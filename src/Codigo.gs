@@ -6,44 +6,72 @@
  *   ?           → formulario de carga para el vendedor (Index.html)
  *   ?v=panel    → panel de seguimiento de Atención al Cliente (Panel.html)
  *
- * ⚠️ getHtml() y crearResumen() son stubs: existían en el proyecto original
- *    y hay que pegar su código real desde el editor de Apps Script.
+ * IMPORTANTE SOBRE LA PLANILLA
+ * La hoja 'No Compra' tiene 22 columnas en uso: A-I las carga el vendedor
+ * desde el formulario, y J-V las completa Atención al Cliente a mano durante
+ * el seguimiento. Nunca escribir en J-V sin saber qué había: son datos vivos.
+ * La fila de encabezados se detecta sola con getFilaEncabezado_(), así que el
+ * código no se rompe si la planilla arranca en otra fila.
  */
 
 // ── Configuración ──────────────────────────────────────────────────────────
-const CONFIG = {
-  SHEET_ID: '',            // ID de la planilla. Vacío = planilla contenedora.
-  HOJA: 'No Compra',       // Nombre exacto de la pestaña.
-  TITULO: 'VDH · No Compra',
+// El ID de la planilla, el PIN y el mail de avisos viven en las propiedades
+// del script, NO en el repo, porque el repo es público.
+// Correr configurar() una vez desde el editor para cargarlos.
 
-  // Mail de Atención al Cliente. Vacío = no se envía aviso.
-  NOTIFICAR_A: '',
+const HOJA = 'No Compra';
+const TZ = 'America/Argentina/Buenos_Aires';
+const FORMATO_FECHA = 'dd/MM/yyyy HH:mm';
 
-  // Copia al encargado de la sucursal, si está cargado en MAILS_SUCURSAL.
-  NOTIFICAR_SUCURSAL: false
+/** Posición de cada columna (0 = A). Refleja la planilla real. */
+const COL = {
+  FECHA:        0,   // A
+  SUCURSAL:     1,   // B
+  VENDEDOR:     2,   // C
+  NOMBRE:       3,   // D
+  WHATSAPP:     4,   // E
+  MAIL:         5,   // F
+  PRODUCTO:     6,   // G
+  TALLE:        7,   // H
+  OBS:          8,   // I
+  // ── de acá en adelante lo completa Atención al Cliente ──
+  CONTACTAMOS:  9,   // J  Nos contactamos?
+  AL_WHAT:     10,   // K  Agregado al What
+  RESPONSABLE: 11,   // L  Responsable Seguim.
+  FECHA_1:     12,   // M  Fecha 1er Contacto
+  RESULTADO_1: 13,   // N  Resultado 1er Contacto
+  FECHA_2:     14,   // O  Fecha 2do Contacto
+  CANAL_2:     15,   // P  Canal 2do Contacto
+  RESULTADO_2: 16,   // Q  Resultado 2do Contacto
+  ESTADO:      17,   // R  Estado Actual
+  OBS_SEGUIM:  18,   // S  Observaciones Seguim.
+  COMPRO:      19,   // T  Compró?
+  PROD_FINAL:  20,   // U  Producto Final
+  MONTO:       21    // V  Monto Venta ($)
 };
 
-const COLUMNAS = [
-  'Fecha',          // 0
-  'Sucursal',       // 1
-  'Vendedor',       // 2
-  'Nombre',         // 3
-  'WhatsApp',       // 4
-  'Mail',           // 5
-  'Producto',       // 6
-  'Talle',          // 7
-  'Observaciones',  // 8
-  'Estado',         // 9
-  'Atendido por',   // 10
-  'Fecha contacto'  // 11
-];
+const ANCHO = 22;  // columnas A-V
 
-const ESTADOS = ['Pendiente', 'Contactado', 'Vendido', 'Sin stock', 'No responde'];
-
-/** Mail del encargado por sucursal. Opcional. */
-const MAILS_SUCURSAL = {
-  // 'MD2 - Mar del Plata Rivadavia': 'rivadavia@vdh.com',
+/** Vocabulario real, tomado de lo que ya cargó el equipo. No inventar valores. */
+const VOCAB = {
+  CONTACTAMOS: ['si', 'no'],
+  RESULTADO_1: ['Respondió - interesado', 'Respondió - no interesado', 'No respondió'],
+  ESTADO:      ['En seguimiento', 'Esperando respuesta', 'Cerrado - compró',
+                'Cerrado - no compró', 'Descartado'],
+  COMPRO:      ['Sí - local', 'Sí - online', 'No']
 };
+
+/**
+ * Carga los valores sensibles. Correr una vez desde el editor:
+ *   configurar('ID_DE_LA_PLANILLA', '1234', 'atencion@vdh.com')
+ */
+function configurar(sheetId, pin, mailAvisos) {
+  const props = PropertiesService.getScriptProperties();
+  if (sheetId)   props.setProperty('SHEET_ID', sheetId);
+  if (pin)       props.setProperty('PANEL_PIN', String(pin));
+  if (mailAvisos !== undefined) props.setProperty('NOTIFICAR_A', mailAvisos);
+  return 'Configuración guardada.';
+}
 
 // ── Web app ────────────────────────────────────────────────────────────────
 function doGet(e) {
@@ -51,13 +79,15 @@ function doGet(e) {
   const archivo = vista === 'panel' ? 'Panel' : 'Index';
 
   return HtmlService.createHtmlOutputFromFile(archivo)
-    .setTitle(CONFIG.TITULO)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0');
+    .setTitle('VDH · No Compra')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1.0')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 // ── Carga (vendedor) ───────────────────────────────────────────────────────
 /**
- * Guarda un registro. Invocado desde Index.html vía google.script.run.
+ * Guarda un registro. Escribe únicamente A-I; J en adelante queda vacío para
+ * que lo complete Atención al Cliente.
  * @param {Object} data {sucursal, vendedor, nombre, whatsapp, mail, producto, talle, obs}
  * @return {{status: string, msg: string=}}
  */
@@ -71,20 +101,18 @@ function submitForm(data) {
     if (!data.vendedor)          return { status: 'error', msg: 'Falta el vendedor.' };
 
     const hoja = getHoja_();
+    const fecha = Utilities.formatDate(new Date(), TZ, FORMATO_FECHA);
 
     hoja.appendRow([
-      new Date(),
-      data.sucursal,
-      data.vendedor,
+      fecha,
+      data.sucursal || '',
+      data.vendedor || '',
       data.nombre   || '',
-      normalizarTel_(data.whatsapp),
+      data.whatsapp || '',
       data.mail     || '',
       data.producto || '',
       data.talle    || '',
-      data.obs      || '',
-      'Pendiente',
-      '',
-      ''
+      data.obs      || ''
     ]);
 
     notificar_(data);
@@ -102,40 +130,55 @@ function submitForm(data) {
 /**
  * Devuelve los registros para el panel, del más nuevo al más viejo.
  * @param {string} pin
- * @param {string} estado Filtro por estado. 'Todos' trae todo.
- * @return {{status: string, registros: Array<Object>=, msg: string=}}
+ * @param {string} filtro 'Pendiente' | uno de VOCAB.ESTADO | 'Todos'
  */
-function getRegistros(pin, estado) {
+function getRegistros(pin, filtro) {
   if (!verificarPin_(pin)) return { status: 'error', msg: 'PIN incorrecto.' };
 
   try {
     const hoja = getHoja_();
+    const inicio = getFilaEncabezado_(hoja) + 1;
     const ultima = hoja.getLastRow();
-    if (ultima < 2) return { status: 'ok', registros: [] };
+    if (ultima < inicio) return { status: 'ok', registros: [] };
 
-    const valores = hoja.getRange(2, 1, ultima - 1, COLUMNAS.length).getValues();
-    const tz = Session.getScriptTimeZone();
+    const ancho = Math.min(ANCHO, hoja.getLastColumn());
+    const valores = hoja.getRange(inicio, 1, ultima - inicio + 1, ancho).getValues();
     const registros = [];
 
     for (let i = 0; i < valores.length; i++) {
       const f = valores[i];
-      const est = f[9] || 'Pendiente';
-      if (estado && estado !== 'Todos' && est !== estado) continue;
+      if (!f[COL.FECHA] && !f[COL.WHATSAPP]) continue;   // fila vacía
 
+      const estado = String(f[COL.ESTADO] || '').trim();
+      const contactado = String(f[COL.CONTACTAMOS] || '').trim().toLowerCase() === 'si';
+
+      // 'Pendiente' no es un estado de la planilla: es "todavía nadie lo tocó".
+      if (filtro === 'Pendiente') {
+        if (estado || contactado) continue;
+      } else if (filtro && filtro !== 'Todos' && estado !== filtro) {
+        continue;
+      }
+
+      const fecha = parseFecha_(f[COL.FECHA]);
       registros.push({
-        fila:     i + 2,                        // fila real en la planilla
-        fecha:    f[0] ? Utilities.formatDate(new Date(f[0]), tz, 'dd/MM/yy HH:mm') : '',
-        sucursal: f[1],
-        vendedor: f[2],
-        nombre:   f[3],
-        whatsapp: String(f[4] || ''),
-        mail:     f[5],
-        producto: f[6],
-        talle:    f[7],
-        obs:      f[8],
-        estado:   est,
-        atendido: f[10],
-        dias:     f[0] ? Math.floor((Date.now() - new Date(f[0]).getTime()) / 86400000) : 0
+        fila:        inicio + i,
+        fecha:       String(f[COL.FECHA] || ''),
+        dias:        fecha ? Math.floor((Date.now() - fecha.getTime()) / 86400000) : null,
+        sucursal:    String(f[COL.SUCURSAL] || ''),
+        vendedor:    String(f[COL.VENDEDOR] || ''),
+        nombre:      String(f[COL.NOMBRE] || ''),
+        whatsapp:    String(f[COL.WHATSAPP] || ''),
+        mail:        String(f[COL.MAIL] || ''),
+        producto:    String(f[COL.PRODUCTO] || ''),
+        talle:       String(f[COL.TALLE] || ''),
+        obs:         String(f[COL.OBS] || ''),
+        contactamos: String(f[COL.CONTACTAMOS] || ''),
+        responsable: String(f[COL.RESPONSABLE] || ''),
+        fecha1:      String(f[COL.FECHA_1] || ''),
+        resultado1:  String(f[COL.RESULTADO_1] || ''),
+        estado:      estado,
+        obsSeguim:   String(f[COL.OBS_SEGUIM] || ''),
+        compro:      String(f[COL.COMPRO] || '')
       });
     }
 
@@ -149,66 +192,86 @@ function getRegistros(pin, estado) {
 }
 
 /**
- * Cambia el estado de un registro y deja constancia de quién y cuándo.
- * @return {{status: string, msg: string=}}
+ * Escribe el seguimiento de un registro. Sólo toca las celdas que vienen en
+ * `campos`; lo que no viene, no se pisa.
+ * @param {Object} campos {contactamos, responsable, fecha1, resultado1, estado, obsSeguim, compro}
  */
-function actualizarEstado(pin, fila, estado, atendidoPor) {
+function guardarSeguimiento(pin, fila, campos) {
   if (!verificarPin_(pin)) return { status: 'error', msg: 'PIN incorrecto.' };
-  if (ESTADOS.indexOf(estado) === -1) return { status: 'error', msg: 'Estado inválido.' };
+  if (!campos) return { status: 'error', msg: 'Nada para guardar.' };
+
+  const invalido = validarVocab_(campos);
+  if (invalido) return { status: 'error', msg: invalido };
 
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
 
     const hoja = getHoja_();
-    if (fila < 2 || fila > hoja.getLastRow()) return { status: 'error', msg: 'Fila inexistente.' };
+    const inicio = getFilaEncabezado_(hoja) + 1;
+    if (fila < inicio || fila > hoja.getLastRow()) {
+      return { status: 'error', msg: 'Fila inexistente.' };
+    }
 
-    hoja.getRange(fila, 10).setValue(estado);
-    hoja.getRange(fila, 11).setValue(atendidoPor || '');
-    hoja.getRange(fila, 12).setValue(new Date());
+    const mapa = [
+      ['contactamos', COL.CONTACTAMOS],
+      ['responsable', COL.RESPONSABLE],
+      ['fecha1',      COL.FECHA_1],
+      ['resultado1',  COL.RESULTADO_1],
+      ['estado',      COL.ESTADO],
+      ['obsSeguim',   COL.OBS_SEGUIM],
+      ['compro',      COL.COMPRO]
+    ];
+
+    mapa.forEach(function (par) {
+      const valor = campos[par[0]];
+      if (valor === undefined) return;               // no vino, no se toca
+      hoja.getRange(fila, par[1] + 1).setValue(valor);
+    });
 
     return { status: 'ok' };
 
   } catch (err) {
-    console.error('actualizarEstado: ' + err.stack);
+    console.error('guardarSeguimiento: ' + err.stack);
     return { status: 'error', msg: err.message };
   } finally {
     lock.releaseLock();
   }
 }
 
-/** Totales por estado, para los contadores del panel. */
-function getResumen(pin) {
+/** Totales para los contadores del panel. */
+function getResumenPanel(pin) {
   if (!verificarPin_(pin)) return { status: 'error', msg: 'PIN incorrecto.' };
 
   const hoja = getHoja_();
+  const inicio = getFilaEncabezado_(hoja) + 1;
   const ultima = hoja.getLastRow();
-  const conteo = { Total: 0 };
-  ESTADOS.forEach(function (e) { conteo[e] = 0; });
+  const conteo = { Total: 0, Pendiente: 0 };
+  VOCAB.ESTADO.forEach(function (e) { conteo[e] = 0; });
 
-  if (ultima >= 2) {
-    const estados = hoja.getRange(2, 10, ultima - 1, 1).getValues();
-    estados.forEach(function (f) {
-      const e = f[0] || 'Pendiente';
-      if (conteo[e] === undefined) conteo[e] = 0;
-      conteo[e]++;
+  if (ultima >= inicio) {
+    const ancho = Math.min(ANCHO, hoja.getLastColumn());
+    const v = hoja.getRange(inicio, 1, ultima - inicio + 1, ancho).getValues();
+    v.forEach(function (f) {
+      if (!f[COL.FECHA] && !f[COL.WHATSAPP]) return;
       conteo.Total++;
+      const estado = String(f[COL.ESTADO] || '').trim();
+      const contactado = String(f[COL.CONTACTAMOS] || '').trim().toLowerCase() === 'si';
+      if (!estado && !contactado) { conteo.Pendiente++; return; }
+      if (conteo[estado] === undefined) conteo[estado] = 0;
+      if (estado) conteo[estado]++;
     });
   }
 
-  return { status: 'ok', conteo: conteo };
+  return { status: 'ok', conteo: conteo, vocab: VOCAB };
 }
 
 // ── Aviso por mail ─────────────────────────────────────────────────────────
 function notificar_(data) {
-  if (!CONFIG.NOTIFICAR_A) return;
+  const destino = PropertiesService.getScriptProperties().getProperty('NOTIFICAR_A');
+  if (!destino) return;
 
   try {
-    const destinos = [CONFIG.NOTIFICAR_A];
-    if (CONFIG.NOTIFICAR_SUCURSAL && MAILS_SUCURSAL[data.sucursal]) {
-      destinos.push(MAILS_SUCURSAL[data.sucursal]);
-    }
-
     const cuerpo =
       '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111827">' +
       '<h2 style="color:#22C55E;margin:0 0 4px">Nuevo pedido · No Compra</h2>' +
@@ -229,7 +292,7 @@ function notificar_(data) {
       '</p></div>';
 
     MailApp.sendEmail({
-      to: destinos.join(','),
+      to: destino,
       subject: 'No Compra · ' + data.sucursal + ' · ' + (data.producto || 'sin producto'),
       htmlBody: cuerpo
     });
@@ -246,61 +309,67 @@ function filaMail_(etiqueta, valor) {
          '<td style="font-weight:600">' + esc_(valor) + '</td></tr>';
 }
 
-// ── Setup de la planilla ───────────────────────────────────────────────────
-/**
- * Prepara la hoja: encabezados, desplegable de Estado y colores por estado.
- * Correr una sola vez desde el editor de Apps Script.
- */
-function setupHoja() {
-  const hoja = getHoja_();
-
-  hoja.getRange(1, 1, 1, COLUMNAS.length).setValues([COLUMNAS])
-      .setFontWeight('bold').setBackground('#DCFCE7');
-  hoja.setFrozenRows(1);
-
-  const rango = hoja.getRange(2, 10, hoja.getMaxRows() - 1, 1);
-  rango.setDataValidation(
-    SpreadsheetApp.newDataValidation().requireValueInList(ESTADOS, true).build()
-  );
-
-  const colores = {
-    'Pendiente':   '#FEF3C7',
-    'Contactado':  '#DBEAFE',
-    'Vendido':     '#DCFCE7',
-    'Sin stock':   '#FEE2E2',
-    'No responde': '#F3F4F6'
-  };
-
-  const reglas = Object.keys(colores).map(function (estado) {
-    return SpreadsheetApp.newConditionalFormatRule()
-      .whenTextEqualTo(estado)
-      .setBackground(colores[estado])
-      .setRanges([rango])
-      .build();
-  });
-
-  hoja.setConditionalFormatRules(reglas);
-  hoja.autoResizeColumns(1, COLUMNAS.length);
-}
-
-/** Define el PIN del panel. Correr una vez desde el editor, con tu PIN. */
-function setPin(pin) {
-  PropertiesService.getScriptProperties().setProperty('PANEL_PIN', String(pin));
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────
 function getHoja_() {
-  const ss = CONFIG.SHEET_ID
-    ? SpreadsheetApp.openById(CONFIG.SHEET_ID)
-    : SpreadsheetApp.getActiveSpreadsheet();
+  const id = PropertiesService.getScriptProperties().getProperty('SHEET_ID');
+  if (!id) throw new Error('Falta configurar SHEET_ID. Correr configurar() una vez.');
 
-  let hoja = ss.getSheetByName(CONFIG.HOJA);
-  if (!hoja) {
-    hoja = ss.insertSheet(CONFIG.HOJA);
-    hoja.appendRow(COLUMNAS);
-    hoja.setFrozenRows(1);
-  }
+  const hoja = SpreadsheetApp.openById(id).getSheetByName(HOJA);
+  if (!hoja) throw new Error('No existe la pestaña "' + HOJA + '".');
   return hoja;
+}
+
+/**
+ * Ubica la fila de encabezados buscando 'Fecha' en la columna A.
+ * Evita hardcodear una fila que puede moverse.
+ */
+function getFilaEncabezado_(hoja) {
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get('FILA_ENC');
+  if (guardado) return Number(guardado);
+
+  const tope = Math.min(10, hoja.getLastRow());
+  const col = hoja.getRange(1, 1, tope, 1).getValues();
+  for (let i = 0; i < col.length; i++) {
+    if (String(col[i][0]).trim().toLowerCase() === 'fecha') {
+      cache.put('FILA_ENC', String(i + 1), 21600);   // 6 h
+      return i + 1;
+    }
+  }
+  throw new Error('No encontré la fila de encabezados (celda con "Fecha" en la columna A).');
+}
+
+function validarVocab_(campos) {
+  const chequeos = [
+    ['contactamos', VOCAB.CONTACTAMOS],
+    ['resultado1',  VOCAB.RESULTADO_1],
+    ['estado',      VOCAB.ESTADO],
+    ['compro',      VOCAB.COMPRO]
+  ];
+  for (let i = 0; i < chequeos.length; i++) {
+    const clave = chequeos[i][0];
+    const valor = campos[clave];
+    if (valor === undefined || valor === '') continue;
+    if (chequeos[i][1].indexOf(valor) === -1) {
+      return 'Valor no permitido en ' + clave + ': ' + valor;
+    }
+  }
+  return null;
+}
+
+/** Las fechas se guardan como texto dd/MM/yyyy HH:mm. Devuelve Date o null. */
+function parseFecha_(v) {
+  if (v instanceof Date) return v;
+  const m = String(v).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,]+(\d{1,2}):(\d{2}))?/);
+  if (!m) return null;
+  return new Date(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0));
+}
+
+/** Arma el link de wa.me. Los números se cargan como área + número, sin 0. */
+function linkWhatsapp_(tel) {
+  let n = String(tel).replace(/\D/g, '').replace(/^0/, '');
+  if (n.indexOf('54') !== 0) n = '549' + n;
+  return 'https://wa.me/' + n;
 }
 
 function verificarPin_(pin) {
@@ -309,28 +378,7 @@ function verificarPin_(pin) {
   return String(pin) === guardado;
 }
 
-/** Deja el teléfono sólo con dígitos, para que no se rompa el link de WhatsApp. */
-function normalizarTel_(tel) {
-  return String(tel).replace(/[^\d+]/g, '');
-}
-
-/** Arma el link de wa.me agregando el 549 de Argentina si falta. */
-function linkWhatsapp_(tel) {
-  let n = String(tel).replace(/\D/g, '');
-  if (n.indexOf('54') !== 0) n = '549' + n.replace(/^0/, '').replace(/^15/, '');
-  return 'https://wa.me/' + n;
-}
-
 function esc_(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
-// ── Pendiente de pegar desde el editor de Apps Script ──────────────────────
-function getHtml() {
-  throw new Error('getHtml(): pegar la implementación real desde Apps Script.');
-}
-
-function crearResumen() {
-  throw new Error('crearResumen(): pegar la implementación real desde Apps Script.');
 }
