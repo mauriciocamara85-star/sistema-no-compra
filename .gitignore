@@ -1,0 +1,15 @@
+# Credenciales de clasp — NUNCA subir
+.clasprc.json
+.clasp.json
+
+# Node
+node_modules/
+
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporales
+*.log
+*.tmp
