@@ -17,7 +17,12 @@
 // ── Configuración ──────────────────────────────────────────────────────────
 // El ID de la planilla, el PIN y el mail de avisos viven en las propiedades
 // del script, NO en el repo, porque el repo es público.
-// Correr configurar() una vez desde el editor para cargarlos.
+//
+// Se cargan a mano una sola vez desde el editor de Apps Script, en
+// Configuración del proyecto → Propiedades de la secuencia de comandos:
+//   SHEET_ID      ID de la planilla
+//   PANEL_PIN     PIN de Atención al Cliente
+//   NOTIFICAR_A   mail que recibe el aviso (vacío = sin aviso)
 
 const HOJA = 'No Compra';
 const TZ = 'America/Argentina/Buenos_Aires';
@@ -62,8 +67,9 @@ const VOCAB = {
 };
 
 /**
- * Carga los valores sensibles. Correr una vez desde el editor:
- *   configurar('ID_DE_LA_PLANILLA', '1234', 'atencion@vdh.com')
+ * Alternativa por código a cargar las propiedades a mano. Desde el editor no
+ * se le pueden pasar argumentos, así que sirve sobre todo llamada desde otra
+ * función o desde clasp.
  */
 function configurar(sheetId, pin, mailAvisos) {
   const props = PropertiesService.getScriptProperties();

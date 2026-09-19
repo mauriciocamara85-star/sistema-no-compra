@@ -100,11 +100,14 @@ src/
 1. Pegar el contenido de `src/` en el proyecto de
    [Apps Script](https://script.google.com). Los `.html` van como archivos
    **HTML**, no pegados dentro del `.gs`.
-2. Correr una vez desde el editor:
+2. Cargar las tres propiedades en **Configuración del proyecto → Propiedades
+   de la secuencia de comandos**:
 
-```javascript
-configurar('ID_DE_LA_PLANILLA', '1234', 'atencion@vdh.com')
-```
+   | Propiedad | Valor |
+   |-----------|-------|
+   | `SHEET_ID` | ID de la planilla |
+   | `PANEL_PIN` | PIN de Atención al Cliente |
+   | `NOTIFICAR_A` | mail que recibe el aviso (vacío = sin aviso) |
 
 3. **Implementar → Nueva implementación → Aplicación web**
    - Ejecutar como: **yo**
@@ -117,7 +120,7 @@ configurar('ID_DE_LA_PLANILLA', '1234', 'atencion@vdh.com')
 
 El repo es **público**, así que el ID de la planilla, el PIN del panel y el mail
 de avisos no viven acá: se guardan en las propiedades del script con
-`configurar()`. Así el código se puede compartir sin exponer a qué planilla
+las propiedades del script. Así el código se puede compartir sin exponer a qué planilla
 apunta ni cómo entrar al panel.
 
 ## Sobre el acceso al panel
