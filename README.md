@@ -119,9 +119,8 @@ src/
 ## Configuración fuera del repo
 
 El repo es **público**, así que el ID de la planilla, el PIN del panel y el mail
-de avisos no viven acá: se guardan en las propiedades del script con
-las propiedades del script. Así el código se puede compartir sin exponer a qué planilla
-apunta ni cómo entrar al panel.
+de avisos no viven acá: se guardan en las propiedades del script. Así el código
+se puede compartir sin exponer a qué planilla apunta ni cómo entrar al panel.
 
 ## Sobre el acceso al panel
 
