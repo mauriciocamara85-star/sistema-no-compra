@@ -90,6 +90,35 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
+/**
+ * Punto de entrada para la interfaz alojada en GitHub Pages.
+ *
+ * Esa interfaz no corre adentro de Apps Script, así que no puede usar
+ * google.script.run: le habla a este endpoint por POST y recibe JSON.
+ * Las vistas servidas desde acá (doGet) siguen andando igual.
+ */
+function doPost(e) {
+  let salida;
+  try {
+    const p = JSON.parse(e.postData.contents);
+
+    switch (p.accion) {
+      case 'submit':      salida = submitForm(p.datos);                       break;
+      case 'registros':   salida = getRegistros(p.pin, p.filtro);             break;
+      case 'seguimiento': salida = guardarSeguimiento(p.pin, p.fila, p.campos); break;
+      case 'resumen':     salida = getResumenPanel(p.pin);                    break;
+      default:            salida = { status: 'error', msg: 'Acción desconocida.' };
+    }
+
+  } catch (err) {
+    console.error('doPost: ' + err.stack);
+    salida = { status: 'error', msg: err.message };
+  }
+
+  return ContentService.createTextOutput(JSON.stringify(salida))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
 // ── Carga (vendedor) ───────────────────────────────────────────────────────
 /**
  * Guarda un registro. Escribe únicamente A-I; J en adelante queda vacío para

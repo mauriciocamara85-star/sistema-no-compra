@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VDH · No Compra · Seguimiento</title>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F7F8FA; --surface: #FFFFFF; --border: #E6E8EC; --brite: #D1D5DB;
+    --acc: #22C55E; --txt: #111827; --muted: #9CA3AF; --dim: #6B7280; --red: #EF4444;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--txt); font-family: 'DM Sans', sans-serif; min-height: 100vh; }
+
+  header {
+    border-bottom: 1px solid var(--border); padding: 0 48px; height: 68px;
+    display: flex; align-items: center; justify-content: space-between;
+    background: rgba(255,255,255,.92); backdrop-filter: blur(12px);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06); position: sticky; top: 0; z-index: 20;
+  }
+  .brand { display: flex; align-items: baseline; gap: 14px; }
+  .brand-name { font-family: 'Bebas Neue', sans-serif; font-size: 30px; letter-spacing: 6px; color: var(--acc); line-height: 1; }
+  .brand-sub { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 3px; color: var(--muted); text-transform: uppercase; }
+  .header-actions { display: flex; align-items: center; gap: 14px; }
+  .whoami { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 1px; color: var(--dim); }
+  .btn-ghost {
+    background: none; border: 1px solid var(--border); color: var(--dim); cursor: pointer;
+    font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase;
+    padding: 8px 14px; border-radius: 8px; transition: all .18s;
+  }
+  .btn-ghost:hover { border-color: var(--acc); color: var(--acc); background: #F0FDF4; }
+
+  .gate { max-width: 380px; margin: 100px auto; padding: 0 24px; text-align: center; }
+  .gate-title { font-family: 'Bebas Neue', sans-serif; font-size: 52px; line-height: .9; letter-spacing: 2px; }
+  .gate-title em { color: var(--acc); font-style: normal; display: block; }
+  .gate-desc { font-size: 13px; color: var(--dim); line-height: 1.6; margin: 14px 0 32px; }
+  .gate input {
+    width: 100%; text-align: center; background: #fff; border: 1px solid #E5E7EB;
+    font-family: 'DM Mono', monospace; font-size: 22px; letter-spacing: 10px;
+    padding: 16px; border-radius: 10px; outline: none; transition: all .18s;
+  }
+  .gate input:focus { border-color: var(--acc); box-shadow: 0 0 0 3px rgba(34,197,94,.15); }
+  .btn-send {
+    background: var(--acc); color: #fff; border: none; padding: 15px 48px;
+    font-family: 'Bebas Neue', sans-serif; font-size: 20px; letter-spacing: 4px;
+    cursor: pointer; border-radius: 10px; box-shadow: 0 4px 12px rgba(34,197,94,.3);
+    transition: all .18s; margin-top: 18px; width: 100%;
+  }
+  .btn-send:hover:not(:disabled) { background: #16A34A; }
+  .btn-send:disabled { background: var(--brite); color: var(--muted); cursor: not-allowed; box-shadow: none; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 36px 48px 80px; }
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 30px; }
+  .stat {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.04); flex: 1; min-width: 118px;
+  }
+  .stat-n { font-family: 'Bebas Neue', sans-serif; font-size: 32px; line-height: 1; }
+  .stat-l { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin-top: 6px; }
+  .stat.is-pend .stat-n { color: #D97706; }
+  .stat.is-ok .stat-n { color: var(--acc); }
+
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+  .fbtn {
+    padding: 9px 16px; border: 1px solid #E5E7EB; background: #fff; color: var(--txt);
+    font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1.2px;
+    text-transform: uppercase; cursor: pointer; border-radius: 8px; transition: all .18s;
+  }
+  .fbtn:hover { border-color: var(--acc); color: #16A34A; background: #F0FDF4; }
+  .fbtn.sel { border-color: var(--acc); background: #DCFCE7; color: #16A34A; box-shadow: 0 0 0 2px rgba(34,197,94,.2); }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 20px 24px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+  }
+  .card-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .pill { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1.2px; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; }
+  .pill-suc { background: #F3F4F6; color: var(--dim); }
+  .pill-est { background: #DBEAFE; color: #1D4ED8; }
+  .pill-pend { background: #FEF3C7; color: #B45309; }
+  .ago { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--muted); letter-spacing: 1px; }
+  .ago.viejo { color: var(--red); font-weight: 500; }
+
+  .prod { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+  .prod .talle { color: var(--dim); font-weight: 400; font-size: 14px; }
+  .meta { font-size: 13px; color: var(--dim); line-height: 1.7; }
+  .meta b { color: var(--txt); font-weight: 500; }
+  .obs { font-size: 13px; color: var(--dim); font-style: italic; margin-top: 8px; padding-left: 12px; border-left: 2px solid var(--border); }
+
+  .contacto { display: flex; gap: 8px; margin: 12px 0; flex-wrap: wrap; }
+  .lnk { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; text-decoration: none; padding: 7px 14px; border-radius: 7px; transition: all .18s; }
+  .lnk-wsp { background: #DCFCE7; color: #15803D; }
+  .lnk-wsp:hover { background: var(--acc); color: #fff; }
+  .lnk-mail { background: #F3F4F6; color: var(--dim); }
+
+  .seguim { border-top: 1px dashed var(--border); margin-top: 14px; padding-top: 14px; }
+  .seguim-lbl { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .quick { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .qbtn {
+    padding: 8px 14px; border: 1px solid #E5E7EB; background: #fff; cursor: pointer;
+    font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1px;
+    border-radius: 7px; transition: all .18s; color: var(--dim);
+  }
+  .qbtn:hover:not(:disabled) { border-color: var(--acc); color: #16A34A; background: #F0FDF4; }
+  .qbtn.activo { border-color: var(--acc); background: #DCFCE7; color: #15803D; }
+  .qbtn:disabled { opacity: .5; cursor: not-allowed; }
+
+  .campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .campo { display: flex; flex-direction: column; gap: 5px; }
+  .campo.span2 { grid-column: 1 / -1; }
+  .campo label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); }
+  select, .campo textarea {
+    border: 1px solid #E5E7EB; border-radius: 7px; padding: 9px 11px;
+    font-family: 'DM Sans', sans-serif; font-size: 13px; background: #fff;
+    outline: none; color: var(--txt); width: 100%;
+  }
+  select:focus, .campo textarea:focus { border-color: var(--acc); box-shadow: 0 0 0 3px rgba(34,197,94,.12); }
+  .campo textarea { resize: vertical; min-height: 54px; }
+
+  .vacio { text-align: center; padding: 80px 20px; color: var(--muted); font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 1px; }
+  #feedback {
+    display: none; position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    padding: 14px 24px; font-family: 'DM Mono', monospace; font-size: 12px;
+    letter-spacing: 1px; border-radius: 10px; z-index: 50; box-shadow: 0 6px 20px rgba(0,0,0,.14);
+  }
+  #feedback.ok  { background: #DCFCE7; border: 1px solid #86EFAC; color: #16A34A; }
+  #feedback.err { background: #FEE2E2; border: 1px solid #FCA5A5; color: #DC2626; }
+  .hidden { display: none !important; }
+
+  @media (max-width: 900px) {
+    header { padding: 0 20px; }
+    .wrap { padding: 24px 20px 60px; }
+    .campos { grid-template-columns: 1fr; }
+    .campo.span2 { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="brand-name">VDH</div>
+    <div class="brand-sub">Seguimiento · No Compra</div>
+  </div>
+  <div class="header-actions hidden" id="hActions">
+    <div class="whoami" id="whoami"></div>
+    <button class="btn-ghost" onclick="cargar()">Actualizar</button>
+    <button class="btn-ghost" onclick="salir()">Salir</button>
+  </div>
+</header>
+
+<div class="gate" id="gate">
+  <div class="gate-title">NO<em>COMPRA</em></div>
+  <p class="gate-desc">Panel de seguimiento. Ingresá el PIN de Atención al Cliente.</p>
+  <input type="password" id="pin" inputmode="numeric" placeholder="••••" maxlength="12"
+         onkeydown="if(event.key==='Enter') entrar()">
+  <button class="btn-send" id="btnEntrar" onclick="entrar()">ENTRAR</button>
+</div>
+
+<div class="wrap hidden" id="app">
+  <div class="stats" id="stats"></div>
+  <div class="filters" id="filters"></div>
+  <div id="lista"></div>
+</div>
+
+<div id="feedback"></div>
+
+<script>
+  // Esta página se sirve desde GitHub Pages, fuera de Apps Script, así que
+  // no existe google.script.run: le habla al backend de Google por POST.
+  var API = 'https://script.google.com/macros/s/AKfycbxI373Id-FVEbyhErLlM5wvvyVApwdEBl2tmg_WfVgvXXpdy6ZgGDB0fGdHBQFHMVqu/exec';
+
+  /**
+   * El Content-Type va en text/plain a propósito: así el navegador manda el
+   * POST directo. Con application/json pide permiso antes (preflight) y Apps
+   * Script no responde a ese pedido.
+   */
+  function llamar(cuerpo) {
+    return fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(cuerpo)
+    }).then(function (r) {
+      if (!r.ok) throw new Error('El servidor respondió ' + r.status);
+      return r.json();
+    });
+  }
+
+  var pin = '', filtro = 'Pendiente', quien = '', VOCAB = null;
+
+  function guardar(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  function leer(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function mostrar(tipo, msg) {
+    var el = document.getElementById('feedback');
+    el.className = tipo; el.textContent = msg; el.style.display = 'block';
+    setTimeout(function () { el.style.display = 'none'; }, 3500);
+  }
+
+  function hoyDDMM() {
+    var d = new Date();
+    return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2);
+  }
+
+  // ── Ingreso ─────────────────────────────────────────────────────
+  function entrar() {
+    var v = document.getElementById('pin').value.trim();
+    if (!v) { mostrar('err', '✕ Ingresá el PIN.'); return; }
+
+    var btn = document.getElementById('btnEntrar');
+    btn.disabled = true; btn.textContent = 'VERIFICANDO...';
+
+    llamar({ accion: 'resumen', pin: v })
+      .then(function (res) {
+        btn.disabled = false; btn.textContent = 'ENTRAR';
+        if (res.status !== 'ok') { mostrar('err', '✕ ' + res.msg); return; }
+
+        pin = v; VOCAB = res.vocab;
+        guardar('vdh_pin', v);
+        quien = leer('vdh_quien');
+        if (!quien) {
+          quien = (prompt('¿Quién sos? Queda anotado en "Responsable Seguim."') || '').trim();
+          if (quien) guardar('vdh_quien', quien);
+        }
+
+        document.getElementById('gate').classList.add('hidden');
+        document.getElementById('app').classList.remove('hidden');
+        document.getElementById('hActions').classList.remove('hidden');
+        document.getElementById('whoami').textContent = quien ? quien.toUpperCase() : '';
+
+        pintarStats(res.conteo); pintarFiltros(); cargar();
+      })
+      .catch(function () {
+        btn.disabled = false; btn.textContent = 'ENTRAR';
+        mostrar('err', '✕ Error de conexión.');
+      });
+  }
+
+  function salir() {
+    pin = ''; guardar('vdh_pin', '');
+    document.getElementById('pin').value = '';
+    document.getElementById('app').classList.add('hidden');
+    document.getElementById('hActions').classList.add('hidden');
+    document.getElementById('gate').classList.remove('hidden');
+  }
+
+  // ── Filtros y contadores ────────────────────────────────────────
+  function pintarFiltros() {
+    var ops = ['Pendiente'].concat(VOCAB.ESTADO).concat(['Todos']);
+    document.getElementById('filters').innerHTML = ops.map(function (o) {
+      return '<button class="fbtn' + (o === filtro ? ' sel' : '') + '" data-f="' + esc(o) + '">' + esc(o) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('.fbtn'), function (b) {
+      b.onclick = function () { filtro = b.dataset.f; pintarFiltros(); cargar(); };
+    });
+  }
+
+  function pintarStats(c) {
+    var orden = [{ k: 'Total', cls: '' }, { k: 'Pendiente', cls: 'is-pend' }]
+      .concat(VOCAB.ESTADO.map(function (e) {
+        return { k: e, cls: e === 'Cerrado - compró' ? 'is-ok' : '' };
+      }));
+    document.getElementById('stats').innerHTML = orden.map(function (o) {
+      return '<div class="stat ' + o.cls + '"><div class="stat-n">' + (c[o.k] || 0) +
+             '</div><div class="stat-l">' + esc(o.k) + '</div></div>';
+    }).join('');
+  }
+
+  // ── Carga ───────────────────────────────────────────────────────
+  function cargar() {
+    document.getElementById('lista').innerHTML = '<div class="vacio">Cargando...</div>';
+
+    llamar({ accion: 'registros', pin: pin, filtro: filtro })
+      .then(function (res) {
+        if (res.status !== 'ok') { mostrar('err', '✕ ' + res.msg); return; }
+        pintarLista(res.registros);
+      })
+      .catch(function () { mostrar('err', '✕ Error de conexión.'); });
+
+    llamar({ accion: 'resumen', pin: pin })
+      .then(function (res) { if (res.status === 'ok') pintarStats(res.conteo); })
+      .catch(function () {});
+  }
+
+  function linkWsp(tel) {
+    var n = String(tel).replace(/\D/g, '').replace(/^0/, '');
+    if (n.indexOf('54') !== 0) n = '549' + n;
+    return 'https://wa.me/' + n;
+  }
+
+  function opciones(lista, actual) {
+    return '<option value=""></option>' + lista.map(function (o) {
+      return '<option value="' + esc(o) + '"' + (o === actual ? ' selected' : '') + '>' + esc(o) + '</option>';
+    }).join('');
+  }
+
+  function pintarLista(regs) {
+    if (!regs.length) {
+      document.getElementById('lista').innerHTML =
+        '<div class="vacio">No hay registros en «' + esc(filtro) + '»</div>';
+      return;
+    }
+
+    document.getElementById('lista').innerHTML = regs.map(function (r) {
+      var pendiente = !r.estado && String(r.contactamos).toLowerCase() !== 'si';
+      var alerta = (pendiente && r.dias !== null && r.dias >= 3) ? ' viejo' : '';
+      var anti = r.dias === null ? '' : (r.dias === 0 ? ' · hoy' : ' · hace ' + r.dias + 'd');
+
+      var quick = VOCAB.RESULTADO_1.map(function (o) {
+        return '<button class="qbtn' + (o === r.resultado1 ? ' activo' : '') +
+               '" data-fila="' + r.fila + '" data-res="' + esc(o) + '">' + esc(o) + '</button>';
+      }).join('');
+
+      return '<div class="card" data-fila="' + r.fila + '">' +
+        '<div class="card-head">' +
+          '<span class="pill pill-suc">' + esc(r.sucursal || 'sin sucursal') + '</span>' +
+          (r.estado ? '<span class="pill pill-est">' + esc(r.estado) + '</span>'
+                    : (pendiente ? '<span class="pill pill-pend">Pendiente</span>' : '')) +
+          '<span class="ago' + alerta + '">' + esc(r.fecha) + anti + '</span>' +
+        '</div>' +
+        '<div class="prod">' + esc(r.producto || 'Sin producto especificado') +
+          (r.talle ? ' <span class="talle">· talle ' + esc(r.talle) + '</span>' : '') + '</div>' +
+        '<div class="meta">' +
+          (r.nombre ? '<b>' + esc(r.nombre) + '</b> · ' : '') + esc(r.whatsapp) +
+          (r.mail ? ' · ' + esc(r.mail) : '') +
+          '<br>Cargó <b>' + esc(r.vendedor) + '</b>' +
+          (r.responsable ? ' · sigue <b>' + esc(r.responsable) + '</b>' : '') +
+          (r.fecha1 ? ' · 1er contacto ' + esc(r.fecha1) : '') +
+        '</div>' +
+        (r.obs ? '<div class="obs">' + esc(r.obs) + '</div>' : '') +
+        '<div class="contacto">' +
+          '<a class="lnk lnk-wsp" target="_blank" href="' + linkWsp(r.whatsapp) + '">WhatsApp</a>' +
+          (r.mail ? '<a class="lnk lnk-mail" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
+        '</div>' +
+        '<div class="seguim">' +
+          '<div class="seguim-lbl">Resultado del 1er contacto</div>' +
+          '<div class="quick">' + quick + '</div>' +
+          '<div class="campos">' +
+            '<div class="campo"><label>Estado actual</label>' +
+              '<select data-c="estado">' + opciones(VOCAB.ESTADO, r.estado) + '</select></div>' +
+            '<div class="campo"><label>¿Compró?</label>' +
+              '<select data-c="compro">' + opciones(VOCAB.COMPRO, r.compro) + '</select></div>' +
+            '<div class="campo span2"><label>Observaciones del seguimiento</label>' +
+              '<textarea data-c="obsSeguim">' + esc(r.obsSeguim) + '</textarea></div>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+
+    // Botones de resultado: marcan contacto, fecha, responsable y resultado.
+    Array.prototype.forEach.call(document.querySelectorAll('.qbtn'), function (b) {
+      b.onclick = function () {
+        enviar(+b.dataset.fila, {
+          contactamos: 'si',
+          responsable: quien,
+          fecha1: hoyDDMM(),
+          resultado1: b.dataset.res
+        }, 'Marcado: ' + b.dataset.res);
+      };
+    });
+
+    // Selects y textarea: guardan al cambiar / al salir del campo.
+    Array.prototype.forEach.call(document.querySelectorAll('.card select'), function (s) {
+      s.onchange = function () {
+        var fila = +s.closest('.card').dataset.fila, campos = {};
+        campos[s.dataset.c] = s.value;
+        if (quien) campos.responsable = quien;
+        enviar(fila, campos, 'Guardado');
+      };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.card textarea'), function (t) {
+      var original = t.value;
+      t.onblur = function () {
+        if (t.value === original) return;
+        original = t.value;
+        var fila = +t.closest('.card').dataset.fila, campos = {};
+        campos[t.dataset.c] = t.value;
+        enviar(fila, campos, 'Observación guardada', true);
+      };
+    });
+  }
+
+  function enviar(fila, campos, msgOk, sinRecargar) {
+    llamar({ accion: 'seguimiento', pin: pin, fila: fila, campos: campos })
+      .then(function (res) {
+        if (res.status === 'ok') { mostrar('ok', '✓ ' + msgOk); if (!sinRecargar) cargar(); }
+        else { mostrar('err', '✕ ' + res.msg); cargar(); }
+      })
+      .catch(function () { mostrar('err', '✕ Error de conexión.'); });
+  }
+
+  (function () {
+    var g = leer('vdh_pin');
+    if (g) { document.getElementById('pin').value = g; entrar(); }
+  })();
+</script>
+</body>
+</html>
