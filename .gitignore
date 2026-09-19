@@ -13,3 +13,6 @@ desktop.ini
 # Temporales
 *.log
 *.tmp
+
+# Atajo local con el ID de implementacion
+publicar.ps1

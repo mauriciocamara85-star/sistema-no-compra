@@ -1,37 +1,75 @@
 # Sincronizar con clasp
 
 `clasp` es la herramienta de Google para trabajar Apps Script desde la terminal.
-Permite versionar el código en git y subirlo con un comando, en vez de copiar y
-pegar en el editor web.
+Evita copiar y pegar los archivos a mano en el editor web.
 
-## Requisitos
+## Estado
 
-Node.js no está instalado en esta máquina. Descargarlo de
-[nodejs.org](https://nodejs.org) (versión LTS).
+Ya está instalado y configurado en la máquina de Mauricio: Node.js v24, clasp
+3.4 y la sesión de Google iniciada. Lo que sigue es para reinstalarlo en otra
+máquina o si algo deja de andar.
 
-## Instalación
+## El circuito
+
+```
+editás en src/  →  git push        (queda versionado en GitHub)
+                →  clasp push      (sube el código a Apps Script)
+                →  clasp deploy    (publica una versión nueva, ya en vivo)
+```
+
+Sin el `deploy`, el código queda guardado en Apps Script pero los locales
+siguen viendo la versión anterior. La implementación está fijada a un número de
+versión, así que un `push` solo nunca afecta lo que está en uso.
+
+## Comandos del día a día
 
 ```bash
+clasp.cmd pull     # traer lo que se editó en el navegador
+clasp.cmd push     # subir lo de acá
+clasp.cmd deploy -i <ID_DE_IMPLEMENTACION> -d "qué cambió"
+clasp.cmd list-deployments
+clasp.cmd open-script
+```
+
+El ID de implementación no está en el repo. Sale de `clasp.cmd list-deployments`:
+es el que está fijado a un número de versión (`@12`), no el `@HEAD`.
+
+> **En PowerShell hay que escribir `clasp.cmd`, no `clasp`.** PowerShell bloquea
+> los scripts `.ps1` que instala npm. El `.cmd` hace exactamente lo mismo sin
+> tocar ninguna configuración de seguridad del sistema.
+
+## Instalación desde cero
+
+```bash
+winget install OpenJS.NodeJS.LTS
 npm install -g @google/clasp
-clasp login
+clasp.cmd login
 ```
 
-## Conectar este repo al proyecto
+Después hay que **activar la API**: entrar a
+[script.google.com/home/usersettings](https://script.google.com/home/usersettings)
+y poner *API de Google Apps Script* en **Activado**. Sin eso, `push` falla con
+`User has not enabled the Apps Script API`.
 
-1. Abrir el proyecto en script.google.com
-2. **Configuración del proyecto → ID de secuencia de comandos** — copiarlo
-3. Copiar `.clasp.json.ejemplo` a `.clasp.json` y pegar el ID
+## `.clasp.json`
 
-```bash
-cp .clasp.json.ejemplo .clasp.json
+No se versiona (está en `.gitignore`) porque tiene el ID del proyecto. Se arma
+copiando `.clasp.json.ejemplo`:
+
+```json
+{
+  "scriptId": "EL_ID_DEL_PROYECTO",
+  "rootDir": "src",
+  "scriptExtensions": ".gs",
+  "htmlExtensions": ".html"
+}
 ```
 
-## Uso diario
+`scriptExtensions` es lo que mantiene los archivos como `.gs` en vez de `.js`.
+El `scriptId` sale de Apps Script, en Configuración del proyecto → ID de script.
 
-```bash
-clasp pull     # traer los cambios hechos en el editor web
-clasp push     # subir los cambios hechos acá
-clasp open     # abrir el proyecto en el navegador
-```
+## Nombres de archivo
 
-`.clasp.json` está en `.gitignore` porque contiene el ID del proyecto.
+Los archivos del proyecto no llevan acentos: el archivo se llama `Codigo`, no
+`Código`. clasp nombra los archivos locales igual que los del proyecto, y un
+acento en el nombre trae problemas de codificación en git y en la terminal.
