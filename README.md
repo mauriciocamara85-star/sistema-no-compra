@@ -203,6 +203,24 @@ planilla.
 > queda en el log (`sincronizarCrm_`). Lo que no llegó a Kommo no se reintenta
 > solo: está en la planilla para resubirlo.
 
+### Permisos: si cambiás lo que el script hace, hay que reautorizar
+
+La app web corre con los permisos que aceptaste **la última vez que autorizaste
+el proyecto**, no con los que el código necesita hoy. Cuando se sumó Kommo, el
+código empezó a salir a internet con `UrlFetchApp` — un permiso que la
+autorización vieja no incluía. Resultado: la fila se guardaba bien y Kommo
+fallaba con *"No cuentas con el permiso para llamar a UrlFetchApp.fetch"*.
+
+Por eso `appsscript.json` declara los permisos a mano en `oauthScopes`
+(`spreadsheets`, `script.external_request`, `script.send_mail`) en vez de
+dejar que Apps Script los deduzca: así quedan a la vista y no dependen de
+cuándo se autorizó.
+
+**Después de publicar un cambio que agregue permisos hay que reautorizar:**
+abrir el editor, correr cualquier función a mano (`kommoDiagnostico` sirve) y
+aceptar la pantalla de permisos. Hasta que no se haga, la app publicada sigue
+con los permisos viejos.
+
 El mail y Kommo se mandan **fuera del candado** de la planilla. Son llamadas a
 servicios de afuera y pueden tardar segundos; adentro del candado, un Kommo
 lento dejaba a los otros locales esperando para guardar.
