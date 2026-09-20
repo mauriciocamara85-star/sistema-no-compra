@@ -106,6 +106,19 @@
   }
 
 
+  /* "No estoy en la lista": la salida de emergencia. Va punteado para que se
+     lea distinto de un nombre —no es una persona, es una acción— y siempre
+     tiene que estar, aunque el local tenga la lista completa. El día que
+     entra alguien nuevo un sábado, esto es lo que evita que el local deje de
+     registrar. */
+  .chip-otro {
+    border-style: dashed;
+    background: transparent;
+    color: var(--txt-3);
+    font-weight: 500;
+  }
+  .chip-otro.sel { border-style: solid; }
+
   /* Talle en dos filas: letras arriba, números abajo. Ver pintarTalles(). */
   .talles { display: flex; flex-direction: column; gap: 8px; }
 
@@ -327,6 +340,9 @@
       </div>
     </div>
     <div class="head-acciones">
+      <a class="btn-icono" href="config.html" title="Configuración" aria-label="Configuración">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      </a>
       <a class="btn-icono" href="panel.html" title="Panel de seguimiento" aria-label="Panel de seguimiento">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
       </a>
@@ -379,7 +395,8 @@
     <!-- ── Vendedor ── -->
     <section class="bloque" id="bloqueVendedor">
       <h2 class="bloque-tit">¿Quién sos? <span class="lbl-req">obligatorio</span></h2>
-      <p class="bloque-sub">Tu nombre queda en el registro. Escribilo siempre igual: así el resumen por vendedor sale bien.</p>
+      <p class="bloque-sub">Tocá tu nombre. Si no estás en la lista, lo escribís y se lo pedís al encargado para que te agregue.</p>
+      <div class="chips chips-vend" id="chipsVend" hidden></div>
       <div class="campo" id="cVend">
         <input type="text" id="f_vendedor" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
         <div class="campo-error" id="errVend" hidden>Falta tu nombre.</div>
@@ -469,7 +486,7 @@
 
   </div><!-- /.pasos -->
 
-  <p class="pie">Se guarda en la planilla y el cliente entra al CRM. <a href="panel.html">Panel de seguimiento</a></p>
+  <p class="pie">Se guarda en la planilla y el cliente entra al CRM. <a href="panel.html">Panel de seguimiento</a> · <a href="config.html">Configuración</a> · <span id="version"></span></p>
 </main>
 
 <div class="barra">
@@ -560,8 +577,13 @@
   var TALLES_NUMERO = ['38', '40', '42', '44', '46', '48'];
 
   /* Claves de localStorage. */
-  var K_LOCAL = 'nc_local', K_VEND = 'nc_vendedor',
+  var K_LOCAL = 'nc_local', K_VEND = 'nc_vendedor', K_EQUIPO = 'nc_equipo',
       K_COLA = 'nc_cola', K_HOY = 'nc_hoy';
+
+  /* Sube a mano al publicar, y tiene que coincidir con la del backend.
+     Cuando un vendedor dice "a mí no me anda", esto dice qué versión tiene
+     ESE celular: la app es PWA y puede quedar una vieja cacheada. */
+  var VERSION = '2026.09.20';
 
   var local = '', motivo = '', talles = [];
 
@@ -617,6 +639,82 @@
 
 
 
+  /* ═══ El equipo del local ═══════════════════════════════════════════════
+     Los vendedores salen de la pestaña Equipo de la planilla y se configuran
+     desde config.html. Acá llegan como botones: tocás tu nombre y listo.
+
+     Se guardan en el celular. Esto NO es una optimización, es lo que mantiene
+     la promesa de la app: el formulario tiene que andar con el WiFi del
+     shopping caído. Con señal se refresca de fondo; sin señal se usa lo
+     último que se vio; y si nunca hubo lista, el nombre se escribe a mano
+     como siempre.
+
+     Escribirlo a mano NUNCA deja de ser posible. El día que entra alguien
+     nuevo un sábado y el encargado no está, esa persona tiene que poder
+     registrar igual: si sólo hubiera botones, el local dejaría de cargar. */
+  var equipo = [], escribiendo = false;
+
+  function equipoGuardado() {
+    var g = leerJSON(K_EQUIPO, null);
+    return (g && g.local === local && g.vendedores) ? g.vendedores : [];
+  }
+
+  function pintarVendedores() {
+    var caja = $('chipsVend');
+
+    if (!equipo.length) {           // sin lista todavía: se escribe a mano
+      caja.hidden = true;
+      $('cVend').hidden = false;
+      return;
+    }
+
+    var actual = $('f_vendedor').value.trim();
+    caja.innerHTML = equipo.map(function (v) {
+      return '<button type="button" class="chip' + (v === actual ? ' sel' : '') +
+             '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
+    }).join('') +
+      '<button type="button" class="chip chip-otro' + (escribiendo ? ' sel' : '') +
+      '" data-otro>No estoy en la lista</button>';
+
+    caja.hidden = false;
+    $('cVend').hidden = !escribiendo;
+
+    Array.prototype.forEach.call(caja.children, function (b) {
+      b.onclick = function () {
+        if (b.hasAttribute('data-otro')) {
+          escribiendo = true;
+          pintarVendedores();
+          $('f_vendedor').focus();
+          return;
+        }
+        escribiendo = false;
+        $('f_vendedor').value = b.dataset.v;
+        ocultarError('errVend', 'cVend');
+        pintarVendedores();
+        mostrarIdentidad();
+      };
+    });
+  }
+
+  /**
+   * Pide el equipo del local al servidor y lo guarda.
+   *
+   * Silencioso a propósito: si falla, ya hay una lista guardada o se escribe
+   * a mano. Un cartel de error acá sólo asustaría a alguien que igual puede
+   * seguir trabajando.
+   */
+  function traerEquipo() {
+    if (!local) return;
+    llamar({ accion: 'equipo', local: local })
+      .then(function (res) {
+        if (res.status !== 'ok') return;
+        equipo = res.vendedores || [];
+        guardarJSON(K_EQUIPO, { local: local, vendedores: equipo });
+        pintarVendedores();
+      })
+      .catch(function () { /* sin señal: queda lo guardado */ });
+  }
+
   /* ═══ Identidad ═════════════════════════════════════════════════════════ */
   function elegirLocal(v) {
     local = v;
@@ -625,10 +723,17 @@
       b.classList.toggle('sel', b.dataset.v === v);
     });
     ocultarError('errLocal');
-    if ($('f_vendedor').value.trim()) mostrarIdentidad();
-    else $('f_vendedor').focus();
-  }
 
+    // El equipo cambia con el local: se muestra lo que haya guardado de ese
+    // local y se pide el actualizado de fondo.
+    escribiendo = false;
+    equipo = equipoGuardado();
+    pintarVendedores();
+    traerEquipo();
+
+    if ($('f_vendedor').value.trim()) mostrarIdentidad();
+    else if (!equipo.length) $('f_vendedor').focus();
+  }
   function nombreLocal(v) {
     for (var i = 0; i < LOCALES.length; i++) if (LOCALES[i].v === v) return LOCALES[i].t;
     return bonito(v);
@@ -886,6 +991,12 @@
         b.classList.toggle('sel', b.dataset.v === local);
       });
       if (guardadoVend) mostrarIdentidad();
+
+      // El equipo de ESE local: primero lo guardado, para que los botones
+      // estén antes de que vuelva el servidor; después el refresco.
+      equipo = equipoGuardado();
+      pintarVendedores();
+      traerEquipo();
     }
 
     // Al salir del campo, el nombre se fija como identidad.
@@ -913,6 +1024,7 @@
     if (cola().length) vaciarCola(false);
     window.addEventListener('online', function () { vaciarCola(false); });
 
+    $('version').textContent = 'v' + VERSION;
     iniciarPWA();
   })();
 </script>

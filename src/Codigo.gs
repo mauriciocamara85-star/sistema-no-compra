@@ -27,6 +27,11 @@
 //   PANEL_PIN     PIN de Atención al Cliente
 //   NOTIFICAR_A   mail que recibe el aviso (vacío = sin aviso)
 
+/** Se sube a mano al publicar. Sirve para responder "¿qué versión tenés?"
+    cuando alguien dice que algo no le anda. El formulario muestra la suya en
+    el pie; si no coinciden, el celular tiene la app vieja cacheada. */
+const VERSION = '2026.09.20';
+
 const HOJA = 'No Compra';
 const TZ = 'America/Argentina/Buenos_Aires';
 const FORMATO_FECHA = 'dd/MM/yyyy HH:mm';
@@ -148,6 +153,15 @@ function doPost(e) {
       case 'registros':   salida = getRegistros(p.pin, p.filtro);             break;
       case 'seguimiento': salida = guardarSeguimiento(p.pin, p.fila, p.campos); break;
       case 'resumen':     salida = getResumenPanel(p.pin);                    break;
+
+      // Configuración: equipo y objetivos. Sin PIN a propósito — ver Config.gs.
+      case 'equipo':      salida = getEquipo(p.local);                        break;
+      case 'config':      salida = getConfig();                               break;
+      case 'agregarVend': salida = equipoAgregar(p.local, p.nombre, p.quien); break;
+      case 'sacarVend':   salida = equipoDesactivar(p.local, p.nombre, p.quien); break;
+      case 'objetivo':    salida = objetivoGuardar(p.local, p.periodo, p.meta, p.quien); break;
+
+      case 'version':     salida = { status: 'ok', version: VERSION };        break;
       default:            salida = { status: 'error', msg: 'Acción desconocida.' };
     }
 
@@ -410,7 +424,10 @@ function getResumenPanel(pin) {
     porMotivo: porMotivo,
     // Si el puente con Kommo se rompió, el panel lo tiene que decir: es la
     // única pantalla que Atención al Cliente mira todos los días.
-    crm: estadoCrm_()
+    crm: estadoCrm_(),
+    // Mismo criterio que el CRM: un respaldo que dejó de correr no puede
+    // enterarse nadie recién el día que hace falta.
+    respaldo: (typeof estadoRespaldo_ === 'function') ? estadoRespaldo_() : { activo: false }
   };
 }
 
