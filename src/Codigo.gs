@@ -333,10 +333,15 @@ function guardarSeguimiento(pin, fila, campos) {
 /**
  * Totales para el tablero del panel.
  *
- * Además de los conteos por estado devuelve `recuperado` y `compraron`: la
- * plata que entró de gente que ya se había ido del local sin comprar. Es el
- * único número que contesta si el sistema sirve o no, y hasta ahora estaba
- * cargado en la columna V pero no se mostraba en ninguna parte.
+ * Además de los conteos por estado devuelve la plata que entró de gente que ya
+ * se había ido del local sin comprar. Es el único número que contesta si el
+ * sistema sirve o no, y hasta ahora estaba cargado en la columna V pero no se
+ * mostraba en ninguna parte.
+ *
+ * Va separada en LOCAL y ONLINE porque un no-compra se puede resolver de dos
+ * maneras —que el producto llegue al local y el cliente vuelva, o que se lo
+ * venda la tienda online— y sumarlas esconde justamente lo que hay que ver:
+ * cuánta venta le está empujando esto al ecommerce.
  */
 function getResumenPanel(pin) {
   if (!verificarPin_(pin)) return { status: 'error', msg: mensajePin_() };
@@ -347,7 +352,8 @@ function getResumenPanel(pin) {
   const conteo = { Total: 0, Pendiente: 0 };
   VOCAB.ESTADO.forEach(function (e) { conteo[e] = 0; });
 
-  let recuperado = 0, compraron = 0;
+  const recuperado = { local: 0, online: 0, total: 0 };
+  const compraron  = { local: 0, online: 0, total: 0 };
   const porMotivo = {};
 
   if (ultima >= inicio) {
@@ -361,9 +367,17 @@ function getResumenPanel(pin) {
       if (motivo) porMotivo[motivo] = (porMotivo[motivo] || 0) + 1;
 
       // "Compró" son los Sí del vocabulario (local u online), no el texto libre.
-      if (String(f[COL.COMPRO] || '').trim().indexOf('Sí') === 0) {
-        compraron++;
-        recuperado += parseMonto_(f[COL.MONTO]);
+      const compro = String(f[COL.COMPRO] || '').trim();
+      if (compro.indexOf('Sí') === 0) {
+        const monto = parseMonto_(f[COL.MONTO]);
+        compraron.total++;
+        recuperado.total += monto;
+        // Lo que no diga "online" cuenta como local: el vocabulario sólo tiene
+        // esas dos opciones, y ante un valor raro es preferible no inflar el
+        // número del ecommerce, que es el que estamos tratando de mover.
+        const via = compro.toLowerCase().indexOf('online') > -1 ? 'online' : 'local';
+        compraron[via]++;
+        recuperado[via] += monto;
       }
 
       const estado = String(f[COL.ESTADO] || '').trim();
@@ -378,8 +392,8 @@ function getResumenPanel(pin) {
     status: 'ok',
     conteo: conteo,
     vocab: VOCAB,
-    recuperado: recuperado,
-    compraron: compraron,
+    recuperado: recuperado,   // {local, online, total}
+    compraron: compraron,     // {local, online, total}
     porMotivo: porMotivo
   };
 }

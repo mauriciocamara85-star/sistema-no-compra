@@ -74,7 +74,10 @@
   .kpi.es-ok { border-left-color: var(--ok); }
   .kpi.es-ok .kpi-n { color: var(--ok-txt); }
   .kpi.es-plata { border-left-color: var(--acc); }
-  .kpi.es-plata .kpi-n { color: var(--acc-txt); font-size: 23px; }
+  .kpi.es-plata .kpi-n { color: var(--acc-txt); }
+  /* Las dos tarjetas de plata llevan un importe, no un número corto: con 27px
+     un "$ 1.234.567" se sale de la tarjeta en un celular. */
+  .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 21px; }
 
   /* Controles */
   .controles { margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -309,20 +312,34 @@
 
   /* ═══ Tablero ═══════════════════════════════════════════════════════════
      Los cuatro números que contestan "¿esto sirve?": cuántos entraron, cuántos
-     nadie tocó, cuántos se cerraron con compra y —el que justifica el sistema
-     entero— cuánta plata se recuperó de gente que se había ido sin comprar. */
+     nadie tocó y —los que justifican el sistema entero— cuánta plata se
+     recuperó de gente que ya se había ido sin comprar.
+
+     La plata va partida en LOCAL y ONLINE a propósito. Un no-compra se
+     resuelve de dos maneras: que el producto llegue al local y el cliente
+     vuelva, o que se lo venda la tienda online. Sumarlas esconde justamente lo
+     que hay que ver, que es cuánta venta le está empujando esto al ecommerce. */
   function pintarKpis(res) {
     var c = res.conteo || {};
-    var recuperado = res.recuperado || 0;
-    var compraron = res.compraron || 0;
+    // El backend viejo devolvía un número suelto; el nuevo manda {local, online,
+    // total}. Se aceptan los dos para que el panel no quede en blanco si alguna
+    // vez se publica la interfaz antes que el backend.
+    var rec = typeof res.recuperado === 'object' ? res.recuperado
+                                                 : { total: res.recuperado || 0, local: 0, online: 0 };
+    var com = typeof res.compraron === 'object' ? res.compraron
+                                                : { total: res.compraron || 0, local: 0, online: 0 };
     var total = c.Total || 0;
-    var tasa = total ? Math.round(compraron / total * 100) : 0;
+    var tasa = total ? Math.round((com.total || 0) / total * 100) : 0;
+
+    var clientes = function (n) { return n === 1 ? '1 cliente' : (n || 0) + ' clientes'; };
 
     var tarjetas = [
-      { n: total, l: 'Registros', pie: 'desde que arrancó', cls: '' },
+      { n: total, l: 'Registros', pie: tasa + '% terminó comprando', cls: '' },
       { n: c.Pendiente || 0, l: 'Sin tocar', pie: 'nadie los contactó', cls: 'es-pend' },
-      { n: compraron, l: 'Terminaron comprando', pie: tasa + '% de recupero', cls: 'es-ok' },
-      { n: PESOS.format(recuperado), l: 'Recuperado', pie: 'ventas que se habían perdido', cls: 'es-plata' }
+      { n: PESOS.format(rec.local || 0), l: 'Recuperado en el local',
+        pie: clientes(com.local) + ' volvieron', cls: 'es-ok' },
+      { n: PESOS.format(rec.online || 0), l: 'Recuperado online',
+        pie: clientes(com.online) + ' compraron por la web', cls: 'es-plata' }
     ];
 
     $('kpis').innerHTML = tarjetas.map(function (t, i) {
