@@ -14,12 +14,13 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v1';
+const CACHE = 'no-compra-v2';
 
 const BASICOS = [
   './',
   './index.html',
   './panel.html',
+  './config.html',
   './estilos.css',
   './comun.js',
   './manifest.json',
@@ -56,7 +57,14 @@ self.addEventListener('fetch', (evento) => {
   if (new URL(pedido.url).origin !== self.location.origin) return;
 
   evento.respondWith(
-    fetch(pedido)
+    // "cache: no-cache" NO es redundante con la estrategia de red primero:
+    // sin esto, fetch() pasa por el caché HTTP del navegador, y GitHub Pages
+    // manda Cache-Control de 600 segundos. Durante diez minutos la app se
+    // servía sola la versión vieja sin llegar a la red, y el service worker
+    // encima guardaba esa copia vieja. Decía "red primero" y hacía lo
+    // contrario. Con no-cache va igual a la red pero preguntando por el
+    // ETag: si no cambió nada, el servidor contesta 304 y no baja nada.
+    fetch(new Request(pedido, { cache: 'no-cache' }))
       .then((respuesta) => {
         // Sólo se guarda lo que salió bien; un 404 cacheado es peor que nada.
         if (respuesta && respuesta.ok) {
