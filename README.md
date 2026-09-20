@@ -17,14 +17,15 @@ Vendedor en el local
       └──► aviso por mail a Atención al Cliente
 ```
 
-## Las dos vistas
+## Las tres vistas
 
 | Vista | URL | Para quién |
 |-------|-----|------------|
 | Formulario de carga | [`/`](https://mauriciocamara85-star.github.io/sistema-no-compra/) | Vendedores de los 14 locales |
 | Panel de seguimiento | [`/panel.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/panel.html) | Atención al Cliente (pide PIN) |
+| Configuración | [`/config.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/config.html) | Encargados: el equipo y el objetivo de cada local (sin PIN) |
 
-Las dos se sirven desde GitHub Pages y se publican con un `git push`. Las URLs
+Las tres se sirven desde GitHub Pages y se publican con un `git push`. Las URLs
 viejas de Apps Script (`.../exec` y `.../exec?v=panel`) siguen andando:
 redirigen acá.
 
@@ -116,7 +117,8 @@ UNICENTER · VILLA DEL PARQUE
                      ── la interfaz, en GitHub Pages ──
 index.html           Formulario del vendedor
 panel.html           Panel de seguimiento
-estilos.css          Sistema de diseño compartido (naranja, claro/oscuro)
+config.html          Equipo y objetivos de cada local
+estilos.css          Sistema de diseño compartido (violeta, claro/oscuro)
 comun.js             Backend, tema, avisos, WhatsApp, PWA
 manifest.json        Para instalarla en el celular
 sw.js                Para que abra sin señal
@@ -124,6 +126,8 @@ icon-*.png           Íconos de la app
 
 src/                 ── el backend, en Apps Script ──
   Codigo.gs          Carga, seguimiento, avisos
+  Config.gs          Equipo, objetivos e historial de cambios
+  Respaldo.gs        Copia diaria de la planilla
   Resumen.gs         Arma la pestaña Resumen (sucursal/vendedor/producto/motivo)
   Kommo.gs           Puente con el CRM: cada no-compra entra como lead
   Redirect.html      Manda los links viejos de Apps Script al sitio
@@ -231,6 +235,67 @@ queda guardado (`KOMMO_ULTIMO_ERROR`) y sale como un cartel arriba de los
 números del panel, que es la pantalla que Atención al Cliente abre todos los
 días. El cartel desaparece solo cuando vuelve a entrar un lead bien. Cuando el
 puente está apagado a propósito —todavía sin token— no se muestra nada.
+
+## Equipo y objetivos
+
+Cada local carga su gente una vez desde
+[`/config.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/config.html)
+y el formulario le muestra a esa gente como botones. Vive en dos pestañas de
+la misma planilla, que se crean solas la primera vez:
+
+| Pestaña | Columnas |
+|---------|----------|
+| `Equipo` | Local · Vendedor · Activo · Agregado · Por |
+| `Objetivos` | Local · Período (`dia`/`semana`/`mes`) · Meta |
+| `Log` | Fecha · Acción · Local · Detalle · Quién |
+
+Una fila de `Objetivos` con el **local vacío** vale como objetivo por defecto
+para todos los que no tengan el suyo.
+
+**Por qué el nombre dejó de escribirse a mano:** "Mau", "mau" y "Mauricio" son
+tres personas distintas para cualquier conteo. Sin una lista cerrada no se
+puede rankear a nadie ni ponerle un objetivo.
+
+**Por qué esto no tiene PIN.** El panel sí lo tiene, porque ahí están los
+teléfonos de los clientes. Acá hay nombres de vendedores y números de meta.
+Una clave para algo que se hace una sola vez es la clase de fricción que ya
+mató a este sistema una vez.
+
+En lugar de una puerta hay un **historial**: la pestaña `Log` anota qué
+cambió, quién y cuándo. Sacar a alguien no borra la fila, la marca inactiva —
+así el rastro queda entero y se deshace volviéndolo a agregar. Es la
+diferencia entre impedir el error y poder deshacerlo.
+
+> **Escribir el nombre a mano nunca deja de ser posible.** El botón "No estoy
+> en la lista" está siempre, aunque el local tenga la lista completa. Si entra
+> alguien nuevo un sábado y el encargado no está, sin esa salida el local
+> dejaría de registrar.
+
+La lista se guarda en el celular y se refresca de fondo. No es una
+optimización: es lo que sostiene que el formulario ande con el WiFi del
+shopping caído. Sin señal usa la última que vio; si nunca hubo, se escribe a
+mano.
+
+## Respaldo automático
+
+`instalarRespaldo()`, una vez desde el editor. Deja una copia diaria de la
+planilla a las 4 de la mañana en la carpeta `Respaldos · No Compra` del Drive,
+conservando las últimas 14 — dos semanas, que alcanzan para notar un desastre
+y volver atrás. Se apaga con `quitarRespaldo()`.
+
+> Un respaldo que falla en silencio es **peor** que no tener respaldo, porque
+> da tranquilidad falsa. Cada corrida deja su resultado en las propiedades del
+> script y el panel lo muestra, igual que muestra el estado de Kommo.
+
+Necesita dos permisos que el resto del sistema no usa —Drive y disparadores—,
+así que la primera vez va a pedir autorización. Ver *Permisos* más arriba.
+
+## Versión visible
+
+El pie del formulario muestra su versión (`v2026.09.20`) y el backend devuelve
+la suya con `{"accion":"version"}`. Cuando alguien dice *"a mí no me anda"*,
+comparar las dos dice si ese celular tiene la app vieja cacheada. Las dos se
+suben a mano al publicar: `VERSION` en `index.html` y en `src/Codigo.gs`.
 
 ## Antes de usarlo, cargar el PIN
 
