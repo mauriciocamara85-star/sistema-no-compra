@@ -274,7 +274,7 @@ a { color: var(--acc-txt); }
 }
 .bloque-tit + .campos, .bloque-tit + .chips { margin-top: 14px; }
 
-/* Puntito naranja que marca los bloques obligatorios sin tener que escribir
+/* Puntito violeta que marca los bloques obligatorios sin tener que escribir
    "obligatorio" en cada uno. */
 .req {
   width: 7px; height: 7px; border-radius: 50%;
