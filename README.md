@@ -163,6 +163,7 @@ para trabajarlo desde el CRM y meterlo después en campañas. Vive en
 | `KOMMO_SUBDOMAIN` | El pedacito de la dirección: en `vdh.kommo.com` es `vdh` |
 | `KOMMO_TOKEN` | Token de larga duración (ver abajo) |
 | `KOMMO_PIPELINE_ID` | Opcional: a qué embudo entran. Vacío = el principal |
+| `KOMMO_STATUS_ID` | Opcional: a qué etapa de ese embudo. Vacío = la primera |
 
 **El token** sale de Kommo: Ajustes → Integraciones → crear una integración
 privada → pestaña *Claves y permisos* → **Generar token de larga duración**
@@ -190,10 +191,28 @@ Las etiquetas son lo que hace útil esto para campañas: no necesitan
 configuración previa —Kommo las crea sola— y permiten armar una audiencia de
 "todos los que se fueron por falta de talle en Unicenter" desde el primer día.
 
+Además, cada lead se lleva una **nota** con el registro entero —local,
+vendedor, qué buscaba, talle, motivo, contacto y las observaciones que escribió
+el vendedor—. Las observaciones no tienen campo propio y suelen ser lo que
+explica el caso ("lo quería en negro", "vuelve el sábado"): en la nota entran
+siempre, sin configurar nada, y quien trabaja el lead ve todo sin abrir la
+planilla.
+
 > **Kommo nunca tumba una carga.** La planilla es la fuente de verdad. Si el
 > CRM está caído o el token venció, el registro se guarda igual y el error
 > queda en el log (`sincronizarCrm_`). Lo que no llegó a Kommo no se reintenta
 > solo: está en la planilla para resubirlo.
+
+El mail y Kommo se mandan **fuera del candado** de la planilla. Son llamadas a
+servicios de afuera y pueden tardar segundos; adentro del candado, un Kommo
+lento dejaba a los otros locales esperando para guardar.
+
+**Si el puente se rompe, el panel lo dice.** Un token vencido corta los leads
+en silencio y el log de Apps Script no lo mira nadie, así que el último error
+queda guardado (`KOMMO_ULTIMO_ERROR`) y sale como un cartel arriba de los
+números del panel, que es la pantalla que Atención al Cliente abre todos los
+días. El cartel desaparece solo cuando vuelve a entrar un lead bien. Cuando el
+puente está apagado a propósito —todavía sin token— no se muestra nada.
 
 ## Antes de usarlo, cargar el PIN
 

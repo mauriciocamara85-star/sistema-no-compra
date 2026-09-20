@@ -11,6 +11,7 @@
  *   KOMMO_SUBDOMAIN    el pedacito de la dirección: en vdh.kommo.com es "vdh"
  *   KOMMO_TOKEN        el token de larga duración (ver abajo)
  *   KOMMO_PIPELINE_ID  opcional: a qué embudo entran. Vacío = el principal
+ *   KOMMO_STATUS_ID    opcional: a qué etapa de ese embudo. Vacío = la primera
  *
  * Mientras KOMMO_TOKEN esté vacío no se manda NADA y el sistema funciona
  * exactamente como antes. Es el mismo criterio que NOTIFICAR_A.
@@ -47,7 +48,8 @@ function kommoConfig_() {
   return {
     sub:      p.getProperty('KOMMO_SUBDOMAIN'),
     token:    p.getProperty('KOMMO_TOKEN'),
-    pipeline: p.getProperty('KOMMO_PIPELINE_ID')
+    pipeline: p.getProperty('KOMMO_PIPELINE_ID'),
+    estado:   p.getProperty('KOMMO_STATUS_ID')
   };
 }
 
@@ -147,6 +149,42 @@ function kommoTel_(tel) {
   return '+' + n;
 }
 
+/**
+ * Busca un contacto por teléfono y devuelve su id, o null si no está.
+ *
+ * Existe porque el "Control de duplicados" de Kommo NO actúa sobre
+ * /leads/complex: probado el 20/09/2026 contra la cuenta real, dos cargas con
+ * el mismo teléfono crearon dos contactos distintos. Sin esto, un cliente que
+ * pasa tres veces por el local queda como tres personas, y se rompe
+ * justamente lo que hace útil el CRM: ver todo lo que le pasó a alguien y
+ * poder escribirle por un solo hilo de WhatsApp.
+ *
+ * La búsqueda de Kommo es difusa —matchea contra varios campos—, así que el
+ * resultado se verifica comparando los dígitos del teléfono. Ante la duda
+ * devuelve null y se crea el contacto: un duplicado es molesto, pero colgarle
+ * el lead al cliente equivocado es bastante peor.
+ */
+function kommoBuscarContacto_(tel) {
+  if (!tel) return null;
+
+  // Sin resultados Kommo contesta 204 sin cuerpo, y kommoFetch_ devuelve null.
+  const r = kommoFetch_('get', '/contacts?limit=10&query=' + encodeURIComponent(tel));
+  const lista = (r && r._embedded && r._embedded.contacts) || [];
+  const buscado = String(tel).replace(/\D/g, '');
+
+  const coincide = function (contacto) {
+    return (contacto.custom_fields_values || []).some(function (campo) {
+      if (campo.field_code !== 'PHONE') return false;
+      return (campo.values || []).some(function (v) {
+        return String(v.value).replace(/\D/g, '') === buscado;
+      });
+    });
+  };
+
+  const encontrado = lista.filter(coincide)[0];
+  return encontrado ? encontrado.id : null;
+}
+
 // ── Envío ──────────────────────────────────────────────────────────────────
 /**
  * Manda un no-compra a Kommo como lead + contacto.
@@ -183,6 +221,18 @@ function kommoEnviar_(data) {
     kommoCampo_(campos.lead, 'Motivo',           data.motivo)
   ].filter(function (x) { return x; });
 
+  // Si el cliente ya está en el CRM, el lead se le cuelga al contacto que ya
+  // existe. No se le tocan los datos: si cambió de mail, eso se arregla en
+  // Kommo a mano — pisar un contacto bueno con lo que anotó un vendedor
+  // apurado sería peor que quedarse con el dato viejo.
+  const existente = kommoBuscarContacto_(tel);
+  const contacto = existente
+    ? { id: existente }
+    : {
+        first_name: nombreContacto,
+        custom_fields_values: camposContacto.filter(function (x) { return x.field_id; })
+      };
+
   const etiquetas = [{ name: 'No Compra' }];
   if (data.sucursal) etiquetas.push({ name: data.sucursal });
   if (data.motivo)   etiquetas.push({ name: 'Motivo: ' + data.motivo });
@@ -193,24 +243,68 @@ function kommoEnviar_(data) {
     // planilla generó qué lead cuando algo no cuadra.
     request_id: String(Date.now()),
     _embedded: {
-      contacts: [{
-        first_name: nombreContacto,
-        custom_fields_values: camposContacto.filter(function (x) { return x.field_id; })
-      }],
+      contacts: [contacto],
       tags: etiquetas
     }
   };
 
   if (camposLead.length) lead.custom_fields_values = camposLead;
   if (c.pipeline) lead.pipeline_id = Number(c.pipeline);
+  // Sin etapa explícita el lead cae en la primera del embudo, que en Kommo es
+  // "Leads Entrantes" (la bandeja de sin clasificar). Los no-compra no son
+  // dudosos: ya sabemos qué son y quién los cargó, así que entran derecho a
+  // "Sin contactar", que es la columna donde Atención al Cliente los trabaja.
+  if (c.estado)   lead.status_id   = Number(c.estado);
 
   const res = kommoFetch_('post', '/leads/complex', [lead]);
   const creado = res && res[0];
 
   if (creado) {
-    console.log('Kommo: lead ' + creado.id + (creado.merged ? ' (unificado con uno existente)' : ''));
+    console.log('Kommo: lead ' + creado.id +
+      (existente ? ' colgado del contacto ' + existente + ', que ya estaba en el CRM'
+                 : ' con contacto nuevo'));
+    kommoNota_(creado.id, data);
   }
   return creado;
+}
+
+// ── Nota del lead ──────────────────────────────────────────────────────────
+/**
+ * Pega el registro completo como nota del lead.
+ *
+ * Los campos personalizados sólo guardan lo que existe en esta cuenta de
+ * Kommo, y las observaciones del vendedor no tienen campo propio: son texto
+ * libre y son, justamente, lo que explica el caso ("lo quería en negro",
+ * "vuelve el sábado con la mujer"). La nota entra siempre, sin configurar
+ * nada, así que quien trabaja el lead ve todo sin abrir la planilla.
+ *
+ * Si la nota falla no se reintenta ni se propaga el error: el lead ya está
+ * creado, que es lo que importa. Perder la nota es molesto; perder el lead
+ * por culpa de la nota sería peor.
+ */
+function kommoNota_(leadId, data) {
+  const lineas = ['Se fue del local sin comprar.', ''];
+  const poner = function (etiqueta, valor) {
+    if (valor) lineas.push(etiqueta + ': ' + valor);
+  };
+
+  poner('Local', data.sucursal);
+  poner('Vendedor', data.vendedor);
+  poner('Buscaba', data.producto);
+  poner('Talle', data.talle);
+  poner('Motivo', data.motivo);
+  poner('WhatsApp', data.whatsapp);
+  poner('Mail', data.mail);
+  if (data.obs) lineas.push('', 'Lo que anotó el vendedor:', data.obs);
+
+  try {
+    kommoFetch_('post', '/leads/' + leadId + '/notes', [{
+      note_type: 'common',
+      params: { text: lineas.join('\n') }
+    }]);
+  } catch (err) {
+    console.error('Kommo: el lead ' + leadId + ' se creó pero la nota no: ' + err.message);
+  }
 }
 
 // ── Puesta en marcha y diagnóstico ─────────────────────────────────────────
@@ -237,7 +331,8 @@ function kommoDiagnostico() {
       console.log('        etapa ' + s.id + '  ' + s.name);
     });
   });
-  console.log('  (poné el id del embudo en KOMMO_PIPELINE_ID, o dejalo vacío para el principal)');
+  console.log('  (el id del embudo va en KOMMO_PIPELINE_ID y el de la etapa en KOMMO_STATUS_ID;');
+  console.log('   vacíos = embudo principal y primera etapa, que suele ser la bandeja de entrantes)');
 
   const listar = function (entidad, titulo) {
     console.log('\n── CAMPOS DE ' + titulo + ' ─────────────');

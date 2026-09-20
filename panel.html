@@ -79,6 +79,33 @@
      un "$ 1.234.567" se sale de la tarjeta en un celular. */
   .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 21px; }
 
+  /* Aviso de sistema: algo de fondo se rompió. Va ARRIBA de los números
+     porque no es un dato más de la operación, es una cosa que hay que ir a
+     arreglar. Sigue la forma de las tarjetas para no parecer un error del
+     navegador. */
+  .aviso {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--bad);
+    border-radius: var(--r-sm);
+    padding: 13px 14px;
+    margin-bottom: 14px;
+    box-shadow: var(--sombra);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--txt-2);
+  }
+  .aviso b { color: var(--bad-txt); display: block; margin-bottom: 3px; font-size: 13.5px; }
+  .aviso-detalle {
+    display: block;
+    margin-top: 7px;
+    padding-top: 7px;
+    border-top: 1px solid var(--line);
+    color: var(--txt-3);
+    font-size: 11.5px;
+    word-break: break-word;
+  }
+
   /* Controles */
   .controles { margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
   .buscador { position: relative; }
@@ -252,6 +279,7 @@
 
 <!-- ── Panel ── -->
 <main class="hoja" id="app" hidden>
+  <div class="aviso" id="avisoCrm" hidden></div>
   <div class="kpis" id="kpis"></div>
 
   <div class="controles">
@@ -312,6 +340,7 @@
         $('whoami').textContent = quien ? 'VDH · ' + quien : 'VDH · No Compra';
 
         pintarKpis(res);
+        pintarCrm(res);
         pintarFiltros(res.conteo);
         cargar();
       })
@@ -370,6 +399,23 @@
     }).join('');
   }
 
+  /* El puente con Kommo se cae callado: un token vencido deja de crear leads y
+     nadie se entera hasta que alguien va a buscar un cliente al CRM y no está.
+     Si el backend avisa que la última sincronización falló, se ve acá arriba.
+     No se muestra nada cuando el puente está apagado a propósito (todavía sin
+     token) ni cuando anda bien: un cartel que está siempre no lo lee nadie. */
+  function pintarCrm(res) {
+    var crm = res.crm, caja = $('avisoCrm');
+    if (!crm || !crm.activo || crm.ok) { caja.hidden = true; caja.innerHTML = ''; return; }
+
+    var detalle = esc(crm.msg || 'Sin detalle.') + (crm.cuando ? ' · ' + esc(crm.cuando) : '');
+    caja.innerHTML = '<b>Kommo no está recibiendo los registros.</b>' +
+      'Los no-compra se siguen guardando y se ven acá, pero no están entrando al CRM. ' +
+      'Lo más probable es que el token haya vencido.' +
+      '<span class="aviso-detalle">' + detalle + '</span>';
+    caja.hidden = false;
+  }
+
   function pintarFiltros(conteo) {
     var ops = ['Pendiente'].concat(VOCAB.ESTADO).concat(['Todos']);
     $('filtros').innerHTML = ops.map(function (o) {
@@ -410,7 +456,7 @@
       });
 
     llamar({ accion: 'resumen', pin: pin })
-      .then(function (res) { if (res.status === 'ok') { pintarKpis(res); pintarFiltros(res.conteo); } })
+      .then(function (res) { if (res.status === 'ok') { pintarKpis(res); pintarCrm(res); pintarFiltros(res.conteo); } })
       .catch(function () {});
   }
 

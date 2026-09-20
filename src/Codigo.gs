@@ -168,19 +168,25 @@ function doPost(e) {
  * @return {{status: string, msg: string=}}
  */
 function submitForm(data) {
+  // Las validaciones van ANTES del candado: un pedido mal formado no tiene por
+  // qué hacer cola detrás de las cargas buenas.
+  if (!data || !data.sucursal) return { status: 'error', msg: 'Falta la sucursal.' };
+  if (!data.whatsapp)          return { status: 'error', msg: 'Falta el WhatsApp.' };
+  if (!data.vendedor)          return { status: 'error', msg: 'Falta el vendedor.' };
+
+  // El motivo sí se valida contra el vocabulario: si alguien manda cualquier
+  // cosa, el conteo por motivo deja de servir, que es para lo único que está.
+  if (data.motivo && VOCAB.MOTIVO.indexOf(data.motivo) === -1) {
+    return { status: 'error', msg: 'Motivo no permitido: ' + data.motivo };
+  }
+
+  // ── Con candado: sólo la escritura en la planilla ──
+  // El candado existe para que dos vendedores que cargan al mismo tiempo no se
+  // pisen la fila. Tiene que durar lo mínimo: son 14 locales cargando contra
+  // la misma planilla y todo lo que pase acá adentro hace esperar al resto.
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
-
-    if (!data || !data.sucursal) return { status: 'error', msg: 'Falta la sucursal.' };
-    if (!data.whatsapp)          return { status: 'error', msg: 'Falta el WhatsApp.' };
-    if (!data.vendedor)          return { status: 'error', msg: 'Falta el vendedor.' };
-
-    // El motivo sí se valida contra el vocabulario: si alguien manda cualquier
-    // cosa, el conteo por motivo deja de servir, que es para lo único que está.
-    if (data.motivo && VOCAB.MOTIVO.indexOf(data.motivo) === -1) {
-      return { status: 'error', msg: 'Motivo no permitido: ' + data.motivo };
-    }
 
     const hoja = getHoja_();
     const fecha = Utilities.formatDate(new Date(), TZ, FORMATO_FECHA);
@@ -203,16 +209,22 @@ function submitForm(data) {
       hoja.getRange(hoja.getLastRow(), COL.MOTIVO + 1).setValue(data.motivo);
     }
 
-    notificar_(data);
-    sincronizarCrm_(data);
-    return { status: 'ok' };
-
   } catch (err) {
     console.error('submitForm: ' + err.stack);
     return { status: 'error', msg: err.message };
   } finally {
     lock.releaseLock();
   }
+
+  // ── Sin candado: lo que sale del sistema ──
+  // El mail y Kommo son llamadas a servicios de afuera y pueden tardar
+  // segundos. Adentro del candado, un Kommo lento dejaba a los otros 13
+  // locales esperando para guardar. Acá ya está guardado: que tarden sólo
+  // demora la respuesta de ESTE vendedor, y ninguno de los dos puede hacer
+  // fallar un registro que ya está en la planilla.
+  notificar_(data);
+  sincronizarCrm_(data);
+  return { status: 'ok' };
 }
 
 // ── Seguimiento (Atención al Cliente) ──────────────────────────────────────
@@ -395,7 +407,10 @@ function getResumenPanel(pin) {
     vocab: VOCAB,
     recuperado: recuperado,   // {local, online, total}
     compraron: compraron,     // {local, online, total}
-    porMotivo: porMotivo
+    porMotivo: porMotivo,
+    // Si el puente con Kommo se rompió, el panel lo tiene que decir: es la
+    // única pantalla que Atención al Cliente mira todos los días.
+    crm: estadoCrm_()
   };
 }
 
@@ -448,10 +463,41 @@ function notificar_(data) {
  * su trabajo. El error queda en el log.
  */
 function sincronizarCrm_(data) {
+  // typeof y no una llamada directa: si algún día se borra Kommo.gs, el
+  // sistema tiene que seguir andando sin tocar nada más.
+  if (typeof kommoEnviar_ !== 'function') return;
+
+  const props = PropertiesService.getScriptProperties();
   try {
     kommoEnviar_(data);
+    // Sólo si había algo anotado: esto corre en cada carga y escribir las
+    // propiedades del script en cada no-compra es gasto al pedo.
+    if (props.getProperty('KOMMO_ULTIMO_ERROR')) props.deleteProperty('KOMMO_ULTIMO_ERROR');
   } catch (err) {
     console.error('sincronizarCrm_: ' + err.message);
+    // Además del log, queda anotado para que el PANEL lo muestre. Un token
+    // vencido corta los leads sin hacer ruido, y el log de Apps Script no lo
+    // mira nadie: el día que pase, Atención al Cliente tiene que verlo en la
+    // pantalla que usa todos los días.
+    props.setProperty('KOMMO_ULTIMO_ERROR', JSON.stringify({
+      msg: String(err.message).slice(0, 300),
+      cuando: Utilities.formatDate(new Date(), TZ, FORMATO_FECHA)
+    }));
+  }
+}
+
+/** Cómo viene el puente con el CRM. Lo muestra el panel. */
+function estadoCrm_() {
+  if (typeof kommoActivo_ !== 'function' || !kommoActivo_()) return { activo: false };
+
+  const guardado = PropertiesService.getScriptProperties().getProperty('KOMMO_ULTIMO_ERROR');
+  if (!guardado) return { activo: true, ok: true };
+
+  try {
+    const e = JSON.parse(guardado);
+    return { activo: true, ok: false, msg: e.msg, cuando: e.cuando };
+  } catch (err) {
+    return { activo: true, ok: false, msg: String(guardado) };
   }
 }
 
