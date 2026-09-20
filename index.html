@@ -281,26 +281,33 @@
       flex-direction: column;
       min-height: calc(100vh - 61px - 110px);
     }
-    .pasos { flex: 1; }
+    /* Y el contenido, proporcionado.
 
-    /* Y lo de adentro se estira con la tarjeta. Sin esto el contenido queda
-       apelotonado arriba y el aire sobrante se junta todo abajo, que es peor
-       que no haber estirado nada.
+       El primer intento repartió el aire ENTRE los campos y salió peor: la
+       distancia entre una etiqueta y su campo dice que van juntos, y
+       estirarla rompe esa lectura. "Nombre" terminaba flotando lejos de todo.
 
-       Cada paso reparte a su manera, según qué le sirva al que carga: */
-    .paso { display: flex; flex-direction: column; }
+       Ahora el criterio es otro. Las tarjetas miden lo mismo —el alto lo fija
+       la más cargada, que es el paso 3— y la fila entera se centra en lo que
+       sobra de pantalla. Adentro, los campos se quedan juntos arriba con su
+       espaciado normal y lo que sobra queda abajo, donde se lee como aire de
+       la tarjeta y no como un agujero entre dos campos.
 
-    /* Pasos 1 y 2: el aire se reparte ENTRE los campos. El encabezado queda
-       arriba, el último campo abajo, y los del medio equidistantes. */
-    .paso > .campos { flex: 1; align-content: space-between; }
+       En la PC hay alto de sobra, así que los campos respiran un poco más
+       que en el celular: absorbe parte del sobrante sin deformar nada. */
+    .pasos { flex: 1; align-content: center; }
+    .paso { padding: 22px 18px; }
+    .paso-cab { margin-bottom: 20px; }
+    .paso .campos { gap: 16px; }
+    .paso input, .paso textarea { padding: 15px 14px; }
 
-    /* Paso 3: acá no se reparte, se lo lleva todo el textarea. Es el único
-       campo del formulario donde más espacio es más útil —se escribe más si
-       hay lugar para escribir— y encima es el texto que después se lee en la
-       nota del lead en Kommo. */
-    #paso3 > .campos-seguim { flex: 1; align-content: stretch; }
-    #paso3 > .campos-seguim .campo { min-height: 0; }
-    #paso3 textarea { flex: 1; resize: none; }
+    /* El paso 3 es el que fija el alto, así que no le sobra nada. Si algún
+       día deja de serlo, el textarea se queda con la diferencia: es el único
+       campo donde más lugar es más útil. */
+    #paso3 { display: flex; flex-direction: column; }
+    #paso3 > .campos-seguim { flex: 1; }
+    #paso3 .campo { min-height: 0; }
+    #paso3 textarea { flex: 1; min-height: 130px; resize: none; }
   }
 </style>
 </head>

@@ -52,6 +52,13 @@
   --cian:      #36D6E7;
   --cian-soft: rgba(54, 214, 231, .14);
 
+  /* El chip es un BOTÓN, y no tenía con qué decirlo: usaba el mismo relleno
+     que un input y un borde a 1,45:1 contra la tarjeta, así que se leía como
+     un campo deshabilitado. Sube un escalón y aclara el borde: eso lo despega
+     del fondo y, de paso, lo diferencia de los campos de texto. */
+  --chip:      #2C3860;
+  --chip-line: #445278;
+
   --ok:      #34D399;
   --ok-txt:  #6EE7B7;
   --ok-soft: rgba(52, 211, 153, .15);
@@ -102,6 +109,9 @@ html[data-theme="light"] {
   /* En claro el cian tiene que oscurecerse: el #36D6E7 sobre blanco da 1,8:1. */
   --cian:      #155E75;
   --cian-soft: rgba(21, 94, 117, .12);
+
+  --chip:      #E6ECF4;
+  --chip-line: #8FA5BF;
 
   --ok-txt:  #047857;
   --ok-soft: rgba(5, 150, 105, .13);
@@ -353,16 +363,18 @@ select {
 .chip {
   padding: 10px 14px;
   min-height: 42px;
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--chip-line);
   border-radius: var(--r-pill);
-  background: var(--surface-2);
+  background: var(--chip);
   color: var(--txt-2);
   font-size: 14px; font-weight: 600;
   text-decoration: none;
   display: inline-flex; align-items: center; gap: 7px;
   transition: transform .15s var(--curva), border-color .15s, background .15s, color .15s;
 }
-.chip:hover { border-color: var(--line-alta); color: var(--txt); }
+/* El hover ya no puede usar --line-alta: es el mismo color que el borde
+   normal del chip. Un indicio violeta anticipa en qué se va a convertir. */
+.chip:hover { border-color: var(--acc-line); color: var(--txt); }
 .chip:active { transform: scale(.95); }
 .chip.sel {
   background: var(--acc);
