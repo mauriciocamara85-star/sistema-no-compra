@@ -213,40 +213,51 @@
   }
 
   /* ── En la PC del local ────────────────────────────────────────────────
-     El mismo formulario en dos columnas. En una pantalla ancha, la columna
-     única de 660px obligaba a scrollear cuatro pantallas para cargar algo que
+     El mismo formulario repartido en columnas. En una pantalla ancha, la
+     columna única obligaba a scrollear cuatro pantallas para cargar algo que
      entra casi entero de una sola vez.
 
-     Los bloques que ocupan el ancho completo son los que lo necesitan: la
-     grilla de 14 locales, y las barras que son avisos y no campos. El resto
-     —cliente, qué buscaba, motivo, extra— cae de a dos.
+     Sólo se reparten LOS PASOS. La barra de identidad, los avisos y el pie
+     siguen ocupando el ancho completo: son cosas que se leen de corrido, no
+     campos que compitan por el espacio.
 
-     align-items:start es lo que evita que un bloque corto se estire hasta la
-     altura del de al lado. */
+     align-items:start evita que un bloque corto se estire hasta la altura
+     del de al lado. */
   @media (min-width: 940px) {
-    :root { --tope: 980px; }
-    .hoja {
+    :root { --tope: 1000px; }
+    .pasos {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 12px;
       align-items: start;
+      margin-bottom: 12px;
     }
-    .hoja > .aviso, .hoja > .ident, .hoja > .pie,
-    #bloqueIdentidad { grid-column: 1 / -1; }
-    /* Adentro del bloque de identidad los dos siguen apilados, así que hay que
-       devolverles el aire que la regla de arriba les saca. */
-    #bloqueIdentidad .bloque { margin-bottom: 12px; }
-    #bloqueIdentidad .bloque:last-child { margin-bottom: 0; }
-    .bloque, .ident, .aviso { margin-bottom: 0; }
+    .pasos .bloque { margin-bottom: 0; }
 
-    /* Vuelven a dos columnas. Los motivos pasan a tres arriba de 560px, pero
-       eso se mide contra la ventana, no contra el bloque: acá cada bloque mide
-       la mitad, y con tres columnas "Fue a comparar" se parte de nuevo. */
+    /* El paso 3 se va a la derecha y ocupa las dos filas; el 1 y el 2 se
+       apilan a la izquierda. Es el reparto que menos hueco deja: el paso 1 es
+       corto y el 3 es el más largo, así que dejándolos caer solos quedaba el
+       1 arriba a la izquierda con un agujero debajo. */
+    #paso3 { grid-column: 2; grid-row: 1 / span 2; }
+
+    /* Los motivos se quedan en dos columnas. Arriba de 560px de VENTANA la
+       regla de más arriba los pasa a tres, pero eso se mide contra la ventana
+       y acá cada bloque mide la mitad: con tres, "Fue a comparar" se parte. */
     .chips-motivo { grid-template-columns: repeat(2, 1fr); }
 
-    /* El botón no sigue al ancho de la página: 980px de naranja es un cartel,
-       no un botón. */
+    /* El botón no sigue al ancho de la página: 1000px de violeta es un
+       cartel, no un botón. */
     .barra-in { max-width: 440px; }
+  }
+
+  /* Monitor de escritorio: los tres pasos entran uno al lado del otro y el
+     formulario se ve entero sin scrollear. Es el caso de la PC del local,
+     donde la app queda abierta todo el día. */
+  @media (min-width: 1300px) {
+    :root { --tope: 1320px; }
+    .pasos { grid-template-columns: repeat(3, 1fr); }
+    /* Con tres columnas cada paso tiene la suya y la colocación a mano sobra. */
+    #paso3 { grid-column: auto; grid-row: auto; }
   }
 </style>
 </head>
@@ -327,8 +338,13 @@
     </section>
   </div>
 
+  <!-- Los tres pasos viven en su propio contenedor: así el reparto en
+       columnas se decide en un solo lugar y las barras de arriba y abajo
+       (identidad, avisos, pie) no tienen que pelearse con la grilla. -->
+  <div class="pasos">
+
   <!-- ── Paso 1 ── -->
-  <section class="bloque paso">
+  <section class="bloque paso" id="paso1">
     <div class="paso-cab">
       <span class="paso-n">1</span>
       <div class="paso-txt">
@@ -350,7 +366,7 @@
   </section>
 
   <!-- ── Paso 2 ── -->
-  <section class="bloque paso">
+  <section class="bloque paso" id="paso2">
     <div class="paso-cab">
       <span class="paso-n">2</span>
       <div class="paso-txt">
@@ -377,7 +393,7 @@
        El motivo y el seguimiento van juntos: los tres son lo que se hace con
        el cliente después de que se fue. Separarlos en dos bloques hacía que
        "observaciones" pareciera un trámite aparte y casi nadie lo llenaba. -->
-  <section class="bloque paso bloque-motivo">
+  <section class="bloque paso bloque-motivo" id="paso3">
     <div class="paso-cab">
       <span class="paso-n">3</span>
       <div class="paso-txt">
@@ -399,6 +415,8 @@
       </div>
     </div>
   </section>
+
+  </div><!-- /.pasos -->
 
   <p class="pie">Se guarda en la planilla de Google. <a href="panel.html">Panel de seguimiento</a></p>
 </main>
