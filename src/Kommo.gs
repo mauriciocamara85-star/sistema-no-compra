@@ -268,6 +268,65 @@ function kommoEnviar_(data) {
   return creado;
 }
 
+// ── Lo que se le pregunta a Kommo para la vuelta ───────────────────────────
+/**
+ * Mapa de etapas: id → nombre, de TODOS los embudos de la cuenta.
+ *
+ * Lo usa el webhook para saber qué significa el status_id que avisó Kommo.
+ * Se cachea seis horas, igual que los campos: las etapas no cambian solas y
+ * pedirlas en cada aviso sería un viaje al pedo.
+ */
+function etapasKommo_() {
+  const cache = CacheService.getScriptCache();
+  const guardado = cache.get('KOMMO_ETAPAS');
+  if (guardado) return JSON.parse(guardado);
+
+  const r = kommoFetch_('get', '/leads/pipelines');
+  const mapa = {};
+  ((r && r._embedded && r._embedded.pipelines) || []).forEach(function (emb) {
+    ((emb._embedded && emb._embedded.statuses) || []).forEach(function (s) {
+      mapa[String(s.id)] = s.name;
+    });
+  });
+
+  cache.put('KOMMO_ETAPAS', JSON.stringify(mapa), KOMMO_CACHE);
+  return mapa;
+}
+
+/**
+ * El teléfono del contacto de un lead.
+ *
+ * Es el plan B para ubicar en la planilla un lead viejo, de los creados antes
+ * de que se guardara el id. Dos viajes a Kommo, pero sólo en ese caso: los
+ * leads nuevos se encuentran por id sin preguntarle nada a nadie.
+ *
+ * Devuelve '' ante cualquier problema: no encontrar el teléfono significa no
+ * tocar ninguna fila, que es el final seguro.
+ */
+function kommoTelefonoDeLead_(leadId) {
+  try {
+    if (!kommoActivo_()) return '';
+
+    const lead = kommoFetch_('get', '/leads/' + leadId + '?with=contacts');
+    const contactos = (lead && lead._embedded && lead._embedded.contacts) || [];
+    if (!contactos.length) return '';
+
+    const contacto = kommoFetch_('get', '/contacts/' + contactos[0].id);
+    const campos = (contacto && contacto.custom_fields_values) || [];
+
+    for (let i = 0; i < campos.length; i++) {
+      if (campos[i].field_code !== 'PHONE') continue;
+      const valores = campos[i].values || [];
+      if (valores.length && valores[0].value) return String(valores[0].value);
+    }
+    return '';
+
+  } catch (err) {
+    console.error('kommoTelefonoDeLead_: ' + err.message);
+    return '';
+  }
+}
+
 // ── Nota del lead ──────────────────────────────────────────────────────────
 /**
  * Pega el registro completo como nota del lead.

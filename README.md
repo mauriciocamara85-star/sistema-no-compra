@@ -12,9 +12,14 @@ Vendedor en el local
       │  formulario web (se instala en el celular)
       ▼
   submitForm()  ──►  Google Sheets  ──►  Panel de seguimiento
-      │               A-I + Z            Atención al Cliente
-      │                                  completa J-V
-      └──► aviso por mail a Atención al Cliente
+      │               A-I + Z + AA       Atención al Cliente
+      │                   ▲
+      │                   │  el CRM avisa cuando la venta se cierra
+      │                   │  y el backend escribe R, T y V solo
+      │              Webhook.gs
+      │                   ▲
+      └──► Kommo ─────────┘
+           lead + contacto + nota
 ```
 
 ## Las tres vistas
@@ -69,6 +74,21 @@ La pestaña `No Compra`, dividida por dueño de cada columna:
 
 > **Nunca escribir en J–V ni en W–Y a ciegas.** Son datos vivos que el equipo
 > carga a mano. `submitForm()` escribe únicamente A–I y la Z.
+
+**AA · la escribe el sistema**
+
+| Col | Campo | Quién |
+|-----|-------|-------|
+| AA | Lead Kommo | `anotarLead_`, al crear el lead |
+
+Guarda el id que devuelve el CRM. Es lo que le permite al webhook saber, el
+día que la venta se cierre en Kommo, a qué fila corresponde. Va al final por
+el mismo motivo que el Motivo: no correr nada de lo que ya estaba.
+
+**Las tres excepciones a la regla de arriba** son `R`, `T` y `V`, que ahora
+también las escribe el backend cuando Kommo avisa que el lead cambió de etapa
+(ver *La vuelta del CRM*). El resto de las columnas del seguimiento siguen
+siendo del equipo y nadie más las toca.
 
 La fila de encabezados se busca sola (`getFilaEncabezado_`), así que el código
 no se rompe si la tabla arranca en otra fila.
@@ -130,6 +150,7 @@ src/                 ── el backend, en Apps Script ──
   Respaldo.gs        Copia diaria de la planilla
   Resumen.gs         Arma la pestaña Resumen (sucursal/vendedor/producto/motivo)
   Kommo.gs           Puente con el CRM: cada no-compra entra como lead
+  Webhook.gs         La vuelta: Kommo avisa la venta y se escribe R, T y V
   Redirect.html      Manda los links viejos de Apps Script al sitio
   appsscript.json    Manifiesto del proyecto
 ```
@@ -294,6 +315,57 @@ elegido, abrir "Cambiar" lleva directo al desplegable de vendedores: el que
 entra ahí viene a corregir su nombre, y hacerlo pasar otra vez por una pared
 de catorce sucursales que ya contestó es tiempo perdido. Cambiar de local
 sigue siendo posible desde la línea al pie de ese bloque.
+
+## La vuelta del CRM
+
+Hasta acá el camino era de ida. El resultado —si el cliente al final compró y
+por cuánto— dependía de que alguien lo escribiera a mano en la planilla, y de
+93 registros se completó en **9**. Por eso la tarjeta de "Recuperado" mostraba
+cero aunque hubiera ventas.
+
+Ahora Atención al Cliente trabaja **sólo en Kommo**, y cuando mueve el lead de
+etapa el CRM avisa al backend, que escribe en la planilla:
+
+| Etapa en Kommo | Qué escribe |
+|----------------|-------------|
+| `Closed - won` | `R` Cerrado - compró · `T` Sí - local · `V` el Presupuesto del lead |
+| `Closed - lost` | `R` Cerrado - no compró · `T` No |
+| `En seguimiento`, `Esperando respuesta`, `Descartado` | `R` con ese mismo valor |
+| `Sin contactar`, `Leads Entrantes` | nada: es un registro que todavía nadie tocó |
+
+Las etapas se traducen **por nombre, no por id**: están calcadas del
+`VOCAB.ESTADO` de la planilla desde que se armó el embudo, y los ids cambian
+en cada cuenta de Kommo. Las dos que Kommo no deja renombrar (`Closed - won` y
+`Closed - lost`) tienen su traducción escrita en `ETAPAS_TRADUCIDAS`.
+
+**Puesta en marcha**, una sola vez:
+
+1. Desde el editor de Apps Script, correr **`urlWebhook()`**. Genera el token
+   y escribe en el log la dirección completa.
+2. En Kommo: **Ajustes → Integraciones → Sistema No Compra → Webhooks**, pegar
+   esa dirección con el evento **"Estado del lead cambiado"**.
+
+> **Por qué el token va en la dirección.** Los webhooks de Kommo no mandan
+> encabezados propios, así que no hay otro lugar donde poner una clave. La app
+> web está publicada como `ANYONE_ANONYMOUS` —tiene que estarlo para que la
+> usen los locales—, o sea que sin token cualquiera que adivine la dirección
+> podría marcar ventas falsas. Vive en las propiedades del script, nunca acá.
+
+**Dos cuidados que tiene el código:**
+
+- **Un aviso sin monto no pisa el importe.** Si el lead se cierra con el
+  Presupuesto en cero, la columna `V` se deja como estaba: escribir un cero
+  encima de un importe cargado a mano sería destruir el único dato que
+  justifica el sistema.
+- **Local u online no se puede distinguir por etapa.** Kommo no deja tener dos
+  "ganado" ni renombrar los suyos, así que toda venta cerrada entra como
+  `Sí - local`, que es el caso de este sistema. Si fue online se corrige a
+  mano en la planilla.
+
+**Cómo se ubica la fila.** Por el id del lead guardado en la `AA`, que es
+exacto. Los registros cargados antes de que existiera esa columna no lo
+tienen: ahí se le pregunta el teléfono a Kommo y se comparan los últimos 8
+dígitos, porque la planilla guarda `2234979871` y Kommo `+5492234979871`.
 
 ## El tablero del local
 

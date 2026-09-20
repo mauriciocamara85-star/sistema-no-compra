@@ -62,19 +62,25 @@ const COL = {
   PROD_FINAL:  20,   // U  Producto Final
   MONTO:       21,   // V  Monto Venta ($)
   // ── vuelve a ser dato del vendedor, pero vive al final ──
-  MOTIVO:      25    // Z  Motivo (ver ANCHO)
+  MOTIVO:      25,   // Z  Motivo (ver ANCHO)
+  // ── y esto no lo escribe ni el vendedor ni el equipo ──
+  LEAD:        26    // AA Lead Kommo: el id que devuelve el CRM al crearlo
 };
 
 /**
- * Se leen las columnas A-Z.
+ * Se leen las columnas A-AA.
  *
  * El motivo quedó en la Z y no pegado a Observaciones porque las columnas W
  * ("Orden") e Y ("Total") ya están ocupadas: la planilla tiene ahí una
  * tablita aparte con los totales por mes, cargada a mano. Meter el motivo en
  * el medio, o insertar una columna nueva después de la I, habría corrido esa
  * tabla y todas las fórmulas del equipo. La Z es la primera libre de verdad.
+ *
+ * La AA es del sistema: guarda el id del lead de Kommo para que, cuando el
+ * CRM avise que la venta se cerró, se sepa sin dudas a qué fila corresponde.
+ * Sigue al final por el mismo motivo que el motivo: no correr nada.
  */
-const ANCHO = 26;
+const ANCHO = 27;
 
 /** Vocabulario real, tomado de lo que ya cargó el equipo. No inventar valores. */
 const VOCAB = {
@@ -144,6 +150,13 @@ function doGet(e) {
  * Las vistas servidas desde acá (doGet) siguen andando igual.
  */
 function doPost(e) {
+  // Kommo avisa por webhook y NO manda JSON: manda un formulario. Se atiende
+  // antes de cualquier otra cosa, porque el JSON.parse de abajo lo tumbaría.
+  // Ver Webhook.gs.
+  if (typeof esWebhookKommo_ === 'function' && esWebhookKommo_(e)) {
+    return recibirWebhookKommo_(e);
+  }
+
   let salida;
   try {
     const p = JSON.parse(e.postData.contents);
@@ -202,6 +215,11 @@ function submitForm(data) {
   // El candado existe para que dos vendedores que cargan al mismo tiempo no se
   // pisen la fila. Tiene que durar lo mínimo: son 14 locales cargando contra
   // la misma planilla y todo lo que pase acá adentro hace esperar al resto.
+  // La fila donde quedó el registro. Se anota adentro del candado y se usa
+  // afuera: es lo que después deja escribir el id del lead de Kommo en la AA
+  // sin riesgo de pisarle la fila a otro local que cargó en el medio.
+  let fila = 0;
+
   const lock = LockService.getScriptLock();
   try {
     lock.waitLock(30000);
@@ -222,9 +240,11 @@ function submitForm(data) {
       data.obs      || ''
     ]);
 
+    fila = hoja.getLastRow();
+
     if (data.motivo) {
-      asegurarMotivo_(hoja);
-      hoja.getRange(hoja.getLastRow(), COL.MOTIVO + 1).setValue(data.motivo);
+      asegurarColumna_(hoja, COL.MOTIVO, 'Motivo');
+      hoja.getRange(fila, COL.MOTIVO + 1).setValue(data.motivo);
     }
 
   } catch (err) {
@@ -252,7 +272,7 @@ function submitForm(data) {
   sumarVendedor_(data.sucursal, data.vendedor);
 
   notificar_(data);
-  sincronizarCrm_(data);
+  sincronizarCrm_(data, fila);
   return { status: 'ok' };
 }
 
@@ -606,14 +626,19 @@ function notificar_(data) {
  * campos en Kommo NO pueden hacerle perder la carga a un vendedor que ya hizo
  * su trabajo. El error queda en el log.
  */
-function sincronizarCrm_(data) {
+function sincronizarCrm_(data, fila) {
   // typeof y no una llamada directa: si algún día se borra Kommo.gs, el
   // sistema tiene que seguir andando sin tocar nada más.
   if (typeof kommoEnviar_ !== 'function') return;
 
   const props = PropertiesService.getScriptProperties();
   try {
-    kommoEnviar_(data);
+    const lead = kommoEnviar_(data);
+
+    // El id del lead queda guardado en la fila: es lo que le permite al
+    // webhook saber, cuando la venta se cierre en el CRM, a qué registro
+    // corresponde. Sin esto habría que adivinar por teléfono. Ver Webhook.gs.
+    if (lead && lead.id && fila) anotarLead_(fila, lead.id);
     // Sólo si había algo anotado: esto corre en cada carga y escribir las
     // propiedades del script en cada no-compra es gasto al pedo.
     if (props.getProperty('KOMMO_ULTIMO_ERROR')) props.deleteProperty('KOMMO_ULTIMO_ERROR');
@@ -715,18 +740,37 @@ function linkWhatsapp_(tel) {
 }
 
 /**
- * Deja listo el encabezado del motivo en la Z. Se llama recién cuando entra el
- * primer registro con motivo, así una planilla que todavía no lo usa no se
- * toca para nada.
+ * Deja lista una columna del sistema con su encabezado: el Motivo en la Z y
+ * el id del lead de Kommo en la AA.
+ *
+ * Se llama recién cuando hace falta escribir en ella, así una planilla que
+ * todavía no usa esa columna no se toca para nada.
  */
-function asegurarMotivo_(hoja) {
-  if (hoja.getMaxColumns() < ANCHO) {
-    hoja.insertColumnsAfter(hoja.getMaxColumns(), ANCHO - hoja.getMaxColumns());
+function asegurarColumna_(hoja, col, titulo) {
+  const minimo = col + 1;
+  if (hoja.getMaxColumns() < minimo) {
+    hoja.insertColumnsAfter(hoja.getMaxColumns(), minimo - hoja.getMaxColumns());
   }
-  const filaEnc = getFilaEncabezado_(hoja);
-  const celda = hoja.getRange(filaEnc, COL.MOTIVO + 1);
+  const celda = hoja.getRange(getFilaEncabezado_(hoja), minimo);
   if (!String(celda.getValue()).trim()) {
-    celda.setValue('Motivo').setFontWeight('bold');
+    celda.setValue(titulo).setFontWeight('bold');
+  }
+}
+
+/**
+ * Guarda el id del lead de Kommo en la fila del registro.
+ *
+ * Nunca tumba nada: si esto falla, el registro ya está en la planilla y el
+ * lead ya está en el CRM. Lo único que se pierde es la coincidencia exacta
+ * del webhook, que igual tiene el teléfono como plan B.
+ */
+function anotarLead_(fila, leadId) {
+  try {
+    const hoja = getHoja_();
+    asegurarColumna_(hoja, COL.LEAD, 'Lead Kommo');
+    hoja.getRange(fila, COL.LEAD + 1).setValue(String(leadId));
+  } catch (err) {
+    console.error('anotarLead_: ' + err.message);
   }
 }
 
