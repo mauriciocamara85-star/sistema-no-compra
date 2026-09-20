@@ -154,6 +154,13 @@ function leadsDelAviso_(parametros) {
  * @return {boolean} si se escribió algo
  */
 function aplicarEstadoKommo_(lead) {
+  // Los movimientos de los OTROS embudos —Ventas, Tiendanube— llegan al mismo
+  // webhook y no son de este sistema. Se descartan acá, antes de leer la
+  // planilla y antes de preguntarle nada a Kommo: sin este filtro, cada lead
+  // ajeno que alguien mueva cuesta dos llamadas a la API buscando un teléfono
+  // que nunca va a estar en la planilla.
+  if (!esDelEmbudo_(lead)) return false;
+
   const fila = filaDelLead_(lead.id);
   if (!fila) {
     console.log('Webhook: el lead ' + lead.id + ' no está en la planilla. No se tocó nada.');
@@ -200,6 +207,20 @@ function aplicarEstadoKommo_(lead) {
 
   console.log('Webhook: lead ' + lead.id + ' → fila ' + fila + '. ' + anotado.join(' · '));
   return true;
+}
+
+/**
+ * ¿Este lead es del embudo del sistema?
+ *
+ * Si no hay embudo configurado (KOMMO_PIPELINE_ID vacío) no se filtra nada:
+ * es el caso de una cuenta con un solo embudo, donde todo lo que llega es de
+ * acá. Tampoco se filtra si el aviso no dice de qué embudo viene, porque
+ * descartar por falta de dato sería perder ventas de verdad.
+ */
+function esDelEmbudo_(lead) {
+  const propio = PropertiesService.getScriptProperties().getProperty('KOMMO_PIPELINE_ID');
+  if (!propio || !lead.pipeline_id) return true;
+  return String(lead.pipeline_id).trim() === String(propio).trim();
 }
 
 /**
