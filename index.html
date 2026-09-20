@@ -57,6 +57,47 @@
     box-shadow: 0 0 0 4px var(--ok-soft);
   }
   .ident-datos { flex: 1; min-width: 0; }
+
+  /* La misma identidad, en la cabecera. Sólo existe de 900px para arriba:
+     en un celular de 390px no entra al lado de la marca. */
+  .ident-top { display: none; }
+  @media (min-width: 900px) {
+    .ident { display: none; }
+    /* La cabecera mide 61px y de ahí cuelgan el rail pegajoso y el alto del
+       formulario (--cabeza). La identidad tiene que entrar en ese alto: por
+       eso el botón de acá es más bajo que un .btn-chico normal. Es un control
+       de escritorio, se toca con el mouse, no con el pulgar. */
+    :root { --cabeza: 64px; }
+    .ident-top .btn-chico { min-height: 30px; padding: 0 13px; font-size: 12.5px; }
+    .ident-top {
+      display: flex; align-items: center; gap: 10px;
+      margin-left: auto; margin-right: 14px;
+      padding: 3px 3px 3px 13px;
+      border: 1.5px solid var(--acc-line);
+      border-radius: var(--r-pill);
+      background: var(--surface);
+      min-width: 0;
+    }
+    .ident-top-punto {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+      background: var(--ok);
+      box-shadow: 0 0 0 3px var(--ok-soft);
+    }
+    .ident-top-txt {
+      display: flex; align-items: baseline; gap: 7px;
+      min-width: 0; font-size: 13px; color: var(--txt-2);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .ident-top-txt b { font: 700 14px/1.2 var(--display); color: var(--txt); }
+    /* Sin identidad elegida late en cian, igual que la barra del celular. */
+    .ident-top.vacia { border-color: var(--line); }
+    .ident-top.vacia b { font-size: 13px; font-weight: 600; color: var(--txt-2); font-family: var(--sans); }
+    .ident-top.vacia .ident-top-punto {
+      background: var(--cian);
+      box-shadow: 0 0 0 3px var(--cian-soft);
+      animation: latido 2.4s ease-in-out infinite;
+    }
+  }
   .ident-local {
     display: block;
     font: 700 16px/1.2 var(--display);
@@ -311,15 +352,22 @@
        entre la etiqueta y el campo. El 94vw es para que en un monitor chico
        siga habiendo margen a los costados y no quede pegado al borde. */
     :root { --tope: min(1560px, 94vw); }
-    .pasos {
-      grid-template-columns: repeat(3, 1fr);
-      /* Mismo alto los tres: con tres tarjetas en fila, tres bordes inferiores
-         a distinta altura se leen como un error de maquetado. El contenido
-         no se estira, sólo la tarjeta. */
-      align-items: stretch;
-    }
-    /* Con tres columnas cada paso tiene la suya y la colocación a mano sobra. */
-    #paso3 { grid-column: auto; grid-row: auto; }
+
+    /* Los tres en fila dejaban 120px de hueco abajo del paso 1 y del 2: el
+       paso 3 tiene bastante más contenido y, al emparejar alturas, arrastraba
+       a los otros dos. Medido a 1440×900 el 20/09/2026.
+
+       Ahora el 3 se lleva el ancho completo abajo. Gana todo el mundo: los
+       seis motivos entran en UNA fila —se ven todos juntos, sin barrer con la
+       vista—, las notas pasan a ser un campo ancho que invita a escribir, y
+       arriba quedan dos tarjetas parejas sin vacío. */
+    .pasos { grid-template-columns: 1fr 1fr; }
+    #paso1 { grid-column: 1; grid-row: 1; }
+    #paso2 { grid-column: 2; grid-row: 1; }
+    #paso3 { grid-column: 1 / -1; grid-row: 2; }
+
+    /* Con el bloque a todo lo ancho, los seis motivos entran de una. */
+    .chips-motivo { grid-template-columns: repeat(6, 1fr); }
 
     /* Que el formulario llegue hasta el botón en vez de cortar a media
        pantalla. En vez de restar un número estimado, se mide lo único que
@@ -347,19 +395,24 @@
 
        En la PC hay alto de sobra, así que los campos respiran un poco más
        que en el celular: absorbe parte del sobrante sin deformar nada. */
+    /* Las tarjetas de números se achican un punto: 110px de alto para un
+       número y dos renglones es desproporcionado en una pantalla donde lo que
+       importa es que el formulario entre entero. */
+    .kpi { padding: 11px 13px; }
+    .kpi-n { font-size: 24px; }
+    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 19px; }
+    .kpi-l { font-size: 11.5px; }
+
     .pasos { flex: 1; align-content: center; }
-    .paso { padding: 22px 18px; }
+    .paso { padding: 20px 18px; }
     .paso-cab { margin-bottom: 20px; }
     .paso .campos { gap: 16px; }
     .paso input, .paso textarea { padding: 15px 14px; }
 
-    /* El paso 3 es el que fija el alto, así que no le sobra nada. Si algún
-       día deja de serlo, el textarea se queda con la diferencia: es el único
-       campo donde más lugar es más útil. */
-    #paso3 { display: flex; flex-direction: column; }
-    #paso3 > .campos-seguim { flex: 1; }
-    #paso3 .campo { min-height: 0; }
-    #paso3 textarea { flex: 1; min-height: 130px; resize: none; }
+    /* El textarea ya no pelea por el alto sobrante —el paso 3 tiene su propia
+       fila—, pero sigue siendo el campo donde más lugar es más útil: ancho
+       completo y tres renglones cómodos. */
+    #paso3 textarea { min-height: 96px; resize: vertical; }
   }
 </style>
 </head>
@@ -378,6 +431,21 @@
         <span>Cada visita, una nueva oportunidad</span>
       </div>
     </div>
+    <!-- ── Quién carga, en la PC ──
+         En pantalla grande la identidad vive acá y la barra de abajo
+         desaparece: esa franja entera decía dos palabras, y la cabecera
+         tenía un desierto en el medio. En el celular es al revés —acá no
+         entra— y manda la barra. Ver .ident-top en estilos.css. -->
+    <div class="ident-top" id="identTop">
+      <span class="ident-top-punto"></span>
+      <span class="ident-top-txt">
+        <b id="identLocalTop">Todavía no dijiste quién sos</b>
+        <span id="identVendTop"></span>
+      </span>
+      <button type="button" class="btn btn-sec btn-chico" id="btnIdentTop"
+              onclick="alternarIdentidad()">Elegir</button>
+    </div>
+
     <div class="head-acciones">
       <!-- Configuración y panel se mudaron al rail, que está en las tres
            pantallas y dice en cuál estás parado. -->
@@ -898,9 +966,14 @@
     } else {
       var reg = m.registros, rec = m.recuperado || {}, ven = m.ventas || {};
       tarjetas = [
-        { cls: '', n: reg.dia || 0, l: 'Registros hoy', pie: 'en todo el local' },
+        /* Un cero pelado no dice nada. Cuando todavía no hay registros, el pie
+           deja de describir y pasa a pedir: es el único momento en que la
+           tarjeta puede hacer algo más que informar. */
+        { cls: '', n: reg.dia || 0, l: 'Registros hoy',
+          pie: reg.dia ? 'en todo el local' : 'Cargá el primero del día' },
         { cls: '', n: reg.mes || 0, l: 'Este mes',
-          pie: (reg.total || 0) + ' desde que arrancó' },
+          pie: reg.total ? (reg.total + ' desde que arrancó')
+                         : 'Este local todavía no arrancó' },
         tarjetaObjetivo(m.objetivo),
         { cls: 'es-plata', n: PESOS.format(rec.mes || 0), l: 'Recuperado este mes',
           pie: ven.total
@@ -999,7 +1072,33 @@
     $('identVend').textContent = vend;
     $('ident').classList.remove('ident-vacia');
     $('btnIdent').textContent = 'Cambiar';
+    pintarIdentTop(vend);
     $('bloqueIdentidad').hidden = true;
+  }
+
+  /**
+   * La copia de la identidad que vive en la cabecera, para pantalla grande.
+   *
+   * Son dos elementos y no uno movido con CSS porque en el celular la barra
+   * va abajo de las tarjetas y en la PC adentro de la cabecera: el navegador
+   * no mueve un nodo de un lado al otro, y duplicar tres líneas de texto sale
+   * más barato que mantener dos maquetas.
+   */
+  function pintarIdentTop(vend) {
+    var caja = $('identTop');
+    if (!caja) return;
+
+    if (local && vend) {
+      $('identLocalTop').textContent = nombreLocal(local);
+      $('identVendTop').textContent = vend;
+      $('btnIdentTop').textContent = 'Cambiar';
+      caja.classList.remove('vacia');
+      return;
+    }
+    $('identLocalTop').textContent = 'Todavía no dijiste quién sos';
+    $('identVendTop').textContent = '';
+    $('btnIdentTop').textContent = 'Elegir';
+    caja.classList.add('vacia');
   }
 
   /** El botón de la barra. */
@@ -1299,6 +1398,9 @@
       cargarMetricas();
     }
     acomodarIdentidad();
+    // La cabecera arranca diciendo lo mismo que la barra: con identidad
+    // puesta ya la escribió mostrarIdentidad(); sin ella, queda invitando.
+    if (!(guardadoLocal && guardadoVend)) pintarIdentTop('');
 
     $('s_vendedor').onchange = elegirVendedor;
 

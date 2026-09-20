@@ -27,6 +27,11 @@
   --surface-3: #27324C;
   --line:      #2C3856;
   --line-alta: #445278;
+  /* El borde de lo que se TOCA —campos y chips— es otra cosa que el borde de
+     una tarjeta. La tarjeta sólo separa; el campo tiene que decir "acá se
+     escribe", y para eso la referencia son 3:1 contra su propio relleno.
+     Antes usaba --line y daba 1,27:1: los campos se leían como manchas. */
+  --line-campo: #6275A2;
 
   --txt:   #F8FAFC;
   --txt-2: #CBD5E1;
@@ -57,7 +62,7 @@
      un campo deshabilitado. Sube un escalón y aclara el borde: eso lo despega
      del fondo y, de paso, lo diferencia de los campos de texto. */
   --chip:      #2C3860;
-  --chip-line: #445278;
+  --chip-line: #6275A2;
 
   --ok:      #34D399;
   --ok-txt:  #6EE7B7;
@@ -105,8 +110,12 @@ html[data-theme="light"] {
   --surface:   #FFFFFF;
   --surface-2: #F4F7FB;
   --surface-3: #E6ECF4;
-  --line:      #C3D1E2;
-  --line-alta: #8FA5BF;
+  /* En claro el borde de la tarjeta sube un escalón: con el anterior daba
+     1,38:1 contra el fondo y las tarjetas no se despegaban — la pantalla
+     entera se leía como un bloque plano. */
+  --line:       #B0C1D6;
+  --line-alta:  #8FA5BF;
+  --line-campo: #7A90AE;   /* 3:1 contra el relleno del campo */
 
   --txt:   #0B1220;
   --txt-2: #33475F;
@@ -121,7 +130,7 @@ html[data-theme="light"] {
   --cian-soft: rgba(21, 94, 117, .12);
 
   --chip:      #E6ECF4;
-  --chip-line: #8FA5BF;
+  --chip-line: #7A90AE;
 
   --ok-txt:  #047857;
   --ok-soft: rgba(5, 150, 105, .13);
@@ -132,7 +141,7 @@ html[data-theme="light"] {
   --info-txt:  #1D4ED8;
   --info-soft: rgba(37, 99, 235, .12);
 
-  --sombra:      0 1px 2px rgba(15, 31, 51, .07), 0 10px 26px -16px rgba(15, 31, 51, .35);
+  --sombra:      0 1px 3px rgba(15, 31, 51, .10), 0 12px 28px -14px rgba(15, 31, 51, .45);
   --sombra-alta: 0 16px 44px -16px rgba(15, 31, 51, .35);
   --glow:        0 8px 24px -10px rgba(109, 40, 217, .45);
   color-scheme: light;
@@ -491,7 +500,7 @@ input[type=text], input[type=tel], input[type=email],
 input[type=search], input[type=password], textarea, select {
   width: 100%;
   background: var(--surface-2);
-  border: 1.5px solid var(--line);
+  border: 1.5px solid var(--line-campo);
   border-radius: var(--r-sm);
   color: var(--txt);
   /* 16px exactos: con menos, iOS hace zoom solo al tocar el campo y descoloca
