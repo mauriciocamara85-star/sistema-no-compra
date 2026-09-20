@@ -408,7 +408,11 @@
 
     <div class="campos campos-seguim">
       <div class="campo ancho">
-        <label for="f_obs">Observaciones <span class="lbl-opc">opcional</span></label>
+        <!-- "Notas para el seguimiento" y no "Observaciones": este texto lo lee
+             Atención al Cliente tres días después, y es el que viaja a la nota
+             del lead en Kommo. El label tiene que decir para quién se escribe;
+             el placeholder da los ejemplos, que es lo que hace que se escriba. -->
+        <label for="f_obs">Notas para el seguimiento <span class="lbl-opc">opcional</span></label>
         <textarea id="f_obs" placeholder="Qué le gustó, qué se probó, cuándo vuelve…"></textarea>
       </div>
     </div>
