@@ -2,14 +2,17 @@
  * VDH · Sistema No Compra
  * Registro de clientes que se van del local sin encontrar la prenda.
  *
- * Vistas (aplicación web):
- *   ?           → formulario de carga para el vendedor (Index.html)
- *   ?v=panel    → panel de seguimiento de Atención al Cliente (Panel.html)
+ * Este proyecto es SÓLO EL BACKEND. La interfaz (formulario y panel) vive en
+ * GitHub Pages y le habla acá por POST; doGet sólo manda a la dirección nueva
+ * a quien entre por un link viejo de Apps Script.
  *
  * IMPORTANTE SOBRE LA PLANILLA
- * La hoja 'No Compra' tiene 22 columnas en uso: A-I las carga el vendedor
- * desde el formulario, y J-V las completa Atención al Cliente a mano durante
- * el seguimiento. Nunca escribir en J-V sin saber qué había: son datos vivos.
+ * En la hoja 'No Compra':
+ *   A-I  las carga el vendedor desde el formulario
+ *   J-V  las completa Atención al Cliente a mano durante el seguimiento
+ *   W, Y tabla aparte del equipo (Orden / Total por mes) — NO TOCAR
+ *   Z    Motivo del no-compra, lo carga el formulario
+ * Nunca escribir en J-V ni en W-Y sin saber qué había: son datos vivos.
  * La fila de encabezados se detecta sola con getFilaEncabezado_(), así que el
  * código no se rompe si la planilla arranca en otra fila.
  */
@@ -52,10 +55,21 @@ const COL = {
   OBS_SEGUIM:  18,   // S  Observaciones Seguim.
   COMPRO:      19,   // T  Compró?
   PROD_FINAL:  20,   // U  Producto Final
-  MONTO:       21    // V  Monto Venta ($)
+  MONTO:       21,   // V  Monto Venta ($)
+  // ── vuelve a ser dato del vendedor, pero vive al final ──
+  MOTIVO:      25    // Z  Motivo (ver ANCHO)
 };
 
-const ANCHO = 22;  // columnas A-V
+/**
+ * Se leen las columnas A-Z.
+ *
+ * El motivo quedó en la Z y no pegado a Observaciones porque las columnas W
+ * ("Orden") e Y ("Total") ya están ocupadas: la planilla tiene ahí una
+ * tablita aparte con los totales por mes, cargada a mano. Meter el motivo en
+ * el medio, o insertar una columna nueva después de la I, habría corrido esa
+ * tabla y todas las fórmulas del equipo. La Z es la primera libre de verdad.
+ */
+const ANCHO = 26;
 
 /** Vocabulario real, tomado de lo que ya cargó el equipo. No inventar valores. */
 const VOCAB = {
@@ -63,7 +77,13 @@ const VOCAB = {
   RESULTADO_1: ['Respondió - interesado', 'Respondió - no interesado', 'No respondió'],
   ESTADO:      ['En seguimiento', 'Esperando respuesta', 'Cerrado - compró',
                 'Cerrado - no compró', 'Descartado'],
-  COMPRO:      ['Sí - local', 'Sí - online', 'No']
+  COMPRO:      ['Sí - local', 'Sí - online', 'No'],
+  // Por qué el cliente se fue sin llevar. Es el dato que le dice a Compras qué
+  // falta en el local; el formulario lo pide de a un toque. Los textos son
+  // exactamente los de los botones del formulario, para que lo que toca el
+  // vendedor sea lo que queda escrito en la planilla.
+  MOTIVO:      ['Sin talle', 'Sin stock', 'Precio', 'No le gustó',
+                'Fue a comparar', 'Otro']
 };
 
 /**
@@ -80,11 +100,29 @@ function configurar(sheetId, pin, mailAvisos) {
 }
 
 // ── Web app ────────────────────────────────────────────────────────────────
+/** Dónde vive la interfaz de verdad. */
+const SITIO = 'https://mauriciocamara85-star.github.io/sistema-no-compra/';
+
+/**
+ * Las vistas ya no se sirven desde acá: se mandan al sitio de GitHub Pages.
+ *
+ * Antes este proyecto tenía copias del formulario y del panel (Index.html y
+ * Panel.html) para que los links viejos no se rompieran. Eran copias de
+ * verdad, y cada cambio de interfaz había que hacerlo dos veces: se
+ * desincronizaron. Ahora hay una sola interfaz y esto sólo redirige.
+ *
+ * Apps Script no puede devolver un 302, así que el salto lo hace el navegador.
+ * Tiene que ser window.top y no window.location porque la app corre adentro de
+ * un iframe: sin el .top, el sitio cargaría dentro del marco de Google.
+ */
 function doGet(e) {
   const vista = (e && e.parameter && e.parameter.v) || 'form';
-  const archivo = vista === 'panel' ? 'Panel' : 'Index';
+  const destino = SITIO + (vista === 'panel' ? 'panel.html' : '');
 
-  return HtmlService.createHtmlOutputFromFile(archivo)
+  const t = HtmlService.createTemplateFromFile('Redirect');
+  t.destino = destino;
+
+  return t.evaluate()
     .setTitle('VDH · No Compra')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1.0')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
@@ -121,9 +159,9 @@ function doPost(e) {
 
 // ── Carga (vendedor) ───────────────────────────────────────────────────────
 /**
- * Guarda un registro. Escribe únicamente A-I; J en adelante queda vacío para
- * que lo complete Atención al Cliente.
- * @param {Object} data {sucursal, vendedor, nombre, whatsapp, mail, producto, talle, obs}
+ * Guarda un registro. Escribe A-I y el motivo en la Z; J a Y no se tocan,
+ * porque son del seguimiento de Atención al Cliente y de la tabla de totales.
+ * @param {Object} data {sucursal, vendedor, nombre, whatsapp, mail, producto, talle, obs, motivo}
  * @return {{status: string, msg: string=}}
  */
 function submitForm(data) {
@@ -135,9 +173,16 @@ function submitForm(data) {
     if (!data.whatsapp)          return { status: 'error', msg: 'Falta el WhatsApp.' };
     if (!data.vendedor)          return { status: 'error', msg: 'Falta el vendedor.' };
 
+    // El motivo sí se valida contra el vocabulario: si alguien manda cualquier
+    // cosa, el conteo por motivo deja de servir, que es para lo único que está.
+    if (data.motivo && VOCAB.MOTIVO.indexOf(data.motivo) === -1) {
+      return { status: 'error', msg: 'Motivo no permitido: ' + data.motivo };
+    }
+
     const hoja = getHoja_();
     const fecha = Utilities.formatDate(new Date(), TZ, FORMATO_FECHA);
 
+    // appendRow con las 9 primeras: deja intactas J a Y de la fila nueva.
     hoja.appendRow([
       fecha,
       data.sucursal || '',
@@ -149,6 +194,11 @@ function submitForm(data) {
       data.talle    || '',
       data.obs      || ''
     ]);
+
+    if (data.motivo) {
+      asegurarMotivo_(hoja);
+      hoja.getRange(hoja.getLastRow(), COL.MOTIVO + 1).setValue(data.motivo);
+    }
 
     notificar_(data);
     return { status: 'ok' };
@@ -168,7 +218,7 @@ function submitForm(data) {
  * @param {string} filtro 'Pendiente' | uno de VOCAB.ESTADO | 'Todos'
  */
 function getRegistros(pin, filtro) {
-  if (!verificarPin_(pin)) return { status: 'error', msg: 'PIN incorrecto.' };
+  if (!verificarPin_(pin)) return { status: 'error', msg: mensajePin_() };
 
   try {
     const hoja = getHoja_();
@@ -176,7 +226,9 @@ function getRegistros(pin, filtro) {
     const ultima = hoja.getLastRow();
     if (ultima < inicio) return { status: 'ok', registros: [] };
 
-    const ancho = Math.min(ANCHO, hoja.getLastColumn());
+    // getMaxColumns y no getLastColumn: la Z del motivo puede estar todavía
+    // vacía en toda la hoja, y con getLastColumn nunca se leería.
+    const ancho = Math.min(ANCHO, hoja.getMaxColumns());
     const valores = hoja.getRange(inicio, 1, ultima - inicio + 1, ancho).getValues();
     const registros = [];
 
@@ -207,6 +259,7 @@ function getRegistros(pin, filtro) {
         producto:    String(f[COL.PRODUCTO] || ''),
         talle:       String(f[COL.TALLE] || ''),
         obs:         String(f[COL.OBS] || ''),
+        motivo:      String(f[COL.MOTIVO] || ''),
         contactamos: String(f[COL.CONTACTAMOS] || ''),
         responsable: String(f[COL.RESPONSABLE] || ''),
         fecha1:      String(f[COL.FECHA_1] || ''),
@@ -232,7 +285,7 @@ function getRegistros(pin, filtro) {
  * @param {Object} campos {contactamos, responsable, fecha1, resultado1, estado, obsSeguim, compro}
  */
 function guardarSeguimiento(pin, fila, campos) {
-  if (!verificarPin_(pin)) return { status: 'error', msg: 'PIN incorrecto.' };
+  if (!verificarPin_(pin)) return { status: 'error', msg: mensajePin_() };
   if (!campos) return { status: 'error', msg: 'Nada para guardar.' };
 
   const invalido = validarVocab_(campos);
@@ -274,9 +327,16 @@ function guardarSeguimiento(pin, fila, campos) {
   }
 }
 
-/** Totales para los contadores del panel. */
+/**
+ * Totales para el tablero del panel.
+ *
+ * Además de los conteos por estado devuelve `recuperado` y `compraron`: la
+ * plata que entró de gente que ya se había ido del local sin comprar. Es el
+ * único número que contesta si el sistema sirve o no, y hasta ahora estaba
+ * cargado en la columna V pero no se mostraba en ninguna parte.
+ */
 function getResumenPanel(pin) {
-  if (!verificarPin_(pin)) return { status: 'error', msg: 'PIN incorrecto.' };
+  if (!verificarPin_(pin)) return { status: 'error', msg: mensajePin_() };
 
   const hoja = getHoja_();
   const inicio = getFilaEncabezado_(hoja) + 1;
@@ -284,12 +344,25 @@ function getResumenPanel(pin) {
   const conteo = { Total: 0, Pendiente: 0 };
   VOCAB.ESTADO.forEach(function (e) { conteo[e] = 0; });
 
+  let recuperado = 0, compraron = 0;
+  const porMotivo = {};
+
   if (ultima >= inicio) {
-    const ancho = Math.min(ANCHO, hoja.getLastColumn());
+    const ancho = Math.min(ANCHO, hoja.getMaxColumns());
     const v = hoja.getRange(inicio, 1, ultima - inicio + 1, ancho).getValues();
     v.forEach(function (f) {
       if (!f[COL.FECHA] && !f[COL.WHATSAPP]) return;
       conteo.Total++;
+
+      const motivo = String(f[COL.MOTIVO] || '').trim();
+      if (motivo) porMotivo[motivo] = (porMotivo[motivo] || 0) + 1;
+
+      // "Compró" son los Sí del vocabulario (local u online), no el texto libre.
+      if (String(f[COL.COMPRO] || '').trim().indexOf('Sí') === 0) {
+        compraron++;
+        recuperado += parseMonto_(f[COL.MONTO]);
+      }
+
       const estado = String(f[COL.ESTADO] || '').trim();
       const contactado = String(f[COL.CONTACTAMOS] || '').trim().toLowerCase() === 'si';
       if (!estado && !contactado) { conteo.Pendiente++; return; }
@@ -298,7 +371,14 @@ function getResumenPanel(pin) {
     });
   }
 
-  return { status: 'ok', conteo: conteo, vocab: VOCAB };
+  return {
+    status: 'ok',
+    conteo: conteo,
+    vocab: VOCAB,
+    recuperado: recuperado,
+    compraron: compraron,
+    porMotivo: porMotivo
+  };
 }
 
 // ── Aviso por mail ─────────────────────────────────────────────────────────
@@ -307,23 +387,25 @@ function notificar_(data) {
   if (!destino) return;
 
   try {
+    // Naranja #F97316, el mismo de la app y del resto de los sistemas VDH.
     const cuerpo =
-      '<div style="font-family:Arial,sans-serif;font-size:14px;color:#111827">' +
-      '<h2 style="color:#22C55E;margin:0 0 4px">Nuevo pedido · No Compra</h2>' +
-      '<p style="color:#6B7280;margin:0 0 16px">' + esc_(data.sucursal) + '</p>' +
+      '<div style="font-family:Arial,sans-serif;font-size:14px;color:#0B1220">' +
+      '<h2 style="color:#C2410C;margin:0 0 4px">Nuevo pedido · No Compra</h2>' +
+      '<p style="color:#33475F;margin:0 0 16px">' + esc_(data.sucursal) + '</p>' +
       '<table cellpadding="6" style="border-collapse:collapse">' +
       filaMail_('Cliente',       data.nombre) +
       filaMail_('WhatsApp',      data.whatsapp) +
       filaMail_('Mail',          data.mail) +
       filaMail_('Producto',      data.producto) +
       filaMail_('Talle',         data.talle) +
+      filaMail_('Por qué no compró', data.motivo) +
       filaMail_('Vendedor',      data.vendedor) +
       filaMail_('Observaciones', data.obs) +
       '</table>' +
       '<p style="margin-top:20px">' +
       '<a href="' + linkWhatsapp_(data.whatsapp) + '" ' +
-      'style="background:#22C55E;color:#fff;padding:10px 20px;' +
-      'text-decoration:none;border-radius:6px;display:inline-block">Escribir por WhatsApp</a>' +
+      'style="background:#F97316;color:#fff;padding:10px 20px;font-weight:bold;' +
+      'text-decoration:none;border-radius:8px;display:inline-block">Escribir por WhatsApp</a>' +
       '</p></div>';
 
     MailApp.sendEmail({
@@ -340,7 +422,7 @@ function notificar_(data) {
 
 function filaMail_(etiqueta, valor) {
   if (!valor) return '';
-  return '<tr><td style="color:#6B7280">' + esc_(etiqueta) + '</td>' +
+  return '<tr><td style="color:#33475F">' + esc_(etiqueta) + '</td>' +
          '<td style="font-weight:600">' + esc_(valor) + '</td></tr>';
 }
 
@@ -405,6 +487,54 @@ function linkWhatsapp_(tel) {
   let n = String(tel).replace(/\D/g, '').replace(/^0/, '');
   if (n.indexOf('54') !== 0) n = '549' + n;
   return 'https://wa.me/' + n;
+}
+
+/**
+ * Deja listo el encabezado del motivo en la Z. Se llama recién cuando entra el
+ * primer registro con motivo, así una planilla que todavía no lo usa no se
+ * toca para nada.
+ */
+function asegurarMotivo_(hoja) {
+  if (hoja.getMaxColumns() < ANCHO) {
+    hoja.insertColumnsAfter(hoja.getMaxColumns(), ANCHO - hoja.getMaxColumns());
+  }
+  const filaEnc = getFilaEncabezado_(hoja);
+  const celda = hoja.getRange(filaEnc, COL.MOTIVO + 1);
+  if (!String(celda.getValue()).trim()) {
+    celda.setValue('Motivo').setFontWeight('bold');
+  }
+}
+
+/**
+ * Los montos de la columna V están cargados a mano, como texto y en formato
+ * argentino: "$34.647", "34.647,50", a veces como número. Devuelve 0 si no se
+ * puede leer, nunca NaN: un monto ilegible no tiene que romper el tablero.
+ */
+function parseMonto_(v) {
+  if (typeof v === 'number') return isFinite(v) ? v : 0;
+  const t = String(v == null ? '' : v).replace(/[^\d,.-]/g, '');
+  if (!t) return 0;
+  // Con coma, la coma es el decimal y los puntos son miles. Sin coma, los
+  // puntos son miles igual ("34.647" son treinta y cuatro mil, no 34,647).
+  const n = t.indexOf(',') > -1
+    ? t.replace(/\./g, '').replace(',', '.')
+    : t.replace(/\./g, '');
+  const x = Number(n);
+  return isFinite(x) ? x : 0;
+}
+
+/**
+ * Sin PIN cargado en las propiedades, verificarPin_ devuelve false para
+ * cualquier valor. Decir "PIN incorrecto" ahí manda a Atención al Cliente a
+ * probar números para siempre, cuando lo que falta es configurarlo.
+ */
+function mensajePin_() {
+  const guardado = PropertiesService.getScriptProperties().getProperty('PANEL_PIN');
+  if (!guardado) {
+    return 'El panel todavía no tiene PIN. Cargalo en Apps Script → Configuración ' +
+           'del proyecto → Propiedades de la secuencia de comandos, en PANEL_PIN.';
+  }
+  return 'PIN incorrecto.';
 }
 
 function verificarPin_(pin) {

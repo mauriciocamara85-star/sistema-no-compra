@@ -8,16 +8,36 @@ El sistema está partido en dos, alojados en lugares distintos.
 
    index.html  ─── POST /exec ───►     doPost()
    panel.html                            │
-                                         ▼
-                                    Google Sheets
+   estilos.css                           ▼
+   comun.js                         Google Sheets
+   sw.js + manifest.json
 ```
 
 ## La interfaz — GitHub Pages
 
-`index.html` y `panel.html`, en la raíz del repo. Se sirven desde
+En la raíz del repo, servida desde
 `mauriciocamara85-star.github.io/sistema-no-compra/`.
 
+| Archivo | Qué es |
+|---------|--------|
+| `index.html` | Formulario de carga del vendedor |
+| `panel.html` | Panel de seguimiento (pide PIN) |
+| `estilos.css` | Sistema de diseño que comparten las dos |
+| `comun.js` | Lo que comparten: backend, tema, avisos, WhatsApp, PWA |
+| `manifest.json`, `sw.js`, `icon-*.png` | Lo que la vuelve instalable |
+
 Cada push a `main` las publica: no hay que implementar nada.
+
+## Se instala en el celular
+
+`manifest.json` + `sw.js` hacen que la app se pueda agregar a la pantalla de
+inicio y que **abra sin señal**. El service worker va a la red primero, así que
+un `git push` se ve en los locales enseguida; el caché es sólo red de
+contención.
+
+Lo que se carga sin conexión queda en una cola en el celular (`nc_cola` en
+localStorage) y se manda solo cuando vuelve la señal. Antes, un fallo de red
+perdía el registro.
 
 ## El backend — Apps Script
 
@@ -31,11 +51,15 @@ Cada push a `main` las publica: no hay que implementar nada.
 | `submit` | Guarda un pedido nuevo |
 | `registros` | Lista los pedidos para el panel |
 | `seguimiento` | Escribe el seguimiento de un pedido |
-| `resumen` | Totales por estado |
+| `resumen` | Totales por estado, plata recuperada y conteo por motivo |
 
-`doGet()` sigue existiendo y sirviendo las vistas desde Apps Script, así que las
-URLs viejas no se rompen. Las copias de `src/Index.html` y `src/Panel.html` usan
-`google.script.run`; las de la raíz usan `fetch`.
+`doGet()` ya no sirve ninguna vista: **redirige** a GitHub Pages (`src/Redirect.html`),
+para que los links viejos de Apps Script sigan funcionando.
+
+Antes había copias del formulario y del panel en `src/Index.html` y
+`src/Panel.html`, con `google.script.run` en lugar de `fetch`. Eran copias de
+verdad: cada cambio de interfaz había que hacerlo dos veces y terminaron
+desincronizadas. Se retiraron; ahora hay una sola interfaz.
 
 ## Por qué `text/plain`
 
@@ -53,5 +77,9 @@ comporta el navegador, no qué contiene el cuerpo.
 
 | Qué tocaste | Cómo lo publicás |
 |-------------|------------------|
-| `index.html` o `panel.html` | `git push` — listo en segundos |
+| Cualquier archivo de la raíz (interfaz) | `git push` — listo en segundos |
 | `src/` (el backend) | `.\publicar.ps1 "qué cambió"` |
+
+Al cambiar un archivo de la interfaz conviene subir la versión del caché en
+`sw.js` (`const CACHE = 'no-compra-vN'`): ese cambio de nombre es lo que borra
+la copia vieja en los celulares que ya tienen la app instalada.

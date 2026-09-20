@@ -32,9 +32,13 @@ function crearResumen() {
     resumen.getRange(rango).setFontWeight('bold').setBackground('#222222').setFontColor('#ffffff');
   };
 
-  /** Conteo agrupado por una columna, de mayor a menor. */
-  const conteo = function (columna, etiqueta) {
-    return '=IFERROR(QUERY(\'' + HOJA + '\'!A' + inicio + ':I,' +
+  /**
+   * Conteo agrupado por una columna, de mayor a menor.
+   * `hasta` es la última columna del rango: el motivo vive en la Z, así que
+   * para contarlo hay que estirar el rango más allá de la I.
+   */
+  const conteo = function (columna, etiqueta, hasta) {
+    return '=IFERROR(QUERY(\'' + HOJA + '\'!A' + inicio + ':' + (hasta || 'I') + ',' +
            '"SELECT ' + columna + ', COUNT(A) WHERE ' + columna + ' <> \'\' ' +
            'GROUP BY ' + columna + ' ORDER BY COUNT(A) DESC ' +
            'LABEL ' + columna + ' \'' + etiqueta + '\', COUNT(A) \'Cantidad\'",0),"Sin datos")';
@@ -55,8 +59,15 @@ function crearResumen() {
   sub('G2:H2', 'Producto', 'Cantidad');
   resumen.getRange('G3').setFormula(conteo('G', 'Producto'));
 
+  // ── BLOQUE 4: Por qué no compraron ──
+  // El más importante de los cuatro: los otros tres dicen dónde y qué se
+  // pierde, éste dice por qué. Es lo que Compras puede accionar.
+  h(resumen.getRange('J1'), 'POR QUÉ NO COMPRARON');
+  sub('J2:K2', 'Motivo', 'Cantidad');
+  resumen.getRange('J3').setFormula(conteo('Z', 'Motivo', 'Z'));
+
   // Formato general
-  const anchos = [220, 90, 30, 150, 90, 30, 180, 90];
+  const anchos = [220, 90, 30, 150, 90, 30, 180, 90, 30, 170, 90];
   anchos.forEach(function (ancho, i) { resumen.setColumnWidth(i + 1, ancho); });
 
   // getUi() sólo existe cuando se corre desde la planilla, no desde el editor.
