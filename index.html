@@ -129,10 +129,6 @@
   .chips-motivo .chip.sel svg { opacity: 1; }
   @media (min-width: 560px) { .chips-motivo { grid-template-columns: repeat(3, 1fr); } }
 
-  /* El motivo no es un input sino una grilla de chips, así que no tiene label
-     propio: esta línea se lo da, para que pueda marcarse "obligatorio" igual
-     que los demás campos en vez de marcar el bloque entero. */
-  #paso3 .campo-lbl { margin-bottom: 9px; }
 
   /* Barra de guardar: fija abajo, al alcance del pulgar. */
   .barra {
@@ -365,22 +361,22 @@
     <div class="paso-cab">
       <span class="paso-n">1</span>
       <div class="paso-txt">
-        <h2 class="paso-tit">El cliente</h2>
+        <h2 class="paso-tit">El cliente <span class="lbl-req">obligatorio</span></h2>
         <p class="paso-sub">Sin el WhatsApp no hay seguimiento posible.</p>
       </div>
     </div>
     <div class="campos">
       <div class="campo ancho" id="cWsp">
-        <label for="f_wsp">WhatsApp <span class="lbl-req">obligatorio</span></label>
+        <label for="f_wsp">WhatsApp</label>
         <input type="tel" id="f_wsp" inputmode="tel" placeholder="11 2345 6789" autocomplete="off">
         <div class="campo-error" id="errWsp" hidden></div>
       </div>
       <div class="campo ancho">
-        <label for="f_nombre">Nombre <span class="lbl-opc">opcional</span></label>
+        <label for="f_nombre">Nombre</label>
         <input type="text" id="f_nombre" placeholder="Cómo se llama" autocapitalize="words" autocomplete="off">
       </div>
       <div class="campo ancho">
-        <label for="f_mail">Mail <span class="lbl-opc">opcional</span></label>
+        <label for="f_mail">Mail</label>
         <input type="email" id="f_mail" inputmode="email" placeholder="cliente@mail.com" autocomplete="off" autocapitalize="off">
       </div>
     </div>
@@ -397,7 +393,7 @@
     </div>
     <div class="campos">
       <div class="campo ancho">
-        <label for="f_producto">Producto <span class="lbl-opc">opcional</span></label>
+        <label for="f_producto">Producto</label>
         <input type="text" id="f_producto" placeholder="Campera de abrigo negra" autocomplete="off">
       </div>
       <div class="campo ancho">
@@ -416,11 +412,10 @@
     <div class="paso-cab">
       <span class="paso-n">3</span>
       <div class="paso-txt">
-        <h2 class="paso-tit">Por qué se fue</h2>
+        <h2 class="paso-tit">Por qué se fue <span class="lbl-req">obligatorio</span></h2>
         <p class="paso-sub">Un toque. Es lo que le dice a Compras qué falta en el local.</p>
       </div>
     </div>
-    <div class="campo-lbl">Motivo <span class="lbl-req">obligatorio</span></div>
     <div class="chips chips-motivo" id="chipsMotivo"></div>
     <div class="campo-error" id="errMotivo" hidden>Marcá por qué se fue sin llevar.</div>
 
@@ -430,7 +425,7 @@
              Atención al Cliente tres días después, y es el que viaja a la nota
              del lead en Kommo. El label tiene que decir para quién se escribe;
              el placeholder da los ejemplos, que es lo que hace que se escriba. -->
-        <label for="f_obs">Notas para el seguimiento <span class="lbl-opc">opcional</span></label>
+        <label for="f_obs">Notas para el seguimiento</label>
         <textarea id="f_obs" placeholder="Qué le gustó, qué se probó, cuándo vuelve…"></textarea>
       </div>
     </div>
