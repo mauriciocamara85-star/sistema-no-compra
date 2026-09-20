@@ -2,9 +2,10 @@
    VDH · Sistema No Compra — sistema de diseño compartido
    Lo usan index.html (carga del vendedor) y panel.html (seguimiento).
 
-   Misma familia visual que la app de Ranking VDH: naranja #F97316, DM Sans +
-   Space Grotesk, esquinas de 16px, fondo navy. Si algún día cambia la marca,
-   se cambia acá y las dos pantallas siguen.
+   El No Compra se separó de la familia naranja del Ranking VDH el 20/09/2026:
+   acá la marca es violeta #7C5CFF con cian de acento. Se mantienen DM Sans +
+   Space Grotesk, las esquinas de 16px y el fondo navy. La marca vive en los
+   tokens de abajo: se cambia ahí y las dos pantallas siguen.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── TOKENS ────────────────────────────────────────────────────────────────
@@ -20,26 +21,36 @@
      --txt-3  etiquetas y apoyo, NUNCA un dato              (7:1)
    Ningún dato real usa --txt-3. */
 :root {
-  --bg:        #0B1220;
-  --surface:   #151F31;
-  --surface-2: #1E293B;
-  --surface-3: #27364C;
-  --line:      #2C3E58;
-  --line-alta: #44597A;
+  --bg:        #0B1020;
+  --surface:   #151D30;
+  --surface-2: #1E2740;
+  --surface-3: #27324C;
+  --line:      #2C3856;
+  --line-alta: #445278;
 
   --txt:   #F8FAFC;
   --txt-2: #CBD5E1;
   --txt-3: #94A3B8;
 
-  /* Naranja de marca. --acc es para RELLENOS; como TEXTO sobre el fondo se usa
-     --acc-txt, porque el naranja puro no llega al contraste necesario en claro
-     (3:1 sobre blanco) y quedaría ilegible justo en la mitad de los casos. */
-  --acc:      #F97316;
-  --acc-2:    #EA580C;
-  --acc-ink:  #1B120B;
-  --acc-txt:  #FDBA74;
-  --acc-soft: rgba(249, 115, 22, .15);
-  --acc-line: rgba(249, 115, 22, .45);
+  /* Violeta de marca. --acc es para RELLENOS y va SIEMPRE con --acc-ink
+     encima, nunca con blanco: el violeta claro contra blanco da 3,1:1 y
+     contra la tinta oscura da 6:1. Aclararlo para "que se lea mejor" lo
+     empeora, que es exactamente al revés de lo que uno espera.
+     Como TEXTO sobre el fondo va --acc-txt, más claro todavía.
+     --acc-2 es el extremo del degradado del botón: no puede ser más oscuro
+     que esto porque el texto cruza TODO el degradado y manda el peor punto. */
+  --acc:      #9B7DFF;
+  --acc-2:    #866BFF;
+  --acc-ink:  #140D2B;
+  --acc-txt:  #C4B5FD;
+  --acc-soft: rgba(124, 92, 255, .16);
+  --acc-line: rgba(124, 92, 255, .45);
+
+  /* Cian: el acento frío, para detalles y estados informativos. Nunca para
+     una acción — la acción es siempre violeta, así no hay dos colores
+     compitiendo por decir "tocame". */
+  --cian:      #36D6E7;
+  --cian-soft: rgba(54, 214, 231, .14);
 
   --ok:      #34D399;
   --ok-txt:  #6EE7B7;
@@ -62,7 +73,7 @@
 
   --sombra:    0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .6);
   --sombra-alta: 0 10px 40px -12px rgba(0, 0, 0, .75);
-  --glow:      0 8px 28px -10px rgba(249, 115, 22, .55);
+  --glow:      0 8px 28px -10px rgba(124, 92, 255, .55);
 
   /* Curva de iOS: arranca rápido y frena suave. La misma para todo lo que se
      mueve, así la app "se siente" de una sola pieza. */
@@ -84,9 +95,13 @@ html[data-theme="light"] {
   --txt-2: #33475F;
   --txt-3: #5A6E87;
 
-  --acc-txt:  #C2410C;
-  --acc-soft: rgba(249, 115, 22, .13);
-  --acc-line: rgba(234, 88, 12, .5);
+  --acc-txt:  #6D28D9;
+  --acc-soft: rgba(124, 92, 255, .13);
+  --acc-line: rgba(109, 40, 217, .5);
+
+  /* En claro el cian tiene que oscurecerse: el #36D6E7 sobre blanco da 1,8:1. */
+  --cian:      #155E75;
+  --cian-soft: rgba(21, 94, 117, .12);
 
   --ok-txt:  #047857;
   --ok-soft: rgba(5, 150, 105, .13);
@@ -99,7 +114,7 @@ html[data-theme="light"] {
 
   --sombra:      0 1px 2px rgba(15, 31, 51, .07), 0 10px 26px -16px rgba(15, 31, 51, .35);
   --sombra-alta: 0 16px 44px -16px rgba(15, 31, 51, .35);
-  --glow:        0 8px 24px -10px rgba(234, 88, 12, .45);
+  --glow:        0 8px 24px -10px rgba(109, 40, 217, .45);
   color-scheme: light;
 }
 
@@ -173,7 +188,8 @@ a { color: var(--acc-txt); }
 .marca-icono {
   width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
   background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
-  color: #fff;
+  /* Tinta oscura, NO blanco: sobre el violeta el blanco da 3,1:1 y la tinta 6:1. */
+  color: var(--acc-ink);
   display: grid; place-items: center;
   box-shadow: var(--glow);
 }
@@ -212,7 +228,7 @@ a { color: var(--acc-txt); }
 .tema-btn:hover { color: var(--txt); }
 .tema-btn[aria-pressed="true"] {
   background: var(--acc); color: var(--acc-ink);
-  box-shadow: 0 4px 12px -5px rgba(249, 115, 22, .8);
+  box-shadow: 0 4px 12px -5px rgba(124, 92, 255, .8);
 }
 
 .btn-icono {
@@ -377,7 +393,8 @@ select {
 
 .btn-pri {
   background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
-  color: #fff;
+  /* Tinta oscura, NO blanco: sobre el violeta el blanco da 3,1:1 y la tinta 6:1. */
+  color: var(--acc-ink);
   box-shadow: var(--glow);
 }
 .btn-sec {
@@ -500,3 +517,12 @@ select {
 }
 .pie a { color: var(--txt-3); text-decoration: underline; text-underline-offset: 3px; }
 .pie a:hover { color: var(--acc-txt); }
+
+/* Un pulso corto al elegir un chip: confirma el toque sin hacer esperar a
+   nadie. 280ms es lo que tarda en leerse como respuesta y no como demora. */
+.chip.sel { animation: pulso .28s var(--curva); }
+@keyframes pulso {
+  0%   { transform: scale(.93); }
+  55%  { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}

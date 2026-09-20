@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · No Compra</title>
 <meta name="description" content="Registro de clientes que se van del local sin encontrar lo que buscaban.">
-<meta name="theme-color" content="#0B1220">
+<meta name="theme-color" content="#0B1020">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -58,6 +58,52 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .ident-vend { font-size: 13px; color: var(--txt-2); }
+
+  /* ── Los tres pasos ────────────────────────────────────────────────────
+     Cliente → Qué buscaba → Por qué se fue. El número le dice al vendedor
+     dónde está parado y cuánto le falta, que es lo que hace que un
+     formulario largo se sienta corto.
+
+     El número va en CIAN y no en violeta a propósito: es orientación, no una
+     acción. El violeta queda reservado para lo único que se toca —chips y
+     botón—, así nada compite por decir "apretame". */
+  .paso { padding: 20px 16px; }
+  .paso-cab { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 15px; }
+  .paso-n {
+    flex-shrink: 0;
+    width: 30px; height: 30px;
+    border-radius: 10px;
+    background: var(--cian-soft);
+    border: 1px solid var(--cian);
+    color: var(--cian);
+    display: grid; place-items: center;
+    font: 700 15px/1 var(--display);
+  }
+  .paso-txt { min-width: 0; }
+  .paso-tit {
+    font: 700 21px/1.15 var(--display);
+    letter-spacing: -.5px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .paso-sub { font-size: 13px; color: var(--txt-3); margin-top: 3px; }
+
+  /* Los campos de seguimiento cuelgan del paso 3, debajo de los motivos. */
+  .campos-seguim { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+  /* Identidad sin elegir: el punto late en cian y el borde se apaga, para que
+     se lea como "falta esto" y no como un dato ya cargado. Con la identidad
+     puesta vuelve al verde fijo, que es el estado normal. */
+  .ident-vacia { border-color: var(--line); }
+  .ident-vacia .ident-local { font-size: 14.5px; color: var(--txt-2); }
+  .ident-vacia .ident-punto {
+    background: var(--cian);
+    box-shadow: 0 0 0 4px var(--cian-soft);
+    animation: latido 2.4s ease-in-out infinite;
+  }
+  @keyframes latido {
+    0%, 100% { box-shadow: 0 0 0 4px var(--cian-soft); }
+    50%      { box-shadow: 0 0 0 9px transparent; }
+  }
 
   /* Quick-picks de producto: meten la categoría en el campo sin escribir. */
   .sugerencias { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
@@ -186,7 +232,11 @@
       align-items: start;
     }
     .hoja > .aviso, .hoja > .ident, .hoja > .pie,
-    #bloqueLocal, #bloqueVendedor { grid-column: 1 / -1; }
+    #bloqueIdentidad { grid-column: 1 / -1; }
+    /* Adentro del bloque de identidad los dos siguen apilados, así que hay que
+       devolverles el aire que la regla de arriba les saca. */
+    #bloqueIdentidad .bloque { margin-bottom: 12px; }
+    #bloqueIdentidad .bloque:last-child { margin-bottom: 0; }
     .bloque, .ident, .aviso { margin-bottom: 0; }
 
     /* Vuelven a dos columnas. Los motivos pasan a tres arriba de 560px, pero
@@ -212,7 +262,7 @@
       </div>
       <div class="marca-txt">
         <h1>No Compra</h1>
-        <span>VDH · Registro en el local</span>
+        <span>Cada visita, una nueva oportunidad</span>
       </div>
     </div>
     <div class="head-acciones">
@@ -240,39 +290,52 @@
     <button type="button" onclick="vaciarCola(true)">Reintentar</button>
   </div>
 
-  <!-- ── Identidad ya elegida (reemplaza a los dos bloques de abajo) ── -->
-  <div class="ident" id="ident" hidden>
+  <!-- ── Quién carga ───────────────────────────────────────────────────────
+       Esta barra está SIEMPRE, con identidad elegida o sin ella. Antes, el
+       vendedor que abría la app por primera vez se encontraba con una pared
+       de 14 sucursales antes de poder hacer nada; ahora lo primero que ve es
+       el cliente, que es lo que vino a cargar, y el local se elige desde acá
+       de un toque. El dato sigue siendo obligatorio: si falta, la validación
+       abre este bloque y lo trae hasta él. -->
+  <div class="ident ident-vacia" id="ident">
     <div class="ident-punto"></div>
     <div class="ident-datos">
-      <span class="ident-local" id="identLocal"></span>
-      <span class="ident-vend" id="identVend"></span>
+      <span class="ident-local" id="identLocal">Todavía no dijiste quién sos</span>
+      <span class="ident-vend" id="identVend">Tu local y tu nombre, una sola vez</span>
     </div>
-    <button type="button" class="btn btn-sec btn-chico" onclick="cambiarIdentidad()">Cambiar</button>
+    <button type="button" class="btn btn-sec btn-chico" id="btnIdent" onclick="alternarIdentidad()">Elegir</button>
   </div>
 
-  <!-- ── Local ── -->
-  <section class="bloque" id="bloqueLocal">
-    <h2 class="bloque-tit"><span class="req"></span> ¿En qué local estás?</h2>
-    <p class="bloque-sub">Se guarda en este celular: lo elegís una sola vez.</p>
-    <div class="chips chips-local" id="grillaLocales"></div>
-    <div class="campo-error" id="errLocal" hidden>Eligí el local.</div>
-  </section>
+  <div id="bloqueIdentidad" hidden>
+    <!-- ── Local ── -->
+    <section class="bloque" id="bloqueLocal">
+      <h2 class="bloque-tit"><span class="req"></span> ¿En qué local estás?</h2>
+      <p class="bloque-sub">Se guarda en este celular: lo elegís una sola vez.</p>
+      <div class="chips chips-local" id="grillaLocales"></div>
+      <div class="campo-error" id="errLocal" hidden>Eligí el local.</div>
+    </section>
 
-  <!-- ── Vendedor ── -->
-  <section class="bloque" id="bloqueVendedor">
-    <h2 class="bloque-tit"><span class="req"></span> ¿Quién sos?</h2>
-    <p class="bloque-sub">Tu nombre queda en el registro. Escribilo siempre igual: así el resumen por vendedor sale bien.</p>
-    <div class="campo" id="cVend">
-      <input type="text" id="f_vendedor" list="listaVendedores" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
-      <div class="campo-error" id="errVend" hidden>Falta tu nombre.</div>
+    <!-- ── Vendedor ── -->
+    <section class="bloque" id="bloqueVendedor">
+      <h2 class="bloque-tit"><span class="req"></span> ¿Quién sos?</h2>
+      <p class="bloque-sub">Tu nombre queda en el registro. Escribilo siempre igual: así el resumen por vendedor sale bien.</p>
+      <div class="campo" id="cVend">
+        <input type="text" id="f_vendedor" list="listaVendedores" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
+        <div class="campo-error" id="errVend" hidden>Falta tu nombre.</div>
+      </div>
+      <datalist id="listaVendedores"></datalist>
+    </section>
+  </div>
+
+  <!-- ── Paso 1 ── -->
+  <section class="bloque paso">
+    <div class="paso-cab">
+      <span class="paso-n">1</span>
+      <div class="paso-txt">
+        <h2 class="paso-tit"><span class="req"></span> El cliente</h2>
+        <p class="paso-sub">Sin el WhatsApp no hay seguimiento posible.</p>
+      </div>
     </div>
-    <datalist id="listaVendedores"></datalist>
-  </section>
-
-  <!-- ── Cliente ── -->
-  <section class="bloque">
-    <h2 class="bloque-tit"><span class="req"></span> El cliente</h2>
-    <p class="bloque-sub">Sin el WhatsApp no hay seguimiento posible: es el único campo que no se puede saltear.</p>
     <div class="campos">
       <div class="campo ancho" id="cWsp">
         <label for="f_wsp">WhatsApp</label>
@@ -286,9 +349,15 @@
     </div>
   </section>
 
-  <!-- ── Qué buscaba ── -->
-  <section class="bloque">
-    <h2 class="bloque-tit">Qué estaba buscando</h2>
+  <!-- ── Paso 2 ── -->
+  <section class="bloque paso">
+    <div class="paso-cab">
+      <span class="paso-n">2</span>
+      <div class="paso-txt">
+        <h2 class="paso-tit">Qué buscaba</h2>
+        <p class="paso-sub">Lo que vino a llevarse y no estaba.</p>
+      </div>
+    </div>
     <div class="campos">
       <div class="campo ancho">
         <label for="f_producto">Producto</label>
@@ -304,18 +373,22 @@
     <datalist id="listaProductos"></datalist>
   </section>
 
-  <!-- ── Motivo: lo nuevo ── -->
-  <section class="bloque bloque-motivo">
-    <h2 class="bloque-tit"><span class="req"></span> ¿Por qué no se lo llevó?</h2>
-    <p class="bloque-sub">Un toque. Es el dato que le dice a Compras qué falta en el local, y hasta hoy no lo guardábamos en ningún lado.</p>
+  <!-- ── Paso 3 ──
+       El motivo y el seguimiento van juntos: los tres son lo que se hace con
+       el cliente después de que se fue. Separarlos en dos bloques hacía que
+       "observaciones" pareciera un trámite aparte y casi nadie lo llenaba. -->
+  <section class="bloque paso bloque-motivo">
+    <div class="paso-cab">
+      <span class="paso-n">3</span>
+      <div class="paso-txt">
+        <h2 class="paso-tit"><span class="req"></span> Por qué se fue</h2>
+        <p class="paso-sub">Un toque. Es el dato que le dice a Compras qué falta en el local.</p>
+      </div>
+    </div>
     <div class="chips chips-motivo" id="chipsMotivo"></div>
     <div class="campo-error" id="errMotivo" hidden>Marcá por qué se fue sin llevar.</div>
-  </section>
 
-  <!-- ── Extra ── -->
-  <section class="bloque">
-    <h2 class="bloque-tit">Algo más para el seguimiento</h2>
-    <div class="campos">
+    <div class="campos campos-seguim">
       <div class="campo ancho">
         <label for="f_obs">Observaciones <span class="lbl-opc">opcional</span></label>
         <textarea id="f_obs" placeholder="Qué le gustó, qué se probó, cuándo vuelve…"></textarea>
@@ -334,7 +407,7 @@
   <div class="barra-in">
     <button type="button" class="btn btn-pri btn-ancho" id="btnGuardar" onclick="enviar()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-      Guardar registro
+      Guardar oportunidad
     </button>
     <div class="barra-nota" id="barraNota">Tarda menos de 20 segundos</div>
   </div>
@@ -532,6 +605,9 @@
     return bonito(v);
   }
 
+  /* La barra de identidad no se oculta nunca: cambia de estado. Vacía invita
+     a elegir, llena muestra quién está cargando. Lo que se abre y se cierra
+     es el bloque de abajo, con la grilla de locales y el nombre. */
   function mostrarIdentidad() {
     var vend = $('f_vendedor').value.trim();
     if (!local || !vend) return;
@@ -539,16 +615,21 @@
     recordar(K_VENDS, vend);
     $('identLocal').textContent = nombreLocal(local);
     $('identVend').textContent = vend;
-    $('ident').hidden = false;
-    $('bloqueLocal').hidden = true;
-    $('bloqueVendedor').hidden = true;
+    $('ident').classList.remove('ident-vacia');
+    $('btnIdent').textContent = 'Cambiar';
+    $('bloqueIdentidad').hidden = true;
   }
 
-  function cambiarIdentidad() {
-    $('ident').hidden = true;
-    $('bloqueLocal').hidden = false;
-    $('bloqueVendedor').hidden = false;
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+  /** El botón de la barra. */
+  function alternarIdentidad() {
+    var b = $('bloqueIdentidad');
+    b.hidden = !b.hidden;
+    if (!b.hidden) b.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /** La usa la validación para traer al vendedor hasta el dato que falta. */
+  function abrirIdentidad() {
+    $('bloqueIdentidad').hidden = false;
   }
 
   /* ═══ Validación ════════════════════════════════════════════════════════ */
@@ -581,8 +662,8 @@
     ocultarError('errWsp', 'cWsp');
     $('cVend').classList.remove('mal');
 
-    if (!local) { mostrarError('errLocal'); cambiarIdentidad(); ok = false; }
-    if (!$('f_vendedor').value.trim()) { mostrarError('errVend', 'cVend'); cambiarIdentidad(); ok = false; }
+    if (!local) { mostrarError('errLocal'); abrirIdentidad(); ok = false; }
+    if (!$('f_vendedor').value.trim()) { mostrarError('errVend', 'cVend'); abrirIdentidad(); ok = false; }
 
     var malTel = revisarTelefono($('f_wsp').value);
     if (malTel) { mostrarError('errWsp', 'cWsp', malTel); ok = false; }
