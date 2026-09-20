@@ -125,6 +125,7 @@ icon-*.png           Íconos de la app
 src/                 ── el backend, en Apps Script ──
   Codigo.gs          Carga, seguimiento, avisos
   Resumen.gs         Arma la pestaña Resumen (sucursal/vendedor/producto/motivo)
+  Kommo.gs           Puente con el CRM: cada no-compra entra como lead
   Redirect.html      Manda los links viejos de Apps Script al sitio
   appsscript.json    Manifiesto del proyecto
 ```
@@ -150,6 +151,49 @@ src/                 ── el backend, en Apps Script ──
 > Cada cambio del **backend** necesita una nueva implementación
 > (`.\publicar.ps1` lo hace). Los cambios de **interfaz** no: salen con un
 > `git push`.
+
+## Kommo (CRM)
+
+Cada no-compra puede entrar a [Kommo](https://kommo.com) como **lead + contacto**,
+para trabajarlo desde el CRM y meterlo después en campañas. Vive en
+`src/Kommo.gs` y está **apagado** hasta que se carguen dos propiedades más:
+
+| Propiedad | Valor |
+|-----------|-------|
+| `KOMMO_SUBDOMAIN` | El pedacito de la dirección: en `vdh.kommo.com` es `vdh` |
+| `KOMMO_TOKEN` | Token de larga duración (ver abajo) |
+| `KOMMO_PIPELINE_ID` | Opcional: a qué embudo entran. Vacío = el principal |
+
+**El token** sale de Kommo: Ajustes → Integraciones → crear una integración
+privada → pestaña *Claves y permisos* → **Generar token de larga duración**
+(de 1 día a 5 años). Se muestra una sola vez. Va en las propiedades del
+script, nunca en el repo: el repo es público y ese token da acceso de
+escritura a todo el CRM.
+
+**Puesta en marcha**, una vez cargadas las propiedades:
+
+```
+kommoDiagnostico()   lee la cuenta y escribe en el log los embudos, sus
+                     etapas y los campos con sus ids. No cambia nada.
+kommoCrearCampos()   crea los campos de lead que falten (Sucursal, Vendedor,
+                     Producto buscado, Talle, Motivo). Escribe en Kommo.
+kommoProbar()        manda un lead de prueba para ver que llegue.
+```
+
+**Qué se manda:** el lead se llama `No Compra · <producto>`, el contacto lleva
+el teléfono en formato internacional (`+549…`, así Kommo unifica duplicados) y
+el mail. Los datos estructurados van a campos personalizados **y** a etiquetas:
+
+- `No Compra` · `<sucursal>` · `Motivo: <motivo>`
+
+Las etiquetas son lo que hace útil esto para campañas: no necesitan
+configuración previa —Kommo las crea sola— y permiten armar una audiencia de
+"todos los que se fueron por falta de talle en Unicenter" desde el primer día.
+
+> **Kommo nunca tumba una carga.** La planilla es la fuente de verdad. Si el
+> CRM está caído o el token venció, el registro se guarda igual y el error
+> queda en el log (`sincronizarCrm_`). Lo que no llegó a Kommo no se reintenta
+> solo: está en la planilla para resubirlo.
 
 ## Antes de usarlo, cargar el PIN
 

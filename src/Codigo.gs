@@ -204,6 +204,7 @@ function submitForm(data) {
     }
 
     notificar_(data);
+    sincronizarCrm_(data);
     return { status: 'ok' };
 
   } catch (err) {
@@ -434,6 +435,23 @@ function notificar_(data) {
   } catch (err) {
     // El aviso nunca debe tumbar la carga del registro.
     console.error('notificar_: ' + err.message);
+  }
+}
+
+// ── CRM ────────────────────────────────────────────────────────────────────
+/**
+ * Manda el registro a Kommo, si el puente está configurado (ver Kommo.gs).
+ *
+ * Envuelto en try/catch por la misma razón que el aviso por mail: la planilla
+ * es la fuente de verdad y un CRM caído, un token vencido o un cambio de
+ * campos en Kommo NO pueden hacerle perder la carga a un vendedor que ya hizo
+ * su trabajo. El error queda en el log.
+ */
+function sincronizarCrm_(data) {
+  try {
+    kommoEnviar_(data);
+  } catch (err) {
+    console.error('sincronizarCrm_: ' + err.message);
   }
 }
 
