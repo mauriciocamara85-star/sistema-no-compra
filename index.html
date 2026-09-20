@@ -129,6 +129,11 @@
   .chips-motivo .chip.sel svg { opacity: 1; }
   @media (min-width: 560px) { .chips-motivo { grid-template-columns: repeat(3, 1fr); } }
 
+  /* El motivo no es un input sino una grilla de chips, así que no tiene label
+     propio: esta línea se lo da, para que pueda marcarse "obligatorio" igual
+     que los demás campos en vez de marcar el bloque entero. */
+  #paso3 .campo-lbl { margin-bottom: 9px; }
+
   /* Barra de guardar: fija abajo, al alcance del pulgar. */
   .barra {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
@@ -243,19 +248,31 @@
        cuatro pantallas en el celular. Acá el formulario entra entero a la
        vista y la frase pasa a ser relleno. */
     .barra-nota { display: none; }
+
+    /* Sin esa nota, la barra mide ~98px en vez de ~135: el aire de abajo se
+       recalcula para no dejar un colchón que no hace falta. */
+    body { padding-bottom: 110px; }
   }
 
   /* Monitor de escritorio: los tres pasos entran uno al lado del otro y el
      formulario se ve entero sin scrollear. Es el caso de la PC del local,
      donde la app queda abierta todo el día. */
   @media (min-width: 1300px) {
-    :root { --tope: 1320px; }
+    /* Casi toda la pantalla. El tope duro existe igual: pasados los ~1560px
+       las columnas se vuelven tan anchas que el ojo tiene que viajar de más
+       entre la etiqueta y el campo. El 94vw es para que en un monitor chico
+       siga habiendo margen a los costados y no quede pegado al borde. */
+    :root { --tope: min(1560px, 94vw); }
     .pasos {
       grid-template-columns: repeat(3, 1fr);
       /* Mismo alto los tres: con tres tarjetas en fila, tres bordes inferiores
          a distinta altura se leen como un error de maquetado. El contenido
          no se estira, sólo la tarjeta. */
       align-items: stretch;
+      /* Y que lleguen hasta cerca del botón: si no, las tarjetas terminaban a
+         media pantalla y abajo quedaba un vacío del alto de una tarjeta. Es
+         min-height, así que si el contenido crece, la grilla crece con él. */
+      min-height: calc(100vh - 390px);
     }
     /* Con tres columnas cada paso tiene la suya y la colocación a mano sobra. */
     #paso3 { grid-column: auto; grid-row: auto; }
@@ -348,13 +365,13 @@
     <div class="paso-cab">
       <span class="paso-n">1</span>
       <div class="paso-txt">
-        <h2 class="paso-tit">El cliente <span class="lbl-req">obligatorio</span></h2>
+        <h2 class="paso-tit">El cliente</h2>
         <p class="paso-sub">Sin el WhatsApp no hay seguimiento posible.</p>
       </div>
     </div>
     <div class="campos">
       <div class="campo ancho" id="cWsp">
-        <label for="f_wsp">WhatsApp</label>
+        <label for="f_wsp">WhatsApp <span class="lbl-req">obligatorio</span></label>
         <input type="tel" id="f_wsp" inputmode="tel" placeholder="11 2345 6789" autocomplete="off">
         <div class="campo-error" id="errWsp" hidden></div>
       </div>
@@ -380,7 +397,7 @@
     </div>
     <div class="campos">
       <div class="campo ancho">
-        <label for="f_producto">Producto</label>
+        <label for="f_producto">Producto <span class="lbl-opc">opcional</span></label>
         <input type="text" id="f_producto" placeholder="Campera de abrigo negra" autocomplete="off">
       </div>
       <div class="campo ancho">
@@ -399,10 +416,11 @@
     <div class="paso-cab">
       <span class="paso-n">3</span>
       <div class="paso-txt">
-        <h2 class="paso-tit">Por qué se fue <span class="lbl-req">obligatorio</span></h2>
+        <h2 class="paso-tit">Por qué se fue</h2>
         <p class="paso-sub">Un toque. Es lo que le dice a Compras qué falta en el local.</p>
       </div>
     </div>
+    <div class="campo-lbl">Motivo <span class="lbl-req">obligatorio</span></div>
     <div class="chips chips-motivo" id="chipsMotivo"></div>
     <div class="campo-error" id="errMotivo" hidden>Marcá por qué se fue sin llevar.</div>
 
