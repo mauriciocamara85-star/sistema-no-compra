@@ -265,13 +265,23 @@
          a distinta altura se leen como un error de maquetado. El contenido
          no se estira, sólo la tarjeta. */
       align-items: stretch;
-      /* Y que lleguen hasta cerca del botón: si no, las tarjetas terminaban a
-         media pantalla y abajo quedaba un vacío del alto de una tarjeta. Es
-         min-height, así que si el contenido crece, la grilla crece con él. */
-      min-height: calc(100vh - 390px);
     }
     /* Con tres columnas cada paso tiene la suya y la colocación a mano sobra. */
     #paso3 { grid-column: auto; grid-row: auto; }
+
+    /* Que el formulario llegue hasta el botón en vez de cortar a media
+       pantalla. En vez de restar un número estimado, se mide lo único que
+       ocupa lugar fijo: el encabezado (36px de ícono + 12 y 12 de aire + 1
+       de borde = 61) y el aire de abajo que reserva la barra (110). Lo que
+       sobra se lo queda la grilla de pasos.
+
+       Es min-height: si el contenido crece, la página crece con él. */
+    .hoja {
+      display: flex;
+      flex-direction: column;
+      min-height: calc(100vh - 61px - 110px);
+    }
+    .pasos { flex: 1; }
   }
 </style>
 </head>
