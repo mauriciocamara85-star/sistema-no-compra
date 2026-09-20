@@ -332,10 +332,9 @@
       <h2 class="bloque-tit">¿Quién sos? <span class="lbl-req">obligatorio</span></h2>
       <p class="bloque-sub">Tu nombre queda en el registro. Escribilo siempre igual: así el resumen por vendedor sale bien.</p>
       <div class="campo" id="cVend">
-        <input type="text" id="f_vendedor" list="listaVendedores" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
+        <input type="text" id="f_vendedor" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
         <div class="campo-error" id="errVend" hidden>Falta tu nombre.</div>
       </div>
-      <datalist id="listaVendedores"></datalist>
     </section>
   </div>
 
@@ -382,7 +381,7 @@
     <div class="campos">
       <div class="campo ancho">
         <label for="f_producto">Producto</label>
-        <input type="text" id="f_producto" list="listaProductos" placeholder="Campera de abrigo negra" autocomplete="off">
+        <input type="text" id="f_producto" placeholder="Campera de abrigo negra" autocomplete="off">
       </div>
       <div class="campo ancho">
         <label for="f_talle">Talle <span class="lbl-opc">tocá los que buscaba</span></label>
@@ -390,7 +389,6 @@
         <input type="text" id="f_talle" placeholder="O escribilo: 41.5, 95/100…" autocomplete="off">
       </div>
     </div>
-    <datalist id="listaProductos"></datalist>
   </section>
 
   <!-- ── Paso 3 ──
@@ -508,22 +506,9 @@
   var TALLES_LETRA  = ['S', 'M', 'L', 'XL', 'XXL'];
   var TALLES_NUMERO = ['38', '40', '42', '44', '46', '48'];
 
-  /* Sembrados con lo que el equipo YA escribió en la planilla, para que el
-     autocompletado sirva desde el primer día. Se le suman los nombres y
-     productos que cada celular vaya usando. */
-  var VENDEDORES_BASE = ['Agustina', 'Andrés', 'Antonella', 'Brenda', 'Brisa', 'Cintia',
-    'Delfina', 'Donato', 'Dylan', 'Ezequiel', 'Gabi', 'Javi', 'Juan', 'Karen', 'Lautaro',
-    'Leonardo', 'Mau', 'Mel', 'Nano', 'Nicolás Ramos', 'Ornella', 'Santiago', 'Sebastián'];
-
-  var PRODUCTOS_BASE = ['Campera de abrigo', 'Campera de lluvia', 'Campera Giovani',
-    'Buzo Wind Over', 'Buzos', 'Remera over', 'Remeras clásicas', 'Sweater over',
-    'Saco Robert', 'Pantalón Nueva York Wide', 'Pantalón Kazan', 'Pantalón Relax',
-    'Jean Biel', 'Jeans', 'Joggin', 'Chomba Lumbus', 'Camisas', 'Perfume', 'Bóxer'];
-
-
   /* Claves de localStorage. */
-  var K_LOCAL = 'nc_local', K_VEND = 'nc_vendedor', K_VENDS = 'nc_vendedores',
-      K_PRODS = 'nc_productos', K_COLA = 'nc_cola', K_HOY = 'nc_hoy';
+  var K_LOCAL = 'nc_local', K_VEND = 'nc_vendedor',
+      K_COLA = 'nc_cola', K_HOY = 'nc_hoy';
 
   var local = '', motivo = '', talles = [];
 
@@ -577,30 +562,7 @@
     });
   }
 
-  function pintarListas() {
-    var vends = VENDEDORES_BASE.concat(leerJSON(K_VENDS, []));
-    var prods = PRODUCTOS_BASE.concat(leerJSON(K_PRODS, []));
-    var opciones = function (arr) {
-      var vistos = {};
-      return arr.filter(function (x) {
-        var k = String(x).toLowerCase();
-        if (!x || vistos[k]) return false;
-        vistos[k] = 1; return true;
-      }).map(function (x) { return '<option value="' + esc(x) + '">'; }).join('');
-    };
-    $('listaVendedores').innerHTML = opciones(vends);
-    $('listaProductos').innerHTML = opciones(prods);
-  }
 
-  /** Guarda hasta 40 valores usados en este celular, del más nuevo al más viejo. */
-  function recordar(clave, valor) {
-    if (!valor) return;
-    var prev = leerJSON(clave, []).filter(function (x) {
-      return String(x).toLowerCase() !== String(valor).toLowerCase();
-    });
-    prev.unshift(valor);
-    guardarJSON(clave, prev.slice(0, 40));
-  }
 
   /* ═══ Identidad ═════════════════════════════════════════════════════════ */
   function elegirLocal(v) {
@@ -626,7 +588,6 @@
     var vend = $('f_vendedor').value.trim();
     if (!local || !vend) return;
     guardar(K_VEND, vend);
-    recordar(K_VENDS, vend);
     $('identLocal').textContent = nombreLocal(local);
     $('identVend').textContent = vend;
     $('ident').classList.remove('ident-vacia');
@@ -793,7 +754,6 @@
     btn.innerHTML = 'Guardando…';
 
     mostrarIdentidad();
-    recordar(K_PRODS, datos.producto);
 
     var restaurar = function () {
       btn.disabled = false;
@@ -863,7 +823,6 @@
     pintarLocales();
     pintarMotivos();
     pintarTalles();
-    pintarListas();
     pintarCola();
 
     var guardadoLocal = leer(K_LOCAL), guardadoVend = leer(K_VEND);
