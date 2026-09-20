@@ -87,6 +87,16 @@
   --curva: cubic-bezier(.32, .72, 0, 1);
 
   --tope: 660px;
+
+  /* El marco de navegación. En el celular el rail se acuesta abajo (--nav)
+     y en pantalla grande se para a la izquierda (--rail). --cabeza es lo que
+     mide la cabecera pegajosa: 36 del ícono + 12 y 12 de aire + 1 de borde.
+     Está acá y no estimado en cada regla porque de ese número dependen el
+     alto del rail y dónde se frena al scrollear. */
+  --rail: 88px;
+  --nav: 54px;
+  --cabeza: 61px;
+
   color-scheme: dark;
 }
 
@@ -255,11 +265,172 @@ a { color: var(--acc-txt); }
 .btn-icono.girando svg { animation: girar .7s linear infinite; }
 @keyframes girar { to { transform: rotate(360deg); } }
 
+/* ── MARCO: la navegación de las tres pantallas ────────────────────────── */
+/*
+   Una sola navegación, en dos formas.
+
+   En la PC del local es una columna a la izquierda, siempre a la vista: es la
+   máquina donde la app queda abierta todo el día y donde el encargado entra a
+   configuración. En el celular esa columna se acuesta abajo, al alcance del
+   pulgar, porque en 380px de ancho un rail lateral le come el lugar a los
+   campos — y los vendedores cargan parados en el local, desde el celular.
+
+   Las dos formas son el MISMO marcado. Lo único que cambia es el CSS, así no
+   hay dos navegaciones que mantener sincronizadas.
+*/
+.rail {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
+  /* Opaco primero, igual que la cabecera: sin color-mix la barra tiene que
+     quedar sólida y nunca transparente sobre el contenido. */
+  background: var(--bg);
+  border-top: 1px solid var(--line);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .rail {
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(18px) saturate(180%);
+    -webkit-backdrop-filter: blur(18px) saturate(180%);
+  }
+}
+.rail-in {
+  display: flex;
+  height: var(--nav);
+  max-width: 460px;
+  margin: 0 auto;
+}
+.rail-item {
+  flex: 1;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  color: var(--txt-2);
+  text-decoration: none;
+  font: 600 10.5px/1 var(--sans);
+  -webkit-tap-highlight-color: transparent;
+  transition: color .15s var(--curva), background .15s var(--curva);
+}
+.rail-item svg { width: 20px; height: 20px; }
+.rail-item:hover { color: var(--txt); }
+.rail-item:active { transform: scale(.94); }
+/* La sección abierta se marca con el color de acento como TEXTO, que para eso
+   está --acc-txt; --acc es relleno y acá no hay tinta encima que lo acompañe. */
+.rail-item[aria-current="page"] { color: var(--acc-txt); }
+
+/* Lo que el rail acostado le tapa al contenido. El formulario suma lo suyo
+   aparte en index.html, porque ahí abajo también está la barra de guardar. */
+@media (max-width: 899px) {
+  body { padding-bottom: calc(var(--nav) + env(safe-area-inset-bottom) + 14px); }
+}
+
+@media (min-width: 900px) {
+  .marco {
+    display: grid;
+    grid-template-columns: var(--rail) minmax(0, 1fr);
+    max-width: calc(var(--tope) + var(--rail));
+    margin: 0 auto;
+    align-items: start;
+  }
+  .rail {
+    position: sticky;
+    top: var(--cabeza);
+    left: auto; right: auto; bottom: auto;
+    /* Llega hasta abajo de todo aunque la página sea corta: media columna de
+       borde suelta se lee como un error de maquetado. */
+    height: calc(100vh - var(--cabeza));
+    padding: 14px 8px;
+    border-top: 0;
+    border-right: 1px solid var(--line);
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+  .rail-in {
+    flex-direction: column;
+    height: auto;
+    max-width: none;
+    gap: 4px;
+  }
+  .rail-item {
+    flex: 0 0 auto;
+    padding: 11px 4px;
+    border-radius: var(--r-sm);
+    font-size: 11px;
+    gap: 6px;
+  }
+  .rail-item:hover { background: var(--surface-2); }
+  .rail-item[aria-current="page"] { background: var(--acc-soft); }
+}
+
 /* ── ESTRUCTURA ────────────────────────────────────────────────────────── */
 .hoja {
   max-width: var(--tope);
   margin: 0 auto;
   padding: 18px 16px 24px;
+}
+/* Con rail al costado, el contenido ya no se centra contra la ventana sino
+   contra su columna, y pegarlo al borde del rail lo deja sin aire. */
+@media (min-width: 900px) { .hoja { padding-left: 22px; padding-right: 22px; } }
+
+/* ── TARJETAS DE NÚMEROS ───────────────────────────────────────────────── */
+/*
+   Las usan el formulario (los números del local) y el panel (los del
+   seguimiento). Estaban sueltas adentro de panel.html; viven acá desde que
+   son dos pantallas las que las muestran.
+
+   Dos por fila en el celular y cuatro en pantalla ancha: con cuatro en 380px
+   el número queda más chico que su propia etiqueta.
+*/
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+@media (min-width: 620px) { .kpis { grid-template-columns: repeat(4, 1fr); } }
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--line-alta);
+  border-radius: var(--r-sm);
+  padding: 13px 14px;
+  box-shadow: var(--sombra);
+  animation: aparecer .4s var(--curva) backwards;
+}
+.kpi-n { font: 700 27px/1.05 var(--display); letter-spacing: -.8px; }
+.kpi-l { font-size: 12px; font-weight: 600; color: var(--txt-2); margin-top: 3px; }
+.kpi-pie { font-size: 11.5px; color: var(--txt-3); margin-top: 1px; }
+.kpi.es-pend { border-left-color: var(--warn); }
+.kpi.es-pend .kpi-n { color: var(--warn-txt); }
+.kpi.es-ok { border-left-color: var(--ok); }
+.kpi.es-ok .kpi-n { color: var(--ok-txt); }
+.kpi.es-plata { border-left-color: var(--acc); }
+.kpi.es-plata .kpi-n { color: var(--acc-txt); }
+/* Las tarjetas de plata llevan un importe, no un número corto: con 27px un
+   "$ 1.234.567" se sale de la tarjeta en un celular. */
+.kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 21px; }
+
+/* Objetivo: el único número que se compara contra otro, así que además del
+   valor lleva la barra. El relleno sí usa --acc, que es para eso. */
+.kpi.es-obj { border-left-color: var(--acc-2); }
+/* Objetivo cumplido: el verde de "esto ya está" es el mismo que usa el panel
+   para lo cerrado, así el color quiere decir lo mismo en las dos pantallas. */
+.kpi.es-obj.lleno { border-left-color: var(--ok); }
+.kpi.es-obj.lleno .kpi-n { color: var(--ok-txt); }
+.kpi.es-obj.lleno .kpi-barra i { background: var(--ok); }
+.kpi-barra {
+  height: 6px;
+  border-radius: 99px;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  margin-top: 8px;
+}
+.kpi-barra i {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  background: linear-gradient(90deg, var(--acc-2), var(--acc));
+  transition: width .5s var(--curva);
 }
 
 .bloque {
@@ -349,7 +520,7 @@ select {
 
 /* Campo inválido: sólo después de intentar guardar (lo pone el JS), nunca
    mientras la persona todavía está escribiendo. */
-.campo.mal input, .campo.mal textarea, .campo.mal .chips {
+.campo.mal input, .campo.mal textarea, .campo.mal select, .campo.mal .chips {
   border-color: var(--bad);
   box-shadow: 0 0 0 4px var(--bad-soft);
 }

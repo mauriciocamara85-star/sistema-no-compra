@@ -161,6 +161,10 @@ function doPost(e) {
       case 'sacarVend':   salida = equipoDesactivar(p.local, p.nombre, p.quien); break;
       case 'objetivo':    salida = objetivoGuardar(p.local, p.periodo, p.meta, p.quien); break;
 
+      // Tablero del local, sin PIN por el mismo motivo: son cuentas del
+      // propio local, no hay un dato de ningún cliente adentro.
+      case 'metricas':    salida = getMetricas(p.local);                      break;
+
       case 'version':     salida = { status: 'ok', version: VERSION };        break;
       default:            salida = { status: 'error', msg: 'Acción desconocida.' };
     }
@@ -236,6 +240,17 @@ function submitForm(data) {
   // locales esperando para guardar. Acá ya está guardado: que tarden sólo
   // demora la respuesta de ESTE vendedor, y ninguno de los dos puede hacer
   // fallar un registro que ya está en la planilla.
+  // El tablero del local está cacheado medio minuto. Si no se borra acá, el
+  // vendedor carga un cliente y ve el mismo número que antes, que es
+  // justamente la señal que esa pantalla existe para darle.
+  olvidarMetricas_(data.sucursal);
+
+  // Si el nombre no estaba en la lista del local, entra ahora. Se hace acá y
+  // no cuando lo escribe porque un nombre a medio tipear no tiene que
+  // ensuciar la configuración: se suma recién cuando esa persona cargó un
+  // cliente de verdad. Ver sumarVendedor_ en Config.gs.
+  sumarVendedor_(data.sucursal, data.vendedor);
+
   notificar_(data);
   sincronizarCrm_(data);
   return { status: 'ok' };
@@ -429,6 +444,118 @@ function getResumenPanel(pin) {
     // enterarse nadie recién el día que hace falta.
     respaldo: (typeof estadoRespaldo_ === 'function') ? estadoRespaldo_() : { activo: false }
   };
+}
+
+// ── Tablero del local (vendedor) ───────────────────────────────────────────
+/** Nombre base de la clave de caché del tablero. Una por local. */
+const CACHE_METRICAS = 'metricas_';
+
+/**
+ * Los números que el formulario muestra arriba, del local que está cargando:
+ * cuántos registros van hoy y este mes, cómo viene contra su objetivo y
+ * cuánta plata volvió gracias a esos registros.
+ *
+ * No pide PIN, igual que el equipo y los objetivos: son cuentas del propio
+ * local y un total en pesos, no hay un dato de ningún cliente adentro.
+ *
+ * **El recuperado se corta por la fecha del REGISTRO, no por la de la venta.**
+ * La planilla no guarda cuándo se cerró la compra, así que "recuperado este
+ * mes" quiere decir "de lo que se registró este mes, esto ya volvió". Es la
+ * pregunta que le importa al local y la única que los datos pueden contestar
+ * sin inventar nada.
+ *
+ * Los registros viejos tienen los nombres anteriores de los locales
+ * ('MD2 - Mar del Plata Rivadavia'), así que no entran en la cuenta de
+ * RIVADAVIA. Es el mismo corte que ya tiene el Resumen por sucursal.
+ *
+ * @param {string} local
+ */
+function getMetricas(local) {
+  if (!local) return { status: 'error', msg: 'Falta el local.' };
+
+  const k = clave_(local);
+  const cache = CacheService.getScriptCache();
+  const enCache = cache.get(CACHE_METRICAS + k);
+  if (enCache) return JSON.parse(enCache);
+
+  const hoja = getHoja_();
+  const inicio = getFilaEncabezado_(hoja) + 1;
+  const ultima = hoja.getLastRow();
+  const corte = cortes_();
+
+  const registros  = { dia: 0, semana: 0, mes: 0, total: 0 };
+  const recuperado = { mes: 0, total: 0 };
+  const ventas     = { mes: 0, total: 0 };
+
+  if (ultima >= inicio) {
+    const ancho = Math.min(ANCHO, hoja.getMaxColumns());
+    hoja.getRange(inicio, 1, ultima - inicio + 1, ancho).getValues().forEach(function (f) {
+      if (!f[COL.FECHA] && !f[COL.WHATSAPP]) return;
+      if (clave_(f[COL.SUCURSAL]) !== k) return;
+
+      registros.total++;
+      const fecha = parseFecha_(f[COL.FECHA]);
+      const delMes = !!fecha && fecha >= corte.mes;
+      if (fecha) {
+        if (fecha >= corte.dia)    registros.dia++;
+        if (fecha >= corte.semana) registros.semana++;
+        if (delMes)                registros.mes++;
+      }
+
+      // "Compró" son los Sí del vocabulario, no el texto libre. Mismo criterio
+      // que el panel: ver getResumenPanel.
+      if (String(f[COL.COMPRO] || '').trim().indexOf('Sí') !== 0) return;
+      const monto = parseMonto_(f[COL.MONTO]);
+      ventas.total++;
+      recuperado.total += monto;
+      if (delMes) { ventas.mes++; recuperado.mes += monto; }
+    });
+  }
+
+  const meta = objetivoDe_(local);
+  const salida = {
+    status: 'ok',
+    local: local,
+    registros: registros,
+    recuperado: recuperado,
+    ventas: ventas,
+    // El objetivo se compara contra el período con el que está cargado: si el
+    // local se puso una meta semanal, la tarjeta cuenta la semana.
+    objetivo: meta
+      ? { periodo: meta.periodo, meta: meta.meta, hechos: registros[meta.periodo] || 0 }
+      : null
+  };
+
+  // Medio minuto alcanza. Sin caché, cada vez que un vendedor abre el
+  // formulario se lee la planilla entera, y son 14 locales abriéndola todo el
+  // día; con caché, la carga propia igual se ve al instante porque submitForm
+  // la borra (olvidarMetricas_).
+  cache.put(CACHE_METRICAS + k, JSON.stringify(salida), 30);
+  return salida;
+}
+
+/** Borra el tablero cacheado de un local. Nunca tumba lo que lo llamó. */
+function olvidarMetricas_(local) {
+  try {
+    CacheService.getScriptCache().remove(CACHE_METRICAS + clave_(local));
+  } catch (err) {
+    console.error('olvidarMetricas_: ' + err.message);
+  }
+}
+
+/**
+ * Dónde arrancan el día, la semana y el mes de hoy.
+ *
+ * El proyecto corre en hora argentina (`timeZone` en appsscript.json), así
+ * que alcanza con la fecha local: no hace falta convertir nada.
+ */
+function cortes_() {
+  const ahora = new Date();
+  const dia = new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  // getDay() cuenta el domingo como 0; la semana del equipo arranca el lunes.
+  const semana = new Date(dia);
+  semana.setDate(dia.getDate() - ((dia.getDay() + 6) % 7));
+  return { dia: dia, semana: semana, mes: new Date(ahora.getFullYear(), ahora.getMonth(), 1) };
 }
 
 // ── Aviso por mail ─────────────────────────────────────────────────────────

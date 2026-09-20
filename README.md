@@ -240,8 +240,8 @@ puente está apagado a propósito —todavía sin token— no se muestra nada.
 
 Cada local carga su gente una vez desde
 [`/config.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/config.html)
-y el formulario le muestra a esa gente como botones. Vive en dos pestañas de
-la misma planilla, que se crean solas la primera vez:
+y el formulario le muestra a esa gente en un desplegable. Vive en dos pestañas
+de la misma planilla, que se crean solas la primera vez:
 
 | Pestaña | Columnas |
 |---------|----------|
@@ -266,15 +266,83 @@ cambió, quién y cuándo. Sacar a alguien no borra la fila, la marca inactiva �
 así el rastro queda entero y se deshace volviéndolo a agregar. Es la
 diferencia entre impedir el error y poder deshacerlo.
 
-> **Escribir el nombre a mano nunca deja de ser posible.** El botón "No estoy
-> en la lista" está siempre, aunque el local tenga la lista completa. Si entra
-> alguien nuevo un sábado y el encargado no está, sin esa salida el local
-> dejaría de registrar.
+> **Escribir el nombre a mano nunca deja de ser posible.** "No estoy en la
+> lista" es la última opción del desplegable y está siempre, aunque el local
+> tenga la lista completa. Si entra alguien nuevo un sábado y el encargado no
+> está, sin esa salida el local dejaría de registrar.
+
+**Y ese nombre se agrega solo a la lista** cuando esa persona guarda su primer
+registro (`sumarVendedor_`). Es lo que hace que el sistema se arregle solo: se
+escribe una vez y del registro siguiente en adelante sale del desplegable, en
+todos los celulares del local y escrito siempre igual — que es justamente lo
+que hace falta para poder contar. En el `Log` queda como agregado *desde el
+formulario*, para distinguirlo de lo que cargó alguien a mano.
+
+> **Un nombre desactivado no se reactiva solo.** Si el encargado sacó a
+> alguien de la lista y esa persona sigue cargando desde su celular, el nombre
+> no vuelve: deshacerle la decisión en silencio sería peor que el problema que
+> resuelve. Para volver a habilitarlo está el botón de configuración, que es
+> una persona decidiendo.
 
 La lista se guarda en el celular y se refresca de fondo. No es una
 optimización: es lo que sostiene que el formulario ande con el WiFi del
 shopping caído. Sin señal usa la última que vio; si nunca hubo, se escribe a
 mano.
+
+**La grilla de los 14 locales se muestra una sola vez.** Con el local ya
+elegido, abrir "Cambiar" lleva directo al desplegable de vendedores: el que
+entra ahí viene a corregir su nombre, y hacerlo pasar otra vez por una pared
+de catorce sucursales que ya contestó es tiempo perdido. Cambiar de local
+sigue siendo posible desde la línea al pie de ese bloque.
+
+## El tablero del local
+
+Arriba del formulario hay cuatro tarjetas con los números **del local que está
+cargando**. Salen de `{"accion":"metricas","local":"RIVADAVIA"}`, que no pide
+PIN por el mismo motivo que el equipo y los objetivos: son cuentas del propio
+local, no hay un dato de ningún cliente adentro.
+
+| Tarjeta | De dónde sale |
+|---------|---------------|
+| Registros hoy | Columnas A y B: los del local con fecha de hoy |
+| Este mes | Lo mismo, del 1° a hoy. El pie muestra el total histórico |
+| Objetivo | Pestaña `Objetivos`, comparado contra el período con el que esté cargado (`dia`/`semana`/`mes`) |
+| Recuperado este mes | Columnas T (`Compró?`) y V (`Monto Venta ($)`) |
+
+> **La tarjeta de plata depende de que alguien cierre el círculo.** T y V las
+> llena Atención al Cliente a mano durante el seguimiento. Si nadie las
+> completa, el local puede haber cargado cien clientes y la tarjeta va a decir
+> cero. Por eso el pie dice *"sin ventas cargadas todavía"* en vez de un `$ 0`
+> pelado, que se lee como que el sistema no sirvió.
+
+El recuperado se corta por la **fecha del registro**, no por la de la venta:
+la planilla no guarda cuándo se cerró la compra. "Recuperado este mes" quiere
+decir *de lo que se registró este mes, esto ya volvió*.
+
+Los números se guardan en el celular igual que el equipo, así el que abre la
+app sin señal ve los últimos en vez de cuatro rayitas, y el registro recién
+cargado se suma en el acto sin esperar al servidor (`sumarAlTablero()`).
+
+Del lado del backend hay una **caché de 30 segundos por local**: son 14 locales
+abriendo el formulario todo el día y cada apertura lee la planilla entera.
+`submitForm()` borra la del local que acaba de cargar (`olvidarMetricas_`),
+así el vendedor ve su número subir y no el de hace medio minuto.
+
+> Los registros viejos tienen los nombres anteriores de los locales
+> (`MD2 - Mar del Plata Rivadavia`), así que no entran en la cuenta de
+> `RIVADAVIA`. Es el mismo corte que ya tenía el Resumen por sucursal.
+
+## La navegación
+
+Las tres pantallas comparten un solo rail (`.rail` en `estilos.css`), con el
+mismo marcado y dos formas: columna a la izquierda arriba de 900px —la PC del
+local, donde la app queda abierta todo el día— y barra abajo en el celular, al
+alcance del pulgar. En 380px de ancho una columna lateral le come el lugar a
+los campos, y los vendedores cargan parados en el local.
+
+En el formulario la barra de guardar se apoya **arriba** del rail acostado. El
+aire de seguridad del iPhone lo reserva el rail, que es el que toca el borde;
+si lo reservaran los dos quedaría un escalón vacío entre las dos barras.
 
 ## Respaldo automático
 

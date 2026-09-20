@@ -31,8 +31,13 @@
 
   /* Deja aire para que la barra de guardar no tape el último campo ni el pie.
      La barra mide ~98px (botón de 50 + la nota + los dos padding); 135 deja
-     margen de sobra incluso con el texto del sistema agrandado. */
-  body { padding-bottom: 135px; }
+     margen de sobra incluso con el texto del sistema agrandado.
+
+     En el celular, abajo de la barra de guardar está además el rail acostado,
+     así que el aire es la suma de los dos. Arriba de 900px el rail se para a
+     la izquierda y deja de descontar alto. */
+  body { padding-bottom: calc(135px + var(--nav) + env(safe-area-inset-bottom)); }
+  @media (min-width: 900px) { body { padding-bottom: 135px; } }
 
   /* Identidad ya elegida: reemplaza a los dos bloques de arriba para que el
      vendedor que ya cargó una vez abra la app directo en "el cliente". */
@@ -106,18 +111,35 @@
   }
 
 
-  /* "No estoy en la lista": la salida de emergencia. Va punteado para que se
-     lea distinto de un nombre —no es una persona, es una acción— y siempre
-     tiene que estar, aunque el local tenga la lista completa. El día que
-     entra alguien nuevo un sábado, esto es lo que evita que el local deje de
-     registrar. */
-  .chip-otro {
-    border-style: dashed;
-    background: transparent;
-    color: var(--txt-3);
-    font-weight: 500;
+  /* "No estoy en la lista" dejó de ser un chip punteado: ahora es la última
+     opción del desplegable de vendedores. Sigue siendo la salida de
+     emergencia y sigue estando siempre, aunque el local tenga la lista
+     completa. El día que entra alguien nuevo un sábado, eso es lo que evita
+     que el local deje de registrar. Ver pintarVendedores(). */
+
+  /* El campo de escribir el nombre cuelga del desplegable, pero NO es el
+     mismo campo: pegado uno contra el otro se lee como una sola caja partida
+     al medio. El aire es lo que dice "esto es lo otro que podés hacer".
+     Va en #cVend y no en el desplegable porque cuando el campo está oculto
+     (display:none) el margen no existe y la línea de abajo no se corre. */
+  #cVend { margin-top: 12px; }
+
+  /* Con el local ya elegido, la grilla de 14 sucursales se guarda y queda
+     esta línea en su lugar, al pie del bloque del vendedor. Va discreta a
+     propósito: cambiar de local es lo raro, no lo de todos los días. */
+  .linea-local {
+    margin-top: 14px; padding-top: 12px;
+    border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--txt-2);
   }
-  .chip-otro.sel { border-style: solid; }
+  .linea-local b { color: var(--txt); font-weight: 700; }
+  .linea-local button {
+    background: none; border: 0; padding: 0;
+    font-size: 13px; font-weight: 700;
+    color: var(--acc-txt);
+    text-decoration: underline; text-underline-offset: 3px;
+    cursor: pointer;
+  }
 
   /* Talle en dos filas: letras arriba, números abajo. Ver pintarTalles(). */
   .talles { display: flex; flex-direction: column; gap: 8px; }
@@ -143,18 +165,35 @@
   @media (min-width: 560px) { .chips-motivo { grid-template-columns: repeat(3, 1fr); } }
 
 
-  /* Barra de guardar: fija abajo, al alcance del pulgar. */
+  /* Barra de guardar: fija abajo, al alcance del pulgar.
+
+     En el celular se apoya ARRIBA del rail acostado. El aire de seguridad del
+     iPhone lo reserva el rail, que es el que toca el borde de la pantalla; si
+     lo reservaran los dos, quedaba un escalón vacío entre las dos barras. */
   .barra {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    position: fixed; left: 0; right: 0; z-index: 40;
+    bottom: calc(var(--nav) + env(safe-area-inset-bottom));
     background: color-mix(in srgb, var(--bg) 85%, transparent);
     background: var(--bg);
     backdrop-filter: blur(18px) saturate(180%);
     -webkit-backdrop-filter: blur(18px) saturate(180%);
     border-top: 1px solid var(--line);
-    padding: 12px 16px calc(env(safe-area-inset-bottom) + 12px);
+    padding: 12px 16px;
   }
   @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
     .barra { background: color-mix(in srgb, var(--bg) 85%, transparent); }
+  }
+  /* Con el rail parado a la izquierda, la barra vuelve al piso y se corre
+     para que el botón quede centrado sobre el formulario y no sobre la
+     ventana: descentrado un rail entero se lee como un error. */
+  @media (min-width: 900px) {
+    .barra {
+      bottom: 0;
+      padding-left: calc(16px + var(--rail));
+      /* Acá sí la barra toca el borde, así que el aire de seguridad vuelve a
+         ser suyo: un iPad apaisado también tiene barra de gestos. */
+      padding-bottom: calc(env(safe-area-inset-bottom) + 12px);
+    }
   }
   .barra-in { max-width: var(--tope); margin: 0 auto; }
   .barra-nota {
@@ -340,12 +379,8 @@
       </div>
     </div>
     <div class="head-acciones">
-      <a class="btn-icono" href="config.html" title="Configuración" aria-label="Configuración">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
-      </a>
-      <a class="btn-icono" href="panel.html" title="Panel de seguimiento" aria-label="Panel de seguimiento">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
-      </a>
+      <!-- Configuración y panel se mudaron al rail, que está en las tres
+           pantallas y dice en cuál estás parado. -->
       <div class="tema" role="group" aria-label="Tema visual">
         <button type="button" class="tema-btn" data-tema="dark" title="Tema oscuro" aria-label="Tema oscuro">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
@@ -358,7 +393,42 @@
   </div>
 </header>
 
+<div class="marco">
+
+<!-- ── Secciones ──
+     La misma navegación en las tres pantallas: columna a la izquierda en la
+     PC del local, barra abajo en el celular. Ver .rail en estilos.css. -->
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-in">
+    <a class="rail-item" href="index.html" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+      Carga
+    </a>
+    <a class="rail-item" href="panel.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      Panel
+    </a>
+    <a class="rail-item" href="config.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      Config.
+    </a>
+  </div>
+</nav>
+
 <main class="hoja">
+
+  <!-- ── Los números del local ─────────────────────────────────────────────
+       Lo primero de la pantalla, como en un tablero: cuando el vendedor abre
+       la app lo primero que ve es cómo viene su local.
+
+       Están SIEMPRE, incluso sin local elegido —ahí muestran rayitas—, porque
+       una tira de tarjetas que aparece y desaparece mueve todo lo de abajo y
+       se lee como que algo se rompió.
+
+       Los números salen de la planilla (accion 'metricas') y quedan guardados
+       en el celular, así el que abre sin señal ve los últimos en vez de
+       cuatro rayitas. Ver pintarMetricas(). -->
+  <div class="kpis" id="tarjetas"></div>
 
   <!-- Registros que quedaron esperando señal. Ver cola() más abajo. -->
   <div class="aviso" id="avisoCola" hidden>
@@ -384,7 +454,11 @@
   </div>
 
   <div id="bloqueIdentidad" hidden>
-    <!-- ── Local ── -->
+    <!-- ── Local ──
+         Con el local ya elegido esta grilla NO se muestra: el vendedor que
+         entra a cambiar su nombre no tiene por qué volver a pasar por una
+         pared de 14 sucursales que ya contestó. Queda en su lugar la línea
+         del final del bloque de abajo. Ver acomodarIdentidad(). -->
     <section class="bloque" id="bloqueLocal">
       <h2 class="bloque-tit">¿En qué local estás? <span class="lbl-req">obligatorio</span></h2>
       <p class="bloque-sub">Se guarda en este celular: lo elegís una sola vez.</p>
@@ -395,12 +469,29 @@
     <!-- ── Vendedor ── -->
     <section class="bloque" id="bloqueVendedor">
       <h2 class="bloque-tit">¿Quién sos? <span class="lbl-req">obligatorio</span></h2>
-      <p class="bloque-sub">Tocá tu nombre. Si no estás en la lista, lo escribís y se lo pedís al encargado para que te agregue.</p>
-      <div class="chips chips-vend" id="chipsVend" hidden></div>
+      <p class="bloque-sub">Elegite de la lista de tu local. Si no estás, escribí tu nombre y pedile al encargado que te agregue.</p>
+
+      <!-- La lista del local. Oculta hasta que haya equipo cargado: sin
+           vendedores, un desplegable vacío no ayuda a nadie. -->
+      <div class="campo" id="cSelVend" hidden>
+        <select id="s_vendedor" aria-label="Elegí tu nombre"></select>
+      </div>
+
+      <!-- Escribirlo a mano NUNCA deja de ser posible: ver el comentario de
+           pintarVendedores(). El error vive afuera de los dos campos porque
+           tiene que verse con cualquiera de las dos formas a la vista. -->
       <div class="campo" id="cVend">
         <input type="text" id="f_vendedor" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
-        <div class="campo-error" id="errVend" hidden>Falta tu nombre.</div>
       </div>
+      <div class="campo-error" id="errVend" hidden>Falta tu nombre.</div>
+
+      <!-- La salida para el día que alguien cubre en otra sucursal. Chica y
+           al final: es lo que casi nadie necesita, y tiene que poder hacerse
+           igual. Trae de vuelta la grilla de locales. -->
+      <p class="linea-local" id="lineaLocal" hidden>
+        Estás cargando en <b id="localActual"></b>.
+        <button type="button" onclick="mostrarLocales()">Cambiar de local</button>
+      </p>
     </section>
   </div>
 
@@ -486,8 +577,10 @@
 
   </div><!-- /.pasos -->
 
-  <p class="pie">Se guarda en la planilla y el cliente entra al CRM. <a href="panel.html">Panel de seguimiento</a> · <a href="config.html">Configuración</a> · <span id="version"></span></p>
+  <p class="pie">Se guarda en la planilla y el cliente entra al CRM. <span id="version"></span></p>
 </main>
+
+</div><!-- /.marco -->
 
 <div class="barra">
   <div class="barra-in">
@@ -578,7 +671,12 @@
 
   /* Claves de localStorage. */
   var K_LOCAL = 'nc_local', K_VEND = 'nc_vendedor', K_EQUIPO = 'nc_equipo',
-      K_COLA = 'nc_cola', K_HOY = 'nc_hoy';
+      K_COLA = 'nc_cola', K_HOY = 'nc_hoy', K_METRICAS = 'nc_metricas';
+
+  /* Valor de la última opción del desplegable de vendedores. No puede ser un
+     nombre real, así que lleva guiones: si algún día alguien se llama así,
+     tenemos un problema más grande que este. */
+  var OTRO = '__otro__';
 
   /* Sube a mano al publicar, y tiene que coincidir con la del backend.
      Cuando un vendedor dice "a mí no me anda", esto dice qué versión tiene
@@ -660,7 +758,7 @@
   }
 
   function pintarVendedores() {
-    var caja = $('chipsVend');
+    var caja = $('cSelVend'), sel = $('s_vendedor');
 
     if (!equipo.length) {           // sin lista todavía: se escribe a mano
       caja.hidden = true;
@@ -668,32 +766,45 @@
       return;
     }
 
+    /* Un nombre guardado que ya no está en la lista —renunció, lo
+       desactivaron, o se escribió a mano— no se borra solo: queda el campo de
+       texto a la vista con lo que había, y el desplegable marcando "no estoy
+       en la lista". Vaciárselo al vendedor que viene cargando hace semanas
+       sería la peor forma de avisarle. */
     var actual = $('f_vendedor').value.trim();
-    caja.innerHTML = equipo.map(function (v) {
-      return '<button type="button" class="chip' + (v === actual ? ' sel' : '') +
-             '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
-    }).join('') +
-      '<button type="button" class="chip chip-otro' + (escribiendo ? ' sel' : '') +
-      '" data-otro>No estoy en la lista</button>';
+    var aMano = escribiendo || (!!actual && equipo.indexOf(actual) === -1);
+
+    sel.innerHTML =
+      '<option value="">Elegí tu nombre…</option>' +
+      equipo.map(function (v) {
+        return '<option value="' + esc(v) + '"' +
+               (!aMano && v === actual ? ' selected' : '') + '>' + esc(v) + '</option>';
+      }).join('') +
+      '<option value="' + OTRO + '"' + (aMano ? ' selected' : '') + '>No estoy en la lista</option>';
 
     caja.hidden = false;
-    $('cVend').hidden = !escribiendo;
+    $('cVend').hidden = !aMano;
+  }
 
-    Array.prototype.forEach.call(caja.children, function (b) {
-      b.onclick = function () {
-        if (b.hasAttribute('data-otro')) {
-          escribiendo = true;
-          pintarVendedores();
-          $('f_vendedor').focus();
-          return;
-        }
-        escribiendo = false;
-        $('f_vendedor').value = b.dataset.v;
-        ocultarError('errVend', 'cVend');
-        pintarVendedores();
-        mostrarIdentidad();
-      };
-    });
+  /** Lo que pasa al elegir en el desplegable. */
+  function elegirVendedor() {
+    var sel = $('s_vendedor');
+
+    if (sel.value === OTRO) {
+      escribiendo = true;
+      $('cVend').hidden = false;
+      $('f_vendedor').value = '';
+      $('f_vendedor').focus();
+      return;
+    }
+
+    escribiendo = false;
+    $('f_vendedor').value = sel.value;
+    $('cVend').hidden = true;
+    $('cSelVend').classList.remove('mal');
+    if (!sel.value) return;         // volvió a "Elegí tu nombre…"
+    ocultarError('errVend', 'cVend');
+    mostrarIdentidad();
   }
 
   /**
@@ -710,9 +821,140 @@
         if (res.status !== 'ok') return;
         equipo = res.vendedores || [];
         guardarJSON(K_EQUIPO, { local: local, vendedores: equipo });
+
+        /* El nombre que se escribió a mano entra en la lista del local
+           cuando esa persona guarda su primer registro (lo hace el backend,
+           ver sumarVendedor_). Desde ese momento deja de ser "a mano": se
+           elige del desplegable como cualquiera, y el campo de texto sobra. */
+        var actual = $('f_vendedor').value.trim();
+        if (escribiendo && actual && equipo.indexOf(actual) > -1) escribiendo = false;
+
         pintarVendedores();
       })
       .catch(function () { /* sin señal: queda lo guardado */ });
+  }
+
+  /* ═══ Los números del local ═════════════════════════════════════════════
+     Cuatro tarjetas arriba del formulario, del local que está cargando.
+
+     Las dos primeras las mueve el vendedor con lo que carga: son las que
+     nunca están en cero si el local trabaja. Las otras dos son el para qué:
+     cómo viene contra su objetivo y cuánta plata volvió gracias a estos
+     registros.
+
+     **El recuperado depende de que Atención al Cliente cierre el círculo.**
+     Sale de las columnas "Compró?" y "Monto Venta ($)" de la planilla, que se
+     llenan a mano durante el seguimiento. Si nadie las completa, la tarjeta
+     muestra cero aunque el local haya cargado cien clientes; por eso el pie
+     dice "sin ventas cargadas todavía" en vez de un $ 0 pelado, que se lee
+     como que el sistema no sirvió.
+
+     Se guardan en el celular, igual que el equipo: el que abre la app sin
+     señal ve los últimos números en vez de cuatro rayitas. */
+  var metricas = null;
+
+  var NOMBRE_PERIODO = { dia: 'del día', semana: 'de la semana', mes: 'del mes' };
+
+  function metricasGuardadas() {
+    var g = leerJSON(K_METRICAS, null);
+    return (g && g.local === local && g.datos) ? g.datos : null;
+  }
+
+  /** La tarjeta del objetivo, que es la única que compara dos números. */
+  function tarjetaObjetivo(obj) {
+    if (!obj || !obj.meta) {
+      return { cls: 'es-obj', n: '—', l: 'Objetivo', pie: 'Se pone en Config.' };
+    }
+    var hechos = obj.hechos || 0;
+    var falta = Math.max(0, obj.meta - hechos);
+    return {
+      cls: 'es-obj' + (falta ? '' : ' lleno'),
+      n: hechos + ' / ' + obj.meta,
+      l: 'Objetivo ' + (NOMBRE_PERIODO[obj.periodo] || 'del mes'),
+      pie: falta ? ('Faltan ' + falta) : 'Cumplido',
+      // Pasado el 100% la barra se queda llena: una barra que se sale de su
+      // caja no dice "muy bien", dice "algo se rompió".
+      pct: Math.min(100, Math.round(hechos * 100 / obj.meta))
+    };
+  }
+
+  /* Sin local todavía, o sin nada guardado: las cuatro tarjetas igual están,
+     con rayitas. Es el mismo marco esperando los números, no un hueco. */
+  function tarjetasVacias() {
+    return [
+      { cls: '', n: '—', l: 'Registros hoy', pie: 'Elegí tu local' },
+      { cls: '', n: '—', l: 'Este mes', pie: '' },
+      { cls: 'es-obj', n: '—', l: 'Objetivo', pie: '' },
+      { cls: 'es-plata', n: '—', l: 'Recuperado este mes', pie: '' }
+    ];
+  }
+
+  function pintarMetricas(m) {
+    var caja = $('tarjetas');
+    var tarjetas;
+
+    if (!m || !m.registros) {
+      tarjetas = tarjetasVacias();
+    } else {
+      var reg = m.registros, rec = m.recuperado || {}, ven = m.ventas || {};
+      tarjetas = [
+        { cls: '', n: reg.dia || 0, l: 'Registros hoy', pie: 'en todo el local' },
+        { cls: '', n: reg.mes || 0, l: 'Este mes',
+          pie: (reg.total || 0) + ' desde que arrancó' },
+        tarjetaObjetivo(m.objetivo),
+        { cls: 'es-plata', n: PESOS.format(rec.mes || 0), l: 'Recuperado este mes',
+          pie: ven.total
+            ? PESOS.format(rec.total || 0) + ' en total'
+            : 'Sin ventas cargadas todavía' }
+      ];
+    }
+
+    caja.innerHTML = tarjetas.map(function (t, i) {
+      return '<div class="kpi ' + t.cls + '" style="animation-delay:' + (i * 40) + 'ms">' +
+        '<div class="kpi-n">' + esc(t.n) + '</div>' +
+        '<div class="kpi-l">' + esc(t.l) + '</div>' +
+        '<div class="kpi-pie">' + esc(t.pie) + '</div>' +
+        (t.pct === undefined ? '' :
+          '<div class="kpi-barra"><i style="width:' + t.pct + '%"></i></div>') +
+        '</div>';
+    }).join('');
+  }
+
+  /** Silencioso como traerEquipo: sin señal queda lo último que se vio. */
+  function traerMetricas() {
+    if (!local) return;
+    llamar({ accion: 'metricas', local: local })
+      .then(function (res) {
+        if (res.status !== 'ok') return;
+        metricas = res;
+        guardarJSON(K_METRICAS, { local: local, datos: res });
+        pintarMetricas(res);
+      })
+      .catch(function () { /* sin señal: queda lo guardado */ });
+  }
+
+  /** Lo guardado primero, para que las tarjetas estén antes del servidor. */
+  function cargarMetricas() {
+    metricas = metricasGuardadas();
+    pintarMetricas(metricas);
+    traerMetricas();
+  }
+
+  /**
+   * Suma a mano el registro recién cargado.
+   *
+   * El servidor ya lo tiene, pero la respuesta de las métricas tarda otro
+   * viaje —y si el registro quedó en la cola, sin señal, no hay viaje
+   * ninguno—. El vendedor tiene que ver su número subir en el momento: es
+   * media razón por la que las tarjetas están ahí.
+   */
+  function sumarAlTablero() {
+    if (!metricas || !metricas.registros) return;
+    var r = metricas.registros;
+    r.dia++; r.semana++; r.mes++; r.total++;
+    if (metricas.objetivo) metricas.objetivo.hechos = r[metricas.objetivo.periodo] || 0;
+    guardarJSON(K_METRICAS, { local: local, datos: metricas });
+    pintarMetricas(metricas);
   }
 
   /* ═══ Identidad ═════════════════════════════════════════════════════════ */
@@ -730,6 +972,13 @@
     equipo = equipoGuardado();
     pintarVendedores();
     traerEquipo();
+
+    // Los números también son del local: al cambiarlo, cambian.
+    cargarMetricas();
+
+    // Elegido el local, la grilla se guarda sola y queda a la vista lo único
+    // que falta: el nombre.
+    acomodarIdentidad();
 
     if ($('f_vendedor').value.trim()) mostrarIdentidad();
     else if (!equipo.length) $('f_vendedor').focus();
@@ -757,12 +1006,37 @@
   function alternarIdentidad() {
     var b = $('bloqueIdentidad');
     b.hidden = !b.hidden;
-    if (!b.hidden) b.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (b.hidden) return;
+    acomodarIdentidad();
+    b.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   /** La usa la validación para traer al vendedor hasta el dato que falta. */
   function abrirIdentidad() {
     $('bloqueIdentidad').hidden = false;
+    acomodarIdentidad();
+  }
+
+  /**
+   * Decide si se ve la grilla de locales o la línea de "cambiar de local".
+   *
+   * Con el local elegido se guarda la grilla: quien abre esto es alguien que
+   * viene a cambiar su NOMBRE, y hacerlo pasar de nuevo por catorce
+   * sucursales para llegar al campo de al lado es hacerle perder el tiempo.
+   * Sin local elegido no hay nada que guardar y la grilla es lo primero.
+   */
+  function acomodarIdentidad() {
+    var elegido = !!local;
+    $('bloqueLocal').hidden = elegido;
+    $('lineaLocal').hidden = !elegido;
+    if (elegido) $('localActual').textContent = nombreLocal(local);
+  }
+
+  /** Trae de vuelta la grilla, para el que cubre en otra sucursal. */
+  function mostrarLocales() {
+    $('bloqueLocal').hidden = false;
+    $('lineaLocal').hidden = true;
+    $('bloqueLocal').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   /* ═══ Validación ════════════════════════════════════════════════════════ */
@@ -794,9 +1068,16 @@
     ['errLocal', 'errVend', 'errMotivo'].forEach(function (i) { ocultarError(i); });
     ocultarError('errWsp', 'cWsp');
     $('cVend').classList.remove('mal');
+    $('cSelVend').classList.remove('mal');
 
     if (!local) { mostrarError('errLocal'); abrirIdentidad(); ok = false; }
-    if (!$('f_vendedor').value.trim()) { mostrarError('errVend', 'cVend'); abrirIdentidad(); ok = false; }
+    if (!$('f_vendedor').value.trim()) {
+      // Se marca el campo que está a la vista: el desplegable si hay lista
+      // del local, y el de escribir a mano si no.
+      mostrarError('errVend', $('cSelVend').hidden ? 'cVend' : 'cSelVend');
+      abrirIdentidad();
+      ok = false;
+    }
 
     var malTel = revisarTelefono($('f_wsp').value);
     if (malTel) { mostrarError('errWsp', 'cWsp', malTel); ok = false; }
@@ -882,6 +1163,9 @@
       if (enviados) {
         avisar('ok', enviados === 1 ? 'Se envió el registro que estaba esperando.'
                                     : 'Se enviaron ' + enviados + ' registros pendientes.');
+        // Lo que se cargó sin señal ya estaba sumado a mano en el tablero;
+        // ahora que el servidor lo tiene, se pide la cuenta de verdad.
+        traerMetricas();
         return;
       }
       if (aviso) avisar('err', 'Todavía no hay conexión.');
@@ -946,6 +1230,18 @@
 
   function listo(datos, offline) {
     var n = sumarHoy();
+
+    // Las tarjetas de arriba suben en el acto; con señal, además se piden de
+    // nuevo al servidor, que es el que tiene la cuenta buena.
+    sumarAlTablero();
+    if (!offline) {
+      traerMetricas();
+      // Si el nombre no estaba en la lista del local, el backend lo acaba de
+      // sumar: se vuelve a pedir el equipo para que aparezca en el
+      // desplegable desde ya, en este mismo celular.
+      if (equipo.indexOf(datos.vendedor) === -1) traerEquipo();
+    }
+
     $('exitoTit').textContent = offline ? 'Guardado en el celular' : '¡Cargado!';
     $('exitoSub').textContent = offline
       ? 'Se envía solo cuando vuelva la señal. Podés seguir cargando.'
@@ -982,6 +1278,9 @@
     pintarMotivos();
     pintarTalles();
     pintarCola();
+    // Las tarjetas se dibujan antes de saber nada: con local guardado, abajo
+    // se pisan con los números de ese local.
+    pintarMetricas(null);
 
     var guardadoLocal = leer(K_LOCAL), guardadoVend = leer(K_VEND);
     if (guardadoVend) $('f_vendedor').value = guardadoVend;
@@ -997,7 +1296,11 @@
       equipo = equipoGuardado();
       pintarVendedores();
       traerEquipo();
+      cargarMetricas();
     }
+    acomodarIdentidad();
+
+    $('s_vendedor').onchange = elegirVendedor;
 
     // Al salir del campo, el nombre se fija como identidad.
     $('f_vendedor').onblur = function () {

@@ -193,6 +193,60 @@ function equipoAgregar(local, nombre, quien) {
 }
 
 /**
+ * Suma al vendedor a la lista del local cuando entra un registro con un
+ * nombre que no estaba. Lo llama submitForm().
+ *
+ * Es lo que hace que el sistema se arregle solo: el que entra un sábado y no
+ * está en la configuración escribe su nombre UNA vez, y del registro
+ * siguiente en adelante ya aparece en el desplegable de todos los celulares
+ * del local, escrito siempre igual. Antes ese nombre vivía suelto en cada
+ * teléfono y la lista del local nunca se enteraba.
+ *
+ * Dos cuidados:
+ *
+ *  - **Si el nombre ya figura, activo o no, no se toca nada.** Reactivar en
+ *    silencio a alguien que el encargado desactivó a propósito sería
+ *    deshacerle la decisión sin avisarle. Para eso está el botón de
+ *    configuración, que es una persona decidiendo.
+ *  - Queda en el `Log` como agregado *desde el formulario*, para poder
+ *    distinguirlo de lo que cargó alguien a mano.
+ *
+ * Nunca tumba el registro: el cliente ya está guardado, que es lo que
+ * importa. Un error acá sólo significa que el nombre se va a sumar la
+ * próxima vez.
+ */
+function sumarVendedor_(local, vendedor) {
+  const limpio = String(vendedor || '').trim();
+  if (!local || !limpio || limpio.length > 40) return;
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(20000);
+
+    const datos = equipoFilas_();
+    const kLocal = clave_(local), kNombre = clave_(limpio);
+
+    for (let i = 0; i < datos.filas.length; i++) {
+      const f = datos.filas[i];
+      if (clave_(f[0]) === kLocal && clave_(f[1]) === kNombre) return;
+    }
+
+    const firma = limpio + ' (desde el formulario)';
+    datos.hoja.appendRow([
+      local, limpio, 'si',
+      Utilities.formatDate(new Date(), TZ, FORMATO_FECHA),
+      firma
+    ]);
+    registrarLog_('Agregó vendedor', local, limpio, firma);
+
+  } catch (err) {
+    console.error('sumarVendedor_: ' + err.message);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * Saca a alguien de la lista. NO borra la fila: la marca inactiva.
  *
  * Borrarla perdería quién lo agregó y cuándo, y dejaría los registros viejos
