@@ -104,16 +104,19 @@ function configurar(sheetId, pin, mailAvisos) {
 const SITIO = 'https://mauriciocamara85-star.github.io/sistema-no-compra/';
 
 /**
- * Las vistas ya no se sirven desde acá: se mandan al sitio de GitHub Pages.
+ * Las vistas ya no se sirven desde acá: mandan al sitio de GitHub Pages.
  *
  * Antes este proyecto tenía copias del formulario y del panel (Index.html y
  * Panel.html) para que los links viejos no se rompieran. Eran copias de
  * verdad, y cada cambio de interfaz había que hacerlo dos veces: se
- * desincronizaron. Ahora hay una sola interfaz y esto sólo redirige.
+ * desincronizaron. Ahora hay una sola interfaz y esto sólo lleva hasta ella.
  *
- * Apps Script no puede devolver un 302, así que el salto lo hace el navegador.
- * Tiene que ser window.top y no window.location porque la app corre adentro de
- * un iframe: sin el .top, el sitio cargaría dentro del marco de Google.
+ * NO es una redirección automática, y no puede serlo. Apps Script no devuelve
+ * 302, y la página servida corre dentro de un iframe con
+ * sandbox="… allow-top-navigation-by-user-activation …": la pestaña sólo se
+ * puede navegar a partir de un clic real de la persona, nunca por código. Por
+ * eso Redirect.html es un botón con target="_top" y no un salto con
+ * window.top.location, que queda bloqueado en silencio.
  */
 function doGet(e) {
   const vista = (e && e.parameter && e.parameter.v) || 'form';
