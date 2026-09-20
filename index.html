@@ -105,19 +105,9 @@
     50%      { box-shadow: 0 0 0 9px transparent; }
   }
 
-  /* Quick-picks de producto: meten la categoría en el campo sin escribir. */
-  .sugerencias { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
-  .sug {
-    padding: 7px 12px;
-    border: 1px dashed var(--line-alta);
-    border-radius: var(--r-pill);
-    background: transparent;
-    color: var(--txt-2);
-    font-size: 13px; font-weight: 600;
-    transition: color .15s, border-color .15s, background .15s;
-  }
-  .sug:hover { color: var(--acc-txt); border-color: var(--acc); background: var(--acc-soft); }
-  .sug:active { transform: scale(.95); }
+
+  /* Talle en dos filas: letras arriba, números abajo. Ver pintarTalles(). */
+  .talles { display: flex; flex-direction: column; gap: 8px; }
 
   /* Motivo: la razón por la que el cliente se fue sin llevar. Es el dato
      nuevo de esta versión y el único que le dice a Compras qué falta, así
@@ -248,6 +238,11 @@
     /* El botón no sigue al ancho de la página: 1000px de violeta es un
        cartel, no un botón. */
     .barra-in { max-width: 440px; }
+
+    /* "Tarda menos de 20 segundos" tranquilizaba al vendedor que scrolleaba
+       cuatro pantallas en el celular. Acá el formulario entra entero a la
+       vista y la frase pasa a ser relleno. */
+    .barra-nota { display: none; }
   }
 
   /* Monitor de escritorio: los tres pasos entran uno al lado del otro y el
@@ -255,7 +250,13 @@
      donde la app queda abierta todo el día. */
   @media (min-width: 1300px) {
     :root { --tope: 1320px; }
-    .pasos { grid-template-columns: repeat(3, 1fr); }
+    .pasos {
+      grid-template-columns: repeat(3, 1fr);
+      /* Mismo alto los tres: con tres tarjetas en fila, tres bordes inferiores
+         a distinta altura se leen como un error de maquetado. El contenido
+         no se estira, sólo la tarjeta. */
+      align-items: stretch;
+    }
     /* Con tres columnas cada paso tiene la suya y la colocación a mano sobra. */
     #paso3 { grid-column: auto; grid-row: auto; }
   }
@@ -320,7 +321,7 @@
   <div id="bloqueIdentidad" hidden>
     <!-- ── Local ── -->
     <section class="bloque" id="bloqueLocal">
-      <h2 class="bloque-tit"><span class="req"></span> ¿En qué local estás?</h2>
+      <h2 class="bloque-tit">¿En qué local estás? <span class="lbl-req">obligatorio</span></h2>
       <p class="bloque-sub">Se guarda en este celular: lo elegís una sola vez.</p>
       <div class="chips chips-local" id="grillaLocales"></div>
       <div class="campo-error" id="errLocal" hidden>Eligí el local.</div>
@@ -328,7 +329,7 @@
 
     <!-- ── Vendedor ── -->
     <section class="bloque" id="bloqueVendedor">
-      <h2 class="bloque-tit"><span class="req"></span> ¿Quién sos?</h2>
+      <h2 class="bloque-tit">¿Quién sos? <span class="lbl-req">obligatorio</span></h2>
       <p class="bloque-sub">Tu nombre queda en el registro. Escribilo siempre igual: así el resumen por vendedor sale bien.</p>
       <div class="campo" id="cVend">
         <input type="text" id="f_vendedor" list="listaVendedores" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
@@ -348,7 +349,7 @@
     <div class="paso-cab">
       <span class="paso-n">1</span>
       <div class="paso-txt">
-        <h2 class="paso-tit"><span class="req"></span> El cliente</h2>
+        <h2 class="paso-tit">El cliente <span class="lbl-req">obligatorio</span></h2>
         <p class="paso-sub">Sin el WhatsApp no hay seguimiento posible.</p>
       </div>
     </div>
@@ -382,11 +383,10 @@
       <div class="campo ancho">
         <label for="f_producto">Producto</label>
         <input type="text" id="f_producto" list="listaProductos" placeholder="Campera de abrigo negra" autocomplete="off">
-        <div class="sugerencias" id="sugProductos"></div>
       </div>
       <div class="campo ancho">
         <label for="f_talle">Talle <span class="lbl-opc">tocá los que buscaba</span></label>
-        <div class="chips" id="chipsTalle"></div>
+        <div class="talles" id="chipsTalle"></div>
         <input type="text" id="f_talle" placeholder="O escribilo: 41.5, 95/100…" autocomplete="off">
       </div>
     </div>
@@ -401,7 +401,7 @@
     <div class="paso-cab">
       <span class="paso-n">3</span>
       <div class="paso-txt">
-        <h2 class="paso-tit"><span class="req"></span> Por qué se fue</h2>
+        <h2 class="paso-tit">Por qué se fue <span class="lbl-req">obligatorio</span></h2>
         <p class="paso-sub">Un toque. Es lo que le dice a Compras qué falta en el local.</p>
       </div>
     </div>
@@ -502,7 +502,11 @@
       i: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>' }
   ];
 
-  var TALLES = ['S', 'M', 'L', 'XL', 'XXL', '38', '40', '42', '44', '46', '48'];
+  /* En dos filas a propósito. Once chips en una sola tira obligaban a barrer
+     todo el renglón para encontrar el talle: las letras y los números son dos
+     escalas distintas y el vendedor ya sabe cuál de las dos está buscando. */
+  var TALLES_LETRA  = ['S', 'M', 'L', 'XL', 'XXL'];
+  var TALLES_NUMERO = ['38', '40', '42', '44', '46', '48'];
 
   /* Sembrados con lo que el equipo YA escribió en la planilla, para que el
      autocompletado sirva desde el primer día. Se le suman los nombres y
@@ -516,7 +520,6 @@
     'Saco Robert', 'Pantalón Nueva York Wide', 'Pantalón Kazan', 'Pantalón Relax',
     'Jean Biel', 'Jeans', 'Joggin', 'Chomba Lumbus', 'Camisas', 'Perfume', 'Bóxer'];
 
-  var CATEGORIAS = ['Campera', 'Buzo', 'Remera', 'Pantalón', 'Jean', 'Sweater', 'Camisa', 'Perfume'];
 
   /* Claves de localStorage. */
   var K_LOCAL = 'nc_local', K_VEND = 'nc_vendedor', K_VENDS = 'nc_vendedores',
@@ -555,28 +558,21 @@
   /* Los talles se acumulan: en la planilla ya hay cargas tipo "s, m" o "M/L"
      porque el cliente busca más de una medida. */
   function pintarTalles() {
-    $('chipsTalle').innerHTML = TALLES.map(function (t) {
-      return '<button type="button" class="chip" data-v="' + t + '">' + t + '</button>';
-    }).join('');
-    Array.prototype.forEach.call($('chipsTalle').children, function (b) {
+    var fila = function (arr) {
+      return '<div class="chips">' + arr.map(function (t) {
+        return '<button type="button" class="chip" data-v="' + t + '">' + t + '</button>';
+      }).join('') + '</div>';
+    };
+    $('chipsTalle').innerHTML = fila(TALLES_LETRA) + fila(TALLES_NUMERO);
+
+    // querySelectorAll y no children: ahora los hijos directos son las dos
+    // filas, no los chips.
+    Array.prototype.forEach.call($('chipsTalle').querySelectorAll('.chip'), function (b) {
       b.onclick = function () {
         var i = talles.indexOf(b.dataset.v);
         if (i === -1) talles.push(b.dataset.v); else talles.splice(i, 1);
         b.classList.toggle('sel', i === -1);
         $('f_talle').value = talles.join(' / ');
-      };
-    });
-  }
-
-  function pintarSugerencias() {
-    $('sugProductos').innerHTML = CATEGORIAS.map(function (c) {
-      return '<button type="button" class="sug" data-v="' + esc(c) + '">' + esc(c) + '</button>';
-    }).join('');
-    Array.prototype.forEach.call($('sugProductos').children, function (b) {
-      b.onclick = function () {
-        var campo = $('f_producto');
-        campo.value = campo.value.trim() ? campo.value.trim() + ' ' + b.dataset.v.toLowerCase() : b.dataset.v;
-        campo.focus();
       };
     });
   }
@@ -855,7 +851,7 @@
     });
     motivo = ''; talles = [];
     Array.prototype.forEach.call($('chipsMotivo').children, function (b) { b.classList.remove('sel'); });
-    Array.prototype.forEach.call($('chipsTalle').children, function (b) { b.classList.remove('sel'); });
+    Array.prototype.forEach.call($('chipsTalle').querySelectorAll('.chip'), function (b) { b.classList.remove('sel'); });
     ocultarError('errWsp', 'cWsp');
     ocultarError('errMotivo');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -867,7 +863,6 @@
     pintarLocales();
     pintarMotivos();
     pintarTalles();
-    pintarSugerencias();
     pintarListas();
     pintarCola();
 

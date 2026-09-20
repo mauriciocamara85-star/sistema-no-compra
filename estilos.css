@@ -274,12 +274,21 @@ a { color: var(--acc-txt); }
 }
 .bloque-tit + .campos, .bloque-tit + .chips { margin-top: 14px; }
 
-/* Puntito violeta que marca los bloques obligatorios sin tener que escribir
-   "obligatorio" en cada uno. */
-.req {
-  width: 7px; height: 7px; border-radius: 50%;
-  background: var(--acc); flex-shrink: 0;
-  box-shadow: 0 0 0 3px var(--acc-soft);
+/* "obligatorio" escrito, no un puntito de color.
+   Antes era un punto al lado del título: sin leyenda en ninguna parte, quien
+   abría la app por primera vez lo leía como adorno. La palabra ocupa unos
+   pixeles más y no hay que explicarla. Usa el mismo tono que el "opcional"
+   de los campos, al revés: acá el color marca que hace falta. */
+.lbl-req {
+  font: 600 10.5px/1 var(--sans);
+  letter-spacing: .4px;
+  text-transform: uppercase;
+  color: var(--acc-txt);
+  background: var(--acc-soft);
+  border: 1px solid var(--acc-line);
+  border-radius: var(--r-pill);
+  padding: 4px 8px;
+  flex-shrink: 0;
 }
 
 /* ── CAMPOS ────────────────────────────────────────────────────────────── */
