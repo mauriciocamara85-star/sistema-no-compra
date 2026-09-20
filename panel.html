@@ -179,6 +179,26 @@
   .seg-campos .campo.ancho { grid-column: 1 / -1; }
   @media (max-width: 520px) { .seg-campos { grid-template-columns: 1fr; } }
   .seg-campos textarea { min-height: 62px; }
+
+  /* ── En la PC de Atención al Cliente ───────────────────────────────────
+     Las fichas pasan a dos columnas. Trabajando en una pantalla ancha, ver
+     seis pendientes a la vez en lugar de dos cambia cómo se ataca la lista:
+     se elige a quién escribir en vez de ir bajando de a uno.
+
+     align-items:start deja que cada ficha mida lo suyo — una con
+     observaciones larga no estira a la de al lado. */
+  @media (min-width: 1100px) {
+    :root { --tope: 1180px; }
+    #lista {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .reg { margin-bottom: 0; }
+    /* El vacío no se parte por la mitad: ocupa las dos columnas. */
+    #lista > .vacio, #lista > .skel:nth-child(3) { grid-column: 1 / -1; }
+  }
 </style>
 </head>
 <body>

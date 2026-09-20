@@ -29,8 +29,10 @@
   /* ── Sólo de esta pantalla ─────────────────────────────────────────────
      Lo compartido con el panel vive en estilos.css. */
 
-  /* Deja aire para que la barra de guardar no tape el último campo. */
-  body { padding-bottom: 110px; }
+  /* Deja aire para que la barra de guardar no tape el último campo ni el pie.
+     La barra mide ~98px (botón de 50 + la nota + los dos padding); 135 deja
+     margen de sobra incluso con el texto del sistema agrandado. */
+  body { padding-bottom: 135px; }
 
   /* Identidad ya elegida: reemplaza a los dos bloques de arriba para que el
      vendedor que ya cargó una vez abra la app directo en "el cliente". */
@@ -162,6 +164,39 @@
     background: var(--acc-soft);
     color: var(--acc-txt);
     font-size: 13.5px; font-weight: 700;
+  }
+
+  /* ── En la PC del local ────────────────────────────────────────────────
+     El mismo formulario en dos columnas. En una pantalla ancha, la columna
+     única de 660px obligaba a scrollear cuatro pantallas para cargar algo que
+     entra casi entero de una sola vez.
+
+     Los bloques que ocupan el ancho completo son los que lo necesitan: la
+     grilla de 14 locales, y las barras que son avisos y no campos. El resto
+     —cliente, qué buscaba, motivo, extra— cae de a dos.
+
+     align-items:start es lo que evita que un bloque corto se estire hasta la
+     altura del de al lado. */
+  @media (min-width: 940px) {
+    :root { --tope: 980px; }
+    .hoja {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .hoja > .aviso, .hoja > .ident, .hoja > .pie,
+    #bloqueLocal, #bloqueVendedor { grid-column: 1 / -1; }
+    .bloque, .ident, .aviso { margin-bottom: 0; }
+
+    /* Vuelven a dos columnas. Los motivos pasan a tres arriba de 560px, pero
+       eso se mide contra la ventana, no contra el bloque: acá cada bloque mide
+       la mitad, y con tres columnas "Fue a comparar" se parte de nuevo. */
+    .chips-motivo { grid-template-columns: repeat(2, 1fr); }
+
+    /* El botón no sigue al ancho de la página: 980px de naranja es un cartel,
+       no un botón. */
+    .barra-in { max-width: 440px; }
   }
 </style>
 </head>
