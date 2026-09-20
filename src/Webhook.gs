@@ -34,13 +34,30 @@
 const ENDPOINT = 'https://script.google.com/macros/s/AKfycbxI373Id-FVEbyhErLlM5wvvyVApwdEBl2tmg_WfVgvXXpdy6ZgGDB0fGdHBQFHMVqu/exec';
 
 /**
- * Las dos etapas que Kommo no deja renombrar, traducidas al vocabulario de la
- * planilla. El resto de las etapas del embudo se llaman IGUAL que los estados
- * de la planilla —están calcadas a propósito—, así que se traducen solas.
+ * Las dos etapas de cierre, por id.
+ *
+ * El 142 y el 143 son fijos en TODAS las cuentas y en todos los embudos de
+ * Kommo: son las únicas dos etapas del sistema. Se traducen por id y no por
+ * nombre porque el nombre depende del idioma de la cuenta —la API las llama
+ * "Closed - won" pero la pantalla dice "Venta realizada"— y el día que eso
+ * cambie, una venta cerrada dejaría de llegar a la planilla en silencio.
+ */
+const ETAPAS_CIERRE = {
+  '142': 'Cerrado - compró',
+  '143': 'Cerrado - no compró'
+};
+
+/**
+ * Y por nombre, como red de contención: si algún día Kommo cambia esos ids,
+ * el puente sigue entendiendo las dos etapas. El resto de las etapas del
+ * embudo se llaman IGUAL que los estados de la planilla —están calcadas a
+ * propósito—, así que se traducen solas.
  */
 const ETAPAS_TRADUCIDAS = {
-  'closed - won':  'Cerrado - compró',
-  'closed - lost': 'Cerrado - no compró'
+  'closed - won':      'Cerrado - compró',
+  'closed - lost':     'Cerrado - no compró',
+  'venta realizada':   'Cerrado - compró',
+  'venta perdida':     'Cerrado - no compró'
 };
 
 // ── Puesta en marcha ───────────────────────────────────────────────────────
@@ -274,6 +291,11 @@ function filaDelLead_(leadId) {
  *                  justamente un registro que todavía nadie tocó)
  */
 function estadoDeEtapa_(statusId) {
+  // El cierre primero y sin preguntarle nada a Kommo: es el caso que mueve
+  // plata y el único que no puede fallar por un tema de idioma.
+  const cierre = ETAPAS_CIERRE[String(statusId).trim()];
+  if (cierre) return cierre;
+
   const nombre = (typeof etapasKommo_ === 'function') ? etapasKommo_()[String(statusId)] : '';
   if (!nombre) return '';
 
