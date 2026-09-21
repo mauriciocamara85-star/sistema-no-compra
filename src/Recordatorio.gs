@@ -118,6 +118,26 @@ function recordatorioNumeros_() {
  * Se puede correr a mano desde el editor para ver qué diría hoy.
  */
 function recordatorioDiario() {
+  recordatorioMandar_(false);
+}
+
+/**
+ * El mismo mensaje pero mandado sí o sí, para verlo cuando uno quiere.
+ *
+ * Existe porque la regla del silencio deja al que configura sin saber si
+ * funcionó: se instala, no hay pendientes, no sale nada, y no hay forma de
+ * distinguir "anda y no tenía nada que decir" de "está roto".
+ *
+ * **Función aparte y no un parámetro de recordatorioDiario:** los
+ * disparadores de Apps Script le pasan un objeto de evento al primer
+ * argumento, siempre. Un `forzar` posicional estaría en true todas las
+ * mañanas y la regla del silencio no existiría nunca.
+ */
+function recordatorioAhora() {
+  recordatorioMandar_(true);
+}
+
+function recordatorioMandar_(forzar) {
   if (typeof telegramActivo_ !== 'function' || !telegramActivo_()) {
     console.log('El aviso por Telegram está apagado: no hay a dónde mandarlo.');
     return;
@@ -132,9 +152,10 @@ function recordatorioDiario() {
   }
 
   /* Silencio cuando no hay nada. Ver la cabecera: un "cero y cero" diario
-     entrena a saltearse el grupo. */
-  if (!n.ayer && !n.pendientes) {
-    console.log('Ni entradas ayer ni pendientes: no se manda nada.');
+     entrena a saltearse el grupo. Salvo que lo estén pidiendo a propósito. */
+  if (!n.ayer && !n.pendientes && !forzar) {
+    console.log('Ni entradas ayer ni pendientes: no se manda nada. ' +
+                'Para verlo igual, correr recordatorioAhora().');
     return;
   }
 
@@ -227,7 +248,9 @@ function instalarRecordatorio() {
   console.log('✓ Recordatorio instalado: todos los días alrededor de las ' +
               RECORDATORIO_HORA + ' de la mañana.');
   console.log('Mandando uno ahora para probar…');
-  recordatorioDiario();
+  /* Forzado: si se instala un día tranquilo, la regla del silencio haría que
+     la prueba no mande nada y quien lo instaló se queda sin saber si anda. */
+  recordatorioAhora();
 }
 
 /** Apaga el recordatorio diario. El aviso de cada carga sigue igual. */

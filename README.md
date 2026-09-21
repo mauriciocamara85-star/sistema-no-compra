@@ -348,7 +348,8 @@ venta: un "0 volvieron · $ 0" todas las mañanas del primer mes no informa
 nada y desanima a los que sí están cargando y llamando.
 
 Se instala corriendo `instalarRecordatorio()` **una vez** desde el editor, que
-además manda uno en el momento para probar. `quitarRecordatorio()` lo apaga
+además manda uno en el momento para probar. `recordatorioAhora()` manda uno en el momento aunque no haya nada que
+contar —sirve para ver el formato sin esperar—, y `quitarRecordatorio()` lo apaga
 sin tocar el aviso de cada carga, y la hora vive en `RECORDATORIO_HORA`.
 
 ## Corregir lo que cargaste mal
