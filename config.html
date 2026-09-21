@@ -107,19 +107,29 @@
   .vend button svg { width: 13px; height: 13px; }
   .vend-vacio { font-size: 13.5px; color: var(--txt-3); font-style: italic; }
 
-  .agregar { display: flex; gap: 8px; }
-  .agregar input { flex: 1; }
+  /* La gente del local: se lee, no se carga. Los nombres los pone cada uno
+     desde la pantalla de carga. */
+  .gente { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
+  .gente-txt { font-size: 13.5px; color: var(--txt-2); }
+  .gente-txt b { color: var(--txt); font-weight: 700; }
+  .gente-txt.flojo { color: var(--txt-3); }
+  .gente-mas {
+    margin-top: 8px;
+    background: none; border: 0; padding: 0;
+    font-size: 12.5px; font-weight: 700;
+    color: var(--acc-txt);
+    text-decoration: underline; text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .gente .vends { margin: 10px 0 0; }
 
   /* El control de tema, ahora que vive en el cuerpo de la página y no en una
      esquina: al lado va la frase que dice para qué es cada uno. */
   .tema-fila { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .tema-txt { font-size: 13px; color: var(--txt-3); }
 
-  /* Objetivo: cuántos registros se esperan por período. */
-  .meta {
-    margin-top: 16px; padding-top: 16px;
-    border-top: 1px solid var(--line);
-  }
+  /* Objetivo: cuántos registros se esperan por período. Es lo primero de lo
+     que se abre, así que no lleva línea arriba. */
   .meta-fila { display: flex; gap: 8px; align-items: flex-end; }
   .meta-fila .campo { flex: 1; }
   .meta-nota { font-size: 12px; color: var(--txt-3); margin-top: 8px; }
@@ -241,7 +251,7 @@
 
   <div class="bloque" id="cajaLocales">
     <h2 class="bloque-tit">Los locales</h2>
-    <p class="bloque-sub">Tocá uno para ver su gente y su objetivo. Lo que cambies acá lo ven todos los locales.</p>
+    <p class="bloque-sub">Tocá uno para ponerle su objetivo. Lo que cambies acá lo ven todos los locales. Los vendedores se anotan solos desde la pantalla de carga.</p>
     <div id="locales"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
   </div>
 
@@ -331,33 +341,45 @@
     conectar();
   }
 
+  /**
+   * Lo que se abre al tocar un local.
+   *
+   * Es el OBJETIVO y nada más. Los vendedores ya no se cargan acá: se anotan
+   * solos desde la pantalla de carga —el que no está en la lista escribe su
+   * nombre, toca "Anotarme" y queda—, así que esta pantalla dejó de ser el
+   * trámite entre alguien que entra a trabajar un sábado y poder registrar.
+   *
+   * Lo único que queda de la gente es poder LEER quiénes son y sacar a
+   * alguien, escondido atrás de un botón: con nombres que se escriben solos,
+   * el día que entra un "Jaun" alguien tiene que poder limpiarlo.
+   */
   function cuerpoLocal(l) {
-    var vends = l.vendedores.length
-      ? l.vendedores.map(function (v) {
-          return '<span class="vend">' + esc(v) +
-                 '<button type="button" data-sacar="' + esc(v) + '" title="Sacar a ' + esc(v) + '" aria-label="Sacar a ' + esc(v) + '">' + X + '</button></span>';
-        }).join('')
-      : '<span class="vend-vacio">Todavía no hay nadie cargado. Mientras tanto, en este local el nombre se escribe a mano.</span>';
+    var obj = l.objetivo || { periodo: 'dia', meta: '' };
 
-    var obj = l.objetivo || { periodo: 'semana', meta: '' };
-
-    return '<div class="vends">' + vends + '</div>' +
-      '<div class="agregar">' +
-        '<input type="text" placeholder="Nombre del vendedor" data-nuevo autocomplete="off" autocapitalize="words">' +
-        '<button type="button" class="btn btn-pri btn-chico" data-agregar>Agregar</button>' +
+    var meta =
+      '<div class="meta-fila">' +
+        '<div class="campo"><label>Objetivo de registros</label>' +
+          '<input type="number" inputmode="numeric" min="0" placeholder="0" value="' + esc(obj.meta) + '" data-meta></div>' +
+        '<div class="campo"><label>Por</label>' +
+          '<select data-periodo>' + datos.periodos.map(function (p) {
+            return '<option value="' + p + '"' + (p === obj.periodo ? ' selected' : '') + '>' + nombrePeriodo(p) + '</option>';
+          }).join('') + '</select></div>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-guardar>Guardar</button>' +
       '</div>' +
-      '<div class="meta">' +
-        '<div class="meta-fila">' +
-          '<div class="campo"><label>Objetivo de registros</label>' +
-            '<input type="number" inputmode="numeric" min="0" placeholder="0" value="' + esc(obj.meta) + '" data-meta></div>' +
-          '<div class="campo"><label>Por</label>' +
-            '<select data-periodo>' + datos.periodos.map(function (p) {
-              return '<option value="' + p + '"' + (p === obj.periodo ? ' selected' : '') + '>' + nombrePeriodo(p) + '</option>';
-            }).join('') + '</select></div>' +
-          '<button type="button" class="btn btn-sec btn-chico" data-guardar>Guardar</button>' +
-        '</div>' +
-        '<div class="meta-nota">Cuántos no-compra se espera que cargue este local. En 0 queda sin objetivo propio.</div>' +
-      '</div>';
+      '<div class="meta-nota">Cuántos no-compra se espera que cargue este local. En 0 queda sin objetivo propio.</div>';
+
+    var gente = l.vendedores.length
+      ? '<p class="gente-txt">En la lista: <b>' + l.vendedores.map(esc).join('</b>, <b>') + '</b>.</p>' +
+        '<button type="button" class="gente-mas" data-editar>Sacar a alguien</button>' +
+        '<div class="vends" data-chips hidden>' +
+          l.vendedores.map(function (v) {
+            return '<span class="vend">' + esc(v) +
+                   '<button type="button" data-sacar="' + esc(v) + '" title="Sacar a ' + esc(v) + '" aria-label="Sacar a ' + esc(v) + '">' + X + '</button></span>';
+          }).join('') +
+        '</div>'
+      : '<p class="gente-txt flojo">Todavía no se anotó nadie. Se anotan solos: el que no está en la lista escribe su nombre en la pantalla de carga y queda.</p>';
+
+    return meta + '<div class="gente">' + gente + '</div>';
   }
 
   function nombrePeriodo(p) {
@@ -373,16 +395,15 @@
         pintarLocales();
       };
 
-      var campoNuevo = caja.querySelector('[data-nuevo]');
-      var agregar = function () {
-        var nombre = campoNuevo.value.trim();
-        if (!nombre) { campoNuevo.focus(); return; }
-        mandar({ accion: 'agregarVend', local: local, nombre: nombre, quien: quien }, local,
-                function (res) { campoNuevo.value = ''; avisar('ok', res.msg || 'Listo.'); });
-      };
-      if (campoNuevo) {
-        caja.querySelector('[data-agregar]').onclick = agregar;
-        campoNuevo.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); agregar(); } };
+      // Sacar a alguien está escondido: es lo raro, y es lo único que se
+      // puede hacer mal con una lista que se llena sola.
+      var editar = caja.querySelector('[data-editar]');
+      if (editar) {
+        editar.onclick = function () {
+          var chips = caja.querySelector('[data-chips]');
+          chips.hidden = !chips.hidden;
+          editar.textContent = chips.hidden ? 'Sacar a alguien' : 'Listo';
+        };
       }
 
       Array.prototype.forEach.call(caja.querySelectorAll('[data-sacar]'), function (b) {

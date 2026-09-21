@@ -549,7 +549,9 @@ a { color: var(--acc-txt); }
   }
   .rail .quien-sel option { background-color: #212C48; color: var(--rail-txt); }
   .rail .quien-sel { padding-right: 24px; background-position: right 8px center; }
-  .rail .quien-txt { margin-top: 6px; }
+  /* En 146px de ancho el campo y el botón no entran al lado: se apilan. */
+  .rail .quien-nuevo { flex-direction: column; gap: 6px; margin-top: 6px; }
+  .rail .quien-ok { width: 100%; min-height: 32px; padding: 0 8px; font-size: 12.5px; }
   .rail .quien-sel:focus, .rail .quien-txt:focus {
     background-color: #2A3760;
     border-color: var(--acc);

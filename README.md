@@ -277,9 +277,20 @@ En esa misma pantalla está ahora el **cambio de tema** (claro/oscuro). Vivía
 en la esquina de las tres cabeceras y es algo que se toca una vez: su lugar
 es al lado de la otra cosa que se guarda en este dispositivo, que es el local.
 
-**Por qué el nombre dejó de escribirse a mano:** "Mau", "mau" y "Mauricio" son
-tres personas distintas para cualquier conteo. Sin una lista cerrada no se
-puede rankear a nadie ni ponerle un objetivo.
+**Quién carga a la gente: la gente.** El que no está en la lista escribe su
+nombre en la pantalla de carga, toca **Anotarme** y queda en la lista del
+local —`agregarVend`, sin PIN—: del toque siguiente en adelante aparece en el
+desplegable de todos los celulares de la sucursal, escrito siempre igual. Si
+no hay señal no se pierde: el nombre entra igual cuando se envía su primer
+registro (`sumarVendedor_`). Por eso `/config.html` ya no tiene un campo para
+cargar vendedores a mano; lo único que queda de la gente ahí es poder leer
+quiénes son y sacar a alguien, escondido atrás de un botón: con nombres que
+se escriben solos, el día que entra un "Jaun" alguien tiene que poder
+limpiarlo.
+
+**Por qué el nombre igual sale de una lista:** "Mau", "mau" y "Mauricio" son
+tres personas distintas para cualquier conteo. Escribirlo a mano es la
+excepción —una vez, la primera—, no la forma de todos los días.
 
 **Por qué esto no tiene PIN.** El panel sí lo tiene, porque ahí están los
 teléfonos de los clientes. Acá hay nombres de vendedores y números de meta.

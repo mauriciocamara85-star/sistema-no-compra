@@ -85,7 +85,11 @@
      La última opción de la lista abre el campo de texto, para el que todavía
      no está cargado en el equipo del local. */
   .quien { margin-top: 8px; }
-  .quien-txt { margin-top: 7px; }
+  /* Escribir el nombre y anotarse son un solo gesto, así que el campo y el
+     botón van juntos: el que no está en la lista queda en la lista del local
+     desde acá, no cuando alguien se acuerde de cargarlo en Configuración. */
+  .quien-nuevo { display: flex; gap: 8px; margin-top: 7px; }
+  .quien-nuevo .quien-txt { flex: 1; min-width: 0; }
   .quien.mal .quien-sel, .quien.mal .quien-txt {
     border-color: var(--bad);
     box-shadow: 0 0 0 4px var(--bad-soft);
@@ -597,7 +601,10 @@
     <b class="rail-local" id="railLocal">Elegí tu local</b>
     <div class="quien" id="quienRail" hidden>
       <select class="quien-sel" aria-label="Quién está cargando"></select>
-      <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" hidden>
+      <div class="quien-nuevo" hidden>
+        <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
+        <button type="button" class="btn btn-pri btn-chico quien-ok">Anotarme</button>
+      </div>
     </div>
     <button type="button" class="rail-cambiar" id="btnRailLocal" onclick="alternarLocal()">Elegir local</button>
   </div>
@@ -667,7 +674,10 @@
       <span class="ident-vend" id="identVend">Se elige una sola vez y queda guardado</span>
       <div class="quien" id="quienBarra" hidden>
         <select class="quien-sel" aria-label="Quién está cargando"></select>
-        <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" hidden>
+        <div class="quien-nuevo" hidden>
+          <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
+          <button type="button" class="btn btn-pri btn-chico quien-ok">Anotarme</button>
+        </div>
       </div>
     </div>
     <button type="button" class="btn btn-sec btn-chico" id="btnIdentLocal" onclick="alternarLocal()">Elegir</button>
@@ -959,7 +969,8 @@
   function cadaQuien(fn) {
     CAJAS_QUIEN.forEach(function (id) {
       var caja = $(id);
-      if (caja) fn(caja, caja.querySelector('.quien-sel'), caja.querySelector('.quien-txt'));
+      if (caja) fn(caja, caja.querySelector('.quien-sel'), caja.querySelector('.quien-txt'),
+                   caja.querySelector('.quien-nuevo'), caja.querySelector('.quien-ok'));
     });
   }
 
@@ -980,14 +991,14 @@
   function pintarQuien() {
     var aMano = escribiendo || (!!vendedor && equipo.indexOf(vendedor) === -1);
 
-    cadaQuien(function (caja, sel, txt) {
+    cadaQuien(function (caja, sel, txt, nuevo) {
       // Sin local no hay lista de quién: primero se elige el local.
       caja.hidden = !local;
       if (!local) return;
 
       if (!equipo.length) {          // sin lista todavía: se escribe a mano
         sel.hidden = true;
-        txt.hidden = false;
+        nuevo.hidden = false;
         if (document.activeElement !== txt) txt.value = vendedor;
         return;
       }
@@ -1001,7 +1012,7 @@
         '<option value="' + OTRO + '">No estoy en la lista</option>';
       sel.value = aMano ? OTRO : (vendedor || '');
 
-      txt.hidden = !aMano;
+      nuevo.hidden = !aMano;
       if (aMano && document.activeElement !== txt) txt.value = vendedor;
     });
   }
@@ -1021,7 +1032,7 @@
   }
 
   function conectarQuien() {
-    cadaQuien(function (caja, sel, txt) {
+    cadaQuien(function (caja, sel, txt, nuevo, ok) {
       sel.onchange = function () {
         if (sel.value === OTRO) {
           escribiendo = true;
@@ -1034,13 +1045,49 @@
         escribiendo = false;
         fijarVendedor(sel.value);
       };
-      // Al salir del campo queda fijado. Enter hace lo mismo: en un celular
-      // el teclado tapa medio formulario y nadie va a tocar afuera a propósito.
+      // Al salir del campo el nombre ya queda puesto en ESTE dispositivo,
+      // aunque no se toque "Anotarme": nadie tiene que quedarse sin poder
+      // cargar por no haber apretado un botón.
       txt.onblur = function () { if (txt.value.trim()) fijarVendedor(txt.value); };
       txt.onkeydown = function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); txt.blur(); }
+        if (e.key === 'Enter') { e.preventDefault(); anotarme(txt.value); }
       };
+      ok.onclick = function () { anotarme(txt.value); };
     });
+  }
+
+  /**
+   * El que no está en la lista se anota a sí mismo, desde acá.
+   *
+   * Hace las dos cosas de una: queda como quien está cargando en ESTE
+   * dispositivo —eso es local y no necesita señal— y entra en la lista del
+   * local, que es lo que hace que de acá en adelante aparezca en el
+   * desplegable de todos los celulares de la sucursal, escrito siempre igual.
+   *
+   * Antes esto sólo pasaba cuando esa persona guardaba su primer registro
+   * (sumarVendedor_, en el backend). Sigue pasando: si acá no hay señal no se
+   * pierde nada, el nombre se suma igual con el primer cliente que cargue.
+   */
+  function anotarme(nombre) {
+    var limpio = String(nombre || '').trim();
+    if (!local) { avisar('err', 'Primero elegí tu local.'); return; }
+    if (!limpio) { avisar('err', 'Escribí tu nombre.'); return; }
+
+    fijarVendedor(limpio);
+
+    llamar({ accion: 'agregarVend', local: local, nombre: limpio, quien: limpio })
+      .then(function (res) {
+        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo anotar el nombre.'); return; }
+        equipo = res.vendedores || equipo;
+        guardarJSON(K_EQUIPO, { local: local, vendedores: equipo });
+        escribiendo = false;        // ya está en la lista: se elige como cualquiera
+        pintarQuien();
+        pintarEquipo(metricas);
+        avisar('ok', limpio + ' quedó en la lista de ' + nombreLocal(local) + '.');
+      })
+      .catch(function () {
+        avisar('info', 'Sin señal. Podés cargar igual: tu nombre entra en la lista con tu primer registro.');
+      });
   }
 
   /**
