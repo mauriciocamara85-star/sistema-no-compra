@@ -293,10 +293,20 @@ el grupo* y se elige por nombre. Al guardar **manda un mensaje de prueba**, y
 si no sale no guarda nada: enterarse de que el aviso está roto cuando un
 cliente no recibió el llamado es tarde.
 
-> **La trampa de `getUpdates`:** Telegram sólo devuelve los mensajes de las
-> últimas 24 horas. Por eso la pantalla pide escribir algo en el grupo
-> nombrando al bot justo antes de buscar; sin un mensaje reciente la lista
-> vuelve vacía aunque el bot esté bien puesto.
+> **Las dos trampas de `getUpdates`.** La primera: Telegram sólo devuelve los
+> mensajes de las últimas 24 horas, así que sin uno reciente la lista vuelve
+> vacía aunque el bot esté bien puesto. La segunda, peor porque no se ve: con
+> el **modo privacidad** —prendido de fábrica— una mención con `@` puede no
+> llegarle nunca al bot. Por eso la pantalla pide un **comando con barra**
+> (`/start@el_bot`), que le llega siempre. También quedó afuera por defecto
+> `my_chat_member`, el evento de "agregaron el bot al grupo": hay que pedirlo
+> con `allowed_updates`, y sólo sirve para los grupos donde el bot entra
+> después de haberlo pedido.
+
+> **Si igual no aparece**, `telegramDiagnostico()` desde el editor separa las
+> cuatro causas —token, webhook, privacidad o sin mensajes— e imprime cuál es.
+> Con el id que devuelve, `telegramUsarChat(id)` deja todo andando sin pasar
+> por la pantalla.
 
 **El token no vuelve nunca al navegador.** `getConfig` dice si hay uno puesto
 y a qué grupo llega, no cuál es — el mismo criterio que el de Kommo. Y el

@@ -491,12 +491,15 @@ function telegramBuscar(pin, token) {
          siempre es haberlo mencionado con un usuario parecido pero distinto,
          y así el mensaje no le llegó nunca. */
       const nombre = telegramNombreBot_(limpio);
+      /* Se pide un COMANDO y no una mención: un comando con barra siempre le
+         llega al bot, tenga el modo privacidad prendido o no. Con las
+         menciones se pierden cuarenta minutos sin entender por qué. */
       return {
         status: 'error',
         msg: 'No encontré ningún chat. Escribí en el grupo ' +
-             (nombre ? ('exactamente "' + nombre + ' hola"') : 'un mensaje nombrando al bot') +
-             ' y probá de nuevo. Ojo con el nombre: el bot sólo recibe los mensajes que lo ' +
-             'nombran a él, y Telegram sólo cuenta los de las últimas 24 horas.'
+             (nombre ? ('"/start' + nombre + '"') : '"/start@" y el nombre del bot') +
+             ' y probá de nuevo. Tiene que ser un comando con barra —una mención con @ ' +
+             'puede no llegarle— y Telegram sólo cuenta los mensajes de las últimas 24 horas.'
       };
     }
     return { status: 'ok', chats: chats };

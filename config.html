@@ -657,7 +657,11 @@
       '<div class="campo"><label for="tgPin">PIN del panel</label>' +
         '<input type="password" id="tgPin" inputmode="numeric" maxlength="12" placeholder="••••" ' +
         'value="' + esc(leer(K_PIN)) + '"></div>' +
-      '<div class="meta-nota">Antes de buscar, escribí un mensaje cualquiera en el grupo nombrando al bot: Telegram sólo cuenta los mensajes recientes.</div>' +
+      /* El comando con barra y no una mención con @: un comando SIEMPRE le
+         llega al bot, tenga el modo privacidad prendido o no. Las menciones
+         dependen de esa configuración, que viene prendida de fábrica, y
+         cuando no llegan no hay forma de darse cuenta desde acá. */
+      '<div class="meta-nota">Antes de buscar, escribí en el grupo <b>/start@</b> seguido del nombre del bot (por ejemplo <b>/start@mi_bot</b>). Tiene que ser un comando con barra: una mención con @ puede no llegarle.</div>' +
       '<div class="avisos-botones">' +
         '<button type="button" class="btn btn-pri btn-chico" id="tgBuscar">Buscar el grupo</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="tgCancelar">Cancelar</button>' +
