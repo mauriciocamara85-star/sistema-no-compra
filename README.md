@@ -341,6 +341,12 @@ después se saltea; dos renglones se leen siempre.
 diario que dice "cero y cero" enseña a ignorar el grupo, y el día que diga
 algo importante ya nadie lo va a estar leyendo.
 
+Cierra con **el acumulado del mes** —cuántos volvieron a comprar y cuánta
+plata— separado del resto: es la única línea que no le pide nada a nadie y
+contesta para qué sirvió todo lo de arriba. Aparece recién cuando hay una
+venta: un "0 volvieron · $ 0" todas las mañanas del primer mes no informa
+nada y desanima a los que sí están cargando y llamando.
+
 Se instala corriendo `instalarRecordatorio()` **una vez** desde el editor, que
 además manda uno en el momento para probar. `quitarRecordatorio()` lo apaga
 sin tocar el aviso de cada carga, y la hora vive en `RECORDATORIO_HORA`.
