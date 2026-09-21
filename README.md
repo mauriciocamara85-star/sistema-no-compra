@@ -373,16 +373,31 @@ dígitos, porque la planilla guarda `2234979871` y Kommo `+5492234979871`.
 
 ## El tablero del local
 
-El formulario es un tablero de dos columnas: a la izquierda los tres pasos, a
-la derecha los números **del local que está cargando** y la lista del equipo.
-Salen de `{"accion":"metricas","local":"RIVADAVIA"}`, que no pide PIN por el
-mismo motivo que el equipo y los objetivos: son cuentas del propio local, no
-hay un dato de ningún cliente adentro.
+El formulario es un tablero, y el orden es el mismo en el celular y en la PC:
 
-En el celular no hay dos columnas: las cajas `.col-lado` y `.col-form` se
-deshacen con `display:contents` y cada pieza cae en su lugar —las tarjetas
-arriba de todo, el equipo al final, después de lo que el vendedor vino a
-hacer—. El orden lo fija `order`, no el html.
+```
+Hoy en Rivadavia                            domingo 20 de septiembre
+[ Registros hoy ]  [ Este mes ]  [ Recuperado este mes ]
+[ 1 El cliente  ]  [ 2 Qué buscaba ]  [ 3 Por qué se fue ]
+[ El equipo ───────────────────────────────────────────── ]
+Se guarda en la planilla…                        [ Guardar ]
+```
+
+Los números son **del local que está cargando** y salen de
+`{"accion":"metricas","local":"RIVADAVIA"}`, que no pide PIN por el mismo
+motivo que el equipo y los objetivos: son cuentas del propio local, no hay un
+dato de ningún cliente adentro.
+
+**En la PC entra todo sin scrollear, y eso manda sobre el resto de las
+decisiones.** Por eso los tres pasos van uno al lado del otro y no apilados
+—apilados el formulario mide 550px y con las tarjetas arriba no entra en una
+notebook—, por eso la barra de guardar deja de ser fija y se planta al final,
+y por eso hay tres escalones de compactado por alto de ventana (960, 730). El
+último saca texto de ayuda, nunca datos: ninguna tarjeta pierde su pie.
+Medido: entra entero de 660px de ventana para arriba.
+
+En el celular es una sola columna y el orden lo fija `order`, no el html: la
+caja `.col-form` se deshace con `display:contents`.
 
 | Tarjeta | De dónde sale |
 |---------|---------------|
@@ -445,6 +460,24 @@ está en el rail, la identidad también y el tema se mudó a Configuración. Son
 sin scrollear, en la PC del local. Las otras dos pantallas la conservan: ahí
 adentro hay cosas que no están en el rail (quién configura, actualizar,
 salir).
+
+### Quién está cargando
+
+Dos datos con dos tratos distintos:
+
+- **El local** se elige una vez por dispositivo, son 14 y no entran cómodos en
+  un desplegable: es lo único que abre un bloque (`#bloqueLocal`), y al elegir
+  se cierra solo.
+- **El vendedor** cambia todo el tiempo, así que su desplegable está SIEMPRE
+  puesto y elegir un nombre *es* el cambio: no hay que abrir, buscar ni
+  confirmar nada. La última opción de la lista abre el campo de texto, para el
+  que todavía no está en el equipo del local.
+
+El control existe dos veces —adentro de la barra de identidad en el celular y
+abajo del rail en la PC, `.quien`— porque el navegador no mueve un nodo de un
+lado al otro. Lo que manda no es el html sino la variable `vendedor`;
+`pintarQuien()` sincroniza las dos copias y `fijarVendedor()` es el único
+lugar donde se guarda.
 
 En el celular la barra de guardar se apoya **arriba** del rail acostado. El
 aire de seguridad del iPhone lo reserva el rail, que es el que toca el borde;

@@ -65,16 +65,54 @@
 
      Las otras dos pantallas la conservan: ahí adentro hay cosas que no están
      en el rail (quién configura, actualizar, salir). */
-  @media (min-width: 900px) {
-    .app-head { display: none; }
-    .ident { display: none; }
-  }
+  @media (min-width: 900px) { .app-head { display: none; } }
+  /* La barra de identidad se va recién cuando la ficha del rail tiene lugar
+     para el desplegable, que es a partir de 1200. Entre 900 y 1200 el rail es
+     angosto —sólo íconos— y la identidad sigue acá. */
+  @media (min-width: 1200px) { .ident { display: none; } }
   .ident-local {
     display: block;
     font: 700 16px/1.2 var(--display);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .ident-vend { font-size: 13px; color: var(--txt-2); }
+
+  /* ── Quién está cargando ───────────────────────────────────────────────
+     El mismo control en dos lugares: adentro de la barra de identidad
+     (celular) y abajo del rail (PC). Elegir un nombre de la lista ES el
+     cambio de vendedor: no hay que abrir, buscar ni confirmar nada.
+
+     La última opción de la lista abre el campo de texto, para el que todavía
+     no está cargado en el equipo del local. */
+  .quien { margin-top: 8px; }
+  .quien-txt { margin-top: 7px; }
+  .quien.mal .quien-sel, .quien.mal .quien-txt {
+    border-color: var(--bad);
+    box-shadow: 0 0 0 4px var(--bad-soft);
+  }
+  /* En la barra del celular el control es más bajo que un campo del
+     formulario: no es un dato que se carga, es un interruptor. Los 16px de
+     letra se quedan igual —con menos, iOS hace zoom al tocarlo—. */
+  .ident .quien-sel, .ident .quien-txt { padding: 9px 12px; }
+  .ident .quien-sel { background-position: right 12px center; padding-right: 34px; }
+
+  /* ── La cabecera del tablero ───────────────────────────────────────────
+     De quién son los números: "Hoy en Rivadavia" y la fecha. */
+  .tablero-cab {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .tablero-tit {
+    font: 700 20px/1.2 var(--display);
+    letter-spacing: -.4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tablero-fecha {
+    font-size: 12.5px; color: var(--txt-3);
+    white-space: nowrap;
+  }
+  @media (max-width: 560px) { .tablero-fecha { display: none; } }
 
   /* ── Los tres pasos ────────────────────────────────────────────────────
      Cliente → Qué buscaba → Por qué se fue. El número le dice al vendedor
@@ -122,36 +160,6 @@
     50%      { box-shadow: 0 0 0 9px transparent; }
   }
 
-
-  /* "No estoy en la lista" dejó de ser un chip punteado: ahora es la última
-     opción del desplegable de vendedores. Sigue siendo la salida de
-     emergencia y sigue estando siempre, aunque el local tenga la lista
-     completa. El día que entra alguien nuevo un sábado, eso es lo que evita
-     que el local deje de registrar. Ver pintarVendedores(). */
-
-  /* El campo de escribir el nombre cuelga del desplegable, pero NO es el
-     mismo campo: pegado uno contra el otro se lee como una sola caja partida
-     al medio. El aire es lo que dice "esto es lo otro que podés hacer".
-     Va en #cVend y no en el desplegable porque cuando el campo está oculto
-     (display:none) el margen no existe y la línea de abajo no se corre. */
-  #cVend { margin-top: 12px; }
-
-  /* Con el local ya elegido, la grilla de 14 sucursales se guarda y queda
-     esta línea en su lugar, al pie del bloque del vendedor. Va discreta a
-     propósito: cambiar de local es lo raro, no lo de todos los días. */
-  .linea-local {
-    margin-top: 14px; padding-top: 12px;
-    border-top: 1px solid var(--line);
-    font-size: 13px; color: var(--txt-2);
-  }
-  .linea-local b { color: var(--txt); font-weight: 700; }
-  .linea-local button {
-    background: none; border: 0; padding: 0;
-    font-size: 13px; font-weight: 700;
-    color: var(--acc-txt);
-    text-decoration: underline; text-underline-offset: 3px;
-    cursor: pointer;
-  }
 
   /* Talle en dos filas: letras arriba, números abajo. Ver pintarTalles(). */
   .talles { display: flex; flex-direction: column; gap: 8px; }
@@ -322,23 +330,25 @@
     #tarjetas { grid-template-columns: repeat(3, 1fr); }
   }
 
-  /* ── Hasta 1200: una sola columna ──────────────────────────────────────
-     Las dos cajas del tablero (.col-lado y .col-form) se deshacen —
-     display:contents— y sus piezas caen en la hoja como si nunca hubieran
-     estado envueltas. El orden lo fija `order` y es el del celular: los
-     números arriba, el formulario en el medio y el equipo al final, después
-     de lo que el vendedor vino a hacer. */
-  @media (max-width: 1199px) {
-    .hoja { display: flex; flex-direction: column; }
-    .col-lado, .col-form { display: contents; }
-    #tarjetas        { order: 1; }
-    #avisoCola       { order: 2; }
-    #ident           { order: 3; }
-    #bloqueIdentidad { order: 4; }
-    .pasos           { order: 5; }
-    #equipo          { order: 6; }
-    .pie             { order: 7; }
-  }
+  /* ── El orden de la pantalla ───────────────────────────────────────────
+     Es el mismo en el celular y en la PC, y es el de un tablero: el título,
+     los números arriba, el formulario en el medio y el equipo al final,
+     después de lo que el vendedor vino a hacer.
+
+     La caja .col-form se deshace —display:contents— y sus piezas caen en la
+     hoja como si nunca hubieran estado envueltas; existe sólo para que el
+     html se lea agrupado. Lo que cambia entre pantallas no es el orden: es
+     cómo se reparte cada pieza por dentro. */
+  .hoja { display: flex; flex-direction: column; }
+  .col-form { display: contents; }
+  .tablero-cab { order: 1; }
+  #tarjetas    { order: 2; }
+  #avisoCola   { order: 3; }
+  #ident       { order: 4; }
+  #bloqueLocal { order: 5; }
+  .pasos       { order: 6; }
+  #equipo      { order: 7; }
+  .cierre      { order: 8; }
 
   /* ── En la PC del local ────────────────────────────────────────────────
      El formulario repartido en columnas. En una pantalla ancha, la columna
@@ -389,99 +399,131 @@
 
   /* ── El tablero ────────────────────────────────────────────────────────
      Monitor de escritorio, que es la PC del local con la app abierta todo el
-     día. Dos columnas: el formulario a la izquierda y los números a la
-     derecha, de arriba abajo, como cualquier tablero.
+     día. La pantalla es una pila de franjas, como cualquier tablero:
 
-     Los números se van al costado por una razón de alto, no de gusto: en una
-     tira horizontal se comían 120px que le hacían falta al formulario para
-     entrar entero arriba del botón. De costado no le sacan nada a nadie
-     —esa columna, con el formulario al lado, estaría vacía igual— y de paso
-     quedan a la vista todo el tiempo mientras se carga. */
+         Hoy en Rivadavia                        sábado 20 de septiembre
+         [ Registros hoy ] [ Este mes ] [ Recuperado ]
+         [ 1 El cliente  ] [ 2 Qué buscaba ] [ 3 Por qué se fue ]
+         [ El equipo ─────────────────────────────────────────── ]
+         Se guarda en la planilla…                      [ Guardar ]
+
+     Los tres pasos se ponen UNO AL LADO DEL OTRO. Apilados en dos filas el
+     formulario mide 550px y, con las tarjetas arriba, no entra en la pantalla
+     de una notebook: había que scrollear, que es justo lo que no puede pasar.
+     De costado mide 300 y sobra lugar. El precio es que las tres tarjetas no
+     terminan a la misma altura —align-items:start, cada una mide lo suyo—: es
+     preferible un borde desparejo a un agujero adentro de una tarjeta. */
   @media (min-width: 1200px) {
     /* El tope existe igual: pasado cierto ancho, las columnas se vuelven tan
        anchas que el ojo tiene que viajar de más entre la etiqueta y el
        campo. */
     :root { --tope: 1420px; }
 
-    .hoja {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) 316px;
-      gap: 14px;
-      /* stretch y no start: las dos columnas terminan a la misma altura y el
-         tablero cierra parejo abajo. Con start, la de la derecha cortaba a
-         media pantalla y quedaba un escalón. */
-      align-items: stretch;
-      padding-top: 14px;
-    }
-    /* La columna de números va escrita ANTES en el html —para que en el
-       celular las tarjetas queden arriba de todo— y acá se manda sola a la
-       derecha. Sin estas dos líneas el navegador las reparte por orden de
-       aparición y el formulario termina en la columna angosta. */
-    .col-lado { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 12px; }
-    .col-form { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; }
+    .hoja { gap: 12px; padding-top: 16px; }
+    /* Con la hoja en flex, los márgenes de abajo de cada franja se sumarían
+       al gap: los espacios los maneja el gap y nada más. */
+    .tablero-cab, .kpis, .pasos, .bloque, .equipo { margin-bottom: 0; }
 
-    /* Apiladas, no en tira: es una columna angosta. */
-    .kpis { grid-template-columns: 1fr; gap: 10px; margin-bottom: 0; }
-    .kpi { padding: 11px 13px; }
+    /* Las tarjetas en fila, que es como se miran de un vistazo. */
+    .kpis { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+    .kpi { padding: 12px 14px; }
     .kpi-n { font-size: 24px; }
-    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 19px; }
-    .kpi-l { font-size: 11.5px; }
-    /* El equipo se queda con lo que sobra de la columna: es una lista, crece
-       sin deformarse y así las dos columnas terminan juntas. El total se va
-       al fondo del panel (margin-top:auto sobre .eq-pie). */
-    .equipo { margin-bottom: 0; flex: 1; display: flex; flex-direction: column; }
-    .eq-pie { margin-top: auto; }
+    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 20px; }
 
-    /* Las dos tarjetas de arriba, parejas. Difieren en un par de campos y
-       once píxeles de diferencia entre dos cajas gemelas se ven como un
-       error de alineación. */
-    .pasos { align-items: stretch; }
+    /* Los tres pasos, uno al lado del otro. */
+    .pasos { grid-template-columns: repeat(3, 1fr); align-items: start; }
+    #paso1 { grid-column: 1; grid-row: 1; }
+    #paso2 { grid-column: 2; grid-row: 1; }
+    #paso3 { grid-column: 3; grid-row: 1; }
+    /* Los seis motivos en dos columnas adentro de su tercio. */
+    .chips-motivo { grid-template-columns: repeat(2, 1fr); }
 
-    /* El formulario, compacto. Cada número de acá se midió contra el alto de
-       la ventana: lo que sobraba antes era padding, no información, y era
-       justo lo que hacía que el paso 3 terminara abajo del botón. */
-    .paso { padding: 16px 16px; }
-    .paso-cab { margin-bottom: 14px; }
-    .paso .campos { gap: 13px; }
-    .paso input, .paso textarea { padding: 13px 14px; }
-    #paso3 textarea { min-height: 72px; resize: vertical; }
-    .pie { margin-top: 10px; }
+    .paso { padding: 16px; }
+    .paso-cab { margin-bottom: 13px; }
+    .paso .campos { gap: 12px; }
+    .paso input, .paso textarea { padding: 12px 14px; }
+    #paso3 textarea { min-height: 64px; resize: vertical; }
 
-    /* Sin la nota, la barra de guardar mide 75px y no 98: el aire de abajo se
-       ajusta a lo que la barra tapa de verdad. Son los 17px que separaban
-       "entra justo" de "hay que scrollear un poquito". */
-    body { padding-bottom: 88px; }
-
-    /* El botón, centrado sobre el FORMULARIO y no sobre la ventana. La barra
-       es fija —vive afuera del tablero— así que se le copian las columnas:
-       mismo padding, mismo grid, mismo hueco de la derecha. Centrado contra
-       la ventana quedaba corrido 170px a la derecha del formulario, que es
-       la clase de desajuste que se ve aunque no se sepa explicar. */
-    .barra { padding-left: calc(var(--rail) + 22px); padding-right: 22px; }
-    .barra-in {
-      max-width: var(--tope);
+    /* ── El equipo, a lo ancho ──
+       Abajo del formulario y en varias columnas, como la lista de productos
+       de un tablero: una fila por vendedor sigue siendo una fila, pero tres
+       al lado de la otra ocupan un tercio del alto. */
+    #equipoLista {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 316px;
-      gap: 14px;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      column-gap: 26px;
     }
-    .barra-in .btn { max-width: 440px; margin: 0 auto; }
+    .eq:first-child { border-top: 0; }
+    /* Con varias columnas, el primero de CADA una es el que no lleva línea
+       arriba; como no se sabe cuántas entran, la línea se va del todo y lo
+       que separa es el aire. */
+    .eq { border-top: 0; padding: 7px 0; }
+    .eq-pie { margin-top: 10px; }
+
+    /* ── El cierre ──
+       La barra de guardar deja de ser fija y se planta al final del
+       formulario: el pie a la izquierda, el botón a la derecha. Con todo
+       entrando en una pantalla, una barra pegada abajo sólo le robaba 88px
+       de alto para decir lo mismo. */
+    body { padding-bottom: 18px; }
+    .cierre {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 18px;
+      margin-top: 0;
+    }
+    .cierre .pie { margin: 0; text-align: left; flex: 1; min-width: 0; }
+    .barra {
+      position: static;
+      background: none;
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+      border-top: 0;
+      padding: 0;
+      flex: 0 0 auto;
+    }
+    .barra-in { max-width: none; }
+    .barra-in .btn { min-width: 300px; }
   }
 
-  /* Notebook: la misma pantalla en 700 y pico de alto en vez de 900. Se
-     recorta el aire otra vez, en el mismo orden: primero el padding de las
-     tarjetas, después el de los campos. Ningún texto se achica. */
-  @media (min-width: 1200px) and (max-height: 820px) {
-    .hoja { padding-top: 10px; gap: 12px; }
-    .kpi { padding: 9px 13px; }
-    .kpi-n { font-size: 21px; }
+  /* Notebook: la misma pantalla en 700 y pico de alto. Se recorta el aire
+     otra vez, en el mismo orden: primero el padding de las tarjetas, después
+     el de los campos. Ningún texto se achica. */
+  @media (min-width: 1200px) and (max-height: 960px) {
+    .hoja { padding-top: 8px; gap: 7px; }
+    body { padding-bottom: 8px; }
+    .tablero-tit { font-size: 17px; }
+    .chips-motivo { gap: 6px; }
+    .kpi { padding: 8px 13px; }
+    .kpi-n { font-size: 20px; }
+    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 18px; }
+    .kpi-l { font-size: 11.5px; }
+    .tablero-tit { font-size: 18px; }
     .paso { padding: 13px 14px; }
-    .paso-cab { margin-bottom: 11px; }
+    .paso-cab { margin-bottom: 10px; }
     .paso .campos { gap: 10px; }
     .paso input, .paso textarea { padding: 11px 13px; }
-    .chips-motivo .chip { min-height: 42px; }
-    #paso3 textarea { min-height: 56px; }
-    .campos-seguim { margin-top: 12px; padding-top: 12px; }
-    .eq { padding: 7px 0; }
+    .chips-motivo .chip { min-height: 40px; }
+    #paso3 textarea { min-height: 46px; }
+    .campos-seguim { margin-top: 8px; padding-top: 8px; }
+    .paso-cab { margin-bottom: 8px; }
+    .eq-pie { margin-top: 8px; }
+    .eq { padding: 4px 0; }
+  }
+
+  /* La PC vieja del local: 1366×768, que con la barra del navegador deja
+     menos de 700px de ventana. Acá ya no alcanza con recortar aire y se
+     empieza a sacar texto, en orden de qué se puede perder: primero el
+     título del tablero —el local lo dice el rail—, después las explicaciones
+     de cada paso, que son ayuda para el primer día y no para el número mil.
+     Los DATOS no se tocan: ninguna tarjeta pierde su pie. */
+  @media (min-width: 1200px) and (max-height: 730px) {
+    .tablero-cab { display: none; }
+    .paso-sub { display: none; }
+    .equipo .bloque-sub { display: none; }
+    #paso3 textarea { min-height: 40px; }
+    .eq { padding: 3px 0; }
+    .paso { padding: 12px 13px; }
+    .chips-motivo .chip { min-height: 38px; }
+    body { padding-bottom: 6px; }
   }
 </style>
 </head>
@@ -542,28 +584,39 @@
   <!-- ── Quién carga, en la PC ──
        Con el rail parado la identidad vive acá abajo, como la ficha del
        usuario en cualquier tablero: siempre a la vista y fuera del camino.
-       En el celular este bloque no existe y manda la barra de identidad,
-       que está adentro del formulario. -->
+
+       El vendedor se cambia ACÁ MISMO. El desplegable está siempre puesto y
+       elegir un nombre es todo el trámite: antes había que abrir un bloque
+       arriba del formulario, buscarse ahí y volver. Lo único que abre algo es
+       cambiar de local, que pasa una vez cada muerte de obispo.
+
+       En el celular este bloque no existe y manda la barra de identidad, que
+       tiene exactamente el mismo desplegable. -->
   <div class="rail-pie vacia" id="railPie">
     <span class="rail-punto"></span>
-    <b class="rail-local" id="railLocal">¿Quién sos?</b>
-    <span class="rail-vend" id="railVend"></span>
-    <button type="button" class="rail-cambiar" id="btnRailIdent" onclick="alternarIdentidad()">Elegir</button>
+    <b class="rail-local" id="railLocal">Elegí tu local</b>
+    <div class="quien" id="quienRail" hidden>
+      <select class="quien-sel" aria-label="Quién está cargando"></select>
+      <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" hidden>
+    </div>
+    <button type="button" class="rail-cambiar" id="btnRailLocal" onclick="alternarLocal()">Elegir local</button>
   </div>
 </nav>
 
 <main class="hoja">
 
- <!-- ── La columna de números ─────────────────────────────────────────────
-      En la PC del local es la columna de la derecha, de arriba abajo: los
-      números del local y el equipo. En el celular no es una columna —se
-      deshace con display:contents— y cada pieza va a su lugar: las tarjetas
-      arriba de todo y el equipo al final, después del formulario. -->
- <div class="col-lado">
+  <!-- ── La cabecera del tablero ───────────────────────────────────────────
+       De quién son los números de abajo. Es la línea que en cualquier tablero
+       va arriba de todo, y acá reemplaza a la cabecera de la app, que decía
+       lo mismo que el rail. -->
+  <div class="tablero-cab">
+    <h2 class="tablero-tit" id="hoyTit">Tu local, hoy</h2>
+    <span class="tablero-fecha" id="hoyFecha"></span>
+  </div>
 
   <!-- ── Los números del local ─────────────────────────────────────────────
-       Cuando el vendedor abre la app, lo primero que ve es cómo viene su
-       local.
+       Arriba de todo y en fila, que es donde se miran: cuando el vendedor
+       abre la app, lo primero que ve es cómo viene su local.
 
        Están SIEMPRE, incluso sin local elegido —ahí muestran rayitas—, porque
        una tira de tarjetas que aparece y desaparece mueve todo lo de abajo y
@@ -578,15 +631,16 @@
        Cada vendedor del local y cuántos registros lleva en el mes. Es el
        único lugar donde el trabajo de cada uno se ve con nombre y apellido,
        y por eso está en la pantalla de carga y no escondido en el panel:
-       el que carga tiene que poder ver que su número se mueve. -->
+       el que carga tiene que poder ver que su número se mueve.
+
+       En la PC es la columna de la derecha, de arriba abajo. En el celular
+       va al final, después del formulario: ahí lo que importa es cargar. -->
   <section class="bloque equipo" id="equipo" hidden>
     <h2 class="bloque-tit">El equipo</h2>
     <p class="bloque-sub" id="equipoSub">Registros de este mes, uno por uno.</p>
     <div id="equipoLista"></div>
     <p class="eq-pie" id="equipoPie"></p>
   </section>
-
- </div><!-- /.col-lado -->
 
  <div class="col-form">
 
@@ -597,63 +651,37 @@
     <button type="button" onclick="vaciarCola(true)">Reintentar</button>
   </div>
 
-  <!-- ── Quién carga ───────────────────────────────────────────────────────
-       Esta barra está SIEMPRE, con identidad elegida o sin ella. Antes, el
-       vendedor que abría la app por primera vez se encontraba con una pared
-       de 14 sucursales antes de poder hacer nada; ahora lo primero que ve es
-       el cliente, que es lo que vino a cargar, y el local se elige desde acá
-       de un toque. El dato sigue siendo obligatorio: si falta, la validación
-       abre este bloque y lo trae hasta él. -->
+  <!-- ── Quién carga, en el celular ─────────────────────────────────────────
+       Esta barra está SIEMPRE, con identidad elegida o sin ella, y trae el
+       desplegable de vendedores adentro: cambiar de persona es elegir un
+       nombre acá y listo. En la PC este bloque no se ve —lo reemplaza la
+       ficha del rail, que tiene el mismo desplegable—.
+
+       Escribir el nombre a mano NUNCA deja de ser posible: es la última
+       opción de la lista. El día que entra alguien nuevo un sábado y el
+       encargado no está, esa persona tiene que poder registrar igual. -->
   <div class="ident ident-vacia" id="ident">
     <div class="ident-punto"></div>
     <div class="ident-datos">
-      <span class="ident-local" id="identLocal">Todavía no dijiste quién sos</span>
-      <span class="ident-vend" id="identVend">Tu local y tu nombre, una sola vez</span>
+      <span class="ident-local" id="identLocal">Todavía no elegiste tu local</span>
+      <span class="ident-vend" id="identVend">Se elige una sola vez y queda guardado</span>
+      <div class="quien" id="quienBarra" hidden>
+        <select class="quien-sel" aria-label="Quién está cargando"></select>
+        <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" hidden>
+      </div>
     </div>
-    <button type="button" class="btn btn-sec btn-chico" id="btnIdent" onclick="alternarIdentidad()">Elegir</button>
+    <button type="button" class="btn btn-sec btn-chico" id="btnIdentLocal" onclick="alternarLocal()">Elegir</button>
   </div>
 
-  <div id="bloqueIdentidad" hidden>
-    <!-- ── Local ──
-         Con el local ya elegido esta grilla NO se muestra: el vendedor que
-         entra a cambiar su nombre no tiene por qué volver a pasar por una
-         pared de 14 sucursales que ya contestó. Queda en su lugar la línea
-         del final del bloque de abajo. Ver acomodarIdentidad(). -->
-    <section class="bloque" id="bloqueLocal">
-      <h2 class="bloque-tit">¿En qué local estás? <span class="lbl-req">obligatorio</span></h2>
-      <p class="bloque-sub">Se guarda en este celular: lo elegís una sola vez.</p>
-      <div class="chips chips-local" id="grillaLocales"></div>
-      <div class="campo-error" id="errLocal" hidden>Eligí el local.</div>
-    </section>
-
-    <!-- ── Vendedor ── -->
-    <section class="bloque" id="bloqueVendedor">
-      <h2 class="bloque-tit">¿Quién sos? <span class="lbl-req">obligatorio</span></h2>
-      <p class="bloque-sub">Elegite de la lista de tu local. Si no estás, escribí tu nombre y pedile al encargado que te agregue.</p>
-
-      <!-- La lista del local. Oculta hasta que haya equipo cargado: sin
-           vendedores, un desplegable vacío no ayuda a nadie. -->
-      <div class="campo" id="cSelVend" hidden>
-        <select id="s_vendedor" aria-label="Elegí tu nombre"></select>
-      </div>
-
-      <!-- Escribirlo a mano NUNCA deja de ser posible: ver el comentario de
-           pintarVendedores(). El error vive afuera de los dos campos porque
-           tiene que verse con cualquiera de las dos formas a la vista. -->
-      <div class="campo" id="cVend">
-        <input type="text" id="f_vendedor" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
-      </div>
-      <div class="campo-error" id="errVend" hidden>Falta tu nombre.</div>
-
-      <!-- La salida para el día que alguien cubre en otra sucursal. Chica y
-           al final: es lo que casi nadie necesita, y tiene que poder hacerse
-           igual. Trae de vuelta la grilla de locales. -->
-      <p class="linea-local" id="lineaLocal" hidden>
-        Estás cargando en <b id="localActual"></b>.
-        <button type="button" onclick="mostrarLocales()">Cambiar de local</button>
-      </p>
-    </section>
-  </div>
+  <!-- ── El local ──
+       Lo único que sigue abriéndose: son 14 sucursales y se contesta una vez
+       por dispositivo. Elegido uno, el bloque se cierra solo. -->
+  <section class="bloque" id="bloqueLocal" hidden>
+    <h2 class="bloque-tit">¿En qué local estás? <span class="lbl-req">obligatorio</span></h2>
+    <p class="bloque-sub">Se guarda en este dispositivo: lo elegís una sola vez.</p>
+    <div class="chips chips-local" id="grillaLocales"></div>
+    <div class="campo-error" id="errLocal" hidden>Eligí el local.</div>
+  </section>
 
   <!-- Los tres pasos viven en su propio contenedor: así el reparto en
        columnas se decide en un solo lugar y las barras de arriba y abajo
@@ -717,7 +745,7 @@
       <span class="paso-n">3</span>
       <div class="paso-txt">
         <h2 class="paso-tit">Por qué se fue <span class="lbl-req">obligatorio</span></h2>
-        <p class="paso-sub">Un toque. Es lo que le dice a Compras qué falta en el local.</p>
+        <p class="paso-sub">Lo que le dice a Compras qué falta.</p>
       </div>
     </div>
     <div class="chips chips-motivo" id="chipsMotivo"></div>
@@ -737,22 +765,29 @@
 
   </div><!-- /.pasos -->
 
-  <p class="pie">Se guarda en la planilla y el cliente entra al CRM. <span id="version"></span></p>
+  <!-- ── El cierre ────────────────────────────────────────────────────────
+       En el celular el botón es una barra FIJA abajo, al alcance del pulgar,
+       y esto de acá es sólo el pie. En la PC la barra se planta en el
+       formulario, al final: el botón está a la vista igual —entra todo en
+       una pantalla— y esos 88px que la barra fija le reservaba de aire son
+       justo los que hacían falta para que no haya que scrollear. -->
+  <div class="cierre">
+    <p class="pie">Se guarda en la planilla y el cliente entra al CRM. <span id="version"></span></p>
+    <div class="barra">
+      <div class="barra-in">
+        <button type="button" class="btn btn-pri btn-ancho" id="btnGuardar" onclick="enviar()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          Guardar oportunidad
+        </button>
+        <div class="barra-nota" id="barraNota">Tarda menos de 20 segundos</div>
+      </div>
+    </div>
+  </div>
 
  </div><!-- /.col-form -->
 </main>
 
 </div><!-- /.marco -->
-
-<div class="barra">
-  <div class="barra-in">
-    <button type="button" class="btn btn-pri btn-ancho" id="btnGuardar" onclick="enviar()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
-      Guardar oportunidad
-    </button>
-    <div class="barra-nota" id="barraNota">Tarda menos de 20 segundos</div>
-  </div>
-</div>
 
 <!-- ── Confirmación ── -->
 <div class="exito" id="exito" hidden>
@@ -848,6 +883,7 @@
   var local = '', motivo = '', talles = [];
 
   var $ = function (id) { return document.getElementById(id); };
+  var $$ = function (sel) { return document.querySelectorAll(sel); };
 
   /* ═══ Pintado ═══════════════════════════════════════════════════════════ */
   function pintarLocales() {
@@ -912,61 +948,99 @@
      Escribirlo a mano NUNCA deja de ser posible. El día que entra alguien
      nuevo un sábado y el encargado no está, esa persona tiene que poder
      registrar igual: si sólo hubiera botones, el local dejaría de cargar. */
-  var equipo = [], escribiendo = false;
+  var equipo = [], vendedor = '', escribiendo = false;
+
+  /* El mismo control, en dos lugares: la barra de identidad (celular) y la
+     ficha del rail (PC). El navegador no mueve un nodo de un lado al otro,
+     así que son dos copias con el mismo comportamiento; lo que manda es la
+     variable `vendedor`, no el html. */
+  var CAJAS_QUIEN = ['quienBarra', 'quienRail'];
+
+  function cadaQuien(fn) {
+    CAJAS_QUIEN.forEach(function (id) {
+      var caja = $(id);
+      if (caja) fn(caja, caja.querySelector('.quien-sel'), caja.querySelector('.quien-txt'));
+    });
+  }
 
   function equipoGuardado() {
     var g = leerJSON(K_EQUIPO, null);
     return (g && g.local === local && g.vendedores) ? g.vendedores : [];
   }
 
-  function pintarVendedores() {
-    var caja = $('cSelVend'), sel = $('s_vendedor');
+  /**
+   * Dibuja el desplegable de vendedores en sus dos lugares.
+   *
+   * Un nombre guardado que ya no está en la lista —renunció, lo desactivaron,
+   * o se escribió a mano— no se borra solo: queda el campo de texto a la
+   * vista con lo que había, y el desplegable marcando "no estoy en la lista".
+   * Vaciárselo al vendedor que viene cargando hace semanas sería la peor
+   * forma de avisarle.
+   */
+  function pintarQuien() {
+    var aMano = escribiendo || (!!vendedor && equipo.indexOf(vendedor) === -1);
 
-    if (!equipo.length) {           // sin lista todavía: se escribe a mano
-      caja.hidden = true;
-      $('cVend').hidden = false;
-      return;
-    }
+    cadaQuien(function (caja, sel, txt) {
+      // Sin local no hay lista de quién: primero se elige el local.
+      caja.hidden = !local;
+      if (!local) return;
 
-    /* Un nombre guardado que ya no está en la lista —renunció, lo
-       desactivaron, o se escribió a mano— no se borra solo: queda el campo de
-       texto a la vista con lo que había, y el desplegable marcando "no estoy
-       en la lista". Vaciárselo al vendedor que viene cargando hace semanas
-       sería la peor forma de avisarle. */
-    var actual = $('f_vendedor').value.trim();
-    var aMano = escribiendo || (!!actual && equipo.indexOf(actual) === -1);
+      if (!equipo.length) {          // sin lista todavía: se escribe a mano
+        sel.hidden = true;
+        txt.hidden = false;
+        if (document.activeElement !== txt) txt.value = vendedor;
+        return;
+      }
 
-    sel.innerHTML =
-      '<option value="">Elegí tu nombre…</option>' +
-      equipo.map(function (v) {
-        return '<option value="' + esc(v) + '"' +
-               (!aMano && v === actual ? ' selected' : '') + '>' + esc(v) + '</option>';
-      }).join('') +
-      '<option value="' + OTRO + '"' + (aMano ? ' selected' : '') + '>No estoy en la lista</option>';
+      sel.hidden = false;
+      sel.innerHTML =
+        '<option value="">Elegí tu nombre…</option>' +
+        equipo.map(function (v) {
+          return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
+        }).join('') +
+        '<option value="' + OTRO + '">No estoy en la lista</option>';
+      sel.value = aMano ? OTRO : (vendedor || '');
 
-    caja.hidden = false;
-    $('cVend').hidden = !aMano;
+      txt.hidden = !aMano;
+      if (aMano && document.activeElement !== txt) txt.value = vendedor;
+    });
   }
 
-  /** Lo que pasa al elegir en el desplegable. */
-  function elegirVendedor() {
-    var sel = $('s_vendedor');
+  /** Quién está cargando, de acá en adelante. Es todo el trámite. */
+  function fijarVendedor(v) {
+    vendedor = String(v || '').trim();
+    guardar(K_VEND, vendedor);
+    if (vendedor) marcarQuien(false);
+    pintarQuien();
+    pintarIdentidad();
+    pintarEquipo(metricas);          // para que se marque el suyo en la lista
+  }
 
-    if (sel.value === OTRO) {
-      escribiendo = true;
-      $('cVend').hidden = false;
-      $('f_vendedor').value = '';
-      $('f_vendedor').focus();
-      return;
-    }
+  function marcarQuien(mal) {
+    cadaQuien(function (caja) { caja.classList.toggle('mal', !!mal); });
+  }
 
-    escribiendo = false;
-    $('f_vendedor').value = sel.value;
-    $('cVend').hidden = true;
-    $('cSelVend').classList.remove('mal');
-    if (!sel.value) return;         // volvió a "Elegí tu nombre…"
-    ocultarError('errVend', 'cVend');
-    mostrarIdentidad();
+  function conectarQuien() {
+    cadaQuien(function (caja, sel, txt) {
+      sel.onchange = function () {
+        if (sel.value === OTRO) {
+          escribiendo = true;
+          vendedor = '';
+          pintarQuien();
+          txt.value = '';
+          txt.focus();
+          return;
+        }
+        escribiendo = false;
+        fijarVendedor(sel.value);
+      };
+      // Al salir del campo queda fijado. Enter hace lo mismo: en un celular
+      // el teclado tapa medio formulario y nadie va a tocar afuera a propósito.
+      txt.onblur = function () { if (txt.value.trim()) fijarVendedor(txt.value); };
+      txt.onkeydown = function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); txt.blur(); }
+      };
+    });
   }
 
   /**
@@ -988,10 +1062,9 @@
            cuando esa persona guarda su primer registro (lo hace el backend,
            ver sumarVendedor_). Desde ese momento deja de ser "a mano": se
            elige del desplegable como cualquiera, y el campo de texto sobra. */
-        var actual = $('f_vendedor').value.trim();
-        if (escribiendo && actual && equipo.indexOf(actual) > -1) escribiendo = false;
+        if (escribiendo && vendedor && equipo.indexOf(vendedor) > -1) escribiendo = false;
 
-        pintarVendedores();
+        pintarQuien();
         // La lista del equipo también sale de acá: es la que pone a los que
         // todavía no cargaron nada este mes. Ver pintarEquipo().
         pintarEquipo(metricas);
@@ -1144,7 +1217,7 @@
     // La barra se mide contra el que más cargó, no contra el objetivo: es una
     // lista de quién viene cómo, no otro medidor de meta.
     var tope = filas[0].mes || 1;
-    var yo = ($('f_vendedor').value || '').trim().toLowerCase();
+    var yo = vendedor.toLowerCase();
 
     var total = 0;
     filas.forEach(function (v) { total += v.mes; });
@@ -1202,7 +1275,7 @@
 
     // Y el vendedor sube en la lista del equipo, que es la mitad de la gracia
     // de tenerla ahí: el que carga ve moverse SU número, no el del local.
-    var yo = $('f_vendedor').value.trim();
+    var yo = vendedor;
     if (yo) {
       metricas.equipo = metricas.equipo || [];
       var fila = null;
@@ -1217,7 +1290,13 @@
     pintarMetricas(metricas);
   }
 
-  /* ═══ Identidad ═════════════════════════════════════════════════════════ */
+  /* ═══ Identidad ═════════════════════════════════════════════════════════
+     Dos datos: en qué local estás y quién sos.
+
+     El local se elige UNA vez por dispositivo y es lo único que abre un
+     bloque —son 14 sucursales, no entran en un desplegable cómodo—. El
+     vendedor cambia todo el tiempo, así que su desplegable está siempre
+     puesto: elegir un nombre es el cambio, no hay nada más que hacer. */
   function elegirLocal(v) {
     local = v;
     guardar(K_LOCAL, v);
@@ -1225,105 +1304,62 @@
       b.classList.toggle('sel', b.dataset.v === v);
     });
     ocultarError('errLocal');
+    $('bloqueLocal').hidden = true;   // contestado, se guarda solo
 
     // El equipo cambia con el local: se muestra lo que haya guardado de ese
     // local y se pide el actualizado de fondo.
     escribiendo = false;
     equipo = equipoGuardado();
-    pintarVendedores();
+    pintarQuien();
     traerEquipo();
 
     // Los números también son del local: al cambiarlo, cambian.
     cargarMetricas();
-
-    // Elegido el local, la grilla se guarda sola y queda a la vista lo único
-    // que falta: el nombre.
-    acomodarIdentidad();
-
-    if ($('f_vendedor').value.trim()) mostrarIdentidad();
-    else if (!equipo.length) $('f_vendedor').focus();
+    pintarIdentidad();
   }
+
   function nombreLocal(v) {
     for (var i = 0; i < LOCALES.length; i++) if (LOCALES[i].v === v) return LOCALES[i].t;
     return bonito(v);
   }
 
-  /* La barra de identidad no se oculta nunca: cambia de estado. Vacía invita
-     a elegir, llena muestra quién está cargando. Lo que se abre y se cierra
-     es el bloque de abajo, con la grilla de locales y el nombre. */
-  function mostrarIdentidad() {
-    var vend = $('f_vendedor').value.trim();
-    if (!local || !vend) return;
-    guardar(K_VEND, vend);
-    $('identLocal').textContent = nombreLocal(local);
-    $('identVend').textContent = vend;
-    $('ident').classList.remove('ident-vacia');
-    $('btnIdent').textContent = 'Cambiar';
-    pintarIdentRail(vend);
-    $('bloqueIdentidad').hidden = true;
-  }
-
   /**
-   * La copia de la identidad que vive abajo del rail, para pantalla grande.
+   * Escribe quién está cargando en los tres lugares donde se dice: la barra
+   * del celular, la ficha del rail y el título del tablero.
    *
-   * Son dos elementos y no uno movido con CSS porque en el celular la barra
-   * va abajo de las tarjetas y en la PC adentro del rail: el navegador no
-   * mueve un nodo de un lado al otro, y duplicar tres líneas de texto sale
-   * más barato que mantener dos maquetas.
+   * Son copias y no un nodo movido con CSS porque el navegador no mueve un
+   * nodo de un lado al otro, y duplicar tres líneas de texto sale más barato
+   * que mantener dos maquetas.
    */
-  function pintarIdentRail(vend) {
-    var caja = $('railPie');
-    if (!caja) return;
+  function pintarIdentidad() {
+    var nom = local ? nombreLocal(local) : '';
+    var listo = !!local && !!vendedor;
 
-    if (local && vend) {
-      $('railLocal').textContent = nombreLocal(local);
-      $('railVend').textContent = vend;
-      $('btnRailIdent').textContent = 'Cambiar';
-      caja.classList.remove('vacia');
-      return;
-    }
-    // Más corto que el de la barra del celular: el rail tiene 145px de ancho
-    // y ahí "Todavía no dijiste quién sos" se corta a la mitad.
-    $('railLocal').textContent = '¿Quién sos?';
-    $('railVend').textContent = 'Elegí tu local y tu nombre';
-    $('btnRailIdent').textContent = 'Elegir';
-    caja.classList.add('vacia');
+    // La barra del celular
+    $('identLocal').textContent = local ? nom : 'Todavía no elegiste tu local';
+    $('identVend').hidden = !!local;          // con local manda el desplegable
+    $('ident').classList.toggle('ident-vacia', !listo);
+    $('btnIdentLocal').textContent = local ? 'Cambiar' : 'Elegir';
+
+    // La ficha del rail
+    $('railLocal').textContent = local ? nom : 'Elegí tu local';
+    $('railPie').classList.toggle('vacia', !listo);
+    $('btnRailLocal').textContent = local ? 'Cambiar de local' : 'Elegir local';
+
+    // Y el título del tablero, que es de quién son los números
+    $('hoyTit').textContent = local ? ('Hoy en ' + nom) : 'Tu local, hoy';
   }
 
-  /** El botón de la barra. */
-  function alternarIdentidad() {
-    var b = $('bloqueIdentidad');
+  /** El botón de "Cambiar de local", en la barra y en el rail. */
+  function alternarLocal() {
+    var b = $('bloqueLocal');
     b.hidden = !b.hidden;
-    if (b.hidden) return;
-    acomodarIdentidad();
-    b.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (!b.hidden) b.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   /** La usa la validación para traer al vendedor hasta el dato que falta. */
-  function abrirIdentidad() {
-    $('bloqueIdentidad').hidden = false;
-    acomodarIdentidad();
-  }
-
-  /**
-   * Decide si se ve la grilla de locales o la línea de "cambiar de local".
-   *
-   * Con el local elegido se guarda la grilla: quien abre esto es alguien que
-   * viene a cambiar su NOMBRE, y hacerlo pasar de nuevo por catorce
-   * sucursales para llegar al campo de al lado es hacerle perder el tiempo.
-   * Sin local elegido no hay nada que guardar y la grilla es lo primero.
-   */
-  function acomodarIdentidad() {
-    var elegido = !!local;
-    $('bloqueLocal').hidden = elegido;
-    $('lineaLocal').hidden = !elegido;
-    if (elegido) $('localActual').textContent = nombreLocal(local);
-  }
-
-  /** Trae de vuelta la grilla, para el que cubre en otra sucursal. */
-  function mostrarLocales() {
+  function abrirLocal() {
     $('bloqueLocal').hidden = false;
-    $('lineaLocal').hidden = true;
     $('bloqueLocal').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
@@ -1353,19 +1389,14 @@
 
   function validar() {
     var ok = true;
-    ['errLocal', 'errVend', 'errMotivo'].forEach(function (i) { ocultarError(i); });
+    ['errLocal', 'errMotivo'].forEach(function (i) { ocultarError(i); });
     ocultarError('errWsp', 'cWsp');
-    $('cVend').classList.remove('mal');
-    $('cSelVend').classList.remove('mal');
+    marcarQuien(false);
 
-    if (!local) { mostrarError('errLocal'); abrirIdentidad(); ok = false; }
-    if (!$('f_vendedor').value.trim()) {
-      // Se marca el campo que está a la vista: el desplegable si hay lista
-      // del local, y el de escribir a mano si no.
-      mostrarError('errVend', $('cSelVend').hidden ? 'cVend' : 'cSelVend');
-      abrirIdentidad();
-      ok = false;
-    }
+    if (!local) { mostrarError('errLocal'); abrirLocal(); ok = false; }
+    // El desplegable está siempre a la vista, en la barra o en el rail: se
+    // marca en rojo y se avisa, no hace falta traer a nadie a ningún lado.
+    if (!vendedor) { marcarQuien(true); ok = false; }
 
     var malTel = revisarTelefono($('f_wsp').value);
     if (malTel) { mostrarError('errWsp', 'cWsp', malTel); ok = false; }
@@ -1375,7 +1406,9 @@
     if (!ok) {
       var primero = document.querySelector('.campo-error:not([hidden])');
       if (primero) primero.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      avisar('err', 'Faltan datos para guardar.');
+      avisar('err', (!local || !vendedor)
+        ? 'Falta decir quién está cargando.'
+        : 'Faltan datos para guardar.');
     }
     return ok;
   }
@@ -1464,7 +1497,7 @@
   function armarDatos() {
     return {
       sucursal: local,
-      vendedor: $('f_vendedor').value.trim(),
+      vendedor: vendedor,
       nombre:   $('f_nombre').value.trim(),
       whatsapp: $('f_wsp').value.trim(),
       mail:     $('f_mail').value.trim(),
@@ -1482,8 +1515,6 @@
     var btn = $('btnGuardar');
     btn.disabled = true;
     btn.innerHTML = 'Guardando…';
-
-    mostrarIdentidad();
 
     var restaurar = function () {
       btn.disabled = false;
@@ -1570,45 +1601,42 @@
     // se pisan con los números de ese local.
     pintarMetricas(null);
 
-    var guardadoLocal = leer(K_LOCAL), guardadoVend = leer(K_VEND);
-    if (guardadoVend) $('f_vendedor').value = guardadoVend;
-    if (guardadoLocal) {
-      local = guardadoLocal;
+    /* Hoy, escrito como lo diría alguien: "Domingo 20 de septiembre". Se
+       capitaliza a mano la primera letra y nada más: con text-transform el
+       navegador también le pone mayúscula al "de", y queda "20 De
+       Septiembre". */
+    var hoy = new Date().toLocaleDateString('es-AR',
+      { weekday: 'long', day: 'numeric', month: 'long' }).replace(',', '');
+    $('hoyFecha').textContent = hoy.charAt(0).toUpperCase() + hoy.slice(1);
+
+    local = leer(K_LOCAL);
+    vendedor = leer(K_VEND);
+    if (local) {
       Array.prototype.forEach.call($('grillaLocales').children, function (b) {
         b.classList.toggle('sel', b.dataset.v === local);
       });
-      if (guardadoVend) mostrarIdentidad();
-
-      // El equipo de ESE local: primero lo guardado, para que los botones
-      // estén antes de que vuelva el servidor; después el refresco.
+      // El equipo de ESE local: primero lo guardado, para que el desplegable
+      // esté antes de que vuelva el servidor; después el refresco.
       equipo = equipoGuardado();
-      pintarVendedores();
       traerEquipo();
       cargarMetricas();
     }
-    acomodarIdentidad();
-    // El rail arranca diciendo lo mismo que la barra: con identidad puesta ya
-    // la escribió mostrarIdentidad(); sin ella, queda invitando.
-    if (!(guardadoLocal && guardadoVend)) pintarIdentRail('');
+    pintarQuien();
+    conectarQuien();
+    pintarIdentidad();
 
-    $('s_vendedor').onchange = elegirVendedor;
-
-    // Al salir del campo, el nombre se fija como identidad.
-    $('f_vendedor').onblur = function () {
-      if (local && this.value.trim()) mostrarIdentidad();
-    };
-
-    // Enter en cualquier campo de una línea pasa al siguiente, no guarda: es
+    // Enter en un campo del formulario pasa al siguiente, no guarda: es
     // demasiado fácil mandar el registro a medio llenar desde el teclado.
-    Array.prototype.forEach.call(document.querySelectorAll('input'), function (i) {
+    // Sólo los campos de los pasos: el nombre del vendedor tiene su propio
+    // Enter, que lo fija y cierra el teclado.
+    Array.prototype.forEach.call($$('.pasos input'), function (i) {
       i.onkeydown = function (e) {
         if (e.key !== 'Enter') return;
         e.preventDefault();
-        // offsetParent descarta lo que está dentro de un bloque oculto (local
-        // y vendedor, cuando la identidad ya quedó elegida): sin este filtro
-        // el foco saltaba a un campo invisible y parecía que Enter no hacía nada.
-        var campos = Array.prototype.slice
-          .call(document.querySelectorAll('input, textarea'))
+        // offsetParent descarta lo que esté dentro de un bloque oculto: sin
+        // este filtro el foco saltaba a un campo invisible y parecía que
+        // Enter no hacía nada.
+        var campos = Array.prototype.slice.call($$('.pasos input, .pasos textarea'))
           .filter(function (c) { return c.offsetParent !== null; });
         var k = campos.indexOf(i);
         if (k > -1 && campos[k + 1]) campos[k + 1].focus();
