@@ -58,45 +58,16 @@
   }
   .ident-datos { flex: 1; min-width: 0; }
 
-  /* La misma identidad, en la cabecera. Sólo existe de 900px para arriba:
-     en un celular de 390px no entra al lado de la marca. */
-  .ident-top { display: none; }
+  /* Con el rail parado, la cabecera de esta pantalla sobra entera: la marca
+     está en el rail, la identidad también y el tema se mudó a Configuración.
+     Sacarla le devuelve 61px de alto al formulario, que es justo lo que hace
+     falta para que entre entero sin scrollear en la PC del local.
+
+     Las otras dos pantallas la conservan: ahí adentro hay cosas que no están
+     en el rail (quién configura, actualizar, salir). */
   @media (min-width: 900px) {
+    .app-head { display: none; }
     .ident { display: none; }
-    /* La cabecera mide 61px y de ahí cuelgan el rail pegajoso y el alto del
-       formulario (--cabeza). La identidad tiene que entrar en ese alto: por
-       eso el botón de acá es más bajo que un .btn-chico normal. Es un control
-       de escritorio, se toca con el mouse, no con el pulgar. */
-    :root { --cabeza: 64px; }
-    .ident-top .btn-chico { min-height: 30px; padding: 0 13px; font-size: 12.5px; }
-    .ident-top {
-      display: flex; align-items: center; gap: 10px;
-      margin-left: auto; margin-right: 14px;
-      padding: 3px 3px 3px 13px;
-      border: 1.5px solid var(--acc-line);
-      border-radius: var(--r-pill);
-      background: var(--surface);
-      min-width: 0;
-    }
-    .ident-top-punto {
-      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
-      background: var(--ok);
-      box-shadow: 0 0 0 3px var(--ok-soft);
-    }
-    .ident-top-txt {
-      display: flex; align-items: baseline; gap: 7px;
-      min-width: 0; font-size: 13px; color: var(--txt-2);
-      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    }
-    .ident-top-txt b { font: 700 14px/1.2 var(--display); color: var(--txt); }
-    /* Sin identidad elegida late en cian, igual que la barra del celular. */
-    .ident-top.vacia { border-color: var(--line); }
-    .ident-top.vacia b { font-size: 13px; font-weight: 600; color: var(--txt-2); font-family: var(--sans); }
-    .ident-top.vacia .ident-top-punto {
-      background: var(--cian);
-      box-shadow: 0 0 0 3px var(--cian-soft);
-      animation: latido 2.4s ease-in-out infinite;
-    }
   }
   .ident-local {
     display: block;
@@ -296,19 +267,90 @@
     font-size: 13.5px; font-weight: 700;
   }
 
+  /* ── El equipo ─────────────────────────────────────────────────────────
+     Una fila por vendedor: quién, cuánto lleva en el mes y una barra contra
+     el que más cargó. La barra no es adorno: es lo que hace que la lista se
+     lea de un vistazo, sin ir comparando números de a pares. */
+  .eq {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto auto;
+    align-items: center;
+    column-gap: 8px; row-gap: 5px;
+    padding: 9px 0;
+    border-top: 1px solid var(--line);
+  }
+  .eq:first-child { border-top: 0; padding-top: 2px; }
+  .eq-pos { font: 700 12px/1 var(--display); color: var(--txt-3); text-align: center; }
+  .eq-nom {
+    font-size: 14px; font-weight: 600;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .eq-hoy { font-size: 11.5px; font-weight: 600; color: var(--txt-3); }
+  .eq-n { font: 700 15px/1 var(--display); }
+  .eq-barra {
+    grid-column: 2 / -1;
+    height: 6px; border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .eq-barra i {
+    display: block; height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--acc-2), var(--acc));
+    transition: width .5s var(--curva);
+  }
+  /* El que está cargando se encuentra a sí mismo en la lista sin buscarse. */
+  .eq.yo .eq-nom, .eq.yo .eq-pos, .eq.yo .eq-n { color: var(--acc-txt); }
+  .eq-vacio { font-size: 13.5px; color: var(--txt-3); }
+  /* El total, abajo de todo. Cierra la lista y, en la PC, le da un piso al
+     panel: sin esto la tarjeta quedaba estirada con medio metro de vacío
+     abajo del último vendedor. */
+  .eq-pie {
+    margin-top: 14px; padding-top: 11px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--txt-3);
+  }
+
+  /* Las tarjetas son TRES desde que el objetivo se le pegó a la del período
+     que mide. La grilla compartida está pensada para cuatro, así que acá se
+     le corrige el reparto: de a dos en el celular —la tercera se lleva el
+     renglón entero en vez de dejar un hueco— y de a tres en el medio. */
+  @media (max-width: 619px) {
+    #tarjetas .kpi:nth-child(3):last-child { grid-column: 1 / -1; }
+  }
+  @media (min-width: 620px) and (max-width: 1199px) {
+    #tarjetas { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  /* ── Hasta 1200: una sola columna ──────────────────────────────────────
+     Las dos cajas del tablero (.col-lado y .col-form) se deshacen —
+     display:contents— y sus piezas caen en la hoja como si nunca hubieran
+     estado envueltas. El orden lo fija `order` y es el del celular: los
+     números arriba, el formulario en el medio y el equipo al final, después
+     de lo que el vendedor vino a hacer. */
+  @media (max-width: 1199px) {
+    .hoja { display: flex; flex-direction: column; }
+    .col-lado, .col-form { display: contents; }
+    #tarjetas        { order: 1; }
+    #avisoCola       { order: 2; }
+    #ident           { order: 3; }
+    #bloqueIdentidad { order: 4; }
+    .pasos           { order: 5; }
+    #equipo          { order: 6; }
+    .pie             { order: 7; }
+  }
+
   /* ── En la PC del local ────────────────────────────────────────────────
-     El mismo formulario repartido en columnas. En una pantalla ancha, la
-     columna única obligaba a scrollear cuatro pantallas para cargar algo que
-     entra casi entero de una sola vez.
+     El formulario repartido en columnas. En una pantalla ancha, la columna
+     única obligaba a scrollear cuatro pantallas para cargar algo que entra
+     casi entero de una sola vez.
 
-     Sólo se reparten LOS PASOS. La barra de identidad, los avisos y el pie
-     siguen ocupando el ancho completo: son cosas que se leen de corrido, no
-     campos que compitan por el espacio.
-
-     align-items:start evita que un bloque corto se estire hasta la altura
-     del de al lado. */
+     Sólo se reparten LOS PASOS. Los avisos y el pie siguen ocupando el ancho
+     completo: son cosas que se leen de corrido, no campos que compitan por
+     el espacio. align-items:start evita que un bloque corto se estire hasta
+     la altura del de al lado. */
   @media (min-width: 940px) {
-    :root { --tope: 1000px; }
+    :root { --tope: 1060px; }
     .pasos {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -318,16 +360,18 @@
     }
     .pasos .bloque { margin-bottom: 0; }
 
-    /* El paso 3 se va a la derecha y ocupa las dos filas; el 1 y el 2 se
-       apilan a la izquierda. Es el reparto que menos hueco deja: el paso 1 es
-       corto y el 3 es el más largo, así que dejándolos caer solos quedaba el
-       1 arriba a la izquierda con un agujero debajo. */
-    #paso3 { grid-column: 2; grid-row: 1 / span 2; }
+    /* El 1 y el 2 arriba, uno al lado del otro; el 3 abajo a todo lo ancho.
+       Es el reparto que menos hueco deja: el paso 3 tiene bastante más
+       contenido y, puesto al lado de los otros, emparejaba alturas y les
+       dejaba 120px de vacío abajo. */
+    #paso1 { grid-column: 1; grid-row: 1; }
+    #paso2 { grid-column: 2; grid-row: 1; }
+    #paso3 { grid-column: 1 / -1; grid-row: 2; }
 
-    /* Los motivos se quedan en dos columnas. Arriba de 560px de VENTANA la
-       regla de más arriba los pasa a tres, pero eso se mide contra la ventana
-       y acá cada bloque mide la mitad: con tres, "Fue a comparar" se parte. */
-    .chips-motivo { grid-template-columns: repeat(2, 1fr); }
+    /* Tres y tres. Seis en una fila sólo entran cuando el bloque se lleva la
+       pantalla entera, y acá comparte con la columna de números: a menos de
+       ~150px por chip, "Fue a comparar" se parte en dos renglones. */
+    .chips-motivo { grid-template-columns: repeat(3, 1fr); }
 
     /* El botón no sigue al ancho de la página: 1000px de violeta es un
        cartel, no un botón. */
@@ -343,80 +387,105 @@
     body { padding-bottom: 110px; }
   }
 
-  /* Monitor de escritorio: los tres pasos entran uno al lado del otro y el
-     formulario se ve entero sin scrollear. Es el caso de la PC del local,
-     donde la app queda abierta todo el día. */
-  @media (min-width: 1300px) {
-    /* Casi toda la pantalla. El tope duro existe igual: pasados los ~1560px
-       las columnas se vuelven tan anchas que el ojo tiene que viajar de más
-       entre la etiqueta y el campo. El 94vw es para que en un monitor chico
-       siga habiendo margen a los costados y no quede pegado al borde. */
-    :root { --tope: min(1560px, 94vw); }
+  /* ── El tablero ────────────────────────────────────────────────────────
+     Monitor de escritorio, que es la PC del local con la app abierta todo el
+     día. Dos columnas: el formulario a la izquierda y los números a la
+     derecha, de arriba abajo, como cualquier tablero.
 
-    /* Los tres en fila dejaban 120px de hueco abajo del paso 1 y del 2: el
-       paso 3 tiene bastante más contenido y, al emparejar alturas, arrastraba
-       a los otros dos. Medido a 1440×900 el 20/09/2026.
+     Los números se van al costado por una razón de alto, no de gusto: en una
+     tira horizontal se comían 120px que le hacían falta al formulario para
+     entrar entero arriba del botón. De costado no le sacan nada a nadie
+     —esa columna, con el formulario al lado, estaría vacía igual— y de paso
+     quedan a la vista todo el tiempo mientras se carga. */
+  @media (min-width: 1200px) {
+    /* El tope existe igual: pasado cierto ancho, las columnas se vuelven tan
+       anchas que el ojo tiene que viajar de más entre la etiqueta y el
+       campo. */
+    :root { --tope: 1420px; }
 
-       Ahora el 3 se lleva el ancho completo abajo. Gana todo el mundo: los
-       seis motivos entran en UNA fila —se ven todos juntos, sin barrer con la
-       vista—, las notas pasan a ser un campo ancho que invita a escribir, y
-       arriba quedan dos tarjetas parejas sin vacío. */
-    .pasos { grid-template-columns: 1fr 1fr; }
-    #paso1 { grid-column: 1; grid-row: 1; }
-    #paso2 { grid-column: 2; grid-row: 1; }
-    #paso3 { grid-column: 1 / -1; grid-row: 2; }
-
-    /* Con el bloque a todo lo ancho, los seis motivos entran de una. */
-    .chips-motivo { grid-template-columns: repeat(6, 1fr); }
-
-    /* Que el formulario llegue hasta el botón en vez de cortar a media
-       pantalla. En vez de restar un número estimado, se mide lo único que
-       ocupa lugar fijo: el encabezado (36px de ícono + 12 y 12 de aire + 1
-       de borde = 61) y el aire de abajo que reserva la barra (110). Lo que
-       sobra se lo queda la grilla de pasos.
-
-       Es min-height: si el contenido crece, la página crece con él. */
     .hoja {
-      display: flex;
-      flex-direction: column;
-      min-height: calc(100vh - 61px - 110px);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 316px;
+      gap: 14px;
+      /* stretch y no start: las dos columnas terminan a la misma altura y el
+         tablero cierra parejo abajo. Con start, la de la derecha cortaba a
+         media pantalla y quedaba un escalón. */
+      align-items: stretch;
+      padding-top: 14px;
     }
-    /* Y el contenido, proporcionado.
+    /* La columna de números va escrita ANTES en el html —para que en el
+       celular las tarjetas queden arriba de todo— y acá se manda sola a la
+       derecha. Sin estas dos líneas el navegador las reparte por orden de
+       aparición y el formulario termina en la columna angosta. */
+    .col-lado { grid-column: 2; grid-row: 1; display: flex; flex-direction: column; gap: 12px; }
+    .col-form { grid-column: 1; grid-row: 1; display: flex; flex-direction: column; min-width: 0; }
 
-       El primer intento repartió el aire ENTRE los campos y salió peor: la
-       distancia entre una etiqueta y su campo dice que van juntos, y
-       estirarla rompe esa lectura. "Nombre" terminaba flotando lejos de todo.
-
-       Ahora el criterio es otro. Las tarjetas miden lo mismo —el alto lo fija
-       la más cargada, que es el paso 3— y la fila entera se centra en lo que
-       sobra de pantalla. Adentro, los campos se quedan juntos arriba con su
-       espaciado normal y lo que sobra queda abajo, donde se lee como aire de
-       la tarjeta y no como un agujero entre dos campos.
-
-       En la PC hay alto de sobra, así que los campos respiran un poco más
-       que en el celular: absorbe parte del sobrante sin deformar nada. */
-    /* Las tarjetas de números se achican un punto: 110px de alto para un
-       número y dos renglones es desproporcionado en una pantalla donde lo que
-       importa es que el formulario entre entero. */
+    /* Apiladas, no en tira: es una columna angosta. */
+    .kpis { grid-template-columns: 1fr; gap: 10px; margin-bottom: 0; }
     .kpi { padding: 11px 13px; }
     .kpi-n { font-size: 24px; }
     .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 19px; }
     .kpi-l { font-size: 11.5px; }
+    /* El equipo se queda con lo que sobra de la columna: es una lista, crece
+       sin deformarse y así las dos columnas terminan juntas. El total se va
+       al fondo del panel (margin-top:auto sobre .eq-pie). */
+    .equipo { margin-bottom: 0; flex: 1; display: flex; flex-direction: column; }
+    .eq-pie { margin-top: auto; }
 
-    .pasos { flex: 1; align-content: center; }
-    .paso { padding: 20px 18px; }
-    .paso-cab { margin-bottom: 20px; }
-    .paso .campos { gap: 16px; }
-    .paso input, .paso textarea { padding: 15px 14px; }
+    /* Las dos tarjetas de arriba, parejas. Difieren en un par de campos y
+       once píxeles de diferencia entre dos cajas gemelas se ven como un
+       error de alineación. */
+    .pasos { align-items: stretch; }
 
-    /* El textarea ya no pelea por el alto sobrante —el paso 3 tiene su propia
-       fila—, pero sigue siendo el campo donde más lugar es más útil: ancho
-       completo y tres renglones cómodos. */
-    #paso3 textarea { min-height: 96px; resize: vertical; }
+    /* El formulario, compacto. Cada número de acá se midió contra el alto de
+       la ventana: lo que sobraba antes era padding, no información, y era
+       justo lo que hacía que el paso 3 terminara abajo del botón. */
+    .paso { padding: 16px 16px; }
+    .paso-cab { margin-bottom: 14px; }
+    .paso .campos { gap: 13px; }
+    .paso input, .paso textarea { padding: 13px 14px; }
+    #paso3 textarea { min-height: 72px; resize: vertical; }
+    .pie { margin-top: 10px; }
+
+    /* Sin la nota, la barra de guardar mide 75px y no 98: el aire de abajo se
+       ajusta a lo que la barra tapa de verdad. Son los 17px que separaban
+       "entra justo" de "hay que scrollear un poquito". */
+    body { padding-bottom: 88px; }
+
+    /* El botón, centrado sobre el FORMULARIO y no sobre la ventana. La barra
+       es fija —vive afuera del tablero— así que se le copian las columnas:
+       mismo padding, mismo grid, mismo hueco de la derecha. Centrado contra
+       la ventana quedaba corrido 170px a la derecha del formulario, que es
+       la clase de desajuste que se ve aunque no se sepa explicar. */
+    .barra { padding-left: calc(var(--rail) + 22px); padding-right: 22px; }
+    .barra-in {
+      max-width: var(--tope);
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 316px;
+      gap: 14px;
+    }
+    .barra-in .btn { max-width: 440px; margin: 0 auto; }
+  }
+
+  /* Notebook: la misma pantalla en 700 y pico de alto en vez de 900. Se
+     recorta el aire otra vez, en el mismo orden: primero el padding de las
+     tarjetas, después el de los campos. Ningún texto se achica. */
+  @media (min-width: 1200px) and (max-height: 820px) {
+    .hoja { padding-top: 10px; gap: 12px; }
+    .kpi { padding: 9px 13px; }
+    .kpi-n { font-size: 21px; }
+    .paso { padding: 13px 14px; }
+    .paso-cab { margin-bottom: 11px; }
+    .paso .campos { gap: 10px; }
+    .paso input, .paso textarea { padding: 11px 13px; }
+    .chips-motivo .chip { min-height: 42px; }
+    #paso3 textarea { min-height: 56px; }
+    .campos-seguim { margin-top: 12px; padding-top: 12px; }
+    .eq { padding: 7px 0; }
   }
 </style>
 </head>
-<body>
+<body class="hay-rail">
 
 <header class="app-head">
   <div class="app-head-in">
@@ -431,33 +500,10 @@
         <span>Cada visita, una nueva oportunidad</span>
       </div>
     </div>
-    <!-- ── Quién carga, en la PC ──
-         En pantalla grande la identidad vive acá y la barra de abajo
-         desaparece: esa franja entera decía dos palabras, y la cabecera
-         tenía un desierto en el medio. En el celular es al revés —acá no
-         entra— y manda la barra. Ver .ident-top en estilos.css. -->
-    <div class="ident-top" id="identTop">
-      <span class="ident-top-punto"></span>
-      <span class="ident-top-txt">
-        <b id="identLocalTop">Todavía no dijiste quién sos</b>
-        <span id="identVendTop"></span>
-      </span>
-      <button type="button" class="btn btn-sec btn-chico" id="btnIdentTop"
-              onclick="alternarIdentidad()">Elegir</button>
-    </div>
-
-    <div class="head-acciones">
-      <!-- Configuración y panel se mudaron al rail, que está en las tres
-           pantallas y dice en cuál estás parado. -->
-      <div class="tema" role="group" aria-label="Tema visual">
-        <button type="button" class="tema-btn" data-tema="dark" title="Tema oscuro" aria-label="Tema oscuro">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
-        </button>
-        <button type="button" class="tema-btn" data-tema="light" title="Tema claro" aria-label="Tema claro">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
-        </button>
-      </div>
-    </div>
+    <!-- Configuración y panel se mudaron al rail, que está en las tres
+         pantallas y dice en cuál estás parado. El cambio de tema se fue a
+         Configuración: es algo que se toca una vez y estaba ocupando la
+         esquina de las tres cabeceras. -->
   </div>
 </header>
 
@@ -467,27 +513,57 @@
      La misma navegación en las tres pantallas: columna a la izquierda en la
      PC del local, barra abajo en el celular. Ver .rail en estilos.css. -->
 <nav class="rail" aria-label="Secciones">
+  <!-- La marca: en el rail parado es el logo del tablero; en el celular
+       este bloque no se ve y la marca sigue en la cabecera. -->
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt">No Compra</span>
+  </div>
+
   <div class="rail-in">
     <a class="rail-item" href="index.html" aria-current="page">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
       Carga
     </a>
     <a class="rail-item" href="panel.html">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>
       Panel
     </a>
     <a class="rail-item" href="config.html">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
       Config.
     </a>
+  </div>
+
+  <!-- ── Quién carga, en la PC ──
+       Con el rail parado la identidad vive acá abajo, como la ficha del
+       usuario en cualquier tablero: siempre a la vista y fuera del camino.
+       En el celular este bloque no existe y manda la barra de identidad,
+       que está adentro del formulario. -->
+  <div class="rail-pie vacia" id="railPie">
+    <span class="rail-punto"></span>
+    <b class="rail-local" id="railLocal">¿Quién sos?</b>
+    <span class="rail-vend" id="railVend"></span>
+    <button type="button" class="rail-cambiar" id="btnRailIdent" onclick="alternarIdentidad()">Elegir</button>
   </div>
 </nav>
 
 <main class="hoja">
 
+ <!-- ── La columna de números ─────────────────────────────────────────────
+      En la PC del local es la columna de la derecha, de arriba abajo: los
+      números del local y el equipo. En el celular no es una columna —se
+      deshace con display:contents— y cada pieza va a su lugar: las tarjetas
+      arriba de todo y el equipo al final, después del formulario. -->
+ <div class="col-lado">
+
   <!-- ── Los números del local ─────────────────────────────────────────────
-       Lo primero de la pantalla, como en un tablero: cuando el vendedor abre
-       la app lo primero que ve es cómo viene su local.
+       Cuando el vendedor abre la app, lo primero que ve es cómo viene su
+       local.
 
        Están SIEMPRE, incluso sin local elegido —ahí muestran rayitas—, porque
        una tira de tarjetas que aparece y desaparece mueve todo lo de abajo y
@@ -495,8 +571,24 @@
 
        Los números salen de la planilla (accion 'metricas') y quedan guardados
        en el celular, así el que abre sin señal ve los últimos en vez de
-       cuatro rayitas. Ver pintarMetricas(). -->
+       rayitas. Ver pintarMetricas(). -->
   <div class="kpis" id="tarjetas"></div>
+
+  <!-- ── El equipo ─────────────────────────────────────────────────────────
+       Cada vendedor del local y cuántos registros lleva en el mes. Es el
+       único lugar donde el trabajo de cada uno se ve con nombre y apellido,
+       y por eso está en la pantalla de carga y no escondido en el panel:
+       el que carga tiene que poder ver que su número se mueve. -->
+  <section class="bloque equipo" id="equipo" hidden>
+    <h2 class="bloque-tit">El equipo</h2>
+    <p class="bloque-sub" id="equipoSub">Registros de este mes, uno por uno.</p>
+    <div id="equipoLista"></div>
+    <p class="eq-pie" id="equipoPie"></p>
+  </section>
+
+ </div><!-- /.col-lado -->
+
+ <div class="col-form">
 
   <!-- Registros que quedaron esperando señal. Ver cola() más abajo. -->
   <div class="aviso" id="avisoCola" hidden>
@@ -646,6 +738,8 @@
   </div><!-- /.pasos -->
 
   <p class="pie">Se guarda en la planilla y el cliente entra al CRM. <span id="version"></span></p>
+
+ </div><!-- /.col-form -->
 </main>
 
 </div><!-- /.marco -->
@@ -898,6 +992,9 @@
         if (escribiendo && actual && equipo.indexOf(actual) > -1) escribiendo = false;
 
         pintarVendedores();
+        // La lista del equipo también sale de acá: es la que pone a los que
+        // todavía no cargaron nada este mes. Ver pintarEquipo().
+        pintarEquipo(metricas);
       })
       .catch(function () { /* sin señal: queda lo guardado */ });
   }
@@ -921,38 +1018,38 @@
      señal ve los últimos números en vez de cuatro rayitas. */
   var metricas = null;
 
-  var NOMBRE_PERIODO = { dia: 'del día', semana: 'de la semana', mes: 'del mes' };
-
   function metricasGuardadas() {
     var g = leerJSON(K_METRICAS, null);
     return (g && g.local === local && g.datos) ? g.datos : null;
   }
 
-  /** La tarjeta del objetivo, que es la única que compara dos números. */
-  function tarjetaObjetivo(obj) {
-    if (!obj || !obj.meta) {
-      return { cls: 'es-obj', n: '—', l: 'Objetivo', pie: 'Se pone en Config.' };
-    }
-    var hechos = obj.hechos || 0;
+  /**
+   * Le agrega el objetivo a la tarjeta del período que lo tiene.
+   *
+   * El objetivo NO tiene tarjeta propia. La tenía, y contra un objetivo
+   * diario decía exactamente lo mismo que "Registros hoy" en la tarjeta de al
+   * lado: dos veces el mismo número, uno con barra y otro sin. Ahora la meta
+   * se le pega al número que mide —hoy, la semana o el mes— y la barra
+   * aparece ahí. Es lo mismo que se sabía antes, en una tarjeta menos.
+   */
+  function conObjetivo(t, obj, hechos) {
+    if (!obj || !obj.meta) return t;
     var falta = Math.max(0, obj.meta - hechos);
-    return {
-      cls: 'es-obj' + (falta ? '' : ' lleno'),
-      n: hechos + ' / ' + obj.meta,
-      l: 'Objetivo ' + (NOMBRE_PERIODO[obj.periodo] || 'del mes'),
-      pie: falta ? ('Faltan ' + falta) : 'Cumplido',
-      // Pasado el 100% la barra se queda llena: una barra que se sale de su
-      // caja no dice "muy bien", dice "algo se rompió".
-      pct: Math.min(100, Math.round(hechos * 100 / obj.meta))
-    };
+    t.n = hechos + ' / ' + obj.meta;
+    t.pie = falta ? ('Faltan ' + falta + ' para el objetivo') : 'Objetivo cumplido';
+    t.cls = 'es-obj' + (falta ? '' : ' lleno');
+    // Pasado el 100% la barra se queda llena: una barra que se sale de su
+    // caja no dice "muy bien", dice "algo se rompió".
+    t.pct = Math.min(100, Math.round(hechos * 100 / obj.meta));
+    return t;
   }
 
-  /* Sin local todavía, o sin nada guardado: las cuatro tarjetas igual están,
-     con rayitas. Es el mismo marco esperando los números, no un hueco. */
+  /* Sin local todavía, o sin nada guardado: las tarjetas igual están, con
+     rayitas. Es el mismo marco esperando los números, no un hueco. */
   function tarjetasVacias() {
     return [
       { cls: '', n: '—', l: 'Registros hoy', pie: 'Elegí tu local' },
       { cls: '', n: '—', l: 'Este mes', pie: '' },
-      { cls: 'es-obj', n: '—', l: 'Objetivo', pie: '' },
       { cls: 'es-plata', n: '—', l: 'Recuperado este mes', pie: '' }
     ];
   }
@@ -965,16 +1062,31 @@
       tarjetas = tarjetasVacias();
     } else {
       var reg = m.registros, rec = m.recuperado || {}, ven = m.ventas || {};
-      tarjetas = [
-        /* Un cero pelado no dice nada. Cuando todavía no hay registros, el pie
-           deja de describir y pasa a pedir: es el único momento en que la
-           tarjeta puede hacer algo más que informar. */
-        { cls: '', n: reg.dia || 0, l: 'Registros hoy',
-          pie: reg.dia ? 'en todo el local' : 'Cargá el primero del día' },
-        { cls: '', n: reg.mes || 0, l: 'Este mes',
-          pie: reg.total ? (reg.total + ' desde que arrancó')
-                         : 'Este local todavía no arrancó' },
-        tarjetaObjetivo(m.objetivo),
+      var obj = m.objetivo, per = obj && obj.periodo;
+
+      /* Un cero pelado no dice nada. Cuando todavía no hay registros, el pie
+         deja de describir y pasa a pedir: es el único momento en que la
+         tarjeta puede hacer algo más que informar. */
+      var hoy = { cls: '', n: reg.dia || 0, l: 'Registros hoy',
+                  pie: reg.dia ? 'en todo el local' : 'Cargá el primero del día' };
+      var mes = { cls: '', n: reg.mes || 0, l: 'Este mes',
+                  pie: reg.total ? (reg.total + ' desde que arrancó')
+                                 : 'Este local todavía no arrancó' };
+
+      if (per === 'dia') {
+        conObjetivo(hoy, obj, reg.dia || 0);
+      } else if (per === 'semana') {
+        // La semana no tiene tarjeta propia: se la presta la del mes, que
+        // pasa a contar la semana y se lleva el mes al pie. Un local con meta
+        // semanal mira la semana; el mes queda de contexto.
+        mes.l = 'Esta semana';
+        mes.pie = (reg.mes || 0) + ' en el mes';
+        conObjetivo(mes, obj, reg.semana || 0);
+      } else if (per === 'mes') {
+        conObjetivo(mes, obj, reg.mes || 0);
+      }
+
+      tarjetas = [hoy, mes,
         { cls: 'es-plata', n: PESOS.format(rec.mes || 0), l: 'Recuperado este mes',
           pie: ven.total
             ? PESOS.format(rec.total || 0) + ' en total'
@@ -990,6 +1102,67 @@
         (t.pct === undefined ? '' :
           '<div class="kpi-barra"><i style="width:' + t.pct + '%"></i></div>') +
         '</div>';
+    }).join('');
+
+    pintarEquipo(m);
+  }
+
+  /**
+   * El equipo del local: cada vendedor y cuánto lleva cargado en el mes.
+   *
+   * Se arma con DOS fuentes y por eso no lo resuelve solo el backend: los
+   * registros de la planilla dicen quién cargó y cuánto, y la lista del local
+   * (pestaña Equipo) dice quién MÁS hay. Sin lo segundo, el que todavía no
+   * cargó nada este mes directamente no existiría en la lista, que es
+   * justamente el dato que al encargado le interesa ver.
+   */
+  function pintarEquipo(m) {
+    var caja = $('equipo'), lista = $('equipoLista');
+    if (!caja) return;
+
+    if (!local) { caja.hidden = true; return; }
+
+    var filas = [], visto = {};
+    ((m && m.equipo) || []).forEach(function (v) {
+      if (!v || !v.nombre) return;
+      visto[v.nombre.toLowerCase()] = true;
+      filas.push({ nombre: v.nombre, mes: v.mes || 0, dia: v.dia || 0 });
+    });
+    // Los que están en la lista del local y todavía no cargaron este mes.
+    equipo.forEach(function (n) {
+      if (n && !visto[String(n).toLowerCase()]) filas.push({ nombre: n, mes: 0, dia: 0 });
+    });
+
+    if (!filas.length) { caja.hidden = true; return; }
+    caja.hidden = false;
+    $('equipoSub').textContent = 'Registros de este mes en ' + nombreLocal(local) + '.';
+
+    filas.sort(function (a, b) {
+      return (b.mes - a.mes) || (b.dia - a.dia) || a.nombre.localeCompare(b.nombre);
+    });
+
+    // La barra se mide contra el que más cargó, no contra el objetivo: es una
+    // lista de quién viene cómo, no otro medidor de meta.
+    var tope = filas[0].mes || 1;
+    var yo = ($('f_vendedor').value || '').trim().toLowerCase();
+
+    var total = 0;
+    filas.forEach(function (v) { total += v.mes; });
+    $('equipoPie').textContent = total
+      ? (total + (total === 1 ? ' registro' : ' registros') + ' entre ' +
+         filas.length + (filas.length === 1 ? ' persona' : ' personas') + '.')
+      : 'Este mes todavía no cargó nadie.';
+
+    lista.innerHTML = filas.map(function (v, i) {
+      var mio = yo && v.nombre.toLowerCase() === yo;
+      return '<div class="eq' + (mio ? ' yo' : '') + '">' +
+        '<span class="eq-pos">' + (i + 1) + '</span>' +
+        '<span class="eq-nom">' + esc(v.nombre) + '</span>' +
+        '<span class="eq-hoy">' + (v.dia ? '+' + v.dia + ' hoy' : '') + '</span>' +
+        '<b class="eq-n">' + v.mes + '</b>' +
+        '<span class="eq-barra"><i style="width:' +
+          Math.round((v.mes || 0) * 100 / tope) + '%"></i></span>' +
+      '</div>';
     }).join('');
   }
 
@@ -1026,6 +1199,20 @@
     var r = metricas.registros;
     r.dia++; r.semana++; r.mes++; r.total++;
     if (metricas.objetivo) metricas.objetivo.hechos = r[metricas.objetivo.periodo] || 0;
+
+    // Y el vendedor sube en la lista del equipo, que es la mitad de la gracia
+    // de tenerla ahí: el que carga ve moverse SU número, no el del local.
+    var yo = $('f_vendedor').value.trim();
+    if (yo) {
+      metricas.equipo = metricas.equipo || [];
+      var fila = null;
+      metricas.equipo.forEach(function (v) {
+        if (v.nombre && v.nombre.toLowerCase() === yo.toLowerCase()) fila = v;
+      });
+      if (!fila) { fila = { nombre: yo, mes: 0, dia: 0 }; metricas.equipo.push(fila); }
+      fila.mes++; fila.dia++;
+    }
+
     guardarJSON(K_METRICAS, { local: local, datos: metricas });
     pintarMetricas(metricas);
   }
@@ -1072,32 +1259,34 @@
     $('identVend').textContent = vend;
     $('ident').classList.remove('ident-vacia');
     $('btnIdent').textContent = 'Cambiar';
-    pintarIdentTop(vend);
+    pintarIdentRail(vend);
     $('bloqueIdentidad').hidden = true;
   }
 
   /**
-   * La copia de la identidad que vive en la cabecera, para pantalla grande.
+   * La copia de la identidad que vive abajo del rail, para pantalla grande.
    *
    * Son dos elementos y no uno movido con CSS porque en el celular la barra
-   * va abajo de las tarjetas y en la PC adentro de la cabecera: el navegador
-   * no mueve un nodo de un lado al otro, y duplicar tres líneas de texto sale
+   * va abajo de las tarjetas y en la PC adentro del rail: el navegador no
+   * mueve un nodo de un lado al otro, y duplicar tres líneas de texto sale
    * más barato que mantener dos maquetas.
    */
-  function pintarIdentTop(vend) {
-    var caja = $('identTop');
+  function pintarIdentRail(vend) {
+    var caja = $('railPie');
     if (!caja) return;
 
     if (local && vend) {
-      $('identLocalTop').textContent = nombreLocal(local);
-      $('identVendTop').textContent = vend;
-      $('btnIdentTop').textContent = 'Cambiar';
+      $('railLocal').textContent = nombreLocal(local);
+      $('railVend').textContent = vend;
+      $('btnRailIdent').textContent = 'Cambiar';
       caja.classList.remove('vacia');
       return;
     }
-    $('identLocalTop').textContent = 'Todavía no dijiste quién sos';
-    $('identVendTop').textContent = '';
-    $('btnIdentTop').textContent = 'Elegir';
+    // Más corto que el de la barra del celular: el rail tiene 145px de ancho
+    // y ahí "Todavía no dijiste quién sos" se corta a la mitad.
+    $('railLocal').textContent = '¿Quién sos?';
+    $('railVend').textContent = 'Elegí tu local y tu nombre';
+    $('btnRailIdent').textContent = 'Elegir';
     caja.classList.add('vacia');
   }
 
@@ -1398,9 +1587,9 @@
       cargarMetricas();
     }
     acomodarIdentidad();
-    // La cabecera arranca diciendo lo mismo que la barra: con identidad
-    // puesta ya la escribió mostrarIdentidad(); sin ella, queda invitando.
-    if (!(guardadoLocal && guardadoVend)) pintarIdentTop('');
+    // El rail arranca diciendo lo mismo que la barra: con identidad puesta ya
+    // la escribió mostrarIdentidad(); sin ella, queda invitando.
+    if (!(guardadoLocal && guardadoVend)) pintarIdentRail('');
 
     $('s_vendedor').onchange = elegirVendedor;
 

@@ -273,6 +273,10 @@ de la misma planilla, que se crean solas la primera vez:
 Una fila de `Objetivos` con el **local vacío** vale como objetivo por defecto
 para todos los que no tengan el suyo.
 
+En esa misma pantalla está ahora el **cambio de tema** (claro/oscuro). Vivía
+en la esquina de las tres cabeceras y es algo que se toca una vez: su lugar
+es al lado de la otra cosa que se guarda en este dispositivo, que es el local.
+
 **Por qué el nombre dejó de escribirse a mano:** "Mau", "mau" y "Mauricio" son
 tres personas distintas para cualquier conteo. Sin una lista cerrada no se
 puede rankear a nadie ni ponerle un objetivo.
@@ -369,17 +373,29 @@ dígitos, porque la planilla guarda `2234979871` y Kommo `+5492234979871`.
 
 ## El tablero del local
 
-Arriba del formulario hay cuatro tarjetas con los números **del local que está
-cargando**. Salen de `{"accion":"metricas","local":"RIVADAVIA"}`, que no pide
-PIN por el mismo motivo que el equipo y los objetivos: son cuentas del propio
-local, no hay un dato de ningún cliente adentro.
+El formulario es un tablero de dos columnas: a la izquierda los tres pasos, a
+la derecha los números **del local que está cargando** y la lista del equipo.
+Salen de `{"accion":"metricas","local":"RIVADAVIA"}`, que no pide PIN por el
+mismo motivo que el equipo y los objetivos: son cuentas del propio local, no
+hay un dato de ningún cliente adentro.
+
+En el celular no hay dos columnas: las cajas `.col-lado` y `.col-form` se
+deshacen con `display:contents` y cada pieza cae en su lugar —las tarjetas
+arriba de todo, el equipo al final, después de lo que el vendedor vino a
+hacer—. El orden lo fija `order`, no el html.
 
 | Tarjeta | De dónde sale |
 |---------|---------------|
 | Registros hoy | Columnas A y B: los del local con fecha de hoy |
 | Este mes | Lo mismo, del 1° a hoy. El pie muestra el total histórico |
-| Objetivo | Pestaña `Objetivos`, comparado contra el período con el que esté cargado (`dia`/`semana`/`mes`) |
 | Recuperado este mes | Columnas T (`Compró?`) y V (`Monto Venta ($)`) |
+| El equipo | Columna H (`Vendedor`), contada por persona, más la lista de la pestaña `Equipo` para que aparezcan también los que este mes todavía no cargaron |
+
+**El objetivo no tiene tarjeta propia.** La tenía, y contra un objetivo diario
+decía exactamente lo mismo que "Registros hoy" en la tarjeta de al lado: dos
+veces el mismo número, uno con barra y otro sin. Ahora la meta de la pestaña
+`Objetivos` se le pega a la tarjeta del período que mide —el día, la semana o
+el mes— y la barra aparece ahí (`conObjetivo()`).
 
 > **La tarjeta de plata depende de que alguien cierre el círculo.** T y V las
 > llena Atención al Cliente a mano durante el seguimiento. Si nadie las
@@ -412,7 +428,25 @@ local, donde la app queda abierta todo el día— y barra abajo en el celular, a
 alcance del pulgar. En 380px de ancho una columna lateral le come el lugar a
 los campos, y los vendedores cargan parados en el local.
 
-En el formulario la barra de guardar se apoya **arriba** del rail acostado. El
+Parado es un **panel oscuro flotante** con la marca arriba, las secciones en
+el medio y, en el formulario, quién está cargando abajo de todo. Es oscuro en
+los dos temas y tiene sus propios tokens (`--rail-bg`, `--rail-txt`): en un
+tablero la navegación es el marco y el contenido es la hoja, y un marco
+oscuro contra una hoja clara es lo que hace que la hoja se lea como la hoja.
+
+El hueco que el rail le reserva al contenido lo pone `body.hay-rail`, no un
+grid: la cabecera pegajosa y la barra de guardar viven afuera del `.marco` y
+tienen que correrse igual. El panel de seguimiento se pone esa clase recién
+cuando alguien pasa el PIN, porque hasta ahí no hay rail.
+
+En el formulario, arriba de 900px la cabecera **desaparece entera**: la marca
+está en el rail, la identidad también y el tema se mudó a Configuración. Son
+61px que le hacían falta al formulario para entrar completo arriba del botón,
+sin scrollear, en la PC del local. Las otras dos pantallas la conservan: ahí
+adentro hay cosas que no están en el rail (quién configura, actualizar,
+salir).
+
+En el celular la barra de guardar se apoya **arriba** del rail acostado. El
 aire de seguridad del iPhone lo reserva el rail, que es el que toca el borde;
 si lo reservaran los dos quedaría un escalón vacío entre las dos barras.
 

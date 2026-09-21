@@ -506,6 +506,11 @@ function getMetricas(local) {
   const registros  = { dia: 0, semana: 0, mes: 0, total: 0 };
   const recuperado = { mes: 0, total: 0 };
   const ventas     = { mes: 0, total: 0 };
+  /* Cuánto lleva cada vendedor del local. Se cuenta acá y no en otra pasada
+     porque la planilla ya se está leyendo entera: es la misma vuelta.
+     La clave es el nombre normalizado —'lau' y 'Lau' son la misma persona— y
+     se guarda el primero que aparece para mostrarlo tal como se escribió. */
+  const gente = {};
 
   if (ultima >= inicio) {
     const ancho = Math.min(ANCHO, hoja.getMaxColumns());
@@ -522,6 +527,17 @@ function getMetricas(local) {
         if (delMes)                registros.mes++;
       }
 
+      const vend = String(f[COL.VENDEDOR] || '').trim();
+      if (vend) {
+        const kv = clave_(vend);
+        const v = gente[kv] || (gente[kv] = { nombre: vend, dia: 0, mes: 0, total: 0 });
+        v.total++;
+        if (fecha) {
+          if (fecha >= corte.dia) v.dia++;
+          if (delMes)             v.mes++;
+        }
+      }
+
       // "Compró" son los Sí del vocabulario, no el texto libre. Mismo criterio
       // que el panel: ver getResumenPanel.
       if (String(f[COL.COMPRO] || '').trim().indexOf('Sí') !== 0) return;
@@ -532,6 +548,14 @@ function getMetricas(local) {
     });
   }
 
+  /* De más a menos cargado en el mes. El desempate por total premia al que
+     viene cargando desde antes, y el último por nombre es para que la lista
+     no se reordene sola entre dos que están iguales. */
+  const equipo = Object.keys(gente).map(function (kv) { return gente[kv]; })
+    .sort(function (a, b) {
+      return (b.mes - a.mes) || (b.total - a.total) || a.nombre.localeCompare(b.nombre);
+    });
+
   const meta = objetivoDe_(local);
   const salida = {
     status: 'ok',
@@ -539,6 +563,10 @@ function getMetricas(local) {
     registros: registros,
     recuperado: recuperado,
     ventas: ventas,
+    // Quién cargó qué. Lo usa la lista del equipo en el formulario; el que
+    // está en la lista del local pero todavía no cargó nada NO viene acá
+    // —la planilla no sabe que existe—, lo agrega la pantalla.
+    equipo: equipo,
     // El objetivo se compara contra el período con el que está cargado: si el
     // local se puso una meta semanal, la tarjeta cuenta la semana.
     objetivo: meta

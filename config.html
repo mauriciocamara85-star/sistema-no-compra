@@ -88,6 +88,11 @@
   .agregar { display: flex; gap: 8px; }
   .agregar input { flex: 1; }
 
+  /* El control de tema, ahora que vive en el cuerpo de la página y no en una
+     esquina: al lado va la frase que dice para qué es cada uno. */
+  .tema-fila { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tema-txt { font-size: 13px; color: var(--txt-3); }
+
   /* Objetivo: cuántos registros se esperan por período. */
   .meta {
     margin-top: 16px; padding-top: 16px;
@@ -102,7 +107,7 @@
   }
 </style>
 </head>
-<body>
+<body class="hay-rail">
 
 <header class="app-head">
   <div class="app-head-in">
@@ -117,18 +122,9 @@
         <span id="quienSoy">No Compra</span>
       </div>
     </div>
-    <div class="head-acciones">
-      <!-- Volver a la carga ya está en el rail, que está en las tres
-           pantallas. Dos botones para lo mismo en la misma barra sobran. -->
-      <div class="tema" role="group" aria-label="Tema visual">
-        <button type="button" class="tema-btn" data-tema="dark" title="Tema oscuro" aria-label="Tema oscuro">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
-        </button>
-        <button type="button" class="tema-btn" data-tema="light" title="Tema claro" aria-label="Tema claro">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
-        </button>
-      </div>
-    </div>
+    <!-- Volver a la carga ya está en el rail, que está en las tres pantallas.
+         Y el cambio de tema bajó al cuerpo de esta página, que es donde
+         alguien lo va a buscar: es una configuración, no una acción. -->
   </div>
 </header>
 
@@ -138,17 +134,28 @@
      La misma navegación de las otras dos pantallas: columna a la izquierda en
      la PC, barra abajo en el celular. Ver .rail en estilos.css. -->
 <nav class="rail" aria-label="Secciones">
+
+  <!-- La marca: en el rail parado es el logo del tablero; en el celular
+       este bloque no se ve y la marca sigue en la cabecera. -->
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt">No Compra</span>
+  </div>
   <div class="rail-in">
     <a class="rail-item" href="index.html">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg>
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
       Carga
     </a>
     <a class="rail-item" href="panel.html">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>
       Panel
     </a>
     <a class="rail-item" href="config.html" aria-current="page">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg>
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
       Config.
     </a>
   </div>
@@ -164,6 +171,26 @@
     <div class="esteEquipo-tit">Este equipo</div>
     <div class="esteEquipo-sub">Queda guardado acá. El formulario va a abrir directo con los vendedores de este local.</div>
     <div id="equipoActual"></div>
+  </div>
+
+  <!-- ── Cómo se ve ───────────────────────────────────────────────────────
+       Vivía en la esquina de las tres cabeceras. Es una preferencia de este
+       dispositivo y se toca una vez: su lugar es acá, al lado de la otra
+       cosa que se guarda en este celular. -->
+  <div class="bloque">
+    <h2 class="bloque-tit">Cómo se ve</h2>
+    <p class="bloque-sub">Queda guardado en este dispositivo, igual que el local.</p>
+    <div class="tema-fila">
+      <div class="tema" role="group" aria-label="Tema visual">
+        <button type="button" class="tema-btn" data-tema="dark" title="Tema oscuro" aria-label="Tema oscuro">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+        </button>
+        <button type="button" class="tema-btn" data-tema="light" title="Tema claro" aria-label="Tema claro">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
+        </button>
+      </div>
+      <span class="tema-txt">Oscuro para el local, claro para la oficina.</span>
+    </div>
   </div>
 
   <div class="bloque" id="cajaLocales">

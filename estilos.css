@@ -94,13 +94,26 @@
   --tope: 660px;
 
   /* El marco de navegación. En el celular el rail se acuesta abajo (--nav)
-     y en pantalla grande se para a la izquierda (--rail). --cabeza es lo que
-     mide la cabecera pegajosa: 36 del ícono + 12 y 12 de aire + 1 de borde.
-     Está acá y no estimado en cada regla porque de ese número dependen el
-     alto del rail y dónde se frena al scrollear. */
-  --rail: 88px;
+     y en pantalla grande se para a la izquierda: --rail-ancho es el panel en
+     sí y --rail lo que le reserva al contenido (12 de aire + panel + 12).
+     --cabeza es lo que mide la cabecera pegajosa: 36 del ícono + 12 y 12 de
+     aire + 1 de borde. Está acá y no estimado en cada regla porque de ese
+     número dependen el alto del rail y dónde se frena al scrollear. */
+  --rail-ancho: 84px;
+  --rail: 108px;
   --nav: 54px;
   --cabeza: 61px;
+
+  /* El rail es oscuro en los DOS temas. No es un descuido: en un tablero la
+     columna de navegación es el marco y el contenido es lo que se mira, y un
+     marco oscuro contra una hoja clara es lo que hace que la hoja se lea como
+     la hoja. Con el tema claro el rail se queda igual; lo que cambia es todo
+     lo demás. Por eso tiene sus propios tokens de texto: los --txt de arriba
+     están pensados contra --bg, no contra esto. */
+  --rail-bg:    #131B2F;
+  --rail-txt:   #FFFFFF;
+  --rail-txt-2: #93A3C4;
+  --rail-line:  rgba(255, 255, 255, .09);
 
   color-scheme: dark;
 }
@@ -295,6 +308,9 @@ a { color: var(--acc-txt); }
   border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom);
 }
+/* La marca y la identidad son piezas del rail PARADO. En el celular la marca
+   ya está en la cabecera y la identidad en su barra, así que acá no existen. */
+.rail-marca, .rail-pie { display: none; }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .rail {
     background: color-mix(in srgb, var(--bg) 88%, transparent);
@@ -318,12 +334,22 @@ a { color: var(--acc-txt); }
   -webkit-tap-highlight-color: transparent;
   transition: color .15s var(--curva), background .15s var(--curva);
 }
+/* El ícono vive adentro de su propia cajita redondeada: es lo que permite
+   marcar la sección abierta con un relleno y no sólo con color, que es como
+   lo marcan los tableros. */
+.rail-icono {
+  display: grid; place-items: center;
+  width: 34px; height: 26px;
+  border-radius: 9px;
+  transition: background .18s var(--curva), color .18s var(--curva);
+}
 .rail-item svg { width: 20px; height: 20px; }
 .rail-item:hover { color: var(--txt); }
 .rail-item:active { transform: scale(.94); }
 /* La sección abierta se marca con el color de acento como TEXTO, que para eso
    está --acc-txt; --acc es relleno y acá no hay tinta encima que lo acompañe. */
 .rail-item[aria-current="page"] { color: var(--acc-txt); }
+.rail-item[aria-current="page"] .rail-icono { background: var(--acc-soft); }
 
 /* Lo que el rail acostado le tapa al contenido. El formulario suma lo suyo
    aparte en index.html, porque ahí abajo también está la barra de guardar. */
@@ -331,43 +357,170 @@ a { color: var(--acc-txt); }
   body { padding-bottom: calc(var(--nav) + env(safe-area-inset-bottom) + 14px); }
 }
 
+/* ── El rail parado ────────────────────────────────────────────────────────
+   Un panel oscuro flotando contra el borde izquierdo, de arriba abajo de la
+   ventana: adentro van la marca, las secciones y —en el formulario— quién
+   está cargando. Es el marco de la app; la hoja clara del medio es el
+   trabajo. Que esté SIEMPRE a la vista y no scrollee es la mitad de la
+   gracia: la PC del local queda abierta todo el día en esta pantalla.
+
+   El contenido no se corre con un grid sino con padding-left en el <body>,
+   porque la cabecera pegajosa y la barra de guardar viven afuera del .marco
+   y tienen que correrse igual. La clase la ponen las páginas: el panel de
+   seguimiento no tiene rail hasta que alguien pasa el PIN. */
 @media (min-width: 900px) {
-  .marco {
-    display: grid;
-    grid-template-columns: var(--rail) minmax(0, 1fr);
-    max-width: calc(var(--tope) + var(--rail));
-    margin: 0 auto;
-    align-items: start;
-  }
+  body.hay-rail { padding-left: var(--rail); }
+  .marco { display: block; max-width: none; }
+
   .rail {
-    position: sticky;
-    top: var(--cabeza);
-    left: auto; right: auto; bottom: auto;
-    /* Llega hasta abajo de todo aunque la página sea corta: media columna de
-       borde suelta se lee como un error de maquetado. */
-    height: calc(100vh - var(--cabeza));
-    padding: 14px 8px;
+    position: fixed;
+    top: 12px; bottom: 12px; left: 12px; right: auto;
+    width: var(--rail-ancho);
+    display: flex; flex-direction: column;
+    padding: 14px 10px;
     border-top: 0;
-    border-right: 1px solid var(--line);
-    background: transparent;
+    border-radius: 24px;
+    background: var(--rail-bg);
+    box-shadow: var(--sombra-alta);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
+
+  /* La marca se muda acá: en un tablero el logo es parte del marco, no del
+     encabezado. La cabecera se queda con el título de la pantalla. */
+  .rail-marca {
+    display: grid; place-items: center;
+    margin-bottom: 16px;
+  }
+  .rail-marca-icono {
+    width: 40px; height: 40px; border-radius: 13px;
+    background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
+    color: var(--acc-ink);
+    display: grid; place-items: center;
+    box-shadow: var(--glow);
+  }
+  .rail-marca-icono svg { width: 21px; height: 21px; }
+  .rail-marca-txt { display: none; }
+
   .rail-in {
     flex-direction: column;
     height: auto;
     max-width: none;
-    gap: 4px;
+    gap: 6px;
   }
   .rail-item {
     flex: 0 0 auto;
-    padding: 11px 4px;
-    border-radius: var(--r-sm);
+    padding: 9px 4px;
+    border-radius: 14px;
     font-size: 11px;
-    gap: 6px;
+    gap: 5px;
+    color: var(--rail-txt-2);
   }
-  .rail-item:hover { background: var(--surface-2); }
-  .rail-item[aria-current="page"] { background: var(--acc-soft); }
+  .rail-item:hover { color: var(--rail-txt); background: rgba(255, 255, 255, .05); }
+  .rail-item[aria-current="page"] { color: var(--rail-txt); background: rgba(255, 255, 255, .07); }
+  .rail-icono { width: 38px; height: 34px; border-radius: 12px; }
+  .rail-item[aria-current="page"] .rail-icono {
+    background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
+    color: var(--acc-ink);
+    box-shadow: var(--glow);
+  }
+
+  /* Abajo de todo, separado por el aire que sobra: quién está cargando. Es la
+     tarjeta que en los tableros lleva la foto del usuario. */
+  .rail-pie {
+    display: block;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--rail-line);
+    text-align: center;
+  }
+  .rail-punto {
+    width: 8px; height: 8px; border-radius: 50%;
+    margin: 0 auto 7px;
+    background: var(--ok);
+    box-shadow: 0 0 0 3px var(--ok-soft);
+  }
+  /* El nombre del local puede ocupar dos renglones: en el rail angosto
+     "Rivadavia" ya no entra en uno, y "Lomas de Zamora" no entra nunca.
+     Cortado con puntos suspensivos ("Lomas de…") no sirve para lo único que
+     tiene que hacer, que es decir dónde estás parado. */
+  .rail-local {
+    display: block;
+    font: 700 12.5px/1.2 var(--display);
+    color: var(--rail-txt);
+  }
+  .rail-vend {
+    display: block;
+    font-size: 11.5px; color: var(--rail-txt-2);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-bottom: 8px;
+  }
+  .rail-cambiar {
+    width: 100%;
+    border: 1px solid var(--rail-line);
+    background: rgba(255, 255, 255, .06);
+    color: var(--rail-txt);
+    border-radius: var(--r-pill);
+    padding: 6px 4px;
+    font-size: 11.5px; font-weight: 700;
+    transition: background .15s var(--curva);
+  }
+  .rail-cambiar:hover { background: rgba(255, 255, 255, .13); }
+  /* Sin identidad elegida late en cian, como la barra del celular: es lo
+     único que falta para poder cargar. */
+  /* El cian va con valor fijo y no con --cian: el token se oscurece con el
+     tema claro para poder leerse contra una hoja blanca, y acá el fondo es
+     el rail, que es oscuro siempre. */
+  .rail-pie.vacia .rail-punto {
+    background: #36D6E7;
+    box-shadow: 0 0 0 3px rgba(54, 214, 231, .22);
+    animation: latido-rail 2.4s ease-in-out infinite;
+  }
+  /* Sin identidad, el texto explica en vez de nombrar, así que puede ocupar
+     dos renglones: cortarlo con puntos suspensivos dejaba "Todavía no dijiste
+     quién …", que no dice nada. */
+  .rail-pie.vacia .rail-local {
+    font: 700 13px/1.25 var(--display);
+    white-space: normal;
+  }
+  .rail-pie.vacia .rail-vend { white-space: normal; line-height: 1.35; }
+  @keyframes latido-rail {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(54, 214, 231, .22); }
+    50%      { box-shadow: 0 0 0 7px transparent; }
+  }
+}
+
+/* Pantalla ancha: el rail se ensancha y el ícono se pone al lado del texto,
+   que es como se leen las secciones de un tablero de escritorio. */
+@media (min-width: 1200px) {
+  :root { --rail-ancho: 168px; --rail: 194px; }
+  .rail { padding: 16px 12px; }
+  .rail-marca {
+    display: flex; align-items: center; gap: 9px;
+    justify-content: flex-start;
+    padding: 0 2px;
+    margin-bottom: 22px;
+  }
+  /* 14px y no 15: con 15 "No Compra" no entra en el ancho del rail y se corta
+     en "No Comp…", que es peor que un punto menos de letra. */
+  .rail-marca-txt {
+    display: block; min-width: 0;
+    font: 700 14px/1.15 var(--display);
+    color: var(--rail-txt);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rail-item {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 10px;
+    padding: 7px 10px 7px 7px;
+    font-size: 13.5px; font-weight: 600;
+    border-radius: var(--r-pill);
+  }
+  .rail-icono { width: 32px; height: 32px; border-radius: 10px; }
+  .rail-item svg { width: 17px; height: 17px; }
+  .rail-pie { text-align: left; }
+  .rail-punto { margin: 0 0 7px; }
 }
 
 /* ── ESTRUCTURA ────────────────────────────────────────────────────────── */
