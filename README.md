@@ -22,15 +22,16 @@ Vendedor en el local
            lead + contacto + nota
 ```
 
-## Las tres vistas
+## Las cuatro vistas
 
 | Vista | URL | Para quién |
 |-------|-----|------------|
 | Formulario de carga | [`/`](https://mauriciocamara85-star.github.io/sistema-no-compra/) | Vendedores de los 14 locales |
 | Panel de seguimiento | [`/panel.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/panel.html) | Atención al Cliente (pide PIN) |
+| Motivos | [`/motivos.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/motivos.html) | Compras: por qué se va la gente, qué producto y qué talle faltó (sin PIN) |
 | Configuración | [`/config.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/config.html) | Encargados: el equipo y el objetivo de cada local (sin PIN, salvo el aviso por mail) |
 
-Las tres se sirven desde GitHub Pages y se publican con un `git push`. Las URLs
+Las cuatro se sirven desde GitHub Pages y se publican con un `git push`. Las URLs
 viejas de Apps Script (`.../exec` y `.../exec?v=panel`) siguen andando:
 redirigen acá.
 
@@ -137,6 +138,7 @@ UNICENTER · VILLA DEL PARQUE
                      ── la interfaz, en GitHub Pages ──
 index.html           Formulario del vendedor
 panel.html           Panel de seguimiento
+motivos.html         Por qué se va la gente sin comprar (Compras)
 config.html          Objetivos de cada local, el general y el aviso por mail
 estilos.css          Sistema de diseño compartido (violeta, claro/oscuro)
 comun.js             Backend, tema, avisos, WhatsApp, PWA
@@ -147,6 +149,7 @@ icon-*.png           Íconos de la app
 src/                 ── el backend, en Apps Script ──
   Codigo.gs          Carga, seguimiento, avisos
   Config.gs          Equipo, objetivos, aviso por mail e historial de cambios
+  Motivos.gs         Cuenta los motivos, y qué producto y talle faltaron
   Respaldo.gs        Copia diaria de la planilla
   Resumen.gs         Arma la pestaña Resumen (sucursal/vendedor/producto/motivo)
   Kommo.gs           Puente con el CRM: cada no-compra entra como lead
@@ -262,6 +265,45 @@ queda guardado (`KOMMO_ULTIMO_ERROR`) y sale como un cartel arriba de los
 números del panel, que es la pantalla que Atención al Cliente abre todos los
 días. El cartel desaparece solo cuando vuelve a entrar un lead bien. Cuando el
 puente está apagado a propósito —todavía sin token— no se muestra nada.
+
+## Motivos: por qué se va la gente
+
+`/motivos.html`, cuarto ítem del rail. Es la **única pantalla que no le sirve
+al local: le sirve a Compras.** El local ya sabe lo que le faltó hoy; lo que
+nadie sabía es qué le falta a la cadena entera, y eso es lo que decide qué se
+compra el mes que viene.
+
+Tres bloques:
+
+| Bloque | Contesta |
+|---|---|
+| **Por qué se fueron** | el ranking de motivos con su porcentaje. Tocar uno filtra lo de abajo |
+| **Qué faltó** | los productos y los talles más pedidos, del motivo elegido o de todos |
+| **Por local** | dónde se está yendo la gente y por qué en cada uno (sólo en la vista general) |
+
+**Arranca en la cadena entera, con un selector para bajar a un local.**
+Compras toma dos decisiones distintas y necesita las dos vistas: *qué compro*
+se contesta con el total de la cadena, *a dónde lo mando* se contesta por
+local. El general va por defecto porque es la decisión más cara.
+
+**No pide PIN.** Acá no hay un dato de ningún cliente: hay motivos, productos
+y talles contados. Es el mismo criterio del tablero del local. El PIN sigue
+cuidando lo único que hay que cuidar, que es la lista con los teléfonos. Por
+eso tampoco va adentro de Configuración, que además es donde se *cambian*
+cosas y esto es donde se *mira*.
+
+**Dice cuántos registros quedaron afuera.** Los que no tienen motivo cargado
+se cuentan aparte y la pantalla lo aclara al pie, junto con la fecha desde la
+que cuenta. Un porcentaje calculado sobre la mitad de los registros, sin decir
+de qué mitad, es peor que no tener el número.
+
+**Los talles se parten con criterio:** `S / M` y `s, m` son dos talles, pero
+`95/100` es uno solo. Se corta por coma, o por barra **con espacios a los
+lados** —que es como los junta el formulario—; una barra pegada es parte del
+talle, que es como se venden los cinturones (`partirTalles_`).
+
+Va a abrir vacía las primeras semanas y eso está previsto: el estado vacío
+explica desde cuándo se cuenta y qué lo llena, en vez de decir "sin datos".
 
 ## Desde cuándo cuentan los números
 

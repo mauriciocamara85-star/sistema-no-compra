@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Motivos</title>
+<meta name="description" content="Por qué la gente se va sin comprar: motivos, productos y talles que faltaron.">
+<meta name="theme-color" content="#0B1020">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+  } catch (e) {}
+</script>
+<style>
+  /* ── Sólo de esta pantalla ───────────────────────────────────────────── */
+
+  /* La cabecera del tablero, igual que en la carga: de quién son los números
+     y desde cuándo cuentan. */
+  .tablero-cab {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .tablero-tit {
+    font: 700 20px/1.2 var(--display);
+    letter-spacing: -.4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tablero-fecha { font-size: 12.5px; color: var(--txt-3); white-space: nowrap; }
+  @media (max-width: 620px) { .tablero-fecha { display: none; } }
+
+  /* El selector de local, arriba de todo: es la pregunta que cambia toda la
+     pantalla, así que no puede estar escondida adentro de un bloque. */
+  .filtro-local { margin-bottom: 12px; }
+  .filtro-local select { max-width: 340px; }
+
+  /* ── El ranking de motivos ─────────────────────────────────────────────
+     Una fila por motivo: el nombre, el porcentaje, cuántos, y una barra.
+     Son filas que SE TOCAN —eligen el motivo que filtra lo de abajo—, así
+     que se ven como algo apretable y no como una tabla. */
+  .mot {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    column-gap: 10px; row-gap: 6px;
+    width: 100%;
+    text-align: left;
+    background: none; border: 0;
+    border-top: 1px solid var(--line);
+    padding: 11px 2px;
+    cursor: pointer;
+    color: inherit;
+    -webkit-tap-highlight-color: transparent;
+    transition: background .15s var(--curva);
+  }
+  .mot:first-child { border-top: 0; }
+  .mot:hover { background: var(--surface-2); }
+  .mot-nom { font: 600 15px/1.25 var(--sans); min-width: 0; }
+  .mot-pct { font: 700 16px/1 var(--display); }
+  .mot-n {
+    font-size: 12px; font-weight: 700;
+    color: var(--txt-2);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+  .mot-pos, .mot-nom, .mot-pct, .mot-n { align-self: baseline; }
+  .mot-barra {
+    grid-column: 1 / -1;
+    height: 7px; border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .mot-barra i {
+    display: block; height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--acc-2), var(--acc));
+    transition: width .5s var(--curva);
+  }
+  /* El elegido: el que está filtrando lo de abajo. Se marca con el color de
+     texto y con la caja, no sólo con el color, para que se vea cuál es aunque
+     la pantalla esté a contraluz en el depósito. */
+  .mot.sel {
+    background: var(--acc-soft);
+    border-radius: var(--r-sm);
+    box-shadow: inset 0 0 0 1.5px var(--acc-line);
+  }
+  .mot.sel .mot-nom, .mot.sel .mot-pct { color: var(--acc-txt); }
+  .mot.sel + .mot { border-top-color: transparent; }
+
+  /* La línea que dice qué se está mirando y cómo volver. */
+  .filtro-activo {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 10px;
+    margin-bottom: 13px;
+    font-size: 13.5px; color: var(--txt-2);
+  }
+  .filtro-activo b { color: var(--txt); }
+
+  /* ── Qué faltó ─────────────────────────────────────────────────────────
+     Dos listas cortas, productos y talles. En el celular una abajo de la
+     otra; apenas hay lugar, al lado. */
+  .falto-cols { display: grid; gap: 16px; }
+  @media (min-width: 620px) { .falto-cols { grid-template-columns: 1fr 1fr; gap: 22px; } }
+  .falto-tit {
+    font: 700 13px/1.2 var(--sans);
+    letter-spacing: .3px; text-transform: uppercase;
+    color: var(--txt-3);
+    margin-bottom: 9px;
+  }
+  .linea {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 7px 0;
+    border-top: 1px solid var(--line);
+  }
+  .linea:first-of-type { border-top: 0; }
+  .linea-v {
+    flex: 1; min-width: 0;
+    font-size: 14px; font-weight: 600;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .linea-n { font: 700 14px/1 var(--display); color: var(--acc-txt); }
+
+  /* ── Por local ─────────────────────────────────────────────────────────
+     Sólo en la vista general: dónde se está yendo la gente y por qué, que es
+     la pregunta de "a dónde lo mando". */
+  .loc {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 10px; row-gap: 3px;
+    padding: 10px 0;
+    border-top: 1px solid var(--line);
+  }
+  .loc:first-of-type { border-top: 0; }
+  .loc-nom { font: 700 15px/1.2 var(--display); }
+  .loc-n { font: 700 15px/1 var(--display); }
+  .loc-top { grid-column: 1 / -1; font-size: 12.5px; color: var(--txt-3); }
+
+  /* ── Cuando todavía no hay nada ────────────────────────────────────────
+     Va a ser el estado normal durante las primeras semanas, así que no puede
+     ser una cajita gris que diga "sin datos": tiene que explicar por qué está
+     vacío y qué lo llena. */
+  .vacio { text-align: center; padding: 26px 10px 10px; }
+  .vacio-icono {
+    width: 54px; height: 54px; margin: 0 auto 14px;
+    border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--acc-soft);
+    border: 1.5px solid var(--acc-line);
+    color: var(--acc-txt);
+  }
+  .vacio-icono svg { width: 26px; height: 26px; }
+  .vacio-tit { font: 700 17px/1.3 var(--display); margin-bottom: 6px; }
+  .vacio-txt { font-size: 13.5px; color: var(--txt-2); max-width: 420px; margin: 0 auto; }
+
+  /* La cobertura: cuántos registros no tienen el motivo cargado. Va al pie y
+     en voz baja, pero va: un porcentaje calculado sobre la mitad de los
+     registros, sin decir de qué mitad, es peor que no tener el número. */
+  .cobertura {
+    margin-top: 14px; padding-top: 11px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--txt-3);
+  }
+
+  @media (min-width: 1100px) {
+    :root { --tope: 1180px; }
+    .hoja { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+    .tablero-cab  { grid-column: 1 / -1; }
+    .filtro-local { grid-column: 1 / -1; margin-bottom: 0; }
+    #cajaMotivos  { grid-column: 1; margin-bottom: 0; }
+    #cajaFalto    { grid-column: 1; margin-bottom: 0; }
+    #cajaLocales  { grid-column: 2; grid-row: 3 / span 2; margin-bottom: 0; }
+    .pie          { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body class="hay-rail">
+
+<header class="app-head">
+  <div class="app-head-in">
+    <div class="marca">
+      <div class="marca-icono">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/>
+        </svg>
+      </div>
+      <div class="marca-txt">
+        <h1>Motivos</h1>
+        <span>VDH · No Compra</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="marco">
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt">No Compra</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      Carga
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>
+      Panel
+    </a>
+    <a class="rail-item" href="motivos.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Motivos
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="hoja">
+
+  <div class="tablero-cab">
+    <h2 class="tablero-tit" id="titulo">Por qué se van sin comprar</h2>
+    <span class="tablero-fecha" id="desde"></span>
+  </div>
+
+  <!-- La pregunta que cambia toda la pantalla: la cadena entera o un local.
+       Arranca en la cadena porque "qué compro" es la decisión más cara. -->
+  <div class="filtro-local">
+    <select id="selLocal" aria-label="Local"><option value="">Todos los locales</option></select>
+  </div>
+
+  <div class="bloque" id="cajaMotivos">
+    <h2 class="bloque-tit">Por qué se fueron</h2>
+    <p class="bloque-sub">Tocá un motivo para ver qué producto y qué talle faltaron en ese caso.</p>
+    <div id="motivos"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    <p class="cobertura" id="cobertura" hidden></p>
+  </div>
+
+  <div class="bloque" id="cajaFalto" hidden>
+    <h2 class="bloque-tit">Qué faltó</h2>
+    <div class="filtro-activo" id="filtroActivo" hidden></div>
+    <div class="falto-cols" id="falto"></div>
+  </div>
+
+  <div class="bloque" id="cajaLocales" hidden>
+    <h2 class="bloque-tit">Por local</h2>
+    <p class="bloque-sub">Dónde se está yendo la gente, y por qué en cada uno.</p>
+    <div id="porLocal"></div>
+  </div>
+
+  <p class="pie">Sale del motivo que toca el vendedor al cargar. <a href="panel.html">Panel de seguimiento</a></p>
+</main>
+
+</div><!-- /.marco -->
+
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* El local elegido en ESTA pantalla no es el del dispositivo: acá se mira
+     la cadena entera y se baja a un local para comparar, no se "trabaja en"
+     un local. Por eso no toca nc_local ni lo lee. */
+  var localSel = '', motivoSel = '', datos = null;
+
+  /* ═══ Pintado ═══════════════════════════════════════════════════════════ */
+  function pintar() {
+    $('titulo').textContent = localSel
+      ? 'Por qué se van en ' + bonito(localSel)
+      : 'Por qué se van sin comprar';
+
+    $('desde').textContent = datos && datos.arranque
+      ? 'Desde el ' + fechaLinda(datos.arranque)
+      : '';
+
+    pintarMotivos();
+    pintarFalto();
+    pintarPorLocal();
+  }
+
+  function pintarMotivos() {
+    var lista = (datos && datos.motivos) || [];
+
+    if (!lista.length) { pintarVacio(); return; }
+
+    // La barra se mide contra el motivo más repetido y no contra el 100%: con
+    // un 40% arriba de todo, todas las barras quedaban en el primer tercio y
+    // no se distinguía la diferencia entre el segundo y el tercero.
+    var tope = lista[0].n || 1;
+
+    $('motivos').innerHTML = lista.map(function (m) {
+      var elegido = m.v === motivoSel;
+      return '<button type="button" class="mot' + (elegido ? ' sel' : '') + '" data-v="' + esc(m.v) + '"' +
+               ' aria-pressed="' + elegido + '">' +
+        '<span class="mot-nom">' + esc(m.v) + '</span>' +
+        '<span class="mot-pct">' + m.pct + '%</span>' +
+        '<span class="mot-n">' + m.n + (m.n === 1 ? ' vez' : ' veces') + '</span>' +
+        '<span class="mot-barra"><i style="width:' + Math.round(m.n * 100 / tope) + '%"></i></span>' +
+      '</button>';
+    }).join('');
+
+    Array.prototype.forEach.call($('motivos').children, function (b) {
+      b.onclick = function () {
+        // Tocar el que ya está elegido lo suelta: no hace falta un botón
+        // aparte para volver a todos.
+        motivoSel = (motivoSel === b.dataset.v) ? '' : b.dataset.v;
+        cargar();
+      };
+    });
+
+    /* El pie dice dos cosas y las dos hacen falta para leer bien los
+       porcentajes: desde cuándo se cuenta y cuántos registros quedaron
+       afuera por no tener el motivo.
+
+       La fecha se repite acá aposta: arriba a la derecha se esconde abajo de
+       620px, y el celular es donde más se mira. Un 50% sin saber sobre qué
+       período se calculó no es un dato. */
+    var partes = [];
+    if (datos && datos.arranque) {
+      partes.push('Cuentan los registros desde el ' + fechaLinda(datos.arranque) + '.');
+    }
+
+    // Los sin motivo son los de la etapa vieja y los que alguien cargó a mano
+    // en la planilla sin pasar por el formulario.
+    var sin = (datos && datos.sinMotivo) || 0;
+    if (sin) {
+      partes.push(sin === 1
+        ? '1 registro más no tiene el motivo cargado, así que no entra en estos porcentajes.'
+        : sin + ' registros más no tienen el motivo cargado, así que no entran en estos porcentajes.');
+    }
+
+    $('cobertura').hidden = !partes.length;
+    $('cobertura').textContent = partes.join(' ');
+  }
+
+  /** Lo que se ve las primeras semanas: vacío, pero explicado. */
+  function pintarVacio() {
+    var sin = (datos && datos.sinMotivo) || 0;
+    var donde = localSel ? bonito(localSel) : 'ningún local';
+
+    $('motivos').innerHTML =
+      '<div class="vacio">' +
+        '<div class="vacio-icono">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg>' +
+        '</div>' +
+        '<div class="vacio-tit">Todavía no hay nada que contar</div>' +
+        '<p class="vacio-txt">' +
+          (sin
+            ? esc(sin + (sin === 1 ? ' registro' : ' registros') + ' sin el motivo cargado. ' +
+                  'Los que entran por el formulario lo traen siempre: es un paso obligatorio.')
+            : 'No se cargaron registros en ' + esc(donde) +
+              (datos && datos.arranque ? ' desde el ' + esc(fechaLinda(datos.arranque)) : '') + '. ' +
+              'Esta pantalla se llena sola con cada carga.') +
+        '</p>' +
+      '</div>';
+
+    $('cobertura').hidden = true;
+  }
+
+  function pintarFalto() {
+    var prods = (datos && datos.productos) || [];
+    var tall = (datos && datos.talles) || [];
+
+    if (!prods.length && !tall.length) { $('cajaFalto').hidden = true; return; }
+    $('cajaFalto').hidden = false;
+
+    $('filtroActivo').hidden = !motivoSel;
+    if (motivoSel) {
+      $('filtroActivo').innerHTML =
+        '<span>Sólo lo que se fue por <b>' + esc(motivoSel.toLowerCase()) + '</b>.</span>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="btnTodos">Ver todos los motivos</button>';
+      $('btnTodos').onclick = function () { motivoSel = ''; cargar(); };
+    }
+
+    $('falto').innerHTML =
+      columna('Producto que buscaban', prods, 'Todavía sin productos cargados.') +
+      columna('Talle que faltó', tall, 'Todavía sin talles cargados.');
+  }
+
+  function columna(titulo, filas, vacio) {
+    return '<div><div class="falto-tit">' + esc(titulo) + '</div>' +
+      (filas.length
+        ? filas.map(function (f) {
+            return '<div class="linea"><span class="linea-v">' + esc(f.v) + '</span>' +
+                   '<span class="linea-n">' + f.n + '</span></div>';
+          }).join('')
+        : '<p class="vacio-txt" style="text-align:left">' + esc(vacio) + '</p>') +
+    '</div>';
+  }
+
+  /* Sólo en la vista general: con un local elegido, "por local" es una fila
+     repitiendo lo que ya dice el título. */
+  function pintarPorLocal() {
+    var lista = (datos && datos.porLocal) || [];
+    if (localSel || !lista.length) { $('cajaLocales').hidden = true; return; }
+
+    $('cajaLocales').hidden = false;
+    $('porLocal').innerHTML = lista.map(function (l) {
+      return '<div class="loc">' +
+        '<span class="loc-nom">' + esc(bonito(l.local)) + '</span>' +
+        '<span class="loc-n">' + l.n + '</span>' +
+        '<span class="loc-top">' + (l.top ? 'sobre todo ' + esc(l.top.toLowerCase()) : '') + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  /** '2026-09-21' → '21 de septiembre'. */
+  function fechaLinda(iso) {
+    var p = String(iso).split('-');
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
+  }
+
+  function pintarSelector() {
+    var lista = (datos && datos.locales) || [];
+    $('selLocal').innerHTML =
+      '<option value="">Todos los locales</option>' +
+      lista.map(function (l) {
+        return '<option value="' + esc(l) + '"' + (l === localSel ? ' selected' : '') + '>' +
+               esc(bonito(l)) + '</option>';
+      }).join('');
+  }
+
+  /* ═══ Carga ═════════════════════════════════════════════════════════════ */
+  function cargar() {
+    return llamar({ accion: 'motivos', local: localSel, motivo: motivoSel })
+      .then(function (res) {
+        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo leer.'); return; }
+        datos = res;
+        /* El motivo elegido puede haber dejado de existir —se cambió de local
+           y en ese no se fue nadie por eso—: si no está en el ranking que
+           volvió, se suelta, o la pantalla quedaría filtrada por algo que no
+           se ve en ninguna parte. */
+        if (motivoSel && !res.motivos.some(function (m) { return m.v === motivoSel; })) {
+          motivoSel = '';
+        }
+        pintarSelector();
+        pintar();
+      })
+      .catch(function () {
+        avisar('err', 'Sin conexión.');
+        $('motivos').innerHTML = '<p class="vacio-txt">No se pudo conectar. Revisá la señal y recargá.</p>';
+      });
+  }
+
+  /* ═══ Arranque ══════════════════════════════════════════════════════════ */
+  (function () {
+    iniciarTema();
+    $('selLocal').onchange = function () {
+      localSel = $('selLocal').value;
+      motivoSel = '';
+      cargar();
+    };
+    cargar();
+    iniciarPWA();
+  })();
+</script>
+</body>
+</html>

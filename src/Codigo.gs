@@ -257,6 +257,9 @@ function doPost(e) {
       // Tablero del local, sin PIN por el mismo motivo: son cuentas del
       // propio local, no hay un dato de ningún cliente adentro.
       case 'metricas':    salida = getMetricas(p.local);                      break;
+      // Por qué se va la gente sin comprar. Sin PIN por lo mismo: son motivos,
+      // productos y talles contados, no hay un cliente adentro. Ver Motivos.gs.
+      case 'motivos':     salida = getMotivos(p.local, p.motivo);             break;
 
       case 'version':     salida = { status: 'ok', version: VERSION };        break;
       default:            salida = { status: 'error', msg: 'Acción desconocida.' };
