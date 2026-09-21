@@ -154,6 +154,7 @@ src/                 ── el backend, en Apps Script ──
   Motivos.gs         Cuenta los motivos, y qué producto y talle faltaron
   Resultados.gs      El embudo: cuánto se carga, se sigue y se cobra
   Telegram.gs        El aviso por Telegram, con botón de WhatsApp
+  Recordatorio.gs    El mensaje de la mañana: cuántos entraron y a cuántos falta
   Respaldo.gs        Copia diaria de la planilla
   Resumen.gs         Arma la pestaña Resumen (sucursal/vendedor/producto/motivo)
   Kommo.gs           Puente con el CRM: cada no-compra entra como lead
@@ -318,6 +319,31 @@ pueda decir que un aviso dejó de salir.
 
 No hace falta reautorizar el proyecto: `script.external_request` ya estaba
 declarado desde que existe el puente con Kommo.
+
+## El recordatorio de la mañana
+
+Todos los días a las 9 cae en el mismo grupo de Telegram un mensaje corto:
+cuántos entraron ayer y a cuántos falta contestarles, con un botón que abre
+el panel.
+
+**Por qué existe.** El sistema se murió del lado del seguimiento, y el número
+de pendientes **siempre** estuvo disponible: bastaba con abrir el panel. Eso
+fue exactamente el problema — *lo que hay que ir a buscar no se mira.* La
+pantalla de Resultados lo mide y el aviso de cada carga lo notifica, pero
+ninguno de los dos le dice a nadie "hoy te faltan seis".
+
+**Por qué es un recordatorio y no un informe.** Dos números y un botón. Nada
+de porcentajes, plata ni comparaciones contra el mes pasado: eso está en
+Resultados para el que lo quiera. Un informe diario se lee tres días y
+después se saltea; dos renglones se leen siempre.
+
+**Si no hay nada que hacer ni nada que contar, no manda nada.** Un mensaje
+diario que dice "cero y cero" enseña a ignorar el grupo, y el día que diga
+algo importante ya nadie lo va a estar leyendo.
+
+Se instala corriendo `instalarRecordatorio()` **una vez** desde el editor, que
+además manda uno en el momento para probar. `quitarRecordatorio()` lo apaga
+sin tocar el aviso de cada carga, y la hora vive en `RECORDATORIO_HORA`.
 
 ## Corregir lo que cargaste mal
 
