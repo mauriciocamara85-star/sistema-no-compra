@@ -145,7 +145,15 @@ function telegramEnviar_(data) {
  * persona elija por nombre y el id quede adentro.
  */
 function telegramChats_(token) {
-  const updates = telegramFetch_(token, 'getUpdates', { limit: 100 }) || [];
+  /* `allowed_updates` NO es opcional acá. Por defecto getUpdates deja afuera
+     `my_chat_member`, que es justo el evento de "agregaron el bot al grupo" —
+     el más confiable de todos, porque pasa una sola vez y sin que nadie tenga
+     que acordarse de escribir nada. Sin pedirlo, un bot recién agregado a un
+     grupo devuelve una lista vacía y parece que estuviera mal puesto. */
+  const updates = telegramFetch_(token, 'getUpdates', {
+    limit: 100,
+    allowed_updates: ['message', 'channel_post', 'my_chat_member']
+  }) || [];
   const vistos = {};
   const chats = [];
 
@@ -168,6 +176,23 @@ function telegramChats_(token) {
   });
 
   return chats;
+}
+
+/**
+ * Cómo se llama el bot, para poder decirlo cuando la búsqueda vuelve vacía.
+ *
+ * Es el error más fácil de cometer y el más difícil de ver: el bot tiene un
+ * usuario y uno escribe en el grupo mencionando otro parecido. Con el modo
+ * privacidad —que viene prendido de fábrica— sólo le llegan los mensajes que
+ * lo nombran A ÉL, así que mencionar mal es lo mismo que no escribir nada.
+ */
+function telegramNombreBot_(token) {
+  try {
+    const yo = telegramFetch_(token, 'getMe');
+    return (yo && yo.username) ? ('@' + yo.username) : '';
+  } catch (err) {
+    return '';
+  }
 }
 
 /**

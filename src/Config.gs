@@ -487,10 +487,16 @@ function telegramBuscar(pin, token) {
   try {
     const chats = telegramChats_(limpio);
     if (!chats.length) {
+      /* Decir el nombre del bot resuelve el 90% de los casos: el error casi
+         siempre es haberlo mencionado con un usuario parecido pero distinto,
+         y así el mensaje no le llegó nunca. */
+      const nombre = telegramNombreBot_(limpio);
       return {
         status: 'error',
-        msg: 'No encontré ningún chat. Escribí un mensaje cualquiera en el grupo ' +
-             'donde está el bot y probá de nuevo: Telegram sólo cuenta los mensajes recientes.'
+        msg: 'No encontré ningún chat. Escribí en el grupo ' +
+             (nombre ? ('exactamente "' + nombre + ' hola"') : 'un mensaje nombrando al bot') +
+             ' y probá de nuevo. Ojo con el nombre: el bot sólo recibe los mensajes que lo ' +
+             'nombran a él, y Telegram sólo cuenta los de las últimas 24 horas.'
       };
     }
     return { status: 'ok', chats: chats };
