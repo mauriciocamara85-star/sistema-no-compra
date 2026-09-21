@@ -19,6 +19,10 @@
  * vendedores, se ve qué pasó y se restaura. Es la diferencia entre impedir el
  * error y poder deshacerlo, y para este caso lo segundo cuesta menos y sirve
  * más.
+ *
+ * La única excepción es a quién le llega el AVISO POR MAIL: ese mail lleva
+ * adentro el teléfono del cliente, así que cambiarlo sí pide el PIN del panel.
+ * No se protege la configuración, se protege el dato que viaja.
  */
 
 const HOJA_EQUIPO = 'Equipo';
@@ -318,6 +322,15 @@ function objetivoDe_(local) {
 function objetivoGuardar(local, periodo, meta, quien) {
   if (!local) return { status: 'error', msg: 'Falta el local.' };
 
+  /* '*' es el objetivo GENERAL: el que vale para todo local que no tenga el
+     suyo. En la planilla vive como una fila con el local vacío —así lo lee
+     objetivos_()—, así que acá se traduce a eso. Se manda con un asterisco y
+     no con una cadena vacía para que un error de la pantalla no termine
+     escribiendo el objetivo de todos sin querer. */
+  const general = local === '*';
+  const nombre = general ? '' : local;
+  const enLog = general ? 'Todos los locales' : local;
+
   const p = clave_(periodo);
   if (PERIODOS.indexOf(p) === -1) {
     return { status: 'error', msg: 'Período no permitido: ' + periodo };
@@ -331,28 +344,36 @@ function objetivoGuardar(local, periodo, meta, quien) {
 
     const hoja = asegurarPestana_(HOJA_OBJETIVOS, ['Local', 'Período', 'Meta'], '#36D6E7');
     const ultima = hoja.getLastRow();
-    const k = clave_(local);
+    const k = general ? '' : clave_(local);
     let fila = 0;
 
     if (ultima >= 2) {
-      const filas = hoja.getRange(2, 1, ultima - 1, 1).getValues();
+      const filas = hoja.getRange(2, 1, ultima - 1, 3).getValues();
       for (let i = 0; i < filas.length; i++) {
-        if (clave_(filas[i][0]) === k) { fila = i + 2; break; }
+        if (clave_(filas[i][0]) !== k) continue;
+        /* El general se busca por un nombre VACÍO, así que una fila en blanco
+           perdida en el medio de la hoja también coincide. Pedirle además una
+           meta escrita la descarta: si el objetivo terminara ahí, la fila
+           general de más abajo seguiría existiendo y objetivos_() se quedaría
+           con la última, que es la vieja. */
+        if (general && !String(filas[i][2]).trim()) continue;
+        fila = i + 2;
+        break;
       }
     }
 
     if (!n) {
       if (fila) {
         hoja.deleteRow(fila);
-        registrarLog_('Borró objetivo', local, '', quien);
+        registrarLog_('Borró objetivo', enLog, '', quien);
       }
       return { status: 'ok', objetivo: null };
     }
 
-    if (fila) hoja.getRange(fila, 1, 1, 3).setValues([[local, p, n]]);
-    else      hoja.appendRow([local, p, n]);
+    if (fila) hoja.getRange(fila, 1, 1, 3).setValues([[nombre, p, n]]);
+    else      hoja.appendRow([nombre, p, n]);
 
-    registrarLog_('Puso objetivo', local, n + ' por ' + p, quien);
+    registrarLog_('Puso objetivo', enLog, n + ' por ' + p, quien);
     return { status: 'ok', objetivo: { periodo: p, meta: n } };
 
   } catch (err) {
@@ -361,6 +382,67 @@ function objetivoGuardar(local, periodo, meta, quien) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ── A quién le llega el aviso ──────────────────────────────────────────────
+/**
+ * El mail que recibe un aviso por cada registro nuevo.
+ *
+ * Vive en la propiedad NOTIFICAR_A del script y no en la planilla porque el
+ * repo es público y las propiedades no se publican. Vacío significa que no se
+ * manda nada: notificar_() (Codigo.gs) se vuelve sin hacer nada.
+ */
+function avisosLeer_() {
+  const destino = String(
+    PropertiesService.getScriptProperties().getProperty('NOTIFICAR_A') || ''
+  ).trim();
+  return { mail: destino, activo: !!destino };
+}
+
+/** Un mail con forma de mail. Que exista lo dice el rebote, no esto. */
+function mailValido_(m) {
+  return /^[^\s@,]+@[^\s@,]+\.[^\s@,]{2,}$/.test(m);
+}
+
+/**
+ * Cambia a quién le llega el aviso. Es lo ÚNICO de esta pantalla que pide el
+ * PIN, y no por proteger un ajuste.
+ *
+ * Ese mail lleva adentro el nombre, el teléfono y el mail del cliente. Sin
+ * PIN, cualquiera que tenga la dirección del backend —que está en un repo
+ * público— podría mandarse los datos de cada persona que pasa por los locales
+ * a su propia casilla, y nadie se enteraría: el sistema seguiría andando
+ * igual. Es el mismo dato que protege el panel, sólo que saliendo por otra
+ * puerta.
+ *
+ * Vacío apaga el aviso. Se pueden poner varias casillas separadas por coma:
+ * MailApp las acepta tal cual en el campo "to".
+ */
+function avisosGuardar(pin, mail, quien) {
+  if (!verificarPin_(pin)) return { status: 'error', msg: mensajePin_() };
+
+  // Sin espacios en ninguna parte: un mail no los lleva, y pegado desde el
+  // celular casi siempre viene con uno adelante o atrás.
+  const limpio = String(mail || '').replace(/\s+/g, '').replace(/,+$/, '');
+  if (limpio.length > 200) {
+    return { status: 'error', msg: 'Esa lista de mails es demasiado larga.' };
+  }
+
+  if (limpio) {
+    const partes = limpio.split(',');
+    if (partes.length > 5) {
+      return { status: 'error', msg: 'Como mucho cinco casillas.' };
+    }
+    for (let i = 0; i < partes.length; i++) {
+      if (!mailValido_(partes[i])) {
+        return { status: 'error', msg: 'Esto no parece un mail: ' + partes[i] };
+      }
+    }
+  }
+
+  PropertiesService.getScriptProperties().setProperty('NOTIFICAR_A', limpio);
+  registrarLog_('Cambió el aviso', '', limpio || 'sin aviso', quien);
+  return { status: 'ok', avisos: avisosLeer_() };
 }
 
 // ── Lo que pide la pantalla de configuración ───────────────────────────────
@@ -395,6 +477,9 @@ function getConfig() {
     status: 'ok',
     locales: locales,
     periodos: PERIODOS,
-    general: metas['*'] || null
+    general: metas['*'] || null,
+    // A quién le llega el aviso de cada registro nuevo. La pantalla lo muestra
+    // siempre; cambiarlo pide el PIN (ver avisosGuardar).
+    avisos: avisosLeer_()
   };
 }

@@ -134,8 +134,33 @@
   .meta-fila .campo { flex: 1; }
   .meta-nota { font-size: 12px; color: var(--txt-3); margin-top: 8px; }
 
+  /* La fila de arriba de todo NO es un local: es el objetivo que rige donde
+     no hay uno propio. Va pintada distinta y con una línea abajo para que
+     nadie la cuente como una sucursal más: son catorce, no quince. */
+  .local-general { padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+  .local-general + .local { border-top: 0; }
+  .local-general .local-nom { color: var(--acc-txt); }
+  .local-sub {
+    display: block;
+    font: 400 12px/1.35 var(--sans);
+    color: var(--txt-3);
+    margin-top: 2px;
+  }
+
+  /* El aviso por mail: se lee de un renglón y se cambia una vez por año, así
+     que el estado va en texto corrido y el formulario recién aparece cuando
+     alguien toca el botón. */
+  .avisos-quien { font-size: 13.5px; color: var(--txt-2); }
+  .avisos-quien b { color: var(--txt); font-weight: 700; word-break: break-word; }
+  .avisos-quien.flojo { color: var(--txt-3); }
+  .avisos-botones { display: flex; gap: 8px; margin-top: 16px; }
+  #avisos .campo + .meta-nota { margin-bottom: 14px; }
+
   @media (min-width: 720px) {
     .agregar input, .meta-fila .campo { max-width: 260px; }
+    /* Un mail es más largo que un objetivo de dos dígitos, pero tampoco tiene
+       que cruzar la pantalla entera. */
+    #avisos .campo { max-width: 340px; }
   }
 
   /* ── En la PC ──────────────────────────────────────────────────────────
@@ -153,6 +178,7 @@
       align-items: start;
     }
     #cajaLocales { grid-column: 1; grid-row: 1; margin-bottom: 0; }
+    #cajaAvisos  { grid-column: 1; grid-row: 2; margin-bottom: 0; }
     .col-lado    { grid-column: 2; grid-row: 1; }
     .col-lado .esteEquipo, .col-lado .bloque { margin-bottom: 12px; }
     .pie { grid-column: 1 / -1; }
@@ -255,6 +281,16 @@
     <div id="locales"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
   </div>
 
+  <!-- ── El aviso por mail ────────────────────────────────────────────────
+       Lo único de esta pantalla que pide el PIN, y no por ser configuración:
+       ese mail lleva adentro el teléfono del cliente. El motivo entero está
+       en avisosGuardar (Config.gs). -->
+  <div class="bloque" id="cajaAvisos">
+    <h2 class="bloque-tit">El aviso por mail</h2>
+    <p class="bloque-sub">A quién le llega un mail cada vez que un local carga un no-compra.</p>
+    <div id="avisos"><div class="skel"></div></div>
+  </div>
+
   <p class="pie">Los cambios quedan anotados con la fecha en la pestaña <strong>Log</strong> de la planilla. <a href="panel.html">Panel de seguimiento</a></p>
 </main>
 
@@ -266,7 +302,7 @@
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
-  var K_LOCAL = 'nc_local';
+  var K_LOCAL = 'nc_local', K_PIN = 'nc_pin';
   var datos = null, abierto = '';
 
   var X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
@@ -321,28 +357,44 @@
 
   /* ═══ Los locales ═══════════════════════════════════════════════════════ */
   function pintarLocales() {
-    $('locales').innerHTML = datos.locales.map(function (l) {
-      var n = l.vendedores.length;
-      var obj = l.objetivo || {};
-      /* Los dos datos que uno viene a mirar, en la fila cerrada: cuánta gente
-         tiene el local y qué objetivo le pusieron. Sin esto las catorce filas
-         decían lo mismo y había que abrirlas de a una. */
-      var chipGente = n
-        ? '<span class="local-cuenta">' + (n === 1 ? '1 vendedor' : n + ' vendedores') + '</span>'
-        : '<span class="local-cuenta flojo">sin gente</span>';
-      var chipMeta = obj.meta
-        ? '<span class="local-cuenta es-meta">' + obj.meta + ' por ' + nombrePeriodo(obj.periodo) + '</span>'
-        : '<span class="local-cuenta flojo">sin objetivo</span>';
+    /* Arriba de los catorce va el OBJETIVO GENERAL: el que rige en el local
+       que no tiene el suyo. Es una fila más y no un bloque aparte porque se
+       configura exactamente igual que las otras; lo único que le falta es la
+       gente. Hasta ahora sólo se podía poner a mano en la planilla —una fila
+       con el local vacío— y nadie fuera de este código sabía que existía. */
+    $('locales').innerHTML =
+      filaLocal({ local: '*', vendedores: [], objetivo: datos.general }) +
+      datos.locales.map(function (l) { return filaLocal(l); }).join('');
+    conectar();
+  }
 
-      return '<div class="local' + (l.local === abierto ? ' abierto' : '') + '" data-local="' + esc(l.local) + '">' +
+  function filaLocal(l) {
+    var esGeneral = l.local === '*';
+    var n = l.vendedores.length;
+    var obj = l.objetivo || {};
+
+    /* Los dos datos que uno viene a mirar, en la fila cerrada: cuánta gente
+       tiene el local y qué objetivo le pusieron. Sin esto las catorce filas
+       decían lo mismo y había que abrirlas de a una. */
+    var chipGente = n
+      ? '<span class="local-cuenta">' + (n === 1 ? '1 vendedor' : n + ' vendedores') + '</span>'
+      : '<span class="local-cuenta flojo">sin gente</span>';
+    var chipMeta = obj.meta
+      ? '<span class="local-cuenta es-meta">' + obj.meta + ' por ' + nombrePeriodo(obj.periodo) + '</span>'
+      : '<span class="local-cuenta flojo">sin objetivo' + (esGeneral ? ' general' : '') + '</span>';
+
+    var titulo = esGeneral
+      ? 'Todos los locales<span class="local-sub">Rige donde no hay un objetivo propio</span>'
+      : esc(bonito(l.local));
+
+    return '<div class="local' + (esGeneral ? ' local-general' : '') +
+             (l.local === abierto ? ' abierto' : '') + '" data-local="' + esc(l.local) + '">' +
         '<div class="local-cab">' + FLECHA +
-          '<span class="local-nom">' + esc(bonito(l.local)) + '</span>' +
-          '<span class="local-datos">' + chipGente + chipMeta + '</span>' +
+          '<span class="local-nom">' + titulo + '</span>' +
+          '<span class="local-datos">' + (esGeneral ? '' : chipGente) + chipMeta + '</span>' +
         '</div>' +
         '<div class="local-cuerpo">' + cuerpoLocal(l) + '</div>' +
       '</div>';
-    }).join('');
-    conectar();
   }
 
   /**
@@ -358,6 +410,7 @@
    * el día que entra un "Jaun" alguien tiene que poder limpiarlo.
    */
   function cuerpoLocal(l) {
+    var esGeneral = l.local === '*';
     var obj = l.objetivo || { periodo: 'dia', meta: '' };
 
     var meta =
@@ -370,7 +423,13 @@
           }).join('') + '</select></div>' +
         '<button type="button" class="btn btn-sec btn-chico" data-guardar>Guardar</button>' +
       '</div>' +
-      '<div class="meta-nota">Cuántos no-compra se espera que cargue este local. En 0 queda sin objetivo propio.</div>';
+      '<div class="meta-nota">' + (esGeneral
+        ? 'Rige en todo local que no tenga el suyo; a los que ya tienen objetivo propio no los toca. En 0 no rige ninguno.'
+        : 'Cuántos no-compra se espera que cargue este local. En 0 queda sin objetivo propio y vuelve a regir el general.') +
+      '</div>';
+
+    // El objetivo general no es de nadie en particular: no lleva gente abajo.
+    if (esGeneral) return meta;
 
     var gente = l.vendedores.length
       ? '<p class="gente-txt">En la lista: <b>' + l.vendedores.map(esc).join('</b>, <b>') + '</b>.</p>' +
@@ -429,7 +488,9 @@
             local: local,
             periodo: caja.querySelector('[data-periodo]').value,
             meta: caja.querySelector('[data-meta]').value
-          }, local, function () { avisar('ok', 'Objetivo guardado.'); });
+          }, local, function () {
+            avisar('ok', local === '*' ? 'Objetivo general guardado.' : 'Objetivo guardado.');
+          });
         };
       }
     });
@@ -451,6 +512,78 @@
       .catch(function () { avisar('err', 'Sin conexión. El cambio no se guardó.'); });
   }
 
+  /* ═══ El aviso por mail ═════════════════════════════════════════════════
+     Es lo único de esta pantalla que pide el PIN. No por ser configuración:
+     el mail que sale por cada registro lleva adentro el nombre, el teléfono
+     y el mail del cliente, o sea el mismo dato que el panel esconde detrás
+     de una clave. Cambiar a dónde se manda es abrirle esa puerta a otro.
+
+     Mientras tanto se LEE sin PIN, porque saber a quién le llega —o que no
+     le llega a nadie, que es lo que pasaba hasta hoy— no le hace daño a
+     nadie y es justo lo que alguien viene a mirar acá. */
+  function pintarAvisos() {
+    var a = (datos && datos.avisos) || { mail: '', activo: false };
+
+    $('avisos').innerHTML = a.activo
+      ? '<p class="avisos-quien">Le llega a <b>' + esc(a.mail.split(',').join(', ')) + '</b>.</p>' +
+        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnAviso">Cambiar</button></div>'
+      : '<p class="avisos-quien flojo">No le llega a nadie. Los registros se guardan igual en la planilla y se ven en el panel; lo único que falta es el mail.</p>' +
+        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnAviso">Poner un mail</button></div>';
+
+    $('btnAviso').onclick = formAvisos;
+  }
+
+  function formAvisos() {
+    var a = (datos && datos.avisos) || { mail: '' };
+
+    $('avisos').innerHTML =
+      '<div class="campo"><label for="avMail">Mail que recibe el aviso</label>' +
+        '<input type="email" id="avMail" inputmode="email" autocomplete="off" spellcheck="false" ' +
+        'placeholder="alguien@vdh.com" value="' + esc(a.mail) + '"></div>' +
+      '<div class="meta-nota">Vacío apaga el aviso. Se pueden poner hasta cinco casillas separadas por coma.</div>' +
+      '<div class="campo"><label for="avPin">PIN del panel</label>' +
+        '<input type="password" id="avPin" inputmode="numeric" maxlength="12" placeholder="••••" ' +
+        'value="' + esc(leer(K_PIN)) + '"></div>' +
+      '<div class="meta-nota">Se pide el PIN porque ese mail lleva adentro el teléfono del cliente.</div>' +
+      '<div class="avisos-botones">' +
+        '<button type="button" class="btn btn-pri btn-chico" id="avGuardar">Guardar</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="avCancelar">Cancelar</button>' +
+      '</div>';
+
+    $('avCancelar').onclick = pintarAvisos;
+    $('avGuardar').onclick = guardarAvisos;
+    // Enter en el PIN guarda: es el último campo y no hay <form> que lo haga.
+    $('avPin').onkeydown = function (e) { if (e.key === 'Enter') guardarAvisos(); };
+  }
+
+  function guardarAvisos() {
+    var pin = $('avPin').value.trim();
+    if (!pin) { avisar('err', 'Falta el PIN del panel.'); $('avPin').focus(); return; }
+
+    var btn = $('avGuardar');
+    btn.disabled = true;
+
+    llamar({ accion: 'avisos', pin: pin, mail: $('avMail').value })
+      .then(function (res) {
+        btn.disabled = false;
+        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo guardar.'); return; }
+
+        // El PIN quedó bien: se guarda acá para no volver a escribirlo, igual
+        // que hace el panel. Es la misma clave y el mismo dispositivo.
+        guardar(K_PIN, pin);
+
+        datos.avisos = res.avisos;
+        pintarAvisos();
+        avisar('ok', res.avisos.activo
+          ? 'El aviso ahora le llega a ' + res.avisos.mail + '.'
+          : 'El aviso quedó apagado.');
+      })
+      .catch(function () {
+        btn.disabled = false;
+        avisar('err', 'Sin conexión. El cambio no se guardó.');
+      });
+  }
+
   /* ═══ Carga ═════════════════════════════════════════════════════════════ */
   function cargar(silencioso) {
     return llamar({ accion: 'config' })
@@ -459,10 +592,12 @@
         datos = res;
         pintarEsteEquipo();
         pintarLocales();
+        pintarAvisos();
       })
       .catch(function () {
         if (!silencioso) {
           $('locales').innerHTML = '<div class="vend-vacio">No se pudo conectar. Revisá la señal y recargá.</div>';
+          $('avisos').innerHTML = '<p class="avisos-quien flojo">No se pudo leer. Recargá la pantalla.</p>';
         }
         avisar('err', 'Error de conexión.');
       });

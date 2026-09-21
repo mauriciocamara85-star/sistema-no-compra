@@ -25,12 +25,14 @@
 // Configuración del proyecto → Propiedades de la secuencia de comandos:
 //   SHEET_ID      ID de la planilla
 //   PANEL_PIN     PIN de Atención al Cliente
-//   NOTIFICAR_A   mail que recibe el aviso (vacío = sin aviso)
+//   NOTIFICAR_A   mail que recibe el aviso (vacío = sin aviso). Es la única
+//                 que además se puede cambiar desde /config.html, con el PIN
+//                 del panel: ver avisosGuardar en Config.gs.
 
 /** Se sube a mano al publicar. Sirve para responder "¿qué versión tenés?"
     cuando alguien dice que algo no le anda. El formulario muestra la suya en
     el pie; si no coinciden, el celular tiene la app vieja cacheada. */
-const VERSION = '2026.09.20';
+const VERSION = '2026.09.21';
 
 const HOJA = 'No Compra';
 const TZ = 'America/Argentina/Buenos_Aires';
@@ -173,6 +175,11 @@ function doPost(e) {
       case 'agregarVend': salida = equipoAgregar(p.local, p.nombre, p.quien); break;
       case 'sacarVend':   salida = equipoDesactivar(p.local, p.nombre, p.quien); break;
       case 'objetivo':    salida = objetivoGuardar(p.local, p.periodo, p.meta, p.quien); break;
+
+      // El aviso por mail SÍ pide el PIN, y es lo único de la configuración
+      // que lo pide: el mail lleva adentro el teléfono del cliente. El motivo
+      // entero está en avisosGuardar (Config.gs).
+      case 'avisos':      salida = avisosGuardar(p.pin, p.mail, p.quien);     break;
 
       // Tablero del local, sin PIN por el mismo motivo: son cuentas del
       // propio local, no hay un dato de ningún cliente adentro.

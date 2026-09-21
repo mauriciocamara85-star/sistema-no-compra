@@ -28,7 +28,7 @@ Vendedor en el local
 |-------|-----|------------|
 | Formulario de carga | [`/`](https://mauriciocamara85-star.github.io/sistema-no-compra/) | Vendedores de los 14 locales |
 | Panel de seguimiento | [`/panel.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/panel.html) | Atención al Cliente (pide PIN) |
-| Configuración | [`/config.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/config.html) | Encargados: el equipo y el objetivo de cada local (sin PIN) |
+| Configuración | [`/config.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/config.html) | Encargados: el equipo y el objetivo de cada local (sin PIN, salvo el aviso por mail) |
 
 Las tres se sirven desde GitHub Pages y se publican con un `git push`. Las URLs
 viejas de Apps Script (`.../exec` y `.../exec?v=panel`) siguen andando:
@@ -137,7 +137,7 @@ UNICENTER · VILLA DEL PARQUE
                      ── la interfaz, en GitHub Pages ──
 index.html           Formulario del vendedor
 panel.html           Panel de seguimiento
-config.html          Equipo y objetivos de cada local
+config.html          Objetivos de cada local, el general y el aviso por mail
 estilos.css          Sistema de diseño compartido (violeta, claro/oscuro)
 comun.js             Backend, tema, avisos, WhatsApp, PWA
 manifest.json        Para instalarla en el celular
@@ -146,7 +146,7 @@ icon-*.png           Íconos de la app
 
 src/                 ── el backend, en Apps Script ──
   Codigo.gs          Carga, seguimiento, avisos
-  Config.gs          Equipo, objetivos e historial de cambios
+  Config.gs          Equipo, objetivos, aviso por mail e historial de cambios
   Respaldo.gs        Copia diaria de la planilla
   Resumen.gs         Arma la pestaña Resumen (sucursal/vendedor/producto/motivo)
   Kommo.gs           Puente con el CRM: cada no-compra entra como lead
@@ -168,6 +168,9 @@ src/                 ── el backend, en Apps Script ──
    | `SHEET_ID` | ID de la planilla |
    | `PANEL_PIN` | PIN de Atención al Cliente |
    | `NOTIFICAR_A` | mail que recibe el aviso (vacío = sin aviso) |
+
+   `NOTIFICAR_A` es la única que además se puede cambiar desde `/config.html`,
+   con el PIN del panel. Ver [El aviso por mail](#el-aviso-por-mail).
 
 3. **Implementar → Nueva implementación → Aplicación web**
    - Ejecutar como: **yo**
@@ -271,7 +274,14 @@ de la misma planilla, que se crean solas la primera vez:
 | `Log` | Fecha · Acción · Local · Detalle · Quién |
 
 Una fila de `Objetivos` con el **local vacío** vale como objetivo por defecto
-para todos los que no tengan el suyo.
+para todos los que no tengan el suyo. En la pantalla es la fila **Todos los
+locales**, arriba de las catorce: se configura igual que cualquier otra y lo
+único que le falta es la gente. Antes había que escribirla a mano en la
+planilla y no había forma de enterarse de que existía.
+
+**Cómo se resuelve el objetivo de un local:** primero el suyo; si no tiene, el
+general; si tampoco hay, ninguno. Poner un local en **0** borra su fila y lo
+devuelve al general — no lo deja en cero.
 
 En esa misma pantalla está ahora el **cambio de tema** (claro/oscuro). Vivía
 en la esquina de las tres cabeceras y es algo que se toca una vez: su lugar
@@ -330,6 +340,27 @@ elegido, abrir "Cambiar" lleva directo al desplegable de vendedores: el que
 entra ahí viene a corregir su nombre, y hacerlo pasar otra vez por una pared
 de catorce sucursales que ya contestó es tiempo perdido. Cambiar de local
 sigue siendo posible desde la línea al pie de ese bloque.
+
+## El aviso por mail
+
+Cada registro nuevo dispara un mail con el cliente, el producto y un botón
+para escribirle por WhatsApp. A dónde va lo dice la propiedad `NOTIFICAR_A`, y
+**vacío significa que no se manda nada** — que es como estuvo todo este
+tiempo, sin que se notara desde ninguna pantalla.
+
+Ahora se ve y se cambia desde `/config.html`, abajo de los locales. Es lo
+**único de esa pantalla que pide el PIN**, y no por proteger un ajuste: ese
+mail lleva adentro el nombre, el teléfono y el mail del cliente, o sea el
+mismo dato que el panel esconde detrás de una clave. Sin PIN, cualquiera con
+la dirección del backend —que está en un repo público— podría mandarse a su
+casilla los datos de cada persona que pasa por los locales, y nadie se
+enteraría: el sistema seguiría andando igual.
+
+Leerlo, en cambio, no pide nada. Saber a quién le llega —o que no le llega a
+nadie— es justo lo que alguien viene a mirar ahí.
+
+Se aceptan hasta cinco casillas separadas por coma. Vaciar el campo apaga el
+aviso. Todo cambio queda en el `Log`.
 
 ## La vuelta del CRM
 
@@ -518,7 +549,7 @@ así que la primera vez va a pedir autorización. Ver *Permisos* más arriba.
 
 ## Versión visible
 
-El pie del formulario muestra su versión (`v2026.09.20`) y el backend devuelve
+El pie del formulario muestra su versión (`v2026.09.21`) y el backend devuelve
 la suya con `{"accion":"version"}`. Cuando alguien dice *"a mí no me anda"*,
 comparar las dos dice si ese celular tiene la app vieja cacheada. Las dos se
 suben a mano al publicar: `VERSION` en `index.html` y en `src/Codigo.gs`.
@@ -535,6 +566,9 @@ probar números para siempre.
 El repo es **público**, así que el ID de la planilla, el PIN del panel y el mail
 de avisos no viven acá: se guardan en las propiedades del script. Así el código
 se puede compartir sin exponer a qué planilla apunta ni cómo entrar al panel.
+
+De las tres, el mail de avisos es la única que se puede cambiar sin abrir Apps
+Script: se hace desde `/config.html` con el PIN del panel.
 
 ## Sobre el acceso al panel
 
