@@ -309,8 +309,26 @@
   }
   .eq:first-child { border-top: 0; padding-top: 2px; }
   .eq-pos { font: 700 12px/1 var(--display); color: var(--txt-3); text-align: center; }
+  /* El nombre y, abajo, lo que volvió por lo que cargó. La plata va ACÁ
+     adentro y no en una columna propia porque las columnas de la grilla las
+     comparten todas las filas: una columna de plata se ensancharía distinto
+     en cada fila y las barras dejarían de medir lo mismo, que es lo único
+     para lo que están. */
   .eq-nom {
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 2px; min-width: 0;
     font-size: 14px; font-weight: 600;
+  }
+  .eq-nom-txt {
+    max-width: 100%;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* En verde y no en violeta: es plata que entró, el mismo significado que
+     tiene el verde en el resto de la app. El violeta es de lo que se toca. */
+  .eq-plata {
+    font: 700 11.5px/1.2 var(--sans);
+    color: var(--ok-txt);
+    max-width: 100%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .eq-hoy { font-size: 11.5px; font-weight: 600; color: var(--txt-3); }
@@ -683,7 +701,7 @@
        va al final, después del formulario: ahí lo que importa es cargar. -->
   <section class="bloque equipo" id="equipo" hidden>
     <h2 class="bloque-tit">El equipo</h2>
-    <p class="bloque-sub" id="equipoSub">Registros de este mes, uno por uno.</p>
+    <p class="bloque-sub" id="equipoSub">Este mes, uno por uno.</p>
     <div id="equipoLista"></div>
     <p class="eq-pie" id="equipoPie"></p>
   </section>
@@ -1274,7 +1292,13 @@
   }
 
   /**
-   * El equipo del local: cada vendedor y cuánto lleva cargado en el mes.
+   * El equipo del local: cada vendedor, cuánto lleva cargado en el mes y
+   * cuánta plata volvió por lo que cargó.
+   *
+   * Esa segunda línea es el punto entero de la lista. "Lau · 12" dice cuánto
+   * trabajó; "Lau · 12 · $340.000 recuperados" dice para qué sirvió. Lo
+   * primero se parece a un control de asistencia y lo segundo a un resultado,
+   * y el que carga necesita ver lo segundo para seguir cargando.
    *
    * Se arma con DOS fuentes y por eso no lo resuelve solo el backend: los
    * registros de la planilla dicen quién cargó y cuánto, y la lista del local
@@ -1292,16 +1316,20 @@
     ((m && m.equipo) || []).forEach(function (v) {
       if (!v || !v.nombre) return;
       visto[v.nombre.toLowerCase()] = true;
-      filas.push({ nombre: v.nombre, mes: v.mes || 0, dia: v.dia || 0 });
+      filas.push({
+        nombre: v.nombre, mes: v.mes || 0, dia: v.dia || 0,
+        plata: (v.recuperado && v.recuperado.mes) || 0
+      });
     });
     // Los que están en la lista del local y todavía no cargaron este mes.
     equipo.forEach(function (n) {
-      if (n && !visto[String(n).toLowerCase()]) filas.push({ nombre: n, mes: 0, dia: 0 });
+      if (n && !visto[String(n).toLowerCase()]) filas.push({ nombre: n, mes: 0, dia: 0, plata: 0 });
     });
 
     if (!filas.length) { caja.hidden = true; return; }
     caja.hidden = false;
-    $('equipoSub').textContent = 'Registros de este mes en ' + nombreLocal(local) + '.';
+    $('equipoSub').textContent =
+      'Este mes en ' + nombreLocal(local) + ': cuánto cargó cada uno y cuánto volvió.';
 
     filas.sort(function (a, b) {
       return (b.mes - a.mes) || (b.dia - a.dia) || a.nombre.localeCompare(b.nombre);
@@ -1321,9 +1349,16 @@
 
     lista.innerHTML = filas.map(function (v, i) {
       var mio = yo && v.nombre.toLowerCase() === yo;
+      /* La plata sólo aparece cuando la hay. Un "$0" abajo de cada nombre
+         sería un cartel de fracaso en una lista que está para lo contrario, y
+         el mes arranca en cero para todos. */
+      var plata = v.plata
+        ? '<span class="eq-plata">' + PESOS.format(v.plata) + ' recuperados</span>'
+        : '';
+
       return '<div class="eq' + (mio ? ' yo' : '') + '">' +
         '<span class="eq-pos">' + (i + 1) + '</span>' +
-        '<span class="eq-nom">' + esc(v.nombre) + '</span>' +
+        '<span class="eq-nom"><span class="eq-nom-txt">' + esc(v.nombre) + '</span>' + plata + '</span>' +
         '<span class="eq-hoy">' + (v.dia ? '+' + v.dia + ' hoy' : '') + '</span>' +
         '<b class="eq-n">' + v.mes + '</b>' +
         '<span class="eq-barra"><i style="width:' +

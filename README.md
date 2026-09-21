@@ -362,6 +362,12 @@ nadie— es justo lo que alguien viene a mirar ahí.
 Se aceptan hasta cinco casillas separadas por coma. Vaciar el campo apaga el
 aviso. Todo cambio queda en el `Log`.
 
+El cuerpo del mail va en **violeta**, como la app. Era naranja `#F97316`, el
+de Ranking VDH. Los violetas del mail son más oscuros que los de la pantalla
+(`#5B21B6` el título, `#6D28D9` el botón) porque ahí el fondo lo pone el
+cliente de correo y siempre es claro: el violeta de la app daría 3,1:1 contra
+blanco.
+
 ## La vuelta del CRM
 
 Hasta acá el camino era de ida. El resultado —si el cliente al final compró y
@@ -446,7 +452,19 @@ caja `.col-form` se deshace con `display:contents`.
 | Registros hoy | Columnas A y B: los del local con fecha de hoy |
 | Este mes | Lo mismo, del 1° a hoy. El pie muestra el total histórico |
 | Recuperado este mes | Columnas T (`Compró?`) y V (`Monto Venta ($)`) |
-| El equipo | Columna H (`Vendedor`), contada por persona, más la lista de la pestaña `Equipo` para que aparezcan también los que este mes todavía no cargaron |
+| El equipo | Columna H (`Vendedor`), contada por persona, más la lista de la pestaña `Equipo` para que aparezcan también los que este mes todavía no cargaron. Cada uno lleva además **la plata que volvió por lo que cargó** (columnas T y V de sus registros) |
+
+**"Lau · 4" dice cuánto trabajó; "Lau · 4 · $85.000 recuperados" dice para qué
+sirvió.** Lo primero se parece a un control de asistencia, lo segundo a un
+resultado, y es la diferencia entre que alguien siga cargando o deje de
+hacerlo. La plata se calcula en la misma pasada que ya hacía `getMetricas`.
+
+Hay que leerla por lo que es: **la venta la suele cerrar Atención al Cliente
+semanas después**, así que eso no es "lo que vendió" el vendedor. Es lo que
+volvió porque se tomó el trabajo de cargar a un cliente que se iba con las
+manos vacías — que es justamente el trabajo que no se ve. Aparece sólo cuando
+hay plata: un `$0` abajo de cada nombre sería un cartel de fracaso en una
+lista que está para lo contrario.
 
 Las tarjetas son de **otro material** que los paneles del formulario: violeta
 oscuro en los dos temas, como el rail. Antes usaban el mismo `--surface` que

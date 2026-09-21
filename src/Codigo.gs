@@ -513,8 +513,9 @@ function getMetricas(local) {
   const registros  = { dia: 0, semana: 0, mes: 0, total: 0 };
   const recuperado = { mes: 0, total: 0 };
   const ventas     = { mes: 0, total: 0 };
-  /* Cuánto lleva cada vendedor del local. Se cuenta acá y no en otra pasada
-     porque la planilla ya se está leyendo entera: es la misma vuelta.
+  /* Cuánto lleva cada vendedor del local: registros Y la plata que volvió por
+     esos registros. Se cuenta acá y no en otra pasada porque la planilla ya se
+     está leyendo entera: es la misma vuelta.
      La clave es el nombre normalizado —'lau' y 'Lau' son la misma persona— y
      se guarda el primero que aparece para mostrarlo tal como se escribió. */
   const gente = {};
@@ -535,13 +536,19 @@ function getMetricas(local) {
       }
 
       const vend = String(f[COL.VENDEDOR] || '').trim();
+      let suyo = null;
       if (vend) {
         const kv = clave_(vend);
-        const v = gente[kv] || (gente[kv] = { nombre: vend, dia: 0, mes: 0, total: 0 });
-        v.total++;
+        suyo = gente[kv] || (gente[kv] = {
+          nombre: vend, dia: 0, mes: 0, total: 0,
+          // Mismas cajas que las del local, pero de esta persona. Ver abajo.
+          recuperado: { mes: 0, total: 0 },
+          ventas: { mes: 0, total: 0 }
+        });
+        suyo.total++;
         if (fecha) {
-          if (fecha >= corte.dia) v.dia++;
-          if (delMes)             v.mes++;
+          if (fecha >= corte.dia) suyo.dia++;
+          if (delMes)             suyo.mes++;
         }
       }
 
@@ -552,6 +559,22 @@ function getMetricas(local) {
       ventas.total++;
       recuperado.total += monto;
       if (delMes) { ventas.mes++; recuperado.mes += monto; }
+
+      /* Y lo mismo a nombre de quien cargó el registro. Es la misma vuelta por
+         la planilla y el mismo dato: lo único que cambia es a quién se le
+         anota.
+
+         OJO CON QUÉ SIGNIFICA: la venta la puede haber cerrado Atención al
+         Cliente semanas después, así que esto NO es "lo que vendió" esta
+         persona. Es la plata que volvió porque se tomó el trabajo de cargar a
+         un cliente que se iba con las manos vacías. Ese es justamente el
+         trabajo que no se ve y el que hay que devolverle a la vista, que es
+         media razón por la que el sistema se murió la primera vez. */
+      if (suyo) {
+        suyo.ventas.total++;
+        suyo.recuperado.total += monto;
+        if (delMes) { suyo.ventas.mes++; suyo.recuperado.mes += monto; }
+      }
     });
   }
 
@@ -619,10 +642,16 @@ function notificar_(data) {
   if (!destino) return;
 
   try {
-    // Naranja #F97316, el mismo de la app y del resto de los sistemas VDH.
+    /* Violeta, como la app. Era naranja #F97316 —el de Ranking VDH y el
+       dashboard de locales—, que dejó de ser el color de este sistema.
+
+       Los dos violetas son OSCUROS a propósito y no los de la pantalla: acá
+       el fondo lo pone el cliente de correo y siempre es claro, así que el
+       violeta claro de la app daría 3,1:1 contra blanco. #5B21B6 da 9:1 como
+       texto y #6D28D9 da 7,1:1 con el blanco del botón encima. */
     const cuerpo =
       '<div style="font-family:Arial,sans-serif;font-size:14px;color:#0B1220">' +
-      '<h2 style="color:#C2410C;margin:0 0 4px">Nuevo pedido · No Compra</h2>' +
+      '<h2 style="color:#5B21B6;margin:0 0 4px">Nuevo pedido · No Compra</h2>' +
       '<p style="color:#33475F;margin:0 0 16px">' + esc_(data.sucursal) + '</p>' +
       '<table cellpadding="6" style="border-collapse:collapse">' +
       filaMail_('Cliente',       data.nombre) +
@@ -636,7 +665,7 @@ function notificar_(data) {
       '</table>' +
       '<p style="margin-top:20px">' +
       '<a href="' + linkWhatsapp_(data.whatsapp) + '" ' +
-      'style="background:#F97316;color:#fff;padding:10px 20px;font-weight:bold;' +
+      'style="background:#6D28D9;color:#fff;padding:10px 20px;font-weight:bold;' +
       'text-decoration:none;border-radius:8px;display:inline-block">Escribir por WhatsApp</a>' +
       '</p></div>';
 
