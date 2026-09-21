@@ -267,6 +267,9 @@ function doPost(e) {
       // Por qué se va la gente sin comprar. Sin PIN por lo mismo: son motivos,
       // productos y talles contados, no hay un cliente adentro. Ver Motivos.gs.
       case 'motivos':     salida = getMotivos(p.local, p.motivo);             break;
+      // ¿Esto está sirviendo? Sin PIN por lo mismo: conteos, porcentajes y
+      // totales en pesos, ningún dato de nadie. Ver Resultados.gs.
+      case 'resultados':  salida = getResultados(p.local);                    break;
 
       case 'version':     salida = { status: 'ok', version: VERSION };        break;
       default:            salida = { status: 'error', msg: 'Acción desconocida.' };

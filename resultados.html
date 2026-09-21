@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Resultados</title>
+<meta name="description" content="Si el Sistema No Compra está sirviendo: cuánto se carga, cuánto se sigue y cuánto vuelve.">
+<meta name="theme-color" content="#0B1020">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+  } catch (e) {}
+</script>
+<style>
+  .tablero-cab {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 12px; margin-bottom: 10px;
+  }
+  .tablero-tit {
+    font: 700 20px/1.2 var(--display); letter-spacing: -.4px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tablero-fecha { font-size: 12.5px; color: var(--txt-3); white-space: nowrap; }
+  @media (max-width: 620px) { .tablero-fecha { display: none; } }
+
+  .filtro-local { margin-bottom: 12px; }
+  .filtro-local select { max-width: 340px; }
+
+  /* ── El embudo ─────────────────────────────────────────────────────────
+     Cuatro escalones, cada uno con su barra medida contra el primero. La
+     barra no es adorno: el salto entre "cargados" y "contactados" es todo el
+     punto de esta pantalla, y un número al lado del otro no lo muestra. */
+  .paso-emb {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 10px; row-gap: 6px;
+    padding: 13px 0;
+    border-top: 1px solid var(--line);
+  }
+  .paso-emb:first-child { border-top: 0; padding-top: 2px; }
+  .paso-emb-nom { font: 600 15px/1.25 var(--sans); }
+  .paso-emb-n { font: 700 22px/1 var(--display); }
+  .paso-emb-pct {
+    font-size: 12px; font-weight: 700;
+    color: var(--txt-2);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    padding: 3px 9px;
+    margin-left: 8px;
+    white-space: nowrap;
+  }
+  .paso-emb-barra {
+    grid-column: 1 / -1;
+    height: 8px; border-radius: 99px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .paso-emb-barra i {
+    display: block; height: 100%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--acc-2), var(--acc));
+    transition: width .6s var(--curva);
+  }
+  /* El escalón donde se corta la cadena. Si de lo cargado se contactó menos
+     de la mitad, el problema no es que falten registros: es que nadie los
+     está trabajando, y eso tiene que gritar. */
+  .paso-emb.flojo .paso-emb-n, .paso-emb.flojo .paso-emb-nom { color: var(--bad-txt); }
+  .paso-emb.flojo .paso-emb-barra i { background: var(--bad); }
+  .paso-emb.plata .paso-emb-n { color: var(--ok-txt); font-size: 19px; }
+  .paso-emb.plata .paso-emb-barra { display: none; }
+
+  .emb-nota {
+    margin-top: 14px; padding-top: 11px;
+    border-top: 1px solid var(--line);
+    font-size: 12.5px; color: var(--txt-3);
+  }
+
+  /* ── Lo que se está por perder ─────────────────────────────────────────
+     Los registros que nadie tocó. Es el único bloque de esta pantalla que
+     pide una acción, así que se ve distinto del resto. */
+  .alerta {
+    display: flex; align-items: flex-start; gap: 12px;
+    background: var(--bad-soft);
+    border: 1.5px solid var(--bad);
+    border-radius: var(--r);
+    padding: 15px 16px;
+    margin-bottom: 12px;
+  }
+  .alerta svg { width: 20px; height: 20px; flex-shrink: 0; color: var(--bad-txt); margin-top: 1px; }
+  .alerta-tit { font: 700 15px/1.3 var(--display); color: var(--bad-txt); margin-bottom: 3px; }
+  .alerta-txt { font-size: 13.5px; color: var(--txt-2); }
+  .alerta-txt a { font-weight: 700; }
+
+  /* ── Por local ─────────────────────────────────────────────────────────
+     Una fila por sucursal: cuánto cargó, cuánto de eso se siguió y cuánto
+     volvió. Es la comparación que dice dónde está funcionando de verdad. */
+  .loc {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 10px; row-gap: 4px;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+  }
+  .loc:first-of-type { border-top: 0; padding-top: 2px; }
+  .loc-nom { font: 700 15px/1.2 var(--display); }
+  .loc-plata { font: 700 14px/1 var(--display); color: var(--ok-txt); white-space: nowrap; }
+  .loc-detalle { grid-column: 1 / -1; font-size: 12.5px; color: var(--txt-3); }
+
+  .vacio { text-align: center; padding: 26px 10px 10px; }
+  .vacio-icono {
+    width: 54px; height: 54px; margin: 0 auto 14px;
+    border-radius: 50%; display: grid; place-items: center;
+    background: var(--acc-soft); border: 1.5px solid var(--acc-line);
+    color: var(--acc-txt);
+  }
+  .vacio-icono svg { width: 26px; height: 26px; }
+  .vacio-tit { font: 700 17px/1.3 var(--display); margin-bottom: 6px; }
+  .vacio-txt { font-size: 13.5px; color: var(--txt-2); max-width: 420px; margin: 0 auto; }
+
+  @media (min-width: 1100px) {
+    :root { --tope: 1180px; }
+    .hoja { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 14px; align-items: start; }
+    .tablero-cab  { grid-column: 1 / -1; }
+    .filtro-local { grid-column: 1 / -1; margin-bottom: 0; }
+    #cajaAlerta   { grid-column: 1 / -1; margin-bottom: 0; }
+    #cajaEmbudo   { grid-column: 1; margin-bottom: 0; }
+    #cajaLocales  { grid-column: 2; margin-bottom: 0; }
+    .pie          { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body class="hay-rail">
+
+<header class="app-head">
+  <div class="app-head-in">
+    <div class="marca">
+      <div class="marca-icono">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+        </svg>
+      </div>
+      <div class="marca-txt">
+        <h1>Resultados</h1>
+        <span>VDH · No Compra</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="marco">
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt">No Compra</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      Carga
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>
+      Panel
+    </a>
+    <a class="rail-item" href="motivos.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Motivos
+    </a>
+    <a class="rail-item" href="resultados.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+      Resultados
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="hoja">
+
+  <div class="tablero-cab">
+    <h2 class="tablero-tit" id="titulo">¿Esto está sirviendo?</h2>
+    <span class="tablero-fecha" id="desde"></span>
+  </div>
+
+  <div class="filtro-local">
+    <select id="selLocal" aria-label="Local"><option value="">Todos los locales</option></select>
+  </div>
+
+  <!-- Lo único de esta pantalla que pide una acción: registros que nadie
+       tocó. Aparece sólo cuando hay, y manda al panel. -->
+  <div id="cajaAlerta"></div>
+
+  <div class="bloque" id="cajaEmbudo">
+    <h2 class="bloque-tit">De cargado a cobrado</h2>
+    <p class="bloque-sub">Dónde se corta la cadena. Cada escalón se mide contra lo que cargaron los locales.</p>
+    <div id="embudo"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+    <p class="emb-nota" id="embNota" hidden></p>
+  </div>
+
+  <div class="bloque" id="cajaLocales" hidden>
+    <h2 class="bloque-tit">Local por local</h2>
+    <p class="bloque-sub">Ordenados por lo que volvió.</p>
+    <div id="porLocal"></div>
+  </div>
+
+  <p class="pie">Sale de la planilla: lo que cargan los vendedores y lo que completa Atención al Cliente. <a href="panel.html">Panel de seguimiento</a></p>
+</main>
+
+</div><!-- /.marco -->
+
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+  var localSel = '', datos = null;
+
+  function pct(parte, total) {
+    return total ? Math.round(parte * 100 / total) : 0;
+  }
+
+  function pintar() {
+    $('titulo').textContent = localSel
+      ? '¿Está sirviendo en ' + bonito(localSel) + '?'
+      : '¿Esto está sirviendo?';
+    $('desde').textContent = datos && datos.arranque
+      ? 'Desde el ' + fechaLinda(datos.arranque) : '';
+
+    pintarAlerta();
+    pintarEmbudo();
+    pintarLocales();
+  }
+
+  function pintarEmbudo() {
+    var t = (datos && datos.total) || { cargados: 0, contactados: 0, compraron: 0 };
+    var rec = (datos && datos.recuperado) || { total: 0, local: 0, online: 0 };
+
+    if (!t.cargados) { pintarVacio(); return; }
+
+    /* Todo se mide contra lo CARGADO, no cada escalón contra el anterior: lo
+       que importa no es qué tan bien viene cada tramo por separado, sino
+       cuánto del total original sobrevive hasta el final. */
+    var filas = [
+      { nom: 'Cargados', n: t.cargados, pct: 100, cls: '',
+        nota: 'lo que registraron los vendedores' },
+      { nom: 'Contactados', n: t.contactados, pct: pct(t.contactados, t.cargados),
+        /* Menos de la mitad contactada es el síntoma que mató al sistema la
+           primera vez: 139 cargados, 8 seguidos. Se marca en rojo. */
+        cls: pct(t.contactados, t.cargados) < 50 ? 'flojo' : '',
+        nota: 'alguien los trabajó' },
+      { nom: 'Compraron', n: t.compraron, pct: pct(t.compraron, t.cargados), cls: '',
+        nota: 'volvieron y se llevaron algo' }
+    ];
+
+    $('embudo').innerHTML = filas.map(function (f) {
+      return '<div class="paso-emb ' + f.cls + '">' +
+        '<span class="paso-emb-nom">' + esc(f.nom) +
+          (f.pct < 100 ? '<span class="paso-emb-pct">' + f.pct + '%</span>' : '') + '</span>' +
+        '<span class="paso-emb-n">' + f.n + '</span>' +
+        '<span class="paso-emb-barra"><i style="width:' + f.pct + '%"></i></span>' +
+      '</div>';
+    }).join('') +
+      '<div class="paso-emb plata">' +
+        '<span class="paso-emb-nom">Recuperado</span>' +
+        '<span class="paso-emb-n">' + esc(PESOS.format(rec.total || 0)) + '</span>' +
+      '</div>';
+
+    // El desglose entre local y online: son dos negocios distintos y sumarlos
+    // esconde cuánta venta le está empujando esto al ecommerce.
+    var partes = [];
+    if (rec.local) partes.push(PESOS.format(rec.local) + ' en el local');
+    if (rec.online) partes.push(PESOS.format(rec.online) + ' online');
+
+    var nota = partes.length ? partes.join(' · ') + '.' : '';
+    if (t.contactados && !t.compraron) {
+      nota = 'Se contactó a ' + t.contactados + ', pero todavía ninguno volvió a comprar.';
+    } else if (!t.contactados) {
+      nota = 'Nadie trabajó todavía ninguno de estos registros.';
+    }
+
+    $('embNota').hidden = !nota;
+    $('embNota').textContent = nota;
+  }
+
+  /* El bloque que pide algo. Sólo aparece si hay registros que nadie tocó:
+     no es una métrica más, es trabajo esperando. */
+  function pintarAlerta() {
+    var p = (datos && datos.pendientes) || { total: 0, viejos: 0, dias: 0 };
+
+    if (!p.total) { $('cajaAlerta').innerHTML = ''; return; }
+
+    var cuantos = p.total === 1 ? '1 cliente está esperando' : p.total + ' clientes están esperando';
+    var detalle = p.viejos
+      ? (p.viejos === 1 ? '1 de ellos hace ' : p.viejos + ' de ellos hace ') +
+        (p.dias === 1 ? 'más de un día' : 'más de 3 días, y el más viejo hace ' + p.dias)
+      : 'Todavía ninguno lleva más de 3 días.';
+
+    $('cajaAlerta').innerHTML =
+      '<div class="alerta">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+        '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>' +
+        '<div>' +
+          '<div class="alerta-tit">' + esc(cuantos) + ' que nadie llamó</div>' +
+          '<p class="alerta-txt">' + esc(detalle) + ' ' +
+            'Se trabajan desde el <a href="panel.html">panel de seguimiento</a>.</p>' +
+        '</div>' +
+      '</div>';
+  }
+
+  function pintarLocales() {
+    var lista = (datos && datos.porLocal) || [];
+    if (localSel || !lista.length) { $('cajaLocales').hidden = true; return; }
+
+    $('cajaLocales').hidden = false;
+    $('porLocal').innerHTML = lista.map(function (l) {
+      var seguidos = pct(l.contactados, l.cargados);
+      return '<div class="loc">' +
+        '<span class="loc-nom">' + esc(bonito(l.local)) + '</span>' +
+        '<span class="loc-plata">' + esc(l.recuperado ? PESOS.format(l.recuperado) : '—') + '</span>' +
+        '<span class="loc-detalle">' +
+          l.cargados + (l.cargados === 1 ? ' cargado' : ' cargados') + ' · ' +
+          seguidos + '% seguidos · ' +
+          l.compraron + (l.compraron === 1 ? ' compró' : ' compraron') +
+        '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  function pintarVacio() {
+    var donde = localSel ? bonito(localSel) : 'ningún local';
+    $('embudo').innerHTML =
+      '<div class="vacio">' +
+        '<div class="vacio-icono">' +
+          '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">' +
+          '<path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>' +
+        '</div>' +
+        '<div class="vacio-tit">Todavía no hay nada que medir</div>' +
+        '<p class="vacio-txt">No se cargaron registros en ' + esc(donde) +
+          (datos && datos.arranque ? ' desde el ' + esc(fechaLinda(datos.arranque)) : '') + '. ' +
+          'Con el primero que carguen, acá se va a ver cuántos se siguieron y cuántos volvieron a comprar.</p>' +
+      '</div>';
+    $('embNota').hidden = true;
+  }
+
+  function fechaLinda(iso) {
+    var p = String(iso).split('-');
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
+  }
+
+  function pintarSelector() {
+    var lista = (datos && datos.locales) || [];
+    $('selLocal').innerHTML = '<option value="">Todos los locales</option>' +
+      lista.map(function (l) {
+        return '<option value="' + esc(l) + '"' + (l === localSel ? ' selected' : '') + '>' +
+               esc(bonito(l)) + '</option>';
+      }).join('');
+  }
+
+  function cargar() {
+    return llamar({ accion: 'resultados', local: localSel })
+      .then(function (res) {
+        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo leer.'); return; }
+        datos = res;
+        pintarSelector();
+        pintar();
+      })
+      .catch(function () {
+        avisar('err', 'Sin conexión.');
+        $('embudo').innerHTML = '<p class="vacio-txt">No se pudo conectar. Revisá la señal y recargá.</p>';
+      });
+  }
+
+  (function () {
+    iniciarTema();
+    $('selLocal').onchange = function () { localSel = $('selLocal').value; cargar(); };
+    cargar();
+    iniciarPWA();
+  })();
+</script>
+</body>
+</html>
