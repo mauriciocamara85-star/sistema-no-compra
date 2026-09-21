@@ -266,6 +266,49 @@ números del panel, que es la pantalla que Atención al Cliente abre todos los
 días. El cartel desaparece solo cuando vuelve a entrar un lead bien. Cuando el
 puente está apagado a propósito —todavía sin token— no se muestra nada.
 
+## Corregir lo que cargaste mal
+
+Abajo del formulario está **"Lo último que cargaste"**: los últimos tres
+registros de esa persona, con un botón que los trae de vuelta al mismo
+formulario para arreglarlos. Dura **24 horas** (`CORREGIR_HORAS`).
+
+**Por qué no hay una búsqueda.** El vendedor corrige lo suyo y reciente,
+nunca una lista. Si esta pantalla pudiera buscar, los teléfonos de todos los
+clientes saldrían de atrás del PIN sin que nadie lo decida: el backend es
+anónimo y el nombre de cualquier vendedor se saca de la lista del local, que
+tampoco pide PIN.
+
+**Por eso el servidor no devuelve nada.** El celular se acuerda de lo que él
+mismo mandó —la fila y la fecha que le contestó `submitForm`— y guarda eso en
+`nc_ultimos`. `corregirRegistro` **sólo escribe**: su respuesta no incluye el
+contenido de la fila ni siquiera con el cambio ya hecho. No se agregó ninguna
+forma nueva de leer datos de clientes.
+
+Para tocar una fila tienen que coincidir **cuatro cosas** —número de fila,
+fecha exacta, local y vendedor— y ser de las últimas 24 horas. No es un
+candado, porque quien quiera ensuciar la planilla ya puede hacerlo con
+`submit`; es lo que convierte el vandalismo a ciegas en algo que hay que
+acertar.
+
+**Sólo se reescriben las columnas del vendedor** (D–I y la Z del motivo). La
+fecha, el local y el nombre de quien cargó quedan como estaban, y J–V —el
+seguimiento de Atención al Cliente— no se tocan nunca.
+
+**La lista es de cada persona, no del aparato.** El celular del local lo usan
+todos: se muestra sólo lo que cargó el vendedor que está seleccionado ahora.
+
+**El CRM se entera** (`kommoCorregir_`). Si el teléfono estaba mal y sólo se
+arreglara la planilla, Atención al Cliente igual llamaría al número viejo,
+porque llama desde Kommo. Se actualiza el contacto (teléfono, mail, nombre),
+los campos del lead (producto, talle, motivo) y queda una nota con lo que
+cambió. Acá **sí** se pisa el contacto, al revés de lo que hace `kommoEnviar_`
+con un cliente que ya existía: allá el dato viejo puede estar mejor que lo que
+anotó un vendedor apurado; acá el vendedor está diciendo "me equivoqué".
+
+Una corrección **no se encola** si no hay señal. Lo que está en la planilla es
+lo que se cargó la primera vez, que no está roto: es mejor reintentar que
+dejar una cola de correcciones pisándose sobre la misma fila.
+
 ## Motivos: por qué se va la gente
 
 `/motivos.html`, cuarto ítem del rail. Es la **única pantalla que no le sirve

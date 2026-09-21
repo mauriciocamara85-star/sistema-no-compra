@@ -455,3 +455,94 @@ function kommoProbar() {
   if (!res) { console.log('El puente está apagado: falta KOMMO_SUBDOMAIN o KOMMO_TOKEN.'); return; }
   console.log('✓ Lead creado en Kommo con id ' + res.id + '. Buscalo por la etiqueta "No Compra".');
 }
+
+/**
+ * Lleva al CRM una corrección hecha desde la pantalla de carga.
+ *
+ * **Por qué hace falta.** Atención al Cliente llama desde Kommo, no desde la
+ * planilla. Si el vendedor se equivocó en el teléfono y sólo se arregla la
+ * planilla, el CRM sigue teniendo el número malo y la corrección no sirve
+ * para nada: el cliente igual no recibe el llamado.
+ *
+ * Toca tres cosas, en orden de qué se rompe si falla cada una:
+ *
+ *  1. **El teléfono y el mail del contacto**, que es lo que se usa para
+ *     contactar. Acá SÍ se pisa el contacto, al revés de lo que hace
+ *     kommoEnviar_ cuando el cliente ya existía: allá el dato viejo es de
+ *     alguien que ya estaba en el CRM y puede estar mejor que lo que anotó un
+ *     vendedor apurado; acá el vendedor está diciendo explícitamente "me
+ *     equivoqué en esto".
+ *  2. **Los campos del lead** —producto, talle, motivo—, que es lo que se
+ *     mira para saber de qué se trata.
+ *  3. **Una nota**, para que quede el rastro de que esto se corrigió y
+ *     cuándo. Es lo último porque es lo único que nadie necesita para
+ *     trabajar.
+ *
+ * Nunca tumba la corrección: la planilla ya se escribió, que es la fuente de
+ * verdad. Un Kommo caído deja el CRM desactualizado y el error en el log, no
+ * un vendedor sin poder arreglar lo que cargó mal.
+ */
+function kommoCorregir_(leadId, data) {
+  if (!kommoActivo_() || !leadId) return;
+
+  const campos = kommoCampos_();
+  const tel = kommoTel_(data.whatsapp);
+
+  // 1 · El contacto
+  try {
+    const lead = kommoFetch_('get', '/leads/' + leadId + '?with=contacts');
+    const contactos = (lead && lead._embedded && lead._embedded.contacts) || [];
+
+    if (contactos.length) {
+      const valores = [];
+      if (tel) valores.push({ field_id: campos.contacto['#PHONE'], values: [{ value: tel }] });
+      if (data.mail) valores.push({ field_id: campos.contacto['#EMAIL'], values: [{ value: data.mail }] });
+
+      const cambio = {};
+      if (data.nombre) cambio.first_name = data.nombre;
+      const conId = valores.filter(function (x) { return x.field_id; });
+      if (conId.length) cambio.custom_fields_values = conId;
+
+      if (Object.keys(cambio).length) {
+        kommoFetch_('patch', '/contacts/' + contactos[0].id, cambio);
+      }
+    }
+  } catch (err) {
+    console.error('kommoCorregir_/contacto: ' + err.message);
+  }
+
+  // 2 · El lead
+  try {
+    const camposLead = [
+      kommoCampo_(campos.lead, 'Producto buscado', data.producto),
+      kommoCampo_(campos.lead, 'Talle',            data.talle),
+      kommoCampo_(campos.lead, 'Motivo',           data.motivo)
+    ].filter(function (x) { return x; });
+
+    const cambio = { name: 'No Compra · ' + (data.producto || 'sin producto especificado') };
+    if (camposLead.length) cambio.custom_fields_values = camposLead;
+
+    kommoFetch_('patch', '/leads/' + leadId, cambio);
+  } catch (err) {
+    console.error('kommoCorregir_/lead: ' + err.message);
+  }
+
+  // 3 · El rastro
+  try {
+    const lineas = ['El vendedor corrigió este registro. Quedó así:', ''];
+    const poner = function (etiqueta, valor) { if (valor) lineas.push(etiqueta + ': ' + valor); };
+    poner('Buscaba', data.producto);
+    poner('Talle', data.talle);
+    poner('Motivo', data.motivo);
+    poner('WhatsApp', data.whatsapp);
+    poner('Mail', data.mail);
+    if (data.obs) lineas.push('', 'Lo que anotó el vendedor:', data.obs);
+
+    kommoFetch_('post', '/leads/' + leadId + '/notes', [{
+      note_type: 'common',
+      params: { text: lineas.join('\n') }
+    }]);
+  } catch (err) {
+    console.error('kommoCorregir_/nota: ' + err.message);
+  }
+}

@@ -235,6 +235,9 @@ function doPost(e) {
 
     switch (p.accion) {
       case 'submit':      salida = submitForm(p.datos);                       break;
+      // Corregir lo que uno mismo acaba de cargar. Sin PIN, y sin abrir
+      // ninguna forma nueva de LEER: ver corregirRegistro.
+      case 'corregir':    salida = corregirRegistro(p.datos);                 break;
       case 'registros':   salida = getRegistros(p.pin, p.filtro);             break;
       case 'seguimiento': salida = guardarSeguimiento(p.pin, p.fila, p.campos); break;
       case 'resumen':     salida = getResumenPanel(p.pin);                    break;
@@ -356,6 +359,111 @@ function submitForm(data) {
 
   notificar_(data);
   sincronizarCrm_(data, fila);
+
+  /* La fila y la fecha vuelven para que el celular pueda ofrecer corregir lo
+     que acaba de cargar. Las dos, y no sólo la fila: la fecha funciona como
+     prueba de que quien corrige es el que cargó. Ver corregirRegistro. */
+  return { status: 'ok', fila: fila, fecha: fecha };
+}
+
+/**
+ * Corrige un registro recién cargado, desde la misma pantalla de carga.
+ *
+ * ── Por qué esto no es "buscar mi registro" ────────────────────────────────
+ * El vendedor corrige lo SUYO y RECIENTE, nunca una lista. La diferencia no
+ * es de comodidad: si esta pantalla pudiera buscar, los teléfonos de todos
+ * los clientes saldrían de atrás del PIN sin que nadie lo decida. Por eso
+ * **acá no se lee nada**: el celular se acuerda de lo que él mismo cargó —la
+ * fila y la fecha que devolvió submitForm— y esta función sólo escribe. La
+ * respuesta no devuelve el contenido de la fila ni con el cambio hecho.
+ *
+ * Cuatro cosas tienen que coincidir para que se toque una fila: el número de
+ * fila, la fecha exacta, el local y el vendedor. Y tiene que ser de las
+ * últimas CORREGIR_HORAS. No es un candado —el backend es anónimo y quien
+ * quiera ensuciar la planilla ya puede hacerlo con `submit`—, pero convierte
+ * el vandalismo a ciegas en algo que hay que acertar.
+ *
+ * **Sólo se reescriben las columnas del vendedor** (D a I y la Z del motivo).
+ * La fecha, el local y el nombre de quien cargó quedan como estaban, y J a V
+ * —el seguimiento de Atención al Cliente— no se tocan nunca.
+ */
+const CORREGIR_HORAS = 24;
+
+function corregirRegistro(data) {
+  if (!data || !data.fila) return { status: 'error', msg: 'Falta la fila.' };
+  if (!data.whatsapp)      return { status: 'error', msg: 'Falta el WhatsApp.' };
+  if (data.motivo && VOCAB.MOTIVO.indexOf(data.motivo) === -1) {
+    return { status: 'error', msg: 'Motivo no permitido: ' + data.motivo };
+  }
+
+  const fila = Number(data.fila);
+  if (!fila || fila < 2) return { status: 'error', msg: 'Esa fila no existe.' };
+
+  let leadId = '';
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+
+    const hoja = getHoja_();
+    if (fila > hoja.getLastRow()) return { status: 'error', msg: 'Esa fila no existe.' };
+
+    const ancho = Math.min(ANCHO, hoja.getMaxColumns());
+    const f = hoja.getRange(fila, 1, 1, ancho).getValues()[0];
+
+    // El mismo registro, cargado por la misma persona, en el mismo local.
+    if (String(f[COL.FECHA]).trim() !== String(data.fecha || '').trim() ||
+        clave_(f[COL.SUCURSAL]) !== clave_(data.sucursal) ||
+        clave_(f[COL.VENDEDOR]) !== clave_(data.vendedor)) {
+      return { status: 'error', msg: 'Ese registro no es el que estabas corrigiendo.' };
+    }
+
+    const cuando = parseFecha_(f[COL.FECHA]);
+    if (!cuando || (Date.now() - cuando.getTime()) > CORREGIR_HORAS * 3600000) {
+      return {
+        status: 'error',
+        msg: 'Este registro ya tiene más de ' + CORREGIR_HORAS + ' horas. ' +
+             'Para cambiarlo, pedíselo a Atención al Cliente.'
+      };
+    }
+
+    // D a I: lo que cargó el vendedor. A, B y C quedan como estaban.
+    hoja.getRange(fila, COL.NOMBRE + 1, 1, 6).setValues([[
+      data.nombre   || '',
+      data.whatsapp || '',
+      data.mail     || '',
+      data.producto || '',
+      data.talle    || '',
+      data.obs      || ''
+    ]]);
+
+    if (data.motivo) {
+      asegurarColumna_(hoja, COL.MOTIVO, 'Motivo');
+      hoja.getRange(fila, COL.MOTIVO + 1).setValue(data.motivo);
+    }
+
+    leadId = String(f[COL.LEAD] || '').trim();
+
+  } catch (err) {
+    console.error('corregirRegistro: ' + err.stack);
+    return { status: 'error', msg: err.message };
+  } finally {
+    lock.releaseLock();
+  }
+
+  // Afuera del candado, por lo mismo que submitForm: son servicios de afuera.
+  olvidarMetricas_(data.sucursal);
+  registrarLog_('Corrigió un registro', data.sucursal,
+                'Fila ' + fila, data.vendedor);
+
+  /* El CRM tiene que enterarse. Si el teléfono estaba mal, Atención al
+     Cliente lo va a llamar desde Kommo, no desde la planilla: dejar el lead
+     con el número viejo haría que la corrección no sirviera para nada. */
+  if (leadId && typeof kommoCorregir_ === 'function') {
+    try { kommoCorregir_(leadId, data); }
+    catch (err) { console.error('corregirRegistro/kommo: ' + err.message); }
+  }
+
   return { status: 'ok' };
 }
 

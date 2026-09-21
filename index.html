@@ -295,6 +295,35 @@
     font-size: 13.5px; font-weight: 700;
   }
 
+  /* ── Lo último que cargaste ────────────────────────────────────────────
+     Los últimos registros de ESTE vendedor en ESTE celular, con un botón
+     para arreglarlos. No es una lista de clientes: son tres, son suyos y
+     duran 24 horas. Ver pintarUltimos(). */
+  .ult {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    column-gap: 10px; row-gap: 4px;
+    padding: 12px 0;
+    border-top: 1px solid var(--line);
+  }
+  .ult:first-child { border-top: 0; padding-top: 2px; }
+  .ult-quien {
+    font-size: 14.5px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .ult-cuando { font-size: 11.5px; color: var(--txt-3); white-space: nowrap; }
+  .ult-que { grid-column: 1 / -1; font-size: 13px; color: var(--txt-2); }
+  .ult-btn { grid-column: 1 / -1; justify-self: start; margin-top: 6px; }
+
+  /* Corrigiendo: el formulario deja de ser "cargar" y pasa a ser "arreglar
+     aquel". Se dice con un cartel arriba y con el borde del paso 1, que es
+     donde está el dato que casi siempre se viene a corregir. */
+  body.corrigiendo #paso1 { border-color: var(--acc); }
+  /* "Tarda menos de 20 segundos" es para el que está cargando un cliente
+     nuevo. El que vino a arreglar un teléfono ya sabe cuánto tarda. */
+  body.corrigiendo .barra-nota { display: none; }
+
   /* ── El equipo ─────────────────────────────────────────────────────────
      Una fila por vendedor: quién, cuánto lleva en el mes y una barra contra
      el que más cargó. La barra no es adorno: es lo que hace que la lista se
@@ -386,12 +415,15 @@
   .col-form { display: contents; }
   .tablero-cab { order: 1; }
   #tarjetas    { order: 2; }
-  #avisoCola   { order: 3; }
+  /* Los dos avisos comparten el orden: entre ellos manda el html, y en el
+     html el de corrección va primero porque es el que pide una decisión. */
+  #avisoCorrige, #avisoCola { order: 3; }
   #ident       { order: 4; }
   #bloqueLocal { order: 5; }
   .pasos       { order: 6; }
-  #equipo      { order: 7; }
-  .cierre      { order: 8; }
+  #ultimos     { order: 7; }
+  #equipo      { order: 8; }
+  .cierre      { order: 9; }
 
   /* ── En la PC del local ────────────────────────────────────────────────
      El formulario repartido en columnas. En una pantalla ancha, la columna
@@ -497,8 +529,9 @@
        vista. Acá es estática, y con el equipo en el medio se terminaba el
        paso 3 arriba a la derecha y había que cruzar el ranking entero para
        llegar al botón. */
-    .cierre { order: 7; }
-    #equipo { order: 8; }
+    .cierre  { order: 7; }
+    #ultimos { order: 8; }
+    #equipo  { order: 9; }
 
     /* ── El equipo, a lo ancho ──
        Abajo del formulario y en varias columnas, como la lista de productos
@@ -695,6 +728,17 @@
        rayitas. Ver pintarMetricas(). -->
   <div class="kpis" id="tarjetas"></div>
 
+  <!-- ── Lo último que cargaste ────────────────────────────────────────────
+       Los últimos registros de ESTE vendedor en ESTE celular, con un botón
+       para arreglarlos. No hay búsqueda ni lista de clientes a propósito:
+       son tres, son suyos y duran 24 horas. El celular se acuerda de lo que
+       él mismo cargó, así que el servidor no tiene que devolver nada. -->
+  <section class="bloque" id="ultimos" hidden>
+    <h2 class="bloque-tit">Lo último que cargaste</h2>
+    <p class="bloque-sub">Si te equivocaste en algo, se arregla desde acá durante las primeras 24 horas.</p>
+    <div id="ultimosLista"></div>
+  </section>
+
   <!-- ── El equipo ─────────────────────────────────────────────────────────
        Cada vendedor del local y cuántos registros lleva en el mes. Es el
        único lugar donde el trabajo de cada uno se ve con nombre y apellido,
@@ -711,6 +755,14 @@
   </section>
 
  <div class="col-form">
+
+  <!-- Corrigiendo: el formulario dejó de ser "cargar un cliente nuevo" y hay
+       que decirlo fuerte, porque los campos se ven exactamente igual. -->
+  <div class="aviso" id="avisoCorrige" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+    <div class="aviso-cuerpo" id="avisoCorrigeTxt"></div>
+    <button type="button" onclick="cancelarCorreccion()">Cancelar</button>
+  </div>
 
   <!-- Registros que quedaron esperando señal. Ver cola() más abajo. -->
   <div class="aviso" id="avisoCola" hidden>
@@ -940,7 +992,13 @@
 
   /* Claves de localStorage. */
   var K_LOCAL = 'nc_local', K_VEND = 'nc_vendedor', K_EQUIPO = 'nc_equipo',
-      K_COLA = 'nc_cola', K_HOY = 'nc_hoy', K_METRICAS = 'nc_metricas';
+      K_COLA = 'nc_cola', K_HOY = 'nc_hoy', K_METRICAS = 'nc_metricas',
+      K_ULTIMOS = 'nc_ultimos';
+
+  /* Cuánto se puede corregir un registro. Tiene que coincidir con
+     CORREGIR_HORAS del backend, que es el que manda: si acá dijera más, el
+     vendedor vería un botón que el servidor le va a rechazar. */
+  var CORREGIR_MS = 24 * 3600000;
 
   /* Valor de la última opción del desplegable de vendedores. No puede ser un
      nombre real, así que lleva guiones: si algún día alguien se llama así,
@@ -1084,9 +1142,21 @@
     vendedor = String(v || '').trim();
     guardar(K_VEND, vendedor);
     if (vendedor) marcarQuien(false);
+
+    /* Si en el medio de una corrección cambia quién carga, la corrección se
+       suelta: el servidor la iba a rechazar igual —compara el vendedor de la
+       fila— y es mejor decirlo acá que dejar que el vendedor escriba todo y
+       se entere al apretar Guardar. */
+    if (corrigiendo && !igual(corrigiendo.datos.vendedor, vendedor)) {
+      limpiar();
+      avisar('info', 'Se canceló la corrección: ese registro es de otra persona.');
+    }
     pintarQuien();
     pintarIdentidad();
     pintarEquipo(metricas);          // para que se marque el suyo en la lista
+    // "Lo último que cargaste" es de cada persona: al cambiar de vendedor
+    // cambia la lista, porque el celular del local lo usan todos.
+    pintarUltimos();
   }
 
   function marcarQuien(mal) {
@@ -1448,6 +1518,7 @@
     // Los números también son del local: al cambiarlo, cambian.
     cargarMetricas();
     pintarIdentidad();
+    pintarUltimos();
   }
 
   function nombreLocal(v) {
@@ -1601,7 +1672,9 @@
       return llamar({ accion: 'submit', datos: item.datos })
         .then(function (res) {
           sacarDeCola(item.id);
-          if (res.status === 'ok') enviados++;
+          // Recién ahora tiene fila, así que recién ahora se puede corregir:
+          // lo que se cargó sin señal también entra en "lo último".
+          if (res.status === 'ok') { enviados++; guardarUltimo(item.datos, res); }
           // Si el servidor lo rechaza, reintentarlo no lo va a arreglar nunca:
           // sale de la cola y se avisa, en vez de dejarla trabada para siempre.
           else rechazo = res.msg || 'El servidor rechazó un registro pendiente.';
@@ -1625,6 +1698,133 @@
     });
   }
 
+  /* ═══ Lo último que cargaste ════════════════════════════════════════════
+     Corregir lo que uno acaba de cargar, sin pedirle nada a nadie.
+
+     **Esto vive en el celular a propósito.** La alternativa era una acción
+     que le pidiera al servidor "mis últimos registros", y esa acción sería
+     una forma de leer nombres y teléfonos de clientes sin PIN: el backend es
+     anónimo y el nombre de cualquier vendedor se saca de la lista del local,
+     que tampoco pide PIN. Así, en cambio, el servidor no devuelve NADA: el
+     celular se acuerda de lo que él mismo mandó —la fila y la fecha que le
+     contestó submitForm— y esos dos datos son los que le alcanzan para
+     corregir. Ver corregirRegistro en Codigo.gs.
+
+     Y se muestra sólo lo del vendedor que está cargando ahora, porque el
+     celular del local lo usan todos: no es un historial del aparato, es lo
+     último que hizo esta persona. */
+  var corrigiendo = null;
+
+  function ultimos() {
+    var ahora = Date.now();
+    return leerJSON(K_ULTIMOS, []).filter(function (u) {
+      // Sin fila no se puede corregir —quedó en la cola, sin señal— y pasadas
+      // las 24 horas el servidor lo va a rechazar igual.
+      return u && u.fila && (ahora - (u.cuando || 0)) < CORREGIR_MS;
+    });
+  }
+
+  function guardarUltimo(datos, res) {
+    if (!res || !res.fila) return;
+    var lista = ultimos();
+    lista.unshift({ fila: res.fila, fecha: res.fecha || '', cuando: Date.now(), datos: datos });
+    guardarJSON(K_ULTIMOS, lista.slice(0, 6));
+    pintarUltimos();
+  }
+
+  function igual(a, b) {
+    return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase();
+  }
+
+  function haceCuanto(cuando) {
+    var min = Math.floor((Date.now() - cuando) / 60000);
+    if (min < 1) return 'recién';
+    if (min < 60) return 'hace ' + min + ' min';
+    var h = Math.round(min / 60);
+    return 'hace ' + h + (h === 1 ? ' hora' : ' horas');
+  }
+
+  function pintarUltimos() {
+    var caja = $('ultimos');
+    if (!caja) return;
+
+    var lista = ultimos().filter(function (u) {
+      return u.datos && igual(u.datos.vendedor, vendedor) && igual(u.datos.sucursal, local);
+    }).slice(0, 3);
+
+    if (!lista.length) { caja.hidden = true; return; }
+    caja.hidden = false;
+
+    $('ultimosLista').innerHTML = lista.map(function (u) {
+      var d = u.datos;
+      /* El renglón de abajo es el que deja ver el error sin abrir nada: casi
+         siempre lo que está mal es el producto o el talle. */
+      var que = [d.producto, d.talle, d.motivo].filter(function (x) { return x; }).join(' · ');
+      return '<div class="ult">' +
+        '<span class="ult-quien">' + esc(d.nombre || 'Sin nombre') + ' · ' + esc(d.whatsapp || '') + '</span>' +
+        '<span class="ult-cuando">' + esc(haceCuanto(u.cuando)) + '</span>' +
+        (que ? '<span class="ult-que">' + esc(que) + '</span>' : '') +
+        '<button type="button" class="btn btn-sec btn-chico ult-btn" data-fila="' + u.fila + '">Corregir</button>' +
+      '</div>';
+    }).join('');
+
+    Array.prototype.forEach.call($('ultimosLista').querySelectorAll('[data-fila]'), function (b) {
+      b.onclick = function () { empezarCorreccion(Number(b.dataset.fila)); };
+    });
+  }
+
+  /** Trae el registro al formulario. Es el mismo formulario: no hay otro. */
+  function empezarCorreccion(fila) {
+    var u = null;
+    ultimos().forEach(function (x) { if (x.fila === fila) u = x; });
+    if (!u) { avisar('err', 'Ese registro ya no se puede corregir.'); pintarUltimos(); return; }
+
+    corrigiendo = u;
+    var d = u.datos;
+
+    $('f_nombre').value = d.nombre || '';
+    $('f_wsp').value = d.whatsapp || '';
+    $('f_mail').value = d.mail || '';
+    $('f_producto').value = d.producto || '';
+    $('f_talle').value = d.talle || '';
+    $('f_obs').value = d.obs || '';
+
+    // Los talles vuelven a quedar marcados: se guardaron unidos con " / ",
+    // que es como los junta pintarTalles.
+    talles = (d.talle || '').split(' / ').filter(function (t) { return t; });
+    Array.prototype.forEach.call($('chipsTalle').querySelectorAll('.chip'), function (b) {
+      b.classList.toggle('sel', talles.indexOf(b.dataset.v) > -1);
+    });
+
+    motivo = d.motivo || '';
+    Array.prototype.forEach.call($('chipsMotivo').children, function (b) {
+      b.classList.toggle('sel', b.dataset.v === motivo);
+    });
+
+    document.body.classList.add('corrigiendo');
+    $('avisoCorrige').hidden = false;
+    $('avisoCorrigeTxt').textContent =
+      'Estás corrigiendo el registro de ' + (d.nombre || d.whatsapp || 'ese cliente') + '.';
+    botonGuardar();
+
+    $('paso1').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  function cancelarCorreccion() {
+    corrigiendo = null;
+    limpiar();
+    avisar('info', 'Listo, seguís cargando normal.');
+  }
+
+  /** El botón dice lo que va a hacer, que no es siempre lo mismo. */
+  function botonGuardar(texto) {
+    var btn = $('btnGuardar');
+    btn.innerHTML = texto || (
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
+      'stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> ' +
+      (corrigiendo ? 'Guardar corrección' : 'Guardar oportunidad'));
+  }
+
   /* ═══ Envío ═════════════════════════════════════════════════════════════ */
   function armarDatos() {
     return {
@@ -1645,19 +1845,43 @@
 
     var datos = armarDatos();
     var btn = $('btnGuardar');
+    var correccion = corrigiendo;      // se lee ahora: limpiar() lo va a soltar
+
     btn.disabled = true;
     btn.innerHTML = 'Guardando…';
 
     var restaurar = function () {
       btn.disabled = false;
-      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
-        'stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> Guardar registro';
+      botonGuardar();
     };
+
+    if (correccion) {
+      /* La fila y la fecha son lo que le dice al servidor cuál es el registro
+         y que este celular es el que lo cargó. Ver corregirRegistro. */
+      datos.fila = correccion.fila;
+      datos.fecha = correccion.fecha;
+
+      llamar({ accion: 'corregir', datos: datos })
+        .then(function (res) {
+          restaurar();
+          if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo corregir.'); return; }
+          corregido(correccion, datos);
+        })
+        .catch(function () {
+          /* Una corrección NO se encola. Lo que está en la planilla es lo que
+             el vendedor cargó la primera vez, que no está roto: es mejor que
+             se vuelva a intentar cuando haya señal, y no que quede una cola
+             de correcciones tapándose unas a otras sobre la misma fila. */
+          restaurar();
+          avisar('err', 'Sin señal. La corrección no se guardó: probá de nuevo en un rato.');
+        });
+      return;
+    }
 
     llamar({ accion: 'submit', datos: datos })
       .then(function (res) {
         restaurar();
-        if (res.status === 'ok') { listo(datos, false); }
+        if (res.status === 'ok') { guardarUltimo(datos, res); listo(datos, false); }
         else { avisar('err', res.msg || 'El servidor rechazó el registro.'); }
       })
       .catch(function () {
@@ -1667,6 +1891,24 @@
         encolar(datos);
         listo(datos, true);
       });
+  }
+
+  /**
+   * Corrección guardada. No abre la pantalla de éxito a propósito: esa está
+   * para celebrar un cliente nuevo, y acá no hay ninguno. Arreglar un error
+   * propio se agradece con un cartel y volviendo al formulario limpio.
+   */
+  function corregido(u, datos) {
+    var lista = leerJSON(K_ULTIMOS, []);
+    lista.forEach(function (x) { if (x.fila === u.fila) x.datos = datos; });
+    guardarJSON(K_ULTIMOS, lista);
+
+    corrigiendo = null;
+    limpiar();
+    // El producto o el motivo pueden haber cambiado, y de eso viven las
+    // cuentas del local y la pantalla de Motivos.
+    traerMetricas();
+    avisar('ok', 'Quedó corregido.');
   }
 
   /** Contador del día: le da al vendedor una señal de que esto suma. */
@@ -1719,6 +1961,14 @@
     Array.prototype.forEach.call($('chipsTalle').querySelectorAll('.chip'), function (b) { b.classList.remove('sel'); });
     ocultarError('errWsp', 'cWsp');
     ocultarError('errMotivo');
+
+    // El formulario vuelve a ser "cargar un cliente nuevo".
+    corrigiendo = null;
+    document.body.classList.remove('corrigiendo');
+    $('avisoCorrige').hidden = true;
+    botonGuardar();
+    pintarUltimos();
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
@@ -1756,6 +2006,7 @@
     pintarQuien();
     conectarQuien();
     pintarIdentidad();
+    pintarUltimos();
 
     // Enter en un campo del formulario pasa al siguiente, no guarda: es
     // demasiado fácil mandar el registro a medio llenar desde el teclado.
