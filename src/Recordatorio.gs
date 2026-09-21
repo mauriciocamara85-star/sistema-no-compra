@@ -140,34 +140,42 @@ function recordatorioDiario() {
 
   const lineas = ['<b>Buen día.</b>', ''];
 
-  lineas.push(n.ayer
-    ? ((n.ayer === 1 ? 'Ayer entró <b>1</b> no-compra' : 'Ayer entraron <b>' + n.ayer + '</b> no-compra') + '.')
-    : 'Ayer no entró ningún registro.');
+  /* Lo de ayer y el acumulado juntos: el segundo le da escala al primero.
+     "Entraron 2" no dice nada solo; "entraron 2, van 137" sí. Y el total va
+     dicho con todas las letras porque más abajo hay otro número parecido —el
+     del mes— y dos totales sin etiqueta en el mismo mensaje se confunden. */
+  lineas.push(
+    (n.ayer
+      ? (n.ayer === 1 ? 'Ayer entró <b>1</b>.' : 'Ayer entraron <b>' + n.ayer + '</b>.')
+      : 'Ayer no entró ninguno.') +
+    (n.total === 1
+      ? ' Va <b>1</b> cargado desde que arrancamos.'
+      : ' Van <b>' + n.total + '</b> cargados desde que arrancamos.'));
 
   /* El trabajo HECHO va antes que el que falta, y es deliberado. Este mensaje
      lo leen el dueño y el que atiende: si arranca por la deuda, todos los días
      es un reclamo. Arrancando por lo hecho, el que atendió a veinte ve que se
      ve, y el que falta también. */
-  if (n.contactados) {
-    lineas.push(n.contactados === n.total
-      ? ('Se les escribió a <b>los ' + n.total + '</b>.')
-      : ('Se les escribió a <b>' + n.contactados + '</b> de ' + n.total + '.'));
+  const seguimiento = [];
+
+  if (n.contactados && !n.pendientes) {
+    // Todo al día: una sola frase, no dos diciendo lo mismo.
+    seguimiento.push('Ya se les escribió a <b>todos</b>.');
+  } else {
+    if (n.contactados) seguimiento.push('Se les escribió a <b>' + n.contactados + '</b>.');
+    if (n.pendientes) {
+      let falta = 'Falta contestarle a <b>' + n.pendientes +
+                  (n.pendientes === 1 ? '</b> cliente' : '</b> clientes');
+      if (n.viejos) {
+        falta += ', ' + (n.viejos === 1 ? 'uno' : n.viejos) + ' hace más de ' +
+                 RECORDATORIO_DIAS + ' días';
+        if (n.dias > RECORDATORIO_DIAS) falta += ' (el más viejo, ' + n.dias + ' días)';
+      }
+      seguimiento.push(falta + '.');
+    }
   }
 
-  if (n.pendientes) {
-    let falta = 'Falta contestarle a <b>' + n.pendientes +
-                (n.pendientes === 1 ? '</b> cliente' : '</b> clientes');
-    if (n.viejos) {
-      falta += ', ' + (n.viejos === 1 ? 'uno' : n.viejos) + ' de ellos hace más de ' +
-               RECORDATORIO_DIAS + ' días';
-      if (n.dias > RECORDATORIO_DIAS) {
-        falta += ' (el más viejo lleva ' + n.dias + ' días)';
-      }
-    }
-    lineas.push(falta + '.');
-  } else if (n.total) {
-    lineas.push('No quedó nadie esperando.');
-  }
+  if (seguimiento.length) lineas.push(seguimiento.join(' '));
 
   /* El acumulado del mes, separado del resto: es la única línea que no le
      pide nada a nadie. Contesta para qué sirvió todo lo de arriba, que es lo
@@ -178,8 +186,8 @@ function recordatorioDiario() {
      haciendo el trabajo de cargar y llamar. */
   if (n.mes.compraron) {
     lineas.push('');
-    lineas.push('Este mes: <b>' + n.mes.compraron + '</b> de ' + n.mes.cargados +
-                ' volvieron a comprar · <b>' + pesos_(n.mes.plata) + '</b> recuperados.');
+    lineas.push('Este mes volvieron a comprar <b>' + n.mes.compraron + '</b> de los ' +
+                n.mes.cargados + ' que entraron · <b>' + pesos_(n.mes.plata) + '</b> recuperados.');
   }
 
   const c = telegramConfig_();
