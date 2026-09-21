@@ -574,13 +574,41 @@ a { color: var(--acc-txt); }
   margin-bottom: 16px;
 }
 @media (min-width: 620px) { .kpis { grid-template-columns: repeat(4, 1fr); } }
+/*
+   La tarjeta de números es de OTRO MATERIAL, no de otro color: violeta
+   oscuro en los dos temas, igual que el rail. La regla que queda es simple y
+   se ve sin explicarla —lo que es tablero (la navegación y los números) es
+   oscuro; la hoja donde se trabaja es clara—, y de paso no le roba el
+   violeta lleno al botón de guardar, que es lo único que se toca.
+
+   Antes usaba el mismo --surface que los paneles del formulario y sólo se
+   diferenciaba por el tamaño.
+
+   Los tokens de texto se REDECLARAN acá adentro en vez de escribir colores
+   sueltos en cada regla: los --txt de arriba están pensados contra --bg y
+   acá el fondo es este. Así todo lo de adentro —etiquetas, pies, la barra y
+   los números de colores— se acomoda solo y sigue habiendo un solo lugar
+   donde se cambian. */
 .kpi {
-  background: var(--surface);
+  --txt:   #F8FAFC;
+  --txt-2: #CBD5E1;
+  --txt-3: #93A3C4;
+  --line:      rgba(255, 255, 255, .11);
+  --line-alta: rgba(255, 255, 255, .34);
+  --surface-2: rgba(255, 255, 255, .10);
+  --ok-txt:   #6EE7B7;
+  --warn-txt: #FCD34D;
+  --bad-txt:  #FCA5A5;
+  --acc-txt:  #C4B5FD;
+  --info-txt: #93C5FD;
+
+  background: linear-gradient(150deg, #241C52 0%, #141B32 72%);
   border: 1px solid var(--line);
   border-left: 3px solid var(--line-alta);
   border-radius: var(--r-sm);
   padding: 13px 14px;
-  box-shadow: var(--sombra);
+  color: var(--txt);
+  box-shadow: 0 10px 26px -16px rgba(0, 0, 0, .75);
   animation: aparecer .4s var(--curva) backwards;
 }
 .kpi-n { font: 700 27px/1.05 var(--display); letter-spacing: -.8px; }

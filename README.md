@@ -406,6 +406,14 @@ caja `.col-form` se deshace con `display:contents`.
 | Recuperado este mes | Columnas T (`Compró?`) y V (`Monto Venta ($)`) |
 | El equipo | Columna H (`Vendedor`), contada por persona, más la lista de la pestaña `Equipo` para que aparezcan también los que este mes todavía no cargaron |
 
+Las tarjetas son de **otro material** que los paneles del formulario: violeta
+oscuro en los dos temas, como el rail. Antes usaban el mismo `--surface` que
+los pasos y sólo se diferenciaban por el tamaño. La regla que queda se ve sin
+explicarla —lo que es tablero (la navegación y los números) es oscuro, la hoja
+donde se trabaja es clara— y de paso no le roba el violeta lleno al botón de
+guardar, que es lo único que se toca. Los tokens de texto se redeclaran dentro
+de `.kpi`: los `--txt` normales están pensados contra `--bg`.
+
 **El objetivo no tiene tarjeta propia.** La tenía, y contra un objetivo diario
 decía exactamente lo mismo que "Registros hoy" en la tarjeta de al lado: dos
 veces el mismo número, uno con barra y otro sin. Ahora la meta de la pestaña
