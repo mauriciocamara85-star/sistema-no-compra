@@ -150,6 +150,7 @@ src/                 ── el backend, en Apps Script ──
   Codigo.gs          Carga, seguimiento, avisos
   Config.gs          Equipo, objetivos, aviso por mail e historial de cambios
   Motivos.gs         Cuenta los motivos, y qué producto y talle faltaron
+  Telegram.gs        El aviso por Telegram, con botón de WhatsApp
   Respaldo.gs        Copia diaria de la planilla
   Resumen.gs         Arma la pestaña Resumen (sucursal/vendedor/producto/motivo)
   Kommo.gs           Puente con el CRM: cada no-compra entra como lead
@@ -265,6 +266,45 @@ queda guardado (`KOMMO_ULTIMO_ERROR`) y sale como un cartel arriba de los
 números del panel, que es la pantalla que Atención al Cliente abre todos los
 días. El cartel desaparece solo cuando vuelve a entrar un lead bien. Cuando el
 puente está apagado a propósito —todavía sin token— no se muestra nada.
+
+## El aviso por Telegram
+
+Cada no-compra cae en un **grupo de Telegram**, con un botón abajo del mensaje
+que abre el chat de WhatsApp con el cliente.
+
+**Por qué, además del mail.** El mail del local no lo mira nadie; Telegram
+suena en el celular en el momento, que es cuando el cliente todavía está a
+tiro de un mensaje. Va a un grupo y no a una persona: Atención al Cliente
+entra y sale sin que haya que tocar la configuración, y el que se suma ve lo
+que pasó antes.
+
+**No lo reemplaza.** Son dos avisos independientes: con `NOTIFICAR_A` vacío no
+hay mail, sin `TELEGRAM_TOKEN` o `TELEGRAM_CHAT` no hay Telegram. Se pueden
+tener los dos, uno o ninguno.
+
+| Propiedad | Valor |
+|-----------|-------|
+| `TELEGRAM_TOKEN` | el que devuelve @BotFather |
+| `TELEGRAM_CHAT` | id del grupo (negativo) o de la persona |
+
+Se configura desde `/config.html` con el PIN, en dos pasos, porque **nadie
+sabe de memoria el `chat_id` de un grupo**: se pega el token, se toca *Buscar
+el grupo* y se elige por nombre. Al guardar **manda un mensaje de prueba**, y
+si no sale no guarda nada: enterarse de que el aviso está roto cuando un
+cliente no recibió el llamado es tarde.
+
+> **La trampa de `getUpdates`:** Telegram sólo devuelve los mensajes de las
+> últimas 24 horas. Por eso la pantalla pide escribir algo en el grupo
+> nombrando al bot justo antes de buscar; sin un mensaje reciente la lista
+> vuelve vacía aunque el bot esté bien puesto.
+
+**El token no vuelve nunca al navegador.** `getConfig` dice si hay uno puesto
+y a qué grupo llega, no cuál es — el mismo criterio que el de Kommo. Y el
+último error queda guardado (`TELEGRAM_ULTIMO_ERROR`) para que la pantalla
+pueda decir que un aviso dejó de salir.
+
+No hace falta reautorizar el proyecto: `script.external_request` ya estaba
+declarado desde que existe el puente con Kommo.
 
 ## Corregir lo que cargaste mal
 

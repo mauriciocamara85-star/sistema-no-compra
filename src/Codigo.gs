@@ -256,6 +256,10 @@ function doPost(e) {
       // Y la línea de arranque, por el mismo motivo: moverla le esconde
       // clientes a Atención al Cliente. Ver arranqueGuardar en Config.gs.
       case 'arranque':    salida = arranqueGuardar(p.pin, p.desde, p.quien);  break;
+      // El aviso por Telegram: igual que el mail, se lee sin PIN y se cambia
+      // con PIN. El token NUNCA vuelve al navegador. Ver Telegram.gs.
+      case 'telegram':    salida = telegramGuardar(p.pin, p.token, p.chat, p.quien); break;
+      case 'telegramChats': salida = telegramBuscar(p.pin, p.token);          break;
 
       // Tablero del local, sin PIN por el mismo motivo: son cuentas del
       // propio local, no hay un dato de ningún cliente adentro.
@@ -358,6 +362,10 @@ function submitForm(data) {
   sumarVendedor_(data.sucursal, data.vendedor);
 
   notificar_(data);
+  /* El aviso por Telegram es independiente del mail: cada uno se prende solo
+     y pueden estar los dos, uno o ninguno. typeof por lo mismo que Kommo: si
+     algún día se borra Telegram.gs, el sistema sigue andando. */
+  if (typeof telegramEnviar_ === 'function') telegramEnviar_(data);
   sincronizarCrm_(data, fila);
 
   /* La fila y la fecha vuelven para que el celular pueda ofrecer corregir lo

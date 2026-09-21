@@ -445,6 +445,114 @@ function avisosGuardar(pin, mail, quien) {
   return { status: 'ok', avisos: avisosLeer_() };
 }
 
+// ── El aviso por Telegram ──────────────────────────────────────────────────
+/**
+ * El estado del aviso por Telegram, para mostrarlo.
+ *
+ * **Nunca devuelve el token.** Es una llave: con ella se puede escribir como
+ * el bot. Sale de acá sólo si está puesto o no, y el id del chat, que sin el
+ * token no sirve para nada. Mismo criterio que el de Kommo.
+ */
+function telegramLeer_() {
+  const p = PropertiesService.getScriptProperties();
+  const token = String(p.getProperty('TELEGRAM_TOKEN') || '').trim();
+  const chat  = String(p.getProperty('TELEGRAM_CHAT') || '').trim();
+  return {
+    activo: !!(token && chat),
+    tieneToken: !!token,
+    chat: chat,
+    nombre: String(p.getProperty('TELEGRAM_NOMBRE') || '').trim(),
+    error: String(p.getProperty('TELEGRAM_ULTIMO_ERROR') || '').trim()
+  };
+}
+
+/**
+ * Busca los chats donde está el bot, para elegir uno por nombre.
+ *
+ * Pide el PIN porque devuelve los nombres de los grupos de la empresa y
+ * porque es el paso previo a redirigir los avisos, que es lo que el PIN
+ * cuida acá.
+ *
+ * El token puede venir en el pedido —todavía no se guardó— o estar ya
+ * cargado: así se puede volver a elegir el chat sin tener que pegar el token
+ * de nuevo.
+ */
+function telegramBuscar(pin, token) {
+  if (!verificarPin_(pin)) return { status: 'error', msg: mensajePin_() };
+
+  const limpio = String(token || '').trim() ||
+    String(PropertiesService.getScriptProperties().getProperty('TELEGRAM_TOKEN') || '').trim();
+  if (!limpio) return { status: 'error', msg: 'Falta el token del bot.' };
+
+  try {
+    const chats = telegramChats_(limpio);
+    if (!chats.length) {
+      return {
+        status: 'error',
+        msg: 'No encontré ningún chat. Escribí un mensaje cualquiera en el grupo ' +
+             'donde está el bot y probá de nuevo: Telegram sólo cuenta los mensajes recientes.'
+      };
+    }
+    return { status: 'ok', chats: chats };
+
+  } catch (err) {
+    console.error('telegramBuscar: ' + err.message);
+    return { status: 'error', msg: 'Telegram dijo: ' + err.message };
+  }
+}
+
+/**
+ * Guarda el bot y el chat, y manda un mensaje de prueba.
+ *
+ * La prueba no es un adorno: sin ella, el que configura se entera de que algo
+ * está mal recién cuando un cliente no recibió el llamado. Si el mensaje no
+ * sale, no se guarda nada y se dice por qué.
+ *
+ * Vacío apaga el aviso.
+ */
+function telegramGuardar(pin, token, chat, quien) {
+  if (!verificarPin_(pin)) return { status: 'error', msg: mensajePin_() };
+
+  const props = PropertiesService.getScriptProperties();
+  const elToken = String(token || '').trim() ||
+                  String(props.getProperty('TELEGRAM_TOKEN') || '').trim();
+  const elChat = String(chat || '').trim();
+
+  // Apagar: alcanza con vaciar el chat, que es lo que se elige en la pantalla.
+  if (!elChat) {
+    props.deleteProperty('TELEGRAM_CHAT');
+    props.deleteProperty('TELEGRAM_NOMBRE');
+    registrarLog_('Cambió el aviso de Telegram', '', 'apagado', quien);
+    return { status: 'ok', telegram: telegramLeer_() };
+  }
+
+  if (!elToken) return { status: 'error', msg: 'Falta el token del bot.' };
+
+  // Antes de guardar, que funcione.
+  let nombre = '';
+  try {
+    const chats = telegramChats_(elToken);
+    chats.forEach(function (c) { if (c.id === elChat) nombre = c.nombre; });
+
+    telegramFetch_(elToken, 'sendMessage', {
+      chat_id: elChat,
+      text: 'Listo: los avisos de <b>No Compra</b> van a llegar acá.',
+      parse_mode: 'HTML'
+    });
+  } catch (err) {
+    console.error('telegramGuardar: ' + err.message);
+    return { status: 'error', msg: 'No se pudo mandar el mensaje de prueba. Telegram dijo: ' + err.message };
+  }
+
+  props.setProperty('TELEGRAM_TOKEN', elToken);
+  props.setProperty('TELEGRAM_CHAT', elChat);
+  if (nombre) props.setProperty('TELEGRAM_NOMBRE', nombre);
+  props.deleteProperty('TELEGRAM_ULTIMO_ERROR');
+
+  registrarLog_('Cambió el aviso de Telegram', '', nombre || elChat, quien);
+  return { status: 'ok', telegram: telegramLeer_() };
+}
+
 // ── Desde cuándo cuentan los números ───────────────────────────────────────
 /**
  * Cambia la línea de arranque del sistema. Pide el PIN por el mismo motivo
@@ -520,6 +628,9 @@ function getConfig() {
     // A quién le llega el aviso de cada registro nuevo. La pantalla lo muestra
     // siempre; cambiarlo pide el PIN (ver avisosGuardar).
     avisos: avisosLeer_(),
+    // El aviso por Telegram. Devuelve si está puesto y a qué grupo, nunca el
+    // token: ver telegramLeer_.
+    telegram: telegramLeer_(),
     // Desde cuándo cuentan los números. Mismo criterio que el aviso: se lee
     // sin PIN y se cambia con PIN (ver arranqueGuardar y la LÍNEA DE ARRANQUE
     // en Codigo.gs).
