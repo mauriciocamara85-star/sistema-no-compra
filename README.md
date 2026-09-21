@@ -337,9 +337,14 @@ de porcentajes, plata ni comparaciones contra el mes pasado: eso está en
 Resultados para el que lo quiera. Un informe diario se lee tres días y
 después se saltea; dos renglones se leen siempre.
 
-**Si no hay nada que hacer ni nada que contar, no manda nada.** Un mensaje
-diario que dice "cero y cero" enseña a ignorar el grupo, y el día que diga
-algo importante ya nadie lo va a estar leyendo.
+**Manda todos los días, incluso sin novedades.** La primera versión se
+callaba cuando no había nada que contar, para no entrenar a la gente a
+ignorar el grupo. Estaba mal: **un día sin cargas es la noticia más
+importante que puede dar este mensaje.** Es exactamente así como se murió el
+sistema la primera vez —los locales dejaron de cargar y nadie se enteró hasta
+meses después— y el silencio hace que ese día se vea igual que un día bueno.
+Cuando ayer no cargó nadie lo dice con todas las letras y pide que alguien
+hable con los locales.
 
 Cierra con **el acumulado del mes** —cuántos volvieron a comprar y cuánta
 plata— separado del resto: es la única línea que no le pide nada a nadie y
@@ -348,8 +353,7 @@ venta: un "0 volvieron · $ 0" todas las mañanas del primer mes no informa
 nada y desanima a los que sí están cargando y llamando.
 
 Se instala corriendo `instalarRecordatorio()` **una vez** desde el editor, que
-además manda uno en el momento para probar. `recordatorioAhora()` manda uno en el momento aunque no haya nada que
-contar —sirve para ver el formato sin esperar—, y `quitarRecordatorio()` lo apaga
+además manda uno en el momento para probar. Se puede correr `recordatorioDiario()` a mano para ver qué diría hoy, y `quitarRecordatorio()` lo apaga
 sin tocar el aviso de cada carga, y la hora vive en `RECORDATORIO_HORA`.
 
 ## Corregir lo que cargaste mal

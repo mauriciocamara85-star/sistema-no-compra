@@ -19,9 +19,17 @@
  * diario se lee tres días y después se saltea; un recordatorio de dos
  * renglones se lee siempre.
  *
- * Y por lo mismo: **si no hay nada que hacer ni nada que contar, no manda
- * nada.** Un mensaje diario que dice "cero y cero" enseña a ignorar el grupo,
- * y el día que diga algo importante ya nadie lo va a estar leyendo.
+ * ── Por qué manda TODOS los días, incluso sin novedades ───────────────────
+ * La primera versión se callaba cuando no había nada que contar, para no
+ * entrenar a la gente a ignorar el grupo. Estaba mal, y Mauricio lo marcó:
+ * **un día sin cargas es la noticia más importante que puede dar este
+ * mensaje.** Es exactamente así como se murió el sistema la primera vez —los
+ * locales dejaron de cargar y nadie se enteró hasta meses después—, y el
+ * silencio hace que ese día se vea igual que un día bueno.
+ *
+ * Así que cuando ayer no cargó nadie, lo dice con todas las letras y pide que
+ * alguien hable con los locales. El grupo tiene al dueño adentro: ese mensaje
+ * tres días seguidos es una conversación que se va a dar sola.
  */
 
 /** A qué hora sale. Temprano, antes de que abran los locales. */
@@ -118,26 +126,6 @@ function recordatorioNumeros_() {
  * Se puede correr a mano desde el editor para ver qué diría hoy.
  */
 function recordatorioDiario() {
-  recordatorioMandar_(false);
-}
-
-/**
- * El mismo mensaje pero mandado sí o sí, para verlo cuando uno quiere.
- *
- * Existe porque la regla del silencio deja al que configura sin saber si
- * funcionó: se instala, no hay pendientes, no sale nada, y no hay forma de
- * distinguir "anda y no tenía nada que decir" de "está roto".
- *
- * **Función aparte y no un parámetro de recordatorioDiario:** los
- * disparadores de Apps Script le pasan un objeto de evento al primer
- * argumento, siempre. Un `forzar` posicional estaría en true todas las
- * mañanas y la regla del silencio no existiría nunca.
- */
-function recordatorioAhora() {
-  recordatorioMandar_(true);
-}
-
-function recordatorioMandar_(forzar) {
   if (typeof telegramActivo_ !== 'function' || !telegramActivo_()) {
     console.log('El aviso por Telegram está apagado: no hay a dónde mandarlo.');
     return;
@@ -151,27 +139,28 @@ function recordatorioMandar_(forzar) {
     return;
   }
 
-  /* Silencio cuando no hay nada. Ver la cabecera: un "cero y cero" diario
-     entrena a saltearse el grupo. Salvo que lo estén pidiendo a propósito. */
-  if (!n.ayer && !n.pendientes && !forzar) {
-    console.log('Ni entradas ayer ni pendientes: no se manda nada. ' +
-                'Para verlo igual, correr recordatorioAhora().');
-    return;
-  }
-
   const lineas = ['<b>Buen día.</b>', ''];
 
   /* Lo de ayer y el acumulado juntos: el segundo le da escala al primero.
      "Entraron 2" no dice nada solo; "entraron 2, van 137" sí. Y el total va
      dicho con todas las letras porque más abajo hay otro número parecido —el
      del mes— y dos totales sin etiqueta en el mismo mensaje se confunden. */
-  lineas.push(
-    (n.ayer
-      ? (n.ayer === 1 ? 'Ayer entró <b>1</b>.' : 'Ayer entraron <b>' + n.ayer + '</b>.')
-      : 'Ayer no entró ninguno.') +
-    (n.total === 1
-      ? ' Va <b>1</b> cargado desde que arrancamos.'
-      : ' Van <b>' + n.total + '</b> cargados desde que arrancamos.'));
+  const acumulado = !n.total
+    ? ' Todavía no se cargó ninguno desde que arrancamos.'
+    : (n.total === 1
+        ? ' Va <b>1</b> cargado desde que arrancamos.'
+        : ' Van <b>' + n.total + '</b> cargados desde que arrancamos.');
+
+  if (n.ayer) {
+    lineas.push((n.ayer === 1 ? 'Ayer entró <b>1</b>.' : 'Ayer entraron <b>' + n.ayer + '</b>.') +
+                acumulado);
+  } else {
+    /* El día sin cargas no se dice de costado: es el síntoma que mató al
+       sistema la primera vez y va con nombre y apellido, más un pedido
+       concreto. Un número solo se mira; un pedido se contesta. */
+    lineas.push('<b>Ayer no cargó ningún local.</b>' + acumulado);
+    lineas.push('Hay que hablar con ellos.');
+  }
 
   /* El trabajo HECHO va antes que el que falta, y es deliberado. Este mensaje
      lo leen el dueño y el que atiende: si arranca por la deuda, todos los días
@@ -248,9 +237,7 @@ function instalarRecordatorio() {
   console.log('✓ Recordatorio instalado: todos los días alrededor de las ' +
               RECORDATORIO_HORA + ' de la mañana.');
   console.log('Mandando uno ahora para probar…');
-  /* Forzado: si se instala un día tranquilo, la regla del silencio haría que
-     la prueba no mande nada y quien lo instaló se queda sin saber si anda. */
-  recordatorioAhora();
+  recordatorioDiario();
 }
 
 /** Apaga el recordatorio diario. El aviso de cada carga sigue igual. */
