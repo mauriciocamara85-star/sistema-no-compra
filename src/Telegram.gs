@@ -217,3 +217,121 @@ function telegramProbar() {
   const err = PropertiesService.getScriptProperties().getProperty(TELEGRAM_ERROR);
   console.log(err ? ('No salió: ' + err) : '✓ Mandado. Miralo en el grupo.');
 }
+
+/**
+ * Qué está pasando de verdad, corrido desde el editor de Apps Script.
+ *
+ * Cuando la pantalla dice "no encontré ningún chat" hay cuatro motivos
+ * posibles y desde afuera se parecen todos: token equivocado, webhook puesto,
+ * modo privacidad, o simplemente que no hay mensajes recientes. Esto los
+ * separa e imprime cuál es.
+ *
+ * Para usarlo alcanza con cargar TELEGRAM_TOKEN en las propiedades del script
+ * —no hace falta el chat todavía— y correr esta función.
+ */
+function telegramDiagnostico() {
+  const token = String(
+    PropertiesService.getScriptProperties().getProperty('TELEGRAM_TOKEN') || ''
+  ).trim();
+
+  if (!token) {
+    console.log('Falta TELEGRAM_TOKEN en las propiedades del script. Cargalo y volvé a correr esto.');
+    return;
+  }
+
+  // 1 · ¿El token sirve, y de qué bot es?
+  let yo;
+  try {
+    yo = telegramFetch_(token, 'getMe');
+    console.log('✓ Token válido. El bot es @' + yo.username + ' (nombre: ' + yo.first_name + ')');
+    console.log('  Para que te lea en un grupo hay que escribir EXACTAMENTE @' + yo.username);
+  } catch (err) {
+    console.log('✗ El token no sirve: ' + err.message);
+    return;
+  }
+
+  // 2 · ¿Hay un webhook robándose las novedades?
+  try {
+    const w = telegramFetch_(token, 'getWebhookInfo') || {};
+    if (w.url) {
+      console.log('✗ HAY UN WEBHOOK puesto en ' + w.url);
+      console.log('  Mientras esté, getUpdates no devuelve nada. Se saca corriendo telegramSacarWebhook().');
+    } else {
+      console.log('✓ Sin webhook: getUpdates es el camino bueno.');
+    }
+    console.log('  Novedades esperando según Telegram: ' + (w.pending_update_count || 0));
+  } catch (err) {
+    console.log('? No pude leer el webhook: ' + err.message);
+  }
+
+  // 3 · Qué hay realmente, sin filtrar por tipo.
+  let updates = [];
+  try {
+    updates = telegramFetch_(token, 'getUpdates', { limit: 100 }) || [];
+  } catch (err) {
+    console.log('✗ getUpdates falló: ' + err.message);
+    return;
+  }
+
+  console.log('getUpdates devolvió ' + updates.length + ' novedad(es).');
+
+  if (!updates.length) {
+    console.log('');
+    console.log('Ninguna novedad. Probá esto, en este orden:');
+    console.log(' 1. Escribí en el grupo: /start@' + yo.username);
+    console.log('    Un comando con barra SIEMPRE le llega al bot, tenga el modo privacidad');
+    console.log('    prendido o no. Es la prueba que no falla.');
+    console.log(' 2. Si igual no aparece: BotFather → /setprivacy → elegí el bot → Disable,');
+    console.log('    y después SACÁ Y VOLVÉ A AGREGAR el bot al grupo (el cambio de privacidad');
+    console.log('    sólo rige para los grupos donde entra después).');
+    return;
+  }
+
+  updates.forEach(function (u) {
+    const m = u.message || u.channel_post || u.my_chat_member || u.edited_message;
+    const chat = m && m.chat;
+    console.log('— ' + Object.keys(u).filter(function (k) { return k !== 'update_id'; }).join('/') +
+      (chat ? (' · chat ' + chat.id + ' · ' + (chat.title || chat.first_name || '') + ' · tipo ' + chat.type) : ' · sin chat') +
+      (m && m.text ? (' · "' + m.text + '"') : ''));
+  });
+
+  console.log('');
+  console.log('Para dejarlo andando, copiá el id del chat que quieras y corré:');
+  console.log('  telegramUsarChat(-1001234567890)');
+}
+
+/**
+ * Deja el chat elegido y manda un mensaje de prueba. Es el atajo por código
+ * para el que prefiere el editor a la pantalla de configuración.
+ */
+function telegramUsarChat(chatId) {
+  const props = PropertiesService.getScriptProperties();
+  const token = String(props.getProperty('TELEGRAM_TOKEN') || '').trim();
+  if (!token) { console.log('Falta TELEGRAM_TOKEN.'); return; }
+  if (!chatId) { console.log('Pasame el id del chat: telegramUsarChat(-100…)'); return; }
+
+  try {
+    telegramFetch_(token, 'sendMessage', {
+      chat_id: String(chatId),
+      text: 'Listo: los avisos de <b>No Compra</b> van a llegar acá.',
+      parse_mode: 'HTML'
+    });
+  } catch (err) {
+    console.log('✗ No pude mandar el mensaje: ' + err.message);
+    return;
+  }
+
+  props.setProperty('TELEGRAM_CHAT', String(chatId));
+  props.deleteProperty('TELEGRAM_ULTIMO_ERROR');
+  console.log('✓ Guardado. Fijate que llegó el mensaje al grupo. Ya está andando.');
+}
+
+/** Saca el webhook, si alguna vez se puso uno y está tapando getUpdates. */
+function telegramSacarWebhook() {
+  const token = String(
+    PropertiesService.getScriptProperties().getProperty('TELEGRAM_TOKEN') || ''
+  ).trim();
+  if (!token) { console.log('Falta TELEGRAM_TOKEN.'); return; }
+  telegramFetch_(token, 'deleteWebhook', { drop_pending_updates: false });
+  console.log('✓ Webhook sacado. Volvé a correr telegramDiagnostico().');
+}
