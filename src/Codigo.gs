@@ -34,6 +34,76 @@
     el pie; si no coinciden, el celular tiene la app vieja cacheada. */
 const VERSION = '2026.09.21';
 
+/**
+ * ── LA LÍNEA DE ARRANQUE ───────────────────────────────────────────────────
+ *
+ * El sistema se usó unas semanas entre abril y julio de 2026 y se dejó de
+ * usar: quedaron 139 registros de los que apenas 8 tuvieron seguimiento, casi
+ * ninguno con motivo cargado —la columna es posterior— y con los nombres
+ * viejos de los locales. Contarlos junto con los nuevos no informa nada: los
+ * porcentajes de Motivos quedarían dominados por filas vacías y el panel
+ * abriría con 131 "pendientes" de abril que ya no tiene sentido llamar.
+ *
+ * Así que hay una fecha de arranque y lo anterior no se cuenta. **Nada se
+ * borra:** las filas viejas siguen enteras en la planilla, con su seguimiento
+ * y su plata. Esto es un filtro de lectura y se deshace cambiando una fecha.
+ *
+ * Manda la propiedad `DESDE` del script; esta constante es sólo el valor del
+ * primer día, para que el corte ande sin que nadie cargue nada. Se cambia
+ * desde /config.html con el PIN, sin publicar: la fecha real del relanzamiento
+ * no es la de este código, es la que se acuerde con los locales.
+ *
+ * `DESDE` puesta en VACÍO significa "contá todo", y es la forma de ver la
+ * historia completa sin tocar el código.
+ */
+const ARRANQUE_POR_DEFECTO = '2026-09-21';
+
+/** La fecha de arranque como Date, o null si se pidió contar todo. */
+let _arranque;   // undefined = todavía no se leyó en esta ejecución
+
+function arranque_() {
+  if (_arranque !== undefined) return _arranque;
+
+  const txt = arranqueISO_();
+  if (!txt) { _arranque = null; return _arranque; }
+
+  const p = txt.split('-');
+  const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+  _arranque = isNaN(d.getTime()) ? null : d;
+  return _arranque;
+}
+
+/**
+ * La fecha de arranque tal como está guardada ('2026-09-21'), o '' si se pidió
+ * contar todo.
+ *
+ * Distingue la propiedad SIN CARGAR de la propiedad cargada en vacío: sin
+ * cargar rige el valor del primer día; en vacío, la decisión de contar todo,
+ * que es deliberada y no se puede confundir con "todavía no la tocó nadie".
+ */
+function arranqueISO_() {
+  const prop = PropertiesService.getScriptProperties().getProperty('DESDE');
+  return (prop === null || prop === undefined)
+    ? ARRANQUE_POR_DEFECTO
+    : String(prop).trim();
+}
+
+/**
+ * ¿Esta fila quedó del otro lado de la línea? Se le pasa el valor crudo de la
+ * columna A.
+ */
+function antesDelArranque_(valorFecha) {
+  const linea = arranque_();
+  if (!linea) return false;
+
+  const f = parseFecha_(valorFecha);
+  /* Sin fecha legible no hay forma de ubicarla, y el formulario SIEMPRE
+     escribe la fecha: una fila así es de la época en que se cargaba a mano.
+     Queda afuera, que es el lado en el que casi seguro está. */
+  if (!f) return true;
+  return f < linea;
+}
+
 const HOJA = 'No Compra';
 const TZ = 'America/Argentina/Buenos_Aires';
 const FORMATO_FECHA = 'dd/MM/yyyy HH:mm';
@@ -180,6 +250,9 @@ function doPost(e) {
       // que lo pide: el mail lleva adentro el teléfono del cliente. El motivo
       // entero está en avisosGuardar (Config.gs).
       case 'avisos':      salida = avisosGuardar(p.pin, p.mail, p.quien);     break;
+      // Y la línea de arranque, por el mismo motivo: moverla le esconde
+      // clientes a Atención al Cliente. Ver arranqueGuardar en Config.gs.
+      case 'arranque':    salida = arranqueGuardar(p.pin, p.desde, p.quien);  break;
 
       // Tablero del local, sin PIN por el mismo motivo: son cuentas del
       // propio local, no hay un dato de ningún cliente adentro.
@@ -307,6 +380,7 @@ function getRegistros(pin, filtro) {
     for (let i = 0; i < valores.length; i++) {
       const f = valores[i];
       if (!f[COL.FECHA] && !f[COL.WHATSAPP]) continue;   // fila vacía
+      if (antesDelArranque_(f[COL.FECHA])) continue;     // ver la línea de arranque
 
       const estado = String(f[COL.ESTADO] || '').trim();
       const contactado = String(f[COL.CONTACTAMOS] || '').trim().toLowerCase() === 'si';
@@ -430,6 +504,7 @@ function getResumenPanel(pin) {
     const v = hoja.getRange(inicio, 1, ultima - inicio + 1, ancho).getValues();
     v.forEach(function (f) {
       if (!f[COL.FECHA] && !f[COL.WHATSAPP]) return;
+      if (antesDelArranque_(f[COL.FECHA])) return;
       conteo.Total++;
 
       const motivo = String(f[COL.MOTIVO] || '').trim();
@@ -464,6 +539,9 @@ function getResumenPanel(pin) {
     recuperado: recuperado,   // {local, online, total}
     compraron: compraron,     // {local, online, total}
     porMotivo: porMotivo,
+    // Desde cuándo cuentan estos números, para que el panel lo pueda decir en
+    // vez de dejar creer que 4 pendientes son todo lo que hubo en la vida.
+    arranque: arranqueISO_(),
     // Si el puente con Kommo se rompió, el panel lo tiene que decir: es la
     // única pantalla que Atención al Cliente mira todos los días.
     crm: estadoCrm_(),
@@ -524,6 +602,7 @@ function getMetricas(local) {
     const ancho = Math.min(ANCHO, hoja.getMaxColumns());
     hoja.getRange(inicio, 1, ultima - inicio + 1, ancho).getValues().forEach(function (f) {
       if (!f[COL.FECHA] && !f[COL.WHATSAPP]) return;
+      if (antesDelArranque_(f[COL.FECHA])) return;
       if (clave_(f[COL.SUCURSAL]) !== k) return;
 
       registros.total++;

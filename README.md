@@ -169,8 +169,11 @@ src/                 ── el backend, en Apps Script ──
    | `PANEL_PIN` | PIN de Atención al Cliente |
    | `NOTIFICAR_A` | mail que recibe el aviso (vacío = sin aviso) |
 
-   `NOTIFICAR_A` es la única que además se puede cambiar desde `/config.html`,
-   con el PIN del panel. Ver [El aviso por mail](#el-aviso-por-mail).
+   Hay una cuarta, opcional: `DESDE`, la fecha desde la que cuentan los
+   números. Ver [Desde cuándo cuentan los números](#desde-cuándo-cuentan-los-números).
+
+   `NOTIFICAR_A` y `DESDE` son las dos que además se pueden cambiar desde
+   `/config.html` con el PIN del panel, sin abrir Apps Script.
 
 3. **Implementar → Nueva implementación → Aplicación web**
    - Ejecutar como: **yo**
@@ -259,6 +262,34 @@ queda guardado (`KOMMO_ULTIMO_ERROR`) y sale como un cartel arriba de los
 números del panel, que es la pantalla que Atención al Cliente abre todos los
 días. El cartel desaparece solo cuando vuelve a entrar un lead bien. Cuando el
 puente está apagado a propósito —todavía sin token— no se muestra nada.
+
+## Desde cuándo cuentan los números
+
+El sistema se usó unas semanas entre abril y julio de 2026 y se dejó de usar:
+quedaron **139 registros de los que apenas 8 tuvieron seguimiento**, casi
+ninguno con motivo cargado —la columna es posterior— y con los nombres viejos
+de los locales. Contarlos junto con los nuevos no informa nada: los
+porcentajes de Motivos los dominarían filas vacías y el panel abriría con 131
+"pendientes" de abril que ya no tiene sentido llamar.
+
+Por eso hay una **línea de arranque** y lo anterior no se cuenta. **Nada se
+borra:** las filas viejas siguen enteras en la planilla, con su seguimiento y
+su plata. Es un filtro de lectura y se deshace cambiando una fecha.
+
+Se aplica en todo lo que cuenta o lista: las tarjetas del local, el ranking
+del equipo, la pantalla de Motivos y la lista del panel.
+
+| Dónde vive | Qué pasa |
+|---|---|
+| Propiedad `DESDE` sin cargar | rige `ARRANQUE_POR_DEFECTO` (`src/Codigo.gs`), la fecha del primer día |
+| `DESDE` con una fecha (`2026-09-21`) | cuenta de ahí en adelante |
+| `DESDE` **en vacío** | cuenta todo, incluida la etapa vieja |
+
+Se cambia desde `/config.html` con el PIN del panel, **sin publicar**: la
+fecha real del relanzamiento no es la que quedó en el código, es la que se
+acuerde con los locales. Pide PIN por lo que hace, no por ser un ajuste:
+correrla para adelante le esconde a Atención al Cliente clientes que están
+esperando que los llamen.
 
 ## Equipo y objetivos
 

@@ -154,13 +154,16 @@
   .avisos-quien b { color: var(--txt); font-weight: 700; word-break: break-word; }
   .avisos-quien.flojo { color: var(--txt-3); }
   .avisos-botones { display: flex; gap: 8px; margin-top: 16px; }
-  #avisos .campo + .meta-nota { margin-bottom: 14px; }
+  #avisos .campo + .meta-nota, #arranque .campo + .meta-nota { margin-bottom: 14px; }
+  /* El campo de fecha lo dibuja el navegador y sin esto queda más bajo que el
+     resto: el alto se lo da el mismo padding que a los demás. */
+  #arranque input[type=date] { min-height: 50px; }
 
   @media (min-width: 720px) {
     .agregar input, .meta-fila .campo { max-width: 260px; }
     /* Un mail es más largo que un objetivo de dos dígitos, pero tampoco tiene
        que cruzar la pantalla entera. */
-    #avisos .campo { max-width: 340px; }
+    #avisos .campo, #arranque .campo { max-width: 340px; }
   }
 
   /* ── En la PC ──────────────────────────────────────────────────────────
@@ -178,7 +181,8 @@
       align-items: start;
     }
     #cajaLocales { grid-column: 1; grid-row: 1; margin-bottom: 0; }
-    #cajaAvisos  { grid-column: 1; grid-row: 2; margin-bottom: 0; }
+    #cajaAvisos   { grid-column: 1; grid-row: 2; margin-bottom: 0; }
+    #cajaArranque { grid-column: 1; grid-row: 3; margin-bottom: 0; }
     .col-lado    { grid-column: 2; grid-row: 1; }
     .col-lado .esteEquipo, .col-lado .bloque { margin-bottom: 12px; }
     .pie { grid-column: 1 / -1; }
@@ -289,6 +293,16 @@
     <h2 class="bloque-tit">El aviso por mail</h2>
     <p class="bloque-sub">A quién le llega un mail cada vez que un local carga un no-compra.</p>
     <div id="avisos"><div class="skel"></div></div>
+  </div>
+
+  <!-- ── Desde cuándo cuentan los números ─────────────────────────────────
+       Pide el PIN por lo que hace, no por ser un ajuste: moverla para
+       adelante le esconde a Atención al Cliente clientes que están esperando
+       que los llamen. Ver arranqueGuardar en Config.gs. -->
+  <div class="bloque" id="cajaArranque">
+    <h2 class="bloque-tit">Desde cuándo cuentan</h2>
+    <p class="bloque-sub">Los números del local, la pantalla de Motivos y la lista del panel arrancan en esta fecha.</p>
+    <div id="arranque"><div class="skel"></div></div>
   </div>
 
   <p class="pie">Los cambios quedan anotados con la fecha en la pestaña <strong>Log</strong> de la planilla. <a href="panel.html">Panel de seguimiento</a></p>
@@ -584,6 +598,81 @@
       });
   }
 
+  /* ═══ Desde cuándo cuentan los números ══════════════════════════════════
+     La etapa vieja del sistema —139 registros de abril a julio, casi ninguno
+     con motivo y con los nombres viejos de los locales— no se borra: se deja
+     del otro lado de esta fecha. Si se cuenta junto con lo nuevo, los
+     porcentajes de Motivos los dominan filas vacías y el panel abre con 131
+     pendientes de abril que ya no tiene sentido llamar.
+
+     Se cambia con el PIN porque moverla para adelante le esconde clientes a
+     Atención al Cliente, y vaciarla vuelve a contar todo. */
+  function pintarArranque() {
+    var d = (datos && datos.arranque) || '';
+
+    $('arranque').innerHTML = d
+      ? '<p class="avisos-quien">Cuentan los registros del <b>' + esc(fechaLinda(d)) + '</b> en adelante. Lo anterior sigue en la planilla, pero no suma.</p>' +
+        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnArranque">Cambiar</button></div>'
+      : '<p class="avisos-quien">Cuenta <b>todo</b>, desde el primer registro que hubo.</p>' +
+        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnArranque">Poner una fecha</button></div>';
+
+    $('btnArranque').onclick = formArranque;
+  }
+
+  /** '2026-09-21' → '21 de septiembre de 2026'. */
+  function fechaLinda(iso) {
+    var p = String(iso).split('-');
+    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
+  }
+
+  function formArranque() {
+    var d = (datos && datos.arranque) || '';
+
+    $('arranque').innerHTML =
+      '<div class="campo"><label for="arFecha">Cuentan desde</label>' +
+        '<input type="date" id="arFecha" value="' + esc(d) + '"></div>' +
+      '<div class="meta-nota">Vacío cuenta todo, incluida la etapa vieja del sistema.</div>' +
+      '<div class="campo"><label for="arPin">PIN del panel</label>' +
+        '<input type="password" id="arPin" inputmode="numeric" maxlength="12" placeholder="••••" ' +
+        'value="' + esc(leer(K_PIN)) + '"></div>' +
+      '<div class="meta-nota">Se pide el PIN porque correr esta fecha para adelante le esconde clientes al panel.</div>' +
+      '<div class="avisos-botones">' +
+        '<button type="button" class="btn btn-pri btn-chico" id="arGuardar">Guardar</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="arCancelar">Cancelar</button>' +
+      '</div>';
+
+    $('arCancelar').onclick = pintarArranque;
+    $('arGuardar').onclick = guardarArranque;
+    $('arPin').onkeydown = function (e) { if (e.key === 'Enter') guardarArranque(); };
+  }
+
+  function guardarArranque() {
+    var pin = $('arPin').value.trim();
+    if (!pin) { avisar('err', 'Falta el PIN del panel.'); $('arPin').focus(); return; }
+
+    var btn = $('arGuardar');
+    btn.disabled = true;
+
+    llamar({ accion: 'arranque', pin: pin, desde: $('arFecha').value })
+      .then(function (res) {
+        btn.disabled = false;
+        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo guardar.'); return; }
+
+        guardar(K_PIN, pin);
+        datos.arranque = res.arranque;
+        pintarArranque();
+        avisar('ok', res.arranque
+          ? 'Los números cuentan desde el ' + fechaLinda(res.arranque) + '.'
+          : 'Ahora cuenta todo.');
+      })
+      .catch(function () {
+        btn.disabled = false;
+        avisar('err', 'Sin conexión. El cambio no se guardó.');
+      });
+  }
+
   /* ═══ Carga ═════════════════════════════════════════════════════════════ */
   function cargar(silencioso) {
     return llamar({ accion: 'config' })
@@ -593,11 +682,13 @@
         pintarEsteEquipo();
         pintarLocales();
         pintarAvisos();
+        pintarArranque();
       })
       .catch(function () {
         if (!silencioso) {
           $('locales').innerHTML = '<div class="vend-vacio">No se pudo conectar. Revisá la señal y recargá.</div>';
           $('avisos').innerHTML = '<p class="avisos-quien flojo">No se pudo leer. Recargá la pantalla.</p>';
+          $('arranque').innerHTML = '<p class="avisos-quien flojo">No se pudo leer. Recargá la pantalla.</p>';
         }
         avisar('err', 'Error de conexión.');
       });

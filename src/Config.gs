@@ -445,6 +445,45 @@ function avisosGuardar(pin, mail, quien) {
   return { status: 'ok', avisos: avisosLeer_() };
 }
 
+// ── Desde cuándo cuentan los números ───────────────────────────────────────
+/**
+ * Cambia la línea de arranque del sistema. Pide el PIN por el mismo motivo
+ * que el aviso: no por proteger un ajuste, sino por lo que hace.
+ *
+ * Mover esta fecha para adelante le esconde registros a Atención al Cliente
+ * —clientes que estaban esperando que los llamen— sin borrar nada y sin que
+ * se note más que en un número que bajó. Es la clase de cambio que tiene que
+ * poder hacer alguien que sabe lo que está haciendo.
+ *
+ * Vacío significa contar todo, incluida la etapa vieja del sistema. Ver la
+ * LÍNEA DE ARRANQUE en Codigo.gs.
+ */
+function arranqueGuardar(pin, desde, quien) {
+  if (!verificarPin_(pin)) return { status: 'error', msg: mensajePin_() };
+
+  const txt = String(desde || '').trim();
+
+  if (txt) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(txt)) {
+      return { status: 'error', msg: 'La fecha va como 2026-09-21.' };
+    }
+    // Que además sea una fecha que existe: el formato no alcanza, 2026-02-31
+    // lo pasa igual.
+    const p = txt.split('-');
+    const d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
+    if (isNaN(d.getTime()) ||
+        d.getFullYear() !== Number(p[0]) ||
+        d.getMonth() !== Number(p[1]) - 1 ||
+        d.getDate() !== Number(p[2])) {
+      return { status: 'error', msg: 'Esa fecha no existe.' };
+    }
+  }
+
+  PropertiesService.getScriptProperties().setProperty('DESDE', txt);
+  registrarLog_('Cambió el arranque', '', txt || 'cuenta todo', quien);
+  return { status: 'ok', arranque: txt };
+}
+
 // ── Lo que pide la pantalla de configuración ───────────────────────────────
 /**
  * Todo junto: qué locales hay, quién trabaja en cada uno y qué objetivo tiene.
@@ -480,6 +519,10 @@ function getConfig() {
     general: metas['*'] || null,
     // A quién le llega el aviso de cada registro nuevo. La pantalla lo muestra
     // siempre; cambiarlo pide el PIN (ver avisosGuardar).
-    avisos: avisosLeer_()
+    avisos: avisosLeer_(),
+    // Desde cuándo cuentan los números. Mismo criterio que el aviso: se lee
+    // sin PIN y se cambia con PIN (ver arranqueGuardar y la LÍNEA DE ARRANQUE
+    // en Codigo.gs).
+    arranque: arranqueISO_()
   };
 }
