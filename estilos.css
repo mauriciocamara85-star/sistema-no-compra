@@ -22,16 +22,29 @@
    Ningún dato real usa --txt-3. */
 :root {
   --bg:        #0B1020;
-  --surface:   #151D30;
-  --surface-2: #1E2740;
-  --surface-3: #27324C;
-  --line:      #2C3856;
-  --line-alta: #445278;
+  /* El resplandor del fondo. Dos focos muy abiertos y muy débiles: si se
+     ven como manchas, están de más. Arriba a la izquierda, que es donde
+     arranca la lectura y donde vive la franja de números. */
+  --fondo-luz:
+    radial-gradient(1100px 480px at 18% -10%, rgba(124, 92, 255, .22), transparent 72%),
+    radial-gradient(760px 360px at 96% -4%, rgba(124, 92, 255, .10), transparent 68%);
+  /* Tres planos, no tres grises casi iguales. En claro la regla se ve sola
+     —el tablero es oscuro y la hoja es blanca—; en oscuro el fondo, la hoja
+     y las tarjetas de números caían todos en la misma banda (1,1:1 entre uno
+     y otro) y la pantalla se leía plana, sin la personalidad que tiene la
+     otra. La hoja sube un escalón y las tarjetas se van al violeta: acá la
+     regla es tablero VIOLETA sobre hoja gris, que es la misma idea dicha con
+     lo único que queda cuando todo es oscuro —el tono, no la luz—. */
+  --surface:   #1A2338;
+  --surface-2: #232E4C;
+  --surface-3: #2C3A5E;
+  --line:      #35426A;
+  --line-alta: #4E5D88;
   /* El borde de lo que se TOCA —campos y chips— es otra cosa que el borde de
      una tarjeta. La tarjeta sólo separa; el campo tiene que decir "acá se
      escribe", y para eso la referencia son 3:1 contra su propio relleno.
      Antes usaba --line y daba 1,27:1: los campos se leían como manchas. */
-  --line-campo: #6275A2;
+  --line-campo: #6A7DAA;
 
   --txt:   #F8FAFC;
   --txt-2: #CBD5E1;
@@ -61,8 +74,8 @@
      que un input y un borde a 1,45:1 contra la tarjeta, así que se leía como
      un campo deshabilitado. Sube un escalón y aclara el borde: eso lo despega
      del fondo y, de paso, lo diferencia de los campos de texto. */
-  --chip:      #2C3860;
-  --chip-line: #6275A2;
+  --chip:      #313E6C;
+  --chip-line: #6A7DAA;
 
   --ok:      #34D399;
   --ok-txt:  #6EE7B7;
@@ -110,7 +123,14 @@
      la hoja. Con el tema claro el rail se queda igual; lo que cambia es todo
      lo demás. Por eso tiene sus propios tokens de texto: los --txt de arriba
      están pensados contra --bg, no contra esto. */
-  --rail-bg:    #131B2F;
+  /* El rail es el MISMO material que las tarjetas de números, no un navy
+     aparte: los dos son tablero. En claro daba igual —el rail es lo único
+     oscuro de la pantalla y se impone solo—, pero en oscuro un rail navy
+     sobre un fondo navy no se despega de nada, y encima quedaba fuera de
+     la regla que dice que en oscuro lo que separa al tablero de la hoja es
+     el TONO. Es el extremo apagado del degradado del KPI. */
+  --rail-bg:    #201A4A;
+  --rail-borde: rgba(167, 139, 255, .16);
   --rail-txt:   #FFFFFF;
   --rail-txt-2: #93A3C4;
   --rail-line:  rgba(255, 255, 255, .09);
@@ -119,20 +139,34 @@
 }
 
 html[data-theme="light"] {
-  --bg:        #EEF2F7;
+  /* Crema tibio y no gris azulado. Es lo que le da al tema claro la
+     personalidad que el oscuro consigue con el violeta: el papel deja de
+     ser una hoja de oficina. Las tarjetas siguen siendo blancas, así que
+     el escalón hoja/fondo se mantiene y el texto oscuro encima da 16:1. */
+  --bg:        #FBE4D8;
+  /* En claro la luz la pone el papel: el resplandor sobraría. */
+  --fondo-luz: none;
   --surface:   #FFFFFF;
-  --surface-2: #F4F7FB;
-  --surface-3: #E6ECF4;
+  /* Los neutros del tema claro se van a TIBIO con el fondo. Un relleno de
+     campo azulado adentro de una tarjeta blanca, sobre una página crema,
+     se lee sucio: no es más claro ni más oscuro, es de otra familia. Cada
+     uno mantiene o mejora el contraste que tenía; están medidos. */
+  --surface-2: #FAF3EF;
+  --surface-3: #EFE2DA;
   /* En claro el borde de la tarjeta sube un escalón: con el anterior daba
      1,38:1 contra el fondo y las tarjetas no se despegaban — la pantalla
      entera se leía como un bloque plano. */
-  --line:       #B0C1D6;
-  --line-alta:  #8FA5BF;
-  --line-campo: #7A90AE;   /* 3:1 contra el relleno del campo */
+  --line:       #D0B5A8;   /* 1,93:1 contra la tarjeta; antes 1,83 */
+  --line-alta:  #B79787;   /* 2,70:1; antes 2,53 */
+  --line-campo: #A38070;   /* 3,25:1 contra el relleno del campo */
 
   --txt:   #0B1220;
   --txt-2: #33475F;
-  --txt-3: #5A6E87;
+  /* Sube de #5A6E87. Ese daba 5,23:1 contra la tarjeta blanca —abajo del
+     piso de 7:1 que declara el bloque de arriba, o sea que el tema claro
+     nunca lo había cumplido— y sobre el fondo crema caía a 4,28. Este da
+     7,05 contra la tarjeta y 5,77 contra el fondo. */
+  --txt-3: #4A5A6E;
 
   --acc-txt:  #6D28D9;
   --acc-soft: rgba(124, 92, 255, .13);
@@ -142,8 +176,8 @@ html[data-theme="light"] {
   --cian:      #155E75;
   --cian-soft: rgba(21, 94, 117, .12);
 
-  --chip:      #E6ECF4;
-  --chip-line: #7A90AE;
+  --chip:      #EFE2DA;
+  --chip-line: #A38070;
 
   --ok-txt:  #047857;
   --ok-soft: rgba(5, 150, 105, .13);
@@ -154,8 +188,10 @@ html[data-theme="light"] {
   --info-txt:  #1D4ED8;
   --info-soft: rgba(37, 99, 235, .12);
 
-  --sombra:      0 1px 3px rgba(15, 31, 51, .10), 0 12px 28px -14px rgba(15, 31, 51, .45);
-  --sombra-alta: 0 16px 44px -16px rgba(15, 31, 51, .35);
+  /* La sombra también es tibia: una sombra azulada sobre papel crema se ve
+     gris y ensucia el borde de la tarjeta. */
+  --sombra:      0 1px 3px rgba(74, 42, 30, .10), 0 12px 28px -14px rgba(74, 42, 30, .40);
+  --sombra-alta: 0 16px 44px -16px rgba(74, 42, 30, .32);
   --glow:        0 8px 24px -10px rgba(109, 40, 217, .45);
   color-scheme: light;
 }
@@ -166,6 +202,24 @@ html[data-theme="light"] {
 
 html { -webkit-text-size-adjust: 100%; }
 
+/* El resplandor va en una capa fija propia y no en background-attachment:
+   fixed, que en iOS directamente no funciona —y la app es una PWA que vive
+   en iPhones—. Fija a la ventana, detrás de todo y sin capturar el dedo.
+   Con --fondo-luz en none (tema claro) no dibuja nada. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--fondo-luz);
+}
+
+/* El fondo no es un color plano: lleva un resplandor violeta arriba, del
+   lado donde están los números. Es lo que hace que una pantalla oscura se
+   lea como un ambiente y no como una tapa negra, y de paso le da a la
+   franja del tablero algo sobre qué apoyarse. En claro se apaga: ahí la
+   luz ya la pone el papel. */
 body {
   background: var(--bg);
   color: var(--txt);
@@ -385,6 +439,9 @@ a { color: var(--acc-txt); }
     border-top: 0;
     border-radius: 24px;
     background: var(--rail-bg);
+    /* Entre dos oscuros, lo que dibuja el canto es la línea, no la sombra:
+       una sombra negra sobre un fondo casi negro no existe. */
+    border: 1px solid var(--rail-borde);
     box-shadow: var(--sombra-alta);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -539,6 +596,23 @@ a { color: var(--acc-txt); }
      translúcido se compone contra el blanco del navegador: la lista se abría
      clara sobre el rail oscuro. Con un color sólido se abre oscura.
      Las opciones se pintan aparte porque en Windows no lo heredan. */
+  /* En el rail la etiqueta se centra como todo lo de la ficha, y en 146px
+     de ancho la palabra y el cartel no entran en un renglón: se apilan. Los
+     colores se rehacen porque acá adentro los tokens de la hoja no valen —el
+     rail es oscuro también con el tema claro—. */
+  .rail .quien-lbl {
+    justify-content: center;
+    font-size: 11.5px;
+    color: var(--rail-txt-2);
+    gap: 5px;
+    margin-bottom: 6px;
+  }
+  .rail .lbl-req {
+    color: var(--rail-txt-2);
+    background: rgba(255, 255, 255, .08);
+    border-color: rgba(255, 255, 255, .16);
+    padding: 3px 7px;
+  }
   .rail .quien-sel, .rail .quien-txt {
     background-color: #212C48;
     border: 1px solid rgba(255, 255, 255, .18);
@@ -592,6 +666,11 @@ a { color: var(--acc-txt); }
    oscuro; la hoja donde se trabaja es clara—, y de paso no le roba el
    violeta lleno al botón de guardar, que es lo único que se toca.
 
+   En claro eso alcanza: la tarjeta es lo único oscuro y se impone sola. En
+   oscuro la luz no puede separarlas —todo es oscuro—, así que el violeta
+   sube y se satura: lo que distingue al tablero de la hoja pasa a ser el
+   tono. Es el mismo material, dicho con lo que cada tema tiene para decirlo.
+
    Antes usaba el mismo --surface que los paneles del formulario y sólo se
    diferenciaba por el tamaño.
 
@@ -605,7 +684,13 @@ a { color: var(--acc-txt); }
   --txt-2: #CBD5E1;
   --txt-3: #93A3C4;
   --line:      rgba(255, 255, 255, .11);
-  --line-alta: rgba(255, 255, 255, .34);
+  /* El canto izquierdo de las tres tarjetas es el MISMO violeta: la que no
+     tiene nada especial que decir lo lleva apagado, y las que sí —objetivo
+     y plata— lo llevan lleno. Antes la neutra usaba un blanco al 34%, y en
+     una fila de tres se leía como la única a la que le falló el color en
+     vez de como la más callada. Tres intensidades de lo mismo, no dos
+     pintadas y una sin pintar. */
+  --canto: rgba(167, 139, 255, .5);
   --surface-2: rgba(255, 255, 255, .10);
   --ok-txt:   #6EE7B7;
   --warn-txt: #FCD34D;
@@ -613,12 +698,14 @@ a { color: var(--acc-txt); }
   --acc-txt:  #C4B5FD;
   --info-txt: #93C5FD;
 
-  background: linear-gradient(150deg, #241C52 0%, #141B32 72%);
+  background: linear-gradient(150deg, #37287C 0%, #1F1948 72%);
   border: 1px solid var(--line);
-  border-left: 3px solid var(--line-alta);
+  border-left: 3px solid var(--canto);
   border-radius: var(--r-sm);
   padding: 13px 14px;
   color: var(--txt);
+  position: relative;
+  overflow: hidden;
   box-shadow: 0 10px 26px -16px rgba(0, 0, 0, .75);
   animation: aparecer .4s var(--curva) backwards;
 }
@@ -643,18 +730,23 @@ a { color: var(--acc-txt); }
 .kpi.es-obj.lleno { border-left-color: var(--ok); }
 .kpi.es-obj.lleno .kpi-n { color: var(--ok-txt); }
 .kpi.es-obj.lleno .kpi-barra i { background: var(--ok); }
+/* La barra va pegada al BORDE de abajo y no en la fila del texto. Es la
+   única tarjeta que la lleva: adentro del contenido, las otras dos quedaban
+   con un hueco de casi medio centímetro abajo —mismo alto de grilla, un
+   elemento menos— y eso se lee como algo que no cargó. Como parte del marco
+   las tres terminan parejas, los números siguen en un solo renglón y la
+   tarjeta se ahorra 14px de alto, que en la notebook del local valen. */
 .kpi-barra {
-  height: 6px;
-  border-radius: 99px;
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 5px;
   background: var(--surface-2);
-  border: 1px solid var(--line);
+  border-top: 1px solid var(--line);
   overflow: hidden;
-  margin-top: 8px;
 }
 .kpi-barra i {
   display: block;
   height: 100%;
-  border-radius: 99px;
   background: linear-gradient(90deg, var(--acc-2), var(--acc));
   transition: width .5s var(--curva);
 }
@@ -686,14 +778,19 @@ a { color: var(--acc-txt); }
    abría la app por primera vez lo leía como adorno. La palabra ocupa unos
    pixeles más y no hay que explicarla. Es la única marca que queda en el
    formulario: los campos no anuncian que se pueden saltear, porque decirle a
-   alguien que algo es opcional es darle permiso para no cargarlo. */
+   alguien que algo es opcional es darle permiso para no cargarlo.
+
+   Y va en GRIS, no en violeta. El violeta está reservado para lo que se
+   toca —los chips y el botón—; es la misma razón por la que el número del
+   paso va en cian. Un cartel violeta al lado del título se ofrecía como si
+   fuera un botón y competía con el único que hay que apretar. */
 .lbl-req {
   font: 600 10.5px/1 var(--sans);
   letter-spacing: .4px;
   text-transform: uppercase;
-  color: var(--acc-txt);
-  background: var(--acc-soft);
-  border: 1px solid var(--acc-line);
+  color: var(--txt-2);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
   border-radius: var(--r-pill);
   padding: 4px 8px;
   flex-shrink: 0;

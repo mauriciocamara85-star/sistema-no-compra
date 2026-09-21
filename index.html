@@ -85,6 +85,19 @@
      La última opción de la lista abre el campo de texto, para el que todavía
      no está cargado en el equipo del local. */
   .quien { margin-top: 8px; }
+  /* El desplegable no decía qué era ni que sin eso no se guarda. El nombre
+     de quien carga SIEMPRE fue obligatorio —validar() frena el registro y
+     pinta el control en rojo—, pero el vendedor se enteraba recién al
+     apretar Guardar. Ahora lo dice antes, con la misma etiqueta que llevan
+     los pasos 1 y 3: si un dato frena el registro, tiene que decirlo desde
+     el principio y no cuando ya escribiste todo. */
+  .quien-lbl {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
+    margin-bottom: 7px;
+    font: 600 13px/1.2 var(--sans);
+    letter-spacing: .1px;
+    color: var(--txt-2);
+  }
   /* Escribir el nombre y anotarse son un solo gesto, así que el campo y el
      botón van juntos: el que no está en la lista queda en la lista del local
      desde acá, no cuando alguien se acuerde de cargarlo en Configuración. */
@@ -139,8 +152,11 @@
     font: 700 15px/1 var(--display);
   }
   .paso-txt { min-width: 0; }
+  /* 18px y no 21: el título de un paso no puede pesar más que el de la
+     pantalla (.tablero-tit, 20px). Con 21 "El cliente" gritaba más fuerte que
+     "Hoy en Rivadavia" y la jerarquía quedaba dada vuelta. */
   .paso-tit {
-    font: 700 21px/1.15 var(--display);
+    font: 700 18px/1.25 var(--display);
     letter-spacing: -.5px;
     display: flex; align-items: center; gap: 8px;
   }
@@ -299,6 +315,11 @@
   }
   .eq-hoy { font-size: 11.5px; font-weight: 600; color: var(--txt-3); }
   .eq-n { font: 700 15px/1 var(--display); }
+  /* Los cuatro de la primera fila comparten LÍNEA DE BASE. Centrados, el
+     puesto (12px) y el total (15px) flotaban arriba del nombre y se leían
+     como superíndices: el centro de una caja de texto no es donde el ojo ve
+     el renglón. La barra, que va sola en la fila de abajo, sigue centrada. */
+  .eq-pos, .eq-nom, .eq-hoy, .eq-n { align-self: baseline; }
   .eq-barra {
     grid-column: 2 / -1;
     height: 6px; border-radius: 99px;
@@ -414,9 +435,11 @@
      Los tres pasos se ponen UNO AL LADO DEL OTRO. Apilados en dos filas el
      formulario mide 550px y, con las tarjetas arriba, no entra en la pantalla
      de una notebook: había que scrollear, que es justo lo que no puede pasar.
-     De costado mide 300 y sobra lugar. El precio es que las tres tarjetas no
-     terminan a la misma altura —align-items:start, cada una mide lo suyo—: es
-     preferible un borde desparejo a un agujero adentro de una tarjeta. */
+     De costado mide 300 y sobra lugar. Las tres terminan a la misma altura
+     —stretch, el reparto de fábrica—: la diferencia real entre la más corta y
+     la más larga es de 25px, y a esa distancia un borde desparejo no se lee
+     como decisión sino como algo que se descolocó. El aire que le queda abajo
+     al paso 1 es fondo liso de la misma tarjeta: no lo ve nadie. */
   @media (min-width: 1200px) {
     /* El tope existe igual: pasado cierto ancho, las columnas se vuelven tan
        anchas que el ojo tiene que viajar de más entre la etiqueta y el
@@ -435,7 +458,9 @@
     .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 20px; }
 
     /* Los tres pasos, uno al lado del otro. */
-    .pasos { grid-template-columns: repeat(3, 1fr); align-items: start; }
+    /* stretch EXPLÍCITO: el bloque de 940px le pone align-items:start y sin
+       pisarlo acá las tres tarjetas seguían terminando desparejas. */
+    .pasos { grid-template-columns: repeat(3, 1fr); align-items: stretch; }
     #paso1 { grid-column: 1; grid-row: 1; }
     #paso2 { grid-column: 2; grid-row: 1; }
     #paso3 { grid-column: 3; grid-row: 1; }
@@ -447,6 +472,15 @@
     .paso .campos { gap: 12px; }
     .paso input, .paso textarea { padding: 12px 14px; }
     #paso3 textarea { min-height: 64px; resize: vertical; }
+
+    /* ── El orden, corregido para el tablero ──
+       El botón va DEBAJO del formulario y el equipo después. En la columna
+       única daba igual: la barra de guardar era fija y estaba siempre a la
+       vista. Acá es estática, y con el equipo en el medio se terminaba el
+       paso 3 arriba a la derecha y había que cruzar el ranking entero para
+       llegar al botón. */
+    .cierre { order: 7; }
+    #equipo { order: 8; }
 
     /* ── El equipo, a lo ancho ──
        Abajo del formulario y en varias columnas, como la lista de productos
@@ -482,7 +516,13 @@
       backdrop-filter: none; -webkit-backdrop-filter: none;
       border-top: 0;
       padding: 0;
-      flex: 0 0 auto;
+      /* El botón se planta abajo de las DOS ÚLTIMAS columnas del formulario,
+         no en un rincón: son los dos pasos que se terminan de llenar último,
+         así que el ojo sale del talle o del motivo y cae justo en el botón.
+         Además le da el peso que merece lo único que se aprieta en toda la
+         pantalla. La cuenta son dos columnas más el gap que hay entre ellas;
+         la tercera parte, a la izquierda, le queda al pie. */
+      flex: 0 0 calc((100% - 24px) / 3 * 2 + 12px);
     }
     .barra-in { max-width: none; }
     .barra-in .btn { min-width: 300px; }
@@ -494,13 +534,11 @@
   @media (min-width: 1200px) and (max-height: 960px) {
     .hoja { padding-top: 8px; gap: 7px; }
     body { padding-bottom: 8px; }
-    .tablero-tit { font-size: 17px; }
     .chips-motivo { gap: 6px; }
     .kpi { padding: 8px 13px; }
     .kpi-n { font-size: 20px; }
     .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 18px; }
     .kpi-l { font-size: 11.5px; }
-    .tablero-tit { font-size: 18px; }
     .paso { padding: 13px 14px; }
     .paso-cab { margin-bottom: 10px; }
     .paso .campos { gap: 10px; }
@@ -600,6 +638,7 @@
     <span class="rail-punto"></span>
     <b class="rail-local" id="railLocal">Elegí tu local</b>
     <div class="quien" id="quienRail" hidden>
+      <span class="quien-lbl">Quién carga <span class="lbl-req">obligatorio</span></span>
       <select class="quien-sel" aria-label="Quién está cargando"></select>
       <div class="quien-nuevo" hidden>
         <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
@@ -673,6 +712,7 @@
       <span class="ident-local" id="identLocal">Todavía no elegiste tu local</span>
       <span class="ident-vend" id="identVend">Se elige una sola vez y queda guardado</span>
       <div class="quien" id="quienBarra" hidden>
+        <span class="quien-lbl">Quién carga <span class="lbl-req">obligatorio</span></span>
         <select class="quien-sel" aria-label="Quién está cargando"></select>
         <div class="quien-nuevo" hidden>
           <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
@@ -888,7 +928,7 @@
   /* Sube a mano al publicar, y tiene que coincidir con la del backend.
      Cuando un vendedor dice "a mí no me anda", esto dice qué versión tiene
      ESE celular: la app es PWA y puede quedar una vieja cacheada. */
-  var VERSION = '2026.09.20';
+  var VERSION = '2026.09.21';
 
   var local = '', motivo = '', talles = [];
 
@@ -1189,9 +1229,14 @@
          tarjeta puede hacer algo más que informar. */
       var hoy = { cls: '', n: reg.dia || 0, l: 'Registros hoy',
                   pie: reg.dia ? 'en todo el local' : 'Cargá el primero del día' };
+      /* El pie no puede repetir el número grande: con el local recién
+         arrancado, "3 / 3 desde que arrancó" dice dos veces lo mismo y la
+         tarjeta se lee como si algo no hubiera cargado. Cuando el mes ES
+         todo lo que hay, el pie lo dice con palabras. */
       var mes = { cls: '', n: reg.mes || 0, l: 'Este mes',
-                  pie: reg.total ? (reg.total + ' desde que arrancó')
-                                 : 'Este local todavía no arrancó' };
+                  pie: !reg.total ? 'Este local todavía no arrancó'
+                     : reg.total === reg.mes ? 'Es el primer mes del local'
+                     : (reg.total + ' desde que arrancó') };
 
       if (per === 'dia') {
         conObjetivo(hoy, obj, reg.dia || 0);
@@ -1208,9 +1253,10 @@
 
       tarjetas = [hoy, mes,
         { cls: 'es-plata', n: PESOS.format(rec.mes || 0), l: 'Recuperado este mes',
-          pie: ven.total
-            ? PESOS.format(rec.total || 0) + ' en total'
-            : 'Sin ventas cargadas todavía' }
+          pie: !ven.total ? 'Sin ventas cargadas todavía'
+             : !rec.total ? 'Todavía sin recuperar'
+             : rec.total === rec.mes ? 'Todo lo recuperado hasta ahora'
+             : PESOS.format(rec.total) + ' en total' }
       ];
     }
 

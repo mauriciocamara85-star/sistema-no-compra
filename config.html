@@ -171,7 +171,7 @@
       </div>
       <div class="marca-txt">
         <h1>Configuración</h1>
-        <span id="quienSoy">No Compra</span>
+        <span>VDH · No Compra</span>
       </div>
     </div>
     <!-- Volver a la carga ya está en el rail, que está en las tres pantallas.
@@ -255,7 +255,7 @@
     <div id="locales"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
   </div>
 
-  <p class="pie">Los cambios quedan anotados con tu nombre en la pestaña <strong>Log</strong> de la planilla. <a href="panel.html">Panel de seguimiento</a></p>
+  <p class="pie">Los cambios quedan anotados con la fecha en la pestaña <strong>Log</strong> de la planilla. <a href="panel.html">Panel de seguimiento</a></p>
 </main>
 
 </div><!-- /.marco -->
@@ -266,24 +266,28 @@
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
-  var K_LOCAL = 'nc_local', K_QUIEN = 'nc_quien';
-  var datos = null, quien = '', abierto = '';
+  var K_LOCAL = 'nc_local';
+  var datos = null, abierto = '';
 
   var X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
   var FLECHA = '<svg class="local-flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
 
-  /* ═══ Quién está configurando ═══════════════════════════════════════════
-     No es una contraseña y no pretende serlo: acá no hay datos de clientes.
-     Es atribución, para que el historial diga quién cambió qué. Se pregunta
-     una vez por dispositivo. */
-  function pedirQuien() {
-    quien = leer(K_QUIEN);
-    if (!quien) {
-      quien = (prompt('¿Quién sos? Queda anotado al lado de cada cambio.') || '').trim();
-      if (quien) guardar(K_QUIEN, quien);
-    }
-    $('quienSoy').textContent = quien ? 'VDH · ' + quien : 'VDH · No Compra';
-  }
+  /* ═══ Acá NO se pregunta quién sos ══════════════════════════════════════
+     Había un prompt() del navegador que tapaba la pantalla al entrar y pedía
+     el nombre para anotarlo en el log. Se fue por tres razones: era lo único
+     de la app que no parecía la app, frenaba también al que venía sólo a
+     MIRAR —que es casi siempre—, y no obligaba a nada: con Cancelar se
+     entraba igual y el log anotaba "sin identificar" lo mismo.
+
+     El log no se toca y sigue diciendo QUÉ cambió, DÓNDE y CUÁNDO, que es lo
+     que sirve para entender por qué un local tiene el objetivo que tiene. Lo
+     único que pierde es el nombre, y con dos o tres personas tocando esta
+     pantalla eso no valía una pared en la puerta. En registrarLog_
+     (Config.gs) la columna Quién queda siempre en "sin identificar".
+
+     OJO: el Panel tiene un prompt parecido y ESE no es lo mismo. Ahí el
+     nombre se guarda como responsable del seguimiento de cada cliente: es un
+     dato del cliente, no una firma al pie de un cambio. */
 
   /* ═══ Este equipo ═══════════════════════════════════════════════════════ */
   function pintarEsteEquipo() {
@@ -412,7 +416,7 @@
           // Confirmación en vez de contraseña: esto lo ven los 14 locales, y
           // un toque sin querer no puede dejar a una sucursal sin gente.
           if (!confirm('¿Sacar a ' + nombre + ' de ' + bonito(local) + '?\n\nNo se borra nada: queda inactivo y se puede volver a agregar.')) return;
-          mandar({ accion: 'sacarVend', local: local, nombre: nombre, quien: quien }, local,
+          mandar({ accion: 'sacarVend', local: local, nombre: nombre }, local,
                   function () { avisar('ok', nombre + ' quedó fuera de la lista.'); });
         };
       });
@@ -424,8 +428,7 @@
             accion: 'objetivo',
             local: local,
             periodo: caja.querySelector('[data-periodo]').value,
-            meta: caja.querySelector('[data-meta]').value,
-            quien: quien
+            meta: caja.querySelector('[data-meta]').value
           }, local, function () { avisar('ok', 'Objetivo guardado.'); });
         };
       }
@@ -468,7 +471,6 @@
   /* ═══ Arranque ══════════════════════════════════════════════════════════ */
   (function () {
     iniciarTema();
-    pedirQuien();
     pintarEsteEquipo();
     cargar(false);
     iniciarPWA();
