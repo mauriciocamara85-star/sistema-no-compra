@@ -43,19 +43,41 @@
     background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft);
   }
 
-  /* Un local: su gente y su objetivo. */
-  .local { margin-bottom: 12px; }
+  /* ── Un local: su gente y su objetivo ──────────────────────────────────
+     Catorce filas iguales se leen mejor como una tabla que sueltas en el
+     aire: una línea entre ellas y el mismo alto siempre.
+
+     Cada fila dice de un vistazo lo que hay adentro —cuánta gente y qué
+     objetivo—, así no hay que abrir las catorce de a una para encontrar al
+     local que falta configurar. */
+  .local { border-top: 1px solid var(--line); }
+  .local:first-child { border-top: 0; }
   .local-cab {
     display: flex; align-items: center; gap: 10px;
     cursor: pointer; user-select: none;
+    padding: 11px 2px;
   }
-  .local-nom { font: 700 17px/1.2 var(--display); flex: 1; min-width: 0; }
+  .local-nom { font: 700 16px/1.2 var(--display); flex: 1; min-width: 0; }
+  .local-datos { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
   .local-cuenta {
     font-size: 12px; font-weight: 700;
-    color: var(--txt-3);
+    color: var(--txt-2);
     background: var(--surface-2);
+    border: 1px solid var(--line);
     border-radius: var(--r-pill);
     padding: 3px 9px;
+    white-space: nowrap;
+  }
+  /* Lo que todavía no se configuró se dice, pero en voz baja: es una
+     pendiente, no un error. */
+  .local-cuenta.flojo { color: var(--txt-3); background: none; border-style: dashed; }
+  .local-cuenta.es-meta { color: var(--acc-txt); border-color: var(--acc-line); background: var(--acc-soft); }
+  @media (max-width: 520px) {
+    /* En un celular no entran los dos chips al lado del nombre: bajan a su
+       propio renglón, corridos el ancho de la flecha para que queden
+       alineados abajo del nombre y no flotando contra el borde. */
+    .local-cab { flex-wrap: wrap; row-gap: 7px; }
+    .local-datos { flex: 1 0 100%; padding-left: 28px; }
   }
   .local-flecha {
     width: 18px; height: 18px; color: var(--txt-3);
@@ -104,6 +126,26 @@
 
   @media (min-width: 720px) {
     .agregar input, .meta-fila .campo { max-width: 260px; }
+  }
+
+  /* ── En la PC ──────────────────────────────────────────────────────────
+     Dos columnas: los locales —lo compartido, a lo que se viene— se llevan
+     el ancho, y lo de este dispositivo se va a una columna angosta a la
+     derecha. Antes todo caía en una sola columna de 660px flotando en el
+     medio de la pantalla, con el rail lejísimos a la izquierda y un desierto
+     al costado. */
+  @media (min-width: 1100px) {
+    :root { --tope: 1180px; }
+    .hoja {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 320px;
+      gap: 14px;
+      align-items: start;
+    }
+    #cajaLocales { grid-column: 1; grid-row: 1; margin-bottom: 0; }
+    .col-lado    { grid-column: 2; grid-row: 1; }
+    .col-lado .esteEquipo, .col-lado .bloque { margin-bottom: 12px; }
+    .pie { grid-column: 1 / -1; }
   }
 </style>
 </head>
@@ -163,10 +205,12 @@
 
 <main class="hoja">
 
-  <!-- ── Qué local es ESTE equipo ──────────────────────────────────────────
-       Lo primero, porque es lo único que cambia cómo se comporta la app en
-       este dispositivo. Todo lo de abajo es dato compartido: lo configura uno
-       y lo ven todos. -->
+  <!-- ── Lo de ESTE dispositivo ────────────────────────────────────────────
+       El local y el tema: las dos cosas que se guardan en este aparato y no
+       las ve nadie más. Van juntas y, en la PC, a la columna de la derecha;
+       lo de la izquierda es lo compartido, que es a lo que se viene. -->
+ <div class="col-lado">
+
   <div class="esteEquipo">
     <div class="esteEquipo-tit">Este equipo</div>
     <div class="esteEquipo-sub">Queda guardado acá. El formulario va a abrir directo con los vendedores de este local.</div>
@@ -192,6 +236,8 @@
       <span class="tema-txt">Oscuro para el local, claro para la oficina.</span>
     </div>
   </div>
+
+ </div><!-- /.col-lado -->
 
   <div class="bloque" id="cajaLocales">
     <h2 class="bloque-tit">Los locales</h2>
@@ -263,10 +309,21 @@
   function pintarLocales() {
     $('locales').innerHTML = datos.locales.map(function (l) {
       var n = l.vendedores.length;
+      var obj = l.objetivo || {};
+      /* Los dos datos que uno viene a mirar, en la fila cerrada: cuánta gente
+         tiene el local y qué objetivo le pusieron. Sin esto las catorce filas
+         decían lo mismo y había que abrirlas de a una. */
+      var chipGente = n
+        ? '<span class="local-cuenta">' + (n === 1 ? '1 vendedor' : n + ' vendedores') + '</span>'
+        : '<span class="local-cuenta flojo">sin gente</span>';
+      var chipMeta = obj.meta
+        ? '<span class="local-cuenta es-meta">' + obj.meta + ' por ' + nombrePeriodo(obj.periodo) + '</span>'
+        : '<span class="local-cuenta flojo">sin objetivo</span>';
+
       return '<div class="local' + (l.local === abierto ? ' abierto' : '') + '" data-local="' + esc(l.local) + '">' +
         '<div class="local-cab">' + FLECHA +
           '<span class="local-nom">' + esc(bonito(l.local)) + '</span>' +
-          '<span class="local-cuenta">' + (n === 1 ? '1 vendedor' : n + ' vendedores') + '</span>' +
+          '<span class="local-datos">' + chipGente + chipMeta + '</span>' +
         '</div>' +
         '<div class="local-cuerpo">' + cuerpoLocal(l) + '</div>' +
       '</div>';
