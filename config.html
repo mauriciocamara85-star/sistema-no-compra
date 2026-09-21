@@ -177,15 +177,22 @@
     :root { --tope: 1180px; }
     .hoja {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) 320px;
+      /* 380 y no 320: en esa columna ahora hay formularios —un mail, un
+         token, una fecha—, no sólo dos líneas de texto. */
+      grid-template-columns: minmax(0, 1fr) 380px;
       gap: 14px;
       align-items: start;
     }
-    #cajaLocales { grid-column: 1; grid-row: 1; margin-bottom: 0; }
-    #cajaAvisos   { grid-column: 1; grid-row: 2; margin-bottom: 0; }
-    #cajaTelegram { grid-column: 1; grid-row: 3; margin-bottom: 0; }
-    #cajaArranque { grid-column: 1; grid-row: 4; margin-bottom: 0; }
-    .col-lado    { grid-column: 2; grid-row: 1; }
+    /* La lista de locales es larga —quince filas— y los ajustes son cortos.
+       Puestos todos en la misma columna, la derecha quedaba vacía desde la
+       mitad de la pantalla para abajo y la izquierda se estiraba el doble de
+       lo necesario. Ahora los locales se llevan la columna entera y los
+       ajustes se apilan al costado, que es justo el espacio que sobraba. */
+    #cajaLocales  { grid-column: 1; grid-row: 1 / span 4; margin-bottom: 0; }
+    .col-lado     { grid-column: 2; grid-row: 1; }
+    #cajaAvisos   { grid-column: 2; grid-row: 2; margin-bottom: 0; }
+    #cajaTelegram { grid-column: 2; grid-row: 3; margin-bottom: 0; }
+    #cajaArranque { grid-column: 2; grid-row: 4; margin-bottom: 0; }
     .col-lado .esteEquipo, .col-lado .bloque { margin-bottom: 12px; }
     .pie { grid-column: 1 / -1; }
   }
@@ -561,7 +568,14 @@
     $('avisos').innerHTML = a.activo
       ? '<p class="avisos-quien">Le llega a <b>' + esc(a.mail.split(',').join(', ')) + '</b>.</p>' +
         '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnAviso">Cambiar</button></div>'
-      : '<p class="avisos-quien flojo">No le llega a nadie. Los registros se guardan igual en la planilla y se ven en el panel; lo único que falta es el mail.</p>' +
+      /* Los dos bloques de aviso tienen que saber el uno del otro. "No le
+         llega a nadie" con Telegram andando se lee como que no hay ningún
+         aviso, y es exactamente al revés: hay uno, y mejor. */
+      : '<p class="avisos-quien flojo">No le llega a nadie. ' +
+        (datos && datos.telegram && datos.telegram.activo
+          ? 'Los avisos están saliendo por Telegram, así que esto es opcional.'
+          : 'Los registros se guardan igual en la planilla y se ven en el panel; lo único que falta es el mail.') +
+        '</p>' +
         '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnAviso">Poner un mail</button></div>';
 
     $('btnAviso').onclick = formAvisos;
