@@ -308,9 +308,12 @@
     if (!p.total) { $('cajaAlerta').innerHTML = ''; return; }
 
     var cuantos = p.total === 1 ? '1 cliente está esperando' : p.total + ' clientes están esperando';
+    var dias = p.dias + (p.dias === 1 ? ' día' : ' días');
+    /* "Viejo" son 3 días o más, el mismo corte que pinta de rojo al panel, así
+       que acá nunca hay que hablar de horas ni de un solo día. */
     var detalle = p.viejos
-      ? (p.viejos === 1 ? '1 de ellos hace ' : p.viejos + ' de ellos hace ') +
-        (p.dias === 1 ? 'más de un día' : 'más de 3 días, y el más viejo hace ' + p.dias)
+      ? (p.viejos === 1 ? 'Uno de ellos lleva' : p.viejos + ' de ellos llevan') +
+        ' más de 3 días esperando, y el más viejo ya lleva ' + dias + '.'
       : 'Todavía ninguno lleva más de 3 días.';
 
     $('cajaAlerta').innerHTML =

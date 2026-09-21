@@ -22,16 +22,17 @@ Vendedor en el local
            lead + contacto + nota
 ```
 
-## Las cuatro vistas
+## Las cinco vistas
 
 | Vista | URL | Para quién |
 |-------|-----|------------|
 | Formulario de carga | [`/`](https://mauriciocamara85-star.github.io/sistema-no-compra/) | Vendedores de los 14 locales |
 | Panel de seguimiento | [`/panel.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/panel.html) | Atención al Cliente (pide PIN) |
 | Motivos | [`/motivos.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/motivos.html) | Compras: por qué se va la gente, qué producto y qué talle faltó (sin PIN) |
+| Resultados | [`/resultados.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/resultados.html) | Todos: si el sistema está sirviendo — cuánto se carga, cuánto se sigue y cuánto vuelve (sin PIN) |
 | Configuración | [`/config.html`](https://mauriciocamara85-star.github.io/sistema-no-compra/config.html) | Encargados: el equipo y el objetivo de cada local (sin PIN, salvo el aviso por mail) |
 
-Las cuatro se sirven desde GitHub Pages y se publican con un `git push`. Las URLs
+Las cinco se sirven desde GitHub Pages y se publican con un `git push`. Las URLs
 viejas de Apps Script (`.../exec` y `.../exec?v=panel`) siguen andando:
 redirigen acá.
 
@@ -139,6 +140,7 @@ UNICENTER · VILLA DEL PARQUE
 index.html           Formulario del vendedor
 panel.html           Panel de seguimiento
 motivos.html         Por qué se va la gente sin comprar (Compras)
+resultados.html      El embudo del sistema: cargado → contactado → cobrado
 config.html          Objetivos de cada local, el general y el aviso por mail
 estilos.css          Sistema de diseño compartido (violeta, claro/oscuro)
 comun.js             Backend, tema, avisos, WhatsApp, PWA
@@ -150,6 +152,7 @@ src/                 ── el backend, en Apps Script ──
   Codigo.gs          Carga, seguimiento, avisos
   Config.gs          Equipo, objetivos, aviso por mail e historial de cambios
   Motivos.gs         Cuenta los motivos, y qué producto y talle faltaron
+  Resultados.gs      El embudo: cuánto se carga, se sigue y se cobra
   Telegram.gs        El aviso por Telegram, con botón de WhatsApp
   Respaldo.gs        Copia diaria de la planilla
   Resumen.gs         Arma la pestaña Resumen (sucursal/vendedor/producto/motivo)
@@ -358,6 +361,43 @@ anotó un vendedor apurado; acá el vendedor está diciendo "me equivoqué".
 Una corrección **no se encola** si no hay señal. Lo que está en la planilla es
 lo que se cargó la primera vez, que no está roto: es mejor reintentar que
 dejar una cola de correcciones pisándose sobre la misma fila.
+
+## Resultados: ¿esto está sirviendo?
+
+`/resultados.html`. Es la única pantalla que mide **al sistema** y no a los
+clientes: si la cadena —cargar, contactar, cerrar— se completa o se corta en
+el medio.
+
+**El número que la hizo existir.** La primera vez que se usó quedaron **139
+registros cargados y 8 con seguimiento hecho**. Nadie lo supo hasta que
+alguien los contó a mano, meses después, y para entonces el sistema ya estaba
+muerto. El agujero no era que los vendedores no cargaran: era que lo cargado
+no se trabajaba y **ninguna pantalla lo decía**.
+
+Por eso el embudo tiene cuatro escalones y no uno:
+
+| Escalón | Quién lo mueve |
+|---|---|
+| Cargados | los vendedores |
+| Contactados | Atención al Cliente ← *acá se cortó* |
+| Compraron | el cliente que volvió |
+| Recuperado | cuánta plata |
+
+**Cada escalón se mide contra lo CARGADO**, no contra el anterior: lo que
+importa no es qué tan bien viene cada tramo por separado, sino cuánto del
+total original sobrevive hasta el final. Un "18 de 20 contactados" se ve
+sano; "18 de 139" es lo que pasó de verdad.
+
+**Si se contactó menos de la mitad, ese escalón se pinta en rojo.** Es el
+síntoma exacto que mató al sistema la primera vez, y tiene que gritar.
+
+Arriba de todo, lo único que pide una acción: **cuántos clientes están
+esperando que nadie llamó**, cuántos hace más de 3 días y hace cuánto el más
+viejo, con el link al panel. El resto de la pantalla informa; ese bloque pide.
+
+**Abierta, sin PIN y sin modo supervisor**, por decisión de Mauricio: quiere
+que las vea todo el mundo, incluidos los vendedores. Y se puede, porque son
+conteos, porcentajes y totales en pesos — ningún dato de ningún cliente.
 
 ## Motivos: por qué se va la gente
 
