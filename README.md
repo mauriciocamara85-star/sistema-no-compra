@@ -343,8 +343,9 @@ ignorar el grupo. Estaba mal: **un día sin cargas es la noticia más
 importante que puede dar este mensaje.** Es exactamente así como se murió el
 sistema la primera vez —los locales dejaron de cargar y nadie se enteró hasta
 meses después— y el silencio hace que ese día se vea igual que un día bueno.
-Cuando ayer no cargó nadie lo dice con todas las letras y pide que alguien
-hable con los locales.
+Cuando ayer no cargó nadie lo dice con todas las letras, y nada más: no
+reparte tareas ni pide que alguien hable con los locales. El grupo tiene al
+dueño adentro y el hecho dicho en seco alcanza.
 
 Cierra con **el acumulado del mes** —cuántos volvieron a comprar y cuánta
 plata— separado del resto: es la única línea que no le pide nada a nadie y

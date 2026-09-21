@@ -27,8 +27,9 @@
  * locales dejaron de cargar y nadie se enteró hasta meses después—, y el
  * silencio hace que ese día se vea igual que un día bueno.
  *
- * Así que cuando ayer no cargó nadie, lo dice con todas las letras y pide que
- * alguien hable con los locales. El grupo tiene al dueño adentro: ese mensaje
+ * Así que cuando ayer no cargó nadie, lo dice con todas las letras. **Y nada
+ * más:** no pide que alguien hable con los locales ni reparte tareas. El
+ * grupo tiene al dueño adentro y el hecho dicho en seco alcanza — ese mensaje
  * tres días seguidos es una conversación que se va a dar sola.
  */
 
@@ -141,51 +142,47 @@ function recordatorioDiario() {
 
   const lineas = ['<b>Buen día.</b>', ''];
 
-  /* Lo de ayer y el acumulado juntos: el segundo le da escala al primero.
-     "Entraron 2" no dice nada solo; "entraron 2, van 137" sí. Y el total va
-     dicho con todas las letras porque más abajo hay otro número parecido —el
-     del mes— y dos totales sin etiqueta en el mismo mensaje se confunden. */
-  const acumulado = !n.total
-    ? ' Todavía no se cargó ninguno desde que arrancamos.'
-    : (n.total === 1
-        ? ' Va <b>1</b> cargado desde que arrancamos.'
-        : ' Van <b>' + n.total + '</b> cargados desde que arrancamos.');
+  /* Dos renglones y nada más: el día, y cómo viene el acumulado. El segundo
+     le da escala al primero —"entraron 2" no dice nada solo, "entraron 2, van
+     137" sí— y va dicho con todas las letras porque más abajo hay otro número
+     parecido, el del mes, y dos totales sin etiqueta se confunden. Tres líneas
+     para un sistema con cuatro registros se leen infladas, y un mensaje que
+     parece relleno se empieza a saltear.
 
-  if (n.ayer) {
-    lineas.push((n.ayer === 1 ? 'Ayer entró <b>1</b>.' : 'Ayer entraron <b>' + n.ayer + '</b>.') +
-                acumulado);
+     Tampoco da instrucciones. Antes decía "hay que hablar con ellos" abajo
+     del día sin cargas: el hecho dicho en seco ya es el mensaje, y mandarle
+     tarea a un grupo donde está el dueño suena a otra cosa. */
+  lineas.push(n.ayer
+    ? ((n.ayer === 1 ? 'Ayer entró <b>1</b>.' : 'Ayer entraron <b>' + n.ayer + '</b>.'))
+    : '<b>Ayer no cargó ningún local.</b>');
+
+  if (!n.total) {
+    lineas.push('Todavía no se cargó ninguno desde que arrancamos.');
   } else {
-    /* El día sin cargas no se dice de costado: es el síntoma que mató al
-       sistema la primera vez y va con nombre y apellido, más un pedido
-       concreto. Un número solo se mira; un pedido se contesta. */
-    lineas.push('<b>Ayer no cargó ningún local.</b>' + acumulado);
-    lineas.push('Hay que hablar con ellos.');
-  }
+    const van = n.total === 1
+      ? 'Va <b>1</b> cargado desde que arrancamos'
+      : 'Van <b>' + n.total + '</b> cargados desde que arrancamos';
 
-  /* El trabajo HECHO va antes que el que falta, y es deliberado. Este mensaje
-     lo leen el dueño y el que atiende: si arranca por la deuda, todos los días
-     es un reclamo. Arrancando por lo hecho, el que atendió a veinte ve que se
-     ve, y el que falta también. */
-  const seguimiento = [];
+    // Los días que está todo al día, el acumulado y la buena noticia entran
+    // en la misma frase: no hacen falta dos renglones para decir que no hay
+    // nada pendiente.
+    if (!n.pendientes) {
+      lineas.push(van + (n.total === 1 ? ' y ya se le escribió.' : ' y ya se les escribió a todos.'));
+    } else {
+      let estado = van + ': ';
+      /* Lo hecho antes que lo que falta, a propósito: este mensaje lo lee el
+         que atiende, y si arranca por la deuda es un reclamo diario. */
+      if (n.contactados) estado += 'se les escribió a <b>' + n.contactados + '</b> y faltan <b>' + n.pendientes + '</b>';
+      else estado += 'falta contestarle a <b>' + n.pendientes + '</b>';
 
-  if (n.contactados && !n.pendientes) {
-    // Todo al día: una sola frase, no dos diciendo lo mismo.
-    seguimiento.push('Ya se les escribió a <b>todos</b>.');
-  } else {
-    if (n.contactados) seguimiento.push('Se les escribió a <b>' + n.contactados + '</b>.');
-    if (n.pendientes) {
-      let falta = 'Falta contestarle a <b>' + n.pendientes +
-                  (n.pendientes === 1 ? '</b> cliente' : '</b> clientes');
       if (n.viejos) {
-        falta += ', ' + (n.viejos === 1 ? 'uno' : n.viejos) + ' hace más de ' +
-                 RECORDATORIO_DIAS + ' días';
-        if (n.dias > RECORDATORIO_DIAS) falta += ' (el más viejo, ' + n.dias + ' días)';
+        estado += ', ' + (n.viejos === 1 ? 'uno' : n.viejos) + ' hace más de ' +
+                  RECORDATORIO_DIAS + ' días';
+        if (n.dias > RECORDATORIO_DIAS) estado += ' (el más viejo, ' + n.dias + ' días)';
       }
-      seguimiento.push(falta + '.');
+      lineas.push(estado + '.');
     }
   }
-
-  if (seguimiento.length) lineas.push(seguimiento.join(' '));
 
   /* El acumulado del mes, separado del resto: es la única línea que no le
      pide nada a nadie. Contesta para qué sirvió todo lo de arriba, que es lo
