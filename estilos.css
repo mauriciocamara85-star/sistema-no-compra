@@ -442,7 +442,10 @@ a { color: var(--acc-txt); }
     border-top: 1px solid var(--rail-line);
     text-align: center;
   }
+  /* display:block y no el inline que trae un <span>: sin esto el ancho y el
+     alto no se aplican, el punto mide cero y directamente no se ve. */
   .rail-punto {
+    display: block;
     width: 8px; height: 8px; border-radius: 50%;
     margin: 0 auto 7px;
     background: var(--ok);
@@ -531,18 +534,24 @@ a { color: var(--acc-txt); }
   .rail .quien { margin-top: 9px; }
   /* background-color y no background: el atajo borraría la flechita del
      desplegable, que es una imagen de fondo. */
+  /* El fondo va OPACO y no con un velo blanco encima del rail. Chrome pinta
+     la lista desplegada con el color de fondo del propio select, y un rgba
+     translúcido se compone contra el blanco del navegador: la lista se abría
+     clara sobre el rail oscuro. Con un color sólido se abre oscura.
+     Las opciones se pintan aparte porque en Windows no lo heredan. */
   .rail .quien-sel, .rail .quien-txt {
-    background-color: rgba(255, 255, 255, .08);
+    background-color: #212C48;
     border: 1px solid rgba(255, 255, 255, .18);
     color: var(--rail-txt);
     font-size: 12.5px;
     padding: 7px 9px;
     border-radius: 10px;
   }
+  .rail .quien-sel option { background-color: #212C48; color: var(--rail-txt); }
   .rail .quien-sel { padding-right: 24px; background-position: right 8px center; }
   .rail .quien-txt { margin-top: 6px; }
   .rail .quien-sel:focus, .rail .quien-txt:focus {
-    background-color: rgba(255, 255, 255, .14);
+    background-color: #2A3760;
     border-color: var(--acc);
     box-shadow: none;
   }
