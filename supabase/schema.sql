@@ -40,6 +40,9 @@ create type resultado_contacto as enum (
 -- cosa por su lado sin buscar texto adentro de un string.
 create type canal_venta as enum ('local', 'online');
 
+-- OJO: estos valores son los que ya usa la app y se muestran tal cual, pero
+-- NO son los que entiende date_trunc, que quiere 'day', 'week' y 'month'.
+-- Donde haya que cruzarlos hay que traducirlos; ver inicio_de() más abajo.
 create type periodo_objetivo as enum ('dia', 'semana', 'mes');
 
 
@@ -176,7 +179,10 @@ create table objetivos (
 );
 
 create unique index objetivos_por_local on objetivos (lower(trim(local)));
-create unique index objetivos_general   on objetivos ((true)) where local is null;
+-- Un solo objetivo general. Se indexa la expresión "local is null" —que en las
+-- filas que entran vale siempre true— porque en un índice único los NULL se
+-- consideran distintos entre sí y sin esto entrarían dos generales.
+create unique index objetivos_general on objetivos ((local is null)) where local is null;
 
 
 -- ════════════════════════════════════════════════════════════════════════
@@ -205,6 +211,32 @@ create table ajustes (
   clave text primary key,
   valor text
 );
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- LA HORA
+--
+-- Postgres trabaja en UTC y los locales están en Argentina. Sin esto,
+-- `date_trunc('day', now())` arranca el día a las 21:00 del día anterior y
+-- todas las noches, entre las 21 y las 24, el tablero del local mostraría los
+-- registros de mañana. Es la clase de error que nadie reporta: se ve raro un
+-- rato y después se acomoda solo.
+--
+-- La cuenta va y vuelve a propósito: se pasa a hora local para saber dónde
+-- empieza el día allá, y se vuelve a UTC para poder comparar contra `creado`.
+--
+-- date_trunc('week') arranca el LUNES, que es como cuenta la semana el
+-- equipo. Es el mismo criterio que cortes_() en Codigo.gs.
+-- ════════════════════════════════════════════════════════════════════════
+
+create or replace function inicio_de(periodo text)
+returns timestamptz
+language sql
+stable
+as $$
+  select date_trunc(periodo, now() at time zone 'America/Argentina/Buenos_Aires')
+         at time zone 'America/Argentina/Buenos_Aires'
+$$;
 
 
 -- ════════════════════════════════════════════════════════════════════════
@@ -240,11 +272,11 @@ create view v_metricas as
   select
     sucursal,
     vendedor,
-    count(*) filter (where creado >= date_trunc('day', now()))   as hoy,
-    count(*) filter (where creado >= date_trunc('week', now()))  as semana,
-    count(*) filter (where creado >= date_trunc('month', now())) as mes,
-    count(*)                                                     as total,
-    coalesce(sum(monto) filter (where compro and creado >= date_trunc('month', now())), 0) as recuperado_mes,
-    coalesce(sum(monto) filter (where compro), 0)                as recuperado_total
+    count(*) filter (where creado >= inicio_de('day'))   as hoy,
+    count(*) filter (where creado >= inicio_de('week'))  as semana,
+    count(*) filter (where creado >= inicio_de('month')) as mes,
+    count(*)                                             as total,
+    coalesce(sum(monto) filter (where compro and creado >= inicio_de('month')), 0) as recuperado_mes,
+    coalesce(sum(monto) filter (where compro), 0)        as recuperado_total
   from registros
   group by sucursal, vendedor;
