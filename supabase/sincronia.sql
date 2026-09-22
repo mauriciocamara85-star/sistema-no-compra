@@ -175,8 +175,15 @@ begin
 end;
 $$;
 
-revoke execute on function aplicar_kommo(text, bigint, numeric) from anon, public;
--- La Edge Function entra con la clave de servicio, no con ésta.
+/* Sólo la Edge Function del webhook, que entra con la clave de servicio.
+   Ni el navegador ni un usuario logueado pueden llamarla: mover el estado de
+   un lead a mano desde afuera dejaría la base y Kommo diciendo cosas
+   distintas, que es justo lo que esto viene a evitar.
+
+   El revoke a PUBLIC va PRIMERO: sin eso, el grant por omisión de Postgres
+   deja la función abierta a cualquiera con conexión. */
+revoke execute on function aplicar_kommo(text, bigint, numeric) from public, anon, authenticated;
+grant  execute on function aplicar_kommo(text, bigint, numeric) to service_role;
 
 
 -- ════════════════════════════════════════════════════════════════════════
