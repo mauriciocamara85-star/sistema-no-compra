@@ -16,3 +16,6 @@ desktop.ini
 
 # Atajo local con el ID de implementacion
 publicar.ps1
+
+# Basura del CLI de Supabase: cachés y el proyecto vinculado.
+supabase/.temp/
