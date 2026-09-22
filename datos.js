@@ -110,6 +110,17 @@ function funcion(nombre, args, sesion) {
 }
 
 /**
+ * El nombre de un local o de un vendedor, para comparar.
+ *
+ * "Lau", "lau" y " Lau " tienen que ser la misma persona, y "MORÓN" el mismo
+ * local que "Morón". La base ya lo resuelve con índices sobre lower(trim(…));
+ * esto es lo mismo del lado de acá, para cuando hay que cruzar dos listas.
+ */
+function clave_(v) {
+  return String(v == null ? '' : v).trim().toLowerCase();
+}
+
+/**
  * Un valor dentro de un filtro.
  *
  * Sin comillas: PostgREST NO las saca en un `eq.`, se las queda como parte
@@ -493,6 +504,107 @@ var base = {
         metodo: 'PATCH', cuerpo: cuerpo, sesion: t
       });
     }).then(function () { return true; });
+  },
+
+  /* ── Lo de Configuración ───────────────────────────────────────────────
+     Sin identificarse, igual que hoy: el equipo de cada local y sus
+     objetivos los maneja el encargado desde el celular del mostrador, y
+     ponerle una clave sería garantizar que nadie los actualice nunca.
+     Adentro no hay un solo dato de un cliente. */
+
+  /**
+   * Todo lo que la pantalla necesita, en tres consultas.
+   *
+   * Se arma acá y no en una función de la base porque son tres tablas
+   * chicas —catorce locales, un puñado de vendedores, quince objetivos— y
+   * cruzarlas del lado del navegador cuesta menos que mantener una función
+   * más.
+   */
+  config: function () {
+    return Promise.all([
+      pedir('/locales?select=codigo&activo=is.true&order=codigo.asc'),
+      pedir('/equipo?select=local,vendedor,activo&order=vendedor.asc'),
+      pedir('/objetivos?select=id,local,periodo,meta')
+    ]).then(function (r) {
+      var locales = (r[0] || []).map(function (l) { return l.codigo; });
+      var equipo = r[1] || [], metas = r[2] || [];
+
+      /* Un local que tiene gente cargada pero ya no está en la tabla sigue
+         apareciendo: si cerró, su lista tiene que poder mirarse igual. */
+      var vistos = {};
+      locales.forEach(function (l) { vistos[clave_(l)] = l; });
+      equipo.forEach(function (f) {
+        var n = String(f.local || '').trim();
+        if (n && !vistos[clave_(n)]) vistos[clave_(n)] = n;
+      });
+
+      var general = null, porLocal = {};
+      metas.forEach(function (m) {
+        if (!m.local) general = { periodo: m.periodo, meta: m.meta };
+        else porLocal[clave_(m.local)] = { periodo: m.periodo, meta: m.meta };
+      });
+
+      return {
+        status: 'ok',
+        locales: Object.keys(vistos).sort().map(function (k) {
+          return {
+            local: vistos[k],
+            vendedores: equipo.filter(function (f) {
+              return clave_(f.local) === k && f.activo;
+            }).map(function (f) { return f.vendedor; }),
+            objetivo: porLocal[k] || null
+          };
+        }),
+        periodos: ['dia', 'semana', 'mes'],
+        general: general
+      };
+    });
+  },
+
+  /** Saca a alguien de la lista de un local. No lo borra: lo desactiva. */
+  sacarVendedor: function (local, nombre) {
+    return pedir('/equipo?local=eq.' + valor(local) + '&vendedor=eq.' + valor(nombre), {
+      metodo: 'PATCH', cuerpo: { activo: false }
+    }).then(function () { return true; });
+  },
+
+  /**
+   * Pone, cambia o saca el objetivo de un local.
+   *
+   * `local` en '*' es el GENERAL: el que vale para todo local que no tenga
+   * el suyo. En la base vive con el local en NULL. Se manda con un asterisco
+   * y no vacío para que un error de la pantalla no termine escribiendo el
+   * objetivo de todos sin querer.
+   *
+   * Una meta en cero lo borra, que es como se apaga.
+   */
+  objetivo: function (local, periodo, meta) {
+    var general = local === '*';
+    var n = Number(String(meta).replace(/[^0-9]/g, ''));
+    if (n > 100000) return Promise.reject(new Error('Esa meta es demasiado grande.'));
+
+    /* Se lee la tabla entera y se busca acá. Son quince filas, y filtrar en
+       el servidor por un nombre de local con coma adentro parte la condición
+       de PostgREST en dos. */
+    return pedir('/objetivos?select=id,local').then(function (filas) {
+      var k = general ? '' : clave_(local);
+      var suyo = null;
+      (filas || []).forEach(function (f) {
+        if (clave_(f.local || '') === k) suyo = f;
+      });
+
+      if (!n) {
+        if (!suyo) return null;
+        return pedir('/objetivos?id=eq.' + suyo.id, { metodo: 'DELETE' })
+          .then(function () { return null; });
+      }
+
+      var fila = { local: general ? null : local, periodo: periodo, meta: n };
+      var camino = suyo
+        ? pedir('/objetivos?id=eq.' + suyo.id, { metodo: 'PATCH', cuerpo: fila })
+        : pedir('/objetivos', { metodo: 'POST', cuerpo: fila });
+      return camino.then(function () { return { periodo: periodo, meta: n }; });
+    });
   },
 
   /** Deja constancia en el historial. Nunca tumba lo que la llamó. */
