@@ -706,6 +706,9 @@ function deLaBase_(f) {
     // Los dos campos de la base, de vuelta en el texto del desplegable.
     compro:      f.compro ? ('Sí - ' + (canal === 'online' ? 'online' : 'local')) : (f.estado || f.contactado ? 'No' : ''),
     productoFinal: f.producto_final || '',
+    // El lead en Kommo, para poder abrirlo desde la ficha: el seguimiento se
+    // trabaja allá y esta pantalla tiene que poder llevar hasta ahí.
+    lead:        f.lead_kommo || '',
     // El descuento, para que la ficha sepa si ya se dio y no lo ofrezca dos veces.
     beneficioPct:   f.beneficio_pct || 0,
     beneficioUsado: !!f.beneficio_usado,

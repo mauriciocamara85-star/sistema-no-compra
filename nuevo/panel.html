@@ -208,6 +208,23 @@
      en una fila de botones que son más altos que ella. */
   .reg-acciones .pill { align-self: center; }
 
+  /* ── Modo consulta ─────────────────────────────────────────────────────
+     Lo que se maneja en Kommo no se ve hasta que alguien prende la
+     edición. No se deshabilita: se ESCONDE. Un campo gris apagado invita a
+     preguntar por qué no se puede, y la respuesta —"andá a Kommo"— es más
+     clara si el campo directamente no está. */
+  .reg-seg { display: none; }
+  body.editando .reg-seg { display: block; }
+
+  /* Prendido, el botón se nota: es un estado en el que no hay que quedarse. */
+  #btnEditar[aria-pressed="true"] {
+    background: var(--warn-soft);
+    border-color: var(--warn);
+    color: var(--warn-txt);
+  }
+  .aviso-editando { border-left-color: var(--warn); }
+  .aviso-editando b { color: var(--warn-txt); }
+
   .reg-seg { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 13px; }
   .seg-lbl { font-size: 12.5px; font-weight: 700; color: var(--txt-2); margin-bottom: 9px; }
   .seg-rapidos { display: flex; flex-wrap: wrap; gap: 7px; }
@@ -272,6 +289,16 @@
       </button>
       <button class="btn-icono" id="btnSalir" onclick="salir()" title="Salir" aria-label="Salir" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+      </button>
+      <!-- El modo edición.
+
+           Arranca APAGADO siempre y no se recuerda a propósito: si quedara
+           guardado dejaría de ser la excepción que es. El que lo necesita
+           lo prende, hace lo suyo, y mañana vuelve a estar apagado. -->
+      <button class="btn-icono" id="btnEditar" onclick="alternarEdicion()"
+              title="Editar (sólo si Kommo no está disponible)"
+              aria-label="Modo edición" aria-pressed="false" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       </button>
       <!-- El cambio de tema se mudó a Configuración: se toca una vez y
            estaba ocupando la esquina de las tres cabeceras. -->
@@ -339,6 +366,16 @@
 
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
+
+  <!-- Se ve sólo con la edición prendida, y no se puede cerrar: mientras
+       esté prendida, el que edita tiene que estar viendo por qué no
+       debería. -->
+  <div class="aviso aviso-editando" id="avisoEditar" hidden>
+    <b>Estás editando desde acá.</b>
+    El seguimiento se maneja en Kommo. Lo que cambies se va a mandar al CRM,
+    pero si alguien lo está tocando allá al mismo tiempo, gana el último.
+    Usalo sólo si Kommo no está disponible.
+  </div>
   <div class="kpis" id="kpis"></div>
 
   <div class="controles">
@@ -381,6 +418,11 @@
      dos semanas hay clientes con 15, con 20 y con 35, y nadie puede decir
      qué descuento da la marca. Para cambiarlo se cambia este número. */
   var DESCUENTO = 20;
+
+  /* Dónde vive el CRM. No es un secreto —es la dirección a la que entra
+     Atención al Cliente todos los días— y va acá y no en la base porque la
+     necesita el navegador para armar un enlace, no el servidor. */
+  var KOMMO = 'https://marketingvdh.kommo.com';
 
   /* ═══ Ingreso ═══════════════════════════════════════════════════════════ */
   /**
@@ -425,6 +467,7 @@
     document.body.classList.add('hay-rail');
     $('btnRefrescar').hidden = false;
     $('btnSalir').hidden = false;
+    $('btnEditar').hidden = false;
     $('whoami').value = quien;
 
     pintarKpis(res);
@@ -450,10 +493,44 @@
     document.body.classList.remove('hay-rail');
     $('btnRefrescar').hidden = true;
     $('btnSalir').hidden = true;
+    $('btnEditar').hidden = true;
+    // Que nunca quede prendido para el próximo que entre.
+    if (editando) alternarEdicion();
     $('porton').hidden = false;
     $('portonMsg').hidden = true;
     var btn = $('btnEntrar');
     btn.disabled = false; btn.textContent = 'Mandame el enlace';
+  }
+
+  /* ═══ Consulta o edición ════════════════════════════════════════════════
+     El seguimiento —estado, primer contacto, cierre, monto— se maneja en
+     Kommo, que es la fuente de verdad. Esta pantalla es para MIRAR qué está
+     pasando: quién está esperando, hace cuánto, y escribirle.
+
+     La edición existe igual, porque si Kommo se cae alguien tiene que poder
+     trabajar. Pero está apagada de entrada y no se recuerda: si quedara
+     guardada volvería a ser el modo normal en dos días, y tendríamos dos
+     lugares donde se cambia lo mismo.
+
+     Lo que se edite acá SÍ vuelve a Kommo: lo empuja la base sola, por la
+     bandeja de salida. Ver sincronia.sql. */
+  var editando = false;
+
+  function alternarEdicion() {
+    editando = !editando;
+    document.body.classList.toggle('editando', editando);
+    $('btnEditar').setAttribute('aria-pressed', String(editando));
+    $('avisoEditar').hidden = !editando;
+
+    /* El nombre se pide recién al guardar, no al prender: el que prende
+       para mirar un campo y lo apaga sin tocar nada no tiene que contestar
+       nada. Ver exigirQuien(). */
+    if (!editando) {
+      // Las fichas abiertas se cierran: si no, al volver a prender estarían
+      // todas desplegadas sin que nadie las haya abierto.
+      abiertos = {};
+      pintar();
+    }
   }
 
   /* ═══ Tablero ═══════════════════════════════════════════════════════════
@@ -681,6 +758,13 @@
             'WhatsApp</a>' +
           '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' + esc(linkWsp(r.whatsapp, '')) + '">Chat en blanco</a>' +
           (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
+
+          /* El seguimiento se trabaja en Kommo. Este enlace es lo que hace
+             que esta pantalla pueda ser sólo de consulta sin dejar a nadie
+             a pie: se ve quién está esperando, y de un toque se está
+             adentro de su ficha en el CRM. */
+          (r.lead ? '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' +
+              KOMMO + '/leads/detail/' + esc(r.lead) + '">Abrir en Kommo</a>' : '') +
 
           /* Cuando el producto no aparece, esto es lo único que queda para
              que el cliente igual se lleve algo. Antes era un cupón: una
