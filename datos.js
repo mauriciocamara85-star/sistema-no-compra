@@ -233,6 +233,22 @@ var base = {
     });
   },
 
+  /**
+   * Por qué se va la gente. Un local vacío es toda la cadena; un motivo,
+   * si viene, filtra los productos y los talles pero NO el ranking.
+   *
+   * Viene armado de la base en un solo viaje, con la misma forma que tenía
+   * cuando esto lo contestaba Apps Script: por eso la pantalla no cambió.
+   */
+  motivos: function (local, motivo) {
+    return funcion('resumen_motivos', { p_local: local || '', p_motivo: motivo || '' });
+  },
+
+  /** El embudo: cuántos se cargaron, a cuántos se trabajó y cuánto volvió. */
+  resultados: function (local) {
+    return funcion('resumen_resultados', { p_local: local || '' });
+  },
+
   /** Si este cliente tiene un descuento sin usar. Se busca por teléfono. */
   beneficio: function (telefono) {
     return funcion('beneficio_buscar', { telefono: telefono }).then(function (filas) {
