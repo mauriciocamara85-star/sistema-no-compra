@@ -65,6 +65,11 @@ function pedir(ruta, opciones) {
      LEERLA, que es justo lo que el vendedor no puede. Pedir "mínimo" no es
      una optimización: sin eso el alta falla. */
   if (opciones.metodo && opciones.metodo !== 'GET') cabeceras.Prefer = 'return=minimal';
+  /* Un PATCH que no toca ninguna fila contesta igual que uno que tocó diez.
+     Pidiendo el conteo, PostgREST lo dice en la cabecera Content-Range, que
+     es la única forma de distinguir "se guardó" de "no había nada que
+     guardar" sin poder leer la tabla. */
+  if (opciones.contar) cabeceras.Prefer = cabeceras.Prefer + ',count=exact';
 
   return fetch(BASE + '/rest/v1' + ruta, {
     method: opciones.metodo || 'GET',
@@ -77,6 +82,13 @@ function pedir(ruta, opciones) {
         try { msg = JSON.parse(t).message || JSON.parse(t).hint || t; } catch (e) {}
         throw rechazo('La base respondió ' + r.status + ': ' + msg);
       });
+    }
+    /* Content-Range viene como "0-0/1", y con un asterisco adelante de la
+       barra cuando no tocó ninguna fila. Lo que interesa es el número de
+       después de la barra, que es el total. */
+    if (opciones.contar) {
+      var rango = String(r.headers.get('content-range') || '');
+      return Number(rango.split('/')[1] || 0);
     }
     /* Un POST con `return=minimal` contesta 201 con el cuerpo VACÍO, no 204.
        Pedirle json() a eso explota, así que se mira el texto: vacío es que
@@ -441,6 +453,31 @@ var base = {
     return funcion('resumen_resultados', { p_local: local || '' });
   },
 
+  /**
+   * Le da el descuento a un cliente. Lo hace Atención al Cliente desde el
+   * panel, cuando el producto no aparece y hay que ofrecerle algo igual.
+   *
+   * **El filtro `beneficio_dado=is.null` es el candado.** Sin él, dos toques
+   * seguidos —o dos personas mirando la misma ficha— le corren la fecha al
+   * beneficio que ya estaba dado, y uno que el cliente todavía no usó
+   * volvería a arrancar de cero. Así el segundo intento no toca nada, y la
+   * pantalla se entera porque cuenta las filas que cambiaron.
+   *
+   * Los dos campos van juntos a propósito: la base tiene una regla que
+   * prohíbe un porcentaje sin beneficio dado, así que mandarlos por separado
+   * no guardaría la mitad, no guardaría nada.
+   */
+  darBeneficio: function (id, pct) {
+    return token().then(function (t) {
+      return pedir('/registros?id=eq.' + valor(id) + '&beneficio_dado=is.null', {
+        metodo: 'PATCH',
+        cuerpo: { beneficio_dado: new Date().toISOString(), beneficio_pct: pct },
+        sesion: t,
+        contar: true
+      });
+    }).then(function (r) { return r > 0; });
+  },
+
   /** Si este cliente tiene un descuento sin usar. Se busca por teléfono. */
   beneficio: function (telefono) {
     return funcion('beneficio_buscar', { telefono: telefono }).then(function (filas) {
@@ -655,6 +692,9 @@ function deLaBase_(f) {
     // Los dos campos de la base, de vuelta en el texto del desplegable.
     compro:      f.compro ? ('Sí - ' + (canal === 'online' ? 'online' : 'local')) : (f.estado || f.contactado ? 'No' : ''),
     productoFinal: f.producto_final || '',
+    // El descuento, para que la ficha sepa si ya se dio y no lo ofrezca dos veces.
+    beneficioPct:   f.beneficio_pct || 0,
+    beneficioUsado: !!f.beneficio_usado,
     /* Con el punto de los miles: es un campo que se lee de un vistazo en
        una lista de fichas, y "92500" obliga a contar ceros. Vuelve a entrar
        bien porque aLaBase_ saca los puntos antes de guardarlo. */

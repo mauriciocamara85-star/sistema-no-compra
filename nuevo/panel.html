@@ -202,6 +202,11 @@
     font-size: 13.5px; color: var(--txt-2);
   }
   .reg-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  /* El descuento ya dado no es un botón: es un hecho. Va con la insignia
+     .pill-ok que ya usa el estado de la ficha, para que se lea como un dato y
+     no como algo para tocar. Lo único propio es el centrado, porque acá vive
+     en una fila de botones que son más altos que ella. */
+  .reg-acciones .pill { align-self: center; }
 
   .reg-seg { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 13px; }
   .seg-lbl { font-size: 12.5px; font-weight: 700; color: var(--txt-2); margin-bottom: 9px; }
@@ -370,6 +375,12 @@
      maneja datos.js y lo que queda en el aparato es un token que vence
      solo, no una clave que sirve para siempre. */
   var K_QUIEN = 'nc_quien';
+
+  /* Cuánto se le ofrece al cliente cuando el producto no aparece. Un solo
+     número acá y no un campo por ficha: si cada uno elige cuánto dar, en
+     dos semanas hay clientes con 15, con 20 y con 35, y nadie puede decir
+     qué descuento da la marca. Para cambiarlo se cambia este número. */
+  var DESCUENTO = 20;
 
   /* ═══ Ingreso ═══════════════════════════════════════════════════════════ */
   /**
@@ -590,6 +601,16 @@
     var que = r.producto
       ? 'Pasaste por el local buscando ' + r.producto.toLowerCase().trim() + ' y no lo pudimos resolver en el momento.'
       : 'Pasaste por el local y no encontraste lo que buscabas.';
+
+    /* Con el descuento dado, el mensaje cambia de pregunta a oferta. Y dice
+       CÓMO se usa —dando el teléfono en la caja— porque es lo primero que
+       el cliente va a preguntar, y si no lo dice acá lo pregunta por
+       WhatsApp y alguien tiene que contestarle. */
+    if (r.beneficioPct) {
+      return hola + 'Te escribo' + donde + '. ' + que +
+        ' Te dejamos un ' + r.beneficioPct + '% de descuento para tu próxima compra en cualquiera de ' +
+        'nuestros locales: decí tu teléfono en la caja y te lo aplican. ¿Te paso fotos de lo que entró?';
+    }
     return hola + 'Te escribo' + donde + '. ' + que + ' Tengo novedades para mostrarte, ¿te paso fotos?';
   }
 
@@ -660,6 +681,18 @@
             'WhatsApp</a>' +
           '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' + esc(linkWsp(r.whatsapp, '')) + '">Chat en blanco</a>' +
           (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
+
+          /* Cuando el producto no aparece, esto es lo único que queda para
+             que el cliente igual se lleve algo. Antes era un cupón: una
+             imagen hecha a mano con un número de serie, anotado en una
+             planilla aparte para que no se usara dos veces. Acá el cliente
+             YA ES el cupón —está cargado con su teléfono—, así que dárselo
+             es un toque y usarlo es decir su número en la caja. */
+          (r.beneficioPct
+            ? '<span class="pill pill-ok">' + r.beneficioPct + '% dado' +
+                (r.beneficioUsado ? ' · usado' : '') + '</span>'
+            : '<button type="button" class="btn btn-sec btn-chico ben-btn" data-id="' + r.id + '">' +
+                'Dar ' + DESCUENTO + '%</button>') +
         '</div>' +
 
         '<div class="reg-seg">' +
@@ -710,6 +743,32 @@
           fecha1: true,
           resultado1: b.dataset.res
         }, 'Anotado: ' + b.dataset.res);
+      };
+    });
+
+    /* Se da y se recarga. La recarga no es por prolijidad: el mensaje de
+       WhatsApp de esa ficha cambia —pasa a ofrecer el descuento— y el que
+       acaba de darlo va a tocar ese botón enseguida. */
+    Array.prototype.forEach.call(document.querySelectorAll('.ben-btn'), function (b) {
+      b.onclick = function () {
+        if (!exigirQuien()) return;
+        b.disabled = true;
+        base.darBeneficio(+b.dataset.id, DESCUENTO)
+          .then(function (bien) {
+            if (!bien) {
+              /* No tocó ninguna fila: ese cliente ya tenía el suyo. Puede
+                 pasar con dos personas mirando el mismo panel. */
+              avisar('info', 'Ese cliente ya tenía su descuento.');
+            } else {
+              avisar('ok', 'Listo: ' + DESCUENTO + '% para este cliente. Avisale por WhatsApp.');
+            }
+            cargar();
+          })
+          .catch(function (err) {
+            b.disabled = false;
+            if (err && err.sinSesion) { caducada(); return; }
+            avisar('err', 'No se pudo dar el descuento.');
+          });
       };
     });
 
