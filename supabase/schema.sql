@@ -85,14 +85,50 @@ create table registros (
   producto_final   text,
   monto            numeric(12,2),
 
+  -- ── El beneficio ──
+  -- Cuando no aparece el producto, Atención al Cliente le ofrece un descuento
+  -- para que el cliente igual se lleve algo. Antes eso era un cupón: una
+  -- imagen hecha a mano en Canva, con un número de serie, anotado en una
+  -- planilla aparte para que no se usara dos veces.
+  --
+  -- Acá no hay cupón ni número: **el cliente YA ES el cupón.** Está cargado
+  -- con su teléfono, así que el beneficio es un estado de su registro. Se
+  -- caen la imagen, el número, el pool y la planilla.
+  --
+  -- **En el local se lo busca por TELÉFONO, nunca por nombre.** Un buscador
+  -- por nombre en el mostrador es un listado de clientes con sus teléfonos
+  -- repartido a los 14 locales, que es justo lo que hay que cuidar. El
+  -- teléfono es la llave que sólo tiene el cliente y hay que acertarla
+  -- entera: no se puede pescar.
+  beneficio_pct      smallint check (beneficio_pct between 1 and 100),
+  beneficio_dado     timestamptz,
+  beneficio_usado    timestamptz,
+  beneficio_local    text,
+  beneficio_vendedor text,
+
   -- ── Del sistema ──
   lead_kommo       text,
 
   -- Un monto sin venta, o una venta sin canal, son datos rotos: que no
   -- entren es más barato que descubrirlos tres meses después en un informe.
   constraint monto_solo_si_compro check (monto is null or compro),
-  constraint canal_solo_si_compro check (compro_canal is null or compro)
+  constraint canal_solo_si_compro check (compro_canal is null or compro),
+
+  -- Un beneficio usado que nunca se dio, o un porcentaje sin beneficio, son
+  -- estados imposibles. Que no entren es más barato que explicarlos después.
+  constraint usado_solo_si_dado check (beneficio_usado is null or beneficio_dado is not null),
+  constraint pct_solo_si_dado   check (beneficio_pct is null or beneficio_dado is not null)
 );
+
+-- Buscar al cliente por su teléfono en el mostrador, que es la única forma de
+-- entrada al beneficio. Sobre el número normalizado —sin espacios ni guiones—
+-- porque nadie lo dicta dos veces igual.
+create index registros_telefono on registros (regexp_replace(whatsapp, '[^0-9]', '', 'g'));
+
+-- Los beneficios entregados que todavía nadie usó: es plata comprometida, y
+-- al no tener vencimiento conviene poder mirarla de un vistazo.
+create index registros_beneficio_abierto on registros (beneficio_dado)
+  where beneficio_dado is not null and beneficio_usado is null;
 
 -- "Pendiente" no es un estado guardado: es no haber sido tocado. Igual que
 -- hoy en el panel. Este índice es el que hace barata esa consulta, que es la
