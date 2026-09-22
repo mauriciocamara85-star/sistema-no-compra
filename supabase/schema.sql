@@ -277,6 +277,10 @@ create view v_metricas as
     count(*) filter (where creado >= inicio_de('month')) as mes,
     count(*)                                             as total,
     coalesce(sum(monto) filter (where compro and creado >= inicio_de('month')), 0) as recuperado_mes,
-    coalesce(sum(monto) filter (where compro), 0)        as recuperado_total
+    coalesce(sum(monto) filter (where compro), 0)        as recuperado_total,
+    -- Cuántas ventas, no cuánta plata: la pantalla necesita distinguir
+    -- "todavía nadie cargó una venta" de "hubo ventas pero sin monto".
+    count(*) filter (where compro and creado >= inicio_de('month')) as ventas_mes,
+    count(*) filter (where compro)                       as ventas_total
   from registros
   group by sucursal, vendedor;
