@@ -120,6 +120,187 @@ function valor(v) {
   return encodeURIComponent(String(v == null ? '' : v));
 }
 
+
+/* ════════════════════════════════════════════════════════════════════════
+   LA SESIÓN
+
+   Sólo el Panel la necesita: es la única pantalla que ve nombres, teléfonos
+   y mails de clientes. Todo lo demás anda con la clave pública.
+
+   ── Por qué un enlace por mail y no una contraseña ──────────────────────
+   Una contraseña compartida por todo Atención al Cliente termina escrita en
+   un papel al lado de la compu, y el día que alguien se va no se puede
+   cambiar sin avisarle a todos. Con el enlace no hay nada que recordar ni
+   que compartir: se pone el mail, llega un enlace, se entra. Y dar de baja a
+   alguien es sacarle el mail, sin tocarle nada a los demás.
+
+   **El registro público está cerrado.** Un mail que no esté dado de alta no
+   recibe ningún enlace. Eso es lo que hace que esto sea una puerta y no un
+   formulario.
+   ════════════════════════════════════════════════════════════════════════ */
+
+var K_SESION = 'nc_sesion';
+
+function leerSesion_() {
+  try { return JSON.parse(localStorage.getItem(K_SESION) || 'null'); } catch (e) { return null; }
+}
+
+function guardarSesion_(s) {
+  try {
+    if (s) localStorage.setItem(K_SESION, JSON.stringify(s));
+    else localStorage.removeItem(K_SESION);
+  } catch (e) { /* modo incógnito: la sesión dura lo que la pestaña */ }
+  _sesion = s;
+}
+
+var _sesion = leerSesion_();
+
+/** Guarda lo que contesta el servidor de sesiones, en el formato de acá. */
+function anotarSesion_(r, mail) {
+  if (!r || !r.access_token) return null;
+  guardarSesion_({
+    token: r.access_token,
+    refresco: r.refresh_token,
+    /* Un minuto antes de que venza de verdad. El margen no es paranoia: sin
+       él, una petición que sale justo en el límite llega vencida y el
+       usuario ve un error que no tiene forma de entender ni de arreglar. */
+    vence: Date.now() + (Number(r.expires_in || 3600) - 60) * 1000,
+    mail: mail || (r.user && r.user.email) || (_sesion && _sesion.mail) || ''
+  });
+  return _sesion;
+}
+
+/**
+ * Un token válido, renovándolo si hace falta.
+ *
+ * Tira si no hay sesión, y el que llama traduce eso a "volvé a entrar". Es a
+ * propósito que no redirija solo: el Panel tiene cosas a medio escribir en
+ * pantalla y mandarlo al portón sin avisar se las come.
+ */
+function token() {
+  if (!_sesion || !_sesion.refresco) return Promise.reject(sinSesion_());
+  if (Date.now() < _sesion.vence) return Promise.resolve(_sesion.token);
+
+  return fetch(BASE + '/auth/v1/token?grant_type=refresh_token', {
+    method: 'POST',
+    headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ refresh_token: _sesion.refresco })
+  }).then(function (r) {
+    if (!r.ok) { guardarSesion_(null); throw sinSesion_(); }
+    return r.json();
+  }).then(function (d) {
+    var s = anotarSesion_(d);
+    if (!s) throw sinSesion_();
+    return s.token;
+  });
+}
+
+function sinSesion_() {
+  var e = new Error('Se cerró la sesión. Entrá de nuevo con tu mail.');
+  e.sinSesion = true;
+  return e;
+}
+
+var sesion = {
+
+  /** El mail de quien entró, o vacío. No pregunta al servidor. */
+  quien: function () { return (_sesion && _sesion.mail) || ''; },
+
+  /** Si hay algo guardado. No garantiza que siga sirviendo: eso lo dice token(). */
+  hay: function () { return !!(_sesion && _sesion.refresco); },
+
+  /**
+   * Pide el enlace. `volver` es a dónde tiene que traer el mail: la misma
+   * pantalla desde donde se pidió, así el que entra termina donde quería ir.
+   */
+  pedirEnlace: function (mail, volver) {
+    return fetch(BASE + '/auth/v1/otp?redirect_to=' + encodeURIComponent(volver || ''), {
+      method: 'POST',
+      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      /* create_user en false: si el mail no está dado de alta, que falle.
+         El proyecto ya tiene el registro cerrado, pero decirlo acá también
+         hace que el día que alguien lo abra sin querer esto no se convierta
+         solo en un formulario de alta. */
+      body: JSON.stringify({ email: String(mail || '').trim(), create_user: false })
+    }).then(function (r) {
+      if (r.ok) return true;
+      return r.text().then(function (t) {
+        var msg = t;
+        try { msg = JSON.parse(t).msg || JSON.parse(t).error_description || t; } catch (e) {}
+        /* El servidor contesta cosas como "Signups not allowed for otp". Es
+           exacto y es inútil para quien lo lee. */
+        if (/signup|not allowed|not found/i.test(msg)) {
+          throw new Error('Ese mail no tiene acceso al panel.');
+        }
+        if (/rate|seconds/i.test(msg)) {
+          throw new Error('Recién se mandó un enlace. Esperá un minuto y probá de nuevo.');
+        }
+        throw new Error(msg);
+      });
+    });
+  },
+
+  /**
+   * Recoge la sesión al volver del mail.
+   *
+   * El enlace trae el token en el # de la dirección. Se guarda y se BORRA de
+   * la barra: un token en la barra se copia sin querer, queda en el historial
+   * y entra en la próxima captura de pantalla que alguien mande por WhatsApp.
+   *
+   * Devuelve una promesa: true si entró recién, false si no había nada.
+   */
+  recoger: function () {
+    var h = String(location.hash || '').replace(/^#/, '');
+    if (!h) return Promise.resolve(false);
+
+    var p = {};
+    h.split('&').forEach(function (par) {
+      var i = par.indexOf('=');
+      if (i > 0) p[decodeURIComponent(par.slice(0, i))] = decodeURIComponent(par.slice(i + 1));
+    });
+
+    var limpiar = function () {
+      try { history.replaceState(null, '', location.pathname + location.search); }
+      catch (e) { location.hash = ''; }
+    };
+
+    if (p.error || p.error_description) {
+      limpiar();
+      var m = p.error_description || p.error;
+      /* El enlace se usa una sola vez y dura una hora. Es el error más común
+         de todos: alguien lo abre al otro día, o dos veces. */
+      if (/expired|invalid/i.test(m)) m = 'Ese enlace ya no sirve. Pedí uno nuevo.';
+      return Promise.reject(new Error(m));
+    }
+
+    if (!p.access_token) return Promise.resolve(false);
+    anotarSesion_({ access_token: p.access_token, refresh_token: p.refresh_token,
+                    expires_in: p.expires_in });
+    limpiar();
+
+    // El # no trae el mail, y la cabecera lo muestra. Se pregunta una vez.
+    return fetch(BASE + '/auth/v1/user', {
+      headers: { apikey: CLAVE, Authorization: 'Bearer ' + p.access_token }
+    }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (u) {
+        if (u && u.email && _sesion) { _sesion.mail = u.email; guardarSesion_(_sesion); }
+        return true;
+      })
+      .catch(function () { return true; });   // entró igual; sólo falta el nombre
+  },
+
+  /** Cierra. Le avisa al servidor, pero lo de acá se borra pase lo que pase. */
+  salir: function () {
+    var t = _sesion && _sesion.token;
+    guardarSesion_(null);
+    if (!t) return Promise.resolve();
+    return fetch(BASE + '/auth/v1/logout', {
+      method: 'POST',
+      headers: { apikey: CLAVE, Authorization: 'Bearer ' + t }
+    }).then(function () {}).catch(function () {});
+  }
+};
+
 var base = {
 
   /**
@@ -264,6 +445,56 @@ var base = {
     });
   },
 
+
+  /* ── Lo del Panel ──────────────────────────────────────────────────────
+     Todo lo de acá abajo exige haber entrado con el mail: es lo único que
+     toca datos de clientes. Si la sesión venció, token() tira con la marca
+     `sinSesion` y la pantalla manda a entrar de nuevo. */
+
+  /** Los números de arriba, los conteos de cada filtro y el vocabulario. */
+  panel: function () {
+    return token().then(function (t) { return funcion('resumen_panel', {}, t); });
+  },
+
+  /**
+   * La lista de fichas del filtro elegido.
+   *
+   * "Pendiente" no es un estado guardado: es no haber sido tocado. Tiene que
+   * ser el MISMO criterio que usa resumen_panel, o el número del filtro no
+   * coincide con la cantidad de fichas que abre y el panel se ve roto.
+   */
+  registros: function (filtro) {
+    var cond = '';
+    if (filtro === 'Pendiente') cond = '&contactado=is.false&estado=is.null';
+    else if (filtro && filtro !== 'Todos') cond = '&estado=eq.' + valor(filtro);
+
+    return token().then(function (t) {
+      /* El id desempata: dos registros que caen en el mismo instante —dos
+         celulares del mismo local, a la vez— dejarían el orden librado a lo
+         que devuelva Postgres, y la lista se reacomodaría sola al refrescar. */
+      return pedir('/registros?select=*&order=creado.desc,id.desc' + cond, { sesion: t });
+    }).then(function (filas) {
+      return (filas || []).map(deLaBase_);
+    });
+  },
+
+  /**
+   * Guarda el seguimiento de una ficha.
+   *
+   * Recibe los nombres que usa la pantalla y los traduce a los campos de la
+   * base; ver aLaBase_. El id va aparte del resto a propósito: es lo único
+   * que no se puede cambiar desde acá.
+   */
+  seguimiento: function (id, campos) {
+    var cuerpo = aLaBase_(campos);
+    if (!Object.keys(cuerpo).length) return Promise.resolve(true);
+    return token().then(function (t) {
+      return pedir('/registros?id=eq.' + valor(id), {
+        metodo: 'PATCH', cuerpo: cuerpo, sesion: t
+      });
+    }).then(function () { return true; });
+  },
+
   /** Deja constancia en el historial. Nunca tumba lo que la llamó. */
   anotar: function (accion, local, detalle, quien) {
     return pedir('/log', {
@@ -272,3 +503,99 @@ var base = {
     }).catch(function () { /* el historial no puede romper una carga */ });
   }
 };
+
+
+/* ════════════════════════════════════════════════════════════════════════
+   LA TRADUCCIÓN DEL PANEL
+
+   La pantalla habla como hablaba la planilla —`fecha1`, `obsSeguim`,
+   `compro` con el texto "Sí - local"— y la base habla con tipos. Las dos
+   funciones de acá abajo son el único lugar donde se cruzan.
+
+   Se podría haber renombrado todo en el HTML. No se hizo: el panel son 765
+   líneas de pantalla que ya funcionan, y cambiarlas entero para ganar dos
+   funciones de veinte líneas es más superficie para romper.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/** Una fila de la base, como la espera la pantalla. */
+function deLaBase_(f) {
+  var canal = f.compro_canal;
+  return {
+    id:          f.id,
+    creado:      f.creado,
+    fecha:       fechaLinda_(f.creado),
+    dias:        Math.floor((Date.now() - new Date(f.creado).getTime()) / 86400000),
+    sucursal:    f.sucursal || '',
+    vendedor:    f.vendedor || '',
+    nombre:      f.nombre || '',
+    whatsapp:    f.whatsapp || '',
+    mail:        f.mail || '',
+    producto:    f.producto || '',
+    talle:       f.talle || '',
+    obs:         f.obs || '',
+    motivo:      f.motivo || '',
+    contactamos: f.contactado ? 'si' : '',
+    responsable: f.responsable || '',
+    fecha1:      f.contacto1_fecha ? fechaCorta_(f.contacto1_fecha) : '',
+    resultado1:  f.contacto1_result || '',
+    estado:      f.estado || '',
+    obsSeguim:   f.obs_seguimiento || '',
+    // Los dos campos de la base, de vuelta en el texto del desplegable.
+    compro:      f.compro ? ('Sí - ' + (canal === 'online' ? 'online' : 'local')) : (f.estado || f.contactado ? 'No' : ''),
+    productoFinal: f.producto_final || '',
+    /* Con el punto de los miles: es un campo que se lee de un vistazo en
+       una lista de fichas, y "92500" obliga a contar ceros. Vuelve a entrar
+       bien porque aLaBase_ saca los puntos antes de guardarlo. */
+    monto:       f.monto == null ? '' : Math.round(Number(f.monto)).toLocaleString('es-AR')
+  };
+}
+
+/** Lo que toca la pantalla, como lo guarda la base. */
+function aLaBase_(campos) {
+  var c = {};
+  if (campos.contactamos !== undefined) c.contactado = String(campos.contactamos).toLowerCase() === 'si';
+  if (campos.responsable !== undefined) c.responsable = campos.responsable || null;
+  if (campos.resultado1  !== undefined) c.contacto1_result = campos.resultado1 || null;
+  if (campos.estado      !== undefined) c.estado = campos.estado || null;
+  if (campos.obsSeguim   !== undefined) c.obs_seguimiento = campos.obsSeguim || null;
+
+  /* La fecha del primer contacto: la pantalla manda "hoy" y acá se escribe
+     como fecha de verdad. Antes era texto "23/4" y había que interpretarlo
+     cada vez que alguien quería contar algo. */
+  if (campos.fecha1 !== undefined) {
+    c.contacto1_fecha = campos.fecha1 ? new Date().toISOString().slice(0, 10) : null;
+  }
+
+  /* "Compró" es un desplegable de tres opciones y en la base son dos campos.
+     Y al decir que NO compró hay que limpiar el monto y el producto final: la
+     base tiene una regla que prohíbe un monto sin venta, así que dejarlos
+     puestos no guardaría "no compró", guardaría un error. */
+  if (campos.compro !== undefined) {
+    var v = String(campos.compro || '');
+    c.compro = v.indexOf('Sí') === 0;
+    c.compro_canal = c.compro ? (v.toLowerCase().indexOf('online') > -1 ? 'online' : 'local') : null;
+    if (!c.compro) { c.monto = null; c.producto_final = null; }
+  }
+
+  if (campos.productoFinal !== undefined) c.producto_final = campos.productoFinal || null;
+  if (campos.monto !== undefined) {
+    var n = Number(String(campos.monto).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.'));
+    c.monto = (campos.monto === '' || isNaN(n)) ? null : n;
+  }
+  return c;
+}
+
+/** "sábado 20 de septiembre, 14:35" — lo que la ficha muestra arriba. */
+function fechaLinda_(iso) {
+  try {
+    return new Date(iso).toLocaleString('es-AR', {
+      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
+    });
+  } catch (e) { return String(iso || ''); }
+}
+
+/** "23/04" — corto, que es como se anotaba a mano. */
+function fechaCorta_(fecha) {
+  var p = String(fecha).slice(0, 10).split('-');
+  return p.length === 3 ? p[2] + '/' + p[1] : String(fecha);
+}
