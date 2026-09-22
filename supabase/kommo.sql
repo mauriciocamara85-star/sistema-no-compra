@@ -105,24 +105,33 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+/* `ent` y no `entidad`: PL/pgSQL resuelve el nombre a favor de la variable
+     adentro del INSERT, y ahí choca con la columna que se llama igual. El
+     error que tira —"column reference is ambiguous"— no dice cuál de las dos
+     era la que sobraba. */
 declare
-  entidad text;
-  r       jsonb;
-  f       jsonb;
-  n       integer := 0;
+  ent text;
+  r   jsonb;
+  f   jsonb;
+  n   integer := 0;
 begin
-  foreach entidad in array array['leads', 'contacts'] loop
-    r := kommo('GET', '/' || entidad || '/custom_fields?limit=250');
+  foreach ent in array array['leads', 'contacts'] loop
+    r := kommo('GET', '/' || ent || '/custom_fields?limit=250');
     for f in select * from jsonb_array_elements(coalesce(r#>'{_embedded,custom_fields}', '[]'::jsonb)) loop
-      -- Los campos de sistema se guardan por su CÓDIGO (PHONE, EMAIL), que
-      -- sí es estable entre cuentas.
+      /* Los campos de sistema se guardan por su CÓDIGO (PHONE, EMAIL), que
+         sí es estable entre cuentas.
+
+         Pasa por kommo_clave igual que el nombre, y no es un detalle: si
+         se guarda '#PHONE' y después se busca '#phone', no coinciden
+         nunca, el teléfono no entra en el contacto y Kommo termina
+         rechazando el lead entero por venir sin campos. */
       if f->>'code' is not null then
         insert into kommo_campos (entidad, clave, campo)
-        values (entidad, '#' || (f->>'code'), (f->>'id')::bigint)
+        values (ent, kommo_clave('#' || (f->>'code')), (f->>'id')::bigint)
         on conflict (entidad, clave) do update set campo = excluded.campo, visto = now();
       end if;
       insert into kommo_campos (entidad, clave, campo)
-      values (entidad, kommo_clave(f->>'name'), (f->>'id')::bigint)
+      values (ent, kommo_clave(f->>'name'), (f->>'id')::bigint)
       on conflict (entidad, clave) do update set campo = excluded.campo, visto = now();
       n := n + 1;
     end loop;
@@ -256,7 +265,10 @@ declare
   etiquetas  jsonb;
   lead       jsonb;
   res        jsonb;
-  creado     jsonb;
+  /* `nuevo` y no `creado`: registros tiene una columna que se llama así, y
+     adentro del UPDATE de más abajo PL/pgSQL no sabe a cuál de las dos le
+     están hablando. */
+  nuevo      jsonb;
   pipeline   text := secreto('KOMMO_PIPELINE_ID');
   etapa      text := secreto('KOMMO_STATUS_ID');
   nota       text[] := '{}';
@@ -291,8 +303,14 @@ begin
       -- Kommo pide un nombre. Si el vendedor no lo anotó, el teléfono es
       -- mejor que dejarlo vacío: en la lista se distingue igual.
       contacto := jsonb_build_object(
-        'first_name', coalesce(r.nombre, 'Cliente ' || coalesce(r.whatsapp, 's/d')),
-        'custom_fields_values', cc);
+        'first_name', coalesce(r.nombre, 'Cliente ' || coalesce(r.whatsapp, 's/d')));
+      /* La clave va SÓLO si hay algo adentro. Kommo rechaza el lead entero
+         —"TooFew"— si la lista viene vacía, y eso pasa el día que alguien
+         borra el campo de teléfono de la cuenta: perder el lead por eso
+         sería bastante peor que crearlo sin el teléfono. */
+      if jsonb_array_length(cc) > 0 then
+        contacto := contacto || jsonb_build_object('custom_fields_values', cc);
+      end if;
     end;
   end if;
 
@@ -349,14 +367,14 @@ begin
   if etapa is not null then lead := lead || jsonb_build_object('status_id', etapa::bigint); end if;
 
   res := kommo('POST', '/leads/complex', jsonb_build_array(lead));
-  creado := res->0;
-  if creado is null or creado->>'id' is null then
+  nuevo := res->0;
+  if nuevo is null or nuevo->>'id' is null then
     raise exception 'Kommo no devolvió el lead creado.';
   end if;
 
   -- El id del lead queda en el registro, que es lo que después permite que el
   -- webhook de Kommo encuentre de vuelta esta fila.
-  update registros set lead_kommo = creado->>'id' where id = p_registro;
+  update registros set lead_kommo = nuevo->>'id' where id = p_registro;
 
   -- ── La nota ──
   nota := array_append(nota, 'Se fue del local sin comprar.');
@@ -378,7 +396,7 @@ begin
      con sus campos. Reintentar todo por una nota duplicaría el lead, que es
      bastante peor que un lead sin nota. */
   begin
-    perform kommo('POST', '/leads/' || (creado->>'id') || '/notes',
+    perform kommo('POST', '/leads/' || (nuevo->>'id') || '/notes',
       jsonb_build_array(jsonb_build_object(
         'note_type', 'common',
         'params', jsonb_build_object('text', array_to_string(nota, E'\n')))));
@@ -387,7 +405,7 @@ begin
   end;
 
   return jsonb_build_object(
-    'lead', creado->>'id',
+    'lead', nuevo->>'id',
     'contacto', case when existente is null then 'nuevo' else existente::text end);
 end;
 $$;
