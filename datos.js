@@ -248,15 +248,29 @@ var sesion = {
     }).then(function (r) {
       if (r.ok) return true;
       return r.text().then(function (t) {
-        var msg = t;
-        try { msg = JSON.parse(t).msg || JSON.parse(t).error_description || t; } catch (e) {}
-        /* El servidor contesta cosas como "Signups not allowed for otp". Es
-           exacto y es inútil para quien lo lee. */
-        if (/signup|not allowed|not found/i.test(msg)) {
+        var cuerpo = {};
+        try { cuerpo = JSON.parse(t); } catch (e) {}
+        var codigo = cuerpo.error_code || '';
+        var msg = cuerpo.msg || cuerpo.error_description || t;
+
+        /* Se mira el CÓDIGO y no el texto. El texto cambia con la
+           redacción y son todos parecidos entre sí: "email rate limit
+           exceeded" y "For security purposes you can only request this
+           after 60 seconds" son dos problemas muy distintos que una
+           expresión regular sobre la palabra "rate" confunde. */
+        if (codigo === 'otp_disabled' || /signup|not allowed|not found/i.test(msg)) {
           throw new Error('Ese mail no tiene acceso al panel.');
         }
-        if (/rate|seconds/i.test(msg)) {
-          throw new Error('Recién se mandó un enlace. Esperá un minuto y probá de nuevo.');
+        /* La cuota del servicio de mail, que se cuenta por hora. NO se
+           arregla esperando un minuto, y decir que sí manda a la persona a
+           probar diez veces seguidas sin enterarse nunca de qué pasa. */
+        if (codigo === 'over_email_send_rate_limit') {
+          throw new Error('El servicio de mail llegó a su límite por hora. ' +
+            'Probá más tarde, o configurá un SMTP propio en Supabase.');
+        }
+        // Ésta sí es la de los 60 segundos entre dos pedidos del mismo mail.
+        if (codigo === 'over_request_rate_limit' || /after \d+ seconds/i.test(msg)) {
+          throw new Error('Recién se pidió un enlace. Esperá un minuto y probá de nuevo.');
         }
         throw new Error(msg);
       });
