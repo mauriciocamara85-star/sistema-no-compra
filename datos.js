@@ -20,10 +20,32 @@
  *
  * Con esta clave, desde afuera, NO se puede: leer un registro, ver un
  * teléfono, contar cuántos clientes hay, borrar nada ni crearse una cuenta.
+ *
+ * ── Se llama `base`, no `datos` ──────────────────────────────────────────
+ * Porque "datos" es como se llama el registro que arma el formulario, en
+ * todas las pantallas. Un objeto global con ese nombre lo tapa adentro de
+ * cada función que arme uno, y la pantalla falla sin decir por qué.
  */
 
 var BASE = 'https://gfjdjupuwxohkgchqykx.supabase.co';
 var CLAVE = 'sb_publishable_A81zY5i4zCXZyIv2fOpokA_jOxiccNU';
+
+/**
+ * Un "no" de la base, distinguible de un "no llegué".
+ *
+ * La cola de lo que se cargó sin señal necesita esa diferencia y no la
+ * puede sacar del mensaje: **sin señal se reintenta, rechazado se
+ * descarta.** Un registro que la base rechaza, reintentado, tapa la cola
+ * para siempre y el vendedor ve "esperando conexión" con señal llena.
+ *
+ * Sólo lleva la marca lo que el servidor contestó. Si `fetch` no llegó a
+ * destino tira su propio error, sin marca, que es justo lo que se quiere.
+ */
+function rechazo(mensaje) {
+  var e = new Error(mensaje);
+  e.delServidor = true;
+  return e;
+}
 
 /**
  * Una llamada a la base.
@@ -53,7 +75,7 @@ function pedir(ruta, opciones) {
       return r.text().then(function (t) {
         var msg = t;
         try { msg = JSON.parse(t).message || JSON.parse(t).hint || t; } catch (e) {}
-        throw new Error('La base respondió ' + r.status + ': ' + msg);
+        throw rechazo('La base respondió ' + r.status + ': ' + msg);
       });
     }
     /* Un POST con `return=minimal` contesta 201 con el cuerpo VACÍO, no 204.
@@ -80,7 +102,7 @@ function funcion(nombre, args, sesion) {
       return r.text().then(function (t) {
         var msg = t;
         try { msg = JSON.parse(t).message || t; } catch (e) {}
-        throw new Error(msg);
+        throw rechazo(msg);
       });
     }
     return r.json();
@@ -98,7 +120,7 @@ function valor(v) {
   return encodeURIComponent(String(v == null ? '' : v));
 }
 
-var datos = {
+var base = {
 
   /**
    * Carga un no-compra. Devuelve {id, creado}, que es lo único que la base le
