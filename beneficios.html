@@ -147,6 +147,63 @@
      canjear. Es el número que a nadie le gusta descubrir de golpe. */
   .comprometido { font-size: 13px; color: var(--txt-2); margin-top: 14px; line-height: 1.5; }
   .comprometido b { color: var(--txt); }
+  /* ── Las condiciones del beneficio ──
+     Van arriba del botón y no en la letra chica. La compra mínima y los
+     locales los valida la base: leídos DESPUÉS de apretar, su rechazo
+     parece una falla del sistema; leídos antes, son las reglas del cupón. */
+  .ficha-cond {
+    list-style: none;
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--txt-2);
+  }
+  .ficha-cond li { padding-left: 16px; position: relative; }
+  .ficha-cond li + li { margin-top: 4px; }
+  .ficha-cond li::before {
+    content: '';
+    position: absolute; left: 4px; top: .55em;
+    width: 5px; height: 5px; border-radius: 50%;
+    background: var(--acc);
+  }
+
+  /* ── El código recién creado ──
+     Grande y en una sola línea: de acá se copia o se dicta por teléfono, y
+     los dos usos piden lo mismo, que se lea de un vistazo sin equivocarse.
+     Va con cifras de ancho fijo para que los bloques se lean parejos. */
+  .cupon-nuevo {
+    margin-top: 16px;
+    padding: 16px;
+    border-radius: var(--r-sm);
+    background: var(--acc-soft);
+    border: 1.5px solid var(--acc-line);
+    text-align: center;
+  }
+  .cupon-lbl {
+    display: block;
+    font-size: 12.5px; font-weight: 600;
+    color: var(--txt-2);
+    margin-bottom: 6px;
+  }
+  .cupon-cod {
+    display: block;
+    font: 700 clamp(24px, 4.5vw, 34px)/1.1 var(--display);
+    letter-spacing: 1px;
+    color: var(--acc-txt);
+    font-variant-numeric: tabular-nums;
+    /* Se puede seleccionar con el dedo aunque el resto de la app no: es lo
+       único de esta pantalla que alguien va a querer copiar a mano. */
+    user-select: all; -webkit-user-select: all;
+    word-break: break-all;
+  }
+  .cupon-acciones {
+    display: flex; justify-content: center; flex-wrap: wrap;
+    gap: 8px; margin-top: 12px;
+  }
+
 </style>
 </head>
 <body class="hay-rail">
@@ -272,6 +329,67 @@
     </div>
   </section>
 
+
+  <!-- ── Crear un cupón ──
+       Sólo para Atención al Cliente y administradores. Arranca escondido y
+       aparece si la base dice que esta persona tiene el rol; esconderlo no
+       protege nada —la regla la aplica `crear_cupon`— pero evita ofrecer
+       algo que después iba a fallar. -->
+  <section class="bloque" id="cajaCupon" hidden>
+    <h2 class="bloque-tit">Crear un cupón</h2>
+    <p class="bloque-sub">
+      Un descuento que vale para <b>el que tenga el código</b>, no para un
+      teléfono. Se puede regalar.
+    </p>
+
+    <div class="ficha-campos">
+      <div class="campo"><label>Descuento</label>
+        <select id="cuPct">
+          <option value="10">10%</option>
+          <option value="15" selected>15%</option>
+          <option value="20">20%</option>
+          <option value="25">25%</option>
+          <option value="30">30%</option>
+        </select></div>
+      <div class="campo"><label>Vence en</label>
+        <select id="cuDias">
+          <option value="15">15 días</option>
+          <option value="30" selected>30 días</option>
+          <option value="60">60 días</option>
+          <option value="90">90 días</option>
+        </select></div>
+
+      <div class="campo"><label>WhatsApp del cliente <span class="lbl-opc">opcional</span></label>
+        <input type="tel" inputmode="numeric" id="cuTel" placeholder="Para poder medir si volvió"></div>
+      <div class="campo"><label>Nombre <span class="lbl-opc">opcional</span></label>
+        <input type="text" id="cuNombre" placeholder="Cómo se llama"></div>
+
+      <div class="campo"><label>Compra mínima <span class="lbl-opc">opcional</span></label>
+        <input type="text" inputmode="numeric" id="cuMinima" placeholder="$"></div>
+      <div class="campo"><label>Dónde vale</label>
+        <select id="cuLocal">
+          <option value="" selected>En todos los locales</option>
+        </select></div>
+
+      <div class="campo ancho"><label>Observaciones <span class="lbl-opc">opcional</span></label>
+        <input type="text" id="cuObs" placeholder="Por qué se le da, o cualquier cosa que convenga recordar"></div>
+
+      <div class="campo ancho">
+        <button type="button" class="btn btn-pri btn-ancho" id="btnCrearCupon">Crear el cupón</button>
+      </div>
+    </div>
+
+    <!-- El código recién creado. Grande, porque de acá se copia o se dicta. -->
+    <div class="cupon-nuevo" id="cuponNuevo" hidden>
+      <span class="cupon-lbl">Listo. El código es</span>
+      <b class="cupon-cod" id="cuponCod">—</b>
+      <div class="cupon-acciones">
+        <button type="button" class="btn btn-sec btn-chico" id="btnCopiarCupon">Copiar</button>
+        <a class="btn btn-wsp btn-chico" id="btnWspCupon" target="_blank" rel="noopener" href="#" hidden>Mandar por WhatsApp</a>
+      </div>
+    </div>
+  </section>
+
   <!-- ── El listado ──
        Sólo con sesión: un listado de clientes con sus teléfonos abierto en
        los 14 locales es exactamente lo que el buscador evita. -->
@@ -379,11 +497,18 @@
       (vivo ? 'pill-ok' : b.estado === 'usado' ? 'pill-neutra' : 'pill-warn') + '">' +
       esc(b.estado) + '</span>';
 
-    var quien = esGC
-      ? (b.nombre ? esc(b.nombre) : 'Gift Card al portador')
-      : (b.nombre ? esc(b.nombre) : 'Cliente sin nombre cargado');
+    /* El cupón es del que lo trae, así que no se anuncia con el nombre del
+       cliente que lo originó: el que está enfrente puede ser otro, y leerle
+       en voz alta un nombre ajeno es una conversación incómoda. El nombre
+       además puede no venir —la base no se lo da a quien no entró—. */
+    var quien = b.al_portador
+      ? 'Cupón al portador'
+      : esGC
+        ? (b.nombre ? esc(b.nombre) : 'Gift Card al portador')
+        : (b.nombre ? esc(b.nombre) : 'Cliente sin nombre cargado');
 
     var detalle = [];
+    if (b.al_portador && b.codigo) detalle.push('Código ' + esc(b.codigo));
     if (esGC && b.serie) detalle.push('Tarjeta ' + esc(b.serie));
     if (!esGC && b.buscaba) detalle.push('Había venido buscando ' + esc(b.buscaba));
     if (b.local) detalle.push((esGC ? 'Vendida en ' : 'Dado en ') + esc(bonito(b.local)));
@@ -393,11 +518,25 @@
         : 'Vencía el ' + esc(String(b.vence).split('-').reverse().join('/')));
     }
 
+    /* Las condiciones, ANTES del botón y no en la letra chica: la compra
+       mínima y los locales los valida la base y devuelven un "no se pudo"
+       que, leído después de apretar, parece una falla del sistema. Dichas
+       antes, son lo que son: las reglas del cupón. */
+    var condiciones = [];
+    if (b.compra_minima) condiciones.push('Compra mínima de ' + PESOS.format(b.compra_minima));
+    if (b.locales && b.locales.length) condiciones.push('Sólo vale en ' + b.locales.map(bonito).map(esc).join(', '));
+    if (b.al_portador && !b.acumulable) condiciones.push('No acumulable con otras promociones');
+
     return '<div class="ficha' + (vivo ? '' : ' muerto') + '">' +
       '<div class="ficha-top">' + insignia + '</div>' +
       titulo +
       '<div class="ficha-quien">' + quien + '</div>' +
       (detalle.length ? '<div class="ficha-que">' + detalle.join(' · ') + '</div>' : '') +
+      (vivo && condiciones.length
+        ? '<ul class="ficha-cond">' +
+            condiciones.map(function (c) { return '<li>' + c + '</li>'; }).join('') +
+          '</ul>'
+        : '') +
       (vivo
         ? '<div class="ficha-campos">' +
             '<div class="campo"><label>Monto de la compra</label>' +
@@ -428,7 +567,10 @@
       return;
     }
 
-    base.canjear(id, local, vendedor, monto, $('prod' + id).value.trim())
+    /* La clave va junto con el id: el id es un número de fila y esta llamada
+       no pide sesión, así que sin la clave cualquiera podía quemar
+       beneficios probando ids. Es la misma que se usó para encontrarlo. */
+    base.canjear(id, clave, local, vendedor, monto, $('prod' + id).value.trim())
       .then(function (res) {
         if (!res || !res.canjeado) {
           /* La base dijo que no: lo usaron en otro local mientras este
@@ -504,6 +646,124 @@
         btn.disabled = false; btn.textContent = 'Vender la Gift Card';
         avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.');
       });
+  }
+
+  /* ═══ Crear un cupón ═════════════════════════════════════════════════════
+     Es un descuento al portador: vale para el que tenga el código, no para
+     un teléfono. Sólo lo ve Atención al Cliente.
+
+     **Esto no es el control de acceso.** La base pide el rol adentro de
+     `crear_cupon` y ahí es donde se decide; acá sólo se esconde un botón
+     que, apretado por quien no puede, iba a devolver un error. Si esta
+     comprobación fallara, lo peor que pasa es que se ofrezca algo que no
+     anda — no que alguien haga lo que no le corresponde.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  var cuponActual = null;
+
+  function prepararCupones() {
+    base.miRol().then(function (rol) {
+      if (rol !== 'atencion' && rol !== 'admin') return;
+
+      $('cajaCupon').hidden = false;
+      $('btnCrearCupon').onclick = crearCupon;
+      $('btnCopiarCupon').onclick = copiarCupon;
+
+      /* Los locales para el desplegable de "dónde vale". Si no se pueden
+         leer, el cupón igual se puede crear para todos los locales, que es
+         lo más común: la lista es una restricción opcional y no vale la
+         pena bloquear la pantalla por ella. */
+      base.config().then(function (c) {
+        (c && c.locales || []).forEach(function (l) {
+          var o = document.createElement('option');
+          o.value = l.local;
+          o.textContent = 'Sólo en ' + bonito(l.local);
+          $('cuLocal').appendChild(o);
+        });
+      }).catch(function () {});
+    }).catch(function () { /* sin sesión no hay rol, y no hay nada que mostrar */ });
+  }
+
+  function crearCupon() {
+    var pct = parseInt($('cuPct').value, 10);
+    var dias = parseInt($('cuDias').value, 10);
+    var soloEn = $('cuLocal').value;
+
+    var b = $('btnCrearCupon');
+    b.disabled = true;
+    b.textContent = 'Creando…';
+
+    base.crearCupon(pct, dias, {
+      telefono: $('cuTel').value.trim() || null,
+      nombre: $('cuNombre').value.trim() || null,
+      compraMinima: plata('cuMinima') || null,
+      locales: soloEn ? [soloEn] : null,
+      obs: $('cuObs').value.trim() || null
+    }).then(function (res) {
+      if (!res || !res.creado) {
+        /* El caso normal de "no": ese cliente ya tiene uno sin usar. No es
+           un error del sistema y no conviene que parezca uno. */
+        avisar('err', 'No se creó: ' + ((res && res.porque) || 'probá de nuevo') + '.');
+        return;
+      }
+      mostrarCupon(res.codigo, pct, $('cuTel').value.trim());
+      avisar('ok', 'Cupón creado.');
+      if (sesion.hay()) cargarLista();
+    }).catch(function (err) {
+      avisar('err', (err && err.delServidor && err.message) || 'No se pudo crear el cupón.');
+    }).then(function () {
+      b.disabled = false;
+      b.textContent = 'Crear el cupón';
+    });
+  }
+
+  /* El código, grande y a mano: de acá se copia o se dicta por teléfono, y
+     si hay WhatsApp del cliente se puede mandar de un toque con el texto ya
+     escrito. Los campos NO se limpian: lo más común es darle el mismo cupón
+     a varias personas seguidas. */
+  function mostrarCupon(codigo, pct, tel) {
+    cuponActual = codigo;
+    $('cuponCod').textContent = codigo;
+    $('cuponNuevo').hidden = false;
+
+    var wsp = $('btnWspCupon');
+    var digitos = (tel || '').replace(/[^0-9]/g, '');
+    if (digitos.length >= 8) {
+      var texto = 'Hola! Te dejamos un ' + pct + '% de descuento en Vida Hermosa. ' +
+        'Tu código es ' + codigo + '. Lo podés usar vos o regalárselo a quien quieras.';
+      wsp.href = 'https://wa.me/' + (digitos.length === 10 ? '549' + digitos : digitos) +
+        '?text=' + encodeURIComponent(texto);
+      wsp.hidden = false;
+    } else {
+      wsp.hidden = true;
+    }
+  }
+
+  function copiarCupon() {
+    if (!cuponActual) return;
+    /* navigator.clipboard no existe fuera de https ni en navegadores viejos,
+       y el mostrador puede tener cualquier cosa. Si no está, se selecciona
+       el texto para que se pueda copiar a mano en vez de no hacer nada. */
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(cuponActual)
+        .then(function () { avisar('ok', 'Código copiado.'); })
+        .catch(function () { seleccionarCupon(); });
+    } else {
+      seleccionarCupon();
+    }
+  }
+
+  function seleccionarCupon() {
+    try {
+      var r = document.createRange();
+      r.selectNodeContents($('cuponCod'));
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(r);
+      avisar('ok', 'Quedó seleccionado: copialo con Ctrl+C.');
+    } catch (e) {
+      avisar('err', 'No se pudo copiar. Anotalo a mano.');
+    }
   }
 
   /* ═══ El listado, sólo con sesión ═══════════════════════════════════════
@@ -593,6 +853,8 @@
       $('cajaLista').hidden = false;
       cargarLista();
     }
+
+    prepararCupones();
 
     iniciarPWA();
   })();

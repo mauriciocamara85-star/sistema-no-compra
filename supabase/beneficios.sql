@@ -182,6 +182,119 @@ create index if not exists beneficios_vivos on beneficios (creado desc)
 
 
 -- ════════════════════════════════════════════════════════════════════════
+-- EL CUPÓN AL PORTADOR
+--
+-- Un descuento tiene ahora DOS formas, y no son dos tipos: es el mismo
+-- beneficio con distinta llave.
+--
+--   ATADO AL CLIENTE (lo de siempre)     AL PORTADOR (el cupón)
+--   La llave es su TELÉFONO              La llave es un CÓDIGO
+--   Lo usa el que se fue sin comprar     Lo usa EL QUE TENGA EL CÓDIGO
+--   Nace de un no-compra                 Lo crea Atención al Cliente
+--
+-- Se resolvió así y no con un tercer tipo porque el cupón es, punto por
+-- punto, un descuento que además se puede regalar: mismo estado calculado,
+-- mismo canje atómico, misma anulación, mismas estadísticas. Un tipo nuevo
+-- habría duplicado las cinco cosas para agregar una columna.
+--
+-- ── Por qué el código es largo ───────────────────────────────────────────
+-- La serie de la gift card puede ser corta y correlativa porque **lo que
+-- autoriza el canje es la tarjeta de papel**, no el número; el número sólo
+-- sirve para encontrarla. Acá no hay papel: el código ES la credencial, y
+-- quien lo adivine se lleva el descuento. Por eso son ocho caracteres al
+-- azar y no cuatro: con cuatro son un millón de combinaciones y mil cupones
+-- vivos hacen que uno de cada mil intentos acierte.
+-- ════════════════════════════════════════════════════════════════════════
+
+alter table beneficios
+  -- VDH-XXXX-XXXX. Sólo lo tienen los descuentos al portador.
+  add column if not exists codigo text,
+
+  -- Quién lo creó, para poder medir por persona de Atención al Cliente. Va
+  -- el uid y no el mail: el mail se puede cambiar desde la cuenta.
+  add column if not exists creado_por uuid references auth.users(id) on delete set null,
+
+  -- Condiciones que se muestran y se validan al canjear.
+  add column if not exists compra_minima numeric(12,2) check (compra_minima > 0),
+
+  /* En qué locales vale. NULL = en todos. Se guarda como arreglo y no como
+     tabla aparte porque son cinco nombres y no se consultan al revés: nunca
+     hace falta "qué cupones valen en Rivadavia". */
+  add column if not exists locales text[],
+
+  /* No acumulable por defecto: es la regla sana, y el que quiera lo
+     contrario tiene que pedirlo a mano.
+
+     OJO CON LO QUE ESTO ES Y LO QUE NO ES. El sistema no conoce la compra:
+     el monto lo tipea el vendedor al canjear. Así que esto NO puede impedir
+     que alguien aplique dos promociones sobre el mismo ticket. Lo que sí
+     hace, y es lo que importa, es que el canje lo muestre en pantalla y que
+     un cliente no pueda tener dos beneficios vivos al mismo tiempo (índice
+     más abajo). Lo demás es condición declarada, como la compra mínima. */
+  add column if not exists acumulable boolean not null default false,
+
+  -- ── Preparado para Tienda Nube, sin implementar ──
+  -- El id del cupón del otro lado. El CÓDIGO es el mismo string en los dos
+  -- sistemas; esto es el identificador interno de allá, para poder pedirle
+  -- que lo dé de baja cuando se canjea acá.
+  add column if not exists externo_id text,
+  -- Por dónde se canjeó. Hoy siempre 'local'; el día que entre la tienda,
+  -- 'online'. Sale del canje, no se elige.
+  add column if not exists canal_canje text
+    check (canal_canje is null or canal_canje in ('local', 'online'));
+
+
+/* Dos cupones no pueden llamarse igual. Sin mayúsculas ni guiones: el que
+   lo dicta por teléfono dice "vdh a7k4 m2p9" y el que lo tipea puede poner
+   cualquier cosa en el medio. */
+create unique index if not exists beneficios_codigo on beneficios
+  (upper(regexp_replace(codigo, '[^A-Za-z0-9]', '', 'g')))
+  where codigo is not null;
+
+/* El código es sólo de los descuentos: la gift card ya tiene su serie, y
+   dos llaves para la misma cosa es cómo se llega a que una diga disponible
+   y la otra usada. */
+alter table beneficios drop constraint if exists codigo_solo_en_descuentos;
+alter table beneficios add constraint codigo_solo_en_descuentos
+  check (codigo is null or tipo = 'descuento');
+
+/* Un descuento tiene que tener UNA llave. Sin teléfono y sin código no hay
+   forma de encontrarlo en el mostrador: sería plata comprometida que nadie
+   puede cobrar. */
+alter table beneficios drop constraint if exists descuento_con_llave;
+alter table beneficios add constraint descuento_con_llave
+  check (tipo <> 'descuento' or telefono is not null or codigo is not null);
+
+/* Y el canal sólo tiene sentido si se canjeó. */
+alter table beneficios drop constraint if exists canal_solo_si_usado;
+alter table beneficios add constraint canal_solo_si_usado
+  check (canal_canje is null or usado is not null);
+
+
+/* ── Un beneficio vivo por cliente ──────────────────────────────────────
+   El índice de más arriba ya impedía dos descuentos sin usar para el mismo
+   teléfono. Con el cupón al portador sigue sirviendo igual: si el cupón
+   nace de un cliente, guarda su teléfono como ORIGEN y entra en la cuenta.
+
+   Un cupón de campaña sin teléfono queda afuera, y está bien: no es de
+   nadie hasta que alguien lo usa.
+
+   Es la forma enforzable de "no acumulable": no se puede juntar lo que no
+   se puede tener a la vez. */
+
+
+-- ════════════════════════════════════════════════════════════════════════
+-- BUSCAR POR CÓDIGO
+--
+-- Sobre el código pelado, por lo mismo que el teléfono: nadie lo dicta dos
+-- veces igual y el guión del medio es decorativo.
+-- ════════════════════════════════════════════════════════════════════════
+
+create index if not exists beneficios_codigo_busqueda on beneficios
+  (upper(regexp_replace(coalesce(codigo, ''), '[^A-Za-z0-9]', '', 'g')));
+
+
+-- ════════════════════════════════════════════════════════════════════════
 -- EL ESTADO NO SE GUARDA: SE CALCULA
 --
 -- "Vencido" como columna es una mentira esperando a pasar: el día que vence

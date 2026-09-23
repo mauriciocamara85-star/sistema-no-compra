@@ -498,14 +498,63 @@ var base = {
    * podía: deja el registro como venta recuperada, así el "Recuperado" del
    * tablero sube solo cuando el cliente vuelve.
    *
+   * **Hay que mandar la CLAVE además del id**, y no es redundante: el id es
+   * un entero correlativo y esta llamada no pide sesión —el mostrador canjea
+   * sin entrar—, así que con el id solo cualquiera podía quemar beneficios
+   * probando 1, 2, 3. La clave es lo que el cliente trae: su teléfono, el
+   * número de la tarjeta o el código del cupón.
+   *
    * Devuelve {canjeado:false, porque:'…'} y no una excepción cuando no se
-   * puede: que esté usado o vencido es una respuesta, no un error.
+   * puede: que esté usado, vencido o que no valga en ese local es una
+   * respuesta, no un error.
    */
-  canjear: function (id, local, vendedor, monto, producto) {
+  canjear: function (id, clave, local, vendedor, monto, producto) {
     return funcion('canjear_beneficio', {
-      p_id: id, p_local: local, p_vendedor: vendedor,
+      p_id: id, p_clave: clave, p_local: local, p_vendedor: vendedor,
       p_monto: monto || null, p_producto: producto || null
     });
+  },
+
+  /**
+   * Crea un cupón al portador: un descuento que vale para EL QUE TENGA EL
+   * CÓDIGO, no para un teléfono.
+   *
+   * Pide sesión, y además la base pide rol `atencion` o `admin`. Que la
+   * pantalla esconda el botón no alcanza: la clave publicable está en este
+   * mismo archivo, que está en un repo público.
+   *
+   * `opciones` puede traer: registro, telefono, nombre, compraMinima,
+   * locales (arreglo, o nada para todos), acumulable y obs.
+   */
+  crearCupon: function (pct, dias, opciones) {
+    var o = opciones || {};
+    return token().then(function (t) {
+      return funcion('crear_cupon', {
+        p_pct: pct,
+        p_dias: dias || 30,
+        p_registro: o.registro || null,
+        p_telefono: o.telefono || null,
+        p_nombre: o.nombre || null,
+        p_compra_minima: o.compraMinima || null,
+        p_locales: o.locales && o.locales.length ? o.locales : null,
+        p_acumulable: !!o.acumulable,
+        p_obs: o.obs || null
+      }, t);
+    });
+  },
+
+  /**
+   * Qué soy. Devuelve 'atencion', 'admin' o null.
+   *
+   * Es para decidir si conviene mostrar el botón de crear cupones, y nada
+   * más: la regla de verdad la aplica la base adentro de `crear_cupon`. Si
+   * esto se equivoca, lo peor que pasa es que se ofrezca algo que después
+   * falla, no que alguien haga lo que no puede.
+   */
+  miRol: function () {
+    return token().then(function (t) {
+      return funcion('mi_rol', {}, t);
+    }).catch(function () { return null; });
   },
 
   /** El próximo número de tarjeta, para mostrarlo antes de vender. */
