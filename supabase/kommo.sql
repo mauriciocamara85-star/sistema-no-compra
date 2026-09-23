@@ -45,6 +45,7 @@ begin
 
   url := 'https://' || sub || '.kommo.com/api/v4' || ruta;
 
+  perform paciencia();
   res := extensions.http((
     metodo,
     url,

@@ -1,0 +1,596 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Beneficios</title>
+<meta name="description" content="Descuentos y Gift Cards: buscar, vender y canjear.">
+<meta name="theme-color" content="#0B1020">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+  } catch (e) {}
+</script>
+<style>
+  /* ── Beneficios ──────────────────────────────────────────────────────────
+     Reemplaza a la planilla "VDH cupones". Son dos cosas distintas y la
+     pantalla lo dice sin explicarlo: el buscador acepta las dos llaves —el
+     teléfono del cliente, el número de la tarjeta— y lo que aparece se ve
+     distinto según cuál sea.
+
+     ── Dos caras según quién entre ───────────────────────────────────────
+     El mostrador busca, canjea y vende gift cards. El listado y los filtros
+     aparecen sólo con sesión, y no por jerarquía: **buscar por teléfono
+     completo es una llave; un listado es un directorio.** Un listado de
+     clientes con sus teléfonos abierto en los 14 locales es justo lo que
+     este sistema evita repartir. */
+  :root { --tope: 760px; }
+
+  .buscar-tit { font: 700 21px/1.2 var(--display); letter-spacing: -.3px; }
+  .buscar-sub { font-size: 14.5px; color: var(--txt-2); margin: 8px 0 20px; line-height: 1.5; }
+
+  .buscar-fila { display: flex; gap: 10px; }
+  .buscar-fila input {
+    flex: 1; min-width: 0;
+    font-size: 19px; font-weight: 600;
+    padding: 16px 14px;
+  }
+  .buscar-fila .btn { flex: none; padding-left: 22px; padding-right: 22px; }
+
+  /* La ficha de un beneficio encontrado. El borde dice de un vistazo si se
+     puede usar: verde sirve, gris no. */
+  .ficha {
+    margin-top: 16px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--ok);
+    border-radius: var(--r);
+    padding: 20px;
+    box-shadow: var(--sombra);
+    animation: aparecer .3s var(--curva) backwards;
+  }
+  .ficha.muerto { border-left-color: var(--line); }
+  .ficha-top { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; }
+  .ficha-pct { font: 700 40px/1.1 var(--display); color: var(--ok-txt); letter-spacing: -1px; }
+  .ficha-pct span { font-size: 19px; font-weight: 600; letter-spacing: 0; }
+  .ficha.muerto .ficha-pct { color: var(--txt-2); }
+  .ficha-quien { font: 600 16px/1.35 var(--sans); margin-top: 8px; }
+  .ficha-que { font-size: 13.5px; color: var(--txt-2); margin-top: 4px; line-height: 1.5; }
+
+  .ficha-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .ficha-campos .campo.ancho { grid-column: 1 / -1; }
+  @media (max-width: 560px) { .ficha-campos { grid-template-columns: 1fr; } }
+
+  .nada {
+    margin-top: 18px;
+    font-size: 14.5px; line-height: 1.55; color: var(--txt-2);
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: var(--r-sm);
+    padding: 16px;
+  }
+
+  /* Vender una gift card: se abre abajo del buscador y no en otra pantalla,
+     porque casi siempre se vende mientras el cliente está ahí parado. */
+  .vender-abrir {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    width: 100%;
+    background: none; border: 0; border-top: 1px solid var(--line);
+    margin-top: 20px; padding: 18px 0 0;
+    font: 600 15px/1.3 var(--display); color: var(--txt);
+    text-align: left; cursor: pointer;
+  }
+  .vender-abrir svg { width: 18px; height: 18px; color: var(--txt-3); transition: transform .2s var(--curva); }
+  .vender-abrir[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+  /* El número que la app va a asignar, mostrado ANTES de vender: el vendedor
+     lo escribe en la tarjeta física, así que tiene que verlo primero. */
+  .proximo {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    background: var(--acc-soft);
+    border: 1px solid var(--acc-line);
+    border-radius: var(--r-sm);
+    padding: 13px 15px;
+    margin: 14px 0 16px;
+    font-size: 13.5px; color: var(--txt-2); line-height: 1.5;
+  }
+  .proximo b { font: 700 22px/1 var(--display); color: var(--acc-txt); letter-spacing: -.5px; }
+
+  /* Sin local elegido no se puede vender ni canjear: las dos cosas anotan
+     dónde y quién, y eso sale del dispositivo. */
+  .sin-local { text-align: center; padding: 30px 20px; }
+  .sin-local p { font-size: 14.5px; color: var(--txt-2); margin: 10px 0 18px; line-height: 1.5; }
+
+  .quien-linea {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 18px;
+    font-size: 13px; color: var(--txt-3);
+  }
+  .quien-linea b { color: var(--txt-2); font-weight: 600; }
+
+  /* ── El listado, sólo con sesión ─────────────────────────────────────── */
+  .filtros-ben { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 2px; scrollbar-width: none; }
+  .filtros-ben::-webkit-scrollbar { display: none; }
+  .filtros-ben .chip { flex: none; min-height: 38px; padding: 8px 14px; font-size: 13.5px; }
+  .filtros-ben .chip .cuenta {
+    font-size: 11.5px; font-weight: 700;
+    padding: 1px 7px; border-radius: var(--r-pill);
+    background: var(--surface-3); color: var(--txt-2);
+  }
+  .filtros-ben .chip.sel .cuenta { background: rgba(0, 0, 0, .22); color: var(--acc-ink); }
+
+  .fila-ben {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 13px 0;
+    border-bottom: 1px solid var(--line);
+    font-size: 14px;
+  }
+  .fila-ben:last-child { border-bottom: 0; }
+  .fila-ben-que { font-weight: 700; min-width: 92px; }
+  .fila-ben-quien { color: var(--txt-2); flex: 1; min-width: 0; }
+  .fila-ben-cuando { font-size: 12px; color: var(--txt-3); margin-left: auto; }
+
+  /* Plata comprometida: lo que el local le debe a quien tenga una tarjeta sin
+     canjear. Es el número que a nadie le gusta descubrir de golpe. */
+  .comprometido { font-size: 13px; color: var(--txt-2); margin-top: 14px; line-height: 1.5; }
+  .comprometido b { color: var(--txt); }
+</style>
+</head>
+<body class="hay-rail">
+
+<header class="app-head">
+  <div class="app-head-in">
+    <div class="marca">
+      <div class="marca-icono">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>
+      </div>
+      <div class="marca-txt">
+        <h1>Beneficios</h1>
+        <span>VDH · No Compra</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="marco">
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt">No Compra</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      Carga
+    </a>
+    <a class="rail-item" href="beneficios.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
+      Beneficios
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>
+      Panel
+    </a>
+    <a class="rail-item" href="motivos.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Motivos
+    </a>
+    <a class="rail-item" href="resultados.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+      Resultados
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="hoja">
+
+  <!-- ── Buscar ──────────────────────────────────────────────────────────
+       Dos llaves, un solo campo: el teléfono del cliente o el número de la
+       tarjeta. La base decide cuál es cuál según lo que se escribió.
+
+       **Por teléfono hace falta el número ENTERO.** No hay búsqueda por
+       nombre acá: sería un listado de clientes con sus teléfonos repartido a
+       los 14 locales, que es justo lo que hay que cuidar. El teléfono es la
+       llave que sólo tiene el cliente y hay que acertarla entera. -->
+  <section class="bloque" id="cajaBuscar" hidden>
+    <p class="quien-linea" id="quienLinea"></p>
+    <h2 class="buscar-tit">Buscar un beneficio</h2>
+    <p class="buscar-sub">El WhatsApp del cliente, o el número de la Gift Card.</p>
+    <div class="buscar-fila">
+      <input type="tel" id="clave" inputmode="numeric" autocomplete="off"
+             placeholder="11 2345 6789  ·  00311" aria-label="Teléfono o número de tarjeta">
+      <button type="button" class="btn btn-pri" id="btnBuscar">Buscar</button>
+    </div>
+    <div id="resultado"></div>
+
+    <!-- ── Vender una Gift Card ──
+         El número lo pone la app y el vendedor lo escribe en la tarjeta
+         física. Es el mismo gesto que ya hacían —tomar el próximo libre de
+         la planilla— sin tener que ir a buscarlo. -->
+    <button type="button" class="vender-abrir" id="btnVender" aria-expanded="false">
+      <span>Vender una Gift Card</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+           stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+
+    <div id="cajaVender" hidden>
+      <p class="proximo">
+        <b id="proximaSerie">…</b>
+        <span>Escribí este número en la tarjeta, abajo de <strong>VALOR</strong>.</span>
+      </p>
+      <div class="ficha-campos">
+        <div class="campo"><label>Valor de la Gift Card</label>
+          <input type="text" inputmode="numeric" id="gcValor" placeholder="$"></div>
+        <div class="campo"><label>Cómo la pagó</label>
+          <select id="gcPago">
+            <option value="">Elegí…</option>
+            <option value="efectivo">Efectivo (10% off)</option>
+            <option value="tarjeta">Tarjeta</option>
+            <option value="3 cuotas">3 cuotas sin interés</option>
+            <option value="6 cuotas">6 cuotas sin interés</option>
+            <option value="otro">Otro</option>
+          </select></div>
+        <div class="campo"><label>Cuánto se cobró</label>
+          <input type="text" inputmode="numeric" id="gcCobrado" placeholder="Si es distinto al valor"></div>
+        <div class="campo"><label>Vence en</label>
+          <select id="gcDias">
+            <option value="30" selected>30 días</option>
+            <option value="60">60 días</option>
+            <option value="90">90 días</option>
+            <option value="365">Un año</option>
+          </select></div>
+        <div class="campo"><label>WhatsApp de quien la compra</label>
+          <input type="tel" inputmode="numeric" id="gcTel" placeholder="Opcional, para encontrarla"></div>
+        <div class="campo"><label>Nombre</label>
+          <input type="text" id="gcNombre" placeholder="Opcional"></div>
+        <div class="campo ancho">
+          <button type="button" class="btn btn-pri btn-ancho" id="btnVenderOk">Vender la Gift Card</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── El listado ──
+       Sólo con sesión: un listado de clientes con sus teléfonos abierto en
+       los 14 locales es exactamente lo que el buscador evita. -->
+  <section class="bloque" id="cajaLista" hidden>
+    <h2 class="bloque-tit">Todos los beneficios</h2>
+    <div class="filtros-ben" id="filtrosBen"></div>
+    <div id="lista"></div>
+    <p class="comprometido" id="comprometido" hidden></p>
+  </section>
+
+  <!-- Sin local elegido no se puede vender ni canjear: las dos cosas anotan
+       dónde y quién, y las dos salen de este dispositivo. -->
+  <section class="bloque sin-local" id="cajaSinLocal" hidden>
+    <h2 class="buscar-tit">Primero elegí tu local</h2>
+    <p>Vender y canjear quedan anotados con el local y con quién atendió, así que hace falta saber dónde estás.</p>
+    <a class="btn btn-pri" href="index.html">Ir a elegir el local</a>
+  </section>
+
+  <p class="pie">El descuento se lo da Atención al Cliente desde el <a href="panel.html">panel de seguimiento</a>. Acá se busca, se vende y se canjea.</p>
+</main>
+
+</div><!-- /.marco -->
+
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script src="datos.js"></script>
+<script>
+  /* ═══ Beneficios ════════════════════════════════════════════════════════
+     Reemplaza a la planilla "VDH cupones". Son DOS cosas distintas:
+
+       · el DESCUENTO se regala para recuperar una venta que se perdió. La
+         llave es el teléfono del cliente que se fue, y lo da Atención al
+         Cliente desde el Panel.
+
+       · la GIFT CARD se vende: el cliente paga. La llave es el número de la
+         tarjeta, porque casi siempre es un regalo y la usa el que la tiene
+         en la mano, que no es el que la pagó.
+
+     El buscador acepta las dos llaves y la base decide cuál es cuál. */
+  var $ = function (id) { return document.getElementById(id); };
+  var K_LOCAL = 'nc_local', K_VENDEDOR = 'nc_vendedor';
+  var local = '', vendedor = '';
+  var filtro = 'disponible';
+
+  /** Lo que se escribió en un campo de plata, como número. */
+  function plata(id) {
+    return Number(String($(id).value).replace(/[^0-9]/g, '')) || 0;
+  }
+
+  /* ═══ Buscar ════════════════════════════════════════════════════════════ */
+  function buscar() {
+    var clave = $('clave').value.trim();
+    if (!clave) { avisar('err', 'Escribí un teléfono o el número de la tarjeta.'); return; }
+
+    var btn = $('btnBuscar');
+    btn.disabled = true; btn.textContent = 'Buscando…';
+    $('resultado').innerHTML = '';
+
+    base.beneficio(clave)
+      .then(function (lista) {
+        btn.disabled = false; btn.textContent = 'Buscar';
+        pintarHallazgo(lista, clave);
+      })
+      .catch(function () {
+        btn.disabled = false; btn.textContent = 'Buscar';
+        avisar('err', 'No se pudo buscar. Revisá la señal.');
+      });
+  }
+
+  function pintarHallazgo(lista, clave) {
+    var caja = $('resultado');
+
+    /* Sin nada NO se dice "no existe": se dice qué hacer. El vendedor tiene
+       al cliente enfrente diciendo que le dijeron que tenía algo, y "no
+       encontrado" lo deja sin salida delante del cliente. */
+    if (!lista.length) {
+      caja.innerHTML = '<p class="nada">No hay ningún beneficio con eso. ' +
+        'Si es un teléfono, fijate que sea el mismo con el que quedó cargado; ' +
+        'si es una Gift Card, mirá el número escrito en la tarjeta. ' +
+        'Y si el cliente nunca pasó, cargalo desde <a href="index.html">Carga</a>.</p>';
+      return;
+    }
+
+    caja.innerHTML = lista.map(function (b) { return ficha(b); }).join('');
+
+    // Los botones de canje, uno por ficha que se pueda usar.
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-canjear]'), function (btn) {
+      btn.onclick = function () { canjear(+btn.dataset.canjear, clave); };
+    });
+  }
+
+  function ficha(b) {
+    var vivo = b.estado === 'disponible';
+    var esGC = b.tipo === 'giftcard';
+
+    var titulo = esGC
+      ? '<div class="ficha-pct">' + PESOS.format(b.saldo || b.valor || 0) +
+          ' <span>de Gift Card</span></div>'
+      : '<div class="ficha-pct">' + b.pct + '% <span>de descuento</span></div>';
+
+    /* El estado en palabras y no sólo en color: "vencido" y "usado" son dos
+       conversaciones distintas con el cliente que está enfrente. */
+    var insignia = '<span class="pill ' +
+      (vivo ? 'pill-ok' : b.estado === 'usado' ? 'pill-neutra' : 'pill-warn') + '">' +
+      esc(b.estado) + '</span>';
+
+    var quien = esGC
+      ? (b.nombre ? esc(b.nombre) : 'Gift Card al portador')
+      : (b.nombre ? esc(b.nombre) : 'Cliente sin nombre cargado');
+
+    var detalle = [];
+    if (esGC && b.serie) detalle.push('Tarjeta ' + esc(b.serie));
+    if (!esGC && b.buscaba) detalle.push('Había venido buscando ' + esc(b.buscaba));
+    if (b.local) detalle.push((esGC ? 'Vendida en ' : 'Dado en ') + esc(bonito(b.local)));
+    if (b.vence) {
+      detalle.push(vivo
+        ? (b.dias === 0 ? 'Vence hoy' : 'Vence en ' + b.dias + (b.dias === 1 ? ' día' : ' días'))
+        : 'Vencía el ' + esc(String(b.vence).split('-').reverse().join('/')));
+    }
+
+    return '<div class="ficha' + (vivo ? '' : ' muerto') + '">' +
+      '<div class="ficha-top">' + insignia + '</div>' +
+      titulo +
+      '<div class="ficha-quien">' + quien + '</div>' +
+      (detalle.length ? '<div class="ficha-que">' + detalle.join(' · ') + '</div>' : '') +
+      (vivo
+        ? '<div class="ficha-campos">' +
+            '<div class="campo"><label>Monto de la compra</label>' +
+              '<input type="text" inputmode="numeric" id="monto' + b.id + '" placeholder="$"></div>' +
+            '<div class="campo"><label>Qué se llevó</label>' +
+              '<input type="text" id="prod' + b.id + '" placeholder="Opcional"></div>' +
+            '<div class="campo ancho">' +
+              '<button type="button" class="btn btn-pri btn-ancho" data-canjear="' + b.id + '">' +
+                (esGC ? 'Canjear la Gift Card' : 'Usar el descuento') + '</button>' +
+            '</div>' +
+          '</div>'
+        : '<p class="nada">' + (
+            b.estado === 'usado'    ? 'Ya se usó. Es de un solo uso.' :
+            b.estado === 'vencido'  ? 'Se pasó de fecha. Atención al Cliente puede extenderlo.' :
+                                      'Fue anulado.') + '</p>') +
+    '</div>';
+  }
+
+  /* ═══ Canjear ═══════════════════════════════════════════════════════════ */
+  function canjear(id, clave) {
+    var monto = plata('monto' + id);
+    /* El monto es obligatorio para el descuento y no por burocracia: sin él,
+       usarlo marcaría la venta como recuperada con cero pesos, y el tablero
+       del local mostraría un cliente recuperado que no sumó nada. */
+    if (!monto) {
+      avisar('err', 'Poné cuánto compró: es lo que suma al recuperado del local.');
+      $('monto' + id).focus();
+      return;
+    }
+
+    base.canjear(id, local, vendedor, monto, $('prod' + id).value.trim())
+      .then(function (res) {
+        if (!res || !res.canjeado) {
+          /* La base dijo que no: lo usaron en otro local mientras este
+             vendedor tenía la pantalla abierta. Es el caso que el cupón de
+             papel no podía evitar y éste sí. */
+          avisar('err', 'No se pudo: ' + ((res && res.porque) || 'probá de nuevo') + '.');
+          buscar();
+          return;
+        }
+        avisar('ok', res.tipo === 'giftcard'
+          ? '¡Listo! Gift Card canjeada.'
+          : '¡Listo! Quedó anotado como venta recuperada.');
+        $('clave').value = '';
+        $('resultado').innerHTML = '';
+        $('clave').focus();
+        if (sesion.hay()) cargarLista();
+      })
+      .catch(function (err) {
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.');
+      });
+  }
+
+  /* ═══ Vender una Gift Card ══════════════════════════════════════════════ */
+  function abrirVender() {
+    var caja = $('cajaVender'), btn = $('btnVender');
+    var abierto = caja.hidden;
+    caja.hidden = !abierto;
+    btn.setAttribute('aria-expanded', String(abierto));
+    if (!abierto) return;
+
+    /* El número se muestra ANTES de vender: el vendedor lo escribe en la
+       tarjeta física, así que tiene que verlo primero. Es sólo el próximo
+       que va a tocar; el definitivo lo asigna la base al guardar. */
+    base.siguienteSerie()
+      .then(function (n) { $('proximaSerie').textContent = n; })
+      .catch(function () { $('proximaSerie').textContent = '—'; });
+    $('gcValor').focus();
+  }
+
+  function vender() {
+    var valor = plata('gcValor');
+    if (!valor) { avisar('err', 'Poné el valor de la Gift Card.'); $('gcValor').focus(); return; }
+    if (!vendedor) { avisar('err', 'Primero elegí tu nombre en Carga.'); return; }
+
+    var btn = $('btnVenderOk');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+
+    base.venderGiftcard({
+      valor: valor,
+      local: local,
+      vendedor: vendedor,
+      cobrado: plata('gcCobrado') || null,
+      pago: $('gcPago').value,
+      dias: Number($('gcDias').value) || 30,
+      telefono: $('gcTel').value.trim(),
+      nombre: $('gcNombre').value.trim()
+    })
+      .then(function (res) {
+        btn.disabled = false; btn.textContent = 'Vender la Gift Card';
+        if (!res || !res.vendida) {
+          avisar('err', (res && res.porque) || 'No se pudo vender.');
+          return;
+        }
+        /* El número va en el cartel y queda a la vista: es lo que hay que
+           escribir en la tarjeta, y si se pierde acá hay que ir a buscarlo. */
+        avisar('ok', 'Vendida. Escribí ' + res.serie + ' en la tarjeta.');
+        $('proximaSerie').textContent = res.serie;
+        ['gcValor', 'gcCobrado', 'gcTel', 'gcNombre'].forEach(function (id) { $(id).value = ''; });
+        $('gcPago').value = '';
+        if (sesion.hay()) cargarLista();
+      })
+      .catch(function (err) {
+        btn.disabled = false; btn.textContent = 'Vender la Gift Card';
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.');
+      });
+  }
+
+  /* ═══ El listado, sólo con sesión ═══════════════════════════════════════
+     Un listado de clientes con sus teléfonos abierto en los 14 locales es
+     exactamente lo que el buscador evita. Por eso esto pide entrar. */
+  var ESTADOS = ['disponible', 'usado', 'vencido', 'anulado'];
+  var NOMBRES = { disponible: 'Activos', usado: 'Usados', vencido: 'Vencidos', anulado: 'Anulados' };
+
+  function cargarLista() {
+    base.resumenBeneficios()
+      .then(function (r) {
+        pintarFiltros(r || {});
+        if (r && r.comprometido > 0) {
+          $('comprometido').hidden = false;
+          $('comprometido').innerHTML = 'Gift Cards vendidas y sin canjear: <b>' +
+            PESOS.format(r.comprometido) + '</b>. Es plata que el local todavía debe.';
+        } else {
+          $('comprometido').hidden = true;
+        }
+      })
+      .catch(function () {});
+
+    base.beneficios(filtro)
+      .then(function (filas) { pintarLista(filas || []); })
+      .catch(function (err) {
+        if (err && err.sinSesion) { $('cajaLista').hidden = true; return; }
+        $('lista').innerHTML = '<p class="vacio-txt">No se pudo leer el listado.</p>';
+      });
+  }
+
+  function pintarFiltros(r) {
+    $('filtrosBen').innerHTML = ESTADOS.map(function (e) {
+      return '<button type="button" class="chip' + (e === filtro ? ' sel' : '') + '" data-e="' + e + '">' +
+        NOMBRES[e] + ' <span class="cuenta">' + (r[e] || 0) + '</span></button>';
+    }).join('');
+    Array.prototype.forEach.call($('filtrosBen').children, function (b) {
+      b.onclick = function () { filtro = b.dataset.e; cargarLista(); };
+    });
+  }
+
+  function pintarLista(filas) {
+    if (!filas.length) {
+      $('lista').innerHTML = '<p class="vacio-txt">No hay ninguno en ' +
+        NOMBRES[filtro].toLowerCase() + '.</p>';
+      return;
+    }
+    $('lista').innerHTML = filas.map(function (b) {
+      var esGC = b.tipo === 'giftcard';
+      var que = esGC ? PESOS.format(b.valor || 0) : b.pct + '%';
+      var quien = esGC
+        ? ('Tarjeta ' + esc(b.serie || '') + (b.nombre ? ' · ' + esc(b.nombre) : ''))
+        : esc(b.nombre || b.telefono || 'sin nombre');
+      return '<div class="fila-ben">' +
+        '<span class="fila-ben-que">' + que + '</span>' +
+        '<span class="fila-ben-quien">' + quien + '</span>' +
+        '<span class="fila-ben-cuando">' + esc(bonito(b.local || '')) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  /* ═══ Arranque ══════════════════════════════════════════════════════════ */
+  (function () {
+    iniciarTema();
+
+    try {
+      local = localStorage.getItem(K_LOCAL) || '';
+      vendedor = localStorage.getItem(K_VENDEDOR) || '';
+    } catch (e) {}
+
+    if (!local) {
+      $('cajaSinLocal').hidden = false;
+    } else {
+      $('cajaBuscar').hidden = false;
+      $('quienLinea').innerHTML = '<b>' + esc(bonito(local)) + '</b>' +
+        (vendedor ? ' · atiende <b>' + esc(vendedor) + '</b>' : '');
+      $('btnBuscar').onclick = buscar;
+      $('clave').onkeydown = function (e) { if (e.key === 'Enter') buscar(); };
+      $('btnVender').onclick = abrirVender;
+      $('btnVenderOk').onclick = vender;
+      $('clave').focus();
+    }
+
+    /* El listado aparece sólo si hay sesión. No se pide entrar: el que viene
+       a canjear no necesita el listado, y ponerle un portón delante sería
+       cobrarle a todos el precio de lo que usa uno. */
+    if (sesion.hay()) {
+      $('cajaLista').hidden = false;
+      cargarLista();
+    }
+
+    iniciarPWA();
+  })();
+</script>
+</body>
+</html>

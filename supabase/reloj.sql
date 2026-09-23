@@ -30,11 +30,6 @@ declare
   res     jsonb;
   hechos  integer := 0;
 begin
-  /* El tiempo de espera de `http` es POR SESIÓN y arranca en un segundo, que
-     no le alcanza ni para saludar a Kommo. Cada corrida de pg_cron es una
-     sesión nueva, así que hay que ponerlo acá adentro todas las veces. */
-  perform extensions.http_set_curlopt('CURLOPT_TIMEOUT_MS', '20000');
-
   for s in
     select * from salidas
      where estado = 'pendiente'
@@ -119,17 +114,23 @@ declare
   -- Se llama UMBRAL y no DIAS porque PL/pgSQL no distingue mayúsculas: con
   -- `DIAS` choca con la variable `dias` de dos líneas más abajo.
   UMBRAL constant integer := 3;
+  /* Con prefijo, y no por gusto: `total`, `contactados`, `dias` y `estado`
+     son nombres de columna de `registros`, y esta función la consulta. Sin
+     el prefijo, PL/pgSQL no sabe si un `estado is null` habla de la columna
+     o de la variable, y contesta "column reference is ambiguous" en una
+     función que corre sola a las 9 de la mañana: nadie se enteraría salvo
+     porque el mensaje no llegó. */
   ayer         integer;
-  total        integer;
+  n_total      integer;
   pendientes   integer;
-  contactados  integer;
+  n_contactados integer;
   viejos       integer;
-  dias         integer;
+  n_dias       integer;
   mes_cargados integer;
   mes_compraron integer;
   mes_plata    numeric;
   lineas   text[] := '{}';
-  estado   text;
+  frase    text;
   van      text;
   cuerpo   jsonb;
   res      extensions.http_response;
@@ -139,17 +140,15 @@ begin
     return 'El aviso por Telegram está apagado: no hay a dónde mandarlo.';
   end if;
 
-  perform extensions.http_set_curlopt('CURLOPT_TIMEOUT_MS', '20000');
-
   select
     count(*) filter (where creado >= inicio_de('day') - interval '1 day'
                        and creado <  inicio_de('day')),
     count(*),
     count(*) filter (where not contactado and estado is null)
-    into ayer, total, pendientes
+    into ayer, n_total, pendientes
   from registros;
 
-  contactados := total - pendientes;
+  n_contactados := n_total - pendientes;
 
   /* Dos números sobre los pendientes, y no miden lo mismo: `viejos` son los
      que pasaron el umbral, y `dias` es lo que espera el más viejo de TODOS,
@@ -159,7 +158,7 @@ begin
   select coalesce(count(*) filter (
            where creado <= now() - (UMBRAL || ' days')::interval), 0),
          coalesce(max(floor(extract(epoch from now() - creado) / 86400))::int, 0)
-    into viejos, dias
+    into viejos, n_dias
   from registros
    where not contactado and estado is null;
 
@@ -181,34 +180,34 @@ begin
     when ayer = 1 then 'Ayer entró <b>1</b>.'
     else 'Ayer entraron <b>' || ayer || '</b>.' end);
 
-  if total = 0 then
+  if n_total = 0 then
     lineas := array_append(lineas, 'Todavía no se cargó ninguno desde que arrancamos.');
   else
-    van := case when total = 1 then 'Va <b>1</b> cargado desde que arrancamos'
-                else 'Van <b>' || total || '</b> cargados desde que arrancamos' end;
+    van := case when n_total = 1 then 'Va <b>1</b> cargado desde que arrancamos'
+                else 'Van <b>' || n_total || '</b> cargados desde que arrancamos' end;
 
     if pendientes = 0 then
       lineas := array_append(lineas, van ||
-        case when total = 1 then ' y ya se le escribió.' else ' y ya se les escribió a todos.' end);
+        case when n_total = 1 then ' y ya se le escribió.' else ' y ya se les escribió a todos.' end);
     else
       /* Lo hecho antes que lo que falta, a propósito: este mensaje lo lee el
          que atiende, y si arranca por la deuda es un reclamo diario. */
-      estado := van || ': ';
-      if contactados > 0 then
-        estado := estado || 'se les escribió a <b>' || contactados ||
+      frase := van || ': ';
+      if n_contactados > 0 then
+        frase := frase || 'se les escribió a <b>' || n_contactados ||
                   '</b> y faltan <b>' || pendientes || '</b>';
       else
-        estado := estado || 'falta contestarle a <b>' || pendientes || '</b>';
+        frase := frase || 'falta contestarle a <b>' || pendientes || '</b>';
       end if;
 
       if viejos > 0 then
-        estado := estado || ', ' || case when viejos = 1 then 'uno' else viejos::text end ||
+        frase := frase || ', ' || case when viejos = 1 then 'uno' else viejos::text end ||
                   ' hace más de ' || UMBRAL || ' días';
-        if dias > UMBRAL then
-          estado := estado || ' (el más viejo, ' || dias || ' días)';
+        if n_dias > UMBRAL then
+          frase := frase || ' (el más viejo, ' || n_dias || ' días)';
         end if;
       end if;
-      lineas := array_append(lineas, estado || '.');
+      lineas := array_append(lineas, frase || '.');
     end if;
   end if;
 
@@ -234,6 +233,7 @@ begin
       jsonb_build_object('text', 'Abrir el panel',
                          'url', coalesce(secreto('SITIO'), '') || 'panel.html')))));
 
+  perform paciencia();
   res := extensions.http_post('https://api.telegram.org/bot' || token || '/sendMessage',
                               cuerpo::text, 'application/json');
   begin salida := res.content::jsonb; exception when others then salida := null; end;
@@ -248,6 +248,18 @@ end;
 $$;
 
 revoke execute on function recordatorio_diario() from anon, authenticated, public;
+
+
+
+
+-- Se fueron dos procedimientos que había acá. Nacieron de un diagnóstico
+-- equivocado —que el timeout no aplicaba en la misma transacción— y no
+-- hacían falta: lo que faltaba era ponerlo pegado a cada llamada. Ver
+-- paciencia() en salidas.sql.
+
+drop procedure if exists trabajar_salidas();
+drop procedure if exists trabajar_recordatorio();
+drop procedure if exists con_paciencia();
 
 
 -- ════════════════════════════════════════════════════════════════════════

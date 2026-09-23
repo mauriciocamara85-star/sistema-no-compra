@@ -467,46 +467,109 @@ var base = {
     return funcion('resumen_resultados', { p_local: local || '' });
   },
 
+  /* ── Los beneficios ───────────────────────────────────────────────────
+     Reemplazan a la planilla "VDH cupones". Son DOS cosas distintas y por
+     eso hay dos llaves:
+
+       · el DESCUENTO se regala para recuperar una venta perdida, y la llave
+         es el teléfono del cliente que se fue;
+       · la GIFT CARD se vende, y la llave es el número de la tarjeta,
+         porque casi siempre es un regalo: la usa el que la tiene en la
+         mano, que no es el que la pagó.
+
+     El buscador acepta las dos y la base decide cuál es cuál. */
+
   /**
-   * Le da el descuento a un cliente. Lo hace Atención al Cliente desde el
-   * panel, cuando el producto no aparece y hay que ofrecerle algo igual.
+   * Busca por teléfono o por número de tarjeta. Devuelve una lista corta —lo
+   * que tenga ESE número— o vacía.
    *
-   * **El filtro `beneficio_dado=is.null` es el candado.** Sin él, dos toques
-   * seguidos —o dos personas mirando la misma ficha— le corren la fecha al
-   * beneficio que ya estaba dado, y uno que el cliente todavía no usó
-   * volvería a arrancar de cero. Así el segundo intento no toca nada, y la
-   * pantalla se entera porque cuenta las filas que cambiaron.
-   *
-   * Los dos campos van juntos a propósito: la base tiene una regla que
-   * prohíbe un porcentaje sin beneficio dado, así que mandarlos por separado
-   * no guardaría la mitad, no guardaría nada.
+   * No es un listado: es lo que hay detrás de una llave que el que busca ya
+   * tenía. El listado que se puede recorrer sin saber a quién buscar pide
+   * sesión; ver `beneficios()`.
    */
-  darBeneficio: function (id, pct) {
+  beneficio: function (clave) {
+    return funcion('beneficio_buscar', { clave: clave }).then(function (filas) {
+      return Array.isArray(filas) ? filas : (filas ? [filas] : []);
+    });
+  },
+
+  /**
+   * Canjea. Para el descuento hace además algo que el cupón de papel no
+   * podía: deja el registro como venta recuperada, así el "Recuperado" del
+   * tablero sube solo cuando el cliente vuelve.
+   *
+   * Devuelve {canjeado:false, porque:'…'} y no una excepción cuando no se
+   * puede: que esté usado o vencido es una respuesta, no un error.
+   */
+  canjear: function (id, local, vendedor, monto, producto) {
+    return funcion('canjear_beneficio', {
+      p_id: id, p_local: local, p_vendedor: vendedor,
+      p_monto: monto || null, p_producto: producto || null
+    });
+  },
+
+  /** El próximo número de tarjeta, para mostrarlo antes de vender. */
+  siguienteSerie: function () {
+    return funcion('siguiente_serie', {});
+  },
+
+  /**
+   * Vende una Gift Card. El número lo pone la base y el vendedor lo escribe
+   * en la tarjeta física.
+   *
+   * `valor` es lo que se puede canjear; `cobrado` es lo que entró a la caja.
+   * Con el 10% de efectivo no son iguales, y los dos hacen falta para cuadrar.
+   */
+  venderGiftcard: function (d) {
+    return funcion('vender_giftcard', {
+      p_valor: d.valor, p_local: d.local, p_vendedor: d.vendedor,
+      p_cobrado: d.cobrado || null, p_pago: d.pago || null,
+      p_dias: d.dias || 30,
+      p_telefono: d.telefono || null, p_nombre: d.nombre || null, p_obs: d.obs || null
+    });
+  },
+
+  /* ── Y lo que pide sesión ────────────────────────────────────────────── */
+
+  /**
+   * Le da el descuento a un cliente, desde la ficha del Panel. Va por id de
+   * REGISTRO y no por teléfono a propósito: tipear un número a mano es la
+   * forma más fácil de dárselo al cliente equivocado.
+   */
+  darDescuento: function (registro, pct, dias, quien) {
     return token().then(function (t) {
-      return pedir('/registros?id=eq.' + valor(id) + '&beneficio_dado=is.null', {
-        metodo: 'PATCH',
-        cuerpo: { beneficio_dado: new Date().toISOString(), beneficio_pct: pct },
-        sesion: t,
-        contar: true
-      });
-    }).then(function (r) { return r > 0; });
-  },
-
-  /** Si este cliente tiene un descuento sin usar. Se busca por teléfono. */
-  beneficio: function (telefono) {
-    return funcion('beneficio_buscar', { telefono: telefono }).then(function (filas) {
-      return Array.isArray(filas) ? (filas[0] || null) : filas;
+      return funcion('dar_descuento', {
+        p_registro: registro, p_pct: pct, p_dias: dias || 30, p_quien: quien || null
+      }, t);
     });
   },
 
-  /** Lo usa: marca el descuento y deja la venta registrada, todo junto. */
-  usarBeneficio: function (telefono, local, vendedor, monto, producto) {
-    return funcion('beneficio_usar', {
-      telefono: telefono, p_local: local, p_vendedor: vendedor,
-      p_monto: monto, p_producto: producto || null
+  /** El listado, con su filtro. Pide sesión: un listado es un directorio. */
+  beneficios: function (estado) {
+    var cond = estado && estado !== 'todos' ? '&estado=eq.' + valor(estado) : '';
+    return token().then(function (t) {
+      return pedir('/v_beneficios?select=*&order=creado.desc&limit=200' + cond, { sesion: t });
     });
   },
 
+  /** Cuántos hay en cada filtro, y cuánta plata hay comprometida. */
+  resumenBeneficios: function () {
+    return token().then(function (t) { return funcion('resumen_beneficios', {}, t); });
+  },
+
+  /** Anular: es la única acción que le saca algo a un cliente. */
+  anularBeneficio: function (id, quien, motivo) {
+    return token().then(function (t) {
+      return funcion('anular_beneficio', { p_id: id, p_quien: quien, p_motivo: motivo || null }, t);
+    });
+  },
+
+  /** Correr el vencimiento. Queda anotado en las observaciones. */
+  extenderBeneficio: function (id, dias, quien) {
+    return token().then(function (t) {
+      return funcion('extender_beneficio', { p_id: id, p_dias: dias, p_quien: quien }, t);
+    });
+  },
 
   /* ── Lo del Panel ──────────────────────────────────────────────────────
      Todo lo de acá abajo exige haber entrado con el mail: es lo único que
@@ -533,8 +596,13 @@ var base = {
     return token().then(function (t) {
       /* El id desempata: dos registros que caen en el mismo instante —dos
          celulares del mismo local, a la vez— dejarían el orden librado a lo
-         que devuelva Postgres, y la lista se reacomodaría sola al refrescar. */
-      return pedir('/registros?select=*&order=creado.desc,id.desc' + cond, { sesion: t });
+         que devuelva Postgres, y la lista se reacomodaría sola al refrescar.
+
+         Y el beneficio viene ANIDADO en el mismo viaje. Vive en su propia
+         tabla desde que existen las gift cards, y pedirlo aparte serían dos
+         consultas que después hay que cruzar a mano. */
+      return pedir('/registros?select=*,beneficios(id,pct,usado,anulado,vence)' +
+                   '&order=creado.desc,id.desc' + cond, { sesion: t });
     }).then(function (filas) {
       return (filas || []).map(deLaBase_);
     });
@@ -709,9 +777,10 @@ function deLaBase_(f) {
     // El lead en Kommo, para poder abrirlo desde la ficha: el seguimiento se
     // trabaja allá y esta pantalla tiene que poder llevar hasta ahí.
     lead:        f.lead_kommo || '',
-    // El descuento, para que la ficha sepa si ya se dio y no lo ofrezca dos veces.
-    beneficioPct:   f.beneficio_pct || 0,
-    beneficioUsado: !!f.beneficio_usado,
+    // El descuento, para que la ficha sepa si ya se dio y no lo ofrezca dos
+    // veces. Viene anidado desde la tabla `beneficios`; se toma el vivo, o
+    // el último si no hay ninguno vivo.
+    beneficio: beneficioDe_(f.beneficios),
     /* Con el punto de los miles: es un campo que se lee de un vistazo en
        una lista de fichas, y "92500" obliga a contar ceros. Vuelve a entrar
        bien porque aLaBase_ saca los puntos antes de guardarlo. */
@@ -752,6 +821,30 @@ function aLaBase_(campos) {
     c.monto = (campos.monto === '' || isNaN(n)) ? null : n;
   }
   return c;
+}
+
+/**
+ * De los beneficios de un cliente, el que la ficha tiene que mostrar.
+ *
+ * Gana el que todavía se puede usar. Si no hay ninguno vivo se muestra el
+ * último, que es lo que contesta "sí, ya se le dio uno" cuando alguien está
+ * por dar otro.
+ */
+function beneficioDe_(lista) {
+  if (!lista || !lista.length) return null;
+  var hoy = new Date().toISOString().slice(0, 10);
+  var vivos = lista.filter(function (b) {
+    return !b.usado && !b.anulado && (!b.vence || b.vence >= hoy);
+  });
+  var b = vivos[0] || lista[lista.length - 1];
+  return {
+    id: b.id,
+    pct: b.pct,
+    usado: !!b.usado,
+    anulado: !!b.anulado,
+    vencido: !b.usado && !b.anulado && !!b.vence && b.vence < hoy,
+    vive: vivos.indexOf(b) > -1
+  };
 }
 
 /** "sábado 20 de septiembre, 14:35" — lo que la ficha muestra arriba. */

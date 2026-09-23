@@ -81,6 +81,36 @@ revoke execute on function guardar_secreto(text, text) from anon, authenticated,
 
 
 -- ════════════════════════════════════════════════════════════════════════
+-- LA PACIENCIA DE LAS LLAMADAS SALIENTES
+--
+-- `http` espera UN SEGUNDO por defecto, que a veces no le alcanza ni para
+-- saludar a Kommo. Se sube con http_set_curlopt, y **hay que llamarla pegada
+-- a cada pedido**, no una vez al principio.
+--
+-- El motivo tardó en aparecer: el despachador lo ponía arriba del bucle, y
+-- cada envío entra en un bloque con `exception`, que es una subtransacción.
+-- Cuando una aborta —un envío que falla, que es todo el punto de tener
+-- reintentos— se pierde lo que se había configurado, y los que venían atrás
+-- salían con un segundo de paciencia.
+--
+-- No se notaba: Kommo y Telegram suelen contestar en 300ms. Fallaba sólo
+-- cuando la red tardaba un poco más, y el reintento tapaba el resto.
+-- ════════════════════════════════════════════════════════════════════════
+
+create or replace function paciencia()
+returns void
+language sql
+security definer
+set search_path = extensions, public
+as $pac$
+  select extensions.http_set_curlopt('CURLOPT_TIMEOUT_MS', '20000');
+  select extensions.http_set_curlopt('CURLOPT_CONNECTTIMEOUT_MS', '10000');
+$pac$;
+
+revoke execute on function paciencia() from anon, authenticated, public;
+
+
+-- ════════════════════════════════════════════════════════════════════════
 -- LA BANDEJA
 -- ════════════════════════════════════════════════════════════════════════
 
@@ -291,6 +321,7 @@ begin
         jsonb_build_object('text', 'Escribirle por WhatsApp', 'url', link)))));
   end if;
 
+  perform paciencia();
   respuesta := extensions.http_post(
     'https://api.telegram.org/bot' || token || '/sendMessage',
     cuerpo::text, 'application/json');
