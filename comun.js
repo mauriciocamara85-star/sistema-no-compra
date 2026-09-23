@@ -88,6 +88,24 @@ function avisar(tipo, mensaje) {
   _toastTimer = setTimeout(function () { el.classList.remove('visible'); }, tipo === 'err' ? 4500 : 3000);
 }
 
+/**
+ * ¿Este teléfono sirve?  Devuelve el problema, o vacío si está bien.
+ *
+ * Un celular argentino tiene 10 dígitos (característica + número), sin el 0
+ * y sin el 15. Se avisa pero no se bloquea con menos: hay números que no
+ * siguen la regla y es peor perder el registro que rechazarlo.
+ *
+ * Vive acá y no en una pantalla porque lo usan DOS: el formulario al
+ * cargar un cliente, y la pantalla del descuento al buscarlo. Dos copias
+ * de la misma regla se separan el día que alguien ajusta una sola.
+ */
+function revisarTelefono(t) {
+  var n = String(t).replace(/\D/g, '');
+  if (!n) return 'Falta el WhatsApp del cliente.';
+  if (n.length < 8) return 'Ese número quedó corto. Revisalo.';
+  return '';
+}
+
 /* ── WHATSAPP ──────────────────────────────────────────────────────────────
    Los números se cargan como característica + número, sin el 0 y sin el 15.
    wa.me los quiere con el país adelante y el 9 de celular. */
