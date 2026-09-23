@@ -120,6 +120,9 @@
     gap: 12px;
     margin-bottom: 10px;
   }
+  .tablero-izq, .tablero-der {
+    display: flex; align-items: baseline; gap: 12px; min-width: 0;
+  }
   .tablero-tit {
     font: 700 20px/1.2 var(--display);
     letter-spacing: -.4px;
@@ -129,6 +132,9 @@
     font-size: 12.5px; color: var(--txt-3);
     white-space: nowrap;
   }
+  /* El saludo y el reloj sólo existen donde sobra alto; abajo de eso la
+     cabecera es la línea de siempre. */
+  .saludo, .reloj { display: none; }
   @media (max-width: 560px) { .tablero-fecha { display: none; } }
 
   /* ── Los tres pasos ────────────────────────────────────────────────────
@@ -657,6 +663,80 @@
     .chips-motivo .chip { min-height: 38px; }
     body { padding-bottom: 6px; }
   }
+  /* ── El saludo grande ───────────────────────────────────────────────────
+     Abierta como app instalada no hay barra de navegador, y en una pantalla
+     alta sobran entre 130 y 490px abajo del equipo. Medido: 1920x1080 en el
+     navegador deja 57px —ahí no entra nada y la cabecera sigue siendo la
+     línea de siempre—, pero la misma pantalla como app deja 127, y un 27"
+     como app deja 487.
+
+     Por eso el corte es por ALTO y no por ancho, y es el mismo mecanismo que
+     usa el resto del archivo para las notebooks, al revés: allá se achica
+     cuando falta, acá se agranda cuando sobra.
+
+     Los tamaños van con clamp sobre vh —lo único de toda la app que se mide
+     contra el alto— porque es exactamente el espacio que se está repartiendo:
+     crece de 1000px de viewport hasta ~1400 y ahí se planta. Sin el techo,
+     un monitor vertical pondría un reloj de 90px.
+
+     El reloj lleva cifras de ancho fijo: sin eso el minuto cambia y toda la
+     hora se corre un pixel para el costado, una vez por minuto, todo el día. */
+  @media (min-width: 1200px) and (min-height: 1000px) {
+    /* El aire que sobra se REPARTE entre las franjas en vez de quedar
+       amontonado abajo del equipo, que es lo que hacía que la pantalla se
+       viera abandonada en la mitad de abajo. No se estira nada: lo que crece
+       es la separación, y con techo, porque un formulario separado 60px es
+       viaje del ojo y no respiración. */
+    .hoja { gap: clamp(14px, 2.2vh, 30px); padding-top: clamp(16px, 2.2vh, 30px); }
+    .paso { padding: clamp(16px, 2vh, 26px); }
+    .equipo { padding: clamp(18px, 2.2vh, 28px) clamp(16px, 2vh, 26px); }
+    body { padding-bottom: clamp(18px, 2.2vh, 30px); }
+
+    .tablero-cab { align-items: flex-end; margin-bottom: 4px; }
+
+    .tablero-izq, .tablero-der {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 2px;
+    }
+    .tablero-der { align-items: flex-end; text-align: right; }
+
+    /* No se borra: se esconde a la vista y se queda para el lector de
+       pantalla, que necesita el encabezado para saber dónde está parado. */
+    .tablero-tit {
+      position: absolute;
+      width: 1px; height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+
+    .saludo { display: block; margin: 0; }
+    .saludo-hola {
+      display: block;
+      font: 700 clamp(24px, 2.6vh, 34px)/1.15 var(--display);
+      letter-spacing: -.5px;
+      color: var(--txt-2);
+    }
+    /* El local en violeta: es el dato, y el saludo es la cortesía. La misma
+       regla que en el resto de la app —el color marca lo que importa—. */
+    .saludo-local {
+      display: block;
+      font: 700 clamp(30px, 3.4vh, 46px)/1.1 var(--display);
+      letter-spacing: -1px;
+      color: var(--acc-txt);
+    }
+
+    .reloj {
+      display: block;
+      font: 700 clamp(34px, 4vh, 56px)/1 var(--display);
+      letter-spacing: -1.5px;
+      color: var(--txt);
+      font-variant-numeric: tabular-nums;
+    }
+    .tablero-fecha { font-size: clamp(13px, 1.4vh, 16px); }
+  }
+
 </style>
 </head>
 <body class="hay-rail">
@@ -758,8 +838,23 @@
        va arriba de todo, y acá reemplaza a la cabecera de la app, que decía
        lo mismo que el rail. -->
   <div class="tablero-cab">
-    <h2 class="tablero-tit" id="hoyTit">Tu local, hoy</h2>
-    <span class="tablero-fecha" id="hoyFecha"></span>
+    <div class="tablero-izq">
+      <!-- El título sigue siendo el encabezado de la página. Cuando aparece
+           el saludo grande no se borra: se esconde a la vista y se queda para
+           quien navega con lector de pantalla, que si no se encuentra una
+           sección sin nombre. -->
+      <h2 class="tablero-tit" id="hoyTit">Tu local, hoy</h2>
+      <!-- El saludo dice lo mismo que el título de otra forma, así que para
+           un lector de pantalla es ruido: lo lee el h2 de arriba. -->
+      <p class="saludo" aria-hidden="true">
+        <span class="saludo-hola" id="hoySaludo">Hola</span>
+        <span class="saludo-local" id="hoyLocal">tu local</span>
+      </p>
+    </div>
+    <div class="tablero-der">
+      <span class="reloj" id="hoyHora" aria-hidden="true">--:--</span>
+      <span class="tablero-fecha" id="hoyFecha"></span>
+    </div>
   </div>
 
   <!-- ── Los números del local ─────────────────────────────────────────────
@@ -1603,8 +1698,67 @@
     $('railPie').classList.toggle('vacia', !listo);
     $('btnRailLocal').textContent = local ? 'Cambiar de local' : 'Elegir local';
 
-    // Y el título del tablero, que es de quién son los números
+    // Y el título del tablero, que es de quién son los números. Son dos
+    // formas de lo mismo: la línea de siempre y, cuando sobra alto, el
+    // nombre suelto que va abajo del saludo.
     $('hoyTit').textContent = local ? ('Hoy en ' + nom) : 'Tu local, hoy';
+    $('hoyLocal').textContent = local ? nom : 'tu local';
+  }
+
+  /**
+   * La hora, la fecha y el saludo.
+   *
+   * Los tres salen de la misma lectura del reloj: si se leyera la hora tres
+   * veces, una carga a las 11:59:59.9 podría saludar con "buen día" y
+   * mostrar las 12:00.
+   *
+   * Los cortes son los de acá, no los del inglés: el "buen día" se estira
+   * hasta las 12 y la noche arranca a las 20, que es cuando cierran los
+   * locales. No hay "buenas madrugadas": a las 3 de la mañana sigue siendo
+   * de noche.
+   */
+  function pintarReloj() {
+    var ahora = new Date();
+    var h = ahora.getHours();
+
+    $('hoySaludo').textContent =
+      h < 6  ? 'Buenas noches' :
+      h < 12 ? 'Buen día' :
+      h < 20 ? 'Buenas tardes' : 'Buenas noches';
+
+    $('hoyHora').textContent = ahora.toLocaleTimeString('es-AR',
+      { hour: '2-digit', minute: '2-digit', hour12: false });
+
+    /* Hoy, escrito como lo diría alguien: "Domingo 20 de septiembre". Se
+       capitaliza a mano la primera letra y nada más: con text-transform el
+       navegador también le pone mayúscula al "de", y queda "20 De
+       Septiembre". */
+    var hoy = ahora.toLocaleDateString('es-AR',
+      { weekday: 'long', day: 'numeric', month: 'long' }).replace(',', '');
+    $('hoyFecha').textContent = hoy.charAt(0).toUpperCase() + hoy.slice(1);
+  }
+
+  /**
+   * Volver a pintarlo cada minuto, en el minuto.
+   *
+   * La PC del local queda abierta en esta pantalla todo el día, así que esto
+   * tiene que cruzar la medianoche —y el cambio de saludo— sin que nadie
+   * recargue. Se despierta justo cuando cambia el minuto y recién ahí pasa a
+   * cada 60 segundos: con un intervalo suelto de 60s, el reloj marca el
+   * cambio hasta 59 segundos tarde y se nota.
+   *
+   * Y se vuelve a pintar al volver a la pestaña: una máquina que estuvo
+   * suspendida despierta con la hora vieja hasta el próximo tic.
+   */
+  function arrancarReloj() {
+    setTimeout(function () {
+      pintarReloj();
+      setInterval(pintarReloj, 60000);
+    }, 60000 - (Date.now() % 60000));
+
+    document.addEventListener('visibilitychange', function () {
+      if (!document.hidden) pintarReloj();
+    });
   }
 
   /** El botón de "Cambiar de local", en la barra y en el rail. */
@@ -2043,13 +2197,8 @@
     // se pisan con los números de ese local.
     pintarMetricas(null);
 
-    /* Hoy, escrito como lo diría alguien: "Domingo 20 de septiembre". Se
-       capitaliza a mano la primera letra y nada más: con text-transform el
-       navegador también le pone mayúscula al "de", y queda "20 De
-       Septiembre". */
-    var hoy = new Date().toLocaleDateString('es-AR',
-      { weekday: 'long', day: 'numeric', month: 'long' }).replace(',', '');
-    $('hoyFecha').textContent = hoy.charAt(0).toUpperCase() + hoy.slice(1);
+    pintarReloj();
+    arrancarReloj();
 
     local = leer(K_LOCAL);
     vendedor = leer(K_VEND);
