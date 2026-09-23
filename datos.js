@@ -515,47 +515,70 @@ var base = {
     });
   },
 
-  /**
-   * Crea un cupón al portador: un descuento que vale para EL QUE TENGA EL
-   * CÓDIGO, no para un teléfono.
-   *
-   * Pide sesión, y además la base pide rol `atencion` o `admin`. Que la
-   * pantalla esconda el botón no alcanza: la clave publicable está en este
-   * mismo archivo, que está en un repo público.
-   *
-   * `opciones` puede traer: registro, telefono, nombre, compraMinima,
-   * locales (arreglo, o nada para todos), acumulable y obs.
-   */
-  crearCupon: function (pct, dias, opciones) {
-    var o = opciones || {};
-    return token().then(function (t) {
-      return funcion('crear_cupon', {
-        p_pct: pct,
-        p_dias: dias || 30,
-        p_registro: o.registro || null,
-        p_telefono: o.telefono || null,
-        p_nombre: o.nombre || null,
-        p_compra_minima: o.compraMinima || null,
-        p_locales: o.locales && o.locales.length ? o.locales : null,
-        p_acumulable: !!o.acumulable,
-        p_obs: o.obs || null
-      }, t);
+  /* ── El PIN de Beneficios ──────────────────────────────────────────────
+     Reemplaza al enlace por mail EN ESTA PANTALLA, y sólo acá: el Panel
+     sigue entrando con el mail, porque ahí adentro está la lista de clientes
+     con sus teléfonos.
+
+     **El PIN no está en este archivo ni en ningún otro del repo.** Vive
+     hasheado en la base y se compara adentro de una función; acá sólo se
+     manda para que lo verifiquen. Compararlo del lado del navegador sería
+     escribirlo en un repositorio público.
+
+     Tampoco se guarda en `localStorage`: vive en `sessionStorage`, así que
+     se olvida al cerrar la pestaña. En una PC de mostrador compartida, una
+     sesión que no caduca nunca es peor que volver a tipear cuatro números. */
+  pin: {
+    /** ¿Hay PIN puesto, y hay que esperar? Para saber qué ofrecer. */
+    situacion: function () { return funcion('pin_situacion', {}); },
+
+    /** Probarlo. Devuelve {ok} o {ok:false, porque, espera, restantes}. */
+    probar: function (pin) { return funcion('pin_ok', { p_pin: pin }); },
+
+    /** Cambiarlo. Hay que saber el actual; el primero lo pone un admin. */
+    definir: function (actual, nuevo) {
+      return funcion('pin_definir', { p_actual: actual || null, p_nuevo: nuevo });
+    }
+  },
+
+  /** Los nombres para el selector de "quién". Sin PIN: son sólo nombres. */
+  atencion: function () { return funcion('atencion_lista', {}); },
+
+  /** Alta o baja en esa lista. Con PIN, como todo lo de esta pantalla. */
+  atencionGuardar: function (pin, nombre, activo) {
+    return funcion('atencion_guardar', {
+      p_pin: pin, p_nombre: nombre, p_activo: activo !== false
     });
   },
 
   /**
-   * Qué soy. Devuelve 'atencion', 'admin' o null.
+   * Crea un cupón al portador: un descuento que vale para EL QUE TENGA EL
+   * CÓDIGO, no para un teléfono.
    *
-   * Es para decidir si conviene mostrar el botón de crear cupones, y nada
-   * más: la regla de verdad la aplica la base adentro de `crear_cupon`. Si
-   * esto se equivoca, lo peor que pasa es que se ofrezca algo que después
-   * falla, no que alguien haga lo que no puede.
+   * `quien` sale de un desplegable y no de un campo libre. Escrito a mano, la
+   * misma persona termina siendo "Agus", "agus" y "Agustina", y la
+   * estadística por persona —que es para lo que se guarda— deja de servir.
+   *
+   * `opciones` puede traer: registro, telefono, nombre, compraMinima,
+   * locales (arreglo, o nada para todos), acumulable y obs.
    */
-  miRol: function () {
-    return token().then(function (t) {
-      return funcion('mi_rol', {}, t);
-    }).catch(function () { return null; });
+  crearCupon: function (pin, quien, pct, dias, opciones) {
+    var o = opciones || {};
+    return funcion('crear_cupon', {
+      p_pin: pin,
+      p_quien: quien,
+      p_pct: pct,
+      p_dias: dias || 30,
+      p_registro: o.registro || null,
+      p_telefono: o.telefono || null,
+      p_nombre: o.nombre || null,
+      p_compra_minima: o.compraMinima || null,
+      p_locales: o.locales && o.locales.length ? o.locales : null,
+      p_acumulable: !!o.acumulable,
+      p_obs: o.obs || null
+    });
   },
+
 
   /** El próximo número de tarjeta, para mostrarlo antes de vender. */
   siguienteSerie: function () {
@@ -593,32 +616,42 @@ var base = {
     });
   },
 
-  /** El listado, con su filtro. Pide sesión: un listado es un directorio. */
-  beneficios: function (estado) {
-    var cond = estado && estado !== 'todos' ? '&estado=eq.' + valor(estado) : '';
-    return token().then(function (t) {
-      return pedir('/v_beneficios?select=*&order=creado.desc&limit=200' + cond, { sesion: t });
+  /**
+   * El listado, con su filtro.
+   *
+   * Pide PIN y NO sesión. Y no sale de la tabla: sale de una función que
+   * verifica el PIN adentro. La diferencia importa —abrirle la vista a `anon`
+   * para que la pantalla pueda leerla habría puesto los datos al alcance de
+   * cualquiera con la clave publicable, que está en este mismo archivo, y el
+   * PIN de la pantalla no habría protegido nada.
+   */
+  beneficios: function (pin, estado) {
+    return funcion('beneficios_listar', {
+      p_pin: pin,
+      p_estado: estado && estado !== 'todos' ? estado : null
     });
   },
 
-  /** Cuántos hay en cada filtro, y cuánta plata hay comprometida. */
-  resumenBeneficios: function () {
-    return token().then(function (t) { return funcion('resumen_beneficios', {}, t); });
+  /** Cuántos hay en cada filtro, cuánta plata hay comprometida, y cómo viene
+      el programa de cupones. */
+  resumenBeneficios: function (pin) {
+    return funcion('resumen_beneficios', { p_pin: pin });
   },
 
   /** Anular: es la única acción que le saca algo a un cliente. */
-  anularBeneficio: function (id, quien, motivo) {
-    return token().then(function (t) {
-      return funcion('anular_beneficio', { p_id: id, p_quien: quien, p_motivo: motivo || null }, t);
+  anularBeneficio: function (pin, id, quien, motivo) {
+    return funcion('anular_beneficio', {
+      p_pin: pin, p_id: id, p_quien: quien, p_motivo: motivo || null
     });
   },
 
   /** Correr el vencimiento. Queda anotado en las observaciones. */
-  extenderBeneficio: function (id, dias, quien) {
-    return token().then(function (t) {
-      return funcion('extender_beneficio', { p_id: id, p_dias: dias, p_quien: quien }, t);
+  extenderBeneficio: function (pin, id, dias, quien) {
+    return funcion('extender_beneficio', {
+      p_pin: pin, p_id: id, p_dias: dias, p_quien: quien
     });
   },
+
 
   /* ── Lo del Panel ──────────────────────────────────────────────────────
      Todo lo de acá abajo exige haber entrado con el mail: es lo único que

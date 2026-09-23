@@ -242,6 +242,19 @@
     font-size: 13.5px; line-height: 1.5;
     color: var(--ok-txt);
   }
+  /* El PIN equivocado no es un aviso alegre. Y el texto lo escribe la base,
+     que es la que sabe cuántos intentos quedan y cuánto falta para que se
+     destrabe: acá sólo se pinta. */
+  .puerta-msg.puerta-mal { color: var(--warn-txt); }
+  .puerta-cambio { margin: 14px auto 0; }
+  /* El PIN se tipea a ojo y se equivoca: cifras grandes, separadas y de ancho
+     fijo, que es lo que hace que se vea cuántas van sin contarlas. */
+  #pinPuerta, #pinViejo, #pinNuevo {
+    letter-spacing: 6px;
+    font-size: 19px; font-weight: 700;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+  }
 
   /* Ya adentro: con qué mail, y cómo salir. El mail importa porque los
      cupones quedan firmados con esa cuenta. */
@@ -398,6 +411,15 @@
     </p>
 
     <div class="ficha-campos">
+      <!-- Quién lo crea. Desplegable y no campo libre: escrito a mano, la
+           misma persona termina siendo "Agus", "agus" y "Agustina", y la
+           estadística por persona deja de servir. Va PRIMERO porque es lo
+           único que no cambia entre un cupón y el siguiente: se elige una vez
+           y queda. -->
+      <div class="campo ancho"><label>¿Quién lo crea?</label>
+        <select id="cuQuien">
+          <option value="">Elegí…</option>
+        </select></div>
       <div class="campo"><label>Descuento</label>
         <select id="cuPct">
           <option value="10">10%</option>
@@ -467,38 +489,51 @@
 
   <!-- ── La puerta de Atención al Cliente ──
        Abajo de todo y en letra chica, a propósito. El mostrador —que es
-       quien más usa esta pantalla— no tiene que entrar a ningún lado: busca,
-       vende gift cards y canjea sin sesión. Poner un portón adelante sería
-       cobrarle a todos el precio de lo que usa una sola persona.
+       quien más usa esta pantalla— no entra a ningún lado: busca, vende gift
+       cards y canjea sin nada. Poner un portón adelante sería cobrarle a
+       todos el precio de lo que usa una sola persona.
 
-       Pero desde que acá se crean cupones hay algo que SÍ pide sesión, y
-       hasta ahora no había forma de conseguirla desde esta pantalla: había
-       que ir al Panel, entrar, y volver. Esto es esa forma, del tamaño que
-       le corresponde. -->
+       El PIN no está en este archivo ni en ninguno del repo, que es público:
+       viaja, y se compara contra un hash adentro de la base. -->
   <div class="puerta" id="puerta" hidden>
     <button type="button" class="puerta-abrir" id="btnPuerta" aria-expanded="false">
-      ¿Sos de Atención al Cliente? Entrá con tu mail
+      ¿Sos de Atención al Cliente? Entrá con el PIN
     </button>
 
     <div class="puerta-caja" id="puertaCaja" hidden>
       <p class="puerta-txt">
-        Te llega un enlace y entrás sin contraseña. Hace falta para ver el
-        listado y crear cupones; para buscar, vender y canjear, no.
+        Hace falta para ver el listado y crear cupones. Para buscar, vender y
+        canjear, no.
       </p>
       <div class="puerta-fila" id="puertaFila">
-        <input type="email" id="mailPuerta" inputmode="email" autocomplete="email"
-               placeholder="tu@mail.com">
-        <button type="button" class="btn btn-pri" id="btnEnlace">Mandame el enlace</button>
+        <input type="password" id="pinPuerta" inputmode="numeric" autocomplete="off"
+               maxlength="8" placeholder="PIN">
+        <button type="button" class="btn btn-pri" id="btnPin">Entrar</button>
       </div>
       <p class="puerta-msg" id="puertaMsg" hidden></p>
     </div>
   </div>
 
-  <!-- Y cuando ya entró: quién es y cómo salir. Saber con qué mail se entró
-       importa cuando los cupones quedan firmados con ese nombre. -->
+  <!-- Ya adentro. No dice el PIN, obviamente: dice que se entró y cómo salir.
+       Cambiarlo está acá y no en Configuración porque Configuración se abre
+       sin nada, y el PIN no puede estar detrás de una puerta abierta. -->
   <div class="puerta puerta-adentro" id="puertaAdentro" hidden>
-    <span>Entraste como <b id="puertaMail">—</b></span>
+    <span>Entraste con el PIN</span>
+    <button type="button" class="puerta-salir" id="btnCambiarPin">Cambiar el PIN</button>
     <button type="button" class="puerta-salir" id="btnSalirBen">Salir</button>
+  </div>
+
+  <div class="puerta-caja puerta-cambio" id="cajaCambio" hidden>
+    <p class="puerta-txt">El PIN nuevo tiene que ser de 4 a 8 dígitos.</p>
+    <div class="ficha-campos">
+      <div class="campo"><label>PIN actual</label>
+        <input type="password" id="pinViejo" inputmode="numeric" maxlength="8" autocomplete="off"></div>
+      <div class="campo"><label>PIN nuevo</label>
+        <input type="password" id="pinNuevo" inputmode="numeric" maxlength="8" autocomplete="off"></div>
+      <div class="campo ancho">
+        <button type="button" class="btn btn-pri btn-ancho" id="btnGuardarPin">Cambiar el PIN</button>
+      </div>
+    </div>
   </div>
 
 </main>
@@ -742,72 +777,132 @@
 
   /* ═══ La puerta ══════════════════════════════════════════════════════════
      El mostrador no entra a ningún lado. Esto es para Atención al Cliente,
-     que necesita sesión para el listado y para crear cupones, y hasta ahora
-     tenía que ir al Panel a buscarla y volver.
+     que necesita llave para el listado y para crear cupones.
 
-     El enlace vuelve a ESTA pantalla —`location.pathname`— así que quien
-     entra termina donde quería ir y no en el Panel.
+     El PIN vive en `sessionStorage` y no en `localStorage`: se olvida al
+     cerrar la pestaña. En una PC de mostrador compartida, una sesión que no
+     caduca nunca es peor que volver a tipear cuatro números.
+
+     **Esto no es el control de acceso.** La base verifica el PIN adentro de
+     cada función y cuenta los intentos fallidos; acá sólo se guarda para no
+     pedirlo en cada clic. Si alguien se saltea esta pantalla y le habla a la
+     base directo, se encuentra con lo mismo.
      ═══════════════════════════════════════════════════════════════════════ */
+
+  var K_PIN = 'nc_pin_beneficios';
+
+  function pinGuardado() {
+    try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; }
+  }
+  function guardarPin(v) {
+    try { if (v) sessionStorage.setItem(K_PIN, v); else sessionStorage.removeItem(K_PIN); } catch (e) {}
+  }
 
   function abrirPuerta() {
     var caja = $('puertaCaja');
-    var b = $('btnPuerta');
     caja.hidden = !caja.hidden;
-    b.setAttribute('aria-expanded', String(!caja.hidden));
-    if (!caja.hidden) $('mailPuerta').focus();
+    $('btnPuerta').setAttribute('aria-expanded', String(!caja.hidden));
+    if (!caja.hidden) $('pinPuerta').focus();
   }
 
-  function pedirEnlaceBen() {
-    var v = $('mailPuerta').value.trim();
-    if (!v || v.indexOf('@') < 1) { avisar('err', 'Escribí tu mail.'); $('mailPuerta').focus(); return; }
+  function entrarConPin() {
+    var v = $('pinPuerta').value.trim();
+    if (!v) { avisar('err', 'Escribí el PIN.'); $('pinPuerta').focus(); return; }
 
-    var b = $('btnEnlace');
-    b.disabled = true; b.textContent = 'Mandando…';
+    var b = $('btnPin');
+    b.disabled = true; b.textContent = 'Probando…';
 
-    /* Sin el # de una vuelta anterior pegado atrás: si el enlace viejo sigue
-       en la barra, el nuevo llega con dos tokens y no entra ninguno. */
-    sesion.pedirEnlace(v, location.origin + location.pathname)
-      .then(function () {
-        var m = $('puertaMsg');
-        m.textContent = 'Listo. Te mandamos un enlace a ' + v + '. Abrilo desde este mismo dispositivo.';
-        m.hidden = false;
-        $('puertaFila') && ($('puertaFila').hidden = true);
+    base.pin.probar(v)
+      .then(function (r) {
+        if (!r || !r.ok) {
+          /* El mensaje lo arma la base, no acá: es la que sabe cuántos
+             intentos quedan y cuánto falta para que se destrabe. */
+          var m = $('puertaMsg');
+          m.textContent = (r && r.porque) || 'PIN incorrecto.';
+          m.className = 'puerta-msg puerta-mal';
+          m.hidden = false;
+          $('pinPuerta').value = '';
+          $('pinPuerta').focus();
+          return;
+        }
+        guardarPin(v);
+        $('puertaMsg').hidden = true;
+        pintarPuerta();
       })
       .catch(function (err) {
-        avisar('err', (err && err.message) || 'No se pudo mandar el enlace.');
+        avisar('err', (err && err.message) || 'No se pudo probar el PIN.');
       })
-      .then(function () {
-        b.disabled = false; b.textContent = 'Mandame el enlace';
-      });
+      .then(function () { b.disabled = false; b.textContent = 'Entrar'; });
   }
 
   function salirBen() {
-    sesion.salir();
+    guardarPin('');
     /* Recargar y no esconder cajas a mano: media pantalla cambia de estado
        —el listado, los cupones, la puerta— y apagarlas de a una es cómo se
        llega a que quede una prendida. */
     location.reload();
   }
 
+  function abrirCambioPin() {
+    var c = $('cajaCambio');
+    c.hidden = !c.hidden;
+    if (!c.hidden) $('pinViejo').focus();
+  }
+
+  function guardarPinNuevo() {
+    var viejo = $('pinViejo').value.trim();
+    var nuevo = $('pinNuevo').value.trim();
+    if (!/^[0-9]{4,8}$/.test(nuevo)) { avisar('err', 'El PIN nuevo tiene que ser de 4 a 8 dígitos.'); return; }
+
+    var b = $('btnGuardarPin');
+    b.disabled = true; b.textContent = 'Cambiando…';
+
+    base.pin.definir(viejo, nuevo)
+      .then(function (r) {
+        if (!r || !r.cambiado) { avisar('err', (r && r.porque) || 'No se pudo cambiar.'); return; }
+        /* El PIN guardado es el viejo: si no se reemplaza, la próxima acción
+           falla y parece que el cambio no funcionó. */
+        guardarPin(nuevo);
+        $('pinViejo').value = ''; $('pinNuevo').value = '';
+        $('cajaCambio').hidden = true;
+        avisar('ok', 'PIN cambiado.');
+      })
+      .catch(function (err) {
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo cambiar el PIN.');
+      })
+      .then(function () { b.disabled = false; b.textContent = 'Cambiar el PIN'; });
+  }
+
   /**
    * Lo que cambia según se haya entrado o no.
    *
-   * Se llama una sola vez, DESPUÉS de recoger el enlace del mail: si se
-   * llamara antes, el que vuelve del correo vería la puerta cerrada durante
-   * un instante y se preguntaría si funcionó.
+   * Si todavía no hay ningún PIN definido, la puerta ni se ofrece: una
+   * puerta que no se puede abrir es peor que ninguna, porque el que la ve
+   * prueba y no entiende por qué no entra.
    */
   function pintarPuerta() {
-    var adentro = sesion.hay();
+    base.pin.situacion().then(function (s) {
+      /* El PIN se lee ACÁ ADENTRO y no antes de la llamada, y no es un
+         detalle de estilo. Si se lee antes, la respuesta de la primera carga
+         —que puede tardar— llega después de que alguien ya entró, y pinta la
+         pantalla con el estado viejo: vuelve a aparecer la puerta y se va el
+         formulario, como si el PIN no hubiera servido. Leerlo cuando la
+         respuesta vuelve hace que la última en llegar siempre tenga razón. */
+      var pin = pinGuardado();
+      var hay = !!(s && s.hay);
+      $('puerta').hidden = !hay || !!pin;
+      $('puertaAdentro').hidden = !pin;
 
-    $('puerta').hidden = adentro;
-    $('puertaAdentro').hidden = !adentro;
-
-    if (adentro) {
-      $('puertaMail').textContent = sesion.quien() || 'tu cuenta';
-      $('cajaLista').hidden = false;
-      cargarLista();
-      prepararCupones();
-    }
+      if (pin) {
+        $('cajaLista').hidden = false;
+        cargarLista();
+        prepararCupones();
+      }
+    }).catch(function () {
+      /* Si no se puede ni preguntar, se esconde: ofrecer una puerta que no
+         va a andar es peor que no ofrecer ninguna. */
+      $('puerta').hidden = true;
+    });
   }
 
   /* ═══ Crear un cupón ═════════════════════════════════════════════════════
@@ -824,10 +919,8 @@
   var cuponActual = null;
 
   function prepararCupones() {
-    base.miRol().then(function (rol) {
-      if (rol !== 'atencion' && rol !== 'admin') return;
-
-      $('cajaCupon').hidden = false;
+    $('cajaCupon').hidden = false;
+    {
       $('btnCrearCupon').onclick = crearCupon;
       $('btnCopiarCupon').onclick = copiarCupon;
 
@@ -843,7 +936,24 @@
           $('cuLocal').appendChild(o);
         });
       }).catch(function () {});
-    }).catch(function () { /* sin sesión no hay rol, y no hay nada que mostrar */ });
+
+      /* Y quién está creando. Desplegable y no campo libre: escrito a mano,
+         la misma persona termina siendo "Agus", "agus" y "Agustina", y la
+         estadística por persona —que es para lo que se guarda— deja de
+         servir. Si la lista está vacía queda el aviso, que es mejor que un
+         desplegable con una sola opción que no dice nada. */
+      base.atencion().then(function (gente) {
+        var sel = $('cuQuien');
+        (gente || []).forEach(function (g) {
+          var o = document.createElement('option');
+          o.value = g.nombre; o.textContent = g.nombre;
+          sel.appendChild(o);
+        });
+        if (!gente || !gente.length) {
+          sel.innerHTML = '<option value="">Todavía no hay nadie cargado</option>';
+        }
+      }).catch(function () {});
+    }
   }
 
   function crearCupon() {
@@ -855,7 +965,10 @@
     b.disabled = true;
     b.textContent = 'Creando…';
 
-    base.crearCupon(pct, dias, {
+    var quien = $('cuQuien').value;
+    if (!quien) { avisar('err', 'Elegí quién está creando el cupón.'); $('cuQuien').focus(); b.disabled = false; b.textContent = 'Crear el cupón'; return; }
+
+    base.crearCupon(pinGuardado(), quien, pct, dias, {
       telefono: $('cuTel').value.trim() || null,
       nombre: $('cuNombre').value.trim() || null,
       compraMinima: plata('cuMinima') || null,
@@ -935,7 +1048,7 @@
   var NOMBRES = { disponible: 'Activos', usado: 'Usados', vencido: 'Vencidos', anulado: 'Anulados' };
 
   function cargarLista() {
-    base.resumenBeneficios()
+    base.resumenBeneficios(pinGuardado())
       .then(function (r) {
         pintarFiltros(r || {});
         if (r && r.comprometido > 0) {
@@ -948,7 +1061,7 @@
       })
       .catch(function () {});
 
-    base.beneficios(filtro)
+    base.beneficios(pinGuardado(), filtro)
       .then(function (filas) { pintarLista(filas || []); })
       .catch(function (err) {
         if (err && err.sinSesion) { $('cajaLista').hidden = true; return; }
@@ -1015,13 +1128,13 @@
        si funciono. Y `recoger` puede fallar —un enlace de ayer, o abierto
        dos veces— y entonces se dice por que en vez de no pasar nada. */
     $('btnPuerta').onclick = abrirPuerta;
-    $('btnEnlace').onclick = pedirEnlaceBen;
-    $('mailPuerta').onkeydown = function (e) { if (e.key === 'Enter') pedirEnlaceBen(); };
+    $('btnPin').onclick = entrarConPin;
+    $('pinPuerta').onkeydown = function (e) { if (e.key === 'Enter') entrarConPin(); };
     $('btnSalirBen').onclick = salirBen;
+    $('btnCambiarPin').onclick = abrirCambioPin;
+    $('btnGuardarPin').onclick = guardarPinNuevo;
 
-    sesion.recoger()
-      .catch(function (e) { avisar('err', (e && e.message) || 'Ese enlace ya no sirve.'); })
-      .then(pintarPuerta);
+    pintarPuerta();
 
     iniciarPWA();
   })();

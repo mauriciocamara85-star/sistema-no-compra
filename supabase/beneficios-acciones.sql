@@ -35,6 +35,12 @@ drop function if exists beneficio_usar(text, text, text, numeric, text);
    baja. Dejarla viva sería dejar abierta justo la puerta que esto cierra. */
 drop function if exists canjear_beneficio(bigint, text, text, numeric, text);
 
+/* crear_cupon y resumen_beneficios tambien cambian de firma: ahora llevan el
+   PIN adelante. Dejar viva la version anterior seria dejar abierta la puerta
+   sin llave que esto reemplaza. */
+drop function if exists crear_cupon(smallint, integer, bigint, text, text, numeric, text[], boolean, text);
+drop function if exists resumen_beneficios();
+
 
 -- ════════════════════════════════════════════════════════════════════════
 -- ¿QUIÉN ESTÁ LLAMANDO?
@@ -285,10 +291,14 @@ revoke execute on function generar_codigo() from anon, authenticated, public;
 -- Es un descuento al portador: la única diferencia con `dar_descuento` es
 -- que no vale para un teléfono sino para el que tenga el código.
 --
--- **La regla de quién puede vive ACÁ, no en la pantalla.** Esconder el botón
--- no protege nada: la clave publicable está en un repo público y cualquiera
--- puede llamarle a PostgREST con su propio token. Esta línea es la que
--- decide; el botón sólo evita ofrecer lo que después iba a fallar.
+-- **La llave es el PIN, y se verifica ACÁ.** El PIN no está en ninguna parte
+-- del frontend —el repo es público— y no se compara en el navegador: viaja,
+-- se compara contra un hash bcrypt adentro de la base, y el intento fallido
+-- queda contado. Esconder el botón es cosmética; esta línea es la que decide.
+--
+-- `p_quien` no es una identidad verificada y no pretende serlo: es el mismo
+-- nivel de confianza que el vendedor de la Carga. Sirve para poder decir
+-- "Agustina creó 40 cupones y volvieron 12", que es para lo que se pidió.
 --
 -- Se puede crear desde un no-compra —y entonces queda atado a ese cliente,
 -- que es lo que después permite medir qué venta se recuperó— o suelto, para
@@ -297,6 +307,8 @@ revoke execute on function generar_codigo() from anon, authenticated, public;
 -- ════════════════════════════════════════════════════════════════════════
 
 create or replace function crear_cupon(
+  p_pin           text,
+  p_quien         text,
   p_pct           smallint,
   p_dias          integer default 30,
   p_registro      bigint  default null,
@@ -314,15 +326,23 @@ set search_path = public
 as $cc$
 declare
   r       registros%rowtype;
+  llave   jsonb;
   tel     text;
   nom     text;
+  quien   text;
   cod     text;
   nid     bigint;
   sueltos text[];
 begin
-  if not puede_crear_cupones() then
-    raise exception 'No tenés permiso para crear cupones.'
-      using hint = 'Hace falta el rol atencion o admin.';
+  llave := pin_ok(p_pin);
+  if not (llave->>'ok')::boolean then
+    return jsonb_build_object('creado', false, 'porque', llave->>'porque',
+                              'espera', llave->'espera', 'pin', true);
+  end if;
+
+  quien := nullif(trim(coalesce(p_quien, '')), '');
+  if quien is null then
+    raise exception 'Falta quién está creando el cupón.';
   end if;
 
   if p_pct is null or p_pct < 1 or p_pct > 100 then
@@ -387,11 +407,12 @@ begin
 
   insert into beneficios (
     tipo, registro, telefono, nombre, pct, codigo, vence,
-    compra_minima, locales, acumulable, creado_por, obs
+    compra_minima, locales, acumulable, creado_por, creado_por_nombre, obs
   ) values (
     'descuento', p_registro, tel, nom, p_pct, cod,
     ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
-    p_compra_minima, p_locales, coalesce(p_acumulable, false), auth.uid(), p_obs
+    p_compra_minima, p_locales, coalesce(p_acumulable, false),
+    auth.uid(), quien, p_obs
   )
   returning id into nid;
 
@@ -399,12 +420,10 @@ begin
 end;
 $cc$;
 
-/* Las dos cosas: el grant deja pasar a cualquiera que entró con su mail, y
-   el rol de adentro decide quién puede de verdad. */
-grant execute on function crear_cupon(smallint, integer, bigint, text, text, numeric, text[], boolean, text)
-  to authenticated;
-revoke execute on function crear_cupon(smallint, integer, bigint, text, text, numeric, text[], boolean, text)
-  from anon, public;
+/* Abierta a `anon`: Beneficios no tiene sesión, y la llave es el PIN, que se
+   verifica adentro. Sin PIN válido esto no escribe nada. */
+grant execute on function crear_cupon(text, text, smallint, integer, bigint, text, text, numeric, text[], boolean, text)
+  to anon, authenticated;
 
 
 
@@ -660,12 +679,25 @@ grant execute on function canjear_beneficio(bigint, text, text, text, numeric, t
 -- ════════════════════════════════════════════════════════════════════════
 -- ANULAR Y EXTENDER
 --
--- Anular pide sesión: es la única acción que le saca algo a un cliente.
--- Extender también, porque correr una fecha de vencimiento a mano desde el
--- mostrador es la forma de que ninguna venza nunca.
+-- Las dos pasan por el PIN. Anular es la única acción que le SACA algo a un
+-- cliente, y extender, dejada suelta en el mostrador, es la forma de que
+-- ninguna tarjeta venza nunca.
+--
+-- Antes pedían sesión. Ahora piden PIN, por lo mismo que el resto de
+-- Beneficios: el mostrador no tiene cuenta y pedirle que abra su mail para
+-- correr un vencimiento es fricción que no se paga. Lo que NO cambió es que
+-- sigan detrás de una llave.
+--
+-- El cuerpo es el mismo de antes, línea por línea: lo único que se agrega es
+-- el PIN adelante. Se bajan primero porque les cambia la firma, y Postgres
+-- no reemplaza una función si le cambian los argumentos —crearía una segunda
+-- con el mismo nombre, y quedaría viva la vieja, que es la que no pide nada—.
 -- ════════════════════════════════════════════════════════════════════════
 
-create or replace function anular_beneficio(p_id bigint, p_quien text, p_motivo text default null)
+drop function if exists anular_beneficio(bigint, text, text);
+drop function if exists extender_beneficio(bigint, integer, text);
+
+create or replace function anular_beneficio(p_pin text, p_id bigint, p_quien text, p_motivo text default null)
 returns boolean
 language plpgsql
 security definer
@@ -673,6 +705,9 @@ set search_path = public
 as $$
 declare tocadas integer;
 begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
   if length(trim(coalesce(p_quien, ''))) = 0 then raise exception 'Falta quién lo anula.'; end if;
   update beneficios
      set anulado = now(), anulado_por = trim(p_quien), motivo_anul = p_motivo
@@ -682,7 +717,7 @@ begin
 end;
 $$;
 
-create or replace function extender_beneficio(p_id bigint, p_dias integer, p_quien text)
+create or replace function extender_beneficio(p_pin text, p_id bigint, p_dias integer, p_quien text)
 returns date
 language plpgsql
 security definer
@@ -690,6 +725,9 @@ set search_path = public
 as $$
 declare nueva date;
 begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
   if coalesce(p_dias, 0) <= 0 then raise exception 'Cuántos días hay que extenderlo.'; end if;
   update beneficios
      set vence = coalesce(vence, (now() at time zone 'America/Argentina/Buenos_Aires')::date) + p_dias,
@@ -704,114 +742,139 @@ begin
 end;
 $$;
 
-grant execute on function anular_beneficio(bigint, text, text)   to authenticated;
-grant execute on function extender_beneficio(bigint, integer, text) to authenticated;
-revoke execute on function anular_beneficio(bigint, text, text)   from anon, public;
-revoke execute on function extender_beneficio(bigint, integer, text) from anon, public;
+grant execute on function anular_beneficio(text, bigint, text, text)      to anon, authenticated;
+grant execute on function extender_beneficio(text, bigint, integer, text) to anon, authenticated;
 
 
 -- ════════════════════════════════════════════════════════════════════════
 -- EL LISTADO
 --
--- Sólo con sesión. Un listado de beneficios con nombres y teléfonos abierto
--- en los 14 locales es exactamente la lista de clientes que este sistema
--- evita repartir; el mostrador se queda con el buscador, que devuelve uno.
+-- Antes se leía la vista directo con la sesión del panel. Desde que
+-- Beneficios entra con PIN, la tabla NO se abre: sale por acá, y sólo si el
+-- PIN es correcto.
+--
+-- Esa diferencia importa. Abrirle `v_beneficios` a `anon` para que la
+-- pantalla pueda leerla habría puesto la lista de clientes con sus teléfonos
+-- a disposición de cualquiera con la clave publicable —que está en un repo
+-- público—, y el PIN de la pantalla no habría protegido nada, porque se
+-- puede saltear pidiéndole los datos a PostgREST de otra forma.
 -- ════════════════════════════════════════════════════════════════════════
 
--- El de la vista está en beneficios.sql, pegado a su creación: el drop que
--- hay ahí se lleva los permisos, y separarlos los rompe en silencio.
-grant select on beneficios to authenticated;
-alter table beneficios enable row level security;
-
--- El drop es para poder volver a correr este archivo entero sin que explote.
-drop policy if exists "el equipo de adentro ve los beneficios" on beneficios;
-create policy "el equipo de adentro ve los beneficios"
-  on beneficios for select to authenticated using (true);
-
-/* Y los conteos de cada filtro, que el listado necesita antes de pedir nada:
-   así las pestañas muestran su número sin traerse las filas.
-
-   Desde que existe el cupón esto además contesta cómo viene el programa:
-   cuántos se dieron, cuántos volvieron y cuánto se vendió por eso. Son
-   cuentas sobre una tabla de miles de filas, no millones; cuando deje de
-   ser instantánea va a haber que pensarla de nuevo. */
-create or replace function resumen_beneficios()
-returns json
-language sql
-stable
+create or replace function beneficios_listar(p_pin text, p_estado text default null)
+returns setof v_beneficios
+language plpgsql
+/* VOLATILE, no stable, y no es un detalle: PostgREST corre las funciones
+   stable en una transaccion de SOLO LECTURA, y pin_ok necesita escribir para
+   contar el intento fallido. Declarada stable, esto falla con "cannot execute
+   SELECT FOR UPDATE in a read-only transaction" — y la alternativa, no contar
+   el fallo cuando se lista, convertiria al listado en un probador de PIN sin
+   freno. */
 security definer
 set search_path = public
 as $$
-  with b as (select * from v_beneficios),
-  cupones as (select * from b where codigo is not null)
-  select json_build_object(
-    'disponible', (select count(*) from b where estado = 'disponible'),
-    'usado',      (select count(*) from b where estado = 'usado'),
-    'vencido',    (select count(*) from b where estado = 'vencido'),
-    'anulado',    (select count(*) from b where estado = 'anulado'),
-    -- Plata comprometida: lo que el local le debe a quien tenga una tarjeta
-    -- sin canjear. Es el número que a nadie le gusta descubrir de golpe.
-    'comprometido', (select coalesce(sum(valor), 0) from b
-                      where tipo = 'giftcard' and estado = 'disponible'),
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
 
-    /* ── El programa de cupones ──
-       Se mide sobre los cupones al portador, no sobre todos los descuentos:
-       el descuento atado al teléfono es otra cosa —se da en el panel, uno
-       por cliente— y mezclarlos haría que la tasa de canje no signifique
-       nada. */
-    'cupones', json_build_object(
-      'creados',  (select count(*) from cupones),
-      'usados',   (select count(*) from cupones where estado = 'usado'),
-      'vencidos', (select count(*) from cupones where estado = 'vencido'),
-      'vivos',    (select count(*) from cupones where estado = 'disponible'),
-
-      /* Tasa de canje: sobre los que ya NO pueden cambiar de estado. Contra
-         el total, un cupón que se dio ayer cuenta como fracaso y la tasa
-         baja sola cada vez que se crea uno. */
-      'tasa', (select case when count(*) = 0 then null
-                     else round(100.0 * count(*) filter (where estado = 'usado') / count(*), 1)
-                     end
-                from cupones where estado in ('usado', 'vencido')),
-
-      -- Lo que se vendió gracias a un cupón, y lo que costó darlo.
-      'vendido',   (select coalesce(sum(monto_compra), 0) from cupones where estado = 'usado'),
-      'regalado',  (select coalesce(sum(round(monto_compra * pct / 100.0, 2)), 0)
-                      from cupones where estado = 'usado' and monto_compra is not null),
-
-      /* Cuánto tarda en volver el que se llevó un cupón. En días y con un
-         decimal: "3,4 días" dice algo, "3 días" esconde la diferencia entre
-         el que volvió a la tarde y el que volvió el jueves. */
-      'dias_hasta_canje', (select round(avg(extract(epoch from (usado - creado)) / 86400.0)::numeric, 1)
-                             from cupones where estado = 'usado'),
-
-      'por_local', (select coalesce(json_agg(x order by x->>'local'), '[]'::json) from (
-          select json_build_object('local', local_canje,
-                                   'usados', count(*),
-                                   'vendido', coalesce(sum(monto_compra), 0)) as x
-            from cupones where estado = 'usado' and local_canje is not null
-           group by local_canje) t),
-
-      'por_vendedor', (select coalesce(json_agg(x order by x->>'vendedor'), '[]'::json) from (
-          select json_build_object('vendedor', vendedor_canje,
-                                   'usados', count(*),
-                                   'vendido', coalesce(sum(monto_compra), 0)) as x
-            from cupones where estado = 'usado' and vendedor_canje is not null
-           group by vendedor_canje) t),
-
-      /* Por quién lo creó. Se muestra el mail y no el uuid, que no le dice
-         nada a nadie; sale de `usuarios` y no de auth.users para no depender
-         de un esquema que conviene tocar lo menos posible. */
-      'por_atencion', (select coalesce(json_agg(x order by x->>'quien'), '[]'::json) from (
-          select json_build_object('quien', coalesce(u.mail, 'sin identificar'),
-                                   'creados', count(*),
-                                   'usados', count(*) filter (where c.estado = 'usado'),
-                                   'vendido', coalesce(sum(c.monto_compra) filter (where c.estado = 'usado'), 0)) as x
-            from cupones c
-            left join usuarios u on u.uid = c.creado_por
-           group by coalesce(u.mail, 'sin identificar')) t)
-    )
-  )
+  return query
+    select * from v_beneficios
+     where p_estado is null or p_estado = 'todos' or estado = p_estado
+     order by creado desc
+     limit 200;
+end;
 $$;
 
-grant execute on function resumen_beneficios() to authenticated;
-revoke execute on function resumen_beneficios() from anon, public;
+grant execute on function beneficios_listar(text, text) to anon, authenticated;
+
+
+/* Los conteos de cada filtro, que el listado necesita antes de pedir nada:
+   así las pestañas muestran su número sin traerse las filas.
+
+   Desde que existe el cupón esto además contesta cómo viene el programa:
+   cuántos se dieron, cuántos volvieron y cuánto se vendió por eso. */
+create or replace function resumen_beneficios(p_pin text)
+returns json
+language plpgsql
+-- Volatile por lo mismo que beneficios_listar: pin_ok escribe.
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return (
+    with b as (select * from v_beneficios),
+    cupones as (select * from b where codigo is not null)
+    select json_build_object(
+      'disponible', (select count(*) from b where estado = 'disponible'),
+      'usado',      (select count(*) from b where estado = 'usado'),
+      'vencido',    (select count(*) from b where estado = 'vencido'),
+      'anulado',    (select count(*) from b where estado = 'anulado'),
+      -- Plata comprometida: lo que el local le debe a quien tenga una tarjeta
+      -- sin canjear. Es el número que a nadie le gusta descubrir de golpe.
+      'comprometido', (select coalesce(sum(valor), 0) from b
+                        where tipo = 'giftcard' and estado = 'disponible'),
+
+      /* ── El programa de cupones ──
+         Se mide sobre los cupones al portador, no sobre todos los descuentos:
+         el descuento atado al teléfono es otra cosa —se da en el panel, uno
+         por cliente— y mezclarlos haría que la tasa de canje no signifique
+         nada. */
+      'cupones', json_build_object(
+        'creados',  (select count(*) from cupones),
+        'usados',   (select count(*) from cupones where estado = 'usado'),
+        'vencidos', (select count(*) from cupones where estado = 'vencido'),
+        'vivos',    (select count(*) from cupones where estado = 'disponible'),
+
+        /* Tasa de canje: sobre los que ya NO pueden cambiar de estado. Contra
+           el total, un cupón que se dio ayer cuenta como fracaso y la tasa
+           baja sola cada vez que se crea uno. */
+        'tasa', (select case when count(*) = 0 then null
+                       else round(100.0 * count(*) filter (where estado = 'usado') / count(*), 1)
+                       end
+                  from cupones where estado in ('usado', 'vencido')),
+
+        'vendido',   (select coalesce(sum(monto_compra), 0) from cupones where estado = 'usado'),
+        'regalado',  (select coalesce(sum(round(monto_compra * pct / 100.0, 2)), 0)
+                        from cupones where estado = 'usado' and monto_compra is not null),
+
+        /* Cuánto tarda en volver el que se llevó un cupón. En días y con un
+           decimal: "3,4 días" dice algo, "3 días" esconde la diferencia entre
+           el que volvió a la tarde y el que volvió el jueves. */
+        'dias_hasta_canje', (select round(avg(extract(epoch from (usado - creado)) / 86400.0)::numeric, 1)
+                               from cupones where estado = 'usado'),
+
+        'por_local', (select coalesce(json_agg(x order by x->>'local'), '[]'::json) from (
+            select json_build_object('local', local_canje,
+                                     'usados', count(*),
+                                     'vendido', coalesce(sum(monto_compra), 0)) as x
+              from cupones where estado = 'usado' and local_canje is not null
+             group by local_canje) t),
+
+        'por_vendedor', (select coalesce(json_agg(x order by x->>'vendedor'), '[]'::json) from (
+            select json_build_object('vendedor', vendedor_canje,
+                                     'usados', count(*),
+                                     'vendido', coalesce(sum(monto_compra), 0)) as x
+              from cupones where estado = 'usado' and vendedor_canje is not null
+             group by vendedor_canje) t),
+
+        /* Por quién lo creó. Sale del nombre que se dijo al crearlo, no de
+           una cuenta: desde que se entra con PIN no hay cuenta de la cual
+           sacarlo. Sirve para medir, no para auditar. */
+        'por_atencion', (select coalesce(json_agg(x order by x->>'quien'), '[]'::json) from (
+            select json_build_object('quien', coalesce(creado_por_nombre, 'sin identificar'),
+                                     'creados', count(*),
+                                     'usados', count(*) filter (where estado = 'usado'),
+                                     'vendido', coalesce(sum(monto_compra) filter (where estado = 'usado'), 0)) as x
+              from cupones
+             group by coalesce(creado_por_nombre, 'sin identificar')) t)
+      )
+    )
+  );
+end;
+$$;
+
+grant execute on function resumen_beneficios(text) to anon, authenticated;

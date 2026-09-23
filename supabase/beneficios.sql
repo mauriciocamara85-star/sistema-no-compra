@@ -214,6 +214,14 @@ alter table beneficios
   -- el uid y no el mail: el mail se puede cambiar desde la cuenta.
   add column if not exists creado_por uuid references auth.users(id) on delete set null,
 
+  /* Y quién dijo ser. Desde que Beneficios entra con PIN y no con cuenta, el
+     uid de arriba viene vacío casi siempre: no hay sesión de la cual sacarlo.
+     Este campo es el que devuelve la estadística por persona de Atención al
+     Cliente, y es del mismo nivel de confianza que el `vendedor` de la
+     Carga: lo dice quien lo usa, nadie lo verifica. Sirve para medir, no
+     para auditar, y en esta app esa distinción ya estaba tomada. */
+  add column if not exists creado_por_nombre text,
+
   -- Condiciones que se muestran y se validan al canjear.
   add column if not exists compra_minima numeric(12,2) check (compra_minima > 0),
 
