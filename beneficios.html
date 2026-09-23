@@ -204,6 +204,61 @@
     gap: 8px; margin-top: 12px;
   }
 
+  /* ── La puerta ──
+     Discreta y abajo de todo. El que la necesita la busca; el mostrador, que
+     es la mayoría, no tiene que tropezarse con ella. Por eso no es un botón
+     lleno: es una línea subrayada, del tamaño de un pie de página. */
+  .puerta { margin-top: 26px; text-align: center; }
+  .puerta-abrir {
+    background: none; border: 0; padding: 6px 4px;
+    font: 500 13px/1.4 var(--sans);
+    color: var(--txt-3);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .puerta-abrir:hover { color: var(--txt-2); }
+
+  .puerta-caja {
+    max-width: 420px;
+    margin: 14px auto 0;
+    padding: 18px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--r);
+    text-align: left;
+    animation: aparecer .3s var(--curva) backwards;
+  }
+  .puerta-txt { font-size: 13.5px; color: var(--txt-2); line-height: 1.5; margin-bottom: 14px; }
+  .puerta-fila { display: flex; gap: 8px; }
+  .puerta-fila input { flex: 1; min-width: 0; }
+  .puerta-fila .btn { flex: none; min-height: 48px; padding: 0 16px; font-size: 14.5px; }
+  @media (max-width: 460px) {
+    .puerta-fila { flex-direction: column; }
+    .puerta-fila .btn { width: 100%; }
+  }
+  .puerta-msg {
+    margin-top: 12px;
+    font-size: 13.5px; line-height: 1.5;
+    color: var(--ok-txt);
+  }
+
+  /* Ya adentro: con qué mail, y cómo salir. El mail importa porque los
+     cupones quedan firmados con esa cuenta. */
+  .puerta-adentro {
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px; flex-wrap: wrap;
+    font-size: 13px; color: var(--txt-3);
+  }
+  .puerta-adentro b { color: var(--txt-2); font-weight: 600; }
+  .puerta-salir {
+    background: none; border: 0; padding: 4px;
+    font: 600 13px var(--sans); color: var(--txt-3);
+    text-decoration: underline; text-underline-offset: 3px;
+    cursor: pointer;
+  }
+  .puerta-salir:hover { color: var(--txt-2); }
+
 </style>
 </head>
 <body class="hay-rail">
@@ -409,6 +464,43 @@
   </section>
 
   <p class="pie">El descuento se lo da Atención al Cliente desde el <a href="panel.html">panel de seguimiento</a>. Acá se busca, se vende y se canjea.</p>
+
+  <!-- ── La puerta de Atención al Cliente ──
+       Abajo de todo y en letra chica, a propósito. El mostrador —que es
+       quien más usa esta pantalla— no tiene que entrar a ningún lado: busca,
+       vende gift cards y canjea sin sesión. Poner un portón adelante sería
+       cobrarle a todos el precio de lo que usa una sola persona.
+
+       Pero desde que acá se crean cupones hay algo que SÍ pide sesión, y
+       hasta ahora no había forma de conseguirla desde esta pantalla: había
+       que ir al Panel, entrar, y volver. Esto es esa forma, del tamaño que
+       le corresponde. -->
+  <div class="puerta" id="puerta" hidden>
+    <button type="button" class="puerta-abrir" id="btnPuerta" aria-expanded="false">
+      ¿Sos de Atención al Cliente? Entrá con tu mail
+    </button>
+
+    <div class="puerta-caja" id="puertaCaja" hidden>
+      <p class="puerta-txt">
+        Te llega un enlace y entrás sin contraseña. Hace falta para ver el
+        listado y crear cupones; para buscar, vender y canjear, no.
+      </p>
+      <div class="puerta-fila" id="puertaFila">
+        <input type="email" id="mailPuerta" inputmode="email" autocomplete="email"
+               placeholder="tu@mail.com">
+        <button type="button" class="btn btn-pri" id="btnEnlace">Mandame el enlace</button>
+      </div>
+      <p class="puerta-msg" id="puertaMsg" hidden></p>
+    </div>
+  </div>
+
+  <!-- Y cuando ya entró: quién es y cómo salir. Saber con qué mail se entró
+       importa cuando los cupones quedan firmados con ese nombre. -->
+  <div class="puerta puerta-adentro" id="puertaAdentro" hidden>
+    <span>Entraste como <b id="puertaMail">—</b></span>
+    <button type="button" class="puerta-salir" id="btnSalirBen">Salir</button>
+  </div>
+
 </main>
 
 </div><!-- /.marco -->
@@ -648,6 +740,76 @@
       });
   }
 
+  /* ═══ La puerta ══════════════════════════════════════════════════════════
+     El mostrador no entra a ningún lado. Esto es para Atención al Cliente,
+     que necesita sesión para el listado y para crear cupones, y hasta ahora
+     tenía que ir al Panel a buscarla y volver.
+
+     El enlace vuelve a ESTA pantalla —`location.pathname`— así que quien
+     entra termina donde quería ir y no en el Panel.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  function abrirPuerta() {
+    var caja = $('puertaCaja');
+    var b = $('btnPuerta');
+    caja.hidden = !caja.hidden;
+    b.setAttribute('aria-expanded', String(!caja.hidden));
+    if (!caja.hidden) $('mailPuerta').focus();
+  }
+
+  function pedirEnlaceBen() {
+    var v = $('mailPuerta').value.trim();
+    if (!v || v.indexOf('@') < 1) { avisar('err', 'Escribí tu mail.'); $('mailPuerta').focus(); return; }
+
+    var b = $('btnEnlace');
+    b.disabled = true; b.textContent = 'Mandando…';
+
+    /* Sin el # de una vuelta anterior pegado atrás: si el enlace viejo sigue
+       en la barra, el nuevo llega con dos tokens y no entra ninguno. */
+    sesion.pedirEnlace(v, location.origin + location.pathname)
+      .then(function () {
+        var m = $('puertaMsg');
+        m.textContent = 'Listo. Te mandamos un enlace a ' + v + '. Abrilo desde este mismo dispositivo.';
+        m.hidden = false;
+        $('puertaFila') && ($('puertaFila').hidden = true);
+      })
+      .catch(function (err) {
+        avisar('err', (err && err.message) || 'No se pudo mandar el enlace.');
+      })
+      .then(function () {
+        b.disabled = false; b.textContent = 'Mandame el enlace';
+      });
+  }
+
+  function salirBen() {
+    sesion.salir();
+    /* Recargar y no esconder cajas a mano: media pantalla cambia de estado
+       —el listado, los cupones, la puerta— y apagarlas de a una es cómo se
+       llega a que quede una prendida. */
+    location.reload();
+  }
+
+  /**
+   * Lo que cambia según se haya entrado o no.
+   *
+   * Se llama una sola vez, DESPUÉS de recoger el enlace del mail: si se
+   * llamara antes, el que vuelve del correo vería la puerta cerrada durante
+   * un instante y se preguntaría si funcionó.
+   */
+  function pintarPuerta() {
+    var adentro = sesion.hay();
+
+    $('puerta').hidden = adentro;
+    $('puertaAdentro').hidden = !adentro;
+
+    if (adentro) {
+      $('puertaMail').textContent = sesion.quien() || 'tu cuenta';
+      $('cajaLista').hidden = false;
+      cargarLista();
+      prepararCupones();
+    }
+  }
+
   /* ═══ Crear un cupón ═════════════════════════════════════════════════════
      Es un descuento al portador: vale para el que tenga el código, no para
      un teléfono. Sólo lo ve Atención al Cliente.
@@ -846,15 +1008,20 @@
       $('clave').focus();
     }
 
-    /* El listado aparece sólo si hay sesión. No se pide entrar: el que viene
-       a canjear no necesita el listado, y ponerle un portón delante sería
-       cobrarle a todos el precio de lo que usa uno. */
-    if (sesion.hay()) {
-      $('cajaLista').hidden = false;
-      cargarLista();
-    }
+    /* La puerta, y lo que aparece del otro lado.
 
-    prepararCupones();
+       Se pinta DESPUES de recoger el enlace del mail: si se pintara antes, el
+       que vuelve del correo veria la puerta cerrada un instante y no sabria
+       si funciono. Y `recoger` puede fallar —un enlace de ayer, o abierto
+       dos veces— y entonces se dice por que en vez de no pasar nada. */
+    $('btnPuerta').onclick = abrirPuerta;
+    $('btnEnlace').onclick = pedirEnlaceBen;
+    $('mailPuerta').onkeydown = function (e) { if (e.key === 'Enter') pedirEnlaceBen(); };
+    $('btnSalirBen').onclick = salirBen;
+
+    sesion.recoger()
+      .catch(function (e) { avisar('err', (e && e.message) || 'Ese enlace ya no sirve.'); })
+      .then(pintarPuerta);
 
     iniciarPWA();
   })();
