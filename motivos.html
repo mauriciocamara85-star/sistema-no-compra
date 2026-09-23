@@ -277,6 +277,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="comun.js"></script>
+<script src="datos.js"></script>
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
@@ -342,8 +343,8 @@
       partes.push('Cuentan los registros desde el ' + fechaLinda(datos.arranque) + '.');
     }
 
-    // Los sin motivo son los de la etapa vieja y los que alguien cargó a mano
-    // en la planilla sin pasar por el formulario.
+    // Un registro sin motivo es uno que se cargó apurado: el motivo es el
+    // único campo del formulario que se puede saltear.
     var sin = (datos && datos.sinMotivo) || 0;
     if (sin) {
       partes.push(sin === 1
@@ -447,7 +448,7 @@
 
   /* ═══ Carga ═════════════════════════════════════════════════════════════ */
   function cargar() {
-    return llamar({ accion: 'motivos', local: localSel, motivo: motivoSel })
+    return base.motivos(localSel, motivoSel)
       .then(function (res) {
         if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo leer.'); return; }
         datos = res;

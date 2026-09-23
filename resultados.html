@@ -221,7 +221,7 @@
     <div id="porLocal"></div>
   </div>
 
-  <p class="pie">Sale de la planilla: lo que cargan los vendedores y lo que completa Atención al Cliente. <a href="panel.html">Panel de seguimiento</a></p>
+  <p class="pie">Sale de dos manos: lo que cargan los vendedores y lo que completa Atención al Cliente. <a href="panel.html">Panel de seguimiento</a></p>
 </main>
 
 </div><!-- /.marco -->
@@ -229,6 +229,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="comun.js"></script>
+<script src="datos.js"></script>
 <script>
   var $ = function (id) { return document.getElementById(id); };
   var localSel = '', datos = null;
@@ -380,7 +381,7 @@
   }
 
   function cargar() {
-    return llamar({ accion: 'resultados', local: localSel })
+    return base.resultados(localSel)
       .then(function (res) {
         if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo leer.'); return; }
         datos = res;

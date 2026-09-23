@@ -14,7 +14,7 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v20';
+const CACHE = 'no-compra-v21';
 
 const BASICOS = [
   './',
@@ -25,6 +25,10 @@ const BASICOS = [
   './config.html',
   './estilos.css',
   './comun.js',
+  // Sin esto, la PRIMERA apertura sin señal no encuentra el puente con la
+  // base y la pantalla queda sin datos. Las siguientes sí, porque el fetch
+  // de abajo guarda todo lo que sale bien.
+  './datos.js',
   './manifest.json',
   './icon-192.png',
   './icon-512.png'
@@ -52,9 +56,10 @@ self.addEventListener('activate', (evento) => {
 self.addEventListener('fetch', (evento) => {
   const pedido = evento.request;
 
-  // Sólo GET del propio sitio. Los POST al backend de Apps Script no pasan por
-  // acá a propósito: si se cachearan, un registro podría "guardarse" contra el
-  // caché y no llegar nunca a la planilla.
+  // Sólo GET del propio sitio. Los POST a la base no pasan por acá —son de
+  // otro origen y además no son GET—, y está bien que así sea: si se
+  // cachearan, un registro podría "guardarse" contra el caché y no llegar
+  // nunca.
   if (pedido.method !== 'GET') return;
   if (new URL(pedido.url).origin !== self.location.origin) return;
 

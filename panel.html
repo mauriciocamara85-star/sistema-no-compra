@@ -75,11 +75,18 @@
   .porton p { font-size: 14.5px; color: var(--txt-2); margin: 10px 0 24px; }
   .porton input {
     text-align: center;
-    font-size: 26px; font-weight: 700;
-    letter-spacing: 12px; text-indent: 12px;
-    padding: 16px 14px;
+    font-size: 17px; font-weight: 600;
+    padding: 15px 14px;
   }
   .porton .btn { margin-top: 12px; }
+  /* El "fijate en el mail" después de pedirlo. En verde y no en gris: es
+     una confirmación de que algo pasó, no una aclaración al pie. */
+  .porton-msg {
+    margin-top: 18px !important;
+    color: var(--ok-txt) !important;
+    font-size: 14px !important;
+    line-height: 1.45;
+  }
 
   /* El tablero de números (.kpis / .kpi) se mudó a estilos.css: ahora lo
      muestran esta pantalla y el formulario, y tener dos copias era garantía
@@ -195,6 +202,28 @@
     font-size: 13.5px; color: var(--txt-2);
   }
   .reg-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  /* El descuento ya dado no es un botón: es un hecho. Va con la insignia
+     .pill-ok que ya usa el estado de la ficha, para que se lea como un dato y
+     no como algo para tocar. Lo único propio es el centrado, porque acá vive
+     en una fila de botones que son más altos que ella. */
+  .reg-acciones .pill { align-self: center; }
+
+  /* ── Modo consulta ─────────────────────────────────────────────────────
+     Lo que se maneja en Kommo no se ve hasta que alguien prende la
+     edición. No se deshabilita: se ESCONDE. Un campo gris apagado invita a
+     preguntar por qué no se puede, y la respuesta —"andá a Kommo"— es más
+     clara si el campo directamente no está. */
+  .reg-seg { display: none; }
+  body.editando .reg-seg { display: block; }
+
+  /* Prendido, el botón se nota: es un estado en el que no hay que quedarse. */
+  #btnEditar[aria-pressed="true"] {
+    background: var(--warn-soft);
+    border-color: var(--warn);
+    color: var(--warn-txt);
+  }
+  .aviso-editando { border-left-color: var(--warn); }
+  .aviso-editando b { color: var(--warn-txt); }
 
   .reg-seg { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 13px; }
   .seg-lbl { font-size: 12.5px; font-weight: 700; color: var(--txt-2); margin-bottom: 9px; }
@@ -212,6 +241,9 @@
   .seg-campos .campo.ancho { grid-column: 1 / -1; }
   @media (max-width: 520px) { .seg-campos { grid-template-columns: 1fr; } }
   .seg-campos textarea { min-height: 62px; }
+  /* Los dos de la venta van juntos y arriba de las notas, que es el orden
+     en que se completan: qué se llevó, por cuánto, y después el comentario. */
+  .seg-campos .campo.venta input { width: 100%; }
 
   /* ── En la PC de Atención al Cliente ───────────────────────────────────
      Las fichas pasan a dos columnas. Trabajando en una pantalla ancha, ver
@@ -258,6 +290,16 @@
       <button class="btn-icono" id="btnSalir" onclick="salir()" title="Salir" aria-label="Salir" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
       </button>
+      <!-- El modo edición.
+
+           Arranca APAGADO siempre y no se recuerda a propósito: si quedara
+           guardado dejaría de ser la excepción que es. El que lo necesita
+           lo prende, hace lo suyo, y mañana vuelve a estar apagado. -->
+      <button class="btn-icono" id="btnEditar" onclick="alternarEdicion()"
+              title="Editar (sólo si Kommo no está disponible)"
+              aria-label="Modo edición" aria-pressed="false" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+      </button>
       <!-- El cambio de tema se mudó a Configuración: se toca una vez y
            estaba ocupando la esquina de las tres cabeceras. -->
     </div>
@@ -267,13 +309,14 @@
 <!-- ── Portón ── -->
 <div class="porton" id="porton">
   <div class="porton-icono">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg>
   </div>
   <h2>Panel de seguimiento</h2>
-  <p>Acá están los teléfonos y mails de los clientes. Ingresá el PIN de Atención al Cliente.</p>
-  <input type="password" id="pin" inputmode="numeric" placeholder="••••" maxlength="12"
-         autocomplete="off" onkeydown="if(event.key==='Enter') entrar()">
-  <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Entrar</button>
+  <p>Acá están los teléfonos y mails de los clientes. Poné tu mail y te llega un enlace para entrar.</p>
+  <input type="email" id="mail" inputmode="email" placeholder="tu@mail.com"
+         autocomplete="email" onkeydown="if(event.key==='Enter') entrar()">
+  <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Mandame el enlace</button>
+  <p class="porton-msg" id="portonMsg" hidden></p>
   <p class="pie" style="margin-top:22px">
     ¿Venías a cargar un cliente? <a href="index.html">Andá al formulario</a>
   </p>
@@ -323,6 +366,16 @@
 
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
+
+  <!-- Se ve sólo con la edición prendida, y no se puede cerrar: mientras
+       esté prendida, el que edita tiene que estar viendo por qué no
+       debería. -->
+  <div class="aviso aviso-editando" id="avisoEditar" hidden>
+    <b>Estás editando desde acá.</b>
+    El seguimiento se maneja en Kommo. Lo que cambies se va a mandar al CRM,
+    pero si alguien lo está tocando allá al mismo tiempo, gana el último.
+    Usalo sólo si Kommo no está disponible.
+  </div>
   <div class="kpis" id="kpis"></div>
 
   <div class="controles">
@@ -348,61 +401,136 @@
 <div class="toast" id="toast"></div>
 
 <script src="comun.js"></script>
+<script src="datos.js"></script>
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
-  var pin = '', filtro = 'Pendiente', quien = '', VOCAB = null;
+  var filtro = 'Pendiente', quien = '', VOCAB = null;
   var registros = [], abiertos = {};
 
-  var K_PIN = 'nc_pin', K_QUIEN = 'nc_quien';
+  /* El PIN se guardaba acá. Ya no hay nada que guardar: la sesión la
+     maneja datos.js y lo que queda en el aparato es un token que vence
+     solo, no una clave que sirve para siempre. */
+  var K_QUIEN = 'nc_quien';
+
+  /* Cuánto se le ofrece al cliente cuando el producto no aparece. Un solo
+     número acá y no un campo por ficha: si cada uno elige cuánto dar, en
+     dos semanas hay clientes con 15, con 20 y con 35, y nadie puede decir
+     qué descuento da la marca. Para cambiarlo se cambia este número. */
+  var DESCUENTO = 20;
+
+  /* Dónde vive el CRM. No es un secreto —es la dirección a la que entra
+     Atención al Cliente todos los días— y va acá y no en la base porque la
+     necesita el navegador para armar un enlace, no el servidor. */
+  var KOMMO = 'https://marketingvdh.kommo.com';
 
   /* ═══ Ingreso ═══════════════════════════════════════════════════════════ */
+  /**
+   * Pide el enlace. No abre nada: el que abre es el mail.
+   *
+   * El botón queda apagado después de mandarlo. Volver a tocarlo no sirve
+   * —el servidor no manda dos seguidos— y el segundo enlace invalida el
+   * primero, así que el que ya lo tuviera abierto se quedaría afuera.
+   */
   function entrar() {
-    var v = $('pin').value.trim();
-    if (!v) { avisar('err', 'Ingresá el PIN.'); return; }
+    var v = $('mail').value.trim();
+    if (!v || v.indexOf('@') < 1) { avisar('err', 'Escribí tu mail.'); return; }
 
     var btn = $('btnEntrar');
-    btn.disabled = true; btn.textContent = 'Verificando…';
+    btn.disabled = true; btn.textContent = 'Mandando…';
 
-    llamar({ accion: 'resumen', pin: v })
-      .then(function (res) {
-        btn.disabled = false; btn.textContent = 'Entrar';
-        if (res.status !== 'ok') { avisar('err', res.msg); return; }
-
-        pin = v; VOCAB = res.vocab;
-        guardar(K_PIN, v);
-
-        quien = leer(K_QUIEN);
-
-        $('porton').hidden = true;
-        $('marco').hidden = false;
-        // El rail recién existe acá adentro, así que el hueco que le reserva
-        // el contenido también: con el portón cerrado la pantalla es una sola
-        // caja centrada y un margen izquierdo la dejaría corrida.
-        document.body.classList.add('hay-rail');
-        $('btnRefrescar').hidden = false;
-        $('btnSalir').hidden = false;
-        $('whoami').value = quien;
-
-        pintarKpis(res);
-        pintarCrm(res);
-        pintarFiltros(res.conteo);
-        cargar();
+    /* El enlace tiene que traer de vuelta a ESTA pantalla, sin el # de una
+       vuelta anterior pegado atrás. */
+    sesion.pedirEnlace(v, location.origin + location.pathname)
+      .then(function () {
+        btn.textContent = 'Enlace mandado';
+        $('portonMsg').hidden = false;
+        $('portonMsg').textContent =
+          'Listo. Fijate en ' + v + ': te llegó un enlace para entrar. Dura una hora y se usa una sola vez.';
       })
-      .catch(function () {
-        btn.disabled = false; btn.textContent = 'Entrar';
-        avisar('err', 'Error de conexión.');
+      .catch(function (err) {
+        btn.disabled = false; btn.textContent = 'Mandame el enlace';
+        avisar('err', err.message || 'No se pudo mandar el enlace.');
       });
   }
 
+  /** Abre el panel. Ya hay sesión cuando esto corre. */
+  function abrir(res) {
+    VOCAB = res.vocab;
+    quien = leer(K_QUIEN);
+
+    $('porton').hidden = true;
+    $('marco').hidden = false;
+    // El rail recién existe acá adentro, así que el hueco que le reserva
+    // el contenido también: con el portón cerrado la pantalla es una sola
+    // caja centrada y un margen izquierdo la dejaría corrida.
+    document.body.classList.add('hay-rail');
+    $('btnRefrescar').hidden = false;
+    $('btnSalir').hidden = false;
+    $('btnEditar').hidden = false;
+    $('whoami').value = quien;
+
+    pintarKpis(res);
+    pintarCrm(res);
+    pintarFiltros(res.conteo);
+    cargar();
+  }
+
+  /**
+   * La sesión se cayó en medio de algo.
+   *
+   * Vuelve al portón, pero avisando por qué: sin el cartel, el que estaba
+   * escribiendo una nota ve la pantalla de entrada y cree que se rompió.
+   */
+  function caducada() {
+    salir();
+    avisar('err', 'Se cerró la sesión. Pedí un enlace nuevo.');
+  }
+
   function salir() {
-    pin = ''; guardar(K_PIN, '');
-    $('pin').value = '';
+    sesion.salir();
     $('marco').hidden = true;
     document.body.classList.remove('hay-rail');
     $('btnRefrescar').hidden = true;
     $('btnSalir').hidden = true;
+    $('btnEditar').hidden = true;
+    // Que nunca quede prendido para el próximo que entre.
+    if (editando) alternarEdicion();
     $('porton').hidden = false;
+    $('portonMsg').hidden = true;
+    var btn = $('btnEntrar');
+    btn.disabled = false; btn.textContent = 'Mandame el enlace';
+  }
+
+  /* ═══ Consulta o edición ════════════════════════════════════════════════
+     El seguimiento —estado, primer contacto, cierre, monto— se maneja en
+     Kommo, que es la fuente de verdad. Esta pantalla es para MIRAR qué está
+     pasando: quién está esperando, hace cuánto, y escribirle.
+
+     La edición existe igual, porque si Kommo se cae alguien tiene que poder
+     trabajar. Pero está apagada de entrada y no se recuerda: si quedara
+     guardada volvería a ser el modo normal en dos días, y tendríamos dos
+     lugares donde se cambia lo mismo.
+
+     Lo que se edite acá SÍ vuelve a Kommo: lo empuja la base sola, por la
+     bandeja de salida. Ver sincronia.sql. */
+  var editando = false;
+
+  function alternarEdicion() {
+    editando = !editando;
+    document.body.classList.toggle('editando', editando);
+    $('btnEditar').setAttribute('aria-pressed', String(editando));
+    $('avisoEditar').hidden = !editando;
+
+    /* El nombre se pide recién al guardar, no al prender: el que prende
+       para mirar un campo y lo apaga sin tocar nada no tiene que contestar
+       nada. Ver exigirQuien(). */
+    if (!editando) {
+      // Las fichas abiertas se cierran: si no, al volver a prender estarían
+      // todas desplegadas sin que nadie las haya abierto.
+      abiertos = {};
+      pintar();
+    }
   }
 
   /* ═══ Tablero ═══════════════════════════════════════════════════════════
@@ -487,22 +615,22 @@
     $('btnRefrescar').classList.add('girando');
     $('lista').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
 
-    llamar({ accion: 'registros', pin: pin, filtro: filtro })
-      .then(function (res) {
+    base.registros(filtro)
+      .then(function (filas) {
         $('btnRefrescar').classList.remove('girando');
-        if (res.status !== 'ok') { avisar('err', res.msg); return; }
-        registros = res.registros || [];
+        registros = filas || [];
         llenarLocales();
         pintar();
       })
-      .catch(function () {
+      .catch(function (err) {
         $('btnRefrescar').classList.remove('girando');
         $('lista').innerHTML = '';
+        if (err && err.sinSesion) { caducada(); return; }
         avisar('err', 'Error de conexión.');
       });
 
-    llamar({ accion: 'resumen', pin: pin })
-      .then(function (res) { if (res.status === 'ok') { pintarKpis(res); pintarCrm(res); pintarFiltros(res.conteo); } })
+    base.panel()
+      .then(function (res) { pintarKpis(res); pintarCrm(res); pintarFiltros(res.conteo); })
       .catch(function () {});
   }
 
@@ -550,6 +678,16 @@
     var que = r.producto
       ? 'Pasaste por el local buscando ' + r.producto.toLowerCase().trim() + ' y no lo pudimos resolver en el momento.'
       : 'Pasaste por el local y no encontraste lo que buscabas.';
+
+    /* Con el descuento dado, el mensaje cambia de pregunta a oferta. Y dice
+       CÓMO se usa —dando el teléfono en la caja— porque es lo primero que
+       el cliente va a preguntar, y si no lo dice acá lo pregunta por
+       WhatsApp y alguien tiene que contestarle. */
+    if (r.beneficioPct) {
+      return hola + 'Te escribo' + donde + '. ' + que +
+        ' Te dejamos un ' + r.beneficioPct + '% de descuento para tu próxima compra en cualquiera de ' +
+        'nuestros locales: decí tu teléfono en la caja y te lo aplican. ¿Te paso fotos de lo que entró?';
+    }
     return hola + 'Te escribo' + donde + '. ' + que + ' Tengo novedades para mostrarte, ¿te paso fotos?';
   }
 
@@ -574,7 +712,8 @@
       var pendiente = !r.estado && String(r.contactamos).toLowerCase() !== 'si';
       var urgente = pendiente && r.dias !== null && r.dias >= 3;
       var cerrado = r.estado && r.estado.indexOf('Cerrado') === 0;
-      var abierto = !!abiertos[r.fila];
+      var abierto = !!abiertos[r.id];
+      var vendio = String(r.compro || '').indexOf('Sí') === 0;
 
       var clase = 'reg' + (urgente ? ' urgente' : (pendiente ? ' es-pend' : '')) + (cerrado ? ' es-cerrado' : '');
 
@@ -586,10 +725,10 @@
 
       var rapidos = VOCAB.RESULTADO_1.map(function (o) {
         return '<button type="button" class="chip' + (o === r.resultado1 ? ' sel' : '') +
-               '" data-fila="' + r.fila + '" data-res="' + esc(o) + '">' + esc(o) + '</button>';
+               '" data-id="' + r.id + '" data-res="' + esc(o) + '">' + esc(o) + '</button>';
       }).join('');
 
-      return '<article class="' + clase + '" data-fila="' + r.fila + '" style="animation-delay:' + Math.min(i * 30, 300) + 'ms">' +
+      return '<article class="' + clase + '" data-id="' + r.id + '" style="animation-delay:' + Math.min(i * 30, 300) + 'ms">' +
         '<div class="reg-top">' +
           '<span class="pill pill-neutra">' + esc(bonito(r.sucursal) || 'Sin local') + '</span>' +
           estadoPill +
@@ -619,13 +758,32 @@
             'WhatsApp</a>' +
           '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' + esc(linkWsp(r.whatsapp, '')) + '">Chat en blanco</a>' +
           (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
+
+          /* El seguimiento se trabaja en Kommo. Este enlace es lo que hace
+             que esta pantalla pueda ser sólo de consulta sin dejar a nadie
+             a pie: se ve quién está esperando, y de un toque se está
+             adentro de su ficha en el CRM. */
+          (r.lead ? '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' +
+              KOMMO + '/leads/detail/' + esc(r.lead) + '">Abrir en Kommo</a>' : '') +
+
+          /* Cuando el producto no aparece, esto es lo único que queda para
+             que el cliente igual se lleve algo. Antes era un cupón: una
+             imagen hecha a mano con un número de serie, anotado en una
+             planilla aparte para que no se usara dos veces. Acá el cliente
+             YA ES el cupón —está cargado con su teléfono—, así que dárselo
+             es un toque y usarlo es decir su número en la caja. */
+          (r.beneficioPct
+            ? '<span class="pill pill-ok">' + r.beneficioPct + '% dado' +
+                (r.beneficioUsado ? ' · usado' : '') + '</span>'
+            : '<button type="button" class="btn btn-sec btn-chico ben-btn" data-id="' + r.id + '">' +
+                'Dar ' + DESCUENTO + '%</button>') +
         '</div>' +
 
         '<div class="reg-seg">' +
           '<div class="seg-lbl">¿Cómo salió el primer contacto?</div>' +
           '<div class="seg-rapidos">' + rapidos + '</div>' +
           '<div class="seg-mas">' +
-            '<button type="button" class="seg-toggle" data-fila="' + r.fila + '" aria-expanded="' + abierto + '">' +
+            '<button type="button" class="seg-toggle" data-id="' + r.id + '" aria-expanded="' + abierto + '">' +
               'Estado, compra y notas ' +
               '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' +
             '</button>' +
@@ -634,6 +792,15 @@
                 '<select data-c="estado">' + opciones(VOCAB.ESTADO, r.estado) + '</select></div>' +
               '<div class="campo"><label>¿Compró?</label>' +
                 '<select data-c="compro">' + opciones(VOCAB.COMPRO, r.compro) + '</select></div>' +
+
+              /* Aparecen recién cuando compró. Un "Monto" siempre visible
+                 se lee como un campo más para llenar, y la base además lo
+                 rechaza si no hay venta: mostrarlo sería ofrecer un error. */
+              '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Qué se llevó</label>' +
+                '<input type="text" data-c="productoFinal" placeholder="El producto que terminó comprando" value="' + esc(r.productoFinal) + '"></div>' +
+              '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Monto de la venta</label>' +
+                '<input type="text" inputmode="numeric" data-c="monto" placeholder="$" value="' + esc(r.monto) + '"></div>' +
+
               '<div class="campo ancho"><label>Notas del seguimiento</label>' +
                 '<textarea data-c="obsSeguim" placeholder="Qué dijo, qué quedó pendiente…">' + esc(r.obsSeguim) + '</textarea></div>' +
             '</div>' +
@@ -651,12 +818,41 @@
     // responsable y resultado, que es lo que antes se cargaba a mano.
     Array.prototype.forEach.call(document.querySelectorAll('.seg-rapidos .chip'), function (b) {
       b.onclick = function () {
-        guardarSeguim(+b.dataset.fila, {
+        guardarSeguim(+b.dataset.id, {
           contactamos: 'si',
           responsable: quien,
-          fecha1: hoyDDMM(),
+          /* La fecha la pone la base con el día de hoy; acá sólo se dice
+             QUE hubo contacto. Antes se mandaba un "23/04" armado en el
+             celular, que quedaba mal si el aparato tenía la fecha corrida. */
+          fecha1: true,
           resultado1: b.dataset.res
         }, 'Anotado: ' + b.dataset.res);
+      };
+    });
+
+    /* Se da y se recarga. La recarga no es por prolijidad: el mensaje de
+       WhatsApp de esa ficha cambia —pasa a ofrecer el descuento— y el que
+       acaba de darlo va a tocar ese botón enseguida. */
+    Array.prototype.forEach.call(document.querySelectorAll('.ben-btn'), function (b) {
+      b.onclick = function () {
+        if (!exigirQuien()) return;
+        b.disabled = true;
+        base.darBeneficio(+b.dataset.id, DESCUENTO)
+          .then(function (bien) {
+            if (!bien) {
+              /* No tocó ninguna fila: ese cliente ya tenía el suyo. Puede
+                 pasar con dos personas mirando el mismo panel. */
+              avisar('info', 'Ese cliente ya tenía su descuento.');
+            } else {
+              avisar('ok', 'Listo: ' + DESCUENTO + '% para este cliente. Avisale por WhatsApp.');
+            }
+            cargar();
+          })
+          .catch(function (err) {
+            b.disabled = false;
+            if (err && err.sinSesion) { caducada(); return; }
+            avisar('err', 'No se pudo dar el descuento.');
+          });
       };
     });
 
@@ -666,7 +862,7 @@
         var abierto = campos.hidden;
         campos.hidden = !abierto;
         b.setAttribute('aria-expanded', String(abierto));
-        abiertos[b.dataset.fila] = abierto;
+        abiertos[b.dataset.id] = abierto;
       };
     });
 
@@ -675,7 +871,44 @@
         var campos = {};
         campos[s.dataset.c] = s.value;
         campos.responsable = quien;
-        guardarSeguim(+s.closest('.reg').dataset.fila, campos, 'Guardado');
+
+        /* Los campos de la venta se prenden EN EL ACTO, antes de que el
+           guardado vuelva. El que acaba de marcar "Sí - local" está por
+           escribir el monto: hacerlo esperar un viaje al servidor para que
+           aparezca el campo es la diferencia entre anotarlo y no anotarlo. */
+        if (s.dataset.c === 'compro') {
+          var vendio = String(s.value || '').indexOf('Sí') === 0;
+          var ficha = s.closest('.reg');
+          Array.prototype.forEach.call(ficha.querySelectorAll('.campo.venta'), function (c) {
+            c.hidden = !vendio;
+          });
+          /* Y al decir que NO, la base limpia el monto y el producto final
+             —tiene una regla que prohíbe un monto sin venta—, así que la
+             pantalla los vacía para no mostrar algo que ya no existe. */
+          if (!vendio) {
+            Array.prototype.forEach.call(ficha.querySelectorAll('.campo.venta input'), function (i) {
+              i.value = '';
+            });
+          }
+        }
+
+        guardarSeguim(+s.closest('.reg').dataset.id, campos, 'Guardado');
+      };
+    });
+
+    /* Qué se llevó y por cuánto. Igual que la nota: se guardan al salir del
+       campo y sin recargar la lista, porque casi siempre se escriben los
+       dos seguidos y una recarga en el medio se come el segundo. */
+    Array.prototype.forEach.call(document.querySelectorAll('.campo.venta input'), function (i) {
+      var original = i.value;
+      i.onblur = function () {
+        if (i.value === original) return;
+        original = i.value;
+        var campos = {};
+        campos[i.dataset.c] = i.value;
+        campos.responsable = quien;
+        guardarSeguim(+i.closest('.reg').dataset.id, campos,
+                      i.dataset.c === 'monto' ? 'Monto guardado' : 'Guardado', true);
       };
     });
 
@@ -686,14 +919,9 @@
         original = t.value;
         var campos = {};
         campos[t.dataset.c] = t.value;
-        guardarSeguim(+t.closest('.reg').dataset.fila, campos, 'Nota guardada', true);
+        guardarSeguim(+t.closest('.reg').dataset.id, campos, 'Nota guardada', true);
       };
     });
-  }
-
-  function hoyDDMM() {
-    var d = new Date();
-    return ('0' + d.getDate()).slice(-2) + '/' + ('0' + (d.getMonth() + 1)).slice(-2);
   }
 
   /** Prende el degradé del borde derecho sólo mientras queden filtros afuera. */
@@ -728,19 +956,22 @@
     return false;
   }
 
-  function guardarSeguim(fila, campos, msgOk, sinRecargar) {
+  function guardarSeguim(id, campos, msgOk, sinRecargar) {
     if (!exigirQuien()) return;
-    llamar({ accion: 'seguimiento', pin: pin, fila: fila, campos: campos })
-      .then(function (res) {
-        if (res.status === 'ok') {
-          avisar('ok', msgOk);
-          if (!sinRecargar) cargar();
-        } else {
-          avisar('err', res.msg);
-          cargar();
-        }
+    base.seguimiento(id, campos)
+      .then(function () {
+        avisar('ok', msgOk);
+        if (!sinRecargar) cargar();
       })
-      .catch(function () { avisar('err', 'No se pudo guardar. Revisá la conexión.'); });
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        /* Si la base lo rechazó dice por qué, y vale la pena mostrarlo: son
+           las reglas que impiden guardar un monto sin venta o un estado que
+           no existe, y el que está cargando puede arreglarlo. */
+        avisar('err', (err && err.delServidor && err.message) ||
+                      'No se pudo guardar. Revisá la conexión.');
+        cargar();
+      });
   }
 
   /* ═══ Arranque ══════════════════════════════════════════════════════════ */
@@ -755,8 +986,30 @@
     $('filtros').onscroll = marcarScroll;
     window.addEventListener('resize', marcarScroll);
 
-    var guardadoPin = leer(K_PIN);
-    if (guardadoPin) { $('pin').value = guardadoPin; entrar(); }
+    /* Tres formas de llegar acá:
+         · volviendo del mail, con el token en el # de la dirección
+         · con una sesión de antes, que puede estar vencida
+         · de cero, y entonces se queda el portón
+
+       El orden importa: primero se recoge lo del # —si no, el token queda
+       dando vueltas en la barra— y recién después se prueba lo guardado. */
+    sesion.recoger()
+      .catch(function (err) {
+        avisar('err', err.message || 'Ese enlace no sirvió.');
+        return false;
+      })
+      .then(function () {
+        if (!sesion.hay()) return;
+        /* Se pide el resumen, que es la prueba de que la sesión sirve. Si
+           no sirve, no se abre nada y el portón queda como estaba: entrar
+           y que después falle todo es peor que no entrar. */
+        return base.panel()
+          .then(abrir)
+          .catch(function (err) {
+            if (err && err.sinSesion) { sesion.salir(); return; }
+            avisar('err', 'No se pudo abrir el panel. Probá de nuevo.');
+          });
+      });
 
     iniciarPWA();
   })();

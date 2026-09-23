@@ -6,27 +6,12 @@
  * dirección del backend, el tema, los avisos y el arranque de la PWA.
  */
 
-/* ── BACKEND ───────────────────────────────────────────────────────────────
-   La interfaz se sirve desde GitHub Pages, fuera de Apps Script, así que no
-   existe google.script.run: se le habla al backend por POST. */
-var API = 'https://script.google.com/macros/s/AKfycbxI373Id-FVEbyhErLlM5wvvyVApwdEBl2tmg_WfVgvXXpdy6ZgGDB0fGdHBQFHMVqu/exec';
+/* ── LA BASE ───────────────────────────────────────────────────────────
+   Acá vivía `llamar()`, que le hablaba al backend de Apps Script. Ya no
+   existe ninguno de los dos: todo pasa por `base`, en datos.js.
 
-/**
- * El Content-Type va en text/plain A PROPÓSITO. Con application/json el
- * navegador manda antes un pedido de permiso (preflight OPTIONS) que Apps
- * Script no contesta, y la llamada falla siempre. Con text/plain es un pedido
- * simple y sale directo; el backend igual parsea el cuerpo como JSON.
- */
-function llamar(cuerpo) {
-  return fetch(API, {
-    method: 'POST',
-    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-    body: JSON.stringify(cuerpo)
-  }).then(function (r) {
-    if (!r.ok) throw new Error('El servidor respondió ' + r.status);
-    return r.json();
-  });
-}
+   La dirección del backend viejo se fue con él. Si algún día hace falta
+   mirar cómo era, está en el historial de git. */
 
 /* ── ALMACENAMIENTO ────────────────────────────────────────────────────────
    Siempre entre try/catch: en una ventana privada o con las cookies

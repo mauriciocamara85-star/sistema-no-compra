@@ -302,37 +302,20 @@
     <div id="locales"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
   </div>
 
-  <!-- ── El aviso por mail ────────────────────────────────────────────────
-       Lo único de esta pantalla que pide el PIN, y no por ser configuración:
-       ese mail lleva adentro el teléfono del cliente. El motivo entero está
-       en avisosGuardar (Config.gs). -->
-  <div class="bloque" id="cajaAvisos">
-    <h2 class="bloque-tit">El aviso por mail</h2>
-    <p class="bloque-sub">A quién le llega un mail cada vez que un local carga un no-compra.</p>
-    <div id="avisos"><div class="skel"></div></div>
+  <!-- ── Lo que se configura en otro lado ──────────────────────────────
+       Los avisos (mail y Telegram) los manda una función aparte, y sus
+       tokens viven en el entorno de esa función y no en la base, que es lo
+       mismo que hoy pasa con las propiedades del script.
+
+       Se dice acá en vez de no decir nada: el que abre esta pantalla
+       buscando el aviso por Telegram tiene que enterarse de que existe y
+       de dónde se toca, no quedarse pensando que se perdió. -->
+  <div class="bloque">
+    <h2 class="bloque-tit">Los avisos</h2>
+    <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
   </div>
 
-  <!-- ── El aviso por Telegram ────────────────────────────────────────────
-       El mail del local no lo mira nadie; esto suena en el celular en el
-       momento, que es cuando el cliente todavía está a tiro de un WhatsApp.
-       Ver Telegram.gs. -->
-  <div class="bloque" id="cajaTelegram">
-    <h2 class="bloque-tit">El aviso por Telegram</h2>
-    <p class="bloque-sub">Cada no-compra cae en un grupo, con un botón para escribirle al cliente por WhatsApp.</p>
-    <div id="telegram"><div class="skel"></div></div>
-  </div>
-
-  <!-- ── Desde cuándo cuentan los números ─────────────────────────────────
-       Pide el PIN por lo que hace, no por ser un ajuste: moverla para
-       adelante le esconde a Atención al Cliente clientes que están esperando
-       que los llamen. Ver arranqueGuardar en Config.gs. -->
-  <div class="bloque" id="cajaArranque">
-    <h2 class="bloque-tit">Desde cuándo cuentan</h2>
-    <p class="bloque-sub">Los números del local, la pantalla de Motivos y la lista del panel arrancan en esta fecha.</p>
-    <div id="arranque"><div class="skel"></div></div>
-  </div>
-
-  <p class="pie">Los cambios quedan anotados con la fecha en la pestaña <strong>Log</strong> de la planilla. <a href="panel.html">Panel de seguimiento</a></p>
+  <p class="pie">Los cambios quedan anotados con la fecha y quién los hizo. <a href="panel.html">Panel de seguimiento</a></p>
 </main>
 
 </div><!-- /.marco -->
@@ -340,10 +323,11 @@
 <div class="toast" id="toast"></div>
 
 <script src="comun.js"></script>
+<script src="datos.js"></script>
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
-  var K_LOCAL = 'nc_local', K_PIN = 'nc_pin';
+  var K_LOCAL = 'nc_local';
   var datos = null, abierto = '';
 
   var X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
@@ -516,7 +500,7 @@
           // Confirmación en vez de contraseña: esto lo ven los 14 locales, y
           // un toque sin querer no puede dejar a una sucursal sin gente.
           if (!confirm('¿Sacar a ' + nombre + ' de ' + bonito(local) + '?\n\nNo se borra nada: queda inactivo y se puede volver a agregar.')) return;
-          mandar({ accion: 'sacarVend', local: local, nombre: nombre }, local,
+          mandar({ que: 'sacarVend', local: local, nombre: nombre }, local,
                   function () { avisar('ok', nombre + ' quedó fuera de la lista.'); });
         };
       });
@@ -525,7 +509,7 @@
       if (btnGuardar) {
         btnGuardar.onclick = function () {
           mandar({
-            accion: 'objetivo',
+            que: 'objetivo',
             local: local,
             periodo: caja.querySelector('[data-periodo]').value,
             meta: caja.querySelector('[data-meta]').value
@@ -544,330 +528,35 @@
    */
   function mandar(cuerpo, local, alSalirBien) {
     abierto = local;
-    llamar(cuerpo)
+
+    var hacer = cuerpo.que === 'sacarVend'
+      ? base.sacarVendedor(cuerpo.local, cuerpo.nombre)
+      : base.objetivo(cuerpo.local, cuerpo.periodo, cuerpo.meta);
+
+    hacer
       .then(function (res) {
-        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo guardar.'); return; }
         if (alSalirBien) alSalirBien(res);
         cargar(true);
       })
-      .catch(function () { avisar('err', 'Sin conexión. El cambio no se guardó.'); });
-  }
-
-  /* ═══ El aviso por mail ═════════════════════════════════════════════════
-     Es lo único de esta pantalla que pide el PIN. No por ser configuración:
-     el mail que sale por cada registro lleva adentro el nombre, el teléfono
-     y el mail del cliente, o sea el mismo dato que el panel esconde detrás
-     de una clave. Cambiar a dónde se manda es abrirle esa puerta a otro.
-
-     Mientras tanto se LEE sin PIN, porque saber a quién le llega —o que no
-     le llega a nadie, que es lo que pasaba hasta hoy— no le hace daño a
-     nadie y es justo lo que alguien viene a mirar acá. */
-  function pintarAvisos() {
-    var a = (datos && datos.avisos) || { mail: '', activo: false };
-
-    $('avisos').innerHTML = a.activo
-      ? '<p class="avisos-quien">Le llega a <b>' + esc(a.mail.split(',').join(', ')) + '</b>.</p>' +
-        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnAviso">Cambiar</button></div>'
-      /* Los dos bloques de aviso tienen que saber el uno del otro. "No le
-         llega a nadie" con Telegram andando se lee como que no hay ningún
-         aviso, y es exactamente al revés: hay uno, y mejor. */
-      : '<p class="avisos-quien flojo">No le llega a nadie. ' +
-        (datos && datos.telegram && datos.telegram.activo
-          ? 'Los avisos están saliendo por Telegram, así que esto es opcional.'
-          : 'Los registros se guardan igual en la planilla y se ven en el panel; lo único que falta es el mail.') +
-        '</p>' +
-        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnAviso">Poner un mail</button></div>';
-
-    $('btnAviso').onclick = formAvisos;
-  }
-
-  function formAvisos() {
-    var a = (datos && datos.avisos) || { mail: '' };
-
-    $('avisos').innerHTML =
-      '<div class="campo"><label for="avMail">Mail que recibe el aviso</label>' +
-        '<input type="email" id="avMail" inputmode="email" autocomplete="off" spellcheck="false" ' +
-        'placeholder="alguien@vdh.com" value="' + esc(a.mail) + '"></div>' +
-      '<div class="meta-nota">Vacío apaga el aviso. Se pueden poner hasta cinco casillas separadas por coma.</div>' +
-      '<div class="campo"><label for="avPin">PIN del panel</label>' +
-        '<input type="password" id="avPin" inputmode="numeric" maxlength="12" placeholder="••••" ' +
-        'value="' + esc(leer(K_PIN)) + '"></div>' +
-      '<div class="meta-nota">Se pide el PIN porque ese mail lleva adentro el teléfono del cliente.</div>' +
-      '<div class="avisos-botones">' +
-        '<button type="button" class="btn btn-pri btn-chico" id="avGuardar">Guardar</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="avCancelar">Cancelar</button>' +
-      '</div>';
-
-    $('avCancelar').onclick = pintarAvisos;
-    $('avGuardar').onclick = guardarAvisos;
-    // Enter en el PIN guarda: es el último campo y no hay <form> que lo haga.
-    $('avPin').onkeydown = function (e) { if (e.key === 'Enter') guardarAvisos(); };
-  }
-
-  function guardarAvisos() {
-    var pin = $('avPin').value.trim();
-    if (!pin) { avisar('err', 'Falta el PIN del panel.'); $('avPin').focus(); return; }
-
-    var btn = $('avGuardar');
-    btn.disabled = true;
-
-    llamar({ accion: 'avisos', pin: pin, mail: $('avMail').value })
-      .then(function (res) {
-        btn.disabled = false;
-        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo guardar.'); return; }
-
-        // El PIN quedó bien: se guarda acá para no volver a escribirlo, igual
-        // que hace el panel. Es la misma clave y el mismo dispositivo.
-        guardar(K_PIN, pin);
-
-        datos.avisos = res.avisos;
-        pintarAvisos();
-        avisar('ok', res.avisos.activo
-          ? 'El aviso ahora le llega a ' + res.avisos.mail + '.'
-          : 'El aviso quedó apagado.');
-      })
-      .catch(function () {
-        btn.disabled = false;
-        avisar('err', 'Sin conexión. El cambio no se guardó.');
-      });
-  }
-
-  /* ═══ El aviso por Telegram ═════════════════════════════════════════════
-     Dos pasos, porque el chat_id de un grupo no lo sabe nadie de memoria:
-     se pega el token, se busca, y se elige el grupo por NOMBRE.
-
-     El token se manda pero nunca vuelve: getConfig dice si hay uno puesto y
-     a qué grupo llega, no cuál es. Ver telegramLeer_ en Config.gs. */
-  var tgChats = [], tgElegido = '';
-
-  function pintarTelegram() {
-    var t = (datos && datos.telegram) || { activo: false };
-
-    var error = t.error
-      ? '<p class="avisos-quien flojo" style="margin-top:8px">El último aviso no salió: ' + esc(t.error) + '</p>'
-      : '';
-
-    $('telegram').innerHTML = t.activo
-      ? '<p class="avisos-quien">Le llega a <b>' + esc(t.nombre || ('el chat ' + t.chat)) + '</b>.</p>' + error +
-        '<div class="avisos-botones">' +
-          '<button type="button" class="btn btn-sec btn-chico" id="btnTg">Cambiar de grupo</button>' +
-          '<button type="button" class="btn btn-sec btn-chico" id="btnTgOff">Apagar</button>' +
-        '</div>'
-      : '<p class="avisos-quien flojo">Todavía no está puesto. Se crea un bot con @BotFather, se lo agrega a un grupo y se pega acá el token.</p>' + error +
-        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnTg">Configurar</button></div>';
-
-    $('btnTg').onclick = formTelegram;
-    if ($('btnTgOff')) $('btnTgOff').onclick = apagarTelegram;
-  }
-
-  function formTelegram() {
-    var t = (datos && datos.telegram) || {};
-    tgChats = []; tgElegido = '';
-
-    $('telegram').innerHTML =
-      '<div class="campo"><label for="tgToken">Token del bot</label>' +
-        '<input type="password" id="tgToken" autocomplete="off" spellcheck="false" ' +
-        'placeholder="' + (t.tieneToken ? 'Ya hay uno guardado' : '1234:AA…') + '"></div>' +
-      '<div class="meta-nota">' + (t.tieneToken
-        ? 'Dejalo vacío para seguir usando el que ya está.'
-        : 'Es el que devuelve @BotFather al crear el bot. Se guarda en el servidor y no vuelve a salir de ahí.') +
-      '</div>' +
-      '<div class="campo"><label for="tgPin">PIN del panel</label>' +
-        '<input type="password" id="tgPin" inputmode="numeric" maxlength="12" placeholder="••••" ' +
-        'value="' + esc(leer(K_PIN)) + '"></div>' +
-      /* El comando con barra y no una mención con @: un comando SIEMPRE le
-         llega al bot, tenga el modo privacidad prendido o no. Las menciones
-         dependen de esa configuración, que viene prendida de fábrica, y
-         cuando no llegan no hay forma de darse cuenta desde acá. */
-      '<div class="meta-nota">Antes de buscar, escribí en el grupo <b>/start@</b> seguido del nombre del bot (por ejemplo <b>/start@mi_bot</b>). Tiene que ser un comando con barra: una mención con @ puede no llegarle.</div>' +
-      '<div class="avisos-botones">' +
-        '<button type="button" class="btn btn-pri btn-chico" id="tgBuscar">Buscar el grupo</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="tgCancelar">Cancelar</button>' +
-      '</div>' +
-      '<div id="tgLista"></div>';
-
-    $('tgCancelar').onclick = pintarTelegram;
-    $('tgBuscar').onclick = buscarChats;
-  }
-
-  function buscarChats() {
-    var pin = $('tgPin').value.trim();
-    if (!pin) { avisar('err', 'Falta el PIN del panel.'); $('tgPin').focus(); return; }
-
-    var btn = $('tgBuscar');
-    btn.disabled = true;
-    btn.textContent = 'Buscando…';
-
-    llamar({ accion: 'telegramChats', pin: pin, token: $('tgToken').value.trim() })
-      .then(function (res) {
-        btn.disabled = false;
-        btn.textContent = 'Buscar de nuevo';
-        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo buscar.'); return; }
-        guardar(K_PIN, pin);
-        tgChats = res.chats || [];
-        pintarChats();
-      })
-      .catch(function () {
-        btn.disabled = false;
-        btn.textContent = 'Buscar el grupo';
-        avisar('err', 'Sin conexión.');
-      });
-  }
-
-  /* Los chats como chips: se elige por nombre y el id queda adentro, que es
-     todo el punto de este paso. */
-  function pintarChats() {
-    $('tgLista').innerHTML =
-      '<div class="meta-nota" style="margin-top:14px">Elegí dónde tienen que llegar los avisos:</div>' +
-      '<div class="chips" style="margin-top:8px">' +
-        tgChats.map(function (c) {
-          return '<button type="button" class="chip' + (c.id === tgElegido ? ' sel' : '') + '" data-id="' + esc(c.id) + '">' +
-                 esc(c.nombre) + (c.grupo ? '' : ' (personal)') + '</button>';
-        }).join('') +
-      '</div>' +
-      '<div class="avisos-botones">' +
-        '<button type="button" class="btn btn-pri btn-chico" id="tgGuardar"' + (tgElegido ? '' : ' disabled') + '>Guardar y probar</button>' +
-      '</div>';
-
-    Array.prototype.forEach.call($('tgLista').querySelectorAll('[data-id]'), function (b) {
-      b.onclick = function () { tgElegido = b.dataset.id; pintarChats(); };
-    });
-    $('tgGuardar').onclick = guardarTelegram;
-  }
-
-  function guardarTelegram() {
-    var btn = $('tgGuardar');
-    btn.disabled = true;
-    btn.textContent = 'Probando…';
-
-    llamar({
-      accion: 'telegram', pin: $('tgPin').value.trim(),
-      token: $('tgToken').value.trim(), chat: tgElegido
-    })
-      .then(function (res) {
-        btn.disabled = false;
-        btn.textContent = 'Guardar y probar';
-        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo guardar.'); return; }
-        datos.telegram = res.telegram;
-        pintarTelegram();
-        avisar('ok', 'Listo. Fijate que llegó el mensaje de prueba al grupo.');
-      })
-      .catch(function () {
-        btn.disabled = false;
-        btn.textContent = 'Guardar y probar';
-        avisar('err', 'Sin conexión.');
-      });
-  }
-
-  function apagarTelegram() {
-    if (!confirm('¿Apagar el aviso por Telegram?\n\nEl bot y el grupo quedan como están; sólo se dejan de mandar los avisos.')) return;
-
-    var pin = leer(K_PIN);
-    if (!pin) { avisar('err', 'Entrá una vez al panel con el PIN y volvé.'); return; }
-
-    llamar({ accion: 'telegram', pin: pin, chat: '' })
-      .then(function (res) {
-        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo apagar.'); return; }
-        datos.telegram = res.telegram;
-        pintarTelegram();
-        avisar('ok', 'Los avisos por Telegram quedaron apagados.');
-      })
-      .catch(function () { avisar('err', 'Sin conexión.'); });
-  }
-
-  /* ═══ Desde cuándo cuentan los números ══════════════════════════════════
-     La etapa vieja del sistema —139 registros de abril a julio, casi ninguno
-     con motivo y con los nombres viejos de los locales— no se borra: se deja
-     del otro lado de esta fecha. Si se cuenta junto con lo nuevo, los
-     porcentajes de Motivos los dominan filas vacías y el panel abre con 131
-     pendientes de abril que ya no tiene sentido llamar.
-
-     Se cambia con el PIN porque moverla para adelante le esconde clientes a
-     Atención al Cliente, y vaciarla vuelve a contar todo. */
-  function pintarArranque() {
-    var d = (datos && datos.arranque) || '';
-
-    $('arranque').innerHTML = d
-      ? '<p class="avisos-quien">Cuentan los registros del <b>' + esc(fechaLinda(d)) + '</b> en adelante. Lo anterior sigue en la planilla, pero no suma.</p>' +
-        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnArranque">Cambiar</button></div>'
-      : '<p class="avisos-quien">Cuenta <b>todo</b>, desde el primer registro que hubo.</p>' +
-        '<div class="avisos-botones"><button type="button" class="btn btn-sec btn-chico" id="btnArranque">Poner una fecha</button></div>';
-
-    $('btnArranque').onclick = formArranque;
-  }
-
-  /** '2026-09-21' → '21 de septiembre de 2026'. */
-  function fechaLinda(iso) {
-    var p = String(iso).split('-');
-    var d = new Date(Number(p[0]), Number(p[1]) - 1, Number(p[2]));
-    if (isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' });
-  }
-
-  function formArranque() {
-    var d = (datos && datos.arranque) || '';
-
-    $('arranque').innerHTML =
-      '<div class="campo"><label for="arFecha">Cuentan desde</label>' +
-        '<input type="date" id="arFecha" value="' + esc(d) + '"></div>' +
-      '<div class="meta-nota">Vacío cuenta todo, incluida la etapa vieja del sistema.</div>' +
-      '<div class="campo"><label for="arPin">PIN del panel</label>' +
-        '<input type="password" id="arPin" inputmode="numeric" maxlength="12" placeholder="••••" ' +
-        'value="' + esc(leer(K_PIN)) + '"></div>' +
-      '<div class="meta-nota">Se pide el PIN porque correr esta fecha para adelante le esconde clientes al panel.</div>' +
-      '<div class="avisos-botones">' +
-        '<button type="button" class="btn btn-pri btn-chico" id="arGuardar">Guardar</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="arCancelar">Cancelar</button>' +
-      '</div>';
-
-    $('arCancelar').onclick = pintarArranque;
-    $('arGuardar').onclick = guardarArranque;
-    $('arPin').onkeydown = function (e) { if (e.key === 'Enter') guardarArranque(); };
-  }
-
-  function guardarArranque() {
-    var pin = $('arPin').value.trim();
-    if (!pin) { avisar('err', 'Falta el PIN del panel.'); $('arPin').focus(); return; }
-
-    var btn = $('arGuardar');
-    btn.disabled = true;
-
-    llamar({ accion: 'arranque', pin: pin, desde: $('arFecha').value })
-      .then(function (res) {
-        btn.disabled = false;
-        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo guardar.'); return; }
-
-        guardar(K_PIN, pin);
-        datos.arranque = res.arranque;
-        pintarArranque();
-        avisar('ok', res.arranque
-          ? 'Los números cuentan desde el ' + fechaLinda(res.arranque) + '.'
-          : 'Ahora cuenta todo.');
-      })
-      .catch(function () {
-        btn.disabled = false;
-        avisar('err', 'Sin conexión. El cambio no se guardó.');
+      .catch(function (err) {
+        /* Si la base lo rechazó dice por qué —una meta imposible, un período
+           que no existe— y eso se puede arreglar. Un fallo de red, no. */
+        avisar('err', (err && err.delServidor && err.message) ||
+                      (err && err.message) || 'Sin conexión. El cambio no se guardó.');
       });
   }
 
   /* ═══ Carga ═════════════════════════════════════════════════════════════ */
   function cargar(silencioso) {
-    return llamar({ accion: 'config' })
+    return base.config()
       .then(function (res) {
-        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo leer la configuración.'); return; }
         datos = res;
         pintarEsteEquipo();
         pintarLocales();
-        pintarAvisos();
-        pintarTelegram();
-        pintarArranque();
       })
       .catch(function () {
         if (!silencioso) {
           $('locales').innerHTML = '<div class="vend-vacio">No se pudo conectar. Revisá la señal y recargá.</div>';
-          $('avisos').innerHTML = '<p class="avisos-quien flojo">No se pudo leer. Recargá la pantalla.</p>';
-          $('arranque').innerHTML = '<p class="avisos-quien flojo">No se pudo leer. Recargá la pantalla.</p>';
-          $('telegram').innerHTML = '<p class="avisos-quien flojo">No se pudo leer. Recargá la pantalla.</p>';
         }
         avisar('err', 'Error de conexión.');
       });

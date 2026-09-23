@@ -295,6 +295,49 @@
     font-size: 13.5px; font-weight: 700;
   }
 
+
+  /* ── El descuento ──────────────────────────────────────────────────────
+     Todo el bloque es el título cuando está cerrado: un renglón que se toca,
+     no un título con un botoncito al lado. En el mostrador se toca con el
+     pulgar y con el celular en una mano. */
+  #beneficio { padding-top: 0; padding-bottom: 0; }
+  #beneficio:has(#benCuerpo:not([hidden])) { padding-bottom: 18px; }
+  .ben-abrir {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    width: 100%;
+    background: none; border: 0;
+    padding: 18px 0;
+    font: 600 15.5px/1.3 var(--display);
+    color: var(--txt);
+    text-align: left;
+    cursor: pointer;
+  }
+  .ben-abrir svg { width: 18px; height: 18px; color: var(--txt-3); transition: transform .2s var(--curva); }
+  .ben-abrir[aria-expanded="true"] svg { transform: rotate(180deg); }
+
+  .ben-buscar { display: flex; gap: 8px; margin-bottom: 4px; }
+  .ben-buscar input { flex: 1; min-width: 0; }
+  .ben-buscar .btn { flex: none; }
+
+  /* La ficha del cliente encontrado. Verde porque es una buena noticia para
+     los dos: el cliente se lleva algo y el local recupera una venta. */
+  .ben-ficha {
+    margin-top: 14px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--ok);
+    border-radius: var(--r-sm);
+    padding: 14px;
+  }
+  .ben-ficha.gastado { border-left-color: var(--line); opacity: .75; }
+  .ben-pct { font: 700 30px/1 var(--display); color: var(--ok-txt); letter-spacing: -.5px; }
+  .ben-quien { font: 600 15px/1.3 var(--sans); margin-top: 6px; }
+  .ben-que { font-size: 13px; color: var(--txt-2); margin-top: 3px; }
+  .ben-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .ben-campos .campo.ancho { grid-column: 1 / -1; }
+  @media (max-width: 460px) { .ben-campos { grid-template-columns: 1fr; } }
+  .ben-nada { margin-top: 14px; font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
+
   /* ── Lo último que cargaste ────────────────────────────────────────────
      Los últimos registros de ESTE vendedor en ESTE celular, con un botón
      para arreglarlos. No es una lista de clientes: son tres, son suyos y
@@ -420,10 +463,19 @@
   #avisoCorrige, #avisoCola { order: 3; }
   #ident       { order: 4; }
   #bloqueLocal { order: 5; }
-  .pasos       { order: 6; }
-  #ultimos     { order: 7; }
-  #equipo      { order: 8; }
-  .cierre      { order: 9; }
+  /* El descuento va ARRIBA del formulario y no al final, por dos razones: es
+     lo que se necesita con el cliente parado enfrente, y cerrado ocupa un
+     renglón. Al final nadie se entera de que existe, que es exactamente cómo
+     se murió la primera versión de este sistema.
+
+     Y va DESPUÉS de "quién carga" a propósito: usar un descuento anota quién
+     lo atendió, así que el nombre tiene que estar elegido antes. Si estuviera
+     más arriba, el aviso de "elegí tu nombre arriba" apuntaría para abajo. */
+  #beneficio   { order: 6; }
+  .pasos       { order: 7; }
+  #ultimos     { order: 8; }
+  #equipo      { order: 9; }
+  .cierre      { order: 10; }
 
   /* ── En la PC del local ────────────────────────────────────────────────
      El formulario repartido en columnas. En una pantalla ancha, la columna
@@ -480,7 +532,7 @@
          [ Registros hoy ] [ Este mes ] [ Recuperado ]
          [ 1 El cliente  ] [ 2 Qué buscaba ] [ 3 Por qué se fue ]
          [ El equipo ─────────────────────────────────────────── ]
-         Se guarda en la planilla…                      [ Guardar ]
+         Se guarda al instante…                         [ Guardar ]
 
      Los tres pasos se ponen UNO AL LADO DEL OTRO. Apilados en dos filas el
      formulario mide 550px y, con las tarjetas arriba, no entra en la pantalla
@@ -727,9 +779,9 @@
        una tira de tarjetas que aparece y desaparece mueve todo lo de abajo y
        se lee como que algo se rompió.
 
-       Los números salen de la planilla (accion 'metricas') y quedan guardados
-       en el celular, así el que abre sin señal ve los últimos en vez de
-       rayitas. Ver pintarMetricas(). -->
+       Los números salen de la base (la vista v_metricas, que los cuenta por
+       vendedor) y quedan guardados en el celular, así el que abre sin señal
+       ve los últimos en vez de rayitas. Ver pintarMetricas(). -->
   <div class="kpis" id="tarjetas"></div>
 
   <!-- ── Lo último que cargaste ────────────────────────────────────────────
@@ -741,6 +793,37 @@
     <h2 class="bloque-tit">Lo último que cargaste</h2>
     <p class="bloque-sub">Si te equivocaste en algo, se arregla desde acá durante las primeras 24 horas.</p>
     <div id="ultimosLista"></div>
+  </section>
+
+
+  <!-- ── El descuento ──────────────────────────────────────────────────────
+       El cliente llega al mostrador y dice "me dijeron que tengo un
+       descuento". Esto es lo que lo encuentra.
+
+       **Se busca por TELÉFONO y nunca por nombre.** Un buscador por nombre
+       acá sería un listado de clientes con sus teléfonos repartido a los 14
+       locales, que es justo lo que hay que cuidar. El teléfono es la llave
+       que sólo tiene el cliente y hay que acertarla entera: no se puede
+       pescar. La base devuelve UN cliente o ninguno, nunca una lista.
+
+       Arranca cerrado porque es la excepción: el 95% de las aperturas de
+       esta pantalla son para cargar a alguien que se va, no para cobrarle. -->
+  <section class="bloque" id="beneficio">
+    <button type="button" class="ben-abrir" id="benAbrir" aria-expanded="false">
+      <span>¿El cliente tiene un descuento?</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+           stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+
+    <div id="benCuerpo" hidden>
+      <p class="bloque-sub">Buscalo por su número de WhatsApp, el mismo con el que quedó cargado.</p>
+      <div class="ben-buscar">
+        <input type="tel" id="benTel" inputmode="numeric" autocomplete="off"
+               placeholder="11 2345 6789" aria-label="Teléfono del cliente">
+        <button type="button" class="btn btn-sec" id="benBuscar">Buscar</button>
+      </div>
+      <div id="benResultado"></div>
+    </div>
   </section>
 
   <!-- ── El equipo ─────────────────────────────────────────────────────────
@@ -900,7 +983,7 @@
        una pantalla— y esos 88px que la barra fija le reservaba de aire son
        justo los que hacían falta para que no haya que scrollear. -->
   <div class="cierre">
-    <p class="pie">Se guarda en la planilla y el cliente entra al CRM. <span id="version"></span></p>
+    <p class="pie">Se guarda al instante y el cliente entra al CRM. <span id="version"></span></p>
     <div class="barra">
       <div class="barra-in">
         <button type="button" class="btn btn-pri btn-ancho" id="btnGuardar" onclick="enviar()">
@@ -933,10 +1016,11 @@
 <div class="toast" id="toast"></div>
 
 <script src="comun.js"></script>
+<script src="datos.js"></script>
 <script>
   /* ═══ Datos de la pantalla ═══════════════════════════════════════════════
      Los 14 locales son EXACTAMENTE los de la app de Ranking VDH (salen de su
-     mismo consolidador de ventas). `v` es lo que se escribe en la planilla —en
+     mismo consolidador de ventas). `v` es lo que se guarda como sucursal —en
      mayúsculas, como viene del consolidador, para que un día se puedan cruzar
      los no-compra con las ventas de cada local— y `t` es lo que se muestra.
 
@@ -969,10 +1053,12 @@
   }
 
   /* Cortos a propósito: entran en una línea en el celular, y sobre todo el
-     texto del botón es EXACTAMENTE lo que queda escrito en la planilla y lo
-     que después se ve en el panel y en el Resumen. Tienen que coincidir con
-     VOCAB.MOTIVO del backend: si no coinciden, el servidor rechaza el
-     registro entero. */
+     texto del botón es EXACTAMENTE lo que queda guardado y lo que después se
+     ve en el panel y en el Resumen.
+
+     Tienen que coincidir con el enum motivo_no_compra (ver schema.sql). Ya
+     no es una lista que el backend revisa: es un TIPO, y la base rechaza el
+     registro entero si el texto no es uno de esos seis, exacto. */
   var MOTIVOS = [
     { v: 'Sin talle',
       i: '<path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4Z"/><path d="m7.5 10.5 2 2M10.5 7.5l2 2M13.5 4.5l2 2"/>' },
@@ -999,9 +1085,10 @@
       K_COLA = 'nc_cola', K_HOY = 'nc_hoy', K_METRICAS = 'nc_metricas',
       K_ULTIMOS = 'nc_ultimos';
 
-  /* Cuánto se puede corregir un registro. Tiene que coincidir con
-     CORREGIR_HORAS del backend, que es el que manda: si acá dijera más, el
-     vendedor vería un botón que el servidor le va a rechazar. */
+  /* Cuánto se puede corregir un registro. Tiene que coincidir con el
+     intervalo de corregir_registro (funciones.sql), que es el que manda: si
+     acá dijera más, el vendedor vería un botón que la base le va a
+     rechazar. */
   var CORREGIR_MS = 24 * 3600000;
 
   /* Valor de la última opción del desplegable de vendedores. No puede ser un
@@ -1009,9 +1096,9 @@
      tenemos un problema más grande que este. */
   var OTRO = '__otro__';
 
-  /* Sube a mano al publicar, y tiene que coincidir con la del backend.
-     Cuando un vendedor dice "a mí no me anda", esto dice qué versión tiene
-     ESE celular: la app es PWA y puede quedar una vieja cacheada. */
+  /* Sube a mano al publicar. Cuando un vendedor dice "a mí no me anda",
+     esto dice qué versión tiene ESE celular: la app es PWA y puede quedar
+     una vieja cacheada. */
   var VERSION = '2026.09.21';
 
   var local = '', motivo = '', talles = [];
@@ -1070,8 +1157,8 @@
 
 
   /* ═══ El equipo del local ═══════════════════════════════════════════════
-     Los vendedores salen de la pestaña Equipo de la planilla y se configuran
-     desde config.html. Acá llegan como botones: tocás tu nombre y listo.
+     Los vendedores salen de la tabla `equipo` y se configuran desde
+     config.html. Acá llegan como botones: tocás tu nombre y listo.
 
      Se guardan en el celular. Esto NO es una optimización, es lo que mantiene
      la promesa de la app: el formulario tiene que andar con el WiFi del
@@ -1201,8 +1288,9 @@
    * desplegable de todos los celulares de la sucursal, escrito siempre igual.
    *
    * Antes esto sólo pasaba cuando esa persona guardaba su primer registro
-   * (sumarVendedor_, en el backend). Sigue pasando: si acá no hay señal no se
-   * pierde nada, el nombre se suma igual con el primer cliente que cargue.
+   * (lo hace cargar_registro, en la base). Sigue pasando: si acá no hay señal
+   * no se pierde nada, el nombre se suma igual con el primer cliente que
+   * cargue.
    */
   function anotarme(nombre) {
     var limpio = String(nombre || '').trim();
@@ -1211,10 +1299,13 @@
 
     fijarVendedor(limpio);
 
-    llamar({ accion: 'agregarVend', local: local, nombre: limpio, quien: limpio })
-      .then(function (res) {
-        if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo anotar el nombre.'); return; }
-        equipo = res.vendedores || equipo;
+    /* Dos viajes: anotarse y volver a pedir la lista. El alta no devuelve
+       el equipo actualizado —la base no le deja leer de vuelta lo que
+       escribe— y la lista tiene que salir de ella, no de suponerla acá. */
+    base.anotarse(local, limpio)
+      .then(function () { return base.equipo(local); })
+      .then(function (lista) {
+        equipo = lista || equipo;
         guardarJSON(K_EQUIPO, { local: local, vendedores: equipo });
         escribiendo = false;        // ya está en la lista: se elige como cualquiera
         pintarQuien();
@@ -1235,15 +1326,14 @@
    */
   function traerEquipo() {
     if (!local) return;
-    llamar({ accion: 'equipo', local: local })
-      .then(function (res) {
-        if (res.status !== 'ok') return;
-        equipo = res.vendedores || [];
+    base.equipo(local)
+      .then(function (lista) {
+        equipo = lista || [];
         guardarJSON(K_EQUIPO, { local: local, vendedores: equipo });
 
         /* El nombre que se escribió a mano entra en la lista del local
-           cuando esa persona guarda su primer registro (lo hace el backend,
-           ver sumarVendedor_). Desde ese momento deja de ser "a mano": se
+           cuando esa persona guarda su primer registro (lo hace la base,
+           ver cargar_registro). Desde ese momento deja de ser "a mano": se
            elige del desplegable como cualquiera, y el campo de texto sobra. */
         if (escribiendo && vendedor && equipo.indexOf(vendedor) > -1) escribiendo = false;
 
@@ -1264,8 +1354,8 @@
      registros.
 
      **El recuperado depende de que Atención al Cliente cierre el círculo.**
-     Sale de las columnas "Compró?" y "Monto Venta ($)" de la planilla, que se
-     llenan a mano durante el seguimiento. Si nadie las completa, la tarjeta
+     Sale de `compro` y `monto`, que se completan desde el Panel durante el
+     seguimiento. Si nadie los completa, la tarjeta
      muestra cero aunque el local haya cargado cien clientes; por eso el pie
      dice "sin ventas cargadas todavía" en vez de un $ 0 pelado, que se lee
      como que el sistema no sirvió.
@@ -1378,9 +1468,9 @@
    * primero se parece a un control de asistencia y lo segundo a un resultado,
    * y el que carga necesita ver lo segundo para seguir cargando.
    *
-   * Se arma con DOS fuentes y por eso no lo resuelve solo el backend: los
-   * registros de la planilla dicen quién cargó y cuánto, y la lista del local
-   * (pestaña Equipo) dice quién MÁS hay. Sin lo segundo, el que todavía no
+   * Se arma con DOS fuentes y por eso no sale de una sola consulta: la vista
+   * v_metricas dice quién cargó y cuánto, y la tabla `equipo` dice quién MÁS
+   * hay. Sin lo segundo, el que todavía no
    * cargó nada este mes directamente no existiría en la lista, que es
    * justamente el dato que al encargado le interesa ver.
    */
@@ -1448,9 +1538,8 @@
   /** Silencioso como traerEquipo: sin señal queda lo último que se vio. */
   function traerMetricas() {
     if (!local) return;
-    llamar({ accion: 'metricas', local: local })
+    base.metricas(local)
       .then(function (res) {
-        if (res.status !== 'ok') return;
         metricas = res;
         guardarJSON(K_METRICAS, { local: local, datos: res });
         pintarMetricas(res);
@@ -1584,8 +1673,8 @@
 
   /**
    * Un celular argentino tiene 10 dígitos (característica + número), sin el 0
-   * y sin el 15. Se avisa pero no se bloquea con menos: hay números viejos en
-   * la planilla que no siguen la regla y es peor perder el registro.
+   * y sin el 15. Se avisa pero no se bloquea con menos: hay números que no
+   * siguen la regla y es peor perder el registro que rechazarlo.
    */
   function revisarTelefono(t) {
     var n = String(t).replace(/\D/g, '');
@@ -1666,30 +1755,38 @@
       return Promise.resolve();
     }
 
-    var enviados = 0, sinSenal = false, rechazo = '';
+    var enviados = 0, sinSenal = false, rechazado = '';
 
     var siguiente = function () {
       var pend = cola();
       if (!pend.length || sinSenal) return Promise.resolve();
       var item = pend[0];
 
-      return llamar({ accion: 'submit', datos: item.datos })
+      return base.cargar(item.datos)
         .then(function (res) {
           sacarDeCola(item.id);
-          // Recién ahora tiene fila, así que recién ahora se puede corregir:
+          enviados++;
+          // Recién ahora tiene id, así que recién ahora se puede corregir:
           // lo que se cargó sin señal también entra en "lo último".
-          if (res.status === 'ok') { enviados++; guardarUltimo(item.datos, res); }
-          // Si el servidor lo rechaza, reintentarlo no lo va a arreglar nunca:
-          // sale de la cola y se avisa, en vez de dejarla trabada para siempre.
-          else rechazo = res.msg || 'El servidor rechazó un registro pendiente.';
+          guardarUltimo(item.datos, res);
           return siguiente();
         })
-        .catch(function () { sinSenal = true; });
+        .catch(function (err) {
+          /* Si la base lo RECHAZÓ, reintentarlo no lo va a arreglar nunca:
+             sale de la cola y se avisa, en vez de dejarla trabada para
+             siempre. Sin señal, en cambio, queda y se corta el intento. */
+          if (err && err.delServidor) {
+            sacarDeCola(item.id);
+            rechazado = err.message || 'La base rechazó un registro pendiente.';
+            return siguiente();
+          }
+          sinSenal = true;
+        });
     };
 
     return siguiente().then(function () {
       pintarCola();
-      if (rechazo) { avisar('err', rechazo); return; }
+      if (rechazado) { avisar('err', rechazado); return; }
       if (enviados) {
         avisar('ok', enviados === 1 ? 'Se envió el registro que estaba esperando.'
                                     : 'Se enviaron ' + enviados + ' registros pendientes.');
@@ -1705,14 +1802,15 @@
   /* ═══ Lo último que cargaste ════════════════════════════════════════════
      Corregir lo que uno acaba de cargar, sin pedirle nada a nadie.
 
-     **Esto vive en el celular a propósito.** La alternativa era una acción
-     que le pidiera al servidor "mis últimos registros", y esa acción sería
-     una forma de leer nombres y teléfonos de clientes sin PIN: el backend es
-     anónimo y el nombre de cualquier vendedor se saca de la lista del local,
-     que tampoco pide PIN. Así, en cambio, el servidor no devuelve NADA: el
-     celular se acuerda de lo que él mismo mandó —la fila y la fecha que le
-     contestó submitForm— y esos dos datos son los que le alcanzan para
-     corregir. Ver corregirRegistro en Codigo.gs.
+     **Esto vive en el celular a propósito.** La alternativa era pedirle a la
+     base "mis últimos registros", y eso sería una forma de leer nombres y
+     teléfonos de clientes sin identificarse: la clave de la app es pública y
+     el nombre de cualquier vendedor se saca de la lista del local, que
+     tampoco pide nada. Por eso el vendedor NO puede leer `registros`, ni una
+     fila: está probado y es el corazón del modelo. Así, en cambio, el
+     celular se acuerda de lo que él mismo mandó —el id y la fecha exacta
+     que le contestó la base— y esos dos datos son los que le alcanzan para
+     corregir. Ver corregir_registro en funciones.sql.
 
      Y se muestra sólo lo del vendedor que está cargando ahora, porque el
      celular del local lo usan todos: no es un historial del aparato, es lo
@@ -1722,16 +1820,19 @@
   function ultimos() {
     var ahora = Date.now();
     return leerJSON(K_ULTIMOS, []).filter(function (u) {
-      // Sin fila no se puede corregir —quedó en la cola, sin señal— y pasadas
-      // las 24 horas el servidor lo va a rechazar igual.
-      return u && u.fila && (ahora - (u.cuando || 0)) < CORREGIR_MS;
+      // Sin id no se puede corregir —quedó en la cola, sin señal— y pasadas
+      // las 24 horas la base lo va a rechazar igual.
+      return u && u.id && (ahora - (u.cuando || 0)) < CORREGIR_MS;
     });
   }
 
   function guardarUltimo(datos, res) {
-    if (!res || !res.fila) return;
+    if (!res || !res.id) return;
     var lista = ultimos();
-    lista.unshift({ fila: res.fila, fecha: res.fecha || '', cuando: Date.now(), datos: datos });
+    /* `creado` se guarda TAL CUAL vino, como texto. Pasarlo por un Date y
+       volver a escribirlo le corta los microsegundos, y la base lo compara
+       entero: corregir dejaría de andar sin que nada avise. */
+    lista.unshift({ id: res.id, creado: res.creado, cuando: Date.now(), datos: datos });
     guardarJSON(K_ULTIMOS, lista.slice(0, 6));
     pintarUltimos();
   }
@@ -1768,19 +1869,19 @@
         '<span class="ult-quien">' + esc(d.nombre || 'Sin nombre') + ' · ' + esc(d.whatsapp || '') + '</span>' +
         '<span class="ult-cuando">' + esc(haceCuanto(u.cuando)) + '</span>' +
         (que ? '<span class="ult-que">' + esc(que) + '</span>' : '') +
-        '<button type="button" class="btn btn-sec btn-chico ult-btn" data-fila="' + u.fila + '">Corregir</button>' +
+        '<button type="button" class="btn btn-sec btn-chico ult-btn" data-id="' + u.id + '">Corregir</button>' +
       '</div>';
     }).join('');
 
-    Array.prototype.forEach.call($('ultimosLista').querySelectorAll('[data-fila]'), function (b) {
-      b.onclick = function () { empezarCorreccion(Number(b.dataset.fila)); };
+    Array.prototype.forEach.call($('ultimosLista').querySelectorAll('[data-id]'), function (b) {
+      b.onclick = function () { empezarCorreccion(Number(b.dataset.id)); };
     });
   }
 
   /** Trae el registro al formulario. Es el mismo formulario: no hay otro. */
-  function empezarCorreccion(fila) {
+  function empezarCorreccion(id) {
     var u = null;
-    ultimos().forEach(function (x) { if (x.fila === fila) u = x; });
+    ultimos().forEach(function (x) { if (x.id === id) u = x; });
     if (!u) { avisar('err', 'Ese registro ya no se puede corregir.'); pintarUltimos(); return; }
 
     corrigiendo = u;
@@ -1829,6 +1930,123 @@
       (corrigiendo ? 'Guardar corrección' : 'Guardar oportunidad'));
   }
 
+
+  /* ═══ El descuento ══════════════════════════════════════════════════════
+     Tres pasos y ninguno de más: buscar por teléfono, ver de quién es, y
+     usarlo anotando la venta.
+
+     **Usarlo cierra el círculo entero.** No sólo marca el descuento como
+     gastado: deja el registro como venta recuperada, con su monto y su
+     local. Es lo que hace que el número de "Recuperado" del tablero suba
+     solo cuando el cliente vuelve, sin que nadie tenga que acordarse de
+     anotarlo en ningún lado. Ver beneficio_usar en politicas.sql. */
+  var benCliente = null;
+
+  function benAbrirCerrar() {
+    var cuerpo = $('benCuerpo'), btn = $('benAbrir');
+    var abierto = cuerpo.hidden;
+    cuerpo.hidden = !abierto;
+    btn.setAttribute('aria-expanded', String(abierto));
+    if (abierto) $('benTel').focus();
+  }
+
+  function benBuscar() {
+    var tel = $('benTel').value.trim();
+    if (revisarTelefono(tel)) { avisar('err', revisarTelefono(tel)); $('benTel').focus(); return; }
+
+    var btn = $('benBuscar');
+    btn.disabled = true; btn.textContent = 'Buscando…';
+    $('benResultado').innerHTML = '';
+
+    base.beneficio(tel)
+      .then(function (c) {
+        btn.disabled = false; btn.textContent = 'Buscar';
+        benCliente = c;
+        benPintar(c, tel);
+      })
+      .catch(function () {
+        btn.disabled = false; btn.textContent = 'Buscar';
+        avisar('err', 'No se pudo buscar. Revisá la señal.');
+      });
+  }
+
+  function benPintar(c, tel) {
+    var caja = $('benResultado');
+
+    /* Sin descuento NO se dice "no existe": se dice qué hacer. El vendedor
+       tiene al cliente enfrente diciendo que le dijeron que tenía uno, y
+       "no encontrado" lo deja sin salida delante del cliente. */
+    if (!c) {
+      caja.innerHTML = '<p class="ben-nada">Ese número no tiene ningún descuento cargado. ' +
+        'Fijate que sea el mismo con el que quedó registrado —a veces lo dan con otro—, ' +
+        'y si no, cargalo como cliente nuevo desde acá abajo.</p>';
+      return;
+    }
+
+    if (!c.disponible) {
+      caja.innerHTML = '<div class="ben-ficha gastado">' +
+        '<div class="ben-quien">' + esc(c.nombre || 'Este cliente') + '</div>' +
+        '<p class="ben-nada" style="margin-top:6px">Ya usó su descuento de ' + c.pct + '%. ' +
+        'Es de un solo uso.</p>' +
+      '</div>';
+      return;
+    }
+
+    caja.innerHTML = '<div class="ben-ficha">' +
+      '<div class="ben-pct">' + c.pct + '% de descuento</div>' +
+      '<div class="ben-quien">' + esc(c.nombre || 'Cliente sin nombre cargado') + '</div>' +
+      (c.buscaba ? '<div class="ben-que">Había venido buscando ' + esc(c.buscaba) + '</div>' : '') +
+      '<div class="ben-campos">' +
+        '<div class="campo"><label>Monto de la venta</label>' +
+          '<input type="text" inputmode="numeric" id="benMonto" placeholder="$"></div>' +
+        '<div class="campo"><label>Qué se llevó</label>' +
+          '<input type="text" id="benProducto" placeholder="Opcional"></div>' +
+        '<div class="campo ancho">' +
+          '<button type="button" class="btn btn-pri btn-ancho" id="benUsar">Usar el descuento</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+
+    $('benMonto').focus();
+    $('benUsar').onclick = function () { benUsar(tel); };
+  }
+
+  function benUsar(tel) {
+    if (!vendedor) { avisar('err', 'Primero elegí tu nombre arriba.'); return; }
+
+    var monto = Number(String($('benMonto').value).replace(/[^0-9]/g, ''));
+    /* El monto es obligatorio y no por burocracia: sin él, usar el descuento
+       marcaría la venta como recuperada con cero pesos, y el tablero del
+       local mostraría un cliente recuperado que no sumó nada. */
+    if (!monto) { avisar('err', 'Poné cuánto compró: es lo que suma al recuperado del local.'); $('benMonto').focus(); return; }
+
+    var btn = $('benUsar');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+
+    base.usarBeneficio(tel, local, vendedor, monto, $('benProducto').value.trim())
+      .then(function (bien) {
+        btn.disabled = false; btn.textContent = 'Usar el descuento';
+        if (!bien) {
+          /* La base dijo que no: lo usaron en otro local mientras este
+             vendedor tenía la pantalla abierta. Es el caso que el cupón de
+             papel no podía evitar y éste sí. */
+          avisar('err', 'Ese descuento ya se usó. Volvé a buscarlo para ver dónde.');
+          benBuscar();
+          return;
+        }
+        avisar('ok', '¡Listo! Quedó anotado como venta recuperada.');
+        $('benResultado').innerHTML = '';
+        $('benTel').value = '';
+        benCliente = null;
+        // El recuperado del local acaba de subir: se pide de nuevo.
+        traerMetricas();
+      })
+      .catch(function (err) {
+        btn.disabled = false; btn.textContent = 'Usar el descuento';
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.');
+      });
+  }
+
   /* ═══ Envío ═════════════════════════════════════════════════════════════ */
   function armarDatos() {
     return {
@@ -1860,38 +2078,43 @@
     };
 
     if (correccion) {
-      /* La fila y la fecha son lo que le dice al servidor cuál es el registro
-         y que este celular es el que lo cargó. Ver corregirRegistro. */
-      datos.fila = correccion.fila;
-      datos.fecha = correccion.fecha;
-
-      llamar({ accion: 'corregir', datos: datos })
-        .then(function (res) {
+      /* El id y la fecha exacta son lo que le dice a la base cuál es el
+         registro y que este celular es el que lo cargó. Ver
+         corregir_registro en funciones.sql. */
+      base.corregir(correccion.id, correccion.creado, datos)
+        .then(function (bien) {
           restaurar();
-          if (res.status !== 'ok') { avisar('err', res.msg || 'No se pudo corregir.'); return; }
+          /* La base no explica por qué dijo que no: contesta sí o no, y de
+             adrede. Desde acá sólo hay un motivo posible —pasaron las 24
+             horas— porque el resto lo puso este mismo celular. */
+          if (!bien) { avisar('err', 'Ese registro ya no se puede corregir.'); return; }
           corregido(correccion, datos);
         })
         .catch(function () {
-          /* Una corrección NO se encola. Lo que está en la planilla es lo que
-             el vendedor cargó la primera vez, que no está roto: es mejor que
-             se vuelva a intentar cuando haya señal, y no que quede una cola
-             de correcciones tapándose unas a otras sobre la misma fila. */
+          /* Una corrección NO se encola. Lo que está guardado es lo que el
+             vendedor cargó la primera vez, que no está roto: es mejor que se
+             vuelva a intentar cuando haya señal, y no que quede una cola de
+             correcciones tapándose unas a otras sobre el mismo registro. */
           restaurar();
           avisar('err', 'Sin señal. La corrección no se guardó: probá de nuevo en un rato.');
         });
       return;
     }
 
-    llamar({ accion: 'submit', datos: datos })
+    base.cargar(datos)
       .then(function (res) {
         restaurar();
-        if (res.status === 'ok') { guardarUltimo(datos, res); listo(datos, false); }
-        else { avisar('err', res.msg || 'El servidor rechazó el registro.'); }
+        guardarUltimo(datos, res);
+        listo(datos, false);
       })
-      .catch(function () {
+      .catch(function (err) {
+        restaurar();
+        /* Que la base lo rechace NO es falta de señal: encolarlo lo haría
+           reintentarse para siempre. Se avisa y el formulario queda como
+           está, con todo cargado, para arreglar lo que falte. */
+        if (err && err.delServidor) { avisar('err', err.message); return; }
         // Sin señal: se guarda en el celular. Para el vendedor está cargado,
         // porque desde su lado el trabajo está hecho.
-        restaurar();
         encolar(datos);
         listo(datos, true);
       });
@@ -1904,7 +2127,7 @@
    */
   function corregido(u, datos) {
     var lista = leerJSON(K_ULTIMOS, []);
-    lista.forEach(function (x) { if (x.fila === u.fila) x.datos = datos; });
+    lista.forEach(function (x) { if (x.id === u.id) x.datos = datos; });
     guardarJSON(K_ULTIMOS, lista);
 
     corrigiendo = null;
@@ -1933,9 +2156,9 @@
     sumarAlTablero();
     if (!offline) {
       traerMetricas();
-      // Si el nombre no estaba en la lista del local, el backend lo acaba de
-      // sumar: se vuelve a pedir el equipo para que aparezca en el
-      // desplegable desde ya, en este mismo celular.
+      // Si el nombre no estaba en la lista del local, la base lo acaba de
+      // sumar (lo hace cargar_registro): se vuelve a pedir el equipo para que
+      // aparezca en el desplegable desde ya, en este mismo celular.
       if (equipo.indexOf(datos.vendedor) === -1) traerEquipo();
     }
 
@@ -2029,6 +2252,10 @@
         if (k > -1 && campos[k + 1]) campos[k + 1].focus();
       };
     });
+
+    $('benAbrir').onclick = benAbrirCerrar;
+    $('benBuscar').onclick = benBuscar;
+    $('benTel').onkeydown = function (e) { if (e.key === 'Enter') benBuscar(); };
 
     if (cola().length) vaciarCola(false);
     window.addEventListener('online', function () { vaciarCola(false); });

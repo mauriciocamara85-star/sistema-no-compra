@@ -84,10 +84,24 @@ revoke execute on function guardar_secreto(text, text) from anon, authenticated,
 -- LA BANDEJA
 -- ════════════════════════════════════════════════════════════════════════
 
-create type destino_salida as enum ('kommo', 'telegram');
-create type estado_salida  as enum ('pendiente', 'hecho', 'fallado');
+/* Postgres no tiene "create type if not exists", así que se pregunta. Este
+   archivo se corre entero cada vez que se toca algo de acá, y un error en
+   la primera línea deja todo lo de abajo sin aplicar.
 
-create table salidas (
+   El destino lleva un valor más —kommo_estado— que agrega sincronia.sql;
+   por eso acá se pregunta antes en vez de recrear, o se perdería. */
+do $tipos$
+begin
+  if not exists (select 1 from pg_type where typname = 'destino_salida') then
+    create type destino_salida as enum ('kommo', 'telegram');
+  end if;
+  if not exists (select 1 from pg_type where typname = 'estado_salida') then
+    create type estado_salida as enum ('pendiente', 'hecho', 'fallado');
+  end if;
+end
+$tipos$;
+
+create table if not exists salidas (
   id        bigint generated always as identity primary key,
   registro  bigint not null references registros(id) on delete cascade,
   destino   destino_salida not null,
@@ -112,11 +126,11 @@ create table salidas (
 
 -- Lo que el trabajador busca cada minuto: lo que falta mandar, lo más viejo
 -- primero. Parcial, porque lo ya hecho no se consulta nunca más.
-create index salidas_pendientes on salidas (creado)
+create index if not exists salidas_pendientes on salidas (creado)
   where estado = 'pendiente';
 
 -- Y lo que mira el panel para avisar que el puente se rompió.
-create index salidas_falladas on salidas (ultimo desc)
+create index if not exists salidas_falladas on salidas (ultimo desc)
   where estado = 'fallado';
 
 
@@ -138,6 +152,24 @@ security definer
 set search_path = public
 as $$
 begin
+  /* Un registro de un local que NO está en la tabla `locales` no sale afuera.
+     Es o una prueba o un error de carga, y en los dos casos crear un lead en
+     el CRM —que no se puede borrar por API— es peor que no crearlo.
+
+     No se calla: queda anotado en el historial. Un local nuevo que alguien
+     olvidó dar de alta se descubre ahí, en vez de descubrirse tres semanas
+     después al notar que sus clientes nunca entraron a Kommo. */
+  if not exists (
+    select 1 from locales
+     where lower(trim(codigo)) = lower(trim(new.sucursal)) and activo
+  ) then
+    insert into log (accion, local, detalle, quien)
+    values ('Registro sin local conocido', new.sucursal,
+            'No se mandó a Kommo ni a Telegram: ese local no está dado de alta.',
+            new.vendedor);
+    return new;
+  end if;
+
   if secreto('KOMMO_TOKEN') is not null then
     insert into salidas (registro, destino) values (new.id, 'kommo')
     on conflict do nothing;
