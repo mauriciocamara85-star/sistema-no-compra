@@ -316,10 +316,10 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg>
   </div>
   <h2>Panel de seguimiento</h2>
-  <p>Acá están los teléfonos y mails de los clientes. Poné tu mail y te llega un enlace para entrar.</p>
-  <input type="email" id="mail" inputmode="email" placeholder="tu@mail.com"
-         autocomplete="email" onkeydown="if(event.key==='Enter') entrar()">
-  <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Mandame el enlace</button>
+  <p>Acá están los teléfonos y mails de los clientes. Poné el PIN para entrar.</p>
+  <input type="password" id="pinPanel" inputmode="numeric" maxlength="8" placeholder="PIN"
+         autocomplete="off" onkeydown="if(event.key==='Enter') entrar()">
+  <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Entrar</button>
   <p class="porton-msg" id="portonMsg" hidden></p>
   <p class="pie" style="margin-top:22px">
     ¿Venías a cargar un cliente? <a href="index.html">Andá al formulario</a>
@@ -444,25 +444,45 @@
    * primero, así que el que ya lo tuviera abierto se quedaría afuera.
    */
   function entrar() {
-    var v = $('mail').value.trim();
-    if (!v || v.indexOf('@') < 1) { avisar('err', 'Escribí tu mail.'); return; }
+    var v = $('pinPanel').value.trim();
+    if (!v) { avisar('err', 'Escribí el PIN.'); $('pinPanel').focus(); return; }
 
     var btn = $('btnEntrar');
-    btn.disabled = true; btn.textContent = 'Mandando…';
+    btn.disabled = true; btn.textContent = 'Probando…';
 
-    /* El enlace tiene que traer de vuelta a ESTA pantalla, sin el # de una
-       vuelta anterior pegado atrás. */
-    sesion.pedirEnlace(v, location.origin + location.pathname)
-      .then(function () {
-        btn.textContent = 'Enlace mandado';
-        $('portonMsg').hidden = false;
-        $('portonMsg').textContent =
-          'Listo. Fijate en ' + v + ': te llegó un enlace para entrar. Dura una hora y se usa una sola vez.';
+    base.pin.probar(v)
+      .then(function (r) {
+        if (!r || !r.ok) {
+          /* El mensaje lo arma la base, que es la que sabe cuántos intentos
+             quedan y cuánto falta para que se destrabe. */
+          $('portonMsg').hidden = false;
+          $('portonMsg').textContent = (r && r.porque) || 'PIN incorrecto.';
+          $('pinPanel').value = '';
+          $('pinPanel').focus();
+          return;
+        }
+        guardarPin(v);
+        $('portonMsg').hidden = true;
+        /* Se pide el resumen, que es la prueba de que se puede leer de
+           verdad. Entrar y que después falle todo es peor que no entrar. */
+        return base.panel(v).then(abrir);
       })
-      .catch(function (err) {
-        btn.disabled = false; btn.textContent = 'Mandame el enlace';
-        avisar('err', err.message || 'No se pudo mandar el enlace.');
-      });
+      .catch(function (e) {
+        avisar('err', (e && e.message) || 'No se pudo entrar.');
+      })
+      .then(function () { btn.disabled = false; btn.textContent = 'Entrar'; });
+  }
+
+  /* La llave, compartida con Beneficios: es el mismo PIN para las dos
+     secciones. Vive en sessionStorage y no en localStorage, así que se
+     olvida al cerrar la pestaña — en una máquina compartida, una sesión que
+     no caduca nunca es peor que volver a tipear cuatro números. */
+  var K_PIN = 'nc_pin';
+  function pinGuardado() {
+    try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; }
+  }
+  function guardarPin(v) {
+    try { if (v) sessionStorage.setItem(K_PIN, v); else sessionStorage.removeItem(K_PIN); } catch (e) {}
   }
 
   /** Abre el panel. Ya hay sesión cuando esto corre. */
@@ -495,10 +515,11 @@
    */
   function caducada() {
     salir();
-    avisar('err', 'Se cerró la sesión. Pedí un enlace nuevo.');
+    avisar('err', 'Se cerró la sesión. Volvé a poner el PIN.');
   }
 
   function salir() {
+    guardarPin('');
     sesion.salir();
     $('marco').hidden = true;
     document.body.classList.remove('hay-rail');
@@ -510,7 +531,7 @@
     $('porton').hidden = false;
     $('portonMsg').hidden = true;
     var btn = $('btnEntrar');
-    btn.disabled = false; btn.textContent = 'Mandame el enlace';
+    btn.disabled = false; btn.textContent = 'Entrar';
   }
 
   /* ═══ Consulta o edición ════════════════════════════════════════════════
@@ -626,7 +647,7 @@
     $('btnRefrescar').classList.add('girando');
     $('lista').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
 
-    base.registros(filtro)
+    base.registros(pinGuardado(), filtro)
       .then(function (filas) {
         $('btnRefrescar').classList.remove('girando');
         registros = filas || [];
@@ -640,7 +661,7 @@
         avisar('err', 'Error de conexión.');
       });
 
-    base.panel()
+    base.panel(pinGuardado())
       .then(function (res) { pintarKpis(res); pintarCrm(res); pintarFiltros(res.conteo); })
       .catch(function () {});
   }
@@ -854,7 +875,7 @@
       b.onclick = function () {
         if (!exigirQuien()) return;
         b.disabled = true;
-        base.darDescuento(+b.dataset.id, DESCUENTO, DIAS, quien)
+        base.darDescuento(pinGuardado(), +b.dataset.id, DESCUENTO, DIAS, quien)
           .then(function (res) {
             /* La base contesta si lo dio o no, y por qué. El caso de "ya
                tenía uno" pasa con dos personas mirando el mismo panel, y no
@@ -977,7 +998,7 @@
 
   function guardarSeguim(id, campos, msgOk, sinRecargar) {
     if (!exigirQuien()) return;
-    base.seguimiento(id, campos)
+    base.seguimiento(pinGuardado(), id, campos)
       .then(function () {
         avisar('ok', msgOk);
         if (!sinRecargar) cargar();
@@ -1012,23 +1033,17 @@
 
        El orden importa: primero se recoge lo del # —si no, el token queda
        dando vueltas en la barra— y recién después se prueba lo guardado. */
-    sesion.recoger()
-      .catch(function (err) {
-        avisar('err', err.message || 'Ese enlace no sirvió.');
-        return false;
-      })
-      .then(function () {
-        if (!sesion.hay()) return;
-        /* Se pide el resumen, que es la prueba de que la sesión sirve. Si
-           no sirve, no se abre nada y el portón queda como estaba: entrar
-           y que después falle todo es peor que no entrar. */
-        return base.panel()
-          .then(abrir)
-          .catch(function (err) {
-            if (err && err.sinSesion) { sesion.salir(); return; }
-            avisar('err', 'No se pudo abrir el panel. Probá de nuevo.');
-          });
-      });
+    /* Si el PIN sigue en la pestaña —se vino de Beneficios, o se recargó—,
+       se entra sin volver a pedirlo. Y se PRUEBA pidiendo el resumen: un PIN
+       viejo que ya no vale tiene que devolver al portón, no abrir una
+       pantalla que después falla en cada clic. */
+    (function () {
+      var pin = pinGuardado();
+      if (!pin) return;
+      base.panel(pin)
+        .then(abrir)
+        .catch(function () { guardarPin(''); });
+    })();
 
     iniciarPWA();
   })();

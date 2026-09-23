@@ -608,13 +608,6 @@ var base = {
    * REGISTRO y no por teléfono a propósito: tipear un número a mano es la
    * forma más fácil de dárselo al cliente equivocado.
    */
-  darDescuento: function (registro, pct, dias, quien) {
-    return token().then(function (t) {
-      return funcion('dar_descuento', {
-        p_registro: registro, p_pct: pct, p_dias: dias || 30, p_quien: quien || null
-      }, t);
-    });
-  },
 
   /**
    * El listado, con su filtro.
@@ -654,37 +647,32 @@ var base = {
 
 
   /* ── Lo del Panel ──────────────────────────────────────────────────────
-     Todo lo de acá abajo exige haber entrado con el mail: es lo único que
-     toca datos de clientes. Si la sesión venció, token() tira con la marca
-     `sinSesion` y la pantalla manda a entrar de nuevo. */
+     Todo lo de acá abajo pide el PIN: es lo único que toca datos de
+     clientes. Antes pedía haber entrado con el mail; desde el 23/09/2026 es
+     el mismo PIN que Beneficios, una sola llave para las dos secciones.
+
+     Y no leen la tabla: leen funciones que verifican el PIN adentro. A
+     `authenticated` se le sacó el permiso de leer `registros`, así que el
+     camino viejo ya no existe — que es lo que hace que el PIN signifique
+     algo y no sea un candado al lado de una puerta abierta. */
 
   /** Los números de arriba, los conteos de cada filtro y el vocabulario. */
-  panel: function () {
-    return token().then(function (t) { return funcion('resumen_panel', {}, t); });
+  panel: function (pin) {
+    return funcion('resumen_panel', { p_pin: pin });
   },
 
   /**
    * La lista de fichas del filtro elegido.
    *
-   * "Pendiente" no es un estado guardado: es no haber sido tocado. Tiene que
-   * ser el MISMO criterio que usa resumen_panel, o el número del filtro no
-   * coincide con la cantidad de fichas que abre y el panel se ve roto.
+   * "Pendiente" no es un estado guardado: es no haber sido tocado. El
+   * criterio vive ahora en la base, junto al de resumen_panel, que es donde
+   * tenía que estar: separados, el número del filtro y la cantidad de fichas
+   * que abre se despegaban y el panel se veía roto.
    */
-  registros: function (filtro) {
-    var cond = '';
-    if (filtro === 'Pendiente') cond = '&contactado=is.false&estado=is.null';
-    else if (filtro && filtro !== 'Todos') cond = '&estado=eq.' + valor(filtro);
-
-    return token().then(function (t) {
-      /* El id desempata: dos registros que caen en el mismo instante —dos
-         celulares del mismo local, a la vez— dejarían el orden librado a lo
-         que devuelva Postgres, y la lista se reacomodaría sola al refrescar.
-
-         Y el beneficio viene ANIDADO en el mismo viaje. Vive en su propia
-         tabla desde que existen las gift cards, y pedirlo aparte serían dos
-         consultas que después hay que cruzar a mano. */
-      return pedir('/registros?select=*,beneficios(id,pct,usado,anulado,vence)' +
-                   '&order=creado.desc,id.desc' + cond, { sesion: t });
+  registros: function (pin, filtro) {
+    return funcion('registros_listar', {
+      p_pin: pin,
+      p_filtro: filtro || null
     }).then(function (filas) {
       return (filas || []).map(deLaBase_);
     });
@@ -695,16 +683,23 @@ var base = {
    *
    * Recibe los nombres que usa la pantalla y los traduce a los campos de la
    * base; ver aLaBase_. El id va aparte del resto a propósito: es lo único
-   * que no se puede cambiar desde acá.
+   * que no se puede cambiar desde acá — y del otro lado la función enumera
+   * las columnas una por una, así que tampoco se puede desde afuera.
    */
-  seguimiento: function (id, campos) {
+  seguimiento: function (pin, id, campos) {
     var cuerpo = aLaBase_(campos);
     if (!Object.keys(cuerpo).length) return Promise.resolve(true);
-    return token().then(function (t) {
-      return pedir('/registros?id=eq.' + valor(id), {
-        metodo: 'PATCH', cuerpo: cuerpo, sesion: t
-      });
-    }).then(function () { return true; });
+    return funcion('seguimiento_guardar', {
+      p_pin: pin, p_id: id, p_campos: cuerpo
+    });
+  },
+
+  /** El descuento atado al teléfono, desde la ficha del cliente. */
+  darDescuento: function (pin, registro, pct, dias, quien) {
+    return funcion('dar_descuento', {
+      p_pin: pin, p_registro: registro, p_pct: pct,
+      p_dias: dias || 30, p_quien: quien || null
+    });
   },
 
   /* ── Lo de Configuración ───────────────────────────────────────────────
