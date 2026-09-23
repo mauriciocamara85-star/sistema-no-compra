@@ -1051,3 +1051,42 @@ select {
   55%  { transform: scale(1.04); }
   100% { transform: scale(1); }
 }
+
+
+/* ── PANTALLA GRANDE ───────────────────────────────────────────────────────
+   Arriba de 1600px el problema deja de ser el ancho y pasa a ser la ESCALA.
+   Hasta acá un monitor de 27" recibía exactamente el mismo layout que una
+   notebook de 1280 —la misma letra de 16px, el mismo padding de 16px, los
+   mismos números de 24px— y lo único que crecía eran los márgenes. Por eso
+   se veía chico y apretado en el medio en vez de angosto.
+
+   Lo que sube es el cuerpo de lo que se lee, NO el ancho de las columnas:
+   estirar un campo de texto a 700px empeora la lectura —el ojo viaja de más
+   entre la etiqueta y el campo— y eso ya estaba dicho en index.html. Los
+   topes de cada pantalla crecen aparte, y con moderación.
+
+   El alto no entra en la cuenta: un monitor de 27" tiene alto de sobra. Las
+   reglas por altura que achican todo para las notebooks viven en index.html,
+   son más específicas por venir después y siguen mandando sobre esto.
+
+   Los inputs no bajan de 16px nunca (iOS hace zoom solo); acá sólo suben. */
+@media (min-width: 1600px) {
+  .kpi-l { font-size: 14px; }
+  .kpi-pie { font-size: 12.5px; }
+
+  .bloque { padding: 20px 22px; }
+  .bloque-tit { font-size: 18.5px; }
+  .bloque-sub { font-size: 14.5px; }
+
+  .campos { gap: 14px; }
+  label, .campo-lbl { font-size: 13.5px; }
+  input[type=text], input[type=tel], input[type=email], input[type=number],
+  input[type=search], input[type=password], textarea, select {
+    font-size: 16.5px;
+    padding: 14px 15px;
+  }
+
+  .chip { font-size: 14.5px; min-height: 44px; padding: 10px 16px; }
+  .btn { font-size: 16.5px; min-height: 52px; }
+  .btn-chico { font-size: 14px; }
+}

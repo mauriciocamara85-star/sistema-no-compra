@@ -253,10 +253,14 @@
      align-items:start deja que cada ficha mida lo suyo — una con
      observaciones larga no estira a la de al lado. */
   @media (min-width: 1100px) {
-    :root { --tope: 1180px; }
+    :root { --tope: 1560px; }
+    /* De a dos columnas fijas pasaba a desperdiciar media pantalla en un
+       monitor grande. Con auto-fill sobre un mínimo de 420px son dos en
+       1100, tres desde ~1520 y nunca una ficha más angosta que lo que
+       necesita el renglón del cliente. */
     #lista {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
       gap: 12px;
       align-items: start;
     }

@@ -173,8 +173,14 @@
      derecha. Antes todo caía en una sola columna de 660px flotando en el
      medio de la pantalla, con el rail lejísimos a la izquierda y un desierto
      al costado. */
+  /* Tablet acostada y notebook chica: entre el celular y el escritorio no
+     había nada, así que una pantalla de 1024 se quedaba con los 660px del
+     celular y 128 de vacío de cada lado. Acá todavía no hay dos columnas
+     —eso empieza en 1100— pero sí más ancho para las tarjetas. */
+  @media (min-width: 900px) { :root { --tope: 940px; } }
+
   @media (min-width: 1100px) {
-    :root { --tope: 1180px; }
+    :root { --tope: 1440px; }
     .hoja {
       display: grid;
       /* 380 y no 320: en esa columna ahora hay formularios —un mail, un

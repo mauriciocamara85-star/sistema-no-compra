@@ -498,7 +498,7 @@
     /* El tope existe igual: pasado cierto ancho, las columnas se vuelven tan
        anchas que el ojo tiene que viajar de más entre la etiqueta y el
        campo. */
-    :root { --tope: 1420px; }
+    :root { --tope: 1560px; }
 
     .hoja { gap: 12px; padding-top: 16px; }
     /* Con la hoja en flex, los márgenes de abajo de cada franja se sumarían
@@ -543,8 +543,8 @@
        al lado de la otra ocupan un tercio del alto. */
     #equipoLista {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
-      column-gap: 26px;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      column-gap: clamp(18px, 1.6vw, 34px);
     }
     .eq:first-child { border-top: 0; }
     /* Con varias columnas, el primero de CADA una es el que no lleva línea
@@ -583,6 +583,29 @@
     .barra-in .btn { min-width: 300px; }
   }
 
+
+  /* ── 27 pulgadas ──────────────────────────────────────────────────────
+     Los números y los pasos crecen; las columnas del formulario no, que ya
+     están en el ancho donde se leen bien. Lo que gana la pantalla grande es
+     tamaño de letra y aire, no viaje del ojo. */
+  @media (min-width: 1600px) {
+    .hoja { gap: 16px; padding-top: 22px; }
+    .kpis { gap: 16px; }
+    .kpi { padding: 16px 18px; }
+    .kpi-n { font-size: 30px; }
+    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 25px; }
+
+    .pasos { gap: 16px; }
+    .paso { padding: 20px 22px; }
+    .paso-cab { margin-bottom: 16px; }
+    .paso .campos { gap: 14px; }
+    .paso input, .paso textarea { padding: 14px 15px; }
+    #paso3 textarea { min-height: 88px; }
+    .chips-motivo { gap: 10px; }
+
+    .barra-in .btn { min-width: 360px; }
+  }
+
   /* Notebook: la misma pantalla en 700 y pico de alto. Se recorta el aire
      otra vez, en el mismo orden: primero el padding de las tarjetas, después
      el de los campos. Ningún texto se achica. */
@@ -613,6 +636,18 @@
      de cada paso, que son ayuda para el primer día y no para el número mil.
      Los DATOS no se tocan: ninguna tarjeta pierde su pie. */
   @media (min-width: 1200px) and (max-height: 730px) {
+
+    /* Con 768px de pantalla física el viewport queda en ~658 y el equipo
+       empujaba la página al scroll por una segunda fila de vendedores. Más
+       columnas y menos aire entre renglones: seis entran en una fila. Con un
+       equipo muy numeroso va a scrollear igual, y está bien que scrollee algo
+       que se mira una vez por día —lo que no puede quedar abajo del corte es
+       el formulario, y ese termina 190px antes. */
+    #equipoLista { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); column-gap: 16px; }
+    .eq { padding: 5px 0; }
+    .equipo { padding: 12px 14px; }
+    .eq-pie { margin-top: 8px; padding-top: 8px; }
+
     .tablero-cab { display: none; }
     .paso-sub { display: none; }
     .equipo .bloque-sub { display: none; }
