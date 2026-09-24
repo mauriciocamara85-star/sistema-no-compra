@@ -324,6 +324,16 @@
        Se dice acá en vez de no decir nada: el que abre esta pantalla
        buscando el aviso por Telegram tiene que enterarse de que existe y
        de dónde se toca, no quedarse pensando que se perdió. -->
+  <!-- ── La promo del Club ──
+       Lo único de esta pantalla que ven los CLIENTES, y por eso es lo único
+       que pide el PIN. El resto de Configuración —objetivos, locales— lo ve
+       el equipo. -->
+  <div class="bloque" id="cajaPromo">
+    <h2 class="bloque-tit">La promo del Club</h2>
+    <p class="bloque-sub">Un cartel que ven todos los socios al abrir su tarjeta. Pasada la fecha desaparece solo.</p>
+    <div id="promoCuerpo"></div>
+  </div>
+
   <div class="bloque">
     <h2 class="bloque-tit">Los avisos</h2>
     <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
@@ -365,6 +375,109 @@
      dato del cliente, no una firma al pie de un cambio. */
 
   /* ═══ Este equipo ═══════════════════════════════════════════════════════ */
+  /* ═══ La promo del Club ═════════════════════════════════════════════
+     Es lo único de Configuración que sale de esta pantalla y llega a un
+     cliente, así que es lo único que pide el PIN —el mismo del Panel, de
+     Beneficios y de la caja—.
+
+     El PIN vive en sessionStorage y no en localStorage: dura lo que dura la
+     pestaña. En la PC del local, que queda abierta todo el día, guardarlo
+     para siempre sería dejar la llave puesta. */
+  var K_PIN_PROMO = 'nc_pin';
+
+  function pinPromo() {
+    try { return sessionStorage.getItem(K_PIN_PROMO) || ''; } catch (e) { return ''; }
+  }
+  function guardarPinPromo(v) {
+    try {
+      if (v) sessionStorage.setItem(K_PIN_PROMO, v); else sessionStorage.removeItem(K_PIN_PROMO);
+    } catch (e) {}
+  }
+
+  function pintarPromo() {
+    var caja = $('promoCuerpo');
+    if (!caja) return;
+
+    if (!pinPromo()) { pedirPinPromo(); return; }
+
+    caja.innerHTML = '<p class="bloque-sub">Buscando lo que hay puesto…</p>';
+    base.club.avisoEditar(pinPromo())
+      .then(function (a) { editorPromo((a && a.texto) || '', (a && a.hasta) || ''); })
+      .catch(function (err) {
+        /* PIN vencido o equivocado: se vuelve a pedir en vez de dejar un
+           cartel de error que no se puede accionar. */
+        guardarPinPromo('');
+        pedirPinPromo((err && err.delServidor && err.message) || '');
+      });
+  }
+
+  function pedirPinPromo(error) {
+    $('promoCuerpo').innerHTML =
+      '<div class="campo ancho">' +
+        '<label for="promoPin">PIN <span class="lbl-req">obligatorio</span></label>' +
+        '<input type="password" id="promoPin" inputmode="numeric" maxlength="8" ' +
+               'placeholder="PIN" autocomplete="current-password">' +
+        (error ? '<div class="campo-error">' + esc(error) + '</div>' : '') +
+      '</div>' +
+      '<button type="button" class="btn btn-sec btn-chico" id="promoEntrar" ' +
+              'style="margin-top:10px">Entrar</button>';
+
+    $('promoEntrar').onclick = entrarPromo;
+    $('promoPin').onkeydown = function (e) { if (e.key === 'Enter') entrarPromo(); };
+  }
+
+  function entrarPromo() {
+    var v = $('promoPin').value.trim();
+    if (!v) { avisar('err', 'Escribí el PIN.'); return; }
+    guardarPinPromo(v);
+    pintarPromo();
+  }
+
+  function editorPromo(texto, hasta) {
+    $('promoCuerpo').innerHTML =
+      '<div class="campos">' +
+        '<div class="campo ancho">' +
+          '<label for="promoTexto">Qué dice <span class="lbl-opc">— vacío lo apaga</span></label>' +
+          '<textarea id="promoTexto" maxlength="140" ' +
+            'placeholder="Sólo por hoy: 30% off en remeras">' + esc(texto) + '</textarea>' +
+          '<div class="campo-error" id="promoLargo" hidden></div>' +
+        '</div>' +
+        '<div class="campo">' +
+          '<label for="promoHasta">Hasta qué día</label>' +
+          '<input type="date" id="promoHasta" value="' + esc(hasta || '') + '">' +
+        '</div>' +
+        '<div class="campo">' +
+          '<label>&nbsp;</label>' +
+          '<button type="button" class="btn btn-pri" id="promoGuardar">Guardar el cartel</button>' +
+        '</div>' +
+      '</div>' +
+      '<p class="bloque-sub" style="margin-top:12px">Lo ven cuando abren la tarjeta. ' +
+      'No es una notificación: a nadie le suena el teléfono.</p>';
+
+    $('promoGuardar').onclick = guardarPromo;
+  }
+
+  function guardarPromo() {
+    var b = $('promoGuardar');
+    var texto = $('promoTexto').value.trim();
+    var hasta = $('promoHasta').value;
+
+    /* Un cartel con texto y sin fecha se queda para siempre, y "sólo por
+       hoy" en marzo es peor que no tener cartel. */
+    if (texto && !hasta) { avisar('err', 'Poné hasta qué día se muestra.'); return; }
+
+    b.disabled = true;
+    base.club.avisoGuardar(pinPromo(), texto, hasta)
+      .then(function (r) {
+        avisar('ok', (r && r.texto) ? 'Listo: los socios lo ven al abrir su tarjeta.'
+                                    : 'Cartel apagado.');
+      })
+      .catch(function (err) {
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
+      })
+      .then(function () { b.disabled = false; });
+  }
+
   function pintarEsteEquipo() {
     var actual = leer(K_LOCAL);
     if (actual) {
@@ -581,6 +694,9 @@
     iniciarTema();
     pintarEsteEquipo();
     cargar(false);
+    /* Viaje aparte del resto: pide PIN y puede fallar sola sin arrastrar a
+       los objetivos, que no lo piden. */
+    pintarPromo();
     iniciarPWA();
   })();
 </script>

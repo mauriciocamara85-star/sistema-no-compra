@@ -61,6 +61,15 @@ var club = {
    */
   recuperar: function (telefono) {
     return llamar('club_recuperar', { p_telefono: telefono });
+  },
+
+  /**
+   * El cartel de la promo. La base lo devuelve sólo si está vigente, así
+   * que acá no hay ninguna fecha que comparar: una tarjeta abierta con una
+   * copia vieja de la página tampoco puede mostrar algo que ya venció.
+   */
+  aviso: function () {
+    return llamar('club_aviso_ver', {});
   }
 };
 

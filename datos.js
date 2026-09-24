@@ -697,6 +697,17 @@ var base = {
     /** La tarjeta como la ve el cliente, para mostrarla en el mostrador. */
     tarjeta: function (codigo) {
       return funcion('club_tarjeta', { p_codigo: codigo });
+    },
+
+    /* ── La promo ──
+       Lo que ve un socio al abrir su tarjeta. Leerlo para EDITARLO pide PIN
+       y devuelve lo que haya aunque esté vencido; lo que ve el cliente sale
+       de club_aviso_ver, que esconde lo vencido y no pide nada. */
+    avisoEditar: function (pin) {
+      return funcion('club_aviso_editar', { p_pin: pin });
+    },
+    avisoGuardar: function (pin, texto, hasta) {
+      return funcion('club_aviso_guardar', { p_pin: pin, p_texto: texto, p_hasta: hasta });
     }
   },
 

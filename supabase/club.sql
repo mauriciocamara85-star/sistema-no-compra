@@ -955,3 +955,124 @@ end;
 $cr$;
 
 grant execute on function club_recuperar(text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- LA PROMO DEL CLUB
+--
+-- Un cartel que Mauricio escribe en Configuración y que ve todo el que abre
+-- su tarjeta: "sólo por hoy, 30% off en remeras".
+--
+-- Es un DATO, no una versión de la app. No hay que publicar nada ni esperar
+-- a que nadie actualice: la tarjeta lo lee cada vez que se abre.
+--
+-- Y NO es una notificación. El cliente lo ve cuando entra; a nadie le suena
+-- el teléfono. Eso es otra cosa (push, o WhatsApp) y cuesta bastante más.
+--
+-- Lleva fecha de vencimiento y no es un lujo: un cartel que dice "sólo por
+-- hoy" y sigue ahí en marzo es peor que no tener cartel. Vencido desaparece
+-- solo, sin que nadie se tenga que acordar de bajarlo.
+-- ══════════════════════════════════════════════════════════════════════════
+
+insert into club_reglas (clave, valor) values
+  ('aviso_texto', null),      -- qué dice el cartel
+  ('aviso_hasta', null)       -- último día que se muestra (fecha, inclusive)
+on conflict (clave) do nothing;
+
+
+/* Lo que ve el cliente. Devuelve el cartel SÓLO si está vigente: la regla
+   de si se muestra o no vive acá y no en la página, así no hay dos lugares
+   donde arreglarla, y así una tarjeta abierta sin señal con la copia vieja
+   tampoco puede mostrar una promo que ya venció.
+
+   Sin PIN, como club_reglas_ver: es lo que dice el cartel del local. */
+create or replace function club_aviso_ver()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $av$
+  select case
+    when t.valor is null or length(trim(t.valor)) = 0 then jsonb_build_object('hay', false)
+    when h.valor is not null and h.valor::date < current_date then jsonb_build_object('hay', false)
+    else jsonb_build_object('hay', true, 'texto', trim(t.valor), 'hasta', h.valor)
+  end
+  from (select valor from club_reglas where clave = 'aviso_texto') t
+  cross join (select valor from club_reglas where clave = 'aviso_hasta') h
+$av$;
+
+grant execute on function club_aviso_ver() to anon, authenticated;
+
+
+/* Escribirlo. Con el mismo PIN que el Panel, Beneficios y la caja: es lo
+   que ven todos los clientes del club, no una preferencia del dispositivo.
+
+   Vaciar el texto apaga el cartel, que es más fácil de explicar que un
+   botón de "apagar" al lado de un texto que sigue escrito. */
+create or replace function club_aviso_guardar(p_pin text, p_texto text, p_hasta text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ag$
+declare
+  txt text;
+  fec date;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  txt := nullif(trim(coalesce(p_texto, '')), '');
+
+  if txt is not null and length(txt) > 140 then
+    raise exception 'El cartel es muy largo. Máximo 140 caracteres.';
+  end if;
+
+  /* La fecha se valida acá y no en la pantalla: si llega algo que no es una
+     fecha, mejor que falle al guardar y no el día que un cliente abre la
+     tarjeta y club_aviso_ver revienta al comparar. */
+  begin
+    fec := nullif(trim(coalesce(p_hasta, '')), '')::date;
+  exception when others then
+    raise exception 'Esa fecha no se entiende. Va como 2026-09-30.';
+  end;
+
+  if txt is not null and fec is not null and fec < current_date then
+    raise exception 'Esa fecha ya pasó: el cartel no lo vería nadie.';
+  end if;
+
+  update club_reglas set valor = txt where clave = 'aviso_texto';
+  update club_reglas set valor = to_char(fec, 'YYYY-MM-DD') where clave = 'aviso_hasta';
+
+  return jsonb_build_object('ok', true, 'texto', txt,
+                            'hasta', to_char(fec, 'YYYY-MM-DD'));
+end;
+$ag$;
+
+grant execute on function club_aviso_guardar(text, text, text) to anon, authenticated;
+
+
+/* Y leerlo para editarlo: la pantalla de Configuración tiene que poder
+   mostrar lo que hay puesto AUNQUE esté vencido, que es lo que club_aviso_ver
+   esconde a propósito. Pide PIN porque escribir lo pide, y porque ver el
+   cartel vencido de la semana pasada no es asunto de un cliente. */
+create or replace function club_aviso_editar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ae$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return jsonb_build_object(
+    'texto', (select valor from club_reglas where clave = 'aviso_texto'),
+    'hasta', (select valor from club_reglas where clave = 'aviso_hasta'));
+end;
+$ae$;
+
+grant execute on function club_aviso_editar(text) to anon, authenticated;
