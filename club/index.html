@@ -234,9 +234,15 @@
       .then(function (r) {
         if (!r || !r.alta) {
           /* El caso normal de "no" es que ese número ya esté anotado. La
-             base no devuelve la tarjeta ajena a propósito, así que acá lo
-             único que se puede hacer es mandarlo al local. */
-          m.textContent = (r && r.porque) || 'No se pudo crear la tarjeta.';
+             base no devuelve la tarjeta ajena a propósito —si alcanzara con
+             tipear un número, esto sería un buscador de personas— así que
+             acá no se puede hacer aparecer la tarjeta. Lo que sí hay que
+             hacer es decir los dos caminos que quedan, porque el mensaje
+             pelado deja al cliente parado sin saber qué hacer. */
+          m.innerHTML = esc((r && r.porque) || 'No se pudo crear la tarjeta.') +
+            '<br><br>Si guardaste el enlace de tu tarjeta, abrilo: ese te lleva ' +
+            'a la tuya. Si no lo tenés, pedila en cualquier local y te la abren ' +
+            'en el momento con tu teléfono.';
           m.hidden = false;
           return;
         }
