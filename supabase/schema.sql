@@ -22,8 +22,12 @@
 -- haya revisado.
 -- ════════════════════════════════════════════════════════════════════════
 
+/* 'Sin stock' y 'No lo hacemos' NO son lo mismo, y separarlos es lo que
+   permite contestar dos preguntas distintas: qué hay que reponer (depósito)
+   y qué habría que fabricar (producto). Ver motivo-nuevo.sql. */
 create type motivo_no_compra as enum (
-  'Sin talle', 'Sin stock', 'Precio', 'No le gustó', 'Fue a comparar', 'Otro'
+  'Sin talle', 'Sin stock', 'No lo hacemos', 'Precio', 'No le gustó',
+  'Fue a comparar', 'Otro'
 );
 
 create type estado_seguimiento as enum (

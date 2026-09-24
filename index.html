@@ -653,8 +653,16 @@
        el formulario, y ese termina 190px antes. */
     #equipoLista { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); column-gap: 16px; }
     .eq { padding: 5px 0; }
-    .equipo { padding: 12px 14px; }
-    .eq-pie { margin-top: 8px; padding-top: 8px; }
+    .equipo { padding: 10px 14px; }
+    .eq-pie { margin-top: 6px; padding-top: 6px; }
+
+    /* El séptimo motivo —"No lo hacemos"— agrega una cuarta fila de chips
+       y con eso la página se pasaba 8px del alto de esta pantalla. Se
+       recuperan achicando el chip dos puntos y el aire uno: acá se usa con
+       mouse, no con el dedo, así que 36px de alto alcanzan. Medido:
+       666/658 antes, 655/658 después. */
+    .chips-motivo { gap: 5px; }
+    .chips-motivo .chip { min-height: 36px; }
 
     .tablero-cab { display: none; }
     .paso-sub { display: none; }
@@ -1142,6 +1150,12 @@
       i: '<path d="M21.3 8.7 8.7 21.3a1 1 0 0 1-1.4 0l-4.6-4.6a1 1 0 0 1 0-1.4L15.3 2.7a1 1 0 0 1 1.4 0l4.6 4.6a1 1 0 0 1 0 1.4Z"/><path d="m7.5 10.5 2 2M10.5 7.5l2 2M13.5 4.5l2 2"/>' },
     { v: 'Sin stock',
       i: '<path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/>' },
+    /* Distinto de "Sin stock": ahí la prenda existe y no había acá; acá el
+       producto no se fabrica. Uno es del depósito y el otro de la fábrica,
+       y hasta hoy los dos caían en el mismo chip. El ícono es un círculo
+       tachado y no una caja, justamente para no parecerse al de stock. */
+    { v: 'No lo hacemos',
+      i: '<circle cx="12" cy="12" r="9"/><path d="m5.6 5.6 12.8 12.8"/>' },
     { v: 'Precio',
       i: '<path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2c0 .5.2 1 .6 1.4l8.8 8.8a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/>' },
     { v: 'No le gustó',
