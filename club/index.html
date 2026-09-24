@@ -209,7 +209,10 @@
 
   /* Si ya tiene tarjeta en este celular, no tiene sentido mostrarle un
      formulario de alta: se va derecho a la suya. */
-  if (codigoGuardado()) { location.replace('tarjeta.html'); return; }
+  if (codigoGuardado()) {
+    location.replace('tarjeta.html?c=' + encodeURIComponent(codigoGuardado()));
+    return;
+  }
 
   /* El QR de cada local trae su nombre: club/?local=RIVADAVIA. Sirve para
      saber qué local trae más socios, y para que el cliente vea que el cartel
@@ -238,7 +241,9 @@
           return;
         }
         guardarCodigo(r.codigo);
-        location.replace('tarjeta.html');
+        /* Con el código en la dirección: es lo que hace que agregar la
+           tarjeta a la pantalla de inicio sirva de verdad. Ver tarjeta.html. */
+        location.replace('tarjeta.html?c=' + encodeURIComponent(r.codigo));
       })
       .catch(function (err) {
         m.textContent = (err && err.message) || 'No se pudo. Fijate la señal y probá de nuevo.';

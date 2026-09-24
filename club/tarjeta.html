@@ -6,6 +6,18 @@
 <title>Mi tarjeta · VDH Club</title>
 <meta name="description" content="Tu tarjeta del Club VDH: mostrala en la caja.">
 <meta name="theme-color" content="#EDEEF0">
+<!-- Agregada a la pantalla de inicio, se abre sin la barra del navegador:
+     es lo que hace que se sienta la tarjeta y no una página guardada.
+     NO lleva manifest a propósito. Un manifest obliga a declarar una
+     start_url fija, y acá cada cliente tiene la suya —su código va en la
+     dirección—: Chrome instalaría a todos apuntando a la misma página sin
+     código, que es un formulario de alta. Sin manifest, el navegador arma
+     el acceso directo con la dirección que está a la vista, que es la
+     correcta para esa persona. -->
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Mi tarjeta">
 <link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <link rel="icon" href="../icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -172,6 +184,15 @@
 
   if (!codigo) { location.replace('index.html'); return; }
 
+  /* Sin recargar: la dirección pasa a llevar el código aunque haya venido
+     del navegador. replaceState y no un salto, para no dejar la vuelta
+     atrás llena de la misma página. */
+  if (!m) {
+    try {
+      history.replaceState(null, '', 'tarjeta.html?c=' + encodeURIComponent(codigo));
+    } catch (e) { /* en file:// tira excepción; la tarjeta anda igual */ }
+  }
+
   club.tarjeta(codigo)
     .then(function (t) {
       if (!t || !t.hay) {
@@ -248,12 +269,40 @@
           '<p class="vacio">Mostrá tu tarjeta la próxima vez que compres y te ' +
           'sumamos la primera.</p></div>') +
 
-      '<p class="letra-chica">Guardá este enlace o agregalo a tu pantalla de inicio.<br>' +
-      'Tu código es sólo tuyo: no lo compartas.</p>';
+      (estaInstalada() ? '' :
+        '<div class="caja">' +
+          '<h2>Tenela siempre a mano</h2>' +
+          '<p class="vacio">Agregala a la pantalla de tu celular y se abre como ' +
+          'una app, con tu código adentro. ' + comoAgregar() + '</p>' +
+        '</div>') +
+
+      '<p class="letra-chica">Tu código es sólo tuyo: no lo compartas.<br>' +
+      'Si perdés esta página, en cualquier local te la vuelven a abrir con tu teléfono.</p>';
 
     $('todo').innerHTML = html;
     $('todo').hidden = false;
     $('cargando').hidden = true;
+  }
+
+  /* Ya agregada a la pantalla de inicio: el cartel de cómo agregarla
+     sobra, y es lo primero que mira alguien que ya lo hizo. */
+  function estaInstalada() {
+    try {
+      return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+             navigator.standalone === true;
+    } catch (e) { return false; }
+  }
+
+  /* El camino es distinto en cada teléfono y no hay forma de hacerlo por el
+     cliente: en iOS no existe ninguna manera de que una página se ofrezca
+     sola. Lo único que se puede es decir dónde tocar, y decirlo bien. */
+  function comoAgregar() {
+    var ua = navigator.userAgent || '';
+    var ios = /iPad|iPhone|iPod/.test(ua) ||
+              (ua.indexOf('Macintosh') > -1 && 'ontouchend' in document);
+    return ios
+      ? 'Tocá <b>Compartir</b> abajo y después <b>Agregar a inicio</b>.'
+      : 'Abrí el menú del navegador y tocá <b>Agregar a la pantalla principal</b>.';
   }
 
   /* "23 de septiembre", como lo diría alguien. Sin el año: la tarjeta es de
