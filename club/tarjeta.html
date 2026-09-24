@@ -155,6 +155,114 @@
   .letra-chica a { color: var(--acc); }
   .cargando { text-align: center; padding: 60px 0; color: var(--txt-3); }
 
+  /* ── Las pestañas ──────────────────────────────────────────────────────
+     La barra de abajo, al alcance del pulgar. Cuatro, y la del medio —la
+     tarjeta— sobresale: es lo que el cliente viene a mostrar en la caja y lo
+     que abre cuando entra.
+
+     La app ARRANCA en la tarjeta, no en un menú. Hoy se abre y el código de
+     barras está a la vista, y ésa es su mejor virtud: si al agregar pestañas
+     quedara a un toque de distancia, habríamos empeorado. */
+  body { padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+
+  .tabs {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    /* Esto es una app de CELULAR y sólo de celular (decisión de Mauricio,
+       24/09/2026). Pero se abre igual en una computadora —él la mira ahí
+       mientras la armamos— y una barra de 1900px de ancho con cuatro
+       iconitos perdidos se ve rota. Se queda del ancho de la columna. */
+    max-width: 520px; margin: 0 auto;
+    display: grid; grid-template-columns: repeat(4, 1fr);
+    background: var(--hoja);
+    border-top: 1px solid var(--linea);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .tab {
+    border: 0; background: none; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    padding: 9px 4px 10px;
+    font: 600 11px var(--sans);
+    color: var(--txt-3);
+    text-decoration: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab svg { width: 22px; height: 22px; }
+  .tab[aria-current="page"] { color: var(--acc); }
+
+  /* La del medio: un círculo rojo que sobresale de la barra. El margen
+     negativo la levanta sin sacarla de la grilla, así las otras tres siguen
+     repartidas parejo. */
+  .tab-centro { position: relative; }
+  .tab-centro .tab-ico {
+    width: 52px; height: 52px; border-radius: 50%;
+    margin-top: -22px; margin-bottom: 1px;
+    background: linear-gradient(150deg, var(--acc), var(--acc-2));
+    color: #fff;
+    display: grid; place-items: center;
+    box-shadow: 0 8px 20px -8px rgba(181, 18, 34, .75);
+    border: 3px solid var(--bg);
+  }
+  .tab-centro svg { width: 25px; height: 25px; }
+
+  /* ── Las vistas ── */
+  .vista[hidden] { display: none; }
+  .vista h1 {
+    font: 700 clamp(25px, 7vw, 32px)/1.15 var(--display);
+    letter-spacing: -.8px; margin-bottom: 4px;
+  }
+  .vista-sub { font-size: 15px; color: var(--txt-2); margin-bottom: 20px; }
+
+  /* ── Promos ──
+     Pantalla entera para lo que Mauricio escribe en Configuración. Si no hay
+     nada cargado, se dice — un cartel vacío es peor que ninguno. */
+  .promo-grande {
+    background:
+      radial-gradient(70% 130% at 110% 20%, rgba(181, 18, 34, .55) 0%, rgba(181, 18, 34, .14) 46%, transparent 74%),
+      repeating-linear-gradient(118deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 11px),
+      linear-gradient(158deg, #2B2E33 0%, #141517 78%);
+    color: #fff;
+    border-radius: var(--r);
+    padding: 30px 24px;
+    font: 700 clamp(21px, 6vw, 27px)/1.3 var(--display);
+    letter-spacing: -.5px;
+    box-shadow: 0 16px 34px -18px rgba(22, 24, 27, .85);
+  }
+  .promo-hasta {
+    display: block;
+    font: 600 12.5px/1 var(--sans);
+    letter-spacing: .4px; text-transform: uppercase;
+    opacity: .75;
+    margin-top: 16px;
+  }
+
+  /* ── Locales ── */
+  .local {
+    background: var(--hoja);
+    border: 1px solid var(--linea);
+    border-radius: var(--r-sm);
+    padding: 16px 17px;
+    margin-bottom: 11px;
+  }
+  .local b { display: block; font: 700 17px/1.2 var(--display); letter-spacing: -.3px; }
+  .local-zona { font-size: 12.5px; color: var(--txt-3); margin-top: 2px; }
+  .local-dato {
+    display: flex; gap: 9px; align-items: flex-start;
+    font-size: 14.5px; color: var(--txt-2); line-height: 1.45;
+    margin-top: 11px;
+  }
+  .local-dato svg { width: 17px; height: 17px; flex: none; margin-top: 2px; color: var(--txt-3); }
+  .local-ir {
+    display: inline-flex; align-items: center; gap: 7px;
+    margin-top: 14px;
+    border: 1.5px solid var(--linea);
+    border-radius: 999px;
+    padding: 9px 16px;
+    font: 700 14px var(--sans);
+    color: var(--acc);
+    text-decoration: none;
+  }
+  .local-ir svg { width: 16px; height: 16px; }
+
   /* El mismo botón que la página de alta: esta pantalla no tenía ninguno
      porque hasta ahora no había nada que apretar. */
   .btn {
@@ -218,10 +326,51 @@
     </div>
   </div>
 
-  <div id="todo" hidden></div>
-  <p class="cargando" id="cargando">Abriendo tu tarjeta…</p>
+  <section class="vista" id="vTarjeta">
+    <div id="todo" hidden></div>
+    <p class="cargando" id="cargando">Abriendo tu tarjeta…</p>
+  </section>
+
+  <section class="vista" id="vPromos" hidden>
+    <h1>Promociones</h1>
+    <p class="vista-sub">Lo que está vigente hoy en todos los locales.</p>
+    <div id="promoGrande"></div>
+  </section>
+
+  <section class="vista" id="vLocales" hidden>
+    <h1>Nuestros locales</h1>
+    <p class="vista-sub">Catorce en todo el país. Mostrá tu tarjeta en cualquiera.</p>
+    <div id="listaLocales"></div>
+  </section>
 </main>
 
+<!-- ── Las pestañas ──
+     La tarjeta va al medio y sobresale: es lo que se usa parado en la caja.
+     El e-shop es un enlace de verdad y no una pestaña con contenido, así que
+     es un <a>: abre la tienda afuera. -->
+<nav class="tabs" aria-label="Secciones">
+  <button type="button" class="tab" data-vista="promos">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2c0 .5.2 1 .6 1.4l8.8 8.8a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>
+    Promos
+  </button>
+
+  <button type="button" class="tab" data-vista="locales">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+    Locales
+  </button>
+
+  <button type="button" class="tab tab-centro" data-vista="tarjeta">
+    <span class="tab-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+    Mi tarjeta
+  </button>
+
+  <a class="tab" href="https://vdh.com.ar/" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+    E-shop
+  </a>
+</nav>
+
+<script src="locales.js"></script>
 <script src="codigo.js"></script>
 <script src="club.js"></script>
 <script>
@@ -271,6 +420,8 @@
       return (g && g.codigo === cod) ? g.t : null;
     } catch (e) { return null; }
   }
+
+  irA((location.hash || '').replace('#', '') || 'tarjeta', false);
 
   club.tarjeta(codigo)
     .then(function (t) {
@@ -514,6 +665,113 @@
       });
   }
 
+  /* ═══ Las pestañas ═══════════════════════════════════════════════════
+     Mostrar y esconder secciones, sin traer nada de la red: las tres vistas
+     ya están en la página. Cambiar de pestaña tiene que ser instantáneo
+     incluso sin señal — el cliente está parado en la caja.
+
+     La pestaña viaja en el # de la dirección para que el botón de atrás del
+     celular haga lo que se espera: volver a la tarjeta en vez de salirse de
+     la app. Y la dirección SIN # sigue abriendo en la tarjeta, que es lo que
+     usa el acceso directo de la pantalla de inicio. */
+  function irA(nombre, conHistoria) {
+    /* El mapa va ADENTRO y no en un var de afuera: irA() se llama al arrancar,
+       antes de que la ejecución llegue a esta altura del archivo, y un var
+       declarado más abajo todavía vale undefined. Eso tiraba el script entero
+       en la primera línea y ni la tarjeta se dibujaba. Una declaración de
+       función se iza; el valor de un var, no. */
+    var VISTAS = { tarjeta: 'vTarjeta', promos: 'vPromos', locales: 'vLocales' };
+    var v = VISTAS[nombre] ? nombre : 'tarjeta';
+
+    Object.keys(VISTAS).forEach(function (k) {
+      var s = $(VISTAS[k]);
+      if (s) s.hidden = (k !== v);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.tab[data-vista]'), function (b) {
+      if (b.dataset.vista === v) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    });
+
+    /* Arriba de todo al cambiar: entrar a Locales scrolleado a la mitad
+       porque la tarjeta estaba scrolleada se lee como que se rompió. */
+    window.scrollTo(0, 0);
+
+    if (conHistoria) {
+      try {
+        history.pushState({ v: v }, '', v === 'tarjeta' ? location.pathname + location.search
+                                                        : '#' + v);
+      } catch (e) { /* en file:// tira excepción; las pestañas andan igual */ }
+    }
+
+    if (v === 'promos') pintarPromoGrande();
+    if (v === 'locales') pintarLocales();
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('.tab[data-vista]'), function (b) {
+    b.onclick = function () { irA(b.dataset.vista, true); };
+  });
+
+  window.addEventListener('popstate', function (e) {
+    irA((e.state && e.state.v) || (location.hash || '').replace('#', '') || 'tarjeta', false);
+  });
+
+  /* ── Promociones, a pantalla completa ──
+     Sale de la misma función que el cartel de la tarjeta, así que la fecha
+     de vencimiento la sigue decidiendo la base y no hay dos lugares donde
+     arreglarla. */
+  var promoCargada = null;
+
+  function pintarPromoGrande() {
+    var caja = $('promoGrande');
+    if (!caja) return;
+
+    var pintar = function (a) {
+      if (a && a.hay) {
+        caja.innerHTML = '<div class="promo-grande">' + esc(a.texto) +
+          (a.hasta ? '<span class="promo-hasta">Hasta el ' + fecha(a.hasta) + '</span>' : '') +
+          '</div>';
+      } else {
+        caja.innerHTML = '<div class="caja"><h2>No hay promociones activas</h2>' +
+          '<p class="vacio">Cuando haya una, te la mostramos acá. Mientras tanto, tus ' +
+          'compras siguen sumando sellos.</p></div>';
+      }
+    };
+
+    if (promoCargada) { pintar(promoCargada); return; }
+    caja.innerHTML = '<p class="vacio">Buscando…</p>';
+    club.aviso()
+      .then(function (a) { promoCargada = a || { hay: false }; pintar(promoCargada); })
+      .catch(function () {
+        caja.innerHTML = '<p class="vacio">No se pudo cargar. Fijate la señal y probá de nuevo.</p>';
+      });
+  }
+
+  /* ── Los locales ──
+     Salen de locales.js, que viaja con la página: catorce direcciones que
+     cambian una vez por año no justifican un viaje a la base, y así la
+     pantalla abre sin señal. */
+  function pintarLocales() {
+    var caja = $('listaLocales');
+    if (!caja || caja.dataset.listo) return;
+
+    var pin = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
+    var reloj = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+    var flecha = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+
+    caja.innerHTML = LOCALES_VDH.map(function (l) {
+      return '<div class="local">' +
+        '<b>' + esc(l.nombre) + '</b>' +
+        '<div class="local-zona">' + esc(l.zona) + '</div>' +
+        '<div class="local-dato">' + pin + '<span>' + esc(l.dir) + '</span></div>' +
+        '<div class="local-dato">' + reloj + '<span>' + esc(l.hora) + '</span></div>' +
+        '<a class="local-ir" target="_blank" rel="noopener" href="' + esc(comoLlegar(l)) + '">' +
+          'Cómo llegar' + flecha +
+        '</a>' +
+      '</div>';
+    }).join('');
+    caja.dataset.listo = '1';
+  }
+
   /* Ya agregada a la pantalla de inicio: el cartel de cómo agregarla
      sobra, y es lo primero que mira alguien que ya lo hizo. */
   function estaInstalada() {
@@ -540,7 +798,15 @@
   function fecha(iso) {
     if (!iso) return '';
     try {
-      return new Date(iso).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
+      /* Una fecha SOLA (2026-09-28, sin hora) la interpreta como medianoche
+         UTC, y en Argentina eso es el día anterior a las 21:00. La promo que
+         vencía el 28 mostraba "hasta el 27". Con año, mes y día sueltos el
+         Date se arma en hora local y el día es el que dice el texto.
+         Las marcas con hora —el "socio desde", que viene con zona— siguen
+         por el camino de siempre. */
+      var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+      var f = d ? new Date(+d[1], +d[2] - 1, +d[3]) : new Date(iso);
+      return f.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
     } catch (e) { return ''; }
   }
 })();

@@ -29,12 +29,13 @@
    Al tocar cualquiera de estos archivos, subir CACHE. Ese cambio de nombre
    es lo que borra el caché viejo de los celulares.
    ═══════════════════════════════════════════════════════════════════════════ */
-const CACHE = 'vdh-club-v2';
+const CACHE = 'vdh-club-v3';
 
 const BASICOS = [
   './tarjeta.html',
   './index.html',
   './club.js',
+  './locales.js',
   './codigo.js',
   './tarjeta.webmanifest',
   '../icon-192.png',
