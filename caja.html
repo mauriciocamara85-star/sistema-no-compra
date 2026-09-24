@@ -35,6 +35,10 @@
   .buscar-tit { font: 700 21px/1.2 var(--display); letter-spacing: -.3px; }
   .buscar-sub { font-size: 14.5px; color: var(--txt-2); margin: 8px 0 20px; line-height: 1.5; }
   .buscar-fila { display: flex; gap: 10px; }
+  /* Mandar la tarjeta y corregir los datos: dos cosas que se hacen de vez en
+     cuando, así que van chicas y juntas abajo del código. Lo de todos los
+     días —sumar la compra— es el botón grande de más abajo. */
+  .ficha-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .buscar-fila input { flex: 1; min-width: 0; font-size: 19px; font-weight: 600; padding: 16px 14px; }
   .buscar-fila .btn { flex: none; padding-left: 22px; padding-right: 22px; }
 
@@ -288,7 +292,7 @@
             'Si todavía no es socio, puede anotarse con el QR del mostrador.</p>';
           return;
         }
-        if (lista.length === 1) { elegir(lista[0].codigo, lista[0].telefono); return; }
+        if (lista.length === 1) { elegir(lista[0].codigo, lista[0].telefono, lista[0].mail); return; }
         pintarLista(lista);
       })
       .catch(function (err) {
@@ -300,7 +304,8 @@
   function pintarLista(lista) {
     $('resultado').innerHTML = lista.map(function (s) {
       return '<button type="button" class="socio" data-cod="' + esc(s.codigo) + '" ' +
-        'data-tel="' + esc(s.telefono || '') + '">' +
+        'data-tel="' + esc(s.telefono || '') + '" ' +
+        'data-mail="' + esc(s.mail || '') + '">' +
         '<span class="socio-n">' + s.sellos + '</span>' +
         '<span><span class="socio-nom">' + esc(s.nombre) + '</span>' +
         '<span class="socio-sub">' + esc(s.telefono) + '</span></span>' +
@@ -308,18 +313,19 @@
         '</button>';
     }).join('');
     Array.prototype.forEach.call($('resultado').querySelectorAll('[data-cod]'), function (b) {
-      b.onclick = function () { elegir(b.dataset.cod, b.dataset.tel); };
+      b.onclick = function () { elegir(b.dataset.cod, b.dataset.tel, b.dataset.mail); };
     });
   }
 
   /* ═══ La ficha del cliente ════════════════════════════════════════════ */
-  function elegir(codigo, telefono) {
+  function elegir(codigo, telefono, mail) {
     base.club.tarjeta(codigo).then(function (t) {
       if (!t || !t.hay) { avisar('err', 'No encontré esa tarjeta.'); return; }
       socio = t;
       /* club_tarjeta no devuelve el teléfono a propósito —la abre cualquiera
          con el código—, así que el de la búsqueda es el único que hay. */
       socio.telefono = telefono || '';
+      socio.mail = mail || '';
       pintarFicha(t);
     }).catch(function () { avisar('err', 'No se pudo abrir la tarjeta.'); });
   }
@@ -378,7 +384,13 @@
         '<div class="ficha-top">' +
           '<div><div class="ficha-nom">' + esc(t.nombre) + '</div>' +
           '<div class="socio-sub">' + codigoBonito(t.codigo) + '</div>' +
-          (mandar ? '<div style="margin-top:10px">' + mandar + '</div>' : '') +
+          '<div class="ficha-acciones">' + mandar +
+            '<button type="button" class="btn btn-sec btn-chico" id="btnEditar">' +
+            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+            'stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/>' +
+            '<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
+            'Corregir datos</button>' +
+          '</div>' +
           '</div>' +
           '<div class="ficha-sellos">' + t.sellos + ' <small>de ' + meta + '</small></div>' +
         '</div>' +
@@ -397,10 +409,69 @@
       '</div>';
 
     $('btnSumar').onclick = function () { sumar(false); };
+    $('btnEditar').onclick = editarSocio;
     Array.prototype.forEach.call($('resultado').querySelectorAll('[data-hito]'), function (b) {
       b.onclick = function () { entregar(+b.dataset.hito); };
     });
     cargarMovs();
+  }
+
+  /* ═══ Corregir los datos ══════════════════════════════════════════════
+     El agujero que quedaba: no había forma de cambiarle el teléfono a nadie.
+     Importa más desde que el teléfono abre la tarjeta —el que cambia de
+     número y además pierde el enlace, sin esto no vuelve a entrar nunca—.
+
+     Y es delicado por lo mismo: cambiarle el número a un socio es poder
+     abrir su tarjeta. No es una capacidad nueva (quien tiene el PIN ya puede
+     canjear premios de cualquiera) pero la base lo anota en el log con el
+     nombre de quien atendía. */
+  function editarSocio() {
+    var t = socio;
+    $('resultado').innerHTML =
+      '<div class="bloque ficha-socio">' +
+        '<div class="ficha-top">' +
+          '<div><div class="ficha-nom">Corregir los datos</div>' +
+          '<div class="socio-sub">' + codigoBonito(t.codigo) + '</div></div>' +
+        '</div>' +
+        '<div class="campos" style="margin-top:18px">' +
+          '<div class="campo ancho"><label for="edNom">Nombre</label>' +
+            '<input type="text" id="edNom" autocapitalize="words" value="' + esc(t.nombre || '') + '"></div>' +
+          '<div class="campo"><label for="edTel">WhatsApp</label>' +
+            '<input type="tel" id="edTel" inputmode="numeric" value="' + esc(t.telefono || '') + '"></div>' +
+          '<div class="campo"><label for="edMail">Mail <span class="lbl-opc">opcional</span></label>' +
+            '<input type="email" id="edMail" inputmode="email" autocapitalize="off" ' +
+            'placeholder="vos@mail.com" value="' + esc(t.mail || '') + '"></div>' +
+          '<div class="campo ancho">' +
+            '<button type="button" class="btn btn-pri btn-ancho" id="edGuardar">Guardar los cambios</button>' +
+          '</div>' +
+          '<div class="campo ancho">' +
+            '<button type="button" class="btn btn-sec btn-ancho" id="edVolver">Volver sin cambiar nada</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    $('edVolver').onclick = function () { pintarFicha(socio); };
+    $('edGuardar').onclick = function () {
+      var b = $('edGuardar');
+      b.disabled = true;
+      base.club.editar(pinGuardado(), t.codigo,
+                       $('edNom').value, $('edTel').value, $('edMail').value, vendedor)
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          /* La ficha se redibuja con lo que quedó, no con lo que se escribió:
+             la base normaliza (el mail en minúsculas, los espacios de más) y
+             el mostrador tiene que ver lo que quedó guardado de verdad. */
+          socio.nombre = r.nombre;
+          socio.telefono = r.telefono;
+          socio.mail = r.mail || '';
+          avisar('ok', 'Listo, quedaron corregidos.');
+          pintarFicha(socio);
+        })
+        .catch(function (err) {
+          avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
+        })
+        .then(function () { b.disabled = false; });
+    };
   }
 
   /* ═══ Sumar ═══════════════════════════════════════════════════════════ */

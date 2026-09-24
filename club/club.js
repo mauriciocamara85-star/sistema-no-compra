@@ -37,11 +37,11 @@ function llamar(fn, args) {
 
 var club = {
   /** Anotarse. Devuelve {alta:true, codigo} o {alta:false, porque}. */
-  alta: function (nombre, telefono, local, cumple, acepta) {
+  alta: function (nombre, telefono, local, cumple, acepta, mail) {
     return llamar('club_alta', {
       p_nombre: nombre, p_telefono: telefono,
       p_local: local || null, p_cumple: cumple || null,
-      p_acepta: !!acepta
+      p_acepta: !!acepta, p_mail: mail || null
     });
   },
 

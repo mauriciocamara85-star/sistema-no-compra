@@ -75,6 +75,13 @@ create table if not exists club_clientes (
 
   nombre   text not null,
   telefono text not null,
+  /* Opcional y hoy no lo usa el club: es para el ECOMMERCE. Tienda Nube
+     identifica a sus clientes por mail, así que esto es lo único que va a
+     permitir cruzar quién compra en el local con quién compra en la web.
+     Se pide en el alta por la misma razón que el cumple: preguntarlo
+     después cuesta cien veces más que preguntarlo ahora.
+     NO sirve para entrar a la tarjeta — ver club_recuperar. */
+  mail     text,
   /* Opcional y hoy no lo usa nadie. Se pide en el alta porque preguntarlo
      después cuesta mucho más que preguntarlo ahora. */
   cumple   date,
@@ -287,12 +294,15 @@ revoke execute on function club_codigo() from anon, authenticated, public;
 -- donde alguien puede mirarle la cara.
 -- ════════════════════════════════════════════════════════════════════════
 
+/* El alta, con el mail. Firma nueva: la vieja se borra abajo, si no quedan
+   las dos y PostgREST no sabe cuál llamar. */
 create or replace function club_alta(
   p_nombre   text,
   p_telefono text,
   p_local    text default null,
   p_cumple   date default null,
-  p_acepta   boolean default false
+  p_acepta   boolean default false,
+  p_mail     text default null
 )
 returns jsonb
 language plpgsql
@@ -302,21 +312,27 @@ as $ca$
 declare
   tel   text;
   nom   text;
+  mai   text;
   cod   text;
   nid   bigint;
 begin
   nom := nullif(trim(coalesce(p_nombre, '')), '');
   tel := regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g');
+  mai := lower(nullif(trim(coalesce(p_mail, '')), ''));
 
   if nom is null then raise exception 'Falta el nombre.'; end if;
   if length(tel) < 8 then raise exception 'Ese WhatsApp no parece completo.'; end if;
 
+  /* Un mail mal escrito no frena el alta: se guarda igual. Frenar a alguien
+     parado en el mostrador por un campo OPCIONAL es exactamente al revés de
+     para qué es opcional. Lo único que se rechaza es algo que claramente no
+     es un mail, para no llenar la base de "no tengo". */
+  if mai is not null and mai !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    raise exception 'Ese mail no se entiende. Dejalo vacío si no lo tenés a mano.';
+  end if;
+
   if exists (select 1 from club_clientes
               where regexp_replace(telefono, '[^0-9]', '', 'g') = tel) then
-    /* Sin código y sin nombre. La tarjeta NO se devuelve acá: quien se
-       está anotando escribió un nombre que puede no ser el suyo. Lo que
-       hace la pantalla con esto es pedir club_recuperar con el mismo
-       teléfono, que es la puerta pensada para esto. */
     return jsonb_build_object('alta', false, 'ya_estaba', true,
       'porque', 'Ese número ya tiene tarjeta. Te la abrimos.');
   end if;
@@ -324,10 +340,11 @@ begin
   cod := club_codigo();
 
   insert into club_clientes (
-    codigo, nombre, telefono, cumple, local_alta,
+    codigo, nombre, telefono, mail, cumple, local_alta,
     acepta_promos, consentimiento, consentimiento_via
   ) values (
-    cod, nom, trim(p_telefono), p_cumple, nullif(trim(coalesce(p_local, '')), ''),
+    cod, nom, trim(p_telefono), mai, p_cumple,
+    nullif(trim(coalesce(p_local, '')), ''),
     coalesce(p_acepta, false),
     case when coalesce(p_acepta, false) then now() else null end,
     case when coalesce(p_acepta, false)
@@ -340,7 +357,13 @@ begin
 end;
 $ca$;
 
-grant execute on function club_alta(text, text, text, date, boolean) to anon, authenticated;
+grant execute on function club_alta(text, text, text, date, boolean, text) to anon, authenticated;
+
+/* La de cinco argumentos se va. Con las dos, PostgREST elige por los
+   nombres que le llegan y una página vieja en un celular seguiría entrando
+   por la otra: dos altas distintas conviviendo es como se desincronizan
+   estas cosas. */
+drop function if exists club_alta(text, text, text, date, boolean);
 
 
 -- ════════════════════════════════════════════════════════════════════════
@@ -463,6 +486,7 @@ begin
   return coalesce((
     select jsonb_agg(jsonb_build_object(
              'codigo', codigo, 'nombre', nombre, 'telefono', telefono,
+             'mail', mail,
              'sellos', sellos, 'compras', compras, 'confirmado', confirmado)
            order by confirmado desc, creado desc)
       from (
@@ -470,7 +494,10 @@ begin
          where baja is null
            and ( (length(dig) >= 8 and regexp_replace(telefono, '[^0-9]', '', 'g') = dig)
               or (length(dig) = 12 and codigo = dig)
-              or (length(txt) >= 3 and lower(nombre) like '%' || txt || '%') )
+              or (length(txt) >= 3 and lower(nombre) like '%' || txt || '%')
+              /* Por mail también: si el vendedor lo tiene, es una llave
+                 entera y no un pedazo de nombre. */
+              or (position('@' in txt) > 1 and lower(coalesce(mail, '')) = txt) )
          order by creado desc
          limit 10
       ) t
@@ -1076,3 +1103,113 @@ end;
 $ae$;
 
 grant execute on function club_aviso_editar(text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- EL MAIL DEL SOCIO, Y PODER CORREGIRLE LOS DATOS
+--
+-- Dos cosas chicas, decididas el 24/09/2026.
+--
+-- EL MAIL va en el alta, OPCIONAL, y no sirve para entrar. Las tres cosas a
+-- propósito:
+--
+--   · Va ahora y no "cuando haga falta" porque cada socio que se anote sin
+--     mail no lo va a tener nunca, salvo una campaña que cuesta cien veces
+--     más que un campo. Es la misma razón por la que ya se pide el cumple:
+--     preguntarlo después sale mucho más caro que preguntarlo ahora.
+--
+--   · Es para el ECOMMERCE, no para el club. Tienda Nube identifica a sus
+--     clientes por mail, así que es lo único que va a permitir cruzar quién
+--     compra en el local con quién compra en la web. Hoy esa pregunta no se
+--     puede ni formular.
+--
+--   · NO se puede entrar con él. Siendo opcional, entrar por mail andaría
+--     para unos sí y para otros no, y un camino que a veces funciona es peor
+--     que uno que siempre funciona. Para entrar está el teléfono, que lo
+--     tienen todos.
+--
+-- CORREGIR LOS DATOS es el agujero que quedaba: no había forma de cambiarle
+-- el teléfono a nadie. Con el teléfono convertido en credencial, además, esa
+-- edición es delicada —cambiarle el número a un socio es poder abrir su
+-- tarjeta— así que pide PIN y queda anotada en el log. No es una capacidad
+-- nueva (quien tiene el PIN ya puede canjear premios de cualquiera), pero de
+-- las que dejan rastro.
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* ── Corregir los datos de un socio ──
+   Con PIN. Deja rastro. Lo que NO deja hacer: poner un teléfono que ya es de
+   otro socio, porque el teléfono es lo que abre la tarjeta y dos tarjetas
+   con el mismo número hacen que club_recuperar devuelva cualquiera de las
+   dos. */
+create or replace function club_cliente_editar(
+  p_pin      text,
+  p_codigo   text,
+  p_nombre   text,
+  p_telefono text,
+  p_mail     text default null,
+  p_quien    text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ce$
+declare
+  c    club_clientes%rowtype;
+  nom  text;
+  tel  text;
+  mai  text;
+  dig  text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  select * into c from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+     and baja is null;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+
+  nom := nullif(trim(coalesce(p_nombre, '')), '');
+  tel := nullif(trim(coalesce(p_telefono, '')), '');
+  mai := lower(nullif(trim(coalesce(p_mail, '')), ''));
+  dig := regexp_replace(coalesce(tel, ''), '[^0-9]', '', 'g');
+
+  if nom is null then raise exception 'El nombre no puede quedar vacío.'; end if;
+  if length(dig) < 8 then raise exception 'Ese WhatsApp no parece completo.'; end if;
+
+  if mai is not null and mai !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    raise exception 'Ese mail no se entiende.';
+  end if;
+
+  if exists (select 1 from club_clientes
+              where regexp_replace(telefono, '[^0-9]', '', 'g') = dig
+                and id <> c.id and baja is null) then
+    raise exception 'Ese número ya es de otro socio.';
+  end if;
+
+  /* El rastro se escribe ANTES, con lo que había: después del update ya no
+     hay de dónde sacarlo. */
+  insert into log (accion, detalle, quien)
+  values ('club: editar socio',
+          'tarjeta ' || c.codigo ||
+          case when c.nombre is distinct from nom
+               then ' · nombre: ' || c.nombre || ' → ' || nom else '' end ||
+          case when c.telefono is distinct from tel
+               then ' · teléfono: ' || c.telefono || ' → ' || tel else '' end ||
+          case when c.mail is distinct from mai
+               then ' · mail: ' || coalesce(c.mail, '—') || ' → ' || coalesce(mai, '—') else '' end,
+          nullif(trim(coalesce(p_quien, '')), ''));
+
+  update club_clientes
+     set nombre = nom, telefono = tel, mail = mai
+   where id = c.id;
+
+  return jsonb_build_object('ok', true, 'nombre', nom, 'telefono', tel, 'mail', mai);
+end;
+$ce$;
+
+grant execute on function club_cliente_editar(text, text, text, text, text, text)
+  to anon, authenticated;

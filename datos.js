@@ -699,6 +699,20 @@ var base = {
       return funcion('club_tarjeta', { p_codigo: codigo });
     },
 
+    /**
+     * Corregirle los datos a un socio: el nombre, el teléfono y el mail.
+     *
+     * Con el teléfono convertido en credencial, cambiárselo a alguien es
+     * poder abrir su tarjeta. Por eso pide PIN y la base deja el cambio
+     * anotado en el log con quién lo hizo.
+     */
+    editar: function (pin, codigo, nombre, telefono, mail, quien) {
+      return funcion('club_cliente_editar', {
+        p_pin: pin, p_codigo: codigo, p_nombre: nombre,
+        p_telefono: telefono, p_mail: mail || null, p_quien: quien || null
+      });
+    },
+
     /* ── La promo ──
        Lo que ve un socio al abrir su tarjeta. Leerlo para EDITARLO pide PIN
        y devuelve lo que haya aunque esté vencido; lo que ve el cliente sale
