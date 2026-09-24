@@ -288,7 +288,7 @@
             'Si todavía no es socio, puede anotarse con el QR del mostrador.</p>';
           return;
         }
-        if (lista.length === 1) { elegir(lista[0].codigo); return; }
+        if (lista.length === 1) { elegir(lista[0].codigo, lista[0].telefono); return; }
         pintarLista(lista);
       })
       .catch(function (err) {
@@ -299,7 +299,8 @@
 
   function pintarLista(lista) {
     $('resultado').innerHTML = lista.map(function (s) {
-      return '<button type="button" class="socio" data-cod="' + esc(s.codigo) + '">' +
+      return '<button type="button" class="socio" data-cod="' + esc(s.codigo) + '" ' +
+        'data-tel="' + esc(s.telefono || '') + '">' +
         '<span class="socio-n">' + s.sellos + '</span>' +
         '<span><span class="socio-nom">' + esc(s.nombre) + '</span>' +
         '<span class="socio-sub">' + esc(s.telefono) + '</span></span>' +
@@ -307,21 +308,59 @@
         '</button>';
     }).join('');
     Array.prototype.forEach.call($('resultado').querySelectorAll('[data-cod]'), function (b) {
-      b.onclick = function () { elegir(b.dataset.cod); };
+      b.onclick = function () { elegir(b.dataset.cod, b.dataset.tel); };
     });
   }
 
   /* ═══ La ficha del cliente ════════════════════════════════════════════ */
-  function elegir(codigo) {
+  function elegir(codigo, telefono) {
     base.club.tarjeta(codigo).then(function (t) {
       if (!t || !t.hay) { avisar('err', 'No encontré esa tarjeta.'); return; }
       socio = t;
+      /* club_tarjeta no devuelve el teléfono a propósito —la abre cualquiera
+         con el código—, así que el de la búsqueda es el único que hay. */
+      socio.telefono = telefono || '';
       pintarFicha(t);
     }).catch(function () { avisar('err', 'No se pudo abrir la tarjeta.'); });
   }
 
+  /**
+   * El enlace de una tarjeta, absoluto.
+   *
+   * Absoluto y no relativo porque va adentro de un WhatsApp: el cliente lo
+   * abre en su teléfono, donde "club/tarjeta.html" no quiere decir nada.
+   * Sale de la dirección de ESTA página, así que anda igual en el sitio
+   * publicado y en una prueba local, sin ninguna constante que mantener.
+   */
+  function enlaceTarjeta(codigo) {
+    try {
+      return new URL('club/tarjeta.html?c=' + encodeURIComponent(codigo), location.href).href;
+    } catch (e) {
+      return 'club/tarjeta.html?c=' + encodeURIComponent(codigo);
+    }
+  }
+
   function pintarFicha(t) {
     var meta = t.meta || 0;
+    /* Mandarle su tarjeta. Es la respuesta a "perdí mi tarjeta" y también a
+       "recién me anoté": el cliente se va con el enlace en su WhatsApp, que
+       es el único lugar donde no se le va a perder.
+
+       Sin teléfono no hay botón: pasa cuando se llega a la ficha con el
+       código escaneado de una lista vieja. Un botón que abre WhatsApp sin
+       número obliga al vendedor a elegir el contacto a mano, y ahí se
+       equivoca de persona. */
+    var mandar = t.telefono
+      ? '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="' +
+          esc(linkWsp(t.telefono,
+            'Hola ' + t.nombre + '! Esta es tu tarjeta del Club VDH: ' +
+            enlaceTarjeta(t.codigo) +
+            ' — Abrila y agregala a la pantalla de tu celular para tenerla siempre a mano.')) +
+        '">' +
+        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+        'stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.7A8.4 8.4 0 1 1 21 11.5Z"/></svg>' +
+        'Mandarle su tarjeta</a>'
+      : '';
     var premios = (t.hitos || []).map(function (h) {
       var clase = h.canjeado ? ' usado' : (h.alcanzado ? ' listo' : '');
       var pie = h.canjeado ? 'Ya se lo llevó'
@@ -338,7 +377,9 @@
       '<div class="bloque ficha-socio">' +
         '<div class="ficha-top">' +
           '<div><div class="ficha-nom">' + esc(t.nombre) + '</div>' +
-          '<div class="socio-sub">' + codigoBonito(t.codigo) + '</div></div>' +
+          '<div class="socio-sub">' + codigoBonito(t.codigo) + '</div>' +
+          (mandar ? '<div style="margin-top:10px">' + mandar + '</div>' : '') +
+          '</div>' +
           '<div class="ficha-sellos">' + t.sellos + ' <small>de ' + meta + '</small></div>' +
         '</div>' +
         (premios ? '<div class="premios">' + premios + '</div>' : '') +
