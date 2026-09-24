@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · No Compra</title>
 <meta name="description" content="Registro de clientes que se van del local sin encontrar lo que buscaban.">
-<meta name="theme-color" content="#0B1020">
+<meta name="theme-color" content="#121315">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -142,18 +142,19 @@
      dónde está parado y cuánto le falta, que es lo que hace que un
      formulario largo se sienta corto.
 
-     El número va en CIAN y no en violeta a propósito: es orientación, no una
-     acción. El violeta queda reservado para lo único que se toca —chips y
-     botón—, así nada compite por decir "apretame". */
+     El número va HUECO —contorno rojo, fondo apenas teñido— y lo que se
+     toca va LLENO. Antes esa diferencia la hacía un color aparte (el cian);
+     con la paleta de marca la hace la forma, que además se sostiene en una
+     foto en blanco y negro. Así nada compite por decir "apretame". */
   .paso { padding: 20px 16px; }
   .paso-cab { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 15px; }
   .paso-n {
     flex-shrink: 0;
     width: 30px; height: 30px;
     border-radius: 10px;
-    background: var(--cian-soft);
-    border: 1px solid var(--cian);
-    color: var(--cian);
+    background: var(--acc-soft);
+    border: 1px solid var(--acc-line);
+    color: var(--acc-txt);
     display: grid; place-items: center;
     font: 700 15px/1 var(--display);
   }
@@ -171,18 +172,18 @@
   /* Los campos de seguimiento cuelgan del paso 3, debajo de los motivos. */
   .campos-seguim { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 
-  /* Identidad sin elegir: el punto late en cian y el borde se apaga, para que
+  /* Identidad sin elegir: el punto late en rojo y el borde se apaga, para que
      se lea como "falta esto" y no como un dato ya cargado. Con la identidad
      puesta vuelve al verde fijo, que es el estado normal. */
   .ident-vacia { border-color: var(--line); }
   .ident-vacia .ident-local { font-size: 14.5px; color: var(--txt-2); }
   .ident-vacia .ident-punto {
-    background: var(--cian);
-    box-shadow: 0 0 0 4px var(--cian-soft);
+    background: var(--acc-txt);
+    box-shadow: 0 0 0 4px var(--acc-soft);
     animation: latido 2.4s ease-in-out infinite;
   }
   @keyframes latido {
-    0%, 100% { box-shadow: 0 0 0 4px var(--cian-soft); }
+    0%, 100% { box-shadow: 0 0 0 4px var(--acc-soft); }
     50%      { box-shadow: 0 0 0 9px transparent; }
   }
 
@@ -359,8 +360,8 @@
     max-width: 100%;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
-  /* En verde y no en violeta: es plata que entró, el mismo significado que
-     tiene el verde en el resto de la app. El violeta es de lo que se toca. */
+  /* En verde y no en rojo: es plata que entró, el mismo significado que
+     tiene el verde en el resto de la app. El rojo es de lo que se toca. */
   .eq-plata {
     font: 700 11.5px/1.2 var(--sans);
     color: var(--ok-txt);
@@ -468,7 +469,7 @@
        ~150px por chip, "Fue a comparar" se parte en dos renglones. */
     .chips-motivo { grid-template-columns: repeat(3, 1fr); }
 
-    /* El botón no sigue al ancho de la página: 1000px de violeta es un
+    /* El botón no sigue al ancho de la página: 1000px de rojo es un
        cartel, no un botón. */
     .barra-in { max-width: 440px; }
 
@@ -512,10 +513,11 @@
     .tablero-cab, .kpis, .pasos, .bloque, .equipo { margin-bottom: 0; }
 
     /* Las tarjetas en fila, que es como se miran de un vistazo. */
-    .kpis { grid-template-columns: repeat(3, 1fr); gap: 12px; }
-    .kpi { padding: 12px 14px; }
-    .kpi-n { font-size: 24px; }
-    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 20px; }
+    .kpis { grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .kpi { padding: 17px 20px; }
+    .kpi-n { font-size: 29px; }
+    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 24px; }
+    .kpi-l { font-size: 13px; }
 
     /* Los tres pasos, uno al lado del otro. */
     /* stretch EXPLÍCITO: el bloque de 940px le pone align-items:start y sin
@@ -596,10 +598,10 @@
      tamaño de letra y aire, no viaje del ojo. */
   @media (min-width: 1600px) {
     .hoja { gap: 16px; padding-top: 22px; }
-    .kpis { gap: 16px; }
-    .kpi { padding: 16px 18px; }
-    .kpi-n { font-size: 30px; }
-    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 25px; }
+    .kpis { gap: 18px; }
+    .kpi { padding: 21px 24px; }
+    .kpi-n { font-size: 34px; }
+    .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 28px; }
 
     .pasos { gap: 16px; }
     .paso { padding: 20px 22px; }
@@ -732,13 +734,15 @@
       letter-spacing: -.5px;
       color: var(--txt-2);
     }
-    /* El local en violeta: es el dato, y el saludo es la cortesía. La misma
-       regla que en el resto de la app —el color marca lo que importa—. */
+    /* El local en BLANCO, no en rojo. Es el dato y por eso va en el tono
+       más fuerte que hay; el saludo de arriba es la cortesía y va apagado.
+       La jerarquía la hace el peso, no el color: en esta pantalla el rojo
+       tiene un solo trabajo, que es decir dónde se aprieta. */
     .saludo-local {
       display: block;
       font: 700 clamp(24px, 3.4vh, 46px)/1.1 var(--display);
       letter-spacing: -1px;
-      color: var(--acc-txt);
+      color: var(--txt);
     }
 
     .reloj {
@@ -1173,7 +1177,7 @@
   /* Sube a mano al publicar. Cuando un vendedor dice "a mí no me anda",
      esto dice qué versión tiene ESE celular: la app es PWA y puede quedar
      una vieja cacheada. */
-  var VERSION = '2026.09.21';
+  var VERSION = '2026.09.24';
 
   var local = '', motivo = '', talles = [];
 

@@ -142,7 +142,7 @@ panel.html           Panel de seguimiento
 motivos.html         Por qué se va la gente sin comprar (Compras)
 resultados.html      El embudo del sistema: cargado → contactado → cobrado
 config.html          Objetivos de cada local, el general y el aviso por mail
-estilos.css          Sistema de diseño compartido (violeta, claro/oscuro)
+estilos.css          Sistema de diseño compartido (rojo VDH, claro/oscuro)
 comun.js             Backend, tema, avisos, WhatsApp, PWA
 manifest.json        Para instalarla en el celular
 sw.js                Para que abra sin señal
@@ -710,11 +710,12 @@ manos vacías — que es justamente el trabajo que no se ve. Aparece sólo cuand
 hay plata: un `$0` abajo de cada nombre sería un cartel de fracaso en una
 lista que está para lo contrario.
 
-Las tarjetas son de **otro material** que los paneles del formulario: violeta
-oscuro en los dos temas, como el rail. Antes usaban el mismo `--surface` que
+Las tarjetas son de **otro material** que los paneles del formulario: grafito
+a negro en los dos temas, con la textura diagonal y el resplandor rojo del
+canto derecho, como el carnet del Club. Antes usaban el mismo `--surface` que
 los pasos y sólo se diferenciaban por el tamaño. La regla que queda se ve sin
 explicarla —lo que es tablero (la navegación y los números) es oscuro, la hoja
-donde se trabaja es clara— y de paso no le roba el violeta lleno al botón de
+donde se trabaja es clara— y de paso no le roba el rojo lleno al botón de
 guardar, que es lo único que se toca. Los tokens de texto se redeclaran dentro
 de `.kpi`: los `--txt` normales están pensados contra `--bg`.
 
@@ -746,6 +747,53 @@ así el vendedor ve su número subir y no el de hace medio minuto.
 > Los registros viejos tienen los nombres anteriores de los locales
 > (`MD2 - Mar del Plata Rivadavia`), así que no entran en la cuenta de
 > `RIVADAVIA`. Es el mismo corte que ya tenía el Resumen por sucursal.
+
+## La identidad
+
+El 24/09/2026 la app volvió a la marca: **negro, blanco, grises y rojo VDH**.
+Antes era violeta con cian de acento, una paleta que se había elegido por
+"tecnológica" y no tenía nada que ver con el cartel de los locales.
+
+Todo sale de `estilos.css`. Ninguna pantalla escribe un color de marca a
+mano: se cambian los tokens de arriba de ese archivo y las siete pantallas
+siguen. Las únicas dos que tienen su propia copia chica son las del cliente
+(`club/index.html` y `club/tarjeta.html`), que no cargan `estilos.css` a
+propósito —las abre alguien con la señal del shopping y tienen que pesar lo
+menos posible—.
+
+| | Oscuro | Claro |
+|---|---|---|
+| Fondo | `#121315` | `#E8EAED` |
+| Panel | `#1C1E21` | `#FFFFFF` |
+| Campo | `#25282C` | `#F3F4F6` |
+| Borde | `#41454B` | `#DCDEE3` |
+| Texto | `#F4F4F2` | `#16181B` |
+| Rojo de relleno | `#B51222` | `#B51222` |
+| Rojo de texto | `#FF6B72` | `#A00F1E` |
+
+**Tres reglas que conviene no romper:**
+
+1. **El rojo de relleno y el rojo de texto son dos tokens distintos.**
+   `#B51222` contra el fondo oscuro da 2,7:1 —no se puede escribir con él— y
+   contra blanco da 6,8:1. Por eso `--acc` es para rellenos y va siempre con
+   blanco encima (`--acc-ink`), y lo que se escribe usa `--acc-txt`.
+   Aclarar `--acc` "para que se lea mejor" rompe el relleno.
+
+2. **El rojo de error es el mismo rojo de la marca, a propósito.** Dos rojos
+   distintos en una pantalla se leen como un error de impresión. Lo que los
+   distingue es la forma: la acción es un relleno lleno con texto blanco, el
+   error es texto rojo claro sobre un fondo apenas teñido. Nunca hay un error
+   con forma de botón.
+
+3. **Verde y ámbar siguen existiendo, pero no son colores de marca.** Son las
+   tres cosas que el negro, el blanco y el rojo no pueden decir solos: esto
+   salió bien, esto está esperando, esto falló. Viven en pastillas, cantos y
+   números; nunca en un relleno grande.
+
+El **rail es oscuro en los dos temas**: es el marco, y un marco oscuro contra
+una hoja clara es lo que hace que la hoja se lea como la hoja. La sección
+activa se marca con una barra roja pegada al canto izquierdo del renglón —se
+ve de reojo, sin mirar el rail de frente— y no con el ícono lleno de color.
 
 ## La navegación
 

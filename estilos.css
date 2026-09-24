@@ -1,93 +1,114 @@
 /* ═══════════════════════════════════════════════════════════════════════════
    VDH · Sistema No Compra — sistema de diseño compartido
-   Lo usan index.html (carga del vendedor) y panel.html (seguimiento).
+   Lo usan las cinco pantallas de la app (Carga, Panel, Motivos, Resultados,
+   Configuración) más Beneficios y la caja del Club.
 
-   El No Compra se separó de la familia naranja del Ranking VDH el 20/09/2026:
-   acá la marca es violeta #7C5CFF con cian de acento. Se mantienen DM Sans +
-   Space Grotesk, las esquinas de 16px y el fondo navy. La marca vive en los
-   tokens de abajo: se cambia ahí y las dos pantallas siguen.
+   El 24/09/2026 la app volvió a la marca: NEGRO, BLANCO, GRISES Y ROJO VDH.
+   Se fueron el violeta y el cian, que eran una estética prestada. Lo que se
+   mantiene es la estructura —DM Sans + Space Grotesk, las esquinas redondas,
+   el rail oscuro flotante, tres niveles de texto— porque eso no era el color.
+
+   La marca vive en los tokens de abajo: se cambia ahí y las siete pantallas
+   siguen. Ningún archivo escribe un color de marca a mano.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── TOKENS ────────────────────────────────────────────────────────────────
    Arranca en OSCURO: el tema claro se pide a mano con el toggle y vive en
    html[data-theme="light"], más abajo.
 
-   Sobre el contraste: la versión anterior usaba un gris #9CA3AF para TODAS las
-   etiquetas sobre blanco (2,5:1, menos de la mitad del mínimo accesible) y eso
-   era lo que hacía que la información se sintiera "lavada". Acá hay tres
-   niveles de texto y cada uno tiene un trabajo:
-     --txt    dato duro, lo que la persona vino a leer     (17:1)
-     --txt-2  contexto que igual hay que poder leer         (12:1)
+   Sobre el contraste: hay tres niveles de texto y cada uno tiene un trabajo.
+     --txt    dato duro, lo que la persona vino a leer     (16:1)
+     --txt-2  contexto que igual hay que poder leer         (11:1)
      --txt-3  etiquetas y apoyo, NUNCA un dato              (7:1)
-   Ningún dato real usa --txt-3. */
+   Ningún dato real usa --txt-3. El piso de 7:1 se respeta en los dos temas.
+
+   Los tres se miden contra la TARJETA y no contra el fondo: casi todas las
+   etiquetas viven adentro de un panel, y contra el fondo —que es más
+   oscuro— cualquier gris "da bien" y después no se lee. El gris secundario
+   quedó dos puntos más claro que el de la guía de marca (#AEB3B9) por eso
+   mismo: con ese valor, --txt-2 y --txt-3 daban 7,9 y 7,1 contra la tarjeta,
+   o sea el mismo gris dos veces, y la jerarquía de tres niveles dejaba de
+   existir.
+
+   Y la regla del rojo, que es la que más se equivoca uno solo:
+     --acc      es para RELLENOS y va SIEMPRE con --acc-ink (blanco) encima.
+     --acc-txt  es el rojo que se puede LEER sobre el fondo.
+   El rojo de marca #B51222 contra el fondo oscuro da 2,7:1 — no se puede
+   escribir con él. Contra blanco da 6,8:1 y con blanco encima, 6,8:1 también.
+   Aclararlo "para que se lea" rompe el relleno; oscurecerlo rompe el texto.
+   Por eso son dos tokens y no uno. */
 :root {
-  --bg:        #0B1020;
+  --bg:        #121315;
   /* El resplandor del fondo. Dos focos muy abiertos y muy débiles: si se
      ven como manchas, están de más. Arriba a la izquierda, que es donde
-     arranca la lectura y donde vive la franja de números. */
+     arranca la lectura y donde vive la franja de números. Con el rojo hay
+     que ir más suave que con el violeta: el rojo pesa más a igual opacidad
+     y un fondo que "sangra" cansa a la vista en ocho horas de mostrador. */
   --fondo-luz:
-    radial-gradient(1100px 480px at 18% -10%, rgba(124, 92, 255, .22), transparent 72%),
-    radial-gradient(760px 360px at 96% -4%, rgba(124, 92, 255, .10), transparent 68%);
-  /* Tres planos, no tres grises casi iguales. En claro la regla se ve sola
-     —el tablero es oscuro y la hoja es blanca—; en oscuro el fondo, la hoja
-     y las tarjetas de números caían todos en la misma banda (1,1:1 entre uno
-     y otro) y la pantalla se leía plana, sin la personalidad que tiene la
-     otra. La hoja sube un escalón y las tarjetas se van al violeta: acá la
-     regla es tablero VIOLETA sobre hoja gris, que es la misma idea dicha con
-     lo único que queda cuando todo es oscuro —el tono, no la luz—. */
-  --surface:   #1A2338;
-  --surface-2: #232E4C;
-  --surface-3: #2C3A5E;
-  --line:      #35426A;
-  --line-alta: #4E5D88;
+    radial-gradient(1100px 480px at 18% -10%, rgba(181, 18, 34, .16), transparent 72%),
+    radial-gradient(760px 360px at 96% -4%, rgba(181, 18, 34, .07), transparent 68%);
+  /* Tres planos de gris, no tres grises casi iguales: fondo, hoja y campo.
+     Con la paleta violeta lo que separaba al tablero de la hoja era el TONO,
+     porque los dos eran oscuros y del mismo color. Acá no hace falta el
+     truco: la escala es neutra y los escalones se ven como escalones. */
+  --surface:   #1C1E21;
+  --surface-2: #25282C;
+  --surface-3: #2E3237;
+  --line:      #41454B;
+  --line-alta: #5C6168;
   /* El borde de lo que se TOCA —campos y chips— es otra cosa que el borde de
      una tarjeta. La tarjeta sólo separa; el campo tiene que decir "acá se
      escribe", y para eso la referencia son 3:1 contra su propio relleno.
-     Antes usaba --line y daba 1,27:1: los campos se leían como manchas. */
-  --line-campo: #6A7DAA;
+     #737880 contra #25282C da 3,33:1. El #41454B de las tarjetas daría
+     1,5:1: ahí los campos se leen como manchas. */
+  --line-campo: #737880;
 
-  --txt:   #F8FAFC;
-  --txt-2: #CBD5E1;
-  --txt-3: #94A3B8;
+  --txt:   #F4F4F2;
+  --txt-2: #C6CAD0;   /* 11,3:1 contra la tarjeta */
+  --txt-3: #A4AAB1;   /*  7,1:1 contra la tarjeta */
 
-  /* Violeta de marca. --acc es para RELLENOS y va SIEMPRE con --acc-ink
-     encima, nunca con blanco: el violeta claro contra blanco da 3,1:1 y
-     contra la tinta oscura da 6:1. Aclararlo para "que se lea mejor" lo
-     empeora, que es exactamente al revés de lo que uno espera.
-     Como TEXTO sobre el fondo va --acc-txt, más claro todavía.
-     --acc-2 es el extremo del degradado del botón: no puede ser más oscuro
-     que esto porque el texto cruza TODO el degradado y manda el peor punto. */
-  --acc:      #9B7DFF;
-  --acc-2:    #866BFF;
-  --acc-ink:  #140D2B;
-  --acc-txt:  #C4B5FD;
-  --acc-soft: rgba(124, 92, 255, .16);
-  --acc-line: rgba(124, 92, 255, .45);
+  /* ── El rojo VDH ── */
+  --acc:      #B51222;
+  /* El extremo oscuro del degradado del botón. El texto cruza TODO el
+     recorrido, así que manda el peor punto: blanco sobre #8E0E1B da 9,4:1. */
+  --acc-2:    #8E0E1B;
+  --acc-ink:  #FFFFFF;
+  --acc-txt:  #FF6B72;   /* 6,7:1 contra el fondo, 6:1 contra la hoja */
+  --acc-soft: rgba(181, 18, 34, .20);
+  --acc-line: rgba(255, 107, 114, .32);
 
-  /* Cian: el acento frío, para detalles y estados informativos. Nunca para
-     una acción — la acción es siempre violeta, así no hay dos colores
-     compitiendo por decir "tocame". */
-  --cian:      #36D6E7;
-  --cian-soft: rgba(54, 214, 231, .14);
+  /* El chip es un BOTÓN, y necesita con qué decirlo: sube un escalón sobre
+     el campo y aclara el borde. Si usara el mismo relleno que un input se
+     lee como un campo deshabilitado. */
+  --chip:      #2E3237;
+  --chip-line: #737880;
 
-  /* El chip es un BOTÓN, y no tenía con qué decirlo: usaba el mismo relleno
-     que un input y un borde a 1,45:1 contra la tarjeta, así que se leía como
-     un campo deshabilitado. Sube un escalón y aclara el borde: eso lo despega
-     del fondo y, de paso, lo diferencia de los campos de texto. */
-  --chip:      #313E6C;
-  --chip-line: #6A7DAA;
+  /* ── Los estados ──
+     Tres cosas que la app necesita decir y que el negro, el blanco y el rojo
+     no alcanzan a decir solos: esto salió bien, esto está esperando, esto
+     falló. Van apagados a propósito —no son colores de marca, son señales—
+     y sólo aparecen en pastillas, cantos y números, nunca en un relleno
+     grande que compita con el botón rojo.
 
-  --ok:      #34D399;
-  --ok-txt:  #6EE7B7;
-  --ok-soft: rgba(52, 211, 153, .15);
-  --warn:      #FBBF24;
-  --warn-txt:  #FCD34D;
-  --warn-soft: rgba(251, 191, 36, .15);
-  --bad:      #F87171;
-  --bad-txt:  #FCA5A5;
-  --bad-soft: rgba(248, 113, 113, .15);
-  --info-txt:  #93C5FD;
-  --info-soft: rgba(96, 165, 250, .15);
+     Y una decisión que conviene no rediscutir: el ROJO DE ERROR ES EL ROJO
+     DE MARCA. Son el mismo color y no se intentó separarlos, porque dos
+     rojos distintos en la misma pantalla se leen como un error de impresión.
+     Lo que los distingue es la FORMA: la acción es un relleno rojo lleno con
+     texto blanco; el error es texto rojo claro sobre un fondo apenas teñido.
+     Nunca hay un error con forma de botón. */
+  --ok:      #2FA36B;
+  --ok-txt:  #6FD39C;
+  --ok-soft: rgba(47, 163, 107, .16);
+  --warn:      #D99A18;
+  --warn-txt:  #F0C05A;
+  --warn-soft: rgba(217, 154, 24, .16);
+  --bad:      #B51222;
+  --bad-txt:  #FF6B72;
+  --bad-soft: rgba(181, 18, 34, .18);
+  /* Lo informativo era azul y el azul se fue con el violeta: un aviso que no
+     es ni bueno ni malo no necesita color, necesita no gritar. */
+  --info-txt:  #C6CAD0;
+  --info-soft: rgba(255, 255, 255, .08);
 
   --sans:    'DM Sans', system-ui, -apple-system, sans-serif;
   --display: 'Space Grotesk', var(--sans);
@@ -98,7 +119,7 @@
 
   --sombra:    0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .6);
   --sombra-alta: 0 10px 40px -12px rgba(0, 0, 0, .75);
-  --glow:      0 8px 28px -10px rgba(124, 92, 255, .55);
+  --glow:      0 8px 28px -10px rgba(181, 18, 34, .70);
 
   /* Curva de iOS: arranca rápido y frena suave. La misma para todo lo que se
      mueve, así la app "se siente" de una sola pieza. */
@@ -122,85 +143,82 @@
      marco oscuro contra una hoja clara es lo que hace que la hoja se lea como
      la hoja. Con el tema claro el rail se queda igual; lo que cambia es todo
      lo demás. Por eso tiene sus propios tokens de texto: los --txt de arriba
-     están pensados contra --bg, no contra esto. */
-  /* El rail es el MISMO material que las tarjetas de números, no un navy
-     aparte: los dos son tablero. En claro daba igual —el rail es lo único
-     oscuro de la pantalla y se impone solo—, pero en oscuro un rail navy
-     sobre un fondo navy no se despega de nada, y encima quedaba fuera de
-     la regla que dice que en oscuro lo que separa al tablero de la hoja es
-     el TONO. Es el extremo apagado del degradado del KPI. */
-  --rail-bg:    #201A4A;
-  --rail-borde: rgba(167, 139, 255, .16);
+     están pensados contra --bg, no contra esto.
+
+     Es el mismo grafito que las tarjetas de números y que los paneles: en la
+     paleta neutra no hace falta un material aparte para que se lea como
+     marco. Lo que lo despega es que flota —bordes redondeados, aire alrededor
+     y sombra—, no el color.
+
+     --rail-acc es el rojo del marcador de la sección activa. Va más claro que
+     --acc porque el #B51222 contra el grafito del rail da 2,6:1 y una barra
+     de 3px de ese contraste no se ve; este da 3,5:1, que es el piso de lo
+     que no es texto. */
+  --rail-bg:    #1C1E21;
+  --rail-borde: rgba(255, 255, 255, .10);
+  --rail-acc:   #E11D2B;
   --rail-txt:   #FFFFFF;
-  --rail-txt-2: #93A3C4;
+  --rail-txt-2: #A4AAB1;
   --rail-line:  rgba(255, 255, 255, .09);
 
   color-scheme: dark;
 }
 
 html[data-theme="light"] {
-  /* ── Gris frío, no crema ────────────────────────────────────────────────
-     Era crema tibio. El violeta de la marca es un color FRÍO, y un fondo
-     cálido al lado vibra: la pantalla se ve menos limpia de lo que es y los
-     bordes tibios de los campos son los que más chocan. Con un gris neutro
-     el violeta pasa a ser el único color que habla.
+  /* ── Gris neutro, ni crema ni azulado ───────────────────────────────────
+     El rojo VDH es un rojo frío, de bandera, casi sin naranja. Un fondo
+     cálido al lado lo empuja al ladrillo y un fondo azulado lo empuja al
+     fucsia: el gris neutro es el único que lo deja ser rojo.
 
-     Los valores no se eligieron a ojo: cada uno mantiene o mejora el
-     contraste que tenía el tibio, y están anotados al lado. El tema oscuro
-     no cambia. */
-  --bg:        #E4E8F2;   /* 1,23:1 contra la tarjeta; el crema daba 1,22 */
+     Los valores no se eligieron a ojo: cada uno está anotado con su
+     contraste. El piso de 7:1 de --txt-3 se cumple contra la TARJETA, que es
+     donde vive la mayoría de las etiquetas. */
+  --bg:        #E8EAED;   /* 1,20:1 contra la tarjeta: la hoja se despega */
   /* En claro la luz la pone el papel: el resplandor sobraría. */
   --fondo-luz: none;
   --surface:   #FFFFFF;
-  --surface-2: #F5F7FB;
-  --surface-3: #E0E4EE;   /* 1,27:1, igual que el chip tibio */
+  --surface-2: #F3F4F6;
+  --surface-3: #E3E5E9;
 
   /* ── Los dos bordes hacen trabajos distintos ──
      El de la TARJETA sólo separa, y puede ser suave: la separación la carga
-     el escalón de tono contra el fondo, que se mantuvo a propósito. Si se
-     ablandaran las dos cosas a la vez —fondo casi blanco Y borde casi
-     invisible— la pantalla quedaría plana.
+     el escalón de tono contra el fondo.
 
      El del CAMPO es otra cosa: tiene que decir "acá se escribe", y la
      referencia son 3:1 contra su propio relleno. Un gris de 1,4:1 ahí es
      exactamente el bug que este archivo ya arregló una vez, cuando los
      campos "se leían como manchas". */
-  --line:       #D8DAE2;   /* 1,40:1 contra la tarjeta — sólo separa */
-  --line-alta:  #999DA7;   /* 2,71:1; el tibio daba 2,70 */
-  --line-campo: #858993;   /* 3,26:1 contra el relleno; el tibio daba 3,25 */
+  --line:       #DCDEE3;   /* 1,35:1 contra la tarjeta — sólo separa */
+  --line-alta:  #9A9EA6;   /* 2,75:1 */
+  --line-campo: #85898F;   /* 3,2:1 contra el relleno del campo */
 
-  --txt:   #17151F;        /* 18,05:1 */
-  --txt-2: #41454F;        /* 9,59:1; el tibio daba 9,51 */
-  /* El piso de 7:1 que declara el bloque de arriba para las etiquetas. El
-     tema claro no lo cumplió durante un tiempo —daba 5,23— y desde entonces
-     es el número que hay que respetar al tocar esto. */
-  --txt-3: #545862;        /* 7,12:1 contra la tarjeta, 5,84 contra el fondo */
+  --txt:   #16181B;        /* 17,9:1 */
+  --txt-2: #4A4F55;        /*  8,3:1 */
+  --txt-3: #55595F;        /*  7,0:1 contra la tarjeta */
 
-  --acc-txt:  #6D28D9;
-  --acc-soft: rgba(124, 92, 255, .13);
-  --acc-line: rgba(109, 40, 217, .5);
+  /* Sobre blanco el rojo de marca SÍ se puede leer: 6,8:1. El que se oscurece
+     un punto más es el de texto corrido, para que un enlace largo no canse. */
+  --acc-txt:  #A00F1E;     /* 8,1:1 contra blanco */
+  --acc-soft: rgba(181, 18, 34, .10);
+  --acc-line: rgba(181, 18, 34, .32);
 
-  /* En claro el cian tiene que oscurecerse: el #36D6E7 sobre blanco da 1,8:1. */
-  --cian:      #155E75;
-  --cian-soft: rgba(21, 94, 117, .12);
+  --chip:      #E3E5E9;
+  --chip-line: #85898F;
 
-  --chip:      #E0E4EE;
-  --chip-line: #858993;
+  --ok-txt:  #0F7444;
+  --ok-soft: rgba(15, 116, 68, .12);
+  --warn-txt:  #8A5A06;
+  --warn-soft: rgba(217, 154, 24, .18);
+  --bad-txt:  #A00F1E;
+  --bad-soft: rgba(181, 18, 34, .10);
+  --info-txt:  #4A4F55;
+  --info-soft: rgba(22, 24, 27, .07);
 
-  --ok-txt:  #047857;
-  --ok-soft: rgba(5, 150, 105, .13);
-  --warn-txt:  #92400E;
-  --warn-soft: rgba(217, 119, 6, .15);
-  --bad-txt:  #B91C1C;
-  --bad-soft: rgba(220, 38, 38, .12);
-  --info-txt:  #1D4ED8;
-  --info-soft: rgba(37, 99, 235, .12);
-
-  /* La sombra acompaña al fondo: sobre gris frío, una sombra marrón se ve
+  /* La sombra acompaña al fondo: sobre gris neutro, una sombra marrón se ve
      sucia igual que una azulada se veía sucia sobre el crema. */
-  --sombra:      0 1px 3px rgba(23, 21, 31, .08), 0 12px 28px -14px rgba(23, 21, 31, .30);
-  --sombra-alta: 0 16px 44px -16px rgba(23, 21, 31, .26);
-  --glow:        0 8px 24px -10px rgba(109, 40, 217, .45);
+  --sombra:      0 1px 3px rgba(22, 24, 27, .08), 0 12px 28px -14px rgba(22, 24, 27, .30);
+  --sombra-alta: 0 16px 44px -16px rgba(22, 24, 27, .26);
+  --glow:        0 8px 24px -10px rgba(181, 18, 34, .40);
   color-scheme: light;
 }
 
@@ -223,7 +241,7 @@ body::before {
   background: var(--fondo-luz);
 }
 
-/* El fondo no es un color plano: lleva un resplandor violeta arriba, del
+/* El fondo no es un color plano: lleva un resplandor rojo arriba, del
    lado donde están los números. Es lo que hace que una pantalla oscura se
    lea como un ambiente y no como una tapa negra, y de paso le da a la
    franja del tablero algo sobre qué apoyarse. En claro se apaga: ahí la
@@ -248,7 +266,7 @@ a { color: var(--acc-txt); }
 /* Todo lo que se puede tocar muestra dónde está el foco del teclado. Es lo que
    permite cargar el formulario entero con Tab desde la PC del local. */
 :focus-visible {
-  outline: 2px solid var(--acc);
+  outline: 2px solid var(--acc-txt);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -292,7 +310,6 @@ a { color: var(--acc-txt); }
 .marca-icono {
   width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
   background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
-  /* Tinta oscura, NO blanco: sobre el violeta el blanco da 3,1:1 y la tinta 6:1. */
   color: var(--acc-ink);
   display: grid; place-items: center;
   box-shadow: var(--glow);
@@ -332,7 +349,7 @@ a { color: var(--acc-txt); }
 .tema-btn:hover { color: var(--txt); }
 .tema-btn[aria-pressed="true"] {
   background: var(--acc); color: var(--acc-ink);
-  box-shadow: 0 4px 12px -5px rgba(124, 92, 255, .8);
+  box-shadow: 0 4px 12px -5px rgba(181, 18, 34, .8);
 }
 
 .btn-icono {
@@ -485,13 +502,23 @@ a { color: var(--acc-txt); }
     gap: 5px;
     color: var(--rail-txt-2);
   }
+  .rail-item { position: relative; }
   .rail-item:hover { color: var(--rail-txt); background: rgba(255, 255, 255, .05); }
   .rail-item[aria-current="page"] { color: var(--rail-txt); background: rgba(255, 255, 255, .07); }
+  /* La barra del canto. Va de 8 a 8 y no de punta a punta: pegada a los
+     extremos se lee como el borde del rail y no como una marca. */
+  .rail-item[aria-current="page"]::before {
+    content: "";
+    position: absolute;
+    left: 0; top: 8px; bottom: 8px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--rail-acc);
+  }
   .rail-icono { width: 38px; height: 34px; border-radius: 12px; }
   .rail-item[aria-current="page"] .rail-icono {
-    background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
-    color: var(--acc-ink);
-    box-shadow: var(--glow);
+    background: rgba(225, 29, 43, .18);
+    color: #FF6B72;
   }
 
   /* Abajo de todo, separado por el aire que sobra: quién está cargando. Es la
@@ -540,14 +567,13 @@ a { color: var(--acc-txt); }
     transition: background .15s var(--curva), color .15s;
   }
   .rail-cambiar:hover { background: rgba(255, 255, 255, .13); color: var(--rail-txt); }
-  /* Sin identidad elegida late en cian, como la barra del celular: es lo
+  /* Sin identidad elegida late en rojo, como la barra del celular: es lo
      único que falta para poder cargar. */
-  /* El cian va con valor fijo y no con --cian: el token se oscurece con el
-     tema claro para poder leerse contra una hoja blanca, y acá el fondo es
-     el rail, que es oscuro siempre. */
+  /* Va con valor fijo y no con --acc: el token cambia con el tema y acá el
+     fondo es el rail, que es oscuro siempre. */
   .rail-pie.vacia .rail-punto {
-    background: #36D6E7;
-    box-shadow: 0 0 0 3px rgba(54, 214, 231, .22);
+    background: #E11D2B;
+    box-shadow: 0 0 0 3px rgba(225, 29, 43, .28);
     animation: latido-rail 2.4s ease-in-out infinite;
   }
   /* Sin identidad, el texto explica en vez de nombrar, así que puede ocupar
@@ -558,7 +584,7 @@ a { color: var(--acc-txt); }
     white-space: normal;
   }
   @keyframes latido-rail {
-    0%, 100% { box-shadow: 0 0 0 3px rgba(54, 214, 231, .22); }
+    0%, 100% { box-shadow: 0 0 0 3px rgba(225, 29, 43, .28); }
     50%      { box-shadow: 0 0 0 7px transparent; }
   }
 }
@@ -586,9 +612,9 @@ a { color: var(--acc-txt); }
     flex-direction: row;
     justify-content: flex-start;
     gap: 10px;
-    padding: 7px 10px 7px 7px;
+    padding: 7px 10px 7px 10px;
     font-size: 13.5px; font-weight: 600;
-    border-radius: var(--r-pill);
+    border-radius: 12px;
   }
   .rail-icono { width: 32px; height: 32px; border-radius: 10px; }
   .rail-item svg { width: 17px; height: 17px; }
@@ -622,21 +648,21 @@ a { color: var(--acc-txt); }
     padding: 3px 7px;
   }
   .rail .quien-sel, .rail .quien-txt {
-    background-color: #212C48;
+    background-color: #2A2E33;
     border: 1px solid rgba(255, 255, 255, .18);
     color: var(--rail-txt);
     font-size: 12.5px;
     padding: 7px 9px;
     border-radius: 10px;
   }
-  .rail .quien-sel option { background-color: #212C48; color: var(--rail-txt); }
+  .rail .quien-sel option { background-color: #2A2E33; color: var(--rail-txt); }
   .rail .quien-sel { padding-right: 24px; background-position: right 8px center; }
   /* En 146px de ancho el campo y el botón no entran al lado: se apilan. */
   .rail .quien-nuevo { flex-direction: column; gap: 6px; margin-top: 6px; }
   .rail .quien-ok { width: 100%; min-height: 32px; padding: 0 8px; font-size: 12.5px; }
   .rail .quien-sel:focus, .rail .quien-txt:focus {
-    background-color: #2A3760;
-    border-color: var(--acc);
+    background-color: #343841;
+    border-color: var(--rail-acc);
     box-shadow: none;
   }
 }
@@ -668,16 +694,15 @@ a { color: var(--acc-txt); }
 }
 @media (min-width: 620px) { .kpis { grid-template-columns: repeat(4, 1fr); } }
 /*
-   La tarjeta de números es de OTRO MATERIAL, no de otro color: violeta
-   oscuro en los dos temas, igual que el rail. La regla que queda es simple y
+   La tarjeta de números es de OTRO MATERIAL, no de otro color: grafito a
+   negro en los dos temas, igual que el rail. La regla que queda es simple y
    se ve sin explicarla —lo que es tablero (la navegación y los números) es
-   oscuro; la hoja donde se trabaja es clara—, y de paso no le roba el
-   violeta lleno al botón de guardar, que es lo único que se toca.
+   oscuro; la hoja donde se trabaja es clara—, y de paso no le roba el rojo
+   lleno al botón de guardar, que es lo único que se toca.
 
    En claro eso alcanza: la tarjeta es lo único oscuro y se impone sola. En
-   oscuro la luz no puede separarlas —todo es oscuro—, así que el violeta
-   sube y se satura: lo que distingue al tablero de la hoja pasa a ser el
-   tono. Es el mismo material, dicho con lo que cada tema tiene para decirlo.
+   oscuro hay menos luz para repartir, y lo que la despega del fondo es el
+   resplandor rojo de su canto derecho, que el fondo no tiene.
 
    Antes usaba el mismo --surface que los paneles del formulario y sólo se
    diferenciaba por el tamaño.
@@ -688,29 +713,44 @@ a { color: var(--acc-txt); }
    los números de colores— se acomoda solo y sigue habiendo un solo lugar
    donde se cambian. */
 .kpi {
-  --txt:   #F8FAFC;
-  --txt-2: #CBD5E1;
-  --txt-3: #93A3C4;
-  --line:      rgba(255, 255, 255, .11);
-  /* El canto izquierdo de las tres tarjetas es el MISMO violeta: la que no
+  --txt:   #F4F4F2;
+  --txt-2: #C6CAD0;
+  --txt-3: #A4AAB1;
+  --line:      rgba(255, 255, 255, .10);
+  /* El canto izquierdo de las tres tarjetas es la MISMA escala: la que no
      tiene nada especial que decir lo lleva apagado, y las que sí —objetivo
-     y plata— lo llevan lleno. Antes la neutra usaba un blanco al 34%, y en
-     una fila de tres se leía como la única a la que le falló el color en
-     vez de como la más callada. Tres intensidades de lo mismo, no dos
-     pintadas y una sin pintar. */
-  --canto: rgba(167, 139, 255, .5);
-  --surface-2: rgba(255, 255, 255, .10);
-  --ok-txt:   #6EE7B7;
-  --warn-txt: #FCD34D;
-  --bad-txt:  #FCA5A5;
-  --acc-txt:  #C4B5FD;
-  --info-txt: #93C5FD;
+     y plata— lo llevan lleno. Tres intensidades de lo mismo, no dos pintadas
+     y una sin pintar.
 
-  background: linear-gradient(150deg, #37287C 0%, #1F1948 72%);
+     Blanco y no rojo, por pedido de Mauricio: el rojo en esta franja ya lo
+     pone el resplandor de la tarjeta, y un canto rojo al lado de ese
+     resplandor no agrega un dato, agrega ruido. */
+  --canto: rgba(255, 255, 255, .26);
+  --surface-2: rgba(255, 255, 255, .10);
+  --ok-txt:   #6FD39C;
+  --warn-txt: #F0C05A;
+  --bad-txt:  #FF8A90;
+  --acc-txt:  #FF6B72;
+  --info-txt: #C6CAD0;
+
+  /* Tres capas, de adelante para atrás:
+       1. el resplandor rojo, pegado al canto derecho. Ahí no hay texto
+          nunca —el número y las etiquetas viven a la izquierda—, así que
+          puede ser fuerte sin comerse el contraste de nada.
+       2. la textura diagonal, a 5 de 100 de blanco. Si se ve como rayas
+          está de más: lo único que tiene que hacer es que el negro no sea
+          una tapa plana.
+       3. la base, grafito arriba a negro abajo.
+     Es el material del tablero, y es el mismo en los dos temas: lo que se
+     mira es oscuro, la hoja donde se trabaja cambia. */
+  background:
+    radial-gradient(62% 130% at 112% 50%, rgba(181, 18, 34, .52) 0%, rgba(181, 18, 34, .12) 46%, transparent 72%),
+    repeating-linear-gradient(118deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 11px),
+    linear-gradient(158deg, #2B2E33 0%, #141517 76%);
   border: 1px solid var(--line);
   border-left: 3px solid var(--canto);
   border-radius: var(--r-sm);
-  padding: 13px 14px;
+  padding: 14px 16px;
   color: var(--txt);
   position: relative;
   overflow: hidden;
@@ -724,15 +764,15 @@ a { color: var(--acc-txt); }
 .kpi.es-pend .kpi-n { color: var(--warn-txt); }
 .kpi.es-ok { border-left-color: var(--ok); }
 .kpi.es-ok .kpi-n { color: var(--ok-txt); }
-.kpi.es-plata { border-left-color: var(--acc); }
-.kpi.es-plata .kpi-n { color: var(--acc-txt); }
+.kpi.es-plata { border-left-color: rgba(255, 255, 255, .55); }
+.kpi.es-plata .kpi-n { color: var(--txt); }
 /* Las tarjetas de plata llevan un importe, no un número corto: con 27px un
    "$ 1.234.567" se sale de la tarjeta en un celular. */
 .kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 21px; }
 
 /* Objetivo: el único número que se compara contra otro, así que además del
    valor lleva la barra. El relleno sí usa --acc, que es para eso. */
-.kpi.es-obj { border-left-color: var(--acc-2); }
+.kpi.es-obj { border-left-color: rgba(255, 255, 255, .55); }
 /* Objetivo cumplido: el verde de "esto ya está" es el mismo que usa el panel
    para lo cerrado, así el color quiere decir lo mismo en las dos pantallas. */
 .kpi.es-obj.lleno { border-left-color: var(--ok); }
@@ -755,7 +795,7 @@ a { color: var(--acc-txt); }
 .kpi-barra i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, var(--acc-2), var(--acc));
+  background: linear-gradient(90deg, rgba(255, 255, 255, .72), #FFFFFF);
   transition: width .5s var(--curva);
 }
 
@@ -788,9 +828,9 @@ a { color: var(--acc-txt); }
    formulario: los campos no anuncian que se pueden saltear, porque decirle a
    alguien que algo es opcional es darle permiso para no cargarlo.
 
-   Y va en GRIS, no en violeta. El violeta está reservado para lo que se
+   Y va en GRIS, no en rojo. El rojo está reservado para lo que se
    toca —los chips y el botón—; es la misma razón por la que el número del
-   paso va en cian. Un cartel violeta al lado del título se ofrecía como si
+   paso va hueco. Un cartel rojo al lado del título se ofrecía como si
    fuera un botón y competía con el único que hay que apretar. */
 .lbl-req {
   font: 600 10.5px/1 var(--sans);
@@ -884,7 +924,7 @@ select {
   transition: transform .15s var(--curva), border-color .15s, background .15s, color .15s;
 }
 /* El hover ya no puede usar --line-alta: es el mismo color que el borde
-   normal del chip. Un indicio violeta anticipa en qué se va a convertir. */
+   normal del chip. Un indicio rojo anticipa en qué se va a convertir. */
 .chip:hover { border-color: var(--acc-line); color: var(--txt); }
 .chip:active { transform: scale(.95); }
 .chip.sel {
@@ -926,7 +966,8 @@ select {
 
 .btn-pri {
   background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
-  /* Tinta oscura, NO blanco: sobre el violeta el blanco da 3,1:1 y la tinta 6:1. */
+  /* Blanco: sobre el rojo VDH da 6,8:1, y 9,4:1 en el extremo oscuro del
+     degradado, que es el punto que manda. */
   color: var(--acc-ink);
   box-shadow: var(--glow);
 }
@@ -1008,7 +1049,7 @@ select {
 .toast.visible { opacity: 1; transform: translate(-50%, 0); }
 .toast svg { width: 17px; height: 17px; flex-shrink: 0; }
 .toast.ok  { background: var(--ok);  color: #05291A; }
-.toast.err { background: var(--bad); color: #3A0A0A; }
+.toast.err { background: var(--bad); color: #FFFFFF; }
 .toast.info { background: var(--surface-3); color: var(--txt); border: 1px solid var(--line-alta); }
 
 /* ── VACÍO / CARGANDO ──────────────────────────────────────────────────── */

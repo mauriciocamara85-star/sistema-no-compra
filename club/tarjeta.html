@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Mi tarjeta · VDH Club</title>
 <meta name="description" content="Tu tarjeta del Club VDH: mostrala en la caja.">
-<meta name="theme-color" content="#F6F3FF">
+<meta name="theme-color" content="#EDEEF0">
 <link rel="apple-touch-icon" href="../apple-touch-icon.png">
 <link rel="icon" href="../icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -17,17 +17,17 @@
      hace falta tiene que verse SIN scrollear: el código de barras, el número
      y cuántas compras lleva. Lo demás va abajo. */
   :root {
-    --bg:      #F6F3FF;
+    --bg:      #EDEEF0;
     --hoja:    #FFFFFF;
-    --txt:     #1A1333;
-    --txt-2:   #574B78;
-    --txt-3:   #8579A8;
-    --linea:   #E3DCF5;
-    --acc:     #6D28D9;
-    --acc-2:   #8B5CF6;
-    --acc-soft:#F0EAFF;
-    --ok:      #15803D;
-    --ok-soft: #DCFCE7;
+    --txt:     #16181B;
+    --txt-2:   #4A4F55;
+    --txt-3:   #55595F;
+    --linea:   #DCDEE3;
+    --acc:     #B51222;
+    --acc-2:   #8E0E1B;
+    --acc-soft:#FBEAEC;
+    --ok:      #0F7444;
+    --ok-soft: #E7F6EE;
     --r:       20px;
     --r-sm:    14px;
     --sans:    'DM Sans', system-ui, -apple-system, sans-serif;
@@ -47,15 +47,20 @@
   .cab span { font-size: 12px; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
 
   /* ── El carnet ──
-     Violeta lleno: es lo único de la pantalla que tiene que gritar "esto es
-     la tarjeta". El código de barras va sobre blanco adentro, porque un
-     lector necesita negro sobre blanco y nada más. */
+     El material del tablero: grafito a negro, textura diagonal y un
+     resplandor rojo a la derecha. Es lo único oscuro de la pantalla, así que
+     es lo primero que se mira —que es exactamente lo que tiene que pasar—.
+     El código de barras va sobre blanco adentro, porque un lector necesita
+     negro sobre blanco y nada más. */
   .carnet {
-    background: linear-gradient(150deg, var(--acc-2), var(--acc));
+    background:
+      radial-gradient(70% 130% at 110% 42%, rgba(181, 18, 34, .55) 0%, rgba(181, 18, 34, .14) 46%, transparent 74%),
+      repeating-linear-gradient(118deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 11px),
+      linear-gradient(158deg, #2B2E33 0%, #141517 78%);
     border-radius: var(--r);
     padding: 20px;
     color: #fff;
-    box-shadow: 0 16px 34px -18px rgba(109, 40, 217, .85);
+    box-shadow: 0 16px 34px -18px rgba(22, 24, 27, .85);
   }
   .carnet-nom { font: 700 21px/1.2 var(--display); letter-spacing: -.4px; }
   .carnet-desde { font-size: 12.5px; opacity: .8; margin-top: 3px; }
@@ -74,7 +79,7 @@
     margin-top: 8px;
     font: 700 clamp(19px, 6vw, 25px)/1 var(--display);
     letter-spacing: 2px;
-    color: #1A1333;
+    color: #16181B;
     font-variant-numeric: tabular-nums;
   }
   .carnet-pie { font-size: 13px; opacity: .85; margin-top: 14px; text-align: center; }
@@ -103,7 +108,7 @@
     font: 700 12px var(--display); color: var(--txt-3);
   }
   .sello.lleno { border: 0; background: var(--acc); color: #fff; }
-  .sello.premio { border-color: var(--acc-2); color: var(--acc); border-style: solid; }
+  .sello.premio { border-color: var(--acc); color: var(--acc); border-style: solid; }
   .sello svg { width: 16px; height: 16px; }
 
   .hitos { margin-top: 20px; display: grid; gap: 11px; }
@@ -121,8 +126,8 @@
   }
   .hito b { display: block; font-size: 15px; }
   .hito small { display: block; font-size: 13px; color: var(--txt-3); }
-  .hito.listo { border-color: #86EFAC; background: var(--ok-soft); }
-  .hito.listo .hito-n { background: #BBF7D0; color: var(--ok); }
+  .hito.listo { border-color: #A7D9BF; background: var(--ok-soft); }
+  .hito.listo .hito-n { background: #CDEBDC; color: var(--ok); }
   .hito.listo small { color: var(--ok); font-weight: 600; }
   .hito.usado { opacity: .6; }
 
@@ -171,7 +176,7 @@
     .then(function (t) {
       if (!t || !t.hay) {
         $('cargando').innerHTML = 'No encontramos esa tarjeta.<br>' +
-          '<a href="index.html" style="color:#6D28D9">Anotate acá</a>.';
+          '<a href="index.html" style="color:#B51222">Anotate acá</a>.';
         return;
       }
       pintar(t);
