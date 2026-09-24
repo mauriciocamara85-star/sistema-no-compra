@@ -1022,7 +1022,7 @@
     </div>
     <div class="campos">
       <div class="campo ancho">
-        <label for="f_producto">Producto</label>
+        <label for="f_producto" id="lblProducto">Producto</label>
         <input type="text" id="f_producto" placeholder="Campera de abrigo negra" autocomplete="off">
       </div>
       <div class="campo ancho">
@@ -1220,8 +1220,27 @@
           o.classList.toggle('sel', o.dataset.v === motivo);
         });
         if (motivo) ocultarError('errMotivo');
+        pistaProducto();
       };
     });
+  }
+
+  /**
+   * El ejemplo del campo Producto cambia con el motivo.
+   *
+   * Con 'No lo hacemos' no se está anotando una prenda del catálogo: se está
+   * anotando QUÉ pide la gente que VDH no fabrica, y eso sólo sirve si todos
+   * lo escriben igual. Un ejemplo de una palabra es lo único que se puede
+   * hacer hasta que estén los chips de rubro, que es lo que de verdad lo
+   * resuelve: pedir "una o dos palabras" como regla no lo respeta nadie con
+   * un cliente adelante.
+   */
+  function pistaProducto() {
+    var campo = $('f_producto');
+    var noHacemos = motivo === 'No lo hacemos';
+    campo.placeholder = noHacemos ? 'Una palabra: chaleco, buzo, sweater…'
+                                  : 'Campera de abrigo negra';
+    $('lblProducto').textContent = noHacemos ? 'Qué te pidieron' : 'Producto';
   }
 
   /* Los talles se acumulan: en la planilla ya hay cargas tipo "s, m" o "M/L"
@@ -2041,6 +2060,7 @@
     });
 
     motivo = d.motivo || '';
+    pistaProducto();
     Array.prototype.forEach.call($('chipsMotivo').children, function (b) {
       b.classList.toggle('sel', b.dataset.v === motivo);
     });
@@ -2207,6 +2227,7 @@
       $(id).value = '';
     });
     motivo = ''; talles = [];
+    pistaProducto();
     Array.prototype.forEach.call($('chipsMotivo').children, function (b) { b.classList.remove('sel'); });
     Array.prototype.forEach.call($('chipsTalle').querySelectorAll('.chip'), function (b) { b.classList.remove('sel'); });
     ocultarError('errWsp', 'cWsp');
