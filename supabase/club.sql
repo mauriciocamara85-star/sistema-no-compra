@@ -313,10 +313,12 @@ begin
 
   if exists (select 1 from club_clientes
               where regexp_replace(telefono, '[^0-9]', '', 'g') = tel) then
-    /* Sin código y sin nombre: que ya exista es todo lo que se puede decir
-       sin convertir esto en un buscador de personas. */
+    /* Sin código y sin nombre. La tarjeta NO se devuelve acá: quien se
+       está anotando escribió un nombre que puede no ser el suyo. Lo que
+       hace la pantalla con esto es pedir club_recuperar con el mismo
+       teléfono, que es la puerta pensada para esto. */
     return jsonb_build_object('alta', false, 'ya_estaba', true,
-      'porque', 'Ese número ya está anotado. Pedí tu tarjeta en el local.');
+      'porque', 'Ese número ya tiene tarjeta. Te la abrimos.');
   end if;
 
   cod := club_codigo();
@@ -825,3 +827,131 @@ grant execute on function club_canjear_hito(text, text, smallint, text, text) to
 
 revoke all on club_hitos from anon, authenticated;
 alter table club_hitos enable row level security;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- RECUPERAR LA TARJETA CON EL TELÉFONO
+--
+-- Decisión de Mauricio, 24/09/2026, después de quedarse afuera de su propia
+-- tarjeta y no poder volver a entrar sin ayuda de un vendedor.
+--
+-- Hasta acá el modelo era: el código de 12 dígitos ES la credencial, y el
+-- alta con un teléfono ya anotado NO devolvía la tarjeta, porque tipear el
+-- número de otro te la habría dado. Eso era correcto y era caro: el cliente
+-- que perdía el enlace dependía de que alguien con el PIN se la mandara, y
+-- eso en la práctica no pasa. El sistema de la Fuente de Oro —la referencia
+-- que puso Mauricio— resuelve con el teléfono y nada más.
+--
+-- ASÍ QUE ESTO ES UN CAMBIO DE MODELO, NO UN AGREGADO. A partir de acá:
+--
+--   el teléfono también es una credencial.
+--
+-- Lo que eso cuesta, para que quede escrito y nadie lo "descubra" después:
+-- cualquiera que tenga el teléfono de una persona puede ver su nombre, sus
+-- sellos y en qué locales compró, y puede presentarse a retirar su premio.
+-- Se aceptó a ojos abiertos: son sellos de una tienda de ropa, no una cuenta
+-- bancaria, y el costo de NO poder recuperarla ya se midió en la práctica.
+--
+-- Lo único que sí había que frenar es el BARRIDO: sin freno, alguien recorre
+-- números de a miles y se lleva la base de clientes entera. Por eso hay un
+-- límite por origen, y por eso el límite cuenta los intentos FALLIDOS: el
+-- dueño de un teléfono lo escribe bien a la primera, el que barre falla casi
+-- siempre.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_recuperos (
+  id       bigserial primary key,
+  origen   text not null,
+  encontro boolean not null,
+  cuando   timestamptz not null default now()
+);
+
+-- El teléfono NO se guarda. El registro existe para contar intentos, no para
+-- dejar anotado qué números probó alguien: eso sería exactamente la lista que
+-- este freno está para que nadie arme.
+create index if not exists ix_club_recuperos_origen
+  on club_recuperos (origen, cuando desc);
+
+alter table club_recuperos enable row level security;
+-- Sin políticas: nadie la lee ni la escribe desde afuera. La escribe la
+-- función, que es security definer.
+
+/* De dónde vino el pedido. PostgREST deja los encabezados en
+   request.headers; el primero de x-forwarded-for es el cliente y los que
+   siguen son los proxies. Si no hay —una corrida a mano desde psql— queda
+   'desconocido', que comparte cupo con cualquier otro sin encabezado y está
+   bien que así sea. */
+create or replace function club_origen()
+returns text
+language sql
+stable
+as $co$
+  select coalesce(
+    nullif(split_part(
+      coalesce(current_setting('request.headers', true)::json->>'x-forwarded-for', ''),
+      ',', 1), ''),
+    'desconocido')
+$co$;
+
+
+create or replace function club_recuperar(p_telefono text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cr$
+declare
+  tel    text;
+  org    text;
+  fallos integer;
+  c      v_club_clientes%rowtype;
+  /* found lo pisa CUALQUIER sentencia, el insert de abajo incluido. Sin
+     guardarlo antes, el 'if not found' del final estaría mirando si el
+     insert insertó —siempre sí— y nunca contestaría que no hay tarjeta. */
+  hallado boolean;
+begin
+  tel := regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g');
+  org := club_origen();
+
+  /* Ocho dígitos es el mismo piso que usa el alta. Un número corto no se
+     cuenta como intento: es un error de tipeo, no una prueba. */
+  if length(tel) < 8 then
+    return jsonb_build_object('hay', false, 'corto', true,
+      'porque', 'Escribí tu WhatsApp completo, con la característica y sin el 0.');
+  end if;
+
+  /* Diez fallos por origen cada quince minutos. Una persona escribe su
+     número una vez; quien barre falla casi siempre, así que se queda sin
+     cupo enseguida. El que YA encontró su tarjeta no gasta cupo. */
+  select count(*) into fallos
+    from club_recuperos
+   where origen = org and not encontro and cuando > now() - interval '15 minutes';
+
+  if fallos >= 10 then
+    raise exception 'Probaste muchos números seguidos. Esperá un rato y volvé a intentar.'
+      using errcode = '54000';
+  end if;
+
+  select * into c from v_club_clientes
+   where regexp_replace(telefono, '[^0-9]', '', 'g') = tel
+     and baja is null
+   limit 1;
+
+  hallado := found;
+  insert into club_recuperos (origen, encontro) values (org, hallado);
+
+  if not hallado then
+    return jsonb_build_object('hay', false,
+      'porque', 'No encontramos ninguna tarjeta con ese número.');
+  end if;
+
+  /* Devuelve el CÓDIGO y nada más. La tarjeta la arma club_tarjeta, que ya
+     existe y es la única que sabe cómo se ve: dos funciones devolviendo la
+     misma tarjeta se separan el día que alguien toca una sola. Y de paso la
+     página termina con el código en la dirección, que es lo que hace que se
+     pueda agregar a la pantalla del celular. */
+  return jsonb_build_object('hay', true, 'codigo', c.codigo, 'nombre', c.nombre);
+end;
+$cr$;
+
+grant execute on function club_recuperar(text) to anon, authenticated;

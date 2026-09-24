@@ -197,7 +197,7 @@
   <p class="letra-chica">
     Guardamos tu nombre y tu WhatsApp para identificarte en el local.
     No los compartimos con nadie.<br>
-    ¿Ya tenés tarjeta? <a href="tarjeta.html">Abrila acá</a>.
+    ¿Ya tenés tarjeta? <a href="tarjeta.html">Abrila con tu WhatsApp</a>.
   </p>
 </main>
 
@@ -232,17 +232,35 @@
     club.alta($('nombre').value.trim(), $('tel').value.trim(),
               local, $('cumple').value || null, $('acepta').checked)
       .then(function (r) {
+        /* Ese número ya tiene tarjeta: se le abre la suya.
+           Anotarse dos veces con el mismo teléfono no es un error del
+           cliente, es alguien que quiere entrar y no se acuerda de cómo.
+           Contestarle "ya estás anotado" y dejarlo ahí era mandarlo a un
+           callejón: lo probó Mauricio el 24/09/2026 y terminó dando vueltas
+           entre el formulario y el cartel. */
+        if (r && r.ya_estaba) {
+          b.textContent = 'Abriendo tu tarjeta…';
+          club.recuperar($('tel').value.trim())
+            .then(function (t) {
+              if (t && t.hay) {
+                guardarCodigo(t.codigo);
+                location.replace('tarjeta.html?c=' + encodeURIComponent(t.codigo));
+                return;
+              }
+              m.textContent = (t && t.porque) || 'No pudimos abrir esa tarjeta.';
+              m.hidden = false;
+              b.disabled = false; b.textContent = 'Crear mi tarjeta';
+            })
+            .catch(function (err) {
+              m.textContent = (err && err.message) || 'No se pudo. Probá de nuevo.';
+              m.hidden = false;
+              b.disabled = false; b.textContent = 'Crear mi tarjeta';
+            });
+          return;
+        }
+
         if (!r || !r.alta) {
-          /* El caso normal de "no" es que ese número ya esté anotado. La
-             base no devuelve la tarjeta ajena a propósito —si alcanzara con
-             tipear un número, esto sería un buscador de personas— así que
-             acá no se puede hacer aparecer la tarjeta. Lo que sí hay que
-             hacer es decir los dos caminos que quedan, porque el mensaje
-             pelado deja al cliente parado sin saber qué hacer. */
-          m.innerHTML = esc((r && r.porque) || 'No se pudo crear la tarjeta.') +
-            '<br><br>Si guardaste el enlace de tu tarjeta, abrilo: ese te lleva ' +
-            'a la tuya. Si no lo tenés, pedila en cualquier local y te la abren ' +
-            'en el momento con tu teléfono.';
+          m.textContent = (r && r.porque) || 'No se pudo crear la tarjeta.';
           m.hidden = false;
           return;
         }

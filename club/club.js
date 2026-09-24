@@ -48,6 +48,19 @@ var club = {
   /** La tarjeta, por su código y nada más. */
   tarjeta: function (codigo) {
     return llamar('club_tarjeta', { p_codigo: codigo });
+  },
+
+  /**
+   * La tarjeta de este teléfono. Devuelve {hay:true, codigo, nombre} o
+   * {hay:false, porque}.
+   *
+   * Desde el 24/09/2026 el teléfono TAMBIÉN es una credencial: quien lo
+   * tiene puede abrir esa tarjeta. Es un cambio de modelo y está explicado
+   * en club.sql, arriba de club_recuperar. La base frena el barrido de
+   * números por origen; acá no hay nada que frenar.
+   */
+  recuperar: function (telefono) {
+    return llamar('club_recuperar', { p_telefono: telefono });
   }
 };
 

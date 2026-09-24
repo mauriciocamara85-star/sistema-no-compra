@@ -164,6 +164,25 @@
     font: 700 17px var(--sans); text-align: center; text-decoration: none;
   }
   .caja .vacio + .vacio { margin-top: 12px; }
+
+  /* Campos y aviso: hasta que la tarjeta se pudo recuperar con el teléfono,
+     esta pantalla no tenía nada para completar. Mismos valores que la
+     página de alta, incluidos los 16px de letra que evitan que iOS haga
+     zoom solo al tocar el campo. */
+  label { display: block; font-size: 14px; font-weight: 600; color: var(--txt-2); margin-bottom: 7px; }
+  input[type=tel] {
+    width: 100%;
+    background: #fff;
+    border: 1.5px solid var(--linea);
+    border-radius: var(--r-sm);
+    font: 500 16px var(--sans);
+    color: var(--txt);
+    padding: 14px 15px;
+    outline: none;
+  }
+  input:focus { border-color: var(--acc); box-shadow: 0 0 0 4px rgba(181, 18, 34, .14); }
+  .msg { margin-top: 14px; font-size: 14.5px; line-height: 1.5; border-radius: var(--r-sm); padding: 13px 14px; }
+  .msg.mal { background: #FDF2F3; color: #A00F1E; border: 1px solid #F3CFD3; }
 </style>
 </head>
 <body>
@@ -322,15 +341,51 @@
     c.className = '';
     c.innerHTML =
       '<div class="caja">' +
-        '<h2>Tu tarjeta no está en este teléfono</h2>' +
-        '<p class="vacio">La tarjeta se abre con tu código, y acá no hay ' +
-        'ninguno guardado. Puede que te hayas anotado en otro teléfono, o ' +
-        'que el navegador haya borrado los datos del sitio.</p>' +
-        '<p class="vacio">Si ya sos socio, pedila en cualquier local: con tu ' +
-        'teléfono te la vuelven a abrir en el momento. Y si guardaste el ' +
-        'enlace de tu tarjeta, abrilo: ese sí te lleva a la tuya.</p>' +
-        '<a class="btn" href="index.html">Anotarme en el Club</a>' +
+        '<h2>Abrí tu tarjeta</h2>' +
+        '<p class="vacio">Poné el WhatsApp con el que te anotaste y te la ' +
+        'abrimos. Queda guardada en este teléfono: la próxima vez entra sola.</p>' +
+        '<div class="campo" style="margin-top:16px">' +
+          '<label for="recTel">Tu WhatsApp</label>' +
+          '<input type="tel" id="recTel" inputmode="numeric" autocomplete="tel" ' +
+                 'placeholder="11 2345 6789">' +
+        '</div>' +
+        '<button type="button" class="btn" id="recBtn">Abrir mi tarjeta</button>' +
+        '<div class="msg mal" id="recMsg" hidden></div>' +
+        '<p class="vacio" style="margin-top:18px">¿Todavía no sos socio? ' +
+        '<a href="index.html">Anotate acá</a>, es gratis.</p>' +
       '</div>';
+
+    $('recBtn').onclick = recuperar;
+    $('recTel').onkeydown = function (e) { if (e.key === 'Enter') recuperar(); };
+    $('recTel').focus();
+  }
+
+  /* Un solo dato y adentro. El teléfono es una credencial desde el
+     24/09/2026: ver club.sql, arriba de club_recuperar, que es donde está
+     escrito qué se ganó y qué se pagó con eso. */
+  function recuperar() {
+    var b = $('recBtn'), m = $('recMsg');
+    m.hidden = true;
+    b.disabled = true; b.textContent = 'Buscando…';
+
+    club.recuperar($('recTel').value.trim())
+      .then(function (t) {
+        if (t && t.hay) {
+          guardarCodigo(t.codigo);
+          /* replace y no href: la vuelta atrás no tiene por qué pasar por
+             la pantalla de "abrí tu tarjeta" una vez que ya está abierta. */
+          location.replace('tarjeta.html?c=' + encodeURIComponent(t.codigo));
+          return;
+        }
+        m.textContent = (t && t.porque) || 'No encontramos ninguna tarjeta con ese número.';
+        m.hidden = false;
+        b.disabled = false; b.textContent = 'Abrir mi tarjeta';
+      })
+      .catch(function (err) {
+        m.textContent = (err && err.message) || 'No se pudo. Fijate la señal y probá de nuevo.';
+        m.hidden = false;
+        b.disabled = false; b.textContent = 'Abrir mi tarjeta';
+      });
   }
 
   /* Ya agregada a la pantalla de inicio: el cartel de cómo agregarla
