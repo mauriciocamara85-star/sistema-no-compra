@@ -44,11 +44,11 @@ insert into locales (codigo, nombre) values
   ('GRAND BOURG',        'Grand Bourg'),
   ('ITUZAINGÓ',          'Ituzaingó'),
   ('LOMAS DE ZAMORA',    'Lomas de Zamora'),
+  ('MAR DEL PLATA',      'Mar del Plata'),
   ('MORÓN',              'Morón'),
   ('PACHECO',            'Pacheco'),
   ('PARQUE BROWN',       'Parque Brown'),
-  ('RIVADAVIA',          'Rivadavia'),
-  ('SAN JUSTO 1',        'San Justo 1'),
+  ('SAN JUSTO',          'San Justo'),
   ('SAN JUSTO SHOPPING', 'San Justo Shopping'),
   ('UNICENTER',          'Unicenter'),
   ('VILLA DEL PARQUE',   'Villa del Parque')
