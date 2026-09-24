@@ -139,34 +139,42 @@
 }
 
 html[data-theme="light"] {
-  /* Crema tibio y no gris azulado. Es lo que le da al tema claro la
-     personalidad que el oscuro consigue con el violeta: el papel deja de
-     ser una hoja de oficina. Las tarjetas siguen siendo blancas, así que
-     el escalón hoja/fondo se mantiene y el texto oscuro encima da 16:1. */
-  --bg:        #FBE4D8;
+  /* ── Gris frío, no crema ────────────────────────────────────────────────
+     Era crema tibio. El violeta de la marca es un color FRÍO, y un fondo
+     cálido al lado vibra: la pantalla se ve menos limpia de lo que es y los
+     bordes tibios de los campos son los que más chocan. Con un gris neutro
+     el violeta pasa a ser el único color que habla.
+
+     Los valores no se eligieron a ojo: cada uno mantiene o mejora el
+     contraste que tenía el tibio, y están anotados al lado. El tema oscuro
+     no cambia. */
+  --bg:        #E4E8F2;   /* 1,23:1 contra la tarjeta; el crema daba 1,22 */
   /* En claro la luz la pone el papel: el resplandor sobraría. */
   --fondo-luz: none;
   --surface:   #FFFFFF;
-  /* Los neutros del tema claro se van a TIBIO con el fondo. Un relleno de
-     campo azulado adentro de una tarjeta blanca, sobre una página crema,
-     se lee sucio: no es más claro ni más oscuro, es de otra familia. Cada
-     uno mantiene o mejora el contraste que tenía; están medidos. */
-  --surface-2: #FAF3EF;
-  --surface-3: #EFE2DA;
-  /* En claro el borde de la tarjeta sube un escalón: con el anterior daba
-     1,38:1 contra el fondo y las tarjetas no se despegaban — la pantalla
-     entera se leía como un bloque plano. */
-  --line:       #D0B5A8;   /* 1,93:1 contra la tarjeta; antes 1,83 */
-  --line-alta:  #B79787;   /* 2,70:1; antes 2,53 */
-  --line-campo: #A38070;   /* 3,25:1 contra el relleno del campo */
+  --surface-2: #F5F7FB;
+  --surface-3: #E0E4EE;   /* 1,27:1, igual que el chip tibio */
 
-  --txt:   #0B1220;
-  --txt-2: #33475F;
-  /* Sube de #5A6E87. Ese daba 5,23:1 contra la tarjeta blanca —abajo del
-     piso de 7:1 que declara el bloque de arriba, o sea que el tema claro
-     nunca lo había cumplido— y sobre el fondo crema caía a 4,28. Este da
-     7,05 contra la tarjeta y 5,77 contra el fondo. */
-  --txt-3: #4A5A6E;
+  /* ── Los dos bordes hacen trabajos distintos ──
+     El de la TARJETA sólo separa, y puede ser suave: la separación la carga
+     el escalón de tono contra el fondo, que se mantuvo a propósito. Si se
+     ablandaran las dos cosas a la vez —fondo casi blanco Y borde casi
+     invisible— la pantalla quedaría plana.
+
+     El del CAMPO es otra cosa: tiene que decir "acá se escribe", y la
+     referencia son 3:1 contra su propio relleno. Un gris de 1,4:1 ahí es
+     exactamente el bug que este archivo ya arregló una vez, cuando los
+     campos "se leían como manchas". */
+  --line:       #D8DAE2;   /* 1,40:1 contra la tarjeta — sólo separa */
+  --line-alta:  #999DA7;   /* 2,71:1; el tibio daba 2,70 */
+  --line-campo: #858993;   /* 3,26:1 contra el relleno; el tibio daba 3,25 */
+
+  --txt:   #17151F;        /* 18,05:1 */
+  --txt-2: #41454F;        /* 9,59:1; el tibio daba 9,51 */
+  /* El piso de 7:1 que declara el bloque de arriba para las etiquetas. El
+     tema claro no lo cumplió durante un tiempo —daba 5,23— y desde entonces
+     es el número que hay que respetar al tocar esto. */
+  --txt-3: #545862;        /* 7,12:1 contra la tarjeta, 5,84 contra el fondo */
 
   --acc-txt:  #6D28D9;
   --acc-soft: rgba(124, 92, 255, .13);
@@ -176,8 +184,8 @@ html[data-theme="light"] {
   --cian:      #155E75;
   --cian-soft: rgba(21, 94, 117, .12);
 
-  --chip:      #EFE2DA;
-  --chip-line: #A38070;
+  --chip:      #E0E4EE;
+  --chip-line: #858993;
 
   --ok-txt:  #047857;
   --ok-soft: rgba(5, 150, 105, .13);
@@ -188,10 +196,10 @@ html[data-theme="light"] {
   --info-txt:  #1D4ED8;
   --info-soft: rgba(37, 99, 235, .12);
 
-  /* La sombra también es tibia: una sombra azulada sobre papel crema se ve
-     gris y ensucia el borde de la tarjeta. */
-  --sombra:      0 1px 3px rgba(74, 42, 30, .10), 0 12px 28px -14px rgba(74, 42, 30, .40);
-  --sombra-alta: 0 16px 44px -16px rgba(74, 42, 30, .32);
+  /* La sombra acompaña al fondo: sobre gris frío, una sombra marrón se ve
+     sucia igual que una azulada se veía sucia sobre el crema. */
+  --sombra:      0 1px 3px rgba(23, 21, 31, .08), 0 12px 28px -14px rgba(23, 21, 31, .30);
+  --sombra-alta: 0 16px 44px -16px rgba(23, 21, 31, .26);
   --glow:        0 8px 24px -10px rgba(109, 40, 217, .45);
   color-scheme: light;
 }
