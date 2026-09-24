@@ -646,6 +646,60 @@ var base = {
   },
 
 
+  /* ── El Club, del lado de adentro ──────────────────────────────────────
+     La página del cliente NO usa nada de acá: tiene su propio `club/club.js`
+     con dos funciones y nada más. Estas son las del mostrador, y todas piden
+     el mismo PIN que el Panel y Beneficios. */
+
+  club: {
+    /** Buscar al cliente: por teléfono, por nombre o por el código que
+        escribe el lector. Devuelve hasta diez. */
+    buscar: function (pin, texto) {
+      return funcion('club_buscar', { p_pin: pin, p_texto: texto });
+    },
+
+    /**
+     * Sumar una compra. Una compra = un sello, sin monto mínimo.
+     *
+     * Si el ticket ya está cargado en ese local contesta
+     * {sumado:false, duplicado:true, anterior:{…}} en vez de guardar. Volver
+     * a llamar con `confirmar` en true lo fuerza: es para cuando de verdad
+     * son dos cajas que repiten numeración, no para saltearse el aviso.
+     */
+    sumar: function (pin, codigo, local, vendedor, ticket, importe, confirmar) {
+      return funcion('club_sumar_compra', {
+        p_pin: pin, p_codigo: codigo, p_local: local, p_vendedor: vendedor,
+        p_ticket: ticket || null, p_importe: importe || null,
+        p_confirmar: !!confirmar
+      });
+    },
+
+    /** Los últimos veinte movimientos, con ticket e importe. */
+    movimientos: function (pin, codigo) {
+      return funcion('club_movimientos_de', { p_pin: pin, p_codigo: codigo });
+    },
+
+    /** Anular una carga equivocada. No borra: deja el motivo al lado. */
+    anular: function (pin, id, quien, motivo) {
+      return funcion('club_anular_movimiento', {
+        p_pin: pin, p_id: id, p_quien: quien, p_motivo: motivo || null
+      });
+    },
+
+    /** Entregar un premio. NO resta sellos: anota qué hito se llevó. */
+    canjear: function (pin, codigo, hito, local, vendedor) {
+      return funcion('club_canjear_hito', {
+        p_pin: pin, p_codigo: codigo, p_hito: hito,
+        p_local: local, p_vendedor: vendedor
+      });
+    },
+
+    /** La tarjeta como la ve el cliente, para mostrarla en el mostrador. */
+    tarjeta: function (codigo) {
+      return funcion('club_tarjeta', { p_codigo: codigo });
+    }
+  },
+
   /* ── Lo del Panel ──────────────────────────────────────────────────────
      Todo lo de acá abajo pide el PIN: es lo único que toca datos de
      clientes. Antes pedía haber entrado con el mail; desde el 23/09/2026 es

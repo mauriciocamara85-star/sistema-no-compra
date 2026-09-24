@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Club en caja</title>
+<meta name="description" content="Sumar compras del Club de Clientes.">
+<meta name="theme-color" content="#0B1020">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+  } catch (e) {}
+</script>
+<style>
+  /* ── Club en caja ────────────────────────────────────────────────────────
+     La pantalla del mostrador. Un solo campo arriba y todo lo demás aparece
+     debajo según lo que se encuentre: el que atiende tiene al cliente
+     adelante y la fila atrás.
+
+     ── Un campo, dos formas de llenarlo ──
+     Se escribe el teléfono o el nombre, O se dispara el lector, que escribe
+     los doce dígitos del código como si los tipeara alguien. Para esta
+     pantalla son lo mismo y no hay nada que elegir. */
+  :root { --tope: 720px; }
+  @media (min-width: 1100px) { :root { --tope: 980px; } }
+
+  .buscar-tit { font: 700 21px/1.2 var(--display); letter-spacing: -.3px; }
+  .buscar-sub { font-size: 14.5px; color: var(--txt-2); margin: 8px 0 20px; line-height: 1.5; }
+  .buscar-fila { display: flex; gap: 10px; }
+  .buscar-fila input { flex: 1; min-width: 0; font-size: 19px; font-weight: 600; padding: 16px 14px; }
+  .buscar-fila .btn { flex: none; padding-left: 22px; padding-right: 22px; }
+
+  .quien-linea {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 18px; font-size: 13px; color: var(--txt-3);
+  }
+  .quien-linea b { color: var(--txt-2); font-weight: 600; }
+
+  /* Un resultado de la búsqueda. Se toca y se elige. */
+  .socio {
+    display: flex; align-items: center; gap: 14px;
+    width: 100%; text-align: left;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 14px 16px; margin-top: 10px;
+    color: var(--txt); cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .socio:hover { border-color: var(--acc-line); }
+  .socio-n {
+    width: 44px; height: 44px; flex: none; border-radius: 13px;
+    background: var(--acc-soft); color: var(--acc-txt);
+    display: grid; place-items: center; font: 700 16px var(--display);
+  }
+  .socio-nom { font: 600 16px/1.3 var(--sans); }
+  .socio-sub { font-size: 13px; color: var(--txt-3); margin-top: 2px; }
+  .socio .pill { margin-left: auto; flex: none; }
+
+  /* La ficha del cliente elegido: lo único que importa arriba de todo, y el
+     botón de sumar abajo. */
+  .ficha-socio { margin-top: 16px; }
+  .ficha-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .ficha-nom { font: 700 24px/1.15 var(--display); letter-spacing: -.5px; }
+  .ficha-sellos {
+    font: 700 34px/1 var(--display); color: var(--acc-txt);
+    letter-spacing: -1px; margin-left: auto;
+  }
+  .ficha-sellos small { font-size: 15px; font-weight: 600; color: var(--txt-3); letter-spacing: 0; }
+
+  .premios { display: grid; gap: 9px; margin-top: 16px; }
+  .premio {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: var(--r-sm);
+    border: 1px solid var(--line); background: var(--surface-2);
+    font-size: 14.5px;
+  }
+  .premio.listo { border-color: var(--ok); background: var(--ok-soft); }
+  .premio.usado { opacity: .55; }
+  .premio b { display: block; }
+  .premio small { display: block; font-size: 12.5px; color: var(--txt-3); }
+  .premio .btn { margin-left: auto; flex: none; }
+
+  /* El aviso de ticket repetido. Naranja y no rojo: no es un error, es una
+     pregunta. */
+  .repetido {
+    margin-top: 14px; padding: 14px 16px;
+    background: var(--warn-soft); border: 1px solid var(--warn);
+    border-radius: var(--r-sm); font-size: 14px; line-height: 1.55;
+    color: var(--txt);
+  }
+  .repetido b { color: var(--warn-txt); }
+  .repetido .btn { margin-top: 12px; }
+
+  .movs { margin-top: 20px; }
+  .mov {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px;
+  }
+  .mov:last-child { border-bottom: 0; }
+  .mov-cuando { color: var(--txt-3); font-size: 12.5px; }
+  .mov.anulado { opacity: .5; text-decoration: line-through; }
+  .mov .btn { margin-left: auto; }
+
+  .vacio-txt { font-size: 14.5px; color: var(--txt-2); line-height: 1.55; }
+
+  /* ── El portón del PIN, igual que en el Panel y en Beneficios ── */
+  .porton { max-width: 380px; margin: 8vh auto 0; padding: 0 20px; text-align: center; }
+  .porton-icono {
+    width: 62px; height: 62px; margin: 0 auto 18px; border-radius: 20px;
+    background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
+    color: var(--acc-ink); display: grid; place-items: center; box-shadow: var(--glow);
+  }
+  .porton-icono svg { width: 28px; height: 28px; }
+  .porton h2 { font: 700 27px/1.15 var(--display); letter-spacing: -.5px; }
+  .porton p { font-size: 14.5px; color: var(--txt-2); margin: 10px 0 24px; }
+  .porton input {
+    text-align: center; font-size: 19px; font-weight: 700;
+    letter-spacing: 6px; font-variant-numeric: tabular-nums; margin-bottom: 12px;
+  }
+  .porton-msg { margin-top: 14px; font-size: 14px; color: var(--warn-txt); line-height: 1.5; }
+</style>
+</head>
+<body>
+
+<!-- ── Portón ── -->
+<div class="porton" id="porton">
+  <div class="porton-icono">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>
+    </svg>
+  </div>
+  <h2>Club en caja</h2>
+  <p>Acá se suman las compras del Club. Poné el PIN para entrar.</p>
+  <input type="password" id="pinCaja" inputmode="numeric" maxlength="8" placeholder="PIN"
+         autocomplete="off" onkeydown="if(event.key==='Enter') entrar()">
+  <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Entrar</button>
+  <p class="porton-msg" id="portonMsg" hidden></p>
+</div>
+
+<div class="marco" id="marco" hidden>
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt">No Compra</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      Carga
+    </a>
+    <a class="rail-item" href="beneficios.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
+      Beneficios
+    </a>
+    <a class="rail-item" href="caja.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Club
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>
+      Panel
+    </a>
+    <a class="rail-item" href="motivos.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Motivos
+    </a>
+    <a class="rail-item" href="resultados.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></span>
+      Resultados
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="hoja">
+  <section class="bloque">
+    <p class="quien-linea" id="quienLinea"></p>
+    <h2 class="buscar-tit">Sumar una compra</h2>
+    <p class="buscar-sub">
+      Disparale al código de la tarjeta, o escribí el WhatsApp o el nombre del cliente.
+    </p>
+    <div class="buscar-fila">
+      <input type="text" id="clave" inputmode="numeric" autocomplete="off"
+             placeholder="Código, WhatsApp o nombre" aria-label="Código, teléfono o nombre">
+      <button type="button" class="btn btn-pri" id="btnBuscar">Buscar</button>
+    </div>
+    <div id="resultado"></div>
+  </section>
+
+  <section class="bloque sin-local" id="cajaSinLocal" hidden style="text-align:center;padding:30px 20px">
+    <h2 class="buscar-tit">Primero elegí tu local</h2>
+    <p class="vacio-txt" style="margin:10px 0 18px">
+      Cada compra queda anotada con el local y con quién atendió, así que hace
+      falta saber dónde estás.
+    </p>
+    <a class="btn btn-pri" href="index.html">Ir a elegir el local</a>
+  </section>
+
+  <p class="pie" style="text-align:center;margin-top:26px;font-size:13px;color:var(--txt-3)">
+    Una compra confirmada suma un sello. El alta del cliente se hace desde el
+    QR del local.
+  </p>
+</main>
+
+</div><!-- /.marco -->
+
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script src="datos.js"></script>
+<script src="club/codigo.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var K_PIN = 'nc_pin', K_LOCAL = 'nc_local', K_VENDEDOR = 'nc_vendedor';
+  var local = '', vendedor = '', socio = null;
+
+  function pinGuardado() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
+  function guardarPin(v) {
+    try { if (v) sessionStorage.setItem(K_PIN, v); else sessionStorage.removeItem(K_PIN); } catch (e) {}
+  }
+
+  /* ═══ El portón ═══════════════════════════════════════════════════════ */
+  window.entrar = function () {
+    var v = $('pinCaja').value.trim();
+    if (!v) { avisar('err', 'Escribí el PIN.'); $('pinCaja').focus(); return; }
+    var b = $('btnEntrar');
+    b.disabled = true; b.textContent = 'Probando…';
+
+    base.pin.probar(v)
+      .then(function (r) {
+        if (!r || !r.ok) {
+          $('portonMsg').hidden = false;
+          $('portonMsg').textContent = (r && r.porque) || 'PIN incorrecto.';
+          $('pinCaja').value = ''; $('pinCaja').focus();
+          return;
+        }
+        guardarPin(v);
+        abrir();
+      })
+      .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo entrar.'); })
+      .then(function () { b.disabled = false; b.textContent = 'Entrar'; });
+  };
+
+  function abrir() {
+    $('porton').hidden = true;
+    $('marco').hidden = false;
+    document.body.classList.add('hay-rail');
+
+    if (!local) { $('cajaSinLocal').hidden = false; return; }
+    $('quienLinea').innerHTML = '<b>' + esc(bonito(local)) + '</b>' +
+      (vendedor ? ' · atiende <b>' + esc(vendedor) + '</b>' : '');
+    $('clave').focus();
+  }
+
+  /* ═══ Buscar ══════════════════════════════════════════════════════════
+     Un campo para las tres formas. El lector escribe los doce dígitos y un
+     Enter, que es indistinguible de alguien tipeando: no hay nada que
+     detectar ni ningún modo que elegir. */
+  function buscar() {
+    var v = $('clave').value.trim();
+    if (!v) return;
+    socio = null;
+    $('resultado').innerHTML = '<p class="vacio-txt" style="margin-top:16px">Buscando…</p>';
+
+    base.club.buscar(pinGuardado(), v)
+      .then(function (r) {
+        if (r && r.corto) { $('resultado').innerHTML = '<p class="vacio-txt" style="margin-top:16px">' + esc(r.porque) + '</p>'; return; }
+        var lista = Array.isArray(r) ? r : [];
+        if (!lista.length) {
+          $('resultado').innerHTML =
+            '<p class="vacio-txt" style="margin-top:16px">No encontré a nadie. ' +
+            'Si todavía no es socio, puede anotarse con el QR del mostrador.</p>';
+          return;
+        }
+        if (lista.length === 1) { elegir(lista[0].codigo); return; }
+        pintarLista(lista);
+      })
+      .catch(function (err) {
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo buscar.');
+        $('resultado').innerHTML = '';
+      });
+  }
+
+  function pintarLista(lista) {
+    $('resultado').innerHTML = lista.map(function (s) {
+      return '<button type="button" class="socio" data-cod="' + esc(s.codigo) + '">' +
+        '<span class="socio-n">' + s.sellos + '</span>' +
+        '<span><span class="socio-nom">' + esc(s.nombre) + '</span>' +
+        '<span class="socio-sub">' + esc(s.telefono) + '</span></span>' +
+        (s.confirmado ? '' : '<span class="pill pill-warn">Sin compras</span>') +
+        '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('resultado').querySelectorAll('[data-cod]'), function (b) {
+      b.onclick = function () { elegir(b.dataset.cod); };
+    });
+  }
+
+  /* ═══ La ficha del cliente ════════════════════════════════════════════ */
+  function elegir(codigo) {
+    base.club.tarjeta(codigo).then(function (t) {
+      if (!t || !t.hay) { avisar('err', 'No encontré esa tarjeta.'); return; }
+      socio = t;
+      pintarFicha(t);
+    }).catch(function () { avisar('err', 'No se pudo abrir la tarjeta.'); });
+  }
+
+  function pintarFicha(t) {
+    var meta = t.meta || 0;
+    var premios = (t.hitos || []).map(function (h) {
+      var clase = h.canjeado ? ' usado' : (h.alcanzado ? ' listo' : '');
+      var pie = h.canjeado ? 'Ya se lo llevó'
+              : h.alcanzado ? 'Se lo puede llevar'
+              : 'A las ' + h.sellos + ' compras';
+      return '<div class="premio' + clase + '">' +
+        '<div><b>' + esc(h.premio) + '</b><small>' + pie + '</small></div>' +
+        (h.alcanzado && !h.canjeado
+          ? '<button type="button" class="btn btn-sec btn-chico" data-hito="' + h.sellos + '">Entregar</button>'
+          : '') + '</div>';
+    }).join('');
+
+    $('resultado').innerHTML =
+      '<div class="bloque ficha-socio">' +
+        '<div class="ficha-top">' +
+          '<div><div class="ficha-nom">' + esc(t.nombre) + '</div>' +
+          '<div class="socio-sub">' + codigoBonito(t.codigo) + '</div></div>' +
+          '<div class="ficha-sellos">' + t.sellos + ' <small>de ' + meta + '</small></div>' +
+        '</div>' +
+        (premios ? '<div class="premios">' + premios + '</div>' : '') +
+        '<div class="campos" style="margin-top:18px">' +
+          '<div class="campo"><label>Importe</label>' +
+            '<input type="text" inputmode="numeric" id="importe" placeholder="$"></div>' +
+          '<div class="campo"><label>Ticket <span class="lbl-opc">de BlueSoft</span></label>' +
+            '<input type="text" id="ticket" placeholder="Número"></div>' +
+          '<div class="campo ancho">' +
+            '<button type="button" class="btn btn-pri btn-ancho" id="btnSumar">Sumar la compra</button>' +
+          '</div>' +
+        '</div>' +
+        '<div id="avisoRepetido"></div>' +
+        '<div class="movs" id="movs"></div>' +
+      '</div>';
+
+    $('btnSumar').onclick = function () { sumar(false); };
+    Array.prototype.forEach.call($('resultado').querySelectorAll('[data-hito]'), function (b) {
+      b.onclick = function () { entregar(+b.dataset.hito); };
+    });
+    cargarMovs();
+  }
+
+  /* ═══ Sumar ═══════════════════════════════════════════════════════════ */
+  function sumar(confirmar) {
+    if (!socio) return;
+    var b = $('btnSumar');
+    b.disabled = true; b.textContent = 'Sumando…';
+    $('avisoRepetido').innerHTML = '';
+
+    base.club.sumar(pinGuardado(), socio.codigo, local, vendedor,
+                    $('ticket').value.trim(), plata('importe'), confirmar)
+      .then(function (r) {
+        if (r && r.duplicado) {
+          /* No es un error: es una pregunta. Puede ser el mismo vendedor
+             apretando dos veces, o dos cajas que repiten numeración —y
+             todavía no sabemos si BlueSoft lo hace—. Decide quien está
+             mirando el ticket. */
+          var a = r.anterior || {};
+          $('avisoRepetido').innerHTML =
+            '<div class="repetido"><b>Ese ticket ya está cargado.</b><br>' +
+            'Se cargó ' + cuando(a.cuando) + (a.vendedor ? ' por ' + esc(a.vendedor) : '') +
+            (a.importe ? ', por ' + PESOS.format(a.importe) : '') + '.<br>' +
+            'Si de verdad es otra compra, confirmala.' +
+            '<button type="button" class="btn btn-sec btn-chico" id="btnIgual">Sumarla igual</button></div>';
+          $('btnIgual').onclick = function () { sumar(true); };
+          return;
+        }
+        if (!r || !r.sumado) { avisar('err', (r && r.porque) || 'No se pudo sumar.'); return; }
+        avisar('ok', '¡Listo! ' + esc(r.nombre) + ' lleva ' + r.sellos +
+                     (r.meta ? ' de ' + r.meta : '') + '.');
+        elegir(socio.codigo);
+      })
+      .catch(function (err) {
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo sumar.');
+      })
+      .then(function () { b.disabled = false; b.textContent = 'Sumar la compra'; });
+  }
+
+  function entregar(hito) {
+    if (!socio) return;
+    base.club.canjear(pinGuardado(), socio.codigo, hito, local, vendedor)
+      .then(function (r) {
+        if (!r || !r.canjeado) { avisar('err', (r && r.porque) || 'No se pudo entregar.'); return; }
+        avisar('ok', 'Entregado: ' + esc(r.premio) + '.');
+        elegir(socio.codigo);
+      })
+      .catch(function (err) { avisar('err', (err && err.message) || 'No se pudo entregar.'); });
+  }
+
+  /* ═══ Los movimientos, para poder anular ══════════════════════════════ */
+  function cargarMovs() {
+    base.club.movimientos(pinGuardado(), socio.codigo).then(function (ms) {
+      if (!Array.isArray(ms) || !ms.length) { $('movs').innerHTML = ''; return; }
+      $('movs').innerHTML = '<h3 class="bloque-tit" style="font-size:15px;margin-bottom:6px">Últimos movimientos</h3>' +
+        ms.map(function (m) {
+          return '<div class="mov' + (m.anulado ? ' anulado' : '') + '">' +
+            '<span>' + (m.sellos > 0 ? '+' + m.sellos : 'Premio') + '</span>' +
+            '<span class="mov-cuando">' + cuando(m.cuando) + ' · ' + esc(bonito(m.local || '')) +
+              (m.ticket ? ' · ticket ' + esc(m.ticket) : '') +
+              (m.importe ? ' · ' + PESOS.format(m.importe) : '') + '</span>' +
+            (m.anulado ? '' :
+              '<button type="button" class="btn btn-sec btn-chico" data-anular="' + m.id + '">Anular</button>') +
+            '</div>';
+        }).join('');
+      Array.prototype.forEach.call($('movs').querySelectorAll('[data-anular]'), function (b) {
+        b.onclick = function () { anular(+b.dataset.anular); };
+      });
+    }).catch(function () { $('movs').innerHTML = ''; });
+  }
+
+  function anular(id) {
+    var motivo = prompt('¿Por qué se anula? (queda anotado)');
+    if (motivo === null) return;
+    base.club.anular(pinGuardado(), id, vendedor || 'mostrador', motivo)
+      .then(function (r) {
+        if (!r || !r.anulado) { avisar('err', (r && r.porque) || 'No se pudo anular.'); return; }
+        avisar('ok', 'Anulado.');
+        elegir(socio.codigo);
+      })
+      .catch(function () { avisar('err', 'No se pudo anular.'); });
+  }
+
+  /* ═══ Auxiliares ══════════════════════════════════════════════════════ */
+  function plata(id) {
+    var v = ($(id) && $(id).value || '').replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
+    var n = Number(v);
+    return (!v || isNaN(n)) ? null : n;
+  }
+  function cuando(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleString('es-AR',
+        { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return ''; }
+  }
+
+  /* ═══ Arranque ════════════════════════════════════════════════════════ */
+  try {
+    local = localStorage.getItem(K_LOCAL) || '';
+    vendedor = localStorage.getItem(K_VENDEDOR) || '';
+  } catch (e) {}
+
+  $('btnBuscar').onclick = buscar;
+  $('clave').onkeydown = function (e) { if (e.key === 'Enter') buscar(); };
+
+  /* Si el PIN sigue en la pestaña —se vino del Panel o de Beneficios— se
+     entra sin volver a pedirlo, y se prueba pidiendo una búsqueda vacía: un
+     PIN viejo tiene que devolver al portón, no abrir algo que después falla
+     en cada clic. */
+  (function () {
+    var pin = pinGuardado();
+    if (!pin) return;
+    base.club.buscar(pin, '___')
+      .then(abrir)
+      .catch(function () { guardarPin(''); });
+  })();
+
+  iniciarPWA();
+})();
+</script>
+</body>
+</html>

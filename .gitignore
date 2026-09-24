@@ -19,3 +19,6 @@ publicar.ps1
 
 # Basura del CLI de Supabase: cachés y el proyecto vinculado.
 supabase/.temp/
+
+# Perfiles temporales de Chrome de las pruebas
+perfil-chrome/

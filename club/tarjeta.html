@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mi tarjeta · VDH Club</title>
+<meta name="description" content="Tu tarjeta del Club VDH: mostrala en la caja.">
+<meta name="theme-color" content="#F6F3FF">
+<link rel="apple-touch-icon" href="../apple-touch-icon.png">
+<link rel="icon" href="../icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  /* ── La tarjeta ──────────────────────────────────────────────────────────
+     Esto lo abre alguien parado en la caja, con la fila atrás. Todo lo que
+     hace falta tiene que verse SIN scrollear: el código de barras, el número
+     y cuántas compras lleva. Lo demás va abajo. */
+  :root {
+    --bg:      #F6F3FF;
+    --hoja:    #FFFFFF;
+    --txt:     #1A1333;
+    --txt-2:   #574B78;
+    --txt-3:   #8579A8;
+    --linea:   #E3DCF5;
+    --acc:     #6D28D9;
+    --acc-2:   #8B5CF6;
+    --acc-soft:#F0EAFF;
+    --ok:      #15803D;
+    --ok-soft: #DCFCE7;
+    --r:       20px;
+    --r-sm:    14px;
+    --sans:    'DM Sans', system-ui, -apple-system, sans-serif;
+    --display: 'Space Grotesk', var(--sans);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg); color: var(--txt);
+    font: 400 16px/1.55 var(--sans);
+    min-height: 100dvh;
+    padding: env(safe-area-inset-top) 0 calc(env(safe-area-inset-bottom) + 30px);
+  }
+  .hoja { width: 100%; max-width: 520px; margin: 0 auto; padding: 22px 20px 0; }
+
+  .cab { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+  .cab b { font: 700 17px/1.1 var(--display); letter-spacing: -.3px; }
+  .cab span { font-size: 12px; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
+
+  /* ── El carnet ──
+     Violeta lleno: es lo único de la pantalla que tiene que gritar "esto es
+     la tarjeta". El código de barras va sobre blanco adentro, porque un
+     lector necesita negro sobre blanco y nada más. */
+  .carnet {
+    background: linear-gradient(150deg, var(--acc-2), var(--acc));
+    border-radius: var(--r);
+    padding: 20px;
+    color: #fff;
+    box-shadow: 0 16px 34px -18px rgba(109, 40, 217, .85);
+  }
+  .carnet-nom { font: 700 21px/1.2 var(--display); letter-spacing: -.4px; }
+  .carnet-desde { font-size: 12.5px; opacity: .8; margin-top: 3px; }
+
+  .barras {
+    background: #fff;
+    border-radius: var(--r-sm);
+    padding: 14px 12px 10px;
+    margin-top: 16px;
+  }
+  /* El número, grande y agrupado de a cuatro: es el respaldo para cuando el
+     lector no llega a leer la pantalla, y hay que poder dictarlo sin
+     equivocarse. */
+  .numero {
+    display: block; text-align: center;
+    margin-top: 8px;
+    font: 700 clamp(19px, 6vw, 25px)/1 var(--display);
+    letter-spacing: 2px;
+    color: #1A1333;
+    font-variant-numeric: tabular-nums;
+  }
+  .carnet-pie { font-size: 13px; opacity: .85; margin-top: 14px; text-align: center; }
+
+  /* ── El avance ── */
+  .caja {
+    background: var(--hoja);
+    border: 1px solid var(--linea);
+    border-radius: var(--r);
+    padding: 20px;
+    margin-top: 18px;
+  }
+  .caja h2 { font: 700 16px var(--display); letter-spacing: -.2px; }
+
+  .cuenta { display: flex; align-items: baseline; gap: 9px; margin-top: 4px; }
+  .cuenta b { font: 700 clamp(34px, 11vw, 46px)/1 var(--display); color: var(--acc); letter-spacing: -1.5px; }
+  .cuenta span { font-size: 15px; color: var(--txt-2); }
+
+  /* Los sellos, uno por compra. Se ven y se cuentan de un vistazo, que es
+     todo lo que el cliente quiere saber. */
+  .sellos { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
+  .sello {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 2px dashed var(--linea);
+    display: grid; place-items: center;
+    font: 700 12px var(--display); color: var(--txt-3);
+  }
+  .sello.lleno { border: 0; background: var(--acc); color: #fff; }
+  .sello.premio { border-color: var(--acc-2); color: var(--acc); border-style: solid; }
+  .sello svg { width: 16px; height: 16px; }
+
+  .hitos { margin-top: 20px; display: grid; gap: 11px; }
+  .hito {
+    display: flex; align-items: center; gap: 12px;
+    padding: 13px 14px;
+    border: 1px solid var(--linea);
+    border-radius: var(--r-sm);
+    font-size: 14.5px;
+  }
+  .hito-n {
+    width: 38px; height: 38px; flex: none; border-radius: 12px;
+    background: var(--acc-soft); color: var(--acc);
+    display: grid; place-items: center; font: 700 15px var(--display);
+  }
+  .hito b { display: block; font-size: 15px; }
+  .hito small { display: block; font-size: 13px; color: var(--txt-3); }
+  .hito.listo { border-color: #86EFAC; background: var(--ok-soft); }
+  .hito.listo .hito-n { background: #BBF7D0; color: var(--ok); }
+  .hito.listo small { color: var(--ok); font-weight: 600; }
+  .hito.usado { opacity: .6; }
+
+  .lista { margin-top: 18px; }
+  .fila { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--linea); font-size: 14px; }
+  .fila:last-child { border-bottom: 0; }
+  .fila span { color: var(--txt-3); }
+
+  .vacio { font-size: 14.5px; color: var(--txt-2); line-height: 1.55; }
+  .letra-chica { font-size: 12.5px; color: var(--txt-3); margin-top: 22px; text-align: center; line-height: 1.6; }
+  .letra-chica a { color: var(--acc); }
+  .cargando { text-align: center; padding: 60px 0; color: var(--txt-3); }
+</style>
+</head>
+<body>
+
+<main class="hoja">
+  <div class="cab">
+    <div>
+      <b>VDH Club</b><br>
+      <span>Vida Hermosa</span>
+    </div>
+  </div>
+
+  <div id="todo" hidden></div>
+  <p class="cargando" id="cargando">Abriendo tu tarjeta…</p>
+</main>
+
+<script src="codigo.js"></script>
+<script src="club.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+
+  /* El código puede venir en la dirección —el enlace que el cliente se
+     guardó o se pasó— o del celular, si se anotó acá. El de la dirección
+     manda, y se guarda: así abrir el enlace en otro teléfono también
+     funciona. */
+  var m = /[?&]c=([0-9]+)/.exec(location.search);
+  var codigo = m ? m[1] : codigoGuardado();
+  if (m) guardarCodigo(m[1]);
+
+  if (!codigo) { location.replace('index.html'); return; }
+
+  club.tarjeta(codigo)
+    .then(function (t) {
+      if (!t || !t.hay) {
+        $('cargando').innerHTML = 'No encontramos esa tarjeta.<br>' +
+          '<a href="index.html" style="color:#6D28D9">Anotate acá</a>.';
+        return;
+      }
+      pintar(t);
+    })
+    .catch(function () {
+      $('cargando').textContent = 'No se pudo abrir. Fijate la señal y recargá.';
+    });
+
+  function pintar(t) {
+    var meta = t.meta || 0;
+    var hitos = t.hitos || [];
+
+    /* Los sellos: uno por compra hasta la meta. Los que caen justo en un
+       premio se marcan distinto, así se ve dónde está la próxima parada sin
+       tener que leer nada. */
+    var enPremio = {};
+    hitos.forEach(function (h) { enPremio[h.sellos] = true; });
+    var bolitas = '';
+    for (var i = 1; i <= meta; i++) {
+      var lleno = i <= t.sellos;
+      bolitas += '<div class="sello' + (lleno ? ' lleno' : '') +
+                 (!lleno && enPremio[i] ? ' premio' : '') + '">' +
+                 (lleno
+                   ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 13 4 4L19 7"/></svg>'
+                   : i) + '</div>';
+    }
+
+    var falta = 0;
+    var proximo = null;
+    hitos.forEach(function (h) {
+      if (!proximo && t.sellos < h.sellos) { proximo = h; falta = h.sellos - t.sellos; }
+    });
+
+    var html =
+      '<div class="carnet">' +
+        '<div class="carnet-nom">' + esc(t.nombre) + '</div>' +
+        '<div class="carnet-desde">Socio desde ' + fecha(t.desde) + '</div>' +
+        '<div class="barras">' + codigoDeBarras(t.codigo, 84) +
+          '<b class="numero">' + codigoBonito(t.codigo) + '</b>' +
+        '</div>' +
+        '<div class="carnet-pie">Mostralo en la caja cuando comprés</div>' +
+      '</div>' +
+
+      '<div class="caja">' +
+        '<h2>Tu avance</h2>' +
+        '<div class="cuenta"><b>' + t.sellos + '</b><span>de ' + meta + ' compras' +
+          (proximo ? ' · te faltan ' + falta + ' para ' + esc(proximo.premio.toLowerCase()) : '') +
+        '</span></div>' +
+        '<div class="sellos">' + bolitas + '</div>' +
+        '<div class="hitos">' + hitos.map(function (h) {
+          var clase = h.canjeado ? ' usado' : (h.alcanzado ? ' listo' : '');
+          var pie = h.canjeado ? 'Ya te lo llevaste'
+                  : h.alcanzado ? 'Pedilo en cualquier local'
+                  : 'A las ' + h.sellos + ' compras';
+          return '<div class="hito' + clase + '">' +
+                   '<div class="hito-n">' + h.sellos + '</div>' +
+                   '<div><b>' + esc(h.premio) + '</b><small>' + pie + '</small></div>' +
+                 '</div>';
+        }).join('') + '</div>' +
+      '</div>' +
+
+      (t.ultimas && t.ultimas.length
+        ? '<div class="caja"><h2>Tus últimas compras</h2><div class="lista">' +
+            t.ultimas.map(function (u) {
+              return '<div class="fila"><b>' + esc(bonito(u.local || '')) + '</b>' +
+                     '<span>' + fecha(u.cuando) + '</span></div>';
+            }).join('') + '</div></div>'
+        : '<div class="caja"><h2>Todavía no tenés compras</h2>' +
+          '<p class="vacio">Mostrá tu tarjeta la próxima vez que compres y te ' +
+          'sumamos la primera.</p></div>') +
+
+      '<p class="letra-chica">Guardá este enlace o agregalo a tu pantalla de inicio.<br>' +
+      'Tu código es sólo tuyo: no lo compartas.</p>';
+
+    $('todo').innerHTML = html;
+    $('todo').hidden = false;
+    $('cargando').hidden = true;
+  }
+
+  /* "23 de septiembre", como lo diría alguien. Sin el año: la tarjeta es de
+     este año y ponerlo sólo hace la línea más larga. */
+  function fecha(iso) {
+    if (!iso) return '';
+    try {
+      return new Date(iso).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
+    } catch (e) { return ''; }
+  }
+})();
+</script>
+</body>
+</html>
