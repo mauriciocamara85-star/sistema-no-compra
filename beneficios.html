@@ -1008,7 +1008,7 @@
     var wsp = $('btnWspCupon');
     var digitos = (tel || '').replace(/[^0-9]/g, '');
     if (digitos.length >= 8) {
-      var texto = 'Hola! Te dejamos un ' + pct + '% de descuento en Vida Hermosa. ' +
+      var texto = 'Hola! Te dejamos un ' + pct + '% de descuento en VDH. ' +
         'Tu código es ' + codigo + '. Lo podés usar vos o regalárselo a quien quieras.';
       wsp.href = 'https://wa.me/' + (digitos.length === 10 ? '549' + digitos : digitos) +
         '?text=' + encodeURIComponent(texto);
