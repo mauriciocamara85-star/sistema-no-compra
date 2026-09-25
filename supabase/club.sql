@@ -1228,3 +1228,251 @@ $ce$;
 
 grant execute on function club_cliente_editar(text, text, text, text, text, text)
   to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VARIAS PROMOCIONES
+--
+-- Hasta acá la promo era UNA, guardada como tres valores sueltos en
+-- `club_reglas`. Mauricio quiere varias, cada una con su foto.
+--
+-- Lo que cambia de fondo: una promo deja de ser una preferencia y pasa a ser
+-- una FILA. Con eso se puede tener más de una, dejar cargada la del lunes un
+-- viernes, y que cada una venza sola.
+--
+-- LA VIGENCIA TIENE DOS PUNTAS, y el `desde` no es un lujo: es lo que deja
+-- cargar el viernes la promo del lunes y olvidarse. Sin eso alguien tiene
+-- que acordarse de entrar el lunes a la mañana, que es exactamente el tipo
+-- de tarea que nadie hace dos veces.
+--
+-- NO SE BORRAN, se dan de baja. Una promo que estuvo publicada es algo que
+-- los clientes vieron: si tres meses después alguien pregunta "¿no era 3x2?",
+-- tiene que haber con qué contestar.
+--
+-- Las condiciones son TEXTO LIBRE a propósito —qué productos participan, si
+-- combina con otros descuentos, en qué locales vale—. Armar un sistema de
+-- reglas para algo que se escribe en dos renglones es la forma más rápida de
+-- que nadie lo use.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_promos (
+  id          bigint generated always as identity primary key,
+  texto       text not null,
+  imagen      text,
+  /* Null = desde siempre. Se llena con hoy si no se dice otra cosa. */
+  desde       date,
+  hasta       date not null,
+  condiciones text,
+  creado      timestamptz not null default now(),
+  baja        timestamptz
+);
+
+create index if not exists ix_club_promos_vigencia
+  on club_promos (hasta desc) where baja is null;
+
+alter table club_promos enable row level security;
+-- Sin políticas: se lee y se escribe por funciones, como todo el club.
+
+
+/* Lo que ve el cliente: sólo lo vigente HOY, más nuevo primero.
+   Sin PIN, igual que club_reglas_ver: es lo que dice el cartel del local. */
+create or replace function club_promos_ver()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $pv$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'id', id, 'texto', texto, 'imagen', imagen,
+           'hasta', to_char(hasta, 'YYYY-MM-DD'),
+           'condiciones', condiciones)
+         order by desde desc nulls last, id desc), '[]'::jsonb)
+    from club_promos
+   where baja is null
+     and hasta >= current_date
+     and (desde is null or desde <= current_date)
+$pv$;
+
+grant execute on function club_promos_ver() to anon, authenticated;
+
+
+/* La lista para editar: TODAS, incluidas las que todavía no arrancaron y las
+   que ya vencieron. Es lo que club_promos_ver esconde a propósito, y es
+   justo lo que hay que ver para administrarlas. */
+create or replace function club_promos_listar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pl$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', id, 'texto', texto, 'imagen', imagen,
+             'desde', to_char(desde, 'YYYY-MM-DD'),
+             'hasta', to_char(hasta, 'YYYY-MM-DD'),
+             'condiciones', condiciones,
+             'vigente', (hasta >= current_date and (desde is null or desde <= current_date)),
+             'futura',  (desde is not null and desde > current_date),
+             'vencida', (hasta < current_date))
+           order by hasta desc, id desc)
+      from club_promos where baja is null), '[]'::jsonb);
+end;
+$pl$;
+
+grant execute on function club_promos_listar(text) to anon, authenticated;
+
+
+/* Guardar: con id edita, sin id crea. */
+create or replace function club_promo_guardar(
+  p_pin text, p_id bigint, p_texto text, p_imagen text,
+  p_desde text, p_hasta text, p_condiciones text
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pg$
+declare
+  txt text;
+  img text;
+  con text;
+  d1  date;
+  d2  date;
+  nid bigint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  txt := nullif(trim(coalesce(p_texto, '')), '');
+  img := nullif(trim(coalesce(p_imagen, '')), '');
+  con := nullif(trim(coalesce(p_condiciones, '')), '');
+
+  if txt is null then raise exception 'Falta qué dice la promoción.'; end if;
+  if length(txt) > 140 then
+    raise exception 'El texto es muy largo. Máximo 140 caracteres.';
+  end if;
+
+  /* https y no http: una imagen por http en una página https la bloquea el
+     navegador SIN DECIR NADA, y el cartel se vería vacío. */
+  if img is not null and img !~* '^https://' then
+    raise exception 'La foto tiene que ser un enlace que empiece con https.';
+  end if;
+
+  begin
+    d1 := nullif(trim(coalesce(p_desde, '')), '')::date;
+    d2 := nullif(trim(coalesce(p_hasta, '')), '')::date;
+  exception when others then
+    raise exception 'Esa fecha no se entiende. Va como 2026-09-30.';
+  end;
+
+  if d2 is null then
+    raise exception 'Falta hasta qué día vale. Una promo sin vencimiento se queda para siempre.';
+  end if;
+  if d1 is not null and d1 > d2 then
+    raise exception 'El desde no puede ser posterior al hasta.';
+  end if;
+  if d2 < current_date then
+    raise exception 'Esa fecha ya pasó: la promoción no la vería nadie.';
+  end if;
+
+  if p_id is null then
+    insert into club_promos (texto, imagen, desde, hasta, condiciones)
+    values (txt, img, coalesce(d1, current_date), d2, con)
+    returning id into nid;
+  else
+    update club_promos
+       set texto = txt, imagen = img, desde = d1, hasta = d2, condiciones = con
+     where id = p_id and baja is null
+    returning id into nid;
+    if nid is null then
+      return jsonb_build_object('ok', false, 'porque', 'Esa promoción ya no existe.');
+    end if;
+  end if;
+
+  return jsonb_build_object('ok', true, 'id', nid);
+end;
+$pg$;
+
+grant execute on function club_promo_guardar(text, bigint, text, text, text, text, text)
+  to anon, authenticated;
+
+
+/* Dar de baja. NO borra: una promo que estuvo publicada es algo que los
+   clientes vieron, y tres meses después puede haber que explicarla. */
+create or replace function club_promo_baja(p_pin text, p_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pb$
+declare n bigint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  update club_promos set baja = now() where id = p_id and baja is null
+  returning id into n;
+
+  if n is null then
+    return jsonb_build_object('ok', false, 'porque', 'Esa promoción ya no está.');
+  end if;
+  return jsonb_build_object('ok', true);
+end;
+$pb$;
+
+grant execute on function club_promo_baja(text, bigint) to anon, authenticated;
+
+
+-- ── La promo que ya estaba, a la tabla nueva ──────────────────────────────
+-- Para no perder la que Mauricio tenía cargada en club_reglas. Corre una
+-- sola vez: si ya hay promos, no hace nada.
+insert into club_promos (texto, imagen, desde, hasta)
+select trim(t.valor), nullif(trim(coalesce(i.valor, '')), ''),
+       current_date, h.valor::date
+  from (select valor from club_reglas where clave = 'aviso_texto')  t
+  cross join (select valor from club_reglas where clave = 'aviso_hasta')  h
+  cross join (select valor from club_reglas where clave = 'aviso_imagen') i
+ where t.valor is not null and length(trim(t.valor)) > 0
+   and h.valor is not null
+   and not exists (select 1 from club_promos);
+
+
+-- ── Compatibilidad ────────────────────────────────────────────────────────
+-- club_aviso_ver la sigue llamando cualquier página vieja que haya quedado
+-- guardada en el celular de alguien. En vez de dejarla contestando la promo
+-- de club_reglas —que ya nadie edita— devuelve la PRIMERA vigente de la
+-- tabla nueva. Así un teléfono con la versión anterior sigue viendo algo
+-- cierto hasta que se actualice solo.
+create or replace function club_aviso_ver()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $av$
+  select coalesce(
+    (select jsonb_build_object('hay', true, 'texto', texto,
+                               'hasta', to_char(hasta, 'YYYY-MM-DD'),
+                               'imagen', imagen)
+       from club_promos
+      where baja is null and hasta >= current_date
+        and (desde is null or desde <= current_date)
+      order by desde desc nulls last, id desc
+      limit 1),
+    jsonb_build_object('hay', false))
+$av$;
+
+grant execute on function club_aviso_ver() to anon, authenticated;
+
+/* El editor viejo se va: lo reemplaza la lista de promociones. */
+drop function if exists club_aviso_guardar(text, text, text, text);
+drop function if exists club_aviso_guardar(text, text, text);
+drop function if exists club_aviso_editar(text);

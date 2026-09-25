@@ -202,6 +202,24 @@
     .col-lado .esteEquipo, .col-lado .bloque { margin-bottom: 12px; }
     .pie { grid-column: 1 / -1; }
   }
+
+  /* ── Las filas de promociones ──
+     La lista vive en la columna angosta de la derecha, asi que se acomoda
+     sola: el texto manda y lo demas se va abajo cuando no entra. */
+  .promo-fila {
+    display: flex; align-items: center; flex-wrap: wrap;
+    gap: 8px;
+    padding: 11px 0;
+    border-top: 1px solid var(--line);
+  }
+  .promo-fila:first-child { border-top: 0; padding-top: 2px; }
+  .promo-fila-txt { flex: 1 1 100%; min-width: 0; }
+  .promo-fila-txt b {
+    display: block; font-size: 14.5px; font-weight: 700;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .promo-fila-txt span { font-size: 12.5px; color: var(--txt-3); }
+
 </style>
 </head>
 <body class="hay-rail">
@@ -329,8 +347,8 @@
        que pide el PIN. El resto de Configuración —objetivos, locales— lo ve
        el equipo. -->
   <div class="bloque" id="cajaPromo">
-    <h2 class="bloque-tit">La promo del Club</h2>
-    <p class="bloque-sub">Un cartel que ven todos los socios al abrir su tarjeta. Pasada la fecha desaparece solo.</p>
+    <h2 class="bloque-tit">Las promociones del Club</h2>
+    <p class="bloque-sub">Lo que ven los socios al abrir su tarjeta. Pasada la fecha desaparecen solas.</p>
     <div id="promoCuerpo"></div>
   </div>
 
@@ -375,8 +393,8 @@
      dato del cliente, no una firma al pie de un cambio. */
 
   /* ═══ Este equipo ═══════════════════════════════════════════════════════ */
-  /* ═══ La promo del Club ═════════════════════════════════════════════
-     Es lo único de Configuración que sale de esta pantalla y llega a un
+  /* ═══ Las promociones del Club ═══════════════════════════════════════
+     Lo único de Configuración que sale de esta pantalla y llega a un
      cliente, así que es lo único que pide el PIN —el mismo del Panel, de
      Beneficios y de la caja—.
 
@@ -384,6 +402,7 @@
      pestaña. En la PC del local, que queda abierta todo el día, guardarlo
      para siempre sería dejar la llave puesta. */
   var K_PIN_PROMO = 'nc_pin';
+  var editando = null;      // el id que se está editando, o null si es nueva
 
   function pinPromo() {
     try { return sessionStorage.getItem(K_PIN_PROMO) || ''; } catch (e) { return ''; }
@@ -394,50 +413,14 @@
     } catch (e) {}
   }
 
-  /* La vista previa. Chica: es para confirmar que la dirección apunta a una
-     foto, no para diseñar el cartel. */
-  var ESTILO_PREV =
-    'margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid var(--line);' +
-    'background:var(--surface-2);height:110px;display:grid;place-items:center;';
-
-  function verPrevia() {
-    var caja = $('promoImgPrev');
-    var url = $('promoImagen').value.trim();
-    if (!caja) return;
-
-    if (!url) { caja.innerHTML = ''; caja.removeAttribute('style'); return; }
-
-    caja.setAttribute('style', ESTILO_PREV);
-    caja.innerHTML = '<span class="bloque-sub" style="margin:0">Probando la foto…</span>';
-
-    /* Se prueba con un Image() y no metiendo el <img> en la página: así el
-       error se captura sin que quede un ícono de imagen rota a la vista. */
-    var img = new Image();
-    img.onload = function () {
-      caja.innerHTML = '';
-      img.setAttribute('style', 'width:100%;height:110px;object-fit:cover;display:block');
-      caja.appendChild(img);
-    };
-    img.onerror = function () {
-      caja.innerHTML =
-        '<span class="bloque-sub" style="margin:0;text-align:center;padding:0 12px">' +
-        'No se pudo cargar esa foto.<br>¿Copiaste la dirección de la IMAGEN ' +
-        '(clic derecho sobre la foto) y no la de la página?</span>';
-    };
-    img.src = url;
-  }
-
   function pintarPromo() {
     var caja = $('promoCuerpo');
     if (!caja) return;
-
     if (!pinPromo()) { pedirPinPromo(); return; }
 
-    caja.innerHTML = '<p class="bloque-sub">Buscando lo que hay puesto…</p>';
-    base.club.avisoEditar(pinPromo())
-      .then(function (a) {
-        editorPromo((a && a.texto) || '', (a && a.hasta) || '', (a && a.imagen) || '');
-      })
+    caja.innerHTML = '<p class="bloque-sub">Buscando las promociones…</p>';
+    base.club.promosListar(pinPromo())
+      .then(function (lista) { listaPromos(lista || []); })
       .catch(function (err) {
         /* PIN vencido o equivocado: se vuelve a pedir en vez de dejar un
            cartel de error que no se puede accionar. */
@@ -468,28 +451,88 @@
     pintarPromo();
   }
 
-  function editorPromo(texto, hasta, imagen) {
+  /* La lista. Las vencidas y las que todavía no arrancaron se muestran
+     igual, marcadas: una promo que no se ve en ningún lado es una promo que
+     alguien va a volver a cargar sin darse cuenta de que ya estaba. */
+  function listaPromos(lista) {
+    var filas = lista.map(function (p) {
+      var estado = p.vigente ? '<span class="pill pill-ok">Vigente</span>'
+                 : p.futura  ? '<span class="pill pill-warn">Desde el ' + esc(fechaCorta(p.desde)) + '</span>'
+                             : '<span class="pill pill-neutra">Vencida</span>';
+      return '<div class="promo-fila">' +
+        '<div class="promo-fila-txt"><b>' + esc(p.texto) + '</b>' +
+          '<span>Hasta el ' + esc(fechaCorta(p.hasta)) +
+          (p.imagen ? ' · con foto' : '') + '</span></div>' +
+        estado +
+        '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-baja="' + p.id + '">Quitar</button>' +
+      '</div>';
+    }).join('');
+
+    $('promoCuerpo').innerHTML =
+      (filas || '<p class="bloque-sub">Todavía no hay ninguna. La primera que cargues la ven ' +
+                'todos los socios al abrir su tarjeta.</p>') +
+      '<button type="button" class="btn btn-pri btn-chico" id="promoNueva" ' +
+              'style="margin-top:14px">Agregar una promoción</button>';
+
+    $('promoNueva').onclick = function () { editorPromo(null); };
+    Array.prototype.forEach.call($('promoCuerpo').querySelectorAll('[data-editar]'), function (b) {
+      b.onclick = function () {
+        var p = null;
+        lista.forEach(function (x) { if (String(x.id) === b.dataset.editar) p = x; });
+        editorPromo(p);
+      };
+    });
+    Array.prototype.forEach.call($('promoCuerpo').querySelectorAll('[data-baja]'), function (b) {
+      b.onclick = function () { bajaPromo(b.dataset.baja); };
+    });
+  }
+
+  /* "25 sep" en vez de "2026-09-25": la lista se mira de reojo. */
+  function fechaCorta(iso) {
+    if (!iso) return '—';
+    var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso));
+    if (!d) return iso;
+    try {
+      return new Date(+d[1], +d[2] - 1, +d[3])
+        .toLocaleDateString('es-AR', { day: 'numeric', month: 'short' });
+    } catch (e) { return iso; }
+  }
+
+  function editorPromo(p) {
+    editando = p ? p.id : null;
     $('promoCuerpo').innerHTML =
       '<div class="campos">' +
         '<div class="campo ancho">' +
-          '<label for="promoTexto">Qué dice <span class="lbl-opc">— vacío lo apaga</span></label>' +
+          '<label for="promoTexto">Qué dice</label>' +
           '<textarea id="promoTexto" maxlength="140" ' +
-            'placeholder="Sólo por hoy: 30% off en remeras">' + esc(texto) + '</textarea>' +
-          '<div class="campo-error" id="promoLargo" hidden></div>' +
+            'placeholder="Sólo por hoy: 30% off en remeras">' + esc((p && p.texto) || '') + '</textarea>' +
+        '</div>' +
+        '<div class="campo">' +
+          '<label for="promoDesde">Desde <span class="lbl-opc">— vacío: hoy</span></label>' +
+          '<input type="date" id="promoDesde" value="' + esc((p && p.desde) || '') + '">' +
         '</div>' +
         '<div class="campo">' +
           '<label for="promoHasta">Hasta qué día</label>' +
-          '<input type="date" id="promoHasta" value="' + esc(hasta || '') + '">' +
+          '<input type="date" id="promoHasta" value="' + esc((p && p.hasta) || '') + '">' +
         '</div>' +
         '<div class="campo ancho">' +
           '<label for="promoImagen">Foto de fondo <span class="lbl-opc">— opcional</span></label>' +
           '<input type="url" id="promoImagen" inputmode="url" autocapitalize="off" ' +
-            'placeholder="https://…" value="' + esc(imagen || '') + '">' +
+            'placeholder="https://…" value="' + esc((p && p.imagen) || '') + '">' +
           '<div id="promoImgPrev"></div>' +
         '</div>' +
+        '<div class="campo ancho">' +
+          '<label for="promoCond">Condiciones <span class="lbl-opc">— opcional</span></label>' +
+          '<textarea id="promoCond" ' +
+            'placeholder="Qué productos participan, si combina con otros descuentos, en qué locales vale">' +
+            esc((p && p.condiciones) || '') + '</textarea>' +
+        '</div>' +
         '<div class="campo">' +
-          '<label>&nbsp;</label>' +
-          '<button type="button" class="btn btn-pri" id="promoGuardar">Guardar el cartel</button>' +
+          '<button type="button" class="btn btn-pri" id="promoGuardar">Guardar</button>' +
+        '</div>' +
+        '<div class="campo">' +
+          '<button type="button" class="btn btn-sec" id="promoVolver">Volver</button>' +
         '</div>' +
       '</div>' +
       '<p class="bloque-sub" style="margin-top:12px">Lo ven cuando abren la tarjeta. ' +
@@ -498,6 +541,7 @@
       'y tiene que empezar con <b>https</b>: con http el navegador la bloquea.</p>';
 
     $('promoGuardar').onclick = guardarPromo;
+    $('promoVolver').onclick = pintarPromo;
     /* onchange y no oninput: probar la foto en cada tecla dispararía una
        carga por letra mientras se pega una dirección larga. */
     $('promoImagen').onchange = verPrevia;
@@ -505,26 +549,66 @@
     verPrevia();
   }
 
+  /* La vista previa. Sin esto, pegar la dirección de una PÁGINA en vez de la
+     de una FOTO falla en silencio: se guarda bien, la base la acepta —es
+     https— y el cartel aparece vacío. Y no se puede validar en la base:
+     muchos CDN sirven imágenes sin extensión. La única prueba que no se
+     equivoca es intentar cargarla. */
+  var ESTILO_PREV =
+    'margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid var(--line);' +
+    'background:var(--surface-2);height:110px;display:grid;place-items:center;';
+
+  function verPrevia() {
+    var caja = $('promoImgPrev');
+    if (!caja) return;
+    var url = $('promoImagen').value.trim();
+    if (!url) { caja.innerHTML = ''; caja.removeAttribute('style'); return; }
+
+    caja.setAttribute('style', ESTILO_PREV);
+    caja.innerHTML = '<span class="bloque-sub" style="margin:0">Probando la foto…</span>';
+
+    var img = new Image();
+    img.onload = function () {
+      caja.innerHTML = '';
+      img.setAttribute('style', 'width:100%;height:110px;object-fit:cover;display:block');
+      caja.appendChild(img);
+    };
+    img.onerror = function () {
+      caja.innerHTML =
+        '<span class="bloque-sub" style="margin:0;text-align:center;padding:0 12px">' +
+        'No se pudo cargar esa foto.<br>¿Copiaste la dirección de la IMAGEN ' +
+        '(clic derecho sobre la foto) y no la de la página?</span>';
+    };
+    img.src = url;
+  }
+
   function guardarPromo() {
     var b = $('promoGuardar');
-    var texto = $('promoTexto').value.trim();
-    var hasta = $('promoHasta').value;
-    var imagen = $('promoImagen').value.trim();
-
-    /* Un cartel con texto y sin fecha se queda para siempre, y "sólo por
-       hoy" en marzo es peor que no tener cartel. */
-    if (texto && !hasta) { avisar('err', 'Poné hasta qué día se muestra.'); return; }
-
     b.disabled = true;
-    base.club.avisoGuardar(pinPromo(), texto, hasta, imagen)
+    base.club.promoGuardar(pinPromo(), editando,
+        $('promoTexto').value.trim(), $('promoImagen').value.trim(),
+        $('promoDesde').value, $('promoHasta').value, $('promoCond').value.trim())
       .then(function (r) {
-        avisar('ok', (r && r.texto) ? 'Listo: los socios lo ven al abrir su tarjeta.'
-                                    : 'Cartel apagado.');
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+        avisar('ok', 'Listo: los socios la ven al abrir su tarjeta.');
+        pintarPromo();
       })
       .catch(function (err) {
         avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
       })
       .then(function () { b.disabled = false; });
+  }
+
+  function bajaPromo(id) {
+    base.club.promoBaja(pinPromo(), Number(id))
+      .then(function (r) {
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo quitar.'); return; }
+        avisar('ok', 'Quitada. Los socios ya no la ven.');
+        pintarPromo();
+      })
+      .catch(function (err) {
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo quitar.');
+      });
   }
 
   function pintarEsteEquipo() {

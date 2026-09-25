@@ -268,6 +268,29 @@
      informa y lo deja ahí parado. */
   .promo-ir { margin-top: 18px; }
 
+  /* Varias promos, una abajo de la otra, y GRANDES. Es pedido de Mauricio y
+     se sostiene: con una foto cada una, scrollear se parece a mirar un feed
+     de prendas y no a leer carteles. */
+  .promos-lista { display: grid; gap: 22px; }
+
+  /* Las condiciones —qué productos participan, si combina con otros
+     descuentos, en qué locales vale— van en un <details> y no en otra
+     pantalla: se leen una vez de cada diez y no justifican hacer navegar a
+     nadie. Cerradas por defecto, para que no le ganen a la promo. */
+  .promo-cond { margin-top: 10px; }
+  .promo-cond summary {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 700 14px var(--sans);
+    color: var(--acc);
+    cursor: pointer; list-style: none;
+  }
+  .promo-cond summary::-webkit-details-marker { display: none; }
+  .promo-cond p {
+    font-size: 14.5px; color: var(--txt-2); line-height: 1.55;
+    margin-top: 9px;
+    white-space: pre-line;
+  }
+
   /* ── Con foto ──
      La foto va atrás de todo y encima un velo NEGRO DE ABAJO HACIA ARRIBA.
      Ese velo es lo que hace que esto funcione con cualquier imagen: el texto
@@ -341,33 +364,6 @@
      su tarjeta, no para que le vendan algo. Pero va en rojo lleno, porque
      una vez que la tarjeta está a la vista esto es lo único nuevo de la
      pantalla. */
-  /* ── El aviso de que hay promo ──
-     Era un cartel rojo del tamaño de media pantalla, y estaba metido ENTRE
-     el código de barras y el avance: las dos cosas que son del cliente,
-     partidas al medio por una comercial. Y desde que Promos es una pestaña,
-     el cartel entero acá le sacaba el sentido: si ya lo vi, no entro.
-
-     Queda un renglón que avisa y empuja a la pestaña. El texto se corta con
-     puntos suspensivos a propósito: es un adelanto, no la promo. */
-  .promo-linea {
-    display: flex; align-items: center; gap: 10px;
-    width: 100%; margin-top: 14px;
-    border: 1px solid rgba(181, 18, 34, .25);
-    background: var(--acc-soft);
-    border-radius: var(--r-sm);
-    padding: 13px 14px;
-    font: 600 14.5px var(--sans);
-    color: var(--acc);
-    text-align: left;
-    cursor: pointer;
-  }
-  .promo-linea svg { width: 18px; height: 18px; flex: none; }
-  .promo-linea span {
-    flex: 1; min-width: 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .promo-linea b { color: var(--txt); font-weight: 700; }
-
   /* Campos y aviso: hasta que la tarjeta se pudo recuperar con el teléfono,
      esta pantalla no tenía nada para completar. Mismos valores que la
      página de alta, incluidos los 16px de letra que evitan que iOS haga
@@ -592,10 +588,7 @@
         '<div class="carnet-pie">Mostralo en la caja cuando comprés</div>' +
       '</div>' +
 
-      /* El hueco de la promo. Se llena después, en su propio viaje: si la
-         base tarda o no contesta, la tarjeta ya está en pantalla. Nunca al
-         revés —el código de barras no puede esperar a un cartel—. */
-      '<div id="promo"></div>' +
+
 
       '<div class="caja">' +
         '<h2>Tu avance</h2>' +
@@ -639,25 +632,26 @@
     $('todo').hidden = false;
     $('cargando').hidden = true;
     pintarInstalar();
-    pintarPromo();
+    precargarPromo();
   }
 
-  /* El cartel que Mauricio escribe en Configuración. Viaje aparte y en
-     silencio: si falla, la tarjeta no se entera. */
-  function pintarPromo() {
-    var caja = $('promo');
-    if (!caja) return;
-    club.aviso()
-      .then(function (a) {
-        promoCargada = a || { hay: false };
-        if (!a || !a.hay) return;
-        var tag = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.6 2.6A2 2 0 0 0 11.2 2H4a2 2 0 0 0-2 2v7.2c0 .5.2 1 .6 1.4l8.8 8.8a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg>';
-        var flecha = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
-        caja.innerHTML = '<button type="button" class="promo-linea" id="verPromo">' + tag +
-          '<span>Hay una promo activa · <b>' + esc(a.texto) + '</b></span>' + flecha + '</button>';
-        $('verPromo').onclick = function () { irA('promos', true); };
-      })
-      .catch(function () { /* sin aviso, la tarjeta es la tarjeta */ });
+  /**
+   * La promo se trae al abrir, pero NO se dibuja en la tarjeta.
+   *
+   * Tuvo dos formas antes de esta: un cartel rojo del tamaño de media
+   * pantalla y después un renglón. Las dos estaban entre el código de
+   * barras y el avance, o sea partiendo las dos cosas que son del cliente
+   * para meter una comercial. Mauricio pidió sacarla del todo y tiene razón:
+   * la promo ya tiene su pestaña, y el aviso de que hay algo nuevo va a ser
+   * la campanita.
+   *
+   * El viaje se hace igual y en silencio: deja la promo cargada, así tocar
+   * Promos es instantáneo. Si falla, la tarjeta ni se entera.
+   */
+  function precargarPromo() {
+    club.promos()
+      .then(function (l) { promoCargada = l || []; })
+      .catch(function () { /* sin promos, la tarjeta es la tarjeta */ });
   }
 
   /* ── Tenela siempre a mano ──
@@ -838,33 +832,44 @@
      arreglarla. */
   var promoCargada = null;
 
+  /** Una promoción: la tarjeta grande y, si las tiene, sus condiciones. */
+  function unaPromo(p) {
+    /* La dirección de la foto va en una variable CSS y no pegada en el
+       style: así el velo oscuro que hace legible el texto queda escrito UNA
+       vez en la hoja de estilos, con su explicación al lado. Se escapan las
+       comillas porque la escribe una persona. */
+    var clase = 'promo-grande' + (p.imagen ? ' con-foto' : '');
+    var estilo = p.imagen ? ' style="--foto:url(&quot;' + esc(p.imagen) + '&quot;)"' : '';
+
+    return '<div>' +
+      '<div class="' + clase + '"' + estilo + '>' + esc(p.texto) +
+        (p.hasta ? '<span class="promo-hasta">Hasta el ' + fecha(p.hasta) + '</span>' : '') +
+      '</div>' +
+      (p.condiciones
+        ? '<details class="promo-cond"><summary>Ver condiciones</summary><p>' +
+          esc(p.condiciones) + '</p></details>'
+        : '') +
+    '</div>';
+  }
+
   function pintarPromoGrande() {
     var caja = $('promoGrande');
     if (!caja) return;
 
-    var pintar = function (a) {
-      var irALaTarjeta = '<button type="button" class="btn promo-ir" id="promoVerTarjeta">' +
-        'Ver mi tarjeta</button>';
+    var irALaTarjeta = '<button type="button" class="btn promo-ir" id="promoVerTarjeta">' +
+      'Ver mi tarjeta</button>';
 
-      /* La dirección de la foto va en una variable CSS y no pegada en el
-         style: así el velo de arriba queda escrito UNA vez en la hoja de
-         estilos, con su explicación al lado, en vez de armarse a mano acá.
-         Y se escapan las comillas por las dudas: la escribe una persona. */
-      var conFoto = (a && a.hay && a.imagen)
-        ? ' con-foto" style="--foto:url(&quot;' + esc(a.imagen) + '&quot;)'
-        : '';
+    var pintar = function (lista) {
+      caja.innerHTML =
+        ((lista && lista.length)
+          ? '<div class="promos-lista">' + lista.map(unaPromo).join('') + '</div>' +
+            '<p class="vacio" style="margin-top:20px">Mostrá tu tarjeta en la caja de ' +
+            'cualquier local para aprovechar' + (lista.length > 1 ? 'las' : 'la') + '.</p>'
+          : '<div class="caja"><h2>No hay promociones activas</h2>' +
+            '<p class="vacio">Cuando haya una, te la mostramos acá. Mientras tanto, tus ' +
+            'compras siguen sumando sellos.</p></div>') +
+        irALaTarjeta;
 
-      if (a && a.hay) {
-        caja.innerHTML = '<div class="promo-grande' + conFoto + '">' + esc(a.texto) +
-          (a.hasta ? '<span class="promo-hasta">Hasta el ' + fecha(a.hasta) + '</span>' : '') +
-          '</div>' +
-          '<p class="vacio" style="margin-top:18px">Mostrá tu tarjeta en la caja de ' +
-          'cualquier local para aprovecharla.</p>' + irALaTarjeta;
-      } else {
-        caja.innerHTML = '<div class="caja"><h2>No hay promociones activas</h2>' +
-          '<p class="vacio">Cuando haya una, te la mostramos acá. Mientras tanto, tus ' +
-          'compras siguen sumando sellos.</p></div>' + irALaTarjeta;
-      }
       if ($('promoVerTarjeta')) {
         $('promoVerTarjeta').onclick = function () { irA('tarjeta', true); };
       }
@@ -872,8 +877,8 @@
 
     if (promoCargada) { pintar(promoCargada); return; }
     caja.innerHTML = '<p class="vacio">Buscando…</p>';
-    club.aviso()
-      .then(function (a) { promoCargada = a || { hay: false }; pintar(promoCargada); })
+    club.promos()
+      .then(function (l) { promoCargada = l || []; pintar(promoCargada); })
       .catch(function () {
         caja.innerHTML = '<p class="vacio">No se pudo cargar. Fijate la señal y probá de nuevo.</p>';
       });

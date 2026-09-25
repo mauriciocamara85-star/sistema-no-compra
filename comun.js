@@ -58,9 +58,28 @@ function esc(s) {
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-/** Capitaliza para mostrar: 'SAN JUSTO 1' → 'San Justo 1'. */
+/**
+ * Capitaliza para mostrar: 'MAR DEL PLATA' → 'Mar del Plata'.
+ *
+ * Las palabras cortas que unen —de, del, la, los, y— van en minúscula salvo
+ * que arranquen el nombre. Poner mayúscula después de cada espacio dejaba
+ * "Mar Del Plata", "Villa Del Parque" y "Lomas De Zamora", que se leen como
+ * un cartel de oferta. Misma corrección que en club/club.js, que tiene su
+ * propia copia porque las páginas del cliente no cargan este archivo.
+ */
+var MENUDAS = { de: 1, del: 1, la: 1, las: 1, los: 1, el: 1, y: 1 };
+
+/* Las siglas se quedan como son. Hoy es una sola —el local del shopping
+   DOT— pero sin esto quedaba "Dot", que parece un error de tipeo. */
+var SIGLAS = { dot: 'DOT' };
+
 function bonito(s) {
-  return String(s || '').toLowerCase().replace(/(^|\s)\S/g, function (c) { return c.toUpperCase(); });
+  return String(s || '').toLowerCase().split(/(\s+|-)/).map(function (p, i) {
+    if (!/[a-záéíóúñ]/.test(p)) return p;
+    if (SIGLAS[p]) return SIGLAS[p];
+    if (i > 0 && MENUDAS[p]) return p;
+    return p.charAt(0).toUpperCase() + p.slice(1);
+  }).join('');
 }
 
 var PESOS = new Intl.NumberFormat('es-AR', {

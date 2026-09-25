@@ -70,6 +70,11 @@ var club = {
    */
   aviso: function () {
     return llamar('club_aviso_ver', {});
+  },
+
+  /** Todas las promociones vigentes hoy, la más nueva primero. */
+  promos: function () {
+    return llamar('club_promos_ver', {});
   }
 };
 
@@ -102,9 +107,14 @@ function esc(s) {
  */
 var MENUDAS = { de: 1, del: 1, la: 1, las: 1, los: 1, el: 1, y: 1 };
 
+/* Las siglas se quedan como son. Hoy es una sola —el local del shopping
+   DOT— pero sin esto quedaba "Dot", que parece un error de tipeo. */
+var SIGLAS = { dot: 'DOT' };
+
 function bonito(s) {
   return String(s || '').toLowerCase().split(/(\s+|-)/).map(function (p, i) {
     if (!/[a-záéíóúñ]/.test(p)) return p;
+    if (SIGLAS[p]) return SIGLAS[p];
     if (i > 0 && MENUDAS[p]) return p;
     return p.charAt(0).toUpperCase() + p.slice(1);
   }).join('');
