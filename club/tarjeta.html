@@ -172,7 +172,9 @@
        mientras la armamos— y una barra de 1900px de ancho con cuatro
        iconitos perdidos se ve rota. Se queda del ancho de la columna. */
     max-width: 520px; margin: 0 auto;
-    display: grid; grid-template-columns: repeat(4, 1fr);
+    /* Cinco, y por eso el boton del medio queda de verdad en el medio:
+       con cuatro estaba en el lugar 3 de 4, apenas corrido. */
+    display: grid; grid-template-columns: repeat(5, 1fr);
     background: var(--hoja);
     border-top: 1px solid var(--linea);
     padding-bottom: env(safe-area-inset-bottom);
@@ -367,6 +369,11 @@
   <a class="tab" href="https://vdh.com.ar/" target="_blank" rel="noopener">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
     E-shop
+  </a>
+
+  <a class="tab" href="https://instagram.com/vdh.indumentaria" target="_blank" rel="noopener">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="20" rx="5.5"/><circle cx="12" cy="12" r="4"/><path d="M17.6 6.4h.01"/></svg>
+    Instagram
   </a>
 </nav>
 
