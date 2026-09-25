@@ -791,8 +791,18 @@ a { color: var(--acc-txt); }
      Blanco y no rojo, por pedido de Mauricio: el rojo en esta franja ya lo
      pone el resplandor de la tarjeta, y un canto rojo al lado de ese
      resplandor no agrega un dato, agrega ruido. */
-  --canto: rgba(255, 255, 255, .26);
-  --surface-2: rgba(255, 255, 255, .10);
+  /* Bajó de .26 a .12 cuando la tarjeta bajó a negro. No es capricho: un
+     blanco al 26% sobre #2B2E33 era un canto; el MISMO blanco sobre #0E0F11
+     es una chapa clara pegada al borde, y encima la esquina redondeada le
+     dibuja un inglete que se ve como un error de recorte. Lo que cambió no
+     es el canto: es cuánto contrasta, y eso se mide contra el fondo nuevo. */
+  --canto: rgba(255, 255, 255, .12);
+  /* La pista de la barra del objetivo. Ojo con este valor: a 0% no se ve el
+     relleno, así que la pista SOLA es lo que queda, y cruza la tarjeta de
+     lado a lado abajo de todo. Al 10% sobre el negro nuevo parecía un pie de
+     tarjeta gris que no cargó —justo en la única tarjeta que lo tiene, así
+     que se leía como que esa tarjeta estaba rota—. */
+  --surface-2: rgba(255, 255, 255, .06);
   --ok-txt:   #6FD39C;
   --warn-txt: #F0C05A;
   --bad-txt:  #FF8A90;
@@ -834,7 +844,7 @@ a { color: var(--acc-txt); }
 .kpi.es-pend .kpi-n { color: var(--warn-txt); }
 .kpi.es-ok { border-left-color: var(--ok); }
 .kpi.es-ok .kpi-n { color: var(--ok-txt); }
-.kpi.es-plata { border-left-color: rgba(255, 255, 255, .55); }
+.kpi.es-plata { border-left-color: rgba(255, 255, 255, .32); }
 .kpi.es-plata .kpi-n { color: var(--txt); }
 /* Las tarjetas de plata llevan un importe, no un número corto: con 27px un
    "$ 1.234.567" se sale de la tarjeta en un celular. */
@@ -842,7 +852,7 @@ a { color: var(--acc-txt); }
 
 /* Objetivo: el único número que se compara contra otro, así que además del
    valor lleva la barra. El relleno sí usa --acc, que es para eso. */
-.kpi.es-obj { border-left-color: rgba(255, 255, 255, .55); }
+.kpi.es-obj { border-left-color: rgba(255, 255, 255, .32); }
 /* Objetivo cumplido: el verde de "esto ya está" es el mismo que usa el panel
    para lo cerrado, así el color quiere decir lo mismo en las dos pantallas. */
 .kpi.es-obj.lleno { border-left-color: var(--ok); }
@@ -859,13 +869,16 @@ a { color: var(--acc-txt); }
   left: 0; right: 0; bottom: 0;
   height: 5px;
   background: var(--surface-2);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid rgba(255, 255, 255, .05);
   overflow: hidden;
 }
+/* Con la pista apagada, el relleno queda solo contra el negro y puede ir a
+   pleno: la barra pasó a decirse por lo que está HECHO y no por el hueco que
+   falta, que es como se lee un objetivo. */
 .kpi-barra i {
   display: block;
   height: 100%;
-  background: linear-gradient(90deg, rgba(255, 255, 255, .72), #FFFFFF);
+  background: linear-gradient(90deg, rgba(255, 255, 255, .82), #FFFFFF);
   transition: width .5s var(--curva);
 }
 
