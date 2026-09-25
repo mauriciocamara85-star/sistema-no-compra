@@ -394,7 +394,7 @@
   <div class="cab">
     <div>
       <b>VDH Club</b><br>
-      <span>Tarjeta de beneficios</span>
+      <span id="cabSub">Tarjeta de beneficios</span>
     </div>
   </div>
 
@@ -411,7 +411,7 @@
 
   <section class="vista" id="vLocales" hidden>
     <h1>Nuestros locales</h1>
-    <p class="vista-sub">Catorce en todo el país. Mostrá tu tarjeta en cualquiera.</p>
+    <p class="vista-sub">Encontrá tu local VDH. Mostrá tu tarjeta en cualquiera.</p>
 
     <!-- Ver los 14 juntos. Es lo único bueno que tenía el mapa de la
          competencia —saber cuál queda más cerca— y se resuelve abriendo la
@@ -802,6 +802,13 @@
       else b.removeAttribute('aria-current');
     });
 
+    /* "Tarjeta de beneficios" es la bajada de la TARJETA, no de la app.
+       En Promos y en Locales repetía algo que ya dice el título de la
+       sección, y encima decía algo que no era: esa pantalla no es la
+       tarjeta. Arriba queda sólo VDH Club. */
+    var sub = $('cabSub');
+    if (sub) sub.hidden = (v !== 'tarjeta');
+
     /* Arriba de todo al cambiar: entrar a Locales scrolleado a la mitad
        porque la tarjeta estaba scrolleada se lee como que se rompió. */
     window.scrollTo(0, 0);
@@ -885,9 +892,14 @@
     var flecha = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 
     caja.innerHTML = LOCALES_VDH.map(function (l) {
+      /* La zona se esconde cuando repite el nombre: en Caseros decía
+         "Caseros" abajo de "Caseros". En DOT dice "Shopping DOT · CABA" y
+         ahí sí ubica al cliente, así que no se saca para todos. */
+      var zona = (l.zona && l.zona !== l.nombre)
+        ? '<div class="local-zona">' + esc(l.zona) + '</div>' : '';
+
       return '<div class="local">' +
-        '<b>' + esc(l.nombre) + '</b>' +
-        '<div class="local-zona">' + esc(l.zona) + '</div>' +
+        '<b>' + esc(l.nombre) + '</b>' + zona +
         '<div class="local-dato">' + pin + '<span>' + esc(l.dir) + '</span></div>' +
         '<div class="local-dato">' + reloj + '<span>' + esc(l.hora) + '</span></div>' +
         '<a class="local-ir" target="_blank" rel="noopener" href="' + esc(comoLlegar(l)) + '">' +
