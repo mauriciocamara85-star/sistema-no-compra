@@ -42,7 +42,10 @@
      se apoya todo, y cuanto más abajo esté, más se despegan los paneles.
      Con #121315 el escalón contra el panel era de 1,1:1 y la pantalla se
      leía plana —era la queja vieja de este archivo, y seguía pasando—. */
-  --bg:        #0A0B0D;
+  /* Negro de verdad. No queda dónde bajar más: por debajo de esto la
+     pantalla apagada y la pantalla prendida son el mismo color, y el marco
+     del monitor se come el borde de la imagen. */
+  --bg:        #050507;
   /* El resplandor del fondo. Dos focos muy abiertos y muy débiles: si se
      ven como manchas, están de más. Arriba a la izquierda, que es donde
      arranca la lectura y donde vive la franja de números. Con el rojo hay
@@ -55,9 +58,22 @@
      Con la paleta violeta lo que separaba al tablero de la hoja era el TONO,
      porque los dos eran oscuros y del mismo color. Acá no hace falta el
      truco: la escala es neutra y los escalones se ven como escalones. */
-  --surface:   #1E2126;
-  --surface-2: #272B31;
-  --surface-3: #31363D;
+  --surface:   #1A1D21;
+  --surface-2: #23262B;
+  --surface-3: #2C3037;
+  /* La tarjeta no es un color: es un DEGRADADO que cae a negro. Un plano
+     liso bajado a fuerza de restarle luz termina en una mancha gris; uno
+     que se va apagando hacia abajo tiene peso, y el peso es lo que hace que
+     se vea negra sin dejar de verse tarjeta. Arriba conserva el grafito
+     justo para que la luz de canto de --sombra tenga contra qué recortarse.
+
+     Es el mismo material que ya tenían las tarjetas de números: ahora todo
+     el tablero está hecho de lo mismo.
+
+     Los grises de texto se siguen midiendo contra el punto MÁS CLARO del
+     degradado, que es el de arriba: --txt-3 da 7,5:1 contra #1C1F24 y 8,4:1
+     contra el pie. El piso de 7:1 se cumple en toda la tarjeta. */
+  --panel-fondo: linear-gradient(180deg, #1C1F24 0%, #0E1013 100%);
   --line:      #41454B;
   --line-alta: #5C6168;
   /* El borde de lo que se TOCA —campos y chips— es otra cosa que el borde de
@@ -80,19 +96,17 @@
   --acc-txt:  #FF6B72;   /* 6,7:1 contra el fondo, 6:1 contra la hoja */
   --acc-soft: rgba(181, 18, 34, .20);
   --acc-line: rgba(255, 107, 114, .32);
-  /* ── El canto izquierdo de las tarjetas que piden algo ──
-     Dos tonos del mismo rojo: apagado cuando la tarjeta espera, encendido
-     cuando estás escribiendo adentro. El apagado va a media asta a propósito
-     —son tres tarjetas una abajo de la otra y tres franjas rojas a pleno
-     serían empapelado—; el encendido es el que dice dónde estás parado.
+  /* Acá vivían --canto-acc y compañía: un canto rojo en el borde izquierdo
+     de las tres tarjetas del formulario, que se encendía en la que tenía el
+     cursor. Duró un commit. Mauricio lo vio en pantalla el 25/09/2026 y la
+     razón es buena: entre el botón de guardar, los chips, los números de
+     paso y el resplandor de las tarjetas de números, el rojo ya estaba en
+     todos lados, y tres franjas más lo volvían empapelado.
 
-     Ojo: NO es el mismo canto que el de las tarjetas de números. Ese está
-     declarado adentro de .kpi y es blanco, porque ahí el canto lleva un
-     dato (objetivo cumplido se pone verde). Acá no lleva dato: lleva marca.
-     Por eso son dos tokens y no uno. */
-  --canto-acc:      rgba(181, 18, 34, .60);
-  --canto-acc-viva: #FF2E3C;
-  --canto-luz:      rgba(255, 46, 60, .75);
+     El canto que SÍ queda es el de .kpi, declarado ahí adentro, y no es
+     decoración: lleva un dato (objetivo cumplido se pone verde).
+
+     Queda anotado para no volver a proponerlo sin motivo. */
 
   /* El chip es un BOTÓN, y necesita con qué decirlo: sube un escalón sobre
      el campo y aclara el borde. Si usara el mismo relleno que un input se
@@ -184,7 +198,10 @@
      --acc porque el #B51222 contra el grafito del rail da 2,6:1 y una barra
      de 3px de ese contraste no se ve; este da 3,5:1, que es el piso de lo
      que no es texto. */
-  --rail-bg:    #1C1E21;
+  /* Degradado y no color liso, por lo mismo que las tarjetas: el rail es
+     una columna alta y un gris parejo de arriba abajo se lee como cartón.
+     Cayendo a negro se lee como un panel. */
+  --rail-bg:    linear-gradient(180deg, #16191D 0%, #08090B 100%);
   --rail-borde: rgba(255, 255, 255, .10);
   --rail-acc:   #E11D2B;
   --rail-txt:   #FFFFFF;
@@ -209,6 +226,9 @@ html[data-theme="light"] {
   --surface:   #FFFFFF;
   --surface-2: #F3F4F6;
   --surface-3: #E3E5E9;
+  /* Liso. Un degradado sobre blanco no se lee como peso: se lee como una
+     tarjeta sucia. */
+  --panel-fondo: var(--surface);
 
   /* ── Los dos bordes hacen trabajos distintos ──
      El de la TARJETA sólo separa, y puede ser suave: la separación la carga
@@ -231,11 +251,6 @@ html[data-theme="light"] {
   --acc-txt:  #A00F1E;     /* 8,1:1 contra blanco */
   --acc-soft: rgba(181, 18, 34, .10);
   --acc-line: rgba(181, 18, 34, .32);
-  /* Sobre blanco el mismo rojo pesa el doble, así que el apagado baja y el
-     resplandor casi desaparece: en claro el relieve no lo da la luz. */
-  --canto-acc:      rgba(181, 18, 34, .45);
-  --canto-acc-viva: #B51222;
-  --canto-luz:      rgba(181, 18, 34, .30);
 
   --chip:      #E3E5E9;
   --chip-line: #85898F;
@@ -798,8 +813,8 @@ a { color: var(--acc-txt); }
      resplandor ya hace ese trabajo, y una textura que se NOTA dejó de ser
      textura. */
   background:
-    radial-gradient(62% 130% at 112% 50%, rgba(181, 18, 34, .52) 0%, rgba(181, 18, 34, .12) 46%, transparent 72%),
-    linear-gradient(158deg, #2B2E33 0%, #141517 76%);
+    radial-gradient(62% 130% at 112% 50%, rgba(181, 18, 34, .50) 0%, rgba(181, 18, 34, .11) 46%, transparent 72%),
+    linear-gradient(158deg, #26292E 0%, #0E0F11 76%);
   border: 1px solid var(--line);
   border-left: 3px solid var(--canto);
   border-radius: var(--r-sm);
@@ -855,7 +870,7 @@ a { color: var(--acc-txt); }
 }
 
 .bloque {
-  background: var(--surface);
+  background: var(--panel-fondo);
   border: 1px solid var(--line);
   border-radius: var(--r);
   padding: 18px 16px;
