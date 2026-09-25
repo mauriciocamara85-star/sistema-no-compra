@@ -300,10 +300,20 @@
      Mauricio y puede ser cualquiera.
 
      El resplandor rojo y la textura se van cuando hay foto: eran para que un
-     rectángulo negro no fuera una tapa plana, y con una imagen sobran. */
+     rectángulo negro no fuera una tapa plana, y con una imagen sobran.
+
+     El 25/09/2026 el velo se levantó de arriba: antes cubría la foto ENTERA
+     —incluso donde no hay texto— y apagaba la imagen sin necesidad. Ahora
+     el tercio superior queda limpio y lo oscuro vive sólo debajo del texto.
+     Menos de eso no se puede: el texto es blanco y la foto la elige
+     Mauricio, así que puede ser una blanca. */
   .promo-grande.con-foto {
     background-image:
-      linear-gradient(to top, rgba(10, 11, 12, .92) 0%, rgba(10, 11, 12, .55) 45%, rgba(10, 11, 12, .25) 100%),
+      linear-gradient(to top,
+        rgba(10, 11, 12, .90) 0%,
+        rgba(10, 11, 12, .70) 20%,
+        rgba(10, 11, 12, .12) 50%,
+        rgba(10, 11, 12, 0)   68%),
       var(--foto);
   }
 
