@@ -38,22 +38,26 @@
    Aclararlo "para que se lea" rompe el relleno; oscurecerlo rompe el texto.
    Por eso son dos tokens y no uno. */
 :root {
-  --bg:        #121315;
+  /* Casi negro. El fondo no es un plano más: es la oscuridad sobre la que
+     se apoya todo, y cuanto más abajo esté, más se despegan los paneles.
+     Con #121315 el escalón contra el panel era de 1,1:1 y la pantalla se
+     leía plana —era la queja vieja de este archivo, y seguía pasando—. */
+  --bg:        #0A0B0D;
   /* El resplandor del fondo. Dos focos muy abiertos y muy débiles: si se
      ven como manchas, están de más. Arriba a la izquierda, que es donde
      arranca la lectura y donde vive la franja de números. Con el rojo hay
      que ir más suave que con el violeta: el rojo pesa más a igual opacidad
      y un fondo que "sangra" cansa a la vista en ocho horas de mostrador. */
   --fondo-luz:
-    radial-gradient(1100px 480px at 18% -10%, rgba(181, 18, 34, .16), transparent 72%),
-    radial-gradient(760px 360px at 96% -4%, rgba(181, 18, 34, .07), transparent 68%);
+    radial-gradient(1200px 520px at 15% -12%, rgba(181, 18, 34, .26), transparent 70%),
+    radial-gradient(820px 400px at 98% -6%, rgba(181, 18, 34, .13), transparent 66%);
   /* Tres planos de gris, no tres grises casi iguales: fondo, hoja y campo.
      Con la paleta violeta lo que separaba al tablero de la hoja era el TONO,
      porque los dos eran oscuros y del mismo color. Acá no hace falta el
      truco: la escala es neutra y los escalones se ven como escalones. */
-  --surface:   #1C1E21;
-  --surface-2: #25282C;
-  --surface-3: #2E3237;
+  --surface:   #1E2126;
+  --surface-2: #272B31;
+  --surface-3: #31363D;
   --line:      #41454B;
   --line-alta: #5C6168;
   /* El borde de lo que se TOCA —campos y chips— es otra cosa que el borde de
@@ -65,7 +69,7 @@
 
   --txt:   #F4F4F2;
   --txt-2: #C6CAD0;   /* 11,3:1 contra la tarjeta */
-  --txt-3: #A4AAB1;   /*  7,1:1 contra la tarjeta */
+  --txt-3: #A7ADB4;   /*  7,1:1 contra la tarjeta */
 
   /* ── El rojo VDH ── */
   --acc:      #B51222;
@@ -117,8 +121,21 @@
   --r-sm:   12px;
   --r-pill: 999px;
 
-  --sombra:    0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .6);
-  --sombra-alta: 0 10px 40px -12px rgba(0, 0, 0, .75);
+  /* En una interfaz oscura el relieve NO lo da el color: lo dan la luz de
+     canto y la sombra. El primer valor es una línea de un píxel en el borde
+     de arriba de cada panel —como si le pegara una luz desde arriba— y es
+     lo que hace que la tarjeta se vea tallada y no dibujada. Sin eso, un
+     panel oscuro sobre un fondo oscuro es una mancha con borde.
+
+     La sombra, encima, es más profunda que antes: sobre un fondo casi negro
+     una sombra suave no existe. */
+  --sombra:
+    inset 0 1px 0 rgba(255, 255, 255, .055),
+    0 1px 2px rgba(0, 0, 0, .5),
+    0 12px 32px -14px rgba(0, 0, 0, .85);
+  --sombra-alta:
+    inset 0 1px 0 rgba(255, 255, 255, .07),
+    0 16px 48px -14px rgba(0, 0, 0, .9);
   --glow:      0 8px 28px -10px rgba(181, 18, 34, .70);
 
   /* Curva de iOS: arranca rápido y frena suave. La misma para todo lo que se
@@ -158,7 +175,7 @@
   --rail-borde: rgba(255, 255, 255, .10);
   --rail-acc:   #E11D2B;
   --rail-txt:   #FFFFFF;
-  --rail-txt-2: #A4AAB1;
+  --rail-txt-2: #A7ADB4;
   --rail-line:  rgba(255, 255, 255, .09);
 
   color-scheme: dark;
@@ -216,6 +233,8 @@ html[data-theme="light"] {
 
   /* La sombra acompaña al fondo: sobre gris neutro, una sombra marrón se ve
      sucia igual que una azulada se veía sucia sobre el crema. */
+  /* Sin luz de canto: sobre blanco no hay nada que iluminar, y una línea
+     clara encima de una tarjeta blanca no se ve. */
   --sombra:      0 1px 3px rgba(22, 24, 27, .08), 0 12px 28px -14px rgba(22, 24, 27, .30);
   --sombra-alta: 0 16px 44px -16px rgba(22, 24, 27, .26);
   --glow:        0 8px 24px -10px rgba(181, 18, 34, .40);
@@ -756,7 +775,9 @@ a { color: var(--acc-txt); }
   color: var(--txt);
   position: relative;
   overflow: hidden;
-  box-shadow: 0 10px 26px -16px rgba(0, 0, 0, .75);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, .07),
+    0 14px 30px -14px rgba(0, 0, 0, .9);
   animation: aparecer .4s var(--curva) backwards;
 }
 .kpi-n { font: 700 27px/1.05 var(--display); letter-spacing: -.8px; }
