@@ -61,15 +61,17 @@
   .cab span { font-size: 12px; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
 
   /* ── El carnet ──
-     El material del tablero: grafito a negro, textura diagonal y un
-     resplandor rojo a la derecha. Es lo único oscuro de la pantalla, así que
+     El material del tablero: grafito a negro y un resplandor rojo a la
+     derecha. Llevaba además una textura de rayas diagonales; se fue el
+     25/09/2026 junto con la de las tarjetas de números —Mauricio las vio y
+     no le gustaron— y no hizo falta reemplazarla: el resplandor ya evita
+     que el negro sea una tapa plana. Es lo único oscuro de la pantalla, así que
      es lo primero que se mira —que es exactamente lo que tiene que pasar—.
      El código de barras va sobre blanco adentro, porque un lector necesita
      negro sobre blanco y nada más. */
   .carnet {
     background:
       radial-gradient(70% 130% at 110% 42%, rgba(181, 18, 34, .55) 0%, rgba(181, 18, 34, .14) 46%, transparent 74%),
-      repeating-linear-gradient(118deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 11px),
       linear-gradient(158deg, #2B2E33 0%, #141517 78%);
     border-radius: var(--r);
     padding: 16px;
@@ -243,7 +245,6 @@
   .promo-grande {
     background:
       radial-gradient(70% 130% at 110% 20%, rgba(181, 18, 34, .55) 0%, rgba(181, 18, 34, .14) 46%, transparent 74%),
-      repeating-linear-gradient(118deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 11px),
       linear-gradient(158deg, #2B2E33 0%, #141517 78%);
     background-size: cover;
     background-position: center;
@@ -299,8 +300,8 @@
      ilegible y no hay forma de saberlo de antemano — la foto la elige
      Mauricio y puede ser cualquiera.
 
-     El resplandor rojo y la textura se van cuando hay foto: eran para que un
-     rectángulo negro no fuera una tapa plana, y con una imagen sobran.
+     El resplandor rojo se va cuando hay foto: estaba para que un rectángulo
+     negro no fuera una tapa plana, y con una imagen sobra.
 
      El 25/09/2026 el velo se levantó de arriba: antes cubría la foto ENTERA
      —incluso donde no hay texto— y apagaba la imagen sin necesidad. Ahora
