@@ -339,6 +339,43 @@
   .local-cerca svg { width: 18px; height: 18px; color: var(--acc); }
   .local-cerca[disabled] { opacity: .6; }
 
+  /* ── Dudas ──
+     Las preguntas van en <details> nativos: cerradas ocupan un renglón cada
+     una, así se ven las siete de un vistazo y el cliente abre la suya. Una
+     lista de respuestas abiertas sería una pared de texto que no lee nadie.
+     Y sin una línea de JavaScript. */
+  .faq { border-top: 1px solid var(--linea); }
+  .faq:first-of-type { border-top: 0; }
+  .faq summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 13px 0;
+    font: 600 15px/1.35 var(--sans);
+    cursor: pointer; list-style: none;
+  }
+  .faq summary::-webkit-details-marker { display: none; }
+  .faq summary::after {
+    content: "+"; flex: none;
+    font: 400 20px/1 var(--sans); color: var(--acc);
+  }
+  .faq[open] summary::after { content: "–"; }
+  .faq p {
+    font-size: 14.5px; color: var(--txt-2); line-height: 1.55;
+    padding-bottom: 14px;
+  }
+
+  .btn-wsp {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; margin-top: 16px;
+    min-height: 52px;
+    border-radius: var(--r-sm);
+    background: #25D366;
+    /* Tinta oscura y no blanca: sobre ese verde, el blanco da 1,8:1. */
+    color: #06331A;
+    font: 700 16px var(--sans);
+    text-decoration: none;
+  }
+  .btn-wsp svg { width: 20px; height: 20px; }
+
   .local-dist {
     display: inline-block;
     margin-left: 8px;
@@ -657,6 +694,8 @@
 
       (estaInstalada() ? '' : '<div id="instalar"></div>') +
 
+      bloqueAyuda() +
+
       '<p class="letra-chica">Tu código es sólo tuyo: no lo compartas.<br>' +
       'Si perdés esta página, en cualquier local te la vuelven a abrir con tu teléfono.</p>';
 
@@ -799,6 +838,66 @@
         m.hidden = false;
         b.disabled = false; b.textContent = 'Abrir mi tarjeta';
       });
+  }
+
+  /* ═══ Dudas ══════════════════════════════════════════════════════════
+     Las respuestas salen de las reglas que ya están implementadas, no de lo
+     que estaría bueno que dijeran. Si alguna vez cambia una regla —la meta,
+     los premios, el vencimiento— hay que cambiarla también acá, y por eso
+     cada una dice de dónde sale.
+
+     El WhatsApp es un enlace y nada más: no hay ninguna integración detrás,
+     se abre la app del cliente con el mensaje empezado. */
+  var WSP_CONSULTAS = '2235845942';
+
+  var PREGUNTAS = [
+    ['¿Cómo sumo sellos?',
+     'Cada compra suma un sello, sin monto mínimo. Mostrá tu tarjeta en la caja ' +
+     'antes de pagar y el vendedor la escanea.'],
+    /* club_sumar_compra: un sello por compra, sin mirar el importe. */
+
+    ['¿Sirve en todos los locales?',
+     'Sí, en los 14. Podés juntar sellos en uno y llevarte el premio en otro: la ' +
+     'tarjeta es la misma en toda la cadena.'],
+    /* La tarjeta es compartida entre los 14 — ver club.sql. */
+
+    ['¿Los sellos vencen?',
+     'No. Lo que juntaste se queda ahí, sin fecha límite.'],
+    /* club_reglas.vence_dias está en null. */
+
+    ['Si me llevo el premio de las 5 compras, ¿vuelvo a cero?',
+     'No. El contador sigue subiendo: llevarte el perfume a las 5 no te aleja de ' +
+     'la remera de las 10.'],
+    /* La regla que más condiciona el modelo: un canje NO resta sellos. */
+
+    ['Perdí mi tarjeta, ¿qué hago?',
+     'Abrí esta misma página y poné el WhatsApp con el que te anotaste: se abre ' +
+     'sola. Y si no la encontrás, en cualquier local te la vuelven a abrir.'],
+    /* club_recuperar. */
+
+    ['¿Se la puedo prestar a alguien?',
+     'La tarjeta es tuya y los sellos también. Quien tenga tu código puede ver tu ' +
+     'tarjeta, así que mejor no lo compartas.']
+    /* Honesto: el código ES la credencial, no hay nada que lo impida. */
+  ];
+
+  function bloqueAyuda() {
+    var wsp = 'https://wa.me/549' + WSP_CONSULTAS +
+      '?text=' + encodeURIComponent('Hola! Tengo una consulta sobre el VDH Club.');
+
+    var icono = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" ' +
+      'stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">' +
+      '<path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.7A8.4 8.4 0 1 1 21 11.5Z"/></svg>';
+
+    return '<div class="caja">' +
+      '<h2>Dudas</h2>' +
+      PREGUNTAS.map(function (p) {
+        return '<details class="faq"><summary>' + esc(p[0]) + '</summary>' +
+               '<p>' + esc(p[1]) + '</p></details>';
+      }).join('') +
+      '<a class="btn-wsp" target="_blank" rel="noopener" href="' + esc(wsp) + '">' +
+        icono + 'Escribinos por WhatsApp</a>' +
+    '</div>';
   }
 
   /* ═══ Las pestañas ═══════════════════════════════════════════════════
