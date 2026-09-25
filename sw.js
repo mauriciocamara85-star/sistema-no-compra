@@ -14,7 +14,7 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v33';
+const CACHE = 'no-compra-v34';
 
 const BASICOS = [
   './',
@@ -25,6 +25,10 @@ const BASICOS = [
   './config.html',
   './estilos.css',
   './comun.js',
+  /* El catálogo de productos. Es el archivo que MÁS importa tener en caché:
+     sin él el buscador y la pistola no resuelven nada, y justamente están
+     para funcionar con el WiFi del shopping caído. */
+  './catalogo.js',
   // Sin esto, la PRIMERA apertura sin señal no encuentra el puente con la
   // base y la pantalla queda sin datos. Las siguientes sí, porque el fetch
   // de abajo guarda todo lo que sale bien.

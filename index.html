@@ -195,6 +195,83 @@
   /* Talle en dos filas: letras arriba, números abajo. Ver pintarTalles(). */
   .talles { display: flex; flex-direction: column; gap: 8px; }
 
+  /* ── El buscador de productos ──
+     La lista va en position:absolute para que NO ocupe lugar: si empujara el
+     formulario, los chips de talle bajarían y subirían con cada tecla, y en
+     la pantalla del local no sobra alto. */
+  .campo-busca { position: relative; }
+  .sug {
+    position: absolute;
+    top: 100%; left: 0; right: 0;
+    z-index: 30;
+    margin-top: 4px;
+    background: var(--surface);
+    border: 1px solid var(--line-campo);
+    border-radius: var(--r-sm);
+    box-shadow: var(--sombra-alta);
+    overflow: hidden;
+    max-height: 264px; overflow-y: auto;
+  }
+  .sug-item {
+    display: flex; align-items: baseline; gap: 8px;
+    width: 100%;
+    padding: 9px 12px;
+    background: none; border: 0; border-bottom: 1px solid var(--line);
+    text-align: left; cursor: pointer;
+    color: var(--txt);
+  }
+  .sug-item:last-child { border-bottom: 0; }
+  /* El resaltado va por clase y no por :hover: con el teclado se recorre con
+     las flechas y con la pistola nunca hay mouse. */
+  .sug-item.mira, .sug-item:hover { background: var(--surface-2); }
+  .sug-nom { font-weight: 600; font-size: 14px; }
+  .sug-meta { font-size: 11.5px; color: var(--txt-3); margin-left: auto; flex-shrink: 0; }
+  .sug-vacio { padding: 9px 12px; font-size: 13px; color: var(--txt-3); }
+
+  /* El producto elegido, en el renglón de la etiqueta. margin-left:auto lo
+     manda a la derecha: la etiqueta es un flex. */
+  .elegido {
+    display: flex; align-items: center; gap: 7px;
+    margin-left: auto;
+    font-size: 11.5px; color: var(--txt-3);
+    font-weight: 400;
+    min-width: 0;
+  }
+  .elegido b {
+    color: var(--acc-txt); font-weight: 700; letter-spacing: .2px;
+    font-size: 12px;
+  }
+  .elegido-x {
+    border: 1px solid var(--line);
+    background: var(--surface-2);
+    color: var(--txt-2);
+    border-radius: var(--r-pill);
+    padding: 2px 9px;
+    font-size: 11px; font-weight: 600;
+    flex-shrink: 0;
+  }
+  .elegido-x:hover { color: var(--txt); border-color: var(--line-alta); }
+
+  /* Con un producto elegido, Color y Talle van uno al lado del otro. Es lo
+     que hace que el campo de color no cueste alto: en la pantalla del local
+     el límite son 658px y no sobra ni un renglón. */
+  .campos .campo.ancho.mitad { grid-column: auto; }
+
+  /* Diez productos de 576 tienen más de diez colores, y uno tiene 23. Dos
+     renglones y el resto se scrollea: con uno o dos colores —que son 484 de
+     los 576— no aparece ninguna barra y esto no existe. El caso raro no
+     puede quedar afuera, pero tampoco puede mandar en el diseño. */
+  #chipsColor {
+    /* Un renglón entero más un pedazo del siguiente. Ese pedazo asomando es
+       el que avisa que hay más abajo: con dos renglones justos parecía que
+       eso era todo y los colores de la tercera fila no existían para nadie.
+       Con uno o dos colores —484 productos de 576— no hay nada que scrollear
+       y este máximo no se nota. */
+    max-height: 52px;
+    overflow-y: auto;
+    align-content: flex-start;
+  }
+
   /* Motivo: la razón por la que el cliente se fue sin llevar. Es el dato
      nuevo de esta versión y el único que le dice a Compras qué falta, así
      que ocupa un bloque propio y destacado en vez de esconderse en
@@ -1025,11 +1102,25 @@
       </div>
     </div>
     <div class="campos">
-      <div class="campo ancho">
-        <label for="f_producto" id="lblProducto">Producto</label>
-        <input type="text" id="f_producto" placeholder="Campera de abrigo negra" autocomplete="off">
+      <div class="campo ancho campo-busca">
+        <label for="f_producto">
+          <span id="lblProducto">Producto</span>
+          <!-- El código se muestra porque es lo que el vendedor ve en la
+               etiqueta y en BlueSoft: así comprueba de un vistazo que eligió
+               el correcto. -->
+          <span class="elegido" id="elegido" hidden></span>
+        </label>
+        <input type="text" id="f_producto" placeholder="Buscá el producto o disparale a la etiqueta" autocomplete="off">
+        <!-- Flota por encima del formulario en vez de empujarlo: la lista
+             aparece y desaparece con cada tecla, y si ocupara lugar de verdad
+             los chips de abajo saltarían mientras el vendedor escribe. -->
+        <div class="sug" id="sugProducto" hidden></div>
       </div>
-      <div class="campo ancho">
+      <div class="campo ancho" id="campoColor" hidden>
+        <label>Color <span class="lbl-opc">el que buscaba</span></label>
+        <div class="chips" id="chipsColor"></div>
+      </div>
+      <div class="campo ancho" id="campoTalle">
         <label for="f_talle">Talle <span class="lbl-opc">tocá los que buscaba</span></label>
         <div class="talles" id="chipsTalle"></div>
         <input type="text" id="f_talle" placeholder="O escribilo: 41.5, 95/100…" autocomplete="off">
@@ -1105,6 +1196,7 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="catalogo.js"></script>
 <script src="comun.js"></script>
 <script src="datos.js"></script>
 <script>
@@ -1198,6 +1290,10 @@
   var VERSION = '2026.09.24';
 
   var local = '', motivo = '', talles = [];
+  /* El producto del catálogo, o null si se escribió a mano. Lo segundo NO es
+     un caso degradado: es exactamente lo que pasa cuando piden algo que no
+     fabricamos, que es de lo más valioso que registra este sistema. */
+  var prodElegido = null, color = '', mira = -1, sugeridos = [];
 
   var $ = function (id) { return document.getElementById(id); };
   var $$ = function (sel) { return document.querySelectorAll(sel); };
@@ -1239,6 +1335,7 @@
    * resuelve: pedir "una o dos palabras" como regla no lo respeta nadie con
    * un cliente adelante.
    */
+  /* Se llama una vez al arrancar, junto con el resto del formulario. */
   function pistaProducto() {
     var campo = $('f_producto');
     var noHacemos = motivo === 'No lo hacemos';
@@ -1248,18 +1345,27 @@
   }
 
   /* Los talles se acumulan: en la planilla ya hay cargas tipo "s, m" o "M/L"
-     porque el cliente busca más de una medida. */
+     porque el cliente busca más de una medida.
+
+     Con un producto elegido se muestran SÓLO sus talles, en una fila. Eso
+     además gana alto en vez de gastarlo: una remera tiene cuatro talles y la
+     grilla completa tiene once en dos filas. */
   function pintarTalles() {
     var fila = function (arr) {
       return '<div class="chips">' + arr.map(function (t) {
-        return '<button type="button" class="chip" data-v="' + t + '">' + t + '</button>';
+        return '<button type="button" class="chip" data-v="' + esc(t) + '">' + esc(t) + '</button>';
       }).join('') + '</div>';
     };
-    $('chipsTalle').innerHTML = fila(TALLES_LETRA) + fila(TALLES_NUMERO);
+
+    var propios = prodElegido ? prodElegido[3].split(',').filter(function (t) { return t; }) : [];
+    $('chipsTalle').innerHTML = propios.length
+      ? fila(propios)
+      : fila(TALLES_LETRA) + fila(TALLES_NUMERO);
 
     // querySelectorAll y no children: ahora los hijos directos son las dos
     // filas, no los chips.
     Array.prototype.forEach.call($('chipsTalle').querySelectorAll('.chip'), function (b) {
+      b.classList.toggle('sel', talles.indexOf(b.dataset.v) > -1);
       b.onclick = function () {
         var i = talles.indexOf(b.dataset.v);
         if (i === -1) talles.push(b.dataset.v); else talles.splice(i, 1);
@@ -1267,6 +1373,251 @@
         $('f_talle').value = talles.join(' / ');
       };
     });
+  }
+
+  /* ═══ El catálogo ═══════════════════════════════════════════════════════
+
+     Viaja adentro de la app (catalogo.js) y no en la base. En los locales de
+     shopping el WiFi se cae seguido —es lo que motivó la cola offline— y el
+     escaneo tiene que resolver JUSTO cuando el cliente está parado enfrente.
+     Una consulta a la base en ese momento es una apuesta.
+
+     Y la regla que ordena todo lo de acá abajo: el catálogo está para que el
+     caso común sea rápido y preciso, NUNCA para que el caso raro sea
+     imposible. Cada campo mantiene su salida a mano.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* Sin acentos y en minúscula: nadie escribe "Clásica" con tilde apurado. */
+  function normalizar(s) {
+    return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  /* El índice se arma una sola vez, la primera vez que alguien escribe. Son
+     576 productos: armarlo cuesta milisegundos, pero hacerlo en cada tecla
+     sí se notaría. */
+  var INDICE = null;
+  function indice() {
+    if (!INDICE) {
+      INDICE = CATALOGO.map(function (p) {
+        return { p: p, b: normalizar(p[1] + ' ' + p[0] + ' ' + p[2]) };
+      });
+    }
+    return INDICE;
+  }
+
+  /* Todas las palabras tienen que aparecer, en cualquier orden y en
+     cualquier parte. "clasica o" y "o clasica" encuentran lo mismo, y
+     "manif" encuentra Manifesto. */
+  function buscarProducto(txt) {
+    var q = normalizar(txt).trim();
+    if (q.length < 2) { return []; }
+    var partes = q.split(/\s+/);
+    var r = [];
+    var lista = indice();
+    for (var i = 0; i < lista.length && r.length < 8; i++) {
+      var ok = true;
+      for (var j = 0; j < partes.length; j++) {
+        if (lista[i].b.indexOf(partes[j]) < 0) { ok = false; break; }
+      }
+      if (ok) { r.push(lista[i].p); }
+    }
+    return r;
+  }
+
+  function porCodigo(cod) {
+    var c = String(cod || '').toUpperCase();
+    var lista = CATALOGO;
+    for (var i = 0; i < lista.length; i++) {
+      if (lista[i][0].toUpperCase() === c) { return lista[i]; }
+    }
+    return null;
+  }
+
+  /* ── Lo que escribe la pistola ──
+     "RM41641 S NE": tres pedazos separados por un espacio —código, talle,
+     color— y un Enter al final.
+
+     No hay modo escáner ni botón que activar: se distingue por la FORMA, sin
+     medir tiempos entre teclas. Tres pedazos y el primero con pinta de
+     código. "remera south negra" también son tres pedazos, pero "remera" no
+     empieza con letras seguidas de un número. */
+  var ESCANEO = /^([A-Za-z]{1,4}\d[A-Za-z0-9]*)\s+(\S+)\s+(\S+)$/;
+
+  function esEscaneo(txt) {
+    var m = String(txt || '').trim().match(ESCANEO);
+    if (!m) { return null; }
+    var p = porCodigo(m[1]);
+    return p ? { p: p, talle: m[2], color: m[3] } : null;
+  }
+
+  function pintarColores() {
+    var pares = prodElegido
+      ? prodElegido[4].split('|').filter(function (x) { return x; }).map(function (x) {
+          var i = x.indexOf(':');
+          return i < 0 ? [x, x] : [x.slice(0, i), x.slice(i + 1)];
+        })
+      : [];
+
+    /* Los dos campos se achican juntos o no se achican: si el color se
+       muestra y el talle sigue ocupando el ancho entero, el color queda solo
+       en su renglón y no se ahorró nada. */
+    var hay = pares.length > 0;
+    $('campoColor').hidden = !hay;
+    if (!hay) { $('chipsColor').innerHTML = ''; return; }
+
+    $('chipsColor').innerHTML = pares.map(function (par) {
+      return '<button type="button" class="chip" data-v="' + esc(par[1]) + '">' +
+             esc(par[1]) + '</button>';
+    }).join('');
+
+    Array.prototype.forEach.call($('chipsColor').children, function (b) {
+      b.classList.toggle('sel', b.dataset.v === color);
+      b.onclick = function () {
+        /* Uno solo, y se puede desmarcar: el cliente buscaba un color, pero
+           a veces el vendedor no se acuerda y forzarlo a elegir sería
+           inventar el dato. */
+        color = (color === b.dataset.v) ? '' : b.dataset.v;
+        Array.prototype.forEach.call($('chipsColor').children, function (o) {
+          o.classList.toggle('sel', o.dataset.v === color);
+        });
+      };
+    });
+  }
+
+  function pintarElegido() {
+    var caja = $('elegido');
+    caja.hidden = !prodElegido;
+    if (!prodElegido) { return; }
+    caja.innerHTML =
+      '<b>' + esc(prodElegido[0]) + '</b>' +
+      (prodElegido[2] ? '<span>' + esc(prodElegido[2]) + '</span>' : '') +
+      '<button type="button" class="elegido-x" id="soltarProd">Cambiar</button>';
+    $('soltarProd').onclick = function () {
+      soltarProducto();
+      $('f_producto').value = '';
+      $('f_producto').focus();
+    };
+  }
+
+  /* Elegir un producto REINICIA el color y los talles. No es una molestia:
+     un talle que quedó marcado de la búsqueda anterior se lee como un dato
+     cargado, y sería de otra prenda. */
+  function elegirProducto(p, colorCodigo) {
+    prodElegido = p;
+    color = '';
+    talles = [];
+    $('f_producto').value = p[1];
+    $('f_talle').value = '';
+    cerrarSugerencias();
+
+    if (colorCodigo) {
+      var buscado = String(colorCodigo).toUpperCase();
+      p[4].split('|').forEach(function (x) {
+        var i = x.indexOf(':');
+        if (i > 0 && x.slice(0, i).toUpperCase() === buscado) { color = x.slice(i + 1); }
+      });
+    }
+
+    pintarElegido();
+    pintarColores();
+    pintarTalles();
+  }
+
+  function soltarProducto() {
+    prodElegido = null;
+    color = '';
+    talles = [];
+    $('f_talle').value = '';
+    pintarElegido();
+    pintarColores();
+    pintarTalles();
+  }
+
+  function cerrarSugerencias() {
+    $('sugProducto').hidden = true;
+    $('sugProducto').innerHTML = '';
+    sugeridos = []; mira = -1;
+  }
+
+  function pintarSugerencias(txt) {
+    sugeridos = buscarProducto(txt);
+    mira = -1;
+    var caja = $('sugProducto');
+
+    if (!sugeridos.length) { cerrarSugerencias(); return; }
+
+    caja.innerHTML = sugeridos.map(function (p, i) {
+      return '<button type="button" class="sug-item" data-i="' + i + '">' +
+             '<span class="sug-nom">' + esc(p[1]) + '</span>' +
+             '<span class="sug-meta">' + esc(p[2] || '') + ' · ' + esc(p[0]) + '</span>' +
+             '</button>';
+    }).join('');
+    caja.hidden = false;
+
+    Array.prototype.forEach.call(caja.children, function (b) {
+      /* mousedown y no click: el click llega DESPUÉS del blur del campo, y
+         para entonces la lista ya se cerró y no hay a qué pegarle. */
+      b.onmousedown = function (e) {
+        e.preventDefault();
+        elegirProducto(sugeridos[+b.dataset.i]);
+      };
+    });
+  }
+
+  /* Da la vuelta en las dos puntas: de la última a la primera y al revés.
+     Arranca en -1 —nada resaltado— así que la primera flecha abajo cae en la
+     0 y la primera flecha arriba en la última, que es lo que uno espera. */
+  function moverMira(paso) {
+    var n = sugeridos.length;
+    if (!n) { return; }
+    mira = mira < 0
+      ? (paso > 0 ? 0 : n - 1)
+      : ((mira + paso) % n + n) % n;
+    Array.prototype.forEach.call($('sugProducto').children, function (b, i) {
+      b.classList.toggle('mira', i === mira);
+    });
+  }
+
+  function engancharProducto() {
+    var campo = $('f_producto');
+
+    campo.oninput = function () {
+      /* Cualquier tecla suelta el producto elegido: si el vendedor edita el
+         texto, el código que quedaría pegado sería de otra prenda, y un
+         código equivocado es peor que ninguno porque parece un dato bueno. */
+      if (prodElegido && campo.value !== prodElegido[1]) { soltarProducto(); }
+
+      /* La pistola escribe de golpe. Algunas mandan Enter y otras no, así que
+         se prueba también acá: si el texto ya tiene la forma de un disparo y
+         el código existe, se resuelve sin esperar nada. */
+      var d = esEscaneo(campo.value);
+      if (d) { elegirProducto(d.p, d.color); return; }
+
+      pintarSugerencias(campo.value);
+    };
+
+    campo.onkeydown = function (e) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moverMira(1); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); moverMira(-1); return; }
+      if (e.key === 'Escape')    { cerrarSugerencias(); return; }
+      if (e.key !== 'Enter') { return; }
+
+      /* El Enter NUNCA guarda el registro. Lo manda la pistola al final de
+         cada disparo, y guardar un formulario a medio llenar porque alguien
+         escaneó una etiqueta sería el peor error posible de esta pantalla. */
+      e.preventDefault();
+
+      var d = esEscaneo(campo.value);
+      if (d) { elegirProducto(d.p, d.color); return; }
+
+      if (sugeridos.length) { elegirProducto(sugeridos[mira >= 0 ? mira : 0]); return; }
+      cerrarSugerencias();
+    };
+
+    /* Al salir del campo la lista se cierra, pero lo escrito se RESPETA: si
+       no eligió nada, eso que escribió es el producto. Es el caso de lo que
+       nos piden y no fabricamos. */
+    campo.onblur = function () { setTimeout(cerrarSugerencias, 120); };
   }
 
 
@@ -2056,12 +2407,18 @@
     $('f_talle').value = d.talle || '';
     $('f_obs').value = d.obs || '';
 
+    /* El producto del catálogo vuelve por su CÓDIGO, no por el nombre: si
+       mientras tanto le cambiaron el nombre en BlueSoft, el código sigue
+       siendo el mismo y el vendedor no pierde lo que había elegido. */
+    prodElegido = d.producto_codigo ? porCodigo(d.producto_codigo) : null;
+    color = d.color || '';
+    pintarElegido();
+    pintarColores();
+
     // Los talles vuelven a quedar marcados: se guardaron unidos con " / ",
     // que es como los junta pintarTalles.
     talles = (d.talle || '').split(' / ').filter(function (t) { return t; });
-    Array.prototype.forEach.call($('chipsTalle').querySelectorAll('.chip'), function (b) {
-      b.classList.toggle('sel', talles.indexOf(b.dataset.v) > -1);
-    });
+    pintarTalles();
 
     motivo = d.motivo || '';
     pistaProducto();
@@ -2103,6 +2460,12 @@
       whatsapp: $('f_wsp').value.trim(),
       mail:     $('f_mail').value.trim(),
       producto: $('f_producto').value.trim(),
+      /* El código va sólo si el producto salió del catálogo. Escrito a mano
+         viaja vacío, que es lo correcto: inventarle un código a "chaleco"
+         sería ensuciar justo el dato que Hermes va a cruzar contra el
+         stock. */
+      producto_codigo: prodElegido ? prodElegido[0] : '',
+      color:    color,
       talle:    $('f_talle').value.trim(),
       obs:      $('f_obs').value.trim(),
       motivo:   motivo
@@ -2231,6 +2594,8 @@
       $(id).value = '';
     });
     motivo = ''; talles = [];
+    soltarProducto();
+    cerrarSugerencias();
     pistaProducto();
     Array.prototype.forEach.call($('chipsMotivo').children, function (b) { b.classList.remove('sel'); });
     Array.prototype.forEach.call($('chipsTalle').querySelectorAll('.chip'), function (b) { b.classList.remove('sel'); });
@@ -2253,6 +2618,7 @@
     pintarLocales();
     pintarMotivos();
     pintarTalles();
+    engancharProducto();
     pintarCola();
     // Las tarjetas se dibujan antes de saber nada: con local guardado, abajo
     // se pisan con los números de ese local.

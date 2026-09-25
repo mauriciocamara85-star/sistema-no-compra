@@ -349,7 +349,8 @@ var base = {
     return funcion('cargar_registro', {
       p_sucursal: d.sucursal, p_vendedor: d.vendedor, p_whatsapp: d.whatsapp,
       p_nombre: d.nombre, p_mail: d.mail, p_producto: d.producto,
-      p_talle: d.talle, p_obs: d.obs, p_motivo: d.motivo
+      p_talle: d.talle, p_obs: d.obs, p_motivo: d.motivo,
+      p_producto_codigo: d.producto_codigo || null, p_color: d.color || null
     }).then(function (filas) {
       var f = Array.isArray(filas) ? filas[0] : filas;
       if (!f || !f.id) throw new Error('La base no devolvió el registro.');
@@ -367,7 +368,8 @@ var base = {
       p_id: id, p_creado: creado,
       p_sucursal: d.sucursal, p_vendedor: d.vendedor, p_whatsapp: d.whatsapp,
       p_nombre: d.nombre, p_mail: d.mail, p_producto: d.producto,
-      p_talle: d.talle, p_obs: d.obs, p_motivo: d.motivo
+      p_talle: d.talle, p_obs: d.obs, p_motivo: d.motivo,
+      p_producto_codigo: d.producto_codigo || null, p_color: d.color || null
     });
   },
 

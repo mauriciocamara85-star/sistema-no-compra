@@ -69,6 +69,13 @@ create table registros (
   obs         text,
   motivo      motivo_no_compra,
 
+  -- El producto elegido del catálogo de BlueSoft. Van vacíos cuando se
+  -- escribió a mano, que es el caso de lo que nos piden y no fabricamos.
+  -- El código es lo que permite cruzar contra el stock: buscar por
+  -- "campera negra" no sirve, buscar por RM41641 sí.
+  producto_codigo  text,
+  color            text,
+
   -- ── Lo que completa el seguimiento (J–V) ──
   -- Hoy el seguimiento se trabaja en Kommo; esto es el registro del
   -- desenlace, no la herramienta para llegar a él.
