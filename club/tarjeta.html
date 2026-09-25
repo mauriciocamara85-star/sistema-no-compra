@@ -320,6 +320,34 @@
   }
   .local-mapa svg { width: 19px; height: 19px; }
 
+  /* El botón de la ubicación. El permiso se pide CUANDO SE TOCA, no al
+     abrir: pedirlo de entrada —como hace la app de la competencia, con un
+     cartel antes de que hayas visto nada— es lo que hace que la gente
+     apriete "Ahora no", y una vez que dicen que no, volver a pedirlo es un
+     trámite. Tocado el botón, la respuesta casi siempre es que sí. */
+  .local-cerca {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; margin-bottom: 18px;
+    min-height: 48px;
+    border: 1.5px solid var(--linea);
+    border-radius: var(--r-sm);
+    background: var(--hoja);
+    color: var(--txt);
+    font: 700 15px var(--sans);
+    cursor: pointer;
+  }
+  .local-cerca svg { width: 18px; height: 18px; color: var(--acc); }
+  .local-cerca[disabled] { opacity: .6; }
+
+  .local-dist {
+    display: inline-block;
+    margin-left: 8px;
+    background: var(--acc-soft); color: var(--acc);
+    border-radius: 999px; padding: 3px 9px;
+    font: 700 12.5px var(--sans);
+    vertical-align: middle;
+  }
+
   .local {
     background: var(--hoja);
     border: 1px solid var(--linea);
@@ -426,6 +454,10 @@
       Ver los 14 en el mapa
     </a>
 
+    <button type="button" class="local-cerca" id="btnCerca">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="8"/></svg>
+      ¿Cuál me queda más cerca?
+    </button>
     <div id="listaLocales"></div>
   </section>
 </main>
@@ -888,23 +920,42 @@
      Salen de locales.js, que viaja con la página: catorce direcciones que
      cambian una vez por año no justifican un viaje a la base, y así la
      pantalla abre sin señal. */
+  /* Dónde está el cliente, si lo dijo. Sólo en memoria: no hay ninguna
+     razón para dejar anotado dónde estuvo alguien. */
+  var miPosicion = null;
+
   function pintarLocales() {
     var caja = $('listaLocales');
-    if (!caja || caja.dataset.listo) return;
+    if (!caja) return;
+    /* Se redibuja si llegó la ubicación; si no, una vez y listo. */
+    if (caja.dataset.listo && !miPosicion) { engancharCerca(); return; }
 
     var pin = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>';
     var reloj = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
     var flecha = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 
-    caja.innerHTML = LOCALES_VDH.map(function (l) {
+    /* Ordenados por cercanía si el cliente compartió dónde está; si no,
+       como vienen, que es alfabético. */
+    var lista = LOCALES_VDH.slice();
+    if (miPosicion) {
+      lista.forEach(function (l) {
+        l._km = distanciaKm(miPosicion.lat, miPosicion.lng, l.lat, l.lng);
+      });
+      lista.sort(function (a, b) { return a._km - b._km; });
+    }
+
+    caja.innerHTML = lista.map(function (l) {
       /* La zona se esconde cuando repite el nombre: en Caseros decía
          "Caseros" abajo de "Caseros". En DOT dice "Shopping DOT · CABA" y
          ahí sí ubica al cliente, así que no se saca para todos. */
       var zona = (l.zona && l.zona !== l.nombre)
         ? '<div class="local-zona">' + esc(l.zona) + '</div>' : '';
 
+      var dist = (miPosicion && l._km !== undefined)
+        ? '<span class="local-dist">a ' + distanciaLinda(l._km) + '</span>' : '';
+
       return '<div class="local">' +
-        '<b>' + esc(l.nombre) + '</b>' + zona +
+        '<b>' + esc(l.nombre) + dist + '</b>' + zona +
         '<div class="local-dato">' + pin + '<span>' + esc(l.dir) + '</span></div>' +
         '<div class="local-dato">' + reloj + '<span>' + esc(l.hora) + '</span></div>' +
         '<a class="local-ir" target="_blank" rel="noopener" href="' + esc(comoLlegar(l)) + '">' +
@@ -913,6 +964,45 @@
       '</div>';
     }).join('');
     caja.dataset.listo = '1';
+    engancharCerca();
+  }
+
+  /* ── El más cercano ──
+     Pide el permiso al tocar, y contesta SIEMPRE algo: si el cliente dice
+     que no, o el teléfono no puede, el botón lo dice y la lista se queda
+     como estaba. Un botón que no hace nada y no explica por qué es peor que
+     no tener botón. */
+  function engancharCerca() {
+    var b = $('btnCerca');
+    if (!b || b.dataset.listo) return;
+    b.dataset.listo = '1';
+
+    b.onclick = function () {
+      if (!navigator.geolocation) {
+        b.textContent = 'Tu teléfono no comparte la ubicación';
+        b.disabled = true;
+        return;
+      }
+      b.disabled = true;
+      b.textContent = 'Buscando dónde estás…';
+
+      navigator.geolocation.getCurrentPosition(
+        function (pos) {
+          miPosicion = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+          pintarLocales();
+          b.textContent = 'Ordenados por cercanía';
+        },
+        function () {
+          b.disabled = false;
+          b.textContent = 'No pudimos saber dónde estás';
+        },
+        /* Diez segundos y sin exigir el GPS fino: para elegir entre locales
+           que están a kilómetros, la ubicación de la antena alcanza, y el
+           GPS adentro de un shopping puede tardar una eternidad o no llegar
+           nunca. */
+        { timeout: 10000, maximumAge: 300000, enableHighAccuracy: false }
+      );
+    };
   }
 
   /**
