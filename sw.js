@@ -14,7 +14,7 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v34';
+const CACHE = 'no-compra-v35';
 
 const BASICOS = [
   './',
@@ -29,6 +29,10 @@ const BASICOS = [
      sin él el buscador y la pistola no resuelven nada, y justamente están
      para funcionar con el WiFi del shopping caído. */
   './catalogo.js',
+  /* El generador del código de barras, que dibuja la tarjeta del socio en
+     la caja. Se mudó de club/ a la raíz cuando el Club se fue a su propio
+     dominio. */
+  './codigo.js',
   // Sin esto, la PRIMERA apertura sin señal no encuentra el puente con la
   // base y la pantalla queda sin datos. Las siguientes sí, porque el fetch
   // de abajo guarda todo lo que sale bien.

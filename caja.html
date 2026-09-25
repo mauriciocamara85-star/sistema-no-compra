@@ -227,7 +227,12 @@
 
 <script src="comun.js"></script>
 <script src="datos.js"></script>
-<script src="club/codigo.js"></script>
+<!-- El generador del código de barras. Vivía en club/ cuando el Club era
+     una carpeta de este sitio; desde que se mudó a vdhclub.com esa carpeta
+     sólo tiene redirecciones, así que el archivo pasó a la raíz. Lo usan las
+     dos puntas —la caja lo dibuja, la tarjeta del cliente también— y por eso
+     hay una copia en cada repositorio. -->
+<script src="codigo.js"></script>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
@@ -333,17 +338,21 @@
   /**
    * El enlace de una tarjeta, absoluto.
    *
-   * Absoluto y no relativo porque va adentro de un WhatsApp: el cliente lo
-   * abre en su teléfono, donde "club/tarjeta.html" no quiere decir nada.
-   * Sale de la dirección de ESTA página, así que anda igual en el sitio
-   * publicado y en una prueba local, sin ninguna constante que mantener.
+   * Absoluto porque va adentro de un WhatsApp: el cliente lo abre en su
+   * teléfono, donde "club/tarjeta.html" no quiere decir nada.
+   *
+   * Y ahora es una constante y no se arma desde location.href, como era
+   * antes. El Club se mudó a su propio dominio el 25/09/2026, así que ya no
+   * es una carpeta de este sitio: derivarlo de esta página mandaría a la
+   * copia vieja. Es la única constante de este archivo y está acá arriba a
+   * propósito, para que se encuentre.
+   *
+   * Es también la dirección que lleva el QR de los mostradores.
    */
+  var CLUB = 'https://vdhclub.com/';
+
   function enlaceTarjeta(codigo) {
-    try {
-      return new URL('club/tarjeta.html?c=' + encodeURIComponent(codigo), location.href).href;
-    } catch (e) {
-      return 'club/tarjeta.html?c=' + encodeURIComponent(codigo);
-    }
+    return CLUB + 'tarjeta.html?c=' + encodeURIComponent(codigo);
   }
 
   function pintarFicha(t) {
