@@ -733,19 +733,21 @@ a { color: var(--acc-txt); }
   --acc-txt:  #FF6B72;
   --info-txt: #C6CAD0;
 
-  /* Tres capas, de adelante para atrás:
+  /* Dos capas, de adelante para atrás:
        1. el resplandor rojo, pegado al canto derecho. Ahí no hay texto
           nunca —el número y las etiquetas viven a la izquierda—, así que
           puede ser fuerte sin comerse el contraste de nada.
-       2. la textura diagonal, a 5 de 100 de blanco. Si se ve como rayas
-          está de más: lo único que tiene que hacer es que el negro no sea
-          una tapa plana.
-       3. la base, grafito arriba a negro abajo.
+       2. la base, grafito arriba a negro abajo.
      Es el material del tablero, y es el mismo en los dos temas: lo que se
-     mira es oscuro, la hoja donde se trabaja cambia. */
+     mira es oscuro, la hoja donde se trabaja cambia.
+
+     Había una tercera: una textura de rayas diagonales, al 2,8% de blanco,
+     para que el negro no fuera una tapa plana. Mauricio la vio en la
+     pantalla del local el 25/09/2026 y no le gustó. Y no hacía falta: el
+     resplandor ya hace ese trabajo, y una textura que se NOTA dejó de ser
+     textura. */
   background:
     radial-gradient(62% 130% at 112% 50%, rgba(181, 18, 34, .52) 0%, rgba(181, 18, 34, .12) 46%, transparent 72%),
-    repeating-linear-gradient(118deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 11px),
     linear-gradient(158deg, #2B2E33 0%, #141517 76%);
   border: 1px solid var(--line);
   border-left: 3px solid var(--canto);
