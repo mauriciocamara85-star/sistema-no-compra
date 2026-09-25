@@ -1137,9 +1137,25 @@
     var ua = navigator.userAgent || '';
     var ios = /iPad|iPhone|iPod/.test(ua) ||
               (ua.indexOf('Macintosh') > -1 && 'ontouchend' in document);
-    return ios
-      ? 'Tocá <b>Compartir</b> abajo y después <b>Agregar a inicio</b>.'
-      : 'Abrí el menú del navegador y tocá <b>Agregar a la pantalla principal</b>.';
+
+    if (!ios) return 'Abrí el menú del navegador y tocá <b>Agregar a la pantalla principal</b>.';
+
+    /* En iPhone, "Agregar a inicio" existe SÓLO en Safari. Y el camino
+       principal del Club termina justo al revés: el vendedor le manda la
+       tarjeta por WhatsApp, el cliente la toca ahí, y se le abre en el
+       navegador interno de WhatsApp, donde esa opción no está. O sea que el
+       que más la necesita es el que no puede.
+
+       La seña: los navegadores internos de iOS usan WKWebView y su
+       identificación NO termina en "Safari/...". Safari de verdad sí. No es
+       infalible, pero si se equivoca lo único que pasa es que el cliente lee
+       un renglón de más. */
+    var dentroDeOtraApp = !/Safari\//.test(ua);
+
+    return dentroDeOtraApp
+      ? 'Estás viéndola dentro de otra app. Tocá el botón de <b>abrir en Safari</b> ' +
+        'y ahí sí: <b>Compartir</b> → <b>Agregar a inicio</b>.'
+      : 'Tocá <b>Compartir</b> abajo y después <b>Agregar a inicio</b>.';
   }
 
   /* "23 de septiembre", como lo diría alguien. Sin el año: la tarjeta es de
