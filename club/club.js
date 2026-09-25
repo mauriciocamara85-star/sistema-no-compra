@@ -90,8 +90,22 @@ function esc(s) {
     .replace(/"/g, '&quot;');
 }
 
-/** "Rivadavia" a partir de "RIVADAVIA". */
+/**
+ * "Mar del Plata" a partir de "MAR DEL PLATA".
+ *
+ * Las palabras cortas que unen —de, del, la, los, y— van en minúscula salvo
+ * que arranquen el nombre. Poner mayúscula después de cada espacio dejaba
+ * "Mar Del Plata" y "Villa Del Parque", que se lee como un cartel de oferta.
+ *
+ * Para los nombres de los locales conviene igual la lista de locales.js, que
+ * los tiene escritos a mano: ahí DOT sigue siendo DOT y no "Dot".
+ */
+var MENUDAS = { de: 1, del: 1, la: 1, las: 1, los: 1, el: 1, y: 1 };
+
 function bonito(s) {
-  return String(s || '').toLowerCase().replace(/(^|\s|\-)([a-záéíóúñ])/g,
-    function (m, a, b) { return a + b.toUpperCase(); });
+  return String(s || '').toLowerCase().split(/(\s+|-)/).map(function (p, i) {
+    if (!/[a-záéíóúñ]/.test(p)) return p;
+    if (i > 0 && MENUDAS[p]) return p;
+    return p.charAt(0).toUpperCase() + p.slice(1);
+  }).join('');
 }
