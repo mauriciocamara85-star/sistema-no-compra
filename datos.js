@@ -726,6 +726,25 @@ var base = {
        Listar y guardar piden PIN —es lo que ven todos los socios—; lo que
        lee el cliente es club_promos_ver, que no pide nada y sólo devuelve
        lo vigente hoy. */
+    /* ── Los avisos al celular de los socios ──
+       Dos llamadas y ninguna manda nada. La de crear sólo deja el mensaje en
+       una cola: mandarlo necesita firmar con la llave privada, y eso vive en
+       un proceso aparte. */
+
+    /* Cuántos tienen la campanita prendida. Se muestra ANTES de escribir:
+       mandar un aviso a cero personas y enterarse después es la clase de
+       cosa que hace desconfiar de una herramienta. */
+    avisosCuantos: function (pin) {
+      return funcion('club_push_cuantos', { p_pin: pin });
+    },
+
+    avisoCrear: function (pin, titulo, cuerpo, enlace, por) {
+      return funcion('club_aviso_crear', {
+        p_pin: pin, p_titulo: titulo, p_cuerpo: cuerpo,
+        p_enlace: enlace || null, p_por: por || null
+      });
+    },
+
     promosListar: function (pin) {
       return funcion('club_promos_listar', { p_pin: pin });
     },

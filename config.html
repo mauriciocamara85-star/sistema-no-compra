@@ -352,8 +352,17 @@
     <div id="promoCuerpo"></div>
   </div>
 
+  <!-- ── Los avisos a los socios ──
+       Va detrás del PIN igual que las promociones, y por la misma razón: es
+       de lo poco que sale de acá y le llega a un cliente. -->
+  <div class="bloque" id="cajaAviso">
+    <h2 class="bloque-tit">Avisar a los socios</h2>
+    <p class="bloque-sub">Les llega una notificación al celular a los que activaron la campanita en su tarjeta.</p>
+    <div id="avisoCuerpo"></div>
+  </div>
+
   <div class="bloque">
-    <h2 class="bloque-tit">Los avisos</h2>
+    <h2 class="bloque-tit">Los avisos por mail</h2>
     <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
   </div>
 
@@ -449,6 +458,121 @@
     if (!v) { avisar('err', 'Escribí el PIN.'); return; }
     guardarPinPromo(v);
     pintarPromo();
+    /* Es el mismo PIN y la misma sesión: poniéndolo una vez se abren las
+       dos secciones que lo piden. */
+    pintarAviso();
+  }
+
+  /* ═══ Avisar a los socios ═══════════════════════════════════════════════
+
+     Escribir el aviso NO lo manda. Lo deja en una cola y un proceso aparte
+     lo levanta cada diez minutos: mandar una notificación hay que firmarla
+     con una llave privada, y una llave privada en una página pública no es
+     privada.
+
+     Eso hay que decirlo en la pantalla, no esconderlo. Alguien que aprieta
+     "Mandar" y no ve nada durante diez minutos piensa que se rompió, y a la
+     tercera vez mandó el mismo aviso tres veces.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* Los mismos topes que la base. Acá están para avisar mientras se escribe,
+     no para validar: quien valida es la base. */
+  var TOPE_TIT = 60, TOPE_CUERPO = 160;
+
+  function pintarAviso() {
+    var caja = $('avisoCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de arriba ' +
+                       'y esto se abre solo.</p>';
+      return;
+    }
+
+    caja.innerHTML = '<p class="bloque-sub">Viendo a cuántos llega…</p>';
+
+    base.club.avisosCuantos(pinPromo())
+      .then(function (r) { formAviso(r || {}); })
+      .catch(function (err) {
+        guardarPinPromo('');
+        pintarPromo();
+        pintarAviso();
+        if (err && err.delServidor) { avisar('err', err.message); }
+      });
+  }
+
+  function formAviso(r) {
+    var vivos = r.vivos || 0;
+
+    /* Sin nadie suscripto no se muestra el formulario. No es una limitación
+       técnica —el aviso quedaría en cola igual— es que escribir algo y
+       mandarlo a nadie se siente como que la herramienta te mintió. */
+    if (!vivos) {
+      $('avisoCuerpo').innerHTML =
+        '<p class="bloque-sub">Todavía no hay nadie con los avisos activados. ' +
+        'Los socios los prenden desde la campanita de su tarjeta.</p>';
+      return;
+    }
+
+    $('avisoCuerpo').innerHTML =
+      '<p class="bloque-sub"><b>' + vivos + '</b> ' +
+        (vivos === 1 ? 'socio tiene' : 'socios tienen') + ' los avisos activados.</p>' +
+      '<div class="campos">' +
+        '<div class="campo ancho">' +
+          '<label for="avTit">Título <span class="lbl-opc" id="avTitResta">' + TOPE_TIT + '</span></label>' +
+          '<input type="text" id="avTit" maxlength="' + TOPE_TIT + '" ' +
+                 'placeholder="Llegó la colección nueva" autocomplete="off">' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label for="avCuerpo">Mensaje <span class="lbl-opc" id="avCuerpoResta">' + TOPE_CUERPO + '</span></label>' +
+          '<textarea id="avCuerpo" maxlength="' + TOPE_CUERPO + '" rows="2" ' +
+                 'placeholder="Pasá por el local a verla. Mostrá tu tarjeta y sumás."></textarea>' +
+        '</div>' +
+      '</div>' +
+      '<button type="button" class="btn btn-pri btn-chico" id="avMandar" ' +
+              'style="margin-top:12px">Mandar a ' + vivos + '</button>' +
+      '<p class="bloque-sub" style="margin-top:10px">Sale en los próximos minutos. ' +
+        'No se puede deshacer: una vez que llegó al celular, llegó.</p>';
+
+    /* Cuánto queda. Es un dato chico que evita el peor momento: escribir el
+       mensaje entero y descubrir al final que quedó cortado. */
+    function resta(campo, salida, tope) {
+      var f = function () { $(salida).textContent = (tope - $(campo).value.length) + ''; };
+      $(campo).oninput = f; f();
+    }
+    resta('avTit', 'avTitResta', TOPE_TIT);
+    resta('avCuerpo', 'avCuerpoResta', TOPE_CUERPO);
+
+    $('avMandar').onclick = function () { mandarAviso(vivos); };
+  }
+
+  function mandarAviso(vivos) {
+    var tit = $('avTit').value.trim();
+    var cue = $('avCuerpo').value.trim();
+
+    if (!tit) { avisar('err', 'Falta el título.'); $('avTit').focus(); return; }
+    if (!cue) { avisar('err', 'Falta el mensaje.'); $('avCuerpo').focus(); return; }
+
+    /* La única confirmación de toda esta pantalla, y va porque es la única
+       acción que no se puede deshacer: lo demás se edita, esto sale. */
+    if (!confirm('Mandarle esto a ' + vivos + ' socio(s)?  —  ' + tit + ' — ' + cue)) { return; }
+
+    var b = $('avMandar');
+    b.disabled = true; b.textContent = 'Poniéndolo en cola…';
+
+    base.club.avisoCrear(pinPromo(), tit, cue, null, 'Configuración')
+      .then(function () {
+        $('avisoCuerpo').innerHTML =
+          '<p class="bloque-sub"><b>Listo.</b> El aviso está en cola y sale en los ' +
+          'próximos minutos.</p>' +
+          '<button type="button" class="btn btn-sec btn-chico" id="avOtro" ' +
+                  'style="margin-top:10px">Escribir otro</button>';
+        $('avOtro').onclick = pintarAviso;
+        avisar('ok', 'Aviso en cola.');
+      })
+      .catch(function (err) {
+        b.disabled = false; b.textContent = 'Mandar a ' + vivos;
+        avisar('err', (err && err.message) || 'No se pudo.');
+      });
   }
 
   /* La lista. Las vencidas y las que todavía no arrancaron se muestran
@@ -830,6 +954,7 @@
     /* Viaje aparte del resto: pide PIN y puede fallar sola sin arrastrar a
        los objetivos, que no lo piden. */
     pintarPromo();
+    pintarAviso();
     iniciarPWA();
   })();
 </script>
