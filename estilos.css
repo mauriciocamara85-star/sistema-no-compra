@@ -80,6 +80,19 @@
   --acc-txt:  #FF6B72;   /* 6,7:1 contra el fondo, 6:1 contra la hoja */
   --acc-soft: rgba(181, 18, 34, .20);
   --acc-line: rgba(255, 107, 114, .32);
+  /* ── El canto izquierdo de las tarjetas que piden algo ──
+     Dos tonos del mismo rojo: apagado cuando la tarjeta espera, encendido
+     cuando estás escribiendo adentro. El apagado va a media asta a propósito
+     —son tres tarjetas una abajo de la otra y tres franjas rojas a pleno
+     serían empapelado—; el encendido es el que dice dónde estás parado.
+
+     Ojo: NO es el mismo canto que el de las tarjetas de números. Ese está
+     declarado adentro de .kpi y es blanco, porque ahí el canto lleva un
+     dato (objetivo cumplido se pone verde). Acá no lleva dato: lleva marca.
+     Por eso son dos tokens y no uno. */
+  --canto-acc:      rgba(181, 18, 34, .60);
+  --canto-acc-viva: #FF2E3C;
+  --canto-luz:      rgba(255, 46, 60, .75);
 
   /* El chip es un BOTÓN, y necesita con qué decirlo: sube un escalón sobre
      el campo y aclara el borde. Si usara el mismo relleno que un input se
@@ -218,6 +231,11 @@ html[data-theme="light"] {
   --acc-txt:  #A00F1E;     /* 8,1:1 contra blanco */
   --acc-soft: rgba(181, 18, 34, .10);
   --acc-line: rgba(181, 18, 34, .32);
+  /* Sobre blanco el mismo rojo pesa el doble, así que el apagado baja y el
+     resplandor casi desaparece: en claro el relieve no lo da la luz. */
+  --canto-acc:      rgba(181, 18, 34, .45);
+  --canto-acc-viva: #B51222;
+  --canto-luz:      rgba(181, 18, 34, .30);
 
   --chip:      #E3E5E9;
   --chip-line: #85898F;
@@ -555,12 +573,24 @@ a { color: var(--acc-txt); }
   }
   /* display:block y no el inline que trae un <span>: sin esto el ancho y el
      alto no se aplican, el punto mide cero y directamente no se ve. */
+  /* ── El punto de estado ──
+     Tiene que parecer una LUZ ENCENDIDA, no un círculo verde. La diferencia
+     no es el color: es que una luz tira resplandor sobre lo que tiene
+     alrededor. Son dos sombras —un aro cercano y apretado, y un halo abierto
+     y difuso— y esa segunda es la que hace el truco.
+
+     Y usa un verde propio, más vivo que el --ok de los estados. Ese está
+     apagado a propósito para no competir con el rojo en pastillas y cantos,
+     pero un indicador apagado parece pintado. Acá el punto mide ocho
+     píxeles: no compite con nada. */
   .rail-punto {
     display: block;
     width: 8px; height: 8px; border-radius: 50%;
     margin: 0 auto 7px;
-    background: var(--ok);
-    box-shadow: 0 0 0 3px var(--ok-soft);
+    background: #2FE38A;
+    box-shadow:
+      0 0 0 3px rgba(47, 227, 138, .16),
+      0 0 12px 2px rgba(47, 227, 138, .55);
   }
   /* El nombre del local puede ocupar dos renglones: en el rail angosto
      "Rivadavia" ya no entra en uno, y "Lomas de Zamora" no entra nunca.
@@ -591,8 +621,10 @@ a { color: var(--acc-txt); }
   /* Va con valor fijo y no con --acc: el token cambia con el tema y acá el
      fondo es el rail, que es oscuro siempre. */
   .rail-pie.vacia .rail-punto {
-    background: #E11D2B;
-    box-shadow: 0 0 0 3px rgba(225, 29, 43, .28);
+    background: #FF3B49;
+    box-shadow:
+      0 0 0 3px rgba(255, 59, 73, .22),
+      0 0 12px 2px rgba(255, 59, 73, .6);
     animation: latido-rail 2.4s ease-in-out infinite;
   }
   /* Sin identidad, el texto explica en vez de nombrar, así que puede ocupar
@@ -603,7 +635,7 @@ a { color: var(--acc-txt); }
     white-space: normal;
   }
   @keyframes latido-rail {
-    0%, 100% { box-shadow: 0 0 0 3px rgba(225, 29, 43, .28); }
+    0%, 100% { box-shadow: 0 0 0 3px rgba(255, 59, 73, .22), 0 0 12px 2px rgba(255, 59, 73, .6); }
     50%      { box-shadow: 0 0 0 7px transparent; }
   }
 }

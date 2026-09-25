@@ -51,10 +51,14 @@
     box-shadow: var(--sombra);
     animation: aparecer .4s var(--curva) backwards;
   }
+  /* El mismo punto encendido que el del rail. Ver .rail-punto en
+     estilos.css: el halo abierto es lo que lo hace parecer una luz. */
   .ident-punto {
     width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
-    background: var(--ok);
-    box-shadow: 0 0 0 4px var(--ok-soft);
+    background: #2FE38A;
+    box-shadow:
+      0 0 0 4px rgba(47, 227, 138, .16),
+      0 0 12px 2px rgba(47, 227, 138, .5);
   }
   .ident-datos { flex: 1; min-width: 0; }
 
@@ -146,7 +150,29 @@
      toca va LLENO. Antes esa diferencia la hacía un color aparte (el cian);
      con la paleta de marca la hace la forma, que además se sostiene en una
      foto en blanco y negro. Así nada compite por decir "apretame". */
-  .paso { padding: 20px 16px; }
+  /* ── El canto rojo ──
+     Las tarjetas del formulario llevan el rojo de la marca en el borde
+     izquierdo. Es lo único que las separa de un rectángulo gris, y cae del
+     lado por el que se empieza a leer.
+
+     El de la tarjeta en la que estás escribiendo se enciende: sube al rojo
+     vivo y tira un resplandor hacia afuera. Sale gratis —:focus-within, sin
+     una línea de JavaScript— y hace que el formulario conteste. En el
+     mostrador eso vale: el vendedor levanta la vista del cliente, mira la
+     pantalla y ve en qué paso quedó sin tener que leer nada.
+
+     Son 3px y no 4: con el borde de 1px que ya trae .bloque, el contenido se
+     corre 2px y a 4px la primera letra de cada título quedaba desalineada
+     contra la franja de números de arriba. */
+  .paso {
+    padding: 20px 16px;
+    border-left: 3px solid var(--canto-acc);
+    transition: border-left-color .18s var(--curva), box-shadow .18s var(--curva);
+  }
+  .paso:focus-within {
+    border-left-color: var(--canto-acc-viva);
+    box-shadow: var(--sombra), -4px 0 22px -6px var(--canto-luz);
+  }
   .paso-cab { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 15px; }
   .paso-n {
     flex-shrink: 0;
@@ -195,7 +221,14 @@
      nuevo de esta versión y el único que le dice a Compras qué falta, así
      que ocupa un bloque propio y destacado en vez de esconderse en
      observaciones. */
-  .bloque-motivo { border-color: var(--acc-line); }
+  /* Los tres bordes, no border-color a secas: el izquierdo es el canto del
+     paso y lo pone .paso. Con el atajo, el paso 3 era el único de los tres
+     que no tenía el canto rojo. */
+  .bloque-motivo {
+    border-top-color: var(--acc-line);
+    border-right-color: var(--acc-line);
+    border-bottom-color: var(--acc-line);
+  }
   .chips-motivo { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
   /* Un punto menos de letra y menos padding lateral que un chip normal: es lo
      que hace que "Fue a comparar" entre en un renglón en un celular de 390px
