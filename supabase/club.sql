@@ -1002,8 +1002,9 @@ grant execute on function club_recuperar(text) to anon, authenticated;
 -- ══════════════════════════════════════════════════════════════════════════
 
 insert into club_reglas (clave, valor) values
-  ('aviso_texto', null),      -- qué dice el cartel
-  ('aviso_hasta', null)       -- último día que se muestra (fecha, inclusive)
+  ('aviso_texto',  null),     -- qué dice el cartel
+  ('aviso_hasta',  null),     -- último día que se muestra (fecha, inclusive)
+  ('aviso_imagen', null)      -- foto de fondo, una dirección https
 on conflict (clave) do nothing;
 
 
@@ -1023,10 +1024,12 @@ as $av$
   select case
     when t.valor is null or length(trim(t.valor)) = 0 then jsonb_build_object('hay', false)
     when h.valor is not null and h.valor::date < current_date then jsonb_build_object('hay', false)
-    else jsonb_build_object('hay', true, 'texto', trim(t.valor), 'hasta', h.valor)
+    else jsonb_build_object('hay', true, 'texto', trim(t.valor), 'hasta', h.valor,
+                            'imagen', nullif(trim(coalesce(i.valor, '')), ''))
   end
   from (select valor from club_reglas where clave = 'aviso_texto') t
   cross join (select valor from club_reglas where clave = 'aviso_hasta') h
+  cross join (select valor from club_reglas where clave = 'aviso_imagen') i
 $av$;
 
 grant execute on function club_aviso_ver() to anon, authenticated;
@@ -1037,7 +1040,9 @@ grant execute on function club_aviso_ver() to anon, authenticated;
 
    Vaciar el texto apaga el cartel, que es más fácil de explicar que un
    botón de "apagar" al lado de un texto que sigue escrito. */
-create or replace function club_aviso_guardar(p_pin text, p_texto text, p_hasta text)
+create or replace function club_aviso_guardar(
+  p_pin text, p_texto text, p_hasta text, p_imagen text default null
+)
 returns jsonb
 language plpgsql
 security definer
@@ -1045,6 +1050,7 @@ set search_path = public
 as $ag$
 declare
   txt text;
+  img text;
   fec date;
 begin
   if not (pin_ok(p_pin)->>'ok')::boolean then
@@ -1052,14 +1058,16 @@ begin
   end if;
 
   txt := nullif(trim(coalesce(p_texto, '')), '');
+  img := nullif(trim(coalesce(p_imagen, '')), '');
 
   if txt is not null and length(txt) > 140 then
     raise exception 'El cartel es muy largo. Máximo 140 caracteres.';
   end if;
 
-  /* La fecha se valida acá y no en la pantalla: si llega algo que no es una
-     fecha, mejor que falle al guardar y no el día que un cliente abre la
-     tarjeta y club_aviso_ver revienta al comparar. */
+  if img is not null and img !~* '^https://' then
+    raise exception 'La foto tiene que ser un enlace que empiece con https. Con http el navegador la bloquea y el cartel queda vacío.';
+  end if;
+
   begin
     fec := nullif(trim(coalesce(p_hasta, '')), '')::date;
   exception when others then
@@ -1072,13 +1080,19 @@ begin
 
   update club_reglas set valor = txt where clave = 'aviso_texto';
   update club_reglas set valor = to_char(fec, 'YYYY-MM-DD') where clave = 'aviso_hasta';
+  update club_reglas set valor = img where clave = 'aviso_imagen';
 
   return jsonb_build_object('ok', true, 'texto', txt,
-                            'hasta', to_char(fec, 'YYYY-MM-DD'));
+                            'hasta', to_char(fec, 'YYYY-MM-DD'), 'imagen', img);
 end;
 $ag$;
 
-grant execute on function club_aviso_guardar(text, text, text) to anon, authenticated;
+grant execute on function club_aviso_guardar(text, text, text, text) to anon, authenticated;
+
+/* La de tres argumentos se va: con las dos, PostgREST elige por los nombres
+   que le llegan y una pantalla vieja seguiría guardando por la otra, sin la
+   foto. */
+drop function if exists club_aviso_guardar(text, text, text);
 
 
 /* Y leerlo para editarlo: la pantalla de Configuración tiene que poder
@@ -1097,8 +1111,9 @@ begin
   end if;
 
   return jsonb_build_object(
-    'texto', (select valor from club_reglas where clave = 'aviso_texto'),
-    'hasta', (select valor from club_reglas where clave = 'aviso_hasta'));
+    'texto',  (select valor from club_reglas where clave = 'aviso_texto'),
+    'hasta',  (select valor from club_reglas where clave = 'aviso_hasta'),
+    'imagen', (select valor from club_reglas where clave = 'aviso_imagen'));
 end;
 $ae$;
 

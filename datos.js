@@ -720,8 +720,10 @@ var base = {
     avisoEditar: function (pin) {
       return funcion('club_aviso_editar', { p_pin: pin });
     },
-    avisoGuardar: function (pin, texto, hasta) {
-      return funcion('club_aviso_guardar', { p_pin: pin, p_texto: texto, p_hasta: hasta });
+    avisoGuardar: function (pin, texto, hasta, imagen) {
+      return funcion('club_aviso_guardar', {
+        p_pin: pin, p_texto: texto, p_hasta: hasta, p_imagen: imagen || null
+      });
     }
   },
 

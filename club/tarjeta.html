@@ -224,6 +224,8 @@
       radial-gradient(70% 130% at 110% 20%, rgba(181, 18, 34, .55) 0%, rgba(181, 18, 34, .14) 46%, transparent 74%),
       repeating-linear-gradient(118deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 11px),
       linear-gradient(158deg, #2B2E33 0%, #141517 78%);
+    background-size: cover;
+    background-position: center;
     color: #fff;
     border-radius: var(--r);
     padding: clamp(34px, 9vw, 52px) clamp(24px, 6vw, 34px);
@@ -244,6 +246,22 @@
      2x1 sirve si va al local y muestra la tarjeta; sin esto, la pantalla
      informa y lo deja ahí parado. */
   .promo-ir { margin-top: 18px; }
+
+  /* ── Con foto ──
+     La foto va atrás de todo y encima un velo NEGRO DE ABAJO HACIA ARRIBA.
+     Ese velo es lo que hace que esto funcione con cualquier imagen: el texto
+     vive abajo (justify-content: flex-end), así que siempre cae sobre la
+     parte más oscura. Sin el velo, una foto clara deja el texto blanco
+     ilegible y no hay forma de saberlo de antemano — la foto la elige
+     Mauricio y puede ser cualquiera.
+
+     El resplandor rojo y la textura se van cuando hay foto: eran para que un
+     rectángulo negro no fuera una tapa plana, y con una imagen sobran. */
+  .promo-grande.con-foto {
+    background-image:
+      linear-gradient(to top, rgba(10, 11, 12, .92) 0%, rgba(10, 11, 12, .55) 45%, rgba(10, 11, 12, .25) 100%),
+      var(--foto);
+  }
 
   /* ── Locales ── */
   .local-mapa {
@@ -789,8 +807,16 @@
       var irALaTarjeta = '<button type="button" class="btn promo-ir" id="promoVerTarjeta">' +
         'Ver mi tarjeta</button>';
 
+      /* La dirección de la foto va en una variable CSS y no pegada en el
+         style: así el velo de arriba queda escrito UNA vez en la hoja de
+         estilos, con su explicación al lado, en vez de armarse a mano acá.
+         Y se escapan las comillas por las dudas: la escribe una persona. */
+      var conFoto = (a && a.hay && a.imagen)
+        ? ' con-foto" style="--foto:url(&quot;' + esc(a.imagen) + '&quot;)'
+        : '';
+
       if (a && a.hay) {
-        caja.innerHTML = '<div class="promo-grande">' + esc(a.texto) +
+        caja.innerHTML = '<div class="promo-grande' + conFoto + '">' + esc(a.texto) +
           (a.hasta ? '<span class="promo-hasta">Hasta el ' + fecha(a.hasta) + '</span>' : '') +
           '</div>' +
           '<p class="vacio" style="margin-top:18px">Mostrá tu tarjeta en la caja de ' +

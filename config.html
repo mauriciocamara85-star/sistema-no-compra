@@ -402,7 +402,9 @@
 
     caja.innerHTML = '<p class="bloque-sub">Buscando lo que hay puesto…</p>';
     base.club.avisoEditar(pinPromo())
-      .then(function (a) { editorPromo((a && a.texto) || '', (a && a.hasta) || ''); })
+      .then(function (a) {
+        editorPromo((a && a.texto) || '', (a && a.hasta) || '', (a && a.imagen) || '');
+      })
       .catch(function (err) {
         /* PIN vencido o equivocado: se vuelve a pedir en vez de dejar un
            cartel de error que no se puede accionar. */
@@ -433,7 +435,7 @@
     pintarPromo();
   }
 
-  function editorPromo(texto, hasta) {
+  function editorPromo(texto, hasta, imagen) {
     $('promoCuerpo').innerHTML =
       '<div class="campos">' +
         '<div class="campo ancho">' +
@@ -446,13 +448,21 @@
           '<label for="promoHasta">Hasta qué día</label>' +
           '<input type="date" id="promoHasta" value="' + esc(hasta || '') + '">' +
         '</div>' +
+        '<div class="campo ancho">' +
+          '<label for="promoImagen">Foto de fondo <span class="lbl-opc">— opcional</span></label>' +
+          '<input type="url" id="promoImagen" inputmode="url" autocapitalize="off" ' +
+            'placeholder="https://…" value="' + esc(imagen || '') + '">' +
+          '<div class="campo-error" id="promoImgErr" hidden></div>' +
+        '</div>' +
         '<div class="campo">' +
           '<label>&nbsp;</label>' +
           '<button type="button" class="btn btn-pri" id="promoGuardar">Guardar el cartel</button>' +
         '</div>' +
       '</div>' +
       '<p class="bloque-sub" style="margin-top:12px">Lo ven cuando abren la tarjeta. ' +
-      'No es una notificación: a nadie le suena el teléfono.</p>';
+      'No es una notificación: a nadie le suena el teléfono.<br>' +
+      'La foto es un enlace a una imagen ya publicada —de la tienda, de una campaña— ' +
+      'y tiene que empezar con <b>https</b>: con http el navegador la bloquea.</p>';
 
     $('promoGuardar').onclick = guardarPromo;
   }
@@ -461,13 +471,14 @@
     var b = $('promoGuardar');
     var texto = $('promoTexto').value.trim();
     var hasta = $('promoHasta').value;
+    var imagen = $('promoImagen').value.trim();
 
     /* Un cartel con texto y sin fecha se queda para siempre, y "sólo por
        hoy" en marzo es peor que no tener cartel. */
     if (texto && !hasta) { avisar('err', 'Poné hasta qué día se muestra.'); return; }
 
     b.disabled = true;
-    base.club.avisoGuardar(pinPromo(), texto, hasta)
+    base.club.avisoGuardar(pinPromo(), texto, hasta, imagen)
       .then(function (r) {
         avisar('ok', (r && r.texto) ? 'Listo: los socios lo ven al abrir su tarjeta.'
                                     : 'Cartel apagado.');
