@@ -394,6 +394,39 @@
     } catch (e) {}
   }
 
+  /* La vista previa. Chica: es para confirmar que la dirección apunta a una
+     foto, no para diseñar el cartel. */
+  var ESTILO_PREV =
+    'margin-top:10px;border-radius:10px;overflow:hidden;border:1px solid var(--line);' +
+    'background:var(--surface-2);height:110px;display:grid;place-items:center;';
+
+  function verPrevia() {
+    var caja = $('promoImgPrev');
+    var url = $('promoImagen').value.trim();
+    if (!caja) return;
+
+    if (!url) { caja.innerHTML = ''; caja.removeAttribute('style'); return; }
+
+    caja.setAttribute('style', ESTILO_PREV);
+    caja.innerHTML = '<span class="bloque-sub" style="margin:0">Probando la foto…</span>';
+
+    /* Se prueba con un Image() y no metiendo el <img> en la página: así el
+       error se captura sin que quede un ícono de imagen rota a la vista. */
+    var img = new Image();
+    img.onload = function () {
+      caja.innerHTML = '';
+      img.setAttribute('style', 'width:100%;height:110px;object-fit:cover;display:block');
+      caja.appendChild(img);
+    };
+    img.onerror = function () {
+      caja.innerHTML =
+        '<span class="bloque-sub" style="margin:0;text-align:center;padding:0 12px">' +
+        'No se pudo cargar esa foto.<br>¿Copiaste la dirección de la IMAGEN ' +
+        '(clic derecho sobre la foto) y no la de la página?</span>';
+    };
+    img.src = url;
+  }
+
   function pintarPromo() {
     var caja = $('promoCuerpo');
     if (!caja) return;
@@ -452,7 +485,7 @@
           '<label for="promoImagen">Foto de fondo <span class="lbl-opc">— opcional</span></label>' +
           '<input type="url" id="promoImagen" inputmode="url" autocapitalize="off" ' +
             'placeholder="https://…" value="' + esc(imagen || '') + '">' +
-          '<div class="campo-error" id="promoImgErr" hidden></div>' +
+          '<div id="promoImgPrev"></div>' +
         '</div>' +
         '<div class="campo">' +
           '<label>&nbsp;</label>' +
@@ -465,6 +498,11 @@
       'y tiene que empezar con <b>https</b>: con http el navegador la bloquea.</p>';
 
     $('promoGuardar').onclick = guardarPromo;
+    /* onchange y no oninput: probar la foto en cada tecla dispararía una
+       carga por letra mientras se pega una dirección larga. */
+    $('promoImagen').onchange = verPrevia;
+    $('promoImagen').onblur = verPrevia;
+    verPrevia();
   }
 
   function guardarPromo() {
