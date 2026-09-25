@@ -72,18 +72,18 @@
       repeating-linear-gradient(118deg, rgba(255, 255, 255, .028) 0 1px, transparent 1px 11px),
       linear-gradient(158deg, #2B2E33 0%, #141517 78%);
     border-radius: var(--r);
-    padding: 20px;
+    padding: 16px;
     color: #fff;
     box-shadow: 0 16px 34px -18px rgba(22, 24, 27, .85);
   }
-  .carnet-nom { font: 700 21px/1.2 var(--display); letter-spacing: -.4px; }
-  .carnet-desde { font-size: 12.5px; opacity: .8; margin-top: 3px; }
+  .carnet-nom { font: 700 20px/1.2 var(--display); letter-spacing: -.4px; }
+  .carnet-desde { font-size: 12px; opacity: .8; margin-top: 2px; }
 
   .barras {
     background: #fff;
     border-radius: var(--r-sm);
-    padding: 14px 12px 10px;
-    margin-top: 16px;
+    padding: 11px 11px 8px;
+    margin-top: 12px;
   }
   /* El número, grande y agrupado de a cuatro: es el respaldo para cuando el
      lector no llega a leer la pantalla, y hay que poder dictarlo sin
@@ -96,7 +96,7 @@
     color: #16181B;
     font-variant-numeric: tabular-nums;
   }
-  .carnet-pie { font-size: 13px; opacity: .85; margin-top: 14px; text-align: center; }
+  .carnet-pie { font-size: 12.5px; opacity: .85; margin-top: 11px; text-align: center; }
 
   /* ── El avance ── */
   .caja {
@@ -111,12 +111,33 @@
   .cuenta { display: flex; align-items: baseline; gap: 9px; margin-top: 4px; }
   .cuenta b { font: 700 clamp(34px, 11vw, 46px)/1 var(--display); color: var(--acc); letter-spacing: -1.5px; }
   .cuenta span { font-size: 15px; color: var(--txt-2); }
+  .falta {
+    font: 600 17px/1.35 var(--sans);
+    color: var(--txt);
+    margin-top: 4px;
+  }
+  .falta b { color: var(--acc); font-weight: 700; }
 
   /* Los sellos, uno por compra. Se ven y se cuentan de un vistazo, que es
      todo lo que el cliente quiere saber. */
-  .sellos { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 16px; }
+  /* ── Los sellos ──
+     En GRILLA y no en fila que se acomoda sola. Suelto, el ancho del teléfono
+     decidía el corte: diez sellos entraban de a siete y tres, y con ese
+     reparto el 5 y el 10 —que son los premios— caían en cualquier lado. En
+     filas del largo del primer premio, el 5 termina una fila y el 10 termina
+     la otra, y la relación se ve sin explicarla.
+
+     El largo lo pone pintar() según los hitos, en --por-fila. Si los premios
+     cambian a 4 y 8, las filas pasan a cuatro solas. */
+  .sellos {
+    display: grid;
+    grid-template-columns: repeat(var(--por-fila, 5), 1fr);
+    gap: 9px; margin-top: 16px;
+    justify-items: center;
+  }
   .sello {
-    width: 34px; height: 34px; border-radius: 50%;
+    width: 100%; max-width: 46px; aspect-ratio: 1; height: auto;
+    border-radius: 50%;
     border: 2px dashed var(--linea);
     display: grid; place-items: center;
     font: 700 12px var(--display); color: var(--txt-3);
@@ -398,12 +419,13 @@
          incrustado acá no podría hacer ninguna de las dos cosas, y encima
          pediría una clave de Google en un repositorio público.
 
-         Es una LISTA GUARDADA de la cuenta de Google de Mauricio, compartida
-         como "cualquiera con el enlace". Probada de incógnito el 24/09/2026:
-         abre bien sin sesión. Si algún día deja de andar, lo primero que hay
-         que mirar es ese permiso de la lista, no el código. -->
+         Es un "Mis Mapas" de Google (maps/d/viewer), que es lo que está
+         hecho para compartir en público — antes era una lista guardada de la
+         cuenta de Mauricio, que funcionaba pero dependía de un permiso suyo.
+         Si algún día deja de andar, mirar primero que el mapa siga
+         compartido, no el código. -->
     <a class="local-mapa" target="_blank" rel="noopener"
-       href="https://maps.app.goo.gl/NftZRV34UC1vD7en6">
+       href="https://www.google.com/maps/d/viewer?mid=1y8koZ_-YOh37JwyQhBwsMvZJ2EZJans">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 4-6 2v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>
       Ver los 14 en el mapa
     </a>
@@ -539,6 +561,11 @@
        tener que leer nada. */
     var enPremio = {};
     hitos.forEach(function (h) { enPremio[h.sellos] = true; });
+    /* El largo de la fila sale del PRIMER premio: si el primero es a los 5,
+       filas de cinco. Entre 3 y 6 para que no queden ni apretadas ni de a
+       dos; fuera de ese rango, cinco, que es lo que venía. */
+    var porFila = (hitos.length && hitos[0].sellos >= 3 && hitos[0].sellos <= 6)
+      ? hitos[0].sellos : 5;
     var bolitas = '';
     for (var i = 1; i <= meta; i++) {
       var lleno = i <= t.sellos;
@@ -572,10 +599,15 @@
 
       '<div class="caja">' +
         '<h2>Tu avance</h2>' +
-        '<div class="cuenta"><b>' + t.sellos + '</b><span>de ' + meta + ' compras' +
-          (proximo ? ' · te faltan ' + falta + ' para ' + esc(proximo.premio.toLowerCase()) : '') +
-        '</span></div>' +
-        '<div class="sellos">' + bolitas + '</div>' +
+        '<div class="cuenta"><b>' + t.sellos + '</b><span>de ' + meta + ' compras</span></div>' +
+        /* Lo que le falta para el próximo premio, en su propio renglón y
+           grande. Iba pegado a "de 10 compras" en gris chico, y era lo único
+           de la pantalla que le dice al cliente para qué está juntando. */
+        (proximo
+          ? '<p class="falta">Te falta' + (falta === 1 ? '' : 'n') + ' <b>' + falta +
+            '</b> para tu ' + esc(proximo.premio.toLowerCase()) + '</p>'
+          : '<p class="falta">Ya alcanzaste todos los premios</p>') +
+        '<div class="sellos" style="--por-fila:' + porFila + '">' + bolitas + '</div>' +
         '<div class="hitos">' + hitos.map(function (h) {
           var clase = h.canjeado ? ' usado' : (h.alcanzado ? ' listo' : '');
           var pie = h.canjeado ? 'Ya te lo llevaste'
