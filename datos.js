@@ -738,6 +738,23 @@ var base = {
       return funcion('club_push_cuantos', { p_pin: pin });
     },
 
+    /* Le pide a la Edge Function que mande lo que haya en cola AHORA.
+       Se llama después de guardar una promoción con aviso.
+
+       Nunca rechaza: si esto falla —sin señal, la función caída— el aviso
+       igual quedó en la cola y el GitHub Action lo levanta dentro de la
+       hora. Que el envío instantáneo falle no puede hacer que se pierda un
+       aviso ni que la pantalla muestre un error sobre algo que sí se
+       guardó. */
+    avisosMandarYa: function () {
+      return fetch(BASE + '/functions/v1/mandar-avisos', {
+        method: 'POST',
+        headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+        body: '{}'
+      }).then(function (r) { return r.ok ? r.json() : null; })
+        .catch(function () { return null; });
+    },
+
     avisoCrear: function (pin, titulo, cuerpo, enlace, por) {
       return funcion('club_aviso_crear', {
         p_pin: pin, p_titulo: titulo, p_cuerpo: cuerpo,
@@ -748,11 +765,15 @@ var base = {
     promosListar: function (pin) {
       return funcion('club_promos_listar', { p_pin: pin });
     },
-    promoGuardar: function (pin, id, texto, imagen, desde, hasta, condiciones) {
+    /* `avisar` manda una notificación al celular de los socios con el
+       texto de la promo. Va al final porque se agregó después, y con
+       default en la base: una pantalla vieja que quedó cacheada en un
+       celular sigue guardando bien y simplemente no avisa. */
+    promoGuardar: function (pin, id, texto, imagen, desde, hasta, condiciones, avisar) {
       return funcion('club_promo_guardar', {
         p_pin: pin, p_id: id || null, p_texto: texto, p_imagen: imagen || null,
         p_desde: desde || null, p_hasta: hasta || null,
-        p_condiciones: condiciones || null
+        p_condiciones: condiciones || null, p_avisar: !!avisar
       });
     },
     promoBaja: function (pin, id) {
