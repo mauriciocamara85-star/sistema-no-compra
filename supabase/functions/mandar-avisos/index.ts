@@ -132,7 +132,10 @@ Deno.serve(async (req) => {
              los datos del navegador—. No es un error nuestro y no tiene
              sentido reintentarlo nunca más. */
           const codigo = (e as { statusCode?: number }).statusCode;
-          if (codigo === 404 || codigo === 410) { muertos.push(d.id); }
+          /* Y 403: la suscripcion se hizo con OTRA llave VAPID. Tampoco se
+             arregla reintentando — hay que volver a suscribirse desde el
+             telefono. */
+          if (codigo === 404 || codigo === 410 || codigo === 403) { muertos.push(d.id); }
         }
       }));
     }
