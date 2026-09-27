@@ -661,7 +661,13 @@ var base = {
     },
 
     /**
-     * Sumar una compra. Una compra = un sello, sin monto mínimo.
+     * Sumar una compra. Los puntos salen del importe: $100 = 1 punto, por
+     * el multiplicador del nivel del socio. El importe y el ticket son
+     * obligatorios; si faltan contesta {sumado:false, porque}.
+     *
+     * Arriba del tope contesta {sumado:false, revisar:true} y hay que volver
+     * a llamar con `confirmar`: un cero de más en $80.000 son 8.000 puntos
+     * regalados.
      *
      * Si el ticket ya está cargado en ese local contesta
      * {sumado:false, duplicado:true, anterior:{…}} en vez de guardar. Volver
@@ -688,10 +694,10 @@ var base = {
       });
     },
 
-    /** Entregar un premio. NO resta sellos: anota qué hito se llevó. */
-    canjear: function (pin, codigo, hito, local, vendedor) {
-      return funcion('club_canjear_hito', {
-        p_pin: pin, p_codigo: codigo, p_hito: hito,
+    /** Entregar un premio del catálogo. DESCUENTA sus puntos del saldo. */
+    canjear: function (pin, codigo, premio, local, vendedor) {
+      return funcion('club_canjear_premio', {
+        p_pin: pin, p_codigo: codigo, p_premio: premio,
         p_local: local, p_vendedor: vendedor
       });
     },

@@ -58,10 +58,13 @@
     transition: border-color .15s, background .15s;
   }
   .socio:hover { border-color: var(--acc-line); }
+  /* El saldo, y no ya los sellos: "12.300" no entra en un cuadrado de 44,
+     así que crece a lo ancho. */
   .socio-n {
-    width: 44px; height: 44px; flex: none; border-radius: 13px;
+    min-width: 44px; height: 44px; flex: none; border-radius: 13px; padding: 0 10px;
     background: var(--acc-soft); color: var(--acc-txt);
-    display: grid; place-items: center; font: 700 16px var(--display);
+    display: grid; place-items: center; font: 700 14.5px var(--display);
+    font-variant-numeric: tabular-nums;
   }
   .socio-nom { font: 600 16px/1.3 var(--sans); }
   .socio-sub { font-size: 13px; color: var(--txt-3); margin-top: 2px; }
@@ -72,11 +75,29 @@
   .ficha-socio { margin-top: 16px; }
   .ficha-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .ficha-nom { font: 700 24px/1.15 var(--display); letter-spacing: -.5px; }
-  .ficha-sellos {
+  .ficha-puntos { margin-left: auto; text-align: right; }
+  .ficha-puntos b {
+    display: block;
     font: 700 34px/1 var(--display); color: var(--acc-txt);
-    letter-spacing: -1px; margin-left: auto;
+    letter-spacing: -1px; font-variant-numeric: tabular-nums;
   }
-  .ficha-sellos small { font-size: 15px; font-weight: 600; color: var(--txt-3); letter-spacing: 0; }
+  .ficha-puntos small { display: block; font-size: 13px; font-weight: 600; color: var(--txt-3); margin: 4px 0 6px; }
+
+  /* Las mismas tres chapas que ve el cliente en su tarjeta: el vendedor
+     tiene que poder decir "sos Oro" mirando lo mismo que mira él. */
+  .chip-nivel {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 10px; border-radius: 999px;
+    font: 700 11px/1 var(--sans); letter-spacing: .6px; text-transform: uppercase;
+  }
+  .nv-plata   { background: #DADDE2; color: #2A2D31; }
+  .nv-oro     { background: #F1D27A; color: #3A2A00; }
+  .nv-platino { background: #0B0C0E; color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .6); }
+
+  /* Lo que va a sumar, mientras se tipea el importe. Es el freno contra el
+     cero de más: "suma 8.000 puntos" en una remera se ve antes de guardar. */
+  .vista-puntos { font-size: 13.5px; color: var(--txt-3); margin-top: 6px; min-height: 1.4em; }
+  .vista-puntos b { color: var(--acc-txt); }
 
   .premios { display: grid; gap: 9px; margin-top: 16px; }
   .premio {
@@ -87,6 +108,7 @@
   }
   .premio.listo { border-color: var(--ok); background: var(--ok-soft); }
   .premio.usado { opacity: .55; }
+  .premio.falta small { color: var(--txt-3); }
   .premio b { display: block; }
   .premio small { display: block; font-size: 12.5px; color: var(--txt-3); }
   .premio .btn { margin-left: auto; flex: none; }
@@ -109,6 +131,8 @@
   }
   .mov:last-child { border-bottom: 0; }
   .mov-cuando { color: var(--txt-3); font-size: 12.5px; }
+  .mov-pts { font: 700 15px var(--display); font-variant-numeric: tabular-nums; min-width: 62px; }
+  .mov-pts.mas { color: var(--ok); }
   .mov.anulado { opacity: .5; text-decoration: line-through; }
   .mov .btn { margin-left: auto; }
 
@@ -216,7 +240,7 @@
   </section>
 
   <p class="pie" style="text-align:center;margin-top:26px;font-size:13px;color:var(--txt-3)">
-    Una compra confirmada suma un sello. El alta del cliente se hace desde el
+    Cada $100 de compra es un punto. El alta del cliente se hace desde el
     QR del local.
   </p>
 </main>
@@ -311,9 +335,9 @@
       return '<button type="button" class="socio" data-cod="' + esc(s.codigo) + '" ' +
         'data-tel="' + esc(s.telefono || '') + '" ' +
         'data-mail="' + esc(s.mail || '') + '">' +
-        '<span class="socio-n">' + s.sellos + '</span>' +
+        '<span class="socio-n">' + miles(s.puntos) + '</span>' +
         '<span><span class="socio-nom">' + esc(s.nombre) + '</span>' +
-        '<span class="socio-sub">' + esc(s.telefono) + '</span></span>' +
+        '<span class="socio-sub">' + esc(s.telefono) + ' · ' + esc(s.nivel || 'Plata') + '</span></span>' +
         (s.confirmado ? '' : '<span class="pill pill-warn">Sin compras</span>') +
         '</button>';
     }).join('');
@@ -356,7 +380,7 @@
   }
 
   function pintarFicha(t) {
-    var meta = t.meta || 0;
+    var nv = t.nivel || { nombre: 'Plata', multiplica: 1 };
     /* Mandarle su tarjeta. Es la respuesta a "perdí mi tarjeta" y también a
        "recién me anoté": el cliente se va con el enlace en su WhatsApp, que
        es el único lugar donde no se le va a perder.
@@ -376,15 +400,20 @@
         'stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.7A8.4 8.4 0 1 1 21 11.5Z"/></svg>' +
         'Mandarle su tarjeta</a>'
       : '';
-    var premios = (t.hitos || []).map(function (h) {
-      var clase = h.canjeado ? ' usado' : (h.alcanzado ? ' listo' : '');
-      var pie = h.canjeado ? 'Ya se lo llevó'
-              : h.alcanzado ? 'Se lo puede llevar'
-              : 'A las ' + h.sellos + ' compras';
+    /* El catálogo, con lo que la base dice que se puede entregar HOY: puntos
+       suficientes y sin haber llegado al límite del año. Es la misma cuenta
+       que hace el canje, así que un botón de Entregar nunca termina en un
+       "no se puede". */
+    var premios = (t.premios || []).map(function (p) {
+      var clase = p.agotado ? ' usado' : (p.alcanzado ? ' listo' : ' falta');
+      var pie = p.agotado ? 'Ya se lo llevó este año'
+              : p.alcanzado ? miles(p.puntos) + ' puntos · se lo puede llevar'
+              : miles(p.puntos) + ' puntos · le faltan ' + miles(p.falta);
       return '<div class="premio' + clase + '">' +
-        '<div><b>' + esc(h.premio) + '</b><small>' + pie + '</small></div>' +
-        (h.alcanzado && !h.canjeado
-          ? '<button type="button" class="btn btn-sec btn-chico" data-hito="' + h.sellos + '">Entregar</button>'
+        '<div><b>' + esc(p.nombre) + '</b><small>' + pie + '</small></div>' +
+        (p.alcanzado
+          ? '<button type="button" class="btn btn-sec btn-chico" data-premio="' + p.id + '" ' +
+            'data-nombre="' + esc(p.nombre) + '" data-puntos="' + p.puntos + '">Entregar</button>'
           : '') + '</div>';
     }).join('');
 
@@ -401,14 +430,16 @@
             'Corregir datos</button>' +
           '</div>' +
           '</div>' +
-          '<div class="ficha-sellos">' + t.sellos + ' <small>de ' + meta + '</small></div>' +
+          '<div class="ficha-puntos"><b>' + miles(t.puntos) + '</b><small>puntos</small>' +
+            chipNivel(nv.nombre) + '</div>' +
         '</div>' +
         (premios ? '<div class="premios">' + premios + '</div>' : '') +
         '<div class="campos" style="margin-top:18px">' +
-          '<div class="campo"><label>Importe</label>' +
-            '<input type="text" inputmode="numeric" id="importe" placeholder="$"></div>' +
-          '<div class="campo"><label>Ticket <span class="lbl-opc">de BlueSoft</span></label>' +
-            '<input type="text" id="ticket" placeholder="Número"></div>' +
+          '<div class="campo"><label for="importe">Importe de la compra</label>' +
+            '<input type="text" inputmode="numeric" id="importe" placeholder="$" autocomplete="off">' +
+            '<div class="vista-puntos" id="vistaPuntos"></div></div>' +
+          '<div class="campo"><label for="ticket">Ticket de BlueSoft</label>' +
+            '<input type="text" id="ticket" placeholder="Número" autocomplete="off"></div>' +
           '<div class="campo ancho">' +
             '<button type="button" class="btn btn-pri btn-ancho" id="btnSumar">Sumar la compra</button>' +
           '</div>' +
@@ -419,8 +450,9 @@
 
     $('btnSumar').onclick = function () { sumar(false); };
     $('btnEditar').onclick = editarSocio;
-    Array.prototype.forEach.call($('resultado').querySelectorAll('[data-hito]'), function (b) {
-      b.onclick = function () { entregar(+b.dataset.hito); };
+    $('importe').oninput = function () { vistaPuntos(nv); };
+    Array.prototype.forEach.call($('resultado').querySelectorAll('[data-premio]'), function (b) {
+      b.onclick = function () { entregar(+b.dataset.premio, b.dataset.nombre, +b.dataset.puntos); };
     });
     cargarMovs();
   }
@@ -490,6 +522,22 @@
     b.disabled = true; b.textContent = 'Sumando…';
     $('avisoRepetido').innerHTML = '';
 
+    /* Lo mismo que va a contestar la base, pero sin viajar: el vendedor se
+       entera en el acto y no después de un segundo de "Sumando…". La base
+       lo vuelve a controlar igual — esto es comodidad, no seguridad. */
+    if (!plata('importe')) {
+      avisar('err', 'Falta el importe de la compra.');
+      $('importe').focus();
+      b.disabled = false; b.textContent = 'Sumar la compra';
+      return;
+    }
+    if (!$('ticket').value.trim()) {
+      avisar('err', 'Falta el número de ticket de BlueSoft.');
+      $('ticket').focus();
+      b.disabled = false; b.textContent = 'Sumar la compra';
+      return;
+    }
+
     base.club.sumar(pinGuardado(), socio.codigo, local, vendedor,
                     $('ticket').value.trim(), plata('importe'), confirmar)
       .then(function (r) {
@@ -508,10 +556,22 @@
           $('btnIgual').onclick = function () { sumar(true); };
           return;
         }
+        if (r && r.revisar) {
+          /* El monto grande. Misma forma que el ticket repetido: una
+             pregunta con el número a la vista, no un error. */
+          $('avisoRepetido').innerHTML =
+            '<div class="repetido"><b>¿Está bien el importe?</b><br>' +
+            esc(r.porque) +
+            '<button type="button" class="btn btn-sec btn-chico" id="btnIgual">Sí, sumarla</button></div>';
+          $('btnIgual').onclick = function () { sumar(true); };
+          return;
+        }
         if (!r || !r.sumado) { avisar('err', (r && r.porque) || 'No se pudo sumar.'); return; }
-        avisar('ok', '¡Listo! ' + esc(r.nombre) + ' lleva ' + r.sellos +
-                     (r.meta ? ' de ' + r.meta : '') + '.');
-        elegir(socio.codigo);
+        avisar('ok', '¡Listo! Sumó ' + miles(r.gana) + ' puntos' +
+                     (Number(r.multiplica) > 1 ? ' (' + esc(r.nivel) + ', ' +
+                       String(r.multiplica).replace('.', ',') + 'x)' : '') +
+                     '. ' + esc(r.nombre) + ' tiene ' + miles(r.puntos) + '.');
+        elegir(socio.codigo, socio.telefono, socio.mail);
       })
       .catch(function (err) {
         avisar('err', (err && err.delServidor && err.message) || 'No se pudo sumar.');
@@ -519,13 +579,18 @@
       .then(function () { b.disabled = false; b.textContent = 'Sumar la compra'; });
   }
 
-  function entregar(hito) {
+  function entregar(premio, nombre, puntos) {
     if (!socio) return;
-    base.club.canjear(pinGuardado(), socio.codigo, hito, local, vendedor)
+    /* Ahora entregar DESCUENTA puntos. Un toque de más le saca 2.500
+       puntos al cliente —se puede anular, pero con el cliente mirando—, así
+       que se pregunta con el número a la vista. */
+    if (!confirm('¿Entregar ' + nombre + '? Se le descuentan ' + miles(puntos) +
+                 ' puntos de la tarjeta.')) { return; }
+    base.club.canjear(pinGuardado(), socio.codigo, premio, local, vendedor)
       .then(function (r) {
         if (!r || !r.canjeado) { avisar('err', (r && r.porque) || 'No se pudo entregar.'); return; }
-        avisar('ok', 'Entregado: ' + esc(r.premio) + '.');
-        elegir(socio.codigo);
+        avisar('ok', 'Entregado: ' + esc(r.premio) + '. Le quedan ' + miles(r.puntos) + ' puntos.');
+        elegir(socio.codigo, socio.telefono, socio.mail);
       })
       .catch(function (err) { avisar('err', (err && err.message) || 'No se pudo entregar.'); });
   }
@@ -537,8 +602,13 @@
       $('movs').innerHTML = '<h3 class="bloque-tit" style="font-size:15px;margin-bottom:6px">Últimos movimientos</h3>' +
         ms.map(function (m) {
           return '<div class="mov' + (m.anulado ? ' anulado' : '') + '">' +
-            '<span>' + (m.sellos > 0 ? '+' + m.sellos : 'Premio') + '</span>' +
-            '<span class="mov-cuando">' + cuando(m.cuando) + ' · ' + esc(bonito(m.local || '')) +
+            '<span class="mov-pts' + (m.puntos > 0 ? ' mas' : '') + '">' +
+              (m.puntos > 0 ? '+' : m.puntos < 0 ? '−' : '') + miles(Math.abs(m.puntos || 0)) + '</span>' +
+            '<span class="mov-cuando">' + cuando(m.cuando) +
+              (m.tipo === 'canje' ? ' · ' + esc(m.obs || 'premio')
+               : m.concepto === 'bienvenida' ? ' · bienvenida'
+               : m.concepto === 'vencimiento' ? ' · vencidos' : '') +
+              (m.local ? ' · ' + esc(bonito(m.local)) : '') +
               (m.ticket ? ' · ticket ' + esc(m.ticket) : '') +
               (m.importe ? ' · ' + PESOS.format(m.importe) : '') + '</span>' +
             (m.anulado ? '' :
@@ -564,6 +634,29 @@
   }
 
   /* ═══ Auxiliares ══════════════════════════════════════════════════════ */
+
+  /* Lo que va a sumar esa compra, mientras se tipea. $100 = 1 punto por el
+     multiplicador del nivel: es la misma cuenta que hace la base
+     (club_reglas.pesos_por_punto), repetida acá sólo para mostrarla. Lo que
+     vale es lo que conteste la base al sumar. */
+  function vistaPuntos(nv) {
+    var caja = $('vistaPuntos');
+    if (!caja) return;
+    var imp = plata('importe');
+    if (!imp || imp <= 0) { caja.innerHTML = ''; return; }
+    var m = Number(nv && nv.multiplica) || 1;
+    caja.innerHTML = 'Suma <b>' + miles(Math.floor(imp / 100 * m)) + '</b> puntos' +
+      (m > 1 ? ' (' + esc(nv.nombre) + ', ' + String(m).replace('.', ',') + 'x)' : '');
+  }
+
+  function miles(n) { return Math.round(Number(n) || 0).toLocaleString('es-AR'); }
+
+  function chipNivel(nombre) {
+    var n = String(nombre || 'Plata');
+    var clase = 'nv-' + n.toLowerCase().normalize('NFD').replace(/[^a-z]/g, '');
+    return '<span class="chip-nivel ' + clase + '">' + esc(n) + '</span>';
+  }
+
   function plata(id) {
     var v = ($(id) && $(id).value || '').replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
     var n = Number(v);
