@@ -30,11 +30,14 @@
  * ahora; aquello, lo programado.
  */
 
-import webpush from 'npm:web-push@3.6.7';
 
 /* La llave privada se carga como secreto de la función. Nunca está en el
    código: este archivo vive en un repositorio público. */
-const PRIVADA = Deno.env.get('VAPID_PRIVADA') ?? '';
+/* .trim() no es paranoia: la llave se carga copiandola a mano en el panel
+   de Supabase y ahi es facilisimo llevarse un salto de linea o un espacio
+   pegado. Con un caracter de mas la firma no valida y el envio falla con un
+   error que no dice nada de eso. Paso la primera vez que se cargo. */
+const PRIVADA = (Deno.env.get('VAPID_PRIVADA') ?? '').trim();
 const PUBLICA = 'BCG_mGNkME20VL9WrdVAUqSnPOPdNqQOIdyDGnY3UG8WbC-CbxV87N83mGVW71SZW_wrRYXMv2ZGkEWzRGLBxoo';
 
 /* Éstos los pone Supabase sola en toda Edge Function: no hay que cargarlos. */
@@ -85,6 +88,16 @@ Deno.serve(async (req) => {
     });
 
   if (req.method === 'OPTIONS') { return responder({ ok: true }); }
+
+  /* La libreria se carga aca adentro y no arriba: si falla al importarse,
+     arriba tira un 500 mudo y no hay forma de ver por que. Aca el error se
+     puede contar. */
+  let webpush;
+  try {
+    webpush = (await import('npm:web-push@3.6.7')).default;
+  } catch (e) {
+    return responder({ ok: false, donde: 'import web-push', porque: String(e) }, 500);
+  }
 
   if (!PRIVADA) {
     return responder({ ok: false, porque: 'Falta el secreto VAPID_PRIVADA.' }, 500);
