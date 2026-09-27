@@ -916,3 +916,558 @@ as $ct$
 $ct$;
 
 grant execute on function club_tarjeta(text) to anon, authenticated;
+
+
+-- ─────────────────────────── PARTE 15 ───────────────────────────
+-- Puntos dobles y la semana del cumpleaños. Reemplaza a la 14 (la incluye
+-- entera): si la 14 no se corrió, alcanza con esta.
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · PUNTOS DOBLES Y LA SEMANA DEL CUMPLEAÑOS
+--
+-- Correr entero en el editor SQL de Supabase. REEMPLAZA AL 14: si el 14 no
+-- se corrió, no hace falta — todo lo que tenía está acá adentro.
+--
+-- ══════════════════════════════════════════════════════════════════════════
+-- LAS DOS COSAS QUE HACEN VOLVER
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- 1. PUNTOS DOBLES. Mauricio los carga desde Configuración: "Hot Sale, del
+--    1 al 3 de octubre, 2x". Esos días cada compra suma el doble.
+--
+-- 2. LA SEMANA DEL CUMPLEAÑOS. Del día del cumple a seis días después, las
+--    compras de ESE socio suman el doble.
+--
+-- Por qué el cumpleaños es un multiplicador y no puntos de regalo: los
+-- puntos regalados le llegan al cliente venga o no venga, y lo que se busca
+-- es una excusa para que venga. Con el doble en su semana, el regalo existe
+-- sólo si compra — o sea que cuesta sólo cuando trae una venta. Si además se
+-- quiere regalar puntos el día del cumple, está la regla `cumple_puntos`
+-- (hoy en 0), que se cambia con una línea.
+--
+-- ── Cómo se combinan ──
+-- El nivel multiplica siempre (Oro 1,2x). Encima va el MAYOR entre los
+-- puntos dobles vigentes y la semana del cumple, NO los dos a la vez: un
+-- Platino (1,5x) en su cumple durante un 2x del Hot Sale suma 3x, no 6x. Sin
+-- ese tope, el día que coinciden tres cosas el programa regala un premio
+-- por compra.
+--
+-- ── El costo ──
+-- Un 2x duplica el costo del programa ESOS días: del 2% al 4% de lo que
+-- compran los socios. Está bien para una fecha fuerte; no está bien como
+-- costumbre, y por eso los puntos dobles tienen fecha de fin obligatoria.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 1 · LAS REGLAS DEL CUMPLEAÑOS
+-- ══════════════════════════════════════════════════════════════════════════
+
+insert into club_reglas (clave, valor) values
+  ('cumple_multiplica', '2'),   -- las compras de su semana suman el doble
+  ('cumple_dias',       '7'),   -- el día del cumple y los seis siguientes
+  ('cumple_puntos',     '0')    -- puntos de regalo el día del cumple (apagado)
+on conflict (clave) do nothing;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 2 · EL CUMPLEAÑOS DE ESTE AÑO
+--
+-- Parece una línea y no lo es. El que nació un 29 de febrero, en un año que
+-- no es bisiesto, festeja el 1 de marzo — make_date(año, 2, 29) directamente
+-- explota. Y NO se puede resolver sumando "días desde el 1 de enero": en un
+-- año bisiesto eso corre un día a todos los que cumplen después de febrero.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_cumple_en(p_cumple date, p_anio integer)
+returns date
+language sql
+immutable
+as $ce$
+  select case
+    when p_cumple is null then null
+    when extract(month from p_cumple) = 2 and extract(day from p_cumple) = 29
+         and extract(day from make_date(p_anio, 3, 1) - 1) <> 29
+      then make_date(p_anio, 3, 1)
+    else make_date(p_anio, extract(month from p_cumple)::int, extract(day from p_cumple)::int)
+  end
+$ce$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 3 · LOS PUNTOS DOBLES
+--
+-- Con fecha de fin OBLIGATORIA. Unos puntos dobles que quedan prendidos
+-- porque nadie se acordó de apagarlos son el programa costando el doble para
+-- siempre sin que nadie lo haya decidido.
+--
+-- Las fechas se guardan como instantes, pero se cargan como días de
+-- Argentina: "del 1 al 3" quiere decir desde las 0:00 del 1 hasta las 0:00
+-- del 4, hora de acá. La base está en UTC; sin la conversión, los puntos
+-- dobles arrancarían a las 21 del día anterior.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_multiplicadores (
+  id     bigint generated always as identity primary key,
+  nombre text not null check (length(trim(nombre)) between 1 and 60),
+  factor numeric(3,2) not null check (factor > 1 and factor <= 3),
+  desde  timestamptz not null,
+  hasta  timestamptz not null,
+  creado timestamptz not null default now(),
+  por    text,
+  baja   timestamptz,
+  constraint multi_fechas check (hasta > desde)
+);
+
+create index if not exists club_multi_vivos on club_multiplicadores (desde, hasta)
+  where baja is null;
+
+alter table club_multiplicadores enable row level security;
+revoke all on club_multiplicadores from anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 4 · CUÁNTO SUMA HOY ESTE SOCIO
+--
+-- Una sola función para las tres pantallas: la caja la usa para sumar, la
+-- tarjeta para decir "hoy sumás el doble" y la vista previa del vendedor
+-- para mostrar cuánto va a sumar. Si cada una hiciera su cuenta, el día que
+-- no coinciden el cliente ve un número y la caja carga otro.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_factor(p_cliente bigint)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $cf$
+declare
+  hoy       date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  c         record;
+  cm        numeric;
+  dias      integer;
+  ini       date;
+  pr        record;
+  extra     numeric := 1;
+  motivo    text;
+  hasta     date;
+  de_cumple boolean := false;
+begin
+  select v.multiplica, v.cumple into c from v_club_clientes v where v.id = p_cliente;
+
+  select nullif(valor, '')::numeric into cm   from club_reglas where clave = 'cumple_multiplica';
+  select nullif(valor, '')::integer into dias from club_reglas where clave = 'cumple_dias';
+
+  /* La semana del cumple. Se mira el de este año Y el del año pasado: el que
+     cumple el 29 de diciembre sigue en su semana el 2 de enero, y mirando
+     sólo este año se la cortaríamos en Año Nuevo. */
+  if c.cumple is not null and coalesce(cm, 1) > 1 and coalesce(dias, 0) > 0 then
+    ini := club_cumple_en(c.cumple, extract(year from hoy)::int);
+    if not (hoy between ini and ini + dias - 1) then
+      ini := club_cumple_en(c.cumple, extract(year from hoy)::int - 1);
+    end if;
+    if hoy between ini and ini + dias - 1 then
+      extra := cm; motivo := 'Tu semana de cumple'; hasta := ini + dias - 1; de_cumple := true;
+    end if;
+  end if;
+
+  /* Los puntos dobles vigentes. Si hubiera dos pisados, el más alto. */
+  select m.nombre, m.factor,
+         (m.hasta at time zone 'America/Argentina/Buenos_Aires')::date - 1 as ultimo
+    into pr
+    from club_multiplicadores m
+   where m.baja is null and now() >= m.desde and now() < m.hasta
+   order by m.factor desc, m.hasta desc
+   limit 1;
+
+  /* El mayor de los dos, no el producto. Ver el encabezado. */
+  if pr.factor is not null and pr.factor > extra then
+    extra := pr.factor; motivo := pr.nombre; hasta := pr.ultimo; de_cumple := false;
+  end if;
+
+  return jsonb_build_object(
+    'total',  round(coalesce(c.multiplica, 1) * extra, 2),
+    'nivel',  coalesce(c.multiplica, 1),
+    'extra',  extra,
+    'motivo', motivo,
+    'hasta',  hasta,
+    'cumple', de_cumple,
+    /* Hoy es EL día, no la semana: para el "¡Feliz cumple!" de la tarjeta. */
+    'es_cumple', c.cumple is not null
+                 and club_cumple_en(c.cumple, extract(year from hoy)::int) = hoy);
+end;
+$cf$;
+
+/* Por dentro nada más. Con un id cualquiera diría si hoy es la semana de
+   cumpleaños de alguien, y eso no tiene por qué saberlo nadie de afuera.
+   El "from public" es el que importa: una función nace abierta a todos. */
+revoke all on function club_factor(bigint) from public, anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 5 · SUMAR UNA COMPRA, CON EL FACTOR DEL DÍA
+--
+-- Igual que en el 13, salvo la línea de los puntos: ahora multiplica por
+-- club_factor() en vez de por el nivel solo, y devuelve el motivo para que
+-- el vendedor pueda decir "hoy te sumó el doble por el Hot Sale".
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_sumar_compra(
+  p_pin       text,
+  p_codigo    text,
+  p_local     text,
+  p_vendedor  text,
+  p_ticket    text default null,
+  p_importe   numeric default null,
+  p_confirmar boolean default false
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cs$
+declare
+  c      v_club_clientes%rowtype;
+  vieja  club_movimientos%rowtype;
+  porpto numeric;
+  tope   numeric;
+  f      jsonb;
+  gana   integer;
+  nid    bigint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  select * into c from v_club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null;
+  if not found then
+    return jsonb_build_object('sumado', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+  if length(trim(coalesce(p_local, ''))) = 0 then
+    raise exception 'Falta el local.';
+  end if;
+
+  if p_importe is null or p_importe <= 0 then
+    return jsonb_build_object('sumado', false,
+      'porque', 'Falta el importe de la compra. Los puntos salen de ahí.');
+  end if;
+
+  if (select coalesce(valor, 'si') from club_reglas where clave = 'exige_ticket') = 'si'
+     and length(trim(coalesce(p_ticket, ''))) = 0 then
+    return jsonb_build_object('sumado', false,
+      'porque', 'Falta el número de ticket de BlueSoft.');
+  end if;
+
+  /* El tope. No bloquea: pregunta. */
+  select nullif(valor, '')::numeric into tope from club_reglas where clave = 'tope_importe';
+  if tope is not null and p_importe > tope and not coalesce(p_confirmar, false) then
+    return jsonb_build_object('sumado', false, 'revisar', true,
+      'porque', 'Son ' || replace(to_char(p_importe, 'FM999,999,999'), ',', '.') ||
+                ' pesos. Si está bien, confirmalo.');
+  end if;
+
+  /* Mismo ticket y mismo local, sin anular: casi siempre es el mismo vendedor
+     apretando dos veces. `p_confirmar` es uno solo para las dos preguntas
+     —el monto grande y el ticket repetido—; ver el 13. */
+  if length(trim(coalesce(p_ticket, ''))) > 0 and not coalesce(p_confirmar, false) then
+    select * into vieja from club_movimientos
+     where anulado is null
+       and upper(trim(ticket)) = upper(trim(p_ticket))
+       and upper(trim(coalesce(local, ''))) = upper(trim(p_local))
+     limit 1;
+    if found then
+      return jsonb_build_object('sumado', false, 'duplicado', true,
+        'porque', 'Ese ticket ya está cargado en ' || trim(p_local) || '.',
+        'anterior', jsonb_build_object('cuando', vieja.creado, 'vendedor', vieja.vendedor,
+                                       'importe', vieja.importe, 'puntos', vieja.puntos));
+    end if;
+  end if;
+
+  select nullif(valor, '')::numeric into porpto from club_reglas where clave = 'pesos_por_punto';
+  porpto := coalesce(porpto, 100);
+
+  f := club_factor(c.id);
+  /* Se redondea una sola vez, al final. */
+  gana := floor((p_importe / porpto) * (f->>'total')::numeric);
+
+  insert into club_movimientos (cliente, tipo, puntos, local, vendedor, ticket, importe, obs)
+  values (c.id, 'compra', gana, trim(p_local),
+          nullif(trim(coalesce(p_vendedor, '')), ''),
+          nullif(trim(coalesce(p_ticket, '')), ''),
+          p_importe,
+          /* Por qué sumó lo que sumó, anotado en el movimiento. Tres meses
+             después, "¿por qué esta compra me dio el doble?" tiene respuesta
+             aunque los puntos dobles ya no existan. */
+          case when (f->>'extra')::numeric > 1 then
+            (f->>'motivo') || ' ' || replace(trim_scale((f->>'extra')::numeric)::text, '.', ',') || 'x'
+          end)
+  returning id into nid;
+
+  return jsonb_build_object(
+    'sumado', true, 'movimiento', nid,
+    'nombre', c.nombre,
+    'gana', gana,
+    'multiplica', (f->>'total')::numeric,
+    'nivel', c.nivel,
+    'motivo', f->>'motivo',
+    'extra', (f->>'extra')::numeric,
+    'puntos', c.puntos + gana);
+end;
+$cs$;
+
+grant execute on function club_sumar_compra(text, text, text, text, text, numeric, boolean)
+  to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 6 · LA TARJETA
+--
+-- Lo del 14 (el límite anual: `agotado`, y `alcanzado` = se lo pueden dar
+-- HOY) más `hoy`: cuánto suma este socio hoy y por qué.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_tarjeta(p_codigo text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $ct$
+  with c as (
+    select * from v_club_clientes
+     where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and baja is null
+  )
+  select case when not exists (select 1 from c) then jsonb_build_object('hay', false)
+    else (
+      select jsonb_build_object(
+        'hay', true,
+        'codigo', c.codigo,
+        'nombre', c.nombre,
+        'puntos', c.puntos,
+        'xp', c.xp,
+        'compras', c.compras,
+        'confirmado', c.confirmado,
+        'desde', c.creado,
+        'ultima_compra', c.ultima_compra,
+
+        'hoy', club_factor(c.id),
+
+        'nivel', jsonb_build_object(
+          'nombre', c.nivel,
+          'multiplica', c.multiplica,
+          'sigue', (select nv.nombre from club_niveles nv
+                     where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'falta_xp', (select nv.desde_xp - c.xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'desde_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp <= c.xp order by nv.desde_xp desc limit 1),
+          'hasta_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1)),
+
+        /* El catálogo, SIN el costo. `alcanzado` = se lo pueden dar hoy:
+           puntos suficientes y sin haber llegado al límite del año. Es la
+           misma cuenta que club_canjear_premio. */
+        'premios', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle,
+                   'puntos', p.puntos, 'valor', p.valor,
+                   'agotado', u.agotado,
+                   'alcanzado', c.puntos >= p.puntos and not u.agotado,
+                   'falta', greatest(p.puntos - c.puntos, 0))
+                 order by p.orden, p.puntos)
+            from club_premios p
+            cross join lateral (
+              select (p.limite_anual is not null and count(*) >= p.limite_anual) as agotado
+                from club_movimientos m
+               where m.cliente = c.id and m.tipo = 'canje' and m.premio = p.id
+                 and m.anulado is null and m.creado > now() - interval '12 months'
+            ) u
+           where p.activo), '[]'::jsonb),
+
+        'ultimas', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'cuando', m.creado, 'local', m.local, 'puntos', m.puntos,
+                   'tipo', m.tipo, 'concepto', m.concepto, 'obs', m.obs)
+                 order by m.creado desc)
+            from (select creado, local, puntos, tipo, concepto, obs
+                    from club_movimientos
+                   where cliente = c.id and anulado is null
+                   order by creado desc limit 8) m), '[]'::jsonb)
+      ) from c
+    ) end
+$ct$;
+
+grant execute on function club_tarjeta(text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 7 · CARGAR LOS PUNTOS DOBLES DESDE CONFIGURACIÓN
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_multi_listar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ml$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', m.id, 'nombre', m.nombre, 'factor', m.factor,
+             'desde', (m.desde at time zone 'America/Argentina/Buenos_Aires')::date,
+             'hasta', (m.hasta at time zone 'America/Argentina/Buenos_Aires')::date - 1,
+             'vigente', now() >= m.desde and now() < m.hasta,
+             'futura',  now() < m.desde)
+           order by m.desde desc)
+      from (select * from club_multiplicadores
+             where baja is null and hasta > now() - interval '60 days'
+             order by desde desc limit 30) m
+  ), '[]'::jsonb);
+end;
+$ml$;
+
+grant execute on function club_multi_listar(text) to anon, authenticated;
+
+
+create or replace function club_multi_guardar(
+  p_pin text, p_id bigint, p_nombre text, p_factor numeric,
+  p_desde text, p_hasta text, p_por text default null, p_avisar boolean default false)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $mg$
+declare
+  d1  date;
+  d2  date;
+  ini timestamptz;
+  fin timestamptz;
+  nom text := nullif(trim(coalesce(p_nombre, '')), '');
+  nid bigint;
+  cuantos integer := 0;
+  /* "2" y "1,5": sin los ceros que sobran. to_char con FM deja "2."
+     colgando, numeric a texto deja "2.00", y sacar ceros de la derecha a
+     mano convierte un 10 en un 1. trim_scale es exactamente esto. */
+  fx  text := replace(trim_scale(p_factor)::text, '.', ',');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  if nom is null then
+    return jsonb_build_object('ok', false, 'porque', 'Ponele un nombre: es lo que ven los socios.');
+  end if;
+  if length(nom) > 60 then
+    return jsonb_build_object('ok', false, 'porque', 'El nombre es muy largo. Hasta 60 letras.');
+  end if;
+  if p_factor is null or p_factor <= 1 or p_factor > 3 then
+    return jsonb_build_object('ok', false, 'porque', 'El multiplicador va entre 1,5 y 3.');
+  end if;
+
+  begin
+    d1 := p_desde::date;
+    d2 := p_hasta::date;
+  exception when others then
+    return jsonb_build_object('ok', false, 'porque', 'Revisá las fechas.');
+  end;
+  if d1 is null or d2 is null then
+    return jsonb_build_object('ok', false, 'porque', 'Faltan las fechas. La de fin es obligatoria.');
+  end if;
+  if d2 < d1 then
+    return jsonb_build_object('ok', false, 'porque', 'Termina antes de empezar.');
+  end if;
+  if d2 < (now() at time zone 'America/Argentina/Buenos_Aires')::date then
+    return jsonb_build_object('ok', false, 'porque', 'Esas fechas ya pasaron.');
+  end if;
+  /* Un tope a lo largo, por la misma razón que la fecha de fin: unos puntos
+     dobles de tres meses ya no son una fecha especial, son otro programa. */
+  if d2 - d1 > 31 then
+    return jsonb_build_object('ok', false, 'porque', 'Hasta 31 días. Más que eso deja de ser una fecha especial.');
+  end if;
+
+  /* Días de Argentina → instantes. Ver la sección 3. */
+  ini := d1::timestamp at time zone 'America/Argentina/Buenos_Aires';
+  fin := (d2 + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires';
+
+  if p_id is null then
+    insert into club_multiplicadores (nombre, factor, desde, hasta, por)
+    values (nom, p_factor, ini, fin, nullif(trim(coalesce(p_por, '')), ''))
+    returning id into nid;
+  else
+    update club_multiplicadores
+       set nombre = nom, factor = p_factor, desde = ini, hasta = fin
+     where id = p_id and baja is null
+    returning id into nid;
+    if nid is null then
+      return jsonb_build_object('ok', false, 'porque', 'No lo encontré. Puede que lo hayan quitado.');
+    end if;
+  end if;
+
+  /* El aviso al celular, si se pidió. Sale el día que arranca y a las 10 de
+     la mañana, no a la medianoche: una notificación a las 0:00 despierta a
+     alguien, y eso no se lo agradece nadie. Si ya arrancó, sale ahora. */
+  if coalesce(p_avisar, false) then
+    select count(*) into cuantos from club_suscripciones where muerto is null;
+    if cuantos > 0 then
+      insert into club_avisos (titulo, cuerpo, enlace, por, sale)
+      values (
+        nom || ': puntos x' || fx,
+        case when d1 = d2
+          then 'Solo por el ' || to_char(d1, 'DD/MM') || ', tus compras en VDH suman ' ||
+               case when p_factor = 2 then 'el doble' when p_factor = 3 then 'el triple'
+                    else fx || ' veces' end ||
+               ' de puntos.'
+          else 'Del ' || to_char(d1, 'DD/MM') || ' al ' || to_char(d2, 'DD/MM') ||
+               ', tus compras en VDH suman ' ||
+               case when p_factor = 2 then 'el doble' when p_factor = 3 then 'el triple'
+                    else fx || ' veces' end ||
+               ' de puntos.'
+        end,
+        'tarjeta.html',
+        'Puntos dobles',
+        greatest(now(), ini + interval '10 hours'));
+    end if;
+  end if;
+
+  return jsonb_build_object('ok', true, 'id', nid, 'avisados', cuantos);
+end;
+$mg$;
+
+grant execute on function club_multi_guardar(text, bigint, text, numeric, text, text, text, boolean)
+  to anon, authenticated;
+
+
+create or replace function club_multi_baja(p_pin text, p_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $mb$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  /* No se borra: las compras que ya sumaron el doble dicen en su `obs` por
+     qué. La fila queda, dada de baja. */
+  update club_multiplicadores set baja = now() where id = p_id and baja is null;
+  return jsonb_build_object('ok', found);
+end;
+$mb$;
+
+grant execute on function club_multi_baja(text, bigint) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- LISTO
+-- ══════════════════════════════════════════════════════════════════════════
+
+select clave, valor from club_reglas
+ where clave like 'cumple_%' or clave in ('pesos_por_punto', 'bienvenida_puntos', 'vence_meses')
+ order by clave;

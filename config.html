@@ -230,6 +230,19 @@
   }
   .promo-fila-txt span { font-size: 12.5px; color: var(--txt-3); }
 
+  /* ── El Club en números ──
+     Pocas cifras y grandes. Es para mirar una vez por mes y saber si el
+     programa se está pagando solo, no para analizar. */
+  .costo-grilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .costo-dato {
+    padding: 12px 14px; border-radius: var(--r-sm);
+    border: 1px solid var(--line); background: var(--surface-2);
+  }
+  .costo-dato b { display: block; font: 700 21px/1.1 var(--display); font-variant-numeric: tabular-nums; }
+  .costo-dato span { display: block; font-size: 12.5px; color: var(--txt-3); margin-top: 3px; }
+  .costo-dato.clave { grid-column: 1 / -1; border-color: var(--acc-line); }
+  .costo-dato.clave b { font-size: 28px; color: var(--acc-txt); }
+
 </style>
 </head>
 <body class="hay-rail">
@@ -362,6 +375,23 @@
     <div id="promoCuerpo"></div>
   </div>
 
+  <!-- ── Los puntos dobles ──
+       Unos días en que las compras suman más. Tienen fecha de fin
+       obligatoria: unos puntos dobles que nadie se acuerda de apagar son el
+       programa costando el doble para siempre. -->
+  <div class="bloque" id="cajaMulti">
+    <h2 class="bloque-tit">Puntos dobles</h2>
+    <p class="bloque-sub">Unos días en que las compras de los socios suman más puntos. Esos días el programa cuesta el doble: guardalos para las fechas fuertes.</p>
+    <div id="multiCuerpo"></div>
+  </div>
+
+  <!-- ── El Club en números ── -->
+  <div class="bloque" id="cajaCosto">
+    <h2 class="bloque-tit">El Club en números</h2>
+    <p class="bloque-sub">Los últimos 12 meses. El número de arriba es el que importa: cuánto de lo que compran los socios se va en premios.</p>
+    <div id="costoCuerpo"></div>
+  </div>
+
   <!-- ── El mensaje suelto ──
        No todo lo que se le dice a un socio es una promoción. Para lo que no
        tiene fechas ni condiciones —"cerramos el lunes", "abrimos en
@@ -470,9 +500,11 @@
     if (!v) { avisar('err', 'Escribí el PIN.'); return; }
     guardarPinPromo(v);
     pintarPromo();
-    /* Es el mismo PIN y la misma sesión: poniéndolo una vez se abren las
-       dos secciones que lo piden. */
+    /* Es el mismo PIN y la misma sesión: poniéndolo una vez se abren todas
+       las secciones del Club que lo piden. */
     pintarAviso();
+    pintarMulti();
+    pintarCosto();
   }
 
 
@@ -790,6 +822,187 @@
       .then(function () { b.disabled = false; });
   }
 
+  /* ═══ Puntos dobles ═══════════════════════════════════════════════════ */
+
+  function pintarMulti() {
+    var caja = $('multiCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de las promociones ' +
+                       'y esto se abre solo.</p>';
+      return;
+    }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.multiListar(pinPromo())
+      .then(function (lista) { listaMulti(lista || []); })
+      .catch(function (err) {
+        caja.innerHTML = '<p class="bloque-sub">' +
+          esc((err && err.delServidor && err.message) || 'No se pudo abrir.') + '</p>';
+      });
+  }
+
+  function textoFactor(f) {
+    f = Number(f);
+    return f === 2 ? 'el doble' : f === 3 ? 'el triple' : String(f).replace('.', ',') + ' veces';
+  }
+
+  function listaMulti(lista) {
+    var filas = lista.map(function (m) {
+      var estado = m.vigente ? '<span class="pill pill-ok">Ahora</span>'
+                 : m.futura  ? '<span class="pill pill-warn">Desde el ' + esc(fechaCorta(m.desde)) + '</span>'
+                             : '<span class="pill pill-neutra">Terminó</span>';
+      var dias = m.desde === m.hasta ? 'el ' + fechaCorta(m.desde)
+               : 'del ' + fechaCorta(m.desde) + ' al ' + fechaCorta(m.hasta);
+      return '<div class="promo-fila">' +
+        '<div class="promo-fila-txt"><b>' + esc(m.nombre) + '</b>' +
+          '<span>Suman ' + textoFactor(m.factor) + ', ' + esc(dias) + '</span></div>' +
+        estado +
+        (m.vigente || m.futura
+          ? '<button type="button" class="btn btn-sec btn-chico" data-multibaja="' + m.id + '">Quitar</button>'
+          : '') +
+      '</div>';
+    }).join('');
+
+    $('multiCuerpo').innerHTML =
+      (filas || '<p class="bloque-sub">No hay ninguno cargado.</p>') +
+      '<button type="button" class="btn btn-pri btn-chico" id="multiNuevo" ' +
+              'style="margin-top:14px">Cargar puntos dobles</button>';
+
+    $('multiNuevo').onclick = editorMulti;
+    Array.prototype.forEach.call($('multiCuerpo').querySelectorAll('[data-multibaja]'), function (b) {
+      b.onclick = function () {
+        if (!confirm('¿Quitar estos puntos dobles? Desde ahora las compras suman lo normal.')) return;
+        base.club.multiBaja(pinPromo(), Number(b.dataset.multibaja))
+          .then(function () { avisar('ok', 'Quitados.'); pintarMulti(); })
+          .catch(function (err) {
+            avisar('err', (err && err.delServidor && err.message) || 'No se pudo quitar.');
+          });
+      };
+    });
+  }
+
+  function editorMulti() {
+    var hoy = new Date();
+    var iso = hoy.getFullYear() + '-' + ('0' + (hoy.getMonth() + 1)).slice(-2) + '-' +
+              ('0' + hoy.getDate()).slice(-2);
+    $('multiCuerpo').innerHTML =
+      '<div class="campos">' +
+        '<div class="campo ancho">' +
+          '<label for="multiNombre">Nombre <span class="lbl-opc">— lo ven los socios</span></label>' +
+          '<input type="text" id="multiNombre" maxlength="60" placeholder="Hot Sale">' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label for="multiFactor">Cuánto suman</label>' +
+          '<select id="multiFactor">' +
+            '<option value="1.5">Una vez y media (1,5x)</option>' +
+            '<option value="2" selected>El doble (2x)</option>' +
+            '<option value="3">El triple (3x)</option>' +
+          '</select>' +
+        '</div>' +
+        '<div class="campo">' +
+          '<label for="multiDesde">Desde</label>' +
+          '<input type="date" id="multiDesde" value="' + iso + '" min="' + iso + '">' +
+        '</div>' +
+        '<div class="campo">' +
+          '<label for="multiHasta">Hasta qué día</label>' +
+          '<input type="date" id="multiHasta" min="' + iso + '">' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label class="casillero">' +
+            '<input type="checkbox" id="multiAvisar" checked>' +
+            '<span>Avisar a los socios <span class="lbl-opc">— el día que arranca, a las 10</span></span>' +
+          '</label>' +
+        '</div>' +
+        '<div class="campo">' +
+          '<button type="button" class="btn btn-pri" id="multiGuardar">Guardar</button>' +
+        '</div>' +
+        '<div class="campo">' +
+          '<button type="button" class="btn btn-sec" id="multiVolver">Volver</button>' +
+        '</div>' +
+      '</div>' +
+      /* Lo que cuesta, dicho antes de apretar Guardar y no después. */
+      '<p class="bloque-sub" id="multiCuesta" style="margin-top:12px"></p>';
+
+    var cuesta = function () {
+      var f = Number($('multiFactor').value);
+      $('multiCuesta').textContent = 'Esos días cada compra de un socio suma ' + textoFactor(f) +
+        ' de puntos, y el programa cuesta ' + textoFactor(f) + ' que siempre. Un socio en ' +
+        'su semana de cumple no suma las dos cosas: suma la más alta.';
+    };
+    $('multiFactor').onchange = cuesta;
+    cuesta();
+
+    $('multiVolver').onclick = pintarMulti;
+    $('multiGuardar').onclick = function () {
+      var b = $('multiGuardar');
+      b.disabled = true;
+      base.club.multiGuardar(pinPromo(), null, $('multiNombre').value.trim(),
+          Number($('multiFactor').value), $('multiDesde').value, $('multiHasta').value,
+          leer('nc_vendedor') || 'Configuración', $('multiAvisar').checked)
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          if (r.avisados) {
+            /* Si arrancan hoy, el aviso ya está listo para salir y esto lo
+               empuja; si arrancan otro día, queda en la cola y lo manda el
+               Action ese día. */
+            avisar('ok', 'Listo. Aviso para ' + r.avisados + ' socios en la cola.');
+            base.club.avisosMandarYa();
+          } else {
+            avisar('ok', 'Listo.');
+          }
+          pintarMulti();
+        })
+        .catch(function (err) {
+          avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
+        })
+        .then(function () { b.disabled = false; });
+    };
+  }
+
+  /* ═══ El Club en números ══════════════════════════════════════════════ */
+
+  function pintarCosto() {
+    var caja = $('costoCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de las promociones ' +
+                       'y esto se abre solo.</p>';
+      return;
+    }
+    caja.innerHTML = '<p class="bloque-sub">Sumando…</p>';
+    base.club.costo(pinPromo(), 12)
+      .then(function (r) {
+        r = r || {};
+        var plata = function (n) {
+          return '$' + Math.round(Number(n) || 0).toLocaleString('es-AR');
+        };
+        var n = function (x) { return Math.round(Number(x) || 0).toLocaleString('es-AR'); };
+        var fact = Number(r.facturado) || 0;
+        var cost = Number(r.costo_premios) || 0;
+        /* Con poca venta el porcentaje salta de un lado a otro y no dice
+           nada: se muestra recién cuando hay algo que dividir. */
+        var pct = fact >= 100000 ? (cost * 100 / fact).toFixed(1).replace('.', ',') + '%' : '—';
+
+        caja.innerHTML = '<div class="costo-grilla">' +
+          '<div class="costo-dato clave"><b>' + pct + '</b>' +
+            '<span>de lo que compraron los socios se fue en premios (' + plata(cost) +
+            ' de costo VDH)</span></div>' +
+          '<div class="costo-dato"><b>' + n(r.socios) + '</b><span>socios con al menos una compra</span></div>' +
+          '<div class="costo-dato"><b>' + plata(fact) + '</b><span>compraron los socios</span></div>' +
+          '<div class="costo-dato"><b>' + n(r.emitidos) + '</b><span>puntos dados</span></div>' +
+          '<div class="costo-dato"><b>' + n(r.canjeados) + '</b><span>puntos canjeados</span></div>' +
+          /* Los circulantes no son una deuda contable —nadie firmó nada—
+             pero sí son premios que pueden venir a buscar mañana. */
+          '<div class="costo-dato" style="grid-column:1/-1"><b>' + n(r.circulantes) + '</b>' +
+            '<span>puntos dando vueltas: premios que los socios pueden venir a buscar</span></div>' +
+        '</div>';
+      })
+      .catch(function (err) {
+        caja.innerHTML = '<p class="bloque-sub">' +
+          esc((err && err.delServidor && err.message) || 'No se pudo abrir.') + '</p>';
+      });
+  }
+
   function bajaPromo(id) {
     base.club.promoBaja(pinPromo(), Number(id))
       .then(function (r) {
@@ -1022,6 +1235,8 @@
        los objetivos, que no lo piden. */
     pintarPromo();
     pintarAviso();
+    pintarMulti();
+    pintarCosto();
     iniciarPWA();
   })();
 </script>

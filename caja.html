@@ -96,6 +96,10 @@
 
   /* Lo que va a sumar, mientras se tipea el importe. Es el freno contra el
      cero de más: "suma 8.000 puntos" en una remera se ve antes de guardar. */
+  /* Lo que el vendedor le puede decir al cliente apenas abre su ficha: "hoy
+     sumás el doble" o "¡feliz cumple!". Es la frase que lo hace volver. */
+  .ficha-hoy { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+
   .vista-puntos { font-size: 13.5px; color: var(--txt-3); margin-top: 6px; min-height: 1.4em; }
   .vista-puntos b { color: var(--acc-txt); }
 
@@ -422,6 +426,7 @@
         '<div class="ficha-top">' +
           '<div><div class="ficha-nom">' + esc(t.nombre) + '</div>' +
           '<div class="socio-sub">' + codigoBonito(t.codigo) + '</div>' +
+          fichaHoy(t) +
           '<div class="ficha-acciones">' + mandar +
             '<button type="button" class="btn btn-sec btn-chico" id="btnEditar">' +
             '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
@@ -450,7 +455,7 @@
 
     $('btnSumar').onclick = function () { sumar(false); };
     $('btnEditar').onclick = editarSocio;
-    $('importe').oninput = function () { vistaPuntos(nv); };
+    $('importe').oninput = function () { vistaPuntos(t); };
     Array.prototype.forEach.call($('resultado').querySelectorAll('[data-premio]'), function (b) {
       b.onclick = function () { entregar(+b.dataset.premio, b.dataset.nombre, +b.dataset.puntos); };
     });
@@ -568,8 +573,7 @@
         }
         if (!r || !r.sumado) { avisar('err', (r && r.porque) || 'No se pudo sumar.'); return; }
         avisar('ok', '¡Listo! Sumó ' + miles(r.gana) + ' puntos' +
-                     (Number(r.multiplica) > 1 ? ' (' + esc(r.nivel) + ', ' +
-                       String(r.multiplica).replace('.', ',') + 'x)' : '') +
+                     porQue(r.nivel, r.extra > 1 ? r.motivo : null, r.multiplica) +
                      '. ' + esc(r.nombre) + ' tiene ' + miles(r.puntos) + '.');
         elegir(socio.codigo, socio.telefono, socio.mail);
       })
@@ -639,14 +643,41 @@
      multiplicador del nivel: es la misma cuenta que hace la base
      (club_reglas.pesos_por_punto), repetida acá sólo para mostrarla. Lo que
      vale es lo que conteste la base al sumar. */
-  function vistaPuntos(nv) {
+  function vistaPuntos(t) {
     var caja = $('vistaPuntos');
     if (!caja) return;
     var imp = plata('importe');
     if (!imp || imp <= 0) { caja.innerHTML = ''; return; }
-    var m = Number(nv && nv.multiplica) || 1;
+    /* El total del día lo manda la base (nivel × puntos dobles o semana del
+       cumple), la misma cuenta que va a usar al sumar. */
+    var hoy = t.hoy || {};
+    var nv = t.nivel || {};
+    var m = Number(hoy.total) || Number(nv.multiplica) || 1;
     caja.innerHTML = 'Suma <b>' + miles(Math.floor(imp / 100 * m)) + '</b> puntos' +
-      (m > 1 ? ' (' + esc(nv.nombre) + ', ' + String(m).replace('.', ',') + 'x)' : '');
+      porQue(nv.nombre, Number(hoy.extra) > 1 ? hoy.motivo : null, m);
+  }
+
+  /* " (Oro + Hot Sale, 2,4x)", o nada si suma lo normal. */
+  function porQue(nivel, motivo, total) {
+    var t = Number(total) || 1;
+    if (t <= 1) return '';
+    var partes = [];
+    if (nivel && nivel !== 'Plata') partes.push(esc(nivel));
+    if (motivo) partes.push(esc(motivo));
+    return ' (' + partes.join(' + ') + ', ' + String(t).replace('.', ',') + 'x)';
+  }
+
+  function fichaHoy(t) {
+    var hoy = t.hoy || {};
+    var extra = Number(hoy.extra) || 1;
+    var p = [];
+    if (hoy.es_cumple) p.push('<span class="pill pill-ok">Hoy cumple años</span>');
+    if (extra > 1) {
+      p.push('<span class="pill pill-warn">Hoy suma ' +
+             (extra === 2 ? 'el doble' : extra === 3 ? 'el triple' : String(extra).replace('.', ',') + 'x') +
+             ' · ' + esc(hoy.motivo || '') + '</span>');
+    }
+    return p.length ? '<div class="ficha-hoy">' + p.join('') + '</div>' : '';
   }
 
   function miles(n) { return Math.round(Number(n) || 0).toLocaleString('es-AR'); }

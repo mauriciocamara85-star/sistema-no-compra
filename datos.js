@@ -694,6 +694,36 @@ var base = {
       });
     },
 
+    /** Los puntos dobles: los vigentes, los que vienen y los de hace poco. */
+    multiListar: function (pin) {
+      return funcion('club_multi_listar', { p_pin: pin });
+    },
+
+    /**
+     * Cargar unos puntos dobles. Las fechas son días de Argentina
+     * ("2026-10-01"), la de fin es obligatoria y hasta 31 días. Con `avisar`
+     * deja un aviso en la cola que sale el día que arrancan, a las 10.
+     */
+    multiGuardar: function (pin, id, nombre, factor, desde, hasta, por, avisar) {
+      return funcion('club_multi_guardar', {
+        p_pin: pin, p_id: id || null, p_nombre: nombre, p_factor: factor,
+        p_desde: desde, p_hasta: hasta, p_por: por || null, p_avisar: !!avisar
+      });
+    },
+
+    multiBaja: function (pin, id) {
+      return funcion('club_multi_baja', { p_pin: pin, p_id: id });
+    },
+
+    /**
+     * Lo que cuesta el programa: socios, lo que facturaron, puntos emitidos,
+     * canjeados y circulantes, y el costo de VDH de lo entregado. Los
+     * últimos `meses` (12 si no se dice).
+     */
+    costo: function (pin, meses) {
+      return funcion('club_costo', { p_pin: pin, p_meses: meses || 12 });
+    },
+
     /** Entregar un premio del catálogo. DESCUENTA sus puntos del saldo. */
     canjear: function (pin, codigo, premio, local, vendedor) {
       return funcion('club_canjear_premio', {
