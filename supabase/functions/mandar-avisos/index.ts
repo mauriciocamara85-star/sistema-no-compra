@@ -49,6 +49,7 @@ interface Aviso {
   titulo: string;
   cuerpo: string;
   enlace: string | null;
+  imagen: string | null;
 }
 
 interface Destino {
@@ -109,7 +110,7 @@ Deno.serve(async (req) => {
      una promoción futura deja su aviso esperando. */
   const ahora = new Date().toISOString();
   const rAvisos = await base(
-    'club_avisos?select=id,titulo,cuerpo,enlace&enviado=is.null&sale=lte.' + ahora + '&order=sale.asc'
+    'club_avisos?select=id,titulo,cuerpo,enlace,imagen&enviado=is.null&sale=lte.' + ahora + '&order=sale.asc'
   );
   if (!rAvisos.ok) {
     return responder({ ok: false, porque: 'No se pudo leer la cola.' }, 500);
@@ -136,7 +137,8 @@ Deno.serve(async (req) => {
         try {
           await webpush.sendNotification(
             { endpoint: d.endpoint, keys: { p256dh: d.p256dh, auth: d.auth } },
-            JSON.stringify({ titulo: aviso.titulo, cuerpo: aviso.cuerpo, enlace: aviso.enlace })
+            JSON.stringify({ titulo: aviso.titulo, cuerpo: aviso.cuerpo,
+                             enlace: aviso.enlace, imagen: aviso.imagen })
           );
           llegaron++;
         } catch (e) {

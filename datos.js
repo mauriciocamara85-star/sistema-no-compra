@@ -755,10 +755,10 @@ var base = {
         .catch(function () { return null; });
     },
 
-    avisoCrear: function (pin, titulo, cuerpo, enlace, por) {
+    avisoCrear: function (pin, titulo, cuerpo, enlace, por, imagen) {
       return funcion('club_aviso_crear', {
         p_pin: pin, p_titulo: titulo, p_cuerpo: cuerpo,
-        p_enlace: enlace || null, p_por: por || null
+        p_enlace: enlace || null, p_por: por || null, p_imagen: imagen || null
       });
     },
 
@@ -769,11 +769,12 @@ var base = {
        texto de la promo. Va al final porque se agregó después, y con
        default en la base: una pantalla vieja que quedó cacheada en un
        celular sigue guardando bien y simplemente no avisa. */
-    promoGuardar: function (pin, id, texto, imagen, desde, hasta, condiciones, avisar) {
+    promoGuardar: function (pin, id, texto, imagen, desde, hasta, condiciones, avisar, enlace) {
       return funcion('club_promo_guardar', {
         p_pin: pin, p_id: id || null, p_texto: texto, p_imagen: imagen || null,
         p_desde: desde || null, p_hasta: hasta || null,
-        p_condiciones: condiciones || null, p_avisar: !!avisar
+        p_condiciones: condiciones || null, p_avisar: !!avisar,
+        p_enlace: enlace || null
       });
     },
     promoBaja: function (pin, id) {

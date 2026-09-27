@@ -362,6 +362,17 @@
     <div id="promoCuerpo"></div>
   </div>
 
+  <!-- ── El mensaje suelto ──
+       No todo lo que se le dice a un socio es una promoción. Para lo que no
+       tiene fechas ni condiciones —"cerramos el lunes", "abrimos en
+       Pacheco"— hacía falta inventar una promo falsa, que encima le queda
+       publicada al cliente hasta que vence. -->
+  <div class="bloque" id="cajaAviso">
+    <h2 class="bloque-tit">Mandar un aviso</h2>
+    <p class="bloque-sub">Para lo que no es una promoción: un feriado, un local nuevo, algo que contar. Les llega al celular y queda en su campanita.</p>
+    <div id="avisoCuerpo"></div>
+  </div>
+
   <div class="bloque">
     <h2 class="bloque-tit">Los avisos por mail</h2>
     <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
@@ -459,6 +470,9 @@
     if (!v) { avisar('err', 'Escribí el PIN.'); return; }
     guardarPinPromo(v);
     pintarPromo();
+    /* Es el mismo PIN y la misma sesión: poniéndolo una vez se abren las
+       dos secciones que lo piden. */
+    pintarAviso();
   }
 
 
@@ -532,6 +546,11 @@
           '<input type="url" id="promoImagen" inputmode="url" autocapitalize="off" ' +
             'placeholder="https://…" value="' + esc((p && p.imagen) || '') + '">' +
           '<div id="promoImgPrev"></div>' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label for="promoEnlace">A dónde lleva <span class="lbl-opc">— opcional</span></label>' +
+          '<input type="url" id="promoEnlace" inputmode="url" autocapitalize="off" ' +
+            'placeholder="https://vdh.com.ar/…" value="' + esc((p && p.enlace) || '') + '">' +
         '</div>' +
         '<div class="campo ancho">' +
           '<label for="promoCond">Condiciones <span class="lbl-opc">— opcional</span></label>' +
@@ -619,13 +638,134 @@
     img.src = url;
   }
 
+  /* ═══ El mensaje suelto ═════════════════════════════════════════════════
+     Mismo PIN que las promociones. Escribirlo NO lo manda: lo deja en la
+     cola y después se le pide a la función de Supabase que salga ya.
+     ═══════════════════════════════════════════════════════════════════════ */
+
+  /* Los mismos topes que la base. Acá están para avisar mientras se escribe,
+     no para validar: quien valida es la base. */
+  var TOPE_TIT = 60, TOPE_CUERPO = 160;
+
+  function pintarAviso() {
+    var caja = $('avisoCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de arriba ' +
+                       'y esto se abre solo.</p>';
+      return;
+    }
+
+    caja.innerHTML = '<p class="bloque-sub">Viendo a cuántos llega…</p>';
+
+    base.club.avisosCuantos(pinPromo())
+      .then(function (r) { formAviso(r || {}); })
+      .catch(function (err) {
+        guardarPinPromo('');
+        pintarPromo();
+        pintarAviso();
+        if (err && err.delServidor) { avisar('err', err.message); }
+      });
+  }
+
+  function formAviso(r) {
+    var vivos = r.vivos || 0;
+
+    /* Sin nadie suscripto no se muestra el formulario. No es una limitación
+       técnica —el aviso quedaría en cola igual— es que escribir algo y
+       mandarlo a nadie se siente como que la herramienta mintió. */
+    if (!vivos) {
+      $('avisoCuerpo').innerHTML =
+        '<p class="bloque-sub">Todavía no hay nadie con los avisos activados. ' +
+        'Los socios los prenden desde la campanita de su tarjeta.</p>';
+      return;
+    }
+
+    $('avisoCuerpo').innerHTML =
+      '<p class="bloque-sub"><b>' + vivos + '</b> ' +
+        (vivos === 1 ? 'socio tiene' : 'socios tienen') + ' los avisos activados.</p>' +
+      '<div class="campos">' +
+        '<div class="campo ancho">' +
+          '<label for="avTit">Título <span class="lbl-opc" id="avTitResta">' + TOPE_TIT + '</span></label>' +
+          '<input type="text" id="avTit" maxlength="' + TOPE_TIT + '" ' +
+                 'placeholder="Llegó la colección nueva" autocomplete="off">' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label for="avCuerpo">Mensaje <span class="lbl-opc" id="avCuerpoResta">' + TOPE_CUERPO + '</span></label>' +
+          '<textarea id="avCuerpo" maxlength="' + TOPE_CUERPO + '" rows="2" ' +
+                 'placeholder="Pasá por el local a verla. Mostrá tu tarjeta y sumás."></textarea>' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label for="avEnlace">A dónde lleva <span class="lbl-opc">— opcional</span></label>' +
+          '<input type="url" id="avEnlace" inputmode="url" autocapitalize="off" ' +
+                 'placeholder="https://vdh.com.ar/…">' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label for="avImagen">Foto <span class="lbl-opc">— opcional</span></label>' +
+          '<input type="url" id="avImagen" inputmode="url" autocapitalize="off" ' +
+                 'placeholder="https://…">' +
+        '</div>' +
+      '</div>' +
+      '<button type="button" class="btn btn-pri btn-chico" id="avMandar" ' +
+              'style="margin-top:12px">Mandar a ' + vivos + '</button>' +
+      '<p class="bloque-sub" style="margin-top:10px">Sale en segundos. ' +
+        'No se puede deshacer: una vez que llegó al celular, llegó.<br>' +
+        'La foto se ve adentro de la notificación en Android. En iPhone no ' +
+        'se muestra, pero el aviso llega igual.</p>';
+
+    /* Cuánto queda. Es un dato chico que evita el peor momento: escribir el
+       mensaje entero y descubrir al final que quedó cortado. */
+    function resta(campo, salida, tope) {
+      var f = function () { $(salida).textContent = (tope - $(campo).value.length) + ''; };
+      $(campo).oninput = f; f();
+    }
+    resta('avTit', 'avTitResta', TOPE_TIT);
+    resta('avCuerpo', 'avCuerpoResta', TOPE_CUERPO);
+
+    $('avMandar').onclick = function () { mandarAviso(vivos); };
+  }
+
+  function mandarAviso(vivos) {
+    var tit = $('avTit').value.trim();
+    var cue = $('avCuerpo').value.trim();
+
+    if (!tit) { avisar('err', 'Falta el título.'); $('avTit').focus(); return; }
+    if (!cue) { avisar('err', 'Falta el mensaje.'); $('avCuerpo').focus(); return; }
+
+    /* La única confirmación de toda esta pantalla, y va porque es la única
+       acción que no se puede deshacer: lo demás se edita, esto sale. */
+    if (!confirm('Mandarle esto a ' + vivos + ' socio(s)?  —  ' + tit + ' — ' + cue)) { return; }
+
+    var b = $('avMandar');
+    b.disabled = true; b.textContent = 'Mandando…';
+
+    base.club.avisoCrear(pinPromo(), tit, cue,
+        $('avEnlace').value.trim(), 'Configuración', $('avImagen').value.trim())
+      .then(function () { return base.club.avisosMandarYa(); })
+      .then(function (res) {
+        var fue = res && res.detalle && res.detalle[0];
+        $('avisoCuerpo').innerHTML =
+          '<p class="bloque-sub"><b>Listo.</b> ' +
+          (fue ? 'Le llegó a ' + fue.llegaron + '.' : 'El aviso sale en un rato.') + '</p>' +
+          '<button type="button" class="btn btn-sec btn-chico" id="avOtro" ' +
+                  'style="margin-top:10px">Escribir otro</button>';
+        $('avOtro').onclick = pintarAviso;
+        avisar('ok', 'Aviso mandado.');
+      })
+      .catch(function (err) {
+        b.disabled = false; b.textContent = 'Mandar a ' + vivos;
+        avisar('err', (err && err.message) || 'No se pudo.');
+      });
+  }
+
   function guardarPromo() {
     var b = $('promoGuardar');
     b.disabled = true;
     base.club.promoGuardar(pinPromo(), editando,
         $('promoTexto').value.trim(), $('promoImagen').value.trim(),
         $('promoDesde').value, $('promoHasta').value, $('promoCond').value.trim(),
-        $('promoAvisar') && $('promoAvisar').checked)
+        $('promoAvisar') && $('promoAvisar').checked,
+        $('promoEnlace') ? $('promoEnlace').value.trim() : '')
       .then(function (r) {
         if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
         if (r.avisados) {
@@ -881,6 +1021,7 @@
     /* Viaje aparte del resto: pide PIN y puede fallar sola sin arrastrar a
        los objetivos, que no lo piden. */
     pintarPromo();
+    pintarAviso();
     iniciarPWA();
   })();
 </script>
