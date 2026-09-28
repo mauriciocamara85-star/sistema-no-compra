@@ -178,39 +178,58 @@
     #avisos .campo, #arranque .campo, #telegram .campo { max-width: 340px; }
   }
 
-  /* ── En la PC ──────────────────────────────────────────────────────────
-     Dos columnas: los locales —lo compartido, a lo que se viene— se llevan
-     el ancho, y lo de este dispositivo se va a una columna angosta a la
-     derecha. Antes todo caía en una sola columna de 660px flotando en el
-     medio de la pantalla, con el rail lejísimos a la izquierda y un desierto
-     al costado. */
-  /* Tablet acostada y notebook chica: entre el celular y el escritorio no
-     había nada, así que una pantalla de 1024 se quedaba con los 660px del
-     celular y 128 de vacío de cada lado. Acá todavía no hay dos columnas
-     —eso empieza en 1100— pero sí más ancho para las tarjetas. */
+  /* ── Las dos pestañas ──────────────────────────────────────────────────
+     Arriba de todo: "Locales y equipo" y "Club VDH". Son dos trabajos
+     distintos —los objetivos de los locales y el programa de clientes— y
+     el Club solo ya tiene seis secciones. Juntos en una grilla, lo del Club
+     caía donde había lugar y dejaba agujeros del alto de la pantalla. */
+  .secciones {
+    display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px;
+    border: 1px solid var(--line); border-radius: 999px;
+    background: var(--surface-2);
+  }
+  .secciones button {
+    border: 0; background: none; cursor: pointer;
+    padding: 9px 18px; border-radius: 999px;
+    font: 700 14px var(--sans); color: var(--txt-2);
+  }
+  .secciones button[aria-selected="true"] {
+    background: linear-gradient(135deg, var(--acc), var(--acc-2));
+    color: var(--acc-ink, #fff);
+  }
+  /* ⚠ Cada sección tiene display propio en la PC: sin esto, la escondida
+     se vería igual. Mismo caso que todas las capas de las otras pantallas. */
+  .seccion[hidden] { display: none; }
+
+  /* Cada columna apila sus bloques por su cuenta. Es lo que hace que no
+     pueda quedar un agujero: una columna larga no estira a la otra, como
+     pasaba con las filas compartidas de la grilla vieja. */
+  .col > .bloque:last-child, .col > .esteEquipo:last-child { margin-bottom: 0; }
+  /* En el celular las columnas van una abajo de la otra, y sin esto el
+     último bloque de una quedaba pegado al primero de la siguiente. En la PC
+     el aire lo pone el gap de la grilla. */
+  @media (max-width: 1099px) { .col + .col { margin-top: 12px; } }
+
+  /* El PIN del Club, una vez, arriba de todo lo del Club. Antes estaba
+     adentro de "Promociones" y las otras cinco secciones decían "poné el
+     PIN en la sección de las promociones", que había que ir a buscar. */
+  .pin-club { max-width: 460px; }
+
+  /* Tablet acostada y notebook chica: un poco más de ancho, todavía una
+     columna. */
   @media (min-width: 900px) { :root { --tope: 940px; } }
 
+  /* ── En la PC: dos columnas por pestaña ── */
   @media (min-width: 1100px) {
     :root { --tope: 1440px; }
-    .hoja {
-      display: grid;
-      /* 380 y no 320: en esa columna ahora hay formularios —un mail, un
-         token, una fecha—, no sólo dos líneas de texto. */
-      grid-template-columns: minmax(0, 1fr) 380px;
-      gap: 14px;
-      align-items: start;
-    }
-    /* La lista de locales es larga —quince filas— y los ajustes son cortos.
-       Puestos todos en la misma columna, la derecha quedaba vacía desde la
-       mitad de la pantalla para abajo y la izquierda se estiraba el doble de
-       lo necesario. Ahora los locales se llevan la columna entera y los
-       ajustes se apilan al costado, que es justo el espacio que sobraba. */
-    #cajaLocales  { grid-column: 1; grid-row: 1 / span 4; margin-bottom: 0; }
-    .col-lado     { grid-column: 2; grid-row: 1; }
-    #cajaTelegram { grid-column: 2; grid-row: 3; margin-bottom: 0; }
-    #cajaArranque { grid-column: 2; grid-row: 4; margin-bottom: 0; }
-    .col-lado .esteEquipo, .col-lado .bloque { margin-bottom: 12px; }
-    .pie { grid-column: 1 / -1; }
+    .seccion { display: grid; gap: 14px; align-items: start; }
+    /* Locales: la lista se lleva el ancho; lo de este equipo, al costado. */
+    #secLocal { grid-template-columns: minmax(0, 1fr) 380px; }
+    /* Club: dos columnas iguales. A la izquierda lo que se mira y se arma
+       una vez (números, premios, regalos); a la derecha lo que se hace
+       seguido (promociones, puntos dobles, avisos). */
+    #secClub { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .pin-club { grid-column: 1 / -1; }
   }
 
   /* ── Las filas de promociones ──
@@ -320,112 +339,102 @@
 
 <main class="hoja">
 
-  <!-- ── Lo de ESTE dispositivo ────────────────────────────────────────────
-       El local y el tema: las dos cosas que se guardan en este aparato y no
-       las ve nadie más. Van juntas y, en la PC, a la columna de la derecha;
-       lo de la izquierda es lo compartido, que es a lo que se viene. -->
- <div class="col-lado">
-
-  <div class="esteEquipo">
-    <div class="esteEquipo-tit">Este equipo</div>
-    <div class="esteEquipo-sub">Queda guardado acá. El formulario va a abrir directo con los vendedores de este local.</div>
-    <div id="equipoActual"></div>
+  <!-- ── Las pestañas ──
+       Dos trabajos distintos en la misma pantalla: los objetivos de los
+       locales y el Club. La elegida queda recordada en este dispositivo. -->
+  <div class="secciones" role="tablist" aria-label="Secciones de configuración">
+    <button type="button" role="tab" id="tabLocal" data-seccion="local" aria-controls="secLocal" aria-selected="true">Locales y equipo</button>
+    <button type="button" role="tab" id="tabClub" data-seccion="club" aria-controls="secClub" aria-selected="false">Club VDH</button>
   </div>
 
-  <!-- ── Cómo se ve ───────────────────────────────────────────────────────
-       Vivía en la esquina de las tres cabeceras. Es una preferencia de este
-       dispositivo y se toca una vez: su lugar es acá, al lado de la otra
-       cosa que se guarda en este celular. -->
-  <div class="bloque">
-    <h2 class="bloque-tit">Cómo se ve</h2>
-    <p class="bloque-sub">Queda guardado en este dispositivo, igual que el local.</p>
-    <div class="tema-fila">
-      <div class="tema" role="group" aria-label="Tema visual">
-        <button type="button" class="tema-btn" data-tema="dark" title="Tema oscuro" aria-label="Tema oscuro">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
-        </button>
-        <button type="button" class="tema-btn" data-tema="light" title="Tema claro" aria-label="Tema claro">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
-        </button>
-      </div>
-      <span class="tema-txt">Oscuro para el local, claro para la oficina.</span>
+  <!-- ══ LOCALES Y EQUIPO ═══════════════════════════════════════════════ -->
+  <section class="seccion" id="secLocal" role="tabpanel" aria-labelledby="tabLocal">
+    <div class="col">
+    <div class="bloque" id="cajaLocales">
+      <h2 class="bloque-tit">Los locales</h2>
+      <p class="bloque-sub">Tocá uno para ponerle su objetivo. Lo que cambies acá lo ven todos los locales. Los vendedores se anotan solos desde la pantalla de carga.</p>
+      <div id="locales"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
     </div>
-  </div>
+    </div>
+    <!-- Lo de ESTE dispositivo y lo que se configura en otro lado. -->
+    <div class="col">
+    <div class="esteEquipo">
+      <div class="esteEquipo-tit">Este equipo</div>
+      <div class="esteEquipo-sub">Queda guardado acá. El formulario va a abrir directo con los vendedores de este local.</div>
+      <div id="equipoActual"></div>
+    </div>
 
- </div><!-- /.col-lado -->
+    <!-- ── Cómo se ve ───────────────────────────────────────────────────────
+         Vivía en la esquina de las tres cabeceras. Es una preferencia de este
+         dispositivo y se toca una vez: su lugar es acá, al lado de la otra
+         cosa que se guarda en este celular. -->
+    <div class="bloque">
+      <h2 class="bloque-tit">Cómo se ve</h2>
+      <p class="bloque-sub">Queda guardado en este dispositivo, igual que el local.</p>
+      <div class="tema-fila">
+        <div class="tema" role="group" aria-label="Tema visual">
+          <button type="button" class="tema-btn" data-tema="dark" title="Tema oscuro" aria-label="Tema oscuro">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"/></svg>
+          </button>
+          <button type="button" class="tema-btn" data-tema="light" title="Tema claro" aria-label="Tema claro">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4"/></svg>
+          </button>
+        </div>
+        <span class="tema-txt">Oscuro para el local, claro para la oficina.</span>
+      </div>
+    </div>
+    <div class="bloque">
+      <h2 class="bloque-tit">Los avisos por mail</h2>
+      <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
+    </div>
+    </div>
+  </section>
 
-  <div class="bloque" id="cajaLocales">
-    <h2 class="bloque-tit">Los locales</h2>
-    <p class="bloque-sub">Tocá uno para ponerle su objetivo. Lo que cambies acá lo ven todos los locales. Los vendedores se anotan solos desde la pantalla de carga.</p>
-    <div id="locales"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
-  </div>
-
-  <!-- ── Lo que se configura en otro lado ──────────────────────────────
-       Los avisos (mail y Telegram) los manda una función aparte, y sus
-       tokens viven en el entorno de esa función y no en la base, que es lo
-       mismo que hoy pasa con las propiedades del script.
-
-       Se dice acá en vez de no decir nada: el que abre esta pantalla
-       buscando el aviso por Telegram tiene que enterarse de que existe y
-       de dónde se toca, no quedarse pensando que se perdió. -->
-  <!-- ── La promo del Club ──
-       Lo único de esta pantalla que ven los CLIENTES, y por eso es lo único
-       que pide el PIN. El resto de Configuración —objetivos, locales— lo ve
-       el equipo. -->
-  <div class="bloque" id="cajaPromo">
-    <h2 class="bloque-tit">Las promociones del Club</h2>
-    <p class="bloque-sub">Lo que ven los socios al abrir su tarjeta. Pasada la fecha desaparecen solas.</p>
-    <div id="promoCuerpo"></div>
-  </div>
-
-  <!-- ── Los premios del Club ──
-       El catálogo que ven los socios. Se agregan y se cambian acá; no se
-       borran nunca —los canjes viejos apuntan a ellos—, se apagan. -->
-  <div class="bloque" id="cajaPremios">
-    <h2 class="bloque-tit">Premios del Club</h2>
-    <p class="bloque-sub">Lo que los socios canjean con sus puntos. El costo es lo que le sale a VDH: no lo ve nadie más.</p>
-    <div id="premiosCuerpo"></div>
-  </div>
-
-  <!-- ── Los regalos de cumpleaños ── -->
-  <div class="bloque" id="cajaRegalos">
-    <h2 class="bloque-tit">Regalos de cumpleaños</h2>
-    <p class="bloque-sub">Uno por nivel. Le avisamos 7 días antes y vale hasta el día del cumple, una sola vez.</p>
-    <div id="regalosCuerpo"></div>
-  </div>
-
-  <!-- ── Los puntos dobles ──
-       Unos días en que las compras suman más. Tienen fecha de fin
-       obligatoria: unos puntos dobles que nadie se acuerda de apagar son el
-       programa costando el doble para siempre. -->
-  <div class="bloque" id="cajaMulti">
-    <h2 class="bloque-tit">Puntos dobles</h2>
-    <p class="bloque-sub">Unos días en que las compras de los socios suman más puntos. Esos días el programa cuesta el doble: guardalos para las fechas fuertes.</p>
-    <div id="multiCuerpo"></div>
-  </div>
-
-  <!-- ── El Club en números ── -->
-  <div class="bloque" id="cajaCosto">
-    <h2 class="bloque-tit">El Club en números</h2>
-    <p class="bloque-sub">Los últimos 12 meses. El número de arriba es el que importa: cuánto de lo que compran los socios se va en premios.</p>
-    <div id="costoCuerpo"></div>
-  </div>
-
-  <!-- ── El mensaje suelto ──
-       No todo lo que se le dice a un socio es una promoción. Para lo que no
-       tiene fechas ni condiciones —"cerramos el lunes", "abrimos en
-       Pacheco"— hacía falta inventar una promo falsa, que encima le queda
-       publicada al cliente hasta que vence. -->
-  <div class="bloque" id="cajaAviso">
-    <h2 class="bloque-tit">Mandar un aviso</h2>
-    <p class="bloque-sub">Para lo que no es una promoción: un feriado, un local nuevo, algo que contar. Les llega al celular y queda en su campanita.</p>
-    <div id="avisoCuerpo"></div>
-  </div>
-
-  <div class="bloque">
-    <h2 class="bloque-tit">Los avisos por mail</h2>
-    <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
-  </div>
+  <!-- ══ CLUB VDH ═══════════════════════════════════════════════════════ -->
+  <section class="seccion" id="secClub" role="tabpanel" aria-labelledby="tabClub" hidden>
+    <!-- El PIN, una vez para todo el Club. Se esconde solo cuando ya está. -->
+    <div class="bloque pin-club" id="cajaPinClub" hidden>
+      <h2 class="bloque-tit">El Club VDH</h2>
+      <p class="bloque-sub">Acá se manejan los premios, las promociones y los avisos que ven los socios. Pide el PIN porque lo que se cambia lo ven los clientes.</p>
+      <div id="pinClubCuerpo"></div>
+    </div>
+    <!-- Lo que se mira y se arma una vez. -->
+    <div class="col">
+    <div class="bloque" id="cajaCosto">
+      <h2 class="bloque-tit">El Club en números</h2>
+      <p class="bloque-sub">Los últimos 12 meses. El número de arriba es el que importa: cuánto de lo que compran los socios se va en premios.</p>
+      <div id="costoCuerpo"></div>
+    </div>
+    <div class="bloque" id="cajaPremios">
+      <h2 class="bloque-tit">Premios del Club</h2>
+      <p class="bloque-sub">Lo que los socios canjean con sus puntos. El costo es lo que le sale a VDH: no lo ve nadie más.</p>
+      <div id="premiosCuerpo"></div>
+    </div>
+    <div class="bloque" id="cajaRegalos">
+      <h2 class="bloque-tit">Regalos de cumpleaños</h2>
+      <p class="bloque-sub">Uno por nivel. Le avisamos 7 días antes y vale hasta el día del cumple, una sola vez.</p>
+      <div id="regalosCuerpo"></div>
+    </div>
+    </div>
+    <!-- Lo que se hace seguido. -->
+    <div class="col">
+    <div class="bloque" id="cajaPromo">
+      <h2 class="bloque-tit">Las promociones del Club</h2>
+      <p class="bloque-sub">Lo que ven los socios al abrir su tarjeta. Pasada la fecha desaparecen solas.</p>
+      <div id="promoCuerpo"></div>
+    </div>
+    <div class="bloque" id="cajaMulti">
+      <h2 class="bloque-tit">Puntos dobles</h2>
+      <p class="bloque-sub">Unos días en que las compras de los socios suman más puntos. Esos días el programa cuesta el doble: guardalos para las fechas fuertes.</p>
+      <div id="multiCuerpo"></div>
+    </div>
+    <div class="bloque" id="cajaAviso">
+      <h2 class="bloque-tit">Mandar un aviso</h2>
+      <p class="bloque-sub">Para lo que no es una promoción: un feriado, un local nuevo, algo que contar. Les llega al celular y queda en su campanita.</p>
+      <div id="avisoCuerpo"></div>
+    </div>
+    </div>
+  </section>
 
   <p class="pie">Los cambios quedan anotados con la fecha y quién los hizo. <a href="panel.html">Panel de seguimiento</a></p>
 </main>
@@ -490,7 +499,10 @@
 
     caja.innerHTML = '<p class="bloque-sub">Buscando las promociones…</p>';
     base.club.promosListar(pinPromo())
-      .then(function (lista) { listaPromos(lista || []); })
+      .then(function (lista) {
+        if ($('cajaPinClub')) { $('cajaPinClub').hidden = true; }
+        listaPromos(lista || []);
+      })
       .catch(function (err) {
         /* PIN vencido o equivocado: se vuelve a pedir en vez de dejar un
            cartel de error que no se puede accionar. */
@@ -499,8 +511,12 @@
       });
   }
 
+  /* El PIN se pide UNA vez, arriba de todo lo del Club, y no adentro de
+     Promociones. Las secciones de abajo dicen "poné el PIN arriba". */
   function pedirPinPromo(error) {
-    $('promoCuerpo').innerHTML =
+    if ($('cajaPinClub')) { $('cajaPinClub').hidden = false; }
+    $('promoCuerpo').innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+    $('pinClubCuerpo').innerHTML =
       '<div class="campo ancho">' +
         '<label for="promoPin">PIN <span class="lbl-req">obligatorio</span></label>' +
         '<input type="password" id="promoPin" inputmode="numeric" maxlength="8" ' +
@@ -704,8 +720,7 @@
     var caja = $('avisoCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de arriba ' +
-                       'y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
       return;
     }
 
@@ -843,6 +858,29 @@
       .then(function () { b.disabled = false; });
   }
 
+  /* ═══ Las pestañas ════════════════════════════════════════════════════
+     La elegida queda en este dispositivo: el que maneja el Club entra
+     siempre al Club, el que pone objetivos entra a los locales. Y #club en
+     la dirección abre directo el Club, para un enlace o un acceso directo. */
+  function engancharSecciones() {
+    var K_SECCION = 'nc_config_seccion';
+    var mostrar = function (s) {
+      var club = s === 'club';
+      $('secLocal').hidden = club;
+      $('secClub').hidden = !club;
+      $('tabLocal').setAttribute('aria-selected', club ? 'false' : 'true');
+      $('tabClub').setAttribute('aria-selected', club ? 'true' : 'false');
+      try { localStorage.setItem(K_SECCION, s); } catch (e) {}
+    };
+    var inicial = location.hash === '#club' ? 'club' : location.hash === '#locales' ? 'local' : null;
+    if (!inicial) {
+      try { inicial = localStorage.getItem(K_SECCION); } catch (e) {}
+    }
+    mostrar(inicial === 'club' ? 'club' : 'local');
+    $('tabLocal').onclick = function () { mostrar('local'); };
+    $('tabClub').onclick = function () { mostrar('club'); };
+  }
+
   /* ═══ Premios del Club ════════════════════════════════════════════════ */
 
   var premiosLista = [];
@@ -858,8 +896,7 @@
     var caja = $('premiosCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de las promociones ' +
-                       'y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -971,8 +1008,7 @@
     var caja = $('regalosCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de las promociones ' +
-                       'y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -1064,8 +1100,7 @@
     var caja = $('multiCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de las promociones ' +
-                       'y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -1201,8 +1236,7 @@
     var caja = $('costoCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de las promociones ' +
-                       'y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Sumando…</p>';
@@ -1495,6 +1529,7 @@
     cargar(false);
     /* Viaje aparte del resto: pide PIN y puede fallar sola sin arrastrar a
        los objetivos, que no lo piden. */
+    engancharSecciones();
     pintarPromo();
     pintarAviso();
     pintarPremios();
