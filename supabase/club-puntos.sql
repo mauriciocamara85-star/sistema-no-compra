@@ -3301,3 +3301,313 @@ AS $function$
 $function$;
 
 grant execute on function club_tarjeta(text) to anon, authenticated;
+
+
+-- ─────────────────────────── PARTE 21 ───────────────────────────
+-- Reseñas en Google, cada local las suyas.
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · RESEÑAS EN GOOGLE, CADA LOCAL LAS SUYAS
+--
+-- Correr entero en el editor SQL de Supabase, después del 20.
+--
+-- Decidido con Mauricio el 29/09/2026: cada local junta sus propias
+-- reseñas. No es una preferencia, es como funciona Google: una ficha por
+-- local físico, y las reseñas atadas a la ficha. Y es lo que conviene: una
+-- búsqueda de "ropa cerca" desde Flores compara la ficha de Flores con los
+-- negocios de Flores.
+--
+-- ══════════════════════════════════════════════════════════════════════════
+-- LAS DOS REGLAS DE GOOGLE
+-- ══════════════════════════════════════════════════════════════════════════
+--
+--   1. NADA A CAMBIO. Ni puntos, ni descuento. Pagar una reseña puede hacer
+--      que Google las borre y restrinja la ficha.
+--
+--   2. A TODOS POR IGUAL. Pedírsela sólo a los conformes ("review gating")
+--      también está prohibido. Por eso esto no mira nada del cliente: todo
+--      el que compró recibe el pedido, con el mismo texto.
+--
+-- ══════════════════════════════════════════════════════════════════════════
+-- CÓMO SE PIDE
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- Al día siguiente de una compra, a las 11, un aviso al celular con el
+-- enlace de reseñas DEL LOCAL donde compró. Una vez cada 90 días por
+-- cliente como máximo: alguien que compra seguido no puede recibir un
+-- pedido por semana. Y en la tarjeta, durante los 7 días siguientes a la
+-- compra, un botón con el mismo enlace.
+--
+-- El enlace de cada local se carga desde Configuración. El que no tiene
+-- enlace, no pide nada.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 1 · EL ENLACE DE CADA LOCAL Y LAS REGLAS
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table locales add column if not exists resena_url text;
+
+insert into club_reglas (clave, valor) values
+  ('resena_cada_dias', '90'),   -- a un mismo cliente, como mucho una vez cada 90 días
+  ('resena_hora',      '11')    -- el día siguiente a la compra, a esta hora
+on conflict (clave) do nothing;
+
+
+/* Un enlace de Google y nada más: lo que se carga acá termina en el celular
+   de los clientes, y un enlace cualquiera sería una puerta para mandarlos a
+   cualquier lado. */
+create or replace function club_resena_url_ok(u text)
+returns boolean
+language sql
+immutable
+as $ru$
+  select u ~* '^https://(g\.page|www\.google\.[a-z.]+|google\.[a-z.]+|search\.google\.com|maps\.google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl|g\.co)/'
+$ru$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 2 · CONFIGURACIÓN
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_resenas_listar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $rl$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'codigo', l.codigo,
+             'nombre', coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))),
+             'url', l.resena_url,
+             /* Cuántos pedidos salieron de ese local en los últimos 30 días:
+                no dice cuántas reseñas dejaron —eso lo sabe Google—, pero
+                sí si el pedido está saliendo. */
+             'pedidos_30', (select count(*) from club_avisos_personales p
+                             where p.motivo = 'resena'
+                               and split_part(p.clave, '|', 1) = l.codigo
+                               and p.creado > now() - interval '30 days'))
+           order by l.codigo)
+      from locales l where l.activo
+  ), '[]'::jsonb);
+end;
+$rl$;
+
+grant execute on function club_resenas_listar(text) to anon, authenticated;
+
+
+create or replace function club_resena_guardar(p_pin text, p_codigo text, p_url text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $rg$
+declare
+  u text := nullif(trim(coalesce(p_url, '')), '');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if u is not null and not club_resena_url_ok(u) then
+    return jsonb_build_object('ok', false, 'porque',
+      'Tiene que ser el enlace de reseñas de Google (empieza con https://g.page/… o https://www.google…).');
+  end if;
+  update locales set resena_url = u where codigo = p_codigo;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'No encontré ese local.');
+  end if;
+  return jsonb_build_object('ok', true);
+end;
+$rg$;
+
+grant execute on function club_resena_guardar(text, text, text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 3 · EL PEDIDO DEL DÍA SIGUIENTE
+--
+-- Corre en la tarea diaria de las 6. Toma las compras de AYER (en hora de
+-- Argentina) hechas en un local con enlace, y deja un aviso personal para
+-- las 11. Si el cliente compró dos veces ayer, la última manda.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_resenas_pedir()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $rp$
+declare
+  hoy   date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  cada  integer;
+  hora  integer;
+  s     record;
+  n     integer := 0;
+begin
+  select nullif(valor, '')::integer into cada from club_reglas where clave = 'resena_cada_dias';
+  select nullif(valor, '')::integer into hora from club_reglas where clave = 'resena_hora';
+  cada := coalesce(cada, 90);
+  hora := coalesce(hora, 11);
+
+  for s in
+    select distinct on (m.cliente) m.cliente, l.codigo, l.resena_url,
+           coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))) as local_nombre
+      from club_movimientos m
+      join locales l on upper(trim(l.codigo)) = upper(trim(m.local))
+      join club_clientes c on c.id = m.cliente
+     where m.tipo = 'compra' and m.anulado is null
+       and (m.creado at time zone 'America/Argentina/Buenos_Aires')::date = hoy - 1
+       and l.resena_url is not null and c.baja is null
+       /* Con los avisos prendidos: sin suscripción no hay a dónde mandarlo.
+          Igual lo ve en la tarjeta. */
+       and exists (select 1 from club_suscripciones su where su.cliente = m.cliente and su.muerto is null)
+       and not exists (select 1 from club_avisos_personales p
+                        where p.cliente = m.cliente and p.motivo = 'resena'
+                          and p.creado > now() - (cada || ' days')::interval)
+     order by m.cliente, m.creado desc
+  loop
+    insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+    values (s.cliente, 'resena', s.codigo || '|' || (hoy - 1)::text,
+            '¿Cómo te atendieron en ' || s.local_nombre || '?',
+            'Contanos en Google cómo fue tu compra. Nos ayuda a que más gente nos encuentre.',
+            s.resena_url,
+            greatest(now(), (hoy::timestamp + make_interval(hours => hora)) at time zone 'America/Argentina/Buenos_Aires'))
+    on conflict (cliente, motivo, clave) do nothing;
+    if found then n := n + 1; end if;
+  end loop;
+
+  return jsonb_build_object('pedidos', n);
+end;
+$rp$;
+
+revoke all on function club_resenas_pedir() from public, anon, authenticated;
+grant execute on function club_resenas_pedir() to service_role;
+
+
+/* La tarea diaria, con las reseñas. */
+create or replace function club_diario()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cd$
+begin
+  return jsonb_build_object(
+    'vencer',  club_vencer(),
+    'cumple',  club_cumple_avisar(),
+    'kommo',   club_kommo_resincronizar(),
+    'resenas', club_resenas_pedir());
+end;
+$cd$;
+
+revoke all on function club_diario() from public, anon, authenticated;
+grant execute on function club_diario() to service_role;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 4 · LA TARJETA: el botón de reseña durante 7 días después de comprar
+-- (la función que está andando, con un dato más: `resena`)
+-- ══════════════════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION public.club_tarjeta(p_codigo text)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with c as (
+    select * from v_club_clientes
+     where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and baja is null
+  )
+  select case when not exists (select 1 from c) then jsonb_build_object('hay', false)
+    else (
+      select jsonb_build_object(
+        'hay', true,
+        'codigo', c.codigo,
+        'nombre', c.nombre,
+        'puntos', c.puntos,
+        'xp', c.xp,
+        'compras', c.compras,
+        'confirmado', c.confirmado,
+        'desde', c.creado,
+        'ultima_compra', c.ultima_compra,
+
+        'hoy', club_factor(c.id),
+        'cumple', club_regalo_cumple(c.id),
+        /* La última compra de los últimos 7 días en un local con enlace de
+           reseñas: la tarjeta muestra "¿Qué tal tu compra en Flores?". */
+        'resena', (select jsonb_build_object(
+                      'local', l.codigo,
+                      'nombre', coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))),
+                      'url', l.resena_url,
+                      'cuando', m.creado)
+                     from club_movimientos m
+                     join locales l on upper(trim(l.codigo)) = upper(trim(m.local))
+                    where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null
+                      and m.creado > now() - interval '7 days'
+                      and l.resena_url is not null
+                    order by m.creado desc limit 1),
+
+        'nivel', jsonb_build_object(
+          'nombre', c.nivel,
+          'multiplica', c.multiplica,
+          /* Lo que da este nivel y lo que da el siguiente, para que la
+             tarjeta pueda decirlo: si el cliente no sabe qué le da Oro,
+             Oro no es algo que quiera. */
+          'regalo_cumple', (select case when g.tipo = 'descuento'
+                                        then g.porcentaje || '% de descuento en tu compra'
+                                        else g.producto end
+                              from club_regalos_cumple g where g.nivel = c.nivel),
+          'sigue_multiplica', (select nv.multiplica from club_niveles nv
+                                where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue_bono', (select nv.bono from club_niveles nv
+                          where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue', (select nv.nombre from club_niveles nv
+                     where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'falta_xp', (select nv.desde_xp - c.xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'desde_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp <= c.xp order by nv.desde_xp desc limit 1),
+          'hasta_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1)),
+
+        'premios', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle,
+                   'puntos', p.puntos, 'valor', p.valor,
+                   'agotado', u.agotado,
+                   'alcanzado', c.puntos >= p.puntos and not u.agotado,
+                   'falta', greatest(p.puntos - c.puntos, 0))
+                 order by p.orden, p.puntos)
+            from club_premios p
+            cross join lateral (
+              select (p.limite_anual is not null and count(*) >= p.limite_anual) as agotado
+                from club_movimientos m
+               where m.cliente = c.id and m.tipo = 'canje' and m.premio = p.id
+                 and m.anulado is null and m.creado > now() - interval '12 months'
+            ) u
+           where p.activo), '[]'::jsonb),
+
+        'ultimas', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'cuando', m.creado, 'local', m.local, 'puntos', m.puntos,
+                   'tipo', m.tipo, 'concepto', m.concepto, 'obs', m.obs)
+                 order by m.creado desc)
+            from (select creado, local, puntos, tipo, concepto, obs
+                    from club_movimientos
+                   where cliente = c.id and anulado is null
+                   order by creado desc limit 8) m), '[]'::jsonb)
+      ) from c
+    ) end
+$function$;
+
+grant execute on function club_tarjeta(text) to anon, authenticated;
+
+select codigo, resena_url from locales order by codigo;

@@ -432,6 +432,15 @@
       <p class="bloque-sub">Uno por nivel. Le avisamos 7 días antes y vale hasta el día del cumple, una sola vez.</p>
       <div id="regalosCuerpo"></div>
     </div>
+
+    <!-- ── Las reseñas en Google ──
+         Un enlace por local: cada local junta las suyas, que es como
+         funciona Google y lo que lo hace aparecer en su barrio. -->
+    <div class="bloque" id="cajaResenas">
+      <h2 class="bloque-tit">Reseñas en Google</h2>
+      <p class="bloque-sub">El día siguiente a una compra le pedimos la reseña al cliente, con el enlace del local donde compró. A todos por igual y sin nada a cambio: son las reglas de Google. Una vez cada 3 meses como máximo.</p>
+      <div id="resenasCuerpo"></div>
+    </div>
     </div>
     <!-- Lo que se hace seguido. -->
     <div class="col">
@@ -557,6 +566,7 @@
     pintarAviso();
     pintarPremios();
     pintarRegalos();
+    pintarResenas();
     pintarMulti();
     pintarCosto();
   }
@@ -1010,6 +1020,87 @@
         })
         .then(function () { b.disabled = false; });
     };
+  }
+
+  /* ═══ Reseñas en Google ════════════════════════════════════════════════ */
+
+  var resenasLista = [];
+
+  function pintarResenas() {
+    var caja = $('resenasCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      return;
+    }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.resenasListar(pinPromo())
+      .then(function (lista) {
+        resenasLista = lista || [];
+        var cargados = resenasLista.filter(function (l) { return l.url; }).length;
+        caja.innerHTML =
+          '<p class="bloque-sub" style="margin-top:0"><b>' + cargados + '</b> de ' + resenasLista.length +
+            ' locales con enlace.' + (cargados < resenasLista.length
+              ? ' El enlace sale de cada ficha de Google: "Pedir reseñas" o "Compartir formulario de reseñas".'
+              : '') + '</p>' +
+          resenasLista.map(function (l) {
+            return '<div class="promo-fila" data-fila="' + esc(l.codigo) + '">' +
+              '<div class="promo-fila-txt"><b>' + esc(l.nombre) + '</b>' +
+                '<span>' + (l.url ? n(l.pedidos_30) + ' pedidos en los últimos 30 días' : 'Sin enlace: no se piden reseñas') +
+                '</span></div>' +
+              (l.url ? '<span class="pill pill-ok">Listo</span>' : '<span class="pill pill-warn">Falta</span>') +
+              '<button type="button" class="btn btn-sec btn-chico" data-resena="' + esc(l.codigo) + '">' +
+                (l.url ? 'Cambiar' : 'Cargar') + '</button>' +
+            '</div>';
+          }).join('') +
+          (cargados
+            ? '<a class="btn btn-sec btn-chico" href="qr-resenas.html" style="margin-top:14px;display:inline-flex">' +
+              'Imprimir los QR para los mostradores</a>'
+            : '');
+        Array.prototype.forEach.call(caja.querySelectorAll('[data-resena]'), function (b) {
+          b.onclick = function () { editorResena(b.dataset.resena); };
+        });
+      })
+      .catch(function (err) {
+        caja.innerHTML = '<p class="bloque-sub">' +
+          esc((err && err.delServidor && err.message) || 'No se pudo abrir.') + '</p>';
+      });
+
+    function n(x) { return Math.round(Number(x) || 0).toLocaleString('es-AR'); }
+  }
+
+  /* El editor va adentro de la fila del local: hay catorce, y abrir un
+     formulario aparte haría perder de vista cuál se está tocando. */
+  function editorResena(codigo) {
+    var l = null;
+    resenasLista.forEach(function (x) { if (x.codigo === codigo) l = x; });
+    var fila = document.querySelector('[data-fila="' + codigo.replace(/"/g, '') + '"]');
+    if (!l || !fila) { return; }
+    fila.innerHTML =
+      '<div class="promo-fila-txt"><b>' + esc(l.nombre) + '</b></div>' +
+      '<div class="campo ancho" style="flex:1 1 100%;margin:0">' +
+        '<input type="url" id="resenaUrl" inputmode="url" autocapitalize="off" ' +
+          'placeholder="https://g.page/r/…/review" value="' + esc(l.url || '') + '">' +
+      '</div>' +
+      '<button type="button" class="btn btn-pri btn-chico" id="resenaGuardar">Guardar</button>' +
+      (l.url ? '<button type="button" class="btn btn-sec btn-chico" id="resenaQuitar">Quitar</button>' : '') +
+      '<button type="button" class="btn btn-sec btn-chico" id="resenaVolver">Volver</button>';
+    $('resenaUrl').focus();
+    var guardar = function (url) {
+      base.club.resenaGuardar(pinPromo(), codigo, url)
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          avisar('ok', url ? 'Listo: ' + l.nombre + ' ya pide reseñas.' : 'Quitado.');
+          pintarResenas();
+        })
+        .catch(function (err) {
+          avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
+        });
+    };
+    $('resenaGuardar').onclick = function () { guardar($('resenaUrl').value.trim()); };
+    $('resenaUrl').onkeydown = function (e) { if (e.key === 'Enter') guardar($('resenaUrl').value.trim()); };
+    if ($('resenaQuitar')) { $('resenaQuitar').onclick = function () { guardar(''); }; }
+    $('resenaVolver').onclick = pintarResenas;
   }
 
   /* ═══ Regalos de cumpleaños ═══════════════════════════════════════════ */
@@ -1585,6 +1676,7 @@
     pintarAviso();
     pintarPremios();
     pintarRegalos();
+    pintarResenas();
     pintarMulti();
     pintarCosto();
     iniciarPWA();

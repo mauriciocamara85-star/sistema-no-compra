@@ -720,6 +720,17 @@ var base = {
       });
     },
 
+    /** Los 14 locales con su enlace de reseñas de Google y cuántos pedidos
+        salieron en 30 días. */
+    resenasListar: function (pin) {
+      return funcion('club_resenas_listar', { p_pin: pin });
+    },
+
+    /** Cargar (o quitar, con vacío) el enlace de reseñas de un local. */
+    resenaGuardar: function (pin, codigo, url) {
+      return funcion('club_resena_guardar', { p_pin: pin, p_codigo: codigo, p_url: url || null });
+    },
+
     /** Cómo va la sincronización de los socios con Kommo. Pide PIN. */
     kommoEstado: function (pin) {
       return funcion('club_kommo_estado', { p_pin: pin });
