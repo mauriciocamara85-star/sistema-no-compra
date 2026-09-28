@@ -742,10 +742,14 @@ var base = {
      * ("2026-10-01"), la de fin es obligatoria y hasta 31 días. Con `avisar`
      * deja un aviso en la cola que sale el día que arrancan, a las 10.
      */
-    multiGuardar: function (pin, id, nombre, factor, desde, hasta, por, avisar) {
+    /* `dias`: los días de la semana (0 = domingo … 6 = sábado), o null para
+       todos. `horaDesde`/`horaHasta`: "18:00", o vacío para el día entero. */
+    multiGuardar: function (pin, id, nombre, factor, desde, hasta, por, avisar, dias, horaDesde, horaHasta) {
       return funcion('club_multi_guardar', {
         p_pin: pin, p_id: id || null, p_nombre: nombre, p_factor: factor,
-        p_desde: desde, p_hasta: hasta, p_por: por || null, p_avisar: !!avisar
+        p_desde: desde, p_hasta: hasta, p_por: por || null, p_avisar: !!avisar,
+        p_dias: (dias && dias.length) ? dias : null,
+        p_hora_desde: horaDesde || null, p_hora_hasta: horaHasta || null
       });
     },
 

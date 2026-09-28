@@ -2834,3 +2834,373 @@ grant execute on function club_kommo_estado(text) to anon, authenticated;
 
 
 select nombre, desde_xp, multiplica, bono from club_niveles order by orden;
+
+
+-- ─────────────────────────── PARTE 19 ───────────────────────────
+-- Hora feliz y días de la semana en los puntos extra.
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · HORA FELIZ Y DÍAS DE LA SEMANA
+--
+-- Correr entero en el editor SQL de Supabase, después del 18.
+--
+-- Pedido por Mauricio el 28/09/2026 mirando Fidelity: "Martes de doble
+-- puntos" y "Hora feliz 18–20 h, +50% de puntos".
+--
+-- Los puntos dobles ya existían, pero sólo por días enteros ("Hot Sale, del
+-- 1 al 3"). Ahora pueden ser además:
+--
+--   · de algunos días de la semana    "los martes"
+--   · de un horario                   "de 18 a 20 h"
+--   · las dos cosas                   "los martes, de 18 a 20 h"
+--
+-- Siempre dentro de un rango de fechas con fin obligatorio. El tope de 31
+-- días se estira a 92 cuando es por días o por horario: "los martes de
+-- octubre a diciembre" son trece días de promo en tres meses, no noventa.
+--
+-- Las horas son de Argentina, igual que las fechas. La base está en UTC.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+alter table club_multiplicadores add column if not exists dias smallint[];
+alter table club_multiplicadores add column if not exists hora_desde time;
+alter table club_multiplicadores add column if not exists hora_hasta time;
+
+alter table club_multiplicadores drop constraint if exists multi_horas;
+alter table club_multiplicadores add constraint multi_horas check (
+  (hora_desde is null and hora_hasta is null) or
+  (hora_desde is not null and hora_hasta is not null and hora_hasta > hora_desde));
+
+/* 0 = domingo … 6 = sábado, como lo cuenta Postgres (extract dow). */
+alter table club_multiplicadores drop constraint if exists multi_dias;
+alter table club_multiplicadores add constraint multi_dias check (
+  dias is null or (cardinality(dias) between 1 and 7 and dias <@ array[0,1,2,3,4,5,6]::smallint[]));
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- ¿VALE AHORA?
+-- Una sola cuenta para la caja, la tarjeta y Configuración.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_multi_vale(m club_multiplicadores, t timestamptz)
+returns boolean
+language sql
+stable
+as $mv$
+  select m.baja is null and t >= m.desde and t < m.hasta
+     and (m.dias is null
+          or extract(dow from (t at time zone 'America/Argentina/Buenos_Aires'))::smallint = any(m.dias))
+     and (m.hora_desde is null
+          or ((t at time zone 'America/Argentina/Buenos_Aires')::time >= m.hora_desde
+              and (t at time zone 'America/Argentina/Buenos_Aires')::time < m.hora_hasta))
+$mv$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- CUÁNDO, DICHO COMO LO DIRÍA UNA PERSONA
+--
+-- "los martes, de 18 a 20 h, del 01/10 al 31/10". Lo arma la base para
+-- que Configuración, la tarjeta y el aviso al celular digan lo mismo.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_multi_cuando(m club_multiplicadores)
+returns text
+language plpgsql
+stable
+as $mc$
+declare
+  nombres text[] := array['domingos','lunes','martes','miércoles','jueves','viernes','sábados'];
+  d1 date := (m.desde at time zone 'America/Argentina/Buenos_Aires')::date;
+  d2 date := (m.hasta at time zone 'America/Argentina/Buenos_Aires')::date - 1;
+  lista text[];
+  partes text[] := '{}';
+  hora text;
+begin
+  /* Los días, en orden de lunes a domingo, que es como se dicen. */
+  if m.dias is not null and cardinality(m.dias) < 7 then
+    lista := array(select nombres[x + 1] from unnest(m.dias) x
+                    order by case when x = 0 then 7 else x end);
+    partes := partes || ('los ' || case
+      when cardinality(lista) = 1 then lista[1]
+      else array_to_string(lista[1:cardinality(lista) - 1], ', ') || ' y ' || lista[cardinality(lista)] end);
+  end if;
+
+  /* "de 18 a 20 h"; con minutos sólo si los hay: "de 18:30 a 20 h". */
+  if m.hora_desde is not null then
+    hora := 'de ' ||
+      case when extract(minute from m.hora_desde) = 0 then to_char(m.hora_desde, 'FMHH24')
+           else to_char(m.hora_desde, 'FMHH24:MI') end || ' a ' ||
+      case when extract(minute from m.hora_hasta) = 0 then to_char(m.hora_hasta, 'FMHH24')
+           else to_char(m.hora_hasta, 'FMHH24:MI') end || ' h';
+    partes := partes || hora;
+  end if;
+
+  partes := partes || (case when d1 = d2 then 'el ' || to_char(d1, 'DD/MM')
+                            else 'del ' || to_char(d1, 'DD/MM') || ' al ' || to_char(d2, 'DD/MM') end);
+  return array_to_string(partes, ', ');
+end;
+$mc$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- CUÁNTO SUMA HOY: igual que en el 16, con días y horario
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_factor(p_cliente bigint)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $cf$
+declare
+  hoy       date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  c         record;
+  cm        numeric;
+  antes     integer;
+  fin       date;
+  pr        record;
+  extra     numeric := 1;
+  motivo    text;
+  hasta     date;
+  hora_fin  time;
+  de_cumple boolean := false;
+begin
+  select v.multiplica, v.cumple into c from v_club_clientes v where v.id = p_cliente;
+  select nullif(valor, '')::numeric into cm    from club_reglas where clave = 'cumple_multiplica';
+  select nullif(valor, '')::integer into antes from club_reglas where clave = 'cumple_antes';
+
+  if c.cumple is not null and coalesce(cm, 1) > 1 then
+    fin := club_cumple_fin(c.cumple, hoy, coalesce(antes, 7));
+    if fin is not null then
+      extra := cm; motivo := 'Tu semana de cumple'; hasta := fin; de_cumple := true;
+    end if;
+  end if;
+
+  select m.nombre, m.factor, m.hora_hasta,
+         (m.hasta at time zone 'America/Argentina/Buenos_Aires')::date - 1 as ultimo
+    into pr
+    from club_multiplicadores m
+   where club_multi_vale(m, now())
+   order by m.factor desc, m.hasta desc
+   limit 1;
+
+  if pr.factor is not null and pr.factor > extra then
+    extra := pr.factor; motivo := pr.nombre; hasta := pr.ultimo; de_cumple := false;
+    /* Una hora feliz termina hoy a esa hora, no el último día del rango:
+       "hasta las 20 h" es lo que el cliente necesita saber. */
+    hora_fin := pr.hora_hasta;
+  end if;
+
+  return jsonb_build_object(
+    'total',  round(coalesce(c.multiplica, 1) * extra, 2),
+    'nivel',  coalesce(c.multiplica, 1),
+    'extra',  extra,
+    'motivo', motivo,
+    'hasta',  hasta,
+    'hora_hasta', case when hora_fin is null then null
+                       when extract(minute from hora_fin) = 0 then to_char(hora_fin, 'FMHH24')
+                       else to_char(hora_fin, 'FMHH24:MI') end,
+    'cumple', de_cumple,
+    'es_cumple', c.cumple is not null
+                 and club_cumple_en(c.cumple, extract(year from hoy)::int) = hoy);
+end;
+$cf$;
+
+revoke all on function club_factor(bigint) from public, anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- CONFIGURACIÓN: LISTAR Y GUARDAR
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_multi_listar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ml$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', m.id, 'nombre', m.nombre, 'factor', m.factor,
+             'desde', (m.desde at time zone 'America/Argentina/Buenos_Aires')::date,
+             'hasta', (m.hasta at time zone 'America/Argentina/Buenos_Aires')::date - 1,
+             'dias', m.dias,
+             'hora_desde', to_char(m.hora_desde, 'HH24:MI'),
+             'hora_hasta', to_char(m.hora_hasta, 'HH24:MI'),
+             'cuando', club_multi_cuando(m),
+             /* "vigente" es que el rango está en curso; "ahora", que además
+                hoy es uno de sus días y es su horario. */
+             'vigente', now() >= m.desde and now() < m.hasta,
+             'ahora', club_multi_vale(m, now()),
+             'futura',  now() < m.desde)
+           order by m.desde desc)
+      from (select * from club_multiplicadores
+             where baja is null and hasta > now() - interval '60 days'
+             order by desde desc limit 30) m
+  ), '[]'::jsonb);
+end;
+$ml$;
+
+grant execute on function club_multi_listar(text) to anon, authenticated;
+
+
+/* Cambia la firma —tres parámetros más—, así que la vieja se borra: con las
+   dos, PostgREST elige por los nombres que le llegan y una página vieja
+   seguiría entrando por la otra. */
+drop function if exists club_multi_guardar(text, bigint, text, numeric, text, text, text, boolean);
+
+create or replace function club_multi_guardar(
+  p_pin text, p_id bigint, p_nombre text, p_factor numeric,
+  p_desde text, p_hasta text, p_por text default null, p_avisar boolean default false,
+  p_dias smallint[] default null, p_hora_desde text default null, p_hora_hasta text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $mg$
+declare
+  d1  date;
+  d2  date;
+  h1  time;
+  h2  time;
+  ds  smallint[];
+  ini timestamptz;
+  fin timestamptz;
+  nom text := nullif(trim(coalesce(p_nombre, '')), '');
+  nid bigint;
+  cuantos integer := 0;
+  tope integer;
+  fx  text := replace(trim_scale(p_factor)::text, '.', ',');
+  m   club_multiplicadores%rowtype;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  if nom is null then
+    return jsonb_build_object('ok', false, 'porque', 'Ponele un nombre: es lo que ven los socios.');
+  end if;
+  if length(nom) > 60 then
+    return jsonb_build_object('ok', false, 'porque', 'El nombre es muy largo. Hasta 60 letras.');
+  end if;
+  if p_factor is null or p_factor <= 1 or p_factor > 3 then
+    return jsonb_build_object('ok', false, 'porque', 'El multiplicador va entre 1,5 y 3.');
+  end if;
+
+  begin
+    d1 := p_desde::date;
+    d2 := p_hasta::date;
+    h1 := nullif(trim(coalesce(p_hora_desde, '')), '')::time;
+    h2 := nullif(trim(coalesce(p_hora_hasta, '')), '')::time;
+  exception when others then
+    return jsonb_build_object('ok', false, 'porque', 'Revisá las fechas y los horarios.');
+  end;
+  if d1 is null or d2 is null then
+    return jsonb_build_object('ok', false, 'porque', 'Faltan las fechas. La de fin es obligatoria.');
+  end if;
+  if d2 < d1 then
+    return jsonb_build_object('ok', false, 'porque', 'Termina antes de empezar.');
+  end if;
+  if d2 < (now() at time zone 'America/Argentina/Buenos_Aires')::date then
+    return jsonb_build_object('ok', false, 'porque', 'Esas fechas ya pasaron.');
+  end if;
+  if (h1 is null) <> (h2 is null) then
+    return jsonb_build_object('ok', false, 'porque', 'El horario necesita las dos horas: desde y hasta.');
+  end if;
+  if h1 is not null and h2 <= h1 then
+    return jsonb_build_object('ok', false, 'porque', 'La hora de fin tiene que ser después de la de inicio.');
+  end if;
+
+  /* Todos los días marcados es lo mismo que ningún filtro. */
+  ds := case when p_dias is null or cardinality(p_dias) = 0 or cardinality(p_dias) = 7 then null
+             else array(select distinct x from unnest(p_dias) x order by x) end;
+  if ds is not null and not (ds <@ array[0,1,2,3,4,5,6]::smallint[]) then
+    return jsonb_build_object('ok', false, 'porque', 'Revisá los días.');
+  end if;
+
+  tope := case when ds is not null or h1 is not null then 92 else 31 end;
+  if d2 - d1 > tope then
+    return jsonb_build_object('ok', false, 'porque',
+      case when tope = 31 then 'Hasta 31 días. Más que eso deja de ser una fecha especial.'
+           else 'Hasta tres meses. Más que eso deja de ser una promo y pasa a ser la regla.' end);
+  end if;
+
+  ini := d1::timestamp at time zone 'America/Argentina/Buenos_Aires';
+  fin := (d2 + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires';
+
+  if p_id is null then
+    insert into club_multiplicadores (nombre, factor, desde, hasta, por, dias, hora_desde, hora_hasta)
+    values (nom, p_factor, ini, fin, nullif(trim(coalesce(p_por, '')), ''), ds, h1, h2)
+    returning id into nid;
+  else
+    update club_multiplicadores
+       set nombre = nom, factor = p_factor, desde = ini, hasta = fin,
+           dias = ds, hora_desde = h1, hora_hasta = h2
+     where id = p_id and baja is null
+    returning id into nid;
+    if nid is null then
+      return jsonb_build_object('ok', false, 'porque', 'No lo encontré. Puede que lo hayan quitado.');
+    end if;
+  end if;
+
+  if coalesce(p_avisar, false) then
+    select count(*) into cuantos from club_suscripciones where muerto is null;
+    if cuantos > 0 then
+      select * into m from club_multiplicadores where id = nid;
+      insert into club_avisos (titulo, cuerpo, enlace, por, sale)
+      values (
+        nom || ': puntos x' || fx,
+        /* "1,5 veces más" se lee como 2,5: los que no son redondos van en
+           porcentaje, "un 50% más". */
+        'Tus compras en VDH suman ' ||
+          case when p_factor = 2 then 'el doble' when p_factor = 3 then 'el triple'
+               else 'un ' || round((p_factor - 1) * 100)::int || '% más' end ||
+          ' de puntos ' || club_multi_cuando(m) || '.',
+        'tarjeta.html#promos',
+        'Puntos dobles',
+        greatest(now(), ini + interval '10 hours'));
+    end if;
+  end if;
+
+  return jsonb_build_object('ok', true, 'id', nid, 'avisados', cuantos);
+end;
+$mg$;
+
+grant execute on function club_multi_guardar(text, bigint, text, numeric, text, text, text, boolean, smallint[], text, text)
+  to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- LO QUE VE EL SOCIO EN "PROMOS"
+--
+-- Los puntos extra en curso y los que arrancan en la próxima semana, sin
+-- nada que no sea público: nombre, cuánto suman y cuándo. Sin PIN, como
+-- las promociones: es lo que se quiere que vea todo el mundo.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_multi_publicos()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $mp$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'nombre', m.nombre, 'factor', m.factor,
+           'cuando', club_multi_cuando(m),
+           'ahora', club_multi_vale(m, now()))
+         order by club_multi_vale(m, now()) desc, m.desde), '[]'::jsonb)
+    from club_multiplicadores m
+   where m.baja is null and m.hasta > now() and m.desde < now() + interval '7 days'
+$mp$;
+
+grant execute on function club_multi_publicos() to anon, authenticated;
+
+
+select 'listo: días y horario en los puntos extra' as que;

@@ -261,6 +261,23 @@
   .costo-dato span { display: block; font-size: 12.5px; color: var(--txt-3); margin-top: 3px; }
   .costo-dato.clave { grid-column: 1 / -1; border-color: var(--acc-line); }
   .costo-dato.clave b { font-size: 28px; color: var(--acc-txt); }
+  /* Los días de la semana, como botones que se prenden. Ninguno prendido
+     = todos los días, que es el caso común y no tiene que pedir siete
+     clics. */
+  .dias-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dia-chip {
+    min-width: 44px; padding: 9px 10px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--surface-2);
+    font: 700 13px var(--sans); color: var(--txt-2); cursor: pointer;
+  }
+  .dia-chip[aria-pressed="true"] {
+    background: linear-gradient(135deg, var(--acc), var(--acc-2));
+    border-color: transparent; color: var(--acc-ink, #fff);
+  }
+  .horas-fila { display: flex; align-items: center; gap: 8px; }
+  .horas-fila input { flex: 1; min-width: 0; }
+  .horas-fila[hidden] { display: none; }
+
   .kommo-linea { margin-top: 12px; font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
   .kommo-linea b { color: var(--txt); }
   .kommo-linea.mal { color: var(--warn-txt); }
@@ -424,8 +441,8 @@
       <div id="promoCuerpo"></div>
     </div>
     <div class="bloque" id="cajaMulti">
-      <h2 class="bloque-tit">Puntos dobles</h2>
-      <p class="bloque-sub">Unos días en que las compras de los socios suman más puntos. Esos días el programa cuesta el doble: guardalos para las fechas fuertes.</p>
+      <h2 class="bloque-tit">Puntos dobles y hora feliz</h2>
+      <p class="bloque-sub">Fechas, días de la semana u horarios en que las compras de los socios suman más puntos. Mientras duran, el programa cuesta más: guardalos para cuando hace falta mover gente.</p>
       <div id="multiCuerpo"></div>
     </div>
     <div class="bloque" id="cajaAviso">
@@ -1114,19 +1131,21 @@
 
   function textoFactor(f) {
     f = Number(f);
-    return f === 2 ? 'el doble' : f === 3 ? 'el triple' : String(f).replace('.', ',') + ' veces';
+    return f === 2 ? 'el doble' : f === 3 ? 'el triple' : 'un ' + Math.round((f - 1) * 100) + '% más';
   }
 
   function listaMulti(lista) {
     var filas = lista.map(function (m) {
-      var estado = m.vigente ? '<span class="pill pill-ok">Ahora</span>'
+      /* "Ahora" sólo si vale en este momento. Una hora feliz de los martes
+         un miércoles está en curso pero no activa, y decir "Ahora" ahí es
+         mentirle a quien mira. */
+      var estado = m.ahora   ? '<span class="pill pill-ok">Ahora</span>'
+                 : m.vigente ? '<span class="pill pill-neutra">En curso</span>'
                  : m.futura  ? '<span class="pill pill-warn">Desde el ' + esc(fechaCorta(m.desde)) + '</span>'
                              : '<span class="pill pill-neutra">Terminó</span>';
-      var dias = m.desde === m.hasta ? 'el ' + fechaCorta(m.desde)
-               : 'del ' + fechaCorta(m.desde) + ' al ' + fechaCorta(m.hasta);
       return '<div class="promo-fila">' +
         '<div class="promo-fila-txt"><b>' + esc(m.nombre) + '</b>' +
-          '<span>Suman ' + textoFactor(m.factor) + ', ' + esc(dias) + '</span></div>' +
+          '<span>Suman ' + textoFactor(m.factor) + ', ' + esc(m.cuando || '') + '</span></div>' +
         estado +
         (m.vigente || m.futura
           ? '<button type="button" class="btn btn-sec btn-chico" data-multibaja="' + m.id + '">Quitar</button>'
@@ -1137,7 +1156,7 @@
     $('multiCuerpo').innerHTML =
       (filas || '<p class="bloque-sub">No hay ninguno cargado.</p>') +
       '<button type="button" class="btn btn-pri btn-chico" id="multiNuevo" ' +
-              'style="margin-top:14px">Cargar puntos dobles</button>';
+              'style="margin-top:14px">Cargar puntos extra</button>';
 
     $('multiNuevo').onclick = editorMulti;
     Array.prototype.forEach.call($('multiCuerpo').querySelectorAll('[data-multibaja]'), function (b) {
@@ -1160,12 +1179,12 @@
       '<div class="campos">' +
         '<div class="campo ancho">' +
           '<label for="multiNombre">Nombre <span class="lbl-opc">— lo ven los socios</span></label>' +
-          '<input type="text" id="multiNombre" maxlength="60" placeholder="Hot Sale">' +
+          '<input type="text" id="multiNombre" maxlength="60" placeholder="Hot Sale, Hora feliz, Martes dobles…">' +
         '</div>' +
         '<div class="campo ancho">' +
           '<label for="multiFactor">Cuánto suman</label>' +
           '<select id="multiFactor">' +
-            '<option value="1.5">Una vez y media (1,5x)</option>' +
+            '<option value="1.5">Un 50% más (1,5x)</option>' +
             '<option value="2" selected>El doble (2x)</option>' +
             '<option value="3">El triple (3x)</option>' +
           '</select>' +
@@ -1177,6 +1196,25 @@
         '<div class="campo">' +
           '<label for="multiHasta">Hasta qué día</label>' +
           '<input type="date" id="multiHasta" min="' + iso + '">' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label>Qué días <span class="lbl-opc">— ninguno marcado: todos los días</span></label>' +
+          '<div class="dias-chips" id="multiDias">' +
+            [[1, 'Lu'], [2, 'Ma'], [3, 'Mi'], [4, 'Ju'], [5, 'Vi'], [6, 'Sá'], [0, 'Do']].map(function (d) {
+              return '<button type="button" class="dia-chip" aria-pressed="false" data-dia="' + d[0] + '">' + d[1] + '</button>';
+            }).join('') +
+          '</div>' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label class="casillero">' +
+            '<input type="checkbox" id="multiConHora">' +
+            '<span>Sólo en un horario <span class="lbl-opc">— la hora feliz</span></span>' +
+          '</label>' +
+          '<div class="horas-fila" id="multiHoras" hidden style="margin-top:8px">' +
+            '<input type="time" id="multiHoraDesde" value="18:00" aria-label="Desde las">' +
+            '<span>a</span>' +
+            '<input type="time" id="multiHoraHasta" value="20:00" aria-label="Hasta las">' +
+          '</div>' +
         '</div>' +
         '<div class="campo ancho">' +
           '<label class="casillero">' +
@@ -1196,20 +1234,33 @@
 
     var cuesta = function () {
       var f = Number($('multiFactor').value);
-      $('multiCuesta').textContent = 'Esos días cada compra de un socio suma ' + textoFactor(f) +
+      $('multiCuesta').textContent = 'Mientras dure, cada compra de un socio suma ' + textoFactor(f) +
         ' de puntos, y el programa cuesta ' + textoFactor(f) + ' que siempre. Un socio en ' +
         'su semana de cumple no suma las dos cosas: suma la más alta.';
     };
     $('multiFactor').onchange = cuesta;
     cuesta();
 
+    Array.prototype.forEach.call($('multiDias').querySelectorAll('.dia-chip'), function (b) {
+      b.onclick = function () {
+        b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true');
+      };
+    });
+    $('multiConHora').onchange = function () { $('multiHoras').hidden = !$('multiConHora').checked; };
+
     $('multiVolver').onclick = pintarMulti;
     $('multiGuardar').onclick = function () {
       var b = $('multiGuardar');
       b.disabled = true;
+      var dias = [];
+      Array.prototype.forEach.call($('multiDias').querySelectorAll('.dia-chip[aria-pressed="true"]'), function (d) {
+        dias.push(Number(d.dataset.dia));
+      });
+      var conHora = $('multiConHora').checked;
       base.club.multiGuardar(pinPromo(), null, $('multiNombre').value.trim(),
           Number($('multiFactor').value), $('multiDesde').value, $('multiHasta').value,
-          leer('nc_vendedor') || 'Configuración', $('multiAvisar').checked)
+          leer('nc_vendedor') || 'Configuración', $('multiAvisar').checked,
+          dias, conHora ? $('multiHoraDesde').value : '', conHora ? $('multiHoraHasta').value : '')
         .then(function (r) {
           if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
           if (r.avisados) {
