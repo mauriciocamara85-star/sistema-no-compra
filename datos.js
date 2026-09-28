@@ -720,6 +720,11 @@ var base = {
       });
     },
 
+    /** Cómo va la sincronización de los socios con Kommo. Pide PIN. */
+    kommoEstado: function (pin) {
+      return funcion('club_kommo_estado', { p_pin: pin });
+    },
+
     /** Marcar el regalo de cumple como usado. Una vez por cumpleaños. */
     entregarCumple: function (pin, codigo, local, vendedor) {
       return funcion('club_entregar_cumple', {

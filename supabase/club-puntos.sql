@@ -2159,3 +2159,460 @@ grant execute on function club_regalo_guardar(text, text, text, smallint, text, 
 
 select nivel, tipo, coalesce(porcentaje || '%', producto) as regalo from club_regalos_cumple
  order by (select orden from club_niveles n where n.nombre = nivel);
+
+
+-- ─────────────────────────── PARTE 17 ───────────────────────────
+-- Los socios en Kommo, como contactos etiquetados.
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LOS SOCIOS EN KOMMO
+--
+-- Correr entero en el editor SQL de Supabase, DESPUÉS del 16.
+--
+-- Decidido el 25/09/2026 y pedido así: "que toda la gente del club VDH
+-- automáticamente vaya a un segmento, para después poder escribirles
+-- promociones".
+--
+-- ══════════════════════════════════════════════════════════════════════════
+-- CONTACTOS CON ETIQUETAS, NUNCA LEADS
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- Un socio no es una oportunidad de venta: si cada alta creara un lead, el
+-- embudo del No Compra se llenaría de gente que nunca se fue sin comprar y
+-- dejaría de medir lo que mide. Y Kommo no deja borrar leads por API: un
+-- error se limpia a mano, de a uno.
+--
+-- Las etiquetas:
+--
+--   VDH Club          todos los socios
+--   Acepta promos     los que tildaron que quieren recibir novedades
+--   Club Plata/Oro/Platino   el nivel de hoy, que se resincroniza solo
+--
+-- EL SEGMENTO PARA MANDAR PROMOCIONES SON LOS QUE TIENEN "VDH Club" Y
+-- "Acepta promos". No es burocracia: si se le escribe a alguien que no lo
+-- pidió y lo reporta, WhatsApp bloquea el número del local.
+--
+-- ══════════════════════════════════════════════════════════════════════════
+-- NUNCA SE LE BORRA UNA ETIQUETA QUE NO SEA DEL CLUB
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- Mucha gente ya está en Kommo —por un no-compra, por la tienda online— con
+-- etiquetas que puso otro ("No Compra", "RIVADAVIA", "Motivo: Talle"). En
+-- Kommo, mandar la lista de etiquetas de un contacto la REEMPLAZA entera:
+-- hecho a la ligera, sincronizar el Club le borraría todo eso a cada uno.
+--
+-- Así que se AGREGA y se SACA de a una (tags_to_add / tags_to_delete), y
+-- sólo se saca lo que es del Club: el nivel viejo, o "Acepta promos" si lo
+-- revocó. Y después se VERIFICA leyendo el contacto: si Kommo no aplicó el
+-- cambio, se hace de la otra forma —leer las que tiene, sumar, mandar la
+-- lista completa—, que es más lenta pero no pierde nada.
+--
+-- ══════════════════════════════════════════════════════════════════════════
+-- UNA BANDEJA PROPIA, APARTE DE LA DEL NO COMPRA
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- La bandeja `salidas` está atada a los registros de no-compra (cada fila
+-- apunta a uno) y anda. En vez de estirarla, el Club tiene la suya con la
+-- misma mecánica: seis intentos con espera creciente, y lo que no sale queda
+-- a la vista. Si Kommo está caído, el socio no se pierde: espera.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 1 · LO QUE SE RECUERDA DE CADA SOCIO
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* El id del contacto en Kommo: la segunda vez no hay que buscarlo. */
+alter table club_clientes add column if not exists kommo_contacto bigint;
+
+/* Las etiquetas del Club que tiene hoy en Kommo, como quedaron la última
+   vez. Es lo que dice si hay que volver a mandar algo: si el nivel cambió,
+   esto ya no coincide con lo que debería tener. */
+alter table club_clientes add column if not exists kommo_etiquetas text;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 2 · LAS ETIQUETAS QUE LE CORRESPONDEN HOY
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_kommo_etiquetas(p_cliente bigint)
+returns text[]
+language sql
+stable
+security definer
+set search_path = public
+as $ke$
+  select array_remove(array[
+           'VDH Club',
+           case when v.acepta_promos and v.revocado is null then 'Acepta promos' end,
+           'Club ' || v.nivel
+         ], null)
+    from v_club_clientes v where v.id = p_cliente
+$ke$;
+
+revoke all on function club_kommo_etiquetas(bigint) from public, anon, authenticated;
+
+/* Todas las etiquetas que son del Club. Lo que no está acá, no se toca. */
+create or replace function club_kommo_propias()
+returns text[]
+language sql
+stable
+as $kp$
+  select array['VDH Club', 'Acepta promos'] ||
+         coalesce((select array_agg('Club ' || nombre) from club_niveles), '{}')
+$kp$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 3 · LA BANDEJA
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_salidas (
+  id        bigint generated always as identity primary key,
+  cliente   bigint not null references club_clientes(id) on delete cascade,
+  estado    estado_salida not null default 'pendiente',
+  intentos  smallint not null default 0,
+  creado    timestamptz not null default now(),
+  ultimo    timestamptz,
+  error     text,
+  resultado jsonb
+);
+
+/* Un socio no puede tener dos pendientes: el alta y la resincronización del
+   día podrían encolarlo dos veces, y mandarlo dos veces es gastar llamadas.
+   Uno hecho y otro pendiente sí puede: es el cambio de nivel de mañana. */
+create unique index if not exists club_salidas_una_pendiente on club_salidas (cliente)
+  where estado = 'pendiente';
+create index if not exists club_salidas_cola on club_salidas (creado)
+  where estado = 'pendiente';
+
+alter table club_salidas enable row level security;
+revoke all on club_salidas from anon, authenticated;
+
+
+/* Dejar a un socio en la cola. Sin token de Kommo configurado no hace nada:
+   el Club anda igual sin el CRM. */
+create or replace function club_kommo_encolar(p_cliente bigint)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $ce$
+begin
+  if secreto('KOMMO_TOKEN') is null then return false; end if;
+  insert into club_salidas (cliente) values (p_cliente) on conflict do nothing;
+  return found;
+end;
+$ce$;
+
+revoke all on function club_kommo_encolar(bigint) from public, anon, authenticated;
+
+
+/* Cada alta, a la cola. El disparador no llama a Kommo: sólo anota. Así un
+   Kommo lento o caído no le traba el alta a nadie parado en el mostrador. */
+create or replace function club_kommo_alta()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $ka$
+begin
+  perform club_kommo_encolar(new.id);
+  return new;
+end;
+$ka$;
+
+drop trigger if exists club_kommo_alta_tg on club_clientes;
+create trigger club_kommo_alta_tg
+  after insert on club_clientes
+  for each row execute function club_kommo_alta();
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 4 · MANDAR UN SOCIO
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Las etiquetas que tiene un contacto en Kommo, leídas de verdad. */
+create or replace function kommo_etiquetas_de(p_contacto bigint)
+returns text[]
+language plpgsql
+security definer
+set search_path = public
+as $ed$
+declare
+  r jsonb;
+begin
+  r := kommo('GET', '/contacts/' || p_contacto);
+  return coalesce((select array_agg(t->>'name')
+                     from jsonb_array_elements(coalesce(r#>'{_embedded,tags}', '[]'::jsonb)) t), '{}');
+end;
+$ed$;
+
+revoke all on function kommo_etiquetas_de(bigint) from public, anon, authenticated;
+
+
+create or replace function mandar_club_kommo(p_cliente bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $mk$
+declare
+  c        v_club_clientes%rowtype;
+  tel      text;
+  cid      bigint;
+  nuevo    boolean := false;
+  quiere   text[];
+  sacar    text[];
+  tiene    text[];
+  cc       jsonb := '[]'::jsonb;
+  id_campo bigint;
+  r        jsonb;
+  metodo   text := 'agregar';
+  ya       bigint;
+begin
+  select * into c from v_club_clientes where id = p_cliente;
+  if not found then raise exception 'No existe el socio %.', p_cliente; end if;
+  /* De la TABLA y no de la vista: la vista se armó con "c.*" antes de que
+     existiera esta columna, y Postgres fija la lista de columnas de una
+     vista el día que la crea. Leída de la vista, no existe. */
+  select kommo_contacto into ya from club_clientes where id = p_cliente;
+
+  quiere := club_kommo_etiquetas(p_cliente);
+  /* Lo del Club que NO le corresponde: el nivel que ya no tiene, o "Acepta
+     promos" si lo revocó. Nada que no sea del Club entra acá. */
+  sacar := array(select e from unnest(club_kommo_propias()) e where e <> all(quiere));
+
+  tel := kommo_tel(c.telefono);
+
+  -- ── El contacto: el que ya sabemos, el que ya estaba, o uno nuevo ──
+  cid := ya;
+  if cid is null then
+    cid := kommo_buscar_contacto(tel);
+  end if;
+
+  if cid is null then
+    id_campo := kommo_campo('contacts', '#PHONE');
+    if tel is not null and id_campo is not null then
+      cc := cc || jsonb_build_array(jsonb_build_object(
+        'field_id', id_campo, 'values', jsonb_build_array(jsonb_build_object('value', tel))));
+    end if;
+    id_campo := kommo_campo('contacts', '#EMAIL');
+    if c.mail is not null and id_campo is not null then
+      cc := cc || jsonb_build_array(jsonb_build_object(
+        'field_id', id_campo, 'values', jsonb_build_array(jsonb_build_object('value', c.mail))));
+    end if;
+
+    r := kommo('POST', '/contacts', jsonb_build_array(
+      jsonb_build_object('name', c.nombre, 'request_id', 'club-' || p_cliente)
+      || case when jsonb_array_length(cc) > 0 then jsonb_build_object('custom_fields_values', cc) else '{}'::jsonb end
+      || jsonb_build_object('_embedded', jsonb_build_object('tags',
+           (select jsonb_agg(jsonb_build_object('name', e)) from unnest(quiere) e)))));
+    cid := (r#>>'{_embedded,contacts,0,id}')::bigint;
+    if cid is null then raise exception 'Kommo no devolvió el contacto creado.'; end if;
+    nuevo := true;
+  else
+    /* Ya estaba: se agrega lo que falta y se saca lo del Club que sobra, de
+       a una. Sus otras etiquetas no se tocan. Ver el encabezado. */
+    perform kommo('PATCH', '/contacts', jsonb_build_array(
+      jsonb_build_object('id', cid,
+        'tags_to_add', (select jsonb_agg(jsonb_build_object('name', e)) from unnest(quiere) e))
+      || case when cardinality(sacar) > 0 then jsonb_build_object('tags_to_delete',
+           (select jsonb_agg(jsonb_build_object('name', e)) from unnest(sacar) e)) else '{}'::jsonb end));
+  end if;
+
+  -- ── Verificar: leer el contacto y mirar que haya quedado bien ──
+  tiene := kommo_etiquetas_de(cid);
+  if not (tiene @> quiere) or (tiene && sacar) then
+    /* No lo aplicó. Plan B: armar la lista completa —las que tenía, menos
+       las del Club que sobran, más las que faltan— y mandarla entera. */
+    metodo := 'lista completa';
+    tiene := array(select distinct e from unnest(
+               array(select e from unnest(tiene) e where e <> all(sacar)) || quiere) e);
+    perform kommo('PATCH', '/contacts', jsonb_build_array(jsonb_build_object('id', cid,
+      '_embedded', jsonb_build_object('tags',
+        (select jsonb_agg(jsonb_build_object('name', e)) from unnest(tiene) e)))));
+    tiene := kommo_etiquetas_de(cid);
+    if not (tiene @> quiere) or (tiene && sacar) then
+      raise exception 'Kommo no aplicó las etiquetas (quedaron: %).', array_to_string(tiene, ', ');
+    end if;
+  end if;
+
+  -- ── La nota, sólo la primera vez ──
+  /* Para quien atiende en Kommo: de dónde salió este contacto. Si falla no
+     tumba nada: las etiquetas, que son lo que importa, ya están. */
+  if ya is null then
+    begin
+      perform kommo('POST', '/contacts/' || cid || '/notes', jsonb_build_array(jsonb_build_object(
+        'note_type', 'common',
+        'params', jsonb_build_object('text',
+          'Socio del VDH Club desde el ' || to_char(c.creado at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY') ||
+          coalesce(' (se anotó en ' || c.local_alta || ')', '') || '.' ||
+          case when c.acepta_promos and c.revocado is null
+               then E'\nAceptó recibir novedades por WhatsApp el ' ||
+                    to_char(c.consentimiento at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY') || '.'
+               else E'\nNO aceptó recibir promociones: no escribirle con ofertas.' end))));
+    exception when others then
+      null;
+    end;
+  end if;
+
+  update club_clientes
+     set kommo_contacto = cid,
+         kommo_etiquetas = array_to_string(quiere, '|')
+   where id = p_cliente;
+
+  return jsonb_build_object('contacto', cid, 'nuevo', nuevo, 'etiquetas', quiere, 'como', metodo);
+end;
+$mk$;
+
+revoke all on function mandar_club_kommo(bigint) from public, anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 5 · EL DESPACHADOR, CADA MINUTO
+-- Calcado de despachar_salidas (reloj.sql): seis intentos, espera creciente,
+-- de a veinte, y el fallo de uno no corta la vuelta.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function despachar_club_salidas()
+returns integer
+language plpgsql
+security definer
+set search_path = public, extensions
+as $dc$
+declare
+  s      club_salidas%rowtype;
+  res    jsonb;
+  hechos integer := 0;
+begin
+  for s in
+    select * from club_salidas
+     where estado = 'pendiente'
+       and intentos < 6
+       and (ultimo is null or ultimo < now() - (power(2, intentos) * interval '1 minute'))
+     order by creado
+     limit 20
+     for update skip locked
+  loop
+    begin
+      res := mandar_club_kommo(s.cliente);
+      update club_salidas
+         set estado = 'hecho', intentos = intentos + 1, ultimo = now(), error = null, resultado = res
+       where id = s.id;
+      hechos := hechos + 1;
+    exception when others then
+      update club_salidas
+         set intentos = intentos + 1, ultimo = now(), error = left(sqlerrm, 500),
+             estado = case when intentos + 1 >= 6 then 'fallado'::estado_salida
+                           else 'pendiente'::estado_salida end
+       where id = s.id;
+    end;
+  end loop;
+  return hechos;
+end;
+$dc$;
+
+revoke all on function despachar_club_salidas() from public, anon, authenticated;
+
+select cron.schedule('despachar-club', '* * * * *', 'select despachar_club_salidas()');
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 6 · LA RESINCRONIZACIÓN DE CADA DÍA
+--
+-- El nivel cambia solo: sube con las compras y baja cuando las compras de
+-- hace un año salen de la ventana. Una vez por día se encola a todo socio
+-- cuyas etiquetas en Kommo ya no son las que le corresponden.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_kommo_resincronizar()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $kr$
+declare
+  n integer := 0;
+  s record;
+begin
+  if secreto('KOMMO_TOKEN') is null then
+    return jsonb_build_object('encolados', 0, 'porque', 'Sin Kommo configurado.');
+  end if;
+  for s in
+    select k.id from club_clientes k
+     where k.baja is null
+       and coalesce(k.kommo_etiquetas, '') <> array_to_string(club_kommo_etiquetas(k.id), '|')
+  loop
+    if club_kommo_encolar(s.id) then n := n + 1; end if;
+  end loop;
+  return jsonb_build_object('encolados', n);
+end;
+$kr$;
+
+revoke all on function club_kommo_resincronizar() from public, anon, authenticated;
+
+/* La tarea diaria del 16, con Kommo. */
+create or replace function club_diario()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cd$
+begin
+  return jsonb_build_object(
+    'vencer', club_vencer(),
+    'cumple', club_cumple_avisar(),
+    'kommo',  club_kommo_resincronizar());
+end;
+$cd$;
+
+revoke all on function club_diario() from public, anon, authenticated;
+grant execute on function club_diario() to service_role;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 7 · CÓMO VA, PARA "EL CLUB EN NÚMEROS"
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_kommo_estado(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ks$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return jsonb_build_object(
+    'activo',      secreto('KOMMO_TOKEN') is not null,
+    'en_kommo',    (select count(*) from club_clientes where kommo_contacto is not null and baja is null),
+    'socios',      (select count(*) from club_clientes where baja is null),
+    'con_promos',  (select count(*) from club_clientes
+                     where kommo_contacto is not null and baja is null
+                       and acepta_promos and revocado is null),
+    'pendientes',  (select count(*) from club_salidas where estado = 'pendiente'),
+    'fallados',    (select count(*) from club_salidas s
+                     where s.estado = 'fallado'
+                       and not exists (select 1 from club_salidas h
+                                        where h.cliente = s.cliente and h.estado = 'hecho'
+                                          /* Por número de fila y no por hora: dos cosas de la
+                                             misma transacción tienen la misma hora. */
+                                          and h.id > s.id)),
+    'ultimo_error', (select error from club_salidas where estado = 'fallado'
+                      order by ultimo desc limit 1));
+end;
+$ks$;
+
+grant execute on function club_kommo_estado(text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 8 · LOS QUE YA ESTÁN, A LA COLA
+-- ══════════════════════════════════════════════════════════════════════════
+
+select count(*) as encolados from club_clientes where baja is null and club_kommo_encolar(id);
+
+select 'socios en la cola para Kommo' as que, count(*)::text as cuantos
+  from club_salidas where estado = 'pendiente';

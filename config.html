@@ -242,6 +242,9 @@
   .costo-dato span { display: block; font-size: 12.5px; color: var(--txt-3); margin-top: 3px; }
   .costo-dato.clave { grid-column: 1 / -1; border-color: var(--acc-line); }
   .costo-dato.clave b { font-size: 28px; color: var(--acc-txt); }
+  .kommo-linea { margin-top: 12px; font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
+  .kommo-linea b { color: var(--txt); }
+  .kommo-linea.mal { color: var(--warn-txt); }
 
 </style>
 </head>
@@ -1228,12 +1231,36 @@
              pero sí son premios que pueden venir a buscar mañana. */
           '<div class="costo-dato" style="grid-column:1/-1"><b>' + n(r.circulantes) + '</b>' +
             '<span>puntos dando vueltas: premios que los socios pueden venir a buscar</span></div>' +
-        '</div>';
+        '</div>' +
+        '<div id="kommoLinea"></div>';
+        pintarKommo();
       })
       .catch(function (err) {
         caja.innerHTML = '<p class="bloque-sub">' +
           esc((err && err.delServidor && err.message) || 'No se pudo abrir.') + '</p>';
       });
+  }
+
+  /* Cómo va Kommo. Sin token configurado no dice nada: el Club anda igual
+     sin el CRM, y un cartel de "no conectado" permanente no lo lee nadie.
+     Con algo fallado, lo dice en amarillo y con el error: si no se ve acá,
+     se descubre el día que alguien arma un segmento y faltan socios. */
+  function pintarKommo() {
+    var caja = $('kommoLinea');
+    if (!caja || !pinPromo()) return;
+    base.club.kommoEstado(pinPromo()).then(function (k) {
+      if (!k || !k.activo) { caja.innerHTML = ''; return; }
+      var n = function (x) { return Math.round(Number(x) || 0).toLocaleString('es-AR'); };
+      caja.innerHTML =
+        '<p class="kommo-linea">En Kommo: <b>' + n(k.en_kommo) + '</b> de ' + n(k.socios) + ' socios' +
+          ', <b>' + n(k.con_promos) + '</b> aceptan promociones' +
+          (k.pendientes ? ' · ' + n(k.pendientes) + ' en camino' : '') + '. ' +
+          'El segmento para mandarles ofertas: etiquetas <b>VDH Club</b> y <b>Acepta promos</b>.</p>' +
+        (k.fallados
+          ? '<p class="kommo-linea mal">' + n(k.fallados) + ' no se pudieron mandar. Se reintenta ' +
+            'solo todos los días. Último error: ' + esc(k.ultimo_error || 'sin detalle') + '</p>'
+          : '');
+    }).catch(function () { caja.innerHTML = ''; });
   }
 
   function bajaPromo(id) {
