@@ -449,6 +449,11 @@
       <p class="bloque-sub">Lo que ven los socios al abrir su tarjeta. Pasada la fecha desaparecen solas.</p>
       <div id="promoCuerpo"></div>
     </div>
+    <div class="bloque" id="cajaNovedad">
+      <h2 class="bloque-tit">La novedad de Inicio</h2>
+      <p class="bloque-sub">Una foto grande con un título, en la pantalla de Inicio de la tarjeta: la colección nueva, un lanzamiento. Una sola a la vez.</p>
+      <div id="novedadCuerpo"></div>
+    </div>
     <div class="bloque" id="cajaMulti">
       <h2 class="bloque-tit">Puntos dobles y hora feliz</h2>
       <p class="bloque-sub">Fechas, días de la semana u horarios en que las compras de los socios suman más puntos. Mientras duran, el programa cuesta más: guardalos para cuando hace falta mover gente.</p>
@@ -569,6 +574,7 @@
     pintarResenas();
     pintarMulti();
     pintarCosto();
+    pintarNovedad();
   }
 
 
@@ -732,6 +738,95 @@
         '(clic derecho sobre la foto) y no la de la página?</span>';
     };
     img.src = url;
+  }
+
+  /* La misma prueba, para las fotos de la tarjeta: la de un premio va
+     cuadrada y la de la novedad apaisada (3:2). La vista previa tiene la
+     forma con que se va a ver, así el recorte no sorprende a nadie. */
+  function previaFoto(inputId, cajaId, forma) {
+    var caja = $(cajaId);
+    if (!caja || !$(inputId)) return;
+    var url = $(inputId).value.trim();
+    if (!url) { caja.innerHTML = ''; caja.removeAttribute('style'); return; }
+    var medida = forma === 'cuadrada' ? 'width:140px;aspect-ratio:1;' : 'width:100%;max-width:330px;aspect-ratio:3/2;';
+    caja.setAttribute('style', 'margin-top:10px;border-radius:12px;overflow:hidden;border:1px solid var(--line);' +
+      'background:#F2F1EE;display:grid;place-items:center;' + medida);
+    caja.innerHTML = '<span class="bloque-sub" style="margin:0">Probando…</span>';
+    var img = new Image();
+    img.onload = function () {
+      caja.innerHTML = '';
+      img.setAttribute('style', 'width:100%;height:100%;object-fit:cover;display:block');
+      caja.appendChild(img);
+    };
+    img.onerror = function () {
+      caja.innerHTML = '<span class="bloque-sub" style="margin:0;text-align:center;padding:0 10px">' +
+        'No se pudo cargar. ¿Copiaste la dirección de la IMAGEN y no la de la página?</span>';
+    };
+    img.src = url;
+  }
+
+  /* ═══ La novedad de Inicio ══════════════════════════════════════════════
+     Una sola: foto, una bajada ("Nueva colección"), un título y a dónde
+     lleva. Guardar la prende; "Sacar de Inicio" la apaga sin borrarla. */
+  function pintarNovedad() {
+    var caja = $('novedadCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      return;
+    }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.novedadVer(pinPromo())
+      .then(function (n) { formNovedad(n || null); })
+      .catch(function (err) {
+        caja.innerHTML = '<p class="bloque-sub">' +
+          esc((err && err.delServidor && err.message) || 'No se pudo abrir. ¿Se corrió el SQL 22?') + '</p>';
+      });
+  }
+
+  function formNovedad(n) {
+    var v = function (x) { return x == null ? '' : esc(String(x)); };
+    var estado = !n ? 'Todavía no hay ninguna cargada.'
+               : n.activa ? 'Se está mostrando en Inicio.'
+               : 'Está sacada de Inicio: guardarla la vuelve a mostrar.';
+    $('novedadCuerpo').innerHTML =
+      '<p class="bloque-sub" style="margin-top:0"><b>' + estado + '</b></p>' +
+      '<div class="campos">' +
+        '<div class="campo"><label for="novBajada">Bajada <span class="lbl-opc">— opcional</span></label>' +
+          '<input type="text" id="novBajada" maxlength="30" placeholder="Nueva colección" value="' + v(n && n.bajada) + '"></div>' +
+        '<div class="campo"><label for="novTitulo">Título</label>' +
+          '<input type="text" id="novTitulo" maxlength="60" placeholder="Llegó la primavera a VDH" value="' + v(n && n.titulo) + '"></div>' +
+        '<div class="campo ancho"><label for="novImagen">Foto <span class="lbl-opc">— se ve apaisada; ' +
+          'mejor una horizontal o con la prenda al centro</span></label>' +
+          '<input type="url" id="novImagen" inputmode="url" autocapitalize="off" placeholder="https://…" value="' + v(n && n.imagen) + '">' +
+          '<div id="novImgPrev"></div></div>' +
+        '<div class="campo ancho"><label for="novEnlace">A dónde lleva <span class="lbl-opc">— opcional</span></label>' +
+          '<input type="url" id="novEnlace" inputmode="url" autocapitalize="off" placeholder="https://vdh.com.ar/…" value="' + v(n && n.enlace) + '"></div>' +
+        '<div class="campo"><button type="button" class="btn btn-pri" id="novGuardar">Guardar y mostrar</button></div>' +
+        (n && n.activa ? '<div class="campo"><button type="button" class="btn btn-sec" id="novSacar">Sacar de Inicio</button></div>' : '') +
+      '</div>';
+
+    var ver = function () { previaFoto('novImagen', 'novImgPrev', 'apaisada'); };
+    $('novImagen').onchange = ver;
+    $('novImagen').onblur = ver;
+    ver();
+
+    var mandar = function (activa, boton) {
+      boton.disabled = true;
+      base.club.novedadGuardar(pinPromo(), $('novBajada').value.trim(), $('novTitulo').value.trim(),
+          $('novImagen').value.trim(), $('novEnlace').value.trim(), activa)
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          avisar('ok', activa ? 'Listo: ya se ve en Inicio.' : 'Listo: ya no se ve en Inicio.');
+          pintarNovedad();
+        })
+        .catch(function (err) {
+          avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
+        })
+        .then(function () { boton.disabled = false; });
+    };
+    $('novGuardar').onclick = function () { mandar(true, $('novGuardar')); };
+    if ($('novSacar')) { $('novSacar').onclick = function () { mandar(false, $('novSacar')); }; }
   }
 
   /* ═══ El mensaje suelto ═════════════════════════════════════════════════
@@ -937,7 +1032,8 @@
               (p.valor ? ' · vale ' + pesos(p.valor) : '') +
               (p.costo ? ' · cuesta ' + pesos(p.costo) : '') +
               (p.limite_anual ? ' · ' + p.limite_anual + ' por año' : '') +
-              ' · entregados: ' + (p.entregados || 0) + '</span></div>' +
+              ' · entregados: ' + (p.entregados || 0) +
+              (p.imagen ? ' · con foto' : ' · sin foto') + '</span></div>' +
             (p.activo ? '<span class="pill pill-ok">Activo</span>'
                       : '<span class="pill pill-neutra">Apagado</span>') +
             '<button type="button" class="btn btn-sec btn-chico" data-premio="' + p.id + '">Editar</button>' +
@@ -969,6 +1065,14 @@
           '<input type="text" id="prNombre" maxlength="60" placeholder="Gorra VDH" value="' + v(p && p.nombre) + '"></div>' +
         '<div class="campo ancho"><label for="prDetalle">Letra chica <span class="lbl-opc">— opcional</span></label>' +
           '<input type="text" id="prDetalle" maxlength="120" placeholder="Modelos seleccionados." value="' + v(p && p.detalle) + '"></div>' +
+        /* La foto: en la tarjeta va cuadrada y sobre un fondo claro. La
+           vista previa la muestra igual, para que se vea el recorte antes
+           de guardar. */
+        '<div class="campo ancho"><label for="prImagen">Foto <span class="lbl-opc">— opcional; ' +
+          'mejor cuadrada, con el producto al centro y fondo claro</span></label>' +
+          '<input type="url" id="prImagen" inputmode="url" autocapitalize="off" placeholder="https://…" ' +
+            'value="' + v(p && p.imagen) + '">' +
+          '<div id="prImgPrev"></div></div>' +
         '<div class="campo"><label for="prPuntos">Puntos</label>' +
           '<input type="text" inputmode="numeric" id="prPuntos" placeholder="2500" value="' + v(p && p.puntos) + '"></div>' +
         '<div class="campo"><label for="prLimite">Por año <span class="lbl-opc">— vacío: sin límite</span></label>' +
@@ -1002,9 +1106,15 @@
     $('prCosto').oninput = cuenta;
     cuenta();
 
+    var verFotoPremio = function () { previaFoto('prImagen', 'prImgPrev', 'cuadrada'); };
+    $('prImagen').onchange = verFotoPremio;
+    $('prImagen').onblur = verFotoPremio;
+    verFotoPremio();
+
     $('prVolver').onclick = pintarPremios;
     $('prGuardar').onclick = function () {
       var b = $('prGuardar');
+      var foto = $('prImagen').value.trim();
       b.disabled = true;
       base.club.premioGuardar(pinPromo(), p ? p.id : null,
           $('prNombre').value.trim(), $('prDetalle').value.trim(),
@@ -1012,8 +1122,22 @@
           numero($('prLimite').value), $('prActivo').checked)
         .then(function (r) {
           if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
-          avisar('ok', 'Listo: los socios ya lo ven así.');
-          pintarPremios();
+          /* La foto va en su propio viaje, y sólo si cambió. Si falla, el
+             premio ya quedó guardado: se dice así, para no hacer creer que
+             no se guardó nada. */
+          if (foto === ((p && p.imagen) || '')) {
+            avisar('ok', 'Listo: los socios ya lo ven así.');
+            pintarPremios();
+            return;
+          }
+          return base.club.premioFoto(pinPromo(), p ? p.id : r.id, foto).then(function (f) {
+            if (!f || !f.ok) {
+              avisar('err', 'El premio se guardó, pero la foto no: ' + ((f && f.porque) || 'probá de nuevo.'));
+              return;
+            }
+            avisar('ok', 'Listo: los socios ya lo ven así, con ' + (foto ? 'la foto nueva.' : 'el ícono en vez de foto.'));
+            pintarPremios();
+          });
         })
         .catch(function (err) {
           avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
@@ -1679,6 +1803,7 @@
     pintarResenas();
     pintarMulti();
     pintarCosto();
+    pintarNovedad();
     iniciarPWA();
   })();
 </script>

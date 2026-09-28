@@ -731,6 +731,25 @@ var base = {
       return funcion('club_resena_guardar', { p_pin: pin, p_codigo: codigo, p_url: url || null });
     },
 
+    /** La foto de un premio: la dirección de una imagen ya publicada. Vacía
+        la saca. Va aparte del resto del premio (SQL 22). */
+    premioFoto: function (pin, id, url) {
+      return funcion('club_premio_foto', { p_pin: pin, p_id: id, p_url: url || null });
+    },
+
+    /** La novedad de Inicio: una sola, con foto. */
+    novedadVer: function (pin) {
+      return funcion('club_novedad_ver', { p_pin: pin });
+    },
+
+    /** Guardarla la prende; activa false la saca de Inicio sin borrarla. */
+    novedadGuardar: function (pin, bajada, titulo, imagen, enlace, activa) {
+      return funcion('club_novedad_guardar', {
+        p_pin: pin, p_bajada: bajada || null, p_titulo: titulo || null,
+        p_imagen: imagen || null, p_enlace: enlace || null, p_activa: activa !== false
+      });
+    },
+
     /** Cómo va la sincronización de los socios con Kommo. Pide PIN. */
     kommoEstado: function (pin) {
       return funcion('club_kommo_estado', { p_pin: pin });

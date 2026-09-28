@@ -3611,3 +3611,324 @@ $function$;
 grant execute on function club_tarjeta(text) to anon, authenticated;
 
 select codigo, resena_url from locales order by codigo;
+
+
+-- ─────────────────────────── PARTE 22 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LAS FOTOS DE LOS PREMIOS Y LA NOVEDAD DE INICIO
+--
+-- Correr entero en el editor SQL de Supabase, después del 21.
+--
+-- Para el diseño nuevo de la tarjeta (28/09/2026):
+--
+--   · Cada premio puede tener su foto. Se carga desde Configuración, igual
+--     que la de las promos: la dirección de una imagen ya publicada (la de
+--     la tienda online, por ejemplo). El que no tiene foto muestra su ícono.
+--
+--   · Inicio muestra UNA novedad: foto, una bajada ("Nueva colección"), un
+--     título y a dónde lleva. Es una sola a propósito —Inicio es corto— y se
+--     cambia o se saca desde Configuración.
+--
+--   · La tarjeta trae los locales que tienen enlace de reseñas, para el
+--     "Tu opinión nos importa" de Inicio. El local que no tiene enlace no
+--     aparece en la lista.
+--
+-- Deja cargadas la foto del perfume y la novedad de la campera, colgadas en
+-- vdhclub.com. Las dos se cambian desde Configuración.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 1 · LA DIRECCIÓN DE UNA FOTO
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Sólo https y sin nada raro adentro: la dirección termina escrita en la
+   página de los clientes. Una foto no puede llevar a ningún lado, pero una
+   comilla mal puesta sí podría romper la página. */
+create or replace function club_foto_url_ok(u text)
+returns boolean
+language sql
+immutable
+as $fu$
+  select u ~* '^https://[^\s"''<>()\\]+$' and length(u) <= 1000
+$fu$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 2 · LA FOTO DE CADA PREMIO
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table club_premios add column if not exists imagen text;
+
+create or replace function club_premios_listar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pl$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle, 'puntos', p.puntos,
+             'valor', p.valor, 'costo', p.costo, 'limite_anual', p.limite_anual,
+             'activo', p.activo, 'imagen', p.imagen,
+             'entregados', (select count(*) from club_movimientos m
+                             where m.premio = p.id and m.tipo = 'canje' and m.anulado is null))
+           order by p.activo desc, p.orden, p.puntos)
+      from club_premios p
+  ), '[]'::jsonb);
+end;
+$pl$;
+
+grant execute on function club_premios_listar(text) to anon, authenticated;
+
+
+/* La foto va aparte del resto del premio: se cambia sola, desde su propio
+   campo, y no obliga a volver a guardar los puntos y el costo. Vacía la
+   saca. */
+create or replace function club_premio_foto(p_pin text, p_id smallint, p_url text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pf$
+declare
+  u text := nullif(trim(coalesce(p_url, '')), '');
+  n integer;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if u is not null and not club_foto_url_ok(u) then
+    return jsonb_build_object('ok', false, 'porque',
+      'Esa dirección no sirve. Tiene que empezar con https:// y ser la de la imagen.');
+  end if;
+  update club_premios set imagen = u where id = p_id;
+  get diagnostics n = row_count;
+  if n = 0 then
+    return jsonb_build_object('ok', false, 'porque', 'No encontré ese premio.');
+  end if;
+  return jsonb_build_object('ok', true);
+end;
+$pf$;
+
+revoke all on function club_premio_foto(text, smallint, text) from public;
+grant execute on function club_premio_foto(text, smallint, text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 3 · LA NOVEDAD DE INICIO
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Una sola fila (id = 1). Sacarla la apaga y no la borra: la próxima vez
+   se edita la misma. */
+create table if not exists club_novedad (
+  id         smallint primary key default 1 check (id = 1),
+  bajada     text,
+  titulo     text not null,
+  imagen     text not null,
+  enlace     text,
+  activa     boolean not null default true,
+  cambiada   timestamptz not null default now()
+);
+
+alter table club_novedad enable row level security;
+revoke all on club_novedad from anon, authenticated;
+
+
+create or replace function club_novedad_ver(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $nv$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return (select jsonb_build_object('bajada', bajada, 'titulo', titulo, 'imagen', imagen,
+                                    'enlace', enlace, 'activa', activa, 'cambiada', cambiada)
+            from club_novedad where id = 1);
+end;
+$nv$;
+
+revoke all on function club_novedad_ver(text) from public;
+grant execute on function club_novedad_ver(text) to anon, authenticated;
+
+
+create or replace function club_novedad_guardar(
+  p_pin text, p_bajada text, p_titulo text, p_imagen text, p_enlace text, p_activa boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ng$
+declare
+  tit text := nullif(trim(coalesce(p_titulo, '')), '');
+  baj text := nullif(trim(coalesce(p_bajada, '')), '');
+  img text := nullif(trim(coalesce(p_imagen, '')), '');
+  enl text := nullif(trim(coalesce(p_enlace, '')), '');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  /* Apagarla no pide nada más: es el botón "Sacar de Inicio". */
+  if p_activa is false then
+    update club_novedad set activa = false, cambiada = now() where id = 1;
+    return jsonb_build_object('ok', true);
+  end if;
+  if tit is null then
+    return jsonb_build_object('ok', false, 'porque', 'Ponele un título: es lo que lee el cliente.');
+  end if;
+  if length(tit) > 60 then
+    return jsonb_build_object('ok', false, 'porque', 'El título, hasta 60 letras: en el celular no entra más.');
+  end if;
+  if baj is not null and length(baj) > 30 then
+    return jsonb_build_object('ok', false, 'porque', 'La bajada, hasta 30 letras (por ejemplo "Nueva colección").');
+  end if;
+  if img is null or not club_foto_url_ok(img) then
+    return jsonb_build_object('ok', false, 'porque',
+      'Falta la foto, o la dirección no sirve. Tiene que empezar con https:// y ser la de la imagen.');
+  end if;
+  if enl is not null and not club_foto_url_ok(enl) then
+    return jsonb_build_object('ok', false, 'porque', 'El enlace tiene que empezar con https://.');
+  end if;
+  insert into club_novedad (id, bajada, titulo, imagen, enlace, activa, cambiada)
+  values (1, baj, tit, img, enl, true, now())
+  on conflict (id) do update
+     set bajada = excluded.bajada, titulo = excluded.titulo, imagen = excluded.imagen,
+         enlace = excluded.enlace, activa = true, cambiada = now();
+  return jsonb_build_object('ok', true);
+end;
+$ng$;
+
+revoke all on function club_novedad_guardar(text, text, text, text, text, boolean) from public;
+grant execute on function club_novedad_guardar(text, text, text, text, text, boolean) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 4 · LO QUE YA QUEDA CARGADO
+-- ══════════════════════════════════════════════════════════════════════════
+
+update club_premios set imagen = 'https://vdhclub.com/fotos/perfume-vdh-fusion.jpg'
+ where imagen is null and nombre ilike 'perfume%';
+
+insert into club_novedad (id, bajada, titulo, imagen, enlace)
+values (1, 'Nueva colección', 'Llegó la primavera a VDH', 'https://vdhclub.com/fotos/novedad-ocean-pacific.jpg', 'https://vdh.com.ar/')
+on conflict (id) do nothing;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 5 · LA TARJETA: LA FOTO DE CADA PREMIO, LA NOVEDAD Y LOS LOCALES CON RESEÑAS
+-- ══════════════════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION public.club_tarjeta(p_codigo text)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with c as (
+    select * from v_club_clientes
+     where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and baja is null
+  )
+  select case when not exists (select 1 from c) then jsonb_build_object('hay', false)
+    else (
+      select jsonb_build_object(
+        'hay', true,
+        'codigo', c.codigo,
+        'nombre', c.nombre,
+        'puntos', c.puntos,
+        'xp', c.xp,
+        'compras', c.compras,
+        'confirmado', c.confirmado,
+        'desde', c.creado,
+        'ultima_compra', c.ultima_compra,
+
+        'hoy', club_factor(c.id),
+        'cumple', club_regalo_cumple(c.id),
+        /* La última compra de los últimos 7 días en un local con enlace de
+           reseñas: la tarjeta muestra "¿Qué tal tu compra en Flores?". */
+        'resena', (select jsonb_build_object(
+                      'local', l.codigo,
+                      'nombre', coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))),
+                      'url', l.resena_url,
+                      'cuando', m.creado)
+                     from club_movimientos m
+                     join locales l on upper(trim(l.codigo)) = upper(trim(m.local))
+                    where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null
+                      and m.creado > now() - interval '7 days'
+                      and l.resena_url is not null
+                    order by m.creado desc limit 1),
+
+        'nivel', jsonb_build_object(
+          'nombre', c.nivel,
+          'multiplica', c.multiplica,
+          /* Lo que da este nivel y lo que da el siguiente, para que la
+             tarjeta pueda decirlo: si el cliente no sabe qué le da Oro,
+             Oro no es algo que quiera. */
+          'regalo_cumple', (select case when g.tipo = 'descuento'
+                                        then g.porcentaje || '% de descuento en tu compra'
+                                        else g.producto end
+                              from club_regalos_cumple g where g.nivel = c.nivel),
+          'sigue_multiplica', (select nv.multiplica from club_niveles nv
+                                where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue_bono', (select nv.bono from club_niveles nv
+                          where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue', (select nv.nombre from club_niveles nv
+                     where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'falta_xp', (select nv.desde_xp - c.xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'desde_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp <= c.xp order by nv.desde_xp desc limit 1),
+          'hasta_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1)),
+
+        'premios', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle,
+                   'puntos', p.puntos, 'valor', p.valor, 'imagen', p.imagen,
+                   'agotado', u.agotado,
+                   'alcanzado', c.puntos >= p.puntos and not u.agotado,
+                   'falta', greatest(p.puntos - c.puntos, 0))
+                 order by p.orden, p.puntos)
+            from club_premios p
+            cross join lateral (
+              select (p.limite_anual is not null and count(*) >= p.limite_anual) as agotado
+                from club_movimientos m
+               where m.cliente = c.id and m.tipo = 'canje' and m.premio = p.id
+                 and m.anulado is null and m.creado > now() - interval '12 months'
+            ) u
+           where p.activo), '[]'::jsonb),
+
+        /* La novedad de Inicio, si está prendida. */
+        'novedad', (select jsonb_build_object('bajada', n.bajada, 'titulo', n.titulo,
+                                              'imagen', n.imagen, 'enlace', n.enlace)
+                      from club_novedad n where n.id = 1 and n.activa),
+
+        /* Los locales que tienen enlace de reseñas, para elegir en Inicio. */
+        'resenas_locales', coalesce((
+          select jsonb_agg(jsonb_build_object('local', l.codigo, 'url', l.resena_url) order by l.codigo)
+            from locales l
+           where l.resena_url is not null and club_resena_url_ok(l.resena_url)), '[]'::jsonb),
+
+        'ultimas', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'cuando', m.creado, 'local', m.local, 'puntos', m.puntos,
+                   'tipo', m.tipo, 'concepto', m.concepto, 'obs', m.obs)
+                 order by m.creado desc)
+            from (select creado, local, puntos, tipo, concepto, obs
+                    from club_movimientos
+                   where cliente = c.id and anulado is null
+                   order by creado desc limit 8) m), '[]'::jsonb)
+      ) from c
+    ) end
+$function$;
+
+grant execute on function club_tarjeta(text) to anon, authenticated;
+
+select id, nombre, imagen is not null as con_foto from club_premios order by orden;
