@@ -421,6 +421,21 @@
           : '') + '</div>';
     }).join('');
 
+    /* El regalo de cumpleaños, arriba de los premios: vence en días y los
+       premios no. El descuento lo cobra BlueSoft —desde acá no se toca un
+       precio—, así que el botón no dice "Entregar" sino lo que pasó. */
+    var cu = t.cumple || {};
+    var regaloCumple = !cu.vale ? '' :
+      '<div class="premio ' + (cu.usado ? 'usado' : 'listo') + '">' +
+        '<div><b>Regalo de cumple: ' + esc(cu.texto) + '</b><small>' +
+          (cu.usado ? 'Ya lo usó este cumpleaños'
+            : (cu.tipo === 'descuento' ? 'Aplicalo en BlueSoft y marcalo acá' : 'Se lo puede llevar') +
+              ' · vale hasta el ' + diaLargo(cu.hasta)) +
+        '</small></div>' +
+        (cu.usado ? '' : '<button type="button" class="btn btn-sec btn-chico" id="btnCumple">' +
+          (cu.tipo === 'descuento' ? 'Ya se lo hice' : 'Entregar') + '</button>') +
+      '</div>';
+
     $('resultado').innerHTML =
       '<div class="bloque ficha-socio">' +
         '<div class="ficha-top">' +
@@ -438,7 +453,7 @@
           '<div class="ficha-puntos"><b>' + miles(t.puntos) + '</b><small>puntos</small>' +
             chipNivel(nv.nombre) + '</div>' +
         '</div>' +
-        (premios ? '<div class="premios">' + premios + '</div>' : '') +
+        (premios || regaloCumple ? '<div class="premios">' + regaloCumple + premios + '</div>' : '') +
         '<div class="campos" style="margin-top:18px">' +
           '<div class="campo"><label for="importe">Importe de la compra</label>' +
             '<input type="text" inputmode="numeric" id="importe" placeholder="$" autocomplete="off">' +
@@ -456,6 +471,7 @@
     $('btnSumar').onclick = function () { sumar(false); };
     $('btnEditar').onclick = editarSocio;
     $('importe').oninput = function () { vistaPuntos(t); };
+    if ($('btnCumple')) { $('btnCumple').onclick = entregarCumple; }
     Array.prototype.forEach.call($('resultado').querySelectorAll('[data-premio]'), function (b) {
       b.onclick = function () { entregar(+b.dataset.premio, b.dataset.nombre, +b.dataset.puntos); };
     });
@@ -583,6 +599,36 @@
       .then(function () { b.disabled = false; b.textContent = 'Sumar la compra'; });
   }
 
+  function entregarCumple() {
+    if (!socio) return;
+    var cu = socio.cumple || {};
+    /* Queda marcado y no se puede volver a usar en este cumpleaños: por eso
+       se pregunta, con lo que se está marcando a la vista. */
+    var pregunta = cu.tipo === 'descuento'
+      ? '¿Ya le aplicaste el ' + cu.porcentaje + '% en BlueSoft? Queda marcado como usado ' +
+        'y no se puede volver a usar en este cumpleaños.'
+      : '¿Entregar ' + cu.producto + '? Queda marcado como usado.';
+    if (!confirm(pregunta)) return;
+    base.club.entregarCumple(pinGuardado(), socio.codigo, local, vendedor)
+      .then(function (r) {
+        if (!r || !r.entregado) { avisar('err', (r && r.porque) || 'No se pudo anotar.'); return; }
+        avisar('ok', 'Listo: regalo de cumple anotado (' + esc(r.texto) + ').');
+        elegir(socio.codigo, socio.telefono, socio.mail);
+      })
+      .catch(function (err) {
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo anotar.');
+      });
+  }
+
+  /* "12 de octubre", de un día suelto "2026-10-12". Armado a mano y no con
+     new Date(iso): una fecha sola la toma como medianoche UTC, que en
+     Argentina es el día anterior. */
+  function diaLargo(iso) {
+    var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!d) return '';
+    return new Date(+d[1], +d[2] - 1, +d[3]).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
+  }
+
   function entregar(premio, nombre, puntos) {
     if (!socio) return;
     /* Ahora entregar DESCUENTA puntos. Un toque de más le saca 2.500
@@ -607,9 +653,11 @@
         ms.map(function (m) {
           return '<div class="mov' + (m.anulado ? ' anulado' : '') + '">' +
             '<span class="mov-pts' + (m.puntos > 0 ? ' mas' : '') + '">' +
-              (m.puntos > 0 ? '+' : m.puntos < 0 ? '−' : '') + miles(Math.abs(m.puntos || 0)) + '</span>' +
+              (m.concepto === 'regalo_cumple' ? 'Regalo'
+                : (m.puntos > 0 ? '+' : m.puntos < 0 ? '−' : '') + miles(Math.abs(m.puntos || 0))) + '</span>' +
             '<span class="mov-cuando">' + cuando(m.cuando) +
-              (m.tipo === 'canje' ? ' · ' + esc(m.obs || 'premio')
+              (m.concepto === 'regalo_cumple' ? ' · cumple: ' + esc(m.obs || '')
+               : m.tipo === 'canje' ? ' · ' + esc(m.obs || 'premio')
                : m.concepto === 'bienvenida' ? ' · bienvenida'
                : m.concepto === 'vencimiento' ? ' · vencidos' : '') +
               (m.local ? ' · ' + esc(bonito(m.local)) : '') +
@@ -671,7 +719,9 @@
     var hoy = t.hoy || {};
     var extra = Number(hoy.extra) || 1;
     var p = [];
+    var cu = t.cumple || {};
     if (hoy.es_cumple) p.push('<span class="pill pill-ok">Hoy cumple años</span>');
+    else if (cu.vale && !cu.usado) p.push('<span class="pill pill-ok">Semana de cumple · tiene regalo</span>');
     if (extra > 1) {
       p.push('<span class="pill pill-warn">Hoy suma ' +
              (extra === 2 ? 'el doble' : extra === 3 ? 'el triple' : String(extra).replace('.', ',') + 'x') +

@@ -375,6 +375,22 @@
     <div id="promoCuerpo"></div>
   </div>
 
+  <!-- ── Los premios del Club ──
+       El catálogo que ven los socios. Se agregan y se cambian acá; no se
+       borran nunca —los canjes viejos apuntan a ellos—, se apagan. -->
+  <div class="bloque" id="cajaPremios">
+    <h2 class="bloque-tit">Premios del Club</h2>
+    <p class="bloque-sub">Lo que los socios canjean con sus puntos. El costo es lo que le sale a VDH: no lo ve nadie más.</p>
+    <div id="premiosCuerpo"></div>
+  </div>
+
+  <!-- ── Los regalos de cumpleaños ── -->
+  <div class="bloque" id="cajaRegalos">
+    <h2 class="bloque-tit">Regalos de cumpleaños</h2>
+    <p class="bloque-sub">Uno por nivel. Le avisamos 7 días antes y vale hasta el día del cumple, una sola vez.</p>
+    <div id="regalosCuerpo"></div>
+  </div>
+
   <!-- ── Los puntos dobles ──
        Unos días en que las compras suman más. Tienen fecha de fin
        obligatoria: unos puntos dobles que nadie se acuerda de apagar son el
@@ -503,6 +519,8 @@
     /* Es el mismo PIN y la misma sesión: poniéndolo una vez se abren todas
        las secciones del Club que lo piden. */
     pintarAviso();
+    pintarPremios();
+    pintarRegalos();
     pintarMulti();
     pintarCosto();
   }
@@ -820,6 +838,221 @@
         avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
       })
       .then(function () { b.disabled = false; });
+  }
+
+  /* ═══ Premios del Club ════════════════════════════════════════════════ */
+
+  var premiosLista = [];
+
+  /* "$15.000" → 15000. Vacío → null. */
+  function numero(v) {
+    var s = String(v == null ? '' : v).replace(/[^0-9]/g, '');
+    return s ? Number(s) : null;
+  }
+  function pesos(n) { return '$' + Math.round(Number(n) || 0).toLocaleString('es-AR'); }
+
+  function pintarPremios() {
+    var caja = $('premiosCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de las promociones ' +
+                       'y esto se abre solo.</p>';
+      return;
+    }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.premiosListar(pinPromo())
+      .then(function (lista) {
+        premiosLista = lista || [];
+        var filas = premiosLista.map(function (p) {
+          return '<div class="promo-fila">' +
+            '<div class="promo-fila-txt"><b>' + esc(p.nombre) + '</b>' +
+              '<span>' + Number(p.puntos).toLocaleString('es-AR') + ' puntos' +
+              (p.valor ? ' · vale ' + pesos(p.valor) : '') +
+              (p.costo ? ' · cuesta ' + pesos(p.costo) : '') +
+              (p.limite_anual ? ' · ' + p.limite_anual + ' por año' : '') +
+              ' · entregados: ' + (p.entregados || 0) + '</span></div>' +
+            (p.activo ? '<span class="pill pill-ok">Activo</span>'
+                      : '<span class="pill pill-neutra">Apagado</span>') +
+            '<button type="button" class="btn btn-sec btn-chico" data-premio="' + p.id + '">Editar</button>' +
+          '</div>';
+        }).join('');
+        caja.innerHTML = (filas || '<p class="bloque-sub">No hay premios cargados.</p>') +
+          '<button type="button" class="btn btn-pri btn-chico" id="premioNuevo" ' +
+                  'style="margin-top:14px">Agregar un premio</button>';
+        $('premioNuevo').onclick = function () { editorPremio(null); };
+        Array.prototype.forEach.call(caja.querySelectorAll('[data-premio]'), function (b) {
+          b.onclick = function () {
+            var p = null;
+            premiosLista.forEach(function (x) { if (String(x.id) === b.dataset.premio) p = x; });
+            editorPremio(p);
+          };
+        });
+      })
+      .catch(function (err) {
+        caja.innerHTML = '<p class="bloque-sub">' +
+          esc((err && err.delServidor && err.message) || 'No se pudo abrir.') + '</p>';
+      });
+  }
+
+  function editorPremio(p) {
+    var v = function (x) { return x == null ? '' : esc(String(x)); };
+    $('premiosCuerpo').innerHTML =
+      '<div class="campos">' +
+        '<div class="campo ancho"><label for="prNombre">Nombre</label>' +
+          '<input type="text" id="prNombre" maxlength="60" placeholder="Gorra VDH" value="' + v(p && p.nombre) + '"></div>' +
+        '<div class="campo ancho"><label for="prDetalle">Letra chica <span class="lbl-opc">— opcional</span></label>' +
+          '<input type="text" id="prDetalle" maxlength="120" placeholder="Modelos seleccionados." value="' + v(p && p.detalle) + '"></div>' +
+        '<div class="campo"><label for="prPuntos">Puntos</label>' +
+          '<input type="text" inputmode="numeric" id="prPuntos" placeholder="2500" value="' + v(p && p.puntos) + '"></div>' +
+        '<div class="campo"><label for="prLimite">Por año <span class="lbl-opc">— vacío: sin límite</span></label>' +
+          '<input type="text" inputmode="numeric" id="prLimite" placeholder="" value="' + v(p && p.limite_anual) + '"></div>' +
+        '<div class="campo"><label for="prValor">Precio de venta</label>' +
+          '<input type="text" inputmode="numeric" id="prValor" placeholder="$" value="' + v(p && p.valor) + '"></div>' +
+        '<div class="campo"><label for="prCosto">Le cuesta a VDH</label>' +
+          '<input type="text" inputmode="numeric" id="prCosto" placeholder="$" value="' + v(p && p.costo) + '"></div>' +
+        '<div class="campo ancho"><label class="casillero">' +
+          '<input type="checkbox" id="prActivo"' + (!p || p.activo ? ' checked' : '') + '>' +
+          '<span>Activo <span class="lbl-opc">— apagado no lo ve nadie, pero no se borra</span></span></label></div>' +
+        '<div class="campo"><button type="button" class="btn btn-pri" id="prGuardar">Guardar</button></div>' +
+        '<div class="campo"><button type="button" class="btn btn-sec" id="prVolver">Volver</button></div>' +
+      '</div>' +
+      /* La cuenta que decide si un premio conviene, hecha mientras se tipea
+         y no después: cuánto tiene que comprar el socio para ganarlo, y qué
+         parte de eso se va en el premio. $100 = 1 punto es la regla
+         pesos_por_punto de la base. */
+      '<p class="bloque-sub" id="prCuenta" style="margin-top:12px"></p>';
+
+    var cuenta = function () {
+      var pts = numero($('prPuntos').value), cos = numero($('prCosto').value);
+      if (!pts) { $('prCuenta').textContent = ''; return; }
+      var gasto = pts * 100;
+      $('prCuenta').textContent = 'Para ganarlo, el socio tiene que comprar ' + pesos(gasto) +
+        (cos ? '. Le cuesta a VDH el ' + (cos * 100 / gasto).toFixed(1).replace('.', ',') +
+               '% de eso' + (cos * 100 / gasto > 3 ? ': es caro para un premio que se repite.' : '.')
+             : '.');
+    };
+    $('prPuntos').oninput = cuenta;
+    $('prCosto').oninput = cuenta;
+    cuenta();
+
+    $('prVolver').onclick = pintarPremios;
+    $('prGuardar').onclick = function () {
+      var b = $('prGuardar');
+      b.disabled = true;
+      base.club.premioGuardar(pinPromo(), p ? p.id : null,
+          $('prNombre').value.trim(), $('prDetalle').value.trim(),
+          numero($('prPuntos').value), numero($('prValor').value), numero($('prCosto').value),
+          numero($('prLimite').value), $('prActivo').checked)
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          avisar('ok', 'Listo: los socios ya lo ven así.');
+          pintarPremios();
+        })
+        .catch(function (err) {
+          avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
+        })
+        .then(function () { b.disabled = false; });
+    };
+  }
+
+  /* ═══ Regalos de cumpleaños ═══════════════════════════════════════════ */
+
+  var regalosLista = [];
+
+  function textoRegalo(g) {
+    if (!g || !g.tipo) return 'Sin regalo';
+    return g.tipo === 'descuento' ? g.porcentaje + '% de descuento' : g.producto;
+  }
+
+  function pintarRegalos() {
+    var caja = $('regalosCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN en la sección de las promociones ' +
+                       'y esto se abre solo.</p>';
+      return;
+    }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.regalosListar(pinPromo())
+      .then(function (lista) {
+        regalosLista = lista || [];
+        caja.innerHTML = regalosLista.map(function (g) {
+          return '<div class="promo-fila">' +
+            '<div class="promo-fila-txt"><b>' + esc(g.nivel) + '</b>' +
+              '<span>' + esc(textoRegalo(g)) + (g.costo ? ' · cuesta ' + pesos(g.costo) : '') + '</span></div>' +
+            '<button type="button" class="btn btn-sec btn-chico" data-regalo="' + esc(g.nivel) + '">Cambiar</button>' +
+          '</div>';
+        }).join('');
+        Array.prototype.forEach.call(caja.querySelectorAll('[data-regalo]'), function (b) {
+          b.onclick = function () {
+            var g = null;
+            regalosLista.forEach(function (x) { if (x.nivel === b.dataset.regalo) g = x; });
+            editorRegalo(g);
+          };
+        });
+      })
+      .catch(function (err) {
+        caja.innerHTML = '<p class="bloque-sub">' +
+          esc((err && err.delServidor && err.message) || 'No se pudo abrir.') + '</p>';
+      });
+  }
+
+  function editorRegalo(g) {
+    var v = function (x) { return x == null ? '' : esc(String(x)); };
+    var esProd = g && g.tipo === 'producto';
+    $('regalosCuerpo').innerHTML =
+      '<p class="bloque-sub" style="margin-top:0">El regalo de los socios <b>' + esc(g.nivel) + '</b>.</p>' +
+      '<div class="campos">' +
+        '<div class="campo ancho"><label for="rgTipo">Qué es</label>' +
+          '<select id="rgTipo">' +
+            '<option value="descuento"' + (esProd ? '' : ' selected') + '>Un descuento en su compra</option>' +
+            '<option value="producto"' + (esProd ? ' selected' : '') + '>Un producto de regalo</option>' +
+          '</select></div>' +
+        '<div class="campo" id="rgPctCampo"><label for="rgPct">Porcentaje</label>' +
+          '<input type="text" inputmode="numeric" id="rgPct" placeholder="10" value="' + v(g.porcentaje) + '"></div>' +
+        '<div class="campo ancho" id="rgProdCampo"><label for="rgProd">Qué producto</label>' +
+          '<input type="text" id="rgProd" maxlength="60" placeholder="Remera VDH" value="' + v(g.producto) + '"></div>' +
+        '<div class="campo ancho" id="rgDetCampo"><label for="rgDet">Letra chica <span class="lbl-opc">— opcional</span></label>' +
+          '<input type="text" id="rgDet" maxlength="120" placeholder="Modelos seleccionados." value="' + v(g.detalle) + '"></div>' +
+        '<div class="campo" id="rgCostoCampo"><label for="rgCosto">Le cuesta a VDH</label>' +
+          '<input type="text" inputmode="numeric" id="rgCosto" placeholder="$" value="' + v(g.costo) + '"></div>' +
+        '<div class="campo ancho"><button type="button" class="btn btn-pri" id="rgGuardar">Guardar</button></div>' +
+        '<div class="campo ancho"><button type="button" class="btn btn-sec" id="rgVolver">Volver</button></div>' +
+      '</div>' +
+      '<p class="bloque-sub" id="rgNota" style="margin-top:12px"></p>';
+
+    /* Los campos que no aplican se esconden: un porcentaje en un producto no
+       significa nada, y un campo que no hace nada confunde. */
+    var mostrar = function () {
+      var prod = $('rgTipo').value === 'producto';
+      $('rgPctCampo').hidden = prod;
+      $('rgProdCampo').hidden = !prod;
+      $('rgDetCampo').hidden = !prod;
+      $('rgCostoCampo').hidden = !prod;
+      $('rgNota').textContent = prod
+        ? 'Se entrega desde la caja, como un premio.'
+        : 'El descuento lo aplica el vendedor en BlueSoft; en la caja del Club sólo marca que lo usó.';
+    };
+    $('rgTipo').onchange = mostrar;
+    mostrar();
+
+    $('rgVolver').onclick = pintarRegalos;
+    $('rgGuardar').onclick = function () {
+      var b = $('rgGuardar');
+      b.disabled = true;
+      base.club.regaloGuardar(pinPromo(), g.nivel, $('rgTipo').value,
+          numero($('rgPct').value), $('rgProd').value.trim(), $('rgDet').value.trim(),
+          numero($('rgCosto').value))
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          avisar('ok', 'Listo. Vale para los próximos cumpleaños.');
+          pintarRegalos();
+        })
+        .catch(function (err) {
+          avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
+        })
+        .then(function () { b.disabled = false; });
+    };
   }
 
   /* ═══ Puntos dobles ═══════════════════════════════════════════════════ */
@@ -1235,6 +1468,8 @@
        los objetivos, que no lo piden. */
     pintarPromo();
     pintarAviso();
+    pintarPremios();
+    pintarRegalos();
     pintarMulti();
     pintarCosto();
     iniciarPWA();

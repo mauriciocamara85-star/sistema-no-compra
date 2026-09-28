@@ -1471,3 +1471,691 @@ grant execute on function club_multi_baja(text, bigint) to anon, authenticated;
 select clave, valor from club_reglas
  where clave like 'cumple_%' or clave in ('pesos_por_punto', 'bienvenida_puntos', 'vence_meses')
  order by clave;
+
+
+-- ─────────────────────────── PARTE 16 ───────────────────────────
+-- El regalo de cumpleaños por nivel, los avisos personales y los premios
+-- editables desde Configuración.
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · EL REGALO DE CUMPLEAÑOS, LOS AVISOS PERSONALES Y LOS PREMIOS
+--             EDITABLES
+--
+-- Correr entero en el editor SQL de Supabase, después del 15.
+--
+-- ══════════════════════════════════════════════════════════════════════════
+-- EL CUMPLEAÑOS, COMO LO DECIDIÓ MAURICIO (27/09/2026)
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- Siete días antes del cumple le llega un aviso al celular: tiene un regalo
+-- esperándolo. El regalo vale desde ese día hasta el día del cumple, así
+-- tiene una semana entera para pasar por el local. No el día del cumple: ese
+-- día nadie tiene tiempo de ir a buscar nada.
+--
+-- El regalo depende del nivel, y se cambia desde Configuración:
+--
+--   Plata     10% de descuento en su compra
+--   Oro       20% de descuento en su compra
+--   Platino   una remera VDH (modelos seleccionados)
+--
+-- Se usa UNA vez por cumpleaños y lo marca el vendedor desde la caja. El
+-- descuento lo cobra BlueSoft —desde acá no se puede tocar un precio—, así
+-- que el vendedor lo aplica allá y acá anota que lo usó.
+--
+-- Reemplaza a los puntos dobles en la semana del cumple del 15, que quedan
+-- APAGADOS (cumple_multiplica = 1) pero no borrados: si algún día se
+-- quieren las dos cosas, es una línea.
+--
+-- ══════════════════════════════════════════════════════════════════════════
+-- LOS AVISOS PERSONALES VAN EN OTRA TABLA, Y ES A PROPÓSITO
+-- ══════════════════════════════════════════════════════════════════════════
+--
+-- Hasta acá todo aviso era para todos: los dos programas que los mandan
+-- (la Edge Function y el Action de cada hora) agarran cada fila de
+-- club_avisos y la mandan a TODAS las suscripciones.
+--
+-- Si el "Se viene tu cumple, Carolina" se agregara ahí con una columna
+-- nueva que diga para quién es, cualquier versión de esos programas que
+-- no supiera de la columna —una publicada un día antes que la otra, una
+-- que alguien restaure de un respaldo— se lo mandaría a todos los socios.
+--
+-- En una tabla aparte eso no puede pasar: un programa que no la conoce, no
+-- la lee. Lo peor que puede ocurrir es que el saludo se atrase.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 1 · LAS REGLAS
+-- ══════════════════════════════════════════════════════════════════════════
+
+insert into club_reglas (clave, valor) values
+  ('cumple_antes', '7')   -- el aviso y el regalo arrancan 7 días antes del cumple
+on conflict (clave) do nothing;
+
+/* Los puntos dobles en la semana del cumple, apagados. El regalo por nivel
+   los reemplaza. */
+update club_reglas set valor = '1' where clave = 'cumple_multiplica';
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 2 · ¿ESTÁ EN SU SEMANA DE CUMPLE?
+--
+-- Devuelve el día del cumple de la semana en curso, o null si hoy no cae en
+-- ninguna. Mira el cumpleaños de este año Y el del que viene: el que cumple
+-- el 3 de enero está en su semana el 29 de diciembre, y mirando sólo este
+-- año se la perderíamos entera.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_cumple_fin(p_cumple date, p_hoy date, p_antes integer)
+returns date
+language sql
+immutable
+as $cf$
+  select f from (
+    select club_cumple_en(p_cumple, extract(year from p_hoy)::int + d) as f
+      from (values (0), (1)) a(d)
+  ) x
+  where p_cumple is not null
+    and p_hoy between f - coalesce(p_antes, 7) and f
+  order by f
+  limit 1
+$cf$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 3 · LOS REGALOS, POR NIVEL
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_regalos_cumple (
+  nivel      text primary key references club_niveles(nombre) on update cascade,
+  tipo       text not null check (tipo in ('descuento', 'producto')),
+  porcentaje smallint check (porcentaje between 1 and 50),
+  producto   text,
+  detalle    text,
+  /* Lo que le cuesta a VDH, para "El Club en números". En un descuento no
+     se sabe de antemano —depende de lo que compre— y queda vacío. NUNCA
+     sale a la tarjeta del cliente. */
+  costo      numeric(12,2),
+  constraint regalo_completo check (
+    (tipo = 'descuento' and porcentaje is not null) or
+    (tipo = 'producto'  and length(trim(coalesce(producto, ''))) > 0))
+);
+
+insert into club_regalos_cumple (nivel, tipo, porcentaje, producto, detalle, costo) values
+  ('Plata',   'descuento', 10,   null,         null,                     null),
+  ('Oro',     'descuento', 20,   null,         null,                     null),
+  ('Platino', 'producto',  null, 'Remera VDH', 'Modelos seleccionados.', 5000)
+on conflict (nivel) do nothing;
+
+alter table club_regalos_cumple enable row level security;
+revoke all on club_regalos_cumple from anon, authenticated;
+
+/* Lo que costó cada cosa entregada, anotado en el movimiento. Hasta acá el
+   costo salía del catálogo de premios; el regalo de cumple no está en el
+   catálogo, y sin esto "El Club en números" daría de menos. */
+alter table club_movimientos add column if not exists costo numeric(12,2);
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 4 · EL REGALO DE ESTE SOCIO, HOY
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_regalo_cumple(p_cliente bigint)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $rc$
+declare
+  hoy   date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  c     record;
+  antes integer;
+  fin   date;
+  r     club_regalos_cumple%rowtype;
+  usado boolean;
+begin
+  select v.cumple, v.nivel into c from v_club_clientes v where v.id = p_cliente;
+  select nullif(valor, '')::integer into antes from club_reglas where clave = 'cumple_antes';
+  antes := coalesce(antes, 7);
+
+  fin := club_cumple_fin(c.cumple, hoy, antes);
+  if fin is null then
+    return jsonb_build_object('vale', false);
+  end if;
+
+  select * into r from club_regalos_cumple where nivel = c.nivel;
+  if not found then
+    return jsonb_build_object('vale', false);
+  end if;
+
+  /* Usado = hay un regalo de cumple entregado desde que arrancó ESTA
+     semana. El del año pasado no cuenta. */
+  usado := exists (
+    select 1 from club_movimientos m
+     where m.cliente = p_cliente and m.concepto = 'regalo_cumple' and m.anulado is null
+       and m.creado >= ((fin - antes)::timestamp at time zone 'America/Argentina/Buenos_Aires'));
+
+  /* Sin el costo: esto viaja a la tarjeta. */
+  return jsonb_build_object(
+    'vale',       true,
+    'desde',      fin - antes,
+    'hasta',      fin,
+    'es_hoy',     hoy = fin,
+    'tipo',       r.tipo,
+    'porcentaje', r.porcentaje,
+    'producto',   r.producto,
+    'detalle',    r.detalle,
+    'usado',      usado,
+    'texto',      case when r.tipo = 'descuento'
+                       then r.porcentaje || '% de descuento en tu compra'
+                       else r.producto end);
+end;
+$rc$;
+
+revoke all on function club_regalo_cumple(bigint) from public, anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 5 · ENTREGARLO, DESDE LA CAJA
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_entregar_cumple(
+  p_pin text, p_codigo text, p_local text, p_vendedor text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ec$
+declare
+  cid bigint;
+  r   jsonb;
+  cos numeric;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  /* El candado, como en el canje: dos locales marcándolo a la vez no le dan
+     dos regalos. */
+  select id into cid from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null
+   for update;
+  if cid is null then
+    return jsonb_build_object('entregado', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+
+  r := club_regalo_cumple(cid);
+  if not (r->>'vale')::boolean then
+    return jsonb_build_object('entregado', false,
+      'porque', 'No está en su semana de cumpleaños (o no tiene el cumple cargado).');
+  end if;
+  if (r->>'usado')::boolean then
+    return jsonb_build_object('entregado', false, 'porque', 'Ya usó su regalo de este cumpleaños.');
+  end if;
+
+  select g.costo into cos from club_regalos_cumple g
+    join v_club_clientes v on v.nivel = g.nivel where v.id = cid;
+
+  insert into club_movimientos (cliente, tipo, concepto, puntos, local, vendedor, obs, costo)
+  values (cid, 'canje', 'regalo_cumple', 0,
+          nullif(trim(coalesce(p_local, '')), ''),
+          nullif(trim(coalesce(p_vendedor, '')), ''),
+          r->>'texto', cos);
+
+  return jsonb_build_object('entregado', true, 'texto', r->>'texto', 'tipo', r->>'tipo');
+end;
+$ec$;
+
+grant execute on function club_entregar_cumple(text, text, text, text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 6 · CUÁNTO SUMA HOY: con la ventana nueva
+--
+-- Igual que en el 15, pero la semana del cumple ahora es la de los 7 días
+-- antes. Con cumple_multiplica en 1 no suma nada extra; queda coherente por
+-- si algún día se vuelve a prender.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_factor(p_cliente bigint)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $cf$
+declare
+  hoy       date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  c         record;
+  cm        numeric;
+  antes     integer;
+  fin       date;
+  pr        record;
+  extra     numeric := 1;
+  motivo    text;
+  hasta     date;
+  de_cumple boolean := false;
+begin
+  select v.multiplica, v.cumple into c from v_club_clientes v where v.id = p_cliente;
+  select nullif(valor, '')::numeric into cm    from club_reglas where clave = 'cumple_multiplica';
+  select nullif(valor, '')::integer into antes from club_reglas where clave = 'cumple_antes';
+
+  if c.cumple is not null and coalesce(cm, 1) > 1 then
+    fin := club_cumple_fin(c.cumple, hoy, coalesce(antes, 7));
+    if fin is not null then
+      extra := cm; motivo := 'Tu semana de cumple'; hasta := fin; de_cumple := true;
+    end if;
+  end if;
+
+  select m.nombre, m.factor,
+         (m.hasta at time zone 'America/Argentina/Buenos_Aires')::date - 1 as ultimo
+    into pr
+    from club_multiplicadores m
+   where m.baja is null and now() >= m.desde and now() < m.hasta
+   order by m.factor desc, m.hasta desc
+   limit 1;
+
+  if pr.factor is not null and pr.factor > extra then
+    extra := pr.factor; motivo := pr.nombre; hasta := pr.ultimo; de_cumple := false;
+  end if;
+
+  return jsonb_build_object(
+    'total',  round(coalesce(c.multiplica, 1) * extra, 2),
+    'nivel',  coalesce(c.multiplica, 1),
+    'extra',  extra,
+    'motivo', motivo,
+    'hasta',  hasta,
+    'cumple', de_cumple,
+    'es_cumple', c.cumple is not null
+                 and club_cumple_en(c.cumple, extract(year from hoy)::int) = hoy);
+end;
+$cf$;
+
+revoke all on function club_factor(bigint) from public, anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 7 · LA TARJETA: lo del 15 más `cumple`
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_tarjeta(p_codigo text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $ct$
+  with c as (
+    select * from v_club_clientes
+     where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and baja is null
+  )
+  select case when not exists (select 1 from c) then jsonb_build_object('hay', false)
+    else (
+      select jsonb_build_object(
+        'hay', true,
+        'codigo', c.codigo,
+        'nombre', c.nombre,
+        'puntos', c.puntos,
+        'xp', c.xp,
+        'compras', c.compras,
+        'confirmado', c.confirmado,
+        'desde', c.creado,
+        'ultima_compra', c.ultima_compra,
+
+        'hoy', club_factor(c.id),
+        'cumple', club_regalo_cumple(c.id),
+
+        'nivel', jsonb_build_object(
+          'nombre', c.nivel,
+          'multiplica', c.multiplica,
+          'sigue', (select nv.nombre from club_niveles nv
+                     where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'falta_xp', (select nv.desde_xp - c.xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'desde_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp <= c.xp order by nv.desde_xp desc limit 1),
+          'hasta_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1)),
+
+        'premios', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle,
+                   'puntos', p.puntos, 'valor', p.valor,
+                   'agotado', u.agotado,
+                   'alcanzado', c.puntos >= p.puntos and not u.agotado,
+                   'falta', greatest(p.puntos - c.puntos, 0))
+                 order by p.orden, p.puntos)
+            from club_premios p
+            cross join lateral (
+              select (p.limite_anual is not null and count(*) >= p.limite_anual) as agotado
+                from club_movimientos m
+               where m.cliente = c.id and m.tipo = 'canje' and m.premio = p.id
+                 and m.anulado is null and m.creado > now() - interval '12 months'
+            ) u
+           where p.activo), '[]'::jsonb),
+
+        'ultimas', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'cuando', m.creado, 'local', m.local, 'puntos', m.puntos,
+                   'tipo', m.tipo, 'concepto', m.concepto, 'obs', m.obs)
+                 order by m.creado desc)
+            from (select creado, local, puntos, tipo, concepto, obs
+                    from club_movimientos
+                   where cliente = c.id and anulado is null
+                   order by creado desc limit 8) m), '[]'::jsonb)
+      ) from c
+    ) end
+$ct$;
+
+grant execute on function club_tarjeta(text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 8 · LOS AVISOS PERSONALES
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_avisos_personales (
+  id       bigint generated always as identity primary key,
+  cliente  bigint not null references club_clientes(id) on delete cascade,
+  /* De qué es ('cumple') y de cuál ('2026-10-12'): la pareja no se repite,
+     y eso es lo que impide mandarle el mismo saludo dos veces aunque la
+     tarea diaria corra dos veces el mismo día. */
+  motivo   text not null,
+  clave    text not null,
+  titulo   text not null,
+  cuerpo   text not null,
+  enlace   text,
+  sale     timestamptz not null,
+  creado   timestamptz not null default now(),
+  enviado  timestamptz,
+  llegaron integer,
+  fallaron integer,
+  constraint aviso_personal_unico unique (cliente, motivo, clave)
+);
+
+create index if not exists club_avp_pendientes on club_avisos_personales (sale)
+  where enviado is null;
+
+alter table club_avisos_personales enable row level security;
+revoke all on club_avisos_personales from anon, authenticated;
+
+
+/* Los saludos de cumpleaños del día. Los deja en la cola para las 10 de la
+   mañana; los manda el Action de cada hora.
+
+   Se generan durante los primeros días de la semana y no sólo el primero:
+   si la tarea diaria no corre un día —GitHub se cae, pasa—, al día
+   siguiente el saludo sale igual, con un día menos para pasar. El último
+   par de días ya no: un "tenés una semana" con dos días de margen es
+   mentir. La restricción única hace que nunca salga dos veces. */
+create or replace function club_cumple_avisar()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ca$
+declare
+  hoy   date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  antes integer;
+  s     record;
+  n     integer := 0;
+  diez  timestamptz;
+begin
+  select nullif(valor, '')::integer into antes from club_reglas where clave = 'cumple_antes';
+  antes := coalesce(antes, 7);
+  diez := (hoy::timestamp + interval '10 hours') at time zone 'America/Argentina/Buenos_Aires';
+
+  for s in
+    select v.id, v.nombre, f.fin, g.tipo, g.porcentaje, g.producto
+      from v_club_clientes v
+      cross join lateral (select club_cumple_fin(v.cumple, hoy, antes) as fin) f
+      join club_regalos_cumple g on g.nivel = v.nivel
+     where v.baja is null and v.cumple is not null
+       and f.fin is not null
+       and hoy <= f.fin - 3
+       /* Sólo a quien tiene los avisos prendidos: sin suscripción no hay a
+          dónde mandarlo. Igual lo ve en la tarjeta si la abre. */
+       and exists (select 1 from club_suscripciones su
+                    where su.cliente = v.id and su.muerto is null)
+  loop
+    insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+    values (
+      s.id, 'cumple', s.fin::text,
+      'Se viene tu cumple, ' || split_part(trim(s.nombre), ' ', 1),
+      'Tenés un regalo esperándote: ' ||
+        case when s.tipo = 'descuento' then s.porcentaje || '% de descuento en tu compra'
+             else s.producto end ||
+        '. Pasá por cualquier local VDH hasta el ' || to_char(s.fin, 'DD/MM') || '.',
+      'tarjeta.html',
+      greatest(now(), diez))
+    on conflict (cliente, motivo, clave) do nothing;
+    if found then n := n + 1; end if;
+  end loop;
+
+  return jsonb_build_object('saludos', n);
+end;
+$ca$;
+
+revoke all on function club_cumple_avisar() from public, anon, authenticated;
+grant execute on function club_cumple_avisar() to service_role;
+
+
+/* Lo que corre una vez por día, a las 6: vencer puntos y dejar los saludos
+   de cumpleaños en la cola. Una sola llamada desde el Action del respaldo. */
+create or replace function club_diario()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cd$
+begin
+  return jsonb_build_object('vencer', club_vencer(), 'cumple', club_cumple_avisar());
+end;
+$cd$;
+
+revoke all on function club_diario() from public, anon, authenticated;
+grant execute on function club_diario() to service_role;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 9 · EL COSTO, CONTANDO LOS REGALOS
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_costo(p_pin text, p_meses integer default 12)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cc$
+declare
+  desde timestamptz;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  desde := now() - (greatest(coalesce(p_meses, 12), 1) || ' months')::interval;
+
+  return jsonb_build_object(
+    'desde', desde,
+    'socios',    (select count(*) from v_club_clientes where confirmado),
+    'facturado', (select coalesce(sum(importe), 0) from club_movimientos
+                   where tipo = 'compra' and anulado is null and creado > desde),
+    'emitidos',  (select coalesce(sum(puntos), 0) from club_movimientos
+                   where puntos > 0 and anulado is null and creado > desde),
+    'canjeados', (select coalesce(-sum(puntos), 0) from club_movimientos
+                   where tipo = 'canje' and anulado is null and creado > desde),
+    'circulantes', (select coalesce(sum(puntos), 0) from v_club_clientes),
+    /* El costo de lo entregado: el del movimiento si lo anotó (regalos de
+       cumple, y lo que se entregue de acá en adelante), si no el del
+       catálogo. */
+    'costo_premios', (select coalesce(sum(coalesce(m.costo, p.costo)), 0)
+                        from club_movimientos m left join club_premios p on p.id = m.premio
+                       where m.tipo = 'canje' and m.anulado is null and m.creado > desde),
+    'regalos_cumple', (select count(*) from club_movimientos
+                        where concepto = 'regalo_cumple' and anulado is null and creado > desde)
+  );
+end;
+$cc$;
+
+revoke all on function club_costo(text, integer) from public;
+grant execute on function club_costo(text, integer) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 10 · LOS PREMIOS, DESDE CONFIGURACIÓN
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_premios_listar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pl$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle, 'puntos', p.puntos,
+             'valor', p.valor, 'costo', p.costo, 'limite_anual', p.limite_anual,
+             'activo', p.activo,
+             'entregados', (select count(*) from club_movimientos m
+                             where m.premio = p.id and m.tipo = 'canje' and m.anulado is null))
+           order by p.activo desc, p.orden, p.puntos)
+      from club_premios p
+  ), '[]'::jsonb);
+end;
+$pl$;
+
+grant execute on function club_premios_listar(text) to anon, authenticated;
+
+
+create or replace function club_premio_guardar(
+  p_pin text, p_id smallint, p_nombre text, p_detalle text, p_puntos integer,
+  p_valor numeric, p_costo numeric, p_limite smallint, p_activo boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pg$
+declare
+  nom text := nullif(trim(coalesce(p_nombre, '')), '');
+  nid smallint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if nom is null then
+    return jsonb_build_object('ok', false, 'porque', 'Ponele un nombre: es lo que ve el socio.');
+  end if;
+  if p_puntos is null or p_puntos < 100 then
+    return jsonb_build_object('ok', false, 'porque', 'Tiene que costar al menos 100 puntos.');
+  end if;
+  if p_limite is not null and p_limite < 1 then
+    return jsonb_build_object('ok', false, 'porque', 'El límite por año va vacío o desde 1.');
+  end if;
+
+  if p_id is null then
+    /* El id y el orden, a mano: la tabla nació con los tres primeros
+       cargados con número y no tiene contador. El nuevo va al final. */
+    select coalesce(max(id), 0) + 1 into nid from club_premios;
+    insert into club_premios (id, nombre, detalle, puntos, valor, costo, limite_anual, orden, activo)
+    values (nid, nom, nullif(trim(coalesce(p_detalle, '')), ''), p_puntos, p_valor, p_costo,
+            p_limite, (select coalesce(max(orden), 0) + 1 from club_premios),
+            coalesce(p_activo, true));
+  else
+    /* No se borra nunca: los canjes viejos apuntan acá. Se apaga. */
+    update club_premios
+       set nombre = nom, detalle = nullif(trim(coalesce(p_detalle, '')), ''),
+           puntos = p_puntos, valor = p_valor, costo = p_costo,
+           limite_anual = p_limite, activo = coalesce(p_activo, true)
+     where id = p_id
+    returning id into nid;
+    if nid is null then
+      return jsonb_build_object('ok', false, 'porque', 'No encontré ese premio.');
+    end if;
+  end if;
+
+  return jsonb_build_object('ok', true, 'id', nid);
+end;
+$pg$;
+
+grant execute on function club_premio_guardar(text, smallint, text, text, integer, numeric, numeric, smallint, boolean)
+  to anon, authenticated;
+
+
+create or replace function club_regalos_listar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $rl$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'nivel', n.nombre, 'tipo', g.tipo, 'porcentaje', g.porcentaje,
+             'producto', g.producto, 'detalle', g.detalle, 'costo', g.costo)
+           order by n.orden)
+      from club_niveles n left join club_regalos_cumple g on g.nivel = n.nombre
+  ), '[]'::jsonb);
+end;
+$rl$;
+
+grant execute on function club_regalos_listar(text) to anon, authenticated;
+
+
+create or replace function club_regalo_guardar(
+  p_pin text, p_nivel text, p_tipo text, p_porcentaje smallint,
+  p_producto text, p_detalle text, p_costo numeric)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $rg$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if not exists (select 1 from club_niveles where nombre = p_nivel) then
+    return jsonb_build_object('ok', false, 'porque', 'Ese nivel no existe.');
+  end if;
+  if p_tipo = 'descuento' and (p_porcentaje is null or p_porcentaje < 1 or p_porcentaje > 50) then
+    return jsonb_build_object('ok', false, 'porque', 'El descuento va de 1% a 50%.');
+  end if;
+  if p_tipo = 'producto' and length(trim(coalesce(p_producto, ''))) = 0 then
+    return jsonb_build_object('ok', false, 'porque', 'Falta qué producto se lleva.');
+  end if;
+  if p_tipo not in ('descuento', 'producto') then
+    return jsonb_build_object('ok', false, 'porque', 'Elegí descuento o producto.');
+  end if;
+
+  insert into club_regalos_cumple (nivel, tipo, porcentaje, producto, detalle, costo)
+  values (p_nivel, p_tipo,
+          case when p_tipo = 'descuento' then p_porcentaje end,
+          case when p_tipo = 'producto' then trim(p_producto) end,
+          case when p_tipo = 'producto' then nullif(trim(coalesce(p_detalle, '')), '') end,
+          case when p_tipo = 'producto' then p_costo end)
+  on conflict (nivel) do update set
+    tipo = excluded.tipo, porcentaje = excluded.porcentaje, producto = excluded.producto,
+    detalle = excluded.detalle, costo = excluded.costo;
+
+  return jsonb_build_object('ok', true);
+end;
+$rg$;
+
+grant execute on function club_regalo_guardar(text, text, text, smallint, text, text, numeric)
+  to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- LISTO
+-- ══════════════════════════════════════════════════════════════════════════
+
+select nivel, tipo, coalesce(porcentaje || '%', producto) as regalo from club_regalos_cumple
+ order by (select orden from club_niveles n where n.nombre = nivel);

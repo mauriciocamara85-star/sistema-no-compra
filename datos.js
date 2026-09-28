@@ -694,6 +694,39 @@ var base = {
       });
     },
 
+    /** El catálogo entero, con el costo de VDH y los apagados. Pide PIN. */
+    premiosListar: function (pin) {
+      return funcion('club_premios_listar', { p_pin: pin });
+    },
+
+    /** Agregar (id null) o cambiar un premio. No se borran: se apagan. */
+    premioGuardar: function (pin, id, nombre, detalle, puntos, valor, costo, limite, activo) {
+      return funcion('club_premio_guardar', {
+        p_pin: pin, p_id: id || null, p_nombre: nombre, p_detalle: detalle || null,
+        p_puntos: puntos, p_valor: valor, p_costo: costo, p_limite: limite || null,
+        p_activo: activo !== false
+      });
+    },
+
+    /** El regalo de cumpleaños de cada nivel. */
+    regalosListar: function (pin) {
+      return funcion('club_regalos_listar', { p_pin: pin });
+    },
+
+    regaloGuardar: function (pin, nivel, tipo, porcentaje, producto, detalle, costo) {
+      return funcion('club_regalo_guardar', {
+        p_pin: pin, p_nivel: nivel, p_tipo: tipo, p_porcentaje: porcentaje || null,
+        p_producto: producto || null, p_detalle: detalle || null, p_costo: costo || null
+      });
+    },
+
+    /** Marcar el regalo de cumple como usado. Una vez por cumpleaños. */
+    entregarCumple: function (pin, codigo, local, vendedor) {
+      return funcion('club_entregar_cumple', {
+        p_pin: pin, p_codigo: codigo, p_local: local, p_vendedor: vendedor
+      });
+    },
+
     /** Los puntos dobles: los vigentes, los que vienen y los de hace poco. */
     multiListar: function (pin) {
       return funcion('club_multi_listar', { p_pin: pin });
