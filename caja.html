@@ -351,8 +351,10 @@
   }
 
   /* ═══ La ficha del cliente ════════════════════════════════════════════ */
+  /* Devuelve la promesa: quien sumó una compra necesita saber cuándo está
+     la ficha nueva, para ver si el cliente subió de nivel. */
   function elegir(codigo, telefono, mail) {
-    base.club.tarjeta(codigo).then(function (t) {
+    return base.club.tarjeta(codigo).then(function (t) {
       if (!t || !t.hay) { avisar('err', 'No encontré esa tarjeta.'); return; }
       socio = t;
       /* club_tarjeta no devuelve el teléfono a propósito —la abre cualquiera
@@ -588,10 +590,27 @@
           return;
         }
         if (!r || !r.sumado) { avisar('err', (r && r.porque) || 'No se pudo sumar.'); return; }
-        avisar('ok', '¡Listo! Sumó ' + miles(r.gana) + ' puntos' +
-                     porQue(r.nivel, r.extra > 1 ? r.motivo : null, r.multiplica) +
-                     '. ' + esc(r.nombre) + ' tiene ' + miles(r.puntos) + '.');
-        elegir(socio.codigo, socio.telefono, socio.mail);
+        /* El mensaje se arma DESPUÉS de traer la ficha nueva: si con esta
+           compra subió de nivel, el vendedor se tiene que enterar ahí, con el
+           cliente adelante, para decírselo. Es el momento que más vale. */
+        var nivelAntes = socio.nivel && socio.nivel.nombre;
+        var suma = '¡Listo! Sumó ' + miles(r.gana) + ' puntos' +
+                   porQue(r.nivel, r.extra > 1 ? r.motivo : null, r.multiplica) + '.';
+        elegir(socio.codigo, socio.telefono, socio.mail).then(function () {
+          var ahora = socio && socio.nivel && socio.nivel.nombre;
+          if (nivelAntes && ahora && ahora !== nivelAntes) {
+            var regalo = 0;
+            (socio.ultimas || []).forEach(function (m) {
+              if (m.concepto === 'bono_nivel' && Date.now() - new Date(m.cuando).getTime() < 5 * 60000) {
+                regalo += Number(m.puntos) || 0;
+              }
+            });
+            avisar('ok', suma + ' ¡' + esc(r.nombre) + ' pasó a ' + esc(ahora) + '!' +
+                   (regalo ? ' Le regalamos ' + miles(regalo) + ' puntos: decíselo.' : ' Decíselo.'));
+          } else {
+            avisar('ok', suma + ' ' + esc(r.nombre) + ' tiene ' + miles(socio ? socio.puntos : r.puntos) + '.');
+          }
+        });
       })
       .catch(function (err) {
         avisar('err', (err && err.delServidor && err.message) || 'No se pudo sumar.');

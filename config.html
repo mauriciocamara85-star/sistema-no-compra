@@ -1256,9 +1256,11 @@
           ', <b>' + n(k.con_promos) + '</b> aceptan promociones' +
           (k.pendientes ? ' · ' + n(k.pendientes) + ' en camino' : '') + '. ' +
           'El segmento para mandarles ofertas: etiquetas <b>VDH Club</b> y <b>Acepta promos</b>.</p>' +
-        (k.fallados
-          ? '<p class="kommo-linea mal">' + n(k.fallados) + ' no se pudieron mandar. Se reintenta ' +
-            'solo todos los días. Último error: ' + esc(k.ultimo_error || 'sin detalle') + '</p>'
+        (k.fallados || k.reintentando
+          ? '<p class="kommo-linea mal">' +
+            (k.fallados ? n(k.fallados) + ' no se pudieron mandar (se reintenta solo todos los días). '
+                        : n(k.reintentando) + ' reintentando. ') +
+            'Último error: ' + esc(k.ultimo_error || 'sin detalle') + '</p>'
           : '');
     }).catch(function () { caja.innerHTML = ''; });
   }

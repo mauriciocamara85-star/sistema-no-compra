@@ -2616,3 +2616,221 @@ select count(*) as encolados from club_clientes where baja is null and club_komm
 
 select 'socios en la cola para Kommo' as que, count(*)::text as cuantos
   from club_salidas where estado = 'pendiente';
+
+
+-- ─────────────────────────── PARTE 18 ───────────────────────────
+-- El regalo al subir de nivel, y el 402 de Kommo en castellano.
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · EL REGALO AL SUBIR DE NIVEL
+--
+-- Correr entero en el editor SQL de Supabase, después del 16 y 17.
+--
+-- Decidido por Mauricio el 27/09/2026: al llegar a Oro, 500 puntos de
+-- regalo; al llegar a Platino, 1.000. Con una notificación al celular.
+--
+-- Hasta acá subir de nivel no se notaba: pasaba en silencio y el cliente
+-- se enteraba —si se enteraba— la próxima vez que abría la tarjeta. Un
+-- regalo en el momento es lo que convierte "subí de nivel" en algo que se
+-- festeja, y es lo que hace que el siguiente valga la pena perseguirlo.
+--
+-- ── Cómo se detecta ──
+-- Un disparador sobre cada compra que entra: mira el nivel con y sin esa
+-- compra. Va como disparador y no adentro de club_sumar_compra para que
+-- valga venga la compra de donde venga —la caja hoy, la tienda online
+-- mañana— sin tener que acordarse de agregarlo en cada lugar.
+--
+-- ── Una vez por año por nivel ──
+-- El nivel se mide con lo comprado en los últimos 12 meses, así que puede
+-- bajar y volver a subir. Sin tope, el mismo socio cobraría el regalo de
+-- Oro cada vez que cruza la raya. Se regala una vez cada 12 meses por nivel.
+--
+-- ── Los regalos no suben el nivel ──
+-- Son puntos de ajuste, no de compra, y el nivel sólo cuenta compras. Sin
+-- eso, el regalo de Oro podría empujar a alguien a Platino, que le daría el
+-- de Platino, en cadena.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+/* El regalo de cada nivel. Se cambia con un update; Plata va en 0 porque es
+   donde arranca todo el mundo. */
+alter table club_niveles add column if not exists bono integer not null default 0
+  check (bono >= 0);
+
+update club_niveles set bono = 500  where nombre = 'Oro'     and bono = 0;
+update club_niveles set bono = 1000 where nombre = 'Platino' and bono = 0;
+
+
+create or replace function club_subio_nivel()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $sn$
+declare
+  despues integer;
+  antes   integer;
+  nv      record;
+  nombre  text;
+begin
+  if new.tipo <> 'compra' or new.anulado is not null or coalesce(new.puntos, 0) <= 0 then
+    return new;
+  end if;
+
+  /* El XP con esta compra y sin ella. Es la misma cuenta que la vista:
+     compras no anuladas de los últimos 12 meses. */
+  select coalesce(sum(puntos), 0) into despues
+    from club_movimientos
+   where cliente = new.cliente and tipo = 'compra' and anulado is null
+     and creado > now() - interval '12 months';
+  antes := despues - new.puntos;
+
+  /* Todos los niveles cruzados con esta compra, no sólo el último: una
+     compra grande puede pasar de Plata a Platino de una, y los dos regalos
+     están ganados. */
+  for nv in
+    select n.nombre, n.bono, n.multiplica
+      from club_niveles n
+     where n.desde_xp > antes and n.desde_xp <= despues and n.bono > 0
+     order by n.desde_xp
+  loop
+    if exists (select 1 from club_movimientos m
+                where m.cliente = new.cliente and m.concepto = 'bono_nivel'
+                  and m.obs = 'Llegaste a ' || nv.nombre
+                  and m.anulado is null and m.creado > now() - interval '12 months') then
+      continue;
+    end if;
+
+    insert into club_movimientos (cliente, tipo, concepto, puntos, local, vendedor, obs)
+    values (new.cliente, 'ajuste', 'bono_nivel', nv.bono, new.local, new.vendedor,
+            'Llegaste a ' || nv.nombre);
+
+    /* El aviso al celular, si tiene los avisos prendidos. Sale ya: lo manda
+       el Action de cada hora. En la caja el vendedor ya se lo dice en el
+       momento; esto es para que le quede. */
+    if exists (select 1 from club_suscripciones su
+                where su.cliente = new.cliente and su.muerto is null) then
+      select split_part(trim(c.nombre), ' ', 1) into nombre from club_clientes c where c.id = new.cliente;
+      insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+      values (new.cliente, 'nivel', nv.nombre || '-' || to_char(now(), 'YYYY-MM-DD'),
+              '¡Pasaste a ' || nv.nombre || ', ' || nombre || '!',
+              'Te regalamos ' || replace(to_char(nv.bono, 'FM999,999'), ',', '.') ||
+              ' puntos. Desde ahora sumás ' || replace(trim_scale(nv.multiplica)::text, '.', ',') ||
+              ' puntos por cada $100.',
+              'tarjeta.html', now())
+      on conflict (cliente, motivo, clave) do nothing;
+    end if;
+  end loop;
+
+  return new;
+end;
+$sn$;
+
+revoke all on function club_subio_nivel() from public, anon, authenticated;
+
+drop trigger if exists club_subio_nivel_tg on club_movimientos;
+create trigger club_subio_nivel_tg
+  after insert on club_movimientos
+  for each row execute function club_subio_nivel();
+
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- Y UN ERROR QUE SE ENTIENDA CUANDO KOMMO PIDE PAGO
+--
+-- La función que habla con Kommo (la misma del No Compra), igual a la que
+-- está andando, con un caso más: el 402.
+-- ══════════════════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION public.kommo(metodo text, ruta text, cuerpo jsonb DEFAULT NULL::jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  sub  text := secreto('KOMMO_SUBDOMAIN');
+  tok  text := secreto('KOMMO_TOKEN');
+  res  extensions.http_response;
+  url  text;
+begin
+  if sub is null or tok is null then
+    raise exception 'Falta configurar KOMMO_SUBDOMAIN o KOMMO_TOKEN.';
+  end if;
+
+  url := 'https://' || sub || '.kommo.com/api/v4' || ruta;
+
+  perform paciencia();
+  res := extensions.http((
+    metodo,
+    url,
+    array[extensions.http_header('Authorization', 'Bearer ' || tok)],
+    case when cuerpo is null then null else 'application/json' end,
+    case when cuerpo is null then null else cuerpo::text end
+  )::extensions.http_request);
+
+  if res.status = 401 then
+    raise exception 'Kommo rechazó el token (401). Venció o fue revocado: generá uno nuevo.';
+  end if;
+  /* 402: la cuenta de Kommo quedó sin plan pagado. Kommo sigue dejando LEER
+     pero no crear ni cambiar nada, así que los contactos y los leads no
+     entran. Pasó el 28/09/2026 con los primeros socios del Club, y el
+     mensaje crudo decía 'Payment Required' en inglés en el medio de un JSON. */
+  if res.status = 402 then
+    raise exception 'La cuenta de Kommo no está paga (402): deja ver pero no crear ni cambiar contactos. Se reintenta solo cuando se regularice.';
+  end if;
+  if res.status >= 300 then
+    raise exception 'Kommo respondió % · %', res.status, left(coalesce(res.content, ''), 300);
+  end if;
+
+  -- 204 sin cuerpo: Kommo contesta así cuando una búsqueda no encuentra nada.
+  if res.content is null or length(trim(res.content)) = 0 then return null; end if;
+  return res.content::jsonb;
+end;
+$function$;
+
+revoke execute on function kommo(text, text, jsonb) from anon, authenticated, public;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- EL ESTADO DE KOMMO, TAMBIÉN MIENTRAS REINTENTA
+--
+-- Antes el error se veía recién cuando un socio agotaba los seis intentos:
+-- durante la primera media hora Configuración decía "4 en camino" como si
+-- todo anduviera. Ahora el último error se muestra apenas aparece.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_kommo_estado(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ks$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return jsonb_build_object(
+    'activo',      secreto('KOMMO_TOKEN') is not null,
+    'en_kommo',    (select count(*) from club_clientes where kommo_contacto is not null and baja is null),
+    'socios',      (select count(*) from club_clientes where baja is null),
+    'con_promos',  (select count(*) from club_clientes
+                     where kommo_contacto is not null and baja is null
+                       and acepta_promos and revocado is null),
+    'pendientes',  (select count(*) from club_salidas where estado = 'pendiente'),
+    'reintentando', (select count(*) from club_salidas where estado = 'pendiente' and error is not null),
+    'fallados',    (select count(*) from club_salidas s
+                     where s.estado = 'fallado'
+                       and not exists (select 1 from club_salidas h
+                                        where h.cliente = s.cliente and h.estado = 'hecho'
+                                          and h.id > s.id)),
+    'ultimo_error', (select error from club_salidas
+                      where error is not null and estado in ('pendiente', 'fallado')
+                      order by ultimo desc limit 1));
+end;
+$ks$;
+
+grant execute on function club_kommo_estado(text) to anon, authenticated;
+
+
+select nombre, desde_xp, multiplica, bono from club_niveles order by orden;
