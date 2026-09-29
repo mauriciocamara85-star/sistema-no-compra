@@ -940,19 +940,35 @@
       /* Y quién está creando. Desplegable y no campo libre: escrito a mano,
          la misma persona termina siendo "Agus", "agus" y "Agustina", y la
          estadística por persona —que es para lo que se guarda— deja de
-         servir. Si la lista está vacía queda el aviso, que es mejor que un
-         desplegable con una sola opción que no dice nada. */
-      base.atencion().then(function (gente) {
+         servir.
+
+         La lista es el equipo del local, la MISMA de la Carga, más la de
+         atención si tiene a alguien. Hasta el 29/09/2026 salía sólo de
+         atención, que quedó vacía y sin pantalla para cargarla: Mauricio
+         entraba como "atiende Mau" y el desplegable decía "Todavía no hay
+         nadie cargado". Quien atiende en esta compu queda elegido. */
+      Promise.all([
+        local ? base.equipo(local).catch(function () { return []; }) : Promise.resolve([]),
+        base.atencion().catch(function () { return []; })
+      ]).then(function (r) {
+        var nombres = [], vistos = {};
+        var sumar = function (n) {
+          n = String(n || '').trim();
+          if (n && !vistos[n.toLowerCase()]) { vistos[n.toLowerCase()] = true; nombres.push(n); }
+        };
+        sumar(vendedor);
+        (r[0] || []).forEach(sumar);
+        (r[1] || []).forEach(function (g) { sumar(g && g.nombre); });
         var sel = $('cuQuien');
-        (gente || []).forEach(function (g) {
-          var o = document.createElement('option');
-          o.value = g.nombre; o.textContent = g.nombre;
-          sel.appendChild(o);
-        });
-        if (!gente || !gente.length) {
+        if (!nombres.length) {
           sel.innerHTML = '<option value="">Todavía no hay nadie cargado</option>';
+          return;
         }
-      }).catch(function () {});
+        sel.innerHTML = (vendedor ? '' : '<option value="">Elegí quién sos</option>') +
+          nombres.map(function (n) {
+            return '<option value="' + esc(n) + '"' + (n === vendedor ? ' selected' : '') + '>' + esc(n) + '</option>';
+          }).join('');
+      });
     }
   }
 
