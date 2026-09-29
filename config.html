@@ -533,6 +533,7 @@
      para siempre sería dejar la llave puesta. */
   var K_PIN_PROMO = 'nc_pin';
   var editando = null;      // el id que se está editando, o null si es nueva
+  var promoAbierta = null;  // la promo que se está editando, tal como vino de la base
 
   function pinPromo() {
     try { return sessionStorage.getItem(K_PIN_PROMO) || ''; } catch (e) { return ''; }
@@ -610,7 +611,7 @@
       return '<div class="promo-fila">' +
         '<div class="promo-fila-txt"><b>' + esc(p.texto) + '</b>' +
           '<span>Hasta el ' + esc(fechaCorta(p.hasta)) +
-          (p.imagen ? ' · con foto' : '') + '</span></div>' +
+          (p.imagen ? ' · con foto' : '') + (p.cuenta ? ' · con cuenta regresiva' : '') + '</span></div>' +
         estado +
         '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button>' +
         '<button type="button" class="btn btn-sec btn-chico" data-baja="' + p.id + '">Quitar</button>' +
@@ -649,6 +650,7 @@
 
   function editorPromo(p) {
     editando = p ? p.id : null;
+    promoAbierta = p;
     $('promoCuerpo').innerHTML =
       '<div class="campos">' +
         '<div class="campo ancho">' +
@@ -680,6 +682,15 @@
           '<textarea id="promoCond" ' +
             'placeholder="Qué productos participan, si combina con otros descuentos, en qué locales vale">' +
             esc((p && p.condiciones) || '') + '</textarea>' +
+        '</div>' +
+        /* La cuenta regresiva (SQL 35, 29/09/2026): en la app la promo lleva
+           "Termina en 1 día 04:12:33" hasta la medianoche de su último día.
+           Apagada de entrada: es para la promo puntual, no para todas. */
+        '<div class="campo ancho">' +
+          '<label class="casillero">' +
+            '<input type="checkbox" id="promoCuenta"' + (p && p.cuenta ? ' checked' : '') + '>' +
+            '<span>Mostrar cuenta regresiva<span class="lbl-opc"> — "Termina en 04:12:33" en la app</span></span>' +
+          '</label>' +
         '</div>' +
         /* El casillero va PEGADO al botón de guardar y no arriba con el
            resto: es lo último que se decide, y lo que decide es si le suena
@@ -1020,11 +1031,17 @@
   function guardarPromo() {
     var b = $('promoGuardar');
     b.disabled = true;
+    /* La cuenta regresiva viaja si está tildada, o si la base ya conoce el
+       dato (la promo vino con "cuenta"). Destildada en una base sin el SQL
+       35, no se manda: si no, guardar cualquier promo fallaría. */
+    var cuenta = $('promoCuenta') ? $('promoCuenta').checked : null;
+    if (cuenta === false && !(promoAbierta && 'cuenta' in promoAbierta)) { cuenta = null; }
     base.club.promoGuardar(pinPromo(), editando,
         $('promoTexto').value.trim(), $('promoImagen').value.trim(),
         $('promoDesde').value, $('promoHasta').value, $('promoCond').value.trim(),
         $('promoAvisar') && $('promoAvisar').checked,
-        $('promoEnlace') ? $('promoEnlace').value.trim() : '')
+        $('promoEnlace') ? $('promoEnlace').value.trim() : '',
+        cuenta)
       .then(function (r) {
         if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
         if (r.avisados) {

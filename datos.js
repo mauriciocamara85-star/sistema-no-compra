@@ -973,13 +973,18 @@ var base = {
        texto de la promo. Va al final porque se agregó después, y con
        default en la base: una pantalla vieja que quedó cacheada en un
        celular sigue guardando bien y simplemente no avisa. */
-    promoGuardar: function (pin, id, texto, imagen, desde, hasta, condiciones, avisar, enlace) {
-      return funcion('club_promo_guardar', {
+    /* `cuenta` (SQL 35): la cuenta regresiva en la app. Va sólo si viene
+       true o false: sin el SQL 35 corrido, mandarlo haría fallar el
+       guardado, y sin el dato la base deja la promo como estaba. */
+    promoGuardar: function (pin, id, texto, imagen, desde, hasta, condiciones, avisar, enlace, cuenta) {
+      var args = {
         p_pin: pin, p_id: id || null, p_texto: texto, p_imagen: imagen || null,
         p_desde: desde || null, p_hasta: hasta || null,
         p_condiciones: condiciones || null, p_avisar: !!avisar,
         p_enlace: enlace || null
-      });
+      };
+      if (cuenta === true || cuenta === false) { args.p_cuenta = cuenta; }
+      return funcion('club_promo_guardar', args);
     },
     promoBaja: function (pin, id) {
       return funcion('club_promo_baja', { p_pin: pin, p_id: id });

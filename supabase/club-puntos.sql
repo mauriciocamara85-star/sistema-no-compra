@@ -7694,3 +7694,315 @@ AS $function$
 $function$;
 
 select 'Listo: la tarjeta trae hasta 60 movimientos.' as "SQL 34";
+
+
+-- ─────────────────────────── PARTE 35 ───────────────────────────
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LA CUENTA REGRESIVA
+--
+-- Correr entero en el editor SQL de Supabase, después del 34.
+--
+-- Pedido de Mauricio (29/09/2026), sobre capturas de Tienda de Puntos:
+-- "Activo ahora · Termina en 02:28:58".
+--
+--   · PUNTOS EXTRA: la tarjeta y la lista de Promos saben el momento exacto
+--     en que termina el que vale ahora. Una hora feliz termina hoy a su
+--     hora; uno de ciertos días, a la medianoche del último día seguido; y
+--     el resto, cuando vence.
+--   · PROMOCIONES: un casillero nuevo en Configuración, "Mostrar cuenta
+--     regresiva". Prendido, la promo lleva "Termina en…" hasta la
+--     medianoche de su último día.
+--
+-- Y un arreglo: la lista de promos de Configuración no traía el enlace, así
+-- que editar una promo que lo tenía lo borraba al guardar.
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table club_promos add column if not exists cuenta_regresiva boolean not null default false;
+
+
+/* Cuándo termina la ventana de puntos extra que vale en el momento t. Nulo
+   si en t no vale. */
+create or replace function club_multi_termina(m club_multiplicadores, t timestamptz)
+returns timestamptz
+language plpgsql
+stable
+set search_path = public
+as $mt$
+declare
+  dia date;
+  fin timestamptz;
+begin
+  if not club_multi_vale(m, t) then return null; end if;
+  dia := (t at time zone 'America/Argentina/Buenos_Aires')::date;
+
+  if m.hora_hasta is not null then
+    /* Una hora feliz: hoy, a su hora (hora_hasta > hora_desde, nunca cruza
+       la medianoche). */
+    fin := (dia + m.hora_hasta) at time zone 'America/Argentina/Buenos_Aires';
+  elsif m.dias is not null and cardinality(m.dias) < 7 then
+    /* Ciertos días: sigue mientras los días que vienen también estén
+       elegidos (un viernes-sábado-domingo termina el domingo a la noche). */
+    while extract(dow from dia + 1)::smallint = any(m.dias) and dia - (t at time zone 'America/Argentina/Buenos_Aires')::date < 7 loop
+      dia := dia + 1;
+    end loop;
+    fin := (dia + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires';
+  else
+    fin := m.hasta;
+  end if;
+
+  return least(fin, m.hasta);
+end;
+$mt$;
+
+revoke all on function club_multi_termina(club_multiplicadores, timestamptz) from public, anon, authenticated;
+
+
+create or replace function club_factor_en(p_cliente bigint, p_t timestamp with time zone)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  hoy       date := (p_t at time zone 'America/Argentina/Buenos_Aires')::date;
+  c         record;
+  cm        numeric;
+  antes     integer;
+  fin       date;
+  pr        record;
+  extra     numeric := 1;
+  motivo    text;
+  hasta     date;
+  hora_fin  time;
+  de_cumple boolean := false;
+  termina   timestamptz;
+begin
+  select v.multiplica, v.cumple into c from v_club_clientes v where v.id = p_cliente;
+  select nullif(valor, '')::numeric into cm    from club_reglas where clave = 'cumple_multiplica';
+  select nullif(valor, '')::integer into antes from club_reglas where clave = 'cumple_antes';
+
+  if c.cumple is not null and coalesce(cm, 1) > 1 then
+    fin := club_cumple_fin(c.cumple, hoy, coalesce(antes, 7));
+    if fin is not null then
+      extra := cm; motivo := 'Tu semana de cumple'; hasta := fin; de_cumple := true;
+      termina := ((fin + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires');
+    end if;
+  end if;
+
+  select m.nombre, m.factor, m.hora_hasta, club_multi_termina(m, p_t) as termina,
+         (m.hasta at time zone 'America/Argentina/Buenos_Aires')::date - 1 as ultimo
+    into pr
+    from club_multiplicadores m
+   where club_multi_vale(m, p_t)
+   order by m.factor desc, m.hasta desc
+   limit 1;
+
+  if pr.factor is not null and pr.factor > extra then
+    extra := pr.factor; motivo := pr.nombre; hasta := pr.ultimo; de_cumple := false;
+    /* Una hora feliz termina hoy a esa hora, no el último día del rango:
+       "hasta las 20 h" es lo que el cliente necesita saber. */
+    hora_fin := pr.hora_hasta;
+    termina := pr.termina;
+  end if;
+
+  return jsonb_build_object(
+    'total',  round(coalesce(c.multiplica, 1) * extra, 2),
+    'nivel',  coalesce(c.multiplica, 1),
+    'extra',  extra,
+    'motivo', motivo,
+    'hasta',  hasta,
+    'hora_hasta', case when hora_fin is null then null
+                       when extract(minute from hora_fin) = 0 then to_char(hora_fin, 'FMHH24')
+                       else to_char(hora_fin, 'FMHH24:MI') end,
+    'cumple', de_cumple,
+    /* El momento exacto en que se termina (SQL 35), para la cuenta
+       regresiva de la tarjeta. */
+    'termina', termina,
+    'es_cumple', c.cumple is not null
+                 and club_cumple_en(c.cumple, extract(year from hoy)::int) = hoy);
+end;
+$function$;
+
+
+create or replace function club_multi_publicos()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'nombre', m.nombre, 'factor', m.factor,
+           'cuando', club_multi_cuando(m),
+           'ahora', club_multi_vale(m, now()),
+           'termina', club_multi_termina(m, now()))
+         order by club_multi_vale(m, now()) desc, m.desde), '[]'::jsonb)
+    from club_multiplicadores m
+   where m.baja is null and m.hasta > now() and m.desde < now() + interval '7 days'
+$function$;
+
+
+drop function if exists club_promos_ver();
+create function club_promos_ver()
+ RETURNS TABLE(id bigint, texto text, imagen text, condiciones text, desde date, hasta date, enlace text,
+               cuenta boolean, termina timestamptz)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select p.id, p.texto, p.imagen, p.condiciones, p.desde, p.hasta, p.enlace,
+         p.cuenta_regresiva,
+         /* A la medianoche de su último día, en hora de Argentina. */
+         ((p.hasta + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires')
+    from club_promos p
+   where p.baja is null
+     and p.desde <= current_date
+     and p.hasta >= current_date
+   order by p.desde desc, p.id desc;
+$function$;
+
+grant execute on function club_promos_ver() to anon, authenticated;
+
+
+create or replace function club_promos_listar(p_pin text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', id, 'texto', texto, 'imagen', imagen,
+             'desde', to_char(desde, 'YYYY-MM-DD'),
+             'hasta', to_char(hasta, 'YYYY-MM-DD'),
+             'condiciones', condiciones,
+             /* El enlace faltaba: al editar una promo que lo tenía, el
+                formulario lo mostraba vacío y guardar lo borraba. */
+             'enlace', enlace,
+             'cuenta', cuenta_regresiva,
+             'vigente', (hasta >= current_date and (desde is null or desde <= current_date)),
+             'futura',  (desde is not null and desde > current_date),
+             'vencida', (hasta < current_date))
+           order by hasta desc, id desc)
+      from club_promos where baja is null), '[]'::jsonb);
+end;
+$function$;
+
+
+/* La firma cambia (p_cuenta al final): la vieja se borra, o la API no sabe
+   cuál de las dos llamar. */
+drop function if exists club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text);
+
+create or replace function club_promo_guardar(p_pin text, p_id bigint, p_texto text, p_imagen text, p_desde text, p_hasta text, p_condiciones text, p_avisar boolean DEFAULT false, p_enlace text DEFAULT NULL::text, p_cuenta boolean DEFAULT NULL::boolean)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  txt text;
+  img text;
+  con text;
+  enl text;
+  d1  date;
+  d2  date;
+  nid bigint;
+  arranca date;
+  cuantos integer := 0;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  txt := nullif(trim(coalesce(p_texto, '')), '');
+  img := nullif(trim(coalesce(p_imagen, '')), '');
+  con := nullif(trim(coalesce(p_condiciones, '')), '');
+  enl := nullif(trim(coalesce(p_enlace, '')), '');
+
+  if txt is null then raise exception 'Falta qué dice la promoción.'; end if;
+  if length(txt) > 140 then
+    raise exception 'El texto es muy largo. Máximo 140 caracteres.';
+  end if;
+
+  /* https y no http: una imagen por http en una página https la bloquea el
+     navegador SIN DECIR NADA, y el cartel se vería vacío. */
+  if img is not null and img !~* '^https://' then
+    raise exception 'La foto tiene que ser un enlace que empiece con https.';
+  end if;
+
+  /* Lo mismo con el enlace, y por un motivo más: una notificación que lleva
+     a un sitio sin candado le muestra al cliente un cartel de peligro con
+     la marca al lado. */
+  if enl is not null and enl !~* '^https://' then
+    raise exception 'El enlace tiene que empezar con https.';
+  end if;
+
+  begin
+    d1 := nullif(trim(coalesce(p_desde, '')), '')::date;
+    d2 := nullif(trim(coalesce(p_hasta, '')), '')::date;
+  exception when others then
+    raise exception 'Esa fecha no se entiende. Va como 2026-09-30.';
+  end;
+
+  if d2 is null then
+    raise exception 'Falta hasta qué día vale. Una promo sin vencimiento se queda para siempre.';
+  end if;
+  if d1 is not null and d1 > d2 then
+    raise exception 'El desde no puede ser posterior al hasta.';
+  end if;
+  if d2 < current_date then
+    raise exception 'Esa fecha ya pasó: la promoción no la vería nadie.';
+  end if;
+
+  if p_id is null then
+    insert into club_promos (texto, imagen, desde, hasta, condiciones, enlace, cuenta_regresiva)
+    values (txt, img, coalesce(d1, current_date), d2, con, enl, coalesce(p_cuenta, false))
+    returning id, desde into nid, arranca;
+  else
+    update club_promos
+       set texto = txt, imagen = img, desde = d1, hasta = d2,
+           condiciones = con, enlace = enl,
+           /* Sin el dato (una pantalla vieja cacheada) queda como estaba. */
+           cuenta_regresiva = coalesce(p_cuenta, cuenta_regresiva)
+     where id = p_id and baja is null
+    returning id, desde into nid, arranca;
+    if nid is null then
+      return jsonb_build_object('ok', false, 'porque', 'Esa promoción ya no existe.');
+    end if;
+  end if;
+
+  /* ── El aviso ──
+     Hereda de la promo el texto, la foto y el enlace. Sin enlace propio
+     lleva a las promos de la app, que es lo que hacía siempre. */
+  if coalesce(p_avisar, false) then
+    select count(*) into cuantos from club_suscripciones where muerto is null;
+
+    if cuantos > 0 then
+      insert into club_avisos (titulo, cuerpo, enlace, imagen, por, promo, sale)
+      values (
+        'Nueva promo',
+        txt,
+        coalesce(enl, 'tarjeta.html#promos'),
+        img,
+        'Promoción',
+        nid,
+        greatest(now(), coalesce(arranca, current_date)::timestamptz)
+      );
+    end if;
+  end if;
+
+  return jsonb_build_object('ok', true, 'id', nid,
+    'avisados', case when coalesce(p_avisar, false) then cuantos else 0 end);
+end;
+$function$;
+
+revoke all on function club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text, boolean) from public;
+grant execute on function club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text, boolean) to anon, authenticated;
+
+
+select 'Listo: la cuenta regresiva en los puntos extra y en las promos.' as "SQL 35";
