@@ -737,6 +737,29 @@ var base = {
       return funcion('club_premio_foto', { p_pin: pin, p_id: id, p_url: url || null });
     },
 
+    /** Todo el tablero de "Club · Números" para un período y un local
+        (vacío = todos). Fechas como '2026-09-28'; null = últimos 30 días. */
+    estadisticas: function (pin, desde, hasta, local) {
+      return funcion('club_estadisticas', {
+        p_pin: pin, p_desde: desde || null, p_hasta: hasta || null, p_local: local || null
+      });
+    },
+
+    /** La lista de movimientos, con buscador, tipo y páginas. */
+    movimientosBuscar: function (pin, desde, hasta, local, texto, tipo, limite, salto) {
+      return funcion('club_movimientos_buscar', {
+        p_pin: pin, p_desde: desde || null, p_hasta: hasta || null, p_local: local || null,
+        p_texto: texto || null, p_tipo: tipo || null, p_limite: limite || 25, p_salto: salto || 0
+      });
+    },
+
+    /** Un aviso a los socios que dejaron de venir (60 días a un año). */
+    avisarRecuperar: function (pin, local, titulo, cuerpo, enlace) {
+      return funcion('club_avisar_recuperar', {
+        p_pin: pin, p_local: local || null, p_titulo: titulo, p_cuerpo: cuerpo, p_enlace: enlace || null
+      });
+    },
+
     /** La novedad de Inicio: una sola, con foto. */
     novedadVer: function (pin) {
       return funcion('club_novedad_ver', { p_pin: pin });
