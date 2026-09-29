@@ -6950,3 +6950,604 @@ grant execute on function club_avisar_socio(text, text, text, text, text, text) 
 select count(*) filter (where a_recuperar) as "Para recuperar hoy",
        count(*) filter (where frecuencia is not null) as "Con ritmo (3+ compras)"
   from club_ritmo();
+
+
+-- ─────────────────────────── PARTE 33 ───────────────────────────
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LA TARJETA DE INICIO: MISIONES, VENCIMIENTO, NIVELES Y CUPONES
+--
+-- Correr entero en el editor SQL de Supabase, después del 32.
+--
+-- Pedido de Mauricio (29/09/2026), sobre capturas de la app de King Of The
+-- Kongo: el Inicio pasa a tener una tarjeta con los puntos y cuatro
+-- accesos (Canjear, Movimientos, Mis cupones, Niveles), y abajo las
+-- misiones de "Sumá más puntos". Acá está lo que la tarjeta necesita:
+--
+--   · MISIONES: cosas que dan puntos UNA sola vez. Completar el perfil
+--     (mail y cumpleaños), activar los avisos, agregar la app a la
+--     pantalla, la primera compra y —apagada de entrada— comprar un fin de
+--     semana. Se cumplen solas: un disparador mira cada cambio. Los puntos
+--     y cuáles están prendidas se cambian desde Configuración.
+--     NO hay misión por dejar una reseña: Google prohíbe premiarlas.
+--   · VENCIMIENTO: la fecha en que vencen sus puntos si no vuelve a
+--     comprar (la misma cuenta que club_vencer).
+--   · NIVELES: los tres, con lo que da cada uno.
+--   · MIS CUPONES: los cupones de Beneficios dados a SU teléfono, y las
+--     campañas que se marcaron "Mostrar en la app del Club".
+--
+-- A los socios que ya estaban se les dan las misiones que ya cumplieron.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 1 · LAS MISIONES
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_misiones (
+  clave  text primary key,
+  titulo text not null,
+  texto  text not null,
+  puntos integer not null check (puntos > 0 and puntos <= 5000),
+  activa boolean not null default true,
+  orden  integer not null default 0,
+  /* Qué hace el botón en la app: abrir Mis datos, la campanita, cómo
+     instalar, o nada (las de comprar se cumplen en la caja). */
+  accion text not null check (accion in ('datos', 'avisos', 'instalar', 'comprar'))
+);
+alter table club_misiones enable row level security;
+revoke all on club_misiones from anon, authenticated;
+
+/* Las de entrada. "on conflict do nothing": si Mauricio ya les cambió los
+   puntos, correr esto otra vez no se los pisa. */
+insert into club_misiones (clave, titulo, texto, puntos, activa, orden, accion) values
+  ('perfil',         'Completá tu perfil',          'Cargá tu mail y tu cumpleaños en Mis datos.',                              250, true,  1, 'datos'),
+  ('avisos',         'Activá los avisos',           'Enterate antes que nadie de las promos y de tus puntos.',                  200, true,  2, 'avisos'),
+  ('instalar',       'Agregá la app a tu pantalla', 'Tené tu tarjeta a un toque, como cualquier app.',                          150, true,  3, 'instalar'),
+  ('primera_compra', 'Hacé tu primera compra',      'Mostrá tu tarjeta en la caja de cualquier local, o comprá en vdh.com.ar.', 300, true,  4, 'comprar'),
+  ('finde',          'Comprá un fin de semana',     'Una compra un sábado o un domingo, en cualquier local.',                   200, false, 5, 'comprar')
+on conflict (clave) do nothing;
+
+/* Cada misión se paga una vez por socio: el índice lo garantiza aunque dos
+   cosas la cumplan en el mismo instante. */
+create unique index if not exists club_mision_una_vez
+  on club_movimientos (cliente, concepto)
+  where concepto like 'mision:%' and anulado is null;
+
+
+/* Dar una misión, si está prendida y no la tiene. Devuelve si la dio. */
+create or replace function club_mision_dar(p_cliente bigint, p_clave text)
+returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $md$
+declare
+  m club_misiones%rowtype;
+  n integer;
+begin
+  select * into m from club_misiones where clave = p_clave and activa;
+  if not found then return false; end if;
+  insert into club_movimientos (cliente, tipo, concepto, puntos, obs)
+  values (p_cliente, 'ajuste', 'mision:' || m.clave, m.puntos, 'Misión cumplida: ' || m.titulo)
+  on conflict (cliente, concepto) where concepto like 'mision:%' and anulado is null do nothing;
+  get diagnostics n = row_count;
+  return n > 0;
+end;
+$md$;
+
+/* Mirar qué misiones cumple un socio y darle las que falten. La de
+   instalar no se puede mirar desde acá: la avisa la app. */
+create or replace function club_misiones_revisar(p_cliente bigint)
+returns integer
+language plpgsql
+security definer
+set search_path = public
+as $mr$
+declare
+  c club_clientes%rowtype;
+  n integer := 0;
+begin
+  select * into c from club_clientes where id = p_cliente and baja is null;
+  if not found then return 0; end if;
+
+  if nullif(trim(coalesce(c.mail, '')), '') is not null and c.cumple is not null then
+    if club_mision_dar(c.id, 'perfil') then n := n + 1; end if;
+  end if;
+  if exists (select 1 from club_suscripciones s where s.cliente = c.id and s.muerto is null) then
+    if club_mision_dar(c.id, 'avisos') then n := n + 1; end if;
+  end if;
+  if exists (select 1 from club_movimientos m where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null) then
+    if club_mision_dar(c.id, 'primera_compra') then n := n + 1; end if;
+  end if;
+  if exists (select 1 from club_movimientos m where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null
+                and extract(isodow from (m.creado at time zone 'America/Argentina/Buenos_Aires')) in (6, 7)) then
+    if club_mision_dar(c.id, 'finde') then n := n + 1; end if;
+  end if;
+  return n;
+end;
+$mr$;
+
+revoke all on function club_mision_dar(bigint, text) from public, anon, authenticated;
+revoke all on function club_misiones_revisar(bigint) from public, anon, authenticated;
+
+
+-- ── Los disparadores: las misiones se cumplen solas ──
+create or replace function club_misiones_tg_cliente()
+returns trigger language plpgsql security definer set search_path = public as $t1$
+begin
+  perform club_misiones_revisar(new.id);
+  return null;
+end;
+$t1$;
+
+create or replace function club_misiones_tg_suscripcion()
+returns trigger language plpgsql security definer set search_path = public as $t2$
+begin
+  if new.cliente is not null and new.muerto is null then
+    perform club_misiones_revisar(new.cliente);
+  end if;
+  return null;
+end;
+$t2$;
+
+create or replace function club_misiones_tg_compra()
+returns trigger language plpgsql security definer set search_path = public as $t3$
+begin
+  /* Sólo las compras: la misión misma es un "ajuste", y así no se llama
+     a sí misma. */
+  if new.tipo = 'compra' and new.anulado is null then
+    perform club_misiones_revisar(new.cliente);
+  end if;
+  return null;
+end;
+$t3$;
+
+drop trigger if exists club_misiones_tg on club_clientes;
+create trigger club_misiones_tg after insert or update of mail, cumple on club_clientes
+  for each row execute function club_misiones_tg_cliente();
+drop trigger if exists club_misiones_tg on club_suscripciones;
+create trigger club_misiones_tg after insert or update of cliente, muerto on club_suscripciones
+  for each row execute function club_misiones_tg_suscripcion();
+drop trigger if exists club_misiones_tg on club_movimientos;
+create trigger club_misiones_tg after insert on club_movimientos
+  for each row execute function club_misiones_tg_compra();
+
+
+/* "La agregué a la pantalla": la app lo avisa cuando se abre instalada.
+   Con el código de la tarjeta, como todo lo del socio. */
+create or replace function club_mision_instalada(p_codigo text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $mi$
+declare
+  cid bigint;
+  dio boolean;
+begin
+  select id into cid from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null;
+  if cid is null then return jsonb_build_object('ok', false); end if;
+  dio := club_mision_dar(cid, 'instalar');
+  return jsonb_build_object('ok', true, 'dio', dio,
+    'puntos', case when dio then (select puntos from club_misiones where clave = 'instalar') end);
+end;
+$mi$;
+
+revoke all on function club_mision_instalada(text) from public;
+grant execute on function club_mision_instalada(text) to anon, authenticated;
+
+
+/* Las misiones de un socio, para la tarjeta: las prendidas, en orden, con
+   si ya la cumplió. */
+create or replace function club_misiones_de(p_cliente bigint)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $mdd$
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'clave', m.clave, 'titulo', m.titulo, 'texto', m.texto, 'puntos', m.puntos, 'accion', m.accion,
+           'hecha', exists (select 1 from club_movimientos x
+                             where x.cliente = p_cliente and x.concepto = 'mision:' || m.clave and x.anulado is null))
+         order by m.orden, m.clave), '[]'::jsonb)
+    from club_misiones m
+   where m.activa
+$mdd$;
+
+revoke all on function club_misiones_de(bigint) from public, anon, authenticated;
+
+
+-- ── Configuración: los puntos y cuáles están prendidas ──
+create or replace function club_misiones_listar(p_pin text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $ml$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((select jsonb_agg(jsonb_build_object(
+            'clave', m.clave, 'titulo', m.titulo, 'texto', m.texto, 'puntos', m.puntos,
+            'activa', m.activa, 'accion', m.accion,
+            'cumplidas', (select count(*) from club_movimientos x where x.concepto = 'mision:' || m.clave and x.anulado is null))
+          order by m.orden, m.clave) from club_misiones m), '[]'::jsonb);
+end;
+$ml$;
+
+create or replace function club_mision_guardar(p_pin text, p_clave text, p_puntos integer, p_activa boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $mg$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_puntos is null or p_puntos < 1 or p_puntos > 5000 then
+    return jsonb_build_object('ok', false, 'porque', 'Los puntos van de 1 a 5.000.');
+  end if;
+  update club_misiones set puntos = p_puntos, activa = coalesce(p_activa, activa) where clave = p_clave;
+  if not found then return jsonb_build_object('ok', false, 'porque', 'No existe esa misión.'); end if;
+  /* Una misión que se prende ahora se les da a los que ya la cumplían. */
+  if coalesce(p_activa, false) then
+    perform club_misiones_revisar(id) from club_clientes where baja is null;
+  end if;
+  return jsonb_build_object('ok', true);
+end;
+$mg$;
+
+revoke all on function club_misiones_listar(text) from public;
+revoke all on function club_mision_guardar(text, text, integer, boolean) from public;
+grant execute on function club_misiones_listar(text) to anon, authenticated;
+grant execute on function club_mision_guardar(text, text, integer, boolean) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 2 · MIS CUPONES
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Una campaña se muestra en la app sólo si se marcó. Una campaña para un
+   grupo (los de un evento, los de un local) no tiene por qué verla todo el
+   Club. */
+alter table beneficios add column if not exists en_app boolean not null default false;
+
+create or replace view v_beneficios as
+  select b.id, b.tipo, b.creado, b.registro, b.telefono, b.nombre, b.serie, b.pct, b.valor, b.cobrado, b.pago,
+         b.vence, b.local, b.vendedor, b.usado, b.local_canje, b.vendedor_canje, b.monto_compra, b.anulado,
+         b.anulado_por, b.motivo_anul, b.obs, b.codigo, b.creado_por, b.compra_minima, b.locales, b.acumulable,
+         b.externo_id, b.canal_canje, b.creado_por_nombre,
+         estado_de(b.*) as estado,
+         case when b.vence is null then null::integer
+              else b.vence - (now() at time zone 'America/Argentina/Buenos_Aires')::date end as dias,
+         b.multiuso, b.usos_max, b.por_cliente, b.desde, b.tope,
+         case when b.multiuso
+              then (select count(*)::integer from beneficio_usos u where u.beneficio = b.id and u.anulado is null)
+              else (case when b.usado is null then 0 else 1 end) end as usos,
+         b.en_app
+    from beneficios b;
+
+/* Los cupones de un socio: los que le dieron a SU teléfono (comparado por
+   los últimos 10 números) y las campañas marcadas para la app que todavía
+   puede usar. */
+create or replace function club_cupones_de(p_cliente bigint)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $cu$
+  with s as (
+    select right(regexp_replace(coalesce(telefono, ''), '[^0-9]', '', 'g'), 10) as tel
+      from club_clientes where id = p_cliente
+  ),
+  suyos as (
+    select b.*, 'personal'::text as clase
+      from v_beneficios b, s
+     where b.tipo = 'descuento' and not b.multiuso and b.estado = 'disponible'
+       and length(s.tel) = 10
+       and right(regexp_replace(coalesce(b.telefono, ''), '[^0-9]', '', 'g'), 10) = s.tel
+  ),
+  campanas as (
+    select b.*, 'campana'::text as clase
+      from v_beneficios b, s
+     where b.multiuso and b.en_app and b.estado = 'disponible'
+       and (b.por_cliente is null
+            or (select count(*) from beneficio_usos u
+                 where u.beneficio = b.id and u.anulado is null and u.telefono = s.tel) < b.por_cliente)
+  )
+  select coalesce(jsonb_agg(jsonb_build_object(
+           'codigo', x.codigo, 'pct', x.pct, 'vence', x.vence, 'dias', x.dias, 'desde', x.desde,
+           'compra_minima', x.compra_minima, 'tope', x.tope, 'locales', x.locales, 'acumulable', x.acumulable,
+           'por_cliente', x.por_cliente, 'clase', x.clase)
+         order by x.clase desc, x.vence nulls last), '[]'::jsonb)
+    from (select * from suyos union all select * from campanas) x
+$cu$;
+
+revoke all on function club_cupones_de(bigint) from public, anon, authenticated;
+
+
+/* Crear cupón: la campaña suma "mostrar en la app". La de 18 argumentos
+   se va (con las dos, PostgREST no sabría cuál llamar). */
+drop function if exists crear_cupon(text, text, smallint, integer, bigint, text, text, numeric, text[], boolean, text,
+                                    boolean, text, integer, integer, date, date, numeric);
+
+create or replace function crear_cupon(p_pin text, p_quien text, p_pct smallint, p_dias integer DEFAULT 30, p_registro bigint DEFAULT NULL::bigint, p_telefono text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text, p_compra_minima numeric DEFAULT NULL::numeric, p_locales text[] DEFAULT NULL::text[], p_acumulable boolean DEFAULT false, p_obs text DEFAULT NULL::text, p_campana boolean DEFAULT false, p_codigo text DEFAULT NULL::text, p_usos_max integer DEFAULT NULL::integer, p_por_cliente integer DEFAULT NULL::integer, p_desde date DEFAULT NULL::date, p_hasta date DEFAULT NULL::date, p_tope numeric DEFAULT NULL::numeric, p_en_app boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tz      constant text := 'America/Argentina/Buenos_Aires';
+  hoy     date := (now() at time zone tz)::date;
+  r       registros%rowtype;
+  llave   jsonb;
+  tel     text;
+  nom     text;
+  quien   text;
+  cod     text;
+  nid     bigint;
+  sueltos text[];
+  hasta   date;
+  camp    boolean := coalesce(p_campana, false);
+begin
+  llave := pin_ok(p_pin);
+  if not (llave->>'ok')::boolean then
+    return jsonb_build_object('creado', false, 'porque', llave->>'porque',
+                              'espera', llave->'espera', 'pin', true);
+  end if;
+
+  quien := nullif(trim(coalesce(p_quien, '')), '');
+  if quien is null then raise exception 'Falta quién está creando el cupón.'; end if;
+  if p_pct is null or p_pct < 1 or p_pct > 100 then raise exception 'El descuento tiene que estar entre 1 y 100.'; end if;
+  if p_compra_minima is not null and p_compra_minima <= 0 then raise exception 'La compra mínima tiene que ser mayor que cero.'; end if;
+  if p_tope is not null and p_tope <= 0 then raise exception 'El tope de descuento tiene que ser mayor que cero.'; end if;
+
+  /* Hasta cuándo: una fecha, o los días de siempre. */
+  if p_hasta is not null then
+    hasta := p_hasta;
+  else
+    if coalesce(p_dias, 0) < 1 then raise exception 'El cupón tiene que durar al menos un día.'; end if;
+    hasta := hoy + coalesce(p_dias, 30);
+  end if;
+  if hasta < hoy then raise exception 'La fecha de fin ya pasó.'; end if;
+  if p_desde is not null and p_desde > hasta then raise exception 'Empieza después de terminar: revisá las fechas.'; end if;
+
+  if p_locales is not null then
+    if array_length(p_locales, 1) is null then
+      raise exception 'La lista de locales está vacía. Para todos, dejala sin poner.';
+    end if;
+    select array_agg(x) into sueltos
+      from unnest(p_locales) as x
+     where upper(trim(x)) not in (select upper(codigo) from locales where activo);
+    if sueltos is not null then
+      raise exception 'Estos locales no existen o están inactivos: %.', array_to_string(sueltos, ', ');
+    end if;
+  end if;
+
+  -- ── La campaña ──
+  if camp then
+    cod := upper(regexp_replace(trim(coalesce(p_codigo, '')), '\s+', '', 'g'));
+    if cod = '' then raise exception 'Falta el código del cupón.'; end if;
+    if cod !~ '^[A-Z0-9-]{4,20}$' then
+      raise exception 'El código va de 4 a 20 letras o números, sin espacios ni acentos.';
+    end if;
+    /* Con al menos una letra: un código de puros números se confundiría
+       con el número de una Gift Card o con un teléfono al buscarlo. */
+    if cod !~ '[A-Z]' then raise exception 'El código necesita al menos una letra.'; end if;
+    if exists (select 1 from beneficios
+                where upper(regexp_replace(coalesce(codigo, ''), '[^A-Za-z0-9]', '', 'g'))
+                    = regexp_replace(cod, '[^A-Z0-9]', '', 'g')) then
+      raise exception 'Ya hay un cupón con el código %. Elegí otro nombre.', cod;
+    end if;
+    if p_usos_max is not null and p_usos_max < 1 then raise exception 'El límite de usos tiene que ser 1 o más.'; end if;
+    if p_por_cliente is not null and p_por_cliente < 1 then raise exception 'Los usos por cliente tienen que ser 1 o más.'; end if;
+
+    insert into beneficios (
+      tipo, pct, codigo, vence, desde, compra_minima, locales, acumulable, tope,
+      multiuso, usos_max, por_cliente, creado_por, creado_por_nombre, obs, en_app
+    ) values (
+      'descuento', p_pct, cod, hasta, p_desde, p_compra_minima, p_locales, coalesce(p_acumulable, false), p_tope,
+      true, p_usos_max, p_por_cliente, auth.uid(), quien, nullif(trim(coalesce(p_obs, '')), ''), coalesce(p_en_app, false)
+    )
+    returning id into nid;
+
+    return jsonb_build_object('creado', true, 'id', nid, 'codigo', cod, 'pct', p_pct, 'campana', true);
+  end if;
+
+  -- ── El de una persona, como siempre ──
+  tel := nullif(trim(coalesce(p_telefono, '')), '');
+  nom := nullif(trim(coalesce(p_nombre, '')), '');
+  if p_registro is not null then
+    select * into r from registros where id = p_registro;
+    if not found then raise exception 'No existe el registro %.', p_registro; end if;
+    tel := r.whatsapp;
+    nom := coalesce(nom, r.nombre);
+  end if;
+  if tel is not null then
+    select id into nid from v_beneficios
+     where tipo = 'descuento' and estado = 'disponible'
+       and regexp_replace(coalesce(telefono, ''), '[^0-9]', '', 'g') = regexp_replace(tel, '[^0-9]', '', 'g')
+     limit 1;
+    if nid is not null then
+      return jsonb_build_object('creado', false, 'porque', 'ese cliente ya tiene un beneficio sin usar', 'id', nid);
+    end if;
+  end if;
+
+  cod := generar_codigo();
+  insert into beneficios (
+    tipo, registro, telefono, nombre, pct, codigo, vence, desde,
+    compra_minima, locales, acumulable, tope, creado_por, creado_por_nombre, obs
+  ) values (
+    'descuento', p_registro, tel, nom, p_pct, cod, hasta, p_desde,
+    p_compra_minima, p_locales, coalesce(p_acumulable, false), p_tope, auth.uid(), quien, p_obs
+  )
+  returning id into nid;
+
+  return jsonb_build_object('creado', true, 'id', nid, 'codigo', cod, 'pct', p_pct);
+end;
+$function$;
+
+grant execute on function crear_cupon(text, text, smallint, integer, bigint, text, text, numeric, text[], boolean, text,
+                                      boolean, text, integer, integer, date, date, numeric, boolean) to anon, authenticated;
+
+/* Prender o apagar una campaña en la app, desde la lista de Beneficios. */
+create or replace function beneficio_en_app(p_pin text, p_id bigint, p_en_app boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ea$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  update beneficios set en_app = coalesce(p_en_app, false) where id = p_id and multiuso;
+  if not found then return jsonb_build_object('ok', false, 'porque', 'Sólo las campañas se muestran en la app.'); end if;
+  return jsonb_build_object('ok', true, 'en_app', coalesce(p_en_app, false));
+end;
+$ea$;
+
+revoke all on function beneficio_en_app(text, bigint, boolean) from public;
+grant execute on function beneficio_en_app(text, bigint, boolean) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 3 · LA TARJETA, CON TODO ESO
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_tarjeta(p_codigo text)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with c as (
+    select * from v_club_clientes
+     where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and baja is null
+  )
+  select case when not exists (select 1 from c) then jsonb_build_object('hay', false)
+    else (
+      select jsonb_build_object(
+        'hay', true,
+        'codigo', c.codigo,
+        'nombre', c.nombre,
+        'puntos', c.puntos,
+        'xp', c.xp,
+        'compras', c.compras,
+        'confirmado', c.confirmado,
+        'desde', c.creado,
+        'ultima_compra', c.ultima_compra,
+
+        'hoy', club_factor(c.id),
+        'cumple', club_regalo_cumple(c.id),
+        /* La última compra de los últimos 7 días en un local con enlace de
+           reseñas: la tarjeta muestra "¿Qué tal tu compra en Flores?". */
+        'resena', (select jsonb_build_object(
+                      'local', l.codigo,
+                      'nombre', coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))),
+                      'url', l.resena_url,
+                      'cuando', m.creado)
+                     from club_movimientos m
+                     join locales l on upper(trim(l.codigo)) = upper(trim(m.local))
+                    where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null
+                      and m.creado > now() - interval '7 days'
+                      and l.resena_url is not null
+                    order by m.creado desc limit 1),
+
+        'nivel', jsonb_build_object(
+          'nombre', c.nivel,
+          'multiplica', c.multiplica,
+          /* Lo que da este nivel y lo que da el siguiente, para que la
+             tarjeta pueda decirlo: si el cliente no sabe qué le da Oro,
+             Oro no es algo que quiera. */
+          'regalo_cumple', (select case when g.tipo = 'descuento'
+                                        then g.porcentaje || '% de descuento en tu compra'
+                                        else g.producto end
+                              from club_regalos_cumple g where g.nivel = c.nivel),
+          'sigue_multiplica', (select nv.multiplica from club_niveles nv
+                                where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue_bono', (select nv.bono from club_niveles nv
+                          where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue', (select nv.nombre from club_niveles nv
+                     where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'falta_xp', (select nv.desde_xp - c.xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'desde_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp <= c.xp order by nv.desde_xp desc limit 1),
+          'hasta_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1)),
+
+        'premios', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle,
+                   'puntos', p.puntos, 'valor', p.valor, 'imagen', p.imagen,
+                   'agotado', u.agotado,
+                   'alcanzado', c.puntos >= p.puntos and not u.agotado,
+                   'falta', greatest(p.puntos - c.puntos, 0))
+                 order by p.orden, p.puntos)
+            from club_premios p
+            cross join lateral (
+              select (p.limite_anual is not null and count(*) >= p.limite_anual) as agotado
+                from club_movimientos m
+               where m.cliente = c.id and m.tipo = 'canje' and m.premio = p.id
+                 and m.anulado is null and m.creado > now() - interval '12 months'
+            ) u
+           where p.activo), '[]'::jsonb),
+
+        /* La novedad de Inicio, si está prendida. */
+        'novedad', (select jsonb_build_object('bajada', n.bajada, 'titulo', n.titulo,
+                                              'imagen', n.imagen, 'enlace', n.enlace)
+                      from club_novedad n where n.id = 1 and n.activa),
+
+        /* Los locales que tienen enlace de reseñas, para elegir en Inicio. */
+        'resenas_locales', coalesce((
+          select jsonb_agg(jsonb_build_object('local', l.codigo, 'url', l.resena_url) order by l.codigo)
+            from locales l
+           where l.resena_url is not null and club_resena_url_ok(l.resena_url)), '[]'::jsonb),
+
+        /* ── La tarjeta de Inicio (SQL 33) ── */
+        /* Cuándo vencen sus puntos si no vuelve a comprar: la misma cuenta
+           que club_vencer (12 meses desde la última compra, o desde el alta
+           si nunca compró). Sin puntos, no hay nada que venza. */
+        'vence_puntos', (select case when c.puntos > 0 and nullif(r.valor, '')::integer > 0
+                                     then ((coalesce(c.ultima_compra, c.creado) + (r.valor || ' months')::interval)
+                                           at time zone 'America/Argentina/Buenos_Aires')::date end
+                           from club_reglas r where r.clave = 'vence_meses'),
+        /* Los tres niveles, para la pantalla de Niveles. */
+        'niveles', (select jsonb_agg(jsonb_build_object(
+                             'nombre', nv.nombre, 'desde_xp', nv.desde_xp, 'multiplica', nv.multiplica, 'bono', nv.bono,
+                             'regalo_cumple', (select case when g.tipo = 'descuento'
+                                                           then g.porcentaje || '% de descuento en tu compra'
+                                                           else g.producto end
+                                                 from club_regalos_cumple g where g.nivel = nv.nombre))
+                           order by nv.desde_xp)
+                      from club_niveles nv),
+        'misiones', club_misiones_de(c.id),
+        'cupones', club_cupones_de(c.id),
+
+        'ultimas', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'cuando', m.creado, 'local', m.local, 'puntos', m.puntos,
+                   'tipo', m.tipo, 'concepto', m.concepto, 'obs', m.obs)
+                 order by m.creado desc)
+            from (select creado, local, puntos, tipo, concepto, obs
+                    from club_movimientos
+                   where cliente = c.id and anulado is null
+                   order by creado desc limit 8) m), '[]'::jsonb)
+      ) from c
+    ) end
+$function$;
+
+
+-- Los socios que ya estaban: las misiones que ya cumplieron.
+select coalesce(sum(club_misiones_revisar(id)), 0) as "Misiones dadas a los que ya estaban"
+  from club_clientes where baja is null;

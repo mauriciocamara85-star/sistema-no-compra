@@ -282,6 +282,25 @@
   .kommo-linea b { color: var(--txt); }
   .kommo-linea.mal { color: var(--warn-txt); }
 
+  /* Las misiones: el texto a la izquierda y los puntos, el interruptor y
+     Guardar a la derecha. En el celular, uno abajo del otro. */
+  .misiones-cfg { display: grid; gap: 10px; }
+  .mis-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px 16px; align-items: center;
+              padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+  .mis-fila.apagada .mis-txt { opacity: .6; }
+  .mis-txt b { display: block; font-size: 15px; }
+  .mis-txt span { display: block; font-size: 13.5px; color: var(--txt-2); margin-top: 2px; }
+  .mis-txt small { display: block; font-size: 12.5px; color: var(--txt-3); margin-top: 4px; }
+  .mis-ctl { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+  .mis-pts { display: flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--txt-2); }
+  .mis-pts input { width: 84px; text-align: right; }
+  .mis-si { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+  .mis-si input { width: 18px; height: 18px; accent-color: var(--acc); }
+  @media (max-width: 640px) {
+    .mis-fila { grid-template-columns: minmax(0, 1fr); }
+    .mis-ctl { justify-content: flex-start; }
+  }
+
 </style>
 </head>
 <body class="hay-rail">
@@ -446,9 +465,14 @@
       <div id="promoCuerpo"></div>
     </div>
     <div class="bloque" id="cajaNovedad">
-      <h2 class="bloque-tit">La novedad de Inicio</h2>
-      <p class="bloque-sub">Una foto grande con un título, en la pantalla de Inicio de la tarjeta: la colección nueva, un lanzamiento. Una sola a la vez.</p>
+      <h2 class="bloque-tit">La novedad</h2>
+      <p class="bloque-sub">Una foto grande con un título, arriba de todo en Promos: la colección nueva, un lanzamiento. En Inicio aparece un renglón que lleva ahí, y un puntito en Promos hasta que el socio la ve. Una sola a la vez.</p>
       <div id="novedadCuerpo"></div>
+    </div>
+    <div class="bloque" id="cajaMisiones">
+      <h2 class="bloque-tit">Misiones: "Sumá más puntos"</h2>
+      <p class="bloque-sub">Cosas que le dan puntos al socio una sola vez: completar su perfil, activar los avisos, instalar la app, su primera compra. Aparecen en el Inicio de la tarjeta y se cumplen solas. Prender una le da los puntos a los que ya la cumplían.</p>
+      <div id="misionesCuerpo"></div>
     </div>
     <div class="bloque" id="cajaMulti">
       <h2 class="bloque-tit">Puntos dobles y hora feliz</h2>
@@ -571,6 +595,7 @@
     pintarMulti();
     pintarCosto();
     pintarNovedad();
+    pintarMisiones();
   }
 
 
@@ -813,7 +838,7 @@
           $('novImagen').value.trim(), $('novEnlace').value.trim(), activa)
         .then(function (r) {
           if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
-          avisar('ok', activa ? 'Listo: ya se ve en Inicio.' : 'Listo: ya no se ve en Inicio.');
+          avisar('ok', activa ? 'Listo: ya se ve en la app.' : 'Listo: ya no se ve en la app.');
           pintarNovedad();
         })
         .catch(function (err) {
@@ -823,6 +848,54 @@
     };
     $('novGuardar').onclick = function () { mandar(true, $('novGuardar')); };
     if ($('novSacar')) { $('novSacar').onclick = function () { mandar(false, $('novSacar')); }; }
+  }
+
+  /* ═══ Las misiones (SQL 33) ═════════════════════════════════════════════
+     "Sumá más puntos" en el Inicio de la tarjeta. Acá se cambian los
+     puntos y se prenden o apagan; cuáles existen y cómo se cumplen está en
+     la base. Cada una se guarda sola: tocar una no mueve las otras. */
+  function pintarMisiones() {
+    var caja = $('misionesCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      return;
+    }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.misiones(pinPromo())
+      .then(function (l) {
+        l = l || [];
+        caja.innerHTML = '<div class="misiones-cfg">' + l.map(function (m) {
+          return '<div class="mis-fila' + (m.activa ? '' : ' apagada') + '">' +
+            '<div class="mis-txt"><b>' + esc(m.titulo) + '</b><span>' + esc(m.texto) + '</span>' +
+              '<small>' + (m.cumplidas ? (m.cumplidas === 1 ? 'La cumplió 1 socio' : 'La cumplieron ' + m.cumplidas + ' socios') : 'Nadie la cumplió todavía') + '</small></div>' +
+            '<div class="mis-ctl">' +
+              '<label class="mis-pts"><input type="text" inputmode="numeric" id="misPts_' + esc(m.clave) + '" value="' + esc(m.puntos) + '" aria-label="Puntos de ' + esc(m.titulo) + '"> puntos</label>' +
+              '<label class="mis-si"><input type="checkbox" id="misSi_' + esc(m.clave) + '"' + (m.activa ? ' checked' : '') + '> Prendida</label>' +
+              '<button type="button" class="btn btn-sec btn-chico" data-mis="' + esc(m.clave) + '">Guardar</button>' +
+            '</div></div>';
+        }).join('') + '</div>';
+        Array.prototype.forEach.call(caja.querySelectorAll('[data-mis]'), function (b) {
+          b.onclick = function () {
+            var clave = b.getAttribute('data-mis');
+            var pts = parseInt(String($('misPts_' + clave).value).replace(/[^0-9]/g, ''), 10);
+            if (!pts || pts < 1 || pts > 5000) { avisar('err', 'Los puntos van de 1 a 5.000.'); $('misPts_' + clave).focus(); return; }
+            b.disabled = true;
+            base.club.misionGuardar(pinPromo(), clave, pts, $('misSi_' + clave).checked)
+              .then(function (r) {
+                if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+                avisar('ok', 'Listo: la misión quedó guardada.');
+                pintarMisiones();
+              })
+              .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.'); })
+              .then(function () { b.disabled = false; });
+          };
+        });
+      })
+      .catch(function (err) {
+        caja.innerHTML = '<p class="bloque-sub">' +
+          esc((err && err.delServidor && err.message) || 'No se pudo abrir. ¿Se corrió el SQL 33?') + '</p>';
+      });
   }
 
   /* ═══ El mensaje suelto ═════════════════════════════════════════════════
@@ -1800,6 +1873,7 @@
     pintarMulti();
     pintarCosto();
     pintarNovedad();
+    pintarMisiones();
     iniciarPWA();
   })();
 </script>

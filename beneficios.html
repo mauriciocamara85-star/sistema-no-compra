@@ -217,6 +217,8 @@
   .check-fila { display: flex; align-items: center; gap: 10px; font-size: 14.5px; font-weight: 600; cursor: pointer; }
   .check-fila input { width: 20px; height: 20px; flex: none; accent-color: var(--acc); }
   #cuCodigo { text-transform: uppercase; font-weight: 700; letter-spacing: .5px; }
+  .link-app { background: none; border: 0; padding: 0 2px; cursor: pointer; font: 600 12.5px var(--sans);
+              color: var(--txt); text-decoration: underline; text-underline-offset: 3px; white-space: nowrap; }
 
   /* ── La puerta ──
      Discreta y abajo de todo. El que la necesita la busca; el mostrador, que
@@ -504,6 +506,11 @@
 
       <div class="campo ancho solo-campana">
         <label class="check-fila"><input type="checkbox" id="cuAcumulable"> Se puede combinar con otras promociones</label></div>
+      <!-- En "Mis cupones" de la app del Club (SQL 33). Prendido de entrada:
+           una campaña casi siempre es para todos. Para una de un grupo (un
+           evento, un local) se apaga. -->
+      <div class="campo ancho solo-campana">
+        <label class="check-fila"><input type="checkbox" id="cuEnApp" checked> Mostrarla en la app del Club, en "Mis cupones" de todos los socios</label></div>
 
       <div class="campo ancho"><label>Observaciones <span class="lbl-opc">opcional</span></label>
         <input type="text" id="cuObs" placeholder="Por qué se le da, o cualquier cosa que convenga recordar"></div>
@@ -1139,6 +1146,7 @@
       opciones.desde = $('cuDesde').value || null;
       opciones.hasta = $('cuHasta').value;
       opciones.acumulable = $('cuAcumulable').checked;
+      opciones.enApp = $('cuEnApp').checked;
     } else {
       opciones.telefono = $('cuTel').value.trim() || null;
       opciones.nombre = $('cuNombre').value.trim() || null;
@@ -1176,7 +1184,8 @@
     if (campana) {
       $('cuponDet').textContent = pct + '% · ' + vecesPorPersona(campana.porCliente) +
         (campana.usosMax ? ' · hasta ' + campana.usosMax + ' usos' : '') +
-        ' · ' + (campana.desde ? 'del ' + fechaCorta(campana.desde) + ' ' : '') + 'al ' + fechaCorta(campana.hasta);
+        ' · ' + (campana.desde ? 'del ' + fechaCorta(campana.desde) + ' ' : '') + 'al ' + fechaCorta(campana.hasta) +
+        (campana.enApp ? ' · se ve en la app del Club' : '');
     }
 
     var wsp = $('btnWspCupon');
@@ -1274,10 +1283,31 @@
         : esc(b.nombre || b.telefono || 'sin nombre');
       return '<div class="fila-ben">' +
         '<span class="fila-ben-que">' + que + '</span>' +
-        '<span class="fila-ben-quien">' + quien + '</span>' +
+        '<span class="fila-ben-quien">' + quien +
+          /* La campaña se puede mostrar o sacar de la app del Club desde acá
+             (SQL 33): una que se creó antes, o una que se quiere cortar. */
+          (b.multiuso && b.estado === 'disponible'
+            ? ' <button type="button" class="link-app" data-enapp="' + b.id + '" data-valor="' + (b.en_app ? '0' : '1') + '">' +
+                (b.en_app ? 'En la app · sacar' : 'Mostrar en la app') + '</button>'
+            : '') +
+        '</span>' +
         '<span class="fila-ben-cuando">' + esc(bonito(b.local || '')) + '</span>' +
       '</div>';
     }).join('');
+    Array.prototype.forEach.call($('lista').querySelectorAll('[data-enapp]'), function (bt) {
+      bt.onclick = function () {
+        bt.disabled = true;
+        var poner = bt.getAttribute('data-valor') === '1';
+        base.beneficioEnApp(pinGuardado(), Number(bt.getAttribute('data-enapp')), poner)
+          .then(function (r) {
+            if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo cambiar.'); return; }
+            avisar('ok', poner ? 'Listo: ya se ve en la app del Club.' : 'Listo: ya no se ve en la app.');
+            cargarLista();
+          })
+          .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo cambiar. ¿Se corrió el SQL 33?'); })
+          .then(function () { bt.disabled = false; });
+      };
+    });
   }
 
   /* ═══ Arranque ══════════════════════════════════════════════════════════ */

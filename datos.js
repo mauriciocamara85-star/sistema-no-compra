@@ -603,6 +603,9 @@ var base = {
       args.p_por_cliente = o.porCliente || null;
       args.p_desde = o.desde || null;
       args.p_hasta = o.hasta || null;
+      /* Mostrarla en la app del Club (SQL 33). Sólo si se marcó, por lo
+         mismo de arriba. */
+      if (o.enApp) { args.p_en_app = true; }
     }
     if (o.tope) { args.p_tope = o.tope; }
     return funcion('crear_cupon', args);
@@ -658,6 +661,11 @@ var base = {
       el programa de cupones. */
   resumenBeneficios: function (pin) {
     return funcion('resumen_beneficios', { p_pin: pin });
+  },
+
+  /** Mostrar o sacar una campaña de "Mis cupones" en la app del Club. */
+  beneficioEnApp: function (pin, id, enApp) {
+    return funcion('beneficio_en_app', { p_pin: pin, p_id: id, p_en_app: !!enApp });
   },
 
   /** Anular: es la única acción que le saca algo a un cliente. */
@@ -817,6 +825,16 @@ var base = {
         p_pin: pin, p_bajada: bajada || null, p_titulo: titulo || null,
         p_imagen: imagen || null, p_enlace: enlace || null, p_activa: activa !== false
       });
+    },
+
+    /** Las misiones de "Sumá más puntos", con cuántos las cumplieron (SQL 33). */
+    misiones: function (pin) {
+      return funcion('club_misiones_listar', { p_pin: pin });
+    },
+
+    /** Cambiarle los puntos a una misión, o prenderla y apagarla. */
+    misionGuardar: function (pin, clave, puntos, activa) {
+      return funcion('club_mision_guardar', { p_pin: pin, p_clave: clave, p_puntos: puntos, p_activa: activa });
     },
 
     /** Cómo va la sincronización de los socios con Kommo. Pide PIN. */
