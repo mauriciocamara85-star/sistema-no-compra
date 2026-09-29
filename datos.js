@@ -760,6 +760,25 @@ var base = {
       });
     },
 
+    /** La ficha de un socio para el panel: puntos, compras, su ritmo, si
+        hay que recuperarlo y a quién se le escribió (SQL 29). */
+    socioFicha: function (pin, codigo) {
+      return funcion('club_socio_ficha', { p_pin: pin, p_codigo: codigo });
+    },
+
+    /** Anotar que se le escribió por WhatsApp (se llama al tocar el botón). */
+    contactoAnotar: function (pin, codigo, via, quien) {
+      return funcion('club_contacto_anotar', { p_pin: pin, p_codigo: codigo, p_via: via, p_quien: quien || null });
+    },
+
+    /** Un aviso al celular de UN socio. Como mucho uno por mes. */
+    avisarSocio: function (pin, codigo, titulo, cuerpo, enlace, quien) {
+      return funcion('club_avisar_socio', {
+        p_pin: pin, p_codigo: codigo, p_titulo: titulo, p_cuerpo: cuerpo,
+        p_enlace: enlace || null, p_quien: quien || null
+      });
+    },
+
     /** La novedad de Inicio: una sola, con foto. */
     novedadVer: function (pin) {
       return funcion('club_novedad_ver', { p_pin: pin });

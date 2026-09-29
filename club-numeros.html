@@ -150,6 +150,62 @@
   details.mas > summary::-webkit-details-marker { display: none; }
   details.mas > summary::before { content: '+ '; }
   details.mas[open] > summary::before { content: '− '; }
+  /* Las filas de "Para recuperar" se tocan: abren la ficha. */
+  button.dato { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: flex; justify-content: space-between;
+                align-items: baseline; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+  button.dato:first-child { border-top: 0; padding-top: 2px; }
+  button.dato:hover > span { text-decoration: underline; text-underline-offset: 3px; }
+  button.dato:focus-visible { outline: 2px solid var(--txt); outline-offset: 2px; border-radius: 4px; }
+  button.dato > span { font-size: 15px; color: var(--txt); }
+  button.dato > b { font: 700 18px/1.1 var(--display); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  button.dato small { display: block; font-size: 13px; color: var(--txt-2); margin-top: 2px; }
+  button.dato > b.atrasado { color: var(--bad-txt); }
+
+  /* ── La ficha de un socio ──
+     Un panel al costado, encima de la página: se abre desde "Para
+     recuperar" o desde "Buscar un socio", y se cierra sin perder dónde
+     estabas. En el celular ocupa todo el ancho. */
+  .ficha-fondo { position: fixed; inset: 0; background: rgba(0, 0, 0, .5); z-index: 60; }
+  .ficha-fondo[hidden], .ficha[hidden] { display: none; }
+  .ficha {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 100vw); z-index: 61;
+    background: var(--surface); border-left: 1px solid var(--line); box-shadow: -12px 0 40px rgba(0, 0, 0, .25);
+    overflow-y: auto; overscroll-behavior: contain; padding: 14px 22px 32px;
+  }
+  .ficha-barra { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .ficha-barra span { font: 700 13px var(--sans); letter-spacing: .4px; text-transform: uppercase; color: var(--txt-2); }
+  .ficha-x { all: unset; cursor: pointer; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px;
+             border: 1px solid var(--line); color: var(--txt); }
+  .ficha-x:focus-visible { outline: 2px solid var(--txt); outline-offset: 2px; }
+  .ficha-x svg { width: 18px; height: 18px; }
+  .ficha-busca input { width: 100%; }
+  .ficha-res { margin-top: 8px; }
+  .ficha-cab { display: grid; grid-template-columns: 56px 1fr; gap: 14px; align-items: center; margin-top: 6px; }
+  .ficha-ini { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
+               background: var(--surface-3); color: var(--txt); font: 700 19px var(--display); letter-spacing: .5px; }
+  .ficha-nom { font: 700 23px/1.15 var(--display); letter-spacing: -.4px; }
+  .ficha-sub { font-size: 14px; color: var(--txt-2); margin-top: 4px; line-height: 1.45; }
+  .ficha-sub .pill { margin-left: 4px; vertical-align: 1px; }
+  .ficha-datos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 18px; }
+  .ficha-dato { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px 14px; }
+  .ficha-dato span { display: block; font: 600 13px var(--sans); color: var(--txt-2); }
+  .ficha-dato b { display: block; font: 700 21px/1.2 var(--display); letter-spacing: -.3px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  .ficha-dato small { display: block; font-size: 12.5px; color: var(--txt-2); margin-top: 2px; }
+  .ficha-alerta { display: flex; gap: 10px; align-items: flex-start; margin-top: 14px; padding: 13px 15px; border-radius: var(--r-sm);
+                  font-size: 15px; line-height: 1.45; font-weight: 600; }
+  .ficha-alerta svg { width: 20px; height: 20px; flex: none; margin-top: 1px; }
+  .ficha-alerta.mal { background: var(--bad-soft); color: var(--bad-txt); border: 1px solid var(--bad); }
+  .ficha-alerta.neutra { background: var(--surface-2); color: var(--txt); border: 1px solid var(--line); font-weight: 500; }
+  .ficha-premio { margin-top: 10px; font-size: 14.5px; color: var(--txt-2); }
+  .ficha-premio b { color: var(--txt); }
+  .ficha-acc { display: grid; gap: 8px; margin-top: 16px; }
+  .ficha-acc .btn { justify-content: center; }
+  .ficha-acc .btn svg { width: 18px; height: 18px; }
+  .ficha-nota { font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
+  .ficha-form { display: grid; gap: 10px; margin-top: 4px; padding: 14px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .ficha-form[hidden] { display: none; }
+  .ficha-form textarea { min-height: 70px; }
+  .ficha .sub-tit { margin-top: 22px; }
 
   /* ── Tablas ── */
   .tabla-caja { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
@@ -353,6 +409,10 @@
     </div>
     <div class="cn-fila">
       <select id="selLocal" aria-label="Local"><option value="">Todos los locales</option></select>
+      <button type="button" class="btn btn-sec btn-chico" id="btnBuscarSocio">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        Buscar un socio
+      </button>
       <button type="button" class="btn btn-sec btn-chico" id="btnExportar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
         Bajar los movimientos (Excel)
@@ -377,7 +437,7 @@
     </div>
     <div class="bloque" id="cajaRecuperar">
       <h2 class="bloque-tit">Para recuperar <span class="cuando">hoy</span></h2>
-      <p class="bloque-sub">Compraron alguna vez y dejaron de venir: su última compra fue hace entre 60 días y un año. No depende del período elegido.</p>
+      <p class="bloque-sub">Dejaron de venir, cada uno según su ritmo: el que compraba cada 18 días aparece a los 36 sin volver; el que compró una o dos veces, a los 60. Primero los más atrasados. Tocá uno para ver su ficha. No depende del período.</p>
       <div id="recuperar"></div>
     </div>
   </div>
@@ -496,6 +556,21 @@
 </main>
 
 </div><!-- /.marco -->
+
+<div class="ficha-fondo" id="fichaFondo" hidden></div>
+<aside class="ficha" id="ficha" role="dialog" aria-modal="true" aria-label="Ficha del socio" tabindex="-1" hidden>
+  <div class="ficha-barra">
+    <span id="fichaTit">Ficha del socio</span>
+    <button type="button" class="ficha-x" id="fichaCerrar" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+    </button>
+  </div>
+  <div class="ficha-busca" id="fichaBusca" hidden>
+    <input type="search" id="fichaTexto" placeholder="Nombre, teléfono o mail" autocomplete="off" aria-label="Buscar un socio">
+    <div class="ficha-res" id="fichaRes"></div>
+  </div>
+  <div id="fichaCuerpo"></div>
+</aside>
 
 <div class="toast" id="toast"></div>
 
@@ -783,9 +858,14 @@
       $('recuMandar').onclick = mandarRecuperar;
     }
   }
+  /* Cada fila abre la ficha. Debajo del nombre va su ritmo: es lo que dice
+     por qué está en la lista. */
   function filaRecu(x) {
-    return '<div class="dato"><span>' + esc(x.nombre) + '<small>' + esc(x.nivel) + (x.local ? ' · ' + esc(bonito(x.local)) : '') +
-           ' · gastó ' + esc(plata(x.gastado)) + '</small></span><b>hace ' + miles(x.dias) + ' días</b></div>';
+    var ritmo = x.frecuencia ? 'compraba cada ' + miles(x.frecuencia) + ' días'
+              : unoVarios(x.compras || 1, 'compra', 'compras') + ' en total';
+    return '<button type="button" class="dato" data-codigo="' + esc(x.codigo || '') + '"><span>' + esc(x.nombre) +
+           '<small>' + esc(x.nivel) + (x.local ? ' · ' + esc(nombreDe(x.local)) : '') + ' · ' + ritmo + '</small></span>' +
+           '<b class="atrasado">hace ' + miles(x.dias) + ' días</b></button>';
   }
   function mandarRecuperar() {
     var b = $('recuMandar'); b.disabled = true;
@@ -1196,6 +1276,222 @@
       .then(function () { b.disabled = false; });
   }
 
+  /* ═══ La ficha de un socio ═════════════════════════════════════════════
+     Sale de una captura de Tienda de Puntos que trajo Mauricio (29/09):
+     cuatro números y, si dejó de venir, el cartel "Solía comprar cada 18
+     días. Hace 42 días que no vuelve." con el botón para escribirle.
+
+     El ritmo lo calcula la base (club_ritmo, SQL 29): la mediana de días
+     entre compras, recién con 3 días de compra. La misma cuenta arma la
+     lista de "Para recuperar", así que la ficha nunca contradice a la
+     lista. */
+  var CLUB = 'https://vdhclub.com/';
+  var fichaSocio = null, fichaDesde = null, fichaModo = 'lista', esperaF;
+
+  /* Quién escribe: el vendedor que tiene guardado la caja en esta compu, o
+     "Números". Queda al lado de cada contacto para que dos personas no le
+     escriban al mismo. */
+  function quienSoy() { return leer('nc_vendedor') || 'Números'; }
+
+  var IC_WSP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.7A8.4 8.4 0 1 1 21 11.5Z"/></svg>';
+  var IC_CAMPANA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>';
+  var IC_ALERTA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>';
+
+  function iniciales(n) {
+    var p = String(n || '').trim().split(/\s+/);
+    return ((p[0] || '').charAt(0) + (p.length > 1 ? p[p.length - 1].charAt(0) : '')).toUpperCase();
+  }
+  function diaCorto(ts) { return new Date(ts).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' }); }
+  function haceCuanto(ts) {
+    var d = Math.floor((Date.now() - new Date(ts).getTime()) / 864e5);
+    return d <= 0 ? 'hoy' : d === 1 ? 'ayer' : 'hace ' + miles(d) + ' días';
+  }
+  function nombreLocalDe(codigo) { return codigo ? nombreDe(codigo) : ''; }
+
+  function abrirPanel() {
+    if ($('ficha').hidden) { fichaDesde = document.activeElement; }
+    $('ficha').hidden = false; $('fichaFondo').hidden = false;
+    document.body.style.overflow = 'hidden';
+    $('ficha').scrollTop = 0;
+  }
+  function cerrarFicha() {
+    $('ficha').hidden = true; $('fichaFondo').hidden = true;
+    document.body.style.overflow = '';
+    fichaSocio = null;
+    if (fichaDesde && fichaDesde.focus) { try { fichaDesde.focus(); } catch (e) {} }
+  }
+  function abrirBuscador() {
+    abrirPanel(); fichaModo = 'busca';
+    $('fichaTit').textContent = 'Buscar un socio';
+    $('fichaBusca').hidden = false; $('fichaCuerpo').innerHTML = ''; $('fichaRes').innerHTML = '';
+    $('fichaTexto').value = ''; $('fichaTexto').focus();
+  }
+  function buscarSocio() {
+    var t = $('fichaTexto').value.trim();
+    if (t.length < 3) { $('fichaRes').innerHTML = t ? '<p class="vacio-cn">Seguí escribiendo: al menos 3 letras.</p>' : ''; return; }
+    base.club.buscar(pinGuardado(), t)
+      .then(function (r) {
+        if (t !== $('fichaTexto').value.trim()) { return; }   // ya escribió otra cosa
+        if (r && r.corto) { $('fichaRes').innerHTML = '<p class="vacio-cn">' + esc(r.porque) + '</p>'; return; }
+        var l = r || [];
+        $('fichaRes').innerHTML = l.length ? l.map(function (s) {
+          return '<button type="button" class="dato" data-codigo="' + esc(s.codigo) + '"><span>' + esc(s.nombre) +
+                 '<small>' + esc(s.nivel || 'Plata') + ' · ' + unoVarios(s.compras || 0, 'compra', 'compras') + '</small></span>' +
+                 '<b>' + miles(s.puntos) + '</b></button>';
+        }).join('') : '<p class="vacio-cn">No encontré a nadie con eso.</p>';
+      })
+      .catch(function (err) { $('fichaRes').innerHTML = '<p class="vacio-cn">' + esc((err && err.delServidor && err.message) || 'No se pudo buscar.') + '</p>'; });
+  }
+
+  function abrirFicha(codigo, desdeBusqueda) {
+    if (!codigo) { return; }
+    abrirPanel();
+    if (!desdeBusqueda) { fichaModo = 'lista'; }
+    $('fichaBusca').hidden = true;
+    $('fichaTit').textContent = 'Ficha del socio';
+    $('fichaCuerpo').innerHTML = '<p class="vacio-cn">Cargando…</p>';
+    return base.club.socioFicha(pinGuardado(), codigo)
+      .then(function (f) {
+        if (!f || !f.hay) { $('fichaCuerpo').innerHTML = '<p class="vacio-cn">' + esc((f && f.porque) || 'No encontré ese socio.') + '</p>'; return; }
+        fichaSocio = f; pintarFichaSocio(f);
+        $('ficha').focus();
+      })
+      .catch(function (err) {
+        $('fichaCuerpo').innerHTML = '<p class="vacio-cn">' +
+          esc((err && err.delServidor && err.message) || 'No se pudo leer la ficha. ¿Se corrió el SQL 29?') + '</p>';
+      });
+  }
+
+  /* El mensaje de WhatsApp: su nombre, sus puntos y, si ya le alcanza, el
+     premio. Sale escrito pero se puede cambiar en WhatsApp antes de mandar. */
+  function mensajeVolver(f) {
+    var loc = f.local ? nombreLocalDe(f.local) : '';
+    return 'Hola ' + (f.nombres || '') + '! Te escribimos de VDH. ' +
+      (Number(f.puntos) > 0
+        ? 'Tenés ' + miles(f.puntos) + ' puntos en tu tarjeta del Club' + (f.premio ? ' y ya te alcanzan para ' + f.premio.nombre : '') + '. '
+        : 'Hay colección nueva y te estamos esperando. ') +
+      'Pasá por ' + (loc ? 'el local de ' + loc : 'cualquiera de nuestros locales') + ' y mostrá tu tarjeta: ' +
+      CLUB + 'tarjeta.html?c=' + encodeURIComponent(f.codigo);
+  }
+  function avisoCuerpo(f) {
+    var t = Number(f.puntos) > 0
+      ? 'Tenés ' + miles(f.puntos) + ' puntos' + (f.premio ? ' y ya te alcanzan para ' + f.premio.nombre : ' esperándote') + '. Pasá por tu local y mostrá tu tarjeta.'
+      : 'Hay colección nueva y te estamos esperando. Pasá por tu local y mostrá tu tarjeta.';
+    return t.slice(0, TOPE_CUERPO);
+  }
+
+  function pintarFichaSocio(f) {
+    var frec = f.frecuencia, compras = Number(f.compras) || 0;
+    var alerta = '';
+    if (!compras) {
+      alerta = '<div class="ficha-alerta neutra">Se anotó y todavía no compró con la tarjeta.</div>';
+    } else if (f.a_recuperar) {
+      alerta = '<div class="ficha-alerta mal" role="status">' + IC_ALERTA + '<span>' +
+        (frec ? 'Solía comprar cada ' + miles(frec) + ' días. Hace ' + miles(f.dias_sin) + ' días que no vuelve.'
+              : 'Hace ' + miles(f.dias_sin) + ' días que no compra.') + '</span></div>';
+    } else if (frec && f.dias_sin > frec) {
+      alerta = '<div class="ficha-alerta neutra">Viene cada ' + miles(frec) + ' días y lleva ' + miles(f.dias_sin) +
+               ': todavía está dentro de lo suyo.</div>';
+    }
+
+    var datosF = [
+      { l: 'Puntos para canjear', n: miles(f.puntos) },
+      { l: 'Compras', n: miles(compras), s: compras ? 'gastó ' + plata(f.gastado) : '' },
+      { l: 'Frecuencia', n: frec ? 'Cada ' + miles(frec) + ' días' : '—',
+        s: frec ? '' : (compras ? 'se calcula con 3 compras' : '') },
+      { l: 'Última compra', n: f.ultima_compra ? (f.dias_sin === 0 ? 'Hoy' : f.dias_sin === 1 ? 'Ayer' : 'Hace ' + miles(f.dias_sin) + ' días') : 'Nunca',
+        s: f.ultima_compra ? diaCorto(f.ultima_compra) : '' }
+    ];
+
+    /* Cómo escribirle. WhatsApp sólo si aceptó promociones: escribirle a
+       quien no aceptó es lo que hace que WhatsApp bloquee el número. */
+    var puedeWsp = !!f.telefono && f.acepta_promos;
+    var avisoReciente = f.avisado && (Date.now() - new Date(f.avisado).getTime()) < 30 * 864e5;
+    var acc = '';
+    if (puedeWsp) {
+      acc += '<a class="btn btn-wsp" id="fichaWsp" target="_blank" rel="noopener" href="' + esc(linkWsp(f.telefono, mensajeVolver(f))) + '">' +
+             IC_WSP + 'Mandarle un motivo para volver</a>';
+    }
+    if (f.con_avisos && !avisoReciente) {
+      acc += '<button type="button" class="btn btn-sec" id="fichaAvisoAbrir">' + IC_CAMPANA + 'Mandarle un aviso al celular</button>' +
+        '<div class="ficha-form" id="fichaAvisoForm" hidden>' +
+          '<div class="campo"><label for="fichaAvTit">Título</label><input type="text" id="fichaAvTit" maxlength="' + TOPE_TIT + '" value="' + esc(('Te extrañamos, ' + (f.nombres || '')).slice(0, TOPE_TIT)) + '"></div>' +
+          '<div class="campo"><label for="fichaAvCuerpo">Mensaje</label><textarea id="fichaAvCuerpo" maxlength="' + TOPE_CUERPO + '">' + esc(avisoCuerpo(f)) + '</textarea></div>' +
+          '<button type="button" class="btn btn-pri" id="fichaAvMandar">Mandar</button>' +
+          '<p class="ficha-nota" style="margin:0">Le llega al celular en menos de una hora y queda en su campanita.</p>' +
+        '</div>';
+    }
+    var notas = [];
+    if (f.telefono && !f.acepta_promos) { notas.push('No aceptó promociones por WhatsApp: por ahí no se le escribe.'); }
+    if (!f.telefono) { notas.push('No tiene teléfono cargado.'); }
+    if (!f.con_avisos) { notas.push('No tiene los avisos prendidos en su celular.'); }
+    else if (avisoReciente) { notas.push('Ya se le mandó un aviso el ' + diaCorto(f.avisado) + ': como mucho uno por mes.'); }
+    if (!puedeWsp && !(f.con_avisos && !avisoReciente)) { notas.push('Cuando vuelva al local, en la caja se le muestra su tarjeta.'); }
+
+    var contactos = (f.contactos || []).map(function (k) {
+      return '<div class="dato"><span>' + (k.via === 'whatsapp' ? 'WhatsApp' : 'Aviso al celular') +
+             (k.quien ? '<small>' + esc(k.quien) + '</small>' : '') + '</span><b style="font-size:15px">' + haceCuanto(k.cuando) + '</b></div>';
+    }).join('');
+    /* El aviso a todos los que dejaron de venir no pasa por los contactos:
+       se muestra aparte si fue el último. */
+    var hayAvisoEnContactos = (f.contactos || []).some(function (k) { return k.via === 'aviso'; });
+    if (f.avisado && !hayAvisoEnContactos) {
+      contactos += '<div class="dato"><span>Aviso al celular<small>el aviso a todos los que dejaron de venir</small></span>' +
+                   '<b style="font-size:15px">' + haceCuanto(f.avisado) + '</b></div>';
+    }
+
+    var ultimas = (f.ultimas || []).map(function (m) {
+      return '<div class="dato"><span>' + diaCorto(m.cuando) + '<small>' + esc(nombreLocalDe(m.local) || 'Sin local') + '</small></span>' +
+             '<b style="font-size:15px">' + plata(m.importe) + '</b></div>';
+    }).join('');
+
+    $('fichaCuerpo').innerHTML =
+      (fichaModo === 'busca' ? '<button type="button" class="link-bot" id="fichaOtro" style="margin-bottom:10px">← Buscar otro</button>' : '') +
+      '<div class="ficha-cab"><div class="ficha-ini" aria-hidden="true">' + esc(iniciales(f.nombre)) + '</div>' +
+        '<div><div class="ficha-nom" id="fichaNom">' + esc(f.nombre) + '</div>' +
+        '<div class="ficha-sub">Socio desde el ' + diaCorto(f.desde) + (f.local ? ' · ' + esc(nombreLocalDe(f.local)) : '') +
+          ' <span class="pill pill-neutra">' + esc(f.nivel || 'Plata') + '</span></div></div></div>' +
+      '<div class="ficha-datos">' + datosF.map(function (d) {
+        return '<div class="ficha-dato"><span>' + esc(d.l) + '</span><b>' + esc(d.n) + '</b>' + (d.s ? '<small>' + esc(d.s) + '</small>' : '') + '</div>';
+      }).join('') + '</div>' +
+      alerta +
+      (f.premio ? '<p class="ficha-premio">Ya le alcanza para <b>' + esc(f.premio.nombre) + '</b> (' + miles(f.premio.puntos) + ' puntos): es el mejor motivo para volver.</p>' : '') +
+      (acc ? '<div class="ficha-acc">' + acc + '</div>' : '') +
+      (notas.length ? '<p class="ficha-nota" style="margin-top:12px">' + esc(notas.join(' ')) + '</p>' : '') +
+      '<h3 class="sub-tit">Le escribieron</h3>' + (contactos || '<p class="vacio-cn">Nadie le escribió todavía desde acá.</p>') +
+      (ultimas ? '<h3 class="sub-tit">Últimas compras</h3>' + ultimas : '');
+
+    $('ficha').setAttribute('aria-label', 'Ficha de ' + f.nombre);
+    if ($('fichaOtro')) { $('fichaOtro').onclick = abrirBuscador; }
+    if ($('fichaWsp')) {
+      $('fichaWsp').onclick = function () {
+        /* Se anota al tocar: no hay forma de saber si lo mandó, pero sí de
+           avisarle al que venga después que alguien ya le escribió. */
+        var cod = f.codigo;
+        base.club.contactoAnotar(pinGuardado(), cod, 'whatsapp', quienSoy())
+          .then(function () { if (fichaSocio && fichaSocio.codigo === cod) { setTimeout(function () { abrirFicha(cod, fichaModo === 'busca'); }, 600); } })
+          .catch(function () {});
+      };
+    }
+    if ($('fichaAvisoAbrir')) {
+      $('fichaAvisoAbrir').onclick = function () {
+        $('fichaAvisoForm').hidden = !$('fichaAvisoForm').hidden;
+        if (!$('fichaAvisoForm').hidden) { $('fichaAvTit').focus(); }
+      };
+      $('fichaAvMandar').onclick = function () {
+        var b = $('fichaAvMandar'); b.disabled = true; b.textContent = 'Mandando…';
+        var cod = f.codigo;
+        base.club.avisarSocio(pinGuardado(), cod, $('fichaAvTit').value.trim(), $('fichaAvCuerpo').value.trim(), null, quienSoy())
+          .then(function (r) {
+            if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo mandar.'); b.disabled = false; b.textContent = 'Mandar'; return; }
+            avisar('ok', 'Listo: le llega en menos de una hora.');
+            abrirFicha(cod, fichaModo === 'busca');
+          })
+          .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo mandar.'); b.disabled = false; b.textContent = 'Mandar'; });
+      };
+    }
+  }
+
   /* ═══ Los controles ════════════════════════════════════════════════════ */
   (function () {
     iniciarTema();
@@ -1241,6 +1537,21 @@
     };
     $('movTipo').onchange = function () { mov.tipo = $('movTipo').value; mov.salto = 0; cargarMovs(); };
     $('btnExportar').onclick = exportar;
+    /* La ficha: desde "Para recuperar", desde el buscador, y se cierra con
+       la X, tocando afuera o con Escape. */
+    $('btnBuscarSocio').onclick = abrirBuscador;
+    $('recuperar').addEventListener('click', function (e) {
+      var b = e.target.closest('button.dato[data-codigo]');
+      if (b && b.dataset.codigo) { abrirFicha(b.dataset.codigo); }
+    });
+    $('fichaRes').onclick = function (e) {
+      var b = e.target.closest('[data-codigo]');
+      if (b) { abrirFicha(b.dataset.codigo, true); }
+    };
+    $('fichaTexto').oninput = function () { clearTimeout(esperaF); esperaF = setTimeout(buscarSocio, 300); };
+    $('fichaCerrar').onclick = cerrarFicha;
+    $('fichaFondo').onclick = cerrarFicha;
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('ficha').hidden) { cerrarFicha(); } });
     $('btnRefrescar').onclick = cargar;
     $('btnEntrar').onclick = entrar;
     $('pinCn').onkeydown = function (e) { if (e.key === 'Enter') { entrar(); } };
