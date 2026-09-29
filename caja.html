@@ -509,6 +509,11 @@
           '<div class="campo"><label for="edMail">Mail <span class="lbl-opc">opcional</span></label>' +
             '<input type="email" id="edMail" inputmode="email" autocapitalize="off" ' +
             'placeholder="vos@mail.com" value="' + esc(t.mail || '') + '"></div>' +
+          /* El cumpleaños: el socio lo carga una vez desde su tarjeta, y
+             corregirlo es acá. Un solo regalo cada 12 meses aunque cambie
+             la fecha: moverlo no le vuelve a dar el regalo. */
+          '<div class="campo"><label for="edCumple">Cumpleaños <span class="lbl-opc">opcional</span></label>' +
+            '<input type="date" id="edCumple" min="1920-01-01" disabled></div>' +
           '<div class="campo ancho">' +
             '<button type="button" class="btn btn-pri btn-ancho" id="edGuardar">Guardar los cambios</button>' +
           '</div>' +
@@ -519,6 +524,16 @@
       '</div>';
 
     $('edVolver').onclick = function () { pintarFicha(socio); };
+    /* El cumpleaños se trae aparte: la búsqueda de socios no lo manda. */
+    var cumpleAntes = '';
+    base.club.cumple(pinGuardado(), t.codigo, null, false)
+      .then(function (r) {
+        if (!$('edCumple')) { return; }
+        cumpleAntes = (r && r.cumple) || '';
+        $('edCumple').value = cumpleAntes;
+        $('edCumple').disabled = false;
+      })
+      .catch(function () { /* sin el cumple a la vista, se corrige lo demás igual */ });
     $('edGuardar').onclick = function () {
       var b = $('edGuardar');
       b.disabled = true;
@@ -526,6 +541,18 @@
                        $('edNom').value, $('edTel').value, $('edMail').value, vendedor)
         .then(function (r) {
           if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          /* El cumpleaños, sólo si se tocó. */
+          var nuevo = $('edCumple') && !$('edCumple').disabled ? $('edCumple').value : cumpleAntes;
+          if (nuevo !== cumpleAntes) {
+            return base.club.cumple(pinGuardado(), t.codigo, nuevo, true, vendedor).then(function (c) {
+              if (!c || !c.ok) { avisar('err', 'Los datos se guardaron, pero el cumpleaños no: ' + ((c && c.porque) || 'probá de nuevo.')); return 'parcial'; }
+              return r;
+            });
+          }
+          return r;
+        })
+        .then(function (r) {
+          if (!r || r === 'parcial' || !r.ok) { return; }
           /* La ficha se redibuja con lo que quedó, no con lo que se escribió:
              la base normaliza (el mail en minúsculas, los espacios de más) y
              el mostrador tiene que ver lo que quedó guardado de verdad. */

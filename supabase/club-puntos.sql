@@ -4988,3 +4988,269 @@ $ar$;
 
 revoke all on function club_avisar_recuperar(text, text, text, text, text) from public;
 grant execute on function club_avisar_recuperar(text, text, text, text, text) to anon, authenticated;
+
+
+-- ─────────────────────────── PARTE 25 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · MIS DATOS
+--
+-- Correr entero en el editor SQL de Supabase, después del 24.
+--
+-- El socio consulta y corrige sus datos desde la tarjeta (Inicio → "Mis
+-- datos"). Decidido con Mauricio el 29/09/2026:
+--
+--   · Nombre y mail: los corrige él.
+--   · Promociones por WhatsApp: las prende y las apaga él. Apagarlas anota
+--     la revocación (es un consentimiento, y tiene que poder retirarse tan
+--     fácil como se dio). El cambio va a Kommo por la cola de siempre.
+--   · Cumpleaños: si nunca lo cargó, lo carga UNA vez. Si ya está, se
+--     corrige en el local, con PIN y quedando anotado.
+--   · Teléfono: se ve (enmascarado) pero NO se cambia desde el celular. El
+--     teléfono abre la tarjeta (club_recuperar) y la tarjeta se abre con el
+--     enlace, sin contraseña: dejarlo cambiar desde ahí sería dejar que
+--     cualquiera que tenga el enlace de otro se quede con su tarjeta. Se
+--     cambia en el local, como hasta ahora (club_cliente_editar).
+--
+-- Y una regla nueva para el regalo de cumpleaños: UNO cada 12 meses, aunque
+-- se mueva la fecha. Hasta acá "usado" miraba sólo la semana del cumple de
+-- este año: con la fecha corregida, el regalo volvía a aparecer.
+--
+-- Nada de esto toca los puntos, el nivel ni el historial.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 1 · LO QUE VE EL SOCIO
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Con el código de la tarjeta, como club_tarjeta: quien tiene el código ya
+   ve la tarjeta. El teléfono va enmascarado: sirve para reconocerlo, no
+   para leerlo entero en la pantalla de otro. */
+create or replace function club_mis_datos(p_codigo text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $md$
+  select coalesce((
+    select jsonb_build_object(
+      'hay', true,
+      'nombre', c.nombre,
+      'mail', c.mail,
+      'telefono', case when length(d.dig) >= 6
+                       then left(d.dig, 2) || ' •••• ' || right(d.dig, 4)
+                       else '••••' end,
+      'cumple', c.cumple,
+      'acepta_promos', c.acepta_promos,
+      'desde', c.creado)
+      from club_clientes c
+      cross join lateral (select regexp_replace(coalesce(c.telefono, ''), '[^0-9]', '', 'g') as dig) d
+     where c.codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and c.baja is null), jsonb_build_object('hay', false))
+$md$;
+
+revoke all on function club_mis_datos(text) from public;
+grant execute on function club_mis_datos(text) to anon, authenticated;
+
+
+/* Una fecha de cumpleaños que tenga sentido: ni del futuro ni de alguien de
+   cinco años, ni de antes de 1920. */
+create or replace function club_cumple_ok(p date)
+returns boolean
+language sql
+stable
+as $co$
+  select p is not null
+     and p >= date '1920-01-01'
+     and p <= ((now() at time zone 'America/Argentina/Buenos_Aires')::date - interval '5 years')::date
+$co$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 2 · LO QUE GUARDA EL SOCIO
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_mis_datos_guardar(
+  p_codigo text, p_nombre text, p_mail text, p_cumple date, p_acepta boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $mg$
+declare
+  c    club_clientes%rowtype;
+  nom  text := nullif(trim(coalesce(p_nombre, '')), '');
+  mai  text := lower(nullif(trim(coalesce(p_mail, '')), ''));
+  cam  text := '';
+begin
+  select * into c from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'No encontramos tu tarjeta. Recargá la página y probá de nuevo.');
+  end if;
+
+  if nom is null then
+    return jsonb_build_object('ok', false, 'campo', 'nombre', 'porque', 'Tu nombre no puede quedar vacío.');
+  end if;
+  if length(nom) > 80 then
+    return jsonb_build_object('ok', false, 'campo', 'nombre', 'porque', 'El nombre es muy largo: hasta 80 letras.');
+  end if;
+  if mai is not null and mai !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    return jsonb_build_object('ok', false, 'campo', 'mail', 'porque', 'Ese mail no parece completo. Revisalo o dejalo vacío.');
+  end if;
+
+  /* El cumpleaños: una sola vez desde acá. */
+  if p_cumple is not null and c.cumple is null then
+    if not club_cumple_ok(p_cumple) then
+      return jsonb_build_object('ok', false, 'campo', 'cumple', 'porque', 'Esa fecha de cumpleaños no parece correcta.');
+    end if;
+    cam := cam || ' · cumple: ' || to_char(p_cumple, 'DD/MM/YYYY');
+  elsif p_cumple is not null and c.cumple is distinct from p_cumple then
+    return jsonb_build_object('ok', false, 'campo', 'cumple',
+      'porque', 'Tu cumpleaños ya está cargado. Para corregirlo, pedilo en la caja de cualquier local.');
+  end if;
+
+  if c.nombre is distinct from nom then cam := cam || ' · nombre: ' || c.nombre || ' → ' || nom; end if;
+  if c.mail is distinct from mai then cam := cam || ' · mail: ' || coalesce(c.mail, '—') || ' → ' || coalesce(mai, '—'); end if;
+  if p_acepta is not null and p_acepta is distinct from c.acepta_promos then
+    cam := cam || case when p_acepta then ' · prendió las promos por WhatsApp' else ' · apagó las promos por WhatsApp' end;
+  end if;
+
+  if cam = '' then
+    return jsonb_build_object('ok', true, 'cambios', false) || club_mis_datos(c.codigo);
+  end if;
+
+  insert into log (accion, detalle, quien)
+  values ('club: el socio corrigió sus datos', 'tarjeta ' || c.codigo || cam, 'el socio, desde su tarjeta');
+
+  update club_clientes
+     set nombre = nom,
+         mail = mai,
+         cumple = coalesce(cumple, p_cumple),
+         acepta_promos = coalesce(p_acepta, acepta_promos),
+         consentimiento = case when p_acepta is true and not acepta_promos then now() else consentimiento end,
+         consentimiento_via = case when p_acepta is true and not acepta_promos then 'tarjeta' else consentimiento_via end,
+         revocado = case when p_acepta is true and not acepta_promos then null
+                         when p_acepta is false and acepta_promos then now()
+                         else revocado end
+   where id = c.id;
+
+  /* Kommo se entera por la cola de siempre: el nombre y la etiqueta de
+     "acepta promos" viajan con el próximo envío. Sin Kommo, no hace nada. */
+  perform club_kommo_encolar(c.id);
+
+  return jsonb_build_object('ok', true, 'cambios', true) || club_mis_datos(c.codigo);
+end;
+$mg$;
+
+revoke all on function club_mis_datos_guardar(text, text, text, date, boolean) from public;
+grant execute on function club_mis_datos_guardar(text, text, text, date, boolean) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 3 · EL CUMPLEAÑOS, EN EL LOCAL
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Leer (p_cambiar = false) o corregir el cumpleaños de un socio, con PIN.
+   Corregirlo queda anotado con quién atendía. Vacío lo borra. */
+create or replace function club_cliente_cumple(
+  p_pin text, p_codigo text, p_cumple date, p_cambiar boolean, p_quien text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cc$
+declare
+  c club_clientes%rowtype;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  select * into c from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+  if not coalesce(p_cambiar, false) or c.cumple is not distinct from p_cumple then
+    return jsonb_build_object('ok', true, 'cumple', c.cumple, 'cambio', false);
+  end if;
+  if p_cumple is not null and not club_cumple_ok(p_cumple) then
+    return jsonb_build_object('ok', false, 'porque', 'Esa fecha de cumpleaños no parece correcta.');
+  end if;
+  insert into log (accion, detalle, quien)
+  values ('club: corregir cumpleaños',
+          'tarjeta ' || c.codigo || ' · cumple: ' || coalesce(to_char(c.cumple, 'DD/MM/YYYY'), '—') ||
+          ' → ' || coalesce(to_char(p_cumple, 'DD/MM/YYYY'), '—'),
+          nullif(trim(coalesce(p_quien, '')), ''));
+  update club_clientes set cumple = p_cumple where id = c.id;
+  return jsonb_build_object('ok', true, 'cumple', p_cumple, 'cambio', true);
+end;
+$cc$;
+
+revoke all on function club_cliente_cumple(text, text, date, boolean, text) from public;
+grant execute on function club_cliente_cumple(text, text, date, boolean, text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 4 · UN REGALO DE CUMPLE CADA 12 MESES
+-- ══════════════════════════════════════════════════════════════════════════
+
+CREATE OR REPLACE FUNCTION public.club_regalo_cumple(p_cliente bigint)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  hoy   date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  c     record;
+  antes integer;
+  fin   date;
+  r     club_regalos_cumple%rowtype;
+  usado boolean;
+begin
+  select v.cumple, v.nivel into c from v_club_clientes v where v.id = p_cliente;
+  select nullif(valor, '')::integer into antes from club_reglas where clave = 'cumple_antes';
+  antes := coalesce(antes, 7);
+
+  fin := club_cumple_fin(c.cumple, hoy, antes);
+  if fin is null then
+    return jsonb_build_object('vale', false);
+  end if;
+
+  select * into r from club_regalos_cumple where nivel = c.nivel;
+  if not found then
+    return jsonb_build_object('vale', false);
+  end if;
+
+  /* Usado = hay un regalo de cumple entregado desde que arrancó ESTA
+     semana, o en los últimos 300 días. Lo segundo es la regla de "uno cada
+     12 meses aunque se mueva la fecha": sin eso, corregir el cumpleaños
+     volvía a mostrar el regalo. 300 y no 365 porque el del año pasado
+     legítimo puede estar a 358 días (se entregó el último día de la semana
+     del año pasado y hoy es el primero de la de este año). */
+  usado := exists (
+    select 1 from club_movimientos m
+     where m.cliente = p_cliente and m.concepto = 'regalo_cumple' and m.anulado is null
+       and (m.creado >= ((fin - antes)::timestamp at time zone 'America/Argentina/Buenos_Aires')
+            or m.creado >= now() - interval '300 days'));
+
+  /* Sin el costo: esto viaja a la tarjeta. */
+  return jsonb_build_object(
+    'vale',       true,
+    'desde',      fin - antes,
+    'hasta',      fin,
+    'es_hoy',     hoy = fin,
+    'tipo',       r.tipo,
+    'porcentaje', r.porcentaje,
+    'producto',   r.producto,
+    'detalle',    r.detalle,
+    'usado',      usado,
+    'texto',      case when r.tipo = 'descuento'
+                       then r.porcentaje || '% de descuento en tu compra'
+                       else r.producto end);
+end;
+$function$;
+
+revoke all on function club_regalo_cumple(bigint) from public, anon, authenticated;

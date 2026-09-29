@@ -846,6 +846,15 @@ var base = {
       });
     },
 
+    /** El cumpleaños de un socio: leerlo (cambiar = false) o corregirlo.
+        Desde el 29/09/2026 el socio lo carga una sola vez desde su tarjeta;
+        corregirlo después es acá, con PIN y quedando anotado (SQL 25). */
+    cumple: function (pin, codigo, cumple, cambiar, quien) {
+      return funcion('club_cliente_cumple', {
+        p_pin: pin, p_codigo: codigo, p_cumple: cumple || null, p_cambiar: !!cambiar, p_quien: quien || null
+      });
+    },
+
     /* ── La promo ──
        Lo que ve un socio al abrir su tarjeta. Leerlo para EDITARLO pide PIN
        y devuelve lo que haya aunque esté vencido; lo que ve el cliente sale
