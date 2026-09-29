@@ -521,11 +521,15 @@ var base = {
    * puede: que esté usado, vencido o que no valga en ese local es una
    * respuesta, no un error.
    */
-  canjear: function (id, clave, local, vendedor, monto, producto) {
-    return funcion('canjear_beneficio', {
+  canjear: function (id, clave, local, vendedor, monto, producto, telefono, nombre) {
+    var args = {
       p_id: id, p_clave: clave, p_local: local, p_vendedor: vendedor,
       p_monto: monto || null, p_producto: producto || null
-    });
+    };
+    /* El cupón de campaña pide quién lo usa (SQL 31). Sólo va si hay. */
+    if (telefono) { args.p_telefono = telefono; }
+    if (nombre) { args.p_nombre = nombre; }
+    return funcion('canjear_beneficio', args);
   },
 
   /* ── El PIN de Beneficios ──────────────────────────────────────────────
@@ -577,7 +581,7 @@ var base = {
    */
   crearCupon: function (pin, quien, pct, dias, opciones) {
     var o = opciones || {};
-    return funcion('crear_cupon', {
+    var args = {
       p_pin: pin,
       p_quien: quien,
       p_pct: pct,
@@ -589,7 +593,19 @@ var base = {
       p_locales: o.locales && o.locales.length ? o.locales : null,
       p_acumulable: !!o.acumulable,
       p_obs: o.obs || null
-    });
+    };
+    /* Lo del cupón de campaña (SQL 31) va sólo si se usa: así un cupón de
+       una persona sigue saliendo aunque la base todavía no tenga el 31. */
+    if (o.campana) {
+      args.p_campana = true;
+      args.p_codigo = o.codigo;
+      args.p_usos_max = o.usosMax || null;
+      args.p_por_cliente = o.porCliente || null;
+      args.p_desde = o.desde || null;
+      args.p_hasta = o.hasta || null;
+    }
+    if (o.tope) { args.p_tope = o.tope; }
+    return funcion('crear_cupon', args);
   },
 
 

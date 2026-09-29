@@ -878,3 +878,562 @@ end;
 $$;
 
 grant execute on function resumen_beneficios(text) to anon, authenticated;
+
+
+-- ════════════════ EL CUPÓN DE CAMPAÑA (correr-en-supabase-31, 29/09/2026) ════════════════
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Beneficios · EL CUPÓN DE CAMPAÑA
+--
+-- Correr entero en el editor SQL de Supabase, después del 30.
+--
+-- Pedido de Mauricio (29/09/2026), con la pantalla de cupones de Tienda Nube
+-- como referencia: un código con nombre ("ENEROPROMO") que lo puedan usar
+-- muchas personas, con la opción de "una vez por persona".
+--
+-- Hasta acá un cupón era de UN solo uso: al canjearlo quedaba "usado". El
+-- de campaña se usa muchas veces, y por eso cada uso queda anotado aparte
+-- (beneficio_usos) con el teléfono de quien lo usó. Es lo que permite
+-- frenar al que quiere usarlo por segunda vez, aunque vaya a otro local.
+--
+-- Lo que se puede poner, como en Tienda Nube:
+--   · el código, elegido (letras y números, de 4 a 20);
+--   · desde y hasta cuándo vale;
+--   · usos por cliente (una vez, 2, 3… o sin límite);
+--   · usos en total (o sin límite);
+--   · compra mínima y tope de descuento en pesos;
+--   · si se combina con otras promociones, y en qué locales vale.
+--
+-- Lo que NO: "aplicar a categorías o productos" y "envío gratis" son de la
+-- tienda online. En el local el descuento lo hace el vendedor en BlueSoft;
+-- lo que la base puede cuidar es quién lo usa y cuántas veces.
+--
+-- Los cupones de una persona siguen exactamente igual.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ── Las columnas nuevas ──
+alter table beneficios add column if not exists multiuso    boolean not null default false;
+alter table beneficios add column if not exists usos_max    integer;
+alter table beneficios add column if not exists por_cliente integer;
+alter table beneficios add column if not exists desde       date;
+alter table beneficios add column if not exists tope        numeric;
+
+do $ck$
+begin
+  if not exists (select 1 from pg_constraint where conname = 'campana_bien_formada') then
+    alter table beneficios add constraint campana_bien_formada check (
+      not multiuso or (tipo = 'descuento' and codigo is not null and telefono is null and usado is null));
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'beneficios_usos_max_check') then
+    alter table beneficios add constraint beneficios_usos_max_check check (usos_max is null or usos_max > 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'beneficios_por_cliente_check') then
+    alter table beneficios add constraint beneficios_por_cliente_check check (por_cliente is null or por_cliente > 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'beneficios_tope_check') then
+    alter table beneficios add constraint beneficios_tope_check check (tope is null or tope > 0);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'beneficios_desde_antes_de_vence') then
+    alter table beneficios add constraint beneficios_desde_antes_de_vence check (desde is null or vence is null or desde <= vence);
+  end if;
+end
+$ck$;
+
+
+-- ── Cada uso de un cupón de campaña ──
+create table if not exists beneficio_usos (
+  id           bigint generated always as identity primary key,
+  beneficio    bigint not null references beneficios(id) on delete cascade,
+  creado       timestamptz not null default now(),
+  /* Sólo los dígitos: "11 2345-6789" y "1123456789" son la misma persona. */
+  telefono     text,
+  nombre       text,
+  local        text not null,
+  vendedor     text,
+  monto_compra numeric,
+  producto     text,
+  anulado      timestamptz,
+  anulado_por  text
+);
+create index if not exists beneficio_usos_vivos on beneficio_usos (beneficio) where anulado is null;
+create index if not exists beneficio_usos_quien on beneficio_usos (beneficio, telefono) where anulado is null;
+alter table beneficio_usos enable row level security;
+revoke all on beneficio_usos from anon, authenticated;
+
+
+-- ── El estado ──
+/* Una campaña está "usada" cuando llegó a su tope de usos: es el mismo
+   lugar de la lista que un cupón de un solo uso ya canjeado. Sin tope,
+   sigue disponible hasta que vence. */
+create or replace function estado_de(b beneficios)
+returns text
+language sql
+stable
+as $es$
+  select case
+    when b.anulado is not null then 'anulado'
+    when b.multiuso and b.usos_max is not null
+         and (select count(*) from beneficio_usos u where u.beneficio = b.id and u.anulado is null) >= b.usos_max
+         then 'usado'
+    when not b.multiuso and b.usado is not null then 'usado'
+    when b.vence is not null and b.vence < (now() at time zone 'America/Argentina/Buenos_Aires')::date
+         then 'vencido'
+    else 'disponible'
+  end
+$es$;
+
+
+/* La vista, con las columnas nuevas AL FINAL (una vista sólo puede crecer
+   hacia la derecha) y la cuenta de usos. */
+create or replace view v_beneficios as
+  select b.id, b.tipo, b.creado, b.registro, b.telefono, b.nombre, b.serie, b.pct, b.valor, b.cobrado, b.pago,
+         b.vence, b.local, b.vendedor, b.usado, b.local_canje, b.vendedor_canje, b.monto_compra, b.anulado,
+         b.anulado_por, b.motivo_anul, b.obs, b.codigo, b.creado_por, b.compra_minima, b.locales, b.acumulable,
+         b.externo_id, b.canal_canje, b.creado_por_nombre,
+         estado_de(b.*) as estado,
+         case when b.vence is null then null::integer
+              else b.vence - (now() at time zone 'America/Argentina/Buenos_Aires')::date end as dias,
+         b.multiuso, b.usos_max, b.por_cliente, b.desde, b.tope,
+         case when b.multiuso
+              then (select count(*)::integer from beneficio_usos u where u.beneficio = b.id and u.anulado is null)
+              else (case when b.usado is null then 0 else 1 end) end as usos
+    from beneficios b;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- CREAR: el de una persona como siempre, o el de campaña
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* La de once argumentos se va: con las dos, PostgREST no sabría cuál
+   llamar. Una página vieja sigue entrando por la nueva (los argumentos
+   nuevos tienen valor por defecto). */
+drop function if exists crear_cupon(text, text, smallint, integer, bigint, text, text, numeric, text[], boolean, text);
+
+create or replace function crear_cupon(
+  p_pin           text,
+  p_quien         text,
+  p_pct           smallint,
+  p_dias          integer default 30,
+  p_registro      bigint  default null,
+  p_telefono      text    default null,
+  p_nombre        text    default null,
+  p_compra_minima numeric default null,
+  p_locales       text[]  default null,
+  p_acumulable    boolean default false,
+  p_obs           text    default null,
+  p_campana       boolean default false,
+  p_codigo        text    default null,
+  p_usos_max      integer default null,
+  p_por_cliente   integer default null,
+  p_desde         date    default null,
+  p_hasta         date    default null,
+  p_tope          numeric default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cc$
+declare
+  tz      constant text := 'America/Argentina/Buenos_Aires';
+  hoy     date := (now() at time zone tz)::date;
+  r       registros%rowtype;
+  llave   jsonb;
+  tel     text;
+  nom     text;
+  quien   text;
+  cod     text;
+  nid     bigint;
+  sueltos text[];
+  hasta   date;
+  camp    boolean := coalesce(p_campana, false);
+begin
+  llave := pin_ok(p_pin);
+  if not (llave->>'ok')::boolean then
+    return jsonb_build_object('creado', false, 'porque', llave->>'porque',
+                              'espera', llave->'espera', 'pin', true);
+  end if;
+
+  quien := nullif(trim(coalesce(p_quien, '')), '');
+  if quien is null then raise exception 'Falta quién está creando el cupón.'; end if;
+  if p_pct is null or p_pct < 1 or p_pct > 100 then raise exception 'El descuento tiene que estar entre 1 y 100.'; end if;
+  if p_compra_minima is not null and p_compra_minima <= 0 then raise exception 'La compra mínima tiene que ser mayor que cero.'; end if;
+  if p_tope is not null and p_tope <= 0 then raise exception 'El tope de descuento tiene que ser mayor que cero.'; end if;
+
+  /* Hasta cuándo: una fecha, o los días de siempre. */
+  if p_hasta is not null then
+    hasta := p_hasta;
+  else
+    if coalesce(p_dias, 0) < 1 then raise exception 'El cupón tiene que durar al menos un día.'; end if;
+    hasta := hoy + coalesce(p_dias, 30);
+  end if;
+  if hasta < hoy then raise exception 'La fecha de fin ya pasó.'; end if;
+  if p_desde is not null and p_desde > hasta then raise exception 'Empieza después de terminar: revisá las fechas.'; end if;
+
+  if p_locales is not null then
+    if array_length(p_locales, 1) is null then
+      raise exception 'La lista de locales está vacía. Para todos, dejala sin poner.';
+    end if;
+    select array_agg(x) into sueltos
+      from unnest(p_locales) as x
+     where upper(trim(x)) not in (select upper(codigo) from locales where activo);
+    if sueltos is not null then
+      raise exception 'Estos locales no existen o están inactivos: %.', array_to_string(sueltos, ', ');
+    end if;
+  end if;
+
+  -- ── La campaña ──
+  if camp then
+    cod := upper(regexp_replace(trim(coalesce(p_codigo, '')), '\s+', '', 'g'));
+    if cod = '' then raise exception 'Falta el código del cupón.'; end if;
+    if cod !~ '^[A-Z0-9-]{4,20}$' then
+      raise exception 'El código va de 4 a 20 letras o números, sin espacios ni acentos.';
+    end if;
+    /* Con al menos una letra: un código de puros números se confundiría
+       con el número de una Gift Card o con un teléfono al buscarlo. */
+    if cod !~ '[A-Z]' then raise exception 'El código necesita al menos una letra.'; end if;
+    if exists (select 1 from beneficios
+                where upper(regexp_replace(coalesce(codigo, ''), '[^A-Za-z0-9]', '', 'g'))
+                    = regexp_replace(cod, '[^A-Z0-9]', '', 'g')) then
+      raise exception 'Ya hay un cupón con el código %. Elegí otro nombre.', cod;
+    end if;
+    if p_usos_max is not null and p_usos_max < 1 then raise exception 'El límite de usos tiene que ser 1 o más.'; end if;
+    if p_por_cliente is not null and p_por_cliente < 1 then raise exception 'Los usos por cliente tienen que ser 1 o más.'; end if;
+
+    insert into beneficios (
+      tipo, pct, codigo, vence, desde, compra_minima, locales, acumulable, tope,
+      multiuso, usos_max, por_cliente, creado_por, creado_por_nombre, obs
+    ) values (
+      'descuento', p_pct, cod, hasta, p_desde, p_compra_minima, p_locales, coalesce(p_acumulable, false), p_tope,
+      true, p_usos_max, p_por_cliente, auth.uid(), quien, nullif(trim(coalesce(p_obs, '')), '')
+    )
+    returning id into nid;
+
+    return jsonb_build_object('creado', true, 'id', nid, 'codigo', cod, 'pct', p_pct, 'campana', true);
+  end if;
+
+  -- ── El de una persona, como siempre ──
+  tel := nullif(trim(coalesce(p_telefono, '')), '');
+  nom := nullif(trim(coalesce(p_nombre, '')), '');
+  if p_registro is not null then
+    select * into r from registros where id = p_registro;
+    if not found then raise exception 'No existe el registro %.', p_registro; end if;
+    tel := r.whatsapp;
+    nom := coalesce(nom, r.nombre);
+  end if;
+  if tel is not null then
+    select id into nid from v_beneficios
+     where tipo = 'descuento' and estado = 'disponible'
+       and regexp_replace(coalesce(telefono, ''), '[^0-9]', '', 'g') = regexp_replace(tel, '[^0-9]', '', 'g')
+     limit 1;
+    if nid is not null then
+      return jsonb_build_object('creado', false, 'porque', 'ese cliente ya tiene un beneficio sin usar', 'id', nid);
+    end if;
+  end if;
+
+  cod := generar_codigo();
+  insert into beneficios (
+    tipo, registro, telefono, nombre, pct, codigo, vence, desde,
+    compra_minima, locales, acumulable, tope, creado_por, creado_por_nombre, obs
+  ) values (
+    'descuento', p_registro, tel, nom, p_pct, cod, hasta, p_desde,
+    p_compra_minima, p_locales, coalesce(p_acumulable, false), p_tope, auth.uid(), quien, p_obs
+  )
+  returning id into nid;
+
+  return jsonb_build_object('creado', true, 'id', nid, 'codigo', cod, 'pct', p_pct);
+end;
+$cc$;
+
+grant execute on function crear_cupon(text, text, smallint, integer, bigint, text, text, numeric, text[], boolean, text,
+                                      boolean, text, integer, integer, date, date, numeric) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- BUSCAR: encuentra también las campañas, con su código corto
+-- ══════════════════════════════════════════════════════════════════════════
+
+drop function if exists beneficio_buscar(text);
+
+create or replace function beneficio_buscar(clave text)
+returns table (
+  id bigint, tipo text, estado text, nombre text, pct smallint, valor numeric, saldo numeric,
+  serie text, codigo text, vence date, dias integer, buscaba text, local text, vendedor text,
+  obs text, compra_minima numeric, locales text[], acumulable boolean, al_portador boolean,
+  multiuso boolean, usos integer, usos_max integer, por_cliente integer, desde date, tope numeric
+)
+language sql
+stable
+security definer
+set search_path = public
+as $bb$
+  with pelado as (
+    select regexp_replace(coalesce(clave, ''), '[^0-9]', '', 'g') as digitos,
+           upper(regexp_replace(coalesce(clave, ''), '[^A-Za-z0-9]', '', 'g')) as alfanum
+  )
+  select b.id, b.tipo::text, b.estado,
+         /* El nombre, sólo para el que está adentro: ver el 14. */
+         case when soy_de_adentro() then b.nombre else null end as nombre,
+         b.pct, b.valor,
+         case when b.usado is null then b.valor else 0 end as saldo,
+         b.serie, b.codigo, b.vence, b.dias::integer, r.producto, b.local, b.vendedor, b.obs,
+         b.compra_minima, b.locales, b.acumulable, (b.codigo is not null) as al_portador,
+         b.multiuso, b.usos, b.usos_max, b.por_cliente, b.desde, b.tope
+    from v_beneficios b
+    left join registros r on r.id = b.registro
+    cross join pelado p
+   where (length(p.digitos) >= 8
+          and regexp_replace(coalesce(b.telefono, ''), '[^0-9]', '', 'g') = p.digitos)
+      /* Por código. El de una persona es largo y al azar, y se pide entero
+         (8 o más): es la credencial. El de campaña es corto y público a
+         propósito —se publica en Instagram—, así que alcanza con 4. */
+      or (b.codigo is not null
+          and length(p.alfanum) >= case when b.multiuso then 4 else 8 end
+          and upper(regexp_replace(b.codigo, '[^A-Za-z0-9]', '', 'g')) = p.alfanum)
+      or (b.tipo = 'giftcard' and length(p.digitos) between 1 and 7
+          and ltrim(regexp_replace(coalesce(b.serie, ''), '[^0-9]', '', 'g'), '0') = ltrim(p.digitos, '0'))
+   order by (b.estado = 'disponible') desc, b.creado desc
+   limit 5;
+$bb$;
+
+grant execute on function beneficio_buscar(text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- CANJEAR: la campaña pide el WhatsApp de quien lo usa
+-- ══════════════════════════════════════════════════════════════════════════
+
+drop function if exists canjear_beneficio(bigint, text, text, text, numeric, text);
+
+create or replace function canjear_beneficio(
+  p_id bigint, p_clave text, p_local text, p_vendedor text,
+  p_monto numeric default null, p_producto text default null,
+  p_telefono text default null, p_nombre text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $cj$
+declare
+  b        v_beneficios%rowtype;
+  tocadas  integer;
+  dig      text;
+  alfa     text;
+  coincide boolean;
+  tel      text;
+  ya       integer;
+  ult      record;
+  total    integer;
+  hoy      date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+begin
+  select * into b from v_beneficios where id = p_id;
+  if not found then return jsonb_build_object('canjeado', false, 'porque', 'ese beneficio no existe'); end if;
+
+  /* Hay que traer la misma llave con la que se lo encontró: ver el 14. */
+  dig  := regexp_replace(coalesce(p_clave, ''), '[^0-9]', '', 'g');
+  alfa := upper(regexp_replace(coalesce(p_clave, ''), '[^A-Za-z0-9]', '', 'g'));
+  coincide :=
+       (length(dig) >= 8 and regexp_replace(coalesce(b.telefono, ''), '[^0-9]', '', 'g') = dig)
+    or (b.codigo is not null and length(alfa) >= case when b.multiuso then 4 else 8 end
+        and upper(regexp_replace(b.codigo, '[^A-Za-z0-9]', '', 'g')) = alfa)
+    or (b.serie is not null and length(dig) between 1 and 7
+        and ltrim(regexp_replace(b.serie, '[^0-9]', '', 'g'), '0') = ltrim(dig, '0'));
+  if not coincide then
+    return jsonb_build_object('canjeado', false, 'porque', 'la clave no corresponde a ese beneficio');
+  end if;
+
+  if b.estado <> 'disponible' then
+    return jsonb_build_object('canjeado', false, 'porque',
+      case when b.multiuso and b.estado = 'usado' then 'ya se usó todas las veces que permitía' else 'ese beneficio está ' || b.estado end);
+  end if;
+  if b.desde is not null and b.desde > hoy then
+    return jsonb_build_object('canjeado', false,
+      'porque', 'empieza a valer el ' || to_char(b.desde, 'DD/MM'));
+  end if;
+  if length(trim(coalesce(p_local, ''))) = 0 then raise exception 'Falta el local del canje.'; end if;
+
+  if b.locales is not null
+     and upper(trim(p_local)) <> all (select upper(trim(x)) from unnest(b.locales) as x) then
+    return jsonb_build_object('canjeado', false, 'porque', 'ese beneficio no vale en ' || trim(p_local), 'locales', b.locales);
+  end if;
+  if b.compra_minima is not null and coalesce(p_monto, 0) < b.compra_minima then
+    return jsonb_build_object('canjeado', false,
+      'porque', 'la compra no llega al mínimo de ' || b.compra_minima::text, 'compra_minima', b.compra_minima);
+  end if;
+
+  -- ── La campaña: se anota un uso, el cupón sigue vivo ──
+  if b.multiuso then
+    /* "11 2345-6789" y "+54 9 11 2345 6789" son la misma persona: se
+       comparan los últimos 10 números. Sin esto, escribir el teléfono de
+       otra forma alcanzaba para usar "una vez por persona" dos veces. */
+    tel := nullif(regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g'), '');
+    if length(tel) >= 10 then tel := right(tel, 10); end if;
+    if b.por_cliente is not null and (tel is null or length(tel) < 8) then
+      return jsonb_build_object('canjeado', false, 'falta_telefono', true,
+        'porque', 'este cupón es de ' ||
+          case when b.por_cliente = 1 then 'un uso por persona' else b.por_cliente || ' usos por persona' end ||
+          ': poné el WhatsApp del cliente');
+    end if;
+
+    /* Dos canjes del mismo cupón a la vez —dos locales, o el mismo
+       cliente en dos cajas— se hacen de a uno: el segundo ya ve el uso del
+       primero. Es lo que hace que "una vez por persona" se cumpla de
+       verdad y que el tope no se pase por uno. */
+    perform pg_advisory_xact_lock(hashtext('cupon_campana'), b.id::integer);
+
+    if b.por_cliente is not null then
+      select count(*) into ya from beneficio_usos
+       where beneficio = b.id and anulado is null and telefono = tel;
+      if ya >= b.por_cliente then
+        select creado, local into ult from beneficio_usos
+         where beneficio = b.id and anulado is null and telefono = tel
+         order by creado desc limit 1;
+        return jsonb_build_object('canjeado', false, 'ya_lo_uso', true,
+          'porque', 'ese cliente ya lo usó' ||
+            case when b.por_cliente > 1 then ' las ' || b.por_cliente || ' veces que permite' else '' end ||
+            ' (el ' || to_char(ult.creado at time zone 'America/Argentina/Buenos_Aires', 'DD/MM') ||
+            ' en ' || coalesce((select nullif(trim(l.nombre), '') from locales l where upper(trim(l.codigo)) = upper(trim(ult.local))),
+                              initcap(lower(ult.local))) || ')');
+      end if;
+    end if;
+    if b.usos_max is not null then
+      select count(*) into total from beneficio_usos where beneficio = b.id and anulado is null;
+      if total >= b.usos_max then
+        return jsonb_build_object('canjeado', false, 'porque', 'ya se usó las ' || b.usos_max || ' veces que permitía');
+      end if;
+    end if;
+
+    insert into beneficio_usos (beneficio, telefono, nombre, local, vendedor, monto_compra, producto)
+    values (b.id, tel, nullif(trim(coalesce(p_nombre, '')), ''), trim(p_local),
+            nullif(trim(coalesce(p_vendedor, '')), ''), p_monto, nullif(trim(coalesce(p_producto, '')), ''));
+
+    return jsonb_build_object('canjeado', true, 'tipo', 'descuento', 'al_portador', true, 'campana', true,
+      'quedan', case when b.usos_max is null then null else b.usos_max - coalesce(total, b.usos) - 1 end);
+  end if;
+
+  -- ── Un solo uso, como siempre ──
+  update beneficios
+     set usado = now(), local_canje = trim(p_local),
+         vendedor_canje = nullif(trim(coalesce(p_vendedor, '')), ''),
+         monto_compra = p_monto,
+         canal_canje = 'local'
+   where id = p_id and usado is null and anulado is null;
+  get diagnostics tocadas = row_count;
+  if tocadas = 0 then
+    return jsonb_build_object('canjeado', false, 'porque', 'lo acaban de usar en otro lado');
+  end if;
+
+  if b.tipo = 'descuento' and b.registro is not null and coalesce(p_monto, 0) > 0 then
+    update registros
+       set compro = true, compro_canal = 'local', monto = p_monto,
+           producto_final = coalesce(nullif(trim(coalesce(p_producto, '')), ''), producto_final),
+           estado = coalesce(estado, 'Cerrado - compró'), contactado = true
+     where id = b.registro;
+  end if;
+
+  return jsonb_build_object('canjeado', true, 'tipo', b.tipo::text, 'al_portador', (b.codigo is not null));
+end;
+$cj$;
+
+grant execute on function canjear_beneficio(bigint, text, text, text, numeric, text, text, text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- EL RESUMEN: las campañas aparte
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function resumen_beneficios(p_pin text)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return (
+    with b as (select * from v_beneficios),
+    cupones as (select * from b where codigo is not null and not multiuso)
+    select json_build_object(
+      'disponible', (select count(*) from b where estado = 'disponible'),
+      'usado',      (select count(*) from b where estado = 'usado'),
+      'vencido',    (select count(*) from b where estado = 'vencido'),
+      'anulado',    (select count(*) from b where estado = 'anulado'),
+      -- Plata comprometida: lo que el local le debe a quien tenga una tarjeta
+      -- sin canjear. Es el número que a nadie le gusta descubrir de golpe.
+      'comprometido', (select coalesce(sum(valor), 0) from b
+                        where tipo = 'giftcard' and estado = 'disponible'),
+
+      /* ── El programa de cupones ──
+         Se mide sobre los cupones al portador, no sobre todos los descuentos:
+         el descuento atado al teléfono es otra cosa —se da en el panel, uno
+         por cliente— y mezclarlos haría que la tasa de canje no signifique
+         nada. */
+      /* Las campañas: un código para muchos. Cada una con sus usos. */
+      'campanas', (select coalesce(json_agg(x order by x->>'creado' desc), '[]'::json) from (
+          select json_build_object('id', c.id, 'codigo', c.codigo, 'pct', c.pct, 'estado', c.estado,
+                                   'creado', c.creado, 'vence', c.vence, 'usos', c.usos, 'usos_max', c.usos_max,
+                                   'por_cliente', c.por_cliente,
+                                   'vendido', (select coalesce(sum(u.monto_compra), 0) from beneficio_usos u
+                                                where u.beneficio = c.id and u.anulado is null)) as x
+            from b c where c.multiuso) t),
+
+      'cupones', json_build_object(
+        'creados',  (select count(*) from cupones),
+        'usados',   (select count(*) from cupones where estado = 'usado'),
+        'vencidos', (select count(*) from cupones where estado = 'vencido'),
+        'vivos',    (select count(*) from cupones where estado = 'disponible'),
+
+        /* Tasa de canje: sobre los que ya NO pueden cambiar de estado. Contra
+           el total, un cupón que se dio ayer cuenta como fracaso y la tasa
+           baja sola cada vez que se crea uno. */
+        'tasa', (select case when count(*) = 0 then null
+                       else round(100.0 * count(*) filter (where estado = 'usado') / count(*), 1)
+                       end
+                  from cupones where estado in ('usado', 'vencido')),
+
+        'vendido',   (select coalesce(sum(monto_compra), 0) from cupones where estado = 'usado'),
+        'regalado',  (select coalesce(sum(round(monto_compra * pct / 100.0, 2)), 0)
+                        from cupones where estado = 'usado' and monto_compra is not null),
+
+        /* Cuánto tarda en volver el que se llevó un cupón. En días y con un
+           decimal: "3,4 días" dice algo, "3 días" esconde la diferencia entre
+           el que volvió a la tarde y el que volvió el jueves. */
+        'dias_hasta_canje', (select round(avg(extract(epoch from (usado - creado)) / 86400.0)::numeric, 1)
+                               from cupones where estado = 'usado'),
+
+        'por_local', (select coalesce(json_agg(x order by x->>'local'), '[]'::json) from (
+            select json_build_object('local', local_canje,
+                                     'usados', count(*),
+                                     'vendido', coalesce(sum(monto_compra), 0)) as x
+              from cupones where estado = 'usado' and local_canje is not null
+             group by local_canje) t),
+
+        'por_vendedor', (select coalesce(json_agg(x order by x->>'vendedor'), '[]'::json) from (
+            select json_build_object('vendedor', vendedor_canje,
+                                     'usados', count(*),
+                                     'vendido', coalesce(sum(monto_compra), 0)) as x
+              from cupones where estado = 'usado' and vendedor_canje is not null
+             group by vendedor_canje) t),
+
+        /* Por quién lo creó. Sale del nombre que se dijo al crearlo, no de
+           una cuenta: desde que se entra con PIN no hay cuenta de la cual
+           sacarlo. Sirve para medir, no para auditar. */
+        'por_atencion', (select coalesce(json_agg(x order by x->>'quien'), '[]'::json) from (
+            select json_build_object('quien', coalesce(creado_por_nombre, 'sin identificar'),
+                                     'creados', count(*),
+                                     'usados', count(*) filter (where estado = 'usado'),
+                                     'vendido', coalesce(sum(monto_compra) filter (where estado = 'usado'), 0)) as x
+              from cupones
+             group by coalesce(creado_por_nombre, 'sin identificar')) t)
+      )
+    )
+  );
+end;
+$function$;
+
+
+select count(*) as "Beneficios", count(*) filter (where multiuso) as "Campañas" from beneficios;

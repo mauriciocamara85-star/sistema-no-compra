@@ -203,6 +203,20 @@
     display: flex; justify-content: center; flex-wrap: wrap;
     gap: 8px; margin-top: 12px;
   }
+  .cupon-det { display: block; font-size: 14px; color: var(--txt-2); margin-top: 6px; }
+
+  /* ── Para una persona o de campaña ──
+     Las mismas pastillas del Club, pero con botones: acá no se cambia de
+     página, se cambia el formulario. */
+  .pestanas button.pestana { border: 0; background: none; cursor: pointer; }
+  .pestanas button.pestana[aria-pressed="true"] { background: var(--surface); color: var(--txt); box-shadow: var(--sombra); }
+  #cajaCupon .pestanas { margin: 4px 0 2px; }
+  #cajaCupon[data-modo="persona"] .solo-campana,
+  #cajaCupon[data-modo="campana"] .solo-persona { display: none; }
+  .campo-ayuda { font-size: 12.5px; color: var(--txt-3); margin-top: 5px; line-height: 1.45; }
+  .check-fila { display: flex; align-items: center; gap: 10px; font-size: 14.5px; font-weight: 600; cursor: pointer; }
+  .check-fila input { width: 20px; height: 20px; flex: none; accent-color: var(--acc); }
+  #cuCodigo { text-transform: uppercase; font-weight: 700; letter-spacing: .5px; }
 
   /* ── La puerta ──
      Discreta y abajo de todo. El que la necesita la busca; el mostrador, que
@@ -342,10 +356,13 @@
   <section class="bloque" id="cajaBuscar" hidden>
     <p class="quien-linea" id="quienLinea"></p>
     <h2 class="buscar-tit">Buscar un beneficio</h2>
-    <p class="buscar-sub">El WhatsApp del cliente, o el número de la Gift Card.</p>
+    <p class="buscar-sub">El WhatsApp del cliente, el código del cupón o el número de la Gift Card.</p>
     <div class="buscar-fila">
-      <input type="tel" id="clave" inputmode="numeric" autocomplete="off"
-             placeholder="11 2345 6789  ·  00311" aria-label="Teléfono o número de tarjeta">
+      <!-- Teclado de letras y no numérico: desde el 29/09/2026 hay cupones de
+           campaña con nombre ("ENEROPROMO"), y con el teclado numérico del
+           celular no se podían escribir. -->
+      <input type="text" id="clave" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
+             placeholder="11 2345 6789  ·  ENEROPROMO  ·  00311" aria-label="Teléfono, código de cupón o número de tarjeta">
       <button type="button" class="btn btn-pri" id="btnBuscar">Buscar</button>
     </div>
     <div id="resultado"></div>
@@ -403,11 +420,23 @@
        aparece si la base dice que esta persona tiene el rol; esconderlo no
        protege nada —la regla la aplica `crear_cupon`— pero evita ofrecer
        algo que después iba a fallar. -->
-  <section class="bloque" id="cajaCupon" hidden>
+  <section class="bloque" id="cajaCupon" data-modo="persona" hidden>
     <h2 class="bloque-tit">Crear un cupón</h2>
-    <p class="bloque-sub">
+    <!-- Dos clases de cupón (29/09/2026): el de siempre, con un código al
+         azar para UNA persona, y el de campaña, con un código elegido que
+         usa mucha gente —con "una vez por persona" si se quiere—. -->
+    <div class="pestanas" role="group" aria-label="Qué cupón">
+      <button type="button" class="pestana" data-modo="persona" aria-pressed="true">Para una persona</button>
+      <button type="button" class="pestana" data-modo="campana" aria-pressed="false">De campaña</button>
+    </div>
+    <p class="bloque-sub solo-persona">
       Un descuento que vale para <b>el que tenga el código</b>, no para un
       teléfono. Se puede regalar.
+    </p>
+    <p class="bloque-sub solo-campana">
+      Un código para publicar —Instagram, WhatsApp, la vidriera— que lo usa
+      <b>mucha gente</b>. En la caja se pide el WhatsApp de quien lo usa, y
+      la base frena al que ya lo usó, aunque vaya a otro local.
     </p>
 
     <div class="ficha-campos">
@@ -420,33 +449,61 @@
         <select id="cuQuien">
           <option value="">Elegí…</option>
         </select></div>
+      <div class="campo ancho solo-campana"><label for="cuCodigo">Código del cupón</label>
+        <input type="text" id="cuCodigo" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ENEROPROMO">
+        <p class="campo-ayuda">Lo que el cliente dice o muestra en la caja. De 4 a 20 letras o números, con al menos una letra.</p></div>
+
       <div class="campo"><label>Descuento</label>
         <select id="cuPct">
+          <option value="5">5%</option>
           <option value="10">10%</option>
           <option value="15" selected>15%</option>
           <option value="20">20%</option>
           <option value="25">25%</option>
           <option value="30">30%</option>
+          <option value="35">35%</option>
+          <option value="40">40%</option>
+          <option value="50">50%</option>
         </select></div>
-      <div class="campo"><label>Vence en</label>
+      <div class="campo solo-persona"><label>Vence en</label>
         <select id="cuDias">
           <option value="15">15 días</option>
           <option value="30" selected>30 días</option>
           <option value="60">60 días</option>
           <option value="90">90 días</option>
         </select></div>
+      <div class="campo solo-campana"><label for="cuPorCliente">Usos por cliente</label>
+        <select id="cuPorCliente">
+          <option value="1" selected>Una vez por persona</option>
+          <option value="2">Dos veces por persona</option>
+          <option value="3">Tres veces por persona</option>
+          <option value="">Sin límite (no pide WhatsApp)</option>
+        </select></div>
 
-      <div class="campo"><label>WhatsApp del cliente <span class="lbl-opc">opcional</span></label>
+      <div class="campo solo-campana"><label for="cuDesde">Vale desde</label>
+        <input type="date" id="cuDesde"></div>
+      <div class="campo solo-campana"><label for="cuHasta">Vale hasta</label>
+        <input type="date" id="cuHasta"></div>
+
+      <div class="campo solo-persona"><label>WhatsApp del cliente <span class="lbl-opc">opcional</span></label>
         <input type="tel" inputmode="numeric" id="cuTel" placeholder="Para poder medir si volvió"></div>
-      <div class="campo"><label>Nombre <span class="lbl-opc">opcional</span></label>
+      <div class="campo solo-persona"><label>Nombre <span class="lbl-opc">opcional</span></label>
         <input type="text" id="cuNombre" placeholder="Cómo se llama"></div>
 
       <div class="campo"><label>Compra mínima <span class="lbl-opc">opcional</span></label>
         <input type="text" inputmode="numeric" id="cuMinima" placeholder="$"></div>
+      <div class="campo"><label for="cuTope">Tope de descuento <span class="lbl-opc">opcional</span></label>
+        <input type="text" inputmode="numeric" id="cuTope" placeholder="$ sin tope"></div>
+
+      <div class="campo solo-campana"><label for="cuUsosMax">Usos en total <span class="lbl-opc">opcional</span></label>
+        <input type="text" inputmode="numeric" id="cuUsosMax" placeholder="Sin límite"></div>
       <div class="campo"><label>Dónde vale</label>
         <select id="cuLocal">
           <option value="" selected>En todos los locales</option>
         </select></div>
+
+      <div class="campo ancho solo-campana">
+        <label class="check-fila"><input type="checkbox" id="cuAcumulable"> Se puede combinar con otras promociones</label></div>
 
       <div class="campo ancho"><label>Observaciones <span class="lbl-opc">opcional</span></label>
         <input type="text" id="cuObs" placeholder="Por qué se le da, o cualquier cosa que convenga recordar"></div>
@@ -460,6 +517,7 @@
     <div class="cupon-nuevo" id="cuponNuevo" hidden>
       <span class="cupon-lbl">Listo. El código es</span>
       <b class="cupon-cod" id="cuponCod">—</b>
+      <span class="cupon-det" id="cuponDet" hidden></span>
       <div class="cupon-acciones">
         <button type="button" class="btn btn-sec btn-chico" id="btnCopiarCupon">Copiar</button>
         <a class="btn btn-wsp btn-chico" id="btnWspCupon" target="_blank" rel="noopener" href="#" hidden>Mandar por WhatsApp</a>
@@ -570,7 +628,7 @@
   /* ═══ Buscar ════════════════════════════════════════════════════════════ */
   function buscar() {
     var clave = $('clave').value.trim();
-    if (!clave) { avisar('err', 'Escribí un teléfono o el número de la tarjeta.'); return; }
+    if (!clave) { avisar('err', 'Escribí un teléfono, el código del cupón o el número de la tarjeta.'); return; }
 
     var btn = $('btnBuscar');
     btn.disabled = true; btn.textContent = 'Buscando…';
@@ -618,17 +676,24 @@
           ' <span>de Gift Card</span></div>'
       : '<div class="ficha-pct">' + b.pct + '% <span>de descuento</span></div>';
 
+    /* La campaña que todavía no empezó: se ve, pero no se puede usar. */
+    var noEmpezo = vivo && b.multiuso && b.desde && String(b.desde) > isoHoy(0);
+    var enFecha = vivo;
+    if (noEmpezo) { vivo = false; }
+
     /* El estado en palabras y no sólo en color: "vencido" y "usado" son dos
        conversaciones distintas con el cliente que está enfrente. */
     var insignia = '<span class="pill ' +
       (vivo ? 'pill-ok' : b.estado === 'usado' ? 'pill-neutra' : 'pill-warn') + '">' +
-      esc(b.estado) + '</span>';
+      esc(noEmpezo ? 'empieza el ' + fechaCorta(b.desde) : b.estado) + '</span>';
 
     /* El cupón es del que lo trae, así que no se anuncia con el nombre del
        cliente que lo originó: el que está enfrente puede ser otro, y leerle
        en voz alta un nombre ajeno es una conversación incómoda. El nombre
        además puede no venir —la base no se lo da a quien no entró—. */
-    var quien = b.al_portador
+    var quien = b.multiuso
+      ? 'Cupón de campaña'
+      : b.al_portador
       ? 'Cupón al portador'
       : esGC
         ? (b.nombre ? esc(b.nombre) : 'Gift Card al portador')
@@ -640,9 +705,15 @@
     if (!esGC && b.buscaba) detalle.push('Había venido buscando ' + esc(b.buscaba));
     if (b.local) detalle.push((esGC ? 'Vendida en ' : 'Dado en ') + esc(bonito(b.local)));
     if (b.vence) {
-      detalle.push(vivo
+      detalle.push(enFecha
         ? (b.dias === 0 ? 'Vence hoy' : 'Vence en ' + b.dias + (b.dias === 1 ? ' día' : ' días'))
         : 'Vencía el ' + esc(String(b.vence).split('-').reverse().join('/')));
+    }
+
+    /* La campaña: cuántas veces por persona y cuánto se usó ya. */
+    if (b.multiuso) {
+      detalle.unshift(esc(vecesPorPersona(b.por_cliente).replace(/^./, function (c) { return c.toUpperCase(); })) +
+        ' · usado ' + (b.usos === 1 ? '1 vez' : (b.usos || 0) + ' veces') + (b.usos_max ? ' de ' + b.usos_max : ''));
     }
 
     /* Las condiciones, ANTES del botón y no en la letra chica: la compra
@@ -650,6 +721,7 @@
        que, leído después de apretar, parece una falla del sistema. Dichas
        antes, son lo que son: las reglas del cupón. */
     var condiciones = [];
+    if (b.tope) condiciones.push('Descuento máximo de ' + PESOS.format(b.tope));
     if (b.compra_minima) condiciones.push('Compra mínima de ' + PESOS.format(b.compra_minima));
     if (b.locales && b.locales.length) condiciones.push('Sólo vale en ' + b.locales.map(bonito).map(esc).join(', '));
     if (b.al_portador && !b.acumulable) condiciones.push('No acumulable con otras promociones');
@@ -666,6 +738,14 @@
         : '') +
       (vivo
         ? '<div class="ficha-campos">' +
+            /* La campaña "por persona" pide quién lo usa: es lo que deja a
+               la base frenar al que ya lo usó. */
+            (b.multiuso && b.por_cliente
+              ? '<div class="campo"><label for="tel' + b.id + '">WhatsApp del cliente</label>' +
+                  '<input type="tel" inputmode="numeric" id="tel' + b.id + '" placeholder="11 2345 6789"></div>' +
+                '<div class="campo"><label for="nom' + b.id + '">Nombre <span class="lbl-opc">opcional</span></label>' +
+                  '<input type="text" id="nom' + b.id + '" placeholder="Cómo se llama"></div>'
+              : '') +
             '<div class="campo"><label>Monto de la compra</label>' +
               '<input type="text" inputmode="numeric" id="monto' + b.id + '" placeholder="$"></div>' +
             '<div class="campo"><label>Qué se llevó</label>' +
@@ -676,6 +756,8 @@
             '</div>' +
           '</div>'
         : '<p class="nada">' + (
+            noEmpezo                ? 'Todavía no empezó: vale desde el ' + esc(fechaCorta(b.desde)) + '.' :
+            b.multiuso && b.estado === 'usado' ? 'Ya se usó todas las veces que permitía.' :
             b.estado === 'usado'    ? 'Ya se usó. Es de un solo uso.' :
             b.estado === 'vencido'  ? 'Se pasó de fecha. Atención al Cliente puede extenderlo.' :
                                       'Fue anulado.') + '</p>') +
@@ -697,8 +779,23 @@
     /* La clave va junto con el id: el id es un número de fila y esta llamada
        no pide sesión, así que sin la clave cualquiera podía quemar
        beneficios probando ids. Es la misma que se usó para encontrarlo. */
-    base.canjear(id, clave, local, vendedor, monto, $('prod' + id).value.trim())
+    /* La campaña por persona: sin el WhatsApp no viaja. */
+    var tel = $('tel' + id) ? $('tel' + id).value.trim() : '';
+    if ($('tel' + id) && tel.replace(/[^0-9]/g, '').length < 8) {
+      avisar('err', 'Este cupón es uno por persona: poné el WhatsApp del cliente.');
+      $('tel' + id).focus();
+      return;
+    }
+    var nom = $('nom' + id) ? $('nom' + id).value.trim() : '';
+
+    base.canjear(id, clave, local, vendedor, monto, $('prod' + id).value.trim(), tel, nom)
       .then(function (res) {
+        if (res && res.ya_lo_uso) {
+          /* No es una falla: el cliente ya lo usó. Se dice y se deja la
+             ficha como está, para que el vendedor se lo explique. */
+          avisar('err', 'No se puede: ' + res.porque + '.');
+          return;
+        }
         if (!res || !res.canjeado) {
           /* La base dijo que no: lo usaron en otro local mientras este
              vendedor tenía la pantalla abierta. Es el caso que el cupón de
@@ -707,7 +804,9 @@
           buscar();
           return;
         }
-        avisar('ok', res.tipo === 'giftcard'
+        avisar('ok', res.campana
+          ? '¡Listo! Descuento aplicado' + (res.quedan != null ? ': quedan ' + res.quedan + ' usos.' : '.')
+          : res.tipo === 'giftcard'
           ? '¡Listo! Gift Card canjeada.'
           : '¡Listo! Quedó anotado como venta recuperada.');
         $('clave').value = '';
@@ -918,11 +1017,41 @@
 
   var cuponActual = null;
 
+  /* Para una persona o de campaña. El modo cambia qué campos se ven (con
+     CSS, por data-modo) y qué se manda al crear. */
+  function modoCupon(m) {
+    $('cajaCupon').dataset.modo = m;
+    Array.prototype.forEach.call(document.querySelectorAll('#cajaCupon .pestana'), function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.modo === m));
+    });
+    $('cuponNuevo').hidden = true;
+    if (m === 'campana') { $('cuCodigo').focus(); }
+  }
+  function isoHoy(mas) {
+    var d = new Date(); d.setDate(d.getDate() + (mas || 0));
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function fechaCorta(iso) { var p = String(iso || '').split('-'); return p.length === 3 ? p[2] + '/' + p[1] : ''; }
+  function vecesPorPersona(n) {
+    return !n ? 'sin límite por persona' : n === 1 ? 'una vez por persona' : n + ' veces por persona';
+  }
+
   function prepararCupones() {
     $('cajaCupon').hidden = false;
     {
       $('btnCrearCupon').onclick = crearCupon;
       $('btnCopiarCupon').onclick = copiarCupon;
+      Array.prototype.forEach.call(document.querySelectorAll('#cajaCupon .pestana'), function (b) {
+        b.onclick = function () { modoCupon(b.dataset.modo); };
+      });
+      if (!$('cuDesde').value) { $('cuDesde').value = isoHoy(0); }
+      if (!$('cuHasta').value) { $('cuHasta').value = isoHoy(30); }
+      /* El código se ve como va a quedar: en mayúsculas y sin espacios. */
+      $('cuCodigo').oninput = function () {
+        var i = $('cuCodigo'), p = i.selectionStart;
+        i.value = i.value.toUpperCase().replace(/\s+/g, '');
+        try { i.setSelectionRange(p, p); } catch (e) {}
+      };
 
       /* Los locales para el desplegable de "dónde vale". Si no se pueden
          leer, el cupón igual se puede crear para todos los locales, que es
@@ -982,23 +1111,48 @@
     b.textContent = 'Creando…';
 
     var quien = $('cuQuien').value;
-    if (!quien) { avisar('err', 'Elegí quién está creando el cupón.'); $('cuQuien').focus(); b.disabled = false; b.textContent = 'Crear el cupón'; return; }
+    var listo = function () { b.disabled = false; b.textContent = 'Crear el cupón'; };
+    if (!quien) { avisar('err', 'Elegí quién está creando el cupón.'); $('cuQuien').focus(); listo(); return; }
 
-    base.crearCupon(pinGuardado(), quien, pct, dias, {
-      telefono: $('cuTel').value.trim() || null,
-      nombre: $('cuNombre').value.trim() || null,
+    var campana = $('cajaCupon').dataset.modo === 'campana';
+    var opciones = {
       compraMinima: plata('cuMinima') || null,
+      tope: plata('cuTope') || null,
       locales: soloEn ? [soloEn] : null,
       obs: $('cuObs').value.trim() || null
-    }).then(function (res) {
+    };
+    if (campana) {
+      /* Lo mismo que va a controlar la base, antes de viajar: el que crea
+         se entera en el acto. La que manda sigue siendo la base. */
+      var cod = $('cuCodigo').value.trim().toUpperCase();
+      if (!/^[A-Z0-9-]{4,20}$/.test(cod) || !/[A-Z]/.test(cod)) {
+        avisar('err', 'El código va de 4 a 20 letras o números, con al menos una letra.'); $('cuCodigo').focus(); listo(); return;
+      }
+      if (!$('cuHasta').value) { avisar('err', 'Poné hasta cuándo vale.'); $('cuHasta').focus(); listo(); return; }
+      if ($('cuDesde').value && $('cuDesde').value > $('cuHasta').value) {
+        avisar('err', 'Empieza después de terminar: revisá las fechas.'); $('cuDesde').focus(); listo(); return;
+      }
+      opciones.campana = true;
+      opciones.codigo = cod;
+      opciones.porCliente = parseInt($('cuPorCliente').value, 10) || null;
+      opciones.usosMax = parseInt(String($('cuUsosMax').value).replace(/[^0-9]/g, ''), 10) || null;
+      opciones.desde = $('cuDesde').value || null;
+      opciones.hasta = $('cuHasta').value;
+      opciones.acumulable = $('cuAcumulable').checked;
+    } else {
+      opciones.telefono = $('cuTel').value.trim() || null;
+      opciones.nombre = $('cuNombre').value.trim() || null;
+    }
+
+    base.crearCupon(pinGuardado(), quien, pct, dias, opciones).then(function (res) {
       if (!res || !res.creado) {
         /* El caso normal de "no": ese cliente ya tiene uno sin usar. No es
            un error del sistema y no conviene que parezca uno. */
         avisar('err', 'No se creó: ' + ((res && res.porque) || 'probá de nuevo') + '.');
         return;
       }
-      mostrarCupon(res.codigo, pct, $('cuTel').value.trim());
-      avisar('ok', 'Cupón creado.');
+      mostrarCupon(res.codigo, pct, campana ? '' : $('cuTel').value.trim(), campana ? opciones : null);
+      avisar('ok', campana ? 'Campaña creada.' : 'Cupón creado.');
       if (sesion.hay()) cargarLista();
     }).catch(function (err) {
       avisar('err', (err && err.delServidor && err.message) || 'No se pudo crear el cupón.');
@@ -1012,10 +1166,18 @@
      si hay WhatsApp del cliente se puede mandar de un toque con el texto ya
      escrito. Los campos NO se limpian: lo más común es darle el mismo cupón
      a varias personas seguidas. */
-  function mostrarCupon(codigo, pct, tel) {
+  function mostrarCupon(codigo, pct, tel, campana) {
     cuponActual = codigo;
     $('cuponCod').textContent = codigo;
     $('cuponNuevo').hidden = false;
+    /* La campaña dice abajo sus reglas: es lo que se va a copiar al
+       publicarla. */
+    $('cuponDet').hidden = !campana;
+    if (campana) {
+      $('cuponDet').textContent = pct + '% · ' + vecesPorPersona(campana.porCliente) +
+        (campana.usosMax ? ' · hasta ' + campana.usosMax + ' usos' : '') +
+        ' · ' + (campana.desde ? 'del ' + fechaCorta(campana.desde) + ' ' : '') + 'al ' + fechaCorta(campana.hasta);
+    }
 
     var wsp = $('btnWspCupon');
     var digitos = (tel || '').replace(/[^0-9]/g, '');
@@ -1104,7 +1266,10 @@
     $('lista').innerHTML = filas.map(function (b) {
       var esGC = b.tipo === 'giftcard';
       var que = esGC ? PESOS.format(b.valor || 0) : b.pct + '%';
-      var quien = esGC
+      var quien = b.multiuso
+        ? ('Campaña <b>' + esc(b.codigo) + '</b> · ' + (b.usos === 1 ? '1 uso' : (b.usos || 0) + ' usos') +
+           (b.usos_max ? ' de ' + b.usos_max : '') + ' · ' + esc(vecesPorPersona(b.por_cliente)))
+        : esGC
         ? ('Tarjeta ' + esc(b.serie || '') + (b.nombre ? ' · ' + esc(b.nombre) : ''))
         : esc(b.nombre || b.telefono || 'sin nombre');
       return '<div class="fila-ben">' +

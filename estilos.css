@@ -942,7 +942,7 @@ label, .campo-lbl {
 .lbl-opc { font-weight: 400; color: var(--txt-3); font-size: 12px; }
 
 input[type=text], input[type=tel], input[type=email], input[type=number],
-input[type=search], input[type=password], input[type=url], textarea, select {
+input[type=search], input[type=password], input[type=url], input[type=date], textarea, select {
   width: 100%;
   background: var(--surface-2);
   border: 1.5px solid var(--line-campo);
@@ -1213,7 +1213,7 @@ select {
   .campos { gap: 14px; }
   label, .campo-lbl { font-size: 13.5px; }
   input[type=text], input[type=tel], input[type=email], input[type=number],
-  input[type=search], input[type=password], input[type=url], textarea, select {
+  input[type=search], input[type=password], input[type=url], input[type=date], textarea, select {
     font-size: 16.5px;
     padding: 14px 15px;
   }
