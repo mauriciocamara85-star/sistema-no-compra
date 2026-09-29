@@ -6237,3 +6237,65 @@ $function$;
 
 
 select desde as "Cuentan los pedidos pagados desde" from club_tienda_estado;
+
+
+-- ─────────────────────────── PARTE 28 ───────────────────────────
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · EL RELOJ DE CADA HORA
+--
+-- Correr entero en el editor SQL de Supabase, después del 27.
+--
+-- El Action de vdh-respaldos (avisos.yml) está programado cada hora, pero
+-- GitHub lo corre cada 4 a 6 horas: estrangula los horarios de los
+-- repositorios privados con poco movimiento. Medido del 26 al 29/09/2026.
+-- Con eso, los puntos de la tienda online y los saludos de cumpleaños
+-- salían con horas de atraso.
+--
+-- Lo que GitHub NO demora es un pedido directo ("workflow_dispatch"). Así
+-- que el reloj pasa a ser la base: pg_cron, el mismo que ya despacha las
+-- salidas cada minuto, le pide a GitHub que corra el Action a los 5 minutos
+-- de cada hora. El horario propio del Action queda como respaldo.
+--
+-- La llave de GitHub vive en el Vault de Supabase con el nombre
+-- github_despachar. Sin ella esto no hace nada y no falla.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_despachar_hora()
+returns bigint
+language plpgsql
+security definer
+set search_path = public
+as $dh$
+declare
+  llave text;
+  pedido bigint;
+begin
+  select decrypted_secret into llave from vault.decrypted_secrets where name = 'github_despachar';
+  if llave is null or length(trim(llave)) = 0 then
+    return null;
+  end if;
+
+  select net.http_post(
+    url     := 'https://api.github.com/repos/mauriciocamara85-star/vdh-respaldos/actions/workflows/avisos.yml/dispatches',
+    body    := '{"ref": "main"}'::jsonb,
+    headers := jsonb_build_object(
+                 'Authorization', 'Bearer ' || trim(llave),
+                 'Accept', 'application/vnd.github+json',
+                 'X-GitHub-Api-Version', '2022-11-28',
+                 'User-Agent', 'vdh-club-supabase',
+                 'Content-Type', 'application/json')
+  ) into pedido;
+
+  return pedido;
+end;
+$dh$;
+
+revoke all on function club_despachar_hora() from public, anon, authenticated;
+
+/* Con el mismo nombre, pg_cron lo reemplaza: correr esto dos veces deja una
+   sola tarea. */
+select cron.schedule('club-cada-hora', '5 * * * *', $cr$ select club_despachar_hora() $cr$);
+
+select jobname as "Tarea", schedule as "Cuándo", active as "Activa"
+  from cron.job where jobname = 'club-cada-hora';
