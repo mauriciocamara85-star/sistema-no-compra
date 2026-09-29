@@ -1,0 +1,794 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Estadísticas</title>
+<meta name="description" content="Estadísticas del No Compra: cuántos se fueron sin comprar, por qué, qué faltó y cuántos se recuperaron.">
+<meta name="theme-color" content="#121315">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+  } catch (e) {}
+</script>
+<style>
+  /* ── Estadísticas del No Compra ─────────────────────────────────────────
+     Armada el 29/09/2026 a pedido de Mauricio, con la misma forma que las
+     Estadísticas del Club. Reemplaza a Motivos y Resultados, que contaban
+     todo "desde siempre" y no dejaban comparar un mes con otro.
+
+     El orden de lectura:
+       1. Cinco números del período, con la comparación contra el anterior.
+       2. Por qué se fueron, y los que nadie contactó todavía (hoy).
+       3. Qué faltó: productos, talles y colores.
+       4. El recorrido (cargado → contactado → compró) y los locales.
+       5. La evolución.
+       6. El detalle, plegado: vendedores, día de la semana, hora.
+
+     Reglas, las mismas del Club:
+       · Todo respeta el período y el local. Lo que es "hoy" lo dice.
+       · Los 14 locales más "Sin local" suman lo mismo que el total.
+       · Con pocos registros no hay gráficos: se dicen los números.
+       · El color es para decir algo (subió, bajó, alerta). */
+
+  /* ── Controles ── */
+  .cn-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+  .cn-tit { font: 700 26px/1.2 var(--display); letter-spacing: -.5px; }
+  .cn-rango { font-size: 14.5px; color: var(--txt-2); font-weight: 600; }
+  .cn-controles { display: grid; gap: 10px; margin-bottom: 18px; }
+  .cn-periodos { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .cn-periodos::-webkit-scrollbar { display: none; }
+  .cn-periodos .chip { flex: none; min-height: 40px; padding: 8px 15px; font-size: 14px; }
+  .cn-fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .cn-fila select { flex: 1 1 240px; max-width: 360px; }
+  .cn-fechas { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .cn-fechas[hidden] { display: none; }
+  .cn-fechas input { width: auto; flex: 1 1 150px; max-width: 200px; }
+  .cn-fechas span { font-size: 14px; color: var(--txt-2); }
+
+  .pocos {
+    display: flex; gap: 12px; align-items: flex-start;
+    background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--warn);
+    border-radius: var(--r-sm); padding: 13px 16px; margin-bottom: 14px;
+    font-size: 14.5px; color: var(--txt-2); line-height: 1.5;
+  }
+  .pocos[hidden] { display: none; }
+  .pocos b { color: var(--txt); }
+  .pocos svg { width: 20px; height: 20px; flex: none; color: var(--warn-txt); margin-top: 1px; }
+
+  /* ── Los cinco números ── */
+  .cn-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
+  @media (min-width: 700px) { .cn-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1100px) { .cn-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  .cn-kpi {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--sombra);
+  }
+  .cn-kpi-l { font: 700 13px/1.3 var(--sans); color: var(--txt-2); text-transform: uppercase; letter-spacing: .4px; }
+  .cn-kpi-n { font: 700 32px/1.1 var(--display); letter-spacing: -.8px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .cn-kpi-n.plata { font-size: 27px; }
+  .cn-kpi-pie { font-size: 14px; color: var(--txt-2); line-height: 1.4; }
+  .link-bot { color: var(--txt); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; background: none; border: 0; padding: 0; font-size: inherit; }
+  .cn-vs { font: 700 13px var(--sans); margin-top: 6px; align-self: flex-start; padding: 3px 9px; border-radius: 99px;
+           background: var(--surface-2); color: var(--txt-2); }
+  .cn-vs.sube { background: var(--ok-soft); color: var(--ok-txt); }
+  .cn-vs.baja { background: var(--bad-soft); color: var(--bad-txt); }
+
+  /* ── Bloques ── */
+  .bloque-tit { font-size: 19px; }
+  .bloque-sub { font-size: 14.5px; }
+  .cuando { display: inline-block; font: 700 12px var(--sans); letter-spacing: .4px; text-transform: uppercase;
+            color: var(--txt-2); background: var(--surface-2); border: 1px solid var(--line); border-radius: 99px;
+            padding: 3px 9px; margin-left: 8px; vertical-align: 2px; }
+  .nota-cn { font-size: 13.5px; color: var(--txt-2); margin-top: 12px; line-height: 1.55; }
+  .vacio-cn { font-size: 14.5px; color: var(--txt-2); padding: 4px 0; line-height: 1.5; }
+  .dato { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+  .dato:first-child { border-top: 0; padding-top: 2px; }
+  .dato > span { font-size: 15px; color: var(--txt); }
+  .dato > b { font: 700 18px/1.1 var(--display); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .dato small { display: block; font-size: 13px; color: var(--txt-2); margin-top: 2px; }
+
+  /* ── Los motivos: filas que se tocan y eligen qué mirar en "Qué faltó" ── */
+  .mot { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: grid;
+         grid-template-columns: minmax(0, 1fr) auto; gap: 6px 12px; align-items: baseline;
+         padding: 11px 8px; margin: 0 -8px; border-top: 1px solid var(--line); border-radius: 8px; }
+  .mot:first-child { border-top: 0; }
+  .mot:hover { background: var(--surface-2); }
+  .mot:focus-visible { outline: 2px solid var(--txt); outline-offset: 1px; }
+  .mot[aria-pressed="true"] { background: var(--surface-2); box-shadow: inset 3px 0 0 var(--txt); }
+  .mot span { font: 600 15px var(--sans); }
+  .mot b { font: 700 18px var(--display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .mot b em { font: 600 13px var(--sans); font-style: normal; color: var(--txt-2); margin-left: 6px; }
+  .mot i { grid-column: 1 / -1; display: block; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+  .mot i u { display: block; height: 100%; background: var(--txt-2); border-radius: inherit; }
+  .mot[aria-pressed="true"] i u { background: var(--txt); }
+
+  /* ── Pendientes (hoy) ── */
+  .pend-n { font: 700 36px/1 var(--display); letter-spacing: -1px; }
+  .pend-sub { font-size: 15px; color: var(--txt-2); margin-top: 4px; }
+  .pend-alerta { margin-top: 12px; padding: 11px 14px; border-radius: var(--r-sm); font-size: 14.5px; font-weight: 600;
+                 background: var(--bad-soft); color: var(--bad-txt); border: 1px solid var(--bad); }
+  .pend-bien { margin-top: 12px; padding: 11px 14px; border-radius: var(--r-sm); font-size: 14.5px; font-weight: 600;
+               background: var(--ok-soft); color: var(--ok-txt); }
+
+  /* ── Qué faltó: tres columnas ── */
+  .falto-cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  @media (min-width: 760px) { .falto-cols { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .sub-tit { font: 700 13px var(--sans); letter-spacing: .5px; text-transform: uppercase; color: var(--txt-2); margin: 0 0 6px; }
+  .filtro-activo { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; font-size: 14.5px; }
+  .filtro-activo[hidden] { display: none; }
+
+  /* ── El recorrido ── */
+  .paso { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 10px; align-items: baseline; padding: 12px 0; border-top: 1px solid var(--line); }
+  .paso:first-child { border-top: 0; padding-top: 2px; }
+  .paso span { font: 600 15px var(--sans); }
+  .paso b { font: 700 22px var(--display); font-variant-numeric: tabular-nums; }
+  .paso b em { font: 600 13px var(--sans); font-style: normal; color: var(--txt-2); margin-left: 6px; }
+  .paso i { grid-column: 1 / -1; display: block; height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+  .paso i u { display: block; height: 100%; background: var(--txt); border-radius: inherit; }
+  .paso.plata b { font-size: 24px; }
+
+  /* ── Tablas ── */
+  .tabla-caja { overflow-x: auto; margin: 0 -4px; padding: 0 4px; }
+  table.tabla { width: 100%; border-collapse: collapse; font-size: 14.5px; font-variant-numeric: tabular-nums; }
+  .tabla th {
+    text-align: right; font: 700 12px var(--sans); letter-spacing: .4px; text-transform: uppercase;
+    color: var(--txt-2); padding: 0 10px 9px; white-space: nowrap; border-bottom: 1px solid var(--line-alta);
+  }
+  .tabla th:first-child, .tabla td:first-child { text-align: left; padding-left: 0; }
+  .tabla th button { all: unset; cursor: pointer; }
+  .tabla th button:focus-visible { outline: 2px solid var(--txt); outline-offset: 2px; }
+  .tabla th[aria-sort] { color: var(--txt); }
+  .tabla td { text-align: right; padding: 11px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .tabla td:first-child { font-weight: 700; color: var(--txt); }
+  @media (max-width: 899px) { .tabla td:first-child { position: sticky; left: 0; background: var(--surface); } }
+  .tabla td small { display: block; font-size: 12.5px; font-weight: 500; color: var(--txt-2); }
+  .tabla td.izq { text-align: left; }
+  .tabla tr.sel td { background: var(--surface-2); }
+  .tabla tr.sinlocal td { color: var(--txt-2); font-style: italic; }
+  .tabla tr.total td { font-weight: 700; color: var(--txt); border-top: 2px solid var(--line-alta); border-bottom: 0; }
+  .tabla .cero { color: var(--txt-3); }
+
+  /* ── Gráficos: al ancho real de su caja, alto fijo ── */
+  .graf { display: block; width: 100%; }
+  .graf text { fill: var(--txt-2); font: 500 12px var(--sans); }
+  .graf .eje { stroke: var(--line); stroke-width: 1; }
+  .graf .area { fill: var(--txt); opacity: .07; }
+  .graf .linea { fill: none; stroke: var(--txt); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .graf .barra { fill: var(--txt-3); opacity: .55; }
+  .graf .barra.pico { fill: var(--txt); opacity: 1; }
+  .graf .punto { fill: var(--txt); }
+  .graf-pie { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 12px; font-size: 13.5px; color: var(--txt-2); margin-top: 8px; }
+  .interruptor { display: inline-flex; border: 1px solid var(--line); border-radius: 99px; padding: 2px; margin-left: auto; }
+  .interruptor[hidden] { display: none; }
+  .interruptor button { all: unset; cursor: pointer; font: 600 13px var(--sans); color: var(--txt-2); padding: 5px 12px; border-radius: 99px; }
+  .interruptor button[aria-pressed="true"] { background: var(--surface-3); color: var(--txt); }
+
+  /* ── El detalle, plegado ── */
+  .detalle-caja > summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px 18px;
+    font: 700 17px var(--display);
+  }
+  .detalle-caja > summary::-webkit-details-marker { display: none; }
+  .detalle-caja > summary span { font: 500 14px var(--sans); color: var(--txt-2); }
+  .detalle-caja > summary::after { content: 'Abrir'; font: 700 13px var(--sans); color: var(--txt); border: 1px solid var(--line-alta); border-radius: 99px; padding: 4px 12px; }
+  .detalle-caja[open] > summary::after { content: 'Cerrar'; }
+  .detalle-caja[open] > summary { margin-bottom: 12px; }
+
+  /* ── La grilla ── */
+  .cn-grilla, .cn-sub { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .cn-grilla > .bloque, .cn-sub > .bloque { margin-bottom: 0; }
+  .cn-grilla { margin-bottom: 12px; }
+  @media (min-width: 900px) { :root { --tope: 1000px; } }
+  @media (min-width: 1100px) {
+    :root { --tope: 1480px; }
+    .cn-grilla, .cn-sub { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+    .cn-grilla > .ancho, .cn-sub > .ancho { grid-column: 1 / -1; }
+  }
+</style>
+</head>
+<body class="hay-rail">
+
+<header class="app-head">
+  <div class="app-head-in">
+    <div class="marca">
+      <div class="marca-icono">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/>
+        </svg>
+      </div>
+      <div class="marca-txt">
+        <h1>Estadísticas</h1>
+        <span>VDH · No Compra</span>
+      </div>
+    </div>
+    <div class="head-acciones">
+      <button class="btn-icono" id="btnRefrescar" title="Actualizar" aria-label="Actualizar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="marco">
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt">No Compra</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      Carga
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      Panel
+    </a>
+    <a class="rail-item" href="estadisticas.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Estadísticas
+    </a>
+    <a class="rail-item" href="caja.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Club
+    </a>
+    <a class="rail-item" href="beneficios.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
+      Beneficios
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="hoja">
+  <div class="cn-cab">
+    <h2 class="cn-tit" id="titulo">No Compra</h2>
+    <span class="cn-rango" id="rango"></span>
+  </div>
+
+  <div class="cn-controles">
+    <div class="cn-periodos" id="periodos" role="group" aria-label="Período"></div>
+    <div class="cn-fechas" id="fechas" hidden>
+      <input type="date" id="fDesde" aria-label="Desde"><span>al</span>
+      <input type="date" id="fHasta" aria-label="Hasta">
+      <button type="button" class="btn btn-sec btn-chico" id="fAplicar">Ver</button>
+    </div>
+    <div class="cn-fila">
+      <select id="selLocal" aria-label="Local"><option value="">Todos los locales</option></select>
+    </div>
+  </div>
+
+  <div class="pocos" id="pocos" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+    <span id="pocosTxt"></span>
+  </div>
+
+  <!-- 1. Los cinco números -->
+  <div class="cn-kpis" id="kpis"></div>
+
+  <!-- 2. Por qué, y lo que falta hacer hoy -->
+  <div class="cn-grilla">
+    <div class="bloque" id="cajaMotivos">
+      <h2 class="bloque-tit">Por qué se fueron</h2>
+      <p class="bloque-sub">En el período. Tocá un motivo para ver qué faltó en ese caso.</p>
+      <div id="motivos"></div>
+    </div>
+    <div class="bloque" id="cajaPendientes">
+      <h2 class="bloque-tit">Sin contactar <span class="cuando">hoy</span></h2>
+      <p class="bloque-sub">Los que nadie tocó todavía. No depende del período.</p>
+      <div id="pendientes"></div>
+    </div>
+  </div>
+
+  <!-- 3. Qué faltó -->
+  <div class="cn-grilla">
+    <div class="bloque ancho" id="cajaFalto">
+      <h2 class="bloque-tit">Qué faltó</h2>
+      <p class="bloque-sub">Lo que buscaban y no se llevaron, en el período. Sirve para compras y para el stock de cada local.</p>
+      <div class="filtro-activo" id="filtroActivo" hidden></div>
+      <div class="falto-cols" id="falto"></div>
+    </div>
+  </div>
+
+  <!-- 4. El recorrido y los locales -->
+  <div class="cn-grilla">
+    <div class="bloque" id="cajaRecorrido">
+      <h2 class="bloque-tit">El recorrido</h2>
+      <p class="bloque-sub">De los que se fueron sin comprar en el período: a cuántos se llamó y cuántos volvieron.</p>
+      <div id="recorrido"></div>
+    </div>
+    <div class="bloque" id="cajaRecuperado">
+      <h2 class="bloque-tit">La plata que volvió</h2>
+      <p class="bloque-sub">Lo que compraron los que se habían ido sin comprar, en el período.</p>
+      <div id="recuperado"></div>
+    </div>
+    <div class="bloque ancho" id="cajaLocales">
+      <h2 class="bloque-tit">Por local</h2>
+      <p class="bloque-sub">En el período. Tocá un título para ordenar; tocá un local para ver sólo ese.</p>
+      <div class="tabla-caja" id="locales"></div>
+    </div>
+  </div>
+
+  <!-- 5. La evolución -->
+  <div class="cn-grilla">
+    <div class="bloque ancho" id="cajaDias">
+      <h2 class="bloque-tit" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Evolución
+        <span class="interruptor" id="interruptor" role="group" aria-label="Qué mostrar">
+          <button type="button" id="verCargados" aria-pressed="true">Se fueron</button>
+          <button type="button" id="verCompraron" aria-pressed="false">Volvieron</button>
+        </span>
+      </h2>
+      <p class="bloque-sub" id="diasSub"></p>
+      <div id="dias"></div>
+    </div>
+  </div>
+
+  <!-- 6. El detalle, plegado -->
+  <details class="detalle-caja" id="detalle">
+    <summary>Más detalle <span>vendedores, días de la semana y horarios</span></summary>
+    <div class="cn-sub">
+      <div class="bloque ancho" id="cajaVendedores">
+        <h2 class="bloque-tit">Vendedores</h2>
+        <p class="bloque-sub">Lo que cargó cada uno en el período, y cuántos de esos volvieron a comprar. "Con producto": cargados diciendo qué buscaban, que es lo que permite llamarlos con algo concreto.</p>
+        <div class="tabla-caja" id="vendedores"></div>
+      </div>
+      <div class="bloque" id="cajaSemana">
+        <h2 class="bloque-tit">Por día de la semana</h2>
+        <p class="bloque-sub">Cuántos se van sin comprar cada día, en promedio.</p>
+        <div id="semana"></div>
+      </div>
+      <div class="bloque" id="cajaHora">
+        <h2 class="bloque-tit">Por hora</h2>
+        <p class="bloque-sub">A qué hora se va más gente sin comprar: dónde puede faltar alguien en el salón.</p>
+        <div id="hora"></div>
+      </div>
+    </div>
+  </details>
+
+  <p class="pie">Sale de lo que carga el vendedor y de lo que se anota en el <a href="panel.html">Panel</a>. En la hora de Argentina.</p>
+</main>
+
+</div><!-- /.marco -->
+
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script src="datos.js"></script>
+<script>
+  var $ = function (id) { return document.getElementById(id); };
+
+  var K_PERIODO = 'nc_est_periodo', K_LOCAL = 'nc_est_local';
+  var SIN = '__SIN__';
+  var estado = { periodo: leer(K_PERIODO) || '30', desde: '', hasta: '', local: leer(K_LOCAL) || '', motivo: '' };
+  var datos = null, verCompraron = false, ordenLoc = { col: 'cargados', desc: true }, verCeros = false;
+
+  /* Con menos que esto no hay tendencia que mirar. */
+  var MIN_REG = 20, MIN_DIAS = 7;
+
+  var PERIODOS = [
+    ['mes', 'Este mes'], ['7', '7 días'], ['30', '30 días'], ['90', '90 días'],
+    ['anio', 'Este año'], ['todo', 'Todo'], ['elegir', 'Elegir fechas']
+  ];
+
+  /* ═══ Fechas ═══════════════════════════════════════════════════════════ */
+  function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
+  function deIso(s) { var p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function menosDias(d, n) { var x = new Date(d); x.setDate(x.getDate() - n); return x; }
+  function rango() {
+    var hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    switch (estado.periodo) {
+      case 'mes':  return [iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), iso(hoy)];
+      case '7':    return [iso(menosDias(hoy, 6)), iso(hoy)];
+      case '90':   return [iso(menosDias(hoy, 89)), iso(hoy)];
+      case 'anio': return [iso(new Date(hoy.getFullYear(), 0, 1)), iso(hoy)];
+      case 'todo': return [iso(menosDias(hoy, 1100)), iso(hoy)];
+      case 'elegir': return [estado.desde || iso(menosDias(hoy, 29)), estado.hasta || iso(hoy)];
+      default:     return [iso(menosDias(hoy, 29)), iso(hoy)];
+    }
+  }
+  function fechaLarga(s) { return deIso(s).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' }); }
+  function fechaCorta(s) { var d = deIso(s); return d.getDate() + '/' + (d.getMonth() + 1); }
+
+  /* ═══ Números ══════════════════════════════════════════════════════════ */
+  function miles(n) { return Math.round(Number(n) || 0).toLocaleString('es-AR'); }
+  function plata(n) { return PESOS.format(Math.round(Number(n) || 0)); }
+  function pct(a, b) { return b ? Math.round(a * 100 / b) : 0; }
+  function coma(n) { return (Math.round(Number(n) * 10) / 10).toLocaleString('es-AR'); }
+  function unoVarios(n, uno, varios) { return miles(n) + ' ' + (Number(n) === 1 ? uno : varios); }
+
+  /* Contra el período anterior del mismo largo. Con color sólo si hay
+     datos de los dos lados. "inverso": menos es mejor (días hasta el
+     contacto). "neutro": subir no es bueno ni malo (cuántos se fueron:
+     más cargados puede ser que se carga mejor). */
+  function comparar(actual, anterior, modo) {
+    actual = Number(actual) || 0; anterior = Number(anterior) || 0;
+    if (!anterior && !actual) { return { txt: 'sin datos en el período anterior', cls: '' }; }
+    if (!anterior) { return { txt: 'el período anterior no tuvo', cls: '' }; }
+    if (anterior < 5 || actual < 5) { return { txt: 'antes: ' + (modo === 'dias' ? coma(anterior) : miles(anterior)), cls: '' }; }
+    var p = Math.round((actual - anterior) * 100 / anterior);
+    if (p === 0) { return { txt: 'igual que el período anterior', cls: '' }; }
+    var bueno = modo === 'inverso' || modo === 'dias' ? p < 0 : p > 0;
+    return { txt: (p > 0 ? '↑ ' : '↓ ') + Math.abs(p).toLocaleString('es-AR') + ' % vs. período anterior',
+             cls: modo === 'neutro' ? '' : (bueno ? 'sube' : 'baja') };
+  }
+
+  function nombreDe(codigo) {
+    if (codigo === SIN) { return 'Sin local'; }
+    var l = (datos && datos.por_local || []).filter(function (x) { return x.local === codigo; })[0];
+    return l ? l.nombre : bonito(codigo);
+  }
+
+  /* ═══ Arranque ═════════════════════════════════════════════════════════ */
+  function pintarPeriodos() {
+    $('periodos').innerHTML = PERIODOS.map(function (p) {
+      return '<button type="button" class="chip' + (estado.periodo === p[0] ? ' sel' : '') + '" data-p="' + p[0] + '"' +
+             ' aria-pressed="' + (estado.periodo === p[0]) + '">' + esc(p[1]) + '</button>';
+    }).join('');
+    $('fechas').hidden = estado.periodo !== 'elegir';
+    var r = rango(); $('fDesde').value = r[0]; $('fHasta').value = r[1];
+  }
+
+  function cargar() {
+    var r = rango();
+    $('rango').textContent = 'Del ' + fechaLarga(r[0]) + ' al ' + fechaLarga(r[1]);
+    $('btnRefrescar').classList.add('girando');
+    return base.estadisticas(r[0], r[1], estado.local, estado.motivo)
+      .then(function (d) { datos = d; pintar(); })
+      .catch(function (err) {
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo leer. ¿Se corrió el SQL 30?');
+      })
+      .then(function () { $('btnRefrescar').classList.remove('girando'); });
+  }
+
+  function pocosDatos() {
+    var dias = (datos.por_dia || []).filter(function (p) { return Number(p.cargados) > 0; }).length;
+    return { pocos: Number(datos.actual.cargados) < MIN_REG || dias < MIN_DIAS, dias: dias };
+  }
+
+  function pintar() {
+    $('titulo').textContent = estado.local ? 'No Compra en ' + nombreDe(estado.local) : 'No Compra';
+    pintarSelectorLocal();
+    var pd = pocosDatos();
+    $('pocos').hidden = !pd.pocos;
+    $('pocosTxt').innerHTML = '<b>Todavía hay pocos registros para ver tendencias</b>: ' +
+      unoVarios(datos.actual.cargados, 'cliente cargado', 'clientes cargados') + ' en ' + unoVarios(pd.dias, 'día', 'días distintos') +
+      ' del período. Mostramos los números que hay; los gráficos aparecen con ' + MIN_REG + ' registros en al menos ' + MIN_DIAS + ' días.';
+    pintarKpis();
+    pintarMotivos();
+    pintarPendientes();
+    pintarFalto();
+    pintarRecorrido();
+    pintarRecuperado();
+    pintarLocales();
+    pintarDias();
+    pintarVendedores();
+    if ($('detalle').open) { pintarGraficosDetalle(); }
+  }
+
+  function pintarSelectorLocal() {
+    var lista = datos.por_local || [], sl = datos.sin_local || {};
+    var haySin = Number(sl.cargados) || estado.local === SIN;
+    $('selLocal').innerHTML = '<option value="">Todos los locales</option>' + lista.map(function (l) {
+      return '<option value="' + esc(l.local) + '"' + (l.local === estado.local ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
+    }).join('') + (haySin ? '<option value="' + SIN + '"' + (estado.local === SIN ? ' selected' : '') + '>Sin local</option>' : '');
+  }
+
+  /* ═══ 1. Los cinco números ═════════════════════════════════════════════ */
+  function pintarKpis() {
+    var a = datos.actual, b = datos.anterior;
+    var tarjetas = [
+      { l: 'Se fueron sin comprar', n: miles(a.cargados),
+        pie: estado.local ? 'cargados en este local' : 'clientes cargados en el período', c: comparar(a.cargados, b.cargados, 'neutro') },
+      { l: 'Contactados', n: miles(a.contactados),
+        pie: a.cargados ? pct(a.contactados, a.cargados) + ' % de los cargados' : 'nadie cargado', c: comparar(a.contactados, b.contactados) },
+      { l: 'Volvieron a comprar', n: miles(a.compraron),
+        pie: a.cargados ? pct(a.compraron, a.cargados) + ' % de los cargados' : 'nadie cargado', c: comparar(a.compraron, b.compraron) },
+      { l: 'Plata recuperada', n: plata(a.recuperado), plata: true,
+        pie: a.compraron ? 'en el local ' + plata(a.rec_local) + ' · online ' + plata(a.rec_online) : 'todavía nadie volvió',
+        c: comparar(a.recuperado, b.recuperado) },
+      { l: 'Días hasta el contacto', n: a.contacto_casos ? coma(a.dias_contacto) : '—',
+        pie: a.contacto_casos ? 'promedio, de ' + unoVarios(a.contacto_casos, 'contacto con fecha', 'contactos con fecha') + '. Menos es mejor.'
+                              : 'nadie tiene fecha de contacto todavía',
+        c: a.contacto_casos && b.contacto_casos ? comparar(a.dias_contacto, b.dias_contacto, 'dias') : null }
+    ];
+    $('kpis').innerHTML = tarjetas.map(function (t) {
+      return '<div class="cn-kpi">' +
+        '<div class="cn-kpi-l">' + esc(t.l) + '</div>' +
+        '<div class="cn-kpi-n' + (t.plata ? ' plata' : '') + '">' + esc(t.n) + '</div>' +
+        '<div class="cn-kpi-pie">' + esc(t.pie) + '</div>' +
+        (t.c ? '<div class="cn-vs ' + t.c.cls + '">' + esc(t.c.txt) + '</div>' : '') +
+      '</div>';
+    }).join('');
+  }
+
+  /* ═══ 2. Por qué se fueron ═════════════════════════════════════════════ */
+  function pintarMotivos() {
+    var l = datos.motivos || [], sin = Number(datos.actual.sin_motivo) || 0;
+    if (!l.length) {
+      $('motivos').innerHTML = '<p class="vacio-cn">' + (datos.actual.cargados ? 'Ninguno de los cargados tiene motivo.' : 'Nadie se fue sin comprar en el período, o no se cargó.') + '</p>';
+      return;
+    }
+    var max = l.reduce(function (m, x) { return Math.max(m, Number(x.n)); }, 1);
+    $('motivos').innerHTML = l.map(function (m) {
+      var sel = estado.motivo && estado.motivo.toLowerCase() === String(m.v).toLowerCase();
+      return '<button type="button" class="mot" data-motivo="' + esc(m.v) + '" aria-pressed="' + !!sel + '">' +
+        '<span>' + esc(m.v) + '</span><b>' + m.pct + ' %<em>' + unoVarios(m.n, 'cliente', 'clientes') + '</em></b>' +
+        '<i><u style="width:' + Math.round(Number(m.n) * 100 / max) + '%"></u></i></button>';
+    }).join('') +
+    (sin ? '<p class="nota-cn">' + unoVarios(sin, 'cargado sin motivo no entra', 'cargados sin motivo no entran') + ' en los porcentajes.</p>' : '');
+  }
+
+  function pintarPendientes() {
+    var p = datos.pendientes || {};
+    if (!p.total) {
+      $('pendientes').innerHTML = '<div class="pend-n">0</div><div class="pend-bien">Todos los cargados tienen a alguien siguiéndolos.</div>';
+      return;
+    }
+    $('pendientes').innerHTML =
+      '<div class="pend-n">' + miles(p.total) + '</div>' +
+      '<p class="pend-sub">' + (p.total === 1 ? 'cliente que nadie contactó' : 'clientes que nadie contactó') + ' todavía.</p>' +
+      (p.viejos
+        ? '<div class="pend-alerta">' + unoVarios(p.viejos, 'lleva', 'llevan') + ' más de 3 días esperando. El más viejo, ' + miles(p.dias) + ' días.</div>'
+        : '') +
+      '<p class="nota-cn">Se contactan desde el <a href="panel.html">Panel</a>. Un cliente llamado al día siguiente vuelve mucho más que uno llamado a las tres semanas.</p>';
+  }
+
+  /* ═══ 3. Qué faltó ═════════════════════════════════════════════════════ */
+  function lista(items, vacio) {
+    if (!items || !items.length) { return '<p class="vacio-cn">' + vacio + '</p>'; }
+    return items.map(function (x) { return '<div class="dato"><span>' + esc(x.v) + '</span><b>' + miles(x.n) + '</b></div>'; }).join('');
+  }
+  function pintarFalto() {
+    $('filtroActivo').hidden = !estado.motivo;
+    $('filtroActivo').innerHTML = estado.motivo
+      ? '<span class="pill pill-neutra">Motivo: ' + esc(estado.motivo) + '</span><button type="button" class="link-bot" id="quitarMotivo">Ver todos los motivos</button>'
+      : '';
+    if ($('quitarMotivo')) { $('quitarMotivo').onclick = function () { estado.motivo = ''; cargar(); }; }
+    $('falto').innerHTML =
+      '<div><h3 class="sub-tit">Productos</h3>' + lista(datos.productos, 'Sin productos anotados.') + '</div>' +
+      '<div><h3 class="sub-tit">Talles</h3>' + lista(datos.talles, 'Sin talles anotados.') + '</div>' +
+      '<div><h3 class="sub-tit">Colores</h3>' + lista(datos.colores, 'Sin colores anotados.') + '</div>';
+  }
+
+  /* ═══ 4. El recorrido, la plata y los locales ══════════════════════════ */
+  function pintarRecorrido() {
+    var a = datos.actual, base0 = Number(a.cargados) || 0;
+    if (!base0) { $('recorrido').innerHTML = '<p class="vacio-cn">Nadie cargado en el período.</p>'; return; }
+    var pasos = [
+      ['Se fueron sin comprar', a.cargados],
+      ['Se los contactó', a.contactados],
+      ['Volvieron a comprar', a.compraron]
+    ];
+    $('recorrido').innerHTML = pasos.map(function (p, i) {
+      return '<div class="paso"><span>' + esc(p[0]) + '</span><b>' + miles(p[1]) + (i ? '<em>' + pct(p[1], base0) + ' %</em>' : '') + '</b>' +
+             '<i><u style="width:' + pct(p[1], base0) + '%"></u></i></div>';
+    }).join('') +
+    '<p class="nota-cn">Los cargados hace pocos días tuvieron menos tiempo para volver: el porcentaje del período en curso sube con los días.</p>';
+  }
+
+  function pintarRecuperado() {
+    var a = datos.actual;
+    if (!Number(a.compraron)) { $('recuperado').innerHTML = '<p class="vacio-cn">En el período todavía nadie volvió a comprar.</p>'; return; }
+    $('recuperado').innerHTML =
+      '<div class="paso plata"><span>Total</span><b>' + plata(a.recuperado) + '</b></div>' +
+      '<div class="dato"><span>En el local</span><b>' + plata(a.rec_local) + '</b></div>' +
+      '<div class="dato"><span>Online</span><b>' + plata(a.rec_online) + '</b></div>' +
+      '<div class="dato"><span>Ticket promedio<small>de los que volvieron</small></span><b>' + plata(Number(a.recuperado) / Number(a.compraron)) + '</b></div>';
+  }
+
+  var COLS_LOC = [
+    ['nombre', 'Local'], ['cargados', 'Se fueron'], ['contactados', 'Contactados'], ['compraron', 'Volvieron'],
+    ['recuperado', 'Recuperado'], ['top', 'Motivo principal']
+  ];
+  function pintarLocales() {
+    var lista0 = (datos.por_local || []).slice(), c = ordenLoc.col;
+    var valor = function (x) { return c === 'nombre' || c === 'top' ? String(x[c] || '') : Number(x[c]) || 0; };
+    lista0.sort(function (x, y) {
+      var a = valor(x), b = valor(y);
+      if (a < b) return ordenLoc.desc ? 1 : -1;
+      if (a > b) return ordenLoc.desc ? -1 : 1;
+      return String(x.nombre).localeCompare(y.nombre);
+    });
+    /* Los locales sin nada van juntos en un renglón: al arrancar son casi
+       todos, y catorce filas de ceros tapan las que dicen algo. */
+    var vacio = function (l) { return !Number(l.cargados); };
+    var ceros = lista0.filter(vacio);
+    if (!verCeros && ceros.length > 1) { lista0 = lista0.filter(function (l) { return !vacio(l); }); }
+    var sl = datos.sin_local || {};
+    if (Number(sl.cargados)) { lista0.push(Object.assign({ sinlocal: true }, sl)); }
+    var celda = function (n, txt) { return '<td' + (Number(n) ? '' : ' class="cero"') + '>' + txt + '</td>'; };
+    var conPct = function (n, de) { return miles(n) + (Number(de) ? '<small>' + pct(n, de) + ' %</small>' : ''); };
+    var a = datos.actual;
+    $('locales').innerHTML = '<table class="tabla"><thead><tr>' + COLS_LOC.map(function (k) {
+        return '<th' + (ordenLoc.col === k[0] ? ' aria-sort="' + (ordenLoc.desc ? 'descending' : 'ascending') + '"' : '') + (k[0] === 'top' ? ' style="text-align:left"' : '') + '>' +
+               '<button type="button" data-orden="' + k[0] + '">' + esc(k[1]) + (ordenLoc.col === k[0] ? (ordenLoc.desc ? ' ↓' : ' ↑') : '') + '</button></th>';
+      }).join('') + '</tr></thead><tbody>' +
+      lista0.map(function (l) {
+        return '<tr class="' + (l.sinlocal ? 'sinlocal' : '') + (l.local === estado.local ? ' sel' : '') + '" data-local="' + esc(l.local) + '" style="cursor:pointer">' +
+          '<td>' + esc(l.nombre) + '</td>' +
+          celda(l.cargados, miles(l.cargados)) + celda(l.contactados, conPct(l.contactados, l.cargados)) +
+          celda(l.compraron, conPct(l.compraron, l.cargados)) + celda(l.recuperado, plata(l.recuperado)) +
+          '<td class="izq' + (l.top ? '' : ' cero') + '">' + esc(l.top || '—') + '</td></tr>';
+      }).join('') +
+      (ceros.length > 1 ? '<tr><td colspan="6" style="font-weight:500;color:var(--txt-2)">' +
+        (verCeros ? '' : ceros.length + ' locales sin nada cargado en el período. ') +
+        '<button type="button" class="link-bot" id="verCeros">' + (verCeros ? 'Ocultar los que están en cero' : 'Mostrarlos') + '</button></td></tr>' : '') +
+      (estado.local ? '' :
+        '<tr class="total"><td>Total</td><td>' + miles(a.cargados) + '</td><td>' + conPct(a.contactados, a.cargados) + '</td>' +
+        '<td>' + conPct(a.compraron, a.cargados) + '</td><td>' + plata(a.recuperado) + '</td><td class="izq"></td></tr>') +
+      '</tbody></table>' +
+      (Number(sl.cargados) ? '<p class="nota-cn"><b>Sin local</b>: registros cargados con un local que no es ninguno de los 14 (un local que cerró, un error de tipeo).</p>' : '');
+    if ($('verCeros')) { $('verCeros').onclick = function (e) { e.stopPropagation(); verCeros = !verCeros; pintarLocales(); }; }
+  }
+
+  /* ═══ 5. Evolución ═════════════════════════════════════════════════════ */
+  function anchoDe(el) { return Math.max(280, Math.round((el && el.clientWidth) || 600)); }
+
+  function graficoLinea(el, puntos, alto, etiquetaX, formato) {
+    var W = anchoDe(el), H = alto, izq = 44, der = 12, arr = 14, aba = 26;
+    var max = Math.max.apply(null, puntos.map(function (p) { return p.v; }).concat([1]));
+    var n = puntos.length;
+    var x = function (i) { return izq + (n > 1 ? i * (W - izq - der) / (n - 1) : (W - izq - der) / 2); };
+    var y = function (v) { return arr + (H - arr - aba) * (1 - v / max); };
+    var camino = puntos.map(function (p, i) { return (i ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(p.v).toFixed(1); }).join(' ');
+    var area = camino + ' L' + x(n - 1).toFixed(1) + ' ' + y(0) + ' L' + x(0).toFixed(1) + ' ' + y(0) + ' Z';
+    var guias = [0, .5, 1].map(function (f) {
+      var v = max * f;
+      return '<line class="eje" x1="' + izq + '" x2="' + (W - der) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
+             '<text x="' + (izq - 8) + '" y="' + (y(v) + 4).toFixed(1) + '" text-anchor="end">' + esc(formato(v)) + '</text>';
+    }).join('');
+    var paso = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((W - izq) / 90))));
+    var marcas = puntos.map(function (p, i) {
+      var toca = i === n - 1 || (i % paso === 0 && (n - 1 - i) >= paso * .6);
+      return toca ? '<text x="' + x(i).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="' + (i === n - 1 ? 'end' : i === 0 ? 'start' : 'middle') + '">' + esc(etiquetaX(p)) + '</text>' : '';
+    }).join('');
+    var pico = 0; puntos.forEach(function (p, i) { if (p.v > puntos[pico].v) pico = i; });
+    return '<svg class="graf" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Evolución en el período">' +
+      guias + '<path class="area" d="' + area + '"/><path class="linea" d="' + camino + '"/>' +
+      (puntos[pico] && puntos[pico].v ? '<circle class="punto" cx="' + x(pico).toFixed(1) + '" cy="' + y(puntos[pico].v).toFixed(1) + '" r="4"/>' : '') +
+      marcas + '</svg>';
+  }
+
+  function graficoBarras(el, items, alto) {
+    var W = anchoDe(el), H = alto, izq = 4, der = 4, arr = 10, aba = 24;
+    var max = Math.max.apply(null, items.map(function (p) { return p.v; }).concat([0.0001]));
+    var n = items.length, ancho = (W - izq - der) / n, hueco = Math.min(ancho * .3, 14);
+    var y = function (v) { return arr + (H - arr - aba) * (1 - v / max); };
+    var pico = -1, pv = 0; items.forEach(function (p, i) { if (p.v > pv) { pv = p.v; pico = i; } });
+    var paso = Math.max(1, Math.ceil(n / Math.max(4, Math.floor(W / 50))));
+    return '<svg class="graf" width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + ' ' + H + '" role="img">' +
+      '<line class="eje" x1="' + izq + '" x2="' + (W - der) + '" y1="' + y(0) + '" y2="' + y(0) + '"/>' +
+      items.map(function (p, i) {
+        var bx = izq + i * ancho + hueco / 2, bw = ancho - hueco, by = y(p.v);
+        return (p.v ? '<rect class="barra' + (i === pico ? ' pico' : '') + '" x="' + bx.toFixed(1) + '" y="' + by.toFixed(1) + '" width="' + bw.toFixed(1) +
+                      '" height="' + Math.max(0, y(0) - by).toFixed(1) + '" rx="3"><title>' + esc(p.l + ': ' + p.vt) + '</title></rect>' : '') +
+               ((i % paso === 0) ? '<text x="' + (bx + bw / 2).toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle">' + esc(p.l) + '</text>' : '');
+      }).join('') + '</svg>';
+  }
+
+  function pintarDias() {
+    var d = datos.por_dia || [], escala = datos.periodo.escala, pd = pocosDatos();
+    $('interruptor').hidden = pd.pocos;
+    if (pd.pocos) {
+      var conAlgo = d.filter(function (p) { return Number(p.cargados) > 0; });
+      $('diasSub').textContent = 'Todavía no hay suficientes registros para ver una tendencia.';
+      $('dias').innerHTML = conAlgo.length
+        ? conAlgo.slice(-10).reverse().map(function (p) {
+            return '<div class="dato"><span>' + esc((escala === 'week' ? 'Semana del ' : '') + fechaLarga(p.f)) + '</span>' +
+                   '<b>' + unoVarios(p.cargados, 'se fue', 'se fueron') + (Number(p.compraron) ? ' · ' + unoVarios(p.compraron, 'volvió', 'volvieron') : '') + '</b></div>';
+          }).join('') + (conAlgo.length > 10 ? '<p class="nota-cn">Y ' + (conAlgo.length - 10) + ' días más.</p>' : '')
+        : '<p class="vacio-cn">No se cargó a nadie en el período.</p>';
+      return;
+    }
+    $('diasSub').textContent = (escala === 'day' ? 'Día por día' : escala === 'week' ? 'Semana por semana' : 'Mes por mes') +
+      (verCompraron ? ': de los que se fueron ese día, cuántos volvieron.' : ': cuántos se fueron sin comprar.');
+    var campo = verCompraron ? 'compraron' : 'cargados';
+    var puntos = d.map(function (p) { return { f: p.f, v: Number(p[campo]) }; });
+    var etiqueta = escala === 'month' ? function (p) { return deIso(p.f).toLocaleDateString('es-AR', { month: 'short' }); } : function (p) { return fechaCorta(p.f); };
+    var pico = d.reduce(function (m, p) { return Number(p[campo]) > Number(m[campo]) ? p : m; }, d[0]);
+    $('dias').innerHTML = graficoLinea($('dias'), puntos, 200, etiqueta, function (v) { return coma(v); }) +
+      '<div class="graf-pie"><span>El pico: ' + (escala === 'week' ? 'la semana del ' : '') + fechaLarga(pico.f) + ', ' + miles(pico[campo]) +
+      '</span><span>' + unoVarios(datos.actual.cargados, 'se fue', 'se fueron') + ' · ' + unoVarios(datos.actual.compraron, 'volvió', 'volvieron') + '</span></div>';
+  }
+
+  /* ═══ 6. El detalle ════════════════════════════════════════════════════
+     Los gráficos de adentro se dibujan al abrirlo: cerrado no tiene ancho. */
+  function pintarGraficosDetalle() {
+    var pd = pocosDatos();
+    var faltan = '<p class="vacio-cn">Todavía no hay suficientes registros para este gráfico (' + unoVarios(datos.actual.cargados, 'registro', 'registros') + ' en el período).</p>';
+    if (pd.pocos) { $('semana').innerHTML = faltan; $('hora').innerHTML = faltan; return; }
+    var DIAS = ['', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+    var sem = (datos.por_semana || []).map(function (s) {
+      var v = s.veces ? s.cargados / s.veces : 0;
+      return { l: DIAS[s.d], v: v, vt: coma(v) + ' por día' };
+    });
+    var ps = sem.reduce(function (m, x) { return x.v > m.v ? x : m; }, sem[0]);
+    $('semana').innerHTML = graficoBarras($('semana'), sem, 170) + '<div class="graf-pie"><span>El que más: ' + esc(ps.l) + ', ' + esc(ps.vt) + '</span></div>';
+
+    var todas = datos.por_hora || [], desde = 9, hasta = 21;
+    todas.forEach(function (h) { if (h.cargados && h.h < desde) desde = h.h; if (h.cargados && h.h > hasta) hasta = h.h; });
+    var hs = todas.filter(function (h) { return h.h >= desde && h.h <= hasta; }).map(function (h) { return { l: String(h.h), v: h.cargados, vt: unoVarios(h.cargados, 'cliente', 'clientes') }; });
+    var ph = hs.reduce(function (m, x) { return x.v > m.v ? x : m; }, hs[0]);
+    $('hora').innerHTML = graficoBarras($('hora'), hs, 170) + '<div class="graf-pie"><span>La hora que más: de ' + ph.l + ' a ' + (Number(ph.l) + 1) + ' h</span></div>';
+  }
+
+  function pintarVendedores() {
+    var l = datos.vendedores || [];
+    if (!l.length) { $('vendedores').innerHTML = '<p class="vacio-cn">En el período nadie cargó clientes.</p>'; return; }
+    $('vendedores').innerHTML = '<table class="tabla"><thead><tr><th>Vendedor</th><th>Cargó</th><th>Con producto</th><th>Contactados</th><th>Volvieron</th><th>Recuperado</th></tr></thead><tbody>' +
+      l.map(function (v) {
+        return '<tr><td>' + esc(v.vendedor) + '</td><td>' + miles(v.cargados) + '</td>' +
+               '<td>' + miles(v.con_producto) + '<small>' + pct(v.con_producto, v.cargados) + ' %</small></td>' +
+               '<td>' + miles(v.contactados) + '</td>' +
+               '<td' + (v.compraron ? '' : ' class="cero"') + '>' + miles(v.compraron) + '</td>' +
+               '<td' + (Number(v.recuperado) ? '' : ' class="cero"') + '>' + plata(v.recuperado) + '</td></tr>';
+      }).join('') + '</tbody></table>';
+  }
+
+  /* ═══ Los controles ════════════════════════════════════════════════════ */
+  (function () {
+    iniciarTema();
+    $('periodos').onclick = function (e) {
+      var b = e.target.closest('[data-p]'); if (!b) { return; }
+      estado.periodo = b.dataset.p; guardar(K_PERIODO, estado.periodo);
+      pintarPeriodos();
+      if (estado.periodo !== 'elegir') { cargar(); } else { $('fDesde').focus(); }
+    };
+    $('fAplicar').onclick = function () {
+      if (!$('fDesde').value || !$('fHasta').value) { avisar('err', 'Elegí las dos fechas.'); return; }
+      estado.desde = $('fDesde').value; estado.hasta = $('fHasta').value; cargar();
+    };
+    $('selLocal').onchange = function () { estado.local = $('selLocal').value; guardar(K_LOCAL, estado.local); cargar(); };
+    $('motivos').onclick = function (e) {
+      var b = e.target.closest('[data-motivo]'); if (!b) { return; }
+      estado.motivo = estado.motivo.toLowerCase() === b.dataset.motivo.toLowerCase() ? '' : b.dataset.motivo;
+      cargar().then(function () { if (estado.motivo) { $('cajaFalto').scrollIntoView({ behavior: 'smooth', block: 'start' }); } });
+    };
+    $('locales').onclick = function (e) {
+      var o = e.target.closest('[data-orden]');
+      if (o) {
+        var c = o.dataset.orden;
+        ordenLoc = { col: c, desc: ordenLoc.col === c ? !ordenLoc.desc : (c !== 'nombre' && c !== 'top') };
+        pintarLocales(); return;
+      }
+      var f = e.target.closest('tr[data-local]');
+      if (f && f.dataset.local) {
+        estado.local = estado.local === f.dataset.local ? '' : f.dataset.local;
+        guardar(K_LOCAL, estado.local); cargar();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+    $('verCargados').onclick = function () { verCompraron = false; $('verCargados').setAttribute('aria-pressed', 'true'); $('verCompraron').setAttribute('aria-pressed', 'false'); pintarDias(); };
+    $('verCompraron').onclick = function () { verCompraron = true; $('verCompraron').setAttribute('aria-pressed', 'true'); $('verCargados').setAttribute('aria-pressed', 'false'); pintarDias(); };
+    $('detalle').addEventListener('toggle', function () { if ($('detalle').open && datos) { pintarGraficosDetalle(); } });
+    var espera;
+    window.addEventListener('resize', function () {
+      clearTimeout(espera);
+      espera = setTimeout(function () { if (datos) { pintarDias(); if ($('detalle').open) { pintarGraficosDetalle(); } } }, 200);
+    });
+    $('btnRefrescar').onclick = cargar;
+    pintarPeriodos();
+    cargar();
+    iniciarPWA();
+  })();
+</script>
+</body>
+</html>

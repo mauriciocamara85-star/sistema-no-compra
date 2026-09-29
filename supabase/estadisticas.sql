@@ -331,3 +331,249 @@ $$;
 
 grant execute on function resumen_motivos(text, text)  to anon, authenticated;
 grant execute on function resumen_resultados(text)     to anon, authenticated;
+
+
+-- ─────────────────────────── ESTADÍSTICAS (correr-en-supabase-30, 29/09/2026) ───────────────────────────
+-- Reemplaza a Motivos y Resultados en la pantalla. Las dos funciones de arriba
+-- quedan: no molestan y una página vieja guardada en un celular las sigue usando.
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH No Compra · ESTADÍSTICAS
+--
+-- Correr entero en el editor SQL de Supabase, después del 29.
+--
+-- Pedido de Mauricio (29/09/2026): que las estadísticas del No Compra se
+-- armen como las del Club. Hasta acá Motivos y Resultados contaban todo
+-- "desde siempre", sin período ni comparación, así que no se podía
+-- contestar "¿este mes recuperamos más que el anterior?".
+--
+-- Una sola función, nc_estadisticas, con período, local y motivo:
+--
+--   · Cuentan los registros CARGADOS en el período, cada uno con lo que
+--     pasó después (si se lo contactó, si compró, cuánto). Es la misma
+--     regla que Resultados: "contactado" = se lo marcó como contactado o
+--     tiene un estado de seguimiento.
+--   · El período anterior del mismo largo, para comparar. Ojo al leerlo:
+--     los cargados hace poco tuvieron menos tiempo para volver.
+--   · Los 14 locales más "Sin local" suman el total.
+--   · "Pendientes" es HOY, no depende del período: los que nadie tocó.
+--
+-- No pide PIN, igual que Motivos y Resultados: son números sin datos de
+-- clientes (el único nombre que aparece es el del vendedor).
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+/* Si un registro entra en el filtro de local. '__SIN__' es "Sin local":
+   vacío, o un nombre que no es ninguno de los 14. */
+create or replace function nc_est_local_ok(p_suc text, p_filtro text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $lo$
+  select case
+    when p_filtro is null then true
+    when p_filtro = '__SIN__' then
+      nullif(trim(coalesce(p_suc, '')), '') is null
+      or not exists (select 1 from locales l where l.activo and lower(trim(l.codigo)) = lower(trim(p_suc)))
+    else lower(trim(coalesce(p_suc, ''))) = lower(p_filtro)
+  end
+$lo$;
+
+revoke all on function nc_est_local_ok(text, text) from public, anon, authenticated;
+
+
+/* Los números de arriba para un rango y un local: se piden para el
+   período, el anterior y cada local. */
+create or replace function nc_est_resumen(t0 timestamptz, t1 timestamptz, loc text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $er$
+  with r as (
+    select *, (contactado or estado is not null) as atendido
+      from registros
+     where creado >= t0 and creado < t1 and nc_est_local_ok(sucursal, loc)
+  )
+  select jsonb_build_object(
+    'cargados',    count(*),
+    'contactados', count(*) filter (where atendido),
+    'compraron',   count(*) filter (where compro),
+    'recuperado',  coalesce(sum(monto) filter (where compro), 0),
+    'rec_local',   coalesce(sum(monto) filter (where compro and compro_canal is distinct from 'online'), 0),
+    'rec_online',  coalesce(sum(monto) filter (where compro and compro_canal = 'online'), 0),
+    'sin_motivo',  count(*) filter (where motivo is null),
+    /* Días entre la carga y el primer contacto, de los que tienen fecha
+       de contacto. Menos es mejor. */
+    'dias_contacto', round(avg(greatest(0, contacto1_fecha - (creado at time zone 'America/Argentina/Buenos_Aires')::date))
+                            filter (where contacto1_fecha is not null), 1),
+    'contacto_casos', count(*) filter (where contacto1_fecha is not null))
+    from r
+$er$;
+
+revoke all on function nc_est_resumen(timestamptz, timestamptz, text) from public, anon, authenticated;
+
+
+create or replace function nc_estadisticas(
+  p_desde date default null, p_hasta date default null,
+  p_local text default null, p_motivo text default null)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $ne$
+declare
+  tz  constant text := 'America/Argentina/Buenos_Aires';
+  hoy date := (now() at time zone tz)::date;
+  d0  date := coalesce(p_desde, hoy - 29);
+  d1  date := coalesce(p_hasta, hoy);
+  aux date;
+  dias integer;
+  loc text := nullif(trim(coalesce(p_local, '')), '');
+  motsel text := nullif(trim(coalesce(p_motivo, '')), '');
+  t0 timestamptz; t1 timestamptz; a0 timestamptz;
+  escala text;
+  r jsonb;
+begin
+  if d1 < d0 then aux := d0; d0 := d1; d1 := aux; end if;
+  if d1 - d0 > 1100 then d0 := d1 - 1100; end if;
+  dias := d1 - d0 + 1;
+  t0 := d0::timestamp at time zone tz;
+  t1 := (d1 + 1)::timestamp at time zone tz;
+  a0 := (d0 - dias)::timestamp at time zone tz;
+  escala := case when dias <= 92 then 'day' when dias <= 400 then 'week' else 'month' end;
+
+  with
+  per as (
+    select *, (contactado or estado is not null) as atendido,
+           (creado at time zone tz) as local_ts, motivo::text as mot
+      from registros
+     where creado >= t0 and creado < t1 and nc_est_local_ok(sucursal, loc)
+  ),
+  /* Lo de "Qué faltó" mira sólo el motivo elegido, si hay uno. */
+  falto as (select * from per where mot is not null and (motsel is null or lower(mot) = lower(motsel))),
+  grafias as (
+    select lower(trim(producto)) as k, trim(producto) as v, count(*) as n, min(id) as primero
+      from falto
+     where nullif(trim(producto), '') is not null
+     group by 1, 2
+  ),
+  prods as (
+    select (array_agg(v order by n desc, primero))[1] as v, sum(n)::int as n from grafias group by k
+  ),
+  talles_sueltos as (
+    select trim(t) as t, f.id
+      from falto f, regexp_split_to_table(coalesce(f.talle, ''), '\s*,\s*|\s+/\s+') as t
+     where nullif(trim(t), '') is not null and length(trim(t)) <= 12
+  ),
+  talles as (
+    select (array_agg(t order by n desc, primero))[1] as v, sum(n)::int as n
+      from (select lower(t) as k, t, count(*) as n, min(id) as primero from talles_sueltos group by 1, 2) x
+     group by k
+  ),
+  colores as (
+    select (array_agg(v order by n desc, primero))[1] as v, sum(n)::int as n
+      from (select lower(trim(color)) as k, trim(color) as v, count(*) as n, min(id) as primero
+              from falto where nullif(trim(color), '') is not null group by 1, 2) x
+     group by k
+  )
+  select jsonb_build_object(
+    'periodo', jsonb_build_object('desde', d0, 'hasta', d1, 'dias', dias,
+                                  'antes_desde', d0 - dias, 'antes_hasta', d0 - 1,
+                                  'local', loc, 'motivo', motsel, 'escala', escala),
+    'actual',   nc_est_resumen(t0, t1, loc),
+    'anterior', nc_est_resumen(a0, t0, loc),
+
+    /* Hoy, no en el período: los que nadie tocó todavía. Tres días es el
+       umbral de "viejo" que ya usaba Resultados. */
+    'pendientes', (
+      select jsonb_build_object(
+        'total', count(*),
+        'viejos', count(*) filter (where creado <= now() - interval '3 days'),
+        'dias', coalesce(max(floor(extract(epoch from now() - creado) / 86400))::int, 0))
+        from registros
+       where not (contactado or estado is not null)
+         and coalesce(estado::text, '') not like 'Cerrado%' and estado is distinct from 'Descartado'
+         and nc_est_local_ok(sucursal, loc)),
+
+    'motivos', (
+      select coalesce(jsonb_agg(jsonb_build_object('v', x.mot, 'n', x.n,
+                                  'pct', round(x.n * 100.0 / nullif(x.tot, 0)),
+                                  'compraron', x.c)
+                                order by x.n desc, x.mot), '[]'::jsonb)
+        from (select mot, count(*) as n, count(*) filter (where compro) as c,
+                     sum(count(*)) over () as tot
+                from per where mot is not null group by mot) x),
+
+    'productos', (select coalesce(jsonb_agg(jsonb_build_object('v', v, 'n', n) order by n desc, v), '[]'::jsonb)
+                    from (select * from prods order by n desc, v limit 12) z),
+    'talles',    (select coalesce(jsonb_agg(jsonb_build_object('v', v, 'n', n) order by n desc, v), '[]'::jsonb)
+                    from (select * from talles order by n desc, v limit 12) z),
+    'colores',   (select coalesce(jsonb_agg(jsonb_build_object('v', v, 'n', n) order by n desc, v), '[]'::jsonb)
+                    from (select * from colores order by n desc, v limit 8) z),
+
+    /* Los 14, siempre todos, con su motivo más repetido. */
+    'por_local', (
+      select coalesce(jsonb_agg(
+               nc_est_resumen(t0, t1, l.codigo) ||
+               jsonb_build_object('local', l.codigo,
+                                  'nombre', coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))),
+                                  'top', (select p.mot from per p
+                                           where lower(trim(p.sucursal)) = lower(trim(l.codigo)) and p.mot is not null
+                                           group by p.mot order by count(*) desc, p.mot limit 1))
+               order by l.codigo), '[]'::jsonb)
+        from locales l where l.activo),
+    'sin_local', nc_est_resumen(t0, t1, '__SIN__') ||
+                 jsonb_build_object('local', '__SIN__', 'nombre', 'Sin local'),
+
+    'por_dia', (
+      select coalesce(jsonb_agg(jsonb_build_object('f', s.f, 'cargados', coalesce(x.n, 0),
+                                                   'compraron', coalesce(x.c, 0)) order by s.f), '[]'::jsonb)
+        from (select distinct date_trunc(escala, g)::date as f
+                from generate_series(d0::timestamp, d1::timestamp, interval '1 day') g) s
+        left join (select date_trunc(escala, local_ts)::date as f, count(*) as n, count(*) filter (where compro) as c
+                     from per group by 1) x on x.f = s.f),
+
+    'por_semana', (
+      select jsonb_agg(jsonb_build_object('d', w.d, 'veces', w.veces, 'cargados', coalesce(x.n, 0)) order by w.d)
+        from (select extract(isodow from g)::int as d, count(*) as veces
+                from generate_series(d0::timestamp, d1::timestamp, interval '1 day') g group by 1) w
+        left join (select extract(isodow from local_ts)::int as d, count(*) as n from per group by 1) x on x.d = w.d),
+
+    'por_hora', (
+      select jsonb_agg(jsonb_build_object('h', h.h, 'cargados', coalesce(x.n, 0)) order by h.h)
+        from generate_series(0, 23) h(h)
+        left join (select extract(hour from local_ts)::int as h, count(*) as n from per group by 1) x on x.h = h.h),
+
+    /* Quién carga y a quién le vuelven. Lo que compró se le cuenta al que
+       lo cargó: es el que lo anotó bien para que se lo pudiera llamar. */
+    'vendedores', (
+      select coalesce(jsonb_agg(v order by (v->>'cargados')::int desc, v->>'vendedor'), '[]'::jsonb)
+        from (select jsonb_build_object(
+                       'vendedor', trim(vendedor),
+                       'cargados', count(*),
+                       'contactados', count(*) filter (where atendido),
+                       'compraron', count(*) filter (where compro),
+                       'recuperado', coalesce(sum(monto) filter (where compro), 0),
+                       'con_producto', count(*) filter (where nullif(trim(producto), '') is not null)) as v
+                from per
+               where nullif(trim(vendedor), '') is not null
+               group by trim(vendedor)
+               order by count(*) desc
+               limit 30) z)
+  )
+  into r;
+
+  return r;
+end;
+$ne$;
+
+revoke all on function nc_estadisticas(date, date, text, text) from public;
+grant execute on function nc_estadisticas(date, date, text, text) to anon, authenticated;
+
+
+select (nc_estadisticas()->'actual'->>'cargados') as "Cargados en los últimos 30 días";

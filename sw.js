@@ -14,14 +14,14 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v52';
+const CACHE = 'no-compra-v53';
 
 const BASICOS = [
   './',
   './index.html',
   './panel.html',
-  './motivos.html',
-  './resultados.html',
+  './estadisticas.html',
+  './caja.html',
   './club-numeros.html',
   './config.html',
   './estilos.css',

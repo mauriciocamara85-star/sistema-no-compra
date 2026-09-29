@@ -469,6 +469,17 @@ var base = {
     return funcion('resumen_resultados', { p_local: local || '' });
   },
 
+  /**
+   * Las Estadísticas del No Compra (SQL 30): todo el tablero de un período,
+   * un local (vacío = todos) y, si viene, un motivo que filtra "Qué faltó".
+   * Fechas como '2026-09-28'; null = los últimos 30 días.
+   */
+  estadisticas: function (desde, hasta, local, motivo) {
+    return funcion('nc_estadisticas', {
+      p_desde: desde || null, p_hasta: hasta || null, p_local: local || null, p_motivo: motivo || null
+    });
+  },
+
   /* ── Los beneficios ───────────────────────────────────────────────────
      Reemplazan a la planilla "VDH cupones". Son DOS cosas distintas y por
      eso hay dos llaves:

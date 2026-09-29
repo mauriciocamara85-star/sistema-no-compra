@@ -1222,3 +1222,21 @@ select {
   .btn { font-size: 16.5px; min-height: 52px; }
   .btn-chico { font-size: 14px; }
 }
+
+
+/* ── Las pastillas de una sección con dos caras ──────────────────────────
+   El Club tiene dos: Cobrar (la caja) y Estadísticas. Son dos páginas, pero
+   se ven como una sola sección con una pastilla arriba para pasar de una a
+   la otra. La elegida se ve apretada, no sólo de otro color. */
+.pestanas {
+  display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 16px;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: 99px;
+}
+.pestana {
+  padding: 9px 20px; border-radius: 99px; text-decoration: none;
+  font: 700 14.5px/1 var(--sans); color: var(--txt-2);
+  transition: background .15s var(--curva), color .15s var(--curva);
+}
+.pestana:hover { color: var(--txt); }
+.pestana:focus-visible { outline: 2px solid var(--txt); outline-offset: 2px; }
+.pestana[aria-current="page"] { background: var(--surface); color: var(--txt); box-shadow: var(--sombra); }
