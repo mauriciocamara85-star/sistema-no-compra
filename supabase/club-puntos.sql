@@ -7551,3 +7551,146 @@ $function$;
 -- Los socios que ya estaban: las misiones que ya cumplieron.
 select coalesce(sum(club_misiones_revisar(id)), 0) as "Misiones dadas a los que ya estaban"
   from club_clientes where baja is null;
+
+
+-- ─────────────────────────── PARTE 34 ───────────────────────────
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LA HISTORIA DE MOVIMIENTOS EN LA TARJETA
+--
+-- Correr en el editor SQL de Supabase, después del 33.
+--
+-- Pedido de Mauricio (29/09/2026), como la app de King Of The Kongo:
+-- "Movimientos" abre una pantalla con tres solapas —Misiones, Movimientos y
+-- Canjes—. Para que Movimientos y Canjes muestren la historia, la tarjeta
+-- trae los últimos 60 movimientos en vez de 8. Nada más cambia.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_tarjeta(p_codigo text)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with c as (
+    select * from v_club_clientes
+     where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and baja is null
+  )
+  select case when not exists (select 1 from c) then jsonb_build_object('hay', false)
+    else (
+      select jsonb_build_object(
+        'hay', true,
+        'codigo', c.codigo,
+        'nombre', c.nombre,
+        'puntos', c.puntos,
+        'xp', c.xp,
+        'compras', c.compras,
+        'confirmado', c.confirmado,
+        'desde', c.creado,
+        'ultima_compra', c.ultima_compra,
+
+        'hoy', club_factor(c.id),
+        'cumple', club_regalo_cumple(c.id),
+        /* La última compra de los últimos 7 días en un local con enlace de
+           reseñas: la tarjeta muestra "¿Qué tal tu compra en Flores?". */
+        'resena', (select jsonb_build_object(
+                      'local', l.codigo,
+                      'nombre', coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))),
+                      'url', l.resena_url,
+                      'cuando', m.creado)
+                     from club_movimientos m
+                     join locales l on upper(trim(l.codigo)) = upper(trim(m.local))
+                    where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null
+                      and m.creado > now() - interval '7 days'
+                      and l.resena_url is not null
+                    order by m.creado desc limit 1),
+
+        'nivel', jsonb_build_object(
+          'nombre', c.nivel,
+          'multiplica', c.multiplica,
+          /* Lo que da este nivel y lo que da el siguiente, para que la
+             tarjeta pueda decirlo: si el cliente no sabe qué le da Oro,
+             Oro no es algo que quiera. */
+          'regalo_cumple', (select case when g.tipo = 'descuento'
+                                        then g.porcentaje || '% de descuento en tu compra'
+                                        else g.producto end
+                              from club_regalos_cumple g where g.nivel = c.nivel),
+          'sigue_multiplica', (select nv.multiplica from club_niveles nv
+                                where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue_bono', (select nv.bono from club_niveles nv
+                          where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue', (select nv.nombre from club_niveles nv
+                     where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'falta_xp', (select nv.desde_xp - c.xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'desde_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp <= c.xp order by nv.desde_xp desc limit 1),
+          'hasta_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1)),
+
+        'premios', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle,
+                   'puntos', p.puntos, 'valor', p.valor, 'imagen', p.imagen,
+                   'agotado', u.agotado,
+                   'alcanzado', c.puntos >= p.puntos and not u.agotado,
+                   'falta', greatest(p.puntos - c.puntos, 0))
+                 order by p.orden, p.puntos)
+            from club_premios p
+            cross join lateral (
+              select (p.limite_anual is not null and count(*) >= p.limite_anual) as agotado
+                from club_movimientos m
+               where m.cliente = c.id and m.tipo = 'canje' and m.premio = p.id
+                 and m.anulado is null and m.creado > now() - interval '12 months'
+            ) u
+           where p.activo), '[]'::jsonb),
+
+        /* La novedad de Inicio, si está prendida. */
+        'novedad', (select jsonb_build_object('bajada', n.bajada, 'titulo', n.titulo,
+                                              'imagen', n.imagen, 'enlace', n.enlace)
+                      from club_novedad n where n.id = 1 and n.activa),
+
+        /* Los locales que tienen enlace de reseñas, para elegir en Inicio. */
+        'resenas_locales', coalesce((
+          select jsonb_agg(jsonb_build_object('local', l.codigo, 'url', l.resena_url) order by l.codigo)
+            from locales l
+           where l.resena_url is not null and club_resena_url_ok(l.resena_url)), '[]'::jsonb),
+
+        /* ── La tarjeta de Inicio (SQL 33) ── */
+        /* Cuándo vencen sus puntos si no vuelve a comprar: la misma cuenta
+           que club_vencer (12 meses desde la última compra, o desde el alta
+           si nunca compró). Sin puntos, no hay nada que venza. */
+        'vence_puntos', (select case when c.puntos > 0 and nullif(r.valor, '')::integer > 0
+                                     then ((coalesce(c.ultima_compra, c.creado) + (r.valor || ' months')::interval)
+                                           at time zone 'America/Argentina/Buenos_Aires')::date end
+                           from club_reglas r where r.clave = 'vence_meses'),
+        /* Los tres niveles, para la pantalla de Niveles. */
+        'niveles', (select jsonb_agg(jsonb_build_object(
+                             'nombre', nv.nombre, 'desde_xp', nv.desde_xp, 'multiplica', nv.multiplica, 'bono', nv.bono,
+                             'regalo_cumple', (select case when g.tipo = 'descuento'
+                                                           then g.porcentaje || '% de descuento en tu compra'
+                                                           else g.producto end
+                                                 from club_regalos_cumple g where g.nivel = nv.nombre))
+                           order by nv.desde_xp)
+                      from club_niveles nv),
+        'misiones', club_misiones_de(c.id),
+        'cupones', club_cupones_de(c.id),
+
+        'ultimas', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'cuando', m.creado, 'local', m.local, 'puntos', m.puntos,
+                   'tipo', m.tipo, 'concepto', m.concepto, 'obs', m.obs)
+                 order by m.creado desc)
+            from (select creado, local, puntos, tipo, concepto, obs
+                    from club_movimientos
+                   where cliente = c.id and anulado is null
+                   /* 60 y no 8 (SQL 34): la pantalla de Movimientos, con sus
+                      solapas de Movimientos y Canjes, muestra la historia y
+                      no sólo lo último. */
+                   order by creado desc limit 60) m), '[]'::jsonb)
+      ) from c
+    ) end
+$function$;
+
+select 'Listo: la tarjeta trae hasta 60 movimientos.' as "SQL 34";
