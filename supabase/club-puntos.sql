@@ -5556,3 +5556,684 @@ revoke all on function club_mis_datos_guardar(text, text, text, text, date, bool
 grant execute on function club_mis_datos_guardar(text, text, text, text, date, boolean) to anon, authenticated;
 
 select nombre, nombres, apellido from club_clientes where baja is null order by id;
+
+
+-- ─────────────────────────── PARTE 27 ───────────────────────────
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · PUNTOS POR LAS COMPRAS DE LA TIENDA ONLINE
+--
+-- Correr entero en el editor SQL de Supabase, después del 26.
+--
+-- Pedido de Mauricio (29/09/2026): si un socio compra en vdh.com.ar, suma
+-- puntos igual que en el local. Las reglas, acordadas con él:
+--
+--   · Se lo reconoce por el teléfono (los últimos 10 números) o por el mail
+--     del pedido. Tiene que dar UN solo socio: si da dos, no se adivina.
+--   · Suma lo pagado menos el envío, con el multiplicador de su nivel y los
+--     puntos extra que corrían A LA HORA DEL PAGO (no a la de la lectura).
+--   · Le llega el aviso "Sumaste X puntos por tu compra online".
+--   · Si el pedido se cancela o se devuelve, la compra se anula. El saldo
+--     puede quedar negativo (decidido: si no, cancelar después de canjear
+--     sería una forma de llevarse un premio gratis).
+--   · Cuentan los pedidos pagados desde que se corre esto, no los de antes.
+--   · En las estadísticas es un local más: "Tienda online".
+--
+-- Quién lee la tienda: el GitHub Action de cada hora (vdh-respaldos), con
+-- la llave de Tienda Nube en sus Secrets. Todo lo de acá es interno: la
+-- página del cliente no puede llamar a nada de esto.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 1 · DÓNDE QUEDA ANOTADO
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Una sola fila: desde cuándo cuentan los pedidos, hasta dónde se leyó y
+   cuándo fue la última lectura. */
+create table if not exists club_tienda_estado (
+  id        smallint primary key default 1 check (id = 1),
+  desde     timestamptz not null,
+  visto     timestamptz,
+  corrio    timestamptz,
+  resultado jsonb
+);
+insert into club_tienda_estado (id, desde) values (1, now()) on conflict (id) do nothing;
+alter table club_tienda_estado enable row level security;
+revoke all on club_tienda_estado from anon, authenticated;
+
+/* Cada pedido que ya se decidió, con qué se decidió. Es lo que impide que
+   uno sume dos veces aunque la tienda lo mande veinte. Del pedido se guarda
+   el número y nada más: ni el mail ni el teléfono de quien no es socio. */
+create table if not exists club_tienda_pedidos (
+  pedido     bigint primary key,
+  numero     text not null,
+  /* sumado · anulado · cancelado · sin_socio · varios_socios · anterior ·
+     sin_monto · otra_moneda */
+  estado     text not null,
+  cliente    bigint references club_clientes(id) on delete set null,
+  movimiento bigint references club_movimientos(id) on delete set null,
+  importe    numeric,
+  puntos     integer,
+  pagado     timestamptz,
+  por        text,
+  creado     timestamptz not null default now(),
+  cambiado   timestamptz not null default now()
+);
+alter table club_tienda_pedidos enable row level security;
+revoke all on club_tienda_pedidos from anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 2 · EL MULTIPLICADOR A UNA HORA DADA
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* club_factor pero a la hora que se diga. Un pedido pagado el martes de
+   puntos dobles a las 23:50 se lee a la 0:07 del miércoles: tiene que
+   sumar doble igual. club_factor queda como esto mismo a la hora de ahora,
+   así la cuenta está escrita una sola vez. */
+create or replace function club_factor_en(p_cliente bigint, p_t timestamp with time zone)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  hoy       date := (p_t at time zone 'America/Argentina/Buenos_Aires')::date;
+  c         record;
+  cm        numeric;
+  antes     integer;
+  fin       date;
+  pr        record;
+  extra     numeric := 1;
+  motivo    text;
+  hasta     date;
+  hora_fin  time;
+  de_cumple boolean := false;
+begin
+  select v.multiplica, v.cumple into c from v_club_clientes v where v.id = p_cliente;
+  select nullif(valor, '')::numeric into cm    from club_reglas where clave = 'cumple_multiplica';
+  select nullif(valor, '')::integer into antes from club_reglas where clave = 'cumple_antes';
+
+  if c.cumple is not null and coalesce(cm, 1) > 1 then
+    fin := club_cumple_fin(c.cumple, hoy, coalesce(antes, 7));
+    if fin is not null then
+      extra := cm; motivo := 'Tu semana de cumple'; hasta := fin; de_cumple := true;
+    end if;
+  end if;
+
+  select m.nombre, m.factor, m.hora_hasta,
+         (m.hasta at time zone 'America/Argentina/Buenos_Aires')::date - 1 as ultimo
+    into pr
+    from club_multiplicadores m
+   where club_multi_vale(m, p_t)
+   order by m.factor desc, m.hasta desc
+   limit 1;
+
+  if pr.factor is not null and pr.factor > extra then
+    extra := pr.factor; motivo := pr.nombre; hasta := pr.ultimo; de_cumple := false;
+    /* Una hora feliz termina hoy a esa hora, no el último día del rango:
+       "hasta las 20 h" es lo que el cliente necesita saber. */
+    hora_fin := pr.hora_hasta;
+  end if;
+
+  return jsonb_build_object(
+    'total',  round(coalesce(c.multiplica, 1) * extra, 2),
+    'nivel',  coalesce(c.multiplica, 1),
+    'extra',  extra,
+    'motivo', motivo,
+    'hasta',  hasta,
+    'hora_hasta', case when hora_fin is null then null
+                       when extract(minute from hora_fin) = 0 then to_char(hora_fin, 'FMHH24')
+                       else to_char(hora_fin, 'FMHH24:MI') end,
+    'cumple', de_cumple,
+    'es_cumple', c.cumple is not null
+                 and club_cumple_en(c.cumple, extract(year from hoy)::int) = hoy);
+end;
+$function$;
+
+revoke all on function club_factor_en(bigint, timestamptz) from public, anon, authenticated;
+
+create or replace function club_factor(p_cliente bigint)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $cf$
+  select club_factor_en(p_cliente, now())
+$cf$;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 3 · UN PEDIDO
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* "+54 9 11 2345-6789", "011 2345 6789" y "11 2345 6789" son el mismo
+   teléfono: los últimos 10 números. Con menos de 10 no se compara. */
+create or replace function club_tel10(p text)
+returns text
+language sql
+immutable
+as $t10$
+  select case when length(d) >= 10 then right(d, 10) end
+    from (select regexp_replace(coalesce(p, ''), '[^0-9]', '', 'g') as d) x
+$t10$;
+
+create or replace function club_tienda_anotar(p_pedido bigint, p_numero text, p_estado text, p_pagado timestamptz)
+returns void
+language sql
+security definer
+set search_path = public
+as $ta$
+  insert into club_tienda_pedidos (pedido, numero, estado, pagado)
+  values (p_pedido, p_numero, p_estado, p_pagado)
+  on conflict (pedido) do update
+    set estado = excluded.estado, pagado = excluded.pagado, cambiado = now()
+$ta$;
+
+revoke all on function club_tel10(text) from public, anon, authenticated;
+revoke all on function club_tienda_anotar(bigint, text, text, timestamptz) from public, anon, authenticated;
+
+
+/* Recibe un pedido tal como lo arma el Action y decide. Se puede llamar
+   las veces que sea con el mismo pedido: la segunda no hace nada.
+
+   Lo que espera: id, numero, pago (payment_status), estado (status),
+   pagado (paid_at), total, envio (shipping_cost_customer), moneda,
+   telefonos [..], mails [..]. */
+create or replace function club_tienda_pedido(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $tp$
+declare
+  pid    bigint := nullif(p->>'id', '')::bigint;
+  num    text   := coalesce(nullif(trim(p->>'numero'), ''), p->>'id');
+  pago   text   := lower(coalesce(p->>'pago', ''));
+  est    text   := lower(coalesce(p->>'estado', ''));
+  pag    timestamptz := nullif(p->>'pagado', '')::timestamptz;
+  desde  timestamptz;
+  ya     club_tienda_pedidos%rowtype;
+  base   numeric;
+  tels   text[];
+  mails  text[];
+  cands  bigint[];
+  cli    bigint;
+  por    text;
+  porpto numeric;
+  f      jsonb;
+  gana   integer;
+  mid    bigint;
+begin
+  if pid is null then raise exception 'Un pedido sin id.'; end if;
+
+  /* Dos corridas a la vez con el mismo pedido: la segunda espera a la
+     primera, y cuando entra ya lo encuentra decidido. */
+  perform pg_advisory_xact_lock(hashtext('club_tienda'), hashtext(pid::text));
+
+  select * into ya from club_tienda_pedidos where pedido = pid;
+
+  /* ── Se cayó: cancelado, devuelto o desconocido por la tarjeta ── */
+  if est = 'cancelled' or pago in ('voided', 'refunded', 'chargeback') then
+    if ya.estado = 'sumado' then
+      update club_movimientos
+         set anulado = now(), anulado_por = 'Tienda online',
+             motivo_anul = 'Pedido #' || num || case when est = 'cancelled' then ' cancelado' else ' devuelto' end ||
+                           ' en la tienda online'
+       where id = ya.movimiento and anulado is null;
+      update club_tienda_pedidos set estado = 'anulado', cambiado = now() where pedido = pid;
+      /* La compra desaparece de su tarjeta y el saldo baja: sin un aviso,
+         parece que le sacamos puntos porque sí. */
+      if coalesce(ya.puntos, 0) > 0
+         and exists (select 1 from club_suscripciones su where su.cliente = ya.cliente and su.muerto is null) then
+        insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+        values (ya.cliente, 'tienda_anulada', num,
+                'Se canceló tu pedido #' || num,
+                'Descontamos los ' || replace(to_char(ya.puntos, 'FM999,999,999'), ',', '.') ||
+                ' puntos que había sumado.',
+                'tarjeta.html', now())
+        on conflict (cliente, motivo, clave) do nothing;
+      end if;
+      return jsonb_build_object('pedido', num, 'hizo', 'anulado', 'puntos', -coalesce(ya.puntos, 0));
+    end if;
+    if ya.pedido is not null and ya.estado <> 'anulado' then
+      update club_tienda_pedidos set estado = 'cancelado', cambiado = now() where pedido = pid;
+    end if;
+    return jsonb_build_object('pedido', num, 'hizo', 'nada', 'porque', 'cancelado');
+  end if;
+
+  /* Ya decidido para siempre. Lo que NO está acá (sin_socio, varios_socios)
+     se vuelve a mirar: si el cliente se anota después de comprar, el pedido
+     que vuelva a aparecer ya lo encuentra. */
+  if ya.estado in ('sumado', 'anulado', 'cancelado', 'anterior', 'sin_monto', 'otra_moneda') then
+    return jsonb_build_object('pedido', num, 'hizo', 'nada', 'porque', 'ya estaba: ' || ya.estado);
+  end if;
+
+  /* Pendiente, autorizado, abandonado: todavía no. Cuando se pague, la
+     tienda lo marca como cambiado y vuelve a aparecer. */
+  if pago <> 'paid' then
+    return jsonb_build_object('pedido', num, 'hizo', 'nada', 'porque', 'sin pagar');
+  end if;
+  pag := coalesce(pag, now());
+
+  select t.desde into desde from club_tienda_estado t where t.id = 1;
+  if pag < desde then
+    perform club_tienda_anotar(pid, num, 'anterior', pag);
+    return jsonb_build_object('pedido', num, 'hizo', 'nada', 'porque', 'pagado antes de arrancar');
+  end if;
+  if upper(coalesce(nullif(trim(p->>'moneda'), ''), 'ARS')) <> 'ARS' then
+    perform club_tienda_anotar(pid, num, 'otra_moneda', pag);
+    return jsonb_build_object('pedido', num, 'hizo', 'nada', 'porque', 'otra moneda');
+  end if;
+
+  base := coalesce(nullif(p->>'total', '')::numeric, 0) - coalesce(nullif(p->>'envio', '')::numeric, 0);
+  if base <= 0 then
+    perform club_tienda_anotar(pid, num, 'sin_monto', pag);
+    return jsonb_build_object('pedido', num, 'hizo', 'nada', 'porque', 'sin monto');
+  end if;
+
+  /* ── Quién es ── */
+  select coalesce(array_agg(distinct club_tel10(x)) filter (where club_tel10(x) is not null), '{}')
+    into tels
+    from jsonb_array_elements_text(case when jsonb_typeof(p->'telefonos') = 'array' then p->'telefonos' else '[]'::jsonb end) x;
+  select coalesce(array_agg(distinct lower(trim(x))) filter (where trim(x) ~ '^[^@[:space:]]+@[^@[:space:]]+$'), '{}')
+    into mails
+    from jsonb_array_elements_text(case when jsonb_typeof(p->'mails') = 'array' then p->'mails' else '[]'::jsonb end) x;
+
+  select array_agg(c.id order by c.id) into cands
+    from club_clientes c
+   where c.baja is null
+     and (club_tel10(c.telefono) = any(tels) or lower(trim(c.mail)) = any(mails));
+
+  if coalesce(array_length(cands, 1), 0) = 0 then
+    perform club_tienda_anotar(pid, num, 'sin_socio', pag);
+    return jsonb_build_object('pedido', num, 'hizo', 'nada', 'porque', 'no es socio');
+  end if;
+  /* El teléfono de uno y el mail de otro: no se adivina. */
+  if array_length(cands, 1) > 1 then
+    perform club_tienda_anotar(pid, num, 'varios_socios', pag);
+    return jsonb_build_object('pedido', num, 'hizo', 'nada', 'porque', 'coincide con más de un socio');
+  end if;
+  cli := cands[1];
+
+  select case when club_tel10(c.telefono) = any(tels) and lower(trim(c.mail)) = any(mails) then 'teléfono y mail'
+              when club_tel10(c.telefono) = any(tels) then 'teléfono'
+              else 'mail' end
+    into por
+    from club_clientes c where c.id = cli;
+
+  /* ── Cuánto suma: la misma cuenta que la caja ── */
+  select nullif(valor, '')::numeric into porpto from club_reglas where clave = 'pesos_por_punto';
+  porpto := coalesce(porpto, 100);
+  f := club_factor_en(cli, pag);
+  gana := floor((base / porpto) * (f->>'total')::numeric);
+
+  /* La compra queda con la fecha del PAGO: en las estadísticas es una venta
+     de ese día, aunque se haya leído una hora después. */
+  insert into club_movimientos (cliente, tipo, creado, puntos, local, ticket, importe, concepto, obs)
+  values (cli, 'compra', least(pag, now()), gana, 'TIENDA ONLINE', 'TN-' || num, base, 'tienda_online',
+          case when (f->>'extra')::numeric > 1 then
+            (f->>'motivo') || ' ' || replace(trim_scale((f->>'extra')::numeric)::text, '.', ',') || 'x'
+          end)
+  returning id into mid;
+
+  insert into club_tienda_pedidos (pedido, numero, estado, cliente, movimiento, importe, puntos, pagado, por)
+  values (pid, num, 'sumado', cli, mid, base, gana, pag, por)
+  on conflict (pedido) do update
+    set estado = 'sumado', cliente = excluded.cliente, movimiento = excluded.movimiento,
+        importe = excluded.importe, puntos = excluded.puntos, pagado = excluded.pagado,
+        por = excluded.por, cambiado = now();
+
+  /* El aviso, si tiene los avisos prendidos. Lo manda el mismo Action un
+     momento después. */
+  if gana > 0 and exists (select 1 from club_suscripciones su where su.cliente = cli and su.muerto is null) then
+    insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+    values (cli, 'tienda', num,
+            'Sumaste ' || replace(to_char(gana, 'FM999,999,999'), ',', '.') || ' puntos por tu compra online',
+            'Pedido #' || num || '. Ya están en tu tarjeta.',
+            'tarjeta.html', now())
+    on conflict (cliente, motivo, clave) do nothing;
+  end if;
+
+  return jsonb_build_object('pedido', num, 'hizo', 'sumado', 'puntos', gana, 'por', por);
+end;
+$tp$;
+
+revoke all on function club_tienda_pedido(jsonb) from public, anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 4 · LAS ESTADÍSTICAS: "TIENDA ONLINE" ES UN LOCAL MÁS
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* "Sin local asignado" deja de juntar la tienda: tiene su propia fila, y
+   así la tabla sigue cerrando con el total. */
+create or replace function club_est_local_ok(p_local text, p_filtro text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $lo$
+  select case
+    when p_filtro is null then true
+    when p_filtro = '__SIN__' then
+      (nullif(trim(coalesce(p_local, '')), '') is null
+       or not exists (select 1 from locales l where l.activo and upper(trim(l.codigo)) = upper(trim(p_local))))
+      and upper(trim(coalesce(p_local, ''))) <> 'TIENDA ONLINE'
+    else upper(trim(coalesce(p_local, ''))) = p_filtro
+  end
+$lo$;
+
+revoke all on function club_est_local_ok(text, text) from public, anon, authenticated;
+
+create or replace function club_estadisticas(p_pin text, p_desde date, p_hasta date, p_local text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tz  constant text := 'America/Argentina/Buenos_Aires';
+  hoy date := (now() at time zone tz)::date;
+  d0  date := coalesce(p_desde, hoy - 29);
+  d1  date := coalesce(p_hasta, hoy);
+  aux date;
+  dias integer;
+  loc text := nullif(upper(trim(coalesce(p_local, ''))), '');
+  t0 timestamptz; t1 timestamptz; a0 timestamptz;
+  escala text;
+  costo_punto numeric;
+  r jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  if d1 < d0 then aux := d0; d0 := d1; d1 := aux; end if;
+  /* Tres años como mucho: más que eso no es un período, es la historia. */
+  if d1 - d0 > 1100 then d0 := d1 - 1100; end if;
+  dias := d1 - d0 + 1;
+  t0 := d0::timestamp at time zone tz;
+  t1 := (d1 + 1)::timestamp at time zone tz;
+  a0 := (d0 - dias)::timestamp at time zone tz;      -- el período anterior, del mismo largo
+  /* El gráfico por día: con más de tres meses serían puntos ilegibles. */
+  escala := case when dias <= 92 then 'day' when dias <= 400 then 'week' else 'month' end;
+
+  /* Cuánto cuesta un punto que se canjea, en promedio del catálogo activo:
+     para pasar los puntos que los socios tienen guardados a plata. */
+  select case when sum(puntos) > 0 then sum(costo) / sum(puntos) end
+    into costo_punto
+    from club_premios where activo and costo is not null and puntos > 0;
+
+  with
+  mov as (
+    select m.*, (m.creado at time zone tz) as local_ts
+      from club_movimientos m
+     where m.anulado is null and m.creado >= t0 and m.creado < t1
+       and club_est_local_ok(m.local, loc)
+  ),
+  compras as (select * from mov where tipo = 'compra'),
+  /* Los socios que se miran en "hoy": todos, o los anotados en el local. */
+  socios as (
+    select v.*
+      from v_club_clientes v
+     where v.baja is null
+       and club_est_local_ok(v.local_alta, loc)
+  ),
+  primera as (
+    select cliente, min(creado) as cuando
+      from club_movimientos where tipo = 'compra' and anulado is null
+     group by cliente
+  ),
+  vivos as (
+    select distinct cliente from club_suscripciones where muerto is null and cliente is not null
+  ),
+  a_recuperar as (
+    select s.* from socios s
+     where s.ultima_compra is not null
+       and s.ultima_compra < now() - interval '60 days'
+       and s.ultima_compra >= now() - interval '365 days'
+  )
+  select jsonb_build_object(
+    'periodo', jsonb_build_object('desde', d0, 'hasta', d1, 'dias', dias,
+                                  'antes_desde', d0 - dias, 'antes_hasta', d0 - 1,
+                                  'local', loc, 'escala', escala),
+    'actual',   club_est_resumen(t0, t1, loc),
+    'anterior', club_est_resumen(a0, t0, loc),
+
+    /* Cada cuántos días vuelve a comprar un socio: para cada compra DEL
+       período que no es la primera del socio, cuántos días pasaron desde la
+       anterior (que puede ser de antes del período). El promedio. */
+    'frecuencia_dias', (
+      select round(avg(extract(epoch from g.gap) / 86400))
+        from (select creado, local, creado - lag(creado) over (partition by cliente order by creado) as gap
+                from club_movimientos
+               where tipo = 'compra' and anulado is null and creado < t1) g
+       where g.gap is not null and g.creado >= t0 and club_est_local_ok(g.local, loc)),
+    'frecuencia_casos', (
+      select count(*)
+        from (select creado, local, creado - lag(creado) over (partition by cliente order by creado) as gap
+                from club_movimientos
+               where tipo = 'compra' and anulado is null and creado < t1) g
+       where g.gap is not null and g.creado >= t0 and club_est_local_ok(g.local, loc)),
+
+    /* Quiénes compraron en el período y si "volvieron": ya habían comprado
+       antes, o compraron más de una vez en el período. Es la lista detrás
+       del número. */
+    'volvieron_lista', (
+      select coalesce(jsonb_agg(x order by (x->>'volvio')::boolean desc, x->>'nombre'), '[]'::jsonb) from (
+        select jsonb_build_object(
+                 'nombre', k.nombre,
+                 'compras', count(*),
+                 'primera', (select min(x.creado) from club_movimientos x
+                              where x.cliente = c.cliente and x.tipo = 'compra' and x.anulado is null),
+                 'volvio', count(*) > 1 or exists (select 1 from club_movimientos x
+                                                    where x.cliente = c.cliente and x.tipo = 'compra'
+                                                      and x.anulado is null and x.creado < t0)) as x
+          from compras c join club_clientes k on k.id = c.cliente
+         group by c.cliente, k.nombre
+         limit 200) z),
+
+    /* Hoy, no en el período: cuánto hace que compró cada socio. */
+    'actividad', (
+      select jsonb_build_object(
+        'total', count(*),
+        'ultimos_30', count(*) filter (where ultima_compra >= now() - interval '30 days'),
+        'de_31_a_90', count(*) filter (where ultima_compra <  now() - interval '30 days'
+                                         and ultima_compra >= now() - interval '90 days'),
+        'mas_de_90',  count(*) filter (where ultima_compra <  now() - interval '90 days'),
+        'nunca',      count(*) filter (where ultima_compra is null))
+        from socios),
+
+    /* Los que venían y dejaron: la última compra hace entre 60 días y un
+       año. Más de un año ya es otro trabajo (y sus puntos vencieron). */
+    'recuperar', (
+      select jsonb_build_object(
+        'total', count(*),
+        'plata', count(*) filter (where nivel = 'Plata'),
+        'oro', count(*) filter (where nivel = 'Oro'),
+        'platino', count(*) filter (where nivel = 'Platino'),
+        'con_avisos', count(*) filter (where exists (select 1 from vivos w where w.cliente = ar.id)),
+        'avisados_30', count(*) filter (where exists (
+                          select 1 from club_avisos_personales p
+                           where p.cliente = ar.id and p.motivo = 'recuperar'
+                             and p.creado > now() - interval '30 days')),
+        'puntos', coalesce(sum(puntos), 0),
+        'lista', coalesce((select jsonb_agg(z.x order by z.hace) from (
+                   select jsonb_build_object('nombre', q.nombre, 'nivel', q.nivel, 'local', q.local_alta,
+                            'puntos', q.puntos, 'gastado', q.gastado,
+                            'dias', (now()::date - (q.ultima_compra at time zone tz)::date)) as x,
+                          (now()::date - (q.ultima_compra at time zone tz)::date) as hace
+                     from a_recuperar q
+                    order by q.gastado desc nulls last limit 30) z), '[]'::jsonb))
+        from a_recuperar ar),
+
+    'niveles', (
+      select jsonb_build_object(
+        'plata', count(*) filter (where nivel = 'Plata'),
+        'oro', count(*) filter (where nivel = 'Oro'),
+        'platino', count(*) filter (where nivel = 'Platino'),
+        /* Cerca de subir: tiene el 80% o más de lo que pide el siguiente. */
+        'cerca', count(*) filter (where exists (
+                   select 1 from club_niveles n
+                    where n.desde_xp > s.xp and s.xp >= n.desde_xp * 0.8
+                      and n.desde_xp = (select min(desde_xp) from club_niveles where desde_xp > s.xp))))
+        from socios s),
+
+    /* Los 14, siempre todos: es la comparación. */
+    'por_local', (
+      select coalesce(jsonb_agg(
+               club_est_resumen(t0, t1, upper(trim(l.codigo))) ||
+               jsonb_build_object('local', l.codigo,
+                                  'nombre', coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))),
+                                  'socios', (select count(*) from club_clientes k
+                                              where k.baja is null
+                                                and upper(trim(k.local_alta)) = upper(trim(l.codigo))))
+               order by l.codigo), '[]'::jsonb)
+        from locales l where l.activo),
+
+    /* "Sin local asignado": las compras sin local y los socios anotados
+       solos. Con esta fila, la tabla suma lo mismo que el resumen. */
+    /* La tienda online: una fila propia, ni uno de los 14 ni "sin local".
+       Lleva cuándo se leyó la tienda por última vez: si eso se atrasa,
+       algo dejó de andar. Ver el 27. */
+    'tienda', club_est_resumen(t0, t1, 'TIENDA ONLINE') ||
+              jsonb_build_object('local', 'TIENDA ONLINE', 'nombre', 'Tienda online', 'socios', 0,
+                                 'leida', (select t.corrio from club_tienda_estado t where t.id = 1)),
+
+    'sin_local', club_est_resumen(t0, t1, '__SIN__') ||
+                 jsonb_build_object('local', '__SIN__', 'nombre', 'Sin local asignado',
+                                    'socios', (select count(*) from club_clientes k
+                                                where k.baja is null and club_est_local_ok(k.local_alta, '__SIN__'))),
+
+    /* Quién carga las compras con tarjeta, y a cuántos socios les cargó la
+       PRIMERA compra: los que "estrenó". El alta no guarda quién anotó al
+       socio (se anotan solos con el QR, muchas veces), y la primera compra
+       es la mejor seña de quién lo trajo al Club. */
+    'vendedores', (
+      select coalesce(jsonb_agg(v order by (v->>'compras')::int desc, v->>'vendedor'), '[]'::jsonb)
+        from (select jsonb_build_object(
+                       'vendedor', trim(c.vendedor),
+                       'compras', count(*),
+                       'facturado', coalesce(sum(c.importe), 0),
+                       'clientes', count(distinct c.cliente),
+                       'estrenados', count(*) filter (where p.cuando = c.creado)) as v
+                from compras c
+                left join primera p on p.cliente = c.cliente
+               where nullif(trim(c.vendedor), '') is not null
+               group by trim(c.vendedor)
+               order by count(*) desc
+               limit 25) z),
+
+    'por_dia', (
+      select coalesce(jsonb_agg(jsonb_build_object('f', s.f, 'compras', coalesce(x.n, 0),
+                                                   'facturado', coalesce(x.plata, 0)) order by s.f), '[]'::jsonb)
+        from (select distinct date_trunc(escala, g)::date as f
+                from generate_series(d0::timestamp, d1::timestamp, interval '1 day') g) s
+        left join (select date_trunc(escala, local_ts)::date as f, count(*) as n, sum(importe) as plata
+                     from compras group by 1) x on x.f = s.f),
+
+    /* Por día de la semana: las compras y cuántas veces hubo ese día en el
+       período, para sacar el promedio (un mes tiene cuatro o cinco lunes). */
+    'por_semana', (
+      select jsonb_agg(jsonb_build_object('d', w.d, 'veces', w.veces, 'compras', coalesce(x.n, 0)) order by w.d)
+        from (select extract(isodow from g)::int as d, count(*) as veces
+                from generate_series(d0::timestamp, d1::timestamp, interval '1 day') g group by 1) w
+        left join (select extract(isodow from local_ts)::int as d, count(*) as n
+                     from compras group by 1) x on x.d = w.d),
+
+    'por_hora', (
+      select jsonb_agg(jsonb_build_object('h', h.h, 'compras', coalesce(x.n, 0)) order by h.h)
+        from generate_series(0, 23) h(h)
+        left join (select extract(hour from local_ts)::int as h, count(*) as n
+                     from compras group by 1) x on x.h = h.h),
+
+    'premios', (
+      select coalesce(jsonb_agg(jsonb_build_object(
+               'id', p.id, 'nombre', p.nombre, 'puntos', p.puntos, 'costo', p.costo,
+               'canjes', (select count(*) from mov m where m.tipo = 'canje' and m.premio = p.id),
+               'canjes_total', (select count(*) from club_movimientos m
+                                 where m.tipo = 'canje' and m.premio = p.id and m.anulado is null),
+               /* Cuántos socios podrían llevárselo hoy mismo. */
+               'alcanza_hoy', (select count(*) from socios s where s.puntos >= p.puntos))
+             order by p.orden, p.puntos), '[]'::jsonb)
+        from club_premios p where p.activo),
+
+    /* Los que cumplen en los próximos 7 días. El cumple de este año se arma
+       con el mes y el día; sólo el 29 de febrero se corre al 28, que en un
+       año no bisiesto no existe. (Una primera versión cortaba TODOS los días
+       en 28 y el 29 y el 30 de cualquier mes daban "hoy" un día 28.) */
+    'cumples', (
+      select jsonb_build_object(
+        'proximos', coalesce((select jsonb_agg(x order by x->>'falta') from (
+            select jsonb_build_object('nombre', s.nombre, 'nivel', s.nivel, 'local', s.local_alta,
+                     'dia', to_char(s.cumple, 'DD/MM'),
+                     'falta', lpad(((make_date(extract(year from hoy)::int, extract(month from s.cumple)::int,
+                                  case when extract(month from s.cumple) = 2 and extract(day from s.cumple) = 29 then 28 else extract(day from s.cumple)::int end) - hoy + 366) % 366)::text, 3, '0')) as x
+              from socios s
+             where s.cumple is not null
+               and ((make_date(extract(year from hoy)::int, extract(month from s.cumple)::int,
+                     case when extract(month from s.cumple) = 2 and extract(day from s.cumple) = 29 then 28 else extract(day from s.cumple)::int end) - hoy + 366) % 366) <= 7
+             limit 40) z), '[]'::jsonb))),
+
+    'ranking', (
+      select coalesce(jsonb_agg(x order by (x->>'gastado')::numeric desc), '[]'::jsonb) from (
+        select jsonb_build_object(
+                 'nombre', k.nombre, 'nivel', v.nivel, 'local', k.local_alta,
+                 'compras', count(*), 'gastado', coalesce(sum(c.importe), 0),
+                 'puntos', v.puntos,
+                 'ultima', max(c.creado)) as x
+          from compras c
+          join club_clientes k on k.id = c.cliente
+          join v_club_clientes v on v.id = c.cliente
+         group by k.id, k.nombre, v.nivel, k.local_alta, v.puntos
+         order by coalesce(sum(c.importe), 0) desc
+         limit 10) z),
+
+    /* Lo que VDH les debe en premios: los puntos que tienen guardados,
+       pasados a plata al costo promedio de un punto del catálogo. Y los que
+       vencen en los próximos 60 días (12 meses sin comprar). */
+    'pasivo', (
+      select jsonb_build_object(
+        'catalogo', (select coalesce(jsonb_agg(jsonb_build_object('nombre', p.nombre, 'puntos', p.puntos, 'costo', p.costo)
+                                               order by p.puntos), '[]'::jsonb)
+                       from club_premios p where p.activo and p.costo is not null and p.puntos > 0),
+        'puntos', coalesce(sum(greatest(puntos, 0)), 0),
+        'costo_punto', costo_punto,
+        'costo', round(coalesce(sum(greatest(puntos, 0)), 0) * coalesce(costo_punto, 0)),
+        'vencen_60', coalesce(sum(greatest(puntos, 0)) filter (
+                        where coalesce(ultima_compra, creado) <  now() - interval '10 months'
+                          and coalesce(ultima_compra, creado) >= now() - interval '12 months'), 0),
+        'vencen_60_socios', count(*) filter (
+                        where puntos > 0
+                          and coalesce(ultima_compra, creado) <  now() - interval '10 months'
+                          and coalesce(ultima_compra, creado) >= now() - interval '12 months'))
+        from socios),
+
+    'resenas', (
+      select coalesce(jsonb_agg(jsonb_build_object('local', x.l, 'pedidos', x.n) order by x.n desc), '[]'::jsonb)
+        from (select split_part(p.clave, '|', 1) as l, count(*) as n
+                from club_avisos_personales p
+               where p.motivo = 'resena' and p.creado >= t0 and p.creado < t1
+                 and (loc is null or upper(split_part(p.clave, '|', 1)) = loc)
+               group by 1) x),
+
+    'recientes', (
+      select coalesce(jsonb_agg(x order by x->>'cuando' desc), '[]'::jsonb) from (
+        select jsonb_build_object('cuando', m.creado, 'nombre', k.nombre, 'tipo', m.tipo,
+                                  'concepto', m.concepto, 'puntos', m.puntos, 'local', m.local,
+                                  'obs', m.obs, 'importe', m.importe) as x
+          from mov m join club_clientes k on k.id = m.cliente
+         order by m.creado desc limit 12) z)
+  )
+  into r;
+
+  return r;
+end;
+$function$;
+
+
+select desde as "Cuentan los pedidos pagados desde" from club_tienda_estado;

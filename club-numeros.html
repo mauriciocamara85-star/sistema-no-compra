@@ -510,6 +510,9 @@
 
   var K_PERIODO = 'nc_cn_periodo', K_LOCAL = 'nc_cn_local';
   var SIN = '__SIN__';
+  /* Las compras de vdh.com.ar (SQL 27): una fila propia, ni uno de los 14 ni
+     "sin local". */
+  var TIENDA = 'TIENDA ONLINE';
 
   var estado = { periodo: leer(K_PERIODO) || '30', desde: '', hasta: '', local: leer(K_LOCAL) || '' };
   var datos = null, verPlata = false, ordenLoc = { col: 'facturado', desc: true }, verCeros = false;
@@ -566,10 +569,31 @@
 
   function nombreDe(codigo) {
     if (codigo === SIN) { return 'Sin local asignado'; }
+    if (codigo === TIENDA) { return 'Tienda online'; }
     var l = (datos && datos.por_local || []).filter(function (x) { return x.local === codigo; })[0];
     return l ? l.nombre : bonito(codigo);
   }
-  function enElLocal() { return estado.local ? (estado.local === SIN ? 'sin local asignado' : 'de ' + nombreDe(estado.local)) : ''; }
+  function enElLocal() {
+    return !estado.local ? '' : estado.local === SIN ? 'sin local asignado'
+         : estado.local === TIENDA ? 'de la tienda online' : 'de ' + nombreDe(estado.local);
+  }
+  /* La tienda aparece recién cuando tiene algo: antes de conectarla sería
+     una fila de ceros. */
+  function tiendaConAlgo() {
+    var t = datos && datos.tienda;
+    return !!t && (Number(t.compras) > 0 || Number(t.canjes) > 0);
+  }
+  /* Cuándo se leyó la tienda. Si pasó más de un día, algo dejó de andar
+     (la llave, el Action), y lo dice. */
+  function cuandoLeida(s) {
+    var d = new Date(s), min = Math.round((Date.now() - d) / 60000);
+    if (isNaN(min)) { return '—'; }
+    if (min < 2) { return 'recién'; }
+    if (min < 60) { return 'hace ' + min + ' minutos'; }
+    var h = Math.round(min / 60);
+    if (h < 24) { return 'hace ' + h + (h === 1 ? ' hora' : ' horas'); }
+    return 'el ' + d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' }) + ': hace más de un día, hay que revisarlo';
+  }
 
   /* ═══ Arranque ═════════════════════════════════════════════════════════ */
   function entrar() {
@@ -655,7 +679,10 @@
     var hayCosasSin = Number(sl.socios) || Number(sl.compras) || estado.local === SIN;
     $('selLocal').innerHTML = '<option value="">Todos los locales</option>' + lista.map(function (l) {
       return '<option value="' + esc(l.local) + '"' + (l.local === estado.local ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
-    }).join('') + (hayCosasSin ? '<option value="' + SIN + '"' + (estado.local === SIN ? ' selected' : '') + '>Sin local asignado</option>' : '');
+    }).join('') +
+      (datos.tienda && (tiendaConAlgo() || estado.local === TIENDA)
+        ? '<option value="' + TIENDA + '"' + (estado.local === TIENDA ? ' selected' : '') + '>Tienda online</option>' : '') +
+      (hayCosasSin ? '<option value="' + SIN + '"' + (estado.local === SIN ? ' selected' : '') + '>Sin local asignado</option>' : '');
   }
 
   /* ═══ 1. Lo que vendió el Club ═════════════════════════════════════════ */
@@ -800,6 +827,7 @@
     var vacio = function (l) { return !Number(l.socios) && !Number(l.compras) && !Number(l.nuevos) && !Number(l.canjes); };
     var ceros = lista.filter(vacio);
     if (!verCeros && ceros.length > 1) { lista = lista.filter(function (l) { return !vacio(l); }); }
+    if (tiendaConAlgo()) { lista.push(Object.assign({ tienda: true }, datos.tienda)); }
     var sl = datos.sin_local || {};
     if (Number(sl.socios) || Number(sl.compras) || Number(sl.nuevos) || Number(sl.canjes)) { lista.push(Object.assign({ sinlocal: true }, sl)); }
     var celda = function (n, txt) { return '<td' + (Number(n) ? '' : ' class="cero"') + '>' + txt + '</td>'; };
@@ -825,7 +853,11 @@
       '</tbody></table>' +
       '<p class="nota-cn"><b>Socios</b>: anotados en el local, desde siempre. <b>Volvieron</b>: de los socios que compraron en ese local en el período, ' +
       'cuántos ya habían comprado antes o compraron más de una vez. Un socio que compró en dos locales cuenta en los dos, por eso esa ' +
-      'columna no se suma. <b>Sin local asignado</b>: socios que se anotaron solos con el QR y compras cargadas sin local.</p>';
+      'columna no se suma. <b>Sin local asignado</b>: socios que se anotaron solos con el QR y compras cargadas sin local.' +
+      (datos.tienda && datos.tienda.leida
+        ? ' <b>Tienda online</b>: compras en vdh.com.ar de socios reconocidos por su teléfono o su mail; se lee una vez por hora ' +
+          '(la última, ' + esc(cuandoLeida(datos.tienda.leida)) + ').'
+        : '') + '</p>';
   }
 
   /* ═══ Evolución ════════════════════════════════════════════════════════ */
