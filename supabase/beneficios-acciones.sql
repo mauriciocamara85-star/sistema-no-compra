@@ -1437,3 +1437,38 @@ $function$;
 
 
 select count(*) as "Beneficios", count(*) filter (where multiuso) as "Campañas" from beneficios;
+
+
+-- ════════════════ LAS GIFT CARDS ARRANCAN EN 0004 (correr-en-supabase-32, 29/09/2026) ════════════════
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Beneficios · LAS GIFT CARDS ARRANCAN EN 0004
+--
+-- Correr en el editor SQL de Supabase, después del 31.
+--
+-- Hasta acá el número arrancaba en 00311, siguiendo el talonario numerado
+-- de la planilla vieja. Mauricio (29/09/2026): en la planilla hay sólo 3
+-- gift cards vendidas, así que la numeración nueva sigue desde ahí: 00004,
+-- 00005… Sigue siendo correlativa y nunca repite: si ya hay tarjetas
+-- cargadas, sale la siguiente a la más alta.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function siguiente_serie()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $sig$
+  /* Se arranca en 4 aunque la tabla esté vacía: la 1, la 2 y la 3 son las
+     que quedaron anotadas en la planilla vieja, y repetir un número haría
+     que dos tarjetas distintas se llamen igual. */
+  select lpad(
+    greatest(
+      4,
+      coalesce(max(regexp_replace(serie, '[^0-9]', '', 'g')::bigint), 0) + 1
+    )::text, 5, '0')
+  from beneficios where tipo = 'giftcard'
+$sig$;
+
+select siguiente_serie() as "La próxima Gift Card";
