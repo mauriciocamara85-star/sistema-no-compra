@@ -5254,3 +5254,305 @@ end;
 $function$;
 
 revoke all on function club_regalo_cumple(bigint) from public, anon, authenticated;
+
+
+-- ─────────────────────────── PARTE 26 ───────────────────────────
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · NOMBRE Y APELLIDO, POR SEPARADO
+--
+-- Correr entero en el editor SQL de Supabase, después del 25.
+--
+-- Pedido de Mauricio (29/09/2026): al anotarse y en "Mis datos", el nombre
+-- y el apellido van en dos campos. Sirve para saludar por el nombre sin
+-- adivinar, y para que la tienda online (que trae nombre y apellido) pueda
+-- reconocer al socio.
+--
+-- Cómo queda:
+--   · club_clientes suma "nombres" y "apellido". La columna "nombre" sigue
+--     siendo el nombre completo, que es lo que usan la tarjeta, la caja,
+--     Kommo y las estadísticas: nada de eso cambia.
+--   · Un disparador los mantiene sincronizados venga el cambio de donde
+--     venga: si se cargan nombre y apellido, arma el completo; si se carga
+--     sólo el completo (la caja, una página vieja), lo parte: la última
+--     palabra es el apellido. Si queda mal partido ("Juan de la Cruz"), el
+--     socio lo corrige en "Mis datos".
+--   · Los socios que ya están se parten igual, una vez.
+--   · El alta y "Mis datos" suman el apellido. Las versiones viejas siguen
+--     andando: un celular con la página vieja guardada no se rompe.
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table club_clientes add column if not exists nombres  text;
+alter table club_clientes add column if not exists apellido text;
+
+
+/* "María José Pérez" → {María José, Pérez}. Una sola palabra: sin apellido. */
+create or replace function club_partir_nombre(p text)
+returns text[]
+language sql
+immutable
+as $pn$
+  select case
+    when nullif(btrim(coalesce(p, '')), '') is null then array[null, null]::text[]
+    when position(' ' in btrim(regexp_replace(p, '\s+', ' ', 'g'))) = 0 then array[btrim(p), null]::text[]
+    else array[regexp_replace(btrim(regexp_replace(p, '\s+', ' ', 'g')), '\s+\S+$', ''),
+               substring(btrim(regexp_replace(p, '\s+', ' ', 'g')) from '(\S+)$')]::text[]
+  end
+$pn$;
+
+
+/* El disparador: nombre y apellido mandan si se cargaron; si no, se parte
+   el completo. Un cambio que no toca ninguno de los tres pasa de largo. */
+create or replace function club_nombre_sync()
+returns trigger
+language plpgsql
+as $ns$
+declare
+  p text[];
+begin
+  if tg_op = 'UPDATE'
+     and new.nombre   is not distinct from old.nombre
+     and new.nombres  is not distinct from old.nombres
+     and new.apellido is not distinct from old.apellido then
+    return new;
+  end if;
+  if (tg_op = 'INSERT' and nullif(btrim(coalesce(new.apellido, '')), '') is not null)
+     or (tg_op = 'UPDATE' and (new.nombres is distinct from old.nombres or new.apellido is distinct from old.apellido)) then
+    new.nombres  := nullif(btrim(regexp_replace(coalesce(new.nombres, ''), '\s+', ' ', 'g')), '');
+    new.apellido := nullif(btrim(regexp_replace(coalesce(new.apellido, ''), '\s+', ' ', 'g')), '');
+    new.nombre   := btrim(coalesce(new.nombres, '') || ' ' || coalesce(new.apellido, ''));
+  else
+    p := club_partir_nombre(new.nombre);
+    new.nombres := p[1];
+    new.apellido := p[2];
+  end if;
+  return new;
+end;
+$ns$;
+
+drop trigger if exists club_nombre_sync_tg on club_clientes;
+create trigger club_nombre_sync_tg
+  before insert or update on club_clientes
+  for each row execute function club_nombre_sync();
+
+/* Los que ya están, una vez. */
+update club_clientes
+   set nombres = (club_partir_nombre(nombre))[1], apellido = (club_partir_nombre(nombre))[2]
+ where nombres is null and apellido is null;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- EL ALTA, CON EL APELLIDO
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* La de seis argumentos se va: con las dos, PostgREST no sabría cuál
+   llamar cuando llegan seis (la nueva también acepta seis, el apellido es
+   opcional). Una página vieja sigue entrando por la nueva sin apellido, y
+   el disparador parte el nombre. */
+drop function if exists club_alta(text, text, text, date, boolean, text);
+
+create or replace function club_alta(
+  p_nombre   text,
+  p_telefono text,
+  p_local    text default null,
+  p_cumple   date default null,
+  p_acepta   boolean default false,
+  p_mail     text default null,
+  p_apellido text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $ca$
+declare
+  tel   text;
+  nom   text;
+  nms   text;
+  ape   text;
+  mai   text;
+  cod   text;
+  nid   bigint;
+begin
+  nms := nullif(btrim(regexp_replace(coalesce(p_nombre, ''), '\s+', ' ', 'g')), '');
+  tel := regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g');
+  mai := lower(nullif(trim(coalesce(p_mail, '')), ''));
+
+  if nms is null then raise exception 'Falta tu nombre.'; end if;
+  /* Con la página nueva el apellido llega siempre (aunque sea vacío): ahí
+     es obligatorio. Una página vieja no lo manda y entra como antes. */
+  if p_apellido is not null then
+    ape := nullif(btrim(regexp_replace(p_apellido, '\s+', ' ', 'g')), '');
+    if ape is null then raise exception 'Falta tu apellido.'; end if;
+    if length(nms) > 40 or length(ape) > 40 then raise exception 'El nombre o el apellido es muy largo: hasta 40 letras cada uno.'; end if;
+    nom := nms || ' ' || ape;
+  else
+    nom := nms;
+  end if;
+  if length(tel) < 8 then raise exception 'Ese WhatsApp no parece completo.'; end if;
+
+  /* Un mail mal escrito no frena el alta: se guarda igual. Frenar a alguien
+     parado en el mostrador por un campo OPCIONAL es exactamente al revés de
+     para qué es opcional. Lo único que se rechaza es algo que claramente no
+     es un mail, para no llenar la base de "no tengo". */
+  if mai is not null and mai !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    raise exception 'Ese mail no se entiende. Dejalo vacío si no lo tenés a mano.';
+  end if;
+
+  /* La misma regla que "Mis datos": una fecha que tenga sentido. */
+  if p_cumple is not null and not club_cumple_ok(p_cumple) then
+    raise exception 'Esa fecha de cumpleaños no parece correcta.';
+  end if;
+
+  if exists (select 1 from club_clientes
+              where regexp_replace(telefono, '[^0-9]', '', 'g') = tel) then
+    return jsonb_build_object('alta', false, 'ya_estaba', true,
+      'porque', 'Ese número ya tiene tarjeta. Te la abrimos.');
+  end if;
+
+  cod := club_codigo();
+
+  insert into club_clientes (
+    codigo, nombre, nombres, apellido, telefono, mail, cumple, local_alta,
+    acepta_promos, consentimiento, consentimiento_via
+  ) values (
+    cod, nom, case when ape is not null then nms end, ape, trim(p_telefono), mai, p_cumple,
+    nullif(trim(coalesce(p_local, '')), ''),
+    coalesce(p_acepta, false),
+    case when coalesce(p_acepta, false) then now() else null end,
+    case when coalesce(p_acepta, false)
+         then 'alta web' || coalesce(' · ' || nullif(trim(coalesce(p_local, '')), ''), '')
+         else null end
+  )
+  returning id into nid;
+
+  return jsonb_build_object('alta', true, 'codigo', cod, 'nombre', nom);
+end;
+$ca$;
+
+revoke all on function club_alta(text, text, text, date, boolean, text, text) from public;
+grant execute on function club_alta(text, text, text, date, boolean, text, text) to anon, authenticated;
+
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- MIS DATOS, CON EL APELLIDO
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_mis_datos(p_codigo text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $md$
+  select coalesce((
+    select jsonb_build_object(
+      'hay', true,
+      'nombre', c.nombre,
+      'nombres', coalesce(c.nombres, (club_partir_nombre(c.nombre))[1]),
+      'apellido', coalesce(c.apellido, (club_partir_nombre(c.nombre))[2]),
+      'mail', c.mail,
+      'telefono', case when length(d.dig) >= 6
+                       then left(d.dig, 2) || ' •••• ' || right(d.dig, 4)
+                       else '••••' end,
+      'cumple', c.cumple,
+      'acepta_promos', c.acepta_promos,
+      'desde', c.creado)
+      from club_clientes c
+      cross join lateral (select regexp_replace(coalesce(c.telefono, ''), '[^0-9]', '', 'g') as dig) d
+     where c.codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and c.baja is null), jsonb_build_object('hay', false))
+$md$;
+
+revoke all on function club_mis_datos(text) from public;
+grant execute on function club_mis_datos(text) to anon, authenticated;
+
+
+/* La de "Mis datos" con nombre y apellido. Parámetros con otros nombres que
+   la del 25 (p_nombres, p_apellido): conviven sin confundirse, y la vieja
+   sigue sirviendo a un celular con la página anterior. */
+create or replace function club_mis_datos_guardar(
+  p_codigo text, p_nombres text, p_apellido text, p_mail text, p_cumple date, p_acepta boolean)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $mg$
+declare
+  c    club_clientes%rowtype;
+  nms  text := nullif(btrim(regexp_replace(coalesce(p_nombres, ''), '\s+', ' ', 'g')), '');
+  ape  text := nullif(btrim(regexp_replace(coalesce(p_apellido, ''), '\s+', ' ', 'g')), '');
+  mai  text := lower(nullif(trim(coalesce(p_mail, '')), ''));
+  cam  text := '';
+begin
+  select * into c from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'No encontramos tu tarjeta. Recargá la página y probá de nuevo.');
+  end if;
+
+  if nms is null then
+    return jsonb_build_object('ok', false, 'campo', 'nombres', 'porque', 'Tu nombre no puede quedar vacío.');
+  end if;
+  if ape is null then
+    return jsonb_build_object('ok', false, 'campo', 'apellido', 'porque', 'Tu apellido no puede quedar vacío.');
+  end if;
+  if length(nms) > 40 then
+    return jsonb_build_object('ok', false, 'campo', 'nombres', 'porque', 'El nombre es muy largo: hasta 40 letras.');
+  end if;
+  if length(ape) > 40 then
+    return jsonb_build_object('ok', false, 'campo', 'apellido', 'porque', 'El apellido es muy largo: hasta 40 letras.');
+  end if;
+  if mai is not null and mai !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$' then
+    return jsonb_build_object('ok', false, 'campo', 'mail', 'porque', 'Ese mail no parece completo. Revisalo o dejalo vacío.');
+  end if;
+
+  if p_cumple is not null and c.cumple is null then
+    if not club_cumple_ok(p_cumple) then
+      return jsonb_build_object('ok', false, 'campo', 'cumple', 'porque', 'Esa fecha de cumpleaños no parece correcta.');
+    end if;
+    cam := cam || ' · cumple: ' || to_char(p_cumple, 'DD/MM/YYYY');
+  elsif p_cumple is not null and c.cumple is distinct from p_cumple then
+    return jsonb_build_object('ok', false, 'campo', 'cumple',
+      'porque', 'Tu cumpleaños ya está cargado. Para corregirlo, pedilo en la caja de cualquier local.');
+  end if;
+
+  if c.nombres is distinct from nms or c.apellido is distinct from ape then
+    cam := cam || ' · nombre: ' || c.nombre || ' → ' || nms || ' ' || ape;
+  end if;
+  if c.mail is distinct from mai then cam := cam || ' · mail: ' || coalesce(c.mail, '—') || ' → ' || coalesce(mai, '—'); end if;
+  if p_acepta is not null and p_acepta is distinct from c.acepta_promos then
+    cam := cam || case when p_acepta then ' · prendió las promos por WhatsApp' else ' · apagó las promos por WhatsApp' end;
+  end if;
+
+  if cam = '' then
+    return jsonb_build_object('ok', true, 'cambios', false) || club_mis_datos(c.codigo);
+  end if;
+
+  insert into log (accion, detalle, quien)
+  values ('club: el socio corrigió sus datos', 'tarjeta ' || c.codigo || cam, 'el socio, desde su tarjeta');
+
+  /* nombres y apellido: el disparador arma el nombre completo. */
+  update club_clientes
+     set nombres = nms,
+         apellido = ape,
+         mail = mai,
+         cumple = coalesce(cumple, p_cumple),
+         acepta_promos = coalesce(p_acepta, acepta_promos),
+         consentimiento = case when p_acepta is true and not acepta_promos then now() else consentimiento end,
+         consentimiento_via = case when p_acepta is true and not acepta_promos then 'tarjeta' else consentimiento_via end,
+         revocado = case when p_acepta is true and not acepta_promos then null
+                         when p_acepta is false and acepta_promos then now()
+                         else revocado end
+   where id = c.id;
+
+  perform club_kommo_encolar(c.id);
+
+  return jsonb_build_object('ok', true, 'cambios', true) || club_mis_datos(c.codigo);
+end;
+$mg$;
+
+revoke all on function club_mis_datos_guardar(text, text, text, text, date, boolean) from public;
+grant execute on function club_mis_datos_guardar(text, text, text, text, date, boolean) to anon, authenticated;
+
+select nombre, nombres, apellido from club_clientes where baja is null order by id;
