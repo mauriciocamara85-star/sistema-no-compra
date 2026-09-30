@@ -125,6 +125,18 @@
   .premio small { display: block; font-size: 12.5px; color: var(--txt-3); }
   .premio .btn { margin-left: auto; flex: none; }
 
+  /* Las promos "Sólo socios" (SQL 38): el vendedor las ve al abrir la
+     ficha y las aplica en BlueSoft, como el regalo de cumple. Con el borde
+     del color de la marca: es lo primero que tiene que ver. */
+  .promos-socio { display: grid; gap: 8px; margin-top: 16px; }
+  .promos-socio-tit { font: 700 12px var(--sans); letter-spacing: .5px; text-transform: uppercase; color: var(--txt-2); }
+  .promo-socio { padding: 12px 14px; border-radius: var(--r-sm); border: 1.5px solid var(--acc-line); background: var(--surface-2); font-size: 14.5px; }
+  .promo-socio b { display: block; }
+  .promo-socio small { display: block; font-size: 12.5px; color: var(--txt-2); margin-top: 2px; }
+  .promo-socio details { margin-top: 6px; font-size: 13px; color: var(--txt-2); }
+  .promo-socio summary { cursor: pointer; font-weight: 700; color: var(--txt); }
+  .promo-socio details p { margin-top: 4px; white-space: pre-line; line-height: 1.5; }
+
   /* El aviso de ticket repetido. Naranja y no rojo: no es un error, es una
      pregunta. */
   .repetido {
@@ -465,6 +477,7 @@
           '<div class="ficha-puntos"><b>' + miles(t.puntos) + '</b><small>puntos</small>' +
             chipNivel(nv.nombre) + '</div>' +
         '</div>' +
+        '<div id="promosSocio"></div>' +
         (premios || regaloCumple ? '<div class="premios">' + regaloCumple + premios + '</div>' : '') +
         '<div class="campos" style="margin-top:18px">' +
           '<div class="campo"><label for="importe">Importe de la compra</label>' +
@@ -487,7 +500,41 @@
     Array.prototype.forEach.call($('resultado').querySelectorAll('[data-premio]'), function (b) {
       b.onclick = function () { entregar(+b.dataset.premio, b.dataset.nombre, +b.dataset.puntos); };
     });
+    pintarPromosSocio();
     cargarMovs();
+  }
+
+  /* ═══ Las promos de socio (SQL 38) ════════════════════════════════════
+     Las que en Configuración se marcaron "Sólo para socios del Club" y
+     valen en este local. Son las mismas que el socio ve en su app con el
+     rótulo: si él la ve y el vendedor no, la promesa no se cumple. Se piden
+     una vez cada diez minutos: cambian muy de vez en cuando. */
+  var promosSocio = null, promosCuando = 0;
+  function valeAca(p) {
+    if (p.donde === 'online') { return false; }
+    if (p.donde === 'algunos') {
+      return (p.locales || []).some(function (l) { return String(l).trim().toUpperCase() === String(local).trim().toUpperCase(); });
+    }
+    return true;
+  }
+  function pintarPromosSocio() {
+    var dibujar = function () {
+      var caja = $('promosSocio');
+      if (!caja) { return; }
+      var l = (promosSocio || []).filter(function (p) { return p.solo_socios && valeAca(p); });
+      caja.innerHTML = !l.length ? '' :
+        '<div class="promos-socio"><div class="promos-socio-tit">Promos de socio vigentes</div>' +
+        l.map(function (p) {
+          return '<div class="promo-socio"><b>' + esc(p.texto) + '</b>' +
+            '<small>Aplicala en BlueSoft · vale hasta el ' + esc(diaLargo(p.hasta)) + '</small>' +
+            (p.condiciones ? '<details><summary>Condiciones</summary><p>' + esc(p.condiciones) + '</p></details>' : '') +
+          '</div>';
+        }).join('') + '</div>';
+    };
+    if (promosSocio && Date.now() - promosCuando < 10 * 60000) { dibujar(); return; }
+    base.club.promosHoy()
+      .then(function (l) { promosSocio = Array.isArray(l) ? l : []; promosCuando = Date.now(); dibujar(); })
+      .catch(function () { /* sin las promos se cobra igual */ });
   }
 
   /* ═══ Corregir los datos ══════════════════════════════════════════════

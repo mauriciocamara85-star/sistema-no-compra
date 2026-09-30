@@ -31,6 +31,10 @@
   }
   .casillero input { width: 20px; height: 20px; accent-color: var(--acc); flex-shrink: 0; }
   .casillero .lbl-opc { font-weight: 400; }
+  /* Los 14 locales de una promo, para tildar (SQL 38). */
+  .promo-locales { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0 14px; }
+  .promo-locales .casillero { min-height: 40px; font-weight: 500; }
+  #promoLocalesCaja[hidden], #promoSoloNota[hidden] { display: none; }
 
 
   /* Este equipo: qué local es. Es una preferencia del dispositivo, no un dato
@@ -814,6 +818,7 @@
       return '<div class="promo-fila">' +
         '<div class="promo-fila-txt"><b>' + esc(p.texto) + '</b>' +
           '<span>Hasta el ' + esc(fechaCorta(p.hasta)) +
+          (p.solo_socios ? ' · sólo socios' : '') + dondePromo(p) +
           (p.imagen ? ' · con foto' : '') + (p.cuenta ? ' · con cuenta regresiva' : '') + '</span></div>' +
         estado +
         '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button>' +
@@ -838,6 +843,18 @@
     Array.prototype.forEach.call($('promoCuerpo').querySelectorAll('[data-baja]'), function (b) {
       b.onclick = function () { bajaPromo(b.dataset.baja); };
     });
+  }
+
+  /* Dónde vale, para el renglón de la lista. "En todos los locales" no se
+     dice: es lo de siempre. */
+  function dondePromo(p) {
+    if (p.donde === 'locales_online') { return ' · locales y online'; }
+    if (p.donde === 'online') { return ' · sólo online'; }
+    if (p.donde === 'algunos') {
+      var l = p.locales || [];
+      return ' · en ' + (l.length <= 2 ? l.map(bonito).join(' y ') : l.length + ' locales');
+    }
+    return '';
   }
 
   /* "25 sep" en vez de "2026-09-25": la lista se mira de reojo. */
@@ -869,6 +886,30 @@
           '<label for="promoHasta">Hasta qué día</label>' +
           '<input type="date" id="promoHasta" value="' + esc((p && p.hasta) || '') + '">' +
         '</div>' +
+        /* Para quién y dónde (SQL 38, 30/09/2026): lo que el socio necesita
+           saber en dos segundos, junto con el hasta cuándo. */
+        '<div class="campo ancho">' +
+          '<label for="promoDonde">Dónde vale</label>' +
+          '<select id="promoDonde">' +
+            [['locales', 'En todos los locales'], ['locales_online', 'En los locales y en la tienda online'],
+             ['online', 'Sólo en la tienda online'], ['algunos', 'En algunos locales']].map(function (o) {
+              return '<option value="' + o[0] + '"' + (((p && p.donde) || 'locales') === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+            }).join('') +
+          '</select>' +
+        '</div>' +
+        '<div class="campo ancho">' +
+          '<label class="casillero">' +
+            '<input type="checkbox" id="promoSolo"' + (p && p.solo_socios ? ' checked' : '') + '>' +
+            '<span>Sólo para socios del Club</span>' +
+          '</label>' +
+        '</div>' +
+        '<div class="campo ancho" id="promoLocalesCaja" hidden>' +
+          '<label>En qué locales</label>' +
+          '<div class="promo-locales" id="promoLocales"><span class="bloque-sub" style="margin:0">Buscando los locales…</span></div>' +
+        '</div>' +
+        '<p class="bloque-sub campo ancho" id="promoSoloNota" hidden style="margin:-4px 0 0">' +
+          'En la app lleva el rótulo "Sólo socios". En Cobrar, el vendedor la ve al escanear la tarjeta del ' +
+          'socio, para aplicarla en BlueSoft como el regalo de cumple.</p>' +
         '<div class="campo ancho">' +
           '<label for="promoImagen">Foto de fondo <span class="lbl-opc">— opcional</span></label>' +
           '<input type="url" id="promoImagen" inputmode="url" autocapitalize="off" ' +
@@ -940,6 +981,57 @@
     $('promoImagen').onchange = verPrevia;
     $('promoImagen').onblur = verPrevia;
     verPrevia();
+
+    /* "En algunos locales" abre la lista de los 14 para tildar. */
+    var marcados = (p && p.locales) || [];
+    var verDonde = function () {
+      var algunos = $('promoDonde').value === 'algunos';
+      $('promoLocalesCaja').hidden = !algunos;
+      if (algunos) { pintarLocalesPromo(marcados); }
+    };
+    /* Sólo socios en la tienda online: la tienda no sabe quién es socio,
+       así que hace falta un cupón, y cómo se usa va en las condiciones. */
+    var verNota = function () {
+      var solo = $('promoSolo').checked, online = /online/.test($('promoDonde').value);
+      $('promoSoloNota').hidden = !solo;
+      $('promoSoloNota').innerHTML = 'En la app lleva el rótulo "Sólo socios". En Cobrar, el vendedor la ve al escanear la ' +
+        'tarjeta del socio, para aplicarla en BlueSoft como el regalo de cumple.' +
+        (solo && online ? ' <b>En la tienda online</b> no hay forma automática de saber quién es socio: poné en ' +
+                          'Condiciones el cupón que tienen que usar.' : '');
+    };
+    $('promoDonde').onchange = function () { marcados = localesTildados(); verDonde(); verNota(); };
+    $('promoSolo').onchange = verNota;
+    verNota();
+    verDonde();
+  }
+
+  /* Los locales para tildar. Se piden una vez: son los mismos 14 de la
+     pantalla de Locales y equipo. */
+  var localesPromo = null;
+  function pintarLocalesPromo(marcados) {
+    var caja = $('promoLocales');
+    if (!caja) { return; }
+    var pintar = function (lista) {
+      if (!$('promoLocales')) { return; }
+      var ya = {};
+      (marcados || []).forEach(function (l) { ya[String(l).toUpperCase()] = true; });
+      $('promoLocales').innerHTML = lista.map(function (l) {
+        return '<label class="casillero"><input type="checkbox" value="' + esc(l) + '"' +
+               (ya[String(l).toUpperCase()] ? ' checked' : '') + '><span>' + esc(bonito(l)) + '</span></label>';
+      }).join('');
+    };
+    if (localesPromo) { pintar(localesPromo); return; }
+    base.config()
+      .then(function (d) {
+        localesPromo = ((d && d.locales) || []).map(function (x) { return x.local; });
+        pintar(localesPromo);
+      })
+      .catch(function () {
+        if ($('promoLocales')) { $('promoLocales').innerHTML = '<span class="bloque-sub" style="margin:0">No se pudieron traer los locales. Probá de nuevo.</span>'; }
+      });
+  }
+  function localesTildados() {
+    return Array.prototype.map.call(document.querySelectorAll('#promoLocales input:checked'), function (i) { return i.value; });
   }
 
   /* La vista previa. Sin esto, pegar la dirección de una PÁGINA en vez de la
@@ -1248,12 +1340,20 @@
        35, no se manda: si no, guardar cualquier promo fallaría. */
     var cuenta = $('promoCuenta') ? $('promoCuenta').checked : null;
     if (cuenta === false && !(promoAbierta && 'cuenta' in promoAbierta)) { cuenta = null; }
+    /* Para quién y dónde (SQL 38), con el mismo cuidado: lo de siempre (para
+       todos, en todos lados) no se manda si la base todavía no lo conoce. */
+    var extra = { solo: $('promoSolo').checked, donde: $('promoDonde').value, locales: localesTildados() };
+    if (extra.donde === 'algunos' && !extra.locales.length) {
+      avisar('err', 'Tildá en qué locales vale.'); b.disabled = false; return;
+    }
+    var conoce = promoAbierta && 'donde' in promoAbierta;
+    if (!conoce && !extra.solo && extra.donde === 'locales') { extra = null; }
     base.club.promoGuardar(pinPromo(), editando,
         $('promoTexto').value.trim(), $('promoImagen').value.trim(),
         $('promoDesde').value, $('promoHasta').value, $('promoCond').value.trim(),
         $('promoAvisar') && $('promoAvisar').checked,
         $('promoEnlace') ? $('promoEnlace').value.trim() : '',
-        cuenta)
+        cuenta, extra)
       .then(function (r) {
         if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
         if (r.avisados) {
@@ -1273,7 +1373,10 @@
         pintarPromo();
       })
       .catch(function (err) {
-        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
+        var m = (err && err.message) || '';
+        avisar('err', extra && /p_solo_socios|p_donde|PGRST202|could not find the function/i.test(m)
+          ? 'Falta correr el SQL 38 en Supabase para guardar "Sólo para socios" y "Dónde vale".'
+          : (err && err.delServidor && m) || 'No se pudo guardar.');
       })
       .then(function () { b.disabled = false; });
   }

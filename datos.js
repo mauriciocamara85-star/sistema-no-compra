@@ -991,7 +991,9 @@ var base = {
     /* `cuenta` (SQL 35): la cuenta regresiva en la app. Va sólo si viene
        true o false: sin el SQL 35 corrido, mandarlo haría fallar el
        guardado, y sin el dato la base deja la promo como estaba. */
-    promoGuardar: function (pin, id, texto, imagen, desde, hasta, condiciones, avisar, enlace, cuenta) {
+    /* `extra` (SQL 38): { solo, donde, locales }. Mismo cuidado que con
+       `cuenta`: va sólo lo que viene, así sin el 38 se sigue guardando. */
+    promoGuardar: function (pin, id, texto, imagen, desde, hasta, condiciones, avisar, enlace, cuenta, extra) {
       var args = {
         p_pin: pin, p_id: id || null, p_texto: texto, p_imagen: imagen || null,
         p_desde: desde || null, p_hasta: hasta || null,
@@ -999,7 +1001,17 @@ var base = {
         p_enlace: enlace || null
       };
       if (cuenta === true || cuenta === false) { args.p_cuenta = cuenta; }
+      if (extra) {
+        if (extra.solo === true || extra.solo === false) { args.p_solo_socios = extra.solo; }
+        if (extra.donde) { args.p_donde = extra.donde; }
+        if (extra.donde === 'algunos') { args.p_locales = extra.locales || []; }
+      }
       return funcion('club_promo_guardar', args);
+    },
+    /* Las promos vigentes hoy, las mismas que ve el socio (no pide PIN).
+       Cobrar las usa para mostrarle al vendedor las de socios. */
+    promosHoy: function () {
+      return funcion('club_promos_ver', {});
     },
     promoBaja: function (pin, id) {
       return funcion('club_promo_baja', { p_pin: pin, p_id: id });
