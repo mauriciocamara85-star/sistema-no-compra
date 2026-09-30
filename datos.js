@@ -1005,6 +1005,8 @@ var base = {
         if (extra.solo === true || extra.solo === false) { args.p_solo_socios = extra.solo; }
         if (extra.donde) { args.p_donde = extra.donde; }
         if (extra.donde === 'algunos') { args.p_locales = extra.locales || []; }
+        /* El nivel (SQL 39): '' lo saca; sin el dato, queda como estaba. */
+        if (typeof extra.nivel === 'string') { args.p_desde_nivel = extra.nivel; }
       }
       return funcion('club_promo_guardar', args);
     },

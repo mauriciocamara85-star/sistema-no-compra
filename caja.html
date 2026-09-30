@@ -521,12 +521,16 @@
     var dibujar = function () {
       var caja = $('promosSocio');
       if (!caja) { return; }
-      var l = (promosSocio || []).filter(function (p) { return p.solo_socios && valeAca(p); });
+      /* Las de nivel (SQL 39), sólo si el socio llega: la cuenta es la misma
+         que la del nivel (lo que sumó en compras en los últimos 12 meses). */
+      var llega = function (p) { return !p.desde_nivel || (Number(socio && socio.xp) || 0) >= (Number(p.nivel_xp) || 0); };
+      var l = (promosSocio || []).filter(function (p) { return p.solo_socios && valeAca(p) && llega(p); });
       caja.innerHTML = !l.length ? '' :
         '<div class="promos-socio"><div class="promos-socio-tit">Promos de socio vigentes</div>' +
         l.map(function (p) {
           return '<div class="promo-socio"><b>' + esc(p.texto) + '</b>' +
-            '<small>Aplicala en BlueSoft · vale hasta el ' + esc(diaLargo(p.hasta)) + '</small>' +
+            '<small>' + (p.para ? 'Socios ' + esc(p.para) + ' · ' : '') +
+              'Aplicala en BlueSoft · vale hasta el ' + esc(diaLargo(p.hasta)) + '</small>' +
             (p.condiciones ? '<details><summary>Condiciones</summary><p>' + esc(p.condiciones) + '</p></details>' : '') +
           '</div>';
         }).join('') + '</div>';

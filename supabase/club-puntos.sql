@@ -8872,3 +8872,282 @@ grant execute on function club_promo_guardar(text, bigint, text, text, text, tex
 
 
 select 'Listo: las promos dicen si son sólo para socios y dónde valen, y cambian de día a la medianoche de Argentina.' as "SQL 38";
+
+
+-- ─────────────────────────── PARTE 39 ───────────────────────────
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · PROMOS POR NIVEL
+--
+-- Correr en el editor SQL de Supabase, después del 38.
+--
+-- Pedido de Mauricio (30/09/2026), sobre lo que hace Starbucks: promos que
+-- son sólo para los niveles más altos ("Socios Oro y Platino", "Sólo
+-- Platino"). Es lo que hace que subir de nivel valga algo más que un número.
+--
+--   · En la app, el que llega la ve primero, con su rótulo y "Mostrar mi
+--     código". El que no llega la ve al final, con candado y cuánto le
+--     falta: es un motivo para comprar y subir.
+--   · En Cobrar, el vendedor la ve sólo si el socio llega al nivel.
+--   · El aviso al celular les llega SÓLO a los socios de ese nivel (como
+--     aviso personal, en menos de una hora): a un Plata no le suena el
+--     teléfono por algo que no puede usar.
+--
+-- Un nivel implica "sólo socios". El primer nivel (Plata) es lo mismo que
+-- "todos los socios", así que no se guarda como nivel.
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table club_promos add column if not exists desde_nivel text;
+
+
+-- ── Lo que ve el socio. Cambia lo que devuelve: hay que borrarla antes. ──
+drop function if exists club_promos_ver();
+
+create function club_promos_ver()
+returns table(id bigint, texto text, imagen text, condiciones text, desde date, hasta date, enlace text,
+              cuenta boolean, termina timestamptz, solo_socios boolean, donde text, locales text[],
+              desde_nivel text, nivel_xp integer, para text)
+language sql
+stable
+security definer
+set search_path = public
+as $pv$
+  select p.id, p.texto, p.imagen, p.condiciones, p.desde, p.hasta, p.enlace,
+         p.cuenta_regresiva,
+         /* A la medianoche de su último día, en hora de Argentina. */
+         ((p.hasta + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires'),
+         p.solo_socios, p.donde, p.locales,
+         /* El nivel, lo que pide (para que la app y la caja comparen con el
+            socio) y cómo se dice: "Oro y Platino". */
+         p.desde_nivel, nv.desde_xp,
+         (select string_agg(n.nombre, ' y ' order by n.desde_xp) from club_niveles n where n.desde_xp >= nv.desde_xp)
+    from club_promos p
+    left join club_niveles nv on nv.nombre = p.desde_nivel
+   where p.baja is null
+     and p.desde <= (now() at time zone 'America/Argentina/Buenos_Aires')::date
+     and p.hasta >= (now() at time zone 'America/Argentina/Buenos_Aires')::date
+   /* Las de nivel, las de socios, y después la que termina antes. */
+   order by (p.desde_nivel is not null) desc, p.solo_socios desc, p.hasta, p.desde desc, p.id desc;
+$pv$;
+
+revoke all on function club_promos_ver() from public;
+grant execute on function club_promos_ver() to anon, authenticated;
+
+
+-- ── La lista de Configuración ──
+create or replace function club_promos_listar(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pl$
+declare
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', id, 'texto', texto, 'imagen', imagen,
+             'desde', to_char(desde, 'YYYY-MM-DD'),
+             'hasta', to_char(hasta, 'YYYY-MM-DD'),
+             'condiciones', condiciones,
+             'enlace', enlace,
+             'cuenta', cuenta_regresiva,
+             'solo_socios', solo_socios,
+             'donde', donde,
+             'locales', to_jsonb(locales),
+             'desde_nivel', desde_nivel,
+             'vigente', (hasta >= hoy and (desde is null or desde <= hoy)),
+             'futura',  (desde is not null and desde > hoy),
+             'vencida', (hasta < hoy))
+           order by hasta desc, id desc)
+      from club_promos where baja is null), '[]'::jsonb);
+end;
+$pl$;
+
+
+-- ── Guardar. El nivel va al final, con default: una pantalla vieja no lo
+--    toca. Vacío ('') lo saca; null lo deja como estaba. ──
+drop function if exists club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text, boolean, boolean, text, text[]);
+
+create function club_promo_guardar(p_pin text, p_id bigint, p_texto text, p_imagen text, p_desde text, p_hasta text,
+                                   p_condiciones text, p_avisar boolean default false, p_enlace text default null,
+                                   p_cuenta boolean default null, p_solo_socios boolean default null,
+                                   p_donde text default null, p_locales text[] default null,
+                                   p_desde_nivel text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $pg$
+declare
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  txt text;
+  img text;
+  con text;
+  enl text;
+  dnd text;
+  locs text[];
+  d1  date;
+  d2  date;
+  nid bigint;
+  arranca date;
+  solo boolean;
+  nvl text;
+  nvxp integer;
+  toca_nivel boolean := p_desde_nivel is not null;
+  /* Elegir un nivel, aunque sea el primero, es elegir "sólo socios". */
+  pide_socios boolean := nullif(trim(coalesce(p_desde_nivel, '')), '') is not null;
+  nivel text;
+  para text;
+  sale timestamptz;
+  cuantos integer := 0;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  txt := nullif(trim(coalesce(p_texto, '')), '');
+  img := nullif(trim(coalesce(p_imagen, '')), '');
+  con := nullif(trim(coalesce(p_condiciones, '')), '');
+  enl := nullif(trim(coalesce(p_enlace, '')), '');
+  dnd := nullif(lower(trim(coalesce(p_donde, ''))), '');
+
+  if txt is null then raise exception 'Falta qué dice la promoción.'; end if;
+  if length(txt) > 140 then
+    raise exception 'El texto es muy largo. Máximo 140 caracteres.';
+  end if;
+
+  /* https y no http: una imagen por http en una página https la bloquea el
+     navegador SIN DECIR NADA, y el cartel se vería vacío. */
+  if img is not null and img !~* '^https://' then
+    raise exception 'La foto tiene que ser un enlace que empiece con https.';
+  end if;
+
+  /* Lo mismo con el enlace, y por un motivo más: una notificación que lleva
+     a un sitio sin candado le muestra al cliente un cartel de peligro con
+     la marca al lado. */
+  if enl is not null and enl !~* '^https://' then
+    raise exception 'El enlace tiene que empezar con https.';
+  end if;
+
+  /* Dónde vale. "algunos" necesita la lista, y cada uno tiene que ser un
+     local de verdad: un nombre mal escrito haría que la caja de ese local
+     nunca la vea. */
+  if dnd is not null and dnd not in ('locales', 'locales_online', 'online', 'algunos') then
+    raise exception 'No entiendo dónde vale la promo.';
+  end if;
+  if dnd = 'algunos' then
+    select array_agg(distinct upper(trim(x)) order by upper(trim(x))) into locs
+      from unnest(coalesce(p_locales, '{}'::text[])) x
+     where nullif(trim(x), '') is not null;
+    if locs is null then
+      raise exception 'Elegí en qué locales vale.';
+    end if;
+    if exists (select 1 from unnest(locs) x
+                where not exists (select 1 from locales l where l.activo and upper(trim(l.codigo)) = x)) then
+      raise exception 'Uno de los locales elegidos no existe.';
+    end if;
+  end if;
+
+  /* El nivel (SQL 39). El primero es "todos los socios": no se guarda. */
+  if toca_nivel and nullif(trim(p_desde_nivel), '') is not null then
+    select n.nombre, n.desde_xp into nvl, nvxp from club_niveles n where lower(n.nombre) = lower(trim(p_desde_nivel));
+    if nvl is null then
+      raise exception 'Ese nivel no existe.';
+    end if;
+    if nvxp <= (select min(desde_xp) from club_niveles) then nvl := null; end if;
+  end if;
+
+  begin
+    d1 := nullif(trim(coalesce(p_desde, '')), '')::date;
+    d2 := nullif(trim(coalesce(p_hasta, '')), '')::date;
+  exception when others then
+    raise exception 'Esa fecha no se entiende. Va como 2026-09-30.';
+  end;
+
+  if d2 is null then
+    raise exception 'Falta hasta qué día vale. Una promo sin vencimiento se queda para siempre.';
+  end if;
+  if d1 is not null and d1 > d2 then
+    raise exception 'El desde no puede ser posterior al hasta.';
+  end if;
+  if d2 < hoy then
+    raise exception 'Esa fecha ya pasó: la promoción no la vería nadie.';
+  end if;
+
+  if p_id is null then
+    insert into club_promos (texto, imagen, desde, hasta, condiciones, enlace, cuenta_regresiva,
+                             solo_socios, donde, locales, desde_nivel)
+    values (txt, img, coalesce(d1, hoy), d2, con, enl, coalesce(p_cuenta, false),
+            coalesce(p_solo_socios, false) or pide_socios, coalesce(dnd, 'locales'), locs, nvl)
+    returning id, desde, solo_socios, desde_nivel into nid, arranca, solo, nivel;
+  else
+    /* "Desde" vacío es hoy, también al editar (ver el 38). */
+    update club_promos
+       set texto = txt, imagen = img, desde = coalesce(d1, hoy), hasta = d2,
+           condiciones = con, enlace = enl,
+           /* Sin el dato (una pantalla vieja cacheada) queda como estaba. */
+           cuenta_regresiva = coalesce(p_cuenta, cuenta_regresiva),
+           desde_nivel = case when toca_nivel then nvl else desde_nivel end,
+           /* Con nivel es de socios, siempre. */
+           solo_socios = coalesce(p_solo_socios, solo_socios) or pide_socios
+                         or (case when toca_nivel then nvl else desde_nivel end) is not null,
+           donde = coalesce(dnd, donde),
+           locales = case when dnd is null then locales else locs end
+     where id = p_id and baja is null
+    returning id, desde, solo_socios, desde_nivel into nid, arranca, solo, nivel;
+    if nid is null then
+      return jsonb_build_object('ok', false, 'porque', 'Esa promoción ya no existe.');
+    end if;
+  end if;
+
+  /* ── El aviso ──
+     Hereda de la promo el texto, la foto y el enlace. Sin enlace propio
+     lleva a las promos de la app. La de socios lo dice en el título: es lo
+     que hace que valga la pena abrirlo. */
+  if coalesce(p_avisar, false) then
+    sale := greatest(now(), (coalesce(arranca, hoy)::timestamp at time zone 'America/Argentina/Buenos_Aires'));
+
+    if nivel is null then
+      select count(*) into cuantos from club_suscripciones where muerto is null;
+      if cuantos > 0 then
+        insert into club_avisos (titulo, cuerpo, enlace, imagen, por, promo, sale)
+        values (case when solo then 'Solo para socios del Club' else 'Nueva promo' end,
+                txt, coalesce(enl, 'tarjeta.html#promos'), img, 'Promoción', nid, sale);
+      end if;
+    else
+      /* Con nivel: un aviso personal a cada socio que llega, y a nadie más.
+         La clave es la promo: guardarla de nuevo con "avisar" no le vuelve
+         a sonar el teléfono al que ya lo recibió. */
+      select n.desde_xp, (select string_agg(m.nombre, ' y ' order by m.desde_xp) from club_niveles m where m.desde_xp >= n.desde_xp)
+        into nvxp, para
+        from club_niveles n where n.nombre = nivel;
+      insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+      select v.id, 'promo', 'promo:' || nid, left('Para socios ' || para, 60), txt,
+             coalesce(enl, 'tarjeta.html#promos'), sale
+        from v_club_clientes v
+        join club_niveles n on n.nombre = v.nivel
+       where v.baja is null and n.desde_xp >= nvxp
+         and exists (select 1 from club_suscripciones s where s.cliente = v.id and s.muerto is null)
+      on conflict (cliente, motivo, clave) do nothing;
+      get diagnostics cuantos = row_count;
+    end if;
+  end if;
+
+  return jsonb_build_object('ok', true, 'id', nid,
+    'avisados', case when coalesce(p_avisar, false) then cuantos else 0 end,
+    /* Con nivel, el aviso es personal: sale en menos de una hora, no ya. */
+    'personal', nivel is not null and coalesce(p_avisar, false),
+    'para', para);
+end;
+$pg$;
+
+revoke all on function club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text, boolean, boolean, text, text[], text) from public;
+grant execute on function club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text, boolean, boolean, text, text[], text) to anon, authenticated;
+
+
+select 'Listo: las promos pueden ser para un nivel, y el aviso les llega sólo a esos socios.' as "SQL 39";

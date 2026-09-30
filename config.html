@@ -818,7 +818,7 @@
       return '<div class="promo-fila">' +
         '<div class="promo-fila-txt"><b>' + esc(p.texto) + '</b>' +
           '<span>Hasta el ' + esc(fechaCorta(p.hasta)) +
-          (p.solo_socios ? ' · sólo socios' : '') + dondePromo(p) +
+          (p.desde_nivel ? ' · socios ' + (p.desde_nivel === 'Oro' ? 'Oro y Platino' : esc(p.desde_nivel)) : p.solo_socios ? ' · sólo socios' : '') + dondePromo(p) +
           (p.imagen ? ' · con foto' : '') + (p.cuenta ? ' · con cuenta regresiva' : '') + '</span></div>' +
         estado +
         '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button>' +
@@ -897,11 +897,18 @@
             }).join('') +
           '</select>' +
         '</div>' +
+        /* Para quién (SQL 38 y 39): todos, los socios, o desde un nivel. Un
+           nivel ya es "sólo socios": un solo desplegable y no un casillero
+           más un desplegable que se pueden contradecir. */
         '<div class="campo ancho">' +
-          '<label class="casillero">' +
-            '<input type="checkbox" id="promoSolo"' + (p && p.solo_socios ? ' checked' : '') + '>' +
-            '<span>Sólo para socios del Club</span>' +
-          '</label>' +
+          '<label for="promoPara">Para quién</label>' +
+          '<select id="promoPara">' +
+            [['todos', 'Todos los clientes'], ['socios', 'Todos los socios del Club'],
+             ['Oro', 'Socios Oro y Platino'], ['Platino', 'Sólo socios Platino']].map(function (o) {
+              var actual = p && p.desde_nivel ? p.desde_nivel : p && p.solo_socios ? 'socios' : 'todos';
+              return '<option value="' + o[0] + '"' + (actual === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+            }).join('') +
+          '</select>' +
         '</div>' +
         '<div class="campo ancho" id="promoLocalesCaja" hidden>' +
           '<label>En qué locales</label>' +
@@ -992,15 +999,22 @@
     /* Sólo socios en la tienda online: la tienda no sabe quién es socio,
        así que hace falta un cupón, y cómo se usa va en las condiciones. */
     var verNota = function () {
-      var solo = $('promoSolo').checked, online = /online/.test($('promoDonde').value);
+      var para = $('promoPara').value, solo = para !== 'todos', nivel = para === 'Oro' || para === 'Platino';
+      var online = /online/.test($('promoDonde').value);
       $('promoSoloNota').hidden = !solo;
-      $('promoSoloNota').innerHTML = 'En la app lleva el rótulo "Sólo socios". En Cobrar, el vendedor la ve al escanear la ' +
-        'tarjeta del socio, para aplicarla en BlueSoft como el regalo de cumple.' +
-        (solo && online ? ' <b>En la tienda online</b> no hay forma automática de saber quién es socio: poné en ' +
-                          'Condiciones el cupón que tienen que usar.' : '');
+      $('promoSoloNota').innerHTML = nivel
+        ? 'La ven primero los socios ' + (para === 'Oro' ? 'Oro y Platino' : 'Platino') + ', con su rótulo; en Cobrar, el ' +
+          'vendedor la ve sólo si el socio llega al nivel. Los de niveles más bajos la ven al final, con candado y cuánto ' +
+          'les falta: es un motivo para subir. El aviso al celular les llega sólo a los que llegan, en menos de una hora.'
+        : 'En la app lleva el rótulo "Sólo socios". En Cobrar, el vendedor la ve al escanear la tarjeta del socio, ' +
+          'para aplicarla en BlueSoft como el regalo de cumple.';
+      if (solo && online) {
+        $('promoSoloNota').innerHTML += ' <b>En la tienda online</b> no hay forma automática de saber quién es socio: poné en ' +
+                                        'Condiciones el cupón que tienen que usar.';
+      }
     };
     $('promoDonde').onchange = function () { marcados = localesTildados(); verDonde(); verNota(); };
-    $('promoSolo').onchange = verNota;
+    $('promoPara').onchange = verNota;
     verNota();
     verDonde();
   }
@@ -1342,12 +1356,17 @@
     if (cuenta === false && !(promoAbierta && 'cuenta' in promoAbierta)) { cuenta = null; }
     /* Para quién y dónde (SQL 38), con el mismo cuidado: lo de siempre (para
        todos, en todos lados) no se manda si la base todavía no lo conoce. */
-    var extra = { solo: $('promoSolo').checked, donde: $('promoDonde').value, locales: localesTildados() };
+    var para = $('promoPara').value;
+    var extra = { solo: para !== 'todos', donde: $('promoDonde').value, locales: localesTildados() };
     if (extra.donde === 'algunos' && !extra.locales.length) {
       avisar('err', 'Tildá en qué locales vale.'); b.disabled = false; return;
     }
+    /* El nivel (SQL 39): se manda si se eligió uno, o si la base ya lo
+       conoce (para poder sacarlo, con ''). */
+    var nivel = para === 'Oro' || para === 'Platino' ? para : '';
+    if (nivel || (promoAbierta && 'desde_nivel' in promoAbierta)) { extra.nivel = nivel; }
     var conoce = promoAbierta && 'donde' in promoAbierta;
-    if (!conoce && !extra.solo && extra.donde === 'locales') { extra = null; }
+    if (!conoce && !extra.solo && extra.donde === 'locales' && !nivel) { extra = null; }
     base.club.promoGuardar(pinPromo(), editando,
         $('promoTexto').value.trim(), $('promoImagen').value.trim(),
         $('promoDesde').value, $('promoHasta').value, $('promoCond').value.trim(),
@@ -1356,7 +1375,13 @@
         cuenta, extra)
       .then(function (r) {
         if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
-        if (r.avisados) {
+        if (r.personal) {
+          /* La de nivel avisa uno por uno (aviso personal): sale con el
+             Action, no con el envío de ahora. */
+          avisar('ok', r.avisados
+            ? 'Listo. A ' + r.avisados + (r.avisados === 1 ? ' socio ' : ' socios ') + r.para + ' les llega el aviso en menos de una hora.'
+            : 'Listo. Ningún socio ' + r.para + ' tiene los avisos prendidos: la ven al abrir la app.');
+        } else if (r.avisados) {
           /* El aviso ya está en la cola; esto sólo lo empuja para que salga
              ahora en vez de esperar al Action. Si falla, sale igual más
              tarde — por eso no se comprueba el resultado. */
@@ -1374,8 +1399,10 @@
       })
       .catch(function (err) {
         var m = (err && err.message) || '';
-        avisar('err', extra && /p_solo_socios|p_donde|PGRST202|could not find the function/i.test(m)
-          ? 'Falta correr el SQL 38 en Supabase para guardar "Sólo para socios" y "Dónde vale".'
+        avisar('err', extra && /p_desde_nivel/i.test(m)
+          ? 'Falta correr el SQL 39 en Supabase para guardar promos por nivel.'
+          : extra && /p_solo_socios|p_donde|PGRST202|could not find the function/i.test(m)
+          ? 'Falta correr el SQL 38 en Supabase para guardar "Para quién" y "Dónde vale".'
           : (err && err.delServidor && m) || 'No se pudo guardar.');
       })
       .then(function () { b.disabled = false; });
