@@ -179,6 +179,16 @@
   .ficha-x:focus-visible { outline: 2px solid var(--txt); outline-offset: 2px; }
   .ficha-x svg { width: 18px; height: 18px; }
   .ficha-busca input { width: 100%; }
+
+  /* ── Las vistas (30/09/2026) ──
+     Cada bloque dice en qué vistas va (data-vistas). Lo que no va se saca
+     con esta clase y no con hidden, que varios bloques ya usan para otra
+     cosa (pocos datos, las fechas a elegir). */
+  .fuera { display: none !important; }
+  /* En Socios, "Para recuperar" está solo en su fila: que use el ancho. */
+  @media (min-width: 1100px) { [data-vista="socios"] #cajaRecuperar { grid-column: 1 / -1; } }
+  #sociosTexto { width: 100%; max-width: 560px; }
+  #cajaBuscaSocios .ficha-res { max-width: 560px; }
   .ficha-res { margin-top: 8px; }
   .ficha-cab { display: grid; grid-template-columns: 56px 1fr; gap: 14px; align-items: center; margin-top: 6px; }
   .ficha-ini { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
@@ -323,7 +333,7 @@
         </svg>
       </div>
       <div class="marca-txt">
-        <h1>Estadísticas del Club</h1>
+        <h1 id="cabTitulo">Estadísticas del Club</h1>
         <span>VDH · Club</span>
       </div>
     </div>
@@ -387,51 +397,60 @@
 </nav>
 
 <main class="hoja">
+  <!-- Las cuatro caras del Club (30/09/2026). Socios, Movimientos y
+       Estadísticas son vistas de esta misma página (#socios, #movimientos):
+       comparten el período, el local, la ficha del socio y los datos. -->
   <nav class="pestanas" aria-label="Club">
     <a class="pestana" href="caja.html" data-pestana="cobrar">Cobrar</a>
-    <a class="pestana" href="club-numeros.html" data-pestana="estadisticas" aria-current="page">Estadísticas</a>
+    <a class="pestana" href="club-numeros.html#socios" data-pestana="socios" data-vista="socios">Socios</a>
+    <a class="pestana" href="club-numeros.html#movimientos" data-pestana="movimientos" data-vista="movimientos">Movimientos</a>
+    <a class="pestana" href="club-numeros.html" data-pestana="estadisticas" data-vista="estadisticas" aria-current="page">Estadísticas</a>
   </nav>
   <div class="cn-cab">
     <h2 class="cn-tit" id="titulo">El Club</h2>
-    <span class="cn-rango" id="rango"></span>
+    <span class="cn-rango" id="rango" data-vistas="estadisticas movimientos"></span>
   </div>
 
   <div class="cn-controles">
-    <div class="cn-periodos" id="periodos" role="group" aria-label="Período"></div>
-    <div class="cn-fechas" id="fechas" hidden>
+    <div class="cn-periodos" id="periodos" role="group" aria-label="Período" data-vistas="estadisticas movimientos"></div>
+    <div class="cn-fechas" id="fechas" data-vistas="estadisticas movimientos" hidden>
       <input type="date" id="fDesde" aria-label="Desde"><span>al</span>
       <input type="date" id="fHasta" aria-label="Hasta">
       <button type="button" class="btn btn-sec btn-chico" id="fAplicar">Ver</button>
     </div>
     <div class="cn-fila">
       <select id="selLocal" aria-label="Local"><option value="">Todos los locales</option></select>
-      <button type="button" class="btn btn-sec btn-chico" id="btnBuscarSocio">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        Buscar un socio
-      </button>
-      <button type="button" class="btn btn-sec btn-chico" id="btnExportar">
+      <button type="button" class="btn btn-sec btn-chico" id="btnExportar" data-vistas="movimientos">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 21h14"/></svg>
         Bajar los movimientos (Excel)
       </button>
     </div>
   </div>
 
-  <div class="pocos" id="pocos" hidden>
+  <!-- Socios: el buscador, a la vista y no escondido atrás de un botón. -->
+  <div class="bloque" id="cajaBuscaSocios" data-vistas="socios" style="margin-bottom:12px">
+    <h2 class="bloque-tit">Buscar un socio</h2>
+    <p class="bloque-sub">Por nombre, teléfono o mail. Tocá uno para ver su ficha: sus compras, su ritmo y cómo escribirle.</p>
+    <input type="search" id="sociosTexto" placeholder="Nombre, teléfono o mail" autocomplete="off" aria-label="Buscar un socio">
+    <div class="ficha-res" id="sociosRes"></div>
+  </div>
+
+  <div class="pocos" id="pocos" data-vistas="estadisticas" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
     <span id="pocosTxt"></span>
   </div>
 
   <!-- 1. Lo que vendió el Club -->
-  <div class="cn-kpis" id="kpis"></div>
+  <div class="cn-kpis" id="kpis" data-vistas="estadisticas"></div>
 
   <!-- 2. Los socios -->
   <div class="cn-grilla">
-    <div class="bloque" id="cajaActividad">
+    <div class="bloque" id="cajaActividad" data-vistas="estadisticas">
       <h2 class="bloque-tit">Actividad de los socios <span class="cuando">hoy</span></h2>
       <p class="bloque-sub" id="actividadSub"></p>
       <div id="actividad"></div>
     </div>
-    <div class="bloque" id="cajaRecuperar">
+    <div class="bloque" id="cajaRecuperar" data-vistas="estadisticas socios">
       <h2 class="bloque-tit">Para recuperar <span class="cuando">hoy</span></h2>
       <p class="bloque-sub">Dejaron de venir, cada uno según su ritmo: el que compraba cada 18 días aparece a los 36 sin volver; el que compró una o dos veces, a los 60. Primero los más atrasados. Tocá uno para ver su ficha. No depende del período.</p>
       <div id="recuperar"></div>
@@ -440,13 +459,13 @@
 
   <!-- 3. Locales, evolución, premios y costos -->
   <div class="cn-grilla">
-    <div class="bloque ancho" id="cajaLocales">
+    <div class="bloque ancho" id="cajaLocales" data-vistas="estadisticas">
       <h2 class="bloque-tit">Por local</h2>
       <p class="bloque-sub">En el período. Tocá un título para ordenar; tocá un local para ver sólo ese.</p>
       <div class="tabla-caja" id="locales"></div>
     </div>
 
-    <div class="bloque ancho" id="cajaDias">
+    <div class="bloque ancho" id="cajaDias" data-vistas="estadisticas">
       <h2 class="bloque-tit" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">Evolución de las compras
         <span class="interruptor" id="interruptor" role="group" aria-label="Qué mostrar">
           <button type="button" id="verCompras" aria-pressed="true">Compras</button>
@@ -457,13 +476,13 @@
       <div id="dias"></div>
     </div>
 
-    <div class="bloque" id="cajaPremios">
+    <div class="bloque" id="cajaPremios" data-vistas="estadisticas">
       <h2 class="bloque-tit">Premios</h2>
       <p class="bloque-sub">Canjes en el período. "Hoy les alcanza": los socios que ya tienen los puntos para llevárselo.</p>
       <div class="tabla-caja" id="premios"></div>
     </div>
 
-    <div class="bloque" id="cajaCostos">
+    <div class="bloque" id="cajaCostos" data-vistas="estadisticas">
       <h2 class="bloque-tit">Costos del Club</h2>
       <p class="bloque-sub">Lo que ya costó, y lo que podría costar con los puntos que los socios tienen guardados.</p>
       <div id="costos"></div>
@@ -472,27 +491,27 @@
 
   <!-- Los socios, en detalle -->
   <div class="cn-grilla">
-    <div class="bloque" id="cajaVolvieron">
+    <div class="bloque" id="cajaVolvieron" data-vistas="estadisticas">
       <h2 class="bloque-tit">Quiénes compraron</h2>
       <p class="bloque-sub" id="volvieronSub"></p>
       <div id="volvieron"></div>
     </div>
-    <div class="bloque" id="cajaNiveles">
+    <div class="bloque" id="cajaNiveles" data-vistas="estadisticas socios">
       <h2 class="bloque-tit">Niveles <span class="cuando">hoy</span></h2>
       <p class="bloque-sub" id="nivelesSub"></p>
       <div id="niveles"></div>
     </div>
-    <div class="bloque ancho" id="cajaRanking">
+    <div class="bloque ancho" id="cajaRanking" data-vistas="estadisticas socios">
       <h2 class="bloque-tit">Los socios que más compraron</h2>
       <p class="bloque-sub">En el período.</p>
       <div class="tabla-caja" id="ranking"></div>
     </div>
-    <div class="bloque" id="cajaCumples">
+    <div class="bloque" id="cajaCumples" data-vistas="estadisticas socios">
       <h2 class="bloque-tit">Cumpleaños <span class="cuando">próximos 7 días</span></h2>
       <p class="bloque-sub">Su regalo lo ven en la tarjeta y se entrega en la caja.</p>
       <div id="cumples"></div>
     </div>
-    <div class="bloque" id="cajaResenas">
+    <div class="bloque" id="cajaResenas" data-vistas="estadisticas">
       <h2 class="bloque-tit">Reseñas pedidas</h2>
       <p class="bloque-sub">Los pedidos de reseña en Google que salieron en el período.</p>
       <div id="resenas"></div>
@@ -500,7 +519,7 @@
   </div>
 
   <!-- 4. El detalle, plegado -->
-  <details class="detalle-caja" id="detalle">
+  <details class="detalle-caja" id="detalle" data-vistas="estadisticas">
     <summary>Más detalle <span>vendedores, días de la semana, horarios y lo último</span></summary>
     <div class="cn-sub">
       <div class="bloque ancho" id="cajaVendedores">
@@ -531,9 +550,8 @@
     </div>
   </details>
 
-  <div class="bloque" id="cajaMovs" style="margin-top:12px">
-    <h2 class="bloque-tit">Movimientos</h2>
-    <p class="bloque-sub">Todo lo que pasó en el período. Se busca por socio, los últimos 4 números de su tarjeta, ticket o vendedor.</p>
+  <div class="bloque" id="cajaMovs" data-vistas="movimientos">
+    <p class="bloque-sub" style="margin-top:0">Todo lo que pasó en el período. Se busca por socio, los últimos 4 números de su tarjeta, ticket o vendedor.</p>
     <div class="mov-controles">
       <input type="search" id="movBusca" placeholder="Buscar…" autocomplete="off" aria-label="Buscar movimientos">
       <select id="movTipo" aria-label="Tipo">
@@ -719,8 +737,44 @@
     return { pocos: Number(datos.actual.compras) < MIN_COMPRAS || dias < MIN_DIAS, dias: dias };
   }
 
+  /* ═══ Las vistas: Socios, Movimientos y Estadísticas (30/09/2026) ═══════
+     Tres caras de la misma página, elegidas por la dirección (#socios,
+     #movimientos, o nada). Comparten el período, el local, los datos y la
+     ficha; cada una muestra sólo sus bloques (data-vistas). */
+  var vista = 'estadisticas';
+  function leerVista() {
+    var h = location.hash.replace('#', '');
+    return h === 'socios' || h === 'movimientos' ? h : 'estadisticas';
+  }
+  function aplicarVista() {
+    vista = leerVista();
+    Array.prototype.forEach.call(document.querySelectorAll('[data-vistas]'), function (el) {
+      el.classList.toggle('fuera', el.getAttribute('data-vistas').split(' ').indexOf(vista) < 0);
+    });
+    /* Una grilla sin ningún bloque de esta vista no deja su hueco. */
+    Array.prototype.forEach.call(document.querySelectorAll('.cn-grilla'), function (g) {
+      var alguno = Array.prototype.some.call(g.children, function (c) { return !c.classList.contains('fuera'); });
+      g.classList.toggle('fuera', !alguno);
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('.pestana[data-vista]'), function (a) {
+      if (a.dataset.vista === vista) { a.setAttribute('aria-current', 'page'); } else { a.removeAttribute('aria-current'); }
+    });
+    var nombre = { socios: 'Socios', movimientos: 'Movimientos', estadisticas: 'Estadísticas' }[vista] + ' del Club';
+    document.title = 'VDH · ' + nombre;
+    $('cabTitulo').textContent = nombre;
+    document.body.dataset.vista = vista;
+    ponerTitulo();
+  }
+  function ponerTitulo() {
+    var donde = !estado.local ? '' : estado.local === SIN ? 'sin local asignado' : nombreDe(estado.local);
+    $('titulo').textContent =
+      vista === 'socios'      ? 'Socios' + (donde ? ' · ' + donde : '') :
+      vista === 'movimientos' ? 'Movimientos' + (donde ? ' · ' + donde : '') :
+      estado.local ? (estado.local === SIN ? 'El Club · sin local asignado' : 'El Club en ' + donde) : 'El Club';
+  }
+
   function pintar() {
-    $('titulo').textContent = estado.local ? (estado.local === SIN ? 'El Club · sin local asignado' : 'El Club en ' + nombreDe(estado.local)) : 'El Club';
+    ponerTitulo();
     pintarSelectorLocal();
     var pd = pocosDatos();
     $('pocos').hidden = !pd.pocos;
@@ -1322,21 +1376,24 @@
     $('fichaBusca').hidden = false; $('fichaCuerpo').innerHTML = ''; $('fichaRes').innerHTML = '';
     $('fichaTexto').value = ''; $('fichaTexto').focus();
   }
-  function buscarSocio() {
-    var t = $('fichaTexto').value.trim();
-    if (t.length < 3) { $('fichaRes').innerHTML = t ? '<p class="vacio-cn">Seguí escribiendo: al menos 3 letras.</p>' : ''; return; }
+  /* Busca desde el panel de la ficha o desde el buscador de la vista
+     Socios: la misma búsqueda, en dos lugares. */
+  function buscarSocio(entrada, salida) {
+    entrada = entrada || $('fichaTexto'); salida = salida || $('fichaRes');
+    var t = entrada.value.trim();
+    if (t.length < 3) { salida.innerHTML = t ? '<p class="vacio-cn">Seguí escribiendo: al menos 3 letras.</p>' : ''; return; }
     base.club.buscar(pinGuardado(), t)
       .then(function (r) {
-        if (t !== $('fichaTexto').value.trim()) { return; }   // ya escribió otra cosa
-        if (r && r.corto) { $('fichaRes').innerHTML = '<p class="vacio-cn">' + esc(r.porque) + '</p>'; return; }
+        if (t !== entrada.value.trim()) { return; }   // ya escribió otra cosa
+        if (r && r.corto) { salida.innerHTML = '<p class="vacio-cn">' + esc(r.porque) + '</p>'; return; }
         var l = r || [];
-        $('fichaRes').innerHTML = l.length ? l.map(function (s) {
+        salida.innerHTML = l.length ? l.map(function (s) {
           return '<button type="button" class="dato" data-codigo="' + esc(s.codigo) + '"><span>' + esc(s.nombre) +
                  '<small>' + esc(s.nivel || 'Plata') + ' · ' + unoVarios(s.compras || 0, 'compra', 'compras') + '</small></span>' +
                  '<b>' + miles(s.puntos) + '</b></button>';
         }).join('') : '<p class="vacio-cn">No encontré a nadie con eso.</p>';
       })
-      .catch(function (err) { $('fichaRes').innerHTML = '<p class="vacio-cn">' + esc((err && err.delServidor && err.message) || 'No se pudo buscar.') + '</p>'; });
+      .catch(function (err) { salida.innerHTML = '<p class="vacio-cn">' + esc((err && err.delServidor && err.message) || 'No se pudo buscar.') + '</p>'; });
   }
 
   function abrirFicha(codigo, desdeBusqueda) {
@@ -1533,9 +1590,22 @@
     };
     $('movTipo').onchange = function () { mov.tipo = $('movTipo').value; mov.salto = 0; cargarMovs(); };
     $('btnExportar').onclick = exportar;
-    /* La ficha: desde "Para recuperar", desde el buscador, y se cierra con
-       la X, tocando afuera o con Escape. */
-    $('btnBuscarSocio').onclick = abrirBuscador;
+    /* La ficha: desde "Para recuperar", desde el buscador de Socios, y se
+       cierra con la X, tocando afuera o con Escape. */
+    var esperaS;
+    $('sociosTexto').oninput = function () {
+      clearTimeout(esperaS);
+      esperaS = setTimeout(function () { buscarSocio($('sociosTexto'), $('sociosRes')); }, 300);
+    };
+    $('sociosRes').onclick = function (e) {
+      var b = e.target.closest('[data-codigo]');
+      if (b) { abrirFicha(b.dataset.codigo); }
+    };
+    window.addEventListener('hashchange', function () {
+      aplicarVista();
+      if (vista === 'socios') { $('sociosTexto').focus(); }
+    });
+    aplicarVista();
     $('recuperar').addEventListener('click', function (e) {
       var b = e.target.closest('button.dato[data-codigo]');
       if (b && b.dataset.codigo) { abrirFicha(b.dataset.codigo); }
@@ -1544,7 +1614,7 @@
       var b = e.target.closest('[data-codigo]');
       if (b) { abrirFicha(b.dataset.codigo, true); }
     };
-    $('fichaTexto').oninput = function () { clearTimeout(esperaF); esperaF = setTimeout(buscarSocio, 300); };
+    $('fichaTexto').oninput = function () { clearTimeout(esperaF); esperaF = setTimeout(function () { buscarSocio(); }, 300); };
     $('fichaCerrar').onclick = cerrarFicha;
     $('fichaFondo').onclick = cerrarFicha;
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('ficha').hidden) { cerrarFicha(); } });

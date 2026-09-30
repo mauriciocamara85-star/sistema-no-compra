@@ -14,10 +14,13 @@
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="estilos.css">
 <script>
+  /* El ítem "Club" del menú abre la última pastilla que se usó en esta compu.
+     Socios, Movimientos y Estadísticas son vistas de club-numeros.html. */
   try {
-    if (localStorage.getItem('nc_club_pestana') === 'estadisticas' && !/[?&]cobrar/.test(location.search)) {
-      location.replace('club-numeros.html');
-    }
+    var ultimaPestana = localStorage.getItem('nc_club_pestana');
+    var destinoPestana = { estadisticas: 'club-numeros.html', socios: 'club-numeros.html#socios',
+                           movimientos: 'club-numeros.html#movimientos' }[ultimaPestana];
+    if (destinoPestana && !/[?&]cobrar/.test(location.search)) { location.replace(destinoPestana); }
   } catch (e) {}
   try {
     document.documentElement.dataset.theme =
@@ -223,6 +226,8 @@
 <main class="hoja">
   <nav class="pestanas" aria-label="Club">
     <a class="pestana" href="caja.html" data-pestana="cobrar" aria-current="page">Cobrar</a>
+    <a class="pestana" href="club-numeros.html#socios" data-pestana="socios">Socios</a>
+    <a class="pestana" href="club-numeros.html#movimientos" data-pestana="movimientos">Movimientos</a>
     <a class="pestana" href="club-numeros.html" data-pestana="estadisticas">Estadísticas</a>
   </nav>
   <section class="bloque">

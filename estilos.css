@@ -1224,10 +1224,11 @@ select {
 }
 
 
-/* ── Las pastillas de una sección con dos caras ──────────────────────────
-   El Club tiene dos: Cobrar (la caja) y Estadísticas. Son dos páginas, pero
-   se ven como una sola sección con una pastilla arriba para pasar de una a
-   la otra. La elegida se ve apretada, no sólo de otro color. */
+/* ── Las pastillas de una sección con varias caras ───────────────────────
+   El Club tiene cuatro: Cobrar (la caja), Socios, Movimientos y
+   Estadísticas (30/09/2026). Se ven como una sola sección con una pastilla
+   arriba para pasar de una a otra. La elegida se ve apretada, no sólo de
+   otro color. */
 .pestanas {
   display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 16px;
   background: var(--surface-2); border: 1px solid var(--line); border-radius: 99px;
@@ -1240,3 +1241,9 @@ select {
 .pestana:hover { color: var(--txt); }
 .pestana:focus-visible { outline: 2px solid var(--txt); outline-offset: 2px; }
 .pestana[aria-current="page"] { background: var(--surface); color: var(--txt); box-shadow: var(--sombra); }
+/* En el celular las cuatro no entran con su aire: ocupan el ancho y se
+   reparten el lugar. */
+@media (max-width: 520px) {
+  .pestanas { display: flex; width: 100%; }
+  .pestana { flex: 1 1 auto; text-align: center; padding: 9px 6px; font-size: 13.5px; }
+}
