@@ -156,7 +156,7 @@
      arriba están pensados contra --bg, no contra esto. */
   --rail-bg:    linear-gradient(180deg, #2A2926 0%, #161614 100%);
   --rail-borde: rgba(255, 255, 255, .08);
-  --rail-acc:   #FFFFFF;
+  --rail-acc:   #D6AE55;   /* la sección abierta, en oro: 7:1 contra el rail */
   --rail-txt:   #FFFFFF;
   --rail-txt-2: #BDB8AE;   /* 7:1 contra el rail */
   --rail-line:  rgba(255, 255, 255, .08);
@@ -316,16 +316,15 @@ a { color: var(--acc-txt); }
   gap: 12px;
 }
 .marca { display: flex; align-items: center; gap: 11px; min-width: 0; }
-/* La marca: la bolsa en un CÍRCULO carbón (redondo como los botones de la
-   app; el cuadrado se veía duro), con el ícono blanco. */
+/* La marca: la bolsa en un CÍRCULO dorado (redondo como los botones de la
+   app; el cuadrado se veía duro). El oro del nivel del Club. */
 .marca-icono {
   width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-  background: linear-gradient(160deg, #2E2D2A 0%, #1C1C1A 100%);
-  color: #FFFFFF;
+  background: var(--oro);
+  color: var(--oro-ink);
   display: grid; place-items: center;
-  box-shadow: 0 6px 14px -8px rgba(28, 28, 26, .6);
+  box-shadow: 0 6px 16px -10px rgba(122, 90, 18, .7);
 }
-html[data-theme="dark"] .marca-icono { background: #F4F2EC; color: #1C1C1A; }
 .marca-icono svg { width: 22px; height: 22px; }
 .marca-txt { min-width: 0; }
 .marca-txt h1 {
@@ -440,7 +439,7 @@ html[data-theme="dark"] .marca-icono { background: #F4F2EC; color: #1C1C1A; }
 /* La sección abierta se marca con el color de acento como TEXTO, que para eso
    está --acc-txt; --acc es relleno y acá no hay tinta encima que lo acompañe. */
 .rail-item[aria-current="page"] { color: var(--txt); }
-.rail-item[aria-current="page"] .rail-icono { background: var(--acc-soft); color: var(--txt); }
+.rail-item[aria-current="page"] .rail-icono { background: var(--oro-soft); color: var(--oro-txt); }
 
 /* Lo que el rail acostado le tapa al contenido. El formulario suma lo suyo
    aparte en index.html, porque ahí abajo también está la barra de guardar. */
@@ -492,8 +491,8 @@ html[data-theme="dark"] .marca-icono { background: #F4F2EC; color: #1C1C1A; }
   }
   .rail-marca-icono {
     width: 40px; height: 40px; border-radius: 50%;
-    background: #F4F2EC;
-    color: #1C1C1A;
+    background: var(--oro);
+    color: var(--oro-ink);
     display: grid; place-items: center;
     box-shadow: 0 8px 18px -10px rgba(0, 0, 0, .8);
   }
@@ -529,8 +528,8 @@ html[data-theme="dark"] .marca-icono { background: #F4F2EC; color: #1C1C1A; }
   }
   .rail-icono { width: 38px; height: 34px; border-radius: 12px; }
   .rail-item[aria-current="page"] .rail-icono {
-    background: rgba(255, 255, 255, .14);
-    color: #FFFFFF;
+    background: rgba(214, 174, 85, .16);
+    color: #E8C877;
   }
 
   /* Abajo de todo, separado por el aire que sobra: quién está cargando. Es la
@@ -824,9 +823,9 @@ html[data-theme="dark"] .marca-icono { background: #F4F2EC; color: #1C1C1A; }
 .kpi.es-obj { border-left-color: rgba(255, 255, 255, .32); }
 /* Objetivo cumplido: el verde de "esto ya está" es el mismo que usa el panel
    para lo cerrado, así el color quiere decir lo mismo en las dos pantallas. */
-.kpi.es-obj.lleno { border-left-color: #6FC596; }
-.kpi.es-obj.lleno .kpi-n { color: var(--ok-txt); }
-.kpi.es-obj.lleno .kpi-barra i { background: #6FC596; }
+.kpi.es-obj.lleno { border-left-color: var(--oro-liso); }
+.kpi.es-obj.lleno .kpi-n { color: #E8C877; }
+.kpi.es-obj.lleno .kpi-barra i { background: var(--oro); }
 /* La barra va pegada al BORDE de abajo y no en la fila del texto. Es la
    única tarjeta que la lleva: adentro del contenido, las otras dos quedaban
    con un hueco de casi medio centímetro abajo —mismo alto de grilla, un
@@ -847,10 +846,8 @@ html[data-theme="dark"] .marca-icono { background: #F4F2EC; color: #1C1C1A; }
 .kpi-barra i {
   display: block;
   height: 100%;
-  /* El avance, en el verde de la app: es progreso, como la barra de
-     "te alcanza" del Club. Más claro que el de la app porque va sobre
-     platino. */
-  background: #6FC596;
+  /* El avance del objetivo, en oro: el logro del día. */
+  background: var(--oro);
   transition: width .5s var(--curva);
 }
 
