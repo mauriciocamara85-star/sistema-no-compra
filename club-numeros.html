@@ -1046,7 +1046,7 @@
             cat.map(function (c) {
               return '<tr><td>' + esc(c.nombre) + '</td><td>' + miles(c.puntos) + '</td><td>' + plata(c.costo) + '</td><td>' + plata(c.costo * 100 / c.puntos) + '</td></tr>';
             }).join('') + '</tbody></table></div>'
-          : '<p class="nota-cn" style="margin-top:6px">Falta cargar el costo de los premios en Configuración → Premios del Club: sin eso no se puede estimar.</p>') +
+          : '<p class="nota-cn" style="margin-top:6px">Falta cargar el costo de los premios en <a href="config.html#club/premios">Configuración → Premios</a>: sin eso no se puede estimar.</p>') +
       '</details>';
   }
 
@@ -1111,7 +1111,7 @@
     $('resenas').innerHTML = l.length
       ? l.map(function (r) { return '<div class="dato"><span>' + esc(nombreDe(r.local)) + '</span><b>' + miles(r.pedidos) + '</b></div>'; }).join('')
       : '<p class="vacio-cn">Ninguno en el período. Salen solos al día siguiente de una compra en un local con su enlace de Google cargado ' +
-        '(<a href="config.html#club">Configuración → Reseñas en Google</a>).</p>';
+        '(<a href="config.html#club/resenas">Configuración → Reseñas por local</a>).</p>';
   }
 
   /* ═══ 4. El detalle, plegado ═══════════════════════════════════════════

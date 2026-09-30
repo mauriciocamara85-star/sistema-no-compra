@@ -8006,3 +8006,62 @@ grant execute on function club_promo_guardar(text, bigint, text, text, text, tex
 
 
 select 'Listo: la cuenta regresiva en los puntos extra y en las promos.' as "SQL 35";
+
+
+-- ─────────────────────────── PARTE 36 ───────────────────────────
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · CONFIGURACIÓN ORDENADA: LO QUE SE MIRA
+--
+-- Correr en el editor SQL de Supabase, después del 35.
+--
+-- Pedido de Mauricio (30/09/2026): Configuración > Club VDH pasa a ser un
+-- menú, y cada parte abre su pantalla. Dos pantallas nuevas necesitan datos
+-- que no tenían de dónde salir:
+--
+--   · PUNTOS Y NIVELES: las reglas (cuánto vale un punto, cuándo vencen, el
+--     regalo de bienvenida…) y los tres niveles, con cuántos socios hay en
+--     cada uno. Para mirar: no se cambian desde la pantalla.
+--   · INTEGRACIONES: cómo va la tienda online (compras que sumaron puntos,
+--     pedidos que no coincidieron con ningún socio, el último revisado).
+--
+-- Una sola función, que sólo lee y pide PIN. No cambia ninguna regla.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_config_resumen(p_pin text)
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $cr$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return jsonb_build_object(
+    'reglas', (select coalesce(jsonb_object_agg(clave, valor), '{}'::jsonb)
+                 from club_reglas
+                where clave in ('pesos_por_punto', 'vence_meses', 'bienvenida_puntos', 'cumple_antes',
+                                'tope_importe', 'exige_ticket', 'resena_cada_dias')),
+    'niveles', (select coalesce(jsonb_agg(jsonb_build_object(
+                         'nombre', n.nombre, 'desde_xp', n.desde_xp, 'multiplica', n.multiplica, 'bono', n.bono,
+                         'socios', (select count(*) from v_club_clientes v where v.nivel = n.nombre and v.baja is null))
+                       order by n.desde_xp), '[]'::jsonb)
+                  from club_niveles n),
+    'tienda', (select jsonb_build_object(
+                        'pedidos',      count(*),
+                        'sumados_30',   count(*) filter (where estado = 'sumado' and creado > now() - interval '30 days'),
+                        'puntos_30',    coalesce(sum(puntos) filter (where estado = 'sumado' and creado > now() - interval '30 days'), 0),
+                        'sin_socio_30', count(*) filter (where estado in ('sin_socio', 'varios_socios') and creado > now() - interval '30 days'),
+                        'ultimo',       max(creado))
+                 from club_tienda_pedidos));
+end;
+$cr$;
+
+revoke all on function club_config_resumen(text) from public;
+grant execute on function club_config_resumen(text) to anon, authenticated;
+
+
+select 'Listo: Configuración ya puede mostrar las reglas, los niveles y la tienda online.' as "SQL 36";

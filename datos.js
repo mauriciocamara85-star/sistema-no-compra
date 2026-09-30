@@ -842,6 +842,12 @@ var base = {
       return funcion('club_kommo_estado', { p_pin: pin });
     },
 
+    /** Para Configuración (SQL 36): las reglas y los niveles como están, y
+        cómo va la tienda online. Sólo lee. Pide PIN. */
+    configResumen: function (pin) {
+      return funcion('club_config_resumen', { p_pin: pin });
+    },
+
     /** Marcar el regalo de cumple como usado. Una vez por cumpleaños. */
     entregarCumple: function (pin, codigo, local, vendedor) {
       return funcion('club_entregar_cumple', {

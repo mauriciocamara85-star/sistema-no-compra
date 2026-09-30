@@ -225,12 +225,85 @@
     .seccion { display: grid; gap: 14px; align-items: start; }
     /* Locales: la lista se lleva el ancho; lo de este equipo, al costado. */
     #secLocal { grid-template-columns: minmax(0, 1fr) 380px; }
-    /* Club: dos columnas iguales. A la izquierda lo que se mira y se arma
-       una vez (números, premios, regalos); a la derecha lo que se hace
-       seguido (promociones, puntos dobles, avisos). */
-    #secClub { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .pin-club { grid-column: 1 / -1; }
+    /* Club: el menú arma sus propias columnas; las pantallas, una. */
+    #secClub { display: block; }
   }
+
+  /* ── Club VDH: el menú ──
+     Tres grupos. En la PC, uno al lado del otro; en el celular, uno abajo
+     del otro. Cada opción: ícono, título, lo que hay adentro en un renglón
+     y la flecha. */
+  .club-menu { display: grid; gap: 14px; align-items: start; }
+  @media (min-width: 900px) { .club-menu { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .club-menu[hidden] { display: none; }
+  .club-grupo {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
+    padding: 8px; box-shadow: var(--sombra);
+  }
+  .club-grupo-tit {
+    font: 700 12px var(--sans); letter-spacing: .6px; text-transform: uppercase;
+    color: var(--txt-3); padding: 10px 12px 6px;
+  }
+  .club-op {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px; border-radius: var(--r-sm);
+    color: inherit; text-decoration: none;
+  }
+  .club-op:hover, .club-op:focus-visible { background: var(--surface-2); }
+  .club-op::after {
+    content: ""; flex: none; width: 8px; height: 8px; margin-right: 4px;
+    border: solid var(--txt-3); border-width: 0 2px 2px 0; transform: rotate(-45deg);
+  }
+  .club-op + .club-op { border-top: 1px solid var(--line); border-top-left-radius: 0; border-top-right-radius: 0; }
+  .club-op-ico {
+    flex: none; width: 40px; height: 40px; border-radius: 11px;
+    display: grid; place-items: center;
+    background: var(--acc-soft); color: var(--acc-txt);
+  }
+  .club-op-ico svg { width: 20px; height: 20px; }
+  .club-op-txt { flex: 1; min-width: 0; }
+  .club-op-txt b { display: block; font: 700 15px/1.3 var(--sans); }
+  .club-op-txt span { display: block; font-size: 13px; line-height: 1.4; color: var(--txt-2); margin-top: 2px; }
+  /* Lo que avisa algo (un error de Kommo, un local sin enlace) se nota. */
+  .club-op-txt span.ojo { color: var(--warn-txt); }
+  .club-op-ir .club-op-ico { background: var(--surface-2); color: var(--txt-2); }
+
+  /* ── Club VDH: cada pantalla ──
+     Una columna y no más ancha que lo que se lee cómodo: son formularios y
+     listas, no tableros. */
+  .club-pant { max-width: 980px; }
+  .club-pant[hidden] { display: none; }
+  .club-pant > .bloque + .bloque { margin-top: 14px; }
+  .pant-cab { margin: 2px 2px 16px; }
+  .pant-volver {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 700 14px var(--sans); color: var(--txt-2); text-decoration: none;
+    padding: 6px 0; margin-bottom: 4px;
+  }
+  .pant-volver::before {
+    content: ""; width: 8px; height: 8px;
+    border: solid currentColor; border-width: 0 0 2px 2px; transform: rotate(45deg);
+  }
+  .pant-volver:hover { color: var(--txt); }
+  .pant-tit { font: 700 clamp(22px, 5vw, 28px)/1.2 var(--display); letter-spacing: -.4px; }
+  .pant-cab .bloque-sub { margin-top: 6px; max-width: 720px; }
+  .pant-cab .bloque-sub a, .bloque-sub a { color: var(--acc-txt); }
+
+  /* Puntos y niveles: la tabla de los tres niveles y las reglas. */
+  .reglas-tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .reglas-tabla th { text-align: left; font: 700 12px var(--sans); letter-spacing: .4px; text-transform: uppercase;
+                     color: var(--txt-3); padding: 0 10px 8px 0; }
+  .reglas-tabla td { padding: 11px 10px 11px 0; border-top: 1px solid var(--line); vertical-align: top; }
+  .reglas-tabla td b { font-weight: 700; }
+  .reglas-tabla .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tabla-scroll { overflow-x: auto; }
+  .reglas-lista { display: grid; gap: 10px; margin-top: 18px; }
+  .regla { display: flex; justify-content: space-between; gap: 14px; align-items: baseline;
+           padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+  .regla span { font-size: 14px; color: var(--txt-2); }
+  .regla b { font-weight: 700; text-align: right; }
+  .detalle-err summary { cursor: pointer; font-size: 13.5px; font-weight: 700; color: var(--txt-2); margin-top: 8px; }
+  .detalle-err p { font-size: 13px; color: var(--txt-3); margin-top: 6px; word-break: break-word; }
 
   /* ── Las filas de promociones ──
      La lista vive en la columna angosta de la derecha, asi que se acomoda
@@ -248,19 +321,15 @@
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   .promo-fila-txt span { font-size: 12.5px; color: var(--txt-3); }
-
-  /* ── El Club en números ──
-     Pocas cifras y grandes. Es para mirar una vez por mes y saber si el
-     programa se está pagando solo, no para analizar. */
-  .costo-grilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-  .costo-dato {
-    padding: 12px 14px; border-radius: var(--r-sm);
-    border: 1px solid var(--line); background: var(--surface-2);
+  /* En su propia pantalla hay ancho: el estado y los botones van al lado
+     del texto, como en una tabla, y no abajo. */
+  @media (min-width: 720px) {
+    .club-pant .promo-fila { flex-wrap: nowrap; }
+    .club-pant .promo-fila-txt { flex: 1 1 0; }
+    .club-pant .promo-fila-txt b { white-space: normal; }
+    .club-pant .promo-fila > .pill, .club-pant .promo-fila > .btn { flex: none; }
   }
-  .costo-dato b { display: block; font: 700 21px/1.1 var(--display); font-variant-numeric: tabular-nums; }
-  .costo-dato span { display: block; font-size: 12.5px; color: var(--txt-3); margin-top: 3px; }
-  .costo-dato.clave { grid-column: 1 / -1; border-color: var(--acc-line); }
-  .costo-dato.clave b { font-size: 28px; color: var(--acc-txt); }
+
   /* Los días de la semana, como botones que se prenden. Ninguno prendido
      = todos los días, que es el caso común y no tiene que pedir siete
      clics. */
@@ -278,7 +347,8 @@
   .horas-fila input { flex: 1; min-width: 0; }
   .horas-fila[hidden] { display: none; }
 
-  .kommo-linea { margin-top: 12px; font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
+  .kommo-linea { margin-top: 4px; font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
+  .kommo-linea + .kommo-linea { margin-top: 8px; }
   .kommo-linea b { color: var(--txt); }
   .kommo-linea.mal { color: var(--warn-txt); }
 
@@ -430,60 +500,169 @@
       <p class="bloque-sub">Acá se manejan los premios, las promociones y los avisos que ven los socios. Pide el PIN porque lo que se cambia lo ven los clientes.</p>
       <div id="pinClubCuerpo"></div>
     </div>
-    <!-- Lo que se mira y se arma una vez. -->
-    <div class="col">
-    <div class="bloque" id="cajaCosto">
-      <h2 class="bloque-tit">El Club en números</h2>
-      <p class="bloque-sub">Los últimos 12 meses. El número de arriba es el que importa: cuánto de lo que compran los socios se va en premios.</p>
-      <div id="costoCuerpo"></div>
+    <!-- ── El menú (30/09/2026) ──
+         Antes eran diez bloques uno abajo del otro. Ahora cada parte del Club
+         es una opción con lo que tiene adentro dicho en un renglón, y se
+         abre en su propia pantalla (#club/premios, #club/promos…). Los
+         renglones salen de lo que devuelve la base, nunca de un texto fijo. -->
+    <div class="club-menu" id="clubMenu">
+      <div class="club-grupo">
+        <h2 class="club-grupo-tit">El programa</h2>
+        <a class="club-op" href="#club/niveles" data-sec="niveles">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0Z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></svg></span>
+          <span class="club-op-txt"><b>Puntos y niveles</b><span data-res="niveles">…</span></span>
+        </a>
+        <a class="club-op" href="#club/premios" data-sec="premios">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C11 3 12 8 12 8s1-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
+          <span class="club-op-txt"><b>Premios</b><span data-res="premios">…</span></span>
+        </a>
+        <a class="club-op" href="#club/cumple" data-sec="cumple">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 21v-8a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8"/><path d="M4 16s.5-1 2-1 2.5 2 4 2 2.5-2 4-2 2.5 2 4 2 2-1 2-1"/><path d="M2 21h20M7 8v3M12 8v3M17 8v3M7 4h.01M12 4h.01M17 4h.01"/></svg></span>
+          <span class="club-op-txt"><b>Regalos de cumpleaños</b><span data-res="cumple">…</span></span>
+        </a>
+        <a class="club-op" href="#club/misiones" data-sec="misiones">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/></svg></span>
+          <span class="club-op-txt"><b>Misiones</b><span data-res="misiones">…</span></span>
+        </a>
+      </div>
+      <div class="club-grupo">
+        <h2 class="club-grupo-tit">Lo que ven los socios</h2>
+        <a class="club-op" href="#club/promos" data-sec="promos">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
+          <span class="club-op-txt"><b>Promociones y novedades</b><span data-res="promos">…</span></span>
+        </a>
+        <a class="club-op" href="#club/extra" data-sec="extra">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg></span>
+          <span class="club-op-txt"><b>Puntos extra</b><span data-res="extra">…</span></span>
+        </a>
+        <a class="club-op" href="#club/avisos" data-sec="avisos">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
+          <span class="club-op-txt"><b>Avisos</b><span data-res="avisos">…</span></span>
+        </a>
+      </div>
+      <div class="club-grupo">
+        <h2 class="club-grupo-tit">Conexiones</h2>
+        <a class="club-op" href="#club/resenas" data-sec="resenas">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z"/></svg></span>
+          <span class="club-op-txt"><b>Reseñas por local</b><span data-res="resenas">…</span></span>
+        </a>
+        <a class="club-op" href="#club/integraciones" data-sec="integraciones">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
+          <span class="club-op-txt"><b>Integraciones</b><span data-res="integraciones">…</span></span>
+        </a>
+        <!-- Los números no se configuran: viven en Club > Estadísticas. -->
+        <a class="club-op club-op-ir" href="club-numeros.html">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+          <span class="club-op-txt"><b>Ver estadísticas del Club</b><span>Ventas, socios, costos y movimientos</span></span>
+        </a>
+      </div>
     </div>
-    <div class="bloque" id="cajaPremios">
-      <h2 class="bloque-tit">Premios del Club</h2>
-      <p class="bloque-sub">Lo que los socios canjean con sus puntos. El costo es lo que le sale a VDH: no lo ve nadie más.</p>
-      <div id="premiosCuerpo"></div>
+
+    <!-- ══ Las pantallas ══
+         Una por sección. Arriba, "Club VDH" para volver al menú y el título;
+         adentro, los mismos bloques de siempre con los mismos ids: lo que
+         guarda sigue siendo exactamente lo que guardaba. -->
+
+    <div class="club-pant" data-sec="niveles" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Puntos y niveles</h2>
+        <p class="bloque-sub">Las reglas del programa, tal como están andando. Se miran acá; se cambian en la base, a propósito, para que nadie cambie una regla sin querer.</p>
+      </div>
+      <div class="bloque"><div id="nivelesCuerpo"></div></div>
     </div>
-    <div class="bloque" id="cajaRegalos">
-      <h2 class="bloque-tit">Regalos de cumpleaños</h2>
-      <p class="bloque-sub">Uno por nivel. Le avisamos 7 días antes y vale hasta el día del cumple, una sola vez.</p>
-      <div id="regalosCuerpo"></div>
+
+    <div class="club-pant" data-sec="premios" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Premios</h2>
+        <p class="bloque-sub">Lo que los socios canjean con sus puntos. El costo es lo que le sale a VDH: no lo ve nadie más.</p>
+      </div>
+      <div class="bloque" id="cajaPremios"><div id="premiosCuerpo"></div></div>
+    </div>
+
+    <div class="club-pant" data-sec="cumple" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Regalos de cumpleaños</h2>
+        <p class="bloque-sub">Uno por nivel. Le avisamos 7 días antes y vale hasta el día del cumple, una sola vez. Los cupones de descuento están en <a href="beneficios.html">Beneficios</a>.</p>
+      </div>
+      <div class="bloque" id="cajaRegalos"><div id="regalosCuerpo"></div></div>
+    </div>
+
+    <div class="club-pant" data-sec="misiones" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Misiones</h2>
+        <p class="bloque-sub">"Sumá más puntos": cosas que le dan puntos al socio una sola vez. Aparecen en el Inicio de la tarjeta y se cumplen solas. Prender una le da los puntos a los que ya la cumplían.</p>
+      </div>
+      <div class="bloque" id="cajaMisiones"><div id="misionesCuerpo"></div></div>
+    </div>
+
+    <div class="club-pant" data-sec="promos" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Promociones y novedades</h2>
+        <p class="bloque-sub">Las dos viven en la pestaña Promos de la tarjeta: primero las promociones, abajo la novedad.</p>
+      </div>
+      <div class="bloque" id="cajaPromo">
+        <h3 class="bloque-tit">Promociones</h3>
+        <p class="bloque-sub">Lo que ven los socios en Promos. Pasada la fecha desaparecen solas.</p>
+        <div id="promoCuerpo"></div>
+      </div>
+      <div class="bloque" id="cajaNovedad">
+        <h3 class="bloque-tit">Novedad</h3>
+        <p class="bloque-sub">Una foto grande con un título, debajo de las promociones: la colección nueva, un lanzamiento. Mientras el socio no la vio, la pestaña Promos tiene un puntito. Una sola a la vez.</p>
+        <div id="novedadCuerpo"></div>
+      </div>
+    </div>
+
+    <div class="club-pant" data-sec="extra" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Puntos extra</h2>
+        <p class="bloque-sub">Fechas, días de la semana u horarios en que las compras de los socios suman más puntos. Mientras duran, el programa cuesta más: guardalos para cuando hace falta mover gente.</p>
+      </div>
+      <div class="bloque" id="cajaMulti"><div id="multiCuerpo"></div></div>
+    </div>
+
+    <div class="club-pant" data-sec="avisos" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Avisos</h2>
+        <p class="bloque-sub">Para lo que no es una promoción: un feriado, un local nuevo, algo que contar. Les llega al celular y queda en su campanita. Los avisos de las promociones y de los puntos extra salen desde sus pantallas.</p>
+      </div>
+      <div class="bloque" id="cajaAviso"><div id="avisoCuerpo"></div></div>
     </div>
 
     <!-- ── Las reseñas en Google ──
          Un enlace por local: cada local junta las suyas, que es como
          funciona Google y lo que lo hace aparecer en su barrio. -->
-    <div class="bloque" id="cajaResenas">
-      <h2 class="bloque-tit">Reseñas en Google</h2>
-      <p class="bloque-sub">El día siguiente a una compra le pedimos la reseña al cliente, con el enlace del local donde compró. A todos por igual y sin nada a cambio: son las reglas de Google. Una vez cada 3 meses como máximo.</p>
-      <div id="resenasCuerpo"></div>
+    <div class="club-pant" data-sec="resenas" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Reseñas por local</h2>
+        <p class="bloque-sub">El día siguiente a una compra le pedimos la reseña al cliente, con el enlace del local donde compró. A todos por igual y sin nada a cambio: son las reglas de Google. Una vez cada 3 meses como máximo.</p>
+      </div>
+      <div class="bloque" id="cajaResenas"><div id="resenasCuerpo"></div></div>
     </div>
-    </div>
-    <!-- Lo que se hace seguido. -->
-    <div class="col">
-    <div class="bloque" id="cajaPromo">
-      <h2 class="bloque-tit">Las promociones del Club</h2>
-      <p class="bloque-sub">Lo que ven los socios al abrir su tarjeta. Pasada la fecha desaparecen solas.</p>
-      <div id="promoCuerpo"></div>
-    </div>
-    <div class="bloque" id="cajaNovedad">
-      <h2 class="bloque-tit">La novedad</h2>
-      <p class="bloque-sub">Una foto grande con un título, arriba de todo en Promos: la colección nueva, un lanzamiento. En Inicio aparece un renglón que lleva ahí, y un puntito en Promos hasta que el socio la ve. Una sola a la vez.</p>
-      <div id="novedadCuerpo"></div>
-    </div>
-    <div class="bloque" id="cajaMisiones">
-      <h2 class="bloque-tit">Misiones: "Sumá más puntos"</h2>
-      <p class="bloque-sub">Cosas que le dan puntos al socio una sola vez: completar su perfil, activar los avisos, instalar la app, su primera compra. Aparecen en el Inicio de la tarjeta y se cumplen solas. Prender una le da los puntos a los que ya la cumplían.</p>
-      <div id="misionesCuerpo"></div>
-    </div>
-    <div class="bloque" id="cajaMulti">
-      <h2 class="bloque-tit">Puntos dobles y hora feliz</h2>
-      <p class="bloque-sub">Fechas, días de la semana u horarios en que las compras de los socios suman más puntos. Mientras duran, el programa cuesta más: guardalos para cuando hace falta mover gente.</p>
-      <div id="multiCuerpo"></div>
-    </div>
-    <div class="bloque" id="cajaAviso">
-      <h2 class="bloque-tit">Mandar un aviso</h2>
-      <p class="bloque-sub">Para lo que no es una promoción: un feriado, un local nuevo, algo que contar. Les llega al celular y queda en su campanita.</p>
-      <div id="avisoCuerpo"></div>
-    </div>
+
+    <div class="club-pant" data-sec="integraciones" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Integraciones</h2>
+        <p class="bloque-sub">Lo que el Club manda y recibe de otros sistemas. Se configuran aparte; acá se ve si andan.</p>
+      </div>
+      <div class="bloque">
+        <h3 class="bloque-tit">Kommo</h3>
+        <p class="bloque-sub">Cada socio entra a Kommo como contacto, con sus etiquetas, para armar segmentos y mandarles ofertas.</p>
+        <div id="kommoCuerpo"></div>
+      </div>
+      <div class="bloque">
+        <h3 class="bloque-tit">Tienda online</h3>
+        <p class="bloque-sub">Las compras pagadas en vdh.com.ar suman puntos si el teléfono o el mail coinciden con un socio. Se revisa cada hora.</p>
+        <div id="tiendaCuerpo"></div>
+      </div>
     </div>
   </section>
 
@@ -567,6 +746,7 @@
      Promociones. Las secciones de abajo dicen "poné el PIN arriba". */
   function pedirPinPromo(error) {
     if ($('cajaPinClub')) { $('cajaPinClub').hidden = false; }
+    mostrarClub(rutaClub());
     $('promoCuerpo').innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
     $('pinClubCuerpo').innerHTML =
       '<div class="campo ancho">' +
@@ -586,24 +766,47 @@
     var v = $('promoPin').value.trim();
     if (!v) { avisar('err', 'Escribí el PIN.'); return; }
     guardarPinPromo(v);
-    pintarPromo();
+    mostrarClub(rutaClub());
     /* Es el mismo PIN y la misma sesión: poniéndolo una vez se abren todas
        las secciones del Club que lo piden. */
+    pintarTodoElClub();
+  }
+
+  /* Todas las secciones a la vez, y no la que se abre: el menú necesita el
+     renglón de cada una, y así abrir cualquiera es instantáneo. */
+  function pintarTodoElClub() {
+    pintarPromo();
     pintarAviso();
     pintarPremios();
     pintarRegalos();
     pintarResenas();
     pintarMulti();
-    pintarCosto();
     pintarNovedad();
     pintarMisiones();
+    pintarIntegraciones();
+    pintarReglas();
   }
 
 
   /* La lista. Las vencidas y las que todavía no arrancaron se muestran
      igual, marcadas: una promo que no se ve en ningún lado es una promo que
      alguien va a volver a cargar sin darse cuenta de que ya estaba. */
+  /* El renglón de "Promociones y novedades": se arma con las dos partes,
+     que llegan por separado. */
+  var resPromos = '', resNove = '';
+  function resumenPromos() {
+    if (!resPromos && !resNove) { return; }
+    ponerResumen('promos', [resPromos, resNove].filter(Boolean).join(' · '));
+  }
+
   function listaPromos(lista) {
+    var vig = lista.filter(function (p) { return p.vigente; }).length;
+    var fut = lista.filter(function (p) { return p.futura; }).length;
+    resPromos = vig || fut
+      ? [vig ? cuantos(vig, 'promoción vigente', 'promociones vigentes') : '', fut ? cuantos(fut, 'programada', 'programadas') : '']
+          .filter(Boolean).join(' · ')
+      : 'Ninguna promoción vigente';
+    resumenPromos();
     var filas = lista.map(function (p) {
       var estado = p.vigente ? '<span class="pill pill-ok">Vigente</span>'
                  : p.futura  ? '<span class="pill pill-warn">Desde el ' + esc(fechaCorta(p.desde)) + '</span>'
@@ -797,9 +1000,12 @@
     img.src = url;
   }
 
-  /* ═══ La novedad de Inicio ══════════════════════════════════════════════
+  /* ═══ La novedad ════════════════════════════════════════════════════════
      Una sola: foto, una bajada ("Nueva colección"), un título y a dónde
-     lleva. Guardar la prende; "Sacar de Inicio" la apaga sin borrarla. */
+     lleva. Vive en la pestaña Promos de la tarjeta, debajo de las
+     promociones (antes estaba en Inicio: de ahí los nombres viejos que
+     quedaron en la base). Guardar la prende; "Dejar de mostrar" la apaga
+     sin borrarla. */
   function pintarNovedad() {
     var caja = $('novedadCuerpo');
     if (!caja) { return; }
@@ -819,8 +1025,10 @@
   function formNovedad(n) {
     var v = function (x) { return x == null ? '' : esc(String(x)); };
     var estado = !n ? 'Todavía no hay ninguna cargada.'
-               : n.activa ? 'Se está mostrando en Inicio.'
-               : 'Está sacada de Inicio: guardarla la vuelve a mostrar.';
+               : n.activa ? 'Se está mostrando en Promos.'
+               : 'No se está mostrando: guardarla la vuelve a mostrar.';
+    resNove = !n ? 'Sin novedad' : n.activa ? 'Novedad: se muestra' : 'Novedad: apagada';
+    resumenPromos();
     $('novedadCuerpo').innerHTML =
       '<p class="bloque-sub" style="margin-top:0"><b>' + estado + '</b></p>' +
       '<div class="campos">' +
@@ -835,7 +1043,7 @@
         '<div class="campo ancho"><label for="novEnlace">A dónde lleva <span class="lbl-opc">— opcional</span></label>' +
           '<input type="url" id="novEnlace" inputmode="url" autocapitalize="off" placeholder="https://vdh.com.ar/…" value="' + v(n && n.enlace) + '"></div>' +
         '<div class="campo"><button type="button" class="btn btn-pri" id="novGuardar">Guardar y mostrar</button></div>' +
-        (n && n.activa ? '<div class="campo"><button type="button" class="btn btn-sec" id="novSacar">Sacar de Inicio</button></div>' : '') +
+        (n && n.activa ? '<div class="campo"><button type="button" class="btn btn-sec" id="novSacar">Dejar de mostrar</button></div>' : '') +
       '</div>';
 
     var ver = function () { previaFoto('novImagen', 'novImgPrev', 'apaisada'); };
@@ -876,6 +1084,8 @@
     base.club.misiones(pinPromo())
       .then(function (l) {
         l = l || [];
+        var prendidas = l.filter(function (m) { return m.activa; }).length;
+        ponerResumen('misiones', l.length ? prendidas + ' de ' + l.length + ' prendidas' : 'Ninguna cargada');
         caja.innerHTML = '<div class="misiones-cfg">' + l.map(function (m) {
           return '<div class="mis-fila' + (m.activa ? '' : ' apagada') + '">' +
             '<div class="mis-txt"><b>' + esc(m.titulo) + '</b><span>' + esc(m.texto) + '</span>' +
@@ -940,6 +1150,8 @@
 
   function formAviso(r) {
     var vivos = r.vivos || 0;
+    ponerResumen('avisos', vivos ? cuantos(vivos, 'socio con los avisos activados', 'socios con los avisos activados')
+                                 : 'Nadie activó los avisos todavía');
 
     /* Sin nadie suscripto no se muestra el formulario. No es una limitación
        técnica —el aviso quedaría en cola igual— es que escribir algo y
@@ -1079,15 +1291,99 @@
       $('tabLocal').setAttribute('aria-selected', club ? 'false' : 'true');
       $('tabClub').setAttribute('aria-selected', club ? 'true' : 'false');
       try { localStorage.setItem(K_SECCION, s); } catch (e) {}
+      if (club) { mostrarClub(rutaClub()); }
     };
-    var inicial = location.hash === '#club' ? 'club' : location.hash === '#locales' ? 'local' : null;
+    var inicial = /^#club/.test(location.hash) ? 'club' : location.hash === '#locales' ? 'local' : null;
     if (!inicial) {
       try { inicial = localStorage.getItem(K_SECCION); } catch (e) {}
     }
     mostrar(inicial === 'club' ? 'club' : 'local');
-    $('tabLocal').onclick = function () { mostrar('local'); };
+    $('tabLocal').onclick = function () {
+      if (!dejarSinGuardar()) { return; }
+      if (/^#club\//.test(location.hash)) { history.replaceState(null, '', '#club'); seccionAbierta = ''; }
+      mostrar('local');
+    };
     $('tabClub').onclick = function () { mostrar('club'); };
   }
+
+  /* ═══ Club VDH: el menú y sus pantallas (30/09/2026) ════════════════════
+     La dirección dice qué se ve: #club es el menú y #club/premios la
+     pantalla de Premios. Así el "atrás" del celular vuelve al menú, y un
+     enlace (el de los QR de reseñas, el de Estadísticas) puede abrir una
+     sección directo. */
+  var SECCIONES_CLUB = ['niveles', 'premios', 'cumple', 'misiones', 'promos', 'extra', 'avisos', 'resenas', 'integraciones'];
+  var seccionAbierta = '';
+
+  function rutaClub() {
+    var m = /^#club\/([a-z]+)/.exec(location.hash);
+    return m && SECCIONES_CLUB.indexOf(m[1]) >= 0 ? m[1] : '';
+  }
+
+  function mostrarClub(sec) {
+    /* Sin PIN no hay nada que mostrar: ni el menú, que se arma con lo que
+       devuelve la base, ni las pantallas. Se ve sólo el cartel del PIN. */
+    var sinPin = !pinPromo();
+    $('clubMenu').hidden = sinPin || !!sec;
+    Array.prototype.forEach.call(document.querySelectorAll('.club-pant'), function (p) {
+      p.hidden = sinPin || p.dataset.sec !== sec;
+    });
+    if (sec !== seccionAbierta) { window.scrollTo(0, 0); }
+    seccionAbierta = sinPin ? '' : sec;
+  }
+
+  /* ¿Quedó algo escrito sin guardar en la pantalla abierta? Se compara cada
+     campo con el valor con que se dibujó: después de guardar, la pantalla
+     se vuelve a dibujar con lo nuevo y deja de haber diferencias. */
+  function haySinGuardar() {
+    if (!seccionAbierta) { return false; }
+    var p = document.querySelector('.club-pant[data-sec="' + seccionAbierta + '"]');
+    if (!p) { return false; }
+    return Array.prototype.some.call(p.querySelectorAll('input, textarea, select'), function (el) {
+      if (el.type === 'checkbox' || el.type === 'radio') { return el.checked !== el.defaultChecked; }
+      if (el.tagName === 'SELECT') {
+        var inicial = 0;
+        Array.prototype.forEach.call(el.options, function (o, i) { if (o.defaultSelected) { inicial = i; } });
+        return el.selectedIndex !== inicial;
+      }
+      return el.value !== el.defaultValue;
+    });
+  }
+  function dejarSinGuardar() {
+    return !haySinGuardar() || confirm('Hay cambios sin guardar en esta pantalla. ¿Salir igual y perderlos?');
+  }
+
+  function engancharClub() {
+    /* "Club VDH" (volver al menú) pregunta antes de perder lo escrito. */
+    document.addEventListener('click', function (e) {
+      var a = e.target.closest && e.target.closest('a.pant-volver');
+      if (a && !dejarSinGuardar()) { e.preventDefault(); }
+    });
+    /* El "atrás" del celular ya cambió la dirección cuando esto corre: si
+       había algo sin guardar y no quiere perderlo, se vuelve a la pantalla. */
+    window.addEventListener('hashchange', function () {
+      if (!/^#club/.test(location.hash)) { return; }
+      var nueva = rutaClub();
+      if (seccionAbierta && nueva !== seccionAbierta && haySinGuardar() &&
+          !confirm('Hay cambios sin guardar en esta pantalla. ¿Salir igual y perderlos?')) {
+        history.pushState(null, '', '#club/' + seccionAbierta);
+        return;
+      }
+      if ($('secClub').hidden) { $('tabClub').click(); } else { mostrarClub(nueva); }
+    });
+    /* Cerrar la pestaña o irse a otra pantalla del rail. */
+    window.addEventListener('beforeunload', function (e) {
+      if (haySinGuardar()) { e.preventDefault(); e.returnValue = ''; }
+    });
+  }
+
+  /* El renglón de cada opción del menú. `ojo` lo pinta de advertencia. */
+  function ponerResumen(sec, texto, ojo) {
+    var s = document.querySelector('[data-res="' + sec + '"]');
+    if (!s) { return; }
+    s.textContent = texto;
+    s.classList.toggle('ojo', !!ojo);
+  }
+  function cuantos(n, uno, varios) { return n + ' ' + (n === 1 ? uno : varios); }
 
   /* ═══ Premios del Club ════════════════════════════════════════════════ */
 
@@ -1111,6 +1407,11 @@
     base.club.premiosListar(pinPromo())
       .then(function (lista) {
         premiosLista = lista || [];
+        var activos = premiosLista.filter(function (p) { return p.activo; }).length;
+        var apagados = premiosLista.length - activos;
+        ponerResumen('premios', premiosLista.length
+          ? cuantos(activos, 'activo', 'activos') + (apagados ? ' · ' + cuantos(apagados, 'apagado', 'apagados') : '')
+          : 'Ninguno cargado');
         var filas = premiosLista.map(function (p) {
           return '<div class="promo-fila">' +
             '<div class="promo-fila-txt"><b>' + esc(p.nombre) + '</b>' +
@@ -1248,6 +1549,7 @@
       .then(function (lista) {
         resenasLista = lista || [];
         var cargados = resenasLista.filter(function (l) { return l.url; }).length;
+        ponerResumen('resenas', cargados + ' de ' + resenasLista.length + ' locales con enlace', cargados < resenasLista.length);
         caja.innerHTML =
           '<p class="bloque-sub" style="margin-top:0"><b>' + cargados + '</b> de ' + resenasLista.length +
             ' locales con enlace.' + (cargados < resenasLista.length
@@ -1333,6 +1635,9 @@
     base.club.regalosListar(pinPromo())
       .then(function (lista) {
         regalosLista = lista || [];
+        ponerResumen('cumple', regalosLista.length
+          ? regalosLista.map(function (g) { return g.nivel + ': ' + textoRegalo(g); }).join(' · ')
+          : 'Sin regalos cargados');
         caja.innerHTML = regalosLista.map(function (g) {
           return '<div class="promo-fila">' +
             '<div class="promo-fila-txt"><b>' + esc(g.nivel) + '</b>' +
@@ -1436,6 +1741,14 @@
   }
 
   function listaMulti(lista) {
+    var ahora = lista.filter(function (m) { return m.ahora; }).length;
+    var curso = lista.filter(function (m) { return m.vigente && !m.ahora; }).length;
+    var fut = lista.filter(function (m) { return m.futura; }).length;
+    ponerResumen('extra', ahora || curso || fut
+      ? [ahora ? cuantos(ahora, 'activo ahora', 'activos ahora') : '',
+         curso ? cuantos(curso, 'en curso', 'en curso') : '',
+         fut ? cuantos(fut, 'programado', 'programados') : ''].filter(Boolean).join(' · ')
+      : 'Ninguno en curso ni programado');
     var filas = lista.map(function (m) {
       /* "Ahora" sólo si vale en este momento. Una hora feliz de los martes
          un miércoles está en curso pero no activa, y decir "Ahora" ahí es
@@ -1582,73 +1895,142 @@
     };
   }
 
-  /* ═══ El Club en números ══════════════════════════════════════════════ */
-
-  function pintarCosto() {
-    var caja = $('costoCuerpo');
-    if (!caja) { return; }
-    if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
-      return;
+  /* ═══ Lo que devuelve club_config_resumen (SQL 36) ═════════════════════
+     Las reglas, los niveles y cómo va la tienda online, en un solo viaje:
+     lo usan "Puntos y niveles" e "Integraciones". "El Club en números" se
+     fue de acá: vive en Club > Estadísticas, que tiene lo mismo y más. */
+  var resumenClub = null;
+  function traerResumenClub() {
+    if (!resumenClub) {
+      resumenClub = base.club.configResumen(pinPromo());
+      /* Si falla (sin el SQL 36, sin señal) se vuelve a pedir la próxima. */
+      resumenClub.catch(function () { resumenClub = null; });
     }
-    caja.innerHTML = '<p class="bloque-sub">Sumando…</p>';
-    base.club.costo(pinPromo(), 12)
-      .then(function (r) {
-        r = r || {};
-        var plata = function (n) {
-          return '$' + Math.round(Number(n) || 0).toLocaleString('es-AR');
-        };
-        var n = function (x) { return Math.round(Number(x) || 0).toLocaleString('es-AR'); };
-        var fact = Number(r.facturado) || 0;
-        var cost = Number(r.costo_premios) || 0;
-        /* Con poca venta el porcentaje salta de un lado a otro y no dice
-           nada: se muestra recién cuando hay algo que dividir. */
-        var pct = fact >= 100000 ? (cost * 100 / fact).toFixed(1).replace('.', ',') + '%' : '—';
+    return resumenClub;
+  }
+  function miles(x) { return Math.round(Number(x) || 0).toLocaleString('es-AR'); }
+  var FALTA_36 = 'Para ver esto falta correr el SQL 36 en Supabase.';
 
-        caja.innerHTML = '<div class="costo-grilla">' +
-          '<div class="costo-dato clave"><b>' + pct + '</b>' +
-            '<span>de lo que compraron los socios se fue en premios (' + plata(cost) +
-            ' de costo VDH)</span></div>' +
-          '<div class="costo-dato"><b>' + n(r.socios) + '</b><span>socios con al menos una compra</span></div>' +
-          '<div class="costo-dato"><b>' + plata(fact) + '</b><span>compraron los socios</span></div>' +
-          '<div class="costo-dato"><b>' + n(r.emitidos) + '</b><span>puntos dados</span></div>' +
-          '<div class="costo-dato"><b>' + n(r.canjeados) + '</b><span>puntos canjeados</span></div>' +
-          /* Los circulantes no son una deuda contable —nadie firmó nada—
-             pero sí son premios que pueden venir a buscar mañana. */
-          '<div class="costo-dato" style="grid-column:1/-1"><b>' + n(r.circulantes) + '</b>' +
-            '<span>puntos dando vueltas: premios que los socios pueden venir a buscar</span></div>' +
-        '</div>' +
-        '<div id="kommoLinea"></div>';
-        pintarKommo();
+  /* ═══ Puntos y niveles: para mirar ═════════════════════════════════════
+     No se editan desde acá, a propósito: cambiar cuánto vale un punto o
+     desde cuánto se es Oro cambia lo que ya ganó cada socio, y eso no puede
+     pasar por un campo que alguien toca sin querer. */
+  function pintarReglas() {
+    var caja = $('nivelesCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) { caja.innerHTML = ''; return; }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    traerResumenClub()
+      .then(function (r) {
+        var rg = (r && r.reglas) || {}, nv = (r && r.niveles) || [];
+        var ppp = Number(rg.pesos_por_punto) || 100;
+        ponerResumen('niveles', '$' + miles(ppp) + ' = 1 punto · ' + nv.map(function (n) { return n.nombre; }).join(', ') +
+          (Number(rg.vence_meses) ? ' · vencen a los ' + rg.vence_meses + ' meses sin comprar' : ''));
+        var multi = function (m) { m = Number(m) || 1; return (m === 1 ? '1' : String(m).replace('.', ',')) + ' punto' + (m === 1 ? '' : 's'); };
+        caja.innerHTML =
+          '<div class="tabla-scroll"><table class="reglas-tabla">' +
+            '<thead><tr><th>Nivel</th><th class="num">Desde</th><th class="num">Cada $' + miles(ppp) + '</th><th class="num">Al llegar</th><th class="num">Socios hoy</th></tr></thead>' +
+            '<tbody>' + nv.map(function (n) {
+              return '<tr><td><b>' + esc(n.nombre) + '</b></td>' +
+                '<td class="num">' + (Number(n.desde_xp) ? miles(n.desde_xp) + ' pts de compras' : 'Al anotarse') + '</td>' +
+                '<td class="num">' + multi(n.multiplica) + '</td>' +
+                '<td class="num">' + (Number(n.bono) ? miles(n.bono) + ' pts de regalo' : '—') + '</td>' +
+                '<td class="num">' + miles(n.socios) + '</td></tr>';
+            }).join('') + '</tbody></table></div>' +
+          '<p class="bloque-sub" style="margin-top:10px">El nivel cuenta los puntos de compras de los últimos 12 meses: ' +
+            'cuando una compra cumple un año deja de contar, y el socio puede bajar. Canjear no lo baja.</p>' +
+          '<div class="reglas-lista">' +
+            '<div class="regla"><span>Cada compra suma</span><b>1 punto cada $' + miles(ppp) + '</b></div>' +
+            (Number(rg.bienvenida_puntos) ? '<div class="regla"><span>Regalo al anotarse</span><b>' + miles(rg.bienvenida_puntos) + ' puntos</b></div>' : '') +
+            '<div class="regla"><span>Vencimiento de los puntos para canjear</span><b>' +
+              (Number(rg.vence_meses) ? rg.vence_meses + ' meses sin comprar' : 'No vencen') + '</b></div>' +
+            (Number(rg.tope_importe) ? '<div class="regla"><span>Compra más grande que se acepta en la caja</span><b>$' + miles(rg.tope_importe) + '</b></div>' : '') +
+            (rg.exige_ticket ? '<div class="regla"><span>Pide el número de ticket al cobrar</span><b>' + (rg.exige_ticket === 'si' ? 'Sí' : 'No') + '</b></div>' : '') +
+          '</div>' +
+          '<p class="bloque-sub" style="margin-top:14px">Para cambiar alguna de estas reglas, pedilo: se cambia en la base, con cuidado, y queda anotado.</p>';
       })
       .catch(function (err) {
-        caja.innerHTML = '<p class="bloque-sub">' +
-          esc((err && err.delServidor && err.message) || 'No se pudo abrir.') + '</p>';
+        ponerResumen('niveles', 'Falta el SQL 36', true);
+        caja.innerHTML = '<p class="bloque-sub">' + esc((err && err.delServidor && /club_config_resumen/.test(err.message || '') ? FALTA_36 : (err && err.message)) || FALTA_36) + '</p>';
       });
   }
 
-  /* Cómo va Kommo. Sin token configurado no dice nada: el Club anda igual
-     sin el CRM, y un cartel de "no conectado" permanente no lo lee nadie.
-     Con algo fallado, lo dice en amarillo y con el error: si no se ve acá,
-     se descubre el día que alguien arma un segmento y faltan socios. */
-  function pintarKommo() {
-    var caja = $('kommoLinea');
-    if (!caja || !pinPromo()) return;
+  /* ═══ Integraciones: Kommo y la tienda online ══════════════════════════
+     Cómo va cada una, en corto. El error de Kommo se resume en una línea y
+     el texto técnico queda a un toque: si no se ve acá, se descubre el día
+     que alguien arma un segmento y faltan socios. */
+  var resKommo = '', resTienda = '', kommoOjo = false;
+  function resumenIntegraciones() {
+    ponerResumen('integraciones', [resKommo, resTienda].filter(Boolean).join(' · ') || '…', kommoOjo);
+  }
+
+  function pintarIntegraciones() {
+    if (!$('kommoCuerpo') || !pinPromo()) { return; }
+    $('kommoCuerpo').innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    $('tiendaCuerpo').innerHTML = '<p class="bloque-sub">Buscando…</p>';
+
     base.club.kommoEstado(pinPromo()).then(function (k) {
-      if (!k || !k.activo) { caja.innerHTML = ''; return; }
-      var n = function (x) { return Math.round(Number(x) || 0).toLocaleString('es-AR'); };
-      caja.innerHTML =
-        '<p class="kommo-linea">En Kommo: <b>' + n(k.en_kommo) + '</b> de ' + n(k.socios) + ' socios' +
-          ', <b>' + n(k.con_promos) + '</b> aceptan promociones' +
-          (k.pendientes ? ' · ' + n(k.pendientes) + ' en camino' : '') + '. ' +
+      if (!k || !k.activo) {
+        resKommo = 'Kommo sin conectar'; kommoOjo = false;
+        $('kommoCuerpo').innerHTML = '<p class="kommo-linea">No está conectado. El Club anda igual sin Kommo.</p>';
+        resumenIntegraciones();
+        return;
+      }
+      var errores = Number(k.fallados) || 0, reint = Number(k.reintentando) || 0;
+      kommoOjo = errores > 0;
+      resKommo = errores ? 'Kommo: ' + cuantos(errores, 'socio con error', 'socios con error')
+                         : 'Kommo: ' + miles(k.en_kommo) + ' de ' + miles(k.socios) + ' socios';
+      $('kommoCuerpo').innerHTML =
+        '<p class="kommo-linea"><span class="pill ' + (errores ? 'pill-warn' : 'pill-ok') + '">' +
+          (errores ? 'Con errores' : 'Andando') + '</span></p>' +
+        '<p class="kommo-linea">En Kommo: <b>' + miles(k.en_kommo) + '</b> de ' + miles(k.socios) + ' socios' +
+          ', <b>' + miles(k.con_promos) + '</b> ' + (Number(k.con_promos) === 1 ? 'acepta' : 'aceptan') + ' promociones' +
+          (k.pendientes ? ' · ' + miles(k.pendientes) + ' en camino' : '') + '. ' +
           'El segmento para mandarles ofertas: etiquetas <b>VDH Club</b> y <b>Acepta promos</b>.</p>' +
-        (k.fallados || k.reintentando
+        (errores || reint
           ? '<p class="kommo-linea mal">' +
-            (k.fallados ? n(k.fallados) + ' no se pudieron mandar (se reintenta solo todos los días). '
-                        : n(k.reintentando) + ' reintentando. ') +
-            'Último error: ' + esc(k.ultimo_error || 'sin detalle') + '</p>'
+              (errores ? cuantos(errores, 'socio no se pudo mandar', 'socios no se pudieron mandar') + '. Se reintenta solo todos los días.'
+                       : cuantos(reint, 'socio reintentando', 'socios reintentando') + '.') + '</p>' +
+            '<details class="detalle-err"><summary>Ver el detalle del error</summary><p>' +
+              esc(k.ultimo_error || 'Kommo no mandó detalle.') + '</p></details>'
           : '');
-    }).catch(function () { caja.innerHTML = ''; });
+      resumenIntegraciones();
+    }).catch(function () {
+      resKommo = 'Kommo: no se pudo consultar';
+      $('kommoCuerpo').innerHTML = '<p class="kommo-linea">No se pudo consultar cómo va. Probá de nuevo en un rato.</p>';
+      resumenIntegraciones();
+    });
+
+    traerResumenClub().then(function (r) {
+      var t = (r && r.tienda) || {};
+      if (!Number(t.pedidos)) {
+        resTienda = 'Tienda online: sin pedidos todavía';
+        $('tiendaCuerpo').innerHTML = '<p class="kommo-linea">Todavía no llegó ningún pedido pagado desde que se conectó.</p>';
+      } else {
+        resTienda = 'Tienda online: ' + cuantos(Number(t.sumados_30) || 0, 'compra', 'compras') + ' en 30 días';
+        $('tiendaCuerpo').innerHTML =
+          '<p class="kommo-linea">En los últimos 30 días, <b>' + cuantos(Number(t.sumados_30) || 0, 'compra', 'compras') +
+            '</b> de la tienda sumaron <b>' + miles(t.puntos_30) + ' puntos</b>.</p>' +
+          (Number(t.sin_socio_30)
+            ? '<p class="kommo-linea">' + cuantos(Number(t.sin_socio_30), 'pedido no coincidió', 'pedidos no coincidieron') +
+              ' con ningún socio: el teléfono o el mail no están en el Club (o coinciden con más de uno).</p>'
+            : '') +
+          (t.ultimo ? '<p class="kommo-linea">Último pedido revisado: ' + esc(fechaHora(t.ultimo)) + '.</p>' : '');
+      }
+      resumenIntegraciones();
+    }).catch(function () {
+      resTienda = '';
+      $('tiendaCuerpo').innerHTML = '<p class="kommo-linea">' + FALTA_36 + '</p>';
+      resumenIntegraciones();
+    });
+  }
+
+  /* "29 de septiembre, 15:43" en la hora del equipo. */
+  function fechaHora(iso) {
+    var d = new Date(iso);
+    if (isNaN(d)) { return ''; }
+    return d.toLocaleDateString('es-AR', { day: 'numeric', month: 'long' }) + ', ' +
+           d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false }) + ' h';
   }
 
   function bajaPromo(id) {
@@ -1881,16 +2263,9 @@
     cargar(false);
     /* Viaje aparte del resto: pide PIN y puede fallar sola sin arrastrar a
        los objetivos, que no lo piden. */
+    engancharClub();
     engancharSecciones();
-    pintarPromo();
-    pintarAviso();
-    pintarPremios();
-    pintarRegalos();
-    pintarResenas();
-    pintarMulti();
-    pintarCosto();
-    pintarNovedad();
-    pintarMisiones();
+    pintarTodoElClub();
     iniciarPWA();
   })();
 </script>
