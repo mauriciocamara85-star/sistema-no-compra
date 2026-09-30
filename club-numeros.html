@@ -187,9 +187,45 @@
   .fuera { display: none !important; }
   /* En Socios, "Para recuperar" está solo en su fila: que use el ancho. */
   @media (min-width: 1100px) { [data-vista="socios"] #cajaRecuperar { grid-column: 1 / -1; } }
-  #sociosTexto { width: 100%; max-width: 560px; }
-  #cajaBuscaSocios .ficha-res { max-width: 560px; }
   .ficha-res { margin-top: 8px; }
+
+  /* ── Tipos de cliente (SQL 37) ──
+     En Estadísticas, seis tarjetas que llevan a la lista; en Socios, las
+     mismas como pastillas que filtran. Neutras: sólo "Dormidos" avisa. */
+  .tipos-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+  .tipos-chips .chip { min-height: 38px; padding: 7px 13px; font-size: 14px; }
+  .tipos-chips .chip b { font-variant-numeric: tabular-nums; margin-left: 6px; }
+  .tipos-chips .chip.vacio:not(.sel) { color: var(--txt-3); }
+  /* En el celular, en una fila que se desliza (como los períodos): de a
+     varias filas se comían media pantalla antes de la lista. */
+  @media (max-width: 699px) {
+    .tipos-chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-right: -16px; padding-right: 16px; }
+    .tipos-chips::-webkit-scrollbar { display: none; }
+    .tipos-chips .chip { flex: none; }
+  }
+  #sociosLista th:nth-child(2), #sociosLista td:nth-child(2) { text-align: left; }
+  .tipo-tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  @media (min-width: 700px) { .tipo-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (min-width: 1100px) { .tipo-tiles { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+  .tipo-tile { all: unset; box-sizing: border-box; cursor: pointer; display: flex; flex-direction: column; gap: 2px;
+               background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 12px 14px; }
+  .tipo-tile:hover { border-color: var(--line-alta); }
+  .tipo-tile:focus-visible { outline: 2px solid var(--txt); outline-offset: 2px; }
+  .tipo-tile span { font: 700 12.5px/1.3 var(--sans); letter-spacing: .4px; text-transform: uppercase; color: var(--txt-2); }
+  .tipo-tile b { font: 700 28px/1.1 var(--display); letter-spacing: -.6px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .tipo-tile small { font-size: 13px; color: var(--txt-2); }
+  .tipo-tile.alerta { border-left: 3px solid var(--warn); }
+  .tipo-tile.cero b { color: var(--txt-3); }
+  .tipos-reglas { display: grid; gap: 0; margin-top: 4px; }
+  .tipos-reglas .dato > span { font-weight: 700; flex: none; min-width: 104px; }
+  .tipos-reglas .dato > em { font-style: normal; font-size: 14px; color: var(--txt-2); text-align: right; line-height: 1.45; }
+  details.tipos-que { margin-top: 10px; }
+  /* Las filas de la lista y del ranking se tocan: abren la ficha. */
+  .tabla tr[data-codigo] { cursor: pointer; }
+  .tabla tr[data-codigo]:hover td { background: var(--surface-2); }
+  .fila-nom { all: unset; cursor: pointer; font-weight: 700; color: var(--txt); }
+  .fila-nom:focus-visible { outline: 2px solid var(--txt); outline-offset: 2px; border-radius: 3px; }
+  .tabla td .pill { font-size: 12.5px; }
   .ficha-cab { display: grid; grid-template-columns: 56px 1fr; gap: 14px; align-items: center; margin-top: 6px; }
   .ficha-ini { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center;
                background: var(--surface-3); color: var(--txt); font: 700 19px var(--display); letter-spacing: .5px; }
@@ -427,12 +463,25 @@
     </div>
   </div>
 
-  <!-- Socios: el buscador, a la vista y no escondido atrás de un botón. -->
-  <div class="bloque" id="cajaBuscaSocios" data-vistas="socios" style="margin-bottom:12px">
-    <h2 class="bloque-tit">Buscar un socio</h2>
-    <p class="bloque-sub">Por nombre, teléfono o mail. Tocá uno para ver su ficha: sus compras, su ritmo y cómo escribirle.</p>
-    <input type="search" id="sociosTexto" placeholder="Nombre, teléfono o mail" autocomplete="off" aria-label="Buscar un socio">
-    <div class="ficha-res" id="sociosRes"></div>
+  <!-- Socios: todos, con su tipo (SQL 37). El buscador está arriba de la
+       lista y no escondido atrás de un botón. -->
+  <div class="bloque" id="cajaSocios" data-vistas="socios" style="margin-bottom:12px">
+    <h2 class="bloque-tit">Todos los socios</h2>
+    <p class="bloque-sub">Tocá uno para ver su ficha: sus compras, su ritmo y cómo escribirle.</p>
+    <div class="tipos-chips" id="sociosTipos" role="group" aria-label="Tipo de cliente"></div>
+    <div class="mov-controles">
+      <input type="search" id="sociosTexto" placeholder="Nombre, teléfono, mail o tarjeta" autocomplete="off" aria-label="Buscar un socio">
+      <select id="sociosOrden" aria-label="Ordenar">
+        <option value="ultima">Última compra</option>
+        <option value="gastado">Los que más gastaron</option>
+        <option value="puntos">Los que más puntos tienen</option>
+        <option value="alta">Recién anotados</option>
+        <option value="nombre">Por nombre</option>
+      </select>
+    </div>
+    <div class="tabla-caja" id="sociosLista"></div>
+    <div class="paginas" id="sociosPag"></div>
+    <details class="mas tipos-que"><summary>Qué es cada tipo</summary><div id="sociosReglas"></div></details>
   </div>
 
   <div class="pocos" id="pocos" data-vistas="estadisticas" hidden>
@@ -454,6 +503,11 @@
       <h2 class="bloque-tit">Para recuperar <span class="cuando">hoy</span></h2>
       <p class="bloque-sub">Dejaron de venir, cada uno según su ritmo: el que compraba cada 18 días aparece a los 36 sin volver; el que compró una o dos veces, a los 60. Primero los más atrasados. Tocá uno para ver su ficha. No depende del período.</p>
       <div id="recuperar"></div>
+    </div>
+    <div class="bloque ancho" id="cajaTipos" data-vistas="estadisticas">
+      <h2 class="bloque-tit">Tipos de cliente <span class="cuando">hoy</span></h2>
+      <p class="bloque-sub" id="tiposSub"></p>
+      <div id="tipos"></div>
     </div>
   </div>
 
@@ -784,6 +838,7 @@
     pintarKpis();
     pintarActividad();
     pintarRecuperar();
+    pintarTipos();
     pintarLocales();
     pintarDias();
     pintarPremios();
@@ -796,6 +851,10 @@
     pintarDetalle();
     mov.salto = 0;
     cargarMovs();
+    /* La lista de socios se pide sólo si se está mirando: si no, queda
+       marcada para pedirla al entrar a Socios (el local pudo cambiar). */
+    soc.salto = 0;
+    if (vista === 'socios') { cargarSocios(); } else { soc.cargada = false; }
   }
 
   function pintarSelectorLocal() {
@@ -1136,12 +1195,118 @@
                                         : 'Nadie está cerca de subir de nivel todavía.') + '</p>';
   }
 
+  /* ═══ Tipos de cliente (SQL 37) ════════════════════════════════════════
+     Los calcula la base (club_tipos), con la misma regla para las tarjetas
+     de Estadísticas, las pastillas de Socios y la ficha. Se prueban en este
+     orden y gana el primero: un Platino que dejó de venir es Dormido. */
+  var TIPOS_CLI = [
+    { k: 'nuevo',       varios: 'Nuevos',      uno: 'Nuevo',       que: 'Se anotó hace menos de 30 días.' },
+    { k: 'habitual',    varios: 'Habituales',  uno: 'Habitual',    que: 'Compró en 3 a 5 días distintos en el año y sigue viniendo.' },
+    { k: 'vip',         varios: 'VIP',         uno: 'VIP',         que: 'Es Platino, o compró en 6 días distintos o más en el año.' },
+    { k: 'ocasional',   varios: 'Ocasionales', uno: 'Ocasional',   que: 'Compró una o dos veces en el año.' },
+    { k: 'dormido',     varios: 'Dormidos',    uno: 'Dormido',     que: 'Dejó de venir: los de "Para recuperar", más los que hace más de un año que no compran.' },
+    { k: 'sin_compras', varios: 'Sin compras', uno: 'Sin compras', que: 'Se anotó hace más de 30 días y nunca compró.' }
+  ];
+  function tipoCli(k) { return TIPOS_CLI.filter(function (t) { return t.k === k; })[0]; }
+  function pillTipo(k) {
+    var t = tipoCli(k);
+    return t ? '<span class="pill ' + (k === 'dormido' ? 'pill-warn' : 'pill-neutra') + '">' + esc(t.uno) + '</span>' : '';
+  }
+  function reglasTipos() {
+    return '<div class="tipos-reglas">' + TIPOS_CLI.map(function (t) {
+      return '<div class="dato"><span>' + esc(t.uno) + '</span><em>' + esc(t.que) + '</em></div>';
+    }).join('') + '</div>' +
+      '<p class="nota-cn">Se cuentan días de compra y no tickets: dos tickets el mismo día son una visita. ' +
+      'Si cumple más de una regla, gana la de más arriba en este orden: Nuevo, Sin compras, Dormido, VIP, Habitual, Ocasional.</p>';
+  }
+
+  function pintarTipos() {
+    var t = datos.tipos;
+    if (!t) {
+      $('tiposSub').textContent = '';
+      $('tipos').innerHTML = '<p class="vacio-cn">Falta correr el SQL 37 en Supabase para ver los tipos de cliente.</p>';
+      return;
+    }
+    var tot = TIPOS_CLI.reduce(function (s, x) { return s + (Number(t[x.k]) || 0); }, 0);
+    $('tiposSub').textContent = 'Cada socio' + (estado.local ? ' ' + enElLocal().replace(/^de /, 'anotado en ') : '') +
+      ', según cómo compra. Se calcula solo. Tocá uno para ver quiénes son.';
+    if (!tot) { $('tipos').innerHTML = '<p class="vacio-cn">Todavía no hay socios' + (estado.local ? ' ' + enElLocal() : '') + '.</p>'; return; }
+    $('tipos').innerHTML = '<div class="tipo-tiles">' + TIPOS_CLI.map(function (x) {
+        var n = Number(t[x.k]) || 0;
+        return '<button type="button" class="tipo-tile' + (x.k === 'dormido' && n ? ' alerta' : '') + (n ? '' : ' cero') + '" data-tipo="' + x.k + '">' +
+               '<span>' + esc(x.varios) + '</span><b>' + miles(n) + '</b><small>' + pct(n, tot) + ' %</small></button>';
+      }).join('') + '</div>' +
+      (Number(t.nuevo) === tot ? '<p class="nota-cn">Por ahora todos son nuevos: el Club arrancó hace menos de un mes. Los tipos se van armando solos con las compras.</p>' : '') +
+      '<details class="mas tipos-que"><summary>Qué es cada tipo</summary>' + reglasTipos() + '</details>';
+  }
+
+  /* ═══ Socios: la lista de todos ════════════════════════════════════════ */
+  var soc = { tipo: '', texto: '', orden: 'ultima', salto: 0, lim: 50, total: 0, cargada: false };
+  function cargarSocios() {
+    soc.cargada = true;
+    if (!$('sociosLista').innerHTML) { $('sociosLista').innerHTML = '<p class="vacio-cn">Cargando…</p>'; }
+    var pedido = [estado.local, soc.tipo, soc.texto, soc.orden, soc.salto].join('|');
+    soc.pedido = pedido;
+    return base.club.sociosLista(pinGuardado(), estado.local, soc.tipo, soc.texto, soc.orden, soc.lim, soc.salto)
+      .then(function (r) { if (soc.pedido === pedido) { pintarSocios(r || {}); } })
+      .catch(function (err) {
+        if (soc.pedido !== pedido) { return; }
+        $('sociosTipos').innerHTML = ''; $('sociosPag').innerHTML = '';
+        var falta = err && /club_socios_lista|could not find|PGRST202/i.test(err.message || '');
+        $('sociosLista').innerHTML = '<p class="vacio-cn">' + esc(falta ? 'Falta correr el SQL 37 en Supabase para ver la lista de socios.'
+                                                                    : (err && err.delServidor && err.message) || 'No se pudo traer la lista de socios.') + '</p>';
+      });
+  }
+  function pintarSocios(r) {
+    var c = r.cuantos || {};
+    soc.total = Number(r.total) || 0;
+    var chip = function (k, nombre, n) {
+      var sel = soc.tipo === k;
+      return '<button type="button" class="chip' + (sel ? ' sel' : '') + (n ? '' : ' vacio') + '" data-tipo="' + k + '" aria-pressed="' + sel + '">' +
+             esc(nombre) + '<b>' + miles(n) + '</b></button>';
+    };
+    $('sociosTipos').innerHTML = chip('', 'Todos', c.todos) + TIPOS_CLI.map(function (t) { return chip(t.k, t.varios, c[t.k]); }).join('');
+    var l = r.lista || [];
+    if (!l.length) {
+      var t = tipoCli(soc.tipo);
+      $('sociosLista').innerHTML = '<p class="vacio-cn">' + (
+        !c.todos ? 'Todavía no hay socios' + (estado.local ? ' ' + enElLocal() : '') + '.' :
+        soc.texto ? 'No encontré a nadie con "' + esc(soc.texto) + '"' + (t ? ' entre los ' + esc(t.varios.toLowerCase()) : '') + '.' :
+        t ? 'No hay socios ' + esc(t.varios.toLowerCase()) + (estado.local ? ' ' + esc(enElLocal()) : '') + '. ' + esc(t.que) : 'No hay socios.') + '</p>';
+      $('sociosPag').innerHTML = ''; return;
+    }
+    $('sociosLista').innerHTML = '<table class="tabla"><thead><tr><th>Socio</th><th>Tipo</th><th>Puntos</th><th>Compras</th>' +
+      '<th>Gastó</th><th>Última compra</th></tr></thead><tbody>' + l.map(function (s) {
+        return '<tr data-codigo="' + esc(s.codigo) + '">' +
+          '<td><button type="button" class="fila-nom" data-codigo="' + esc(s.codigo) + '">' + esc(s.nombre) + '</button>' +
+            '<small>' + esc(s.nivel || 'Plata') + (s.local ? ' · ' + esc(nombreDe(s.local)) : '') + '</small></td>' +
+          '<td>' + pillTipo(s.tipo) + '</td>' +
+          '<td' + (Number(s.puntos) ? '' : ' class="cero"') + '>' + miles(s.puntos) + '</td>' +
+          '<td' + (Number(s.compras) ? '' : ' class="cero"') + '>' + miles(s.compras) + '</td>' +
+          '<td' + (Number(s.gastado) ? '' : ' class="cero"') + '>' + (Number(s.gastado) ? plata(s.gastado) : '—') + '</td>' +
+          '<td>' + (s.ultima ? esc(haceCuanto(s.ultima)) + '<small>' + esc(diaCorto(s.ultima)) + '</small>'
+                             : '<span class="cero">nunca</span><small>se anotó ' + esc(diaCorto(s.desde)) + '</small>') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    var hasta = Math.min(soc.salto + l.length, soc.total);
+    $('sociosPag').innerHTML = soc.total <= soc.lim && !soc.salto
+      ? '<span>' + unoVarios(soc.total, 'socio', 'socios') + '</span>'
+      : '<span>' + miles(soc.salto + 1) + ' a ' + miles(hasta) + ' de ' + miles(soc.total) + '</span><span>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="socAnt"' + (soc.salto ? '' : ' disabled') + '>Anteriores</button> ' +
+        '<button type="button" class="btn btn-sec btn-chico" id="socSig"' + (hasta < soc.total ? '' : ' disabled') + '>Siguientes</button></span>';
+    if ($('socAnt')) {
+      $('socAnt').onclick = function () { soc.salto = Math.max(0, soc.salto - soc.lim); cargarSocios(); $('cajaSocios').scrollIntoView({ block: 'start' }); };
+      $('socSig').onclick = function () { soc.salto += soc.lim; cargarSocios(); $('cajaSocios').scrollIntoView({ block: 'start' }); };
+    }
+  }
+
   function pintarRanking() {
     var l = datos.ranking || [];
     if (!l.length) { $('ranking').innerHTML = '<p class="vacio-cn">Nadie compró con tarjeta en el período.</p>'; return; }
     $('ranking').innerHTML = '<table class="tabla"><thead><tr><th>Socio</th><th>Compras</th><th>Gastó</th><th>Ticket</th>' +
       '<th>Puntos hoy</th><th>Última compra</th></tr></thead><tbody>' + l.map(function (r, i) {
-        return '<tr><td>' + (i + 1) + '. ' + esc(r.nombre) + '<small>' + esc(r.nivel) + (r.local ? ' · ' + esc(bonito(r.local)) : '') + '</small></td>' +
+        /* Con el SQL 37 cada fila trae el código y abre la ficha. */
+        var nom = r.codigo ? '<button type="button" class="fila-nom" data-codigo="' + esc(r.codigo) + '">' + esc(r.nombre) + '</button>' : esc(r.nombre);
+        return '<tr' + (r.codigo ? ' data-codigo="' + esc(r.codigo) + '"' : '') + '><td>' + (i + 1) + '. ' + nom + '<small>' + esc(r.nivel) + (r.local ? ' · ' + esc(bonito(r.local)) : '') + '</small></td>' +
                '<td>' + miles(r.compras) + '</td><td>' + plata(r.gastado) + '</td><td>' + plata(r.gastado / r.compras) + '</td>' +
                '<td>' + miles(r.puntos) + '</td><td>' + esc(new Date(r.ultima).toLocaleDateString('es-AR', { day: 'numeric', month: 'short' })) + '</td></tr>';
       }).join('') + '</tbody></table>';
@@ -1376,8 +1541,8 @@
     $('fichaBusca').hidden = false; $('fichaCuerpo').innerHTML = ''; $('fichaRes').innerHTML = '';
     $('fichaTexto').value = ''; $('fichaTexto').focus();
   }
-  /* Busca desde el panel de la ficha o desde el buscador de la vista
-     Socios: la misma búsqueda, en dos lugares. */
+  /* Busca desde el panel de la ficha ("← Buscar otro"). La vista Socios
+     busca en su propia lista (club_socios_lista). */
   function buscarSocio(entrada, salida) {
     entrada = entrada || $('fichaTexto'); salida = salida || $('fichaRes');
     var t = entrada.value.trim();
@@ -1503,7 +1668,7 @@
       '<div class="ficha-cab"><div class="ficha-ini" aria-hidden="true">' + esc(iniciales(f.nombre)) + '</div>' +
         '<div><div class="ficha-nom" id="fichaNom">' + esc(f.nombre) + '</div>' +
         '<div class="ficha-sub">Socio desde el ' + diaCorto(f.desde) + (f.local ? ' · ' + esc(nombreLocalDe(f.local)) : '') +
-          ' <span class="pill pill-neutra">' + esc(f.nivel || 'Plata') + '</span></div></div></div>' +
+          ' <span class="pill pill-neutra">' + esc(f.nivel || 'Plata') + '</span>' + (f.tipo ? ' ' + pillTipo(f.tipo) : '') + '</div></div></div>' +
       '<div class="ficha-datos">' + datosF.map(function (d) {
         return '<div class="ficha-dato"><span>' + esc(d.l) + '</span><b>' + esc(d.n) + '</b>' + (d.s ? '<small>' + esc(d.s) + '</small>' : '') + '</div>';
       }).join('') + '</div>' +
@@ -1590,20 +1755,41 @@
     };
     $('movTipo').onchange = function () { mov.tipo = $('movTipo').value; mov.salto = 0; cargarMovs(); };
     $('btnExportar').onclick = exportar;
-    /* La ficha: desde "Para recuperar", desde el buscador de Socios, y se
-       cierra con la X, tocando afuera o con Escape. */
+    /* Socios: las pastillas de tipo, la búsqueda y el orden piden la lista
+       de nuevo a la base, desde la primera página. */
+    $('sociosReglas').innerHTML = reglasTipos();
     var esperaS;
     $('sociosTexto').oninput = function () {
       clearTimeout(esperaS);
-      esperaS = setTimeout(function () { buscarSocio($('sociosTexto'), $('sociosRes')); }, 300);
+      esperaS = setTimeout(function () { soc.texto = $('sociosTexto').value.trim(); soc.salto = 0; cargarSocios(); }, 300);
     };
-    $('sociosRes').onclick = function (e) {
-      var b = e.target.closest('[data-codigo]');
-      if (b) { abrirFicha(b.dataset.codigo); }
+    $('sociosTipos').onclick = function (e) {
+      var b = e.target.closest('[data-tipo]'); if (!b) { return; }
+      soc.tipo = b.dataset.tipo; soc.salto = 0; cargarSocios();
     };
+    $('sociosOrden').onchange = function () { soc.orden = $('sociosOrden').value; soc.salto = 0; cargarSocios(); };
+    /* Una tarjeta de tipo en Estadísticas lleva a Socios, ya filtrado. */
+    $('tipos').addEventListener('click', function (e) {
+      var b = e.target.closest('.tipo-tile[data-tipo]'); if (!b) { return; }
+      soc.tipo = b.dataset.tipo; soc.salto = 0; soc.texto = ''; $('sociosTexto').value = ''; soc.cargada = false;
+      try { localStorage.setItem('nc_club_pestana', 'socios'); } catch (x) {}
+      location.hash = 'socios';
+      window.scrollTo(0, 0);
+    });
+    /* La ficha: desde la lista de socios, "Para recuperar" y el ranking. Se
+       cierra con la X, tocando afuera o con Escape. */
+    ['sociosLista', 'ranking'].forEach(function (id) {
+      $(id).addEventListener('click', function (e) {
+        var f = e.target.closest('tr[data-codigo]');
+        if (f && f.dataset.codigo) { abrirFicha(f.dataset.codigo); }
+      });
+    });
     window.addEventListener('hashchange', function () {
       aplicarVista();
-      if (vista === 'socios') { $('sociosTexto').focus(); }
+      if (vista === 'socios') {
+        if (!soc.cargada && datos) { cargarSocios(); }
+        if (!soc.tipo) { $('sociosTexto').focus(); }
+      }
     });
     aplicarVista();
     $('recuperar').addEventListener('click', function (e) {

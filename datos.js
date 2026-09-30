@@ -795,6 +795,15 @@ var base = {
       });
     },
 
+    /** Todos los socios, con su tipo (Nuevo, Habitual, VIP…), filtro por
+        tipo, búsqueda, orden y páginas. Es la pastilla Socios (SQL 37). */
+    sociosLista: function (pin, local, tipo, texto, orden, limite, salto) {
+      return funcion('club_socios_lista', {
+        p_pin: pin, p_local: local || null, p_tipo: tipo || null, p_texto: texto || null,
+        p_orden: orden || null, p_limite: limite || 50, p_salto: salto || 0
+      });
+    },
+
     /** La ficha de un socio para el panel: puntos, compras, su ritmo, si
         hay que recuperarlo y a quién se le escribió (SQL 29). */
     socioFicha: function (pin, codigo) {
