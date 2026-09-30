@@ -43,7 +43,7 @@ function aplicarTema(tema, guardarlo) {
   document.documentElement.dataset.theme = elegido;
   if (guardarlo) { guardar(TEMA_CLAVE, elegido); }
   var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', elegido === 'light' ? '#F1EFEA' : '#121211');
+  if (meta) meta.setAttribute('content', elegido === 'light' ? '#F7F6F3' : '#121211');
   Array.prototype.forEach.call(document.querySelectorAll('.tema-btn'), function (b) {
     b.setAttribute('aria-pressed', String(b.dataset.tema === elegido));
   });

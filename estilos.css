@@ -5,10 +5,10 @@
 
    El 30/09/2026 la app tomó la paleta del VDH CLUB, a pedido de Mauricio:
    una sola marca para la tienda (vdh.com.ar), el Club y el sistema interno.
-   Blanco cálido y carbón, la letra Poppins —la de vdh.com.ar— y los
-   materiales de los niveles del Club (plata, oro, platino) para detalles.
-   Se fue el rojo como color de marca: no era de la tienda, lo habíamos
-   elegido para las apps internas (24/09 al 30/09/2026).
+   Los tonos de la app, exactos: fondo #F7F6F3, tarjetas blancas, carbón y
+   la letra Poppins —la de vdh.com.ar—, y el verde de la app como único
+   color. Se fue el rojo como color de marca: no era de la tienda, lo
+   habíamos elegido para las apps internas (24/09 al 30/09/2026).
 
    Lo que se mantiene es la estructura: las esquinas redondas, el rail
    oscuro flotante, tres niveles de texto.
@@ -16,12 +16,13 @@
    ── Cada color tiene UN trabajo ──
      carbón   lo que se aprieta: botones, el chip elegido
      platino  lo que se mira: las tarjetas de números de los tableros
-     oro      el logro y dónde estás: el objetivo, el primero del equipo, la
-              sección abierta, la marca
-     plata    el segundo puesto
-     verde    plata que entró, lo que salió bien
+     verde    el color de la app: el campo elegido, el avance del objetivo,
+              lo tuyo (vos en el equipo), los beneficios, lo que salió bien
      ámbar    lo que está esperando
      rojo     un error o una alerta. NADA más: así, cuando aparece, se ve.
+     plata, oro y platino son SÓLO los niveles de un socio (sus pastillas y
+     barras), como en la app. El dorado en la marca, el menú y el equipo se
+     probó el mismo 30/09 y a Mauricio no lo convenció.
 
    La marca vive en los tokens de abajo: se cambia ahí y todas las pantallas
    siguen. Ningún archivo escribe un color de marca a mano.
@@ -43,9 +44,11 @@
    carbón con blanco; en oscuro se invierte (claro con carbón), porque un
    botón carbón sobre una hoja carbón no existe. */
 :root {
-  /* El fondo, un escalón más hondo que el del Club: en la PC del local hay
-     mucha pantalla, y las tarjetas blancas tienen que flotar. */
-  --bg:          #F1EFEA;
+  /* El fondo de la app del Club, exacto. Las tarjetas blancas se despegan
+     por su canto (--line, el de la app) y la sombra: en pantallas que
+     apagan el blanco —la notebook de Mauricio muestra #E1E1E1 donde hay
+     #FFFFFF— el tono solo no alcanza. */
+  --bg:          #F7F6F3;
   --fondo-luz:   none;
   --surface:     #FFFFFF;
   --surface-2:   #F6F4F0;
@@ -58,7 +61,7 @@
   /* ── Los dos bordes hacen trabajos distintos ──
      El de la TARJETA sólo separa (la separación la carga la sombra). El del
      CAMPO dice "acá se escribe": 3:1 contra su relleno como mínimo. */
-  --line:       #E6E2DA;
+  --line:       #E0DCD4;
   --line-alta:  #A39E94;
   --line-campo: #8A857C;   /* 3,6:1 contra el blanco del campo */
 
@@ -95,6 +98,12 @@
   --bad-ink:   #FFFFFF;
   --info-txt:  #46433E;
   --info-soft: rgba(28, 28, 26, .06);
+  --ok-borde:  #C4DCCD;
+
+  /* El campo elegido: el verde de la app, no un halo gris (pedido de
+     Mauricio, 30/09/2026). */
+  --foco:        #1E5A3E;
+  --foco-anillo: rgba(30, 90, 62, .16);
 
   /* ── Los materiales de los niveles del Club ──
      Los mismos degradados que la franja de la tarjeta del socio. Son para
@@ -143,12 +152,11 @@
   /* El rail es oscuro en los DOS temas: en un tablero la columna de
      navegación es el marco y el contenido es lo que se mira. Carbón cálido,
      el mismo de los botones, y flotando (redondeado, con aire y sombra:
-     a Mauricio le gusta así). La sección abierta se marca en ORO: es
-     "dónde estás". Tiene sus propios tokens de texto porque los --txt de
+     a Mauricio le gusta así). La sección abierta se marca en blanco. Tiene sus propios tokens de texto porque los --txt de
      arriba están pensados contra --bg, no contra esto. */
   --rail-bg:    linear-gradient(180deg, #2A2926 0%, #161614 100%);
   --rail-borde: rgba(255, 255, 255, .08);
-  --rail-acc:   #D6AE55;   /* 8:1 contra el rail */
+  --rail-acc:   #FFFFFF;
   --rail-txt:   #FFFFFF;
   --rail-txt-2: #BDB8AE;   /* 7:1 contra el rail */
   --rail-line:  rgba(255, 255, 255, .08);
@@ -203,6 +211,9 @@ html[data-theme="dark"] {
 
   --oro-txt:   #E8C877;
   --oro-soft:  rgba(214, 174, 85, .18);
+  --ok-borde:    rgba(143, 209, 174, .40);
+  --foco:        #8FD1AE;
+  --foco-anillo: rgba(143, 209, 174, .22);
 
   --sombra:
     inset 0 1px 0 rgba(255, 255, 255, .05),
@@ -264,7 +275,7 @@ a { color: var(--acc-txt); }
 /* Todo lo que se puede tocar muestra dónde está el foco del teclado. Es lo que
    permite cargar el formulario entero con Tab desde la PC del local. */
 :focus-visible {
-  outline: 2px solid var(--acc-txt);
+  outline: 2px solid var(--foco);
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -305,16 +316,17 @@ a { color: var(--acc-txt); }
   gap: 12px;
 }
 .marca { display: flex; align-items: center; gap: 11px; min-width: 0; }
-/* La marca va en ORO, el material del nivel del Club: es lo único de la
-   cabecera que no se toca, y el oro es "esto es VDH". */
+/* La marca: la bolsa en un CÍRCULO carbón (redondo como los botones de la
+   app; el cuadrado se veía duro), con el ícono blanco. */
 .marca-icono {
-  width: 36px; height: 36px; border-radius: 11px; flex-shrink: 0;
-  background: var(--oro);
-  color: var(--oro-ink);
+  width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
+  background: linear-gradient(160deg, #2E2D2A 0%, #1C1C1A 100%);
+  color: #FFFFFF;
   display: grid; place-items: center;
-  box-shadow: 0 6px 16px -10px rgba(122, 90, 18, .7);
+  box-shadow: 0 6px 14px -8px rgba(28, 28, 26, .6);
 }
-.marca-icono svg { width: 19px; height: 19px; }
+html[data-theme="dark"] .marca-icono { background: #F4F2EC; color: #1C1C1A; }
+.marca-icono svg { width: 22px; height: 22px; }
 .marca-txt { min-width: 0; }
 .marca-txt h1 {
   font: 700 16px/1.15 var(--display);
@@ -428,7 +440,7 @@ a { color: var(--acc-txt); }
 /* La sección abierta se marca con el color de acento como TEXTO, que para eso
    está --acc-txt; --acc es relleno y acá no hay tinta encima que lo acompañe. */
 .rail-item[aria-current="page"] { color: var(--txt); }
-.rail-item[aria-current="page"] .rail-icono { background: var(--oro-soft); color: var(--oro-txt); }
+.rail-item[aria-current="page"] .rail-icono { background: var(--acc-soft); color: var(--txt); }
 
 /* Lo que el rail acostado le tapa al contenido. El formulario suma lo suyo
    aparte en index.html, porque ahí abajo también está la barra de guardar. */
@@ -479,13 +491,13 @@ a { color: var(--acc-txt); }
     margin-bottom: 16px;
   }
   .rail-marca-icono {
-    width: 40px; height: 40px; border-radius: 13px;
-    background: var(--oro);
-    color: var(--oro-ink);
+    width: 40px; height: 40px; border-radius: 50%;
+    background: #F4F2EC;
+    color: #1C1C1A;
     display: grid; place-items: center;
     box-shadow: 0 8px 18px -10px rgba(0, 0, 0, .8);
   }
-  .rail-marca-icono svg { width: 21px; height: 21px; }
+  .rail-marca-icono svg { width: 25px; height: 25px; }
   .rail-marca-txt { display: none; }
 
   .rail-in {
@@ -517,8 +529,8 @@ a { color: var(--acc-txt); }
   }
   .rail-icono { width: 38px; height: 34px; border-radius: 12px; }
   .rail-item[aria-current="page"] .rail-icono {
-    background: rgba(214, 174, 85, .16);
-    color: #E8C877;
+    background: rgba(255, 255, 255, .14);
+    color: #FFFFFF;
   }
 
   /* Abajo de todo, separado por el aire que sobra: quién está cargando. Es la
@@ -621,6 +633,15 @@ a { color: var(--acc-txt); }
     font: 700 14px/1.15 var(--display);
     color: var(--rail-txt);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  /* "SISTEMA" chico arriba y "No Compra" abajo: el nombre completo entra
+     en el ancho del rail sin achicar la letra del nombre. */
+  .rail-marca-txt small {
+    display: block;
+    font: 600 9.5px/1 var(--sans);
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--rail-txt-2);
+    margin-bottom: 3px;
   }
   .rail-item {
     flex-direction: row;
@@ -803,9 +824,9 @@ a { color: var(--acc-txt); }
 .kpi.es-obj { border-left-color: rgba(255, 255, 255, .32); }
 /* Objetivo cumplido: el verde de "esto ya está" es el mismo que usa el panel
    para lo cerrado, así el color quiere decir lo mismo en las dos pantallas. */
-.kpi.es-obj.lleno { border-left-color: var(--oro-liso); }
-.kpi.es-obj.lleno .kpi-n { color: #E8C877; }
-.kpi.es-obj.lleno .kpi-barra i { background: var(--oro); }
+.kpi.es-obj.lleno { border-left-color: #6FC596; }
+.kpi.es-obj.lleno .kpi-n { color: var(--ok-txt); }
+.kpi.es-obj.lleno .kpi-barra i { background: #6FC596; }
 /* La barra va pegada al BORDE de abajo y no en la fila del texto. Es la
    única tarjeta que la lleva: adentro del contenido, las otras dos quedaban
    con un hueco de casi medio centímetro abajo —mismo alto de grilla, un
@@ -826,7 +847,10 @@ a { color: var(--acc-txt); }
 .kpi-barra i {
   display: block;
   height: 100%;
-  background: var(--oro);
+  /* El avance, en el verde de la app: es progreso, como la barra de
+     "te alcanza" del Club. Más claro que el de la app porque va sobre
+     platino. */
+  background: #6FC596;
   transition: width .5s var(--curva);
 }
 
@@ -910,8 +934,8 @@ input[type=search], input[type=password], input[type=url], input[type=date], tex
 }
 input::placeholder, textarea::placeholder { color: var(--txt-3); opacity: 1; }
 input:focus, textarea:focus, select:focus {
-  border-color: var(--acc);
-  box-shadow: 0 0 0 4px var(--acc-line);
+  border-color: var(--foco);
+  box-shadow: 0 0 0 4px var(--foco-anillo);
   background: var(--campo);
 }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }

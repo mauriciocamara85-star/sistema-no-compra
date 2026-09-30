@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · No Compra</title>
 <meta name="description" content="Registro de clientes que se van del local sin encontrar lo que buscaban.">
-<meta name="theme-color" content="#F1EFEA">
+<meta name="theme-color" content="#F7F6F3">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -472,19 +472,17 @@
     transition: width .5s var(--curva);
   }
   /* El que está cargando se encuentra a sí mismo en la lista sin buscarse. */
-  /* El que está cargando se ve en ORO: es "dónde estás". */
-  .eq.yo .eq-nom, .eq.yo .eq-pos, .eq.yo .eq-n { color: var(--oro-txt); }
-  /* Las medallas (30/09/2026): el primero en oro y el segundo en plata, los
-     materiales de los niveles del Club. La barra acompaña a su medalla. */
-  #equipoLista .eq:nth-child(-n+2) .eq-pos {
+  /* Todos iguales (pedido de Mauricio, 30/09/2026): el puesto en un
+     círculo gris y la barra carbón para todos. El que está cargando se
+     encuentra a sí mismo en verde, el color de la app para lo tuyo. */
+  #equipoLista .eq-pos {
     width: 20px; height: 20px; border-radius: 50%;
     display: grid; place-items: center; align-self: center;
     font-size: 11px;
+    background: var(--surface-3); color: var(--txt-2);
   }
-  #equipoLista .eq:nth-child(1) .eq-pos { background: var(--oro); color: var(--oro-ink); }
-  #equipoLista .eq:nth-child(2) .eq-pos { background: var(--plata); color: var(--plata-ink); }
-  #equipoLista .eq:nth-child(1) .eq-barra i { background: var(--oro); }
-  #equipoLista .eq:nth-child(2) .eq-barra i { background: linear-gradient(90deg, #9AA1AB, #C9CDD3); }
+  .eq.yo .eq-nom, .eq.yo .eq-n { color: var(--ok-txt); }
+  .eq.yo .eq-pos { background: var(--ok-soft); color: var(--ok-txt); }
   .eq-vacio { font-size: 13.5px; color: var(--txt-3); }
   /* El total, abajo de todo. Cierra la lista y, en la PC, le da un piso al
      panel: sin esto la tarjeta quedaba estirada con medio metro de vacío
@@ -871,11 +869,11 @@
     <div class="marca">
       <div class="marca-icono">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+          <g fill="none" stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/><path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g><circle cx="9.1" cy="8.9" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="8.8" r="1.15" fill="currentColor" stroke="none"/>
         </svg>
       </div>
       <div class="marca-txt">
-        <h1>No Compra</h1>
+        <h1>Sistema No Compra</h1>
         <span>Cada visita, una nueva oportunidad</span>
       </div>
     </div>
@@ -897,10 +895,10 @@
   <div class="rail-marca">
     <span class="rail-marca-icono">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/>
+        <g fill="none" stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/><path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g><circle cx="9.1" cy="8.9" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="8.8" r="1.15" fill="currentColor" stroke="none"/>
       </svg>
     </span>
-    <span class="rail-marca-txt">No Compra</span>
+    <span class="rail-marca-txt"><small>Sistema</small>No Compra</span>
   </div>
 
   <div class="rail-in">
