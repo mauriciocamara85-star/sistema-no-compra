@@ -1,17 +1,18 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="dark">
+<html lang="es" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · Club en caja</title>
 <meta name="description" content="Sumar compras del Club de Clientes.">
-<meta name="theme-color" content="#121315">
+<meta name="theme-color" content="#F1EFEA">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- Poppins, la de vdh.com.ar y la del VDH Club (30/09/2026). -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="estilos.css">
 <script>
   /* El ítem "Club" del menú abre la última pastilla que se usó en esta compu.
@@ -24,7 +25,7 @@
   } catch (e) {}
   try {
     document.documentElement.dataset.theme =
-      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
   } catch (e) {}
 </script>
 <style>
@@ -127,10 +128,16 @@
 
   /* Las promos "Sólo socios" (SQL 38): el vendedor las ve al abrir la
      ficha y las aplica en BlueSoft, como el regalo de cumple. Con el borde
-     del color de la marca: es lo primero que tiene que ver. */
+     dorado: es lo primero que tiene que ver. */
   .promos-socio { display: grid; gap: 8px; margin-top: 16px; }
   .promos-socio-tit { font: 700 12px var(--sans); letter-spacing: .5px; text-transform: uppercase; color: var(--txt-2); }
-  .promo-socio { padding: 12px 14px; border-radius: var(--r-sm); border: 1.5px solid var(--acc-line); background: var(--surface-2); font-size: 14.5px; }
+  /* Importe y ticket, lado a lado: si una etiqueta ocupa dos renglones
+     ("Importe de la compra", con Poppins, en el celular), los dos campos
+     igual quedan a la misma altura. */
+  #resultado .campos .campo { justify-content: flex-end; }
+
+  /* Un beneficio del Club: canto dorado, el oro de los niveles. */
+  .promo-socio { padding: 12px 14px; border-radius: var(--r-sm); border: 1.5px solid var(--oro-liso); background: var(--surface); font-size: 14.5px; }
   .promo-socio b { display: block; }
   .promo-socio small { display: block; font-size: 12.5px; color: var(--txt-2); margin-top: 2px; }
   .promo-socio details { margin-top: 6px; font-size: 13px; color: var(--txt-2); }

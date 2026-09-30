@@ -1,23 +1,24 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="dark">
+<html lang="es" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · Estadísticas del Club</title>
 <meta name="description" content="Cómo va el Club VDH: ventas, socios, locales, premios y costos.">
-<meta name="theme-color" content="#121315">
+<meta name="theme-color" content="#F1EFEA">
 <meta name="robots" content="noindex">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- Poppins, la de vdh.com.ar y la del VDH Club (30/09/2026). -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="estilos.css">
 <script>
   try {
     document.documentElement.dataset.theme =
-      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
   } catch (e) {}
 </script>
 <style>
@@ -88,9 +89,18 @@
   .cn-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 18px; }
   @media (min-width: 700px) { .cn-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (min-width: 1100px) { .cn-kpis { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+  /* Los números, en el material del Platino (30/09/2026): "lo que se
+     mira" es oscuro en todos los tableros, como en Carga. Adentro, los
+     colores de la comparación pasan a su versión para fondo oscuro. */
   .cn-kpi {
-    background: var(--surface); border: 1px solid var(--line); border-radius: var(--r);
-    padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--sombra);
+    background: var(--platino); border: 1px solid #2E2D2A; border-radius: var(--r);
+    padding: 16px 18px; display: flex; flex-direction: column; gap: 4px;
+    box-shadow: 0 14px 30px -16px rgba(28, 28, 26, .7);
+    --txt: #F4F2EC; --txt-2: #D2CDC3; --txt-3: #B8B2A7;
+    --ok-txt: #8FD1AE; --ok-soft: rgba(143, 209, 174, .14);
+    --bad-txt: #FF9AA0; --bad-soft: rgba(255, 154, 160, .14);
+    --surface-2: rgba(255, 255, 255, .08);
+    color: var(--txt);
   }
   .cn-kpi-l { font: 700 13px/1.3 var(--sans); color: var(--txt-2); text-transform: uppercase; letter-spacing: .4px; }
   .cn-kpi-n { font: 700 32px/1.1 var(--display); letter-spacing: -.8px; font-variant-numeric: tabular-nums; margin-top: 2px; }
@@ -303,14 +313,14 @@
   .cal-c { aspect-ratio: 1.4; border-radius: 7px; display: grid; place-items: center; font: 700 13px var(--display);
            background: var(--surface-2); color: var(--txt-3); }
   .cal-c.vacia { background: none; }
-  .cal-c.n1 { background: #2C3037; color: #C6CAD0; }
-  .cal-c.n2 { background: #4A4F57; color: #F4F4F2; }
-  .cal-c.n3 { background: #A7ADB4; color: #0E1013; }
-  .cal-c.n4 { background: #F4F4F2; color: #0E1013; }
-  [data-theme="light"] .cal-c.n1 { background: #E4E6E9; color: #3A3E44; }
-  [data-theme="light"] .cal-c.n2 { background: #C4C8CE; color: #16181B; }
-  [data-theme="light"] .cal-c.n3 { background: #4F545B; color: #fff; }
-  [data-theme="light"] .cal-c.n4 { background: #16181B; color: #fff; }
+  .cal-c.n1 { background: #EFEDE8; color: #46433E; }
+  .cal-c.n2 { background: #D6D1C7; color: #1C1C1A; }
+  .cal-c.n3 { background: #5A5750; color: #FFFFFF; }
+  .cal-c.n4 { background: #1C1C1A; color: #FFFFFF; }
+  [data-theme="dark"] .cal-c.n1 { background: #302F2C; color: #CFCAC0; }
+  [data-theme="dark"] .cal-c.n2 { background: #4E4C46; color: #F4F2EC; }
+  [data-theme="dark"] .cal-c.n3 { background: #ADA79C; color: #121211; }
+  [data-theme="dark"] .cal-c.n4 { background: #F4F2EC; color: #121211; }
 
   /* Niveles */
   .nv-fila { display: grid; grid-template-columns: 72px 1fr auto; gap: 10px; align-items: center; padding: 7px 0; }
@@ -318,9 +328,9 @@
   .nv-fila b { font: 700 17px var(--display); min-width: 36px; text-align: right; }
   .nv-barra { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
   .nv-barra i { display: block; height: 100%; border-radius: inherit; }
-  .nv-plata   { background: linear-gradient(90deg, #8B919A, #C9CDD3); }
-  .nv-oro     { background: linear-gradient(90deg, #B8872E, #EED79E); }
-  .nv-platino { background: linear-gradient(90deg, #3A3935, #8A877F); }
+  .nv-plata   { background: var(--plata); }
+  .nv-oro     { background: var(--oro); }
+  .nv-platino { background: var(--platino); }
 
   .reciente { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
   .reciente:first-child { border-top: 0; padding-top: 2px; }
@@ -937,9 +947,9 @@
       '<div class="recu-n">' + miles(r.total) + '</div>' +
       '<p class="recu-sub">' + (r.total === 1 ? 'socio' : 'socios') + ' con ' + miles(r.puntos) + ' puntos guardados sin usar.</p>' +
       '<div class="recu-niveles">' +
-        (r.platino ? '<span class="pill pill-neutra">' + r.platino + ' Platino</span>' : '') +
-        (r.oro ? '<span class="pill pill-neutra">' + r.oro + ' Oro</span>' : '') +
-        (r.plata ? '<span class="pill pill-neutra">' + r.plata + ' Plata</span>' : '') +
+        (r.platino ? '<span class="pill pill-platino">' + r.platino + ' Platino</span>' : '') +
+        (r.oro ? '<span class="pill pill-oro">' + r.oro + ' Oro</span>' : '') +
+        (r.plata ? '<span class="pill pill-plata">' + r.plata + ' Plata</span>' : '') +
         '<span class="pill ' + (puedo ? 'pill-ok' : 'pill-neutra') + '">' + puedo + ' con avisos prendidos</span>' +
         (r.avisados_30 ? '<span class="pill pill-warn">' + r.avisados_30 + ' ya avisados este mes</span>' : '') +
       '</div>' +
@@ -1207,6 +1217,12 @@
     { k: 'dormido',     varios: 'Dormidos',    uno: 'Dormido',     que: 'Dejó de venir: los de "Para recuperar", más los que hace más de un año que no compran.' },
     { k: 'sin_compras', varios: 'Sin compras', uno: 'Sin compras', que: 'Se anotó hace más de 30 días y nunca compró.' }
   ];
+  /* El nivel de un socio con el color de su nivel, como en su tarjeta. */
+  function pillNivel(n) {
+    n = n || 'Plata';
+    var c = { Plata: 'pill-plata', Oro: 'pill-oro', Platino: 'pill-platino' }[n] || 'pill-neutra';
+    return '<span class="pill ' + c + '">' + esc(n) + '</span>';
+  }
   function tipoCli(k) { return TIPOS_CLI.filter(function (t) { return t.k === k; })[0]; }
   function pillTipo(k) {
     var t = tipoCli(k);
@@ -1668,7 +1684,7 @@
       '<div class="ficha-cab"><div class="ficha-ini" aria-hidden="true">' + esc(iniciales(f.nombre)) + '</div>' +
         '<div><div class="ficha-nom" id="fichaNom">' + esc(f.nombre) + '</div>' +
         '<div class="ficha-sub">Socio desde el ' + diaCorto(f.desde) + (f.local ? ' · ' + esc(nombreLocalDe(f.local)) : '') +
-          ' <span class="pill pill-neutra">' + esc(f.nivel || 'Plata') + '</span>' + (f.tipo ? ' ' + pillTipo(f.tipo) : '') + '</div></div></div>' +
+          ' ' + pillNivel(f.nivel) + (f.tipo ? ' ' + pillTipo(f.tipo) : '') + '</div></div></div>' +
       '<div class="ficha-datos">' + datosF.map(function (d) {
         return '<div class="ficha-dato"><span>' + esc(d.l) + '</span><b>' + esc(d.n) + '</b>' + (d.s ? '<small>' + esc(d.s) + '</small>' : '') + '</div>';
       }).join('') + '</div>' +

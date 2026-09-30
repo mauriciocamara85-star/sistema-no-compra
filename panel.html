@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="dark">
+<html lang="es" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · No Compra · Seguimiento</title>
 <meta name="description" content="Panel de seguimiento de los clientes que se fueron sin comprar.">
-<meta name="theme-color" content="#121315">
+<meta name="theme-color" content="#F1EFEA">
 <meta name="robots" content="noindex">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -16,12 +16,13 @@
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- Poppins, la de vdh.com.ar y la del VDH Club (30/09/2026). -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="estilos.css">
 <script>
   try {
     document.documentElement.dataset.theme =
-      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
   } catch (e) {}
 </script>
 <style>

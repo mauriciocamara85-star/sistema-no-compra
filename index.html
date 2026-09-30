@@ -1,11 +1,11 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="dark">
+<html lang="es" data-theme="light">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · No Compra</title>
 <meta name="description" content="Registro de clientes que se van del local sin encontrar lo que buscaban.">
-<meta name="theme-color" content="#121315">
+<meta name="theme-color" content="#F1EFEA">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -15,14 +15,15 @@
 <link rel="icon" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<!-- Poppins, la de vdh.com.ar y la del VDH Club (30/09/2026). -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="estilos.css">
 <script>
   // Antes de pintar nada: sin esto, quien eligió el tema claro ve un
   // fogonazo oscuro en cada apertura (y al revés).
   try {
     document.documentElement.dataset.theme =
-      localStorage.getItem('nc_tema') === 'light' ? 'light' : 'dark';
+      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
   } catch (e) {}
 </script>
 <style>
@@ -152,15 +153,17 @@
      foto en blanco y negro. Así nada compite por decir "apretame". */
   .paso { padding: 20px 16px; }
   .paso-cab { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 15px; }
+  /* Un círculo con canto y sin relleno (30/09/2026): no es un botón y no
+     tiene que parecerlo. En esta app lo que se toca va LLENO. */
   .paso-n {
     flex-shrink: 0;
     width: 30px; height: 30px;
-    border-radius: 10px;
-    background: var(--acc-soft);
-    border: 1px solid var(--acc-line);
+    border-radius: 50%;
+    background: transparent;
+    border: 1.5px solid var(--acc);
     color: var(--acc-txt);
     display: grid; place-items: center;
-    font: 700 15px/1 var(--display);
+    font: 700 14px/1 var(--display);
   }
   .paso-txt { min-width: 0; }
   /* 18px y no 21: el título de un paso no puede pesar más que el de la
@@ -469,7 +472,19 @@
     transition: width .5s var(--curva);
   }
   /* El que está cargando se encuentra a sí mismo en la lista sin buscarse. */
-  .eq.yo .eq-nom, .eq.yo .eq-pos, .eq.yo .eq-n { color: var(--acc-txt); }
+  /* El que está cargando se ve en ORO: es "dónde estás". */
+  .eq.yo .eq-nom, .eq.yo .eq-pos, .eq.yo .eq-n { color: var(--oro-txt); }
+  /* Las medallas (30/09/2026): el primero en oro y el segundo en plata, los
+     materiales de los niveles del Club. La barra acompaña a su medalla. */
+  #equipoLista .eq:nth-child(-n+2) .eq-pos {
+    width: 20px; height: 20px; border-radius: 50%;
+    display: grid; place-items: center; align-self: center;
+    font-size: 11px;
+  }
+  #equipoLista .eq:nth-child(1) .eq-pos { background: var(--oro); color: var(--oro-ink); }
+  #equipoLista .eq:nth-child(2) .eq-pos { background: var(--plata); color: var(--plata-ink); }
+  #equipoLista .eq:nth-child(1) .eq-barra i { background: var(--oro); }
+  #equipoLista .eq:nth-child(2) .eq-barra i { background: linear-gradient(90deg, #9AA1AB, #C9CDD3); }
   .eq-vacio { font-size: 13.5px; color: var(--txt-3); }
   /* El total, abajo de todo. Cierra la lista y, en la PC, le da un piso al
      panel: sin esto la tarjeta quedaba estirada con medio metro de vacío
@@ -653,7 +668,10 @@
       gap: 18px;
       margin-top: 0;
     }
-    .cierre .pie { margin: 0; text-align: left; flex: 1; min-width: 0; }
+    /* Sin el padding del pie suelto: acá el aire lo pone la fila. Con
+       Poppins el texto va en dos renglones, y con ese padding la fila crecía
+       10px por encima del botón (30/09/2026). */
+    .cierre .pie { margin: 0; padding: 0; text-align: left; flex: 1; min-width: 0; }
     .barra {
       position: static;
       background: none;

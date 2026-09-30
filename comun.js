@@ -28,26 +28,31 @@ function leerJSON(clave, porDefecto) {
 }
 
 /* ── TEMA ──────────────────────────────────────────────────────────────────
-   Arranca en oscuro, como la app de ranking. La elección es a mano y queda
-   guardada; el <head> de cada página la aplica antes de pintar para que no
-   haya un flash blanco al abrir. */
-var TEMA_CLAVE = 'nc_tema';
+   Arranca en CLARO, como el VDH Club (30/09/2026). El oscuro se elige a mano
+   con el sol y la luna, y queda guardado; el <head> de cada página lo aplica
+   antes de pintar para que no haya un fogonazo al abrir.
 
-function aplicarTema(tema) {
-  var elegido = tema === 'light' ? 'light' : 'dark';
+   La clave es nueva ('nc_tema_club' y no 'nc_tema'): antes el tema se
+   guardaba también al abrir, así que todas las compus tenían "oscuro"
+   guardado sin que nadie lo hubiera elegido, y con la clave vieja seguirían
+   viendo el diseño anterior. Ahora se guarda sólo cuando alguien lo toca. */
+var TEMA_CLAVE = 'nc_tema_club';
+
+function aplicarTema(tema, guardarlo) {
+  var elegido = tema === 'dark' ? 'dark' : 'light';
   document.documentElement.dataset.theme = elegido;
-  guardar(TEMA_CLAVE, elegido);
+  if (guardarlo) { guardar(TEMA_CLAVE, elegido); }
   var meta = document.querySelector('meta[name="theme-color"]');
-  if (meta) meta.setAttribute('content', elegido === 'light' ? '#E8EAED' : '#121315');
+  if (meta) meta.setAttribute('content', elegido === 'light' ? '#F1EFEA' : '#121211');
   Array.prototype.forEach.call(document.querySelectorAll('.tema-btn'), function (b) {
     b.setAttribute('aria-pressed', String(b.dataset.tema === elegido));
   });
 }
 
 function iniciarTema() {
-  aplicarTema(leer(TEMA_CLAVE) || 'dark');
+  aplicarTema(leer(TEMA_CLAVE) || 'light', false);
   Array.prototype.forEach.call(document.querySelectorAll('.tema-btn'), function (b) {
-    b.onclick = function () { aplicarTema(b.dataset.tema); };
+    b.onclick = function () { aplicarTema(b.dataset.tema, true); };
   });
 }
 
