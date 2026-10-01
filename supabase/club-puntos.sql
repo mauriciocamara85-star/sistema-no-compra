@@ -9151,3 +9151,37 @@ grant execute on function club_promo_guardar(text, bigint, text, text, text, tex
 
 
 select 'Listo: las promos pueden ser para un nivel, y el aviso les llega sólo a esos socios.' as "SQL 39";
+
+
+-- ─────────────────────────── PARTE 40 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LAS PANTALLAS CON PIN QUE NO ABRÍAN
+--
+-- Correr en el editor SQL de Supabase, después del 39.
+--
+-- "Puntos y niveles" y "Misiones" (Configuración del Club) mostraban
+-- "cannot execute SELECT FOR UPDATE in a read-only transaction" (01/10/2026).
+--
+-- Es la misma trampa que ya se había anotado en beneficios_listar: PostgREST
+-- corre las funciones STABLE en una transacción de SOLO LECTURA, y pin_ok
+-- necesita escribir —cuenta los intentos fallidos para frenar al que prueba
+-- PINes—. Cualquier función que pida PIN tiene que ser VOLATILE.
+--
+-- Estaban mal cuatro: las dos de Configuración y las dos de Socios (la lista
+-- y la ficha), que tenían el mismo defecto aunque nadie lo hubiera visto
+-- todavía. No cambia lo que hacen ni lo que devuelven: sólo cómo las corre
+-- la base.
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter function club_config_resumen(text) volatile;
+alter function club_misiones_listar(text) volatile;
+alter function club_socio_ficha(text, text) volatile;
+alter function club_socios_lista(text, text, text, text, text, integer, integer) volatile;
+
+
+-- Ninguna función que pida PIN puede quedar en solo lectura.
+select p.oid::regprocedure as "Todavía en solo lectura (tiene que salir vacío)"
+  from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+ where n.nspname = 'public' and p.provolatile <> 'v' and p.prosrc ~* 'pin_ok\s*\(';
+
+select 'Listo: Puntos y niveles, Misiones y Socios abren con el PIN.' as "SQL 40";
