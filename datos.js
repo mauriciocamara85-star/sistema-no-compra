@@ -1007,6 +1007,8 @@ var base = {
         if (extra.donde === 'algunos') { args.p_locales = extra.locales || []; }
         /* El nivel (SQL 39): '' lo saca; sin el dato, queda como estaba. */
         if (typeof extra.nivel === 'string') { args.p_desde_nivel = extra.nivel; }
+        /* La destacada (SQL 41): sin el dato, queda como estaba. */
+        if (extra.destacada === true || extra.destacada === false) { args.p_destacada = extra.destacada; }
       }
       return funcion('club_promo_guardar', args);
     },

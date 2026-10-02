@@ -821,6 +821,7 @@
           '<span>Hasta el ' + esc(fechaCorta(p.hasta)) +
           (p.desde_nivel ? ' · socios ' + (p.desde_nivel === 'Oro' ? 'Oro y Platino' : esc(p.desde_nivel)) : p.solo_socios ? ' · sólo socios' : '') + dondePromo(p) +
           (p.imagen ? ' · con foto' : '') + (p.cuenta ? ' · con cuenta regresiva' : '') + '</span></div>' +
+        (p.destacada ? '<span class="pill pill-oro">Destacada</span>' : '') +
         estado +
         '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button>' +
         '<button type="button" class="btn btn-sec btn-chico" data-baja="' + p.id + '">Quitar</button>' +
@@ -942,6 +943,15 @@
           '<label class="casillero">' +
             '<input type="checkbox" id="promoCuenta"' + (p && p.cuenta ? ' checked' : '') + '>' +
             '<span>Mostrar cuenta regresiva<span class="lbl-opc"> — "Termina en 04:12:33" en la app</span></span>' +
+          '</label>' +
+        '</div>' +
+        /* La destacada (SQL 41, 02/10/2026): la que va arriba de todo en
+           Promos, sola, y después "Todas las promos". Una sola: marcar ésta
+           le saca la marca a la que la tenía. */
+        '<div class="campo ancho">' +
+          '<label class="casillero">' +
+            '<input type="checkbox" id="promoDestacada"' + (p && p.destacada ? ' checked' : '') + '>' +
+            '<span>Destacada<span class="lbl-opc"> — arriba de todo en Promos. Es una sola: marcar ésta desmarca la otra</span></span>' +
           '</label>' +
         '</div>' +
         /* El casillero va PEGADO al botón de guardar y no arriba con el
@@ -1368,6 +1378,11 @@
     if (nivel || (promoAbierta && 'desde_nivel' in promoAbierta)) { extra.nivel = nivel; }
     var conoce = promoAbierta && 'donde' in promoAbierta;
     if (!conoce && !extra.solo && extra.donde === 'locales' && !nivel) { extra = null; }
+    /* La destacada (SQL 41): se manda si está tildada, o si la base ya la
+       conoce (para poder destildarla). Sin eso, una base sin el 41 no
+       podría guardar ninguna promo. */
+    var dest = $('promoDestacada') ? $('promoDestacada').checked : false;
+    if (dest || (promoAbierta && 'destacada' in promoAbierta)) { extra = extra || {}; extra.destacada = dest; }
     base.club.promoGuardar(pinPromo(), editando,
         $('promoTexto').value.trim(), $('promoImagen').value.trim(),
         $('promoDesde').value, $('promoHasta').value, $('promoCond').value.trim(),
@@ -1400,7 +1415,9 @@
       })
       .catch(function (err) {
         var m = (err && err.message) || '';
-        avisar('err', extra && /p_desde_nivel/i.test(m)
+        avisar('err', extra && /p_destacada/i.test(m)
+          ? 'Falta correr el SQL 41 en Supabase para marcar la promo destacada.'
+          : extra && /p_desde_nivel/i.test(m)
           ? 'Falta correr el SQL 39 en Supabase para guardar promos por nivel.'
           : extra && /p_solo_socios|p_donde|PGRST202|could not find the function/i.test(m)
           ? 'Falta correr el SQL 38 en Supabase para guardar "Para quién" y "Dónde vale".'
