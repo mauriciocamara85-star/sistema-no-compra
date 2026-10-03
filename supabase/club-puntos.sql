@@ -10536,3 +10536,212 @@ $function$;
 
 
 select 'Listo: la Tienda igual a vdh.com.ar (desde la próxima hora) y los videos.' as "SQL 45";
+
+
+-- ─────────────────────────── PARTE 46 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LOS AVISOS AUTOMÁTICOS, CON CUPÓN DE REGALO
+--
+-- Correr en el editor SQL de Supabase, después del 45.
+--
+-- Pedido de Mauricio (03/10/2026): dos avisos que salen solos, cada uno con
+-- un cupón del 20% de regalo, acumulable con otras promos:
+--
+--   vencen      "Tus puntos vencen pronto": X días antes de que venzan (12
+--               meses sin comprar). Default: 30 días antes.
+--   extranamos  "Te extrañamos": a los X días sin comprar. Default: 60.
+--
+-- Se configuran desde Configuración → Club → Avisos (prender o apagar,
+-- días, título, texto, % y validez del cupón).
+--
+-- Cómo corre: un reloj de pg_cron, cada hora en punto. Sólo actúa entre las
+-- 11 y las 20 (hora de Argentina): nadie recibe un cupón a las 3 de la
+-- mañana. Deja el aviso en club_avisos_personales y el Action de cada hora
+-- lo manda (a los 5 minutos).
+--
+-- Reglas:
+--   · Sólo a socios con los avisos prendidos y con puntos.
+--   · Una vez por situación: la clave es la fecha de su última compra. Si
+--     vuelve a comprar, la cuenta empieza de nuevo.
+--   · El cupón es personal (por su teléfono), aparece en su app ("Para vos"
+--     y "Mis cupones") y en Beneficios. Si ya tiene un cupón sin usar, no se
+--     le hace otro: el aviso le llega igual, sin la línea del cupón.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_avisos_auto (
+  motivo     text primary key check (motivo in ('vencen', 'extranamos')),
+  activo     boolean not null default true,
+  dias       integer not null check (dias between 1 and 365),
+  titulo     text not null check (length(titulo) between 1 and 60),
+  cuerpo     text not null check (length(cuerpo) between 1 and 180),
+  cupon_pct  smallint check (cupon_pct is null or cupon_pct between 1 and 100),
+  cupon_dias integer not null default 30 check (cupon_dias between 1 and 365),
+  cambiado   timestamptz not null default now()
+);
+-- Sin políticas: se lee y se cambia por las funciones con PIN.
+alter table club_avisos_auto enable row level security;
+
+insert into club_avisos_auto (motivo, activo, dias, titulo, cuerpo, cupon_pct, cupon_dias) values
+  ('vencen', true, 30, 'Tus puntos vencen pronto',
+   'Tenés {puntos} puntos que vencen el {fecha}. Con una compra se renuevan por 12 meses.', 20, 30),
+  ('extranamos', true, 60, 'Te extrañamos, {nombre}',
+   'Hace un tiempo que no te vemos. Tenés {puntos} puntos esperándote.', 20, 30)
+on conflict (motivo) do nothing;
+
+
+-- Quiénes caen hoy en cada aviso (sin mirar la hora). La usan el reloj y
+-- la pantalla de Configuración ("hoy le llegaría a…").
+create or replace function club_avisos_auto_candidatos(p_motivo text)
+returns table(cliente bigint, nombre text, telefono text, puntos numeric, base date, vence date)
+language sql
+stable
+security definer
+set search_path = public
+as $
+  with cfg as (select * from club_avisos_auto where motivo = p_motivo),
+       hoy as (select (now() at time zone 'America/Argentina/Buenos_Aires')::date as d),
+       meses as (select nullif((select valor from club_reglas where clave = 'vence_meses'), '')::integer as m)
+  select v.id, v.nombre, v.telefono, v.puntos,
+         (coalesce(v.ultima_compra, v.creado) at time zone 'America/Argentina/Buenos_Aires')::date,
+         ((coalesce(v.ultima_compra, v.creado) at time zone 'America/Argentina/Buenos_Aires')::date + make_interval(months => coalesce(meses.m, 0)))::date
+    from v_club_clientes v, cfg, hoy, meses
+   where v.baja is null
+     and v.puntos > 0
+     and exists (select 1 from club_suscripciones s where s.cliente = v.id and s.muerto is null)
+     and case p_motivo
+           when 'vencen' then coalesce(meses.m, 0) > 0
+                and ((coalesce(v.ultima_compra, v.creado) at time zone 'America/Argentina/Buenos_Aires')::date + make_interval(months => meses.m))::date
+                    between hoy.d and hoy.d + cfg.dias
+           when 'extranamos' then (coalesce(v.ultima_compra, v.creado) at time zone 'America/Argentina/Buenos_Aires')::date <= hoy.d - cfg.dias
+           else false end
+     /* Ya avisado en esta situación (la misma última compra): no. */
+     and not exists (select 1 from club_avisos_personales a
+                      where a.cliente = v.id and a.motivo = p_motivo
+                        and a.clave = p_motivo || ':' || (coalesce(v.ultima_compra, v.creado) at time zone 'America/Argentina/Buenos_Aires')::date::text);
+$;
+
+revoke all on function club_avisos_auto_candidatos(text) from public, anon, authenticated;
+
+
+-- El reloj: cada hora. Fuera de 11 a 20 h no hace nada.
+create or replace function club_avisos_auto_correr()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  ahora timestamp := now() at time zone 'America/Argentina/Buenos_Aires';
+  hoy   date := ahora::date;
+  cfg   club_avisos_auto%rowtype;
+  s     record;
+  tel   text;
+  cod   text;
+  txt   text;
+  tit   text;
+  n_av  integer := 0;
+  n_cu  integer := 0;
+  miles text;
+begin
+  if extract(hour from ahora) < 11 or extract(hour from ahora) >= 20 then
+    return jsonb_build_object('hecho', false, 'porque', 'fuera de horario (11 a 20)');
+  end if;
+
+  for cfg in select * from club_avisos_auto where activo order by motivo loop
+    for s in select * from club_avisos_auto_candidatos(cfg.motivo) loop
+      tel := right(regexp_replace(coalesce(s.telefono, ''), '[^0-9]', '', 'g'), 10);
+      cod := null;
+      /* El cupón, si hay % y no tiene otro sin usar (uno vivo por teléfono). */
+      if cfg.cupon_pct is not null and length(tel) = 10
+         and not exists (select 1 from v_beneficios b
+                          where b.tipo = 'descuento' and not b.multiuso and b.estado = 'disponible'
+                            and right(regexp_replace(coalesce(b.telefono, ''), '[^0-9]', '', 'g'), 10) = tel) then
+        cod := generar_codigo();
+        insert into beneficios (tipo, telefono, nombre, pct, codigo, vence, acumulable, creado_por_nombre, obs)
+        values ('descuento', s.telefono, s.nombre, cfg.cupon_pct, cod, hoy + cfg.cupon_dias, true,
+                'VDH Club (automático)', 'Aviso automático: ' || case cfg.motivo when 'vencen' then 'puntos por vencer' else 'te extrañamos' end);
+        n_cu := n_cu + 1;
+      end if;
+      miles := replace(to_char(floor(s.puntos), 'FM999,999,999'), ',', '.');
+      tit := replace(cfg.titulo, '{nombre}', split_part(coalesce(s.nombre, ''), ' ', 1));
+      txt := replace(replace(replace(cfg.cuerpo, '{nombre}', split_part(coalesce(s.nombre, ''), ' ', 1)),
+                             '{puntos}', miles), '{fecha}', to_char(s.vence, 'DD/MM'));
+      if cod is not null then
+        txt := txt || ' Y te regalamos un ' || cfg.cupon_pct || '% de descuento, acumulable con otras promos.';
+      end if;
+      insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+      values (s.cliente, cfg.motivo, cfg.motivo || ':' || s.base::text, left(tit, 60), txt, 'tarjeta.html#promos', now())
+      on conflict (cliente, motivo, clave) do nothing;
+      n_av := n_av + 1;
+    end loop;
+  end loop;
+  return jsonb_build_object('hecho', true, 'avisos', n_av, 'cupones', n_cu);
+end;
+$;
+
+revoke all on function club_avisos_auto_correr() from public, anon, authenticated;
+
+-- Cada hora en punto (el Action que los manda corre a los 5).
+select cron.unschedule('club-avisos-auto') where exists (select 1 from cron.job where jobname = 'club-avisos-auto');
+select cron.schedule('club-avisos-auto', '0 * * * *', 'select club_avisos_auto_correr()');
+
+
+-- ── Configuración (con PIN: VOLATILE, ver el SQL 40) ──
+create or replace function club_avisos_auto_ver(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'motivo', a.motivo, 'activo', a.activo, 'dias', a.dias, 'titulo', a.titulo, 'cuerpo', a.cuerpo,
+             'cupon_pct', a.cupon_pct, 'cupon_dias', a.cupon_dias,
+             'hoy', (select count(*) from club_avisos_auto_candidatos(a.motivo)),
+             'mes', (select count(*) from club_avisos_personales p where p.motivo = a.motivo and p.creado > now() - interval '30 days'))
+           order by case a.motivo when 'vencen' then 1 else 2 end)
+      from club_avisos_auto a), '[]'::jsonb);
+end;
+$;
+
+revoke all on function club_avisos_auto_ver(text) from public;
+grant execute on function club_avisos_auto_ver(text) to anon, authenticated;
+
+create or replace function club_avisos_auto_guardar(p_pin text, p_motivo text, p_activo boolean, p_dias integer,
+                                                    p_titulo text, p_cuerpo text, p_cupon_pct integer, p_cupon_dias integer)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  tit text := nullif(trim(coalesce(p_titulo, '')), '');
+  cue text := nullif(trim(coalesce(p_cuerpo, '')), '');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if tit is null or cue is null then raise exception 'Faltan el título o el texto.'; end if;
+  if length(tit) > 60 then raise exception 'El título es muy largo. Máximo 60 caracteres.'; end if;
+  if length(cue) > 180 then raise exception 'El texto es muy largo. Máximo 180 caracteres.'; end if;
+  if p_dias is null or p_dias < 1 or p_dias > 365 then raise exception 'Los días van de 1 a 365.'; end if;
+  if coalesce(p_cupon_pct, 0) < 0 or coalesce(p_cupon_pct, 0) > 100 then raise exception 'El cupón va de 0 (sin cupón) a 100%%.'; end if;
+  if coalesce(p_cupon_dias, 30) < 1 or coalesce(p_cupon_dias, 30) > 365 then raise exception 'La validez del cupón va de 1 a 365 días.'; end if;
+  update club_avisos_auto
+     set activo = coalesce(p_activo, activo), dias = p_dias, titulo = tit, cuerpo = cue,
+         cupon_pct = nullif(p_cupon_pct, 0), cupon_dias = coalesce(p_cupon_dias, 30), cambiado = now()
+   where motivo = p_motivo;
+  if not found then raise exception 'Ese aviso no existe.'; end if;
+  return jsonb_build_object('ok', true);
+end;
+$;
+
+revoke all on function club_avisos_auto_guardar(text, text, boolean, integer, text, text, integer, integer) from public;
+grant execute on function club_avisos_auto_guardar(text, text, boolean, integer, text, text, integer, integer) to anon, authenticated;
+
+
+select 'Listo: los avisos automáticos (puntos por vencer y te extrañamos), con cupón del 20%.' as "SQL 46";

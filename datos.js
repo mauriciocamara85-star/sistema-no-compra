@@ -1051,6 +1051,15 @@ var base = {
     tiendaVer: function () {
       return funcion('club_tienda_ver', {});
     },
+    /** Los avisos automáticos (SQL 46): la configuración, con cuántos les
+        llegaría hoy y cuántos salieron en el mes. */
+    avisosAutoVer: function (pin) {
+      return funcion('club_avisos_auto_ver', { p_pin: pin });
+    },
+    avisosAutoGuardar: function (pin, a) {
+      return funcion('club_avisos_auto_guardar', { p_pin: pin, p_motivo: a.motivo, p_activo: a.activo, p_dias: a.dias,
+        p_titulo: a.titulo, p_cuerpo: a.cuerpo, p_cupon_pct: a.cupon_pct, p_cupon_dias: a.cupon_dias });
+    },
     /** La portada propia de la Tienda (SQL 45). Todo vacío: la de la tienda. */
     tiendaPortadaGuardar: function (pin, foto, video, texto, cat) {
       return funcion('club_tienda_portada_guardar', { p_pin: pin, p_foto: foto || null, p_video: video || null, p_texto: texto || null, p_cat: cat || null });

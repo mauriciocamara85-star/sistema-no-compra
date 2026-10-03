@@ -271,6 +271,15 @@
   .club-op-txt span { display: block; font-size: 13px; line-height: 1.4; color: var(--txt-2); margin-top: 2px; }
   /* Lo que avisa algo (un error de Kommo, un local sin enlace) se nota. */
   .club-op-txt span.ojo { color: var(--warn-txt); }
+  /* Los avisos automáticos (SQL 46). */
+  .auto-av { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--surface); }
+  .auto-av + .auto-av { margin-top: 14px; }
+  .auto-cab { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 4px; }
+  .auto-cab b { font: 700 16px var(--sans); }
+  .auto-fila { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .auto-fila input { width: 84px; }
+  .auto-fila span { font-size: 13.5px; color: var(--txt-2); }
+  .auto-ejemplo { padding: 12px 14px; border-radius: 10px; background: var(--surface-2); font-size: 14px; line-height: 1.45; }
   .club-op-ir .club-op-ico { background: var(--surface-2); color: var(--txt-2); }
 
   /* ── Club VDH: cada pantalla ──
@@ -644,6 +653,12 @@
         <p class="bloque-sub">Para lo que no es una promoción: un feriado, un local nuevo, algo que contar. Les llega al celular y queda en su campanita. Los avisos de las promociones y de los puntos extra salen desde sus pantallas.</p>
       </div>
       <div class="bloque" id="cajaAviso"><div id="avisoCuerpo"></div></div>
+      <!-- Los automáticos (SQL 46): salen solos, cada uno con su cupón. -->
+      <div class="bloque">
+        <h3 class="bloque-tit">Automáticos</h3>
+        <p class="bloque-sub">Salen solos, entre las 11 y las 20, a los socios con los avisos prendidos. Una vez por situación: si vuelve a comprar, la cuenta empieza de nuevo. El cupón es personal y aparece en su app; si ya tiene uno sin usar, el aviso sale sin cupón.</p>
+        <div id="autoCuerpo"></div>
+      </div>
     </div>
 
     <!-- ── Las reseñas en Google ──
@@ -796,6 +811,7 @@
     pintarIntegraciones();
     pintarReglas();
     pintarPortadaTienda();
+    pintarAvisosAuto();
   }
 
 
@@ -1339,6 +1355,67 @@
     });
     $(campo).onchange = function () { previaVideo(campo, caja); };
     previaVideo(campo, caja);
+  }
+
+  /* ═══ Los avisos automáticos (SQL 46) ═══════════════════════════════
+     Cada uno en su tarjeta: prendido o no, cuándo sale, título, texto (con
+     {nombre}, {puntos} y {fecha}) y el cupón (0 = sin cupón). Abajo, cómo le
+     llega a un socio de ejemplo. */
+  var AUTO_NOMBRE = { vencen: ['Tus puntos vencen', 'días antes de que venzan (12 meses sin comprar)'],
+                      extranamos: ['Te extrañamos', 'días sin comprar'] };
+  function ejemploAuto(a) {
+    var r = function (x) { return String(x || '').replace(/\{nombre\}/g, 'Carolina').replace(/\{puntos\}/g, '2.700').replace(/\{fecha\}/g, '15/11'); };
+    var pct = Number(a.cupon_pct) || 0;
+    return '<b>' + esc(r(a.titulo)) + '</b><br>' + esc(r(a.cuerpo)) +
+      (pct ? ' Y te regalamos un ' + pct + '% de descuento, acumulable con otras promos.' : '');
+  }
+  function pintarAvisosAuto() {
+    var caja = $('autoCuerpo');
+    if (!caja) { return; }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.avisosAutoVer(pinPromo())
+      .then(function (l) {
+        l = l || [];
+        caja.innerHTML = l.map(function (a) {
+          var k = a.motivo, n = AUTO_NOMBRE[k] || [k, 'días'];
+          return '<div class="auto-av" data-auto="' + k + '">' +
+            '<div class="auto-cab"><b>' + esc(n[0]) + '</b>' +
+              '<label class="casillero"><input type="checkbox" data-c="activo"' + (a.activo ? ' checked' : '') + '><span>Prendido</span></label></div>' +
+            '<p class="bloque-sub" style="margin:0 0 10px">' + (a.activo ? 'Hoy le llegaría a ' + a.hoy + ' socio' + (a.hoy === 1 ? '' : 's') + ' · ' : '') +
+              'En los últimos 30 días: ' + a.mes + '</p>' +
+            '<div class="campos">' +
+              '<div class="campo"><label>Sale a los</label><div class="auto-fila"><input type="number" min="1" max="365" data-c="dias" value="' + esc(a.dias) + '"><span>' + esc(n[1]) + '</span></div></div>' +
+              '<div class="campo"><label>Cupón de regalo</label><div class="auto-fila"><input type="number" min="0" max="100" data-c="cupon_pct" value="' + esc(a.cupon_pct || 0) + '"><span>% · válido</span>' +
+                '<input type="number" min="1" max="365" data-c="cupon_dias" value="' + esc(a.cupon_dias) + '"><span>días (0% = sin cupón)</span></div></div>' +
+              '<div class="campo ancho"><label>Título</label><input type="text" maxlength="60" data-c="titulo" value="' + esc(a.titulo) + '"></div>' +
+              '<div class="campo ancho"><label>Texto <span class="lbl-opc">— {nombre}, {puntos} y {fecha} se completan solos</span></label>' +
+                '<textarea maxlength="180" data-c="cuerpo">' + esc(a.cuerpo) + '</textarea></div>' +
+              '<div class="campo ancho"><label>Así le llega</label><div class="auto-ejemplo" data-ejemplo>' + ejemploAuto(a) + '</div></div>' +
+              '<div class="campo"><button type="button" class="btn btn-pri" data-guardar>Guardar</button></div>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+        Array.prototype.forEach.call(caja.querySelectorAll('[data-auto]'), function (t) {
+          var valor = function (cl) { var e = t.querySelector('[data-c="' + cl + '"]'); return e.type === 'checkbox' ? e.checked : e.value; };
+          var leer = function () {
+            return { motivo: t.dataset.auto, activo: valor('activo'), dias: Number(valor('dias')), titulo: valor('titulo').trim(),
+                     cuerpo: valor('cuerpo').trim(), cupon_pct: Number(valor('cupon_pct')) || 0, cupon_dias: Number(valor('cupon_dias')) || 30 };
+          };
+          t.addEventListener('input', function () { t.querySelector('[data-ejemplo]').innerHTML = ejemploAuto(leer()); });
+          t.querySelector('[data-guardar]').onclick = function () {
+            var b = this; b.disabled = true;
+            base.club.avisosAutoGuardar(pinPromo(), leer())
+              .then(function () { avisar('ok', 'Guardado.'); pintarAvisosAuto(); })
+              .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.'); })
+              .then(function () { b.disabled = false; });
+          };
+        });
+      })
+      .catch(function (err) {
+        var m = (err && err.message) || '';
+        caja.innerHTML = '<p class="bloque-sub">' + (/club_avisos_auto_ver|PGRST202|could not find the function/i.test(m)
+          ? 'Falta correr el SQL 46 en Supabase.' : esc(m || 'No se pudo abrir.')) + '</p>';
+      });
   }
 
   /* ═══ La portada de la Tienda (SQL 45) ═══════════════════════════════
