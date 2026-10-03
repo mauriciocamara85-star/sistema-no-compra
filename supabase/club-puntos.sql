@@ -9961,3 +9961,101 @@ $function$;
 
 
 select 'Listo: las promos pueden tener su colección tipo revista.' as "SQL 43";
+
+
+-- ─────────────────────────── PARTE 44 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LAS FOTOS DE LOS BANNERS DE CATEGORÍA
+--
+-- Correr en el editor SQL de Supabase, después del 43.
+--
+-- Pedido de Mauricio (03/10/2026): que los banners de categoría de la
+-- Tienda del Club usen las fotos que ya tiene vdh.com.ar en su portada
+-- (Camperas, Camisas, Pantalones, Remeras: fotos del lookbook), en vez de la
+-- foto de la primera prenda. Las lee el mismo Action de cada hora, de la
+-- página de inicio de la tienda. Las categorías sin banner en la tienda
+-- siguen con la foto de su primera prenda.
+--
+--   banners  { "Remeras": "https://…", "Camperas": "https://…" }
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table club_tienda_estado add column if not exists banners jsonb;
+
+-- Un parámetro más (con valor por defecto: el Action viejo, con tres,
+-- sigue andando). Se borra la firma vieja para que no queden dos.
+drop function if exists club_tienda_catalogo_cargar(jsonb, jsonb, text[]);
+
+create function club_tienda_catalogo_cargar(p_productos jsonb, p_pago jsonb, p_campanas text[], p_banners jsonb default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  n integer := coalesce(jsonb_array_length(p_productos), 0);
+begin
+  /* Cero productos es una tienda que no contestó bien, no una tienda
+     vacía: borrar el catálogo dejaría la pestaña en blanco. Se queda el de
+     la corrida anterior. */
+  if n = 0 then
+    raise exception 'Llegaron cero productos: no toco el catálogo.';
+  end if;
+
+  delete from club_tienda_productos where true;
+  insert into club_tienda_productos (id, nombre, url, foto, precio, oferta, tipo, campanas, colores, talles, nuevo, orden)
+  select x.id, x.nombre, x.url, x.foto, x.precio, nullif(x.oferta, 0), coalesce(nullif(x.tipo, ''), 'Otros'),
+         coalesce(x.campanas, '{}'), coalesce(x.colores, '[]'), coalesce(x.talles, '[]'), coalesce(x.nuevo, false), coalesce(x.orden, 0)
+    from jsonb_to_recordset(p_productos) as x(id bigint, nombre text, url text, foto text, precio numeric, oferta numeric,
+                                               tipo text, campanas text[], colores jsonb, talles jsonb, nuevo boolean, orden integer);
+
+  /* Cuotas, transferencia y banners: si esta vez no se pudieron leer,
+     quedan los últimos que se leyeron. Los banners, sólo los https. */
+  update club_tienda_estado
+     set pago_cuotas        = coalesce((p_pago->>'cuotas')::integer, pago_cuotas),
+         pago_transferencia = coalesce((p_pago->>'transferencia')::numeric, pago_transferencia),
+         campanas           = coalesce(p_campanas, '{}'),
+         banners            = case when jsonb_typeof(p_banners) = 'object'
+                                   then (select coalesce(jsonb_object_agg(k, v), '{}'::jsonb)
+                                           from jsonb_each_text(p_banners) as b(k, v) where v ~* '^https://')
+                                   else banners end,
+         catalogo_corrio    = now(),
+         catalogo_resultado = jsonb_build_object('productos', n, 'pago', p_pago)
+   where id = 1;
+
+  return jsonb_build_object('ok', true, 'productos', n);
+end;
+$;
+
+revoke all on function club_tienda_catalogo_cargar(jsonb, jsonb, text[], jsonb) from public, anon, authenticated;
+
+
+-- Lo que ve el socio: también los banners.
+create or replace function club_tienda_ver()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $
+  select jsonb_build_object(
+    'productos', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', p.id, 'nombre', p.nombre, 'url', p.url, 'foto', p.foto,
+               'precio', p.precio, 'oferta', p.oferta, 'tipo', p.tipo,
+               'campanas', to_jsonb(p.campanas), 'colores', p.colores, 'talles', p.talles,
+               'nuevo', p.nuevo)
+             order by p.orden, p.id)
+        from club_tienda_productos p), '[]'::jsonb),
+    'pago', jsonb_build_object('cuotas', e.pago_cuotas, 'transferencia', e.pago_transferencia),
+    'campanas', to_jsonb(coalesce(e.campanas, '{}')),
+    'banners', coalesce(e.banners, '{}'::jsonb),
+    'actualizado', e.catalogo_corrio)
+  from club_tienda_estado e
+  where e.id = 1;
+$;
+
+revoke all on function club_tienda_ver() from public;
+grant execute on function club_tienda_ver() to anon, authenticated;
+
+
+select 'Listo: los banners de categoría usan las fotos de la tienda (desde la próxima hora).' as "SQL 44";

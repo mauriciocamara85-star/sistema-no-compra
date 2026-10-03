@@ -608,16 +608,16 @@
       <div class="pant-cab">
         <a class="pant-volver" href="#club">Club VDH</a>
         <h2 class="pant-tit">Promociones y novedades</h2>
-        <p class="bloque-sub">Las dos viven en la pestaña Promos de la tarjeta: primero las promociones, abajo la novedad.</p>
+        <p class="bloque-sub">Las dos viven en la pestaña Novedades de la tarjeta: primero las promociones, abajo la novedad.</p>
       </div>
       <div class="bloque" id="cajaPromo">
         <h3 class="bloque-tit">Promociones</h3>
-        <p class="bloque-sub">Lo que ven los socios en Promos. Pasada la fecha desaparecen solas.</p>
+        <p class="bloque-sub">Lo que ven los socios en Novedades. Pasada la fecha desaparecen solas.</p>
         <div id="promoCuerpo"></div>
       </div>
       <div class="bloque" id="cajaNovedad">
         <h3 class="bloque-tit">Novedad</h3>
-        <p class="bloque-sub">Una foto grande con un título, debajo de las promociones: la colección nueva, un lanzamiento. Mientras el socio no la vio, la pestaña Promos tiene un puntito. Una sola a la vez.</p>
+        <p class="bloque-sub">Una foto grande con un título, debajo de las promociones: la colección nueva, un lanzamiento. Mientras el socio no la vio, la pestaña Novedades tiene un puntito. Una sola a la vez.</p>
         <div id="novedadCuerpo"></div>
       </div>
     </div>
@@ -975,7 +975,7 @@
         '<div class="campo ancho">' +
           '<label class="casillero">' +
             '<input type="checkbox" id="promoDestacada"' + (p && p.destacada ? ' checked' : '') + '>' +
-            '<span>Destacada<span class="lbl-opc"> — de portada en Promos, a pantalla completa. Es una sola: marcar ésta desmarca la otra. Si no marcás ninguna, va de portada la primera con foto</span></span>' +
+            '<span>Destacada<span class="lbl-opc"> — de portada en Novedades, a pantalla completa. Es una sola: marcar ésta desmarca la otra. Si no marcás ninguna, va de portada la primera con foto</span></span>' +
           '</label>' +
         '</div>' +
         /* El casillero va PEGADO al botón de guardar y no arriba con el
@@ -1382,7 +1382,7 @@
 
   /* ═══ La novedad ════════════════════════════════════════════════════════
      Una sola: foto, una bajada ("Nueva colección"), un título y a dónde
-     lleva. Vive en la pestaña Promos de la tarjeta, debajo de las
+     lleva. Vive en la pestaña Novedades de la tarjeta, debajo de las
      promociones (antes estaba en Inicio: de ahí los nombres viejos que
      quedaron en la base). Guardar la prende; "Dejar de mostrar" la apaga
      sin borrarla. */
@@ -1405,7 +1405,7 @@
   function formNovedad(n) {
     var v = function (x) { return x == null ? '' : esc(String(x)); };
     var estado = !n ? 'Todavía no hay ninguna cargada.'
-               : n.activa ? 'Se está mostrando en Promos.'
+               : n.activa ? 'Se está mostrando en Novedades.'
                : 'No se está mostrando: guardarla la vuelve a mostrar.';
     resNove = !n ? 'Sin novedad' : n.activa ? 'Novedad: se muestra' : 'Novedad: apagada';
     resumenPromos();
