@@ -10059,3 +10059,480 @@ grant execute on function club_tienda_ver() to anon, authenticated;
 
 
 select 'Listo: los banners de categoría usan las fotos de la tienda (desde la próxima hora).' as "SQL 44";
+
+
+-- ─────────────────────────── PARTE 45 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LA TIENDA IGUAL A VDH.COM.AR, Y LOS VIDEOS
+--
+-- Correr en el editor SQL de Supabase, después del 44.
+--
+-- Pedido de Mauricio (03/10/2026), mirando la app de Zara: que la Tienda
+-- del Club esté ordenada igual que vdh.com.ar y se vea editorial.
+--
+--   · menu      el menú de la tienda, en su orden, con sus subcategorías
+--               (Adelanto Verano, Camperas… SALE FINAL > Camperas, Buzos…),
+--               y la foto del banner de cada una si la tiene.
+--   · portada   la foto de portada para celular de la tienda (su slide).
+--               Configuración la puede pisar con una foto o un VIDEO propio.
+--   · categorias de cada producto: las de Tienda Nube de verdad (y sus
+--               padres), no adivinadas por el nombre.
+--   · video     de una promo: corre de fondo en su portada, como en Zara.
+--
+-- Todo lo trae el mismo Action de cada hora. Storage acepta videos MP4 y
+-- WEBM de hasta 12 MB: un video lo descarga cada socio que lo ve, y el plan
+-- gratis de Supabase tiene un tope de descarga por mes.
+-- ══════════════════════════════════════════════════════════════════════════
+
+
+-- ── Los videos en Storage ──
+update storage.buckets
+   set file_size_limit = 12582912,
+       allowed_mime_types = array['image/jpeg', 'image/webp', 'image/png', 'video/mp4', 'video/webm']
+ where id = 'promos';
+
+-- El permiso para subir un video: como el de las fotos (SQL 42), con su
+-- extensión. VOLATILE: pide PIN.
+create or replace function club_video_permiso(p_pin text, p_ext text default 'mp4')
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  n text;
+  e text := lower(coalesce(p_ext, 'mp4'));
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if e not in ('mp4', 'webm') then
+    raise exception 'El video tiene que ser MP4 o WEBM.';
+  end if;
+  delete from club_fotos_permisos where vence < now() - interval '1 day';
+  n := to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'YYYY-MM') || '/' || gen_random_uuid()::text || '.' || e;
+  insert into club_fotos_permisos (nombre, vence) values (n, now() + interval '10 minutes');
+  return jsonb_build_object('ok', true, 'bucket', 'promos', 'nombre', n);
+end;
+$;
+
+revoke all on function club_video_permiso(text, text) from public;
+grant execute on function club_video_permiso(text, text) to anon, authenticated;
+
+
+-- ── La tienda: menú, portada y categorías ──
+alter table club_tienda_productos add column if not exists categorias text[] not null default '{}';
+alter table club_tienda_estado
+  add column if not exists menu jsonb,
+  add column if not exists portada jsonb,
+  add column if not exists portada_propia jsonb;
+
+drop function if exists club_tienda_catalogo_cargar(jsonb, jsonb, text[], jsonb);
+
+create function club_tienda_catalogo_cargar(p_productos jsonb, p_pago jsonb, p_campanas text[], p_banners jsonb default null,
+                                            p_menu jsonb default null, p_portada jsonb default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  n integer := coalesce(jsonb_array_length(p_productos), 0);
+begin
+  /* Cero productos es una tienda que no contestó bien, no una tienda
+     vacía: borrar el catálogo dejaría la pestaña en blanco. */
+  if n = 0 then
+    raise exception 'Llegaron cero productos: no toco el catálogo.';
+  end if;
+
+  delete from club_tienda_productos where true;
+  insert into club_tienda_productos (id, nombre, url, foto, precio, oferta, tipo, campanas, categorias, colores, talles, nuevo, orden)
+  select x.id, x.nombre, x.url, x.foto, x.precio, nullif(x.oferta, 0), coalesce(nullif(x.tipo, ''), 'Otros'),
+         coalesce(x.campanas, '{}'), coalesce(x.categorias, '{}'), coalesce(x.colores, '[]'), coalesce(x.talles, '[]'),
+         coalesce(x.nuevo, false), coalesce(x.orden, 0)
+    from jsonb_to_recordset(p_productos) as x(id bigint, nombre text, url text, foto text, precio numeric, oferta numeric,
+                                               tipo text, campanas text[], categorias text[], colores jsonb, talles jsonb,
+                                               nuevo boolean, orden integer);
+
+  /* Lo que no se pudo leer esta vez (null) queda como estaba. */
+  update club_tienda_estado
+     set pago_cuotas        = coalesce((p_pago->>'cuotas')::integer, pago_cuotas),
+         pago_transferencia = coalesce((p_pago->>'transferencia')::numeric, pago_transferencia),
+         campanas           = coalesce(p_campanas, '{}'),
+         banners            = case when jsonb_typeof(p_banners) = 'object'
+                                   then (select coalesce(jsonb_object_agg(k, v), '{}'::jsonb)
+                                           from jsonb_each_text(p_banners) as b(k, v) where v ~* '^https://')
+                                   else banners end,
+         menu               = case when jsonb_typeof(p_menu) = 'array' and jsonb_array_length(p_menu) > 0 then p_menu else menu end,
+         portada            = case when jsonb_typeof(p_portada) = 'object' and coalesce(p_portada->>'foto', '') ~* '^https://' then p_portada else portada end,
+         catalogo_corrio    = now(),
+         catalogo_resultado = jsonb_build_object('productos', n, 'pago', p_pago)
+   where id = 1;
+
+  return jsonb_build_object('ok', true, 'productos', n);
+end;
+$;
+
+revoke all on function club_tienda_catalogo_cargar(jsonb, jsonb, text[], jsonb, jsonb, jsonb) from public, anon, authenticated;
+
+
+-- La portada propia, desde Configuración: una foto, un video (con su foto
+-- de respaldo), un texto y a qué categoría lleva. Todo vacío vuelve a la
+-- portada de la tienda.
+create or replace function club_tienda_portada_guardar(p_pin text, p_foto text, p_video text, p_texto text, p_cat text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  f text := nullif(trim(coalesce(p_foto, '')), '');
+  v text := nullif(trim(coalesce(p_video, '')), '');
+  t text := nullif(trim(coalesce(p_texto, '')), '');
+  c text := nullif(trim(coalesce(p_cat, '')), '');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if (f is not null and f !~* '^https://') or (v is not null and v !~* '^https://') then
+    raise exception 'La foto y el video tienen que ser enlaces que empiecen con https.';
+  end if;
+  if t is not null and length(t) > 60 then
+    raise exception 'El texto es muy largo. Máximo 60 caracteres.';
+  end if;
+  update club_tienda_estado
+     set portada_propia = case when f is null and v is null then null
+                               else jsonb_build_object('foto', f, 'video', v, 'texto', t, 'cat', c) end
+   where id = 1;
+  return jsonb_build_object('ok', true, 'propia', f is not null or v is not null);
+end;
+$;
+
+revoke all on function club_tienda_portada_guardar(text, text, text, text, text) from public;
+grant execute on function club_tienda_portada_guardar(text, text, text, text, text) to anon, authenticated;
+
+
+-- Lo que ve el socio. La portada: la propia si hay (la foto de la tienda
+-- de respaldo si la propia es sólo un video), si no la de la tienda.
+create or replace function club_tienda_ver()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $
+  select jsonb_build_object(
+    'productos', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', p.id, 'nombre', p.nombre, 'url', p.url, 'foto', p.foto,
+               'precio', p.precio, 'oferta', p.oferta, 'tipo', p.tipo,
+               'campanas', to_jsonb(p.campanas), 'categorias', to_jsonb(p.categorias),
+               'colores', p.colores, 'talles', p.talles, 'nuevo', p.nuevo)
+             order by p.orden, p.id)
+        from club_tienda_productos p), '[]'::jsonb),
+    'pago', jsonb_build_object('cuotas', e.pago_cuotas, 'transferencia', e.pago_transferencia),
+    'campanas', to_jsonb(coalesce(e.campanas, '{}')),
+    'banners', coalesce(e.banners, '{}'::jsonb),
+    'menu', coalesce(e.menu, '[]'::jsonb),
+    'portada', case when e.portada_propia is not null
+                    then e.portada_propia || jsonb_build_object('foto', coalesce(e.portada_propia->>'foto', e.portada->>'foto'), 'propia', true)
+                    else coalesce(e.portada, '{}'::jsonb) end,
+    'actualizado', e.catalogo_corrio)
+  from club_tienda_estado e
+  where e.id = 1;
+$;
+
+revoke all on function club_tienda_ver() from public;
+grant execute on function club_tienda_ver() to anon, authenticated;
+
+
+-- ── Las promos: el video ──
+alter table club_promos add column if not exists video text;
+
+-- Cambia lo que devuelve: hay que borrarla antes.
+drop function if exists club_promos_ver();
+
+create function club_promos_ver()
+ RETURNS TABLE(id bigint, texto text, imagen text, condiciones text, desde date, hasta date, enlace text, cuenta boolean, termina timestamp with time zone, solo_socios boolean, donde text, locales text[], desde_nivel text, nivel_xp integer, para text, destacada boolean, galeria jsonb, sobre text, video text)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select p.id, p.texto, p.imagen, p.condiciones, p.desde, p.hasta, p.enlace,
+         p.cuenta_regresiva,
+         /* A la medianoche de su último día, en hora de Argentina. */
+         ((p.hasta + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires'),
+         p.solo_socios, p.donde, p.locales,
+         /* El nivel, lo que pide (para que la app y la caja comparen con el
+            socio) y cómo se dice: "Oro y Platino". */
+         p.desde_nivel, nv.desde_xp,
+         (select string_agg(n.nombre, ' y ' order by n.desde_xp) from club_niveles n where n.desde_xp >= nv.desde_xp),
+         p.destacada, p.galeria, p.sobre, p.video
+    from club_promos p
+    left join club_niveles nv on nv.nombre = p.desde_nivel
+   where p.baja is null
+     and p.desde <= (now() at time zone 'America/Argentina/Buenos_Aires')::date
+     and p.hasta >= (now() at time zone 'America/Argentina/Buenos_Aires')::date
+   /* Las de nivel, las de socios, y después la que termina antes. */
+   order by (p.desde_nivel is not null) desc, p.solo_socios desc, p.hasta, p.desde desc, p.id desc;
+$function$;
+
+revoke all on function club_promos_ver() from public;
+grant execute on function club_promos_ver() to anon, authenticated;
+
+-- Un parámetro más: se borra la firma vieja para que no queden dos.
+drop function if exists club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text, boolean, boolean, text, text[], text, boolean, jsonb, text);
+
+create function club_promo_guardar(p_pin text, p_id bigint, p_texto text, p_imagen text, p_desde text, p_hasta text, p_condiciones text, p_avisar boolean DEFAULT false, p_enlace text DEFAULT NULL::text, p_cuenta boolean DEFAULT NULL::boolean, p_solo_socios boolean DEFAULT NULL::boolean, p_donde text DEFAULT NULL::text, p_locales text[] DEFAULT NULL::text[], p_desde_nivel text DEFAULT NULL::text, p_destacada boolean DEFAULT NULL::boolean, p_galeria jsonb DEFAULT NULL::jsonb, p_sobre text DEFAULT NULL::text, p_video text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  txt text;
+  img text;
+  con text;
+  enl text;
+  dnd text;
+  locs text[];
+  d1  date;
+  d2  date;
+  nid bigint;
+  arranca date;
+  solo boolean;
+  nvl text;
+  nvxp integer;
+  toca_nivel boolean := p_desde_nivel is not null;
+  /* Elegir un nivel, aunque sea el primero, es elegir "sólo socios". */
+  pide_socios boolean := nullif(trim(coalesce(p_desde_nivel, '')), '') is not null;
+  nivel text;
+  para text;
+  sale timestamptz;
+  cuantos integer := 0;
+  gal jsonb;
+  sob text := nullif(trim(coalesce(p_sobre, '')), '');
+  vid text := nullif(trim(coalesce(p_video, '')), '');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  txt := nullif(trim(coalesce(p_texto, '')), '');
+  img := nullif(trim(coalesce(p_imagen, '')), '');
+  con := nullif(trim(coalesce(p_condiciones, '')), '');
+  enl := nullif(trim(coalesce(p_enlace, '')), '');
+  dnd := nullif(lower(trim(coalesce(p_donde, ''))), '');
+
+  if txt is null then raise exception 'Falta qué dice la promoción.'; end if;
+  if length(txt) > 140 then
+    raise exception 'El texto es muy largo. Máximo 140 caracteres.';
+  end if;
+
+  /* https y no http: una imagen por http en una página https la bloquea el
+     navegador SIN DECIR NADA, y el cartel se vería vacío. */
+  if img is not null and img !~* '^https://' then
+    raise exception 'La foto tiene que ser un enlace que empiece con https.';
+  end if;
+
+  /* Lo mismo con el enlace, y por un motivo más: una notificación que lleva
+     a un sitio sin candado le muestra al cliente un cartel de peligro con
+     la marca al lado. */
+  if enl is not null and enl !~* '^https://' then
+    raise exception 'El enlace tiene que empezar con https.';
+  end if;
+
+  /* La colección (SQL 43): las fotos de la revista, en orden, cada una con
+     su producto de la Tienda si se eligió. Se limpia acá: sólo foto
+     (https) y producto (un número), nada más. */
+  if p_galeria is not null then
+    if jsonb_typeof(p_galeria) <> 'array' then
+      raise exception 'La colección no se entiende.';
+    end if;
+    if jsonb_array_length(p_galeria) > 24 then
+      raise exception 'La colección puede tener hasta 24 fotos.';
+    end if;
+    if exists (select 1 from jsonb_array_elements(p_galeria) g where coalesce(g->>'foto', '') !~* '^https://') then
+      raise exception 'Cada foto de la colección tiene que ser un enlace que empiece con https.';
+    end if;
+    select coalesce(jsonb_agg(jsonb_build_object('foto', g->>'foto',
+             'producto', case when coalesce(g->>'producto', '') ~ '^[0-9]{1,18} then (g->>'producto')::bigint end) order by n), '[]'::jsonb)
+      into gal
+      from jsonb_array_elements(p_galeria) with ordinality as x(g, n);
+  end if;
+  /* El video (SQL 45): https, como la foto. */
+  if vid is not null and vid !~* '^https://' then
+    raise exception 'El video tiene que ser un enlace que empiece con https.';
+  end if;
+  if sob is not null and length(sob) > 40 then
+    raise exception 'El texto de arriba del título es muy largo. Máximo 40 caracteres.';
+  end if;
+
+  /* Dónde vale. "algunos" necesita la lista, y cada uno tiene que ser un
+     local de verdad: un nombre mal escrito haría que la caja de ese local
+     nunca la vea. */
+  if dnd is not null and dnd not in ('locales', 'locales_online', 'online', 'algunos') then
+    raise exception 'No entiendo dónde vale la promo.';
+  end if;
+  if dnd = 'algunos' then
+    select array_agg(distinct upper(trim(x)) order by upper(trim(x))) into locs
+      from unnest(coalesce(p_locales, '{}'::text[])) x
+     where nullif(trim(x), '') is not null;
+    if locs is null then
+      raise exception 'Elegí en qué locales vale.';
+    end if;
+    if exists (select 1 from unnest(locs) x
+                where not exists (select 1 from locales l where l.activo and upper(trim(l.codigo)) = x)) then
+      raise exception 'Uno de los locales elegidos no existe.';
+    end if;
+  end if;
+
+  /* El nivel (SQL 39). El primero es "todos los socios": no se guarda. */
+  if toca_nivel and nullif(trim(p_desde_nivel), '') is not null then
+    select n.nombre, n.desde_xp into nvl, nvxp from club_niveles n where lower(n.nombre) = lower(trim(p_desde_nivel));
+    if nvl is null then
+      raise exception 'Ese nivel no existe.';
+    end if;
+    if nvxp <= (select min(desde_xp) from club_niveles) then nvl := null; end if;
+  end if;
+
+  begin
+    d1 := nullif(trim(coalesce(p_desde, '')), '')::date;
+    d2 := nullif(trim(coalesce(p_hasta, '')), '')::date;
+  exception when others then
+    raise exception 'Esa fecha no se entiende. Va como 2026-09-30.';
+  end;
+
+  if d2 is null then
+    raise exception 'Falta hasta qué día vale. Una promo sin vencimiento se queda para siempre.';
+  end if;
+  if d1 is not null and d1 > d2 then
+    raise exception 'El desde no puede ser posterior al hasta.';
+  end if;
+  if d2 < hoy then
+    raise exception 'Esa fecha ya pasó: la promoción no la vería nadie.';
+  end if;
+
+  if p_id is null then
+    insert into club_promos (texto, imagen, desde, hasta, condiciones, enlace, cuenta_regresiva,
+                             solo_socios, donde, locales, desde_nivel, destacada, galeria, sobre, video)
+    values (txt, img, coalesce(d1, hoy), d2, con, enl, coalesce(p_cuenta, false),
+            coalesce(p_solo_socios, false) or pide_socios, coalesce(dnd, 'locales'), locs, nvl,
+            coalesce(p_destacada, false), coalesce(gal, '[]'::jsonb), sob, vid)
+    returning id, desde, solo_socios, desde_nivel into nid, arranca, solo, nivel;
+  else
+    /* "Desde" vacío es hoy, también al editar (ver el 38). */
+    update club_promos
+       set texto = txt, imagen = img, desde = coalesce(d1, hoy), hasta = d2,
+           condiciones = con, enlace = enl,
+           /* Sin el dato (una pantalla vieja cacheada) queda como estaba. */
+           cuenta_regresiva = coalesce(p_cuenta, cuenta_regresiva),
+           desde_nivel = case when toca_nivel then nvl else desde_nivel end,
+           /* Con nivel es de socios, siempre. */
+           solo_socios = coalesce(p_solo_socios, solo_socios) or pide_socios
+                         or (case when toca_nivel then nvl else desde_nivel end) is not null,
+           donde = coalesce(dnd, donde),
+           locales = case when dnd is null then locales else locs end,
+           /* Sin el dato (una pantalla vieja cacheada) queda como estaba. */
+           destacada = coalesce(p_destacada, destacada),
+           /* Sin el dato queda como estaba; con el dato, aunque sea vacío. */
+           galeria = coalesce(gal, galeria),
+           sobre = case when p_sobre is null then sobre else sob end,
+           video = case when p_video is null then video else vid end
+     where id = p_id and baja is null
+    returning id, desde, solo_socios, desde_nivel into nid, arranca, solo, nivel;
+    if nid is null then
+      return jsonb_build_object('ok', false, 'porque', 'Esa promoción ya no existe.');
+    end if;
+  end if;
+
+  /* La destacada (SQL 41) es UNA: la que va arriba de todo en Promos.
+     Marcar una le saca la marca a la que la tenía. */
+  if coalesce(p_destacada, false) then
+    update club_promos set destacada = false where destacada and id <> nid;
+  end if;
+
+  /* ── El aviso ──
+     Hereda de la promo el texto, la foto y el enlace. Sin enlace propio
+     lleva a las promos de la app. La de socios lo dice en el título: es lo
+     que hace que valga la pena abrirlo. */
+  if coalesce(p_avisar, false) then
+    sale := greatest(now(), (coalesce(arranca, hoy)::timestamp at time zone 'America/Argentina/Buenos_Aires'));
+
+    if nivel is null then
+      select count(*) into cuantos from club_suscripciones where muerto is null;
+      if cuantos > 0 then
+        insert into club_avisos (titulo, cuerpo, enlace, imagen, por, promo, sale)
+        values (case when solo then 'Solo para socios del Club' else 'Nueva promo' end,
+                txt, coalesce(enl, 'tarjeta.html#promos'), img, 'Promoción', nid, sale);
+      end if;
+    else
+      /* Con nivel: un aviso personal a cada socio que llega, y a nadie más.
+         La clave es la promo: guardarla de nuevo con "avisar" no le vuelve
+         a sonar el teléfono al que ya lo recibió. */
+      select n.desde_xp, (select string_agg(m.nombre, ' y ' order by m.desde_xp) from club_niveles m where m.desde_xp >= n.desde_xp)
+        into nvxp, para
+        from club_niveles n where n.nombre = nivel;
+      insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+      select v.id, 'promo', 'promo:' || nid, left('Para socios ' || para, 60), txt,
+             coalesce(enl, 'tarjeta.html#promos'), sale
+        from v_club_clientes v
+        join club_niveles n on n.nombre = v.nivel
+       where v.baja is null and n.desde_xp >= nvxp
+         and exists (select 1 from club_suscripciones s where s.cliente = v.id and s.muerto is null)
+      on conflict (cliente, motivo, clave) do nothing;
+      get diagnostics cuantos = row_count;
+    end if;
+  end if;
+
+  return jsonb_build_object('ok', true, 'id', nid,
+    'avisados', case when coalesce(p_avisar, false) then cuantos else 0 end,
+    /* Con nivel, el aviso es personal: sale en menos de una hora, no ya. */
+    'personal', nivel is not null and coalesce(p_avisar, false),
+    'para', para);
+end;
+$function$;
+
+revoke all on function club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text, boolean, boolean, text, text[], text, boolean, jsonb, text, text) from public;
+grant execute on function club_promo_guardar(text, bigint, text, text, text, text, text, boolean, text, boolean, boolean, text, text[], text, boolean, jsonb, text, text) to anon, authenticated;
+
+create or replace function club_promos_listar(p_pin text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', id, 'texto', texto, 'imagen', imagen,
+             'desde', to_char(desde, 'YYYY-MM-DD'),
+             'hasta', to_char(hasta, 'YYYY-MM-DD'),
+             'condiciones', condiciones,
+             'enlace', enlace,
+             'cuenta', cuenta_regresiva,
+             'solo_socios', solo_socios,
+             'donde', donde,
+             'locales', to_jsonb(locales),
+             'desde_nivel', desde_nivel,
+             'destacada', destacada,
+             'galeria', galeria,
+             'sobre', sobre,
+             'video', video,
+             'vigente', (hasta >= hoy and (desde is null or desde <= hoy)),
+             'futura',  (desde is not null and desde > hoy),
+             'vencida', (hasta < hoy))
+           order by hasta desc, id desc)
+      from club_promos where baja is null), '[]'::jsonb);
+end;
+$function$;
+
+
+select 'Listo: la Tienda igual a vdh.com.ar (desde la próxima hora) y los videos.' as "SQL 45";

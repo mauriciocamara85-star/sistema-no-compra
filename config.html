@@ -536,6 +536,10 @@
           <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
           <span class="club-op-txt"><b>Novedades y promociones</b><span data-res="promos">…</span></span>
         </a>
+        <a class="club-op" href="#club/tienda" data-sec="tienda">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8h14l-1 12H6Z"/><path d="M9 8V6.5a3 3 0 0 1 6 0V8"/></svg></span>
+          <span class="club-op-txt"><b>Portada de la Tienda</b><span data-res="tienda">…</span></span>
+        </a>
         <a class="club-op" href="#club/extra" data-sec="extra">
           <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg></span>
           <span class="club-op-txt"><b>Puntos extra</b><span data-res="extra">…</span></span>
@@ -613,6 +617,15 @@
       <div class="bloque" id="cajaPromo">
         <div id="promoCuerpo"></div>
       </div>
+    </div>
+
+    <div class="club-pant" data-sec="tienda" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Portada de la Tienda</h2>
+        <p class="bloque-sub">Lo primero que ven los socios al tocar Tienda, a pantalla completa. Si no cargás nada, va la portada de vdh.com.ar, que se actualiza sola.</p>
+      </div>
+      <div class="bloque"><div id="tiendaPortadaCuerpo"></div></div>
     </div>
 
     <div class="club-pant" data-sec="extra" hidden>
@@ -782,6 +795,7 @@
     pintarMisiones();
     pintarIntegraciones();
     pintarReglas();
+    pintarPortadaTienda();
   }
 
 
@@ -813,7 +827,7 @@
           '<span>Hasta el ' + esc(fechaCorta(p.hasta)) +
           (p.desde_nivel ? ' · socios ' + (p.desde_nivel === 'Oro' ? 'Oro y Platino' : esc(p.desde_nivel)) : p.solo_socios ? ' · sólo socios' : '') + dondePromo(p) +
           (p.imagen ? ' · con foto' : '') + (p.cuenta ? ' · con cuenta regresiva' : '') +
-          (p.galeria && p.galeria.length ? ' · colección de ' + p.galeria.length + ' fotos' : '') + '</span></div>' +
+          (p.video ? ' · con video' : '') + (p.galeria && p.galeria.length ? ' · colección de ' + p.galeria.length + ' fotos' : '') + '</span></div>' +
         (p.destacada ? '<span class="pill pill-oro">Destacada</span>' : '') +
         estado +
         '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button>' +
@@ -930,6 +944,20 @@
             'placeholder="…o pegá el enlace de una foto: https://…" value="' + esc((p && p.imagen) || '') + '">' +
           '<div id="promoImgPrev"></div>' +
         '</div>' +
+        /* El video (SQL 45): de fondo en la portada de la promo, mudo y en
+           loop, como en Zara. La foto queda de respaldo (y es la del aviso al
+           celular, que no muestra videos). */
+        '<div class="campo ancho">' +
+          '<label for="promoVideo">Video <span class="lbl-opc">— opcional. MP4 corto, hasta 12 MB: se ve de fondo; la foto queda de respaldo</span></label>' +
+          '<div class="foto-zona" id="promoVidZona">' +
+            '<span id="promoVidTxt"><b>Arrastrá un video</b> acá o elegilo.</span>' +
+            '<button type="button" class="btn btn-sec btn-chico" id="promoVidElegir">Elegir video</button>' +
+            '<input type="file" id="promoVidArchivo" accept="video/mp4,video/webm" hidden>' +
+          '</div>' +
+          '<input type="url" id="promoVideo" inputmode="url" autocapitalize="off" style="margin-top:8px" ' +
+            'placeholder="…o pegá el enlace de un video MP4: https://…" value="' + esc((p && p.video) || '') + '">' +
+          '<div id="promoVidPrev"></div>' +
+        '</div>' +
         /* La colección (SQL 43, 03/10/2026): con fotos acá, tocar la promo
            en la app abre la revista. Vacía, la promo es como siempre. */
         '<div class="campo ancho">' +
@@ -1018,6 +1046,7 @@
     galeriaEd = ((p && p.galeria) || []).map(function (g) { return { foto: g.foto, producto: g.producto || null }; });
     engancharFoto();
     engancharColeccion();
+    engancharVideo('promoVidZona', 'promoVidElegir', 'promoVidArchivo', 'promoVidTxt', 'promoVideo', 'promoVidPrev');
 
     /* "En algunos locales" abre la lista de los 14 para tildar. */
     var marcados = (p && p.locales) || [];
@@ -1125,6 +1154,7 @@
         if (!fotos.length) { return; }
         var hayPromo = !!$('promoFotoZona'), hayNove = !!$('novFotoZona');
         if (!hayPromo && !hayNove) { return; }
+        if (destinoFoto === 'tienda') { return; }
         ev.preventDefault();
         if (hayNove && (destinoFoto === 'novedad' || !hayPromo)) { subirFoto(fotos[0], 'novedad'); }
         else if (destinoFoto === 'coleccion' || fotos.length > 1) { subirColeccion(fotos); }
@@ -1141,6 +1171,7 @@
     destinoFoto = d;
     if ($('promoFotoZona')) { $('promoFotoZona').classList.toggle('activa', d === 'portada'); }
     if ($('colZona')) { $('colZona').classList.toggle('activa', d === 'coleccion'); }
+    if ($('tpFotoZona')) { $('tpFotoZona').classList.toggle('activa', d === 'tienda'); }
     if ($('novFotoZona')) { $('novFotoZona').classList.toggle('activa', d === 'novedad'); }
   }
 
@@ -1252,6 +1283,163 @@
     Array.prototype.forEach.call(caja.querySelectorAll('[data-gal-prod]'), function (s) {
       s.onchange = function () { galeriaEd[Number(s.dataset.galProd)].producto = s.value ? Number(s.value) : null; };
     });
+  }
+
+  /* ── Los videos (SQL 45) ──
+     Un video no se achica en el navegador: tiene que llegar ya corto y
+     liviano. MP4 o WEBM, hasta 12 MB (cada socio que lo ve lo descarga, y
+     el plan gratis de Supabase tiene un tope por mes). */
+  var VIDEO_MAX = 12 * 1024 * 1024;
+  function problemaVideo(f) {
+    if (/quicktime|\.mov$/i.test(f.type + ' ' + f.name)) {
+      return 'Ese video es .MOV (el formato del iPhone). Pasalo a MP4: en el celular, compartilo por WhatsApp a vos mismo y descargalo, o usá un conversor.';
+    }
+    if (!/^video\/(mp4|webm)$/.test(f.type)) { return 'Tiene que ser un video MP4 o WEBM.'; }
+    if (f.size > VIDEO_MAX) {
+      return 'El video pesa ' + (f.size / 1048576).toFixed(1).replace('.', ',') + ' MB y el máximo es 12. Acortalo (5 a 10 segundos alcanzan) o bajale la calidad.';
+    }
+    return '';
+  }
+  function previaVideo(campo, caja) {
+    var c = $(caja), url = $(campo) ? $(campo).value.trim() : '';
+    if (!c) { return; }
+    c.innerHTML = url ? '<video src="' + esc(url) + '" muted loop autoplay playsinline style="margin-top:10px;width:180px;aspect-ratio:9/16;object-fit:cover;border-radius:12px;border:1px solid var(--line);background:#111"></video>' : '';
+  }
+  function engancharVideo(zonaId, elegirId, archivoId, txtId, campo, caja) {
+    var zona = $(zonaId);
+    if (!zona) { return; }
+    var subir = function (f) {
+      var mal = problemaVideo(f);
+      if (mal) { avisar('err', mal); return; }
+      if (zona.classList.contains('subiendo')) { return; }
+      var txt = $(txtId), antes = txt.innerHTML;
+      zona.classList.add('subiendo');
+      txt.innerHTML = '<b>Subiendo el video…</b> (' + (f.size / 1048576).toFixed(1).replace('.', ',') + ' MB)';
+      base.club.videoSubir(pinPromo(), f)
+        .then(function (url) {
+          if (!$(campo)) { return; }
+          $(campo).value = url; previaVideo(campo, caja);
+          avisar('ok', 'Video subido. Se guarda al guardar.');
+        })
+        .catch(function (err) {
+          var m = (err && err.message) || '';
+          avisar('err', /club_video_permiso|PGRST202|could not find the function/i.test(m)
+            ? 'Falta correr el SQL 45 en Supabase para subir videos.' : m || 'No se pudo subir el video.');
+        })
+        .then(function () { if (document.body.contains(zona)) { zona.classList.remove('subiendo'); txt.innerHTML = antes; } });
+    };
+    $(elegirId).onclick = function (ev) { ev.stopPropagation(); $(archivoId).click(); };
+    $(archivoId).onchange = function () { if (this.files && this.files[0]) { subir(this.files[0]); } this.value = ''; };
+    ['dragenter', 'dragover'].forEach(function (t) { zona.addEventListener(t, function (ev) { ev.preventDefault(); zona.classList.add('encima'); }); });
+    ['dragleave', 'drop'].forEach(function (t) { zona.addEventListener(t, function () { zona.classList.remove('encima'); }); });
+    zona.addEventListener('drop', function (ev) {
+      ev.preventDefault();
+      var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (f) { subir(f); }
+    });
+    $(campo).onchange = function () { previaVideo(campo, caja); };
+    previaVideo(campo, caja);
+  }
+
+  /* ═══ La portada de la Tienda (SQL 45) ═══════════════════════════════
+     Una foto o un video propio, un texto chico y a qué categoría lleva. Si
+     no hay nada, la app usa la portada de vdh.com.ar (su slide para
+     celular), que el Action de cada hora trae sola. */
+  var pegarTienda = null;
+  function pintarPortadaTienda() {
+    var caja = $('tiendaPortadaCuerpo');
+    if (!caja) { return; }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.tiendaVer()
+      .then(function (t) {
+        var po = (t && t.portada) || {}, menu = (t && t.menu) || [];
+        var propia = !!po.propia;
+        ponerResumen('tienda', propia ? 'Propia' + (po.video ? ', con video' : '') : 'La de vdh.com.ar');
+        var v = function (x) { return propia && x ? esc(x) : ''; };
+        var opciones = '<option value="">La que elige la tienda</option>' + menu.map(function (m) {
+          return '<option value="' + esc(m.handle) + '"' + (propia && po.cat === m.handle ? ' selected' : '') + '>' + esc(m.nombre) + '</option>' +
+            (m.hijos || []).map(function (h) {
+              return '<option value="' + esc(h.handle) + '"' + (propia && po.cat === h.handle ? ' selected' : '') + '>— ' + esc(h.nombre) + '</option>';
+            }).join('');
+        }).join('');
+        caja.innerHTML =
+          '<p class="bloque-sub" style="margin-top:0"><b>Ahora se ve: ' + (propia ? 'tu portada' + (po.video ? ', con video' : '') : 'la portada de vdh.com.ar') + '.</b></p>' +
+          (!propia && po.foto ? '<img src="' + esc(po.foto) + '" alt="" style="width:180px;aspect-ratio:9/16;object-fit:cover;border-radius:12px;border:1px solid var(--line);margin-bottom:14px">' : '') +
+          '<div class="campos">' +
+            '<div class="campo ancho"><label for="tpFoto">Foto <span class="lbl-opc">— vertical, a pantalla completa</span></label>' +
+              '<div class="foto-zona" id="tpFotoZona" tabindex="0">' +
+                '<span id="tpFotoTxt"><b>Pegá una foto</b> (Ctrl+V) o arrastrala acá.</span>' +
+                '<button type="button" class="btn btn-sec btn-chico" id="tpFotoElegir">Elegir foto</button>' +
+                '<input type="file" id="tpFotoArchivo" accept="image/jpeg,image/png,image/webp" hidden>' +
+              '</div>' +
+              '<input type="url" id="tpFoto" inputmode="url" autocapitalize="off" style="margin-top:8px" placeholder="…o pegá el enlace: https://…" value="' + v(po.foto) + '">' +
+              '<div id="tpFotoPrev"></div></div>' +
+            '<div class="campo ancho"><label for="tpVideo">Video <span class="lbl-opc">— opcional. MP4 corto, hasta 12 MB; la foto queda de respaldo</span></label>' +
+              '<div class="foto-zona" id="tpVidZona">' +
+                '<span id="tpVidTxt"><b>Arrastrá un video</b> acá o elegilo.</span>' +
+                '<button type="button" class="btn btn-sec btn-chico" id="tpVidElegir">Elegir video</button>' +
+                '<input type="file" id="tpVidArchivo" accept="video/mp4,video/webm" hidden>' +
+              '</div>' +
+              '<input type="url" id="tpVideo" inputmode="url" autocapitalize="off" style="margin-top:8px" placeholder="…o pegá el enlace de un MP4: https://…" value="' + v(po.video) + '">' +
+              '<div id="tpVidPrev"></div></div>' +
+            '<div class="campo"><label for="tpTexto">Texto <span class="lbl-opc">— opcional, abajo de VDH</span></label>' +
+              '<input type="text" id="tpTexto" maxlength="60" placeholder="Adelanto Verano" value="' + v(po.texto) + '"></div>' +
+            '<div class="campo"><label for="tpCat">"Ver la colección" lleva a</label><select id="tpCat">' + opciones + '</select></div>' +
+            '<div class="campo"><button type="button" class="btn btn-pri" id="tpGuardar">Guardar</button></div>' +
+            (propia ? '<div class="campo"><button type="button" class="btn btn-sec" id="tpSacar">Volver a la de vdh.com.ar</button></div>' : '') +
+          '</div>';
+        var verFoto = function () { previaFoto('tpFoto', 'tpFotoPrev', 'vertical'); };
+        $('tpFoto').onchange = verFoto; verFoto();
+        engancharVideo('tpVidZona', 'tpVidElegir', 'tpVidArchivo', 'tpVidTxt', 'tpVideo', 'tpVidPrev');
+        /* La foto: pegar, arrastrar o elegir, como en las promos. */
+        var subirFotoTienda = function (f) {
+          if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { avisar('err', 'Tiene que ser una foto JPG, PNG o WEBP.'); return; }
+          var zona = $('tpFotoZona'), txt = $('tpFotoTxt'), antes = txt.innerHTML;
+          zona.classList.add('subiendo'); txt.innerHTML = '<b>Subiendo la foto…</b>';
+          achicarFoto(f)
+            .then(function (b) { return base.club.fotoSubir(pinPromo(), b); })
+            .then(function (url) { if ($('tpFoto')) { $('tpFoto').value = url; verFoto(); avisar('ok', 'Foto subida. Se ve al guardar.'); } })
+            .catch(function (err) { avisar('err', (err && err.message) || 'No se pudo subir la foto.'); })
+            .then(function () { if (document.body.contains(zona)) { zona.classList.remove('subiendo'); txt.innerHTML = antes; } });
+        };
+        var zona = $('tpFotoZona');
+        zona.onclick = zona.onfocus = function () { elegirDestino('tienda'); };
+        $('tpFotoElegir').onclick = function (ev) { ev.stopPropagation(); elegirDestino('tienda'); $('tpFotoArchivo').click(); };
+        $('tpFotoArchivo').onchange = function () { if (this.files && this.files[0]) { subirFotoTienda(this.files[0]); } this.value = ''; };
+        ['dragenter', 'dragover'].forEach(function (x) { zona.addEventListener(x, function (ev) { ev.preventDefault(); zona.classList.add('encima'); }); });
+        ['dragleave', 'drop'].forEach(function (x) { zona.addEventListener(x, function () { zona.classList.remove('encima'); }); });
+        zona.addEventListener('drop', function (ev) {
+          ev.preventDefault(); elegirDestino('tienda');
+          var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+          if (f) { subirFotoTienda(f); }
+        });
+        if (!pegarTienda) {
+          pegarTienda = function (ev) {
+            if (destinoFoto !== 'tienda' || !$('tpFotoZona')) { return; }
+            var f = Array.prototype.filter.call((ev.clipboardData && ev.clipboardData.files) || [], function (x) { return /^image\//.test(x.type); })[0];
+            if (f) { ev.preventDefault(); subirFotoTienda(f); }
+          };
+          document.addEventListener('paste', pegarTienda);
+        }
+        var mandar = function (vaciar, boton) {
+          boton.disabled = true;
+          var foto = vaciar ? '' : $('tpFoto').value.trim(), video = vaciar ? '' : $('tpVideo').value.trim();
+          if (!vaciar && !foto && !video) { avisar('err', 'Cargá una foto o un video (o tocá "Volver a la de vdh.com.ar").'); boton.disabled = false; return; }
+          base.club.tiendaPortadaGuardar(pinPromo(), foto, video, vaciar ? '' : $('tpTexto').value.trim(), vaciar ? '' : $('tpCat').value)
+            .then(function () { avisar('ok', vaciar ? 'Listo: vuelve la portada de vdh.com.ar.' : 'Listo: ya se ve en la Tienda del Club.'); pintarPortadaTienda(); })
+            .catch(function (err) {
+              var m = (err && err.message) || '';
+              avisar('err', /club_tienda_portada_guardar|PGRST202|could not find the function/i.test(m) ? 'Falta correr el SQL 45 en Supabase.' : (err && err.delServidor && m) || 'No se pudo guardar.');
+            })
+            .then(function () { boton.disabled = false; });
+        };
+        $('tpGuardar').onclick = function () { mandar(false, $('tpGuardar')); };
+        if ($('tpSacar')) { $('tpSacar').onclick = function () { mandar(true, $('tpSacar')); }; }
+      })
+      .catch(function () {
+        ponerResumen('tienda', 'Falta el SQL 45', true);
+        caja.innerHTML = '<p class="bloque-sub">No se pudo abrir. ¿Se corrió el SQL 45?</p>';
+      });
   }
 
   /* Achicada a 1600 de lado largo, en JPEG: sobra para un celular (la
@@ -1574,6 +1762,9 @@
     var sobre = $('promoSobre') ? $('promoSobre').value.trim() : '';
     if (galeriaEd.length || (promoAbierta && 'galeria' in promoAbierta)) { extra = extra || {}; extra.galeria = galeriaEd; }
     if (sobre || (promoAbierta && 'sobre' in promoAbierta)) { extra = extra || {}; extra.sobre = sobre; }
+    /* El video (SQL 45), con el mismo cuidado. */
+    var video = $('promoVideo') ? $('promoVideo').value.trim() : '';
+    if (video || (promoAbierta && 'video' in promoAbierta)) { extra = extra || {}; extra.video = video; }
     base.club.promoGuardar(pinPromo(), editando,
         $('promoTexto').value.trim(), $('promoImagen').value.trim(),
         $('promoDesde').value, $('promoHasta').value, $('promoCond').value.trim(),
@@ -1606,7 +1797,9 @@
       })
       .catch(function (err) {
         var m = (err && err.message) || '';
-        avisar('err', extra && /p_galeria|p_sobre/i.test(m)
+        avisar('err', extra && /p_video/i.test(m)
+          ? 'Falta correr el SQL 45 en Supabase para guardar el video.'
+          : extra && /p_galeria|p_sobre/i.test(m)
           ? 'Falta correr el SQL 43 en Supabase para guardar la colección.'
           : extra && /p_destacada/i.test(m)
           ? 'Falta correr el SQL 41 en Supabase para marcar la promo destacada.'

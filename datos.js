@@ -1012,6 +1012,8 @@ var base = {
         /* La colección y el texto de arriba (SQL 43): sin el dato, quedan como estaban. */
         if (Array.isArray(extra.galeria)) { args.p_galeria = extra.galeria; }
         if (typeof extra.sobre === 'string') { args.p_sobre = extra.sobre; }
+        /* El video (SQL 45): '' lo saca; sin el dato, queda como estaba. */
+        if (typeof extra.video === 'string') { args.p_video = extra.video; }
       }
       return funcion('club_promo_guardar', args);
     },
@@ -1023,6 +1025,36 @@ var base = {
     /** Subir la foto de una promo (SQL 42). Primero un permiso con el PIN
         (un nombre de archivo al azar que vale diez minutos), después la
         foto con ese nombre. Devuelve la dirección pública. */
+    /** Subir un video (SQL 45): como una foto, con su permiso de un solo
+        uso. MP4 o WEBM, hasta 12 MB. Devuelve la dirección pública. */
+    videoSubir: function (pin, video) {
+      var ext = /webm/.test(video.type) ? 'webm' : 'mp4';
+      return funcion('club_video_permiso', { p_pin: pin, p_ext: ext }).then(function (p) {
+        var ruta = encodeURI(p.bucket + '/' + p.nombre);
+        return fetch(BASE + '/storage/v1/object/' + ruta, {
+          method: 'POST',
+          headers: { apikey: CLAVE, Authorization: 'Bearer ' + CLAVE, 'Content-Type': video.type || 'video/mp4',
+                     'cache-control': '31536000', 'x-upsert': 'false' },
+          body: video
+        }).then(function (r) {
+          if (!r.ok) {
+            return r.text().then(function (t) {
+              var m = t; try { m = JSON.parse(t).message || JSON.parse(t).error || t; } catch (e) {}
+              throw rechazo('No se pudo subir el video (' + r.status + '): ' + m);
+            });
+          }
+          return BASE + '/storage/v1/object/public/' + ruta;
+        });
+      });
+    },
+    /** La Tienda del Club como la ve un socio (menú, portada…). Sin PIN. */
+    tiendaVer: function () {
+      return funcion('club_tienda_ver', {});
+    },
+    /** La portada propia de la Tienda (SQL 45). Todo vacío: la de la tienda. */
+    tiendaPortadaGuardar: function (pin, foto, video, texto, cat) {
+      return funcion('club_tienda_portada_guardar', { p_pin: pin, p_foto: foto || null, p_video: video || null, p_texto: texto || null, p_cat: cat || null });
+    },
     fotoSubir: function (pin, foto) {
       return funcion('club_foto_permiso', { p_pin: pin }).then(function (p) {
         var ruta = encodeURI(p.bucket + '/' + p.nombre);
