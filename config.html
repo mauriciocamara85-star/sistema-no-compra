@@ -534,7 +534,7 @@
         <h2 class="club-grupo-tit">Lo que ven los socios</h2>
         <a class="club-op" href="#club/promos" data-sec="promos">
           <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
-          <span class="club-op-txt"><b>Promociones y novedades</b><span data-res="promos">…</span></span>
+          <span class="club-op-txt"><b>Novedades y promociones</b><span data-res="promos">…</span></span>
         </a>
         <a class="club-op" href="#club/extra" data-sec="extra">
           <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"/></svg></span>
@@ -607,18 +607,11 @@
     <div class="club-pant" data-sec="promos" hidden>
       <div class="pant-cab">
         <a class="pant-volver" href="#club">Club VDH</a>
-        <h2 class="pant-tit">Promociones y novedades</h2>
-        <p class="bloque-sub">Las dos viven en la pestaña Novedades de la tarjeta: primero las promociones, abajo la novedad.</p>
+        <h2 class="pant-tit">Novedades y promociones</h2>
+        <p class="bloque-sub">Lo que ven los socios en la pestaña Novedades de la app: cada una a pantalla completa y, con fotos de colección, una revista. Pasada la fecha desaparecen solas.</p>
       </div>
       <div class="bloque" id="cajaPromo">
-        <h3 class="bloque-tit">Promociones</h3>
-        <p class="bloque-sub">Lo que ven los socios en Novedades. Pasada la fecha desaparecen solas.</p>
         <div id="promoCuerpo"></div>
-      </div>
-      <div class="bloque" id="cajaNovedad">
-        <h3 class="bloque-tit">Novedad</h3>
-        <p class="bloque-sub">Una foto grande con un título, debajo de las promociones: la colección nueva, un lanzamiento. Mientras el socio no la vio, la pestaña Novedades tiene un puntito. Una sola a la vez.</p>
-        <div id="novedadCuerpo"></div>
       </div>
     </div>
 
@@ -786,7 +779,6 @@
     pintarRegalos();
     pintarResenas();
     pintarMulti();
-    pintarNovedad();
     pintarMisiones();
     pintarIntegraciones();
     pintarReglas();
@@ -800,8 +792,8 @@
      que llegan por separado. */
   var resPromos = '', resNove = '';
   function resumenPromos() {
-    if (!resPromos && !resNove) { return; }
-    ponerResumen('promos', [resPromos, resNove].filter(Boolean).join(' · '));
+    if (!resPromos) { return; }
+    ponerResumen('promos', resPromos);
   }
 
   function listaPromos(lista) {
@@ -1378,81 +1370,6 @@
         'No se pudo cargar. ¿Copiaste la dirección de la IMAGEN y no la de la página?</span>';
     };
     img.src = url;
-  }
-
-  /* ═══ La novedad ════════════════════════════════════════════════════════
-     Una sola: foto, una bajada ("Nueva colección"), un título y a dónde
-     lleva. Vive en la pestaña Novedades de la tarjeta, debajo de las
-     promociones (antes estaba en Inicio: de ahí los nombres viejos que
-     quedaron en la base). Guardar la prende; "Dejar de mostrar" la apaga
-     sin borrarla. */
-  function pintarNovedad() {
-    var caja = $('novedadCuerpo');
-    if (!caja) { return; }
-    if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
-      return;
-    }
-    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
-    base.club.novedadVer(pinPromo())
-      .then(function (n) { formNovedad(n || null); })
-      .catch(function (err) {
-        caja.innerHTML = '<p class="bloque-sub">' +
-          esc((err && err.delServidor && err.message) || 'No se pudo abrir. ¿Se corrió el SQL 22?') + '</p>';
-      });
-  }
-
-  function formNovedad(n) {
-    var v = function (x) { return x == null ? '' : esc(String(x)); };
-    var estado = !n ? 'Todavía no hay ninguna cargada.'
-               : n.activa ? 'Se está mostrando en Novedades.'
-               : 'No se está mostrando: guardarla la vuelve a mostrar.';
-    resNove = !n ? 'Sin novedad' : n.activa ? 'Novedad: se muestra' : 'Novedad: apagada';
-    resumenPromos();
-    $('novedadCuerpo').innerHTML =
-      '<p class="bloque-sub" style="margin-top:0"><b>' + estado + '</b></p>' +
-      '<div class="campos">' +
-        '<div class="campo"><label for="novBajada">Bajada <span class="lbl-opc">— opcional</span></label>' +
-          '<input type="text" id="novBajada" maxlength="30" placeholder="Nueva colección" value="' + v(n && n.bajada) + '"></div>' +
-        '<div class="campo"><label for="novTitulo">Título</label>' +
-          '<input type="text" id="novTitulo" maxlength="60" placeholder="Llegó la primavera a VDH" value="' + v(n && n.titulo) + '"></div>' +
-        '<div class="campo ancho"><label for="novImagen">Foto <span class="lbl-opc">— se ve a pantalla completa, como las ' +
-          'promos: mejor una vertical</span></label>' +
-          '<div class="foto-zona" id="novFotoZona" tabindex="0">' +
-            '<span id="novFotoTxt"><b>Pegá una foto</b> (Ctrl+V, también copiada de una carpeta) o arrastrala acá.</span>' +
-            '<button type="button" class="btn btn-sec btn-chico" id="novFotoElegir">Elegir foto</button>' +
-            '<input type="file" id="novFotoArchivo" accept="image/jpeg,image/png,image/webp" hidden>' +
-          '</div>' +
-          '<input type="url" id="novImagen" inputmode="url" autocapitalize="off" style="margin-top:8px" placeholder="…o pegá el enlace de una foto: https://…" value="' + v(n && n.imagen) + '">' +
-          '<div id="novImgPrev"></div></div>' +
-        '<div class="campo ancho"><label for="novEnlace">A dónde lleva <span class="lbl-opc">— opcional</span></label>' +
-          '<input type="url" id="novEnlace" inputmode="url" autocapitalize="off" placeholder="https://vdh.com.ar/…" value="' + v(n && n.enlace) + '"></div>' +
-        '<div class="campo"><button type="button" class="btn btn-pri" id="novGuardar">Guardar y mostrar</button></div>' +
-        (n && n.activa ? '<div class="campo"><button type="button" class="btn btn-sec" id="novSacar">Dejar de mostrar</button></div>' : '') +
-      '</div>';
-
-    var ver = function () { previaFoto('novImagen', 'novImgPrev', 'vertical'); };
-    $('novImagen').onchange = ver;
-    $('novImagen').onblur = ver;
-    ver();
-    engancharZona('novFotoZona', 'novFotoElegir', 'novFotoArchivo', 'novedad');
-
-    var mandar = function (activa, boton) {
-      boton.disabled = true;
-      base.club.novedadGuardar(pinPromo(), $('novBajada').value.trim(), $('novTitulo').value.trim(),
-          $('novImagen').value.trim(), $('novEnlace').value.trim(), activa)
-        .then(function (r) {
-          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
-          avisar('ok', activa ? 'Listo: ya se ve en la app.' : 'Listo: ya no se ve en la app.');
-          pintarNovedad();
-        })
-        .catch(function (err) {
-          avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
-        })
-        .then(function () { boton.disabled = false; });
-    };
-    $('novGuardar').onclick = function () { mandar(true, $('novGuardar')); };
-    if ($('novSacar')) { $('novSacar').onclick = function () { mandar(false, $('novSacar')); }; }
   }
 
   /* ═══ Las misiones (SQL 33) ═════════════════════════════════════════════
