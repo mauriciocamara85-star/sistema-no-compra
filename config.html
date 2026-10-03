@@ -1094,12 +1094,20 @@
   function engancharFoto() {
     var zona = $('promoFotoZona');
     if (!zona) { return; }
-    destinoFoto = 'portada';
-    zona.onclick = zona.onfocus = function () { elegirDestino('portada'); };
-    elegirDestino('portada');
-    $('promoFotoElegir').onclick = function () { $('promoFotoArchivo').click(); };
-    $('promoFotoArchivo').onchange = function () {
-      if (this.files && this.files[0]) { subirFoto(this.files[0]); }
+    engancharZona('promoFotoZona', 'promoFotoElegir', 'promoFotoArchivo', 'portada');
+  }
+
+  /* Una zona de foto (la portada de una promo o la novedad): tocarla la
+     elige como destino de lo que se pega, el botón elige un archivo, y se
+     puede soltar una encima. */
+  function engancharZona(zonaId, elegirId, archivoId, cual) {
+    var zona = $(zonaId);
+    if (!zona) { return; }
+    zona.onclick = zona.onfocus = function () { elegirDestino(cual); };
+    elegirDestino(cual);
+    $(elegirId).onclick = function (ev) { ev.stopPropagation(); elegirDestino(cual); $(archivoId).click(); };
+    $(archivoId).onchange = function () {
+      if (this.files && this.files[0]) { subirFoto(this.files[0], cual); }
       this.value = '';
     };
     ['dragenter', 'dragover'].forEach(function (t) {
@@ -1110,21 +1118,25 @@
     });
     zona.addEventListener('drop', function (ev) {
       ev.preventDefault();
+      elegirDestino(cual);
       var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
-      if (f) { subirFoto(f); }
+      if (f) { subirFoto(f, cual); }
     });
-    /* El pegado se escucha en toda la página mientras el editor está
-       abierto, pero sólo se queda con IMÁGENES: pegar texto en "Qué dice"
-       sigue siendo pegar texto. Uno solo, aunque el editor se abra veinte
-       veces. */
+    /* El pegado se escucha en toda la página, pero sólo se queda con
+       IMÁGENES: pegar texto en "Qué dice" sigue siendo pegar texto. Uno
+       solo, aunque el editor se abra veinte veces. Va a la zona elegida;
+       varias juntas, a la colección. */
     if (!pegarFoto) {
       pegarFoto = function (ev) {
-        if (!$('promoFotoZona')) { return; }
         var archivos = (ev.clipboardData && ev.clipboardData.files) || [];
         var fotos = Array.prototype.filter.call(archivos, function (x) { return /^image\//.test(x.type); });
         if (!fotos.length) { return; }
+        var hayPromo = !!$('promoFotoZona'), hayNove = !!$('novFotoZona');
+        if (!hayPromo && !hayNove) { return; }
         ev.preventDefault();
-        if (destinoFoto === 'coleccion' || fotos.length > 1) { subirColeccion(fotos); } else { subirFoto(fotos[0]); }
+        if (hayNove && (destinoFoto === 'novedad' || !hayPromo)) { subirFoto(fotos[0], 'novedad'); }
+        else if (destinoFoto === 'coleccion' || fotos.length > 1) { subirColeccion(fotos); }
+        else { subirFoto(fotos[0], 'portada'); }
       };
       document.addEventListener('paste', pegarFoto);
     }
@@ -1137,6 +1149,7 @@
     destinoFoto = d;
     if ($('promoFotoZona')) { $('promoFotoZona').classList.toggle('activa', d === 'portada'); }
     if ($('colZona')) { $('colZona').classList.toggle('activa', d === 'coleccion'); }
+    if ($('novFotoZona')) { $('novFotoZona').classList.toggle('activa', d === 'novedad'); }
   }
 
   /* ── La colección (SQL 43) ── */
@@ -1275,8 +1288,11 @@
     });
   }
 
-  function subirFoto(f) {
-    var zona = $('promoFotoZona'), txt = $('promoFotoTxt');
+  /* cual: 'portada' (la foto de fondo de una promo) o 'novedad'. */
+  function subirFoto(f, cual) {
+    var nove = cual === 'novedad';
+    var zona = $(nove ? 'novFotoZona' : 'promoFotoZona'), txt = $(nove ? 'novFotoTxt' : 'promoFotoTxt');
+    var campo = nove ? 'novImagen' : 'promoImagen';
     if (!zona || zona.classList.contains('subiendo')) { return; }
     if (!/^image\/(jpeg|png|webp)$/.test(f.type)) {
       avisar('err', 'Tiene que ser una foto JPG, PNG o WEBP.'); return;
@@ -1287,10 +1303,10 @@
     achicarFoto(f)
       .then(function (b) { return base.club.fotoSubir(pinPromo(), b); })
       .then(function (url) {
-        if (!$('promoImagen')) { return; }
-        $('promoImagen').value = url;
-        verPrevia();
-        avisar('ok', 'Foto subida. Se guarda con la promo.');
+        if (!$(campo)) { return; }
+        $(campo).value = url;
+        if (nove) { previaFoto('novImagen', 'novImgPrev', 'vertical'); } else { verPrevia(); }
+        avisar('ok', nove ? 'Foto subida. Se ve en la app al tocar "Guardar y mostrar".' : 'Foto subida. Se guarda con la promo.');
       })
       .catch(function (err) {
         var m = (err && err.message) || '';
@@ -1299,7 +1315,7 @@
           : m || 'No se pudo subir la foto.');
       })
       .then(function () {
-        if ($('promoFotoZona')) { zona.classList.remove('subiendo'); txt.innerHTML = antes; }
+        if (zona && document.body.contains(zona)) { zona.classList.remove('subiendo'); txt.innerHTML = antes; }
       });
   }
 
@@ -1337,14 +1353,17 @@
   }
 
   /* La misma prueba, para las fotos de la tarjeta: la de un premio va
-     cuadrada y la de la novedad apaisada (3:2). La vista previa tiene la
-     forma con que se va a ver, así el recorte no sorprende a nadie. */
+     cuadrada y la de la novedad vertical, a pantalla completa (desde el
+     02/10/2026; antes era apaisada). La vista previa tiene la forma con que
+     se va a ver, así el recorte no sorprende a nadie. */
   function previaFoto(inputId, cajaId, forma) {
     var caja = $(cajaId);
     if (!caja || !$(inputId)) return;
     var url = $(inputId).value.trim();
     if (!url) { caja.innerHTML = ''; caja.removeAttribute('style'); return; }
-    var medida = forma === 'cuadrada' ? 'width:140px;aspect-ratio:1;' : 'width:100%;max-width:330px;aspect-ratio:3/2;';
+    var medida = forma === 'cuadrada' ? 'width:140px;aspect-ratio:1;'
+               : forma === 'vertical' ? 'width:180px;aspect-ratio:5/8;'
+               : 'width:100%;max-width:330px;aspect-ratio:3/2;';
     caja.setAttribute('style', 'margin-top:10px;border-radius:12px;overflow:hidden;border:1px solid var(--line);' +
       'background:#F2F1EE;display:grid;place-items:center;' + medida);
     caja.innerHTML = '<span class="bloque-sub" style="margin:0">Probando…</span>';
@@ -1397,9 +1416,14 @@
           '<input type="text" id="novBajada" maxlength="30" placeholder="Nueva colección" value="' + v(n && n.bajada) + '"></div>' +
         '<div class="campo"><label for="novTitulo">Título</label>' +
           '<input type="text" id="novTitulo" maxlength="60" placeholder="Llegó la primavera a VDH" value="' + v(n && n.titulo) + '"></div>' +
-        '<div class="campo ancho"><label for="novImagen">Foto <span class="lbl-opc">— se ve apaisada; ' +
-          'mejor una horizontal o con la prenda al centro</span></label>' +
-          '<input type="url" id="novImagen" inputmode="url" autocapitalize="off" placeholder="https://…" value="' + v(n && n.imagen) + '">' +
+        '<div class="campo ancho"><label for="novImagen">Foto <span class="lbl-opc">— se ve a pantalla completa, como las ' +
+          'promos: mejor una vertical</span></label>' +
+          '<div class="foto-zona" id="novFotoZona" tabindex="0">' +
+            '<span id="novFotoTxt"><b>Pegá una foto</b> (Ctrl+V, también copiada de una carpeta) o arrastrala acá.</span>' +
+            '<button type="button" class="btn btn-sec btn-chico" id="novFotoElegir">Elegir foto</button>' +
+            '<input type="file" id="novFotoArchivo" accept="image/jpeg,image/png,image/webp" hidden>' +
+          '</div>' +
+          '<input type="url" id="novImagen" inputmode="url" autocapitalize="off" style="margin-top:8px" placeholder="…o pegá el enlace de una foto: https://…" value="' + v(n && n.imagen) + '">' +
           '<div id="novImgPrev"></div></div>' +
         '<div class="campo ancho"><label for="novEnlace">A dónde lleva <span class="lbl-opc">— opcional</span></label>' +
           '<input type="url" id="novEnlace" inputmode="url" autocapitalize="off" placeholder="https://vdh.com.ar/…" value="' + v(n && n.enlace) + '"></div>' +
@@ -1407,10 +1431,11 @@
         (n && n.activa ? '<div class="campo"><button type="button" class="btn btn-sec" id="novSacar">Dejar de mostrar</button></div>' : '') +
       '</div>';
 
-    var ver = function () { previaFoto('novImagen', 'novImgPrev', 'apaisada'); };
+    var ver = function () { previaFoto('novImagen', 'novImgPrev', 'vertical'); };
     $('novImagen').onchange = ver;
     $('novImagen').onblur = ver;
     ver();
+    engancharZona('novFotoZona', 'novFotoElegir', 'novFotoArchivo', 'novedad');
 
     var mandar = function (activa, boton) {
       boton.disabled = true;
