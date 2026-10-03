@@ -1224,3 +1224,17 @@ select {
   .pestanas { display: flex; width: 100%; }
   .pestana { flex: 1 1 auto; text-align: center; padding: 9px 6px; font-size: 13.5px; }
 }
+
+/* ── La foto de una promo: pegarla, arrastrarla o elegirla (02/10/2026) ──
+   Al lado del enlace, no en vez de él: las dos formas quedan. */
+.foto-zona {
+  margin-top: 8px; padding: 12px 14px;
+  border: 1.5px dashed var(--line); border-radius: 10px;
+  background: var(--surface-2); color: var(--txt-2);
+  font-size: 13.5px; line-height: 1.45;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.foto-zona.encima { border-color: var(--foco); background: var(--ok-soft); }
+.foto-zona.subiendo { opacity: .7; pointer-events: none; }
+.foto-zona b { color: var(--txt); }
+.foto-zona .btn { flex: none; }

@@ -921,8 +921,15 @@
           'socio, para aplicarla en BlueSoft como el regalo de cumple.</p>' +
         '<div class="campo ancho">' +
           '<label for="promoImagen">Foto de fondo <span class="lbl-opc">— opcional</span></label>' +
-          '<input type="url" id="promoImagen" inputmode="url" autocapitalize="off" ' +
-            'placeholder="https://…" value="' + esc((p && p.imagen) || '') + '">' +
+          /* Pegar, arrastrar o elegir (SQL 42): se sube y el enlace se
+             completa solo. Pegar un enlace sigue andando igual. */
+          '<div class="foto-zona" id="promoFotoZona">' +
+            '<span id="promoFotoTxt"><b>Pegá una foto</b> (Ctrl+V, también copiada de una carpeta) o arrastrala acá.</span>' +
+            '<button type="button" class="btn btn-sec btn-chico" id="promoFotoElegir">Elegir foto</button>' +
+            '<input type="file" id="promoFotoArchivo" accept="image/jpeg,image/png,image/webp" hidden>' +
+          '</div>' +
+          '<input type="url" id="promoImagen" inputmode="url" autocapitalize="off" style="margin-top:8px" ' +
+            'placeholder="…o pegá el enlace de una foto: https://…" value="' + esc((p && p.imagen) || '') + '">' +
           '<div id="promoImgPrev"></div>' +
         '</div>' +
         '<div class="campo ancho">' +
@@ -999,6 +1006,7 @@
     $('promoImagen').onchange = verPrevia;
     $('promoImagen').onblur = verPrevia;
     verPrevia();
+    engancharFoto();
 
     /* "En algunos locales" abre la lista de los 14 para tildar. */
     var marcados = (p && p.locales) || [];
@@ -1057,6 +1065,99 @@
   }
   function localesTildados() {
     return Array.prototype.map.call(document.querySelectorAll('#promoLocales input:checked'), function (i) { return i.value; });
+  }
+
+  /* ── Subir la foto (SQL 42, 02/10/2026) ──
+     Tres entradas para lo mismo: pegar (Ctrl+V: Chrome deja pegar una foto
+     copiada desde el Explorador de Windows, no sólo una captura), arrastrar
+     sobre la zona, o elegir el archivo. */
+  var pegarFoto = null;
+  function engancharFoto() {
+    var zona = $('promoFotoZona');
+    if (!zona) { return; }
+    $('promoFotoElegir').onclick = function () { $('promoFotoArchivo').click(); };
+    $('promoFotoArchivo').onchange = function () {
+      if (this.files && this.files[0]) { subirFoto(this.files[0]); }
+      this.value = '';
+    };
+    ['dragenter', 'dragover'].forEach(function (t) {
+      zona.addEventListener(t, function (ev) { ev.preventDefault(); zona.classList.add('encima'); });
+    });
+    ['dragleave', 'drop'].forEach(function (t) {
+      zona.addEventListener(t, function () { zona.classList.remove('encima'); });
+    });
+    zona.addEventListener('drop', function (ev) {
+      ev.preventDefault();
+      var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (f) { subirFoto(f); }
+    });
+    /* El pegado se escucha en toda la página mientras el editor está
+       abierto, pero sólo se queda con IMÁGENES: pegar texto en "Qué dice"
+       sigue siendo pegar texto. Uno solo, aunque el editor se abra veinte
+       veces. */
+    if (!pegarFoto) {
+      pegarFoto = function (ev) {
+        if (!$('promoFotoZona')) { return; }
+        var archivos = (ev.clipboardData && ev.clipboardData.files) || [];
+        var f = Array.prototype.filter.call(archivos, function (x) { return /^image\//.test(x.type); })[0];
+        if (f) { ev.preventDefault(); subirFoto(f); }
+      };
+      document.addEventListener('paste', pegarFoto);
+    }
+  }
+
+  /* Achicada a 1600 de lado largo, en JPEG: sobra para un celular (la
+     pantalla más ancha en la que se ve tiene 1290 puntos) y una foto del
+     lookbook pasa de varios MB a unos 300 KB. */
+  function achicarFoto(f) {
+    return new Promise(function (ok, mal) {
+      var url = URL.createObjectURL(f), img = new Image();
+      img.onload = function () {
+        var lado = 1600, w = img.naturalWidth, h = img.naturalHeight;
+        var k = Math.min(1, lado / Math.max(w, h));
+        var cv = document.createElement('canvas');
+        cv.width = Math.round(w * k); cv.height = Math.round(h * k);
+        var cx = cv.getContext('2d');
+        /* Fondo blanco: un PNG con transparencia en JPEG quedaría negro. */
+        cx.fillStyle = '#fff'; cx.fillRect(0, 0, cv.width, cv.height);
+        cx.drawImage(img, 0, 0, cv.width, cv.height);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function (b) { b ? ok(b) : mal(new Error('No se pudo preparar la foto.')); }, 'image/jpeg', 0.85);
+      };
+      img.onerror = function () {
+        URL.revokeObjectURL(url);
+        mal(new Error('Esa foto no se puede abrir. Probá con una JPG o PNG.'));
+      };
+      img.src = url;
+    });
+  }
+
+  function subirFoto(f) {
+    var zona = $('promoFotoZona'), txt = $('promoFotoTxt');
+    if (!zona || zona.classList.contains('subiendo')) { return; }
+    if (!/^image\/(jpeg|png|webp)$/.test(f.type)) {
+      avisar('err', 'Tiene que ser una foto JPG, PNG o WEBP.'); return;
+    }
+    var antes = txt.innerHTML;
+    zona.classList.add('subiendo');
+    txt.innerHTML = '<b>Subiendo la foto…</b>';
+    achicarFoto(f)
+      .then(function (b) { return base.club.fotoSubir(pinPromo(), b); })
+      .then(function (url) {
+        if (!$('promoImagen')) { return; }
+        $('promoImagen').value = url;
+        verPrevia();
+        avisar('ok', 'Foto subida. Se guarda con la promo.');
+      })
+      .catch(function (err) {
+        var m = (err && err.message) || '';
+        avisar('err', /club_foto_permiso|PGRST202|could not find the function/i.test(m)
+          ? 'Falta correr el SQL 42 en Supabase para subir fotos. Mientras tanto, pegá el enlace.'
+          : m || 'No se pudo subir la foto.');
+      })
+      .then(function () {
+        if ($('promoFotoZona')) { zona.classList.remove('subiendo'); txt.innerHTML = antes; }
+      });
   }
 
   /* La vista previa. Sin esto, pegar la dirección de una PÁGINA en vez de la

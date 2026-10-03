@@ -9566,3 +9566,95 @@ $function$;
 
 
 select 'Listo: la tienda adentro del Club (se llena sola en la próxima hora) y la promo destacada.' as "SQL 41";
+
+
+-- ─────────────────────────── PARTE 42 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · SUBIR LA FOTO DE UNA PROMO
+--
+-- Correr en el editor SQL de Supabase, después del 41.
+--
+-- Pedido de Mauricio (02/10/2026): además de pegar un enlace, poder copiar
+-- una foto de la carpeta (el lookbook) y pegarla en el editor de promos.
+--
+-- Las fotos quedan en Storage de Supabase, en el bucket público "promos":
+-- la app las muestra con una dirección https como cualquier otra.
+--
+-- Quién puede subir: el que tiene el PIN. La pantalla de Configuración no
+-- tiene sesión, entra con la llave publicable, que está en un repositorio
+-- público; abrirle Storage a esa llave sería regalarle a cualquiera un
+-- lugar donde subir archivos con la marca. Entonces:
+--
+--   1. La pantalla pide un PERMISO con el PIN (club_foto_permiso): un
+--      nombre de archivo al azar que vale diez minutos.
+--   2. Sube la foto con ESE nombre. La política de Storage deja subir sólo
+--      un archivo cuyo nombre tenga un permiso vigente.
+--   3. No se puede pisar ni borrar nada: no hay política de update ni de
+--      delete. Cada foto es un archivo nuevo.
+--
+-- El navegador achica la foto antes de subirla (las del lookbook pesan
+-- varios MB): la app la muestra en un celular.
+-- ══════════════════════════════════════════════════════════════════════════
+
+-- ── El bucket: público para leer, sólo imágenes, hasta 3 MB ──
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('promos', 'promos', true, 3145728, array['image/jpeg', 'image/webp', 'image/png'])
+on conflict (id) do update
+  set public = true, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
+
+
+-- ── Los permisos: un nombre de archivo, por diez minutos ──
+create table if not exists club_fotos_permisos (
+  nombre text primary key,
+  vence  timestamptz not null,
+  creado timestamptz not null default now()
+);
+-- Sin políticas: nadie la lee directo.
+alter table club_fotos_permisos enable row level security;
+
+-- VOLATILE: pide PIN, y pin_ok escribe (ver el SQL 40).
+create or replace function club_foto_permiso(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $
+declare
+  n text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  delete from club_fotos_permisos where vence < now() - interval '1 day';
+  n := to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'YYYY-MM') || '/' || gen_random_uuid()::text || '.jpg';
+  insert into club_fotos_permisos (nombre, vence) values (n, now() + interval '10 minutes');
+  return jsonb_build_object('ok', true, 'bucket', 'promos', 'nombre', n);
+end;
+$;
+
+revoke all on function club_foto_permiso(text) from public;
+grant execute on function club_foto_permiso(text) to anon, authenticated;
+
+-- La usa la política de Storage. Sólo dice sí o no.
+create or replace function club_foto_permitida(p_nombre text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $
+  select exists (select 1 from club_fotos_permisos where nombre = p_nombre and vence > now());
+$;
+
+revoke all on function club_foto_permitida(text) from public;
+grant execute on function club_foto_permitida(text) to anon, authenticated;
+
+
+-- ── La política: subir sólo con permiso ──
+drop policy if exists "fotos de promos, con permiso" on storage.objects;
+create policy "fotos de promos, con permiso" on storage.objects
+  for insert to anon, authenticated
+  with check (bucket_id = 'promos' and public.club_foto_permitida(name));
+
+
+select 'Listo: ya se pueden pegar o elegir fotos en el editor de promos.' as "SQL 42";

@@ -1017,6 +1017,33 @@ var base = {
     promosHoy: function () {
       return funcion('club_promos_ver', {});
     },
+    /** Subir la foto de una promo (SQL 42). Primero un permiso con el PIN
+        (un nombre de archivo al azar que vale diez minutos), después la
+        foto con ese nombre. Devuelve la dirección pública. */
+    fotoSubir: function (pin, foto) {
+      return funcion('club_foto_permiso', { p_pin: pin }).then(function (p) {
+        var ruta = encodeURI(p.bucket + '/' + p.nombre);
+        return fetch(BASE + '/storage/v1/object/' + ruta, {
+          method: 'POST',
+          headers: {
+            apikey: CLAVE, Authorization: 'Bearer ' + CLAVE,
+            'Content-Type': foto.type || 'image/jpeg',
+            /* Una foto subida no cambia nunca (cada una tiene su nombre):
+               que el celular la guarde un año. */
+            'cache-control': '31536000', 'x-upsert': 'false'
+          },
+          body: foto
+        }).then(function (r) {
+          if (!r.ok) {
+            return r.text().then(function (t) {
+              var m = t; try { m = JSON.parse(t).message || JSON.parse(t).error || t; } catch (e) {}
+              throw rechazo('No se pudo subir la foto (' + r.status + '): ' + m);
+            });
+          }
+          return BASE + '/storage/v1/object/public/' + ruta;
+        });
+      });
+    },
     promoBaja: function (pin, id) {
       return funcion('club_promo_baja', { p_pin: pin, p_id: id });
     }
