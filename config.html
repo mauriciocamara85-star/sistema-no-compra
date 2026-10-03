@@ -820,7 +820,8 @@
         '<div class="promo-fila-txt"><b>' + esc(p.texto) + '</b>' +
           '<span>Hasta el ' + esc(fechaCorta(p.hasta)) +
           (p.desde_nivel ? ' · socios ' + (p.desde_nivel === 'Oro' ? 'Oro y Platino' : esc(p.desde_nivel)) : p.solo_socios ? ' · sólo socios' : '') + dondePromo(p) +
-          (p.imagen ? ' · con foto' : '') + (p.cuenta ? ' · con cuenta regresiva' : '') + '</span></div>' +
+          (p.imagen ? ' · con foto' : '') + (p.cuenta ? ' · con cuenta regresiva' : '') +
+          (p.galeria && p.galeria.length ? ' · colección de ' + p.galeria.length + ' fotos' : '') + '</span></div>' +
         (p.destacada ? '<span class="pill pill-oro">Destacada</span>' : '') +
         estado +
         '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button>' +
@@ -880,6 +881,11 @@
           '<textarea id="promoTexto" maxlength="140" ' +
             'placeholder="Sólo por hoy: 30% off en remeras">' + esc((p && p.texto) || '') + '</textarea>' +
         '</div>' +
+        /* El textito de arriba del título, en la portada (SQL 43). */
+        '<div class="campo ancho">' +
+          '<label for="promoSobre">Arriba del título <span class="lbl-opc">— opcional, en letra chica: "Temporada nueva"</span></label>' +
+          '<input type="text" id="promoSobre" maxlength="40" value="' + esc((p && p.sobre) || '') + '">' +
+        '</div>' +
         '<div class="campo">' +
           '<label for="promoDesde">Desde <span class="lbl-opc">— vacío: hoy</span></label>' +
           '<input type="date" id="promoDesde" value="' + esc((p && p.desde) || '') + '">' +
@@ -931,6 +937,17 @@
           '<input type="url" id="promoImagen" inputmode="url" autocapitalize="off" style="margin-top:8px" ' +
             'placeholder="…o pegá el enlace de una foto: https://…" value="' + esc((p && p.imagen) || '') + '">' +
           '<div id="promoImgPrev"></div>' +
+        '</div>' +
+        /* La colección (SQL 43, 03/10/2026): con fotos acá, tocar la promo
+           en la app abre la revista. Vacía, la promo es como siempre. */
+        '<div class="campo ancho">' +
+          '<label>Fotos de la colección <span class="lbl-opc">— opcional. Con fotos, la promo abre una revista en la app</span></label>' +
+          '<div class="foto-zona" id="colZona" tabindex="0">' +
+            '<span id="colTxt"><b>Pegá o arrastrá varias fotos</b> de una vez, en el orden en que van.</span>' +
+            '<button type="button" class="btn btn-sec btn-chico" id="colElegir">Elegir fotos</button>' +
+            '<input type="file" id="colArchivo" accept="image/jpeg,image/png,image/webp" multiple hidden>' +
+          '</div>' +
+          '<div class="col-admin" id="colLista"></div>' +
         '</div>' +
         '<div class="campo ancho">' +
           '<label for="promoEnlace">A dónde lleva <span class="lbl-opc">— opcional</span></label>' +
@@ -1006,7 +1023,9 @@
     $('promoImagen').onchange = verPrevia;
     $('promoImagen').onblur = verPrevia;
     verPrevia();
+    galeriaEd = ((p && p.galeria) || []).map(function (g) { return { foto: g.foto, producto: g.producto || null }; });
     engancharFoto();
+    engancharColeccion();
 
     /* "En algunos locales" abre la lista de los 14 para tildar. */
     var marcados = (p && p.locales) || [];
@@ -1075,6 +1094,9 @@
   function engancharFoto() {
     var zona = $('promoFotoZona');
     if (!zona) { return; }
+    destinoFoto = 'portada';
+    zona.onclick = zona.onfocus = function () { elegirDestino('portada'); };
+    elegirDestino('portada');
     $('promoFotoElegir').onclick = function () { $('promoFotoArchivo').click(); };
     $('promoFotoArchivo').onchange = function () {
       if (this.files && this.files[0]) { subirFoto(this.files[0]); }
@@ -1099,11 +1121,132 @@
       pegarFoto = function (ev) {
         if (!$('promoFotoZona')) { return; }
         var archivos = (ev.clipboardData && ev.clipboardData.files) || [];
-        var f = Array.prototype.filter.call(archivos, function (x) { return /^image\//.test(x.type); })[0];
-        if (f) { ev.preventDefault(); subirFoto(f); }
+        var fotos = Array.prototype.filter.call(archivos, function (x) { return /^image\//.test(x.type); });
+        if (!fotos.length) { return; }
+        ev.preventDefault();
+        if (destinoFoto === 'coleccion' || fotos.length > 1) { subirColeccion(fotos); } else { subirFoto(fotos[0]); }
       };
       document.addEventListener('paste', pegarFoto);
     }
+  }
+
+  /* A dónde va lo que se pega: la portada o la colección. La zona elegida se
+     marca, para que se sepa antes de pegar. */
+  var destinoFoto = 'portada';
+  function elegirDestino(d) {
+    destinoFoto = d;
+    if ($('promoFotoZona')) { $('promoFotoZona').classList.toggle('activa', d === 'portada'); }
+    if ($('colZona')) { $('colZona').classList.toggle('activa', d === 'coleccion'); }
+  }
+
+  /* ── La colección (SQL 43) ── */
+  var galeriaEd = [];
+  var productosTienda = null;
+  function engancharColeccion() {
+    var zona = $('colZona');
+    if (!zona) { return; }
+    zona.onclick = zona.onfocus = function () { elegirDestino('coleccion'); };
+    $('colElegir').onclick = function (ev) { ev.stopPropagation(); elegirDestino('coleccion'); $('colArchivo').click(); };
+    $('colArchivo').onchange = function () {
+      if (this.files && this.files.length) { subirColeccion(Array.prototype.slice.call(this.files)); }
+      this.value = '';
+    };
+    ['dragenter', 'dragover'].forEach(function (t) {
+      zona.addEventListener(t, function (ev) { ev.preventDefault(); zona.classList.add('encima'); });
+    });
+    ['dragleave', 'drop'].forEach(function (t) {
+      zona.addEventListener(t, function () { zona.classList.remove('encima'); });
+    });
+    zona.addEventListener('drop', function (ev) {
+      ev.preventDefault();
+      elegirDestino('coleccion');
+      var lista = ev.dataTransfer && ev.dataTransfer.files;
+      if (lista && lista.length) { subirColeccion(Array.prototype.slice.call(lista)); }
+    });
+    /* Los productos para elegir, una vez: son los mismos de la Tienda del Club. */
+    if (!productosTienda) {
+      base.club.tiendaProductos()
+        .then(function (l) {
+          productosTienda = l.slice().sort(function (a, b) { return String(a.nombre).localeCompare(String(b.nombre), 'es'); });
+          pintarGaleria();
+        })
+        .catch(function () { productosTienda = []; pintarGaleria(); });
+    }
+    pintarGaleria();
+  }
+
+  /* Una por una y en el orden en que vinieron (el orden del Explorador es el
+     de la revista). Si una falla, las demás siguen. */
+  function subirColeccion(fotos) {
+    var zona = $('colZona'), txt = $('colTxt');
+    if (!zona || zona.classList.contains('subiendo')) { return; }
+    elegirDestino('coleccion');
+    fotos = fotos.filter(function (f) { return /^image\/(jpeg|png|webp)$/.test(f.type); });
+    if (!fotos.length) { avisar('err', 'Tienen que ser fotos JPG, PNG o WEBP.'); return; }
+    if (galeriaEd.length + fotos.length > 24) {
+      avisar('err', 'La colección puede tener hasta 24 fotos. Ya hay ' + galeriaEd.length + '.'); return;
+    }
+    var antes = txt.innerHTML, n = 0, mal = 0;
+    zona.classList.add('subiendo');
+    var una = function (i) {
+      if (i >= fotos.length) { return Promise.resolve(); }
+      txt.innerHTML = '<b>Subiendo ' + (i + 1) + ' de ' + fotos.length + '…</b>';
+      return achicarFoto(fotos[i])
+        .then(function (b) { return base.club.fotoSubir(pinPromo(), b); })
+        .then(function (url) { galeriaEd.push({ foto: url, producto: null }); n++; pintarGaleria(); })
+        .catch(function (err) {
+          mal++;
+          if (/club_foto_permiso|PGRST202|could not find the function/i.test((err && err.message) || '')) { throw err; }
+        })
+        .then(function () { return una(i + 1); });
+    };
+    una(0)
+      .then(function () {
+        avisar(mal ? 'err' : 'ok', mal ? 'Se subieron ' + n + ' y fallaron ' + mal + '. Probá de nuevo con las que faltan.'
+                                     : (n === 1 ? 'Foto subida.' : n + ' fotos subidas.') + ' Se guardan con la promo.');
+      })
+      .catch(function () { avisar('err', 'Falta correr el SQL 42 en Supabase para subir fotos.'); })
+      .then(function () {
+        if ($('colZona')) { zona.classList.remove('subiendo'); txt.innerHTML = antes; }
+      });
+  }
+
+  function pintarGaleria() {
+    var caja = $('colLista');
+    if (!caja) { return; }
+    var ops = function (sel) {
+      if (!productosTienda) { return '<option value="">Buscando productos…</option>'; }
+      return '<option value="">Sin producto</option>' + productosTienda.map(function (x) {
+        return '<option value="' + esc(x.id) + '"' + (String(x.id) === String(sel) ? ' selected' : '') + '>' + esc(x.nombre) + '</option>';
+      }).join('');
+    };
+    caja.innerHTML = galeriaEd.map(function (g, k) {
+      return '<div class="col-item">' +
+        '<div class="col-item-foto" style="background-image:url(&quot;' + esc(g.foto) + '&quot;)">' +
+          '<span class="col-item-n">' + (k + 1) + '</span>' +
+          (k % 3 === 0 ? '<span class="col-item-ancho">a lo ancho</span>' : '') + '</div>' +
+        '<div class="col-item-barra">' +
+          '<button type="button" data-gal-mover="' + k + '" data-a="-1" aria-label="Antes"' + (k === 0 ? ' disabled' : '') + '>‹</button>' +
+          '<button type="button" data-gal-mover="' + k + '" data-a="1" aria-label="Después"' + (k === galeriaEd.length - 1 ? ' disabled' : '') + '>›</button>' +
+          '<button type="button" data-gal-sacar="' + k + '" aria-label="Sacar">×</button>' +
+        '</div>' +
+        '<select data-gal-prod="' + k + '" aria-label="Producto de la foto ' + (k + 1) + '">' + ops(g.producto) + '</select>' +
+      '</div>';
+    }).join('');
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-gal-mover]'), function (b) {
+      b.onclick = function () {
+        var k = Number(b.dataset.galMover), j = k + Number(b.dataset.a);
+        if (j < 0 || j >= galeriaEd.length) { return; }
+        var x = galeriaEd[k]; galeriaEd[k] = galeriaEd[j]; galeriaEd[j] = x;
+        pintarGaleria();
+      };
+    });
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-gal-sacar]'), function (b) {
+      b.onclick = function () { galeriaEd.splice(Number(b.dataset.galSacar), 1); pintarGaleria(); };
+    });
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-gal-prod]'), function (s) {
+      s.onchange = function () { galeriaEd[Number(s.dataset.galProd)].producto = s.value ? Number(s.value) : null; };
+    });
   }
 
   /* Achicada a 1600 de lado largo, en JPEG: sobra para un celular (la
@@ -1484,6 +1627,11 @@
        podría guardar ninguna promo. */
     var dest = $('promoDestacada') ? $('promoDestacada').checked : false;
     if (dest || (promoAbierta && 'destacada' in promoAbierta)) { extra = extra || {}; extra.destacada = dest; }
+    /* La colección y el texto de arriba (SQL 43), con el mismo cuidado: se
+       mandan si hay algo, o si la base ya los conoce (para poder vaciarlos). */
+    var sobre = $('promoSobre') ? $('promoSobre').value.trim() : '';
+    if (galeriaEd.length || (promoAbierta && 'galeria' in promoAbierta)) { extra = extra || {}; extra.galeria = galeriaEd; }
+    if (sobre || (promoAbierta && 'sobre' in promoAbierta)) { extra = extra || {}; extra.sobre = sobre; }
     base.club.promoGuardar(pinPromo(), editando,
         $('promoTexto').value.trim(), $('promoImagen').value.trim(),
         $('promoDesde').value, $('promoHasta').value, $('promoCond').value.trim(),
@@ -1516,7 +1664,9 @@
       })
       .catch(function (err) {
         var m = (err && err.message) || '';
-        avisar('err', extra && /p_destacada/i.test(m)
+        avisar('err', extra && /p_galeria|p_sobre/i.test(m)
+          ? 'Falta correr el SQL 43 en Supabase para guardar la colección.'
+          : extra && /p_destacada/i.test(m)
           ? 'Falta correr el SQL 41 en Supabase para marcar la promo destacada.'
           : extra && /p_desde_nivel/i.test(m)
           ? 'Falta correr el SQL 39 en Supabase para guardar promos por nivel.'

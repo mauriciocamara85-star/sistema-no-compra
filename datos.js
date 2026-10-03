@@ -1009,6 +1009,9 @@ var base = {
         if (typeof extra.nivel === 'string') { args.p_desde_nivel = extra.nivel; }
         /* La destacada (SQL 41): sin el dato, queda como estaba. */
         if (extra.destacada === true || extra.destacada === false) { args.p_destacada = extra.destacada; }
+        /* La colección y el texto de arriba (SQL 43): sin el dato, quedan como estaban. */
+        if (Array.isArray(extra.galeria)) { args.p_galeria = extra.galeria; }
+        if (typeof extra.sobre === 'string') { args.p_sobre = extra.sobre; }
       }
       return funcion('club_promo_guardar', args);
     },
@@ -1043,6 +1046,11 @@ var base = {
           return BASE + '/storage/v1/object/public/' + ruta;
         });
       });
+    },
+    /** Los productos de la Tienda del Club (SQL 41), para elegir cuál es
+        cada foto de una colección. Es lo público: no pide PIN. */
+    tiendaProductos: function () {
+      return funcion('club_tienda_ver', {}).then(function (t) { return (t && t.productos) || []; });
     },
     promoBaja: function (pin, id) {
       return funcion('club_promo_baja', { p_pin: pin, p_id: id });
