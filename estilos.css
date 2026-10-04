@@ -48,7 +48,9 @@
      por su canto (--line, el de la app) y la sombra: en pantallas que
      apagan el blanco —la notebook de Mauricio muestra #E1E1E1 donde hay
      #FFFFFF— el tono solo no alcanza. */
-  --bg:          #F7F6F3;
+  /* 04/10/2026: un poco más cálido y más oscuro que el del Club, para que
+     las tarjetas blancas se despeguen también en la notebook. */
+  --bg:          #F1EFEA;
   --fondo-luz:   none;
   --surface:     #FFFFFF;
   --surface-2:   #F6F4F0;
@@ -67,7 +69,7 @@
 
   --txt:   #1C1C1A;        /* 16,9:1 */
   --txt-2: #46433E;        /*  9,9:1 */
-  --txt-3: #524F48;        /*  8:1 contra la tarjeta, 7:1 contra el fondo */
+  --txt-3: #67635B;        /*  6:1 contra la tarjeta, 5,2:1 contra el fondo: la ayuda, más suave (04/10/2026) */
 
   /* ── Lo que se aprieta: carbón, como los botones del Club ── */
   --acc:      #1C1C1A;
@@ -102,8 +104,10 @@
 
   /* El campo elegido: el verde de la app, no un halo gris (pedido de
      Mauricio, 30/09/2026). */
-  --foco:        #1E5A3E;
-  --foco-anillo: rgba(30, 90, 62, .16);
+  /* El foco (04/10/2026): carbón, fino y nítido, sin halo. El verde
+     queda para lo que significa algo: guardado, objetivo cumplido. */
+  --foco:        #1C1C1A;
+  --foco-anillo: transparent;
 
   /* ── Los materiales de los niveles del Club ──
      Los mismos degradados que la franja de la tarjeta del socio. Son para
@@ -128,7 +132,7 @@
 
   /* Sobre claro no hay luz de canto: la tarjeta la despega una sombra
      ancha y suave, no un borde marcado. */
-  --sombra:      0 1px 2px rgba(28, 28, 26, .04), 0 14px 34px -18px rgba(28, 28, 26, .30);
+  --sombra:      0 1px 2px rgba(20, 20, 18, .06), 0 18px 40px -22px rgba(20, 20, 18, .38);
   --sombra-alta: 0 16px 44px -16px rgba(28, 28, 26, .30);
   --glow:        0 8px 22px -12px rgba(28, 28, 26, .45);
 
@@ -154,13 +158,17 @@
      el mismo de los botones, y flotando (redondeado, con aire y sombra:
      a Mauricio le gusta así). La sección abierta se marca en blanco. Tiene sus propios tokens de texto porque los --txt de
      arriba están pensados contra --bg, no contra esto. */
-  --rail-bg:    linear-gradient(180deg, #2A2926 0%, #161614 100%);
-  --rail-borde: rgba(255, 255, 255, .08);
+  /* 04/10/2026: negro de verdad (era un carbón que tiraba a gris), con un
+     canto de luz; las secciones casi blancas. */
+  --rail-bg:    linear-gradient(180deg, #131312 0%, #050505 100%);
+  --rail-borde: rgba(255, 255, 255, .12);
   --rail-acc:   #D6AE55;   /* la sección abierta, en oro: 7:1 contra el rail */
   --rail-txt:   #FFFFFF;
-  --rail-txt-2: #BDB8AE;   /* 7:1 contra el rail */
-  --rail-line:  rgba(255, 255, 255, .08);
-  --rail-campo: #34332F;   /* el desplegable de quién carga, adentro del rail */
+  --rail-txt-2: rgba(255, 255, 255, .76);   /* 13:1 contra el rail */
+  --rail-line:  rgba(255, 255, 255, .10);
+  --rail-campo: #1C1C1A;   /* el desplegable de quién carga, adentro del rail */
+  /* Las tarjetas oscuras del tablero, del mismo negro que el panel. */
+  --tablero-negro: linear-gradient(135deg, #1E1E1C 0%, #0A0A09 60%, #252522 100%);
 
   color-scheme: light;
 }
@@ -212,8 +220,8 @@ html[data-theme="dark"] {
   --oro-txt:   #E8C877;
   --oro-soft:  rgba(214, 174, 85, .18);
   --ok-borde:    rgba(143, 209, 174, .40);
-  --foco:        #8FD1AE;
-  --foco-anillo: rgba(143, 209, 174, .22);
+  --foco:        #F1EEE7;
+  --foco-anillo: transparent;
 
   --sombra:
     inset 0 1px 0 rgba(255, 255, 255, .05),
@@ -225,8 +233,8 @@ html[data-theme="dark"] {
   --glow: 0 8px 22px -12px rgba(0, 0, 0, .8);
 
   /* En oscuro el rail se despega del fondo con su canto, no con la sombra. */
-  --rail-bg:    linear-gradient(180deg, #252422 0%, #0E0E0D 100%);
-  --rail-borde: rgba(255, 255, 255, .10);
+  --rail-bg:    linear-gradient(180deg, #131312 0%, #050505 100%);
+  --rail-borde: rgba(255, 255, 255, .12);
 
   color-scheme: dark;
 }
@@ -478,7 +486,9 @@ a { color: var(--acc-txt); }
     /* Entre dos oscuros, lo que dibuja el canto es la línea, no la sombra:
        una sombra negra sobre un fondo casi negro no existe. */
     border: 1px solid var(--rail-borde);
-    box-shadow: var(--sombra-alta);
+    /* Flota sobre el fondo claro (04/10/2026): sombra más honda y un canto
+       de luz arriba. */
+    box-shadow: 0 26px 50px -20px rgba(0, 0, 0, .6), inset 0 1px 0 rgba(255, 255, 255, .06);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
   }
@@ -515,7 +525,7 @@ a { color: var(--acc-txt); }
   }
   .rail-item { position: relative; }
   .rail-item:hover { color: var(--rail-txt); background: rgba(255, 255, 255, .05); }
-  .rail-item[aria-current="page"] { color: var(--rail-txt); background: rgba(255, 255, 255, .07); }
+  .rail-item[aria-current="page"] { color: var(--rail-txt); background: rgba(255, 255, 255, .10); }
   /* La barra del canto. Va de 8 a 8 y no de punta a punta: pegada a los
      extremos se lee como el borde del rail y no como una marca. */
   .rail-item[aria-current="page"]::before {
@@ -792,7 +802,7 @@ a { color: var(--acc-txt); }
      textura. */
   /* 30/09/2026: el material del nivel Platino del Club, el mismo degradado
      que la franja de su tarjeta. Se fue el resplandor rojo del canto. */
-  background: var(--platino);
+  background: var(--tablero-negro, var(--platino));
   border: 1px solid var(--line);
   border-left: 3px solid var(--canto);
   border-radius: var(--r-sm);
@@ -932,7 +942,9 @@ input[type=search], input[type=password], input[type=url], input[type=date], tex
 input::placeholder, textarea::placeholder { color: var(--txt-3); opacity: 1; }
 input:focus, textarea:focus, select:focus {
   border-color: var(--foco);
-  box-shadow: 0 0 0 4px var(--foco-anillo);
+  /* Una línea más del mismo color, adentro del borde: 2 px nítidos en vez
+     del borde de 1 más un halo de 4 que se veía difuso (04/10/2026). */
+  box-shadow: 0 0 0 1px var(--foco);
   background: var(--campo);
 }
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: none; }
