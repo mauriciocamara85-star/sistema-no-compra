@@ -10823,3 +10823,316 @@ select cron.schedule('club-wallet', '*/5 * * * *', $cron$
 $cron$);
 
 select 'listo: la tarjeta en Google Wallet' as "SQL 47";
+
+
+-- ─────────────────────────── PARTE 48 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · UN TELÉFONO ES UN SOCIO, SE ESCRIBA COMO SE ESCRIBA
+--
+-- Correr en el editor SQL de Supabase. No depende del 47.
+--
+-- Lo encontró Mauricio el 04/10/2026: aparecía dos veces en Socios. Era el
+-- mismo número, una vez con el 54 adelante y otra sin: la base comparaba
+-- dígito por dígito y los tomó como dos personas.
+--
+--   club_tel(texto)   el número argentino "pelado": sin el 54, el 9, el 0
+--                     ni el 15. "+54 9 11 2345-6789", "011 15 2345 6789" y
+--                     "11 2345 6789" dan lo mismo.
+--   club_alta, club_recuperar, club_buscar, club_cliente_editar
+--                     comparan con club_tel (lo demás, igual que antes).
+--   el índice único   sobre club_tel y sólo de los socios activos.
+--   la baja           del duplicado: "Mauricio Ezequiel Cámara", la tarjeta
+--                     de prueba del 25/09. Queda la de Mauricio Camara (Oro,
+--                     con sus puntos y su pase de Google Wallet). No se borra
+--                     nada: la baja deja el registro y lo anota en el log.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function club_tel(p text)
+returns text
+language plpgsql
+immutable
+as $ct$
+declare
+  n text := regexp_replace(coalesce(p, ''), '[^0-9]', '', 'g');
+  a integer;
+begin
+  n := regexp_replace(n, '^00', '');                                  -- 00 54 …
+  if length(n) >= 12 and n like '54%' then n := substr(n, 3); end if; -- 54 …
+  if length(n) = 11 and n like '9%' then n := substr(n, 2); end if;   -- el 9 de los celulares
+  n := regexp_replace(n, '^0', '');                                   -- el 0 de larga distancia
+  /* Con el 15: característica (2 a 4 dígitos) + 15 + número = 12 dígitos.
+     El 15 va justo después de la característica. */
+  if length(n) = 12 then
+    for a in 2..4 loop
+      if substr(n, a + 1, 2) = '15' then
+        return substr(n, 1, a) || substr(n, a + 3);
+      end if;
+    end loop;
+  end if;
+  return n;
+end;
+$ct$;
+
+-- club_alta: igual que en la base, comparando con club_tel.
+CREATE OR REPLACE FUNCTION public.club_alta(p_nombre text, p_telefono text, p_local text DEFAULT NULL::text, p_cumple date DEFAULT NULL::date, p_acepta boolean DEFAULT false, p_mail text DEFAULT NULL::text, p_apellido text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tel   text;
+  nom   text;
+  nms   text;
+  ape   text;
+  mai   text;
+  cod   text;
+  nid   bigint;
+begin
+  nms := nullif(btrim(regexp_replace(coalesce(p_nombre, ''), '\s+', ' ', 'g')), '');
+  tel := regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g');
+  mai := lower(nullif(trim(coalesce(p_mail, '')), ''));
+
+  if nms is null then raise exception 'Falta tu nombre.'; end if;
+  /* Con la página nueva el apellido llega siempre (aunque sea vacío): ahí
+     es obligatorio. Una página vieja no lo manda y entra como antes. */
+  if p_apellido is not null then
+    ape := nullif(btrim(regexp_replace(p_apellido, '\s+', ' ', 'g')), '');
+    if ape is null then raise exception 'Falta tu apellido.'; end if;
+    if length(nms) > 40 or length(ape) > 40 then raise exception 'El nombre o el apellido es muy largo: hasta 40 letras cada uno.'; end if;
+    nom := nms || ' ' || ape;
+  else
+    nom := nms;
+  end if;
+  if length(tel) < 8 then raise exception 'Ese WhatsApp no parece completo.'; end if;
+
+  /* Un mail mal escrito no frena el alta: se guarda igual. Frenar a alguien
+     parado en el mostrador por un campo OPCIONAL es exactamente al revés de
+     para qué es opcional. Lo único que se rechaza es algo que claramente no
+     es un mail, para no llenar la base de "no tengo". */
+  if mai is not null and mai !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+ then
+    raise exception 'Ese mail no se entiende. Dejalo vacío si no lo tenés a mano.';
+  end if;
+
+  /* La misma regla que "Mis datos": una fecha que tenga sentido. */
+  if p_cumple is not null and not club_cumple_ok(p_cumple) then
+    raise exception 'Esa fecha de cumpleaños no parece correcta.';
+  end if;
+
+  if exists (select 1 from club_clientes
+              where club_tel(telefono) = club_tel(tel)) then
+    return jsonb_build_object('alta', false, 'ya_estaba', true,
+      'porque', 'Ese número ya tiene tarjeta. Te la abrimos.');
+  end if;
+
+  cod := club_codigo();
+
+  insert into club_clientes (
+    codigo, nombre, nombres, apellido, telefono, mail, cumple, local_alta,
+    acepta_promos, consentimiento, consentimiento_via
+  ) values (
+    cod, nom, case when ape is not null then nms end, ape, trim(p_telefono), mai, p_cumple,
+    nullif(trim(coalesce(p_local, '')), ''),
+    coalesce(p_acepta, false),
+    case when coalesce(p_acepta, false) then now() else null end,
+    case when coalesce(p_acepta, false)
+         then 'alta web' || coalesce(' · ' || nullif(trim(coalesce(p_local, '')), ''), '')
+         else null end
+  )
+  returning id into nid;
+
+  return jsonb_build_object('alta', true, 'codigo', cod, 'nombre', nom);
+end;
+$function$;
+
+-- club_recuperar: igual que en la base, comparando con club_tel.
+CREATE OR REPLACE FUNCTION public.club_recuperar(p_telefono text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tel    text;
+  org    text;
+  fallos integer;
+  c      v_club_clientes%rowtype;
+  /* found lo pisa CUALQUIER sentencia, el insert de abajo incluido. Sin
+     guardarlo antes, el 'if not found' del final estaría mirando si el
+     insert insertó —siempre sí— y nunca contestaría que no hay tarjeta. */
+  hallado boolean;
+begin
+  tel := regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g');
+  org := club_origen();
+
+  /* Ocho dígitos es el mismo piso que usa el alta. Un número corto no se
+     cuenta como intento: es un error de tipeo, no una prueba. */
+  if length(tel) < 8 then
+    return jsonb_build_object('hay', false, 'corto', true,
+      'porque', 'Escribí tu WhatsApp completo, con la característica y sin el 0.');
+  end if;
+
+  /* Diez fallos por origen cada quince minutos. Una persona escribe su
+     número una vez; quien barre falla casi siempre, así que se queda sin
+     cupo enseguida. El que YA encontró su tarjeta no gasta cupo. */
+  select count(*) into fallos
+    from club_recuperos
+   where origen = org and not encontro and cuando > now() - interval '15 minutes';
+
+  if fallos >= 10 then
+    raise exception 'Probaste muchos números seguidos. Esperá un rato y volvé a intentar.'
+      using errcode = '54000';
+  end if;
+
+  select * into c from v_club_clientes
+   where club_tel(telefono) = club_tel(tel)
+     and baja is null
+   limit 1;
+
+  hallado := found;
+  insert into club_recuperos (origen, encontro) values (org, hallado);
+
+  if not hallado then
+    return jsonb_build_object('hay', false,
+      'porque', 'No encontramos ninguna tarjeta con ese número.');
+  end if;
+
+  /* Devuelve el CÓDIGO y nada más. La tarjeta la arma club_tarjeta, que ya
+     existe y es la única que sabe cómo se ve: dos funciones devolviendo la
+     misma tarjeta se separan el día que alguien toca una sola. Y de paso la
+     página termina con el código en la dirección, que es lo que hace que se
+     pueda agregar a la pantalla del celular. */
+  return jsonb_build_object('hay', true, 'codigo', c.codigo, 'nombre', c.nombre);
+end;
+$function$;
+
+-- club_buscar: igual que en la base, comparando con club_tel.
+CREATE OR REPLACE FUNCTION public.club_buscar(p_pin text, p_texto text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  dig text;
+  txt text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  dig := regexp_replace(coalesce(p_texto, ''), '[^0-9]', '', 'g');
+  txt := lower(trim(coalesce(p_texto, '')));
+  if length(txt) < 3 then
+    return jsonb_build_object('corto', true,
+      'porque', 'Escribí el teléfono entero o al menos 3 letras del nombre.');
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'codigo', codigo, 'nombre', nombre, 'telefono', telefono,
+             'mail', mail, 'puntos', puntos, 'nivel', nivel,
+             'compras', compras, 'confirmado', confirmado)
+           order by confirmado desc, creado desc)
+      from (
+        select * from v_club_clientes
+         where baja is null
+           and ( (length(dig) >= 8 and club_tel(telefono) = club_tel(dig))
+              or (length(dig) = 12 and codigo = dig)
+              or (length(txt) >= 3 and lower(nombre) like '%' || txt || '%')
+              or (position('@' in txt) > 1 and lower(coalesce(mail, '')) = txt) )
+         order by creado desc
+         limit 10
+      ) t
+  ), '[]'::jsonb);
+end;
+$function$;
+
+-- club_cliente_editar: igual que en la base, comparando con club_tel.
+CREATE OR REPLACE FUNCTION public.club_cliente_editar(p_pin text, p_codigo text, p_nombre text, p_telefono text, p_mail text DEFAULT NULL::text, p_quien text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c    club_clientes%rowtype;
+  nom  text;
+  tel  text;
+  mai  text;
+  dig  text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  select * into c from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+     and baja is null;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+
+  nom := nullif(trim(coalesce(p_nombre, '')), '');
+  tel := nullif(trim(coalesce(p_telefono, '')), '');
+  mai := lower(nullif(trim(coalesce(p_mail, '')), ''));
+  dig := regexp_replace(coalesce(tel, ''), '[^0-9]', '', 'g');
+
+  if nom is null then raise exception 'El nombre no puede quedar vacío.'; end if;
+  if length(dig) < 8 then raise exception 'Ese WhatsApp no parece completo.'; end if;
+
+  if mai is not null and mai !~ '^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+ then
+    raise exception 'Ese mail no se entiende.';
+  end if;
+
+  if exists (select 1 from club_clientes
+              where club_tel(telefono) = club_tel(dig)
+                and id <> c.id and baja is null) then
+    raise exception 'Ese número ya es de otro socio.';
+  end if;
+
+  /* El rastro se escribe ANTES, con lo que había: después del update ya no
+     hay de dónde sacarlo. */
+  insert into log (accion, detalle, quien)
+  values ('club: editar socio',
+          'tarjeta ' || c.codigo ||
+          case when c.nombre is distinct from nom
+               then ' · nombre: ' || c.nombre || ' → ' || nom else '' end ||
+          case when c.telefono is distinct from tel
+               then ' · teléfono: ' || c.telefono || ' → ' || tel else '' end ||
+          case when c.mail is distinct from mai
+               then ' · mail: ' || coalesce(c.mail, '—') || ' → ' || coalesce(mai, '—') else '' end,
+          nullif(trim(coalesce(p_quien, '')), ''));
+
+  update club_clientes
+     set nombre = nom, telefono = tel, mail = mai
+   where id = c.id;
+
+  return jsonb_build_object('ok', true, 'nombre', nom, 'telefono', tel, 'mail', mai);
+end;
+$function$;
+
+/* El duplicado, de baja. Con todas las condiciones: si algo no coincide
+   (otro nombre, otro número, ya dado de baja), no toca nada. */
+insert into log (accion, detalle, quien)
+select 'club: baja de socio',
+       'tarjeta ' || d.codigo || ' (' || d.nombre || ') · duplicado de la tarjeta ' || k.codigo ||
+       ' (' || k.nombre || '): el mismo teléfono, una vez con el 54 adelante',
+       'Mauricio (SQL 48)'
+  from club_clientes d, club_clientes k
+ where d.id = 7 and k.id = 5
+   and d.nombre = 'Mauricio Ezequiel Cámara' and d.baja is null
+   and club_tel(d.telefono) = club_tel(k.telefono);
+
+update club_clientes d
+   set baja = now()
+  from club_clientes k
+ where d.id = 7 and k.id = 5
+   and d.nombre = 'Mauricio Ezequiel Cámara' and d.baja is null
+   and club_tel(d.telefono) = club_tel(k.telefono);
+
+/* El índice: un número pelado, un socio activo. */
+drop index if exists club_clientes_telefono;
+create unique index if not exists club_clientes_tel on club_clientes (club_tel(telefono)) where baja is null;
+
+select 'listo: un teléfono es un socio' as "SQL 48";
