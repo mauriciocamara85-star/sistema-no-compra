@@ -219,7 +219,10 @@ async function enlace(codigo: string, k: Llave) {
     origins: ['https://vdhclub.com'],
     payload: { loyaltyObjects: [{ id: o.id }] }
   }, k);
-  return { ok: true, url: 'https://pay.google.com/gp/v/save/' + jwt };
+  /* ver: el enlace directo al pase ya guardado (04/10/2026). La app lo
+     guarda y "Ver en la Billetera" lo abre al instante, sin volver a pasar
+     por acá; con la app de Google Wallet anda hasta sin señal. */
+  return { ok: true, url: 'https://pay.google.com/gp/v/save/' + jwt, ver: 'https://pay.google.com/gp/v/object/' + o.id };
 }
 
 async function actualizar(k: Llave) {
