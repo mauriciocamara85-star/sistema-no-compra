@@ -1170,7 +1170,7 @@
         if (!fotos.length) { return; }
         var hayPromo = !!$('promoFotoZona'), hayNove = !!$('novFotoZona');
         if (!hayPromo && !hayNove) { return; }
-        if (destinoFoto === 'tienda') { return; }
+        if (destinoFoto === 'tienda' || destinoFoto === 'premio') { return; }
         ev.preventDefault();
         if (hayNove && (destinoFoto === 'novedad' || !hayPromo)) { subirFoto(fotos[0], 'novedad'); }
         else if (destinoFoto === 'coleccion' || fotos.length > 1) { subirColeccion(fotos); }
@@ -1189,6 +1189,7 @@
     if ($('colZona')) { $('colZona').classList.toggle('activa', d === 'coleccion'); }
     if ($('tpFotoZona')) { $('tpFotoZona').classList.toggle('activa', d === 'tienda'); }
     if ($('novFotoZona')) { $('novFotoZona').classList.toggle('activa', d === 'novedad'); }
+    if ($('prFotoZona')) { $('prFotoZona').classList.toggle('activa', d === 'premio'); }
   }
 
   /* ── La colección (SQL 43) ── */
@@ -1619,6 +1620,7 @@
     var url = $(inputId).value.trim();
     if (!url) { caja.innerHTML = ''; caja.removeAttribute('style'); return; }
     var medida = forma === 'cuadrada' ? 'width:140px;aspect-ratio:1;'
+               : forma === 'premio' ? 'width:150px;aspect-ratio:3/4;'
                : forma === 'vertical' ? 'width:180px;aspect-ratio:5/8;'
                : 'width:100%;max-width:330px;aspect-ratio:3/2;';
     caja.setAttribute('style', 'margin-top:10px;border-radius:12px;overflow:hidden;border:1px solid var(--line);' +
@@ -2055,6 +2057,8 @@
       });
   }
 
+  /* La subida de la foto del premio y su pegado (los arma editorPremio). */
+  var pegarPremio = null, subirFotoPremio = null;
   function editorPremio(p) {
     var v = function (x) { return x == null ? '' : esc(String(x)); };
     $('premiosCuerpo').innerHTML =
@@ -2063,12 +2067,17 @@
           '<input type="text" id="prNombre" maxlength="60" placeholder="Gorra VDH" value="' + v(p && p.nombre) + '"></div>' +
         '<div class="campo ancho"><label for="prDetalle">Letra chica <span class="lbl-opc">— opcional</span></label>' +
           '<input type="text" id="prDetalle" maxlength="120" placeholder="Modelos seleccionados." value="' + v(p && p.detalle) + '"></div>' +
-        /* La foto: en la tarjeta va cuadrada y sobre un fondo claro. La
-           vista previa la muestra igual, para que se vea el recorte antes
-           de guardar. */
+        /* La foto (04/10/2026): se sube como en las promos —pegar,
+           arrastrar o elegir— o se pega el enlace. En la app va vertical
+           (3:4) y editorial; la vista previa la muestra con ese recorte. */
         '<div class="campo ancho"><label for="prImagen">Foto <span class="lbl-opc">— opcional; ' +
-          'mejor cuadrada, con el producto al centro y fondo claro</span></label>' +
-          '<input type="url" id="prImagen" inputmode="url" autocapitalize="off" placeholder="https://…" ' +
+          'vertical y editorial (con modelo, como el lookbook) es la que mejor se ve</span></label>' +
+          '<div class="foto-zona" id="prFotoZona" tabindex="0">' +
+            '<span id="prFotoTxt"><b>Pegá una foto</b> (Ctrl+V, también copiada de una carpeta) o arrastrala acá.</span>' +
+            '<button type="button" class="btn btn-sec btn-chico" id="prFotoElegir">Elegir foto</button>' +
+            '<input type="file" id="prFotoArchivo" accept="image/jpeg,image/png,image/webp" hidden>' +
+          '</div>' +
+          '<input type="url" id="prImagen" inputmode="url" autocapitalize="off" style="margin-top:8px" placeholder="…o pegá el enlace de una foto: https://…" ' +
             'value="' + v(p && p.imagen) + '">' +
           '<div id="prImgPrev"></div></div>' +
         '<div class="campo"><label for="prPuntos">Puntos</label>' +
@@ -2104,10 +2113,47 @@
     $('prCosto').oninput = cuenta;
     cuenta();
 
-    var verFotoPremio = function () { previaFoto('prImagen', 'prImgPrev', 'cuadrada'); };
+    var verFotoPremio = function () { previaFoto('prImagen', 'prImgPrev', 'premio'); };
     $('prImagen').onchange = verFotoPremio;
     $('prImagen').onblur = verFotoPremio;
     verFotoPremio();
+
+    /* La foto: pegar, arrastrar o elegir, como en las promos. Queda en el
+       campo de la dirección y se guarda con el premio. */
+    subirFotoPremio = function (f) {
+      if (!/^image\/(jpeg|png|webp)$/.test(f.type)) { avisar('err', 'Tiene que ser una foto JPG, PNG o WEBP.'); return; }
+      var zona = $('prFotoZona'), txt = $('prFotoTxt');
+      if (!zona || zona.classList.contains('subiendo')) { return; }
+      var antes = txt.innerHTML;
+      zona.classList.add('subiendo'); txt.innerHTML = '<b>Subiendo la foto…</b>';
+      achicarFoto(f)
+        .then(function (b) { return base.club.fotoSubir(pinPromo(), b); })
+        .then(function (url) { if ($('prImagen')) { $('prImagen').value = url; verFotoPremio(); avisar('ok', 'Foto subida. Se guarda con el premio.'); } })
+        .catch(function (err) { avisar('err', (err && err.message) || 'No se pudo subir la foto.'); })
+        .then(function () { if (document.body.contains(zona)) { zona.classList.remove('subiendo'); txt.innerHTML = antes; } });
+    };
+    var zonaPr = $('prFotoZona');
+    zonaPr.onclick = zonaPr.onfocus = function () { elegirDestino('premio'); };
+    elegirDestino('premio');
+    $('prFotoElegir').onclick = function (ev) { ev.stopPropagation(); elegirDestino('premio'); $('prFotoArchivo').click(); };
+    $('prFotoArchivo').onchange = function () { if (this.files && this.files[0]) { subirFotoPremio(this.files[0]); } this.value = ''; };
+    ['dragenter', 'dragover'].forEach(function (x) { zonaPr.addEventListener(x, function (ev) { ev.preventDefault(); zonaPr.classList.add('encima'); }); });
+    ['dragleave', 'drop'].forEach(function (x) { zonaPr.addEventListener(x, function () { zonaPr.classList.remove('encima'); }); });
+    zonaPr.addEventListener('drop', function (ev) {
+      ev.preventDefault(); elegirDestino('premio');
+      var f = ev.dataTransfer && ev.dataTransfer.files && ev.dataTransfer.files[0];
+      if (f) { subirFotoPremio(f); }
+    });
+    /* El pegado: uno solo para toda la página, aunque el editor se abra
+       veinte veces; sólo con imágenes y sólo si el destino es el premio. */
+    if (!pegarPremio) {
+      pegarPremio = function (ev) {
+        if (destinoFoto !== 'premio' || !$('prFotoZona') || !subirFotoPremio) { return; }
+        var f = Array.prototype.filter.call((ev.clipboardData && ev.clipboardData.files) || [], function (x) { return /^image\//.test(x.type); })[0];
+        if (f) { ev.preventDefault(); subirFotoPremio(f); }
+      };
+      document.addEventListener('paste', pegarPremio);
+    }
 
     $('prVolver').onclick = pintarPremios;
     $('prGuardar').onclick = function () {
