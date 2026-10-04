@@ -165,6 +165,10 @@
     display: grid; place-items: center;
     font: 700 14px/1 var(--display);
   }
+  /* El paso completo (04/10/2026): el número se vuelve un tilde verde.
+     Ya no es una pregunta: es algo hecho. */
+  .paso-n.listo { background: var(--ok); border-color: var(--ok); color: var(--ok-ink); }
+  .paso-n svg { width: 16px; height: 16px; }
   .paso-txt { min-width: 0; }
   /* 18px y no 21: el título de un paso no puede pesar más que el de la
      pantalla (.tablero-tit, 20px). Con 21 "El cliente" gritaba más fuerte que
@@ -1122,7 +1126,7 @@
                el correcto. -->
           <span class="elegido" id="elegido" hidden></span>
         </label>
-        <input type="text" id="f_producto" placeholder="Buscá el producto o disparale a la etiqueta" autocomplete="off">
+        <input type="text" id="f_producto" placeholder="Buscá o escaneá la etiqueta" autocomplete="off">
         <!-- Flota por encima del formulario en vez de empujarlo: la lista
              aparece y desaparece con cada tecla, y si ocupara lugar de verdad
              los chips de abajo saltarían mientras el vendedor escribe. -->
@@ -1352,7 +1356,7 @@
     var campo = $('f_producto');
     var noHacemos = motivo === 'No lo hacemos';
     campo.placeholder = noHacemos ? 'Una palabra: chaleco, buzo, sweater…'
-                                  : 'Campera de abrigo negra';
+                                  : 'Buscá o escaneá la etiqueta';
     $('lblProducto').textContent = noHacemos ? 'Qué te pidieron' : 'Producto';
   }
 
@@ -2454,12 +2458,38 @@
   }
 
   /** El botón dice lo que va a hacer, que no es siempre lo mismo. */
+  /* Los pasos completos llevan un tilde (04/10/2026). Se mira en cada
+     tecla y cada toque del formulario: es barato y no se escapa ningún
+     camino (elegir un producto de la lista, un talle, corregir). */
+  var TILDE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  function marcarPasos() {
+    var hechos = {
+      paso1: !!$('f_wsp') && !revisarTelefono($('f_wsp').value),
+      paso2: !!(($('f_producto') && $('f_producto').value.trim()) || ($('f_talle') && $('f_talle').value.trim()) ||
+                talles.length || ($('elegido') && !$('elegido').hidden)),
+      paso3: !!motivo
+    };
+    Object.keys(hechos).forEach(function (id) {
+      var n = document.querySelector('#' + id + ' .paso-n');
+      if (!n) { return; }
+      if (!n.dataset.n) { n.dataset.n = n.textContent.trim(); }
+      var hecho = hechos[id];
+      if (n.classList.contains('listo') === hecho) { return; }
+      n.classList.toggle('listo', hecho);
+      n.innerHTML = hecho ? TILDE : n.dataset.n;
+      n.setAttribute('aria-label', 'Paso ' + n.dataset.n + (hecho ? ', completo' : ''));
+    });
+  }
+  document.addEventListener('input', marcarPasos);
+  document.addEventListener('click', function () { setTimeout(marcarPasos, 0); });
+
   function botonGuardar(texto) {
     var btn = $('btnGuardar');
     btn.innerHTML = texto || (
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" ' +
       'stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg> ' +
       (corrigiendo ? 'Guardar corrección' : 'Guardar oportunidad'));
+    marcarPasos();
   }
 
 
