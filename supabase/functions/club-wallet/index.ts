@@ -148,7 +148,9 @@ function cercanos(local: string | null) {
 /** Lo que cambia con cada compra. Va aparte para mandar sólo esto. */
 const puntosDe = (s: Socio) => ({
   accountName: s.nombre,
-  loyaltyPoints: { label: 'Puntos', balance: { int: s.puntos } },
+  /* Como texto y no como número: con { int } Google escribe "8,901", a la
+     americana, aunque el pase esté en castellano. */
+  loyaltyPoints: { label: 'Puntos', balance: { string: String(Math.floor(Number(s.puntos) || 0)).replace(/\B(?=(\d{3})+(?!\d))/g, '.') } },
   secondaryLoyaltyPoints: { label: 'Nivel', balance: { string: s.nivel } }
 });
 
