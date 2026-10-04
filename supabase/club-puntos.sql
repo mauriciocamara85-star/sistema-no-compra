@@ -10745,3 +10745,81 @@ grant execute on function club_avisos_auto_guardar(text, text, boolean, integer,
 
 
 select 'Listo: los avisos automáticos (puntos por vencer y te extrañamos), con cupón del 20%.' as "SQL 46";
+
+
+-- ─────────────────────────── PARTE 47 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LA TARJETA EN GOOGLE WALLET
+--
+-- Correr en el editor SQL de Supabase. No depende del 46.
+--
+-- Pedido de Mauricio (03/10/2026): la tarjeta del Club en la billetera del
+-- celular. El pase lo crea la Edge Function club-wallet cuando el socio
+-- toca "Agregar a Google Wallet" en Inicio. Esto es lo que necesita de la
+-- base:
+--
+--   club_wallet              quién tiene el pase, y con qué puntos, nivel y
+--                            nombre se lo mandamos a Google la última vez.
+--   club_wallet_socio        los datos de una tarjeta para armar el pase.
+--   club_wallet_pendientes   los pases que quedaron atrás (compró, canjeó,
+--                            subió de nivel).
+--   reloj 'club-wallet'      cada 5 minutos, y sólo si hay pendientes, llama
+--                            a la función para que los ponga al día.
+--
+-- Las tres cosas son sólo para la llave de servicio: el socio nunca las
+-- llama directo, pasa por la función.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_wallet (
+  cliente     bigint primary key references club_clientes(id) on delete cascade,
+  puntos      integer,
+  nivel       text,
+  nombre      text,
+  alta        timestamptz not null default now(),
+  actualizado timestamptz
+);
+alter table club_wallet enable row level security;
+revoke all on club_wallet from anon, authenticated;
+grant all on club_wallet to service_role;
+
+create or replace function club_wallet_socio(p_codigo text)
+returns jsonb
+language sql stable security definer
+set search_path = public
+as $
+  select jsonb_build_object('cliente', c.id, 'codigo', c.codigo, 'nombre', c.nombre,
+                            'puntos', c.puntos, 'nivel', c.nivel, 'local_alta', c.local_alta)
+    from v_club_clientes c
+   where c.codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+     and c.baja is null
+$;
+
+create or replace function club_wallet_pendientes()
+returns setof jsonb
+language sql stable security definer
+set search_path = public
+as $
+  select jsonb_build_object('cliente', c.id, 'codigo', c.codigo, 'nombre', c.nombre,
+                            'puntos', c.puntos, 'nivel', c.nivel, 'local_alta', c.local_alta)
+    from club_wallet w
+    join v_club_clientes c on c.id = w.cliente
+   where c.baja is null
+     and (w.puntos is distinct from c.puntos or w.nivel is distinct from c.nivel
+          or w.nombre is distinct from c.nombre)
+   limit 200
+$;
+
+revoke execute on function club_wallet_socio(text) from public, anon, authenticated;
+revoke execute on function club_wallet_pendientes() from public, anon, authenticated;
+grant execute on function club_wallet_socio(text) to service_role;
+grant execute on function club_wallet_pendientes() to service_role;
+
+select cron.schedule('club-wallet', '*/5 * * * *', $cron$
+  select net.http_post(
+           url := 'https://gfjdjupuwxohkgchqykx.supabase.co/functions/v1/club-wallet',
+           body := '{"accion":"actualizar"}'::jsonb,
+           headers := '{"Content-Type":"application/json"}'::jsonb)
+   where exists (select 1 from club_wallet_pendientes())
+$cron$);
+
+select 'listo: la tarjeta en Google Wallet' as "SQL 47";
