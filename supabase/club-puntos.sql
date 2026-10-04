@@ -11136,3 +11136,590 @@ drop index if exists club_clientes_telefono;
 create unique index if not exists club_clientes_tel on club_clientes (club_tel(telefono)) where baja is null;
 
 select 'listo: un teléfono es un socio' as "SQL 48";
+
+
+-- ─────────────────────────── PARTE 49 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LAS CAJAS HABILITADAS: COBRAR SIN PIN EN EL APARATO DEL LOCAL
+--
+-- Correr en el editor SQL de Supabase, DESPUÉS del 48.
+--
+-- Pedido de Mauricio (04/10/2026): en los locales cobran, suman puntos,
+-- buscan socios y entregan el regalo de cumple SIN PIN; el PIN (el de
+-- administrador, el de siempre) queda para cupones, estadísticas, avisos,
+-- Configuración, editar socios, anular movimientos y el Panel.
+--
+-- Sin PIN no puede quedar abierto para cualquiera: la dirección de la base
+-- está en la app del Club, que es pública, y alguien podría sumarse puntos
+-- llamándola directo. Por eso se habilita cada APARATO una vez:
+--
+--   · Mauricio crea en Configuración un enlace para un local. Sirve UNA vez
+--     y vence a las 24 horas si nadie lo usó. Lo manda por WhatsApp.
+--   · El encargado lo abre en la compu o el celular de la caja: ese aparato
+--     queda habilitado para siempre (hasta que Mauricio lo deshabilite) y
+--     guarda una llave propia, larga y al azar. El PIN nunca sale de sus
+--     manos ni se guarda en ningún lado.
+--   · Con la llave, ese aparato cobra en SU local, y nada más.
+--
+--   club_cajas                   los aparatos habilitados (la llave, cifrada)
+--   club_caja_enlaces            los enlaces de un solo uso (cifrados)
+--   club_caja_acceso(clave)      el PIN o la llave de una caja: ¿pasa?
+--   club_caja_local(clave)       el local de esa caja (o nada, si es el PIN)
+--   club_caja_enlace             crea un enlace                (con PIN)
+--   club_caja_habilitar          habilita ESTE aparato         (con PIN)
+--   club_caja_activar            usa un enlace                 (sin PIN)
+--   club_cajas_listar / club_caja_deshabilitar                 (con PIN)
+--
+--   Y las de la caja aceptan la llave: club_buscar, club_sumar_compra,
+--   club_movimientos_de, club_canjear_premio, club_entregar_cumple y
+--   club_cliente_cumple. Anular un movimiento y editar un socio siguen
+--   pidiendo el PIN.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists club_cajas (
+  id         bigint generated always as identity primary key,
+  local      text not null,
+  nombre     text,                    -- "Compu Windows", "Celular Android"…
+  llave_hash text not null unique,    -- la llave, cifrada: en la base no está
+  via        text not null,           -- 'enlace' o 'pin'
+  creado     timestamptz not null default now(),
+  ultimo_uso timestamptz,
+  baja       timestamptz
+);
+create table if not exists club_caja_enlaces (
+  id          bigint generated always as identity primary key,
+  local       text not null,
+  codigo_hash text not null unique,
+  creado      timestamptz not null default now(),
+  vence       timestamptz not null,
+  usado       timestamptz,
+  caja        bigint references club_cajas(id)
+);
+alter table club_cajas enable row level security;
+alter table club_caja_enlaces enable row level security;
+revoke all on club_cajas, club_caja_enlaces from anon, authenticated;
+
+create or replace function club_caja_hash(p text)
+returns text
+language sql
+immutable
+set search_path = public, extensions
+as $h$ select encode(extensions.digest(coalesce(p, ''), 'sha256'), 'hex') $h$;
+
+/* El local de una caja habilitada, o nada. Sólo mira lo que empieza con
+   "caja_": un PIN no pasa por acá. Anota el último uso (una vez por hora,
+   para no escribir en cada búsqueda). */
+create or replace function club_caja_local(p text)
+returns text
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $cl$
+declare
+  c club_cajas%rowtype;
+begin
+  if p is null or p not like 'caja\_%' then return null; end if;
+  select * into c from club_cajas where llave_hash = club_caja_hash(p) and baja is null;
+  if not found then return null; end if;
+  if c.ultimo_uso is null or c.ultimo_uso < now() - interval '1 hour' then
+    update club_cajas set ultimo_uso = now() where id = c.id;
+  end if;
+  return c.local;
+end;
+$cl$;
+
+/* ¿Pasa? Con la llave de una caja, se mira la caja y NO el PIN: si se
+   probara como PIN contaría como un intento fallido y podría trabar el PIN
+   de verdad. */
+create or replace function club_caja_acceso(p text)
+returns boolean
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $ca$
+begin
+  if p like 'caja\_%' then return club_caja_local(p) is not null; end if;
+  return coalesce((pin_ok(p)->>'ok')::boolean, false);
+end;
+$ca$;
+
+revoke all on function club_caja_hash(text), club_caja_local(text), club_caja_acceso(text) from public, anon, authenticated;
+
+/* El local, tal como está en la tabla locales (activo). */
+create or replace function club_caja_local_ok(p text)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $lo$
+  select l.codigo from locales l where l.activo and upper(trim(l.codigo)) = upper(trim(coalesce(p, ''))) limit 1
+$lo$;
+revoke all on function club_caja_local_ok(text) from public, anon, authenticated;
+
+/* Un enlace para un local: sirve una vez y vence a las 24 horas. */
+create or replace function club_caja_enlace(p_pin text, p_local text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $ce$
+declare
+  loc text;
+  cod text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  loc := club_caja_local_ok(p_local);
+  if loc is null then raise exception 'Elegí un local.'; end if;
+  cod := encode(extensions.gen_random_bytes(12), 'hex');
+  insert into club_caja_enlaces (local, codigo_hash, vence)
+  values (loc, club_caja_hash(cod), now() + interval '24 hours');
+  return jsonb_build_object('ok', true, 'codigo', cod, 'local', loc, 'vence', now() + interval '24 hours');
+end;
+$ce$;
+
+/* Una caja nueva: la llave sólo viaja esta vez, al aparato. */
+create or replace function club_caja_nueva(p_local text, p_nombre text, p_via text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $cn$
+declare
+  llave text := 'caja_' || encode(extensions.gen_random_bytes(24), 'hex');
+  nid   bigint;
+begin
+  insert into club_cajas (local, nombre, llave_hash, via)
+  values (p_local, nullif(left(trim(coalesce(p_nombre, '')), 40), ''), club_caja_hash(llave), p_via)
+  returning id into nid;
+  insert into log (accion, detalle, quien)
+  values ('club: caja habilitada', p_local || coalesce(' · ' || nullif(trim(coalesce(p_nombre, '')), ''), '') || ' · por ' || p_via, null);
+  return jsonb_build_object('ok', true, 'llave', llave, 'local', p_local, 'id', nid);
+end;
+$cn$;
+revoke all on function club_caja_nueva(text, text, text) from public, anon, authenticated;
+
+/* Usar un enlace (sin PIN: el enlace ES el permiso). */
+create or replace function club_caja_activar(p_codigo text, p_nombre text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $cv$
+declare
+  e club_caja_enlaces%rowtype;
+  r jsonb;
+begin
+  select * into e from club_caja_enlaces
+   where codigo_hash = club_caja_hash(lower(trim(coalesce(p_codigo, ''))))
+   for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'Ese enlace no es válido. Pedile uno nuevo al encargado.');
+  end if;
+  if e.usado is not null then
+    return jsonb_build_object('ok', false, 'porque', 'Ese enlace ya se usó. Cada enlace habilita una sola caja: pedí uno nuevo.');
+  end if;
+  if e.vence < now() then
+    return jsonb_build_object('ok', false, 'porque', 'Ese enlace venció (duran 24 horas). Pedí uno nuevo.');
+  end if;
+  r := club_caja_nueva(e.local, p_nombre, 'enlace');
+  update club_caja_enlaces set usado = now(), caja = (r->>'id')::bigint where id = e.id;
+  return r;
+end;
+$cv$;
+
+/* Habilitar ESTE aparato, con el PIN (en el local de Mauricio). */
+create or replace function club_caja_habilitar(p_pin text, p_local text, p_nombre text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $ch$
+declare
+  loc text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  loc := club_caja_local_ok(p_local);
+  if loc is null then raise exception 'Elegí un local.'; end if;
+  return club_caja_nueva(loc, p_nombre, 'pin');
+end;
+$ch$;
+
+create or replace function club_cajas_listar(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $cs$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return jsonb_build_object(
+    'cajas', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'local', local, 'nombre', nombre, 'via', via,
+                                                           'creado', creado, 'ultimo_uso', ultimo_uso)
+                                        order by local, creado)
+                         from club_cajas where baja is null), '[]'::jsonb),
+    'enlaces', (select count(*) from club_caja_enlaces where usado is null and vence > now()),
+    'locales', coalesce((select jsonb_agg(jsonb_build_object('codigo', codigo, 'nombre', coalesce(nullif(trim(nombre), ''), initcap(lower(codigo))))
+                                          order by codigo)
+                           from locales where activo), '[]'::jsonb));
+end;
+$cs$;
+
+create or replace function club_caja_deshabilitar(p_pin text, p_id bigint)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $cd$
+declare
+  c club_cajas%rowtype;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  update club_cajas set baja = now() where id = p_id and baja is null returning * into c;
+  if not found then return jsonb_build_object('ok', false, 'porque', 'Esa caja ya no está habilitada.'); end if;
+  insert into log (accion, detalle, quien)
+  values ('club: caja deshabilitada', c.local || coalesce(' · ' || c.nombre, ''), null);
+  return jsonb_build_object('ok', true);
+end;
+$cd$;
+
+revoke all on function club_caja_enlace(text, text), club_caja_activar(text, text), club_caja_habilitar(text, text, text),
+                       club_cajas_listar(text), club_caja_deshabilitar(text, bigint) from public;
+grant execute on function club_caja_enlace(text, text), club_caja_activar(text, text), club_caja_habilitar(text, text, text),
+                          club_cajas_listar(text), club_caja_deshabilitar(text, bigint) to anon, authenticated;
+
+-- club_buscar: igual que en la base; entra con el PIN o con la llave de una caja.
+CREATE OR REPLACE FUNCTION public.club_buscar(p_pin text, p_texto text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  dig text;
+  txt text;
+begin
+  if not club_caja_acceso(p_pin) then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  dig := regexp_replace(coalesce(p_texto, ''), '[^0-9]', '', 'g');
+  txt := lower(trim(coalesce(p_texto, '')));
+  if length(txt) < 3 then
+    return jsonb_build_object('corto', true,
+      'porque', 'Escribí el teléfono entero o al menos 3 letras del nombre.');
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'codigo', codigo, 'nombre', nombre, 'telefono', telefono,
+             'mail', mail, 'puntos', puntos, 'nivel', nivel,
+             'compras', compras, 'confirmado', confirmado)
+           order by confirmado desc, creado desc)
+      from (
+        select * from v_club_clientes
+         where baja is null
+           and ( (length(dig) >= 8 and club_tel(telefono) = club_tel(dig))
+              or (length(dig) = 12 and codigo = dig)
+              or (length(txt) >= 3 and lower(nombre) like '%' || txt || '%')
+              or (position('@' in txt) > 1 and lower(coalesce(mail, '')) = txt) )
+         order by creado desc
+         limit 10
+      ) t
+  ), '[]'::jsonb);
+end;
+$function$;
+
+-- club_movimientos_de: igual que en la base; entra con el PIN o con la llave de una caja.
+CREATE OR REPLACE FUNCTION public.club_movimientos_de(p_pin text, p_codigo text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not club_caja_acceso(p_pin) then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', m.id, 'cuando', m.creado, 'local', m.local, 'vendedor', m.vendedor,
+             'ticket', m.ticket, 'importe', m.importe, 'puntos', m.puntos,
+             'tipo', m.tipo, 'concepto', m.concepto, 'obs', m.obs,
+             'anulado', m.anulado, 'motivo', m.motivo_anul)
+           order by m.creado desc)
+      from (
+        select * from club_movimientos
+         where cliente = (select id from club_clientes
+                           where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g'))
+         order by creado desc limit 20
+      ) m
+  ), '[]'::jsonb);
+end;
+$function$;
+
+-- club_cliente_cumple: igual que en la base; entra con el PIN o con la llave de una caja.
+CREATE OR REPLACE FUNCTION public.club_cliente_cumple(p_pin text, p_codigo text, p_cumple date, p_cambiar boolean, p_quien text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c club_clientes%rowtype;
+begin
+  if not club_caja_acceso(p_pin) then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  select * into c from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+  if not coalesce(p_cambiar, false) or c.cumple is not distinct from p_cumple then
+    return jsonb_build_object('ok', true, 'cumple', c.cumple, 'cambio', false);
+  end if;
+  if p_cumple is not null and not club_cumple_ok(p_cumple) then
+    return jsonb_build_object('ok', false, 'porque', 'Esa fecha de cumpleaños no parece correcta.');
+  end if;
+  insert into log (accion, detalle, quien)
+  values ('club: corregir cumpleaños',
+          'tarjeta ' || c.codigo || ' · cumple: ' || coalesce(to_char(c.cumple, 'DD/MM/YYYY'), '—') ||
+          ' → ' || coalesce(to_char(p_cumple, 'DD/MM/YYYY'), '—'),
+          nullif(trim(coalesce(p_quien, '')), ''));
+  update club_clientes set cumple = p_cumple where id = c.id;
+  return jsonb_build_object('ok', true, 'cumple', p_cumple, 'cambio', true);
+end;
+$function$;
+
+-- club_sumar_compra: igual que en la base; entra con el PIN o con la llave de una caja.
+CREATE OR REPLACE FUNCTION public.club_sumar_compra(p_pin text, p_codigo text, p_local text, p_vendedor text, p_ticket text DEFAULT NULL::text, p_importe numeric DEFAULT NULL::numeric, p_confirmar boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c      v_club_clientes%rowtype;
+  vieja  club_movimientos%rowtype;
+  porpto numeric;
+  tope   numeric;
+  f      jsonb;
+  gana   integer;
+  nid    bigint;
+begin
+  if not club_caja_acceso(p_pin) then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  /* Una caja habilitada cobra en SU local y en ningún otro (SQL 49). */
+  if club_caja_local(p_pin) is not null and upper(trim(coalesce(p_local, ''))) <> upper(club_caja_local(p_pin)) then
+    raise exception 'Esta caja está habilitada para %. Para cobrar en otro local hace falta su propia caja.', initcap(lower(club_caja_local(p_pin)));
+  end if;
+
+  select * into c from v_club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null;
+  if not found then
+    return jsonb_build_object('sumado', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+  if length(trim(coalesce(p_local, ''))) = 0 then
+    raise exception 'Falta el local.';
+  end if;
+
+  if p_importe is null or p_importe <= 0 then
+    return jsonb_build_object('sumado', false,
+      'porque', 'Falta el importe de la compra. Los puntos salen de ahí.');
+  end if;
+
+  if (select coalesce(valor, 'si') from club_reglas where clave = 'exige_ticket') = 'si'
+     and length(trim(coalesce(p_ticket, ''))) = 0 then
+    return jsonb_build_object('sumado', false,
+      'porque', 'Falta el número de ticket de BlueSoft.');
+  end if;
+
+  /* El tope. No bloquea: pregunta. */
+  select nullif(valor, '')::numeric into tope from club_reglas where clave = 'tope_importe';
+  if tope is not null and p_importe > tope and not coalesce(p_confirmar, false) then
+    return jsonb_build_object('sumado', false, 'revisar', true,
+      'porque', 'Son ' || replace(to_char(p_importe, 'FM999,999,999'), ',', '.') ||
+                ' pesos. Si está bien, confirmalo.');
+  end if;
+
+  /* Mismo ticket y mismo local, sin anular: casi siempre es el mismo vendedor
+     apretando dos veces. `p_confirmar` es uno solo para las dos preguntas
+     —el monto grande y el ticket repetido—; ver el 13. */
+  if length(trim(coalesce(p_ticket, ''))) > 0 and not coalesce(p_confirmar, false) then
+    select * into vieja from club_movimientos
+     where anulado is null
+       and upper(trim(ticket)) = upper(trim(p_ticket))
+       and upper(trim(coalesce(local, ''))) = upper(trim(p_local))
+     limit 1;
+    if found then
+      return jsonb_build_object('sumado', false, 'duplicado', true,
+        'porque', 'Ese ticket ya está cargado en ' || trim(p_local) || '.',
+        'anterior', jsonb_build_object('cuando', vieja.creado, 'vendedor', vieja.vendedor,
+                                       'importe', vieja.importe, 'puntos', vieja.puntos));
+    end if;
+  end if;
+
+  select nullif(valor, '')::numeric into porpto from club_reglas where clave = 'pesos_por_punto';
+  porpto := coalesce(porpto, 100);
+
+  f := club_factor(c.id);
+  /* Se redondea una sola vez, al final. */
+  gana := floor((p_importe / porpto) * (f->>'total')::numeric);
+
+  insert into club_movimientos (cliente, tipo, puntos, local, vendedor, ticket, importe, obs)
+  values (c.id, 'compra', gana, trim(p_local),
+          nullif(trim(coalesce(p_vendedor, '')), ''),
+          nullif(trim(coalesce(p_ticket, '')), ''),
+          p_importe,
+          /* Por qué sumó lo que sumó, anotado en el movimiento. Tres meses
+             después, "¿por qué esta compra me dio el doble?" tiene respuesta
+             aunque los puntos dobles ya no existan. */
+          case when (f->>'extra')::numeric > 1 then
+            (f->>'motivo') || ' ' || replace(trim_scale((f->>'extra')::numeric)::text, '.', ',') || 'x'
+          end)
+  returning id into nid;
+
+  return jsonb_build_object(
+    'sumado', true, 'movimiento', nid,
+    'nombre', c.nombre,
+    'gana', gana,
+    'multiplica', (f->>'total')::numeric,
+    'nivel', c.nivel,
+    'motivo', f->>'motivo',
+    'extra', (f->>'extra')::numeric,
+    'puntos', c.puntos + gana);
+end;
+$function$;
+
+-- club_canjear_premio: igual que en la base; entra con el PIN o con la llave de una caja.
+CREATE OR REPLACE FUNCTION public.club_canjear_premio(p_pin text, p_codigo text, p_premio smallint, p_local text, p_vendedor text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  cid    bigint;
+  c      v_club_clientes%rowtype;
+  pr     club_premios%rowtype;
+  usados integer;
+begin
+  if not club_caja_acceso(p_pin) then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  /* Una caja habilitada cobra en SU local y en ningún otro (SQL 49). */
+  if club_caja_local(p_pin) is not null and upper(trim(coalesce(p_local, ''))) <> upper(club_caja_local(p_pin)) then
+    raise exception 'Esta caja está habilitada para %. Para cobrar en otro local hace falta su propia caja.', initcap(lower(club_caja_local(p_pin)));
+  end if;
+
+  select id into cid from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null
+   for update;
+  if cid is null then
+    return jsonb_build_object('canjeado', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+
+  select * into pr from club_premios where id = p_premio and activo;
+  if not found then
+    return jsonb_build_object('canjeado', false, 'porque', 'Ese premio no está disponible.');
+  end if;
+
+  select * into c from v_club_clientes where id = cid;
+
+  if c.puntos < pr.puntos then
+    return jsonb_build_object('canjeado', false,
+      'porque', 'Le faltan ' || (pr.puntos - c.puntos)::text || ' puntos.');
+  end if;
+
+  if pr.limite_anual is not null then
+    select count(*) into usados from club_movimientos
+     where cliente = cid and tipo = 'canje' and premio = pr.id
+       and anulado is null and creado > now() - interval '12 months';
+    if usados >= pr.limite_anual then
+      return jsonb_build_object('canjeado', false,
+        'porque', 'Ya se llevó ' || pr.nombre || ' este año.');
+    end if;
+  end if;
+
+  insert into club_movimientos (cliente, tipo, puntos, premio, local, vendedor, obs)
+  values (cid, 'canje', -pr.puntos, pr.id,
+          nullif(trim(coalesce(p_local, '')), ''),
+          nullif(trim(coalesce(p_vendedor, '')), ''),
+          pr.nombre);
+
+  return jsonb_build_object('canjeado', true, 'premio', pr.nombre,
+                            'gasto', pr.puntos, 'puntos', c.puntos - pr.puntos);
+end;
+$function$;
+
+-- club_entregar_cumple: igual que en la base; entra con el PIN o con la llave de una caja.
+CREATE OR REPLACE FUNCTION public.club_entregar_cumple(p_pin text, p_codigo text, p_local text, p_vendedor text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  cid bigint;
+  r   jsonb;
+  cos numeric;
+begin
+  if not club_caja_acceso(p_pin) then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  /* Una caja habilitada cobra en SU local y en ningún otro (SQL 49). */
+  if club_caja_local(p_pin) is not null and upper(trim(coalesce(p_local, ''))) <> upper(club_caja_local(p_pin)) then
+    raise exception 'Esta caja está habilitada para %. Para cobrar en otro local hace falta su propia caja.', initcap(lower(club_caja_local(p_pin)));
+  end if;
+
+  /* El candado, como en el canje: dos locales marcándolo a la vez no le dan
+     dos regalos. */
+  select id into cid from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null
+   for update;
+  if cid is null then
+    return jsonb_build_object('entregado', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+
+  r := club_regalo_cumple(cid);
+  if not (r->>'vale')::boolean then
+    return jsonb_build_object('entregado', false,
+      'porque', 'No está en su semana de cumpleaños (o no tiene el cumple cargado).');
+  end if;
+  if (r->>'usado')::boolean then
+    return jsonb_build_object('entregado', false, 'porque', 'Ya usó su regalo de este cumpleaños.');
+  end if;
+
+  select g.costo into cos from club_regalos_cumple g
+    join v_club_clientes v on v.nivel = g.nivel where v.id = cid;
+
+  insert into club_movimientos (cliente, tipo, concepto, puntos, local, vendedor, obs, costo)
+  values (cid, 'canje', 'regalo_cumple', 0,
+          nullif(trim(coalesce(p_local, '')), ''),
+          nullif(trim(coalesce(p_vendedor, '')), ''),
+          r->>'texto', cos);
+
+  return jsonb_build_object('entregado', true, 'texto', r->>'texto', 'tipo', r->>'tipo');
+end;
+$function$;
+
+select 'listo: las cajas habilitadas cobran sin PIN' as "SQL 49";

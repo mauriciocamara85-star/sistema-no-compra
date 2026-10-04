@@ -772,6 +772,30 @@ var base = {
       return funcion('club_premio_foto', { p_pin: pin, p_id: id, p_url: url || null });
     },
 
+    /* ── Las cajas habilitadas (SQL 49, 04/10/2026) ──
+       Un aparato del local habilitado cobra sin PIN: guarda una llave
+       ("caja_…") que la caja manda en lugar del PIN. Se habilita con un
+       enlace de un solo uso o, en el lugar, con el PIN. */
+    /** Un enlace para un local: sirve una vez y vence a las 24 horas. Pide PIN. */
+    cajaEnlace: function (pin, local) {
+      return funcion('club_caja_enlace', { p_pin: pin, p_local: local });
+    },
+    /** Usar un enlace: devuelve la llave de esta caja. Sin PIN. */
+    cajaActivar: function (codigo, nombre) {
+      return funcion('club_caja_activar', { p_codigo: codigo, p_nombre: nombre || null });
+    },
+    /** Habilitar ESTE aparato, con el PIN. */
+    cajaHabilitar: function (pin, local, nombre) {
+      return funcion('club_caja_habilitar', { p_pin: pin, p_local: local, p_nombre: nombre || null });
+    },
+    /** Las cajas habilitadas y los locales. Pide PIN. */
+    cajasListar: function (pin) {
+      return funcion('club_cajas_listar', { p_pin: pin });
+    },
+    cajaDeshabilitar: function (pin, id) {
+      return funcion('club_caja_deshabilitar', { p_pin: pin, p_id: id });
+    },
+
     /** Todo el tablero de "Club · Números" para un período y un local
         (vacío = todos). Fechas como '2026-09-28'; null = últimos 30 días. */
     estadisticas: function (pin, desde, hasta, local) {

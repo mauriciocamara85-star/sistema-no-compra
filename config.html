@@ -560,6 +560,10 @@
       </div>
       <div class="club-grupo">
         <h2 class="club-grupo-tit">Conexiones</h2>
+        <a class="club-op" href="#club/cajas" data-sec="cajas">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+          <span class="club-op-txt"><b>Cajas habilitadas</b><span data-res="cajas">…</span></span>
+        </a>
         <a class="club-op" href="#club/resenas" data-sec="resenas">
           <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z"/></svg></span>
           <span class="club-op-txt"><b>Reseñas por local</b><span data-res="resenas">…</span></span>
@@ -671,6 +675,23 @@
         <p class="bloque-sub">El día siguiente a una compra le pedimos la reseña al cliente, con el enlace del local donde compró. A todos por igual y sin nada a cambio: son las reglas de Google. Una vez cada 3 meses como máximo.</p>
       </div>
       <div class="bloque" id="cajaResenas"><div id="resenasCuerpo"></div></div>
+    </div>
+
+    <div class="club-pant" data-sec="cajas" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Cajas habilitadas</h2>
+        <p class="bloque-sub">Los aparatos de los locales que cobran, suman puntos, buscan socios y entregan el regalo de cumple sin PIN. Cada uno cobra sólo en su local. Lo demás sigue pidiendo tu PIN.</p>
+      </div>
+      <div class="bloque">
+        <h3 class="bloque-tit">Habilitar una caja</h3>
+        <p class="bloque-sub">Creá un enlace y mandáselo al encargado: lo abre en la compu o el celular con el que cobran y queda habilitado. Sirve una sola vez y, si nadie lo usa, vence a las 24 horas. Un enlace por aparato.</p>
+        <div id="cajasNueva"></div>
+      </div>
+      <div class="bloque">
+        <h3 class="bloque-tit">Las que están habilitadas</h3>
+        <div id="cajasCuerpo"></div>
+      </div>
     </div>
 
     <div class="club-pant" data-sec="integraciones" hidden>
@@ -806,6 +827,7 @@
     pintarPremios();
     pintarRegalos();
     pintarResenas();
+    pintarCajas();
     pintarMulti();
     pintarMisiones();
     pintarIntegraciones();
@@ -1924,7 +1946,7 @@
      pantalla de Premios. Así el "atrás" del celular vuelve al menú, y un
      enlace (el de los QR de reseñas, el de Estadísticas) puede abrir una
      sección directo. */
-  var SECCIONES_CLUB = ['niveles', 'premios', 'cumple', 'misiones', 'promos', 'extra', 'avisos', 'resenas', 'integraciones'];
+  var SECCIONES_CLUB = ['niveles', 'premios', 'cumple', 'misiones', 'promos', 'extra', 'avisos', 'cajas', 'resenas', 'integraciones'];
   var seccionAbierta = '';
 
   function rutaClub() {
@@ -2193,6 +2215,141 @@
   /* ═══ Reseñas en Google ════════════════════════════════════════════════ */
 
   var resenasLista = [];
+
+  /* ── Las cajas habilitadas (SQL 49, 04/10/2026) ── */
+  var cajasLocales = [];
+  function pintarCajas() {
+    var caja = $('cajasCuerpo'), nueva = $('cajasNueva');
+    if (!caja || !nueva) { return; }
+    if (!pinPromo()) {
+      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      nueva.innerHTML = '';
+      return;
+    }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.cajasListar(pinPromo())
+      .then(function (r) {
+        var lista = (r && r.cajas) || [];
+        cajasLocales = (r && r.locales) || [];
+        var locs = {};
+        lista.forEach(function (c) { locs[c.local] = 1; });
+        ponerResumen('cajas', lista.length
+          ? cuantos(lista.length, 'caja', 'cajas') + ' en ' + cuantos(Object.keys(locs).length, 'local', 'locales')
+          : 'Ninguna todavía: hoy cobran con el PIN', !lista.length);
+        var mia = '';
+        try { mia = localStorage.getItem('nc_caja_id') || ''; } catch (e) {}
+        var nombreLocal = function (cod) {
+          var l = cajasLocales.filter(function (x) { return x.codigo === cod; })[0];
+          return l ? l.nombre : cod;
+        };
+        caja.innerHTML = lista.length ? lista.map(function (c) {
+          return '<div class="promo-fila">' +
+            '<div class="promo-fila-txt"><b>' + esc(nombreLocal(c.local)) + (c.nombre ? ' · ' + esc(c.nombre) : '') +
+              (String(c.id) === mia ? ' <span class="pill pill-ok">Este aparato</span>' : '') + '</b>' +
+              '<span>Habilitada el ' + esc(fechaHora(c.creado)) + (c.via === 'pin' ? ' con el PIN' : ' con un enlace') +
+              (c.ultimo_uso ? ' · usada por última vez el ' + esc(fechaHora(c.ultimo_uso)) : ' · todavía no cobró') + '</span></div>' +
+            '<button type="button" class="btn btn-sec btn-chico" data-caja-baja="' + c.id + '">Deshabilitar</button>' +
+          '</div>';
+        }).join('') : '<p class="bloque-sub">Ninguna todavía.</p>';
+        Array.prototype.forEach.call(caja.querySelectorAll('[data-caja-baja]'), function (b) {
+          b.onclick = function () {
+            if (!confirm('¿Deshabilitar esta caja? Va a volver a pedir el PIN hasta que la habilites de nuevo.')) { return; }
+            b.disabled = true;
+            base.club.cajaDeshabilitar(pinPromo(), +b.dataset.cajaBaja)
+              .then(function (x) {
+                if (!x || !x.ok) { avisar('err', (x && x.porque) || 'No se pudo.'); return; }
+                if (b.dataset.cajaBaja === mia) {
+                  try { localStorage.removeItem('nc_caja'); localStorage.removeItem('nc_caja_local'); localStorage.removeItem('nc_caja_id'); } catch (e) {}
+                }
+                avisar('ok', 'Caja deshabilitada.');
+                pintarCajas();
+              })
+              .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo.'); b.disabled = false; });
+          };
+        });
+        pintarCajaNueva();
+      })
+      .catch(function (e) {
+        var m = (e && e.message) || '';
+        caja.innerHTML = '<p class="bloque-sub">' + esc(/club_cajas_listar|PGRST202|could not find the function/i.test(m)
+          ? 'Falta correr el SQL 49 en Supabase.' : (m || 'No se pudo traer la lista.')) + '</p>';
+        nueva.innerHTML = '';
+      });
+  }
+
+  function pintarCajaNueva() {
+    var nueva = $('cajasNueva');
+    var actual = '';
+    try { actual = localStorage.getItem('nc_local') || ''; } catch (e) {}
+    nueva.innerHTML =
+      '<div class="campos">' +
+        '<div class="campo ancho"><label for="cajaLocal">Local</label><select id="cajaLocal">' +
+          '<option value="">Elegí el local…</option>' +
+          cajasLocales.map(function (l) {
+            return '<option value="' + esc(l.codigo) + '"' + (l.codigo === actual ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
+          }).join('') +
+        '</select></div>' +
+        '<div class="campo"><button type="button" class="btn btn-pri" id="cajaEnlace">Crear el enlace</button></div>' +
+        '<div class="campo"><button type="button" class="btn btn-sec" id="cajaAca">Habilitar este aparato</button></div>' +
+      '</div>' +
+      '<div id="cajaEnlaceListo"></div>';
+    var local = function () {
+      var v = $('cajaLocal').value;
+      if (!v) { avisar('err', 'Elegí el local.'); $('cajaLocal').focus(); }
+      return v;
+    };
+    $('cajaEnlace').onclick = function () {
+      var loc = local(); if (!loc) { return; }
+      var b = $('cajaEnlace'); b.disabled = true;
+      base.club.cajaEnlace(pinPromo(), loc)
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo crear.'); return; }
+          var url = location.origin + location.pathname.replace(/[^\/]*$/, '') + 'caja.html?habilitar=' + r.codigo;
+          var nom = (cajasLocales.filter(function (x) { return x.codigo === r.local; })[0] || {}).nombre || r.local;
+          var texto = 'Hola! Este es el enlace para habilitar la caja de ' + nom + ' en el Club VDH. ' +
+                      'Abrilo en la compu o el celular con el que cobran: sirve una sola vez y vence en 24 horas.\n' + url;
+          $('cajaEnlaceListo').innerHTML =
+            '<div style="margin-top:14px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)">' +
+              '<p class="bloque-sub" style="margin-top:0"><b>Enlace para ' + esc(nom) + '</b> — sirve una vez; si nadie lo usa, vence en 24 horas.</p>' +
+              '<input type="url" id="cajaUrl" readonly value="' + esc(url) + '" style="margin-top:6px">' +
+              '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">' +
+                '<a class="btn btn-pri btn-chico" target="_blank" rel="noopener" href="https://wa.me/?text=' + encodeURIComponent(texto) + '">Mandar por WhatsApp</a>' +
+                '<button type="button" class="btn btn-sec btn-chico" id="cajaCopiar">Copiar</button>' +
+              '</div>' +
+            '</div>';
+          $('cajaCopiar').onclick = function () {
+            var i = $('cajaUrl'); i.select();
+            (navigator.clipboard ? navigator.clipboard.writeText(url) : Promise.reject())
+              .catch(function () { try { document.execCommand('copy'); } catch (e) {} })
+              .then(function () { avisar('ok', 'Copiado.'); });
+          };
+          /* Sin volver a dibujar la pantalla: se borraría el enlace recién creado. */
+        })
+        .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo crear.'); })
+        .then(function () { if ($('cajaEnlace')) { $('cajaEnlace').disabled = false; } });
+    };
+    $('cajaAca').onclick = function () {
+      var loc = local(); if (!loc) { return; }
+      var nom = (cajasLocales.filter(function (x) { return x.codigo === loc; })[0] || {}).nombre || loc;
+      if (!confirm('¿Habilitar ESTE aparato como caja de ' + nom + '? Va a cobrar sin PIN en ' + nom + '.')) { return; }
+      var ua = navigator.userAgent || '';
+      var aparato = (/Mobi|Android|iPhone/i.test(ua) ? 'Celular' : 'Compu') +
+                    (/iPhone|iPad|Mac OS/i.test(ua) ? ' Apple' : /Android/i.test(ua) ? ' Android' : /Windows/i.test(ua) ? ' Windows' : '');
+      base.club.cajaHabilitar(pinPromo(), loc, aparato)
+        .then(function (r) {
+          if (!r || !r.ok || !r.llave) { avisar('err', (r && r.porque) || 'No se pudo.'); return; }
+          try {
+            localStorage.setItem('nc_caja', r.llave);
+            localStorage.setItem('nc_caja_local', r.local);
+            localStorage.setItem('nc_caja_id', String(r.id));
+            localStorage.setItem('nc_local', r.local);
+          } catch (e) {}
+          avisar('ok', 'Listo: este aparato cobra sin PIN en ' + nom + '.');
+          pintarCajas();
+        })
+        .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo.'); });
+    };
+  }
 
   function pintarResenas() {
     var caja = $('resenasCuerpo');

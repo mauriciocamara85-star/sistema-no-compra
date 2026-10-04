@@ -185,6 +185,12 @@
     letter-spacing: 6px; font-variant-numeric: tabular-nums; margin-bottom: 12px;
   }
   .porton-msg { margin-top: 14px; font-size: 14px; color: var(--warn-txt); line-height: 1.5; }
+  /* La caja habilitada, sin PIN (04/10/2026): corregir datos, anular y las
+     pestañas de números son del administrador. */
+  body.solo-caja #btnEditar, body.solo-caja [data-anular],
+  body.solo-caja .pestana[data-pestana="socios"], body.solo-caja .pestana[data-pestana="movimientos"],
+  body.solo-caja .pestana[data-pestana="estadisticas"] { display: none !important; }
+  .porton-nota { font-size: 13px; color: var(--txt-3); margin-top: -4px; }
 </style>
 </head>
 <body>
@@ -198,6 +204,7 @@
   </div>
   <h2>Club en caja</h2>
   <p>Acá se suman las compras del Club. Poné el PIN para entrar.</p>
+  <p class="porton-nota">¿Es la caja del local? Abrí en este aparato el enlace que te mandó el encargado y no vuelve a pedir el PIN.</p>
   <input type="password" id="pinCaja" inputmode="numeric" maxlength="8" placeholder="PIN"
          autocomplete="off" onkeydown="if(event.key==='Enter') entrar()">
   <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Entrar</button>
@@ -297,7 +304,21 @@
   var K_PIN = 'nc_pin', K_LOCAL = 'nc_local', K_VENDEDOR = 'nc_vendedor';
   var local = '', vendedor = '', socio = null;
 
-  function pinGuardado() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
+  /* La llave de una caja habilitada (SQL 49): queda en el aparato y va en
+     lugar del PIN. El PIN de verdad, si alguien lo pone, manda. */
+  var K_CAJA = 'nc_caja', K_CAJA_LOCAL = 'nc_caja_local';
+  function llaveCaja() { try { return localStorage.getItem(K_CAJA) || ''; } catch (e) { return ''; } }
+  function pinDeVerdad() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
+  function soloCaja() { return !pinDeVerdad() && !!llaveCaja(); }
+  function pinGuardado() { return pinDeVerdad() || llaveCaja(); }
+  function olvidarCaja() { try { localStorage.removeItem(K_CAJA); localStorage.removeItem(K_CAJA_LOCAL); localStorage.removeItem('nc_caja_id'); } catch (e) {} }
+  /* El nombre del aparato, para reconocerlo en Configuración. */
+  function nombreAparato() {
+    var ua = navigator.userAgent || '';
+    var que = /Mobi|Android|iPhone/i.test(ua) ? 'Celular' : /iPad|Tablet/i.test(ua) ? 'Tablet' : 'Compu';
+    var so = /iPhone|iPad|Mac OS/i.test(ua) ? 'Apple' : /Android/i.test(ua) ? 'Android' : /Windows/i.test(ua) ? 'Windows' : '';
+    return que + (so ? ' ' + so : '');
+  }
   function guardarPin(v) {
     try { if (v) sessionStorage.setItem(K_PIN, v); else sessionStorage.removeItem(K_PIN); } catch (e) {}
   }
@@ -328,6 +349,7 @@
     $('porton').hidden = true;
     $('marco').hidden = false;
     document.body.classList.add('hay-rail');
+    document.body.classList.toggle('solo-caja', soloCaja());
 
     if (!local) { $('cajaSinLocal').hidden = false; return; }
     $('quienLinea').innerHTML = '<b>' + esc(bonito(local)) + '</b>' +
@@ -870,7 +892,19 @@
   try {
     local = localStorage.getItem(K_LOCAL) || '';
     vendedor = localStorage.getItem(K_VENDEDOR) || '';
+    /* Una caja habilitada cobra en SU local, aunque en Carga hayan elegido otro. */
+    if (llaveCaja() && localStorage.getItem(K_CAJA_LOCAL)) { local = localStorage.getItem(K_CAJA_LOCAL); }
   } catch (e) {}
+
+  /* Con la llave sola, "PIN incorrecto" en algo del administrador se dice
+     como es. */
+  var avisarComun = window.avisar;
+  window.avisar = function (tipo, mensaje) {
+    if (tipo === 'err' && soloCaja() && /PIN incorrecto/.test(mensaje || '')) {
+      mensaje = 'Eso lo hace el administrador, con el PIN.';
+    }
+    return avisarComun.apply(this, [tipo, mensaje]);
+  };
 
   $('btnBuscar').onclick = buscar;
   $('clave').onkeydown = function (e) { if (e.key === 'Enter') buscar(); };
@@ -880,11 +914,48 @@
      PIN viejo tiene que devolver al portón, no abrir algo que después falla
      en cada clic. */
   (function () {
+    /* El enlace de un solo uso: caja.html?habilitar=… */
+    var m = /[?&]habilitar=([0-9a-fA-F]{24})\b/.exec(location.search);
+    if (m) {
+      try { history.replaceState(null, '', location.pathname); } catch (e) {}
+      $('portonMsg').hidden = false;
+      $('portonMsg').textContent = 'Habilitando esta caja…';
+      base.club.cajaActivar(m[1], nombreAparato())
+        .then(function (r) {
+          if (!r || !r.ok || !r.llave) {
+            $('portonMsg').textContent = (r && r.porque) || 'No se pudo habilitar esta caja.';
+            return;
+          }
+          try {
+            localStorage.setItem(K_CAJA, r.llave);
+            localStorage.setItem(K_CAJA_LOCAL, r.local);
+            localStorage.setItem('nc_caja_id', String(r.id));
+            localStorage.setItem(K_LOCAL, r.local);
+          } catch (e) {}
+          local = r.local;
+          $('portonMsg').hidden = true;
+          abrir();
+          avisar('ok', 'Listo: esta caja quedó habilitada para ' + bonito(r.local) + '. Ya no pide el PIN.');
+        })
+        .catch(function (e) {
+          $('portonMsg').textContent = (e && e.message) || 'No se pudo habilitar esta caja. Probá de nuevo.';
+        });
+      return;
+    }
     var pin = pinGuardado();
     if (!pin) return;
     base.club.buscar(pin, '___')
       .then(abrir)
-      .catch(function () { guardarPin(''); });
+      .catch(function () {
+        if (soloCaja()) {
+          /* La deshabilitaron desde Configuración. */
+          olvidarCaja();
+          $('portonMsg').hidden = false;
+          $('portonMsg').textContent = 'Esta caja ya no está habilitada. Pedile al encargado un enlace nuevo.';
+        } else {
+          guardarPin('');
+        }
+      });
   })();
 
   iniciarPWA();
