@@ -11723,3 +11723,102 @@ end;
 $function$;
 
 select 'listo: las cajas habilitadas cobran sin PIN' as "SQL 49";
+
+
+-- ─────────────────────────── PARTE 50 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH Club · LA MISIÓN DE LA BILLETERA: "GUARDÁ TU TARJETA EN LA BILLETERA"
+--
+-- Correr en el editor SQL de Supabase, DESPUÉS del 49.
+--
+-- Pedido de Mauricio (04/10/2026): una misión que da puntos por guardar la
+-- tarjeta del Club en la Billetera de Google.
+--
+-- Los puntos se dan SÓLO si la guardó de verdad: tocar el botón y cancelar
+-- no da nada. Lo confirma Google (el pase "tiene usuarios"): la app le
+-- pregunta a la Edge Function club-wallet { accion: 'comprobar' } al volver
+-- de la Billetera, y si Google dice que sí, la función llama a
+-- club_wallet_guardada, que lo anota y paga la misión una sola vez.
+--
+-- La misión arranca APAGADA: mientras la Billetera esté en modo prueba sólo
+-- las cuentas de prueba pueden guardar el pase. Se prende en Configuración →
+-- Misiones cuando Google apruebe la publicación; al prenderla, los que ya la
+-- tenían guardada (y Google lo confirmó) cobran solos.
+--
+-- En iPhone no aparece (Google Wallet es de Android). Con Apple Wallet,
+-- más adelante, la misma misión puede valer para las dos.
+--
+--   club_wallet.guardada        cuándo confirmó Google que la guardó
+--   club_wallet_guardada        la anota y paga la misión (sólo la Edge Function)
+--   club_misiones_revisar       + la Billetera, para cuando se prende la misión
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table club_wallet add column if not exists guardada timestamptz;
+comment on column club_wallet.guardada is
+  'Cuándo confirmó Google que el pase está guardado en algún celular (hasUsers). Lo anota club_wallet_guardada.';
+
+/* Lo que hace la app al tocarla: 'wallet' abre la Billetera. */
+alter table club_misiones drop constraint if exists club_misiones_accion_check;
+alter table club_misiones add constraint club_misiones_accion_check
+  check (accion = any (array['datos', 'avisos', 'instalar', 'comprar', 'wallet']));
+
+insert into club_misiones (clave, titulo, texto, puntos, activa, orden, accion)
+values ('wallet', 'Guardá tu tarjeta en la Billetera',
+        'Agregala a la Billetera de Google y mostrala en la caja sin abrir la app.', 150, false, 4, 'wallet')
+on conflict (clave) do nothing;
+update club_misiones set orden = 5 where clave = 'primera_compra';
+update club_misiones set orden = 6 where clave = 'finde';
+
+/* Google confirmó que el socio guardó su pase: se anota (la primera vez) y
+   se paga la misión si está prendida y no la cobró. Sólo la llama la Edge
+   Function club-wallet, con la llave de servicio: nadie de afuera puede
+   decir "la guardé". */
+create or replace function club_wallet_guardada(p_cliente bigint)
+returns jsonb language plpgsql security definer set search_path = public as $
+declare
+  dio boolean;
+begin
+  update club_wallet set guardada = coalesce(guardada, now()) where cliente = p_cliente;
+  dio := club_mision_dar(p_cliente, 'wallet');
+  return jsonb_build_object('ok', true, 'dio', dio,
+    'puntos', case when dio then (select puntos from club_misiones where clave = 'wallet') end);
+end;
+$;
+revoke all on function club_wallet_guardada(bigint) from public, anon, authenticated;
+grant execute on function club_wallet_guardada(bigint) to service_role;
+
+CREATE OR REPLACE FUNCTION public.club_misiones_revisar(p_cliente bigint)
+ RETURNS integer
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c club_clientes%rowtype;
+  n integer := 0;
+begin
+  select * into c from club_clientes where id = p_cliente and baja is null;
+  if not found then return 0; end if;
+
+  if nullif(trim(coalesce(c.mail, '')), '') is not null and c.cumple is not null then
+    if club_mision_dar(c.id, 'perfil') then n := n + 1; end if;
+  end if;
+  if exists (select 1 from club_suscripciones s where s.cliente = c.id and s.muerto is null) then
+    if club_mision_dar(c.id, 'avisos') then n := n + 1; end if;
+  end if;
+  if exists (select 1 from club_movimientos m where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null) then
+    if club_mision_dar(c.id, 'primera_compra') then n := n + 1; end if;
+  end if;
+  if exists (select 1 from club_movimientos m where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null
+                and extract(isodow from (m.creado at time zone 'America/Argentina/Buenos_Aires')) in (6, 7)) then
+    if club_mision_dar(c.id, 'finde') then n := n + 1; end if;
+  end if;
+  /* La Billetera (SQL 50): si Google ya confirmó que la guardó. */
+  if exists (select 1 from club_wallet w where w.cliente = c.id and w.guardada is not null) then
+    if club_mision_dar(c.id, 'wallet') then n := n + 1; end if;
+  end if;
+  return n;
+end;
+$function$;
+
+select 'listo: la misión de la Billetera (apagada hasta que Google apruebe)' as "SQL 50";

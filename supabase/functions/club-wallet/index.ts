@@ -22,6 +22,11 @@
  *       que la llame cualquiera no le sirve a nadie.
  *   { accion: 'clase' }           Vuelve a mandar el diseño de la tarjeta
  *       (colores, logo, enlace). Se usa al cambiarlo acá.
+ *   { accion: 'comprobar', codigo }  ¿La guardó de verdad? (04/10/2026,
+ *       la misión "Guardá tu tarjeta en la Billetera"). Google dice si el
+ *       pase de ese socio está en algún celular (hasUsers). Si está, se anota
+ *       en club_wallet y se paga la misión, una sola vez (SQL 50). Tocar el
+ *       botón y cancelar no da puntos: los da Google al confirmar.
  *
  * La llave va en el secreto GOOGLE_WALLET_KEY (el JSON entero de la cuenta
  * id-vdh-wallet del proyecto vdh-club). Nunca en este archivo: el
@@ -225,6 +230,26 @@ async function enlace(codigo: string, k: Llave) {
   return { ok: true, url: 'https://pay.google.com/gp/v/save/' + jwt, ver: 'https://pay.google.com/gp/v/object/' + o.id };
 }
 
+async function comprobar(codigo: string, k: Llave) {
+  const r = await base('rpc/club_wallet_socio', { method: 'POST', body: JSON.stringify({ p_codigo: codigo }) });
+  const s: Socio | null = r.ok ? await r.json() : null;
+  if (!s || !s.cliente) { return { ok: false, porque: 'No encontramos esa tarjeta.' }; }
+  const tok = await permiso(k);
+  const o = await google(tok, 'GET', '/loyaltyObject/' + objetoId(s.cliente));
+  if (o.status === 404) { return { ok: true, guardada: false }; }
+  if (!o.ok) { throw new Error('Google no contestó el pase: ' + JSON.stringify(o.cuerpo).slice(0, 300)); }
+  /* hasUsers lo pone Google: true si el pase está guardado en algún
+     celular. Si no viene, no está. */
+  if (!o.cuerpo?.hasUsers) { return { ok: true, guardada: false }; }
+  /* Anotarla y pagar la misión (si está prendida y no la cobró). Sin el
+     SQL 50 corrido, la función no existe: se dice guardada, sin puntos. */
+  const g = await base('rpc/club_wallet_guardada', { method: 'POST', body: JSON.stringify({ p_cliente: s.cliente }) });
+  const j = g.ok ? await g.json() : null;
+  /* anotada: quedó en la base. Hasta que lo esté, la app vuelve a
+     preguntar (si no, uno que la guardó antes del SQL 50 no cobraría nunca). */
+  return { ok: true, guardada: true, anotada: !!j?.ok, dio: !!j?.dio, puntos: j?.puntos ?? null };
+}
+
 async function actualizar(k: Llave) {
   const r = await base('rpc/club_wallet_pendientes', { method: 'POST', body: '{}' });
   const lista: Socio[] = r.ok ? await r.json() : [];
@@ -257,6 +282,7 @@ Deno.serve(async (req) => {
   try {
     const p = await req.json().catch(() => ({}));
     if (p.accion === 'enlace') { return responder(await enlace(String(p.codigo ?? '').replace(/\D/g, ''), k)); }
+    if (p.accion === 'comprobar') { return responder(await comprobar(String(p.codigo ?? '').replace(/\D/g, ''), k)); }
     if (p.accion === 'actualizar') { return responder(await actualizar(k)); }
     if (p.accion === 'clase') { await asegurarClase(await permiso(k), true); return responder({ ok: true }); }
     return responder({ ok: false, porque: 'Acción desconocida.' }, 400);
