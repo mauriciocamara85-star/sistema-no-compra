@@ -1321,6 +1321,9 @@ function deLaBase_(f) {
     contactamos: f.contactado ? 'si' : '',
     responsable: f.responsable || '',
     fecha1:      f.contacto1_fecha ? fechaCorta_(f.contacto1_fecha) : '',
+    /* La misma fecha sin formato: el tablero cuenta los días desde que se le
+       escribió, para marcar a los que no contestan (07/10/2026). */
+    fecha1Iso:   f.contacto1_fecha || '',
     resultado1:  f.contacto1_result || '',
     estado:      f.estado || '',
     obsSeguim:   f.obs_seguimiento || '',

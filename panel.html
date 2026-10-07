@@ -246,6 +246,94 @@
      en que se completan: qué se llevó, por cuánto, y después el comentario. */
   .seg-campos .campo.venta input { width: 100%; }
 
+  /* ══ El tablero (07/10/2026) ══════════════════════════════════════════
+     Nuestro CRM: una columna por estado, como Kommo. En la PC se ven todas
+     y las tarjetas se arrastran; en el celular, una columna por vez y se
+     elige con las pastillas de arriba (las mismas que antes filtraban). */
+  .tablero { display: block; }
+  .col { display: none; }
+  .col.sel { display: block; }
+  .col-cab { display: none; }
+  .col-vacia { padding: 26px 12px; text-align: center; font-size: 13px; color: var(--txt-3);
+               border: 1.5px dashed var(--line); border-radius: var(--r-sm); }
+
+  .tj { position: relative; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--line);
+        border-radius: var(--r-sm); padding: 11px 12px 12px; margin-bottom: 9px; box-shadow: var(--sombra);
+        cursor: pointer; animation: aparecer .3s var(--curva) backwards; }
+  .tj:hover { border-color: var(--line-alta); }
+  .tj.es-pend { border-left-color: var(--warn); }
+  .tj.urgente, .tj.frio { border-left-color: var(--bad); }
+  .tj.es-ok { border-left-color: var(--ok); }
+  .tj.arrastrando { opacity: .4; }
+  .tj-top { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
+  .tj-top .pill { font-size: 11px; padding: 2px 8px; }
+  .tj-dias { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--txt-3); white-space: nowrap; }
+  .tj-dias.viejo { color: var(--bad-txt); }
+  .tj-nom { display: block; font-size: 14.5px; font-weight: 700; color: var(--txt); line-height: 1.3; }
+  .tj-prod { margin-top: 2px; font-size: 13.5px; color: var(--txt-2); line-height: 1.35; }
+  .tj-motivo { margin-top: 5px; font-size: 12px; font-weight: 600; color: var(--txt-3); }
+  .tj-aviso { margin-top: 7px; font-size: 12px; font-weight: 700; color: var(--bad-txt); }
+  .tj-plata { margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--ok-txt); }
+  .tj-acc { display: flex; gap: 6px; margin-top: 10px; }
+  .tj-acc .btn { min-height: 34px; padding: 6px 11px; font-size: 12.5px; }
+  .tj-acc select { flex: 1; min-width: 0; height: 34px; padding: 0 8px; font-size: 12.5px; border-radius: var(--r-sm); }
+
+  /* En la PC: todas las columnas lado a lado. */
+  @media (min-width: 900px) {
+    /* El buscador y el local en un renglón: el alto es para las columnas. */
+    .controles { flex-direction: row; align-items: center; }
+    .controles .buscador { flex: 1; }
+    .controles .fila-filtros { flex: none; width: 260px; }
+    .tablero { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr); gap: 12px;
+               overflow-x: auto; padding-bottom: 8px; align-items: start; }
+    .col, .col.sel { display: block; background: var(--surface-2); border: 1px solid var(--line);
+                     border-radius: var(--r); padding: 10px; min-height: 160px; }
+    .col.sobre { background: var(--acc-soft); border-color: var(--acc-line); }
+    .col-cab { display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; }
+    .col-cab b { font-size: 13px; font-weight: 700; color: var(--txt); }
+    .col-cab .cuenta { margin-left: auto; font-size: 11.5px; font-weight: 700; padding: 1px 8px;
+                       border-radius: var(--r-pill); background: var(--surface-3); color: var(--txt-2); }
+    .col-cab i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-alta); flex: none; }
+    .col-cab i.c-pend { background: var(--warn); }
+    .col-cab i.c-seg { background: var(--acc); }
+    .col-cab i.c-esp { background: #3E6FB0; }
+    .col-cab i.c-ok { background: var(--ok); }
+    .filtros { display: none; }
+  }
+
+  /* ── La ficha del cliente: un panel que entra por la derecha ── */
+  .capa { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end; background: rgba(20, 20, 18, .38); }
+  .capa[hidden] { display: none; }
+  .ficha { width: min(520px, 100%); height: 100%; overflow: auto; background: var(--bg); box-shadow: var(--sombra-alta);
+           padding: 0 0 30px; animation: entrarDer .25s var(--curva); }
+  @keyframes entrarDer { from { transform: translateX(30px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .ficha-cab { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 10px; padding: 14px 18px;
+               background: var(--surface); border-bottom: 1px solid var(--line); }
+  .ficha-cab h2 { flex: 1; font: 700 17px/1.25 var(--display); }
+  .ficha-x { width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--txt); background: var(--surface-2); }
+  .ficha-x svg { width: 18px; height: 18px; }
+  .ficha-in { padding: 16px 18px; display: grid; gap: 14px; }
+  .ficha-bloque { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 14px; }
+  .ficha-bloque h3 { font-size: 12px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 9px; }
+  .ficha-dato { font-size: 14px; color: var(--txt); line-height: 1.5; }
+  .ficha-dato span { color: var(--txt-2); }
+  .ficha-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .ficha-grid .ancho { grid-column: 1 / -1; }
+  .ficha-grid textarea { min-height: 70px; }
+  .ficha-acc { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* ── Las ventanitas: plantillas y "¿cuánto compró?" ── */
+  .modal { position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px; background: rgba(20, 20, 18, .42); }
+  .modal[hidden] { display: none; }
+  .modal-caja { width: min(520px, 100%); max-height: 92vh; overflow: auto; background: var(--surface); border-radius: var(--r);
+                box-shadow: var(--sombra-alta); padding: 18px; display: grid; gap: 12px; }
+  .modal-caja h2 { font: 700 18px/1.25 var(--display); }
+  .modal-caja p { font-size: 13.5px; color: var(--txt-2); }
+  .plantillas { display: flex; flex-wrap: wrap; gap: 7px; }
+  .plantillas .chip { min-height: 36px; padding: 7px 12px; font-size: 13px; }
+  .modal-caja textarea { min-height: 130px; font-size: 15px; line-height: 1.45; }
+  .modal-pie { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+
   /* ── En la PC de Atención al Cliente ───────────────────────────────────
      Las fichas pasan a dos columnas. Trabajando en una pantalla ancha, ver
      seis pendientes a la vez en lugar de dos cambia cómo se ataca la lista:
@@ -254,7 +342,7 @@
      align-items:start deja que cada ficha mida lo suyo — una con
      observaciones larga no estira a la de al lado. */
   @media (min-width: 1100px) {
-    :root { --tope: 1560px; }
+    :root { --tope: 1900px; }
     /* De a dos columnas fijas pasaba a desperdiciar media pantalla en un
        monitor grande. Con auto-fill sobre un mínimo de 420px son dos en
        1100, tres desde ~1520 y nunca una ficha más angosta que lo que
@@ -294,16 +382,6 @@
       </button>
       <button class="btn-icono" id="btnSalir" onclick="salir()" title="Salir" aria-label="Salir" hidden>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
-      </button>
-      <!-- El modo edición.
-
-           Arranca APAGADO siempre y no se recuerda a propósito: si quedara
-           guardado dejaría de ser la excepción que es. El que lo necesita
-           lo prende, hace lo suyo, y mañana vuelve a estar apagado. -->
-      <button class="btn-icono" id="btnEditar" onclick="alternarEdicion()"
-              title="Editar (sólo si Kommo no está disponible)"
-              aria-label="Modo edición" aria-pressed="false" hidden>
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
       </button>
       <!-- El cambio de tema se mudó a Configuración: se toca una vez y
            estaba ocupando la esquina de las tres cabeceras. -->
@@ -376,15 +454,6 @@
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
 
-  <!-- Se ve sólo con la edición prendida, y no se puede cerrar: mientras
-       esté prendida, el que edita tiene que estar viendo por qué no
-       debería. -->
-  <div class="aviso aviso-editando" id="avisoEditar" hidden>
-    <b>Estás editando desde acá.</b>
-    El seguimiento se maneja en Kommo. Lo que cambies se va a mandar al CRM,
-    pero si alguien lo está tocando allá al mismo tiempo, gana el último.
-    Usalo sólo si Kommo no está disponible.
-  </div>
   <div class="kpis" id="kpis"></div>
 
   <div class="controles">
@@ -394,18 +463,58 @@
     </div>
     <div class="fila-filtros">
       <select id="filtroLocal" aria-label="Filtrar por local"><option value="">Todos los locales</option></select>
-      <select id="orden" aria-label="Orden">
-        <option value="viejos">Más viejos primero</option>
-        <option value="nuevos">Más nuevos primero</option>
-      </select>
     </div>
     <div class="filtros" id="filtros"></div>
   </div>
 
-  <div id="lista"></div>
+  <div class="tablero" id="tablero"></div>
 </main>
 
 </div><!-- /.marco -->
+
+<!-- La ficha del cliente. -->
+<div class="capa" id="capaFicha" hidden>
+  <aside class="ficha" role="dialog" aria-modal="true" aria-labelledby="fichaTit">
+    <div class="ficha-cab">
+      <h2 id="fichaTit"></h2>
+      <button type="button" class="ficha-x" id="fichaX" aria-label="Cerrar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="ficha-in" id="fichaIn"></div>
+  </aside>
+</div>
+
+<!-- Escribirle por WhatsApp: se elige la plantilla y se puede retocar. -->
+<div class="modal" id="modalWsp" hidden>
+  <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="wspTit">
+    <h2 id="wspTit">Escribirle por WhatsApp</h2>
+    <div class="plantillas" id="wspPlantillas"></div>
+    <textarea id="wspTexto" aria-label="Mensaje"></textarea>
+    <p>Se abre WhatsApp con el mensaje puesto: revisalo y mandalo desde ahí.</p>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec" id="wspCancelar">Cancelar</button>
+      <a class="btn btn-wsp" id="wspIr" target="_blank" rel="noopener">Abrir WhatsApp</a>
+    </div>
+  </div>
+</div>
+
+<!-- "Cerrado - compró": qué se llevó y por cuánto, que es lo que mide si esto sirve. -->
+<div class="modal" id="modalVenta" hidden>
+  <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="ventaTit">
+    <h2 id="ventaTit">¡Compró! ¿Dónde y por cuánto?</h2>
+    <div class="plantillas" id="ventaCanal">
+      <button type="button" class="chip sel" data-canal="Sí - local">En el local</button>
+      <button type="button" class="chip" data-canal="Sí - online">En la tienda online</button>
+    </div>
+    <div class="campo"><label for="ventaMonto">Monto de la venta</label><input id="ventaMonto" inputmode="numeric" placeholder="$"></div>
+    <div class="campo"><label for="ventaProd">Qué se llevó</label><input id="ventaProd" placeholder="Opcional"></div>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec" id="ventaCancelar">Cancelar</button>
+      <button type="button" class="btn btn-pri" id="ventaOk">Guardar</button>
+    </div>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -414,8 +523,10 @@
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
-  var filtro = 'Pendiente', quien = '', VOCAB = null;
-  var registros = [], abiertos = {};
+  var quien = '', VOCAB = null;
+  var registros = [];
+  /* La columna que se ve en el celular (en la PC se ven todas). */
+  var colSel = 'Pendiente';
 
   /* El PIN se guardaba acá. Ya no hay nada que guardar: la sesión la
      maneja datos.js y lo que queda en el aparato es un token que vence
@@ -499,12 +610,10 @@
     document.body.classList.add('hay-rail');
     $('btnRefrescar').hidden = false;
     $('btnSalir').hidden = false;
-    $('btnEditar').hidden = false;
     $('whoami').value = quien;
 
     pintarKpis(res);
     pintarCrm(res);
-    pintarFiltros(res.conteo);
     cargar();
   }
 
@@ -526,44 +635,11 @@
     document.body.classList.remove('hay-rail');
     $('btnRefrescar').hidden = true;
     $('btnSalir').hidden = true;
-    $('btnEditar').hidden = true;
-    // Que nunca quede prendido para el próximo que entre.
-    if (editando) alternarEdicion();
+    cerrarFicha();
     $('porton').hidden = false;
     $('portonMsg').hidden = true;
     var btn = $('btnEntrar');
     btn.disabled = false; btn.textContent = 'Entrar';
-  }
-
-  /* ═══ Consulta o edición ════════════════════════════════════════════════
-     El seguimiento —estado, primer contacto, cierre, monto— se maneja en
-     Kommo, que es la fuente de verdad. Esta pantalla es para MIRAR qué está
-     pasando: quién está esperando, hace cuánto, y escribirle.
-
-     La edición existe igual, porque si Kommo se cae alguien tiene que poder
-     trabajar. Pero está apagada de entrada y no se recuerda: si quedara
-     guardada volvería a ser el modo normal en dos días, y tendríamos dos
-     lugares donde se cambia lo mismo.
-
-     Lo que se edite acá SÍ vuelve a Kommo: lo empuja la base sola, por la
-     bandeja de salida. Ver sincronia.sql. */
-  var editando = false;
-
-  function alternarEdicion() {
-    editando = !editando;
-    document.body.classList.toggle('editando', editando);
-    $('btnEditar').setAttribute('aria-pressed', String(editando));
-    $('avisoEditar').hidden = !editando;
-
-    /* El nombre se pide recién al guardar, no al prender: el que prende
-       para mirar un campo y lo apaga sin tocar nada no tiene que contestar
-       nada. Ver exigirQuien(). */
-    if (!editando) {
-      // Las fichas abiertas se cierran: si no, al volver a prender estarían
-      // todas desplegadas sin que nadie las haya abierto.
-      abiertos = {};
-      pintar();
-    }
   }
 
   /* ═══ Tablero ═══════════════════════════════════════════════════════════
@@ -623,47 +699,75 @@
     caja.hidden = false;
   }
 
-  function pintarFiltros(conteo) {
-    var ops = ['Pendiente'].concat(VOCAB.ESTADO).concat(['Todos']);
-    $('filtros').innerHTML = ops.map(function (o) {
-      var n = o === 'Todos' ? (conteo.Total || 0) : (conteo[o] || 0);
-      return '<button type="button" class="chip' + (o === filtro ? ' sel' : '') + '" data-f="' + esc(o) + '">' +
-             esc(o) + ' <span class="cuenta">' + n + '</span></button>';
+  /* ═══ El tablero (07/10/2026) ═══════════════════════════════════════════
+     Nuestro CRM. Una columna por estado, como Kommo; "Pendiente" no es un
+     estado guardado, es no haber sido contactado. Se cargan TODOS los
+     registros de una vez (registros_listar 'Todos') y las columnas se
+     arman acá: mover una tarjeta se ve en el acto y se guarda atrás. */
+  var COLUMNAS = [
+    { e: 'Pendiente',           t: 'Pendiente',           c: 'c-pend' },
+    { e: 'En seguimiento',      t: 'En seguimiento',      c: 'c-seg' },
+    { e: 'Esperando respuesta', t: 'Esperando respuesta', c: 'c-esp' },
+    { e: 'Cerrado - compró',    t: 'Compró',              c: 'c-ok' },
+    { e: 'Cerrado - no compró', t: 'No compró',           c: '' },
+    { e: 'Descartado',          t: 'Descartado',          c: '' }
+  ];
+  /* Los que cuentan como "ya le escribimos". */
+  var CONTACTADOS = ['En seguimiento', 'Esperando respuesta', 'Cerrado - compró', 'Cerrado - no compró'];
+  /* Días sin respuesta para marcar "volver a escribir". */
+  var DIAS_FRIO = 2;
+
+  function columnaDe(r) {
+    if (r.estado) { return r.estado; }
+    return r.contactamos === 'si' ? 'En seguimiento' : 'Pendiente';
+  }
+  function porId(id) { return registros.filter(function (r) { return r.id === id; })[0]; }
+  function diasDesde(iso) {
+    if (!iso) { return null; }
+    return Math.floor((Date.now() - new Date(iso + 'T12:00:00').getTime()) / 86400000);
+  }
+  /* Esperando respuesta hace DIAS_FRIO días o más: hay que volver a escribirle. */
+  function frio(r) {
+    if (columnaDe(r) !== 'Esperando respuesta') { return 0; }
+    var d = diasDesde(r.fecha1Iso);
+    return d !== null && d >= DIAS_FRIO ? d : 0;
+  }
+
+  function pintarColumnasCel() {
+    var cuenta = {};
+    visibles().forEach(function (r) { var c = columnaDe(r); cuenta[c] = (cuenta[c] || 0) + 1; });
+    $('filtros').innerHTML = COLUMNAS.map(function (c) {
+      return '<button type="button" class="chip' + (c.e === colSel ? ' sel' : '') + '" data-col="' + esc(c.e) + '">' +
+             esc(c.t) + ' <span class="cuenta">' + (cuenta[c.e] || 0) + '</span></button>';
     }).join('');
     marcarScroll();
     Array.prototype.forEach.call($('filtros').children, function (b) {
-      b.onclick = function () {
-        filtro = b.dataset.f;
-        // Los pendientes se atacan del más viejo: son los que se están
-        // por perder. En los demás estados interesa lo último que pasó.
-        $('orden').value = filtro === 'Pendiente' ? 'viejos' : 'nuevos';
-        pintarFiltros(conteo);
-        cargar();
-      };
+      b.onclick = function () { colSel = b.dataset.col; pintar(); };
     });
   }
 
   /* ═══ Carga ═════════════════════════════════════════════════════════════ */
   function cargar() {
     $('btnRefrescar').classList.add('girando');
-    $('lista').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
-
-    base.registros(pinGuardado(), filtro)
+    if (!registros.length) {
+      $('tablero').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
+    }
+    base.registros(pinGuardado(), 'Todos')
       .then(function (filas) {
         $('btnRefrescar').classList.remove('girando');
         registros = filas || [];
         llenarLocales();
         pintar();
+        if (fichaId) { pintarFicha(); }
       })
       .catch(function (err) {
         $('btnRefrescar').classList.remove('girando');
-        $('lista').innerHTML = '';
         if (err && err.sinSesion) { caducada(); return; }
         avisar('err', 'Error de conexión.');
       });
 
     base.panel(pinGuardado())
-      .then(function (res) { pintarKpis(res); pintarCrm(res); pintarFiltros(res.conteo); })
+      .then(function (res) { pintarKpis(res); pintarCrm(res); })
       .catch(function () {});
   }
 
@@ -678,19 +782,15 @@
       }).join('');
   }
 
-  /* ═══ Lista ═════════════════════════════════════════════════════════════ */
   function visibles() {
     var q = $('busca').value.trim().toLowerCase();
     var loc = $('filtroLocal').value;
-    var lista = registros.filter(function (r) {
+    return registros.filter(function (r) {
       if (loc && r.sucursal !== loc) return false;
       if (!q) return true;
       return [r.nombre, r.whatsapp, r.producto, r.vendedor, r.mail, r.obs, r.motivo]
         .join(' ').toLowerCase().indexOf(q) > -1;
     });
-    // El backend los manda del más nuevo al más viejo.
-    if ($('orden').value === 'viejos') lista = lista.slice().reverse();
-    return lista;
   }
 
   function antiguedad(r) {
@@ -700,13 +800,44 @@
     return 'hace ' + r.dias + ' días';
   }
 
+  /* ═══ Las plantillas de WhatsApp ════════════════════════════════════════
+     Mensajes listos para elegir y retocar. wa.me abre el chat con el texto
+     puesto: nunca se manda solo. */
+  function nombreDe(r) { return (r.nombre || '').trim().split(/\s+/)[0]; }
+  function holaDe(r) { var n = nombreDe(r); return n ? '¡Hola ' + n + '! ' : '¡Hola! '; }
+  function dondeDe(r) { return r.sucursal ? 'VDH ' + bonito(r.sucursal) : 'VDH'; }
+  function prendaDe(r) {
+    return (r.producto ? r.producto.trim() : 'lo que buscabas') + (r.talle ? ' en talle ' + r.talle : '');
+  }
+  function enDias(n) {
+    var f = new Date(); f.setDate(f.getDate() + n);
+    return f.getDate() + '/' + (f.getMonth() + 1);
+  }
+  function plantillas(r) {
+    var l = [
+      { k: 'novedades', t: 'Novedades', txt: mensajeWsp(r) },
+      { k: 'llego', t: 'Llegó lo que buscabas',
+        txt: holaDe(r) + 'Te escribo de ' + dondeDe(r) + '. ¡Ya tenemos ' + prendaDe(r) + '! ¿Querés que te lo separemos?' },
+      { k: 'guardamos', t: 'Te lo guardamos',
+        txt: holaDe(r) + 'Te escribo de ' + dondeDe(r) + '. Te separamos ' + prendaDe(r) + ' hasta el ' + enDias(3) +
+             '. Pasá cuando quieras y preguntá por tu nombre.' },
+      { k: 'otravez', t: 'Volver a escribir',
+        txt: holaDe(r) + '¿Pudiste ver lo que te mandé? Si querés te paso más fotos o te lo separamos en ' + dondeDe(r) + '.' }
+    ];
+    if (r.beneficio && r.beneficio.vive) {
+      l.splice(1, 0, { k: 'descuento', t: 'Tu ' + r.beneficio.pct + '% de descuento',
+        txt: holaDe(r) + 'Te escribo de ' + dondeDe(r) + '. Te dejamos un ' + r.beneficio.pct + '% de descuento para tu ' +
+             'próxima compra en cualquiera de nuestros locales: decí tu teléfono en la caja y te lo aplican.' });
+    }
+    return l;
+  }
+
   /**
-   * Mensaje ya escrito para WhatsApp. El vendedor lo puede editar antes de
-   * mandarlo: wa.me abre el chat con el texto puesto, no lo envía solo.
+   * Mensaje de "novedades". El vendedor lo puede editar antes de mandarlo:
+   * wa.me abre el chat con el texto puesto, no lo envía solo.
    */
   function mensajeWsp(r) {
-    var nombre = (r.nombre || '').trim().split(/\s+/)[0];
-    var hola = nombre ? '¡Hola ' + nombre + '! ' : '¡Hola! ';
+    var hola = holaDe(r);
     var donde = r.sucursal ? ' de VDH ' + bonito(r.sucursal) : ' de VDH';
     var que = r.producto
       ? 'Pasaste por el local buscando ' + r.producto.toLowerCase().trim() + ' y no lo pudimos resolver en el momento.'
@@ -714,8 +845,7 @@
 
     /* Con el descuento dado, el mensaje cambia de pregunta a oferta. Y dice
        CÓMO se usa —dando el teléfono en la caja— porque es lo primero que
-       el cliente va a preguntar, y si no lo dice acá lo pregunta por
-       WhatsApp y alguien tiene que contestarle. */
+       el cliente va a preguntar. */
     if (r.beneficio && r.beneficio.vive) {
       return hola + 'Te escribo' + donde + '. ' + que +
         ' Te dejamos un ' + r.beneficio.pct + '% de descuento para tu próxima compra en cualquiera de ' +
@@ -724,246 +854,289 @@
     return hola + 'Te escribo' + donde + '. ' + que + ' Tengo novedades para mostrarte, ¿te paso fotos?';
   }
 
+  var wspId = null;
+  function abrirWsp(id, clave) {
+    if (!exigirQuien()) return;
+    var r = porId(id); if (!r) return;
+    wspId = id;
+    var l = plantillas(r);
+    var elegida = l.filter(function (x) { return x.k === clave; })[0] || (frio(r) ? l.filter(function (x) { return x.k === 'otravez'; })[0] : l[0]);
+    $('wspTit').textContent = 'Escribirle a ' + (r.nombre || r.whatsapp);
+    $('wspPlantillas').innerHTML = l.map(function (x) {
+      return '<button type="button" class="chip' + (x === elegida ? ' sel' : '') + '" data-k="' + x.k + '">' + esc(x.t) + '</button>';
+    }).join('');
+    $('wspTexto').value = elegida.txt;
+    actualizarWsp();
+    Array.prototype.forEach.call($('wspPlantillas').children, function (b) {
+      b.onclick = function () {
+        Array.prototype.forEach.call($('wspPlantillas').children, function (o) { o.classList.toggle('sel', o === b); });
+        $('wspTexto').value = l.filter(function (x) { return x.k === b.dataset.k; })[0].txt;
+        actualizarWsp();
+      };
+    });
+    $('modalWsp').hidden = false;
+  }
+  function actualizarWsp() {
+    var r = porId(wspId); if (!r) return;
+    $('wspIr').href = linkWsp(r.whatsapp, $('wspTexto').value);
+  }
+  /* Abrir WhatsApp ES el primer contacto: si estaba Pendiente, pasa solo a
+     "En seguimiento" con quién y cuándo. El enlace se abre igual (lo abre
+     el navegador por el toque, no esto). */
+  function wspEnviado() {
+    var r = porId(wspId);
+    $('modalWsp').hidden = true;
+    if (!r) return;
+    if (columnaDe(r) === 'Pendiente') {
+      r.estado = 'En seguimiento'; r.contactamos = 'si'; r.fecha1Iso = new Date().toISOString().slice(0, 10);
+      r.responsable = quien;
+      pintar(); if (fichaId === r.id) { pintarFicha(); }
+      guardarSeguim(r.id, { contactamos: 'si', fecha1: true, estado: 'En seguimiento', responsable: quien },
+                    'Pasó a En seguimiento', true);
+    }
+  }
+
+  /* ═══ Pintar el tablero ═════════════════════════════════════════════════ */
+  function tarjeta(r) {
+    var col = columnaDe(r);
+    var pend = col === 'Pendiente';
+    var urgente = pend && r.dias !== null && r.dias >= 3;
+    var dFrio = frio(r);
+    var clase = 'tj' + (urgente ? ' urgente' : pend ? ' es-pend' : '') + (dFrio ? ' frio' : '') +
+                (col === 'Cerrado - compró' ? ' es-ok' : '');
+    return '<article class="' + clase + '" draggable="true" data-id="' + r.id + '">' +
+      '<div class="tj-top"><span class="pill pill-neutra">' + esc(bonito(r.sucursal) || 'Sin local') + '</span>' +
+        '<span class="tj-dias' + (urgente ? ' viejo' : '') + '">' + esc(antiguedad(r)) + '</span></div>' +
+      '<b class="tj-nom">' + esc(r.nombre || r.whatsapp || 'Sin nombre') + '</b>' +
+      '<div class="tj-prod">' + esc(r.producto || 'Sin producto anotado') + (r.talle ? ' · talle ' + esc(r.talle) : '') + '</div>' +
+      (r.motivo ? '<div class="tj-motivo">' + esc(r.motivo) + '</div>' : '') +
+      (dFrio ? '<div class="tj-aviso">Hace ' + dFrio + ' días sin respuesta: volvé a escribirle</div>' : '') +
+      (col === 'Cerrado - compró' && r.monto ? '<div class="tj-plata">$' + esc(r.monto) + '</div>' : '') +
+      '<div class="tj-acc">' +
+        '<button type="button" class="btn btn-wsp btn-chico" data-wsp="' + r.id + '">WhatsApp</button>' +
+        '<select data-mover="' + r.id + '" aria-label="Mover a">' +
+          '<option value="">Mover a…</option>' +
+          COLUMNAS.filter(function (c) { return c.e !== col; }).map(function (c) {
+            return '<option value="' + esc(c.e) + '">' + esc(c.t) + '</option>';
+          }).join('') +
+        '</select>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function pintar() {
+    var lista = visibles();
+    pintarColumnasCel();
+    $('tablero').innerHTML = COLUMNAS.map(function (c) {
+      var dentro = lista.filter(function (r) { return columnaDe(r) === c.e; });
+      /* Pendientes: el más viejo arriba (es el que se pierde). El resto: lo
+         último que pasó arriba. Los fríos, primero en su columna. */
+      dentro.sort(function (a, b) {
+        if (frio(a) !== frio(b)) { return frio(b) - frio(a); }
+        return c.e === 'Pendiente' ? (b.dias - a.dias) : (a.dias - b.dias);
+      });
+      return '<section class="col' + (c.e === colSel ? ' sel' : '') + '" data-col="' + esc(c.e) + '">' +
+        '<div class="col-cab"><i class="' + c.c + '"></i><b>' + esc(c.t) + '</b><span class="cuenta">' + dentro.length + '</span></div>' +
+        (dentro.length ? dentro.map(tarjeta).join('') : '<div class="col-vacia">Nadie acá</div>') +
+      '</section>';
+    }).join('');
+    conectar();
+  }
+
+  /* ═══ Mover de columna ══════════════════════════════════════════════════ */
+  function mover(id, destino) {
+    var r = porId(id);
+    if (!r || !destino || columnaDe(r) === destino) { pintar(); return; }
+    if (!exigirQuien()) { pintar(); return; }
+    /* "Compró" pide dónde y cuánto: es el número que dice si esto sirve. */
+    if (destino === 'Cerrado - compró') { pedirVenta(id); return; }
+
+    var campos = { estado: destino === 'Pendiente' ? '' : destino, responsable: quien };
+    if (destino === 'Pendiente') { campos.contactamos = ''; }
+    else if (CONTACTADOS.indexOf(destino) > -1 && r.contactamos !== 'si') { campos.contactamos = 'si'; campos.fecha1 = true; }
+    if (destino === 'Cerrado - no compró') { campos.compro = 'No'; }
+
+    /* Se ve en el acto; si la base lo rechaza, guardarSeguim recarga. */
+    r.estado = destino === 'Pendiente' ? '' : destino;
+    if (campos.contactamos !== undefined) { r.contactamos = campos.contactamos; }
+    if (campos.fecha1) { r.fecha1Iso = new Date().toISOString().slice(0, 10); }
+    r.responsable = quien;
+    pintar(); if (fichaId === id) { pintarFicha(); }
+    guardarSeguim(id, campos, 'Movido a ' + tituloDe(destino), true);
+  }
+  function tituloDe(e) { var c = COLUMNAS.filter(function (x) { return x.e === e; })[0]; return c ? c.t : e; }
+
+  var ventaId = null, ventaCanal = 'Sí - local';
+  function pedirVenta(id) {
+    var r = porId(id);
+    ventaId = id; ventaCanal = String(r.compro || '').indexOf('online') > -1 ? 'Sí - online' : 'Sí - local';
+    Array.prototype.forEach.call($('ventaCanal').children, function (b) { b.classList.toggle('sel', b.dataset.canal === ventaCanal); });
+    $('ventaMonto').value = r.monto || '';
+    $('ventaProd').value = r.productoFinal || '';
+    $('modalVenta').hidden = false;
+    setTimeout(function () { $('ventaMonto').focus(); }, 50);
+  }
+  function guardarVenta() {
+    var r = porId(ventaId); if (!r) return;
+    var campos = { estado: 'Cerrado - compró', compro: ventaCanal, responsable: quien };
+    if (r.contactamos !== 'si') { campos.contactamos = 'si'; campos.fecha1 = true; }
+    $('modalVenta').hidden = true;
+    r.estado = 'Cerrado - compró'; r.compro = ventaCanal; r.contactamos = 'si';
+    pintar(); if (fichaId === r.id) { pintarFicha(); }
+    /* Primero el estado y el canal; después el monto y el producto (la base
+       rechaza un monto sin venta, así que van en ese orden). */
+    var monto = $('ventaMonto').value.trim(), prod = $('ventaProd').value.trim();
+    base.seguimiento(pinGuardado(), r.id, campos)
+      .then(function () {
+        var extra = {};
+        if (monto) { extra.monto = monto; }
+        if (prod) { extra.productoFinal = prod; }
+        return Object.keys(extra).length ? base.seguimiento(pinGuardado(), r.id, extra) : true;
+      })
+      .then(function () { avisar('ok', '¡Venta recuperada!' + (monto ? ' $' + monto : '')); cargar(); })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la conexión.');
+        cargar();
+      });
+  }
+
+  /* ═══ La ficha del cliente ══════════════════════════════════════════════ */
+  var fichaId = null;
+  function abrirFicha(id) { fichaId = id; pintarFicha(); $('capaFicha').hidden = false; }
+  function cerrarFicha() { fichaId = null; if ($('capaFicha')) { $('capaFicha').hidden = true; } }
+
   function opciones(lista, actual) {
     return '<option value=""></option>' + lista.map(function (o) {
       return '<option value="' + esc(o) + '"' + (o === actual ? ' selected' : '') + '>' + esc(o) + '</option>';
     }).join('');
   }
 
-  function pintar() {
-    var lista = visibles();
-
-    if (!lista.length) {
-      $('lista').innerHTML =
-        '<div class="vacio"><div class="vacio-icono">' +
-        '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>' +
-        '</div><b>No hay nada acá</b><span>Probá con otro filtro o limpiá la búsqueda.</span></div>';
-      return;
-    }
-
-    $('lista').innerHTML = lista.map(function (r, i) {
-      var pendiente = !r.estado && String(r.contactamos).toLowerCase() !== 'si';
-      var urgente = pendiente && r.dias !== null && r.dias >= 3;
-      var cerrado = r.estado && r.estado.indexOf('Cerrado') === 0;
-      var abierto = !!abiertos[r.id];
-      var vendio = String(r.compro || '').indexOf('Sí') === 0;
-
-      var clase = 'reg' + (urgente ? ' urgente' : (pendiente ? ' es-pend' : '')) + (cerrado ? ' es-cerrado' : '');
-
-      var estadoPill = r.estado
-        ? '<span class="pill ' + (r.estado === 'Cerrado - compró' ? 'pill-ok'
-            : r.estado === 'Cerrado - no compró' || r.estado === 'Descartado' ? 'pill-neutra' : 'pill-info') +
-          '">' + esc(r.estado) + '</span>'
-        : (pendiente ? '<span class="pill pill-warn">Pendiente</span>' : '');
-
-      var rapidos = VOCAB.RESULTADO_1.map(function (o) {
-        return '<button type="button" class="chip' + (o === r.resultado1 ? ' sel' : '') +
-               '" data-id="' + r.id + '" data-res="' + esc(o) + '">' + esc(o) + '</button>';
-      }).join('');
-
-      return '<article class="' + clase + '" data-id="' + r.id + '" style="animation-delay:' + Math.min(i * 30, 300) + 'ms">' +
-        '<div class="reg-top">' +
-          '<span class="pill pill-neutra">' + esc(bonito(r.sucursal) || 'Sin local') + '</span>' +
-          estadoPill +
-          '<span class="reg-dias' + (urgente ? ' viejo' : '') + '">' + esc(antiguedad(r)) + '</span>' +
-        '</div>' +
-
-        '<h3 class="reg-prod">' + esc(r.producto || 'Sin producto anotado') +
-          (r.talle ? ' <span class="talle">· talle ' + esc(r.talle) + '</span>' : '') + '</h3>' +
-
-        (r.motivo ? '<div class="reg-motivo">' + esc(r.motivo) + '</div>' : '') +
-
-        '<div class="reg-cliente">' +
-          (r.nombre ? '<b>' + esc(r.nombre) + '</b> · ' : '') +
-          '<span class="tel">' + esc(r.whatsapp) + '</span>' +
-          (r.mail ? ' · <span class="tel">' + esc(r.mail) + '</span>' : '') +
-        '</div>' +
-
-        '<div class="reg-meta">' + esc(r.fecha) + ' · cargó <b>' + esc(r.vendedor || '—') + '</b>' +
-          (r.responsable ? ' · sigue <b>' + esc(r.responsable) + '</b>' : '') +
-          (r.fecha1 ? ' · 1er contacto ' + esc(r.fecha1) : '') + '</div>' +
-
-        (r.obs ? '<div class="reg-obs">' + esc(r.obs) + '</div>' : '') +
-
-        '<div class="reg-acciones">' +
-          '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="' + esc(linkWsp(r.whatsapp, mensajeWsp(r))) + '">' +
-            '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2Zm5.3 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .1-1.7-.1-.4-.1-.9-.3-1.5-.6-2.7-1.2-4.4-3.9-4.6-4.1-.1-.2-1-1.4-1-2.6 0-1.2.6-1.8.9-2 .2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.3 0 .5l-.4.5-.3.3c-.1.1-.2.3 0 .5.1.3.6 1.1 1.4 1.7 1 .8 1.7 1.1 2 1.2.2.1.4.1.5-.1l.7-.8c.2-.2.3-.2.5-.1l1.8.9c.2.1.4.2.4.3.1.1.1.6-.1 1.2Z"/></svg>' +
-            'WhatsApp</a>' +
-          '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' + esc(linkWsp(r.whatsapp, '')) + '">Chat en blanco</a>' +
+  function pintarFicha() {
+    var r = porId(fichaId);
+    if (!r) { cerrarFicha(); return; }
+    var col = columnaDe(r);
+    var vendio = String(r.compro || '').indexOf('Sí') === 0;
+    $('fichaTit').textContent = r.nombre || r.whatsapp || 'Cliente';
+    $('fichaIn').innerHTML =
+      '<div class="ficha-bloque">' +
+        '<h3>Cliente</h3>' +
+        '<div class="ficha-dato"><b>' + esc(r.nombre || 'Sin nombre') + '</b></div>' +
+        '<div class="ficha-dato"><span>WhatsApp:</span> ' + esc(r.whatsapp || '—') + '</div>' +
+        (r.mail ? '<div class="ficha-dato"><span>Mail:</span> ' + esc(r.mail) + '</div>' : '') +
+        '<div class="ficha-acc" style="margin-top:12px">' +
+          '<button type="button" class="btn btn-wsp btn-chico" data-wsp="' + r.id + '">Escribirle por WhatsApp</button>' +
           (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
-
-          /* El seguimiento se trabaja en Kommo. Este enlace es lo que hace
-             que esta pantalla pueda ser sólo de consulta sin dejar a nadie
-             a pie: se ve quién está esperando, y de un toque se está
-             adentro de su ficha en el CRM. */
-          (r.lead ? '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' +
-              KOMMO + '/leads/detail/' + esc(r.lead) + '">Abrir en Kommo</a>' : '') +
-
-          /* Cuando el producto no aparece, esto es lo único que queda para
-             que el cliente igual se lleve algo. Antes era un cupón: una
-             imagen hecha a mano con un número de serie, anotado en una
-             planilla aparte para que no se usara dos veces. Acá el cliente
-             YA ES el cupón —está cargado con su teléfono—, así que dárselo
-             es un toque y usarlo es decir su número en la caja. */
-          /* Un descuento ya dado no es un botón: es un hecho. Y dice en qué
-             quedó —usado, vencido, anulado— porque de eso depende si hay que
-             darle otro o no. */
           (r.beneficio
-            ? '<span class="pill ' + (r.beneficio.vive ? 'pill-ok' : 'pill-neutra') + '">' +
-                r.beneficio.pct + '% ' +
-                (r.beneficio.usado ? 'usado'
-                 : r.beneficio.anulado ? 'anulado'
-                 : r.beneficio.vencido ? 'vencido' : 'dado') + '</span>'
-            : '<button type="button" class="btn btn-sec btn-chico ben-btn" data-id="' + r.id + '">' +
-                'Dar ' + DESCUENTO + '%</button>') +
+            ? '<span class="pill ' + (r.beneficio.vive ? 'pill-ok' : 'pill-neutra') + '" style="align-self:center">' + r.beneficio.pct + '% ' +
+                (r.beneficio.usado ? 'usado' : r.beneficio.anulado ? 'anulado' : r.beneficio.vencido ? 'vencido' : 'dado') + '</span>'
+            : '<button type="button" class="btn btn-sec btn-chico" id="fichaDar">Dar ' + DESCUENTO + '%</button>') +
         '</div>' +
-
-        '<div class="reg-seg">' +
-          '<div class="seg-lbl">¿Cómo salió el primer contacto?</div>' +
-          '<div class="seg-rapidos">' + rapidos + '</div>' +
-          '<div class="seg-mas">' +
-            '<button type="button" class="seg-toggle" data-id="' + r.id + '" aria-expanded="' + abierto + '">' +
-              'Estado, compra y notas ' +
-              '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>' +
-            '</button>' +
-            '<div class="seg-campos"' + (abierto ? '' : ' hidden') + '>' +
-              '<div class="campo"><label>Estado actual</label>' +
-                '<select data-c="estado">' + opciones(VOCAB.ESTADO, r.estado) + '</select></div>' +
-              '<div class="campo"><label>¿Compró?</label>' +
-                '<select data-c="compro">' + opciones(VOCAB.COMPRO, r.compro) + '</select></div>' +
-
-              /* Aparecen recién cuando compró. Un "Monto" siempre visible
-                 se lee como un campo más para llenar, y la base además lo
-                 rechaza si no hay venta: mostrarlo sería ofrecer un error. */
-              '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Qué se llevó</label>' +
-                '<input type="text" data-c="productoFinal" placeholder="El producto que terminó comprando" value="' + esc(r.productoFinal) + '"></div>' +
-              '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Monto de la venta</label>' +
-                '<input type="text" inputmode="numeric" data-c="monto" placeholder="$" value="' + esc(r.monto) + '"></div>' +
-
-              '<div class="campo ancho"><label>Notas del seguimiento</label>' +
-                '<textarea data-c="obsSeguim" placeholder="Qué dijo, qué quedó pendiente…">' + esc(r.obsSeguim) + '</textarea></div>' +
-            '</div>' +
-          '</div>' +
+      '</div>' +
+      '<div class="ficha-bloque">' +
+        '<h3>Qué buscaba</h3>' +
+        '<div class="ficha-dato"><b>' + esc(r.producto || 'Sin producto anotado') + '</b>' + (r.talle ? ' · talle ' + esc(r.talle) : '') + '</div>' +
+        (r.motivo ? '<div class="ficha-dato"><span>Motivo:</span> ' + esc(r.motivo) + '</div>' : '') +
+        (r.obs ? '<div class="ficha-dato"><span>Nota del local:</span> ' + esc(r.obs) + '</div>' : '') +
+        '<div class="ficha-dato"><span>' + esc(bonito(r.sucursal) || 'Sin local') + ' · ' + esc(r.fecha) + ' · cargó</span> ' + esc(r.vendedor || '—') + '</div>' +
+      '</div>' +
+      '<div class="ficha-bloque">' +
+        '<h3>Seguimiento</h3>' +
+        '<div class="ficha-grid">' +
+          '<div class="campo"><label>Columna</label><select id="fichaCol">' +
+            COLUMNAS.map(function (c) { return '<option value="' + esc(c.e) + '"' + (c.e === col ? ' selected' : '') + '>' + esc(c.t) + '</option>'; }).join('') +
+          '</select></div>' +
+          '<div class="campo"><label>¿Compró?</label><select data-c="compro">' + opciones(VOCAB.COMPRO, r.compro) + '</select></div>' +
+          '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Monto</label>' +
+            '<input type="text" inputmode="numeric" data-c="monto" placeholder="$" value="' + esc(r.monto) + '"></div>' +
+          '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Qué se llevó</label>' +
+            '<input type="text" data-c="productoFinal" value="' + esc(r.productoFinal) + '"></div>' +
+          '<div class="campo ancho"><label>Notas</label>' +
+            '<textarea data-c="obsSeguim" placeholder="Qué dijo, qué quedó pendiente…">' + esc(r.obsSeguim) + '</textarea></div>' +
         '</div>' +
-      '</article>';
-    }).join('');
-
-    conectar();
+        '<div class="ficha-dato" style="margin-top:10px"><span>' +
+          (r.responsable ? 'Lo sigue ' + esc(r.responsable) : 'Nadie lo tomó todavía') +
+          (r.fecha1 ? ' · 1.er contacto ' + esc(r.fecha1) : '') + '</span></div>' +
+      '</div>';
+    conectarFicha(r);
   }
 
-  /* ═══ Guardado ══════════════════════════════════════════════════════════ */
-  function conectar() {
-    // Resultado del 1er contacto: un toque deja marcado contacto, fecha,
-    // responsable y resultado, que es lo que antes se cargaba a mano.
-    Array.prototype.forEach.call(document.querySelectorAll('.seg-rapidos .chip'), function (b) {
-      b.onclick = function () {
-        guardarSeguim(+b.dataset.id, {
-          contactamos: 'si',
-          responsable: quien,
-          /* La fecha la pone la base con el día de hoy; acá sólo se dice
-             QUE hubo contacto. Antes se mandaba un "23/04" armado en el
-             celular, que quedaba mal si el aparato tenía la fecha corrida. */
-          fecha1: true,
-          resultado1: b.dataset.res
-        }, 'Anotado: ' + b.dataset.res);
-      };
-    });
-
-    /* Se da y se recarga. La recarga no es por prolijidad: el mensaje de
-       WhatsApp de esa ficha cambia —pasa a ofrecer el descuento— y el que
-       acaba de darlo va a tocar ese botón enseguida. */
-    Array.prototype.forEach.call(document.querySelectorAll('.ben-btn'), function (b) {
-      b.onclick = function () {
+  function conectarFicha(r) {
+    $('fichaCol').onchange = function () { mover(r.id, this.value); };
+    var dar = $('fichaDar');
+    if (dar) {
+      dar.onclick = function () {
         if (!exigirQuien()) return;
-        b.disabled = true;
-        base.darDescuento(pinGuardado(), +b.dataset.id, DESCUENTO, DIAS, quien)
+        dar.disabled = true;
+        base.darDescuento(pinGuardado(), r.id, DESCUENTO, DIAS, quien)
           .then(function (res) {
-            /* La base contesta si lo dio o no, y por qué. El caso de "ya
-               tenía uno" pasa con dos personas mirando el mismo panel, y no
-               es un error: es la respuesta. */
-            if (!res || !res.dado) {
-              avisar('info', 'Ese cliente ya tenía un descuento sin usar.');
-            } else {
-              avisar('ok', 'Listo: ' + DESCUENTO + '% por ' + DIAS +
-                           ' días. Avisale por WhatsApp.');
-            }
+            avisar(res && res.dado ? 'ok' : 'info', res && res.dado
+              ? 'Listo: ' + DESCUENTO + '% por ' + DIAS + ' días. Avisale por WhatsApp.'
+              : 'Ese cliente ya tenía un descuento sin usar.');
             cargar();
           })
           .catch(function (err) {
-            b.disabled = false;
+            dar.disabled = false;
             if (err && err.sinSesion) { caducada(); return; }
             avisar('err', 'No se pudo dar el descuento.');
           });
       };
-    });
-
-    Array.prototype.forEach.call(document.querySelectorAll('.seg-toggle'), function (b) {
-      b.onclick = function () {
-        var campos = b.parentNode.querySelector('.seg-campos');
-        var abierto = campos.hidden;
-        campos.hidden = !abierto;
-        b.setAttribute('aria-expanded', String(abierto));
-        abiertos[b.dataset.id] = abierto;
-      };
-    });
-
-    Array.prototype.forEach.call(document.querySelectorAll('.reg select'), function (s) {
+    }
+    Array.prototype.forEach.call($('fichaIn').querySelectorAll('select[data-c]'), function (s) {
       s.onchange = function () {
-        var campos = {};
+        var campos = { responsable: quien };
         campos[s.dataset.c] = s.value;
-        campos.responsable = quien;
-
-        /* Los campos de la venta se prenden EN EL ACTO, antes de que el
-           guardado vuelva. El que acaba de marcar "Sí - local" está por
-           escribir el monto: hacerlo esperar un viaje al servidor para que
-           aparezca el campo es la diferencia entre anotarlo y no anotarlo. */
-        if (s.dataset.c === 'compro') {
-          var vendio = String(s.value || '').indexOf('Sí') === 0;
-          var ficha = s.closest('.reg');
-          Array.prototype.forEach.call(ficha.querySelectorAll('.campo.venta'), function (c) {
-            c.hidden = !vendio;
-          });
-          /* Y al decir que NO, la base limpia el monto y el producto final
-             —tiene una regla que prohíbe un monto sin venta—, así que la
-             pantalla los vacía para no mostrar algo que ya no existe. */
-          if (!vendio) {
-            Array.prototype.forEach.call(ficha.querySelectorAll('.campo.venta input'), function (i) {
-              i.value = '';
-            });
-          }
-        }
-
-        guardarSeguim(+s.closest('.reg').dataset.id, campos, 'Guardado');
+        var vendio = String(s.value || '').indexOf('Sí') === 0;
+        Array.prototype.forEach.call($('fichaIn').querySelectorAll('.campo.venta'), function (c) { c.hidden = !vendio; });
+        guardarSeguim(r.id, campos, 'Guardado');
       };
     });
-
-    /* Qué se llevó y por cuánto. Igual que la nota: se guardan al salir del
-       campo y sin recargar la lista, porque casi siempre se escriben los
-       dos seguidos y una recarga en el medio se come el segundo. */
-    Array.prototype.forEach.call(document.querySelectorAll('.campo.venta input'), function (i) {
+    Array.prototype.forEach.call($('fichaIn').querySelectorAll('input[data-c], textarea[data-c]'), function (i) {
       var original = i.value;
       i.onblur = function () {
         if (i.value === original) return;
         original = i.value;
-        var campos = {};
-        campos[i.dataset.c] = i.value;
-        campos.responsable = quien;
-        guardarSeguim(+i.closest('.reg').dataset.id, campos,
-                      i.dataset.c === 'monto' ? 'Monto guardado' : 'Guardado', true);
-      };
-    });
-
-    Array.prototype.forEach.call(document.querySelectorAll('.reg textarea'), function (t) {
-      var original = t.value;
-      t.onblur = function () {
-        if (t.value === original) return;
-        original = t.value;
-        var campos = {};
-        campos[t.dataset.c] = t.value;
-        guardarSeguim(+t.closest('.reg').dataset.id, campos, 'Nota guardada', true);
+        var campos = {}; campos[i.dataset.c] = i.value;
+        if (i.dataset.c !== 'obsSeguim') { campos.responsable = quien; }
+        guardarSeguim(r.id, campos, i.dataset.c === 'obsSeguim' ? 'Nota guardada' : 'Guardado', true);
+        r[i.dataset.c] = i.value;
       };
     });
   }
+
+  /* ═══ Los toques ════════════════════════════════════════════════════════ */
+  var arrastrado = null;
+  function conectar() {
+    Array.prototype.forEach.call(document.querySelectorAll('#tablero .tj'), function (t) {
+      t.onclick = function (ev) {
+        if (ev.target.closest('button, select, a')) return;
+        abrirFicha(+t.dataset.id);
+      };
+      t.ondragstart = function (ev) {
+        arrastrado = +t.dataset.id; t.classList.add('arrastrando');
+        try { ev.dataTransfer.setData('text/plain', String(arrastrado)); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {}
+      };
+      t.ondragend = function () { t.classList.remove('arrastrando'); };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#tablero .col'), function (c) {
+      c.ondragover = function (ev) { ev.preventDefault(); c.classList.add('sobre'); };
+      c.ondragleave = function (ev) { if (!c.contains(ev.relatedTarget)) { c.classList.remove('sobre'); } };
+      c.ondrop = function (ev) {
+        ev.preventDefault(); c.classList.remove('sobre');
+        if (arrastrado !== null) { var id = arrastrado; arrastrado = null; mover(id, c.dataset.col); }
+      };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('#tablero select[data-mover]'), function (s) {
+      s.onchange = function () { mover(+s.dataset.mover, s.value); };
+    });
+  }
+
+  /* Los botones de WhatsApp viven en el tablero y en la ficha: uno solo
+     escucha todos. */
+  document.addEventListener('click', function (ev) {
+    var b = ev.target.closest('[data-wsp]');
+    if (b) { abrirWsp(+b.dataset.wsp); }
+  });
 
   /** Prende el degradé del borde derecho sólo mientras queden filtros afuera. */
   function marcarScroll() {
@@ -1023,7 +1196,27 @@
     var t = null;
     $('busca').oninput = function () { clearTimeout(t); t = setTimeout(pintar, 180); };
     $('filtroLocal').onchange = pintar;
-    $('orden').onchange = pintar;
+
+    /* Las ventanitas y la ficha. */
+    $('wspTexto').oninput = actualizarWsp;
+    $('wspIr').onclick = function () { setTimeout(wspEnviado, 0); };
+    $('wspCancelar').onclick = function () { $('modalWsp').hidden = true; };
+    Array.prototype.forEach.call($('ventaCanal').children, function (b) {
+      b.onclick = function () {
+        ventaCanal = b.dataset.canal;
+        Array.prototype.forEach.call($('ventaCanal').children, function (o) { o.classList.toggle('sel', o === b); });
+      };
+    });
+    $('ventaOk').onclick = guardarVenta;
+    $('ventaCancelar').onclick = function () { $('modalVenta').hidden = true; pintar(); if (fichaId) { pintarFicha(); } };
+    $('fichaX').onclick = cerrarFicha;
+    $('capaFicha').onclick = function (ev) { if (ev.target === $('capaFicha')) { cerrarFicha(); } };
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Escape') return;
+      if (!$('modalWsp').hidden) { $('modalWsp').hidden = true; return; }
+      if (!$('modalVenta').hidden) { $('ventaCancelar').onclick(); return; }
+      cerrarFicha();
+    });
     $('filtros').onscroll = marcarScroll;
     window.addEventListener('resize', marcarScroll);
 
