@@ -1170,6 +1170,26 @@ var base = {
     });
   },
 
+  /** Los carritos abandonados de la tienda (SQL 51), como fichas del tablero. */
+  carritos: function (pin) {
+    return funcion('crm_carritos_listar', { p_pin: pin }).then(function (filas) {
+      return (filas || []).map(deCarrito_);
+    });
+  },
+
+  /** Mover un carrito, anotar o cerrarlo con monto. Las mismas claves que
+      seguimiento(): aLaBase_ las traduce y la base ignora las que no aplican. */
+  carritoGuardar: function (pin, id, campos) {
+    var cuerpo = aLaBase_(campos);
+    if (!Object.keys(cuerpo).length) return Promise.resolve(true);
+    return funcion('crm_carrito_guardar', { p_pin: pin, p_id: id, p_campos: cuerpo });
+  },
+
+  /** Los números del CRM de un período (SQL 51). */
+  crmEstadisticas: function (pin, desde, hasta, quien) {
+    return funcion('crm_estadisticas', { p_pin: pin, p_desde: desde, p_hasta: hasta, p_quien: quien || null });
+  },
+
   /** El descuento atado al teléfono, desde la ficha del cliente. */
   darDescuento: function (pin, registro, pct, dias, quien) {
     return funcion('dar_descuento', {
@@ -1341,6 +1361,48 @@ function deLaBase_(f) {
        una lista de fichas, y "92500" obliga a contar ceros. Vuelve a entrar
        bien porque aLaBase_ saca los puntos antes de guardarlo. */
     monto:       f.monto == null ? '' : Math.round(Number(f.monto)).toLocaleString('es-AR')
+  };
+}
+
+/**
+ * Un carrito abandonado (SQL 51) con los mismos nombres que una ficha del No
+ * Compra: el tablero, el arrastre y las plantillas los tratan igual.
+ */
+function deCarrito_(k) {
+  var prods = Array.isArray(k.productos) ? k.productos : [];
+  var p = prods[0] || {};
+  var total = Number(k.total) || 0;
+  return {
+    id:          Number(k.id),
+    fuente:      'carrito',
+    creado:      k.creado,
+    fecha:       fechaLinda_(k.creado),
+    dias:        Math.floor((Date.now() - new Date(k.creado).getTime()) / 86400000),
+    sucursal:    '',
+    vendedor:    '',
+    nombre:      k.nombre || '',
+    whatsapp:    String(k.telefono || '').replace(/\D/g, ''),
+    mail:        k.mail || '',
+    producto:    p.nombre ? p.nombre + (p.variante ? ' · ' + p.variante : '') +
+                            (prods.length > 1 ? ' y ' + (prods.length - 1) + ' más' : '') : 'Carrito',
+    productosTxt: prods.map(function (x) { return x.nombre || ''; }).join(' '),
+    productos:   prods,
+    foto:        p.imagen || '',
+    total:       total,
+    totalTxt:    '$' + Math.round(total).toLocaleString('es-AR'),
+    url:         k.url || '',
+    casiPago:    !!k.casi_pago,
+    pedido:      k.pedido || '',
+    contactamos: k.contactado ? 'si' : '',
+    responsable: k.responsable || '',
+    fecha1:      k.contacto1_fecha ? fechaCorta_(k.contacto1_fecha) : '',
+    /* Para "volver a escribir": desde que pasó a Esperando respuesta. */
+    fecha1Iso:   (k.esperando_desde ? String(k.esperando_desde).slice(0, 10) : '') || k.contacto1_fecha || '',
+    estado:      k.estado || '',
+    obsSeguim:   k.obs_seguimiento || '',
+    compro:      k.compro ? 'Sí - online' : '',
+    productoFinal: '',
+    monto:       k.monto == null ? '' : Math.round(Number(k.monto)).toLocaleString('es-AR')
   };
 }
 

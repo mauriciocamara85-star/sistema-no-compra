@@ -137,6 +137,9 @@ function normalizarTel(tel) {
   var n = String(tel || '').replace(/\D/g, '').replace(/^0/, '');
   if (!n) return '';
   if (n.indexOf('54') !== 0) n = '549' + n;
+  /* "54 11 5821-7030" (sin el 9 de los celulares, como lo guarda Tienda
+     Nube): WhatsApp lo necesita para abrir el chat. */
+  else if (n.indexOf('549') !== 0 && n.length === 12) n = '549' + n.slice(2);
   return n;
 }
 

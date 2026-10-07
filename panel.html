@@ -321,6 +321,53 @@
     .filtros { display: none; }
   }
 
+  /* ══ Las tres vistas: No Compra · Carritos · Números (07/10/2026) ══ */
+  .vistas { display: flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--surface-3); border-radius: var(--r-pill); }
+  .vistas button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px;
+                   padding: 6px 10px; border-radius: var(--r-pill); font: 600 13.5px var(--sans); color: var(--txt-2); white-space: nowrap; }
+  .vistas button.sel { background: var(--surface); color: var(--txt); box-shadow: var(--sombra); }
+  /* El numerito es lo que espera: los que nadie contactó todavía. */
+  .vistas .cuenta { font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: var(--r-pill);
+                    background: var(--warn-soft); color: var(--warn-txt); }
+  .vistas .cuenta.cero { background: var(--surface-2); color: var(--txt-3); }
+  @media (min-width: 900px) { .vistas { display: inline-flex; } .vistas button { flex: none; padding: 6px 18px; } }
+
+  /* El carrito en su tarjeta: la foto de la primera prenda y el total. */
+  .tj-foto { float: right; width: 46px; height: 46px; margin: 0 0 4px 10px; border-radius: 6px; object-fit: cover;
+             background: var(--surface-2); pointer-events: none; -webkit-user-drag: none; }
+  .tj-total { margin-top: 6px; font-size: 14px; font-weight: 700; color: var(--txt); }
+  .tj-acc { clear: both; }
+  /* En la ficha: las prendas del carrito. */
+  .carro-prod { display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; align-items: center; padding: 9px 0;
+                border-top: 1px solid var(--line); font-size: 13.5px; }
+  .carro-prod:first-of-type { border-top: 0; }
+  .carro-prod img, .carro-prod .sin-foto { width: 52px; height: 52px; border-radius: 6px; object-fit: cover; background: var(--surface-2); }
+  .carro-prod b { display: block; font-weight: 600; color: var(--txt); }
+  .carro-prod span { color: var(--txt-2); }
+  .carro-total { display: flex; justify-content: space-between; padding-top: 10px; margin-top: 2px; border-top: 1px solid var(--line-alta); font-weight: 700; }
+  .vacio-vista { padding: 40px 16px; text-align: center; color: var(--txt-2); font-size: 14px; }
+  .vacio-vista b { display: block; font-size: 16px; color: var(--txt); margin-bottom: 4px; }
+
+  /* ══ Números del CRM ══ */
+  .num-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 16px; }
+  .periodos { display: flex; gap: 6px; flex-wrap: wrap; }
+  .periodos .chip { min-height: 36px; padding: 7px 13px; font-size: 13px; }
+  .num-fechas { display: flex; align-items: center; gap: 6px; color: var(--txt-2); font-size: 13px; }
+  .num-fechas[hidden] { display: none; }
+  .num-fechas input { width: 150px; }
+  .num-filtros select { width: auto; min-width: 190px; }
+  @media (min-width: 900px) { .num-filtros select { margin-left: auto; } }
+  .num-tit { font-size: 12px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; margin: 4px 2px 9px; }
+  .num-grid { display: grid; gap: 12px; margin-top: 4px; }
+  @media (min-width: 900px) { .num-grid { grid-template-columns: 1fr 1fr; } }
+  .num-tabla { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .num-tabla th { text-align: left; font-size: 11.5px; font-weight: 700; color: var(--txt-3); padding: 0 6px 8px; }
+  .num-tabla td { padding: 8px 6px; border-top: 1px solid var(--line); color: var(--txt); }
+  .num-tabla .n { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .num-barra { display: flex; align-items: center; gap: 8px; }
+  .num-barra i { display: block; height: 8px; border-radius: 0 4px 4px 0; background: var(--acc); min-width: 3px; }
+  .num-vacio { padding: 10px 0 2px; font-size: 13px; color: var(--txt-3); }
+
   /* ── La ficha del cliente: un panel que entra por la derecha ── */
   .capa { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end; background: rgba(20, 20, 18, .38); }
   .capa[hidden] { display: none; }
@@ -473,8 +520,10 @@
 
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
+  <!-- Las tres vistas: los No Compra, los carritos de la tienda y los números. -->
+  <div class="vistas" id="vistas" role="tablist" aria-label="Qué ver"></div>
 
-
+  <div id="vistaTablero">
   <div class="controles">
     <div class="buscador">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
@@ -488,6 +537,19 @@
 
   <p class="pista-mover" id="pistaMover" hidden></p>
   <div class="tablero" id="tablero"></div>
+  </div>
+
+  <!-- Los números del CRM (SQL 51), como el panel de Kommo. -->
+  <section id="vistaNumeros" hidden>
+    <div class="num-filtros">
+      <div class="periodos" id="periodos"></div>
+      <div class="num-fechas" id="numFechas" hidden>
+        <input type="date" id="numDesde" aria-label="Desde"> <span>a</span> <input type="date" id="numHasta" aria-label="Hasta">
+      </div>
+      <select id="numQuien" aria-label="Persona"><option value="">Todo el equipo</option></select>
+    </div>
+    <div id="numeros"></div>
+  </section>
 </main>
 
 </div><!-- /.marco -->
@@ -561,6 +623,10 @@
   var registros = [];
   /* La columna que se ve en el celular (en la PC se ven todas). */
   var colSel = 'Pendiente';
+  /* La vista abierta: 'no_compra', 'carrito' o 'numeros'. Se recuerda en
+     esta compu (07/10/2026). */
+  var K_VISTA = 'nc_panel_vista';
+  var vista = 'no_compra', carritos = [], carritosError = '';
 
   /* El PIN se guardaba acá. Ya no hay nada que guardar: la sesión la
      maneja datos.js y lo que queda en el aparato es un token que vence
@@ -646,6 +712,8 @@
     $('btnSalir').hidden = false;
     $('whoami').value = quien;
 
+    vista = ['no_compra', 'carrito', 'numeros'].indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : 'no_compra';
+    aplicarVista();
     pintarCrm(res);
     cargar();
   }
@@ -714,7 +782,9 @@
     if (r.estado) { return r.estado; }
     return r.contactamos === 'si' ? 'En seguimiento' : 'Pendiente';
   }
-  function porId(id) { return registros.filter(function (r) { return r.id === id; })[0]; }
+  /* Las fichas de la vista abierta. */
+  function datos() { return vista === 'carrito' ? carritos : registros; }
+  function porId(id) { return datos().filter(function (r) { return r.id === id; })[0]; }
   function diasDesde(iso) {
     if (!iso) { return null; }
     return Math.floor((Date.now() - new Date(iso + 'T12:00:00').getTime()) / 86400000);
@@ -781,25 +851,42 @@
   var K_ARRASTRO = 'nc_ya_arrastro';
   function pintarPista() {
     var pista = $('pistaMover');
-    if (leer(K_ARRASTRO) === '1' || !registros.length) { pista.hidden = true; return; }
+    if (vista === 'carrito' && !carritos.length && !carritosError) {
+      pista.textContent = 'Los carritos abandonados de vdh.com.ar llegan solos, cada hora.';
+      pista.hidden = false;
+      return;
+    }
+    if (leer(K_ARRASTRO) === '1' || !datos().length) { pista.hidden = true; return; }
     pista.textContent = window.matchMedia('(hover: none)').matches
       ? 'Para mover a un cliente de columna, mantené apretada su tarjeta y arrastrala.'
       : 'Arrastrá las tarjetas de una columna a otra, como en Trello.';
     pista.hidden = false;
   }
 
-  /* ═══ Carga ═════════════════════════════════════════════════════════════ */
+  /* ═══ Carga ═════════════════════════════════════════════════════════════
+     Los No Compra y los carritos a la vez: los números de arriba (lo que
+     espera en cada vista) necesitan los dos. Si los carritos todavía no
+     existen en la base (falta el SQL 51), los No Compra andan igual. */
   function cargar() {
     $('btnRefrescar').classList.add('girando');
-    if (!registros.length) {
+    if (vista !== 'numeros' && !datos().length) {
       $('tablero').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
     }
-    base.registros(pinGuardado(), 'Todos')
-      .then(function (filas) {
+    var pin = pinGuardado();
+    var pReg = base.registros(pin, 'Todos').then(function (filas) { registros = filas || []; });
+    var pCar = base.carritos(pin)
+      .then(function (filas) { carritos = filas || []; carritosError = ''; })
+      .catch(function (err) {
+        if (err && err.sinSesion) { throw err; }
+        carritos = [];
+        carritosError = /crm_carritos_listar|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'error';
+      });
+    Promise.all([pReg, pCar])
+      .then(function () {
         $('btnRefrescar').classList.remove('girando');
-        registros = filas || [];
         llenarLocales();
-        pintar();
+        pintarVistas();
+        if (vista === 'numeros') { cargarNumeros(); } else { pintar(); }
         if (fichaId) { pintarFicha(); }
       })
       .catch(function (err) {
@@ -808,9 +895,42 @@
         avisar('err', 'Error de conexión.');
       });
 
-    base.panel(pinGuardado())
+    base.panel(pin)
       .then(function (res) { pintarCrm(res); })
       .catch(function () {});
+  }
+
+  /* ═══ Las tres vistas ═══════════════════════════════════════════════════ */
+  function pintarVistas() {
+    var pend = function (l) { return l.filter(function (r) { return columnaDe(r) === 'Pendiente'; }).length; };
+    var ops = [['no_compra', 'No Compra', pend(registros)], ['carrito', 'Carritos', pend(carritos)], ['numeros', 'Números', null]];
+    $('vistas').innerHTML = ops.map(function (o) {
+      return '<button type="button" role="tab" aria-selected="' + (o[0] === vista) + '"' + (o[0] === vista ? ' class="sel"' : '') +
+        ' data-vista="' + o[0] + '">' + o[1] +
+        (o[2] === null ? '' : ' <span class="cuenta' + (o[2] ? '' : ' cero') + '" title="Sin contactar">' + o[2] + '</span>') + '</button>';
+    }).join('');
+    [].forEach.call($('vistas').children, function (b) { b.onclick = function () { cambiarVista(b.dataset.vista); }; });
+  }
+  function aplicarVista() {
+    var nums = vista === 'numeros';
+    $('vistaTablero').hidden = nums;
+    $('vistaNumeros').hidden = !nums;
+    /* El local sólo tiene sentido en los No Compra: los carritos son todos online. */
+    $('filtroLocal').parentNode.style.display = vista === 'no_compra' ? '' : 'none';
+    $('busca').placeholder = vista === 'carrito' ? 'Buscar por nombre, teléfono, mail o prenda…'
+                                                 : 'Buscar por nombre, teléfono, producto o vendedor…';
+    pintarVistas();
+  }
+  function cambiarVista(v) {
+    if (v === vista) return;
+    cancelarArrastre();
+    cerrarFicha();
+    vista = v;
+    guardar(K_VISTA, v);
+    colSel = 'Pendiente';
+    $('tablero').scrollLeft = 0;
+    aplicarVista();
+    if (vista === 'numeros') { cargarNumeros(); } else { pintar(); }
   }
 
   function llenarLocales() {
@@ -826,11 +946,11 @@
 
   function visibles() {
     var q = $('busca').value.trim().toLowerCase();
-    var loc = $('filtroLocal').value;
-    return registros.filter(function (r) {
+    var loc = vista === 'no_compra' ? $('filtroLocal').value : '';
+    return datos().filter(function (r) {
       if (loc && r.sucursal !== loc) return false;
       if (!q) return true;
-      return [r.nombre, r.whatsapp, r.producto, r.vendedor, r.mail, r.obs, r.motivo]
+      return [r.nombre, r.whatsapp, r.producto, r.productosTxt, r.vendedor, r.mail, r.obs, r.motivo]
         .join(' ').toLowerCase().indexOf(q) > -1;
     });
   }
@@ -855,7 +975,36 @@
     var f = new Date(); f.setDate(f.getDate() + n);
     return f.getDate() + '/' + (f.getMonth() + 1);
   }
+  /* Qué tenía el carrito, para el mensaje: "Remera Mordecai over (Grafito,
+     S)" o "… y 2 prendas más". Sin artículo: no sabemos si es "la" o "el". */
+  function queLlevaba(r) {
+    var p = (r.productos || [])[0];
+    if (!p) { return 'tu compra'; }
+    var uno = p.nombre + (p.variante ? ' (' + p.variante + ')' : '');
+    var mas = r.productos.length - 1;
+    return mas > 0 ? uno + ' y ' + (mas === 1 ? '1 prenda más' : mas + ' prendas más') : uno;
+  }
+  function plantillasCarrito(r) {
+    var link = r.url ? ' ' + r.url : '';
+    var l = [
+      { k: 'carrito', t: 'Te quedó en el carrito',
+        txt: holaDe(r) + 'Te escribo de VDH. Te quedó en el carrito de vdh.com.ar: ' + queLlevaba(r) + '.' +
+             (r.url ? ' Si querés terminar la compra, te lo dejé listo acá:' + link : ' ¿Te ayudo a terminar la compra?') },
+      { k: 'pago', t: '¿Problema con el pago?',
+        txt: holaDe(r) + 'Te escribo de VDH. Vimos que estabas por terminar tu compra en vdh.com.ar y el pago no se completó. ' +
+             '¿Tuviste algún problema?' + (r.url ? ' Si querés, la retomás desde acá:' + link : '') },
+      { k: 'talle', t: '¿Dudas con el talle?',
+        txt: holaDe(r) + 'Te escribo de VDH. ¿Tenés dudas con el talle o el color de ' + queLlevaba(r) + '? Te ayudo a elegir.' +
+             (r.url ? ' Tu carrito sigue guardado acá:' + link : '') },
+      { k: 'otravez', t: 'Volver a escribir',
+        txt: holaDe(r) + '¿Pudiste ver lo que te mandé?' + (r.url ? ' Tu carrito sigue guardado:' + link : ' Cualquier cosa, avisame.') }
+    ];
+    /* Si lo dejó en el pago, lo primero es preguntar si tuvo un problema. */
+    if (r.casiPago) { l.unshift(l.splice(1, 1)[0]); }
+    return l;
+  }
   function plantillas(r) {
+    if (r.fuente === 'carrito') { return plantillasCarrito(r); }
     var l = [
       { k: 'novedades', t: 'Novedades', txt: mensajeWsp(r) },
       { k: 'llego', t: 'Llegó lo que buscabas',
@@ -902,7 +1051,8 @@
     var r = porId(id); if (!r) return;
     wspId = id;
     var l = plantillas(r);
-    var elegida = l.filter(function (x) { return x.k === clave; })[0] || (frio(r) ? l.filter(function (x) { return x.k === 'otravez'; })[0] : l[0]);
+    var porClave = function (k) { return l.filter(function (x) { return x.k === k; })[0]; };
+    var elegida = porClave(clave) || (frio(r) ? porClave('otravez') : null) || l[0];
     $('wspTit').textContent = 'Escribirle a ' + (r.nombre || r.whatsapp);
     $('wspPlantillas').innerHTML = l.map(function (x) {
       return '<button type="button" class="chip' + (x === elegida ? ' sel' : '') + '" data-k="' + x.k + '">' + esc(x.t) + '</button>';
@@ -946,6 +1096,7 @@
     var dFrio = frio(r);
     var clase = 'tj' + (urgente ? ' urgente' : pend ? ' es-pend' : '') + (dFrio ? ' frio' : '') +
                 (col === 'Cerrado - compró' ? ' es-ok' : '');
+    if (r.fuente === 'carrito') { return tarjetaCarrito(r, clase, col, urgente, dFrio); }
     return '<article class="' + clase + '" data-id="' + r.id + '">' +
       '<div class="tj-top"><span class="pill pill-neutra">' + esc(bonito(r.sucursal) || 'Sin local') + '</span>' +
         '<span class="tj-dias' + (urgente ? ' viejo' : '') + '">' + esc(antiguedad(r)) + '</span></div>' +
@@ -960,8 +1111,34 @@
     '</article>';
   }
 
+  function tarjetaCarrito(r, clase, col, urgente, dFrio) {
+    var accion = r.whatsapp
+      ? '<button type="button" class="btn btn-wsp btn-chico" data-wsp="' + r.id + '">WhatsApp</button>'
+      : (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '');
+    return '<article class="' + clase + '" data-id="' + r.id + '">' +
+      (r.foto ? '<img class="tj-foto" src="' + esc(r.foto) + '" alt="" loading="lazy" onerror="this.remove()">' : '') +
+      '<div class="tj-top">' +
+        (r.casiPago ? '<span class="pill pill-warn">Casi pagó</span>' : '<span class="pill pill-neutra">Tienda online</span>') +
+        '<span class="tj-dias' + (urgente ? ' viejo' : '') + '">' + esc(antiguedad(r)) + '</span></div>' +
+      '<b class="tj-nom">' + esc(r.nombre || r.whatsapp || r.mail || 'Sin nombre') + '</b>' +
+      '<div class="tj-prod">' + esc(r.producto) + '</div>' +
+      '<div class="tj-total">' + esc(r.totalTxt) + '</div>' +
+      (dFrio ? '<div class="tj-aviso">Hace ' + dFrio + ' días sin respuesta: volvé a escribirle</div>' : '') +
+      (col === 'Cerrado - compró' && r.monto ? '<div class="tj-plata">Compró $' + esc(r.monto) + '</div>' : '') +
+      '<div class="tj-acc">' + accion + '</div>' +
+    '</article>';
+  }
+
   function pintar() {
     var lista = visibles();
+    if (vista === 'carrito' && carritosError) {
+      pintarColumnasCel();
+      $('tablero').innerHTML = '<div class="vacio-vista"><b>' +
+        (carritosError === 'falta' ? 'Falta un paso' : 'No se pudieron traer los carritos') + '</b>' +
+        (carritosError === 'falta' ? 'Para ver los carritos hay que correr el SQL 51 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
+      $('pistaMover').hidden = true;
+      return;
+    }
     pintarColumnasCel();
     $('tablero').innerHTML = COLUMNAS.map(function (c) {
       var dentro = lista.filter(function (r) { return columnaDe(r) === c.e; });
@@ -1006,9 +1183,13 @@
   var ventaId = null, ventaCanal = 'Sí - local';
   function pedirVenta(id) {
     var r = porId(id);
-    ventaId = id; ventaCanal = String(r.compro || '').indexOf('online') > -1 ? 'Sí - online' : 'Sí - local';
+    var esCarrito = r.fuente === 'carrito';
+    ventaId = id;
+    ventaCanal = esCarrito || String(r.compro || '').indexOf('online') > -1 ? 'Sí - online' : 'Sí - local';
     Array.prototype.forEach.call($('ventaCanal').children, function (b) { b.classList.toggle('sel', b.dataset.canal === ventaCanal); });
-    $('ventaMonto').value = r.monto || '';
+    $('ventaCanal').hidden = esCarrito;
+    $('ventaProd').parentNode.hidden = esCarrito;
+    $('ventaMonto').value = r.monto || (esCarrito && r.total ? Math.round(r.total).toLocaleString('es-AR') : '');
     $('ventaProd').value = r.productoFinal || '';
     $('modalVenta').hidden = false;
     setTimeout(function () { $('ventaMonto').focus(); }, 50);
@@ -1023,12 +1204,12 @@
     /* Primero el estado y el canal; después el monto y el producto (la base
        rechaza un monto sin venta, así que van en ese orden). */
     var monto = $('ventaMonto').value.trim(), prod = $('ventaProd').value.trim();
-    base.seguimiento(pinGuardado(), r.id, campos)
+    guardarEn(r.id, campos)
       .then(function () {
         var extra = {};
         if (monto) { extra.monto = monto; }
-        if (prod) { extra.productoFinal = prod; }
-        return Object.keys(extra).length ? base.seguimiento(pinGuardado(), r.id, extra) : true;
+        if (prod && r.fuente !== 'carrito') { extra.productoFinal = prod; }
+        return Object.keys(extra).length ? guardarEn(r.id, extra) : true;
       })
       .then(function () { avisar('ok', '¡Venta recuperada!' + (monto ? ' $' + monto : '')); cargar(); })
       .catch(function (err) {
@@ -1054,7 +1235,8 @@
     if (!r) { cerrarFicha(); return; }
     var col = columnaDe(r);
     var vendio = String(r.compro || '').indexOf('Sí') === 0;
-    $('fichaTit').textContent = r.nombre || r.whatsapp || 'Cliente';
+    $('fichaTit').textContent = r.nombre || r.whatsapp || r.mail || 'Cliente';
+    if (r.fuente === 'carrito') { fichaCarrito(r, col, vendio); return; }
     $('fichaIn').innerHTML =
       '<div class="ficha-bloque">' +
         '<h3>Cliente</h3>' +
@@ -1093,6 +1275,52 @@
         '</div>' +
         '<div class="ficha-dato" style="margin-top:10px"><span>' +
           (r.responsable ? 'Lo sigue ' + esc(r.responsable) : 'Nadie lo tomó todavía') +
+          (r.fecha1 ? ' · 1.er contacto ' + esc(r.fecha1) : '') + '</span></div>' +
+      '</div>';
+    conectarFicha(r);
+  }
+
+  function fichaCarrito(r, col, vendio) {
+    $('fichaIn').innerHTML =
+      '<div class="ficha-bloque">' +
+        '<h3>Cliente</h3>' +
+        '<div class="ficha-dato"><b>' + esc(r.nombre || 'Sin nombre') + '</b></div>' +
+        (r.whatsapp ? '<div class="ficha-dato"><span>WhatsApp:</span> +' + esc(normalizarTel(r.whatsapp)) + '</div>' : '') +
+        (r.mail ? '<div class="ficha-dato"><span>Mail:</span> ' + esc(r.mail) + '</div>' : '') +
+        '<div class="ficha-acc" style="margin-top:12px">' +
+          (r.whatsapp ? '<button type="button" class="btn btn-wsp btn-chico" data-wsp="' + r.id + '">Escribirle por WhatsApp</button>' : '') +
+          (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
+          (r.url ? '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' + esc(r.url) + '">Ver el carrito</a>' : '') +
+        '</div>' +
+      '</div>' +
+      '<div class="ficha-bloque">' +
+        '<h3>El carrito</h3>' +
+        (r.productos || []).map(function (q) {
+          var cant = Number(q.cantidad) || 1;
+          return '<div class="carro-prod">' +
+            (q.imagen ? '<img src="' + esc(q.imagen) + '" alt="" loading="lazy">' : '<span class="sin-foto"></span>') +
+            '<div><b>' + esc(q.nombre) + '</b><span>' + esc([q.variante, cant > 1 ? cant + ' unidades' : ''].filter(Boolean).join(' · ')) + '</span></div>' +
+            '<div>' + PESOS.format((Number(q.precio) || 0) * cant) + '</div>' +
+          '</div>';
+        }).join('') +
+        '<div class="carro-total"><span>Total</span><span>' + esc(r.totalTxt) + '</span></div>' +
+        '<div class="ficha-dato" style="margin-top:10px"><span>' + esc(r.fecha) +
+          (r.casiPago ? ' · lo dejó en el paso del pago' : '') + '</span></div>' +
+      '</div>' +
+      '<div class="ficha-bloque">' +
+        '<h3>Seguimiento</h3>' +
+        '<div class="ficha-grid">' +
+          '<div class="campo"><label>Columna</label><select id="fichaCol">' +
+            COLUMNAS.map(function (c) { return '<option value="' + esc(c.e) + '"' + (c.e === col ? ' selected' : '') + '>' + esc(c.t) + '</option>'; }).join('') +
+          '</select></div>' +
+          '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Monto</label>' +
+            '<input type="text" inputmode="numeric" data-c="monto" placeholder="$" value="' + esc(r.monto) + '"></div>' +
+          '<div class="campo ancho"><label>Notas</label>' +
+            '<textarea data-c="obsSeguim" placeholder="Qué dijo, qué quedó pendiente…">' + esc(r.obsSeguim) + '</textarea></div>' +
+        '</div>' +
+        '<div class="ficha-dato" style="margin-top:10px"><span>' +
+          (r.pedido ? 'Compró en la tienda · pedido #' + esc(r.pedido) + (r.responsable ? ' · lo siguió ' + esc(r.responsable) : '') :
+           r.responsable ? 'Lo sigue ' + esc(r.responsable) : 'Nadie lo tomó todavía') +
           (r.fecha1 ? ' · 1.er contacto ' + esc(r.fecha1) : '') + '</span></div>' +
       '</div>';
     conectarFicha(r);
@@ -1362,11 +1590,17 @@
     if (sigue) { sigue(); }
   }
 
+  /* Los No Compra van a registros; los carritos, a crm_carritos. */
+  function guardarEn(id, campos) {
+    return vista === 'carrito' ? base.carritoGuardar(pinGuardado(), id, campos)
+                               : base.seguimiento(pinGuardado(), id, campos);
+  }
+
   function guardarSeguim(id, campos, msgOk, sinRecargar) {
     if (!exigirQuien(function () { guardarSeguim(id, campos, msgOk, sinRecargar); })) return;
     /* Si se preguntó el nombre recién, que vaya el nombre. */
     if ('responsable' in campos) { campos.responsable = quien; }
-    base.seguimiento(pinGuardado(), id, campos)
+    guardarEn(id, campos)
       .then(function () {
         avisar('ok', msgOk);
         if (!sinRecargar) cargar();
@@ -1382,6 +1616,142 @@
       });
   }
 
+  /* ═══ Números del CRM (07/10/2026) ══════════════════════════════════════
+     Como el panel de Kommo: lo que pasó en el período (entraron, ganados,
+     perdidos, cierre) y cómo está hoy (sin contactar, para volver a
+     escribir, primer contacto, plata en juego en carritos). Por local y por
+     persona en tablas, no en gráficos: con pocos datos, un gráfico vacío no
+     dice nada y una tabla sí. */
+  var periodo = 'semana', quienNum = '';
+  var PERIODOS = [['hoy', 'Hoy'], ['ayer', 'Ayer'], ['semana', 'Semana'], ['mes', 'Mes'], ['fechas', 'Elegir fechas']];
+
+  function pintarPeriodos() {
+    $('periodos').innerHTML = PERIODOS.map(function (o) {
+      return '<button type="button" class="chip' + (o[0] === periodo ? ' sel' : '') + '" data-p="' + o[0] + '">' + o[1] + '</button>';
+    }).join('');
+    [].forEach.call($('periodos').children, function (b) {
+      b.onclick = function () {
+        periodo = b.dataset.p;
+        if (periodo === 'fechas' && !$('numDesde').value) {
+          var h = new Date(), d = new Date(); d.setDate(d.getDate() - 6);
+          $('numDesde').value = isoDia(d); $('numHasta').value = isoDia(h);
+        }
+        cargarNumeros();
+      };
+    });
+    $('numFechas').hidden = periodo !== 'fechas';
+  }
+  function isoDia(d) {
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  /* Del período elegido: [desde, hasta) en la hora de acá. */
+  function rangoNumeros() {
+    var hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    var manana = new Date(hoy); manana.setDate(manana.getDate() + 1);
+    if (periodo === 'hoy') { return [hoy, manana]; }
+    if (periodo === 'ayer') { var a = new Date(hoy); a.setDate(a.getDate() - 1); return [a, hoy]; }
+    if (periodo === 'semana') { var l = new Date(hoy); l.setDate(l.getDate() - ((l.getDay() + 6) % 7)); return [l, manana]; }
+    if (periodo === 'mes') { return [new Date(hoy.getFullYear(), hoy.getMonth(), 1), manana]; }
+    var d = $('numDesde').value, h = $('numHasta').value;
+    if (!d || !h) { return null; }
+    var desde = new Date(d + 'T00:00:00'), hasta = new Date(h + 'T00:00:00');
+    hasta.setDate(hasta.getDate() + 1);
+    return desde < hasta ? [desde, hasta] : [hasta, desde];
+  }
+  function duracion(h) {
+    if (h === null || h === undefined || h === '') { return '—'; }
+    h = Number(h);
+    if (h < 1) { return Math.max(1, Math.round(h * 60)) + ' min'; }
+    if (h < 48) { return String(Math.round(h * 10) / 10).replace('.', ',') + ' h'; }
+    return Math.round(h / 24) + ' días';
+  }
+
+  function cargarNumeros() {
+    pintarPeriodos();
+    var rg = rangoNumeros();
+    if (!rg) { return; }
+    $('numeros').innerHTML = '<div class="skel"></div><div class="skel"></div>';
+    base.crmEstadisticas(pinGuardado(), rg[0].toISOString(), rg[1].toISOString(), quienNum || null)
+      .then(pintarNumeros)
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        var falta = /crm_estadisticas|PGRST202|Could not find/i.test(String(err && err.message));
+        $('numeros').innerHTML = '<div class="vacio-vista"><b>' + (falta ? 'Falta un paso' : 'No se pudieron traer los números') + '</b>' +
+          (falta ? 'Para ver los números del CRM hay que correr el SQL 51 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
+      });
+  }
+
+  function pintarNumeros(st) {
+    var f = st.fuentes || {}, nc = f.no_compra || {}, ca = f.carrito || {};
+    var n = function (o, k) { return Number(o[k]) || 0; };
+    var suma = function (k) { return n(nc, k) + n(ca, k); };
+    var partes = function (k) { return 'No Compra ' + n(nc, k) + ' · Carritos ' + n(ca, k); };
+    var cerrados = suma('ganados') + suma('perdidos');
+    var viejo = Math.max(n(nc, 'pendiente_mas_viejo_dias'), n(ca, 'pendiente_mas_viejo_dias'));
+    var abiertos = n(ca, 'pendientes') + n(ca, 'seguimiento') + n(ca, 'esperando');
+    var tile = function (t, i) {
+      return '<div class="kpi ' + (t.cls || '') + '" style="animation-delay:' + (i * 40) + 'ms">' +
+        '<div class="kpi-n">' + esc(t.n) + '</div><div class="kpi-l">' + esc(t.l) + '</div><div class="kpi-pie">' + esc(t.pie) + '</div></div>';
+    };
+    var nombre = (PERIODOS.filter(function (o) { return o[0] === periodo; })[0] || ['', ''])[1];
+    var periodoTxt = periodo === 'fechas' ? 'Entre fechas' : nombre;
+
+    var pasaron = [
+      { n: suma('entraron'), l: 'Entraron', pie: partes('entraron') },
+      { n: suma('ganados'), l: 'Ganados', cls: 'es-ok',
+        pie: PESOS.format(suma('ganados_monto')) + ' · ' + suma('ganados_contactados') + ' después de escribirles' },
+      { n: suma('perdidos'), l: 'Perdidos', pie: 'no compraron o se descartaron' },
+      { n: cerrados ? Math.round(suma('ganados') * 100 / cerrados) + ' %' : '—', l: 'Cierre',
+        pie: cerrados ? 'compraron ' + suma('ganados') + ' de ' + cerrados + ' cerrados' : 'todavía no se cerró ninguno' }
+    ];
+    var hoy = [
+      { n: suma('pendientes'), l: 'Sin contactar', cls: 'es-pend',
+        pie: suma('pendientes') ? 'el más viejo, ' + (viejo === 0 ? 'de hoy' : viejo === 1 ? 'de ayer' : 'de hace ' + viejo + ' días') : 'nadie esperando' },
+      { n: suma('frios'), l: 'Para volver a escribir', pie: 'esperan respuesta hace 2 días o más' },
+      { n: duracion(st.primero_prom_h), l: 'Primer contacto',
+        pie: st.primero_max_h !== null && st.primero_max_h !== undefined ? 'promedio · el más largo, ' + duracion(st.primero_max_h) : 'desde que entran hasta que se les escribe' },
+      { n: PESOS.format(n(ca, 'en_juego')), l: 'En juego en carritos', cls: 'es-plata',
+        pie: abiertos === 1 ? '1 carrito abierto' : abiertos + ' carritos abiertos' }
+    ];
+
+    var locales = st.por_local || [];
+    var maxEnt = Math.max.apply(null, [1].concat(locales.map(function (l) { return Number(l.entraron) || 0; })));
+    var tablaLocales = locales.length
+      ? '<table class="num-tabla"><thead><tr><th>Local</th><th>Entraron</th><th class="n">Ganados</th><th class="n">Plata</th></tr></thead><tbody>' +
+        locales.map(function (l) {
+          var e = Number(l.entraron) || 0;
+          return '<tr><td>' + esc(l.local === 'Tienda online' ? l.local : bonito(l.local)) + '</td>' +
+            '<td><span class="num-barra" title="' + e + ' entraron"><i style="width:' + Math.round(e * 100 / maxEnt) + 'px"></i>' + e + '</span></td>' +
+            '<td class="n">' + (Number(l.ganados) || 0) + '</td><td class="n">' + PESOS.format(Number(l.monto) || 0) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<p class="num-vacio">En este período no entró nadie.</p>';
+
+    var gente = st.por_persona || [];
+    var tablaGente = gente.length
+      ? '<table class="num-tabla"><thead><tr><th>Persona</th><th class="n">Contactos</th><th class="n">Ganados</th><th class="n">Plata</th><th class="n">Perdidos</th></tr></thead><tbody>' +
+        gente.map(function (g) {
+          return '<tr><td>' + esc(g.quien) + '</td><td class="n">' + (Number(g.contactos) || 0) + '</td><td class="n">' + (Number(g.ganados) || 0) +
+            '</td><td class="n">' + PESOS.format(Number(g.monto) || 0) + '</td><td class="n">' + (Number(g.perdidos) || 0) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<p class="num-vacio">En este período nadie movió una tarjeta.</p>';
+
+    $('numeros').innerHTML =
+      '<h3 class="num-tit">Lo que pasó · ' + esc(periodoTxt) + (quienNum ? ' · ' + esc(quienNum) : '') + '</h3>' +
+      '<div class="kpis">' + pasaron.map(tile).join('') + '</div>' +
+      '<h3 class="num-tit">Cómo está hoy</h3>' +
+      '<div class="kpis">' + hoy.map(tile).join('') + '</div>' +
+      '<div class="num-grid">' +
+        '<div class="ficha-bloque"><h3>Por local</h3>' + tablaLocales + '</div>' +
+        '<div class="ficha-bloque"><h3>Por persona</h3>' + tablaGente + '</div>' +
+      '</div>';
+
+    /* Las personas que movieron algo, para elegir. */
+    var sel = $('numQuien'), actual = quienNum;
+    sel.innerHTML = '<option value="">Todo el equipo</option>' + (st.personas || []).map(function (q) {
+      return '<option value="' + esc(q) + '"' + (q === actual ? ' selected' : '') + '>' + esc(q) + '</option>';
+    }).join('');
+  }
+
   /* ═══ Arranque ══════════════════════════════════════════════════════════ */
   (function () {
     iniciarTema();
@@ -1390,6 +1760,9 @@
     var t = null;
     $('busca').oninput = function () { clearTimeout(t); t = setTimeout(pintar, 180); };
     $('filtroLocal').onchange = pintar;
+    $('numQuien').onchange = function () { quienNum = this.value; cargarNumeros(); };
+    $('numDesde').onchange = cargarNumeros;
+    $('numHasta').onchange = cargarNumeros;
 
     /* Las ventanitas y la ficha. */
     $('wspTexto').oninput = actualizarWsp;
