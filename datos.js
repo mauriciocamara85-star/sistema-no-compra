@@ -1230,6 +1230,11 @@ var base = {
     return funcion('crm_historial', { p_pin: pin, p_fuente: fuente, p_ref: ref });
   },
 
+  /** La ficha completa (SQL 53): si es socio del Club y las otras veces que vino. */
+  crmCliente: function (pin, fuente, ref) {
+    return funcion('crm_cliente', { p_pin: pin, p_fuente: fuente, p_ref: ref });
+  },
+
   /** El descuento atado al teléfono, desde la ficha del cliente. */
   darDescuento: function (pin, registro, pct, dias, quien) {
     return funcion('dar_descuento', {
@@ -1400,6 +1405,10 @@ function deLaBase_(f) {
     /* El recordatorio (SQL 52): "2026-10-10" y para qué. */
     recordar:     f.recordar || '',
     recordarNota: f.recordar_nota || '',
+    /* Por qué no compró y las etiquetas (SQL 53). Sin la columna, null. */
+    perdida:      f.perdida || '',
+    perdidaNota:  f.perdida_nota || '',
+    etiquetas:    Array.isArray(f.etiquetas) ? f.etiquetas : null,
     /* Con el punto de los miles: es un campo que se lee de un vistazo en
        una lista de fichas, y "92500" obliga a contar ceros. Vuelve a entrar
        bien porque aLaBase_ saca los puntos antes de guardarlo. */
@@ -1447,6 +1456,9 @@ function deCarrito_(k) {
     productoFinal: '',
     recordar:     k.recordar || '',
     recordarNota: k.recordar_nota || '',
+    perdida:      k.perdida || '',
+    perdidaNota:  k.perdida_nota || '',
+    etiquetas:    Array.isArray(k.etiquetas) ? k.etiquetas : null,
     monto:       k.monto == null ? '' : Math.round(Number(k.monto)).toLocaleString('es-AR')
   };
 }
@@ -1485,6 +1497,11 @@ function aLaBase_(campos) {
   if (campos.recordar     !== undefined) c.recordar = campos.recordar || null;
   if (campos.recordarNota !== undefined) c.recordar_nota = campos.recordarNota || null;
   if (campos.quien        !== undefined) c.quien = campos.quien || null;
+
+  /* Por qué no compró y las etiquetas (SQL 53). */
+  if (campos.perdida      !== undefined) c.perdida = campos.perdida || null;
+  if (campos.perdidaNota  !== undefined) c.perdida_nota = campos.perdidaNota || null;
+  if (campos.etiquetas    !== undefined) c.etiquetas = campos.etiquetas || [];
   if (campos.monto !== undefined) {
     var n = Number(String(campos.monto).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.'));
     c.monto = (campos.monto === '' || isNaN(n)) ? null : n;

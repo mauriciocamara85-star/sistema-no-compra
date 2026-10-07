@@ -764,3 +764,492 @@ $$;
 grant execute on function crm_carrito_guardar(text, bigint, jsonb) to anon, authenticated;
 
 select 'listo: plantillas, recordatorios e historial del CRM' as "SQL 52";
+
+
+-- ─────────────────────────── PARTE 53 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · EL CRM PROPIO, TERCERA PARTE: POR QUÉ NO COMPRAN, EL CLIENTE ENTERO
+-- Y LAS ETIQUETAS
+--
+-- Correr en el editor SQL de Supabase, DESPUÉS del 52.
+--
+-- Lo que seguía del plan del 07/10/2026 (puntos 5, 6 y 7):
+--
+-- 5. MOTIVO DE PÉRDIDA. Al pasar una tarjeta a "No compró" se elige por
+--    qué (no contestó, precio, compró en otro lado…). En Números se ve por
+--    qué se pierden las ventas. Los carritos que se cierran solos a los 30
+--    días quedan con "Pasaron 30 días".
+-- 6. LA FICHA COMPLETA DEL CLIENTE. Si es socio del Club, su nivel, sus
+--    puntos y sus compras; y las otras veces que vino (otros No Compra,
+--    otros carritos). Se cruza por teléfono y por mail.
+-- 7. ETIQUETAS LIBRES ("VIP", "Talle especial", "Mayorista") en cada
+--    tarjeta.
+--
+--   registros / crm_carritos  + perdida, perdida_nota, etiquetas
+--   crm_etiquetas_limpias     sin repetidas, sin espacios de más, hasta 8
+--   crm_cliente               la ficha completa (con el PIN)
+--   seguimiento_guardar       + motivo y etiquetas (el mismo de siempre)
+--   crm_carrito_guardar       + motivo y etiquetas
+--   crm_carritos_cargar       + "Pasaron 30 días" al cerrarlos solo
+--   crm_estadisticas          + motivos (por qué no compraron)
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* ═══ 1. LAS COLUMNAS ════════════════════════════════════════════════════ */
+
+alter table registros add column if not exists perdida text;
+alter table registros add column if not exists perdida_nota text;
+alter table registros add column if not exists etiquetas text[] not null default '{}';
+alter table crm_carritos add column if not exists perdida text;
+alter table crm_carritos add column if not exists perdida_nota text;
+alter table crm_carritos add column if not exists etiquetas text[] not null default '{}';
+
+/* Las etiquetas como llegan del Panel: sin repetidas (VIP y vip son la
+   misma, queda como se escribió primero), sin espacios de más, hasta 30
+   letras cada una y no más de 8. */
+create or replace function crm_etiquetas_limpias(p jsonb)
+returns text[] language sql immutable as $$
+  select coalesce(array_agg(e order by primera), '{}'::text[]) from (
+    select (array_agg(e0 order by n))[1] as e, min(n) as primera
+      from (select left(regexp_replace(trim(x), '\s+', ' ', 'g'), 30) as e0, n
+              from jsonb_array_elements_text(case when jsonb_typeof(p) = 'array' then p else '[]'::jsonb end)
+                   with ordinality as t(x, n)) z
+     where e0 <> ''
+     group by lower(e0)
+     order by min(n)
+     limit 8
+  ) y
+$$;
+
+/* Los carritos que ya se cerraron solos (a los 30 días): ese es su motivo. */
+update crm_carritos k set perdida = 'Pasaron 30 días'
+ where k.estado = 'Cerrado - no compró' and k.perdida is null
+   and (select m.quien from crm_movimientos m
+         where m.fuente = 'carrito' and m.ref = k.id and m.a = 'Cerrado - no compró'
+         order by m.cuando desc, m.id desc limit 1) = 'Automático';
+
+
+/* ═══ 2. LA FICHA COMPLETA DEL CLIENTE ═══════════════════════════════════ */
+
+/* Lo que sabemos de la persona de una tarjeta, por su teléfono (los últimos
+   10 números) o su mail: si es socio del Club —nivel, puntos, compras; sin
+   el código, que acá no hace falta— y las otras veces que vino. */
+create or replace function crm_cliente(p_pin text, p_fuente text, p_ref bigint)
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+declare
+  tel text; correo text; socio_id bigint; socio jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_fuente = 'carrito' then
+    select club_tel10(k.telefono), nullif(lower(trim(k.mail)), '') into tel, correo from crm_carritos k where k.id = p_ref;
+  else
+    select club_tel10(r.whatsapp), nullif(lower(trim(r.mail)), '') into tel, correo from registros r where r.id = p_ref;
+  end if;
+  if tel is null and correo is null then
+    return jsonb_build_object('socio', null, 'otras', '[]'::jsonb);
+  end if;
+
+  select c.id into socio_id from club_clientes c
+   where c.baja is null
+     and ((tel is not null and club_tel10(c.telefono) = tel) or (correo is not null and lower(trim(c.mail)) = correo))
+   order by (tel is not null and club_tel10(c.telefono) = tel) desc, c.creado
+   limit 1;
+  if socio_id is not null then
+    select jsonb_build_object('nombre', v.nombre, 'nivel', v.nivel, 'puntos', v.puntos, 'compras', v.compras,
+                              'gastado', v.gastado, 'ultima_compra', v.ultima_compra, 'desde', v.creado, 'local', v.local_alta)
+      into socio from v_club_clientes v where v.id = socio_id;
+  end if;
+
+  return jsonb_build_object(
+    'socio', socio,
+    'otras', coalesce((
+      select jsonb_agg(to_jsonb(o) order by o.creado desc) from (
+        select * from (
+          select 'no_compra'::text as fuente, r.id, r.creado, r.sucursal as local, r.producto as que, r.talle,
+                 crm_columna(r.estado, r.contactado) as columna, null::numeric as total, r.monto
+            from registros r
+           where not (p_fuente = 'no_compra' and r.id = p_ref)
+             and ((tel is not null and club_tel10(r.whatsapp) = tel) or (correo is not null and lower(trim(r.mail)) = correo))
+          union all
+          select 'carrito', k.id, k.creado, null, k.productos->0->>'nombre', null,
+                 crm_columna(k.estado, k.contactado), k.total, k.monto
+            from crm_carritos k
+           where not (p_fuente = 'carrito' and k.id = p_ref)
+             and ((tel is not null and club_tel10(k.telefono) = tel) or (correo is not null and k.mail = correo))
+        ) t order by creado desc limit 12
+      ) o), '[]'::jsonb));
+end;
+$$;
+grant execute on function crm_cliente(text, text, bigint) to anon, authenticated;
+
+/* El de siempre (con el recordatorio del 52), + el motivo de pérdida y las etiquetas. */
+CREATE OR REPLACE FUNCTION public.seguimiento_guardar(p_pin text, p_id bigint, p_campos jsonb)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare tocadas integer;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_campos is null or p_campos = '{}'::jsonb then return true; end if;
+
+  update registros set
+    contactado = case when p_campos ? 'contactado'
+                      then coalesce((p_campos->>'contactado')::boolean, false) else contactado end,
+    responsable = case when p_campos ? 'responsable'
+                       then p_campos->>'responsable' else responsable end,
+    contacto1_result = case when p_campos ? 'contacto1_result'
+                            then (p_campos->>'contacto1_result')::resultado_contacto else contacto1_result end,
+    contacto1_fecha = case when p_campos ? 'contacto1_fecha'
+                           then (p_campos->>'contacto1_fecha')::date else contacto1_fecha end,
+    estado = case when p_campos ? 'estado'
+                  then (p_campos->>'estado')::estado_seguimiento else estado end,
+    obs_seguimiento = case when p_campos ? 'obs_seguimiento'
+                           then p_campos->>'obs_seguimiento' else obs_seguimiento end,
+    compro = case when p_campos ? 'compro'
+                  then coalesce((p_campos->>'compro')::boolean, false) else compro end,
+    compro_canal = case when p_campos ? 'compro_canal'
+                        then (p_campos->>'compro_canal')::canal_venta else compro_canal end,
+    producto_final = case when p_campos ? 'producto_final'
+                          then p_campos->>'producto_final' else producto_final end,
+    monto = case when p_campos ? 'monto'
+                 then (p_campos->>'monto')::numeric else monto end,
+    /* El recordatorio (SQL 52). */
+    recordar = case when p_campos ? 'recordar' then nullif(p_campos->>'recordar', '')::date else recordar end,
+    recordar_nota = case when p_campos ? 'recordar_nota' then nullif(trim(p_campos->>'recordar_nota'), '') else recordar_nota end,
+    /* Por qué no compró (SQL 53). Si sale de "No compró", se borra. */
+    perdida = case when p_campos ? 'perdida' then nullif(trim(p_campos->>'perdida'), '')
+                   when p_campos ? 'estado' and (p_campos->>'estado') is distinct from 'Cerrado - no compró' then null
+                   else perdida end,
+    perdida_nota = case when p_campos ? 'perdida_nota' then nullif(trim(p_campos->>'perdida_nota'), '')
+                        when p_campos ? 'estado' and (p_campos->>'estado') is distinct from 'Cerrado - no compró' then null
+                        else perdida_nota end,
+    /* Las etiquetas (SQL 53). */
+    etiquetas = case when p_campos ? 'etiquetas' then crm_etiquetas_limpias(p_campos->'etiquetas') else etiquetas end
+  where id = p_id;
+
+  get diagnostics tocadas = row_count;
+
+  /* Al historial de la ficha (SQL 52). */
+  if tocadas > 0 and p_campos ? 'recordar' then
+    insert into crm_eventos (fuente, ref, tipo, detalle, quien)
+    values ('no_compra', p_id, 'recordatorio', crm_recordatorio_txt(p_campos),
+            crm_quien(coalesce(nullif(trim(p_campos->>'quien'), ''), p_campos->>'responsable')));
+  end if;
+  return tocadas > 0;
+end;
+$function$
+;
+
+/* Lo mismo para los carritos. */
+CREATE OR REPLACE FUNCTION public.crm_carrito_guardar(p_pin text, p_id bigint, p_campos jsonb)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare tocadas integer;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_campos is null or p_campos = '{}'::jsonb then return true; end if;
+
+  update crm_carritos set
+    contactado = case when p_campos ? 'contactado'
+                      then coalesce((p_campos->>'contactado')::boolean, false) else contactado end,
+    responsable = case when p_campos ? 'responsable' then p_campos->>'responsable' else responsable end,
+    contacto1_fecha = case when p_campos ? 'contacto1_fecha'
+                           then (p_campos->>'contacto1_fecha')::date else contacto1_fecha end,
+    estado = case when p_campos ? 'estado'
+                  then (p_campos->>'estado')::estado_seguimiento else estado end,
+    obs_seguimiento = case when p_campos ? 'obs_seguimiento'
+                           then p_campos->>'obs_seguimiento' else obs_seguimiento end,
+    compro = case when p_campos ? 'compro'
+                  then coalesce((p_campos->>'compro')::boolean, false) else compro end,
+    monto = case when p_campos ? 'compro' and not coalesce((p_campos->>'compro')::boolean, false) then null
+                 when p_campos ? 'monto' then (p_campos->>'monto')::numeric
+                 else monto end,
+    recordar = case when p_campos ? 'recordar' then nullif(p_campos->>'recordar', '')::date else recordar end,
+    recordar_nota = case when p_campos ? 'recordar_nota' then nullif(trim(p_campos->>'recordar_nota'), '') else recordar_nota end,
+    /* Por qué no compró (SQL 53). Si sale de "No compró", se borra. */
+    perdida = case when p_campos ? 'perdida' then nullif(trim(p_campos->>'perdida'), '')
+                   when p_campos ? 'estado' and (p_campos->>'estado') is distinct from 'Cerrado - no compró' then null
+                   else perdida end,
+    perdida_nota = case when p_campos ? 'perdida_nota' then nullif(trim(p_campos->>'perdida_nota'), '')
+                        when p_campos ? 'estado' and (p_campos->>'estado') is distinct from 'Cerrado - no compró' then null
+                        else perdida_nota end,
+    /* Las etiquetas (SQL 53). */
+    etiquetas = case when p_campos ? 'etiquetas' then crm_etiquetas_limpias(p_campos->'etiquetas') else etiquetas end
+  where id = p_id;
+  get diagnostics tocadas = row_count;
+
+  if tocadas > 0 and p_campos ? 'recordar' then
+    insert into crm_eventos (fuente, ref, tipo, detalle, quien)
+    values ('carrito', p_id, 'recordatorio', crm_recordatorio_txt(p_campos),
+            crm_quien(coalesce(nullif(trim(p_campos->>'quien'), ''), p_campos->>'responsable')));
+  end if;
+  return tocadas > 0;
+end;
+$function$
+;
+
+/* La carga de cada hora, igual: sólo que al cerrar uno a los 30 días anota el motivo. */
+CREATE OR REPLACE FUNCTION public.crm_carritos_cargar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  c jsonb; o jsonb;
+  nuevos integer := 0; actualizados integer := 0; saltados integer := 0;
+  compraron integer := 0; vencidos integer := 0; n integer; esnuevo boolean;
+  mails text[]; tels text[]; cuando timestamptz;
+begin
+  perform set_config('vdh.crm_quien', 'Automático', true);
+
+  for c in select value from jsonb_array_elements(coalesce(p->'carritos', '[]'::jsonb)) loop
+    if coalesce(nullif(c->>'total', '')::numeric, 0) <= 0
+       or jsonb_array_length(coalesce(c->'productos', '[]'::jsonb)) = 0 then
+      saltados := saltados + 1;
+      continue;
+    end if;
+    insert into crm_carritos as k (id, token, creado, actualizado, nombre, mail, telefono, total, moneda, url,
+                                   productos, casi_pago, visto)
+    values ((c->>'id')::bigint, nullif(c->>'token', ''), (c->>'creado')::timestamptz,
+            nullif(c->>'actualizado', '')::timestamptz, nullif(trim(c->>'nombre'), ''),
+            nullif(lower(trim(c->>'mail')), ''), nullif(trim(c->>'telefono'), ''),
+            (c->>'total')::numeric, nullif(c->>'moneda', ''), nullif(c->>'url', ''),
+            coalesce(c->'productos', '[]'::jsonb), coalesce((c->>'casi_pago')::boolean, false), now())
+    on conflict (id) do update set
+      actualizado = excluded.actualizado,
+      nombre      = coalesce(excluded.nombre, k.nombre),
+      mail        = coalesce(excluded.mail, k.mail),
+      telefono    = coalesce(excluded.telefono, k.telefono),
+      total       = excluded.total,
+      moneda      = coalesce(excluded.moneda, k.moneda),
+      url         = coalesce(excluded.url, k.url),
+      productos   = excluded.productos,
+      casi_pago   = k.casi_pago or excluded.casi_pago,
+      visto       = now()
+    returning (xmax = 0) into esnuevo;
+    if esnuevo then nuevos := nuevos + 1; else actualizados := actualizados + 1; end if;
+
+    /* Si Tienda Nube ya lo da por completado, compró. */
+    if nullif(c->>'completado', '') is not null then
+      update crm_carritos
+         set compro = true, estado = 'Cerrado - compró', monto = coalesce(monto, total)
+       where id = (c->>'id')::bigint and not compro;
+      get diagnostics n = row_count;
+      compraron := compraron + n;
+    end if;
+  end loop;
+
+  for o in select value from jsonb_array_elements(coalesce(p->'pedidos', '[]'::jsonb)) loop
+    cuando := (o->>'creado')::timestamptz;
+    select array_agg(distinct lower(trim(x))) into mails
+      from jsonb_array_elements_text(coalesce(o->'mails', '[]'::jsonb)) x where x like '%_@_%';
+    select array_agg(distinct right(regexp_replace(x, '\D', '', 'g'), 10)) into tels
+      from jsonb_array_elements_text(coalesce(o->'telefonos', '[]'::jsonb)) x
+     where length(regexp_replace(x, '\D', '', 'g')) >= 10;
+    if mails is null and tels is null then continue; end if;
+
+    with suyos as (
+      select k.id, row_number() over (order by k.creado desc) as orden
+        from crm_carritos k
+       where not k.compro
+         and k.creado <= cuando
+         and k.creado > cuando - interval '30 days'
+         and ((k.mail is not null and k.mail = any (coalesce(mails, '{}'::text[])))
+              or (length(regexp_replace(coalesce(k.telefono, ''), '\D', '', 'g')) >= 10
+                  and right(regexp_replace(k.telefono, '\D', '', 'g'), 10) = any (coalesce(tels, '{}'::text[]))))
+    )
+    update crm_carritos k
+       set compro = true, estado = 'Cerrado - compró', pedido = nullif(o->>'numero', ''),
+           monto = case when s.orden = 1 then nullif(o->>'total', '')::numeric end
+      from suyos s
+     where s.id = k.id;
+    get diagnostics n = row_count;
+    compraron := compraron + n;
+  end loop;
+
+  update crm_carritos
+     set estado = 'Cerrado - no compró', perdida = coalesce(perdida, 'Pasaron 30 días')
+   where not compro
+     and creado < now() - interval '30 days'
+     and crm_columna(estado, contactado) in ('Pendiente', 'En seguimiento', 'Esperando respuesta');
+  get diagnostics vencidos = row_count;
+
+  /* Que lo que se mueva después en la misma transacción no salga como Automático. */
+  perform set_config('vdh.crm_quien', '', true);
+
+  return jsonb_build_object('nuevos', nuevos, 'actualizados', actualizados, 'saltados', saltados,
+                            'compraron', compraron, 'vencidos', vencidos);
+end;
+$function$
+;
+
+/* Los números del CRM (SQL 51), + por qué no compraron. */
+CREATE OR REPLACE FUNCTION public.crm_estadisticas(p_pin text, p_desde timestamp with time zone, p_hasta timestamp with time zone, p_quien text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  res jsonb;
+  tz constant text := 'America/Argentina/Buenos_Aires';
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  with
+  /* Cada tarjeta, con dónde está hoy, su local, su plata y cuándo entró. */
+  fichas as (
+    select 'no_compra'::text as fuente, r.id as ref, crm_columna(r.estado, r.contactado) as col,
+           r.creado, coalesce(nullif(trim(r.sucursal), ''), 'Sin local') as local, r.monto,
+           null::numeric as total, r.contactado,
+           (r.contacto1_fecha + time '12:00') at time zone tz as contacto1, r.perdida
+      from registros r
+    union all
+    select 'carrito', k.id, crm_columna(k.estado, k.contactado), k.creado, 'Tienda online', k.monto,
+           k.total, k.contactado, (k.contacto1_fecha + time '12:00') at time zone tz, k.perdida
+      from crm_carritos k
+  ),
+  mov as (
+    select m.* from crm_movimientos m where m.cuando >= p_desde and m.cuando < p_hasta
+  ),
+  /* El último paso de cada tarjeta a un cierre, en el período. */
+  cierres as (
+    select distinct on (m.fuente, m.ref) m.fuente, m.ref, m.a, m.quien, m.cuando
+      from mov m
+     where m.a in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado')
+     order by m.fuente, m.ref, m.cuando desc
+  ),
+  ganados as (
+    select c.*, f.monto, f.contactado, f.local from cierres c
+      join fichas f on f.fuente = c.fuente and f.ref = c.ref
+     where c.a = 'Cerrado - compró' and f.col = 'Cerrado - compró'
+       and (p_quien is null or c.quien = p_quien)
+  ),
+  perdidos as (
+    select c.*, f.local, f.perdida from cierres c
+      join fichas f on f.fuente = c.fuente and f.ref = c.ref
+     where c.a in ('Cerrado - no compró', 'Descartado') and f.col in ('Cerrado - no compró', 'Descartado')
+       and (p_quien is null or c.quien = p_quien)
+  ),
+  /* El primer contacto de cada tarjeta: la primera vez que salió de
+     Pendiente hacia una columna de contacto, movida por una persona. */
+  primeros_todos as (
+    select distinct on (m.fuente, m.ref) m.fuente, m.ref, m.quien, m.cuando
+      from crm_movimientos m
+     where m.de = 'Pendiente'
+       and m.a in ('En seguimiento', 'Esperando respuesta', 'Cerrado - compró', 'Cerrado - no compró')
+       and coalesce(m.quien, '') not in ('', 'Automático')
+     order by m.fuente, m.ref, m.cuando
+  ),
+  primeros as (
+    select p.*, extract(epoch from (p.cuando - f.creado)) / 3600.0 as horas
+      from primeros_todos p join fichas f on f.fuente = p.fuente and f.ref = p.ref
+     where p.cuando >= p_desde and p.cuando < p_hasta
+       and (p_quien is null or p.quien = p_quien)
+  ),
+  entraron as (
+    select f.* from fichas f where f.creado >= p_desde and f.creado < p_hasta
+  ),
+  /* La foto de hoy. */
+  esperando as (
+    select f.fuente, f.ref,
+           coalesce((select max(m.cuando) from crm_movimientos m
+                      where m.fuente = f.fuente and m.ref = f.ref and m.a = 'Esperando respuesta'), f.contacto1) as desde
+      from fichas f where f.col = 'Esperando respuesta'
+  ),
+  por_fuente as (
+    select x.fuente,
+      (select count(*) from entraron e where e.fuente = x.fuente) as entraron,
+      (select count(*) from ganados g where g.fuente = x.fuente) as ganados,
+      (select coalesce(sum(g.monto), 0) from ganados g where g.fuente = x.fuente) as ganados_monto,
+      (select count(*) from ganados g where g.fuente = x.fuente and g.contactado) as ganados_contactados,
+      (select count(*) from perdidos q where q.fuente = x.fuente) as perdidos,
+      (select count(*) from primeros p where p.fuente = x.fuente) as primeros,
+      (select round(avg(p.horas)::numeric, 1) from primeros p where p.fuente = x.fuente) as primero_prom_h,
+      (select round(max(p.horas)::numeric, 1) from primeros p where p.fuente = x.fuente) as primero_max_h,
+      (select count(*) from fichas f where f.fuente = x.fuente and f.col = 'Pendiente') as pendientes,
+      (select coalesce(max(extract(day from now() - f.creado)), 0)::int from fichas f
+        where f.fuente = x.fuente and f.col = 'Pendiente') as pendiente_mas_viejo_dias,
+      (select count(*) from fichas f where f.fuente = x.fuente and f.col = 'En seguimiento') as seguimiento,
+      (select count(*) from fichas f where f.fuente = x.fuente and f.col = 'Esperando respuesta') as esperando,
+      (select count(*) from esperando s where s.fuente = x.fuente and s.desde < now() - interval '2 days') as frios,
+      (select coalesce(sum(f.total), 0) from fichas f where f.fuente = x.fuente
+          and f.col in ('Pendiente', 'En seguimiento', 'Esperando respuesta')) as en_juego
+    from (values ('no_compra'), ('carrito')) as x(fuente)
+  )
+  select jsonb_build_object(
+    'desde', p_desde, 'hasta', p_hasta, 'quien', p_quien,
+    'fuentes', (select jsonb_object_agg(fuente, to_jsonb(por_fuente) - 'fuente') from por_fuente),
+    'primero_prom_h', (select round(avg(horas)::numeric, 1) from primeros),
+    'primero_max_h', (select round(max(horas)::numeric, 1) from primeros),
+    /* Por qué no compraron (SQL 53): los que pasaron a "No compró" en el período. */
+    'motivos', coalesce((
+      select jsonb_agg(jsonb_build_object('motivo', m.motivo, 'no_compra', m.nc, 'carrito', m.ca, 'total', m.total)
+                       order by m.total desc, m.motivo)
+        from (
+          select coalesce(q.perdida, 'Sin motivo') as motivo,
+                 count(*) filter (where q.fuente = 'no_compra')::int as nc,
+                 count(*) filter (where q.fuente = 'carrito')::int as ca,
+                 count(*)::int as total
+            from perdidos q where q.a = 'Cerrado - no compró'
+           group by 1
+        ) m), '[]'::jsonb),
+    'por_dia', coalesce((
+      select jsonb_agg(jsonb_build_object('dia', d.dia, 'entraron', d.entraron, 'ganados', d.ganados) order by d.dia)
+        from (
+          select dia, sum(entraron)::int as entraron, sum(ganados)::int as ganados from (
+            select (e.creado at time zone tz)::date as dia, 1 as entraron, 0 as ganados from entraron e
+            union all
+            select (g.cuando at time zone tz)::date, 0, 1 from ganados g
+          ) t group by dia
+        ) d), '[]'::jsonb),
+    'por_local', coalesce((
+      select jsonb_agg(jsonb_build_object('local', l.local, 'entraron', l.entraron, 'ganados', l.ganados, 'monto', l.monto)
+                       order by l.entraron desc, l.local)
+        from (
+          select local, sum(entraron)::int as entraron, sum(ganados)::int as ganados, sum(monto) as monto from (
+            select e.local, 1 as entraron, 0 as ganados, 0::numeric as monto from entraron e
+            union all
+            select g.local, 0, 1, coalesce(g.monto, 0) from ganados g
+          ) t group by local
+        ) l), '[]'::jsonb),
+    'por_persona', coalesce((
+      select jsonb_agg(jsonb_build_object('quien', q.quien, 'contactos', q.contactos, 'ganados', q.ganados,
+                                          'monto', q.monto, 'perdidos', q.perdidos)
+                       order by q.ganados desc, q.contactos desc, q.quien)
+        from (
+          select quien, sum(contactos)::int as contactos, sum(ganados)::int as ganados,
+                 sum(monto) as monto, sum(perdidos)::int as perdidos from (
+            select p.quien, 1 as contactos, 0 as ganados, 0::numeric as monto, 0 as perdidos from primeros p
+            union all
+            select g.quien, 0, 1, coalesce(g.monto, 0), 0 from ganados g
+            union all
+            select q.quien, 0, 0, 0, 1 from perdidos q
+          ) t
+          where coalesce(quien, '') not in ('', 'Automático')
+          group by quien
+        ) q), '[]'::jsonb),
+    'personas', coalesce((
+      select jsonb_agg(distinct m.quien order by m.quien) from crm_movimientos m
+       where coalesce(m.quien, '') not in ('', 'Automático') and m.de is not null
+         and m.cuando > now() - interval '120 days'), '[]'::jsonb)
+  ) into res;
+  return res;
+end;
+$function$
+;
+
+select 'listo: motivo de pérdida, ficha completa del cliente y etiquetas' as "SQL 53";
