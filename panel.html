@@ -254,6 +254,8 @@
   .col { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); padding: 10px; min-height: 180px;
          transition: background .15s, border-color .15s; }
   .col.sobre { background: var(--acc-soft); border: 1px dashed var(--acc); }
+  /* Donde va a caer la tarjeta, como en Kommo. */
+  .tj-hueco { margin-bottom: 9px; border: 2px dashed var(--acc-line); border-radius: var(--r-sm); background: rgba(28, 28, 26, .04); }
   .col-cab { display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; }
   .col-cab b { font-size: 13px; font-weight: 700; color: var(--txt); }
   .col-cab .cuenta { margin-left: auto; font-size: 11.5px; font-weight: 700; padding: 1px 8px;
@@ -306,7 +308,7 @@
     .tablero::-webkit-scrollbar { display: none; }
     /* Mientras se arrastra una tarjeta, sin imanes: el tablero se corre solo. */
     .tablero.sin-imanes { scroll-snap-type: none; }
-    .col { flex: 0 0 calc(100% - 38px); scroll-snap-align: start; }
+    .col { flex: 0 0 calc(100% - 38px); scroll-snap-align: start; min-height: max(180px, calc(100vh - 330px)); }
     .filtros { position: relative; }
   }
 
@@ -316,8 +318,11 @@
     .controles { flex-direction: row; align-items: center; }
     .controles .buscador { flex: 1; }
     .controles .fila-filtros { flex: none; width: 260px; }
+    /* Cada columna es un carril que llega hasta abajo, aunque esté vacía:
+       así se ve dónde soltar y se puede soltar a cualquier altura. */
     .tablero { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr); gap: 12px;
-               overflow-x: auto; padding-bottom: 8px; align-items: start; }
+               overflow-x: auto; padding-bottom: 8px; align-items: stretch; }
+    .col { min-height: max(220px, calc(100vh - 270px)); }
     .filtros { display: none; }
   }
 
@@ -1145,6 +1150,9 @@
       /* Pendientes: el más viejo arriba (es el que se pierde). El resto: lo
          último que pasó arriba. Los fríos, primero en su columna. */
       dentro.sort(function (a, b) {
+        /* Carritos: el más nuevo arriba en todas las columnas, que es el que
+           más chance tiene de comprar (Mauricio, 07/10/2026). */
+        if (vista === 'carrito') { return new Date(b.creado) - new Date(a.creado); }
         if (frio(a) !== frio(b)) { return frio(b) - frio(a); }
         return c.e === 'Pendiente' ? (b.dias - a.dias) : (a.dias - b.dias);
       });
@@ -1423,15 +1431,43 @@
     arr.x = x; arr.y = y;
     if (!arr.activo) return;
     arr.f.style.transform = 'translate3d(' + (x + arr.fx) + 'px,' + (y + arr.fy) + 'px,0) rotate(2.5deg) scale(1.03)';
-    var bajo = document.elementFromPoint(x, y);
-    var col = bajo && bajo.closest ? bajo.closest('#tablero .col') : null;
+    var col = carrilEn(x, y);
     /* La de origen no se marca: soltarla ahí es no moverla. */
     if (col && col.dataset.col === arr.origen) { col = null; }
     if (col !== arr.sobre) {
       if (arr.sobre) { arr.sobre.classList.remove('sobre'); }
-      if (col) { col.classList.add('sobre'); }
+      sacarHueco();
+      if (col) {
+        col.classList.add('sobre');
+        /* El hueco, arriba de todo en el destino, del alto de la tarjeta. */
+        var h = document.createElement('div');
+        h.className = 'tj-hueco';
+        h.style.height = arr.t.offsetHeight + 'px';
+        var cab = col.querySelector('.col-cab');
+        col.insertBefore(h, cab ? cab.nextSibling : col.firstChild);
+      }
       arr.sobre = col;
     }
+  }
+
+  /* El carril que está debajo del puntero, de costado y a cualquier altura
+     (07/10/2026). Antes se miraba el elemento justo debajo, y una columna
+     vacía era tan corta que, a la altura de la segunda tarjeta, no había
+     columna. Entre dos columnas gana la más cercana: no hay zona muerta. */
+  function carrilEn(x, y) {
+    var tb = $('tablero'), rt = tb.getBoundingClientRect();
+    if (x < rt.left || x > rt.right || y < rt.top - 40) { return null; }
+    var mejor = null, dist = 1e9;
+    [].forEach.call(tb.querySelectorAll('.col'), function (c) {
+      var r = c.getBoundingClientRect();
+      if (r.right < rt.left || r.left > rt.right) { return; }   /* fuera de la vista */
+      var d = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      if (d < dist) { dist = d; mejor = c; }
+    });
+    return mejor;
+  }
+  function sacarHueco() {
+    [].forEach.call(document.querySelectorAll('#tablero .tj-hueco'), function (h) { h.remove(); });
   }
 
   /* Cerca de un borde, el tablero (de costado) o la página (arriba y abajo)
@@ -1464,6 +1500,7 @@
     if (a.f) { a.f.remove(); }
     a.t.classList.remove('levantada');
     if (a.sobre) { a.sobre.classList.remove('sobre'); }
+    sacarHueco();
     $('tablero').classList.remove('sin-imanes');
     var destino = moverlo && a.sobre ? a.sobre.dataset.col : null;
     if (destino && destino !== a.origen) {
