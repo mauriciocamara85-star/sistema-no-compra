@@ -464,3 +464,303 @@ $;
 grant execute on function crm_estadisticas(text, timestamptz, timestamptz, text) to anon, authenticated;
 
 select 'listo: el CRM propio (el historial, los carritos y los números)' as "SQL 51";
+
+
+-- ─────────────────────────── PARTE 52 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · EL CRM PROPIO, SEGUNDA PARTE: PLANTILLAS, RECORDATORIOS E HISTORIAL
+--
+-- Correr en el editor SQL de Supabase, DESPUÉS del 51.
+--
+-- Pedido de Mauricio (07/10/2026), cuatro cosas para el CRM del Panel:
+--
+-- 1. PLANTILLAS EDITABLES. Los mensajes de WhatsApp dejan de estar fijos en
+--    el código: se crean, se editan, se ordenan y se apagan desde la
+--    pestaña Plantillas. Llevan datos que se completan solos ({nombre},
+--    {prenda}, {local}, {link}, {total}, {descuento}, {hasta}). Las que ya
+--    había quedan cargadas con su título.
+-- 2. RECORDATORIOS. "Volver a escribirle el jueves": una fecha y una nota
+--    en cada No Compra y cada carrito. Ese día la tarjeta se marca.
+-- 3. EL HISTORIAL EN LA FICHA, como el de Kommo: quién lo movió, quién le
+--    escribió y con qué plantilla, qué recordatorio se puso.
+-- 4. (Guardar el contacto en el celular no necesita nada de la base.)
+--
+--   crm_plantillas            los mensajes (No Compra y carritos)
+--   crm_eventos               lo que no es mover: WhatsApp, recordatorios
+--   registros.recordar        y recordar_nota (también en crm_carritos)
+--   crm_plantillas_ver / crm_plantilla_guardar / crm_plantilla_borrar /
+--   crm_plantillas_ordenar    la pestaña Plantillas (con el PIN)
+--   crm_evento_anotar         anotar "le escribió por WhatsApp" (con el PIN)
+--   crm_historial             el historial de una ficha (con el PIN)
+--   seguimiento_guardar       + el recordatorio (el mismo de siempre)
+--   crm_carrito_guardar       + el recordatorio
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* ═══ 1. LAS PLANTILLAS ═════════════════════════════════════════════════ */
+
+create table if not exists crm_plantillas (
+  id        bigserial primary key,
+  fuente    text not null check (fuente in ('no_compra', 'carrito')),
+  titulo    text not null check (length(trim(titulo)) between 1 and 60),
+  texto     text not null check (length(trim(texto)) between 1 and 1000),
+  orden     integer not null default 0,
+  activa    boolean not null default true,
+  clave     text unique,            -- las que vinieron con el sistema
+  creada    timestamptz not null default now(),
+  cambiada  timestamptz not null default now()
+);
+alter table crm_plantillas enable row level security;
+
+/* Las que había, con sus datos entre llaves. Si se corre dos veces no se
+   duplican, y si alguien las cambió no se pisan. */
+insert into crm_plantillas (fuente, titulo, texto, orden, clave) values
+  ('no_compra', 'Novedades',
+   '¡Hola {nombre}! Te escribo de VDH {local}. Cuando pasaste por el local no pudimos resolverte {prenda}. Tengo novedades para mostrarte, ¿te paso fotos?',
+   1, 'nc_novedades'),
+  ('no_compra', 'Tu descuento',
+   '¡Hola {nombre}! Te escribo de VDH {local}. Te dejamos un {descuento} de descuento para tu próxima compra en cualquiera de nuestros locales: decí tu teléfono en la caja y te lo aplican.',
+   2, 'nc_descuento'),
+  ('no_compra', 'Llegó lo que buscabas',
+   '¡Hola {nombre}! Te escribo de VDH {local}. ¡Ya tenemos {prenda}! ¿Querés que te lo separemos?',
+   3, 'nc_llego'),
+  ('no_compra', 'Te lo guardamos',
+   '¡Hola {nombre}! Te escribo de VDH {local}. Te separamos {prenda} hasta el {hasta}. Pasá cuando quieras y preguntá por tu nombre.',
+   4, 'nc_guardamos'),
+  ('no_compra', 'Volver a escribir',
+   '¡Hola {nombre}! ¿Pudiste ver lo que te mandé? Si querés te paso más fotos o te lo separamos en VDH {local}.',
+   5, 'nc_otravez'),
+  ('carrito', 'Te quedó en el carrito',
+   '¡Hola {nombre}! Te escribo de VDH. Te quedó en el carrito de vdh.com.ar: {prenda}. Si querés terminar la compra, te lo dejé listo acá: {link}',
+   1, 'ca_carrito'),
+  ('carrito', '¿Problema con el pago?',
+   '¡Hola {nombre}! Te escribo de VDH. Vimos que estabas por terminar tu compra en vdh.com.ar y el pago no se completó. ¿Tuviste algún problema? Si querés, la retomás desde acá: {link}',
+   2, 'ca_pago'),
+  ('carrito', '¿Dudas con el talle?',
+   '¡Hola {nombre}! Te escribo de VDH. ¿Tenés dudas con el talle o el color de {prenda}? Te ayudo a elegir. Tu carrito sigue guardado acá: {link}',
+   3, 'ca_talle'),
+  ('carrito', 'Volver a escribir',
+   '¡Hola {nombre}! ¿Pudiste ver lo que te mandé? Tu carrito sigue guardado: {link}',
+   4, 'ca_otravez')
+on conflict (clave) do nothing;
+
+create or replace function crm_plantillas_ver(p_pin text)
+returns json language plpgsql volatile security definer set search_path = public as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((select json_agg(to_jsonb(t) order by t.fuente, t.orden, t.id) from crm_plantillas t), '[]'::json);
+end;
+$$;
+grant execute on function crm_plantillas_ver(text) to anon, authenticated;
+
+/* Nueva (p_id null) o cambiada. Una nueva va al final de las suyas. */
+create or replace function crm_plantilla_guardar(p_pin text, p_id bigint, p_fuente text, p_titulo text,
+                                                 p_texto text, p_activa boolean default true)
+returns bigint language plpgsql volatile security definer set search_path = public as $$
+declare nuevo bigint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if coalesce(trim(p_titulo), '') = '' then raise exception 'Falta el título.'; end if;
+  if coalesce(trim(p_texto), '') = '' then raise exception 'Falta el mensaje.'; end if;
+  if p_id is null then
+    insert into crm_plantillas (fuente, titulo, texto, activa, orden)
+    values (p_fuente, trim(p_titulo), trim(p_texto), coalesce(p_activa, true),
+            coalesce((select max(orden) from crm_plantillas where fuente = p_fuente), 0) + 1)
+    returning id into nuevo;
+    return nuevo;
+  end if;
+  update crm_plantillas
+     set titulo = trim(p_titulo), texto = trim(p_texto), activa = coalesce(p_activa, activa), cambiada = now()
+   where id = p_id;
+  return p_id;
+end;
+$$;
+grant execute on function crm_plantilla_guardar(text, bigint, text, text, text, boolean) to anon, authenticated;
+
+create or replace function crm_plantilla_borrar(p_pin text, p_id bigint)
+returns boolean language plpgsql volatile security definer set search_path = public as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  delete from crm_plantillas where id = p_id;
+  return found;
+end;
+$$;
+grant execute on function crm_plantilla_borrar(text, bigint) to anon, authenticated;
+
+/* El orden: el que viene en la lista es el de arriba. */
+create or replace function crm_plantillas_ordenar(p_pin text, p_ids bigint[])
+returns boolean language plpgsql volatile security definer set search_path = public as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  update crm_plantillas t set orden = x.i, cambiada = now()
+    from unnest(p_ids) with ordinality as x(id, i)
+   where t.id = x.id;
+  return true;
+end;
+$$;
+grant execute on function crm_plantillas_ordenar(text, bigint[]) to anon, authenticated;
+
+
+/* ═══ 2. LOS RECORDATORIOS Y LO QUE PASA EN CADA FICHA ══════════════════ */
+
+alter table registros add column if not exists recordar date;
+alter table registros add column if not exists recordar_nota text;
+alter table crm_carritos add column if not exists recordar date;
+alter table crm_carritos add column if not exists recordar_nota text;
+
+/* Lo que no es mover de columna: le escribieron por WhatsApp (con qué
+   plantilla), le pusieron o sacaron un recordatorio, guardaron su
+   contacto. Los movimientos siguen en crm_movimientos. */
+create table if not exists crm_eventos (
+  id      bigserial primary key,
+  fuente  text not null check (fuente in ('no_compra', 'carrito')),
+  ref     bigint not null,
+  tipo    text not null check (tipo in ('whatsapp', 'recordatorio', 'contacto', 'nota')),
+  detalle text,
+  quien   text,
+  cuando  timestamptz not null default clock_timestamp()   -- el momento justo: va arriba del movimiento de la misma llamada
+);
+create index if not exists crm_eventos_ref on crm_eventos (fuente, ref, cuando);
+alter table crm_eventos enable row level security;
+
+/* El texto del recordatorio para el historial: "para el 10/10 · nota". */
+create or replace function crm_recordatorio_txt(p_campos jsonb)
+returns text language sql immutable as $$
+  select coalesce('para el ' || to_char(nullif(p_campos->>'recordar', '')::date, 'DD/MM'), 'lo quitó')
+         || coalesce(' · ' || nullif(trim(p_campos->>'recordar_nota'), ''), '')
+$$;
+
+create or replace function crm_evento_anotar(p_pin text, p_fuente text, p_ref bigint, p_tipo text,
+                                             p_detalle text, p_quien text)
+returns boolean language plpgsql volatile security definer set search_path = public as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  insert into crm_eventos (fuente, ref, tipo, detalle, quien)
+  values (p_fuente, p_ref, p_tipo, nullif(trim(p_detalle), ''), nullif(trim(p_quien), ''));
+  return true;
+end;
+$$;
+grant execute on function crm_evento_anotar(text, text, bigint, text, text, text) to anon, authenticated;
+
+/* El historial de una ficha: los movimientos y lo demás, lo último arriba. */
+create or replace function crm_historial(p_pin text, p_fuente text, p_ref bigint)
+returns json language plpgsql volatile security definer set search_path = public as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((
+    select json_agg(x order by x.cuando desc, x.n desc) from (
+      select m.cuando, 'movimiento'::text as tipo, m.de, m.a, m.quien, null::text as detalle, m.id as n
+        from crm_movimientos m where m.fuente = p_fuente and m.ref = p_ref
+      union all
+      select e.cuando, e.tipo, null, null, e.quien, e.detalle, e.id
+        from crm_eventos e where e.fuente = p_fuente and e.ref = p_ref
+    ) x), '[]'::json);
+end;
+$$;
+grant execute on function crm_historial(text, text, bigint) to anon, authenticated;
+
+/* El de siempre, + el recordatorio y su renglón en el historial. */
+CREATE OR REPLACE FUNCTION public.seguimiento_guardar(p_pin text, p_id bigint, p_campos jsonb)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare tocadas integer;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_campos is null or p_campos = '{}'::jsonb then return true; end if;
+
+  update registros set
+    contactado = case when p_campos ? 'contactado'
+                      then coalesce((p_campos->>'contactado')::boolean, false) else contactado end,
+    responsable = case when p_campos ? 'responsable'
+                       then p_campos->>'responsable' else responsable end,
+    contacto1_result = case when p_campos ? 'contacto1_result'
+                            then (p_campos->>'contacto1_result')::resultado_contacto else contacto1_result end,
+    contacto1_fecha = case when p_campos ? 'contacto1_fecha'
+                           then (p_campos->>'contacto1_fecha')::date else contacto1_fecha end,
+    estado = case when p_campos ? 'estado'
+                  then (p_campos->>'estado')::estado_seguimiento else estado end,
+    obs_seguimiento = case when p_campos ? 'obs_seguimiento'
+                           then p_campos->>'obs_seguimiento' else obs_seguimiento end,
+    compro = case when p_campos ? 'compro'
+                  then coalesce((p_campos->>'compro')::boolean, false) else compro end,
+    compro_canal = case when p_campos ? 'compro_canal'
+                        then (p_campos->>'compro_canal')::canal_venta else compro_canal end,
+    producto_final = case when p_campos ? 'producto_final'
+                          then p_campos->>'producto_final' else producto_final end,
+    monto = case when p_campos ? 'monto'
+                 then (p_campos->>'monto')::numeric else monto end,
+    /* El recordatorio (SQL 52). */
+    recordar = case when p_campos ? 'recordar' then nullif(p_campos->>'recordar', '')::date else recordar end,
+    recordar_nota = case when p_campos ? 'recordar_nota' then nullif(trim(p_campos->>'recordar_nota'), '') else recordar_nota end
+  where id = p_id;
+
+  get diagnostics tocadas = row_count;
+
+  /* Al historial de la ficha (SQL 52). */
+  if tocadas > 0 and p_campos ? 'recordar' then
+    insert into crm_eventos (fuente, ref, tipo, detalle, quien)
+    values ('no_compra', p_id, 'recordatorio', crm_recordatorio_txt(p_campos),
+            crm_quien(coalesce(nullif(trim(p_campos->>'quien'), ''), p_campos->>'responsable')));
+  end if;
+  return tocadas > 0;
+end;
+$function$
+;
+
+/* Mover un carrito, anotar, cerrar con monto, y ahora el recordatorio. */
+create or replace function crm_carrito_guardar(p_pin text, p_id bigint, p_campos jsonb)
+returns boolean language plpgsql volatile security definer set search_path = public as $$
+declare tocadas integer;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_campos is null or p_campos = '{}'::jsonb then return true; end if;
+
+  update crm_carritos set
+    contactado = case when p_campos ? 'contactado'
+                      then coalesce((p_campos->>'contactado')::boolean, false) else contactado end,
+    responsable = case when p_campos ? 'responsable' then p_campos->>'responsable' else responsable end,
+    contacto1_fecha = case when p_campos ? 'contacto1_fecha'
+                           then (p_campos->>'contacto1_fecha')::date else contacto1_fecha end,
+    estado = case when p_campos ? 'estado'
+                  then (p_campos->>'estado')::estado_seguimiento else estado end,
+    obs_seguimiento = case when p_campos ? 'obs_seguimiento'
+                           then p_campos->>'obs_seguimiento' else obs_seguimiento end,
+    compro = case when p_campos ? 'compro'
+                  then coalesce((p_campos->>'compro')::boolean, false) else compro end,
+    monto = case when p_campos ? 'compro' and not coalesce((p_campos->>'compro')::boolean, false) then null
+                 when p_campos ? 'monto' then (p_campos->>'monto')::numeric
+                 else monto end,
+    recordar = case when p_campos ? 'recordar' then nullif(p_campos->>'recordar', '')::date else recordar end,
+    recordar_nota = case when p_campos ? 'recordar_nota' then nullif(trim(p_campos->>'recordar_nota'), '') else recordar_nota end
+  where id = p_id;
+  get diagnostics tocadas = row_count;
+
+  if tocadas > 0 and p_campos ? 'recordar' then
+    insert into crm_eventos (fuente, ref, tipo, detalle, quien)
+    values ('carrito', p_id, 'recordatorio', crm_recordatorio_txt(p_campos),
+            crm_quien(coalesce(nullif(trim(p_campos->>'quien'), ''), p_campos->>'responsable')));
+  end if;
+  return tocadas > 0;
+end;
+$$;
+grant execute on function crm_carrito_guardar(text, bigint, jsonb) to anon, authenticated;
+
+select 'listo: plantillas, recordatorios e historial del CRM' as "SQL 52";

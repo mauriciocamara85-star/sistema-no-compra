@@ -1190,6 +1190,46 @@ var base = {
     return funcion('crm_estadisticas', { p_pin: pin, p_desde: desde, p_hasta: hasta, p_quien: quien || null });
   },
 
+  /* ── Plantillas, recordatorios e historial (SQL 52) ── */
+
+  /** Las plantillas de WhatsApp de las dos fuentes, en su orden. */
+  plantillas: function (pin) {
+    return funcion('crm_plantillas_ver', { p_pin: pin }).then(function (l) {
+      return (l || []).map(function (t) {
+        return { id: Number(t.id), fuente: t.fuente, titulo: t.titulo, texto: t.texto,
+                 orden: t.orden, activa: !!t.activa, clave: t.clave || '' };
+      });
+    });
+  },
+
+  /** Nueva (sin id) o cambiada. Devuelve el id. */
+  plantillaGuardar: function (pin, id, fuente, titulo, texto, activa) {
+    return funcion('crm_plantilla_guardar', {
+      p_pin: pin, p_id: id || null, p_fuente: fuente, p_titulo: titulo, p_texto: texto, p_activa: activa !== false
+    }).then(Number);
+  },
+
+  plantillaBorrar: function (pin, id) {
+    return funcion('crm_plantilla_borrar', { p_pin: pin, p_id: id });
+  },
+
+  /** El orden nuevo de una fuente: los ids de arriba a abajo. */
+  plantillasOrdenar: function (pin, ids) {
+    return funcion('crm_plantillas_ordenar', { p_pin: pin, p_ids: ids });
+  },
+
+  /** "Le escribió por WhatsApp", "Guardó el contacto": al historial de la ficha. */
+  crmEvento: function (pin, fuente, ref, tipo, detalle, quien) {
+    return funcion('crm_evento_anotar', {
+      p_pin: pin, p_fuente: fuente, p_ref: ref, p_tipo: tipo, p_detalle: detalle || null, p_quien: quien || null
+    });
+  },
+
+  /** Lo que pasó con una ficha, lo último arriba. */
+  crmHistorial: function (pin, fuente, ref) {
+    return funcion('crm_historial', { p_pin: pin, p_fuente: fuente, p_ref: ref });
+  },
+
   /** El descuento atado al teléfono, desde la ficha del cliente. */
   darDescuento: function (pin, registro, pct, dias, quien) {
     return funcion('dar_descuento', {
@@ -1357,6 +1397,9 @@ function deLaBase_(f) {
     // veces. Viene anidado desde la tabla `beneficios`; se toma el vivo, o
     // el último si no hay ninguno vivo.
     beneficio: beneficioDe_(f.beneficios),
+    /* El recordatorio (SQL 52): "2026-10-10" y para qué. */
+    recordar:     f.recordar || '',
+    recordarNota: f.recordar_nota || '',
     /* Con el punto de los miles: es un campo que se lee de un vistazo en
        una lista de fichas, y "92500" obliga a contar ceros. Vuelve a entrar
        bien porque aLaBase_ saca los puntos antes de guardarlo. */
@@ -1402,6 +1445,8 @@ function deCarrito_(k) {
     obsSeguim:   k.obs_seguimiento || '',
     compro:      k.compro ? 'Sí - online' : '',
     productoFinal: '',
+    recordar:     k.recordar || '',
+    recordarNota: k.recordar_nota || '',
     monto:       k.monto == null ? '' : Math.round(Number(k.monto)).toLocaleString('es-AR')
   };
 }
@@ -1419,7 +1464,7 @@ function aLaBase_(campos) {
      como fecha de verdad. Antes era texto "23/4" y había que interpretarlo
      cada vez que alguien quería contar algo. */
   if (campos.fecha1 !== undefined) {
-    c.contacto1_fecha = campos.fecha1 ? new Date().toISOString().slice(0, 10) : null;
+    c.contacto1_fecha = campos.fecha1 ? hoyIso_() : null;
   }
 
   /* "Compró" es un desplegable de tres opciones y en la base son dos campos.
@@ -1434,6 +1479,12 @@ function aLaBase_(campos) {
   }
 
   if (campos.productoFinal !== undefined) c.producto_final = campos.productoFinal || null;
+
+  /* El recordatorio (SQL 52): una fecha, o vacío para sacarlo. 'quien' es
+     sólo para el historial —quién lo puso— y no cambia "Lo sigue". */
+  if (campos.recordar     !== undefined) c.recordar = campos.recordar || null;
+  if (campos.recordarNota !== undefined) c.recordar_nota = campos.recordarNota || null;
+  if (campos.quien        !== undefined) c.quien = campos.quien || null;
   if (campos.monto !== undefined) {
     var n = Number(String(campos.monto).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.'));
     c.monto = (campos.monto === '' || isNaN(n)) ? null : n;
@@ -1450,7 +1501,7 @@ function aLaBase_(campos) {
  */
 function beneficioDe_(lista) {
   if (!lista || !lista.length) return null;
-  var hoy = new Date().toISOString().slice(0, 10);
+  var hoy = hoyIso_();
   var vivos = lista.filter(function (b) {
     return !b.usado && !b.anulado && (!b.vence || b.vence >= hoy);
   });
@@ -1472,6 +1523,16 @@ function fechaLinda_(iso) {
       day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
     });
   } catch (e) { return String(iso || ''); }
+}
+
+/**
+ * La fecha de hoy ACÁ, "2026-10-07". toISOString() da la de Londres: desde
+ * las 21 h ya es mañana, y un primer contacto de la noche quedaba anotado
+ * al día siguiente.
+ */
+function hoyIso_() {
+  var d = new Date();
+  return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
 }
 
 /** "23/04" — corto, que es como se anotaba a mano. */
