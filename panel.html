@@ -89,9 +89,8 @@
     line-height: 1.45;
   }
 
-  /* El tablero de números (.kpis / .kpi) se mudó a estilos.css: ahora lo
-     muestran esta pantalla y el formulario, y tener dos copias era garantía
-     de que un día se vieran distintos. */
+  /* Los números de arriba (.kpis) se fueron del panel el 07/10/2026: el
+     lugar es para el tablero. La plata recuperada está en Estadísticas. */
 
   /* Aviso de sistema: algo de fondo se rompió. Va ARRIBA de los números
      porque no es un dato más de la operación, es una cosa que hay que ir a
@@ -247,24 +246,42 @@
   .seg-campos .campo.venta input { width: 100%; }
 
   /* ══ El tablero (07/10/2026) ══════════════════════════════════════════
-     Nuestro CRM: una columna por estado, como Kommo. En la PC se ven todas
-     y las tarjetas se arrastran; en el celular, una columna por vez y se
-     elige con las pastillas de arriba (las mismas que antes filtraban). */
-  .tablero { display: block; }
-  .col { display: none; }
-  .col.sel { display: block; }
-  .col-cab { display: none; }
+     Nuestro CRM: una columna por estado, como Kommo y Trello. Las tarjetas
+     se arrastran de una columna a otra con el mouse o con el dedo. En la PC
+     se ven todas las columnas; en el celular, una al lado de la otra y se
+     pasa deslizando (las pastillas de arriba llevan directo a cada una). */
+  .tablero { position: relative; }
+  .col { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); padding: 10px; min-height: 180px;
+         transition: background .15s, border-color .15s; }
+  .col.sobre { background: var(--acc-soft); border: 1px dashed var(--acc); }
+  .col-cab { display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; }
+  .col-cab b { font-size: 13px; font-weight: 700; color: var(--txt); }
+  .col-cab .cuenta { margin-left: auto; font-size: 11.5px; font-weight: 700; padding: 1px 8px;
+                     border-radius: var(--r-pill); background: var(--surface-3); color: var(--txt-2); }
+  .col-cab i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-alta); flex: none; }
+  .col-cab i.c-pend { background: var(--warn); }
+  .col-cab i.c-seg { background: var(--acc); }
+  .col-cab i.c-esp { background: #3E6FB0; }
+  .col-cab i.c-ok { background: var(--ok); }
   .col-vacia { padding: 26px 12px; text-align: center; font-size: 13px; color: var(--txt-3);
                border: 1.5px dashed var(--line); border-radius: var(--r-sm); }
 
+  /* La tarjeta: sin selección de texto ni el menú del toque largo, que
+     se pelean con el arrastre. */
   .tj { position: relative; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--line);
         border-radius: var(--r-sm); padding: 11px 12px 12px; margin-bottom: 9px; box-shadow: var(--sombra);
-        cursor: pointer; animation: aparecer .3s var(--curva) backwards; }
-  .tj:hover { border-color: var(--line-alta); }
+        cursor: pointer; animation: aparecer .3s var(--curva) backwards;
+        -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  @media (hover: hover) { .tj { cursor: grab; } .tj:hover { border-color: var(--line-alta); } }
   .tj.es-pend { border-left-color: var(--warn); }
   .tj.urgente, .tj.frio { border-left-color: var(--bad); }
   .tj.es-ok { border-left-color: var(--ok); }
-  .tj.arrastrando { opacity: .4; }
+  /* La que se está moviendo: queda su lugar marcado. */
+  .tj.levantada { opacity: .35; box-shadow: none; border-style: dashed; }
+  /* La copia que sigue al mouse o al dedo, inclinada como en Trello. */
+  .tj.fantasma { position: fixed; left: 0; top: 0; z-index: 90; margin: 0; pointer-events: none; animation: none;
+                 box-shadow: 0 22px 44px -14px rgba(20, 20, 18, .5); border-color: var(--line-alta); will-change: transform; }
+  body.arrastrando, body.arrastrando * { cursor: grabbing !important; }
   .tj-top { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
   .tj-top .pill { font-size: 11px; padding: 2px 8px; }
   .tj-dias { margin-left: auto; font-size: 11.5px; font-weight: 600; color: var(--txt-3); white-space: nowrap; }
@@ -275,8 +292,23 @@
   .tj-aviso { margin-top: 7px; font-size: 12px; font-weight: 700; color: var(--bad-txt); }
   .tj-plata { margin-top: 6px; font-size: 13px; font-weight: 700; color: var(--ok-txt); }
   .tj-acc { display: flex; gap: 6px; margin-top: 10px; }
-  .tj-acc .btn { min-height: 34px; padding: 6px 11px; font-size: 12.5px; }
-  .tj-acc select { flex: 1; min-width: 0; height: 34px; padding: 0 8px; font-size: 12.5px; border-radius: var(--r-sm); }
+  .tj-acc .btn { min-height: 34px; padding: 6px 12px; font-size: 12.5px; }
+
+  /* La ayudita para mover, hasta que se mueve la primera. */
+  .pista-mover { margin: -2px 2px 10px; font-size: 12.5px; color: var(--txt-3); }
+  .pista-mover[hidden] { display: none; }
+
+  /* El celular: columnas en fila que se deslizan y "encajan" de a una; se
+     asoma un pedacito de la siguiente para que se note que hay más. */
+  @media (max-width: 899px) {
+    .tablero { display: flex; gap: 10px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding-left: 16px;
+               margin: 0 -16px; padding: 0 16px 10px; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+    .tablero::-webkit-scrollbar { display: none; }
+    /* Mientras se arrastra una tarjeta, sin imanes: el tablero se corre solo. */
+    .tablero.sin-imanes { scroll-snap-type: none; }
+    .col { flex: 0 0 calc(100% - 38px); scroll-snap-align: start; }
+    .filtros { position: relative; }
+  }
 
   /* En la PC: todas las columnas lado a lado. */
   @media (min-width: 900px) {
@@ -286,18 +318,6 @@
     .controles .fila-filtros { flex: none; width: 260px; }
     .tablero { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr); gap: 12px;
                overflow-x: auto; padding-bottom: 8px; align-items: start; }
-    .col, .col.sel { display: block; background: var(--surface-2); border: 1px solid var(--line);
-                     border-radius: var(--r); padding: 10px; min-height: 160px; }
-    .col.sobre { background: var(--acc-soft); border-color: var(--acc-line); }
-    .col-cab { display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; }
-    .col-cab b { font-size: 13px; font-weight: 700; color: var(--txt); }
-    .col-cab .cuenta { margin-left: auto; font-size: 11.5px; font-weight: 700; padding: 1px 8px;
-                       border-radius: var(--r-pill); background: var(--surface-3); color: var(--txt-2); }
-    .col-cab i { width: 8px; height: 8px; border-radius: 50%; background: var(--line-alta); flex: none; }
-    .col-cab i.c-pend { background: var(--warn); }
-    .col-cab i.c-seg { background: var(--acc); }
-    .col-cab i.c-esp { background: #3E6FB0; }
-    .col-cab i.c-ok { background: var(--ok); }
     .filtros { display: none; }
   }
 
@@ -454,7 +474,6 @@
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
 
-  <div class="kpis" id="kpis"></div>
 
   <div class="controles">
     <div class="buscador">
@@ -467,6 +486,7 @@
     <div class="filtros" id="filtros"></div>
   </div>
 
+  <p class="pista-mover" id="pistaMover" hidden></p>
   <div class="tablero" id="tablero"></div>
 </main>
 
@@ -512,6 +532,20 @@
     <div class="modal-pie">
       <button type="button" class="btn btn-sec" id="ventaCancelar">Cancelar</button>
       <button type="button" class="btn btn-pri" id="ventaOk">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- "¿Quién sos?": se pregunta recién al mover o escribir, y lo que se
+     estaba haciendo sigue solo después. -->
+<div class="modal" id="modalQuien" hidden>
+  <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="quienTit">
+    <h2 id="quienTit">¿Quién sos?</h2>
+    <p>Queda anotado en cada cliente que movés o le escribís.</p>
+    <div class="campo"><input id="quienNombre" type="text" autocomplete="off" autocapitalize="words" placeholder="Tu nombre"></div>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec" id="quienCancelar">Cancelar</button>
+      <button type="button" class="btn btn-pri" id="quienOk">Seguir</button>
     </div>
   </div>
 </div>
@@ -612,7 +646,6 @@
     $('btnSalir').hidden = false;
     $('whoami').value = quien;
 
-    pintarKpis(res);
     pintarCrm(res);
     cargar();
   }
@@ -640,46 +673,6 @@
     $('portonMsg').hidden = true;
     var btn = $('btnEntrar');
     btn.disabled = false; btn.textContent = 'Entrar';
-  }
-
-  /* ═══ Tablero ═══════════════════════════════════════════════════════════
-     Los cuatro números que contestan "¿esto sirve?": cuántos entraron, cuántos
-     nadie tocó y —los que justifican el sistema entero— cuánta plata se
-     recuperó de gente que ya se había ido sin comprar.
-
-     La plata va partida en LOCAL y ONLINE a propósito. Un no-compra se
-     resuelve de dos maneras: que el producto llegue al local y el cliente
-     vuelva, o que se lo venda la tienda online. Sumarlas esconde justamente lo
-     que hay que ver, que es cuánta venta le está empujando esto al ecommerce. */
-  function pintarKpis(res) {
-    var c = res.conteo || {};
-    // El backend viejo devolvía un número suelto; el nuevo manda {local, online,
-    // total}. Se aceptan los dos para que el panel no quede en blanco si alguna
-    // vez se publica la interfaz antes que el backend.
-    var rec = typeof res.recuperado === 'object' ? res.recuperado
-                                                 : { total: res.recuperado || 0, local: 0, online: 0 };
-    var com = typeof res.compraron === 'object' ? res.compraron
-                                                : { total: res.compraron || 0, local: 0, online: 0 };
-    var total = c.Total || 0;
-    var tasa = total ? Math.round((com.total || 0) / total * 100) : 0;
-
-    var clientes = function (n) { return n === 1 ? '1 cliente' : (n || 0) + ' clientes'; };
-
-    var tarjetas = [
-      { n: total, l: 'Registros', pie: tasa + '% terminó comprando', cls: '' },
-      { n: c.Pendiente || 0, l: 'Sin tocar', pie: 'nadie los contactó', cls: 'es-pend' },
-      { n: PESOS.format(rec.local || 0), l: 'Recuperado en el local',
-        pie: clientes(com.local) + ' volvieron', cls: 'es-ok' },
-      { n: PESOS.format(rec.online || 0), l: 'Recuperado online',
-        pie: clientes(com.online) + ' compraron por la web', cls: 'es-plata' }
-    ];
-
-    $('kpis').innerHTML = tarjetas.map(function (t, i) {
-      return '<div class="kpi ' + t.cls + '" style="animation-delay:' + (i * 40) + 'ms">' +
-        '<div class="kpi-n">' + esc(t.n) + '</div>' +
-        '<div class="kpi-l">' + esc(t.l) + '</div>' +
-        '<div class="kpi-pie">' + esc(t.pie) + '</div></div>';
-    }).join('');
   }
 
   /* El puente con Kommo se cae callado: un token vencido deja de crear leads y
@@ -742,8 +735,57 @@
     }).join('');
     marcarScroll();
     Array.prototype.forEach.call($('filtros').children, function (b) {
-      b.onclick = function () { colSel = b.dataset.col; pintar(); };
+      b.onclick = function () { colSel = b.dataset.col; marcarPastilla(); irAColumna(colSel, true); };
     });
+  }
+
+  function columnaEl(e) {
+    return [].filter.call($('tablero').querySelectorAll('.col'), function (c) { return c.dataset.col === e; })[0];
+  }
+  /* Corre el tablero del celular hasta esa columna. */
+  function irAColumna(e, suave) {
+    var tb = $('tablero'), c = columnaEl(e);
+    if (!c) return;
+    var pad = parseFloat(getComputedStyle(tb).paddingLeft) || 0;
+    tb.scrollTo({ left: c.offsetLeft - pad, behavior: suave ? 'smooth' : 'auto' });
+  }
+  /* La columna que está a la vista en el celular. */
+  function columnaEnVista() {
+    var tb = $('tablero'), pad = parseFloat(getComputedStyle(tb).paddingLeft) || 0, mejor = null, dist = 1e9;
+    [].forEach.call(tb.querySelectorAll('.col'), function (c) {
+      var d = Math.abs(c.offsetLeft - pad - tb.scrollLeft);
+      if (d < dist) { dist = d; mejor = c; }
+    });
+    return mejor;
+  }
+  function marcarPastilla() {
+    [].forEach.call($('filtros').children, function (b) {
+      var si = b.dataset.col === colSel;
+      b.classList.toggle('sel', si);
+      if (si) { $('filtros').scrollTo({ left: Math.max(0, b.offsetLeft - 16), behavior: 'smooth' }); }
+    });
+  }
+  var rafVista = 0;
+  function alDeslizar() {
+    if (rafVista || arr) return;
+    rafVista = requestAnimationFrame(function () {
+      rafVista = 0;
+      if (esPC()) return;
+      var c = columnaEnVista();
+      if (c && c.dataset.col !== colSel) { colSel = c.dataset.col; marcarPastilla(); }
+    });
+  }
+  function esPC() { return window.matchMedia('(min-width: 900px)').matches; }
+
+  /* La ayudita, hasta que alguien mueve la primera tarjeta. */
+  var K_ARRASTRO = 'nc_ya_arrastro';
+  function pintarPista() {
+    var pista = $('pistaMover');
+    if (leer(K_ARRASTRO) === '1' || !registros.length) { pista.hidden = true; return; }
+    pista.textContent = window.matchMedia('(hover: none)').matches
+      ? 'Para mover a un cliente de columna, mantené apretada su tarjeta y arrastrala.'
+      : 'Arrastrá las tarjetas de una columna a otra, como en Trello.';
+    pista.hidden = false;
   }
 
   /* ═══ Carga ═════════════════════════════════════════════════════════════ */
@@ -767,7 +809,7 @@
       });
 
     base.panel(pinGuardado())
-      .then(function (res) { pintarKpis(res); pintarCrm(res); })
+      .then(function (res) { pintarCrm(res); })
       .catch(function () {});
   }
 
@@ -856,7 +898,7 @@
 
   var wspId = null;
   function abrirWsp(id, clave) {
-    if (!exigirQuien()) return;
+    if (!exigirQuien(function () { abrirWsp(id, clave); })) return;
     var r = porId(id); if (!r) return;
     wspId = id;
     var l = plantillas(r);
@@ -904,7 +946,7 @@
     var dFrio = frio(r);
     var clase = 'tj' + (urgente ? ' urgente' : pend ? ' es-pend' : '') + (dFrio ? ' frio' : '') +
                 (col === 'Cerrado - compró' ? ' es-ok' : '');
-    return '<article class="' + clase + '" draggable="true" data-id="' + r.id + '">' +
+    return '<article class="' + clase + '" data-id="' + r.id + '">' +
       '<div class="tj-top"><span class="pill pill-neutra">' + esc(bonito(r.sucursal) || 'Sin local') + '</span>' +
         '<span class="tj-dias' + (urgente ? ' viejo' : '') + '">' + esc(antiguedad(r)) + '</span></div>' +
       '<b class="tj-nom">' + esc(r.nombre || r.whatsapp || 'Sin nombre') + '</b>' +
@@ -914,12 +956,6 @@
       (col === 'Cerrado - compró' && r.monto ? '<div class="tj-plata">$' + esc(r.monto) + '</div>' : '') +
       '<div class="tj-acc">' +
         '<button type="button" class="btn btn-wsp btn-chico" data-wsp="' + r.id + '">WhatsApp</button>' +
-        '<select data-mover="' + r.id + '" aria-label="Mover a">' +
-          '<option value="">Mover a…</option>' +
-          COLUMNAS.filter(function (c) { return c.e !== col; }).map(function (c) {
-            return '<option value="' + esc(c.e) + '">' + esc(c.t) + '</option>';
-          }).join('') +
-        '</select>' +
       '</div>' +
     '</article>';
   }
@@ -935,19 +971,20 @@
         if (frio(a) !== frio(b)) { return frio(b) - frio(a); }
         return c.e === 'Pendiente' ? (b.dias - a.dias) : (a.dias - b.dias);
       });
-      return '<section class="col' + (c.e === colSel ? ' sel' : '') + '" data-col="' + esc(c.e) + '">' +
+      return '<section class="col" data-col="' + esc(c.e) + '">' +
         '<div class="col-cab"><i class="' + c.c + '"></i><b>' + esc(c.t) + '</b><span class="cuenta">' + dentro.length + '</span></div>' +
         (dentro.length ? dentro.map(tarjeta).join('') : '<div class="col-vacia">Nadie acá</div>') +
       '</section>';
     }).join('');
     conectar();
+    pintarPista();
   }
 
   /* ═══ Mover de columna ══════════════════════════════════════════════════ */
   function mover(id, destino) {
     var r = porId(id);
     if (!r || !destino || columnaDe(r) === destino) { pintar(); return; }
-    if (!exigirQuien()) { pintar(); return; }
+    if (!exigirQuien(function () { mover(id, destino); })) { pintar(); return; }
     /* "Compró" pide dónde y cuánto: es el número que dice si esto sirve. */
     if (destino === 'Cerrado - compró') { pedirVenta(id); return; }
 
@@ -1066,7 +1103,7 @@
     var dar = $('fichaDar');
     if (dar) {
       dar.onclick = function () {
-        if (!exigirQuien()) return;
+        if (!exigirQuien(function () { var d = $('fichaDar'); if (d) { d.onclick(); } })) return;
         dar.disabled = true;
         base.darDescuento(pinGuardado(), r.id, DESCUENTO, DIAS, quien)
           .then(function (res) {
@@ -1105,30 +1142,169 @@
   }
 
   /* ═══ Los toques ════════════════════════════════════════════════════════ */
-  var arrastrado = null;
   function conectar() {
-    Array.prototype.forEach.call(document.querySelectorAll('#tablero .tj'), function (t) {
+    [].forEach.call(document.querySelectorAll('#tablero .tj'), function (t) {
       t.onclick = function (ev) {
+        /* Recién soltada: el toque era para moverla, no para abrirla. */
+        if (Date.now() - recienSoltada < 400) return;
         if (ev.target.closest('button, select, a')) return;
         abrirFicha(+t.dataset.id);
       };
-      t.ondragstart = function (ev) {
-        arrastrado = +t.dataset.id; t.classList.add('arrastrando');
-        try { ev.dataTransfer.setData('text/plain', String(arrastrado)); ev.dataTransfer.effectAllowed = 'move'; } catch (e) {}
-      };
-      t.ondragend = function () { t.classList.remove('arrastrando'); };
     });
-    Array.prototype.forEach.call(document.querySelectorAll('#tablero .col'), function (c) {
-      c.ondragover = function (ev) { ev.preventDefault(); c.classList.add('sobre'); };
-      c.ondragleave = function (ev) { if (!c.contains(ev.relatedTarget)) { c.classList.remove('sobre'); } };
-      c.ondrop = function (ev) {
-        ev.preventDefault(); c.classList.remove('sobre');
-        if (arrastrado !== null) { var id = arrastrado; arrastrado = null; mover(id, c.dataset.col); }
-      };
+  }
+
+  /* ═══ Arrastrar, como Trello y Kommo (07/10/2026) ══════════════════════
+     Con el mouse: se aprieta y se arrastra. Con el dedo: se mantiene
+     apretada la tarjeta un tercio de segundo y recién ahí se levanta (vibra
+     un toquecito); si el dedo se mueve antes, era para deslizar y no se
+     toca nada. La tarjeta levantada sigue al puntero, la columna de abajo se
+     marca, y cerca de los bordes el tablero y la página se corren solos —
+     así se llega a una columna que no está a la vista. */
+  var arr = null, recienSoltada = 0;
+  var MANTENER = 320, UMBRAL_MOUSE = 6, UMBRAL_DEDO = 10, BORDE = 52;
+
+  function prepararArrastre(t, x, y, dedo) {
+    cancelarArrastre();
+    var r = porId(+t.dataset.id);
+    if (!r) return;
+    arr = { t: t, id: r.id, origen: columnaDe(r), x0: x, y0: y, x: x, y: y, dedo: dedo,
+            activo: false, timer: null, sobre: null, raf: 0, f: null };
+    if (dedo) { arr.timer = setTimeout(levantar, MANTENER); }
+  }
+
+  function levantar() {
+    if (!arr || arr.activo) return;
+    var rc = arr.t.getBoundingClientRect();
+    var f = arr.t.cloneNode(true);
+    f.classList.add('fantasma');
+    f.removeAttribute('data-id');
+    f.style.width = rc.width + 'px';
+    document.body.appendChild(f);
+    arr.f = f; arr.fx = rc.left - arr.x; arr.fy = rc.top - arr.y;
+    arr.activo = true;
+    arr.t.classList.add('levantada');
+    document.body.classList.add('arrastrando');
+    $('tablero').classList.add('sin-imanes');
+    if (arr.dedo && navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+    seguir(arr.x, arr.y);
+    arr.raf = requestAnimationFrame(bordes);
+  }
+
+  function seguir(x, y) {
+    if (!arr) return;
+    arr.x = x; arr.y = y;
+    if (!arr.activo) return;
+    arr.f.style.transform = 'translate3d(' + (x + arr.fx) + 'px,' + (y + arr.fy) + 'px,0) rotate(2.5deg) scale(1.03)';
+    var bajo = document.elementFromPoint(x, y);
+    var col = bajo && bajo.closest ? bajo.closest('#tablero .col') : null;
+    /* La de origen no se marca: soltarla ahí es no moverla. */
+    if (col && col.dataset.col === arr.origen) { col = null; }
+    if (col !== arr.sobre) {
+      if (arr.sobre) { arr.sobre.classList.remove('sobre'); }
+      if (col) { col.classList.add('sobre'); }
+      arr.sobre = col;
+    }
+  }
+
+  /* Cerca de un borde, el tablero (de costado) o la página (arriba y abajo)
+     se corren, más rápido cuanto más al borde. */
+  function bordes() {
+    if (!arr || !arr.activo) return;
+    var tb = $('tablero'), rt = tb.getBoundingClientRect();
+    var izq = Math.max(rt.left, 0), der = Math.min(rt.right, window.innerWidth);
+    var vx = 0, vy = 0;
+    if (arr.x < izq + BORDE) { vx = -Math.round(14 * Math.min(1, (izq + BORDE - arr.x) / BORDE)); }
+    else if (arr.x > der - BORDE) { vx = Math.round(14 * Math.min(1, (arr.x - (der - BORDE)) / BORDE)); }
+    /* En el celular, abajo está la barra de secciones. */
+    var abajo = window.innerHeight - (esPC() ? 0 : 76);
+    if (arr.y < 90) { vy = -Math.round(12 * Math.min(1, (90 - arr.y) / 90)); }
+    else if (arr.y > abajo - 60) { vy = Math.round(12 * Math.min(1, (arr.y - (abajo - 60)) / 60)); }
+    if (vx) { tb.scrollLeft += vx; }
+    if (vy) { window.scrollBy(0, vy); }
+    if (vx || vy) { seguir(arr.x, arr.y); }
+    arr.raf = requestAnimationFrame(bordes);
+  }
+
+  function terminarArrastre(moverlo) {
+    var a = arr; arr = null;
+    if (!a) return;
+    clearTimeout(a.timer);
+    cancelAnimationFrame(a.raf);
+    if (!a.activo) return;
+    recienSoltada = Date.now();
+    document.body.classList.remove('arrastrando');
+    if (a.f) { a.f.remove(); }
+    a.t.classList.remove('levantada');
+    if (a.sobre) { a.sobre.classList.remove('sobre'); }
+    $('tablero').classList.remove('sin-imanes');
+    var destino = moverlo && a.sobre ? a.sobre.dataset.col : null;
+    if (destino && destino !== a.origen) {
+      guardar(K_ARRASTRO, '1');
+      if (!esPC()) { colSel = destino; marcarPastilla(); }
+      mover(a.id, destino);
+    }
+    /* En el celular, que el tablero vuelva a encajar en una columna. */
+    if (!esPC()) { var c = destino ? columnaEl(destino) : columnaEnVista(); if (c) { irAColumna(c.dataset.col, true); } }
+  }
+  function soltar() { terminarArrastre(true); }
+  function cancelarArrastre() { terminarArrastre(false); }
+
+  function conectarArrastre() {
+    var tb = $('tablero');
+    var noEs = function (ev) { return ev.target.closest('button, a, select, input, textarea'); };
+
+    /* El mouse. */
+    tb.addEventListener('mousedown', function (ev) {
+      if (ev.button !== 0) return;
+      var t = ev.target.closest('.tj');
+      if (!t || noEs(ev)) return;
+      ev.preventDefault();
+      prepararArrastre(t, ev.clientX, ev.clientY, false);
     });
-    Array.prototype.forEach.call(document.querySelectorAll('#tablero select[data-mover]'), function (s) {
-      s.onchange = function () { mover(+s.dataset.mover, s.value); };
+    document.addEventListener('mousemove', function (ev) {
+      if (!arr || arr.dedo) return;
+      if (!arr.activo) {
+        if (Math.abs(ev.clientX - arr.x0) + Math.abs(ev.clientY - arr.y0) < UMBRAL_MOUSE) return;
+        arr.x = ev.clientX; arr.y = ev.clientY;
+        levantar();
+      }
+      seguir(ev.clientX, ev.clientY);
     });
+    document.addEventListener('mouseup', function () {
+      if (!arr || arr.dedo) return;
+      if (arr.activo) { soltar(); } else { cancelarArrastre(); }
+    });
+
+    /* El dedo. touchmove no es pasivo: es lo que deja frenar el scroll de
+       la página una vez que la tarjeta está levantada. */
+    tb.addEventListener('touchstart', function (ev) {
+      if (ev.touches.length !== 1) { cancelarArrastre(); return; }
+      var t = ev.target.closest('.tj');
+      if (!t || noEs(ev)) return;
+      prepararArrastre(t, ev.touches[0].clientX, ev.touches[0].clientY, true);
+    }, { passive: true });
+    tb.addEventListener('touchmove', function (ev) {
+      if (!arr || !arr.dedo) return;
+      var q = ev.touches[0];
+      if (!arr.activo) {
+        /* Se movió antes de tiempo: era para deslizar. */
+        if (Math.abs(q.clientX - arr.x0) + Math.abs(q.clientY - arr.y0) > UMBRAL_DEDO) { cancelarArrastre(); }
+        else { arr.x = q.clientX; arr.y = q.clientY; }
+        return;
+      }
+      if (ev.cancelable) { ev.preventDefault(); }
+      seguir(q.clientX, q.clientY);
+    }, { passive: false });
+    tb.addEventListener('touchend', function (ev) {
+      if (!arr || !arr.dedo) return;
+      if (arr.activo) { if (ev.cancelable) { ev.preventDefault(); } soltar(); }
+      else { cancelarArrastre(); }
+    });
+    tb.addEventListener('touchcancel', function () { if (arr && arr.dedo) { cancelarArrastre(); } });
+    /* El toque largo de Android abre un menú: sobre una tarjeta, no. */
+    tb.addEventListener('contextmenu', function (ev) { if (ev.target.closest('.tj')) { ev.preventDefault(); } });
+    window.addEventListener('blur', cancelarArrastre);
+    tb.addEventListener('scroll', alDeslizar, { passive: true });
   }
 
   /* Los botones de WhatsApp viven en el tablero y en la ficha: uno solo
@@ -1159,19 +1335,37 @@
     };
   }
 
-  /** false y marca el campo cuando todavía no dijo quién es. */
-  function exigirQuien() {
+  /**
+   * false cuando todavía no dijo quién es. Antes marcaba en rojo el campito
+   * de arriba y no pasaba nada más: se movía una tarjeta y volvía sola, sin
+   * que se entendiera por qué (07/10/2026). Ahora pregunta en una
+   * ventanita y, con el nombre puesto, lo que se estaba haciendo sigue.
+   */
+  var despuesQuien = null;
+  function exigirQuien(seguir) {
     if (quien) return true;
-    var campo = $('whoami');
-    campo.classList.add('mal');
-    campo.focus();
-    campo.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    avisar('err', 'Escribí arriba quién sos: queda anotado en el seguimiento.');
+    despuesQuien = seguir || null;
+    $('quienNombre').value = '';
+    $('modalQuien').hidden = false;
+    setTimeout(function () { $('quienNombre').focus(); }, 50);
     return false;
+  }
+  function confirmarQuien() {
+    var n = $('quienNombre').value.trim();
+    if (!n) { $('quienNombre').focus(); return; }
+    quien = n;
+    guardar(K_QUIEN, quien);
+    $('whoami').value = quien;
+    $('whoami').classList.remove('mal');
+    $('modalQuien').hidden = true;
+    var sigue = despuesQuien; despuesQuien = null;
+    if (sigue) { sigue(); }
   }
 
   function guardarSeguim(id, campos, msgOk, sinRecargar) {
-    if (!exigirQuien()) return;
+    if (!exigirQuien(function () { guardarSeguim(id, campos, msgOk, sinRecargar); })) return;
+    /* Si se preguntó el nombre recién, que vaya el nombre. */
+    if ('responsable' in campos) { campos.responsable = quien; }
     base.seguimiento(pinGuardado(), id, campos)
       .then(function () {
         avisar('ok', msgOk);
@@ -1211,8 +1405,14 @@
     $('ventaCancelar').onclick = function () { $('modalVenta').hidden = true; pintar(); if (fichaId) { pintarFicha(); } };
     $('fichaX').onclick = cerrarFicha;
     $('capaFicha').onclick = function (ev) { if (ev.target === $('capaFicha')) { cerrarFicha(); } };
+    conectarArrastre();
+    $('quienOk').onclick = confirmarQuien;
+    $('quienNombre').onkeydown = function (ev) { if (ev.key === 'Enter') { confirmarQuien(); } };
+    $('quienCancelar').onclick = function () { despuesQuien = null; $('modalQuien').hidden = true; pintar(); };
     document.addEventListener('keydown', function (ev) {
       if (ev.key !== 'Escape') return;
+      if (arr) { cancelarArrastre(); return; }
+      if (!$('modalQuien').hidden) { $('quienCancelar').onclick(); return; }
       if (!$('modalWsp').hidden) { $('modalWsp').hidden = true; return; }
       if (!$('modalVenta').hidden) { $('ventaCancelar').onclick(); return; }
       cerrarFicha();
