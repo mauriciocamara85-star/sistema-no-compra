@@ -41,8 +41,8 @@
   ],
   "shortcuts": [
     {
-      "name": "Panel de seguimiento",
-      "short_name": "Seguimiento",
+      "name": "CRM",
+      "short_name": "CRM",
       "description": "Ver y trabajar los clientes pendientes de contactar",
       "url": "./panel.html",
       "icons": [

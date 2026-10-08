@@ -655,3 +655,248 @@ $function$
 ;
 
 select 'listo: primero la tienda, después la fábrica' as "SQL 58";
+
+
+-- ─────────────────────────── PARTE 59 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · "PANEL" PASA A LLAMARSE "CRM" EN LOS MENSAJES DEL BOT
+--
+-- Correr en el editor SQL de Supabase.
+--
+-- Mauricio (07/10/2026): la sección Panel del Sistema No Compra se llama
+-- CRM. En el sistema ya está cambiado; acá, los mensajes de Telegram:
+-- el botón "Abrir el CRM" (resumen de la mañana y aviso de stock) y el
+-- texto del aviso de stock. Lo demás no cambia: el sistema sigue siendo el
+-- Sistema No Compra y el enlace sigue llevando al mismo lugar.
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* El resumen de la mañana, igual: el botón dice "Abrir el CRM". */
+CREATE OR REPLACE FUNCTION public.recordatorio_diario()
+ RETURNS text
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  token  text := secreto('TELEGRAM_TOKEN');
+  chat   text := secreto('TELEGRAM_CHAT');
+  -- Se llama UMBRAL y no DIAS porque PL/pgSQL no distingue mayúsculas: con
+  -- `DIAS` choca con la variable `dias` de dos líneas más abajo.
+  UMBRAL constant integer := 3;
+  /* Con prefijo, y no por gusto: `total`, `contactados`, `dias` y `estado`
+     son nombres de columna de `registros`, y esta función la consulta. Sin
+     el prefijo, PL/pgSQL no sabe si un `estado is null` habla de la columna
+     o de la variable, y contesta "column reference is ambiguous" en una
+     función que corre sola a las 9 de la mañana: nadie se enteraría salvo
+     porque el mensaje no llegó. */
+  ayer         integer;
+  n_total      integer;
+  pendientes   integer;
+  n_contactados integer;
+  viejos       integer;
+  n_dias       integer;
+  mes_cargados integer;
+  mes_compraron integer;
+  mes_plata    numeric;
+  lineas   text[] := '{}';
+  frase    text;
+  van      text;
+  cuerpo   jsonb;
+  res      extensions.http_response;
+  salida   jsonb;
+begin
+  if token is null or chat is null then
+    return 'El aviso por Telegram está apagado: no hay a dónde mandarlo.';
+  end if;
+
+  select
+    count(*) filter (where creado >= inicio_de('day') - interval '1 day'
+                       and creado <  inicio_de('day')),
+    count(*),
+    count(*) filter (where not contactado and estado is null)
+    into ayer, n_total, pendientes
+  from registros;
+
+  n_contactados := n_total - pendientes;
+
+  /* Dos números sobre los pendientes, y no miden lo mismo: `viejos` son los
+     que pasaron el umbral, y `dias` es lo que espera el más viejo de TODOS,
+     pasen o no el umbral. Por eso el filtro va adentro del count y no en el
+     where: sacarlos de la consulta dejaría a `dias` midiendo sólo entre los
+     viejos, que es una cuenta distinta. */
+  select coalesce(count(*) filter (
+           where creado <= now() - (UMBRAL || ' days')::interval), 0),
+         coalesce(max(floor(extract(epoch from now() - creado) / 86400))::int, 0)
+    into viejos, n_dias
+  from registros
+   where not contactado and estado is null;
+
+  /* El mes se corta por la fecha del REGISTRO, no por la de la venta: no se
+     guarda cuándo se cerró la compra. "Este mes" quiere decir "de lo que
+     entró este mes, esto ya volvió", que es la única pregunta que los datos
+     pueden contestar sin inventar nada. Mismo criterio que el tablero. */
+  select count(*),
+         count(*) filter (where compro),
+         coalesce(sum(monto) filter (where compro), 0)
+    into mes_cargados, mes_compraron, mes_plata
+  from registros where creado >= inicio_de('month');
+
+  lineas := array_append(lineas, '<b>Buen día.</b>');
+  lineas := array_append(lineas, '');
+
+  lineas := array_append(lineas, case
+    when ayer = 0 then '<b>Ayer no cargó ningún local.</b>'
+    when ayer = 1 then 'Ayer entró <b>1</b>.'
+    else 'Ayer entraron <b>' || ayer || '</b>.' end);
+
+  if n_total = 0 then
+    lineas := array_append(lineas, 'Todavía no se cargó ninguno desde que arrancamos.');
+  else
+    van := case when n_total = 1 then 'Va <b>1</b> cargado desde que arrancamos'
+                else 'Van <b>' || n_total || '</b> cargados desde que arrancamos' end;
+
+    if pendientes = 0 then
+      lineas := array_append(lineas, van ||
+        case when n_total = 1 then ' y ya se le escribió.' else ' y ya se les escribió a todos.' end);
+    else
+      /* Lo hecho antes que lo que falta, a propósito: este mensaje lo lee el
+         que atiende, y si arranca por la deuda es un reclamo diario. */
+      frase := van || ': ';
+      if n_contactados > 0 then
+        frase := frase || 'se les escribió a <b>' || n_contactados ||
+                  '</b> y faltan <b>' || pendientes || '</b>';
+      else
+        frase := frase || 'falta contestarle a <b>' || pendientes || '</b>';
+      end if;
+
+      if viejos > 0 then
+        frase := frase || ', ' || case when viejos = 1 then 'uno' else viejos::text end ||
+                  ' hace más de ' || UMBRAL || ' días';
+        if n_dias > UMBRAL then
+          frase := frase || ' (el más viejo, ' || n_dias || ' días)';
+        end if;
+      end if;
+      lineas := array_append(lineas, frase || '.');
+    end if;
+  end if;
+
+  /* El acumulado del mes, separado: es la única línea que no le pide nada a
+     nadie. Contesta para qué sirvió todo lo de arriba, que es lo que mira el
+     dueño. Aparece recién cuando hay una venta: un "0 volvieron · $ 0" todas
+     las mañanas del primer mes no informa nada y desanima a los que sí están
+     haciendo el trabajo de cargar y llamar. */
+  if mes_compraron > 0 then
+    lineas := array_append(lineas, '');
+    lineas := array_append(lineas, 'Este mes volvieron a comprar <b>' || mes_compraron ||
+      '</b> de los ' || mes_cargados || ' que entraron · <b>' || pesos(mes_plata) || '</b> recuperados.');
+  end if;
+
+  cuerpo := jsonb_build_object(
+    'chat_id', chat,
+    'text', array_to_string(lineas, E'\n'),
+    'parse_mode', 'HTML',
+    'disable_web_page_preview', true,
+    -- El botón es lo que convierte el recordatorio en una acción: se toca y
+    -- ya está adentro de la lista que hay que trabajar.
+    'reply_markup', jsonb_build_object('inline_keyboard', jsonb_build_array(jsonb_build_array(
+      jsonb_build_object('text', 'Abrir el CRM',
+                         'url', coalesce(secreto('SITIO'), '') || 'panel.html')))));
+
+  perform paciencia();
+  res := extensions.http_post('https://api.telegram.org/bot' || token || '/sendMessage',
+                              cuerpo::text, 'application/json');
+  begin salida := res.content::jsonb; exception when others then salida := null; end;
+
+  if res.status >= 300 or coalesce((salida->>'ok')::boolean, false) = false then
+    raise exception 'El recordatorio no salió: % · %', res.status,
+      left(coalesce(salida->>'description', res.content, ''), 200);
+  end if;
+
+  return array_to_string(lineas, ' | ');
+end;
+$function$
+;
+
+/* El aviso de stock de cada hora, igual: el botón dice "Abrir el CRM". */
+CREATE OR REPLACE FUNCTION public.avisar_stock_nuevo()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  token     text := secreto('TELEGRAM_TOKEN');
+  chat      text := secreto('TELEGRAM_CHAT');
+  hora      integer := extract(hour from now() at time zone 'America/Argentina/Buenos_Aires');
+  m         jsonb;
+  cuerpo    jsonb;
+  respuesta extensions.http_response;
+  salida    jsonb;
+begin
+  if token is null or chat is null then return jsonb_build_object('avisados', 0, 'porque', 'Telegram no está configurado'); end if;
+  if hora < 10 or hora >= 21 then return jsonb_build_object('avisados', 0, 'porque', 'fuera de horario'); end if;
+  m := avisar_stock_mensaje();
+  if (m->>'n')::integer = 0 then return jsonb_build_object('avisados', 0); end if;
+  cuerpo := jsonb_build_object('chat_id', chat, 'text', m->>'texto', 'parse_mode', 'HTML', 'disable_web_page_preview', true,
+    'reply_markup', jsonb_build_object('inline_keyboard', jsonb_build_array(jsonb_build_array(
+      jsonb_build_object('text', 'Abrir el CRM', 'url', coalesce(secreto('SITIO'), '') || 'panel.html')))));
+  perform paciencia();
+  respuesta := extensions.http_post('https://api.telegram.org/bot' || token || '/sendMessage', cuerpo::text, 'application/json');
+  begin salida := respuesta.content::jsonb; exception when others then salida := null; end;
+  if respuesta.status >= 300 or coalesce((salida->>'ok')::boolean, false) = false then
+    raise exception 'Telegram respondió % · %', respuesta.status, left(coalesce(salida->>'description', respuesta.content, ''), 200);
+  end if;
+  update registros set stock_avisado = now()
+   where id in (select (jsonb_array_elements_text(m->'ids'))::bigint);
+  return jsonb_build_object('avisados', (m->>'n')::integer);
+end;
+$function$
+;
+
+/* El texto del aviso de stock: "En el CRM…". */
+CREATE OR REPLACE FUNCTION public.avisar_stock_mensaje()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tz     constant text := 'America/Argentina/Buenos_Aires';
+  l      record;
+  lineas text[] := '{}';
+  ids    bigint[] := '{}';
+  n      integer := 0;
+  fab    integer;
+  que    text;
+begin
+  for l in
+    select r.id, r.sucursal, r.producto, r.talle, r.color, r.creado,
+           stock_de(r.producto_codigo, r.talle, r.color, r.producto) as s
+      from registros r
+     where r.stock_avisado is null
+       and r.creado > now() - interval '45 days'
+       and crm_columna(r.estado, r.contactado) in ('Pendiente', 'En seguimiento', 'Esperando respuesta')
+     order by r.creado
+  loop
+    continue when not coalesce((l.s->>'hay')::boolean, false);
+    n := n + 1;
+    ids := ids || l.id;
+    if n <= 15 then
+      fab := coalesce((l.s->>'fabrica')::integer, 0);
+      que := array_to_string(array_remove(array[
+        case when coalesce((l.s->>'tienda_hay')::boolean, false) then 'en la tienda' end,
+        case when fab > 0 then fab || ' en fábrica' end], null), ' · ');
+      lineas := lineas || ('• ' || esc_html(coalesce(l.sucursal, '')) || ' · ' || esc_html(coalesce(l.producto, 'sin producto'))
+                || coalesce(' · ' || esc_html(l.talle), '') || coalesce(' · ' || esc_html(lower(l.color)), '')
+                || ' — <b>' || que || '</b> <i>(vino el ' || to_char(l.creado at time zone tz, 'DD/MM') || ')</i>');
+    end if;
+  end loop;
+  return jsonb_build_object('n', n, 'ids', to_jsonb(ids), 'texto', case when n = 0 then null else
+    '📦 <b>Ya tenemos lo que buscaban</b> (' || n || ')' || E'\n\n' || array_to_string(lineas, E'\n')
+    || case when n > 15 then E'\n…y ' || (n - 15) || ' más: están en el CRM.' else '' end
+    || E'\n\nEn el CRM cada tarjeta dice qué hay: escribiles desde ahí.' end);
+end;
+$function$
+;
+
+select 'listo: los mensajes del bot dicen CRM' as "SQL 59";
