@@ -2490,8 +2490,9 @@
     var s = stockDe(r);
     if (!s || !s.hay) return '';
     var fab = Number(s.fabrica) || 0, partes = [];
-    if (fab > 0) { partes.push('en fábrica (' + fab + ')'); }
+    /* Primero la tienda online, después la fábrica (Mauricio, 07/10/2026). */
     if (s.tienda_hay) { partes.push('en la tienda' + (s.tienda ? ' (' + s.tienda + ')' : '')); }
+    if (fab > 0) { partes.push('en fábrica (' + fab + ')'); }
     return '<div class="tj-stock">' + TILDE + '<span>Hay ' + partes.join(' y ') + '</span></div>';
   }
   function fichaStock(r) {
@@ -2500,11 +2501,11 @@
     var fab = s.fabrica === null || s.fabrica === undefined ? null : Number(s.fabrica) || 0;
     var del = STOCK.del ? ' (Excel del ' + fechaCorta(STOCK.del) + ')' : '';
     var lineas = [];
-    lineas.push('<span>Fábrica' + del + ':</span> ' + (fab === null ? 'sin código para buscar' : fab > 0 ? '<b>hay ' + fab + '</b>' : 'no hay') +
-      (s.fabrica_otros_talles ? ' · otros talles: ' + esc(s.fabrica_otros_talles) : ''));
     lineas.push('<span>Tienda online:</span> ' + (s.tienda_hay ? '<b>hay' + (s.tienda ? ' ' + s.tienda : '') + '</b>' : 'no hay') +
       (s.tienda_otros_talles ? ' · otros talles: ' + esc(s.tienda_otros_talles) : '') +
       (s.tienda_url ? ' · <a href="' + esc(s.tienda_url) + '" target="_blank" rel="noopener">Ver</a>' : ''));
+    lineas.push('<span>Fábrica' + del + ':</span> ' + (fab === null ? 'sin código para buscar' : fab > 0 ? '<b>hay ' + fab + '</b>' : 'no hay') +
+      (s.fabrica_otros_talles ? ' · otros talles: ' + esc(s.fabrica_otros_talles) : ''));
     return '<div class="ficha-stock' + (s.hay ? ' hay' : '') + '">' + lineas.join('<br>') +
       (s.hay ? '<small>Es una venta para recuperar: avisale que lo tenemos.</small>' : '') + '</div>';
   }

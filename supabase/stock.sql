@@ -455,3 +455,203 @@ revoke all on function avisar_stock_nuevo() from public, anon, authenticated;
 delete from hermes_llave;
 
 select 'listo: el stock en el aviso del bot y el repaso de cada hora' as "SQL 57";
+
+
+-- ─────────────────────────── PARTE 58 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · PRIMERO LA TIENDA ONLINE, DESPUÉS LA FÁBRICA
+--
+-- Correr en el editor SQL de Supabase, DESPUÉS del 57.
+--
+-- Pedido de Mauricio (07/10/2026): "se tienen que fijar en los dos lados,
+-- primero en el e-commerce y después en fábrica".
+--   · En el aviso del bot, en el repaso de cada hora y en el Panel, la
+--     tienda va primero: "✅ Lo tenemos: en la tienda online (2) · 1 en
+--     fábrica".
+--   · Los productos de la tienda que no tienen el código cargado (eran 15:
+--     perfumes, packs, gorras, algunas remeras…) se buscan por NOMBRE: tienen
+--     que estar todas las palabras ("Timi Relax" encuentra "Campera Timi
+--     Relax", no "Buzo Real Relax"). Con talle y color, como siempre.
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* ¿El nombre de la tienda tiene todas las palabras de lo que se buscaba?
+   Las palabras de menos de 3 letras no cuentan ("CP", "BX", "HI"). */
+create or replace function stock_nombre_coincide(p_tienda text, p_buscado text)
+returns boolean language sql immutable as $$
+  select coalesce(bool_and(position(' ' || w || ' ' in ' ' || regexp_replace(stock_norma(p_tienda), '[^a-z0-9]+', ' ', 'g') || ' ') > 0), false)
+    from unnest(regexp_split_to_array(stock_norma(p_buscado), '[^a-z0-9]+')) w
+   where length(w) >= 3
+$$;
+
+/* El cruce, igual que en el 56: sólo que lo de la tienda sin código se busca por nombre. */
+CREATE OR REPLACE FUNCTION public.stock_de(p_codigo text, p_talle text, p_color text, p_producto text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  cod  text := upper(trim(coalesce(p_codigo, '')));
+  tal  text := upper(trim(coalesce(p_talle, '')));
+  col  text := stock_norma(p_color);
+  prod text := stock_norma(p_producto);
+  fab integer; fab_otros text;
+  tie_hay boolean; tie_sin_cuenta boolean; tie integer; tie_url text; tie_otros text;
+begin
+  if cod <> '' then
+    select sum(f.cantidad) into fab from stock_fabrica f
+     where f.codigo = cod and (tal = '' or f.talle = tal)
+       and (col = '' or stock_norma(f.color_nombre) = col or stock_norma(f.color) = col);
+    select string_agg(f.talle || ' (' || f.cantidad || ')', ', ' order by f.talle) into fab_otros
+      from (select f.talle, sum(f.cantidad) as cantidad from stock_fabrica f
+             where f.codigo = cod and tal <> '' and f.talle <> tal
+               and (col = '' or stock_norma(f.color_nombre) = col or stock_norma(f.color) = col)
+             group by f.talle) f;
+  end if;
+  with suyas as (
+    select t.* from stock_tienda t
+     where (cod <> '' and t.codigo = cod)
+        or ((cod = '' or t.codigo = '') and stock_nombre_coincide(t.producto, p_producto))
+  ), del_color as (
+    select s.* from suyas s
+     where col = '' or stock_norma(s.color) = col
+        or stock_norma(s.color) like col || ' %' or col like stock_norma(s.color) || ' %'
+  )
+  select (select count(*) > 0 from del_color c where tal = '' or c.talle = tal),
+         (select bool_or(c.stock is null) from del_color c where tal = '' or c.talle = tal),
+         (select sum(c.stock) from del_color c where tal = '' or c.talle = tal),
+         (select string_agg(distinct c.talle, ', ') from del_color c where tal <> '' and c.talle <> tal),
+         (select max(s.url) from suyas s)
+    into tie_hay, tie_sin_cuenta, tie, tie_otros, tie_url;
+  return jsonb_build_object(
+    'fabrica', case when cod = '' then null else coalesce(fab, 0) end,
+    'fabrica_otros_talles', fab_otros,
+    'tienda_hay', coalesce(tie_hay, false),
+    'tienda', case when coalesce(tie_hay, false) and not coalesce(tie_sin_cuenta, false) then tie
+                   when coalesce(tie_hay, false) then null else 0 end,
+    'tienda_otros_talles', tie_otros,
+    'tienda_url', tie_url,
+    'hay', coalesce(fab, 0) > 0 or coalesce(tie_hay, false));
+end;
+$function$
+;
+
+/* El aviso de cada No Compra: primero la tienda, después la fábrica. */
+CREATE OR REPLACE FUNCTION public.telegram_no_compra_cuerpo(p_registro bigint, p_chat text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public', 'extensions'
+AS $function$
+declare
+  r       registros%rowtype;
+  lineas  text[] := '{}';
+  st      jsonb;
+  hay     boolean;
+  fab     integer;
+  botones jsonb := '[]'::jsonb;
+  link    text;
+begin
+  select * into r from registros where id = p_registro;
+  if not found then raise exception 'No existe el registro %.', p_registro; end if;
+  st  := stock_de(r.producto_codigo, r.talle, r.color, r.producto);
+  hay := coalesce((st->>'hay')::boolean, false);
+  fab := coalesce((st->>'fabrica')::integer, 0);
+
+  lineas := array_append(lineas, '<b>Nuevo no-compra · ' || esc_html(r.sucursal) || '</b>');
+  lineas := array_append(lineas, '');
+  if r.nombre   is not null then lineas := array_append(lineas, '<b>Cliente:</b> ' || esc_html(r.nombre)); end if;
+  if r.whatsapp is not null then lineas := array_append(lineas, '<b>WhatsApp:</b> ' || esc_html(r.whatsapp)); end if;
+  if r.mail     is not null then lineas := array_append(lineas, '<b>Mail:</b> ' || esc_html(r.mail)); end if;
+  if r.producto is not null then lineas := array_append(lineas, '<b>Buscaba:</b> ' || esc_html(r.producto)); end if;
+  if r.talle    is not null then lineas := array_append(lineas, '<b>Talle:</b> ' || esc_html(r.talle)); end if;
+  if r.color    is not null then lineas := array_append(lineas, '<b>Color:</b> ' || esc_html(lower(r.color))); end if;
+  if r.motivo   is not null then lineas := array_append(lineas, '<b>Por qué se fue:</b> ' || esc_html(r.motivo::text)); end if;
+  if r.vendedor is not null then lineas := array_append(lineas, '<b>Vendedor:</b> ' || esc_html(r.vendedor)); end if;
+
+  /* El stock (SQL 57): si está lo que buscaba; si no, otros talles. */
+  if hay then
+    lineas := array_append(lineas, '');
+    lineas := array_append(lineas, '✅ <b>Lo tenemos:</b> ' || array_to_string(array_remove(array[
+      case when coalesce((st->>'tienda_hay')::boolean, false)
+           then 'en la tienda online' || coalesce(' (' || (st->>'tienda') || ')', '') end,
+      case when fab > 0 then fab || ' en fábrica' end
+    ], null), ' · '));
+  elsif st->>'fabrica_otros_talles' is not null or st->>'tienda_otros_talles' is not null then
+    lineas := array_append(lineas, '');
+    lineas := array_append(lineas, '🔁 <b>En otro talle:</b> ' || array_to_string(array_remove(array[
+      case when st->>'tienda_otros_talles' is not null then esc_html(st->>'tienda_otros_talles') || ' en la tienda' end,
+      case when st->>'fabrica_otros_talles' is not null then esc_html(st->>'fabrica_otros_talles') || ' en fábrica' end
+    ], null), ' · '));
+  end if;
+
+  if r.obs is not null then
+    lineas := array_append(lineas, '');
+    lineas := array_append(lineas, '<i>' || esc_html(r.obs) || '</i>');
+  end if;
+
+  /* Se mira el TELÉFONO y no el link: con el número vacío no hay botón. */
+  link := link_whatsapp(r.whatsapp);
+  if link is not null then
+    botones := botones || jsonb_build_array(jsonb_build_object('text', 'Escribirle por WhatsApp', 'url', link));
+  end if;
+  if coalesce((st->>'tienda_hay')::boolean, false) and st->>'tienda_url' is not null then
+    botones := botones || jsonb_build_array(jsonb_build_object('text', 'Ver en la tienda', 'url', st->>'tienda_url'));
+  end if;
+
+  return jsonb_build_object('chat_id', p_chat, 'text', array_to_string(lineas, E'\n'),
+                            'parse_mode', 'HTML', 'disable_web_page_preview', true, '_hay', hay)
+         || case when jsonb_array_length(botones) > 0
+                 then jsonb_build_object('reply_markup', jsonb_build_object('inline_keyboard', jsonb_build_array(botones)))
+                 else '{}'::jsonb end;
+end;
+$function$
+;
+
+/* El repaso de cada hora: primero la tienda, después la fábrica. */
+CREATE OR REPLACE FUNCTION public.avisar_stock_mensaje()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tz     constant text := 'America/Argentina/Buenos_Aires';
+  l      record;
+  lineas text[] := '{}';
+  ids    bigint[] := '{}';
+  n      integer := 0;
+  fab    integer;
+  que    text;
+begin
+  for l in
+    select r.id, r.sucursal, r.producto, r.talle, r.color, r.creado,
+           stock_de(r.producto_codigo, r.talle, r.color, r.producto) as s
+      from registros r
+     where r.stock_avisado is null
+       and r.creado > now() - interval '45 days'
+       and crm_columna(r.estado, r.contactado) in ('Pendiente', 'En seguimiento', 'Esperando respuesta')
+     order by r.creado
+  loop
+    continue when not coalesce((l.s->>'hay')::boolean, false);
+    n := n + 1;
+    ids := ids || l.id;
+    if n <= 15 then
+      fab := coalesce((l.s->>'fabrica')::integer, 0);
+      que := array_to_string(array_remove(array[
+        case when coalesce((l.s->>'tienda_hay')::boolean, false) then 'en la tienda' end,
+        case when fab > 0 then fab || ' en fábrica' end], null), ' · ');
+      lineas := lineas || ('• ' || esc_html(coalesce(l.sucursal, '')) || ' · ' || esc_html(coalesce(l.producto, 'sin producto'))
+                || coalesce(' · ' || esc_html(l.talle), '') || coalesce(' · ' || esc_html(lower(l.color)), '')
+                || ' — <b>' || que || '</b> <i>(vino el ' || to_char(l.creado at time zone tz, 'DD/MM') || ')</i>');
+    end if;
+  end loop;
+  return jsonb_build_object('n', n, 'ids', to_jsonb(ids), 'texto', case when n = 0 then null else
+    '📦 <b>Ya tenemos lo que buscaban</b> (' || n || ')' || E'\n\n' || array_to_string(lineas, E'\n')
+    || case when n > 15 then E'\n…y ' || (n - 15) || ' más: están en el Panel.' else '' end
+    || E'\n\nEn el Panel cada tarjeta dice qué hay: escribiles desde ahí.' end);
+end;
+$function$
+;
+
+select 'listo: primero la tienda, después la fábrica' as "SQL 58";
