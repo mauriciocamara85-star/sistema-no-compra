@@ -93,15 +93,15 @@
   .ficha-puntos small { display: block; font-size: 13px; font-weight: 600; color: var(--txt-3); margin: 4px 0 6px; }
 
   /* Las mismas tres chapas que ve el cliente en su tarjeta: el vendedor
-     tiene que poder decir "sos Oro" mirando lo mismo que mira él. */
+     tiene que poder decir "sos Gold" mirando lo mismo que mira él. */
   .chip-nivel {
     display: inline-flex; align-items: center; gap: 5px;
     padding: 5px 10px; border-radius: 999px;
     font: 700 11px/1 var(--sans); letter-spacing: .6px; text-transform: uppercase;
   }
-  .nv-plata   { background: #DADDE2; color: #2A2D31; }
-  .nv-oro     { background: #F1D27A; color: #3A2A00; }
-  .nv-platino { background: #0B0C0E; color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .6); }
+  .nv-silver { background: #DADDE2; color: #2A2D31; }
+  .nv-gold   { background: #F1D27A; color: #3A2A00; }
+  .nv-black  { background: #0B0C0E; color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .6); }
 
   /* Lo que va a sumar, mientras se tipea el importe. Es el freno contra el
      cero de más: "suma 8.000 puntos" en una remera se ve antes de guardar. */
@@ -393,7 +393,7 @@
         'data-mail="' + esc(s.mail || '') + '">' +
         '<span class="socio-n">' + miles(s.puntos) + '</span>' +
         '<span><span class="socio-nom">' + esc(s.nombre) + '</span>' +
-        '<span class="socio-sub">' + esc(s.telefono) + ' · ' + esc(s.nivel || 'Plata') + '</span></span>' +
+        '<span class="socio-sub">' + esc(s.telefono) + ' · ' + esc(s.nivel || 'Silver') + '</span></span>' +
         (s.confirmado ? '' : '<span class="pill pill-warn">Sin compras</span>') +
         '</button>';
     }).join('');
@@ -438,7 +438,7 @@
   }
 
   function pintarFicha(t) {
-    var nv = t.nivel || { nombre: 'Plata', multiplica: 1 };
+    var nv = t.nivel || { nombre: 'Silver', multiplica: 1 };
     /* Mandarle su tarjeta. Es la respuesta a "perdí mi tarjeta" y también a
        "recién me anoté": el cliente se va con el enlace en su WhatsApp, que
        es el único lugar donde no se le va a perder.
@@ -842,12 +842,12 @@
       porQue(nv.nombre, Number(hoy.extra) > 1 ? hoy.motivo : null, m);
   }
 
-  /* " (Oro + Hot Sale, 2,4x)", o nada si suma lo normal. */
+  /* " (Gold + Hot Sale, 2,4x)", o nada si suma lo normal. */
   function porQue(nivel, motivo, total) {
     var t = Number(total) || 1;
     if (t <= 1) return '';
     var partes = [];
-    if (nivel && nivel !== 'Plata') partes.push(esc(nivel));
+    if (nivel && nivel !== 'Silver' && nivel !== 'Plata') partes.push(esc(nivel));
     if (motivo) partes.push(esc(motivo));
     return ' (' + partes.join(' + ') + ', ' + String(t).replace('.', ',') + 'x)';
   }
@@ -870,8 +870,10 @@
   function miles(n) { return Math.round(Number(n) || 0).toLocaleString('es-AR'); }
 
   function chipNivel(nombre) {
-    var n = String(nombre || 'Plata');
-    var clase = 'nv-' + n.toLowerCase().normalize('NFD').replace(/[^a-z]/g, '');
+    var n = String(nombre || 'Silver');
+    /* Con los nombres de antes del SQL 54 también. */
+    var k = n.toLowerCase().normalize('NFD').replace(/[^a-z]/g, '');
+    var clase = 'nv-' + ({ plata: 'silver', oro: 'gold', platino: 'black' }[k] || k);
     return '<span class="chip-nivel ' + clase + '">' + esc(n) + '</span>';
   }
 

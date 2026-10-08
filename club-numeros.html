@@ -328,9 +328,9 @@
   .nv-fila b { font: 700 17px var(--display); min-width: 36px; text-align: right; }
   .nv-barra { height: 10px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
   .nv-barra i { display: block; height: 100%; border-radius: inherit; }
-  .nv-plata   { background: var(--plata); }
-  .nv-oro     { background: var(--oro); }
-  .nv-platino { background: var(--platino); }
+  .nv-silver { background: var(--plata); }
+  .nv-gold   { background: var(--oro); }
+  .nv-black  { background: var(--platino); }
 
   .reciente { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--line); }
   .reciente:first-child { border-top: 0; padding-top: 2px; }
@@ -947,9 +947,9 @@
       '<div class="recu-n">' + miles(r.total) + '</div>' +
       '<p class="recu-sub">' + (r.total === 1 ? 'socio' : 'socios') + ' con ' + miles(r.puntos) + ' puntos guardados sin usar.</p>' +
       '<div class="recu-niveles">' +
-        (r.platino ? '<span class="pill pill-platino">' + r.platino + ' Platino</span>' : '') +
-        (r.oro ? '<span class="pill pill-oro">' + r.oro + ' Oro</span>' : '') +
-        (r.plata ? '<span class="pill pill-plata">' + r.plata + ' Plata</span>' : '') +
+        (porNivel(r).black ? '<span class="pill pill-black">' + porNivel(r).black + ' Black</span>' : '') +
+        (porNivel(r).gold ? '<span class="pill pill-gold">' + porNivel(r).gold + ' Gold</span>' : '') +
+        (porNivel(r).silver ? '<span class="pill pill-silver">' + porNivel(r).silver + ' Silver</span>' : '') +
         '<span class="pill ' + (puedo ? 'pill-ok' : 'pill-neutra') + '">' + puedo + ' con avisos prendidos</span>' +
         (r.avisados_30 ? '<span class="pill pill-warn">' + r.avisados_30 + ' ya avisados este mes</span>' : '') +
       '</div>' +
@@ -1191,16 +1191,24 @@
       (l.length > 8 ? '<details class="mas"><summary>Ver ' + (l.length - 8) + ' más</summary>' + l.slice(8).map(fila).join('') + '</details>' : '');
   }
 
+  /* Los socios por nivel: con las claves nuevas (SQL 54) o las de antes. */
+  function porNivel(x) {
+    x = x || {};
+    return { silver: Number(x.silver != null ? x.silver : x.plata) || 0,
+             gold: Number(x.gold != null ? x.gold : x.oro) || 0,
+             black: Number(x.black != null ? x.black : x.platino) || 0 };
+  }
+
   function pintarNiveles() {
-    var n = datos.niveles || {};
-    var tot = (n.plata || 0) + (n.oro || 0) + (n.platino || 0);
+    var n = datos.niveles || {}, nv = porNivel(n);
+    var tot = nv.silver + nv.gold + nv.black;
     $('nivelesSub').textContent = 'Los socios' + (estado.local ? ' ' + enElLocal().replace(/^de /, 'anotados en ') : '') + ', según lo que compraron en los últimos 12 meses.';
     if (!tot) { $('niveles').innerHTML = '<p class="vacio-cn">Todavía no hay socios.</p>'; return; }
     var fila = function (nom, clase, v) {
       return '<div class="nv-fila"><span>' + nom + '</span><div class="nv-barra"><i class="' + clase + '" style="width:' +
              (v ? Math.max(2, v * 100 / tot) : 0) + '%"></i></div><b>' + miles(v) + '</b></div>';
     };
-    $('niveles').innerHTML = fila('Plata', 'nv-plata', n.plata) + fila('Oro', 'nv-oro', n.oro) + fila('Platino', 'nv-platino', n.platino) +
+    $('niveles').innerHTML = fila('Silver', 'nv-silver', nv.silver) + fila('Gold', 'nv-gold', nv.gold) + fila('Black', 'nv-black', nv.black) +
       '<p class="nota-cn">' + (n.cerca ? '<b>' + miles(n.cerca) + '</b> ' + (n.cerca === 1 ? 'está' : 'están') + ' cerca de subir (tienen el 80 % o más de lo que pide el nivel siguiente).'
                                         : 'Nadie está cerca de subir de nivel todavía.') + '</p>';
   }
@@ -1208,19 +1216,20 @@
   /* ═══ Tipos de cliente (SQL 37) ════════════════════════════════════════
      Los calcula la base (club_tipos), con la misma regla para las tarjetas
      de Estadísticas, las pastillas de Socios y la ficha. Se prueban en este
-     orden y gana el primero: un Platino que dejó de venir es Dormido. */
+     orden y gana el primero: un Black que dejó de venir es Dormido. */
   var TIPOS_CLI = [
     { k: 'nuevo',       varios: 'Nuevos',      uno: 'Nuevo',       que: 'Se anotó hace menos de 30 días.' },
     { k: 'habitual',    varios: 'Habituales',  uno: 'Habitual',    que: 'Compró en 3 a 5 días distintos en el año y sigue viniendo.' },
-    { k: 'vip',         varios: 'VIP',         uno: 'VIP',         que: 'Es Platino, o compró en 6 días distintos o más en el año.' },
+    { k: 'vip',         varios: 'VIP',         uno: 'VIP',         que: 'Es Black, o compró en 6 días distintos o más en el año.' },
     { k: 'ocasional',   varios: 'Ocasionales', uno: 'Ocasional',   que: 'Compró una o dos veces en el año.' },
     { k: 'dormido',     varios: 'Dormidos',    uno: 'Dormido',     que: 'Dejó de venir: los de "Para recuperar", más los que hace más de un año que no compran.' },
     { k: 'sin_compras', varios: 'Sin compras', uno: 'Sin compras', que: 'Se anotó hace más de 30 días y nunca compró.' }
   ];
   /* El nivel de un socio con el color de su nivel, como en su tarjeta. */
+  var PILL_NIVEL = { Silver: 'pill-silver', Gold: 'pill-gold', Black: 'pill-black', Plata: 'pill-silver', Oro: 'pill-gold', Platino: 'pill-black' };
   function pillNivel(n) {
-    n = n || 'Plata';
-    var c = { Plata: 'pill-plata', Oro: 'pill-oro', Platino: 'pill-platino' }[n] || 'pill-neutra';
+    n = n || 'Silver';
+    var c = PILL_NIVEL[n] || 'pill-neutra';
     return '<span class="pill ' + c + '">' + esc(n) + '</span>';
   }
   function tipoCli(k) { return TIPOS_CLI.filter(function (t) { return t.k === k; })[0]; }
@@ -1295,7 +1304,7 @@
       '<th>Gastó</th><th>Última compra</th></tr></thead><tbody>' + l.map(function (s) {
         return '<tr data-codigo="' + esc(s.codigo) + '">' +
           '<td><button type="button" class="fila-nom" data-codigo="' + esc(s.codigo) + '">' + esc(s.nombre) + '</button>' +
-            '<small>' + esc(s.nivel || 'Plata') + (s.local ? ' · ' + esc(nombreDe(s.local)) : '') + '</small></td>' +
+            '<small>' + esc(s.nivel || 'Silver') + (s.local ? ' · ' + esc(nombreDe(s.local)) : '') + '</small></td>' +
           '<td>' + pillTipo(s.tipo) + '</td>' +
           '<td' + (Number(s.puntos) ? '' : ' class="cero"') + '>' + miles(s.puntos) + '</td>' +
           '<td' + (Number(s.compras) ? '' : ' class="cero"') + '>' + miles(s.compras) + '</td>' +
@@ -1570,7 +1579,7 @@
         var l = r || [];
         salida.innerHTML = l.length ? l.map(function (s) {
           return '<button type="button" class="dato" data-codigo="' + esc(s.codigo) + '"><span>' + esc(s.nombre) +
-                 '<small>' + esc(s.nivel || 'Plata') + ' · ' + unoVarios(s.compras || 0, 'compra', 'compras') + '</small></span>' +
+                 '<small>' + esc(s.nivel || 'Silver') + ' · ' + unoVarios(s.compras || 0, 'compra', 'compras') + '</small></span>' +
                  '<b>' + miles(s.puntos) + '</b></button>';
         }).join('') : '<p class="vacio-cn">No encontré a nadie con eso.</p>';
       })

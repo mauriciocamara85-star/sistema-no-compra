@@ -863,7 +863,7 @@
       return '<div class="promo-fila">' +
         '<div class="promo-fila-txt"><b>' + esc(p.texto) + '</b>' +
           '<span>Hasta el ' + esc(fechaCorta(p.hasta)) +
-          (p.desde_nivel ? ' · socios ' + (p.desde_nivel === 'Oro' ? 'Oro y Platino' : esc(p.desde_nivel)) : p.solo_socios ? ' · sólo socios' : '') + dondePromo(p) +
+          (p.desde_nivel ? ' · socios ' + (p.desde_nivel === 'Gold' || p.desde_nivel === 'Oro' ? 'Gold y Black' : esc(p.desde_nivel)) : p.solo_socios ? ' · sólo socios' : '') + dondePromo(p) +
           (p.imagen ? ' · con foto' : '') + (p.cuenta ? ' · con cuenta regresiva' : '') +
           (p.video ? ' · con video' : '') + (p.galeria && p.galeria.length ? ' · colección de ' + p.galeria.length + ' fotos' : '') + '</span></div>' +
         (p.destacada ? '<span class="pill pill-oro">Destacada</span>' : '') +
@@ -956,8 +956,9 @@
           '<label for="promoPara">Para quién</label>' +
           '<select id="promoPara">' +
             [['todos', 'Todos los clientes'], ['socios', 'Todos los socios del Club'],
-             ['Oro', 'Socios Oro y Platino'], ['Platino', 'Sólo socios Platino']].map(function (o) {
-              var actual = p && p.desde_nivel ? p.desde_nivel : p && p.solo_socios ? 'socios' : 'todos';
+             ['Gold', 'Socios Gold y Black'], ['Black', 'Sólo socios Black']].map(function (o) {
+              var actual = p && p.desde_nivel ? ({ Oro: 'Gold', Platino: 'Black' }[p.desde_nivel] || p.desde_nivel)
+                                              : p && p.solo_socios ? 'socios' : 'todos';
               return '<option value="' + o[0] + '"' + (actual === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
             }).join('') +
           '</select>' +
@@ -1096,11 +1097,11 @@
     /* Sólo socios en la tienda online: la tienda no sabe quién es socio,
        así que hace falta un cupón, y cómo se usa va en las condiciones. */
     var verNota = function () {
-      var para = $('promoPara').value, solo = para !== 'todos', nivel = para === 'Oro' || para === 'Platino';
+      var para = $('promoPara').value, solo = para !== 'todos', nivel = para === 'Gold' || para === 'Black';
       var online = /online/.test($('promoDonde').value);
       $('promoSoloNota').hidden = !solo;
       $('promoSoloNota').innerHTML = nivel
-        ? 'La ven primero los socios ' + (para === 'Oro' ? 'Oro y Platino' : 'Platino') + ', con su rótulo; en Cobrar, el ' +
+        ? 'La ven primero los socios ' + (para === 'Gold' ? 'Gold y Black' : 'Black') + ', con su rótulo; en Cobrar, el ' +
           'vendedor la ve sólo si el socio llega al nivel. Los de niveles más bajos la ven al final, con candado y cuánto ' +
           'les falta: es un motivo para subir. El aviso al celular les llega sólo a los que llegan, en menos de una hora.'
         : 'En la app lleva el rótulo "Sólo socios". En Cobrar, el vendedor la ve al escanear la tarjeta del socio, ' +
@@ -1849,7 +1850,7 @@
     }
     /* El nivel (SQL 39): se manda si se eligió uno, o si la base ya lo
        conoce (para poder sacarlo, con ''). */
-    var nivel = para === 'Oro' || para === 'Platino' ? para : '';
+    var nivel = para === 'Gold' || para === 'Black' ? para : '';
     if (nivel || (promoAbierta && 'desde_nivel' in promoAbierta)) { extra.nivel = nivel; }
     var conoce = promoAbierta && 'donde' in promoAbierta;
     if (!conoce && !extra.solo && extra.donde === 'locales' && !nivel) { extra = null; }
@@ -2727,7 +2728,7 @@
 
   /* ═══ Puntos y niveles: para mirar ═════════════════════════════════════
      No se editan desde acá, a propósito: cambiar cuánto vale un punto o
-     desde cuánto se es Oro cambia lo que ya ganó cada socio, y eso no puede
+     desde cuánto se es Gold cambia lo que ya ganó cada socio, y eso no puede
      pasar por un campo que alguien toca sin querer. */
   function pintarReglas() {
     var caja = $('nivelesCuerpo');

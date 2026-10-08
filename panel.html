@@ -2423,7 +2423,7 @@
     }
   }
   function lineaSocio(s) {
-    var cls = { Plata: 'pill-plata', Oro: 'pill-oro', Platino: 'pill-platino' }[s.nivel] || 'pill-neutra';
+    var cls = { Silver: 'pill-silver', Gold: 'pill-gold', Black: 'pill-black', Plata: 'pill-silver', Oro: 'pill-gold', Platino: 'pill-black' }[s.nivel] || 'pill-neutra';
     var dias = s.ultima_compra ? Math.floor((Date.now() - new Date(s.ultima_compra).getTime()) / 86400000) : null;
     var compras = Number(s.compras) || 0;
     return '<span class="pill ' + cls + '">' + esc(s.nivel || 'Socio') + '</span>' +
