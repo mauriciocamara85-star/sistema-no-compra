@@ -238,3 +238,220 @@ $$;
 grant execute on function crm_stock(text) to anon, authenticated;
 
 select 'listo: el stock de la fábrica y de la tienda, cruzado con cada No Compra' as "SQL 56";
+
+
+-- ─────────────────────────── PARTE 57 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · EL STOCK EN EL AVISO DEL BOT (SIN HERMES)
+--
+-- Correr en el editor SQL de Supabase, DESPUÉS del 56.
+--
+-- Decidido con Mauricio el 07/10/2026: sin Hermes. El bot del grupo "No
+-- compra VDH" ya avisa cada No Compra al minuto; ahora ese mismo aviso dice
+-- si lo tenemos, porque el cruce ya está en la base (SQL 56):
+--
+--     Buscaba: Kazan CP · Talle: M · Color: marino
+--     ✅ Lo tenemos: 1 en fábrica · en la tienda online
+--     [Escribirle por WhatsApp] [Ver en la tienda]
+--
+-- Y una vez por hora, de 10 a 21: si a un No Compra abierto que no se avisó
+-- le apareció stock (llegó el Excel de fábrica o se repuso en la tienda),
+-- un solo mensaje con todos: "📦 Ya tenemos lo que buscaban". Cada uno se
+-- avisa UNA vez (registros.stock_avisado).
+--
+--   telegram_no_compra_cuerpo   el aviso de un No Compra (el de siempre,
+--                               + color y stock), sin mandarlo
+--   mandar_telegram             lo manda (como siempre)
+--   avisar_stock_mensaje        el repaso de cada hora, sin mandarlo
+--   avisar_stock_nuevo          lo manda (lo llama el robot de cada hora)
+--
+-- Y a Hermes se le corta la llave: no se usa.
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table registros add column if not exists stock_avisado timestamptz;
+
+/* El aviso de un No Compra, armado: el de siempre, más el color y el stock.
+   Aparte de mandar_telegram para poder probarlo sin mandar nada. */
+create or replace function telegram_no_compra_cuerpo(p_registro bigint, p_chat text)
+returns jsonb language plpgsql stable security definer set search_path = public, extensions as $$
+declare
+  r       registros%rowtype;
+  lineas  text[] := '{}';
+  st      jsonb;
+  hay     boolean;
+  fab     integer;
+  botones jsonb := '[]'::jsonb;
+  link    text;
+begin
+  select * into r from registros where id = p_registro;
+  if not found then raise exception 'No existe el registro %.', p_registro; end if;
+  st  := stock_de(r.producto_codigo, r.talle, r.color, r.producto);
+  hay := coalesce((st->>'hay')::boolean, false);
+  fab := coalesce((st->>'fabrica')::integer, 0);
+
+  lineas := array_append(lineas, '<b>Nuevo no-compra · ' || esc_html(r.sucursal) || '</b>');
+  lineas := array_append(lineas, '');
+  if r.nombre   is not null then lineas := array_append(lineas, '<b>Cliente:</b> ' || esc_html(r.nombre)); end if;
+  if r.whatsapp is not null then lineas := array_append(lineas, '<b>WhatsApp:</b> ' || esc_html(r.whatsapp)); end if;
+  if r.mail     is not null then lineas := array_append(lineas, '<b>Mail:</b> ' || esc_html(r.mail)); end if;
+  if r.producto is not null then lineas := array_append(lineas, '<b>Buscaba:</b> ' || esc_html(r.producto)); end if;
+  if r.talle    is not null then lineas := array_append(lineas, '<b>Talle:</b> ' || esc_html(r.talle)); end if;
+  if r.color    is not null then lineas := array_append(lineas, '<b>Color:</b> ' || esc_html(lower(r.color))); end if;
+  if r.motivo   is not null then lineas := array_append(lineas, '<b>Por qué se fue:</b> ' || esc_html(r.motivo::text)); end if;
+  if r.vendedor is not null then lineas := array_append(lineas, '<b>Vendedor:</b> ' || esc_html(r.vendedor)); end if;
+
+  /* El stock (SQL 57): si está lo que buscaba; si no, otros talles. */
+  if hay then
+    lineas := array_append(lineas, '');
+    lineas := array_append(lineas, '✅ <b>Lo tenemos:</b> ' || array_to_string(array_remove(array[
+      case when fab > 0 then fab || ' en fábrica' end,
+      case when coalesce((st->>'tienda_hay')::boolean, false)
+           then 'en la tienda online' || coalesce(' (' || (st->>'tienda') || ')', '') end
+    ], null), ' · '));
+  elsif st->>'fabrica_otros_talles' is not null or st->>'tienda_otros_talles' is not null then
+    lineas := array_append(lineas, '');
+    lineas := array_append(lineas, '🔁 <b>En otro talle:</b> ' || array_to_string(array_remove(array[
+      case when st->>'fabrica_otros_talles' is not null then esc_html(st->>'fabrica_otros_talles') || ' en fábrica' end,
+      case when st->>'tienda_otros_talles' is not null then esc_html(st->>'tienda_otros_talles') || ' en la tienda' end
+    ], null), ' · '));
+  end if;
+
+  if r.obs is not null then
+    lineas := array_append(lineas, '');
+    lineas := array_append(lineas, '<i>' || esc_html(r.obs) || '</i>');
+  end if;
+
+  /* Se mira el TELÉFONO y no el link: con el número vacío no hay botón. */
+  link := link_whatsapp(r.whatsapp);
+  if link is not null then
+    botones := botones || jsonb_build_array(jsonb_build_object('text', 'Escribirle por WhatsApp', 'url', link));
+  end if;
+  if coalesce((st->>'tienda_hay')::boolean, false) and st->>'tienda_url' is not null then
+    botones := botones || jsonb_build_array(jsonb_build_object('text', 'Ver en la tienda', 'url', st->>'tienda_url'));
+  end if;
+
+  return jsonb_build_object('chat_id', p_chat, 'text', array_to_string(lineas, E'\n'),
+                            'parse_mode', 'HTML', 'disable_web_page_preview', true, '_hay', hay)
+         || case when jsonb_array_length(botones) > 0
+                 then jsonb_build_object('reply_markup', jsonb_build_object('inline_keyboard', jsonb_build_array(botones)))
+                 else '{}'::jsonb end;
+end;
+$$;
+revoke all on function telegram_no_compra_cuerpo(bigint, text) from public, anon, authenticated;
+
+/* Manda el aviso de un No Compra, como siempre. Si salió diciendo que lo
+   tenemos, queda avisado: el repaso de cada hora no lo repite. */
+create or replace function mandar_telegram(p_registro bigint)
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
+declare
+  token     text := secreto('TELEGRAM_TOKEN');
+  chat      text := secreto('TELEGRAM_CHAT');
+  cuerpo    jsonb;
+  hay       boolean;
+  respuesta extensions.http_response;
+  salida    jsonb;
+begin
+  if token is null or chat is null then
+    raise exception 'Telegram no está configurado.';
+  end if;
+  cuerpo := telegram_no_compra_cuerpo(p_registro, chat);
+  hay := coalesce((cuerpo->>'_hay')::boolean, false);
+  cuerpo := cuerpo - '_hay';
+
+  perform paciencia();
+  respuesta := extensions.http_post(
+    'https://api.telegram.org/bot' || token || '/sendMessage',
+    cuerpo::text, 'application/json');
+
+  begin salida := respuesta.content::jsonb; exception when others then salida := null; end;
+
+  if respuesta.status >= 300 or coalesce((salida->>'ok')::boolean, false) = false then
+    raise exception 'Telegram respondió % · %', respuesta.status,
+      left(coalesce(salida->>'description', respuesta.content, ''), 200);
+  end if;
+
+  if hay then update registros set stock_avisado = now() where id = p_registro; end if;
+  return jsonb_build_object('mensaje', salida->'result'->>'message_id');
+end;
+$$;
+
+/* El repaso: los No Compra abiertos (de los últimos 45 días) que no se
+   avisaron y ahora tienen stock. Arma el mensaje, sin mandarlo. */
+create or replace function avisar_stock_mensaje()
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  tz     constant text := 'America/Argentina/Buenos_Aires';
+  l      record;
+  lineas text[] := '{}';
+  ids    bigint[] := '{}';
+  n      integer := 0;
+  fab    integer;
+  que    text;
+begin
+  for l in
+    select r.id, r.sucursal, r.producto, r.talle, r.color, r.creado,
+           stock_de(r.producto_codigo, r.talle, r.color, r.producto) as s
+      from registros r
+     where r.stock_avisado is null
+       and r.creado > now() - interval '45 days'
+       and crm_columna(r.estado, r.contactado) in ('Pendiente', 'En seguimiento', 'Esperando respuesta')
+     order by r.creado
+  loop
+    continue when not coalesce((l.s->>'hay')::boolean, false);
+    n := n + 1;
+    ids := ids || l.id;
+    if n <= 15 then
+      fab := coalesce((l.s->>'fabrica')::integer, 0);
+      que := array_to_string(array_remove(array[
+        case when fab > 0 then fab || ' en fábrica' end,
+        case when coalesce((l.s->>'tienda_hay')::boolean, false) then 'en la tienda' end], null), ' · ');
+      lineas := lineas || ('• ' || esc_html(coalesce(l.sucursal, '')) || ' · ' || esc_html(coalesce(l.producto, 'sin producto'))
+                || coalesce(' · ' || esc_html(l.talle), '') || coalesce(' · ' || esc_html(lower(l.color)), '')
+                || ' — <b>' || que || '</b> <i>(vino el ' || to_char(l.creado at time zone tz, 'DD/MM') || ')</i>');
+    end if;
+  end loop;
+  return jsonb_build_object('n', n, 'ids', to_jsonb(ids), 'texto', case when n = 0 then null else
+    '📦 <b>Ya tenemos lo que buscaban</b> (' || n || ')' || E'\n\n' || array_to_string(lineas, E'\n')
+    || case when n > 15 then E'\n…y ' || (n - 15) || ' más: están en el Panel.' else '' end
+    || E'\n\nEn el Panel cada tarjeta dice qué hay: escribiles desde ahí.' end);
+end;
+$$;
+revoke all on function avisar_stock_mensaje() from public, anon, authenticated;
+
+/* Lo manda el robot de cada hora (stock.js), de 10 a 21. */
+create or replace function avisar_stock_nuevo()
+returns jsonb language plpgsql volatile security definer set search_path = public, extensions as $$
+declare
+  token     text := secreto('TELEGRAM_TOKEN');
+  chat      text := secreto('TELEGRAM_CHAT');
+  hora      integer := extract(hour from now() at time zone 'America/Argentina/Buenos_Aires');
+  m         jsonb;
+  cuerpo    jsonb;
+  respuesta extensions.http_response;
+  salida    jsonb;
+begin
+  if token is null or chat is null then return jsonb_build_object('avisados', 0, 'porque', 'Telegram no está configurado'); end if;
+  if hora < 10 or hora >= 21 then return jsonb_build_object('avisados', 0, 'porque', 'fuera de horario'); end if;
+  m := avisar_stock_mensaje();
+  if (m->>'n')::integer = 0 then return jsonb_build_object('avisados', 0); end if;
+  cuerpo := jsonb_build_object('chat_id', chat, 'text', m->>'texto', 'parse_mode', 'HTML', 'disable_web_page_preview', true,
+    'reply_markup', jsonb_build_object('inline_keyboard', jsonb_build_array(jsonb_build_array(
+      jsonb_build_object('text', 'Abrir el panel', 'url', coalesce(secreto('SITIO'), '') || 'panel.html')))));
+  perform paciencia();
+  respuesta := extensions.http_post('https://api.telegram.org/bot' || token || '/sendMessage', cuerpo::text, 'application/json');
+  begin salida := respuesta.content::jsonb; exception when others then salida := null; end;
+  if respuesta.status >= 300 or coalesce((salida->>'ok')::boolean, false) = false then
+    raise exception 'Telegram respondió % · %', respuesta.status, left(coalesce(salida->>'description', respuesta.content, ''), 200);
+  end if;
+  update registros set stock_avisado = now()
+   where id in (select (jsonb_array_elements_text(m->'ids'))::bigint);
+  return jsonb_build_object('avisados', (m->>'n')::integer);
+end;
+$$;
+revoke all on function avisar_stock_nuevo() from public, anon, authenticated;
+
+/* Hermes no se usa: se le corta la llave (la función queda, sin llave no
+   devuelve nada). Para volver a darle acceso: select hermes_llave_nueva(); */
+delete from hermes_llave;
+
+select 'listo: el stock en el aviso del bot y el repaso de cada hora' as "SQL 57";
