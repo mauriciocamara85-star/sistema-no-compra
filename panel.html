@@ -476,6 +476,15 @@
   .otra-col { flex: none; font-size: 12px; font-weight: 600; color: var(--txt-3); white-space: nowrap; }
   .btn-link { padding: 2px 0; font: 700 13px var(--sans); color: var(--acc-txt); text-decoration: underline; text-underline-offset: 2px; }
 
+  /* ══ El stock (SQL 56): lo que buscaba el cliente, si está ══ */
+  .tj-stock { display: flex; align-items: center; gap: 5px; margin-top: 6px; font-size: 12px; font-weight: 700; line-height: 1.35; color: var(--ok-txt); }
+  .tj-stock svg { width: 13px; height: 13px; flex: none; }
+  .ficha-stock { margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2); font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
+  .ficha-stock b { color: var(--txt); }
+  .ficha-stock.hay { background: var(--ok-soft); }
+  .ficha-stock.hay b { color: var(--ok-txt); }
+  .ficha-stock small { display: block; margin-top: 2px; font-size: 12px; color: var(--txt-3); }
+
   /* ── La ficha del cliente: un panel que entra por la derecha ── */
   .capa { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end; background: rgba(20, 20, 18, .38); }
   .capa[hidden] { display: none; }
@@ -781,6 +790,8 @@
   /* Las plantillas de WhatsApp vienen de la base (SQL 52). Hasta que se
      corra, salen las de siempre, fijas, y no hay recordatorios ni historial. */
   var PLANTILLAS = null, sql52 = null;
+  /* El stock de lo que buscaban (SQL 56): { del, porId: { id: cruce } }. */
+  var STOCK = null;
 
   /* El PIN se guardaba acá. Ya no hay nada que guardar: la sesión la
      maneja datos.js y lo que queda en el aparato es un token que vence
@@ -1061,7 +1072,7 @@
         carritos = [];
         carritosError = /crm_carritos_listar|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'error';
       });
-    Promise.all([pReg, pCar, cargarPlantillas(pin)])
+    Promise.all([pReg, pCar, cargarPlantillas(pin), cargarStock(pin)])
       .then(function () {
         $('btnRefrescar').classList.remove('girando');
         llenarLocales();
@@ -1317,6 +1328,7 @@
         '<span class="tj-dias' + (urgente ? ' viejo' : '') + '">' + esc(antiguedad(r)) + '</span></div>' +
       '<b class="tj-nom">' + esc(r.nombre || r.whatsapp || 'Sin nombre') + '</b>' +
       '<div class="tj-prod">' + esc(r.producto || 'Sin producto anotado') + (r.talle ? ' · talle ' + esc(r.talle) : '') + '</div>' +
+      lineaStock(r) +
       etiquetasTarjeta(r) +
       (col === 'Cerrado - no compró' && r.perdida ? '<div class="tj-motivo">' + esc(r.perdida) + '</div>'
         : r.motivo ? '<div class="tj-motivo">' + esc(r.motivo) + '</div>' : '') +
@@ -1532,7 +1544,9 @@
       '</div>' +
       '<div class="ficha-bloque">' +
         '<h3>Qué buscaba</h3>' +
-        '<div class="ficha-dato"><b>' + esc(r.producto || 'Sin producto anotado') + '</b>' + (r.talle ? ' · talle ' + esc(r.talle) : '') + '</div>' +
+        '<div class="ficha-dato"><b>' + esc(r.producto || 'Sin producto anotado') + '</b>' + (r.talle ? ' · talle ' + esc(r.talle) : '') +
+          (r.color ? ' · ' + esc(String(r.color).toLowerCase()) : '') + '</div>' +
+        fichaStock(r) +
         (r.motivo ? '<div class="ficha-dato"><span>Motivo:</span> ' + esc(r.motivo) + '</div>' : '') +
         (r.obs ? '<div class="ficha-dato"><span>Nota del local:</span> ' + esc(r.obs) + '</div>' : '') +
         '<div class="ficha-dato"><span>' + esc(bonito(r.sucursal) || 'Sin local') + ' · ' + esc(r.fecha) + ' · cargó</span> ' + esc(r.vendedor || '—') + '</div>' +
@@ -2452,6 +2466,49 @@
     if (vista !== v) { cambiarVista(v); }
     abrirFicha(id);
   }
+
+  /* ═══ El stock (SQL 56) ═════════════════════════════════════════════════
+     Lo carga el robot de cada hora: la tienda online y el Excel de fábrica
+     del Drive. Acá sólo se muestra: verde si lo que buscaba el cliente está
+     (es una venta para recuperar), y en la ficha, los otros talles. */
+  var TILDE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  function cargarStock(pin) {
+    return base.crmStock(pin)
+      .then(function (x) {
+        var porId = {};
+        ((x && x.registros) || []).forEach(function (s) { porId[s.id] = s; });
+        STOCK = { del: x && x.fabrica_del, porId: porId };
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { throw err; }
+        STOCK = null;
+      });
+  }
+  function stockDe(r) { return STOCK && r.fuente !== 'carrito' ? STOCK.porId[r.id] || null : null; }
+  /* "Hay en fábrica (1) y en la tienda", sólo cuando hay. */
+  function lineaStock(r) {
+    var s = stockDe(r);
+    if (!s || !s.hay) return '';
+    var fab = Number(s.fabrica) || 0, partes = [];
+    if (fab > 0) { partes.push('en fábrica (' + fab + ')'); }
+    if (s.tienda_hay) { partes.push('en la tienda' + (s.tienda ? ' (' + s.tienda + ')' : '')); }
+    return '<div class="tj-stock">' + TILDE + '<span>Hay ' + partes.join(' y ') + '</span></div>';
+  }
+  function fichaStock(r) {
+    var s = stockDe(r);
+    if (!s) return '';
+    var fab = s.fabrica === null || s.fabrica === undefined ? null : Number(s.fabrica) || 0;
+    var del = STOCK.del ? ' (Excel del ' + fechaCorta(STOCK.del) + ')' : '';
+    var lineas = [];
+    lineas.push('<span>Fábrica' + del + ':</span> ' + (fab === null ? 'sin código para buscar' : fab > 0 ? '<b>hay ' + fab + '</b>' : 'no hay') +
+      (s.fabrica_otros_talles ? ' · otros talles: ' + esc(s.fabrica_otros_talles) : ''));
+    lineas.push('<span>Tienda online:</span> ' + (s.tienda_hay ? '<b>hay' + (s.tienda ? ' ' + s.tienda : '') + '</b>' : 'no hay') +
+      (s.tienda_otros_talles ? ' · otros talles: ' + esc(s.tienda_otros_talles) : '') +
+      (s.tienda_url ? ' · <a href="' + esc(s.tienda_url) + '" target="_blank" rel="noopener">Ver</a>' : ''));
+    return '<div class="ficha-stock' + (s.hay ? ' hay' : '') + '">' + lineas.join('<br>') +
+      (s.hay ? '<small>Es una venta para recuperar: avisale que lo tenemos.</small>' : '') + '</div>';
+  }
+  function fechaCorta(iso) { var x = String(iso).slice(0, 10).split('-'); return +x[2] + '/' + +x[1]; }
 
   /* ═══ Plantillas (SQL 52) ═══════════════════════════════════════════════
      Las crean y las cambian ustedes. Cada tipo (No Compra, Carritos) tiene

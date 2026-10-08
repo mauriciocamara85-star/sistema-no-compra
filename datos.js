@@ -1230,6 +1230,11 @@ var base = {
     return funcion('crm_historial', { p_pin: pin, p_fuente: fuente, p_ref: ref });
   },
 
+  /** El stock de lo que buscaban los No Compra abiertos (SQL 56). */
+  crmStock: function (pin) {
+    return funcion('crm_stock', { p_pin: pin });
+  },
+
   /** La ficha completa (SQL 53): si es socio del Club y las otras veces que vino. */
   crmCliente: function (pin, fuente, ref) {
     return funcion('crm_cliente', { p_pin: pin, p_fuente: fuente, p_ref: ref });
@@ -1381,6 +1386,9 @@ function deLaBase_(f) {
     mail:        f.mail || '',
     producto:    f.producto || '',
     talle:       f.talle || '',
+    /* El código y el color de la etiqueta (para el stock, SQL 56). */
+    codigo:      f.producto_codigo || '',
+    color:       f.color || '',
     obs:         f.obs || '',
     motivo:      f.motivo || '',
     contactamos: f.contactado ? 'si' : '',
