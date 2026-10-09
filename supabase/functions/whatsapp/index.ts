@@ -12,10 +12,9 @@
  *   POST con firma de Meta      Un aviso. Se comprueba la firma con la clave
  *                               secreta de la app y se le pasa a la base.
  *   POST {accion}               Para configurar desde acá, sin pantallas:
- *                               "estado", "cuentas", "suscribir" y
- *                               "webhook". No devuelven nada secreto y
- *                               repetirlas no cambia nada, por eso no piden
- *                               PIN.
+ *                               "estado", "suscribir" y "webhook". No
+ *                               devuelven nada secreto y repetirlas no
+ *                               cambia nada, por eso no piden PIN.
  *   POST {accion:"enviar"}      Contestar desde el CRM (SQL 64). Con PIN: la
  *                               base lo comprueba, y también que estemos
  *                               dentro de las 24 h, antes de mandar nada.
@@ -35,16 +34,32 @@ const VERIFICA = Deno.env.get('WA_VERIFICA') ?? '';
 const URL_BASE = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICIO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-/* Las cuentas de WhatsApp que mira el CRM, separadas por coma. Hoy, VDH
-   Indumentaria (Vdhstore); el número de la tienda se suma cuando VDH la
-   comparta. Los identificadores no son secretos. */
-const CUENTAS = (Deno.env.get('WA_CUENTAS') ?? '668621112856892').split(',').map((s) => s.trim()).filter(Boolean);
+/* Hay DOS apps de Meta, una por portfolio, y las dos avisan acá:
+   - "VDH CRM" (Vdhstore): WA_TOKEN y WA_APP_SECRET.
+   - "VDH CRM Tienda" (VDH): WA_TOKEN_VDH y WA_APP_SECRET_VDH.
+   ¿Por qué dos? El número de la tienda es del portfolio VDH y su cuenta de
+   WhatsApp admite un solo socio: lo ocupaba Kommo y, al sacarlo (09/10),
+   Meta bloqueó sumar socios hasta el 01/11/2026. Tampoco se puede compartir
+   la app de Vdhstore: es una empresa nueva para Meta. Así que VDH tiene su
+   propia app, con su usuario del sistema. */
+const APPS = [
+  { token: TOKEN, secreto: SECRETO },
+  { token: Deno.env.get('WA_TOKEN_VDH') ?? '', secreto: Deno.env.get('WA_APP_SECRET_VDH') ?? '' },
+].filter((a) => a.token && a.secreto);
+
+/* Las cuentas de WhatsApp que mira el CRM, separadas por coma, cada una con
+   el nombre del Secret de su token: "id" (usa WA_TOKEN) o "id:WA_TOKEN_VDH".
+   Los identificadores no son secretos. */
+const CUENTAS = (Deno.env.get('WA_CUENTAS') ?? '668621112856892').split(',').map((s) => s.trim()).filter(Boolean)
+  .map((s) => {
+    const [id, nombre] = s.split(':');
+    return { id, nombreToken: nombre || 'WA_TOKEN', token: (nombre ? Deno.env.get(nombre) : TOKEN) ?? '' };
+  });
+/* Los tokens que puede haber, para "estado" (sólo sí/no). */
+const TOKENS: Record<string, string> = { WA_TOKEN: TOKEN, WA_TOKEN_VDH: Deno.env.get('WA_TOKEN_VDH') ?? '' };
 const GRAPH = 'https://graph.facebook.com/v23.0';
 const AQUI = URL_BASE + '/functions/v1/whatsapp';
 const CAMPOS = 'messages,smb_message_echoes';
-
-/* El portfolio Vdhstore, dueño de la app: para listar las cuentas que ve. */
-const PORTFOLIO = '2808549986001115';
 
 // El CRM llama desde GitHub Pages: hace falta decirle al navegador que puede.
 const CORS = {
@@ -56,8 +71,8 @@ const json = (x: unknown, status = 200) =>
   new Response(JSON.stringify(x), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
 /** Firma HMAC-SHA256 del cuerpo, como la calcula Meta, en hexadecimal. */
-async function firmar(cuerpo: Uint8Array): Promise<string> {
-  const llave = await crypto.subtle.importKey('raw', new TextEncoder().encode(SECRETO),
+async function firmar(cuerpo: Uint8Array, secreto: string): Promise<string> {
+  const llave = await crypto.subtle.importKey('raw', new TextEncoder().encode(secreto),
     { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
   const f = new Uint8Array(await crypto.subtle.sign('HMAC', llave, cuerpo));
   return Array.from(f, (b) => b.toString(16).padStart(2, '0')).join('');
@@ -96,43 +111,41 @@ async function meta(ruta: string, metodo = 'GET', datos?: Record<string, unknown
 /** Cómo está todo: qué secretos hay (sí/no), la app, las cuentas y los números. */
 async function estado() {
   const salida: Record<string, unknown> = {
-    secretos: { WA_TOKEN: !!TOKEN, WA_APP_SECRET: !!SECRETO, WA_VERIFICA: !!VERIFICA },
+    secretos: { ...Object.fromEntries(Object.entries(TOKENS).map(([k, v]) => [k, !!v])),
+                WA_APP_SECRET: !!SECRETO, WA_APP_SECRET_VDH: !!Deno.env.get('WA_APP_SECRET_VDH'), WA_VERIFICA: !!VERIFICA },
     direccion: AQUI,
   };
   if (!TOKEN) return salida;
   salida.app = await meta('/app?fields=id,name');
-  salida.cuentas = await Promise.all(CUENTAS.map(async (id) => ({
-    id,
-    cuenta: await meta('/' + id + '?fields=name,currency,timezone_id,business_verification_status'),
-    numeros: await meta('/' + id + '/phone_numbers?fields=display_phone_number,verified_name,quality_rating,platform_type,status,messaging_limit_tier,is_on_biz_app'),
-    apps: await meta('/' + id + '/subscribed_apps'),
+  salida.cuentas = await Promise.all(CUENTAS.map(async (c) => ({
+    id: c.id, token: c.nombreToken + (c.token ? '' : ' (FALTA)'),
+    cuenta: await meta('/' + c.id + '?fields=name,currency,timezone_id,business_verification_status', 'GET', undefined, c.token),
+    numeros: await meta('/' + c.id + '/phone_numbers?fields=display_phone_number,verified_name,quality_rating,platform_type,status,messaging_limit_tier,is_on_biz_app', 'GET', undefined, c.token),
+    apps: await meta('/' + c.id + '/subscribed_apps', 'GET', undefined, c.token),
   })));
   return salida;
 }
 
-/** Las cuentas de WhatsApp a las que llega el token: las de Vdhstore y las
- *  que otro portfolio (VDH) le compartió. Se lee de los permisos del token
- *  (listar las del portfolio pediría business_management, que no tiene). */
-async function cuentas() {
-  // debug_token se pregunta con el token de la APP (id|clave secreta).
-  const app = await meta('/app?fields=id');
-  const d = await meta('/debug_token?input_token=' + encodeURIComponent(TOKEN), 'GET', undefined, app?.id + '|' + SECRETO);
-  if (!d?.data) return { error: d?.error ?? 'sin datos', configuradas: CUENTAS };
-  const ids = new Set<string>();
-  for (const s of d?.data?.granular_scopes ?? []) {
-    if (String(s.scope).startsWith('whatsapp_business')) (s.target_ids ?? []).forEach((x: string) => ids.add(x));
-  }
-  const lista = await Promise.all([...ids].map(async (id) => ({
-    id,
-    cuenta: await meta('/' + id + '?fields=name'),
-    numeros: await meta('/' + id + '/phone_numbers?fields=display_phone_number,verified_name,platform_type,status,is_on_biz_app'),
-  })));
-  return { portfolio: PORTFOLIO, configuradas: CUENTAS, alcanza: lista };
-}
-
 /** Suscribe la app a las cuentas: sin esto Meta no le manda nada. */
 async function suscribir() {
-  return Promise.all(CUENTAS.map(async (id) => ({ id, r: await meta('/' + id + '/subscribed_apps', 'POST') })));
+  return Promise.all(CUENTAS.map(async (c) => ({ id: c.id, r: await meta('/' + c.id + '/subscribed_apps', 'POST', undefined, c.token) })));
+}
+
+/** El token del número desde el que se manda: el de la cuenta que lo tiene.
+ *  Se arma una vez por arranque de la función, preguntándole a cada cuenta
+ *  sus números. */
+let TOKEN_DEL_NUMERO: Record<string, string> | null = null;
+async function tokenDelNumero(numeroId: string): Promise<string> {
+  if (!TOKEN_DEL_NUMERO) {
+    const mapa: Record<string, string> = {};
+    for (const c of CUENTAS) {
+      if (!c.token) continue;
+      const r = await meta('/' + c.id + '/phone_numbers?fields=id', 'GET', undefined, c.token);
+      (r?.data ?? []).forEach((n: any) => { mapa[n.id] = c.token; });
+    }
+    TOKEN_DEL_NUMERO = mapa;
+  }
+  return TOKEN_DEL_NUMERO[numeroId] ?? TOKEN;
 }
 
 /**
@@ -141,15 +154,25 @@ async function suscribir() {
  * Meta comprueba la dirección en el momento: llama al GET de acá abajo.
  */
 async function webhook() {
-  if (!SECRETO || !VERIFICA) return { error: 'faltan WA_APP_SECRET o WA_VERIFICA en los Secrets' };
-  const app = await meta('/app?fields=id');
-  if (!app?.id) return { error: 'no se pudo leer la app', app };
-  const tokenApp = app.id + '|' + SECRETO;
-  const r = await meta('/' + app.id + '/subscriptions', 'POST', {
-    object: 'whatsapp_business_account', callback_url: AQUI, verify_token: VERIFICA, fields: CAMPOS,
-  }, tokenApp);
-  const ahora = await meta('/' + app.id + '/subscriptions', 'GET', undefined, tokenApp);
-  return { r, ahora };
+  if (!VERIFICA) return { error: 'falta WA_VERIFICA en los Secrets' };
+  return Promise.all(APPS.map(async (a) => {
+    const app = await meta('/app?fields=id,name', 'GET', undefined, a.token);
+    if (!app?.id) return { error: 'no se pudo leer la app', app };
+    const tokenApp = app.id + '|' + a.secreto;
+    const r = await meta('/' + app.id + '/subscriptions', 'POST', {
+      object: 'whatsapp_business_account', callback_url: AQUI, verify_token: VERIFICA, fields: CAMPOS,
+    }, tokenApp);
+    const ahora = await meta('/' + app.id + '/subscriptions', 'GET', undefined, tokenApp);
+    return { app: app.name, r, ahora };
+  }));
+}
+
+/** ¿La firma es de alguna de nuestras apps? */
+async function firmaValida(firma: string, cuerpo: Uint8Array): Promise<boolean> {
+  for (const a of APPS) {
+    if (iguales(firma, 'sha256=' + await firmar(cuerpo, a.secreto))) return true;
+  }
+  return false;
 }
 
 /** Una función de la base, con permisos de servicio. */
@@ -194,7 +217,7 @@ async function enviar(p: { pin?: string; clave?: string; texto?: string; quien?:
   const r = await meta('/' + prep.numero_id + '/messages', 'POST', {
     messaging_product: 'whatsapp', recipient_type: 'individual', to: prep.tel,
     type: 'text', text: { body: texto, preview_url: true },
-  }, TOKEN, true);
+  }, await tokenDelNumero(prep.numero_id), true);
   const wamid = r?.messages?.[0]?.id;
   if (!wamid) {
     console.error('whatsapp: Meta no aceptó el envío:', JSON.stringify(r?.error ?? r));
@@ -229,7 +252,7 @@ Deno.serve(async (req) => {
 
   // Un aviso de Meta.
   if (firma) {
-    if (!SECRETO || !iguales(firma, 'sha256=' + await firmar(cuerpo))) {
+    if (!(await firmaValida(firma, cuerpo))) {
       // Se anota que pasó (sin el cuerpo, que no sabemos de quién es): si
       // la clave secreta se pegó mal, es la única pista de que Meta llama.
       console.warn('whatsapp: firma que no coincide, se rechaza');
@@ -251,11 +274,10 @@ Deno.serve(async (req) => {
   try {
     if (pedido.accion === 'enviar') return json(await enviar(pedido as any));
     if (pedido.accion === 'estado') return json(await estado());
-    if (pedido.accion === 'cuentas') return json(await cuentas());
     if (pedido.accion === 'suscribir') return json(await suscribir());
     if (pedido.accion === 'webhook') return json(await webhook());
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
   }
-  return json({ error: 'accion: enviar, estado, cuentas, suscribir o webhook' }, 400);
+  return json({ error: 'accion: enviar, estado, suscribir o webhook' }, 400);
 });
