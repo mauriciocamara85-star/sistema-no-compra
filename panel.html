@@ -308,7 +308,7 @@
   @media (max-width: 899px) { .lote { bottom: 86px; } }
 
   /* ── Contactos (09/10/2026): una fila por persona, como el Inbox de Kommo ── */
-  #vistaContactos { max-width: 900px; }
+  #vistaContactos, #vistaMensajes { max-width: 900px; }
   .ct-controles { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
   .ct-controles .atajos { margin: 0; }
   .ct-lista { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
@@ -328,6 +328,33 @@
   .ct-ultimo { font-size: 13px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ct-mas { padding: 12px 14px; font-size: 12.5px; color: var(--txt-3); text-align: center; }
   .ct-vacio { padding: 26px 14px; text-align: center; color: var(--txt-3); font-size: 13.5px; }
+
+  /* ── Mensajes (SQL 63): las conversaciones de WhatsApp, como el Inbox ──
+     La que espera respuesta, en negrita y con cuántos mensajes esperan. */
+  .ms-ult { display: flex; align-items: center; gap: 8px; }
+  .ct-tel { font-size: 12px; color: var(--txt-3); }
+  .ms-ult > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ms-pend { flex: none; min-width: 20px; padding: 1px 7px; border-radius: var(--r-pill); text-align: center;
+             font: 700 11.5px/16px var(--sans); background: #25D366; color: #06290F; }
+  .ct-fila.sin-contestar .ct-cab b { font-weight: 700; }
+  .ct-fila.sin-contestar .ct-ultimo { color: var(--txt); font-weight: 500; }
+  .ct-fila.sin-contestar .ct-hora { color: var(--ok-txt); font-weight: 600; }
+  /* La conversación en la ficha: lo del cliente a la izquierda, lo nuestro
+     a la derecha, como en el teléfono. */
+  .chat { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; padding: 10px;
+          background: var(--surface-2); border-radius: var(--r-sm); }
+  .chat-dia { align-self: center; margin: 6px 0 2px; padding: 2px 10px; border-radius: var(--r-pill);
+              background: var(--surface); font-size: 11.5px; color: var(--txt-3); }
+  .burbuja { max-width: 82%; padding: 7px 10px 5px; border-radius: 12px; font-size: 14px; line-height: 1.38;
+             white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px 1px rgba(0, 0, 0, .06); }
+  .burbuja.entra { align-self: flex-start; background: var(--surface); color: var(--txt); border-top-left-radius: 4px; }
+  .burbuja.sale { align-self: flex-end; background: var(--ok-soft); color: var(--txt); border-top-right-radius: 4px; }
+  .burbuja.otra { background: var(--surface-3); color: var(--txt-2); font-style: italic; }
+  .burbuja-tipo { display: block; font-size: 12.5px; font-weight: 600; color: var(--txt-2); }
+  .burbuja-pie { display: block; margin-top: 2px; font-size: 11px; font-style: normal; color: var(--txt-3); text-align: right; white-space: nowrap; }
+  .burbuja-pie .visto { color: #1D9BD1; }
+  .burbuja-pie .fallo { color: var(--bad-txt); }
+  .chat-nota { margin: 10px 0 0; font-size: 12.5px; color: var(--txt-3); }
   .ct-resumen { margin-top: 8px; color: var(--txt-2); }
   .ct-noacepta { margin-top: 6px; color: var(--txt-3); font-size: 12.5px; }
   .hist li.h-compra::before { background: var(--ok); }
@@ -406,7 +433,7 @@
     .filtros { display: none; }
   }
 
-  /* ══ Las tres vistas: No Compra · Carritos · Números (07/10/2026) ══ */
+  /* ══ Las pestañas del CRM (desde 07/10/2026; el orden, 09/10) ══ */
   .vistas { display: flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--surface-3); border-radius: var(--r-pill); }
   .vistas button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px;
                    padding: 6px 10px; border-radius: var(--r-pill); font: 600 13.5px var(--sans); color: var(--txt-2); white-space: nowrap; }
@@ -728,7 +755,7 @@
 
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
-  <!-- Las tres vistas: los No Compra, los carritos de la tienda y los números. -->
+  <!-- Las pestañas: Contactos, Mensajes, No Compra, Carritos, Plantillas y Números. -->
   <div class="vistas" id="vistas" role="tablist" aria-label="Qué ver"></div>
 
   <div id="vistaTablero">
@@ -765,6 +792,18 @@
       <div class="atajos" id="ctFuentes" hidden></div>
     </div>
     <div id="ctLista"></div>
+  </section>
+
+  <!-- Mensajes (SQL 63): las conversaciones de WhatsApp de VDH Indumentaria,
+       la última arriba, como el Inbox de Kommo. Tocar una abre la ficha. -->
+  <section id="vistaMensajes" hidden>
+    <div class="ct-controles">
+      <div class="buscador">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="search" id="msBusca" placeholder="Buscar por nombre, número o lo que escribió…" autocomplete="off">
+      </div>
+    </div>
+    <div id="msLista"></div>
   </section>
 
   <!-- Los números del CRM (SQL 51), como el panel de Kommo. -->
@@ -1008,7 +1047,14 @@
     pintarWhoami();
     traerAtencion();
 
-    vista = ['no_compra', 'carrito', 'contactos', 'numeros', 'plantillas'].indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : 'no_compra';
+    /* Cada uno vuelve a la última pestaña que usó; el que entra por primera
+       vez arranca en Contactos, la primera (pedido de Mauricio, 09/10). */
+    vista = VISTAS.indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : 'contactos';
+    if (!MS.reloj) {
+      MS.reloj = setInterval(function () {
+        if (document.visibilityState === 'visible' && !$('marco').hidden) { revisarMensajes(); }
+      }, 20000);
+    }
     /* El botón del aviso de Telegram ("Casi pagaron") trae #casi-pago:
        se abre en Carritos, mostrando sólo esos. */
     if (location.hash === '#casi-pago') {
@@ -1198,6 +1244,7 @@
      existen en la base (falta el SQL 51), los No Compra andan igual. */
   function cargar() {
     $('btnRefrescar').classList.add('girando');
+    revisarMensajes();
     if ((vista === 'no_compra' || vista === 'carrito') && !datos().length) {
       $('tablero').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>';
     }
@@ -1230,14 +1277,19 @@
   }
 
   /* ═══ Las vistas ═════════════════════════════════════════════════════════ */
+  /* El orden (09/10/2026, pedido de Mauricio, como Kommo): primero las
+     personas y sus conversaciones, después los tableros, al final las
+     herramientas. */
+  var VISTAS = ['contactos', 'mensajes', 'no_compra', 'carrito', 'plantillas', 'numeros'];
   function pintarVistas() {
     var pend = function (l) { return l.filter(function (r) { return columnaDe(r) === 'Pendiente'; }).length; };
-    var ops = [['no_compra', 'No Compra', pend(registros)], ['carrito', 'Carritos', pend(carritos)], ['contactos', 'Contactos', null],
-               ['numeros', 'Números', null], ['plantillas', 'Plantillas', null]];
+    var ops = [['contactos', 'Contactos', null], ['mensajes', 'Mensajes', MS.sin, 'Sin contestar'],
+               ['no_compra', 'No Compra', pend(registros), 'Sin contactar'], ['carrito', 'Carritos', pend(carritos), 'Sin contactar'],
+               ['plantillas', 'Plantillas', null], ['numeros', 'Números', null]];
     $('vistas').innerHTML = ops.map(function (o) {
       return '<button type="button" role="tab" aria-selected="' + (o[0] === vista) + '"' + (o[0] === vista ? ' class="sel"' : '') +
         ' data-vista="' + o[0] + '">' + o[1] +
-        (o[2] === null ? '' : ' <span class="cuenta' + (o[2] ? '' : ' cero') + '" title="Sin contactar">' + o[2] + '</span>') + '</button>';
+        (o[2] === null || o[2] === undefined ? '' : ' <span class="cuenta' + (o[2] ? '' : ' cero') + '" title="' + o[3] + '">' + o[2] + '</span>') + '</button>';
     }).join('');
     [].forEach.call($('vistas').children, function (b) { b.onclick = function () { cambiarVista(b.dataset.vista); }; });
     /* En el celular las pestañas se deslizan: la elegida, a la vista. */
@@ -1253,11 +1305,13 @@
     if (vista === 'numeros') { cargarNumeros(); }
     else if (vista === 'plantillas') { pintarPlantillas(); }
     else if (vista === 'contactos') { cargarContactos(); }
+    else if (vista === 'mensajes') { cargarMensajes(); }
     else { pintar(); }
   }
   function aplicarVista() {
     $('vistaTablero').hidden = vista !== 'no_compra' && vista !== 'carrito';
     $('vistaContactos').hidden = vista !== 'contactos';
+    $('vistaMensajes').hidden = vista !== 'mensajes';
     $('vistaNumeros').hidden = vista !== 'numeros';
     $('vistaPlantillas').hidden = vista !== 'plantillas';
     /* El local sólo tiene sentido en los No Compra: los carritos son todos online. */
@@ -2951,13 +3005,22 @@
      carritos, el Club y los que compraron en vdh.com.ar. A la misma persona
      se la reconoce por el teléfono y, si una vez dejó sólo el mail, por el
      mail. Arriba, lo último que pasó, como el Inbox de Kommo. El buscador y
-     las pastillas los resuelve la base, que es la que tiene a todos. Cuando
-     esté Meta, en la ficha van los mensajes. */
+     las pastillas los resuelve la base, que es la que tiene a todos. Desde
+     el SQL 63 también los que escribieron por WhatsApp, y en la ficha está
+     la conversación. */
   var CT = { buscar: '', fuente: '', datos: null, error: '', pedido: 0, abierto: null, espera: 0 };
   var FUENTES_CT = [['', 'Todos', 'todos'], ['tienda', 'Tienda', 'tienda'], ['carrito', 'Carritos', 'carrito'],
-                    ['no_compra', 'No Compra', 'no_compra'], ['club', 'Club', 'club']];
-  var NOMBRE_FUENTE = { tienda: 'Tienda', carrito: 'Carrito', no_compra: 'No Compra', club: 'Club' };
-  var ORDEN_FUENTES = ['tienda', 'carrito', 'no_compra', 'club'];
+                    ['no_compra', 'No Compra', 'no_compra'], ['club', 'Club', 'club'], ['whatsapp', 'WhatsApp', 'whatsapp']];
+  var NOMBRE_FUENTE = { tienda: 'Tienda', carrito: 'Carrito', no_compra: 'No Compra', club: 'Club', whatsapp: 'WhatsApp' };
+  var ORDEN_FUENTES = ['tienda', 'carrito', 'no_compra', 'club', 'whatsapp'];
+
+  /* ═══ Mensajes (SQL 63) ══════════════════════════════════════════════════
+     Las conversaciones de WhatsApp de VDH Indumentaria, la última arriba.
+     "Sin contestar": lo último lo escribió el cliente. Cada 20 segundos se
+     pregunta lo mínimo (el último mensaje); si cambió, se trae la lista o la
+     conversación abierta. Lo que se contesta desde Kommo no nos llega: queda
+     una marca de que se contestó, sin el texto. */
+  var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0 };
 
   function cargarContactos() {
     var n = ++CT.pedido;
@@ -3030,7 +3093,162 @@
       return d.tipo === 'compra' ? 'Compró ' + plata(d.importe) + ' en ' + (bonito(d.local) || 'un local') + ' con el Club'
                                  : 'Se hizo socio del Club' + (d.local ? ' en ' + bonito(d.local) : '');
     }
+    if (fuente === 'whatsapp') {
+      if (d.desde === 'otra_app') { return 'Le contestaron por Kommo'; }
+      return (d.sentido === 'sale' ? 'Le contestaron por WhatsApp: ' : 'Escribió por WhatsApp: ') + textoMensaje(d);
+    }
     return d.texto || '';
+  }
+
+  /* Un mensaje en una línea: el texto, o qué era si no es texto. */
+  var TIPO_MENSAJE = { image: 'Foto', video: 'Video', audio: 'Audio', document: 'Documento', sticker: 'Sticker',
+                       location: 'Ubicación', contacts: 'Contacto', reaction: 'Reaccionó' };
+  function textoMensaje(m) {
+    if (!m) { return ''; }
+    if (m.desde === 'otra_app') { return 'Mensaje enviado desde Kommo'; }
+    var t = TIPO_MENSAJE[m.tipo];
+    if (m.tipo === 'text' || m.tipo === 'button' || m.tipo === 'interactive') { return m.texto || ''; }
+    if (t) { return t + (m.texto && m.tipo !== 'location' ? ': ' + m.texto : m.texto ? ' · ' + m.texto : ''); }
+    return m.texto || 'Un mensaje que WhatsApp no deja ver acá';
+  }
+
+  function cargarMensajes() {
+    var n = ++MS.pedido;
+    if (!MS.datos && !MS.error) { $('msLista').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'; }
+    base.crmMensajes(pinGuardado(), MS.buscar, 200)
+      .then(function (d) {
+        if (n !== MS.pedido) return;
+        MS.datos = d || { cuentas: {}, conversaciones: [] };
+        MS.error = '';
+        MS.ultimo = MS.datos.ultimo_id;
+        var sin = (MS.datos.cuentas || {}).sin_contestar;
+        if (sin !== undefined && sin !== MS.sin) { MS.sin = sin; pintarVistas(); }
+        pintarMensajes();
+      })
+      .catch(function (err) {
+        if (n !== MS.pedido) return;
+        if (err && err.sinSesion) { caducada(); return; }
+        MS.error = /crm_mensajes|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red';
+        MS.datos = null;
+        pintarMensajes();
+      });
+  }
+
+  function pintarMensajes() {
+    var caja = $('msLista');
+    if (MS.error) {
+      caja.innerHTML = '<div class="vacio-vista"><b>' + (MS.error === 'falta' ? 'Falta un paso' : 'No se pudieron traer los mensajes') + '</b>' +
+        (MS.error === 'falta' ? 'Para ver los mensajes hay que correr el SQL 63 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
+      return;
+    }
+    if (!MS.datos) { return; }
+    var l = MS.datos.conversaciones || [];
+    caja.innerHTML = '<div class="ct-lista">' + (l.length ? l.map(filaMensaje).join('')
+      : '<div class="ct-vacio">' + (MS.buscar ? 'Ninguna conversación con «' + esc(MS.buscar) + '».'
+                                              : 'Todavía no escribió nadie al WhatsApp de VDH Indumentaria.') + '</div>') + '</div>';
+    [].forEach.call(caja.querySelectorAll('[data-clave]'), function (b) {
+      b.onclick = function () {
+        var c = l.filter(function (x) { return x.clave === b.dataset.clave; })[0] || {};
+        abrirContacto(b.dataset.clave, { nombre: c.nombre, tel: c.tel });
+      };
+    });
+  }
+
+  function filaMensaje(c) {
+    var u = c.ultimo || {};
+    var previo = u.desde === 'otra_app' ? 'Contestado desde Kommo' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u);
+    var origen = (c.fuentes || []).length ? pillsFuentes(c.fuentes, c.nivel) : '<span class="ct-tel">+' + esc(normalizarTel(c.tel)) + '</span>';
+    return '<button type="button" class="ct-fila' + (c.sin_contestar ? ' sin-contestar' : '') + (CT.abierto === c.clave ? ' abierta' : '') +
+        '" data-clave="' + esc(c.clave) + '">' +
+      '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(c.nombre)) + '</span>' +
+      '<span class="ct-cuerpo">' +
+        '<span class="ct-cab"><b>' + esc(c.nombre || ('+' + normalizarTel(c.tel))) + '</b><span class="ct-hora">' + esc(c.ultima ? cuandoHist(c.ultima) : '') + '</span></span>' +
+        '<span class="ct-origen">' + origen + '</span>' +
+        '<span class="ct-ultimo ms-ult"><span>' + esc(previo) + '</span>' +
+          (c.sin_contestar ? '<span class="ms-pend" title="Mensajes sin contestar">' + Number(c.pendientes || 1) + '</span>' : '') + '</span>' +
+      '</span></button>';
+  }
+
+  /* Cada 20 s (y al actualizar): ¿llegó algo? El numerito de la pestaña
+     siempre; la lista y la conversación abierta, sólo si cambió. */
+  function revisarMensajes() {
+    var pin = pinGuardado();
+    if (!pin) { return; }
+    base.crmMensajesUltimo(pin)
+      .then(function (u) {
+        if (!u) { return; }
+        var cambio = MS.ultimo !== null && u.ultimo_id !== MS.ultimo;
+        MS.ultimo = u.ultimo_id;
+        if (u.sin_contestar !== MS.sin) { MS.sin = u.sin_contestar; pintarVistas(); }
+        if (cambio) {
+          if (vista === 'mensajes') { cargarMensajes(); }
+          if (CT.abierto) { refrescarChat(CT.abierto); }
+        }
+      })
+      .catch(function () {});   // sin el SQL 63 o sin red: la pestaña sin numerito, nada más
+  }
+
+  /* La conversación, como en el teléfono: un separador por día, lo del
+     cliente a la izquierda, lo nuestro a la derecha con quién lo mandó. */
+  var QUIEN_MANDO = { celular: 'Celular', crm: 'CRM', otra_app: 'Kommo' };
+  function diaChat(f) {
+    var hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    var d = new Date(f); d.setHours(0, 0, 0, 0);
+    var dias = Math.round((hoy - d) / 86400000);
+    if (dias === 0) { return 'Hoy'; }
+    if (dias === 1) { return 'Ayer'; }
+    if (dias === -1) { return 'Mañana'; }
+    return f.toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: f.getFullYear() === hoy.getFullYear() ? undefined : 'numeric' });
+  }
+  /* 14:05, como el resto del CRM (toLocaleTimeString de Chrome da "02:05 p. m."). */
+  function horaChat(f) { return f.getHours() + ':' + ('0' + f.getMinutes()).slice(-2); }
+  function vistoChat(e) {
+    if (e === 'read') { return ' <span class="visto" title="Leído">✓✓</span>'; }
+    if (e === 'delivered') { return ' <span title="Entregado">✓✓</span>'; }
+    if (e === 'sent') { return ' <span title="Enviado">✓</span>'; }
+    if (e === 'failed') { return ' <span class="fallo">· No se entregó</span>'; }
+    return '';
+  }
+  function chatContacto(d) {
+    var l = (d && d.mensajes) || [];
+    if (!l.length) {
+      return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3>' +
+        '<p class="num-vacio">Todavía no escribió al WhatsApp de VDH Indumentaria.</p></div>';
+    }
+    var dia = '';
+    var html = l.map(function (m) {
+      var f = new Date(m.cuando), dd = diaChat(f), sep = '';
+      if (dd !== dia) { sep = '<div class="chat-dia">' + esc(dd) + '</div>'; dia = dd; }
+      var otra = m.desde === 'otra_app';
+      var tipo = TIPO_MENSAJE[m.tipo];
+      var cuerpo = otra ? 'Mensaje enviado desde Kommo. El texto no nos llega.'
+        : (tipo ? '<span class="burbuja-tipo">' + tipo + '</span>' : '') + esc(m.texto || (tipo ? '' : 'Un mensaje que WhatsApp no deja ver acá'));
+      var pie = horaChat(f) + (m.sentido === 'sale' ? ' · ' + (QUIEN_MANDO[m.desde] || 'Nosotros') + vistoChat(m.estado) : '');
+      return sep + '<div class="burbuja ' + (m.sentido === 'entra' ? 'entra' : 'sale') + (otra ? ' otra' : '') + '">' +
+        cuerpo + '<span class="burbuja-pie">' + pie + '</span></div>';
+    }).join('');
+    var v = d.ventana ? new Date(d.ventana) : null;
+    var nota = v && v > new Date()
+      ? 'Se le puede contestar gratis hasta ' + diaChat(v).toLowerCase() + ' a las ' + horaChat(v) + '.'
+      : v ? 'Pasaron más de 24 horas desde que escribió: para escribirle primero hace falta una plantilla aprobada por Meta.' : '';
+    return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3><div class="chat">' + html + '</div>' +
+      '<p class="chat-nota">' + esc(nota) + ' Contestar desde el CRM va a estar muy pronto; mientras tanto, desde el celular o Kommo.</p></div>';
+  }
+  function bajarChat() {
+    var c = document.querySelector('#chatBloque .chat');
+    if (c) { c.scrollTop = c.scrollHeight; }
+  }
+  /* Llegó algo con la ficha abierta: se cambia sólo la conversación, sin
+     mover el resto de la ficha. */
+  function refrescarChat(clave) {
+    base.crmContacto(pinGuardado(), clave)
+      .then(function (d) {
+        var b = $('chatBloque');
+        if (CT.abierto !== clave || !b || !d) { return; }
+        b.outerHTML = chatContacto(d);
+        bajarChat();
+      })
+      .catch(function () {});
   }
 
   function pillsFuentes(fuentes, nivel) {
@@ -3052,11 +3270,12 @@
       '</span></button>';
   }
 
-  /* La ficha de la persona, en el mismo panel de costado que las tarjetas. */
-  function abrirContacto(clave) {
+  /* La ficha de la persona, en el mismo panel de costado que las tarjetas.
+     Desde Mensajes llega con lo que ya se sabe de la conversación. */
+  function abrirContacto(clave, previo) {
     fichaId = null;
     CT.abierto = clave;
-    var c = ((CT.datos && CT.datos.contactos) || []).filter(function (x) { return x.clave === clave; })[0] || {};
+    var c = previo || ((CT.datos && CT.datos.contactos) || []).filter(function (x) { return x.clave === clave; })[0] || {};
     $('fichaTit').textContent = nombreContacto(c);
     $('fichaIn').innerHTML = '<div class="ficha-bloque"><p class="num-vacio">Cargando…</p></div>';
     $('capaFicha').hidden = false;
@@ -3104,12 +3323,15 @@
         ((p.etiquetas || []).length ? '<div class="tj-etq" style="margin-top:12px">' + p.etiquetas.map(function (e) {
           return '<span class="etq">' + esc(e) + '</span>'; }).join('') + '</div>' : '') +
       '</div>' +
+      /* Si escribió por WhatsApp, la conversación va antes que la historia:
+         es lo que se viene a mirar desde Mensajes. */
+      ((d.mensajes || []).length ? chatContacto(d) : '') +
       '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(h) + '</div>' +
-      '<div class="ficha-bloque"><h3>Mensajes</h3>' +
-        '<p class="num-vacio">Cuando conectemos el WhatsApp con Meta, acá van a estar los mensajes con esta persona.</p></div>';
+      ((d.mensajes || []).length ? '' : chatContacto(d));
     if ($('ctGuardar')) {
       $('ctGuardar').onclick = function () { guardarContacto({ fuente: 'contacto', nombre: nom, whatsapp: tel, mail: p.mail }); };
     }
+    bajarChat();
     [].forEach.call($('fichaIn').querySelectorAll('[data-abrir]'), function (b) {
       b.onclick = function () { var x = b.dataset.abrir.split(':'); irAFicha(x[0], Number(x[1])); };
     });
@@ -3390,6 +3612,11 @@
       var v = this.value.trim();
       clearTimeout(CT.espera);
       CT.espera = setTimeout(function () { CT.buscar = v; cargarContactos(); }, 250);
+    };
+    $('msBusca').oninput = function () {
+      var v = this.value.trim();
+      clearTimeout(MS.espera);
+      MS.espera = setTimeout(function () { MS.buscar = v; cargarMensajes(); }, 250);
     };
     $('loteMover').onchange = function () { var d = this.value; this.value = ''; if (d) { moverLote(d); } };
     $('loteEtq').onclick = abrirEtqLote;

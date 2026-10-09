@@ -1253,6 +1253,17 @@ var base = {
     return funcion('crm_contacto', { p_pin: pin, p_clave: clave });
   },
 
+  /** Las conversaciones de WhatsApp (SQL 63), la última arriba. */
+  crmMensajes: function (pin, buscar, limite) {
+    return funcion('crm_mensajes', { p_pin: pin, p_buscar: buscar || null, p_limite: limite || 200 });
+  },
+
+  /** Lo mínimo para preguntar seguido si llegó algo: el último mensaje y
+   *  cuántas conversaciones esperan respuesta. */
+  crmMensajesUltimo: function (pin) {
+    return funcion('crm_mensajes_ultimo', { p_pin: pin });
+  },
+
   /** El descuento atado al teléfono, desde la ficha del cliente. */
   darDescuento: function (pin, registro, pct, dias, quien) {
     return funcion('dar_descuento', {
