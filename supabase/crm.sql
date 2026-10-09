@@ -1645,3 +1645,146 @@ $$;
 grant execute on function crm_contacto(text, text) to anon, authenticated;
 
 select 'listo: los Contactos del CRM' as "SQL 61";
+
+
+-- ─────────────────────────── PARTE 62 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · LOS MENSAJES DE WHATSAPP, EN LA BASE
+--
+-- Correr en el editor SQL de Supabase.
+--
+-- Primer paso de la conexión propia con Meta (09/10/2026). La app "VDH CRM"
+-- del portfolio Vdhstore recibe los avisos de Meta en la Edge Function
+-- "whatsapp", que comprueba la firma y se los pasa a wa_recibir().
+--   · Entra: lo que escribe el cliente.
+--   · Sale, "celular": lo que contestan desde la app WhatsApp Business del
+--     teléfono (la cuenta es de coexistencia, Meta manda el eco).
+--   · Sale, "crm": lo que se mande desde el CRM, cuando esté.
+--   · Lo que manda Kommo NO llega: Meta no les cuenta a las otras apps lo
+--     que manda cada una. Llegan, a lo sumo, los estados.
+-- Kommo sigue conectado igual. Todo cerrado: sólo la Edge Function.
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Cada aviso tal como llegó. Sirve para ver qué manda Meta de verdad
+   mientras se arma esto; se puede vaciar cuando ande todo. */
+create table if not exists wa_avisos (
+  id         bigserial primary key,
+  recibido   timestamptz not null default now(),
+  cuerpo     jsonb not null,
+  resultado  jsonb
+);
+alter table wa_avisos enable row level security;
+revoke all on wa_avisos from anon, authenticated;
+
+/* Un mensaje por fila. tel es el número del cliente como lo da WhatsApp
+   (con el 549 adelante); para cruzarlo con el resto se usa club_tel10. */
+create table if not exists wa_mensajes (
+  id         bigserial primary key,
+  wamid      text unique,
+  numero_id  text not null,
+  numero     text,
+  tel        text not null,
+  sentido    text not null check (sentido in ('entra', 'sale')),
+  desde      text not null,
+  tipo       text not null,
+  texto      text,
+  media      jsonb,
+  perfil     text,
+  estado     text,
+  error      jsonb,
+  cuando     timestamptz not null,
+  creado     timestamptz not null default now()
+);
+create index if not exists wa_mensajes_tel    on wa_mensajes (club_tel10(tel), cuando desc);
+create index if not exists wa_mensajes_cuando on wa_mensajes (cuando desc);
+alter table wa_mensajes enable row level security;
+revoke all on wa_mensajes from anon, authenticated;
+
+/* El texto que se ve de cada tipo de mensaje. Lo que no es texto (foto,
+   audio…) guarda el id del archivo en media; bajarlo es otro paso. */
+create or replace function wa_texto(m jsonb)
+returns text
+language sql
+immutable
+as $$
+  select case m->>'type'
+    when 'text'        then m->'text'->>'body'
+    when 'button'      then m->'button'->>'text'
+    when 'interactive' then coalesce(m->'interactive'->'button_reply'->>'title', m->'interactive'->'list_reply'->>'title')
+    when 'reaction'    then m->'reaction'->>'emoji'
+    when 'location'    then coalesce(m->'location'->>'name', m->'location'->>'address', 'Ubicación')
+    when 'contacts'    then 'Contacto compartido'
+    else m->(m->>'type')->>'caption'
+  end
+$$;
+
+create or replace function wa_recibir(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  e jsonb; c jsonb; v jsonb; m jsonb; s jsonb;
+  v_numero_id text; v_numero text;
+  entran integer := 0; ecos integer := 0; estados integer := 0; otros integer := 0;
+  n integer;
+  orden constant text[] := array['sent', 'delivered', 'read'];
+  res jsonb;
+begin
+  for e in select * from jsonb_array_elements(coalesce(p->'entry', '[]'::jsonb)) loop
+    for c in select * from jsonb_array_elements(coalesce(e->'changes', '[]'::jsonb)) loop
+      v := c->'value';
+      v_numero_id := v->'metadata'->>'phone_number_id';
+      v_numero := v->'metadata'->>'display_phone_number';
+
+      if c->>'field' = 'messages' then
+        for m in select * from jsonb_array_elements(coalesce(v->'messages', '[]'::jsonb)) loop
+          insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, media, perfil, cuando)
+          values (m->>'id', v_numero_id, v_numero, m->>'from', 'entra', 'cliente', m->>'type', wa_texto(m),
+                  case when m->>'type' in ('image', 'video', 'audio', 'document', 'sticker') then m->(m->>'type') end,
+                  (select x->'profile'->>'name' from jsonb_array_elements(coalesce(v->'contacts', '[]'::jsonb)) x
+                    where x->>'wa_id' = m->>'from' limit 1),
+                  to_timestamp((m->>'timestamp')::bigint))
+          on conflict (wamid) do nothing;
+          get diagnostics n = row_count;
+          entran := entran + n;
+        end loop;
+
+        /* Los estados sólo avanzan: un "entregado" que llega tarde no
+           pisa un "leído". "failed" pisa siempre. */
+        for s in select * from jsonb_array_elements(coalesce(v->'statuses', '[]'::jsonb)) loop
+          update wa_mensajes w
+             set estado = s->>'status', error = coalesce(s->'errors', w.error)
+           where w.wamid = s->>'id'
+             and (s->>'status' = 'failed' or w.estado is null
+                  or coalesce(array_position(orden, s->>'status'), 0) > coalesce(array_position(orden, w.estado), 0));
+          get diagnostics n = row_count;
+          estados := estados + n;
+        end loop;
+
+      elsif c->>'field' = 'smb_message_echoes' then
+        for m in select * from jsonb_array_elements(coalesce(v->'message_echoes', '[]'::jsonb)) loop
+          insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, media, cuando)
+          values (m->>'id', v_numero_id, v_numero, m->>'to', 'sale', 'celular', m->>'type', wa_texto(m),
+                  case when m->>'type' in ('image', 'video', 'audio', 'document', 'sticker') then m->(m->>'type') end,
+                  to_timestamp((m->>'timestamp')::bigint))
+          on conflict (wamid) do nothing;
+          get diagnostics n = row_count;
+          ecos := ecos + n;
+        end loop;
+
+      else
+        otros := otros + 1;
+      end if;
+    end loop;
+  end loop;
+
+  res := jsonb_build_object('entran', entran, 'ecos', ecos, 'estados', estados, 'otros', otros);
+  insert into wa_avisos (cuerpo, resultado) values (p, res);
+  return res;
+end;
+$$;
+revoke execute on function wa_recibir(jsonb) from public, anon, authenticated;
+-- La Edge Function entra como service_role: sin esto no puede guardar.
+grant  execute on function wa_recibir(jsonb) to service_role;
