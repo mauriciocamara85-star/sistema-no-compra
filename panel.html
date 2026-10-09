@@ -275,6 +275,46 @@
   .col-cab i.c-ok { background: var(--ok); }
   .col-vacia { padding: 26px 12px; text-align: center; font-size: 13px; color: var(--txt-3);
                border: 1.5px dashed var(--line); border-radius: var(--r-sm); }
+  /* ── Atajos y "Elegir varios" (08/10/2026) ── */
+  .atajos { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: -4px 0 12px; }
+  .atajos[hidden] { display: none; }
+  .atajos .chip { min-height: 34px; padding: 6px 12px; font-size: 13px; gap: 6px; }
+  .atajos .chip .cuenta { font-size: 11.5px; font-weight: 700; padding: 0 7px; border-radius: var(--r-pill);
+                          background: var(--surface-3); color: var(--txt-2); }
+  .atajos .chip.sel .cuenta { background: rgba(0, 0, 0, .22); color: var(--acc-ink); }
+  .atajos-der { margin-left: auto; }
+  /* Eligiendo: un toque marca la tarjeta en vez de abrirla; el redondel de
+     abajo a la derecha dice cuáles. */
+  .eligiendo .tj { cursor: pointer; }
+  .eligiendo .tj::after { content: ''; position: absolute; right: 12px; bottom: 12px; width: 22px; height: 22px;
+                          border-radius: 50%; border: 2px solid var(--line-alta); background: var(--surface);
+                          font: 700 13px/18px var(--sans); text-align: center; color: var(--acc-ink); }
+  .eligiendo .tj.elegida { border-color: var(--acc); }
+  .eligiendo .tj.elegida::after { content: '✓'; background: var(--acc); border-color: var(--acc); }
+  .eligiendo .tj-acc, .eligiendo .tj-etq { pointer-events: none; opacity: .45; }
+  .col-todas { margin-left: auto; font: 600 12px var(--sans); color: var(--txt-2); text-decoration: underline;
+               text-underline-offset: 2px; padding: 2px 4px; }
+  .col-todas + .cuenta { margin-left: 4px; }
+  .col-viejos-elegir { display: block; width: 100%; margin: -4px 0 9px; padding: 6px; font: 600 12.5px var(--sans);
+                       color: var(--txt-2); text-decoration: underline; text-underline-offset: 2px; }
+  .lote { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 65;
+          display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: wrap;
+          width: max-content; max-width: calc(100% - 24px); padding: 10px 12px;
+          background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra-alta); }
+  .lote[hidden] { display: none; }
+  .lote b { font-size: 14px; padding: 0 6px; }
+  .lote select { width: auto; min-width: 150px; min-height: 0; padding: 8px 34px 8px 12px; font-size: 14px; }
+  .lote .btn { min-height: 38px; }
+  @media (max-width: 899px) { .lote { bottom: 86px; } }
+
+  /* Las notas del historial: cada una con su fecha y quién la escribió. */
+  .nota-fila { display: flex; gap: 8px; align-items: flex-end; }
+  .nota-fila textarea { flex: 1; min-height: 46px; }
+  .nota-fila .btn { flex: none; }
+  .nota-pie { font-size: 12px; color: var(--txt-3); margin-top: 4px; }
+  .nota-vieja { font-size: 13.5px; color: var(--txt-2); white-space: pre-wrap; margin: 0 0 8px; padding: 8px 10px;
+                background: var(--surface-2); border-radius: var(--r-sm); }
+
   /* Los carritos de más de una semana, juntos al final de Pendiente. */
   .col-viejos { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
                 margin: 2px 0 9px; padding: 11px 12px; border: 1.5px dashed var(--line); border-radius: var(--r-sm);
@@ -459,6 +499,8 @@
   .hist li.h-whatsapp::before { background: #25D366; }
   .hist li.h-recordatorio::before { background: var(--warn); }
   .hist li.h-contacto::before { background: var(--txt-3); }
+  .hist li.h-nota::before { background: var(--acc); }
+  .hist-nota { white-space: pre-wrap; color: var(--txt); }
   .hist-que { display: block; font-size: 13.5px; line-height: 1.4; color: var(--txt); }
   .hist-pie { display: block; margin-top: 1px; font-size: 12px; color: var(--txt-3); }
 
@@ -472,8 +514,18 @@
   .ficha-etq { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 12px; }
   .ficha-etq .etq { font-size: 12.5px; padding: 4px 10px; }
   .ficha-etq .etq i { font-style: normal; color: var(--txt-3); }
-  .ficha-etq .etq-mas { background: none; border: 1px dashed var(--line-alta); }
-  .ficha-etq input { width: 170px; padding: 5px 10px; }
+  /* El "+": redondo al lado de las que tiene; con ninguna, "+ Etiqueta". */
+  .etq-mas { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 30px; height: 30px; padding: 0 8px;
+             border-radius: var(--r-pill); border: 1.5px dashed var(--line-alta); background: none; color: var(--txt-2);
+             font: 600 17px/1 var(--sans); }
+  .etq-mas span { font-size: 12.5px; }
+  .etq-mas:hover, .etq-mas.abierto { border-style: solid; border-color: var(--txt-2); color: var(--txt); }
+  .etq-panel { margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
+               background: var(--surface-2); display: grid; gap: 10px; }
+  .etq-sug { display: flex; flex-wrap: wrap; gap: 6px; }
+  .etq-sug .chip { min-height: 32px; padding: 5px 11px; font-size: 13px; }
+  .etq-otra { display: flex; gap: 8px; align-items: center; }
+  .etq-otra input { flex: 1; min-width: 0; padding: 8px 12px; font-size: 14px; }
   .filtro-etq { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 12px; font-size: 13.5px; color: var(--txt-2); }
   .filtro-etq[hidden] { display: none; }
   .filtro-etq .btn { min-height: 32px; }
@@ -666,6 +718,9 @@
     <div class="filtros" id="filtros"></div>
   </div>
 
+  <!-- Los atajos de un toque y "Elegir varios" (08/10/2026). -->
+  <div class="atajos" id="atajos" hidden></div>
+
   <!-- Los recordatorios del día (SQL 52). -->
   <div class="aviso-hoy" id="avisoHoy" hidden></div>
   <!-- "Mostrando sólo VIP": el filtro de una etiqueta (SQL 53). -->
@@ -735,6 +790,28 @@
     <div class="modal-pie">
       <button type="button" class="btn btn-sec" id="ventaCancelar">Cancelar</button>
       <button type="button" class="btn btn-pri" id="ventaOk">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- "Elegir varios": la barra de abajo con lo que se puede hacer de a muchas. -->
+<div class="lote" id="lote" hidden>
+  <b id="loteN"></b>
+  <select id="loteMover" aria-label="Mover las elegidas a"></select>
+  <button type="button" class="btn btn-sec btn-chico" id="loteEtq">+ Etiqueta</button>
+  <button type="button" class="btn btn-sec btn-chico" id="loteX">Terminar</button>
+</div>
+
+<!-- Una etiqueta para todas las elegidas. -->
+<div class="modal" id="modalEtqLote" hidden>
+  <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="etqLoteTit">
+    <h2 id="etqLoteTit">Poner una etiqueta</h2>
+    <p>Las que ya la tienen quedan igual.</p>
+    <div class="plantillas" id="etqLoteChips"></div>
+    <div class="campo"><input id="etqLoteTxt" type="text" maxlength="30" autocomplete="off" placeholder="O escribí otra"></div>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec" id="etqLoteNo">Cancelar</button>
+      <button type="button" class="btn btn-pri" id="etqLoteOk">Poner</button>
     </div>
   </div>
 </div>
@@ -894,6 +971,13 @@
     traerAtencion();
 
     vista = ['no_compra', 'carrito', 'numeros', 'plantillas'].indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : 'no_compra';
+    /* El botón del aviso de Telegram ("Casi pagaron") trae #casi-pago:
+       se abre en Carritos, mostrando sólo esos. */
+    if (location.hash === '#casi-pago') {
+      vista = 'carrito'; atajo = 'casi';
+      guardar(K_VISTA, vista);
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    }
     aplicarVista();
     pintarCrm(res);
     cargar();
@@ -1151,6 +1235,8 @@
     colSel = 'Pendiente';
     soloHoy = false;
     filtroEtq = '';
+    atajo = '';
+    eligiendo = false; elegidos = [];
     $('tablero').scrollLeft = 0;
     aplicarVista();
     pintarVista();
@@ -1172,6 +1258,7 @@
     var loc = vista === 'no_compra' ? $('filtroLocal').value : '';
     return datos().filter(function (r) {
       if (soloHoy && !vencido(r)) return false;
+      if (atajo && !pasaAtajo(r, atajo)) return false;
       if (filtroEtq && (r.etiquetas || []).indexOf(filtroEtq) < 0) return false;
       if (loc && r.sucursal !== loc) return false;
       if (!q) return true;
@@ -1423,8 +1510,10 @@
     }
     pintarAvisoHoy();
     pintarFiltroEtq();
+    pintarAtajos();
     lista = visibles();
     pintarColumnasCel();
+    viejosDe = {};
     $('tablero').innerHTML = COLUMNAS.map(function (c) {
       var dentro = lista.filter(function (r) { return columnaDe(r) === c.e; });
       /* Pendientes: el más viejo arriba (es el que se pierde). El resto: lo
@@ -1448,20 +1537,32 @@
       if (vista === 'carrito' && c.e === 'Pendiente') {
         viejos = dentro.filter(function (r) { return r.dias >= DIAS_VIEJO && !vencido(r); });
         dentro = dentro.filter(function (r) { return viejos.indexOf(r) === -1; });
+        viejosDe[c.e] = viejos.map(function (r) { return r.id; });
       }
       return '<section class="col" data-col="' + esc(c.e) + '">' +
-        '<div class="col-cab"><i class="' + c.c + '"></i><b>' + esc(c.t) + '</b><span class="cuenta">' + total + '</span></div>' +
+        '<div class="col-cab"><i class="' + c.c + '"></i><b>' + esc(c.t) + '</b>' +
+          (eligiendo && total ? '<button type="button" class="col-todas" data-todas="' + esc(c.e) + '">Todas</button>' : '') +
+          '<span class="cuenta">' + total + '</span></div>' +
         (dentro.length ? dentro.map(tarjeta).join('') : (viejos.length ? '' : '<div class="col-vacia">Nadie acá</div>')) +
         (viejos.length
           ? '<button type="button" class="col-viejos" id="btnViejos" aria-expanded="' + verViejos + '">' +
               '<span>' + (verViejos ? 'Esconder los de más de una semana' : 'Más de una semana') + '</span>' +
               '<span class="cuenta">' + viejos.length + '</span></button>' +
+            (eligiendo ? '<button type="button" class="col-viejos-elegir" id="btnViejosElegir">Elegir estos ' + viejos.length + '</button>' : '') +
             (verViejos ? viejos.map(tarjeta).join('') : '')
           : '') +
       '</section>';
     }).join('');
     if ($('btnViejos')) { $('btnViejos').onclick = function () { verViejos = !verViejos; pintar(); }; }
+    if ($('btnViejosElegir')) { $('btnViejosElegir').onclick = function () { elegirVarias(viejosDe.Pendiente || []); }; }
+    [].forEach.call(document.querySelectorAll('#tablero [data-todas]'), function (b) {
+      b.onclick = function () {
+        var col = b.dataset.todas;
+        elegirVarias(visibles().filter(function (r) { return columnaDe(r) === col; }).map(function (r) { return r.id; }));
+      };
+    });
     conectar();
+    marcarElegidas();
     pintarPista();
   }
 
@@ -1473,10 +1574,7 @@
     /* "Compró" pide dónde y cuánto: es el número que dice si esto sirve. */
     if (destino === 'Cerrado - compró') { pedirVenta(id); return; }
 
-    var campos = { estado: destino === 'Pendiente' ? '' : destino, responsable: quien };
-    if (destino === 'Pendiente') { campos.contactamos = ''; }
-    else if (CONTACTADOS.indexOf(destino) > -1 && r.contactamos !== 'si') { campos.contactamos = 'si'; campos.fecha1 = true; }
-    if (destino === 'Cerrado - no compró') { campos.compro = 'No'; }
+    var campos = camposMovida(r, destino, false);
 
     /* "No compró" pregunta por qué (SQL 53): es lo que dice Números. */
     if (destino === 'Cerrado - no compró' && hay53()) {
@@ -1488,17 +1586,32 @@
     }
     aplicarMovida(id, destino, campos);
   }
+  /* Lo que se guarda al pasar a otra columna. De a muchas ("Elegir
+     varios") no se anota un primer contacto que no hubo: cerrar de a
+     cincuenta es ordenar, no escribirles. Sólo "En seguimiento" y
+     "Esperando respuesta" dicen, también en lote, que ya se habló. */
+  function camposMovida(r, destino, enLote) {
+    var campos = { estado: destino === 'Pendiente' ? '' : destino, responsable: quien };
+    var contacta = enLote ? (destino === 'En seguimiento' || destino === 'Esperando respuesta') : CONTACTADOS.indexOf(destino) > -1;
+    if (destino === 'Pendiente') { campos.contactamos = ''; }
+    else if (contacta && r.contactamos !== 'si') { campos.contactamos = 'si'; campos.fecha1 = true; }
+    if (destino === 'Cerrado - no compró') { campos.compro = 'No'; }
+    return campos;
+  }
   function aplicarMovida(id, destino, campos) {
     var r = porId(id); if (!r) return;
     /* Se ve en el acto; si la base lo rechaza, guardarSeguim recarga. */
+    aplicarLocal(r, destino, campos);
+    pintar(); if (fichaId === id) { pintarFicha(); }
+    guardarSeguim(id, campos, 'Movido a ' + tituloDe(destino), true);
+  }
+  function aplicarLocal(r, destino, campos) {
     r.estado = destino === 'Pendiente' ? '' : destino;
     if (campos.contactamos !== undefined) { r.contactamos = campos.contactamos; }
     if (campos.fecha1) { r.fecha1Iso = isoDia(new Date()); }
     if (campos.perdida !== undefined) { r.perdida = campos.perdida; r.perdidaNota = campos.perdidaNota || ''; }
     else if (destino !== 'Cerrado - no compró') { r.perdida = ''; r.perdidaNota = ''; }
     r.responsable = quien;
-    pintar(); if (fichaId === id) { pintarFicha(); }
-    guardarSeguim(id, campos, 'Movido a ' + tituloDe(destino), true);
   }
   function tituloDe(e) { var c = COLUMNAS.filter(function (x) { return x.e === e; })[0]; return c ? c.t : e; }
 
@@ -1598,8 +1711,7 @@
             '<input type="text" inputmode="numeric" data-c="monto" placeholder="$" value="' + esc(r.monto) + '"></div>' +
           '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Qué se llevó</label>' +
             '<input type="text" data-c="productoFinal" value="' + esc(r.productoFinal) + '"></div>' +
-          '<div class="campo ancho"><label>Notas</label>' +
-            '<textarea data-c="obsSeguim" placeholder="Qué dijo, qué quedó pendiente…">' + esc(r.obsSeguim) + '</textarea></div>' +
+          campoNota(r) +
         '</div>' +
         lineaPerdida(r, col) +
         '<div class="ficha-dato" style="margin-top:10px"><span>' +
@@ -1650,8 +1762,7 @@
           '</select></div>' +
           '<div class="campo venta"' + (vendio ? '' : ' hidden') + '><label>Monto</label>' +
             '<input type="text" inputmode="numeric" data-c="monto" placeholder="$" value="' + esc(r.monto) + '"></div>' +
-          '<div class="campo ancho"><label>Notas</label>' +
-            '<textarea data-c="obsSeguim" placeholder="Qué dijo, qué quedó pendiente…">' + esc(r.obsSeguim) + '</textarea></div>' +
+          campoNota(r) +
         '</div>' +
         lineaPerdida(r, col) +
         '<div class="ficha-dato" style="margin-top:10px"><span>' +
@@ -1664,8 +1775,47 @@
     pintarCliente(r);
   }
 
+  /* Las notas (08/10/2026): cada una queda en el historial con la fecha y
+     quién la escribió, como el muro de Kommo. Antes era un solo cuadro que
+     se pisaba al escribir encima; lo que tenía se sigue viendo arriba. Sin
+     el SQL 52 no hay historial, y queda el cuadro de antes. */
+  function campoNota(r) {
+    if (!sql52) {
+      return '<div class="campo ancho"><label>Notas</label>' +
+        '<textarea data-c="obsSeguim" placeholder="Qué dijo, qué quedó pendiente…">' + esc(r.obsSeguim) + '</textarea></div>';
+    }
+    return '<div class="campo ancho"><label for="notaNueva">Anotar</label>' +
+      (r.obsSeguim ? '<div class="nota-vieja">' + esc(r.obsSeguim) + '</div>' : '') +
+      '<div class="nota-fila"><textarea id="notaNueva" maxlength="500" placeholder="Qué dijo, qué quedó pendiente…"></textarea>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="notaOk">Anotar</button></div>' +
+      '<div class="nota-pie">Queda en el historial, con la fecha y tu nombre.</div></div>';
+  }
+  function anotarNota(r) {
+    var caja = $('notaNueva');
+    var t = caja ? caja.value.trim() : '';
+    if (!t) { if (caja) { caja.focus(); } return; }
+    if (!exigirQuien(function () { anotarNota(r); })) { return; }
+    $('notaOk').disabled = true;
+    base.crmEvento(pinGuardado(), r.fuente === 'carrito' ? 'carrito' : 'no_compra', r.id, 'nota', t, quien || null)
+      .then(function () {
+        if ($('notaNueva')) { $('notaNueva').value = ''; }
+        avisar('ok', 'Anotado.');
+        if (fichaId === r.id) { cargarHistorial(); }
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', 'No se pudo anotar. Revisá la conexión.');
+      })
+      .then(function () { if ($('notaOk')) { $('notaOk').disabled = false; } });
+  }
+
   function conectarFicha(r) {
     $('fichaCol').onchange = function () { mover(r.id, this.value); };
+    if ($('notaOk')) {
+      $('notaOk').onclick = function () { anotarNota(r); };
+      /* Ctrl+Enter anota; Enter solo baja de renglón, como en un mensaje. */
+      $('notaNueva').onkeydown = function (ev) { if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); anotarNota(r); } };
+    }
     var dar = $('fichaDar');
     if (dar) {
       dar.onclick = function () {
@@ -1728,35 +1878,39 @@
     var rq = $('recQuitar');
     if (rq) { rq.onclick = function () { ponerRecordatorio(r.id, '', ''); }; }
 
-    /* Las etiquetas: la × la saca; "+ Etiqueta" abre un campo con las que ya se usan. */
+    /* Las etiquetas: la × la saca; el "+" abre las sugeridas y el campo. */
     [].forEach.call($('fichaIn').querySelectorAll('[data-quitar]'), function (b) {
       b.onclick = function () {
         var x = porId(r.id); if (!x) return;
         cambiarEtiquetas(x.id, (x.etiquetas || []).filter(function (e) { return e !== b.dataset.quitar; }));
       };
     });
-    var mas = $('etqMas');
-    if (mas) {
-      mas.onclick = function () {
-        var inp = document.createElement('input');
-        inp.type = 'text'; inp.maxLength = 30; inp.placeholder = 'VIP, Mayorista…';
-        inp.setAttribute('list', 'etqSugeridas'); inp.setAttribute('aria-label', 'Etiqueta nueva');
-        mas.replaceWith(inp);
-        inp.focus();
-        var hecho = false;
-        var listo = function (guardarla) {
-          if (hecho) return;
-          hecho = true;
-          var v = inp.value.trim(), x = porId(r.id);
-          if (guardarla && v && x) { cambiarEtiquetas(x.id, (x.etiquetas || []).concat([v])); }
-          else { pintarFicha(); }
-        };
-        inp.onkeydown = function (ev) {
-          if (ev.key === 'Enter') { ev.preventDefault(); listo(true); }
-          if (ev.key === 'Escape') { ev.stopPropagation(); listo(false); }
-        };
-        inp.onblur = function () { listo(true); };
+    var sumarEtq = function (v) {
+      var x = porId(r.id);
+      if (x && v) { cambiarEtiquetas(x.id, (x.etiquetas || []).concat([v])); }
+    };
+    if ($('etqMas')) {
+      $('etqMas').onclick = function () {
+        etqAbierto = etqAbierto === r.id ? null : r.id;
+        pintarFicha();
+        if (etqAbierto && $('etqOtra') && !$('fichaIn').querySelector('[data-poner]')) { $('etqOtra').focus(); }
       };
+    }
+    [].forEach.call($('fichaIn').querySelectorAll('[data-poner]'), function (b) {
+      b.onclick = function () { sumarEtq(b.dataset.poner); };
+    });
+    if ($('etqOtra')) {
+      var otra = function () {
+        var v = $('etqOtra').value.trim();
+        if (!v) { $('etqOtra').focus(); return; }
+        sumarEtq(v);
+      };
+      $('etqOtraOk').onclick = otra;
+      $('etqOtra').onkeydown = function (ev) {
+        if (ev.key === 'Enter') { ev.preventDefault(); otra(); }
+        if (ev.key === 'Escape') { ev.stopPropagation(); etqAbierto = null; pintarFicha(); }
+      };
+      $('etqListo').onclick = function () { etqAbierto = null; pintarFicha(); };
     }
     var cp = $('fichaPerdida');
     if (cp) {
@@ -1870,6 +2024,8 @@
         que = h.detalle === 'lo quitó' ? 'Quitó el recordatorio' : 'Recordatorio ' + esc(h.detalle || '');
       } else if (h.tipo === 'contacto') {
         que = 'Guardó el contacto';
+      } else if (h.tipo === 'nota') {
+        que = '<span class="hist-nota">' + esc(h.detalle || '') + '</span>';
       } else {
         que = esc(h.detalle || '');
       }
@@ -1914,12 +2070,168 @@
   function conectar() {
     [].forEach.call(document.querySelectorAll('#tablero .tj'), function (t) {
       t.onclick = function (ev) {
+        /* Eligiendo varias: el toque la marca o la desmarca. */
+        if (eligiendo) { alternarElegida(+t.dataset.id); return; }
         /* Recién soltada: el toque era para moverla, no para abrirla. */
         if (Date.now() - recienSoltada < 400) return;
         if (ev.target.closest('button, select, a')) return;
         abrirFicha(+t.dataset.id);
       };
     });
+  }
+
+  /* ═══ Atajos y "Elegir varios" (08/10/2026) ════════════════════════════
+     Los filtros de un toque que más se usan, arriba del tablero: "Los
+     míos" (los que sigue el que está en el CRM) y, según la vista, "Casi
+     pagó" o "Hay stock". Y "Elegir varios", para mover o etiquetar de a
+     muchas como en Kommo: con 55 carritos viejos, de a uno no se hace. */
+  var atajo = '', eligiendo = false, elegidos = [], viejosDe = {};
+
+  function esMio(r) { return !!quien && String(r.responsable || '').toLowerCase() === quien.toLowerCase(); }
+  function pasaAtajo(r, k) {
+    if (k === 'mios') { return esMio(r); }
+    if (k === 'casi') { return !!r.casiPago; }
+    if (k === 'stock') { var s = stockDe(r); return !!(s && s.hay); }
+    return true;
+  }
+  function pintarAtajos() {
+    var caja = $('atajos'), l = datos();
+    var defs = [['mios', 'Los míos'], vista === 'carrito' ? ['casi', 'Casi pagó'] : ['stock', 'Hay stock']];
+    /* Un atajo sin nadie no se muestra: un botón que lleva a un tablero
+       vacío es ruido. El que está prendido se ve siempre, para poder
+       apagarlo. */
+    caja.innerHTML = defs.map(function (d) {
+      var n = l.filter(function (r) { return pasaAtajo(r, d[0]); }).length;
+      if (!n && atajo !== d[0]) { return ''; }
+      return '<button type="button" class="chip' + (atajo === d[0] ? ' sel' : '') + '" data-atajo="' + d[0] + '">' +
+        d[1] + '<span class="cuenta">' + n + '</span></button>';
+    }).join('') +
+      (l.length ? '<button type="button" class="btn btn-sec btn-chico atajos-der" id="btnElegir">' + (eligiendo ? 'Terminar' : 'Elegir varios') + '</button>' : '');
+    caja.hidden = !caja.innerHTML;
+    [].forEach.call(caja.querySelectorAll('[data-atajo]'), function (b) {
+      b.onclick = function () { atajo = atajo === b.dataset.atajo ? '' : b.dataset.atajo; pintar(); };
+    });
+    if ($('btnElegir')) {
+      $('btnElegir').onclick = function () {
+        if (eligiendo) { salirDeElegir(); return; }
+        cerrarFicha();
+        eligiendo = true; elegidos = [];
+        pintar();
+      };
+    }
+  }
+
+  function salirDeElegir() { eligiendo = false; elegidos = []; pintar(); }
+  function alternarElegida(id) {
+    var i = elegidos.indexOf(id);
+    if (i > -1) { elegidos.splice(i, 1); } else { elegidos.push(id); }
+    marcarElegidas();
+  }
+  /* "Todas" de una columna, o "Elegir estos 55": si ya estaban todas
+     elegidas, el mismo toque las suelta. */
+  function elegirVarias(ids) {
+    var todas = ids.length && ids.every(function (id) { return elegidos.indexOf(id) > -1; });
+    if (todas) { elegidos = elegidos.filter(function (id) { return ids.indexOf(id) < 0; }); }
+    else { ids.forEach(function (id) { if (elegidos.indexOf(id) < 0) { elegidos.push(id); } }); }
+    marcarElegidas();
+  }
+  function marcarElegidas() {
+    document.body.classList.toggle('eligiendo', eligiendo);
+    [].forEach.call(document.querySelectorAll('#tablero .tj'), function (t) {
+      t.classList.toggle('elegida', eligiendo && elegidos.indexOf(+t.dataset.id) > -1);
+    });
+    var b = $('lote');
+    b.hidden = !eligiendo;
+    if (!eligiendo) { return; }
+    var n = elegidos.length;
+    $('loteN').textContent = !n ? 'Tocá las tarjetas' : n === 1 ? '1 elegida' : n + ' elegidas';
+    /* "Compró" no está: pide el monto de cada uno, y eso es de a uno. */
+    $('loteMover').innerHTML = '<option value="">Mover a…</option>' + COLUMNAS.filter(function (c) {
+      return c.e !== 'Cerrado - compró';
+    }).map(function (c) { return '<option value="' + esc(c.e) + '">' + esc(c.t) + '</option>'; }).join('');
+    $('loteMover').disabled = !n;
+    $('loteEtq').disabled = !n;
+    $('loteEtq').hidden = !hay53();
+  }
+
+  function moverLote(destino) {
+    var ids = elegidos.filter(function (id) { var r = porId(id); return r && columnaDe(r) !== destino; });
+    if (!ids.length) { avisar('info', 'Ya están en ' + tituloDe(destino) + '.'); return; }
+    if (!exigirQuien(function () { moverLote(destino); })) { return; }
+    var hacer = function (x) {
+      enLote(ids, function (id) {
+        var r = porId(id);
+        var campos = camposMovida(r, destino, true);
+        if (x) { campos.perdida = x.perdida; campos.perdidaNota = x.perdidaNota; }
+        aplicarLocal(r, destino, campos);
+        return guardarEn(id, campos);
+      }, function (n) { return (n === 1 ? '1 pasó a ' : n + ' pasaron a ') + tituloDe(destino); });
+    };
+    if (destino === 'Cerrado - no compró' && hay53()) {
+      pedirPerdida(ids[0], hacer);
+      $('perdidaTit').textContent = '¿Por qué no compraron? (' + ids.length + ')';
+      return;
+    }
+    hacer(null);
+  }
+
+  function abrirEtqLote() {
+    if (!elegidos.length) { return; }
+    $('etqLoteTit').textContent = 'Poner una etiqueta (' + elegidos.length + ')';
+    $('etqLoteChips').innerHTML = etiquetasUsadas().map(function (e) {
+      return '<button type="button" class="chip" data-e="' + esc(e) + '">' + esc(e) + '</button>';
+    }).join('');
+    [].forEach.call($('etqLoteChips').children, function (b) { b.onclick = function () { ponerEtqLote(b.dataset.e); }; });
+    $('etqLoteTxt').value = '';
+    $('modalEtqLote').hidden = false;
+  }
+  function ponerEtqLote(e) {
+    e = String(e || '').trim().replace(/\s+/g, ' ').slice(0, 30);
+    if (!e) { $('etqLoteTxt').focus(); return; }
+    $('modalEtqLote').hidden = true;
+    var k = e.toLowerCase();
+    var ids = elegidos.filter(function (id) {
+      var r = porId(id);
+      return r && r.etiquetas && r.etiquetas.length < 8 && !r.etiquetas.some(function (x) { return x.toLowerCase() === k; });
+    });
+    if (!ids.length) { avisar('info', 'Ya la tienen todas.'); return; }
+    if (!exigirQuien(function () { ponerEtqLote(e); })) { return; }
+    enLote(ids, function (id) {
+      var r = porId(id);
+      r.etiquetas = r.etiquetas.concat([e]);
+      return guardarEn(id, { etiquetas: r.etiquetas });
+    }, function (n) { return '«' + e + '» quedó en ' + (n === 1 ? '1 tarjeta' : n + ' tarjetas'); });
+  }
+
+  /* De a cuatro por vez: rápido, sin tirarle cincuenta pedidos juntos a la
+     base. Lo de la pantalla ya cambió; si algo falla, se recarga y se ve
+     cómo quedó de verdad. */
+  function enLote(ids, hacer, mensaje) {
+    var i = 0, malos = 0, hechos = 0, N = ids.length;
+    $('loteMover').disabled = true; $('loteEtq').disabled = true;
+    $('loteN').textContent = 'Guardando… 0 de ' + N;
+    var tanda = function () {
+      var parte = ids.slice(i, i + 4);
+      i += parte.length;
+      if (!parte.length) { return Promise.resolve(); }
+      return Promise.all(parte.map(function (id) {
+        return Promise.resolve().then(function () { return hacer(id); })
+          .catch(function (err) { if (err && err.sinSesion) { throw err; } malos++; })
+          .then(function () { hechos++; $('loteN').textContent = 'Guardando… ' + hechos + ' de ' + N; });
+      })).then(tanda);
+    };
+    tanda()
+      .then(function () {
+        eligiendo = false; elegidos = [];
+        pintar();
+        if (malos) { avisar('err', (malos === 1 ? '1 no se pudo guardar' : malos + ' no se pudieron guardar') + '. Revisá la conexión.'); cargar(); }
+        else { avisar('ok', mensaje(N)); }
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', 'No se pudo guardar. Revisá la conexión.');
+        cargar();
+      });
   }
 
   /* ═══ Arrastrar, como Trello y Kommo (07/10/2026) ══════════════════════
@@ -1934,6 +2246,7 @@
 
   function prepararArrastre(t, x, y, dedo) {
     cancelarArrastre();
+    if (eligiendo) return;          // eligiendo varias, el toque marca: no levanta
     var r = porId(+t.dataset.id);
     if (!r) return;
     arr = { t: t, id: r.id, origen: columnaDe(r), x0: x, y0: y, x: x, y: y, dedo: dedo,
@@ -2451,7 +2764,12 @@
 
   /* ── Las etiquetas ── Libres, por tarjeta. Las que ya se usan se sugieren. */
   var filtroEtq = '';
-  var ETIQUETAS_BASE = ['VIP', 'Talle especial', 'Mayorista'];
+  /* Las que se sugieren aunque nadie las haya usado todavía (08/10/2026).
+     Cada una sirve para algo que viene: "Avisar si llega" para el cruce
+     con el stock, "No escribir" para que los envíos masivos lo salteen,
+     "Para un evento" y "Regalo" porque cambian el apuro y el mensaje. Se
+     puede escribir cualquier otra: las que se usan se suman solas. */
+  var ETIQUETAS_BASE = ['VIP', 'Talle especial', 'Avisar si llega', 'Para un evento', 'Regalo', 'No escribir'];
   function etiquetasUsadas() {
     var n = {};
     ETIQUETAS_BASE.forEach(function (e) { n[e] = 0; });
@@ -2464,19 +2782,38 @@
       return '<button type="button" class="etq' + (e === filtroEtq ? ' sel' : '') + '" data-etq="' + esc(e) + '" title="Ver sólo «' + esc(e) + '»">' + esc(e) + '</button>';
     }).join('') + (r.etiquetas.length > 3 ? '<span class="etq">+' + (r.etiquetas.length - 3) + '</span>' : '') + '</div>';
   }
+  /* En la ficha (08/10/2026, "muy básica"): las que tiene, con su × para
+     sacarlas, y un "+" que abre las sugeridas como botones —un toque y
+     queda— más un campo para escribir otra. Antes era un campo con la
+     lista del navegador, que no se entendía. Queda abierto mientras se
+     agregan; "Listo" lo cierra. */
+  var etqAbierto = null;
   function etiquetasFicha(r) {
     if (!r.etiquetas) return '';
     var tiene = {};
     r.etiquetas.forEach(function (e) { tiene[e.toLowerCase()] = 1; });
+    var lugar = r.etiquetas.length < 8, abierto = lugar && etqAbierto === r.id;
+    var sug = etiquetasUsadas().filter(function (e) { return !tiene[e.toLowerCase()]; });
     return '<div class="ficha-etq">' +
       r.etiquetas.map(function (e) {
         return '<button type="button" class="etq" data-quitar="' + esc(e) + '" title="Sacar «' + esc(e) + '»">' + esc(e) + ' <i>×</i></button>';
       }).join('') +
-      (r.etiquetas.length < 8 ? '<button type="button" class="etq etq-mas" id="etqMas">+ Etiqueta</button>' : '') +
-      '<datalist id="etqSugeridas">' + etiquetasUsadas().filter(function (e) { return !tiene[e.toLowerCase()]; }).map(function (e) {
-        return '<option value="' + esc(e) + '">';
-      }).join('') + '</datalist>' +
-    '</div>';
+      (lugar ? '<button type="button" class="etq-mas' + (r.etiquetas.length ? '' : ' con-texto') + (abierto ? ' abierto' : '') + '" id="etqMas" ' +
+               'aria-expanded="' + abierto + '" title="Agregar una etiqueta" aria-label="Agregar una etiqueta">+' +
+               (r.etiquetas.length ? '' : '<span>Etiqueta</span>') + '</button>' : '') +
+    '</div>' +
+    (abierto
+      ? '<div class="etq-panel">' +
+          (sug.length ? '<div class="etq-sug">' + sug.map(function (e) {
+            return '<button type="button" class="chip" data-poner="' + esc(e) + '">' + esc(e) + '</button>';
+          }).join('') + '</div>' : '') +
+          '<div class="etq-otra">' +
+            '<input type="text" id="etqOtra" maxlength="30" autocomplete="off" placeholder="Otra etiqueta" aria-label="Otra etiqueta">' +
+            '<button type="button" class="btn btn-sec btn-chico" id="etqOtraOk">Agregar</button>' +
+            '<button type="button" class="btn-link" id="etqListo">Listo</button>' +
+          '</div>' +
+        '</div>'
+      : '');
   }
   function cambiarEtiquetas(id, lista) {
     var r = porId(id); if (!r) return;
@@ -2806,8 +3143,16 @@
       if (!$('modalPerdida').hidden) { cancelarPerdida(); return; }
       if (!$('modalWsp').hidden) { $('modalWsp').hidden = true; return; }
       if (!$('modalVenta').hidden) { $('ventaCancelar').onclick(); return; }
+      if (!$('modalEtqLote').hidden) { $('modalEtqLote').hidden = true; return; }
+      if (eligiendo) { salirDeElegir(); return; }
       cerrarFicha();
     });
+    $('loteMover').onchange = function () { var d = this.value; this.value = ''; if (d) { moverLote(d); } };
+    $('loteEtq').onclick = abrirEtqLote;
+    $('loteX').onclick = salirDeElegir;
+    $('etqLoteOk').onclick = function () { ponerEtqLote($('etqLoteTxt').value); };
+    $('etqLoteTxt').onkeydown = function (ev) { if (ev.key === 'Enter') { ponerEtqLote($('etqLoteTxt').value); } };
+    $('etqLoteNo').onclick = function () { $('modalEtqLote').hidden = true; };
     $('filtros').onscroll = marcarScroll;
     window.addEventListener('resize', marcarScroll);
     $('vistas').onscroll = marcarVistas;

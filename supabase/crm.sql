@@ -1253,3 +1253,112 @@ $function$
 ;
 
 select 'listo: motivo de pérdida, ficha completa del cliente y etiquetas' as "SQL 53";
+
+
+-- ─────────────────────────── PARTE 60 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · AVISO DE LOS CARRITOS "CASI PAGÓ"
+--
+-- Correr en el editor SQL de Supabase.
+--
+-- Pedido de Mauricio (08/10/2026, "hacé las mejoras rápidas"): cuando
+-- alguien llega al pago en vdh.com.ar y no termina, que Atención se entere
+-- en la hora y no cuando abre el CRM. Es el cliente más caliente que hay.
+--   · El robot de cada hora, después de traer los carritos, llama a
+--     avisar_casi_pago(): un solo mensaje al grupo con los nuevos, de 10 a
+--     21 (lo que entra de noche sale a las 10).
+--   · Cada carrito se avisa UNA vez (casi_avisado). Los que ya estaban no
+--     se avisan: es para los nuevos de acá en adelante.
+--   · Sólo los pendientes: si alguien ya le escribió o ya compró, no.
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table crm_carritos add column if not exists casi_avisado timestamptz;
+
+-- Los que ya están: no se avisan.
+update crm_carritos set casi_avisado = now() where casi_pago and casi_avisado is null;
+
+/* El mensaje, sin mandarlo (se puede probar). Los más caros primero. */
+create or replace function avisar_casi_pago_mensaje()
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  l       record;
+  lineas  text[] := '{}';
+  ids     bigint[] := '{}';
+  n       integer := 0;
+  prenda  text;
+  mas     integer;
+begin
+  for l in
+    select k.id, k.nombre, k.total, k.productos
+      from crm_carritos k
+     where k.casi_pago and k.casi_avisado is null
+       and k.estado is null and not k.contactado and not k.compro
+       and k.creado > now() - interval '3 days'
+     order by k.total desc nulls last, k.creado desc
+  loop
+    n := n + 1;
+    ids := ids || l.id;
+    if n <= 10 then
+      prenda := nullif(trim(coalesce(l.productos->0->>'nombre', '')), '');
+      mas := greatest(jsonb_array_length(coalesce(l.productos, '[]'::jsonb)) - 1, 0);
+      lineas := lineas || ('• <b>' || esc_html(coalesce(nullif(trim(l.nombre), ''), 'Sin nombre')) || '</b> · $' ||
+        replace(to_char(round(coalesce(l.total, 0))::bigint, 'FM999,999,999'), ',', '.') ||
+        coalesce(' · ' || esc_html(prenda), '') ||
+        case when mas > 0 then ' y ' || mas || ' más' else '' end);
+    end if;
+  end loop;
+  if n = 0 then return jsonb_build_object('n', 0); end if;
+  return jsonb_build_object('n', n, 'ids', to_jsonb(ids), 'texto',
+    '🛒 <b>Casi pagaron</b> (' || n || ')' || E'\n' ||
+    'Llegaron al pago en vdh.com.ar y no terminaron:' || E'\n' ||
+    array_to_string(lineas, E'\n') ||
+    case when n > 10 then E'\n…y ' || (n - 10) || ' más: están en el CRM.' else '' end ||
+    E'\n\nEscribiles hoy: es la venta más cerca de cerrarse.');
+end;
+$$;
+
+/* Lo manda (de 10 a 21) y marca los avisados. */
+create or replace function avisar_casi_pago()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, extensions
+as $$
+declare
+  token     text := secreto('TELEGRAM_TOKEN');
+  chat      text := secreto('TELEGRAM_CHAT');
+  hora      integer := extract(hour from now() at time zone 'America/Argentina/Buenos_Aires');
+  m         jsonb;
+  cuerpo    jsonb;
+  respuesta extensions.http_response;
+  salida    jsonb;
+begin
+  if token is null or chat is null then return jsonb_build_object('avisados', 0, 'porque', 'Telegram no está configurado'); end if;
+  if hora < 10 or hora >= 21 then return jsonb_build_object('avisados', 0, 'porque', 'fuera de horario'); end if;
+  m := avisar_casi_pago_mensaje();
+  if (m->>'n')::integer = 0 then return jsonb_build_object('avisados', 0); end if;
+  cuerpo := jsonb_build_object('chat_id', chat, 'text', m->>'texto', 'parse_mode', 'HTML', 'disable_web_page_preview', true,
+    'reply_markup', jsonb_build_object('inline_keyboard', jsonb_build_array(jsonb_build_array(
+      jsonb_build_object('text', 'Abrir en el CRM', 'url', coalesce(secreto('SITIO'), '') || 'panel.html#casi-pago')))));
+  perform paciencia();
+  respuesta := extensions.http_post('https://api.telegram.org/bot' || token || '/sendMessage', cuerpo::text, 'application/json');
+  begin salida := respuesta.content::jsonb; exception when others then salida := null; end;
+  if respuesta.status >= 300 or coalesce((salida->>'ok')::boolean, false) = false then
+    raise exception 'Telegram respondió % · %', respuesta.status, left(coalesce(salida->>'description', respuesta.content, ''), 200);
+  end if;
+  update crm_carritos set casi_avisado = now()
+   where id in (select (jsonb_array_elements_text(m->'ids'))::bigint);
+  return jsonb_build_object('avisados', (m->>'n')::integer);
+end;
+$$;
+
+/* Sólo el robot: nadie de afuera puede mandar mensajes al grupo. */
+revoke execute on function avisar_casi_pago_mensaje() from public, anon, authenticated;
+revoke execute on function avisar_casi_pago() from public, anon, authenticated;
+
+select 'listo: el aviso de "casi pagó"' as "SQL 60";
