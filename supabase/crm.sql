@@ -1362,3 +1362,286 @@ revoke execute on function avisar_casi_pago_mensaje() from public, anon, authent
 revoke execute on function avisar_casi_pago() from public, anon, authenticated;
 
 select 'listo: el aviso de "casi pagó"' as "SQL 60";
+
+
+-- ─────────────────────────── PARTE 61 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · CONTACTOS DEL CRM, CON LOS COMPRADORES DE VDH.COM.AR
+--
+-- Correr en el editor SQL de Supabase.
+--
+-- Pedido de Mauricio (09/10/2026), mirando el Inbox de Kommo: una pestaña
+-- "Contactos" en el CRM con UNA fila por persona, venga de donde venga.
+--   · Junta los No Compra, los carritos, los socios del Club (y lo que
+--     compran en los locales) y —nuevo— los que compraron en vdh.com.ar.
+--   · A la misma persona se la reconoce por el teléfono (los últimos 10
+--     números) y, si alguna vez dejó sólo el mail, por el mail.
+--   · Los pedidos de la tienda los trae el robot de cada hora a
+--     tienda_pedidos: sólo con qué reconocer a la persona y qué compró.
+--   · Todo detrás del PIN, como el resto del CRM: hay nombres y teléfonos.
+-- Cuando esté conectado Meta, en la misma ficha van a ir los mensajes.
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Los pedidos de vdh.com.ar. El id es el de Tienda Nube. "acepta" es si el
+   cliente aceptó recibir novedades, cuando la tienda lo dice (si no, null). */
+create table if not exists tienda_pedidos (
+  id          bigint primary key,
+  numero      text,
+  creado      timestamptz not null,
+  pagado      timestamptz,
+  actualizado timestamptz,
+  pago        text,
+  estado      text,
+  total       numeric(12,2),
+  nombre      text,
+  telefono    text,
+  mail        text,
+  cliente_tn  bigint,
+  acepta      boolean,
+  productos   jsonb not null default '[]'::jsonb,
+  visto       timestamptz not null default now()
+);
+create index if not exists tienda_pedidos_tel  on tienda_pedidos (club_tel10(telefono));
+create index if not exists tienda_pedidos_mail on tienda_pedidos (mail);
+create index if not exists tienda_pedidos_act  on tienda_pedidos (actualizado);
+alter table tienda_pedidos enable row level security;
+revoke all on tienda_pedidos from anon, authenticated;
+
+/* El robot los carga de a tandas. Si el pedido ya estaba, lo actualiza
+   (cambia el pago, se cancela). Sólo el robot: nadie de afuera. */
+create or replace function tienda_pedidos_cargar(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  x jsonb;
+  recibidos integer := 0;
+  nuevos integer := 0;
+  era_nuevo boolean;
+begin
+  for x in select * from jsonb_array_elements(coalesce(p->'pedidos', '[]'::jsonb)) loop
+    recibidos := recibidos + 1;
+    insert into tienda_pedidos (id, numero, creado, pagado, actualizado, pago, estado, total,
+                                nombre, telefono, mail, cliente_tn, acepta, productos, visto)
+    values ((x->>'id')::bigint, x->>'numero', (x->>'creado')::timestamptz, (x->>'pagado')::timestamptz,
+            (x->>'actualizado')::timestamptz, x->>'pago', x->>'estado', nullif(x->>'total', '')::numeric,
+            nullif(trim(x->>'nombre'), ''), nullif(trim(x->>'telefono'), ''), nullif(lower(trim(x->>'mail')), ''),
+            nullif(x->>'cliente_tn', '')::bigint, (x->>'acepta')::boolean, coalesce(x->'productos', '[]'::jsonb), now())
+    on conflict (id) do update set
+      numero = excluded.numero, pagado = excluded.pagado, actualizado = excluded.actualizado,
+      pago = excluded.pago, estado = excluded.estado, total = excluded.total, nombre = excluded.nombre,
+      telefono = excluded.telefono, mail = excluded.mail, cliente_tn = excluded.cliente_tn,
+      acepta = excluded.acepta, productos = excluded.productos, visto = now()
+    returning (xmax = 0) into era_nuevo;
+    if era_nuevo then nuevos := nuevos + 1; end if;
+  end loop;
+  return jsonb_build_object('recibidos', recibidos, 'nuevos', nuevos,
+                            'en_total', (select count(*) from tienda_pedidos));
+end;
+$$;
+revoke execute on function tienda_pedidos_cargar(jsonb) from public, anon, authenticated;
+
+/* Todo lo que pasó con cada persona, de todos lados, con su "clave": el
+   teléfono (10 números) o, si nunca dejó teléfono, el mail. Es la base de
+   la lista y de la ficha; no se llama desde afuera. */
+create or replace function crm_contactos_base()
+returns table (clave text, fuente text, ref bigint, cuando timestamptz, nombre text, tel text, mail text,
+               datos jsonb, monto numeric, abierta boolean, etiquetas text[], nivel text, acepta boolean)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with f as (
+    select 'no_compra'::text as fuente, r.id as ref, r.creado as cuando, nullif(trim(r.nombre), '') as nombre,
+           club_tel10(r.whatsapp) as tel, nullif(lower(trim(r.mail)), '') as mail,
+           jsonb_build_object('local', r.sucursal, 'producto', r.producto, 'talle', r.talle, 'motivo', r.motivo::text,
+                              'columna', crm_columna(r.estado, r.contactado), 'monto', r.monto) as datos,
+           case when r.compro then r.monto end as monto,
+           crm_columna(r.estado, r.contactado) not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado') as abierta,
+           coalesce(r.etiquetas, '{}'::text[]) as etiquetas, null::text as nivel, null::boolean as acepta
+      from registros r
+    union all
+    select 'carrito', k.id, k.creado, nullif(trim(k.nombre), ''), club_tel10(k.telefono), nullif(lower(trim(k.mail)), ''),
+           jsonb_build_object('total', k.total, 'producto', k.productos->0->>'nombre',
+                              'mas', greatest(jsonb_array_length(k.productos) - 1, 0), 'casi_pago', k.casi_pago,
+                              'columna', crm_columna(k.estado, k.contactado), 'monto', k.monto),
+           case when k.compro then k.monto end,
+           crm_columna(k.estado, k.contactado) not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado'),
+           coalesce(k.etiquetas, '{}'::text[]), null, null
+      from crm_carritos k
+    union all
+    select 'club', c.id, c.creado, nullif(trim(c.nombre), ''), club_tel10(c.telefono), nullif(lower(trim(c.mail)), ''),
+           jsonb_build_object('tipo', 'alta', 'local', c.local_alta, 'nivel', v.nivel, 'puntos', v.puntos),
+           null, false, '{}'::text[], v.nivel, (c.acepta_promos and c.revocado is null)
+      from club_clientes c join v_club_clientes v on v.id = c.id
+     where c.baja is null
+    union all
+    select 'club', m.id, m.creado, nullif(trim(c.nombre), ''), club_tel10(c.telefono), nullif(lower(trim(c.mail)), ''),
+           jsonb_build_object('tipo', 'compra', 'local', m.local, 'importe', m.importe, 'puntos', m.puntos),
+           m.importe, false, '{}'::text[], null, null
+      from club_movimientos m join club_clientes c on c.id = m.cliente
+     where m.tipo::text = 'compra' and m.anulado is null and c.baja is null
+    union all
+    select 'tienda', t.id, coalesce(t.pagado, t.creado), t.nombre, club_tel10(t.telefono), t.mail,
+           jsonb_build_object('numero', t.numero, 'total', t.total, 'producto', t.productos->0->>'nombre',
+                              'mas', greatest(jsonb_array_length(t.productos) - 1, 0)),
+           t.total, false, '{}'::text[], null, t.acepta
+      from tienda_pedidos t
+     where t.pago = 'paid' and coalesce(t.estado, '') <> 'cancelled'
+  ),
+  /* El teléfono de cada mail: así el que una vez dejó sólo el mail cae en
+     la misma persona que cuando dejó el teléfono. */
+  mt as (
+    select distinct on (mail) mail, tel from f
+     where mail is not null and tel is not null
+     order by mail, cuando desc
+  )
+  select coalesce(f.tel, mt.tel, 'm:' || f.mail) as clave, f.*
+    from f left join mt on mt.mail = f.mail
+   where coalesce(f.tel, mt.tel, f.mail) is not null
+$$;
+revoke execute on function crm_contactos_base() from public, anon, authenticated;
+
+/* La lista: una fila por persona, lo último que pasó arriba. Con buscador
+   (nombre, teléfono, mail o etiqueta) y por de dónde vino. Las cuentas son
+   de lo buscado, para las pastillas. */
+create or replace function crm_contactos(p_pin text, p_buscar text default null, p_fuente text default null,
+                                         p_limite integer default 300)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  q  text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
+  qd text := nullif(regexp_replace(coalesce(p_buscar, ''), '[^0-9]', '', 'g'), '');
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  with b as (select * from crm_contactos_base()),
+  e as (select b.clave, array_agg(distinct x order by x) as etiquetas from b, unnest(b.etiquetas) x group by b.clave),
+  p as (
+    select b.clave,
+           (array_agg(b.nombre order by b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           max(b.tel) as tel,
+           (array_agg(b.mail order by b.cuando desc) filter (where b.mail is not null))[1] as mail,
+           array_agg(distinct b.fuente) as fuentes,
+           max(b.cuando) as ultima,
+           (array_agg(b.datos || jsonb_build_object('fuente', b.fuente, 'ref', b.ref) order by b.cuando desc))[1] as ultimo,
+           count(*) filter (where b.fuente = 'tienda') as compras_tienda,
+           coalesce(sum(b.monto) filter (where b.fuente = 'tienda'), 0) as gastado_tienda,
+           count(*) filter (where b.abierta) as abiertas,
+           max(b.nivel) as nivel,
+           bool_or(b.acepta) as acepta
+      from b group by b.clave
+  ),
+  pe as (select p.*, coalesce(e.etiquetas, '{}'::text[]) as etq from p left join e on e.clave = p.clave),
+  filtrado as (
+    select * from pe
+     where q is null
+        or lower(coalesce(pe.nombre, '')) like '%' || q || '%'
+        or coalesce(pe.mail, '') like '%' || q || '%'
+        or (qd is not null and length(qd) >= 3 and coalesce(pe.tel, '') like '%' || qd || '%')
+        or exists (select 1 from unnest(pe.etq) x where lower(x) like '%' || q || '%')
+  )
+  select jsonb_build_object(
+           'cuentas', jsonb_build_object(
+             'todos', count(*),
+             'tienda', count(*) filter (where 'tienda' = any(fuentes)),
+             'carrito', count(*) filter (where 'carrito' = any(fuentes)),
+             'no_compra', count(*) filter (where 'no_compra' = any(fuentes)),
+             'club', count(*) filter (where 'club' = any(fuentes))),
+           'contactos', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'clave', x.clave, 'nombre', x.nombre, 'tel', x.tel, 'mail', x.mail, 'fuentes', to_jsonb(x.fuentes),
+                      'ultima', x.ultima, 'ultimo', x.ultimo, 'compras_tienda', x.compras_tienda,
+                      'gastado_tienda', x.gastado_tienda, 'abiertas', x.abiertas, 'nivel', x.nivel,
+                      'acepta', x.acepta, 'etiquetas', to_jsonb(x.etq))
+                    order by x.ultima desc)
+               from (select * from filtrado
+                      where p_fuente is null or p_fuente = any(fuentes)
+                      order by ultima desc
+                      limit greatest(coalesce(p_limite, 300), 1)) x), '[]'::jsonb))
+    into salida
+    from filtrado;
+  return salida;
+end;
+$$;
+grant execute on function crm_contactos(text, text, text, integer) to anon, authenticated;
+
+/* La ficha de una persona: sus datos, el Club y todo lo que pasó, con las
+   notas del CRM en el medio. */
+create or replace function crm_contacto(p_pin text, p_clave text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  /* Con prefijo: "tel" y "mail" son también columnas de lo que se consulta,
+     y PL/pgSQL no sabría a cuál le hablan. */
+  v_filas jsonb; v_tel text; v_mail text; v_nombre text; v_acepta boolean; v_etq jsonb;
+  socio_id bigint; socio jsonb; historia jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if coalesce(trim(p_clave), '') = '' then return null; end if;
+
+  /* Lo de esta persona, lo más nuevo primero. En una variable y no en una
+     tabla temporal: es poco, y una función con permisos de dueño no tiene
+     por qué andar creando tablas. */
+  select coalesce(jsonb_agg(to_jsonb(b) order by b.cuando desc), '[]'::jsonb) into v_filas
+    from crm_contactos_base() b where b.clave = p_clave;
+  if jsonb_array_length(v_filas) = 0 then return null; end if;
+
+  select max(x.e->>'tel'),
+         (array_agg(x.e->>'mail' order by x.i) filter (where x.e->>'mail' is not null))[1],
+         (array_agg(x.e->>'nombre' order by x.i) filter (where x.e->>'nombre' is not null))[1],
+         bool_or((x.e->>'acepta')::boolean)
+    into v_tel, v_mail, v_nombre, v_acepta
+    from jsonb_array_elements(v_filas) with ordinality as x(e, i);
+  select coalesce(to_jsonb(array_agg(distinct t order by t)), '[]'::jsonb) into v_etq
+    from jsonb_array_elements(v_filas) as x(e), jsonb_array_elements_text(x.e->'etiquetas') as t;
+
+  select c.id into socio_id from club_clientes c
+   where c.baja is null
+     and ((v_tel is not null and club_tel10(c.telefono) = v_tel) or (v_mail is not null and lower(trim(c.mail)) = v_mail))
+   order by (v_tel is not null and club_tel10(c.telefono) = v_tel) desc, c.creado
+   limit 1;
+  if socio_id is not null then
+    select jsonb_build_object('nombre', v.nombre, 'nivel', v.nivel, 'puntos', v.puntos, 'compras', v.compras,
+                              'gastado', v.gastado, 'ultima_compra', v.ultima_compra, 'desde', v.creado, 'local', v.local_alta)
+      into socio from v_club_clientes v where v.id = socio_id;
+  end if;
+
+  select coalesce(jsonb_agg(h order by (h->>'cuando')::timestamptz desc), '[]'::jsonb) into historia
+    from (
+      select jsonb_build_object('fuente', x.e->>'fuente', 'ref', (x.e->>'ref')::bigint, 'cuando', x.e->'cuando',
+                                'datos', x.e->'datos') as h
+        from jsonb_array_elements(v_filas) as x(e)
+      union all
+      select jsonb_build_object('fuente', 'nota', 'ref', ev.ref, 'cuando', ev.cuando,
+                                'datos', jsonb_build_object('de', ev.fuente, 'quien', ev.quien, 'texto', ev.detalle))
+        from crm_eventos ev
+       where ev.tipo = 'nota'
+         and exists (select 1 from jsonb_array_elements(v_filas) as x(e)
+                      where x.e->>'fuente' = ev.fuente and (x.e->>'ref')::bigint = ev.ref)
+    ) t;
+
+  return jsonb_build_object(
+    'persona', jsonb_build_object('clave', p_clave, 'nombre', v_nombre, 'tel', v_tel, 'mail', v_mail,
+                                  'acepta', v_acepta, 'etiquetas', v_etq),
+    'socio', socio, 'historia', historia);
+end;
+$$;
+grant execute on function crm_contacto(text, text) to anon, authenticated;
+
+select 'listo: los Contactos del CRM' as "SQL 61";

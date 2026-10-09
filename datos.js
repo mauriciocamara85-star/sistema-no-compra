@@ -1240,6 +1240,19 @@ var base = {
     return funcion('crm_cliente', { p_pin: pin, p_fuente: fuente, p_ref: ref });
   },
 
+  /** Contactos (SQL 61): una fila por persona, de todos lados. El buscador
+      y la pastilla se resuelven en la base, que es la que tiene a todos. */
+  crmContactos: function (pin, buscar, fuente, limite) {
+    return funcion('crm_contactos', {
+      p_pin: pin, p_buscar: buscar || null, p_fuente: fuente || null, p_limite: limite || 300
+    });
+  },
+
+  /** La ficha de una persona: sus datos, el Club y todo lo que pasó. */
+  crmContacto: function (pin, clave) {
+    return funcion('crm_contacto', { p_pin: pin, p_clave: clave });
+  },
+
   /** El descuento atado al teléfono, desde la ficha del cliente. */
   darDescuento: function (pin, registro, pct, dias, quien) {
     return funcion('dar_descuento', {

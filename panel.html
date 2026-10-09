@@ -307,6 +307,31 @@
   .lote .btn { min-height: 38px; }
   @media (max-width: 899px) { .lote { bottom: 86px; } }
 
+  /* ── Contactos (09/10/2026): una fila por persona, como el Inbox de Kommo ── */
+  #vistaContactos { max-width: 900px; }
+  .ct-controles { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
+  .ct-controles .atajos { margin: 0; }
+  .ct-lista { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+  .ct-fila { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 12px; width: 100%; padding: 12px 14px;
+             text-align: left; border-bottom: 1px solid var(--line); background: none; cursor: pointer; }
+  .ct-fila:last-child { border-bottom: 0; }
+  .ct-fila:hover { background: var(--surface-2); }
+  .ct-fila.abierta { background: var(--acc-soft); }
+  .ct-avatar { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
+               background: var(--surface-3); color: var(--txt-2); font: 700 14px/1 var(--sans); }
+  .ct-cuerpo { min-width: 0; display: grid; gap: 4px; }
+  .ct-cab { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+  .ct-cab b { flex: 1; min-width: 0; font-size: 14.5px; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ct-hora { flex: none; font-size: 12px; color: var(--txt-3); }
+  .ct-origen { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; }
+  .ct-origen .pill { font-size: 11px; padding: 1px 8px; }
+  .ct-ultimo { font-size: 13px; color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ct-mas { padding: 12px 14px; font-size: 12.5px; color: var(--txt-3); text-align: center; }
+  .ct-vacio { padding: 26px 14px; text-align: center; color: var(--txt-3); font-size: 13.5px; }
+  .ct-resumen { margin-top: 8px; color: var(--txt-2); }
+  .ct-noacepta { margin-top: 6px; color: var(--txt-3); font-size: 12.5px; }
+  .hist li.h-compra::before { background: var(--ok); }
+
   /* Las notas del historial: cada una con su fecha y quién la escribió. */
   .nota-fila { display: flex; gap: 8px; align-items: flex-end; }
   .nota-fila textarea { flex: 1; min-height: 46px; }
@@ -729,6 +754,19 @@
   <div class="tablero" id="tablero"></div>
   </div>
 
+  <!-- Contactos (SQL 61): una fila por persona, venga de donde venga,
+       como el Inbox de Kommo. Cuando esté Meta, en su ficha van los mensajes. -->
+  <section id="vistaContactos" hidden>
+    <div class="ct-controles">
+      <div class="buscador">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <input type="search" id="ctBusca" placeholder="Buscar por nombre, teléfono, mail o etiqueta…" autocomplete="off">
+      </div>
+      <div class="atajos" id="ctFuentes" hidden></div>
+    </div>
+    <div id="ctLista"></div>
+  </section>
+
   <!-- Los números del CRM (SQL 51), como el panel de Kommo. -->
   <section id="vistaNumeros" hidden>
     <div class="num-filtros">
@@ -970,7 +1008,7 @@
     pintarWhoami();
     traerAtencion();
 
-    vista = ['no_compra', 'carrito', 'numeros', 'plantillas'].indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : 'no_compra';
+    vista = ['no_compra', 'carrito', 'contactos', 'numeros', 'plantillas'].indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : 'no_compra';
     /* El botón del aviso de Telegram ("Casi pagaron") trae #casi-pago:
        se abre en Carritos, mostrando sólo esos. */
     if (location.hash === '#casi-pago') {
@@ -1194,8 +1232,8 @@
   /* ═══ Las vistas ═════════════════════════════════════════════════════════ */
   function pintarVistas() {
     var pend = function (l) { return l.filter(function (r) { return columnaDe(r) === 'Pendiente'; }).length; };
-    var ops = [['no_compra', 'No Compra', pend(registros)], ['carrito', 'Carritos', pend(carritos)], ['numeros', 'Números', null],
-               ['plantillas', 'Plantillas', null]];
+    var ops = [['no_compra', 'No Compra', pend(registros)], ['carrito', 'Carritos', pend(carritos)], ['contactos', 'Contactos', null],
+               ['numeros', 'Números', null], ['plantillas', 'Plantillas', null]];
     $('vistas').innerHTML = ops.map(function (o) {
       return '<button type="button" role="tab" aria-selected="' + (o[0] === vista) + '"' + (o[0] === vista ? ' class="sel"' : '') +
         ' data-vista="' + o[0] + '">' + o[1] +
@@ -1214,10 +1252,12 @@
   function pintarVista() {
     if (vista === 'numeros') { cargarNumeros(); }
     else if (vista === 'plantillas') { pintarPlantillas(); }
+    else if (vista === 'contactos') { cargarContactos(); }
     else { pintar(); }
   }
   function aplicarVista() {
     $('vistaTablero').hidden = vista !== 'no_compra' && vista !== 'carrito';
+    $('vistaContactos').hidden = vista !== 'contactos';
     $('vistaNumeros').hidden = vista !== 'numeros';
     $('vistaPlantillas').hidden = vista !== 'plantillas';
     /* El local sólo tiene sentido en los No Compra: los carritos son todos online. */
@@ -1657,7 +1697,14 @@
   /* ═══ La ficha del cliente ══════════════════════════════════════════════ */
   var fichaId = null;
   function abrirFicha(id) { fichaId = id; pintarFicha(); $('capaFicha').hidden = false; cargarHistorial(); cargarCliente(); }
-  function cerrarFicha() { fichaId = null; if ($('capaFicha')) { $('capaFicha').hidden = true; } }
+  function cerrarFicha() {
+    fichaId = null;
+    if (typeof CT !== 'undefined' && CT && CT.abierto) {
+      CT.abierto = null;
+      [].forEach.call(document.querySelectorAll('.ct-fila.abierta'), function (f) { f.classList.remove('abierta'); });
+    }
+    if ($('capaFicha')) { $('capaFicha').hidden = true; }
+  }
 
   function opciones(lista, actual) {
     return '<option value=""></option>' + lista.map(function (o) {
@@ -2036,7 +2083,7 @@
 
   /* Al historial: le escribió, guardó el contacto. Nunca frena lo que lo llamó. */
   function anotarEvento(r, tipo, detalle) {
-    if (!sql52) return;
+    if (!sql52 || !r.id) return;     // sin tarjeta (la ficha de un contacto) no hay dónde anotarlo
     base.crmEvento(pinGuardado(), r.fuente === 'carrito' ? 'carrito' : 'no_compra', r.id, tipo, detalle || null, quien || null)
       .then(function () { if (fichaId === r.id) { cargarHistorial(); } })
       .catch(function () {});
@@ -2048,10 +2095,11 @@
   function guardarContacto(r) {
     var tel = normalizarTel(r.whatsapp);
     if (!tel) return;
-    var donde = r.fuente === 'carrito' ? 'Tienda' : bonito(r.sucursal);
+    var donde = r.fuente === 'carrito' ? 'Tienda' : r.fuente === 'contacto' ? '' : bonito(r.sucursal);
     var nombre = (r.nombre || 'Cliente').trim() + ' · VDH' + (donde ? ' ' + donde : '');
     var vc = function (s) { return String(s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1'); };
-    var nota = r.fuente === 'carrito'
+    var nota = r.fuente === 'contacto' ? 'Cliente de VDH'
+      : r.fuente === 'carrito'
       ? 'Carrito de vdh.com.ar: ' + (r.producto || '')
       : 'No Compra: ' + (r.producto || 'sin producto anotado') + (r.talle ? ', talle ' + r.talle : '');
     var vcf = ['BEGIN:VCARD', 'VERSION:3.0', 'N:;' + vc(nombre) + ';;;', 'FN:' + vc(nombre), 'TEL;TYPE=CELL:+' + tel]
@@ -2865,8 +2913,10 @@
       });
     }
   }
+  /* El color de cada nivel del Club (con los nombres viejos, por si quedó alguno). */
+  var CLASE_NIVEL = { Silver: 'pill-silver', Gold: 'pill-gold', Black: 'pill-black', Plata: 'pill-silver', Oro: 'pill-gold', Platino: 'pill-black' };
   function lineaSocio(s) {
-    var cls = { Silver: 'pill-silver', Gold: 'pill-gold', Black: 'pill-black', Plata: 'pill-silver', Oro: 'pill-gold', Platino: 'pill-black' }[s.nivel] || 'pill-neutra';
+    var cls = CLASE_NIVEL[s.nivel] || 'pill-neutra';
     var dias = s.ultima_compra ? Math.floor((Date.now() - new Date(s.ultima_compra).getTime()) / 86400000) : null;
     var compras = Number(s.compras) || 0;
     return '<span class="pill ' + cls + '">' + esc(s.nivel || 'Socio') + '</span>' +
@@ -2894,6 +2944,193 @@
     if (!l.some(function (x) { return x.id === id; })) { avisar('info', 'Esa ficha ya no está en el tablero (los carritos se ven 45 días).'); return; }
     if (vista !== v) { cambiarVista(v); }
     abrirFicha(id);
+  }
+
+  /* ═══ Contactos (09/10/2026) ═════════════════════════════════════════════
+     Una fila por persona, venga de donde venga (SQL 61): los No Compra, los
+     carritos, el Club y los que compraron en vdh.com.ar. A la misma persona
+     se la reconoce por el teléfono y, si una vez dejó sólo el mail, por el
+     mail. Arriba, lo último que pasó, como el Inbox de Kommo. El buscador y
+     las pastillas los resuelve la base, que es la que tiene a todos. Cuando
+     esté Meta, en la ficha van los mensajes. */
+  var CT = { buscar: '', fuente: '', datos: null, error: '', pedido: 0, abierto: null, espera: 0 };
+  var FUENTES_CT = [['', 'Todos', 'todos'], ['tienda', 'Tienda', 'tienda'], ['carrito', 'Carritos', 'carrito'],
+                    ['no_compra', 'No Compra', 'no_compra'], ['club', 'Club', 'club']];
+  var NOMBRE_FUENTE = { tienda: 'Tienda', carrito: 'Carrito', no_compra: 'No Compra', club: 'Club' };
+  var ORDEN_FUENTES = ['tienda', 'carrito', 'no_compra', 'club'];
+
+  function cargarContactos() {
+    var n = ++CT.pedido;
+    if (!CT.datos && !CT.error) { $('ctLista').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'; }
+    base.crmContactos(pinGuardado(), CT.buscar, CT.fuente, 300)
+      .then(function (d) {
+        if (n !== CT.pedido) return;          // llegó tarde: ya se pidió otra cosa
+        CT.datos = d || { cuentas: {}, contactos: [] };
+        CT.error = '';
+        pintarContactos();
+      })
+      .catch(function (err) {
+        if (n !== CT.pedido) return;
+        if (err && err.sinSesion) { caducada(); return; }
+        CT.error = /crm_contactos|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red';
+        CT.datos = null;
+        pintarContactos();
+      });
+  }
+
+  function pintarContactos() {
+    var caja = $('ctLista'), fu = $('ctFuentes');
+    if (CT.error) {
+      fu.hidden = true;
+      caja.innerHTML = '<div class="vacio-vista"><b>' + (CT.error === 'falta' ? 'Falta un paso' : 'No se pudieron traer los contactos') + '</b>' +
+        (CT.error === 'falta' ? 'Para ver los contactos hay que correr el SQL 61 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
+      return;
+    }
+    if (!CT.datos) { return; }
+    var cu = CT.datos.cuentas || {}, l = CT.datos.contactos || [];
+    /* Una pastilla sin nadie no se muestra (salvo la que está puesta). */
+    fu.innerHTML = FUENTES_CT.map(function (f) {
+      var n = Number(cu[f[2]]) || 0;
+      if (f[0] && !n && CT.fuente !== f[0]) { return ''; }
+      return '<button type="button" class="chip' + (CT.fuente === f[0] ? ' sel' : '') + '" data-fuente="' + f[0] + '">' +
+        f[1] + '<span class="cuenta">' + n + '</span></button>';
+    }).join('');
+    fu.hidden = false;
+    [].forEach.call(fu.querySelectorAll('[data-fuente]'), function (b) {
+      b.onclick = function () { CT.fuente = b.dataset.fuente; cargarContactos(); };
+    });
+    var total = CT.fuente ? (Number(cu[CT.fuente]) || 0) : (Number(cu.todos) || 0);
+    caja.innerHTML = '<div class="ct-lista">' + (l.length
+      ? l.map(filaContacto).join('') +
+        (total > l.length ? '<div class="ct-mas">Se ven los ' + l.length + ' más recientes de ' + total + '. Buscá para encontrar a otro.</div>' : '')
+      : '<div class="ct-vacio">' + (CT.buscar ? 'Nadie con «' + esc(CT.buscar) + '».' : 'Todavía no hay nadie.') + '</div>') + '</div>';
+    [].forEach.call(caja.querySelectorAll('[data-clave]'), function (b) {
+      b.onclick = function () { abrirContacto(b.dataset.clave); };
+    });
+  }
+
+  function iniciales(n) {
+    var p = String(n || '').trim().split(/\s+/).filter(Boolean);
+    return p.length ? (p[0].charAt(0) + (p.length > 1 ? p[p.length - 1].charAt(0) : '')).toUpperCase() : '·';
+  }
+  function nombreContacto(c) { return (c && (c.nombre || (c.tel ? '+' + normalizarTel(c.tel) : '') || c.mail)) || 'Sin nombre'; }
+  function plata(n) { return PESOS.format(Math.round(Number(n) || 0)); }
+  function prendaYMas(d) { return d.producto ? d.producto + (Number(d.mas) > 0 ? ' y ' + d.mas + ' más' : '') : ''; }
+
+  /* Lo que pasó, dicho como lo diría alguien. */
+  function queFue(fuente, d) {
+    d = d || {};
+    var prenda = prendaYMas(d);
+    if (fuente === 'tienda') { return 'Compró ' + plata(d.total) + ' en vdh.com.ar' + (prenda ? ' · ' + prenda : ''); }
+    if (fuente === 'carrito') { return 'Dejó un carrito de ' + plata(d.total) + (d.casi_pago ? ' (casi pagó)' : '') + (prenda ? ' · ' + prenda : ''); }
+    if (fuente === 'no_compra') {
+      return 'Vino a ' + (bonito(d.local) || 'un local') + (d.producto ? ': buscaba ' + d.producto + (d.talle ? ' talle ' + d.talle : '') : ' y no compró');
+    }
+    if (fuente === 'club') {
+      return d.tipo === 'compra' ? 'Compró ' + plata(d.importe) + ' en ' + (bonito(d.local) || 'un local') + ' con el Club'
+                                 : 'Se hizo socio del Club' + (d.local ? ' en ' + bonito(d.local) : '');
+    }
+    return d.texto || '';
+  }
+
+  function pillsFuentes(fuentes, nivel) {
+    return ORDEN_FUENTES.filter(function (f) { return (fuentes || []).indexOf(f) > -1; }).map(function (f) {
+      if (f === 'club' && nivel) { return '<span class="pill ' + (CLASE_NIVEL[nivel] || 'pill-neutra') + '">Club · ' + esc(nivel) + '</span>'; }
+      return '<span class="pill pill-neutra">' + NOMBRE_FUENTE[f] + '</span>';
+    }).join('');
+  }
+
+  function filaContacto(c) {
+    var u = c.ultimo || {};
+    return '<button type="button" class="ct-fila' + (CT.abierto === c.clave ? ' abierta' : '') + '" data-clave="' + esc(c.clave) + '">' +
+      '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(c.nombre)) + '</span>' +
+      '<span class="ct-cuerpo">' +
+        '<span class="ct-cab"><b>' + esc(nombreContacto(c)) + '</b><span class="ct-hora">' + esc(c.ultima ? cuandoHist(c.ultima) : '') + '</span></span>' +
+        '<span class="ct-origen">' + pillsFuentes(c.fuentes, c.nivel) +
+          (c.etiquetas || []).slice(0, 2).map(function (e) { return '<span class="etq">' + esc(e) + '</span>'; }).join('') + '</span>' +
+        '<span class="ct-ultimo">' + esc(queFue(u.fuente, u)) + '</span>' +
+      '</span></button>';
+  }
+
+  /* La ficha de la persona, en el mismo panel de costado que las tarjetas. */
+  function abrirContacto(clave) {
+    fichaId = null;
+    CT.abierto = clave;
+    var c = ((CT.datos && CT.datos.contactos) || []).filter(function (x) { return x.clave === clave; })[0] || {};
+    $('fichaTit').textContent = nombreContacto(c);
+    $('fichaIn').innerHTML = '<div class="ficha-bloque"><p class="num-vacio">Cargando…</p></div>';
+    $('capaFicha').hidden = false;
+    [].forEach.call(document.querySelectorAll('.ct-fila'), function (f) { f.classList.toggle('abierta', f.dataset.clave === clave); });
+    base.crmContacto(pinGuardado(), clave)
+      .then(function (d) { if (CT.abierto === clave) { pintarContacto(d, c); } })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        if (CT.abierto === clave) { $('fichaIn').innerHTML = '<div class="ficha-bloque"><p class="num-vacio">No se pudo traer el contacto. Revisá la conexión.</p></div>'; }
+      });
+  }
+
+  function pintarContacto(d, c) {
+    if (!d || !d.persona) {
+      $('fichaIn').innerHTML = '<div class="ficha-bloque"><p class="num-vacio">No encontramos a esta persona.</p></div>';
+      return;
+    }
+    var p = d.persona, h = d.historia || [];
+    var nom = p.nombre || nombreContacto(c);
+    var tel = p.tel ? normalizarTel(p.tel) : '';
+    $('fichaTit').textContent = nom;
+    var de = function (f, tipo) { return h.filter(function (x) { return x.fuente === f && (!tipo || (x.datos || {}).tipo === tipo); }); };
+    var suma = function (l, k) { return l.reduce(function (a, x) { return a + (Number((x.datos || {})[k]) || 0); }, 0); };
+    var online = de('tienda'), local = de('club', 'compra'), nc = de('no_compra').length, ca = de('carrito').length;
+    var resumen = [];
+    if (online.length) { resumen.push((online.length === 1 ? '1 compra' : online.length + ' compras') + ' en vdh.com.ar (' + plata(suma(online, 'total')) + ')'); }
+    if (local.length) { resumen.push((local.length === 1 ? '1 compra' : local.length + ' compras') + ' en los locales (' + plata(suma(local, 'importe')) + ')'); }
+    if (nc) { resumen.push(nc === 1 ? 'vino 1 vez sin comprar' : 'vino ' + nc + ' veces sin comprar'); }
+    if (ca) { resumen.push(ca === 1 ? '1 carrito' : ca + ' carritos'); }
+    var txt = resumen.join(' · ');
+    $('fichaIn').innerHTML =
+      '<div class="ficha-bloque">' +
+        '<h3>Contacto</h3>' +
+        '<div class="ficha-dato"><b>' + esc(nom) + '</b></div>' +
+        (tel ? '<div class="ficha-dato"><span>WhatsApp:</span> +' + esc(tel) + '</div>' : '') +
+        (p.mail ? '<div class="ficha-dato"><span>Mail:</span> ' + esc(p.mail) + '</div>' : '') +
+        (d.socio ? '<div class="ficha-socio">' + lineaSocio(d.socio) + '</div>' : '') +
+        (txt ? '<div class="ficha-dato ct-resumen">' + esc(txt.charAt(0).toUpperCase() + txt.slice(1)) + '</div>' : '') +
+        (p.acepta === false ? '<div class="ct-noacepta">No aceptó recibir promociones.</div>' : '') +
+        '<div class="ficha-acc" style="margin-top:12px">' +
+          (tel ? '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="https://wa.me/' + esc(tel) + '">Escribirle por WhatsApp</a>' +
+                 '<button type="button" class="btn btn-sec btn-chico" id="ctGuardar">Guardar contacto</button>' : '') +
+          (p.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(p.mail) + '">Mail</a>' : '') +
+        '</div>' +
+        ((p.etiquetas || []).length ? '<div class="tj-etq" style="margin-top:12px">' + p.etiquetas.map(function (e) {
+          return '<span class="etq">' + esc(e) + '</span>'; }).join('') + '</div>' : '') +
+      '</div>' +
+      '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(h) + '</div>' +
+      '<div class="ficha-bloque"><h3>Mensajes</h3>' +
+        '<p class="num-vacio">Cuando conectemos el WhatsApp con Meta, acá van a estar los mensajes con esta persona.</p></div>';
+    if ($('ctGuardar')) {
+      $('ctGuardar').onclick = function () { guardarContacto({ fuente: 'contacto', nombre: nom, whatsapp: tel, mail: p.mail }); };
+    }
+    [].forEach.call($('fichaIn').querySelectorAll('[data-abrir]'), function (b) {
+      b.onclick = function () { var x = b.dataset.abrir.split(':'); irAFicha(x[0], Number(x[1])); };
+    });
+  }
+
+  /* Todo lo que pasó con la persona, lo último arriba. Lo que es una tarjeta
+     del CRM (un No Compra o un carrito) se puede abrir. */
+  function historiaContacto(h) {
+    if (!h.length) { return '<p class="num-vacio">Todavía no pasó nada.</p>'; }
+    return '<ol class="hist">' + h.map(function (x) {
+      var d = x.datos || {};
+      var tarjeta = x.fuente === 'no_compra' || x.fuente === 'carrito';
+      var clase = x.fuente === 'nota' ? 'nota' : (x.fuente === 'tienda' || d.tipo === 'compra') ? 'compra' : x.fuente;
+      var pie = cuandoHist(x.cuando) + (x.fuente === 'nota' && d.quien ? ' · ' + d.quien : '') +
+                (tarjeta && d.columna ? ' · ' + tituloDe(d.columna) : '');
+      return '<li class="h-' + esc(clase) + '">' +
+        '<span class="hist-que">' + (x.fuente === 'nota' ? '<span class="hist-nota">' + esc(d.texto || '') + '</span>' : esc(queFue(x.fuente, d))) + '</span>' +
+        '<span class="hist-pie">' + esc(pie) +
+          (tarjeta ? ' · <button type="button" class="btn-link" data-abrir="' + esc(x.fuente) + ':' + Number(x.ref) + '">Abrir</button>' : '') +
+        '</span></li>';
+    }).join('') + '</ol>';
   }
 
   /* ═══ El stock (SQL 56) ═════════════════════════════════════════════════
@@ -3147,6 +3384,13 @@
       if (eligiendo) { salirDeElegir(); return; }
       cerrarFicha();
     });
+    /* Contactos: el buscador espera un cuarto de segundo a que se termine
+       de escribir, así no se le pide a la base una vez por letra. */
+    $('ctBusca').oninput = function () {
+      var v = this.value.trim();
+      clearTimeout(CT.espera);
+      CT.espera = setTimeout(function () { CT.buscar = v; cargarContactos(); }, 250);
+    };
     $('loteMover').onchange = function () { var d = this.value; this.value = ''; if (d) { moverLote(d); } };
     $('loteEtq').onclick = abrirEtqLote;
     $('loteX').onclick = salirDeElegir;
