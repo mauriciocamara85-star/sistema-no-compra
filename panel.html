@@ -355,6 +355,8 @@
   .burbuja-pie .visto { color: #1D9BD1; }
   .burbuja-pie .fallo { color: var(--bad-txt); }
   .chat-nota { margin: 10px 0 0; font-size: 12.5px; color: var(--txt-3); }
+  .chat-escribir { margin-top: 10px; }
+  .chat-escribir textarea { min-height: 46px; max-height: 160px; font-size: 14px; line-height: 1.4; }
   .ct-resumen { margin-top: 8px; color: var(--txt-2); }
   .ct-noacepta { margin-top: 6px; color: var(--txt-3); font-size: 12.5px; }
   .hist li.h-compra::before { background: var(--ok); }
@@ -3020,7 +3022,7 @@
      pregunta lo mínimo (el último mensaje); si cambió, se trae la lista o la
      conversación abierta. Lo que se contesta desde Kommo no nos llega: queda
      una marca de que se contestó, sin el texto. */
-  var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0 };
+  var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0, borrador: {} };
 
   function cargarContactos() {
     var n = ++CT.pedido;
@@ -3223,16 +3225,52 @@
       var tipo = TIPO_MENSAJE[m.tipo];
       var cuerpo = otra ? 'Mensaje enviado desde Kommo. El texto no nos llega.'
         : (tipo ? '<span class="burbuja-tipo">' + tipo + '</span>' : '') + esc(m.texto || (tipo ? '' : 'Un mensaje que WhatsApp no deja ver acá'));
-      var pie = horaChat(f) + (m.sentido === 'sale' ? ' · ' + (QUIEN_MANDO[m.desde] || 'Nosotros') + vistoChat(m.estado) : '');
+      var pie = horaChat(f) + (m.sentido === 'sale' ? ' · ' + (QUIEN_MANDO[m.desde] || 'Nosotros') +
+                (m.desde === 'crm' && m.quien ? ' · ' + esc(m.quien) : '') + vistoChat(m.estado) : '');
       return sep + '<div class="burbuja ' + (m.sentido === 'entra' ? 'entra' : 'sale') + (otra ? ' otra' : '') + '">' +
         cuerpo + '<span class="burbuja-pie">' + pie + '</span></div>';
     }).join('');
-    var v = d.ventana ? new Date(d.ventana) : null;
-    var nota = v && v > new Date()
-      ? 'Se le puede contestar gratis hasta ' + diaChat(v).toLowerCase() + ' a las ' + horaChat(v) + '.'
-      : v ? 'Pasaron más de 24 horas desde que escribió: para escribirle primero hace falta una plantilla aprobada por Meta.' : '';
+    /* Contestar (SQL 64): sólo dentro de las 24 h desde su último mensaje,
+       que es gratis y es lo que Meta deja. Después, plantilla. */
+    var v = d.ventana ? new Date(d.ventana) : null, abierta = !!v && v > new Date();
+    var nota = abierta
+      ? 'Sale por el mismo número al que escribió y también se ve en el celular. Se le puede contestar gratis hasta ' +
+        diaChat(v).toLowerCase() + ' a las ' + horaChat(v) + '.'
+      : v ? 'Pasaron más de 24 horas desde que escribió: para escribirle primero hace falta una plantilla aprobada por Meta (va a estar con las campañas).' : '';
     return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3><div class="chat">' + html + '</div>' +
-      '<p class="chat-nota">' + esc(nota) + ' Contestar desde el CRM va a estar muy pronto; mientras tanto, desde el celular o Kommo.</p></div>';
+      (abierta ? '<div class="nota-fila chat-escribir"><textarea id="chatTexto" maxlength="4000" placeholder="Escribí la respuesta…" aria-label="Respuesta por WhatsApp"></textarea>' +
+                 '<button type="button" class="btn btn-wsp btn-chico" id="chatEnviar">Enviar</button></div>' : '') +
+      '<p class="chat-nota">' + esc(nota) + '</p></div>';
+  }
+  /* La caja de la respuesta: Enter manda (Shift+Enter, otra línea); en el
+     celular Enter es otra línea y se manda con el botón. Lo escrito se
+     guarda por persona, así un mensaje que llega no lo borra. */
+  function conectarChat(clave) {
+    var t = $('chatTexto'), b = $('chatEnviar');
+    if (!t || !b) { return; }
+    if (MS.borrador[clave]) { t.value = MS.borrador[clave]; }
+    t.oninput = function () { MS.borrador[clave] = t.value; };
+    var mandar = function () {
+      var texto = t.value.trim();
+      if (!texto || b.disabled) { return; }
+      b.disabled = true; b.textContent = 'Enviando…';
+      base.waEnviar(pinGuardado(), clave, texto, quien)
+        .then(function () {
+          MS.borrador[clave] = '';
+          t.value = '';
+          refrescarChat(clave);
+          if (vista === 'mensajes') { cargarMensajes(); }
+        })
+        .catch(function (err) {
+          if (err && err.sinSesion) { caducada(); return; }
+          avisar('err', (err && err.message) || 'No se pudo mandar.');
+        })
+        .then(function () { b.disabled = false; b.textContent = 'Enviar'; });
+    };
+    b.onclick = mandar;
+    t.onkeydown = function (ev) {
+      if (ev.key === 'Enter' && !ev.shiftKey && !(window.matchMedia && matchMedia('(pointer: coarse)').matches)) { ev.preventDefault(); mandar(); }
+    };
   }
   function bajarChat() {
     var c = document.querySelector('#chatBloque .chat');
@@ -3245,8 +3283,11 @@
       .then(function (d) {
         var b = $('chatBloque');
         if (CT.abierto !== clave || !b || !d) { return; }
+        var escribiendo = document.activeElement && document.activeElement.id === 'chatTexto';
         b.outerHTML = chatContacto(d);
+        conectarChat(clave);
         bajarChat();
+        if (escribiendo && $('chatTexto')) { $('chatTexto').focus(); }
       })
       .catch(function () {});
   }
@@ -3331,6 +3372,7 @@
     if ($('ctGuardar')) {
       $('ctGuardar').onclick = function () { guardarContacto({ fuente: 'contacto', nombre: nom, whatsapp: tel, mail: p.mail }); };
     }
+    conectarChat(p.clave);
     bajarChat();
     [].forEach.call($('fichaIn').querySelectorAll('[data-abrir]'), function (b) {
       b.onclick = function () { var x = b.dataset.abrir.split(':'); irAFicha(x[0], Number(x[1])); };

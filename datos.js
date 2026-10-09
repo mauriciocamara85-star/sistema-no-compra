@@ -1264,6 +1264,22 @@ var base = {
     return funcion('crm_mensajes_ultimo', { p_pin: pin });
   },
 
+  /** Contestar por WhatsApp desde el CRM (SQL 64). Lo manda la Edge
+   *  Function, que es la que tiene el token; la base comprueba el PIN y las
+   *  24 h. Rechaza con el porqué si no salió. */
+  waEnviar: function (pin, clave, texto, quien) {
+    return fetch(BASE + '/functions/v1/whatsapp', {
+      method: 'POST',
+      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'enviar', pin: pin, clave: clave, texto: texto, quien: quien || '' })
+    }).then(function (r) {
+      return r.json().catch(function () { return { ok: false, error: 'No se pudo mandar.' }; });
+    }).then(function (x) {
+      if (!x || !x.ok) { throw rechazo((x && x.error) || 'No se pudo mandar.'); }
+      return x;
+    });
+  },
+
   /** El descuento atado al teléfono, desde la ficha del cliente. */
   darDescuento: function (pin, registro, pct, dias, quien) {
     return funcion('dar_descuento', {

@@ -12,9 +12,13 @@
  *   POST con firma de Meta      Un aviso. Se comprueba la firma con la clave
  *                               secreta de la app y se le pasa a la base.
  *   POST {accion}               Para configurar desde acá, sin pantallas:
- *                               "estado", "suscribir" y "webhook". No
- *                               devuelven nada secreto y repetirlas no
- *                               cambia nada, por eso no piden PIN.
+ *                               "estado", "cuentas", "suscribir" y
+ *                               "webhook". No devuelven nada secreto y
+ *                               repetirlas no cambia nada, por eso no piden
+ *                               PIN.
+ *   POST {accion:"enviar"}      Contestar desde el CRM (SQL 64). Con PIN: la
+ *                               base lo comprueba, y también que estemos
+ *                               dentro de las 24 h, antes de mandar nada.
  *
  * ── Siempre contesta 200 a Meta ───────────────────────────────────────────
  * Igual que el de Kommo: un aviso que recibe un error se reintenta, y si el
@@ -39,8 +43,17 @@ const GRAPH = 'https://graph.facebook.com/v23.0';
 const AQUI = URL_BASE + '/functions/v1/whatsapp';
 const CAMPOS = 'messages,smb_message_echoes';
 
+/* El portfolio Vdhstore, dueño de la app: para listar las cuentas que ve. */
+const PORTFOLIO = '2808549986001115';
+
+// El CRM llama desde GitHub Pages: hace falta decirle al navegador que puede.
+const CORS = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 const json = (x: unknown, status = 200) =>
-  new Response(JSON.stringify(x), { status, headers: { 'Content-Type': 'application/json' } });
+  new Response(JSON.stringify(x), { status, headers: { 'Content-Type': 'application/json', ...CORS } });
 
 /** Firma HMAC-SHA256 del cuerpo, como la calcula Meta, en hexadecimal. */
 async function firmar(cuerpo: Uint8Array): Promise<string> {
@@ -58,16 +71,22 @@ function iguales(a: string, b: string): boolean {
   return d === 0;
 }
 
-/** Una llamada a Meta con el token del usuario del sistema. */
-async function meta(ruta: string, metodo = 'GET', datos?: Record<string, string>, token = TOKEN): Promise<any> {
+/** Una llamada a Meta con el token del usuario del sistema. Los mensajes
+ *  van en JSON (tienen partes adentro); lo demás, como formulario. */
+async function meta(ruta: string, metodo = 'GET', datos?: Record<string, unknown>, token = TOKEN, enJson = false): Promise<any> {
   const url = new URL(GRAPH + ruta);
-  let cuerpo: URLSearchParams | undefined;
+  let cuerpo: URLSearchParams | string | undefined;
+  const cabeceras: Record<string, string> = {};
   if (metodo === 'GET') {
     url.searchParams.set('access_token', token);
+  } else if (enJson) {
+    cuerpo = JSON.stringify(datos ?? {});
+    cabeceras['Content-Type'] = 'application/json';
+    cabeceras['Authorization'] = 'Bearer ' + token;
   } else {
-    cuerpo = new URLSearchParams({ ...(datos ?? {}), access_token: token });
+    cuerpo = new URLSearchParams({ ...(datos as Record<string, string> ?? {}), access_token: token });
   }
-  const r = await fetch(url, { method: metodo, body: cuerpo });
+  const r = await fetch(url, { method: metodo, body: cuerpo, headers: cabeceras });
   const x = await r.json().catch(() => ({}));
   // Los errores de Meta traen mensaje y código; nunca el token.
   if (!r.ok) return { error: { mensaje: x?.error?.message, codigo: x?.error?.code, sub: x?.error?.error_subcode } };
@@ -89,6 +108,26 @@ async function estado() {
     apps: await meta('/' + id + '/subscribed_apps'),
   })));
   return salida;
+}
+
+/** Las cuentas de WhatsApp a las que llega el token: las de Vdhstore y las
+ *  que otro portfolio (VDH) le compartió. Se lee de los permisos del token
+ *  (listar las del portfolio pediría business_management, que no tiene). */
+async function cuentas() {
+  // debug_token se pregunta con el token de la APP (id|clave secreta).
+  const app = await meta('/app?fields=id');
+  const d = await meta('/debug_token?input_token=' + encodeURIComponent(TOKEN), 'GET', undefined, app?.id + '|' + SECRETO);
+  if (!d?.data) return { error: d?.error ?? 'sin datos', configuradas: CUENTAS };
+  const ids = new Set<string>();
+  for (const s of d?.data?.granular_scopes ?? []) {
+    if (String(s.scope).startsWith('whatsapp_business')) (s.target_ids ?? []).forEach((x: string) => ids.add(x));
+  }
+  const lista = await Promise.all([...ids].map(async (id) => ({
+    id,
+    cuenta: await meta('/' + id + '?fields=name'),
+    numeros: await meta('/' + id + '/phone_numbers?fields=display_phone_number,verified_name,platform_type,status,is_on_biz_app'),
+  })));
+  return { portfolio: PORTFOLIO, configuradas: CUENTAS, alcanza: lista };
 }
 
 /** Suscribe la app a las cuentas: sin esto Meta no le manda nada. */
@@ -113,20 +152,67 @@ async function webhook() {
   return { r, ahora };
 }
 
-/** Le pasa el aviso a la base, que es la que lo desarma y lo guarda. */
-async function guardar(aviso: unknown): Promise<unknown> {
-  const r = await fetch(URL_BASE + '/rest/v1/rpc/wa_recibir', {
+/** Una función de la base, con permisos de servicio. */
+async function rpc(nombre: string, args: unknown): Promise<any> {
+  const r = await fetch(URL_BASE + '/rest/v1/rpc/' + nombre, {
     method: 'POST',
     headers: { apikey: SERVICIO, Authorization: 'Bearer ' + SERVICIO, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ p: aviso }),
+    body: JSON.stringify(args),
   });
   const texto = await r.text();
-  if (!r.ok) throw new Error(r.status + ': ' + texto.slice(0, 300));
+  if (!r.ok) {
+    let msg = texto;
+    try { msg = JSON.parse(texto).message ?? texto; } catch { /* queda el texto */ }
+    throw new Error(String(msg).slice(0, 300));
+  }
   try { return JSON.parse(texto); } catch { return texto; }
+}
+
+/** Le pasa el aviso a la base, que es la que lo desarma y lo guarda. */
+const guardar = (aviso: unknown) => rpc('wa_recibir', { p: aviso });
+
+/**
+ * Contestar desde el CRM. La base comprueba el PIN y las 24 h y dice a qué
+ * número y desde cuál; Meta lo manda; la base lo guarda con quién fue.
+ * Si Meta lo rechaza, no se guarda nada y se dice por qué.
+ */
+async function enviar(p: { pin?: string; clave?: string; texto?: string; quien?: string }) {
+  const texto = String(p.texto ?? '').trim();
+  if (!texto) return { ok: false, error: 'El mensaje está vacío.' };
+  if (texto.length > 4000) return { ok: false, error: 'El mensaje es demasiado largo.' };
+  let prep: any;
+  try {
+    prep = await rpc('wa_preparar_envio', { p_pin: String(p.pin ?? ''), p_clave: String(p.clave ?? '') });
+  } catch (e) {
+    return { ok: false, error: /PIN/.test(String(e)) ? 'PIN incorrecto.' : 'No se pudo preparar el envío.' };
+  }
+  if (!prep?.ok) {
+    return { ok: false, motivo: prep?.motivo, ventana: prep?.ventana,
+             error: prep?.motivo === 'ventana' ? 'Pasaron más de 24 horas desde que escribió: hace falta una plantilla.'
+                                               : 'Esta persona no escribió a nuestro WhatsApp.' };
+  }
+  const r = await meta('/' + prep.numero_id + '/messages', 'POST', {
+    messaging_product: 'whatsapp', recipient_type: 'individual', to: prep.tel,
+    type: 'text', text: { body: texto, preview_url: true },
+  }, TOKEN, true);
+  const wamid = r?.messages?.[0]?.id;
+  if (!wamid) {
+    console.error('whatsapp: Meta no aceptó el envío:', JSON.stringify(r?.error ?? r));
+    return { ok: false, error: 'WhatsApp no lo aceptó' + (r?.error?.mensaje ? ': ' + r.error.mensaje : '.'), codigo: r?.error?.codigo };
+  }
+  try {
+    await rpc('wa_anotar_envio', { p: { wamid, numero_id: prep.numero_id, numero: prep.numero, tel: prep.tel,
+                                        texto, quien: String(p.quien ?? '').slice(0, 60) } });
+  } catch (e) {
+    // Salió igual: el estado de Meta va a dejar la marca y la conversación sigue bien.
+    console.error('whatsapp: salió pero no se pudo guardar:', String(e));
+  }
+  return { ok: true, wamid };
 }
 
 Deno.serve(async (req) => {
   const url = new URL(req.url);
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
 
   // Meta comprobando la dirección.
   if (req.method === 'GET') {
@@ -160,14 +246,16 @@ Deno.serve(async (req) => {
   }
 
   // Configuración.
-  let pedido: { accion?: string } = {};
+  let pedido: { accion?: string; [k: string]: unknown } = {};
   try { pedido = JSON.parse(new TextDecoder().decode(cuerpo)); } catch { /* vacío */ }
   try {
+    if (pedido.accion === 'enviar') return json(await enviar(pedido as any));
     if (pedido.accion === 'estado') return json(await estado());
+    if (pedido.accion === 'cuentas') return json(await cuentas());
     if (pedido.accion === 'suscribir') return json(await suscribir());
     if (pedido.accion === 'webhook') return json(await webhook());
   } catch (e) {
-    return json({ error: String(e) }, 500);
+    return json({ ok: false, error: String(e) }, 500);
   }
-  return json({ error: 'accion: estado, suscribir o webhook' }, 400);
+  return json({ error: 'accion: enviar, estado, cuentas, suscribir o webhook' }, 400);
 });
