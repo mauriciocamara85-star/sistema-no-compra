@@ -774,6 +774,28 @@
     .chips-motivo .chip { min-height: 38px; }
     body { padding-bottom: 6px; }
   }
+  /* ── La bienvenida ──────────────────────────────────────────────────────
+     La ventana de la primera vez: local y nombre. Ver #bienvenida. */
+  .bienv { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px;
+           background: rgba(20, 20, 18, .5); }
+  .bienv[hidden] { display: none; }
+  .bienv-caja { width: min(600px, 100%); max-height: calc(100vh - 32px); overflow: auto;
+                background: var(--surface); border-radius: var(--r); box-shadow: var(--sombra-alta);
+                padding: 24px 22px 18px; animation: subir .45s var(--curva); }
+  .bienv-paso[hidden] { display: none; }
+  .bienv h2 { font: 700 22px/1.2 var(--display); color: var(--txt); margin-bottom: 4px; }
+  .bienv-sub { font-size: 14px; color: var(--txt-2); margin-bottom: 16px; }
+  .bienv-sub b { color: var(--txt); }
+  .bienv-espera { font-size: 14px; color: var(--txt-3); padding: 14px 0; }
+  .bienv-nuevo { display: flex; gap: 8px; margin-top: 12px; }
+  .bienv-nuevo[hidden] { display: none; }
+  .bienv-nuevo input { flex: 1; min-width: 0; }
+  .bienv-nuevo .btn { flex: none; }
+  .bienv-pie { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-top: 14px; }
+  .bienv-link { font: 600 13.5px/1.3 var(--sans); color: var(--txt-2); text-decoration: underline;
+                text-underline-offset: 3px; padding: 6px 0; }
+  .bienv-link:hover { color: var(--txt); }
+
   /* ── El saludo grande ───────────────────────────────────────────────────
      Abierta como app instalada no hay barra de navegador, y en una pantalla
      alta sobran entre 130 y 490px abajo del equipo. Medido: 1920x1080 en el
@@ -1067,6 +1089,38 @@
     <button type="button" class="btn btn-sec btn-chico" id="btnIdentLocal" onclick="alternarLocal()">Elegir</button>
   </div>
 
+  <!-- ── La bienvenida (08/10/2026, idea de Mauricio) ──
+       La primera vez que se abre el sistema en un aparato: en qué local está
+       y quién es. Antes había que encontrarlo solo, y en la PC quedaba
+       escondido abajo del menú ("Elegí tu local"). Queda guardado en el
+       aparato y lo usan la Carga, Beneficios y la Caja del Club. Una caja
+       habilitada ya sabe su local: arranca directo en "¿Quién sos?". -->
+  <div class="bienv" id="bienvenida" hidden>
+    <div class="bienv-caja" role="dialog" aria-modal="true" aria-labelledby="bienvTit1">
+      <div class="bienv-paso" id="bienvPaso1">
+        <h2 id="bienvTit1">¡Hola! ¿En qué local estás?</h2>
+        <p class="bienv-sub">Se elige una sola vez: queda guardado en este aparato.</p>
+        <div class="chips chips-local" id="bienvLocales"></div>
+        <div class="bienv-pie">
+          <button type="button" class="bienv-link" id="bienvOficina">No estoy en un local (oficina)</button>
+        </div>
+      </div>
+      <div class="bienv-paso" id="bienvPaso2" hidden>
+        <h2>¿Quién sos?</h2>
+        <p class="bienv-sub" id="bienvLocalTxt"></p>
+        <div class="chips chips-local" id="bienvVends"></div>
+        <div class="bienv-nuevo" id="bienvNuevo" hidden>
+          <input type="text" id="bienvNombre" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" aria-label="Tu nombre">
+          <button type="button" class="btn btn-pri" id="bienvEmpezar">Empezar</button>
+        </div>
+        <div class="bienv-pie">
+          <button type="button" class="bienv-link" id="bienvVolver">← Cambiar de local</button>
+          <button type="button" class="bienv-link" id="bienvNoEstoy">No estoy en la lista</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── El local ──
        Lo único que sigue abriéndose: son 14 sucursales y se contesta una vez
        por dispositivo. Elegido uno, el bloque se cierra solo. -->
@@ -1287,7 +1341,7 @@
   /* Claves de localStorage. */
   var K_LOCAL = 'nc_local', K_VEND = 'nc_vendedor', K_EQUIPO = 'nc_equipo',
       K_COLA = 'nc_cola', K_HOY = 'nc_hoy', K_METRICAS = 'nc_metricas',
-      K_ULTIMOS = 'nc_ultimos';
+      K_ULTIMOS = 'nc_ultimos', K_OFICINA = 'nc_oficina';
 
   /* Cuánto se puede corregir un registro. Tiene que coincidir con el
      intervalo de corregir_registro (funciones.sql), que es el que manda: si
@@ -1303,7 +1357,7 @@
   /* Sube a mano al publicar. Cuando un vendedor dice "a mí no me anda",
      esto dice qué versión tiene ESE celular: la app es PWA y puede quedar
      una vieja cacheada. */
-  var VERSION = '2026.09.24';
+  var VERSION = '2026.10.08';
 
   var local = '', motivo = '', talles = [];
   /* El producto del catálogo, o null si se escribió a mano. Lo segundo NO es
@@ -1823,8 +1877,14 @@
         // La lista del equipo también sale de acá: es la que pone a los que
         // todavía no cargaron nada este mes. Ver pintarEquipo().
         pintarEquipo(metricas);
+        bienvEspera = false;
+        pintarBienvPaso2();
       })
-      .catch(function () { /* sin señal: queda lo guardado */ });
+      .catch(function () {
+        /* sin señal: queda lo guardado (y en la bienvenida, escribirlo) */
+        bienvEspera = false;
+        pintarBienvPaso2();
+      });
   }
 
   /* ═══ Los números del local ═════════════════════════════════════════════
@@ -2198,6 +2258,108 @@
   function abrirLocal() {
     $('bloqueLocal').hidden = false;
     $('bloqueLocal').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  /* ═══ La bienvenida ═════════════════════════════════════════════════════
+     La primera vez en un aparato: local y nombre, en una ventana, antes de
+     tocar nada. Usa lo mismo que el menú —elegirLocal, fijarVendedor,
+     anotarme—, así que no hay dos formas de quedar identificado: hay una,
+     que ahora además se pregunta. Para cambiar después, el menú de siempre.
+
+     "Oficina" es para los aparatos que no están en un local (el de
+     Mauricio): queda anotado y la ventana no vuelve a salir. */
+  var bienvEspera = false;      // pidiendo el equipo del local elegido
+  var bienvEscribe = false;     // tocó "No estoy en la lista"
+
+  function debeDarBienvenida() {
+    return !leer(K_OFICINA) && (!local || !vendedor);
+  }
+
+  function abrirBienvenida() {
+    $('bienvLocales').innerHTML = LOCALES.map(function (l) {
+      return '<button type="button" class="chip" data-v="' + esc(l.v) + '">' + esc(l.t) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('bienvLocales').children, function (b) {
+      b.onclick = function () {
+        bienvEspera = true;
+        elegirLocal(b.dataset.v);          // guarda, trae el equipo y los números
+        bienvPaso(2);
+      };
+    });
+    $('bienvOficina').onclick = function () { guardar(K_OFICINA, '1'); cerrarBienvenida(); };
+    $('bienvVolver').onclick = function () { bienvPaso(1); };
+    $('bienvNoEstoy').onclick = function () { bienvEscribe = true; pintarBienvPaso2(); };
+    $('bienvEmpezar').onclick = bienvEscrito;
+    $('bienvNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); bienvEscrito(); } };
+    /* Con local ya elegido (una caja habilitada, o alguien que nunca puso
+       su nombre), el equipo ya se está pidiendo desde el arranque. */
+    bienvEspera = !!local && !equipo.length;
+    $('bienvenida').hidden = false;
+    bienvPaso(local ? 2 : 1);
+  }
+
+  function bienvPaso(n) {
+    $('bienvPaso1').hidden = n !== 1;
+    $('bienvPaso2').hidden = n !== 2;
+    if (n === 1) {
+      Array.prototype.forEach.call($('bienvLocales').children, function (b) {
+        b.classList.toggle('sel', b.dataset.v === local);
+      });
+      var b1 = $('bienvLocales').querySelector('.sel') || $('bienvLocales').firstChild;
+      if (b1) { b1.focus(); }
+      return;
+    }
+    bienvEscribe = false;
+    pintarBienvPaso2();
+  }
+
+  /* "¿Quién sos?": los del local como botones. Mientras llega la lista,
+     "buscando"; si el local todavía no tiene a nadie (o no hay señal la
+     primera vez), directo el campo para escribirlo. Se vuelve a pintar
+     cuando llega el equipo (ver traerEquipo). */
+  function pintarBienvPaso2() {
+    if ($('bienvenida').hidden || $('bienvPaso2').hidden) return;
+    var nom = '<b>' + esc(nombreLocal(local)) + '</b>', caja = $('bienvVends');
+    var conLista = equipo.length > 0;
+    var escribe = bienvEscribe || (!conLista && !bienvEspera);
+    if (conLista) {
+      $('bienvLocalTxt').innerHTML = 'Estás en ' + nom + '. Tocá tu nombre.';
+      caja.innerHTML = equipo.map(function (v) {
+        return '<button type="button" class="chip" data-v="' + esc(v) + '">' + esc(v) + '</button>';
+      }).join('');
+      Array.prototype.forEach.call(caja.children, function (b) {
+        b.onclick = function () {
+          escribiendo = false;
+          fijarVendedor(b.dataset.v);
+          cerrarBienvenida();
+        };
+      });
+    } else if (bienvEspera) {
+      $('bienvLocalTxt').innerHTML = 'Estás en ' + nom + '.';
+      caja.innerHTML = '<div class="bienv-espera">Buscando el equipo del local…</div>';
+    } else {
+      $('bienvLocalTxt').innerHTML = 'Estás en ' + nom + '. Escribí tu nombre: queda en la lista del local.';
+      caja.innerHTML = '';
+    }
+    var estabaCerrado = $('bienvNuevo').hidden;
+    $('bienvNuevo').hidden = !escribe;
+    $('bienvNoEstoy').hidden = escribe || !conLista;
+    if (escribe && estabaCerrado) {
+      $('bienvNombre').value = '';
+      setTimeout(function () { $('bienvNombre').focus(); }, 30);
+    }
+  }
+
+  function bienvEscrito() {
+    var n = $('bienvNombre').value.trim();
+    if (!n) { $('bienvNombre').focus(); return; }
+    anotarme(n);                         // queda acá y entra en la lista del local
+    cerrarBienvenida();
+  }
+
+  function cerrarBienvenida() {
+    $('bienvenida').hidden = true;
+    pintarIdentidad();
   }
 
   /* ═══ Validación ════════════════════════════════════════════════════════ */
@@ -2685,6 +2847,7 @@
     conectarQuien();
     pintarIdentidad();
     pintarUltimos();
+    if (debeDarBienvenida()) { abrirBienvenida(); }
 
     // Enter en un campo del formulario pasa al siguiente, no guarda: es
     // demasiado fácil mandar el registro a medio llenar desde el teclado.

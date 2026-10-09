@@ -40,7 +40,7 @@
      Los 16px no son un descuido de escala: con menos, iOS hace zoom solo al
      tocar el campo y descoloca la cabecera entera. Recién en la PC, donde
      eso no pasa, baja a 12 y vuelve a parecer el subtítulo que era. */
-  input.whoami {
+  .whoami {
     display: block; width: 100%;
     background: none;
     border: 0; border-bottom: 1px dashed var(--line-campo);
@@ -49,17 +49,25 @@
     font: 500 16px/1.3 var(--sans);
     color: var(--txt-2);
   }
-  input.whoami::placeholder { color: var(--txt-3); }
-  input.whoami:focus {
+  /* Desde el 08/10/2026 es un desplegable con los de Atención al Cliente
+     (Configuración), para que "Mau", "Mauri" y "Mauricio" no sean tres
+     personas en los números. Se ve igual que el campo que era: texto con
+     la raya punteada, más la flechita. */
+  select.whoami {
+    border-radius: 0; padding: 2px 18px 2px 0; min-height: 0;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7'%3E%3Cpath d='M1 1l4.5 5L10 1' stroke='%238A857C' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 2px center;
+    cursor: pointer;
+  }
+  .whoami:focus {
     outline: none; box-shadow: none;
-    background: none;
-    border-bottom-color: var(--acc);
+    border-color: transparent; border-bottom-color: var(--acc);
     color: var(--txt);
   }
+  select.whoami:focus { background-color: transparent; }
   /* Sin nombre y queriendo guardar: el mismo rojo con el que el formulario de
      carga marca el vendedor que falta. */
-  input.whoami.mal { border-bottom-color: var(--bad); color: var(--bad-txt); }
-  @media (min-width: 900px) { input.whoami { font-size: 12px; } }
+  .whoami.mal { border-bottom-color: var(--bad); color: var(--bad-txt); }
+  @media (min-width: 900px) { .whoami, select.whoami { font-size: 12px; padding-top: 2px; padding-bottom: 2px; } }
 
   /* Portón del PIN */
   .porton { max-width: 380px; margin: 8vh auto 0; padding: 0 20px; text-align: center; }
@@ -267,6 +275,13 @@
   .col-cab i.c-ok { background: var(--ok); }
   .col-vacia { padding: 26px 12px; text-align: center; font-size: 13px; color: var(--txt-3);
                border: 1.5px dashed var(--line); border-radius: var(--r-sm); }
+  /* Los carritos de más de una semana, juntos al final de Pendiente. */
+  .col-viejos { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%;
+                margin: 2px 0 9px; padding: 11px 12px; border: 1.5px dashed var(--line); border-radius: var(--r-sm);
+                background: none; font: 600 13px/1.2 var(--sans); color: var(--txt-2); cursor: pointer; }
+  .col-viejos:hover { border-color: var(--line-alta); color: var(--txt); }
+  .col-viejos .cuenta { font-size: 11.5px; font-weight: 700; padding: 1px 8px; border-radius: var(--r-pill);
+                        background: var(--surface-3); color: var(--txt-2); }
 
   /* La tarjeta: sin selección de texto ni el menú del toque largo, que
      se pelean con el arrastre. */
@@ -555,9 +570,8 @@
       </div>
       <div class="marca-txt">
         <h1>CRM</h1>
-        <!-- Quién sigue: es un CAMPO, no un rótulo. Ver input.whoami arriba. -->
-        <input id="whoami" class="whoami" type="text" placeholder="Quién sigue"
-               autocomplete="off" autocapitalize="words" aria-label="Quién hace el seguimiento">
+        <!-- Quién sigue: es un CAMPO, no un rótulo. Ver .whoami arriba. -->
+        <select id="whoami" class="whoami" aria-label="Quién hace el seguimiento"></select>
       </div>
     </div>
     <div class="head-acciones">
@@ -731,6 +745,7 @@
   <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="quienTit">
     <h2 id="quienTit">¿Quién sos?</h2>
     <p>Queda anotado en cada cliente que movés o le escribís.</p>
+    <div class="plantillas" id="quienChips"></div>
     <div class="campo"><input id="quienNombre" type="text" autocomplete="off" autocapitalize="words" placeholder="Tu nombre"></div>
     <div class="modal-pie">
       <button type="button" class="btn btn-sec" id="quienCancelar">Cancelar</button>
@@ -875,7 +890,8 @@
     document.body.classList.add('hay-rail');
     $('btnRefrescar').hidden = false;
     $('btnSalir').hidden = false;
-    $('whoami').value = quien;
+    pintarWhoami();
+    traerAtencion();
 
     vista = ['no_compra', 'carrito', 'numeros', 'plantillas'].indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : 'no_compra';
     aplicarVista();
@@ -1373,6 +1389,8 @@
   /* "Hoy tenés 3 recordatorios": los de esta vista se pueden ver solos; si
      los hay en la otra, se avisa y se puede ir. */
   var soloHoy = false;
+  /* Desde cuántos días un carrito pendiente se junta abajo, y si se ven. */
+  var DIAS_VIEJO = 7, verViejos = false;
   function pintarAvisoHoy() {
     var caja = $('avisoHoy');
     var cuantos = function (l) { return l.filter(vencido).length; };
@@ -1421,11 +1439,28 @@
         if (frio(a) !== frio(b)) { return frio(b) - frio(a); }
         return c.e === 'Pendiente' ? (b.dias - a.dias) : (a.dias - b.dias);
       });
+      /* Carritos: los que llevan más de una semana sin que nadie los toque
+         van juntos al final de Pendiente. Siguen ahí —un toque los abre—,
+         pero no tapan a los de esta semana, que son los que todavía compran
+         (08/10/2026: de 64 pendientes, 55 tenían más de una semana). Uno con
+         recordatorio para hoy no se esconde nunca. */
+      var total = dentro.length, viejos = [];
+      if (vista === 'carrito' && c.e === 'Pendiente') {
+        viejos = dentro.filter(function (r) { return r.dias >= DIAS_VIEJO && !vencido(r); });
+        dentro = dentro.filter(function (r) { return viejos.indexOf(r) === -1; });
+      }
       return '<section class="col" data-col="' + esc(c.e) + '">' +
-        '<div class="col-cab"><i class="' + c.c + '"></i><b>' + esc(c.t) + '</b><span class="cuenta">' + dentro.length + '</span></div>' +
-        (dentro.length ? dentro.map(tarjeta).join('') : '<div class="col-vacia">Nadie acá</div>') +
+        '<div class="col-cab"><i class="' + c.c + '"></i><b>' + esc(c.t) + '</b><span class="cuenta">' + total + '</span></div>' +
+        (dentro.length ? dentro.map(tarjeta).join('') : (viejos.length ? '' : '<div class="col-vacia">Nadie acá</div>')) +
+        (viejos.length
+          ? '<button type="button" class="col-viejos" id="btnViejos" aria-expanded="' + verViejos + '">' +
+              '<span>' + (verViejos ? 'Esconder los de más de una semana' : 'Más de una semana') + '</span>' +
+              '<span class="cuenta">' + viejos.length + '</span></button>' +
+            (verViejos ? viejos.map(tarjeta).join('') : '')
+          : '') +
       '</section>';
     }).join('');
+    if ($('btnViejos')) { $('btnViejos').onclick = function () { verViejos = !verViejos; pintar(); }; }
     conectar();
     pintarPista();
   }
@@ -2092,12 +2127,58 @@
      cuando el nombre sirve para algo —ahí va a la columna Responsable de la
      fila del cliente—, y queda a la vista en la cabecera para que el del
      turno siguiente lo corrija sin buscarlo en ningún menú. */
+  /* Desde el 08/10/2026 el nombre se elige de la lista de Atención al
+     Cliente, que se arma en Configuración. "Otro…" sigue dejando escribirlo:
+     el día que entra alguien nuevo y nadie lo cargó, tiene que poder
+     trabajar igual. Un nombre guardado que no está en la lista no se pierde:
+     queda como una opción más. */
+  var ATENCION = [], OTRO_QUIEN = '__otro__';
+
+  function traerAtencion() {
+    base.atencion()
+      .then(function (filas) {
+        ATENCION = (filas || []).map(function (f) { return String((f && f.nombre) || '').trim(); }).filter(Boolean);
+        pintarWhoami();
+      })
+      .catch(function () { /* sin señal: queda el nombre guardado y "Otro…" */ });
+  }
+
+  /* El de la lista escrito como en la lista ("mau" → "Mau"), o '' si no está. */
+  function deLaLista(n) {
+    var k = String(n || '').trim().toLowerCase();
+    for (var i = 0; i < ATENCION.length; i++) { if (ATENCION[i].toLowerCase() === k) { return ATENCION[i]; } }
+    return '';
+  }
+
+  function pintarWhoami() {
+    var sel = $('whoami');
+    var canon = deLaLista(quien);
+    if (canon && canon !== quien) { quien = canon; guardar(K_QUIEN, quien); }
+    var nombres = ATENCION.slice();
+    if (quien && !canon) { nombres.push(quien); }
+    sel.innerHTML = (quien ? '' : '<option value="">¿Quién sos?</option>') +
+      nombres.map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('') +
+      '<option value="' + OTRO_QUIEN + '">Otro…</option>';
+    sel.value = quien || '';
+  }
+
+  function ponerQuien(n) {
+    quien = String(n || '').trim();
+    guardar(K_QUIEN, quien);
+    pintarWhoami();
+    if (quien) { $('whoami').classList.remove('mal'); }
+  }
+
   function conectarQuien() {
-    var campo = $('whoami');
-    campo.oninput = function () {
-      quien = campo.value.trim();
-      guardar(K_QUIEN, quien);
-      if (quien) campo.classList.remove('mal');
+    var sel = $('whoami');
+    sel.onchange = function () {
+      if (sel.value === OTRO_QUIEN) {
+        /* Escribirlo: la misma ventanita, sin nada que siga después. */
+        sel.value = quien || '';
+        abrirQuien(null, true);
+        return;
+      }
+      ponerQuien(sel.value);
     };
   }
 
@@ -2110,19 +2191,30 @@
   var despuesQuien = null;
   function exigirQuien(seguir) {
     if (quien) return true;
-    despuesQuien = seguir || null;
-    $('quienNombre').value = '';
-    $('modalQuien').hidden = false;
-    setTimeout(function () { $('quienNombre').focus(); }, 50);
+    abrirQuien(seguir, false);
     return false;
   }
-  function confirmarQuien() {
-    var n = $('quienNombre').value.trim();
+  /* La ventanita: los de la lista como botones (un toque y listo) y, abajo,
+     el campo para escribirlo. Con "Otro…" se abre directo para escribir. */
+  function abrirQuien(seguir, escribir) {
+    despuesQuien = seguir || null;
+    var chips = $('quienChips');
+    chips.innerHTML = escribir ? '' : ATENCION.map(function (n) {
+      return '<button type="button" class="chip" data-n="' + esc(n) + '">' + esc(n) + '</button>';
+    }).join('');
+    chips.hidden = !chips.innerHTML;
+    [].forEach.call(chips.querySelectorAll('[data-n]'), function (b) {
+      b.onclick = function () { confirmarQuien(b.dataset.n); };
+    });
+    $('quienNombre').value = '';
+    $('quienNombre').placeholder = chips.hidden ? 'Tu nombre' : 'O escribí tu nombre';
+    $('modalQuien').hidden = false;
+    setTimeout(function () { (chips.hidden ? $('quienNombre') : chips.querySelector('.chip')).focus(); }, 50);
+  }
+  function confirmarQuien(elegido) {
+    var n = typeof elegido === 'string' ? elegido : $('quienNombre').value.trim();
     if (!n) { $('quienNombre').focus(); return; }
-    quien = n;
-    guardar(K_QUIEN, quien);
-    $('whoami').value = quien;
-    $('whoami').classList.remove('mal');
+    ponerQuien(deLaLista(n) || n);
     $('modalQuien').hidden = true;
     var sigue = despuesQuien; despuesQuien = null;
     if (sigue) { sigue(); }

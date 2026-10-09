@@ -1425,11 +1425,29 @@ function deLaBase_(f) {
 }
 
 /**
+ * Tienda Nube manda el nombre con la variante al final —"Remera X (Negro,
+ * S)"— y además la variante aparte. Sin esto la tarjeta decía "Remera X
+ * (Negro, S) · Negro, S" y el WhatsApp al cliente, "(Negro, S) (Negro, S)".
+ * Se saca sólo si lo de los paréntesis ES la variante: un "(Pack x3)" que
+ * es parte del nombre se queda.
+ */
+function sinVariante_(nombre, variante) {
+  var n = String(nombre || ''), v = String(variante || '').replace(/\s+/g, '').toLowerCase();
+  var m = n.match(/^(.*?)\s*\(([^()]*)\)\s*$/);
+  return v && m && m[2].replace(/\s+/g, '').toLowerCase() === v ? m[1] : n;
+}
+
+/**
  * Un carrito abandonado (SQL 51) con los mismos nombres que una ficha del No
  * Compra: el tablero, el arrastre y las plantillas los tratan igual.
  */
 function deCarrito_(k) {
-  var prods = Array.isArray(k.productos) ? k.productos : [];
+  var prods = (Array.isArray(k.productos) ? k.productos : []).map(function (x) {
+    var c = {};
+    for (var q in x) { c[q] = x[q]; }
+    c.nombre = sinVariante_(x.nombre, x.variante);
+    return c;
+  });
   var p = prods[0] || {};
   var total = Number(k.total) || 0;
   return {

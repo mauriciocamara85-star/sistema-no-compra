@@ -129,6 +129,11 @@
   .gente-txt { font-size: 13.5px; color: var(--txt-2); }
   .gente-txt b { color: var(--txt); font-weight: 700; }
   .gente-txt.flojo { color: var(--txt-3); }
+  /* Atención al cliente: sumar a alguien, y el PIN si hace falta. */
+  .at-fila { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+  .at-fila input { flex: 1; min-width: 0; }
+  .at-fila .btn { flex: none; }
+  #cajaAtencion .gente-txt { margin-top: 2px; }
   .gente-mas {
     margin-top: 8px;
     background: none; border: 0; padding: 0;
@@ -478,6 +483,16 @@
       <div class="esteEquipo-tit">Este equipo</div>
       <div class="esteEquipo-sub">Queda guardado acá. El formulario va a abrir directo con los vendedores de este local.</div>
       <div id="equipoActual"></div>
+    </div>
+
+    <!-- ── Atención al cliente (08/10/2026) ──
+         Los que siguen a los clientes en el CRM: es la lista del
+         desplegable "¿Quién sos?" de arriba del CRM. Mirarla es libre;
+         sumar o sacar a alguien pide el PIN. -->
+    <div class="bloque" id="cajaAtencion">
+      <h2 class="bloque-tit">Atención al cliente</h2>
+      <p class="bloque-sub">Los que siguen a los clientes en el CRM. Aparecen en su desplegable "¿Quién sos?". Sumar o sacar a alguien pide el PIN.</p>
+      <div id="atencionCuerpo"><div class="skel"></div></div>
     </div>
 
     <!-- ── Cómo se ve ───────────────────────────────────────────────────────
@@ -2889,6 +2904,92 @@
     }
   }
 
+  /* ═══ Atención al cliente ═══════════════════════════════════════════════
+     La tabla `atencion` ya existía (la usaba "quién lo creó" de los
+     cupones) pero no tenía pantalla: estaba vacía. Ahora es la lista del
+     CRM. No se borra a nadie: sacarlo lo deja inactivo, y los clientes y
+     cupones que tiene anotados siguen diciendo su nombre. */
+  var atencionPend = null;   // lo que se quería hacer cuando faltó el PIN
+
+  function pintarAtencion() {
+    var caja = $('atencionCuerpo');
+    base.atencion()
+      .then(function (filas) {
+        var nombres = (filas || []).map(function (f) { return f && f.nombre; }).filter(Boolean);
+        caja.innerHTML =
+          (nombres.length
+            ? '<div class="vends">' + nombres.map(function (n) {
+                return '<span class="vend">' + esc(n) +
+                       '<button type="button" data-sacar-at="' + esc(n) + '" title="Sacar a ' + esc(n) + '" aria-label="Sacar a ' + esc(n) + '">' + X + '</button></span>';
+              }).join('') + '</div>'
+            : '<p class="gente-txt flojo">Todavía no hay nadie. Sumá a los que atienden el CRM.</p>') +
+          '<div class="at-fila">' +
+            '<input type="text" id="atNombre" placeholder="Nombre, como lo van a ver" autocomplete="off" autocapitalize="words" aria-label="Nombre">' +
+            '<button type="button" class="btn btn-sec btn-chico" id="atSumar">Sumar</button>' +
+          '</div>' +
+          '<div class="at-fila" id="atPin" hidden>' +
+            '<input type="password" id="atPinTxt" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="current-password" aria-label="PIN">' +
+            '<button type="button" class="btn btn-pri btn-chico" id="atPinOk">Seguir</button>' +
+          '</div>';
+
+        var sumar = function () {
+          var n = $('atNombre').value.trim();
+          if (!n) { avisar('err', 'Escribí el nombre.'); $('atNombre').focus(); return; }
+          atencionHacer(n, true);
+        };
+        $('atSumar').onclick = sumar;
+        $('atNombre').onkeydown = function (e) { if (e.key === 'Enter') { sumar(); } };
+        var conPin = function () {
+          var v = $('atPinTxt').value.trim();
+          if (!v) { $('atPinTxt').focus(); return; }
+          guardarPinPromo(v);
+          var p = atencionPend; atencionPend = null;
+          if (p) { atencionHacer(p[0], p[1], true); }
+        };
+        $('atPinOk').onclick = conPin;
+        $('atPinTxt').onkeydown = function (e) { if (e.key === 'Enter') { conPin(); } };
+        [].forEach.call(caja.querySelectorAll('[data-sacar-at]'), function (b) {
+          b.onclick = function () {
+            var n = b.dataset.sacarAt;
+            if (!confirm('¿Sacar a ' + n + ' de Atención al cliente?\n\nNo se borra nada: los clientes que tiene anotados siguen diciendo su nombre, y se puede volver a sumar.')) { return; }
+            atencionHacer(n, false);
+          };
+        });
+      })
+      .catch(function () {
+        caja.innerHTML = '<p class="gente-txt flojo">No se pudo traer la lista. Revisá la señal y recargá.</p>';
+      });
+  }
+
+  /* Sumar (activo) o sacar. Sin PIN en esta pestaña, lo pide ahí mismo y
+     después sigue solo con lo que se estaba haciendo. */
+  function atencionHacer(nombre, activo, pinNuevo) {
+    if (!pinPromo()) {
+      atencionPend = [nombre, activo];
+      $('atPin').hidden = false;
+      $('atPinTxt').focus();
+      return;
+    }
+    base.atencionGuardar(pinPromo(), nombre, activo)
+      .then(function () {
+        avisar('ok', activo ? nombre + ' ya aparece en el CRM.' : nombre + ' quedó fuera de la lista.');
+        pintarAtencion();
+        /* Es el mismo PIN del Club: puesto acá, la pestaña del Club también se abre. */
+        if (pinNuevo) { pintarTodoElClub(); }
+      })
+      .catch(function (err) {
+        var m = (err && err.delServidor && err.message) || (err && err.message) || 'No se pudo guardar.';
+        if (/PIN/i.test(m)) {
+          guardarPinPromo('');
+          atencionPend = [nombre, activo];
+          $('atPin').hidden = false;
+          $('atPinTxt').value = '';
+          $('atPinTxt').focus();
+        }
+        avisar('err', m);
+      });
+  }
+
   /* ═══ Los locales ═══════════════════════════════════════════════════════ */
   function pintarLocales() {
     /* Arriba de los catorce va el OBJETIVO GENERAL: el que rige en el local
@@ -3076,6 +3177,7 @@
     iniciarTema();
     pintarEsteEquipo();
     cargar(false);
+    pintarAtencion();
     /* Viaje aparte del resto: pide PIN y puede fallar sola sin arrastrar a
        los objetivos, que no lo piden. */
     engancharClub();
