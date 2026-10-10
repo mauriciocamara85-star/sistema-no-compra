@@ -15,6 +15,8 @@
  *                               "estado", "suscribir" y "webhook". No
  *                               devuelven nada secreto y repetirlas no
  *                               cambia nada, por eso no piden PIN.
+ *                               "historial" (con numero_id) le pide a Meta
+ *                               los chats viejos del celular (coexistencia).
  *   POST {accion, pin, …}       Lo que usa el CRM, siempre con PIN:
  *       "enviar"                Contestar dentro de las 24 h (SQL 64).
  *       "plantillas"            Las plantillas de cada cuenta, como las tiene
@@ -66,7 +68,8 @@ const CUENTAS = (Deno.env.get('WA_CUENTAS') ?? '668621112856892').split(',').map
 const TOKENS: Record<string, string> = { WA_TOKEN: TOKEN, WA_TOKEN_VDH: Deno.env.get('WA_TOKEN_VDH') ?? '' };
 const GRAPH = 'https://graph.facebook.com/v23.0';
 const AQUI = URL_BASE + '/functions/v1/whatsapp';
-const CAMPOS = 'messages,smb_message_echoes';
+/* "history": los chats viejos del celular, cuando se piden (ver historial). */
+const CAMPOS = 'messages,smb_message_echoes,history';
 const CAMPOS_PLANTILLA = 'id,name,status,category,language,components,rejected_reason,parameter_format';
 
 // El CRM llama desde GitHub Pages: hace falta decirle al navegador que puede.
@@ -150,6 +153,18 @@ async function estado() {
     };
   }));
   return salida;
+}
+
+/** Coexistencia: pedirle a Meta los chats de los últimos 6 meses del
+ *  celular, si el negocio aceptó compartirlos al conectar. Se puede sólo en
+ *  las primeras 24 h después del alta. Llegan de a partes como avisos
+ *  "history", y la base los guarda enteros en wa_avisos: se pasan a
+ *  wa_mensajes después, con calma. */
+async function historial(p: { numero_id?: unknown }) {
+  const num = (await numeros()).find((n) => n.id === String(p.numero_id ?? ''));
+  if (!num) return { ok: false, error: 'Ese número no es nuestro.' };
+  const r = await meta('/' + num.id + '/smb_app_data', 'POST', { messaging_product: 'whatsapp', sync_type: 'history' }, num.token, true);
+  return r?.error ? { ok: false, error: r.error } : { ok: true, r };
 }
 
 /** Suscribe la app a las cuentas: sin esto Meta no le manda nada. */
@@ -484,6 +499,7 @@ Deno.serve(async (req) => {
       case 'estado': return json(await estado());
       case 'suscribir': return json(await suscribir());
       case 'webhook': return json(await webhook());
+      case 'historial': return json(await historial(pedido));
     }
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);

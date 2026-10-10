@@ -2559,3 +2559,331 @@ $$;
 grant execute on function crm_contacto(text, text) to anon, authenticated;
 
 select 'listo: plantillas de WhatsApp desde el CRM' as "SQL 65";
+
+
+-- ─────────────────────────── PARTE 66 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · LOS SEGMENTOS QUE SE ARMAN EN EL CRM
+--
+-- Correr en el editor SQL de Supabase.
+--
+-- Pedido de Mauricio (10/10/2026): "¿se pueden crear segmentos? Por ejemplo,
+-- gente del local que no compra hace 60 días". Un segmento son condiciones
+-- que se suman (dónde compró, hace cuánto, cuánto, el local, el Club, los
+-- carritos, los No Compra, WhatsApp, las etiquetas). Se guarda con un nombre
+-- y se pone al día solo: el que vuelve a comprar sale, el que cumple los 60
+-- días entra.
+--   · Las compras en los locales se conocen sólo de los socios del Club
+--     (BlueSoft no dice a quién le vendió). Con el POS propio, de todos.
+--   · Los que tienen la etiqueta "No escribir" quedan afuera siempre.
+--   · Todo detrás del PIN, como el resto del CRM.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists crm_segmentos (
+  id          bigserial primary key,
+  nombre      text not null,
+  reglas      jsonb not null default '{}'::jsonb,
+  creado_por  text,
+  creado      timestamptz not null default now(),
+  actualizado timestamptz not null default now()
+);
+alter table crm_segmentos enable row level security;
+revoke all on crm_segmentos from anon, authenticated;
+
+/* Una fila por persona (la misma "clave" que Contactos: el teléfono, o el
+   mail si nunca dejó teléfono), con lo que hace falta para filtrar. Los
+   locales van en minúscula, para comparar. Es un tipo propio para que
+   crm_cumple lea los campos directo (convertir cada persona a JSON por
+   cada segmento hacía la lista tres veces más lenta). */
+do $tipo$
+begin
+  if to_regtype('crm_persona') is null then
+    create type crm_persona as (
+      clave text, nombre text, tel text, mail text, fuentes text[], ultima timestamptz, ultimo jsonb,
+      ult_local timestamptz, n_local integer, gasto_local numeric,
+      ult_tienda timestamptz, n_tienda integer, gasto_tienda numeric,
+      socio boolean, nivel text, cumple date, ult_carrito timestamptz, ult_no_compra timestamptz, whatsapp boolean,
+      locales text[], locales_compra text[], etiquetas text[], etq text[], acepta boolean);
+  end if;
+end
+$tipo$;
+
+create or replace function crm_personas()
+returns setof crm_persona
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with b as (select * from crm_contactos_base()),
+  e as (
+    select b.clave, array_agg(distinct x order by x) as etiquetas
+      from b, unnest(b.etiquetas) x
+     where nullif(trim(x), '') is not null
+     group by b.clave
+  ),
+  cu as (
+    select distinct on (club_tel10(c.telefono)) club_tel10(c.telefono) as t10, c.cumple
+      from club_clientes c
+     where c.baja is null and club_tel10(c.telefono) is not null
+     order by club_tel10(c.telefono), c.creado
+  ),
+  g as (
+    select b.clave,
+           (array_agg(b.nombre order by (b.fuente = 'whatsapp'), b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           max(b.tel) as tel,
+           (array_agg(b.mail order by b.cuando desc) filter (where b.mail is not null))[1] as mail,
+           array_agg(distinct b.fuente) as fuentes,
+           max(b.cuando) as ultima,
+           (array_agg(b.datos || jsonb_build_object('fuente', b.fuente, 'ref', b.ref) order by b.cuando desc))[1] as ultimo,
+           max(b.cuando) filter (where b.fuente = 'club' and b.datos->>'tipo' = 'compra') as ult_local,
+           (count(*) filter (where b.fuente = 'club' and b.datos->>'tipo' = 'compra'))::integer as n_local,
+           coalesce(sum(b.monto) filter (where b.fuente = 'club' and b.datos->>'tipo' = 'compra'), 0) as gasto_local,
+           max(b.cuando) filter (where b.fuente = 'tienda') as ult_tienda,
+           (count(*) filter (where b.fuente = 'tienda'))::integer as n_tienda,
+           coalesce(sum(b.monto) filter (where b.fuente = 'tienda'), 0) as gasto_tienda,
+           coalesce(bool_or(b.fuente = 'club' and b.datos->>'tipo' = 'alta'), false) as socio,
+           max(b.nivel) as nivel,
+           max(b.cuando) filter (where b.fuente = 'carrito') as ult_carrito,
+           max(b.cuando) filter (where b.fuente = 'no_compra') as ult_no_compra,
+           coalesce(bool_or(b.fuente = 'whatsapp'), false) as whatsapp,
+           coalesce(array_agg(distinct lower(trim(b.datos->>'local'))) filter (where nullif(trim(b.datos->>'local'), '') is not null),
+                    '{}'::text[]) as locales,
+           coalesce(array_agg(distinct lower(trim(b.datos->>'local')))
+                      filter (where b.fuente = 'club' and b.datos->>'tipo' = 'compra' and nullif(trim(b.datos->>'local'), '') is not null),
+                    '{}'::text[]) as locales_compra,
+           bool_or(b.acepta) as acepta
+      from b
+     group by b.clave
+  )
+  select g.clave, g.nombre, g.tel, g.mail, g.fuentes, g.ultima, g.ultimo, g.ult_local, g.n_local, g.gasto_local,
+         g.ult_tienda, g.n_tienda, g.gasto_tienda, g.socio, g.nivel, cu.cumple, g.ult_carrito, g.ult_no_compra, g.whatsapp,
+         g.locales, g.locales_compra, coalesce(e.etiquetas, '{}'::text[]),
+         coalesce((select array_agg(distinct lower(trim(x))) from unnest(e.etiquetas) x), '{}'::text[]),
+         g.acepta
+    from g
+    left join e on e.clave = g.clave
+    left join cu on cu.t10 = g.clave
+$$;
+revoke execute on function crm_personas() from public, anon, authenticated;
+
+/* ¿Entra esta persona en el segmento? Las reglas (todas opcionales, se
+   suman):
+     donde            'local' | 'tienda' | 'cualquiera': compró ahí alguna vez
+     sin_comprar_dias  su última compra (ahí) fue hace más de N días
+     compro_dias       compró (ahí) en los últimos N días
+     compras_min       al menos N compras (ahí)
+     gasto_min         gastó al menos $N (ahí)
+     local             tuvo algo en ese local (con "donde: local", compró ahí)
+     socio             true / false
+     niveles           ["Gold", "Black"]
+     cumple_mes        cumple años este mes (los socios)
+     carrito_dias      dejó un carrito en los últimos N días (0: alguna vez)
+     no_compra_dias    vino al local y no compró, en los últimos N días (0: alguna vez)
+     whatsapp          nos escribió por WhatsApp
+     etiqueta          tiene esa etiqueta
+     sin_etiqueta      no tiene esa etiqueta
+     acepta            aceptó recibir promociones
+   "No escribir" queda afuera siempre. El mes es el de Argentina. */
+create or replace function crm_cumple(p crm_persona, r jsonb)
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select not coalesce('no escribir' = any((p).etq), false)
+     and (coalesce(r->>'donde', '') = '' or x.n > 0)
+     and (r->>'sin_comprar_dias' is null or (x.ult is not null and x.ult < now() - make_interval(days => (r->>'sin_comprar_dias')::integer)))
+     and (r->>'compro_dias' is null or (x.ult is not null and x.ult >= now() - make_interval(days => (r->>'compro_dias')::integer)))
+     and (r->>'compras_min' is null or x.n >= (r->>'compras_min')::integer)
+     and (r->>'gasto_min' is null or x.gasto >= (r->>'gasto_min')::numeric)
+     and (coalesce(r->>'local', '') = ''
+          or coalesce(lower(trim(r->>'local')) = any(case when r->>'donde' = 'local' then (p).locales_compra else (p).locales end), false))
+     and (r->>'socio' is null or coalesce((p).socio, false) = (r->>'socio')::boolean)
+     and (coalesce(jsonb_array_length(r->'niveles'), 0) = 0 or coalesce((r->'niveles') ? (p).nivel, false))
+     and (not coalesce((r->>'cumple_mes')::boolean, false)
+          or ((p).cumple is not null
+              and extract(month from (p).cumple) = extract(month from (now() at time zone 'America/Argentina/Buenos_Aires'))))
+     and (r->>'carrito_dias' is null
+          or ((p).ult_carrito is not null
+              and ((r->>'carrito_dias')::integer = 0
+                   or (p).ult_carrito >= now() - make_interval(days => (r->>'carrito_dias')::integer))))
+     and (r->>'no_compra_dias' is null
+          or ((p).ult_no_compra is not null
+              and ((r->>'no_compra_dias')::integer = 0
+                   or (p).ult_no_compra >= now() - make_interval(days => (r->>'no_compra_dias')::integer))))
+     and (not coalesce((r->>'whatsapp')::boolean, false) or coalesce((p).whatsapp, false))
+     and (coalesce(r->>'etiqueta', '') = '' or coalesce(lower(trim(r->>'etiqueta')) = any((p).etq), false))
+     and (coalesce(r->>'sin_etiqueta', '') = '' or not coalesce(lower(trim(r->>'sin_etiqueta')) = any((p).etq), false))
+     and (not coalesce((r->>'acepta')::boolean, false) or coalesce((p).acepta, false))
+    from (select
+            case r->>'donde'
+              when 'local' then (p).ult_local
+              when 'tienda' then (p).ult_tienda
+              else greatest((p).ult_local, (p).ult_tienda) end as ult,
+            case r->>'donde'
+              when 'local' then coalesce((p).n_local, 0)
+              when 'tienda' then coalesce((p).n_tienda, 0)
+              else coalesce((p).n_local, 0) + coalesce((p).n_tienda, 0) end as n,
+            case r->>'donde'
+              when 'local' then coalesce((p).gasto_local, 0)
+              when 'tienda' then coalesce((p).gasto_tienda, 0)
+              else coalesce((p).gasto_local, 0) + coalesce((p).gasto_tienda, 0) end as gasto) x
+$$;
+revoke execute on function crm_cumple(crm_persona, jsonb) from public, anon, authenticated;
+
+/* Cuántos son, mientras se arma: en total, cuántos con teléfono (a los que
+   se les puede escribir) y cuántos aceptaron promociones. */
+create or replace function crm_segmento_contar(p_pin text, p_reglas jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  select jsonb_build_object('total', count(*),
+                            'con_telefono', count(*) filter (where p.clave !~ '^m:'),
+                            'acepta', count(*) filter (where p.acepta))
+    into salida
+    from crm_personas() p
+   where crm_cumple(p, coalesce(p_reglas, '{}'::jsonb));
+  return salida;
+end;
+$$;
+grant execute on function crm_segmento_contar(text, jsonb) to anon, authenticated;
+
+/* Las personas de un segmento, como la lista de Contactos (la última
+   actividad arriba), con buscador adentro del segmento. */
+create or replace function crm_segmento_lista(p_pin text, p_reglas jsonb, p_buscar text default null, p_limite integer default 300)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  q  text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
+  qd text := nullif(regexp_replace(coalesce(p_buscar, ''), '[^0-9]', '', 'g'), '');
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  with f as materialized (
+    select p.* from crm_personas() p
+     where crm_cumple(p, coalesce(p_reglas, '{}'::jsonb))
+       and (q is null
+            or lower(coalesce(p.nombre, '')) like '%' || q || '%'
+            or coalesce(p.mail, '') like '%' || q || '%'
+            or (qd is not null and length(qd) >= 3 and coalesce(p.tel, '') like '%' || qd || '%')
+            or exists (select 1 from unnest(p.etq) x where x like '%' || q || '%'))
+  )
+  select jsonb_build_object(
+           'cuentas', jsonb_build_object('todos', (select count(*) from f)),
+           'contactos', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'clave', y.clave, 'nombre', y.nombre, 'tel', y.tel, 'mail', y.mail, 'fuentes', to_jsonb(y.fuentes),
+                      'ultima', y.ultima, 'ultimo', y.ultimo, 'compras_tienda', y.n_tienda, 'gastado_tienda', y.gasto_tienda,
+                      'nivel', y.nivel, 'acepta', y.acepta, 'etiquetas', to_jsonb(y.etiquetas))
+                    order by y.ultima desc)
+               from (select * from f order by f.ultima desc limit greatest(coalesce(p_limite, 300), 1)) y), '[]'::jsonb))
+    into salida;
+  return salida;
+end;
+$$;
+grant execute on function crm_segmento_lista(text, jsonb, text, integer) to anon, authenticated;
+
+/* Los segmentos guardados, cada uno con cuántos son hoy, y los locales que
+   aparecen en los datos (para elegir). */
+create or replace function crm_segmentos_listar(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  with p as materialized (select x as fila, x.clave, x.acepta from crm_personas() x)
+  select jsonb_build_object(
+           'segmentos', coalesce((
+             select jsonb_agg(jsonb_build_object('id', s.id, 'nombre', s.nombre, 'reglas', s.reglas, 'creado_por', s.creado_por,
+                                                 'creado', s.creado, 'total', c.total, 'con_telefono', c.con_tel, 'acepta', c.acepta)
+                              order by s.creado, s.id)
+               from crm_segmentos s
+               cross join lateral (select count(*) as total, count(*) filter (where p.clave !~ '^m:') as con_tel,
+                                          count(*) filter (where p.acepta) as acepta
+                                     from p where crm_cumple(p.fila, s.reglas)) c), '[]'::jsonb),
+           'locales', coalesce((select jsonb_agg(distinct l order by l) from p, unnest((p.fila).locales) l), '[]'::jsonb))
+    into salida;
+  return salida;
+end;
+$$;
+grant execute on function crm_segmentos_listar(text) to anon, authenticated;
+
+/* Guardar (nuevo o cambiado) y borrar. */
+create or replace function crm_segmento_guardar(p_pin text, p_id bigint, p_nombre text, p_reglas jsonb, p_quien text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_id bigint;
+  v_nombre text := nullif(trim(coalesce(p_nombre, '')), '');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if v_nombre is null then
+    raise exception 'Ponele un nombre al segmento.';
+  end if;
+  if p_reglas is null or jsonb_typeof(p_reglas) <> 'object' then
+    raise exception 'Faltan las condiciones del segmento.';
+  end if;
+  if p_id is null then
+    insert into crm_segmentos (nombre, reglas, creado_por)
+    values (left(v_nombre, 80), p_reglas, nullif(trim(coalesce(p_quien, '')), ''))
+    returning id into v_id;
+  else
+    update crm_segmentos set nombre = left(v_nombre, 80), reglas = p_reglas, actualizado = now()
+     where id = p_id
+    returning id into v_id;
+    if v_id is null then
+      raise exception 'Ese segmento ya no existe.';
+    end if;
+  end if;
+  return jsonb_build_object('id', v_id);
+end;
+$$;
+grant execute on function crm_segmento_guardar(text, bigint, text, jsonb, text) to anon, authenticated;
+
+create or replace function crm_segmento_borrar(p_pin text, p_id bigint)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  delete from crm_segmentos where id = p_id;
+  return jsonb_build_object('borrado', found);
+end;
+$$;
+grant execute on function crm_segmento_borrar(text, bigint) to anon, authenticated;
+
+select 'listo: segmentos que se arman en el CRM' as "SQL 66";

@@ -578,6 +578,38 @@
   .seg p { font-size: 13px; line-height: 1.45; color: var(--txt-2); }
   .seg-acc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .seg.por-venir { border-style: dashed; background: transparent; }
+  .seg-cab { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+  .seg-cab .seg-intro { flex: 1 1 360px; margin-bottom: 4px; }
+  #vistaSegmentos .num-tit { margin-top: 18px; }
+  .seg-tel { font-size: 12px; color: var(--txt-3); }
+  .seg-vacio, .seg-aviso { max-width: 760px; }
+  /* Lo que se ve de un segmento en Contactos ("Ver"): cuál es, y quitarlo. */
+  .ct-segmento { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; margin-bottom: 10px;
+                 padding: 10px 14px; border-radius: var(--r-sm); background: var(--acc-soft); font-size: 13.5px; color: var(--txt); }
+  /* La ventanita para armar un segmento. */
+  .modal-caja.sg-caja { width: min(640px, 100%); }
+  .sg-bloque { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .sg-bloque h3 { font-size: 12px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
+  .sg-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+  .sg-fila[hidden] { display: none; }
+  .sg-fila > label { flex: none; width: 74px; font-size: 13.5px; font-weight: 600; color: var(--txt-2); }
+  .sg-fila select, .sg-fila > input { flex: 1 1 200px; width: auto; min-width: 0; min-height: 40px; padding-top: 7px; padding-bottom: 7px; font-size: 14px; }
+  .sg-dias { display: inline-flex; align-items: center; gap: 6px; font-size: 13.5px; color: var(--txt-2); }
+  .sg-dias[hidden] { display: none; }
+  .sg-dias input { width: 88px; min-height: 38px; padding: 6px 10px; font-size: 14px; }
+  .sg-niveles { display: inline-flex; flex-wrap: wrap; gap: 6px; }
+  .sg-niveles[hidden] { display: none; }
+  .sg-niveles .chip { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+  .sg-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--txt); cursor: pointer; }
+  .sg-check input { width: 18px; height: 18px; accent-color: var(--acc); }
+  .sg-check-fila { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+  .sg-nota { font-size: 12.5px; line-height: 1.45; color: var(--txt-3); }
+  .sg-nota[hidden] { display: none; }
+  .sg-cuenta { padding: 12px 14px; border-radius: var(--r-sm); background: var(--ok-soft); color: var(--ok-txt); font-size: 15px; }
+  .sg-cuenta b { font-size: 20px; font-variant-numeric: tabular-nums; }
+  .sg-cuenta span { font-size: 13px; }
+  .sg-cuenta.contando { opacity: .6; }
+  #segBorrar.seguro { background: var(--bad-soft); border-color: var(--bad); }
 
   /* ── Difusiones: a quién, con qué plantilla y cuánto sale ── */
   .dif { max-width: 760px; display: grid; gap: 12px; }
@@ -1216,6 +1248,72 @@
     <div class="modal-pie">
       <button type="button" class="btn btn-sec" id="plmeCancelar">Cancelar</button>
       <button type="button" class="btn btn-wsp" id="plmeOk" disabled>Mandar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Armar un segmento (SQL 66): las condiciones se suman; mientras se arma,
+     dice cuántos son hoy. -->
+<div class="modal" id="modalSeg" hidden>
+  <div class="modal-caja sg-caja" role="dialog" aria-modal="true" aria-labelledby="segTit">
+    <h2 id="segTit">Nuevo segmento</h2>
+    <div class="campo"><label for="sgNombre">Nombre</label>
+      <input id="sgNombre" type="text" maxlength="80" placeholder="Ej.: Del local, sin comprar hace 60 días" autocomplete="off"></div>
+    <div class="sg-bloque"><h3>Compras</h3>
+      <div class="sg-fila"><label for="sgDonde">Compró</label>
+        <select id="sgDonde">
+          <option value="">No importa</option>
+          <option value="local">En un local (socios del Club)</option>
+          <option value="tienda">En la tienda online</option>
+          <option value="cualquiera">En un local o en la tienda</option>
+        </select></div>
+      <div class="sg-fila" id="sgCuandoFila"><label for="sgCuando">Cuándo</label>
+        <select id="sgCuando">
+          <option value="">No importa</option>
+          <option value="sin">No compra hace más de…</option>
+          <option value="con">Compró en los últimos…</option>
+        </select>
+        <span class="sg-dias" id="sgDiasCaja"><input id="sgDias" type="number" min="1" max="3650" value="60" aria-label="Días"> días</span></div>
+      <div class="sg-fila" id="sgCuantoFila"><label for="sgCompras">Al menos</label>
+        <span class="sg-dias"><input id="sgCompras" type="number" min="1" placeholder="—" aria-label="Compras"> compras</span>
+        <span class="sg-dias">y gastó más de $ <input id="sgGasto" type="number" min="1" step="1000" placeholder="—" aria-label="Gastó más de"></span></div>
+      <p class="sg-nota" id="sgNotaLocal" hidden>De los locales sólo sabemos las compras de los socios del Club: BlueSoft no dice a quién le vendió. Con el POS propio, de todos.</p>
+    </div>
+    <div class="sg-bloque"><h3>Local y Club</h3>
+      <div class="sg-fila"><label for="sgLocal">Local</label><select id="sgLocal"></select></div>
+      <div class="sg-fila"><label for="sgSocio">Club</label>
+        <select id="sgSocio">
+          <option value="">No importa</option>
+          <option value="si">Es socio</option>
+          <option value="no">No es socio</option>
+        </select>
+        <span class="sg-niveles" id="sgNiveles">
+          <button type="button" class="chip" data-nivel="Silver">Silver</button>
+          <button type="button" class="chip" data-nivel="Gold">Gold</button>
+          <button type="button" class="chip" data-nivel="Black">Black</button>
+        </span></div>
+      <label class="sg-check"><input type="checkbox" id="sgCumple"> Cumple años este mes</label>
+    </div>
+    <div class="sg-bloque"><h3>Otras cosas que hizo</h3>
+      <div class="sg-check-fila"><label class="sg-check"><input type="checkbox" id="sgCarrito"> Dejó un carrito</label>
+        <span class="sg-dias" id="sgCarritoDiasCaja">en los últimos <input id="sgCarritoDias" type="number" min="1" placeholder="—" aria-label="Días"> días</span></div>
+      <div class="sg-check-fila"><label class="sg-check"><input type="checkbox" id="sgNoCompra"> Vino al local y no compró</label>
+        <span class="sg-dias" id="sgNoCompraDiasCaja">en los últimos <input id="sgNoCompraDias" type="number" min="1" placeholder="—" aria-label="Días"> días</span></div>
+      <label class="sg-check"><input type="checkbox" id="sgWsp"> Nos escribió por WhatsApp</label>
+      <label class="sg-check"><input type="checkbox" id="sgAcepta"> Aceptó recibir promociones</label>
+    </div>
+    <div class="sg-bloque"><h3>Etiquetas</h3>
+      <div class="sg-fila"><label for="sgEtq">Tiene</label><input id="sgEtq" list="sgEtqs" placeholder="Cualquiera" autocomplete="off"></div>
+      <div class="sg-fila"><label for="sgSinEtq">No tiene</label><input id="sgSinEtq" list="sgEtqs" placeholder="—" autocomplete="off"></div>
+      <datalist id="sgEtqs"></datalist>
+    </div>
+    <div class="sg-cuenta" id="sgCuenta" aria-live="polite"></div>
+    <p class="sg-nota">Los que tienen la etiqueta "No escribir" quedan afuera siempre.</p>
+    <p class="plm-error" id="sgError" hidden></p>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec" id="segBorrar" hidden>Borrar</button>
+      <button type="button" class="btn btn-sec" id="segCancelar">Cancelar</button>
+      <button type="button" class="btn btn-pri" id="segOk">Guardar</button>
     </div>
   </div>
 </div>
@@ -3398,7 +3496,9 @@
   function cargarContactos() {
     var n = ++CT.pedido;
     if (!CT.datos && !CT.error) { $('ctLista').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'; }
-    base.crmContactos(pinGuardado(), CT.buscar, CT.fuente, 300)
+    /* Con un segmento puesto ("Ver" en Segmentos), la gente de ese segmento. */
+    (CT.segmento ? base.crmSegmentoLista(pinGuardado(), CT.segmento.reglas, CT.buscar, 300)
+                 : base.crmContactos(pinGuardado(), CT.buscar, CT.fuente, 300))
       .then(function (d) {
         if (n !== CT.pedido) return;          // llegó tarde: ya se pidió otra cosa
         CT.datos = d || { cuentas: {}, contactos: [] };
@@ -3424,6 +3524,19 @@
     }
     if (!CT.datos) { return; }
     var cu = CT.datos.cuentas || {}, l = CT.datos.contactos || [];
+    if (CT.segmento) {
+      /* La gente de un segmento: sin las pastillas, con el cartel para quitarlo. */
+      fu.hidden = true;
+      var tot = Number(cu.todos) || 0;
+      caja.innerHTML = '<div class="ct-segmento"><span>Segmento: <b>' + esc(CT.segmento.nombre) + '</b> · ' + miles(tot) + ' ' +
+          (tot === 1 ? 'persona' : 'personas') + '</span><button type="button" class="btn-link" id="ctSinSegmento">Quitar</button></div>' +
+        '<div class="ct-lista">' + (l.length ? l.map(filaContacto).join('') +
+          (tot > l.length ? '<div class="ct-mas">Se ven los ' + l.length + ' con actividad más reciente de ' + miles(tot) + '. Buscá para encontrar a otro.</div>' : '')
+          : '<div class="ct-vacio">' + (CT.buscar ? 'Nadie con «' + esc(CT.buscar) + '» en este segmento.' : 'Hoy no hay nadie en este segmento.') + '</div>') + '</div>';
+      $('ctSinSegmento').onclick = function () { CT.segmento = null; CT.datos = null; cargarContactos(); };
+      [].forEach.call(caja.querySelectorAll('[data-clave]'), function (b) { b.onclick = function () { abrirContacto(b.dataset.clave); }; });
+      return;
+    }
     /* Una pastilla sin nadie no se muestra (salvo la que está puesta). */
     fu.innerHTML = FUENTES_CT.map(function (f) {
       var n = Number(cu[f[2]]) || 0;
@@ -3949,33 +4062,49 @@
     '</div>';
   }
 
-  /* ═══ Segmentos (Beta) ═══════════════════════════════════════════════════
-     Un segmento es un grupo de contactos que se arma solo con los datos. Por
-     ahora, los que salen de Contactos (de dónde vino cada uno y la etiqueta
-     VIP); los que necesitan cuentas nuevas en la base dicen "Pronto". Son la
-     base de las Difusiones. */
+  /* ═══ Segmentos ══════════════════════════════════════════════════════════
+     Un segmento es un grupo de contactos que se arma solo con los datos y se
+     pone al día solo. Hay tres clases:
+     - "Tus segmentos": los que arman ustedes con condiciones (SQL 66), por
+       ejemplo "del local, sin comprar hace 60 días" (pedido de Mauricio,
+       10/10/2026). Se guardan con un nombre.
+     - "De dónde vino cada uno": los que salen de Contactos.
+     - "Para armar con un toque": abren la ventanita con las condiciones ya
+       puestas, para guardarlos como propios.
+     Son la base de las Difusiones. */
   var SEGMENTOS = [
     { id: 'tienda', t: 'Compraron en vdh.com.ar', d: 'Todos los que alguna vez compraron en la tienda online.', fuente: 'tienda' },
     { id: 'club', t: 'Socios del Club', d: 'Los que se hicieron socios en los locales.', fuente: 'club' },
     { id: 'carrito', t: 'Dejaron un carrito', d: 'Cargaron algo en vdh.com.ar y no terminaron de pagar.', fuente: 'carrito' },
     { id: 'no_compra', t: 'Vinieron al local y no compraron', d: 'Los No Compra que cargaron los vendedores.', fuente: 'no_compra' },
     { id: 'whatsapp', t: 'Nos escribieron por WhatsApp', d: 'Los que tienen una conversación con nosotros.', fuente: 'whatsapp' },
-    { id: 'vip', t: 'Etiqueta VIP', d: 'A los que les pusieron la etiqueta VIP en el CRM.', buscar: 'vip' },
-    { id: 'recuperar', t: 'Para recuperar', d: 'Compraban y hace más de 60 días que no vuelven.', pronto: true },
-    { id: 'mejores', t: 'Socios Gold y Black', d: 'Los mejores clientes del Club.', pronto: true },
-    { id: 'cumple', t: 'Cumplen años este mes', d: 'Para saludarlos con un beneficio.', pronto: true }
+    { id: 'vip', t: 'Etiqueta VIP', d: 'A los que les pusieron la etiqueta VIP en el CRM.', buscar: 'vip' }
   ];
-  var SEG = { cuentas: null, vip: null, error: '', pedido: 0 };
+  var PRESETS = [
+    { id: 'recuperar_local', t: 'Del local, sin comprar hace 60 días', d: 'Socios que compraron en un local y hace más de 60 días que no vuelven.',
+      reglas: { donde: 'local', sin_comprar_dias: 60 } },
+    { id: 'recuperar_tienda', t: 'De la tienda, sin comprar hace 60 días', d: 'Compraron en vdh.com.ar y hace más de 60 días que no vuelven.',
+      reglas: { donde: 'tienda', sin_comprar_dias: 60 } },
+    { id: 'mejores', t: 'Socios Gold y Black', d: 'Los mejores clientes del Club.', reglas: { socio: true, niveles: ['Gold', 'Black'] } },
+    { id: 'cumple', t: 'Cumplen años este mes', d: 'Socios del Club, para saludarlos con un beneficio.', reglas: { socio: true, cumple_mes: true } }
+  ];
+  var SEG = { cuentas: null, vip: null, guardados: null, locales: [], falta66: false, error: '', pedido: 0 };
   var miles = function (n) { return Number(n || 0).toLocaleString('es-AR'); };
   function cargarSegmentos(despues) {
-    var n = ++SEG.pedido;
+    var n = ++SEG.pedido, pin = pinGuardado();
     if (!SEG.cuentas && vista === 'segmentos') { $('vistaSegmentos').innerHTML = '<div class="skel"></div><div class="skel"></div>'; }
-    Promise.all([base.crmContactos(pinGuardado(), '', '', 1), base.crmContactos(pinGuardado(), 'vip', '', 1)])
+    Promise.all([base.crmContactos(pin, '', '', 1), base.crmContactos(pin, 'vip', '', 1),
+                 base.crmSegmentosListar(pin).catch(function (err) {
+                   if (err && err.sinSesion) { throw err; }
+                   return { error: /crm_segmentos_listar|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red' };
+                 })])
       .then(function (r) {
         if (n !== SEG.pedido) return;
         SEG.cuentas = (r[0] && r[0].cuentas) || {};
         SEG.vip = Number(((r[1] && r[1].cuentas) || {}).todos) || 0;
         SEG.error = '';
+        SEG.falta66 = !!(r[2] && r[2].error === 'falta');
+        if (r[2] && !r[2].error) { SEG.guardados = r[2].segmentos || []; SEG.locales = r[2].locales || []; }
       })
       .catch(function (err) {
         if (n !== SEG.pedido) return;
@@ -3988,10 +4117,44 @@
         if (despues) { despues(); }
       });
   }
-  function segmento(id) { return SEGMENTOS.filter(function (s) { return s.id === id; })[0]; }
+  /* Un segmento por su id: "g:12" es uno de los guardados. */
+  function segmento(id) {
+    id = String(id || '');
+    if (id.indexOf('g:') === 0) {
+      var g = (SEG.guardados || []).filter(function (s) { return String(s.id) === id.slice(2); })[0];
+      return g ? { id: id, t: g.nombre, guardado: g } : null;
+    }
+    return SEGMENTOS.filter(function (s) { return s.id === id; })[0] || null;
+  }
   function cuantosSegmento(s) {
-    if (!SEG.cuentas || !s || s.pronto) { return null; }
+    if (!s) { return null; }
+    if (s.guardado) { return Number(s.guardado.total) || 0; }
+    if (!SEG.cuentas) { return null; }
     return s.buscar ? SEG.vip : (Number(SEG.cuentas[s.fuente]) || 0);
+  }
+  var personas = function (n) { return n === 1 ? 'persona' : 'personas'; };
+  /* Las condiciones de un segmento, dichas como las diría alguien. */
+  function describirReglas(r) {
+    r = r || {};
+    var d = [], donde = { local: 'en un local', tienda: 'en la tienda', cualquiera: 'en un local o en la tienda' }[r.donde];
+    if (donde) {
+      d.push(r.sin_comprar_dias ? 'compró ' + donde + ' y no vuelve hace más de ' + r.sin_comprar_dias + ' días'
+           : r.compro_dias ? 'compró ' + donde + ' en los últimos ' + r.compro_dias + ' días' : 'compró ' + donde);
+      if (r.compras_min) { d.push('al menos ' + r.compras_min + (r.compras_min === 1 ? ' compra' : ' compras')); }
+      if (r.gasto_min) { d.push('gastó más de ' + plata(r.gasto_min)); }
+    }
+    if (r.local) { d.push(bonito(r.local)); }
+    if (r.socio === true) { d.push(r.niveles && r.niveles.length ? 'socio ' + r.niveles.join(' o ') : 'socio del Club'); }
+    if (r.socio === false) { d.push('no es socio del Club'); }
+    if (r.cumple_mes) { d.push('cumple años este mes'); }
+    if (r.carrito_dias !== undefined && r.carrito_dias !== null) { d.push('dejó un carrito' + (r.carrito_dias ? ' en los últimos ' + r.carrito_dias + ' días' : '')); }
+    if (r.no_compra_dias !== undefined && r.no_compra_dias !== null) { d.push('vino al local y no compró' + (r.no_compra_dias ? ' en los últimos ' + r.no_compra_dias + ' días' : '')); }
+    if (r.whatsapp) { d.push('nos escribió por WhatsApp'); }
+    if (r.acepta) { d.push('aceptó promociones'); }
+    if (r.etiqueta) { d.push('con la etiqueta ' + r.etiqueta); }
+    if (r.sin_etiqueta) { d.push('sin la etiqueta ' + r.sin_etiqueta); }
+    var t = d.join(' · ');
+    return t ? t.charAt(0).toUpperCase() + t.slice(1) : 'Todos los contactos';
   }
   function pintarSegmentos() {
     var caja = $('vistaSegmentos');
@@ -4000,31 +4163,191 @@
       return;
     }
     if (!SEG.cuentas) { caja.innerHTML = '<div class="skel"></div><div class="skel"></div>'; return; }
-    caja.innerHTML = '<p class="seg-intro">Un segmento es un grupo de contactos que se arma solo con los datos y se pone al día solo. ' +
-        'Sirven para mandar difusiones. En las difusiones siempre quedan afuera los que tienen la etiqueta "No escribir" y los que no aceptaron promociones.</p>' +
+    var tarjeta = function (t, n, d, botones, extra) {
+      return '<div class="ficha-bloque seg">' + '<h3>' + esc(t) + '</h3>' +
+        (n === null ? '' : '<div class="seg-n">' + miles(n) + '<small>' + personas(n) + '</small></div>') +
+        '<p>' + esc(d) + '</p>' + (extra || '') + '<div class="seg-acc">' + botones + '</div></div>';
+    };
+    var boton = function (dato, valor, texto, apagado) {
+      return '<button type="button" class="btn btn-sec btn-chico" data-' + dato + '="' + esc(valor) + '"' + (apagado ? ' disabled' : '') + '>' + texto + '</button>';
+    };
+    caja.innerHTML =
+      '<div class="seg-cab"><p class="seg-intro">Un segmento es un grupo de contactos que se arma solo con los datos y se pone al día solo: ' +
+        'el que vuelve a comprar sale, el que cumple las condiciones entra. Sirven para mandar difusiones. Los que tienen la etiqueta "No escribir" quedan afuera siempre.</p>' +
+        (SEG.falta66 ? '' : '<button type="button" class="btn btn-pri btn-chico" id="segNuevo">Nuevo segmento</button>') + '</div>' +
+      '<h3 class="num-tit">Tus segmentos</h3>' +
+      (SEG.falta66 ? '<div class="plm-aviso seg-aviso">Para armar tus propios segmentos hay que correr el SQL 66 en Supabase.</div>'
+        : SEG.guardados && SEG.guardados.length
+          ? '<div class="seg-grid">' + SEG.guardados.map(function (s) {
+              return tarjeta(s.nombre, Number(s.total) || 0, describirReglas(s.reglas),
+                boton('seg-ver', 'g:' + s.id, 'Ver') + boton('seg-dif', 'g:' + s.id, 'Mandar difusión') + boton('seg-editar', s.id, 'Editar'),
+                '<p class="seg-tel">' + miles(s.con_telefono) + ' con teléfono' + (s.creado_por ? ' · lo armó ' + esc(s.creado_por) : '') + '</p>');
+            }).join('') + '</div>'
+          : '<p class="num-vacio seg-vacio">Todavía no armaste ninguno. Tocá "Nuevo segmento" o usá uno de los de abajo.</p>') +
+      '<h3 class="num-tit">De dónde vino cada uno</h3>' +
       '<div class="seg-grid">' + SEGMENTOS.map(function (s) {
-        var n = cuantosSegmento(s);
-        return '<div class="ficha-bloque seg' + (s.pronto ? ' por-venir' : '') + '">' +
-          '<h3>' + esc(s.t) + (s.pronto ? ' <span class="pill pill-warn">Pronto</span>' : '') + '</h3>' +
-          (s.pronto ? '' : '<div class="seg-n">' + miles(n) + '<small>' + (n === 1 ? 'persona' : 'personas') + '</small></div>') +
-          '<p>' + esc(s.d) + '</p>' +
-          (s.pronto ? '' : '<div class="seg-acc"><button type="button" class="btn btn-sec btn-chico" data-seg-ver="' + s.id + '">Ver</button>' +
-                           '<button type="button" class="btn btn-sec btn-chico" data-seg-dif="' + s.id + '">Mandar difusión</button></div>') +
-        '</div>';
+        return tarjeta(s.t, cuantosSegmento(s), s.d, boton('seg-ver', s.id, 'Ver') + boton('seg-dif', s.id, 'Mandar difusión'));
+      }).join('') + '</div>' +
+      '<h3 class="num-tit">Para armar con un toque</h3>' +
+      '<div class="seg-grid">' + PRESETS.map(function (p) {
+        return tarjeta(p.t, null, p.d, boton('seg-armar', p.id, 'Armar', SEG.falta66));
       }).join('') + '</div>';
+    if ($('segNuevo')) { $('segNuevo').onclick = function () { abrirSegmento(null, null); }; }
     [].forEach.call(caja.querySelectorAll('[data-seg-ver]'), function (b) { b.onclick = function () { verSegmento(b.dataset.segVer); }; });
     [].forEach.call(caja.querySelectorAll('[data-seg-dif]'), function (b) {
       b.onclick = function () { DIF.segmento = b.dataset.segDif; cambiarVista('difusiones'); };
     });
+    [].forEach.call(caja.querySelectorAll('[data-seg-editar]'), function (b) {
+      b.onclick = function () { abrirSegmento((SEG.guardados || []).filter(function (s) { return String(s.id) === b.dataset.segEditar; })[0], null); };
+    });
+    [].forEach.call(caja.querySelectorAll('[data-seg-armar]'), function (b) {
+      b.onclick = function () { abrirSegmento(null, PRESETS.filter(function (p) { return p.id === b.dataset.segArmar; })[0]); };
+    });
   }
-  /* "Ver": Contactos, con el filtro del segmento puesto. */
+  /* "Ver": Contactos con la gente del segmento (o con el filtro puesto). */
   function verSegmento(id) {
     var s = segmento(id);
+    if (!s) { return; }
+    CT.segmento = s.guardado ? { id: s.guardado.id, nombre: s.guardado.nombre, reglas: s.guardado.reglas } : null;
     CT.fuente = s.fuente || '';
     CT.buscar = s.buscar || '';
     $('ctBusca').value = CT.buscar;
     CT.datos = null;
     cambiarVista('contactos');
+  }
+
+  /* La ventanita para armar un segmento: las condiciones se suman, y mientras
+     se arma dice cuántos son hoy. */
+  var SEGE = { id: null, niveles: [], espera: 0, pedido: 0, borrarHasta: 0 };
+  function abrirSegmento(seg, preset) {
+    var r = (seg && seg.reglas) || (preset && preset.reglas) || {};
+    SEGE.id = seg ? seg.id : null;
+    $('segTit').textContent = seg ? 'Editar segmento' : 'Nuevo segmento';
+    $('sgNombre').value = seg ? seg.nombre : (preset ? preset.t : '');
+    $('sgDonde').value = r.donde || '';
+    $('sgCuando').value = r.sin_comprar_dias ? 'sin' : r.compro_dias ? 'con' : '';
+    $('sgDias').value = r.sin_comprar_dias || r.compro_dias || 60;
+    $('sgCompras').value = r.compras_min || '';
+    $('sgGasto').value = r.gasto_min || '';
+    $('sgLocal').innerHTML = '<option value="">Todos</option>' + (SEG.locales || []).map(function (l) {
+      return '<option value="' + esc(l) + '">' + esc(bonito(l)) + '</option>';
+    }).join('');
+    $('sgLocal').value = r.local ? String(r.local).toLowerCase() : '';
+    $('sgSocio').value = r.socio === true ? 'si' : r.socio === false ? 'no' : '';
+    SEGE.niveles = (r.niveles || []).slice();
+    $('sgCumple').checked = !!r.cumple_mes;
+    $('sgCarrito').checked = r.carrito_dias !== undefined && r.carrito_dias !== null;
+    $('sgCarritoDias').value = r.carrito_dias || '';
+    $('sgNoCompra').checked = r.no_compra_dias !== undefined && r.no_compra_dias !== null;
+    $('sgNoCompraDias').value = r.no_compra_dias || '';
+    $('sgWsp').checked = !!r.whatsapp;
+    $('sgAcepta').checked = !!r.acepta;
+    $('sgEtq').value = r.etiqueta || '';
+    $('sgSinEtq').value = r.sin_etiqueta || '';
+    $('sgEtqs').innerHTML = etiquetasUsadas().filter(function (e) { return e.toLowerCase() !== 'no escribir'; })
+      .map(function (e) { return '<option value="' + esc(e) + '">'; }).join('');
+    $('segBorrar').hidden = !seg;
+    $('segBorrar').classList.remove('seguro');
+    $('segBorrar').textContent = 'Borrar';
+    SEGE.borrarHasta = 0;
+    errorPl('sgError', '');
+    mostrarCondiciones();
+    contarSegmento(true);
+    $('modalSeg').hidden = false;
+    if (!seg) { setTimeout(function () { $('sgNombre').focus(); $('sgNombre').select(); }, 50); }
+  }
+  /* Las condiciones, como las guarda la base (ver crm_cumple, SQL 66). */
+  function reglasSegmento() {
+    var r = {}, donde = $('sgDonde').value, dias = parseInt($('sgDias').value, 10), num = function (id) { return parseInt($(id).value, 10); };
+    if (donde) {
+      r.donde = donde;
+      if ($('sgCuando').value === 'sin' && dias > 0) { r.sin_comprar_dias = dias; }
+      if ($('sgCuando').value === 'con' && dias > 0) { r.compro_dias = dias; }
+      if (num('sgCompras') > 0) { r.compras_min = num('sgCompras'); }
+      if (parseFloat($('sgGasto').value) > 0) { r.gasto_min = parseFloat($('sgGasto').value); }
+    }
+    if ($('sgLocal').value) { r.local = $('sgLocal').value; }
+    if ($('sgSocio').value === 'si') { r.socio = true; if (SEGE.niveles.length) { r.niveles = SEGE.niveles.slice(); } }
+    if ($('sgSocio').value === 'no') { r.socio = false; }
+    if ($('sgCumple').checked) { r.cumple_mes = true; }
+    if ($('sgCarrito').checked) { r.carrito_dias = num('sgCarritoDias') > 0 ? num('sgCarritoDias') : 0; }
+    if ($('sgNoCompra').checked) { r.no_compra_dias = num('sgNoCompraDias') > 0 ? num('sgNoCompraDias') : 0; }
+    if ($('sgWsp').checked) { r.whatsapp = true; }
+    if ($('sgAcepta').checked) { r.acepta = true; }
+    if ($('sgEtq').value.trim()) { r.etiqueta = $('sgEtq').value.trim(); }
+    if ($('sgSinEtq').value.trim()) { r.sin_etiqueta = $('sgSinEtq').value.trim(); }
+    return r;
+  }
+  /* Lo que depende de otra cosa, se ve sólo cuando tiene sentido. */
+  function mostrarCondiciones() {
+    var donde = $('sgDonde').value;
+    $('sgCuandoFila').hidden = !donde;
+    $('sgCuantoFila').hidden = !donde;
+    $('sgDiasCaja').hidden = !$('sgCuando').value;
+    $('sgNotaLocal').hidden = donde !== 'local' && donde !== 'cualquiera';
+    $('sgNiveles').hidden = $('sgSocio').value !== 'si';
+    [].forEach.call($('sgNiveles').querySelectorAll('[data-nivel]'), function (b) {
+      b.classList.toggle('sel', SEGE.niveles.indexOf(b.dataset.nivel) > -1);
+    });
+    $('sgCarritoDiasCaja').hidden = !$('sgCarrito').checked;
+    $('sgNoCompraDiasCaja').hidden = !$('sgNoCompra').checked;
+  }
+  /* Cuántos son: a la base, con un respiro para no preguntar en cada tecla. */
+  function contarSegmento(ya) {
+    clearTimeout(SEGE.espera);
+    var n = ++SEGE.pedido;
+    $('sgCuenta').classList.add('contando');
+    SEGE.espera = setTimeout(function () {
+      base.crmSegmentoContar(pinGuardado(), reglasSegmento())
+        .then(function (c) {
+          if (n !== SEGE.pedido) return;
+          $('sgCuenta').classList.remove('contando');
+          $('sgCuenta').innerHTML = 'Hoy son <b>' + miles(c.total) + '</b> ' + personas(Number(c.total)) +
+            ' <span>· ' + miles(c.con_telefono) + ' con teléfono</span>';
+        })
+        .catch(function (err) {
+          if (n !== SEGE.pedido) return;
+          if (err && err.sinSesion) { caducada(); return; }
+          $('sgCuenta').classList.remove('contando');
+          $('sgCuenta').textContent = /crm_segmento_contar|PGRST202|Could not find/i.test(String(err && err.message))
+            ? 'Para contar hay que correr el SQL 66 en Supabase.' : 'No se pudo contar. Revisá la conexión.';
+        });
+    }, ya ? 0 : 400);
+  }
+  function cambioSegmento() { mostrarCondiciones(); contarSegmento(false); }
+  function guardarSegmento() {
+    var nombre = $('sgNombre').value.trim();
+    if (!nombre) { errorPl('sgError', 'Ponele un nombre al segmento.'); $('sgNombre').focus(); return; }
+    errorPl('sgError', '');
+    $('segOk').disabled = true;
+    base.crmSegmentoGuardar(pinGuardado(), SEGE.id, nombre, reglasSegmento(), quien)
+      .then(function () {
+        $('modalSeg').hidden = true;
+        avisar('ok', SEGE.id ? 'Segmento guardado.' : 'Listo: el segmento quedó guardado.');
+        cargarSegmentos();
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        errorPl('sgError', (err && err.message) || 'No se pudo guardar.');
+      })
+      .then(function () { $('segOk').disabled = false; });
+  }
+  function borrarSegmento() {
+    if (!SEGE.id) { return; }
+    if (Date.now() > SEGE.borrarHasta) {
+      SEGE.borrarHasta = Date.now() + 4000;
+      $('segBorrar').classList.add('seguro');
+      $('segBorrar').textContent = '¿Seguro? Tocá de nuevo';
+      return;
+    }
+    $('segBorrar').disabled = true;
+    base.crmSegmentoBorrar(pinGuardado(), SEGE.id)
+      .then(function () { $('modalSeg').hidden = true; avisar('ok', 'Segmento borrado.'); cargarSegmentos(); })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        errorPl('sgError', (err && err.message) || 'No se pudo borrar.');
+      })
+      .then(function () { $('segBorrar').disabled = false; });
   }
 
   /* ═══ Difusiones ═════════════════════════════════════════════════════════
@@ -4039,7 +4362,9 @@
   function pintarDifusiones() {
     if (!SEG.cuentas && !SEG.error) { cargarSegmentos(function () { if (vista === 'difusiones') { pintarDifusiones(); } }); }
     if (!PLM.datos && !PLM.error && !PLM.cargando) { cargarPlantillasMeta(function () { if (vista === 'difusiones') { pintarDifusiones(); } }); }
-    var segs = SEGMENTOS.filter(function (s) { return !s.pronto; });
+    var opcion = function (id, t, c) {
+      return '<option value="' + esc(id) + '"' + (id === DIF.segmento ? ' selected' : '') + '>' + esc(t) + (c === null ? '' : ' (' + miles(c) + ')') + '</option>';
+    };
     var aprobadas = plantillasAprobadas();
     var s = segmento(DIF.segmento), t = aprobadas.filter(function (x) { return x.name === DIF.plantilla; })[0];
     var n = cuantosSegmento(s);
@@ -4048,10 +4373,12 @@
       '<div class="pronto-cab"><small>Automatizaciones</small><h2>Difusiones</h2>' +
         '<p>Mandarle una plantilla aprobada a un segmento entero, de una vez. Meta cobra cada mensaje: USD 0,0618 los de marketing y USD 0,026 los de utilidad.</p></div>' +
       '<div class="ficha-bloque dif-paso"><h3><i>1</i>A quién</h3>' +
-        '<select id="difSeg" aria-label="Segmento"><option value="">Elegí un segmento…</option>' + segs.map(function (x) {
-          var c = cuantosSegmento(x);
-          return '<option value="' + x.id + '"' + (x.id === DIF.segmento ? ' selected' : '') + '>' + esc(x.t) + (c === null ? '' : ' (' + miles(c) + ')') + '</option>';
-        }).join('') + '</select></div>' +
+        '<select id="difSeg" aria-label="Segmento"><option value="">Elegí un segmento…</option>' +
+          (SEG.guardados && SEG.guardados.length ? '<optgroup label="Tus segmentos">' + SEG.guardados.map(function (x) {
+            return opcion('g:' + x.id, x.nombre, Number(x.total) || 0);
+          }).join('') + '</optgroup>' : '') +
+          '<optgroup label="De dónde vino cada uno">' + SEGMENTOS.map(function (x) { return opcion(x.id, x.t, cuantosSegmento(x)); }).join('') +
+          '</optgroup></select></div>' +
       '<div class="ficha-bloque dif-paso"><h3><i>2</i>Con qué plantilla</h3>' + (aprobadas.length
         ? '<select id="difPl" aria-label="Plantilla"><option value="">Elegí una plantilla aprobada…</option>' + aprobadas.map(function (x) {
             return '<option value="' + esc(x.name) + '"' + (x.name === DIF.plantilla ? ' selected' : '') + '>' + esc(nombrePl(x.name)) + ' · ' + (CAT_PL[x.category] || x.category) + '</option>';
@@ -4709,6 +5036,7 @@
       if (!$('modalWsp').hidden) { $('modalWsp').hidden = true; return; }
       if (!$('modalVenta').hidden) { $('ventaCancelar').onclick(); return; }
       if (!$('modalEtqLote').hidden) { $('modalEtqLote').hidden = true; return; }
+      if (!$('modalSeg').hidden) { $('modalSeg').hidden = true; return; }
       if (!$('modalPlmEnviar').hidden) { $('modalPlmEnviar').hidden = true; return; }
       if (!$('modalPlm').hidden) { $('modalPlm').hidden = true; return; }
       if ($('crm').classList.contains('menu-abierto')) { cerrarMenuCrm(); return; }
@@ -4743,6 +5071,24 @@
     $('plmBorrar').onclick = borrarPl;
     $('plmeCancelar').onclick = function () { $('modalPlmEnviar').hidden = true; };
     $('plmeOk').onclick = mandarPlantillaElegida;
+    /* Armar un segmento: cada cambio vuelve a contar. */
+    ['sgDonde', 'sgCuando', 'sgLocal', 'sgSocio', 'sgCumple', 'sgCarrito', 'sgNoCompra', 'sgWsp', 'sgAcepta'].forEach(function (id) {
+      $(id).onchange = cambioSegmento;
+    });
+    ['sgDias', 'sgCompras', 'sgGasto', 'sgCarritoDias', 'sgNoCompraDias', 'sgEtq', 'sgSinEtq'].forEach(function (id) {
+      $(id).oninput = cambioSegmento;
+    });
+    [].forEach.call($('sgNiveles').querySelectorAll('[data-nivel]'), function (b) {
+      b.onclick = function () {
+        var i = SEGE.niveles.indexOf(b.dataset.nivel);
+        if (i > -1) { SEGE.niveles.splice(i, 1); } else { SEGE.niveles.push(b.dataset.nivel); }
+        cambioSegmento();
+      };
+    });
+    $('segCancelar').onclick = function () { $('modalSeg').hidden = true; };
+    $('segOk').onclick = guardarSegmento;
+    $('segBorrar').onclick = borrarSegmento;
+    $('sgNombre').onkeydown = function (ev) { if (ev.key === 'Enter') { guardarSegmento(); } };
     $('loteMover').onchange = function () { var d = this.value; this.value = ''; if (d) { moverLote(d); } };
     $('loteEtq').onclick = abrirEtqLote;
     $('loteX').onclick = salirDeElegir;

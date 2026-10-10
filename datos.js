@@ -1253,6 +1253,20 @@ var base = {
     return funcion('crm_contacto', { p_pin: pin, p_clave: clave });
   },
 
+  /** Los segmentos que se arman en el CRM (SQL 66): los guardados, con
+   *  cuántos son hoy, y los locales que aparecen en los datos. */
+  crmSegmentosListar: function (pin) { return funcion('crm_segmentos_listar', { p_pin: pin }); },
+  /** Cuántos son, mientras se arma. */
+  crmSegmentoContar: function (pin, reglas) { return funcion('crm_segmento_contar', { p_pin: pin, p_reglas: reglas }); },
+  /** La gente de un segmento, como la lista de Contactos. */
+  crmSegmentoLista: function (pin, reglas, buscar, limite) {
+    return funcion('crm_segmento_lista', { p_pin: pin, p_reglas: reglas, p_buscar: buscar || null, p_limite: limite || 300 });
+  },
+  crmSegmentoGuardar: function (pin, id, nombre, reglas, quien) {
+    return funcion('crm_segmento_guardar', { p_pin: pin, p_id: id || null, p_nombre: nombre, p_reglas: reglas, p_quien: quien || null });
+  },
+  crmSegmentoBorrar: function (pin, id) { return funcion('crm_segmento_borrar', { p_pin: pin, p_id: id }); },
+
   /** Las conversaciones de WhatsApp (SQL 63), la última arriba. */
   crmMensajes: function (pin, buscar, limite) {
     return funcion('crm_mensajes', { p_pin: pin, p_buscar: buscar || null, p_limite: limite || 200 });
