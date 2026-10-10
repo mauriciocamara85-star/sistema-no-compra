@@ -1267,9 +1267,20 @@ var base = {
   },
   crmSegmentoBorrar: function (pin, id) { return funcion('crm_segmento_borrar', { p_pin: pin, p_id: id }); },
 
-  /** Las conversaciones de WhatsApp (SQL 63), la última arriba. */
-  crmMensajes: function (pin, buscar, limite) {
-    return funcion('crm_mensajes', { p_pin: pin, p_buscar: buscar || null, p_limite: limite || 200 });
+  /** Las conversaciones de WhatsApp (SQL 63), la última arriba. Con
+   *  "numero", sólo las de ese número nuestro (SQL 67): sin él no se manda,
+   *  así anda igual con la base de antes. */
+  crmMensajes: function (pin, buscar, limite, numero) {
+    var args = { p_pin: pin, p_buscar: buscar || null, p_limite: limite || 200 };
+    if (numero) { args.p_numero = numero; }
+    return funcion('crm_mensajes', args);
+  },
+
+  /** El tablero Tienda online (SQL 67): las consultas al WhatsApp de la
+   *  tienda, ya puestas al día (compras y 7 días), y el resumen del mes. */
+  crmTienda: function (pin) { return funcion('crm_tienda', { p_pin: pin }); },
+  crmConsultaMover: function (pin, id, columna, quien) {
+    return funcion('crm_consulta_mover', { p_pin: pin, p_id: id, p_columna: columna, p_quien: quien || null });
   },
 
   /** Lo mínimo para preguntar seguido si llegó algo: el último mensaje y

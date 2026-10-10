@@ -408,6 +408,44 @@
   }
   .chat-dia { align-self: center; margin: 6px 0 2px; padding: 2px 10px; border-radius: var(--r-pill);
               background: var(--surface); font-size: 11.5px; color: var(--txt-3); }
+  /* ── Los dos números (SQL 67) ──
+     Cada uno con su etiqueta y un punto de color que no se confunde con las
+     de dónde vino la persona (que son grises): No Compra verde, Tienda online
+     azul. En el chat, una marca cuando cambia de número y otra donde termina
+     lo que vino del historial del celular. */
+  .pill-num { gap: 5px; background: var(--surface); border: 1px solid var(--line); color: var(--txt-2); }
+  .pill-num::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--line-alta); flex: none; }
+  .pill-num.n1::before { background: var(--ok); }
+  .pill-num.n2::before { background: #3E6FB0; }
+  /* "Todos · No Compra · Tienda online": en un renglón, aunque la lista sea
+     angosta (si no entran, se deslizan). */
+  .ms-numeros { flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  .ms-numeros::-webkit-scrollbar { display: none; }
+  .ms-numeros .chip { flex: none; min-height: 30px; padding: 4px 10px; font-size: 12.5px; }
+  .chat-num { background: var(--surface-3); color: var(--txt-2); font-weight: 600; }
+  .chat-hist { background: none; border: 1px dashed var(--line-alta); }
+
+  /* ── Tienda online (SQL 67): las consultas del WhatsApp de la tienda ──
+     El mismo tablero que No Compra y Carritos; las tarjetas no se arrastran
+     (casi todo se mueve solo): se tocan para abrir el chat y se mueven con
+     "Mover a…". La que espera respuesta, con el borde rojo. */
+  .ti-intro { margin: 0 0 12px; max-width: 820px; font-size: 13.5px; color: var(--txt-2); }
+  .ti-resumen { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 22px; margin: 0 0 14px; padding: 12px 16px;
+                background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); font-size: 13px; color: var(--txt-2); }
+  .ti-resumen b { margin-right: 5px; font-size: 19px; color: var(--txt); }
+  .ti-esperan.hay b { color: var(--bad-txt); }
+  .ti-cols { margin-bottom: 12px; }
+  .ti-tablero .tj { cursor: pointer; }
+  .tj.ti-espera { border-left-color: var(--bad); }
+  .tj-ult { margin-top: 3px; font-size: 13px; color: var(--txt-2); line-height: 1.35; overflow-wrap: anywhere;
+            display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .tj-quien { margin-top: 6px; font-size: 12px; color: var(--txt-3); }
+  .ti-tablero .tj-acc select, .ti-ficha select { width: auto; max-width: 100%; min-height: 32px; padding: 4px 30px 4px 10px; font-size: 12.5px; }
+  .ti-ficha { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  @media (min-width: 900px) {
+    .ti-tablero { grid-auto-columns: minmax(220px, 1fr); }
+    .ti-tablero .col { min-height: max(220px, calc(100vh - 330px)); }
+  }
   .burbuja { max-width: 82%; padding: 7px 10px 5px; border-radius: 12px; font-size: 14px; line-height: 1.38;
              white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px 1px rgba(0, 0, 0, .06); }
   .burbuja.entra { align-self: flex-start; background: var(--surface); color: var(--txt); border-top-left-radius: 4px; }
@@ -1036,6 +1074,8 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
           <input type="search" id="msBusca" placeholder="Buscar nombre, número o texto…" autocomplete="off">
         </div>
+        <!-- Por cuál de nuestros números escribió (SQL 67). -->
+        <div class="atajos ms-numeros" id="msNumeros" hidden></div>
       </div>
       <div id="msLista"></div>
     </div>
@@ -1069,8 +1109,11 @@
     </div>
   </section>
 
-  <!-- Segmentos (Beta), Difusiones y lo que está por venir (Tienda online,
-       Agente de IA, Bots). -->
+  <!-- Tienda online (SQL 67): las consultas del WhatsApp de la tienda, como
+       tarjetas que se mueven solas. -->
+  <section id="vistaTienda" hidden></section>
+  <!-- Segmentos (Beta), Difusiones y lo que está por venir (Agente de IA,
+       Bots). -->
   <section id="vistaSegmentos" hidden></section>
   <section id="vistaDifusiones" hidden></section>
   <section id="vistaPronto" hidden></section>
@@ -1678,7 +1721,7 @@
     { g: 'pipelines', t: 'Pipelines', i: ICO.pipe, hijos: [
       { v: 'no_compra', t: 'No Compra', nt: 'Sin contactar' },
       { v: 'carrito', t: 'Carritos abandonados', nt: 'Sin contactar' },
-      { v: 'tienda', t: 'Tienda online', marca: 'Pronto' }] },
+      { v: 'tienda', t: 'Tienda online', nt: 'Esperan respuesta' }] },
     { v: 'segmentos', t: 'Segmentos', i: ICO.seg, marca: 'Beta' },
     { v: 'contactos', t: 'Contactos', i: ICO.gente },
     { v: 'agente', t: 'Agente de IA', i: ICO.ia, marca: 'Pronto' },
@@ -1700,7 +1743,7 @@
 
   function pintarVistas() {
     var pend = function (l) { return l.filter(function (r) { return columnaDe(r) === 'Pendiente'; }).length; };
-    var cuantos = { mensajes: MS.sin, no_compra: pend(registros), carrito: pend(carritos) };
+    var cuantos = { mensajes: MS.sin, no_compra: pend(registros), carrito: pend(carritos), tienda: MS.tienda };
     var cerrados = gruposCerrados();
     var item = function (o, sub) {
       var n = cuantos[o.v], sel = o.v === vista;
@@ -1770,6 +1813,7 @@
     else if (vista === 'mensajes') { cargarMensajes(); }
     else if (vista === 'segmentos') { cargarSegmentos(); }
     else if (vista === 'difusiones') { pintarDifusiones(); }
+    else if (vista === 'tienda') { cargarTienda(); }
     else if (PRONTO[vista]) { pintarPronto(vista); }
     else { pintar(); }
   }
@@ -1783,6 +1827,7 @@
     $('vistaPlantillas').hidden = vista !== 'plantillas';
     $('vistaSegmentos').hidden = vista !== 'segmentos';
     $('vistaDifusiones').hidden = vista !== 'difusiones';
+    $('vistaTienda').hidden = vista !== 'tienda';
     $('vistaPronto').hidden = !PRONTO[vista];
     /* El local sólo tiene sentido en los No Compra: los carritos son todos online. */
     $('filtroLocal').parentNode.style.display = vista === 'no_compra' ? '' : 'none';
@@ -3485,13 +3530,35 @@
   var ORDEN_FUENTES = ['tienda', 'carrito', 'no_compra', 'club', 'whatsapp'];
 
   /* ═══ Mensajes (SQL 63) ══════════════════════════════════════════════════
-     Las conversaciones de WhatsApp de VDH Indumentaria, la última arriba.
-     "Sin contestar": lo último lo escribió el cliente. Cada 20 segundos se
-     pregunta lo mínimo (el último mensaje); si cambió, se trae la lista o la
-     conversación abierta. Lo que se contesta desde Kommo no nos llega: queda
-     una marca de que se contestó, sin el texto. */
+     Las conversaciones de WhatsApp de nuestros dos números (No Compra y
+     Tienda online), la última arriba. "Sin contestar": lo último lo escribió
+     el cliente (lo que vino del historial del celular no cuenta). Cada 20
+     segundos se pregunta lo mínimo (el último mensaje); si cambió, se trae la
+     lista o la conversación abierta. Lo que se contesta desde Kommo no nos
+     llega: queda una marca de que se contestó, sin el texto. */
+  var K_MS_NUM = 'nc_ms_numero';
   var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0, borrador: {},
-             abierto: null, previo: null, ficha: null };
+             abierto: null, previo: null, ficha: null, numero: leer(K_MS_NUM) || '', tienda: null };
+
+  /* Nuestros números de WhatsApp (SQL 67), por id: el nombre ("No Compra",
+     "Tienda online"), cómo se lee el teléfono y el orden (da el color). */
+  var NUMS = {};
+  function recordarNumeros(l) {
+    (l || []).forEach(function (n, i) { NUMS[n.id] = { nombre: n.nombre, telefono: n.telefono, tablero: n.tablero, o: i + 1 }; });
+  }
+  /* La etiqueta del número, sólo si hay más de uno (si no, no dice nada). */
+  function chipNumero(id) {
+    var n = NUMS[id];
+    if (!n || Object.keys(NUMS).length < 2) { return ''; }
+    return '<span class="pill pill-num n' + n.o + '"' + (n.telefono ? ' title="' + esc(n.telefono) + '"' : '') + '>' + esc(n.nombre) + '</span>';
+  }
+  /* Por cuál de los nuestros sale la respuesta: por el que escribió último. */
+  function numeroRespuesta(d) {
+    var l = (d && d.mensajes) || [], i;
+    for (i = l.length - 1; i >= 0; i--) { if (l[i].sentido === 'entra' && l[i].numero_id) { return l[i].numero_id; } }
+    for (i = l.length - 1; i >= 0; i--) { if (l[i].numero_id) { return l[i].numero_id; } }
+    return null;
+  }
 
   function cargarContactos() {
     var n = ++CT.pedido;
@@ -3588,7 +3655,10 @@
 
   /* Un mensaje en una línea: el texto, o qué era si no es texto. */
   var TIPO_MENSAJE = { image: 'Foto', video: 'Video', audio: 'Audio', document: 'Documento', sticker: 'Sticker',
-                       location: 'Ubicación', contacts: 'Contacto', reaction: 'Reaccionó' };
+                       location: 'Ubicación', contacts: 'Contacto', reaction: 'Reaccionó',
+                       /* Del historial del celular (SQL 67): la foto o el archivo que
+                          Meta no mandó, y un mensaje que se editó. */
+                       media_placeholder: 'Foto o archivo', edit: 'Editado' };
   function textoMensaje(m) {
     if (!m) { return ''; }
     if (m.desde === 'otra_app') { return 'Mensaje enviado desde Kommo'; }
@@ -3602,12 +3672,15 @@
   function cargarMensajes() {
     var n = ++MS.pedido;
     if (!MS.datos && !MS.error) { $('msLista').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'; }
-    base.crmMensajes(pinGuardado(), MS.buscar, 200)
+    base.crmMensajes(pinGuardado(), MS.buscar, 200, MS.numero)
       .then(function (d) {
         if (n !== MS.pedido) return;
         MS.datos = d || { cuentas: {}, conversaciones: [] };
         MS.error = '';
         MS.ultimo = MS.datos.ultimo_id;
+        recordarNumeros(MS.datos.numeros);
+        /* Un número que ya no está: se vuelve a "Todos". */
+        if (MS.numero && MS.datos.numeros && !NUMS[MS.numero]) { MS.numero = ''; guardar(K_MS_NUM, ''); }
         var sin = (MS.datos.cuentas || {}).sin_contestar;
         if (sin !== undefined && sin !== MS.sin) { MS.sin = sin; pintarVistas(); }
         pintarMensajes();
@@ -3630,9 +3703,11 @@
     }
     if (!MS.datos) { return; }
     var l = MS.datos.conversaciones || [];
+    pintarNumerosMensajes();
+    var nomNum = MS.numero && NUMS[MS.numero] ? NUMS[MS.numero].nombre : '';
     caja.innerHTML = '<div class="ct-lista">' + (l.length ? l.map(filaMensaje).join('')
-      : '<div class="ct-vacio">' + (MS.buscar ? 'Ninguna conversación con «' + esc(MS.buscar) + '».'
-                                              : 'Todavía no escribió nadie al WhatsApp de VDH Indumentaria.') + '</div>') + '</div>';
+      : '<div class="ct-vacio">' + (MS.buscar ? 'Ninguna conversación con «' + esc(MS.buscar) + '»' + (nomNum ? ' en ' + esc(nomNum) : '') + '.'
+                                              : nomNum ? 'Todavía nadie le escribió a ' + esc(nomNum) + '.' : 'Todavía no escribió nadie.') + '</div>') + '</div>';
     [].forEach.call(caja.querySelectorAll('[data-clave]'), function (b) {
       b.onclick = function () {
         var c = l.filter(function (x) { return x.clave === b.dataset.clave; })[0] || {};
@@ -3644,10 +3719,35 @@
     if (!MS.abierto && l.length && !ES_CEL()) { abrirConversacion(l[0].clave, { nombre: l[0].nombre, tel: l[0].tel }); }
   }
 
+  /* "Todos · No Compra · Tienda online": por cuál de nuestros números
+     escribió. Cada número con cuántas conversaciones esperan respuesta (el
+     total ya está en el menú, al lado de Mensajes). */
+  function pintarNumerosMensajes() {
+    var caja = $('msNumeros'), nums = (MS.datos && MS.datos.numeros) || [];
+    if (nums.length < 2) { caja.hidden = true; caja.innerHTML = ''; return; }
+    var cuenta = function (n) { return Number(n) ? '<span class="cuenta">' + Number(n) + '</span>' : ''; };
+    caja.innerHTML = '<button type="button" class="chip' + (!MS.numero ? ' sel' : '') + '" data-num="">Todos</button>' +
+      nums.map(function (n) {
+        return '<button type="button" class="chip' + (MS.numero === n.id ? ' sel' : '') + '" data-num="' + esc(n.id) + '">' +
+          esc(n.nombre) + cuenta(n.sin_contestar) + '</button>';
+      }).join('');
+    caja.hidden = false;
+    [].forEach.call(caja.querySelectorAll('[data-num]'), function (b) {
+      b.onclick = function () {
+        if (MS.numero === b.dataset.num) { return; }
+        MS.numero = b.dataset.num;
+        guardar(K_MS_NUM, MS.numero);
+        pintarNumerosMensajes();
+        cargarMensajes();
+      };
+    });
+  }
+
   function filaMensaje(c) {
     var u = c.ultimo || {};
     var previo = u.desde === 'otra_app' ? 'Contestado desde Kommo' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u);
-    var origen = (c.fuentes || []).length ? pillsFuentes(c.fuentes, c.nivel) : '<span class="ct-tel">+' + esc(normalizarTel(c.tel)) + '</span>';
+    var origen = chipNumero(c.numero) +
+      ((c.fuentes || []).length ? pillsFuentes(c.fuentes, c.nivel) : '<span class="ct-tel">+' + esc(normalizarTel(c.tel)) + '</span>');
     return '<button type="button" class="ct-fila' + (c.sin_contestar ? ' sin-contestar' : '') + (MS.abierto === c.clave ? ' abierta' : '') +
         '" data-clave="' + esc(c.clave) + '">' +
       '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(c.nombre)) + '</span>' +
@@ -3669,9 +3769,13 @@
         if (!u) { return; }
         var cambio = MS.ultimo !== null && u.ultimo_id !== MS.ultimo;
         MS.ultimo = u.ultimo_id;
-        if (u.sin_contestar !== MS.sin) { MS.sin = u.sin_contestar; pintarVistas(); }
+        /* "tienda" (SQL 67): las de la tienda que esperan respuesta, para el
+           numerito de Tienda online. Sin el 67 no viene y no se muestra. */
+        var tienda = u.tienda === undefined ? null : u.tienda;
+        if (u.sin_contestar !== MS.sin || tienda !== MS.tienda) { MS.sin = u.sin_contestar; MS.tienda = tienda; pintarVistas(); }
         if (cambio) {
           if (vista === 'mensajes') { cargarMensajes(); }
+          if (vista === 'tienda') { cargarTienda(); }
           if (vista === 'mensajes' && MS.abierto) { refrescarConversacion(MS.abierto); }
           if (CT.abierto) { refrescarChat(CT.abierto); }
         }
@@ -3712,12 +3816,21 @@
     }
     return '';
   }
-  /* Las burbujas, con un separador por día. */
+  /* Las burbujas, con un separador por día. Si la persona habló con los dos
+     números, una marca cada vez que cambia ("Por Tienda online"); y donde
+     termina lo que vino del historial del celular, otra (SQL 67). */
   function burbujasChat(l) {
-    var dia = '';
+    var dia = '', num = null, hist = false;
+    var varios = Object.keys(NUMS).length > 1 && l.some(function (m) { return m.numero_id && l[0].numero_id && m.numero_id !== l[0].numero_id; });
     return l.map(function (m) {
       var f = new Date(m.cuando), dd = diaChat(f), sep = '';
       if (dd !== dia) { sep = '<div class="chat-dia">' + esc(dd) + '</div>'; dia = dd; }
+      if (hist && !m.historial) { sep += '<div class="chat-dia chat-hist">Hasta acá, lo que trajimos del celular</div>'; }
+      hist = !!m.historial;
+      if (varios && m.numero_id && m.numero_id !== num && NUMS[m.numero_id]) {
+        sep += '<div class="chat-dia chat-num">Por ' + esc(NUMS[m.numero_id].nombre) + '</div>';
+      }
+      if (m.numero_id) { num = m.numero_id; }
       var otra = m.desde === 'otra_app';
       var tipo = m.tipo === 'template' ? 'Plantilla' : TIPO_MENSAJE[m.tipo];
       var cuerpo = otra ? 'Mensaje enviado desde Kommo. El texto no nos llega.'
@@ -3732,11 +3845,16 @@
      que es gratis y es lo que Meta deja. Después, plantilla. */
   function ventanaChat(d) {
     var v = d && d.ventana ? new Date(d.ventana) : null, abierta = !!v && v > new Date();
+    /* Por cuál de los nuestros sale (SQL 67): el nombre y el teléfono. */
+    var n = NUMS[numeroRespuesta(d)];
+    var sale = 'Sale por ' + (n ? n.nombre + (n.telefono ? ' (' + n.telefono + ')' : '') : 'el mismo número al que escribió') +
+               ' y también se ve en el celular.';
     return {
       abierta: abierta,
+      sale: sale,
       corto: abierta ? 'Gratis hasta ' + (diaChat(v) === 'Hoy' ? '' : diaChat(v).toLowerCase() + ' ') + horaChat(v) : v ? 'Pasaron 24 h' : '',
       nota: abierta
-        ? 'Sale por el mismo número al que escribió y también se ve en el celular. Se le puede contestar gratis hasta ' +
+        ? sale + ' Se le puede contestar gratis hasta ' +
           diaChat(v).toLowerCase() + ' a las ' + horaChat(v) + '.'
         : v ? 'Pasaron más de 24 horas desde que escribió: para escribirle hace falta una plantilla aprobada por Meta.'
             : 'No nos escribió: para escribirle primero hace falta una plantilla aprobada por Meta.'
@@ -3751,7 +3869,7 @@
     var l = (d && d.mensajes) || [];
     if (!l.length) {
       return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3>' +
-        '<p class="num-vacio">Todavía no escribió al WhatsApp de VDH Indumentaria.</p></div>';
+        '<p class="num-vacio">Todavía no nos escribió por WhatsApp.</p></div>';
     }
     var v = ventanaChat(d);
     return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3><div class="chat">' + burbujasChat(l) + '</div>' +
@@ -3868,12 +3986,13 @@
     var p = d.persona, c = MS.previo || {};
     var nom = p.nombre || nombreContacto(c);
     var conv = ((MS.datos && MS.datos.conversaciones) || []).filter(function (x) { return x.clave === p.clave; })[0] || {};
+    recordarNumeros(d.numeros);
     var v = ventanaChat(d);
     var escribiendo = escribiendoEn(raiz);
     raiz.innerHTML = '<div class="ms-chat">' +
       '<div class="ms-chat-cab">' + botonVolver() +
         '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(nom)) + '</span>' +
-        '<span class="ms-quien"><b>' + esc(nom) + '</b><span class="ct-origen">' +
+        '<span class="ms-quien"><b>' + esc(nom) + '</b><span class="ct-origen">' + chipNumero(numeroRespuesta(d)) +
           ((conv.fuentes || []).length ? pillsFuentes(conv.fuentes, conv.nivel) : '<span class="ct-tel">+' + esc(normalizarTel(p.tel || '')) + '</span>') +
         '</span></span>' +
         (v.corto ? '<span class="ms-ventana' + (v.abierta ? '' : ' cerrada') + '" title="' + esc(v.nota) + '">' + esc(v.corto) + '</span>' : '') +
@@ -3883,7 +4002,7 @@
         ((d.mensajes || []).length ? burbujasChat(d.mensajes) : '<p class="num-vacio">Todavía no hay mensajes.</p>') + '</div></div>' +
       /* En la compu, el "gratis hasta" ya está arriba; en el celular, abajo. */
       '<div class="ms-chat-pie">' + (v.abierta
-        ? cajaRespuesta() + '<p class="chat-nota">Sale por el mismo número al que escribió y también se ve en el celular.<span class="ms-solo-cel"> ' +
+        ? cajaRespuesta() + '<p class="chat-nota">' + esc(v.sale) + '<span class="ms-solo-cel"> ' +
           esc(v.nota.replace(/^.*celular\. /, '')) + '</span></p>'
         : sinVentana(v)) + '</div>' +
     '</div>';
@@ -3956,6 +4075,7 @@
       $('fichaIn').innerHTML = '<div class="ficha-bloque"><p class="num-vacio">No encontramos a esta persona.</p></div>';
       return;
     }
+    recordarNumeros(d.numeros);
     var f = fichaContactoHtml(d, c), h = d.historia || [];
     $('fichaTit').textContent = f.nom;
     $('fichaIn').innerHTML = f.contacto +
@@ -3994,6 +4114,12 @@
         (d.socio ? '<div class="ficha-socio">' + lineaSocio(d.socio) + '</div>' : '') +
         (txt ? '<div class="ficha-dato ct-resumen">' + esc(txt.charAt(0).toUpperCase() + txt.slice(1)) + '</div>' : '') +
         (p.acepta === false ? '<div class="ct-noacepta">No aceptó recibir promociones.</div>' : '') +
+        /* Su consulta de la tienda (SQL 67): en qué columna está, para moverla
+           desde acá sin ir al tablero. */
+        (d.consulta ? '<div class="ficha-dato ti-ficha"><span>Tienda online:</span> <select class="ti-mover-ficha" data-ti="' +
+          Number(d.consulta.id) + '" aria-label="Columna en Tienda online">' + COLS_TIENDA.map(function (x) {
+            return '<option' + (x.e === d.consulta.columna ? ' selected' : '') + '>' + esc(x.e) + '</option>'; }).join('') +
+          '</select></div>' : '') +
         '<div class="ficha-acc" style="margin-top:12px">' +
           (tel ? '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="https://wa.me/' + esc(tel) + '">Escribirle por WhatsApp</a>' +
                  '<button type="button" class="btn btn-sec btn-chico ct-plantilla">Plantilla de WhatsApp</button>' +
@@ -4011,6 +4137,11 @@
     [].forEach.call(raiz.querySelectorAll('[data-abrir]'), function (b) {
       b.onclick = function () { var x = b.dataset.abrir.split(':'); irAFicha(x[0], Number(x[1])); };
     });
+    var tm = raiz.querySelector('.ti-mover-ficha');
+    if (tm) {
+      tm.dataset.antes = tm.value;
+      tm.onchange = function () { moverConsulta(Number(tm.dataset.ti), tm.value, tm); };
+    }
     cablearPlantilla(raiz, p.clave, nom);
   }
 
@@ -4036,11 +4167,6 @@
      "Quiero ver toda la estructura armada": cada sección que todavía no está
      dice qué va a hacer, qué falta y lo que ya hay. */
   var PRONTO = {
-    tienda: { grupo: 'Pipelines', t: 'Tienda online', sub: 'Las consultas del WhatsApp de la tienda, como tarjetas.',
-      que: 'Cada consulta que llega al WhatsApp de la tienda (el número que atiende Ale) entra acá como una tarjeta, igual que los No Compra y los carritos: Nueva consulta → En conversación → Le pasamos el link → Compró o No compró. Así se ve cuántas consultas terminan en venta y cuáles quedaron sin contestar.',
-      falta: ['Reconectar el número de la tienda a WhatsApp: quedó desconectado el 09/10 al sacar a Kommo. Se reconecta desde Kommo ("Conectar mi WhatsApp" → "Aplicación de WhatsApp Business"), con el QR del celular de la tienda.',
-              'Definir con Ale las etapas del tablero.'],
-      ya: 'Los mensajes de VDH Indumentaria ya llegan a Mensajes, y el número de la tienda ya está suscripto: en cuanto se reconecte, sus mensajes llegan solos.' },
     agente: { t: 'Agente de IA', sub: 'Un asistente que contesta solo, las 24 horas.',
       que: 'Contesta solo por WhatsApp las preguntas de siempre (stock, talles, precios, envíos, cambios, locales y horarios) con los datos que ya tenemos, y le pasa la conversación a una persona cuando hace falta o cuando el cliente lo pide.',
       falta: ['Definir qué puede contestar solo y cuándo pasa a una persona.', 'Armarlo con Claude, con el catálogo, el stock y los locales.',
@@ -4051,6 +4177,162 @@
       falta: ['Elegir cuáles sirven de verdad: mejor pocos y buenos.', 'Las plantillas aprobadas que van a usar (las que escriben primero).'],
       ya: 'El aviso de "casi pagó" ya le llega al equipo por Telegram.' }
   };
+  /* ═══ Tienda online (SQL 67) ═════════════════════════════════════════════
+     Las consultas que llegan al WhatsApp de la tienda (el que atiende Ale),
+     como tarjetas. Pedido de Mauricio (10/10/2026), el día que se reconectó
+     el número. Se mueven solas:
+       - cuando le contestan (desde el CRM o desde el celular) → En conversación;
+       - cuando le mandan un link de vdh.com.ar → Le pasamos el link;
+       - si compra en la tienda online con ese teléfono → Compró, con el monto;
+       - 7 días sin hablar → No compró.
+     También se mueven a mano, desde la tarjeta o desde la ficha. Tocar una
+     abre la ficha con la conversación, para contestar ahí. */
+  var COLS_TIENDA = [
+    { e: 'Nueva consulta', c: 'c-pend' }, { e: 'En conversación', c: 'c-seg' }, { e: 'Le pasamos el link', c: 'c-esp' },
+    { e: 'Compró', c: 'c-ok' }, { e: 'No compró', c: '' }];
+  var TI = { datos: null, error: '', pedido: 0 };
+
+  function cargarTienda() {
+    var n = ++TI.pedido;
+    if (!TI.datos && !TI.error) { $('vistaTienda').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'; }
+    base.crmTienda(pinGuardado())
+      .then(function (d) {
+        if (n !== TI.pedido) return;
+        TI.datos = d || { tarjetas: [] };
+        TI.error = '';
+        pintarTienda();
+      })
+      .catch(function (err) {
+        if (n !== TI.pedido) return;
+        if (err && err.sinSesion) { caducada(); return; }
+        TI.error = /crm_tienda|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red';
+        TI.datos = null;
+        pintarTienda();
+      });
+  }
+
+  /* "hace 5 min", "hace 2 h", "hace 3 días". */
+  function haceTxt(iso) {
+    var min = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+    if (min < 60) { return 'hace ' + Math.max(min, 1) + ' min'; }
+    var h = Math.round(min / 60);
+    if (h < 24) { return 'hace ' + h + ' h'; }
+    var d = Math.round(h / 24);
+    return d === 1 ? 'hace 1 día' : 'hace ' + d + ' días';
+  }
+  function esperaRespuesta(t) { return !!t.espera && !t.cerrada; }
+  /* En cada columna: arriba la que más hace que espera respuesta; después,
+     lo último que pasó. */
+  function ordenTienda(a, b) {
+    var ea = esperaRespuesta(a), eb = esperaRespuesta(b);
+    if (ea !== eb) { return ea ? -1 : 1; }
+    if (ea) { return new Date(a.espera) - new Date(b.espera); }
+    return new Date((b.ultimo && b.ultimo.cuando) || b.creada) - new Date((a.ultimo && a.ultimo.cuando) || a.creada);
+  }
+
+  function pintarTienda() {
+    var caja = $('vistaTienda');
+    if (TI.error) {
+      caja.innerHTML = '<div class="vacio-vista"><b>' + (TI.error === 'falta' ? 'Falta un paso' : 'No se pudo traer el tablero') + '</b>' +
+        (TI.error === 'falta' ? 'Para ver Tienda online hay que correr el SQL 67 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
+      return;
+    }
+    if (!TI.datos) { return; }
+    var l = TI.datos.tarjetas || [], r = TI.datos.resumen || {};
+    var esperan = l.filter(esperaRespuesta).length;
+    var pct = Number(r.consultas) ? Math.round(100 * Number(r.compraron) / Number(r.consultas)) : 0;
+    var cuenta = {};
+    l.forEach(function (t) { cuenta[t.columna] = (cuenta[t.columna] || 0) + 1; });
+    caja.innerHTML =
+      '<p class="ti-intro">Las consultas que llegan al WhatsApp de la tienda. Se mueven solas: cuando le contestan, cuando le mandan un link ' +
+        'de vdh.com.ar y cuando compra en la tienda online con ese teléfono. Siete días sin hablar, pasan a No compró.</p>' +
+      '<div class="ti-resumen">' +
+        '<span class="ti-esperan' + (esperan ? ' hay' : '') + '"><b>' + esperan + '</b>' + (esperan === 1 ? 'espera respuesta' : 'esperan respuesta') + '</span>' +
+        '<span><b>' + miles(r.consultas) + '</b>' + (Number(r.consultas) === 1 ? 'consulta' : 'consultas') + ' en 30 días</span>' +
+        '<span><b>' + miles(r.compraron) + '</b>' + (Number(r.compraron) === 1 ? 'compró' : 'compraron') + (Number(r.consultas) ? ' (' + pct + ' %)' : '') + '</span>' +
+        '<span><b>' + esc(plata(r.vendido)) + '</b>vendido</span>' +
+      '</div>' +
+      /* En el celular, las columnas van una al lado de la otra: las pastillas
+         llevan a cada una. */
+      '<div class="filtros ti-cols">' + COLS_TIENDA.map(function (c) {
+        return '<button type="button" class="chip" data-col="' + esc(c.e) + '">' + esc(c.e) + ' <span class="cuenta">' + (cuenta[c.e] || 0) + '</span></button>';
+      }).join('') + '</div>' +
+      '<div class="tablero ti-tablero">' + COLS_TIENDA.map(function (c) {
+        var dentro = l.filter(function (t) { return t.columna === c.e; }).sort(ordenTienda);
+        return '<section class="col" data-col="' + esc(c.e) + '">' +
+          '<div class="col-cab"><i class="' + c.c + '"></i><b>' + esc(c.e) + '</b><span class="cuenta">' + dentro.length + '</span></div>' +
+          (dentro.length ? dentro.map(tarjetaTienda).join('') : '<div class="col-vacia">Nadie acá</div>') +
+        '</section>';
+      }).join('') + '</div>';
+    [].forEach.call(caja.querySelectorAll('.ti-tj'), function (a) {
+      a.onclick = function (ev) {
+        if (ev.target.closest('select')) { return; }
+        var t = tarjetaTiendaPorId(Number(a.dataset.ti)) || {};
+        abrirContacto(a.dataset.clave, { nombre: t.nombre, tel: t.tel });
+      };
+      var s = a.querySelector('.ti-mover');
+      s.onchange = function () { if (s.value) { moverConsulta(Number(a.dataset.ti), s.value, null); } };
+    });
+    var tb = caja.querySelector('.ti-tablero');
+    [].forEach.call(caja.querySelectorAll('.ti-cols [data-col]'), function (b) {
+      b.onclick = function () {
+        var col = [].filter.call(tb.querySelectorAll('.col'), function (x) { return x.dataset.col === b.dataset.col; })[0];
+        if (col) { tb.scrollTo({ left: col.offsetLeft - (parseFloat(getComputedStyle(tb).paddingLeft) || 0), behavior: 'smooth' }); }
+        [].forEach.call(caja.querySelectorAll('.ti-cols .chip'), function (x) { x.classList.toggle('sel', x === b); });
+      };
+    });
+  }
+  function tarjetaTiendaPorId(id) {
+    return ((TI.datos && TI.datos.tarjetas) || []).filter(function (t) { return t.id === id; })[0];
+  }
+
+  function tarjetaTienda(t) {
+    var u = t.ultimo || {}, espera = esperaRespuesta(t);
+    var previo = u.sentido ? (u.desde === 'otra_app' ? 'Contestado desde Kommo' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u)) : '';
+    return '<article class="tj ti-tj' + (espera ? ' ti-espera' : '') + (t.columna === 'Compró' ? ' es-ok' : '') +
+        '" data-ti="' + Number(t.id) + '" data-clave="' + esc(t.clave) + '">' +
+      '<div class="tj-top">' + ((t.fuentes || []).length ? pillsFuentes(t.fuentes, t.nivel) : '<span class="pill pill-neutra">WhatsApp</span>') +
+        '<span class="tj-dias">' + esc(cuandoHist(u.cuando || t.creada)) + '</span></div>' +
+      '<b class="tj-nom">' + esc(t.nombre || ('+' + normalizarTel(t.tel || t.clave))) + '</b>' +
+      (previo ? '<div class="tj-ult">' + esc(previo) + '</div>' : '') +
+      (espera ? '<div class="tj-aviso">Espera respuesta ' + esc(haceTxt(t.espera)) + '</div>' : '') +
+      (t.columna === 'Compró' && t.pedido ? '<div class="tj-plata">Compró ' + esc(plata(t.pedido.total)) + ' en vdh.com.ar' +
+        (t.pedido.numero ? ' · pedido ' + esc(t.pedido.numero) : '') + '</div>' : '') +
+      (t.columna === 'No compró' && t.sola ? '<div class="tj-motivo">Se cerró sola: 7 días sin hablar</div>' : '') +
+      (t.quien ? '<div class="tj-quien">La movió ' + esc(t.quien) + '</div>' : '') +
+      '<div class="tj-acc"><select class="ti-mover" aria-label="Mover a otra columna"><option value="">Mover a…</option>' +
+        COLS_TIENDA.filter(function (c) { return c.e !== t.columna; }).map(function (c) {
+          return '<option value="' + esc(c.e) + '">' + esc(c.e) + '</option>'; }).join('') + '</select></div>' +
+    '</article>';
+  }
+
+  /* Mover una consulta a mano, desde la tarjeta o desde la ficha ("sel" es
+     el desplegable de la ficha, para volverlo atrás si no se pudo). */
+  function moverConsulta(id, destino, sel) {
+    var t = tarjetaTiendaPorId(id);
+    var volver = function () { if (sel) { sel.value = sel.dataset.antes || sel.value; } if (TI.datos) { pintarTienda(); } };
+    if (!exigirQuien(function () { moverConsulta(id, destino, sel); })) { volver(); return; }
+    var antes = t ? { columna: t.columna, cerrada: t.cerrada, quien: t.quien, sola: t.sola } : null;
+    if (t) {
+      /* Se ve en el acto; si la base dice que no, vuelve. */
+      t.columna = destino; t.quien = quien; t.sola = false;
+      t.cerrada = destino === 'Compró' || destino === 'No compró' ? (t.cerrada || new Date().toISOString()) : null;
+      if (vista === 'tienda') { pintarTienda(); }
+    }
+    base.crmConsultaMover(pinGuardado(), id, destino, quien)
+      .then(function () {
+        avisar('ok', 'Pasó a ' + destino + '.');
+        if (sel) { sel.dataset.antes = destino; }
+        if (vista === 'tienda') { cargarTienda(); }
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        if (t && antes) { t.columna = antes.columna; t.cerrada = antes.cerrada; t.quien = antes.quien; t.sola = antes.sola; }
+        volver();
+        avisar('err', (err && err.message) || 'No se pudo mover.');
+      });
+  }
+
   function pintarPronto(v) {
     var p = PRONTO[v];
     $('vistaPronto').innerHTML = '<div class="pronto">' +
