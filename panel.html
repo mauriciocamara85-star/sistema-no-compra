@@ -886,6 +886,47 @@
   .ficha-bloque h3 { font-size: 12px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; margin-bottom: 9px; }
   .ficha-dato { font-size: 14px; color: var(--txt); line-height: 1.5; }
   .ficha-dato span { color: var(--txt-2); }
+
+  /* ── La ficha completa (10/10/2026), como la de Kommo ──
+     La de una persona (Contactos, Tienda online) ocupa toda la pantalla:
+     arriba, volver, el nombre y lo suyo de un vistazo (por qué número habló,
+     de dónde viene, la columna de Tienda online, hasta cuándo es gratis);
+     abajo, la ficha a la izquierda y la conversación grande a la derecha,
+     con la caja para contestar siempre a la vista. En el celular, una
+     columna: los datos, el chat y lo que pasó. Las fichas de No Compra y
+     Carritos siguen siendo el panel de costado. */
+  .fc-volver { display: inline-flex; align-items: center; gap: 3px; flex: none; padding: 7px 13px 7px 8px; border-radius: var(--r-pill);
+               background: var(--surface-2); font: 600 13px var(--sans); color: var(--txt); }
+  .fc-volver svg { width: 18px; height: 18px; }
+  .fc-volver[hidden], .fc-extra[hidden] { display: none; }
+  .fc-extra { display: flex; align-items: center; gap: 8px 12px; flex-wrap: wrap; min-width: 0; }
+  .fc-chips { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+  .fc-chips .pill { font-size: 11px; padding: 1px 8px; }
+  .fc-etapa { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--txt-2); white-space: nowrap; }
+  .fc-etapa select { width: auto; min-height: 32px; padding: 4px 30px 4px 10px; font-size: 13px; }
+  .capa.completa .ficha-x { display: none; }
+  .capa.completa .ficha-cab { flex-wrap: wrap; row-gap: 8px; }
+  .ficha-in.fc { display: flex; flex-direction: column; gap: 14px; }
+  .ficha-in.fc .fc-izq { display: contents; }
+  .ficha-in.fc .fc-contacto { order: 1; }
+  .ficha-in.fc .fc-der { order: 2; }
+  .ficha-in.fc .fc-hist { order: 3; }
+  .fc-chat { height: auto; }
+  .fc-chat .chat { max-height: min(60vh, 520px); }
+  @media (min-width: 900px) {
+    .capa.completa .ficha { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 0;
+                            animation: aparecer .2s var(--curva); }
+    .capa.completa .ficha-cab { position: static; padding: 12px 20px; }
+    .capa.completa .ficha-cab h2 { flex: 0 1 auto; font-size: 19px; }
+    .capa.completa .fc-extra { flex: 1; }
+    .capa.completa .fc-extra .ms-ventana { margin-left: auto; }
+    .ficha-in.fc { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, 380px) minmax(0, 1fr);
+                   gap: 16px; padding: 16px 20px 18px; }
+    .ficha-in.fc .fc-izq { display: grid; align-content: start; gap: 14px; min-height: 0; overflow-y: auto; }
+    .ficha-in.fc .fc-der { min-height: 0; display: flex; }
+    .fc-chat { flex: 1; }
+    .fc-chat .chat { max-height: none; }
+  }
   .ficha-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .ficha-grid .ancho { grid-column: 1 / -1; }
   .ficha-grid textarea { min-height: 70px; }
@@ -1127,7 +1168,14 @@
 <div class="capa" id="capaFicha" hidden>
   <aside class="ficha" role="dialog" aria-modal="true" aria-labelledby="fichaTit">
     <div class="ficha-cab">
+      <!-- La ficha completa de una persona (Contactos y Tienda online,
+           10/10/2026): vuelve a donde se abrió. -->
+      <button type="button" class="fc-volver" id="fichaVolver" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        <span id="fichaVolverTxt">Volver</span>
+      </button>
       <h2 id="fichaTit"></h2>
+      <div class="fc-extra" id="fichaExtra" hidden></div>
       <button type="button" class="ficha-x" id="fichaX" aria-label="Cerrar">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
       </button>
@@ -2265,14 +2313,27 @@
 
   /* ═══ La ficha del cliente ══════════════════════════════════════════════ */
   var fichaId = null;
-  function abrirFicha(id) { fichaId = id; pintarFicha(); $('capaFicha').hidden = false; cargarHistorial(); cargarCliente(); }
+  function abrirFicha(id) { fichaCompleta(false); fichaId = id; pintarFicha(); $('capaFicha').hidden = false; cargarHistorial(); cargarCliente(); }
   function cerrarFicha() {
     fichaId = null;
     if (typeof CT !== 'undefined' && CT && CT.abierto) {
       CT.abierto = null;
       [].forEach.call(document.querySelectorAll('.ct-fila.abierta'), function (f) { f.classList.remove('abierta'); });
     }
-    if ($('capaFicha')) { $('capaFicha').hidden = true; }
+    if ($('capaFicha')) { $('capaFicha').hidden = true; fichaCompleta(false); }
+  }
+  /* La ficha completa (pedido de Mauricio, 10/10/2026, "como Kommo"): la de
+     una persona (Contactos, Tienda online) ocupa toda la pantalla, con la
+     ficha a la izquierda y la conversación grande a la derecha. Las de No
+     Compra y Carritos siguen siendo el panel de costado. */
+  function fichaCompleta(si) {
+    var capa = $('capaFicha');
+    if (!capa) { return; }
+    capa.classList.toggle('completa', !!si);
+    $('fichaVolver').hidden = !si;
+    $('fichaExtra').hidden = !si;
+    if (!si) { $('fichaExtra').innerHTML = ''; $('fichaIn').className = 'ficha-in'; }
+    else { $('fichaVolverTxt').textContent = tituloVista(vista) || 'Volver'; }
   }
 
   function opciones(lista, actual) {
@@ -3629,7 +3690,15 @@
     var p = String(n || '').trim().split(/\s+/).filter(Boolean);
     return p.length ? (p[0].charAt(0) + (p.length > 1 ? p[p.length - 1].charAt(0) : '')).toUpperCase() : '·';
   }
-  function nombreContacto(c) { return (c && (c.nombre || (c.tel ? '+' + normalizarTel(c.tel) : '') || c.mail)) || 'Sin nombre'; }
+  function nombreContacto(c) { return (c && (c.nombre || (c.tel ? '+' + telVista(c.tel) : '') || c.mail)) || 'Sin nombre'; }
+  /* Un teléfono para mostrar. Los de WhatsApp ya traen el país adelante: uno
+     que no empieza con 54 y tiene más de 10 números es del exterior (+44 de
+     Inglaterra, por ejemplo) y se deja como está; normalizarTel le pegaba un
+     549 adelante. Los de 10 números (los cargados acá) siguen igual. */
+  function telVista(t) {
+    var n = String(t || '').replace(/\D/g, '');
+    return n.length > 10 && n.indexOf('54') !== 0 ? n : normalizarTel(n);
+  }
   function plata(n) { return PESOS.format(Math.round(Number(n) || 0)); }
   function prendaYMas(d) { return d.producto ? d.producto + (Number(d.mas) > 0 ? ' y ' + d.mas + ' más' : '') : ''; }
 
@@ -3747,12 +3816,12 @@
     var u = c.ultimo || {};
     var previo = u.desde === 'otra_app' ? 'Contestado desde Kommo' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u);
     var origen = chipNumero(c.numero) +
-      ((c.fuentes || []).length ? pillsFuentes(c.fuentes, c.nivel) : '<span class="ct-tel">+' + esc(normalizarTel(c.tel)) + '</span>');
+      ((c.fuentes || []).length ? pillsFuentes(c.fuentes, c.nivel) : '<span class="ct-tel">+' + esc(telVista(c.tel)) + '</span>');
     return '<button type="button" class="ct-fila' + (c.sin_contestar ? ' sin-contestar' : '') + (MS.abierto === c.clave ? ' abierta' : '') +
         '" data-clave="' + esc(c.clave) + '">' +
       '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(c.nombre)) + '</span>' +
       '<span class="ct-cuerpo">' +
-        '<span class="ct-cab"><b>' + esc(c.nombre || ('+' + normalizarTel(c.tel))) + '</b><span class="ct-hora">' + esc(c.ultima ? cuandoHist(c.ultima) : '') + '</span></span>' +
+        '<span class="ct-cab"><b>' + esc(c.nombre || ('+' + telVista(c.tel))) + '</b><span class="ct-hora">' + esc(c.ultima ? cuandoHist(c.ultima) : '') + '</span></span>' +
         '<span class="ct-origen">' + origen + '</span>' +
         '<span class="ct-ultimo ms-ult"><span>' + esc(previo) + '</span>' +
           (c.sin_contestar ? '<span class="ms-pend" title="Mensajes sin contestar">' + Number(c.pendientes || 1) + '</span>' : '') + '</span>' +
@@ -3864,16 +3933,16 @@
     return '<div class="nota-fila chat-escribir"><textarea class="chat-texto" maxlength="4000" placeholder="Escribí la respuesta…" aria-label="Respuesta por WhatsApp"></textarea>' +
            '<button type="button" class="btn btn-wsp btn-chico chat-enviar">Enviar</button></div>';
   }
-  /* En la ficha de Contactos: un bloque más. */
+  /* La conversación en la ficha completa: como el chat de Mensajes, con la
+     caja para contestar (o "Enviar plantilla") siempre abajo. */
   function chatContacto(d) {
     var l = (d && d.mensajes) || [];
-    if (!l.length) {
-      return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3>' +
-        '<p class="num-vacio">Todavía no nos escribió por WhatsApp.</p></div>';
-    }
     var v = ventanaChat(d);
-    return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3><div class="chat">' + burbujasChat(l) + '</div>' +
-      (v.abierta ? cajaRespuesta() + '<p class="chat-nota">' + esc(v.nota) + '</p>' : sinVentana(v)) + '</div>';
+    return '<div class="ms-chat fc-chat" id="chatBloque">' +
+      '<div class="ms-chat-cuerpo"><div class="chat">' +
+        (l.length ? burbujasChat(l) : '<p class="num-vacio">Todavía no nos escribió por WhatsApp.</p>') + '</div></div>' +
+      '<div class="ms-chat-pie">' + (v.abierta ? cajaRespuesta() + '<p class="chat-nota">' + esc(v.nota) + '</p>' : sinVentana(v)) + '</div>' +
+    '</div>';
   }
   /* Pasaron las 24 h (o nunca escribió): en lugar de la caja, una plantilla. */
   function sinVentana(v) {
@@ -3928,6 +3997,8 @@
         var escribiendo = escribiendoEn(b);
         b.outerHTML = chatContacto(d);
         b = $('chatBloque');
+        recordarNumeros(d.numeros);
+        pintarCabFicha(d);
         conectarChat(clave, b, function () { refrescarChat(clave); });
         cablearPlantilla(b, clave, (d.persona && d.persona.nombre) || $('fichaTit').textContent);
         bajarChat(b);
@@ -3993,7 +4064,7 @@
       '<div class="ms-chat-cab">' + botonVolver() +
         '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(nom)) + '</span>' +
         '<span class="ms-quien"><b>' + esc(nom) + '</b><span class="ct-origen">' + chipNumero(numeroRespuesta(d)) +
-          ((conv.fuentes || []).length ? pillsFuentes(conv.fuentes, conv.nivel) : '<span class="ct-tel">+' + esc(normalizarTel(p.tel || '')) + '</span>') +
+          ((conv.fuentes || []).length ? pillsFuentes(conv.fuentes, conv.nivel) : '<span class="ct-tel">+' + esc(telVista(p.wa_tel || conv.tel || p.tel || '')) + '</span>') +
         '</span></span>' +
         (v.corto ? '<span class="ms-ventana' + (v.abierta ? '' : ' cerrada') + '" title="' + esc(v.nota) + '">' + esc(v.corto) + '</span>' : '') +
         '<button type="button" class="btn btn-sec btn-chico ms-ver-ficha">Ver ficha</button>' +
@@ -4058,7 +4129,10 @@
     fichaId = null;
     CT.abierto = clave;
     var c = previo || ((CT.datos && CT.datos.contactos) || []).filter(function (x) { return x.clave === clave; })[0] || {};
+    fichaCompleta(true);
     $('fichaTit').textContent = nombreContacto(c);
+    $('fichaExtra').innerHTML = '';
+    $('fichaIn').className = 'ficha-in';
     $('fichaIn').innerHTML = '<div class="ficha-bloque"><p class="num-vacio">Cargando…</p></div>';
     $('capaFicha').hidden = false;
     [].forEach.call(document.querySelectorAll('.ct-fila'), function (f) { f.classList.toggle('abierta', f.dataset.clave === clave); });
@@ -4076,26 +4150,55 @@
       return;
     }
     recordarNumeros(d.numeros);
-    var f = fichaContactoHtml(d, c), h = d.historia || [];
+    /* La ficha completa: a la izquierda los datos y lo que pasó; a la
+       derecha la conversación, grande, con la caja para contestar abajo. En
+       el celular va todo en una columna: los datos, el chat y lo que pasó. */
+    var f = fichaContactoHtml(d, c, { sinConsulta: true }), h = d.historia || [];
     $('fichaTit').textContent = f.nom;
-    $('fichaIn').innerHTML = f.contacto +
-      /* Si escribió por WhatsApp, la conversación va antes que la historia:
-         es lo que se viene a mirar desde Mensajes. */
-      ((d.mensajes || []).length ? chatContacto(d) : '') +
-      '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(h) + '</div>' +
-      ((d.mensajes || []).length ? '' : chatContacto(d));
+    pintarCabFicha(d);
+    $('fichaIn').className = 'ficha-in fc';
+    $('fichaIn').innerHTML =
+      '<div class="fc-izq"><div class="fc-contacto">' + f.contacto + '</div>' +
+        '<div class="ficha-bloque fc-hist"><h3>Lo que pasó</h3>' + historiaContacto(h) + '</div></div>' +
+      '<div class="fc-der">' + chatContacto(d) + '</div>';
     cablearFicha($('fichaIn'), d.persona, f.nom, f.tel);
     var b = $('chatBloque');
     conectarChat(d.persona.clave, b, function () { refrescarChat(d.persona.clave); });
     bajarChat(b);
+    if (!ES_CEL() && b.querySelector('.chat-texto')) { b.querySelector('.chat-texto').focus(); }
+  }
+
+  /* La cabecera de la ficha completa, como la de Kommo: por qué número
+     habló, de dónde viene, su teléfono; la columna de Tienda online (para
+     moverla ahí mismo) y hasta cuándo se le puede contestar gratis. */
+  function pintarCabFicha(d) {
+    var p = d.persona || {}, fu = [];
+    (d.historia || []).forEach(function (x) { if (ORDEN_FUENTES.indexOf(x.fuente) > -1 && fu.indexOf(x.fuente) < 0) { fu.push(x.fuente); } });
+    if (d.socio && fu.indexOf('club') < 0) { fu.push('club'); }
+    var tel = p.wa_tel || p.tel, v = ventanaChat(d), k = d.consulta;
+    $('fichaExtra').innerHTML =
+      '<span class="fc-chips">' + chipNumero(numeroRespuesta(d)) + pillsFuentes(fu, d.socio && d.socio.nivel) +
+        (tel ? '<span class="ct-tel">+' + esc(telVista(tel)) + '</span>' : '') + '</span>' +
+      (k ? '<label class="fc-etapa"><span>Tienda online</span><select class="ti-mover-ficha" data-ti="' + Number(k.id) +
+             '" aria-label="Columna en Tienda online">' + COLS_TIENDA.map(function (x) {
+               return '<option' + (x.e === k.columna ? ' selected' : '') + '>' + esc(x.e) + '</option>'; }).join('') + '</select></label>' : '') +
+      (v.corto ? '<span class="ms-ventana' + (v.abierta ? '' : ' cerrada') + '" title="' + esc(v.nota) + '">' + esc(v.corto) + '</span>' : '');
+    var tm = $('fichaExtra').querySelector('.ti-mover-ficha');
+    if (tm) {
+      tm.dataset.antes = tm.value;
+      tm.onchange = function () { moverConsulta(Number(tm.dataset.ti), tm.value, tm); };
+    }
   }
 
   /* El bloque "Contacto" de una persona (en la ficha de Contactos y a la
      derecha de Mensajes): datos, Club, el resumen y los botones. */
-  function fichaContactoHtml(d, c) {
+  function fichaContactoHtml(d, c, opc) {
     var p = d.persona, h = d.historia || [];
+    opc = opc || {};
     var nom = p.nombre || nombreContacto(c);
-    var tel = p.tel ? normalizarTel(p.tel) : '';
+    /* El número como lo da WhatsApp (SQL 71) es el bueno también para los
+       del exterior; si no está, el de los 10 números. */
+    var tel = p.wa_tel ? telVista(p.wa_tel) : p.tel ? normalizarTel(p.tel) : '';
     var de = function (f, tipo) { return h.filter(function (x) { return x.fuente === f && (!tipo || (x.datos || {}).tipo === tipo); }); };
     var suma = function (l, k) { return l.reduce(function (a, x) { return a + (Number((x.datos || {})[k]) || 0); }, 0); };
     var online = de('tienda'), local = de('club', 'compra'), nc = de('no_compra').length, ca = de('carrito').length;
@@ -4116,7 +4219,7 @@
         (p.acepta === false ? '<div class="ct-noacepta">No aceptó recibir promociones.</div>' : '') +
         /* Su consulta de la tienda (SQL 67): en qué columna está, para moverla
            desde acá sin ir al tablero. */
-        (d.consulta ? '<div class="ficha-dato ti-ficha"><span>Tienda online:</span> <select class="ti-mover-ficha" data-ti="' +
+        (d.consulta && !opc.sinConsulta ? '<div class="ficha-dato ti-ficha"><span>Tienda online:</span> <select class="ti-mover-ficha" data-ti="' +
           Number(d.consulta.id) + '" aria-label="Columna en Tienda online">' + COLS_TIENDA.map(function (x) {
             return '<option' + (x.e === d.consulta.columna ? ' selected' : '') + '>' + esc(x.e) + '</option>'; }).join('') +
           '</select></div>' : '') +
@@ -4293,7 +4396,7 @@
         '" data-ti="' + Number(t.id) + '" data-clave="' + esc(t.clave) + '">' +
       '<div class="tj-top">' + ((t.fuentes || []).length ? pillsFuentes(t.fuentes, t.nivel) : '<span class="pill pill-neutra">WhatsApp</span>') +
         '<span class="tj-dias">' + esc(cuandoHist(u.cuando || t.creada)) + '</span></div>' +
-      '<b class="tj-nom">' + esc(t.nombre || ('+' + normalizarTel(t.tel || t.clave))) + '</b>' +
+      '<b class="tj-nom">' + esc(t.nombre || ('+' + telVista(t.tel || t.clave))) + '</b>' +
       (previo ? '<div class="tj-ult">' + esc(previo) + '</div>' : '') +
       (espera ? '<div class="tj-aviso">Espera respuesta ' + esc(haceTxt(t.espera)) + '</div>' : '') +
       (t.columna === 'Compró' && t.pedido ? '<div class="tj-plata">Compró ' + esc(plata(t.pedido.total)) + ' en vdh.com.ar' +
@@ -5294,6 +5397,7 @@
     $('ventaOk').onclick = guardarVenta;
     $('ventaCancelar').onclick = function () { $('modalVenta').hidden = true; pintar(); if (fichaId) { pintarFicha(); } };
     $('fichaX').onclick = cerrarFicha;
+    $('fichaVolver').onclick = cerrarFicha;
     $('capaFicha').onclick = function (ev) { if (ev.target === $('capaFicha')) { cerrarFicha(); } };
     conectarArrastre();
     $('quienOk').onclick = confirmarQuien;
