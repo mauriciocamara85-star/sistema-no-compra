@@ -542,6 +542,24 @@
      menú se abre desde el botón de la sección, por encima de todo. El
      numerito es lo que espera: lo que nadie contactó o contestó todavía. */
   .crm-cuerpo { min-width: 0; }
+  /* ── El CRM a pantalla completa (pedido de Mauricio, 10/10/2026) ──
+     Sin el rail negro a la izquierda, como Kommo: el CRM ya tiene su propio
+     menú. El rail no desaparece —es la única salida a Carga, Club o
+     Configuración—: se abre encima con el botón de arriba a la izquierda y
+     se cierra tocando afuera o con Escape. En el celular el rail es la
+     barra de abajo y se queda como está. */
+  .btn-sistema { display: none; }
+  .rail-velo { display: none; }
+  /* Con el botón adelante son tres en la cabecera: el título se queda
+     pegado al botón, a la izquierda, y no en el medio. */
+  .app-head-in > .marca { margin-right: auto; }
+  @media (min-width: 900px) {
+    body.hay-rail.crm-completo { padding-left: 0; }
+    body.crm-completo .rail { display: none; }
+    body.crm-completo.hay-rail .btn-sistema { display: grid; margin-right: 4px; }
+    body.crm-completo.rail-abierto .rail { display: flex; z-index: 96; }
+    body.crm-completo.rail-abierto .rail-velo { display: block; position: fixed; inset: 0; z-index: 95; background: rgba(20, 20, 18, .32); }
+  }
   .crm-menu { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; background: var(--surface);
               border: 1px solid var(--line); border-radius: var(--r); }
   .crm-menu-cab { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px 10px; }
@@ -943,6 +961,20 @@
   .plantillas .chip { min-height: 36px; padding: 7px 12px; font-size: 13px; }
   .modal-caja textarea { min-height: 130px; font-size: 15px; line-height: 1.45; }
   .modal-pie { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+  /* Borrar un registro y la papelera (SQL 74). */
+  .btn-borrar { background: var(--bad); border-color: var(--bad); color: var(--bad-ink); }
+  .ficha-borrar { margin-top: 4px; padding: 14px 2px 6px; border-top: 1px solid var(--line);
+                  display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
+  .ficha-borrar .btn-link { color: var(--bad-txt); }
+  .ficha-borrar span { font-size: 12.5px; color: var(--txt-3); }
+  .modal-caja p.borrar-kommo { padding: 10px 12px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn-txt); }
+  .borrar-kommo a { color: inherit; font-weight: 700; }
+  .pap-fila { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
+  .pap-fila:first-child { border-top: 0; }
+  .pap-fila > div { flex: 1; min-width: 0; }
+  .pap-fila b { display: block; font-size: 14.5px; }
+  .pap-fila span { display: block; font-size: 12.5px; color: var(--txt-3); }
+  .pap-fila a { font-size: 12.5px; font-weight: 700; color: var(--acc-txt); }
 
   /* ── En la PC de Atención al Cliente ───────────────────────────────────
      Las fichas pasan a dos columnas. Trabajando en una pantalla ancha, ver
@@ -969,10 +1001,15 @@
   }
 </style>
 </head>
-<body>
+<body class="crm-completo">
 
 <header class="app-head">
   <div class="app-head-in">
+    <!-- El menú del sistema (Carga, Estadísticas, Club…): el CRM va a
+         pantalla completa y el rail se abre desde acá. Sólo en la compu. -->
+    <button type="button" class="btn-icono btn-sistema" id="btnSistema" aria-label="Menú del sistema" aria-expanded="false" title="Carga, Estadísticas, Club, Beneficios, Config.">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+    </button>
     <div class="marca">
       <div class="marca-icono">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1059,6 +1096,8 @@
     </a>
   </div>
 </nav>
+<!-- Con el rail abierto encima (CRM a pantalla completa): tocar afuera lo cierra. -->
+<div class="rail-velo" id="railVelo"></div>
 
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
@@ -1195,6 +1234,38 @@
       <button type="button" class="btn btn-sec" id="wspCancelar">Cancelar</button>
       <a class="btn btn-wsp" id="wspIr" target="_blank" rel="noopener">Abrir WhatsApp</a>
     </div>
+  </div>
+</div>
+
+<!-- Borrar un registro (SQL 74): el PIN de nuevo, aunque ya esté adentro, y
+     el motivo. Va a una papelera de 30 días. -->
+<div class="modal" id="modalBorrar" hidden>
+  <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="borrarTit">
+    <h2 id="borrarTit">Borrar el registro</h2>
+    <p id="borrarQue"></p>
+    <div class="plantillas" id="borrarMotivo">
+      <button type="button" class="chip sel" data-motivo="Prueba">Prueba</button>
+      <button type="button" class="chip" data-motivo="Duplicado">Duplicado</button>
+      <button type="button" class="chip" data-motivo="Otro">Otro</button>
+    </div>
+    <div class="campo" id="borrarNotaCampo" hidden><label for="borrarNota">¿Por qué?</label><input id="borrarNota" maxlength="140" placeholder="En una línea"></div>
+    <div class="campo"><label for="borrarPin">PIN</label><input id="borrarPin" type="password" inputmode="numeric" autocomplete="off"></div>
+    <p class="borrar-kommo" id="borrarKommo" hidden></p>
+    <p>Sale del tablero, de Contactos y de las estadísticas. Queda 30 días en la papelera, por si hay que volverlo.</p>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec" id="borrarCancelar">Cancelar</button>
+      <button type="button" class="btn btn-borrar" id="borrarOk">Borrar</button>
+    </div>
+  </div>
+</div>
+
+<!-- La papelera: lo borrado en los últimos 30 días, para volverlo. -->
+<div class="modal" id="modalPapelera" hidden>
+  <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="papTit">
+    <h2 id="papTit">Papelera</h2>
+    <p>Los registros borrados quedan acá 30 días. Restaurar los vuelve al tablero como estaban, sin mandarlos de nuevo a Kommo ni a Telegram.</p>
+    <div id="papLista"></div>
+    <div class="modal-pie"><button type="button" class="btn btn-sec" id="papCerrar">Cerrar</button></div>
   </div>
 </div>
 
@@ -1448,6 +1519,23 @@
      Atención al Cliente todos los días— y va acá y no en la base porque la
      necesita el navegador para armar un enlace, no el servidor. */
   var KOMMO = 'https://marketingvdh.kommo.com';
+
+  /* El CRM a pantalla completa (10/10/2026): el rail del sistema se abre
+     encima con el botón de arriba a la izquierda, y se cierra tocando
+     afuera o con Escape. */
+  (function () {
+    var b = $('btnSistema'), velo = $('railVelo');
+    if (!b || !velo) { return; }
+    function poner(abierto) {
+      document.body.classList.toggle('rail-abierto', abierto);
+      b.setAttribute('aria-expanded', abierto ? 'true' : 'false');
+    }
+    b.onclick = function () { poner(!document.body.classList.contains('rail-abierto')); };
+    velo.onclick = function () { poner(false); };
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && document.body.classList.contains('rail-abierto')) { poner(false); }
+    });
+  })();
 
   /* ═══ Ingreso ═══════════════════════════════════════════════════════════ */
   /**
@@ -1744,6 +1832,7 @@
     base.panel(pin)
       .then(function (res) { pintarCrm(res); })
       .catch(function () {});
+    cargarPapelera();
   }
 
   /* ═══ Las secciones: el menú como Kommo (10/10/2026) ═════════════════════
@@ -2395,7 +2484,10 @@
           (r.responsable ? 'Lo sigue ' + esc(r.responsable) : 'Nadie lo tomó todavía') +
           (r.fecha1 ? ' · 1.er contacto ' + esc(r.fecha1) : '') + '</span></div>' +
       '</div>' +
-      bloquesCrm(r);
+      bloquesCrm(r) +
+      /* Al final y discreto (SQL 74): para una prueba o un duplicado. */
+      '<div class="ficha-borrar"><button type="button" class="btn-link" id="fichaBorrar">Borrar registro</button>' +
+        '<span>Para pruebas o duplicados. Pide el PIN.</span></div>';
     conectarFicha(r);
     pintarCliente(r);
   }
@@ -2452,6 +2544,110 @@
     pintarCliente(r);
   }
 
+  /* ═══ Borrar un registro y la papelera (SQL 74) ═════════════════════════
+     Pedido de Mauricio (10/10/2026): borrar una prueba o un duplicado. El
+     PIN se tipea de nuevo en el momento —no se usa el guardado: una compu
+     abierta no alcanza para borrar— y el registro va a una papelera de 30
+     días. Lo que ya salió no vuelve: el lead de Kommo se borra a mano allá
+     (su API no deja), y por eso se avisa ANTES, con el enlace. */
+  var papeleraLista = [];
+  function enlaceKommo(lead) { return KOMMO + '/leads/detail/' + encodeURIComponent(lead); }
+
+  function pedirBorrar(r) {
+    var m = $('modalBorrar'), ok = $('borrarOk'), motivo = 'Prueba';
+    $('borrarTit').textContent = 'Borrar el registro de ' + (r.nombre || r.whatsapp || 'este cliente');
+    $('borrarQue').textContent = [r.producto, bonito(r.sucursal), r.fecha, r.vendedor ? 'cargó ' + r.vendedor : '']
+      .filter(Boolean).join(' · ');
+    [].forEach.call($('borrarMotivo').querySelectorAll('[data-motivo]'), function (b) {
+      b.classList.toggle('sel', b.dataset.motivo === motivo);
+      b.onclick = function () {
+        motivo = b.dataset.motivo;
+        [].forEach.call($('borrarMotivo').querySelectorAll('[data-motivo]'), function (x) { x.classList.toggle('sel', x === b); });
+        $('borrarNotaCampo').hidden = motivo !== 'Otro';
+        if (motivo === 'Otro') { $('borrarNota').focus(); }
+      };
+    });
+    $('borrarNotaCampo').hidden = true;
+    $('borrarNota').value = '';
+    $('borrarPin').value = '';
+    $('borrarKommo').hidden = !r.lead;
+    $('borrarKommo').innerHTML = r.lead
+      ? 'Tiene un lead en Kommo, y Kommo no deja borrarlo desde acá: después <a href="' + esc(enlaceKommo(r.lead)) +
+        '" target="_blank" rel="noopener">borralo allá</a>.'
+      : '';
+    ok.disabled = false;
+    ok.onclick = function () {
+      var pin = $('borrarPin').value.trim(), nota = $('borrarNota').value.trim();
+      if (!pin) { avisar('err', 'Poné el PIN.'); $('borrarPin').focus(); return; }
+      if (motivo === 'Otro' && !nota) { avisar('err', 'Contá en una línea por qué se borra.'); $('borrarNota').focus(); return; }
+      ok.disabled = true;
+      base.registroBorrar(pin, r.id, motivo, nota)
+        .then(function (res) {
+          if (!res || !res.ok) { avisar('err', (res && res.porque) || 'No se pudo borrar.'); return; }
+          m.hidden = true;
+          registros = registros.filter(function (x) { return x.id !== r.id; });
+          cerrarFicha();
+          pintarVistas();
+          pintarVista();
+          avisar('ok', 'Borrado. Queda 30 días en la papelera.');
+          cargarPapelera();
+        })
+        .catch(function (err) {
+          var txt = (err && err.message) || '';
+          avisar('err', /PIN incorrecto/.test(txt) ? 'Ese PIN no es. No se borró nada.'
+            : /registro_borrar|PGRST202|Could not find/.test(txt) ? 'Para borrar falta correr el SQL 74 en Supabase.'
+            : txt || 'No se pudo borrar.');
+          $('borrarPin').value = '';
+          $('borrarPin').focus();
+        })
+        .then(function () { ok.disabled = false; });
+    };
+    $('borrarCancelar').onclick = function () { m.hidden = true; };
+    $('borrarPin').onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); ok.click(); } };
+    m.hidden = false;
+    $('borrarPin').focus();
+  }
+
+  /* Sin el SQL 74 la papelera no existe: no hay botón y no se dice nada. */
+  function cargarPapelera() {
+    return base.papelera(pinGuardado())
+      .then(function (l) { papeleraLista = Array.isArray(l) ? l : []; })
+      .catch(function () { papeleraLista = []; })
+      .then(function () {
+        if (vista === 'no_compra') { pintarAtajos(); }
+        if (!$('modalPapelera').hidden) { pintarPapelera(); }
+      });
+  }
+  function abrirPapelera() {
+    $('papCerrar').onclick = function () { $('modalPapelera').hidden = true; };
+    pintarPapelera();
+    $('modalPapelera').hidden = false;
+  }
+  function pintarPapelera() {
+    var l = papeleraLista;
+    $('papLista').innerHTML = !l.length ? '<p class="num-vacio">No hay nada en la papelera.</p>' : l.map(function (p) {
+      return '<div class="pap-fila"><div>' +
+        '<b>' + esc(p.nombre || p.whatsapp || 'Sin nombre') + '</b>' +
+        '<span>' + esc([p.producto, bonito(p.sucursal), p.vendedor ? 'cargó ' + p.vendedor : ''].filter(Boolean).join(' · ')) + '</span>' +
+        '<span>' + esc(p.motivo + (p.nota ? ': ' + p.nota : '') + ' · ' + (p.quedan === 1 ? 'queda 1 día' : 'quedan ' + p.quedan + ' días')) + '</span>' +
+        (p.kommo ? '<a href="' + esc(enlaceKommo(p.kommo)) + '" target="_blank" rel="noopener">Ver el lead en Kommo</a>' : '') +
+        '</div><button type="button" class="btn btn-sec btn-chico" data-restaurar="' + esc(p.id) + '">Restaurar</button></div>';
+    }).join('');
+    [].forEach.call($('papLista').querySelectorAll('[data-restaurar]'), function (b) {
+      b.onclick = function () {
+        b.disabled = true;
+        base.registroRestaurar(pinGuardado(), Number(b.dataset.restaurar))
+          .then(function (res) {
+            if (!res || !res.ok) { avisar('err', (res && res.porque) || 'No se pudo restaurar.'); b.disabled = false; return; }
+            avisar('ok', 'Restaurado: volvió al tablero como estaba.');
+            cargarPapelera();
+            cargar();
+          })
+          .catch(function (err) { avisar('err', (err && err.message) || 'No se pudo restaurar.'); b.disabled = false; });
+      };
+    });
+  }
+
   /* Las notas (08/10/2026): cada una queda en el historial con la fecha y
      quién la escribió, como el muro de Kommo. Antes era un solo cuadro que
      se pisaba al escribir encima; lo que tenía se sigue viendo arriba. Sin
@@ -2488,6 +2684,7 @@
 
   function conectarFicha(r) {
     $('fichaCol').onchange = function () { mover(r.id, this.value); };
+    if ($('fichaBorrar')) { $('fichaBorrar').onclick = function () { pedirBorrar(r); }; }
     if ($('notaOk')) {
       $('notaOk').onclick = function () { anotarNota(r); };
       /* Ctrl+Enter anota; Enter solo baja de renglón, como en un mensaje. */
@@ -2784,8 +2981,12 @@
       return '<button type="button" class="chip' + (atajo === d[0] ? ' sel' : '') + '" data-atajo="' + d[0] + '">' +
         d[1] + '<span class="cuenta">' + n + '</span></button>';
     }).join('') +
+      /* La papelera (SQL 74), sólo si hay algo adentro. */
+      (vista === 'no_compra' && papeleraLista.length
+        ? '<button type="button" class="chip" id="btnPapelera">Papelera<span class="cuenta">' + papeleraLista.length + '</span></button>' : '') +
       (l.length ? '<button type="button" class="btn btn-sec btn-chico atajos-der" id="btnElegir">' + (eligiendo ? 'Terminar' : 'Elegir varios') + '</button>' : '');
     caja.hidden = !caja.innerHTML;
+    if ($('btnPapelera')) { $('btnPapelera').onclick = abrirPapelera; }
     [].forEach.call(caja.querySelectorAll('[data-atajo]'), function (b) {
       b.onclick = function () { atajo = atajo === b.dataset.atajo ? '' : b.dataset.atajo; pintar(); };
     });

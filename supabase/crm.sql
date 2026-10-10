@@ -4499,3 +4499,249 @@ $$;
 grant execute on function crm_contacto(text, text) to anon, authenticated;
 
 select 'listo: la ficha con el número de WhatsApp' as "SQL 71";
+
+
+-- ─────────────────────────── PARTE 74 (10/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · BORRAR UN REGISTRO DE NO COMPRA (A UNA PAPELERA DE 30 DÍAS)
+--
+-- Correr en el editor SQL de Supabase (después del 73).
+--
+-- Pedido de Mauricio (10/10/2026): poder borrar un registro que fue una
+-- prueba o quedó duplicado, con el PIN pedido de nuevo en el momento.
+--   · registro_borrar: con el PIN y el motivo (Prueba, Duplicado u Otro).
+--     El registro sale de todos lados —tablero, contactos, estadísticas,
+--     objetivos— y queda 30 días en registros_papelera con lo que colgaba
+--     de él: su historial del CRM, su cola de salidas y sus cupones.
+--   · registro_restaurar: lo vuelve a poner como estaba, con el mismo
+--     número, SIN mandarlo de nuevo a Kommo ni a Telegram.
+--   · registros_papelera_ver: lo borrado en los últimos 30 días.
+--   · Lo que ya salió no vuelve atrás: el lead de Kommo (la API de Kommo no
+--     deja borrarlo: se borra a mano allá) y el aviso de Telegram.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists registros_papelera (
+  id         bigint primary key,             -- el número que tenía en registros
+  datos      jsonb not null,                 -- la fila entera
+  extras     jsonb not null default '{}'::jsonb,
+  motivo     text not null check (motivo in ('Prueba', 'Duplicado', 'Otro')),
+  nota       text,
+  borrado    timestamptz not null default now(),
+  restaurado timestamptz
+);
+alter table registros_papelera enable row level security;
+revoke all on registros_papelera from anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.encolar_salidas()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  /* SQL 74: un registro que se RESTAURA de la papelera no es uno nuevo:
+     ya salió a Kommo y a Telegram, y su historial vuelve con él. */
+  if coalesce(current_setting('vdh.restaurando', true), '') = 'si' then return new; end if;
+  /* Un registro de un local que NO está en la tabla `locales` no sale afuera.
+     Es o una prueba o un error de carga, y en los dos casos crear un lead en
+     el CRM —que no se puede borrar por API— es peor que no crearlo.
+
+     No se calla: queda anotado en el historial. Un local nuevo que alguien
+     olvidó dar de alta se descubre ahí, en vez de descubrirse tres semanas
+     después al notar que sus clientes nunca entraron a Kommo. */
+  if not exists (
+    select 1 from locales
+     where lower(trim(codigo)) = lower(trim(new.sucursal)) and activo
+  ) then
+    insert into log (accion, local, detalle, quien)
+    values ('Registro sin local conocido', new.sucursal,
+            'No se mandó a Kommo ni a Telegram: ese local no está dado de alta.',
+            new.vendedor);
+    return new;
+  end if;
+
+  if secreto('KOMMO_TOKEN') is not null then
+    insert into salidas (registro, destino) values (new.id, 'kommo')
+    on conflict do nothing;
+  end if;
+
+  if secreto('TELEGRAM_TOKEN') is not null and secreto('TELEGRAM_CHAT') is not null then
+    insert into salidas (registro, destino) values (new.id, 'telegram')
+    on conflict do nothing;
+  end if;
+
+  return new;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.crm_anotar_registro()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare de text; a text;
+begin
+  /* SQL 74: un registro que se RESTAURA de la papelera no es uno nuevo:
+     ya salió a Kommo y a Telegram, y su historial vuelve con él. */
+  if coalesce(current_setting('vdh.restaurando', true), '') = 'si' then return new; end if;
+  a := crm_columna(new.estado, new.contactado);
+  if tg_op = 'INSERT' then
+    insert into crm_movimientos (fuente, ref, de, a, quien, cuando)
+    values ('no_compra', new.id, null, a, nullif(trim(new.vendedor), ''), new.creado);
+    return new;
+  end if;
+  de := crm_columna(old.estado, old.contactado);
+  if de is distinct from a then
+    insert into crm_movimientos (fuente, ref, de, a, quien)
+    values ('no_compra', new.id, de, a, crm_quien(new.responsable));
+  end if;
+  return new;
+end;
+$function$
+;
+
+/* Borrar: con el PIN de administrador, pedido de nuevo en el momento (la
+   pantalla no usa el guardado). */
+create or replace function registro_borrar(p_pin text, p_id bigint, p_motivo text, p_nota text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  r    registros%rowtype;
+  mot  text := nullif(trim(coalesce(p_motivo, '')), '');
+  nota text := nullif(trim(coalesce(p_nota, '')), '');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if mot is null or mot not in ('Prueba', 'Duplicado', 'Otro') then
+    return jsonb_build_object('ok', false, 'porque', 'Elegí por qué se borra: prueba, duplicado u otro.');
+  end if;
+  if mot = 'Otro' and nota is null then
+    return jsonb_build_object('ok', false, 'porque', 'Contá en una línea por qué se borra.');
+  end if;
+
+  select * into r from registros where id = p_id for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'Ese registro ya no está.');
+  end if;
+
+  insert into registros_papelera (id, datos, extras, motivo, nota)
+  values (r.id, to_jsonb(r),
+          jsonb_build_object(
+            'movimientos', coalesce((select jsonb_agg(to_jsonb(m) order by m.id) from crm_movimientos m
+                                      where m.fuente = 'no_compra' and m.ref = r.id), '[]'::jsonb),
+            'eventos',     coalesce((select jsonb_agg(to_jsonb(e) order by e.id) from crm_eventos e
+                                      where e.fuente = 'no_compra' and e.ref = r.id), '[]'::jsonb),
+            'salidas',     coalesce((select jsonb_agg(to_jsonb(s) order by s.id) from salidas s
+                                      where s.registro = r.id), '[]'::jsonb),
+            'beneficios',  coalesce((select jsonb_agg(b.id order by b.id) from beneficios b
+                                      where b.registro = r.id), '[]'::jsonb)),
+          mot, nota)
+  on conflict (id) do update
+    set datos = excluded.datos, extras = excluded.extras, motivo = excluded.motivo,
+        nota = excluded.nota, borrado = now(), restaurado = null;
+
+  delete from crm_movimientos where fuente = 'no_compra' and ref = r.id;
+  delete from crm_eventos where fuente = 'no_compra' and ref = r.id;
+  /* Su cola de salidas se va con él (en cascada) y los cupones que lo
+     nombraban quedan sueltos: siguen valiendo. */
+  delete from registros where id = r.id;
+
+  insert into log (accion, local, detalle, quien)
+  values ('Registro borrado', r.sucursal,
+          'Registro ' || r.id || ' (' || mot || coalesce(': ' || nota, '') || '). Queda 30 días en la papelera.',
+          'PIN de administrador');
+
+  /* La papelera se limpia sola: lo de más de 30 días se va. */
+  delete from registros_papelera where borrado < now() - interval '30 days';
+
+  return jsonb_build_object('ok', true, 'id', r.id, 'kommo', r.lead_kommo);
+end;
+$$;
+revoke execute on function registro_borrar(text, bigint, text, text) from public;
+grant execute on function registro_borrar(text, bigint, text, text) to anon, authenticated;
+
+/* Restaurar: igual que estaba, con su número, su historial y sus salidas. */
+create or replace function registro_restaurar(p_pin text, p_id bigint)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  p registros_papelera%rowtype;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  select * into p from registros_papelera
+   where id = p_id and restaurado is null and borrado > now() - interval '30 days'
+   for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'Ya no está en la papelera.');
+  end if;
+  if exists (select 1 from registros where id = p_id) then
+    return jsonb_build_object('ok', false, 'porque', 'Ese registro ya está en el tablero.');
+  end if;
+
+  perform set_config('vdh.restaurando', 'si', true);
+  insert into registros overriding system value
+  select * from jsonb_populate_record(null::registros, p.datos);
+  insert into crm_movimientos
+  select * from jsonb_populate_recordset(null::crm_movimientos, p.extras->'movimientos');
+  insert into crm_eventos
+  select * from jsonb_populate_recordset(null::crm_eventos, p.extras->'eventos');
+  insert into salidas overriding system value
+  select * from jsonb_populate_recordset(null::salidas, p.extras->'salidas');
+  update beneficios set registro = p_id
+   where registro is null
+     and id in (select x::bigint from jsonb_array_elements_text(coalesce(p.extras->'beneficios', '[]'::jsonb)) x);
+  perform set_config('vdh.restaurando', '', true);
+
+  update registros_papelera set restaurado = now() where id = p_id;
+  insert into log (accion, local, detalle, quien)
+  values ('Registro restaurado', p.datos->>'sucursal', 'Registro ' || p_id || ', desde la papelera.', 'PIN de administrador');
+  return jsonb_build_object('ok', true, 'id', p_id);
+end;
+$$;
+revoke execute on function registro_restaurar(text, bigint) from public;
+grant execute on function registro_restaurar(text, bigint) to anon, authenticated;
+
+/* Lo borrado en los últimos 30 días, lo último primero. */
+create or replace function registros_papelera_ver(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  delete from registros_papelera where borrado < now() - interval '30 days';
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', p.id, 'nombre', p.datos->>'nombre', 'whatsapp', p.datos->>'whatsapp',
+             'sucursal', p.datos->>'sucursal', 'vendedor', p.datos->>'vendedor',
+             'producto', p.datos->>'producto', 'talle', p.datos->>'talle',
+             'creado', p.datos->>'creado', 'kommo', p.datos->>'lead_kommo',
+             'motivo', p.motivo, 'nota', p.nota, 'borrado', p.borrado,
+             'quedan', greatest(0, 30 - floor(extract(epoch from now() - p.borrado) / 86400))::int)
+           order by p.borrado desc)
+      from registros_papelera p
+     where p.restaurado is null), '[]'::jsonb);
+end;
+$$;
+revoke execute on function registros_papelera_ver(text) from public;
+grant execute on function registros_papelera_ver(text) to anon, authenticated;
+
+/* Y una vez por día, aunque nadie abra la papelera. */
+select cron.schedule('papelera-registros', '30 7 * * *',
+  $c$delete from registros_papelera where borrado < now() - interval '30 days'$c$);
+
+select 'listo: borrar registros, con papelera de 30 días' as "SQL 74";

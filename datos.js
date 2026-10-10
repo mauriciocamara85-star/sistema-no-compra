@@ -1354,6 +1354,21 @@ var base = {
     });
   },
 
+  /* ── La papelera de registros (SQL 74) ── */
+  /** Borrar un registro (una prueba, un duplicado): va 30 días a la
+      papelera. El PIN es el que se tipea en el momento, no el guardado. */
+  registroBorrar: function (pin, id, motivo, nota) {
+    return funcion('registro_borrar', { p_pin: pin, p_id: id, p_motivo: motivo, p_nota: nota || null });
+  },
+  /** Volverlo al tablero como estaba, sin mandarlo de nuevo a Kommo ni a Telegram. */
+  registroRestaurar: function (pin, id) {
+    return funcion('registro_restaurar', { p_pin: pin, p_id: id });
+  },
+  /** Lo borrado en los últimos 30 días. */
+  papelera: function (pin) {
+    return funcion('registros_papelera_ver', { p_pin: pin });
+  },
+
   /* ── Lo de Configuración ───────────────────────────────────────────────
      Sin identificarse, igual que hoy: el equipo de cada local y sus
      objetivos los maneja el encargado desde el celular del mostrador, y
