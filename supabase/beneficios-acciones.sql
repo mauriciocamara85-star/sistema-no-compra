@@ -1472,3 +1472,337 @@ as $sig$
 $sig$;
 
 select siguiente_serie() as "La próxima Gift Card";
+
+
+-- ─────────────────────────── PARTE 72 (10/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · LAS GIFT CARDS IMPRESAS, CON SU CÓDIGO
+--
+-- Correr en el editor SQL de Supabase (después del 71).
+--
+-- Pedido de Mauricio (10/10/2026): las gift cards nuevas (Black y Gold)
+-- traen impreso un código de barras distinto cada una. Con ese código se
+-- vende (se le carga el valor), se canjea y se cancela. En BlueSoft la venta
+-- se carga a mano como "gift card": el que sabe cuánto vale cada tarjeta y
+-- si ya se usó es este sistema.
+--   · giftcard_tarjetas: las 230 impresas (130 para Buenos Aires, 100 para
+--     Mar del Plata; Nº, color y lote).
+--   · Vender: se pasa la tarjeta por el lector. Tiene que ser una de las
+--     impresas y no haberse vendido. Sin código, como antes (las tarjetas
+--     viejas, con el número escrito a mano).
+--   · Buscar y canjear: también por los 14 números.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists giftcard_tarjetas (
+  codigo text primary key check (codigo ~ '^99[0-9]{12}$'),
+  nro    integer not null unique,
+  color  text not null check (color in ('Black', 'Gold')),
+  lote   text not null,
+  creada timestamptz not null default now()
+);
+alter table giftcard_tarjetas enable row level security;
+revoke all on giftcard_tarjetas from anon, authenticated;
+
+insert into giftcard_tarjetas (codigo, nro, color, lote) values
+  -- (los 230 códigos van sólo en correr-en-supabase-72.sql: el repositorio es público)
+  ('99000000000000', 0, 'Black', 'ejemplo')
+on conflict (codigo) do nothing;
+delete from giftcard_tarjetas where codigo = '99000000000000';
+
+/* Qué tarjeta es y si ya se vendió: para la pantalla, al pasarla por el
+   lector. No dice nada que no esté impreso en la tarjeta. */
+create or replace function giftcard_tarjeta(p_codigo text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with c as (select regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') as d)
+  select case
+    when (select d from c) !~ '^99[0-9]{12}$' then jsonb_build_object('existe', false, 'formato', false)
+    when not exists (select 1 from giftcard_tarjetas g, c where g.codigo = c.d) then jsonb_build_object('existe', false, 'formato', true)
+    else (select jsonb_build_object('existe', true, 'formato', true, 'nro', lpad(g.nro::text, 3, '0'), 'color', g.color,
+                                    'vendida', b.id is not null, 'estado', b.estado,
+                                    'local', b.local, 'cuando', b.creado)
+            from giftcard_tarjetas g cross join c
+            left join v_beneficios b on b.tipo = 'giftcard' and b.serie = g.codigo
+           where g.codigo = c.d
+           limit 1)
+  end
+$$;
+revoke execute on function giftcard_tarjeta(text) from public;
+grant execute on function giftcard_tarjeta(text) to anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.siguiente_serie()
+ RETURNS text
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  /* Se arranca en 4 aunque la tabla esté vacía: la 1, la 2 y la 3 son las
+     que quedaron anotadas en la planilla vieja, y repetir un número haría
+     que dos tarjetas distintas se llamen igual. */
+  select lpad(
+    greatest(
+      4,
+      coalesce(max(regexp_replace(serie, '[^0-9]', '', 'g')::bigint), 0) + 1
+    )::text, 5, '0')
+  /* SQL 72: sólo las de número corto. Las impresas tienen 14 números y, si
+     contaran, el próximo de las viejas sería un número de 14 dígitos. */
+  from beneficios where tipo = 'giftcard' and length(regexp_replace(serie, '[^0-9]', '', 'g')) <= 7
+$function$
+;
+
+drop function if exists public.vender_giftcard(numeric, text, text, numeric, text, integer, text, text, text);
+CREATE OR REPLACE FUNCTION public.vender_giftcard(p_valor numeric, p_local text, p_vendedor text, p_cobrado numeric DEFAULT NULL::numeric, p_pago text DEFAULT NULL::text, p_dias integer DEFAULT 30, p_telefono text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text, p_obs text DEFAULT NULL::text, p_codigo text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  nid     bigint;
+  intento integer;
+  /* `nro` y no `serie`: la tabla tiene una columna que se llama así, y
+     adentro del INSERT PL/pgSQL no sabe a cuál de las dos le hablan. */
+  nro text;
+  v_cod text := nullif(regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g'), '');
+  t giftcard_tarjetas%rowtype;
+begin
+  if coalesce(p_valor, 0) <= 0 then raise exception 'Falta el valor de la Gift Card.'; end if;
+  if length(trim(coalesce(p_local, ''))) = 0 then raise exception 'Falta el local.'; end if;
+  if length(trim(coalesce(p_vendedor, ''))) = 0 then raise exception 'Falta el vendedor.'; end if;
+
+  /* SQL 72: la tarjeta impresa. Su número es el código que lee la pistola:
+     tiene que ser una de las impresas y no haberse vendido. */
+  if v_cod is not null then
+    if v_cod !~ '^99[0-9]{12}$' then raise exception 'Ese código no es de una Gift Card VDH.'; end if;
+    select * into t from giftcard_tarjetas g where g.codigo = v_cod;
+    if not found then raise exception 'Esa tarjeta no está entre las Gift Cards impresas.'; end if;
+    if exists (select 1 from beneficios b where b.tipo = 'giftcard' and b.serie = v_cod) then
+      raise exception 'Esa Gift Card ya se vendió.';
+    end if;
+    begin
+      insert into beneficios (tipo, serie, valor, cobrado, pago, vence,
+                              local, vendedor, telefono, nombre, obs)
+      values ('giftcard', v_cod, p_valor, coalesce(p_cobrado, p_valor),
+              nullif(p_pago, '')::forma_pago,
+              ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+              trim(p_local), trim(p_vendedor),
+              nullif(trim(coalesce(p_telefono, '')), ''),
+              nullif(trim(coalesce(p_nombre, '')), ''),
+              p_obs)
+      returning id into nid;
+    exception when unique_violation then
+      raise exception 'Esa Gift Card ya se vendió.';
+    end;
+    return jsonb_build_object('vendida', true, 'id', nid, 'serie', v_cod, 'nro', t.nro, 'color', t.color,
+                              'vence', ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)));
+  end if;
+
+  /* Sin código: una tarjeta vieja, con el número escrito a mano. */
+
+  /* El número se toma acá adentro y en la misma transacción que el insert.
+     Dos ventas al mismo tiempo en dos locales distintos podrían pedir el
+     mismo: el índice único sobre la serie es el que decide, y el que pierde
+     reintenta con el siguiente. */
+  for intento in 1 .. 5 loop
+    nro := siguiente_serie();
+    begin
+      insert into beneficios (tipo, serie, valor, cobrado, pago, vence,
+                              local, vendedor, telefono, nombre, obs)
+      values ('giftcard', nro, p_valor,
+              -- Sin decir cuánto se cobró, se asume que se cobró el valor.
+              coalesce(p_cobrado, p_valor),
+              nullif(p_pago, '')::forma_pago,
+              ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+              trim(p_local), trim(p_vendedor),
+              nullif(trim(coalesce(p_telefono, '')), ''),
+              nullif(trim(coalesce(p_nombre, '')), ''),
+              p_obs)
+      returning id into nid;
+
+      return jsonb_build_object('vendida', true, 'id', nid, 'serie', nro);
+
+    exception when unique_violation then
+      -- Se la ganó otro local. Se prueba con la que sigue.
+      null;
+    end;
+  end loop;
+
+  raise exception 'No se pudo tomar un número de tarjeta. Probá de nuevo.';
+end;
+$function$
+;
+grant execute on function public.vender_giftcard(numeric, text, text, numeric, text, integer, text, text, text, text) to anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.beneficio_buscar(clave text)
+ RETURNS TABLE(id bigint, tipo text, estado text, nombre text, pct smallint, valor numeric, saldo numeric, serie text, codigo text, vence date, dias integer, buscaba text, local text, vendedor text, obs text, compra_minima numeric, locales text[], acumulable boolean, al_portador boolean, multiuso boolean, usos integer, usos_max integer, por_cliente integer, desde date, tope numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with pelado as (
+    select regexp_replace(coalesce(clave, ''), '[^0-9]', '', 'g') as digitos,
+           upper(regexp_replace(coalesce(clave, ''), '[^A-Za-z0-9]', '', 'g')) as alfanum
+  )
+  select b.id, b.tipo::text, b.estado,
+         /* El nombre, sólo para el que está adentro: ver el 14. */
+         case when soy_de_adentro() then b.nombre else null end as nombre,
+         b.pct, b.valor,
+         case when b.usado is null then b.valor else 0 end as saldo,
+         b.serie, b.codigo, b.vence, b.dias::integer, r.producto, b.local, b.vendedor, b.obs,
+         b.compra_minima, b.locales, b.acumulable, (b.codigo is not null) as al_portador,
+         b.multiuso, b.usos, b.usos_max, b.por_cliente, b.desde, b.tope
+    from v_beneficios b
+    left join registros r on r.id = b.registro
+    cross join pelado p
+   where (length(p.digitos) >= 8
+          and regexp_replace(coalesce(b.telefono, ''), '[^0-9]', '', 'g') = p.digitos)
+      /* Por código. El de una persona es largo y al azar, y se pide entero
+         (8 o más): es la credencial. El de campaña es corto y público a
+         propósito —se publica en Instagram—, así que alcanza con 4. */
+      or (b.codigo is not null
+          and length(p.alfanum) >= case when b.multiuso then 4 else 8 end
+          and upper(regexp_replace(b.codigo, '[^A-Za-z0-9]', '', 'g')) = p.alfanum)
+      or (b.tipo = 'giftcard' and length(p.digitos) between 1 and 7
+          and ltrim(regexp_replace(coalesce(b.serie, ''), '[^0-9]', '', 'g'), '0') = ltrim(p.digitos, '0'))
+      /* SQL 72: la gift card impresa, por los 14 números que lee la pistola. */
+      or (b.tipo = 'giftcard' and p.digitos ~ '^99[0-9]{12}$' and b.serie = p.digitos)
+   order by (b.estado = 'disponible') desc, b.creado desc
+   limit 5;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.canjear_beneficio(p_id bigint, p_clave text, p_local text, p_vendedor text, p_monto numeric DEFAULT NULL::numeric, p_producto text DEFAULT NULL::text, p_telefono text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  b        v_beneficios%rowtype;
+  tocadas  integer;
+  dig      text;
+  alfa     text;
+  coincide boolean;
+  tel      text;
+  ya       integer;
+  ult      record;
+  total    integer;
+  hoy      date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+begin
+  select * into b from v_beneficios where id = p_id;
+  if not found then return jsonb_build_object('canjeado', false, 'porque', 'ese beneficio no existe'); end if;
+
+  /* Hay que traer la misma llave con la que se lo encontró: ver el 14. */
+  dig  := regexp_replace(coalesce(p_clave, ''), '[^0-9]', '', 'g');
+  alfa := upper(regexp_replace(coalesce(p_clave, ''), '[^A-Za-z0-9]', '', 'g'));
+  coincide :=
+       (length(dig) >= 8 and regexp_replace(coalesce(b.telefono, ''), '[^0-9]', '', 'g') = dig)
+    or (b.codigo is not null and length(alfa) >= case when b.multiuso then 4 else 8 end
+        and upper(regexp_replace(b.codigo, '[^A-Za-z0-9]', '', 'g')) = alfa)
+    or (b.serie is not null and length(dig) between 1 and 7
+        and ltrim(regexp_replace(b.serie, '[^0-9]', '', 'g'), '0') = ltrim(dig, '0'))
+    /* SQL 72: la gift card impresa, por sus 14 números. */
+    or (b.serie is not null and dig ~ '^99[0-9]{12}$' and b.serie = dig);
+  if not coincide then
+    return jsonb_build_object('canjeado', false, 'porque', 'la clave no corresponde a ese beneficio');
+  end if;
+
+  if b.estado <> 'disponible' then
+    return jsonb_build_object('canjeado', false, 'porque',
+      case when b.multiuso and b.estado = 'usado' then 'ya se usó todas las veces que permitía' else 'ese beneficio está ' || b.estado end);
+  end if;
+  if b.desde is not null and b.desde > hoy then
+    return jsonb_build_object('canjeado', false,
+      'porque', 'empieza a valer el ' || to_char(b.desde, 'DD/MM'));
+  end if;
+  if length(trim(coalesce(p_local, ''))) = 0 then raise exception 'Falta el local del canje.'; end if;
+
+  if b.locales is not null
+     and upper(trim(p_local)) <> all (select upper(trim(x)) from unnest(b.locales) as x) then
+    return jsonb_build_object('canjeado', false, 'porque', 'ese beneficio no vale en ' || trim(p_local), 'locales', b.locales);
+  end if;
+  if b.compra_minima is not null and coalesce(p_monto, 0) < b.compra_minima then
+    return jsonb_build_object('canjeado', false,
+      'porque', 'la compra no llega al mínimo de ' || b.compra_minima::text, 'compra_minima', b.compra_minima);
+  end if;
+
+  -- ── La campaña: se anota un uso, el cupón sigue vivo ──
+  if b.multiuso then
+    /* "11 2345-6789" y "+54 9 11 2345 6789" son la misma persona: se
+       comparan los últimos 10 números. Sin esto, escribir el teléfono de
+       otra forma alcanzaba para usar "una vez por persona" dos veces. */
+    tel := nullif(regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g'), '');
+    if length(tel) >= 10 then tel := right(tel, 10); end if;
+    if b.por_cliente is not null and (tel is null or length(tel) < 8) then
+      return jsonb_build_object('canjeado', false, 'falta_telefono', true,
+        'porque', 'este cupón es de ' ||
+          case when b.por_cliente = 1 then 'un uso por persona' else b.por_cliente || ' usos por persona' end ||
+          ': poné el WhatsApp del cliente');
+    end if;
+
+    /* Dos canjes del mismo cupón a la vez —dos locales, o el mismo
+       cliente en dos cajas— se hacen de a uno: el segundo ya ve el uso del
+       primero. Es lo que hace que "una vez por persona" se cumpla de
+       verdad y que el tope no se pase por uno. */
+    perform pg_advisory_xact_lock(hashtext('cupon_campana'), b.id::integer);
+
+    if b.por_cliente is not null then
+      select count(*) into ya from beneficio_usos
+       where beneficio = b.id and anulado is null and telefono = tel;
+      if ya >= b.por_cliente then
+        select creado, local into ult from beneficio_usos
+         where beneficio = b.id and anulado is null and telefono = tel
+         order by creado desc limit 1;
+        return jsonb_build_object('canjeado', false, 'ya_lo_uso', true,
+          'porque', 'ese cliente ya lo usó' ||
+            case when b.por_cliente > 1 then ' las ' || b.por_cliente || ' veces que permite' else '' end ||
+            ' (el ' || to_char(ult.creado at time zone 'America/Argentina/Buenos_Aires', 'DD/MM') ||
+            ' en ' || coalesce((select nullif(trim(l.nombre), '') from locales l where upper(trim(l.codigo)) = upper(trim(ult.local))),
+                              initcap(lower(ult.local))) || ')');
+      end if;
+    end if;
+    if b.usos_max is not null then
+      select count(*) into total from beneficio_usos where beneficio = b.id and anulado is null;
+      if total >= b.usos_max then
+        return jsonb_build_object('canjeado', false, 'porque', 'ya se usó las ' || b.usos_max || ' veces que permitía');
+      end if;
+    end if;
+
+    insert into beneficio_usos (beneficio, telefono, nombre, local, vendedor, monto_compra, producto)
+    values (b.id, tel, nullif(trim(coalesce(p_nombre, '')), ''), trim(p_local),
+            nullif(trim(coalesce(p_vendedor, '')), ''), p_monto, nullif(trim(coalesce(p_producto, '')), ''));
+
+    return jsonb_build_object('canjeado', true, 'tipo', 'descuento', 'al_portador', true, 'campana', true,
+      'quedan', case when b.usos_max is null then null else b.usos_max - coalesce(total, b.usos) - 1 end);
+  end if;
+
+  -- ── Un solo uso, como siempre ──
+  update beneficios
+     set usado = now(), local_canje = trim(p_local),
+         vendedor_canje = nullif(trim(coalesce(p_vendedor, '')), ''),
+         monto_compra = p_monto,
+         canal_canje = 'local'
+   where id = p_id and usado is null and anulado is null;
+  get diagnostics tocadas = row_count;
+  if tocadas = 0 then
+    return jsonb_build_object('canjeado', false, 'porque', 'lo acaban de usar en otro lado');
+  end if;
+
+  if b.tipo = 'descuento' and b.registro is not null and coalesce(p_monto, 0) > 0 then
+    update registros
+       set compro = true, compro_canal = 'local', monto = p_monto,
+           producto_final = coalesce(nullif(trim(coalesce(p_producto, '')), ''), producto_final),
+           estado = coalesce(estado, 'Cerrado - compró'), contactado = true
+     where id = b.registro;
+  end if;
+
+  return jsonb_build_object('canjeado', true, 'tipo', b.tipo::text, 'al_portador', (b.codigo is not null));
+end;
+$function$
+;
+
+select 'listo: las gift cards impresas, con su código' as "SQL 72";

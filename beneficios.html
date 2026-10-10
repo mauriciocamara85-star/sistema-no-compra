@@ -109,6 +109,15 @@
     font-size: 13.5px; color: var(--txt-2); line-height: 1.5;
   }
   .proximo b { font: 700 22px/1 var(--display); color: var(--acc-txt); letter-spacing: -.5px; }
+  .proximo[hidden] { display: none; }
+  /* La tarjeta impresa: el campo del lector y qué tarjeta es (10/10/2026). */
+  .gc-codigo { margin: 14px 0 12px; }
+  .gc-codigo input { font-size: 17px; letter-spacing: .5px; }
+  .gc-tarjeta { margin-top: 8px; padding: 9px 12px; border-radius: var(--r-sm); font-size: 14px; font-weight: 600;
+                background: var(--ok-soft); color: var(--ok-txt); }
+  .gc-tarjeta.mal { background: var(--bad-soft); color: var(--bad-txt); }
+  .gc-tarjeta.espera { background: var(--surface-2); color: var(--txt-2); font-weight: 500; }
+  .gc-tarjeta[hidden] { display: none; }
 
   /* Sin local elegido no se puede vender ni canjear: las dos cosas anotan
      dónde y quién, y eso sale del dispositivo. */
@@ -359,21 +368,21 @@
   <section class="bloque" id="cajaBuscar" hidden>
     <p class="quien-linea" id="quienLinea"></p>
     <h2 class="buscar-tit">Buscar un beneficio</h2>
-    <p class="buscar-sub">El WhatsApp del cliente, el código del cupón o el número de la Gift Card.</p>
+    <p class="buscar-sub">El WhatsApp del cliente, el código del cupón o la Gift Card (pasala por el lector).</p>
     <div class="buscar-fila">
       <!-- Teclado de letras y no numérico: desde el 29/09/2026 hay cupones de
            campaña con nombre ("ENEROPROMO"), y con el teclado numérico del
            celular no se podían escribir. -->
       <input type="text" id="clave" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false"
-             placeholder="11 2345 6789  ·  ENEROPROMO  ·  00004" aria-label="Teléfono, código de cupón o número de tarjeta">
+             placeholder="11 2345 6789  ·  ENEROPROMO  ·  o pasá la Gift Card" aria-label="Teléfono, código de cupón o número de tarjeta">
       <button type="button" class="btn btn-pri" id="btnBuscar">Buscar</button>
     </div>
     <div id="resultado"></div>
 
     <!-- ── Vender una Gift Card ──
-         El número lo pone la app y el vendedor lo escribe en la tarjeta
-         física. Es el mismo gesto que ya hacían —tomar el próximo libre de
-         la planilla— sin tener que ir a buscarlo. -->
+         Las impresas (10/10/2026) se pasan por el lector: su código es su
+         número. Las viejas, sin código, siguen como antes: el número lo pone
+         la app y el vendedor lo escribe en la tarjeta. -->
     <button type="button" class="vender-abrir" id="btnVender" aria-expanded="false">
       <span>Vender una Gift Card</span>
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
@@ -381,9 +390,19 @@
     </button>
 
     <div id="cajaVender" hidden>
-      <p class="proximo">
+      <!-- La tarjeta impresa (10/10/2026): se pasa por el lector y su código
+           es su número. Dice al toque qué tarjeta es y si ya se vendió. -->
+      <div class="campo gc-codigo">
+        <label for="gcCodigo">La tarjeta</label>
+        <input type="text" inputmode="numeric" id="gcCodigo" autocomplete="off" spellcheck="false"
+               placeholder="Pasá la tarjeta por el lector">
+        <div class="gc-tarjeta" id="gcTarjeta" hidden></div>
+      </div>
+      <!-- Las tarjetas viejas, sin código: el número lo pone la app y se
+           escribe a mano. -->
+      <p class="proximo" id="proximoViejo">
         <b id="proximaSerie">…</b>
-        <span>Escribí este número en la tarjeta, abajo de <strong>VALOR</strong>.</span>
+        <span>¿Tarjeta vieja, sin código? Escribí este número en la tarjeta, abajo de <strong>VALOR</strong>.</span>
       </p>
       <div class="ficha-campos">
         <div class="campo"><label>Valor de la Gift Card</label>
@@ -633,6 +652,15 @@
     return Number(String($(id).value).replace(/[^0-9]/g, '')) || 0;
   }
 
+  /* La Gift Card impresa (SQL 72): 14 números, "99" + 12, que lee la
+     pistola. Se muestra agrupada como en la tarjeta: "99 1234 5678 9012". */
+  function digitos(t) { return String(t || '').replace(/[^0-9]/g, ''); }
+  function esCodigoGC(t) { return /^99\d{12}$/.test(digitos(t)); }
+  function lindoGC(t) {
+    var d = digitos(t);
+    return d.length === 14 ? d.slice(0, 2) + ' ' + d.slice(2).replace(/(\d{4})(?=\d)/g, '$1 ') : String(t || '');
+  }
+
   /* ═══ Buscar ════════════════════════════════════════════════════════════ */
   function buscar() {
     var clave = $('clave').value.trim();
@@ -660,10 +688,26 @@
        al cliente enfrente diciendo que le dijeron que tenía algo, y "no
        encontrado" lo deja sin salida delante del cliente. */
     if (!lista.length) {
-      caja.innerHTML = '<p class="nada">No hay ningún beneficio con eso. ' +
+      var nada = '<p class="nada">No hay ningún beneficio con eso. ' +
         'Si es un teléfono, fijate que sea el mismo con el que quedó cargado; ' +
         'si es una Gift Card, mirá el número escrito en la tarjeta. ' +
         'Y si el cliente nunca pasó, cargalo desde <a href="index.html">Carga</a>.</p>';
+      /* Una Gift Card impresa que no aparece: o todavía no se vendió, o no es
+         nuestra. Se pregunta cuál de las dos, que son dos respuestas
+         distintas para el que tiene la tarjeta en la mano (SQL 72). */
+      if (esCodigoGC(clave)) {
+        caja.innerHTML = '<p class="nada">Buscando la tarjeta…</p>';
+        base.giftcardTarjeta(digitos(clave))
+          .then(function (t) {
+            caja.innerHTML = '<p class="nada">' + (t && t.existe
+              ? 'Esta Gift Card (' + esc(t.color) + ' Nº ' + esc(t.nro) + ') todavía no se vendió: no tiene valor cargado. ' +
+                'Si la están comprando, abrí "Vender una Gift Card" y pasala por el lector.'
+              : 'Ese código no es de una Gift Card VDH.') + '</p>';
+          })
+          .catch(function () { caja.innerHTML = nada; });
+        return;
+      }
+      caja.innerHTML = nada;
       return;
     }
 
@@ -709,7 +753,7 @@
 
     var detalle = [];
     if (b.al_portador && b.codigo) detalle.push('Código ' + esc(b.codigo));
-    if (esGC && b.serie) detalle.push('Tarjeta ' + esc(b.serie));
+    if (esGC && b.serie) detalle.push('Tarjeta ' + esc(lindoGC(b.serie)));
     if (!esGC && b.buscaba) detalle.push('Había venido buscando ' + esc(b.buscaba));
     if (b.local) detalle.push((esGC ? 'Vendida en ' : 'Dado en ') + esc(bonito(b.local)));
     if (b.vence) {
@@ -835,17 +879,56 @@
     btn.setAttribute('aria-expanded', String(abierto));
     if (!abierto) return;
 
-    /* El número se muestra ANTES de vender: el vendedor lo escribe en la
-       tarjeta física, así que tiene que verlo primero. Es sólo el próximo
-       que va a tocar; el definitivo lo asigna la base al guardar. */
+    /* Las tarjetas viejas (sin código): el número se muestra ANTES de
+       vender, porque el vendedor lo escribe en la tarjeta. Es sólo el
+       próximo; el definitivo lo asigna la base al guardar. */
     base.siguienteSerie()
       .then(function (n) { $('proximaSerie').textContent = n; })
       .catch(function () { $('proximaSerie').textContent = '—'; });
-    $('gcValor').focus();
+    /* Las impresas (10/10/2026): lo primero es pasarla por el lector. */
+    $('gcCodigo').value = '';
+    mostrarTarjeta(null);
+    $('gcCodigo').focus();
+  }
+
+  /* Qué tarjeta se pasó por el lector, apenas se lee: Black o Gold, el Nº, y
+     si ya se vendió. La base lo vuelve a revisar al vender: esto es para
+     que el vendedor lo sepa antes de cobrar. */
+  var gcPedido = 0;
+  function mostrarTarjeta(estado, txt) {
+    var c = $('gcTarjeta');
+    if (!estado) { c.hidden = true; c.textContent = ''; c.className = 'gc-tarjeta'; $('proximoViejo').hidden = false; return; }
+    c.hidden = false;
+    c.className = 'gc-tarjeta' + (estado === 'ok' ? '' : ' ' + estado);
+    c.textContent = txt;
+    $('proximoViejo').hidden = true;
+  }
+  function revisarTarjeta() {
+    var d = digitos($('gcCodigo').value), n = ++gcPedido;
+    if (!d) { mostrarTarjeta(null); return; }
+    if (d.length < 14) { mostrarTarjeta('espera', 'Faltan números: el código de la tarjeta tiene 14.'); return; }
+    if (!esCodigoGC(d)) { mostrarTarjeta('mal', 'Ese código no es de una Gift Card VDH.'); return; }
+    mostrarTarjeta('espera', 'Revisando la tarjeta…');
+    base.giftcardTarjeta(d)
+      .then(function (t) {
+        if (n !== gcPedido) return;
+        if (!t || !t.existe) { mostrarTarjeta('mal', 'Esa tarjeta no está entre las Gift Cards impresas.'); return; }
+        if (t.vendida) {
+          mostrarTarjeta('mal', 'Esa Gift Card (' + t.color + ' Nº ' + t.nro + ') ya se vendió' + (t.local ? ' en ' + bonito(t.local) : '') + '.');
+          return;
+        }
+        mostrarTarjeta('ok', '✓ Gift Card ' + t.color + ' Nº ' + t.nro + ', sin vender. Poné el valor.');
+      })
+      .catch(function () {
+        if (n !== gcPedido) return;
+        mostrarTarjeta('espera', 'No se pudo revisar la tarjeta ahora: se revisa al vender.');
+      });
   }
 
   function vender() {
     var valor = plata('gcValor');
+    var cod = digitos($('gcCodigo').value);
+    if (cod && !esCodigoGC(cod)) { avisar('err', 'Ese código no es de una Gift Card VDH: pasá de nuevo la tarjeta.'); $('gcCodigo').focus(); return; }
     if (!valor) { avisar('err', 'Poné el valor de la Gift Card.'); $('gcValor').focus(); return; }
     if (!vendedor) { avisar('err', 'Primero elegí tu nombre en Carga.'); return; }
 
@@ -860,7 +943,8 @@
       pago: $('gcPago').value,
       dias: Number($('gcDias').value) || 30,
       telefono: $('gcTel').value.trim(),
-      nombre: $('gcNombre').value.trim()
+      nombre: $('gcNombre').value.trim(),
+      codigo: cod || null
     })
       .then(function (res) {
         btn.disabled = false; btn.textContent = 'Vender la Gift Card';
@@ -868,10 +952,17 @@
           avisar('err', (res && res.porque) || 'No se pudo vender.');
           return;
         }
-        /* El número va en el cartel y queda a la vista: es lo que hay que
-           escribir en la tarjeta, y si se pierde acá hay que ir a buscarlo. */
-        avisar('ok', 'Vendida. Escribí ' + res.serie + ' en la tarjeta.');
-        $('proximaSerie').textContent = res.serie;
+        if (res.nro) {
+          /* La impresa: ya tiene su número; se dice cuál se vendió y cuánto vale. */
+          avisar('ok', 'Vendida: Gift Card ' + res.color + ' Nº ' + ('00' + res.nro).slice(-3) + ', vale ' + PESOS.format(valor) + '.');
+          $('gcCodigo').value = '';
+          mostrarTarjeta(null);
+        } else {
+          /* La vieja: el número va en el cartel y queda a la vista, porque es
+             lo que hay que escribir en la tarjeta. */
+          avisar('ok', 'Vendida. Escribí ' + res.serie + ' en la tarjeta.');
+          $('proximaSerie').textContent = res.serie;
+        }
         ['gcValor', 'gcCobrado', 'gcTel', 'gcNombre'].forEach(function (id) { $(id).value = ''; });
         $('gcPago').value = '';
         if (sesion.hay()) cargarLista();
@@ -1280,7 +1371,7 @@
         ? ('Campaña <b>' + esc(b.codigo) + '</b> · ' + (b.usos === 1 ? '1 uso' : (b.usos || 0) + ' usos') +
            (b.usos_max ? ' de ' + b.usos_max : '') + ' · ' + esc(vecesPorPersona(b.por_cliente)))
         : esGC
-        ? ('Tarjeta ' + esc(b.serie || '') + (b.nombre ? ' · ' + esc(b.nombre) : ''))
+        ? ('Tarjeta ' + esc(lindoGC(b.serie || '')) + (b.nombre ? ' · ' + esc(b.nombre) : ''))
         : esc(b.nombre || b.telefono || 'sin nombre');
       return '<div class="fila-ben">' +
         '<span class="fila-ben-que">' + que + '</span>' +
@@ -1330,6 +1421,10 @@
       $('clave').onkeydown = function (e) { if (e.key === 'Enter') buscar(); };
       $('btnVender').onclick = abrirVender;
       $('btnVenderOk').onclick = vender;
+      /* La pistola escribe los 14 números y un Enter: con el Enter se pasa
+         al valor. */
+      $('gcCodigo').oninput = revisarTarjeta;
+      $('gcCodigo').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); revisarTarjeta(); $('gcValor').focus(); } };
       $('clave').focus();
     }
 

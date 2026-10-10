@@ -625,12 +625,22 @@ var base = {
    * Con el 10% de efectivo no son iguales, y los dos hacen falta para cuadrar.
    */
   venderGiftcard: function (d) {
-    return funcion('vender_giftcard', {
+    var args = {
       p_valor: d.valor, p_local: d.local, p_vendedor: d.vendedor,
       p_cobrado: d.cobrado || null, p_pago: d.pago || null,
       p_dias: d.dias || 30,
       p_telefono: d.telefono || null, p_nombre: d.nombre || null, p_obs: d.obs || null
-    });
+    };
+    /* La tarjeta impresa (SQL 72): el código que lee la pistola es su
+       número. Sólo va si hay, así las tarjetas viejas se siguen vendiendo
+       aunque la base todavía no tenga el 72. */
+    if (d.codigo) { args.p_codigo = d.codigo; }
+    return funcion('vender_giftcard', args);
+  },
+
+  /** Qué Gift Card impresa es un código y si ya se vendió (SQL 72). */
+  giftcardTarjeta: function (codigo) {
+    return funcion('giftcard_tarjeta', { p_codigo: codigo });
   },
 
   /* ── Y lo que pide sesión ────────────────────────────────────────────── */
