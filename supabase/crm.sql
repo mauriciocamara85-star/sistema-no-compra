@@ -4232,3 +4232,159 @@ begin
 end $hist$;
 
 select 'listo: sin las respuestas de Kommo que no eran' as "SQL 69";
+
+
+-- ─────────────────────────── PARTE 70 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · UNA REACCIÓN SOLA NO ES "SIN CONTESTAR"
+--
+-- Correr en el editor SQL de Supabase (después del 69).
+--
+-- Pedido de Mauricio (10/10/2026): un ❤️ del cliente después de nuestra
+-- respuesta dejaba la conversación como "sin contestar" y sumaba el
+-- numerito de Mensajes. Ahora una conversación espera respuesta si, después
+-- de lo último que le mandamos, escribió algo que NO sea sólo una reacción
+-- (y que no venga del historial del celular). Si pregunta algo y después
+-- reacciona, sigue esperando por la pregunta.
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* Mensajes: "sin contestar" y el numerito de cada conversación, con la regla
+   nueva. El resto, igual que en el 68. */
+create or replace function crm_mensajes(p_pin text, p_buscar text default null, p_limite integer default 200,
+                                        p_numero text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  q  text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
+  qd text := nullif(regexp_replace(coalesce(p_buscar, ''), '[^0-9]', '', 'g'), '');
+  v_num text := nullif(trim(coalesce(p_numero, '')), '');
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  with w as (select club_tel10(m.tel) as clave, m.* from wa_mensajes m),
+  ult as (
+    select distinct on (w.clave) w.clave, w.id, w.tel, w.numero_id, w.sentido, w.desde, w.tipo, w.texto, w.estado, w.cuando, w.historial
+      from w order by w.clave, w.cuando desc, w.id desc
+  ),
+  conv as (
+    select w.clave, count(*) as n,
+           (array_agg(nullif(trim(w.perfil), '') order by w.cuando desc) filter (where nullif(trim(w.perfil), '') is not null))[1] as perfil,
+           max(w.cuando) filter (where w.sentido = 'sale') as ultima_sale,
+           max(w.cuando) filter (where w.sentido = 'entra') as ultima_entra
+      from w group by w.clave
+  ),
+  /* Por cuáles de nuestros números habló, el último primero. */
+  nums as (
+    select x.clave, array_agg(x.numero_id order by x.ult desc) as numeros
+      from (select w.clave, w.numero_id, max(w.cuando) as ult from w group by w.clave, w.numero_id) x
+     group by x.clave
+  ),
+  pend as (
+    select w.clave, count(*) as pendientes
+      from w join conv c on c.clave = w.clave
+     where w.sentido = 'entra' and not w.historial and w.tipo <> 'reaction'
+       and w.cuando > coalesce(c.ultima_sale, '-infinity'::timestamptz)
+     group by w.clave
+  ),
+  nm as (
+    select b.clave,
+           (array_agg(b.nombre order by b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           array_agg(distinct b.fuente) as fuentes, max(b.nivel) as nivel
+      from crm_contactos_base() b
+     where b.fuente <> 'whatsapp' and b.clave in (select conv.clave from conv)
+     group by b.clave
+  ),
+  x as (
+    select c.clave, u.tel, coalesce(nm.nombre, wa_agenda_nombre(c.clave), c.perfil) as nombre, c.perfil,
+           coalesce(nm.fuentes, '{}'::text[]) as fuentes, nm.nivel, c.n,
+           coalesce(p.pendientes, 0) as pendientes, (coalesce(p.pendientes, 0) > 0) as sin_contestar,
+           u.cuando as ultima, c.ultima_entra, u.numero_id, ns.numeros,
+           jsonb_build_object('texto', u.texto, 'tipo', u.tipo, 'sentido', u.sentido, 'desde', u.desde, 'estado', u.estado) as ultimo
+      from conv c
+      join ult u on u.clave = c.clave
+      join nums ns on ns.clave = c.clave
+      left join pend p on p.clave = c.clave
+      left join nm on nm.clave = c.clave
+  ),
+  f as (
+    select * from x
+     where (v_num is null or v_num = any(x.numeros))
+       and (q is null
+            or lower(coalesce(x.nombre, '')) like '%' || q || '%'
+            or lower(coalesce(x.perfil, '')) like '%' || q || '%'
+            or (qd is not null and length(qd) >= 3 and x.tel like '%' || qd || '%')
+            or exists (select 1 from w where w.clave = x.clave and lower(coalesce(w.texto, '')) like '%' || q || '%'))
+  )
+  select jsonb_build_object(
+           'cuentas', jsonb_build_object('todas', (select count(*) from x),
+                                         'sin_contestar', (select count(*) from x where x.sin_contestar)),
+           'numeros', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'id', nu.numero_id, 'nombre', nu.nombre, 'telefono', nu.telefono, 'tablero', nu.tablero,
+                      'todas', (select count(*) from x where nu.numero_id = any(x.numeros)),
+                      'sin_contestar', (select count(*) from x where x.sin_contestar and x.numero_id = nu.numero_id))
+                    order by nu.orden)
+               from wa_numeros nu), '[]'::jsonb),
+           'ultimo_id', (select max(m.id) from wa_mensajes m),
+           'conversaciones', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'clave', y.clave, 'tel', y.tel, 'nombre', y.nombre, 'perfil', y.perfil,
+                      'fuentes', to_jsonb(y.fuentes), 'nivel', y.nivel, 'n', y.n, 'pendientes', y.pendientes,
+                      'sin_contestar', y.sin_contestar, 'ultima', y.ultima, 'ultima_entra', y.ultima_entra,
+                      'numero', y.numero_id, 'numeros', to_jsonb(y.numeros), 'ultimo', y.ultimo)
+                    order by y.ultima desc)
+               from (select * from f order by f.ultima desc limit greatest(coalesce(p_limite, 200), 1)) y), '[]'::jsonb))
+    into salida;
+  return salida;
+end;
+$$;
+grant execute on function crm_mensajes(text, text, integer, text) to anon, authenticated;
+
+/* Lo mínimo, para preguntar seguido: el último mensaje y cuántas
+   conversaciones esperan respuesta (con la regla de arriba), en total, por
+   número (el del último mensaje que espera) y en los números con tablero. */
+create or replace function crm_mensajes_ultimo(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  with u as (
+    select club_tel10(m.tel) as clave, max(m.cuando) filter (where m.sentido = 'sale') as ultima_sale
+      from wa_mensajes m
+     group by 1
+  ),
+  s as (
+    select distinct on (club_tel10(m.tel)) club_tel10(m.tel) as clave, m.numero_id
+      from wa_mensajes m
+      join u on u.clave = club_tel10(m.tel)
+     where m.sentido = 'entra' and not m.historial and m.tipo <> 'reaction'
+       and m.cuando > coalesce(u.ultima_sale, '-infinity'::timestamptz)
+     order by club_tel10(m.tel), m.cuando desc, m.id desc
+  )
+  select jsonb_build_object(
+           'ultimo_id', (select max(m.id) from wa_mensajes m),
+           'sin_contestar', (select count(*) from s),
+           'por_numero', coalesce((select jsonb_object_agg(z.numero_id, z.n)
+                                     from (select s.numero_id, count(*) as n from s group by s.numero_id) z), '{}'::jsonb),
+           'tienda', (select count(*) from s join wa_numeros nu on nu.numero_id = s.numero_id and nu.tablero = 'tienda'))
+    into salida;
+  return salida;
+end;
+$$;
+grant execute on function crm_mensajes_ultimo(text) to anon, authenticated;
+
+select 'listo: una reacción sola no es sin contestar' as "SQL 70";
