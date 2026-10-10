@@ -308,7 +308,7 @@
   @media (max-width: 899px) { .lote { bottom: 86px; } }
 
   /* ── Contactos (09/10/2026): una fila por persona, como el Inbox de Kommo ── */
-  #vistaContactos, #vistaMensajes { max-width: 900px; }
+  #vistaContactos { max-width: 900px; }
   .ct-controles { display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; }
   .ct-controles .atajos { margin: 0; }
   .ct-lista { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
@@ -341,8 +341,71 @@
   .ct-fila.sin-contestar .ct-hora { color: var(--ok-txt); font-weight: 600; }
   /* La conversación en la ficha: lo del cliente a la izquierda, lo nuestro
      a la derecha, como en el teléfono. */
-  .chat { display: flex; flex-direction: column; gap: 6px; max-height: 460px; overflow-y: auto; padding: 10px;
+  .chat { display: flex; flex-direction: column; gap: 6px; max-height: min(60vh, 560px); overflow-y: auto; padding: 10px;
           background: var(--surface-2); border-radius: var(--r-sm); }
+
+  /* ── Mensajes como el Inbox (10/10/2026): lista · chat · ficha ──
+     En la compu, tres columnas del alto de la pantalla: el chat al centro
+     con la caja fija abajo, como WhatsApp Web. La ficha va a la derecha
+     sólo si hay ancho (1700 px, con el menú del CRM al lado); si no,
+     aparece con "Ver ficha". En el celular, la lista; al tocar una, el
+     chat ocupa toda la pantalla. */
+  #vistaMensajes { position: relative; }
+  .ms-col { min-width: 0; min-height: 0; }
+  .ms-col-lista { display: flex; flex-direction: column; }
+  .ms-col-lista .ct-controles { flex: none; }
+  .ms-col-chat, .ms-col-info { display: none; }
+  .ms-chat { display: flex; flex-direction: column; height: 100%; background: var(--surface); border: 1px solid var(--line);
+             border-radius: var(--r); overflow: hidden; }
+  .ms-chat-cab { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+  .ms-chat-cab .ct-avatar { width: 38px; height: 38px; font-size: 13px; flex: none; }
+  .ms-quien { flex: 1; min-width: 0; display: grid; gap: 3px; }
+  .ms-quien b { font-size: 15px; color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ms-quien .ct-origen .pill { font-size: 11px; padding: 1px 8px; }
+  .ms-ventana { flex: none; padding: 4px 10px; border-radius: var(--r-pill); font: 600 12px var(--sans);
+                background: var(--ok-soft); color: var(--ok-txt); white-space: nowrap; }
+  .ms-ventana.cerrada { background: var(--warn-soft); color: var(--warn-txt); }
+  .ms-volver { display: none; width: 36px; height: 36px; border-radius: 50%; place-items: center; flex: none;
+               background: var(--surface-2); color: var(--txt); }
+  .ms-volver svg { width: 18px; height: 18px; }
+  .ms-chat-cuerpo { flex: 1; min-height: 0; display: flex; }
+  .ms-chat-cuerpo .chat { flex: 1; max-height: none; border-radius: 0; padding: 14px 16px; }
+  .ms-chat-pie { flex: none; padding: 10px 14px 12px; border-top: 1px solid var(--line); background: var(--surface); }
+  .ms-chat-pie .chat-escribir { margin-top: 0; }
+  .ms-chat-pie .chat-nota { margin-top: 6px; }
+  .ms-vacio { height: 100%; display: grid; place-items: center; text-align: center; padding: 20px; color: var(--txt-3); font-size: 14px;
+              background: var(--surface); border: 1px dashed var(--line); border-radius: var(--r); }
+  .ms-info { height: 100%; overflow: auto; display: grid; align-content: start; gap: 12px; }
+  .ms-info-cab { display: flex; align-items: center; justify-content: space-between; }
+  .ms-info-cab b { font-size: 13px; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
+  @media (min-width: 900px) { .ms-solo-cel { display: none; } }
+  @media (min-width: 900px) {
+    #vistaMensajes { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 14px; height: var(--ms-alto, 560px); }
+    #vistaMensajes[hidden] { display: none; }
+    .ms-col-lista { overflow: hidden; }
+    #msLista { flex: 1; min-height: 0; overflow-y: auto; border-radius: var(--r); }
+    .ms-col-chat { display: block; }
+    .ms-info-x { display: grid; }
+    /* Angosta (la de la oficina): la ficha, encima del chat, a la derecha. */
+    #vistaMensajes.con-info .ms-col-info { display: block; position: absolute; top: 0; right: 0; bottom: 0; width: 360px; z-index: 5;
+                                           padding: 12px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--r);
+                                           box-shadow: var(--sombra-alta); }
+  }
+  @media (min-width: 1700px) {
+    #vistaMensajes { grid-template-columns: 340px minmax(0, 1fr) 340px; }
+    .ms-col-info, #vistaMensajes.con-info .ms-col-info { display: block; position: static; width: auto; padding: 0; background: none;
+                                                         border: 0; box-shadow: none; }
+    .ms-ver-ficha, .ms-info-x { display: none !important; }
+  }
+  @media (max-width: 899px) {
+    /* El chat abierto: toda la pantalla, por encima de la barra de abajo. */
+    #vistaMensajes.con-chat .ms-col-chat { display: block; position: fixed; inset: 0; z-index: 75; background: var(--bg); }
+    #vistaMensajes.con-chat .ms-chat { border-radius: 0; border: 0; }
+    .ms-volver { display: grid; }
+    #vistaMensajes.con-info .ms-col-info { display: block; position: fixed; inset: 0; z-index: 76; overflow: auto; padding: 14px 16px 30px;
+                                           background: var(--bg); }
+    .ms-ventana { display: none; }
+  }
   .chat-dia { align-self: center; margin: 6px 0 2px; padding: 2px 10px; border-radius: var(--r-pill);
               background: var(--surface); font-size: 11.5px; color: var(--txt-3); }
   .burbuja { max-width: 82%; padding: 7px 10px 5px; border-radius: 12px; font-size: 14px; line-height: 1.38;
@@ -435,16 +498,158 @@
     .filtros { display: none; }
   }
 
-  /* ══ Las pestañas del CRM (desde 07/10/2026; el orden, 09/10) ══ */
-  .vistas { display: flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--surface-3); border-radius: var(--r-pill); }
-  .vistas button { flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 40px;
-                   padding: 6px 10px; border-radius: var(--r-pill); font: 600 13.5px var(--sans); color: var(--txt-2); white-space: nowrap; }
-  .vistas button.sel { background: var(--surface); color: var(--txt); box-shadow: var(--sombra); }
-  /* El numerito es lo que espera: los que nadie contactó todavía. */
-  .vistas .cuenta { font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: var(--r-pill);
-                    background: var(--warn-soft); color: var(--warn-txt); }
-  .vistas .cuenta.cero { background: var(--surface-2); color: var(--txt-3); }
-  @media (min-width: 900px) { .vistas { display: inline-flex; } .vistas button { flex: none; padding: 6px 18px; } }
+  /* ══ El CRM como Kommo (10/10/2026): el menú a la izquierda ══
+     En la compu, una columna con las secciones y sus grupos (Pipelines,
+     Automatizaciones), que se puede achicar a los íconos. En el celular el
+     menú se abre desde el botón de la sección, por encima de todo. El
+     numerito es lo que espera: lo que nadie contactó o contestó todavía. */
+  .crm-cuerpo { min-width: 0; }
+  .crm-menu { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; background: var(--surface);
+              border: 1px solid var(--line); border-radius: var(--r); }
+  .crm-menu-cab { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px 10px; }
+  .crm-menu-cab b { font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
+  .crm-plegar { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--txt-3); }
+  .crm-plegar:hover { background: var(--surface-2); color: var(--txt); }
+  .crm-plegar svg { width: 16px; height: 16px; transition: transform .2s var(--curva); }
+  .crm-item, .crm-subitem { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px;
+                            padding: 7px 10px; border-radius: 10px; text-align: left; font: 600 13px var(--sans); color: var(--txt-2); }
+  .crm-item:hover, .crm-subitem:hover { background: var(--surface-2); color: var(--txt); }
+  .crm-item.sel, .crm-subitem.sel { background: var(--acc-soft); color: var(--txt); }
+  .crm-item.sel::before, .crm-subitem.sel::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
+                                                   border-radius: 3px; background: var(--acc); }
+  .crm-ico { flex: none; width: 20px; height: 20px; display: grid; place-items: center; }
+  .crm-ico svg { width: 19px; height: 19px; }
+  .crm-txt { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crm-subitem { min-height: 34px; padding-left: 34px; font-size: 12.5px; font-weight: 500; }
+  .crm-subitem.sel { font-weight: 600; }
+  .crm-marca { flex: none; padding: 1px 7px; border-radius: var(--r-pill); font: 700 10.5px var(--sans); background: var(--surface-3); color: var(--txt-3); }
+  .crm-menu .cuenta, .crm-punto { flex: none; font-size: 11.5px; font-weight: 700; padding: 1px 7px; border-radius: var(--r-pill);
+                                  background: var(--warn-soft); color: var(--warn-txt); }
+  .crm-menu .cuenta.cero, .crm-punto.cero, .crm-grupo.abierto .crm-punto { display: none; }
+  .crm-flecha { flex: none; width: 16px; height: 16px; color: var(--txt-3); transition: transform .2s var(--curva); }
+  .crm-flecha svg { width: 16px; height: 16px; }
+  .crm-grupo.abierto .crm-flecha { transform: rotate(180deg); }
+  .crm-sub { display: none; flex-direction: column; gap: 1px; }
+  .crm-grupo.abierto .crm-sub { display: flex; }
+  .crm-seccion, .crm-velo { display: none; }
+  @media (min-width: 900px) {
+    .crm { display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 18px; align-items: start; }
+    .crm-menu { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
+    /* Achicado: sólo los íconos, con el numerito encima. */
+    .crm.chico { grid-template-columns: 58px minmax(0, 1fr); }
+    .crm.chico .crm-menu { padding: 10px 6px; }
+    .crm.chico .crm-menu-cab { justify-content: center; padding: 2px 0 8px; }
+    .crm.chico .crm-menu-cab b, .crm.chico .crm-txt, .crm.chico .crm-marca, .crm.chico .crm-flecha, .crm.chico .crm-sub { display: none; }
+    .crm.chico .crm-plegar svg { transform: rotate(180deg); }
+    .crm.chico .crm-item { justify-content: center; padding: 7px 0; }
+    .crm.chico .crm-item .cuenta, .crm.chico .crm-punto { position: absolute; top: 1px; right: 1px; padding: 0 5px; font-size: 10px; }
+    .crm.chico .crm-grupo .crm-punto:not(.cero) { display: block; }
+  }
+  @media (max-width: 899px) {
+    /* El botón de la sección: dónde estás y, al tocarlo, el menú. */
+    .crm-seccion { display: inline-flex; align-items: center; gap: 8px; min-height: 42px; padding: 7px 14px 7px 11px; margin-bottom: 12px;
+                   border-radius: var(--r-pill); background: var(--surface); border: 1px solid var(--line); font: 600 14.5px var(--sans); color: var(--txt); }
+    .crm-seccion svg { width: 18px; height: 18px; }
+    .crm-seccion .cuenta { font-size: 11px; font-weight: 700; padding: 0 6px; border-radius: var(--r-pill); background: var(--warn-soft); color: var(--warn-txt); }
+    .crm-menu { position: fixed; top: 0; bottom: 0; left: 0; z-index: 72; width: min(300px, 86vw); padding-top: 16px; border-radius: 0 var(--r) var(--r) 0;
+                overflow-y: auto; transform: translateX(-105%); transition: transform .25s var(--curva); }
+    .crm.menu-abierto .crm-menu { transform: none; box-shadow: var(--sombra-alta); }
+    .crm.menu-abierto .crm-velo { display: block; position: fixed; inset: 0; z-index: 71; background: rgba(20, 20, 18, .38); }
+    .crm-plegar { display: none; }
+    .crm-item, .crm-subitem { min-height: 44px; font-size: 15px; }
+  }
+
+  /* ── Lo que está por venir: qué va a hacer, qué falta y lo que ya hay ── */
+  .pronto { max-width: 760px; display: grid; gap: 14px; }
+  .pronto-cab small { display: block; font-size: 12px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
+  .pronto-cab h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; font: 700 22px/1.2 var(--display); }
+  .pronto-cab p { margin-top: 4px; font-size: 14px; color: var(--txt-2); }
+  .pronto .ficha-bloque p, .pronto li { font-size: 14px; line-height: 1.55; color: var(--txt); }
+  .pronto ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+
+  /* ── Segmentos (Beta): grupos de contactos que se arman solos ── */
+  .seg-intro { max-width: 760px; margin: 0 2px 14px; font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
+  .seg-grid { display: grid; gap: 12px; }
+  @media (min-width: 900px) { .seg-grid { grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); } }
+  .seg { display: grid; gap: 6px; align-content: start; }
+  .seg h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--txt); text-transform: none; letter-spacing: 0; }
+  .seg-n { font: 700 28px/1 var(--display); color: var(--txt); font-variant-numeric: tabular-nums; }
+  .seg-n small { margin-left: 4px; font: 500 12.5px var(--sans); color: var(--txt-3); }
+  .seg p { font-size: 13px; line-height: 1.45; color: var(--txt-2); }
+  .seg-acc { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .seg.por-venir { border-style: dashed; background: transparent; }
+
+  /* ── Difusiones: a quién, con qué plantilla y cuánto sale ── */
+  .dif { max-width: 760px; display: grid; gap: 12px; }
+  .dif-paso { display: grid; gap: 8px; }
+  .dif-paso h3 { display: flex; align-items: center; gap: 8px; }
+  .dif-paso h3 i { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font: 700 11px var(--sans);
+                   font-style: normal; background: var(--acc); color: var(--acc-ink); }
+  .dif-paso select { max-width: 100%; }
+  .dif-resumen { font-size: 14px; line-height: 1.6; color: var(--txt); }
+  .dif-resumen b { font-variant-numeric: tabular-nums; }
+  .dif-falta { font-size: 13px; line-height: 1.5; color: var(--warn-txt); background: var(--warn-soft); border-radius: var(--r-sm); padding: 10px 12px; }
+
+  /* ── Plantillas: las de WhatsApp (Meta) y las respuestas rápidas ── */
+  .pl-solapas { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--surface-3); border-radius: var(--r-pill); }
+  .pl-solapas button { min-height: 36px; padding: 6px 16px; border-radius: var(--r-pill); font: 600 13px var(--sans); color: var(--txt-2); }
+  .pl-solapas button.sel { background: var(--surface); color: var(--txt); box-shadow: var(--sombra); }
+  .plm-cab { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; margin-bottom: 14px; }
+  .plm-cab p { flex: 1 1 360px; max-width: 760px; font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
+  .plm-cab .acc { display: flex; flex-wrap: wrap; gap: 8px; }
+  .plm-cuenta { margin-bottom: 12px; }
+  .plm-cuenta h3 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .plm-fila { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 11px 0;
+              border-top: 1px solid var(--line); }
+  .plm-fila b { font-size: 14px; color: var(--txt); }
+  .plm-fila .pill { margin-left: 4px; font-size: 11px; padding: 1px 8px; }
+  .plm-fila p { margin-top: 4px; font-size: 13px; line-height: 1.45; color: var(--txt-2); white-space: pre-wrap;
+                display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .plm-motivo { margin-top: 4px; font-size: 12.5px; color: var(--bad-txt); }
+  .pl-dato { padding: 0 3px; border-radius: 4px; background: var(--acc-soft); color: var(--txt); font-weight: 600; }
+  /* La ventanita: el formulario y, al lado, cómo le llega. */
+  .modal-caja.plm-caja { width: min(880px, 100%); }
+  .plm-grid { display: grid; gap: 16px; }
+  @media (min-width: 760px) { .plm-grid { grid-template-columns: minmax(0, 1fr) 280px; } }
+  .plm-form { display: grid; gap: 12px; align-content: start; }
+  .plm-form textarea { min-height: 120px; }
+  .plm-slug, .plm-ayuda { font-size: 12px; line-height: 1.4; color: var(--txt-3); }
+  .plm-botones { display: grid; gap: 6px; }
+  .plm-boton { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .plm-boton span { flex: none; width: 70px; font-size: 12px; color: var(--txt-3); }
+  .plm-boton input { flex: 1 1 140px; min-width: 0; min-height: 38px; padding: 7px 10px; font-size: 14px; }
+  .plm-boton button { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); color: var(--txt-2); }
+  .plm-mas { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .plm-lado { display: grid; gap: 8px; align-content: start; }
+  .plm-lado-tit { font-size: 11.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
+  .plm-tel { padding: 14px 12px; border-radius: var(--r-sm); background: var(--surface-2); }
+  .plm-burbuja { padding: 8px 10px; border-radius: 10px 10px 10px 4px; background: var(--surface); color: var(--txt); font-size: 13.5px;
+                 line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px 1px rgba(0, 0, 0, .06); }
+  .plm-burbuja .t { display: block; margin-bottom: 4px; font-weight: 700; }
+  .plm-burbuja .p { display: block; margin-top: 6px; font-size: 12px; color: var(--txt-3); }
+  .plm-btns { display: grid; gap: 4px; margin-top: 4px; }
+  .plm-btns span { display: block; padding: 7px; border-radius: 8px; background: var(--surface); text-align: center; font-size: 13px;
+                   font-weight: 600; color: #1D9BD1; box-shadow: 0 1px 1px rgba(0, 0, 0, .06); }
+  .plm-nota { font-size: 12.5px; line-height: 1.45; color: var(--txt-3); }
+  .plm-error { font-size: 13.5px; color: var(--bad-txt); background: var(--bad-soft); border-radius: var(--r-sm); padding: 9px 12px; }
+  .plm-error[hidden] { display: none; }
+  /* Mandar una: elegir, completar los datos, ver cómo queda. */
+  .plm-desde { font-size: 13.5px; color: var(--txt-2); }
+  .plm-aviso { font-size: 13px; line-height: 1.45; color: var(--warn-txt); background: var(--warn-soft); border-radius: var(--r-sm); padding: 9px 12px; }
+  .plm-aviso.mal { color: var(--bad-txt); background: var(--bad-soft); }
+  .plm-vacio { font-size: 13.5px; line-height: 1.5; color: var(--txt-2); background: var(--surface-2); border-radius: var(--r-sm); padding: 12px; }
+  .plm-lista { display: grid; gap: 6px; max-height: 240px; overflow: auto; }
+  .plm-opcion { display: grid; gap: 3px; padding: 10px 12px; text-align: left; border: 1px solid var(--line); border-radius: var(--r-sm);
+                background: var(--surface); }
+  .plm-opcion.sel { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
+  .plm-opcion b { font-size: 14px; color: var(--txt); }
+  .plm-opcion .pill { justify-self: start; font-size: 11px; padding: 1px 8px; }
+  .plm-opcion-txt { font-size: 12.5px; color: var(--txt-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .plm-datos { display: grid; gap: 8px; }
+  @media (min-width: 600px) { .plm-datos { grid-template-columns: 1fr 1fr; } }
+  .ms-sin-ventana { display: grid; justify-items: start; gap: 6px; }
+  #plmBorrar.seguro { background: var(--bad-soft); border-color: var(--bad); }
+  .burbuja-pie .fallo { display: block; white-space: normal; text-align: left; }
 
   /* El carrito en su tarjeta: la foto de la primera prenda y el total. */
   .tj-foto { float: right; width: 46px; height: 46px; margin: 0 0 4px 10px; border-radius: 6px; object-fit: cover;
@@ -483,17 +688,6 @@
   .num-vacio { padding: 10px 0 2px; font-size: 13px; color: var(--txt-3); }
 
   /* ══ Plantillas, recordatorios e historial (SQL 52) ══ */
-  /* Cuatro pestañas no entran en un celular angosto: se deslizan. */
-  @media (max-width: 899px) {
-    .vistas { overflow-x: auto; scrollbar-width: none; }
-    .vistas::-webkit-scrollbar { display: none; }
-    .vistas button { flex: 1 0 auto; }
-    /* Lo que avisa que hay más a la derecha (la clase la pone marcarVistas). */
-    .vistas.desborda {
-      -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 34px), transparent 100%);
-      mask-image: linear-gradient(to right, #000 calc(100% - 34px), transparent 100%);
-    }
-  }
   .pl-intro { margin: -2px 2px 14px; font-size: 13.5px; color: var(--txt-2); }
   .pl-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .pl-cab h3 { margin: 0; }
@@ -757,8 +951,13 @@
 
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
-  <!-- Las pestañas: Contactos, Mensajes, No Compra, Carritos, Plantillas y Números. -->
-  <div class="vistas" id="vistas" role="tablist" aria-label="Qué ver"></div>
+  <!-- El CRM como Kommo (10/10/2026): el menú a la izquierda (en el celular,
+       detrás del botón de la sección) y la sección elegida a la derecha. -->
+  <div class="crm" id="crm">
+  <nav class="crm-menu" id="vistas" aria-label="Secciones del CRM"></nav>
+  <div class="crm-velo" id="crmVelo"></div>
+  <div class="crm-cuerpo">
+  <button type="button" class="crm-seccion" id="crmSeccion" aria-controls="vistas" aria-expanded="false"></button>
 
   <div id="vistaTablero">
   <div class="controles">
@@ -796,16 +995,20 @@
     <div id="ctLista"></div>
   </section>
 
-  <!-- Mensajes (SQL 63): las conversaciones de WhatsApp de VDH Indumentaria,
-       la última arriba, como el Inbox de Kommo. Tocar una abre la ficha. -->
+  <!-- Mensajes (SQL 63), como el Inbox de Kommo (10/10/2026): la lista de
+       conversaciones, el chat al centro y la ficha a la derecha. -->
   <section id="vistaMensajes" hidden>
-    <div class="ct-controles">
-      <div class="buscador">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
-        <input type="search" id="msBusca" placeholder="Buscar por nombre, número o lo que escribió…" autocomplete="off">
+    <div class="ms-col ms-col-lista">
+      <div class="ct-controles">
+        <div class="buscador">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+          <input type="search" id="msBusca" placeholder="Buscar nombre, número o texto…" autocomplete="off">
+        </div>
       </div>
+      <div id="msLista"></div>
     </div>
-    <div id="msLista"></div>
+    <div class="ms-col ms-col-chat" id="msChat"><div class="ms-vacio">Elegí una conversación de la lista.</div></div>
+    <aside class="ms-col ms-col-info" id="msInfo" aria-label="Ficha del contacto"></aside>
   </section>
 
   <!-- Los números del CRM (SQL 51), como el panel de Kommo. -->
@@ -820,11 +1023,27 @@
     <div id="numeros"></div>
   </section>
 
-  <!-- Las plantillas de WhatsApp (SQL 52): se crean y se cambian acá. -->
+  <!-- Automatizaciones → Plantillas: las de WhatsApp, que aprueba Meta (para
+       escribirle primero a alguien), y las respuestas rápidas (SQL 52). -->
   <section id="vistaPlantillas" hidden>
-    <p class="pl-intro">Los mensajes para escribirles por WhatsApp. Lo que está en gris se completa solo con los datos de cada cliente.</p>
-    <div id="plantillasIn"></div>
+    <div class="pl-solapas" id="plSolapas" role="tablist" aria-label="Qué plantillas">
+      <button type="button" role="tab" data-pl-solapa="meta">De WhatsApp (Meta)</button>
+      <button type="button" role="tab" data-pl-solapa="rapidas">Respuestas rápidas</button>
+    </div>
+    <div id="plMeta"></div>
+    <div id="plRapidas" hidden>
+      <p class="pl-intro">Los textos que se arman solos al tocar WhatsApp en una tarjeta: salen desde tu WhatsApp y no pasan por Meta. Lo que está en gris se completa solo con los datos de cada cliente.</p>
+      <div id="plantillasIn"></div>
+    </div>
   </section>
+
+  <!-- Segmentos (Beta), Difusiones y lo que está por venir (Tienda online,
+       Agente de IA, Bots). -->
+  <section id="vistaSegmentos" hidden></section>
+  <section id="vistaDifusiones" hidden></section>
+  <section id="vistaPronto" hidden></section>
+  </div><!-- /.crm-cuerpo -->
+  </div><!-- /.crm -->
 </main>
 
 </div><!-- /.marco -->
@@ -943,6 +1162,64 @@
   </div>
 </div>
 
+<!-- Una plantilla de WhatsApp (Meta): crearla, o verla y borrarla. -->
+<div class="modal" id="modalPlm" hidden>
+  <div class="modal-caja plm-caja" role="dialog" aria-modal="true" aria-labelledby="plmTit">
+    <h2 id="plmTit">Nueva plantilla de WhatsApp</h2>
+    <div class="plm-grid">
+      <div class="plm-form" id="plmForm">
+        <div class="campo"><label for="plmCuenta">Número</label><select id="plmCuenta"></select></div>
+        <div class="campo"><label for="plmNombre">Nombre</label>
+          <input id="plmNombre" type="text" maxlength="60" placeholder="Ej.: Llegó tu talle" autocomplete="off">
+          <small class="plm-slug" id="plmSlug"></small></div>
+        <div class="campo"><span class="campo-lbl">Tipo</span>
+          <div class="plantillas" id="plmCat">
+            <button type="button" class="chip" data-cat="MARKETING">Marketing</button>
+            <button type="button" class="chip" data-cat="UTILITY">Utilidad</button>
+          </div>
+          <small class="plm-ayuda" id="plmCatAyuda"></small></div>
+        <div class="campo"><label for="plmTitulo">Título (opcional)</label>
+          <input id="plmTitulo" type="text" maxlength="60" placeholder="Ej.: ¡Ya llegó!" autocomplete="off"></div>
+        <div class="campo"><label for="plmCuerpo">Mensaje</label>
+          <textarea id="plmCuerpo" maxlength="1024"></textarea>
+          <div class="pl-vars" id="plmVars"></div></div>
+        <div class="campo"><label for="plmPie">Pie (opcional)</label>
+          <input id="plmPie" type="text" maxlength="60" placeholder="Ej.: Si no querés recibir mensajes, avisanos." autocomplete="off"></div>
+        <div class="campo"><span class="campo-lbl">Botones (opcional)</span>
+          <div class="plm-botones" id="plmBotones"></div>
+          <div class="plm-mas" id="plmMas">
+            <button type="button" class="btn btn-sec btn-chico" id="plmMasRapida">+ Respuesta rápida</button>
+            <button type="button" class="btn btn-sec btn-chico" id="plmMasLink">+ Botón con link</button>
+          </div></div>
+      </div>
+      <div class="plm-lado">
+        <span class="plm-lado-tit">Así le llega (con datos de ejemplo)</span>
+        <div class="plm-tel"><div class="plm-burbuja" id="plmPrevia"></div><div class="plm-btns" id="plmPreviaBtns"></div></div>
+        <p class="plm-nota" id="plmNota"></p>
+      </div>
+    </div>
+    <p class="plm-error" id="plmError" hidden></p>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec" id="plmBorrar" hidden>Borrar</button>
+      <button type="button" class="btn btn-sec" id="plmCancelar">Cancelar</button>
+      <button type="button" class="btn btn-pri" id="plmOk">Mandar a revisión</button>
+    </div>
+  </div>
+</div>
+
+<!-- Mandarle una plantilla a una persona. -->
+<div class="modal" id="modalPlmEnviar" hidden>
+  <div class="modal-caja plm-caja" role="dialog" aria-modal="true" aria-labelledby="plmeTit">
+    <h2 id="plmeTit">Mandar una plantilla</h2>
+    <div class="plm-form" id="plmeIn"></div>
+    <p class="plm-error" id="plmeError" hidden></p>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec" id="plmeCancelar">Cancelar</button>
+      <button type="button" class="btn btn-wsp" id="plmeOk" disabled>Mandar</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script src="comun.js"></script>
@@ -954,8 +1231,8 @@
   var registros = [];
   /* La columna que se ve en el celular (en la PC se ven todas). */
   var colSel = 'Pendiente';
-  /* La vista abierta: 'no_compra', 'carrito', 'numeros' o 'plantillas'. Se
-     recuerda en esta compu (07/10/2026). */
+  /* La sección abierta (una de las del menú, ver MENU_CRM). Se recuerda en
+     esta compu (07/10/2026). */
   var K_VISTA = 'nc_panel_vista';
   var vista = 'no_compra', carritos = [], carritosError = '';
   /* Las plantillas de WhatsApp vienen de la base (SQL 52). Hasta que se
@@ -1049,9 +1326,11 @@
     pintarWhoami();
     traerAtencion();
 
-    /* Cada uno vuelve a la última pestaña que usó; el que entra por primera
-       vez arranca en Contactos, la primera (pedido de Mauricio, 09/10). */
-    vista = VISTAS.indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : 'contactos';
+    /* Cada uno vuelve a la última sección que usó; el que entra por primera
+       vez arranca en la primera del menú, Mensajes (como Kommo, 10/10). */
+    vista = VISTAS.indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : VISTAS[0];
+    guardar(K_VISTA, vista);
+    $('crm').classList.toggle('chico', leer(K_MENU_CHICO) === '1');
     if (!MS.reloj) {
       MS.reloj = setInterval(function () {
         if (document.visibilityState === 'visible' && !$('marco').hidden) { revisarMensajes(); }
@@ -1278,44 +1557,135 @@
       .catch(function () {});
   }
 
-  /* ═══ Las vistas ═════════════════════════════════════════════════════════ */
-  /* El orden (09/10/2026, pedido de Mauricio, como Kommo): primero las
-     personas y sus conversaciones, después los tableros, al final las
-     herramientas. */
-  var VISTAS = ['contactos', 'mensajes', 'no_compra', 'carrito', 'plantillas', 'numeros'];
+  /* ═══ Las secciones: el menú como Kommo (10/10/2026) ═════════════════════
+     Pedido de Mauricio, con capturas de Kommo: el mismo orden y los mismos
+     grupos. Mensajes es su "Comunicaciones"; Pipelines junta los tableros
+     (más uno para la tienda online); Contactos es su "Listas"; y
+     Automatizaciones junta Bots, Plantillas y Difusiones. Lo que todavía no
+     está dice "Pronto" y explica qué va a hacer. */
+  var ICO = {
+    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    pipe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>',
+    seg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="5.5"/><circle cx="15" cy="15" r="5.5"/></svg>',
+    gente: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+    ia: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>',
+    auto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v1.5a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V8.5M12 13v2.5"/></svg>',
+    est: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>',
+    flecha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+    plegar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/></svg>',
+    menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>'
+  };
+  var MENU_CRM = [
+    { v: 'mensajes', t: 'Mensajes', i: ICO.chat, nt: 'Sin contestar' },
+    { g: 'pipelines', t: 'Pipelines', i: ICO.pipe, hijos: [
+      { v: 'no_compra', t: 'No Compra', nt: 'Sin contactar' },
+      { v: 'carrito', t: 'Carritos abandonados', nt: 'Sin contactar' },
+      { v: 'tienda', t: 'Tienda online', marca: 'Pronto' }] },
+    { v: 'segmentos', t: 'Segmentos', i: ICO.seg, marca: 'Beta' },
+    { v: 'contactos', t: 'Contactos', i: ICO.gente },
+    { v: 'agente', t: 'Agente de IA', i: ICO.ia, marca: 'Pronto' },
+    { g: 'automatizaciones', t: 'Automatizaciones', i: ICO.auto, hijos: [
+      { v: 'bots', t: 'Bots', marca: 'Pronto' },
+      { v: 'plantillas', t: 'Plantillas' },
+      { v: 'difusiones', t: 'Difusiones' }] },
+    { v: 'numeros', t: 'Estadísticas', i: ICO.est }
+  ];
+  var VISTAS = [];
+  MENU_CRM.forEach(function (o) { (o.hijos || [o]).forEach(function (h) { VISTAS.push(h.v); }); });
+  var K_MENU_CHICO = 'nc_crm_menu_chico', K_GRUPOS = 'nc_crm_grupos_cerrados';
+  function gruposCerrados() { try { return JSON.parse(leer(K_GRUPOS) || '[]') || []; } catch (e) { return []; } }
+  function tituloVista(v) {
+    var t = '';
+    MENU_CRM.forEach(function (o) { (o.hijos || [o]).forEach(function (h) { if (h.v === v) { t = h.t; } }); });
+    return t;
+  }
+
   function pintarVistas() {
     var pend = function (l) { return l.filter(function (r) { return columnaDe(r) === 'Pendiente'; }).length; };
-    var ops = [['contactos', 'Contactos', null], ['mensajes', 'Mensajes', MS.sin, 'Sin contestar'],
-               ['no_compra', 'No Compra', pend(registros), 'Sin contactar'], ['carrito', 'Carritos', pend(carritos), 'Sin contactar'],
-               ['plantillas', 'Plantillas', null], ['numeros', 'Números', null]];
-    $('vistas').innerHTML = ops.map(function (o) {
-      return '<button type="button" role="tab" aria-selected="' + (o[0] === vista) + '"' + (o[0] === vista ? ' class="sel"' : '') +
-        ' data-vista="' + o[0] + '">' + o[1] +
-        (o[2] === null || o[2] === undefined ? '' : ' <span class="cuenta' + (o[2] ? '' : ' cero') + '" title="' + o[3] + '">' + o[2] + '</span>') + '</button>';
-    }).join('');
-    [].forEach.call($('vistas').children, function (b) { b.onclick = function () { cambiarVista(b.dataset.vista); }; });
-    /* En el celular las pestañas se deslizan: la elegida, a la vista. */
-    var sel = $('vistas').querySelector('.sel');
-    if (sel && sel.offsetLeft + sel.offsetWidth > $('vistas').clientWidth) { $('vistas').scrollLeft = sel.offsetLeft - 8; }
-    marcarVistas();
+    var cuantos = { mensajes: MS.sin, no_compra: pend(registros), carrito: pend(carritos) };
+    var cerrados = gruposCerrados();
+    var item = function (o, sub) {
+      var n = cuantos[o.v], sel = o.v === vista;
+      return '<button type="button" class="' + (sub ? 'crm-subitem' : 'crm-item') + (sel ? ' sel' : '') + '" data-vista="' + o.v + '"' +
+          (sel ? ' aria-current="page"' : '') + ' title="' + esc(o.t) + '">' +
+        (sub ? '' : '<span class="crm-ico" aria-hidden="true">' + o.i + '</span>') +
+        '<span class="crm-txt">' + esc(o.t) + '</span>' +
+        (o.marca ? '<span class="crm-marca">' + o.marca + '</span>' : '') +
+        (n === null || n === undefined ? '' : '<span class="cuenta' + (n ? '' : ' cero') + '" title="' + o.nt + '">' + n + '</span>') +
+      '</button>';
+    };
+    $('vistas').innerHTML =
+      '<div class="crm-menu-cab"><b>CRM</b><button type="button" class="crm-plegar" id="crmPlegar" aria-label="Achicar el menú" title="Achicar el menú">' +
+        ICO.plegar + '</button></div>' +
+      MENU_CRM.map(function (o) {
+        if (!o.hijos) { return item(o); }
+        var activo = o.hijos.some(function (h) { return h.v === vista; });
+        var abierto = activo || cerrados.indexOf(o.g) < 0;
+        var suma = o.hijos.reduce(function (a, h) { return a + (Number(cuantos[h.v]) || 0); }, 0);
+        return '<div class="crm-grupo' + (abierto ? ' abierto' : '') + '">' +
+          '<button type="button" class="crm-item crm-grupo-cab" data-grupo="' + o.g + '" aria-expanded="' + abierto + '" title="' + esc(o.t) + '">' +
+            '<span class="crm-ico" aria-hidden="true">' + o.i + '</span><span class="crm-txt">' + esc(o.t) + '</span>' +
+            '<span class="crm-punto' + (suma ? '' : ' cero') + '">' + suma + '</span>' +
+            '<span class="crm-flecha" aria-hidden="true">' + ICO.flecha + '</span></button>' +
+          '<div class="crm-sub">' + o.hijos.map(function (h) { return item(h, true); }).join('') + '</div></div>';
+      }).join('');
+    [].forEach.call($('vistas').querySelectorAll('[data-vista]'), function (b) {
+      b.onclick = function () { cerrarMenuCrm(); cambiarVista(b.dataset.vista); };
+    });
+    [].forEach.call($('vistas').querySelectorAll('[data-grupo]'), function (b) {
+      b.onclick = function () { tocarGrupo(b.dataset.grupo); };
+    });
+    $('crmPlegar').onclick = function () { achicarMenu(!$('crm').classList.contains('chico')); };
+    /* En el celular, el botón de la sección dice dónde estás. */
+    var n = cuantos[vista];
+    $('crmSeccion').innerHTML = ICO.menu + '<span>' + esc(tituloVista(vista)) + '</span>' +
+      (n ? '<span class="cuenta">' + n + '</span>' : '');
   }
-  function marcarVistas() {
-    var v = $('vistas');
-    v.classList.toggle('desborda', v.scrollLeft + v.clientWidth < v.scrollWidth - 2);
+  /* Un grupo: abrirlo o cerrarlo. Con el menú achicado, tocarlo lo agranda
+     con ese grupo abierto. */
+  function tocarGrupo(g) {
+    var cerrados = gruposCerrados(), achicado = $('crm').classList.contains('chico');
+    if (achicado) {
+      cerrados = cerrados.filter(function (x) { return x !== g; });
+      achicarMenu(false);
+    } else if (cerrados.indexOf(g) > -1) {
+      cerrados = cerrados.filter(function (x) { return x !== g; });
+    } else {
+      cerrados.push(g);
+    }
+    guardar(K_GRUPOS, JSON.stringify(cerrados));
+    pintarVistas();
   }
+  function achicarMenu(si) {
+    $('crm').classList.toggle('chico', !!si);
+    guardar(K_MENU_CHICO, si ? '1' : '');
+    ajustarAltoMensajes();
+  }
+  /* El menú en el celular: se abre desde el botón de la sección. */
+  function abrirMenuCrm() { $('crm').classList.add('menu-abierto'); $('crmSeccion').setAttribute('aria-expanded', 'true'); }
+  function cerrarMenuCrm() { $('crm').classList.remove('menu-abierto'); $('crmSeccion').setAttribute('aria-expanded', 'false'); }
+
   function pintarVista() {
     if (vista === 'numeros') { cargarNumeros(); }
-    else if (vista === 'plantillas') { pintarPlantillas(); }
+    else if (vista === 'plantillas') { pintarPlantillasVista(); }
     else if (vista === 'contactos') { cargarContactos(); }
     else if (vista === 'mensajes') { cargarMensajes(); }
+    else if (vista === 'segmentos') { cargarSegmentos(); }
+    else if (vista === 'difusiones') { pintarDifusiones(); }
+    else if (PRONTO[vista]) { pintarPronto(vista); }
     else { pintar(); }
   }
   function aplicarVista() {
     $('vistaTablero').hidden = vista !== 'no_compra' && vista !== 'carrito';
     $('vistaContactos').hidden = vista !== 'contactos';
     $('vistaMensajes').hidden = vista !== 'mensajes';
+    if (vista !== 'mensajes') { $('vistaMensajes').classList.remove('con-chat', 'con-info'); }
+    ajustarAltoMensajes();
     $('vistaNumeros').hidden = vista !== 'numeros';
     $('vistaPlantillas').hidden = vista !== 'plantillas';
+    $('vistaSegmentos').hidden = vista !== 'segmentos';
+    $('vistaDifusiones').hidden = vista !== 'difusiones';
+    $('vistaPronto').hidden = !PRONTO[vista];
     /* El local sólo tiene sentido en los No Compra: los carritos son todos online. */
     $('filtroLocal').parentNode.style.display = vista === 'no_compra' ? '' : 'none';
     $('busca').placeholder = vista === 'carrito' ? 'Buscar por nombre, teléfono, mail o prenda…'
@@ -3022,7 +3392,8 @@
      pregunta lo mínimo (el último mensaje); si cambió, se trae la lista o la
      conversación abierta. Lo que se contesta desde Kommo no nos llega: queda
      una marca de que se contestó, sin el texto. */
-  var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0, borrador: {} };
+  var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0, borrador: {},
+             abierto: null, previo: null, ficha: null };
 
   function cargarContactos() {
     var n = ++CT.pedido;
@@ -3108,6 +3479,7 @@
   function textoMensaje(m) {
     if (!m) { return ''; }
     if (m.desde === 'otra_app') { return 'Mensaje enviado desde Kommo'; }
+    if (m.tipo === 'template') { return m.texto || 'Plantilla'; }
     var t = TIPO_MENSAJE[m.tipo];
     if (m.tipo === 'text' || m.tipo === 'button' || m.tipo === 'interactive') { return m.texto || ''; }
     if (t) { return t + (m.texto && m.tipo !== 'location' ? ': ' + m.texto : m.texto ? ' · ' + m.texto : ''); }
@@ -3151,16 +3523,19 @@
     [].forEach.call(caja.querySelectorAll('[data-clave]'), function (b) {
       b.onclick = function () {
         var c = l.filter(function (x) { return x.clave === b.dataset.clave; })[0] || {};
-        abrirContacto(b.dataset.clave, { nombre: c.nombre, tel: c.tel });
+        abrirConversacion(b.dataset.clave, { nombre: c.nombre, tel: c.tel });
       };
     });
+    ajustarAltoMensajes();
+    /* En la compu el centro no queda vacío: se abre la primera. */
+    if (!MS.abierto && l.length && !ES_CEL()) { abrirConversacion(l[0].clave, { nombre: l[0].nombre, tel: l[0].tel }); }
   }
 
   function filaMensaje(c) {
     var u = c.ultimo || {};
     var previo = u.desde === 'otra_app' ? 'Contestado desde Kommo' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u);
     var origen = (c.fuentes || []).length ? pillsFuentes(c.fuentes, c.nivel) : '<span class="ct-tel">+' + esc(normalizarTel(c.tel)) + '</span>';
-    return '<button type="button" class="ct-fila' + (c.sin_contestar ? ' sin-contestar' : '') + (CT.abierto === c.clave ? ' abierta' : '') +
+    return '<button type="button" class="ct-fila' + (c.sin_contestar ? ' sin-contestar' : '') + (MS.abierto === c.clave ? ' abierta' : '') +
         '" data-clave="' + esc(c.clave) + '">' +
       '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(c.nombre)) + '</span>' +
       '<span class="ct-cuerpo">' +
@@ -3184,6 +3559,7 @@
         if (u.sin_contestar !== MS.sin) { MS.sin = u.sin_contestar; pintarVistas(); }
         if (cambio) {
           if (vista === 'mensajes') { cargarMensajes(); }
+          if (vista === 'mensajes' && MS.abierto) { refrescarConversacion(MS.abierto); }
           if (CT.abierto) { refrescarChat(CT.abierto); }
         }
       })
@@ -3204,49 +3580,81 @@
   }
   /* 14:05, como el resto del CRM (toLocaleTimeString de Chrome da "02:05 p. m."). */
   function horaChat(f) { return f.getHours() + ':' + ('0' + f.getMinutes()).slice(-2); }
-  function vistoChat(e) {
+  /* Por qué no se entregó, dicho en castellano (los códigos de Meta). */
+  var MOTIVO_FALLO = {
+    131042: 'falta la tarjeta en la cuenta de WhatsApp (Meta)', 131049: 'Meta no la entregó: esa persona ya recibió muchas promociones',
+    131026: 'no se pudo entregar (¿ese número tiene WhatsApp?)', 131047: 'pasaron 24 h: hace falta una plantilla',
+    131056: 'demasiados mensajes seguidos a esa persona', 131031: 'la cuenta de WhatsApp está bloqueada',
+    132000: 'faltan datos de la plantilla', 132001: 'la plantilla no existe o no está aprobada',
+    132015: 'la plantilla está pausada', 132016: 'la plantilla está desactivada', 130472: 'Meta no la entregó (prueba de Meta)'
+  };
+  function vistoChat(m) {
+    var e = m && m.estado;
     if (e === 'read') { return ' <span class="visto" title="Leído">✓✓</span>'; }
     if (e === 'delivered') { return ' <span title="Entregado">✓✓</span>'; }
     if (e === 'sent') { return ' <span title="Enviado">✓</span>'; }
-    if (e === 'failed') { return ' <span class="fallo">· No se entregó</span>'; }
+    if (e === 'failed') {
+      var er = ((m && m.error) || [])[0] || {}, por = MOTIVO_FALLO[er.code] || er.title || '';
+      return ' <span class="fallo" title="' + esc(er.title || '') + '">No se entregó' + (por ? ': ' + esc(por) : '') + '</span>';
+    }
     return '';
   }
+  /* Las burbujas, con un separador por día. */
+  function burbujasChat(l) {
+    var dia = '';
+    return l.map(function (m) {
+      var f = new Date(m.cuando), dd = diaChat(f), sep = '';
+      if (dd !== dia) { sep = '<div class="chat-dia">' + esc(dd) + '</div>'; dia = dd; }
+      var otra = m.desde === 'otra_app';
+      var tipo = m.tipo === 'template' ? 'Plantilla' : TIPO_MENSAJE[m.tipo];
+      var cuerpo = otra ? 'Mensaje enviado desde Kommo. El texto no nos llega.'
+        : (tipo ? '<span class="burbuja-tipo">' + tipo + '</span>' : '') + esc(m.texto || (tipo ? '' : 'Un mensaje que WhatsApp no deja ver acá'));
+      var pie = horaChat(f) + (m.sentido === 'sale' ? ' · ' + (QUIEN_MANDO[m.desde] || 'Nosotros') +
+                (m.desde === 'crm' && m.quien ? ' · ' + esc(m.quien) : '') + vistoChat(m) : '');
+      return sep + '<div class="burbuja ' + (m.sentido === 'entra' ? 'entra' : 'sale') + (otra ? ' otra' : '') + '">' +
+        cuerpo + '<span class="burbuja-pie">' + pie + '</span></div>';
+    }).join('');
+  }
+  /* Contestar (SQL 64): sólo dentro de las 24 h desde su último mensaje,
+     que es gratis y es lo que Meta deja. Después, plantilla. */
+  function ventanaChat(d) {
+    var v = d && d.ventana ? new Date(d.ventana) : null, abierta = !!v && v > new Date();
+    return {
+      abierta: abierta,
+      corto: abierta ? 'Gratis hasta ' + (diaChat(v) === 'Hoy' ? '' : diaChat(v).toLowerCase() + ' ') + horaChat(v) : v ? 'Pasaron 24 h' : '',
+      nota: abierta
+        ? 'Sale por el mismo número al que escribió y también se ve en el celular. Se le puede contestar gratis hasta ' +
+          diaChat(v).toLowerCase() + ' a las ' + horaChat(v) + '.'
+        : v ? 'Pasaron más de 24 horas desde que escribió: para escribirle hace falta una plantilla aprobada por Meta.'
+            : 'No nos escribió: para escribirle primero hace falta una plantilla aprobada por Meta.'
+    };
+  }
+  function cajaRespuesta() {
+    return '<div class="nota-fila chat-escribir"><textarea class="chat-texto" maxlength="4000" placeholder="Escribí la respuesta…" aria-label="Respuesta por WhatsApp"></textarea>' +
+           '<button type="button" class="btn btn-wsp btn-chico chat-enviar">Enviar</button></div>';
+  }
+  /* En la ficha de Contactos: un bloque más. */
   function chatContacto(d) {
     var l = (d && d.mensajes) || [];
     if (!l.length) {
       return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3>' +
         '<p class="num-vacio">Todavía no escribió al WhatsApp de VDH Indumentaria.</p></div>';
     }
-    var dia = '';
-    var html = l.map(function (m) {
-      var f = new Date(m.cuando), dd = diaChat(f), sep = '';
-      if (dd !== dia) { sep = '<div class="chat-dia">' + esc(dd) + '</div>'; dia = dd; }
-      var otra = m.desde === 'otra_app';
-      var tipo = TIPO_MENSAJE[m.tipo];
-      var cuerpo = otra ? 'Mensaje enviado desde Kommo. El texto no nos llega.'
-        : (tipo ? '<span class="burbuja-tipo">' + tipo + '</span>' : '') + esc(m.texto || (tipo ? '' : 'Un mensaje que WhatsApp no deja ver acá'));
-      var pie = horaChat(f) + (m.sentido === 'sale' ? ' · ' + (QUIEN_MANDO[m.desde] || 'Nosotros') +
-                (m.desde === 'crm' && m.quien ? ' · ' + esc(m.quien) : '') + vistoChat(m.estado) : '');
-      return sep + '<div class="burbuja ' + (m.sentido === 'entra' ? 'entra' : 'sale') + (otra ? ' otra' : '') + '">' +
-        cuerpo + '<span class="burbuja-pie">' + pie + '</span></div>';
-    }).join('');
-    /* Contestar (SQL 64): sólo dentro de las 24 h desde su último mensaje,
-       que es gratis y es lo que Meta deja. Después, plantilla. */
-    var v = d.ventana ? new Date(d.ventana) : null, abierta = !!v && v > new Date();
-    var nota = abierta
-      ? 'Sale por el mismo número al que escribió y también se ve en el celular. Se le puede contestar gratis hasta ' +
-        diaChat(v).toLowerCase() + ' a las ' + horaChat(v) + '.'
-      : v ? 'Pasaron más de 24 horas desde que escribió: para escribirle primero hace falta una plantilla aprobada por Meta (va a estar con las campañas).' : '';
-    return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3><div class="chat">' + html + '</div>' +
-      (abierta ? '<div class="nota-fila chat-escribir"><textarea id="chatTexto" maxlength="4000" placeholder="Escribí la respuesta…" aria-label="Respuesta por WhatsApp"></textarea>' +
-                 '<button type="button" class="btn btn-wsp btn-chico" id="chatEnviar">Enviar</button></div>' : '') +
-      '<p class="chat-nota">' + esc(nota) + '</p></div>';
+    var v = ventanaChat(d);
+    return '<div class="ficha-bloque" id="chatBloque"><h3>Mensajes</h3><div class="chat">' + burbujasChat(l) + '</div>' +
+      (v.abierta ? cajaRespuesta() + '<p class="chat-nota">' + esc(v.nota) + '</p>' : sinVentana(v)) + '</div>';
   }
-  /* La caja de la respuesta: Enter manda (Shift+Enter, otra línea); en el
-     celular Enter es otra línea y se manda con el botón. Lo escrito se
-     guarda por persona, así un mensaje que llega no lo borra. */
-  function conectarChat(clave) {
-    var t = $('chatTexto'), b = $('chatEnviar');
+  /* Pasaron las 24 h (o nunca escribió): en lugar de la caja, una plantilla. */
+  function sinVentana(v) {
+    return '<div class="ms-sin-ventana chat-escribir"><button type="button" class="btn btn-wsp btn-chico ms-enviar-pl">Enviar plantilla</button>' +
+      '<p class="chat-nota">' + esc(v.nota) + '</p></div>';
+  }
+  /* La caja de la respuesta, dentro de "raiz" (la ficha o la columna de
+     Mensajes): Enter manda (Shift+Enter, otra línea); en el celular Enter es
+     otra línea y se manda con el botón. Lo escrito se guarda por persona,
+     así un mensaje que llega no lo borra. */
+  function conectarChat(clave, raiz, despues) {
+    var t = raiz && raiz.querySelector('.chat-texto'), b = raiz && raiz.querySelector('.chat-enviar');
     if (!t || !b) { return; }
     if (MS.borrador[clave]) { t.value = MS.borrador[clave]; }
     t.oninput = function () { MS.borrador[clave] = t.value; };
@@ -3258,7 +3666,7 @@
         .then(function () {
           MS.borrador[clave] = '';
           t.value = '';
-          refrescarChat(clave);
+          despues();
           if (vista === 'mensajes') { cargarMensajes(); }
         })
         .catch(function (err) {
@@ -3272,9 +3680,12 @@
       if (ev.key === 'Enter' && !ev.shiftKey && !(window.matchMedia && matchMedia('(pointer: coarse)').matches)) { ev.preventDefault(); mandar(); }
     };
   }
-  function bajarChat() {
-    var c = document.querySelector('#chatBloque .chat');
+  function bajarChat(raiz) {
+    var c = raiz && raiz.querySelector('.chat');
     if (c) { c.scrollTop = c.scrollHeight; }
+  }
+  function escribiendoEn(raiz) {
+    return !!(raiz && document.activeElement && document.activeElement.classList.contains('chat-texto') && raiz.contains(document.activeElement));
   }
   /* Llegó algo con la ficha abierta: se cambia sólo la conversación, sin
      mover el resto de la ficha. */
@@ -3283,12 +3694,110 @@
       .then(function (d) {
         var b = $('chatBloque');
         if (CT.abierto !== clave || !b || !d) { return; }
-        var escribiendo = document.activeElement && document.activeElement.id === 'chatTexto';
+        var escribiendo = escribiendoEn(b);
         b.outerHTML = chatContacto(d);
-        conectarChat(clave);
-        bajarChat();
-        if (escribiendo && $('chatTexto')) { $('chatTexto').focus(); }
+        b = $('chatBloque');
+        conectarChat(clave, b, function () { refrescarChat(clave); });
+        cablearPlantilla(b, clave, (d.persona && d.persona.nombre) || $('fichaTit').textContent);
+        bajarChat(b);
+        if (escribiendo && b.querySelector('.chat-texto')) { b.querySelector('.chat-texto').focus(); }
       })
+      .catch(function () {});
+  }
+
+  /* ── Mensajes como el Inbox: el chat grande al centro ── */
+  var ES_CEL = function () { return !(window.matchMedia && matchMedia('(min-width: 900px)').matches); };
+  /* Las tres columnas ocupan lo que queda de la pantalla hacia abajo. */
+  function ajustarAltoMensajes() {
+    var v = $('vistaMensajes');
+    if (!v || v.hidden || ES_CEL()) { return; }
+    var arriba = v.getBoundingClientRect().top + window.scrollY;
+    var alto = Math.max(420, window.innerHeight - arriba - 16);
+    v.style.setProperty('--ms-alto', alto + 'px');
+    /* Lo que sobre (el margen de abajo de la hoja), se descuenta. */
+    var sobra = document.documentElement.scrollHeight - window.innerHeight;
+    if (sobra > 0 && alto - sobra >= 420) { v.style.setProperty('--ms-alto', (alto - sobra) + 'px'); }
+  }
+  function abrirConversacion(clave, previo) {
+    MS.abierto = clave;
+    MS.previo = previo || {};
+    MS.ficha = null;
+    var v = $('vistaMensajes');
+    v.classList.add('con-chat');
+    v.classList.remove('con-info');
+    [].forEach.call(document.querySelectorAll('#msLista .ct-fila'), function (f) { f.classList.toggle('abierta', f.dataset.clave === clave); });
+    $('msChat').innerHTML = '<div class="ms-chat"><div class="ms-chat-cab">' + botonVolver() +
+      '<span class="ms-quien"><b>' + esc(MS.previo.nombre || 'Cargando…') + '</b></span></div>' +
+      '<div class="ms-chat-cuerpo"><div class="chat"><p class="num-vacio">Cargando…</p></div></div></div>';
+    $('msInfo').innerHTML = '';
+    conectarVolver();
+    base.crmContacto(pinGuardado(), clave)
+      .then(function (d) { if (MS.abierto === clave) { MS.ficha = d; pintarConversacion(d, true); } })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        if (MS.abierto === clave) { $('msChat').innerHTML = '<div class="ms-vacio">No se pudo traer la conversación. Revisá la conexión.</div>'; }
+      });
+  }
+  function botonVolver() {
+    return '<button type="button" class="ms-volver" aria-label="Volver a la lista"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button>';
+  }
+  function conectarVolver() {
+    var b = $('msChat').querySelector('.ms-volver');
+    if (b) { b.onclick = cerrarConversacion; }
+  }
+  /* En el celular: volver a la lista. En la compu la conversación queda. */
+  function cerrarConversacion() {
+    $('vistaMensajes').classList.remove('con-chat', 'con-info');
+  }
+  function pintarConversacion(d, conInfo) {
+    var raiz = $('msChat');
+    if (!d || !d.persona) { raiz.innerHTML = '<div class="ms-vacio">No encontramos a esta persona.</div>'; return; }
+    var p = d.persona, c = MS.previo || {};
+    var nom = p.nombre || nombreContacto(c);
+    var conv = ((MS.datos && MS.datos.conversaciones) || []).filter(function (x) { return x.clave === p.clave; })[0] || {};
+    var v = ventanaChat(d);
+    var escribiendo = escribiendoEn(raiz);
+    raiz.innerHTML = '<div class="ms-chat">' +
+      '<div class="ms-chat-cab">' + botonVolver() +
+        '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(nom)) + '</span>' +
+        '<span class="ms-quien"><b>' + esc(nom) + '</b><span class="ct-origen">' +
+          ((conv.fuentes || []).length ? pillsFuentes(conv.fuentes, conv.nivel) : '<span class="ct-tel">+' + esc(normalizarTel(p.tel || '')) + '</span>') +
+        '</span></span>' +
+        (v.corto ? '<span class="ms-ventana' + (v.abierta ? '' : ' cerrada') + '" title="' + esc(v.nota) + '">' + esc(v.corto) + '</span>' : '') +
+        '<button type="button" class="btn btn-sec btn-chico ms-ver-ficha">Ver ficha</button>' +
+      '</div>' +
+      '<div class="ms-chat-cuerpo"><div class="chat">' +
+        ((d.mensajes || []).length ? burbujasChat(d.mensajes) : '<p class="num-vacio">Todavía no hay mensajes.</p>') + '</div></div>' +
+      /* En la compu, el "gratis hasta" ya está arriba; en el celular, abajo. */
+      '<div class="ms-chat-pie">' + (v.abierta
+        ? cajaRespuesta() + '<p class="chat-nota">Sale por el mismo número al que escribió y también se ve en el celular.<span class="ms-solo-cel"> ' +
+          esc(v.nota.replace(/^.*celular\. /, '')) + '</span></p>'
+        : sinVentana(v)) + '</div>' +
+    '</div>';
+    conectarVolver();
+    raiz.querySelector('.ms-ver-ficha').onclick = function () { $('vistaMensajes').classList.toggle('con-info'); };
+    conectarChat(p.clave, raiz, function () { refrescarConversacion(p.clave); });
+    cablearPlantilla(raiz, p.clave, nom);
+    bajarChat(raiz);
+    if (escribiendo && raiz.querySelector('.chat-texto')) { raiz.querySelector('.chat-texto').focus(); }
+    else if (conInfo && !ES_CEL() && raiz.querySelector('.chat-texto')) { raiz.querySelector('.chat-texto').focus(); }
+    if (conInfo) { pintarInfo(d, c); }
+  }
+  /* La ficha a la derecha: los datos, el Club y lo que pasó. */
+  function pintarInfo(d, c) {
+    var info = $('msInfo');
+    var f = fichaContactoHtml(d, c);
+    info.innerHTML = '<div class="ms-info-cab"><b>Ficha</b>' +
+        '<button type="button" class="ficha-x ms-info-x" aria-label="Cerrar la ficha"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>' +
+      f.contacto + '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(d.historia || []) + '</div>';
+    info.querySelector('.ms-info-x').onclick = function () { $('vistaMensajes').classList.remove('con-info'); };
+    cablearFicha(info, d.persona, f.nom, f.tel);
+  }
+  /* Llegó algo con una conversación abierta: se rearma el chat (no la
+     ficha), sin perder lo que se estaba escribiendo. */
+  function refrescarConversacion(clave) {
+    base.crmContacto(pinGuardado(), clave)
+      .then(function (d) { if (MS.abierto === clave && vista === 'mensajes' && d) { MS.ficha = d; pintarConversacion(d, false); } })
       .catch(function () {});
   }
 
@@ -3334,10 +3843,26 @@
       $('fichaIn').innerHTML = '<div class="ficha-bloque"><p class="num-vacio">No encontramos a esta persona.</p></div>';
       return;
     }
+    var f = fichaContactoHtml(d, c), h = d.historia || [];
+    $('fichaTit').textContent = f.nom;
+    $('fichaIn').innerHTML = f.contacto +
+      /* Si escribió por WhatsApp, la conversación va antes que la historia:
+         es lo que se viene a mirar desde Mensajes. */
+      ((d.mensajes || []).length ? chatContacto(d) : '') +
+      '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(h) + '</div>' +
+      ((d.mensajes || []).length ? '' : chatContacto(d));
+    cablearFicha($('fichaIn'), d.persona, f.nom, f.tel);
+    var b = $('chatBloque');
+    conectarChat(d.persona.clave, b, function () { refrescarChat(d.persona.clave); });
+    bajarChat(b);
+  }
+
+  /* El bloque "Contacto" de una persona (en la ficha de Contactos y a la
+     derecha de Mensajes): datos, Club, el resumen y los botones. */
+  function fichaContactoHtml(d, c) {
     var p = d.persona, h = d.historia || [];
     var nom = p.nombre || nombreContacto(c);
     var tel = p.tel ? normalizarTel(p.tel) : '';
-    $('fichaTit').textContent = nom;
     var de = function (f, tipo) { return h.filter(function (x) { return x.fuente === f && (!tipo || (x.datos || {}).tipo === tipo); }); };
     var suma = function (l, k) { return l.reduce(function (a, x) { return a + (Number((x.datos || {})[k]) || 0); }, 0); };
     var online = de('tienda'), local = de('club', 'compra'), nc = de('no_compra').length, ca = de('carrito').length;
@@ -3347,7 +3872,7 @@
     if (nc) { resumen.push(nc === 1 ? 'vino 1 vez sin comprar' : 'vino ' + nc + ' veces sin comprar'); }
     if (ca) { resumen.push(ca === 1 ? '1 carrito' : ca + ' carritos'); }
     var txt = resumen.join(' · ');
-    $('fichaIn').innerHTML =
+    return { nom: nom, tel: tel, contacto:
       '<div class="ficha-bloque">' +
         '<h3>Contacto</h3>' +
         '<div class="ficha-dato"><b>' + esc(nom) + '</b></div>' +
@@ -3358,25 +3883,22 @@
         (p.acepta === false ? '<div class="ct-noacepta">No aceptó recibir promociones.</div>' : '') +
         '<div class="ficha-acc" style="margin-top:12px">' +
           (tel ? '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="https://wa.me/' + esc(tel) + '">Escribirle por WhatsApp</a>' +
-                 '<button type="button" class="btn btn-sec btn-chico" id="ctGuardar">Guardar contacto</button>' : '') +
+                 '<button type="button" class="btn btn-sec btn-chico ct-plantilla">Plantilla de WhatsApp</button>' +
+                 '<button type="button" class="btn btn-sec btn-chico ct-guardar">Guardar contacto</button>' : '') +
           (p.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(p.mail) + '">Mail</a>' : '') +
         '</div>' +
         ((p.etiquetas || []).length ? '<div class="tj-etq" style="margin-top:12px">' + p.etiquetas.map(function (e) {
           return '<span class="etq">' + esc(e) + '</span>'; }).join('') + '</div>' : '') +
-      '</div>' +
-      /* Si escribió por WhatsApp, la conversación va antes que la historia:
-         es lo que se viene a mirar desde Mensajes. */
-      ((d.mensajes || []).length ? chatContacto(d) : '') +
-      '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(h) + '</div>' +
-      ((d.mensajes || []).length ? '' : chatContacto(d));
-    if ($('ctGuardar')) {
-      $('ctGuardar').onclick = function () { guardarContacto({ fuente: 'contacto', nombre: nom, whatsapp: tel, mail: p.mail }); };
-    }
-    conectarChat(p.clave);
-    bajarChat();
-    [].forEach.call($('fichaIn').querySelectorAll('[data-abrir]'), function (b) {
+      '</div>' };
+  }
+  /* Los botones de la ficha: "Guardar contacto" y los "Abrir" de lo que pasó. */
+  function cablearFicha(raiz, p, nom, tel) {
+    var g = raiz.querySelector('.ct-guardar');
+    if (g) { g.onclick = function () { guardarContacto({ fuente: 'contacto', nombre: nom, whatsapp: tel, mail: p.mail }); }; }
+    [].forEach.call(raiz.querySelectorAll('[data-abrir]'), function (b) {
       b.onclick = function () { var x = b.dataset.abrir.split(':'); irAFicha(x[0], Number(x[1])); };
     });
+    cablearPlantilla(raiz, p.clave, nom);
   }
 
   /* Todo lo que pasó con la persona, lo último arriba. Lo que es una tarjeta
@@ -3395,6 +3917,548 @@
           (tarjeta ? ' · <button type="button" class="btn-link" data-abrir="' + esc(x.fuente) + ':' + Number(x.ref) + '">Abrir</button>' : '') +
         '</span></li>';
     }).join('') + '</ol>';
+  }
+
+  /* ═══ Lo que está por venir (10/10/2026) ═════════════════════════════════
+     "Quiero ver toda la estructura armada": cada sección que todavía no está
+     dice qué va a hacer, qué falta y lo que ya hay. */
+  var PRONTO = {
+    tienda: { grupo: 'Pipelines', t: 'Tienda online', sub: 'Las consultas del WhatsApp de la tienda, como tarjetas.',
+      que: 'Cada consulta que llega al WhatsApp de la tienda (el número que atiende Ale) entra acá como una tarjeta, igual que los No Compra y los carritos: Nueva consulta → En conversación → Le pasamos el link → Compró o No compró. Así se ve cuántas consultas terminan en venta y cuáles quedaron sin contestar.',
+      falta: ['Reconectar el número de la tienda a WhatsApp: quedó desconectado el 09/10 al sacar a Kommo. Se reconecta desde Kommo ("Conectar mi WhatsApp" → "Aplicación de WhatsApp Business"), con el QR del celular de la tienda.',
+              'Definir con Ale las etapas del tablero.'],
+      ya: 'Los mensajes de VDH Indumentaria ya llegan a Mensajes, y el número de la tienda ya está suscripto: en cuanto se reconecte, sus mensajes llegan solos.' },
+    agente: { t: 'Agente de IA', sub: 'Un asistente que contesta solo, las 24 horas.',
+      que: 'Contesta solo por WhatsApp las preguntas de siempre (stock, talles, precios, envíos, cambios, locales y horarios) con los datos que ya tenemos, y le pasa la conversación a una persona cuando hace falta o cuando el cliente lo pide.',
+      falta: ['Definir qué puede contestar solo y cuándo pasa a una persona.', 'Armarlo con Claude, con el catálogo, el stock y los locales.',
+              'Probarlo primero entre nosotros, antes de dejarlo con clientes.'],
+      ya: 'El catálogo, el stock de la tienda y de la fábrica y los 14 locales con su horario ya están en el sistema.' },
+    bots: { grupo: 'Automatizaciones', t: 'Bots', sub: 'Respuestas y avisos que salen solos.',
+      que: 'Reglas simples que se disparan solas: un saludo de bienvenida, una respuesta fuera de horario, el mensaje automático al que casi pagó, una encuesta después de la compra.',
+      falta: ['Elegir cuáles sirven de verdad: mejor pocos y buenos.', 'Las plantillas aprobadas que van a usar (las que escriben primero).'],
+      ya: 'El aviso de "casi pagó" ya le llega al equipo por Telegram.' }
+  };
+  function pintarPronto(v) {
+    var p = PRONTO[v];
+    $('vistaPronto').innerHTML = '<div class="pronto">' +
+      '<div class="pronto-cab">' + (p.grupo ? '<small>' + esc(p.grupo) + '</small>' : '') +
+        '<h2>' + esc(p.t) + ' <span class="pill pill-warn">Pronto</span></h2><p>' + esc(p.sub) + '</p></div>' +
+      '<div class="ficha-bloque"><h3>Qué va a hacer</h3><p>' + esc(p.que) + '</p></div>' +
+      '<div class="ficha-bloque"><h3>Qué falta</h3><ul>' + p.falta.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul></div>' +
+      '<div class="ficha-bloque"><h3>Lo que ya hay</h3><p>' + esc(p.ya) + '</p></div>' +
+    '</div>';
+  }
+
+  /* ═══ Segmentos (Beta) ═══════════════════════════════════════════════════
+     Un segmento es un grupo de contactos que se arma solo con los datos. Por
+     ahora, los que salen de Contactos (de dónde vino cada uno y la etiqueta
+     VIP); los que necesitan cuentas nuevas en la base dicen "Pronto". Son la
+     base de las Difusiones. */
+  var SEGMENTOS = [
+    { id: 'tienda', t: 'Compraron en vdh.com.ar', d: 'Todos los que alguna vez compraron en la tienda online.', fuente: 'tienda' },
+    { id: 'club', t: 'Socios del Club', d: 'Los que se hicieron socios en los locales.', fuente: 'club' },
+    { id: 'carrito', t: 'Dejaron un carrito', d: 'Cargaron algo en vdh.com.ar y no terminaron de pagar.', fuente: 'carrito' },
+    { id: 'no_compra', t: 'Vinieron al local y no compraron', d: 'Los No Compra que cargaron los vendedores.', fuente: 'no_compra' },
+    { id: 'whatsapp', t: 'Nos escribieron por WhatsApp', d: 'Los que tienen una conversación con nosotros.', fuente: 'whatsapp' },
+    { id: 'vip', t: 'Etiqueta VIP', d: 'A los que les pusieron la etiqueta VIP en el CRM.', buscar: 'vip' },
+    { id: 'recuperar', t: 'Para recuperar', d: 'Compraban y hace más de 60 días que no vuelven.', pronto: true },
+    { id: 'mejores', t: 'Socios Gold y Black', d: 'Los mejores clientes del Club.', pronto: true },
+    { id: 'cumple', t: 'Cumplen años este mes', d: 'Para saludarlos con un beneficio.', pronto: true }
+  ];
+  var SEG = { cuentas: null, vip: null, error: '', pedido: 0 };
+  var miles = function (n) { return Number(n || 0).toLocaleString('es-AR'); };
+  function cargarSegmentos(despues) {
+    var n = ++SEG.pedido;
+    if (!SEG.cuentas && vista === 'segmentos') { $('vistaSegmentos').innerHTML = '<div class="skel"></div><div class="skel"></div>'; }
+    Promise.all([base.crmContactos(pinGuardado(), '', '', 1), base.crmContactos(pinGuardado(), 'vip', '', 1)])
+      .then(function (r) {
+        if (n !== SEG.pedido) return;
+        SEG.cuentas = (r[0] && r[0].cuentas) || {};
+        SEG.vip = Number(((r[1] && r[1].cuentas) || {}).todos) || 0;
+        SEG.error = '';
+      })
+      .catch(function (err) {
+        if (n !== SEG.pedido) return;
+        if (err && err.sinSesion) { caducada(); return; }
+        SEG.error = 'red';
+      })
+      .then(function () {
+        if (n !== SEG.pedido) return;
+        if (vista === 'segmentos') { pintarSegmentos(); }
+        if (despues) { despues(); }
+      });
+  }
+  function segmento(id) { return SEGMENTOS.filter(function (s) { return s.id === id; })[0]; }
+  function cuantosSegmento(s) {
+    if (!SEG.cuentas || !s || s.pronto) { return null; }
+    return s.buscar ? SEG.vip : (Number(SEG.cuentas[s.fuente]) || 0);
+  }
+  function pintarSegmentos() {
+    var caja = $('vistaSegmentos');
+    if (SEG.error && !SEG.cuentas) {
+      caja.innerHTML = '<div class="vacio-vista"><b>No se pudieron contar los segmentos</b>Revisá la conexión y tocá actualizar.</div>';
+      return;
+    }
+    if (!SEG.cuentas) { caja.innerHTML = '<div class="skel"></div><div class="skel"></div>'; return; }
+    caja.innerHTML = '<p class="seg-intro">Un segmento es un grupo de contactos que se arma solo con los datos y se pone al día solo. ' +
+        'Sirven para mandar difusiones. En las difusiones siempre quedan afuera los que tienen la etiqueta "No escribir" y los que no aceptaron promociones.</p>' +
+      '<div class="seg-grid">' + SEGMENTOS.map(function (s) {
+        var n = cuantosSegmento(s);
+        return '<div class="ficha-bloque seg' + (s.pronto ? ' por-venir' : '') + '">' +
+          '<h3>' + esc(s.t) + (s.pronto ? ' <span class="pill pill-warn">Pronto</span>' : '') + '</h3>' +
+          (s.pronto ? '' : '<div class="seg-n">' + miles(n) + '<small>' + (n === 1 ? 'persona' : 'personas') + '</small></div>') +
+          '<p>' + esc(s.d) + '</p>' +
+          (s.pronto ? '' : '<div class="seg-acc"><button type="button" class="btn btn-sec btn-chico" data-seg-ver="' + s.id + '">Ver</button>' +
+                           '<button type="button" class="btn btn-sec btn-chico" data-seg-dif="' + s.id + '">Mandar difusión</button></div>') +
+        '</div>';
+      }).join('') + '</div>';
+    [].forEach.call(caja.querySelectorAll('[data-seg-ver]'), function (b) { b.onclick = function () { verSegmento(b.dataset.segVer); }; });
+    [].forEach.call(caja.querySelectorAll('[data-seg-dif]'), function (b) {
+      b.onclick = function () { DIF.segmento = b.dataset.segDif; cambiarVista('difusiones'); };
+    });
+  }
+  /* "Ver": Contactos, con el filtro del segmento puesto. */
+  function verSegmento(id) {
+    var s = segmento(id);
+    CT.fuente = s.fuente || '';
+    CT.buscar = s.buscar || '';
+    $('ctBusca').value = CT.buscar;
+    CT.datos = null;
+    cambiarVista('contactos');
+  }
+
+  /* ═══ Difusiones ═════════════════════════════════════════════════════════
+     Mandarle una plantilla aprobada a un segmento entero. Se arma acá con
+     números de verdad (a cuántos les llega y cuánto sale); mandar queda para
+     cuando la cuenta tenga la tarjeta y la empresa esté verificada (sin
+     verificar, Meta deja escribirle primero a 250 personas por día). */
+  var DIF = { segmento: '', plantilla: '' };
+  /* USD por mensaje en Argentina (calculadora de Kommo, 10/10/2026). */
+  var PRECIO_PL = { MARKETING: 0.0618, UTILITY: 0.026 };
+  var usd = function (x) { return Number(x || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  function pintarDifusiones() {
+    if (!SEG.cuentas && !SEG.error) { cargarSegmentos(function () { if (vista === 'difusiones') { pintarDifusiones(); } }); }
+    if (!PLM.datos && !PLM.error && !PLM.cargando) { cargarPlantillasMeta(function () { if (vista === 'difusiones') { pintarDifusiones(); } }); }
+    var segs = SEGMENTOS.filter(function (s) { return !s.pronto; });
+    var aprobadas = plantillasAprobadas();
+    var s = segmento(DIF.segmento), t = aprobadas.filter(function (x) { return x.name === DIF.plantilla; })[0];
+    var n = cuantosSegmento(s);
+    var costo = t && n !== null ? n * (PRECIO_PL[t.category] || PRECIO_PL.MARKETING) : null;
+    $('vistaDifusiones').innerHTML = '<div class="dif">' +
+      '<div class="pronto-cab"><small>Automatizaciones</small><h2>Difusiones</h2>' +
+        '<p>Mandarle una plantilla aprobada a un segmento entero, de una vez. Meta cobra cada mensaje: USD 0,0618 los de marketing y USD 0,026 los de utilidad.</p></div>' +
+      '<div class="ficha-bloque dif-paso"><h3><i>1</i>A quién</h3>' +
+        '<select id="difSeg" aria-label="Segmento"><option value="">Elegí un segmento…</option>' + segs.map(function (x) {
+          var c = cuantosSegmento(x);
+          return '<option value="' + x.id + '"' + (x.id === DIF.segmento ? ' selected' : '') + '>' + esc(x.t) + (c === null ? '' : ' (' + miles(c) + ')') + '</option>';
+        }).join('') + '</select></div>' +
+      '<div class="ficha-bloque dif-paso"><h3><i>2</i>Con qué plantilla</h3>' + (aprobadas.length
+        ? '<select id="difPl" aria-label="Plantilla"><option value="">Elegí una plantilla aprobada…</option>' + aprobadas.map(function (x) {
+            return '<option value="' + esc(x.name) + '"' + (x.name === DIF.plantilla ? ' selected' : '') + '>' + esc(nombrePl(x.name)) + ' · ' + (CAT_PL[x.category] || x.category) + '</option>';
+          }).join('') + '</select>'
+        : '<p class="num-vacio">' + (PLM.cargando || (!PLM.datos && !PLM.error) ? 'Buscando las plantillas…'
+            : 'Todavía no hay plantillas aprobadas. Creá una en Automatizaciones → Plantillas: Meta suele aprobarlas en minutos.') + '</p>') + '</div>' +
+      '<div class="ficha-bloque dif-paso"><h3><i>3</i>Antes de mandar</h3>' +
+        '<p class="dif-resumen">' + (s && t
+          ? 'Le llegaría a <b>' + miles(n) + '</b> ' + (n === 1 ? 'persona' : 'personas') + ', menos las que tienen "No escribir" o no aceptaron promociones. Costo aproximado: <b>USD ' + usd(costo) + '</b>.'
+          : 'Elegí el segmento y la plantilla para ver a cuántos les llega y cuánto sale.') + '</p>' +
+        '<div class="dif-falta">Mandar difusiones va a estar pronto. Antes hay que <b>cargar una tarjeta</b> en la cuenta de WhatsApp de VDH Indumentaria (en Meta) y <b>verificar la empresa</b> (Black Fish): sin verificar, Meta deja escribirle primero a 250 personas por día.</div>' +
+        '<div><button type="button" class="btn btn-wsp" disabled>Mandar difusión</button></div></div>' +
+    '</div>';
+    $('difSeg').onchange = function () { DIF.segmento = this.value; pintarDifusiones(); };
+    if ($('difPl')) { $('difPl').onchange = function () { DIF.plantilla = this.value; pintarDifusiones(); }; }
+  }
+
+  /* ═══ Plantillas de WhatsApp (Meta) ══════════════════════════════════════
+     Las que se usan para escribirle primero a alguien, o pasadas las 24 h.
+     Las tiene Meta: acá se ven como están allá (aprobadas, en revisión,
+     rechazadas), se crean y se borran. Los datos que cambian van con nombre
+     ({{nombre}}, {{producto}}…) y se completan al mandarla. */
+  var PLM = { datos: null, error: '', cargando: false, pedido: 0, solapa: '' };
+  var K_PL_SOLAPA = 'nc_pl_solapa';
+  var ESTADO_PL = { APPROVED: ['Aprobada', 'pill-ok'], PENDING: ['En revisión', 'pill-warn'], REJECTED: ['Rechazada', 'pill-bad'],
+                    PAUSED: ['Pausada', 'pill-warn'], DISABLED: ['Desactivada', 'pill-bad'], IN_APPEAL: ['En apelación', 'pill-warn'],
+                    PENDING_DELETION: ['Borrándose', 'pill-neutra'] };
+  var CAT_PL = { MARKETING: 'Marketing', UTILITY: 'Utilidad', AUTHENTICATION: 'Autenticación' };
+  var AYUDA_CAT = { MARKETING: 'Promociones, novedades, invitar a volver. USD 0,0618 cada mensaje.',
+                    UTILITY: 'Avisos de algo que la persona pidió o compró: llegó su talle, salió su pedido. USD 0,026 cada mensaje. Si Meta ve que es una promoción, la pasa a Marketing.' };
+  var MOTIVO_RECHAZO = { INVALID_FORMAT: 'el formato no es válido', TAG_CONTENT_MISMATCH: 'el texto no coincide con el tipo elegido',
+                         PROMOTIONAL: 'Meta la ve como promoción: probá con el tipo Marketing', INCORRECT_CATEGORY: 'el tipo (marketing o utilidad) no corresponde',
+                         ABUSIVE_CONTENT: 'Meta la ve como contenido no permitido', SCAM: 'Meta la ve como un posible engaño' };
+  /* Los datos que se pueden sumar, con un ejemplo (Meta pide ejemplos para revisarla). */
+  var DATOS_PL = [{ k: 'nombre', t: 'Nombre', ej: 'Lautaro' }, { k: 'producto', t: 'Producto', ej: 'Campera Kazan' },
+                  { k: 'talle', t: 'Talle', ej: 'L' }, { k: 'color', t: 'Color', ej: 'Negro' }, { k: 'local', t: 'Local', ej: 'Mar del Plata' }];
+  function datoPl(k) { return DATOS_PL.filter(function (x) { return x.k === k; })[0]; }
+
+  function pintarPlantillasVista() {
+    PLM.solapa = PLM.solapa || leer(K_PL_SOLAPA) || 'meta';
+    [].forEach.call($('plSolapas').querySelectorAll('[data-pl-solapa]'), function (b) {
+      var sel = b.dataset.plSolapa === PLM.solapa;
+      b.classList.toggle('sel', sel);
+      b.setAttribute('aria-selected', String(sel));
+      b.onclick = function () { PLM.solapa = b.dataset.plSolapa; guardar(K_PL_SOLAPA, PLM.solapa); pintarPlantillasVista(); };
+    });
+    $('plMeta').hidden = PLM.solapa !== 'meta';
+    $('plRapidas').hidden = PLM.solapa !== 'rapidas';
+    if (PLM.solapa === 'meta') { if (PLM.datos) { pintarPlantillasMeta(); } else { cargarPlantillasMeta(); } }
+    else { pintarPlantillas(); }
+  }
+  function cargarPlantillasMeta(despues) {
+    var n = ++PLM.pedido;
+    PLM.cargando = true;
+    if (!PLM.datos && vista === 'plantillas') { $('plMeta').innerHTML = '<div class="skel"></div><div class="skel"></div>'; }
+    base.waPlantillas(pinGuardado())
+      .then(function (x) { if (n !== PLM.pedido) return; PLM.datos = x.cuentas || []; PLM.error = ''; })
+      .catch(function (err) {
+        if (n !== PLM.pedido) return;
+        if (err && err.sinSesion) { caducada(); return; }
+        PLM.error = (err && err.message) || 'No se pudo conectar con WhatsApp.';
+      })
+      .then(function () {
+        if (n !== PLM.pedido) return;
+        PLM.cargando = false;
+        if (vista === 'plantillas' && PLM.solapa === 'meta') { pintarPlantillasMeta(); }
+        if (despues) { despues(); }
+      });
+  }
+  function etiquetaCuenta(c) {
+    var n = (c.numeros || [])[0];
+    return n ? (n.nombre || 'WhatsApp') + ' · ' + n.display : 'Cuenta ' + c.id;
+  }
+  function cuentaConectada(c) { return (c.numeros || []).some(function (n) { return n.conectado; }); }
+  function plantillasAprobadas() {
+    var c = (PLM.datos || []).filter(cuentaConectada)[0];
+    return c ? (c.plantillas || []).filter(function (t) { return t.status === 'APPROVED'; }) : [];
+  }
+  /* Las partes de una plantilla, como las devuelve Meta. */
+  function partesPl(t) {
+    var p = { titulo: '', cuerpo: '', pie: '', botones: [] };
+    ((t && t.components) || []).forEach(function (c) {
+      var ty = String(c.type || '').toUpperCase();
+      if (ty === 'HEADER' && String(c.format || '').toUpperCase() === 'TEXT') { p.titulo = c.text || ''; }
+      else if (ty === 'BODY') { p.cuerpo = c.text || ''; }
+      else if (ty === 'FOOTER') { p.pie = c.text || ''; }
+      else if (ty === 'BUTTONS') { p.botones = (c.buttons || []).map(function (b) { return { tipo: b.type, texto: b.text, url: b.url }; }); }
+    });
+    return p;
+  }
+  function nombrePl(n) { var s = String(n || '').replace(/_/g, ' '); return s.charAt(0).toUpperCase() + s.slice(1); }
+  /* Los datos que lleva un texto ({{nombre}}, o {{1}} en las de Kommo), en orden. */
+  function varsDe(texto) {
+    var l = [];
+    String(texto || '').replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/g, function (m, k) { if (l.indexOf(k) < 0) { l.push(k); } return m; });
+    return l;
+  }
+  /* El texto con los datos marcados: el valor, si lo hay; si no, qué es. */
+  function conDatosPl(texto, valores) {
+    return esc(texto || '').replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/g, function (m, k) {
+      var v = valores && valores[k], d = datoPl(k);
+      return '<span class="pl-dato">' + esc(v ? v : (d ? d.t : (/^\d+$/.test(k) ? 'dato ' + k : k))) + '</span>';
+    });
+  }
+  function rellenarPl(texto, valores) {
+    return String(texto || '').replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/g, function (m, k) { return (valores && valores[k]) || m; });
+  }
+
+  function pintarPlantillasMeta() {
+    var caja = $('plMeta');
+    if (PLM.error && !PLM.datos) {
+      caja.innerHTML = '<div class="vacio-vista"><b>No se pudieron traer las plantillas</b>' + esc(PLM.error) + '</div>';
+      return;
+    }
+    if (!PLM.datos) { caja.innerHTML = '<div class="skel"></div><div class="skel"></div>'; return; }
+    caja.innerHTML = '<div class="plm-cab"><p>Para escribirle a alguien que no te escribió, o cuando pasaron 24 horas desde su último mensaje. ' +
+        'Meta las revisa antes de que se puedan usar (suele tardar minutos) y cobra cada mensaje: USD 0,0618 las de marketing y USD 0,026 las de utilidad.</p>' +
+        '<div class="acc"><button type="button" class="btn btn-sec btn-chico" id="plmActualizar">Actualizar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="plmNueva">Nueva plantilla</button></div></div>' +
+      PLM.datos.map(function (c) {
+        var con = cuentaConectada(c), l = c.plantillas || [];
+        return '<div class="ficha-bloque plm-cuenta"><h3>' + esc(etiquetaCuenta(c)) + (con ? '' : ' <span class="pill pill-warn">Desconectado</span>') + '</h3>' +
+          (con ? '' : '<p class="num-vacio">Este número está desconectado de WhatsApp: sus plantillas no se pueden usar hasta reconectarlo.</p>') +
+          (c.error ? '<p class="plm-motivo">' + esc(c.error) + '</p>' : '') +
+          (l.length ? l.map(function (t, i) {
+            var e = ESTADO_PL[t.status] || [t.status, 'pill-neutra'], p = partesPl(t);
+            return '<div class="plm-fila"><div><b>' + esc(nombrePl(t.name)) + '</b><span class="pill ' + e[1] + '">' + esc(e[0]) + '</span>' +
+                '<span class="pill pill-neutra">' + esc(CAT_PL[t.category] || t.category) + '</span>' +
+                '<p>' + conDatosPl(p.cuerpo) + '</p>' +
+                (t.status === 'REJECTED' && t.rejected_reason && t.rejected_reason !== 'NONE'
+                  ? '<p class="plm-motivo">Motivo: ' + esc(MOTIVO_RECHAZO[t.rejected_reason] || t.rejected_reason) + '</p>' : '') +
+              '</div><button type="button" class="btn btn-sec btn-chico" data-plm-ver="' + esc(c.id) + ':' + i + '">Ver</button></div>';
+          }).join('') : '<p class="num-vacio">Todavía no hay plantillas en este número.</p>') +
+        '</div>';
+      }).join('');
+    $('plmActualizar').onclick = function () { cargarPlantillasMeta(); };
+    $('plmNueva').onclick = function () { abrirPlantillaMeta(null); };
+    [].forEach.call(caja.querySelectorAll('[data-plm-ver]'), function (b) {
+      b.onclick = function () {
+        var x = b.dataset.plmVer.split(':');
+        var c = PLM.datos.filter(function (y) { return y.id === x[0]; })[0];
+        if (c) { abrirPlantillaMeta(c.plantillas[+x[1]], c.id); }
+      };
+    });
+  }
+
+  /* La ventanita: crear una (o ver una que ya está, y borrarla). */
+  var PLE = { cat: 'MARKETING', botones: [], ver: null, borrarHasta: 0 };
+  function slugPl(s) {
+    return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 60);
+  }
+  function abrirPlantillaMeta(t, cuentaId) {
+    var ver = !!t, p = ver ? partesPl(t) : { titulo: '', cuerpo: '¡Hola {{nombre}}! ', pie: '', botones: [] };
+    var cuentas = PLM.datos || [];
+    PLE.ver = t || null;
+    $('plmTit').textContent = ver ? nombrePl(t.name) : 'Nueva plantilla de WhatsApp';
+    $('plmCuenta').innerHTML = cuentas.map(function (c) {
+      return '<option value="' + esc(c.id) + '">' + esc(etiquetaCuenta(c)) + (cuentaConectada(c) ? '' : ' (desconectado)') + '</option>';
+    }).join('');
+    $('plmCuenta').value = cuentaId || (cuentas.filter(cuentaConectada)[0] || cuentas[0] || {}).id || '';
+    $('plmNombre').value = ver ? nombrePl(t.name) : '';
+    PLE.cat = ver && t.category === 'UTILITY' ? 'UTILITY' : 'MARKETING';
+    $('plmTitulo').value = p.titulo;
+    $('plmCuerpo').value = p.cuerpo;
+    $('plmPie').value = p.pie;
+    PLE.botones = p.botones.map(function (b) { return { tipo: b.tipo === 'URL' ? 'URL' : 'QUICK_REPLY', texto: b.texto || '', url: b.url || '' }; });
+    ['plmCuenta', 'plmNombre', 'plmTitulo', 'plmCuerpo', 'plmPie'].forEach(function (id) { $(id).disabled = ver; });
+    $('plmVars').hidden = ver;
+    $('plmMas').hidden = ver;
+    $('plmBorrar').hidden = !ver;
+    $('plmBorrar').classList.remove('seguro');
+    $('plmBorrar').textContent = 'Borrar';
+    PLE.borrarHasta = 0;
+    $('plmOk').hidden = ver;
+    $('plmCancelar').textContent = ver ? 'Cerrar' : 'Cancelar';
+    $('plmError').hidden = true;
+    var e = ver ? (ESTADO_PL[t.status] || [t.status]) : null;
+    $('plmNota').innerHTML = ver
+      ? 'Estado: <b>' + esc(e[0]) + '</b>' + (t.status === 'REJECTED' && t.rejected_reason && t.rejected_reason !== 'NONE'
+          ? ' (' + esc(MOTIVO_RECHAZO[t.rejected_reason] || t.rejected_reason) + ')' : '') + '. Para cambiarla, creá una nueva y borrá ésta.'
+      : 'Meta la revisa antes de que se pueda usar: suele tardar unos minutos. Los datos marcados se completan al mandarla.';
+    $('plmVars').innerHTML = '<span>Sumar dato:</span>' + DATOS_PL.map(function (d) {
+      return '<button type="button" class="chip" data-pl-dato="' + d.k + '">' + d.t + '</button>';
+    }).join('');
+    [].forEach.call($('plmVars').querySelectorAll('[data-pl-dato]'), function (b) {
+      b.onmousedown = function (ev) { ev.preventDefault(); };   // que el cursor no se vaya del mensaje
+      b.onclick = function () { meterEn($('plmCuerpo'), '{{' + b.dataset.plDato + '}}'); previaPl(); };
+    });
+    marcarCatPl();
+    pintarBotonesPl();
+    previaPl();
+    $('modalPlm').hidden = false;
+    if (!ver) { setTimeout(function () { $('plmNombre').focus(); }, 50); }
+  }
+  function meterEn(ta, txt) {
+    var ini = typeof ta.selectionStart === 'number' ? ta.selectionStart : ta.value.length;
+    var fin = typeof ta.selectionEnd === 'number' ? ta.selectionEnd : ini;
+    ta.value = ta.value.slice(0, ini) + txt + ta.value.slice(fin);
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = ini + txt.length;
+  }
+  function marcarCatPl() {
+    [].forEach.call($('plmCat').children, function (b) {
+      b.classList.toggle('sel', b.dataset.cat === PLE.cat);
+      b.disabled = !!PLE.ver;
+    });
+    $('plmCatAyuda').textContent = AYUDA_CAT[PLE.cat];
+  }
+  function pintarBotonesPl() {
+    var ver = !!PLE.ver;
+    $('plmBotones').innerHTML = PLE.botones.map(function (b, i) {
+      var link = b.tipo === 'URL';
+      return '<div class="plm-boton"><span>' + (link ? 'Link' : 'Respuesta') + '</span>' +
+        '<input type="text" maxlength="25" data-b="' + i + '" data-k="texto" value="' + esc(b.texto) + '" placeholder="' +
+          (link ? 'Ej.: Ver en la tienda' : 'Ej.: Sí, quiero') + '"' + (ver ? ' disabled' : '') + ' aria-label="Texto del botón">' +
+        (link ? '<input type="url" data-b="' + i + '" data-k="url" value="' + esc(b.url) + '" placeholder="https://www.vdh.com.ar/…"' +
+                (ver ? ' disabled' : '') + ' aria-label="Link del botón">' : '') +
+        (ver ? '' : '<button type="button" data-quitar="' + i + '" aria-label="Sacar el botón">×</button>') + '</div>';
+    }).join('');
+    [].forEach.call($('plmBotones').querySelectorAll('input'), function (inp) {
+      inp.oninput = function () { PLE.botones[+inp.dataset.b][inp.dataset.k] = inp.value; previaPl(); };
+    });
+    [].forEach.call($('plmBotones').querySelectorAll('[data-quitar]'), function (b) {
+      b.onclick = function () { PLE.botones.splice(+b.dataset.quitar, 1); pintarBotonesPl(); previaPl(); };
+    });
+    var rapidas = PLE.botones.filter(function (b) { return b.tipo !== 'URL'; }).length, links = PLE.botones.length - rapidas;
+    $('plmMasRapida').hidden = rapidas >= 3;
+    $('plmMasLink').hidden = links >= 2;
+  }
+  function previaPl() {
+    var ej = {};
+    DATOS_PL.forEach(function (d) { ej[d.k] = d.ej; });
+    var titulo = $('plmTitulo').value.trim(), cuerpo = $('plmCuerpo').value, pie = $('plmPie').value.trim();
+    $('plmPrevia').innerHTML = (titulo ? '<span class="t">' + esc(titulo) + '</span>' : '') +
+      (cuerpo.trim() ? conDatosPl(cuerpo, ej) : '<span class="p">Escribí el mensaje…</span>') +
+      (pie ? '<span class="p">' + esc(pie) + '</span>' : '');
+    $('plmPreviaBtns').innerHTML = PLE.botones.filter(function (b) { return String(b.texto).trim(); })
+      .map(function (b) { return '<span>' + esc(b.texto) + '</span>'; }).join('');
+    var slug = slugPl($('plmNombre').value);
+    $('plmSlug').textContent = PLE.ver ? 'En Meta: ' + PLE.ver.name
+      : slug ? 'Para Meta: ' + slug : 'Un nombre para reconocerla, por ejemplo "Llegó tu talle".';
+  }
+  /* Lo mismo que revisa la Edge Function, para decirlo en el momento. */
+  function revisarPl() {
+    var cuerpo = $('plmCuerpo').value.trim(), marcas = cuerpo.match(/\{\{[^}]*\}\}/g) || [];
+    if (!slugPl($('plmNombre').value)) { return 'Ponele un nombre.'; }
+    if (!cuerpo) { return 'Falta el mensaje.'; }
+    if (marcas.some(function (m) { return !/^\{\{[a-z_]+\}\}$/.test(m); })) { return 'Hay un dato mal escrito: tiene que ser como {{nombre}}.'; }
+    if (/^\{\{/.test(cuerpo) || /\}\}$/.test(cuerpo)) { return 'El mensaje no puede empezar ni terminar con un dato: sumale texto antes o después.'; }
+    if (/\}\}\s*\{\{/.test(cuerpo)) { return 'Hay dos datos seguidos: poné algo de texto entre medio.'; }
+    if (/\{\{/.test($('plmTitulo').value)) { return 'El título no puede llevar datos.'; }
+    var mal = PLE.botones.filter(function (b) { return !String(b.texto).trim() || (b.tipo === 'URL' && !/^https:\/\/\S+$/.test(String(b.url).trim())); })[0];
+    if (mal) { return mal.tipo === 'URL' && String(mal.texto).trim() ? 'El link de un botón tiene que empezar con https://' : 'Hay un botón sin texto: completalo o sacalo.'; }
+    return '';
+  }
+  function errorPl(id, txt) { $(id).textContent = txt; $(id).hidden = !txt; }
+  function guardarPl() {
+    var mal = revisarPl();
+    if (mal) { errorPl('plmError', mal); return; }
+    errorPl('plmError', '');
+    var cuerpo = $('plmCuerpo').value.trim(), ejemplos = {};
+    varsDe(cuerpo).forEach(function (k) { var d = datoPl(k); ejemplos[k] = d ? d.ej : 'ejemplo'; });
+    $('plmOk').disabled = true; $('plmOk').textContent = 'Mandando…';
+    base.waPlantillaCrear(pinGuardado(), {
+      cuenta: $('plmCuenta').value, nombre: slugPl($('plmNombre').value), categoria: PLE.cat, idioma: 'es_AR',
+      encabezado: $('plmTitulo').value.trim(), cuerpo: cuerpo, pie: $('plmPie').value.trim(), botones: PLE.botones, ejemplos: ejemplos
+    })
+      .then(function () {
+        $('modalPlm').hidden = true;
+        avisar('ok', 'Listo: Meta la está revisando. Suele tardar unos minutos.');
+        cargarPlantillasMeta();
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        errorPl('plmError', (err && err.message) || 'No se pudo mandar a Meta.');
+      })
+      .then(function () { $('plmOk').disabled = false; $('plmOk').textContent = 'Mandar a revisión'; });
+  }
+  function borrarPl() {
+    if (!PLE.ver) { return; }
+    if (Date.now() > PLE.borrarHasta) {
+      PLE.borrarHasta = Date.now() + 4000;
+      $('plmBorrar').classList.add('seguro');
+      $('plmBorrar').textContent = '¿Seguro? Tocá de nuevo';
+      return;
+    }
+    $('plmBorrar').disabled = true;
+    base.waPlantillaBorrar(pinGuardado(), $('plmCuenta').value, PLE.ver.name, PLE.ver.id)
+      .then(function () { $('modalPlm').hidden = true; avisar('ok', 'Plantilla borrada.'); cargarPlantillasMeta(); })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        errorPl('plmError', (err && err.message) || 'No se pudo borrar.');
+      })
+      .then(function () { $('plmBorrar').disabled = false; });
+  }
+
+  /* ═══ Mandarle una plantilla a una persona ═══════════════════════════════
+     Desde la conversación (cuando pasaron las 24 h) o desde la ficha (aunque
+     nunca haya escrito). La base dice a qué número y si se puede ("No
+     escribir" es un no); acá se elige la plantilla y se completan sus datos. */
+  var PLE2 = { clave: '', nombre: '', datos: null, elegida: null, valores: {} };
+  function primerNombre(n) {
+    var p = String(n || '').trim().split(/\s+/)[0] || '';
+    return p ? p.charAt(0).toUpperCase() + p.slice(1).toLowerCase() : '';
+  }
+  function abrirEnviarPlantilla(clave, nombre) {
+    PLE2 = { clave: clave, nombre: nombre || '', datos: null, elegida: null, valores: {} };
+    $('plmeTit').textContent = 'Mandar una plantilla' + (nombre ? ' a ' + nombre : '');
+    $('plmeIn').innerHTML = '<p class="num-vacio">Buscando las plantillas aprobadas…</p>';
+    errorPl('plmeError', '');
+    $('plmeOk').disabled = true;
+    $('modalPlmEnviar').hidden = false;
+    base.waPlantillasPara(pinGuardado(), clave)
+      .then(function (x) { if (PLE2.clave !== clave) return; PLE2.datos = x; pintarEnviarPl(); })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        if (PLE2.clave === clave) { $('plmeIn').innerHTML = '<div class="plm-aviso mal">' + esc((err && err.message) || 'No se pudo conectar con WhatsApp.') + '</div>'; }
+      });
+  }
+  function pintarEnviarPl() {
+    var x = PLE2.datos, l = x.plantillas || [], num = x.numero || {};
+    var html = '<p class="plm-desde">Sale desde <b>' + esc(num.nombre || 'nuestro WhatsApp') + '</b> (' + esc(num.display || '') + ').</p>';
+    if (x.contacto && x.contacto.acepta === false) {
+      html += '<div class="plm-aviso">No aceptó recibir promociones: mandale sólo algo que te haya pedido (una plantilla de Utilidad).</div>';
+    }
+    if (!l.length) {
+      html += '<div class="plm-vacio">Todavía no hay plantillas aprobadas para este número. Creá una en ' +
+              '<button type="button" class="btn-link" id="plmeIrPl">Automatizaciones → Plantillas</button>: Meta suele aprobarlas en minutos.</div>';
+    } else {
+      html += '<div class="plm-lista">' + l.map(function (t, i) {
+        return '<button type="button" class="plm-opcion' + (PLE2.elegida === i ? ' sel' : '') + '" data-i="' + i + '">' +
+          '<b>' + esc(nombrePl(t.name)) + '</b><span class="pill ' + (t.category === 'UTILITY' ? 'pill-info' : 'pill-neutra') + '">' +
+          esc(CAT_PL[t.category] || t.category) + '</span><span class="plm-opcion-txt">' + conDatosPl(partesPl(t).cuerpo) + '</span></button>';
+      }).join('') + '</div>';
+    }
+    if (PLE2.elegida !== null && l[PLE2.elegida]) {
+      var t = l[PLE2.elegida], p = partesPl(t), vars = varsDe(p.titulo).concat(varsDe(p.cuerpo));
+      vars.forEach(function (k) {
+        if (PLE2.valores[k] === undefined) { PLE2.valores[k] = (k === 'nombre' || k === '1') ? primerNombre(PLE2.nombre) : ''; }
+      });
+      html += (vars.length ? '<div class="plm-datos">' + vars.map(function (k) {
+          var d = datoPl(k);
+          return '<div class="campo"><label for="plmeDato_' + k + '">' + esc(d ? d.t : (/^\d+$/.test(k) ? 'Dato ' + k : k)) + '</label>' +
+            '<input type="text" id="plmeDato_' + k + '" data-dato="' + k + '" maxlength="200" value="' + esc(PLE2.valores[k]) + '"' +
+            (d ? ' placeholder="Ej.: ' + esc(d.ej) + '"' : '') + '></div>';
+        }).join('') + '</div>' : '') +
+        '<div class="plm-tel"><div class="plm-burbuja" id="plmePrevia"></div><div class="plm-btns" id="plmePreviaBtns"></div></div>' +
+        '<p class="plm-nota">Cuesta USD ' + (t.category === 'UTILITY' ? '0,026' : '0,0618') + '. Si a la cuenta le falta la tarjeta en Meta, no se entrega (lo vas a ver en la conversación).</p>';
+    }
+    $('plmeIn').innerHTML = html;
+    [].forEach.call($('plmeIn').querySelectorAll('.plm-opcion'), function (b) {
+      b.onclick = function () { PLE2.elegida = +b.dataset.i; pintarEnviarPl(); };
+    });
+    [].forEach.call($('plmeIn').querySelectorAll('[data-dato]'), function (inp) {
+      inp.oninput = function () { PLE2.valores[inp.dataset.dato] = inp.value; previaEnviarPl(); };
+    });
+    if ($('plmeIrPl')) { $('plmeIrPl').onclick = function () { $('modalPlmEnviar').hidden = true; cerrarFicha(); cambiarVista('plantillas'); }; }
+    previaEnviarPl();
+  }
+  function previaEnviarPl() {
+    var x = PLE2.datos, t = x && PLE2.elegida !== null ? (x.plantillas || [])[PLE2.elegida] : null;
+    if (!t) { $('plmeOk').disabled = true; return; }
+    var p = partesPl(t);
+    if ($('plmePrevia')) {
+      $('plmePrevia').innerHTML = (p.titulo ? '<span class="t">' + conDatosPl(p.titulo, PLE2.valores) + '</span>' : '') +
+        conDatosPl(p.cuerpo, PLE2.valores) + (p.pie ? '<span class="p">' + esc(p.pie) + '</span>' : '');
+      $('plmePreviaBtns').innerHTML = p.botones.map(function (b) { return '<span>' + esc(b.texto) + '</span>'; }).join('');
+    }
+    var faltan = varsDe(p.titulo).concat(varsDe(p.cuerpo)).some(function (k) { return !String(PLE2.valores[k] || '').trim(); });
+    $('plmeOk').disabled = faltan;
+  }
+  function mandarPlantillaElegida() {
+    var x = PLE2.datos, t = x && PLE2.elegida !== null ? (x.plantillas || [])[PLE2.elegida] : null;
+    if (!t) { return; }
+    var p = partesPl(t), conNombre = String(t.parameter_format || '').toUpperCase() === 'NAMED';
+    var lista = function (txt) {
+      var vs = varsDe(txt);
+      if (!conNombre) { vs.sort(function (a, b) { return +a - +b; }); }
+      return vs.map(function (k) { return conNombre ? { nombre: k, texto: PLE2.valores[k] } : { texto: PLE2.valores[k] }; });
+    };
+    var clave = PLE2.clave;
+    $('plmeOk').disabled = true; $('plmeOk').textContent = 'Mandando…';
+    base.waEnviarPlantilla(pinGuardado(), {
+      clave: clave, nombre: t.name, idioma: t.language, formato: conNombre ? 'named' : 'positional',
+      parametros: { titulo: lista(p.titulo), cuerpo: lista(p.cuerpo) },
+      texto: [rellenarPl(p.titulo, PLE2.valores), rellenarPl(p.cuerpo, PLE2.valores)].filter(Boolean).join('\n\n'),
+      quien: quien
+    })
+      .then(function () {
+        $('modalPlmEnviar').hidden = true;
+        avisar('ok', 'Listo: le mandamos la plantilla.');
+        if (vista === 'mensajes') { cargarMensajes(); if (MS.abierto === clave) { refrescarConversacion(clave); } }
+        if (CT.abierto === clave) { refrescarChat(clave); }
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        errorPl('plmeError', (err && err.message) || 'No se pudo mandar.');
+      })
+      .then(function () { $('plmeOk').textContent = 'Mandar'; previaEnviarPl(); });
+  }
+  /* Los botones que abren "Mandar una plantilla", dentro de una ficha o una
+     conversación. */
+  function cablearPlantilla(raiz, clave, nombre) {
+    [].forEach.call((raiz && raiz.querySelectorAll('.ms-enviar-pl, .ct-plantilla')) || [], function (b) {
+      b.onclick = function () { abrirEnviarPlantilla(clave, nombre); };
+    });
   }
 
   /* ═══ El stock (SQL 56) ═════════════════════════════════════════════════
@@ -3645,7 +4709,14 @@
       if (!$('modalWsp').hidden) { $('modalWsp').hidden = true; return; }
       if (!$('modalVenta').hidden) { $('ventaCancelar').onclick(); return; }
       if (!$('modalEtqLote').hidden) { $('modalEtqLote').hidden = true; return; }
+      if (!$('modalPlmEnviar').hidden) { $('modalPlmEnviar').hidden = true; return; }
+      if (!$('modalPlm').hidden) { $('modalPlm').hidden = true; return; }
+      if ($('crm').classList.contains('menu-abierto')) { cerrarMenuCrm(); return; }
       if (eligiendo) { salirDeElegir(); return; }
+      /* Mensajes: primero se cierra la ficha de la derecha; en el celular,
+         después, la conversación. */
+      if (vista === 'mensajes' && $('vistaMensajes').classList.contains('con-info')) { $('vistaMensajes').classList.remove('con-info'); return; }
+      if (vista === 'mensajes' && ES_CEL() && $('vistaMensajes').classList.contains('con-chat')) { cerrarConversacion(); return; }
       cerrarFicha();
     });
     /* Contactos: el buscador espera un cuarto de segundo a que se termine
@@ -3660,6 +4731,18 @@
       clearTimeout(MS.espera);
       MS.espera = setTimeout(function () { MS.buscar = v; cargarMensajes(); }, 250);
     };
+    /* Plantillas de WhatsApp (Meta): la ventanita de crear o ver, y la de mandar. */
+    [].forEach.call($('plmCat').children, function (b) {
+      b.onclick = function () { if (PLE.ver) { return; } PLE.cat = b.dataset.cat; marcarCatPl(); };
+    });
+    ['plmNombre', 'plmTitulo', 'plmCuerpo', 'plmPie'].forEach(function (id) { $(id).oninput = previaPl; });
+    $('plmMasRapida').onclick = function () { PLE.botones.push({ tipo: 'QUICK_REPLY', texto: '', url: '' }); pintarBotonesPl(); previaPl(); };
+    $('plmMasLink').onclick = function () { PLE.botones.push({ tipo: 'URL', texto: '', url: 'https://www.vdh.com.ar/' }); pintarBotonesPl(); previaPl(); };
+    $('plmCancelar').onclick = function () { $('modalPlm').hidden = true; };
+    $('plmOk').onclick = guardarPl;
+    $('plmBorrar').onclick = borrarPl;
+    $('plmeCancelar').onclick = function () { $('modalPlmEnviar').hidden = true; };
+    $('plmeOk').onclick = mandarPlantillaElegida;
     $('loteMover').onchange = function () { var d = this.value; this.value = ''; if (d) { moverLote(d); } };
     $('loteEtq').onclick = abrirEtqLote;
     $('loteX').onclick = salirDeElegir;
@@ -3668,8 +4751,13 @@
     $('etqLoteNo').onclick = function () { $('modalEtqLote').hidden = true; };
     $('filtros').onscroll = marcarScroll;
     window.addEventListener('resize', marcarScroll);
-    $('vistas').onscroll = marcarVistas;
-    window.addEventListener('resize', marcarVistas);
+    /* El menú del CRM en el celular: se abre desde el botón de la sección y
+       se cierra tocando afuera. */
+    $('crmSeccion').onclick = function () {
+      if ($('crm').classList.contains('menu-abierto')) { cerrarMenuCrm(); } else { abrirMenuCrm(); }
+    };
+    $('crmVelo').onclick = cerrarMenuCrm;
+    window.addEventListener('resize', ajustarAltoMensajes);
 
     /* Tres formas de llegar acá:
          · volviendo del mail, con el token en el # de la dirección

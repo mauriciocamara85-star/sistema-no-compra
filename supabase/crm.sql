@@ -2382,3 +2382,180 @@ $$;
 grant execute on function crm_contacto(text, text) to anon, authenticated;
 
 select 'listo: contestar desde el CRM' as "SQL 64";
+
+
+-- ─────────────────────────── PARTE 65 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · MANDAR PLANTILLAS DE WHATSAPP DESDE EL CRM
+--
+-- Correr en el editor SQL de Supabase.
+--
+-- Pedido de Mauricio (10/10/2026): para escribirle a alguien que no nos
+-- escribió, o cuando pasaron las 24 h, Meta sólo deja mandar plantillas
+-- aprobadas. Se crean desde el CRM (Automatizaciones → Plantillas) y se
+-- mandan desde la conversación o la ficha.
+--   · La base comprueba el PIN, arma el número de WhatsApp (549 + los 10
+--     números) y dice desde cuál de los nuestros conviene salir: el mismo
+--     al que escribió la última vez.
+--   · "No escribir" es un no: con esa etiqueta, no sale nada.
+--   · Lo que sale queda guardado como cualquier mensaje, con qué plantilla.
+--   · La ficha trae, además, por qué no se entregó un mensaje (por ejemplo,
+--     si a la cuenta le falta la tarjeta en Meta).
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function wa_preparar_plantilla(p_pin text, p_clave text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_tel text; v_numero_id text; v_numero text; v_ventana timestamptz;
+  v_no boolean; v_acepta boolean; v_nombre text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  /* Sólo se le escribe a un teléfono: los que dejaron sólo el mail, no. */
+  if coalesce(p_clave, '') !~ '^[0-9]{10}$' then
+    return jsonb_build_object('ok', false, 'motivo', 'sin_telefono');
+  end if;
+
+  /* Lo de la persona, de todos lados: su nombre, si aceptó promociones y
+     si alguien le puso "No escribir". */
+  select bool_or(exists (select 1 from unnest(b.etiquetas) e where lower(trim(e)) = 'no escribir')),
+         bool_or(b.acepta),
+         (array_agg(b.nombre order by (b.fuente = 'whatsapp'), b.cuando desc) filter (where b.nombre is not null))[1]
+    into v_no, v_acepta, v_nombre
+    from crm_contactos_base() b
+   where b.clave = p_clave;
+  if coalesce(v_no, false) then
+    return jsonb_build_object('ok', false, 'motivo', 'no_escribir');
+  end if;
+
+  /* Si ya hubo conversación: su número como lo da WhatsApp y el nuestro
+     por el que hablaron. Si no, 549 + los 10 números, y el número lo elige
+     la Edge Function (el del CRM). */
+  select m.tel, m.numero_id, m.numero into v_tel, v_numero_id, v_numero
+    from wa_mensajes m
+   where club_tel10(m.tel) = p_clave
+   order by m.cuando desc, m.id desc
+   limit 1;
+  select max(m.cuando) + interval '24 hours' into v_ventana
+    from wa_mensajes m where club_tel10(m.tel) = p_clave and m.sentido = 'entra';
+
+  return jsonb_build_object('ok', true, 'tel', coalesce(v_tel, '549' || p_clave), 'numero_id', v_numero_id,
+                            'numero', v_numero, 'nombre', v_nombre, 'acepta', v_acepta, 'ventana', v_ventana);
+end;
+$$;
+revoke execute on function wa_preparar_plantilla(text, text) from public, anon, authenticated;
+grant  execute on function wa_preparar_plantilla(text, text) to service_role;
+
+/* Lo que Meta aceptó: texto o plantilla (con cuál, en media). Si su estado
+   llegó antes (y dejó la marca de "otra app"), se completa. */
+create or replace function wa_anotar_envio(p jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_id bigint;
+begin
+  insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, media, quien, cuando)
+  values (p->>'wamid', p->>'numero_id', p->>'numero', p->>'tel', 'sale', 'crm', coalesce(nullif(p->>'tipo', ''), 'text'),
+          p->>'texto', p->'media', nullif(trim(p->>'quien'), ''), now())
+  on conflict (wamid) do update
+    set desde = 'crm', tipo = excluded.tipo, texto = excluded.texto, media = excluded.media, quien = excluded.quien
+    where wa_mensajes.desde = 'otra_app'
+  returning id into v_id;
+  return jsonb_build_object('id', v_id);
+end;
+$$;
+revoke execute on function wa_anotar_envio(jsonb) from public, anon, authenticated;
+grant  execute on function wa_anotar_envio(jsonb) to service_role;
+
+create or replace function crm_contacto(p_pin text, p_clave text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  /* Con prefijo: "tel" y "mail" son también columnas de lo que se consulta,
+     y PL/pgSQL no sabría a cuál le hablan. */
+  v_filas jsonb; v_tel text; v_mail text; v_nombre text; v_acepta boolean; v_etq jsonb;
+  socio_id bigint; socio jsonb; historia jsonb;
+  v_mensajes jsonb; v_ventana timestamptz;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if coalesce(trim(p_clave), '') = '' then return null; end if;
+
+  /* Lo de esta persona, lo más nuevo primero. En una variable y no en una
+     tabla temporal: es poco, y una función con permisos de dueño no tiene
+     por qué andar creando tablas. */
+  select coalesce(jsonb_agg(to_jsonb(b) order by b.cuando desc), '[]'::jsonb) into v_filas
+    from crm_contactos_base() b where b.clave = p_clave;
+  if jsonb_array_length(v_filas) = 0 then return null; end if;
+
+  select max(x.e->>'tel'),
+         (array_agg(x.e->>'mail' order by x.i) filter (where x.e->>'mail' is not null))[1],
+         (array_agg(x.e->>'nombre' order by (x.e->>'fuente' = 'whatsapp'), x.i) filter (where x.e->>'nombre' is not null))[1],
+         bool_or((x.e->>'acepta')::boolean)
+    into v_tel, v_mail, v_nombre, v_acepta
+    from jsonb_array_elements(v_filas) with ordinality as x(e, i);
+  select coalesce(to_jsonb(array_agg(distinct t order by t)), '[]'::jsonb) into v_etq
+    from jsonb_array_elements(v_filas) as x(e), jsonb_array_elements_text(x.e->'etiquetas') as t;
+
+  select c.id into socio_id from club_clientes c
+   where c.baja is null
+     and ((v_tel is not null and club_tel10(c.telefono) = v_tel) or (v_mail is not null and lower(trim(c.mail)) = v_mail))
+   order by (v_tel is not null and club_tel10(c.telefono) = v_tel) desc, c.creado
+   limit 1;
+  if socio_id is not null then
+    select jsonb_build_object('nombre', v.nombre, 'nivel', v.nivel, 'puntos', v.puntos, 'compras', v.compras,
+                              'gastado', v.gastado, 'ultima_compra', v.ultima_compra, 'desde', v.creado, 'local', v.local_alta)
+      into socio from v_club_clientes v where v.id = socio_id;
+  end if;
+
+  select coalesce(jsonb_agg(h order by (h->>'cuando')::timestamptz desc), '[]'::jsonb) into historia
+    from (
+      select jsonb_build_object('fuente', x.e->>'fuente', 'ref', (x.e->>'ref')::bigint, 'cuando', x.e->'cuando',
+                                'datos', x.e->'datos') as h
+        from jsonb_array_elements(v_filas) as x(e)
+       where x.e->>'fuente' <> 'whatsapp'
+      union all
+      select jsonb_build_object('fuente', 'nota', 'ref', ev.ref, 'cuando', ev.cuando,
+                                'datos', jsonb_build_object('de', ev.fuente, 'quien', ev.quien, 'texto', ev.detalle))
+        from crm_eventos ev
+       where ev.tipo = 'nota'
+         and exists (select 1 from jsonb_array_elements(v_filas) as x(e)
+                      where x.e->>'fuente' = ev.fuente and (x.e->>'ref')::bigint = ev.ref)
+    ) t;
+
+  /* SQL 63: la conversación de WhatsApp (las últimas 200, en orden) y
+     hasta cuándo se le puede contestar gratis: 24 h desde que escribió. */
+  if v_tel is not null then
+    select coalesce(jsonb_agg(jsonb_build_object('id', w.id, 'sentido', w.sentido, 'desde', w.desde, 'tipo', w.tipo,
+                                                 'texto', w.texto, 'estado', w.estado, 'cuando', w.cuando, 'quien', w.quien, 'error', w.error)
+                              order by w.cuando, w.id), '[]'::jsonb)
+      into v_mensajes
+      from (select * from wa_mensajes m where club_tel10(m.tel) = v_tel order by m.cuando desc, m.id desc limit 200) w;
+    select max(m.cuando) + interval '24 hours' into v_ventana
+      from wa_mensajes m where club_tel10(m.tel) = v_tel and m.sentido = 'entra';
+  end if;
+  return jsonb_build_object(
+    'persona', jsonb_build_object('clave', p_clave, 'nombre', v_nombre, 'tel', v_tel, 'mail', v_mail,
+                                  'acepta', v_acepta, 'etiquetas', v_etq),
+    'socio', socio, 'historia', historia,
+    'mensajes', coalesce(v_mensajes, '[]'::jsonb), 'ventana', v_ventana);
+end;
+$$;
+grant execute on function crm_contacto(text, text) to anon, authenticated;
+
+select 'listo: plantillas de WhatsApp desde el CRM' as "SQL 65";

@@ -1264,21 +1264,37 @@ var base = {
     return funcion('crm_mensajes_ultimo', { p_pin: pin });
   },
 
-  /** Contestar por WhatsApp desde el CRM (SQL 64). Lo manda la Edge
-   *  Function, que es la que tiene el token; la base comprueba el PIN y las
-   *  24 h. Rechaza con el porqué si no salió. */
-  waEnviar: function (pin, clave, texto, quien) {
+  /** Lo de WhatsApp lo hace la Edge Function "whatsapp", que es la que
+   *  tiene el token de Meta; todo con el PIN. Rechaza con el porqué. */
+  waAccion: function (accion, datos) {
     return fetch(BASE + '/functions/v1/whatsapp', {
       method: 'POST',
       headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accion: 'enviar', pin: pin, clave: clave, texto: texto, quien: quien || '' })
+      body: JSON.stringify(Object.assign({ accion: accion }, datos))
     }).then(function (r) {
-      return r.json().catch(function () { return { ok: false, error: 'No se pudo mandar.' }; });
+      return r.json().catch(function () { return { ok: false, error: 'No se pudo conectar con WhatsApp.' }; });
     }).then(function (x) {
-      if (!x || !x.ok) { throw rechazo((x && x.error) || 'No se pudo mandar.'); }
+      if (!x || !x.ok) { var e = rechazo((x && x.error) || 'No se pudo conectar con WhatsApp.'); e.motivo = x && x.motivo; throw e; }
       return x;
     });
   },
+
+  /** Contestar por WhatsApp desde el CRM (SQL 64): la base comprueba el PIN
+   *  y las 24 h. */
+  waEnviar: function (pin, clave, texto, quien) {
+    return base.waAccion('enviar', { pin: pin, clave: clave, texto: texto, quien: quien || '' });
+  },
+
+  /** Las plantillas de WhatsApp de cada cuenta, como las tiene Meta. */
+  waPlantillas: function (pin) { return base.waAccion('plantillas', { pin: pin }); },
+  /** Una plantilla nueva: Meta la revisa (suele tardar minutos). */
+  waPlantillaCrear: function (pin, datos) { return base.waAccion('plantilla_crear', Object.assign({ pin: pin }, datos)); },
+  waPlantillaBorrar: function (pin, cuenta, nombre, id) {
+    return base.waAccion('plantilla_borrar', { pin: pin, cuenta: cuenta, nombre: nombre, id: id });
+  },
+  /** Las aprobadas con las que se le puede escribir a una persona (SQL 65). */
+  waPlantillasPara: function (pin, clave) { return base.waAccion('plantillas_para', { pin: pin, clave: clave }); },
+  waEnviarPlantilla: function (pin, datos) { return base.waAccion('enviar_plantilla', Object.assign({ pin: pin }, datos)); },
 
   /** El descuento atado al teléfono, desde la ficha del cliente. */
   darDescuento: function (pin, registro, pct, dias, quien) {
