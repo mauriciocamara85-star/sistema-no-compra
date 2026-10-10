@@ -3568,3 +3568,480 @@ $$;
 grant execute on function crm_contacto(text, text) to anon, authenticated;
 
 select 'listo: los dos números, el historial de la tienda y el tablero Tienda online' as "SQL 67";
+
+
+-- ─────────────────────────── PARTE 68 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · LA AGENDA DEL CELULAR DE LA TIENDA
+--
+-- Correr en el editor SQL de Supabase (después del 67).
+--
+-- Pedido de Mauricio (10/10/2026): el historial de la tienda trajo las
+-- conversaciones pero no los nombres. Meta también manda los contactos
+-- agendados en el celular (con el nombre con que los guardaron) y después
+-- avisa cada vez que agendan, cambian o borran uno.
+--   · Se guardan en wa_agenda.
+--   · El nombre se usa cuando no hay uno mejor: primero el de las compras,
+--     el Club, los carritos o los No Compra; después el de la agenda; al
+--     final, el del perfil de WhatsApp. En Mensajes, Contactos, la ficha y
+--     Tienda online.
+--   · Los agendados que nunca escribieron no aparecen en Contactos (pueden
+--     ser proveedores o gente de la empresa).
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists wa_agenda (
+  numero_id     text not null,
+  clave         text not null,
+  tel           text,
+  nombre        text,
+  primer_nombre text,
+  actualizado   timestamptz not null default now(),
+  borrado       boolean not null default false,
+  primary key (numero_id, clave)
+);
+create index if not exists wa_agenda_clave on wa_agenda (clave);
+alter table wa_agenda enable row level security;
+revoke all on wa_agenda from anon, authenticated;
+
+/* El nombre de agenda de una persona (el último que se guardó). */
+create or replace function wa_agenda_nombre(p_clave text)
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select a.nombre from wa_agenda a
+   where a.clave = p_clave and not a.borrado and a.nombre is not null
+   order by a.actualizado desc
+   limit 1
+$$;
+revoke execute on function wa_agenda_nombre(text) from public, anon, authenticated;
+
+create or replace function wa_procesar(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  e jsonb; c jsonb; v jsonb; m jsonb; s jsonb; h jsonb; t jsonb;
+  v_numero_id text; v_numero text; v_hist boolean; v_propio boolean;
+  entran integer := 0; ecos integer := 0; estados integer := 0; otros integer := 0; de_otra integer := 0;
+  viejos integer := 0; editados integer := 0; agenda integer := 0;
+  n integer;
+  orden constant text[] := array['sent', 'delivered', 'read'];
+begin
+  for e in select * from jsonb_array_elements(coalesce(p->'entry', '[]'::jsonb)) loop
+    for c in select * from jsonb_array_elements(coalesce(e->'changes', '[]'::jsonb)) loop
+      v := c->'value';
+      v_numero_id := v->'metadata'->>'phone_number_id';
+      v_numero := v->'metadata'->>'display_phone_number';
+      v_hist := c->>'field' = 'history';
+
+      if c->>'field' in ('messages', 'history') then
+        for m in select * from jsonb_array_elements(coalesce(v->'messages', '[]'::jsonb)) loop
+          insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, media, perfil, cuando, historial)
+          values (m->>'id', v_numero_id, v_numero, m->>'from', 'entra', 'cliente', m->>'type', wa_texto(m),
+                  case when m->>'type' in ('image', 'video', 'audio', 'document', 'sticker') then m->(m->>'type') end,
+                  (select x->'profile'->>'name' from jsonb_array_elements(coalesce(v->'contacts', '[]'::jsonb)) x
+                    where x->>'wa_id' = m->>'from' limit 1),
+                  to_timestamp((m->>'timestamp')::bigint), v_hist)
+          on conflict (wamid) do update
+            set tipo = excluded.tipo, texto = coalesce(excluded.texto, wa_mensajes.texto), media = excluded.media
+            where wa_mensajes.tipo = 'media_placeholder';
+          get diagnostics n = row_count;
+          entran := entran + n;
+          if n > 0 and not v_hist and coalesce(m->>'type', '') <> 'reaction' then
+            perform crm_consulta_mensaje(m->>'from', v_numero_id, 'entra', wa_texto(m), to_timestamp((m->>'timestamp')::bigint));
+          end if;
+        end loop;
+
+        /* Los estados sólo avanzan: un "entregado" que llega tarde no
+           pisa un "leído". "failed" pisa siempre. */
+        for s in select * from jsonb_array_elements(coalesce(v->'statuses', '[]'::jsonb)) loop
+          update wa_mensajes w
+             set estado = s->>'status', error = coalesce(s->'errors', w.error)
+           where w.wamid = s->>'id'
+             and (s->>'status' = 'failed' or w.estado is null
+                  or coalesce(array_position(orden, s->>'status'), 0) > coalesce(array_position(orden, w.estado), 0));
+          get diagnostics n = row_count;
+          estados := estados + n;
+          /* El estado de algo que no tenemos es algo que salió por otra app
+             (Kommo): se deja la marca de que se contestó. */
+          if n = 0 and s->>'recipient_id' is not null
+             and not exists (select 1 from wa_mensajes w where w.wamid = s->>'id') then
+            insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, estado, error, cuando)
+            values (s->>'id', v_numero_id, v_numero, s->>'recipient_id', 'sale', 'otra_app', 'desconocido',
+                    s->>'status', s->'errors', coalesce(to_timestamp((s->>'timestamp')::bigint), now()))
+            on conflict (wamid) do nothing;
+            get diagnostics n = row_count;
+            de_otra := de_otra + n;
+            if n > 0 then
+              perform crm_consulta_mensaje(s->>'recipient_id', v_numero_id, 'sale', null,
+                                           coalesce(to_timestamp((s->>'timestamp')::bigint), now()));
+            end if;
+          end if;
+        end loop;
+      end if;
+
+      if c->>'field' = 'smb_message_echoes' or (v_hist and v ? 'message_echoes') then
+        for m in select * from jsonb_array_elements(coalesce(v->'message_echoes', '[]'::jsonb)) loop
+          insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, media, cuando, historial)
+          values (m->>'id', v_numero_id, v_numero, m->>'to', 'sale', 'celular', m->>'type', wa_texto(m),
+                  case when m->>'type' in ('image', 'video', 'audio', 'document', 'sticker') then m->(m->>'type') end,
+                  to_timestamp((m->>'timestamp')::bigint), v_hist)
+          on conflict (wamid) do update
+            set desde = 'celular', tipo = excluded.tipo, texto = coalesce(excluded.texto, wa_mensajes.texto), media = excluded.media
+            where wa_mensajes.desde = 'otra_app' or wa_mensajes.tipo = 'media_placeholder';
+          get diagnostics n = row_count;
+          ecos := ecos + n;
+          if n > 0 and not v_hist and coalesce(m->>'type', '') <> 'reaction' then
+            perform crm_consulta_mensaje(m->>'to', v_numero_id, 'sale', wa_texto(m), to_timestamp((m->>'timestamp')::bigint));
+          end if;
+        end loop;
+      end if;
+
+      if v_hist then
+        for h in select * from jsonb_array_elements(coalesce(v->'history', '[]'::jsonb)) loop
+          for t in select * from jsonb_array_elements(coalesce(h->'threads', '[]'::jsonb)) loop
+            for m in select * from jsonb_array_elements(coalesce(t->'messages', '[]'::jsonb)) loop
+              if m->>'type' = 'edit' then
+                update wa_mensajes w set texto = coalesce(wa_texto(m->'edit'->'message'), w.texto)
+                 where w.wamid = m->'edit'->>'original_message_id';
+                get diagnostics n = row_count;
+                editados := editados + n;
+                if n > 0 then continue; end if;
+              end if;
+              v_propio := coalesce((m->'history_context'->>'from_me')::boolean, false);
+              insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, estado, cuando, historial)
+              values (m->>'id', v_numero_id, v_numero, t->>'id',
+                      case when v_propio then 'sale' else 'entra' end,
+                      case when v_propio then 'celular' else 'cliente' end,
+                      m->>'type', case when m->>'type' = 'edit' then wa_texto(m->'edit'->'message') else wa_texto(m) end,
+                      case when v_propio then lower(m->'history_context'->>'status') end,
+                      to_timestamp((m->>'timestamp')::bigint), true)
+              on conflict (wamid) do nothing;
+              get diagnostics n = row_count;
+              viejos := viejos + n;
+            end loop;
+          end loop;
+        end loop;
+      end if;
+
+      /* SQL 68: la agenda del celular. Al pedirla llega entera; después,
+         cada contacto que agendan, cambian ("add") o borran ("remove"). */
+      if c->>'field' = 'smb_app_state_sync' then
+        for s in select * from jsonb_array_elements(coalesce(v->'state_sync', '[]'::jsonb)) loop
+          if s->>'type' = 'contact' and club_tel10(s->'contact'->>'phone_number') is not null then
+            if s->>'action' = 'remove' then
+              update wa_agenda a set borrado = true, actualizado = now()
+               where a.numero_id = v_numero_id and a.clave = club_tel10(s->'contact'->>'phone_number');
+            else
+              insert into wa_agenda (numero_id, clave, tel, nombre, primer_nombre, actualizado)
+              values (v_numero_id, club_tel10(s->'contact'->>'phone_number'), s->'contact'->>'phone_number',
+                      nullif(trim(s->'contact'->>'full_name'), ''), nullif(trim(s->'contact'->>'first_name'), ''),
+                      coalesce(to_timestamp((s->'metadata'->>'timestamp')::bigint), now()))
+              on conflict (numero_id, clave) do update
+                set tel = excluded.tel, nombre = coalesce(excluded.nombre, wa_agenda.nombre),
+                    primer_nombre = coalesce(excluded.primer_nombre, wa_agenda.primer_nombre),
+                    actualizado = excluded.actualizado, borrado = false;
+            end if;
+            agenda := agenda + 1;
+          end if;
+        end loop;
+      end if;
+
+      if c->>'field' not in ('messages', 'smb_message_echoes', 'history', 'smb_app_state_sync') then
+        otros := otros + 1;
+      end if;
+    end loop;
+  end loop;
+  return jsonb_build_object('entran', entran, 'ecos', ecos, 'estados', estados, 'de_otra_app', de_otra,
+                            'historial', viejos, 'editados', editados, 'agenda', agenda, 'otros', otros);
+end;
+$$;
+revoke execute on function wa_procesar(jsonb) from public, anon, authenticated;
+
+/* La agenda que ya llegó (Meta la mandó el 10/10, a las 11:41). */
+do $agenda$
+declare
+  a record;
+begin
+  for a in select w.id, w.cuerpo from wa_avisos w
+            where exists (select 1 from jsonb_array_elements(coalesce(w.cuerpo->'entry', '[]'::jsonb)) e,
+                                        jsonb_array_elements(coalesce(e->'changes', '[]'::jsonb)) ch
+                           where ch->>'field' = 'smb_app_state_sync')
+            order by w.id loop
+    perform wa_procesar(a.cuerpo);
+  end loop;
+end $agenda$;
+
+create or replace function crm_contactos_base()
+returns table (clave text, fuente text, ref bigint, cuando timestamptz, nombre text, tel text, mail text,
+               datos jsonb, monto numeric, abierta boolean, etiquetas text[], nivel text, acepta boolean)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with f as (
+    select 'no_compra'::text as fuente, r.id as ref, r.creado as cuando, nullif(trim(r.nombre), '') as nombre,
+           club_tel10(r.whatsapp) as tel, nullif(lower(trim(r.mail)), '') as mail,
+           jsonb_build_object('local', r.sucursal, 'producto', r.producto, 'talle', r.talle, 'motivo', r.motivo::text,
+                              'columna', crm_columna(r.estado, r.contactado), 'monto', r.monto) as datos,
+           case when r.compro then r.monto end as monto,
+           crm_columna(r.estado, r.contactado) not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado') as abierta,
+           coalesce(r.etiquetas, '{}'::text[]) as etiquetas, null::text as nivel, null::boolean as acepta
+      from registros r
+    union all
+    select 'carrito', k.id, k.creado, nullif(trim(k.nombre), ''), club_tel10(k.telefono), nullif(lower(trim(k.mail)), ''),
+           jsonb_build_object('total', k.total, 'producto', k.productos->0->>'nombre',
+                              'mas', greatest(jsonb_array_length(k.productos) - 1, 0), 'casi_pago', k.casi_pago,
+                              'columna', crm_columna(k.estado, k.contactado), 'monto', k.monto),
+           case when k.compro then k.monto end,
+           crm_columna(k.estado, k.contactado) not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado'),
+           coalesce(k.etiquetas, '{}'::text[]), null, null
+      from crm_carritos k
+    union all
+    select 'club', c.id, c.creado, nullif(trim(c.nombre), ''), club_tel10(c.telefono), nullif(lower(trim(c.mail)), ''),
+           jsonb_build_object('tipo', 'alta', 'local', c.local_alta, 'nivel', v.nivel, 'puntos', v.puntos),
+           null, false, '{}'::text[], v.nivel, (c.acepta_promos and c.revocado is null)
+      from club_clientes c join v_club_clientes v on v.id = c.id
+     where c.baja is null
+    union all
+    select 'club', m.id, m.creado, nullif(trim(c.nombre), ''), club_tel10(c.telefono), nullif(lower(trim(c.mail)), ''),
+           jsonb_build_object('tipo', 'compra', 'local', m.local, 'importe', m.importe, 'puntos', m.puntos),
+           m.importe, false, '{}'::text[], null, null
+      from club_movimientos m join club_clientes c on c.id = m.cliente
+     where m.tipo::text = 'compra' and m.anulado is null and c.baja is null
+    union all
+    select 'tienda', t.id, coalesce(t.pagado, t.creado), t.nombre, club_tel10(t.telefono), t.mail,
+           jsonb_build_object('numero', t.numero, 'total', t.total, 'producto', t.productos->0->>'nombre',
+                              'mas', greatest(jsonb_array_length(t.productos) - 1, 0)),
+           t.total, false, '{}'::text[], null, t.acepta
+      from tienda_pedidos t
+     where t.pago = 'paid' and coalesce(t.estado, '') <> 'cancelled'
+    union all
+    /* SQL 63: los que escribieron por WhatsApp, una fila por conversación.
+       El nombre (sólo si no hay otro): el de la agenda del celular de la
+       tienda (SQL 68) o, si no, el del perfil de WhatsApp. */
+    select 'whatsapp', max(w.id), max(w.cuando),
+           coalesce(wa_agenda_nombre(club_tel10(w.tel)),
+                    (array_agg(nullif(trim(w.perfil), '') order by w.cuando desc) filter (where nullif(trim(w.perfil), '') is not null))[1]),
+           club_tel10(w.tel), null,
+           jsonb_build_object('mensajes', count(*),
+                              'texto', (array_agg(w.texto order by w.cuando desc, w.id desc))[1],
+                              'tipo', (array_agg(w.tipo order by w.cuando desc, w.id desc))[1],
+                              'desde', (array_agg(w.desde order by w.cuando desc, w.id desc))[1],
+                              'sentido', (array_agg(w.sentido order by w.cuando desc, w.id desc))[1]),
+           null, false, '{}'::text[], null, null
+      from wa_mensajes w
+     group by club_tel10(w.tel)
+  ),
+  /* El teléfono de cada mail: así el que una vez dejó sólo el mail cae en
+     la misma persona que cuando dejó el teléfono. */
+  mt as (
+    select distinct on (mail) mail, tel from f
+     where mail is not null and tel is not null
+     order by mail, cuando desc
+  )
+  select coalesce(f.tel, mt.tel, 'm:' || f.mail) as clave, f.*
+    from f left join mt on mt.mail = f.mail
+   where coalesce(f.tel, mt.tel, f.mail) is not null
+$$;
+revoke execute on function crm_contactos_base() from public, anon, authenticated;
+
+create or replace function crm_mensajes(p_pin text, p_buscar text default null, p_limite integer default 200,
+                                        p_numero text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  q  text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
+  qd text := nullif(regexp_replace(coalesce(p_buscar, ''), '[^0-9]', '', 'g'), '');
+  v_num text := nullif(trim(coalesce(p_numero, '')), '');
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  with w as (select club_tel10(m.tel) as clave, m.* from wa_mensajes m),
+  ult as (
+    select distinct on (w.clave) w.clave, w.id, w.tel, w.numero_id, w.sentido, w.desde, w.tipo, w.texto, w.estado, w.cuando, w.historial
+      from w order by w.clave, w.cuando desc, w.id desc
+  ),
+  conv as (
+    select w.clave, count(*) as n,
+           (array_agg(nullif(trim(w.perfil), '') order by w.cuando desc) filter (where nullif(trim(w.perfil), '') is not null))[1] as perfil,
+           max(w.cuando) filter (where w.sentido = 'sale') as ultima_sale,
+           max(w.cuando) filter (where w.sentido = 'entra') as ultima_entra
+      from w group by w.clave
+  ),
+  /* Por cuáles de nuestros números habló, el último primero. */
+  nums as (
+    select x.clave, array_agg(x.numero_id order by x.ult desc) as numeros
+      from (select w.clave, w.numero_id, max(w.cuando) as ult from w group by w.clave, w.numero_id) x
+     group by x.clave
+  ),
+  pend as (
+    select w.clave, count(*) as pendientes
+      from w join conv c on c.clave = w.clave
+     where w.sentido = 'entra' and not w.historial and w.cuando > coalesce(c.ultima_sale, '-infinity'::timestamptz)
+     group by w.clave
+  ),
+  nm as (
+    select b.clave,
+           (array_agg(b.nombre order by b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           array_agg(distinct b.fuente) as fuentes, max(b.nivel) as nivel
+      from crm_contactos_base() b
+     where b.fuente <> 'whatsapp' and b.clave in (select conv.clave from conv)
+     group by b.clave
+  ),
+  x as (
+    select c.clave, u.tel, coalesce(nm.nombre, wa_agenda_nombre(c.clave), c.perfil) as nombre, c.perfil,
+           coalesce(nm.fuentes, '{}'::text[]) as fuentes, nm.nivel, c.n,
+           coalesce(p.pendientes, 0) as pendientes, (u.sentido = 'entra' and not u.historial) as sin_contestar,
+           u.cuando as ultima, c.ultima_entra, u.numero_id, ns.numeros,
+           jsonb_build_object('texto', u.texto, 'tipo', u.tipo, 'sentido', u.sentido, 'desde', u.desde, 'estado', u.estado) as ultimo
+      from conv c
+      join ult u on u.clave = c.clave
+      join nums ns on ns.clave = c.clave
+      left join pend p on p.clave = c.clave
+      left join nm on nm.clave = c.clave
+  ),
+  f as (
+    select * from x
+     where (v_num is null or v_num = any(x.numeros))
+       and (q is null
+            or lower(coalesce(x.nombre, '')) like '%' || q || '%'
+            or lower(coalesce(x.perfil, '')) like '%' || q || '%'
+            or (qd is not null and length(qd) >= 3 and x.tel like '%' || qd || '%')
+            or exists (select 1 from w where w.clave = x.clave and lower(coalesce(w.texto, '')) like '%' || q || '%'))
+  )
+  select jsonb_build_object(
+           'cuentas', jsonb_build_object('todas', (select count(*) from x),
+                                         'sin_contestar', (select count(*) from x where x.sin_contestar)),
+           'numeros', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'id', nu.numero_id, 'nombre', nu.nombre, 'telefono', nu.telefono, 'tablero', nu.tablero,
+                      'todas', (select count(*) from x where nu.numero_id = any(x.numeros)),
+                      'sin_contestar', (select count(*) from x where x.sin_contestar and x.numero_id = nu.numero_id))
+                    order by nu.orden)
+               from wa_numeros nu), '[]'::jsonb),
+           'ultimo_id', (select max(m.id) from wa_mensajes m),
+           'conversaciones', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'clave', y.clave, 'tel', y.tel, 'nombre', y.nombre, 'perfil', y.perfil,
+                      'fuentes', to_jsonb(y.fuentes), 'nivel', y.nivel, 'n', y.n, 'pendientes', y.pendientes,
+                      'sin_contestar', y.sin_contestar, 'ultima', y.ultima, 'ultima_entra', y.ultima_entra,
+                      'numero', y.numero_id, 'numeros', to_jsonb(y.numeros), 'ultimo', y.ultimo)
+                    order by y.ultima desc)
+               from (select * from f order by f.ultima desc limit greatest(coalesce(p_limite, 200), 1)) y), '[]'::jsonb))
+    into salida;
+  return salida;
+end;
+$$;
+grant execute on function crm_mensajes(text, text, integer, text) to anon, authenticated;
+
+create or replace function crm_tienda(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  update crm_consultas c
+     set columna = 'Compró', cerrada = x.cuando, movida = now(), sola = true,
+         pedido = jsonb_build_object('numero', x.numero, 'total', x.total, 'cuando', x.cuando)
+    from (select c2.id, o.numero, o.total, o.cuando
+            from crm_consultas c2
+            cross join lateral (
+              select t.numero, t.total, coalesce(t.pagado, t.creado) as cuando
+                from tienda_pedidos t
+               where club_tel10(t.telefono) = c2.clave
+                 and t.pago = 'paid' and coalesce(t.estado, '') <> 'cancelled'
+                 and coalesce(t.pagado, t.creado) between c2.creada - interval '1 hour' and c2.creada + interval '30 days'
+               order by coalesce(t.pagado, t.creado)
+               limit 1) o
+           where c2.columna <> 'Compró' and c2.creada > now() - interval '45 days') x
+   where x.id = c.id;
+
+  update crm_consultas c
+     set columna = 'No compró', cerrada = coalesce(u.ultima, c.creada), movida = now(), sola = true
+    from (select c2.id, (select max(w.cuando) from wa_mensajes w
+                          where club_tel10(w.tel) = c2.clave and w.numero_id = c2.numero_id) as ultima
+            from crm_consultas c2 where c2.cerrada is null) u
+   where u.id = c.id and coalesce(u.ultima, c.creada) < now() - interval '7 days';
+
+  with k as (
+    select c.* from crm_consultas c
+     where c.cerrada is null or c.cerrada > now() - interval '30 days'
+  ),
+  w as (
+    select k.id as kid, k.creada, m.*
+      from k join wa_mensajes m on club_tel10(m.tel) = k.clave and m.numero_id = k.numero_id
+  ),
+  ult as (
+    select distinct on (w.kid) w.kid, w.sentido, w.desde, w.tipo, w.texto, w.estado, w.cuando, w.quien
+      from w order by w.kid, w.cuando desc, w.id desc
+  ),
+  cuenta as (
+    select w.kid, count(*) filter (where w.cuando >= w.creada) as n,
+           max(w.cuando) filter (where w.sentido = 'sale') as ultima_sale,
+           (array_agg(nullif(trim(w.perfil), '') order by w.cuando desc) filter (where nullif(trim(w.perfil), '') is not null))[1] as perfil
+      from w group by w.kid
+  ),
+  espera as (
+    select w.kid, min(w.cuando) as desde
+      from w join cuenta cu on cu.kid = w.kid
+     where w.sentido = 'entra' and not w.historial and w.tipo <> 'reaction'
+       and w.cuando > coalesce(cu.ultima_sale, '-infinity'::timestamptz)
+     group by w.kid
+  ),
+  nm as (
+    select b.clave,
+           (array_agg(b.nombre order by b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           array_agg(distinct b.fuente) as fuentes, max(b.nivel) as nivel
+      from crm_contactos_base() b
+     where b.fuente <> 'whatsapp' and b.clave in (select k.clave from k)
+     group by b.clave
+  )
+  select jsonb_build_object(
+    'columnas', to_jsonb(array['Nueva consulta', 'En conversación', 'Le pasamos el link', 'Compró', 'No compró']),
+    'resumen', (select jsonb_build_object(
+                  'consultas', count(*),
+                  'compraron', count(*) filter (where c.columna = 'Compró'),
+                  'vendido', coalesce(sum((c.pedido->>'total')::numeric) filter (where c.columna = 'Compró'), 0))
+                  from crm_consultas c where c.creada > now() - interval '30 days'),
+    'tarjetas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', k.id, 'clave', k.clave, 'tel', k.tel, 'columna', k.columna, 'creada', k.creada, 'movida', k.movida,
+               'cerrada', k.cerrada, 'sola', k.sola, 'pedido', k.pedido, 'quien', k.quien,
+               'nombre', coalesce(nm.nombre, wa_agenda_nombre(k.clave), cu.perfil), 'fuentes', coalesce(to_jsonb(nm.fuentes), '[]'::jsonb), 'nivel', nm.nivel,
+               'n', coalesce(cu.n, 0), 'espera', es.desde,
+               'ultimo', case when u.kid is null then null else jsonb_build_object(
+                           'texto', u.texto, 'tipo', u.tipo, 'sentido', u.sentido, 'desde', u.desde, 'cuando', u.cuando, 'quien', u.quien) end)
+             order by k.creada desc)
+        from k
+        left join ult u on u.kid = k.id
+        left join cuenta cu on cu.kid = k.id
+        left join espera es on es.kid = k.id
+        left join nm on nm.clave = k.clave), '[]'::jsonb))
+    into salida;
+  return salida;
+end;
+$$;
+grant execute on function crm_tienda(text) to anon, authenticated;
+
+select 'listo: la agenda del celular de la tienda' as "SQL 68";
