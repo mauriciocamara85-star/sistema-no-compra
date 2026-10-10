@@ -4045,3 +4045,190 @@ $$;
 grant execute on function crm_tienda(text) to anon, authenticated;
 
 select 'listo: la agenda del celular de la tienda' as "SQL 68";
+
+
+-- ─────────────────────────── PARTE 69 ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · LAS DOS RESPUESTAS "DESDE KOMMO" QUE NO ERAN DE KOMMO
+--
+-- Correr en el editor SQL de Supabase (después del 68).
+--
+-- Lo vio Mauricio (10/10/2026): dos conversaciones de la tienda decían
+-- "Contestado desde Kommo" a las 10:40, con "No se entregó: Media download
+-- error", y en Kommo no había nada. Eran dos fotos viejas que habían mandado
+-- clientes: al traer el historial, Meta no las pudo bajar y avisó con un
+-- estado "failed". El receptor toma el estado de algo que no tenemos como
+-- una respuesta mandada por otra app (Kommo).
+--   · Un "failed" de algo que no tenemos ya no deja esa marca.
+--   · Si un mensaje del historial llega después de una marca con su id, la
+--     reemplaza.
+--   · Se pasa el historial de nuevo: las dos vuelven a ser la foto que mandó
+--     el cliente, en su fecha.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function wa_procesar(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  e jsonb; c jsonb; v jsonb; m jsonb; s jsonb; h jsonb; t jsonb;
+  v_numero_id text; v_numero text; v_hist boolean; v_propio boolean;
+  entran integer := 0; ecos integer := 0; estados integer := 0; otros integer := 0; de_otra integer := 0;
+  viejos integer := 0; editados integer := 0; agenda integer := 0;
+  n integer;
+  orden constant text[] := array['sent', 'delivered', 'read'];
+begin
+  for e in select * from jsonb_array_elements(coalesce(p->'entry', '[]'::jsonb)) loop
+    for c in select * from jsonb_array_elements(coalesce(e->'changes', '[]'::jsonb)) loop
+      v := c->'value';
+      v_numero_id := v->'metadata'->>'phone_number_id';
+      v_numero := v->'metadata'->>'display_phone_number';
+      v_hist := c->>'field' = 'history';
+
+      if c->>'field' in ('messages', 'history') then
+        for m in select * from jsonb_array_elements(coalesce(v->'messages', '[]'::jsonb)) loop
+          insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, media, perfil, cuando, historial)
+          values (m->>'id', v_numero_id, v_numero, m->>'from', 'entra', 'cliente', m->>'type', wa_texto(m),
+                  case when m->>'type' in ('image', 'video', 'audio', 'document', 'sticker') then m->(m->>'type') end,
+                  (select x->'profile'->>'name' from jsonb_array_elements(coalesce(v->'contacts', '[]'::jsonb)) x
+                    where x->>'wa_id' = m->>'from' limit 1),
+                  to_timestamp((m->>'timestamp')::bigint), v_hist)
+          on conflict (wamid) do update
+            set tipo = excluded.tipo, texto = coalesce(excluded.texto, wa_mensajes.texto), media = excluded.media
+            where wa_mensajes.tipo = 'media_placeholder';
+          get diagnostics n = row_count;
+          entran := entran + n;
+          if n > 0 and not v_hist and coalesce(m->>'type', '') <> 'reaction' then
+            perform crm_consulta_mensaje(m->>'from', v_numero_id, 'entra', wa_texto(m), to_timestamp((m->>'timestamp')::bigint));
+          end if;
+        end loop;
+
+        /* Los estados sólo avanzan: un "entregado" que llega tarde no
+           pisa un "leído". "failed" pisa siempre. */
+        for s in select * from jsonb_array_elements(coalesce(v->'statuses', '[]'::jsonb)) loop
+          update wa_mensajes w
+             set estado = s->>'status', error = coalesce(s->'errors', w.error)
+           where w.wamid = s->>'id'
+             and (s->>'status' = 'failed' or w.estado is null
+                  or coalesce(array_position(orden, s->>'status'), 0) > coalesce(array_position(orden, w.estado), 0));
+          get diagnostics n = row_count;
+          estados := estados + n;
+          /* El estado de algo que no tenemos es algo que salió por otra app
+             (Kommo): se deja la marca de que se contestó. Salvo si es un
+             "failed": eso no llegó a nadie (y al traer el historial, Meta
+             manda así las fotos viejas que no pudo bajar; SQL 69). */
+          if n = 0 and s->>'recipient_id' is not null and coalesce(s->>'status', '') <> 'failed'
+             and not exists (select 1 from wa_mensajes w where w.wamid = s->>'id') then
+            insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, estado, error, cuando)
+            values (s->>'id', v_numero_id, v_numero, s->>'recipient_id', 'sale', 'otra_app', 'desconocido',
+                    s->>'status', s->'errors', coalesce(to_timestamp((s->>'timestamp')::bigint), now()))
+            on conflict (wamid) do nothing;
+            get diagnostics n = row_count;
+            de_otra := de_otra + n;
+            if n > 0 then
+              perform crm_consulta_mensaje(s->>'recipient_id', v_numero_id, 'sale', null,
+                                           coalesce(to_timestamp((s->>'timestamp')::bigint), now()));
+            end if;
+          end if;
+        end loop;
+      end if;
+
+      if c->>'field' = 'smb_message_echoes' or (v_hist and v ? 'message_echoes') then
+        for m in select * from jsonb_array_elements(coalesce(v->'message_echoes', '[]'::jsonb)) loop
+          insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, media, cuando, historial)
+          values (m->>'id', v_numero_id, v_numero, m->>'to', 'sale', 'celular', m->>'type', wa_texto(m),
+                  case when m->>'type' in ('image', 'video', 'audio', 'document', 'sticker') then m->(m->>'type') end,
+                  to_timestamp((m->>'timestamp')::bigint), v_hist)
+          on conflict (wamid) do update
+            set desde = 'celular', tipo = excluded.tipo, texto = coalesce(excluded.texto, wa_mensajes.texto), media = excluded.media
+            where wa_mensajes.desde = 'otra_app' or wa_mensajes.tipo = 'media_placeholder';
+          get diagnostics n = row_count;
+          ecos := ecos + n;
+          if n > 0 and not v_hist and coalesce(m->>'type', '') <> 'reaction' then
+            perform crm_consulta_mensaje(m->>'to', v_numero_id, 'sale', wa_texto(m), to_timestamp((m->>'timestamp')::bigint));
+          end if;
+        end loop;
+      end if;
+
+      if v_hist then
+        for h in select * from jsonb_array_elements(coalesce(v->'history', '[]'::jsonb)) loop
+          for t in select * from jsonb_array_elements(coalesce(h->'threads', '[]'::jsonb)) loop
+            for m in select * from jsonb_array_elements(coalesce(t->'messages', '[]'::jsonb)) loop
+              if m->>'type' = 'edit' then
+                update wa_mensajes w set texto = coalesce(wa_texto(m->'edit'->'message'), w.texto)
+                 where w.wamid = m->'edit'->>'original_message_id';
+                get diagnostics n = row_count;
+                editados := editados + n;
+                if n > 0 then continue; end if;
+              end if;
+              v_propio := coalesce((m->'history_context'->>'from_me')::boolean, false);
+              insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, estado, cuando, historial)
+              values (m->>'id', v_numero_id, v_numero, t->>'id',
+                      case when v_propio then 'sale' else 'entra' end,
+                      case when v_propio then 'celular' else 'cliente' end,
+                      m->>'type', case when m->>'type' = 'edit' then wa_texto(m->'edit'->'message') else wa_texto(m) end,
+                      case when v_propio then lower(m->'history_context'->>'status') end,
+                      to_timestamp((m->>'timestamp')::bigint), true)
+              /* Si antes llegó un estado suyo y quedó como "otra app", el
+                 mensaje del historial lo reemplaza (SQL 69). */
+              on conflict (wamid) do update
+                set tel = excluded.tel, sentido = excluded.sentido, desde = excluded.desde, tipo = excluded.tipo,
+                    texto = excluded.texto, estado = excluded.estado, error = null, cuando = excluded.cuando, historial = true
+                where wa_mensajes.desde = 'otra_app';
+              get diagnostics n = row_count;
+              viejos := viejos + n;
+            end loop;
+          end loop;
+        end loop;
+      end if;
+
+      /* SQL 68: la agenda del celular. Al pedirla llega entera; después,
+         cada contacto que agendan, cambian ("add") o borran ("remove"). */
+      if c->>'field' = 'smb_app_state_sync' then
+        for s in select * from jsonb_array_elements(coalesce(v->'state_sync', '[]'::jsonb)) loop
+          if s->>'type' = 'contact' and club_tel10(s->'contact'->>'phone_number') is not null then
+            if s->>'action' = 'remove' then
+              update wa_agenda a set borrado = true, actualizado = now()
+               where a.numero_id = v_numero_id and a.clave = club_tel10(s->'contact'->>'phone_number');
+            else
+              insert into wa_agenda (numero_id, clave, tel, nombre, primer_nombre, actualizado)
+              values (v_numero_id, club_tel10(s->'contact'->>'phone_number'), s->'contact'->>'phone_number',
+                      nullif(trim(s->'contact'->>'full_name'), ''), nullif(trim(s->'contact'->>'first_name'), ''),
+                      coalesce(to_timestamp((s->'metadata'->>'timestamp')::bigint), now()))
+              on conflict (numero_id, clave) do update
+                set tel = excluded.tel, nombre = coalesce(excluded.nombre, wa_agenda.nombre),
+                    primer_nombre = coalesce(excluded.primer_nombre, wa_agenda.primer_nombre),
+                    actualizado = excluded.actualizado, borrado = false;
+            end if;
+            agenda := agenda + 1;
+          end if;
+        end loop;
+      end if;
+
+      if c->>'field' not in ('messages', 'smb_message_echoes', 'history', 'smb_app_state_sync') then
+        otros := otros + 1;
+      end if;
+    end loop;
+  end loop;
+  return jsonb_build_object('entran', entran, 'ecos', ecos, 'estados', estados, 'de_otra_app', de_otra,
+                            'historial', viejos, 'editados', editados, 'agenda', agenda, 'otros', otros);
+end;
+$$;
+revoke execute on function wa_procesar(jsonb) from public, anon, authenticated;
+
+do $hist$
+declare
+  a record;
+begin
+  for a in select w.id, w.cuerpo from wa_avisos w
+            where exists (select 1 from jsonb_array_elements(coalesce(w.cuerpo->'entry', '[]'::jsonb)) e,
+                                        jsonb_array_elements(coalesce(e->'changes', '[]'::jsonb)) ch
+                           where ch->>'field' = 'history')
+            order by w.id loop
+    perform wa_procesar(a.cuerpo);
+  end loop;
+end $hist$;
+
+select 'listo: sin las respuestas de Kommo que no eran' as "SQL 69";
