@@ -1485,8 +1485,8 @@ select siguiente_serie() as "La próxima Gift Card";
 -- vende (se le carga el valor), se canjea y se cancela. En BlueSoft la venta
 -- se carga a mano como "gift card": el que sabe cuánto vale cada tarjeta y
 -- si ya se usó es este sistema.
---   · giftcard_tarjetas: las 230 impresas (130 para Buenos Aires, 100 para
---     Mar del Plata; Nº, color y lote).
+--   · giftcard_tarjetas: las 150 impresas (130 para Buenos Aires, 10 por
+--     local, y 20 para Mar del Plata; Nº, color y lote).
 --   · Vender: se pasa la tarjeta por el lector. Tiene que ser una de las
 --     impresas y no haberse vendido. Sin código, como antes (las tarjetas
 --     viejas, con el número escrito a mano).
@@ -1504,7 +1504,7 @@ alter table giftcard_tarjetas enable row level security;
 revoke all on giftcard_tarjetas from anon, authenticated;
 
 insert into giftcard_tarjetas (codigo, nro, color, lote) values
-  -- (los 230 códigos van sólo en correr-en-supabase-72.sql: el repositorio es público)
+  -- (los 150 códigos van sólo en correr-en-supabase-72.sql: el repositorio es público)
   ('99000000000000', 0, 'Black', 'ejemplo')
 on conflict (codigo) do nothing;
 delete from giftcard_tarjetas where codigo = '99000000000000';
