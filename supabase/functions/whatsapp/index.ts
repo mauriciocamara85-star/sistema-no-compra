@@ -136,12 +136,19 @@ async function estado() {
   };
   if (!TOKEN) return salida;
   salida.app = await meta('/app?fields=id,name');
-  salida.cuentas = await Promise.all(CUENTAS.map(async (c) => ({
-    id: c.id, token: c.nombreToken + (c.token ? '' : ' (FALTA)'),
-    cuenta: await meta('/' + c.id + '?fields=name,currency,timezone_id,business_verification_status', 'GET', undefined, c.token),
-    numeros: await meta('/' + c.id + '/phone_numbers?fields=display_phone_number,verified_name,quality_rating,platform_type,status,messaging_limit_tier,is_on_biz_app', 'GET', undefined, c.token),
-    apps: await meta('/' + c.id + '/subscribed_apps', 'GET', undefined, c.token),
-  })));
+  salida.cuentas = await Promise.all(CUENTAS.map(async (c) => {
+    const numeros = await meta('/' + c.id + '/phone_numbers?fields=display_phone_number,verified_name,quality_rating,platform_type,status,messaging_limit_tier,is_on_biz_app', 'GET', undefined, c.token);
+    return {
+      id: c.id, token: c.nombreToken + (c.token ? '' : ' (FALTA)'),
+      cuenta: await meta('/' + c.id + '?fields=name,currency,timezone_id,business_verification_status', 'GET', undefined, c.token),
+      numeros,
+      apps: await meta('/' + c.id + '/subscribed_apps', 'GET', undefined, c.token),
+      /* Para cuando un número no avisa: a dónde le manda Meta los avisos a
+         esta app, en qué modo está y si algo lo frena (health_status). */
+      detalle: await Promise.all((numeros?.data ?? []).map((n: any) =>
+        meta('/' + n.id + '?fields=account_mode,name_status,code_verification_status,webhook_configuration,health_status', 'GET', undefined, c.token))),
+    };
+  }));
   return salida;
 }
 
