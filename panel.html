@@ -533,6 +533,15 @@
     .tablero { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(232px, 1fr); gap: 12px;
                overflow-x: auto; padding-bottom: 8px; align-items: stretch; }
     .col { min-height: max(220px, calc(100vh - 270px)); }
+    /* A la medida de la pantalla (10/10/2026, ver ajustarAltoTableros): cada
+       columna baja por su cuenta con el título fijo, y la barra de costado
+       queda a la vista, abajo. El fondo se arrastra para correrlo. */
+    .tablero.a-medida { height: var(--tb-alto); grid-auto-rows: minmax(0, 1fr); padding-bottom: 6px; cursor: grab; }
+    .tablero.a-medida .col { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+    .tablero.a-medida .col-cab { position: sticky; top: -10px; z-index: 2; margin: -10px -10px 0; padding: 12px 14px 10px;
+                                 background: var(--surface-2); border-radius: var(--r) var(--r) 0 0; }
+    .tablero.a-medida .col.sobre .col-cab { background: var(--acc-soft); }
+    .tablero.paneando, .tablero.paneando * { cursor: grabbing !important; user-select: none; }
     .filtros { display: none; }
   }
 
@@ -2303,7 +2312,57 @@
     conectar();
     marcarElegidas();
     pintarPista();
+    ajustarAltoTableros();
   }
+
+  /* ═══ El tablero a la medida de la pantalla (10/10/2026) ═════════════════
+     Pedido de Mauricio: "para no tener que bajar hasta el fondo para correr
+     a la derecha". Como en Trello y Kommo: el tablero llega justo hasta abajo
+     de la pantalla, cada columna baja por su cuenta (con el título fijo
+     arriba) y la barra para ir de costado queda siempre a la vista. Además,
+     arrastrar el fondo con el mouse lo corre de costado. Sólo en la compu: en
+     el celular las columnas se pasan de a una, deslizando. */
+  function ajustarAltoTableros() {
+    [].forEach.call(document.querySelectorAll('.tablero'), function (tb) {
+      if (!esPC() || !tb.offsetParent || tb.querySelector('.vacio-vista')) {
+        tb.classList.remove('a-medida');
+        tb.style.removeProperty('--tb-alto');
+        return;
+      }
+      var arriba = tb.getBoundingClientRect().top + window.scrollY;
+      tb.style.setProperty('--tb-alto', Math.max(240, Math.floor(window.innerHeight - arriba - 14)) + 'px');
+      tb.classList.add('a-medida');
+    });
+  }
+  /* La manito, como en Kommo (Mauricio: "una manito que agarra y se
+     desplaza"): agarrar el fondo y arrastrar corre el tablero de costado y,
+     si se agarró dentro de una columna, también la sube o la baja. */
+  (function () {
+    var pan = null;
+    document.addEventListener('pointerdown', function (e) {
+      if (e.pointerType !== 'mouse' || e.button !== 0 || !e.target.closest) { return; }
+      var tb = e.target.closest('.tablero.a-medida');
+      if (!tb) { return; }
+      /* Las tarjetas y los botones, como siempre; y las barras de
+         desplazamiento (lo que queda afuera del área del elemento), también. */
+      if (e.target.closest('.tj, button, a, input, select, textarea, label')) { return; }
+      var t = e.target;
+      if (t.clientWidth && (e.offsetX > t.clientWidth || e.offsetY > t.clientHeight)) { return; }
+      var col = e.target.closest('.col');
+      pan = { tb: tb, col: col, x: e.clientX, y: e.clientY, sl: tb.scrollLeft, st: col ? col.scrollTop : 0 };
+      tb.classList.add('paneando');
+      e.preventDefault();
+    });
+    document.addEventListener('pointermove', function (e) {
+      if (!pan) { return; }
+      pan.tb.scrollLeft = pan.sl - (e.clientX - pan.x);
+      if (pan.col) { pan.col.scrollTop = pan.st - (e.clientY - pan.y); }
+    });
+    var fin = function () { if (pan) { pan.tb.classList.remove('paneando'); pan = null; } };
+    document.addEventListener('pointerup', fin);
+    document.addEventListener('pointercancel', fin);
+    window.addEventListener('resize', function () { ajustarAltoTableros(); });
+  })();
 
   /* ═══ Mover de columna ══════════════════════════════════════════════════ */
   function mover(id, destino) {
@@ -3344,6 +3403,9 @@
       sacarHueco();
       if (col) {
         col.classList.add('sobre');
+        /* La tarjeta cae arriba de todo: si la columna estaba bajada, sube
+           para que se vea dónde va a quedar. */
+        if (col.scrollTop) { col.scrollTop = 0; }
         /* El hueco, arriba de todo en el destino, del alto de la tarjeta. */
         var h = document.createElement('div');
         h.className = 'tj-hueco';
@@ -4760,6 +4822,7 @@
       s.onchange = function () { if (s.value) { moverConsulta(Number(a.dataset.ti), s.value, null); } };
     });
     var tb = caja.querySelector('.ti-tablero');
+    ajustarAltoTableros();
     [].forEach.call(caja.querySelectorAll('.ti-cols [data-col]'), function (b) {
       b.onclick = function () {
         var col = [].filter.call(tb.querySelectorAll('.col'), function (x) { return x.dataset.col === b.dataset.col; })[0];
