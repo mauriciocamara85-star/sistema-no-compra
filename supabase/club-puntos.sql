@@ -12236,3 +12236,449 @@ $function$
 
 /* Kommo: cada socio con la etiqueta nueva ("Club Gold"…), sin la vieja. */
 select 'listo: los niveles son Silver, Gold y Black' as "SQL 54", club_kommo_resincronizar() as kommo;
+
+
+-- ─────────────────────────── PARTE 73 (10/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · LOS PREMIOS DEL CLUB: EL LÍMITE POR PERÍODO, Y LAS BASES Y CONDICIONES
+--
+-- Correr en el editor SQL de Supabase (después del 72).
+--
+-- Pedido de Mauricio (10/10/2026):
+--   · El perfume se puede canjear siempre ("nos conviene que se lleven un
+--     perfume"), y las gorras también. Buzos y camperas, uno cada 6 meses
+--     (antes, uno por año). El período se elige en Configuración: el límite
+--     pasa a ser "N cada M meses" (club_premios.limite_meses).
+--   · La tarjeta dice el límite de cada premio y, si ya lo canjeó, desde
+--     cuándo lo puede volver a canjear. La caja también.
+--   · Las bases y condiciones del Club: se editan en Configuración y se leen
+--     en la app y en vdhclub.com/bases.html. Cada vez que se guardan queda
+--     una versión nueva, para saber qué decían en cada fecha.
+-- ══════════════════════════════════════════════════════════════════════════
+
+alter table club_premios add column if not exists limite_meses smallint not null default 12
+  check (limite_meses between 1 and 24);
+
+-- Los premios, como los decidió Mauricio (1 Perfumes, 2 Gorras, 4 Buzos, 5 Camperas).
+update club_premios set limite_anual = null where id in (1, 2);
+update club_premios set limite_anual = 1, limite_meses = 6 where id in (4, 5);
+update club_premios set detalle = 'Cualquier fragancia de la línea VDH, según las que haya en el local.'
+ where id = 1 and detalle is null;
+
+CREATE OR REPLACE FUNCTION public.club_canjear_premio(p_pin text, p_codigo text, p_premio smallint, p_local text, p_vendedor text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  cid    bigint;
+  c      v_club_clientes%rowtype;
+  pr     club_premios%rowtype;
+  usados integer;
+  vuelve date;
+begin
+  if not club_caja_acceso(p_pin) then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  /* Una caja habilitada cobra en SU local y en ningún otro (SQL 49). */
+  if club_caja_local(p_pin) is not null and upper(trim(coalesce(p_local, ''))) <> upper(club_caja_local(p_pin)) then
+    raise exception 'Esta caja está habilitada para %. Para cobrar en otro local hace falta su propia caja.', initcap(lower(club_caja_local(p_pin)));
+  end if;
+
+  select id into cid from club_clientes
+   where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g') and baja is null
+   for update;
+  if cid is null then
+    return jsonb_build_object('canjeado', false, 'porque', 'No encontré esa tarjeta.');
+  end if;
+
+  select * into pr from club_premios where id = p_premio and activo;
+  if not found then
+    return jsonb_build_object('canjeado', false, 'porque', 'Ese premio no está disponible.');
+  end if;
+
+  select * into c from v_club_clientes where id = cid;
+
+  if c.puntos < pr.puntos then
+    return jsonb_build_object('canjeado', false,
+      'porque', 'Le faltan ' || (pr.puntos - c.puntos)::text || ' puntos.');
+  end if;
+
+  if pr.limite_anual is not null then
+    select count(*) into usados from club_movimientos
+     where cliente = cid and tipo = 'canje' and premio = pr.id
+       and anulado is null and creado > now() - make_interval(months => pr.limite_meses);
+    if usados >= pr.limite_anual then
+      /* SQL 73: el límite es "N cada M meses", y se dice desde cuándo puede
+         volver: cuando el N-ésimo canje más nuevo sale del período. */
+      select ((m.creado + make_interval(months => pr.limite_meses)) at time zone 'America/Argentina/Buenos_Aires')::date
+        into vuelve
+        from club_movimientos m
+       where m.cliente = cid and m.tipo = 'canje' and m.premio = pr.id
+         and m.anulado is null and m.creado > now() - make_interval(months => pr.limite_meses)
+       order by m.creado desc
+       offset pr.limite_anual - 1 limit 1;
+      return jsonb_build_object('canjeado', false, 'vuelve', vuelve,
+        'porque', 'Ya se llevó ' || pr.nombre || '. Lo puede volver a llevar desde el ' || to_char(vuelve, 'DD/MM/YYYY') || '.');
+    end if;
+  end if;
+
+  insert into club_movimientos (cliente, tipo, puntos, premio, local, vendedor, obs)
+  values (cid, 'canje', -pr.puntos, pr.id,
+          nullif(trim(coalesce(p_local, '')), ''),
+          nullif(trim(coalesce(p_vendedor, '')), ''),
+          pr.nombre);
+
+  return jsonb_build_object('canjeado', true, 'premio', pr.nombre,
+                            'gasto', pr.puntos, 'puntos', c.puntos - pr.puntos);
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.club_tarjeta(p_codigo text)
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with c as (
+    select * from v_club_clientes
+     where codigo = regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g')
+       and baja is null
+  )
+  select case when not exists (select 1 from c) then jsonb_build_object('hay', false)
+    else (
+      select jsonb_build_object(
+        'hay', true,
+        'codigo', c.codigo,
+        'nombre', c.nombre,
+        'puntos', c.puntos,
+        'xp', c.xp,
+        'compras', c.compras,
+        'confirmado', c.confirmado,
+        'desde', c.creado,
+        'ultima_compra', c.ultima_compra,
+
+        'hoy', club_factor(c.id),
+        'cumple', club_regalo_cumple(c.id),
+        /* La última compra de los últimos 7 días en un local con enlace de
+           reseñas: la tarjeta muestra "¿Qué tal tu compra en Flores?". */
+        'resena', (select jsonb_build_object(
+                      'local', l.codigo,
+                      'nombre', coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))),
+                      'url', l.resena_url,
+                      'cuando', m.creado)
+                     from club_movimientos m
+                     join locales l on upper(trim(l.codigo)) = upper(trim(m.local))
+                    where m.cliente = c.id and m.tipo = 'compra' and m.anulado is null
+                      and m.creado > now() - interval '7 days'
+                      and l.resena_url is not null
+                    order by m.creado desc limit 1),
+
+        'nivel', jsonb_build_object(
+          'nombre', c.nivel,
+          'multiplica', c.multiplica,
+          /* Lo que da este nivel y lo que da el siguiente, para que la
+             tarjeta pueda decirlo: si el cliente no sabe qué le da Oro,
+             Oro no es algo que quiera. */
+          'regalo_cumple', (select case when g.tipo = 'descuento'
+                                        then g.porcentaje || '% de descuento en tu compra'
+                                        else g.producto end
+                              from club_regalos_cumple g where g.nivel = c.nivel),
+          'sigue_multiplica', (select nv.multiplica from club_niveles nv
+                                where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue_bono', (select nv.bono from club_niveles nv
+                          where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'sigue', (select nv.nombre from club_niveles nv
+                     where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'falta_xp', (select nv.desde_xp - c.xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1),
+          'desde_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp <= c.xp order by nv.desde_xp desc limit 1),
+          'hasta_xp', (select nv.desde_xp from club_niveles nv
+                        where nv.desde_xp > c.xp order by nv.desde_xp limit 1)),
+
+        'premios', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle,
+                   'puntos', p.puntos, 'valor', p.valor, 'imagen', p.imagen,
+                   'agotado', u.agotado,
+                   /* SQL 73: el límite, para decirlo en la ficha, y desde
+                      cuándo lo puede volver a canjear si ya llegó. */
+                   'limite', p.limite_anual, 'cada_meses', p.limite_meses,
+                   'vuelve', case when u.agotado then u.vuelve end,
+                   'alcanzado', c.puntos >= p.puntos and not u.agotado,
+                   'falta', greatest(p.puntos - c.puntos, 0))
+                 order by p.orden, p.puntos)
+            from club_premios p
+            cross join lateral (
+              /* SQL 73: "N cada M meses" (antes, N por año). vuelve: el
+                 N-ésimo canje más nuevo + el período, que es cuando deja de
+                 contar y queda uno libre. */
+              select (p.limite_anual is not null and count(*) >= p.limite_anual) as agotado,
+                     ((max(m.creado) filter (where m.n = p.limite_anual)
+                       + make_interval(months => p.limite_meses))
+                      at time zone 'America/Argentina/Buenos_Aires')::date as vuelve
+                from (select m0.creado, row_number() over (order by m0.creado desc) as n
+                        from club_movimientos m0
+                       where m0.cliente = c.id and m0.tipo = 'canje' and m0.premio = p.id
+                         and m0.anulado is null and m0.creado > now() - make_interval(months => p.limite_meses)) m
+            ) u
+           where p.activo), '[]'::jsonb),
+
+        /* La novedad de Inicio, si está prendida. */
+        'novedad', (select jsonb_build_object('bajada', n.bajada, 'titulo', n.titulo,
+                                              'imagen', n.imagen, 'enlace', n.enlace)
+                      from club_novedad n where n.id = 1 and n.activa),
+
+        /* Los locales que tienen enlace de reseñas, para elegir en Inicio. */
+        'resenas_locales', coalesce((
+          select jsonb_agg(jsonb_build_object('local', l.codigo, 'url', l.resena_url) order by l.codigo)
+            from locales l
+           where l.resena_url is not null and club_resena_url_ok(l.resena_url)), '[]'::jsonb),
+
+        /* ── La tarjeta de Inicio (SQL 33) ── */
+        /* Cuándo vencen sus puntos si no vuelve a comprar: la misma cuenta
+           que club_vencer (12 meses desde la última compra, o desde el alta
+           si nunca compró). Sin puntos, no hay nada que venza. */
+        'vence_puntos', (select case when c.puntos > 0 and nullif(r.valor, '')::integer > 0
+                                     then ((coalesce(c.ultima_compra, c.creado) + (r.valor || ' months')::interval)
+                                           at time zone 'America/Argentina/Buenos_Aires')::date end
+                           from club_reglas r where r.clave = 'vence_meses'),
+        /* Los tres niveles, para la pantalla de Niveles. */
+        'niveles', (select jsonb_agg(jsonb_build_object(
+                             'nombre', nv.nombre, 'desde_xp', nv.desde_xp, 'multiplica', nv.multiplica, 'bono', nv.bono,
+                             'regalo_cumple', (select case when g.tipo = 'descuento'
+                                                           then g.porcentaje || '% de descuento en tu compra'
+                                                           else g.producto end
+                                                 from club_regalos_cumple g where g.nivel = nv.nombre))
+                           order by nv.desde_xp)
+                      from club_niveles nv),
+        'misiones', club_misiones_de(c.id),
+        'cupones', club_cupones_de(c.id),
+
+        'ultimas', coalesce((
+          select jsonb_agg(jsonb_build_object(
+                   'cuando', m.creado, 'local', m.local, 'puntos', m.puntos,
+                   'tipo', m.tipo, 'concepto', m.concepto, 'obs', m.obs)
+                 order by m.creado desc)
+            from (select creado, local, puntos, tipo, concepto, obs
+                    from club_movimientos
+                   where cliente = c.id and anulado is null
+                   /* 60 y no 8 (SQL 34): la pantalla de Movimientos, con sus
+                      solapas de Movimientos y Canjes, muestra la historia y
+                      no sólo lo último. */
+                   order by creado desc limit 60) m), '[]'::jsonb)
+      ) from c
+    ) end
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.club_premios_listar(p_pin text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', p.id, 'nombre', p.nombre, 'detalle', p.detalle, 'puntos', p.puntos,
+             'valor', p.valor, 'costo', p.costo, 'limite_anual', p.limite_anual, 'limite_meses', p.limite_meses,
+             'activo', p.activo, 'imagen', p.imagen,
+             'entregados', (select count(*) from club_movimientos m
+                             where m.premio = p.id and m.tipo = 'canje' and m.anulado is null))
+           order by p.activo desc, p.orden, p.puntos)
+      from club_premios p
+  ), '[]'::jsonb);
+end;
+$function$
+;
+
+drop function if exists public.club_premio_guardar(text, smallint, text, text, integer, numeric, numeric, smallint, boolean);
+CREATE OR REPLACE FUNCTION public.club_premio_guardar(p_pin text, p_id smallint, p_nombre text, p_detalle text, p_puntos integer, p_valor numeric, p_costo numeric, p_limite smallint, p_activo boolean, p_meses smallint DEFAULT NULL::smallint)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  nom text := nullif(trim(coalesce(p_nombre, '')), '');
+  nid smallint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if nom is null then
+    return jsonb_build_object('ok', false, 'porque', 'Ponele un nombre: es lo que ve el socio.');
+  end if;
+  if p_puntos is null or p_puntos < 100 then
+    return jsonb_build_object('ok', false, 'porque', 'Tiene que costar al menos 100 puntos.');
+  end if;
+  if p_limite is not null and p_limite < 1 then
+    return jsonb_build_object('ok', false, 'porque', 'El límite va vacío o desde 1.');
+  end if;
+  /* SQL 73: el período del límite ("1 cada 6 meses"). Sin decirlo, 12. */
+  if p_meses is not null and (p_meses < 1 or p_meses > 24) then
+    return jsonb_build_object('ok', false, 'porque', 'El período del límite va de 1 a 24 meses.');
+  end if;
+
+  if p_id is null then
+    /* El id y el orden, a mano: la tabla nació con los tres primeros
+       cargados con número y no tiene contador. El nuevo va al final. */
+    select coalesce(max(id), 0) + 1 into nid from club_premios;
+    insert into club_premios (id, nombre, detalle, puntos, valor, costo, limite_anual, orden, activo, limite_meses)
+    values (nid, nom, nullif(trim(coalesce(p_detalle, '')), ''), p_puntos, p_valor, p_costo,
+            p_limite, (select coalesce(max(orden), 0) + 1 from club_premios),
+            coalesce(p_activo, true), coalesce(p_meses, 12));
+  else
+    /* No se borra nunca: los canjes viejos apuntan acá. Se apaga. */
+    update club_premios
+       set nombre = nom, detalle = nullif(trim(coalesce(p_detalle, '')), ''),
+           puntos = p_puntos, valor = p_valor, costo = p_costo,
+           limite_anual = p_limite, activo = coalesce(p_activo, true),
+           limite_meses = coalesce(p_meses, limite_meses)
+     where id = p_id
+    returning id into nid;
+    if nid is null then
+      return jsonb_build_object('ok', false, 'porque', 'No encontré ese premio.');
+    end if;
+  end if;
+
+  return jsonb_build_object('ok', true, 'id', nid);
+end;
+$function$
+;
+grant execute on function public.club_premio_guardar(text, smallint, text, text, integer, numeric, numeric, smallint, boolean, smallint) to anon, authenticated;
+
+-- ── Las bases y condiciones ──
+
+/* Cada vez que se guarda un texto queda una fila nueva: el vigente es el
+   último. Así se sabe qué decían las bases el día de cualquier canje. */
+create table if not exists club_textos (
+  id     bigserial primary key,
+  clave  text not null check (clave in ('bases')),
+  texto  text not null,
+  creado timestamptz not null default now()
+);
+create index if not exists club_textos_clave on club_textos (clave, creado desc);
+alter table club_textos enable row level security;
+revoke all on club_textos from anon, authenticated;
+
+/* El texto vigente. Público: son las bases del Club. */
+create or replace function club_texto(p_clave text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object('texto', t.texto,
+                            'actualizado', (t.creado at time zone 'America/Argentina/Buenos_Aires')::date)
+    from club_textos t
+   where t.clave = p_clave
+   order by t.creado desc, t.id desc
+   limit 1
+$$;
+revoke execute on function club_texto(text) from public;
+grant execute on function club_texto(text) to anon, authenticated;
+
+/* Guardarlo, con el PIN de administrador. Un texto vacío o muy corto no
+   se guarda: casi seguro es un borrado sin querer. */
+create or replace function club_texto_guardar(p_pin text, p_clave text, p_texto text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t      text := nullif(btrim(coalesce(p_texto, ''), E' \n\r\t'), '');
+  ultimo text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_clave is distinct from 'bases' then
+    return jsonb_build_object('ok', false, 'porque', 'Ese texto no existe.');
+  end if;
+  if t is null or length(t) < 200 then
+    return jsonb_build_object('ok', false, 'porque', 'El texto quedó vacío o muy corto: no se guardó.');
+  end if;
+  if length(t) > 40000 then
+    return jsonb_build_object('ok', false, 'porque', 'El texto es demasiado largo.');
+  end if;
+  select x.texto into ultimo from club_textos x where x.clave = p_clave order by x.creado desc, x.id desc limit 1;
+  if ultimo is not distinct from t then
+    return jsonb_build_object('ok', true, 'igual', true);
+  end if;
+  insert into club_textos (clave, texto) values (p_clave, t);
+  return jsonb_build_object('ok', true, 'actualizado', (now() at time zone 'America/Argentina/Buenos_Aires')::date);
+end;
+$$;
+revoke execute on function club_texto_guardar(text, text, text) from public;
+grant execute on function club_texto_guardar(text, text, text) to anon, authenticated;
+
+/* La primera versión. Volver a correr este archivo no la pisa. */
+insert into club_textos (clave, texto)
+select 'bases', $bases$## Qué es el VDH Club
+El VDH Club es el programa de beneficios de VDH. Es gratis: con tus compras sumás puntos y los canjeás por premios.
+Lo organiza Black Fish S.R.L. (CUIT 30-71559752-3), con domicilio en Av. Rivadavia 6757, Ciudad Autónoma de Buenos Aires.
+
+## Quién puede ser socio
+- Cualquier persona que se anote con su número de WhatsApp. Cada número es una sola tarjeta.
+- La tarjeta y los puntos son personales: no se venden ni se pasan a otra tarjeta.
+- Tu código abre tu tarjeta. No lo compartas.
+
+## Cómo se suman puntos
+- Cada $100 que gastás en los locales VDH es 1 punto. En el nivel Gold sumás 1,2 puntos y en el Black, 1,5. Mostrá tu tarjeta en la caja antes de pagar.
+- Las compras en vdh.com.ar también suman si el pedido tiene el teléfono o el mail de tu tarjeta. Se cuenta lo que pagaste, sin el envío.
+- También suman las misiones y las promociones de puntos extra que se publican en la app, cada una con sus condiciones.
+- Si una compra se anula o se devuelve, se descuentan los puntos que sumó.
+
+## Niveles
+- Hay tres niveles: Silver, Gold y Black. Tu nivel depende de los puntos que sumaste con compras en los últimos 12 meses: cuando una compra cumple un año deja de contar, así que el nivel puede bajar.
+- Canjear un premio no te baja de nivel.
+- Lo que hace falta para cada nivel y lo que suma cada uno está en la app, en Niveles.
+
+## Vencimiento de los puntos
+Los puntos vencen si pasan 12 meses sin que compres. Mientras sigas comprando, no vencen.
+
+## Cómo se canjean los premios
+- Los premios y los puntos que cuesta cada uno están en la app.
+- Se canjean en la caja de cualquier local VDH, mostrando tu código. No se canjean en la tienda online.
+- Los puntos se descuentan recién cuando te llevás el premio.
+- Algunos premios tienen un límite, por ejemplo uno cada 6 meses. Cada premio lo dice en la app.
+
+## Si el premio no está en el local
+- Las fotos de los premios son ilustrativas: el modelo, el talle y el color dependen del stock de cada local.
+- Si el premio no está, elegís: otro modelo del mismo premio, que te lo pidan a otro local (te lo entregan cuando llega) o volver otro día.
+- En los tres casos tus puntos quedan como están hasta que te llevás el premio.
+
+## Cambios de talle
+Un premio se puede cambiar por otro talle o color del mismo premio, como cualquier compra: dentro de los 30 días y según el stock del local. Los premios no se cambian por dinero ni por puntos.
+
+## Regalo de cumpleaños
+Si cargaste tu fecha de cumpleaños, tenés un regalo según tu nivel: te avisamos unos días antes y vale hasta el día de tu cumpleaños, una vez por año. La fecha se carga una sola vez desde la app; para corregirla, pedilo en un local.
+
+## Cambios en el Club
+- VDH puede cambiar los premios, los puntos de cada uno, los niveles, los límites y estas bases. Los cambios se avisan en la app antes de empezar a regir, y los puntos que ya sumaste se respetan.
+- Si el Club termina, lo avisamos con al menos 30 días de anticipación para que puedas usar tus puntos.
+- VDH puede anular puntos sumados por error o de forma indebida.
+
+## Tus datos
+- Guardamos lo necesario para que el Club funcione: tu nombre, tu WhatsApp, tu mail y tu fecha de cumpleaños si los cargás, las compras que suman puntos (fecha, local e importe) y tus canjes.
+- Los usamos para reconocerte en la caja, sumar y descontar tus puntos y avisarte de tu tarjeta. Las promociones por WhatsApp te llegan sólo si las aceptaste, y podés darte de baja cuando quieras desde Mis datos, en la app.
+- No vendemos ni cedemos tus datos. Los guardan los servicios que usamos para que el Club funcione.
+- Podés pedirnos por WhatsApp ver, corregir o borrar tus datos.
+- El titular de los datos personales tiene la facultad de ejercer el derecho de acceso a los mismos en forma gratuita a intervalos no inferiores a seis meses, salvo que se acredite un interés legítimo al efecto conforme lo establecido en el artículo 14, inciso 3 de la Ley Nº 25.326.
+- La AGENCIA DE ACCESO A LA INFORMACIÓN PÚBLICA, en su carácter de Órgano de Control de la Ley Nº 25.326, tiene la atribución de atender las denuncias y reclamos que interpongan quienes resulten afectados en sus derechos por incumplimiento de las normas vigentes en materia de protección de datos personales.
+
+## Contacto
+Por cualquier consulta, escribinos por WhatsApp al 223 584-5942.$bases$
+ where not exists (select 1 from club_textos where clave = 'bases');
+
+select 'listo: premios con límite por período, y las bases y condiciones' as "SQL 73";

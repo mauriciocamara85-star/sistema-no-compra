@@ -125,6 +125,8 @@
   .premio b { display: block; }
   .premio small { display: block; font-size: 12.5px; color: var(--txt-3); }
   .premio .btn { margin-left: auto; flex: none; }
+  /* Qué hacer si el premio no está (bases y condiciones, SQL 73). */
+  .premios-nota { font-size: 12.5px; line-height: 1.45; color: var(--txt-3); }
 
   /* Las promos "Sólo socios" (SQL 38): el vendedor las ve al abrir la
      ficha y las aplica en BlueSoft, como el regalo de cumple. Con el borde
@@ -464,7 +466,9 @@
        "no se puede". */
     var premios = (t.premios || []).map(function (p) {
       var clase = p.agotado ? ' usado' : (p.alcanzado ? ' listo' : ' falta');
-      var pie = p.agotado ? 'Ya se lo llevó este año'
+      /* El límite es "N cada M meses" y la base dice desde cuándo puede
+         volver (SQL 73). Sin el 73, el texto de antes. */
+      var pie = p.agotado ? (p.vuelve ? 'Ya se lo llevó · puede volver desde el ' + diaLargo(p.vuelve) : 'Ya se lo llevó este año')
               : p.alcanzado ? miles(p.puntos) + ' puntos · se lo puede llevar'
               : miles(p.puntos) + ' puntos · le faltan ' + miles(p.falta);
       return '<div class="premio' + clase + '">' +
@@ -474,6 +478,13 @@
             'data-nombre="' + esc(p.nombre) + '" data-puntos="' + p.puntos + '">Entregar</button>'
           : '') + '</div>';
     }).join('');
+    /* Las bases y condiciones, dichas para el vendedor: si no está, se
+       ofrece otro modelo o se pide a otro local, y los puntos se descuentan
+       recién al entregar. Sólo cuando hay algo para entregar. */
+    if ((t.premios || []).some(function (p) { return p.alcanzado; })) {
+      premios += '<p class="premios-nota">¿No está en el local? Ofrecele otro modelo del mismo premio o pedilo a otro local. ' +
+                 'Tocá Entregar recién cuando se lo lleva: ahí se le descuentan los puntos.</p>';
+    }
 
     /* El regalo de cumpleaños, arriba de los premios: vence en días y los
        premios no. El descuento lo cobra BlueSoft —desde acá no se toca un

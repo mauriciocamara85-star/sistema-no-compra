@@ -321,6 +321,17 @@
            padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
   .regla span { font-size: 14px; color: var(--txt-2); }
   .regla b { font-weight: 700; text-align: right; }
+  /* El límite de un premio en un renglón: "[1] cada [6] meses" (SQL 73). */
+  .limite-fila { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--txt-2); }
+  .limite-fila input { width: 64px; text-align: center; }
+  /* Bases y condiciones: el texto que se escribe y cómo lo ve el socio. */
+  #bsTexto { min-height: 340px; font-size: 14px; line-height: 1.5; resize: vertical; }
+  .bases-previa { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2);
+                  padding: 6px 18px 16px; max-height: 520px; overflow-y: auto; }
+  .bases-previa h3 { font: 700 15px/1.3 var(--sans); margin: 16px 0 6px; }
+  .bases-previa p, .bases-previa li { font-size: 14px; line-height: 1.55; color: var(--txt-2); }
+  .bases-previa p + p { margin-top: 6px; }
+  .bases-previa ul { padding-left: 18px; display: grid; gap: 4px; }
   .detalle-err summary { cursor: pointer; font-size: 13.5px; font-weight: 700; color: var(--txt-2); margin-top: 8px; }
   .detalle-err p { font-size: 13px; color: var(--txt-3); margin-top: 6px; word-break: break-word; }
 
@@ -572,6 +583,10 @@
           <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg></span>
           <span class="club-op-txt"><b>Avisos</b><span data-res="avisos">…</span></span>
         </a>
+        <a class="club-op" href="#club/bases" data-sec="bases">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg></span>
+          <span class="club-op-txt"><b>Bases y condiciones</b><span data-res="bases">…</span></span>
+        </a>
       </div>
       <div class="club-grupo">
         <h2 class="club-grupo-tit">Conexiones</h2>
@@ -616,6 +631,15 @@
         <p class="bloque-sub">Lo que los socios canjean con sus puntos. El costo es lo que le sale a VDH: no lo ve nadie más.</p>
       </div>
       <div class="bloque" id="cajaPremios"><div id="premiosCuerpo"></div></div>
+    </div>
+
+    <div class="club-pant" data-sec="bases" hidden>
+      <div class="pant-cab">
+        <a class="pant-volver" href="#club">Club VDH</a>
+        <h2 class="pant-tit">Bases y condiciones</h2>
+        <p class="bloque-sub">Las ven los socios abajo de cada premio, en las preguntas frecuentes y en <a href="https://vdhclub.com/bases.html" target="_blank" rel="noopener">vdhclub.com/bases.html</a>. Cada vez que guardás queda una versión nueva con su fecha: siempre se puede saber qué decían el día de un canje.</p>
+      </div>
+      <div class="bloque"><div id="basesCuerpo"></div></div>
     </div>
 
     <div class="club-pant" data-sec="cumple" hidden>
@@ -840,6 +864,7 @@
     pintarPromo();
     pintarAviso();
     pintarPremios();
+    pintarBases();
     pintarRegalos();
     pintarResenas();
     pintarCajas();
@@ -1962,7 +1987,7 @@
      pantalla de Premios. Así el "atrás" del celular vuelve al menú, y un
      enlace (el de los QR de reseñas, el de Estadísticas) puede abrir una
      sección directo. */
-  var SECCIONES_CLUB = ['niveles', 'premios', 'cumple', 'misiones', 'promos', 'extra', 'avisos', 'cajas', 'resenas', 'integraciones'];
+  var SECCIONES_CLUB = ['niveles', 'premios', 'cumple', 'misiones', 'promos', 'extra', 'avisos', 'bases', 'cajas', 'resenas', 'integraciones'];
   var seccionAbierta = '';
 
   function rutaClub() {
@@ -2069,7 +2094,7 @@
               '<span>' + Number(p.puntos).toLocaleString('es-AR') + ' puntos' +
               (p.valor ? ' · vale ' + pesos(p.valor) : '') +
               (p.costo ? ' · cuesta ' + pesos(p.costo) : '') +
-              (p.limite_anual ? ' · ' + p.limite_anual + ' por año' : '') +
+              (p.limite_anual ? ' · ' + limiteTexto(p.limite_anual, p.limite_meses) : '') +
               ' · entregados: ' + (p.entregados || 0) +
               (p.imagen ? ' · con foto' : ' · sin foto') + '</span></div>' +
             (p.activo ? '<span class="pill pill-ok">Activo</span>'
@@ -2093,6 +2118,13 @@
         caja.innerHTML = '<p class="bloque-sub">' +
           esc((err && err.delServidor && err.message) || 'No se pudo abrir.') + '</p>';
       });
+  }
+
+  /* "1 por año", "1 cada 6 meses", "2 por mes" (SQL 73). Sin período
+     (una base sin el 73), es por año. */
+  function limiteTexto(n, meses) {
+    meses = Number(meses) || 12;
+    return n + (meses === 12 ? ' por año' : meses === 1 ? ' por mes' : ' cada ' + meses + ' meses');
   }
 
   /* La subida de la foto del premio y su pegado (los arma editorPremio). */
@@ -2120,8 +2152,15 @@
           '<div id="prImgPrev"></div></div>' +
         '<div class="campo"><label for="prPuntos">Puntos</label>' +
           '<input type="text" inputmode="numeric" id="prPuntos" placeholder="2500" value="' + v(p && p.puntos) + '"></div>' +
-        '<div class="campo"><label for="prLimite">Por año <span class="lbl-opc">— vacío: sin límite</span></label>' +
-          '<input type="text" inputmode="numeric" id="prLimite" placeholder="" value="' + v(p && p.limite_anual) + '"></div>' +
+        /* "1 cada 6 meses" (SQL 73): cuántas veces lo puede canjear el
+           mismo socio en ese período. Vacío, sin límite. */
+        '<div class="campo"><label for="prLimite">Límite por socio <span class="lbl-opc">— vacío: sin límite</span></label>' +
+          '<div class="limite-fila">' +
+            '<input type="text" inputmode="numeric" id="prLimite" placeholder="" value="' + v(p && p.limite_anual) + '" aria-label="Cuántas veces">' +
+            '<span>cada</span>' +
+            '<input type="text" inputmode="numeric" id="prMeses" value="' + v((p && p.limite_meses) || 12) + '" aria-label="Cada cuántos meses">' +
+            '<span>meses</span>' +
+          '</div></div>' +
         '<div class="campo"><label for="prValor">Precio de venta</label>' +
           '<input type="text" inputmode="numeric" id="prValor" placeholder="$" value="' + v(p && p.valor) + '"></div>' +
         '<div class="campo"><label for="prCosto">Le cuesta a VDH</label>' +
@@ -2197,11 +2236,16 @@
     $('prGuardar').onclick = function () {
       var b = $('prGuardar');
       var foto = $('prImagen').value.trim();
+      /* El período va sólo si cambió: una base sin el SQL 73 no lo conoce,
+         y así sigue guardando todo lo demás. */
+      var meses = numero($('prMeses').value) || 12;
+      var mesesAntes = Number(p && p.limite_meses) || 12;
       b.disabled = true;
       base.club.premioGuardar(pinPromo(), p ? p.id : null,
           $('prNombre').value.trim(), $('prDetalle').value.trim(),
           numero($('prPuntos').value), numero($('prValor').value), numero($('prCosto').value),
-          numero($('prLimite').value), $('prActivo').checked)
+          numero($('prLimite').value), $('prActivo').checked,
+          meses !== mesesAntes ? meses : null)
         .then(function (r) {
           if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
           /* La foto va en su propio viaje, y sólo si cambió. Si falla, el
@@ -2723,6 +2767,68 @@
         })
         .then(function () { b.disabled = false; });
     };
+  }
+
+  /* ═══ Bases y condiciones (SQL 73) ════════════════════════════════════
+     Un texto con un formato mínimo que se escribe a mano: "## " al
+     principio es un título, "- " un punto de una lista y cada renglón un
+     párrafo. La vista previa lo muestra como lo ve el socio, con la misma
+     cuenta que la app del Club (basesHtml está igual en tarjeta.html y en
+     bases.html). */
+  function basesHtml(texto) {
+    var html = '', lista = false;
+    String(texto || '').split(/\r?\n/).forEach(function (r) {
+      var l = r.trim(), item = /^[-•]\s+/.test(l);
+      if (lista && !item) { html += '</ul>'; lista = false; }
+      if (!l) { return; }
+      var t = esc(l.replace(/^(##\s+|[-•]\s+)/, '')).replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+      if (/^##\s+/.test(l)) { html += '<h3>' + t + '</h3>'; }
+      else if (item) { if (!lista) { html += '<ul>'; lista = true; } html += '<li>' + t + '</li>'; }
+      else { html += '<p>' + t + '</p>'; }
+    });
+    return html + (lista ? '</ul>' : '');
+  }
+
+  function pintarBases() {
+    var caja = $('basesCuerpo');
+    if (!caja) { return; }
+    if (!pinPromo()) { caja.innerHTML = ''; return; }
+    caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    base.club.texto('bases')
+      .then(function (b) {
+        ponerResumen('bases', b && b.actualizado ? 'Actualizadas el ' + fechaCorta(b.actualizado) : 'Sin cargar', !b);
+        caja.innerHTML =
+          '<div class="campos">' +
+            '<div class="campo ancho"><label for="bsTexto">El texto <span class="lbl-opc">— "## " al principio es un título; "- ", un punto de una lista; cada renglón, un párrafo</span></label>' +
+              '<textarea id="bsTexto" spellcheck="true">' + esc((b && b.texto) || '') + '</textarea></div>' +
+            '<div class="campo"><button type="button" class="btn btn-pri" id="bsGuardar">Guardar</button></div>' +
+            '<div class="campo"><a class="btn btn-sec" href="https://vdhclub.com/bases.html" target="_blank" rel="noopener">Ver la página</a></div>' +
+          '</div>' +
+          (b && b.actualizado ? '<p class="bloque-sub" style="margin-top:10px">Última versión: ' + fechaCorta(b.actualizado) + '.</p>' : '') +
+          '<h3 class="bloque-tit" style="margin-top:22px;margin-bottom:10px">Así lo ve el socio</h3>' +
+          '<div class="bases-previa" id="bsPrevia"></div>';
+        var previa = function () { $('bsPrevia').innerHTML = basesHtml($('bsTexto').value); };
+        $('bsTexto').oninput = previa;
+        previa();
+        $('bsGuardar').onclick = function () {
+          var btn = $('bsGuardar');
+          btn.disabled = true;
+          base.club.textoGuardar(pinPromo(), 'bases', $('bsTexto').value)
+            .then(function (r) {
+              if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+              avisar('ok', r.igual ? 'No había cambios: quedan como estaban.' : 'Listo: los socios ya las ven así.');
+              pintarBases();
+            })
+            .catch(function (err) { avisar('err', (err && err.message) || 'No se pudo guardar.'); })
+            .then(function () { if (document.body.contains(btn)) { btn.disabled = false; } });
+        };
+      })
+      .catch(function (err) {
+        var falta = err && err.delServidor && /club_texto/.test(err.message || '');
+        ponerResumen('bases', falta ? 'Falta el SQL 73' : 'No se pudo abrir', true);
+        caja.innerHTML = '<p class="bloque-sub">' +
+          esc(falta ? 'Para esto falta correr el SQL 73 en Supabase.' : ((err && err.message) || 'No se pudo abrir.')) + '</p>';
+      });
   }
 
   /* ═══ Lo que devuelve club_config_resumen (SQL 36) ═════════════════════

@@ -744,13 +744,28 @@ var base = {
       return funcion('club_premios_listar', { p_pin: pin });
     },
 
-    /** Agregar (id null) o cambiar un premio. No se borran: se apagan. */
-    premioGuardar: function (pin, id, nombre, detalle, puntos, valor, costo, limite, activo) {
-      return funcion('club_premio_guardar', {
+    /** Agregar (id null) o cambiar un premio. No se borran: se apagan.
+        meses: el período del límite ("1 cada 6 meses", SQL 73). Va sólo si
+        viene, así una base sin el 73 sigue guardando como antes. */
+    premioGuardar: function (pin, id, nombre, detalle, puntos, valor, costo, limite, activo, meses) {
+      var args = {
         p_pin: pin, p_id: id || null, p_nombre: nombre, p_detalle: detalle || null,
         p_puntos: puntos, p_valor: valor, p_costo: costo, p_limite: limite || null,
         p_activo: activo !== false
-      });
+      };
+      if (meses) { args.p_meses = meses; }
+      return funcion('club_premio_guardar', args);
+    },
+
+    /** Un texto del Club, el vigente: hoy, las bases y condiciones ('bases').
+        Público. Devuelve {texto, actualizado} o null (SQL 73). */
+    texto: function (clave) {
+      return funcion('club_texto', { p_clave: clave });
+    },
+
+    /** Guardar un texto del Club. Cada cambio queda como versión nueva. */
+    textoGuardar: function (pin, clave, texto) {
+      return funcion('club_texto_guardar', { p_pin: pin, p_clave: clave, p_texto: texto });
     },
 
     /** El regalo de cumpleaños de cada nivel. */
