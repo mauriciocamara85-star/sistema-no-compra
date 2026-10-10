@@ -389,6 +389,20 @@
     color: var(--acc-txt);
     font-size: 13.5px; font-weight: 700;
   }
+  /* Para qué sirve lo que se acaba de cargar (pedido de Mauricio,
+     10/10/2026): si el cliente vuelve y compra, la venta suma al objetivo del
+     local y al del que lo cargó. Va acá, en el momento de cargar, y al pie de
+     "El equipo"; las dos son lugares que no le agregan alto a la pantalla. */
+  .exito-valor {
+    margin: -6px 0 20px;
+    padding: 11px 14px;
+    border-radius: var(--r-sm);
+    background: var(--ok-soft);
+    color: var(--ok-txt);
+    font-size: 13.5px; line-height: 1.45;
+  }
+  .exito-valor:empty { display: none; }
+  .eq-valor { color: var(--ok-txt); font-weight: 600; }
 
 
   /* ── Lo último que cargaste ────────────────────────────────────────────
@@ -1260,6 +1274,7 @@
     <div class="exito-tit" id="exitoTit">¡Cargado!</div>
     <div class="exito-sub" id="exitoSub"></div>
     <div class="exito-racha" id="exitoRacha"></div>
+    <div class="exito-valor" id="exitoValor"></div>
     <button type="button" class="btn btn-pri btn-ancho" onclick="cerrarExito()">Cargar otro</button>
   </div>
 </div>
@@ -2052,10 +2067,13 @@
 
     var total = 0;
     filas.forEach(function (v) { total += v.mes; });
-    $('equipoPie').textContent = total
+    /* Al pie, para qué sirve cargar (Mauricio, 10/10/2026): está siempre a la
+       vista, también en la PC vieja del local, y en un renglón. */
+    $('equipoPie').innerHTML = esc(total
       ? (total + (total === 1 ? ' registro' : ' registros') + ' entre ' +
          filas.length + (filas.length === 1 ? ' persona' : ' personas') + '.')
-      : 'Este mes todavía no cargó nadie.';
+      : 'Este mes todavía no cargó nadie.') +
+      ' <span class="eq-valor">Cada cliente que vuelve y compra suma al objetivo del local y al de quien lo cargó.</span>';
 
     lista.innerHTML = filas.map(function (v, i) {
       var mio = yo && v.nombre.toLowerCase() === yo;
@@ -2783,6 +2801,9 @@
     $('exitoRacha').textContent = n === 1
       ? 'Primer registro de hoy'
       : n + ' registros cargados hoy';
+    /* Que el que carga sepa para qué le sirve (Mauricio, 10/10/2026). */
+    $('exitoValor').innerHTML = 'Si ' + (datos.nombre ? '<b>' + esc(datos.nombre) + '</b> vuelve' : 'vuelve') +
+      ' y compra, esa venta suma al objetivo de ventas de ' + esc(nombreLocal(local)) + ' y a tu objetivo individual.';
     $('exito').hidden = false;
     limpiar();
   }
