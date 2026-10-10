@@ -931,6 +931,14 @@
   .ficha-in.fc .fc-hist { order: 3; }
   .fc-chat { height: auto; }
   .fc-chat .chat { max-height: min(60vh, 520px); }
+  /* La ficha de una tarjeta (No Compra, Carritos; 10/10/2026). En el
+     celular: el cliente, la conversación y después todo lo demás. */
+  .ficha-in.fc .fc-izq > .ficha-bloque:not(.fc-contacto),
+  .ficha-in.fc .fc-izq > .ficha-borrar { order: 3; }
+  .tj-plantillas { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .tj-plantillas .chip { min-height: 30px; padding: 4px 11px; font-size: 12.5px; }
+  .chat-escribir .tj-abrir { flex: none; align-self: flex-end; }
+  .chat-nota .btn-link { font-size: inherit; }
   @media (min-width: 900px) {
     .capa.completa .ficha { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; padding: 0;
                             animation: aparecer .2s var(--curva); }
@@ -2114,15 +2122,7 @@
     var r = porId(id); if (!r) return;
     wspId = id;
     var l = wspLista = plantillasPara(r);
-    var carrito = r.fuente === 'carrito';
-    var porClave = function (k) { return l.filter(function (x) { return x.clave === k; })[0]; };
-    /* La que sale elegida: al que no contesta, "volver a escribir"; al que
-       se quedó en el pago, si tuvo un problema; al que tiene el descuento,
-       el descuento. Si no, la primera (el orden lo eligen en Plantillas). */
-    wspElegida = (frio(r) ? porClave(carrito ? 'ca_otravez' : 'nc_otravez') : null) ||
-                 (carrito && r.casiPago ? porClave('ca_pago') : null) ||
-                 (!carrito && r.beneficio && r.beneficio.vive ? porClave('nc_descuento') : null) ||
-                 l[0] || null;
+    wspElegida = plantillaInicial(r, l);
     $('wspTit').textContent = 'Escribirle a ' + (r.nombre || r.whatsapp);
     $('wspPlantillas').innerHTML = l.length
       ? l.map(function (x, i) {
@@ -2153,14 +2153,7 @@
     var r = porId(wspId);
     $('modalWsp').hidden = true;
     if (!r) return;
-    anotarEvento(r, 'whatsapp', wspElegida ? wspElegida.titulo : '');
-    if (columnaDe(r) === 'Pendiente') {
-      r.estado = 'En seguimiento'; r.contactamos = 'si'; r.fecha1Iso = isoDia(new Date());
-      r.responsable = quien;
-      pintar(); if (fichaId === r.id) { pintarFicha(); }
-      guardarSeguim(r.id, { contactamos: 'si', fecha1: true, estado: 'En seguimiento', responsable: quien },
-                    'Pasó a En seguimiento', true);
-    }
+    contactoHecho(r, wspElegida);
   }
 
   /* ═══ Pintar el tablero ═════════════════════════════════════════════════ */
@@ -2402,19 +2395,32 @@
 
   /* ═══ La ficha del cliente ══════════════════════════════════════════════ */
   var fichaId = null;
-  function abrirFicha(id) { fichaCompleta(false); fichaId = id; pintarFicha(); $('capaFicha').hidden = false; cargarHistorial(); cargarCliente(); }
+  /* Desde el 10/10/2026 las de No Compra y Carritos también son la ficha
+     completa, con la conversación de WhatsApp a la derecha. */
+  function abrirFicha(id) {
+    var r = porId(id);
+    fichaId = id;
+    TJC.pedido++;
+    TJC.ficha = r ? claveFicha(r) : null;
+    TJC.clave = r ? claveTel(r.whatsapp) : '';
+    TJC.d = null;
+    fichaCompleta(true);
+    $('fichaExtra').innerHTML = '';
+    pintarFicha(); $('capaFicha').hidden = false; cargarHistorial(); cargarCliente(); cargarChatFicha();
+  }
   function cerrarFicha() {
     fichaId = null;
+    TJC.pedido++; TJC.ficha = null; TJC.clave = ''; TJC.d = null;
     if (typeof CT !== 'undefined' && CT && CT.abierto) {
       CT.abierto = null;
       [].forEach.call(document.querySelectorAll('.ct-fila.abierta'), function (f) { f.classList.remove('abierta'); });
     }
     if ($('capaFicha')) { $('capaFicha').hidden = true; fichaCompleta(false); }
   }
-  /* La ficha completa (pedido de Mauricio, 10/10/2026, "como Kommo"): la de
-     una persona (Contactos, Tienda online) ocupa toda la pantalla, con la
-     ficha a la izquierda y la conversación grande a la derecha. Las de No
-     Compra y Carritos siguen siendo el panel de costado. */
+  /* La ficha completa (pedido de Mauricio, 10/10/2026, "como Kommo"): ocupa
+     toda la pantalla, con la ficha a la izquierda y la conversación grande a
+     la derecha. Primero fueron las de una persona (Contactos, Tienda
+     online); el mismo día, también las de No Compra y Carritos. */
   function fichaCompleta(si) {
     var capa = $('capaFicha');
     if (!capa) { return; }
@@ -2438,15 +2444,16 @@
     var vendio = String(r.compro || '').indexOf('Sí') === 0;
     $('fichaTit').textContent = r.nombre || r.whatsapp || r.mail || 'Cliente';
     if (r.fuente === 'carrito') { fichaCarrito(r, col, vendio); return; }
-    $('fichaIn').innerHTML =
-      '<div class="ficha-bloque">' +
+    ponerFichaTarjeta(r,
+      '<div class="ficha-bloque fc-contacto">' +
         '<h3>Cliente</h3>' +
         '<div class="ficha-dato"><b>' + esc(r.nombre || 'Sin nombre') + '</b></div>' +
         '<div class="ficha-dato"><span>WhatsApp:</span> ' + esc(r.whatsapp || '—') + '</div>' +
         (r.mail ? '<div class="ficha-dato"><span>Mail:</span> ' + esc(r.mail) + '</div>' : '') +
         '<div class="ficha-socio" id="fichaSocio" hidden></div>' +
+        /* "Escribirle por WhatsApp" ya no va acá: la conversación, con los
+           mensajes armados, está a la derecha (abajo en el celular). */
         '<div class="ficha-acc" style="margin-top:12px">' +
-          '<button type="button" class="btn btn-wsp btn-chico" data-wsp="' + r.id + '">Escribirle por WhatsApp</button>' +
           (r.whatsapp ? '<button type="button" class="btn btn-sec btn-chico" id="fichaContacto">Guardar contacto</button>' : '') +
           (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
           (r.beneficio
@@ -2487,22 +2494,21 @@
       bloquesCrm(r) +
       /* Al final y discreto (SQL 74): para una prueba o un duplicado. */
       '<div class="ficha-borrar"><button type="button" class="btn-link" id="fichaBorrar">Borrar registro</button>' +
-        '<span>Para pruebas o duplicados. Pide el PIN.</span></div>';
+        '<span>Para pruebas o duplicados. Pide el PIN.</span></div>');
     conectarFicha(r);
     pintarCliente(r);
   }
 
   function fichaCarrito(r, col, vendio) {
-    $('fichaIn').innerHTML =
-      '<div class="ficha-bloque">' +
+    ponerFichaTarjeta(r,
+      '<div class="ficha-bloque fc-contacto">' +
         '<h3>Cliente</h3>' +
         '<div class="ficha-dato"><b>' + esc(r.nombre || 'Sin nombre') + '</b></div>' +
         (r.whatsapp ? '<div class="ficha-dato"><span>WhatsApp:</span> +' + esc(normalizarTel(r.whatsapp)) + '</div>' : '') +
         (r.mail ? '<div class="ficha-dato"><span>Mail:</span> ' + esc(r.mail) + '</div>' : '') +
         '<div class="ficha-socio" id="fichaSocio" hidden></div>' +
         '<div class="ficha-acc" style="margin-top:12px">' +
-          (r.whatsapp ? '<button type="button" class="btn btn-wsp btn-chico" data-wsp="' + r.id + '">Escribirle por WhatsApp</button>' +
-                        '<button type="button" class="btn btn-sec btn-chico" id="fichaContacto">Guardar contacto</button>' : '') +
+          (r.whatsapp ? '<button type="button" class="btn btn-sec btn-chico" id="fichaContacto">Guardar contacto</button>' : '') +
           (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
           (r.url ? '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' + esc(r.url) + '">Ver el carrito</a>' : '') +
         '</div>' +
@@ -2539,9 +2545,183 @@
            r.responsable ? 'Lo sigue ' + esc(r.responsable) : 'Nadie lo tomó todavía') +
           (r.fecha1 ? ' · 1.er contacto ' + esc(r.fecha1) : '') + '</span></div>' +
       '</div>' +
-      bloquesCrm(r);
+      bloquesCrm(r));
     conectarFicha(r);
     pintarCliente(r);
+  }
+
+  /* ═══ La conversación en la ficha de No Compra y Carritos (10/10/2026) ═══
+     Pedido de Mauricio ("¿no sería lo ideal que se vea todo el WhatsApp?"):
+     la misma ficha completa que Contactos y Tienda online, con lo nuestro a
+     la izquierda y la conversación con esa persona a la derecha (los dos
+     números, y lo mandado desde el celular). Para escribirle, los mensajes
+     armados de siempre arriba de la caja:
+       - si escribió en las últimas 24 h, sale desde el CRM, por el número al
+         que escribió;
+       - si no, "Abrir WhatsApp" con el mensaje puesto, como antes: a un No
+         Compra casi siempre se le escribe primero, y por la API eso pide una
+         plantilla aprobada por Meta (está abajo, chiquito).
+     Cualquiera de los dos es el primer contacto: si estaba Pendiente pasa a
+     En seguimiento, y queda en el historial con qué mensaje. */
+  /* tocada: si eligió un mensaje armado. Dentro de las 24 h la caja arranca
+     vacía (se le contesta lo que preguntó) y ninguno aparece elegido. */
+  var TJC = { clave: '', ficha: null, d: null, pedido: 0, elegida: {}, texto: {}, tocada: {} };
+  /* La persona, por los últimos 10 números (como club_tel10 en la base). */
+  function claveTel(t) { var d = String(t || '').replace(/\D/g, ''); return d.length >= 10 ? d.slice(-10) : ''; }
+
+  /* Lo de la izquierda se vuelve a dibujar seguido (cada cambio de columna,
+     cada nota); la conversación NO: se saca y se vuelve a poner, así no se
+     pierde lo que se estaba escribiendo ni dónde estaba el chat. */
+  function ponerFichaTarjeta(r, izq) {
+    var f = claveFicha(r), chat = $('fichaChat');
+    var quedo = chat && chat.dataset.ficha === f ? chat : null;
+    var foco = quedo && document.activeElement && quedo.contains(document.activeElement) ? document.activeElement : null;
+    var sel = foco && typeof foco.selectionStart === 'number' ? [foco.selectionStart, foco.selectionEnd] : null;
+    var c = quedo && quedo.querySelector('.chat'), arriba = c ? c.scrollTop : null;
+    if (quedo) { quedo.parentNode.removeChild(quedo); }
+    $('fichaIn').className = 'ficha-in fc';
+    $('fichaIn').innerHTML = '<div class="fc-izq">' + izq + '</div>';
+    if (quedo) {
+      $('fichaIn').appendChild(quedo);
+      if (c) { c.scrollTop = arriba; }
+      if (foco) { foco.focus(); if (sel) { try { foco.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
+      return;
+    }
+    var der = document.createElement('div');
+    der.className = 'fc-der';
+    der.id = 'fichaChat';
+    der.dataset.ficha = f;
+    $('fichaIn').appendChild(der);
+    pintarChatFicha();
+  }
+
+  function cargarChatFicha() {
+    var r = porId(fichaId);
+    if (!r || !TJC.clave) { return; }
+    var f = claveFicha(r), n = ++TJC.pedido;
+    base.crmContacto(pinGuardado(), TJC.clave)
+      .then(function (d) {
+        if (n !== TJC.pedido || TJC.ficha !== f) { return; }
+        TJC.d = d || { mensajes: [] };
+        recordarNumeros(TJC.d.numeros);
+        pintarChatFicha();
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        if (n !== TJC.pedido || TJC.ficha !== f) { return; }
+        TJC.d = { error: true, mensajes: [] };
+        pintarChatFicha();
+      });
+  }
+
+  function pintarChatFicha() {
+    var r = porId(fichaId), caja = $('fichaChat');
+    if (!r || !caja || caja.dataset.ficha !== claveFicha(r)) { return; }
+    var a = document.activeElement, escribiendo = !!(a && a.tagName === 'TEXTAREA' && caja.contains(a));
+    caja.innerHTML = chatTarjeta(r);
+    conectarChatTarjeta(r, caja);
+    bajarChat(caja);
+    if (TJC.d && !TJC.d.error) { pintarCabFicha(TJC.d); }
+    var t = caja.querySelector('textarea');
+    if (escribiendo && t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+  }
+
+  function chatTarjeta(r) {
+    var d = TJC.d;
+    if (!TJC.clave) { return '<div class="ms-chat fc-chat"><div class="ms-vacio">No dejó un WhatsApp: no hay conversación.</div></div>'; }
+    if (!d) {
+      return '<div class="ms-chat fc-chat"><div class="ms-chat-cuerpo"><div class="chat"><p class="num-vacio">Trayendo la conversación…</p></div></div></div>';
+    }
+    var l = d.mensajes || [], v = d.error ? { abierta: false, corto: '' } : ventanaChat(d);
+    return '<div class="ms-chat fc-chat">' +
+      '<div class="ms-chat-cuerpo"><div class="chat">' +
+        (d.error ? '<p class="num-vacio">No se pudo traer la conversación. Igual le podés escribir.</p>'
+          : l.length ? burbujasChat(l) : '<p class="num-vacio">Todavía no hay mensajes con esta persona.</p>') +
+      '</div></div>' +
+      '<div class="ms-chat-pie">' + escribirTarjeta(r, v) + '</div></div>';
+  }
+
+  /* La que sale elegida: al que no contesta, "volver a escribir"; al que se
+     quedó en el pago, si tuvo un problema; al que tiene el descuento, el
+     descuento. Si no, la primera (el orden lo eligen en Plantillas). */
+  function plantillaInicial(r, l) {
+    var carrito = r.fuente === 'carrito';
+    var porClave = function (k) { return l.filter(function (x) { return x.clave === k; })[0]; };
+    return (frio(r) ? porClave(carrito ? 'ca_otravez' : 'nc_otravez') : null) ||
+           (carrito && r.casiPago ? porClave('ca_pago') : null) ||
+           (!carrito && r.beneficio && r.beneficio.vive ? porClave('nc_descuento') : null) ||
+           l[0] || null;
+  }
+
+  function escribirTarjeta(r, v) {
+    var f = claveFicha(r), l = plantillasPara(r);
+    if (l.indexOf(TJC.elegida[f]) < 0) { TJC.elegida[f] = plantillaInicial(r, l); }
+    var elegida = TJC.elegida[f], marcada = v.abierta && !TJC.tocada[f] ? null : elegida;
+    var chips = l.length ? '<div class="plantillas tj-plantillas">' + l.map(function (x, i) {
+      return '<button type="button" class="chip' + (x === marcada ? ' sel' : '') + '" data-pl="' + i + '">' + esc(x.titulo) + '</button>';
+    }).join('') + '</div>' : '';
+    if (v.abierta) {
+      return chips + cajaRespuesta() + '<p class="chat-nota">' + esc(v.nota) + '</p>';
+    }
+    if (TJC.texto[f] === undefined) { TJC.texto[f] = rellenar(elegida ? elegida.texto : '¡Hola {nombre}!', r); }
+    return chips +
+      '<div class="nota-fila chat-escribir"><textarea class="tj-texto" maxlength="4000" aria-label="Mensaje por WhatsApp">' + esc(TJC.texto[f]) + '</textarea>' +
+        '<a class="btn btn-wsp btn-chico tj-abrir" target="_blank" rel="noopener" href="' + esc(linkWsp(r.whatsapp, TJC.texto[f])) + '">Abrir WhatsApp</a></div>' +
+      '<p class="chat-nota">' + (v.corto ? 'Pasaron más de 24 horas desde que escribió' : 'Todavía no nos escribió') +
+        ': se abre tu WhatsApp con el mensaje puesto, para mandarlo desde ahí. ' +
+        '<button type="button" class="btn-link ms-enviar-pl">O mandale una plantilla aprobada por Meta</button></p>';
+  }
+
+  function conectarChatTarjeta(r, caja) {
+    var f = claveFicha(r), l = plantillasPara(r);
+    var area = caja.querySelector('.chat-texto') || caja.querySelector('.tj-texto');
+    [].forEach.call(caja.querySelectorAll('.tj-plantillas [data-pl]'), function (b) {
+      b.onclick = function () {
+        var x = l[+b.dataset.pl];
+        if (!x || !area) { return; }
+        TJC.elegida[f] = x;
+        TJC.tocada[f] = true;
+        [].forEach.call(caja.querySelectorAll('.tj-plantillas [data-pl]'), function (o) { o.classList.toggle('sel', o === b); });
+        area.value = rellenar(x.texto, r);
+        if (area.oninput) { area.oninput(); }
+        area.focus();
+      };
+    });
+    /* Dentro de las 24 h: sale desde el CRM. Primero, quién lo manda. */
+    if (caja.querySelector('.chat-texto')) {
+      conectarChat(TJC.clave, caja, function () { contactoHecho(r, TJC.tocada[f] ? TJC.elegida[f] : null); TJC.tocada[f] = false; cargarChatFicha(); });
+      var b = caja.querySelector('.chat-enviar'), t = caja.querySelector('.chat-texto');
+      var mandar = b.onclick, tecla = t.onkeydown;
+      b.onclick = function () { if (!exigirQuien(function () { b.click(); })) { return; } mandar(); };
+      t.onkeydown = function (ev) {
+        if (ev.key === 'Enter' && !ev.shiftKey && !quien) { ev.preventDefault(); exigirQuien(function () { b.click(); }); return; }
+        tecla(ev);
+      };
+    }
+    /* Fuera de las 24 h: su WhatsApp, con el mensaje puesto. */
+    var abrir = caja.querySelector('.tj-abrir'), tt = caja.querySelector('.tj-texto');
+    if (abrir && tt) {
+      tt.oninput = function () { TJC.texto[f] = tt.value; abrir.href = linkWsp(r.whatsapp, tt.value); };
+      abrir.onclick = function (ev) {
+        if (!quien) { ev.preventDefault(); exigirQuien(function () { abrir.click(); }); return; }
+        contactoHecho(r, TJC.elegida[f]);
+      };
+    }
+    cablearPlantilla(caja, TJC.clave, r.nombre || r.whatsapp);
+  }
+
+  /* Escribirle ES el primer contacto: queda en el historial con qué
+     mensaje, y si estaba Pendiente pasa a En seguimiento con quién y
+     cuándo. Lo usan la ficha y la ventana de la tarjeta. */
+  function contactoHecho(r, pl) {
+    anotarEvento(r, 'whatsapp', pl ? pl.titulo : '');
+    if (columnaDe(r) === 'Pendiente') {
+      r.estado = 'En seguimiento'; r.contactamos = 'si'; r.fecha1Iso = isoDia(new Date());
+      r.responsable = quien;
+      pintar(); if (fichaId === r.id) { pintarFicha(); }
+      guardarSeguim(r.id, { contactamos: 'si', fecha1: true, estado: 'En seguimiento', responsable: quien },
+                    'Pasó a En seguimiento', true);
+    }
   }
 
   /* ═══ Borrar un registro y la papelera (SQL 74) ═════════════════════════
@@ -4048,6 +4228,8 @@
           if (vista === 'tienda') { cargarTienda(); }
           if (vista === 'mensajes' && MS.abierto) { refrescarConversacion(MS.abierto); }
           if (CT.abierto) { refrescarChat(CT.abierto); }
+          /* La ficha de un No Compra o un carrito, con su conversación. */
+          if (fichaId && TJC.clave) { cargarChatFicha(); }
         }
       })
       .catch(function () {});   // sin el SQL 63 o sin red: la pestaña sin numerito, nada más
@@ -5359,6 +5541,8 @@
         avisar('ok', 'Listo: le mandamos la plantilla.');
         if (vista === 'mensajes') { cargarMensajes(); if (MS.abierto === clave) { refrescarConversacion(clave); } }
         if (CT.abierto === clave) { refrescarChat(clave); }
+        /* Desde la ficha de una tarjeta: también es el primer contacto. */
+        if (fichaId && TJC.clave === clave && porId(fichaId)) { contactoHecho(porId(fichaId), { titulo: 'Plantilla ' + t.name }); cargarChatFicha(); }
       })
       .catch(function (err) {
         if (err && err.sinSesion) { caducada(); return; }
