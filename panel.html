@@ -305,6 +305,13 @@
   .cifra-t { font-size: 12.5px; font-weight: 600; color: var(--txt-2); }
   .cifra b { font: 700 15.5px/1.1 var(--display); color: var(--kpi-c, var(--txt)); font-variant-numeric: tabular-nums; }
   .cifra-sub { font-size: 12px; color: var(--txt-3); white-space: nowrap; }
+  /* El recordatorio en la fila de Mensajes (SQL 75): gris si es para más
+     adelante, rojo si es para hoy o ya pasó. */
+  .ct-rec { display: flex; align-items: center; gap: 5px; margin-top: 3px; font-size: 12px; font-weight: 600; color: var(--txt-3); }
+  .ct-rec svg { width: 13px; height: 13px; flex: none; }
+  .ct-rec.ya { color: var(--bad-txt); }
+  /* La pastilla de Mensajes es sólo el relojito: la columna es angosta. */
+  .chip-rec svg { width: 14px; height: 14px; flex: none; }
   @media (max-width: 899px) {
     .fila-tablero { display: block; }
     .fila-tablero .atajos { margin: 8px 0 2px; }
@@ -458,9 +465,14 @@
   .pill-num.n2::before { background: #3E6FB0; }
   /* "Todos · No Compra · Tienda online": en un renglón, aunque la lista sea
      angosta (si no entran, se deslizan). */
-  .ms-numeros { flex-wrap: nowrap; gap: 6px; overflow-x: auto; scrollbar-width: none; }
+  /* Con la pastilla del relojito son cuatro y no entran en la columna:
+     pasan a dos renglones (antes, nowrap con scroll escondido: inalcanzable
+     con el mouse). */
+  .ms-numeros { flex-wrap: wrap; gap: 5px; }
   .ms-numeros::-webkit-scrollbar { display: none; }
-  .ms-numeros .chip { flex: none; min-height: 30px; padding: 4px 10px; font-size: 12.5px; }
+  .ms-numeros .chip { flex: none; min-height: 30px; padding: 4px 9px; font-size: 12.5px; gap: 5px; }
+  .ms-numeros .chip .cuenta { padding: 0 5px; }
+  .ms-numeros .chip-rec { padding: 4px 7px; }
   .chat-num { background: var(--surface-3); color: var(--txt-2); font-weight: 600; }
   .chat-hist { background: none; border: 1px dashed var(--line-alta); }
 
@@ -470,6 +482,51 @@
      "Mover a…". La que espera respuesta, con el borde rojo. */
   .ti-intro { margin: 0 0 8px; max-width: 820px; font-size: 12.5px; color: var(--txt-3); }
   .ti-cifras { margin: 0 0 10px; }
+  /* ── Estadísticas por categorías (11/10/2026, como los Insights de Kommo) ── */
+  .num-solapas { margin: 0 0 12px; }
+  .ins-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(235px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .ins-grid .kpi { animation: none; }
+  .ins-ancha { grid-column: span 2; }
+  @media (max-width: 599px) { .ins-ancha { grid-column: span 1; } }
+  .kpi-delta { font-size: 12px; font-weight: 700; margin-top: 3px; }
+  .kpi-delta.up { color: #2FE38A; }
+  .kpi-delta.down { color: #FF8A93; }
+  .kpi-filas { margin-top: 9px; display: grid; gap: 4px; }
+  .kpi-fila { display: flex; justify-content: space-between; gap: 10px; font-size: 12.5px; color: rgba(255, 255, 255, .78);
+              border-top: 1px solid rgba(255, 255, 255, .09); padding-top: 4px; }
+  .kpi-fila b { color: #fff; font-variant-numeric: tabular-nums; }
+  .anillos { display: flex; align-items: center; gap: 16px; margin-top: 8px; }
+  .anillos svg { width: 112px; height: 112px; flex: none; }
+  .anillos-ley { display: grid; gap: 5px; min-width: 0; }
+  .anillos-ley span { display: flex; align-items: center; gap: 7px; font-size: 12.5px; color: rgba(255, 255, 255, .82); white-space: nowrap; }
+  .anillos-ley i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .anillos-ley b { color: #fff; margin-left: auto; font-variant-numeric: tabular-nums; }
+  .linea-svg { width: 100%; height: auto; margin-top: 8px; }
+  .linea-ley { display: flex; gap: 16px; margin-top: 4px; font-size: 12px; color: rgba(255, 255, 255, .78); }
+  .linea-ley i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; }
+  /* El embudo: una tarjeta por etapa, con la raya de su color. */
+  .emb-tit { font: 700 14px var(--sans); margin: 16px 0 8px; color: var(--txt-2); }
+  .emb-fila { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(150px, 1fr); gap: 8px; overflow-x: auto; padding-bottom: 4px; }
+  .emb-card { background: var(--surface); border: 1px solid var(--line); border-top: 3px solid var(--emb-c, var(--line-alta));
+              border-radius: var(--r-sm); padding: 10px 12px; min-width: 0; }
+  .emb-card[data-tono="c-pend"] { --emb-c: var(--warn); }
+  .emb-card[data-tono="c-seg"] { --emb-c: var(--acc); }
+  .emb-card[data-tono="c-esp"] { --emb-c: #3E6FB0; }
+  .emb-card[data-tono="c-ok"] { --emb-c: var(--ok); }
+  .emb-col { font-size: 12px; font-weight: 600; color: var(--txt-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .emb-card b { display: block; font: 700 21px/1.15 var(--display); margin-top: 2px; }
+  .emb-plata { font-size: 12.5px; font-weight: 700; color: var(--txt-2); }
+  .emb-pie { margin-top: 6px; font-size: 12px; color: var(--txt-3); }
+  .emb-pie .mal { color: var(--bad-txt); font-weight: 700; }
+  /* Objetivos: la meta y lo hecho, con su barra. */
+  .obj-mes { font: 700 15px var(--sans); margin: 2px 0 10px; color: var(--txt-2); }
+  .obj-tabla input { width: 92px; min-height: 34px; padding: 4px 8px; }
+  .obj-hecho { font-weight: 700; white-space: nowrap; }
+  .obj-prog { display: block; height: 6px; border-radius: 4px; background: var(--surface-3); overflow: hidden; margin-top: 5px; min-width: 90px; }
+  .obj-prog i { display: block; height: 100%; background: var(--acc); }
+  .obj-prog.lleno i { background: var(--ok); }
+  .obj-nueva { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .obj-nueva input { width: 290px; max-width: 100%; }
   .ti-cols { margin-bottom: 12px; }
   .ti-tablero .tj { cursor: pointer; }
   .tj.ti-espera { border-left-color: var(--bad); }
@@ -673,6 +730,78 @@
   .pronto-cab p { margin-top: 4px; font-size: 14px; color: var(--txt-2); }
   .pronto .ficha-bloque p, .pronto li { font-size: 14px; line-height: 1.55; color: var(--txt); }
   .pronto ul { margin: 0; padding-left: 18px; display: grid; gap: 6px; }
+  /* ── Agente de IA (SQL 77, 11/10/2026) ── */
+  .ag { display: grid; gap: 14px; max-width: 1180px; }
+  .ag-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+  .ag-cab > div { flex: 1 1 420px; min-width: 0; }
+  .ag-cab h2 { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font: 700 22px/1.2 var(--display); }
+  .ag-cab p { margin-top: 4px; font-size: 14px; line-height: 1.5; color: var(--txt-2); max-width: 760px; }
+  /* El interruptor. */
+  .llave { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; padding: 6px 16px 6px 8px; flex: none;
+           border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface);
+           font: 700 14px var(--sans); color: var(--txt-2); cursor: pointer; transition: border-color .2s; }
+  .llave i { position: relative; width: 44px; height: 26px; border-radius: 13px; background: var(--surface-3); flex: none; transition: background .2s; }
+  .llave i::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%;
+                    background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .2s; }
+  .llave[aria-checked="true"] { color: var(--txt); border-color: var(--ok); }
+  .llave[aria-checked="true"] i { background: var(--ok); }
+  .llave[aria-checked="true"] i::after { transform: translateX(18px); }
+  .llave:disabled { opacity: .6; cursor: wait; }
+  .ag-estado { display: grid; gap: 3px; padding: 14px 16px; border-radius: var(--r-sm); border: 1px solid var(--line);
+               border-left: 4px solid var(--txt-3); background: var(--surface); }
+  .ag-estado.on { border-left-color: var(--ok); }
+  .ag-estado.equipo { border-left-color: #3E6FB0; }
+  .ag-estado b { font: 700 16px var(--display); }
+  .ag-estado span { font-size: 13.5px; color: var(--txt-2); }
+  .ag-estado .ag-fase1 { color: var(--warn-txt); font-weight: 600; margin-top: 3px; }
+  .ag-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+  .ag-col { display: grid; gap: 14px; min-width: 0; }
+  .ag-ancho { grid-column: 1 / -1; }
+  @media (max-width: 999px) { .ag-grid { grid-template-columns: minmax(0, 1fr); } }
+  .ag-dia { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 6px 10px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+  .ag-horario h3 + .ag-dia { border-top: 0; padding-top: 0; }
+  .ag-dia > b { font-size: 14px; }
+  .ag-modos { display: flex; gap: 5px; flex-wrap: wrap; }
+  .ag-modos .chip { min-height: 30px; padding: 4px 10px; font-size: 12.5px; }
+  .ag-horas { grid-column: 2; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 13px; color: var(--txt-2); }
+  .ag-horas[hidden] { display: none; }
+  /* Un número con lo que va pegado (el %, el $, el punto): no se separan. */
+  .ag-par { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  @media (max-width: 599px) {
+    .ag-dia { grid-template-columns: minmax(0, 1fr); }
+    .ag-horas { grid-column: 1; }
+  }
+  .ag input[type=time] { width: 116px; background: var(--campo); border: 1px solid var(--line-campo); border-radius: var(--r-sm);
+                         color: var(--txt); font-size: 16px; line-height: 1.3; padding: 5px 8px; }
+  .ag h4 { font-size: 12px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; margin: 16px 0 8px; }
+  .ag-fechas { display: grid; gap: 6px; }
+  .ag-fecha { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+  .ag-fecha-nota { color: var(--txt-2); }
+  .ag-fecha button { margin-left: auto; }
+  .ag-fecha-nueva { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .ag-fecha-nueva input, .ag-fecha-nueva select { width: auto; padding: 8px 10px; }
+  .ag-fecha-nueva input[type=text] { flex: 1 1 150px; min-width: 0; }
+  .ag-tope { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 1.5; }
+  .ag-topes h3 + .ag-tope { border-top: 0; padding-top: 0; }
+  .ag-tope input { width: 74px; padding: 5px 8px; text-align: right; }
+  .ag-tope input.plata { width: 112px; }
+  .ag-tope .chip { min-height: 30px; padding: 4px 12px; font-size: 12.5px; }
+  .ag input.mal { border-color: var(--bad); box-shadow: 0 0 0 1px var(--bad); }
+  .ag-nota { font-size: 12.5px; color: var(--txt-3); margin-top: 8px; line-height: 1.5; }
+  .ag-acciones { display: flex; justify-content: flex-end; margin-top: 10px; }
+  .ag-deriva { display: grid; grid-template-columns: auto minmax(0, 220px); gap: 8px 12px; align-items: center; font-size: 14px; }
+  .ag-deriva input { padding: 6px 10px; }
+  .ag-saber textarea { min-height: 380px; font-size: 14px; line-height: 1.55; }
+  .ag-modo-op { display: grid; gap: 8px; }
+  .ag-op { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+  .ag-op.sel { border-color: var(--acc); background: var(--acc-soft); }
+  .ag-op.no { opacity: .55; }
+  .ag-op b { display: block; font-size: 14px; }
+  .ag-op span { font-size: 12.5px; color: var(--txt-2); }
+  .ag-fases ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+  .ag-fases li b { display: block; font-size: 14px; }
+  .ag-fases li span { display: block; font-size: 13px; color: var(--txt-2); margin-top: 2px; line-height: 1.5; }
+  .ag-fases li.hecha b { color: var(--ok-txt); }
 
   /* ── Segmentos (Beta): grupos de contactos que se arman solos ── */
   .seg-intro { max-width: 760px; margin: 0 2px 14px; font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
@@ -1228,6 +1357,8 @@
 
   <!-- Los números del CRM (SQL 51), como el panel de Kommo. -->
   <section id="vistaNumeros" hidden>
+    <!-- Las categorías, como los Insights de Kommo (11/10/2026). -->
+    <div class="atajos num-solapas" id="numSolapas"></div>
     <div class="num-filtros">
       <div class="periodos" id="periodos"></div>
       <div class="num-fechas" id="numFechas" hidden>
@@ -1255,11 +1386,12 @@
   <!-- Tienda online (SQL 67): las consultas del WhatsApp de la tienda, como
        tarjetas que se mueven solas. -->
   <section id="vistaTienda" hidden></section>
-  <!-- Segmentos (Beta), Difusiones y lo que está por venir (Agente de IA,
-       Bots). -->
+  <!-- Segmentos (Beta), Difusiones, el Agente de IA (SQL 77) y lo que está
+       por venir (Bots). -->
   <section id="vistaSegmentos" hidden></section>
   <section id="vistaDifusiones" hidden></section>
   <section id="vistaPronto" hidden></section>
+  <section id="vistaAgente" hidden></section>
   </div><!-- /.crm-cuerpo -->
   </div><!-- /.crm -->
 </main>
@@ -1924,7 +2056,7 @@
       { v: 'tienda', t: 'Tienda online', nt: 'Esperan respuesta' }] },
     { v: 'segmentos', t: 'Segmentos', i: ICO.seg, marca: 'Beta' },
     { v: 'contactos', t: 'Contactos', i: ICO.gente },
-    { v: 'agente', t: 'Agente de IA', i: ICO.ia, marca: 'Pronto' },
+    { v: 'agente', t: 'Agente de IA', i: ICO.ia, marca: 'Beta' },
     { g: 'automatizaciones', t: 'Automatizaciones', i: ICO.auto, hijos: [
       { v: 'bots', t: 'Bots', marca: 'Pronto' },
       { v: 'plantillas', t: 'Plantillas' },
@@ -2014,6 +2146,7 @@
     else if (vista === 'segmentos') { cargarSegmentos(); }
     else if (vista === 'difusiones') { pintarDifusiones(); }
     else if (vista === 'tienda') { cargarTienda(); }
+    else if (vista === 'agente') { cargarAgente(); }
     else if (PRONTO[vista]) { pintarPronto(vista); }
     else { pintar(); }
   }
@@ -2029,6 +2162,7 @@
     $('vistaDifusiones').hidden = vista !== 'difusiones';
     $('vistaTienda').hidden = vista !== 'tienda';
     $('vistaPronto').hidden = !PRONTO[vista];
+    $('vistaAgente').hidden = vista !== 'agente';
     /* El local sólo tiene sentido en los No Compra: los carritos son todos online. */
     $('filtroLocal').parentNode.style.display = vista === 'no_compra' ? '' : 'none';
     $('busca').placeholder = vista === 'carrito' ? 'Buscar por nombre, teléfono, mail o prenda…'
@@ -2044,6 +2178,7 @@
     colSel = 'Pendiente';
     filtroEtq = '';
     TI.kpi = '';
+    MS.rec = false;
     atajo = '';
     eligiendo = false; elegidos = [];
     $('tablero').scrollLeft = 0;
@@ -3845,19 +3980,247 @@
     return Math.round(h / 24) + ' días';
   }
 
+  /* ═══ Las categorías (11/10/2026, como los Insights de Kommo) ═══════════
+     Resumen (lo de siempre), Panel de control, Embudo, Actividades y
+     Objetivos. El período de arriba vale para todas; la persona, sólo para
+     el Resumen. Sin el SQL 76, el Resumen anda y el resto lo dice. */
+  var numTab = 'resumen';
+  var NUMDAT = { st: null, ins: null, falta76: false };
+  var TABS_NUM = [['resumen', 'Resumen'], ['panel', 'Panel de control'], ['embudo', 'Embudo'],
+                  ['actividades', 'Actividades'], ['objetivos', 'Objetivos']];
+  function pintarSolapasNum() {
+    $('numSolapas').innerHTML = TABS_NUM.map(function (t) {
+      return '<button type="button" class="chip' + (t[0] === numTab ? ' sel' : '') + '" data-tab="' + t[0] + '">' + t[1] + '</button>';
+    }).join('');
+    [].forEach.call($('numSolapas').children, function (b) {
+      b.onclick = function () { numTab = b.dataset.tab; pintarSolapasNum(); pintarVistaNum(); };
+    });
+    $('numQuien').style.display = numTab === 'resumen' ? '' : 'none';
+  }
   function cargarNumeros() {
     pintarPeriodos();
+    pintarSolapasNum();
     var rg = rangoNumeros();
     if (!rg) { return; }
     $('numeros').innerHTML = '<div class="skel"></div><div class="skel"></div>';
-    base.crmEstadisticas(pinGuardado(), rg[0].toISOString(), rg[1].toISOString(), quienNum || null)
-      .then(pintarNumeros)
+    var pin = pinGuardado();
+    var pIns = base.crmInsights(pin, rg[0].toISOString(), rg[1].toISOString())
+      .then(function (d) { NUMDAT.ins = d; NUMDAT.falta76 = false; })
+      .catch(function (err) {
+        if (err && err.sinSesion) { throw err; }
+        NUMDAT.ins = null;
+        NUMDAT.falta76 = /crm_insights|PGRST202|Could not find/i.test(String(err && err.message));
+      });
+    var pSt = base.crmEstadisticas(pin, rg[0].toISOString(), rg[1].toISOString(), quienNum || null)
+      .then(function (st) { NUMDAT.st = st; });
+    Promise.all([pSt, pIns])
+      .then(pintarVistaNum)
       .catch(function (err) {
         if (err && err.sinSesion) { caducada(); return; }
         var falta = /crm_estadisticas|PGRST202|Could not find/i.test(String(err && err.message));
         $('numeros').innerHTML = '<div class="vacio-vista"><b>' + (falta ? 'Falta un paso' : 'No se pudieron traer los números') + '</b>' +
           (falta ? 'Para ver los números del CRM hay que correr el SQL 51 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
       });
+  }
+  function pintarVistaNum() {
+    if (numTab === 'resumen') { pintarNumeros(NUMDAT.st); return; }
+    if (!NUMDAT.ins) {
+      $('numeros').innerHTML = '<div class="vacio-vista"><b>' + (NUMDAT.falta76 ? 'Falta un paso' : 'No se pudo traer esta parte') + '</b>' +
+        (NUMDAT.falta76 ? 'Para esta solapa hay que correr el SQL 76 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
+      return;
+    }
+    if (numTab === 'panel') { pintarPanelNum(NUMDAT.st, NUMDAT.ins); }
+    else if (numTab === 'embudo') { pintarEmbudoNum(NUMDAT.ins); }
+    else if (numTab === 'actividades') { pintarActividadesNum(NUMDAT.ins); }
+    else { pintarObjetivosNum(NUMDAT.st, NUMDAT.ins); }
+  }
+
+  /* "+12 vs el período anterior", verde o rojo. */
+  function deltaIns(ahora, antes) {
+    var d = (Number(ahora) || 0) - (Number(antes) || 0);
+    if (!d) { return ''; }
+    return '<div class="kpi-delta ' + (d > 0 ? 'up' : 'down') + '">' + (d > 0 ? '+' : '−') + Math.abs(d) + ' vs el período anterior</div>';
+  }
+  function tileIns(cls, n, l, pie, extra) {
+    return '<div class="kpi ' + (cls || '') + '"><div class="kpi-n">' + n + '</div><div class="kpi-l">' + esc(l) + '</div>' +
+      (pie ? '<div class="kpi-pie">' + esc(pie) + '</div>' : '') + (extra || '') + '</div>';
+  }
+  /* Los anillos de Kommo: cada fuente con su arco, el más grande completo. */
+  var COLORES_ANILLOS = ['#2FE38A', '#4D9FFF', '#F0C66A', '#B38BFF'];
+  function svgAnillos(items) {
+    var max = Math.max.apply(null, [1].concat(items.map(function (x) { return x.n; })));
+    var circ = items.map(function (x, i) {
+      var r = 48 - i * 11, c = 2 * Math.PI * r, frac = Math.max(0.02, x.n / max);
+      return '<circle cx="56" cy="56" r="' + r + '" fill="none" stroke="rgba(255,255,255,.1)" stroke-width="8"></circle>' +
+        '<circle cx="56" cy="56" r="' + r + '" fill="none" stroke="' + COLORES_ANILLOS[i] + '" stroke-width="8" stroke-linecap="round" ' +
+          'stroke-dasharray="' + (c * frac).toFixed(1) + ' ' + c.toFixed(1) + '" transform="rotate(-90 56 56)"></circle>';
+    }).join('');
+    var ley = items.map(function (x, i) {
+      return '<span><i style="background:' + COLORES_ANILLOS[i] + '"></i>' + esc(x.nombre) + '<b>' + x.n + '</b></span>';
+    }).join('');
+    return '<div class="anillos"><svg viewBox="0 0 112 112" aria-hidden="true">' + circ + '</svg>' +
+      '<div class="anillos-ley">' + ley + '</div></div>';
+  }
+  /* La línea del día a día: entraron (azul) y ganados (verde). */
+  function svgLinea(dias) {
+    if (!dias.length) { return '<p class="num-vacio">Sin días en el período.</p>'; }
+    var W = 560, H = 140, PAD = 8;
+    var max = Math.max.apply(null, [1].concat(dias.map(function (d) { return Math.max(d.entraron, d.ganados); })));
+    var x = function (i) { return dias.length === 1 ? W / 2 : PAD + i * (W - 2 * PAD) / (dias.length - 1); };
+    var y = function (v) { return H - PAD - v * (H - 2 * PAD) / max; };
+    var linea = function (k, color) {
+      var pts = dias.map(function (d, i) { return x(i).toFixed(1) + ',' + y(d[k]).toFixed(1); }).join(' ');
+      var puntos = dias.map(function (d, i) {
+        return '<circle cx="' + x(i).toFixed(1) + '" cy="' + y(d[k]).toFixed(1) + '" r="2.6" fill="' + color + '"></circle>';
+      }).join('');
+      return '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="2.2" stroke-linejoin="round"></polyline>' + puntos;
+    };
+    return '<svg class="linea-svg" viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' +
+        '<line x1="' + PAD + '" y1="' + (H - PAD) + '" x2="' + (W - PAD) + '" y2="' + (H - PAD) + '" stroke="rgba(255,255,255,.14)"></line>' +
+        linea('entraron', '#4D9FFF') + linea('ganados', '#2FE38A') + '</svg>' +
+      '<div class="linea-ley"><span><i style="background:#4D9FFF"></i>Entraron</span>' +
+        '<span><i style="background:#2FE38A"></i>Ganados</span>' +
+        '<span style="margin-left:auto">' + esc(ddmm(dias[0].dia) + ' a ' + ddmm(dias[dias.length - 1].dia)) + '</span></div>';
+  }
+
+  function pintarPanelNum(st, ins) {
+    var f = (st && st.fuentes) || {}, nc = f.no_compra || {}, ca = f.carrito || {};
+    var num = function (o, k) { return Number(o[k]) || 0; };
+    var ms = ins.mensajes || {}, ta = ins.tareas || {};
+    var filasNum = (ms.por_numero || []).map(function (n) {
+      return '<div class="kpi-fila"><span>' + esc(n.nombre) + '</span><b>' + n.entrantes + '</b></div>';
+    }).join('');
+    $('numeros').innerHTML = '<div class="ins-grid">' +
+      tileIns('', ms.entrantes || 0, 'Mensajes que entraron', '', deltaIns(ms.entrantes, ms.antes_entrantes) +
+        (filasNum ? '<div class="kpi-filas">' + filasNum + '</div>' : '')) +
+      tileIns('', ms.salientes || 0, 'Respuestas nuestras', '', deltaIns(ms.salientes, ms.antes_salientes)) +
+      tileIns('', ms.dialogos || 0, 'Conversaciones', 'personas distintas en el período', deltaIns(ms.dialogos, ms.antes_dialogos)) +
+      tileIns(ms.sin_replica ? 'es-pend' : '', ms.sin_replica || 0, 'Sin contestar ahora', 'lo último lo escribió el cliente') +
+      tileIns('', duracion(ms.replica_prom_h), 'Tardamos en contestar',
+        (ms.replica_max_h != null ? 'la más larga, ' + duracion(ms.replica_max_h) : 'promedio del período') +
+        (ms.sin_responder_aun ? ' · ' + ms.sin_responder_aun + ' sin responder aún' : '')) +
+      '<div class="kpi ins-ancha"><div class="kpi-l">De dónde entró la gente</div>' +
+        svgAnillos([{ nombre: 'No Compra', n: Number(ins.fuentes.no_compra) || 0 },
+                    { nombre: 'Carritos', n: Number(ins.fuentes.carrito) || 0 },
+                    { nombre: 'Tienda (WhatsApp)', n: Number(ins.fuentes.tienda) || 0 },
+                    { nombre: 'Club (socios nuevos)', n: Number(ins.fuentes.club) || 0 }]) + '</div>' +
+      tileIns('es-ok', num(nc, 'ganados') + num(ca, 'ganados'), 'Ganados',
+        PESOS.format(num(nc, 'ganados_monto') + num(ca, 'ganados_monto'))) +
+      tileIns('es-plata', PESOS.format(num(ca, 'en_juego')), 'En juego en carritos', 'lo que suman los abiertos') +
+      tileIns(ta.hoy || ta.atrasados ? 'es-pend' : '', (ta.hoy || 0) + (ta.atrasados || 0), 'Recordatorios para hoy',
+        ta.atrasados ? 'con ' + ta.atrasados + ' atrasados' : 'tarjetas y personas') +
+      tileIns('', ta.sin || 0, 'Sin recordatorio', 'abiertos, sin agendar') +
+      '<div class="kpi ins-ancha"><div class="kpi-l">Día a día</div>' + svgLinea(ins.diario || []) + '</div>' +
+    '</div>';
+  }
+
+  var NOMBRE_COL_EMB = { 'Pendiente': 'Pendiente', 'En seguimiento': 'En seguimiento', 'Esperando respuesta': 'Esperando respuesta',
+                         'Cerrado - compró': 'Compró', 'Cerrado - no compró': 'No compró', 'Descartado': 'Descartado' };
+  var TONO_COL_EMB = { 'Pendiente': 'c-pend', 'En seguimiento': 'c-seg', 'Esperando respuesta': 'c-esp', 'Cerrado - compró': 'c-ok',
+                       'Nueva consulta': 'c-pend', 'En conversación': 'c-seg', 'Le pasamos el link': 'c-esp', 'Compró': 'c-ok' };
+  function pintarEmbudoNum(ins) {
+    var fila = function (cols, conPlata) {
+      return '<div class="emb-fila">' + cols.map(function (c) {
+        return '<div class="emb-card" data-tono="' + (TONO_COL_EMB[c.col] || '') + '">' +
+          '<div class="emb-col">' + esc(NOMBRE_COL_EMB[c.col] || c.col) + '</div>' +
+          '<b>' + c.ahora + '</b>' +
+          (conPlata && Number(c.plata) ? '<div class="emb-plata">' + plataCorta(c.plata) + '</div>' : '') +
+          '<div class="emb-pie">entraron ' + (c.entraron || 0) +
+            (c.perdidos ? ' · <span class="mal">se perdieron ' + c.perdidos + '</span>' : '') + '</div>' +
+        '</div>';
+      }).join('') + '</div>';
+    };
+    var e = ins.embudo || {};
+    $('numeros').innerHTML =
+      '<p class="bloque-sub" style="margin-bottom:4px">Cada etapa: cuántos hay AHORA, la plata, cuántos entraron a esa etapa en el período y cuántos se perdieron desde ahí.</p>' +
+      '<h3 class="emb-tit">No Compra</h3>' + fila(e.no_compra || [], true) +
+      '<h3 class="emb-tit">Carritos abandonados</h3>' + fila(e.carrito || [], true) +
+      '<h3 class="emb-tit">Tienda online (consultas de WhatsApp)</h3>' +
+      '<div class="emb-fila">' + (ins.tienda_embudo || []).map(function (c) {
+        return '<div class="emb-card" data-tono="' + (TONO_COL_EMB[c.col] || '') + '">' +
+          '<div class="emb-col">' + esc(c.col) + '</div><b>' + c.ahora + '</b></div>';
+      }).join('') + '</div>';
+  }
+
+  function pintarActividadesNum(ins) {
+    var l = ins.actividades || [];
+    $('numeros').innerHTML = '<div class="ficha-bloque"><h3>Qué hizo cada uno en el período</h3>' +
+      (l.length
+        ? '<table class="num-tabla"><thead><tr><th>Persona</th><th class="n">Tarjetas movidas</th><th class="n">WhatsApps</th>' +
+          '<th class="n">Notas</th><th class="n">Recordatorios</th><th class="n">Ganados</th></tr></thead><tbody>' +
+          l.map(function (a) {
+            return '<tr><td>' + esc(a.quien) + '</td><td class="n">' + a.movidas + '</td><td class="n">' + a.whatsapps +
+              '</td><td class="n">' + a.notas + '</td><td class="n">' + a.recordatorios + '</td><td class="n">' + a.ganados + '</td></tr>';
+          }).join('') + '</tbody></table>'
+        : '<p class="num-vacio">En este período nadie hizo nada todavía.</p>') + '</div>';
+  }
+
+  function mesLindo(iso) {
+    var p = String(iso || '').split('-');
+    if (p.length < 2) { return iso || ''; }
+    var d = new Date(+p[0], +p[1] - 1, 1);
+    var n = d.toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+    return n.charAt(0).toUpperCase() + n.slice(1);
+  }
+  function pintarObjetivosNum(st, ins) {
+    var ob = ins.objetivos || {}, metas = {}, hecho = {};
+    (ob.metas || []).forEach(function (m) { metas[m.quien] = m; });
+    (ob.hecho || []).forEach(function (h) { hecho[h.quien] = h; });
+    var nombres = Object.keys(metas);
+    Object.keys(hecho).forEach(function (q) { if (nombres.indexOf(q) < 0) { nombres.push(q); } });
+    ((st && st.personas) || []).forEach(function (q) { if (nombres.indexOf(q) < 0) { nombres.push(q); } });
+    nombres.sort();
+    var celda = function (h, m, esPlata) {
+      var meta = m == null ? null : Number(m);
+      var txt = (esPlata ? PESOS.format(h || 0) : (h || 0)) + (meta ? ' / ' + (esPlata ? PESOS.format(meta) : meta) : '');
+      var pct = meta ? Math.min(100, Math.round((h || 0) * 100 / meta)) : 0;
+      return '<span class="obj-hecho">' + esc(txt) + '</span>' +
+        (meta ? '<span class="obj-prog' + (pct >= 100 ? ' lleno' : '') + '"><i style="width:' + pct + '%"></i></span>' : '');
+    };
+    $('numeros').innerHTML = '<div class="ficha-bloque">' +
+      '<h3>Objetivos del mes</h3><p class="obj-mes">' + esc(mesLindo(ob.mes)) + ' · lo hecho / la meta</p>' +
+      '<table class="num-tabla obj-tabla"><thead><tr><th>Persona</th><th>Contactados</th><th>Ganados</th><th>Plata</th>' +
+        '<th class="n">Meta: contactados · ganados · plata</th><th></th></tr></thead><tbody>' +
+      (nombres.length ? nombres.map(function (q) {
+        var m = metas[q] || {}, h = hecho[q] || {};
+        return '<tr data-obj="' + esc(q) + '"><td><b>' + esc(q) + '</b></td>' +
+          '<td>' + celda(Number(h.contactos) || 0, m.contactos, false) + '</td>' +
+          '<td>' + celda(Number(h.ganados) || 0, m.ganados, false) + '</td>' +
+          '<td>' + celda(Number(h.plata) || 0, m.plata, true) + '</td>' +
+          '<td class="n"><input type="text" inputmode="numeric" data-o="c" value="' + (m.contactos == null ? '' : m.contactos) + '" placeholder="—" aria-label="Meta de contactados"> ' +
+            '<input type="text" inputmode="numeric" data-o="g" value="' + (m.ganados == null ? '' : m.ganados) + '" placeholder="—" aria-label="Meta de ganados"> ' +
+            '<input type="text" inputmode="numeric" data-o="p" value="' + (m.plata == null ? '' : Math.round(Number(m.plata))) + '" placeholder="$" aria-label="Meta de plata"></td>' +
+          '<td class="n"><button type="button" class="btn btn-sec btn-chico" data-obj-ok="' + esc(q) + '">Guardar</button></td></tr>';
+      }).join('') : '') +
+      '</tbody></table>' +
+      '<div class="obj-nueva"><input type="text" id="objNueva" maxlength="40" placeholder="Otra persona (como firma en el CRM)">' +
+        '<button type="button" class="btn btn-sec btn-chico" id="objNuevaOk">Agregar</button></div>' +
+      '<p class="bloque-sub" style="margin-top:10px">Contactados: primeros contactos hechos más WhatsApps mandados desde el CRM, en el mes. Una meta vacía no se mide. Vaciar las tres la borra.</p>' +
+    '</div>';
+    var guardar = function (q, fila) {
+      var v = function (k) { var x = fila.querySelector('[data-o="' + k + '"]').value.replace(/[^0-9]/g, ''); return x === '' ? null : Number(x); };
+      base.crmObjetivo(pinGuardado(), q, ob.mes, v('c'), v('g'), v('p'))
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          avisar('ok', r.quitado ? 'Meta borrada.' : 'Meta guardada.');
+          cargarNumeros();
+        })
+        .catch(function (err) {
+          if (err && err.sinSesion) { caducada(); return; }
+          avisar('err', /crm_objetivo|PGRST202|Could not find/i.test(String(err && err.message))
+            ? 'Para los objetivos falta correr el SQL 76 en Supabase.' : (err && err.message) || 'No se pudo guardar.');
+        });
+    };
+    [].forEach.call($('numeros').querySelectorAll('[data-obj-ok]'), function (b) {
+      b.onclick = function () { guardar(b.dataset.objOk, b.closest('tr')); };
+    });
+    $('objNuevaOk').onclick = function () {
+      var q = $('objNueva').value.trim();
+      if (!q) { return; }
+      base.crmObjetivo(pinGuardado(), q, ob.mes, 0, null, null)
+        .then(function () { avisar('ok', 'Listo: ponele las metas y guardá.'); cargarNumeros(); })
+        .catch(function (err) { avisar('err', (err && err.message) || 'No se pudo.'); });
+    };
   }
 
   function pintarNumeros(st) {
@@ -4155,7 +4518,7 @@
      llega: queda una marca de que se contestó, sin el texto. */
   var K_MS_NUM = 'nc_ms_numero';
   var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0, borrador: {},
-             abierto: null, previo: null, ficha: null, numero: leer(K_MS_NUM) || '', tienda: null };
+             abierto: null, previo: null, ficha: null, numero: leer(K_MS_NUM) || '', tienda: null, rec: false };
 
   /* Nuestros números de WhatsApp (SQL 67), por id: el nombre ("No Compra",
      "Tienda online"), cómo se lee el teléfono y el orden (da el color). */
@@ -4328,6 +4691,11 @@
     }
     if (!MS.datos) { return; }
     var l = MS.datos.conversaciones || [];
+    /* SQL 75: la que tiene recordatorio vencido o de hoy sube arriba (el
+       orden entre ellas sigue siendo por lo último que pasó). */
+    var hoyRec = isoDia(new Date());
+    l = l.slice().sort(function (a, b) { return recVencida(b, hoyRec) - recVencida(a, hoyRec); });
+    if (MS.rec) { l = l.filter(function (c) { return c.recordatorio; }); }
     pintarNumerosMensajes();
     var nomNum = MS.numero && NUMS[MS.numero] ? NUMS[MS.numero].nombre : '';
     caja.innerHTML = '<div class="ct-lista">' + (l.length ? l.map(filaMensaje).join('')
@@ -4344,19 +4712,36 @@
     if (!MS.abierto && l.length && !ES_CEL()) { abrirConversacion(l[0].clave, { nombre: l[0].nombre, tel: l[0].tel }); }
   }
 
+  function recVencida(c, hoy) { return c.recordatorio && c.recordatorio.fecha <= hoy ? 1 : 0; }
+  /* El renglón del recordatorio en la fila (SQL 75). */
+  function recLineaMs(c) {
+    if (!c.recordatorio) { return ''; }
+    var ya = c.recordatorio.fecha <= isoDia(new Date());
+    return '<span class="ct-rec' + (ya ? ' ya' : '') + '">' + RELOJ +
+      '<span>' + esc(cuandoRec(c.recordatorio.fecha) + (c.recordatorio.nota ? ' · ' + c.recordatorio.nota : '')) + '</span></span>';
+  }
+
   /* "Todos · No Compra · Tienda online": por cuál de nuestros números
      escribió. Cada número con cuántas conversaciones esperan respuesta (el
      total ya está en el menú, al lado de Mensajes). */
   function pintarNumerosMensajes() {
     var caja = $('msNumeros'), nums = (MS.datos && MS.datos.numeros) || [];
-    if (nums.length < 2) { caja.hidden = true; caja.innerHTML = ''; return; }
+    /* SQL 75: la pastilla de los recordatorios, si hay alguno. */
+    var conRec = ((MS.datos && MS.datos.conversaciones) || []).filter(function (c) { return c.recordatorio; }).length;
+    var recPill = conRec || MS.rec
+      ? '<button type="button" class="chip chip-rec' + (MS.rec ? ' sel' : '') + '" id="msRec" title="Recordatorios" aria-label="Recordatorios">' +
+        RELOJ + '<span class="cuenta">' + conRec + '</span></button>'
+      : '';
+    if (nums.length < 2 && !recPill) { caja.hidden = true; caja.innerHTML = ''; MS.rec = false; return; }
     var cuenta = function (n) { return Number(n) ? '<span class="cuenta">' + Number(n) + '</span>' : ''; };
-    caja.innerHTML = '<button type="button" class="chip' + (!MS.numero ? ' sel' : '') + '" data-num="">Todos</button>' +
+    caja.innerHTML = (nums.length < 2 ? '' : '<button type="button" class="chip' + (!MS.numero ? ' sel' : '') + '" data-num="">Todos</button>' +
       nums.map(function (n) {
         return '<button type="button" class="chip' + (MS.numero === n.id ? ' sel' : '') + '" data-num="' + esc(n.id) + '">' +
           esc(n.nombre) + cuenta(n.sin_contestar) + '</button>';
-      }).join('');
+      }).join('')) + recPill;
     caja.hidden = false;
+    var mr = caja.querySelector('#msRec');
+    if (mr) { mr.onclick = function () { MS.rec = !MS.rec; pintarNumerosMensajes(); pintarMensajes(); }; }
     [].forEach.call(caja.querySelectorAll('[data-num]'), function (b) {
       b.onclick = function () {
         if (MS.numero === b.dataset.num) { return; }
@@ -4381,6 +4766,7 @@
         '<span class="ct-origen">' + origen + '</span>' +
         '<span class="ct-ultimo ms-ult"><span>' + esc(previo) + '</span>' +
           (c.sin_contestar ? '<span class="ms-pend" title="Mensajes sin contestar">' + Number(c.pendientes || 1) + '</span>' : '') + '</span>' +
+        recLineaMs(c) +
       '</span></button>';
   }
 
@@ -4650,9 +5036,10 @@
     var f = fichaContactoHtml(d, c);
     info.innerHTML = '<div class="ms-info-cab"><b>Ficha</b>' +
         '<button type="button" class="ficha-x ms-info-x" aria-label="Cerrar la ficha"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>' +
-      f.contacto + '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(d.historia || []) + '</div>';
+      f.contacto + bloqueRecPersona(d) + '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(d.historia || []) + '</div>';
     info.querySelector('.ms-info-x').onclick = function () { $('vistaMensajes').classList.remove('con-info'); };
     cablearFicha(info, d.persona, f.nom, f.tel);
+    cablearRecPersona(info, d);
   }
   /* Llegó algo con una conversación abierta: se rearma el chat (no la
      ficha), sin perder lo que se estaba escribiendo. */
@@ -4717,13 +5104,67 @@
     $('fichaIn').className = 'ficha-in fc';
     $('fichaIn').innerHTML =
       '<div class="fc-izq"><div class="fc-contacto">' + f.contacto + '</div>' +
+        bloqueRecPersona(d) +
         '<div class="ficha-bloque fc-hist"><h3>Lo que pasó</h3>' + historiaContacto(h) + '</div></div>' +
       '<div class="fc-der">' + chatContacto(d) + '</div>';
     cablearFicha($('fichaIn'), d.persona, f.nom, f.tel);
+    cablearRecPersona($('fichaIn'), d);
     var b = $('chatBloque');
     conectarChat(d.persona.clave, b, function () { refrescarChat(d.persona.clave); });
     bajarChat(b);
     if (!ES_CEL() && b.querySelector('.chat-texto')) { b.querySelector('.chat-texto').focus(); }
+  }
+
+  /* ═══ El recordatorio de una persona (SQL 75, 11/10/2026) ═══════════════
+     Pedido de Mauricio: "en Mensajes abro la ficha y le pongo escribirle en
+     dos días". El mismo bloque de las tarjetas, guardado por el teléfono.
+     Si la base no manda 'recordatorio' (falta el SQL 75), no aparece. */
+  function bloqueRecPersona(d) {
+    if (!d || !('recordatorio' in d)) { return ''; }
+    var rc = d.recordatorio;
+    return '<div class="ficha-bloque fc-rec"><h3>Recordatorio</h3>' +
+      (rc ? '<div class="rec-actual">' + RELOJ + '<span><b>' + esc(cuandoRec(rc.fecha)) + '</b>' +
+              (rc.nota ? ' · ' + esc(rc.nota) : '') + (rc.quien ? ' · ' + esc(rc.quien) : '') + '</span>' +
+              '<button type="button" class="btn btn-sec btn-chico" id="rpQuitar">Quitar</button></div>' : '') +
+      '<input type="text" id="rpNota" maxlength="120" placeholder="Para qué (opcional)" value="' + esc((rc && rc.nota) || '') + '">' +
+      '<div class="rec-chips">' +
+        '<button type="button" class="chip" data-recp="1">Mañana</button>' +
+        '<button type="button" class="chip" data-recp="2">En 2 días</button>' +
+        '<button type="button" class="chip" data-recp="7">En una semana</button>' +
+        '<input type="date" id="rpFecha" aria-label="Otro día" min="' + isoDia(new Date()) + '">' +
+      '</div></div>';
+  }
+  function cablearRecPersona(raiz, d) {
+    if (!raiz || !d || !('recordatorio' in d) || !raiz.querySelector('.fc-rec')) { return; }
+    var clave = d.persona && d.persona.clave;
+    var poner = function (iso) {
+      if (!exigirQuien(function () { poner(iso); })) { return; }
+      var nota = (raiz.querySelector('#rpNota') || { value: '' }).value.trim();
+      base.crmRecordatorio(pinGuardado(), clave, iso, nota, quien)
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          d.recordatorio = iso ? { fecha: iso, nota: nota || null, quien: quien } : null;
+          avisar('ok', iso ? 'Listo: queda para el ' + ddmm(iso) + '.' : 'Recordatorio quitado.');
+          var b = raiz.querySelector('.fc-rec');
+          if (b) { b.outerHTML = bloqueRecPersona(d); cablearRecPersona(raiz, d); }
+          /* La lista y el tablero, al día. */
+          if (vista === 'mensajes') { cargarMensajes(); }
+          if (vista === 'tienda') { cargarTienda(); }
+        })
+        .catch(function (err) {
+          if (err && err.sinSesion) { caducada(); return; }
+          avisar('err', /crm_recordatorio|PGRST202|Could not find/i.test(String(err && err.message))
+            ? 'Para los recordatorios falta correr el SQL 75 en Supabase.'
+            : (err && err.message) || 'No se pudo guardar.');
+        });
+    };
+    [].forEach.call(raiz.querySelectorAll('[data-recp]'), function (b) {
+      b.onclick = function () { poner(enDiasIso(+b.dataset.recp)); };
+    });
+    var rf = raiz.querySelector('#rpFecha');
+    if (rf) { rf.onchange = function () { if (rf.value) { poner(rf.value); } }; }
+    var rq = raiz.querySelector('#rpQuitar');
+    if (rq) { rq.onclick = function () { poner(''); }; }
   }
 
   /* La cabecera de la ficha completa, como la de Kommo: por qué número
@@ -4828,11 +5269,6 @@
      "Quiero ver toda la estructura armada": cada sección que todavía no está
      dice qué va a hacer, qué falta y lo que ya hay. */
   var PRONTO = {
-    agente: { t: 'Agente de IA', sub: 'Un asistente que contesta solo, las 24 horas.',
-      que: 'Contesta solo por WhatsApp las preguntas de siempre (stock, talles, precios, envíos, cambios, locales y horarios) con los datos que ya tenemos, y le pasa la conversación a una persona cuando hace falta o cuando el cliente lo pide.',
-      falta: ['Definir qué puede contestar solo y cuándo pasa a una persona.', 'Armarlo con Claude, con el catálogo, el stock y los locales.',
-              'Probarlo primero entre nosotros, antes de dejarlo con clientes.'],
-      ya: 'El catálogo, el stock de la tienda y de la fábrica y los 14 locales con su horario ya están en el sistema.' },
     bots: { grupo: 'Automatizaciones', t: 'Bots', sub: 'Respuestas y avisos que salen solos.',
       que: 'Reglas simples que se disparan solas: un saludo de bienvenida, una respuesta fuera de horario, el mensaje automático al que casi pagó, una encuesta después de la compra.',
       falta: ['Elegir cuáles sirven de verdad: mejor pocos y buenos.', 'Las plantillas aprobadas que van a usar (las que escriben primero).'],
@@ -4887,6 +5323,7 @@
     if (k === 'esperan') { return esperaRespuesta(t); }
     if (k === 'nuevas') { var d = diaDe(t.creada); return d === isoDia(new Date()) || d === enDiasIso(-1); }
     if (k === 'link') { return t.columna === 'Le pasamos el link'; }
+    if (k === 'rec') { return t.recordatorio && t.recordatorio.fecha <= isoDia(new Date()); }
     return true;
   }
   /* En cada columna: arriba la que más hace que espera respuesta; después,
@@ -4912,6 +5349,9 @@
     var nh = todas.filter(function (t) { return diaDe(t.creada) === hoy; }).length;
     var na = todas.filter(function (t) { return diaDe(t.creada) === ayer; }).length;
     var conLink = todas.filter(function (t) { return t.columna === 'Le pasamos el link'; }).length;
+    /* SQL 75: los recordatorios vencidos o de hoy de estas personas. */
+    var conRec75 = todas.some(function (t) { return 'recordatorio' in t; });
+    var recHoy = todas.filter(function (t) { return t.recordatorio && t.recordatorio.fecha <= hoy; }).length;
     var pct = Number(r.consultas) ? Math.round(100 * Number(r.compraron) / Number(r.consultas)) : 0;
     /* Los números de arriba (10/10/2026), como en No Compra: cada uno
        filtra el tablero y "Compraron" lleva a su columna. */
@@ -4923,6 +5363,7 @@
         'de vdh.com.ar y cuando compra en la tienda online con ese teléfono. Siete días sin hablar, pasan a No compró.</p>' +
       '<div class="cifras ti-cifras">' +
         kpiHtml('esperan', 'Esperan respuesta', esperan, '', esperan ? 'mal' : '', TI.kpi === 'esperan', 'mal') +
+        (conRec75 ? kpiHtml('rec', 'Para hoy', recHoy, '', recHoy ? 'mal' : '', TI.kpi === 'rec', 'ok') : '') +
         kpiHtml('nuevas', 'Nuevas hoy / ayer', nh + ' / ' + na, '', '', TI.kpi === 'nuevas', 'azul') +
         kpiHtml('link', 'Con el link', conLink, '', '', TI.kpi === 'link', 'ojo') +
         kpiHtml('compraron', 'Compraron · 30 días', miles(r.compraron),
@@ -5018,6 +5459,254 @@
         volver();
         avisar('err', (err && err.message) || 'No se pudo mover.');
       });
+  }
+
+  /* ═══ Agente de IA (SQL 77, 11/10/2026) ══════════════════════════════════
+     Fase 1, los cimientos: todavía NO contesta. Acá se prende y se apaga,
+     se marca cuándo atiende (cada día: todo el día, fuera del horario del
+     equipo o no atiende; y las fechas especiales, que marca Mauricio), lo
+     que sabe (con versiones), los topes de venta —que valida la base, no la
+     pantalla— y a quién le pasa la charla. */
+  var AG = { datos: null, error: '', w: null };
+  var DIAS_AG = [['lun', 'Lunes'], ['mar', 'Martes'], ['mie', 'Miércoles'], ['jue', 'Jueves'],
+                 ['vie', 'Viernes'], ['sab', 'Sábado'], ['dom', 'Domingo']];
+  var MODOS_DIA_AG = [['todo', 'Todo el día'], ['fuera', 'Fuera de horario'], ['no', 'No atiende']];
+  var TOPES_AG = ['cupon_pct', 'cupon_horas', 'cupon_con_sale', 'envio_gratis_desde', 'envio_piso', 'segunda_pct', 'telegram_min'];
+  var DERIVA_AG = [['derivar_ventas', 'Ventas'], ['derivar_posventa', 'Posventa y cambios'], ['derivar_logistica', 'Pedidos y logística'],
+                   ['derivar_nocompra', 'No Compra'], ['derivar_carritos', 'Carritos abandonados']];
+  var QUE_HACE_AG = 'Atiende y vende por el WhatsApp de la tienda cuando el equipo no está: contesta stock, talles, precios, ' +
+    'envíos, cambios, locales y horarios con los datos del sistema, propone combinaciones con las promos activas y le pasa ' +
+    'la charla a una persona cuando hace falta. Nunca inventa un dato.';
+
+  function jsonAg(t, def) { try { var x = JSON.parse(t); return x == null ? def : x; } catch (e) { return def; } }
+  /* Lo que se está editando, aparte de lo guardado: repintar no lo pierde. */
+  function trabajoAgente(d) {
+    var r = d.reglas || {};
+    var w = { semana: jsonAg(r.semana, {}), fechas: jsonAg(r.fechas, []), texto: (d.conocimiento && d.conocimiento.texto) || '' };
+    DIAS_AG.forEach(function (x) { if (!w.semana[x[0]]) { w.semana[x[0]] = { modo: 'no', de: '09:00', a: '17:00' }; } });
+    TOPES_AG.concat(DERIVA_AG.map(function (x) { return x[0]; })).forEach(function (k) { w[k] = r[k] == null ? '' : String(r[k]); });
+    return w;
+  }
+
+  function cargarAgente() {
+    if (!AG.datos && !AG.error) { $('vistaAgente').innerHTML = '<div class="skel"></div><div class="skel"></div>'; }
+    base.agenteConfig(pinGuardado())
+      .then(function (d) { AG.datos = d; AG.error = ''; AG.w = trabajoAgente(d); pintarAgente(); })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        AG.error = /agente_config|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red';
+        pintarAgente();
+      });
+  }
+
+  /* Ahora mismo, ¿a quién le toca? Lo calcula la base, con la hora de acá. */
+  function ahoraAgente(a) {
+    a = a || {};
+    var esp = 'Fecha especial' + (a.nota ? ' (' + a.nota + ')' : '');
+    if (a.porque === 'apagado') { return ['off', 'Apagado', 'No atiende a nadie hasta que lo prendas.']; }
+    if (a.porque === 'equipo') { return ['equipo', 'Ahora atiende el equipo', 'El agente entra a las ' + a.hasta + '.']; }
+    if (a.porque === 'dia_no') { return ['equipo', 'Hoy el agente no atiende', 'Así está marcado en el horario.']; }
+    if (a.porque === 'fecha' && !a.atiende) { return ['equipo', 'Hoy el agente no atiende', esp + '.']; }
+    if (a.porque === 'fecha') { return ['on', 'Ahora le toca al agente', esp + ': todo el día.']; }
+    if (a.porque === 'dia_todo') { return ['on', 'Ahora le toca al agente', 'Hoy atiende todo el día.']; }
+    return ['on', 'Ahora le toca al agente', 'Fuera del horario del equipo (' + (a.de || '') + ' a ' + (a.a || '') + ').'];
+  }
+
+  function fasesAgente(hay) {
+    var f = [
+      [hay, 'Los cimientos', 'Esta pantalla: cuándo atiende, lo que sabe, los topes y a quién le pasa la charla.'],
+      [false, 'El cerebro, en prueba', 'Redacta las respuestas con el catálogo, el stock, las promos y los locales, y ustedes las aprueban desde Mensajes antes de que salgan. Falta: la clave de Claude, pegada en los Secrets de Supabase.'],
+      [false, 'El vendedor', 'Cupón de cierre, envío gratis y segunda prenda, con los topes de acá. Falta: la app de Tienda Nube para los cupones.'],
+      [false, 'Suelto fuera de horario', 'Contesta solo en los horarios marcados, con la revisión (bien o mal, y la corrección) y sus números en Estadísticas.']
+    ];
+    return '<div class="ficha-bloque ag-fases ag-ancho"><h3>Cómo sigue</h3><ol>' + f.map(function (x, i) {
+      return '<li' + (x[0] ? ' class="hecha"' : '') + '><b>' + (i + 1) + '. ' + esc(x[1]) + (x[0] ? ' · listo' : '') + '</b>' +
+        '<span>' + esc(x[2]) + '</span></li>';
+    }).join('') + '</ol></div>';
+  }
+
+  function fechaLargaAg(iso) {
+    var p = String(iso).split('-');
+    var t = new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+
+  function pintarAgente() {
+    var v = $('vistaAgente');
+    var prendido = !!(AG.datos && AG.datos.reglas && AG.datos.reglas.prendido === 'si');
+    var cab = '<div class="ag-cab"><div><h2>Agente de IA <span class="pill pill-warn">Fase 1</span></h2>' +
+      '<p>' + esc(QUE_HACE_AG) + '</p></div>' +
+      (AG.datos && !AG.error ? '<button type="button" class="llave" role="switch" id="agPrendido" aria-checked="' + prendido + '">' +
+        '<i aria-hidden="true"></i><span>' + (prendido ? 'Prendido' : 'Apagado') + '</span></button>' : '') + '</div>';
+    if (AG.error) {
+      v.innerHTML = '<div class="ag">' + cab +
+        '<div class="vacio-vista"><b>' + (AG.error === 'falta' ? 'Falta un paso' : 'No se pudo traer el agente') + '</b>' +
+          (AG.error === 'falta' ? 'Para configurar el agente hay que correr el SQL 77 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>' +
+        fasesAgente(false) + '</div>';
+      return;
+    }
+    if (!AG.datos) { return; }
+    var d = AG.datos, w = AG.w, ah = ahoraAgente(d.ahora);
+    var horario = DIAS_AG.map(function (x) {
+      var dia = w.semana[x[0]];
+      return '<div class="ag-dia" data-dia="' + x[0] + '"><b>' + x[1] + '</b><div class="ag-modos">' + MODOS_DIA_AG.map(function (m) {
+          return '<button type="button" class="chip' + (dia.modo === m[0] ? ' sel' : '') + '" data-dia-modo="' + x[0] + ':' + m[0] + '">' + m[1] + '</button>';
+        }).join('') + '</div>' +
+        '<div class="ag-horas"' + (dia.modo === 'fuera' ? '' : ' hidden') + '>El equipo atiende de <span class="ag-par">' +
+          '<input type="time" data-dia-hora="' + x[0] + ':de" value="' + esc(dia.de) + '" aria-label="' + x[1] + ': entra el equipo"></span>' +
+          '<span class="ag-par">a <input type="time" data-dia-hora="' + x[0] + ':a" value="' + esc(dia.a) + '" aria-label="' + x[1] + ': sale el equipo"></span></div></div>';
+    }).join('');
+    var fechas = w.fechas.length ? w.fechas.map(function (f) {
+      return '<div class="ag-fecha"><b>' + esc(fechaLargaAg(f.fecha)) + '</b>' +
+        '<span class="pill ' + (f.modo === 'todo' ? 'pill-ok' : 'pill-warn') + '">' + (f.modo === 'todo' ? 'Atiende todo el día' : 'No atiende') + '</span>' +
+        (f.nota ? '<span class="ag-fecha-nota">' + esc(f.nota) + '</span>' : '') +
+        '<button type="button" class="btn btn-sec btn-chico" data-fecha-x="' + esc(f.fecha) + '">Quitar</button></div>';
+    }).join('') : '<p class="ag-nota">Ninguna todavía. Sumá los feriados: ese día manda lo que pongas acá.</p>';
+    var num = function (k, cls) {
+      return '<input type="text" inputmode="numeric" data-k="' + k + '" value="' + esc(w[k]) + '"' + (cls ? ' class="' + cls + '"' : '') + '>';
+    };
+    v.innerHTML = '<div class="ag">' + cab +
+      '<div class="ag-estado ' + ah[0] + '"><b>' + esc(ah[1]) + '</b><span>' + esc(ah[2]) + '</span>' +
+        '<span class="ag-fase1">Todavía no le contesta a nadie: es la fase 1. Desde la fase 2, en estos horarios va a redactar las respuestas para que ustedes las aprueben.</span></div>' +
+      '<div class="ag-grid">' +
+        '<div class="ficha-bloque ag-horario"><h3>Cuándo atiende</h3>' + horario +
+          '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agSemanaOk">Guardar el horario</button></div>' +
+          '<h4>Fechas especiales</h4><div class="ag-fechas">' + fechas + '</div>' +
+          '<div class="ag-fecha-nueva"><input type="date" id="agFecha" min="' + isoDia(new Date()) + '" aria-label="Fecha">' +
+            '<select id="agFechaModo" aria-label="Qué hace ese día"><option value="todo">Atiende todo el día</option><option value="no">No atiende</option></select>' +
+            '<input type="text" id="agFechaNota" maxlength="60" placeholder="Nota (ej.: feriado)" aria-label="Nota">' +
+            '<button type="button" class="btn btn-sec btn-chico" id="agFechaOk">Agregar</button></div></div>' +
+        '<div class="ag-col">' +
+          '<div class="ficha-bloque"><h3>Cómo contesta</h3><div class="ag-modo-op">' +
+            '<div class="ag-op sel"><b>En prueba</b><span>Redacta la respuesta y una persona la aprueba antes de que salga.</span></div>' +
+            '<div class="ag-op no" aria-disabled="true"><b>Automático</b><span>Contesta solo. Se habilita en la fase 4, cuando haya pasado las pruebas.</span></div>' +
+          '</div><p class="ag-nota">Atiende el WhatsApp de ' + esc(d.numero || 'la tienda') + '. El de No Compra, por ahora no.</p></div>' +
+          '<div class="ficha-bloque ag-topes"><h3>Herramientas de venta</h3>' +
+            '<div class="ag-tope">Cupón de cierre: <span class="ag-par">' + num('cupon_pct') + ' %</span> que vence en <span class="ag-par">' + num('cupon_horas') + ' horas.</span></div>' +
+            '<div class="ag-tope">¿Se suma al SALE y a la transferencia? ' +
+              '<button type="button" class="chip' + (w.cupon_con_sale === 'si' ? ' sel' : '') + '" data-sale="si">Sí</button>' +
+              '<button type="button" class="chip' + (w.cupon_con_sale === 'no' ? ' sel' : '') + '" data-sale="no">No</button></div>' +
+            '<div class="ag-tope">La tienda da envío gratis desde <span class="ag-par">$ ' + num('envio_gratis_desde', 'plata') + '.</span></div>' +
+            '<div class="ag-tope">El agente lo puede regalar con un carrito desde <span class="ag-par">$ ' + num('envio_piso', 'plata') + '.</span> Por debajo, consulta.</div>' +
+            '<div class="ag-tope">Segunda prenda: <span class="ag-par">' + num('segunda_pct') + ' %</span> en la de menor valor.</div>' +
+            '<div class="ag-tope">Si consulta por Telegram y nadie contesta en <span class="ag-par">' + num('telegram_min') + ' minutos,</span> no da la excepción.</div>' +
+            '<p class="ag-nota">Estos topes los controla la base: aunque un cliente lo quiera convencer, el agente no se puede pasar.</p>' +
+            '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agTopesOk">Guardar los topes</button></div></div>' +
+          '<div class="ficha-bloque"><h3>A quién le pasa la charla</h3><div class="ag-deriva">' +
+            DERIVA_AG.map(function (x) {
+              return '<span>' + x[1] + '</span><input type="text" maxlength="40" data-k="' + x[0] + '" value="' + esc(w[x[0]]) + '" aria-label="' + x[1] + '">';
+            }).join('') +
+            '</div><div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agDerivaOk">Guardar</button></div></div>' +
+        '</div>' +
+        '<div class="ficha-bloque ag-saber ag-ancho"><h3>Lo que sabe</h3>' +
+          '<p class="ag-nota">Envíos, pagos, cambios, talles, telas, stock y promos. Cada parte arranca con "## ". Lo que no esté acá ni en el sistema, no lo inventa: le pasa la charla a una persona.' +
+            (d.conocimiento ? ' Actualizado el ' + esc(ddmm(d.conocimiento.actualizado)) + ' · versión ' + Number(d.versiones || 1) + '.' : '') + '</p>' +
+          '<textarea id="agTexto" aria-label="Lo que sabe el agente">' + esc(w.texto) + '</textarea>' +
+          '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agTextoOk">Guardar lo que sabe</button></div></div>' +
+        fasesAgente(true) +
+      '</div></div>';
+    cablearAgente(v);
+  }
+
+  /* Guarda reglas y repinta. Si la base rechaza una, marca ese campo. */
+  function guardarReglasAgente(obj, boton, listo) {
+    if (boton) { boton.disabled = true; }
+    base.agenteReglasGuardar(pinGuardado(), obj)
+      .then(function (r) {
+        if (boton) { boton.disabled = false; }
+        if (!r || !r.ok) {
+          avisar('err', (r && r.porque) || 'No se pudo guardar.');
+          var c = r && r.clave ? $('vistaAgente').querySelector('[data-k="' + r.clave + '"]') : null;
+          if (c) { c.classList.add('mal'); c.focus(); }
+          return;
+        }
+        AG.datos.reglas = r.reglas;
+        AG.datos.ahora = r.ahora;
+        Object.keys(obj).forEach(function (k) {
+          if (k === 'semana') { AG.w.semana = jsonAg(r.reglas.semana, AG.w.semana); }
+          else if (k === 'fechas') { AG.w.fechas = jsonAg(r.reglas.fechas, AG.w.fechas); }
+          else { AG.w[k] = r.reglas[k] == null ? '' : String(r.reglas[k]); }
+        });
+        avisar('ok', listo || 'Guardado.');
+        pintarAgente();
+      })
+      .catch(function (err) {
+        if (boton) { boton.disabled = false; }
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', /agente_reglas|PGRST202|Could not find/i.test(String(err && err.message))
+          ? 'Para guardar falta correr el SQL 77 en Supabase.' : (err && err.message) || 'No se pudo guardar.');
+      });
+  }
+
+  function cablearAgente(v) {
+    $('agPrendido').onclick = function () {
+      var nuevo = AG.datos.reglas.prendido === 'si' ? 'no' : 'si';
+      guardarReglasAgente({ prendido: nuevo }, this,
+        nuevo === 'si' ? 'Prendido. Igual todavía no contesta: es la fase 1.' : 'Apagado: no atiende a nadie.');
+    };
+    [].forEach.call(v.querySelectorAll('[data-dia-modo]'), function (b) {
+      b.onclick = function () {
+        var p = b.dataset.diaModo.split(':'), fila = b.closest('.ag-dia');
+        AG.w.semana[p[0]].modo = p[1];
+        [].forEach.call(fila.querySelectorAll('[data-dia-modo]'), function (o) { o.classList.toggle('sel', o === b); });
+        fila.querySelector('.ag-horas').hidden = p[1] !== 'fuera';
+      };
+    });
+    [].forEach.call(v.querySelectorAll('[data-dia-hora]'), function (inp) {
+      inp.onchange = function () { var p = inp.dataset.diaHora.split(':'); AG.w.semana[p[0]][p[1]] = inp.value; };
+    });
+    $('agSemanaOk').onclick = function () { guardarReglasAgente({ semana: AG.w.semana }, this, 'Horario guardado.'); };
+    $('agFechaOk').onclick = function () {
+      var f = $('agFecha').value;
+      if (!f) { avisar('err', 'Elegí la fecha.'); return; }
+      var l = AG.w.fechas.filter(function (x) { return x.fecha !== f; })
+        .concat([{ fecha: f, modo: $('agFechaModo').value, nota: $('agFechaNota').value.trim() || null }]);
+      guardarReglasAgente({ fechas: l }, this, 'Fecha agregada.');
+    };
+    [].forEach.call(v.querySelectorAll('[data-fecha-x]'), function (b) {
+      b.onclick = function () {
+        guardarReglasAgente({ fechas: AG.w.fechas.filter(function (x) { return x.fecha !== b.dataset.fechaX; }) }, b, 'Fecha quitada.');
+      };
+    });
+    [].forEach.call(v.querySelectorAll('[data-k]'), function (inp) {
+      inp.oninput = function () { inp.classList.remove('mal'); AG.w[inp.dataset.k] = inp.value; };
+    });
+    [].forEach.call(v.querySelectorAll('[data-sale]'), function (b) {
+      b.onclick = function () {
+        AG.w.cupon_con_sale = b.dataset.sale;
+        [].forEach.call(v.querySelectorAll('[data-sale]'), function (o) { o.classList.toggle('sel', o === b); });
+      };
+    });
+    $('agTopesOk').onclick = function () {
+      var o = {};
+      TOPES_AG.forEach(function (k) { o[k] = k === 'cupon_con_sale' ? AG.w[k] : String(AG.w[k]).replace(/[^0-9]/g, ''); });
+      guardarReglasAgente(o, this, 'Topes guardados.');
+    };
+    $('agDerivaOk').onclick = function () {
+      var o = {};
+      DERIVA_AG.forEach(function (x) { o[x[0]] = String(AG.w[x[0]] || '').trim(); });
+      guardarReglasAgente(o, this, 'Guardado.');
+    };
+    $('agTexto').oninput = function () { AG.w.texto = this.value; };
+    $('agTextoOk').onclick = function () {
+      var b = this;
+      b.disabled = true;
+      base.agenteTextoGuardar(pinGuardado(), AG.w.texto)
+        .then(function (r) {
+          b.disabled = false;
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+          if (r.igual) { avisar('ok', 'No había cambios.'); return; }
+          AG.datos.conocimiento = { texto: AG.w.texto, actualizado: isoDia(new Date()) };
+          AG.datos.versiones = Number(AG.datos.versiones || 0) + 1;
+          avisar('ok', 'Guardado.');
+          pintarAgente();
+        })
+        .catch(function (err) {
+          b.disabled = false;
+          if (err && err.sinSesion) { caducada(); return; }
+          avisar('err', (err && err.message) || 'No se pudo guardar.');
+        });
+    };
   }
 
   function pintarPronto(v) {

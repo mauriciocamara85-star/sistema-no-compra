@@ -4745,3 +4745,957 @@ select cron.schedule('papelera-registros', '30 7 * * *',
   $c$delete from registros_papelera where borrado < now() - interval '30 days'$c$);
 
 select 'listo: borrar registros, con papelera de 30 días' as "SQL 74";
+
+
+-- ─────────────────────────── PARTE 75 (11/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · RECORDATORIOS POR PERSONA (PARA LOS QUE ESCRIBEN POR WHATSAPP)
+--
+-- Correr en el editor SQL de Supabase (después del 74).
+--
+-- Pedido de Mauricio (11/10/2026): "en Mensajes abro la ficha y le agrego
+-- una tarea de escribirle en dos días; que después aparezca en
+-- Recordatorio". Hasta hoy el recordatorio vivía sólo en las tarjetas de
+-- No Compra y Carritos: alguien que sólo escribió por WhatsApp no tenía
+-- dónde colgarlo.
+--   · crm_recordatorios: uno por persona (su teléfono), con fecha, nota y
+--     quién lo puso. Uno solo: el nuevo pisa al anterior, como en las
+--     tarjetas.
+--   · crm_recordatorio_poner: con el PIN; fecha vacía lo quita. La fecha
+--     se compara con el día de ARGENTINA, no con el de la base (UTC).
+--   · La ficha (crm_contacto), la lista de Mensajes (crm_mensajes) y el
+--     tablero de la tienda (crm_tienda) lo devuelven.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists crm_recordatorios (
+  clave  text primary key check (clave ~ '^[0-9]{10}$'),
+  fecha  date not null,
+  nota   text,
+  quien  text,
+  puesto timestamptz not null default now()
+);
+alter table crm_recordatorios enable row level security;
+revoke all on crm_recordatorios from anon, authenticated;
+
+create or replace function crm_recordatorio_poner(p_pin text, p_clave text, p_fecha date default null,
+                                                  p_nota text default null, p_quien text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  k    text := club_tel10(p_clave);
+  hoy  date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  nota text := nullif(trim(coalesce(p_nota, '')), '');
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if k is null then
+    return jsonb_build_object('ok', false, 'porque', 'Ese teléfono no alcanza para un recordatorio.');
+  end if;
+  if p_fecha is null then
+    delete from crm_recordatorios where clave = k;
+    return jsonb_build_object('ok', true, 'quitado', true);
+  end if;
+  if p_fecha < hoy then
+    return jsonb_build_object('ok', false, 'porque', 'Esa fecha ya pasó.');
+  end if;
+  if p_fecha > hoy + 730 then
+    return jsonb_build_object('ok', false, 'porque', 'Muy lejos: hasta dos años.');
+  end if;
+  if length(coalesce(nota, '')) > 120 then
+    return jsonb_build_object('ok', false, 'porque', 'La nota es muy larga: hasta 120 letras.');
+  end if;
+  insert into crm_recordatorios (clave, fecha, nota, quien)
+  values (k, p_fecha, nota, nullif(trim(coalesce(p_quien, '')), ''))
+  on conflict (clave) do update
+    set fecha = excluded.fecha, nota = excluded.nota, quien = excluded.quien, puesto = now();
+  return jsonb_build_object('ok', true, 'fecha', p_fecha);
+end;
+$$;
+revoke execute on function crm_recordatorio_poner(text, text, date, text, text) from public;
+grant execute on function crm_recordatorio_poner(text, text, date, text, text) to anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.crm_contacto(p_pin text, p_clave text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  /* Con prefijo: "tel" y "mail" son también columnas de lo que se consulta,
+     y PL/pgSQL no sabría a cuál le hablan. */
+  v_filas jsonb; v_tel text; v_mail text; v_nombre text; v_acepta boolean; v_etq jsonb;
+  socio_id bigint; socio jsonb; historia jsonb;
+  v_mensajes jsonb; v_ventana timestamptz; v_numeros jsonb; v_consulta jsonb; v_wa_tel text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if coalesce(trim(p_clave), '') = '' then return null; end if;
+
+  select coalesce(jsonb_agg(to_jsonb(b) order by b.cuando desc), '[]'::jsonb) into v_filas
+    from crm_contactos_base() b where b.clave = p_clave;
+  if jsonb_array_length(v_filas) = 0 then return null; end if;
+
+  select max(x.e->>'tel'),
+         (array_agg(x.e->>'mail' order by x.i) filter (where x.e->>'mail' is not null))[1],
+         (array_agg(x.e->>'nombre' order by (x.e->>'fuente' = 'whatsapp'), x.i) filter (where x.e->>'nombre' is not null))[1],
+         bool_or((x.e->>'acepta')::boolean)
+    into v_tel, v_mail, v_nombre, v_acepta
+    from jsonb_array_elements(v_filas) with ordinality as x(e, i);
+  select coalesce(to_jsonb(array_agg(distinct t order by t)), '[]'::jsonb) into v_etq
+    from jsonb_array_elements(v_filas) as x(e), jsonb_array_elements_text(x.e->'etiquetas') as t;
+
+  select c.id into socio_id from club_clientes c
+   where c.baja is null
+     and ((v_tel is not null and club_tel10(c.telefono) = v_tel) or (v_mail is not null and lower(trim(c.mail)) = v_mail))
+   order by (v_tel is not null and club_tel10(c.telefono) = v_tel) desc, c.creado
+   limit 1;
+  if socio_id is not null then
+    select jsonb_build_object('nombre', v.nombre, 'nivel', v.nivel, 'puntos', v.puntos, 'compras', v.compras,
+                              'gastado', v.gastado, 'ultima_compra', v.ultima_compra, 'desde', v.creado, 'local', v.local_alta)
+      into socio from v_club_clientes v where v.id = socio_id;
+  end if;
+
+  select coalesce(jsonb_agg(h order by (h->>'cuando')::timestamptz desc), '[]'::jsonb) into historia
+    from (
+      select jsonb_build_object('fuente', x.e->>'fuente', 'ref', (x.e->>'ref')::bigint, 'cuando', x.e->'cuando',
+                                'datos', x.e->'datos') as h
+        from jsonb_array_elements(v_filas) as x(e)
+       where x.e->>'fuente' <> 'whatsapp'
+      union all
+      select jsonb_build_object('fuente', 'nota', 'ref', ev.ref, 'cuando', ev.cuando,
+                                'datos', jsonb_build_object('de', ev.fuente, 'quien', ev.quien, 'texto', ev.detalle))
+        from crm_eventos ev
+       where ev.tipo = 'nota'
+         and exists (select 1 from jsonb_array_elements(v_filas) as x(e)
+                      where x.e->>'fuente' = ev.fuente and (x.e->>'ref')::bigint = ev.ref)
+    ) t;
+
+  /* La conversación de WhatsApp (las últimas 200, en orden) y hasta cuándo
+     se le puede contestar gratis: 24 h desde que escribió. */
+  if v_tel is not null then
+    select coalesce(jsonb_agg(jsonb_build_object('id', w.id, 'sentido', w.sentido, 'desde', w.desde, 'tipo', w.tipo,
+                                                 'texto', w.texto, 'estado', w.estado, 'cuando', w.cuando, 'quien', w.quien,
+                                                 'error', w.error, 'numero_id', w.numero_id, 'historial', w.historial)
+                              order by w.cuando, w.id), '[]'::jsonb)
+      into v_mensajes
+      from (select * from wa_mensajes m where club_tel10(m.tel) = v_tel order by m.cuando desc, m.id desc limit 200) w;
+    select max(m.cuando) + interval '24 hours' into v_ventana
+      from wa_mensajes m where club_tel10(m.tel) = v_tel and m.sentido = 'entra';
+    /* SQL 71: el número como lo da WhatsApp (con el país): es el bueno para
+       mostrar y para wa.me, también si es del exterior. */
+    select m.tel into v_wa_tel
+      from wa_mensajes m where club_tel10(m.tel) = v_tel
+     order by m.cuando desc, m.id desc
+     limit 1;
+    select jsonb_build_object('id', c.id, 'columna', c.columna, 'creada', c.creada, 'cerrada', c.cerrada,
+                              'sola', c.sola, 'pedido', c.pedido)
+      into v_consulta
+      from crm_consultas c where c.clave = v_tel
+     order by (c.cerrada is null) desc, c.creada desc
+     limit 1;
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', n.numero_id, 'nombre', n.nombre, 'telefono', n.telefono, 'tablero', n.tablero)
+                            order by n.orden), '[]'::jsonb)
+    into v_numeros from wa_numeros n;
+  return jsonb_build_object(
+    'persona', jsonb_build_object('clave', p_clave, 'nombre', v_nombre, 'tel', v_tel, 'mail', v_mail,
+                                  'acepta', v_acepta, 'etiquetas', v_etq, 'wa_tel', v_wa_tel),
+    'socio', socio, 'historia', historia,
+    'mensajes', coalesce(v_mensajes, '[]'::jsonb), 'ventana', v_ventana,
+    'numeros', v_numeros, 'consulta', v_consulta,
+    /* SQL 75: su recordatorio, para la ficha. */
+    'recordatorio', (select jsonb_build_object('fecha', rc.fecha, 'nota', rc.nota, 'quien', rc.quien)
+                       from crm_recordatorios rc where rc.clave = p_clave));
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.crm_mensajes(p_pin text, p_buscar text DEFAULT NULL::text, p_limite integer DEFAULT 200, p_numero text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  q  text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
+  qd text := nullif(regexp_replace(coalesce(p_buscar, ''), '[^0-9]', '', 'g'), '');
+  v_num text := nullif(trim(coalesce(p_numero, '')), '');
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  with w as (select club_tel10(m.tel) as clave, m.* from wa_mensajes m),
+  ult as (
+    select distinct on (w.clave) w.clave, w.id, w.tel, w.numero_id, w.sentido, w.desde, w.tipo, w.texto, w.estado, w.cuando, w.historial
+      from w order by w.clave, w.cuando desc, w.id desc
+  ),
+  conv as (
+    select w.clave, count(*) as n,
+           (array_agg(nullif(trim(w.perfil), '') order by w.cuando desc) filter (where nullif(trim(w.perfil), '') is not null))[1] as perfil,
+           max(w.cuando) filter (where w.sentido = 'sale') as ultima_sale,
+           max(w.cuando) filter (where w.sentido = 'entra') as ultima_entra
+      from w group by w.clave
+  ),
+  /* Por cuáles de nuestros números habló, el último primero. */
+  nums as (
+    select x.clave, array_agg(x.numero_id order by x.ult desc) as numeros
+      from (select w.clave, w.numero_id, max(w.cuando) as ult from w group by w.clave, w.numero_id) x
+     group by x.clave
+  ),
+  pend as (
+    select w.clave, count(*) as pendientes
+      from w join conv c on c.clave = w.clave
+     where w.sentido = 'entra' and not w.historial and w.tipo <> 'reaction'
+       and w.cuando > coalesce(c.ultima_sale, '-infinity'::timestamptz)
+     group by w.clave
+  ),
+  nm as (
+    select b.clave,
+           (array_agg(b.nombre order by b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           array_agg(distinct b.fuente) as fuentes, max(b.nivel) as nivel
+      from crm_contactos_base() b
+     where b.fuente <> 'whatsapp' and b.clave in (select conv.clave from conv)
+     group by b.clave
+  ),
+  x as (
+    select c.clave, u.tel, coalesce(nm.nombre, wa_agenda_nombre(c.clave), c.perfil) as nombre, c.perfil,
+           coalesce(nm.fuentes, '{}'::text[]) as fuentes, nm.nivel, c.n,
+           coalesce(p.pendientes, 0) as pendientes, (coalesce(p.pendientes, 0) > 0) as sin_contestar,
+           u.cuando as ultima, c.ultima_entra, u.numero_id, ns.numeros,
+           jsonb_build_object('texto', u.texto, 'tipo', u.tipo, 'sentido', u.sentido, 'desde', u.desde, 'estado', u.estado) as ultimo
+      from conv c
+      join ult u on u.clave = c.clave
+      join nums ns on ns.clave = c.clave
+      left join pend p on p.clave = c.clave
+      left join nm on nm.clave = c.clave
+  ),
+  f as (
+    select * from x
+     where (v_num is null or v_num = any(x.numeros))
+       and (q is null
+            or lower(coalesce(x.nombre, '')) like '%' || q || '%'
+            or lower(coalesce(x.perfil, '')) like '%' || q || '%'
+            or (qd is not null and length(qd) >= 3 and x.tel like '%' || qd || '%')
+            or exists (select 1 from w where w.clave = x.clave and lower(coalesce(w.texto, '')) like '%' || q || '%'))
+  )
+  select jsonb_build_object(
+           'cuentas', jsonb_build_object('todas', (select count(*) from x),
+                                         'sin_contestar', (select count(*) from x where x.sin_contestar)),
+           'numeros', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'id', nu.numero_id, 'nombre', nu.nombre, 'telefono', nu.telefono, 'tablero', nu.tablero,
+                      'todas', (select count(*) from x where nu.numero_id = any(x.numeros)),
+                      'sin_contestar', (select count(*) from x where x.sin_contestar and x.numero_id = nu.numero_id))
+                    order by nu.orden)
+               from wa_numeros nu), '[]'::jsonb),
+           'ultimo_id', (select max(m.id) from wa_mensajes m),
+           'conversaciones', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'clave', y.clave, 'tel', y.tel, 'nombre', y.nombre, 'perfil', y.perfil,
+                      'fuentes', to_jsonb(y.fuentes), 'nivel', y.nivel, 'n', y.n, 'pendientes', y.pendientes,
+                      'sin_contestar', y.sin_contestar, 'ultima', y.ultima, 'ultima_entra', y.ultima_entra,
+                      'numero', y.numero_id, 'numeros', to_jsonb(y.numeros),
+                      /* SQL 75: el recordatorio, para marcar y subir la fila. */
+                      'recordatorio', (select jsonb_build_object('fecha', rc.fecha, 'nota', rc.nota)
+                                         from crm_recordatorios rc where rc.clave = y.clave),
+                      'ultimo', y.ultimo)
+                    order by y.ultima desc)
+               from (select * from f order by f.ultima desc limit greatest(coalesce(p_limite, 200), 1)) y), '[]'::jsonb))
+    into salida;
+  return salida;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.crm_tienda(p_pin text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  update crm_consultas c
+     set columna = 'Compró', cerrada = x.cuando, movida = now(), sola = true,
+         pedido = jsonb_build_object('numero', x.numero, 'total', x.total, 'cuando', x.cuando)
+    from (select c2.id, o.numero, o.total, o.cuando
+            from crm_consultas c2
+            cross join lateral (
+              select t.numero, t.total, coalesce(t.pagado, t.creado) as cuando
+                from tienda_pedidos t
+               where club_tel10(t.telefono) = c2.clave
+                 and t.pago = 'paid' and coalesce(t.estado, '') <> 'cancelled'
+                 and coalesce(t.pagado, t.creado) between c2.creada - interval '1 hour' and c2.creada + interval '30 days'
+               order by coalesce(t.pagado, t.creado)
+               limit 1) o
+           where c2.columna <> 'Compró' and c2.creada > now() - interval '45 days') x
+   where x.id = c.id;
+
+  update crm_consultas c
+     set columna = 'No compró', cerrada = coalesce(u.ultima, c.creada), movida = now(), sola = true
+    from (select c2.id, (select max(w.cuando) from wa_mensajes w
+                          where club_tel10(w.tel) = c2.clave and w.numero_id = c2.numero_id) as ultima
+            from crm_consultas c2 where c2.cerrada is null) u
+   where u.id = c.id and coalesce(u.ultima, c.creada) < now() - interval '7 days';
+
+  with k as (
+    select c.* from crm_consultas c
+     where c.cerrada is null or c.cerrada > now() - interval '30 days'
+  ),
+  w as (
+    select k.id as kid, k.creada, m.*
+      from k join wa_mensajes m on club_tel10(m.tel) = k.clave and m.numero_id = k.numero_id
+  ),
+  ult as (
+    select distinct on (w.kid) w.kid, w.sentido, w.desde, w.tipo, w.texto, w.estado, w.cuando, w.quien
+      from w order by w.kid, w.cuando desc, w.id desc
+  ),
+  cuenta as (
+    select w.kid, count(*) filter (where w.cuando >= w.creada) as n,
+           max(w.cuando) filter (where w.sentido = 'sale') as ultima_sale,
+           (array_agg(nullif(trim(w.perfil), '') order by w.cuando desc) filter (where nullif(trim(w.perfil), '') is not null))[1] as perfil
+      from w group by w.kid
+  ),
+  espera as (
+    select w.kid, min(w.cuando) as desde
+      from w join cuenta cu on cu.kid = w.kid
+     where w.sentido = 'entra' and not w.historial and w.tipo <> 'reaction'
+       and w.cuando > coalesce(cu.ultima_sale, '-infinity'::timestamptz)
+     group by w.kid
+  ),
+  nm as (
+    select b.clave,
+           (array_agg(b.nombre order by b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           array_agg(distinct b.fuente) as fuentes, max(b.nivel) as nivel
+      from crm_contactos_base() b
+     where b.fuente <> 'whatsapp' and b.clave in (select k.clave from k)
+     group by b.clave
+  )
+  select jsonb_build_object(
+    'columnas', to_jsonb(array['Nueva consulta', 'En conversación', 'Le pasamos el link', 'Compró', 'No compró']),
+    'resumen', (select jsonb_build_object(
+                  'consultas', count(*),
+                  'compraron', count(*) filter (where c.columna = 'Compró'),
+                  'vendido', coalesce(sum((c.pedido->>'total')::numeric) filter (where c.columna = 'Compró'), 0))
+                  from crm_consultas c where c.creada > now() - interval '30 days'),
+    'tarjetas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', k.id, 'clave', k.clave, 'tel', k.tel, 'columna', k.columna, 'creada', k.creada, 'movida', k.movida,
+               'cerrada', k.cerrada, 'sola', k.sola, 'pedido', k.pedido, 'quien', k.quien,
+               'nombre', coalesce(nm.nombre, wa_agenda_nombre(k.clave), cu.perfil), 'fuentes', coalesce(to_jsonb(nm.fuentes), '[]'::jsonb), 'nivel', nm.nivel,
+               'n', coalesce(cu.n, 0), 'espera', es.desde,
+               /* SQL 75: el recordatorio de esa persona, para la tira. */
+               'recordatorio', (select jsonb_build_object('fecha', rc.fecha, 'nota', rc.nota)
+                                  from crm_recordatorios rc where rc.clave = k.clave),
+               'ultimo', case when u.kid is null then null else jsonb_build_object(
+                           'texto', u.texto, 'tipo', u.tipo, 'sentido', u.sentido, 'desde', u.desde, 'cuando', u.cuando, 'quien', u.quien) end)
+             order by k.creada desc)
+        from k
+        left join ult u on u.kid = k.id
+        left join cuenta cu on cu.kid = k.id
+        left join espera es on es.kid = k.id
+        left join nm on nm.clave = k.clave), '[]'::jsonb))
+    into salida;
+  return salida;
+end;
+$function$
+;
+
+select 'listo: recordatorios por persona' as "SQL 75";
+
+
+-- ─────────────────────────── PARTE 76 (11/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · LAS ESTADÍSTICAS DEL CRM, COMO LAS DE KOMMO
+--
+-- Correr en el editor SQL de Supabase (después del 75).
+--
+-- Pedido de Mauricio (11/10/2026, con capturas de los Insights de Kommo):
+-- las estadísticas segmentadas por categorías (Panel, Embudo, Actividades,
+-- Objetivos) y los objetivos mensuales de cada persona de atención.
+--   · crm_insights(pin, desde, hasta): lo que las solapas nuevas
+--     necesitan: los mensajes de WhatsApp (cuántos entraron y salieron,
+--     por número, contra el período anterior, y cuánto tardamos en
+--     contestar), los diálogos y los sin contestar, de dónde entra la
+--     gente, el embudo por etapa, el día a día, las actividades por
+--     persona, las tareas y los objetivos del mes contra lo hecho.
+--   · crm_objetivos: la meta del mes de cada uno (contactados, ganados,
+--     plata), que se edita en Estadísticas → Objetivos.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists crm_objetivos (
+  quien     text not null,
+  mes       date not null check (extract(day from mes) = 1),
+  contactos integer,
+  ganados   integer,
+  plata     numeric(12,2),
+  puesto    timestamptz not null default now(),
+  primary key (quien, mes)
+);
+alter table crm_objetivos enable row level security;
+revoke all on crm_objetivos from anon, authenticated;
+
+/* La meta de una persona para un mes. Todo vacío la borra. */
+create or replace function crm_objetivo_guardar(p_pin text, p_quien text, p_mes date,
+                                                p_contactos integer default null,
+                                                p_ganados integer default null,
+                                                p_plata numeric default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  q text := nullif(trim(coalesce(p_quien, '')), '');
+  m date := date_trunc('month', p_mes)::date;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if q is null or p_mes is null then
+    return jsonb_build_object('ok', false, 'porque', 'Falta la persona o el mes.');
+  end if;
+  if p_contactos is null and p_ganados is null and p_plata is null then
+    delete from crm_objetivos where quien = q and mes = m;
+    return jsonb_build_object('ok', true, 'quitado', true);
+  end if;
+  if coalesce(p_contactos, 0) < 0 or coalesce(p_ganados, 0) < 0 or coalesce(p_plata, 0) < 0 then
+    return jsonb_build_object('ok', false, 'porque', 'Una meta no puede ser negativa.');
+  end if;
+  insert into crm_objetivos (quien, mes, contactos, ganados, plata)
+  values (q, m, p_contactos, p_ganados, p_plata)
+  on conflict (quien, mes) do update
+    set contactos = excluded.contactos, ganados = excluded.ganados, plata = excluded.plata, puesto = now();
+  return jsonb_build_object('ok', true);
+end;
+$$;
+revoke execute on function crm_objetivo_guardar(text, text, date, integer, integer, numeric) from public;
+grant execute on function crm_objetivo_guardar(text, text, date, integer, integer, numeric) to anon, authenticated;
+
+/* Todo lo de las solapas nuevas, en un viaje. */
+create or replace function crm_insights(p_pin text, p_desde timestamptz, p_hasta timestamptz)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  res jsonb;
+  tz constant text := 'America/Argentina/Buenos_Aires';
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  v_mes date := date_trunc('month', (p_hasta - interval '1 second') at time zone 'America/Argentina/Buenos_Aires')::date;
+  d0 timestamptz := p_desde - (p_hasta - p_desde);   -- el período anterior, del mismo largo
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  with
+  wa as (select m.* from wa_mensajes m where not m.historial),
+  en_rango as (select * from wa where cuando >= p_desde and cuando < p_hasta),
+  antes as (select * from wa where cuando >= d0 and cuando < p_desde),
+  /* Cuánto tardamos en contestar: cada mensaje del cliente que ARRANCA una
+     espera (el anterior de esa persona no era suyo) y nuestra primera
+     respuesta después. */
+  esperas as (
+    select e.cuando as pregunta, r.cuando as respuesta,
+           extract(epoch from (r.cuando - e.cuando)) / 3600.0 as horas
+      from en_rango e
+      left join lateral (
+        select m2.cuando from wa m2
+         where club_tel10(m2.tel) = club_tel10(e.tel) and m2.sentido = 'sale' and m2.cuando > e.cuando
+         order by m2.cuando limit 1
+      ) r on true
+     where e.sentido = 'entra' and e.tipo is distinct from 'reaction'
+       and not exists (
+         select 1 from wa m0
+          where club_tel10(m0.tel) = club_tel10(e.tel) and m0.cuando < e.cuando and m0.sentido = 'entra'
+            and m0.cuando > e.cuando - interval '7 days'
+            and not exists (select 1 from wa ms where club_tel10(ms.tel) = club_tel10(e.tel)
+                             and ms.cuando > m0.cuando and ms.cuando < e.cuando and ms.sentido = 'sale'))
+  ),
+  /* Hoy: a quién le debemos una respuesta (lo último, suyo; como en Mensajes). */
+  ult as (
+    select distinct on (club_tel10(tel)) club_tel10(tel) as clave, sentido
+      from wa where tipo is distinct from 'reaction'
+     order by club_tel10(tel), cuando desc, id desc
+  ),
+  fichas as (
+    select 'no_compra'::text as fuente, crm_columna(r.estado, r.contactado) as col, r.creado,
+           r.monto, null::numeric as total, r.recordar
+      from registros r
+    union all
+    select 'carrito', crm_columna(k.estado, k.contactado), k.creado, k.monto, k.total, k.recordar
+      from crm_carritos k
+  ),
+  mov as (select m.* from crm_movimientos m where m.cuando >= p_desde and m.cuando < p_hasta),
+  /* El mes de los objetivos: lo hecho de verdad, persona por persona. */
+  mes_rango as (select (v_mes + time '00:00') at time zone tz as de,
+                       (date_trunc('month', v_mes + interval '35 days') + time '00:00') at time zone tz as a),
+  mes_primeros as (
+    select distinct on (m.fuente, m.ref) m.quien, m.cuando
+      from crm_movimientos m, mes_rango g
+     where m.de = 'Pendiente' and m.a in ('En seguimiento', 'Esperando respuesta', 'Cerrado - compró', 'Cerrado - no compró')
+       and coalesce(m.quien, '') not in ('', 'Automático')
+     order by m.fuente, m.ref, m.cuando
+  ),
+  mes_ganados as (
+    select distinct on (m.fuente, m.ref) m.fuente, m.ref, m.quien, m.cuando
+      from crm_movimientos m
+     where m.a = 'Cerrado - compró'
+     order by m.fuente, m.ref, m.cuando desc
+  )
+  select jsonb_build_object(
+    'desde', p_desde, 'hasta', p_hasta,
+    'mensajes', jsonb_build_object(
+      'entrantes', (select count(*) from en_rango where sentido = 'entra'),
+      'salientes', (select count(*) from en_rango where sentido = 'sale'),
+      'antes_entrantes', (select count(*) from antes where sentido = 'entra'),
+      'antes_salientes', (select count(*) from antes where sentido = 'sale'),
+      'dialogos', (select count(distinct club_tel10(tel)) from en_rango),
+      'antes_dialogos', (select count(distinct club_tel10(tel)) from antes),
+      'sin_replica', (select count(*) from ult where sentido = 'entra'),
+      'replica_prom_h', (select round(avg(horas)::numeric, 1) from esperas where horas is not null),
+      'replica_max_h', (select round(max(horas)::numeric, 1) from esperas where horas is not null),
+      'sin_responder_aun', (select count(*) from esperas where respuesta is null),
+      'por_numero', coalesce((
+        select jsonb_agg(jsonb_build_object('id', n.numero_id, 'nombre', n.nombre,
+                 'entrantes', (select count(*) from en_rango e where e.numero_id = n.numero_id and e.sentido = 'entra'),
+                 'salientes', (select count(*) from en_rango e where e.numero_id = n.numero_id and e.sentido = 'sale'))
+               order by n.orden)
+          from wa_numeros n), '[]'::jsonb)),
+    'fuentes', jsonb_build_object(
+      'no_compra', (select count(*) from registros r where r.creado >= p_desde and r.creado < p_hasta),
+      'carrito', (select count(*) from crm_carritos k where k.creado >= p_desde and k.creado < p_hasta),
+      'tienda', (select count(*) from crm_consultas c where c.creada >= p_desde and c.creada < p_hasta),
+      'club', (select count(*) from club_clientes c where c.creado >= p_desde and c.creado < p_hasta and c.baja is null)),
+    'embudo', (
+      select jsonb_object_agg(f.fuente, f.cols) from (
+        select x.fuente, jsonb_agg(jsonb_build_object(
+                 'col', c.col,
+                 'ahora', (select count(*) from fichas q where q.fuente = x.fuente and q.col = c.col),
+                 'plata', (select coalesce(sum(coalesce(q.monto, q.total, 0)), 0) from fichas q where q.fuente = x.fuente and q.col = c.col),
+                 'entraron', (select count(distinct m.ref) from mov m where m.fuente = x.fuente and m.a = c.col),
+                 'perdidos', (select count(distinct m.ref) from mov m
+                               where m.fuente = x.fuente and m.de = c.col and m.a in ('Cerrado - no compró', 'Descartado'))
+               ) order by c.orden) as cols
+          from (values ('no_compra'), ('carrito')) as x(fuente)
+          cross join (values ('Pendiente', 1), ('En seguimiento', 2), ('Esperando respuesta', 3),
+                             ('Cerrado - compró', 4), ('Cerrado - no compró', 5), ('Descartado', 6)) as c(col, orden)
+         group by x.fuente) f),
+    'tienda_embudo', coalesce((
+      select jsonb_agg(jsonb_build_object('col', t.columna, 'ahora', t.n) order by
+               array_position(array['Nueva consulta', 'En conversación', 'Le pasamos el link', 'Compró', 'No compró'], t.columna))
+        from (select c.columna, count(*)::int as n from crm_consultas c group by 1) t), '[]'::jsonb),
+    'diario', coalesce((
+      select jsonb_agg(jsonb_build_object('dia', d.dia, 'entraron', d.entraron, 'ganados', d.ganados, 'mensajes', d.mensajes) order by d.dia)
+        from (
+          select g.dia,
+                 (select count(*) from fichas f where (f.creado at time zone tz)::date = g.dia
+                    and f.creado >= p_desde and f.creado < p_hasta) as entraron,
+                 (select count(distinct (m.fuente, m.ref)) from mov m
+                   where m.a = 'Cerrado - compró' and (m.cuando at time zone tz)::date = g.dia) as ganados,
+                 (select count(*) from en_rango e where e.sentido = 'entra' and (e.cuando at time zone tz)::date = g.dia) as mensajes
+            from (select generate_series(((p_desde at time zone tz))::date,
+                                         ((p_hasta - interval '1 second') at time zone tz)::date, '1 day')::date as dia) g
+        ) d), '[]'::jsonb),
+    'actividades', coalesce((
+      select jsonb_agg(jsonb_build_object('quien', a.quien, 'movidas', a.movidas, 'whatsapps', a.whatsapps,
+                                          'notas', a.notas, 'recordatorios', a.recordatorios, 'ganados', a.ganados)
+                       order by a.movidas + a.whatsapps desc, a.quien)
+        from (
+          select quien, sum(movidas)::int as movidas, sum(whatsapps)::int as whatsapps, sum(notas)::int as notas,
+                 sum(recordatorios)::int as recordatorios, sum(ganados)::int as ganados from (
+            select m.quien, 1 as movidas, 0 as whatsapps, 0 as notas, 0 as recordatorios,
+                   case when m.a = 'Cerrado - compró' then 1 else 0 end as ganados from mov m
+            union all
+            select e.quien, 0, case when e.tipo = 'whatsapp' then 1 else 0 end,
+                   case when e.tipo = 'nota' then 1 else 0 end,
+                   case when e.tipo = 'recordatorio' then 1 else 0 end, 0
+              from crm_eventos e where e.cuando >= p_desde and e.cuando < p_hasta
+            union all
+            select w.quien, 0, 1, 0, 0, 0 from en_rango w where w.sentido = 'sale' and w.desde = 'crm'
+          ) t where coalesce(quien, '') not in ('', 'Automático')
+          group by quien
+        ) a), '[]'::jsonb),
+    'tareas', jsonb_build_object(
+      'hoy', (select count(*) from fichas f where f.recordar = hoy and f.col not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado'))
+           + (select count(*) from crm_recordatorios r where r.fecha = hoy),
+      'atrasados', (select count(*) from fichas f where f.recordar < hoy and f.col not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado'))
+                 + (select count(*) from crm_recordatorios r where r.fecha < hoy),
+      'agendados', (select count(*) from fichas f where f.recordar > hoy and f.col not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado'))
+                 + (select count(*) from crm_recordatorios r where r.fecha > hoy),
+      'sin', (select count(*) from fichas f where f.recordar is null and f.col not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado'))),
+    'objetivos', jsonb_build_object(
+      'mes', v_mes,
+      'metas', coalesce((
+        select jsonb_agg(jsonb_build_object('quien', o.quien, 'contactos', o.contactos, 'ganados', o.ganados, 'plata', o.plata)
+                         order by o.quien)
+          from crm_objetivos o where o.mes = v_mes), '[]'::jsonb),
+      'hecho', coalesce((
+        select jsonb_agg(jsonb_build_object('quien', h.quien, 'contactos', h.contactos, 'ganados', h.ganados, 'plata', h.plata)
+                         order by h.quien)
+          from (
+            select quien, sum(contactos)::int as contactos, sum(ganados)::int as ganados, sum(plata) as plata from (
+              select p.quien, 1 as contactos, 0 as ganados, 0::numeric as plata
+                from mes_primeros p, mes_rango g where p.cuando >= g.de and p.cuando < g.a
+              union all
+              select w.quien, 1, 0, 0 from wa w, mes_rango g
+               where w.sentido = 'sale' and w.desde = 'crm' and w.cuando >= g.de and w.cuando < g.a
+                 and coalesce(w.quien, '') <> ''
+              union all
+              select gm.quien, 0, 1, coalesce(f.monto, 0)
+                from mes_ganados gm
+                join (select 'no_compra'::text as fuente, r.id as ref, r.monto, crm_columna(r.estado, r.contactado) as col from registros r
+                      union all
+                      select 'carrito', k.id, k.monto, crm_columna(k.estado, k.contactado) from crm_carritos k) f
+                  on f.fuente = gm.fuente and f.ref = gm.ref
+                cross join mes_rango g
+               where gm.cuando >= g.de and gm.cuando < g.a and f.col = 'Cerrado - compró'
+            ) t where coalesce(quien, '') not in ('', 'Automático')
+            group by quien
+          ) h), '[]'::jsonb))
+  ) into res;
+  return res;
+end;
+$$;
+revoke execute on function crm_insights(text, timestamptz, timestamptz) from public;
+grant execute on function crm_insights(text, timestamptz, timestamptz) to anon, authenticated;
+
+select 'listo: las estadísticas como las de Kommo y los objetivos' as "SQL 76";
+
+
+-- ─────────────────────────── PARTE 77 (11/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · EL AGENTE DE IA, FASE 1: LOS CIMIENTOS
+--
+-- Correr en el editor SQL de Supabase (después del 76).
+--
+-- Pedido de Mauricio (11/10/2026): el agente que atiende y vende por el
+-- WhatsApp de la tienda cuando el equipo no está. Esta fase es el terreno:
+-- todavía NO contesta nada.
+--   · agente_reglas: el interruptor (nace APAGADO), el modo (nace en
+--     "prueba": redacta y una persona aprueba), el horario —cada día:
+--     todo el día, fuera del horario del equipo o no atiende—, las fechas
+--     especiales (feriados), los topes de venta —que se validan acá, en la
+--     base, no en lo que se le dice al agente— y a quién deriva: Ale
+--     (ventas, posventa y logística) y Lautaro (No Compra y carritos).
+--   · agente_textos: la base de conocimiento (envíos, pagos, cambios,
+--     talles, telas, stock, promos), con versiones; se edita desde el CRM.
+--   · agente_atiende(cuándo): si en ese momento le toca al agente.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists agente_reglas (
+  clave  text primary key,
+  valor  text,
+  puesto timestamptz not null default now()
+);
+alter table agente_reglas enable row level security;
+revoke all on agente_reglas from anon, authenticated;
+
+insert into agente_reglas (clave, valor) values
+  ('prendido',           'no'),
+  ('modo',               'prueba'),
+  ('semana',             '{"lun":{"modo":"fuera","de":"09:00","a":"17:00"},"mar":{"modo":"fuera","de":"09:00","a":"17:00"},"mie":{"modo":"fuera","de":"09:00","a":"17:00"},"jue":{"modo":"fuera","de":"09:00","a":"17:00"},"vie":{"modo":"fuera","de":"09:00","a":"17:00"},"sab":{"modo":"todo","de":"09:00","a":"17:00"},"dom":{"modo":"todo","de":"09:00","a":"17:00"}}'),
+  ('fechas',             '[]'),
+  ('numero_id',          (select n.numero_id from wa_numeros n where n.tablero = 'tienda' order by n.orden limit 1)),
+  ('cupon_pct',          null),
+  ('cupon_horas',        null),
+  ('cupon_con_sale',     null),
+  ('envio_gratis_desde', '80000'),
+  ('envio_piso',         null),
+  ('segunda_pct',        null),
+  ('telegram_min',       null),
+  ('derivar_ventas',     'Ale'),
+  ('derivar_posventa',   'Ale'),
+  ('derivar_logistica',  'Ale'),
+  ('derivar_nocompra',   'Lautaro'),
+  ('derivar_carritos',   'Lautaro')
+on conflict (clave) do nothing;
+
+/* La base de conocimiento, con versiones: la vigente es la última. */
+create table if not exists agente_textos (
+  id     bigserial primary key,
+  texto  text not null,
+  creado timestamptz not null default now()
+);
+alter table agente_textos enable row level security;
+revoke all on agente_textos from anon, authenticated;
+
+/* ¿Le toca al agente en ese momento? Con la hora de Argentina. */
+create or replace function agente_atiende(p_cuando timestamptz default now())
+returns jsonb
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  v_loc   timestamp := p_cuando at time zone 'America/Argentina/Buenos_Aires';
+  v_dia   text;
+  v_hora  time;
+  v_fecha text;
+  v_esp   jsonb;
+  v_d     jsonb;
+begin
+  v_dia := (array['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'])[extract(isodow from v_loc)::int];
+  v_hora := v_loc::time;
+  v_fecha := to_char(v_loc, 'YYYY-MM-DD');
+  if coalesce((select r.valor from agente_reglas r where r.clave = 'prendido'), 'no') <> 'si' then
+    return jsonb_build_object('atiende', false, 'porque', 'apagado');
+  end if;
+  select e into v_esp
+    from jsonb_array_elements(coalesce((select r.valor from agente_reglas r where r.clave = 'fechas'), '[]')::jsonb) e
+   where e->>'fecha' = v_fecha
+   limit 1;
+  if v_esp is not null then
+    return jsonb_build_object('atiende', v_esp->>'modo' = 'todo', 'porque', 'fecha', 'nota', v_esp->>'nota');
+  end if;
+  v_d := coalesce((select r.valor from agente_reglas r where r.clave = 'semana'), '{}')::jsonb -> v_dia;
+  if v_d is null or v_d->>'modo' = 'no' then
+    return jsonb_build_object('atiende', false, 'porque', 'dia_no');
+  end if;
+  if v_d->>'modo' = 'todo' then
+    return jsonb_build_object('atiende', true, 'porque', 'dia_todo');
+  end if;
+  if v_hora >= (v_d->>'de')::time and v_hora < (v_d->>'a')::time then
+    return jsonb_build_object('atiende', false, 'porque', 'equipo', 'hasta', v_d->>'a');
+  end if;
+  return jsonb_build_object('atiende', true, 'porque', 'fuera', 'de', v_d->>'de', 'a', v_d->>'a');
+end;
+$$;
+revoke execute on function agente_atiende(timestamptz) from public, anon, authenticated;
+
+/* Cada regla con su forma. Devuelve el valor ya prolijo (el horario con
+   los siete días; las fechas ordenadas, sin repetidas y sin las pasadas). */
+create or replace function agente_regla_valida(p_clave text, p_valor text)
+returns jsonb
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v   text := trim(coalesce(p_valor, ''));
+  j   jsonb;
+  x   jsonb;
+  k   text;
+  nom text;
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  hh  constant text := '^([01][0-9]|2[0-3]):[0-5][0-9]$';
+begin
+  if p_clave = 'prendido' or p_clave = 'cupon_con_sale' then
+    if v not in ('si', 'no') then
+      return jsonb_build_object('ok', false, 'porque', 'Va "si" o "no".');
+    end if;
+  elsif p_clave = 'modo' then
+    /* Por ahora, sólo "prueba": el automático se habilita en la fase 4,
+       cuando el agente haya pasado las pruebas (con su propio SQL). */
+    if v <> 'prueba' then
+      return jsonb_build_object('ok', false, 'porque', 'Por ahora sólo en prueba: el automático llega en la fase 4.');
+    end if;
+  elsif p_clave = 'semana' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'El horario no se entendió.');
+    end;
+    if jsonb_typeof(j) is distinct from 'object' then
+      return jsonb_build_object('ok', false, 'porque', 'El horario no se entendió.');
+    end if;
+    foreach k in array array['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'] loop
+      nom := case k when 'lun' then 'lunes' when 'mar' then 'martes' when 'mie' then 'miércoles' when 'jue' then 'jueves'
+                    when 'vie' then 'viernes' when 'sab' then 'sábado' else 'domingo' end;
+      x := j->k;
+      if x is null or jsonb_typeof(x) <> 'object' or coalesce(x->>'modo', '') not in ('todo', 'fuera', 'no') then
+        return jsonb_build_object('ok', false, 'porque', 'Falta qué hace el agente el ' || nom || '.');
+      end if;
+      if coalesce(x->>'de', '09:00') !~ hh or coalesce(x->>'a', '17:00') !~ hh then
+        return jsonb_build_object('ok', false, 'porque', 'El ' || nom || ': la hora va como 09:00.');
+      end if;
+      if x->>'modo' = 'fuera' and coalesce(x->>'de', '09:00')::time >= coalesce(x->>'a', '17:00')::time then
+        return jsonb_build_object('ok', false, 'porque', 'El ' || nom || ': el equipo tiene que entrar antes de salir.');
+      end if;
+    end loop;
+    v := (select jsonb_object_agg(d, jsonb_build_object('modo', j->d->>'modo',
+                                                        'de', coalesce(j->d->>'de', '09:00'),
+                                                        'a', coalesce(j->d->>'a', '17:00')))
+            from unnest(array['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']) as d)::text;
+  elsif p_clave = 'fechas' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'Las fechas no se entendieron.');
+    end;
+    if jsonb_typeof(j) is distinct from 'array' then
+      return jsonb_build_object('ok', false, 'porque', 'Las fechas no se entendieron.');
+    end if;
+    if jsonb_array_length(j) > 100 then
+      return jsonb_build_object('ok', false, 'porque', 'Hasta 100 fechas especiales.');
+    end if;
+    for x in select * from jsonb_array_elements(j) loop
+      if coalesce(x->>'fecha', '') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' or coalesce(x->>'modo', '') not in ('todo', 'no') then
+        return jsonb_build_object('ok', false, 'porque', 'Cada fecha va con "todo el día" o "no atiende".');
+      end if;
+      begin
+        perform (x->>'fecha')::date;
+      exception when others then
+        return jsonb_build_object('ok', false, 'porque', 'La fecha ' || (x->>'fecha') || ' no existe.');
+      end;
+      if length(coalesce(x->>'nota', '')) > 60 then
+        return jsonb_build_object('ok', false, 'porque', 'La nota de una fecha es muy larga: hasta 60 letras.');
+      end if;
+    end loop;
+    v := coalesce((
+      select jsonb_agg(jsonb_build_object('fecha', t.f, 'modo', t.m, 'nota', t.n) order by t.fd)
+        from (select distinct on ((z.e->>'fecha')::date)
+                     (z.e->>'fecha')::date as fd, to_char((z.e->>'fecha')::date, 'YYYY-MM-DD') as f,
+                     z.e->>'modo' as m, nullif(trim(coalesce(z.e->>'nota', '')), '') as n
+                from jsonb_array_elements(j) with ordinality as z(e, i)
+               order by (z.e->>'fecha')::date, z.i desc) t
+       where t.fd >= hoy), '[]'::jsonb)::text;
+  elsif p_clave in ('cupon_pct', 'segunda_pct') then
+    if v !~ '^[0-9]{1,2}$' or v::int < 1 or v::int > 50 then
+      return jsonb_build_object('ok', false, 'porque', 'El porcentaje va de 1 a 50.');
+    end if;
+  elsif p_clave = 'cupon_horas' then
+    if v !~ '^[0-9]{1,3}$' or v::int < 1 or v::int > 168 then
+      return jsonb_build_object('ok', false, 'porque', 'El cupón vence entre 1 y 168 horas (una semana).');
+    end if;
+  elsif p_clave = 'telegram_min' then
+    if v !~ '^[0-9]{1,3}$' or v::int < 1 or v::int > 240 then
+      return jsonb_build_object('ok', false, 'porque', 'La espera de Telegram va de 1 a 240 minutos.');
+    end if;
+  elsif p_clave in ('envio_gratis_desde', 'envio_piso') then
+    if v !~ '^[0-9]{1,9}$' then
+      return jsonb_build_object('ok', false, 'porque', 'Va un monto en pesos, sin puntos.');
+    end if;
+  elsif p_clave in ('derivar_ventas', 'derivar_posventa', 'derivar_logistica', 'derivar_nocompra', 'derivar_carritos') then
+    if v = '' or length(v) > 40 then
+      return jsonb_build_object('ok', false, 'porque', 'Falta el nombre (hasta 40 letras).');
+    end if;
+  else
+    return jsonb_build_object('ok', false, 'porque', 'Esa regla no existe.');
+  end if;
+  return jsonb_build_object('ok', true, 'valor', v);
+end;
+$$;
+revoke execute on function agente_regla_valida(text, text) from public, anon, authenticated;
+
+/* Todo lo de la pantalla, en un viaje. */
+create or replace function agente_config(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return jsonb_build_object(
+    'reglas', coalesce((select jsonb_object_agg(r.clave, r.valor) from agente_reglas r), '{}'::jsonb),
+    'numero', (select n.nombre from wa_numeros n
+                where n.numero_id = (select r.valor from agente_reglas r where r.clave = 'numero_id')),
+    'conocimiento', (select jsonb_build_object('texto', t.texto,
+                              'actualizado', to_char(t.creado at time zone 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD'))
+                       from agente_textos t order by t.creado desc, t.id desc limit 1),
+    'versiones', (select count(*) from agente_textos),
+    'ahora', agente_atiende(now()));
+end;
+$$;
+revoke execute on function agente_config(text) from public;
+grant execute on function agente_config(text) to anon, authenticated;
+
+/* Varias reglas juntas: se validan TODAS antes de guardar ninguna. */
+create or replace function agente_reglas_guardar(p_pin text, p_reglas jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  k      text;
+  val    jsonb;
+  r      jsonb;
+  limpia jsonb := '{}'::jsonb;
+  piso   numeric;
+  tope   numeric;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_reglas is null or jsonb_typeof(p_reglas) <> 'object' or p_reglas = '{}'::jsonb then
+    return jsonb_build_object('ok', false, 'porque', 'No hay nada para guardar.');
+  end if;
+  for k, val in select * from jsonb_each(p_reglas) loop
+    r := agente_regla_valida(k, case jsonb_typeof(val) when 'string' then val #>> '{}' else val::text end);
+    if not (r->>'ok')::boolean then
+      return r || jsonb_build_object('clave', k);
+    end if;
+    limpia := limpia || jsonb_build_object(k, r->>'valor');
+  end loop;
+  piso := coalesce(limpia->>'envio_piso', (select x.valor from agente_reglas x where x.clave = 'envio_piso'))::numeric;
+  tope := coalesce(limpia->>'envio_gratis_desde', (select x.valor from agente_reglas x where x.clave = 'envio_gratis_desde'))::numeric;
+  if piso is not null and tope is not null and piso > tope then
+    return jsonb_build_object('ok', false, 'clave', 'envio_piso',
+      'porque', 'El piso para regalar el envío no puede ser más alto que el envío gratis de la tienda.');
+  end if;
+  insert into agente_reglas (clave, valor)
+  select e.key, e.value from jsonb_each_text(limpia) e
+  on conflict (clave) do update set valor = excluded.valor, puesto = now();
+  return jsonb_build_object('ok', true,
+    'reglas', (select jsonb_object_agg(x.clave, x.valor) from agente_reglas x),
+    'ahora', agente_atiende(now()));
+end;
+$$;
+revoke execute on function agente_reglas_guardar(text, jsonb) from public;
+grant execute on function agente_reglas_guardar(text, jsonb) to anon, authenticated;
+
+/* La base de conocimiento: cada guardado es una versión nueva. Se sacan
+   los retornos de carro del pegado de Windows antes de comparar. */
+create or replace function agente_texto_guardar(p_pin text, p_texto text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  t      text := nullif(btrim(replace(coalesce(p_texto, ''), E'\r', ''), E' \n\t'), '');
+  ultimo text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if t is null or length(t) < 200 then
+    return jsonb_build_object('ok', false, 'porque', 'El texto quedó vacío o muy corto: no se guardó.');
+  end if;
+  if length(t) > 60000 then
+    return jsonb_build_object('ok', false, 'porque', 'El texto es demasiado largo.');
+  end if;
+  select x.texto into ultimo from agente_textos x order by x.creado desc, x.id desc limit 1;
+  if ultimo is not distinct from t then
+    return jsonb_build_object('ok', true, 'igual', true);
+  end if;
+  insert into agente_textos (texto) values (t);
+  return jsonb_build_object('ok', true);
+end;
+$$;
+revoke execute on function agente_texto_guardar(text, text) from public;
+grant execute on function agente_texto_guardar(text, text) to anon, authenticated;
+
+/* Los valores de las herramientas de venta y el texto de lo que sabe el
+   agente no van a este repo (es público): los trae el archivo que se corre
+   en Supabase y se editan desde el CRM. */
+
+select 'listo: los cimientos del Agente de IA' as "SQL 77";

@@ -1215,6 +1215,37 @@ var base = {
     return funcion('crm_estadisticas', { p_pin: pin, p_desde: desde, p_hasta: hasta, p_quien: quien || null });
   },
 
+  /** Las estadísticas por categorías (SQL 76): mensajes, embudo,
+      actividades, tareas y objetivos. */
+  crmInsights: function (pin, desde, hasta) {
+    return funcion('crm_insights', { p_pin: pin, p_desde: desde, p_hasta: hasta });
+  },
+
+  /** La meta mensual de una persona de atención. Todo vacío la borra. */
+  crmObjetivo: function (pin, quien, mes, contactos, ganados, plata) {
+    return funcion('crm_objetivo_guardar', {
+      p_pin: pin, p_quien: quien, p_mes: mes,
+      p_contactos: contactos == null ? null : contactos,
+      p_ganados: ganados == null ? null : ganados,
+      p_plata: plata == null ? null : plata
+    });
+  },
+
+  /** El Agente de IA (SQL 77): las reglas, lo que sabe y si le toca ahora. */
+  agenteConfig: function (pin) {
+    return funcion('agente_config', { p_pin: pin });
+  },
+
+  /** Varias reglas juntas; la base valida todas antes de guardar. */
+  agenteReglasGuardar: function (pin, reglas) {
+    return funcion('agente_reglas_guardar', { p_pin: pin, p_reglas: reglas });
+  },
+
+  /** Lo que sabe el agente: cada guardado es una versión nueva. */
+  agenteTextoGuardar: function (pin, texto) {
+    return funcion('agente_texto_guardar', { p_pin: pin, p_texto: texto });
+  },
+
   /* ── Plantillas, recordatorios e historial (SQL 52) ── */
 
   /** Las plantillas de WhatsApp de las dos fuentes, en su orden. */
@@ -1276,6 +1307,15 @@ var base = {
   /** La ficha de una persona: sus datos, el Club y todo lo que pasó. */
   crmContacto: function (pin, clave) {
     return funcion('crm_contacto', { p_pin: pin, p_clave: clave });
+  },
+
+  /** El recordatorio de una persona (SQL 75): uno solo, el nuevo pisa al
+      anterior. Fecha vacía lo quita. */
+  crmRecordatorio: function (pin, clave, fecha, nota, quien) {
+    return funcion('crm_recordatorio_poner', {
+      p_pin: pin, p_clave: clave, p_fecha: fecha || null,
+      p_nota: nota || null, p_quien: quien || null
+    });
   },
 
   /** Los segmentos que se arman en el CRM (SQL 66): los guardados, con
