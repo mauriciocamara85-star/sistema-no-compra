@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Asistente</title>
+<meta name="description" content="El asistente de los vendedores: contesta con los manuales de VDH y dice de dónde lo sacó.">
+<meta name="theme-color" content="#F7F6F3">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icono-apple.png">
+<link rel="icon" href="icono-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
+  } catch (e) {}
+</script>
+<style>
+  /* ── El Asistente de los vendedores (12/10/2026) ───────────────────────
+     Pedido de Mauricio: dejar Chatbase y tener el asistente adentro del
+     sistema, libre para todos (sin PIN) y en la PC de cada local.
+       · Arriba el saludo, la caja para preguntar (con micrófono), las
+         preguntas sugeridas y los accesos rápidos (enlaces: el planificador
+         de objetivos, el Drive de manuales…). Todo eso se edita en el CRM →
+         Agentes de IA → Asistente de vendedores → Portada del chat.
+       · Cada respuesta dice de qué manual lo sacó, y se puede marcar con el
+         pulgar: las malas le llegan a la oficina.
+       · Sólo consulta: no vende ni le escribe a nadie.
+     La PC del local es de todos: cada uno dice quién es con un toque al
+     abrir, y ve sólo sus charlas (y sólo las de esa PC). Después de un rato
+     sin usarlo, lo vuelve a preguntar, así el que se sienta después no ve
+     las charlas del anterior. */
+  body.asis { padding-bottom: 0; }
+  .asis-app { display: grid; grid-template-columns: minmax(0, 1fr); height: calc(100dvh - var(--nav) - env(safe-area-inset-bottom)); }
+  @media (min-width: 900px) {
+    .asis-app { grid-template-columns: 252px minmax(0, 1fr); height: 100dvh; }
+  }
+
+  /* ── La columna de las charlas ── */
+  .asis-lado { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 16px 12px; border-right: 1px solid var(--line); background: var(--surface-2); }
+  .asis-nueva { width: 100%; gap: 8px; }
+  .asis-nueva svg { width: 18px; height: 18px; }
+  .asis-lado h3 { font-size: 11.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; margin: 8px 4px 0; }
+  .asis-charlas { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 2px; }
+  .asis-ch { display: grid; gap: 1px; width: 100%; padding: 8px 10px; border-radius: 10px; text-align: left; color: var(--txt-2); }
+  .asis-ch:hover { background: var(--surface-3); color: var(--txt); }
+  .asis-ch.sel { background: var(--surface); color: var(--txt); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+  .asis-ch b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .asis-ch small { font-size: 11.5px; color: var(--txt-3); }
+  .asis-ch-vacio { font-size: 12.5px; color: var(--txt-3); padding: 4px; line-height: 1.5; }
+  .asis-yo { padding: 10px; border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--line); font-size: 12.5px; color: var(--txt-2); line-height: 1.4; }
+  .asis-yo b { display: block; font-size: 13.5px; color: var(--txt); }
+  .asis-yo button { margin-top: 4px; background: none; border: 0; padding: 0; font: 600 12.5px var(--sans); color: var(--txt); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  @media (max-width: 899px) {
+    .asis-lado { position: fixed; top: 0; bottom: 0; left: 0; z-index: 72; width: min(300px, 86vw); transform: translateX(-105%);
+                 transition: transform .25s var(--curva); border-radius: 0 var(--r) var(--r) 0; }
+    .asis-app.lado-abierto .asis-lado { transform: none; box-shadow: var(--sombra-alta); }
+    .asis-velo { display: none; }
+    .asis-app.lado-abierto .asis-velo { display: block; position: fixed; inset: 0; z-index: 71; background: rgba(20, 20, 18, .38); }
+  }
+  @media (min-width: 900px) { .asis-velo { display: none; } }
+
+  /* ── La columna del chat ── */
+  .asis-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  .asis-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  .asis-cab b { font: 700 16px var(--display); }
+  .asis-cab button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: var(--r-pill);
+                     border: 1px solid var(--line); background: var(--surface); font: 600 13.5px var(--sans); color: var(--txt); }
+  .asis-cab svg { width: 17px; height: 17px; }
+  /* En la compu las charlas ya están a la izquierda: la barra de arriba sobra. */
+  @media (min-width: 900px) { .asis-cab { display: none; } }
+  .asis-cuerpo { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 18px 16px 8px; }
+  .asis-ancho { width: 100%; max-width: 760px; margin: 0 auto; }
+
+  /* La portada: el saludo arriba, la caja y lo de abajo. */
+  .asis-main.vacia .asis-cuerpo { justify-content: center; }
+  .asis-portada { text-align: center; padding: 8px 0 14px; }
+  .asis-logo { width: 52px; height: 52px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; background: var(--acc); color: var(--acc-ink); }
+  .asis-logo svg { width: 26px; height: 26px; }
+  .asis-portada h1 { font: 700 26px/1.2 var(--display); letter-spacing: -.4px; }
+  .asis-portada p { margin-top: 6px; font-size: 15px; color: var(--txt-2); }
+  .asis-abajo { padding: 14px 0 6px; display: grid; gap: 18px; }
+  .asis-sug { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .asis-sug button { min-height: 38px; padding: 7px 14px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface);
+                     font: 500 13.5px/1.35 var(--sans); color: var(--txt); text-align: left; }
+  .asis-sug button:hover { border-color: var(--acc); }
+  .asis-accesos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+  .asis-acceso { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--line);
+                 background: var(--surface); color: var(--txt); text-decoration: none; text-align: left; }
+  .asis-acceso:hover { border-color: var(--acc); }
+  .asis-acceso i { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--txt); }
+  .asis-acceso i svg { width: 18px; height: 18px; }
+  .asis-acceso b { display: block; font-size: 14px; font-weight: 600; }
+  .asis-acceso small { display: block; font-size: 12px; color: var(--txt-3); }
+  .asis-main:not(.vacia) .asis-portada, .asis-main:not(.vacia) .asis-abajo { display: none; }
+  .asis-main.vacia .asis-msgs { display: none; }
+
+  /* La caja para preguntar. */
+  .asis-caja { display: flex; align-items: flex-end; gap: 6px; padding: 8px 8px 8px 14px; border-radius: 22px; border: 1px solid var(--line-campo);
+               background: var(--campo); box-shadow: var(--sombra); }
+  .asis-caja:focus-within { border-color: var(--foco); }
+  .asis-caja textarea { flex: 1; min-height: 40px; max-height: 168px; padding: 9px 0; border: 0; background: none; resize: none; box-shadow: none;
+                        font: 400 15.5px/1.45 var(--sans); color: var(--txt); outline: none; }
+  .asis-caja textarea:focus { box-shadow: none; }
+  .asis-boton { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--txt-2); }
+  .asis-boton svg { width: 20px; height: 20px; }
+  .asis-boton:hover { background: var(--surface-2); color: var(--txt); }
+  .asis-mandar { background: var(--acc); color: var(--acc-ink); }
+  .asis-mandar:hover { background: var(--acc-2); color: var(--acc-ink); }
+  .asis-mandar:disabled { background: var(--surface-3); color: var(--txt-3); cursor: default; }
+  .asis-mic.escucha { background: var(--bad-soft); color: var(--bad-txt); animation: latir 1.4s ease-in-out infinite; }
+  @keyframes latir { 50% { box-shadow: 0 0 0 6px rgba(160, 15, 30, .12); } }
+  .asis-pie { padding: 6px 16px 12px; text-align: center; font-size: 12px; color: var(--txt-3); }
+  .asis-abajo-caja { padding: 0 16px; }
+  .asis-main.vacia .asis-abajo-caja { display: none; }
+  .asis-main:not(.vacia) .asis-cuerpo .asis-caja { display: none; }
+
+  /* Los mensajes. */
+  .asis-msgs { display: grid; gap: 18px; padding-bottom: 8px; }
+  .asis-yo-msg { justify-self: end; max-width: 82%; padding: 10px 14px; border-radius: 18px 18px 4px 18px; background: var(--acc); color: var(--acc-ink);
+                 font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .asis-ia { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; }
+  .asis-ia-ico { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--line); }
+  .asis-ia-ico svg { width: 16px; height: 16px; }
+  .asis-md { font-size: 15px; line-height: 1.6; color: var(--txt); overflow-wrap: anywhere; }
+  .asis-md p + p, .asis-md p + ul, .asis-md ul + p, .asis-md p + ol, .asis-md ol + p { margin-top: 8px; }
+  .asis-md ul, .asis-md ol { padding-left: 20px; display: grid; gap: 3px; }
+  .asis-md h4 { font-size: 15px; font-weight: 700; margin: 10px 0 4px; }
+  .asis-md a { color: var(--txt); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+  .asis-ref { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; margin-left: 2px; border-radius: 6px;
+              vertical-align: 2px; background: var(--surface-3); color: var(--txt-2); font: 700 11px var(--sans); border: 0; cursor: pointer; }
+  .asis-ref:hover { background: var(--acc); color: var(--acc-ink); }
+  .asis-fuentes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
+  .asis-fuentes > span { font-size: 12px; font-weight: 700; color: var(--txt-3); }
+  .asis-fuente { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 30px; padding: 3px 10px 3px 4px; border-radius: var(--r-pill);
+                 border: 1px solid var(--line); background: var(--surface); font: 500 12.5px var(--sans); color: var(--txt-2); }
+  .asis-fuente:hover, .asis-fuente[aria-expanded="true"] { border-color: var(--acc); color: var(--txt); }
+  .asis-fuente em { font-style: normal; display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 50%; background: var(--surface-3); font-weight: 700; font-size: 11px; }
+  .asis-fuente span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .asis-cita { margin-top: 8px; padding: 10px 12px; border-left: 3px solid var(--line-alta); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--surface-2);
+               font-size: 13.5px; line-height: 1.55; color: var(--txt-2); }
+  .asis-cita b { display: block; font-size: 12px; color: var(--txt); margin-bottom: 4px; }
+  .asis-cita q { display: block; quotes: none; white-space: pre-wrap; }
+  .asis-cita q + q { margin-top: 6px; }
+  .asis-acc { display: flex; gap: 2px; margin-top: 6px; margin-left: -6px; }
+  .asis-acc button { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; color: var(--txt-3); }
+  .asis-acc button:hover { background: var(--surface-2); color: var(--txt); }
+  .asis-acc button[aria-pressed="true"] { color: var(--txt); background: var(--surface-3); }
+  .asis-acc svg { width: 16px; height: 16px; }
+  .asis-mal { margin-top: 8px; display: grid; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+  .asis-mal p { font-size: 13px; color: var(--txt-2); }
+  .asis-mal textarea { min-height: 60px; font-size: 14px; }
+  .asis-mal div { display: flex; gap: 8px; justify-content: flex-end; }
+  .asis-gracias { margin-top: 6px; font-size: 12.5px; color: var(--ok-txt); font-weight: 600; }
+  .asis-error { justify-self: start; padding: 10px 14px; border-radius: var(--r-sm); background: var(--bad-soft); color: var(--bad-txt); font-size: 14px; }
+  .asis-error button { margin-left: 8px; background: none; border: 0; padding: 0; font: 700 14px var(--sans); color: var(--bad-txt); text-decoration: underline; cursor: pointer; }
+  .asis-pensando { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--txt-3); padding-top: 6px; }
+  .asis-pensando i { width: 6px; height: 6px; border-radius: 50%; background: var(--txt-3); animation: puntito 1.2s infinite ease-in-out; }
+  .asis-pensando i:nth-child(2) { animation-delay: .15s; }
+  .asis-pensando i:nth-child(3) { animation-delay: .3s; }
+  @keyframes puntito { 0%, 80%, 100% { opacity: .25; transform: none; } 40% { opacity: 1; transform: translateY(-3px); } }
+  .asis-aviso { padding: 12px 14px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn-txt); font-size: 14px; line-height: 1.5; text-align: left; margin-bottom: 12px; }
+
+  /* ── ¿Quién sos? ── */
+  .asis-elegir { width: 100%; max-width: 640px; margin: auto; text-align: center; }
+  .asis-elegir h2 { font: 700 22px/1.2 var(--display); }
+  .asis-elegir p { font-size: 14px; color: var(--txt-2); margin: 6px 0 16px; line-height: 1.5; }
+  .asis-elegir .chips { justify-content: center; gap: 8px; }
+  .asis-elegir-nuevo { display: flex; gap: 8px; max-width: 420px; margin: 14px auto 0; }
+  .asis-elegir-nuevo[hidden] { display: none; }
+  .asis-elegir-nuevo input { flex: 1; min-width: 0; }
+  .asis-link { margin: 14px 8px 0; background: none; border: 0; padding: 0; font: 600 13.5px var(--sans); color: var(--txt-2);
+               text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .asis-main.eligiendo .asis-portada, .asis-main.eligiendo .asis-abajo, .asis-main.eligiendo .asis-msgs,
+  .asis-main.eligiendo .asis-caja, .asis-main.eligiendo .asis-abajo-caja, .asis-main.eligiendo .asis-pie { display: none; }
+  .asis-main:not(.eligiendo) .asis-elegir { display: none; }
+  @media (max-width: 599px) {
+    .asis-portada h1 { font-size: 22px; }
+    .asis-accesos { grid-template-columns: minmax(0, 1fr); }
+    .asis-yo-msg { max-width: 92%; }
+  }
+</style>
+</head>
+<body class="hay-rail asis">
+
+<div class="marco" id="marco">
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <g fill="none" stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/><path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g><circle cx="9.1" cy="8.9" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="8.8" r="1.15" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt"><small>Sistema</small>No Compra</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      Carga
+    </a>
+    <a class="rail-item" href="caja.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Cobrar
+    </a>
+    <a class="rail-item" href="giftcards.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 11 5 12 8c1-3 2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
+      Gift Cards
+    </a>
+    <a class="rail-item" href="asistente.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 6.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg></span>
+      Asistente
+    </a>
+    <a class="rail-item" href="estadisticas.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Estadísticas
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      CRM
+    </a>
+    <a class="rail-item" href="club-numeros.html#socios">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.4l-5.72 3l1.1-6.37L2.75 9.53l6.4-.93z"/></svg></span>
+      Socios
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="asis-app" id="asisApp">
+  <!-- Las charlas de quien está usando la PC. -->
+  <aside class="asis-lado" id="asisLado" aria-label="Tus charlas">
+    <button type="button" class="btn btn-pri asis-nueva" id="asisNueva">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      Nueva charla
+    </button>
+    <h3>Tus charlas</h3>
+    <div class="asis-charlas" id="asisCharlas"></div>
+    <div class="asis-yo" id="asisYo"></div>
+  </aside>
+  <div class="asis-velo" id="asisVelo"></div>
+
+  <section class="asis-main vacia eligiendo" id="asisMain">
+    <!-- En el celular: las charlas y una nueva, arriba. -->
+    <div class="asis-cab">
+      <button type="button" id="asisAbrirLado" aria-controls="asisLado" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+        Charlas
+      </button>
+      <b>Asistente</b>
+      <button type="button" id="asisNuevaCel" aria-label="Nueva charla">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        Nueva
+      </button>
+    </div>
+
+    <div class="asis-cuerpo" id="asisCuerpo">
+      <!-- ¿Quién sos? La misma bienvenida de Carga: local y nombre. -->
+      <div class="asis-elegir" id="asisElegir">
+        <div id="asisPaso1">
+          <h2>¿En qué local estás?</h2>
+          <p>Así el Asistente te guarda tus charlas.</p>
+          <div class="chips" id="asisLocales"></div>
+          <button type="button" class="asis-link" id="asisOficina" hidden>Soy de la oficina</button>
+        </div>
+        <div id="asisPaso2" hidden>
+          <h2>¿Quién sos?</h2>
+          <p id="asisPaso2Txt"></p>
+          <div class="chips" id="asisVends"></div>
+          <div class="asis-elegir-nuevo" id="asisNuevoNombre" hidden>
+            <input type="text" id="asisNombre" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" maxlength="40" aria-label="Tu nombre">
+            <button type="button" class="btn btn-pri" id="asisNombreOk">Listo</button>
+          </div>
+          <button type="button" class="asis-link" id="asisNoEstoy">No estoy en la lista</button>
+          <button type="button" class="asis-link" id="asisOtroLocal">Otro local</button>
+        </div>
+      </div>
+
+      <div class="asis-ancho">
+        <div class="asis-portada">
+          <div class="asis-logo" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>
+          </div>
+          <h1 id="asisHola">Hola</h1>
+          <p id="asisSaludo">¿En qué te ayudo?</p>
+        </div>
+        <div class="asis-aviso" id="asisAviso" hidden></div>
+        <div class="asis-msgs" id="asisMsgs" aria-live="polite"></div>
+        <form class="asis-caja" id="asisCajaArriba" data-caja>
+          <textarea rows="1" placeholder="Preguntá lo que necesites…" aria-label="Tu pregunta" maxlength="2000"></textarea>
+          <button type="button" class="asis-boton asis-mic" data-mic aria-label="Hablar" title="Hablar" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
+          </button>
+          <button type="submit" class="asis-boton asis-mandar" aria-label="Preguntar" title="Preguntar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+        <div class="asis-abajo">
+          <div class="asis-sug" id="asisSug"></div>
+          <div class="asis-accesos" id="asisAccesos"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- En una charla, la caja va abajo. -->
+    <div class="asis-abajo-caja">
+      <div class="asis-ancho">
+        <form class="asis-caja" id="asisCajaAbajo" data-caja>
+          <textarea rows="1" placeholder="Seguí preguntando…" aria-label="Tu pregunta" maxlength="2000"></textarea>
+          <button type="button" class="asis-boton asis-mic" data-mic aria-label="Hablar" title="Hablar" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
+          </button>
+          <button type="submit" class="asis-boton asis-mandar" aria-label="Preguntar" title="Preguntar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          </button>
+        </form>
+      </div>
+    </div>
+    <p class="asis-pie">Contesta con los manuales de VDH y dice de dónde lo sacó. Si no sabe algo, te lo dice: ahí preguntale a tu supervisor.</p>
+  </section>
+</main>
+
+</div><!-- /.marco -->
+
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script src="datos.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var K_LOCAL = 'nc_local', K_VENDEDOR = 'nc_vendedor', K_CAJA = 'nc_caja', K_CAJA_LOCAL = 'nc_caja_local';
+  var K_DISP = 'nc_asis_disp', K_YO = 'nc_asis_yo';
+  var OFICINA = leer('nc_oficina') === '1';
+  /* Cuánto vale "quién sos" sin usar el Asistente. */
+  var YO_VALE = 30 * 60000;
+
+  var LOCALES = [
+    { v: 'CASEROS',            t: 'Caseros' },
+    { v: 'DOT',                t: 'DOT' },
+    { v: 'FLORES',             t: 'Flores' },
+    { v: 'GRAND BOURG',        t: 'Grand Bourg' },
+    { v: 'ITUZAINGÓ',          t: 'Ituzaingó' },
+    { v: 'LOMAS DE ZAMORA',    t: 'Lomas de Zamora' },
+    { v: 'MAR DEL PLATA',      t: 'Mar del Plata' },
+    { v: 'MORÓN',              t: 'Morón' },
+    { v: 'PACHECO',            t: 'Pacheco' },
+    { v: 'PARQUE BROWN',       t: 'Parque Brown' },
+    { v: 'SAN JUSTO',          t: 'San Justo' },
+    { v: 'SAN JUSTO SHOPPING', t: 'San Justo Shopping' },
+    { v: 'UNICENTER',          t: 'Unicenter' },
+    { v: 'VILLA DEL PARQUE',   t: 'Villa del Parque' }
+  ];
+  function nombreLocal(v) {
+    if (!v) { return ''; }
+    if (v === 'OFICINA') { return 'Oficina'; }
+    for (var i = 0; i < LOCALES.length; i++) { if (LOCALES[i].v === String(v).trim().toUpperCase()) { return LOCALES[i].t; } }
+    return bonito(v);
+  }
+  var ICO = {
+    chispa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>',
+    arriba: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12M15 5.9 14 10h5.8a2 2 0 0 1 1.9 2.6l-2.3 7A2 2 0 0 1 17.5 21H7V10l4.3-7.3A1.9 1.9 0 0 1 15 5.9z"/></svg>',
+    abajo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2M9 18.1 10 14H4.2a2 2 0 0 1-1.9-2.6l2.3-7A2 2 0 0 1 6.5 3H17v11l-4.3 7.3A1.9 1.9 0 0 1 9 18.1z"/></svg>',
+    copiar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+    enlace: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>',
+    carpeta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
+    objetivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>'
+  };
+
+  /* ═══ Quién está usando la PC ════════════════════════════════════════ */
+  /* La PC: un número al azar que se queda en el navegador. Las charlas
+     quedan atadas a él: desde otro aparato no se ven. */
+  function dispositivo() {
+    var d = leer(K_DISP);
+    if (/^[0-9a-f]{32}$/.test(d)) { return d; }
+    var a = new Uint8Array(16);
+    (window.crypto || window.msCrypto).getRandomValues(a);
+    d = Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+    guardar(K_DISP, d);
+    return d;
+  }
+  /* Quién es: en la pestaña y con vencimiento (se renueva al usarlo). */
+  function yoGuardado() {
+    try {
+      var y = JSON.parse(sessionStorage.getItem(K_YO) || 'null');
+      if (y && y.vendedor && y.local && Date.now() < Number(y.hasta)) { return y; }
+    } catch (e) {}
+    return null;
+  }
+  function renovarYo() {
+    if (!S.vendedor) { return; }
+    try { sessionStorage.setItem(K_YO, JSON.stringify({ local: S.local, vendedor: S.vendedor, hasta: Date.now() + YO_VALE })); } catch (e) {}
+  }
+  function olvidarYo() { try { sessionStorage.removeItem(K_YO); } catch (e) {} }
+
+  var S = {
+    disp: dispositivo(), local: '', vendedor: '', equipo: [], escribe: false,
+    portada: null, charlas: [], charla: null, msgs: [], esperando: false, pedido: 0
+  };
+
+  /* Con la caja habilitada, el local es el de la caja. */
+  function localDelAparato() {
+    if (leer(K_CAJA) && leer(K_CAJA_LOCAL)) { return leer(K_CAJA_LOCAL); }
+    return OFICINA ? '' : leer(K_LOCAL);
+  }
+
+  function abrirElegir(paso) {
+    $('asisMain').classList.add('eligiendo');
+    $('asisLocales').innerHTML = LOCALES.map(function (l) {
+      return '<button type="button" class="chip' + (l.v === S.local ? ' sel' : '') + '" data-v="' + esc(l.v) + '">' + esc(l.t) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('asisLocales').children, function (b) {
+      b.onclick = function () { S.local = b.dataset.v; traerEquipo(); elegirPaso(2); };
+    });
+    $('asisOficina').hidden = !OFICINA;
+    var p = paso || (S.local ? 2 : 1);
+    elegirPaso(p);
+    if (p === 2) { traerEquipo(); }
+    pintarLado();
+  }
+  function elegirPaso(n) {
+    $('asisPaso1').hidden = n !== 1;
+    $('asisPaso2').hidden = n !== 2;
+    $('asisOtroLocal').hidden = !!(leer(K_CAJA) && leer(K_CAJA_LOCAL));
+    if (n === 2) { S.escribe = S.local === 'OFICINA'; pintarVends(); }
+  }
+  function traerEquipo() {
+    S.equipo = [];
+    if (S.local === 'OFICINA') { pintarVends(); return; }
+    var pedido = ++S.pedido, local = S.local;
+    pintarVends();
+    base.equipo(local)
+      .then(function (l) { if (pedido === S.pedido) { S.equipo = l || []; pintarVends(); } })
+      .catch(function () { if (pedido === S.pedido) { S.equipo = []; S.escribe = true; pintarVends(); } });
+  }
+  function pintarVends() {
+    if ($('asisPaso2').hidden) { return; }
+    var ultimo = leer(K_VENDEDOR);
+    $('asisPaso2Txt').innerHTML = (S.local === 'OFICINA' ? 'Estás en la <b>oficina</b>. Escribí tu nombre.'
+      : 'Estás en <b>' + esc(nombreLocal(S.local)) + '</b>. ' + (S.equipo.length ? 'Tocá tu nombre: vas a ver sólo tus charlas.' : 'Escribí tu nombre.'));
+    $('asisVends').innerHTML = S.equipo.map(function (v) {
+      return '<button type="button" class="chip' + (v === ultimo ? ' sel' : '') + '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('asisVends').children, function (b) {
+      b.onclick = function () { fijarYo(b.dataset.v); };
+    });
+    var escribe = S.escribe || !S.equipo.length;
+    $('asisNuevoNombre').hidden = !escribe;
+    $('asisNoEstoy').hidden = escribe;
+  }
+  function fijarYo(nombre) {
+    S.vendedor = String(nombre || '').trim().slice(0, 40);
+    if (!S.vendedor) { return; }
+    if (!OFICINA && S.local !== 'OFICINA') { guardar(K_LOCAL, S.local); guardar(K_VENDEDOR, S.vendedor); }
+    renovarYo();
+    $('asisMain').classList.remove('eligiendo');
+    S.charla = null; S.msgs = []; S.charlas = [];
+    pintarTodo();
+    traerCharlas();
+    enfocarCaja();
+  }
+  function anotarme() {
+    var n = $('asisNombre').value.trim();
+    if (!n) { $('asisNombre').focus(); return; }
+    if (!OFICINA && S.local !== 'OFICINA') { base.anotarse(S.local, n).catch(function () {}); }
+    fijarYo(n);
+  }
+  /* "No soy yo": vuelve a preguntar y no deja nada a la vista. */
+  function cambiarYo() {
+    olvidarYo();
+    S.vendedor = ''; S.charla = null; S.msgs = []; S.charlas = [];
+    cerrarLado();
+    abrirElegir(S.local ? 2 : 1);
+  }
+  /* Al volver a la pestaña después de un rato, se pregunta de nuevo. */
+  function revisarYo() {
+    if (S.vendedor && !yoGuardado()) { cambiarYo(); }
+  }
+
+  /* ═══ La portada: saludo, sugeridas y accesos ════════════════════════ */
+  function traerPortada() {
+    base.asistentePortada()
+      .then(function (p) { S.portada = p || {}; pintarPortada(); })
+      .catch(function (err) {
+        S.portada = { error: /PGRST202|Could not find|asistente_portada/i.test(String(err && err.message)) ? 'falta' : 'red' };
+        pintarPortada();
+      });
+  }
+  function pintarPortada() {
+    var p = S.portada || {};
+    var nombre = String(S.vendedor || '').split(' ')[0];
+    $('asisHola').textContent = nombre ? 'Hola, ' + nombre : 'Hola';
+    $('asisSaludo').textContent = p.saludo || '¿En qué te ayudo?';
+    var aviso = '';
+    if (p.error === 'falta') { aviso = 'El Asistente todavía no está listo: falta un paso en la base de datos. Avisale a la oficina.'; }
+    else if (p.error === 'red') { aviso = 'No hay conexión con el Asistente. Revisá internet y volvé a entrar.'; }
+    else if (p.prendido === false) { aviso = 'El Asistente está apagado por ahora.'; }
+    $('asisAviso').hidden = !aviso;
+    $('asisAviso').textContent = aviso;
+    var sug = (p.sugeridas || []).filter(Boolean).slice(0, 6);
+    $('asisSug').innerHTML = sug.map(function (t, i) {
+      return '<button type="button" data-sug="' + i + '">' + esc(t) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('asisSug').children, function (b) {
+      b.onclick = function () { preguntar(sug[+b.dataset.sug]); };
+    });
+    var acc = (p.accesos || []).filter(function (a) { return a && a.titulo && /^https:\/\//i.test(a.url || ''); }).slice(0, 6);
+    $('asisAccesos').innerHTML = acc.map(function (a) {
+      var ico = /drive\.google|docs\.google/i.test(a.url) ? ICO.carpeta : (/objetivo/i.test(a.titulo + a.url) ? ICO.objetivo : ICO.enlace);
+      return '<a class="asis-acceso" href="' + esc(a.url) + '" target="_blank" rel="noopener"><i aria-hidden="true">' + ico + '</i>' +
+        '<span><b>' + esc(a.titulo) + '</b><small>' + esc(a.nota || 'Se abre en otra pestaña') + '</small></span></a>';
+    }).join('');
+    var apagado = !!p.error || p.prendido === false;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-caja] textarea'), function (t) { t.disabled = apagado; });
+    marcarMandar();
+  }
+
+  /* ═══ Las charlas de quien está ══════════════════════════════════════ */
+  function traerCharlas() {
+    if (!S.vendedor) { return; }
+    var quien = S.vendedor;
+    base.asistenteCharlas(S.disp, S.local, quien)
+      .then(function (l) { if (quien === S.vendedor) { S.charlas = l || []; pintarLado(); } })
+      .catch(function () { /* la lista es un extra: el chat anda igual */ });
+  }
+  function cuandoCorto(ts) {
+    if (!ts) { return ''; }
+    var d = new Date(ts), hoy = new Date();
+    var mismoDia = d.toDateString() === hoy.toDateString();
+    try {
+      return mismoDia ? 'Hoy, ' + d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })
+                      : d.toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric' });
+    } catch (e) { return ''; }
+  }
+  function pintarLado() {
+    var hay = !!S.vendedor;
+    $('asisCharlas').innerHTML = !hay ? '<p class="asis-ch-vacio">Decí quién sos para ver tus charlas.</p>'
+      : (S.charlas.length ? S.charlas.map(function (c) {
+          return '<button type="button" class="asis-ch' + (c.id === S.charla ? ' sel' : '') + '" data-ch="' + esc(c.id) + '">' +
+            '<b>' + esc(c.titulo || 'Charla') + '</b><small>' + esc(cuandoCorto(c.cuando)) + '</small></button>';
+        }).join('') : '<p class="asis-ch-vacio">Todavía no tenés charlas. Las que hagas quedan acá, sólo en esta PC.</p>');
+    Array.prototype.forEach.call($('asisCharlas').querySelectorAll('[data-ch]'), function (b) {
+      b.onclick = function () { abrirCharla(b.dataset.ch); };
+    });
+    $('asisYo').innerHTML = hay
+      ? '<b>' + esc(S.vendedor) + '</b>' + esc(nombreLocal(S.local)) + '<br><button type="button" id="asisNoSoy">No soy ' + esc(S.vendedor.split(' ')[0]) + '</button>'
+      : 'Sin elegir quién sos.';
+    if ($('asisNoSoy')) { $('asisNoSoy').onclick = cambiarYo; }
+    $('asisNueva').disabled = !hay;
+  }
+  function abrirCharla(id) {
+    if (S.esperando) { return; }
+    renovarYo();
+    cerrarLado();
+    S.charla = id; S.msgs = [];
+    pintarLado();
+    pintarMsgs(true);
+    var quien = S.vendedor;
+    base.asistenteCharla(S.disp, S.vendedor, id)
+      .then(function (l) {
+        if (S.charla !== id || quien !== S.vendedor) { return; }
+        S.msgs = (l || []).map(function (m) {
+          return m.rol === 'vendedor' ? { rol: 'yo', texto: m.texto }
+            : { rol: 'ia', id: m.id, texto: m.texto, fuentes: m.fuentes || [], voto: Number(m.voto) || 0 };
+        });
+        pintarMsgs();
+        bajar();
+      })
+      .catch(function () { avisar('err', 'No se pudo abrir la charla.'); });
+  }
+  function nuevaCharla() {
+    if (S.esperando) { return; }
+    renovarYo();
+    cerrarLado();
+    S.charla = null; S.msgs = [];
+    pintarLado();
+    pintarMsgs();
+    enfocarCaja();
+  }
+
+  /* ═══ Preguntar ══════════════════════════════════════════════════════ */
+  function preguntar(texto, reintento) {
+    texto = String(texto || '').trim();
+    if (!texto || S.esperando || !S.vendedor) { return; }
+    if (S.portada && (S.portada.error || S.portada.prendido === false)) { return; }
+    renovarYo();
+    if (!reintento) { S.msgs.push({ rol: 'yo', texto: texto }); }
+    S.esperando = true;
+    Array.prototype.forEach.call(document.querySelectorAll('[data-caja] textarea'), function (t) { t.value = ''; ajustarAlto(t); });
+    pintarMsgs();
+    bajar();
+    var quien = S.vendedor, charla = S.charla;
+    base.asistentePreguntar({ disp: S.disp, charla: charla, local: S.local, vendedor: quien, pregunta: texto })
+      .then(function (r) {
+        if (quien !== S.vendedor || charla !== S.charla) { S.esperando = false; return; }
+        S.esperando = false;
+        S.charla = r.charla || S.charla;
+        S.msgs.push({ rol: 'ia', id: r.id, texto: r.texto, fuentes: r.fuentes || [], voto: 0 });
+        pintarMsgs();
+        bajar();
+        traerCharlas();
+      })
+      .catch(function (err) {
+        if (quien !== S.vendedor || charla !== S.charla) { S.esperando = false; return; }
+        S.esperando = false;
+        S.msgs.push({ rol: 'error', texto: (err && err.message) || 'No se pudo preguntar.', repetir: texto });
+        pintarMsgs();
+        bajar();
+      });
+  }
+
+  /* El texto de una respuesta: párrafos, listas, negritas, enlaces y las
+     marcas de las fuentes ([1]). Todo escapado antes. */
+  function enLinea(s) {
+    s = esc(s);
+    s = s.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+    s = s.replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    s = s.replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+    s = s.replace(/\[(\d{1,2})\]/g, '<button type="button" class="asis-ref" data-ref="$1" aria-label="Fuente $1">$1</button>');
+    return s;
+  }
+  function md(t) {
+    var lineas = String(t || '').replace(/\r/g, '').split('\n'), html = '', lista = '', parrafo = [];
+    function cerrarParrafo() { if (parrafo.length) { html += '<p>' + parrafo.map(enLinea).join('<br>') + '</p>'; parrafo = []; } }
+    function cerrarLista() { if (lista) { html += '</' + lista + '>'; lista = ''; } }
+    lineas.forEach(function (l) {
+      var m;
+      if (/^\s*$/.test(l)) { cerrarParrafo(); cerrarLista(); return; }
+      if ((m = l.match(/^\s*#{1,6}\s+(.*)$/))) { cerrarParrafo(); cerrarLista(); html += '<h4>' + enLinea(m[1]) + '</h4>'; return; }
+      if ((m = l.match(/^\s*(?:[-*•])\s+(.*)$/))) {
+        cerrarParrafo();
+        if (lista !== 'ul') { cerrarLista(); html += '<ul>'; lista = 'ul'; }
+        html += '<li>' + enLinea(m[1]) + '</li>';
+        return;
+      }
+      if ((m = l.match(/^\s*\d{1,2}[.)]\s+(.*)$/))) {
+        cerrarParrafo();
+        if (lista !== 'ol') { cerrarLista(); html += '<ol>'; lista = 'ol'; }
+        html += '<li>' + enLinea(m[1]) + '</li>';
+        return;
+      }
+      cerrarLista();
+      parrafo.push(l);
+    });
+    cerrarParrafo(); cerrarLista();
+    return html;
+  }
+
+  function pintarMsgs(cargando) {
+    var vacia = !S.msgs.length && !S.esperando && !cargando;
+    $('asisMain').classList.toggle('vacia', vacia);
+    var html = S.msgs.map(function (m, i) {
+      if (m.rol === 'yo') { return '<div class="asis-yo-msg">' + esc(m.texto) + '</div>'; }
+      if (m.rol === 'error') {
+        return '<div class="asis-error">' + esc(m.texto) + (m.repetir ? '<button type="button" data-repetir="' + i + '">Probar de nuevo</button>' : '') + '</div>';
+      }
+      var f = m.fuentes || [];
+      return '<div class="asis-ia" data-i="' + i + '"><div class="asis-ia-ico" aria-hidden="true">' + ICO.chispa + '</div><div>' +
+        '<div class="asis-md">' + md(m.texto) + '</div>' +
+        (f.length ? '<div class="asis-fuentes"><span>Fuentes:</span>' + f.map(function (x) {
+          return '<button type="button" class="asis-fuente" data-fuente="' + x.n + '" aria-expanded="false"><em>' + x.n + '</em><span>' + esc(x.titulo) + '</span></button>';
+        }).join('') + '</div>' : '') +
+        '<div class="asis-cita-lugar"></div>' +
+        (m.id ? '<div class="asis-acc">' +
+          '<button type="button" data-voto="1" aria-pressed="' + (m.voto === 1) + '" aria-label="Me sirvió" title="Me sirvió">' + ICO.arriba + '</button>' +
+          '<button type="button" data-voto="-1" aria-pressed="' + (m.voto === -1) + '" aria-label="No me sirvió" title="No me sirvió">' + ICO.abajo + '</button>' +
+          '<button type="button" data-copiar aria-label="Copiar la respuesta" title="Copiar">' + ICO.copiar + '</button></div>' : '') +
+        '<div class="asis-mal-lugar"></div>' +
+      '</div></div>';
+    }).join('');
+    if (S.esperando) {
+      html += '<div class="asis-ia"><div class="asis-ia-ico" aria-hidden="true">' + ICO.chispa + '</div>' +
+        '<div class="asis-pensando">Buscando en los manuales<i></i><i></i><i></i></div></div>';
+    } else if (cargando) {
+      html += '<div class="skel"></div>';
+    }
+    $('asisMsgs').innerHTML = html;
+    cablearMsgs();
+    marcarMandar();
+  }
+  function cablearMsgs() {
+    Array.prototype.forEach.call($('asisMsgs').querySelectorAll('[data-repetir]'), function (b) {
+      b.onclick = function () {
+        var i = +b.dataset.repetir, t = S.msgs[i].repetir;
+        S.msgs.splice(i, 1);
+        preguntar(t, true);
+      };
+    });
+    Array.prototype.forEach.call($('asisMsgs').querySelectorAll('.asis-ia[data-i]'), function (caja) {
+      var m = S.msgs[+caja.dataset.i];
+      var verFuente = function (n, boton) {
+        var x = (m.fuentes || []).filter(function (f) { return String(f.n) === String(n); })[0];
+        var lugar = caja.querySelector('.asis-cita-lugar');
+        var ya = lugar.dataset.n === String(n);
+        Array.prototype.forEach.call(caja.querySelectorAll('.asis-fuente'), function (o) { o.setAttribute('aria-expanded', 'false'); });
+        if (!x || ya) { lugar.innerHTML = ''; lugar.dataset.n = ''; return; }
+        lugar.dataset.n = String(n);
+        var chip = caja.querySelector('.asis-fuente[data-fuente="' + n + '"]');
+        if (chip) { chip.setAttribute('aria-expanded', 'true'); }
+        lugar.innerHTML = '<div class="asis-cita"><b>' + x.n + ' · ' + esc(x.titulo) + '</b>' +
+          ((x.citas || []).length ? x.citas.slice(0, 3).map(function (c) { return '<q>“' + esc(c) + '”</q>'; }).join('')
+                                  : '<q>De esta fuente.</q>') + '</div>';
+      };
+      Array.prototype.forEach.call(caja.querySelectorAll('[data-fuente]'), function (b) {
+        b.onclick = function () { verFuente(b.dataset.fuente, b); };
+      });
+      Array.prototype.forEach.call(caja.querySelectorAll('[data-ref]'), function (b) {
+        b.onclick = function () { verFuente(b.dataset.ref, b); };
+      });
+      Array.prototype.forEach.call(caja.querySelectorAll('[data-voto]'), function (b) {
+        b.onclick = function () { votar(m, +b.dataset.voto, caja); };
+      });
+      var cp = caja.querySelector('[data-copiar]');
+      if (cp) {
+        cp.onclick = function () {
+          var t = String(m.texto || '').replace(/\s?\[\d{1,2}\]/g, '');
+          if (navigator.clipboard) { navigator.clipboard.writeText(t).then(function () { avisar('ok', 'Copiado.'); }, function () {}); }
+        };
+      }
+    });
+  }
+  function votar(m, voto, caja) {
+    if (!m.id) { return; }
+    renovarYo();
+    var nuevo = m.voto === voto ? 0 : voto;
+    var antes = m.voto;
+    m.voto = nuevo;
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-voto]'), function (o) {
+      o.setAttribute('aria-pressed', String(+o.dataset.voto === nuevo));
+    });
+    var lugar = caja.querySelector('.asis-mal-lugar');
+    lugar.innerHTML = '';
+    base.asistenteVotar(S.disp, m.id, nuevo, null)
+      .then(function () {
+        if (nuevo === 1) { lugar.innerHTML = '<p class="asis-gracias">¡Gracias!</p>'; }
+        if (nuevo === -1) {
+          lugar.innerHTML = '<div class="asis-mal"><p>Gracias. ¿Qué estuvo mal? Le llega a la oficina para corregirlo (es opcional).</p>' +
+            '<textarea maxlength="600" aria-label="Qué estuvo mal"></textarea>' +
+            '<div><button type="button" class="btn btn-sec btn-chico" data-mal-no>Listo</button>' +
+            '<button type="button" class="btn btn-pri btn-chico" data-mal-ok>Mandar</button></div></div>';
+          lugar.querySelector('textarea').focus();
+          lugar.querySelector('[data-mal-no]').onclick = function () { lugar.innerHTML = ''; };
+          lugar.querySelector('[data-mal-ok]').onclick = function () {
+            var t = lugar.querySelector('textarea').value.trim();
+            if (!t) { lugar.innerHTML = ''; return; }
+            base.asistenteVotar(S.disp, m.id, -1, t)
+              .then(function () { lugar.innerHTML = '<p class="asis-gracias">Le llegó a la oficina. ¡Gracias!</p>'; })
+              .catch(function () { avisar('err', 'No se pudo mandar. Probá de nuevo.'); });
+          };
+        }
+      })
+      .catch(function () {
+        m.voto = antes;
+        Array.prototype.forEach.call(caja.querySelectorAll('[data-voto]'), function (o) {
+          o.setAttribute('aria-pressed', String(+o.dataset.voto === antes));
+        });
+        avisar('err', 'No se pudo guardar. Probá de nuevo.');
+      });
+  }
+
+  /* ═══ La caja ════════════════════════════════════════════════════════ */
+  function cajaVisible() {
+    var abajo = !$('asisMain').classList.contains('vacia');
+    return (abajo ? $('asisCajaAbajo') : $('asisCajaArriba')).querySelector('textarea');
+  }
+  function enfocarCaja() {
+    setTimeout(function () {
+      var t = cajaVisible();
+      if (t && !t.disabled && window.matchMedia && matchMedia('(min-width: 900px)').matches) { t.focus(); }
+    }, 30);
+  }
+  function ajustarAlto(t) { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 168) + 'px'; }
+  function marcarMandar() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-caja]'), function (f) {
+      var t = f.querySelector('textarea');
+      f.querySelector('.asis-mandar').disabled = S.esperando || t.disabled || !t.value.trim();
+    });
+  }
+  function bajar() { var c = $('asisCuerpo'); c.scrollTop = c.scrollHeight; }
+
+  /* El micrófono: el dictado del navegador (Chrome y Edge), en castellano
+     de acá. Si el navegador no lo tiene, el botón no aparece. */
+  var Reconocer = window.SpeechRecognition || window.webkitSpeechRecognition;
+  var rec = null, escuchando = false;
+  function marcarMic() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-mic]'), function (b) {
+      b.classList.toggle('escucha', escuchando);
+      b.setAttribute('aria-label', escuchando ? 'Dejar de escuchar' : 'Hablar');
+      b.title = escuchando ? 'Dejar de escuchar' : 'Hablar';
+    });
+  }
+  function microfono(t) {
+    if (escuchando && rec) { rec.stop(); return; }
+    if (t.disabled) { return; }
+    var antes = t.value ? t.value.replace(/\s*$/, ' ') : '';
+    rec = new Reconocer();
+    rec.lang = 'es-AR';
+    rec.interimResults = true;
+    rec.continuous = false;
+    rec.onresult = function (e) {
+      var dicho = '';
+      for (var i = 0; i < e.results.length; i++) { dicho += e.results[i][0].transcript; }
+      t.value = antes + dicho;
+      ajustarAlto(t);
+      marcarMandar();
+    };
+    rec.onerror = function (e) {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+        avisar('err', 'El navegador no deja usar el micrófono: permitilo en el candado, al lado de la dirección.');
+      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+        avisar('err', 'No se pudo escuchar. Probá de nuevo.');
+      }
+    };
+    rec.onend = function () { escuchando = false; marcarMic(); t.focus(); };
+    try { rec.start(); escuchando = true; marcarMic(); } catch (e) { escuchando = false; marcarMic(); }
+  }
+
+  Array.prototype.forEach.call(document.querySelectorAll('[data-caja]'), function (f) {
+    var t = f.querySelector('textarea');
+    t.oninput = function () { ajustarAlto(t); marcarMandar(); };
+    t.onkeydown = function (e) {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); preguntar(t.value); }
+    };
+    f.onsubmit = function (e) { e.preventDefault(); preguntar(t.value); };
+    var mic = f.querySelector('[data-mic]');
+    mic.hidden = !Reconocer;
+    mic.onclick = function () { microfono(t); };
+  });
+
+  /* ═══ El celular: las charlas se abren desde arriba ═════════════════ */
+  function abrirLado() { $('asisApp').classList.add('lado-abierto'); $('asisAbrirLado').setAttribute('aria-expanded', 'true'); }
+  function cerrarLado() { $('asisApp').classList.remove('lado-abierto'); $('asisAbrirLado').setAttribute('aria-expanded', 'false'); }
+
+  function pintarTodo() { pintarPortada(); pintarLado(); pintarMsgs(); }
+
+  $('asisNueva').onclick = nuevaCharla;
+  $('asisNuevaCel').onclick = nuevaCharla;
+  $('asisAbrirLado').onclick = function () { if ($('asisApp').classList.contains('lado-abierto')) { cerrarLado(); } else { abrirLado(); } };
+  $('asisVelo').onclick = cerrarLado;
+  $('asisNoEstoy').onclick = function () { S.escribe = true; pintarVends(); $('asisNombre').focus(); };
+  $('asisNombreOk').onclick = anotarme;
+  $('asisNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); anotarme(); } };
+  $('asisOtroLocal').onclick = function () { elegirPaso(1); };
+  $('asisOficina').onclick = function () { S.local = 'OFICINA'; elegirPaso(2); $('asisNombre').focus(); };
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { cerrarLado(); } });
+  document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { revisarYo(); } });
+  window.addEventListener('focus', revisarYo);
+  setInterval(revisarYo, 60000);
+
+  /* Arranque: si quien estaba sigue en la pestaña (y no venció), entra
+     directo; si no, "¿quién sos?" con el local del aparato ya elegido. */
+  var y = yoGuardado();
+  if (y) {
+    S.local = y.local; S.vendedor = y.vendedor;
+    $('asisMain').classList.remove('eligiendo');
+    renovarYo();
+    traerCharlas();
+  } else {
+    S.local = localDelAparato();
+    abrirElegir();
+  }
+  pintarTodo();
+  traerPortada();
+  enfocarCaja();
+  iniciarTema();
+  iniciarPWA();
+})();
+</script>
+</body>
+</html>

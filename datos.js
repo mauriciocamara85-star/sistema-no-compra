@@ -1388,6 +1388,84 @@ var base = {
     return funcion('agente_borrador_resolver', { p_pin: pin, p_id: id, p_estado: estado, p_final: final || null, p_quien: quien || null });
   },
 
+  /* ── El Asistente de los vendedores (12/10/2026): libre, sin PIN ── */
+
+  /** El saludo, las preguntas sugeridas, los accesos y si está prendido. */
+  asistentePortada: function () {
+    return funcion('asistente_portada', {});
+  },
+  /** Las charlas de esa persona en esa PC (y sólo esas). */
+  asistenteCharlas: function (disp, local, vendedor) {
+    return funcion('asistente_charlas', { p_disp: disp, p_local: local || '', p_vendedor: vendedor || '' });
+  },
+  /** Los mensajes de una charla, si es de esa persona en esa PC. */
+  asistenteCharla: function (disp, vendedor, charla) {
+    return funcion('asistente_charla', { p_disp: disp, p_vendedor: vendedor || '', p_charla: charla });
+  },
+  /** El pulgar: 1, -1 o 0 (sacarlo), con lo que estuvo mal si lo dicen. */
+  asistenteVotar: function (disp, id, voto, comentario) {
+    return funcion('asistente_votar', { p_disp: disp, p_id: id, p_voto: voto, p_comentario: comentario || null });
+  },
+  /* ── Agentes de IA en el CRM (SQL 85): con el PIN. Las que son nuevas no
+     tiran error con el PIN malo: devuelven {error: 'pin', porque, mal}. ── */
+
+  /** Las fuentes (sin el contenido entero). */
+  agenteFuentes: function (pin) {
+    return funcion('agente_fuentes_ver', { p_pin: pin });
+  },
+  /** Una fuente con su contenido. */
+  agenteFuente: function (pin, id) {
+    return funcion('agente_fuente_ver', { p_pin: pin, p_id: id });
+  },
+  /** Nueva (sin id) o cambiar una (con id: sólo lo que venga). */
+  agenteFuenteGuardar: function (pin, f) {
+    return funcion('agente_fuente_guardar', { p_pin: pin, p: f });
+  },
+  agenteFuenteBorrar: function (pin, id, quien) {
+    return funcion('agente_fuente_borrar', { p_pin: pin, p_id: id, p_quien: quien || null });
+  },
+  /** Las respuestas del Asistente marcadas con el pulgar para abajo. */
+  asistenteMarcadas: function (pin) {
+    return funcion('asistente_marcadas', { p_pin: pin });
+  },
+  asistenteMarcadaRevisar: function (pin, id, si) {
+    return funcion('asistente_marcada_revisar', { p_pin: pin, p_id: id, p_si: si !== false });
+  },
+  /** El chat de prueba del Asistente (no guarda la charla). Devuelve
+   *  { texto, fuentes, uso }. Rechaza con el porqué (err.pin si es el PIN). */
+  asistenteProbar: function (pin, historial, pregunta) {
+    return fetch(BASE + '/functions/v1/asistente', {
+      method: 'POST',
+      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'probar', pin: pin, historial: historial || [], pregunta: pregunta })
+    }).then(function (r) {
+      return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el Asistente.' }; });
+    }, function () {
+      return { ok: false, error: 'No hay conexión. Revisá internet y probá de nuevo.' };
+    }).then(function (x) {
+      if (!x || !x.ok) { var e = rechazo((x && x.error) || 'No se pudo hablar con el Asistente.'); e.pin = !!(x && x.pin); throw e; }
+      return x;
+    });
+  },
+
+  /** Una pregunta: la contesta la Edge Function "asistente" con Claude.
+   *  Devuelve { charla, id, texto, fuentes }. Rechaza con el porqué. */
+  asistentePreguntar: function (d) {
+    return fetch(BASE + '/functions/v1/asistente', {
+      method: 'POST',
+      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'preguntar', disp: d.disp, charla: d.charla || null, local: d.local || '',
+                             vendedor: d.vendedor || '', pregunta: d.pregunta })
+    }).then(function (r) {
+      return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el Asistente.' }; });
+    }, function () {
+      return { ok: false, error: 'No hay conexión. Revisá internet y probá de nuevo.' };
+    }).then(function (x) {
+      if (!x || !x.ok) { throw rechazo((x && x.error) || 'No se pudo hablar con el Asistente.'); }
+      return x;
+    });
+  },
+
   /** Lo mínimo para preguntar seguido si llegó algo: el último mensaje y
    *  cuántas conversaciones esperan respuesta. */
   crmMensajesUltimo: function (pin) {

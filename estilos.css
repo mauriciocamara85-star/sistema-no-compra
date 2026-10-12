@@ -731,6 +731,26 @@ a { color: var(--acc-txt); }
   }
 }
 
+/* Las PC de los locales (1366×768: al navegador le quedan ~658 px de alto)
+   con ocho secciones (12/10/2026, se sumó el Asistente): el rail se aprieta
+   de alto para que entren todas y, en Carga, también la ficha de quién
+   carga con su botón de abajo. Sin esto, "Cambiar de local" quedaba debajo
+   del borde de la pantalla. */
+@media (min-width: 900px) and (max-height: 760px) {
+  .rail { padding-top: 10px; padding-bottom: 10px; }
+  .rail-marca { margin-bottom: 10px; }
+  .rail-marca-icono { width: 34px; height: 34px; }
+  .rail-in { gap: 2px; }
+  .rail-item { padding-top: 5px; padding-bottom: 5px; gap: 3px; }
+  .rail-icono { height: 28px; }
+}
+@media (min-width: 1200px) and (max-height: 760px) {
+  .rail-marca { margin-bottom: 12px; }
+  .rail-item { padding-top: 4px; padding-bottom: 4px; }
+  .rail-icono { height: 30px; }
+  .rail-pie { padding-top: 10px; }
+}
+
 /* ── ESTRUCTURA ────────────────────────────────────────────────────────── */
 .hoja {
   max-width: var(--tope);

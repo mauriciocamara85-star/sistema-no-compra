@@ -775,7 +775,7 @@
   .ag-estado.equipo { border-left-color: #3E6FB0; }
   .ag-estado b { font: 700 16px var(--display); }
   .ag-estado span { font-size: 13.5px; color: var(--txt-2); }
-  .ag-estado .ag-fase1 { color: var(--warn-txt); font-weight: 600; margin-top: 3px; }
+  .ag-estado .ag-fase1 { color: var(--txt-2); font-weight: 600; margin-top: 3px; }
   .ag-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
   .ag-col { display: grid; gap: 14px; min-width: 0; }
   .ag-ancho { grid-column: 1 / -1; }
@@ -820,10 +820,60 @@
   .ag-op.no { opacity: .55; }
   .ag-op b { display: block; font-size: 14px; }
   .ag-op span { font-size: 12.5px; color: var(--txt-2); }
-  .ag-fases ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
-  .ag-fases li b { display: block; font-size: 14px; }
-  .ag-fases li span { display: block; font-size: 13px; color: var(--txt-2); margin-top: 2px; line-height: 1.5; }
-  .ag-fases li.hecha b { color: var(--ok-txt); }
+  /* ── Agentes de IA (12/10/2026): el menú propio, el selector y el chat
+     de prueba a la derecha ── */
+  .agx-volver { color: var(--txt-2); margin-bottom: 2px; }
+  .agx-cual { display: grid; gap: 3px; margin: 4px 0 10px; padding: 4px; border-radius: 12px; background: var(--surface-2); }
+  .agx-cual-op { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 42px; padding: 5px 10px; border-radius: 9px;
+                 text-align: left; color: var(--txt-2); }
+  .agx-cual-op:hover { color: var(--txt); }
+  .agx-cual-op b { display: block; font: 600 13px/1.25 var(--sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agx-cual-op small { display: block; font-size: 11.5px; line-height: 1.3; color: var(--txt-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .agx-cual-op[aria-checked="true"] { background: var(--surface); color: var(--txt); box-shadow: 0 1px 3px rgba(0, 0, 0, .1); }
+  .agx-punto { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--surface-3); box-shadow: inset 0 0 0 1px var(--line); }
+  .agx-punto.on { background: var(--ok); box-shadow: none; }
+  @media (min-width: 900px) {
+    /* Pegado debajo de la cabecera (64 px), no detrás. */
+    .crm.en-agentes .crm-menu { top: 76px; max-height: calc(100vh - 88px); }
+    .crm.chico .agx-cual { padding: 3px; }
+    .crm.chico .agx-cual-op { justify-content: center; padding: 6px 0; position: relative; }
+    .crm.chico .agx-punto { position: absolute; top: 5px; right: 5px; }
+  }
+  .agx { display: grid; gap: 18px; align-items: start; }
+  .agx-hoja { display: grid; gap: 14px; min-width: 0; max-width: 860px; }
+  .agx-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  .agx-cab small { display: block; font-size: 12px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; }
+  .agx-cab h2 { font: 700 22px/1.2 var(--display); margin-top: 2px; }
+  .agx-cab p { margin-top: 4px; font-size: 14px; line-height: 1.5; color: var(--txt-2); }
+  .agx-dock-abrir { flex: none; gap: 6px; }
+  .agx-dock-abrir svg { width: 16px; height: 16px; }
+  .agx-fila { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .agx-fila p { font-size: 14px; color: var(--txt-2); }
+  /* El chat de prueba. */
+  .agx-chat { display: flex; flex-direction: column; min-height: 0; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+  .agx-hoja > .agx-chat { height: calc(100vh - 200px); min-height: 380px; }
+  .agx-chat-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+  .agx-chat-cab b { display: block; font-size: 14px; }
+  .agx-chat-cab span { display: block; font-size: 12px; color: var(--txt-3); }
+  .agx-x { width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; color: var(--txt-3); }
+  .agx-x:hover { background: var(--surface-2); color: var(--txt); }
+  .agx-x svg { width: 16px; height: 16px; }
+  .agx-chat-msgs { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .agx-chat-vacio { margin: auto; max-width: 300px; text-align: center; font-size: 13.5px; line-height: 1.5; color: var(--txt-3); }
+  .agx-chat-caja { display: flex; align-items: flex-end; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
+  .agx-chat-caja textarea { flex: 1; min-height: 40px; max-height: 140px; resize: none; padding: 9px 12px; font-size: 14px; line-height: 1.4; }
+  .agx-dock, .agx-dock-velo { display: none; }
+  @media (min-width: 1200px) {
+    .agx.con-dock { grid-template-columns: minmax(0, 1fr) 340px; }
+    .agx-dock { display: block; position: sticky; top: 76px; height: calc(100vh - 88px); }
+    .agx-dock .agx-chat { height: 100%; }
+    .agx-dock-abrir, .agx-dock .agx-x { display: none; }
+  }
+  @media (max-width: 1199px) {
+    .agx.dock-abierto .agx-dock { display: block; position: fixed; top: 0; right: 0; bottom: 0; z-index: 81; width: min(380px, 92vw); }
+    .agx.dock-abierto .agx-dock .agx-chat { height: 100%; border-radius: var(--r) 0 0 var(--r); box-shadow: var(--sombra-alta); }
+    .agx.dock-abierto .agx-dock-velo { display: block; position: fixed; inset: 0; z-index: 80; background: rgba(20, 20, 18, .32); }
+  }
 
   /* ── Cupones (12/10/2026): lo que era la lista de Beneficios. Las gift
      cards se fueron a su sección, Gift Cards (giftcards.html). ── */
@@ -1345,6 +1395,10 @@
     <a class="rail-item" href="giftcards.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 11 5 12 8c1-3 2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
       Gift Cards
+    </a>
+    <a class="rail-item" href="asistente.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 6.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg></span>
+      Asistente
     </a>
     <a class="rail-item" href="estadisticas.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
@@ -1916,6 +1970,11 @@
       guardar(K_VISTA, vista);
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
     }
+    if (location.hash === '#agentes') {
+      vista = 'agente';
+      guardar(K_VISTA, vista);
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    }
     aplicarVista();
     pintarCrm(res);
     cargar();
@@ -2159,7 +2218,7 @@
     { v: 'segmentos', t: 'Segmentos', i: ICO.seg, marca: 'Beta' },
     { v: 'contactos', t: 'Contactos', i: ICO.gente },
     { v: 'cupones', t: 'Cupones', i: ICO.cupon },
-    { v: 'agente', t: 'Agente de IA', i: ICO.ia, marca: 'Beta' },
+    { v: 'agente', t: 'Agentes de IA', i: ICO.ia, marca: 'Beta' },
     { g: 'automatizaciones', t: 'Automatizaciones', i: ICO.auto, hijos: [
       { v: 'bots', t: 'Bots', marca: 'Pronto' },
       { v: 'plantillas', t: 'Plantillas' },
@@ -2177,6 +2236,7 @@
   }
 
   function pintarVistas() {
+    if (vista === 'agente') { pintarMenuAgentes(); return; }
     var pend = function (l) { return l.filter(function (r) { return columnaDe(r) === 'Pendiente'; }).length; };
     var cuantos = { mensajes: MS.sin, no_compra: pend(registros), carrito: pend(carritos), tienda: MS.tienda };
     var cerrados = gruposCerrados();
@@ -2267,6 +2327,7 @@
     $('vistaTienda').hidden = vista !== 'tienda';
     $('vistaPronto').hidden = !PRONTO[vista];
     $('vistaAgente').hidden = vista !== 'agente';
+    $('crm').classList.toggle('en-agentes', vista === 'agente');
     $('vistaCupones').hidden = vista !== 'cupones';
     /* El local sólo tiene sentido en los No Compra: los carritos son todos online. */
     $('filtroLocal').parentNode.style.display = vista === 'no_compra' ? '' : 'none';
@@ -2276,6 +2337,7 @@
   }
   function cambiarVista(v) {
     if (v === vista) return;
+    if (v === 'agente') { AGX.volver = vista; }
     cancelarArrastre();
     cerrarFicha();
     vista = v;
@@ -6391,12 +6453,20 @@
       });
   }
 
-  /* ═══ Agente de IA (SQL 77, 11/10/2026) ══════════════════════════════════
-     Fase 1, los cimientos: todavía NO contesta. Acá se prende y se apaga,
-     se marca cuándo atiende (cada día: todo el día, fuera del horario del
-     equipo o no atiende; y las fechas especiales, que marca Mauricio), lo
-     que sabe (con versiones), los topes de venta —que valida la base, no la
-     pantalla— y a quién le pasa la charla. */
+  /* ═══ Agentes de IA (SQL 77, 11/10/2026; dos agentes desde el 12/10) ═════
+     Pedido de Mauricio (12/10/2026): dos agentes, como en Chatbase.
+       · "Atención al cliente": el del WhatsApp de la tienda. Se prende y se
+         apaga, se marca cuándo atiende (cada día: todo el día, fuera del
+         horario del equipo o no atiende; y las fechas especiales), lo que
+         sabe, los topes de venta —que valida la base, no la pantalla— y a
+         quién le pasa la charla.
+       · "Asistente de vendedores": el chat de los locales (asistente.html),
+         que reemplaza a Chatbase. Sólo consulta: no vende ni le escribe a
+         nadie.
+     Los dos se configuran acá, con el PIN del CRM: los vendedores no ven
+     nada de esto. Al entrar, el menú del CRM se cambia por el de los
+     agentes ("Volver al CRM", el selector y sus páginas) y a la derecha
+     queda el chat de prueba. */
   var AG = { datos: null, error: '', w: null };
   var DIAS_AG = [['lun', 'Lunes'], ['mar', 'Martes'], ['mie', 'Miércoles'], ['jue', 'Jueves'],
                  ['vie', 'Viernes'], ['sab', 'Sábado'], ['dom', 'Domingo']];
@@ -6419,13 +6489,13 @@
   }
 
   function cargarAgente() {
-    if (!AG.datos && !AG.error) { $('vistaAgente').innerHTML = '<div class="skel"></div><div class="skel"></div>'; }
+    pintarAgente();
     base.agenteConfig(pinGuardado())
-      .then(function (d) { AG.datos = d; AG.error = ''; AG.w = trabajoAgente(d); pintarAgente(); })
+      .then(function (d) { AG.datos = d; AG.error = ''; AG.w = trabajoAgente(d); if (vista === 'agente') { pintarVistas(); pintarAgente(); } })
       .catch(function (err) {
         if (err && err.sinSesion) { caducada(); return; }
         AG.error = /agente_config|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red';
-        pintarAgente();
+        if (vista === 'agente') { pintarAgente(); }
       });
   }
 
@@ -6442,41 +6512,162 @@
     return ['on', 'Ahora le toca al agente', 'Fuera del horario del equipo (' + (a.de || '') + ' a ' + (a.a || '') + ').'];
   }
 
-  function fasesAgente(hay) {
-    var f = [
-      [hay, 'Los cimientos', 'Esta pantalla: cuándo atiende, lo que sabe, los topes y a quién le pasa la charla.'],
-      [false, 'El cerebro, en prueba', 'Redacta las respuestas con el catálogo, el stock, las promos y los locales, y ustedes las aprueban desde Mensajes antes de que salgan. Falta: la clave de Claude, pegada en los Secrets de Supabase.'],
-      [false, 'El vendedor', 'Cupón de cierre, envío gratis y segunda prenda, con los topes de acá. Falta: la app de Tienda Nube para los cupones.'],
-      [false, 'Suelto fuera de horario', 'Contesta solo en los horarios marcados, con la revisión (bien o mal, y la corrección) y sus números en Estadísticas.']
-    ];
-    return '<div class="ficha-bloque ag-fases ag-ancho"><h3>Cómo sigue</h3><ol>' + f.map(function (x, i) {
-      return '<li' + (x[0] ? ' class="hecha"' : '') + '><b>' + (i + 1) + '. ' + esc(x[1]) + (x[0] ? ' · listo' : '') + '</b>' +
-        '<span>' + esc(x[2]) + '</span></li>';
-    }).join('') + '</ol></div>';
-  }
-
   function fechaLargaAg(iso) {
     var p = String(iso).split('-');
     var t = new Date(+p[0], +p[1] - 1, +p[2]).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'numeric' });
     return t.charAt(0).toUpperCase() + t.slice(1);
   }
 
-  function pintarAgente() {
-    var v = $('vistaAgente');
-    var prendido = !!(AG.datos && AG.datos.reglas && AG.datos.reglas.prendido === 'si');
-    var cab = '<div class="ag-cab"><div><h2>Agente de IA <span class="pill pill-warn">Fase 1</span></h2>' +
-      '<p>' + esc(QUE_HACE_AG) + '</p></div>' +
-      (AG.datos && !AG.error ? '<button type="button" class="llave" role="switch" id="agPrendido" aria-checked="' + prendido + '">' +
-        '<i aria-hidden="true"></i><span>' + (prendido ? 'Prendido' : 'Apagado') + '</span></button>' : '') + '</div>';
-    if (AG.error) {
-      v.innerHTML = '<div class="ag">' + cab +
-        '<div class="vacio-vista"><b>' + (AG.error === 'falta' ? 'Falta un paso' : 'No se pudo traer el agente') + '</b>' +
-          (AG.error === 'falta' ? 'Para configurar el agente hay que correr el SQL 77 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>' +
-        fasesAgente(false) + '</div>';
-      return;
-    }
-    if (!AG.datos) { return; }
-    var d = AG.datos, w = AG.w, ah = ahoraAgente(d.ahora);
+  /* ── El menú de los agentes ──────────────────────────────────────────── */
+  var ICO_AG = {
+    volver: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
+    wsp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.4z"/><path d="M9 9.5c.3 2.4 2.1 4.3 4.6 4.9l1-1.2 1.9.8-.4 1.8c-3.6.2-7.6-3.2-8-7.3l1.7-.6.9 1.8z"/></svg>',
+    tienda: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v10h16V10"/><path d="M2.5 10 5 4h14l2.5 6z"/><path d="M9.5 20v-6h5v6"/></svg>',
+    probar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M10 8l4 2.5-4 2.5z"/></svg>',
+    instr: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>',
+    libro: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5"/></svg>',
+    portada: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M8 14h8M10 17.5h4"/></svg>',
+    reloj: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+    etq: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><path d="M7.5 7.5h.01"/></svg>',
+    escudo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>',
+    tilde: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+    pulgar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.7a2 2 0 0 0-2 1.7l-1.4 9a2 2 0 0 0 2 2.3z"/><path d="M17 2h2.7A2.3 2.3 0 0 1 22 4v7a2.3 2.3 0 0 1-2.3 2H17"/></svg>',
+    enchufe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2v6M15 2v6M6 8h12v4a6 6 0 0 1-12 0z"/><path d="M12 18v4"/></svg>',
+    ajustes: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></svg>',
+    cerrar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>'
+  };
+  var AGENTES_IA = {
+    clientes: { t: 'Atención al cliente', s: 'WhatsApp de la tienda', i: ICO_AG.wsp,
+                prueba: 'Escribí como si fueras un cliente. Contesta acá: no le llega nada a nadie.' },
+    vendedores: { t: 'Asistente de vendedores', s: 'El chat de los locales', i: ICO_AG.tienda,
+                  prueba: 'Preguntá como si fueras un vendedor. Es lo mismo que ven en los locales, sin guardar la charla.' }
+  };
+  /* "solo": la página es de un agente solo. "sub": lo que se ve abajo del título. */
+  var PAGS_AG = [
+    { p: 'probar', t: 'Probar', i: ICO_AG.probar,
+      sub: 'Un chat de borrador: muestra de dónde sacó cada cosa y deja marcar una respuesta mala con la corrección.' },
+    { p: 'instrucciones', t: 'Instrucciones', i: ICO_AG.instr,
+      sub: 'Quién es, cómo habla y cómo contesta. Por partes, con el historial de cada cambio y la vuelta atrás.' },
+    { p: 'conocimiento', t: 'Conocimiento', i: ICO_AG.libro,
+      sub: 'Lo que sabe: archivos, textos y preguntas con su respuesta.' },
+    { p: 'portada', t: 'Portada del chat', i: ICO_AG.portada, solo: 'vendedores',
+      sub: 'Lo que ven los vendedores al abrir el Asistente: el saludo, las preguntas sugeridas y los accesos rápidos.' },
+    { p: 'horarios', t: 'Horarios y derivación', i: ICO_AG.reloj, solo: 'clientes',
+      sub: 'Cuándo atiende y a quién le pasa la charla.' },
+    { p: 'reglas', t: 'Reglas de venta', i: ICO_AG.etq, solo: 'clientes',
+      sub: 'Lo que puede ofrecer para cerrar una venta, con sus topes.' },
+    { p: 'barandillas', t: 'Barandillas', i: ICO_AG.escudo,
+      sub: 'Lo que nunca hace y lo que siempre le pasa a una persona.' },
+    { p: 'pruebas', t: 'Pruebas', i: ICO_AG.tilde,
+      sub: 'Casos guardados (un mensaje y qué tiene que pasar) para correrlos todos juntos.' },
+    { p: 'marcadas', t: 'Respuestas marcadas', i: ICO_AG.pulgar, solo: 'vendedores',
+      sub: 'Las que los vendedores marcaron con el pulgar para abajo.' },
+    { p: 'conexiones', t: 'Conexiones', i: ICO_AG.enchufe,
+      sub: 'Si cada servicio que usa está andando ahora.' },
+    { p: 'ajustes', t: 'Ajustes', i: ICO_AG.ajustes,
+      sub: 'Prendido o apagado, cómo contesta, el modelo y el tope de gasto.' }
+  ];
+  var K_AGX = 'nc_agx';
+  var AGX = (function () {
+    var x = jsonAg(leer(K_AGX), {});
+    return { cual: x.cual === 'vendedores' ? 'vendedores' : 'clientes', pag: String(x.pag || 'probar'),
+             volver: 'mensajes', dock: false };
+  })();
+  function pagsAgente(cual) {
+    return PAGS_AG.filter(function (x) { return !x.solo || x.solo === (cual || AGX.cual); });
+  }
+  function pagAgente() {
+    var l = pagsAgente();
+    for (var i = 0; i < l.length; i++) { if (l[i].p === AGX.pag) { return l[i]; } }
+    return l[0];
+  }
+  /* ¿Está prendido? (el punto verde del selector). */
+  function prendidoAgente(cual) {
+    if (cual === 'clientes') { return !!(AG.datos && AG.datos.reglas && AG.datos.reglas.prendido === 'si'); }
+    return false;
+  }
+
+  function pintarMenuAgentes() {
+    var pg = pagAgente();
+    $('vistas').innerHTML =
+      '<div class="crm-menu-cab"><b>Agentes de IA</b><button type="button" class="crm-plegar" id="crmPlegar" aria-label="Achicar el menú" title="Achicar el menú">' +
+        ICO.plegar + '</button></div>' +
+      '<button type="button" class="crm-item agx-volver" id="agxVolver" title="Volver al CRM">' +
+        '<span class="crm-ico" aria-hidden="true">' + ICO_AG.volver + '</span><span class="crm-txt">Volver al CRM</span></button>' +
+      '<div class="agx-cual" role="radiogroup" aria-label="Qué agente">' +
+        ['clientes', 'vendedores'].map(function (c) {
+          var a = AGENTES_IA[c], sel = c === AGX.cual;
+          return '<button type="button" role="radio" class="agx-cual-op" data-agx-cual="' + c + '" aria-checked="' + sel + '" title="' + esc(a.t) + '">' +
+            '<span class="crm-ico" aria-hidden="true">' + a.i + '</span>' +
+            '<span class="crm-txt"><b>' + esc(a.t) + '</b><small>' + esc(a.s) + '</small></span>' +
+            '<span class="agx-punto' + (prendidoAgente(c) ? ' on' : '') + '" title="' + (prendidoAgente(c) ? 'Prendido' : 'Apagado') + '"></span></button>';
+        }).join('') + '</div>' +
+      pagsAgente().map(function (x) {
+        var sel = x.p === pg.p;
+        return '<button type="button" class="crm-item' + (sel ? ' sel' : '') + '" data-agx-pag="' + x.p + '"' +
+            (sel ? ' aria-current="page"' : '') + ' title="' + esc(x.t) + '">' +
+          '<span class="crm-ico" aria-hidden="true">' + x.i + '</span><span class="crm-txt">' + esc(x.t) + '</span></button>';
+      }).join('');
+    $('agxVolver').onclick = function () {
+      cerrarMenuCrm();
+      cambiarVista(AGX.volver && AGX.volver !== 'agente' && VISTAS.indexOf(AGX.volver) > -1 ? AGX.volver : 'mensajes');
+    };
+    [].forEach.call($('vistas').querySelectorAll('[data-agx-cual]'), function (b) {
+      b.onclick = function () { irAgente(b.dataset.agxCual, null); };
+    });
+    [].forEach.call($('vistas').querySelectorAll('[data-agx-pag]'), function (b) {
+      b.onclick = function () { cerrarMenuCrm(); irAgente(null, b.dataset.agxPag); };
+    });
+    $('crmPlegar').onclick = function () { achicarMenu(!$('crm').classList.contains('chico')); };
+    $('crmSeccion').innerHTML = ICO.menu + '<span>' + esc(AGENTES_IA[AGX.cual].t) + ' · ' + esc(pg.t) + '</span>';
+  }
+
+  /* Cambiar de agente o de página. Si la página no es de ese agente, va a
+     la primera (Probar). */
+  function irAgente(cual, pag) {
+    if (cual) { AGX.cual = cual === 'vendedores' ? 'vendedores' : 'clientes'; }
+    if (pag) { AGX.pag = pag; }
+    AGX.pag = pagAgente().p;
+    guardar(K_AGX, JSON.stringify({ cual: AGX.cual, pag: AGX.pag }));
+    pintarVistas();
+    pintarAgente();
+    window.scrollTo(0, 0);
+  }
+
+  /* El chat de prueba: en Probar ocupa la página; en las demás queda a la
+     derecha (en una pantalla angosta, se abre encima con "Probar"). */
+  function htmlChatPrueba(enDock) {
+    var a = AGENTES_IA[AGX.cual];
+    return '<div class="agx-chat' + (enDock ? ' en-dock' : '') + '">' +
+      '<div class="agx-chat-cab"><div><b>Chat de prueba</b><span>' + esc(a.t) + '</span></div>' +
+        (enDock ? '<button type="button" class="agx-x" id="agxDockCerrar" aria-label="Cerrar el chat de prueba">' + ICO_AG.cerrar + '</button>' : '') + '</div>' +
+      '<div class="agx-chat-msgs"><div class="agx-chat-vacio">' + esc(a.prueba) + '<br><br><b>Todavía no está conectado.</b></div></div>' +
+      '<div class="agx-chat-caja"><textarea rows="1" disabled placeholder="' +
+        (AGX.cual === 'clientes' ? 'Escribí como un cliente…' : 'Preguntá como un vendedor…') + '" aria-label="Mensaje de prueba"></textarea>' +
+        '<button type="button" class="btn btn-pri btn-chico" disabled>Mandar</button></div>' +
+    '</div>';
+  }
+  function abrirDockAgente(si) {
+    AGX.dock = !!si;
+    var x = $('vistaAgente').querySelector('.agx');
+    if (x) { x.classList.toggle('dock-abierto', AGX.dock); }
+  }
+
+  /* ── Las páginas de "Atención al cliente" que ya existían ──────────── */
+  function pagAjustesClientes(d) {
+    var prendido = d.reglas.prendido === 'si', ah = ahoraAgente(d.ahora);
+    return '<div class="ag-estado ' + ah[0] + '"><b>' + esc(ah[1]) + '</b><span>' + esc(ah[2]) + '</span>' +
+        '<span class="ag-fase1">Por ahora redacta sólo cuando se lo piden desde Mensajes (✦ Agente), y una persona lo aprueba antes de que salga.</span></div>' +
+      '<div class="ficha-bloque"><h3>Prendido</h3><div class="agx-fila"><p>' +
+        (prendido ? 'Atiende en los horarios marcados.' : 'No atiende a nadie hasta que lo prendas.') + '</p>' +
+        '<button type="button" class="llave" role="switch" id="agPrendido" aria-checked="' + prendido + '">' +
+          '<i aria-hidden="true"></i><span>' + (prendido ? 'Prendido' : 'Apagado') + '</span></button></div></div>' +
+      '<div class="ficha-bloque"><h3>Cómo contesta</h3><div class="ag-modo-op">' +
+        '<div class="ag-op sel"><b>En prueba</b><span>Redacta la respuesta y una persona la aprueba antes de que salga.</span></div>' +
+        '<div class="ag-op no" aria-disabled="true"><b>Automático</b><span>Contesta solo. Se habilita cuando haya pasado las pruebas.</span></div>' +
+      '</div><p class="ag-nota">Atiende el WhatsApp de ' + esc(d.numero || 'la tienda') + '. El de No Compra, no.</p></div>';
+  }
+  function pagHorarios(d, w) {
     var horario = DIAS_AG.map(function (x) {
       var dia = w.semana[x[0]];
       return '<div class="ag-dia" data-dia="' + x[0] + '"><b>' + x[1] + '</b><div class="ag-modos">' + MODOS_DIA_AG.map(function (m) {
@@ -6492,49 +6683,76 @@
         (f.nota ? '<span class="ag-fecha-nota">' + esc(f.nota) + '</span>' : '') +
         '<button type="button" class="btn btn-sec btn-chico" data-fecha-x="' + esc(f.fecha) + '">Quitar</button></div>';
     }).join('') : '<p class="ag-nota">Ninguna todavía. Sumá los feriados: ese día manda lo que pongas acá.</p>';
+    var ah = ahoraAgente(d.ahora);
+    return '<div class="ag-estado ' + ah[0] + '"><b>' + esc(ah[1]) + '</b><span>' + esc(ah[2]) + '</span></div>' +
+      '<div class="ficha-bloque ag-horario"><h3>Cuándo atiende</h3>' + horario +
+        '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agSemanaOk">Guardar el horario</button></div>' +
+        '<h4>Fechas especiales</h4><div class="ag-fechas">' + fechas + '</div>' +
+        '<div class="ag-fecha-nueva"><input type="date" id="agFecha" min="' + isoDia(new Date()) + '" aria-label="Fecha">' +
+          '<select id="agFechaModo" aria-label="Qué hace ese día"><option value="todo">Atiende todo el día</option><option value="no">No atiende</option></select>' +
+          '<input type="text" id="agFechaNota" maxlength="60" placeholder="Nota (ej.: feriado)" aria-label="Nota">' +
+          '<button type="button" class="btn btn-sec btn-chico" id="agFechaOk">Agregar</button></div></div>' +
+      '<div class="ficha-bloque"><h3>A quién le pasa la charla</h3><div class="ag-deriva">' +
+        DERIVA_AG.map(function (x) {
+          return '<span>' + x[1] + '</span><input type="text" maxlength="40" data-k="' + x[0] + '" value="' + esc(w[x[0]]) + '" aria-label="' + x[1] + '">';
+        }).join('') +
+        '</div><div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agDerivaOk">Guardar</button></div></div>';
+  }
+  function pagReglas(d, w) {
     var num = function (k, cls) {
       return '<input type="text" inputmode="numeric" data-k="' + k + '" value="' + esc(w[k]) + '"' + (cls ? ' class="' + cls + '"' : '') + '>';
     };
-    v.innerHTML = '<div class="ag">' + cab +
-      '<div class="ag-estado ' + ah[0] + '"><b>' + esc(ah[1]) + '</b><span>' + esc(ah[2]) + '</span>' +
-        '<span class="ag-fase1">Todavía no le contesta a nadie: es la fase 1. Desde la fase 2, en estos horarios va a redactar las respuestas para que ustedes las aprueben.</span></div>' +
-      '<div class="ag-grid">' +
-        '<div class="ficha-bloque ag-horario"><h3>Cuándo atiende</h3>' + horario +
-          '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agSemanaOk">Guardar el horario</button></div>' +
-          '<h4>Fechas especiales</h4><div class="ag-fechas">' + fechas + '</div>' +
-          '<div class="ag-fecha-nueva"><input type="date" id="agFecha" min="' + isoDia(new Date()) + '" aria-label="Fecha">' +
-            '<select id="agFechaModo" aria-label="Qué hace ese día"><option value="todo">Atiende todo el día</option><option value="no">No atiende</option></select>' +
-            '<input type="text" id="agFechaNota" maxlength="60" placeholder="Nota (ej.: feriado)" aria-label="Nota">' +
-            '<button type="button" class="btn btn-sec btn-chico" id="agFechaOk">Agregar</button></div></div>' +
-        '<div class="ag-col">' +
-          '<div class="ficha-bloque"><h3>Cómo contesta</h3><div class="ag-modo-op">' +
-            '<div class="ag-op sel"><b>En prueba</b><span>Redacta la respuesta y una persona la aprueba antes de que salga.</span></div>' +
-            '<div class="ag-op no" aria-disabled="true"><b>Automático</b><span>Contesta solo. Se habilita en la fase 4, cuando haya pasado las pruebas.</span></div>' +
-          '</div><p class="ag-nota">Atiende el WhatsApp de ' + esc(d.numero || 'la tienda') + '. El de No Compra, por ahora no.</p></div>' +
-          '<div class="ficha-bloque ag-topes"><h3>Herramientas de venta</h3>' +
-            '<div class="ag-tope">Cupón de cierre: <span class="ag-par">' + num('cupon_pct') + ' %</span> que vence en <span class="ag-par">' + num('cupon_horas') + ' horas.</span></div>' +
-            '<div class="ag-tope">¿Se suma al SALE y a la transferencia? ' +
-              '<button type="button" class="chip' + (w.cupon_con_sale === 'si' ? ' sel' : '') + '" data-sale="si">Sí</button>' +
-              '<button type="button" class="chip' + (w.cupon_con_sale === 'no' ? ' sel' : '') + '" data-sale="no">No</button></div>' +
-            '<div class="ag-tope">La tienda da envío gratis desde <span class="ag-par">$ ' + num('envio_gratis_desde', 'plata') + '.</span></div>' +
-            '<div class="ag-tope">El agente lo puede regalar con un carrito desde <span class="ag-par">$ ' + num('envio_piso', 'plata') + '.</span> Por debajo, consulta.</div>' +
-            '<div class="ag-tope">Segunda prenda: <span class="ag-par">' + num('segunda_pct') + ' %</span> en la de menor valor.</div>' +
-            '<div class="ag-tope">Si consulta por Telegram y nadie contesta en <span class="ag-par">' + num('telegram_min') + ' minutos,</span> no da la excepción.</div>' +
-            '<p class="ag-nota">Estos topes los controla la base: aunque un cliente lo quiera convencer, el agente no se puede pasar.</p>' +
-            '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agTopesOk">Guardar los topes</button></div></div>' +
-          '<div class="ficha-bloque"><h3>A quién le pasa la charla</h3><div class="ag-deriva">' +
-            DERIVA_AG.map(function (x) {
-              return '<span>' + x[1] + '</span><input type="text" maxlength="40" data-k="' + x[0] + '" value="' + esc(w[x[0]]) + '" aria-label="' + x[1] + '">';
-            }).join('') +
-            '</div><div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agDerivaOk">Guardar</button></div></div>' +
-        '</div>' +
-        '<div class="ficha-bloque ag-saber ag-ancho"><h3>Lo que sabe</h3>' +
-          '<p class="ag-nota">Envíos, pagos, cambios, talles, telas, stock y promos. Cada parte arranca con "## ". Lo que no esté acá ni en el sistema, no lo inventa: le pasa la charla a una persona.' +
-            (d.conocimiento ? ' Actualizado el ' + esc(ddmm(d.conocimiento.actualizado)) + ' · versión ' + Number(d.versiones || 1) + '.' : '') + '</p>' +
-          '<textarea id="agTexto" aria-label="Lo que sabe el agente">' + esc(w.texto) + '</textarea>' +
-          '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agTextoOk">Guardar lo que sabe</button></div></div>' +
-        fasesAgente(true) +
-      '</div></div>';
+    return '<div class="ficha-bloque ag-topes"><h3>Herramientas de venta</h3>' +
+        '<div class="ag-tope">Cupón de cierre: <span class="ag-par">' + num('cupon_pct') + ' %</span> que vence en <span class="ag-par">' + num('cupon_horas') + ' horas.</span></div>' +
+        '<div class="ag-tope">¿Se suma al SALE y a la transferencia? ' +
+          '<button type="button" class="chip' + (w.cupon_con_sale === 'si' ? ' sel' : '') + '" data-sale="si">Sí</button>' +
+          '<button type="button" class="chip' + (w.cupon_con_sale === 'no' ? ' sel' : '') + '" data-sale="no">No</button></div>' +
+        '<div class="ag-tope">La tienda da envío gratis desde <span class="ag-par">$ ' + num('envio_gratis_desde', 'plata') + '.</span></div>' +
+        '<div class="ag-tope">El agente lo puede regalar con un carrito desde <span class="ag-par">$ ' + num('envio_piso', 'plata') + '.</span> Por debajo, consulta.</div>' +
+        '<div class="ag-tope">Segunda prenda: <span class="ag-par">' + num('segunda_pct') + ' %</span> en la de menor valor.</div>' +
+        '<div class="ag-tope">Si consulta por Telegram y nadie contesta en <span class="ag-par">' + num('telegram_min') + ' minutos,</span> no da la excepción.</div>' +
+        '<p class="ag-nota">Estos topes los controla la base: aunque un cliente lo quiera convencer, el agente no se puede pasar.</p>' +
+        '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agTopesOk">Guardar los topes</button></div></div>';
+  }
+  function pagSaber(d, w) {
+    return '<div class="ficha-bloque ag-saber"><h3>Lo que sabe</h3>' +
+      '<p class="ag-nota">Envíos, pagos, cambios, talles, telas, stock y promos. Cada parte arranca con "## ". Lo que no esté acá ni en el sistema, no lo inventa: le pasa la charla a una persona.' +
+        (d.conocimiento ? ' Actualizado el ' + esc(ddmm(d.conocimiento.actualizado)) + ' · versión ' + Number(d.versiones || 1) + '.' : '') + '</p>' +
+      '<textarea id="agTexto" aria-label="Lo que sabe el agente">' + esc(w.texto) + '</textarea>' +
+      '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agTextoOk">Guardar lo que sabe</button></div></div>';
+  }
+  var PAGINAS_CLIENTES = { ajustes: pagAjustesClientes, horarios: pagHorarios, reglas: pagReglas, conocimiento: pagSaber };
+
+  /* Lo que todavía no está hecho. */
+  function pagEnObra(pg) {
+    return '<div class="vacio-vista"><b>En construcción</b>' + esc(pg.t) + ' se arma en las próximas etapas.</div>';
+  }
+
+  function pintarAgente() {
+    var v = $('vistaAgente'), pg = pagAgente(), a = AGENTES_IA[AGX.cual];
+    var conDock = pg.p !== 'probar';
+    var cuerpo;
+    if (pg.p === 'probar') {
+      cuerpo = htmlChatPrueba(false);
+    } else if (AGX.cual === 'clientes' && PAGINAS_CLIENTES[pg.p]) {
+      if (AG.error) {
+        cuerpo = '<div class="vacio-vista"><b>' + (AG.error === 'falta' ? 'Falta un paso' : 'No se pudo traer el agente') + '</b>' +
+          (AG.error === 'falta' ? 'Para configurar el agente hay que correr el SQL 77 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
+      } else if (!AG.datos) {
+        cuerpo = '<div class="skel"></div><div class="skel"></div>';
+      } else {
+        cuerpo = PAGINAS_CLIENTES[pg.p](AG.datos, AG.w);
+      }
+    } else {
+      cuerpo = pagEnObra(pg);
+    }
+    v.innerHTML = '<div class="agx' + (conDock ? ' con-dock' : '') + (conDock && AGX.dock ? ' dock-abierto' : '') + '">' +
+      '<div class="agx-hoja ag">' +
+        '<div class="agx-cab"><div><small>' + esc(a.t) + '</small><h2>' + esc(pg.t) + '</h2><p>' + esc(pg.sub) + '</p></div>' +
+          (conDock ? '<button type="button" class="btn btn-sec btn-chico agx-dock-abrir" id="agxDockAbrir">' + ICO_AG.probar + 'Probar</button>' : '') + '</div>' +
+        cuerpo + '</div>' +
+      (conDock ? '<div class="agx-dock-velo" id="agxDockVelo"></div><aside class="agx-dock" aria-label="Chat de prueba">' + htmlChatPrueba(true) + '</aside>' : '') +
+    '</div>';
     cablearAgente(v);
   }
 
@@ -6558,7 +6776,7 @@
           else { AG.w[k] = r.reglas[k] == null ? '' : String(r.reglas[k]); }
         });
         avisar('ok', listo || 'Guardado.');
-        pintarAgente();
+        if (vista === 'agente') { pintarVistas(); pintarAgente(); }
       })
       .catch(function (err) {
         if (boton) { boton.disabled = false; }
@@ -6568,12 +6786,17 @@
       });
   }
 
+  /* Cada página tiene sus botones: se cablea lo que esté. */
   function cablearAgente(v) {
-    $('agPrendido').onclick = function () {
+    var en = function (id, fn) { var el = $(id); if (el) { el.onclick = fn; } };
+    en('agxDockAbrir', function () { abrirDockAgente(true); });
+    en('agxDockCerrar', function () { abrirDockAgente(false); });
+    en('agxDockVelo', function () { abrirDockAgente(false); });
+    en('agPrendido', function () {
       var nuevo = AG.datos.reglas.prendido === 'si' ? 'no' : 'si';
       guardarReglasAgente({ prendido: nuevo }, this,
-        nuevo === 'si' ? 'Prendido. Igual todavía no contesta: es la fase 1.' : 'Apagado: no atiende a nadie.');
-    };
+        nuevo === 'si' ? 'Prendido. Por ahora redacta borradores para aprobar.' : 'Apagado: no atiende a nadie.');
+    });
     [].forEach.call(v.querySelectorAll('[data-dia-modo]'), function (b) {
       b.onclick = function () {
         var p = b.dataset.diaModo.split(':'), fila = b.closest('.ag-dia');
@@ -6585,14 +6808,14 @@
     [].forEach.call(v.querySelectorAll('[data-dia-hora]'), function (inp) {
       inp.onchange = function () { var p = inp.dataset.diaHora.split(':'); AG.w.semana[p[0]][p[1]] = inp.value; };
     });
-    $('agSemanaOk').onclick = function () { guardarReglasAgente({ semana: AG.w.semana }, this, 'Horario guardado.'); };
-    $('agFechaOk').onclick = function () {
+    en('agSemanaOk', function () { guardarReglasAgente({ semana: AG.w.semana }, this, 'Horario guardado.'); });
+    en('agFechaOk', function () {
       var f = $('agFecha').value;
       if (!f) { avisar('err', 'Elegí la fecha.'); return; }
       var l = AG.w.fechas.filter(function (x) { return x.fecha !== f; })
         .concat([{ fecha: f, modo: $('agFechaModo').value, nota: $('agFechaNota').value.trim() || null }]);
       guardarReglasAgente({ fechas: l }, this, 'Fecha agregada.');
-    };
+    });
     [].forEach.call(v.querySelectorAll('[data-fecha-x]'), function (b) {
       b.onclick = function () {
         guardarReglasAgente({ fechas: AG.w.fechas.filter(function (x) { return x.fecha !== b.dataset.fechaX; }) }, b, 'Fecha quitada.');
@@ -6607,18 +6830,18 @@
         [].forEach.call(v.querySelectorAll('[data-sale]'), function (o) { o.classList.toggle('sel', o === b); });
       };
     });
-    $('agTopesOk').onclick = function () {
+    en('agTopesOk', function () {
       var o = {};
       TOPES_AG.forEach(function (k) { o[k] = k === 'cupon_con_sale' ? AG.w[k] : String(AG.w[k]).replace(/[^0-9]/g, ''); });
       guardarReglasAgente(o, this, 'Topes guardados.');
-    };
-    $('agDerivaOk').onclick = function () {
+    });
+    en('agDerivaOk', function () {
       var o = {};
       DERIVA_AG.forEach(function (x) { o[x[0]] = String(AG.w[x[0]] || '').trim(); });
       guardarReglasAgente(o, this, 'Guardado.');
-    };
-    $('agTexto').oninput = function () { AG.w.texto = this.value; };
-    $('agTextoOk').onclick = function () {
+    });
+    if ($('agTexto')) { $('agTexto').oninput = function () { AG.w.texto = this.value; }; }
+    en('agTextoOk', function () {
       var b = this;
       b.disabled = true;
       base.agenteTextoGuardar(pinGuardado(), AG.w.texto)
@@ -6629,14 +6852,14 @@
           AG.datos.conocimiento = { texto: AG.w.texto, actualizado: isoDia(new Date()) };
           AG.datos.versiones = Number(AG.datos.versiones || 0) + 1;
           avisar('ok', 'Guardado.');
-          pintarAgente();
+          if (vista === 'agente') { pintarAgente(); }
         })
         .catch(function (err) {
           b.disabled = false;
           if (err && err.sinSesion) { caducada(); return; }
           avisar('err', (err && err.message) || 'No se pudo guardar.');
         });
-    };
+    });
   }
 
   function pintarPronto(v) {
@@ -7631,6 +7854,7 @@
       if (!$('modalPlmEnviar').hidden) { $('modalPlmEnviar').hidden = true; return; }
       if (!$('modalPlm').hidden) { $('modalPlm').hidden = true; return; }
       if ($('crm').classList.contains('menu-abierto')) { cerrarMenuCrm(); return; }
+      if (vista === 'agente' && AGX.dock) { abrirDockAgente(false); return; }
       if (eligiendo) { salirDeElegir(); return; }
       /* Mensajes: primero se cierra la ficha de la derecha; en el celular,
          después, la conversación. */

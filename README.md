@@ -803,15 +803,20 @@ local, donde la app queda abierta todo el día— y barra abajo en el celular, a
 alcance del pulgar. En 380px de ancho una columna lateral le come el lugar a
 los campos, y los vendedores cargan parados en el local.
 
-Desde el 12/10/2026 son siete secciones, primero lo del local y después lo de
-la oficina: **Carga · Cobrar · Gift Cards · Estadísticas · CRM · Socios ·
-Config.** Cobrar es el mostrador (el Club, los cupones y canjear una gift
-card); Gift Cards, vender una y la lista de las vendidas (con PIN);
-Estadísticas tiene tres pestañas (No Compra, Club y Gift Cards); el CRM
-guarda los cupones. El bloque se reescribe igual en todas las páginas con un
-script, no a mano. En la barra de abajo, con siete, cada botón ocupa lo que su
-palabra y la letra es de 10px: en partes iguales "Gift Cards" se partía en dos
-renglones en un celular de 360.
+Desde el 12/10/2026 a la noche son ocho secciones, primero lo del local y
+después lo de la oficina: **Carga · Cobrar · Gift Cards · Asistente ·
+Estadísticas · CRM · Socios · Config.** Cobrar es el mostrador (el Club, los
+cupones y canjear una gift card); Gift Cards, vender una y la lista de las
+vendidas (con PIN); el Asistente es el chat de los vendedores con los manuales
+(libre, sin PIN; se configura en el CRM → Agentes de IA); Estadísticas tiene
+tres pestañas (No Compra, Club y Gift Cards); el CRM guarda los cupones. El
+bloque se reescribe igual en todas las páginas con un script, no a mano. En la
+barra de abajo cada botón ocupa lo que su palabra y la letra es de 10px: en
+partes iguales "Gift Cards" se partía en dos renglones en un celular de 360.
+Con ocho, por debajo de 390px la barra se desliza de costado y arranca
+mostrando la sección abierta. En la PC del local (1366×768, ~658px de alto
+útiles) el rail se aprieta de alto para que entren las ocho y, en Carga, la
+ficha de quién carga entera.
 
 Parado es un **panel oscuro flotante** con la marca arriba, las secciones en
 el medio y, en el formulario, quién está cargando abajo de todo. Es oscuro en
