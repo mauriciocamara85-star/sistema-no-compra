@@ -862,6 +862,120 @@
   .agx-chat-vacio { margin: auto; max-width: 300px; text-align: center; font-size: 13.5px; line-height: 1.5; color: var(--txt-3); }
   .agx-chat-caja { display: flex; align-items: flex-end; gap: 8px; padding: 10px; border-top: 1px solid var(--line); }
   .agx-chat-caja textarea { flex: 1; min-height: 40px; max-height: 140px; resize: none; padding: 9px 12px; font-size: 14px; line-height: 1.4; }
+  /* ── Conocimiento: las fuentes de los dos agentes (SQL 85) ── */
+  .agf-lee { display: grid; gap: 4px; }
+  .agf-lee b { font-size: 14px; }
+  .agf-lee span { font-size: 13px; color: var(--txt-2); line-height: 1.5; }
+  .agf-barra { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .agf-busca { flex: 1 1 260px; min-width: 0; }
+  .agf-nuevas { display: flex; gap: 6px; flex-wrap: wrap; }
+  .agf-filtros { flex-wrap: wrap; }
+  .agf-filtros .chip span { font-weight: 700; opacity: .75; margin-left: 2px; }
+  .agf-lista { display: grid; gap: 8px; }
+  .agf-fila { display: flex; gap: 12px; align-items: flex-start; padding: 12px 10px 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+  .agf-fila.apagada { background: var(--surface-2); }
+  .agf-fila.apagada .agf-tit, .agf-fila.apagada .agf-inicio { color: var(--txt-3); }
+  .agf-ico { flex: none; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; background: var(--surface-2); color: var(--txt-2); }
+  .agf-ico svg { width: 17px; height: 17px; }
+  .agf-cuerpo { flex: 1; min-width: 0; display: grid; gap: 4px; }
+  .agf-tit { justify-self: start; max-width: 100%; text-align: left; font: 600 14.5px/1.35 var(--sans); color: var(--txt); padding: 0; background: none; border: 0; cursor: pointer; overflow-wrap: anywhere; }
+  .agf-tit:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .agf-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; font-size: 12px; color: var(--txt-3); }
+  .agf-meta > span:last-child { overflow-wrap: anywhere; }
+  .agf-pub, .agf-tema { padding: 1px 8px; border-radius: var(--r-pill); font-weight: 700; font-size: 11.5px; }
+  .agf-pub.clientes { background: var(--ok-soft); color: var(--ok-txt); }
+  .agf-pub.interno { background: var(--surface-3); color: var(--txt-2); }
+  .agf-tema { background: var(--info-soft); color: var(--txt-2); font-weight: 600; }
+  .agf-inicio { font-size: 12.5px; color: var(--txt-2); line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
+  .agf-aviso { font-size: 12.5px; line-height: 1.45; padding: 6px 9px; border-radius: 8px; background: var(--warn-soft); color: var(--warn-txt); }
+  .agf-nolee { font-size: 12px; font-weight: 600; color: var(--txt-3); }
+  .llave.agf-llave { min-height: 34px; padding: 4px; border-color: transparent; background: none; flex: none; }
+  .agf-nada { font-size: 13.5px; color: var(--txt-3); padding: 8px 2px; }
+  /* La ventanita de una fuente. */
+  .modal-caja.agf-modal { width: min(720px, 100%); }
+  .agf-modal .campo label { font-size: 13px; font-weight: 600; color: var(--txt-2); }
+  .agf-modal textarea { min-height: 110px; }
+  .agf-modal textarea.agf-largo { min-height: min(240px, 32vh); font-size: 13.5px; }
+  /* Los botones quedan a la vista abajo de la ventanita: en la PC del local
+     (658 px de alto) el texto de un archivo la hace más alta que la pantalla. */
+  .agf-modal .modal-pie { position: sticky; bottom: -18px; z-index: 1; margin: 0 -18px -18px; padding: 12px 18px 18px;
+                          background: var(--surface); border-top: 1px solid var(--line); }
+  .agf-subir { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px; border: 1px dashed var(--line-alta); border-radius: var(--r-sm); }
+  .agf-subir span { font-size: 13px; color: var(--txt-2); flex: 1 1 220px; line-height: 1.45; overflow-wrap: anywhere; }
+  .agf-input-archivo { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+  .agf-de { font-size: 13px; color: var(--txt-2); }
+  .agf-tam { font-weight: 400; color: var(--txt-3); font-size: 12px; margin-left: 4px; }
+  .agf-tam.mucho { color: var(--bad-txt); font-weight: 700; }
+  .agf-pubs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .agf-op { text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+  .agf-op b { display: block; font-size: 14px; }
+  .agf-op span { display: block; font-size: 12.5px; color: var(--txt-2); margin-top: 2px; line-height: 1.4; }
+  .agf-op.sel { border-color: var(--acc); background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc); }
+  .agf-fila2 { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
+  .agf-fila2 .campo { flex: 1 1 220px; }
+  .agf-prendida { display: flex; align-items: center; gap: 8px; font-size: 13.5px; min-height: 44px; }
+  .agf-prendida input { width: 18px; height: 18px; }
+  .agf-borrar { margin-right: auto; color: var(--bad-txt); }
+  @media (max-width: 599px) { .agf-pubs { grid-template-columns: minmax(0, 1fr); } }
+  /* Respuestas marcadas. */
+  .agx-intro { font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
+  .agm { display: grid; gap: 8px; }
+  .agm.revisada { opacity: .75; }
+  .agm-cab { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; color: var(--txt-3); }
+  .agm-cab b { color: var(--txt); font-size: 14px; }
+  .agm-preg { font: 600 15px/1.45 var(--sans); overflow-wrap: anywhere; }
+  .agm-resp { font-size: 13.5px; line-height: 1.5; color: var(--txt-2); white-space: pre-wrap; overflow-wrap: anywhere; padding: 8px 10px;
+              border-left: 3px solid var(--line-alta); background: var(--surface-2); border-radius: 0 8px 8px 0; }
+  .agm-resp span, .agm-com span { display: block; font-size: 11.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .3px; margin-bottom: 2px; }
+  .agm-com { font-size: 13.5px; overflow-wrap: anywhere; }
+  .agm-fuentes { font-size: 12px; color: var(--txt-3); }
+  .agm-acc { display: flex; gap: 6px; justify-content: flex-end; flex-wrap: wrap; }
+  .agm-rev summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--txt-2); padding: 6px 0; }
+  .agm-rev[open] { display: grid; gap: 8px; }
+  /* Portada del chat. */
+  .agx-cuenta { font: 600 12px var(--sans); color: var(--txt-3); margin-left: 6px; text-transform: none; letter-spacing: 0; }
+  .agx-lista-ed { display: grid; gap: 6px; }
+  .agx-ed-fila { display: flex; gap: 6px; align-items: center; }
+  .agx-ed-fila input { flex: 1; min-width: 0; }
+  .agx-acc-fila { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1.2fr) auto; gap: 6px; align-items: center; }
+  .agx-mas { margin-top: 8px; }
+  @media (max-width: 699px) {
+    .agx-acc-fila { grid-template-columns: minmax(0, 1fr) auto; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+    .agx-acc-fila input { grid-column: 1; }
+    .agx-acc-fila .agx-x { grid-column: 2; grid-row: 1; }
+  }
+  .agx-guardar-portada { gap: 8px; }
+  /* Ajustes del Asistente: el modelo y el gasto. */
+  .ag-estado.off { border-left-color: var(--txt-3); }
+  .agx-modelos { display: grid; gap: 8px; }
+  .agx-modelo { display: grid; gap: 2px; text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+  .agx-modelo b { font-size: 14px; display: flex; gap: 8px; align-items: center; }
+  .agx-modelo span { font-size: 12.5px; color: var(--txt-2); }
+  .agx-modelo small { font-size: 12px; color: var(--txt-3); }
+  .agx-modelo.sel { border-color: var(--acc); background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--acc); }
+  .agx-gasto { display: grid; gap: 6px; margin-top: 10px; font-size: 13px; color: var(--txt-2); }
+  .agx-barra { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+  .agx-barra i { display: block; height: 100%; background: var(--ok); border-radius: 4px; }
+  .agx-barra.alto i { background: var(--warn); }
+  /* El chat de prueba con mensajes. */
+  .agx-chat-cab [data-agp-nueva] { margin-left: auto; }
+  .agp-yo { align-self: flex-end; max-width: 88%; padding: 8px 12px; border-radius: 14px 14px 4px 14px; background: var(--acc); color: var(--acc-ink);
+            font-size: 14px; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .agp-ia { display: grid; gap: 6px; }
+  .agp-md { font-size: 14px; line-height: 1.55; overflow-wrap: anywhere; }
+  .agp-md p + p, .agp-md p + ul, .agp-md ul + p, .agp-md p + ol, .agp-md ol + p { margin-top: 6px; }
+  .agp-md ul, .agp-md ol { padding-left: 18px; }
+  .agp-ref { font-size: 10px; font-weight: 700; color: var(--txt-2); background: var(--surface-3); border-radius: 4px; padding: 0 3px; margin-left: 1px; }
+  .agp-fuentes { display: grid; gap: 4px; }
+  .agp-fuentes details { font-size: 12.5px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--surface-2); }
+  .agp-fuentes summary { cursor: pointer; font-weight: 600; color: var(--txt-2); overflow-wrap: anywhere; }
+  .agp-fuentes em { font-style: normal; display: inline-grid; place-items: center; min-width: 18px; height: 18px; border-radius: 50%; background: var(--surface-3); font-size: 10.5px; font-weight: 700; }
+  .agp-fuentes q { display: block; quotes: none; margin-top: 4px; color: var(--txt-2); line-height: 1.45; overflow-wrap: anywhere; }
+  .agp-sin, .agp-uso { font-size: 11.5px; color: var(--txt-3); }
+  .agp-ok { font-size: 12px; font-weight: 600; color: var(--ok-txt); }
+  .agp-mala { justify-self: start; font-size: 12.5px; color: var(--bad-txt); }
+  .agp-error { padding: 8px 10px; border-radius: 8px; background: var(--bad-soft); color: var(--bad-txt); font-size: 13px; }
+  .agp-pensando { font-size: 13px; color: var(--txt-3); }
   .agx-dock, .agx-dock-velo { display: none; }
   @media (min-width: 1200px) {
     .agx.con-dock { grid-template-columns: minmax(0, 1fr) 340px; }
@@ -1648,6 +1762,19 @@
     <h2 id="cuModalTit">Dar un cupón</h2>
     <div id="cuModalIn"></div>
     <div class="modal-pie"><button type="button" class="btn btn-sec" id="cuModalCerrar">Cerrar</button></div>
+  </div>
+</div>
+
+<!-- Una fuente de lo que saben los agentes (SQL 85): nueva o editar. -->
+<div class="modal" id="modalFuente" hidden>
+  <div class="modal-caja agf-modal" role="dialog" aria-modal="true" aria-labelledby="agfTit">
+    <h2 id="agfTit">Nueva fuente</h2>
+    <div id="agfIn"></div>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec agf-borrar" id="agfBorrar" hidden>Borrar</button>
+      <button type="button" class="btn btn-sec" id="agfNo">Cancelar</button>
+      <button type="button" class="btn btn-pri" id="agfOk">Guardar</button>
+    </div>
   </div>
 </div>
 
@@ -6485,10 +6612,17 @@
     var w = { semana: jsonAg(r.semana, {}), fechas: jsonAg(r.fechas, []), texto: (d.conocimiento && d.conocimiento.texto) || '' };
     DIAS_AG.forEach(function (x) { if (!w.semana[x[0]]) { w.semana[x[0]] = { modo: 'no', de: '09:00', a: '17:00' }; } });
     TOPES_AG.concat(DERIVA_AG.map(function (x) { return x[0]; })).forEach(function (k) { w[k] = r[k] == null ? '' : String(r[k]); });
+    /* El Asistente (SQL 85): la portada y el tope. */
+    w.asis_saludo = r.asis_saludo || '';
+    w.sugeridas = jsonAg(r.asis_sugeridas, []);
+    w.accesos = jsonAg(r.asis_accesos, []);
+    w.asis_tope_usd = r.asis_tope_usd == null ? '' : String(r.asis_tope_usd);
     return w;
   }
 
   function cargarAgente() {
+    AGF.lista = null; AGF.error = '';
+    AGMK.lista = null; AGMK.error = '';
     pintarAgente();
     base.agenteConfig(pinGuardado())
       .then(function (d) { AG.datos = d; AG.error = ''; AG.w = trabajoAgente(d); if (vista === 'agente') { pintarVistas(); pintarAgente(); } })
@@ -6584,9 +6718,18 @@
   /* ¿Está prendido? (el punto verde del selector). */
   function prendidoAgente(cual) {
     if (cual === 'clientes') { return !!(AG.datos && AG.datos.reglas && AG.datos.reglas.prendido === 'si'); }
-    return false;
+    return !!(AG.datos && AG.datos.reglas && AG.datos.reglas.asis_prendido === 'si');
   }
 
+  /* Lo que espera en cada página: las marcadas sin revisar y las fuentes
+     para revisar (en el menú achicado, el numerito va arriba del ícono). */
+  function cuentaPagAg(p) {
+    var d = AG.datos, n = 0, t = '';
+    if (!d) { return ''; }
+    if (p === 'marcadas' && AGX.cual === 'vendedores') { n = Number(d.marcadas) || 0; t = 'Para revisar'; }
+    if (p === 'conocimiento' && d.fuentes) { n = Number(d.fuentes.avisos) || 0; t = 'Fuentes para revisar'; }
+    return n ? '<span class="cuenta" title="' + t + '">' + n + '</span>' : '';
+  }
   function pintarMenuAgentes() {
     var pg = pagAgente();
     $('vistas').innerHTML =
@@ -6606,7 +6749,7 @@
         var sel = x.p === pg.p;
         return '<button type="button" class="crm-item' + (sel ? ' sel' : '') + '" data-agx-pag="' + x.p + '"' +
             (sel ? ' aria-current="page"' : '') + ' title="' + esc(x.t) + '">' +
-          '<span class="crm-ico" aria-hidden="true">' + x.i + '</span><span class="crm-txt">' + esc(x.t) + '</span></button>';
+          '<span class="crm-ico" aria-hidden="true">' + x.i + '</span><span class="crm-txt">' + esc(x.t) + '</span>' + cuentaPagAg(x.p) + '</button>';
       }).join('');
     $('agxVolver').onclick = function () {
       cerrarMenuCrm();
@@ -6637,14 +6780,17 @@
   /* El chat de prueba: en Probar ocupa la página; en las demás queda a la
      derecha (en una pantalla angosta, se abre encima con "Probar"). */
   function htmlChatPrueba(enDock) {
-    var a = AGENTES_IA[AGX.cual];
+    var a = AGENTES_IA[AGX.cual], conectado = AGX.cual === 'vendedores';
+    var P = AGP[AGX.cual];
     return '<div class="agx-chat' + (enDock ? ' en-dock' : '') + '">' +
-      '<div class="agx-chat-cab"><div><b>Chat de prueba</b><span>' + esc(a.t) + '</span></div>' +
+      '<div class="agx-chat-cab"><div><b>Chat de prueba</b><span>' + esc(a.t) + ' · no le llega a nadie</span></div>' +
+        (conectado ? '<button type="button" class="btn btn-sec btn-chico" data-agp-nueva' + (P.msgs.length ? '' : ' hidden') + '>Empezar de nuevo</button>' : '') +
         (enDock ? '<button type="button" class="agx-x" id="agxDockCerrar" aria-label="Cerrar el chat de prueba">' + ICO_AG.cerrar + '</button>' : '') + '</div>' +
-      '<div class="agx-chat-msgs"><div class="agx-chat-vacio">' + esc(a.prueba) + '<br><br><b>Todavía no está conectado.</b></div></div>' +
-      '<div class="agx-chat-caja"><textarea rows="1" disabled placeholder="' +
-        (AGX.cual === 'clientes' ? 'Escribí como un cliente…' : 'Preguntá como un vendedor…') + '" aria-label="Mensaje de prueba"></textarea>' +
-        '<button type="button" class="btn btn-pri btn-chico" disabled>Mandar</button></div>' +
+      '<div class="agx-chat-msgs" aria-live="polite">' + (conectado ? htmlMsgsPrueba() :
+        '<div class="agx-chat-vacio">' + esc(a.prueba) + '<br><br><b>Todavía no está conectado.</b></div>') + '</div>' +
+      '<div class="agx-chat-caja"><textarea rows="1"' + (conectado ? '' : ' disabled') + ' maxlength="2000" placeholder="' +
+        (AGX.cual === 'clientes' ? 'Escribí como cliente…' : 'Preguntá algo…') + '" aria-label="Mensaje de prueba" data-agp-txt></textarea>' +
+        '<button type="button" class="btn btn-pri btn-chico" data-agp-mandar' + (conectado && !P.esperando ? '' : ' disabled') + '>Mandar</button></div>' +
     '</div>';
   }
   function abrirDockAgente(si) {
@@ -6714,14 +6860,11 @@
         '<p class="ag-nota">Estos topes los controla la base: aunque un cliente lo quiera convencer, el agente no se puede pasar.</p>' +
         '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agTopesOk">Guardar los topes</button></div></div>';
   }
-  function pagSaber(d, w) {
-    return '<div class="ficha-bloque ag-saber"><h3>Lo que sabe</h3>' +
-      '<p class="ag-nota">Envíos, pagos, cambios, talles, telas, stock y promos. Cada parte arranca con "## ". Lo que no esté acá ni en el sistema, no lo inventa: le pasa la charla a una persona.' +
-        (d.conocimiento ? ' Actualizado el ' + esc(ddmm(d.conocimiento.actualizado)) + ' · versión ' + Number(d.versiones || 1) + '.' : '') + '</p>' +
-      '<textarea id="agTexto" aria-label="Lo que sabe el agente">' + esc(w.texto) + '</textarea>' +
-      '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agTextoOk">Guardar lo que sabe</button></div></div>';
-  }
-  var PAGINAS_CLIENTES = { ajustes: pagAjustesClientes, horarios: pagHorarios, reglas: pagReglas, conocimiento: pagSaber };
+  /* Las páginas que salen de la configuración (agente_config). */
+  var PAGINAS_CON_DATOS = {
+    clientes: { ajustes: pagAjustesClientes, horarios: pagHorarios, reglas: pagReglas },
+    vendedores: { ajustes: pagAjustesAsis, portada: pagPortada }
+  };
 
   /* Lo que todavía no está hecho. */
   function pagEnObra(pg) {
@@ -6734,14 +6877,18 @@
     var cuerpo;
     if (pg.p === 'probar') {
       cuerpo = htmlChatPrueba(false);
-    } else if (AGX.cual === 'clientes' && PAGINAS_CLIENTES[pg.p]) {
+    } else if (pg.p === 'conocimiento') {
+      cuerpo = pagConocimiento();
+    } else if (pg.p === 'marcadas') {
+      cuerpo = pagMarcadas();
+    } else if (PAGINAS_CON_DATOS[AGX.cual][pg.p]) {
       if (AG.error) {
         cuerpo = '<div class="vacio-vista"><b>' + (AG.error === 'falta' ? 'Falta un paso' : 'No se pudo traer el agente') + '</b>' +
           (AG.error === 'falta' ? 'Para configurar el agente hay que correr el SQL 77 en Supabase.' : 'Revisá la conexión y tocá actualizar.') + '</div>';
       } else if (!AG.datos) {
         cuerpo = '<div class="skel"></div><div class="skel"></div>';
       } else {
-        cuerpo = PAGINAS_CLIENTES[pg.p](AG.datos, AG.w);
+        cuerpo = PAGINAS_CON_DATOS[AGX.cual][pg.p](AG.datos, AG.w);
       }
     } else {
       cuerpo = pagEnObra(pg);
@@ -6773,6 +6920,8 @@
         Object.keys(obj).forEach(function (k) {
           if (k === 'semana') { AG.w.semana = jsonAg(r.reglas.semana, AG.w.semana); }
           else if (k === 'fechas') { AG.w.fechas = jsonAg(r.reglas.fechas, AG.w.fechas); }
+          else if (k === 'asis_sugeridas') { AG.w.sugeridas = jsonAg(r.reglas.asis_sugeridas, AG.w.sugeridas); }
+          else if (k === 'asis_accesos') { AG.w.accesos = jsonAg(r.reglas.asis_accesos, AG.w.accesos); }
           else { AG.w[k] = r.reglas[k] == null ? '' : String(r.reglas[k]); }
         });
         avisar('ok', listo || 'Guardado.');
@@ -6840,25 +6989,749 @@
       DERIVA_AG.forEach(function (x) { o[x[0]] = String(AG.w[x[0]] || '').trim(); });
       guardarReglasAgente(o, this, 'Guardado.');
     });
-    if ($('agTexto')) { $('agTexto').oninput = function () { AG.w.texto = this.value; }; }
-    en('agTextoOk', function () {
-      var b = this;
-      b.disabled = true;
-      base.agenteTextoGuardar(pinGuardado(), AG.w.texto)
-        .then(function (r) {
-          b.disabled = false;
-          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
-          if (r.igual) { avisar('ok', 'No había cambios.'); return; }
-          AG.datos.conocimiento = { texto: AG.w.texto, actualizado: isoDia(new Date()) };
-          AG.datos.versiones = Number(AG.datos.versiones || 0) + 1;
-          avisar('ok', 'Guardado.');
-          if (vista === 'agente') { pintarAgente(); }
-        })
-        .catch(function (err) {
-          b.disabled = false;
-          if (err && err.sinSesion) { caducada(); return; }
-          avisar('err', (err && err.message) || 'No se pudo guardar.');
+    cablearChatPrueba(v);
+    cablearConocimiento(v);
+    cablearAsistente(v);
+  }
+
+  /* ═══ Lo que saben los agentes: las fuentes (SQL 85) ═════════════════════
+     Una sola lista para los dos agentes. Cada fuente dice quién la lee:
+     "Para clientes", los dos; "Solo interno", sólo el Asistente de los
+     vendedores. Lo del agente de clientes lo arma la base
+     (agente_contexto): lo interno no le llega nunca, aunque lo pidan.
+     Los archivos (Word, PDF, Excel, texto) se leen acá, en el navegador, y
+     se guarda el texto: se puede revisar antes de guardar. */
+  var AGF = { lista: null, error: '', cargando: false, busca: '', filtro: 'todas', ed: null, leyendo: false, borrar: 0 };
+  var AGMK = { lista: null, error: '', cargando: false };
+  var AGP = { clientes: { msgs: [], esperando: false }, vendedores: { msgs: [], esperando: false } };
+  var TIPOS_AGF = { archivo: 'Archivo', texto: 'Texto', pregunta: 'Pregunta y respuesta' };
+  var ICO_AGF = {
+    archivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg>',
+    texto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>',
+    pregunta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3M12 17h.01"/></svg>'
+  };
+  /* Los lectores de archivos: de cdnjs, sólo cuando se sube uno. */
+  var LIBS_AG = {
+    docx: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js',
+    pdf: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+    pdfObrero: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js',
+    xlsx: 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'
+  };
+  var TOPE_FUENTE = 400000;
+  function llanoAg(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  function kbAg(b) { b = Number(b) || 0; return b >= 1048576 ? (b / 1048576).toFixed(1).replace('.', ',') + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB'; }
+  function bytesAg(t) { try { return new Blob([String(t || '')]).size; } catch (e) { return String(t || '').length; } }
+  function fechaAg(ts, conHora) {
+    if (!ts) { return ''; }
+    try {
+      return new Date(ts).toLocaleString('es-AR', conHora ? { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' }
+                                                          : { day: 'numeric', month: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' });
+    } catch (e) { return ''; }
+  }
+  function usdAg(n) { n = Number(n) || 0; return 'USD ' + (n > 0 && n < 0.01 ? n.toFixed(3) : n.toFixed(2)).replace('.', ','); }
+  /* Las funciones nuevas no tiran error con el PIN malo (así el intento
+     queda anotado): avisan con {error: 'pin'}. Si el PIN se llegó a
+     comparar y estaba mal, se vuelve al portón. */
+  function pinDelAgente(r) {
+    if (!r || r.error !== 'pin') { return false; }
+    if (r.mal) { cerrarFuente(); caducada(); } else { avisar('err', r.porque || 'Esperá un momento y probá de nuevo.'); }
+    return true;
+  }
+  function faltaSqlAg(err, fn) { return new RegExp(fn + '|PGRST202|Could not find', 'i').test(String(err && err.message)); }
+  function enPaginaAg(p) { return vista === 'agente' && pagAgente().p === p; }
+  function vacioAg(titulo, texto) { return '<div class="vacio-vista"><b>' + esc(titulo) + '</b>' + esc(texto) + '</div>'; }
+
+  function cargarFuentes() {
+    AGF.cargando = true;
+    base.agenteFuentes(pinGuardado())
+      .then(function (r) {
+        AGF.cargando = false;
+        if (pinDelAgente(r)) { return; }
+        AGF.lista = (r && r.fuentes) || [];
+        AGF.error = '';
+        resumenFuentesAg();
+        if (vista === 'agente') { pintarVistas(); }
+        if (enPaginaAg('conocimiento')) { pintarAgente(); }
+      })
+      .catch(function (err) {
+        AGF.cargando = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        AGF.error = faltaSqlAg(err, 'agente_fuentes_ver') ? 'falta' : 'red';
+        if (enPaginaAg('conocimiento')) { pintarAgente(); }
+      });
+  }
+
+  /* El resumen de la configuración (cuánto leen, cuántas para revisar), al
+     día con la lista. */
+  function resumenFuentesAg() {
+    if (!AG.datos || !AGF.lista) { return; }
+    var pr = AGF.lista.filter(function (f) { return f.prendida; });
+    var suma = function (x) { return x.reduce(function (a, f) { return a + (Number(f.bytes) || 0); }, 0); };
+    AG.datos.fuentes = { n: AGF.lista.length, prendidas: pr.length, bytes: suma(pr),
+                         bytes_clientes: suma(pr.filter(function (f) { return f.publico === 'clientes'; })),
+                         avisos: AGF.lista.filter(function (f) { return f.aviso; }).length };
+  }
+  function pagConocimiento() {
+    if (AGF.error) {
+      return AGF.error === 'falta' ? vacioAg('Falta un paso', 'Para las fuentes hay que correr el SQL 85 en Supabase.')
+                                   : vacioAg('No se pudieron traer las fuentes', 'Revisá la conexión y tocá actualizar.');
+    }
+    if (!AGF.lista) {
+      if (!AGF.cargando) { cargarFuentes(); }
+      return '<div class="skel"></div><div class="skel"></div>';
+    }
+    var l = AGF.lista, cli = AGX.cual === 'clientes';
+    var suma = function (x) { return x.reduce(function (a, f) { return a + (Number(f.bytes) || 0); }, 0); };
+    var prendidas = l.filter(function (f) { return f.prendida; });
+    var bCli = suma(prendidas.filter(function (f) { return f.publico === 'clientes'; })), bTodas = suma(prendidas);
+    var cuenta = { todas: l.length, clientes: 0, interno: 0, revisar: 0, apagadas: 0 };
+    l.forEach(function (f) { cuenta[f.publico]++; if (f.aviso) { cuenta.revisar++; } if (!f.prendida) { cuenta.apagadas++; } });
+    if (!cuenta[AGF.filtro]) { AGF.filtro = 'todas'; }
+    var FILTROS = [['todas', 'Todas'], ['clientes', 'Para clientes'], ['interno', 'Solo interno'], ['revisar', 'Para revisar'], ['apagadas', 'Apagadas']];
+    return '<div class="ficha-bloque agf-lee"><b>' +
+        (cli ? 'Este agente lee ' + kbAg(bCli) + ': las fuentes "Para clientes" prendidas.' : 'El Asistente lee ' + kbAg(bTodas) + ': todas las fuentes prendidas.') + '</b>' +
+        '<span>' + (cli ? 'Las "Solo interno" son del Asistente de los vendedores: a este agente no le llegan nunca, ni aunque un cliente las pida. ' +
+                          'El stock, los precios y las promos no van acá: los lee en vivo de la tienda.'
+                        : 'También las "Para clientes". Si algo no está en ninguna, lo dice y manda a preguntarle al supervisor.') + '</span></div>' +
+      '<div class="agf-barra">' +
+        '<div class="buscador agf-busca"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>' +
+          '<input type="search" id="agfBusca" placeholder="Buscar por título, tema o texto…" autocomplete="off" value="' + esc(AGF.busca) + '" aria-label="Buscar fuentes"></div>' +
+        '<div class="agf-nuevas">' +
+          '<button type="button" class="btn btn-pri btn-chico" data-agf-nueva="archivo">+ Archivo</button>' +
+          '<button type="button" class="btn btn-sec btn-chico" data-agf-nueva="texto">+ Texto</button>' +
+          '<button type="button" class="btn btn-sec btn-chico" data-agf-nueva="pregunta">+ Pregunta y respuesta</button></div></div>' +
+      '<div class="atajos agf-filtros" role="group" aria-label="Qué fuentes">' + FILTROS.map(function (x) {
+          if (x[0] !== 'todas' && !cuenta[x[0]]) { return ''; }
+          return '<button type="button" class="chip' + (AGF.filtro === x[0] ? ' sel' : '') + '" data-agf-filtro="' + x[0] + '" aria-pressed="' + (AGF.filtro === x[0]) + '">' +
+            x[1] + ' <span>' + cuenta[x[0]] + '</span></button>';
+        }).join('') + '</div>' +
+      '<div class="agf-lista" id="agfLista">' + htmlListaFuentes() + '</div>';
+  }
+  function fuentesFiltradas() {
+    var q = llanoAg(String(AGF.busca || '').trim());
+    return (AGF.lista || []).filter(function (f) {
+      if (AGF.filtro === 'clientes' && f.publico !== 'clientes') { return false; }
+      if (AGF.filtro === 'interno' && f.publico !== 'interno') { return false; }
+      if (AGF.filtro === 'revisar' && !f.aviso) { return false; }
+      if (AGF.filtro === 'apagadas' && f.prendida) { return false; }
+      return !q || llanoAg([f.titulo, f.tema, f.archivo, f.inicio].join(' ')).indexOf(q) > -1;
+    });
+  }
+  function htmlListaFuentes() {
+    var l = fuentesFiltradas(), cli = AGX.cual === 'clientes';
+    if (!AGF.lista.length) { return vacioAg('Todavía no hay fuentes', 'Subí un archivo, escribí un texto o cargá una pregunta con su respuesta.'); }
+    if (!l.length) { return '<p class="agf-nada">Ninguna fuente con eso.</p>'; }
+    return l.map(function (f) {
+      var noLee = cli && f.publico === 'interno';
+      return '<div class="agf-fila' + (f.prendida ? '' : ' apagada') + (noLee ? ' no-lee' : '') + '">' +
+        '<span class="agf-ico" aria-hidden="true">' + (ICO_AGF[f.tipo] || ICO_AGF.texto) + '</span>' +
+        '<div class="agf-cuerpo">' +
+          '<button type="button" class="agf-tit" data-agf-abrir="' + f.id + '">' + esc(f.titulo) + '</button>' +
+          '<div class="agf-meta"><span class="agf-pub ' + (f.publico === 'clientes' ? 'clientes' : 'interno') + '">' + (f.publico === 'clientes' ? 'Para clientes' : 'Solo interno') + '</span>' +
+            (f.tema ? '<span class="agf-tema">' + esc(f.tema) + '</span>' : '') +
+            '<span>' + esc(TIPOS_AGF[f.tipo] || '') + (f.archivo ? ' · ' + esc(f.archivo) : '') + ' · ' + kbAg(f.bytes) + ' · ' + esc(fechaAg(f.actualizada)) + '</span></div>' +
+          (f.inicio ? '<p class="agf-inicio">' + esc(f.inicio) + '</p>' : '') +
+          (f.aviso ? '<p class="agf-aviso"><b>Para revisar:</b> ' + esc(f.aviso) + '</p>' : '') +
+          (noLee ? '<p class="agf-nolee">Este agente no la lee: es solo interna.</p>' : '') +
+        '</div>' +
+        '<button type="button" class="llave agf-llave" role="switch" aria-checked="' + !!f.prendida + '" data-agf-prender="' + f.id + '" ' +
+          'title="' + (f.prendida ? 'Prendida: tocá para apagarla' : 'Apagada: tocá para prenderla') + '" aria-label="' + esc(f.titulo) + '"><i aria-hidden="true"></i></button>' +
+      '</div>';
+    }).join('');
+  }
+  function cablearConocimiento(v) {
+    var b = $('agfBusca');
+    if (b) {
+      b.oninput = function () { AGF.busca = b.value; $('agfLista').innerHTML = htmlListaFuentes(); cablearListaFuentes(); };
+    }
+    [].forEach.call(v.querySelectorAll('[data-agf-filtro]'), function (x) {
+      x.onclick = function () { AGF.filtro = x.dataset.agfFiltro; pintarAgente(); };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agf-nueva]'), function (x) {
+      x.onclick = function () { abrirFuente({ tipo: x.dataset.agfNueva }); };
+    });
+    cablearListaFuentes();
+  }
+  function cablearListaFuentes() {
+    var v = $('vistaAgente');
+    [].forEach.call(v.querySelectorAll('[data-agf-abrir]'), function (x) {
+      x.onclick = function () { verFuente(+x.dataset.agfAbrir); };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agf-prender]'), function (x) {
+      x.onclick = function () { prenderFuente(+x.dataset.agfPrender, x); };
+    });
+  }
+  function prenderFuente(id, boton) {
+    var f = (AGF.lista || []).filter(function (x) { return +x.id === id; })[0];
+    if (!f) { return; }
+    var nuevo = !f.prendida;
+    boton.disabled = true;
+    base.agenteFuenteGuardar(pinGuardado(), { id: id, prendida: nuevo, quien: quien || null })
+      .then(function (r) {
+        boton.disabled = false;
+        if (pinDelAgente(r)) { return; }
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo cambiar.'); return; }
+        f.prendida = nuevo;
+        resumenFuentesAg();
+        avisar('ok', nuevo ? 'Prendida: los agentes la leen.' : 'Apagada: ningún agente la lee.');
+        if (enPaginaAg('conocimiento')) { pintarAgente(); }
+      })
+      .catch(function (err) {
+        boton.disabled = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.message) || 'No se pudo cambiar.');
+      });
+  }
+
+  /* ── La ventanita: nueva o editar ── */
+  function verFuente(id) {
+    base.agenteFuente(pinGuardado(), id)
+      .then(function (r) {
+        if (pinDelAgente(r)) { return; }
+        if (!r) { avisar('err', 'Esa fuente ya no está.'); AGF.lista = null; pintarAgente(); return; }
+        abrirFuente(r);
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.message) || 'No se pudo abrir.');
+      });
+  }
+  /* f: una fuente (con id: editar) o lo que va de una nueva. "marcada" y
+     "prueba" dicen de dónde vino una corrección. */
+  function abrirFuente(f) {
+    var nueva = !f.id;
+    AGF.ed = { id: f.id || null, tipo: f.tipo || 'texto', titulo: f.titulo || '', contenido: f.contenido || '', archivo: f.archivo || '',
+               publico: f.publico || (AGX.cual === 'clientes' ? 'clientes' : 'interno'), tema: f.tema || '', prendida: f.prendida !== false,
+               aviso: f.aviso || '', avisoQuitar: false, origen: f.origen || '', marcada: f.marcada || null, prueba: f.prueba || null };
+    AGF.borrar = 0;
+    AGF.leyendo = false;
+    $('agfTit').textContent = nueva
+      ? { archivo: 'Nueva fuente desde un archivo', texto: 'Nueva fuente de texto', pregunta: 'Nueva pregunta con su respuesta' }[AGF.ed.tipo]
+      : TIPOS_AGF[AGF.ed.tipo];
+    $('agfBorrar').hidden = nueva;
+    $('agfBorrar').textContent = 'Borrar';
+    $('agfOk').disabled = false;
+    pintarFuente();
+    $('modalFuente').hidden = false;
+    var foco = AGF.ed.tipo === 'archivo' && nueva ? null : (AGF.ed.titulo && AGF.ed.tipo === 'pregunta' ? $('agfContenido') : $('agfTitulo'));
+    if (foco) { foco.focus(); }
+  }
+  function cerrarFuente() { $('modalFuente').hidden = true; AGF.ed = null; AGF.leyendo = false; }
+  function pintarFuente() {
+    var e = AGF.ed, preg = e.tipo === 'pregunta', temas = {};
+    (AGF.lista || []).forEach(function (f) { if (f.tema) { temas[f.tema] = 1; } });
+    ['Correcciones', 'Cambios', 'Caja', 'Telas', 'Talles', 'Locales'].forEach(function (t) { temas[t] = 1; });
+    $('agfIn').innerHTML =
+      (e.tipo === 'archivo' && !e.id ? '<div class="agf-subir"><label class="btn btn-sec btn-chico" for="agfArchivo">' + (e.archivo ? 'Elegir otro' : 'Elegir el archivo') + '</label>' +
+        '<input type="file" id="agfArchivo" accept=".docx,.pdf,.xlsx,.xls,.txt,.md,.csv" class="agf-input-archivo">' +
+        '<span id="agfArchivoTxt">' + (AGF.leyendo ? 'Leyendo ' + esc(e.archivo) + '…' : e.archivo ? esc(e.archivo) + ': revisá el texto antes de guardar.'
+          : 'Word (.docx), PDF, Excel (.xlsx) o texto (.txt). Se guarda el texto: revisalo antes de guardar.') + '</span></div>' : '') +
+      (e.archivo && e.id ? '<p class="agf-de">Del archivo <b>' + esc(e.archivo) + '</b>.</p>' : '') +
+      '<div class="campo"><label for="agfTitulo">' + (preg ? 'La pregunta' : 'Título') + '</label>' +
+        '<input id="agfTitulo" type="text" maxlength="200" value="' + esc(e.titulo) + '" placeholder="' + (preg ? '¿Cómo…?' : 'De qué se trata') + '"></div>' +
+      '<div class="campo"><label for="agfContenido">' + (preg ? 'La respuesta' : 'El texto') + ' <span class="agf-tam" id="agfTam"></span></label>' +
+        '<textarea id="agfContenido"' + (preg ? '' : ' class="agf-largo"') + ' placeholder="' +
+          (preg ? 'Lo que tiene que contestar' : e.tipo === 'archivo' ? 'Acá aparece el texto del archivo' : 'Lo que tiene que saber') + '">' + esc(e.contenido) + '</textarea></div>' +
+      '<div class="agf-pubs" role="radiogroup" aria-label="Quién la lee">' +
+        '<button type="button" role="radio" class="agf-op' + (e.publico === 'clientes' ? ' sel' : '') + '" aria-checked="' + (e.publico === 'clientes') + '" data-agf-pub="clientes">' +
+          '<b>Para clientes</b><span>La leen los dos agentes. El de WhatsApp se la puede contar a un cliente.</span></button>' +
+        '<button type="button" role="radio" class="agf-op' + (e.publico === 'interno' ? ' sel' : '') + '" aria-checked="' + (e.publico === 'interno') + '" data-agf-pub="interno">' +
+          '<b>Solo interno</b><span>Sólo el Asistente de los vendedores. Al agente de clientes no le llega nunca.</span></button></div>' +
+      '<div class="agf-fila2"><div class="campo"><label for="agfTema">Tema</label>' +
+          '<input id="agfTema" type="text" maxlength="40" list="agfTemas" value="' + esc(e.tema) + '" placeholder="Cambios, Telas, Caja…">' +
+          '<datalist id="agfTemas">' + Object.keys(temas).sort().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist></div>' +
+        '<label class="agf-prendida"><input type="checkbox" id="agfPrendida"' + (e.prendida ? ' checked' : '') + '> Prendida: la leen los agentes</label></div>' +
+      (e.aviso && !e.avisoQuitar ? '<p class="agf-aviso"><b>Para revisar:</b> ' + esc(e.aviso) +
+        ' <button type="button" class="btn-link" id="agfRevisado">Ya lo revisé</button></p>' : '');
+    var g = function (id, k) { var el = $(id); if (el) { el.oninput = function () { e[k] = el.value; if (k === 'contenido') { tamFuente(); } }; } };
+    g('agfTitulo', 'titulo'); g('agfContenido', 'contenido'); g('agfTema', 'tema');
+    $('agfPrendida').onchange = function () { e.prendida = this.checked; };
+    [].forEach.call($('agfIn').querySelectorAll('[data-agf-pub]'), function (b) {
+      b.onclick = function () { e.publico = b.dataset.agfPub; pintarFuente(); };
+    });
+    if ($('agfRevisado')) { $('agfRevisado').onclick = function () { e.avisoQuitar = true; pintarFuente(); }; }
+    if ($('agfArchivo')) { $('agfArchivo').onchange = function () { leerArchivoFuente(this.files && this.files[0]); }; }
+    tamFuente();
+  }
+  function tamFuente() {
+    var t = $('agfTam');
+    if (!t || !AGF.ed) { return; }
+    var b = bytesAg(AGF.ed.contenido);
+    t.textContent = AGF.ed.contenido ? '· ' + kbAg(b) + (b > TOPE_FUENTE ? ': es mucho, hasta 400 KB por fuente (partila en dos)' : '') : '';
+    t.classList.toggle('mucho', b > TOPE_FUENTE);
+  }
+
+  /* Leer un archivo: el texto, con la biblioteca que corresponde. */
+  var SCRIPTS_AG = {};
+  function cargarScriptAg(src) {
+    if (!SCRIPTS_AG[src]) {
+      SCRIPTS_AG[src] = new Promise(function (ok, mal) {
+        var sc = document.createElement('script');
+        sc.src = src;
+        sc.async = true;
+        sc.onload = function () { ok(); };
+        sc.onerror = function () { delete SCRIPTS_AG[src]; mal(new Error('No se pudo cargar el lector de archivos: revisá internet y probá de nuevo.')); };
+        document.head.appendChild(sc);
+      });
+    }
+    return SCRIPTS_AG[src];
+  }
+  function textoDeArchivo(file) {
+    var ext = String(file.name.split('.').pop() || '').toLowerCase();
+    var bytes = function () { return file.arrayBuffer ? file.arrayBuffer() : new Response(file).arrayBuffer(); };
+    if (/^(txt|md|csv)$/.test(ext)) { return file.text ? file.text() : new Response(file).text(); }
+    if (ext === 'docx') {
+      return cargarScriptAg(LIBS_AG.docx).then(bytes)
+        .then(function (ab) { return window.mammoth.extractRawText({ arrayBuffer: ab }); })
+        .then(function (r) { return r.value; });
+    }
+    if (ext === 'pdf') {
+      return cargarScriptAg(LIBS_AG.pdf)
+        .then(function () { window.pdfjsLib.GlobalWorkerOptions.workerSrc = LIBS_AG.pdfObrero; return bytes(); })
+        .then(function (ab) { return window.pdfjsLib.getDocument({ data: ab }).promise; })
+        .then(function (pdf) {
+          var paginas = [];
+          var una = function (i) {
+            if (i > pdf.numPages) { return Promise.resolve(paginas.join('\n\n')); }
+            return pdf.getPage(i).then(function (p) { return p.getTextContent(); }).then(function (tc) {
+              paginas.push(tc.items.map(function (it) { return (it.str || '') + (it.hasEOL ? '\n' : ''); }).join(''));
+              return una(i + 1);
+            });
+          };
+          return una(1);
         });
+    }
+    if (ext === 'xlsx' || ext === 'xls') {
+      return cargarScriptAg(LIBS_AG.xlsx).then(bytes).then(function (ab) {
+        var wb = window.XLSX.read(ab, { type: 'array' });
+        return wb.SheetNames.map(function (n) {
+          return '## ' + n + '\n' + window.XLSX.utils.sheet_to_csv(wb.Sheets[n], { blankrows: false });
+        }).join('\n\n');
+      });
+    }
+    return Promise.reject(new Error('Ese archivo no se puede leer: subí un Word (.docx), un PDF, un Excel (.xlsx) o un texto (.txt).'));
+  }
+  function limpiarTextoAg(t) {
+    return String(t || '').replace(/\r/g, '').replace(/ /g, ' ').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  }
+  function leerArchivoFuente(file) {
+    var e = AGF.ed;
+    if (!file || !e) { return; }
+    if (file.size > 30 * 1048576) { avisar('err', 'El archivo pesa más de 30 MB: subí uno más chico o pegá el texto.'); return; }
+    AGF.leyendo = true;
+    e.archivo = file.name;
+    pintarFuente();
+    $('agfOk').disabled = true;
+    textoDeArchivo(file)
+      .then(function (t) {
+        if (AGF.ed !== e) { return; }
+        AGF.leyendo = false;
+        $('agfOk').disabled = false;
+        t = limpiarTextoAg(t);
+        if (!t) {
+          e.archivo = '';
+          pintarFuente();
+          avisar('err', 'El archivo no tiene texto (si es un PDF escaneado, son fotos): cargá lo importante como texto.');
+          return;
+        }
+        e.contenido = t;
+        if (!e.titulo) { e.titulo = file.name.replace(/\.[^.]+$/, '').replace(/[_]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200); }
+        pintarFuente();
+      })
+      .catch(function (err) {
+        if (AGF.ed !== e) { return; }
+        AGF.leyendo = false;
+        $('agfOk').disabled = false;
+        e.archivo = '';
+        pintarFuente();
+        avisar('err', (err && err.message && !/^[A-Z][a-zA-Z]+Error/.test(err.message) ? err.message : 'No se pudo leer el archivo: probá guardarlo de nuevo como .docx o .pdf.'));
+      });
+  }
+
+  function guardarFuente() {
+    var e = AGF.ed;
+    if (!e || AGF.leyendo) { return; }
+    e.titulo = $('agfTitulo').value.trim();
+    e.contenido = $('agfContenido').value;
+    e.tema = $('agfTema').value.trim();
+    e.prendida = $('agfPrendida').checked;
+    if (e.tipo === 'archivo' && !e.id && !e.contenido.trim()) { avisar('err', 'Elegí el archivo (o pegá el texto).'); return; }
+    if (!e.titulo) { avisar('err', e.tipo === 'pregunta' ? 'Falta la pregunta.' : 'Falta el título.'); $('agfTitulo').focus(); return; }
+    if (!e.contenido.trim()) {
+      avisar('err', e.tipo === 'pregunta' ? 'Falta la respuesta.' : e.tipo === 'archivo' && !e.id ? 'Elegí el archivo (o pegá el texto).' : 'El texto está vacío.');
+      return;
+    }
+    if (bytesAg(e.contenido) > TOPE_FUENTE) { avisar('err', 'Es muy grande: hasta 400 KB por fuente. Partila en dos.'); return; }
+    var obj = { titulo: e.titulo, contenido: e.contenido, publico: e.publico, tema: e.tema, prendida: e.prendida, quien: quien || null };
+    if (e.id) { obj.id = e.id; } else { obj.tipo = e.tipo; obj.archivo = e.archivo || null; obj.origen = e.origen || 'crm'; }
+    if (e.avisoQuitar) { obj.aviso = ''; }
+    var b = $('agfOk');
+    b.disabled = true;
+    base.agenteFuenteGuardar(pinGuardado(), obj)
+      .then(function (r) {
+        b.disabled = false;
+        if (pinDelAgente(r)) { return; }
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+        cerrarFuente();
+        avisar('ok', e.id ? 'Guardada.' : e.prendida ? 'Agregada: desde ahora la leen los agentes.' : 'Agregada, apagada.');
+        AGF.lista = null;
+        if (e.marcada) { revisarMarcada(e.marcada, true, true); }
+        if (e.prueba && AGP[e.prueba.cual].msgs[e.prueba.i]) { AGP[e.prueba.cual].msgs[e.prueba.i].corregida = true; }
+        if (vista === 'agente') { pintarAgente(); }
+      })
+      .catch(function (err) {
+        b.disabled = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', faltaSqlAg(err, 'agente_fuente_guardar') ? 'Para guardar falta correr el SQL 85 en Supabase.' : (err && err.message) || 'No se pudo guardar.');
+      });
+  }
+  /* Borrar: hay que tocar dos veces. Se borra sin perderse (desde la base
+     se puede volver). */
+  function borrarFuente() {
+    var e = AGF.ed, b = $('agfBorrar');
+    if (!e || !e.id) { return; }
+    if (!AGF.borrar || Date.now() - AGF.borrar > 5000) {
+      AGF.borrar = Date.now();
+      b.textContent = '¿Seguro? Tocá de nuevo';
+      setTimeout(function () { if (AGF.ed === e && Date.now() - AGF.borrar >= 5000) { b.textContent = 'Borrar'; } }, 5100);
+      return;
+    }
+    b.disabled = true;
+    base.agenteFuenteBorrar(pinGuardado(), e.id, quien || null)
+      .then(function (r) {
+        b.disabled = false;
+        if (pinDelAgente(r)) { return; }
+        cerrarFuente();
+        avisar('ok', r && r.ok ? 'Borrada: ningún agente la lee.' : 'Ya estaba borrada.');
+        AGF.lista = null;
+        if (vista === 'agente') { pintarAgente(); }
+      })
+      .catch(function (err) {
+        b.disabled = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.message) || 'No se pudo borrar.');
+      });
+  }
+  $('agfOk').onclick = guardarFuente;
+  $('agfNo').onclick = cerrarFuente;
+  $('agfBorrar').onclick = borrarFuente;
+
+  /* ═══ Respuestas marcadas: el pulgar para abajo de los vendedores ═══════ */
+  function cargarMarcadas() {
+    AGMK.cargando = true;
+    base.asistenteMarcadas(pinGuardado())
+      .then(function (r) {
+        AGMK.cargando = false;
+        if (pinDelAgente(r)) { return; }
+        AGMK.lista = (r && r.marcadas) || [];
+        AGMK.error = '';
+        if (AG.datos) { AG.datos.marcadas = AGMK.lista.filter(function (m) { return !m.revisada; }).length; }
+        if (vista === 'agente') { pintarVistas(); }
+        if (enPaginaAg('marcadas')) { pintarAgente(); }
+      })
+      .catch(function (err) {
+        AGMK.cargando = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        AGMK.error = faltaSqlAg(err, 'asistente_marcadas') ? 'falta' : 'red';
+        if (enPaginaAg('marcadas')) { pintarAgente(); }
+      });
+  }
+  function sinMarcasAg(t) { return String(t || '').replace(/\s?\[\d{1,2}\]/g, ''); }
+  function localAg(l) { return !l ? '' : l === 'OFICINA' ? 'Oficina' : bonito(l); }
+  function htmlMarcada(m) {
+    var resp = sinMarcasAg(m.respuesta);
+    return '<div class="ficha-bloque agm' + (m.revisada ? ' revisada' : '') + '">' +
+      '<div class="agm-cab"><b>' + esc(m.vendedor || 'Alguien') + '</b><span>' + esc([localAg(m.local), fechaAg(m.creado, true)].filter(Boolean).join(' · ')) + '</span></div>' +
+      '<p class="agm-preg">' + esc(m.pregunta) + '</p>' +
+      '<div class="agm-resp"><span>Contestó</span>' + esc(resp.length > 700 ? resp.slice(0, 700) + '…' : resp) + '</div>' +
+      (m.comentario ? '<p class="agm-com"><span>Qué estuvo mal</span>“' + esc(m.comentario) + '”</p>' : '') +
+      ((m.fuentes || []).length ? '<p class="agm-fuentes">Lo sacó de: ' + m.fuentes.map(function (f) { return esc(f.titulo); }).join(' · ') + '</p>' : '<p class="agm-fuentes">No citó ninguna fuente.</p>') +
+      '<div class="agm-acc">' + (m.revisada
+        ? '<button type="button" class="btn btn-sec btn-chico" data-agm-volver="' + m.id + '">Volver a revisar</button>'
+        : '<button type="button" class="btn btn-sec btn-chico" data-agm-listo="' + m.id + '">Ya está</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" data-agm-corregir="' + m.id + '">Corregir</button>') + '</div></div>';
+  }
+  function pagMarcadas() {
+    if (AGMK.error) {
+      return AGMK.error === 'falta' ? vacioAg('Falta un paso', 'Para las respuestas marcadas hay que correr el SQL 85 en Supabase.')
+                                    : vacioAg('No se pudieron traer', 'Revisá la conexión y tocá actualizar.');
+    }
+    if (!AGMK.lista) {
+      if (!AGMK.cargando) { cargarMarcadas(); }
+      return '<div class="skel"></div>';
+    }
+    if (!AGMK.lista.length) {
+      return vacioAg('Ninguna todavía', 'Cuando un vendedor marque una respuesta con el pulgar para abajo, aparece acá para corregirla.');
+    }
+    var pend = AGMK.lista.filter(function (m) { return !m.revisada; }), rev = AGMK.lista.filter(function (m) { return m.revisada; });
+    return '<p class="agx-intro">' + (pend.length ? pend.length + (pend.length === 1 ? ' para revisar.' : ' para revisar.') : 'Nada para revisar.') +
+        ' "Corregir" guarda la respuesta buena como una pregunta en Conocimiento: la próxima vez contesta eso.</p>' +
+      pend.map(htmlMarcada).join('') +
+      (rev.length ? '<details class="agm-rev"><summary>Revisadas (' + rev.length + ')</summary>' + rev.map(htmlMarcada).join('') + '</details>' : '');
+  }
+  function revisarMarcada(id, si, callado) {
+    base.asistenteMarcadaRevisar(pinGuardado(), id, si)
+      .then(function (r) {
+        if (pinDelAgente(r)) { return; }
+        (AGMK.lista || []).forEach(function (m) { if (+m.id === +id) { m.revisada = si; } });
+        if (AG.datos && AGMK.lista) { AG.datos.marcadas = AGMK.lista.filter(function (m) { return !m.revisada; }).length; }
+        if (!callado) { avisar('ok', si ? 'Lista.' : 'Vuelve a "para revisar".'); }
+        if (vista === 'agente') { pintarVistas(); if (enPaginaAg('marcadas')) { pintarAgente(); } }
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.message) || 'No se pudo guardar.');
+      });
+  }
+
+  /* ═══ El Asistente: Ajustes y Portada del chat ═══════════════════════════
+     El costo es aproximado: lo que leen hoy (las fuentes prendidas) más la
+     pregunta y unos 900 de salida. "La primera de cada rato" escribe la
+     caché (dura 5 minutos); las que siguen la leen, mucho más barato. */
+  var MODELOS_AG = [
+    { id: 'claude-sonnet-5-5', t: 'Sonnet 5.5', d: 'El equilibrio: contesta bien y rápido.', e: 2, s: 10, cl: 0.2, ce: 2.5 },
+    { id: 'claude-haiku-5-5', t: 'Haiku 5.5', d: 'El más barato y el más rápido. Para preguntas simples.', e: 0.1, s: 0.5, cl: 0.01, ce: 0.125 },
+    { id: 'claude-opus-5-5', t: 'Opus 5.5', d: 'El que mejor razona. El más caro.', e: 4, s: 20, cl: 0.2, ce: 5 }
+  ];
+  function costoAg(m, bytes) {
+    var t = Math.round((Number(bytes) || 0) / 3.2) + 2500, sal = 900, x = m.id === 'claude-haiku-5-5' && t > 100000 ? 5 : 1;
+    return { tibio: (t * m.cl + sal * m.s) * x / 1e6, frio: (t * m.ce + sal * m.s) * x / 1e6 };
+  }
+  function nombreModeloAg(id) {
+    for (var i = 0; i < MODELOS_AG.length; i++) { if (String(id || '').indexOf(MODELOS_AG[i].id) === 0) { return MODELOS_AG[i].t; } }
+    return String(id || '');
+  }
+  function pagAjustesAsis(d, w) {
+    var r = d.reglas || {}, prendido = r.asis_prendido === 'si', modelo = r.asis_modelo || 'claude-sonnet-5-5';
+    var g = (d.gasto && d.gasto.vendedores) || { usd: 0, consultas: 0 };
+    var tope = Number(r.asis_tope_usd) || 20, usado = Number(g.usd) || 0, pct = Math.min(100, Math.round(usado * 100 / tope));
+    var bytes = d.fuentes ? Number(d.fuentes.bytes) || 0 : 0;
+    return '<div class="ag-estado ' + (prendido ? 'on' : 'off') + '"><b>' + (prendido ? 'Prendido: los vendedores lo pueden usar' : 'Apagado') + '</b>' +
+        '<span>' + (prendido ? 'Está en la barra de cada local → Asistente. Es libre: no pide PIN.'
+                             : 'En los locales dice "El Asistente está apagado por ahora". El chat de prueba de acá anda igual.') + '</span></div>' +
+      '<div class="ficha-bloque"><h3>Prendido</h3><div class="agx-fila"><p>' +
+          (prendido ? 'Contesta a los vendedores con las fuentes de Conocimiento.' : 'Prendelo cuando tenga sus fuentes cargadas y lo hayas probado.') + '</p>' +
+        '<button type="button" class="llave" role="switch" id="agAsisPrendido" aria-checked="' + prendido + '">' +
+          '<i aria-hidden="true"></i><span>' + (prendido ? 'Prendido' : 'Apagado') + '</span></button></div>' +
+        '<p class="ag-nota"><a href="asistente.html" target="_blank" rel="noopener">Abrir el Asistente como lo ven los locales</a></p></div>' +
+      '<div class="ficha-bloque"><h3>El modelo</h3><div class="agx-modelos" role="radiogroup" aria-label="Modelo">' + MODELOS_AG.map(function (m) {
+          var c = costoAg(m, bytes), sel = m.id === modelo;
+          return '<button type="button" role="radio" aria-checked="' + sel + '" class="agx-modelo' + (sel ? ' sel' : '') + '" data-ag-modelo="' + m.id + '">' +
+            '<b>' + m.t + (m.id === 'claude-sonnet-5-5' ? ' <span class="pill">De fábrica</span>' : '') + '</b><span>' + esc(m.d) + '</span>' +
+            '<small>≈ ' + usdAg(c.tibio) + ' por respuesta · la primera de cada rato, ≈ ' + usdAg(c.frio) + '</small></button>';
+        }).join('') + '</div>' +
+        '<p class="ag-nota">Es un cálculo aproximado con lo que lee hoy (' + kbAg(bytes) + ' de fuentes prendidas). La clave de Claude está guardada en Supabase: no pasa por acá.</p></div>' +
+      '<div class="ficha-bloque ag-topes"><h3>Tope de gasto del mes</h3>' +
+        '<div class="ag-tope">No gasta más de <span class="ag-par">USD <input type="text" inputmode="numeric" data-k="asis_tope_usd" value="' + esc(w.asis_tope_usd) + '" aria-label="Tope del mes en dólares"></span> por mes.</div>' +
+        '<div class="agx-gasto"><div class="agx-barra' + (pct >= 80 ? ' alto' : '') + '"><i style="width:' + pct + '%"></i></div>' +
+          '<span>Este mes: ' + usdAg(usado) + ' de ' + usdAg(tope) + ' · ' + (Number(g.consultas) || 0) + ' respuestas (con las del chat de prueba)</span></div>' +
+        '<p class="ag-nota">Al 80 % avisa por Telegram. Al llegar al tope deja de contestar hasta el mes que viene, o hasta que lo subas.</p>' +
+        '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agAsisTopeOk">Guardar el tope</button></div></div>';
+  }
+  function pagPortada(d, w) {
+    var sug = w.sugeridas || [], acc = w.accesos || [];
+    return '<div class="ficha-bloque"><h3>El saludo</h3>' +
+        '<div class="campo"><input type="text" id="agpSaludo" maxlength="120" value="' + esc(w.asis_saludo) + '" placeholder="¿En qué te ayudo?" aria-label="El saludo"></div>' +
+        '<p class="ag-nota">Va debajo de "Hola, [nombre]".</p></div>' +
+      '<div class="ficha-bloque"><h3>Preguntas sugeridas <span class="agx-cuenta">' + sug.length + ' de 6</span></h3>' +
+        '<div class="agx-lista-ed">' + sug.map(function (t, i) {
+          return '<div class="agx-ed-fila"><input type="text" maxlength="120" data-sug="' + i + '" value="' + esc(t) + '" aria-label="Pregunta sugerida ' + (i + 1) + '">' +
+            '<button type="button" class="agx-x" data-sug-x="' + i + '" aria-label="Sacar la pregunta ' + (i + 1) + '">' + ICO_AG.cerrar + '</button></div>';
+        }).join('') + '</div>' +
+        (sug.length < 6 ? '<button type="button" class="btn-link agx-mas" id="agpSugMas">+ Agregar una pregunta</button>' : '') +
+        '<p class="ag-nota">Las que más preguntan los vendedores: un toque y la preguntan.</p></div>' +
+      '<div class="ficha-bloque"><h3>Accesos rápidos <span class="agx-cuenta">' + acc.length + ' de 6</span></h3>' +
+        '<div class="agx-lista-ed">' + acc.map(function (a, i) {
+          return '<div class="agx-acc-fila">' +
+            '<input type="text" maxlength="40" data-acc="' + i + ':titulo" value="' + esc(a.titulo || '') + '" placeholder="Nombre" aria-label="Nombre del acceso ' + (i + 1) + '">' +
+            '<input type="url" maxlength="500" data-acc="' + i + ':url" value="' + esc(a.url || '') + '" placeholder="https://…" aria-label="Enlace del acceso ' + (i + 1) + '">' +
+            '<input type="text" maxlength="60" data-acc="' + i + ':nota" value="' + esc(a.nota || '') + '" placeholder="Nota (opcional)" aria-label="Nota del acceso ' + (i + 1) + '">' +
+            '<button type="button" class="agx-x" data-acc-x="' + i + '" aria-label="Sacar el acceso ' + (i + 1) + '">' + ICO_AG.cerrar + '</button></div>';
+        }).join('') + '</div>' +
+        (acc.length < 6 ? '<button type="button" class="btn-link agx-mas" id="agpAccMas">+ Agregar un acceso</button>' : '') +
+        '<p class="ag-nota">Enlaces que se abren en otra pestaña: el planificador de objetivos, el Drive de manuales… Tienen que empezar con https://</p></div>' +
+      '<div class="ag-acciones agx-guardar-portada"><a class="btn btn-sec btn-chico" href="asistente.html" target="_blank" rel="noopener">Ver el Asistente</a>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="agpOk">Guardar la portada</button></div>';
+  }
+  function cablearAsistente(v) {
+    var en = function (id, fn) { var el = $(id); if (el) { el.onclick = fn; } };
+    en('agAsisPrendido', function () {
+      var nuevo = AG.datos.reglas.asis_prendido === 'si' ? 'no' : 'si';
+      guardarReglasAgente({ asis_prendido: nuevo }, this,
+        nuevo === 'si' ? 'Prendido: ya lo pueden usar en los locales.' : 'Apagado: en los locales dice que está apagado.');
+    });
+    [].forEach.call(v.querySelectorAll('[data-ag-modelo]'), function (b) {
+      b.onclick = function () {
+        if (b.getAttribute('aria-checked') === 'true') { return; }
+        guardarReglasAgente({ asis_modelo: b.dataset.agModelo }, b, 'Ahora contesta con ' + nombreModeloAg(b.dataset.agModelo) + '.');
+      };
+    });
+    en('agAsisTopeOk', function () {
+      guardarReglasAgente({ asis_tope_usd: String(AG.w.asis_tope_usd || '').replace(/[^0-9]/g, '') }, this, 'Tope guardado.');
+    });
+    /* La portada: lo escrito vive en AG.w, así agregar o sacar no lo pierde. */
+    if ($('agpSaludo')) { $('agpSaludo').oninput = function () { AG.w.asis_saludo = this.value; }; }
+    [].forEach.call(v.querySelectorAll('[data-sug]'), function (inp) {
+      inp.oninput = function () { AG.w.sugeridas[+inp.dataset.sug] = inp.value; };
+    });
+    [].forEach.call(v.querySelectorAll('[data-sug-x]'), function (b) {
+      b.onclick = function () { AG.w.sugeridas.splice(+b.dataset.sugX, 1); pintarAgente(); };
+    });
+    en('agpSugMas', function () {
+      AG.w.sugeridas.push('');
+      pintarAgente();
+      var l = v.querySelectorAll('[data-sug]');
+      if (l.length) { l[l.length - 1].focus(); }
+    });
+    [].forEach.call(v.querySelectorAll('[data-acc]'), function (inp) {
+      inp.oninput = function () { var p = inp.dataset.acc.split(':'); AG.w.accesos[+p[0]][p[1]] = inp.value; };
+    });
+    [].forEach.call(v.querySelectorAll('[data-acc-x]'), function (b) {
+      b.onclick = function () { AG.w.accesos.splice(+b.dataset.accX, 1); pintarAgente(); };
+    });
+    en('agpAccMas', function () {
+      AG.w.accesos.push({ titulo: '', url: 'https://', nota: '' });
+      pintarAgente();
+      var l = v.querySelectorAll('[data-acc$=":titulo"]');
+      if (l.length) { l[l.length - 1].focus(); }
+    });
+    en('agpOk', function () {
+      var sug = AG.w.sugeridas.map(function (t) { return String(t || '').trim(); }).filter(Boolean);
+      var acc = AG.w.accesos.map(function (a) {
+        return { titulo: String(a.titulo || '').trim(), url: String(a.url || '').trim(), nota: String(a.nota || '').trim() || null };
+      }).filter(function (a) { return a.titulo || (a.url && a.url !== 'https://'); });
+      if (!String(AG.w.asis_saludo || '').trim()) { avisar('err', 'Falta el saludo.'); $('agpSaludo').focus(); return; }
+      guardarReglasAgente({ asis_saludo: String(AG.w.asis_saludo).trim(), asis_sugeridas: sug, asis_accesos: acc }, this,
+        'Portada guardada: así la ven los locales.');
+    });
+    /* Las marcadas. */
+    [].forEach.call(v.querySelectorAll('[data-agm-listo]'), function (b) { b.onclick = function () { revisarMarcada(+b.dataset.agmListo, true); }; });
+    [].forEach.call(v.querySelectorAll('[data-agm-volver]'), function (b) { b.onclick = function () { revisarMarcada(+b.dataset.agmVolver, false); }; });
+    [].forEach.call(v.querySelectorAll('[data-agm-corregir]'), function (b) {
+      b.onclick = function () {
+        var m = (AGMK.lista || []).filter(function (x) { return +x.id === +b.dataset.agmCorregir; })[0];
+        if (!m) { return; }
+        abrirFuente({ tipo: 'pregunta', titulo: String(m.pregunta || '').slice(0, 200), contenido: '', publico: 'interno',
+                      tema: 'Correcciones', origen: 'correccion', marcada: m.id });
+      };
+    });
+  }
+
+  /* ═══ El chat de prueba ══════════════════════════════════════════════════
+     El del Asistente ya contesta (Edge Function "asistente", acción
+     "probar", con el PIN): no guarda la charla. Muestra de qué fuente sacó
+     cada cosa, con la cita, y lo que costó. "Marcar como mala" guarda la
+     respuesta buena como una pregunta en Conocimiento. */
+  function enLineaAg(s) {
+    return esc(s).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/\[(\d{1,2})\]/g, '<sup class="agp-ref">$1</sup>');
+  }
+  function mdAg(t) {
+    var html = '', lista = '', parrafo = [];
+    var cerrarP = function () { if (parrafo.length) { html += '<p>' + parrafo.map(enLineaAg).join('<br>') + '</p>'; parrafo = []; } };
+    var cerrarL = function () { if (lista) { html += '</' + lista + '>'; lista = ''; } };
+    String(t || '').replace(/\r/g, '').split('\n').forEach(function (l) {
+      var m;
+      if (/^\s*$/.test(l)) { cerrarP(); cerrarL(); return; }
+      if ((m = l.match(/^\s*#{1,6}\s+(.*)$/))) { cerrarP(); cerrarL(); html += '<p><b>' + enLineaAg(m[1]) + '</b></p>'; return; }
+      if ((m = l.match(/^\s*[-*•]\s+(.*)$/))) { cerrarP(); if (lista !== 'ul') { cerrarL(); html += '<ul>'; lista = 'ul'; } html += '<li>' + enLineaAg(m[1]) + '</li>'; return; }
+      if ((m = l.match(/^\s*\d{1,2}[.)]\s+(.*)$/))) { cerrarP(); if (lista !== 'ol') { cerrarL(); html += '<ol>'; lista = 'ol'; } html += '<li>' + enLineaAg(m[1]) + '</li>'; return; }
+      cerrarL();
+      parrafo.push(l);
+    });
+    cerrarP(); cerrarL();
+    return html;
+  }
+  function htmlMsgsPrueba() {
+    var P = AGP[AGX.cual];
+    if (!P.msgs.length && !P.esperando) {
+      return '<div class="agx-chat-vacio">' + esc(AGENTES_IA[AGX.cual].prueba) + '</div>';
+    }
+    return P.msgs.map(function (m, i) {
+      if (m.rol === 'yo') { return '<div class="agp-yo">' + esc(m.texto) + '</div>'; }
+      if (m.rol === 'error') { return '<div class="agp-error">' + esc(m.texto) + '</div>'; }
+      var f = m.fuentes || [];
+      return '<div class="agp-ia"><div class="agp-md">' + mdAg(m.texto) + '</div>' +
+        (f.length ? '<div class="agp-fuentes">' + f.map(function (x) {
+          return '<details><summary><em>' + x.n + '</em> ' + esc(x.titulo) + '</summary>' +
+            (x.citas || []).map(function (c) { return '<q>“' + esc(c) + '”</q>'; }).join('') + '</details>';
+        }).join('') + '</div>' : '<p class="agp-sin">Sin fuentes: no sacó nada de ningún documento.</p>') +
+        (m.uso ? '<p class="agp-uso">' + esc(nombreModeloAg(m.uso.modelo)) + ' · ' + usdAg(m.uso.usd) + ' · ' +
+          String(Math.round((Number(m.uso.ms) || 0) / 100) / 10).replace('.', ',') + ' s</p>' : '') +
+        (m.corregida ? '<p class="agp-ok">La corrección quedó en Conocimiento.</p>'
+                     : '<button type="button" class="btn-link agp-mala" data-agp-mala="' + i + '">Marcar como mala y corregir</button>') +
+      '</div>';
+    }).join('') + (P.esperando ? '<div class="agp-pensando">Buscando en las fuentes…</div>' : '');
+  }
+  function repintarChats() {
+    if (vista !== 'agente') { return; }
+    var P = AGP[AGX.cual];
+    [].forEach.call($('vistaAgente').querySelectorAll('.agx-chat'), function (c) {
+      var m = c.querySelector('.agx-chat-msgs');
+      m.innerHTML = htmlMsgsPrueba();
+      m.scrollTop = m.scrollHeight;
+      var b = c.querySelector('[data-agp-mandar]');
+      if (b) { b.disabled = P.esperando || AGX.cual !== 'vendedores'; }
+      var n = c.querySelector('[data-agp-nueva]');
+      if (n) { n.hidden = !P.msgs.length; }
+    });
+    cablearChatPrueba($('vistaAgente'));
+  }
+  function mandarPrueba(texto) {
+    var cual = AGX.cual, P = AGP[cual], t = String(texto || '').trim();
+    if (!t || P.esperando || cual !== 'vendedores') { return false; }
+    var historial = [];
+    for (var i = 0; i + 1 < P.msgs.length; i++) {
+      if (P.msgs[i].rol === 'yo' && P.msgs[i + 1].rol === 'ia') { historial.push({ pregunta: P.msgs[i].texto, respuesta: P.msgs[i + 1].texto }); }
+    }
+    P.msgs.push({ rol: 'yo', texto: t });
+    P.esperando = true;
+    repintarChats();
+    base.asistenteProbar(pinGuardado(), historial.slice(-6), t)
+      .then(function (r) {
+        P.esperando = false;
+        P.msgs.push({ rol: 'ia', texto: r.texto, fuentes: r.fuentes || [], uso: r.uso || null, pregunta: t });
+        if (AG.datos && AG.datos.gasto && r.uso) {
+          var g = AG.datos.gasto.vendedores || (AG.datos.gasto.vendedores = { usd: 0, consultas: 0 });
+          g.usd = (Number(g.usd) || 0) + (Number(r.uso.usd) || 0);
+          g.consultas = (Number(g.consultas) || 0) + 1;
+        }
+        repintarChats();
+      })
+      .catch(function (err) {
+        P.esperando = false;
+        if (err && err.pin) { caducada(); return; }
+        P.msgs.push({ rol: 'error', texto: (err && err.message) || 'No se pudo contestar.' });
+        repintarChats();
+      });
+    return true;
+  }
+  function cablearChatPrueba(v) {
+    [].forEach.call(v.querySelectorAll('.agx-chat'), function (c) {
+      var t = c.querySelector('[data-agp-txt]'), b = c.querySelector('[data-agp-mandar]');
+      if (t && b && !t.dataset.cableado) {
+        t.dataset.cableado = '1';
+        var mandar = function () {
+          if (b.disabled) { return; }
+          if (!t.value.trim()) { t.focus(); return; }
+          if (mandarPrueba(t.value)) { t.value = ''; t.style.height = ''; }
+        };
+        t.onkeydown = function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); mandar(); } };
+        t.oninput = function () { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 140) + 'px'; };
+        b.onclick = mandar;
+      }
+      var n = c.querySelector('[data-agp-nueva]');
+      if (n) { n.onclick = function () { if (AGP[AGX.cual].esperando) { return; } AGP[AGX.cual].msgs = []; repintarChats(); }; }
+      [].forEach.call(c.querySelectorAll('[data-agp-mala]'), function (x) {
+        x.onclick = function () {
+          var i = +x.dataset.agpMala, m = AGP[AGX.cual].msgs[i];
+          if (!m) { return; }
+          abrirFuente({ tipo: 'pregunta', titulo: String(m.pregunta || '').slice(0, 200), contenido: '',
+                        publico: AGX.cual === 'clientes' ? 'clientes' : 'interno', tema: 'Correcciones', origen: 'correccion',
+                        prueba: { cual: AGX.cual, i: i } });
+        };
+      });
+      var msgs = c.querySelector('.agx-chat-msgs');
+      if (msgs) { msgs.scrollTop = msgs.scrollHeight; }
     });
   }
 
@@ -7845,6 +8718,7 @@
       if (ev.key !== 'Escape') return;
       if (arr) { cancelarArrastre(); return; }
       if (!$('modalQuien').hidden) { $('quienCancelar').onclick(); return; }
+      if (!$('modalFuente').hidden) { cerrarFuente(); return; }
       if (!$('modalPlantilla').hidden) { $('modalPlantilla').hidden = true; return; }
       if (!$('modalPerdida').hidden) { cancelarPerdida(); return; }
       if (!$('modalWsp').hidden) { $('modalWsp').hidden = true; return; }

@@ -7276,3 +7276,834 @@ end;
 $function$;
 
 select 'listo: la sección Gift Cards (la lista, los números y el tope de la venta)' as "SQL 84";
+
+
+-- ─────────────────────────── PARTE 85 (12/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · AGENTES DE IA, ETAPA B: LAS FUENTES Y EL ASISTENTE DE LOS VENDEDORES
+--
+-- Correr en el editor SQL de Supabase (después del 84).
+--
+-- Pedido de Mauricio (12/10/2026): dejar Chatbase y tener dos agentes
+-- propios. Este SQL arma lo del conocimiento y el Asistente:
+--   · agente_fuentes: lo que saben los agentes, por partes (archivos,
+--     textos y preguntas con su respuesta), cada una con su público
+--     ("clientes" o "interno"), su tema y su interruptor. Lo "interno" lo ve
+--     SÓLO el Asistente de los vendedores: el agente de clientes recibe
+--     únicamente lo "clientes" prendido, y eso lo arma la base
+--     (agente_contexto), no la pantalla ni la función.
+--   · "Lo que sabe" pasa a fuentes (una por cada "## "), para clientes,
+--     sin perder una letra. agente_textos queda como estaba, de respaldo.
+--   · El Asistente: sus charlas (de cada persona, en cada PC), los pulgares
+--     y lo que estuvo mal, la portada (saludo, sugeridas y accesos) y sus
+--     ajustes (prendido, modelo y tope de gasto). Nace APAGADO.
+--   · agente_gasto: lo que gasta cada agente en el mes, con el tope que
+--     corta y el aviso por Telegram al 80 % y al 100 %.
+--
+-- Reversible: crea tablas y funciones nuevas; las que cambia
+-- (agente_contexto, agente_regla_valida, agente_config y
+-- agente_texto_guardar) se pueden volver a su versión del SQL 77/78
+-- corriendo esas partes de nuevo. Las fuentes migradas no borran nada.
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* ═══ Las fuentes ════════════════════════════════════════════════════════
+   tipo "pregunta": el título es la pregunta y el contenido, la respuesta.
+   aviso: lo que hay que revisar (viejo, repetido, sensible, cambia).
+   borrada: se borran sin perderse (se puede volver desde la base). */
+create table if not exists agente_fuentes (
+  id          bigserial primary key,
+  tipo        text not null check (tipo in ('archivo', 'texto', 'pregunta')),
+  titulo      text not null,
+  contenido   text not null,
+  archivo     text,
+  publico     text not null default 'interno' check (publico in ('clientes', 'interno')),
+  tema        text,
+  prendida    boolean not null default true,
+  origen      text,
+  aviso       text,
+  quien       text,
+  creada      timestamptz not null default now(),
+  actualizada timestamptz not null default now(),
+  borrada     timestamptz
+);
+create index if not exists agente_fuentes_vivas on agente_fuentes (publico, id) where borrada is null;
+alter table agente_fuentes enable row level security;
+revoke all on agente_fuentes from anon, authenticated;
+
+/* "Lo que sabe" → fuentes, una por parte, en el mismo orden. Sólo una vez. */
+insert into agente_fuentes (tipo, titulo, contenido, publico, tema, origen, aviso, quien)
+select 'texto', x.titulo, x.cuerpo, 'clientes',
+       case when x.titulo ilike 'Envíos%' then 'Envíos'
+            when x.titulo ilike 'Medios de pago%' then 'Pagos'
+            when x.titulo ilike 'Cambios%' then 'Cambios'
+            when x.titulo ilike 'Talles%' then 'Talles'
+            when x.titulo ilike 'Telas%' then 'Telas'
+            when x.titulo ilike 'Stock%' then 'Stock'
+            when x.titulo ilike 'Colección%' then 'Promociones'
+            when x.titulo ilike 'Contacto%' then 'Contacto'
+            when x.titulo ilike 'Locales%' then 'Locales'
+            else 'General' end,
+       'lo-que-sabe',
+       case when x.titulo ilike 'Envíos%' then 'cambia: trae el monto del envío gratis, que también está en Reglas de venta. Si cambia, hay que cambiarlo en los dos lados (o sacarlo de acá).'
+            when x.titulo ilike 'Medios de pago%' then 'cambia: trae las cuotas y el % de la transferencia. Revisá que sigan vigentes.'
+            when x.titulo ilike 'Colección%' then 'cambia: nombra la colección y el SALE de hoy. Lo que se vende y sus precios salen en vivo de la tienda.'
+       end,
+       'Migración (SQL 85)'
+  from (
+    select t.i,
+           case when t.p like '## %' then btrim(substr(split_part(t.p, E'\n', 1), 4)) else 'General' end as titulo,
+           btrim(case when t.p like '## %' then substr(t.p, length(split_part(t.p, E'\n', 1)) + 2) else t.p end, E' \n\t') as cuerpo
+      from regexp_split_to_table(
+             (select replace(a.texto, E'\r', '') from agente_textos a order by a.creado desc, a.id desc limit 1),
+             E'\n(?=## )') with ordinality as t(p, i)
+  ) x
+ where x.cuerpo <> ''
+   and not exists (select 1 from agente_fuentes f where f.origen = 'lo-que-sabe')
+ order by x.i;
+
+/* ═══ El Asistente: charlas y mensajes ═══════════════════════════════════
+   Una charla es de una persona en una PC (disp: un número al azar que
+   guarda el navegador). Cada fila de mensajes es una pregunta con su
+   respuesta. */
+create table if not exists asistente_charlas (
+  id          uuid primary key default gen_random_uuid(),
+  disp        text not null check (disp ~ '^[0-9a-f]{32}$'),
+  local       text,
+  vendedor    text not null,
+  titulo      text,
+  creada      timestamptz not null default now(),
+  actualizada timestamptz not null default now()
+);
+create index if not exists asistente_charlas_de on asistente_charlas (disp, lower(btrim(vendedor)), actualizada desc);
+alter table asistente_charlas enable row level security;
+revoke all on asistente_charlas from anon, authenticated;
+
+create table if not exists asistente_mensajes (
+  id         bigserial primary key,
+  charla     uuid not null references asistente_charlas (id) on delete cascade,
+  pregunta   text not null,
+  respuesta  text not null,
+  fuentes    jsonb not null default '[]'::jsonb,
+  voto       smallint not null default 0 check (voto in (-1, 0, 1)),
+  comentario text,
+  revisada   boolean not null default false,
+  modelo     text,
+  tokens     jsonb,
+  usd        numeric(10, 5),
+  ms         integer,
+  creado     timestamptz not null default now()
+);
+create index if not exists asistente_mensajes_charla on asistente_mensajes (charla, id);
+create index if not exists asistente_mensajes_malas on asistente_mensajes (creado desc) where voto = -1;
+alter table asistente_mensajes enable row level security;
+revoke all on asistente_mensajes from anon, authenticated;
+
+/* ═══ Lo que gasta cada agente en el mes (hora de Argentina) ════════════ */
+create table if not exists agente_gasto (
+  agente    text not null check (agente in ('clientes', 'vendedores')),
+  mes       date not null,
+  usd       numeric(12, 5) not null default 0,
+  consultas integer not null default 0,
+  aviso80   boolean not null default false,
+  aviso100  boolean not null default false,
+  primary key (agente, mes)
+);
+alter table agente_gasto enable row level security;
+revoke all on agente_gasto from anon, authenticated;
+
+/* Los ajustes nuevos. El Asistente nace apagado: se prende desde el CRM
+   cuando tenga sus fuentes. Los dos arrancan con Sonnet 5.5 y un tope de
+   USD 20 por mes. */
+insert into agente_reglas (clave, valor) values
+  ('asis_prendido',  'no'),
+  ('asis_saludo',    '¿En qué te ayudo?'),
+  ('asis_sugeridas', '[]'),
+  ('asis_accesos',   '[]'),
+  ('asis_modelo',    'claude-sonnet-5-5'),
+  ('asis_tope_usd',  '20'),
+  ('modelo',         'claude-sonnet-5-5'),
+  ('tope_usd',       '20')
+on conflict (clave) do nothing;
+
+/* El mes en curso, con la fecha de acá. */
+create or replace function agente_mes()
+returns date
+language sql
+stable
+as $$
+  select date_trunc('month', now() at time zone 'America/Argentina/Buenos_Aires')::date
+$$;
+
+/* ═══ Cada regla con su forma (la del SQL 77, más las nuevas) ═══════════ */
+create or replace function agente_regla_valida(p_clave text, p_valor text)
+returns jsonb
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v   text := trim(coalesce(p_valor, ''));
+  j   jsonb;
+  x   jsonb;
+  k   text;
+  nom text;
+  t   text;
+  u   text;
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  hh  constant text := '^([01][0-9]|2[0-3]):[0-5][0-9]$';
+begin
+  if p_clave in ('prendido', 'cupon_con_sale', 'asis_prendido') then
+    if v not in ('si', 'no') then
+      return jsonb_build_object('ok', false, 'porque', 'Va "si" o "no".');
+    end if;
+  elsif p_clave = 'modo' then
+    /* Por ahora, sólo "prueba": el automático se habilita en la fase 4,
+       cuando el agente haya pasado las pruebas (con su propio SQL). */
+    if v <> 'prueba' then
+      return jsonb_build_object('ok', false, 'porque', 'Por ahora sólo en prueba: el automático llega en la fase 4.');
+    end if;
+  elsif p_clave = 'semana' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'El horario no se entendió.');
+    end;
+    if jsonb_typeof(j) is distinct from 'object' then
+      return jsonb_build_object('ok', false, 'porque', 'El horario no se entendió.');
+    end if;
+    foreach k in array array['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'] loop
+      nom := case k when 'lun' then 'lunes' when 'mar' then 'martes' when 'mie' then 'miércoles' when 'jue' then 'jueves'
+                    when 'vie' then 'viernes' when 'sab' then 'sábado' else 'domingo' end;
+      x := j->k;
+      if x is null or jsonb_typeof(x) <> 'object' or coalesce(x->>'modo', '') not in ('todo', 'fuera', 'no') then
+        return jsonb_build_object('ok', false, 'porque', 'Falta qué hace el agente el ' || nom || '.');
+      end if;
+      if coalesce(x->>'de', '09:00') !~ hh or coalesce(x->>'a', '17:00') !~ hh then
+        return jsonb_build_object('ok', false, 'porque', 'El ' || nom || ': la hora va como 09:00.');
+      end if;
+      if x->>'modo' = 'fuera' and coalesce(x->>'de', '09:00')::time >= coalesce(x->>'a', '17:00')::time then
+        return jsonb_build_object('ok', false, 'porque', 'El ' || nom || ': el equipo tiene que entrar antes de salir.');
+      end if;
+    end loop;
+    v := (select jsonb_object_agg(d, jsonb_build_object('modo', j->d->>'modo',
+                                                        'de', coalesce(j->d->>'de', '09:00'),
+                                                        'a', coalesce(j->d->>'a', '17:00')))
+            from unnest(array['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']) as d)::text;
+  elsif p_clave = 'fechas' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'Las fechas no se entendieron.');
+    end;
+    if jsonb_typeof(j) is distinct from 'array' then
+      return jsonb_build_object('ok', false, 'porque', 'Las fechas no se entendieron.');
+    end if;
+    if jsonb_array_length(j) > 100 then
+      return jsonb_build_object('ok', false, 'porque', 'Hasta 100 fechas especiales.');
+    end if;
+    for x in select * from jsonb_array_elements(j) loop
+      if coalesce(x->>'fecha', '') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' or coalesce(x->>'modo', '') not in ('todo', 'no') then
+        return jsonb_build_object('ok', false, 'porque', 'Cada fecha va con "todo el día" o "no atiende".');
+      end if;
+      begin
+        perform (x->>'fecha')::date;
+      exception when others then
+        return jsonb_build_object('ok', false, 'porque', 'La fecha ' || (x->>'fecha') || ' no existe.');
+      end;
+      if length(coalesce(x->>'nota', '')) > 60 then
+        return jsonb_build_object('ok', false, 'porque', 'La nota de una fecha es muy larga: hasta 60 letras.');
+      end if;
+    end loop;
+    v := coalesce((
+      select jsonb_agg(jsonb_build_object('fecha', t.f, 'modo', t.m, 'nota', t.n) order by t.fd)
+        from (select distinct on ((z.e->>'fecha')::date)
+                     (z.e->>'fecha')::date as fd, to_char((z.e->>'fecha')::date, 'YYYY-MM-DD') as f,
+                     z.e->>'modo' as m, nullif(trim(coalesce(z.e->>'nota', '')), '') as n
+                from jsonb_array_elements(j) with ordinality as z(e, i)
+               order by (z.e->>'fecha')::date, z.i desc) t
+       where t.fd >= hoy), '[]'::jsonb)::text;
+  elsif p_clave in ('cupon_pct', 'segunda_pct') then
+    if v !~ '^[0-9]{1,2}$' or v::int < 1 or v::int > 50 then
+      return jsonb_build_object('ok', false, 'porque', 'El porcentaje va de 1 a 50.');
+    end if;
+  elsif p_clave = 'cupon_horas' then
+    if v !~ '^[0-9]{1,3}$' or v::int < 1 or v::int > 168 then
+      return jsonb_build_object('ok', false, 'porque', 'El cupón vence entre 1 y 168 horas (una semana).');
+    end if;
+  elsif p_clave = 'telegram_min' then
+    if v !~ '^[0-9]{1,3}$' or v::int < 1 or v::int > 240 then
+      return jsonb_build_object('ok', false, 'porque', 'La espera de Telegram va de 1 a 240 minutos.');
+    end if;
+  elsif p_clave in ('envio_gratis_desde', 'envio_piso') then
+    if v !~ '^[0-9]{1,9}$' then
+      return jsonb_build_object('ok', false, 'porque', 'Va un monto en pesos, sin puntos.');
+    end if;
+  elsif p_clave in ('derivar_ventas', 'derivar_posventa', 'derivar_logistica', 'derivar_nocompra', 'derivar_carritos') then
+    if v = '' or length(v) > 40 then
+      return jsonb_build_object('ok', false, 'porque', 'Falta el nombre (hasta 40 letras).');
+    end if;
+  /* ── Lo nuevo (SQL 85) ── */
+  elsif p_clave in ('modelo', 'asis_modelo') then
+    if v not in ('claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5') then
+      return jsonb_build_object('ok', false, 'porque', 'Ese modelo no está entre los que se pueden elegir.');
+    end if;
+  elsif p_clave in ('tope_usd', 'asis_tope_usd') then
+    if v !~ '^[0-9]{1,4}$' or v::int < 1 or v::int > 1000 then
+      return jsonb_build_object('ok', false, 'porque', 'El tope del mes va de 1 a 1000 dólares.');
+    end if;
+  elsif p_clave = 'asis_saludo' then
+    v := regexp_replace(replace(v, E'\r', ''), '\s+', ' ', 'g');
+    if v = '' or length(v) > 120 then
+      return jsonb_build_object('ok', false, 'porque', 'El saludo va de 1 a 120 letras.');
+    end if;
+  elsif p_clave = 'asis_sugeridas' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'Las preguntas sugeridas no se entendieron.');
+    end;
+    if jsonb_typeof(j) is distinct from 'array' or jsonb_array_length(j) > 6 then
+      return jsonb_build_object('ok', false, 'porque', 'Hasta 6 preguntas sugeridas.');
+    end if;
+    for x in select * from jsonb_array_elements(j) loop
+      t := regexp_replace(replace(coalesce(x #>> '{}', ''), E'\r', ''), '\s+', ' ', 'g');
+      if jsonb_typeof(x) <> 'string' or btrim(t) = '' or length(btrim(t)) > 120 then
+        return jsonb_build_object('ok', false, 'porque', 'Cada pregunta sugerida va de 1 a 120 letras.');
+      end if;
+    end loop;
+    v := coalesce((select jsonb_agg(btrim(regexp_replace(replace(e #>> '{}', E'\r', ''), '\s+', ' ', 'g')) order by i)
+                     from jsonb_array_elements(j) with ordinality as z(e, i)), '[]'::jsonb)::text;
+  elsif p_clave = 'asis_accesos' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'Los accesos no se entendieron.');
+    end;
+    if jsonb_typeof(j) is distinct from 'array' or jsonb_array_length(j) > 6 then
+      return jsonb_build_object('ok', false, 'porque', 'Hasta 6 accesos rápidos.');
+    end if;
+    for x in select * from jsonb_array_elements(j) loop
+      t := btrim(coalesce(x->>'titulo', ''));
+      u := btrim(coalesce(x->>'url', ''));
+      if jsonb_typeof(x) <> 'object' or t = '' or length(t) > 40 then
+        return jsonb_build_object('ok', false, 'porque', 'Cada acceso lleva un nombre de 1 a 40 letras.');
+      end if;
+      if u !~* '^https://[^\s<>"]+$' or length(u) > 500 then
+        return jsonb_build_object('ok', false, 'porque', 'El enlace de "' || t || '" tiene que empezar con https://');
+      end if;
+      if length(coalesce(x->>'nota', '')) > 60 then
+        return jsonb_build_object('ok', false, 'porque', 'La nota de "' || t || '" es muy larga: hasta 60 letras.');
+      end if;
+    end loop;
+    v := coalesce((select jsonb_agg(jsonb_build_object('titulo', btrim(e->>'titulo'), 'url', btrim(e->>'url'),
+                                                       'nota', nullif(btrim(coalesce(e->>'nota', '')), '')) order by i)
+                     from jsonb_array_elements(j) with ordinality as z(e, i)), '[]'::jsonb)::text;
+  else
+    return jsonb_build_object('ok', false, 'porque', 'Esa regla no existe.');
+  end if;
+  return jsonb_build_object('ok', true, 'valor', v);
+end;
+$$;
+revoke execute on function agente_regla_valida(text, text) from public, anon, authenticated;
+
+/* ═══ Lo que necesita el agente de CLIENTES ══════════════════════════════
+   Igual que en el SQL 78, salvo lo que sabe: ahora sale de las fuentes
+   "para clientes" prendidas. Lo "interno" NO entra nunca acá. */
+create or replace function agente_contexto(p_clave text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'clave', k.clave,
+    'reglas', coalesce((select jsonb_object_agg(r.clave, r.valor) from agente_reglas r where r.clave not like 'asis\_%'), '{}'::jsonb),
+    'conocimiento', (select string_agg('## ' || f.titulo || E'\n' || f.contenido, E'\n\n' order by f.id)
+                       from agente_fuentes f
+                      where f.publico = 'clientes' and f.prendida and f.borrada is null),
+    'fuentes', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'tipo', f.tipo, 'titulo', f.titulo, 'tema', f.tema,
+                                                             'contenido', f.contenido) order by f.id)
+                           from agente_fuentes f
+                          where f.publico = 'clientes' and f.prendida and f.borrada is null), '[]'::jsonb),
+    'catalogo', agente_catalogo(),
+    'ahora', agente_atiende(now()),
+    'hoy', (array['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'])[extract(dow from now() at time zone 'America/Argentina/Buenos_Aires')::int + 1] || ' ' ||
+            to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI'),
+    'nombre', coalesce(wa_agenda_nombre(k.clave),
+                       (select nullif(trim(m.perfil), '') from wa_mensajes m
+                         where club_tel10(m.tel) = k.clave and nullif(trim(m.perfil), '') is not null
+                         order by m.cuando desc limit 1)),
+    'ultimo_id', (select max(m.id) from wa_mensajes m where club_tel10(m.tel) = k.clave),
+    'ultimo_entra_id', (select max(m.id) from wa_mensajes m where club_tel10(m.tel) = k.clave and m.sentido = 'entra'),
+    'numero_id', (select m.numero_id from wa_mensajes m where club_tel10(m.tel) = k.clave order by m.cuando desc, m.id desc limit 1),
+    'mensajes', coalesce((
+      select jsonb_agg(jsonb_build_object('id', w.id, 'de', case when w.sentido = 'entra' then 'cliente' else 'vdh' end,
+                                          'tipo', w.tipo, 'texto', w.texto,
+                                          'cuando', to_char(w.cuando at time zone 'America/Argentina/Buenos_Aires', 'DD/MM HH24:MI'))
+                       order by w.cuando, w.id)
+        from (select * from wa_mensajes m where club_tel10(m.tel) = k.clave and m.tipo is distinct from 'reaction'
+               order by m.cuando desc, m.id desc limit 30) w), '[]'::jsonb))
+  from (select club_tel10(p_clave) as clave) k
+  where k.clave is not null
+$$;
+revoke execute on function agente_contexto(text) from public, anon, authenticated;
+grant execute on function agente_contexto(text) to service_role;
+
+/* "Lo que sabe" ya no se guarda entero: se edita por partes en
+   Conocimiento. La pantalla vieja recibe el porqué. */
+create or replace function agente_texto_guardar(p_pin text, p_texto text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return jsonb_build_object('ok', false,
+    'porque', 'Lo que sabe ahora se edita por partes, en Agentes de IA → Conocimiento.');
+end;
+$$;
+revoke execute on function agente_texto_guardar(text, text) from public;
+grant execute on function agente_texto_guardar(text, text) to anon, authenticated;
+
+/* ═══ El CRM: la configuración de los dos agentes, en un viaje ══════════ */
+create or replace function agente_config(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return jsonb_build_object(
+    'reglas', coalesce((select jsonb_object_agg(r.clave, r.valor) from agente_reglas r), '{}'::jsonb),
+    'numero', (select n.nombre from wa_numeros n
+                where n.numero_id = (select r.valor from agente_reglas r where r.clave = 'numero_id')),
+    'conocimiento', (select jsonb_build_object('texto', t.texto,
+                              'actualizado', to_char(t.creado at time zone 'America/Argentina/Buenos_Aires', 'YYYY-MM-DD'))
+                       from agente_textos t order by t.creado desc, t.id desc limit 1),
+    'versiones', (select count(*) from agente_textos),
+    'ahora', agente_atiende(now()),
+    'gasto', coalesce((select jsonb_object_agg(g.agente, jsonb_build_object('usd', round(g.usd, 2), 'consultas', g.consultas))
+                         from agente_gasto g where g.mes = agente_mes()), '{}'::jsonb),
+    'fuentes', (select jsonb_build_object(
+                  'n', count(*),
+                  'prendidas', count(*) filter (where f.prendida),
+                  'bytes', coalesce(sum(octet_length(f.contenido)) filter (where f.prendida), 0),
+                  'bytes_clientes', coalesce(sum(octet_length(f.contenido)) filter (where f.prendida and f.publico = 'clientes'), 0),
+                  'avisos', count(*) filter (where f.aviso is not null))
+                  from agente_fuentes f where f.borrada is null),
+    'marcadas', (select count(*) from asistente_mensajes m where m.voto = -1 and not m.revisada));
+end;
+$$;
+revoke execute on function agente_config(text) from public;
+grant execute on function agente_config(text) to anon, authenticated;
+
+/* ═══ Las fuentes, desde el CRM (con el PIN) ═════════════════════════════
+   Sin tirar un error con el PIN malo: así el intento queda anotado (el
+   modelo del SQL 84). */
+create or replace function agente_pin_mal(r jsonb)
+returns jsonb
+language sql
+immutable
+as $$
+  select jsonb_build_object('error', 'pin', 'porque', coalesce(r->>'porque', 'PIN incorrecto.'),
+                            'espera', coalesce((r->>'espera')::integer, 0), 'mal', r ? 'restantes')
+$$;
+
+create or replace function agente_fuentes_ver(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  return jsonb_build_object('fuentes', coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', f.id, 'tipo', f.tipo, 'titulo', f.titulo, 'archivo', f.archivo, 'publico', f.publico, 'tema', f.tema,
+             'prendida', f.prendida, 'origen', f.origen, 'aviso', f.aviso, 'bytes', octet_length(f.contenido),
+             'inicio', left(regexp_replace(f.contenido, '\s+', ' ', 'g'), 160),
+             'creada', f.creada, 'actualizada', f.actualizada, 'quien', f.quien) order by f.actualizada desc, f.id desc)
+      from agente_fuentes f where f.borrada is null), '[]'::jsonb));
+end;
+$$;
+revoke execute on function agente_fuentes_ver(text) from public;
+grant execute on function agente_fuentes_ver(text) to anon, authenticated;
+
+create or replace function agente_fuente_ver(p_pin text, p_id bigint)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  return (select jsonb_build_object('id', f.id, 'tipo', f.tipo, 'titulo', f.titulo, 'contenido', f.contenido, 'archivo', f.archivo,
+                                    'publico', f.publico, 'tema', f.tema, 'prendida', f.prendida, 'origen', f.origen, 'aviso', f.aviso,
+                                    'creada', f.creada, 'actualizada', f.actualizada, 'quien', f.quien)
+            from agente_fuentes f where f.id = p_id and f.borrada is null);
+end;
+$$;
+revoke execute on function agente_fuente_ver(text, bigint) from public;
+grant execute on function agente_fuente_ver(text, bigint) to anon, authenticated;
+
+/* Nueva (sin id) o cambiar una (con id: sólo lo que venga). */
+create or replace function agente_fuente_guardar(p_pin text, p jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r      jsonb := pin_ok(p_pin);
+  f      agente_fuentes%rowtype;
+  nuevo  boolean := (p->>'id') is null;
+  total  bigint;
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  if p is null or jsonb_typeof(p) <> 'object' then
+    return jsonb_build_object('ok', false, 'porque', 'No hay nada para guardar.');
+  end if;
+  if nuevo then
+    f.tipo := coalesce(p->>'tipo', 'texto');
+    f.publico := coalesce(p->>'publico', 'interno');
+    f.prendida := coalesce((p->>'prendida')::boolean, true);
+    f.origen := coalesce(nullif(p->>'origen', ''), 'crm');
+  else
+    select * into f from agente_fuentes x where x.id = (p->>'id')::bigint and x.borrada is null for update;
+    if not found then return jsonb_build_object('ok', false, 'porque', 'Esa fuente ya no está.'); end if;
+    if p ? 'publico' then f.publico := p->>'publico'; end if;
+    if p ? 'prendida' then f.prendida := (p->>'prendida')::boolean; end if;
+  end if;
+  if p ? 'titulo' or nuevo then f.titulo := btrim(regexp_replace(replace(coalesce(p->>'titulo', ''), E'\r', ''), '\s+', ' ', 'g')); end if;
+  if p ? 'contenido' or nuevo then f.contenido := btrim(replace(coalesce(p->>'contenido', ''), E'\r', ''), E' \n\t'); end if;
+  if p ? 'tema' or nuevo then f.tema := nullif(btrim(coalesce(p->>'tema', '')), ''); end if;
+  if p ? 'archivo' or nuevo then f.archivo := nullif(btrim(coalesce(p->>'archivo', '')), ''); end if;
+  if p ? 'aviso' then f.aviso := nullif(btrim(coalesce(p->>'aviso', '')), ''); end if;
+  if f.tipo not in ('archivo', 'texto', 'pregunta') then return jsonb_build_object('ok', false, 'porque', 'Tipo desconocido.'); end if;
+  if f.publico not in ('clientes', 'interno') then return jsonb_build_object('ok', false, 'porque', 'El público va "clientes" o "interno".'); end if;
+  if f.titulo = '' or length(f.titulo) > 200 then
+    return jsonb_build_object('ok', false, 'porque', case when f.tipo = 'pregunta' then 'La pregunta va de 1 a 200 letras.' else 'El título va de 1 a 200 letras.' end);
+  end if;
+  if f.contenido = '' then
+    return jsonb_build_object('ok', false, 'porque', case when f.tipo = 'pregunta' then 'Falta la respuesta.' else 'La fuente quedó vacía.' end);
+  end if;
+  if octet_length(f.contenido) > 400000 then
+    return jsonb_build_object('ok', false, 'porque', 'Es muy grande: hasta 400 KB por fuente. Partila en dos.');
+  end if;
+  if length(coalesce(f.tema, '')) > 40 then return jsonb_build_object('ok', false, 'porque', 'El tema va hasta 40 letras.'); end if;
+  /* Entre todas las prendidas, hasta 1,5 MB: es lo que se le manda al
+     modelo en cada pregunta. */
+  select coalesce(sum(octet_length(x.contenido)), 0) into total
+    from agente_fuentes x where x.prendida and x.borrada is null and x.id is distinct from f.id;
+  if f.prendida and total + octet_length(f.contenido) > 1500000 then
+    return jsonb_build_object('ok', false, 'porque', 'Entre todas las fuentes prendidas pasan de 1,5 MB: apagá o borrá alguna antes.');
+  end if;
+  f.quien := left(nullif(btrim(coalesce(p->>'quien', '')), ''), 60);
+  if nuevo then
+    insert into agente_fuentes (tipo, titulo, contenido, archivo, publico, tema, prendida, origen, aviso, quien)
+    values (f.tipo, f.titulo, f.contenido, f.archivo, f.publico, f.tema, f.prendida, f.origen, f.aviso, f.quien)
+    returning id into f.id;
+  else
+    update agente_fuentes set titulo = f.titulo, contenido = f.contenido, archivo = f.archivo, publico = f.publico, tema = f.tema,
+                              prendida = f.prendida, aviso = f.aviso, quien = coalesce(f.quien, quien), actualizada = now()
+     where id = f.id;
+  end if;
+  return jsonb_build_object('ok', true, 'id', f.id);
+end;
+$$;
+revoke execute on function agente_fuente_guardar(text, jsonb) from public;
+grant execute on function agente_fuente_guardar(text, jsonb) to anon, authenticated;
+
+create or replace function agente_fuente_borrar(p_pin text, p_id bigint, p_quien text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  update agente_fuentes set borrada = now(), quien = coalesce(left(nullif(btrim(coalesce(p_quien, '')), ''), 60), quien)
+   where id = p_id and borrada is null;
+  return jsonb_build_object('ok', found);
+end;
+$$;
+revoke execute on function agente_fuente_borrar(text, bigint, text) from public;
+grant execute on function agente_fuente_borrar(text, bigint, text) to anon, authenticated;
+
+/* ═══ El Asistente, libre (sin PIN) ══════════════════════════════════════ */
+create or replace function asistente_portada()
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'prendido', coalesce((select r.valor from agente_reglas r where r.clave = 'asis_prendido'), 'no') = 'si',
+    'saludo', (select r.valor from agente_reglas r where r.clave = 'asis_saludo'),
+    'sugeridas', coalesce((select r.valor::jsonb from agente_reglas r where r.clave = 'asis_sugeridas'), '[]'::jsonb),
+    'accesos', coalesce((select r.valor::jsonb from agente_reglas r where r.clave = 'asis_accesos'), '[]'::jsonb))
+$$;
+revoke execute on function asistente_portada() from public;
+grant execute on function asistente_portada() to anon, authenticated;
+
+/* Las charlas de esa persona en esa PC. Sin la PC (un número al azar que
+   sólo tiene ese navegador) no se ve nada. */
+create or replace function asistente_charlas(p_disp text, p_local text, p_vendedor text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'titulo', c.titulo, 'cuando', c.actualizada) order by c.actualizada desc), '[]'::jsonb)
+    from (select * from asistente_charlas c
+           where coalesce(p_disp, '') ~ '^[0-9a-f]{32}$'
+             and c.disp = p_disp
+             and lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, '')))
+           order by c.actualizada desc
+           limit 30) c
+$$;
+revoke execute on function asistente_charlas(text, text, text) from public;
+grant execute on function asistente_charlas(text, text, text) to anon, authenticated;
+
+create or replace function asistente_charla(p_disp text, p_vendedor text, p_charla uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(e order by z.id, z.o), '[]'::jsonb)
+    from (select m.id, 0 as o, jsonb_build_object('rol', 'vendedor', 'texto', m.pregunta) as e
+            from asistente_mensajes m join asistente_charlas c on c.id = m.charla
+           where c.id = p_charla and c.disp = p_disp and coalesce(p_disp, '') ~ '^[0-9a-f]{32}$'
+             and lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, '')))
+          union all
+          select m.id, 1, jsonb_build_object('rol', 'asistente', 'id', m.id, 'texto', m.respuesta, 'fuentes', m.fuentes, 'voto', m.voto)
+            from asistente_mensajes m join asistente_charlas c on c.id = m.charla
+           where c.id = p_charla and c.disp = p_disp and coalesce(p_disp, '') ~ '^[0-9a-f]{32}$'
+             and lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, '')))) z
+$$;
+revoke execute on function asistente_charla(text, text, uuid) from public;
+grant execute on function asistente_charla(text, text, uuid) to anon, authenticated;
+
+/* El pulgar (1, -1 o 0) y lo que estuvo mal: sólo desde la PC de la charla. */
+create or replace function asistente_votar(p_disp text, p_id bigint, p_voto integer, p_comentario text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+begin
+  if coalesce(p_voto, 9) not in (-1, 0, 1) then return jsonb_build_object('ok', false); end if;
+  update asistente_mensajes m
+     set voto = p_voto,
+         comentario = case when p_voto = -1 then coalesce(left(nullif(btrim(coalesce(p_comentario, '')), ''), 600), m.comentario) else null end,
+         revisada = case when p_voto = -1 then false else m.revisada end
+    from asistente_charlas c
+   where m.id = p_id and c.id = m.charla and c.disp = p_disp and coalesce(p_disp, '') ~ '^[0-9a-f]{32}$';
+  return jsonb_build_object('ok', found);
+end;
+$$;
+revoke execute on function asistente_votar(text, bigint, integer, text) from public;
+grant execute on function asistente_votar(text, bigint, integer, text) to anon, authenticated;
+
+/* ═══ Para la Edge Function "asistente" (sólo con la llave de servicio) ═══
+   Todo lo que necesita para contestar: los ajustes, TODAS las fuentes
+   prendidas (el Asistente es interno: ve también lo "interno"), las
+   últimas preguntas de la charla, el gasto del mes y si hay que frenar
+   (más de 20 preguntas en 10 minutos desde una PC, o 300 en una hora
+   entre todos). */
+create or replace function asistente_contexto(p_disp text, p_vendedor text, p_charla uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'reglas', coalesce((select jsonb_object_agg(r.clave, r.valor) from agente_reglas r where r.clave like 'asis\_%'), '{}'::jsonb),
+    'fuentes', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'tipo', f.tipo, 'titulo', f.titulo, 'tema', f.tema,
+                                                             'publico', f.publico, 'contenido', f.contenido) order by f.id)
+                           from agente_fuentes f where f.prendida and f.borrada is null), '[]'::jsonb),
+    'historial', coalesce((select jsonb_agg(jsonb_build_object('pregunta', h.pregunta, 'respuesta', h.respuesta) order by h.id)
+                             from (select m.id, m.pregunta, m.respuesta
+                                     from asistente_mensajes m join asistente_charlas c on c.id = m.charla
+                                    where p_charla is not null and c.id = p_charla and c.disp = p_disp
+                                      and lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, '')))
+                                    order by m.id desc limit 6) h), '[]'::jsonb),
+    'charla_valida', p_charla is null or exists (select 1 from asistente_charlas c where c.id = p_charla and c.disp = p_disp
+                                                   and lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, '')))),
+    'gasto', jsonb_build_object(
+      'usd', coalesce((select g.usd from agente_gasto g where g.agente = 'vendedores' and g.mes = agente_mes()), 0),
+      'tope', coalesce((select r.valor from agente_reglas r where r.clave = 'asis_tope_usd'), '20')::numeric),
+    'frenado', (select count(*) from asistente_mensajes m join asistente_charlas c on c.id = m.charla
+                 where c.disp = p_disp and m.creado > now() - interval '10 minutes') >= 20
+               or (select count(*) from asistente_mensajes m where m.creado > now() - interval '1 hour') >= 300,
+    'hoy', to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI'))
+$$;
+revoke execute on function asistente_contexto(text, text, uuid) from public, anon, authenticated;
+grant execute on function asistente_contexto(text, text, uuid) to service_role;
+
+/* Guarda la pregunta con su respuesta (y crea la charla si es nueva). */
+create or replace function asistente_guardar(p jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  v_ch    uuid := nullif(p->>'charla', '')::uuid;
+  v_disp  text := coalesce(p->>'disp', '');
+  v_vend  text := left(btrim(coalesce(p->>'vendedor', '')), 40);
+  v_nuevo bigint;
+begin
+  if v_disp !~ '^[0-9a-f]{32}$' or v_vend = '' then
+    return jsonb_build_object('ok', false, 'porque', 'Falta quién pregunta.');
+  end if;
+  if v_ch is not null and not exists (select 1 from asistente_charlas c where c.id = v_ch and c.disp = v_disp
+                                       and lower(btrim(c.vendedor)) = lower(v_vend)) then
+    v_ch := null;
+  end if;
+  if v_ch is null then
+    insert into asistente_charlas (disp, local, vendedor, titulo)
+    values (v_disp, left(nullif(btrim(coalesce(p->>'local', '')), ''), 40), v_vend,
+            left(btrim(regexp_replace(coalesce(p->>'pregunta', ''), '\s+', ' ', 'g')), 80))
+    returning id into v_ch;
+  else
+    update asistente_charlas set actualizada = now() where id = v_ch;
+  end if;
+  insert into asistente_mensajes (charla, pregunta, respuesta, fuentes, modelo, tokens, usd, ms)
+  values (v_ch, left(coalesce(p->>'pregunta', ''), 2000), left(coalesce(p->>'respuesta', ''), 20000),
+          coalesce(p->'fuentes', '[]'::jsonb), p->>'modelo', p->'tokens', nullif(p->>'usd', '')::numeric, nullif(p->>'ms', '')::integer)
+  returning id into v_nuevo;
+  return jsonb_build_object('ok', true, 'charla', v_ch, 'id', v_nuevo);
+end;
+$$;
+revoke execute on function asistente_guardar(jsonb) from public, anon, authenticated;
+grant execute on function asistente_guardar(jsonb) to service_role;
+
+/* El aviso al grupo de Telegram (el mismo de los No Compra). Si falla, no
+   corta nada: devuelve false. */
+create or replace function agente_aviso_telegram(p_texto text)
+returns boolean
+language plpgsql
+volatile
+security definer
+set search_path = public, extensions
+as $$
+declare
+  token     text := secreto('TELEGRAM_TOKEN');
+  chat      text := secreto('TELEGRAM_CHAT');
+  respuesta extensions.http_response;
+begin
+  if token is null or chat is null then return false; end if;
+  respuesta := extensions.http_post('https://api.telegram.org/bot' || token || '/sendMessage',
+    jsonb_build_object('chat_id', chat, 'text', p_texto, 'disable_web_page_preview', true)::text, 'application/json');
+  return respuesta.status < 300;
+exception when others then
+  return false;
+end;
+$$;
+revoke execute on function agente_aviso_telegram(text) from public, anon, authenticated;
+
+/* Suma lo que costó una respuesta. Al pasar el 80 % y el 100 % del tope,
+   avisa una sola vez en el mes. */
+create or replace function agente_gasto_sumar(p_agente text, p_usd numeric)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  g    agente_gasto%rowtype;
+  tope numeric;
+  nom  text := case when p_agente = 'vendedores' then 'el Asistente de los vendedores' else 'el agente de clientes' end;
+begin
+  if p_agente not in ('clientes', 'vendedores') then return jsonb_build_object('ok', false); end if;
+  insert into agente_gasto as x (agente, mes, usd, consultas)
+  values (p_agente, agente_mes(), greatest(coalesce(p_usd, 0), 0), 1)
+  on conflict (agente, mes) do update set usd = x.usd + excluded.usd, consultas = x.consultas + 1
+  returning * into g;
+  tope := coalesce((select r.valor from agente_reglas r where r.clave = case when p_agente = 'vendedores' then 'asis_tope_usd' else 'tope_usd' end), '20')::numeric;
+  if g.usd >= tope and not g.aviso100 then
+    update agente_gasto set aviso100 = true, aviso80 = true where agente = g.agente and mes = g.mes;
+    perform agente_aviso_telegram('⛔ ' || initcap(left(nom, 1)) || substr(nom, 2) || ' llegó al tope de gasto del mes (USD ' || tope ||
+      '): dejó de contestar hasta el mes que viene. Se puede subir el tope en el CRM → Agentes de IA → Ajustes.');
+  elsif g.usd >= tope * 0.8 and not g.aviso80 then
+    update agente_gasto set aviso80 = true where agente = g.agente and mes = g.mes;
+    perform agente_aviso_telegram('⚠️ ' || initcap(left(nom, 1)) || substr(nom, 2) || ' ya gastó USD ' || round(g.usd, 2) || ' de los ' || tope ||
+      ' del mes (el 80 %). Al llegar al tope deja de contestar.');
+  end if;
+  return jsonb_build_object('ok', true, 'usd', round(g.usd, 4), 'tope', tope);
+end;
+$$;
+revoke execute on function agente_gasto_sumar(text, numeric) from public, anon, authenticated;
+grant execute on function agente_gasto_sumar(text, numeric) to service_role;
+
+/* ═══ Las respuestas marcadas con el pulgar para abajo (CRM, con el PIN) ═══ */
+create or replace function asistente_marcadas(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  return jsonb_build_object('marcadas', coalesce((
+    select jsonb_agg(jsonb_build_object('id', m.id, 'pregunta', m.pregunta, 'respuesta', m.respuesta, 'comentario', m.comentario,
+                                        'fuentes', m.fuentes, 'revisada', m.revisada, 'creado', m.creado,
+                                        'local', c.local, 'vendedor', c.vendedor) order by m.revisada, m.creado desc)
+      from (select * from asistente_mensajes x where x.voto = -1 order by x.creado desc limit 200) m
+      join asistente_charlas c on c.id = m.charla), '[]'::jsonb));
+end;
+$$;
+revoke execute on function asistente_marcadas(text) from public;
+grant execute on function asistente_marcadas(text) to anon, authenticated;
+
+create or replace function asistente_marcada_revisar(p_pin text, p_id bigint, p_si boolean default true)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  update asistente_mensajes set revisada = coalesce(p_si, true) where id = p_id and voto = -1;
+  return jsonb_build_object('ok', found);
+end;
+$$;
+revoke execute on function asistente_marcada_revisar(text, bigint, boolean) from public;
+grant execute on function asistente_marcada_revisar(text, bigint, boolean) to anon, authenticated;
+
+/* La función "asistente" también usa el PIN (el chat de prueba del CRM). */
+grant execute on function pin_ok(text) to service_role;
+
+select 'listo: las fuentes y el Asistente de los vendedores' as "SQL 85";
