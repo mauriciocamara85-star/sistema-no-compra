@@ -476,6 +476,15 @@
   .pill-num::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--line-alta); flex: none; }
   .pill-num.n1::before { background: var(--ok); }
   .pill-num.n2::before { background: #3E6FB0; }
+  /* El segmento de la charla (12/10/2026): No Compra verde, Carritos
+     naranja, Tienda online azul. */
+  .pill-seg { gap: 5px; background: var(--surface); border: 1px solid var(--line); color: var(--txt); font-weight: 700; }
+  .pill-seg::before, .seg-dot { content: ''; width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--line-alta); }
+  .seg-dot { display: inline-block; }
+  .pill-seg.s-nc::before, .seg-dot.s-nc { background: var(--ok); }
+  .pill-seg.s-ca::before, .seg-dot.s-ca { background: #E07B2E; }
+  .pill-seg.s-ti::before, .seg-dot.s-ti { background: #3E6FB0; }
+  .ms-linea { font-size: 11.5px; font-weight: 500; color: var(--txt-3); white-space: nowrap; align-self: center; }
   /* "Todos · No Compra · Tienda online": en un renglón, aunque la lista sea
      angosta (si no entran, se deslizan). */
   /* Con la pastilla del relojito son cuatro y no entran en la columna:
@@ -4603,9 +4612,8 @@
      segundos se pregunta lo mínimo (el último mensaje); si cambió, se trae la
      lista o la conversación abierta. Lo que se contesta desde Kommo no nos
      llega: queda una marca de que se contestó, sin el texto. */
-  var K_MS_NUM = 'nc_ms_numero';
   var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0, borrador: {},
-             abierto: null, previo: null, ficha: null, numero: leer(K_MS_NUM) || '', tienda: null, rec: false };
+             abierto: null, previo: null, ficha: null, numero: '', segmento: leer('nc_ms_segmento') || '', tienda: null, rec: false };
 
   /* Nuestros números de WhatsApp (SQL 67), por id: el nombre ("No Compra",
      "Tienda online"), cómo se lee el teléfono y el orden (da el color). */
@@ -4613,12 +4621,60 @@
   function recordarNumeros(l) {
     (l || []).forEach(function (n, i) { NUMS[n.id] = { nombre: n.nombre, telefono: n.telefono, tablero: n.tablero, o: i + 1 }; });
   }
-  /* La etiqueta del número, sólo si hay más de uno (si no, no dice nada). */
-  function chipNumero(id) {
+  /* ═══ El segmento de cada charla (12/10/2026, pedido de Mauricio) ═══════
+     La etiqueta de color dice de qué segmento es la charla, no por cuál de
+     nuestros números se habló (Lautaro les escribe a los carritos desde el
+     de No Compra, y un carrito salía como "No Compra"):
+     - por el número de la tienda: Tienda online;
+     - por el otro: el de la tarjeta más reciente que la persona tiene en
+       los pipelines (los No Compra y los carritos que el CRM ya cargó) o,
+       si no está cargada, lo que dice la base de esa persona;
+     - si no está en ninguno (escribió de la nada), sin etiqueta. */
+  /* (No se llama SEGMENTOS: ése es el de la sección Segmentos.) */
+  var SEG_CHARLA = { no_compra: ['No Compra', 's-nc'], carrito: ['Carritos', 's-ca'], tienda: ['Tienda online', 's-ti'] };
+  var ORDEN_SEG = ['no_compra', 'carrito', 'tienda'];
+  var K_MS_SEG = 'nc_ms_segmento';
+  /* Las dos formas de la clave de un teléfono: los últimos 10 y la regla de
+     la base (sin 0, 15, 54 ni 9). */
+  function clavesTel(t) {
+    var a = claveTel(t), n = normalizarTel(t), b = n.indexOf('549') === 0 ? n.slice(3) : '';
+    return [a, b].filter(function (k, i, l) { return k && l.indexOf(k) === i; });
+  }
+  var SEGM = { reg: null, car: null, mapa: {} };
+  function mapaSegmentos() {
+    if (SEGM.reg === registros && SEGM.car === carritos) { return SEGM.mapa; }
+    var mapa = {};
+    var poner = function (tel, f, creado) {
+      var t = new Date(creado || 0).getTime() || 0;
+      clavesTel(tel).forEach(function (k) { if (!mapa[k] || t >= mapa[k].t) { mapa[k] = { f: f, t: t }; } });
+    };
+    (registros || []).forEach(function (r) { poner(r.whatsapp, 'no_compra', r.creado); });
+    (carritos || []).forEach(function (k) { poner(k.whatsapp, 'carrito', k.creado); });
+    SEGM = { reg: registros, car: carritos, mapa: mapa };
+    return mapa;
+  }
+  function segmentoDe(clave, numeroId, fuentes) {
+    var n = NUMS[numeroId];
+    if (n && n.tablero === 'tienda') { return 'tienda'; }
+    var m = mapaSegmentos()[clave];
+    if (m) { return m.f; }
+    fuentes = fuentes || [];
+    if (fuentes.indexOf('carrito') > -1) { return 'carrito'; }
+    if (fuentes.indexOf('no_compra') > -1) { return 'no_compra'; }
+    return '';
+  }
+  function chipSegmento(seg) {
+    var g = SEG_CHARLA[seg];
+    return g ? '<span class="pill pill-seg ' + g[1] + '">' + g[0] + '</span>' : '';
+  }
+  /* El teléfono de uno de nuestros números, para decir por dónde sale. */
+  function telLinea(id) { var n = NUMS[id]; return n ? (n.telefono || n.nombre || '') : ''; }
+  function lineaSale(id) {
     var n = NUMS[id];
     if (!n || Object.keys(NUMS).length < 2) { return ''; }
-    return '<span class="pill pill-num n' + n.o + '"' + (n.telefono ? ' title="' + esc(n.telefono) + '"' : '') + '>' + esc(n.nombre) + '</span>';
+    return '<span class="ms-linea" title="' + esc('Nuestro número ' + (n.nombre || '') + (n.telefono ? ' (' + n.telefono + ')' : '')) + '">sale por el ' + esc(telLinea(id)) + '</span>';
   }
+
   /* Por cuál de los nuestros sale la respuesta: por el que escribió último. */
   function numeroRespuesta(d) {
     var l = (d && d.mensajes) || [], i;
@@ -4747,15 +4803,13 @@
   function cargarMensajes() {
     var n = ++MS.pedido;
     if (!MS.datos && !MS.error) { $('msLista').innerHTML = '<div class="skel"></div><div class="skel"></div><div class="skel"></div>'; }
-    base.crmMensajes(pinGuardado(), MS.buscar, 200, MS.numero)
+    base.crmMensajes(pinGuardado(), MS.buscar, 200, '')
       .then(function (d) {
         if (n !== MS.pedido) return;
         MS.datos = d || { cuentas: {}, conversaciones: [] };
         MS.error = '';
         MS.ultimo = MS.datos.ultimo_id;
         recordarNumeros(MS.datos.numeros);
-        /* Un número que ya no está: se vuelve a "Todos". */
-        if (MS.numero && MS.datos.numeros && !NUMS[MS.numero]) { MS.numero = ''; guardar(K_MS_NUM, ''); }
         var sin = (MS.datos.cuentas || {}).sin_contestar;
         if (sin !== undefined && sin !== MS.sin) { MS.sin = sin; pintarVistas(); }
         pintarMensajes();
@@ -4784,11 +4838,12 @@
     var hoyRec = isoDia(new Date());
     l = l.slice().sort(function (a, b) { return recVencida(b, hoyRec) - recVencida(a, hoyRec); });
     if (MS.rec) { l = l.filter(function (c) { return c.recordatorio; }); }
+    if (MS.segmento) { l = l.filter(function (c) { return segmentoDe(c.clave, c.numero, c.fuentes) === MS.segmento; }); }
     pintarNumerosMensajes();
-    var nomNum = MS.numero && NUMS[MS.numero] ? NUMS[MS.numero].nombre : '';
+    var nomNum = MS.segmento && SEG_CHARLA[MS.segmento] ? SEG_CHARLA[MS.segmento][0] : '';
     caja.innerHTML = '<div class="ct-lista">' + (l.length ? l.map(filaMensaje).join('')
       : '<div class="ct-vacio">' + (MS.buscar ? 'Ninguna conversación con «' + esc(MS.buscar) + '»' + (nomNum ? ' en ' + esc(nomNum) : '') + '.'
-                                              : nomNum ? 'Todavía nadie le escribió a ' + esc(nomNum) + '.' : 'Todavía no escribió nadie.') + '</div>') + '</div>';
+                                              : nomNum ? 'Ninguna conversación de ' + esc(nomNum) + '.' : 'Todavía no escribió nadie.') + '</div>') + '</div>';
     [].forEach.call(caja.querySelectorAll('[data-clave]'), function (b) {
       b.onclick = function () {
         var c = l.filter(function (x) { return x.clave === b.dataset.clave; })[0] || {};
@@ -4809,34 +4864,43 @@
       '<span>' + esc(cuandoRec(c.recordatorio.fecha) + (c.recordatorio.nota ? ' · ' + c.recordatorio.nota : '')) + '</span></span>';
   }
 
-  /* "Todos · No Compra · Tienda online": por cuál de nuestros números
-     escribió. Cada número con cuántas conversaciones esperan respuesta (el
-     total ya está en el menú, al lado de Mensajes). */
+  /* "Todos · No Compra · Carritos · Tienda online": por segmento (12/10/2026;
+     antes era por número). Cada uno con cuántas conversaciones esperan
+     respuesta (el total ya está en el menú, al lado de Mensajes). Uno sin
+     ninguna charla no se muestra. */
   function pintarNumerosMensajes() {
-    var caja = $('msNumeros'), nums = (MS.datos && MS.datos.numeros) || [];
+    var caja = $('msNumeros'), todas = (MS.datos && MS.datos.conversaciones) || [];
+    var hay = {}, sinSeg = {};
+    todas.forEach(function (c) {
+      var g = segmentoDe(c.clave, c.numero, c.fuentes);
+      if (!g) { return; }
+      hay[g] = (hay[g] || 0) + 1;
+      if (c.sin_contestar) { sinSeg[g] = (sinSeg[g] || 0) + 1; }
+    });
+    var segs = ORDEN_SEG.filter(function (g) { return hay[g] || MS.segmento === g; });
     /* SQL 75: la pastilla de los recordatorios, si hay alguno. */
     var conRec = ((MS.datos && MS.datos.conversaciones) || []).filter(function (c) { return c.recordatorio; }).length;
     var recPill = conRec || MS.rec
       ? '<button type="button" class="chip chip-rec' + (MS.rec ? ' sel' : '') + '" id="msRec" title="Recordatorios" aria-label="Recordatorios">' +
         RELOJ + '<span class="cuenta">' + conRec + '</span></button>'
       : '';
-    if (nums.length < 2 && !recPill) { caja.hidden = true; caja.innerHTML = ''; MS.rec = false; return; }
+    var conPestanas = segs.length > 1 || !!MS.segmento;
+    if (!conPestanas && !recPill) { caja.hidden = true; caja.innerHTML = ''; MS.rec = false; return; }
     var cuenta = function (n) { return Number(n) ? '<span class="cuenta">' + Number(n) + '</span>' : ''; };
-    caja.innerHTML = (nums.length < 2 ? '' : '<button type="button" class="chip' + (!MS.numero ? ' sel' : '') + '" data-num="">Todos</button>' +
-      nums.map(function (n) {
-        return '<button type="button" class="chip' + (MS.numero === n.id ? ' sel' : '') + '" data-num="' + esc(n.id) + '">' +
-          esc(n.nombre) + cuenta(n.sin_contestar) + '</button>';
+    caja.innerHTML = (!conPestanas ? '' : '<button type="button" class="chip' + (!MS.segmento ? ' sel' : '') + '" data-seg="">Todos</button>' +
+      segs.map(function (g) {
+        return '<button type="button" class="chip' + (MS.segmento === g ? ' sel' : '') + '" data-seg="' + g + '">' +
+          '<span class="seg-dot ' + SEG_CHARLA[g][1] + '" aria-hidden="true"></span>' + SEG_CHARLA[g][0] + cuenta(sinSeg[g]) + '</button>';
       }).join('')) + recPill;
     caja.hidden = false;
     var mr = caja.querySelector('#msRec');
     if (mr) { mr.onclick = function () { MS.rec = !MS.rec; pintarNumerosMensajes(); pintarMensajes(); }; }
-    [].forEach.call(caja.querySelectorAll('[data-num]'), function (b) {
+    [].forEach.call(caja.querySelectorAll('[data-seg]'), function (b) {
       b.onclick = function () {
-        if (MS.numero === b.dataset.num) { return; }
-        MS.numero = b.dataset.num;
-        guardar(K_MS_NUM, MS.numero);
-        pintarNumerosMensajes();
-        cargarMensajes();
+        if (MS.segmento === b.dataset.seg) { return; }
+        MS.segmento = b.dataset.seg;
+        guardar(K_MS_SEG, MS.segmento);
+        pintarMensajes();
       };
     });
   }
@@ -4844,8 +4908,10 @@
   function filaMensaje(c) {
     var u = c.ultimo || {};
     var previo = u.desde === 'otra_app' ? 'Contestado desde Kommo' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u);
-    var origen = chipNumero(c.numero) +
-      ((c.fuentes || []).length ? pillsFuentes(c.fuentes, c.nivel) : '<span class="ct-tel">+' + esc(telVista(c.tel)) + '</span>');
+    var seg = segmentoDe(c.clave, c.numero, c.fuentes);
+    var otras = (c.fuentes || []).filter(function (f) { return f !== seg; });
+    var origen = chipSegmento(seg) +
+      (otras.length ? pillsFuentes(c.fuentes, c.nivel, seg) : seg ? '' : '<span class="ct-tel">+' + esc(telVista(c.tel)) + '</span>');
     return '<button type="button" class="ct-fila' + (c.sin_contestar ? ' sin-contestar' : '') + (MS.abierto === c.clave ? ' abierta' : '') +
         '" data-clave="' + esc(c.clave) + '">' +
       '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(c.nombre)) + '</span>' +
@@ -4930,7 +4996,7 @@
       if (hist && !m.historial) { sep += '<div class="chat-dia chat-hist">Hasta acá, lo que trajimos del celular</div>'; }
       hist = !!m.historial;
       if (varios && m.numero_id && m.numero_id !== num && NUMS[m.numero_id]) {
-        sep += '<div class="chat-dia chat-num">Por ' + esc(NUMS[m.numero_id].nombre) + '</div>';
+        sep += '<div class="chat-dia chat-num">Por el ' + esc(telLinea(m.numero_id)) + '</div>';
       }
       if (m.numero_id) { num = m.numero_id; }
       var otra = m.desde === 'otra_app';
@@ -4949,7 +5015,7 @@
     var v = d && d.ventana ? new Date(d.ventana) : null, abierta = !!v && v > new Date();
     /* Por cuál de los nuestros sale (SQL 67): el nombre y el teléfono. */
     var n = NUMS[numeroRespuesta(d)];
-    var sale = 'Sale por ' + (n ? n.nombre + (n.telefono ? ' (' + n.telefono + ')' : '') : 'el mismo número al que escribió') +
+    var sale = 'Sale por ' + (n ? 'el ' + (n.telefono || n.nombre) : 'el mismo número al que escribió') +
                ' y también se ve en el celular.';
     return {
       abierta: abierta,
@@ -5226,13 +5292,16 @@
     var nom = p.nombre || nombreContacto(c);
     var conv = ((MS.datos && MS.datos.conversaciones) || []).filter(function (x) { return x.clave === p.clave; })[0] || {};
     recordarNumeros(d.numeros);
+    var segChat = segmentoDe(p.clave, conv.numero || numeroRespuesta(d), conv.fuentes);
     var v = ventanaChat(d);
     var escribiendo = escribiendoEn(raiz);
     raiz.innerHTML = '<div class="ms-chat">' +
       '<div class="ms-chat-cab">' + botonVolver() +
         '<span class="ct-avatar" aria-hidden="true">' + esc(iniciales(nom)) + '</span>' +
-        '<span class="ms-quien"><b>' + esc(nom) + '</b><span class="ct-origen">' + chipNumero(numeroRespuesta(d)) +
-          ((conv.fuentes || []).length ? pillsFuentes(conv.fuentes, conv.nivel) : '<span class="ct-tel">+' + esc(telVista(p.wa_tel || conv.tel || p.tel || '')) + '</span>') +
+        '<span class="ms-quien"><b>' + esc(nom) + '</b><span class="ct-origen">' + chipSegmento(segChat) +
+          ((conv.fuentes || []).filter(function (f) { return f !== segChat; }).length ? pillsFuentes(conv.fuentes, conv.nivel, segChat)
+            : segChat ? '' : '<span class="ct-tel">+' + esc(telVista(p.wa_tel || conv.tel || p.tel || '')) + '</span>') +
+          lineaSale(numeroRespuesta(d)) +
         '</span></span>' +
         (v.corto ? '<span class="ms-ventana' + (v.abierta ? '' : ' cerrada') + '" title="' + esc(v.nota) + '">' + esc(v.corto) + '</span>' : '') +
         '<button type="button" class="btn btn-sec btn-chico ms-agente" title="Que el agente redacte una respuesta">✦ Agente</button>' +
@@ -5276,8 +5345,8 @@
       .catch(function () {});
   }
 
-  function pillsFuentes(fuentes, nivel) {
-    return ORDEN_FUENTES.filter(function (f) { return (fuentes || []).indexOf(f) > -1; }).map(function (f) {
+  function pillsFuentes(fuentes, nivel, menos) {
+    return ORDEN_FUENTES.filter(function (f) { return (fuentes || []).indexOf(f) > -1 && f !== menos; }).map(function (f) {
       if (f === 'club' && nivel) { return '<span class="pill ' + (CLASE_NIVEL[nivel] || 'pill-neutra') + '">Club · ' + esc(nivel) + '</span>'; }
       return '<span class="pill pill-neutra">' + NOMBRE_FUENTE[f] + '</span>';
     }).join('');
@@ -5401,9 +5470,14 @@
     var p = d.persona || {}, fu = [];
     (d.historia || []).forEach(function (x) { if (ORDEN_FUENTES.indexOf(x.fuente) > -1 && fu.indexOf(x.fuente) < 0) { fu.push(x.fuente); } });
     if (d.socio && fu.indexOf('club') < 0) { fu.push('club'); }
+    /* El segmento: por el número de la tienda, o lo último que pasó en los
+       pipelines (la historia de la persona trae la fecha). */
+    var ultPipe = (d.historia || []).filter(function (x) { return x.fuente === 'carrito' || x.fuente === 'no_compra'; })
+      .sort(function (a, b) { return new Date(b.cuando) - new Date(a.cuando); })[0];
+    var segFicha = segmentoDe(p.clave, numeroRespuesta(d), ultPipe ? [ultPipe.fuente] : fu);
     var tel = p.wa_tel || p.tel, v = ventanaChat(d), k = d.consulta;
     $('fichaExtra').innerHTML =
-      '<span class="fc-chips">' + chipNumero(numeroRespuesta(d)) + pillsFuentes(fu, d.socio && d.socio.nivel) +
+      '<span class="fc-chips">' + chipSegmento(segFicha) + pillsFuentes(fu, d.socio && d.socio.nivel, segFicha) + lineaSale(numeroRespuesta(d)) +
         (tel ? '<span class="ct-tel">+' + esc(telVista(tel)) + '</span>' : '') + '</span>' +
       (k ? '<label class="fc-etapa"><span>Tienda online</span><select class="ti-mover-ficha" data-ti="' + Number(k.id) +
              '" aria-label="Columna en Tienda online">' + COLS_TIENDA.map(function (x) {
