@@ -442,6 +442,26 @@ a { color: var(--acc-txt); }
   transition: background .18s var(--curva), color .18s var(--curva);
 }
 .rail-item svg { width: 20px; height: 20px; }
+/* Con siete secciones (12/10/2026, se sumó Gift Cards) cada botón ocupa lo
+   que su palabra, sin partirla, y la letra baja medio punto. En partes
+   iguales "Gift Cards" se partía en dos renglones (a 360 px) o quedaba
+   pegado a "Estadísticas" (a 390): así queda la misma luz entre palabras
+   que tenían las seis. Sólo en la barra de abajo: el rail parado tiene lo
+   suyo más abajo. */
+@media (max-width: 899px) {
+  .rail-item { flex: 1 0 auto; white-space: nowrap; font-size: 10px; padding: 0 3px; }
+  /* Con la letra grande del celular (accesibilidad) los siete no entran:
+     antes que pisar o cortar las palabras, la barra se desliza de costado
+     (comun.js la arranca mostrando la sección abierta). Cada botón deja
+     3px de cada lado, así dos palabras nunca quedan pegadas. */
+  .rail-in { overflow-x: auto; overflow-y: hidden; scrollbar-width: none; overscroll-behavior-x: contain; }
+  .rail-in::-webkit-scrollbar { display: none; }
+}
+/* En los celulares más angostos (320 px) la letra baja medio punto más: así
+   entran los siete sin deslizarse, con 6 px entre palabras. */
+@media (max-width: 339px) {
+  .rail-item { font-size: 9.5px; }
+}
 .rail-item:hover { color: var(--txt); }
 .rail-item:active { transform: scale(.94); }
 /* La sección abierta se marca con el color de acento como TEXTO, que para eso

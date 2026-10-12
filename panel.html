@@ -825,11 +825,14 @@
   .ag-fases li span { display: block; font-size: 13px; color: var(--txt-2); margin-top: 2px; line-height: 1.5; }
   .ag-fases li.hecha b { color: var(--ok-txt); }
 
-  /* ── Cupones y Gift Cards (12/10/2026): lo que era la lista de Beneficios ── */
+  /* ── Cupones (12/10/2026): lo que era la lista de Beneficios. Las gift
+     cards se fueron a su sección, Gift Cards (giftcards.html). ── */
   .cu { display: grid; gap: 14px; max-width: 1180px; }
   .cu-buscar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .cu-buscar .buscador { flex: 1 1 340px; }
-  .cu-solapas { margin-bottom: 0; }
+  .cu-gc { padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line);
+           font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
+  .cu-gc a { color: var(--acc-txt); font-weight: 700; }
   .cu-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 14px; align-items: start; }
   @media (max-width: 999px) { .cu-grid { grid-template-columns: minmax(0, 1fr); } }
   .cu-tipos { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -867,16 +870,10 @@
               border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); font-size: 13.5px; }
   .cu-panel input[type=text] { flex: 1 1 200px; min-width: 0; padding: 7px 10px; }
   .cu-panel .chip { min-height: 32px; padding: 5px 11px; font-size: 12.5px; }
-  .cu-deuda { padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--line); border-left: 4px solid var(--warn);
-              background: var(--surface); font-size: 14px; line-height: 1.5; color: var(--txt-2); }
-  .cu-deuda b { font: 700 18px var(--display); color: var(--txt); }
   .cu-nota { font-size: 12.5px; color: var(--txt-3); margin-top: 8px; line-height: 1.5; }
   .modal-caja.cu-modal { width: min(560px, 100%); }
   .cu-quien .btn-link { font-size: 12.5px; }
   @media (max-width: 599px) {
-    .cu-sol-mas { display: none; }
-    .cu-solapas { display: flex; }
-    .cu-solapas button { flex: 1; }
     .cu-campos { grid-template-columns: minmax(0, 1fr); }
     .cu-fila { grid-template-columns: 72px minmax(0, 1fr); }
     .cu-acc { grid-column: 1 / -1; justify-content: flex-start; }
@@ -1345,6 +1342,10 @@
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
       Cobrar
     </a>
+    <a class="rail-item" href="giftcards.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 11 5 12 8c1-3 2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
+      Gift Cards
+    </a>
     <a class="rail-item" href="estadisticas.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
       Estadísticas
@@ -1471,7 +1472,8 @@
   <section id="vistaDifusiones" hidden></section>
   <section id="vistaPronto" hidden></section>
   <section id="vistaAgente" hidden></section>
-  <!-- Cupones y Gift Cards (12/10/2026): lo que era la lista de Beneficios. -->
+  <!-- Cupones (12/10/2026): lo que era la lista de Beneficios. Las gift cards
+       tienen su sección (giftcards.html). -->
   <section id="vistaCupones" hidden></section>
   </div><!-- /.crm-cuerpo -->
   </div><!-- /.crm -->
@@ -1584,7 +1586,7 @@
   </div>
 </div>
 
-<!-- "Dar un cupón" (12/10/2026): el formulario de Cupones y Gift Cards,
+<!-- "Dar un cupón" (12/10/2026): el formulario de Cupones,
      desde la ficha, con la persona ya puesta. Va antes que "¿Quién sos?",
      que se abre encima. -->
 <div class="modal" id="modalCupon" hidden>
@@ -1800,7 +1802,7 @@
      da la marca. Para cambiar el de siempre se cambia este número. */
   var DESCUENTO = 20;
   /* Cuánto dura. Mismo criterio que la Gift Card, que en el instructivo son
-     30 días desde la compra. Se puede extender desde Cupones y Gift Cards. */
+     30 días desde la compra. Se puede extender desde Cupones. */
   var DIAS = 30;
 
   /* Dónde vive el CRM. No es un secreto —es la dirección a la que entra
@@ -2156,7 +2158,7 @@
       { v: 'tienda', t: 'Tienda online', nt: 'Esperan respuesta' }] },
     { v: 'segmentos', t: 'Segmentos', i: ICO.seg, marca: 'Beta' },
     { v: 'contactos', t: 'Contactos', i: ICO.gente },
-    { v: 'cupones', t: 'Cupones y Gift Cards', i: ICO.cupon },
+    { v: 'cupones', t: 'Cupones', i: ICO.cupon },
     { v: 'agente', t: 'Agente de IA', i: ICO.ia, marca: 'Beta' },
     { g: 'automatizaciones', t: 'Automatizaciones', i: ICO.auto, hijos: [
       { v: 'bots', t: 'Bots', marca: 'Pronto' },
@@ -2856,7 +2858,7 @@
                 (r.beneficio.usado ? 'usado' : r.beneficio.anulado ? 'anulado' : r.beneficio.vencido ? 'vencido' : 'dado') + '</span>'
             : '') +
           /* "Dar un cupón" (12/10/2026, era "Dar 20%"): el formulario de
-             Cupones y Gift Cards con este cliente puesto. Con uno vivo no
+             Cupones con este cliente puesto. Con uno vivo no
              se ofrece: la base no deja dar dos. */
           (r.beneficio && r.beneficio.vive ? '' : '<button type="button" class="btn btn-sec btn-chico" id="fichaDar">Dar un cupón</button>') +
         '</div>' +
@@ -5571,7 +5573,7 @@
     }).join('') + '</ol>';
   }
 
-  /* ═══ Cupones y Gift Cards (12/10/2026) ══════════════════════════════════
+  /* ═══ Cupones (12/10/2026) ═══════════════════════════════════════════════
      Lo que era la lista y el "Crear un cupón" de Beneficios. Beneficios se
      fue del menú (el mostrador es Cobrar) y Atención crea, busca, anula y
      extiende desde acá. Tres clases de cupón:
@@ -5580,14 +5582,15 @@
        - con código: vale para el que lo tenga, se puede regalar;
        - de campaña: un código para muchos, con "una vez por persona".
      "Dar un cupón", en las fichas, abre este mismo formulario con la persona
-     ya puesta. Las reglas las pone la base: acá sólo se ofrecen. */
-  var CU = { lista: null, resumen: null, error: '', muchos: false, solapa: 'cupones', estado: 'disponible',
-             panel: '', busca: '', pedidoBusca: 0, hallados: null, extra: {}, locales: null,
+     ya puesta. Las reglas las pone la base: acá sólo se ofrecen.
+     Las gift cards tenían acá su pestaña: desde el 12/10 tienen su sección
+     en la barra (Gift Cards: vender, la lista, extender y anular). La base
+     las sigue mandando en el listado y en la búsqueda: se dejan afuera, y
+     si alguien busca una se le dice dónde está. */
+  var CU = { lista: null, error: '', muchos: false, estado: 'disponible',
+             panel: '', busca: '', pedidoBusca: 0, hallados: null, gcHallada: false, extra: {}, locales: null,
              form: { donde: 'vista', tipo: 'cliente' } };
-  var ESTADOS_CU = {
-    cupones: [['disponible', 'Activos'], ['usado', 'Usados'], ['vencido', 'Vencidos'], ['anulado', 'Anulados']],
-    gift: [['disponible', 'Sin canjear'], ['usado', 'Canjeadas'], ['vencido', 'Vencidas'], ['anulado', 'Anuladas']]
-  };
+  var ESTADOS_CU = [['disponible', 'Activos'], ['usado', 'Usados'], ['vencido', 'Vencidos'], ['anulado', 'Anulados']];
   var PCTS_CU = [5, 10, 15, 20, 25, 30, 35, 40, 50];
   var LUPA_CU = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
 
@@ -5636,15 +5639,13 @@
        cupón vivo de hace meses no puede quedar afuera de "Activos". */
     return Promise.all([
       base.beneficios(pin, 'disponible'),
-      base.beneficios(pin, null),
-      base.resumenBeneficios(pin).catch(function () { return null; })
+      base.beneficios(pin, null)
     ]).then(function (r) {
       var vistos = {}, lista = [];
-      (r[0] || []).concat(r[1] || []).forEach(function (b) { if (b && !vistos[b.id]) { vistos[b.id] = 1; lista.push(b); } });
+      (r[0] || []).concat(r[1] || []).forEach(function (b) { if (b && !esGiftCu(b) && !vistos[b.id]) { vistos[b.id] = 1; lista.push(b); } });
       lista.sort(function (a, b) { return String(b.creado || '').localeCompare(String(a.creado || '')); });
       CU.lista = lista;
       CU.muchos = (r[1] || []).length >= 200;
-      CU.resumen = r[2];
       CU.error = '';
       if (vista !== 'cupones') { return; }
       if ($('cuCuerpo')) { pintarListasCu(); } else { pintarCupones(); }
@@ -5662,8 +5663,8 @@
 
   function pintarCupones() {
     var v = $('vistaCupones');
-    var cab = '<div class="ag-cab"><div><h2>Cupones y Gift Cards</h2>' +
-      '<p>Crear cupones, buscarlos y corregirlos. Las gift cards se venden y se canjean en Cobrar; acá están todas, con lo que todavía se debe.</p></div></div>';
+    var cab = '<div class="ag-cab"><div><h2>Cupones</h2>' +
+      '<p>Crear cupones, buscarlos y corregirlos. Las gift cards tienen su sección: <a class="btn-link" href="giftcards.html#vendidas">Gift Cards</a>.</p></div></div>';
     if (CU.error) {
       v.innerHTML = '<div class="cu">' + cab +
         '<div class="vacio-vista"><b>No se pudieron traer los cupones</b>Revisá la conexión y tocá actualizar.</div></div>';
@@ -5672,9 +5673,8 @@
     if (!CU.lista) { return; }
     v.innerHTML = '<div class="cu" id="cuCuerpo">' + cab +
       '<div class="cu-buscar"><div class="buscador">' + LUPA_CU +
-        '<input type="search" id="cuBusca" placeholder="Buscar por código, teléfono, nombre o número de tarjeta…" autocomplete="off" value="' + esc(CU.busca) + '"></div></div>' +
+        '<input type="search" id="cuBusca" placeholder="Buscar por código, teléfono o nombre…" autocomplete="off" value="' + esc(CU.busca) + '"></div></div>' +
       '<div class="ficha-bloque" id="cuHallados" hidden></div>' +
-      '<div class="pl-solapas cu-solapas" id="cuSolapas" role="tablist" aria-label="Qué mirar"></div>' +
       '<div id="cuSolapa"></div></div>';
     var b = $('cuBusca'), reloj = 0;
     b.oninput = function () { clearTimeout(reloj); reloj = setTimeout(function () { buscarCu(b.value); }, 300); };
@@ -5686,63 +5686,32 @@
     var c = $('cuSolapa');
     if (!c) { return; }
     var lista = '<div class="cu-estados" id="cuEstados"></div><div class="cu-lista" id="cuLista"></div><p class="cu-nota" id="cuNota" hidden></p>';
-    if (CU.solapa === 'gift') {
-      c.innerHTML = '<div class="cu-deuda" id="cuDeuda"></div>' +
-        '<div class="ficha-bloque" style="margin-top:14px"><h3>Las gift cards</h3>' + lista +
-        '<p class="cu-nota">Se venden y se canjean en Cobrar, pasándolas por el lector.</p></div>';
-    } else {
-      c.innerHTML = '<div class="cu-grid">' +
-        '<div class="ficha-bloque"><h3>Crear un cupón</h3><div id="cuForm"></div></div>' +
-        '<div class="ficha-bloque"><h3>Los cupones</h3>' + lista + '</div></div>';
-      CU.form.donde = 'vista';
-      $('cuForm').innerHTML = htmlFormCu(CU.form);
-      cablearFormCu($('cuForm'), CU.form);
-    }
+    c.innerHTML = '<div class="cu-grid">' +
+      '<div class="ficha-bloque"><h3>Crear un cupón</h3><div id="cuForm"></div></div>' +
+      '<div class="ficha-bloque"><h3>Los cupones</h3>' + lista + '</div></div>';
+    CU.form.donde = 'vista';
+    $('cuForm').innerHTML = htmlFormCu(CU.form);
+    cablearFormCu($('cuForm'), CU.form);
     pintarListasCu();
   }
 
-  /* Las pestañas, los filtros, la lista y lo que se debe: todo lo que
-     cambia cuando cambian los datos. El formulario no se toca. */
+  /* Los filtros y la lista: todo lo que cambia cuando cambian los datos.
+     El formulario no se toca. */
   function pintarListasCu() {
     if (!$('cuCuerpo') || !$('cuLista')) { return; }
-    var l = CU.lista || [];
-    var gc = l.filter(esGiftCu), cu = l.filter(function (b) { return !esGiftCu(b); });
-    var vivos = function (x) { return x.filter(function (b) { return b.estado === 'disponible'; }); };
-    var nCu = vivos(cu).length, nGc = vivos(gc).length;
-    var solapa = function (k, t) {
-      return '<button type="button" role="tab" data-cu-solapa="' + k + '"' + (CU.solapa === k ? ' class="sel" aria-selected="true"' : ' aria-selected="false"') + '>' + t + '</button>';
-    };
-    $('cuSolapas').innerHTML = solapa('cupones', 'Cupones · ' + nCu + '<span class="cu-sol-mas">' + (nCu === 1 ? ' activo' : ' activos') + '</span>') +
-      solapa('gift', 'Gift Cards · ' + nGc + '<span class="cu-sol-mas"> sin canjear</span>');
-    var deLa = CU.solapa === 'gift' ? gc : cu, cuenta = {};
-    deLa.forEach(function (b) { cuenta[b.estado] = (cuenta[b.estado] || 0) + 1; });
-    $('cuEstados').innerHTML = ESTADOS_CU[CU.solapa].map(function (e) {
+    var l = CU.lista || [], cuenta = {};
+    l.forEach(function (b) { cuenta[b.estado] = (cuenta[b.estado] || 0) + 1; });
+    $('cuEstados').innerHTML = ESTADOS_CU.map(function (e) {
       return '<button type="button" class="chip' + (e[0] === CU.estado ? ' sel' : '') + '" data-cu-estado="' + e[0] + '">' + e[1] +
         '<span class="cuenta">' + (cuenta[e[0]] || 0) + '</span></button>';
     }).join('');
-    var filas = deLa.filter(function (b) { return b.estado === CU.estado; });
-    var nombre = ESTADOS_CU[CU.solapa].filter(function (e) { return e[0] === CU.estado; })[0][1].toLowerCase();
+    var filas = l.filter(function (b) { return b.estado === CU.estado; });
+    var nombre = ESTADOS_CU.filter(function (e) { return e[0] === CU.estado; })[0][1].toLowerCase();
     $('cuLista').innerHTML = filas.length ? filas.map(filaCu).join('')
-      : '<p class="num-vacio">No hay ' + (CU.solapa === 'gift' ? 'gift cards ' : 'cupones ') + nombre + '.</p>';
+      : '<p class="num-vacio">No hay cupones ' + nombre + '.</p>';
     $('cuNota').hidden = !CU.muchos || CU.estado === 'disponible';
     $('cuNota').textContent = 'Se ven los últimos 200. Para uno más viejo, buscalo arriba.';
-    if ($('cuDeuda')) {
-      var deben = vivos(gc);
-      var total = CU.resumen && CU.resumen.comprometido !== undefined && CU.resumen.comprometido !== null
-        ? Number(CU.resumen.comprometido) : deben.reduce(function (a, b) { return a + (Number(b.valor) || 0); }, 0);
-      $('cuDeuda').innerHTML = total > 0
-        ? '<b>' + plata(total) + '</b> en ' + (deben.length === 1 ? '1 gift card vendida' : deben.length + ' gift cards vendidas') +
-          ' y sin canjear. Es plata que los locales todavía deben.'
-        : 'No hay gift cards vendidas sin canjear: no se debe nada.';
-    }
     var raiz = $('cuCuerpo');
-    [].forEach.call(raiz.querySelectorAll('[data-cu-solapa]'), function (b) {
-      b.onclick = function () {
-        if (CU.solapa === b.dataset.cuSolapa) { return; }
-        CU.solapa = b.dataset.cuSolapa; CU.estado = 'disponible'; CU.panel = '';
-        pintarSolapaCu();
-      };
-    });
     [].forEach.call(raiz.querySelectorAll('[data-cu-estado]'), function (b) {
       b.onclick = function () { CU.estado = b.dataset.cuEstado; CU.panel = ''; pintarListasCu(); };
     });
@@ -5919,10 +5888,14 @@
   function buscarCu(q) {
     CU.busca = q = String(q || '').trim();
     var n = ++CU.pedidoBusca;
-    /* Un número corto puede ser una gift card vieja (la 7); lo demás, de
-       tres letras para arriba. */
+    CU.gcHallada = false;
+    /* Un número corto puede ser una gift card vieja (la 7): no se muestra
+       acá, pero se avisa que está en Gift Cards. Lo demás, de tres letras
+       para arriba. */
     if (!q || (q.length < 3 && !/^\d+$/.test(q))) { CU.hallados = null; pintarHalladosCu(); return; }
     var dig = q.replace(/\D/g, ''), letras = /[a-záéíóúñ]/i.test(q);
+    /* La gift card impresa (14 números que empiezan con 99, la pistola). */
+    if (!letras && /^99\d{12}$/.test(dig)) { CU.gcHallada = true; }
     var alf = q.toUpperCase().replace(/[^A-Z0-9]/g, ''), txt = llanoCu(q);
     CU.hallados = (CU.lista || []).filter(function (b) {
       if (!letras && dig.length >= 4 && b.telefono && tel10Cu(b.telefono).indexOf(dig.length > 10 ? dig.slice(-10) : dig) > -1) { return true; }
@@ -5938,6 +5911,7 @@
     base.beneficio(q).then(function (filas) {
       if (n !== CU.pedidoBusca || !CU.hallados) { return; }
       (filas || []).forEach(function (b) {
+        if (esGiftCu(b)) { CU.gcHallada = true; return; }
         if (CU.hallados.indexOf(b.id) < 0) { CU.hallados.push(b.id); }
         CU.extra[b.id] = b;
       });
@@ -5950,9 +5924,11 @@
     if (!CU.hallados) { caja.hidden = true; caja.innerHTML = ''; return; }
     var filas = CU.hallados.map(function (id) { return porIdCu(id) || CU.extra[id]; }).filter(Boolean);
     caja.hidden = false;
+    var gc = CU.gcHallada ? '<p class="cu-gc">' + (filas.length ? 'También hay una gift card con eso: ' : 'Eso es una gift card: ') +
+      'está en <a href="giftcards.html#vendidas">Gift Cards</a>, con su lista y lo que se debe.</p>' : '';
     caja.innerHTML = '<h3>Lo que encontramos</h3>' +
-      (filas.length ? '<div class="cu-lista">' + filas.map(filaCu).join('') + '</div>'
-                    : '<p class="num-vacio">No hay ningún cupón ni gift card con eso.</p>') +
+      (filas.length ? '<div class="cu-lista">' + filas.map(filaCu).join('') + '</div>' + gc
+                    : gc || '<p class="num-vacio">No hay ningún cupón con eso.</p>') +
       '<div class="ficha-acc" style="margin-top:10px"><button type="button" class="btn btn-sec btn-chico" id="cuLimpiar">Limpiar la búsqueda</button></div>';
     $('cuLimpiar').onclick = function () { $('cuBusca').value = ''; buscarCu(''); $('cuBusca').focus(); };
     cablearFilasCu(caja);
@@ -6114,7 +6090,7 @@
       /* El índice de "uno vivo por teléfono" (sin el SQL 82, también con uno
          vencido): la base lo dice en inglés. */
       if (/duplicate key|un_descuento_vivo/i.test(String(err && err.message))) {
-        avisar('err', 'No se creó: ese cliente tiene otro descuento sin usar (quizás vencido). Buscalo en Cupones y Gift Cards para extenderlo o anularlo.');
+        avisar('err', 'No se creó: ese cliente tiene otro descuento sin usar (quizás vencido). Buscalo en Cupones para extenderlo o anularlo.');
         return;
       }
       avisar('err', (err && err.delServidor && err.message) || 'No se pudo crear el cupón. Revisá la conexión.');

@@ -162,6 +162,25 @@ function linkWsp(tel, texto) {
    del local y que abra aunque el WiFi del shopping esté caído. La estrategia
    es "red primero": si hay señal se ve siempre la versión publicada, y el
    caché queda sólo de red de contención. */
+/* ── LA BARRA DE ABAJO ─────────────────────────────────────────────────
+   Con la letra grande del celular los siete botones no entran y la barra
+   se desliza de costado (estilos.css): arranca mostrando la sección
+   abierta, no siempre Carga. Se mira otra vez cuando llega la letra
+   (Poppins): con la de reserva entraban y no se movía nada. Sólo si la
+   sección abierta no se ve entera. En la compu el rail es una columna y
+   esto no hace nada. */
+function asomarRail() {
+  var a = document.querySelector('.rail-item[aria-current="page"]');
+  var r = a && a.parentNode;
+  if (!r || r.scrollWidth <= r.clientWidth + 1) { return; }
+  var izq = a.offsetLeft - r.offsetLeft, der = izq + a.offsetWidth;
+  if (izq >= r.scrollLeft && der <= r.scrollLeft + r.clientWidth) { return; }
+  r.scrollLeft = Math.max(0, izq - (r.clientWidth - a.offsetWidth) / 2);
+}
+document.addEventListener('DOMContentLoaded', asomarRail);
+window.addEventListener('load', asomarRail);
+if (document.fonts && document.fonts.ready) { document.fonts.ready.then(asomarRail); }
+
 function iniciarPWA() {
   if (!('serviceWorker' in navigator)) return;
   if (location.protocol === 'file:') return;   // abierto a mano desde el disco

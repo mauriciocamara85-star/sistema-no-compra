@@ -194,6 +194,16 @@
   .detalle-caja[open] > summary::after { content: 'Cerrar'; }
   .detalle-caja[open] > summary { margin-bottom: 12px; }
 
+  /* ── Las tres pestañas y la vista de Gift Cards (12/10/2026) ── */
+  .gc-porton { max-width: 460px; }
+  .gc-porton[hidden], #gcDatos[hidden], #vistaGC[hidden], #vistaNC[hidden], .gc-pin[hidden], #gcPedirPin[hidden], #gcOtraVez[hidden] { display: none; }
+  .gc-pin { display: flex; gap: 8px; margin-top: 4px; }
+  .gc-pin input { flex: 1; min-width: 0; text-align: center; font-size: 17px; font-weight: 600; }
+  .gc-msg { margin-top: 10px; font-size: 13.5px; font-weight: 600; color: var(--bad-txt); }
+  .gc-msg[hidden] { display: none; }
+  .gc-ver { display: inline-block; margin-top: 12px; font-size: 14px; font-weight: 700; color: var(--txt); text-decoration: underline; text-underline-offset: 3px; }
+  .cn-controles.fuera, .cn-rango.fuera { display: none; }
+
   /* ── La grilla ── */
   .cn-grilla, .cn-sub { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
   .cn-grilla > .bloque, .cn-sub > .bloque { margin-bottom: 0; }
@@ -218,7 +228,7 @@
       </div>
       <div class="marca-txt">
         <h1>Estadísticas</h1>
-        <span>VDH · No Compra</span>
+        <span id="cabSub">VDH · No Compra</span>
       </div>
     </div>
     <div class="head-acciones">
@@ -249,6 +259,10 @@
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
       Cobrar
     </a>
+    <a class="rail-item" href="giftcards.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 11 5 12 8c1-3 2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
+      Gift Cards
+    </a>
     <a class="rail-item" href="estadisticas.html" aria-current="page">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
       Estadísticas
@@ -269,6 +283,15 @@
 </nav>
 
 <main class="hoja">
+  <!-- Las estadísticas de todo, en tres pestañas (12/10/2026). No Compra y
+       Gift Cards son vistas de esta página; Club es la de estadísticas de
+       club-numeros.html (comparte la ficha del socio con Socios), que
+       muestra estas mismas pestañas. -->
+  <nav class="pestanas" aria-label="Qué estadísticas">
+    <a class="pestana" href="estadisticas.html#nocompra" data-est="nc">No Compra</a>
+    <a class="pestana" href="club-numeros.html">Club</a>
+    <a class="pestana" href="estadisticas.html#giftcards" data-est="gc">Gift Cards</a>
+  </nav>
   <div class="cn-cab">
     <h2 class="cn-tit" id="titulo">No Compra</h2>
     <span class="cn-rango" id="rango"></span>
@@ -286,6 +309,7 @@
     </div>
   </div>
 
+  <div id="vistaNC">
   <div class="pocos" id="pocos" hidden>
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
     <span id="pocosTxt"></span>
@@ -374,6 +398,67 @@
   </details>
 
   <p class="pie">Sale de lo que carga el vendedor y de lo que se anota en el <a href="panel.html">CRM</a>. En la hora de Argentina.</p>
+  </div><!-- /#vistaNC -->
+
+  <!-- ── Gift Cards (SQL 84): con el PIN, porque es plata ── -->
+  <div id="vistaGC" hidden>
+    <div class="bloque gc-porton" id="gcPorton" hidden>
+      <h2 class="bloque-tit">Los números de las gift cards</h2>
+      <p class="bloque-sub">Es plata: lo vendido, lo canjeado y lo que se debe. Son de la oficina: piden el PIN.</p>
+      <button type="button" class="btn btn-sec" id="gcPedirPin" hidden>Entrar con el PIN</button>
+      <div class="gc-pin" id="gcPinFila" hidden>
+        <input type="password" id="gcPin" inputmode="numeric" maxlength="24" placeholder="PIN" autocomplete="off" aria-label="PIN">
+        <button type="button" class="btn btn-pri" id="gcEntrar">Entrar</button>
+      </div>
+      <p class="gc-msg" id="gcMsg" hidden></p>
+      <button type="button" class="btn btn-sec btn-chico" id="gcOtraVez" style="margin-top:10px" hidden>Probar de nuevo</button>
+    </div>
+    <div id="gcDatos" hidden>
+      <div class="pocos" id="gcPocos" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16h.01"/></svg>
+        <span id="gcPocosTxt"></span>
+      </div>
+      <div class="cn-kpis" id="gcKpis"></div>
+      <div class="cn-grilla">
+        <div class="bloque" id="gcCajaDeuda">
+          <h2 class="bloque-tit">Lo que se debe <span class="cuando">hoy</span></h2>
+          <p class="bloque-sub">Gift cards vendidas que todavía no se canjearon: es plata que los locales deben. No depende del período.</p>
+          <div id="gcDeuda"></div>
+        </div>
+        <div class="bloque" id="gcCajaImpresas">
+          <h2 class="bloque-tit">Las tarjetas impresas <span class="cuando">hoy</span></h2>
+          <p class="bloque-sub">Cuántas quedan sin vender, por lote y color. No depende del período ni del local.</p>
+          <div id="gcImpresas"></div>
+        </div>
+        <div class="bloque ancho" id="gcCajaLocales">
+          <h2 class="bloque-tit">Por local</h2>
+          <p class="bloque-sub">Las vendidas cuentan donde se vendieron y las canjeadas donde se canjearon. "Se debe" es de hoy. Tocá un local para ver sólo ese.</p>
+          <div class="tabla-caja" id="gcLocales"></div>
+        </div>
+        <div class="bloque" id="gcCajaMeses">
+          <h2 class="bloque-tit">Mes por mes</h2>
+          <p class="bloque-sub">En el período.</p>
+          <div class="tabla-caja" id="gcMeses"></div>
+        </div>
+        <div class="bloque" id="gcCajaPagos">
+          <h2 class="bloque-tit">Cómo se pagaron</h2>
+          <p class="bloque-sub">Las vendidas en el período. En efectivo se cobra un 10% menos que el valor.</p>
+          <div id="gcPagos"></div>
+        </div>
+        <div class="bloque" id="gcCajaColores">
+          <h2 class="bloque-tit">Black y Gold</h2>
+          <p class="bloque-sub">Las vendidas en el período, por color de tarjeta.</p>
+          <div id="gcColores"></div>
+        </div>
+        <div class="bloque" id="gcCajaVendedores">
+          <h2 class="bloque-tit">Quién vendió</h2>
+          <p class="bloque-sub">En el período.</p>
+          <div class="tabla-caja" id="gcVendedores"></div>
+        </div>
+      </div>
+      <p class="pie">Sale de lo que se vende en <a href="giftcards.html">Gift Cards</a> y se canjea en <a href="caja.html">Cobrar</a>. En la hora de Argentina.</p>
+    </div>
+  </div><!-- /#vistaGC -->
 </main>
 
 </div><!-- /.marco -->
@@ -456,13 +541,21 @@
     var r = rango(); $('fDesde').value = r[0]; $('fHasta').value = r[1];
   }
 
-  function cargar() {
+  /* Las dos vistas comparten el período y el local: se carga la que se
+     está mirando. */
+  var pedidoEst = 0;
+  function cargar() { var n = ++pedidoEst; return vista === 'gc' ? cargarGC(n) : cargarNC(n); }
+  /* ¿Sigue valiendo esta respuesta? Si después se pidió otra cosa (otro
+     período, la otra pestaña), no. */
+  function vale(n, v) { return n === pedidoEst && vista === v; }
+  function cargarNC(n) {
     var r = rango();
     $('rango').textContent = 'Del ' + fechaLarga(r[0]) + ' al ' + fechaLarga(r[1]);
     $('btnRefrescar').classList.add('girando');
     return base.estadisticas(r[0], r[1], estado.local, estado.motivo)
-      .then(function (d) { datos = d; pintar(); })
+      .then(function (d) { if (!vale(n, 'nc')) { return; } datos = d; pintar(); })
       .catch(function (err) {
+        if (!vale(n, 'nc')) { return; }
         avisar('err', (err && err.delServidor && err.message) || 'No se pudo leer. ¿Se corrió el SQL 30?');
       })
       .then(function () { $('btnRefrescar').classList.remove('girando'); });
@@ -753,6 +846,270 @@
       }).join('') + '</tbody></table>';
   }
 
+  /* ═══ Las vistas: No Compra y Gift Cards (12/10/2026) ══════════════════
+     No Compra es libre (los vendedores lo miran "tipo competencia"); Gift
+     Cards pide el PIN, porque es plata. El Club es otra página
+     (club-numeros.html), con estas mismas pestañas. */
+  var vista = 'nc', datosGC = null;
+  function leerVista() { return location.hash === '#giftcards' ? 'gc' : 'nc'; }
+  function aplicarVista() {
+    vista = leerVista();
+    $('vistaNC').hidden = vista !== 'nc';
+    $('vistaGC').hidden = vista !== 'gc';
+    Array.prototype.forEach.call(document.querySelectorAll('.pestana[data-est]'), function (a) {
+      if (a.dataset.est === vista) { a.setAttribute('aria-current', 'page'); } else { a.removeAttribute('aria-current'); }
+    });
+    /* El período y los locales los esconde el PIN de Gift Cards: en el No
+       Compra (libre) siempre se ven. */
+    if (vista === 'nc') {
+      document.querySelector('.cn-controles').classList.remove('fuera');
+      $('rango').classList.remove('fuera');
+    }
+    $('cabSub').textContent = vista === 'gc' ? 'VDH · Gift Cards' : 'VDH · No Compra';
+    document.title = vista === 'gc' ? 'VDH · Estadísticas de las Gift Cards' : 'VDH · Estadísticas';
+    $('titulo').textContent = vista === 'gc' ? 'Gift Cards' : 'No Compra';
+  }
+
+  /* ── Gift Cards ── */
+  var K_PIN = 'nc_pin';
+  function pinGC() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
+  function guardarPinGC(v) { try { if (v) { sessionStorage.setItem(K_PIN, v); } else { sessionStorage.removeItem(K_PIN); } } catch (e) {} }
+  /* "Sin local" es del No Compra: las gift cards siempre tienen local. */
+  function localGC() { return estado.local === SIN ? '' : estado.local; }
+  var OFICINA = leer('nc_oficina') === '1', pidioPin = false;
+  /* sinCampo: el freno o algo que falta (el SQL 84, la señal): no se ofrece
+     el campo, sí "Probar de nuevo". Con el campo: en la oficina, si ya se
+     pidió, o si hay algo que decir del PIN; si no, "Entrar con el PIN". */
+  function mostrarPortonGC(msg, sinCampo) {
+    if (vista !== 'gc') { return; }
+    var campo = !sinCampo && (OFICINA || pidioPin || !!msg);
+    $('gcDatos').hidden = true;
+    $('gcPorton').hidden = false;
+    $('gcPedirPin').hidden = !!sinCampo || campo;
+    $('gcPinFila').hidden = !campo;
+    $('gcOtraVez').hidden = !sinCampo;
+    $('gcMsg').hidden = !msg;
+    $('gcMsg').textContent = msg || '';
+    document.querySelector('.cn-controles').classList.add('fuera');
+    $('rango').classList.add('fuera');
+    if (campo) { $('gcPin').value = ''; $('gcPin').focus(); }
+  }
+  /* El SQL 84 no tira un error con el PIN malo: contesta {error: 'pin'}.
+     "mal" dice si el PIN se llegó a comparar; si se cortó antes por el
+     freno, puede ser el bueno y no se olvida. */
+  function errorDePinGC(r) {
+    var espera = Number(r.espera) || 0;
+    if (r.mal) { guardarPinGC(''); }
+    if (espera > 0) {
+      mostrarPortonGC(r.mal ? (r.porque || 'Demasiados intentos.') : 'El PIN está frenado por intentos fallidos. Probá de nuevo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).', true);
+      return;
+    }
+    mostrarPortonGC(r.mal ? 'El PIN cambió o venció. Ponelo de nuevo.' : (r.porque || 'PIN incorrecto.'));
+  }
+  function entrarGC() {
+    var v = $('gcPin').value.trim();
+    if (!v) { $('gcPin').focus(); return; }
+    /* El PIN es de 4 a 8 números: otra cosa (una tarjeta pasada con la
+       pistola) no se prueba, así no gasta un intento del freno de todos. */
+    if (!/^[0-9]{4,8}$/.test(v)) {
+      $('gcPin').value = '';
+      $('gcMsg').hidden = false;
+      $('gcMsg').textContent = 'Eso no es un PIN: el PIN es de 4 a 8 números.';
+      $('gcPin').focus();
+      return;
+    }
+    var b = $('gcEntrar'); b.disabled = true; b.textContent = 'Probando…';
+    base.pin.probar(v)
+      .then(function (r) {
+        if (!r || !r.ok) { $('gcMsg').hidden = false; $('gcMsg').textContent = (r && r.porque) || 'PIN incorrecto.'; $('gcPin').value = ''; $('gcPin').focus(); return; }
+        guardarPinGC(v);
+        cargar();
+      })
+      .catch(function () { $('gcMsg').hidden = false; $('gcMsg').textContent = 'No se pudo probar el PIN: revisá la señal.'; })
+      .then(function () { b.disabled = false; b.textContent = 'Entrar'; });
+  }
+  /* La base dijo "PIN incorrecto": o lo cambiaron, o está frenado por
+     intentos fallidos, y ahí contesta lo mismo aunque sea el bueno.
+     pin_situacion no gasta intentos: si es el freno, el PIN se guarda. */
+  function pinGCVencido() {
+    return base.pin.situacion()
+      .then(function (s) {
+        var espera = Number(s && s.espera) || 0;
+        if (espera > 0) { mostrarPortonGC('El PIN está frenado por intentos fallidos. Probá de nuevo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).', true); return; }
+        guardarPinGC('');
+        mostrarPortonGC('El PIN cambió o venció. Ponelo de nuevo.');
+      })
+      .catch(function () { mostrarPortonGC('No se pudo comprobar el PIN: revisá la señal y probá de nuevo.', true); });
+  }
+  function cargarGC(n) {
+    if (!pinGC()) { mostrarPortonGC(''); return Promise.resolve(); }
+    $('gcPorton').hidden = true;
+    document.querySelector('.cn-controles').classList.remove('fuera');
+    $('rango').classList.remove('fuera');
+    var r = rango();
+    $('rango').textContent = 'Del ' + fechaLarga(r[0]) + ' al ' + fechaLarga(r[1]);
+    $('btnRefrescar').classList.add('girando');
+    return base.giftcardEstadisticas(pinGC(), r[0], r[1], localGC())
+      .then(function (d) {
+        if (!vale(n, 'gc')) { return; }
+        if (d && d.error === 'pin') { errorDePinGC(d); return; }
+        datosGC = d;
+        pintarGC();
+      })
+      .catch(function (err) {
+        if (!vale(n, 'gc')) { return; }
+        if (err && err.delServidor && /PIN incorrecto/i.test(err.message || '')) { return pinGCVencido(); }
+        if (err && err.delServidor && /could not find the function|giftcard_estadisticas/i.test(err.message || '')) {
+          mostrarPortonGC('Falta un paso en la base: hay que correr el SQL 84 en Supabase para ver estos números.', true);
+          return;
+        }
+        var msg = (err && err.delServidor && err.message) || 'No se pudieron leer los números de las gift cards. Revisá la señal.';
+        /* Si ya había números a la vista, quedan y se avisa; si no (la
+           primera vez), el aviso con "Probar de nuevo": antes quedaba en
+           blanco (árbitro, ronda 2). */
+        if (!$('gcDatos').hidden) { avisar('err', msg); return; }
+        mostrarPortonGC(msg, true);
+      })
+      .then(function () { $('btnRefrescar').classList.remove('girando'); });
+  }
+
+  var PAGOS_GC = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', '3 cuotas': '3 cuotas sin interés', '6 cuotas': '6 cuotas sin interés', otro: 'Otro', 'sin dato': 'Sin dato' };
+  var ordenGC = { col: 'vendido', desc: true }, verCerosGC = false;
+  function nombreGC(codigo) {
+    var l = (datosGC && datosGC.por_local || []).filter(function (x) { return x.local === codigo; })[0];
+    return l ? l.nombre : bonito(codigo);
+  }
+  function mesLargo(m) {
+    var p = String(m || '').split('-');
+    var t = new Date(+p[0], +p[1] - 1, 1).toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  }
+  function pintarGC() {
+    var d = datosGC || {}, a = d.actual || {}, b = d.anterior || {}, h = d.hoy || {};
+    $('gcDatos').hidden = false;
+    $('titulo').textContent = localGC() ? 'Gift Cards en ' + nombreGC(localGC()) : 'Gift Cards';
+    $('selLocal').innerHTML = '<option value="">Todos los locales</option>' + (d.por_local || []).map(function (l) {
+      return '<option value="' + esc(l.local) + '"' + (l.local === localGC() ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
+    }).join('');
+    var nada = !Number(a.vendidas) && !Number(a.canjeadas) && !Number(h.deben);
+    $('gcPocos').hidden = !nada;
+    $('gcPocosTxt').innerHTML = '<b>Todavía no hay movimiento de gift cards' + (localGC() ? ' en este local' : '') + '</b> en el período: ni vendidas ni canjeadas. Se venden en Gift Cards y se canjean en Cobrar.';
+
+    var tarjetas = [
+      { l: 'Vendidas', n: miles(a.vendidas),
+        pie: Number(a.vendidas) ? 'por ' + plata(a.vendido) + ' en tarjetas' : 'ninguna en el período', c: comparar(a.vendidas, b.vendidas) },
+      { l: 'Plata que entró', n: plata(a.cobrado), plata: true,
+        pie: Number(a.cobrado) !== Number(a.vendido) ? 'de ' + plata(a.vendido) + ': en efectivo se cobra un 10% menos' : 'lo que se cobró por las vendidas',
+        c: comparar(a.cobrado, b.cobrado) },
+      { l: 'Canjeadas', n: miles(a.canjeadas),
+        pie: Number(a.canjeadas) ? plata(a.canjeado) + ' en tarjetas' + (Number(a.compras_canje) ? ' · compraron ' + plata(a.compras_canje) : '') : 'ninguna en el período',
+        c: comparar(a.canjeadas, b.canjeadas) },
+      { l: 'Se debe hoy', n: plata(h.debe), plata: true,
+        pie: Number(h.deben) ? unoVarios(h.deben, 'tarjeta sin canjear', 'tarjetas sin canjear') + (Number(h.vencen) ? ' · ' + (Number(h.vencen) === 1 ? '1 vence' : miles(h.vencen) + ' vencen') + ' en 7 días' : '') : 'no hay tarjetas sin canjear', c: null },
+      { l: 'Vencidas sin usar', n: miles(a.vencidas),
+        pie: Number(a.vencidas) ? plata(a.vencido) + ' que nadie canjeó en el período' : 'ninguna venció en el período', c: null }
+    ];
+    $('gcKpis').innerHTML = tarjetas.map(function (t) {
+      return '<div class="cn-kpi">' +
+        '<div class="cn-kpi-l">' + esc(t.l) + '</div>' +
+        '<div class="cn-kpi-n' + (t.plata ? ' plata' : '') + '">' + esc(t.n) + '</div>' +
+        '<div class="cn-kpi-pie">' + esc(t.pie) + '</div>' +
+        (t.c ? '<div class="cn-vs ' + t.c.cls + '">' + esc(t.c.txt) + '</div>' : '') +
+      '</div>';
+    }).join('');
+
+    $('gcDeuda').innerHTML = Number(h.deben)
+      ? '<div class="dato"><span>Sin canjear<small>' + unoVarios(h.deben, 'tarjeta', 'tarjetas') + '</small></span><b>' + plata(h.debe) + '</b></div>' +
+        '<div class="dato"><span>Vencen en los próximos 7 días<small>' + unoVarios(h.vencen, 'tarjeta', 'tarjetas') + '</small></span><b>' + plata(h.vence) + '</b></div>' +
+        '<a class="gc-ver" href="giftcards.html#vendidas">Ver cuáles en Gift Cards</a>'
+      : '<p class="vacio-cn">No hay gift cards vendidas sin canjear: no se debe nada.</p>';
+
+    var imp = d.impresas || [];
+    var tot = imp.reduce(function (s, x) { return s + Number(x.impresas); }, 0), ven = imp.reduce(function (s, x) { return s + Number(x.vendidas); }, 0);
+    $('gcImpresas').innerHTML = imp.length
+      ? '<div class="paso plata"><span>Quedan sin vender</span><b>' + miles(tot - ven) + '<em>de ' + miles(tot) + '</em></b></div>' +
+        imp.map(function (x) {
+          return '<div class="dato"><span>' + esc(x.lote) + ' · ' + esc(x.color) + '<small>' + unoVarios(x.vendidas, 'vendida', 'vendidas') + ' de ' + miles(x.impresas) + '</small></span>' +
+                 '<b>' + miles(Number(x.impresas) - Number(x.vendidas)) + '</b></div>';
+        }).join('') +
+        '<p class="nota-cn">Una anulada tampoco se puede volver a vender: cuenta como vendida.</p>'
+      : '<p class="vacio-cn">No hay tarjetas impresas cargadas.</p>';
+
+    pintarLocalesGC();
+
+    var meses = (d.por_mes || []).filter(function (m) { return Number(m.vendidas) || Number(m.canjeadas); });
+    $('gcMeses').innerHTML = meses.length
+      ? '<table class="tabla"><thead><tr><th>Mes</th><th>Vendidas</th><th>Vendido</th><th>Canjeadas</th><th>Canjeado</th></tr></thead><tbody>' +
+        meses.map(function (m) {
+          return '<tr><td>' + esc(mesLargo(m.mes)) + '</td><td' + (Number(m.vendidas) ? '' : ' class="cero"') + '>' + miles(m.vendidas) + '</td>' +
+                 '<td' + (Number(m.vendido) ? '' : ' class="cero"') + '>' + plata(m.vendido) + '</td>' +
+                 '<td' + (Number(m.canjeadas) ? '' : ' class="cero"') + '>' + miles(m.canjeadas) + '</td>' +
+                 '<td' + (Number(m.canjeado) ? '' : ' class="cero"') + '>' + plata(m.canjeado) + '</td></tr>';
+        }).join('') + '</tbody></table>' +
+        ((d.por_mes || []).length > meses.length ? '<p class="nota-cn">Los meses sin movimiento no se muestran.</p>' : '')
+      : '<p class="vacio-cn">Sin movimiento en el período.</p>';
+    if (Number(a.anuladas)) {
+      $('gcMeses').innerHTML += '<p class="nota-cn">' + (Number(a.anuladas) === 1
+        ? 'Además se anuló 1 tarjeta en el período (' + plata(a.anulado) + '): no cuenta como vendida.'
+        : 'Además se anularon ' + miles(a.anuladas) + ' tarjetas en el período (' + plata(a.anulado) + '): no cuentan como vendidas.') + '</p>';
+    }
+
+    var pagos = d.por_pago || [];
+    $('gcPagos').innerHTML = pagos.length
+      ? pagos.map(function (p) {
+          return '<div class="dato"><span>' + esc(PAGOS_GC[p.pago] || p.pago) + '<small>' + unoVarios(p.n, 'tarjeta', 'tarjetas') + ' · valen ' + plata(p.valor) + '</small></span><b>' + plata(p.cobrado) + '</b></div>';
+        }).join('')
+      : '<p class="vacio-cn">Ninguna vendida en el período.</p>';
+    var colores = d.por_color || [];
+    $('gcColores').innerHTML = colores.length
+      ? colores.map(function (c) {
+          return '<div class="dato"><span>' + esc(c.color === 'Sin código' ? 'Tarjeta vieja (sin código)' : c.color) + '<small>' + unoVarios(c.n, 'vendida', 'vendidas') + '</small></span><b>' + plata(c.valor) + '</b></div>';
+        }).join('')
+      : '<p class="vacio-cn">Ninguna vendida en el período.</p>';
+    var vend = d.por_vendedor || [];
+    $('gcVendedores').innerHTML = vend.length
+      ? '<table class="tabla"><thead><tr><th>Vendedor</th><th>Local</th><th>Vendidas</th><th>Valor</th></tr></thead><tbody>' +
+        vend.map(function (v) {
+          return '<tr><td>' + esc(v.vendedor) + '</td><td class="izq">' + esc(nombreGC(v.local)) + '</td><td>' + miles(v.n) + '</td><td>' + plata(v.valor) + '</td></tr>';
+        }).join('') + '</tbody></table>'
+      : '<p class="vacio-cn">Nadie vendió en el período.</p>';
+  }
+  var COLS_GC = [['nombre', 'Local'], ['vendidas', 'Vendidas'], ['vendido', 'Vendido'], ['canjeadas', 'Canjeadas'], ['canjeado', 'Canjeado'], ['debe', 'Se debe']];
+  function pintarLocalesGC() {
+    var d = datosGC || {}, lista0 = (d.por_local || []).slice(), c = ordenGC.col;
+    var valor = function (x) { return c === 'nombre' ? String(x.nombre || '') : Number(x[c]) || 0; };
+    lista0.sort(function (x, y) {
+      var a = valor(x), b = valor(y);
+      if (a < b) { return ordenGC.desc ? 1 : -1; }
+      if (a > b) { return ordenGC.desc ? -1 : 1; }
+      return String(x.nombre).localeCompare(y.nombre);
+    });
+    /* Los locales sin nada van juntos en un renglón, como en el No Compra. */
+    var vacio = function (l) { return !Number(l.vendidas) && !Number(l.canjeadas) && !Number(l.deben); };
+    var ceros = lista0.filter(vacio);
+    if (!verCerosGC && ceros.length > 1) { lista0 = lista0.filter(function (l) { return !vacio(l); }); }
+    var celda = function (n, txt) { return '<td' + (Number(n) ? '' : ' class="cero"') + '>' + txt + '</td>'; };
+    var a = d.actual || {}, h = d.hoy || {};
+    $('gcLocales').innerHTML = '<table class="tabla"><thead><tr>' + COLS_GC.map(function (k) {
+        return '<th' + (ordenGC.col === k[0] ? ' aria-sort="' + (ordenGC.desc ? 'descending' : 'ascending') + '"' : '') + '>' +
+               '<button type="button" data-orden="' + k[0] + '">' + esc(k[1]) + (ordenGC.col === k[0] ? (ordenGC.desc ? ' ↓' : ' ↑') : '') + '</button></th>';
+      }).join('') + '</tr></thead><tbody>' +
+      lista0.map(function (l) {
+        return '<tr class="' + (l.local === localGC() ? 'sel' : '') + '" data-local="' + esc(l.local) + '" style="cursor:pointer">' +
+          '<td>' + esc(l.nombre) + '</td>' + celda(l.vendidas, miles(l.vendidas)) + celda(l.vendido, plata(l.vendido)) +
+          celda(l.canjeadas, miles(l.canjeadas)) + celda(l.canjeado, plata(l.canjeado)) +
+          celda(l.debe, plata(l.debe) + (Number(l.deben) ? '<small>' + unoVarios(l.deben, 'tarjeta', 'tarjetas') + '</small>' : '')) + '</tr>';
+      }).join('') +
+      (ceros.length > 1 ? '<tr><td colspan="6" style="font-weight:500;color:var(--txt-2)">' +
+        (verCerosGC ? '' : ceros.length + ' locales sin nada. ') +
+        '<button type="button" class="link-bot" id="verCerosGC">' + (verCerosGC ? 'Ocultar los que están en cero' : 'Mostrarlos') + '</button></td></tr>' : '') +
+      (localGC() ? '' :
+        '<tr class="total"><td>Total</td><td>' + miles(a.vendidas) + '</td><td>' + plata(a.vendido) + '</td><td>' + miles(a.canjeadas) + '</td>' +
+        '<td>' + plata(a.canjeado) + '</td><td>' + plata(h.debe) + '</td></tr>') +
+      '</tbody></table>';
+    if ($('verCerosGC')) { $('verCerosGC').onclick = function (e) { e.stopPropagation(); verCerosGC = !verCerosGC; pintarLocalesGC(); }; }
+  }
+
   /* ═══ Los controles ════════════════════════════════════════════════════ */
   (function () {
     iniciarTema();
@@ -792,9 +1149,39 @@
     var espera;
     window.addEventListener('resize', function () {
       clearTimeout(espera);
-      espera = setTimeout(function () { if (datos) { pintarDias(); if ($('detalle').open) { pintarGraficosDetalle(); } } }, 200);
+      espera = setTimeout(function () { if (datos && vista === 'nc') { pintarDias(); if ($('detalle').open) { pintarGraficosDetalle(); } } }, 200);
     });
+    $('gcLocales').onclick = function (e) {
+      var o = e.target.closest('[data-orden]');
+      if (o) {
+        var c = o.dataset.orden;
+        ordenGC = { col: c, desc: ordenGC.col === c ? !ordenGC.desc : c !== 'nombre' };
+        pintarLocalesGC(); return;
+      }
+      var f = e.target.closest('tr[data-local]');
+      if (f && f.dataset.local) {
+        estado.local = localGC() === f.dataset.local ? '' : f.dataset.local;
+        guardar(K_LOCAL, estado.local); cargar();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    };
+    $('gcEntrar').onclick = entrarGC;
+    $('gcPedirPin').onclick = function () { pidioPin = true; mostrarPortonGC(''); };
+    $('gcOtraVez').onclick = function () { cargar(); };
+    /* La pestaña Club es otra página con sus propios filtros: se le pasa lo
+       elegido acá. "Sin local" del No Compra no es el "sin local" de los
+       socios, y las fechas a elegir no se guardan: esos no pasan. */
+    var aClub = document.querySelector('.pestana[href="club-numeros.html"]');
+    if (aClub) {
+      aClub.addEventListener('click', function () {
+        if (estado.periodo !== 'elegir') { guardar('nc_cn_periodo', estado.periodo); }
+        guardar('nc_cn_local', estado.local === SIN ? '' : estado.local);
+      });
+    }
+    $('gcPin').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); entrarGC(); } };
+    window.addEventListener('hashchange', function () { aplicarVista(); cargar(); });
     $('btnRefrescar').onclick = cargar;
+    aplicarVista();
     pintarPeriodos();
     cargar();
     iniciarPWA();

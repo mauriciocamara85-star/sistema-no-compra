@@ -643,6 +643,19 @@ var base = {
     return funcion('giftcard_tarjeta', { p_codigo: codigo });
   },
 
+  /** Todas las gift cards, para la lista de la sección Gift Cards (SQL 84).
+      Con PIN. De las impresas no viaja el código entero, que es lo que se
+      canjea: el número de tarjeta, el color y los últimos 4. */
+  giftcards: function (pin) {
+    return funcion('giftcards_listar', { p_pin: pin });
+  },
+
+  /** Los números de las gift cards de un período y un local (SQL 84), para
+      Estadísticas. Con PIN: es plata. */
+  giftcardEstadisticas: function (pin, desde, hasta, local) {
+    return funcion('giftcard_estadisticas', { p_pin: pin, p_desde: desde, p_hasta: hasta, p_local: local || null });
+  },
+
   /* ── Y lo que pide sesión ────────────────────────────────────────────── */
 
   /**
@@ -1422,7 +1435,7 @@ var base = {
     });
   },
   /** El mismo descuento sin un No Compra detrás (SQL 81): desde Contactos,
-      Mensajes o Cupones y Gift Cards, con el teléfono. */
+      Mensajes o Cupones, con el teléfono. */
   darDescuentoTel: function (pin, telefono, pct, dias, quien, nombre, obs) {
     return funcion('dar_descuento_tel', {
       p_pin: pin, p_telefono: telefono, p_pct: pct, p_dias: dias || 30,

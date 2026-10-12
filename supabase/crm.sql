@@ -6980,3 +6980,299 @@ create or replace function tel_cliente(p text) returns text language sql immutab
 $$;
 
 select 'listo: los teléfonos del exterior, también sin el +' as "SQL 83";
+
+
+-- ─────────────────────────── PARTE 84 (12/10/2026) ───────────────────────────
+-- ═══ SQL 84 (12/10/2026) · la sección Gift Cards ═══
+-- Pedido de Mauricio: las gift cards tienen su sección en la barra (vender y
+-- la lista) y sus números van a Estadísticas, al lado del No Compra y del
+-- Club. Del CRM sale la pestaña de gift cards (queda "Cupones") y de Cobrar
+-- sale la venta (canjear sigue ahí).
+--   · giftcards_listar: todas las gift cards, para la lista de la sección.
+--     De las impresas NO devuelve el código entero, que es lo que se canjea
+--     (al portador): el número de tarjeta, el color y los últimos 4.
+--   · giftcard_estadisticas: los números de un período y un local.
+--   · vender_giftcard: no vende por un valor absurdo (un código pasado con
+--     la pistola en el campo del valor) ni con lo cobrado por encima del
+--     valor. Corregirlo después cuesta la tarjeta: una anulada no se vuelve
+--     a vender.
+-- Las dos nuevas piden el PIN y son VOLATILE: pin_ok escribe.
+-- Con un PIN malo NO tiran un error: devuelven {"error": "pin"}. Un error
+-- deshace la transacción entera, también lo que pin_ok anotó del intento
+-- fallido, y entonces el freno de los tres intentos no corre por ahí. (Las
+-- funciones viejas con PIN todavía lo tiran: queda pendiente.)
+-- Se puede correr más de una vez.
+
+create or replace function giftcards_listar(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb;
+begin
+  r := pin_ok(p_pin);
+  if not coalesce((r->>'ok')::boolean, false) then
+    /* Sin tirar un error: así el intento fallido queda anotado. "mal" dice
+       si el PIN se llegó a comparar (y estaba mal) o si se cortó antes por
+       el freno: en ese caso el PIN guardado puede ser el bueno. */
+    return jsonb_build_object('error', 'pin', 'porque', coalesce(r->>'porque', 'PIN incorrecto.'),
+                              'espera', coalesce((r->>'espera')::integer, 0), 'mal', r ? 'restantes');
+  end if;
+  return coalesce((
+    select jsonb_agg(s.x order by s.creado desc, s.id desc)
+      from (
+        select b.creado, b.id,
+               jsonb_build_object(
+                 'id', b.id, 'estado', b.estado,
+                 'impresa', t.codigo is not null,
+                 'nro', t.nro, 'color', t.color, 'lote', t.lote,
+                 'fin', case when t.codigo is not null then right(b.serie, 4) end,
+                 'serie', case when t.codigo is null then b.serie end,
+                 'valor', b.valor, 'cobrado', b.cobrado, 'pago', b.pago::text,
+                 'vence', b.vence, 'dias', b.dias,
+                 'local', b.local, 'vendedor', b.vendedor, 'creado', b.creado,
+                 'usado', b.usado, 'local_canje', b.local_canje, 'vendedor_canje', b.vendedor_canje,
+                 'monto_compra', b.monto_compra,
+                 'anulado', b.anulado, 'anulado_por', b.anulado_por, 'motivo_anul', b.motivo_anul,
+                 'obs', b.obs, 'nombre', b.nombre, 'telefono', b.telefono) as x
+          from v_beneficios b
+          left join giftcard_tarjetas t on t.codigo = b.serie
+         where b.tipo = 'giftcard'
+         order by b.creado desc, b.id desc
+         limit 3000) s), '[]'::jsonb);
+end;
+$$;
+
+revoke execute on function giftcards_listar(text) from public;
+grant execute on function giftcards_listar(text) to anon, authenticated;
+
+
+/* Los números de un período (las fechas, en la hora de Argentina) y,
+   si se pide, de un local.
+     · Vendidas: por el día y el local de la venta. Las anuladas, aparte.
+     · Canjeadas: por el día y el local del canje.
+     · Vencidas sin usar: las que vencieron en el período.
+     · Anuladas: por el día en que se anularon.
+     · "Hoy" (no depende del período): lo que se debe y lo que vence en 7 días.
+     · Por local: los 14 siempre (el elegido va marcado en la pantalla).
+     · Las impresas (no dependen del período ni del local): cuántas quedan. */
+create or replace function giftcard_estadisticas(p_pin text, p_desde date, p_hasta date, p_local text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  d0  date;
+  d1  date;
+  a0  date;
+  a1  date;
+  loc text := nullif(upper(trim(coalesce(p_local, ''))), '');
+  r   jsonb;
+begin
+  r := pin_ok(p_pin);
+  if not coalesce((r->>'ok')::boolean, false) then
+    /* Sin tirar un error: ver giftcards_listar. */
+    return jsonb_build_object('error', 'pin', 'porque', coalesce(r->>'porque', 'PIN incorrecto.'),
+                              'espera', coalesce((r->>'espera')::integer, 0), 'mal', r ? 'restantes');
+  end if;
+  d0 := coalesce(p_desde, hoy - 29);
+  d1 := coalesce(p_hasta, hoy);
+  if d1 < d0 then raise exception 'La fecha "desde" es posterior a "hasta".'; end if;
+  /* El período anterior, del mismo largo: para comparar. */
+  a1 := d0 - 1;
+  a0 := d0 - (d1 - d0 + 1);
+
+  return (
+    with g as (
+      select b.id, b.estado, b.valor, b.cobrado, b.pago::text as pago, b.vence,
+             upper(trim(b.local)) as local, b.vendedor,
+             upper(trim(b.local_canje)) as local_canje,
+             b.monto_compra, b.anulado,
+             (b.creado  at time zone 'America/Argentina/Buenos_Aires')::date as dv,
+             (b.usado   at time zone 'America/Argentina/Buenos_Aires')::date as dc,
+             (b.anulado at time zone 'America/Argentina/Buenos_Aires')::date as da,
+             t.color
+        from v_beneficios b
+        left join giftcard_tarjetas t on t.codigo = b.serie
+       where b.tipo = 'giftcard'
+    ),
+    /* De todos los locales: para la tabla "Por local", que muestra los 14
+       aunque se mire uno (como el No Compra: el elegido va marcado). */
+    ven_t   as (select * from g where dv between d0 and d1 and anulado is null),
+    can_t   as (select * from g where dc between d0 and d1),
+    vivas_t as (select * from g where estado = 'disponible'),
+    /* Del local elegido (o de todos): para el resto de los números. */
+    ven     as (select * from ven_t where loc is null or local = loc),
+    ven_ant as (select * from g where dv between a0 and a1 and anulado is null and (loc is null or local = loc)),
+    can     as (select * from can_t where loc is null or local_canje = loc),
+    can_ant as (select * from g where dc between a0 and a1 and (loc is null or local_canje = loc)),
+    vivas   as (select * from vivas_t where loc is null or local = loc),
+    /* Los 14 locales y, si aparece, algún otro escrito en una venta o un
+       canje (un local que cerró, un error de tipeo): así los totales cierran. */
+    codigos as (
+      select upper(trim(l.codigo)) as local, coalesce(nullif(trim(l.nombre), ''), initcap(lower(l.codigo))) as nombre
+        from locales l
+      union
+      select x.local, initcap(lower(x.local))
+        from (select g.local from g union select g.local_canje from g) x
+       where x.local is not null
+         and not exists (select 1 from locales l where upper(trim(l.codigo)) = x.local)
+    )
+    select jsonb_build_object(
+      'periodo', jsonb_build_object('desde', d0, 'hasta', d1, 'dias', d1 - d0 + 1),
+      'actual', jsonb_build_object(
+        'vendidas',      (select count(*) from ven),
+        'vendido',       (select coalesce(sum(valor), 0) from ven),
+        'cobrado',       (select coalesce(sum(cobrado), 0) from ven),
+        'canjeadas',     (select count(*) from can),
+        'canjeado',      (select coalesce(sum(valor), 0) from can),
+        'compras_canje', (select coalesce(sum(monto_compra), 0) from can),
+        'vencidas',      (select count(*) from g where estado = 'vencido' and vence between d0 and d1 and (loc is null or local = loc)),
+        'vencido',       (select coalesce(sum(valor), 0) from g where estado = 'vencido' and vence between d0 and d1 and (loc is null or local = loc)),
+        'anuladas',      (select count(*) from g where da between d0 and d1 and (loc is null or local = loc)),
+        'anulado',       (select coalesce(sum(valor), 0) from g where da between d0 and d1 and (loc is null or local = loc))),
+      'anterior', jsonb_build_object(
+        'vendidas',  (select count(*) from ven_ant),
+        'vendido',   (select coalesce(sum(valor), 0) from ven_ant),
+        'cobrado',   (select coalesce(sum(cobrado), 0) from ven_ant),
+        'canjeadas', (select count(*) from can_ant),
+        'canjeado',  (select coalesce(sum(valor), 0) from can_ant)),
+      'hoy', jsonb_build_object(
+        'deben',  (select count(*) from vivas),
+        'debe',   (select coalesce(sum(valor), 0) from vivas),
+        'vencen', (select count(*) from vivas where vence <= hoy + 7),
+        'vence',  (select coalesce(sum(valor), 0) from vivas where vence <= hoy + 7)),
+      'por_local', (select coalesce(jsonb_agg(jsonb_build_object(
+          'local', c.local, 'nombre', c.nombre,
+          'vendidas',  (select count(*) from ven_t v where v.local = c.local),
+          'vendido',   (select coalesce(sum(v.valor), 0) from ven_t v where v.local = c.local),
+          'cobrado',   (select coalesce(sum(v.cobrado), 0) from ven_t v where v.local = c.local),
+          'canjeadas', (select count(*) from can_t x where x.local_canje = c.local),
+          'canjeado',  (select coalesce(sum(x.valor), 0) from can_t x where x.local_canje = c.local),
+          'deben',     (select count(*) from vivas_t w where w.local = c.local),
+          'debe',      (select coalesce(sum(w.valor), 0) from vivas_t w where w.local = c.local)
+        ) order by c.nombre), '[]'::jsonb)
+        from codigos c),
+      'por_mes', (select coalesce(jsonb_agg(jsonb_build_object(
+          'mes',       to_char(m, 'YYYY-MM'),
+          'vendidas',  (select count(*) from ven v where date_trunc('month', v.dv::timestamp) = m),
+          'vendido',   (select coalesce(sum(v.valor), 0) from ven v where date_trunc('month', v.dv::timestamp) = m),
+          'canjeadas', (select count(*) from can x where date_trunc('month', x.dc::timestamp) = m),
+          'canjeado',  (select coalesce(sum(x.valor), 0) from can x where date_trunc('month', x.dc::timestamp) = m)
+        ) order by m), '[]'::jsonb)
+        from generate_series(date_trunc('month', d0::timestamp), date_trunc('month', d1::timestamp), interval '1 month') m),
+      'por_pago', (select coalesce(jsonb_agg(jsonb_build_object('pago', s.pago, 'n', s.n, 'cobrado', s.c, 'valor', s.v) order by s.n desc, s.pago), '[]'::jsonb)
+        from (select coalesce(v.pago, 'sin dato') as pago, count(*) as n, coalesce(sum(v.cobrado), 0) as c, coalesce(sum(v.valor), 0) as v
+                from ven v group by 1) s),
+      'por_color', (select coalesce(jsonb_agg(jsonb_build_object('color', s.k, 'n', s.n, 'valor', s.v) order by s.k), '[]'::jsonb)
+        from (select coalesce(v.color, 'Sin código') as k, count(*) as n, coalesce(sum(v.valor), 0) as v from ven v group by 1) s),
+      'por_vendedor', (select coalesce(jsonb_agg(jsonb_build_object('vendedor', s.q, 'local', s.l, 'n', s.n, 'valor', s.v) order by s.n desc, s.v desc, s.q), '[]'::jsonb)
+        from (select coalesce(nullif(trim(v.vendedor), ''), 'Sin nombre') as q, v.local as l, count(*) as n, coalesce(sum(v.valor), 0) as v
+                from ven v group by 1, 2) s),
+      /* Las impresas: una anulada tampoco se puede volver a vender. */
+      'impresas', (select coalesce(jsonb_agg(jsonb_build_object('lote', s.lote, 'color', s.color, 'impresas', s.imp, 'vendidas', s.vend) order by s.lote, s.color), '[]'::jsonb)
+        from (select t.lote, t.color, count(*) as imp,
+                     count(*) filter (where exists (select 1 from beneficios b where b.tipo = 'giftcard' and b.serie = t.codigo)) as vend
+                from giftcard_tarjetas t group by 1, 2) s)
+    )
+  );
+end;
+$$;
+
+revoke execute on function giftcard_estadisticas(text, date, date, text) from public;
+grant execute on function giftcard_estadisticas(text, date, date, text) to anon, authenticated;
+
+
+-- vender_giftcard, igual que antes, con el tope (SQL 84).
+CREATE OR REPLACE FUNCTION public.vender_giftcard(p_valor numeric, p_local text, p_vendedor text, p_cobrado numeric DEFAULT NULL::numeric, p_pago text DEFAULT NULL::text, p_dias integer DEFAULT 30, p_telefono text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text, p_obs text DEFAULT NULL::text, p_codigo text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  nid     bigint;
+  intento integer;
+  /* `nro` y no `serie`: la tabla tiene una columna que se llama así, y
+     adentro del INSERT PL/pgSQL no sabe a cuál de las dos le hablan. */
+  nro text;
+  v_cod text := nullif(regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g'), '');
+  t giftcard_tarjetas%rowtype;
+begin
+  if coalesce(p_valor, 0) <= 0 then raise exception 'Falta el valor de la Gift Card.'; end if;
+  /* SQL 84: un valor absurdo (un código pasado con la pistola en el campo
+     del valor: 14 números) o lo cobrado por encima del valor no se venden.
+     Corregirlo después cuesta la tarjeta: una anulada no se vuelve a vender. */
+  if p_valor >= 10000000 then raise exception 'Ese valor no parece de una Gift Card: revisalo (tiene que ser menos de $ 10.000.000).'; end if;
+  if p_cobrado is not null and p_cobrado > p_valor then raise exception 'Lo cobrado no puede ser más que el valor de la Gift Card.'; end if;
+  if length(trim(coalesce(p_local, ''))) = 0 then raise exception 'Falta el local.'; end if;
+  if length(trim(coalesce(p_vendedor, ''))) = 0 then raise exception 'Falta el vendedor.'; end if;
+
+  /* SQL 72: la tarjeta impresa. Su número es el código que lee la pistola:
+     tiene que ser una de las impresas y no haberse vendido. */
+  if v_cod is not null then
+    if v_cod !~ '^99[0-9]{12}$' then raise exception 'Ese código no es de una Gift Card VDH.'; end if;
+    select * into t from giftcard_tarjetas g where g.codigo = v_cod;
+    if not found then raise exception 'Esa tarjeta no está entre las Gift Cards impresas.'; end if;
+    if exists (select 1 from beneficios b where b.tipo = 'giftcard' and b.serie = v_cod) then
+      raise exception 'Esa Gift Card ya se vendió.';
+    end if;
+    begin
+      insert into beneficios (tipo, serie, valor, cobrado, pago, vence,
+                              local, vendedor, telefono, nombre, obs)
+      values ('giftcard', v_cod, p_valor, coalesce(p_cobrado, p_valor),
+              nullif(p_pago, '')::forma_pago,
+              ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+              trim(p_local), trim(p_vendedor),
+              coalesce(tel_cliente(p_telefono), nullif(regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g'), '')),
+              nullif(trim(coalesce(p_nombre, '')), ''),
+              p_obs)
+      returning id into nid;
+    exception when unique_violation then
+      raise exception 'Esa Gift Card ya se vendió.';
+    end;
+    return jsonb_build_object('vendida', true, 'id', nid, 'serie', v_cod, 'nro', t.nro, 'color', t.color,
+                              'vence', ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)));
+  end if;
+
+  /* Sin código: una tarjeta vieja, con el número escrito a mano. */
+
+  /* El número se toma acá adentro y en la misma transacción que el insert.
+     Dos ventas al mismo tiempo en dos locales distintos podrían pedir el
+     mismo: el índice único sobre la serie es el que decide, y el que pierde
+     reintenta con el siguiente. */
+  for intento in 1 .. 5 loop
+    nro := siguiente_serie();
+    begin
+      insert into beneficios (tipo, serie, valor, cobrado, pago, vence,
+                              local, vendedor, telefono, nombre, obs)
+      values ('giftcard', nro, p_valor,
+              -- Sin decir cuánto se cobró, se asume que se cobró el valor.
+              coalesce(p_cobrado, p_valor),
+              nullif(p_pago, '')::forma_pago,
+              ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+              trim(p_local), trim(p_vendedor),
+              coalesce(tel_cliente(p_telefono), nullif(regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g'), '')),
+              nullif(trim(coalesce(p_nombre, '')), ''),
+              p_obs)
+      returning id into nid;
+
+      return jsonb_build_object('vendida', true, 'id', nid, 'serie', nro);
+
+    exception when unique_violation then
+      -- Se la ganó otro local. Se prueba con la que sigue.
+      null;
+    end;
+  end loop;
+
+  raise exception 'No se pudo tomar un número de tarjeta. Probá de nuevo.';
+end;
+$function$;
+
+select 'listo: la sección Gift Cards (la lista, los números y el tope de la venta)' as "SQL 84";

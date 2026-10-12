@@ -1,0 +1,1123 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Gift Cards</title>
+<meta name="description" content="Vender gift cards y ver las vendidas: lo canjeado, lo vencido y lo que se debe.">
+<meta name="theme-color" content="#F7F6F3">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icono-apple.png">
+<link rel="icon" href="icono-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Poppins, la de vdh.com.ar y la del VDH Club (30/09/2026). -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
+  } catch (e) {}
+</script>
+<style>
+  /* ── Gift Cards (12/10/2026) ─────────────────────────────────────────────
+     Pedido de Mauricio: la gift card estaba "como escondida" (un desplegable
+     en Cobrar y una pestaña en el CRM) y es plata que entra. Ahora tiene su
+     ítem en la barra:
+       · arriba, VENDER: lo mismo que estaba en Cobrar, sin PIN (lo hace el
+         vendedor en el local, con la pistola);
+       · abajo, LAS VENDIDAS: la lista, lo que se debe, extender y anular,
+         con el PIN (es de la oficina). En un aparato de local queda un
+         acceso discreto al pie, así nadie prueba el PIN de casualidad.
+     Canjear sigue en Cobrar (un solo campo para todo lo que trae el
+     cliente) y los números están en Estadísticas → Gift Cards. */
+  :root { --tope: 720px; }
+  @media (min-width: 1100px) { :root { --tope: 980px; } }
+
+  .gc-tit { font: 700 21px/1.2 var(--display); letter-spacing: -.3px; }
+  .gc-sub { font-size: 14.5px; color: var(--txt-2); margin: 8px 0 4px; line-height: 1.5; }
+  .gc-sub a { color: var(--acc-txt); font-weight: 600; }
+
+  .quien-linea {
+    display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+    margin-bottom: 18px; font-size: 13px; color: var(--txt-3);
+  }
+  .quien-linea b { color: var(--txt-2); font-weight: 600; }
+  .quien-linea button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--acc-txt); cursor: pointer; text-decoration: underline; }
+
+  /* ── Elegir el local y quién atiende (la misma bienvenida de Carga) ── */
+  .elegir h2 { font: 700 21px/1.2 var(--display); }
+  .elegir-sub { font-size: 14px; color: var(--txt-2); margin: 6px 0 16px; }
+  .elegir-sub b { color: var(--txt); }
+  .elegir .chips { gap: 8px; }
+  .elegir-nuevo { display: flex; gap: 8px; margin-top: 12px; }
+  .elegir-nuevo[hidden] { display: none; }
+  .elegir-nuevo input { flex: 1; min-width: 0; }
+  .elegir-link { margin-top: 14px; background: none; border: 0; padding: 0; font: inherit; font-size: 13.5px;
+                 color: var(--txt-3); text-decoration: underline; cursor: pointer; }
+  .elegir-oficina { margin: -4px 0 12px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2);
+                    border: 1px solid var(--line); font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
+  .elegir-oficina[hidden] { display: none; }
+  .oficina-txt { font-size: 14.5px; color: var(--txt-2); line-height: 1.5; margin: 8px 0 14px; }
+
+  /* ── La venta ── */
+  .proximo {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    background: var(--acc-soft); border: 1px solid var(--acc-line); border-radius: var(--r-sm);
+    padding: 13px 15px; margin: 14px 0 16px;
+    font-size: 13.5px; color: var(--txt-2); line-height: 1.5;
+  }
+  .proximo b { font: 700 22px/1 var(--display); color: var(--acc-txt); letter-spacing: -.5px; }
+  .proximo[hidden] { display: none; }
+  .gc-codigo { margin: 14px 0 12px; }
+  .gc-codigo input { font-size: 17px; letter-spacing: .5px; }
+  .gc-tarjeta { margin-top: 8px; padding: 9px 12px; border-radius: var(--r-sm); font-size: 14px; font-weight: 600;
+                background: var(--ok-soft); color: var(--ok-txt); }
+  .gc-tarjeta.mal { background: var(--bad-soft); color: var(--bad-txt); }
+  .gc-tarjeta.espera { background: var(--surface-2); color: var(--txt-2); font-weight: 500; }
+  .gc-tarjeta[hidden] { display: none; }
+  .ficha-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .ficha-campos .campo.ancho { grid-column: 1 / -1; }
+  @media (max-width: 560px) { .ficha-campos { grid-template-columns: 1fr; } }
+  /* La forma de pago, con botones: los mismos valores que acepta la base. */
+  .pagos { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pagos .chip { min-height: 38px; padding: 7px 13px; font-size: 13.5px; }
+  .gc-quien > summary {
+    list-style: none; cursor: pointer; display: flex; align-items: center; min-height: 50px; padding: 0 14px;
+    border: 1.5px dashed var(--line-alta, var(--line)); border-radius: var(--r-sm); font-size: 14px; font-weight: 600; color: var(--txt-2);
+  }
+  .gc-quien > summary::-webkit-details-marker { display: none; }
+  .gc-quien > summary:hover { color: var(--txt); }
+  .gc-quien[open] > summary { margin-bottom: 8px; border-style: solid; }
+  .gc-quien input + input { margin-top: 8px; }
+  /* La última venta queda a la vista: el aviso flotante se va solo. */
+  .gc-ultima { margin: 10px 0 0; padding: 9px 13px; border-radius: var(--r-sm); background: var(--ok-soft);
+               border: 1px solid var(--ok-borde, var(--ok)); font-size: 13.5px; line-height: 1.45; color: var(--txt); }
+  /* Vender una tarjeta vieja, sin código, se confirma en el mismo botón:
+     sin esto, olvidarse de pasar una impresa la dejaba "sin vender". */
+  .btn.confirmar { background: var(--warn); border-color: var(--warn); color: #1a1300; }
+  .gc-ultima[hidden] { display: none; }
+
+  /* ── Las vendidas ── */
+  .gl-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .gl-cab .bloque-sub { margin-bottom: 12px; }
+  .gl-cuerpo { display: grid; gap: 12px; }
+  .gl-deuda { padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--line); border-left: 4px solid var(--warn);
+              background: var(--surface); font-size: 14px; line-height: 1.5; color: var(--txt-2); }
+  .gl-deuda b { font: 700 18px var(--display); color: var(--txt); }
+  .buscador { position: relative; }
+  .buscador svg {
+    position: absolute; left: 14px; top: 50%; transform: translateY(-50%);
+    width: 17px; height: 17px; color: var(--txt-3); pointer-events: none;
+  }
+  .buscador input { padding-left: 42px; }
+  .gl-estados { display: flex; gap: 6px; flex-wrap: wrap; }
+  .gl-estados .chip { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+  .gl-estados .chip .cuenta { font-size: 11px; font-weight: 700; padding: 0 6px; margin-left: 5px; border-radius: var(--r-pill);
+                              background: var(--surface-3); color: var(--txt-2); }
+  .gl-estados .chip.sel .cuenta { background: rgba(0, 0, 0, .22); color: var(--acc-ink); }
+  .gl-encontradas { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+                    font-size: 13.5px; font-weight: 600; color: var(--txt-2); }
+  .gl-fila { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; gap: 4px 12px; align-items: center;
+             padding: 11px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .gl-lista > .gl-fila:first-child { border-top: 0; }
+  .gl-que { font: 700 16px var(--display); font-variant-numeric: tabular-nums; }
+  .gl-quien { min-width: 0; line-height: 1.45; overflow-wrap: anywhere; }
+  .gl-quien b { font-weight: 700; }
+  .gl-quien small { display: block; font-size: 12.5px; color: var(--txt-3); }
+  .gl-quien .pill { margin-left: 4px; vertical-align: 1px; }
+  .gl-acc { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .gl-panel { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px 12px; margin-top: 4px;
+              border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); font-size: 13.5px; }
+  .gl-panel input[type=text] { flex: 1 1 200px; min-width: 0; padding: 7px 10px; }
+  .gl-panel .chip { min-height: 32px; padding: 5px 11px; font-size: 12.5px; }
+  .btn-borrar { background: var(--bad); border-color: var(--bad); color: var(--bad-ink); }
+  .gl-vacio { font-size: 14px; color: var(--txt-2); line-height: 1.5; padding: 4px 0; }
+  .gl-nota { font-size: 12.5px; color: var(--txt-3); line-height: 1.5; }
+  .gl-yo { font-size: 13px; color: var(--txt-3); line-height: 1.5; }
+  .gl-yo b { color: var(--txt-2); }
+  .gl-yo button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--acc-txt); cursor: pointer; text-decoration: underline; }
+  .gl-elegir-yo { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+  .gl-elegir-yo[hidden] { display: none; }
+  .gl-elegir-yo .chips { gap: 6px; }
+  .gl-elegir-yo .fila { display: flex; gap: 8px; }
+  .gl-elegir-yo .fila input { flex: 1; min-width: 0; }
+  /* El PIN, adentro del bloque: la venta de arriba no lo necesita. */
+  .gl-porton { display: grid; gap: 10px; max-width: 420px; }
+  .gl-porton p { font-size: 14px; color: var(--txt-2); line-height: 1.5; }
+  .gl-pin { display: flex; gap: 8px; }
+  .gl-pin input { flex: 1; min-width: 0; text-align: center; font-size: 17px; font-weight: 600; }
+  .gl-msg { font-size: 13.5px; font-weight: 600; color: var(--bad-txt); }
+  .gl-msg[hidden] { display: none; }
+  .gl-acceso { text-align: center; margin-top: 22px; font-size: 13px; color: var(--txt-3); }
+  .gl-acceso[hidden] { display: none; }
+  .gl-acceso button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--txt-2); cursor: pointer; text-decoration: underline; }
+  @media (max-width: 599px) {
+    .gl-fila { grid-template-columns: 80px minmax(0, 1fr); }
+    .gl-acc { grid-column: 1 / -1; justify-content: flex-start; }
+  }
+</style>
+</head>
+<body class="hay-rail">
+
+<div class="marco" id="marco">
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <g fill="none" stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/><path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g><circle cx="9.1" cy="8.9" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="8.8" r="1.15" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt"><small>Sistema</small>No Compra</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      Carga
+    </a>
+    <a class="rail-item" href="caja.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Cobrar
+    </a>
+    <a class="rail-item" href="giftcards.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 11 5 12 8c1-3 2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
+      Gift Cards
+    </a>
+    <a class="rail-item" href="estadisticas.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Estadísticas
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      CRM
+    </a>
+    <a class="rail-item" href="club-numeros.html#socios">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.4l-5.72 3l1.1-6.37L2.75 9.53l6.4-.93z"/></svg></span>
+      Socios
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="hoja">
+
+  <!-- ── Dónde y quién ──
+       La venta queda anotada con el local y con quién la vendió. Si falta
+       alguno se pregunta acá mismo (la misma bienvenida de Carga y Cobrar).
+       Una caja habilitada ya trae su local. -->
+  <section class="bloque elegir" id="gcElegir" hidden>
+    <div id="elegirPaso1">
+      <h2>¿En qué local estás?</h2>
+      <p class="elegir-sub">La venta queda anotada con el local.</p>
+      <p class="elegir-oficina" id="elegirOficina" hidden>Este aparato es de oficina: las gift cards vendidas están más abajo. Si estás vendiendo en un local, elegilo.</p>
+      <div class="chips" id="elegirLocales"></div>
+    </div>
+    <div id="elegirPaso2" hidden>
+      <h2>¿Quién vende?</h2>
+      <p class="elegir-sub" id="elegirLocalTxt"></p>
+      <div class="chips" id="elegirVends"></div>
+      <div class="elegir-nuevo" id="elegirNuevo" hidden>
+        <input type="text" id="elegirNombre" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" aria-label="Tu nombre">
+        <button type="button" class="btn btn-pri" id="elegirListo">Listo</button>
+      </div>
+      <button type="button" class="elegir-link" id="elegirNoEstoy">No estoy en la lista</button>
+      <button type="button" class="elegir-link" id="elegirOtroLocal" style="margin-left:14px">Otro local</button>
+    </div>
+  </section>
+
+  <!-- Un aparato de oficina no tiene local: la venta se ofrece sin ocupar
+       la pantalla con los 14 locales. -->
+  <section class="bloque" id="gcOficina" hidden>
+    <h2 class="gc-tit">Vender una Gift Card</h2>
+    <p class="oficina-txt">Este aparato es de oficina. Si estás vendiendo una en un local, elegí el local y vendela desde acá.</p>
+    <button type="button" class="btn btn-sec" id="btnElegirLocal">Elegir el local</button>
+  </section>
+
+  <section class="bloque" id="gcVender" hidden>
+    <p class="quien-linea" id="quienLinea"></p>
+    <h2 class="gc-tit">Vender una Gift Card</h2>
+    <p class="gc-sub">Pasá la tarjeta por el lector, poné el valor y cómo la pagó. Para pagar con una gift card, pasala en <a href="caja.html">Cobrar</a>.</p>
+    <!-- La última venta, arriba: queda a la vista en la PC del local (abajo
+         del botón quedaba fuera de la pantalla, árbitro 12/10/2026). -->
+    <p class="gc-ultima" id="gcUltima" hidden></p>
+    <!-- La tarjeta impresa (10/10/2026): se pasa por el lector y su código
+         es su número. Dice al toque qué tarjeta es y si ya se vendió. -->
+    <div class="campo gc-codigo">
+      <label for="gcCodigo">La tarjeta</label>
+      <input type="text" inputmode="numeric" id="gcCodigo" autocomplete="off" spellcheck="false"
+             placeholder="Pasá la tarjeta por el lector">
+      <div class="gc-tarjeta" id="gcTarjeta" hidden></div>
+    </div>
+    <!-- Las tarjetas viejas, sin código: el número lo pone la app y se
+         escribe a mano. -->
+    <p class="proximo" id="proximoViejo">
+      <b id="proximaSerie">…</b>
+      <span>¿Tarjeta vieja, sin código? Escribí este número en la tarjeta, abajo de <strong>VALOR</strong>.</span>
+    </p>
+    <div class="ficha-campos">
+      <div class="campo"><label for="gcValor">Valor de la Gift Card</label>
+        <input type="text" inputmode="numeric" id="gcValor" placeholder="$"></div>
+      <div class="campo"><label for="gcCobrado">Cuánto se cobró</label>
+        <input type="text" inputmode="numeric" id="gcCobrado" placeholder="Igual al valor"></div>
+      <div class="campo ancho"><label>Cómo la pagó</label>
+        <div class="pagos" id="gcPagos" role="group" aria-label="Cómo la pagó">
+          <button type="button" class="chip" data-pago="efectivo">Efectivo (10% off)</button>
+          <button type="button" class="chip" data-pago="tarjeta">Tarjeta</button>
+          <button type="button" class="chip" data-pago="3 cuotas">3 cuotas sin interés</button>
+          <button type="button" class="chip" data-pago="6 cuotas">6 cuotas sin interés</button>
+          <button type="button" class="chip" data-pago="otro">Otro</button>
+        </div></div>
+      <div class="campo"><label for="gcDias">Vence en</label>
+        <select id="gcDias">
+          <option value="30" selected>30 días</option>
+          <option value="60">60 días</option>
+          <option value="90">90 días</option>
+          <option value="365">Un año</option>
+        </select></div>
+      <!-- La gift card es al portador (08/10/2026): quién la compra casi
+           nunca se anota. Plegado, el botón de vender entra en la pantalla
+           de la PC del local (1366×768) con la tarjeta ya pasada. -->
+      <div class="campo"><label>Quién la compra <span class="lbl-opc">opcional</span></label>
+        <details class="gc-quien" id="gcQuien">
+          <summary>Anotar su WhatsApp y su nombre</summary>
+          <input type="tel" inputmode="numeric" id="gcTel" placeholder="WhatsApp, para encontrarla" aria-label="WhatsApp de quien la compra">
+          <input type="text" id="gcNombre" placeholder="Nombre" aria-label="Nombre de quien la compra">
+        </details></div>
+      <div class="campo ancho">
+        <button type="button" class="btn btn-pri btn-ancho" id="btnVenderOk">Vender la Gift Card</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Las vendidas (con PIN) ── -->
+  <section class="bloque" id="gcLista" hidden>
+    <div class="gl-cab">
+      <div>
+        <h2 class="bloque-tit">Las gift cards vendidas</h2>
+        <p class="bloque-sub">Cuáles están sin canjear, canjeadas, vencidas o anuladas. Las vencidas se pueden extender.</p>
+      </div>
+      <a class="btn btn-sec btn-chico" href="estadisticas.html#giftcards" id="glNumeros">Ver los números</a>
+    </div>
+    <div class="gl-cuerpo" id="glCuerpo"></div>
+  </section>
+
+  <p class="gl-acceso" id="glAcceso" hidden>¿Sos de la oficina? <button type="button" id="btnVerVendidas">Ver las gift cards vendidas</button></p>
+
+  <p class="pie" style="text-align:center;margin-top:26px;font-size:13px;color:var(--txt-3)">
+    La gift card es al portador: vale para el que la trae, hasta que vence. Se paga con ella en Cobrar.
+  </p>
+</main>
+
+</div><!-- /.marco -->
+
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script src="datos.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var K_PIN = 'nc_pin', K_LOCAL = 'nc_local', K_VENDEDOR = 'nc_vendedor';
+  var K_CAJA = 'nc_caja', K_CAJA_LOCAL = 'nc_caja_local', K_QUIEN = 'nc_quien';
+  /* Lo que manda Cobrar cuando pasan una tarjeta sin vender y el cliente
+     la está comprando: la tarjeta, el local y quién atiende. Va por
+     sessionStorage y no en la dirección: el código es lo que se canjea y
+     no tiene que quedar en el historial del navegador. */
+  var K_PASE = 'nc_gc_vender';
+  var local = '', vendedor = '';
+  /* Un aparato de oficina (el de Atención): puede vender en un local si
+     hace falta, pero no se vuelve de local ni anota a nadie en el equipo. */
+  var OFICINA = leer('nc_oficina') === '1';
+
+  /* Los 14 locales, como en Carga y Cobrar (el código tiene que coincidir
+     con la tabla `locales`). */
+  var LOCALES = [
+    { v: 'CASEROS',            t: 'Caseros' },
+    { v: 'DOT',                t: 'DOT' },
+    { v: 'FLORES',             t: 'Flores' },
+    { v: 'GRAND BOURG',        t: 'Grand Bourg' },
+    { v: 'ITUZAINGÓ',          t: 'Ituzaingó' },
+    { v: 'LOMAS DE ZAMORA',    t: 'Lomas de Zamora' },
+    { v: 'MAR DEL PLATA',      t: 'Mar del Plata' },
+    { v: 'MORÓN',              t: 'Morón' },
+    { v: 'PACHECO',            t: 'Pacheco' },
+    { v: 'PARQUE BROWN',       t: 'Parque Brown' },
+    { v: 'SAN JUSTO',          t: 'San Justo' },
+    { v: 'SAN JUSTO SHOPPING', t: 'San Justo Shopping' },
+    { v: 'UNICENTER',          t: 'Unicenter' },
+    { v: 'VILLA DEL PARQUE',   t: 'Villa del Parque' }
+  ];
+  function nombreLocal(v) {
+    if (!v) { return ''; }
+    for (var i = 0; i < LOCALES.length; i++) { if (LOCALES[i].v === String(v).trim().toUpperCase()) { return LOCALES[i].t; } }
+    return bonito(v);
+  }
+  function pinDeVerdad() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
+  function guardarPin(v) { try { if (v) { sessionStorage.setItem(K_PIN, v); } else { sessionStorage.removeItem(K_PIN); } } catch (e) {} }
+  function llaveCaja() { return leer(K_CAJA); }
+  function digitos(t) { return String(t || '').replace(/[^0-9]/g, ''); }
+  function esCodigoGC(t) { return /^99\d{12}$/.test(digitos(t)); }
+  function miles(n) { return Math.round(Number(n) || 0).toLocaleString('es-AR'); }
+  function plata(n) { return PESOS.format(Math.round(Number(n) || 0)); }
+  /* Los montos: sólo los números. */
+  function plataN(id) { return Number(String(($(id) && $(id).value) || '').replace(/[^0-9]/g, '')) || 0; }
+  function tres(n) { return ('00' + n).slice(-3); }
+  function llano(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  /* "12/10", de un día suelto ("2026-10-12"): a mano, sin new Date(iso),
+     que lo toma como medianoche UTC (el día anterior en Argentina). */
+  function ddmm(iso) { var p = String(iso || '').slice(0, 10).split('-'); return p.length === 3 ? Number(p[2]) + '/' + Number(p[1]) : ''; }
+  /* El día de un momento (cuándo se vendió, cuándo se canjeó), con la hora de acá. */
+  function diaDe(ts) {
+    if (!ts) { return ''; }
+    try { return new Date(ts).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' }); }
+    catch (e) { return ''; }
+  }
+
+  /* ═══ Dónde y quién ═══════════════════════════════════════════════════ */
+  var equipo = [], elegirEscribe = false, pendiente = null;
+  var PENDIENTE_VALE = 2 * 60000;
+  function abrirElegir(paso) {
+    $('gcVender').hidden = true;
+    $('gcOficina').hidden = true;
+    $('gcElegir').hidden = false;
+    $('elegirLocales').innerHTML = LOCALES.map(function (l) {
+      return '<button type="button" class="chip' + (l.v === local ? ' sel' : '') + '" data-v="' + esc(l.v) + '">' + esc(l.t) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('elegirLocales').children, function (b) {
+      b.onclick = function () { local = b.dataset.v; if (!OFICINA) { guardar(K_LOCAL, local); } traerEquipo(); elegirPaso(2); };
+    });
+    $('elegirOficina').hidden = !OFICINA;
+    var p = paso || (local ? 2 : 1);
+    elegirPaso(p);
+    if (p === 2 && !equipo.length) { traerEquipo(); }
+  }
+  function elegirPaso(n) {
+    $('elegirPaso1').hidden = n !== 1;
+    $('elegirPaso2').hidden = n !== 2;
+    /* La caja habilitada tiene su local: no se cambia desde acá. */
+    $('elegirOtroLocal').hidden = !!(llaveCaja() && leer(K_CAJA_LOCAL));
+    if (n === 2) { elegirEscribe = false; pintarElegirVends(); }
+  }
+  function traerEquipo() {
+    equipo = [];
+    pintarElegirVends();
+    base.equipo(local)
+      .then(function (l) { equipo = l || []; pintarElegirVends(); })
+      .catch(function () { equipo = []; elegirEscribe = true; pintarElegirVends(); });
+  }
+  function pintarElegirVends() {
+    if ($('gcElegir').hidden || $('elegirPaso2').hidden) { return; }
+    $('elegirLocalTxt').innerHTML = 'Estás en <b>' + esc(nombreLocal(local)) + '</b>. ' +
+      (equipo.length ? 'Tocá tu nombre.' : 'Escribí tu nombre: queda en la lista del local.');
+    $('elegirVends').innerHTML = equipo.map(function (v) {
+      return '<button type="button" class="chip' + (v === vendedor ? ' sel' : '') + '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('elegirVends').children, function (b) {
+      b.onclick = function () { fijarVendedor(b.dataset.v); };
+    });
+    var escribe = elegirEscribe || !equipo.length;
+    $('elegirNuevo').hidden = !escribe;
+    $('elegirNoEstoy').hidden = escribe;
+  }
+  function fijarVendedor(v) {
+    vendedor = v;
+    if (!OFICINA) { guardar(K_VENDEDOR, v); }
+    abrirVender();
+  }
+  function anotarme() {
+    var n = $('elegirNombre').value.trim();
+    if (!n) { $('elegirNombre').focus(); return; }
+    if (!OFICINA) { base.anotarse(local, n).catch(function () { /* queda igual en este aparato */ }); }
+    fijarVendedor(n);
+  }
+
+  /* ═══ Vender ══════════════════════════════════════════════════════════ */
+  function abrirVender() {
+    if (!local || !vendedor) {
+      /* En la oficina no se ocupa la pantalla con los 14 locales: se
+         ofrece elegir uno, y abajo queda la lista. */
+      if (OFICINA && !local) { $('gcElegir').hidden = true; $('gcVender').hidden = true; $('gcOficina').hidden = false; return; }
+      abrirElegir();
+      return;
+    }
+    $('gcElegir').hidden = true;
+    $('gcOficina').hidden = true;
+    $('gcVender').hidden = false;
+    $('quienLinea').innerHTML = 'Local: <b>' + esc(nombreLocal(local)) + '</b> · Vende: <b>' + esc(vendedor) + '</b>' +
+      ' <button type="button" id="btnCambiarQuien">cambiar</button>';
+    $('btnCambiarQuien').onclick = function () { abrirElegir(2); };
+    /* Las tarjetas viejas (sin código): el número se muestra ANTES de
+       vender, porque el vendedor lo escribe en la tarjeta. */
+    base.siguienteSerie()
+      .then(function (n) { $('proximaSerie').textContent = n; })
+      .catch(function () { $('proximaSerie').textContent = '—'; });
+    var p = pendiente;
+    pendiente = null;
+    if (p && Date.now() - p.cuando < PENDIENTE_VALE) {
+      $('gcCodigo').value = p.codigo;
+      revisarTarjeta();
+      $('gcValor').focus();
+    } else {
+      $('gcCodigo').focus();
+    }
+  }
+  var gcPago = '', gcPedido = 0;
+  /* El tope de la venta: el mismo de la base (SQL 84). Una gift card de
+     diez millones no existe; un código de 14 números en el valor, sí. */
+  var TOPE_GC = 10000000;
+  /* El botón dice por cuánto se vende: el vendedor lo ve antes de tocar. */
+  function rotuloVender() {
+    if (viejaArmada) { return; }
+    var v = plataN('gcValor');
+    $('btnVenderOk').textContent = v ? 'Vender la Gift Card de ' + PESOS.format(v) : 'Vender la Gift Card';
+  }
+  /* La pistola en el campo equivocado: si en el valor (o en lo cobrado) cae
+     el código de una tarjeta (14 números que empiezan con 99), va a "La
+     tarjeta". Vender por esa cifra costaba la tarjeta: una anulada no se
+     vuelve a vender (árbitro, 12/10/2026). */
+  function vigilarPistola(campo) {
+    var d = digitos(campo.value);
+    if (!esCodigoGC(d)) { return false; }
+    campo.value = '';
+    $('gcCodigo').value = d;
+    desarmarVieja();
+    revisarTarjeta();
+    avisar('info', 'Eso era el código de la tarjeta: lo pasé a "La tarjeta". Poné el valor.');
+    $('gcValor').focus();
+    cobradoSugerido();
+    rotuloVender();
+    return true;
+  }
+  /* Vender sin pasar ninguna tarjeta es vender una vieja (el número lo pone
+     la app). Se confirma en el mismo botón, y un doble toque rápido no
+     confirma: si alguien se olvidó de pasar una impresa, se da cuenta. */
+  var viejaArmada = 0, relojVieja = 0;
+  function desarmarVieja() {
+    if (!viejaArmada) { return; }
+    viejaArmada = 0;
+    clearTimeout(relojVieja);
+    $('btnVenderOk').classList.remove('confirmar');
+    if (!digitos($('gcCodigo').value)) { mostrarTarjeta(null); }
+    rotuloVender();
+  }
+  function mostrarTarjeta(estado, txt) {
+    var c = $('gcTarjeta');
+    if (!estado) { c.hidden = true; c.textContent = ''; c.className = 'gc-tarjeta'; $('proximoViejo').hidden = false; return; }
+    c.hidden = false;
+    c.className = 'gc-tarjeta' + (estado === 'ok' ? '' : ' ' + estado);
+    c.textContent = txt;
+    $('proximoViejo').hidden = true;
+  }
+  function revisarTarjeta() {
+    var d = digitos($('gcCodigo').value), n = ++gcPedido;
+    if (!d) { mostrarTarjeta(null); return; }
+    if (d.length < 14) { mostrarTarjeta('espera', 'Faltan números: el código de la tarjeta tiene 14.'); return; }
+    if (!esCodigoGC(d)) { mostrarTarjeta('mal', 'Ese código no es de una Gift Card VDH.'); return; }
+    mostrarTarjeta('espera', 'Revisando la tarjeta…');
+    base.giftcardTarjeta(d)
+      .then(function (t) {
+        if (n !== gcPedido) { return; }
+        if (!t || !t.existe) { mostrarTarjeta('mal', 'Esa tarjeta no está entre las Gift Cards impresas.'); return; }
+        if (t.vendida) {
+          mostrarTarjeta('mal', 'Esa Gift Card (' + t.color + ' Nº ' + t.nro + ') ya se vendió' + (t.local ? ' en ' + nombreLocal(t.local) : '') + '.');
+          return;
+        }
+        mostrarTarjeta('ok', '✓ Gift Card ' + t.color + ' Nº ' + t.nro + ', sin vender. Poné el valor.');
+      })
+      .catch(function () {
+        if (n !== gcPedido) { return; }
+        mostrarTarjeta('espera', 'No se pudo revisar la tarjeta ahora: se revisa al vender.');
+      });
+  }
+  /* En efectivo se cobra el valor menos el 10%: "cuánto se cobró" se
+     completa solo (se puede cambiar). Con el resto, el valor. */
+  function cobradoSugerido() {
+    var v = plataN('gcValor');
+    if (!v) { $('gcCobrado').placeholder = 'Igual al valor'; return; }
+    $('gcCobrado').placeholder = gcPago === 'efectivo' ? miles(Math.round(v * 0.9)) : miles(v);
+  }
+  function elegirPago(p) {
+    gcPago = p;
+    Array.prototype.forEach.call($('gcPagos').children, function (b) { b.classList.toggle('sel', b.dataset.pago === p); });
+    cobradoSugerido();
+  }
+  function vender() {
+    var valor = plataN('gcValor');
+    var cod = digitos($('gcCodigo').value);
+    var btn = $('btnVenderOk');
+    if (cod && !esCodigoGC(cod)) { avisar('err', 'Ese código no es de una Gift Card VDH: pasá de nuevo la tarjeta.'); $('gcCodigo').focus(); return; }
+    if (!valor) { avisar('err', 'Poné el valor de la Gift Card.'); $('gcValor').focus(); return; }
+    if (valor >= TOPE_GC) { avisar('err', 'Ese valor (' + PESOS.format(valor) + ') no parece de una gift card: revisalo.'); $('gcValor').focus(); return; }
+    if (!gcPago) { avisar('err', 'Elegí cómo la pagó.'); return; }
+    var cobrado = plataN('gcCobrado') || (gcPago === 'efectivo' ? Math.round(valor * 0.9) : valor);
+    if (cobrado > valor) { avisar('err', 'Lo cobrado (' + PESOS.format(cobrado) + ') no puede ser más que el valor de la gift card.'); $('gcCobrado').focus(); return; }
+    if (!cod) {
+      var ahora = Date.now();
+      if (!viejaArmada) {
+        viejaArmada = ahora;
+        var nro = $('proximaSerie').textContent;
+        mostrarTarjeta('mal', 'No pasaste ninguna tarjeta. Las Black y Gold se pasan por el lector. Si es una tarjeta vieja, sin código, tocá de nuevo el botón.');
+        btn.textContent = 'Sí, es una tarjeta vieja' + (/^\d+$/.test(nro) ? ': vender la ' + nro : '');
+        btn.classList.add('confirmar');
+        clearTimeout(relojVieja);
+        relojVieja = setTimeout(desarmarVieja, 8000);
+        $('gcCodigo').focus();
+        return;
+      }
+      if (ahora - viejaArmada < 1500) { return; }
+    }
+    clearTimeout(relojVieja);
+    viejaArmada = 0;
+    btn.classList.remove('confirmar');
+    var dias = Number($('gcDias').value) || 30;
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    base.venderGiftcard({
+      valor: valor, local: local, vendedor: vendedor, cobrado: cobrado, pago: gcPago, dias: dias,
+      telefono: $('gcTel').value.trim(), nombre: $('gcNombre').value.trim(), codigo: cod || null
+    })
+      .then(function (res) {
+        btn.disabled = false;
+        if (!res || !res.vendida) { rotuloVender(); avisar('err', (res && res.porque) || 'No se pudo vender.'); return; }
+        var cual;
+        if (res.nro) {
+          cual = 'Gift Card ' + res.color + ' Nº ' + tres(res.nro);
+          avisar('ok', 'Vendida: ' + cual + ', vale ' + PESOS.format(valor) + '.');
+          $('gcCodigo').value = '';
+        } else {
+          cual = 'la tarjeta ' + res.serie + ' (escribí ese número en la tarjeta, abajo de VALOR)';
+          avisar('ok', 'Vendida. Escribí ' + res.serie + ' en la tarjeta.');
+          /* El recuadro de las viejas pasa a decir la PRÓXIMA. */
+          $('proximaSerie').textContent = '…';
+          base.siguienteSerie()
+            .then(function (n) { $('proximaSerie').textContent = n; })
+            .catch(function () { $('proximaSerie').textContent = '—'; });
+        }
+        mostrarTarjeta(null);
+        $('gcUltima').hidden = false;
+        $('gcUltima').textContent = 'Última venta: ' + cual + ' · vale ' + PESOS.format(valor) +
+          (cobrado !== valor ? ' (se cobró ' + PESOS.format(cobrado) + ')' : '') +
+          (res.vence ? ' · vence el ' + ddmm(res.vence) : ' · vence en ' + dias + ' días') + '.';
+        ['gcValor', 'gcCobrado', 'gcTel', 'gcNombre'].forEach(function (id) { $(id).value = ''; });
+        elegirPago('');
+        $('gcDias').value = '30';
+        $('gcQuien').open = false;
+        rotuloVender();
+        if (GL.lista) { cargarLista(); }
+        $('gcCodigo').focus();
+      })
+      .catch(function (err) {
+        btn.disabled = false;
+        rotuloVender();
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.');
+      });
+  }
+
+  /* ═══ La pistola, venga donde venga el foco (árbitro, ronda 2) ═══════
+     La pistola escribe 14 números y un Enter, como un teclado. Con el foco
+     en un botón, en "Vence en" o en una forma de pago, los números se
+     perdían (o cambiaban el vencimiento) y el Enter tocaba el botón: con
+     "Sí, es una tarjeta vieja" armado, vendía una vieja y la impresa
+     quedaba sin vender. Afuera de los campos de texto, los números se
+     juntan y van a "La tarjeta", y ese Enter no toca nada. */
+  var rafaga = '', relojRafaga = 0;
+  function esCampoDeTexto(el) {
+    if (!el || !el.tagName) { return false; }
+    if (el.tagName === 'TEXTAREA' || el.isContentEditable) { return true; }
+    return el.tagName === 'INPUT' && /^(text|tel|search|password|number|email|url)$/i.test(el.type || 'text');
+  }
+  function tarjetaLeida(d) {
+    /* La venta a la vista: a "La tarjeta". */
+    if (!$('gcVender').hidden) {
+      $('gcCodigo').value = d;
+      desarmarVieja();
+      revisarTarjeta();
+      $('gcValor').focus();
+      return;
+    }
+    /* La lista a la vista (la oficina): se busca ahí. */
+    if ($('glBusca') && !$('gcLista').hidden) {
+      $('glBusca').value = d;
+      buscar(d);
+      $('gcLista').scrollIntoView({ block: 'start' });
+      return;
+    }
+    /* Eligiendo el local o quién vende, para vender: queda cargada un rato. */
+    if (!$('gcElegir').hidden) {
+      pendiente = { codigo: d, cuando: Date.now() };
+      avisar('info', 'Tarjeta leída. Elegí el local y quién vende: queda cargada para la venta.');
+      return;
+    }
+    avisar('info', 'Para venderla, elegí el local. Para buscarla, entrá a las gift cards vendidas.');
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.altKey || e.metaKey) { return; }
+    if (esCampoDeTexto(e.target)) { rafaga = ''; return; }
+    if (/^[0-9]$/.test(e.key)) {
+      e.preventDefault(); e.stopPropagation();
+      rafaga += e.key;
+      clearTimeout(relojRafaga);
+      relojRafaga = setTimeout(function () { rafaga = ''; }, 600);
+      return;
+    }
+    if (e.key === 'Enter' && rafaga) {
+      e.preventDefault(); e.stopPropagation();
+      var d = rafaga;
+      rafaga = ''; clearTimeout(relojRafaga);
+      if (esCodigoGC(d)) { tarjetaLeida(d); return; }
+      /* Un código largo que no es de una gift card, se dice. Unos pocos
+         números (un PIN tipeado sin tocar el campo, los números de una
+         etiqueta): nada, y nunca se prueban como PIN. */
+      if (d.length >= 10) { avisar('err', 'Ese código no es de una Gift Card VDH.'); }
+    }
+  }, true);
+
+  /* ═══ Las vendidas (con PIN) ══════════════════════════════════════════
+     Lo que era la pestaña Gift Cards del CRM: lo que se debe, la lista
+     por estado, el buscador, y Extender y Anular (también lo vencido: es
+     plata que el cliente pagó). Pide el PIN de administrador. */
+  var GL = { lista: null, error: '', estado: 'disponible', busca: '', hallados: null, nota: '', panel: '', pedido: 0 };
+  var ESTADOS = [['disponible', 'Sin canjear'], ['usado', 'Canjeadas'], ['vencido', 'Vencidas'], ['anulado', 'Anuladas']];
+  var PAGO_TXT = { efectivo: 'en efectivo', tarjeta: 'con tarjeta', '3 cuotas': 'en 3 cuotas sin interés', '6 cuotas': 'en 6 cuotas sin interés', otro: 'con otro medio de pago' };
+  var LUPA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+
+  /* irAhi: la lista se pidió (el acceso del pie o un enlace a #vendidas):
+     se baja hasta ella, que la venta queda arriba. */
+  function mostrarLista(irAhi) {
+    $('gcLista').hidden = false;
+    $('glAcceso').hidden = true;
+    /* Se baja enseguida (el PIN o la espera) y otra vez cuando llega la
+       lista: antes la página era corta y no llegaba hasta arriba. */
+    if (irAhi) {
+      GL.bajar = function () { $('gcLista').scrollIntoView({ block: 'start' }); };
+      setTimeout(GL.bajar, 60);
+    }
+    if (pinDeVerdad()) { cargarLista(); } else { pintarPorton(''); }
+  }
+  function pintarPorton(msg, sinCampo) {
+    GL.lista = null;
+    $('glCuerpo').innerHTML = '<div class="gl-porton">' +
+      '<p>La lista, lo que se debe, extender y anular son de la oficina: entrá con el PIN.</p>' +
+      (sinCampo ? '' : '<div class="gl-pin"><input type="password" id="glPin" inputmode="numeric" maxlength="24" placeholder="PIN" autocomplete="off" aria-label="PIN">' +
+        '<button type="button" class="btn btn-pri" id="glEntrar">Entrar</button></div>') +
+      '<p class="gl-msg" id="glMsg"' + (msg ? '' : ' hidden') + '>' + esc(msg || '') + '</p>' +
+      (sinCampo ? '<div><button type="button" class="btn btn-sec btn-chico" id="glOtraVez">Probar de nuevo</button></div>' : '') + '</div>';
+    if (!sinCampo) {
+      $('glEntrar').onclick = entrar;
+      $('glPin').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); entrar(); } };
+      $('glPin').focus({ preventScroll: !GL.bajar });
+    } else {
+      $('glOtraVez').onclick = function () { if (pinDeVerdad()) { cargarLista(); } else { pintarPorton(''); } };
+    }
+  }
+  function entrar() {
+    var v = $('glPin').value.trim();
+    if (!v) { $('glPin').focus(); return; }
+    /* La pistola nunca prueba un PIN (árbitro, ronda 4): el PIN es de 4 a 8
+       números (lo que exige Config). Una gift card pasada con el foco acá
+       va adonde corresponde; otra cosa (una etiqueta, una tarjeta del
+       Club) se dice, sin gastar un intento del freno de todos. */
+    if (!/^[0-9]{4,8}$/.test(v)) {
+      $('glPin').value = '';
+      if (esCodigoGC(v)) { tarjetaLeida(digitos(v)); return; }
+      $('glMsg').hidden = false;
+      $('glMsg').textContent = 'Eso no es un PIN: el PIN es de 4 a 8 números.';
+      $('glPin').focus();
+      return;
+    }
+    var b = $('glEntrar'); b.disabled = true; b.textContent = 'Probando…';
+    base.pin.probar(v)
+      .then(function (r) {
+        if (!r || !r.ok) {
+          $('glMsg').hidden = false; $('glMsg').textContent = (r && r.porque) || 'PIN incorrecto.';
+          $('glPin').value = ''; $('glPin').focus();
+          return;
+        }
+        guardarPin(v);
+        cargarLista();
+      })
+      .catch(function () { $('glMsg').hidden = false; $('glMsg').textContent = 'No se pudo probar el PIN: revisá la señal.'; })
+      .then(function () { if ($('glEntrar')) { $('glEntrar').disabled = false; $('glEntrar').textContent = 'Entrar'; } });
+  }
+  /* El SQL 84 no tira un error con el PIN malo: contesta {error: 'pin'}
+     (así queda anotado el intento y el freno corre). "mal" dice si el PIN
+     se llegó a comparar; si se cortó antes por el freno, puede ser el bueno
+     y no se olvida. */
+  function errorDePin(r) {
+    var espera = Number(r.espera) || 0;
+    if (r.mal) { guardarPin(''); }
+    if (espera > 0) {
+      pintarPorton(r.mal ? (r.porque || 'Demasiados intentos.') : 'El PIN está frenado por intentos fallidos. Probá de nuevo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).', true);
+      return;
+    }
+    pintarPorton(r.mal ? 'El PIN cambió o venció. Ponelo de nuevo.' : (r.porque || 'PIN incorrecto.'));
+  }
+  function esDePin(err) { return !!(err && err.delServidor && /PIN incorrecto/i.test(err.message || '')); }
+  function faltaSql(err) { return !!(err && err.delServidor && /could not find the function|giftcards_listar|does not exist/i.test(err.message || '')); }
+  /* La base dijo "PIN incorrecto": o lo cambiaron, o está frenado por
+     intentos fallidos (de cualquier pantalla), y ahí contesta lo mismo
+     aunque sea el bueno. pin_situacion no gasta intentos: si es el freno,
+     el PIN se guarda. */
+  function pinVencido() {
+    base.pin.situacion()
+      .then(function (s) {
+        var espera = Number(s && s.espera) || 0;
+        if (espera > 0) {
+          pintarPorton('El PIN está frenado por intentos fallidos. Probá de nuevo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).', true);
+          return;
+        }
+        guardarPin('');
+        pintarPorton('El PIN cambió o venció. Ponelo de nuevo.');
+      })
+      .catch(function () { pintarPorton('No se pudo comprobar el PIN: revisá la señal y probá de nuevo.', true); });
+  }
+
+  function cargarLista() {
+    if (!GL.lista) { $('glCuerpo').innerHTML = '<div class="skel"></div><div class="skel"></div>'; }
+    return base.giftcards(pinDeVerdad())
+      .then(function (l) {
+        if (l && !Array.isArray(l) && l.error === 'pin') { errorDePin(l); return; }
+        GL.lista = Array.isArray(l) ? l : [];
+        GL.error = '';
+        if (!$('glFilas')) { pintarLista(); } else { pintarFilas(); }
+        if (GL.busca) { buscar(GL.busca); }
+        if (GL.bajar) { var bajar = GL.bajar; GL.bajar = null; setTimeout(bajar, 30); }
+      })
+      .catch(function (err) {
+        if (esDePin(err)) { pinVencido(); return; }
+        GL.lista = null;
+        GL.error = faltaSql(err) ? 'sql' : 'red';
+        pintarLista();
+      });
+  }
+
+  function pintarLista() {
+    if (GL.error) {
+      $('glCuerpo').innerHTML = '<p class="gl-vacio">' + (GL.error === 'sql'
+        ? '<b>Falta un paso en la base:</b> hay que correr el SQL 84 en Supabase para ver la lista.'
+        : '<b>No se pudo traer la lista.</b> Revisá la señal y probá de nuevo.') +
+        ' <button type="button" class="btn btn-sec btn-chico" id="glReintentar">Probar de nuevo</button></p>';
+      $('glReintentar').onclick = function () { cargarLista(); };
+      return;
+    }
+    if (!GL.lista) { return; }
+    $('glCuerpo').innerHTML =
+      '<div class="gl-deuda" id="glDeuda"></div>' +
+      '<div class="buscador">' + LUPA + '<input type="search" id="glBusca" placeholder="Nº, código, nombre o local" autocomplete="off" aria-label="Buscar una gift card" value="' + esc(GL.busca) + '"></div>' +
+      '<div class="gl-estados" id="glEstados" role="group" aria-label="Qué mirar"></div>' +
+      '<div class="gl-encontradas" id="glEncontradas" hidden></div>' +
+      '<div class="gl-lista" id="glFilas"></div>' +
+      '<div class="gl-elegir-yo" id="glElegirYo" hidden></div>' +
+      '<p class="gl-yo" id="glYo"></p>';
+    var b = $('glBusca'), reloj = 0;
+    b.oninput = function () { clearTimeout(reloj); reloj = setTimeout(function () { buscar(b.value); }, 250); };
+    b.onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(reloj); buscar(b.value); } };
+    pintarFilas();
+  }
+
+  /* Lo que cambia con los datos: lo que se debe, las pastillas, las filas. */
+  function pintarFilas() {
+    if (!$('glFilas')) { return; }
+    var l = GL.lista || [];
+    var vivas = l.filter(function (g) { return g.estado === 'disponible'; });
+    var debe = vivas.reduce(function (a, g) { return a + (Number(g.valor) || 0); }, 0);
+    var pronto = vivas.filter(function (g) { return g.dias !== null && g.dias !== undefined && Number(g.dias) <= 7; });
+    $('glDeuda').innerHTML = vivas.length
+      ? '<b>' + plata(debe) + '</b> en ' + (vivas.length === 1 ? '1 gift card vendida' : vivas.length + ' gift cards vendidas') +
+        ' y sin canjear. Es plata que los locales todavía deben.' +
+        (pronto.length ? ' ' + (pronto.length === 1 ? 'Una vence' : pronto.length + ' vencen') + ' en los próximos 7 días.' : '')
+      : 'No hay gift cards vendidas sin canjear: no se debe nada.';
+    var cuenta = {};
+    l.forEach(function (g) { cuenta[g.estado] = (cuenta[g.estado] || 0) + 1; });
+    var buscando = GL.hallados !== null;
+    $('glEstados').hidden = buscando;
+    $('glEstados').innerHTML = ESTADOS.map(function (e) {
+      return '<button type="button" class="chip' + (e[0] === GL.estado ? ' sel' : '') + '" data-estado="' + e[0] + '" aria-pressed="' + (e[0] === GL.estado) + '">' +
+        e[1] + '<span class="cuenta">' + (cuenta[e[0]] || 0) + '</span></button>';
+    }).join('');
+    Array.prototype.forEach.call($('glEstados').querySelectorAll('[data-estado]'), function (x) {
+      x.onclick = function () { GL.estado = x.dataset.estado; GL.panel = ''; pintarFilas(); };
+    });
+    var filas;
+    if (buscando) {
+      filas = GL.hallados.map(function (id) { return porId(id); }).filter(Boolean);
+      $('glEncontradas').hidden = false;
+      $('glEncontradas').innerHTML = '<span>' + (GL.nota ? esc(GL.nota) : filas.length === 1 ? '1 encontrada' : filas.length + ' encontradas') + '</span>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="glLimpiar">Limpiar la búsqueda</button>';
+      $('glLimpiar').onclick = function () { $('glBusca').value = ''; buscar(''); $('glBusca').focus(); };
+    } else {
+      filas = l.filter(function (g) { return g.estado === GL.estado; });
+      $('glEncontradas').hidden = true;
+    }
+    var nombre = ESTADOS.filter(function (e) { return e[0] === GL.estado; })[0][1].toLowerCase();
+    $('glFilas').innerHTML = filas.length ? filas.map(fila).join('')
+      : buscando ? (GL.nota ? '' : '<p class="gl-vacio">No hay ninguna gift card con eso.</p>')
+      : '<p class="gl-vacio">' + (l.length ? 'No hay gift cards ' + nombre + '.' : 'Todavía no se vendió ninguna gift card.') + '</p>';
+    cablearFilas();
+    pintarYo();
+  }
+  function porId(id) { return (GL.lista || []).filter(function (g) { return g.id === id; })[0] || null; }
+
+  function nombreTarjeta(g) {
+    return g.impresa ? esc(g.color || 'Gift Card') + ' Nº ' + tres(g.nro) + (g.fin ? ' <span class="gl-fin">· termina en ' + esc(g.fin) + '</span>' : '')
+                     : 'Tarjeta ' + esc(g.serie || 'sin número');
+  }
+  /* Una fila: cuánto vale, cuál es, y lo que hay que saber para atender al
+     que pregunta. Lo vivo y lo vencido se puede extender y anular. */
+  function fila(g) {
+    var vivo = g.estado === 'disponible', det = [];
+    det.push('vendida' + (g.local ? ' en ' + nombreLocal(g.local) : '') + (g.vendedor ? ' por ' + g.vendedor : '') + (g.creado ? ' el ' + diaDe(g.creado) : ''));
+    if (g.pago) { det.push(PAGO_TXT[g.pago] || String(g.pago)); }
+    if (g.cobrado !== null && g.cobrado !== undefined && Number(g.cobrado) !== Number(g.valor)) { det.push('se cobró ' + plata(g.cobrado)); }
+    if (vivo && g.vence) {
+      det.push(Number(g.dias) === 0 ? 'vence hoy' : Number(g.dias) > 0 && Number(g.dias) <= 7 ? 'vence en ' + g.dias + (Number(g.dias) === 1 ? ' día' : ' días') : 'vence el ' + ddmm(g.vence));
+    }
+    if (g.estado === 'vencido' && g.vence) { det.push('venció el ' + ddmm(g.vence)); }
+    if (g.estado === 'usado') {
+      det.push('canjeada' + (g.usado ? ' el ' + diaDe(g.usado) : '') + (g.local_canje ? ' en ' + nombreLocal(g.local_canje) : '') +
+        (g.vendedor_canje ? ' por ' + g.vendedor_canje : '') + (g.monto_compra ? ' (compra de ' + plata(g.monto_compra) + ')' : ''));
+    }
+    if (g.estado === 'anulado') { det.push('anulada' + (g.anulado_por ? ' por ' + g.anulado_por : '') + (g.motivo_anul ? ': ' + g.motivo_anul : '')); }
+    var quien = [g.nombre, g.telefono ? 'WhatsApp ' + g.telefono : ''].filter(Boolean).join(' · ');
+    var obs = String(g.obs || '').replace(/\r/g, '').split('\n').filter(function (x) { return x.trim(); }).join(' · ');
+    var acc = !(vivo || g.estado === 'vencido') ? '' :
+      '<button type="button" class="btn btn-sec btn-chico" data-abrir="extender:' + g.id + '">Extender</button>' +
+      '<button type="button" class="btn btn-sec btn-chico" data-abrir="anular:' + g.id + '">Anular</button>';
+    var conDias = g.dias !== null && g.dias !== undefined;
+    var pill = vivo && conDias && Number(g.dias) <= 7 ? ' <span class="pill pill-warn">vence pronto</span>'
+      : g.estado === 'vencido' ? ' <span class="pill pill-warn">vencida</span>' : '';
+    return '<div class="gl-fila" data-id="' + g.id + '"><span class="gl-que">' + plata(g.valor) + '</span>' +
+      '<span class="gl-quien"><b>' + nombreTarjeta(g) + '</b>' + pill + (quien ? ' · ' + esc(quien) : '') +
+        '<small>' + esc(det.join(' · ')) + '</small>' + (obs ? '<small>' + esc(obs) + '</small>' : '') + '</span>' +
+      '<span class="gl-acc">' + acc + '</span>' + panel(g) + '</div>';
+  }
+  /* Anular y Extender se confirman abajo de la fila: anular pide por qué
+     (queda anotado) y extender, cuántos días. */
+  function panel(g) {
+    if (GL.panel === 'anular:' + g.id) {
+      return '<div class="gl-panel"><span>¿Por qué se anula la tarjeta? Queda anotado.</span>' +
+        '<input type="text" data-motivo maxlength="200" placeholder="Motivo" aria-label="Por qué se anula">' +
+        '<button type="button" class="btn btn-borrar btn-chico" data-anular="' + g.id + '">Anular</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button></div>';
+    }
+    if (GL.panel === 'extender:' + g.id) {
+      var vencio = g.estado === 'vencido';
+      return '<div class="gl-panel"><span>' + (vencio ? 'Venció el ' + ddmm(g.vence) + '. Que vuelva a valer, desde hoy:'
+                                                     : 'Correr el vencimiento' + (g.vence ? ' (vence el ' + ddmm(g.vence) + ')' : '') + ':') + '</span>' +
+        [7, 15, 30, 60].map(function (d) { return '<button type="button" class="chip" data-dias="' + d + '">' + (vencio ? '' : '+') + d + ' días</button>'; }).join('') +
+        '<button type="button" class="btn btn-pri btn-chico" data-extender="' + g.id + '" disabled>Extender</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button></div>';
+    }
+    return '';
+  }
+  function cablearFilas() {
+    var raiz = $('glFilas');
+    Array.prototype.forEach.call(raiz.querySelectorAll('[data-abrir]'), function (b) {
+      b.onclick = function () {
+        GL.panel = GL.panel === b.dataset.abrir ? '' : b.dataset.abrir;
+        pintarFilas();
+        var m = $('glFilas').querySelector('[data-motivo]');
+        if (m) { m.focus(); }
+      };
+    });
+    Array.prototype.forEach.call(raiz.querySelectorAll('[data-cerrar]'), function (b) {
+      b.onclick = function () { GL.panel = ''; pintarFilas(); };
+    });
+    Array.prototype.forEach.call(raiz.querySelectorAll('[data-dias]'), function (b) {
+      b.onclick = function () {
+        var p = b.parentNode;
+        Array.prototype.forEach.call(p.querySelectorAll('[data-dias]'), function (x) { x.classList.toggle('sel', x === b); });
+        var ok = p.querySelector('[data-extender]');
+        ok.disabled = false;
+        ok.dataset.d = b.dataset.dias;
+        ok.textContent = 'Extender ' + b.dataset.dias + ' días';
+      };
+    });
+    Array.prototype.forEach.call(raiz.querySelectorAll('[data-extender]'), function (b) {
+      b.onclick = function () { extender(Number(b.dataset.extender), Number(b.dataset.d), b); };
+    });
+    Array.prototype.forEach.call(raiz.querySelectorAll('[data-anular]'), function (b) {
+      b.onclick = function () { anular(Number(b.dataset.anular), b); };
+    });
+    Array.prototype.forEach.call(raiz.querySelectorAll('[data-motivo]'), function (i) {
+      i.onkeydown = function (ev) {
+        if (ev.key !== 'Enter') { return; }
+        ev.preventDefault();
+        var x = i.parentNode.querySelector('[data-anular]');
+        if (x) { x.click(); }
+      };
+    });
+  }
+
+  /* ── Quién lo hace: el mismo nombre del CRM y de Socios (nc_quien) ── */
+  function pintarYo() {
+    var p = $('glYo');
+    if (!p) { return; }
+    var q = leer(K_QUIEN);
+    p.innerHTML = q ? 'Lo que extiendas o anules queda a nombre de <b>' + esc(q) + '</b>. <button type="button" id="glNoSoy">No soy ' + esc(q) + '</button>'
+                    : 'Antes de extender o anular te pregunta quién sos: queda anotado.';
+    if ($('glNoSoy')) { $('glNoSoy').onclick = function () { guardar(K_QUIEN, ''); pintarYo(); }; }
+  }
+  function conQuien(siga) {
+    var q = leer(K_QUIEN);
+    if (q) { siga(q); return; }
+    var caja = $('glElegirYo');
+    caja.hidden = false;
+    caja.innerHTML = '<p class="gl-nota" style="margin:0;font-size:13.5px;color:var(--txt-2)">¿Quién sos? Queda anotado.</p>' +
+      '<div class="chips" id="glYoChips"><span class="gl-nota">Cargando…</span></div>' +
+      '<div class="fila"><input type="text" id="glYoOtro" placeholder="Otro: tu nombre" maxlength="40" aria-label="Tu nombre">' +
+      '<button type="button" class="btn btn-pri btn-chico" id="glYoOk">Seguir</button></div>';
+    var listo = function (n) {
+      n = String(n || '').trim();
+      if (!n) { $('glYoOtro').focus(); return; }
+      guardar(K_QUIEN, n);
+      caja.hidden = true; caja.innerHTML = '';
+      pintarYo();
+      siga(n);
+    };
+    $('glYoOk').onclick = function () { listo($('glYoOtro').value); };
+    $('glYoOtro').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); listo($('glYoOtro').value); } };
+    caja.scrollIntoView({ block: 'nearest' });
+    base.atencion()
+      .then(function (l) {
+        var nombres = (Array.isArray(l) ? l : []).map(function (x) { return x.nombre || x; }).filter(Boolean);
+        $('glYoChips').innerHTML = nombres.map(function (n) { return '<button type="button" class="chip" data-n="' + esc(n) + '">' + esc(n) + '</button>'; }).join('') ||
+          '<span class="gl-nota">Escribí tu nombre.</span>';
+        Array.prototype.forEach.call($('glYoChips').querySelectorAll('[data-n]'), function (b) { b.onclick = function () { listo(b.dataset.n); }; });
+      })
+      .catch(function () { if ($('glYoChips')) { $('glYoChips').innerHTML = '<span class="gl-nota">Escribí tu nombre.</span>'; } });
+  }
+
+  function anular(id, boton) {
+    var m = boton.parentNode.querySelector('[data-motivo]');
+    var motivo = m ? m.value.trim() : '';
+    if (!motivo) { avisar('err', 'Escribí por qué se anula: queda anotado.'); if (m) { m.focus(); } return; }
+    conQuien(function (quien) {
+      boton.disabled = true;
+      base.anularBeneficio(pinDeVerdad(), id, quien, motivo)
+        .then(function (ok) {
+          if (ok !== true) { avisar('err', 'No se anuló: ya estaba canjeada o anulada.'); return; }
+          avisar('ok', 'Anulada. Queda anotado a nombre de ' + quien + '.');
+          GL.panel = '';
+          cargarLista();
+        })
+        .catch(function (err) {
+          if (esDePin(err)) { pinVencido(); return; }
+          avisar('err', (err && err.delServidor && err.message) || 'No se pudo anular. Revisá la señal.');
+        })
+        .then(function () { boton.disabled = false; });
+    });
+  }
+  function extender(id, dias, boton) {
+    if (!dias) { return; }
+    conQuien(function (quien) {
+      boton.disabled = true;
+      base.extenderBeneficio(pinDeVerdad(), id, dias, quien)
+        .then(function (nueva) {
+          if (!nueva) { avisar('err', 'No se extendió: ya estaba canjeada o anulada.'); return; }
+          avisar('ok', 'Listo: vale hasta el ' + ddmm(nueva) + '.');
+          GL.panel = '';
+          cargarLista();
+        })
+        .catch(function (err) {
+          if (esDePin(err)) { pinVencido(); return; }
+          avisar('err', (err && err.delServidor && err.message) || 'No se pudo extender. Revisá la señal.');
+        })
+        .then(function () { boton.disabled = false; });
+    });
+  }
+
+  /* El buscador: el Nº de la tarjeta (el que está impreso chico, "Nº 001"),
+     los últimos 4 del código, el código entero (lo lee la pistola: se
+     pregunta a la base qué tarjeta es, porque la lista no lo trae), un
+     pedazo del WhatsApp, o el nombre, el vendedor o el local. */
+  function buscar(q) {
+    GL.busca = q = String(q || '').trim();
+    var n = ++GL.pedido;
+    GL.nota = '';
+    if (!q) { GL.hallados = null; pintarFilas(); return; }
+    var l = GL.lista || [], dig = digitos(q), letras = /[a-záéíóúñ]/i.test(q);
+    if (!letras && esCodigoGC(dig)) {
+      GL.hallados = []; GL.nota = 'Buscando la tarjeta…';
+      pintarFilas();
+      base.giftcardTarjeta(dig)
+        .then(function (t) {
+          if (n !== GL.pedido) { return; }
+          if (!t || !t.existe) { GL.hallados = []; GL.nota = 'Ese código no es de ninguna de las gift cards impresas.'; }
+          else if (!t.vendida) { GL.hallados = []; GL.nota = 'Es la Gift Card ' + t.color + ' Nº ' + t.nro + ': todavía no se vendió.'; }
+          else {
+            GL.hallados = l.filter(function (g) { return g.impresa && Number(g.nro) === Number(t.nro); }).map(function (g) { return g.id; });
+            GL.nota = '';
+          }
+          pintarFilas();
+        })
+        .catch(function () { if (n === GL.pedido) { GL.hallados = []; GL.nota = 'No se pudo buscar la tarjeta: revisá la señal.'; pintarFilas(); } });
+      return;
+    }
+    var txt = llano(q);
+    GL.hallados = l.filter(function (g) {
+      if (!letras && dig) {
+        if (g.impresa && (Number(g.nro) === Number(dig) || (dig.length === 4 && g.fin === dig))) { return true; }
+        if (!g.impresa && g.serie && digitos(g.serie).replace(/^0+/, '') === dig.replace(/^0+/, '')) { return true; }
+        if (dig.length >= 6 && g.telefono && digitos(g.telefono).indexOf(dig.length > 10 ? dig.slice(-10) : dig) > -1) { return true; }
+        return false;
+      }
+      return [g.nombre, g.vendedor, g.vendedor_canje, nombreLocal(g.local), nombreLocal(g.local_canje), g.color]
+        .some(function (x) { return x && llano(x).indexOf(txt) > -1; });
+    }).map(function (g) { return g.id; });
+    pintarFilas();
+  }
+
+  /* ═══ Arranque ════════════════════════════════════════════════════════ */
+  local = leer(K_LOCAL);
+  vendedor = leer(K_VENDEDOR);
+  /* Un solo local para todo el aparato: el de la caja habilitada, si la hay. */
+  if (llaveCaja() && leer(K_CAJA_LOCAL)) { local = leer(K_CAJA_LOCAL); }
+  /* Lo que mandó Cobrar (se usa una vez y se borra). Si en este aparato no
+     hay local (el de oficina no lo guarda), vale el que se eligió allá. */
+  try {
+    var pase = JSON.parse(sessionStorage.getItem(K_PASE) || 'null');
+    sessionStorage.removeItem(K_PASE);
+    if (pase && Date.now() - (Number(pase.cuando) || 0) < 10 * 60000) {
+      if (!local && pase.local) { local = pase.local; }
+      if (!vendedor && pase.vendedor) { vendedor = pase.vendedor; }
+      if (pase.codigo && esCodigoGC(pase.codigo)) { pendiente = { codigo: digitos(pase.codigo), cuando: Date.now() }; }
+    }
+  } catch (e) {}
+
+  $('btnVenderOk').onclick = function (e) {
+    if (viejaArmada && e && e.isTrusted && e.detail === 0) { return; }
+    vender();
+  };
+  /* La pistola escribe los 14 números y un Enter: con el Enter se pasa al valor. */
+  $('gcCodigo').oninput = function () { desarmarVieja(); revisarTarjeta(); };
+  $('gcCodigo').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); $('gcValor').focus(); } };
+  $('gcValor').oninput = function () { if (!vigilarPistola($('gcValor'))) { cobradoSugerido(); rotuloVender(); } };
+  $('gcCobrado').oninput = function () { vigilarPistola($('gcCobrado')); };
+  /* El Enter de la pistola, si cayó en el valor o en lo cobrado: nada. */
+  $('gcValor').onkeydown = $('gcCobrado').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); } };
+  Array.prototype.forEach.call($('gcPagos').children, function (b) { b.onclick = function () { elegirPago(b.dataset.pago); }; });
+  $('elegirNoEstoy').onclick = function () { elegirEscribe = true; pintarElegirVends(); $('elegirNombre').focus(); };
+  $('elegirListo').onclick = anotarme;
+  $('elegirNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); anotarme(); } };
+  $('elegirOtroLocal').onclick = function () { elegirPaso(1); };
+  $('btnElegirLocal').onclick = function () { abrirElegir(1); };
+  $('btnVerVendidas').onclick = function () { mostrarLista(true); };
+
+  abrirVender();
+  /* La lista: a la vista en la oficina; en un local, un acceso discreto al
+     pie, aunque haya PIN en la pestaña (en los locales suele haberlo, para
+     el Club de Cobrar): la pantalla es para vender. Un enlace a #vendidas
+     (desde Estadísticas o el CRM) la muestra y baja hasta ella. */
+  var aVendidas = location.hash === '#vendidas';
+  if (OFICINA || aVendidas) { mostrarLista(aVendidas); } else { $('glAcceso').hidden = false; }
+  iniciarTema();
+  iniciarPWA();
+})();
+</script>
+</body>
+</html>

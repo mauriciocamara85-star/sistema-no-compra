@@ -213,33 +213,9 @@
   }
   .nada .btn { margin-top: 12px; }
 
-  /* ── Vender una Gift Card ──
-     El único botón de la pantalla: es lo único que el campo no puede
-     adivinar (el cliente que trae una tarjeta puede querer pagar con ella o
-     comprarla). Siempre a la vista, debajo del buscador. */
-  .vender-abrir { margin-top: 20px; }
-  .vender-abrir svg { width: 18px; height: 18px; transition: transform .2s var(--curva); }
-  .vender-abrir[aria-expanded="true"] svg { transform: rotate(180deg); }
-  #cajaVender { margin-top: 6px; }
-  #cajaVender[hidden] { display: none; }
-  .proximo {
-    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
-    background: var(--acc-soft); border: 1px solid var(--acc-line); border-radius: var(--r-sm);
-    padding: 13px 15px; margin: 14px 0 16px;
-    font-size: 13.5px; color: var(--txt-2); line-height: 1.5;
-  }
-  .proximo b { font: 700 22px/1 var(--display); color: var(--acc-txt); letter-spacing: -.5px; }
-  .proximo[hidden] { display: none; }
-  .gc-codigo { margin: 14px 0 12px; }
-  .gc-codigo input { font-size: 17px; letter-spacing: .5px; }
-  .gc-tarjeta { margin-top: 8px; padding: 9px 12px; border-radius: var(--r-sm); font-size: 14px; font-weight: 600;
-                background: var(--ok-soft); color: var(--ok-txt); }
-  .gc-tarjeta.mal { background: var(--bad-soft); color: var(--bad-txt); }
-  .gc-tarjeta.espera { background: var(--surface-2); color: var(--txt-2); font-weight: 500; }
-  .gc-tarjeta[hidden] { display: none; }
-  /* La forma de pago, con botones: los mismos valores que acepta la base. */
-  .pagos { display: flex; flex-wrap: wrap; gap: 6px; }
-  .pagos .chip { min-height: 38px; padding: 7px 13px; font-size: 13.5px; }
+  /* Vender una Gift Card se mudó a su sección, Gift Cards (12/10/2026):
+     acá se cobra con ella. Una tarjeta impresa sin vender ofrece ir a
+     venderla allá, con la tarjeta ya cargada. */
 
   /* ── Elegir el local y quién atiende (la misma bienvenida de Carga) ── */
   .elegir h2 { font: 700 21px/1.2 var(--display); }
@@ -276,6 +252,10 @@
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
       Cobrar
     </a>
+    <a class="rail-item" href="giftcards.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 11 5 12 8c1-3 2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
+      Gift Cards
+    </a>
     <a class="rail-item" href="estadisticas.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
       Estadísticas
@@ -307,8 +287,8 @@
     <div id="elegirPaso1">
       <h2>¿En qué local estás?</h2>
       <p class="elegir-sub">Lo que se cobra acá queda anotado con el local.</p>
-      <p class="elegir-oficina" id="elegirOficina" hidden>Este aparato es de oficina. Para buscar, anular o extender cupones y gift cards, andá al
-        <a href="panel.html#cupones">CRM, en Cupones y Gift Cards</a>. Si estás atendiendo en un local, elegilo.</p>
+      <p class="elegir-oficina" id="elegirOficina" hidden>Este aparato es de oficina. Los cupones están en el
+        <a href="panel.html#cupones">CRM, en Cupones</a>, y las gift cards vendidas en <a href="giftcards.html">Gift Cards</a>. Si estás atendiendo en un local, elegilo.</p>
       <div class="chips" id="elegirLocales"></div>
     </div>
     <div id="elegirPaso2" hidden>
@@ -339,57 +319,6 @@
     <!-- Si el Club no anda en esta caja, se dice de entrada (12/10/2026). -->
     <p class="club-nota" id="clubNota" hidden></p>
 
-    <!-- Arriba, pegado al campo: con la ficha de un socio abierta quedaba al
-         fondo de la página (árbitro, 12/10/2026). -->
-    <button type="button" class="btn btn-sec btn-ancho vender-abrir" id="btnVender" aria-expanded="false">
-      <span>Vender una Gift Card</span>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
-           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-    </button>
-    <div id="cajaVender" hidden>
-      <!-- La tarjeta impresa (10/10/2026): se pasa por el lector y su código
-           es su número. Dice al toque qué tarjeta es y si ya se vendió. -->
-      <div class="campo gc-codigo">
-        <label for="gcCodigo">La tarjeta</label>
-        <input type="text" inputmode="numeric" id="gcCodigo" autocomplete="off" spellcheck="false"
-               placeholder="Pasá la tarjeta por el lector">
-        <div class="gc-tarjeta" id="gcTarjeta" hidden></div>
-      </div>
-      <!-- Las tarjetas viejas, sin código: el número lo pone la app y se
-           escribe a mano. -->
-      <p class="proximo" id="proximoViejo">
-        <b id="proximaSerie">…</b>
-        <span>¿Tarjeta vieja, sin código? Escribí este número en la tarjeta, abajo de <strong>VALOR</strong>.</span>
-      </p>
-      <div class="ficha-campos">
-        <div class="campo"><label for="gcValor">Valor de la Gift Card</label>
-          <input type="text" inputmode="numeric" id="gcValor" placeholder="$"></div>
-        <div class="campo"><label for="gcCobrado">Cuánto se cobró</label>
-          <input type="text" inputmode="numeric" id="gcCobrado" placeholder="Igual al valor"></div>
-        <div class="campo ancho"><label>Cómo la pagó</label>
-          <div class="pagos" id="gcPagos" role="group" aria-label="Cómo la pagó">
-            <button type="button" class="chip" data-pago="efectivo">Efectivo (10% off)</button>
-            <button type="button" class="chip" data-pago="tarjeta">Tarjeta</button>
-            <button type="button" class="chip" data-pago="3 cuotas">3 cuotas sin interés</button>
-            <button type="button" class="chip" data-pago="6 cuotas">6 cuotas sin interés</button>
-            <button type="button" class="chip" data-pago="otro">Otro</button>
-          </div></div>
-        <div class="campo"><label for="gcDias">Vence en</label>
-          <select id="gcDias">
-            <option value="30" selected>30 días</option>
-            <option value="60">60 días</option>
-            <option value="90">90 días</option>
-            <option value="365">Un año</option>
-          </select></div>
-        <div class="campo"><label for="gcTel">WhatsApp de quien la compra</label>
-          <input type="tel" inputmode="numeric" id="gcTel" placeholder="Opcional, para encontrarla"></div>
-        <div class="campo ancho"><label for="gcNombre">Nombre</label>
-          <input type="text" id="gcNombre" placeholder="Opcional"></div>
-        <div class="campo ancho">
-          <button type="button" class="btn btn-pri btn-ancho" id="btnVenderOk">Vender la Gift Card</button>
-        </div>
-      </div>
-    </div>
     <div id="resultado"></div>
   </section>
 
@@ -609,10 +538,6 @@
   function buscar() {
     var v = $('clave').value.trim();
     if (!v) { $('clave').focus(); return; }
-    /* Buscar es pasar al próximo cliente: la venta de gift card se cierra
-       (abierta, lo buscado quedaba abajo, fuera de la pantalla). Lo escrito
-       en ella queda, por si se vuelve a abrir. */
-    if (!$('cajaVender').hidden) { $('cajaVender').hidden = true; $('btnVender').setAttribute('aria-expanded', 'false'); }
     ultimaClave = v;
     socio = null;
     var n = ++pedido;
@@ -643,7 +568,8 @@
     var benError = ben && ben.error;
     /* La Gift Card impresa que todavía no se vendió: el cliente puede
        estar comprándola o queriendo pagar con ella. Se pregunta; nunca se
-       abre la venta sola. */
+       abre la venta sola. La venta está en Gift Cards (12/10/2026): el
+       botón lleva allá con la tarjeta ya cargada. */
     var gcSinVender = gc && gc.existe && !gc.vendida && !bens.some(function (b) { return b.tipo === 'giftcard'; });
     var gcAjena = esCodigoGC(clave) && gc && !gc.existe && !bens.length;
 
@@ -665,7 +591,8 @@
         '<div class="ficha muerto"><div class="ficha-top"><span class="pill pill-neutra">sin vender</span></div>' +
         '<div class="ficha-pct">' + esc(gc.color) + ' <span>Nº ' + esc(gc.nro) + '</span></div>' +
         '<div class="ficha-que">Todavía no se vendió: no tiene valor cargado. No se puede pagar con ella.</div>' +
-        '<p class="nada">¿La está comprando? <br><button type="button" class="btn btn-pri" id="btnVenderEsta">Sí, venderla</button></p></div>';
+        '<p class="nada">¿La está comprando? Se vende en Gift Cards, con la tarjeta ya cargada.<br>' +
+        '<button type="button" class="btn btn-pri" id="btnVenderEsta">Sí, venderla</button></p></div>';
     }
     if (!html) {
       var partes = [];
@@ -691,7 +618,7 @@
       btn.onclick = function () { canjear(+btn.dataset.canjear, clave); };
     });
     if ($('btnVenderEsta')) {
-      $('btnVenderEsta').onclick = function () { abrirVender(true); $('gcCodigo').value = digitos(clave); revisarTarjeta(); $('gcValor').focus(); };
+      $('btnVenderEsta').onclick = function () { irAVender(digitos(clave)); };
     }
   }
 
@@ -1050,7 +977,8 @@
             noEmpezo ? 'Todavía no empezó: vale desde el ' + esc(fechaCorta(b.desde)) + '.' :
             b.multiuso && b.estado === 'usado' ? 'Ya se usó todas las veces que permitía.' :
             b.estado === 'usado' ? 'Ya se usó. Es de un solo uso.' :
-            b.estado === 'vencido' ? 'Se pasó de fecha. Atención al Cliente puede extenderlo desde el CRM.' :
+            b.estado === 'vencido' ? (esGC ? 'Se pasó de fecha. Atención al Cliente la puede extender desde Gift Cards.'
+                                           : 'Se pasó de fecha. Atención al Cliente puede extenderlo desde el CRM.') :
             'Fue anulado.') + '</p>') +
     '</div>';
   }
@@ -1088,97 +1016,16 @@
       .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.'); });
   }
 
-  /* ═══ Vender una Gift Card ════════════════════════════════════════════ */
-  var gcPago = '';
-  function abrirVender(abrir) {
-    var caja = $('cajaVender'), btn = $('btnVender');
-    var abierto = abrir === true ? true : caja.hidden;
-    caja.hidden = !abierto;
-    btn.setAttribute('aria-expanded', String(abierto));
-    if (!abierto) return;
-    /* Las tarjetas viejas (sin código): el número se muestra ANTES de
-       vender, porque el vendedor lo escribe en la tarjeta. */
-    base.siguienteSerie()
-      .then(function (n) { $('proximaSerie').textContent = n; })
-      .catch(function () { $('proximaSerie').textContent = '—'; });
-    $('gcCodigo').value = '';
-    mostrarTarjeta(null);
-    $('gcCodigo').focus();
-  }
-  var gcPedido = 0;
-  function mostrarTarjeta(estado, txt) {
-    var c = $('gcTarjeta');
-    if (!estado) { c.hidden = true; c.textContent = ''; c.className = 'gc-tarjeta'; $('proximoViejo').hidden = false; return; }
-    c.hidden = false;
-    c.className = 'gc-tarjeta' + (estado === 'ok' ? '' : ' ' + estado);
-    c.textContent = txt;
-    $('proximoViejo').hidden = true;
-  }
-  function revisarTarjeta() {
-    var d = digitos($('gcCodigo').value), n = ++gcPedido;
-    if (!d) { mostrarTarjeta(null); return; }
-    if (d.length < 14) { mostrarTarjeta('espera', 'Faltan números: el código de la tarjeta tiene 14.'); return; }
-    if (!esCodigoGC(d)) { mostrarTarjeta('mal', 'Ese código no es de una Gift Card VDH.'); return; }
-    mostrarTarjeta('espera', 'Revisando la tarjeta…');
-    base.giftcardTarjeta(d)
-      .then(function (t) {
-        if (n !== gcPedido) return;
-        if (!t || !t.existe) { mostrarTarjeta('mal', 'Esa tarjeta no está entre las Gift Cards impresas.'); return; }
-        if (t.vendida) {
-          mostrarTarjeta('mal', 'Esa Gift Card (' + t.color + ' Nº ' + t.nro + ') ya se vendió' + (t.local ? ' en ' + bonito(t.local) : '') + '.');
-          return;
-        }
-        mostrarTarjeta('ok', '✓ Gift Card ' + t.color + ' Nº ' + t.nro + ', sin vender. Poné el valor.');
-      })
-      .catch(function () {
-        if (n !== gcPedido) return;
-        mostrarTarjeta('espera', 'No se pudo revisar la tarjeta ahora: se revisa al vender.');
-      });
-  }
-  /* En efectivo se cobra el valor menos el 10%: "cuánto se cobró" se
-     completa solo (se puede cambiar). Con el resto, el valor. */
-  function cobradoSugerido() {
-    var v = plataN('gcValor');
-    if (!v) { $('gcCobrado').placeholder = 'Igual al valor'; return; }
-    $('gcCobrado').placeholder = gcPago === 'efectivo' ? miles(Math.round(v * 0.9)) : miles(v);
-  }
-  function elegirPago(p) {
-    gcPago = p;
-    Array.prototype.forEach.call($('gcPagos').children, function (b) { b.classList.toggle('sel', b.dataset.pago === p); });
-    cobradoSugerido();
-  }
-  function vender() {
-    var valor = plataN('gcValor');
-    var cod = digitos($('gcCodigo').value);
-    if (cod && !esCodigoGC(cod)) { avisar('err', 'Ese código no es de una Gift Card VDH: pasá de nuevo la tarjeta.'); $('gcCodigo').focus(); return; }
-    if (!valor) { avisar('err', 'Poné el valor de la Gift Card.'); $('gcValor').focus(); return; }
-    if (!gcPago) { avisar('err', 'Elegí cómo la pagó.'); return; }
-    var cobrado = plataN('gcCobrado') || (gcPago === 'efectivo' ? Math.round(valor * 0.9) : valor);
-    var btn = $('btnVenderOk');
-    btn.disabled = true; btn.textContent = 'Guardando…';
-    base.venderGiftcard({
-      valor: valor, local: local, vendedor: vendedor, cobrado: cobrado, pago: gcPago,
-      dias: Number($('gcDias').value) || 30,
-      telefono: $('gcTel').value.trim(), nombre: $('gcNombre').value.trim(), codigo: cod || null
-    })
-      .then(function (res) {
-        btn.disabled = false; btn.textContent = 'Vender la Gift Card';
-        if (!res || !res.vendida) { avisar('err', (res && res.porque) || 'No se pudo vender.'); return; }
-        if (res.nro) {
-          avisar('ok', 'Vendida: Gift Card ' + res.color + ' Nº ' + ('00' + res.nro).slice(-3) + ', vale ' + PESOS.format(valor) + '.');
-          $('gcCodigo').value = '';
-          mostrarTarjeta(null);
-        } else {
-          avisar('ok', 'Vendida. Escribí ' + res.serie + ' en la tarjeta.');
-          $('proximaSerie').textContent = res.serie;
-        }
-        ['gcValor', 'gcCobrado', 'gcTel', 'gcNombre'].forEach(function (id) { $(id).value = ''; });
-        elegirPago('');
-      })
-      .catch(function (err) {
-        btn.disabled = false; btn.textContent = 'Vender la Gift Card';
-        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.');
-      });
+  /* ═══ Vender una Gift Card: en Gift Cards (12/10/2026) ════════════════
+     La tarjeta, el local y quién atiende van por sessionStorage (no en la
+     dirección: el código es lo que se canjea y no tiene que quedar en el
+     historial). En un aparato de oficina el local no se guarda, así que
+     también viaja. Gift Cards lo usa una vez y lo borra. */
+  function irAVender(codigo) {
+    try {
+      sessionStorage.setItem('nc_gc_vender', JSON.stringify({ codigo: codigo, local: local, vendedor: vendedor, cuando: Date.now() }));
+    } catch (e) { /* sin sessionStorage, Gift Cards pide pasar la tarjeta de nuevo */ }
+    location.href = 'giftcards.html#vender';
   }
 
   /* ═══ Auxiliares ══════════════════════════════════════════════════════ */
@@ -1265,13 +1112,6 @@
     $('btnAbc').textContent = letras ? '123' : 'ABC';
     $('clave').blur(); $('clave').focus();
   };
-  $('btnVender').onclick = function () { abrirVender(); };
-  $('btnVenderOk').onclick = vender;
-  /* La pistola escribe los 14 números y un Enter: con el Enter se pasa al valor. */
-  $('gcCodigo').oninput = revisarTarjeta;
-  $('gcCodigo').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); $('gcValor').focus(); } };
-  $('gcValor').oninput = cobradoSugerido;
-  Array.prototype.forEach.call($('gcPagos').children, function (b) { b.onclick = function () { elegirPago(b.dataset.pago); }; });
   $('elegirNoEstoy').onclick = function () { elegirEscribe = true; pintarElegirVends(); $('elegirNombre').focus(); };
   $('elegirListo').onclick = anotarme;
   $('elegirNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); anotarme(); } };
