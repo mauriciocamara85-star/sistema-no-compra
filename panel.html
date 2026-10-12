@@ -816,6 +816,63 @@
   .ag-fases li span { display: block; font-size: 13px; color: var(--txt-2); margin-top: 2px; line-height: 1.5; }
   .ag-fases li.hecha b { color: var(--ok-txt); }
 
+  /* ── Cupones y Gift Cards (12/10/2026): lo que era la lista de Beneficios ── */
+  .cu { display: grid; gap: 14px; max-width: 1180px; }
+  .cu-buscar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .cu-buscar .buscador { flex: 1 1 340px; }
+  .cu-solapas { margin-bottom: 0; }
+  .cu-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 14px; align-items: start; }
+  @media (max-width: 999px) { .cu-grid { grid-template-columns: minmax(0, 1fr); } }
+  .cu-tipos { display: flex; gap: 6px; flex-wrap: wrap; }
+  .cu-tipos .chip { min-height: 36px; padding: 7px 13px; font-size: 13px; }
+  .cu-sub { font-size: 13px; line-height: 1.5; color: var(--txt-2); margin: 8px 0 12px; }
+  .cu-campos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
+  .cu-campos .ancho { grid-column: 1 / -1; }
+  .cu-ayuda { font-size: 12px; color: var(--txt-3); line-height: 1.45; }
+  .cu-check { display: flex; align-items: center; gap: 9px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  .cu-check input { width: 18px; height: 18px; flex: none; accent-color: var(--acc); }
+  .cu-para { font-size: 14px; padding: 9px 12px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); }
+  .cu-codigo-in { text-transform: uppercase; font-weight: 700; letter-spacing: .5px; }
+  .cu-nuevo { margin-top: 12px; padding: 14px; border-radius: var(--r-sm); background: var(--acc-soft); border: 1.5px solid var(--acc-line); text-align: center; }
+  .cu-nuevo[hidden] { display: none; }
+  .cu-lbl { display: block; font-size: 12.5px; font-weight: 600; color: var(--txt-2); margin-bottom: 4px; }
+  /* El código: grande, porque de acá se copia o se dicta. */
+  .cu-cod { display: block; font: 700 clamp(22px, 3.4vw, 30px)/1.15 var(--display); letter-spacing: 1px; color: var(--acc-txt);
+            user-select: all; -webkit-user-select: all; word-break: break-all; }
+  .cu-det { display: block; font-size: 13.5px; color: var(--txt-2); margin-top: 6px; line-height: 1.5; }
+  .cu-nuevo .ficha-acc { justify-content: center; margin-top: 10px; }
+  .cu-estados { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 4px; }
+  .cu-estados .chip { min-height: 34px; padding: 6px 12px; font-size: 13px; }
+  .cu-estados .chip .cuenta { font-size: 11px; font-weight: 700; padding: 0 6px; margin-left: 5px; border-radius: var(--r-pill);
+                              background: var(--surface-3); color: var(--txt-2); }
+  .cu-estados .chip.sel .cuenta { background: rgba(0, 0, 0, .22); color: var(--acc-ink); }
+  .cu-fila { display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; gap: 4px 12px; align-items: center;
+             padding: 11px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .cu-lista > .cu-fila:first-child { border-top: 0; }
+  .cu-que { font: 700 16px var(--display); font-variant-numeric: tabular-nums; }
+  .cu-quien { min-width: 0; line-height: 1.45; overflow-wrap: anywhere; }
+  .cu-quien small { display: block; font-size: 12.5px; color: var(--txt-3); }
+  .cu-quien .pill { margin-left: 4px; vertical-align: 1px; }
+  .cu-acc { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  .cu-panel { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; padding: 10px 12px; margin-top: 4px;
+              border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line); font-size: 13.5px; }
+  .cu-panel input[type=text] { flex: 1 1 200px; min-width: 0; padding: 7px 10px; }
+  .cu-panel .chip { min-height: 32px; padding: 5px 11px; font-size: 12.5px; }
+  .cu-deuda { padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--line); border-left: 4px solid var(--warn);
+              background: var(--surface); font-size: 14px; line-height: 1.5; color: var(--txt-2); }
+  .cu-deuda b { font: 700 18px var(--display); color: var(--txt); }
+  .cu-nota { font-size: 12.5px; color: var(--txt-3); margin-top: 8px; line-height: 1.5; }
+  .modal-caja.cu-modal { width: min(560px, 100%); }
+  .cu-quien .btn-link { font-size: 12.5px; }
+  @media (max-width: 599px) {
+    .cu-sol-mas { display: none; }
+    .cu-solapas { display: flex; }
+    .cu-solapas button { flex: 1; }
+    .cu-campos { grid-template-columns: minmax(0, 1fr); }
+    .cu-fila { grid-template-columns: 72px minmax(0, 1fr); }
+    .cu-acc { grid-column: 1 / -1; justify-content: flex-start; }
+  }
+
   /* ── Segmentos (Beta): grupos de contactos que se arman solos ── */
   .seg-intro { max-width: 760px; margin: 0 2px 14px; font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
   .seg-grid { display: grid; gap: 12px; }
@@ -1208,7 +1265,7 @@
   <div class="app-head-in">
     <!-- El menú del sistema (Carga, Estadísticas, Club…): el CRM va a
          pantalla completa y el rail se abre desde acá. Sólo en la compu. -->
-    <button type="button" class="btn-icono btn-sistema" id="btnSistema" aria-label="Menú del sistema" aria-expanded="false" title="Carga, Estadísticas, Club, Beneficios, Config.">
+    <button type="button" class="btn-icono btn-sistema" id="btnSistema" aria-label="Menú del sistema" aria-expanded="false" title="Carga, Cobrar, Estadísticas, Socios, Config.">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
     </button>
     <div class="marca">
@@ -1248,7 +1305,7 @@
   <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Entrar</button>
   <p class="porton-msg" id="portonMsg" hidden></p>
   <p class="pie" style="margin-top:22px">
-    ¿Venías a cargar un cliente? <a href="index.html">Andá al formulario</a>
+    ¿Venías a cargar un cliente o a cobrar? <a href="index.html">Carga</a> · <a href="caja.html">Cobrar</a>
   </p>
 </div>
 
@@ -1275,21 +1332,21 @@
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
       Carga
     </a>
-    <a class="rail-item" href="panel.html" aria-current="page">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
-      CRM
+    <a class="rail-item" href="caja.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Cobrar
     </a>
     <a class="rail-item" href="estadisticas.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
       Estadísticas
     </a>
-    <a class="rail-item" href="caja.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
-      Club
+    <a class="rail-item" href="panel.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      CRM
     </a>
-    <a class="rail-item" href="beneficios.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
-      Beneficios
+    <a class="rail-item" href="club-numeros.html#socios">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.4l-5.72 3l1.1-6.37L2.75 9.53l6.4-.93z"/></svg></span>
+      Socios
     </a>
     <a class="rail-item" href="config.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
@@ -1405,6 +1462,8 @@
   <section id="vistaDifusiones" hidden></section>
   <section id="vistaPronto" hidden></section>
   <section id="vistaAgente" hidden></section>
+  <!-- Cupones y Gift Cards (12/10/2026): lo que era la lista de Beneficios. -->
+  <section id="vistaCupones" hidden></section>
   </div><!-- /.crm-cuerpo -->
   </div><!-- /.crm -->
 </main>
@@ -1513,6 +1572,17 @@
       <button type="button" class="btn btn-sec" id="etqLoteNo">Cancelar</button>
       <button type="button" class="btn btn-pri" id="etqLoteOk">Poner</button>
     </div>
+  </div>
+</div>
+
+<!-- "Dar un cupón" (12/10/2026): el formulario de Cupones y Gift Cards,
+     desde la ficha, con la persona ya puesta. Va antes que "¿Quién sos?",
+     que se abre encima. -->
+<div class="modal" id="modalCupon" hidden>
+  <div class="modal-caja cu-modal" role="dialog" aria-modal="true" aria-labelledby="cuModalTit">
+    <h2 id="cuModalTit">Dar un cupón</h2>
+    <div id="cuModalIn"></div>
+    <div class="modal-pie"><button type="button" class="btn btn-sec" id="cuModalCerrar">Cerrar</button></div>
   </div>
 </div>
 
@@ -1714,13 +1784,14 @@
      solo, no una clave que sirve para siempre. */
   var K_QUIEN = 'nc_quien';
 
-  /* Cuánto se le ofrece al cliente cuando el producto no aparece. Un solo
-     número acá y no un campo por ficha: si cada uno elige cuánto dar, en
-     dos semanas hay clientes con 15, con 20 y con 35, y nadie puede decir
-     qué descuento da la marca. Para cambiarlo se cambia este número. */
+  /* Cuánto se le ofrece al cliente cuando el producto no aparece. Es el que
+     viene puesto en "Dar un cupón" (12/10/2026): ahí se puede cambiar, pero
+     conviene uno solo, porque si cada uno elige cuánto dar, en dos semanas
+     hay clientes con 15, con 20 y con 35, y nadie puede decir qué descuento
+     da la marca. Para cambiar el de siempre se cambia este número. */
   var DESCUENTO = 20;
   /* Cuánto dura. Mismo criterio que la Gift Card, que en el instructivo son
-     30 días desde la compra. Se puede extender desde Beneficios. */
+     30 días desde la compra. Se puede extender desde Cupones y Gift Cards. */
   var DIAS = 30;
 
   /* Dónde vive el CRM. No es un secreto —es la dirección a la que entra
@@ -1783,8 +1854,8 @@
       .then(function () { btn.disabled = false; btn.textContent = 'Entrar'; });
   }
 
-  /* La llave, compartida con Beneficios: es el mismo PIN para las dos
-     secciones. Vive en sessionStorage y no en localStorage, así que se
+  /* La llave, compartida con Socios y Config.: es el mismo PIN para todo
+     lo de la oficina. Vive en sessionStorage y no en localStorage, así que se
      olvida al cerrar la pestaña — en una máquina compartida, una sesión que
      no caduca nunca es peor que volver a tipear cuatro números. */
   var K_PIN = 'nc_pin';
@@ -1825,6 +1896,12 @@
        se abre en Carritos, mostrando sólo esos. */
     if (location.hash === '#casi-pago') {
       vista = 'carrito'; atajo = 'casi';
+      guardar(K_VISTA, vista);
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+    }
+    /* #cupones: los enlaces de Config. y la dirección vieja de Beneficios. */
+    if (location.hash === '#cupones') {
+      vista = 'cupones';
       guardar(K_VISTA, vista);
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
     }
@@ -2059,7 +2136,8 @@
     est: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>',
     flecha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
     plegar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/></svg>',
-    menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>'
+    menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>',
+    cupon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6z"/><path d="M14 5v2M14 11v2M14 17v2"/></svg>'
   };
   var MENU_CRM = [
     { v: 'mensajes', t: 'Mensajes', i: ICO.chat, nt: 'Sin contestar' },
@@ -2069,6 +2147,7 @@
       { v: 'tienda', t: 'Tienda online', nt: 'Esperan respuesta' }] },
     { v: 'segmentos', t: 'Segmentos', i: ICO.seg, marca: 'Beta' },
     { v: 'contactos', t: 'Contactos', i: ICO.gente },
+    { v: 'cupones', t: 'Cupones y Gift Cards', i: ICO.cupon },
     { v: 'agente', t: 'Agente de IA', i: ICO.ia, marca: 'Beta' },
     { g: 'automatizaciones', t: 'Automatizaciones', i: ICO.auto, hijos: [
       { v: 'bots', t: 'Bots', marca: 'Pronto' },
@@ -2160,6 +2239,7 @@
     else if (vista === 'difusiones') { pintarDifusiones(); }
     else if (vista === 'tienda') { cargarTienda(); }
     else if (vista === 'agente') { cargarAgente(); }
+    else if (vista === 'cupones') { cargarCupones(); }
     else if (PRONTO[vista]) { pintarPronto(vista); }
     else { pintar(); }
   }
@@ -2176,6 +2256,7 @@
     $('vistaTienda').hidden = vista !== 'tienda';
     $('vistaPronto').hidden = !PRONTO[vista];
     $('vistaAgente').hidden = vista !== 'agente';
+    $('vistaCupones').hidden = vista !== 'cupones';
     /* El local sólo tiene sentido en los No Compra: los carritos son todos online. */
     $('filtroLocal').parentNode.style.display = vista === 'no_compra' ? '' : 'none';
     $('busca').placeholder = vista === 'carrito' ? 'Buscar por nombre, teléfono, mail o prenda…'
@@ -2764,7 +2845,11 @@
           (r.beneficio
             ? '<span class="pill ' + (r.beneficio.vive ? 'pill-ok' : 'pill-neutra') + '" style="align-self:center">' + r.beneficio.pct + '% ' +
                 (r.beneficio.usado ? 'usado' : r.beneficio.anulado ? 'anulado' : r.beneficio.vencido ? 'vencido' : 'dado') + '</span>'
-            : '<button type="button" class="btn btn-sec btn-chico" id="fichaDar">Dar ' + DESCUENTO + '%</button>') +
+            : '') +
+          /* "Dar un cupón" (12/10/2026, era "Dar 20%"): el formulario de
+             Cupones y Gift Cards con este cliente puesto. Con uno vivo no
+             se ofrece: la base no deja dar dos. */
+          (r.beneficio && r.beneficio.vive ? '' : '<button type="button" class="btn btn-sec btn-chico" id="fichaDar">Dar un cupón</button>') +
         '</div>' +
         etiquetasFicha(r) +
       '</div>' +
@@ -3178,20 +3263,9 @@
     var dar = $('fichaDar');
     if (dar) {
       dar.onclick = function () {
-        if (!exigirQuien(function () { var d = $('fichaDar'); if (d) { d.onclick(); } })) return;
-        dar.disabled = true;
-        base.darDescuento(pinGuardado(), r.id, DESCUENTO, DIAS, quien)
-          .then(function (res) {
-            avisar(res && res.dado ? 'ok' : 'info', res && res.dado
-              ? 'Listo: ' + DESCUENTO + '% por ' + DIAS + ' días. Avisale por WhatsApp.'
-              : 'Ese cliente ya tenía un descuento sin usar.');
-            cargar();
-          })
-          .catch(function (err) {
-            dar.disabled = false;
-            if (err && err.sinSesion) { caducada(); return; }
-            avisar('err', 'No se pudo dar el descuento.');
-          });
+        /* El de "para este cliente" va por el registro: así queda el local y
+           el vendedor, y cuenta como venta recuperada cuando vuelve. */
+        abrirDarCupon({ registro: r.id, tel: r.whatsapp, nombre: r.nombre, alListo: function () { cargar(); } });
       };
     }
     Array.prototype.forEach.call($('fichaIn').querySelectorAll('select[data-c]'), function (s) {
@@ -5097,14 +5171,22 @@
   var ES_CEL = function () { return !(window.matchMedia && matchMedia('(min-width: 900px)').matches); };
   /* Las tres columnas ocupan lo que queda de la pantalla hacia abajo. */
   function ajustarAltoMensajes() {
-    var v = $('vistaMensajes');
+    var v = $('vistaMensajes'), m = $('vistas');
+    /* El menú, en Mensajes, del mismo alto y con su propia barra: con más
+       secciones que pantalla (12/10/2026, Cupones y Gift Cards), empujaba
+       la hoja para abajo. En las demás secciones la hoja se corre igual. */
+    if (m) { m.style.maxHeight = ''; }
     if (!v || v.hidden || ES_CEL()) { return; }
     var arriba = v.getBoundingClientRect().top + window.scrollY;
     var alto = Math.max(420, window.innerHeight - arriba - 16);
     v.style.setProperty('--ms-alto', alto + 'px');
+    if (m) { m.style.maxHeight = alto + 'px'; }
     /* Lo que sobre (el margen de abajo de la hoja), se descuenta. */
     var sobra = document.documentElement.scrollHeight - window.innerHeight;
-    if (sobra > 0 && alto - sobra >= 420) { v.style.setProperty('--ms-alto', (alto - sobra) + 'px'); }
+    if (sobra > 0 && alto - sobra >= 420) {
+      v.style.setProperty('--ms-alto', (alto - sobra) + 'px');
+      if (m) { m.style.maxHeight = (alto - sobra) + 'px'; }
+    }
   }
   function abrirConversacion(clave, previo) {
     MS.abierto = clave;
@@ -5370,6 +5452,7 @@
         '<div class="ficha-acc" style="margin-top:12px">' +
           (tel ? '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="https://wa.me/' + esc(tel) + '">Escribirle por WhatsApp</a>' +
                  '<button type="button" class="btn btn-sec btn-chico ct-plantilla">Plantilla de WhatsApp</button>' +
+                 '<button type="button" class="btn btn-sec btn-chico ct-cupon">Dar un cupón</button>' +
                  '<button type="button" class="btn btn-sec btn-chico ct-guardar">Guardar contacto</button>' : '') +
           (p.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(p.mail) + '">Mail</a>' : '') +
         '</div>' +
@@ -5390,6 +5473,10 @@
       tm.onchange = function () { moverConsulta(Number(tm.dataset.ti), tm.value, tm); };
     }
     cablearPlantilla(raiz, p.clave, nom);
+    var cu = raiz.querySelector('.ct-cupon');
+    /* El número de WhatsApp con el + adelante: así uno del exterior se guarda
+       entero (SQL 82); los de acá quedan igual. */
+    if (cu) { cu.onclick = function () { abrirDarCupon({ tel: p.wa_tel ? '+' + String(p.wa_tel).replace(/\D/g, '') : (p.tel || tel), nombre: p.nombre || '' }); }; }
   }
 
   /* Todo lo que pasó con la persona, lo último arriba. Lo que es una tarjeta
@@ -5409,6 +5496,654 @@
         '</span></li>';
     }).join('') + '</ol>';
   }
+
+  /* ═══ Cupones y Gift Cards (12/10/2026) ══════════════════════════════════
+     Lo que era la lista y el "Crear un cupón" de Beneficios. Beneficios se
+     fue del menú (el mostrador es Cobrar) y Atención crea, busca, anula y
+     extiende desde acá. Tres clases de cupón:
+       - para un cliente: va con su teléfono, sin código (el "Dar 20%" del
+         No Compra); en la caja lo encuentran por el WhatsApp;
+       - con código: vale para el que lo tenga, se puede regalar;
+       - de campaña: un código para muchos, con "una vez por persona".
+     "Dar un cupón", en las fichas, abre este mismo formulario con la persona
+     ya puesta. Las reglas las pone la base: acá sólo se ofrecen. */
+  var CU = { lista: null, resumen: null, error: '', muchos: false, solapa: 'cupones', estado: 'disponible',
+             panel: '', busca: '', pedidoBusca: 0, hallados: null, extra: {}, locales: null,
+             form: { donde: 'vista', tipo: 'cliente' } };
+  var ESTADOS_CU = {
+    cupones: [['disponible', 'Activos'], ['usado', 'Usados'], ['vencido', 'Vencidos'], ['anulado', 'Anulados']],
+    gift: [['disponible', 'Sin canjear'], ['usado', 'Canjeadas'], ['vencido', 'Vencidas'], ['anulado', 'Anuladas']]
+  };
+  var PCTS_CU = [5, 10, 15, 20, 25, 30, 35, 40, 50];
+  var LUPA_CU = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>';
+
+  function esGiftCu(b) { return String(b && b.tipo) === 'giftcard'; }
+  function porIdCu(id) { return (CU.lista || []).filter(function (b) { return b.id === id; })[0] || null; }
+  function tel10Cu(t) { return String(t || '').replace(/\D/g, '').slice(-10); }
+  function llanoCu(t) { return String(t || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  function lindoGcCu(t) {
+    var d = String(t || '').replace(/\D/g, '');
+    return d.length === 14 ? d.slice(0, 2) + ' ' + d.slice(2).replace(/(\d{4})(?=\d)/g, '$1 ') : String(t || '');
+  }
+  function vecesCu(n) { return !n ? 'sin límite por persona' : n === 1 ? 'una vez por persona' : n + ' veces por persona'; }
+  /* El día de un momento (cuándo se creó, cuándo se usó), con la hora de acá. */
+  function diaCu(ts) {
+    if (!ts) { return ''; }
+    try { return new Date(ts).toLocaleDateString('es-AR', { day: 'numeric', month: 'numeric', timeZone: 'America/Argentina/Buenos_Aires' }); }
+    catch (e) { return ''; }
+  }
+  function pesosCu(v) { return parseInt(String(v || '').replace(/[^0-9]/g, ''), 10) || null; }
+
+  /* Los locales, para "Dónde vale". Si no se pueden leer, el cupón igual se
+     crea para todos, que es lo más común. */
+  function cargarLocalesCu() {
+    if (CU.locales) { return; }
+    CU.locales = [];
+    base.config().then(function (c) {
+      CU.locales = ((c && c.locales) || []).map(function (l) { return l && l.local; }).filter(Boolean);
+      [].forEach.call(document.querySelectorAll('select[data-cu="local"]'), llenarLocalesCu);
+    }).catch(function () {});
+  }
+  function llenarLocalesCu(sel) {
+    if (!sel || !CU.locales || !CU.locales.length || sel.options.length > 1) { return; }
+    CU.locales.forEach(function (l) {
+      var o = document.createElement('option');
+      o.value = l;
+      o.textContent = 'Sólo en ' + bonito(l);
+      sel.appendChild(o);
+    });
+  }
+
+  function cargarCupones() {
+    if (!CU.lista && !CU.error) { $('vistaCupones').innerHTML = '<div class="skel"></div><div class="skel"></div>'; }
+    cargarLocalesCu();
+    var pin = pinGuardado();
+    /* Los activos se piden aparte: el listado trae los últimos 200, y un
+       cupón vivo de hace meses no puede quedar afuera de "Activos". */
+    return Promise.all([
+      base.beneficios(pin, 'disponible'),
+      base.beneficios(pin, null),
+      base.resumenBeneficios(pin).catch(function () { return null; })
+    ]).then(function (r) {
+      var vistos = {}, lista = [];
+      (r[0] || []).concat(r[1] || []).forEach(function (b) { if (b && !vistos[b.id]) { vistos[b.id] = 1; lista.push(b); } });
+      lista.sort(function (a, b) { return String(b.creado || '').localeCompare(String(a.creado || '')); });
+      CU.lista = lista;
+      CU.muchos = (r[1] || []).length >= 200;
+      CU.resumen = r[2];
+      CU.error = '';
+      if (vista !== 'cupones') { return; }
+      if ($('cuCuerpo')) { pintarListasCu(); } else { pintarCupones(); }
+    }).catch(function (err) {
+      if (err && err.sinSesion) { caducada(); return; }
+      CU.error = 'red';
+      if (vista === 'cupones') { pintarCupones(); }
+    });
+  }
+  /* Después de crear, anular o extender: la lista al día y, si había una
+     búsqueda, de nuevo (puede haber cambiado algo que vino de la base). */
+  function recargarCu() {
+    cargarCupones().then(function () { if (CU.busca) { buscarCu(CU.busca); } });
+  }
+
+  function pintarCupones() {
+    var v = $('vistaCupones');
+    var cab = '<div class="ag-cab"><div><h2>Cupones y Gift Cards</h2>' +
+      '<p>Crear cupones, buscarlos y corregirlos. Las gift cards se venden y se canjean en Cobrar; acá están todas, con lo que todavía se debe.</p></div></div>';
+    if (CU.error) {
+      v.innerHTML = '<div class="cu">' + cab +
+        '<div class="vacio-vista"><b>No se pudieron traer los cupones</b>Revisá la conexión y tocá actualizar.</div></div>';
+      return;
+    }
+    if (!CU.lista) { return; }
+    v.innerHTML = '<div class="cu" id="cuCuerpo">' + cab +
+      '<div class="cu-buscar"><div class="buscador">' + LUPA_CU +
+        '<input type="search" id="cuBusca" placeholder="Buscar por código, teléfono, nombre o número de tarjeta…" autocomplete="off" value="' + esc(CU.busca) + '"></div></div>' +
+      '<div class="ficha-bloque" id="cuHallados" hidden></div>' +
+      '<div class="pl-solapas cu-solapas" id="cuSolapas" role="tablist" aria-label="Qué mirar"></div>' +
+      '<div id="cuSolapa"></div></div>';
+    var b = $('cuBusca'), reloj = 0;
+    b.oninput = function () { clearTimeout(reloj); reloj = setTimeout(function () { buscarCu(b.value); }, 300); };
+    b.onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); clearTimeout(reloj); buscarCu(b.value); } };
+    pintarSolapaCu();
+  }
+
+  function pintarSolapaCu() {
+    var c = $('cuSolapa');
+    if (!c) { return; }
+    var lista = '<div class="cu-estados" id="cuEstados"></div><div class="cu-lista" id="cuLista"></div><p class="cu-nota" id="cuNota" hidden></p>';
+    if (CU.solapa === 'gift') {
+      c.innerHTML = '<div class="cu-deuda" id="cuDeuda"></div>' +
+        '<div class="ficha-bloque" style="margin-top:14px"><h3>Las gift cards</h3>' + lista +
+        '<p class="cu-nota">Se venden y se canjean en Cobrar, pasándolas por el lector.</p></div>';
+    } else {
+      c.innerHTML = '<div class="cu-grid">' +
+        '<div class="ficha-bloque"><h3>Crear un cupón</h3><div id="cuForm"></div></div>' +
+        '<div class="ficha-bloque"><h3>Los cupones</h3>' + lista + '</div></div>';
+      CU.form.donde = 'vista';
+      $('cuForm').innerHTML = htmlFormCu(CU.form);
+      cablearFormCu($('cuForm'), CU.form);
+    }
+    pintarListasCu();
+  }
+
+  /* Las pestañas, los filtros, la lista y lo que se debe: todo lo que
+     cambia cuando cambian los datos. El formulario no se toca. */
+  function pintarListasCu() {
+    if (!$('cuCuerpo') || !$('cuLista')) { return; }
+    var l = CU.lista || [];
+    var gc = l.filter(esGiftCu), cu = l.filter(function (b) { return !esGiftCu(b); });
+    var vivos = function (x) { return x.filter(function (b) { return b.estado === 'disponible'; }); };
+    var nCu = vivos(cu).length, nGc = vivos(gc).length;
+    var solapa = function (k, t) {
+      return '<button type="button" role="tab" data-cu-solapa="' + k + '"' + (CU.solapa === k ? ' class="sel" aria-selected="true"' : ' aria-selected="false"') + '>' + t + '</button>';
+    };
+    $('cuSolapas').innerHTML = solapa('cupones', 'Cupones · ' + nCu + '<span class="cu-sol-mas">' + (nCu === 1 ? ' activo' : ' activos') + '</span>') +
+      solapa('gift', 'Gift Cards · ' + nGc + '<span class="cu-sol-mas"> sin canjear</span>');
+    var deLa = CU.solapa === 'gift' ? gc : cu, cuenta = {};
+    deLa.forEach(function (b) { cuenta[b.estado] = (cuenta[b.estado] || 0) + 1; });
+    $('cuEstados').innerHTML = ESTADOS_CU[CU.solapa].map(function (e) {
+      return '<button type="button" class="chip' + (e[0] === CU.estado ? ' sel' : '') + '" data-cu-estado="' + e[0] + '">' + e[1] +
+        '<span class="cuenta">' + (cuenta[e[0]] || 0) + '</span></button>';
+    }).join('');
+    var filas = deLa.filter(function (b) { return b.estado === CU.estado; });
+    var nombre = ESTADOS_CU[CU.solapa].filter(function (e) { return e[0] === CU.estado; })[0][1].toLowerCase();
+    $('cuLista').innerHTML = filas.length ? filas.map(filaCu).join('')
+      : '<p class="num-vacio">No hay ' + (CU.solapa === 'gift' ? 'gift cards ' : 'cupones ') + nombre + '.</p>';
+    $('cuNota').hidden = !CU.muchos || CU.estado === 'disponible';
+    $('cuNota').textContent = 'Se ven los últimos 200. Para uno más viejo, buscalo arriba.';
+    if ($('cuDeuda')) {
+      var deben = vivos(gc);
+      var total = CU.resumen && CU.resumen.comprometido !== undefined && CU.resumen.comprometido !== null
+        ? Number(CU.resumen.comprometido) : deben.reduce(function (a, b) { return a + (Number(b.valor) || 0); }, 0);
+      $('cuDeuda').innerHTML = total > 0
+        ? '<b>' + plata(total) + '</b> en ' + (deben.length === 1 ? '1 gift card vendida' : deben.length + ' gift cards vendidas') +
+          ' y sin canjear. Es plata que los locales todavía deben.'
+        : 'No hay gift cards vendidas sin canjear: no se debe nada.';
+    }
+    var raiz = $('cuCuerpo');
+    [].forEach.call(raiz.querySelectorAll('[data-cu-solapa]'), function (b) {
+      b.onclick = function () {
+        if (CU.solapa === b.dataset.cuSolapa) { return; }
+        CU.solapa = b.dataset.cuSolapa; CU.estado = 'disponible'; CU.panel = '';
+        pintarSolapaCu();
+      };
+    });
+    [].forEach.call(raiz.querySelectorAll('[data-cu-estado]'), function (b) {
+      b.onclick = function () { CU.estado = b.dataset.cuEstado; CU.panel = ''; pintarListasCu(); };
+    });
+    cablearFilasCu($('cuLista'));
+    pintarHalladosCu();
+  }
+
+  /* Una fila: cuánto, de quién, y lo que hay que saber para atender al que
+     pregunta. Lo vivo se puede extender y anular. */
+  function filaCu(b) {
+    var gc = esGiftCu(b), vivo = b.estado === 'disponible';
+    var que = gc ? plata(b.valor) : (b.pct || 0) + '%';
+    var tit, det = [];
+    if (gc) {
+      tit = 'Tarjeta ' + esc(lindoGcCu(b.serie) || 'sin número') + (b.nombre ? ' · ' + esc(b.nombre) : '');
+      det.push('vendida' + (b.local ? ' en ' + bonito(b.local) : '') + (b.vendedor ? ' por ' + b.vendedor : '') + (b.creado ? ' el ' + diaCu(b.creado) : ''));
+      if (b.pago) { det.push(String(b.pago)); }
+      if (b.cobrado && Number(b.cobrado) !== Number(b.valor)) { det.push('cobrado ' + plata(b.cobrado)); }
+    } else if (b.multiuso) {
+      tit = 'Campaña <b>' + esc(b.codigo || '') + '</b>' + (b.en_app ? ' <span class="pill pill-info">En la app</span>' : '') +
+        (vivo ? ' · <button type="button" class="btn-link" data-cu-app="' + b.id + '" data-poner="' + (b.en_app ? '0' : '1') + '">' +
+          (b.en_app ? 'sacarla de la app' : 'mostrarla en la app') + '</button>' : '');
+      det.push((b.usos === 1 ? '1 uso' : (b.usos || 0) + ' usos') + (b.usos_max ? ' de ' + b.usos_max : ''), vecesCu(b.por_cliente));
+      if (b.desde) { det.push('desde el ' + ddmm(b.desde)); }
+    } else {
+      tit = esc(b.nombre || (b.telefono ? '+' + telVista(b.telefono) : 'Sin nombre'));
+      det.push(b.codigo ? 'con código ' + b.codigo : 'para un cliente, por su WhatsApp');
+      if (b.nombre && b.telefono) { det.push('+' + telVista(b.telefono)); }
+      if (b.registro) { det.push('del No Compra' + (b.local ? ' de ' + bonito(b.local) : '')); }
+    }
+    if (!gc && (b.creado_por_nombre || b.vendedor)) {
+      det.push('lo dio ' + (b.creado_por_nombre || b.vendedor) + (b.creado ? ' el ' + diaCu(b.creado) : ''));
+    }
+    if (b.compra_minima) { det.push('compra mínima ' + plata(b.compra_minima)); }
+    if (b.tope) { det.push('tope ' + plata(b.tope)); }
+    if (b.locales && b.locales.length) { det.push('sólo en ' + b.locales.map(function (x) { return bonito(x); }).join(', ')); }
+    if (vivo && b.vence) { det.push('vence el ' + ddmm(b.vence)); }
+    if (b.estado === 'vencido' && b.vence) { det.push('venció el ' + ddmm(b.vence)); }
+    if (b.estado === 'usado') {
+      det.push((gc ? 'canjeada' : 'usado') + (b.usado ? ' el ' + diaCu(b.usado) : '') + (b.local_canje ? ' en ' + bonito(b.local_canje) : '') +
+        (b.monto_compra ? ' (compra de ' + plata(b.monto_compra) + ')' : ''));
+    }
+    if (b.estado === 'anulado') { det.push('anulado' + (b.anulado_por ? ' por ' + b.anulado_por : '') + (b.motivo_anul ? ': ' + b.motivo_anul : '')); }
+    /* Lo vencido también (12/10/2026): una gift card vencida sin canjear es
+       plata que el cliente pagó, y Cobrar le dice al vendedor que Atención
+       la puede extender desde acá. */
+    var acc = !(vivo || b.estado === 'vencido') ? '' :
+      '<button type="button" class="btn btn-sec btn-chico" data-cu-abrir="extender:' + b.id + '">Extender</button>' +
+      '<button type="button" class="btn btn-sec btn-chico" data-cu-abrir="anular:' + b.id + '">Anular</button>';
+    return '<div class="cu-fila" data-cu-id="' + b.id + '"><span class="cu-que">' + que + '</span>' +
+      '<span class="cu-quien">' + tit + '<small>' + esc(det.join(' · ')) + '</small></span>' +
+      '<span class="cu-acc">' + acc + '</span>' + panelCu(b) + '</div>';
+  }
+  /* Anular y Extender se confirman abajo de la fila: anular pide por qué
+     (queda anotado) y extender, cuántos días. */
+  function panelCu(b) {
+    if (CU.panel === 'anular:' + b.id) {
+      return '<div class="cu-panel"><span>' + (esGiftCu(b) ? '¿Por qué se anula la tarjeta?' : '¿Por qué se anula?') + ' Queda anotado.</span>' +
+        '<input type="text" data-cu-motivo maxlength="200" placeholder="Motivo" aria-label="Por qué se anula">' +
+        '<button type="button" class="btn btn-borrar btn-chico" data-cu-anular="' + b.id + '">Anular</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-cu-cerrar>Cancelar</button></div>';
+    }
+    if (CU.panel === 'extender:' + b.id) {
+      var vencio = b.estado === 'vencido';
+      return '<div class="cu-panel"><span>' + (vencio ? 'Venció el ' + ddmm(b.vence) + '. Que vuelva a valer, desde hoy:'
+                                                     : 'Correr el vencimiento' + (b.vence ? ' (vence el ' + ddmm(b.vence) + ')' : '') + ':') + '</span>' +
+        [7, 15, 30, 60].map(function (d) { return '<button type="button" class="chip" data-cu-dias="' + d + '">' + (vencio ? '' : '+') + d + ' días</button>'; }).join('') +
+        '<button type="button" class="btn btn-pri btn-chico" data-cu-extender="' + b.id + '" disabled>Extender</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-cu-cerrar>Cancelar</button></div>';
+    }
+    return '';
+  }
+  function cablearFilasCu(raiz) {
+    if (!raiz) { return; }
+    [].forEach.call(raiz.querySelectorAll('[data-cu-abrir]'), function (b) {
+      b.onclick = function () {
+        CU.panel = CU.panel === b.dataset.cuAbrir ? '' : b.dataset.cuAbrir;
+        pintarListasCu();
+        var m = $('cuCuerpo') && $('cuCuerpo').querySelector('[data-cu-motivo]');
+        if (m) { m.focus(); }
+      };
+    });
+    [].forEach.call(raiz.querySelectorAll('[data-cu-cerrar]'), function (b) {
+      b.onclick = function () { CU.panel = ''; pintarListasCu(); };
+    });
+    [].forEach.call(raiz.querySelectorAll('[data-cu-dias]'), function (b) {
+      b.onclick = function () {
+        var p = b.parentNode;
+        [].forEach.call(p.querySelectorAll('[data-cu-dias]'), function (x) { x.classList.toggle('sel', x === b); });
+        var ok = p.querySelector('[data-cu-extender]');
+        ok.disabled = false;
+        ok.dataset.dias = b.dataset.cuDias;
+        ok.textContent = 'Extender ' + b.dataset.cuDias + ' días';
+      };
+    });
+    [].forEach.call(raiz.querySelectorAll('[data-cu-extender]'), function (b) {
+      b.onclick = function () { extenderCu(Number(b.dataset.cuExtender), Number(b.dataset.dias), b); };
+    });
+    [].forEach.call(raiz.querySelectorAll('[data-cu-anular]'), function (b) {
+      b.onclick = function () { anularCu(Number(b.dataset.cuAnular), b); };
+    });
+    [].forEach.call(raiz.querySelectorAll('[data-cu-motivo]'), function (i) {
+      i.onkeydown = function (ev) {
+        if (ev.key !== 'Enter') { return; }
+        ev.preventDefault();
+        var x = i.parentNode.querySelector('[data-cu-anular]');
+        if (x) { x.click(); }
+      };
+    });
+    [].forEach.call(raiz.querySelectorAll('[data-cu-app]'), function (b) {
+      b.onclick = function () { enAppCu(Number(b.dataset.cuApp), b.dataset.poner === '1', b); };
+    });
+  }
+
+  function anularCu(id, boton) {
+    var m = boton.parentNode.querySelector('[data-cu-motivo]');
+    var motivo = m ? m.value.trim() : '';
+    if (!motivo) { avisar('err', 'Escribí por qué se anula: queda anotado.'); if (m) { m.focus(); } return; }
+    if (!exigirQuien(function () { anularCu(id, boton); })) { return; }
+    boton.disabled = true;
+    base.anularBeneficio(pinGuardado(), id, quien, motivo)
+      .then(function (ok) {
+        if (ok !== true) { avisar('err', 'No se anuló: ya estaba usado o anulado.'); return; }
+        avisar('ok', 'Anulado. Queda anotado a nombre de ' + quien + '.');
+        CU.panel = '';
+        recargarCu();
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo anular. Revisá la conexión.');
+      })
+      .then(function () { boton.disabled = false; });
+  }
+  function extenderCu(id, dias, boton) {
+    if (!dias) { return; }
+    if (!exigirQuien(function () { extenderCu(id, dias, boton); })) { return; }
+    boton.disabled = true;
+    base.extenderBeneficio(pinGuardado(), id, dias, quien)
+      .then(function (nueva) {
+        if (!nueva) { avisar('err', 'No se extendió: ya estaba usado o anulado.'); return; }
+        /* Sin el SQL 82, la base suma a la fecha vieja: uno vencido hace
+           mucho puede seguir vencido. Se dice, en vez de decir "listo". */
+        if (String(nueva) < isoDia(new Date())) {
+          avisar('err', 'Sigue vencido (ahora dice ' + ddmm(nueva) + '): para que cuente desde hoy falta correr el SQL 82 en Supabase.');
+        } else {
+          avisar('ok', 'Listo: vale hasta el ' + ddmm(nueva) + '.');
+        }
+        CU.panel = '';
+        recargarCu();
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo extender. Revisá la conexión.');
+      })
+      .then(function () { boton.disabled = false; });
+  }
+  function enAppCu(id, poner, boton) {
+    boton.disabled = true;
+    base.beneficioEnApp(pinGuardado(), id, poner)
+      .then(function (r) {
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo cambiar.'); return; }
+        avisar('ok', poner ? 'Listo: ya se ve en la app del Club.' : 'Listo: ya no se ve en la app.');
+        recargarCu();
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo cambiar. Revisá la conexión.');
+      })
+      .then(function () { boton.disabled = false; });
+  }
+
+  /* El buscador: primero en lo que ya está cargado (también por nombre y por
+     un pedazo del teléfono), y después en la base, por si es uno más viejo. */
+  function buscarCu(q) {
+    CU.busca = q = String(q || '').trim();
+    var n = ++CU.pedidoBusca;
+    /* Un número corto puede ser una gift card vieja (la 7); lo demás, de
+       tres letras para arriba. */
+    if (!q || (q.length < 3 && !/^\d+$/.test(q))) { CU.hallados = null; pintarHalladosCu(); return; }
+    var dig = q.replace(/\D/g, ''), letras = /[a-záéíóúñ]/i.test(q);
+    var alf = q.toUpperCase().replace(/[^A-Z0-9]/g, ''), txt = llanoCu(q);
+    CU.hallados = (CU.lista || []).filter(function (b) {
+      if (!letras && dig.length >= 4 && b.telefono && tel10Cu(b.telefono).indexOf(dig.length > 10 ? dig.slice(-10) : dig) > -1) { return true; }
+      if (!letras && dig && b.serie) {
+        var se = String(b.serie);
+        if (se.replace(/^0+/, '') === dig.replace(/^0+/, '') || (dig.length >= 4 && se.indexOf(dig) > -1)) { return true; }
+      }
+      if (alf.length >= 3 && b.codigo && String(b.codigo).toUpperCase().replace(/[^A-Z0-9]/g, '').indexOf(alf) > -1) { return true; }
+      if (letras && b.nombre && llanoCu(b.nombre).indexOf(txt) > -1) { return true; }
+      return false;
+    }).map(function (b) { return b.id; });
+    pintarHalladosCu();
+    base.beneficio(q).then(function (filas) {
+      if (n !== CU.pedidoBusca || !CU.hallados) { return; }
+      (filas || []).forEach(function (b) {
+        if (CU.hallados.indexOf(b.id) < 0) { CU.hallados.push(b.id); }
+        CU.extra[b.id] = b;
+      });
+      pintarHalladosCu();
+    }).catch(function () {});
+  }
+  function pintarHalladosCu() {
+    var caja = $('cuHallados');
+    if (!caja) { return; }
+    if (!CU.hallados) { caja.hidden = true; caja.innerHTML = ''; return; }
+    var filas = CU.hallados.map(function (id) { return porIdCu(id) || CU.extra[id]; }).filter(Boolean);
+    caja.hidden = false;
+    caja.innerHTML = '<h3>Lo que encontramos</h3>' +
+      (filas.length ? '<div class="cu-lista">' + filas.map(filaCu).join('') + '</div>'
+                    : '<p class="num-vacio">No hay ningún cupón ni gift card con eso.</p>') +
+      '<div class="ficha-acc" style="margin-top:10px"><button type="button" class="btn btn-sec btn-chico" id="cuLimpiar">Limpiar la búsqueda</button></div>';
+    $('cuLimpiar').onclick = function () { $('cuBusca').value = ''; buscarCu(''); $('cuBusca').focus(); };
+    cablearFilasCu(caja);
+  }
+
+  /* ── El formulario: el mismo en la sección y en "Dar un cupón" ──
+     ctx: { donde: 'vista' | 'ficha', tipo: 'cliente' | 'codigo' | 'campana',
+            tel, nombre, registro (el No Compra), alListo }. */
+  function htmlFormCu(ctx) {
+    var t = ctx.tipo, ficha = ctx.donde === 'ficha';
+    /* Desde un No Compra, sólo el personal (decisión de Mauricio, 12/10): es
+       para recuperar a ESE cliente; con código se puede regalar y se pierde
+       quién lo recuperó. */
+    var tipos = ctx.registro ? [['cliente', 'Para este cliente']]
+      : [['cliente', ficha ? 'Para este cliente' : 'Para un cliente'], ['codigo', 'Con código']];
+    if (!ficha) { tipos.push(['campana', 'De campaña']); }
+    var sub = {
+      cliente: ctx.registro
+        ? 'Va con su WhatsApp, sin código: en la caja lo encuentran por el teléfono, y si compra cuenta como venta recuperada del local.'
+        : 'Va con su WhatsApp, sin código: en la caja lo encuentran por el teléfono. Uno vivo por persona.',
+      codigo: 'Vale para el que tenga el código: lo puede usar o regalar.',
+      campana: 'Un código para publicar (Instagram, WhatsApp, la vidriera) que usa mucha gente. En la caja se pide el WhatsApp de quien lo usa, y la base frena al que ya lo usó, aunque vaya a otro local.'
+    }[t];
+    var opc = ' <span class="lbl-opc">opcional</span>';
+    var campo = function (lbl, html, ancho) { return '<div class="campo' + (ancho ? ' ancho' : '') + '"><label>' + lbl + '</label>' + html + '</div>'; };
+    var sel = function (k, ops, def) {
+      return '<select data-cu="' + k + '">' + ops.map(function (o) {
+        return '<option value="' + o[0] + '"' + (String(o[0]) === String(def) ? ' selected' : '') + '>' + o[1] + '</option>';
+      }).join('') + '</select>';
+    };
+    var h = (tipos.length < 2 ? '' : '<div class="cu-tipos" role="group" aria-label="Qué cupón">' + tipos.map(function (x) {
+        return '<button type="button" class="chip' + (x[0] === t ? ' sel' : '') + '" data-cu-tipo="' + x[0] + '" aria-pressed="' + (x[0] === t) + '">' + x[1] + '</button>';
+      }).join('') + '</div>') +
+      '<p class="cu-sub">' + sub + '</p><div class="cu-campos">';
+    if (ficha) {
+      h += '<div class="cu-para ancho">Para <b>' + esc(ctx.nombre || 'este cliente') + '</b>' + (ctx.tel ? ' · +' + esc(telVista(ctx.tel)) : '') + '</div>';
+    }
+    if (t === 'campana') {
+      h += campo('Código del cupón', '<input type="text" data-cu="codigo" class="cu-codigo-in" maxlength="20" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ENEROPROMO">' +
+        '<span class="cu-ayuda">Lo que el cliente dice o muestra en la caja: de 4 a 20 letras o números, con al menos una letra.</span>', true);
+    }
+    h += campo('Descuento', sel('pct', PCTS_CU.map(function (p) { return [p, p + '%']; }), t === 'cliente' ? DESCUENTO : 15));
+    if (t === 'campana') {
+      h += campo('Usos por cliente', sel('porCliente', [[1, 'Una vez por persona'], [2, 'Dos veces por persona'], [3, 'Tres veces por persona'], ['', 'Sin límite (no pide WhatsApp)']], 1));
+      h += campo('Vale desde', '<input type="date" data-cu="desde" value="' + isoDia(new Date()) + '">');
+      h += campo('Vale hasta', '<input type="date" data-cu="hasta" value="' + enDiasIso(30) + '">');
+    } else {
+      h += campo('Vence en', sel('dias', [[15, '15 días'], [30, '30 días'], [60, '60 días'], [90, '90 días']], DIAS));
+      if (!ficha) {
+        h += campo('WhatsApp del cliente' + (t === 'cliente' ? '' : opc),
+          '<input type="tel" inputmode="numeric" data-cu="tel" autocomplete="off" placeholder="' + (t === 'cliente' ? '11 2345 6789' : 'Para medir si volvió') + '">');
+        h += campo('Nombre' + opc, '<input type="text" data-cu="nombre" autocapitalize="words" autocomplete="off" placeholder="Cómo se llama">');
+      }
+    }
+    if (t !== 'cliente') {
+      h += campo('Compra mínima' + opc, '<input type="text" inputmode="numeric" data-cu="minima" placeholder="$">');
+      h += campo('Tope de descuento' + opc, '<input type="text" inputmode="numeric" data-cu="tope" placeholder="$ sin tope">');
+      if (t === 'campana') { h += campo('Usos en total' + opc, '<input type="text" inputmode="numeric" data-cu="usosMax" placeholder="Sin límite">'); }
+      h += campo('Dónde vale', '<select data-cu="local"><option value="">En todos los locales</option></select>', t !== 'campana');
+    }
+    if (t === 'campana') {
+      h += '<label class="cu-check ancho"><input type="checkbox" data-cu="acumulable"> Se puede combinar con otras promociones</label>' +
+           '<label class="cu-check ancho"><input type="checkbox" data-cu="enApp" checked> Mostrarla en la app del Club, en "Mis cupones" de todos los socios</label>';
+    }
+    h += campo('Observaciones' + opc, '<input type="text" data-cu="obs" maxlength="200" autocomplete="off" placeholder="Por qué se le da">', true);
+    h += '<div class="ancho"><button type="button" class="btn btn-pri" data-cu-crear>' +
+      (t === 'campana' ? 'Crear la campaña' : ficha ? 'Dar el cupón' : 'Crear el cupón') + '</button></div></div>' +
+      '<div class="cu-nuevo" data-cu-nuevo hidden></div>';
+    return h;
+  }
+  function cablearFormCu(raiz, ctx) {
+    llenarLocalesCu(raiz.querySelector('select[data-cu="local"]'));
+    if (ctx.valores) { ponerValoresCu(raiz, ctx.valores); ctx.valores = null; }
+    [].forEach.call(raiz.querySelectorAll('[data-cu-tipo]'), function (b) {
+      b.onclick = function () {
+        if (b.dataset.cuTipo === ctx.tipo) { return; }
+        ctx.valores = valoresCu(raiz);
+        ctx.tipo = b.dataset.cuTipo;
+        raiz.innerHTML = htmlFormCu(ctx);
+        cablearFormCu(raiz, ctx);
+      };
+    });
+    var cod = raiz.querySelector('[data-cu="codigo"]');
+    if (cod) {
+      /* El código se ve como va a quedar: en mayúsculas y sin espacios. */
+      cod.oninput = function () {
+        var p = cod.selectionStart;
+        cod.value = cod.value.toUpperCase().replace(/\s+/g, '');
+        try { cod.setSelectionRange(p, p); } catch (e) {}
+      };
+    }
+    raiz.querySelector('[data-cu-crear]').onclick = function () { crearCu(raiz, ctx); };
+  }
+  /* Lo escrito, para no perderlo al cambiar de clase de cupón. El descuento
+     no: cada clase arranca con el suyo. */
+  function valoresCu(raiz) {
+    var v = {};
+    [].forEach.call(raiz.querySelectorAll('input[data-cu]:not([type=checkbox]):not([type=date])'), function (i) { if (i.value) { v[i.dataset.cu] = i.value; } });
+    return v;
+  }
+  function ponerValoresCu(raiz, v) {
+    Object.keys(v).forEach(function (k) { var i = raiz.querySelector('input[data-cu="' + k + '"]'); if (i) { i.value = v[k]; } });
+  }
+
+  function crearCu(raiz, ctx) {
+    if (!exigirQuien(function () { crearCu(raiz, ctx); })) { return; }
+    var val = function (k) {
+      var e = raiz.querySelector('[data-cu="' + k + '"]');
+      return !e ? '' : e.type === 'checkbox' ? e.checked : String(e.value || '').trim();
+    };
+    var foco = function (k) { var e = raiz.querySelector('[data-cu="' + k + '"]'); if (e) { e.focus(); } };
+    var t = ctx.tipo, ficha = ctx.donde === 'ficha';
+    var pct = parseInt(val('pct'), 10), dias = parseInt(val('dias'), 10) || DIAS;
+    var tel = ficha ? (ctx.tel || '') : val('tel'), nombre = ficha ? (ctx.nombre || '') : val('nombre');
+    var pedido, o = null;
+    if (t === 'cliente') {
+      if (ctx.registro) {
+        /* Desde un No Compra va por el registro: queda el local y el
+           vendedor, y cuenta como venta recuperada cuando vuelve. */
+        pedido = function () { return base.darDescuento(pinGuardado(), ctx.registro, pct, dias, quien, val('obs') || null); };
+      } else {
+        if (String(tel).replace(/\D/g, '').length < 10) { avisar('err', 'Poné el WhatsApp con la característica: 10 números.'); foco('tel'); return; }
+        pedido = function () { return base.darDescuentoTel(pinGuardado(), tel, pct, dias, quien, nombre || null, val('obs') || null); };
+      }
+    } else {
+      o = { compraMinima: pesosCu(val('minima')), tope: pesosCu(val('tope')), locales: val('local') ? [val('local')] : null, obs: val('obs') || null };
+      if (t === 'campana') {
+        var c = String(val('codigo')).toUpperCase();
+        if (!/^[A-Z0-9-]{4,20}$/.test(c) || !/[A-Z]/.test(c)) { avisar('err', 'El código va de 4 a 20 letras o números, con al menos una letra.'); foco('codigo'); return; }
+        if (!val('hasta')) { avisar('err', 'Poné hasta cuándo vale.'); foco('hasta'); return; }
+        if (val('desde') && val('desde') > val('hasta')) { avisar('err', 'Empieza después de terminar: revisá las fechas.'); foco('desde'); return; }
+        o.campana = true; o.codigo = c; o.porCliente = parseInt(val('porCliente'), 10) || null;
+        o.usosMax = pesosCu(val('usosMax')); o.desde = val('desde') || null; o.hasta = val('hasta');
+        o.acumulable = val('acumulable') === true; o.enApp = val('enApp') === true;
+      } else {
+        o.telefono = tel || null; o.nombre = nombre || null; o.registro = ctx.registro || null;
+      }
+      pedido = function () { return base.crearCupon(pinGuardado(), quien, pct, dias, o); };
+    }
+    var b = raiz.querySelector('[data-cu-crear]'), txt = b.textContent;
+    b.disabled = true; b.textContent = 'Creando…';
+    pedido().then(function (res) {
+      if (!res || !(res.dado || res.creado)) {
+        /* Lo normal de un "no": ese cliente ya tiene uno vivo. No es una
+           falla y no conviene que parezca una. */
+        avisar('err', 'No se creó: ' + ((res && res.porque) || 'probá de nuevo') + '.');
+        return;
+      }
+      mostrarNuevoCu(raiz, ctx, res, { pct: pct, dias: dias, tel: tel, nombre: nombre, campana: t === 'campana' ? o : null,
+                                      minima: o && o.compraMinima, local: o && o.locales && o.locales[0] });
+      avisar('ok', t === 'campana' ? 'Campaña creada.' : 'Listo, cupón creado.');
+      /* El de un cliente es de una persona: los datos se limpian para el
+         próximo. Los demás quedan, porque se suele dar el mismo a varios. */
+      if (t === 'cliente' && !ficha) { ['tel', 'nombre', 'obs'].forEach(function (k) { var e = raiz.querySelector('[data-cu="' + k + '"]'); if (e) { e.value = ''; } }); }
+      if (ctx.alListo) { ctx.alListo(res); }
+      if (CU.lista) { recargarCu(); }
+    }).catch(function (err) {
+      if (err && err.sinSesion) { caducada(); return; }
+      /* El índice de "uno vivo por teléfono" (sin el SQL 82, también con uno
+         vencido): la base lo dice en inglés. */
+      if (/duplicate key|un_descuento_vivo/i.test(String(err && err.message))) {
+        avisar('err', 'No se creó: ese cliente tiene otro descuento sin usar (quizás vencido). Buscalo en Cupones y Gift Cards para extenderlo o anularlo.');
+        return;
+      }
+      avisar('err', (err && err.delServidor && err.message) || 'No se pudo crear el cupón. Revisá la conexión.');
+    }).then(function () { b.disabled = false; b.textContent = txt; });
+  }
+
+  /* Lo recién creado, grande: el código para copiar o dictar, y el mensaje
+     para mandarle (al chat de la ficha, si está abierto, o copiado). */
+  function mostrarNuevoCu(raiz, ctx, res, d) {
+    var caja = raiz.querySelector('[data-cu-nuevo]');
+    if (!caja) { return; }
+    var t = ctx.tipo, cod = res.codigo || '', hasta = d.campana ? d.campana.hasta : enDiasIso(d.dias);
+    var nom = d.nombre ? String(d.nombre).trim().split(/\s+/)[0] : '';
+    var hola = '¡Hola' + (nom ? ' ' + nom : '') + '! ';
+    var det, msg;
+    if (t === 'campana') {
+      det = d.pct + '% · ' + vecesCu(d.campana.porCliente) + (d.campana.usosMax ? ' · hasta ' + d.campana.usosMax + ' usos' : '') +
+        ' · ' + (d.campana.desde ? 'del ' + ddmm(d.campana.desde) + ' ' : '') + 'al ' + ddmm(hasta) + (d.campana.enApp ? ' · se ve en la app del Club' : '');
+      msg = 'Con el código ' + cod + ' tenés un ' + d.pct + '% de descuento en VDH hasta el ' + ddmm(hasta) + '.';
+    } else if (t === 'codigo') {
+      det = d.pct + '% hasta el ' + ddmm(hasta) + ' · lo puede usar o regalar';
+      msg = hola + 'Te dejamos un ' + d.pct + '% de descuento en VDH, válido hasta el ' + ddmm(hasta) + '. Tu código es ' + cod +
+        ': lo podés usar vos o regalárselo a quien quieras.' + (d.minima ? ' Vale con una compra desde ' + plata(d.minima) + '.' : '') +
+        (d.local ? ' Vale en ' + bonito(d.local) + '.' : '');
+    } else {
+      det = d.pct + '% para ' + (d.nombre || '+' + telVista(d.tel)) + ' hasta el ' + ddmm(hasta) + '. En la caja lo encuentran por su WhatsApp.';
+      msg = hola + 'Te dejamos un ' + d.pct + '% de descuento en VDH, válido hasta el ' + ddmm(hasta) +
+        '. Lo usás en cualquiera de nuestros locales: en la caja decí tu número de WhatsApp.';
+    }
+    var chat = chatAbiertoCu();
+    /* Sin charla abierta, el WhatsApp con el mensaje ya escrito (lo que tenía
+       Beneficios). Los del exterior van como están; los de acá, con el 549. */
+    /* Con la misma regla que la base (tel_cliente, SQL 83): del exterior si
+       tiene 11 a 15 cifras, no empieza con 54, y viene con + (o 00) o
+       empieza con 4 a 8; ésos van enteros. */
+    var telWa = String(d.tel || '').trim(), digWa = telWa.replace(/^(\+|00)/, '').replace(/\D/g, '');
+    var exterior = !/^54/.test(digWa) && digWa.length >= 11 && digWa.length <= 15 && (/^(\+|00)/.test(telWa) || /^[4-8]/.test(digWa));
+    var numWa = digWa.length < 10 ? '' : exterior ? digWa : normalizarTel(digWa);
+    var wa = !chat && t !== 'campana' && numWa ? 'https://wa.me/' + numWa + '?text=' + encodeURIComponent(msg) : '';
+    caja.innerHTML = (cod ? '<span class="cu-lbl">Listo. El código es</span><b class="cu-cod">' + esc(cod) + '</b>'
+                          : '<span class="cu-lbl">Listo</span><b class="cu-cod">' + d.pct + '%</b>') +
+      '<span class="cu-det">' + esc(det) + '</span>' +
+      '<div class="ficha-acc">' +
+        (cod ? '<button type="button" class="btn btn-sec btn-chico" data-cu-copiar="cod">Copiar el código</button>' : '') +
+        (chat ? '<button type="button" class="btn btn-pri btn-chico" data-cu-chat>Ponerlo en el chat</button>' : '') +
+        (wa ? '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="' + esc(wa) + '">Mandar por WhatsApp</a>' : '') +
+        '<button type="button" class="btn btn-sec btn-chico" data-cu-copiar="msg">Copiar el mensaje</button>' +
+      '</div>';
+    caja.hidden = false;
+    [].forEach.call(caja.querySelectorAll('[data-cu-copiar]'), function (b) {
+      b.onclick = function () {
+        var esCod = b.dataset.cuCopiar === 'cod';
+        copiarCu(esCod ? cod : msg, esCod ? 'Código copiado.' : 'Mensaje copiado: pegalo en el WhatsApp.');
+      };
+    });
+    var bc = caja.querySelector('[data-cu-chat]');
+    if (bc) {
+      bc.onclick = function () {
+        var x = chatAbiertoCu();
+        if (!x) { copiarCu(msg, 'Mensaje copiado: pegalo en el WhatsApp.'); return; }
+        x.value = x.value.trim() ? x.value.replace(/\s+$/, '') + '\n' + msg : msg;
+        x.dispatchEvent(new Event('input', { bubbles: true }));
+        $('modalCupon').hidden = true;
+        x.focus();
+      };
+    }
+  }
+  function copiarCu(texto, ok) {
+    var aMano = function () { window.prompt('Copialo de acá (Ctrl+C):', texto); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(texto).then(function () { avisar('ok', ok); }).catch(aMano);
+    } else {
+      aMano();
+    }
+  }
+  /* La caja de escribir del chat que está a la vista: la de la ficha (No
+     Compra, Carritos, Contactos) o la de Mensajes. Sin ventana de 24 h no
+     hay caja, y entonces el mensaje se copia. */
+  function chatAbiertoCu() {
+    var f = $('capaFicha');
+    var t = f && !f.hidden ? f.querySelector('.chat-texto') : null;
+    if (!t && vista === 'mensajes' && $('msChat')) { t = $('msChat').querySelector('.chat-texto'); }
+    return t && !t.disabled ? t : null;
+  }
+
+  /* "Dar un cupón", desde una ficha. */
+  function abrirDarCupon(ctx) {
+    ctx.donde = 'ficha';
+    ctx.tipo = 'cliente';
+    cargarLocalesCu();
+    var raiz = $('cuModalIn');
+    raiz.innerHTML = htmlFormCu(ctx);
+    cablearFormCu(raiz, ctx);
+    $('modalCupon').hidden = false;
+    setTimeout(function () { var b = raiz.querySelector('[data-cu-crear]'); if (b) { b.focus(); } }, 50);
+  }
+  if ($('cuModalCerrar')) {
+    $('cuModalCerrar').onclick = function () { $('modalCupon').hidden = true; };
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && !$('modalCupon').hidden && $('modalQuien').hidden) { $('modalCupon').hidden = true; }
+    });
+  }
+
 
   /* ═══ Lo que está por venir (10/10/2026) ═════════════════════════════════
      "Quiero ver toda la estructura armada": cada sección que todavía no está

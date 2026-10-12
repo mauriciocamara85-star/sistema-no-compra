@@ -6096,3 +6096,887 @@ $reiniciar$;
 
 select case when exists (select 1 from beneficios b join giftcard_tarjetas t on t.codigo = b.serie and t.nro = 1)
             then 'la Nº 1 sigue vendida: revisar' else 'listo: la gift card Nº 1 quedó sin vender, como nueva' end as "SQL 80";
+
+
+-- ─────────────────────────── PARTE 81 (12/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · LOS TELÉFONOS DE CUPONES Y GIFT CARDS, CON UNA SOLA REGLA
+--       Y EL DESCUENTO PERSONAL DESDE CONTACTOS
+--
+-- Correr en el editor SQL de Supabase (después del 80).
+--
+-- Es lo que pide la base para la reorganización del menú (Cobrar, CRM →
+-- Cupones y Gift Cards), aprobada por Mauricio el 12/10/2026:
+--   · tel_cliente(x): la regla de los socios del Club (sin 54, 9, 0 ni 15; los
+--     últimos 10). Los cupones y gift cards se GUARDAN así y se BUSCAN y
+--     CANJEAN así: "1123456789" encuentra el cupón de "+54 9 11 2345-6789" y
+--     lo puede usar, y "un solo descuento vivo por persona" sigue valiendo.
+--   · dar_descuento_tel: el "Dar un cupón" desde Contactos. Personal, por
+--     teléfono y sin código (no se regala), como el del No Compra.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create or replace function tel_cliente(p text)
+returns text
+language sql
+immutable
+as $$ select club_tel10(club_tel(p)) $$;
+
+/* Lo que ya estaba guardado, con la misma regla (si quedan dos descuentos
+   vivos para el mismo número, no se toca ninguno de los dos). */
+update beneficios b set telefono = tel_cliente(b.telefono)
+ where b.telefono is not null and tel_cliente(b.telefono) is not null and b.telefono <> tel_cliente(b.telefono)
+   and not (b.tipo = 'descuento' and b.usado is null and b.anulado is null
+            and exists (select 1 from beneficios o
+                         where o.id <> b.id and o.tipo = 'descuento' and o.usado is null and o.anulado is null
+                           and tel_cliente(o.telefono) = tel_cliente(b.telefono)));
+
+CREATE OR REPLACE FUNCTION public.beneficio_buscar(clave text)
+ RETURNS TABLE(id bigint, tipo text, estado text, nombre text, pct smallint, valor numeric, saldo numeric, serie text, codigo text, vence date, dias integer, buscaba text, local text, vendedor text, obs text, compra_minima numeric, locales text[], acumulable boolean, al_portador boolean, multiuso boolean, usos integer, usos_max integer, por_cliente integer, desde date, tope numeric)
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  with pelado as (
+    select regexp_replace(coalesce(clave, ''), '[^0-9]', '', 'g') as digitos,
+           upper(regexp_replace(coalesce(clave, ''), '[^A-Za-z0-9]', '', 'g')) as alfanum
+  )
+  select b.id, b.tipo::text, b.estado,
+         /* El nombre, sólo para el que está adentro: ver el 14. */
+         case when soy_de_adentro() then b.nombre else null end as nombre,
+         b.pct, b.valor,
+         case when b.usado is null then b.valor else 0 end as saldo,
+         b.serie, b.codigo, b.vence, b.dias::integer, r.producto, b.local, b.vendedor, b.obs,
+         b.compra_minima, b.locales, b.acumulable, (b.codigo is not null) as al_portador,
+         b.multiuso, b.usos, b.usos_max, b.por_cliente, b.desde, b.tope
+    from v_beneficios b
+    left join registros r on r.id = b.registro
+    cross join pelado p
+   where (length(p.digitos) between 8 and 13
+          /* SQL 81: el teléfono con la regla del Club (sin 54, 9, 0 ni 15). */
+          and tel_cliente(b.telefono) = tel_cliente(clave))
+      /* Por código. El de una persona es largo y al azar, y se pide entero
+         (8 o más): es la credencial. El de campaña es corto y público a
+         propósito —se publica en Instagram—, así que alcanza con 4. */
+      or (b.codigo is not null
+          and length(p.alfanum) >= case when b.multiuso then 4 else 8 end
+          and upper(regexp_replace(b.codigo, '[^A-Za-z0-9]', '', 'g')) = p.alfanum)
+      or (b.tipo = 'giftcard' and length(p.digitos) between 1 and 7
+          and ltrim(regexp_replace(coalesce(b.serie, ''), '[^0-9]', '', 'g'), '0') = ltrim(p.digitos, '0'))
+      /* SQL 72: la gift card impresa, por los 14 números que lee la pistola. */
+      or (b.tipo = 'giftcard' and p.digitos ~ '^99[0-9]{12}$' and b.serie = p.digitos)
+   order by (b.estado = 'disponible') desc, b.creado desc
+   limit 5;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.canjear_beneficio(p_id bigint, p_clave text, p_local text, p_vendedor text, p_monto numeric DEFAULT NULL::numeric, p_producto text DEFAULT NULL::text, p_telefono text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  b        v_beneficios%rowtype;
+  tocadas  integer;
+  dig      text;
+  alfa     text;
+  coincide boolean;
+  tel      text;
+  ya       integer;
+  ult      record;
+  total    integer;
+  hoy      date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+begin
+  select * into b from v_beneficios where id = p_id;
+  if not found then return jsonb_build_object('canjeado', false, 'porque', 'ese beneficio no existe'); end if;
+
+  /* Hay que traer la misma llave con la que se lo encontró: ver el 14. */
+  dig  := regexp_replace(coalesce(p_clave, ''), '[^0-9]', '', 'g');
+  alfa := upper(regexp_replace(coalesce(p_clave, ''), '[^A-Za-z0-9]', '', 'g'));
+  coincide :=
+       (length(dig) between 8 and 13 and tel_cliente(b.telefono) = tel_cliente(p_clave))
+    or (b.codigo is not null and length(alfa) >= case when b.multiuso then 4 else 8 end
+        and upper(regexp_replace(b.codigo, '[^A-Za-z0-9]', '', 'g')) = alfa)
+    or (b.serie is not null and length(dig) between 1 and 7
+        and ltrim(regexp_replace(b.serie, '[^0-9]', '', 'g'), '0') = ltrim(dig, '0'))
+    /* SQL 72: la gift card impresa, por sus 14 números. */
+    or (b.serie is not null and dig ~ '^99[0-9]{12}$' and b.serie = dig);
+  if not coincide then
+    return jsonb_build_object('canjeado', false, 'porque', 'la clave no corresponde a ese beneficio');
+  end if;
+
+  if b.estado <> 'disponible' then
+    return jsonb_build_object('canjeado', false, 'porque',
+      case when b.multiuso and b.estado = 'usado' then 'ya se usó todas las veces que permitía' else 'ese beneficio está ' || b.estado end);
+  end if;
+  if b.desde is not null and b.desde > hoy then
+    return jsonb_build_object('canjeado', false,
+      'porque', 'empieza a valer el ' || to_char(b.desde, 'DD/MM'));
+  end if;
+  if length(trim(coalesce(p_local, ''))) = 0 then raise exception 'Falta el local del canje.'; end if;
+
+  if b.locales is not null
+     and upper(trim(p_local)) <> all (select upper(trim(x)) from unnest(b.locales) as x) then
+    return jsonb_build_object('canjeado', false, 'porque', 'ese beneficio no vale en ' || trim(p_local), 'locales', b.locales);
+  end if;
+  if b.compra_minima is not null and coalesce(p_monto, 0) < b.compra_minima then
+    return jsonb_build_object('canjeado', false,
+      'porque', 'la compra no llega al mínimo de ' || b.compra_minima::text, 'compra_minima', b.compra_minima);
+  end if;
+
+  -- ── La campaña: se anota un uso, el cupón sigue vivo ──
+  if b.multiuso then
+    /* "11 2345-6789" y "+54 9 11 2345 6789" son la misma persona: se
+       comparan los últimos 10 números. Sin esto, escribir el teléfono de
+       otra forma alcanzaba para usar "una vez por persona" dos veces. */
+    /* SQL 81: la regla del Club (también saca el 15). */
+    tel := tel_cliente(p_telefono);
+    if b.por_cliente is not null and tel is null then
+      return jsonb_build_object('canjeado', false, 'falta_telefono', true,
+        'porque', 'este cupón es de ' ||
+          case when b.por_cliente = 1 then 'un uso por persona' else b.por_cliente || ' usos por persona' end ||
+          ': poné el WhatsApp del cliente, con la característica');
+    end if;
+
+    /* Dos canjes del mismo cupón a la vez —dos locales, o el mismo
+       cliente en dos cajas— se hacen de a uno: el segundo ya ve el uso del
+       primero. Es lo que hace que "una vez por persona" se cumpla de
+       verdad y que el tope no se pase por uno. */
+    perform pg_advisory_xact_lock(hashtext('cupon_campana'), b.id::integer);
+
+    if b.por_cliente is not null then
+      select count(*) into ya from beneficio_usos
+       where beneficio = b.id and anulado is null and telefono = tel;
+      if ya >= b.por_cliente then
+        select creado, local into ult from beneficio_usos
+         where beneficio = b.id and anulado is null and telefono = tel
+         order by creado desc limit 1;
+        return jsonb_build_object('canjeado', false, 'ya_lo_uso', true,
+          'porque', 'ese cliente ya lo usó' ||
+            case when b.por_cliente > 1 then ' las ' || b.por_cliente || ' veces que permite' else '' end ||
+            ' (el ' || to_char(ult.creado at time zone 'America/Argentina/Buenos_Aires', 'DD/MM') ||
+            ' en ' || coalesce((select nullif(trim(l.nombre), '') from locales l where upper(trim(l.codigo)) = upper(trim(ult.local))),
+                              initcap(lower(ult.local))) || ')');
+      end if;
+    end if;
+    if b.usos_max is not null then
+      select count(*) into total from beneficio_usos where beneficio = b.id and anulado is null;
+      if total >= b.usos_max then
+        return jsonb_build_object('canjeado', false, 'porque', 'ya se usó las ' || b.usos_max || ' veces que permitía');
+      end if;
+    end if;
+
+    insert into beneficio_usos (beneficio, telefono, nombre, local, vendedor, monto_compra, producto)
+    values (b.id, tel, nullif(trim(coalesce(p_nombre, '')), ''), trim(p_local),
+            nullif(trim(coalesce(p_vendedor, '')), ''), p_monto, nullif(trim(coalesce(p_producto, '')), ''));
+
+    return jsonb_build_object('canjeado', true, 'tipo', 'descuento', 'al_portador', true, 'campana', true,
+      'quedan', case when b.usos_max is null then null else b.usos_max - coalesce(total, b.usos) - 1 end);
+  end if;
+
+  -- ── Un solo uso, como siempre ──
+  update beneficios
+     set usado = now(), local_canje = trim(p_local),
+         vendedor_canje = nullif(trim(coalesce(p_vendedor, '')), ''),
+         monto_compra = p_monto,
+         canal_canje = 'local'
+   where id = p_id and usado is null and anulado is null;
+  get diagnostics tocadas = row_count;
+  if tocadas = 0 then
+    return jsonb_build_object('canjeado', false, 'porque', 'lo acaban de usar en otro lado');
+  end if;
+
+  if b.tipo = 'descuento' and b.registro is not null and coalesce(p_monto, 0) > 0 then
+    update registros
+       set compro = true, compro_canal = 'local', monto = p_monto,
+           producto_final = coalesce(nullif(trim(coalesce(p_producto, '')), ''), producto_final),
+           estado = coalesce(estado, 'Cerrado - compró'), contactado = true
+     where id = b.registro;
+  end if;
+
+  return jsonb_build_object('canjeado', true, 'tipo', b.tipo::text, 'al_portador', (b.codigo is not null));
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.crear_cupon(p_pin text, p_quien text, p_pct smallint, p_dias integer DEFAULT 30, p_registro bigint DEFAULT NULL::bigint, p_telefono text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text, p_compra_minima numeric DEFAULT NULL::numeric, p_locales text[] DEFAULT NULL::text[], p_acumulable boolean DEFAULT false, p_obs text DEFAULT NULL::text, p_campana boolean DEFAULT false, p_codigo text DEFAULT NULL::text, p_usos_max integer DEFAULT NULL::integer, p_por_cliente integer DEFAULT NULL::integer, p_desde date DEFAULT NULL::date, p_hasta date DEFAULT NULL::date, p_tope numeric DEFAULT NULL::numeric, p_en_app boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tz      constant text := 'America/Argentina/Buenos_Aires';
+  hoy     date := (now() at time zone tz)::date;
+  r       registros%rowtype;
+  llave   jsonb;
+  tel     text;
+  nom     text;
+  quien   text;
+  cod     text;
+  nid     bigint;
+  sueltos text[];
+  hasta   date;
+  camp    boolean := coalesce(p_campana, false);
+begin
+  llave := pin_ok(p_pin);
+  if not (llave->>'ok')::boolean then
+    return jsonb_build_object('creado', false, 'porque', llave->>'porque',
+                              'espera', llave->'espera', 'pin', true);
+  end if;
+
+  quien := nullif(trim(coalesce(p_quien, '')), '');
+  if quien is null then raise exception 'Falta quién está creando el cupón.'; end if;
+  if p_pct is null or p_pct < 1 or p_pct > 100 then raise exception 'El descuento tiene que estar entre 1 y 100.'; end if;
+  if p_compra_minima is not null and p_compra_minima <= 0 then raise exception 'La compra mínima tiene que ser mayor que cero.'; end if;
+  if p_tope is not null and p_tope <= 0 then raise exception 'El tope de descuento tiene que ser mayor que cero.'; end if;
+
+  /* Hasta cuándo: una fecha, o los días de siempre. */
+  if p_hasta is not null then
+    hasta := p_hasta;
+  else
+    if coalesce(p_dias, 0) < 1 then raise exception 'El cupón tiene que durar al menos un día.'; end if;
+    hasta := hoy + coalesce(p_dias, 30);
+  end if;
+  if hasta < hoy then raise exception 'La fecha de fin ya pasó.'; end if;
+  if p_desde is not null and p_desde > hasta then raise exception 'Empieza después de terminar: revisá las fechas.'; end if;
+
+  if p_locales is not null then
+    if array_length(p_locales, 1) is null then
+      raise exception 'La lista de locales está vacía. Para todos, dejala sin poner.';
+    end if;
+    select array_agg(x) into sueltos
+      from unnest(p_locales) as x
+     where upper(trim(x)) not in (select upper(codigo) from locales where activo);
+    if sueltos is not null then
+      raise exception 'Estos locales no existen o están inactivos: %.', array_to_string(sueltos, ', ');
+    end if;
+  end if;
+
+  -- ── La campaña ──
+  if camp then
+    cod := upper(regexp_replace(trim(coalesce(p_codigo, '')), '\s+', '', 'g'));
+    if cod = '' then raise exception 'Falta el código del cupón.'; end if;
+    if cod !~ '^[A-Z0-9-]{4,20}$' then
+      raise exception 'El código va de 4 a 20 letras o números, sin espacios ni acentos.';
+    end if;
+    /* Con al menos una letra: un código de puros números se confundiría
+       con el número de una Gift Card o con un teléfono al buscarlo. */
+    if cod !~ '[A-Z]' then raise exception 'El código necesita al menos una letra.'; end if;
+    if exists (select 1 from beneficios
+                where upper(regexp_replace(coalesce(codigo, ''), '[^A-Za-z0-9]', '', 'g'))
+                    = regexp_replace(cod, '[^A-Z0-9]', '', 'g')) then
+      raise exception 'Ya hay un cupón con el código %. Elegí otro nombre.', cod;
+    end if;
+    if p_usos_max is not null and p_usos_max < 1 then raise exception 'El límite de usos tiene que ser 1 o más.'; end if;
+    if p_por_cliente is not null and p_por_cliente < 1 then raise exception 'Los usos por cliente tienen que ser 1 o más.'; end if;
+
+    insert into beneficios (
+      tipo, pct, codigo, vence, desde, compra_minima, locales, acumulable, tope,
+      multiuso, usos_max, por_cliente, creado_por, creado_por_nombre, obs, en_app
+    ) values (
+      'descuento', p_pct, cod, hasta, p_desde, p_compra_minima, p_locales, coalesce(p_acumulable, false), p_tope,
+      true, p_usos_max, p_por_cliente, auth.uid(), quien, nullif(trim(coalesce(p_obs, '')), ''), coalesce(p_en_app, false)
+    )
+    returning id into nid;
+
+    return jsonb_build_object('creado', true, 'id', nid, 'codigo', cod, 'pct', p_pct, 'campana', true);
+  end if;
+
+  -- ── El de una persona, como siempre ──
+  /* SQL 81: el teléfono se guarda con la regla del Club. */
+  tel := nullif(trim(coalesce(p_telefono, '')), '');
+  if tel is not null then
+    tel := tel_cliente(tel);
+    if tel is null then raise exception 'El teléfono tiene que tener la característica: 10 números.'; end if;
+  end if;
+  nom := nullif(trim(coalesce(p_nombre, '')), '');
+  if p_registro is not null then
+    select * into r from registros where id = p_registro;
+    if not found then raise exception 'No existe el registro %.', p_registro; end if;
+    tel := tel_cliente(r.whatsapp);
+    nom := coalesce(nom, r.nombre);
+  end if;
+  if tel is not null then
+    select id into nid from v_beneficios
+     where tipo = 'descuento' and estado = 'disponible'
+       and tel_cliente(telefono) = tel
+     limit 1;
+    if nid is not null then
+      return jsonb_build_object('creado', false, 'porque', 'ese cliente ya tiene un beneficio sin usar', 'id', nid);
+    end if;
+  end if;
+
+  cod := generar_codigo();
+  insert into beneficios (
+    tipo, registro, telefono, nombre, pct, codigo, vence, desde,
+    compra_minima, locales, acumulable, tope, creado_por, creado_por_nombre, obs
+  ) values (
+    'descuento', p_registro, tel, nom, p_pct, cod, hasta, p_desde,
+    p_compra_minima, p_locales, coalesce(p_acumulable, false), p_tope, auth.uid(), quien, p_obs
+  )
+  returning id into nid;
+
+  return jsonb_build_object('creado', true, 'id', nid, 'codigo', cod, 'pct', p_pct);
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.dar_descuento(p_pin text, p_registro bigint, p_pct smallint, p_dias integer DEFAULT 30, p_quien text DEFAULT NULL::text, p_obs text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  r   registros%rowtype;
+  nid bigint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  select * into r from registros where id = p_registro;
+  if not found then raise exception 'No existe el registro %.', p_registro; end if;
+
+  /* Si ya tiene uno vivo, no se crea otro: se devuelve el que hay. Dos
+     personas mirando el mismo panel no pueden dejar al cliente con dos
+     descuentos, que es lo que pasaba repartiendo cupones de papel. */
+  /* SQL 81: el teléfono con la regla del Club. */
+  if tel_cliente(r.whatsapp) is null then
+    return jsonb_build_object('dado', false, 'porque', 'ese registro no tiene un WhatsApp con característica');
+  end if;
+  select id into nid from v_beneficios
+   where tipo = 'descuento' and estado = 'disponible'
+     and tel_cliente(telefono) = tel_cliente(r.whatsapp)
+   limit 1;
+  if nid is not null then
+    return jsonb_build_object('dado', false, 'porque', 'ese cliente ya tiene un descuento sin usar', 'id', nid);
+  end if;
+
+  insert into beneficios (tipo, registro, telefono, nombre, pct, vence, local, vendedor, obs)
+  values ('descuento', r.id, tel_cliente(r.whatsapp), r.nombre, p_pct,
+          ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+          r.sucursal, coalesce(p_quien, r.vendedor), p_obs)
+  returning id into nid;
+
+  return jsonb_build_object('dado', true, 'id', nid, 'pct', p_pct);
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.vender_giftcard(p_valor numeric, p_local text, p_vendedor text, p_cobrado numeric DEFAULT NULL::numeric, p_pago text DEFAULT NULL::text, p_dias integer DEFAULT 30, p_telefono text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text, p_obs text DEFAULT NULL::text, p_codigo text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  nid     bigint;
+  intento integer;
+  /* `nro` y no `serie`: la tabla tiene una columna que se llama así, y
+     adentro del INSERT PL/pgSQL no sabe a cuál de las dos le hablan. */
+  nro text;
+  v_cod text := nullif(regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g'), '');
+  t giftcard_tarjetas%rowtype;
+begin
+  if coalesce(p_valor, 0) <= 0 then raise exception 'Falta el valor de la Gift Card.'; end if;
+  if length(trim(coalesce(p_local, ''))) = 0 then raise exception 'Falta el local.'; end if;
+  if length(trim(coalesce(p_vendedor, ''))) = 0 then raise exception 'Falta el vendedor.'; end if;
+
+  /* SQL 72: la tarjeta impresa. Su número es el código que lee la pistola:
+     tiene que ser una de las impresas y no haberse vendido. */
+  if v_cod is not null then
+    if v_cod !~ '^99[0-9]{12}$' then raise exception 'Ese código no es de una Gift Card VDH.'; end if;
+    select * into t from giftcard_tarjetas g where g.codigo = v_cod;
+    if not found then raise exception 'Esa tarjeta no está entre las Gift Cards impresas.'; end if;
+    if exists (select 1 from beneficios b where b.tipo = 'giftcard' and b.serie = v_cod) then
+      raise exception 'Esa Gift Card ya se vendió.';
+    end if;
+    begin
+      insert into beneficios (tipo, serie, valor, cobrado, pago, vence,
+                              local, vendedor, telefono, nombre, obs)
+      values ('giftcard', v_cod, p_valor, coalesce(p_cobrado, p_valor),
+              nullif(p_pago, '')::forma_pago,
+              ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+              trim(p_local), trim(p_vendedor),
+              coalesce(tel_cliente(p_telefono), nullif(regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g'), '')),
+              nullif(trim(coalesce(p_nombre, '')), ''),
+              p_obs)
+      returning id into nid;
+    exception when unique_violation then
+      raise exception 'Esa Gift Card ya se vendió.';
+    end;
+    return jsonb_build_object('vendida', true, 'id', nid, 'serie', v_cod, 'nro', t.nro, 'color', t.color,
+                              'vence', ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)));
+  end if;
+
+  /* Sin código: una tarjeta vieja, con el número escrito a mano. */
+
+  /* El número se toma acá adentro y en la misma transacción que el insert.
+     Dos ventas al mismo tiempo en dos locales distintos podrían pedir el
+     mismo: el índice único sobre la serie es el que decide, y el que pierde
+     reintenta con el siguiente. */
+  for intento in 1 .. 5 loop
+    nro := siguiente_serie();
+    begin
+      insert into beneficios (tipo, serie, valor, cobrado, pago, vence,
+                              local, vendedor, telefono, nombre, obs)
+      values ('giftcard', nro, p_valor,
+              -- Sin decir cuánto se cobró, se asume que se cobró el valor.
+              coalesce(p_cobrado, p_valor),
+              nullif(p_pago, '')::forma_pago,
+              ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+              trim(p_local), trim(p_vendedor),
+              coalesce(tel_cliente(p_telefono), nullif(regexp_replace(coalesce(p_telefono, ''), '[^0-9]', '', 'g'), '')),
+              nullif(trim(coalesce(p_nombre, '')), ''),
+              p_obs)
+      returning id into nid;
+
+      return jsonb_build_object('vendida', true, 'id', nid, 'serie', nro);
+
+    exception when unique_violation then
+      -- Se la ganó otro local. Se prueba con la que sigue.
+      null;
+    end;
+  end loop;
+
+  raise exception 'No se pudo tomar un número de tarjeta. Probá de nuevo.';
+end;
+$function$
+;
+
+/* El "Dar un cupón" de Contactos: personal, por teléfono, sin código. */
+create or replace function dar_descuento_tel(p_pin text, p_telefono text, p_pct smallint, p_dias integer default 30,
+                                             p_quien text default null, p_nombre text default null, p_obs text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  tel text := tel_cliente(p_telefono);
+  nid bigint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if tel is null then
+    return jsonb_build_object('dado', false, 'porque', 'el teléfono tiene que tener la característica: 10 números');
+  end if;
+  if p_pct is null or p_pct < 1 or p_pct > 100 then
+    return jsonb_build_object('dado', false, 'porque', 'el descuento va de 1 a 100');
+  end if;
+  if coalesce(p_dias, 30) < 1 or coalesce(p_dias, 30) > 365 then
+    return jsonb_build_object('dado', false, 'porque', 'el descuento dura entre 1 día y un año');
+  end if;
+  select id into nid from v_beneficios
+   where tipo = 'descuento' and estado = 'disponible' and tel_cliente(telefono) = tel
+   limit 1;
+  if nid is not null then
+    return jsonb_build_object('dado', false, 'porque', 'ese cliente ya tiene un descuento sin usar', 'id', nid);
+  end if;
+  insert into beneficios (tipo, telefono, nombre, pct, vence, vendedor, obs)
+  values ('descuento', tel, nullif(trim(coalesce(p_nombre, '')), ''), p_pct,
+          ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+          nullif(trim(coalesce(p_quien, '')), ''), nullif(trim(coalesce(p_obs, '')), ''))
+  returning id into nid;
+  return jsonb_build_object('dado', true, 'id', nid, 'pct', p_pct);
+end;
+$$;
+revoke execute on function dar_descuento_tel(text, text, smallint, integer, text, text, text) from public;
+grant execute on function dar_descuento_tel(text, text, smallint, integer, text, text, text) to anon, authenticated;
+
+select 'listo: los teléfonos de cupones y gift cards, con una sola regla' as "SQL 81";
+
+
+-- ─────────────────────────── PARTE 82 (12/10/2026) ───────────────────────────
+-- ═══ SQL 82 (12/10/2026) · cupones vencidos y teléfonos del exterior ═══
+-- Lo que encontró el árbitro al probar la reorganización del menú:
+--   · Un cupón o una gift card VENCIDOS ahora se pueden extender: Extender
+--     cuenta desde hoy si ya venció.
+--   · Darle un descuento nuevo a alguien con uno VENCIDO sin usar ya no
+--     choca: el vencido se cierra ("venció sin usarse") y sale el nuevo.
+--     Pasaba en la ficha del No Compra, en Contactos y en "Crear un cupón".
+--   · Lo mismo en los avisos automáticos del Club con cupón: con un cupón
+--     vencido de un socio, la corrida de cada hora se cortaba entera.
+--   · Un teléfono del exterior escrito con + (o 00) se guarda entero.
+-- Se puede correr más de una vez.
+
+-- El teléfono de los cupones: la regla del Club para los de acá; los del
+-- exterior (+598…, 00 1…) enteros y con el +.
+create or replace function tel_cliente(p text) returns text language sql immutable as $$
+  select case
+    when btrim(coalesce(p, '')) ~ '^(\+|00)'
+         and regexp_replace(regexp_replace(btrim(p), '^(\+|00)', ''), '[^0-9]', '', 'g') !~ '^54'
+         and length(regexp_replace(regexp_replace(btrim(p), '^(\+|00)', ''), '[^0-9]', '', 'g')) between 8 and 15
+      then '+' || regexp_replace(regexp_replace(btrim(p), '^(\+|00)', ''), '[^0-9]', '', 'g')
+    else club_tel10(club_tel(p))
+  end
+$$;
+
+-- Cierra los descuentos VENCIDOS y sin usar de un teléfono, para que entre
+-- uno nuevo: el índice "uno vivo por teléfono" no puede mirar la fecha.
+create or replace function cerrar_descuentos_vencidos(p_tel text, p_quien text) returns integer
+language plpgsql security definer set search_path = public as $$
+declare n integer;
+begin
+  if nullif(regexp_replace(coalesce(p_tel, ''), '[^0-9]', '', 'g'), '') is null then return 0; end if;
+  update beneficios b
+     set anulado = now(),
+         anulado_por = coalesce(nullif(trim(coalesce(p_quien, '')), ''), 'sistema'),
+         motivo_anul = 'Venció sin usarse: se le dio uno nuevo.'
+   where b.tipo = 'descuento' and b.usado is null and b.anulado is null
+     and regexp_replace(coalesce(b.telefono, ''), '[^0-9]', '', 'g') = regexp_replace(p_tel, '[^0-9]', '', 'g')
+     and b.vence < (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function cerrar_descuentos_vencidos(text, text) from public, anon, authenticated;
+
+CREATE OR REPLACE FUNCTION public.extender_beneficio(p_pin text, p_id bigint, p_dias integer, p_quien text)
+ RETURNS date
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare nueva date;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if coalesce(p_dias, 0) <= 0 then raise exception 'Cuántos días hay que extenderlo.'; end if;
+  /* SQL 82: si ya venció, cuenta desde hoy (antes sumaba a la fecha vieja y
+     +7 a uno vencido hace 10 lo dejaba vencido). En las columnas de SET,
+     "vence" es el de antes. */
+  update beneficios
+     set vence = greatest(coalesce(vence, (now() at time zone 'America/Argentina/Buenos_Aires')::date),
+                          (now() at time zone 'America/Argentina/Buenos_Aires')::date) + p_dias,
+         -- Queda dicho en las observaciones, que es donde alguien lo va a
+         -- buscar cuando pregunte por qué esta tarjeta duró tres meses.
+         obs = trim(both E'\n' from coalesce(obs, '') || E'\n' ||
+               to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'DD/MM') ||
+               ': ' || coalesce(p_quien, 'alguien') ||
+               case when vence < (now() at time zone 'America/Argentina/Buenos_Aires')::date
+                    then ' lo volvió a dar por ' || p_dias || ' días (había vencido el ' || to_char(vence, 'DD/MM') || ').'
+                    else ' extendió ' || p_dias || ' días.' end)
+   where id = p_id and usado is null and anulado is null
+  returning vence into nueva;
+  return nueva;
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.dar_descuento(p_pin text, p_registro bigint, p_pct smallint, p_dias integer DEFAULT 30, p_quien text DEFAULT NULL::text, p_obs text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  r   registros%rowtype;
+  nid bigint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+
+  select * into r from registros where id = p_registro;
+  if not found then raise exception 'No existe el registro %.', p_registro; end if;
+
+  /* Si ya tiene uno vivo, no se crea otro: se devuelve el que hay. Dos
+     personas mirando el mismo panel no pueden dejar al cliente con dos
+     descuentos, que es lo que pasaba repartiendo cupones de papel. */
+  /* SQL 81: el teléfono con la regla del Club. */
+  if tel_cliente(r.whatsapp) is null then
+    return jsonb_build_object('dado', false, 'porque', 'ese registro no tiene un WhatsApp con característica');
+  end if;
+  select id into nid from v_beneficios
+   where tipo = 'descuento' and estado = 'disponible'
+     and tel_cliente(telefono) = tel_cliente(r.whatsapp)
+   limit 1;
+  if nid is not null then
+    return jsonb_build_object('dado', false, 'porque', 'ese cliente ya tiene un descuento sin usar', 'id', nid);
+  end if;
+
+  /* SQL 82: uno vencido sin usar se cierra, en vez de chocar con el índice. */
+  perform cerrar_descuentos_vencidos(tel_cliente(r.whatsapp), coalesce(p_quien, r.vendedor));
+  begin
+    insert into beneficios (tipo, registro, telefono, nombre, pct, vence, local, vendedor, obs)
+    values ('descuento', r.id, tel_cliente(r.whatsapp), r.nombre, p_pct,
+            ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+            r.sucursal, coalesce(p_quien, r.vendedor), p_obs)
+    returning id into nid;
+  exception when unique_violation then
+    return jsonb_build_object('dado', false, 'porque', 'ese cliente ya tiene un descuento sin usar');
+  end;
+
+  return jsonb_build_object('dado', true, 'id', nid, 'pct', p_pct);
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.dar_descuento_tel(p_pin text, p_telefono text, p_pct smallint, p_dias integer DEFAULT 30, p_quien text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text, p_obs text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tel text := tel_cliente(p_telefono);
+  nid bigint;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if tel is null then
+    return jsonb_build_object('dado', false, 'porque', 'el teléfono tiene que tener la característica: 10 números');
+  end if;
+  if p_pct is null or p_pct < 1 or p_pct > 100 then
+    return jsonb_build_object('dado', false, 'porque', 'el descuento va de 1 a 100');
+  end if;
+  if coalesce(p_dias, 30) < 1 or coalesce(p_dias, 30) > 365 then
+    return jsonb_build_object('dado', false, 'porque', 'el descuento dura entre 1 día y un año');
+  end if;
+  select id into nid from v_beneficios
+   where tipo = 'descuento' and estado = 'disponible' and tel_cliente(telefono) = tel
+   limit 1;
+  if nid is not null then
+    return jsonb_build_object('dado', false, 'porque', 'ese cliente ya tiene un descuento sin usar', 'id', nid);
+  end if;
+  /* SQL 82: uno vencido sin usar se cierra, en vez de chocar con el índice. */
+  perform cerrar_descuentos_vencidos(tel, p_quien);
+  begin
+    insert into beneficios (tipo, telefono, nombre, pct, vence, vendedor, obs)
+    values ('descuento', tel, nullif(trim(coalesce(p_nombre, '')), ''), p_pct,
+            ((now() at time zone 'America/Argentina/Buenos_Aires')::date + coalesce(p_dias, 30)),
+            nullif(trim(coalesce(p_quien, '')), ''), nullif(trim(coalesce(p_obs, '')), ''))
+    returning id into nid;
+  exception when unique_violation then
+    return jsonb_build_object('dado', false, 'porque', 'ese cliente ya tiene un descuento sin usar');
+  end;
+  return jsonb_build_object('dado', true, 'id', nid, 'pct', p_pct);
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.crear_cupon(p_pin text, p_quien text, p_pct smallint, p_dias integer DEFAULT 30, p_registro bigint DEFAULT NULL::bigint, p_telefono text DEFAULT NULL::text, p_nombre text DEFAULT NULL::text, p_compra_minima numeric DEFAULT NULL::numeric, p_locales text[] DEFAULT NULL::text[], p_acumulable boolean DEFAULT false, p_obs text DEFAULT NULL::text, p_campana boolean DEFAULT false, p_codigo text DEFAULT NULL::text, p_usos_max integer DEFAULT NULL::integer, p_por_cliente integer DEFAULT NULL::integer, p_desde date DEFAULT NULL::date, p_hasta date DEFAULT NULL::date, p_tope numeric DEFAULT NULL::numeric, p_en_app boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  tz      constant text := 'America/Argentina/Buenos_Aires';
+  hoy     date := (now() at time zone tz)::date;
+  r       registros%rowtype;
+  llave   jsonb;
+  tel     text;
+  nom     text;
+  quien   text;
+  cod     text;
+  nid     bigint;
+  sueltos text[];
+  hasta   date;
+  camp    boolean := coalesce(p_campana, false);
+begin
+  llave := pin_ok(p_pin);
+  if not (llave->>'ok')::boolean then
+    return jsonb_build_object('creado', false, 'porque', llave->>'porque',
+                              'espera', llave->'espera', 'pin', true);
+  end if;
+
+  quien := nullif(trim(coalesce(p_quien, '')), '');
+  if quien is null then raise exception 'Falta quién está creando el cupón.'; end if;
+  if p_pct is null or p_pct < 1 or p_pct > 100 then raise exception 'El descuento tiene que estar entre 1 y 100.'; end if;
+  if p_compra_minima is not null and p_compra_minima <= 0 then raise exception 'La compra mínima tiene que ser mayor que cero.'; end if;
+  if p_tope is not null and p_tope <= 0 then raise exception 'El tope de descuento tiene que ser mayor que cero.'; end if;
+
+  /* Hasta cuándo: una fecha, o los días de siempre. */
+  if p_hasta is not null then
+    hasta := p_hasta;
+  else
+    if coalesce(p_dias, 0) < 1 then raise exception 'El cupón tiene que durar al menos un día.'; end if;
+    hasta := hoy + coalesce(p_dias, 30);
+  end if;
+  if hasta < hoy then raise exception 'La fecha de fin ya pasó.'; end if;
+  if p_desde is not null and p_desde > hasta then raise exception 'Empieza después de terminar: revisá las fechas.'; end if;
+
+  if p_locales is not null then
+    if array_length(p_locales, 1) is null then
+      raise exception 'La lista de locales está vacía. Para todos, dejala sin poner.';
+    end if;
+    select array_agg(x) into sueltos
+      from unnest(p_locales) as x
+     where upper(trim(x)) not in (select upper(codigo) from locales where activo);
+    if sueltos is not null then
+      raise exception 'Estos locales no existen o están inactivos: %.', array_to_string(sueltos, ', ');
+    end if;
+  end if;
+
+  -- ── La campaña ──
+  if camp then
+    cod := upper(regexp_replace(trim(coalesce(p_codigo, '')), '\s+', '', 'g'));
+    if cod = '' then raise exception 'Falta el código del cupón.'; end if;
+    if cod !~ '^[A-Z0-9-]{4,20}$' then
+      raise exception 'El código va de 4 a 20 letras o números, sin espacios ni acentos.';
+    end if;
+    /* Con al menos una letra: un código de puros números se confundiría
+       con el número de una Gift Card o con un teléfono al buscarlo. */
+    if cod !~ '[A-Z]' then raise exception 'El código necesita al menos una letra.'; end if;
+    if exists (select 1 from beneficios
+                where upper(regexp_replace(coalesce(codigo, ''), '[^A-Za-z0-9]', '', 'g'))
+                    = regexp_replace(cod, '[^A-Z0-9]', '', 'g')) then
+      raise exception 'Ya hay un cupón con el código %. Elegí otro nombre.', cod;
+    end if;
+    if p_usos_max is not null and p_usos_max < 1 then raise exception 'El límite de usos tiene que ser 1 o más.'; end if;
+    if p_por_cliente is not null and p_por_cliente < 1 then raise exception 'Los usos por cliente tienen que ser 1 o más.'; end if;
+
+    insert into beneficios (
+      tipo, pct, codigo, vence, desde, compra_minima, locales, acumulable, tope,
+      multiuso, usos_max, por_cliente, creado_por, creado_por_nombre, obs, en_app
+    ) values (
+      'descuento', p_pct, cod, hasta, p_desde, p_compra_minima, p_locales, coalesce(p_acumulable, false), p_tope,
+      true, p_usos_max, p_por_cliente, auth.uid(), quien, nullif(trim(coalesce(p_obs, '')), ''), coalesce(p_en_app, false)
+    )
+    returning id into nid;
+
+    return jsonb_build_object('creado', true, 'id', nid, 'codigo', cod, 'pct', p_pct, 'campana', true);
+  end if;
+
+  -- ── El de una persona, como siempre ──
+  /* SQL 81: el teléfono se guarda con la regla del Club. */
+  tel := nullif(trim(coalesce(p_telefono, '')), '');
+  if tel is not null then
+    tel := tel_cliente(tel);
+    if tel is null then raise exception 'El teléfono tiene que tener la característica: 10 números.'; end if;
+  end if;
+  nom := nullif(trim(coalesce(p_nombre, '')), '');
+  if p_registro is not null then
+    select * into r from registros where id = p_registro;
+    if not found then raise exception 'No existe el registro %.', p_registro; end if;
+    tel := tel_cliente(r.whatsapp);
+    nom := coalesce(nom, r.nombre);
+  end if;
+  if tel is not null then
+    select id into nid from v_beneficios
+     where tipo = 'descuento' and estado = 'disponible'
+       and tel_cliente(telefono) = tel
+     limit 1;
+    if nid is not null then
+      return jsonb_build_object('creado', false, 'porque', 'ese cliente ya tiene un beneficio sin usar', 'id', nid);
+    end if;
+  end if;
+
+  /* SQL 82: uno vencido sin usar se cierra, en vez de chocar con el índice. */
+  if tel is not null then
+    perform cerrar_descuentos_vencidos(tel, quien);
+  end if;
+  cod := generar_codigo();
+  begin
+    insert into beneficios (
+      tipo, registro, telefono, nombre, pct, codigo, vence, desde,
+      compra_minima, locales, acumulable, tope, creado_por, creado_por_nombre, obs
+    ) values (
+      'descuento', p_registro, tel, nom, p_pct, cod, hasta, p_desde,
+      p_compra_minima, p_locales, coalesce(p_acumulable, false), p_tope, auth.uid(), quien, p_obs
+    )
+    returning id into nid;
+  exception when unique_violation then
+    return jsonb_build_object('creado', false, 'porque', 'ese cliente ya tiene un beneficio sin usar');
+  end;
+
+  return jsonb_build_object('creado', true, 'id', nid, 'codigo', cod, 'pct', p_pct);
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.club_avisos_auto_correr()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  ahora timestamp := now() at time zone 'America/Argentina/Buenos_Aires';
+  hoy   date := ahora::date;
+  cfg   club_avisos_auto%rowtype;
+  s     record;
+  tel   text;
+  cod   text;
+  txt   text;
+  tit   text;
+  n_av  integer := 0;
+  n_cu  integer := 0;
+  miles text;
+begin
+  if extract(hour from ahora) < 11 or extract(hour from ahora) >= 20 then
+    return jsonb_build_object('hecho', false, 'porque', 'fuera de horario (11 a 20)');
+  end if;
+
+  for cfg in select * from club_avisos_auto where activo order by motivo loop
+    for s in select * from club_avisos_auto_candidatos(cfg.motivo) loop
+      /* SQL 82: el teléfono con la regla de los cupones (sin 54, 9, 0 ni 15). */
+      tel := tel_cliente(s.telefono);
+      cod := null;
+      /* El cupón, si hay % y no tiene otro sin usar (uno vivo por teléfono). */
+      if cfg.cupon_pct is not null and length(tel) = 10
+         and not exists (select 1 from v_beneficios b
+                          where b.tipo = 'descuento' and not b.multiuso and b.estado = 'disponible'
+                            and tel_cliente(b.telefono) = tel) then
+        /* SQL 82: el cupón vencido sin usar se cierra (antes el insert chocaba
+           con el índice y se cortaba la corrida entera, para todos). Y si igual
+           choca, el aviso sale sin cupón. */
+        perform cerrar_descuentos_vencidos(tel, 'VDH Club (automático)');
+        cod := generar_codigo();
+        begin
+          insert into beneficios (tipo, telefono, nombre, pct, codigo, vence, acumulable, creado_por_nombre, obs)
+          values ('descuento', tel, s.nombre, cfg.cupon_pct, cod, hoy + cfg.cupon_dias, true,
+                  'VDH Club (automático)', 'Aviso automático: ' || case cfg.motivo when 'vencen' then 'puntos por vencer' else 'te extrañamos' end);
+          n_cu := n_cu + 1;
+        exception when unique_violation then
+          cod := null;
+        end;
+      end if;
+      miles := replace(to_char(floor(s.puntos), 'FM999,999,999'), ',', '.');
+      tit := replace(cfg.titulo, '{nombre}', split_part(coalesce(s.nombre, ''), ' ', 1));
+      txt := replace(replace(replace(cfg.cuerpo, '{nombre}', split_part(coalesce(s.nombre, ''), ' ', 1)),
+                             '{puntos}', miles), '{fecha}', to_char(s.vence, 'DD/MM'));
+      if cod is not null then
+        txt := txt || ' Y te regalamos un ' || cfg.cupon_pct || '% de descuento, acumulable con otras promos.';
+      end if;
+      insert into club_avisos_personales (cliente, motivo, clave, titulo, cuerpo, enlace, sale)
+      values (s.cliente, cfg.motivo, cfg.motivo || ':' || s.base::text, left(tit, 60), txt, 'tarjeta.html#promos', now())
+      on conflict (cliente, motivo, clave) do nothing;
+      n_av := n_av + 1;
+    end loop;
+  end loop;
+  return jsonb_build_object('hecho', true, 'avisos', n_av, 'cupones', n_cu);
+end;
+$function$
+;
+
+select 'listo: cupones vencidos con salida, y los teléfonos del exterior enteros' as "SQL 82";
+
+
+-- ─────────────────────────── PARTE 83 (12/10/2026) ───────────────────────────
+-- ═══ SQL 83 (12/10/2026) · los teléfonos del exterior, también sin el + ═══
+-- El 82 guardaba entero un número del exterior sólo si venía con el +, y
+-- tomaba como del exterior a uno de acá escrito con + y sin el 54.
+-- Ahora es del exterior si tiene 11 cifras o más, no empieza con el 54, y
+-- viene con + (o 00) o empieza con una cifra que acá no puede ir adelante
+-- (las características empiezan con 1, 2 o 3; el 0, el 9 y el 15 los saca
+-- la regla del Club). Los de acá quedan igual que siempre.
+-- Se puede correr más de una vez.
+create or replace function tel_cliente(p text) returns text language sql immutable as $$
+  select case
+    when x.d = '' then null
+    when x.d !~ '^54' and length(x.d) between 11 and 15 and (x.t ~ '^(\+|00)' or x.d ~ '^[4-8]')
+      then '+' || x.d
+    else club_tel10(club_tel(p))
+  end
+  from (select btrim(coalesce(p, '')) as t,
+               regexp_replace(regexp_replace(btrim(coalesce(p, '')), '^(\+|00)', ''), '[^0-9]', '', 'g') as d) x
+$$;
+
+select 'listo: los teléfonos del exterior, también sin el +' as "SQL 83";

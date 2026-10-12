@@ -136,6 +136,15 @@ function revisarTelefono(t) {
 function normalizarTel(tel) {
   var n = String(tel || '').replace(/\D/g, '').replace(/^0/, '');
   if (!n) return '';
+  /* Escrito con el 15 ("11 15 5555-1234", 12/10/2026): sin el 54 son 12
+     cifras y el 15 va justo después de la característica (2 a 4 cifras).
+     Es la misma regla de la base (club_tel); sin esto, wa.me recibía un
+     número de 15 cifras que no existe. */
+  if (n.indexOf('54') !== 0 && n.length === 12) {
+    for (var a = 2; a <= 4; a++) {
+      if (n.substr(a, 2) === '15') { n = n.slice(0, a) + n.slice(a + 2); break; }
+    }
+  }
   if (n.indexOf('54') !== 0) n = '549' + n;
   /* "54 11 5821-7030" (sin el 9 de los celulares, como lo guarda Tienda
      Nube): WhatsApp lo necesita para abrir el chat. */

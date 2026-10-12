@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>VDH · Club en caja</title>
-<meta name="description" content="Sumar compras del Club de Clientes.">
+<title>VDH · Cobrar</title>
+<meta name="description" content="El mostrador: el Club, los cupones y las Gift Cards.">
 <meta name="theme-color" content="#F7F6F3">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icono-apple.png">
@@ -15,49 +15,74 @@
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="estilos.css">
 <script>
-  /* El ítem "Club" del menú abre la última pastilla que se usó en esta compu.
-     Socios, Movimientos y Estadísticas son vistas de club-numeros.html. */
-  try {
-    var ultimaPestana = localStorage.getItem('nc_club_pestana');
-    var destinoPestana = { estadisticas: 'club-numeros.html', socios: 'club-numeros.html#socios',
-                           movimientos: 'club-numeros.html#movimientos' }[ultimaPestana];
-    if (destinoPestana && !/[?&]cobrar/.test(location.search)) { location.replace(destinoPestana); }
-  } catch (e) {}
   try {
     document.documentElement.dataset.theme =
       localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
   } catch (e) {}
 </script>
 <style>
-  /* ── Club en caja ────────────────────────────────────────────────────────
-     La pantalla del mostrador. Un solo campo arriba y todo lo demás aparece
-     debajo según lo que se encuentre: el que atiende tiene al cliente
-     adelante y la fila atrás.
+  /* Ronda 2 del árbitro (12/10/2026). */
+  .club-nota { margin: 10px 0 0; font-size: 13.5px; line-height: 1.45; color: var(--txt-2); }
+  .club-nota[hidden] { display: none; }
+  .elegir-oficina { margin: -4px 0 12px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--surface-2);
+                    border: 1px solid var(--line); font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
+  .elegir-oficina a { color: var(--acc-txt); font-weight: 600; }
+  .elegir-oficina[hidden] { display: none; }
+  /* ── Cobrar (12/10/2026) ─────────────────────────────────────────────────
+     Todo el mostrador en una pantalla: lo que era Club → Cobrar y la parte
+     de mostrador de Beneficios. Decidido con Mauricio y revisado dos veces
+     por un árbitro: el vendedor, con el cliente adelante, no tiene que saber
+     QUÉ le dieron para elegir dónde ir. Un solo campo y la pantalla busca en
+     el Club y en los cupones y gift cards a la vez.
 
-     ── Un campo, dos formas de llenarlo ──
-     Se escribe el teléfono o el nombre, O se dispara el lector, que escribe
-     los doce dígitos del código como si los tipeara alguien. Para esta
-     pantalla son lo mismo y no hay nada que elegir. */
+     ── Un campo, muchas formas de llenarlo ──
+     La tarjeta del Club (12 números), la Gift Card (14, empieza con 99, o el
+     número corto de las viejas), el código de un cupón, un WhatsApp o un
+     nombre. No se adivina por la forma: se busca en las dos bases y se
+     muestra lo que haya, separado. Doce números se buscan como tarjeta Y
+     como teléfono (un celular con el 15 también tiene doce). */
   :root { --tope: 720px; }
   @media (min-width: 1100px) { :root { --tope: 980px; } }
 
   .buscar-tit { font: 700 21px/1.2 var(--display); letter-spacing: -.3px; }
   .buscar-sub { font-size: 14.5px; color: var(--txt-2); margin: 8px 0 20px; line-height: 1.5; }
   .buscar-fila { display: flex; gap: 10px; }
-  /* Mandar la tarjeta y corregir los datos: dos cosas que se hacen de vez en
-     cuando, así que van chicas y juntas abajo del código. Lo de todos los
-     días —sumar la compra— es el botón grande de más abajo. */
-  .ficha-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .buscar-fila input { flex: 1; min-width: 0; font-size: 19px; font-weight: 600; padding: 16px 14px; }
   .buscar-fila .btn { flex: none; padding-left: 22px; padding-right: 22px; }
+  /* "ABC": el campo arranca con el teclado numérico (tarjeta o teléfono, lo
+     más común a mano) y esto lo pasa al de letras (un cupón, un nombre). */
+  .buscar-fila .btn-abc { padding-left: 14px; padding-right: 14px; font-weight: 700; letter-spacing: .5px; }
+  .buscar-fila .btn-abc[aria-pressed="true"] { background: var(--acc-soft); border-color: var(--acc-line); color: var(--acc-txt); }
+  /* El ABC sólo hace falta en el celular: en la compu hay teclado entero. */
+  @media (hover: hover) and (pointer: fine) { .buscar-fila .btn-abc { display: none; } }
+  /* En el celular los botones se achican, así el campo queda ancho. */
+  @media (max-width: 560px) {
+    .buscar-fila { gap: 6px; }
+    .buscar-fila input { font-size: 17px; padding: 14px 12px; }
+    .buscar-fila .btn { padding-left: 14px; padding-right: 14px; }
+    .buscar-fila .btn-abc { padding-left: 10px; padding-right: 10px; }
+  }
 
   .quien-linea {
     display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
     margin-bottom: 18px; font-size: 13px; color: var(--txt-3);
   }
   .quien-linea b { color: var(--txt-2); font-weight: 600; }
+  .quien-linea button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--acc-txt); cursor: pointer; text-decoration: underline; }
 
-  /* Un resultado de la búsqueda. Se toca y se elige. */
+  /* Los avisos del enlace de habilitar la caja ("Habilitando…", "ese enlace
+     ya se usó", "esta caja ya no está habilitada"). Antes vivían en la
+     pantalla del PIN, que Cobrar ya no tiene. */
+  .aviso-caja { margin-bottom: 14px; padding: 13px 15px; border-radius: var(--r-sm); background: var(--warn-soft);
+                border: 1px solid var(--warn); font-size: 14px; line-height: 1.5; color: var(--txt); }
+  .aviso-caja.ok { background: var(--ok-soft); border-color: var(--ok-borde, var(--ok)); }
+  .aviso-caja[hidden] { display: none; }
+
+  /* Los resultados, separados por lo que son: el vendedor ve de un vistazo
+     si encontró un socio, un cupón o una Gift Card. */
+  .grupo-tit { margin: 22px 0 2px; font: 700 12px var(--sans); letter-spacing: .6px; text-transform: uppercase; color: var(--txt-3); }
+
+  /* Un socio de la búsqueda. Se toca y se abre su ficha. */
   .socio {
     display: flex; align-items: center; gap: 14px;
     width: 100%; text-align: left;
@@ -67,21 +92,19 @@
     transition: border-color .15s, background .15s;
   }
   .socio:hover { border-color: var(--acc-line); }
-  /* El saldo, y no ya los sellos: "12.300" no entra en un cuadrado de 44,
-     así que crece a lo ancho. */
   .socio-n {
     min-width: 44px; height: 44px; flex: none; border-radius: 13px; padding: 0 10px;
     background: var(--acc-soft); color: var(--acc-txt);
     display: grid; place-items: center; font: 700 14.5px var(--display);
     font-variant-numeric: tabular-nums;
   }
-  .socio-nom { font: 600 16px/1.3 var(--sans); }
-  .socio-sub { font-size: 13px; color: var(--txt-3); margin-top: 2px; }
+  .socio-nom { display: block; font: 600 16px/1.3 var(--sans); }
+  .socio-sub { display: block; font-size: 13px; color: var(--txt-3); margin-top: 2px; }
   .socio .pill { margin-left: auto; flex: none; }
 
-  /* La ficha del cliente elegido: lo único que importa arriba de todo, y el
-     botón de sumar abajo. */
+  /* La ficha del socio elegido. */
   .ficha-socio { margin-top: 16px; }
+  .ficha-acciones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
   .ficha-top { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
   .ficha-nom { font: 700 24px/1.15 var(--display); letter-spacing: -.5px; }
   .ficha-puntos { margin-left: auto; text-align: right; }
@@ -91,9 +114,6 @@
     letter-spacing: -1px; font-variant-numeric: tabular-nums;
   }
   .ficha-puntos small { display: block; font-size: 13px; font-weight: 600; color: var(--txt-3); margin: 4px 0 6px; }
-
-  /* Las mismas tres chapas que ve el cliente en su tarjeta: el vendedor
-     tiene que poder decir "sos Gold" mirando lo mismo que mira él. */
   .chip-nivel {
     display: inline-flex; align-items: center; gap: 5px;
     padding: 5px 10px; border-radius: 999px;
@@ -102,16 +122,9 @@
   .nv-silver { background: #DADDE2; color: #2A2D31; }
   .nv-gold   { background: #F1D27A; color: #3A2A00; }
   .nv-black  { background: #0B0C0E; color: #fff; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .6); }
-
-  /* Lo que va a sumar, mientras se tipea el importe. Es el freno contra el
-     cero de más: "suma 8.000 puntos" en una remera se ve antes de guardar. */
-  /* Lo que el vendedor le puede decir al cliente apenas abre su ficha: "hoy
-     sumás el doble" o "¡feliz cumple!". Es la frase que lo hace volver. */
   .ficha-hoy { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-
   .vista-puntos { font-size: 13.5px; color: var(--txt-3); margin-top: 6px; min-height: 1.4em; }
   .vista-puntos b { color: var(--acc-txt); }
-
   .premios { display: grid; gap: 9px; margin-top: 16px; }
   .premio {
     display: flex; align-items: center; gap: 12px;
@@ -125,30 +138,16 @@
   .premio b { display: block; }
   .premio small { display: block; font-size: 12.5px; color: var(--txt-3); }
   .premio .btn { margin-left: auto; flex: none; }
-  /* Qué hacer si el premio no está (bases y condiciones, SQL 73). */
   .premios-nota { font-size: 12.5px; line-height: 1.45; color: var(--txt-3); }
-
-  /* Las promos "Sólo socios" (SQL 38): el vendedor las ve al abrir la
-     ficha y las aplica en BlueSoft, como el regalo de cumple. Con el borde
-     verde, como los beneficios en la app: es lo primero que tiene que ver. */
   .promos-socio { display: grid; gap: 8px; margin-top: 16px; }
   .promos-socio-tit { font: 700 12px var(--sans); letter-spacing: .5px; text-transform: uppercase; color: var(--txt-2); }
-  /* Importe y ticket, lado a lado: si una etiqueta ocupa dos renglones
-     ("Importe de la compra", con Poppins, en el celular), los dos campos
-     igual quedan a la misma altura. */
   #resultado .campos .campo { justify-content: flex-end; }
-
-  /* Un beneficio del Club: como la tarjeta "Te alcanza" de la app, verde
-     suave con su canto. */
   .promo-socio { padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--ok-borde); background: var(--ok-soft); font-size: 14.5px; }
   .promo-socio b { display: block; }
   .promo-socio small { display: block; font-size: 12.5px; color: var(--txt-2); margin-top: 2px; }
   .promo-socio details { margin-top: 6px; font-size: 13px; color: var(--txt-2); }
   .promo-socio summary { cursor: pointer; font-weight: 700; color: var(--txt); }
   .promo-socio details p { margin-top: 4px; white-space: pre-line; line-height: 1.5; }
-
-  /* El aviso de ticket repetido. Naranja y no rojo: no es un error, es una
-     pregunta. */
   .repetido {
     margin-top: 14px; padding: 14px 16px;
     background: var(--warn-soft); border: 1px solid var(--warn);
@@ -157,7 +156,6 @@
   }
   .repetido b { color: var(--warn-txt); }
   .repetido .btn { margin-top: 12px; }
-
   .movs { margin-top: 20px; }
   .mov {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -168,52 +166,97 @@
   .mov-pts { font: 700 15px var(--display); font-variant-numeric: tabular-nums; min-width: 62px; }
   .mov-pts.mas { color: var(--ok); }
   .mov.anulado { opacity: .5; text-decoration: line-through; }
-  .mov .btn { margin-left: auto; }
 
+  /* Lo que descuenta puntos se confirma en el mismo botón, que dice lo que
+     va a pasar ("Confirmar: −2.500 puntos"). Un doble toque rápido no
+     confirma: el segundo toque cuenta recién pasado un segundo y medio. */
+  .btn.confirmar { background: var(--warn); border-color: var(--warn); color: #1a1300; }
+
+  /* ── Un cupón o una Gift Card encontrados (lo que era Beneficios) ──
+     El borde dice de un vistazo si se puede usar: verde sirve, gris no. */
+  .ficha {
+    margin-top: 12px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--ok);
+    border-radius: var(--r);
+    padding: 20px;
+    box-shadow: var(--sombra);
+    animation: aparecer .3s var(--curva) backwards;
+  }
+  .ficha.muerto { border-left-color: var(--line); }
+  .ficha .ficha-top { margin-bottom: 12px; gap: 9px; }
+  .ficha-pct { font: 700 40px/1.1 var(--display); color: var(--ok-txt); letter-spacing: -1px; }
+  .ficha-pct span { font-size: 19px; font-weight: 600; letter-spacing: 0; }
+  .ficha.muerto .ficha-pct { color: var(--txt-2); }
+  .ficha-quien { font: 600 16px/1.35 var(--sans); margin-top: 8px; }
+  .ficha-que { font-size: 13.5px; color: var(--txt-2); margin-top: 4px; line-height: 1.5; }
+  .ficha-campos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 18px; }
+  .ficha-campos .campo.ancho { grid-column: 1 / -1; }
+  @media (max-width: 560px) { .ficha-campos { grid-template-columns: 1fr; } }
+  .ficha-cond {
+    list-style: none; margin: 12px 0 0; padding: 10px 12px;
+    border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line);
+    font-size: 13px; color: var(--txt-2);
+  }
+  .ficha-cond li { padding-left: 16px; position: relative; }
+  .ficha-cond li + li { margin-top: 4px; }
+  .ficha-cond li::before {
+    content: ''; position: absolute; left: 4px; top: .55em;
+    width: 5px; height: 5px; border-radius: 50%; background: var(--acc);
+  }
+  .nada {
+    margin-top: 18px;
+    font-size: 14.5px; line-height: 1.55; color: var(--txt-2);
+    background: var(--surface-2); border: 1px solid var(--line);
+    border-radius: var(--r-sm); padding: 16px;
+  }
+  .nada .btn { margin-top: 12px; }
+
+  /* ── Vender una Gift Card ──
+     El único botón de la pantalla: es lo único que el campo no puede
+     adivinar (el cliente que trae una tarjeta puede querer pagar con ella o
+     comprarla). Siempre a la vista, debajo del buscador. */
+  .vender-abrir { margin-top: 20px; }
+  .vender-abrir svg { width: 18px; height: 18px; transition: transform .2s var(--curva); }
+  .vender-abrir[aria-expanded="true"] svg { transform: rotate(180deg); }
+  #cajaVender { margin-top: 6px; }
+  #cajaVender[hidden] { display: none; }
+  .proximo {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    background: var(--acc-soft); border: 1px solid var(--acc-line); border-radius: var(--r-sm);
+    padding: 13px 15px; margin: 14px 0 16px;
+    font-size: 13.5px; color: var(--txt-2); line-height: 1.5;
+  }
+  .proximo b { font: 700 22px/1 var(--display); color: var(--acc-txt); letter-spacing: -.5px; }
+  .proximo[hidden] { display: none; }
+  .gc-codigo { margin: 14px 0 12px; }
+  .gc-codigo input { font-size: 17px; letter-spacing: .5px; }
+  .gc-tarjeta { margin-top: 8px; padding: 9px 12px; border-radius: var(--r-sm); font-size: 14px; font-weight: 600;
+                background: var(--ok-soft); color: var(--ok-txt); }
+  .gc-tarjeta.mal { background: var(--bad-soft); color: var(--bad-txt); }
+  .gc-tarjeta.espera { background: var(--surface-2); color: var(--txt-2); font-weight: 500; }
+  .gc-tarjeta[hidden] { display: none; }
+  /* La forma de pago, con botones: los mismos valores que acepta la base. */
+  .pagos { display: flex; flex-wrap: wrap; gap: 6px; }
+  .pagos .chip { min-height: 38px; padding: 7px 13px; font-size: 13.5px; }
+
+  /* ── Elegir el local y quién atiende (la misma bienvenida de Carga) ── */
+  .elegir h2 { font: 700 21px/1.2 var(--display); }
+  .elegir-sub { font-size: 14px; color: var(--txt-2); margin: 6px 0 16px; }
+  .elegir-sub b { color: var(--txt); }
+  .elegir .chips { gap: 8px; }
+  .elegir-nuevo { display: flex; gap: 8px; margin-top: 12px; }
+  .elegir-nuevo[hidden] { display: none; }
+  .elegir-nuevo input { flex: 1; min-width: 0; }
+  .elegir-link { margin-top: 14px; background: none; border: 0; padding: 0; font: inherit; font-size: 13.5px;
+                 color: var(--txt-3); text-decoration: underline; cursor: pointer; }
   .vacio-txt { font-size: 14.5px; color: var(--txt-2); line-height: 1.55; }
-
-  /* ── El portón del PIN, igual que en el Panel y en Beneficios ── */
-  .porton { max-width: 380px; margin: 8vh auto 0; padding: 0 20px; text-align: center; }
-  .porton-icono {
-    width: 62px; height: 62px; margin: 0 auto 18px; border-radius: 20px;
-    background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
-    color: var(--acc-ink); display: grid; place-items: center; box-shadow: var(--glow);
-  }
-  .porton-icono svg { width: 28px; height: 28px; }
-  .porton h2 { font: 700 27px/1.15 var(--display); letter-spacing: -.5px; }
-  .porton p { font-size: 14.5px; color: var(--txt-2); margin: 10px 0 24px; }
-  .porton input {
-    text-align: center; font-size: 19px; font-weight: 700;
-    letter-spacing: 6px; font-variant-numeric: tabular-nums; margin-bottom: 12px;
-  }
-  .porton-msg { margin-top: 14px; font-size: 14px; color: var(--warn-txt); line-height: 1.5; }
-  /* La caja habilitada, sin PIN (04/10/2026): corregir datos, anular y las
-     pestañas de números son del administrador. */
-  body.solo-caja #btnEditar, body.solo-caja [data-anular],
-  body.solo-caja .pestana[data-pestana="socios"], body.solo-caja .pestana[data-pestana="movimientos"],
-  body.solo-caja .pestana[data-pestana="estadisticas"] { display: none !important; }
-  .porton-nota { font-size: 13px; color: var(--txt-3); margin-top: -4px; }
 </style>
 </head>
-<body>
+<body class="hay-rail">
 
-<!-- ── Portón ── -->
-<div class="porton" id="porton">
-  <div class="porton-icono">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>
-    </svg>
-  </div>
-  <h2>Club en caja</h2>
-  <p>Acá se suman las compras del Club. Poné el PIN para entrar.</p>
-  <p class="porton-nota">¿Es la caja del local? Abrí en este aparato el enlace que te mandó el encargado y no vuelve a pedir el PIN.</p>
-  <input type="password" id="pinCaja" inputmode="numeric" maxlength="8" placeholder="PIN"
-         autocomplete="off" onkeydown="if(event.key==='Enter') entrar()">
-  <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Entrar</button>
-  <p class="porton-msg" id="portonMsg" hidden></p>
-</div>
-
-<div class="marco" id="marco" hidden>
+<div class="marco" id="marco">
 
 <nav class="rail" aria-label="Secciones">
   <div class="rail-marca">
@@ -229,21 +272,21 @@
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
       Carga
     </a>
-    <a class="rail-item" href="panel.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
-      CRM
+    <a class="rail-item" href="caja.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Cobrar
     </a>
     <a class="rail-item" href="estadisticas.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
       Estadísticas
     </a>
-    <a class="rail-item" href="caja.html" aria-current="page">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
-      Club
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      CRM
     </a>
-    <a class="rail-item" href="beneficios.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
-      Beneficios
+    <a class="rail-item" href="club-numeros.html#socios">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.4l-5.72 3l1.1-6.37L2.75 9.53l6.4-.93z"/></svg></span>
+      Socios
     </a>
     <a class="rail-item" href="config.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
@@ -253,38 +296,105 @@
 </nav>
 
 <main class="hoja">
-  <nav class="pestanas" aria-label="Club">
-    <a class="pestana" href="caja.html" data-pestana="cobrar" aria-current="page">Cobrar</a>
-    <a class="pestana" href="club-numeros.html#socios" data-pestana="socios">Socios</a>
-    <a class="pestana" href="club-numeros.html#movimientos" data-pestana="movimientos">Movimientos</a>
-    <a class="pestana" href="club-numeros.html" data-pestana="estadisticas">Estadísticas</a>
-  </nav>
-  <section class="bloque">
+  <p class="aviso-caja" id="avisoCaja" hidden></p>
+
+  <!-- ── Dónde y quién ──
+       Todo lo que se hace acá queda anotado con el local y con quién atendió.
+       Si falta alguno, se pregunta acá mismo (la misma bienvenida de Carga),
+       sin mandar al vendedor a otra pantalla. Una caja habilitada ya trae su
+       local: sólo se pregunta quién atiende. -->
+  <section class="bloque elegir" id="cajaElegir" hidden>
+    <div id="elegirPaso1">
+      <h2>¿En qué local estás?</h2>
+      <p class="elegir-sub">Lo que se cobra acá queda anotado con el local.</p>
+      <p class="elegir-oficina" id="elegirOficina" hidden>Este aparato es de oficina. Para buscar, anular o extender cupones y gift cards, andá al
+        <a href="panel.html#cupones">CRM, en Cupones y Gift Cards</a>. Si estás atendiendo en un local, elegilo.</p>
+      <div class="chips" id="elegirLocales"></div>
+    </div>
+    <div id="elegirPaso2" hidden>
+      <h2>¿Quién atiende?</h2>
+      <p class="elegir-sub" id="elegirLocalTxt"></p>
+      <div class="chips" id="elegirVends"></div>
+      <div class="elegir-nuevo" id="elegirNuevo" hidden>
+        <input type="text" id="elegirNombre" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" aria-label="Tu nombre">
+        <button type="button" class="btn btn-pri" id="elegirListo">Listo</button>
+      </div>
+      <button type="button" class="elegir-link" id="elegirNoEstoy">No estoy en la lista</button>
+      <button type="button" class="elegir-link" id="elegirOtroLocal" style="margin-left:14px">Otro local</button>
+    </div>
+  </section>
+
+  <section class="bloque" id="cajaCobrar" hidden>
     <p class="quien-linea" id="quienLinea"></p>
-    <h2 class="buscar-tit">Sumar una compra</h2>
+    <h2 class="buscar-tit">Cobrar</h2>
     <p class="buscar-sub">
-      Disparale al código de la tarjeta, o escribí el WhatsApp o el nombre del cliente.
+      Pasá la tarjeta del Club o la Gift Card, o escribí el código del cupón, el WhatsApp o el nombre del cliente.
     </p>
     <div class="buscar-fila">
-      <input type="text" id="clave" inputmode="numeric" autocomplete="off"
-             placeholder="Código, WhatsApp o nombre" aria-label="Código, teléfono o nombre">
+      <input type="text" id="clave" inputmode="numeric" autocomplete="off" spellcheck="false" autocapitalize="characters"
+             placeholder="Tarjeta, código o WhatsApp" aria-label="Tarjeta, código, WhatsApp o nombre">
+      <button type="button" class="btn btn-sec btn-abc" id="btnAbc" aria-pressed="false" title="Escribir con letras">ABC</button>
       <button type="button" class="btn btn-pri" id="btnBuscar">Buscar</button>
+    </div>
+    <!-- Si el Club no anda en esta caja, se dice de entrada (12/10/2026). -->
+    <p class="club-nota" id="clubNota" hidden></p>
+
+    <!-- Arriba, pegado al campo: con la ficha de un socio abierta quedaba al
+         fondo de la página (árbitro, 12/10/2026). -->
+    <button type="button" class="btn btn-sec btn-ancho vender-abrir" id="btnVender" aria-expanded="false">
+      <span>Vender una Gift Card</span>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"
+           stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+    </button>
+    <div id="cajaVender" hidden>
+      <!-- La tarjeta impresa (10/10/2026): se pasa por el lector y su código
+           es su número. Dice al toque qué tarjeta es y si ya se vendió. -->
+      <div class="campo gc-codigo">
+        <label for="gcCodigo">La tarjeta</label>
+        <input type="text" inputmode="numeric" id="gcCodigo" autocomplete="off" spellcheck="false"
+               placeholder="Pasá la tarjeta por el lector">
+        <div class="gc-tarjeta" id="gcTarjeta" hidden></div>
+      </div>
+      <!-- Las tarjetas viejas, sin código: el número lo pone la app y se
+           escribe a mano. -->
+      <p class="proximo" id="proximoViejo">
+        <b id="proximaSerie">…</b>
+        <span>¿Tarjeta vieja, sin código? Escribí este número en la tarjeta, abajo de <strong>VALOR</strong>.</span>
+      </p>
+      <div class="ficha-campos">
+        <div class="campo"><label for="gcValor">Valor de la Gift Card</label>
+          <input type="text" inputmode="numeric" id="gcValor" placeholder="$"></div>
+        <div class="campo"><label for="gcCobrado">Cuánto se cobró</label>
+          <input type="text" inputmode="numeric" id="gcCobrado" placeholder="Igual al valor"></div>
+        <div class="campo ancho"><label>Cómo la pagó</label>
+          <div class="pagos" id="gcPagos" role="group" aria-label="Cómo la pagó">
+            <button type="button" class="chip" data-pago="efectivo">Efectivo (10% off)</button>
+            <button type="button" class="chip" data-pago="tarjeta">Tarjeta</button>
+            <button type="button" class="chip" data-pago="3 cuotas">3 cuotas sin interés</button>
+            <button type="button" class="chip" data-pago="6 cuotas">6 cuotas sin interés</button>
+            <button type="button" class="chip" data-pago="otro">Otro</button>
+          </div></div>
+        <div class="campo"><label for="gcDias">Vence en</label>
+          <select id="gcDias">
+            <option value="30" selected>30 días</option>
+            <option value="60">60 días</option>
+            <option value="90">90 días</option>
+            <option value="365">Un año</option>
+          </select></div>
+        <div class="campo"><label for="gcTel">WhatsApp de quien la compra</label>
+          <input type="tel" inputmode="numeric" id="gcTel" placeholder="Opcional, para encontrarla"></div>
+        <div class="campo ancho"><label for="gcNombre">Nombre</label>
+          <input type="text" id="gcNombre" placeholder="Opcional"></div>
+        <div class="campo ancho">
+          <button type="button" class="btn btn-pri btn-ancho" id="btnVenderOk">Vender la Gift Card</button>
+        </div>
+      </div>
     </div>
     <div id="resultado"></div>
   </section>
 
-  <section class="bloque sin-local" id="cajaSinLocal" hidden style="text-align:center;padding:30px 20px">
-    <h2 class="buscar-tit">Primero elegí tu local</h2>
-    <p class="vacio-txt" style="margin:10px 0 18px">
-      Cada compra queda anotada con el local y con quién atendió, así que hace
-      falta saber dónde estás.
-    </p>
-    <a class="btn btn-pri" href="index.html">Ir a elegir el local</a>
-  </section>
-
   <p class="pie" style="text-align:center;margin-top:26px;font-size:13px;color:var(--txt-3)">
-    Cada $100 de compra es un punto. El alta del cliente se hace desde el
-    QR del local.
+    Cada $100 de compra es un punto del Club. El alta del cliente se hace desde el QR del local.
   </p>
 </main>
 
@@ -294,119 +404,312 @@
 
 <script src="comun.js"></script>
 <script src="datos.js"></script>
-<!-- El generador del código de barras. Vivía en club/ cuando el Club era
-     una carpeta de este sitio; desde que se mudó a vdhclub.com esa carpeta
-     sólo tiene redirecciones, así que el archivo pasó a la raíz. Lo usan las
-     dos puntas —la caja lo dibuja, la tarjeta del cliente también— y por eso
-     hay una copia en cada repositorio. -->
+<!-- El generador del código de barras (lo usan las dos puntas: la caja lo
+     dibuja y la tarjeta del cliente también). -->
 <script src="codigo.js"></script>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var K_PIN = 'nc_pin', K_LOCAL = 'nc_local', K_VENDEDOR = 'nc_vendedor';
-  var local = '', vendedor = '', socio = null;
+  var local = '', vendedor = '', socio = null, ultimaClave = '';
 
-  /* La llave de una caja habilitada (SQL 49): queda en el aparato y va en
-     lugar del PIN. El PIN de verdad, si alguien lo pone, manda. */
+  /* Los 14 locales, como en Carga (el código tiene que coincidir con la
+     tabla `locales`). */
+  var LOCALES = [
+    { v: 'CASEROS',            t: 'Caseros' },
+    { v: 'DOT',                t: 'DOT' },
+    { v: 'FLORES',             t: 'Flores' },
+    { v: 'GRAND BOURG',        t: 'Grand Bourg' },
+    { v: 'ITUZAINGÓ',          t: 'Ituzaingó' },
+    { v: 'LOMAS DE ZAMORA',    t: 'Lomas de Zamora' },
+    { v: 'MAR DEL PLATA',      t: 'Mar del Plata' },
+    { v: 'MORÓN',              t: 'Morón' },
+    { v: 'PACHECO',            t: 'Pacheco' },
+    { v: 'PARQUE BROWN',       t: 'Parque Brown' },
+    { v: 'SAN JUSTO',          t: 'San Justo' },
+    { v: 'SAN JUSTO SHOPPING', t: 'San Justo Shopping' },
+    { v: 'UNICENTER',          t: 'Unicenter' },
+    { v: 'VILLA DEL PARQUE',   t: 'Villa del Parque' }
+  ];
+  function nombreLocal(v) {
+    for (var i = 0; i < LOCALES.length; i++) if (LOCALES[i].v === v) return LOCALES[i].t;
+    return bonito(v);
+  }
+  function leer(k) { try { return localStorage.getItem(k) || ''; } catch (e) { return ''; } }
+  function guardar(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
+
+  /* ═══ El Club en esta caja ════════════════════════════════════════════
+     El Club pide una llave: la de una caja habilitada (SQL 49, queda en el
+     aparato) o el PIN de la sesión (si en esta pestaña alguien entró a
+     Config o al CRM). Sin ninguna de las dos, el Club no anda y se dice
+     por qué; los cupones y las gift cards andan igual.
+
+     **No hay campo de PIN en el mostrador**: cada intento fallido suma al
+     freno del PIN, que es para todos los aparatos a la vez y deja trabados
+     al CRM y a Config hasta media hora. */
   var K_CAJA = 'nc_caja', K_CAJA_LOCAL = 'nc_caja_local';
-  function llaveCaja() { try { return localStorage.getItem(K_CAJA) || ''; } catch (e) { return ''; } }
+  function llaveCaja() { return leer(K_CAJA); }
   function pinDeVerdad() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
-  function soloCaja() { return !pinDeVerdad() && !!llaveCaja(); }
-  function pinGuardado() { return pinDeVerdad() || llaveCaja(); }
-  function olvidarCaja() { try { localStorage.removeItem(K_CAJA); localStorage.removeItem(K_CAJA_LOCAL); localStorage.removeItem('nc_caja_id'); } catch (e) {} }
-  /* El nombre del aparato, para reconocerlo en Configuración. */
+  /* La llave de la caja va primero (12/10/2026): no pasa por el PIN, así un
+     PIN viejo que quedó en la pestaña (lo cambiaron en otro aparato) no
+     frena al Club ni suma intentos fallidos al freno de todos. */
+  function pinGuardado() { return llaveCaja() || pinDeVerdad(); }
+  function clubAnda() { return !!pinGuardado(); }
+  function olvidarCaja() { guardar(K_CAJA, ''); guardar(K_CAJA_LOCAL, ''); guardar('nc_caja_id', ''); }
   function nombreAparato() {
     var ua = navigator.userAgent || '';
     var que = /Mobi|Android|iPhone/i.test(ua) ? 'Celular' : /iPad|Tablet/i.test(ua) ? 'Tablet' : 'Compu';
     var so = /iPhone|iPad|Mac OS/i.test(ua) ? 'Apple' : /Android/i.test(ua) ? 'Android' : /Windows/i.test(ua) ? 'Windows' : '';
     return que + (so ? ' ' + so : '');
   }
-  function guardarPin(v) {
-    try { if (v) sessionStorage.setItem(K_PIN, v); else sessionStorage.removeItem(K_PIN); } catch (e) {}
+  function avisoCaja(txt, ok) {
+    var a = $('avisoCaja');
+    a.hidden = !txt;
+    a.textContent = txt || '';
+    a.classList.toggle('ok', !!ok);
   }
-
-  /* ═══ El portón ═══════════════════════════════════════════════════════ */
-  window.entrar = function () {
-    var v = $('pinCaja').value.trim();
-    if (!v) { avisar('err', 'Escribí el PIN.'); $('pinCaja').focus(); return; }
-    var b = $('btnEntrar');
-    b.disabled = true; b.textContent = 'Probando…';
-
-    base.pin.probar(v)
-      .then(function (r) {
-        if (!r || !r.ok) {
-          $('portonMsg').hidden = false;
-          $('portonMsg').textContent = (r && r.porque) || 'PIN incorrecto.';
-          $('pinCaja').value = ''; $('pinCaja').focus();
+  var NO_HABILITADA = 'Esta caja no está habilitada para el Club: pedile el enlace al encargado.';
+  /* El aviso de arriba es de la llave o el PIN (freno, sin señal): se borra
+     con la primera búsqueda del Club que sale bien. */
+  var avisoDeLlave = false;
+  function olvidarPin() { try { sessionStorage.removeItem(K_PIN); } catch (e) {} }
+  /* La llave o el PIN dejaron de servir (deshabilitaron la caja, o
+     cambiaron el PIN): se olvidan acá mismo y se dice. Seguir probando con
+     un PIN malo traba el CRM y Config para todos. Un corte de señal no
+     cuenta: sólo la respuesta de la base. */
+  /* Devuelve qué dejó de servir ('llave' o 'pin'), o nada si el error es
+     otro. "queNoSeHizo" va en el aviso flotante (lo de arriba queda fuera
+     de la pantalla si hay una ficha abierta). */
+  function llaveVencida(err, queNoSeHizo) {
+    if (!err || !err.delServidor || !/PIN incorrecto/i.test(err.message || '')) { return false; }
+    var decir = function (txt) {
+      avisoCaja(txt);
+      avisoDeLlave = true;
+      if (queNoSeHizo) { avisar('err', queNoSeHizo + ': ' + txt.charAt(0).toLowerCase() + txt.slice(1)); }
+      pintarClubNota();
+    };
+    if (llaveCaja()) {
+      olvidarCaja();
+      decir('Esta caja ya no está habilitada para el Club. Pedile al encargado un enlace nuevo.');
+      return 'llave';
+    }
+    /* Con el PIN frenado por intentos fallidos (de cualquier pantalla), la
+       base contesta "PIN incorrecto" aunque sea el bueno. pin_situacion no
+       pide PIN ni gasta intentos: si es el freno, el PIN se guarda. */
+    base.pin.situacion()
+      .then(function (s) {
+        var espera = Number(s && s.espera) || 0;
+        if (espera > 0) {
+          decir('El PIN está frenado por intentos fallidos. El Club vuelve a andar solo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).');
           return;
         }
-        guardarPin(v);
-        abrir();
+        olvidarPin();
+        decir('El PIN que había quedado en esta pestaña ya no sirve (lo cambiaron o era otro), así que acá no anda el Club. Cupones y gift cards, sí.');
       })
-      .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo entrar.'); })
-      .then(function () { b.disabled = false; b.textContent = 'Entrar'; });
-  };
+      .catch(function () {
+        decir('No se pudo comprobar el PIN: revisá la señal y probá de nuevo.');
+      });
+    return 'pin';
+  }
+  /* Que el Club no anda acá se dice de entrada, debajo del campo. */
+  function pintarClubNota() {
+    var n = $('clubNota');
+    if (!n) { return; }
+    n.hidden = clubAnda();
+    n.textContent = clubAnda() ? '' : 'El Club todavía no anda en esta caja: pedile al encargado el enlace para habilitarla. Cupones y gift cards andan igual.';
+  }
 
-  function abrir() {
-    $('porton').hidden = true;
-    $('marco').hidden = false;
-    document.body.classList.add('hay-rail');
-    document.body.classList.toggle('solo-caja', soloCaja());
+  /* ═══ Dónde y quién ═══════════════════════════════════════════════════ */
+  var equipo = [], elegirEscribe = false;
+  /* Un aparato de oficina (el de Atención): puede cobrar en un local si
+     hace falta, pero no se vuelve de local ni anota a nadie en el equipo. */
+  var OFICINA = leer('nc_oficina') === '1';
+  function abrirElegir(paso) {
+    $('cajaCobrar').hidden = true;
+    $('cajaElegir').hidden = false;
+    $('elegirLocales').innerHTML = LOCALES.map(function (l) {
+      return '<button type="button" class="chip' + (l.v === local ? ' sel' : '') + '" data-v="' + esc(l.v) + '">' + esc(l.t) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('elegirLocales').children, function (b) {
+      b.onclick = function () { local = b.dataset.v; if (!OFICINA) { guardar(K_LOCAL, local); } traerEquipo(); elegirPaso(2); };
+    });
+    $('elegirOficina').hidden = !OFICINA;
+    var p = paso || (local ? 2 : 1);
+    elegirPaso(p);
+    /* Con el local ya puesto (o el de la caja habilitada), el equipo también
+       se trae: si no, sólo aparecía el campo para escribir. */
+    if (p === 2 && !equipo.length) { traerEquipo(); }
+  }
+  function elegirPaso(n) {
+    $('elegirPaso1').hidden = n !== 1;
+    $('elegirPaso2').hidden = n !== 2;
+    /* La caja habilitada tiene su local: no se cambia desde acá. */
+    $('elegirOtroLocal').hidden = !!(llaveCaja() && leer(K_CAJA_LOCAL));
+    if (n === 2) { elegirEscribe = false; pintarElegirVends(); }
+  }
+  function traerEquipo() {
+    equipo = [];
+    pintarElegirVends();
+    base.equipo(local)
+      .then(function (l) { equipo = l || []; pintarElegirVends(); })
+      .catch(function () { equipo = []; elegirEscribe = true; pintarElegirVends(); });
+  }
+  function pintarElegirVends() {
+    if ($('cajaElegir').hidden || $('elegirPaso2').hidden) return;
+    $('elegirLocalTxt').innerHTML = 'Estás en <b>' + esc(nombreLocal(local)) + '</b>. ' +
+      (equipo.length ? 'Tocá tu nombre.' : 'Escribí tu nombre: queda en la lista del local.');
+    $('elegirVends').innerHTML = equipo.map(function (v) {
+      return '<button type="button" class="chip' + (v === vendedor ? ' sel' : '') + '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
+    }).join('');
+    Array.prototype.forEach.call($('elegirVends').children, function (b) {
+      b.onclick = function () { fijarVendedor(b.dataset.v); };
+    });
+    var escribe = elegirEscribe || !equipo.length;
+    $('elegirNuevo').hidden = !escribe;
+    $('elegirNoEstoy').hidden = escribe;
+  }
+  function fijarVendedor(v) {
+    vendedor = v;
+    if (!OFICINA) { guardar(K_VENDEDOR, v); }
+    abrirCobrar();
+  }
+  function anotarme() {
+    var n = $('elegirNombre').value.trim();
+    if (!n) { $('elegirNombre').focus(); return; }
+    if (!OFICINA) { base.anotarse(local, n).catch(function () { /* queda igual en este aparato */ }); }
+    fijarVendedor(n);
+  }
 
-    if (!local) { $('cajaSinLocal').hidden = false; return; }
-    $('quienLinea').innerHTML = '<b>' + esc(bonito(local)) + '</b>' +
-      (vendedor ? ' · atiende <b>' + esc(vendedor) + '</b>' : '');
+  function abrirCobrar() {
+    if (!local || !vendedor) { abrirElegir(); return; }
+    $('cajaElegir').hidden = true;
+    $('cajaCobrar').hidden = false;
+    $('quienLinea').innerHTML = 'Local: <b>' + esc(nombreLocal(local)) + '</b> · Atiende: <b>' + esc(vendedor) + '</b>' +
+      ' <button type="button" id="btnCambiarQuien">cambiar</button>';
+    $('btnCambiarQuien').onclick = function () { abrirElegir(2); };
+    pintarClubNota();
     $('clave').focus();
   }
 
   /* ═══ Buscar ══════════════════════════════════════════════════════════
-     Un campo para las tres formas. El lector escribe los doce dígitos y un
-     Enter, que es indistinguible de alguien tipeando: no hay nada que
-     detectar ni ningún modo que elegir. */
-  function buscar() {
-    var v = $('clave').value.trim();
-    if (!v) return;
-    socio = null;
-    $('resultado').innerHTML = '<p class="vacio-txt" style="margin-top:16px">Buscando…</p>';
-
-    base.club.buscar(pinGuardado(), v)
-      .then(function (r) {
-        if (r && r.corto) { $('resultado').innerHTML = '<p class="vacio-txt" style="margin-top:16px">' + esc(r.porque) + '</p>'; return; }
-        var lista = Array.isArray(r) ? r : [];
-        if (!lista.length) {
-          $('resultado').innerHTML =
-            '<p class="vacio-txt" style="margin-top:16px">No encontré a nadie. ' +
-            'Si todavía no es socio, puede anotarse con el QR del mostrador.</p>';
-          return;
-        }
-        if (lista.length === 1) { elegir(lista[0].codigo, lista[0].telefono, lista[0].mail); return; }
-        pintarLista(lista);
-      })
-      .catch(function (err) {
-        avisar('err', (err && err.delServidor && err.message) || 'No se pudo buscar.');
-        $('resultado').innerHTML = '';
-      });
+     En el Club y en los cupones y gift cards a la vez. La pistola escribe
+     la tarjeta y un Enter, igual que alguien tipeando: no hay nada que
+     detectar. Lo único que se reconoce por la forma es la etiqueta de una
+     prenda ("RM41641 S NE", la misma expresión que usa Carga), que no es
+     de ningún cliente. */
+  var ESCANEO_PRENDA = /^([A-Za-z]{1,4}\d[A-Za-z0-9]*)\s+(\S+)\s+(\S+)$/;
+  function digitos(t) { return String(t || '').replace(/[^0-9]/g, ''); }
+  function esCodigoGC(t) { return /^99\d{12}$/.test(digitos(t)); }
+  function lindoGC(t) {
+    var d = digitos(t);
+    return d.length === 14 ? d.slice(0, 2) + ' ' + d.slice(2).replace(/(\d{4})(?=\d)/g, '$1 ') : String(t || '');
   }
 
-  function pintarLista(lista) {
-    $('resultado').innerHTML = lista.map(function (s) {
-      return '<button type="button" class="socio" data-cod="' + esc(s.codigo) + '" ' +
-        'data-tel="' + esc(s.telefono || '') + '" ' +
-        'data-mail="' + esc(s.mail || '') + '">' +
-        '<span class="socio-n">' + miles(s.puntos) + '</span>' +
-        '<span><span class="socio-nom">' + esc(s.nombre) + '</span>' +
-        '<span class="socio-sub">' + esc(s.telefono) + ' · ' + esc(s.nivel || 'Silver') + '</span></span>' +
-        (s.confirmado ? '' : '<span class="pill pill-warn">Sin compras</span>') +
-        '</button>';
-    }).join('');
-    Array.prototype.forEach.call($('resultado').querySelectorAll('[data-cod]'), function (b) {
-      b.onclick = function () { elegir(b.dataset.cod, b.dataset.tel, b.dataset.mail); };
+  var pedido = 0;
+  function buscar() {
+    var v = $('clave').value.trim();
+    if (!v) { $('clave').focus(); return; }
+    /* Buscar es pasar al próximo cliente: la venta de gift card se cierra
+       (abierta, lo buscado quedaba abajo, fuera de la pantalla). Lo escrito
+       en ella queda, por si se vuelve a abrir. */
+    if (!$('cajaVender').hidden) { $('cajaVender').hidden = true; $('btnVender').setAttribute('aria-expanded', 'false'); }
+    ultimaClave = v;
+    socio = null;
+    var n = ++pedido;
+    if (ESCANEO_PRENDA.test(v)) {
+      $('resultado').innerHTML = '<p class="nada">Eso es la etiqueta de una prenda. Pasá la tarjeta del cliente o escribí el código del cupón.</p>';
+      return;
+    }
+    $('resultado').innerHTML = '<p class="vacio-txt" style="margin-top:16px">Buscando…</p>';
+    var pClub = clubAnda()
+      ? base.club.buscar(pinGuardado(), v).catch(function (err) { return { error: err }; })
+      : Promise.resolve(null);
+    var pBen = base.beneficio(v).catch(function () { return { error: true }; });
+    var pGC = esCodigoGC(v) ? base.giftcardTarjeta(digitos(v)).catch(function () { return null; }) : Promise.resolve(null);
+    Promise.all([pClub, pBen, pGC]).then(function (r) {
+      if (n !== pedido) return;
+      if (r[0] && r[0].error && llaveVencida(r[0].error)) { r[0] = { llaveMala: true }; }
+      else if (avisoDeLlave && r[0] && !r[0].error) { avisoCaja(''); avisoDeLlave = false; pintarClubNota(); }
+      pintarResultados(r[0], r[1], r[2], v);
     });
   }
 
-  /* ═══ La ficha del cliente ════════════════════════════════════════════ */
-  /* Devuelve la promesa: quien sumó una compra necesita saber cuándo está
-     la ficha nueva, para ver si el cliente subió de nivel. */
+  function pintarResultados(club, ben, gc, clave) {
+    var caja = $('resultado');
+    var socios = Array.isArray(club) ? club : [];
+    var clubCorto = club && club.corto ? club.porque : '';
+    var clubError = club && club.error;
+    var bens = Array.isArray(ben) ? ben : [];
+    var benError = ben && ben.error;
+    /* La Gift Card impresa que todavía no se vendió: el cliente puede
+       estar comprándola o queriendo pagar con ella. Se pregunta; nunca se
+       abre la venta sola. */
+    var gcSinVender = gc && gc.existe && !gc.vendida && !bens.some(function (b) { return b.tipo === 'giftcard'; });
+    var gcAjena = esCodigoGC(clave) && gc && !gc.existe && !bens.length;
+
+    /* Uno solo y nada más: se abre directo. */
+    if (socios.length === 1 && !bens.length && !gcSinVender) { elegir(socios[0].codigo, socios[0].telefono, socios[0].mail); return; }
+
+    var html = '';
+    if (socios.length) {
+      html += '<h3 class="grupo-tit">Socio del Club</h3>' + socios.map(filaSocio).join('');
+    }
+    if (bens.length) {
+      var cupones = bens.filter(function (b) { return b.tipo !== 'giftcard'; });
+      var gcs = bens.filter(function (b) { return b.tipo === 'giftcard'; });
+      if (cupones.length) { html += '<h3 class="grupo-tit">' + (cupones.length > 1 ? 'Cupones' : 'Cupón') + '</h3>' + cupones.map(fichaBeneficio).join(''); }
+      if (gcs.length) { html += '<h3 class="grupo-tit">' + (gcs.length > 1 ? 'Gift Cards' : 'Gift Card') + '</h3>' + gcs.map(fichaBeneficio).join(''); }
+    }
+    if (gcSinVender) {
+      html += '<h3 class="grupo-tit">Gift Card</h3>' +
+        '<div class="ficha muerto"><div class="ficha-top"><span class="pill pill-neutra">sin vender</span></div>' +
+        '<div class="ficha-pct">' + esc(gc.color) + ' <span>Nº ' + esc(gc.nro) + '</span></div>' +
+        '<div class="ficha-que">Todavía no se vendió: no tiene valor cargado. No se puede pagar con ella.</div>' +
+        '<p class="nada">¿La está comprando? <br><button type="button" class="btn btn-pri" id="btnVenderEsta">Sí, venderla</button></p></div>';
+    }
+    if (!html) {
+      var partes = [];
+      if (gcAjena) { partes.push('Ese código no es de una Gift Card VDH.'); }
+      else if (clubCorto) { partes.push(esc(clubCorto)); }
+      else {
+        partes.push('No encontré nada con eso.');
+        partes.push('Si es un socio, buscalo por su WhatsApp o pasá su tarjeta. Si es un cupón, fijate el código; si es una Gift Card, el número de la tarjeta.');
+      }
+      if (!clubAnda()) { partes.push(NO_HABILITADA); }
+      if (clubError || benError) { partes.push('Algo no se pudo buscar: revisá la señal.'); }
+      if (club && club.llaveMala) { partes.push('Los socios del Club no se pudieron buscar: mirá el aviso de arriba.'); }
+      html = '<p class="nada">' + partes.join(' ') + '</p>';
+    } else if (!clubAnda() && !socios.length && !bens.length) {
+      html += '<p class="nada">' + NO_HABILITADA + '</p>';
+    }
+    caja.innerHTML = html;
+
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-cod]'), function (b) {
+      b.onclick = function () { elegir(b.dataset.cod, b.dataset.tel, b.dataset.mail); };
+    });
+    Array.prototype.forEach.call(caja.querySelectorAll('[data-canjear]'), function (btn) {
+      btn.onclick = function () { canjear(+btn.dataset.canjear, clave); };
+    });
+    if ($('btnVenderEsta')) {
+      $('btnVenderEsta').onclick = function () { abrirVender(true); $('gcCodigo').value = digitos(clave); revisarTarjeta(); $('gcValor').focus(); };
+    }
+  }
+
+  function filaSocio(s) {
+    return '<button type="button" class="socio" data-cod="' + esc(s.codigo) + '" ' +
+      'data-tel="' + esc(s.telefono || '') + '" data-mail="' + esc(s.mail || '') + '">' +
+      '<span class="socio-n">' + miles(s.puntos) + '</span>' +
+      '<span><span class="socio-nom">' + esc(s.nombre) + '</span>' +
+      '<span class="socio-sub">' + esc(s.telefono) + ' · ' + esc(s.nivel || 'Silver') + '</span></span>' +
+      (s.confirmado ? '' : '<span class="pill pill-warn">Sin compras</span>') +
+      '</button>';
+  }
+
+  /* ═══ La ficha del socio ══════════════════════════════════════════════
+     Lo de todos los días con el socio adelante: sumar la compra, entregar
+     un premio o el regalo de cumple, mandarle su tarjeta y ver sus últimos
+     movimientos. Corregir sus datos y anular un movimiento se hacen en
+     Socios, con el PIN: son del administrador. */
   function elegir(codigo, telefono, mail) {
     return base.club.tarjeta(codigo).then(function (t) {
       if (!t || !t.hay) { avisar('err', 'No encontré esa tarjeta.'); return; }
@@ -419,55 +722,25 @@
     }).catch(function () { avisar('err', 'No se pudo abrir la tarjeta.'); });
   }
 
-  /**
-   * El enlace de una tarjeta, absoluto.
-   *
-   * Absoluto porque va adentro de un WhatsApp: el cliente lo abre en su
-   * teléfono, donde "club/tarjeta.html" no quiere decir nada.
-   *
-   * Y ahora es una constante y no se arma desde location.href, como era
-   * antes. El Club se mudó a su propio dominio el 25/09/2026, así que ya no
-   * es una carpeta de este sitio: derivarlo de esta página mandaría a la
-   * copia vieja. Es la única constante de este archivo y está acá arriba a
-   * propósito, para que se encuentre.
-   *
-   * Es también la dirección que lleva el QR de los mostradores.
-   */
+  /* El enlace de la tarjeta del cliente, absoluto: va adentro de un
+     WhatsApp. Es también la dirección del QR de los mostradores. */
   var CLUB = 'https://vdhclub.com/';
-
-  function enlaceTarjeta(codigo) {
-    return CLUB + 'tarjeta.html?c=' + encodeURIComponent(codigo);
-  }
+  function enlaceTarjeta(codigo) { return CLUB + 'tarjeta.html?c=' + encodeURIComponent(codigo); }
 
   function pintarFicha(t) {
     var nv = t.nivel || { nombre: 'Silver', multiplica: 1 };
-    /* Mandarle su tarjeta. Es la respuesta a "perdí mi tarjeta" y también a
-       "recién me anoté": el cliente se va con el enlace en su WhatsApp, que
-       es el único lugar donde no se le va a perder.
-
-       Sin teléfono no hay botón: pasa cuando se llega a la ficha con el
-       código escaneado de una lista vieja. Un botón que abre WhatsApp sin
-       número obliga al vendedor a elegir el contacto a mano, y ahí se
-       equivoca de persona. */
     var mandar = t.telefono
       ? '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="' +
           esc(linkWsp(t.telefono,
             'Hola ' + t.nombre + '! Esta es tu tarjeta de beneficios del VDH Club: ' +
             enlaceTarjeta(t.codigo) +
-            ' — Abrila y agregala a la pantalla de tu celular para tenerla siempre a mano.')) +
-        '">' +
+            ' — Abrila y agregala a la pantalla de tu celular para tenerla siempre a mano.')) + '">' +
         '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
         'stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.7A8.4 8.4 0 1 1 21 11.5Z"/></svg>' +
         'Mandarle su tarjeta</a>'
       : '';
-    /* El catálogo, con lo que la base dice que se puede entregar HOY: puntos
-       suficientes y sin haber llegado al límite del año. Es la misma cuenta
-       que hace el canje, así que un botón de Entregar nunca termina en un
-       "no se puede". */
     var premios = (t.premios || []).map(function (p) {
       var clase = p.agotado ? ' usado' : (p.alcanzado ? ' listo' : ' falta');
-      /* El límite es "N cada M meses" y la base dice desde cuándo puede
-         volver (SQL 73). Sin el 73, el texto de antes. */
       var pie = p.agotado ? (p.vuelve ? 'Ya se lo llevó · puede volver desde el ' + diaLargo(p.vuelve) : 'Ya se lo llevó este año')
               : p.alcanzado ? miles(p.puntos) + ' puntos · se lo puede llevar'
               : miles(p.puntos) + ' puntos · le faltan ' + miles(p.falta);
@@ -478,17 +751,10 @@
             'data-nombre="' + esc(p.nombre) + '" data-puntos="' + p.puntos + '">Entregar</button>'
           : '') + '</div>';
     }).join('');
-    /* Las bases y condiciones, dichas para el vendedor: si no está, se
-       ofrece otro modelo o se pide a otro local, y los puntos se descuentan
-       recién al entregar. Sólo cuando hay algo para entregar. */
     if ((t.premios || []).some(function (p) { return p.alcanzado; })) {
       premios += '<p class="premios-nota">¿No está en el local? Ofrecele otro modelo del mismo premio o pedilo a otro local. ' +
                  'Tocá Entregar recién cuando se lo lleva: ahí se le descuentan los puntos.</p>';
     }
-
-    /* El regalo de cumpleaños, arriba de los premios: vence en días y los
-       premios no. El descuento lo cobra BlueSoft —desde acá no se toca un
-       precio—, así que el botón no dice "Entregar" sino lo que pasó. */
     var cu = t.cumple || {};
     var regaloCumple = !cu.vale ? '' :
       '<div class="premio ' + (cu.usado ? 'usado' : 'listo') + '">' +
@@ -507,16 +773,9 @@
           '<div><div class="ficha-nom">' + esc(t.nombre) + '</div>' +
           '<div class="socio-sub">' + codigoBonito(t.codigo) + '</div>' +
           fichaHoy(t) +
-          '<div class="ficha-acciones">' + mandar +
-            '<button type="button" class="btn btn-sec btn-chico" id="btnEditar">' +
-            '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
-            'stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/>' +
-            '<path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>' +
-            'Corregir datos</button>' +
+          (mandar ? '<div class="ficha-acciones">' + mandar + '</div>' : '') +
           '</div>' +
-          '</div>' +
-          '<div class="ficha-puntos"><b>' + miles(t.puntos) + '</b><small>puntos</small>' +
-            chipNivel(nv.nombre) + '</div>' +
+          '<div class="ficha-puntos"><b>' + miles(t.puntos) + '</b><small>puntos</small>' + chipNivel(nv.nombre) + '</div>' +
         '</div>' +
         '<div id="promosSocio"></div>' +
         (premios || regaloCumple ? '<div class="premios">' + regaloCumple + premios + '</div>' : '') +
@@ -535,21 +794,47 @@
       '</div>';
 
     $('btnSumar').onclick = function () { sumar(false); };
-    $('btnEditar').onclick = editarSocio;
     $('importe').oninput = function () { vistaPuntos(t); };
-    if ($('btnCumple')) { $('btnCumple').onclick = entregarCumple; }
+    if ($('btnCumple')) { dosPasos($('btnCumple'), textoCumple(), entregarCumple); }
     Array.prototype.forEach.call($('resultado').querySelectorAll('[data-premio]'), function (b) {
-      b.onclick = function () { entregar(+b.dataset.premio, b.dataset.nombre, +b.dataset.puntos); };
+      dosPasos(b, 'Confirmar: −' + miles(+b.dataset.puntos) + ' puntos', function (volver) { entregar(+b.dataset.premio, volver); });
     });
     pintarPromosSocio();
     cargarMovs();
   }
 
-  /* ═══ Las promos de socio (SQL 38) ════════════════════════════════════
-     Las que en Configuración se marcaron "Sólo para socios del Club" y
-     valen en este local. Son las mismas que el socio ve en su app con el
-     rótulo: si él la ve y el vendedor no, la promesa no se cumple. Se piden
-     una vez cada diez minutos: cambian muy de vez en cuando. */
+  /* ═══ Confirmar en el mismo botón ═════════════════════════════════════
+     El primer toque cambia el botón a lo que va a pasar ("Confirmar: −2.500
+     puntos"); el segundo lo hace. El segundo cuenta recién pasado un
+     segundo y medio: un doble toque rápido no confirma sin leer. Si nadie
+     confirma en 8 segundos, el botón vuelve a ser el de antes. */
+  function dosPasos(boton, textoConfirmar, accion) {
+    var original = boton.textContent, armado = 0, reloj = 0;
+    boton.onclick = function () {
+      var ahora = Date.now();
+      if (!armado) {
+        armado = ahora;
+        boton.textContent = textoConfirmar;
+        boton.classList.add('confirmar');
+        clearTimeout(reloj);
+        reloj = setTimeout(function () { armado = 0; boton.textContent = original; boton.classList.remove('confirmar'); }, 8000);
+        return;
+      }
+      if (ahora - armado < 1500) { return; }
+      clearTimeout(reloj);
+      armado = 0;
+      boton.disabled = true;
+      /* Si la base dice que no (o se corta), el botón vuelve a ser el de
+         antes: sin esto quedaba trabado en "Confirmar…". */
+      accion(function volver() {
+        boton.disabled = false;
+        boton.textContent = original;
+        boton.classList.remove('confirmar');
+      });
+    };
+  }
+
+  /* ═══ Las promos de socio (SQL 38) ════════════════════════════════════ */
   var promosSocio = null, promosCuando = 0;
   function valeAca(p) {
     if (p.donde === 'online') { return false; }
@@ -562,8 +847,6 @@
     var dibujar = function () {
       var caja = $('promosSocio');
       if (!caja) { return; }
-      /* Las de nivel (SQL 39), sólo si el socio llega: la cuenta es la misma
-         que la del nivel (lo que sumó en compras en los últimos 12 meses). */
       var llega = function (p) { return !p.desde_nivel || (Number(socio && socio.xp) || 0) >= (Number(p.nivel_xp) || 0); };
       var l = (promosSocio || []).filter(function (p) { return p.solo_socios && valeAca(p) && llega(p); });
       caja.innerHTML = !l.length ? '' :
@@ -582,101 +865,12 @@
       .catch(function () { /* sin las promos se cobra igual */ });
   }
 
-  /* ═══ Corregir los datos ══════════════════════════════════════════════
-     El agujero que quedaba: no había forma de cambiarle el teléfono a nadie.
-     Importa más desde que el teléfono abre la tarjeta —el que cambia de
-     número y además pierde el enlace, sin esto no vuelve a entrar nunca—.
-
-     Y es delicado por lo mismo: cambiarle el número a un socio es poder
-     abrir su tarjeta. No es una capacidad nueva (quien tiene el PIN ya puede
-     canjear premios de cualquiera) pero la base lo anota en el log con el
-     nombre de quien atendía. */
-  function editarSocio() {
-    var t = socio;
-    $('resultado').innerHTML =
-      '<div class="bloque ficha-socio">' +
-        '<div class="ficha-top">' +
-          '<div><div class="ficha-nom">Corregir los datos</div>' +
-          '<div class="socio-sub">' + codigoBonito(t.codigo) + '</div></div>' +
-        '</div>' +
-        '<div class="campos" style="margin-top:18px">' +
-          '<div class="campo ancho"><label for="edNom">Nombre</label>' +
-            '<input type="text" id="edNom" autocapitalize="words" value="' + esc(t.nombre || '') + '"></div>' +
-          '<div class="campo"><label for="edTel">WhatsApp</label>' +
-            '<input type="tel" id="edTel" inputmode="numeric" value="' + esc(t.telefono || '') + '"></div>' +
-          '<div class="campo"><label for="edMail">Mail <span class="lbl-opc">opcional</span></label>' +
-            '<input type="email" id="edMail" inputmode="email" autocapitalize="off" ' +
-            'placeholder="vos@mail.com" value="' + esc(t.mail || '') + '"></div>' +
-          /* El cumpleaños: el socio lo carga una vez desde su tarjeta, y
-             corregirlo es acá. Un solo regalo cada 12 meses aunque cambie
-             la fecha: moverlo no le vuelve a dar el regalo. */
-          '<div class="campo"><label for="edCumple">Cumpleaños <span class="lbl-opc">opcional</span></label>' +
-            '<input type="date" id="edCumple" min="1920-01-01" disabled></div>' +
-          '<div class="campo ancho">' +
-            '<button type="button" class="btn btn-pri btn-ancho" id="edGuardar">Guardar los cambios</button>' +
-          '</div>' +
-          '<div class="campo ancho">' +
-            '<button type="button" class="btn btn-sec btn-ancho" id="edVolver">Volver sin cambiar nada</button>' +
-          '</div>' +
-        '</div>' +
-      '</div>';
-
-    $('edVolver').onclick = function () { pintarFicha(socio); };
-    /* El cumpleaños se trae aparte: la búsqueda de socios no lo manda. */
-    var cumpleAntes = '';
-    base.club.cumple(pinGuardado(), t.codigo, null, false)
-      .then(function (r) {
-        if (!$('edCumple')) { return; }
-        cumpleAntes = (r && r.cumple) || '';
-        $('edCumple').value = cumpleAntes;
-        $('edCumple').disabled = false;
-      })
-      .catch(function () { /* sin el cumple a la vista, se corrige lo demás igual */ });
-    $('edGuardar').onclick = function () {
-      var b = $('edGuardar');
-      b.disabled = true;
-      base.club.editar(pinGuardado(), t.codigo,
-                       $('edNom').value, $('edTel').value, $('edMail').value, vendedor)
-        .then(function (r) {
-          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
-          /* El cumpleaños, sólo si se tocó. */
-          var nuevo = $('edCumple') && !$('edCumple').disabled ? $('edCumple').value : cumpleAntes;
-          if (nuevo !== cumpleAntes) {
-            return base.club.cumple(pinGuardado(), t.codigo, nuevo, true, vendedor).then(function (c) {
-              if (!c || !c.ok) { avisar('err', 'Los datos se guardaron, pero el cumpleaños no: ' + ((c && c.porque) || 'probá de nuevo.')); return 'parcial'; }
-              return r;
-            });
-          }
-          return r;
-        })
-        .then(function (r) {
-          if (!r || r === 'parcial' || !r.ok) { return; }
-          /* La ficha se redibuja con lo que quedó, no con lo que se escribió:
-             la base normaliza (el mail en minúsculas, los espacios de más) y
-             el mostrador tiene que ver lo que quedó guardado de verdad. */
-          socio.nombre = r.nombre;
-          socio.telefono = r.telefono;
-          socio.mail = r.mail || '';
-          avisar('ok', 'Listo, quedaron corregidos.');
-          pintarFicha(socio);
-        })
-        .catch(function (err) {
-          avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.');
-        })
-        .then(function () { b.disabled = false; });
-    };
-  }
-
   /* ═══ Sumar ═══════════════════════════════════════════════════════════ */
   function sumar(confirmar) {
     if (!socio) return;
     var b = $('btnSumar');
     b.disabled = true; b.textContent = 'Sumando…';
     $('avisoRepetido').innerHTML = '';
-
-    /* Lo mismo que va a contestar la base, pero sin viajar: el vendedor se
-       entera en el acto y no después de un segundo de "Sumando…". La base
-       lo vuelve a controlar igual — esto es comodidad, no seguridad. */
     if (!plata('importe')) {
       avisar('err', 'Falta el importe de la compra.');
       $('importe').focus();
@@ -689,15 +883,9 @@
       b.disabled = false; b.textContent = 'Sumar la compra';
       return;
     }
-
-    base.club.sumar(pinGuardado(), socio.codigo, local, vendedor,
-                    $('ticket').value.trim(), plata('importe'), confirmar)
+    base.club.sumar(pinGuardado(), socio.codigo, local, vendedor, $('ticket').value.trim(), plata('importe'), confirmar)
       .then(function (r) {
         if (r && r.duplicado) {
-          /* No es un error: es una pregunta. Puede ser el mismo vendedor
-             apretando dos veces, o dos cajas que repiten numeración —y
-             todavía no sabemos si BlueSoft lo hace—. Decide quien está
-             mirando el ticket. */
           var a = r.anterior || {};
           $('avisoRepetido').innerHTML =
             '<div class="repetido"><b>Ese ticket ya está cargado.</b><br>' +
@@ -709,30 +897,21 @@
           return;
         }
         if (r && r.revisar) {
-          /* El monto grande. Misma forma que el ticket repetido: una
-             pregunta con el número a la vista, no un error. */
           $('avisoRepetido').innerHTML =
-            '<div class="repetido"><b>¿Está bien el importe?</b><br>' +
-            esc(r.porque) +
+            '<div class="repetido"><b>¿Está bien el importe?</b><br>' + esc(r.porque) +
             '<button type="button" class="btn btn-sec btn-chico" id="btnIgual">Sí, sumarla</button></div>';
           $('btnIgual').onclick = function () { sumar(true); };
           return;
         }
         if (!r || !r.sumado) { avisar('err', (r && r.porque) || 'No se pudo sumar.'); return; }
-        /* El mensaje se arma DESPUÉS de traer la ficha nueva: si con esta
-           compra subió de nivel, el vendedor se tiene que enterar ahí, con el
-           cliente adelante, para decírselo. Es el momento que más vale. */
         var nivelAntes = socio.nivel && socio.nivel.nombre;
-        var suma = '¡Listo! Sumó ' + miles(r.gana) + ' puntos' +
-                   porQue(r.nivel, r.extra > 1 ? r.motivo : null, r.multiplica) + '.';
+        var suma = '¡Listo! Sumó ' + miles(r.gana) + ' puntos' + porQue(r.nivel, r.extra > 1 ? r.motivo : null, r.multiplica) + '.';
         elegir(socio.codigo, socio.telefono, socio.mail).then(function () {
           var ahora = socio && socio.nivel && socio.nivel.nombre;
           if (nivelAntes && ahora && ahora !== nivelAntes) {
             var regalo = 0;
             (socio.ultimas || []).forEach(function (m) {
-              if (m.concepto === 'bono_nivel' && Date.now() - new Date(m.cuando).getTime() < 5 * 60000) {
-                regalo += Number(m.puntos) || 0;
-              }
+              if (m.concepto === 'bono_nivel' && Date.now() - new Date(m.cuando).getTime() < 5 * 60000) { regalo += Number(m.puntos) || 0; }
             });
             avisar('ok', suma + ' ¡' + esc(r.nombre) + ' pasó a ' + esc(ahora) + '!' +
                    (regalo ? ' Le regalamos ' + miles(regalo) + ' puntos: decíselo.' : ' Decíselo.'));
@@ -742,60 +921,52 @@
         });
       })
       .catch(function (err) {
+        if (llaveVencida(err, 'No se sumó la compra')) { return; }
         avisar('err', (err && err.delServidor && err.message) || 'No se pudo sumar.');
       })
-      .then(function () { b.disabled = false; b.textContent = 'Sumar la compra'; });
+      .then(function () { if ($('btnSumar')) { $('btnSumar').disabled = false; $('btnSumar').textContent = 'Sumar la compra'; } });
   }
 
-  function entregarCumple() {
+  function textoCumple() {
+    var cu = (socio && socio.cumple) || {};
+    return cu.tipo === 'descuento' ? 'Confirmar: ya le hice el ' + cu.porcentaje + '%' : 'Confirmar: entregar el regalo';
+  }
+  function entregarCumple(volver) {
     if (!socio) return;
-    var cu = socio.cumple || {};
-    /* Queda marcado y no se puede volver a usar en este cumpleaños: por eso
-       se pregunta, con lo que se está marcando a la vista. */
-    var pregunta = cu.tipo === 'descuento'
-      ? '¿Ya le aplicaste el ' + cu.porcentaje + '% en BlueSoft? Queda marcado como usado ' +
-        'y no se puede volver a usar en este cumpleaños.'
-      : '¿Entregar ' + cu.producto + '? Queda marcado como usado.';
-    if (!confirm(pregunta)) return;
+    volver = volver || function () {};
     base.club.entregarCumple(pinGuardado(), socio.codigo, local, vendedor)
       .then(function (r) {
-        if (!r || !r.entregado) { avisar('err', (r && r.porque) || 'No se pudo anotar.'); return; }
+        if (!r || !r.entregado) { avisar('err', (r && r.porque) || 'No se pudo anotar.'); volver(); return; }
         avisar('ok', 'Listo: regalo de cumple anotado (' + esc(r.texto) + ').');
         elegir(socio.codigo, socio.telefono, socio.mail);
       })
       .catch(function (err) {
-        avisar('err', (err && err.delServidor && err.message) || 'No se pudo anotar.');
+        volver();
+        if (llaveVencida(err, 'No se anotó el regalo')) { return; }
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo anotar. Revisá la señal y probá de nuevo.');
       });
   }
-
-  /* "12 de octubre", de un día suelto "2026-10-12". Armado a mano y no con
-     new Date(iso): una fecha sola la toma como medianoche UTC, que en
-     Argentina es el día anterior. */
-  function diaLargo(iso) {
-    var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
-    if (!d) return '';
-    return new Date(+d[1], +d[2] - 1, +d[3]).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
-  }
-
-  function entregar(premio, nombre, puntos) {
+  function entregar(premio, volver) {
     if (!socio) return;
-    /* Ahora entregar DESCUENTA puntos. Un toque de más le saca 2.500
-       puntos al cliente —se puede anular, pero con el cliente mirando—, así
-       que se pregunta con el número a la vista. */
-    if (!confirm('¿Entregar ' + nombre + '? Se le descuentan ' + miles(puntos) +
-                 ' puntos de la tarjeta.')) { return; }
+    volver = volver || function () {};
     base.club.canjear(pinGuardado(), socio.codigo, premio, local, vendedor)
       .then(function (r) {
-        if (!r || !r.canjeado) { avisar('err', (r && r.porque) || 'No se pudo entregar.'); return; }
+        if (!r || !r.canjeado) { avisar('err', (r && r.porque) || 'No se pudo entregar.'); volver(); return; }
         avisar('ok', 'Entregado: ' + esc(r.premio) + '. Le quedan ' + miles(r.puntos) + ' puntos.');
         elegir(socio.codigo, socio.telefono, socio.mail);
       })
-      .catch(function (err) { avisar('err', (err && err.message) || 'No se pudo entregar.'); });
+      .catch(function (err) {
+        volver();
+        if (llaveVencida(err, 'No se entregó el premio')) { return; }
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo entregar. Revisá la señal y probá de nuevo.');
+      });
   }
 
-  /* ═══ Los movimientos, para poder anular ══════════════════════════════ */
+  /* Los últimos movimientos, para saber si una compra ya se cargó. Sin
+     Anular: eso es del administrador, en Socios. */
   function cargarMovs() {
     base.club.movimientos(pinGuardado(), socio.codigo).then(function (ms) {
+      if (!$('movs')) return;
       if (!Array.isArray(ms) || !ms.length) { $('movs').innerHTML = ''; return; }
       $('movs').innerHTML = '<h3 class="bloque-tit" style="font-size:15px;margin-bottom:6px">Últimos movimientos</h3>' +
         ms.map(function (m) {
@@ -811,49 +982,216 @@
               (m.local ? ' · ' + esc(bonito(m.local)) : '') +
               (m.ticket ? ' · ticket ' + esc(m.ticket) : '') +
               (m.importe ? ' · ' + PESOS.format(m.importe) : '') + '</span>' +
-            (m.anulado ? '' :
-              '<button type="button" class="btn btn-sec btn-chico" data-anular="' + m.id + '">Anular</button>') +
             '</div>';
         }).join('');
-      Array.prototype.forEach.call($('movs').querySelectorAll('[data-anular]'), function (b) {
-        b.onclick = function () { anular(+b.dataset.anular); };
-      });
-    }).catch(function () { $('movs').innerHTML = ''; });
+    }).catch(function () { if ($('movs')) $('movs').innerHTML = ''; });
   }
 
-  function anular(id) {
-    var motivo = prompt('¿Por qué se anula? (queda anotado)');
-    if (motivo === null) return;
-    base.club.anular(pinGuardado(), id, vendedor || 'mostrador', motivo)
-      .then(function (r) {
-        if (!r || !r.anulado) { avisar('err', (r && r.porque) || 'No se pudo anular.'); return; }
-        avisar('ok', 'Anulado.');
-        elegir(socio.codigo);
+  /* ═══ Un cupón o una Gift Card (lo que era Beneficios) ════════════════ */
+  function fichaBeneficio(b) {
+    var vivo = b.estado === 'disponible';
+    var esGC = b.tipo === 'giftcard';
+    var titulo = esGC
+      ? '<div class="ficha-pct">' + PESOS.format(b.saldo || b.valor || 0) + ' <span>de Gift Card</span></div>'
+      : '<div class="ficha-pct">' + b.pct + '% <span>de descuento</span></div>';
+    /* La campaña que todavía no empezó: se ve, pero no se puede usar. */
+    var noEmpezo = vivo && b.multiuso && b.desde && String(b.desde) > isoHoy(0);
+    var enFecha = vivo;
+    if (noEmpezo) { vivo = false; }
+    var insignia = '<span class="pill ' + (vivo ? 'pill-ok' : b.estado === 'usado' ? 'pill-neutra' : 'pill-warn') + '">' +
+      esc(noEmpezo ? 'empieza el ' + fechaCorta(b.desde) : b.estado) + '</span>';
+    /* El cupón es del que lo trae: no se anuncia con el nombre de otro. */
+    var quien = b.multiuso ? 'Cupón de campaña'
+      : b.al_portador ? 'Cupón al portador'
+      : esGC ? (b.nombre ? esc(b.nombre) : 'Gift Card al portador')
+      : (b.nombre ? esc(b.nombre) : 'Cliente sin nombre cargado');
+    var detalle = [];
+    if (b.al_portador && b.codigo) detalle.push('Código ' + esc(b.codigo));
+    if (esGC && b.serie) detalle.push('Tarjeta ' + esc(lindoGC(b.serie)));
+    if (!esGC && b.buscaba) detalle.push('Había venido buscando ' + esc(b.buscaba));
+    if (b.local) detalle.push((esGC ? 'Vendida en ' : 'Dado en ') + esc(bonito(b.local)));
+    if (b.vence) {
+      detalle.push(enFecha
+        ? (b.dias === 0 ? 'Vence hoy' : 'Vence en ' + b.dias + (b.dias === 1 ? ' día' : ' días'))
+        : 'Vencía el ' + esc(String(b.vence).split('-').reverse().join('/')));
+    }
+    if (b.multiuso) {
+      detalle.unshift(esc(vecesPorPersona(b.por_cliente).replace(/^./, function (c) { return c.toUpperCase(); })) +
+        ' · usado ' + (b.usos === 1 ? '1 vez' : (b.usos || 0) + ' veces') + (b.usos_max ? ' de ' + b.usos_max : ''));
+    }
+    var condiciones = [];
+    if (b.tope) condiciones.push('Descuento máximo de ' + PESOS.format(b.tope));
+    if (b.compra_minima) condiciones.push('Compra mínima de ' + PESOS.format(b.compra_minima));
+    if (b.locales && b.locales.length) condiciones.push('Sólo vale en ' + b.locales.map(bonito).map(esc).join(', '));
+    if (b.al_portador && !b.acumulable) condiciones.push('No acumulable con otras promociones');
+    return '<div class="ficha' + (vivo ? '' : ' muerto') + '">' +
+      '<div class="ficha-top">' + insignia + '</div>' + titulo +
+      '<div class="ficha-quien">' + quien + '</div>' +
+      (detalle.length ? '<div class="ficha-que">' + detalle.join(' · ') + '</div>' : '') +
+      (vivo && condiciones.length ? '<ul class="ficha-cond">' + condiciones.map(function (c) { return '<li>' + c + '</li>'; }).join('') + '</ul>' : '') +
+      (vivo
+        ? '<div class="ficha-campos">' +
+            (b.multiuso && b.por_cliente
+              ? '<div class="campo"><label for="tel' + b.id + '">WhatsApp del cliente</label>' +
+                  '<input type="tel" inputmode="numeric" id="tel' + b.id + '" placeholder="11 2345 6789"></div>' +
+                '<div class="campo"><label for="nom' + b.id + '">Nombre <span class="lbl-opc">opcional</span></label>' +
+                  '<input type="text" id="nom' + b.id + '" placeholder="Cómo se llama"></div>'
+              : '') +
+            '<div class="campo"><label for="monto' + b.id + '">Monto de la compra</label>' +
+              '<input type="text" inputmode="numeric" id="monto' + b.id + '" placeholder="$"></div>' +
+            '<div class="campo"><label for="prod' + b.id + '">Qué se llevó</label>' +
+              '<input type="text" id="prod' + b.id + '" placeholder="Opcional"></div>' +
+            '<div class="campo ancho">' +
+              '<button type="button" class="btn btn-pri btn-ancho" data-canjear="' + b.id + '">' +
+                (esGC ? 'Canjear la Gift Card' : 'Usar el descuento') + '</button>' +
+            '</div>' +
+          '</div>'
+        : '<p class="nada">' + (
+            noEmpezo ? 'Todavía no empezó: vale desde el ' + esc(fechaCorta(b.desde)) + '.' :
+            b.multiuso && b.estado === 'usado' ? 'Ya se usó todas las veces que permitía.' :
+            b.estado === 'usado' ? 'Ya se usó. Es de un solo uso.' :
+            b.estado === 'vencido' ? 'Se pasó de fecha. Atención al Cliente puede extenderlo desde el CRM.' :
+            'Fue anulado.') + '</p>') +
+    '</div>';
+  }
+
+  function canjear(id, clave) {
+    var monto = plataN('monto' + id);
+    if (!monto) {
+      avisar('err', 'Poné cuánto compró: es lo que suma al recuperado del local.');
+      $('monto' + id).focus();
+      return;
+    }
+    var tel = $('tel' + id) ? $('tel' + id).value.trim() : '';
+    if ($('tel' + id) && tel.replace(/[^0-9]/g, '').length < 10) {
+      avisar('err', 'Este cupón es uno por persona: poné el WhatsApp del cliente, con la característica.');
+      $('tel' + id).focus();
+      return;
+    }
+    var nom = $('nom' + id) ? $('nom' + id).value.trim() : '';
+    base.canjear(id, clave, local, vendedor, monto, $('prod' + id).value.trim(), tel, nom)
+      .then(function (res) {
+        if (res && res.ya_lo_uso) { avisar('err', 'No se puede: ' + res.porque + '.'); return; }
+        if (!res || !res.canjeado) {
+          avisar('err', 'No se pudo: ' + ((res && res.porque) || 'probá de nuevo') + '.');
+          buscar();
+          return;
+        }
+        avisar('ok', res.campana
+          ? '¡Listo! Descuento aplicado' + (res.quedan != null ? ': quedan ' + res.quedan + ' usos.' : '.')
+          : res.tipo === 'giftcard' ? '¡Listo! Gift Card canjeada.'
+          : '¡Listo! Quedó anotado como venta recuperada.');
+        $('clave').value = '';
+        $('resultado').innerHTML = '';
+        $('clave').focus();
       })
-      .catch(function () { avisar('err', 'No se pudo anular.'); });
+      .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.'); });
+  }
+
+  /* ═══ Vender una Gift Card ════════════════════════════════════════════ */
+  var gcPago = '';
+  function abrirVender(abrir) {
+    var caja = $('cajaVender'), btn = $('btnVender');
+    var abierto = abrir === true ? true : caja.hidden;
+    caja.hidden = !abierto;
+    btn.setAttribute('aria-expanded', String(abierto));
+    if (!abierto) return;
+    /* Las tarjetas viejas (sin código): el número se muestra ANTES de
+       vender, porque el vendedor lo escribe en la tarjeta. */
+    base.siguienteSerie()
+      .then(function (n) { $('proximaSerie').textContent = n; })
+      .catch(function () { $('proximaSerie').textContent = '—'; });
+    $('gcCodigo').value = '';
+    mostrarTarjeta(null);
+    $('gcCodigo').focus();
+  }
+  var gcPedido = 0;
+  function mostrarTarjeta(estado, txt) {
+    var c = $('gcTarjeta');
+    if (!estado) { c.hidden = true; c.textContent = ''; c.className = 'gc-tarjeta'; $('proximoViejo').hidden = false; return; }
+    c.hidden = false;
+    c.className = 'gc-tarjeta' + (estado === 'ok' ? '' : ' ' + estado);
+    c.textContent = txt;
+    $('proximoViejo').hidden = true;
+  }
+  function revisarTarjeta() {
+    var d = digitos($('gcCodigo').value), n = ++gcPedido;
+    if (!d) { mostrarTarjeta(null); return; }
+    if (d.length < 14) { mostrarTarjeta('espera', 'Faltan números: el código de la tarjeta tiene 14.'); return; }
+    if (!esCodigoGC(d)) { mostrarTarjeta('mal', 'Ese código no es de una Gift Card VDH.'); return; }
+    mostrarTarjeta('espera', 'Revisando la tarjeta…');
+    base.giftcardTarjeta(d)
+      .then(function (t) {
+        if (n !== gcPedido) return;
+        if (!t || !t.existe) { mostrarTarjeta('mal', 'Esa tarjeta no está entre las Gift Cards impresas.'); return; }
+        if (t.vendida) {
+          mostrarTarjeta('mal', 'Esa Gift Card (' + t.color + ' Nº ' + t.nro + ') ya se vendió' + (t.local ? ' en ' + bonito(t.local) : '') + '.');
+          return;
+        }
+        mostrarTarjeta('ok', '✓ Gift Card ' + t.color + ' Nº ' + t.nro + ', sin vender. Poné el valor.');
+      })
+      .catch(function () {
+        if (n !== gcPedido) return;
+        mostrarTarjeta('espera', 'No se pudo revisar la tarjeta ahora: se revisa al vender.');
+      });
+  }
+  /* En efectivo se cobra el valor menos el 10%: "cuánto se cobró" se
+     completa solo (se puede cambiar). Con el resto, el valor. */
+  function cobradoSugerido() {
+    var v = plataN('gcValor');
+    if (!v) { $('gcCobrado').placeholder = 'Igual al valor'; return; }
+    $('gcCobrado').placeholder = gcPago === 'efectivo' ? miles(Math.round(v * 0.9)) : miles(v);
+  }
+  function elegirPago(p) {
+    gcPago = p;
+    Array.prototype.forEach.call($('gcPagos').children, function (b) { b.classList.toggle('sel', b.dataset.pago === p); });
+    cobradoSugerido();
+  }
+  function vender() {
+    var valor = plataN('gcValor');
+    var cod = digitos($('gcCodigo').value);
+    if (cod && !esCodigoGC(cod)) { avisar('err', 'Ese código no es de una Gift Card VDH: pasá de nuevo la tarjeta.'); $('gcCodigo').focus(); return; }
+    if (!valor) { avisar('err', 'Poné el valor de la Gift Card.'); $('gcValor').focus(); return; }
+    if (!gcPago) { avisar('err', 'Elegí cómo la pagó.'); return; }
+    var cobrado = plataN('gcCobrado') || (gcPago === 'efectivo' ? Math.round(valor * 0.9) : valor);
+    var btn = $('btnVenderOk');
+    btn.disabled = true; btn.textContent = 'Guardando…';
+    base.venderGiftcard({
+      valor: valor, local: local, vendedor: vendedor, cobrado: cobrado, pago: gcPago,
+      dias: Number($('gcDias').value) || 30,
+      telefono: $('gcTel').value.trim(), nombre: $('gcNombre').value.trim(), codigo: cod || null
+    })
+      .then(function (res) {
+        btn.disabled = false; btn.textContent = 'Vender la Gift Card';
+        if (!res || !res.vendida) { avisar('err', (res && res.porque) || 'No se pudo vender.'); return; }
+        if (res.nro) {
+          avisar('ok', 'Vendida: Gift Card ' + res.color + ' Nº ' + ('00' + res.nro).slice(-3) + ', vale ' + PESOS.format(valor) + '.');
+          $('gcCodigo').value = '';
+          mostrarTarjeta(null);
+        } else {
+          avisar('ok', 'Vendida. Escribí ' + res.serie + ' en la tarjeta.');
+          $('proximaSerie').textContent = res.serie;
+        }
+        ['gcValor', 'gcCobrado', 'gcTel', 'gcNombre'].forEach(function (id) { $(id).value = ''; });
+        elegirPago('');
+      })
+      .catch(function (err) {
+        btn.disabled = false; btn.textContent = 'Vender la Gift Card';
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar. Revisá la señal.');
+      });
   }
 
   /* ═══ Auxiliares ══════════════════════════════════════════════════════ */
-
-  /* Lo que va a sumar esa compra, mientras se tipea. $100 = 1 punto por el
-     multiplicador del nivel: es la misma cuenta que hace la base
-     (club_reglas.pesos_por_punto), repetida acá sólo para mostrarla. Lo que
-     vale es lo que conteste la base al sumar. */
   function vistaPuntos(t) {
     var caja = $('vistaPuntos');
     if (!caja) return;
     var imp = plata('importe');
     if (!imp || imp <= 0) { caja.innerHTML = ''; return; }
-    /* El total del día lo manda la base (nivel × puntos dobles o semana del
-       cumple), la misma cuenta que va a usar al sumar. */
     var hoy = t.hoy || {};
     var nv = t.nivel || {};
     var m = Number(hoy.total) || Number(nv.multiplica) || 1;
-    caja.innerHTML = 'Suma <b>' + miles(Math.floor(imp / 100 * m)) + '</b> puntos' +
-      porQue(nv.nombre, Number(hoy.extra) > 1 ? hoy.motivo : null, m);
+    caja.innerHTML = 'Suma <b>' + miles(Math.floor(imp / 100 * m)) + '</b> puntos' + porQue(nv.nombre, Number(hoy.extra) > 1 ? hoy.motivo : null, m);
   }
-
-  /* " (Gold + Hot Sale, 2,4x)", o nada si suma lo normal. */
   function porQue(nivel, motivo, total) {
     var t = Number(total) || 1;
     if (t <= 1) return '';
@@ -862,7 +1200,6 @@
     if (motivo) partes.push(esc(motivo));
     return ' (' + partes.join(' + ') + ', ' + String(t).replace('.', ',') + 'x)';
   }
-
   function fichaHoy(t) {
     var hoy = t.hoy || {};
     var extra = Number(hoy.extra) || 1;
@@ -877,108 +1214,107 @@
     }
     return p.length ? '<div class="ficha-hoy">' + p.join('') + '</div>' : '';
   }
-
   function miles(n) { return Math.round(Number(n) || 0).toLocaleString('es-AR'); }
-
   function chipNivel(nombre) {
     var n = String(nombre || 'Silver');
-    /* Con los nombres de antes del SQL 54 también. */
     var k = n.toLowerCase().normalize('NFD').replace(/[^a-z]/g, '');
     var clase = 'nv-' + ({ plata: 'silver', oro: 'gold', platino: 'black' }[k] || k);
     return '<span class="chip-nivel ' + clase + '">' + esc(n) + '</span>';
   }
-
+  /* El importe del Club: admite coma decimal. */
   function plata(id) {
     var v = ($(id) && $(id).value || '').replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
     var n = Number(v);
     return (!v || isNaN(n)) ? null : n;
   }
+  /* Los montos de cupones y gift cards: sólo los números. */
+  function plataN(id) { return Number(String(($(id) && $(id).value) || '').replace(/[^0-9]/g, '')) || 0; }
   function cuando(iso) {
     if (!iso) return '';
-    try {
-      return new Date(iso).toLocaleString('es-AR',
-        { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-    } catch (e) { return ''; }
+    try { return new Date(iso).toLocaleString('es-AR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { return ''; }
+  }
+  /* "12 de octubre", de un día suelto: a mano, sin new Date(iso) (que lo
+     toma como medianoche UTC, el día anterior en Argentina). */
+  function diaLargo(iso) {
+    var d = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso || ''));
+    if (!d) return '';
+    return new Date(+d[1], +d[2] - 1, +d[3]).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' });
+  }
+  function isoHoy(mas) {
+    var d = new Date(); d.setDate(d.getDate() + (mas || 0));
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function fechaCorta(iso) { var p = String(iso || '').split('-'); return p.length === 3 ? p[2] + '/' + p[1] : ''; }
+  function vecesPorPersona(n) {
+    return !n ? 'sin límite por persona' : n === 1 ? 'una vez por persona' : n + ' veces por persona';
   }
 
-  /* ═══ Arranque ════════════════════════════════════════════════════════ */
-  try {
-    local = localStorage.getItem(K_LOCAL) || '';
-    vendedor = localStorage.getItem(K_VENDEDOR) || '';
-    /* Una caja habilitada cobra en SU local, aunque en Carga hayan elegido otro. */
-    if (llaveCaja() && localStorage.getItem(K_CAJA_LOCAL)) { local = localStorage.getItem(K_CAJA_LOCAL); }
-  } catch (e) {}
 
-  /* Con la llave sola, "PIN incorrecto" en algo del administrador se dice
-     como es. */
-  var avisarComun = window.avisar;
-  window.avisar = function (tipo, mensaje) {
-    if (tipo === 'err' && soloCaja() && /PIN incorrecto/.test(mensaje || '')) {
-      mensaje = 'Eso lo hace el administrador, con el PIN.';
-    }
-    return avisarComun.apply(this, [tipo, mensaje]);
-  };
+  /* ═══ Arranque ════════════════════════════════════════════════════════ */
+  local = leer(K_LOCAL);
+  vendedor = leer(K_VENDEDOR);
+  /* Un solo local para todo Cobrar: el de la caja habilitada, si la hay. */
+  if (llaveCaja() && leer(K_CAJA_LOCAL)) { local = leer(K_CAJA_LOCAL); }
 
   $('btnBuscar').onclick = buscar;
   $('clave').onkeydown = function (e) { if (e.key === 'Enter') buscar(); };
+  $('btnAbc').onclick = function () {
+    var letras = $('clave').getAttribute('inputmode') !== 'text';
+    $('clave').setAttribute('inputmode', letras ? 'text' : 'numeric');
+    $('btnAbc').setAttribute('aria-pressed', String(letras));
+    $('btnAbc').textContent = letras ? '123' : 'ABC';
+    $('clave').blur(); $('clave').focus();
+  };
+  $('btnVender').onclick = function () { abrirVender(); };
+  $('btnVenderOk').onclick = vender;
+  /* La pistola escribe los 14 números y un Enter: con el Enter se pasa al valor. */
+  $('gcCodigo').oninput = revisarTarjeta;
+  $('gcCodigo').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); $('gcValor').focus(); } };
+  $('gcValor').oninput = cobradoSugerido;
+  Array.prototype.forEach.call($('gcPagos').children, function (b) { b.onclick = function () { elegirPago(b.dataset.pago); }; });
+  $('elegirNoEstoy').onclick = function () { elegirEscribe = true; pintarElegirVends(); $('elegirNombre').focus(); };
+  $('elegirListo').onclick = anotarme;
+  $('elegirNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); anotarme(); } };
+  $('elegirOtroLocal').onclick = function () { elegirPaso(1); };
 
-  /* Si el PIN sigue en la pestaña —se vino del Panel o de Beneficios— se
-     entra sin volver a pedirlo, y se prueba pidiendo una búsqueda vacía: un
-     PIN viejo tiene que devolver al portón, no abrir algo que después falla
-     en cada clic. */
   (function () {
-    /* El enlace de un solo uso: caja.html?habilitar=… */
+    /* El enlace de un solo uso: caja.html?habilitar=… (lo arma Config y se
+       manda por WhatsApp). */
     var m = /[?&]habilitar=([0-9a-fA-F]{24})\b/.exec(location.search);
     if (m) {
       try { history.replaceState(null, '', location.pathname); } catch (e) {}
-      $('portonMsg').hidden = false;
-      $('portonMsg').textContent = 'Habilitando esta caja…';
+      avisoCaja('Habilitando esta caja…');
       base.club.cajaActivar(m[1], nombreAparato())
         .then(function (r) {
-          if (!r || !r.ok || !r.llave) {
-            $('portonMsg').textContent = (r && r.porque) || 'No se pudo habilitar esta caja.';
-            return;
-          }
-          try {
-            localStorage.setItem(K_CAJA, r.llave);
-            localStorage.setItem(K_CAJA_LOCAL, r.local);
-            localStorage.setItem('nc_caja_id', String(r.id));
-            localStorage.setItem(K_LOCAL, r.local);
-          } catch (e) {}
+          if (!r || !r.ok || !r.llave) { avisoCaja((r && r.porque) || 'No se pudo habilitar esta caja.'); return; }
+          guardar(K_CAJA, r.llave);
+          guardar(K_CAJA_LOCAL, r.local);
+          guardar('nc_caja_id', String(r.id));
+          guardar(K_LOCAL, r.local);
           local = r.local;
-          $('portonMsg').hidden = true;
-          abrir();
-          avisar('ok', 'Listo: esta caja quedó habilitada para ' + bonito(r.local) + '. Ya no pide el PIN.');
+          avisoCaja('Listo: esta caja quedó habilitada para ' + bonito(r.local) + '. El Club ya anda acá.', true);
+          abrirCobrar();
         })
-        .catch(function (e) {
-          $('portonMsg').textContent = (e && e.message) || 'No se pudo habilitar esta caja. Probá de nuevo.';
-        });
+        .catch(function (e) { avisoCaja((e && e.message) || 'No se pudo habilitar esta caja. Probá de nuevo.'); });
+      abrirCobrar();
       return;
     }
-    var pin = pinGuardado();
-    if (!pin) return;
-    base.club.buscar(pin, '___')
-      .then(abrir)
-      .catch(function () {
-        if (soloCaja()) {
-          /* La deshabilitaron desde Configuración. */
-          olvidarCaja();
-          $('portonMsg').hidden = false;
-          $('portonMsg').textContent = 'Esta caja ya no está habilitada. Pedile al encargado un enlace nuevo.';
-        } else {
-          guardarPin('');
+    /* Una caja habilitada que después deshabilitaron desde Config, o un PIN
+       que quedó en la pestaña y ya no sirve: se prueba una vez al abrir, se
+       olvida y se dice (cupones y gift cards andan igual). */
+    if (clubAnda()) {
+      base.club.buscar(pinGuardado(), '___').catch(function (err) {
+        if (llaveVencida(err) === 'llave' && clubAnda()) {
+          /* Era la llave y quedó el PIN: se prueba ése también. */
+          base.club.buscar(pinGuardado(), '___').catch(function (e2) { llaveVencida(e2); });
         }
       });
+    }
+    abrirCobrar();
   })();
 
   iniciarPWA();
 })();
-
-  /* La pastilla elegida queda recordada en esta compu: el ítem "Club" de la
-     barra abre la última que se usó. */
-  document.querySelectorAll('.pestana[data-pestana]').forEach(function (a) {
-    a.addEventListener('click', function () { try { localStorage.setItem('nc_club_pestana', a.dataset.pestana); } catch (e) {} });
-  });
 </script>
 </body>
 </html>

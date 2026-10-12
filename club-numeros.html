@@ -54,6 +54,20 @@
   .porton p { font-size: 15px; color: var(--txt-2); margin: 10px 0 24px; }
   .porton input { text-align: center; font-size: 17px; font-weight: 600; padding: 15px 14px; }
   .porton .btn { margin-top: 12px; }
+  .porton-salida { margin-top: 18px; font-size: 13.5px; color: var(--txt-3); }
+  .porton-salida a { color: var(--acc-txt); font-weight: 600; }
+  /* Lo del administrador en la ficha (12/10/2026): corregir y anular. */
+  .ficha-form { display: grid; gap: 10px; margin-top: 12px; }
+  .ficha-form[hidden] { display: none; }
+  .adm-mov { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .adm-mov:first-child { border-top: 0; }
+  .adm-mov b { font: 700 15px var(--display); font-variant-numeric: tabular-nums; min-width: 62px; }
+  .adm-mov small { color: var(--txt-3); font-size: 12.5px; }
+  .adm-mov .btn { margin-left: auto; }
+  .adm-mov.anulado { opacity: .5; text-decoration: line-through; }
+  .quien-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .quien-adm { margin: 0 0 10px; }
+  .quien-adm button { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--acc-txt); text-decoration: underline; cursor: pointer; }
   .porton-msg { margin-top: 16px !important; color: var(--bad-txt) !important; font-size: 14px !important; }
 
   /* ── Controles ── */
@@ -401,6 +415,9 @@
   <input type="password" id="pinCn" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off">
   <button class="btn btn-pri btn-ancho" id="btnEntrar">Entrar</button>
   <p class="porton-msg" id="portonMsg" hidden></p>
+  <!-- Salida para el que entró por error (en la app instalada no hay barra
+       del navegador para volver). -->
+  <p class="porton-salida">¿Venías a cobrar? <a href="caja.html">Andá a Cobrar</a> · <a href="index.html">Carga</a></p>
 </div>
 
 <div class="marco" id="marco" hidden>
@@ -419,21 +436,21 @@
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
       Carga
     </a>
-    <a class="rail-item" href="panel.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
-      CRM
+    <a class="rail-item" href="caja.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Cobrar
     </a>
     <a class="rail-item" href="estadisticas.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
       Estadísticas
     </a>
-    <a class="rail-item" href="caja.html" aria-current="page">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
-      Club
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      CRM
     </a>
-    <a class="rail-item" href="beneficios.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
-      Beneficios
+    <a class="rail-item" href="club-numeros.html#socios" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.4l-5.72 3l1.1-6.37L2.75 9.53l6.4-.93z"/></svg></span>
+      Socios
     </a>
     <a class="rail-item" href="config.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
@@ -447,8 +464,7 @@
        Estadísticas son vistas de esta misma página (#socios, #movimientos):
        comparten el período, el local, la ficha del socio y los datos. -->
   <nav class="pestanas" aria-label="Club">
-    <a class="pestana" href="caja.html" data-pestana="cobrar">Cobrar</a>
-    <a class="pestana" href="club-numeros.html#socios" data-pestana="socios" data-vista="socios">Socios</a>
+    <a class="pestana" href="club-numeros.html#socios" data-pestana="socios" data-vista="socios">Lista</a>
     <a class="pestana" href="club-numeros.html#movimientos" data-pestana="movimientos" data-vista="movimientos">Movimientos</a>
     <a class="pestana" href="club-numeros.html" data-pestana="estadisticas" data-vista="estadisticas" aria-current="page">Estadísticas</a>
   </nav>
@@ -1605,6 +1621,125 @@
       });
   }
 
+  /* ═══ Lo del administrador en la ficha (12/10/2026) ═══════════════════
+     Corregir los datos y el cumpleaños, y anular un movimiento. Antes
+     estaban en el mostrador (Club → Cobrar); son del administrador y
+     quedan anotados con quién lo hizo. */
+  var K_QUIEN_ADM = 'nc_quien';
+  /* Quién lo hace: el de Atención del CRM, o se pregunta con la lista. */
+  function conQuien(siga) {
+    var q = leer(K_QUIEN_ADM);
+    if (q) { siga(q); return; }
+    var caja = $('fichaAdmin');
+    caja.innerHTML = '<div class="ficha-form"><p class="ficha-nota" style="margin:0">¿Quién sos? Queda anotado.</p>' +
+      '<div class="quien-chips" id="quienChips"><span class="vacio-cn">Cargando…</span></div>' +
+      '<div class="campo"><input type="text" id="quienOtro" placeholder="Otro: tu nombre" maxlength="40"></div>' +
+      '<button type="button" class="btn btn-pri" id="quienOk">Seguir</button></div>';
+    var listo = function (n) {
+      n = String(n || '').trim();
+      if (!n) { $('quienOtro').focus(); return; }
+      guardar(K_QUIEN_ADM, n);
+      caja.innerHTML = '';
+      pintarQuienAdm();
+      siga(n);
+    };
+    $('quienOk').onclick = function () { listo($('quienOtro').value); };
+    base.atencion()
+      .then(function (l) {
+        var nombres = (Array.isArray(l) ? l : []).map(function (x) { return x.nombre || x; }).filter(Boolean);
+        $('quienChips').innerHTML = nombres.map(function (n) { return '<button type="button" class="chip" data-n="' + esc(n) + '">' + esc(n) + '</button>'; }).join('') ||
+          '<span class="vacio-cn">Escribí tu nombre.</span>';
+        Array.prototype.forEach.call($('quienChips').querySelectorAll('[data-n]'), function (b) { b.onclick = function () { listo(b.dataset.n); }; });
+      })
+      .catch(function () { $('quienChips').innerHTML = '<span class="vacio-cn">Escribí tu nombre.</span>'; });
+  }
+  /* A nombre de quién queda, a la vista, y "No soy X" para cambiarlo: el
+     nombre es el mismo del CRM y puede ser de otra persona de la oficina. */
+  function pintarQuienAdm() {
+    var p = $('fichaQuien');
+    if (!p) { return; }
+    var q = leer(K_QUIEN_ADM);
+    p.innerHTML = q ? 'Lo que corrijas o anules queda a nombre de <b>' + esc(q) + '</b>. <button type="button" id="quienNoSoy">No soy ' + esc(q) + '</button>'
+                    : 'Antes de corregir o anular te pregunta quién sos: queda anotado.';
+    if ($('quienNoSoy')) { $('quienNoSoy').onclick = function () { guardar(K_QUIEN_ADM, ''); pintarQuienAdm(); }; }
+  }
+  function cablearAdmin(f) {
+    pintarQuienAdm();
+    if ($('fichaCorregir')) { $('fichaCorregir').onclick = function () { conQuien(function (q) { corregir(f, q); }); }; }
+    cargarMovsAdmin(f);
+  }
+  function cargarMovsAdmin(f) {
+    base.club.movimientos(pinGuardado(), f.codigo)
+      .then(function (ms) {
+        var caja = $('fichaMovs');
+        if (!caja || !fichaSocio || fichaSocio.codigo !== f.codigo) { return; }
+        if (!Array.isArray(ms) || !ms.length) { caja.innerHTML = '<p class="vacio-cn">Sin movimientos.</p>'; return; }
+        caja.innerHTML = ms.map(function (m) {
+          return '<div class="adm-mov' + (m.anulado ? ' anulado' : '') + '">' +
+            '<b>' + (m.concepto === 'regalo_cumple' ? 'Regalo' : (m.puntos > 0 ? '+' : m.puntos < 0 ? '−' : '') + miles(Math.abs(m.puntos || 0))) + '</b>' +
+            '<span>' + esc(m.tipo === 'canje' ? (m.obs || 'premio') : m.concepto === 'bienvenida' ? 'bienvenida' : m.concepto === 'vencimiento' ? 'vencidos' : 'compra') +
+              '<small> · ' + diaCorto(m.cuando) + (m.local ? ' · ' + esc(nombreLocalDe(m.local)) : '') + (m.ticket ? ' · ticket ' + esc(m.ticket) : '') +
+              (m.importe ? ' · ' + plata(m.importe) : '') + '</small></span>' +
+            (m.anulado ? '' : '<button type="button" class="btn btn-sec btn-chico" data-anular="' + m.id + '">Anular</button>') +
+          '</div>';
+        }).join('');
+        Array.prototype.forEach.call(caja.querySelectorAll('[data-anular]'), function (b) {
+          b.onclick = function () { conQuien(function (q) { anularMov(f, +b.dataset.anular, q); }); };
+        });
+      })
+      .catch(function () { if ($('fichaMovs')) { $('fichaMovs').innerHTML = '<p class="vacio-cn">No se pudieron traer los movimientos.</p>'; } });
+  }
+  function anularMov(f, id, quien) {
+    var motivo = prompt('¿Por qué se anula? Queda anotado a nombre de ' + quien + '.');
+    if (motivo === null) { return; }
+    base.club.anular(pinGuardado(), id, quien, motivo)
+      .then(function (r) {
+        if (!r || !r.anulado) { avisar('err', (r && r.porque) || 'No se pudo anular.'); return; }
+        avisar('ok', 'Anulado.');
+        abrirFicha(f.codigo, fichaModo === 'busca');
+      })
+      .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo anular.'); });
+  }
+  function corregir(f, quien) {
+    var caja = $('fichaAdmin');
+    caja.innerHTML = '<div class="ficha-form">' +
+      '<div class="campo"><label for="edNom">Nombre</label><input type="text" id="edNom" autocapitalize="words" value="' + esc(f.nombre || '') + '"></div>' +
+      '<div class="campo"><label for="edTel">WhatsApp</label><input type="tel" id="edTel" inputmode="numeric" value="' + esc(f.telefono || '') + '"></div>' +
+      '<div class="campo"><label for="edMail">Mail <span class="lbl-opc">opcional</span></label><input type="email" id="edMail" inputmode="email" autocapitalize="off" value="' + esc(f.mail || '') + '"></div>' +
+      '<div class="campo"><label for="edCumple">Cumpleaños <span class="lbl-opc">opcional</span></label><input type="date" id="edCumple" min="1920-01-01" disabled></div>' +
+      '<button type="button" class="btn btn-pri" id="edGuardar">Guardar los cambios</button>' +
+      '<button type="button" class="btn btn-sec" id="edVolver">Cancelar</button>' +
+      '<p class="ficha-nota" style="margin:0">Queda anotado a nombre de ' + esc(quien) + '.</p></div>';
+    $('edVolver').onclick = function () { caja.innerHTML = ''; };
+    var cumpleAntes = '';
+    base.club.cumple(pinGuardado(), f.codigo, null, false)
+      .then(function (r) { if (!$('edCumple')) { return; } cumpleAntes = (r && r.cumple) || ''; $('edCumple').value = cumpleAntes; $('edCumple').disabled = false; })
+      .catch(function () {});
+    $('edGuardar').onclick = function () {
+      var b = $('edGuardar');
+      b.disabled = true;
+      base.club.editar(pinGuardado(), f.codigo, $('edNom').value, $('edTel').value, $('edMail').value, quien)
+        .then(function (r) {
+          if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return null; }
+          var nuevo = $('edCumple') && !$('edCumple').disabled ? $('edCumple').value : cumpleAntes;
+          if (nuevo !== cumpleAntes) {
+            return base.club.cumple(pinGuardado(), f.codigo, nuevo, true, quien).then(function (c) {
+              if (!c || !c.ok) { avisar('err', 'Los datos se guardaron, pero el cumpleaños no: ' + ((c && c.porque) || 'probá de nuevo.')); return null; }
+              return r;
+            });
+          }
+          return r;
+        })
+        .then(function (r) {
+          if (!r) { return; }
+          avisar('ok', 'Listo, quedaron corregidos.');
+          abrirFicha(f.codigo, fichaModo === 'busca');
+        })
+        .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo guardar.'); })
+        .then(function () { if ($('edGuardar')) { $('edGuardar').disabled = false; } });
+    };
+  }
+
   /* El mensaje de WhatsApp: su nombre, sus puntos y, si ya le alcanza, el
      premio. Sale escrito pero se puede cambiar en WhatsApp antes de mandar. */
   function mensajeVolver(f) {
@@ -1702,10 +1837,16 @@
       (acc ? '<div class="ficha-acc">' + acc + '</div>' : '') +
       (notas.length ? '<p class="ficha-nota" style="margin-top:12px">' + esc(notas.join(' ')) + '</p>' : '') +
       '<h3 class="sub-tit">Le escribieron</h3>' + (contactos || '<p class="vacio-cn">Nadie le escribió todavía desde acá.</p>') +
-      (ultimas ? '<h3 class="sub-tit">Últimas compras</h3>' + ultimas : '');
+      (ultimas ? '<h3 class="sub-tit">Últimas compras</h3>' + ultimas : '') +
+      '<h3 class="sub-tit">Administración</h3>' +
+      '<p class="ficha-nota quien-adm" id="fichaQuien"></p>' +
+      '<div class="ficha-acc"><button type="button" class="btn btn-sec" id="fichaCorregir">Corregir datos y cumpleaños</button></div>' +
+      '<div id="fichaAdmin"></div>' +
+      '<h3 class="sub-tit">Movimientos de puntos</h3><div id="fichaMovs"><p class="vacio-cn">Cargando…</p></div>';
 
     $('ficha').setAttribute('aria-label', 'Ficha de ' + f.nombre);
     if ($('fichaOtro')) { $('fichaOtro').onclick = abrirBuscador; }
+    cablearAdmin(f);
     if ($('fichaWsp')) {
       $('fichaWsp').onclick = function () {
         /* Se anota al tocar: no hay forma de saber si lo mandó, pero sí de
@@ -1797,7 +1938,6 @@
     $('tipos').addEventListener('click', function (e) {
       var b = e.target.closest('.tipo-tile[data-tipo]'); if (!b) { return; }
       soc.tipo = b.dataset.tipo; soc.salto = 0; soc.texto = ''; $('sociosTexto').value = ''; soc.cargada = false;
-      try { localStorage.setItem('nc_club_pestana', 'socios'); } catch (x) {}
       location.hash = 'socios';
       window.scrollTo(0, 0);
     });
@@ -1836,11 +1976,6 @@
     iniciarPWA();
   })();
 
-  /* La pastilla elegida queda recordada en esta compu: el ítem "Club" de la
-     barra abre la última que se usó. */
-  document.querySelectorAll('.pestana[data-pestana]').forEach(function (a) {
-    a.addEventListener('click', function () { try { localStorage.setItem('nc_club_pestana', a.dataset.pestana); } catch (e) {} });
-  });
 </script>
 </body>
 </html>

@@ -1413,11 +1413,20 @@ var base = {
   waPlantillasPara: function (pin, clave) { return base.waAccion('plantillas_para', { pin: pin, clave: clave }); },
   waEnviarPlantilla: function (pin, datos) { return base.waAccion('enviar_plantilla', Object.assign({ pin: pin }, datos)); },
 
-  /** El descuento atado al teléfono, desde la ficha del cliente. */
-  darDescuento: function (pin, registro, pct, dias, quien) {
+  /** El descuento atado al teléfono, desde la ficha de un No Compra: va por
+      el registro, así queda el local y el vendedor. */
+  darDescuento: function (pin, registro, pct, dias, quien, obs) {
     return funcion('dar_descuento', {
       p_pin: pin, p_registro: registro, p_pct: pct,
-      p_dias: dias || 30, p_quien: quien || null
+      p_dias: dias || 30, p_quien: quien || null, p_obs: obs || null
+    });
+  },
+  /** El mismo descuento sin un No Compra detrás (SQL 81): desde Contactos,
+      Mensajes o Cupones y Gift Cards, con el teléfono. */
+  darDescuentoTel: function (pin, telefono, pct, dias, quien, nombre, obs) {
+    return funcion('dar_descuento_tel', {
+      p_pin: pin, p_telefono: telefono, p_pct: pct, p_dias: dias || 30,
+      p_quien: quien || null, p_nombre: nombre || null, p_obs: obs || null
     });
   },
 

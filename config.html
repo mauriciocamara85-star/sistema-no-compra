@@ -21,6 +21,14 @@
   } catch (e) {}
 </script>
 <style>
+  /* La sesión del PIN en la pestaña Club VDH (12/10/2026). */
+  .pin-sesion { padding-top: 14px; padding-bottom: 14px; }
+  .sesion-fila { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: 14px; color: var(--txt-2); }
+  .sesion-fila .link-bot { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--acc-txt); text-decoration: underline; cursor: pointer; }
+  .sesion-cambio { margin-top: 12px; }
+  .sesion-cambio[hidden] { display: none; }
+  .pie-pin { margin: 4px 2px 0; font-size: 13px; color: var(--txt-3); }
+  .pie-pin a { color: var(--acc-txt); font-weight: 600; }
   /* ── Sólo de esta pantalla ───────────────────────────────────────────── */
 
   /* El único casillero de la app. Toda la fila es clicable: un cuadradito
@@ -446,21 +454,21 @@
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
       Carga
     </a>
-    <a class="rail-item" href="panel.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
-      CRM
+    <a class="rail-item" href="caja.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Cobrar
     </a>
     <a class="rail-item" href="estadisticas.html">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
       Estadísticas
     </a>
-    <a class="rail-item" href="caja.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
-      Club
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      CRM
     </a>
-    <a class="rail-item" href="beneficios.html">
-      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V3h10l7.6 7.6a2 2 0 0 1 0 2.8Z"/><circle cx="7.5" cy="7.5" r="1.3"/></svg></span>
-      Beneficios
+    <a class="rail-item" href="club-numeros.html#socios">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.4l-5.72 3l1.1-6.37L2.75 9.53l6.4-.93z"/></svg></span>
+      Socios
     </a>
     <a class="rail-item" href="config.html" aria-current="page">
       <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
@@ -529,6 +537,9 @@
       <h2 class="bloque-tit">Los avisos por mail</h2>
       <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
     </div>
+    <!-- El acceso discreto al PIN (12/10/2026): un vendedor no lo necesita;
+         el de la oficina sabe dónde está (y ahí lo cambia o sale). -->
+    <p class="pie-pin">¿Sos de Atención o administración? <a href="#club">Entrá con el PIN</a>, en Club VDH.</p>
     </div>
   </section>
 
@@ -539,6 +550,26 @@
       <h2 class="bloque-tit">El Club VDH</h2>
       <p class="bloque-sub">Acá se manejan los premios, las promociones y los avisos que ven los socios. Pide el PIN porque lo que se cambia lo ven los clientes.</p>
       <div id="pinClubCuerpo"></div>
+    </div>
+    <!-- La sesión del PIN (12/10/2026): cambiarlo y salir. Vivían en
+         Beneficios; están acá, detrás del PIN, porque "Locales y equipo" se
+         abre sin nada y el PIN no puede estar detrás de una puerta abierta. -->
+    <div class="bloque pin-sesion" id="cajaSesion" hidden>
+      <div class="sesion-fila">
+        <span>Entraste con el PIN</span>
+        <button type="button" class="link-bot" id="btnCambiarPin">Cambiar el PIN</button>
+        <button type="button" class="link-bot" id="btnSalirPin">Salir</button>
+      </div>
+      <div class="sesion-cambio" id="cajaCambioPin" hidden>
+        <p class="bloque-sub">El PIN nuevo tiene que ser de 4 a 8 dígitos. Es el mismo para el CRM, Socios y esta pantalla.</p>
+        <div class="campos">
+          <div class="campo"><label for="pinViejo">PIN actual</label>
+            <input type="password" id="pinViejo" inputmode="numeric" maxlength="8" autocomplete="off"></div>
+          <div class="campo"><label for="pinNuevo">PIN nuevo</label>
+            <input type="password" id="pinNuevo" inputmode="numeric" maxlength="8" autocomplete="off"></div>
+          <div class="campo ancho"><button type="button" class="btn btn-pri" id="btnGuardarPin">Cambiar el PIN</button></div>
+        </div>
+      </div>
     </div>
     <!-- ── El menú (30/09/2026) ──
          Antes eran diez bloques uno abajo del otro. Ahora cada parte del Club
@@ -646,7 +677,7 @@
       <div class="pant-cab">
         <a class="pant-volver" href="#club">Club VDH</a>
         <h2 class="pant-tit">Regalos de cumpleaños</h2>
-        <p class="bloque-sub">Uno por nivel. Le avisamos 7 días antes y vale hasta el día del cumple, una sola vez. Los cupones de descuento están en <a href="beneficios.html">Beneficios</a>.</p>
+        <p class="bloque-sub">Uno por nivel. Le avisamos 7 días antes y vale hasta el día del cumple, una sola vez. Los cupones de descuento se crean en el CRM, en <a href="panel.html#cupones">Cupones y Gift Cards</a>.</p>
       </div>
       <div class="bloque" id="cajaRegalos"><div id="regalosCuerpo"></div></div>
     </div>
@@ -832,6 +863,7 @@
      Promociones. Las secciones de abajo dicen "poné el PIN arriba". */
   function pedirPinPromo(error) {
     if ($('cajaPinClub')) { $('cajaPinClub').hidden = false; }
+    if ($('cajaSesion')) { $('cajaSesion').hidden = true; }
     mostrarClub(rutaClub());
     $('promoCuerpo').innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
     $('pinClubCuerpo').innerHTML =
@@ -858,9 +890,43 @@
     pintarTodoElClub();
   }
 
+  /* La sesión del PIN: se ve sólo con el PIN puesto. */
+  function pintarSesion() {
+    if ($('cajaSesion')) { $('cajaSesion').hidden = !pinPromo(); }
+  }
+  function salirPin() {
+    guardarPinPromo('');
+    /* Recargar y no esconder a mano: media pantalla depende del PIN. */
+    location.reload();
+  }
+  function guardarPinNuevo() {
+    var viejo = $('pinViejo').value.trim();
+    var nuevo = $('pinNuevo').value.trim();
+    if (!/^[0-9]{4,8}$/.test(nuevo)) { avisar('err', 'El PIN nuevo tiene que ser de 4 a 8 dígitos.'); return; }
+    var b = $('btnGuardarPin');
+    b.disabled = true; b.textContent = 'Cambiando…';
+    base.pin.definir(viejo, nuevo)
+      .then(function (r) {
+        if (!r || !r.cambiado) { avisar('err', (r && r.porque) || 'No se pudo cambiar.'); return; }
+        /* El guardado es el viejo: si no se reemplaza, lo próximo falla. */
+        guardarPinPromo(nuevo);
+        $('pinViejo').value = ''; $('pinNuevo').value = '';
+        $('cajaCambioPin').hidden = true;
+        avisar('ok', 'PIN cambiado.');
+      })
+      .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo cambiar el PIN.'); })
+      .then(function () { b.disabled = false; b.textContent = 'Cambiar el PIN'; });
+  }
+  if ($('btnCambiarPin')) {
+    $('btnCambiarPin').onclick = function () { var c = $('cajaCambioPin'); c.hidden = !c.hidden; if (!c.hidden) { $('pinViejo').focus(); } };
+    $('btnSalirPin').onclick = salirPin;
+    $('btnGuardarPin').onclick = guardarPinNuevo;
+  }
+
   /* Todas las secciones a la vez, y no la que se abre: el menú necesita el
      renglón de cada una, y así abrir cualquiera es instantáneo. */
   function pintarTodoElClub() {
+    pintarSesion();
     pintarPromo();
     pintarAviso();
     pintarPremios();
