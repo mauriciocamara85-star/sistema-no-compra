@@ -858,6 +858,45 @@ En el celular la barra de guardar se apoya **arriba** del rail acostado. El
 aire de seguridad del iPhone lo reserva el rail, que es el que toca el borde;
 si lo reservaran los dos quedaría un escalón vacío entre las dos barras.
 
+## Los agentes de IA
+
+Son dos, y los dos se configuran en el CRM → **Agentes de IA** (con el PIN
+del CRM; los vendedores no ven nada de eso), con el selector arriba:
+
+- **Atención al cliente**: el WhatsApp de la tienda (Edge Function
+  `agente`). Fuera del horario del equipo redacta borradores para aprobar
+  (en prueba, así arranca siempre) o contesta solo (en automático). Si
+  contesta en una charla lo decide la **base** (`agente_puede`): prendido,
+  el número de la tienda (nunca el de No Compra), fuera del horario, la
+  charla sin pausa y sin una persona que haya contestado hace poco. Los
+  mensajes que se mandan desde el celular llegan al CRM como "ecos" de Meta
+  (`desde = 'celular'`): sin eso el automático no se puede elegir. Lo que
+  sabe son las fuentes "para clientes" prendidas, y las elige la base
+  (`agente_contexto`): lo "solo interno" no le llega nunca. En el código
+  quedan dos controles que no dependen de lo que se le diga: los links de
+  productos (sólo los de `ver_producto`) y los topes (no ofrece cupones,
+  descuentos ni envíos de regalo: si lo intenta, se corrige o no sale).
+- **Asistente de vendedores**: `asistente.html` (Asistente, en la barra),
+  libre y sin PIN, para la PC de cada local (Edge Function `asistente`).
+  Contesta sólo con las fuentes y cita de cuál sacó cada cosa (las citas
+  las arma la API de Claude: no se pueden inventar). Cada persona ve sólo
+  sus charlas, y sólo en esa PC; después de 30 minutos sin usarlo vuelve a
+  preguntar quién es.
+
+Para los dos: el modelo (Sonnet 5.5 de fábrica, Haiku 5.5 u Opus 5.5) y el
+tope de gasto del mes (corta, y avisa por Telegram al 80 y al 100 %) se
+eligen en Ajustes; la clave de Claude está en los Secrets de Supabase
+(`ANTHROPIC_API_KEY`). Las instrucciones se editan por partes y guardan
+todas las versiones. Las pruebas guardadas las corre la función del agente
+y las juzga Haiku 5.5. Lo que comparten las dos funciones está en
+`supabase/functions/_shared/claude.ts`.
+
+SQL: 85 (las fuentes y el Asistente), 86 (los manuales: sólo en el archivo
+que se corre en Supabase, porque el texto es interno), 87 (instrucciones,
+barandillas, pruebas y conexiones) y 88 (WhatsApp y la convivencia con el
+equipo). Las funciones se despliegan con
+`npx supabase functions deploy <agente|asistente|whatsapp> --no-verify-jwt --project-ref gfjdjupuwxohkgchqykx`.
+
 ## Respaldo automático
 
 `instalarRespaldo()`, una vez desde el editor. Deja una copia diaria de la

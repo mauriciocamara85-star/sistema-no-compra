@@ -818,6 +818,20 @@
   .ag-op { padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); }
   .ag-op.sel { border-color: var(--acc); background: var(--acc-soft); }
   .ag-op.no { opacity: .55; }
+  button.ag-op { display: block; width: 100%; text-align: left; background: var(--surface); font: inherit; color: var(--txt); }
+  button.ag-op.no { cursor: not-allowed; }
+  .ag-op[aria-checked="true"] { box-shadow: inset 0 0 0 1px var(--acc); }
+  .ag-confirma { margin-top: 10px; padding: 12px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn-txt); display: grid; gap: 6px; }
+  .ag-confirma p { font-size: 13px; line-height: 1.45; }
+  .ag-confirma div { display: flex; gap: 8px; justify-content: flex-end; }
+  .ag-cuidados { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; color: var(--txt-2); line-height: 1.45; }
+  /* La franja del agente en una charla de Mensajes (SQL 88). */
+  .ms-agente-barra { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 14px; font-size: 12.5px; line-height: 1.4;
+                     border-bottom: 1px solid var(--line); background: var(--surface-2); color: var(--txt-2); }
+  .ms-agente-barra[hidden] { display: none; }
+  .ms-agente-barra.solo { background: var(--ok-soft); color: var(--ok-txt); }
+  .ms-agente-barra .ms-ag-txt { flex: 1 1 220px; min-width: 0; }
+  .ms-agente-barra .btn-link { font-size: 12.5px; }
   .ag-op b { display: block; font-size: 14px; }
   .ag-op span { font-size: 12.5px; color: var(--txt-2); }
   /* ── Agentes de IA (12/10/2026): el menú propio, el selector y el chat
@@ -5576,6 +5590,7 @@
         '<button type="button" class="btn btn-sec btn-chico ms-agente" title="Que el agente redacte una respuesta">✦ Agente</button>' +
         '<button type="button" class="btn btn-sec btn-chico ms-ver-ficha">Ver ficha</button>' +
       '</div>' +
+      '<div class="ms-agente-barra" hidden></div>' +
       '<div class="ms-chat-cuerpo"><div class="chat">' +
         ((d.mensajes || []).length ? burbujasChat(d.mensajes) : '<p class="num-vacio">Todavía no hay mensajes.</p>') + '</div></div>' +
       '<div class="ag-borrador" id="agBorrador" hidden></div>' +
@@ -5590,11 +5605,75 @@
     conectarChat(p.clave, raiz, function () { refrescarConversacion(p.clave); });
     cablearPlantilla(raiz, p.clave, nom);
     cablearAgenteChat(raiz, p.clave);
+    estadoAgenteChat(p.clave, raiz, segChat === 'tienda', conInfo);
     bajarChat(raiz);
     if (escribiendo && raiz.querySelector('.chat-texto')) { raiz.querySelector('.chat-texto').focus(); }
     else if (conInfo && !ES_CEL() && raiz.querySelector('.chat-texto')) { raiz.querySelector('.chat-texto').focus(); }
     if (conInfo) { pintarInfo(d, c); }
   }
+  /* El agente en esta charla (SQL 88): si contesta solo, si está en pausa o
+     si una persona contestó hace poco, con el botón para pausarlo. Sólo en
+     las charlas del número de la tienda. Sin el SQL 88 no se muestra. */
+  /* El último estado de cada charla: la charla se redibuja seguido (al abrir,
+     al llegar un mensaje) y así la franja no parpadea ni se pregunta de más. */
+  var AGE = {};
+  function estadoAgenteChat(clave, raiz, esTienda, fresco) {
+    var barra = raiz.querySelector('.ms-agente-barra');
+    if (!barra || !esTienda) { return; }
+    var c = AGE[clave];
+    if (c) { pintarBarraAgente(barra, clave, c.r); }
+    /* Al abrir la charla se pregunta siempre; al redibujarla, cada 20 s. Si
+       ya hay una pregunta en camino, no se hace otra. */
+    if (c && !fresco && Date.now() - c.t < 20000) { return; }
+    if (AGE['?' + clave]) { return; }
+    AGE['?' + clave] = true;
+    base.agenteCharlaEstado(pinGuardado(), clave)
+      .then(function (r) {
+        delete AGE['?' + clave];
+        if (pinDelAgente(r)) { return; }
+        AGE[clave] = { r: r, t: Date.now() };
+        var b = MS.abierto === clave ? $('msChat').querySelector('.ms-agente-barra') : null;
+        if (b) { pintarBarraAgente(b, clave, r); }
+      })
+      .catch(function () { delete AGE['?' + clave]; /* sin el SQL 88, nada */ });
+  }
+  function horaAg(ts) {
+    try { return new Date(ts).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Argentina/Buenos_Aires' }); } catch (e) { return ''; }
+  }
+  function pintarBarraAgente(barra, clave, r) {
+    if (!r || r.porque === 'otro_numero' || r.porque === 'charla') { barra.hidden = true; return; }
+    var manual = r.pausa && r.pausa.motivo === 'manual';
+    var t = r.puede
+      ? (r.modo === 'auto' ? 'El agente contesta solo en esta charla (fuera del horario del equipo).' : 'Fuera del horario del equipo, el agente redacta un borrador para que lo apruebes.')
+      : { apagado: 'El agente está apagado.', horario: 'Ahora atiende el equipo: el agente no contesta.',
+          pausa: 'El agente está en pausa en esta charla' + (r.quien ? ' (lo pausó ' + r.quien + ')' : '') + '.',
+          derivada: 'El agente le pasó esta charla a una persona: no contesta hasta que alguien le escriba al cliente.',
+          persona: r.nunca ? 'Una persona contestó: en esta charla el agente ya no contesta.'
+                           : 'Una persona contestó: el agente vuelve a contestar' + (r.hasta ? ' después de las ' + horaAg(r.hasta) : ' en un rato') + ', si nadie más escribe.'
+        }[r.porque] || 'El agente no contesta ahora.';
+    barra.className = 'ms-agente-barra ' + (r.puede ? (r.modo === 'auto' ? 'solo' : 'prueba') : 'quieto');
+    barra.innerHTML = '<span class="ms-ag-ico" aria-hidden="true">✦</span><span class="ms-ag-txt">' + esc(t) + '</span>' +
+      (r.porque === 'apagado' ? '' : '<button type="button" class="btn-link" data-ag-pausa="' + (manual ? 'no' : 'si') + '">' + (manual ? 'Reanudar el agente' : 'Pausar el agente') + '</button>');
+    barra.hidden = false;
+    var b = barra.querySelector('[data-ag-pausa]');
+    if (b) {
+      b.onclick = function () {
+        var si = b.dataset.agPausa === 'si';
+        b.disabled = true;
+        base.agentePausar(pinGuardado(), clave, si, quien || null)
+          .then(function (x) {
+            b.disabled = false;
+            if (pinDelAgente(x)) { return; }
+            if (!x || !x.ok) { avisar('err', (x && x.porque) || 'No se pudo.'); return; }
+            avisar('ok', si ? 'El agente no va a contestar en esta charla.' : 'El agente vuelve a contestar en esta charla (fuera de horario).');
+            delete AGE[clave];
+            estadoAgenteChat(clave, barra.parentNode, true);
+          })
+          .catch(function (err) { b.disabled = false; avisar('err', (err && err.message) || 'No se pudo.'); });
+      };
+    }
+  }
+
   /* La ficha a la derecha: los datos, el Club y lo que pasó. */
   function pintarInfo(d, c) {
     var info = $('msInfo');
@@ -6699,6 +6778,8 @@
     w.barandillas = jsonAg(r.barandillas, null);
     w.asis_barandillas = jsonAg(r.asis_barandillas, null);
     w.tope_usd = r.tope_usd == null ? '' : String(r.tope_usd);
+    /* SQL 88: cuándo vuelve a contestar después de una persona. */
+    w.reanudar = r.reanudar == null ? null : String(r.reanudar);
     return w;
   }
 
@@ -6886,17 +6967,36 @@
 
   /* ── Las páginas de "Atención al cliente" que ya existían ──────────── */
   function pagAjustesClientes(d, w) {
-    var prendido = d.reglas.prendido === 'si', ah = ahoraAgente(d.ahora);
+    var r = d.reglas || {}, prendido = r.prendido === 'si', ah = ahoraAgente(d.ahora), auto = r.modo === 'auto';
+    var eco = d.eco || null, con88 = r.reanudar != null, puedeAuto = !!(eco && eco.ok);
+    var vuelve = r.reanudar === 'nunca' ? 'en esa charla no vuelve' : 'vuelve después de ' + (r.reanudar || 2) + ' h sin respuesta';
     return '<div class="ag-estado ' + ah[0] + '"><b>' + esc(ah[1]) + '</b><span>' + esc(ah[2]) + '</span>' +
-        '<span class="ag-fase1">Por ahora redacta sólo cuando se lo piden desde Mensajes (✦ Agente), y una persona lo aprueba antes de que salga.</span></div>' +
+        '<span class="ag-fase1">' + (auto ? 'En automático: en esos horarios contesta solo, sin que nadie lo apruebe.'
+          : 'En prueba: en esos horarios redacta borradores y una persona los aprueba en Mensajes antes de que salgan.') + '</span></div>' +
       '<div class="ficha-bloque"><h3>Prendido</h3><div class="agx-fila"><p>' +
         (prendido ? 'Atiende en los horarios marcados.' : 'No atiende a nadie hasta que lo prendas.') + '</p>' +
         '<button type="button" class="llave" role="switch" id="agPrendido" aria-checked="' + prendido + '">' +
           '<i aria-hidden="true"></i><span>' + (prendido ? 'Prendido' : 'Apagado') + '</span></button></div></div>' +
-      '<div class="ficha-bloque"><h3>Cómo contesta</h3><div class="ag-modo-op">' +
-        '<div class="ag-op sel"><b>En prueba</b><span>Redacta la respuesta y una persona la aprueba antes de que salga.</span></div>' +
-        '<div class="ag-op no" aria-disabled="true"><b>Automático</b><span>Contesta solo. Se habilita cuando haya pasado las pruebas.</span></div>' +
-      '</div><p class="ag-nota">Atiende el WhatsApp de ' + esc(d.numero || 'la tienda') + '. El de No Compra, no.</p></div>' +
+      '<div class="ficha-bloque"><h3>Cómo contesta</h3><div class="ag-modo-op" role="radiogroup" aria-label="Cómo contesta">' +
+        '<button type="button" role="radio" aria-checked="' + !auto + '" class="ag-op' + (auto ? '' : ' sel') + '" data-ag-modo="prueba">' +
+          '<b>En prueba</b><span>Redacta la respuesta y una persona la aprueba antes de que salga. Así arranca siempre.</span></button>' +
+        '<button type="button" role="radio" aria-checked="' + auto + '" class="ag-op' + (auto ? ' sel' : '') + (puedeAuto || auto ? '' : ' no') + '" data-ag-modo="auto"' +
+          (puedeAuto || auto ? '' : ' aria-disabled="true"') + '><b>Automático</b><span>' +
+          (puedeAuto || auto ? 'Contesta solo, fuera del horario del equipo.'
+            : con88 ? 'Hace falta que lleguen al CRM los mensajes que se mandan desde el celular de la tienda: así sabe cuándo contestó una persona.'
+                    : 'Se habilita con el SQL 88.') + '</span></button></div>' +
+        (AGX.confirmarAuto ? '<div class="ag-confirma" role="alertdialog" aria-labelledby="agConfTit"><b id="agConfTit">¿Lo pasamos a automático?</b>' +
+          '<p>Fuera del horario del equipo va a contestarles solo a los clientes, sin que nadie lo apruebe. Antes conviene correr las Pruebas.</p>' +
+          '<div><button type="button" class="btn btn-sec btn-chico" id="agAutoNo">No</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" id="agAutoSi">Sí, pasar a automático</button></div></div>' : '') +
+        (con88 ? '<ul class="ag-cuidados">' + ['Sólo fuera del horario del equipo (Horarios y derivación).',
+            'Si una persona contesta (desde el celular o el CRM), se calla: ' + vuelve + '.',
+            'En cada charla de Mensajes hay un botón para pausarlo.',
+            'Nunca contesta en el número de No Compra.',
+            'Cuando le pasa una charla a una persona, se pausa en esa charla y avisa por Telegram.',
+            'No ofrece cupones, descuentos ni envíos de regalo: si lo intenta, el sistema lo frena.'].map(liAg).join('') + '</ul>' : '') +
+        (eco && eco.ok ? '<p class="ag-nota">Los mensajes del celular llegan al CRM: el último, el ' + esc(fechaAg(eco.ultimo, true)) + '.</p>' : '') +
+        '<p class="ag-nota">Atiende el WhatsApp de ' + esc(d.numero || 'la tienda') + '. El de No Compra, no.</p></div>' +
       htmlModeloTope(d, w || AG.w, 'clientes');
   }
   function pagHorarios(d, w) {
@@ -6928,7 +7028,15 @@
         DERIVA_AG.map(function (x) {
           return '<span>' + x[1] + '</span><input type="text" maxlength="40" data-k="' + x[0] + '" value="' + esc(w[x[0]]) + '" aria-label="' + x[1] + '">';
         }).join('') +
-        '</div><div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agDerivaOk">Guardar</button></div></div>';
+        '</div><div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agDerivaOk">Guardar</button></div></div>' +
+      (w.reanudar != null ? '<div class="ficha-bloque"><h3>Cuando contesta una persona</h3>' +
+        '<p class="ag-nota agb-sub">Si alguien del equipo le contesta a un cliente (desde el celular o desde el CRM), el agente se calla en esa charla.</p>' +
+        '<div class="ag-tope">Vuelve a contestar <select id="agReanudar" aria-label="Cuándo vuelve a contestar">' + [['1', 'después de 1 hora sin respuesta'], ['2', 'después de 2 horas sin respuesta'],
+          ['4', 'después de 4 horas sin respuesta'], ['8', 'después de 8 horas sin respuesta'], ['24', 'después de un día sin respuesta'], ['nunca', 'nunca: en esa charla no vuelve']].map(function (o) {
+            return '<option value="' + o[0] + '"' + (w.reanudar === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+          }).join('') + (['1', '2', '4', '8', '24', 'nunca'].indexOf(w.reanudar) < 0 ? '<option value="' + esc(w.reanudar) + '" selected>después de ' + esc(w.reanudar) + ' horas sin respuesta</option>' : '') +
+        '</select></div><p class="ag-nota">Y siempre sólo fuera del horario del equipo.</p>' +
+        '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agReanudarOk">Guardar</button></div></div>' : '');
   }
   function pagReglas(d, w) {
     var num = function (k, cls) {
@@ -7034,6 +7142,18 @@
     en('agxDockAbrir', function () { abrirDockAgente(true); });
     en('agxDockCerrar', function () { abrirDockAgente(false); });
     en('agxDockVelo', function () { abrirDockAgente(false); });
+    [].forEach.call(v.querySelectorAll('[data-ag-modo]'), function (b) {
+      b.onclick = function () {
+        var actual = (AG.datos && AG.datos.reglas && AG.datos.reglas.modo) || 'prueba', m = b.dataset.agModo;
+        if (m === actual) { AGX.confirmarAuto = false; return; }
+        if (m === 'prueba') { AGX.confirmarAuto = false; guardarReglasAgente({ modo: 'prueba' }, b, 'En prueba: redacta borradores para aprobar.'); return; }
+        if (b.getAttribute('aria-disabled') === 'true') { avisar('err', b.querySelector('span').textContent); return; }
+        AGX.confirmarAuto = true;
+        pintarAgente();
+      };
+    });
+    en('agAutoNo', function () { AGX.confirmarAuto = false; pintarAgente(); });
+    en('agAutoSi', function () { AGX.confirmarAuto = false; guardarReglasAgente({ modo: 'auto' }, this, 'Automático: fuera del horario del equipo contesta solo.'); });
     en('agPrendido', function () {
       var nuevo = AG.datos.reglas.prendido === 'si' ? 'no' : 'si';
       guardarReglasAgente({ prendido: nuevo }, this,
@@ -7077,6 +7197,8 @@
       TOPES_AG.forEach(function (k) { o[k] = k === 'cupon_con_sale' ? AG.w[k] : String(AG.w[k]).replace(/[^0-9]/g, ''); });
       guardarReglasAgente(o, this, 'Topes guardados.');
     });
+    if ($('agReanudar')) { $('agReanudar').onchange = function () { AG.w.reanudar = this.value; }; }
+    en('agReanudarOk', function () { guardarReglasAgente({ reanudar: AG.w.reanudar }, this, 'Guardado.'); });
     en('agDerivaOk', function () {
       var o = {};
       DERIVA_AG.forEach(function (x) { o[x[0]] = String(AG.w[x[0]] || '').trim(); });

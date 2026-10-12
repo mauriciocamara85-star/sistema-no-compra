@@ -1507,6 +1507,14 @@ var base = {
   agenteConexiones: function (pin) {
     return base.fnAgentes('asistente', { accion: 'conexiones', pin: pin });
   },
+  /** El agente en una charla (SQL 88): si puede contestar y por qué. */
+  agenteCharlaEstado: function (pin, clave) {
+    return funcion('agente_charla_estado', { p_pin: pin, p_clave: clave });
+  },
+  /** Pausar (si = true) o reanudar el agente en una charla. */
+  agentePausar: function (pin, clave, si, quien) {
+    return funcion('agente_pausar', { p_pin: pin, p_clave: clave, p_si: !!si, p_quien: quien || null });
+  },
   /** El estado de WhatsApp, como lo dice la función "whatsapp" (sin PIN:
    *  dice qué secretos hay —sí o no— y cómo están los números). */
   waEstado: function () {

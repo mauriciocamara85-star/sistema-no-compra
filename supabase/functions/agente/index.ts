@@ -11,8 +11,10 @@
  *
  *   POST {accion: 'pedir', pin, clave, quien}   El CRM pide un borrador (PIN).
  *   POST {accion: 'auto', tel, numero_id}       Lo llama la función whatsapp
- *        con la llave de servicio cuando entra un mensaje. Sólo redacta si
- *        está prendido, es el número de la tienda y le toca por horario.
+ *        con la llave de servicio cuando entra un mensaje. La base decide si
+ *        le toca (agente_puede: prendido, el número de la tienda, fuera del
+ *        horario del equipo, sin pausa y sin una persona que haya contestado
+ *        hace poco). En prueba deja un borrador; en automático lo manda.
  *   POST {accion: 'probar', llave, conversacion} Las pruebas: no guarda nada.
  *   POST {accion: 'probar_chat', pin, conversacion} El chat de prueba del CRM
  *        (Agentes de IA → Probar): no guarda nada y no le llega a nadie.
@@ -32,6 +34,9 @@ import Anthropic from 'npm:@anthropic-ai/sdk';
 import { costo, instrucciones, juzgar, modeloValido } from '../_shared/claude.ts';
 
 const URL_BASE = Deno.env.get('SUPABASE_URL') ?? '';
+/* Lo que espera antes de contestar, por si el cliente sigue escribiendo
+   (en las pruebas se acorta). */
+const ESPERA = Number(Deno.env.get('AGENTE_ESPERA_MS') ?? '25000');
 const SERVICIO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const claude = new Anthropic();
 
@@ -234,6 +239,30 @@ function documentos(fuentes: any[]): any[] {
   return docs;
 }
 
+/* El control de los topes (etapa D). El agente todavía no tiene cupones:
+   llegan con la app de cupones de Tienda Nube (fase 3). Hasta entonces el
+   tope de verdad es cero: si ofrece un cupón, un descuento que no es el SALE
+   ni el de la transferencia, la segunda prenda con descuento o un envío de
+   regalo, se le pide corregir; si insiste, no sale y se pasa la charla. Lo
+   que dice que NO hace ("no te puedo hacer un 30 %") no cuenta. */
+function ofreceAlgo(texto: string): string | null {
+  const t = ' ' + String(texto ?? '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ') + ' ';
+  const sinNo = (re: RegExp) => {
+    for (const m of t.matchAll(re)) {
+      const antes = t.slice(Math.max(0, (m.index ?? 0) - 16), m.index ?? 0);
+      if (!/\b(?:no|nunca|ni)\b/.test(antes)) return true;
+    }
+    return false;
+  };
+  if (sinNo(/\b(?:te|le) (?:paso|doy|dejo|mando|genero|armo|regalo) (?:un |el |este |tu )?(?:cupon|codigo)/g)) return 'un cupón';
+  if (sinNo(/\b(?:usa|aplica|ingresa|pone)(?:lo|la)? (?:el )?(?:cupon|codigo) [a-z0-9]{4,}/g)) return 'un cupón';
+  if (sinNo(/\b(?:te|le) (?:hago|dejo|doy|puedo hacer|puedo dar|puedo dejar|bonifico|aplico|regalo) (?:un |el |una )?(?:descuento (?:del? )?)?\d{1,2} ?%/g)) return 'un descuento';
+  if (sinNo(/\d{1,2} ?% (?:de descuento )?(?:de regalo|extra|adicional|especial)/g)) return 'un descuento';
+  if (sinNo(/\bsegunda(?: prenda| unidad)? (?:al|con(?: un)?|a) \d{1,2} ?%/g)) return 'un descuento en la segunda prenda';
+  if (sinNo(/\b(?:te|le) (?:regalo|bonifico|cubro|pago) el envio/g) || sinNo(/\benvio (?:gratis )?de regalo/g)) return 'un envío gratis';
+  return null;
+}
+
 /** Redacta la respuesta con Claude, usando las herramientas hasta 10 vueltas.
  *  Arriba, lo que no cambia (las instrucciones y el horario, y el
  *  catálogo, que cambia cada hora): se cachea. Lo que sabe va en el primer
@@ -261,7 +290,7 @@ async function redactar(ctx: any, mensajes: { de: string; tipo?: string; texto?:
   const b: Borrador = { texto: '', derivar: null, productos: [], herramientas: [], fuentes: [],
                         tokens: { entrada: 0, salida: 0, cache_leidos: 0, cache_escritos: 0 }, usd: 0, ms: 0, modelo };
 
-  let controles = 0;
+  let controles = 0, topes = 0;
   for (let vuelta = 0; vuelta < 10; vuelta++) {
     const pedido: any = { model: modelo, max_tokens: 4000, output_config: { effort: 'medium' }, system, tools: HERRAMIENTAS, messages };
     /* Si el modelo está saturado, que conteste otro parecido (Haiku no tiene). */
@@ -312,6 +341,24 @@ async function redactar(ctx: any, mensajes: { de: string; tipo?: string; texto?:
       }
       if (inventados.length) {
         for (const u of inventados) b.texto = b.texto.split(u).join('vdh.com.ar');
+      }
+      const ofrece = ofreceAlgo(b.texto);
+      if (ofrece && topes < 2) {
+        topes++;
+        messages.push({ role: 'assistant', content: r.content });
+        messages.push({ role: 'user', content: '[Control interno de VDH, el cliente no lo ve: no podés ofrecer ' + ofrece + '. Hoy sólo existen el SALE ' +
+          '(ya está en el precio), el 10 % con transferencia y las cuotas. Si el cliente pide un descuento o una excepción, decile que lo consultás ' +
+          'y derivá con area "excepcion" en este mismo mensaje. Respondé con el mensaje completo corregido.]' });
+        b.texto = '';
+        continue;
+      }
+      if (ofrece) {
+        b.texto = 'Eso lo tiene que ver una persona del equipo: ya le paso tu consulta y te escriben en el horario de atención.';
+        b.fuentes = [];
+        if (!b.derivar) {
+          b.derivar = { area: 'excepcion', a: reglas[A_QUIEN.excepcion] || 'el equipo',
+                        resumen: 'El cliente pidió un descuento o una excepción y el agente no la puede dar (lo frenó el control de los topes).' };
+        }
       }
       break;
     }
@@ -370,14 +417,29 @@ async function sumarGasto(usd: number) {
 }
 const TOPE_MSJ = 'El agente llegó al tope de gasto del mes: se sube en Agentes de IA → Ajustes.';
 
-async function guardarBorrador(ctx: any, b: Borrador, origen: 'pedido' | 'auto', quien?: string) {
+async function guardarBorrador(ctx: any, b: Borrador, origen: 'pedido' | 'auto', quien?: string, estado?: 'enviado') {
   return await rpc('agente_borrador_guardar', {
     p: {
       clave: ctx.clave, numero_id: ctx.numero_id, ultimo_id: ctx.ultimo_id, texto: b.texto, derivar: b.derivar,
       productos: b.productos, herramientas: b.herramientas, origen, pedido_por: quien ?? null, modelo: b.modelo,
-      tokens: b.tokens, ms: b.ms,
+      tokens: b.tokens, ms: b.ms, estado: estado ?? null,
     },
   });
+}
+
+/* En automático, la respuesta sale por la función whatsapp (que tiene el
+   token de Meta), con la llave de servicio. */
+async function enviarWhatsApp(clave: string, texto: string): Promise<any> {
+  try {
+    const r = await fetch(URL_BASE + '/functions/v1/whatsapp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SERVICIO, Authorization: 'Bearer ' + SERVICIO, 'x-agente': SERVICIO },
+      body: JSON.stringify({ accion: 'enviar_agente', clave, texto }),
+    });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
 }
 
 /* El CRM pide un borrador para una charla. */
@@ -401,24 +463,50 @@ async function pedir(p: { pin?: string; clave?: string; quien?: string }) {
   }
 }
 
-/* Entró un mensaje: si le toca, redacta. Espera un poco por si el cliente
-   sigue escribiendo; si llegó otro, lo deja para la llamada de ese. */
+/* Entró un mensaje (lo avisa la función whatsapp). La base decide si le
+   toca (agente_puede, SQL 88). Espera un poco por si el cliente sigue
+   escribiendo; si llegó otro, lo deja para la llamada de ese. En prueba
+   deja el borrador para que una persona lo apruebe. En automático lo
+   manda, mirando antes una última vez que nadie haya contestado ni el
+   cliente haya escrito mientras redactaba; si le pasó la charla a una
+   persona, se pausa en esa charla y avisa por Telegram. */
 async function auto(p: { tel?: string; numero_id?: string }) {
-  let ctx: any = await rpc('agente_contexto', { p_clave: String(p.tel ?? '') });
-  if (!ctx) return;
-  const r = ctx.reglas ?? {};
-  if (r.prendido !== 'si' || !ctx.ahora?.atiende) return;
-  if (String(p.numero_id ?? '') !== String(r.numero_id ?? '')) return;
+  const tel = String(p.tel ?? ''), numeroId = String(p.numero_id ?? '');
+  const toca = (c: any) => !!c && String(c.reglas?.numero_id ?? '') === numeroId &&
+    (c.puede ? !!c.puede.puede : (c.reglas?.prendido === 'si' && !!c.ahora?.atiende));
+  let ctx: any = await rpc('agente_contexto', { p_clave: tel });
+  if (!toca(ctx)) return;
   const ultimo = ctx.ultimo_entra_id;
-  await new Promise((ok) => setTimeout(ok, 25000));
-  ctx = await rpc('agente_contexto', { p_clave: String(p.tel ?? '') });
-  if (!ctx || ctx.ultimo_entra_id !== ultimo) return;
+  await new Promise((ok) => setTimeout(ok, ESPERA));
+  ctx = await rpc('agente_contexto', { p_clave: tel });
+  if (!toca(ctx) || ctx.ultimo_entra_id !== ultimo) return;
   const ult = ctx.mensajes[ctx.mensajes.length - 1];
   if (!ult || ult.de !== 'cliente') return;
   if (sinPlata(ctx)) return;
   const b = await redactar(ctx, ctx.mensajes);
   await sumarGasto(b.usd);
-  await guardarBorrador(ctx, b, 'auto');
+  /* Sin el SQL 88 (no hay "puede") nunca manda solo: sólo borradores. */
+  if (ctx.reglas?.modo !== 'auto' || !ctx.puede) {
+    await guardarBorrador(ctx, b, 'auto');
+    return;
+  }
+  const ahora: any = await rpc('agente_contexto', { p_clave: tel });
+  if (!toca(ahora) || ahora.ultimo_entra_id !== ultimo || ahora.reglas?.modo !== 'auto') {
+    await guardarBorrador(ctx, b, 'auto');
+    return;
+  }
+  const env = await enviarWhatsApp(ctx.clave, b.texto);
+  if (!env?.ok) {
+    console.error('agente: no se pudo mandar:', String(env?.error ?? ''));
+    await guardarBorrador(ctx, b, 'auto');
+    return;
+  }
+  await guardarBorrador(ctx, b, 'auto', undefined, 'enviado');
+  if (b.derivar) {
+    await rpc('agente_pausar_derivada', { p_clave: ctx.clave, p_resumen: b.derivar.resumen }).catch((e) => console.error('agente: pausa:', String(e)));
+    await rpc('agente_avisar_derivacion', { p_clave: ctx.clave, p_a: b.derivar.a, p_area: b.derivar.area, p_resumen: b.derivar.resumen })
+      .catch((e) => console.error('agente: aviso:', String(e)));
+  }
 }
 
 /* Las pruebas: una charla inventada, con todo lo de verdad (catálogo,

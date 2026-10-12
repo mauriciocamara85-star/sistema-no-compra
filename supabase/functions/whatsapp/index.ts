@@ -317,6 +317,36 @@ async function enviar(p: { pin?: string; clave?: string; texto?: string; quien?:
   return { ok: true, wamid };
 }
 
+/* ═══ El agente de clientes, en automático (12/10/2026, SQL 88) ═════════
+   Lo llama la función "agente" con la llave de servicio, después de que la
+   base dijo que le toca (fuera del horario del equipo, sin pausa y sin una
+   persona que haya contestado hace poco). Sólo texto, dentro de las 24
+   horas y por el número al que escribió el cliente. Queda "desde agente":
+   así no cuenta como si hubiera contestado una persona. */
+async function enviarAgente(p: { clave?: string; texto?: string }) {
+  const texto = String(p.texto ?? '').trim();
+  if (!texto) return { ok: false, error: 'El mensaje está vacío.' };
+  if (texto.length > 4000) return { ok: false, error: 'El mensaje es demasiado largo.' };
+  let prep: any;
+  try { prep = await rpc('wa_preparar_envio_agente', { p_clave: String(p.clave ?? '') }); } catch {
+    return { ok: false, error: 'No se pudo preparar el envío.' };
+  }
+  if (!prep?.ok) return { ok: false, motivo: prep?.motivo, error: prep?.motivo === 'ventana' ? 'Pasaron más de 24 horas.' : 'No hay charla.' };
+  const num = (await numeros()).find((n) => n.id === String(prep.numero_id));
+  if (!num?.conectado) return { ok: false, error: 'El número no está conectado al CRM.' };
+  const r = await meta('/' + num.id + '/messages', 'POST', {
+    messaging_product: 'whatsapp', recipient_type: 'individual', to: prep.tel,
+    type: 'text', text: { body: texto, preview_url: true },
+  }, num.token, true);
+  const wamid = r?.messages?.[0]?.id;
+  if (!wamid) {
+    console.error('whatsapp: Meta no aceptó lo del agente:', JSON.stringify(r?.error ?? r));
+    return { ok: false, error: 'WhatsApp no lo aceptó.' };
+  }
+  await anotar({ wamid, numero_id: num.id, numero: prep.numero ?? num.digitos, tel: prep.tel, texto, quien: 'Agente de IA', desde: 'agente' });
+  return { ok: true, wamid };
+}
+
 /* ═══ Plantillas (10/10/2026) ═══════════════════════════════════════════
    Para escribirle a alguien que no escribió, o pasadas las 24 h, Meta sólo
    deja mandar plantillas que revisó y aprobó. Los datos que cambian van con
@@ -532,6 +562,10 @@ Deno.serve(async (req) => {
       case 'suscribir': return json(await suscribir());
       case 'webhook': return json(await webhook());
       case 'historial': return json(await historial(pedido));
+      case 'enviar_agente': {
+        if (!SERVICIO || req.headers.get('x-agente') !== SERVICIO) return json({ ok: false, error: 'no' }, 401);
+        return json(await enviarAgente(pedido as any));
+      }
     }
   } catch (e) {
     return json({ ok: false, error: String(e) }, 500);
