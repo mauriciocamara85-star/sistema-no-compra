@@ -251,6 +251,31 @@ async function rpc(nombre: string, args: unknown): Promise<any> {
 /** Le pasa el aviso a la base, que es la que lo desarma y lo guarda. */
 const guardar = (aviso: unknown) => rpc('wa_recibir', { p: aviso });
 
+/** Agente de IA (fase 2, 12/10/2026): por cada cliente que escribió, le
+ *  avisa a la función "agente", que decide si le toca redactar (prendido,
+ *  número de la tienda, horario). No se espera: Meta recibe su "ok" igual,
+ *  y si el agente falla, el mensaje ya quedó guardado. */
+function avisarAgente(aviso: any) {
+  const quienes = new Set<string>();
+  for (const e of aviso?.entry ?? []) {
+    for (const c of e?.changes ?? []) {
+      if (c?.field !== 'messages') continue;
+      const numeroId = String(c?.value?.metadata?.phone_number_id ?? '');
+      for (const m of c?.value?.messages ?? []) if (m?.from) quienes.add(String(m.from) + '|' + numeroId);
+    }
+  }
+  for (const q of quienes) {
+    const [tel, numero_id] = q.split('|');
+    const pedido = fetch(URL_BASE + '/functions/v1/agente', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SERVICIO, 'x-agente': SERVICIO },
+      body: JSON.stringify({ accion: 'auto', tel, numero_id }),
+    }).catch((e) => console.error('whatsapp: no se pudo avisar al agente:', String(e)));
+    // deno-lint-ignore no-explicit-any
+    (globalThis as any).EdgeRuntime?.waitUntil?.(pedido);
+  }
+}
+
 /** Guarda lo que salió. Si falla, salió igual: el estado de Meta deja la
  *  marca y la conversación sigue bien. */
 async function anotar(p: Record<string, unknown>) {
@@ -482,8 +507,10 @@ Deno.serve(async (req) => {
       return new Response('firma', { status: 401 });
     }
     try {
-      const r = await guardar(JSON.parse(new TextDecoder().decode(cuerpo)));
+      const aviso = JSON.parse(new TextDecoder().decode(cuerpo));
+      const r = await guardar(aviso);
       console.log('whatsapp:', JSON.stringify(r));
+      avisarAgente(aviso);
     } catch (e) {
       console.error('whatsapp: no se pudo guardar:', String(e));
     }

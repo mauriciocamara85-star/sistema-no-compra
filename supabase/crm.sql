@@ -5699,3 +5699,400 @@ grant execute on function agente_texto_guardar(text, text) to anon, authenticate
    en Supabase y se editan desde el CRM. */
 
 select 'listo: los cimientos del Agente de IA' as "SQL 77";
+
+
+-- ─────────────────────────── PARTE 78 (12/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · EL AGENTE DE IA, FASE 2: LO QUE CONSULTA Y SUS BORRADORES
+--
+-- Correr en el editor SQL de Supabase (después del 77).
+--
+-- El agente redacta respuestas para que el equipo las apruebe en Mensajes.
+-- Para eso consulta, siempre en el momento (nunca de memoria):
+--   · el catálogo de la tienda con el precio que se paga de verdad (el del
+--     SALE, leído cada hora de la página de cada producto);
+--   · el stock por talle y color de la tienda, y el de la fábrica;
+--   · un pedido, sólo con su número Y el mail de la compra;
+--   · lo que sabe (con los 14 locales, la lista oficial).
+-- Todo eso lo usa sólo la Edge Function "agente" (con la llave de
+-- servicio). El CRM ve y resuelve los borradores con el PIN.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists agente_borradores (
+  id         bigserial primary key,
+  clave      text not null,
+  numero_id  text,
+  ultimo_id  bigint,
+  texto      text not null,
+  derivar    jsonb,
+  productos  jsonb not null default '[]'::jsonb,
+  herramientas jsonb not null default '[]'::jsonb,
+  origen     text not null default 'pedido' check (origen in ('pedido', 'auto')),
+  pedido_por text,
+  modelo     text,
+  tokens     jsonb,
+  ms         integer,
+  estado     text not null default 'pendiente'
+             check (estado in ('pendiente', 'enviado', 'editado', 'descartado', 'viejo')),
+  final      text,
+  quien      text,
+  creado     timestamptz not null default now(),
+  resuelto   timestamptz
+);
+create index if not exists agente_borradores_clave on agente_borradores (clave, creado desc);
+alter table agente_borradores enable row level security;
+revoke all on agente_borradores from anon, authenticated;
+
+/* La llave de las pruebas: sólo su huella. */
+create table if not exists agente_llave (
+  id     smallint primary key default 1 check (id = 1),
+  huella text
+);
+insert into agente_llave (id) values (1) on conflict (id) do nothing;
+alter table agente_llave enable row level security;
+revoke all on agente_llave from anon, authenticated;
+
+create or replace function agente_llave_ok(p_llave text)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((select l.huella is not null and length(coalesce(p_llave, '')) >= 32
+                          and l.huella = encode(extensions.digest(p_llave, 'sha256'), 'hex')
+                     from agente_llave l where l.id = 1), false)
+$$;
+revoke execute on function agente_llave_ok(text) from public, anon, authenticated;
+
+/* El catálogo en renglones, para que el agente lo tenga entero a la vista:
+   id · nombre · tipo · precio (y el de antes) · talles y colores con stock. */
+create or replace function agente_catalogo()
+returns text
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(string_agg(
+    p.id || ' · ' || p.nombre || ' · ' || coalesce(p.tipo, 'Otros') || ' · $' ||
+      replace(to_char(round(coalesce(p.oferta, p.precio)::numeric), 'FM999,999,999'), ',', '.') ||
+      case when p.oferta is not null and p.precio::numeric > p.oferta::numeric
+           then ' (antes $' || replace(to_char(round(p.precio::numeric), 'FM999,999,999'), ',', '.') || ', ' ||
+                round(100 - p.oferta::numeric * 100 / p.precio::numeric) || '% OFF)' else '' end ||
+      ' · talles: ' || coalesce((select string_agg(t->>'n', ' ') from jsonb_array_elements(p.talles) t
+                                   where coalesce((t->>'hay')::boolean, true)), '-') ||
+      coalesce(' · colores: ' || nullif((select string_agg(c->>'n', ', ') from jsonb_array_elements(p.colores) c
+                                          where coalesce((c->>'hay')::boolean, true)), ''), ''),
+    E'\n' order by coalesce(p.tipo, 'zz'), p.nombre), '(el catálogo no se pudo leer)')
+  from club_tienda_productos p
+$$;
+revoke execute on function agente_catalogo() from public, anon, authenticated;
+
+/* Un producto en detalle: el precio, la foto, el link, cada talle y color
+   con su stock en la tienda, y lo que hay en la fábrica de ese modelo. */
+create or replace function agente_producto(p_id text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'id', p.id, 'nombre', p.nombre, 'tipo', p.tipo,
+    'precio', round(coalesce(p.oferta, p.precio)::numeric, 2),
+    'precio_lista', round(p.precio::numeric, 2),
+    'off', case when p.oferta is not null and p.precio::numeric > p.oferta::numeric
+                then round(100 - p.oferta::numeric * 100 / p.precio::numeric) end,
+    'con_transferencia', round(coalesce(p.oferta, p.precio)::numeric * 0.9, 2),
+    'link', p.url, 'foto', p.foto,
+    'tienda', coalesce((select jsonb_agg(jsonb_build_object('talle', t.talle, 'color', t.color, 'quedan', t.stock)
+                                         order by t.color, t.talle)
+                          from stock_tienda t where t.url = p.url and coalesce(t.stock, 1) > 0), '[]'::jsonb),
+    'fabrica', coalesce((select jsonb_agg(jsonb_build_object('talle', f.talle, 'color', coalesce(f.color_nombre, f.color),
+                                                             'cantidad', f.cantidad) order by f.color_nombre, f.talle)
+                           from stock_fabrica f
+                          where f.codigo in (select t.codigo from stock_tienda t where t.url = p.url and coalesce(t.codigo, '') <> '')),
+                        '[]'::jsonb))
+  from club_tienda_productos p
+  where p.id::text = trim(coalesce(p_id, ''))
+$$;
+revoke execute on function agente_producto(text) from public, anon, authenticated;
+
+/* Lo que hay en la fábrica con ese nombre (para lo que no está en la tienda). */
+create or replace function agente_fabrica(p_texto text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(x order by x->>'modelo'), '[]'::jsonb) from (
+    select jsonb_build_object('modelo', f.descripcion, 'rubro', f.rubro,
+             'talles', jsonb_agg(jsonb_build_object('talle', f.talle, 'color', coalesce(f.color_nombre, f.color),
+                                                    'cantidad', f.cantidad) order by f.color_nombre, f.talle)) as x
+      from stock_fabrica f
+     where length(stock_norma(p_texto)) >= 3
+       and (stock_nombre_coincide(f.descripcion, p_texto) or stock_nombre_coincide(f.descripcion || ' ' || coalesce(f.rubro, ''), p_texto))
+     group by f.codigo, f.descripcion, f.rubro
+     limit 10) y
+$$;
+revoke execute on function agente_fabrica(text) from public, anon, authenticated;
+
+/* Un pedido de la tienda: sólo si el número Y el mail coinciden. Si no,
+   no dice si el número existe. */
+create or replace function agente_pedido(p_numero text, p_mail text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce((
+    select jsonb_build_object('encontrado', true, 'numero', t.numero,
+             'estado', case t.estado when 'open' then 'abierto' when 'closed' then 'cerrado (entregado o archivado)'
+                                     when 'cancelled' then 'cancelado' else t.estado end,
+             'pago', case t.pago when 'paid' then 'pagado' when 'pending' then 'pendiente de pago'
+                                 when 'refunded' then 'devuelto' when 'voided' then 'anulado' else t.pago end,
+             'creado', to_char(t.creado at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY'),
+             'total', t.total,
+             'productos', (select jsonb_agg(jsonb_build_object('nombre', e->>'nombre', 'cantidad', e->'cantidad'))
+                             from jsonb_array_elements(coalesce(t.productos, '[]'::jsonb)) e))
+      from tienda_pedidos t
+     where t.numero::text = regexp_replace(coalesce(p_numero, ''), '[^0-9]', '', 'g')
+       and lower(trim(coalesce(t.mail, ''))) = lower(trim(coalesce(p_mail, '')))
+       and coalesce(trim(p_mail), '') <> ''
+     limit 1), jsonb_build_object('encontrado', false))
+$$;
+revoke execute on function agente_pedido(text, text) from public, anon, authenticated;
+
+/* Todo lo que el agente necesita para contestarle a una persona. */
+create or replace function agente_contexto(p_clave text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'clave', k.clave,
+    'reglas', coalesce((select jsonb_object_agg(r.clave, r.valor) from agente_reglas r), '{}'::jsonb),
+    'conocimiento', (select t.texto from agente_textos t order by t.creado desc, t.id desc limit 1),
+    'catalogo', agente_catalogo(),
+    'ahora', agente_atiende(now()),
+    'hoy', (array['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'])[extract(dow from now() at time zone 'America/Argentina/Buenos_Aires')::int + 1] || ' ' ||
+            to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI'),
+    'nombre', coalesce(wa_agenda_nombre(k.clave),
+                       (select nullif(trim(m.perfil), '') from wa_mensajes m
+                         where club_tel10(m.tel) = k.clave and nullif(trim(m.perfil), '') is not null
+                         order by m.cuando desc limit 1)),
+    'ultimo_id', (select max(m.id) from wa_mensajes m where club_tel10(m.tel) = k.clave),
+    'ultimo_entra_id', (select max(m.id) from wa_mensajes m where club_tel10(m.tel) = k.clave and m.sentido = 'entra'),
+    'numero_id', (select m.numero_id from wa_mensajes m where club_tel10(m.tel) = k.clave order by m.cuando desc, m.id desc limit 1),
+    'mensajes', coalesce((
+      select jsonb_agg(jsonb_build_object('id', w.id, 'de', case when w.sentido = 'entra' then 'cliente' else 'vdh' end,
+                                          'tipo', w.tipo, 'texto', w.texto,
+                                          'cuando', to_char(w.cuando at time zone 'America/Argentina/Buenos_Aires', 'DD/MM HH24:MI'))
+                       order by w.cuando, w.id)
+        from (select * from wa_mensajes m where club_tel10(m.tel) = k.clave and m.tipo is distinct from 'reaction'
+               order by m.cuando desc, m.id desc limit 30) w), '[]'::jsonb))
+  from (select club_tel10(p_clave) as clave) k
+  where k.clave is not null
+$$;
+revoke execute on function agente_contexto(text) from public, anon, authenticated;
+
+/* Guarda un borrador; los pendientes anteriores de esa persona quedan viejos. */
+create or replace function agente_borrador_guardar(p jsonb)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  k text := club_tel10(p->>'clave');
+  nuevo bigint;
+begin
+  if k is null or nullif(trim(coalesce(p->>'texto', '')), '') is null then
+    return jsonb_build_object('ok', false, 'porque', 'Falta la persona o el texto.');
+  end if;
+  update agente_borradores set estado = 'viejo', resuelto = now() where clave = k and estado = 'pendiente';
+  insert into agente_borradores (clave, numero_id, ultimo_id, texto, derivar, productos, herramientas, origen,
+                                 pedido_por, modelo, tokens, ms)
+  values (k, p->>'numero_id', nullif(p->>'ultimo_id', '')::bigint, left(p->>'texto', 4000), p->'derivar',
+          coalesce(p->'productos', '[]'::jsonb), coalesce(p->'herramientas', '[]'::jsonb),
+          coalesce(nullif(p->>'origen', ''), 'pedido'), left(p->>'pedido_por', 60), p->>'modelo', p->'tokens',
+          nullif(p->>'ms', '')::integer)
+  returning id into nuevo;
+  return jsonb_build_object('ok', true, 'id', nuevo);
+end;
+$$;
+revoke execute on function agente_borrador_guardar(jsonb) from public, anon, authenticated;
+
+/* El CRM: el borrador pendiente de una persona (o nada). */
+create or replace function agente_borrador_ver(p_pin text, p_clave text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return (select jsonb_build_object('id', b.id, 'texto', b.texto, 'derivar', b.derivar, 'productos', b.productos,
+                                    'origen', b.origen, 'pedido_por', b.pedido_por, 'creado', b.creado,
+                                    'viejo', b.ultimo_id is distinct from
+                                             (select max(m.id) from wa_mensajes m where club_tel10(m.tel) = b.clave))
+            from agente_borradores b
+           where b.clave = club_tel10(p_clave) and b.estado = 'pendiente'
+           order by b.creado desc limit 1);
+end;
+$$;
+revoke execute on function agente_borrador_ver(text, text) from public;
+grant execute on function agente_borrador_ver(text, text) to anon, authenticated;
+
+/* El CRM: quiénes tienen un borrador esperando (para marcarlos en la lista). */
+create or replace function agente_borradores_claves(p_pin text)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((select jsonb_agg(distinct b.clave) from agente_borradores b where b.estado = 'pendiente'), '[]'::jsonb);
+end;
+$$;
+revoke execute on function agente_borradores_claves(text) from public;
+grant execute on function agente_borradores_claves(text) to anon, authenticated;
+
+/* El CRM: se mandó tal cual, se mandó editado o se descartó. */
+create or replace function agente_borrador_resolver(p_pin text, p_id bigint, p_estado text, p_final text default null,
+                                                    p_quien text default null)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if p_estado not in ('enviado', 'editado', 'descartado') then
+    return jsonb_build_object('ok', false, 'porque', 'Estado desconocido.');
+  end if;
+  update agente_borradores
+     set estado = p_estado, final = left(nullif(trim(coalesce(p_final, '')), ''), 4000),
+         quien = left(nullif(trim(coalesce(p_quien, '')), ''), 60), resuelto = now()
+   where id = p_id and estado = 'pendiente';
+  return jsonb_build_object('ok', found);
+end;
+$$;
+revoke execute on function agente_borrador_resolver(text, bigint, text, text, text) from public;
+grant execute on function agente_borrador_resolver(text, bigint, text, text, text) to anon, authenticated;
+
+/* Lo que sabe: los 14 locales, la lista oficial (una sola vez). */
+insert into agente_textos (texto)
+select (select t.texto from agente_textos t order by t.creado desc, t.id desc limit 1) ||
+       E'\n\n## Locales (la lista oficial: no usar la de la web)\n' ||
+       replace($loc$- Caseros: 3 de Febrero 2823 (Caseros). Lunes a sábados de 9 a 20:30.
+- DOT: Vedia 3600, local 056 (Shopping DOT · CABA). Todos los días de 10 a 22.
+- Flores: Av. Rivadavia 6757 (CABA). Lunes a sábados de 9 a 20:30.
+- Grand Bourg: Av. Eva Perón 1434 (Grand Bourg). Lunes a sábados de 9 a 20:30.
+- Ituzaingó: Coronel Pablo Zufriategui 940 (Ituzaingó). Lunes a sábados de 9 a 20:30.
+- Lomas de Zamora: Laprida 380 (Lomas de Zamora). Lunes a sábados de 9 a 20:30.
+- Mar del Plata: Rivadavia 2579 (Mar del Plata). Lunes a sábados de 9 a 21 · domingos de 10 a 21.
+- Morón: Av. Rivadavia 18290 (Morón). Lunes a sábados de 9 a 20:30.
+- Pacheco: Av. Hipólito Yrigoyen 871 (General Pacheco). Lunes a sábados de 9 a 20:30.
+- Parque Brown: Av. F. Fernández de la Cruz 4602, local 1038 (Shopping Parque Brown · CABA). Todos los días de 10 a 22.
+- San Justo: Av. Dr. Ignacio Arieta 3163 (San Justo). Lunes a sábados de 9 a 20:30.
+- San Justo Shopping: Av. Brig. J. M. de Rosas 3910, local 11 (San Justo). Todos los días de 10 a 22.
+- Unicenter: Paraná 3745, local 2152 (Unicenter · Martínez). Todos los días de 10 a 22.
+- Villa del Parque: Cuenca 2889 (CABA). Lunes a sábados de 9 a 20:30.$loc$, E'\r', '')
+ where exists (select 1 from agente_textos)
+   and not exists (select 1 from agente_textos t where t.texto like '%## Locales%');
+
+select 'listo: lo que consulta el agente y sus borradores' as "SQL 78";
+
+
+-- ─────────────────────────── PARTE 79 (12/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · EL AGENTE DE IA: LOS PERMISOS DE LA FUNCIÓN (correr después del 78)
+--
+-- La Edge Function "agente" entra a la base como service_role, y las
+-- funciones nuevas no se lo dan solas (la misma trampa que tuvo WhatsApp con
+-- wa_recibir). Sin esto, el agente no puede leer nada.
+-- ══════════════════════════════════════════════════════════════════════════
+
+grant execute on function pin_ok(text) to service_role;
+grant execute on function agente_llave_ok(text) to service_role;
+grant execute on function agente_contexto(text) to service_role;
+grant execute on function agente_producto(text) to service_role;
+grant execute on function agente_fabrica(text) to service_role;
+grant execute on function agente_pedido(text, text) to service_role;
+grant execute on function agente_borrador_guardar(jsonb) to service_role;
+
+select 'listo: la función del agente ya puede consultar' as "SQL 79";
+
+
+-- ─────────────────────────── PARTE 80 (12/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · REINICIAR LA GIFT CARD Nº 1 (LA DE PRUEBA)
+--
+-- Correr en el editor SQL de Supabase (después del 79).
+--
+-- Pedido de Mauricio (12/10/2026): la gift card Nº 1 fue una prueba; que
+-- vuelva a su estado original. Una tarjeta impresa "original" está SIN
+-- VENDER: no tiene registro de venta ni de canje. La Nº 1 tenía uno solo
+-- (vendida y canjeada el 12/10 a las 12:20, $50.000, Mar del Plata).
+--   · Antes de tocar nada, respalda TODAS las gift cards (ventas, usos y las
+--     150 tarjetas) en la tabla "respaldos" (cerrada, como todas).
+--   · Después borra sólo lo de la Nº 1. Si la Nº 1 figura más de una vez, no
+--     toca nada y avisa. Si ya estaba sin vender, no hace nada.
+--   · Ninguna otra gift card se toca.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists respaldos (
+  id     bigserial primary key,
+  que    text not null,
+  cuando timestamptz not null default now(),
+  datos  jsonb not null
+);
+alter table respaldos enable row level security;
+revoke all on respaldos from anon, authenticated;
+
+do $reiniciar$
+declare
+  cod text;
+  n   integer;
+begin
+  select t.codigo into cod from giftcard_tarjetas t where t.nro = 1;
+  if cod is null then
+    raise exception 'No está la tarjeta Nº 1: no se toca nada.';
+  end if;
+  select count(*) into n from beneficios b where b.tipo = 'giftcard' and b.serie = cod;
+  if n = 0 then
+    raise notice 'La gift card Nº 1 ya estaba sin vender: no hay nada que reiniciar.';
+    return;
+  end if;
+  if n > 1 then
+    raise exception 'La gift card Nº 1 figura % veces: no se toca nada.', n;
+  end if;
+
+  insert into respaldos (que, datos)
+  values ('Gift cards, antes de reiniciar la Nº 1 (12/10/2026)', jsonb_build_object(
+    'beneficios', (select jsonb_agg(to_jsonb(b) order by b.id) from beneficios b where b.tipo = 'giftcard'),
+    'usos', (select coalesce(jsonb_agg(to_jsonb(u) order by u.id), '[]'::jsonb)
+               from beneficio_usos u join beneficios b on b.id = u.beneficio where b.tipo = 'giftcard'),
+    'tarjetas', (select jsonb_agg(to_jsonb(t) order by t.nro) from giftcard_tarjetas t)));
+
+  delete from beneficio_usos u using beneficios b
+   where u.beneficio = b.id and b.tipo = 'giftcard' and b.serie = cod;
+  delete from beneficios b where b.tipo = 'giftcard' and b.serie = cod;
+end
+$reiniciar$;
+
+select case when exists (select 1 from beneficios b join giftcard_tarjetas t on t.codigo = b.serie and t.nro = 1)
+            then 'la Nº 1 sigue vendida: revisar' else 'listo: la gift card Nº 1 quedó sin vender, como nueva' end as "SQL 80";

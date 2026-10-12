@@ -417,6 +417,19 @@
   .ms-chat-cuerpo { flex: 1; min-height: 0; display: flex; }
   .ms-chat-cuerpo .chat { flex: 1; max-height: none; border-radius: 0; padding: 14px 16px; }
   .ms-chat-pie { flex: none; padding: 10px 14px 12px; border-top: 1px solid var(--line); background: var(--surface); }
+  /* El borrador del agente (fase 2, 12/10/2026): arriba de la caja. */
+  .ag-borrador { flex: none; max-height: 46%; overflow: auto; margin: 0; padding: 10px 14px; border-top: 1px solid var(--line);
+                 background: var(--acc-soft); box-shadow: inset 3px 0 0 var(--acc); }
+  .ag-borrador[hidden] { display: none; }
+  .ag-b-cab { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+  .ag-b-cab span { font-size: 12px; color: var(--txt-3); }
+  .ag-b-texto { margin-top: 6px; font-size: 14px; line-height: 1.5; color: var(--txt); white-space: normal; overflow-wrap: anywhere; }
+  .ag-b-prods { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .ag-b-prod { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: var(--r-pill); background: var(--surface);
+               border: 1px solid var(--line); color: var(--txt-2); text-decoration: none; }
+  .ag-b-deriva { margin-top: 8px; font-size: 12.5px; color: var(--warn-txt); line-height: 1.45; }
+  .ag-b-acciones { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
+  .ct-ag { display: block; margin-top: 3px; font-size: 12px; font-weight: 700; color: var(--acc); }
   .ms-chat-pie .chat-escribir { margin-top: 0; }
   .ms-chat-pie .chat-nota { margin-top: 6px; }
   .ms-vacio { height: 100%; display: grid; place-items: center; text-align: center; padding: 20px; color: var(--txt-3); font-size: 14px;
@@ -4672,6 +4685,7 @@
         var sin = (MS.datos.cuentas || {}).sin_contestar;
         if (sin !== undefined && sin !== MS.sin) { MS.sin = sin; pintarVistas(); }
         pintarMensajes();
+        cargarClavesAg();
       })
       .catch(function (err) {
         if (n !== MS.pedido) return;
@@ -4767,6 +4781,7 @@
         '<span class="ct-ultimo ms-ult"><span>' + esc(previo) + '</span>' +
           (c.sin_contestar ? '<span class="ms-pend" title="Mensajes sin contestar">' + Number(c.pendientes || 1) + '</span>' : '') + '</span>' +
         recLineaMs(c) +
+        (AGM.claves.indexOf(c.clave) > -1 ? '<span class="ct-ag">✦ Borrador del agente</span>' : '') +
       '</span></button>';
   }
 
@@ -4910,6 +4925,7 @@
         .then(function () {
           MS.borrador[clave] = '';
           t.value = '';
+          agMandado(clave, texto);
           despues();
           if (vista === 'mensajes') { cargarMensajes(); }
         })
@@ -4924,6 +4940,132 @@
       if (ev.key === 'Enter' && !ev.shiftKey && !(window.matchMedia && matchMedia('(pointer: coarse)').matches)) { ev.preventDefault(); mandar(); }
     };
   }
+  /* ═══ El borrador del agente (fase 2, 12/10/2026) ═══════════════════════
+     El agente redacta; una persona lo manda tal cual, lo edita o lo
+     descarta. Nada sale solo. AGM.usado[clave] recuerda el borrador que se
+     pasó a la caja, para anotar al mandarlo si fue tal cual o editado. */
+  var AGM = { claves: [], datos: {}, usado: {}, pidiendo: {} };
+  function cargarClavesAg() {
+    base.agenteBorradoresClaves(pinGuardado())
+      .then(function (l) {
+        l = l || [];
+        if (l.join() === AGM.claves.join()) { return; }
+        AGM.claves = l;
+        marcarFilasAg();
+      })
+      .catch(function () { /* sin el SQL 78, la lista queda como siempre */ });
+  }
+  /* La marca de la lista, al día con AGM.claves (sin repintar la lista). */
+  function marcarFilasAg() {
+    [].forEach.call(document.querySelectorAll('#msLista .ct-fila'), function (f) {
+      var tiene = AGM.claves.indexOf(f.dataset.clave) > -1, m = f.querySelector('.ct-ag');
+      if (tiene && !m) { f.querySelector('.ct-cuerpo').insertAdjacentHTML('beforeend', '<span class="ct-ag">✦ Borrador del agente</span>'); }
+      if (!tiene && m) { m.remove(); }
+    });
+  }
+  function cablearAgenteChat(raiz, clave) {
+    var b = raiz.querySelector('.ms-agente');
+    if (b) { b.onclick = function () { pedirAgente(clave); }; }
+    if (AGM.pidiendo[clave]) { pintarBorradorAg(clave, 'pidiendo'); return; }
+    if (AGM.datos[clave] !== undefined) { pintarBorradorAg(clave, AGM.datos[clave]); }
+    base.agenteBorrador(pinGuardado(), clave)
+      .then(function (d) { AGM.datos[clave] = d || null; if (MS.abierto === clave && !AGM.pidiendo[clave]) { pintarBorradorAg(clave, d); } })
+      .catch(function () { /* sin el SQL 78 no hay borradores */ });
+  }
+  function pedirAgente(clave) {
+    if (AGM.pidiendo[clave]) { return; }
+    AGM.pidiendo[clave] = true;
+    pintarBorradorAg(clave, 'pidiendo');
+    base.agentePedir(pinGuardado(), clave, quien)
+      .then(function (d) {
+        AGM.datos[clave] = d;
+        if (AGM.claves.indexOf(clave) < 0) { AGM.claves = AGM.claves.concat([clave]); }
+        marcarFilasAg();
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.message) || 'El agente no pudo redactar.');
+      })
+      .then(function () {
+        AGM.pidiendo[clave] = false;
+        if (MS.abierto === clave) { pintarBorradorAg(clave, AGM.datos[clave] || null); }
+      });
+  }
+  function pintarBorradorAg(clave, d) {
+    var caja = $('agBorrador');
+    if (!caja || MS.abierto !== clave) { return; }
+    var boton = $('msChat').querySelector('.ms-agente');
+    if (boton) { boton.disabled = d === 'pidiendo'; }
+    if (d === 'pidiendo') {
+      caja.hidden = false;
+      caja.innerHTML = '<div class="ag-b-cab"><b>✦ El agente está escribiendo…</b><span>Mira el catálogo, el stock y lo que sabe. Tarda unos segundos.</span></div>';
+      return;
+    }
+    if (!d) { caja.hidden = true; caja.innerHTML = ''; return; }
+    var cuando = d.creado ? horaCorta(d.creado) : '';
+    caja.hidden = false;
+    caja.innerHTML = '<div class="ag-b-cab"><b>✦ Borrador del agente</b><span>' +
+        esc(d.origen === 'auto' ? 'Lo escribió solo' + (cuando ? ' a las ' + cuando : '') : 'Pedido' + (d.pedido_por ? ' por ' + d.pedido_por : '') + (cuando ? ' a las ' + cuando : '')) +
+        (d.viejo ? ' · después llegó otro mensaje: pedile uno nuevo' : '') + '</span></div>' +
+      '<div class="ag-b-texto">' + esc(d.texto).replace(/\n/g, '<br>') + '</div>' +
+      ((d.productos || []).length ? '<div class="ag-b-prods">' + d.productos.map(function (p) {
+        return '<a class="ag-b-prod" href="' + esc(p.link) + '" target="_blank" rel="noopener">' + esc(p.nombre) + ' · ' + PESOS.format(Number(p.precio) || 0) + '</a>';
+      }).join('') + '</div>' : '') +
+      (d.derivar ? '<div class="ag-b-deriva">Sugiere pasarle la charla a <b>' + esc(d.derivar.a) + '</b> (' + esc(d.derivar.area) + '): ' + esc(d.derivar.resumen) + '</div>' : '') +
+      '<div class="ag-b-acciones">' +
+        '<button type="button" class="btn btn-wsp btn-chico" data-ag="mandar">Mandar</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-ag="editar">Editar</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-ag="otro">Otro</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-ag="descartar">Descartar</button>' +
+      '</div>';
+    var t = $('msChat').querySelector('.chat-texto');
+    var acc = function (k) { return caja.querySelector('[data-ag="' + k + '"]'); };
+    if (!t) { acc('mandar').disabled = true; acc('editar').disabled = true; acc('mandar').title = 'Pasaron las 24 h: hace falta una plantilla.'; }
+    acc('mandar').onclick = function () {
+      var b = this;
+      b.disabled = true; b.textContent = 'Enviando…';
+      base.waEnviar(pinGuardado(), clave, d.texto, quien)
+        .then(function () {
+          resolverAg(clave, d, 'enviado', d.texto);
+          refrescarConversacion(clave);
+          if (vista === 'mensajes') { cargarMensajes(); }
+        })
+        .catch(function (err) {
+          if (err && err.sinSesion) { caducada(); return; }
+          avisar('err', (err && err.message) || 'No se pudo mandar.');
+          b.disabled = false; b.textContent = 'Mandar';
+        });
+    };
+    acc('editar').onclick = function () {
+      if (!t) { return; }
+      t.value = d.texto;
+      MS.borrador[clave] = d.texto;
+      AGM.usado[clave] = d;
+      t.focus();
+      caja.hidden = true;
+    };
+    acc('otro').onclick = function () { pedirAgente(clave); };
+    acc('descartar').onclick = function () { resolverAg(clave, d, 'descartado', null); };
+  }
+  /* Se mandó algo desde la caja: si salió de un borrador, se anota cómo. */
+  function agMandado(clave, texto) {
+    var d = AGM.usado[clave];
+    if (!d) { return; }
+    delete AGM.usado[clave];
+    resolverAg(clave, d, texto.trim() === String(d.texto).trim() ? 'enviado' : 'editado', texto);
+  }
+  function resolverAg(clave, d, estado, final) {
+    AGM.datos[clave] = null;
+    AGM.claves = AGM.claves.filter(function (k) { return k !== clave; });
+    marcarFilasAg();
+    pintarBorradorAg(clave, null);
+    base.agenteBorradorResolver(pinGuardado(), d.id, estado, final, quien).catch(function () {});
+  }
+  function horaCorta(iso) {
+    var x = new Date(iso);
+    return isNaN(x) ? '' : ('0' + x.getHours()).slice(-2) + ':' + ('0' + x.getMinutes()).slice(-2);
+  }
+
   function bajarChat(raiz) {
     var c = raiz && raiz.querySelector('.chat');
     if (c) { c.scrollTop = c.scrollHeight; }
@@ -5011,10 +5153,12 @@
           ((conv.fuentes || []).length ? pillsFuentes(conv.fuentes, conv.nivel) : '<span class="ct-tel">+' + esc(telVista(p.wa_tel || conv.tel || p.tel || '')) + '</span>') +
         '</span></span>' +
         (v.corto ? '<span class="ms-ventana' + (v.abierta ? '' : ' cerrada') + '" title="' + esc(v.nota) + '">' + esc(v.corto) + '</span>' : '') +
+        '<button type="button" class="btn btn-sec btn-chico ms-agente" title="Que el agente redacte una respuesta">✦ Agente</button>' +
         '<button type="button" class="btn btn-sec btn-chico ms-ver-ficha">Ver ficha</button>' +
       '</div>' +
       '<div class="ms-chat-cuerpo"><div class="chat">' +
         ((d.mensajes || []).length ? burbujasChat(d.mensajes) : '<p class="num-vacio">Todavía no hay mensajes.</p>') + '</div></div>' +
+      '<div class="ag-borrador" id="agBorrador" hidden></div>' +
       /* En la compu, el "gratis hasta" ya está arriba; en el celular, abajo. */
       '<div class="ms-chat-pie">' + (v.abierta
         ? cajaRespuesta() + '<p class="chat-nota">' + esc(v.sale) + '<span class="ms-solo-cel"> ' +
@@ -5025,6 +5169,7 @@
     raiz.querySelector('.ms-ver-ficha').onclick = function () { $('vistaMensajes').classList.toggle('con-info'); };
     conectarChat(p.clave, raiz, function () { refrescarConversacion(p.clave); });
     cablearPlantilla(raiz, p.clave, nom);
+    cablearAgenteChat(raiz, p.clave);
     bajarChat(raiz);
     if (escribiendo && raiz.querySelector('.chat-texto')) { raiz.querySelector('.chat-texto').focus(); }
     else if (conInfo && !ES_CEL() && raiz.querySelector('.chat-texto')) { raiz.querySelector('.chat-texto').focus(); }

@@ -1348,6 +1348,33 @@ var base = {
     return funcion('crm_consulta_mover', { p_pin: pin, p_id: id, p_columna: columna, p_quien: quien || null });
   },
 
+  /** El agente redacta un borrador para una charla (Edge Function "agente",
+   *  fase 2): tarda unos segundos. No manda nada. */
+  agentePedir: function (pin, clave, quien) {
+    return fetch(BASE + '/functions/v1/agente', {
+      method: 'POST',
+      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'pedir', pin: pin, clave: clave, quien: quien || '' })
+    }).then(function (r) {
+      return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el agente.' }; });
+    }).then(function (x) {
+      if (!x || !x.ok) { throw rechazo((x && x.error) || 'No se pudo hablar con el agente.'); }
+      return x.borrador;
+    });
+  },
+  /** El borrador que espera en una charla (o null). */
+  agenteBorrador: function (pin, clave) {
+    return funcion('agente_borrador_ver', { p_pin: pin, p_clave: clave });
+  },
+  /** Las charlas con un borrador esperando. */
+  agenteBorradoresClaves: function (pin) {
+    return funcion('agente_borradores_claves', { p_pin: pin });
+  },
+  /** Qué se hizo con el borrador: enviado, editado o descartado. */
+  agenteBorradorResolver: function (pin, id, estado, final, quien) {
+    return funcion('agente_borrador_resolver', { p_pin: pin, p_id: id, p_estado: estado, p_final: final || null, p_quien: quien || null });
+  },
+
   /** Lo mínimo para preguntar seguido si llegó algo: el último mensaje y
    *  cuántas conversaciones esperan respuesta. */
   crmMensajesUltimo: function (pin) {
