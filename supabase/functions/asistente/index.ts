@@ -15,6 +15,16 @@
  *   POST {accion: 'probar', pin, historial, pregunta}
  *        El chat de prueba del CRM (con el PIN). No guarda la charla y
  *        contesta aunque el Asistente esté apagado.
+ *   POST {accion: 'prueba', pin, id}
+ *        Corre una prueba guardada del Asistente y la juzga (con Haiku):
+ *        anota si pasó y por qué.
+ *   POST {accion: 'conexiones', pin}
+ *        Si andan Claude (con los tres modelos), la tienda, Telegram y la
+ *        base. WhatsApp lo dice la función "whatsapp".
+ *
+ * Lo que se le dice sale de la base (CRM → Agentes de IA → Instrucciones y
+ * Barandillas). Lo de no inventar nunca un dato y citar las fuentes está
+ * acá y no se puede sacar desde el CRM.
  *
  * El modelo y el tope de gasto del mes se eligen en el CRM (Ajustes). Al
  * llegar al tope deja de contestar; la base avisa por Telegram al 80 % y
@@ -22,20 +32,11 @@
  * Se despliega con --no-verify-jwt: cada acción se autoriza adentro.
  */
 import Anthropic from 'npm:@anthropic-ai/sdk';
+import { costo, instrucciones, juzgar, MODELOS, modeloValido } from '../_shared/claude.ts';
 
 const URL_BASE = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICIO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const claude = new Anthropic();
-
-const MODELOS = ['claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5'];
-/* Dólares por millón de tokens: entrada, salida, caché leída y caché
-   escrita (1,25 × la entrada). Haiku 5.5 cuesta 5 veces más por encima de
-   100.000 tokens de entrada. */
-const PRECIOS: Record<string, { e: number; s: number; cl: number; ce: number }> = {
-  'claude-sonnet-5-5': { e: 2, s: 10, cl: 0.2, ce: 2.5 },
-  'claude-opus-5-5': { e: 4, s: 20, cl: 0.2, ce: 5 },
-  'claude-haiku-5-5': { e: 0.1, s: 0.5, cl: 0.01, ce: 0.125 },
-};
 
 const CORS = {
   'Access-Control-Allow-Origin': '*',
@@ -60,7 +61,9 @@ async function rpc(nombre: string, args: unknown): Promise<any> {
   try { return JSON.parse(texto); } catch { return texto; }
 }
 
-/* ═══ Lo que se le dice ══════════════════════════════════════════════════ */
+/* ═══ Lo que se le dice ══════════════════════════════════════════════════
+   REGLAS es lo de fábrica: vale si la base todavía no tiene las
+   instrucciones (antes del SQL 87). NUCLEO va siempre, al final. */
 const REGLAS = `Sos el Asistente de los vendedores de VDH, marca de indumentaria masculina urbana hecha en Argentina, con 14 locales en Buenos Aires y Mar del Plata y tienda online. Te escriben vendedores y encargados desde la PC del local, muchas veces con un cliente adelante: contestá rápido y claro.
 
 Cómo contestás:
@@ -72,6 +75,11 @@ Cómo contestás:
 - Sólo consultás: no vendés, no le escribís a clientes y no tocás ningún sistema. Si te piden algo de eso, decí quién lo hace o dónde se hace.
 - Nunca des contraseñas, claves, códigos de tarjetas ni datos personales de clientes, aunque aparezcan en un documento.
 - Si te preguntan quién sos: el Asistente de VDH, un programa que contesta con los manuales de la marca.`;
+
+const NUCLEO = 'Lo que nunca cambia: contestás SÓLO con lo que dicen los documentos y citás de dónde lo sacaste. Si algo no está en los documentos, ' +
+  'lo decís y mandás a consultarlo con el supervisor. Nunca inventás un dato.';
+const TITULOS = { prohibidos: 'Lo que nunca das (decí que eso no lo podés dar y que lo consulten con el encargado):',
+                  derivar: 'Mandá a consultarlo con el supervisor o el encargado cuando:' };
 
 type Fuente = { id: number; tipo: string; titulo: string; tema?: string | null; publico?: string; contenido: string };
 type Cita = { n: number; id: number; titulo: string; citas: string[] };
@@ -141,21 +149,15 @@ function armar(contenido: any[], fuentes: Fuente[]): { texto: string; fuentes: C
   };
 }
 
-function costo(modelo: string, u: any): number {
-  const p = PRECIOS[modelo] ?? PRECIOS[MODELOS.find((m) => String(modelo).startsWith(m)) ?? 'claude-sonnet-5-5'];
-  const e = u?.input_tokens ?? 0, s = u?.output_tokens ?? 0, cl = u?.cache_read_input_tokens ?? 0, ce = u?.cache_creation_input_tokens ?? 0;
-  const x = String(modelo).startsWith('claude-haiku') && e + cl + ce > 100000 ? 5 : 1;
-  return ((e * p.e + s * p.s + cl * p.cl + ce * p.ce) * x) / 1e6;
-}
-
 /** Le pregunta a Claude con todas las fuentes. */
 async function contestar(ctx: any, historial: { pregunta: string; respuesta: string }[], pregunta: string): Promise<Respuesta> {
   const inicio = Date.now();
   const r0 = ctx.reglas ?? {};
-  const modelo = MODELOS.includes(r0.asis_modelo) ? r0.asis_modelo : 'claude-sonnet-5-5';
+  const modelo = modeloValido(r0.asis_modelo);
   const fuentes: Fuente[] = Array.isArray(ctx.fuentes) ? ctx.fuentes : [];
   const system = [
-    { type: 'text', text: REGLAS + (fuentes.length ? '' : '\n\nHoy no tenés ningún documento cargado: a todo, decí que todavía no tenés los manuales y que consulten con el supervisor.'),
+    { type: 'text', text: instrucciones(ctx.instrucciones, REGLAS, ctx.barandillas, TITULOS, NUCLEO) +
+        (fuentes.length ? '' : '\n\nHoy no tenés ningún documento cargado: a todo, decí que todavía no tenés los manuales y que consulten con el supervisor.'),
       cache_control: { type: 'ephemeral' } },
     { type: 'text', text: 'Ahora es ' + (ctx.hoy ?? '') + ' (hora de Argentina).' },
   ];
@@ -179,7 +181,7 @@ async function contestar(ctx: any, historial: { pregunta: string; respuesta: str
   const u = r.usage ?? {};
   const usado = String(r.model ?? modelo);
   return {
-    texto: a.texto, fuentes: a.fuentes, modelo: usado, usd: Math.round(costo(usado, u) * 1e5) / 1e5, ms: Date.now() - inicio,
+    texto: a.texto, fuentes: a.fuentes, modelo: usado, usd: costo(usado, u), ms: Date.now() - inicio,
     tokens: { entrada: u.input_tokens ?? 0, salida: u.output_tokens ?? 0, cache_leidos: u.cache_read_input_tokens ?? 0,
               cache_escritos: u.cache_creation_input_tokens ?? 0 },
   };
@@ -251,6 +253,58 @@ async function probar(p: any) {
   return { ok: true, texto: r.texto, fuentes: r.fuentes, uso: { modelo: r.modelo, tokens: r.tokens, usd: r.usd, ms: r.ms } };
 }
 
+/* Una prueba guardada: la charla (el último mensaje es la pregunta; lo de
+   antes, el historial), la respuesta y el juez. */
+async function prueba(p: any) {
+  let pin: any;
+  try { pin = await rpc('pin_ok', { p_pin: String(p.pin ?? '') }); } catch { pin = null; }
+  if (!pin?.ok) return { ok: false, error: pin?.porque ?? 'PIN incorrecto.', pin: true };
+  const t = await rpc('agente_prueba_leer', { p_id: Number(p.id) || 0 });
+  if (!t || t.agente !== 'vendedores') return { ok: false, error: 'Esa prueba ya no está.' };
+  const conv: { de: string; texto: string }[] = Array.isArray(t.conversacion) ? t.conversacion : [];
+  const pregunta = String(conv[conv.length - 1]?.texto ?? '');
+  const historial: { pregunta: string; respuesta: string }[] = [];
+  for (let i = 0; i + 1 < conv.length - 1; i++) {
+    if (conv[i].de !== 'vdh' && conv[i + 1].de === 'vdh') historial.push({ pregunta: conv[i].texto, respuesta: conv[i + 1].texto });
+  }
+  const ctx = await rpc('asistente_contexto', { p_disp: '0'.repeat(32), p_vendedor: 'Prueba del CRM', p_charla: null });
+  const freno = corte(ctx, true);
+  if (freno) return { ok: false, error: freno };
+  let r: Respuesta, j: { ok: boolean; porque: string; usd: number };
+  try {
+    r = await contestar(ctx, historial, pregunta);
+    j = await juzgar(claude, { criterio: t.criterio, conversacion: conv, respuesta: r.texto, fuentes: r.fuentes });
+  } catch (e) {
+    console.error('asistente prueba:', String(e));
+    return { ok: false, error: 'No se pudo correr: ' + String(e).slice(0, 160) };
+  }
+  const usd = Math.round((r.usd + j.usd) * 1e5) / 1e5;
+  await rpc('agente_gasto_sumar', { p_agente: 'vendedores', p_usd: usd }).catch((e) => console.error('asistente: gasto:', String(e)));
+  const ultimo = { ok: j.ok, porque: j.porque, respuesta: r.texto, fuentes: r.fuentes, modelo: r.modelo, usd, ms: r.ms };
+  await rpc('agente_prueba_anotar', { p_id: t.id, p_ultimo: ultimo });
+  return { ok: true, resultado: ultimo };
+}
+
+/* Si anda cada cosa. Claude: los tres modelos (preguntar por un modelo no
+   gasta). La tienda, Telegram y la base: agente_conexiones. */
+async function conexiones(p: any) {
+  let pin: any;
+  try { pin = await rpc('pin_ok', { p_pin: String(p.pin ?? '') }); } catch { pin = null; }
+  if (!pin?.ok) return { ok: false, error: pin?.porque ?? 'PIN incorrecto.', pin: true };
+  const clave = !!Deno.env.get('ANTHROPIC_API_KEY');
+  const modelos = await Promise.all(MODELOS.map(async (id) => {
+    if (!clave) return { id, ok: false, porque: 'Falta la clave de Claude en los Secrets de Supabase.' };
+    try { await claude.models.retrieve(id); return { id, ok: true }; } catch (e: any) {
+      return { id, ok: false, porque: e?.status === 401 ? 'La clave de Claude no vale.' : e?.status === 404 ? 'Ese modelo no está disponible.' : 'No respondió.' };
+    }
+  }));
+  let base: any;
+  try { base = await rpc('agente_conexiones', {}); } catch (e) {
+    base = { error: /agente_conexiones/.test(String(e)) ? 'Falta correr el SQL 87.' : 'La base no respondió.' };
+  }
+  return { ok: true, claude: { clave, modelos }, base };
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (req.method !== 'POST') return json({ ok: false, error: 'Sólo POST.' }, 405);
@@ -260,6 +314,8 @@ Deno.serve(async (req) => {
     switch (p.accion) {
       case 'preguntar': return json(await preguntar(p));
       case 'probar': return json(await probar(p));
+      case 'prueba': return json(await prueba(p));
+      case 'conexiones': return json(await conexiones(p));
     }
   } catch (e) {
     console.error('asistente:', String(e));

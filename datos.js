@@ -1448,6 +1448,75 @@ var base = {
     });
   },
 
+  /* ── Agentes de IA, etapa C (SQL 87): instrucciones, pruebas y conexiones ── */
+
+  /** Las partes de lo que se le dice a un agente ('clientes'|'vendedores'). */
+  agenteInstrucciones: function (pin, agente) {
+    return funcion('agente_instrucciones_ver', { p_pin: pin, p_agente: agente });
+  },
+  agenteInstruccionHistorial: function (pin, agente, seccion) {
+    return funcion('agente_instruccion_historial', { p_pin: pin, p_agente: agente, p_seccion: seccion });
+  },
+  /** Cada guardado es una versión nueva (volver a una vieja = guardarla). */
+  agenteInstruccionGuardar: function (pin, agente, seccion, texto, quien) {
+    return funcion('agente_instruccion_guardar', { p_pin: pin, p_agente: agente, p_seccion: seccion, p_texto: texto, p_quien: quien || null });
+  },
+  /** Las pruebas guardadas de un agente, con el resultado de la última corrida. */
+  agentePruebas: function (pin, agente) {
+    return funcion('agente_pruebas_ver', { p_pin: pin, p_agente: agente });
+  },
+  agentePruebaGuardar: function (pin, p) {
+    return funcion('agente_prueba_guardar', { p_pin: pin, p: p });
+  },
+  agentePruebaBorrar: function (pin, id) {
+    return funcion('agente_prueba_borrar', { p_pin: pin, p_id: id });
+  },
+  /** Una Edge Function de los agentes. Rechaza con el porqué; err.pin si es
+   *  el PIN, err.sinFuncion si la función todavía no está desplegada. */
+  fnAgentes: function (nombre, cuerpo) {
+    return fetch(BASE + '/functions/v1/' + nombre, {
+      method: 'POST',
+      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify(cuerpo)
+    }).then(function (r) {
+      if (r.status === 404) { return { ok: false, sinFuncion: true, error: 'La función "' + nombre + '" todavía no está desplegada en Supabase.' }; }
+      return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el agente.' }; });
+    }, function () {
+      return { ok: false, error: 'No hay conexión. Revisá internet y probá de nuevo.' };
+    }).then(function (x) {
+      if (!x || !x.ok) {
+        var e = rechazo((x && x.error) || 'No se pudo hablar con el agente.');
+        e.pin = !!(x && x.pin); e.sinFuncion = !!(x && x.sinFuncion);
+        throw e;
+      }
+      return x;
+    });
+  },
+  /** Correr una prueba guardada (la juzga Haiku). Devuelve el resultado. */
+  agentePruebaCorrer: function (pin, agente, id) {
+    return base.fnAgentes(agente === 'vendedores' ? 'asistente' : 'agente', { accion: 'prueba', pin: pin, id: id })
+      .then(function (x) { return x.resultado; });
+  },
+  /** El chat de prueba del agente de clientes: la charla entera, no guarda
+   *  nada. Devuelve { texto, derivar, productos, herramientas, fuentes, uso }. */
+  agenteProbarChat: function (pin, conversacion) {
+    return base.fnAgentes('agente', { accion: 'probar_chat', pin: pin, conversacion: conversacion })
+      .then(function (x) { return x.borrador; });
+  },
+  /** Si andan Claude, la tienda, Telegram y la base (función "asistente"). */
+  agenteConexiones: function (pin) {
+    return base.fnAgentes('asistente', { accion: 'conexiones', pin: pin });
+  },
+  /** El estado de WhatsApp, como lo dice la función "whatsapp" (sin PIN:
+   *  dice qué secretos hay —sí o no— y cómo están los números). */
+  waEstado: function () {
+    return fetch(BASE + '/functions/v1/whatsapp', {
+      method: 'POST',
+      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ accion: 'estado' })
+    }).then(function (r) { return r.json(); });
+  },
+
   /** Una pregunta: la contesta la Edge Function "asistente" con Claude.
    *  Devuelve { charla, id, texto, fuentes }. Rechaza con el porqué. */
   asistentePreguntar: function (d) {

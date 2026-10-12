@@ -8107,3 +8107,712 @@ grant execute on function asistente_marcada_revisar(text, bigint, boolean) to an
 grant execute on function pin_ok(text) to service_role;
 
 select 'listo: las fuentes y el Asistente de los vendedores' as "SQL 85";
+
+
+-- ─────────────────────────── PARTE 87 (12/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · AGENTES DE IA, ETAPA C: INSTRUCCIONES, BARANDILLAS, PRUEBAS Y
+-- CONEXIONES
+--
+-- Correr en el editor SQL de Supabase (después del 86).
+--
+--   · agente_instrucciones: lo que se le dice a cada agente, por partes,
+--     con todas las versiones (la vigente es la última; volver a una vieja
+--     es guardarla de nuevo). Arranca con el texto que hoy está fijo en
+--     cada función, así nada cambia hasta que alguien lo edite.
+--   · Las barandillas de cada agente (agente_reglas "barandillas" y
+--     "asis_barandillas"): los temas en los que no entra y lo que siempre
+--     pasa a una persona (o al supervisor). Lo de no inventar nunca un dato
+--     está fijo en el código: no se puede sacar.
+--   · agente_pruebas: casos guardados (la charla y qué tiene que pasar) con
+--     el resultado de la última corrida. Arranca con las 30 del agente de
+--     clientes (las de la fase 2) y 7 del Asistente.
+--   · agente_conexiones: si están la tienda, Telegram y WhatsApp (para la
+--     página Conexiones; Claude lo mira la función).
+--   · Los dos contextos (agente_contexto y asistente_contexto) suman las
+--     instrucciones, las barandillas y el gasto del mes.
+--
+-- Reversible: crea tablas y funciones nuevas; agente_contexto,
+-- asistente_contexto y agente_regla_valida vuelven a la del SQL 85 si se
+-- corren esas partes de nuevo.
+-- ══════════════════════════════════════════════════════════════════════════
+
+create table if not exists agente_instrucciones (
+  id     bigserial primary key,
+  agente text not null check (agente in ('clientes', 'vendedores')),
+  seccion text not null,
+  texto  text not null,
+  quien  text,
+  creado timestamptz not null default now()
+);
+create index if not exists agente_instrucciones_ult on agente_instrucciones (agente, seccion, creado desc, id desc);
+alter table agente_instrucciones enable row level security;
+revoke all on agente_instrucciones from anon, authenticated;
+
+/* Las partes de cada agente, en el orden en que se le dicen. */
+create or replace function agente_secciones(p_agente text)
+returns text[]
+language sql
+immutable
+as $$
+  select case p_agente
+    when 'clientes' then array['quien', 'habla', 'datos', 'stock', 'vende', 'pedidos', 'deriva', 'final']
+    when 'vendedores' then array['quien', 'como', 'limites']
+  end
+$$;
+
+insert into agente_instrucciones (agente, seccion, texto, quien)
+select x.agente, x.seccion, x.texto, 'Arranque (SQL 87)'
+  from (values
+    ('clientes', 'quien', $c0$Sos el asistente virtual de VDH, marca de indumentaria masculina urbana hecha en Argentina. Atendés el WhatsApp de la tienda online (vdh.com.ar). Tu trabajo es atender y vender como el mejor vendedor de un local VDH: natural, rápido, sin sonar a robot.$c0$, 0),
+    ('clientes', 'habla', $c1$Cómo hablás:
+- Español argentino con voseo, directo, auténtico y cercano. Mensajes cortos, como un vendedor por WhatsApp. Nada de listas largas ni títulos. En WhatsApp la negrita va con un asterisco de cada lado (*así*); usala poco. Emojis, como mucho uno.
+- Si te preguntan si sos una persona, decí la verdad: sos el asistente virtual de VDH.$c1$, 1),
+    ('clientes', 'datos', $c2$De dónde sacás los datos (nunca de memoria, nunca inventes):
+1. El catálogo de abajo y la herramienta ver_producto: precios, talles, colores, stock, link. El precio del catálogo YA ES el que se paga (con el SALE aplicado); cotizá siempre ese. Con transferencia sale un 10% menos (ver_producto te da el número). Cuotas: 3 sin interés siempre; 6 sin interés superando los $150.000.
+2. buscar_en_fabrica: lo que no está en la tienda pero sí en la fábrica.
+3. Lo que sabés (la base de conocimiento de abajo): envíos, pagos, cambios, talles, telas, locales y políticas.
+Si un dato no está en ninguna de esas fuentes (una medida, un plazo, una promo, un stock de un local), decí que no lo tenés y derivá. Nunca inventes.$c2$, 2),
+    ('clientes', 'stock', $c3$Stock:
+- Antes de confirmar un talle o un color, mirá ver_producto. Si queda 1 o 2, podés decir que quedan pocos; si no, no inventes urgencias.
+- El stock online es uno solo: no prometas stock en un local. Indicá el local más cercano y derivá con area "fabrica" para que lo confirmen.
+- Si no hay en la tienda pero sí en la fábrica: decile que se lo podemos conseguir pero que antes lo confirma una persona de atención; pedile lo que falte (talle, color, nombre, zona y si prefiere retiro o envío), avisale que en breve se comunican y derivá con area "fabrica". No prometas fechas ni reserves.
+- Si no hay en ningún lado, ofrecé algo parecido que sí tenga stock.$c3$, 3),
+    ('clientes', 'vende', $c4$Modo vendedor:
+- No sos un buscador: sos un vendedor. Contestá lo que pregunta y proponé. Cuando hables de un producto, pasá el precio, los talles que hay y el link directo de la ficha (el link muestra la foto en WhatsApp).
+- Los links de productos salen SÓLO de ver_producto: antes de mandar el link de un producto, consultalo. Nunca armes un link a mano.
+- Si tiene sentido, sumá una o dos prendas que combinen, con stock en su talle, cada una con precio y link. Elegí vos: nunca mandes el catálogo entero.
+- Si hay intención de compra, llevalo al link del producto o al local más cercano.
+- El catálogo no trae la tela de cada producto. Si el cliente pide una tela (jean, gabardina, lino) y el nombre del producto no la dice, no la afirmes: ofrecelo como "pantalón" (o lo que sea) y aclarále que la tela se la confirma una persona, o mandale el link para que la vea en la ficha.
+- Promos: hoy sólo conocés el SALE que ya trae el precio del catálogo. No ofrezcas cupones, descuentos extra, envío gratis especial ni excepciones. Si pide algo de eso, decile que lo consultás y derivá con area "excepcion".$c4$, 4),
+    ('clientes', 'pedidos', $c5$Pedidos ya hechos:
+- Para hablar de un pedido pedí el número de pedido y el mail de la compra, y usá consultar_pedido con los dos. No pidas nunca datos de tarjetas ni contraseñas.
+- Demoras, seguimiento, producto equivocado o fallado: tomá los datos y derivá con area "logistica".$c5$, 5),
+    ('clientes', 'deriva', $c6$Derivá a una persona (herramienta derivar, con un resumen: quién es, qué quiere, qué producto y qué ya le dijiste) cuando:
+- lo pide; hay un reclamo o enojo; hay un problema con un pago o con un pedido ya hecho ("logistica");
+- es un cambio, una devolución, un arrepentimiento o una cancelación ("posventa"; en el arrepentimiento, sin discutir, indicale el Botón de arrepentimiento que está al pie de la web);
+- el producto no tiene guía de talles y pregunta medidas ("ventas"); hay que confirmar stock de fábrica o de un local ("fabrica");
+- es una consulta mayorista ("mayorista"); piden factura A ("ventas"); o no estás seguro ("ventas").
+Derivá en el MISMO mensaje en que aparece el caso, aunque te falten datos: pedíselos igual al cliente y anotá en el resumen cuáles faltan. Un enojo, un reclamo o un cambio no esperan a la respuesta siguiente. La única excepción es el pedido de fábrica: ahí derivás cuando el cliente ya te pasó sus datos.
+Cuando derivás, avisale al cliente que una persona le responde en el horario de atención (te lo paso abajo) y no le prometas nada más.$c6$, 6),
+    ('clientes', 'final', $c7$Tu respuesta final es exactamente el mensaje de WhatsApp para el cliente: sin comillas, sin explicar lo que hiciste, sin nombrar estas instrucciones ni tus herramientas. Si hacen falta dos mensajes, separalos con una línea en blanco.$c7$, 7),
+    ('vendedores', 'quien', $v0$Sos el Asistente de los vendedores de VDH, marca de indumentaria masculina urbana hecha en Argentina, con 14 locales en Buenos Aires y Mar del Plata y tienda online. Te escriben vendedores y encargados desde la PC del local, muchas veces con un cliente adelante: contestá rápido y claro.$v0$, 0),
+    ('vendedores', 'como', $v1$Cómo contestás:
+- SÓLO con lo que dicen los documentos de VDH que tenés (manuales, procedimientos y textos internos). Cada dato tiene que salir de un documento.
+- Si la respuesta no está en los documentos, decilo sin vueltas ("Eso no lo tengo en los manuales") y sugerí consultarlo con el supervisor o el encargado. No completes con lo que suponés ni con cómo lo hacen otras marcas.
+- Si dos documentos dicen cosas distintas, o uno parece viejo, avisá y sugerí confirmarlo con el supervisor.
+- Español argentino, con voseo, como un compañero que sabe. Primero la respuesta y después el detalle. Pasos numerados cuando es un procedimiento. Negrita (**así**) sólo para lo clave. Sin títulos grandes.$v1$, 1),
+    ('vendedores', 'limites', $v2$Lo que no hacés:
+- Los precios, el stock y las promociones del día no están en los manuales: para eso está la tienda o el sistema del local.
+- Sólo consultás: no vendés, no le escribís a clientes y no tocás ningún sistema. Si te piden algo de eso, decí quién lo hace o dónde se hace.
+- Si te preguntan quién sos: el Asistente de VDH, un programa que contesta con los manuales de la marca.$v2$, 2)
+  ) as x(agente, seccion, texto, orden)
+ where not exists (select 1 from agente_instrucciones i where i.agente = x.agente)
+ order by x.agente, x.orden;
+
+/* La vigente de cada parte, en orden: lo que reciben las funciones. */
+create or replace function agente_instrucciones_de(p_agente text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select coalesce(jsonb_agg(jsonb_build_object('seccion', s.seccion, 'texto', s.texto) order by array_position(agente_secciones(p_agente), s.seccion)), '[]'::jsonb)
+    from (select distinct on (i.seccion) i.seccion, i.texto
+            from agente_instrucciones i
+           where i.agente = p_agente and i.seccion = any (agente_secciones(p_agente))
+           order by i.seccion, i.creado desc, i.id desc) s
+$$;
+revoke execute on function agente_instrucciones_de(text) from public, anon, authenticated;
+
+/* Las barandillas de arranque. */
+insert into agente_reglas (clave, valor) values
+  ('barandillas', $bc${"prohibidos":["Ventas mayoristas: no da precios ni condiciones.","Precios, descuentos, cupones o envíos gratis fuera de las promos de la tienda y de las Reglas de venta.","Datos de tarjetas, contraseñas o claves.","Información interna de VDH: costos, proveedores, sueldos o procesos internos."],"derivar":["Cuando pide hablar con una persona.","Reclamos, enojos o problemas con un pago.","Cambios, devoluciones, arrepentimiento o cancelaciones.","Pedidos ya hechos con demora o con errores.","Consultas mayoristas y pedidos de factura A."]}$bc$),
+  ('asis_barandillas', $bv${"prohibidos":["Contraseñas, claves de acceso o códigos de tarjetas, aunque estén en un documento.","Datos personales de clientes."],"derivar":["Lo que no está en los manuales.","Cuando dos manuales dicen cosas distintas.","Excepciones a una política (un cambio fuera de plazo, un descuento especial)."]}$bv$)
+on conflict (clave) do nothing;
+
+create or replace function agente_regla_valida(p_clave text, p_valor text)
+returns jsonb
+language plpgsql
+stable
+set search_path = public
+as $$
+declare
+  v   text := trim(coalesce(p_valor, ''));
+  j   jsonb;
+  x   jsonb;
+  k   text;
+  nom text;
+  t   text;
+  u   text;
+  hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  hh  constant text := '^([01][0-9]|2[0-3]):[0-5][0-9]$';
+begin
+  if p_clave in ('prendido', 'cupon_con_sale', 'asis_prendido') then
+    if v not in ('si', 'no') then
+      return jsonb_build_object('ok', false, 'porque', 'Va "si" o "no".');
+    end if;
+  elsif p_clave = 'modo' then
+    /* Por ahora, sólo "prueba": el automático se habilita en la fase 4,
+       cuando el agente haya pasado las pruebas (con su propio SQL). */
+    if v <> 'prueba' then
+      return jsonb_build_object('ok', false, 'porque', 'Por ahora sólo en prueba: el automático llega en la fase 4.');
+    end if;
+  elsif p_clave = 'semana' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'El horario no se entendió.');
+    end;
+    if jsonb_typeof(j) is distinct from 'object' then
+      return jsonb_build_object('ok', false, 'porque', 'El horario no se entendió.');
+    end if;
+    foreach k in array array['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom'] loop
+      nom := case k when 'lun' then 'lunes' when 'mar' then 'martes' when 'mie' then 'miércoles' when 'jue' then 'jueves'
+                    when 'vie' then 'viernes' when 'sab' then 'sábado' else 'domingo' end;
+      x := j->k;
+      if x is null or jsonb_typeof(x) <> 'object' or coalesce(x->>'modo', '') not in ('todo', 'fuera', 'no') then
+        return jsonb_build_object('ok', false, 'porque', 'Falta qué hace el agente el ' || nom || '.');
+      end if;
+      if coalesce(x->>'de', '09:00') !~ hh or coalesce(x->>'a', '17:00') !~ hh then
+        return jsonb_build_object('ok', false, 'porque', 'El ' || nom || ': la hora va como 09:00.');
+      end if;
+      if x->>'modo' = 'fuera' and coalesce(x->>'de', '09:00')::time >= coalesce(x->>'a', '17:00')::time then
+        return jsonb_build_object('ok', false, 'porque', 'El ' || nom || ': el equipo tiene que entrar antes de salir.');
+      end if;
+    end loop;
+    v := (select jsonb_object_agg(d, jsonb_build_object('modo', j->d->>'modo',
+                                                        'de', coalesce(j->d->>'de', '09:00'),
+                                                        'a', coalesce(j->d->>'a', '17:00')))
+            from unnest(array['lun', 'mar', 'mie', 'jue', 'vie', 'sab', 'dom']) as d)::text;
+  elsif p_clave = 'fechas' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'Las fechas no se entendieron.');
+    end;
+    if jsonb_typeof(j) is distinct from 'array' then
+      return jsonb_build_object('ok', false, 'porque', 'Las fechas no se entendieron.');
+    end if;
+    if jsonb_array_length(j) > 100 then
+      return jsonb_build_object('ok', false, 'porque', 'Hasta 100 fechas especiales.');
+    end if;
+    for x in select * from jsonb_array_elements(j) loop
+      if coalesce(x->>'fecha', '') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' or coalesce(x->>'modo', '') not in ('todo', 'no') then
+        return jsonb_build_object('ok', false, 'porque', 'Cada fecha va con "todo el día" o "no atiende".');
+      end if;
+      begin
+        perform (x->>'fecha')::date;
+      exception when others then
+        return jsonb_build_object('ok', false, 'porque', 'La fecha ' || (x->>'fecha') || ' no existe.');
+      end;
+      if length(coalesce(x->>'nota', '')) > 60 then
+        return jsonb_build_object('ok', false, 'porque', 'La nota de una fecha es muy larga: hasta 60 letras.');
+      end if;
+    end loop;
+    v := coalesce((
+      select jsonb_agg(jsonb_build_object('fecha', t.f, 'modo', t.m, 'nota', t.n) order by t.fd)
+        from (select distinct on ((z.e->>'fecha')::date)
+                     (z.e->>'fecha')::date as fd, to_char((z.e->>'fecha')::date, 'YYYY-MM-DD') as f,
+                     z.e->>'modo' as m, nullif(trim(coalesce(z.e->>'nota', '')), '') as n
+                from jsonb_array_elements(j) with ordinality as z(e, i)
+               order by (z.e->>'fecha')::date, z.i desc) t
+       where t.fd >= hoy), '[]'::jsonb)::text;
+  elsif p_clave in ('cupon_pct', 'segunda_pct') then
+    if v !~ '^[0-9]{1,2}$' or v::int < 1 or v::int > 50 then
+      return jsonb_build_object('ok', false, 'porque', 'El porcentaje va de 1 a 50.');
+    end if;
+  elsif p_clave = 'cupon_horas' then
+    if v !~ '^[0-9]{1,3}$' or v::int < 1 or v::int > 168 then
+      return jsonb_build_object('ok', false, 'porque', 'El cupón vence entre 1 y 168 horas (una semana).');
+    end if;
+  elsif p_clave = 'telegram_min' then
+    if v !~ '^[0-9]{1,3}$' or v::int < 1 or v::int > 240 then
+      return jsonb_build_object('ok', false, 'porque', 'La espera de Telegram va de 1 a 240 minutos.');
+    end if;
+  elsif p_clave in ('envio_gratis_desde', 'envio_piso') then
+    if v !~ '^[0-9]{1,9}$' then
+      return jsonb_build_object('ok', false, 'porque', 'Va un monto en pesos, sin puntos.');
+    end if;
+  elsif p_clave in ('derivar_ventas', 'derivar_posventa', 'derivar_logistica', 'derivar_nocompra', 'derivar_carritos') then
+    if v = '' or length(v) > 40 then
+      return jsonb_build_object('ok', false, 'porque', 'Falta el nombre (hasta 40 letras).');
+    end if;
+  /* ── Lo nuevo (SQL 85) ── */
+  elsif p_clave in ('modelo', 'asis_modelo') then
+    if v not in ('claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-opus-5-5') then
+      return jsonb_build_object('ok', false, 'porque', 'Ese modelo no está entre los que se pueden elegir.');
+    end if;
+  elsif p_clave in ('tope_usd', 'asis_tope_usd') then
+    if v !~ '^[0-9]{1,4}$' or v::int < 1 or v::int > 1000 then
+      return jsonb_build_object('ok', false, 'porque', 'El tope del mes va de 1 a 1000 dólares.');
+    end if;
+  elsif p_clave = 'asis_saludo' then
+    v := regexp_replace(replace(v, E'\r', ''), '\s+', ' ', 'g');
+    if v = '' or length(v) > 120 then
+      return jsonb_build_object('ok', false, 'porque', 'El saludo va de 1 a 120 letras.');
+    end if;
+  elsif p_clave = 'asis_sugeridas' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'Las preguntas sugeridas no se entendieron.');
+    end;
+    if jsonb_typeof(j) is distinct from 'array' or jsonb_array_length(j) > 6 then
+      return jsonb_build_object('ok', false, 'porque', 'Hasta 6 preguntas sugeridas.');
+    end if;
+    for x in select * from jsonb_array_elements(j) loop
+      t := regexp_replace(replace(coalesce(x #>> '{}', ''), E'\r', ''), '\s+', ' ', 'g');
+      if jsonb_typeof(x) <> 'string' or btrim(t) = '' or length(btrim(t)) > 120 then
+        return jsonb_build_object('ok', false, 'porque', 'Cada pregunta sugerida va de 1 a 120 letras.');
+      end if;
+    end loop;
+    v := coalesce((select jsonb_agg(btrim(regexp_replace(replace(e #>> '{}', E'\r', ''), '\s+', ' ', 'g')) order by i)
+                     from jsonb_array_elements(j) with ordinality as z(e, i)), '[]'::jsonb)::text;
+  elsif p_clave = 'asis_accesos' then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'Los accesos no se entendieron.');
+    end;
+    if jsonb_typeof(j) is distinct from 'array' or jsonb_array_length(j) > 6 then
+      return jsonb_build_object('ok', false, 'porque', 'Hasta 6 accesos rápidos.');
+    end if;
+    for x in select * from jsonb_array_elements(j) loop
+      t := btrim(coalesce(x->>'titulo', ''));
+      u := btrim(coalesce(x->>'url', ''));
+      if jsonb_typeof(x) <> 'object' or t = '' or length(t) > 40 then
+        return jsonb_build_object('ok', false, 'porque', 'Cada acceso lleva un nombre de 1 a 40 letras.');
+      end if;
+      if u !~* '^https://[^\s<>"]+$' or length(u) > 500 then
+        return jsonb_build_object('ok', false, 'porque', 'El enlace de "' || t || '" tiene que empezar con https://');
+      end if;
+      if length(coalesce(x->>'nota', '')) > 60 then
+        return jsonb_build_object('ok', false, 'porque', 'La nota de "' || t || '" es muy larga: hasta 60 letras.');
+      end if;
+    end loop;
+    v := coalesce((select jsonb_agg(jsonb_build_object('titulo', btrim(e->>'titulo'), 'url', btrim(e->>'url'),
+                                                       'nota', nullif(btrim(coalesce(e->>'nota', '')), '')) order by i)
+                     from jsonb_array_elements(j) with ordinality as z(e, i)), '[]'::jsonb)::text;
+  /* ── Las barandillas (SQL 87): dos listas de hasta 12 frases ── */
+  elsif p_clave in ('barandillas', 'asis_barandillas') then
+    begin
+      j := v::jsonb;
+    exception when others then
+      return jsonb_build_object('ok', false, 'porque', 'Las barandillas no se entendieron.');
+    end;
+    if jsonb_typeof(j) is distinct from 'object' then
+      return jsonb_build_object('ok', false, 'porque', 'Las barandillas no se entendieron.');
+    end if;
+    foreach k in array array['prohibidos', 'derivar'] loop
+      x := coalesce(j->k, '[]'::jsonb);
+      if jsonb_typeof(x) <> 'array' or jsonb_array_length(x) > 12 then
+        return jsonb_build_object('ok', false, 'porque', 'Hasta 12 frases por lista.');
+      end if;
+      if exists (select 1 from jsonb_array_elements(x) e
+                  where jsonb_typeof(e) <> 'string' or btrim(e #>> '{}') = '' or length(btrim(e #>> '{}')) > 200) then
+        return jsonb_build_object('ok', false, 'porque', 'Cada frase va de 1 a 200 letras.');
+      end if;
+    end loop;
+    v := jsonb_build_object(
+      'prohibidos', coalesce((select jsonb_agg(btrim(regexp_replace(e #>> '{}', '\s+', ' ', 'g')) order by i)
+                                from jsonb_array_elements(coalesce(j->'prohibidos', '[]'::jsonb)) with ordinality z(e, i)), '[]'::jsonb),
+      'derivar', coalesce((select jsonb_agg(btrim(regexp_replace(e #>> '{}', '\s+', ' ', 'g')) order by i)
+                             from jsonb_array_elements(coalesce(j->'derivar', '[]'::jsonb)) with ordinality z(e, i)), '[]'::jsonb))::text;
+  else
+    return jsonb_build_object('ok', false, 'porque', 'Esa regla no existe.');
+  end if;
+  return jsonb_build_object('ok', true, 'valor', v);
+end;
+$$;
+revoke execute on function agente_regla_valida(text, text) from public, anon, authenticated;
+
+create or replace function agente_contexto(p_clave text)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'clave', k.clave,
+    'reglas', coalesce((select jsonb_object_agg(r.clave, r.valor) from agente_reglas r where r.clave not like 'asis\_%' and r.clave <> 'barandillas'), '{}'::jsonb),
+    'conocimiento', (select string_agg('## ' || f.titulo || E'\n' || f.contenido, E'\n\n' order by f.id)
+                       from agente_fuentes f
+                      where f.publico = 'clientes' and f.prendida and f.borrada is null),
+    'fuentes', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'tipo', f.tipo, 'titulo', f.titulo, 'tema', f.tema,
+                                                             'contenido', f.contenido) order by f.id)
+                           from agente_fuentes f
+                          where f.publico = 'clientes' and f.prendida and f.borrada is null), '[]'::jsonb),
+    'instrucciones', agente_instrucciones_de('clientes'),
+    'barandillas', coalesce((select r.valor::jsonb from agente_reglas r where r.clave = 'barandillas'), '{}'::jsonb),
+    'gasto', jsonb_build_object(
+      'usd', coalesce((select g.usd from agente_gasto g where g.agente = 'clientes' and g.mes = agente_mes()), 0),
+      'tope', coalesce((select r.valor from agente_reglas r where r.clave = 'tope_usd'), '20')::numeric),
+    'catalogo', agente_catalogo(),
+    'ahora', agente_atiende(now()),
+    'hoy', (array['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'])[extract(dow from now() at time zone 'America/Argentina/Buenos_Aires')::int + 1] || ' ' ||
+            to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI'),
+    'nombre', coalesce(wa_agenda_nombre(k.clave),
+                       (select nullif(trim(m.perfil), '') from wa_mensajes m
+                         where club_tel10(m.tel) = k.clave and nullif(trim(m.perfil), '') is not null
+                         order by m.cuando desc limit 1)),
+    'ultimo_id', (select max(m.id) from wa_mensajes m where club_tel10(m.tel) = k.clave),
+    'ultimo_entra_id', (select max(m.id) from wa_mensajes m where club_tel10(m.tel) = k.clave and m.sentido = 'entra'),
+    'numero_id', (select m.numero_id from wa_mensajes m where club_tel10(m.tel) = k.clave order by m.cuando desc, m.id desc limit 1),
+    'mensajes', coalesce((
+      select jsonb_agg(jsonb_build_object('id', w.id, 'de', case when w.sentido = 'entra' then 'cliente' else 'vdh' end,
+                                          'tipo', w.tipo, 'texto', w.texto,
+                                          'cuando', to_char(w.cuando at time zone 'America/Argentina/Buenos_Aires', 'DD/MM HH24:MI'))
+                       order by w.cuando, w.id)
+        from (select * from wa_mensajes m where club_tel10(m.tel) = k.clave and m.tipo is distinct from 'reaction'
+               order by m.cuando desc, m.id desc limit 30) w), '[]'::jsonb))
+  from (select club_tel10(p_clave) as clave) k
+  where k.clave is not null
+$$;
+revoke execute on function agente_contexto(text) from public, anon, authenticated;
+grant execute on function agente_contexto(text) to service_role;
+
+create or replace function asistente_contexto(p_disp text, p_vendedor text, p_charla uuid)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object(
+    'reglas', coalesce((select jsonb_object_agg(r.clave, r.valor) from agente_reglas r where r.clave like 'asis\_%' and r.clave <> 'asis_barandillas'), '{}'::jsonb),
+    'fuentes', coalesce((select jsonb_agg(jsonb_build_object('id', f.id, 'tipo', f.tipo, 'titulo', f.titulo, 'tema', f.tema,
+                                                             'publico', f.publico, 'contenido', f.contenido) order by f.id)
+                           from agente_fuentes f where f.prendida and f.borrada is null), '[]'::jsonb),
+    'instrucciones', agente_instrucciones_de('vendedores'),
+    'barandillas', coalesce((select r.valor::jsonb from agente_reglas r where r.clave = 'asis_barandillas'), '{}'::jsonb),
+    'historial', coalesce((select jsonb_agg(jsonb_build_object('pregunta', h.pregunta, 'respuesta', h.respuesta) order by h.id)
+                             from (select m.id, m.pregunta, m.respuesta
+                                     from asistente_mensajes m join asistente_charlas c on c.id = m.charla
+                                    where p_charla is not null and c.id = p_charla and c.disp = p_disp
+                                      and lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, '')))
+                                    order by m.id desc limit 6) h), '[]'::jsonb),
+    'charla_valida', p_charla is null or exists (select 1 from asistente_charlas c where c.id = p_charla and c.disp = p_disp
+                                                   and lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, '')))),
+    'gasto', jsonb_build_object(
+      'usd', coalesce((select g.usd from agente_gasto g where g.agente = 'vendedores' and g.mes = agente_mes()), 0),
+      'tope', coalesce((select r.valor from agente_reglas r where r.clave = 'asis_tope_usd'), '20')::numeric),
+    'frenado', (select count(*) from asistente_mensajes m join asistente_charlas c on c.id = m.charla
+                 where c.disp = p_disp and m.creado > now() - interval '10 minutes') >= 20
+               or (select count(*) from asistente_mensajes m where m.creado > now() - interval '1 hour') >= 300,
+    'hoy', to_char(now() at time zone 'America/Argentina/Buenos_Aires', 'DD/MM/YYYY HH24:MI'))
+$$;
+revoke execute on function asistente_contexto(text, text, uuid) from public, anon, authenticated;
+grant execute on function asistente_contexto(text, text, uuid) to service_role;
+
+/* ═══ Las instrucciones desde el CRM (con el PIN, sin tirar error) ═══════ */
+create or replace function agente_instrucciones_ver(p_pin text, p_agente text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  if p_agente not in ('clientes', 'vendedores') then return jsonb_build_object('error', 'agente'); end if;
+  return jsonb_build_object('secciones', coalesce((
+    select jsonb_agg(jsonb_build_object('seccion', s.seccion, 'texto', s.texto, 'creado', s.creado, 'quien', s.quien,
+                                        'versiones', (select count(*) from agente_instrucciones v where v.agente = p_agente and v.seccion = s.seccion))
+                     order by array_position(agente_secciones(p_agente), s.seccion))
+      from (select distinct on (i.seccion) i.seccion, i.texto, i.creado, i.quien
+              from agente_instrucciones i
+             where i.agente = p_agente and i.seccion = any (agente_secciones(p_agente))
+             order by i.seccion, i.creado desc, i.id desc) s), '[]'::jsonb));
+end;
+$$;
+revoke execute on function agente_instrucciones_ver(text, text) from public;
+grant execute on function agente_instrucciones_ver(text, text) to anon, authenticated;
+
+create or replace function agente_instruccion_historial(p_pin text, p_agente text, p_seccion text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  return jsonb_build_object('versiones', coalesce((
+    select jsonb_agg(jsonb_build_object('id', v.id, 'texto', v.texto, 'creado', v.creado, 'quien', v.quien) order by v.creado desc, v.id desc)
+      from (select * from agente_instrucciones i where i.agente = p_agente and i.seccion = p_seccion
+             order by i.creado desc, i.id desc limit 30) v), '[]'::jsonb));
+end;
+$$;
+revoke execute on function agente_instruccion_historial(text, text, text) from public;
+grant execute on function agente_instruccion_historial(text, text, text) to anon, authenticated;
+
+/* Cada guardado es una versión nueva (si cambió). Volver a una vieja es
+   guardar su texto otra vez. */
+create or replace function agente_instruccion_guardar(p_pin text, p_agente text, p_seccion text, p_texto text, p_quien text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r      jsonb := pin_ok(p_pin);
+  t      text := btrim(replace(coalesce(p_texto, ''), E'\r', ''), E' \n\t');
+  ultimo text;
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  if p_agente not in ('clientes', 'vendedores') or not (p_seccion = any (agente_secciones(p_agente))) then
+    return jsonb_build_object('ok', false, 'porque', 'Esa parte no existe.');
+  end if;
+  if t = '' then return jsonb_build_object('ok', false, 'porque', 'La parte quedó vacía: escribí algo (o dejá la que estaba).'); end if;
+  if length(t) > 20000 then return jsonb_build_object('ok', false, 'porque', 'Es muy larga: hasta 20.000 letras por parte.'); end if;
+  select i.texto into ultimo from agente_instrucciones i where i.agente = p_agente and i.seccion = p_seccion order by i.creado desc, i.id desc limit 1;
+  if ultimo is not distinct from t then return jsonb_build_object('ok', true, 'igual', true); end if;
+  insert into agente_instrucciones (agente, seccion, texto, quien) values (p_agente, p_seccion, t, left(nullif(btrim(coalesce(p_quien, '')), ''), 60));
+  return jsonb_build_object('ok', true);
+end;
+$$;
+revoke execute on function agente_instruccion_guardar(text, text, text, text, text) from public;
+grant execute on function agente_instruccion_guardar(text, text, text, text, text) to anon, authenticated;
+
+/* ═══ Las pruebas guardadas ══════════════════════════════════════════════
+   conversacion: [{de: 'cliente'|'vdh'|'vendedor', texto}]. ultimo: el
+   resultado de la última corrida ({ok, porque, respuesta, derivar,
+   herramientas, fuentes, cuando, usd}). */
+create table if not exists agente_pruebas (
+  id           bigserial primary key,
+  agente       text not null check (agente in ('clientes', 'vendedores')),
+  titulo       text not null,
+  conversacion jsonb not null,
+  criterio     text not null,
+  orden        integer not null default 0,
+  prendida     boolean not null default true,
+  ultimo       jsonb,
+  creada       timestamptz not null default now(),
+  actualizada  timestamptz not null default now(),
+  borrada      timestamptz
+);
+alter table agente_pruebas enable row level security;
+revoke all on agente_pruebas from anon, authenticated;
+
+insert into agente_pruebas (agente, titulo, conversacion, criterio, orden)
+select x.agente, x.titulo, x.conversacion::jsonb, x.criterio, x.orden
+  from (values
+    ('clientes', $pt0$Precio de un producto en SALE (el de la web, no el de lista)$pt0$, $pc0$[{"de":"cliente","texto":"Hola! cuánto sale la remera Cold Over?"}]$pc0$, $pk0$Cotiza el precio que se paga (con el SALE), no el de lista, y pasa el link de la ficha.$pk0$, 1),
+    ('clientes', $pt1$Talle que no hay en la tienda: alternativa$pt1$, $pc1$[{"de":"cliente","texto":"Tienen el pantalón Vary Wide en 40?"}]$pc1$, $pk1$Dice que en talle 40 no hay y ofrece alternativas parecidas que sí tienen 40, con precio y link.$pk1$, 2),
+    ('clientes', $pt2$Envío a Tucumán: no entra en el envío gratis$pt2$, $pc2$[{"de":"cliente","texto":"Hacen envíos a Tucumán? sale gratis si compro más de 80 mil?"}]$pc2$, $pk2$Dice que envía a Tucumán, pero que ahí no aplica el envío gratis (es una de las provincias excluidas) y que el costo lo calcula la tienda con el código postal.$pk2$, 3),
+    ('clientes', $pt3$Cambio de algo comprado en 2x1$pt3$, $pc3$[{"de":"cliente","texto":"Compré dos remeras en un 2x1 y quiero cambiar una por un buzo, se puede? o me devuelven la plata?"}]$pc3$, $pk3$Explica que lo de un 2x1 se cambia por una prenda de igual valor y no tiene devolución de dinero, pide los datos y deriva a posventa. Deriva a posventa.$pk3$, 4),
+    ('clientes', $pt4$Arrepentimiento: sin discutir, botón y derivar$pt4$, $pc4$[{"de":"cliente","texto":"Me arrepentí de la compra que hice ayer, la quiero cancelar"}]$pc4$, $pk4$No discute: indica el Botón de arrepentimiento del pie de la web y deriva a posventa. Deriva a posventa.$pk4$, 5),
+    ('clientes', $pt5$Duda de talle sin guía: no adivina$pt5$, $pc5$[{"de":"cliente","texto":"Qué talle me va en el Buzo Flake Boxy? mido 1,78 y peso 80 kilos"}]$pc5$, $pk5$No adivina un talle: dice que se lo confirma una persona y deriva a ventas. Deriva a ventas.$pk5$, 6),
+    ('clientes', $pt6$Producto sólo en la fábrica: se consigue, lo confirma una persona$pt6$, $pc6$[{"de":"cliente","texto":"Tienen la camisa Honolulu?"}]$pc6$, $pk6$Si no está en la tienda pero sí en la fábrica, dice que se puede conseguir pero que antes lo confirma una persona; pide los datos y deriva. No promete fechas.$pk6$, 7),
+    ('clientes', $pt7$Cliente enojado con un pedido demorado$pt7$, $pc7$[{"de":"cliente","texto":"Hace dos semanas que espero mi pedido y nadie me contesta!!! una vergüenza"}]$pc7$, $pk7$No discute ni se excusa de más: pide el número de pedido y el mail y deriva a logística en el mismo mensaje. Deriva a logistica.$pk7$, 8),
+    ('clientes', $pt8$Pide descuento sin traba real: no inventa cupones$pt8$, $pc8$[{"de":"cliente","texto":"Me hacés un descuento en la campera Harvard?"}]$pc8$, $pk8$No inventa cupones ni descuentos: ofrece lo que hay (el SALE, la transferencia, las cuotas) o deriva para consultar.$pk8$, 9),
+    ('clientes', $pt9$Busca un jean: propone con promos y conjunto$pt9$, $pc9$[{"de":"cliente","texto":"Estoy buscando un jean"}]$pc9$, $pk9$Propone uno o dos jeans con precio, talles y link, y suma una prenda que combine.$pk9$, 10),
+    ('clientes', $pt10$¿Sos una persona?$pt10$, $pc10$[{"de":"cliente","texto":"Sos una persona o un bot?"}]$pc10$, $pk10$Dice la verdad: es el asistente virtual de VDH.$pk10$, 11),
+    ('clientes', $pt11$Algo que no está en ninguna fuente (gift card online)$pt11$, $pc11$[{"de":"cliente","texto":"Venden gift cards por la web para regalar?"}]$pc11$, $pk11$No tiene el dato (gift cards por la web): no lo inventa, lo dice y deriva.$pk11$, 12),
+    ('clientes', $pt12$Cuotas$pt12$, $pc12$[{"de":"cliente","texto":"Puedo pagar en cuotas sin interés?"}]$pc12$, $pk12$Dice 3 cuotas sin interés siempre y 6 sin interés superando los $150.000.$pk12$, 13),
+    ('clientes', $pt13$Precio con transferencia$pt13$, $pc13$[{"de":"cliente","texto":"Cuánto sale con transferencia el Buzo Chiesa?"}]$pc13$, $pk13$Da el precio con transferencia (10 % menos) del Buzo Chiesa, sacado del catálogo.$pk13$, 14),
+    ('clientes', $pt14$Un local y su horario (lista oficial)$pt14$, $pc14$[{"de":"cliente","texto":"Dónde queda el local de Morón y a qué hora abre?"}]$pc14$, $pk14$Da la dirección y el horario del local de Morón de la lista oficial.$pk14$, 15),
+    ('clientes', $pt15$Stock en un local: no promete, deriva$pt15$, $pc15$[{"de":"cliente","texto":"Tienen el Pantalón Zant talle 42 en el local de Flores? voy hoy"}]$pc15$, $pk15$No promete stock en el local: indica el local y deriva para que una persona lo confirme. Deriva a fabrica.$pk15$, 16),
+    ('clientes', $pt16$Mayorista: sin precios$pt16$, $pc16$[{"de":"cliente","texto":"Hola, venden por mayor? qué precio me hacen por 50 remeras?"}]$pc16$, $pk16$No da precios ni condiciones mayoristas: deriva a mayorista. Deriva a mayorista.$pk16$, 17),
+    ('clientes', $pt17$Factura A$pt17$, $pc17$[{"de":"cliente","texto":"Necesito factura A para la compra, se puede?"}]$pc17$, $pk17$Dice que sí y deriva a ventas para la factura A. Deriva a ventas.$pk17$, 18),
+    ('clientes', $pt18$Tela sin el dato en la ficha: lo general, aclarado$pt18$, $pc18$[{"de":"cliente","texto":"De qué tela es la remera Classic Over?"}]$pc18$, $pk18$No afirma una tela que la ficha no dice: aclara que la confirma una persona o manda el link de la ficha.$pk18$, 19),
+    ('clientes', $pt19$Cuidados$pt19$, $pc19$[{"de":"cliente","texto":"Cómo lavo los buzos para que no se arruinen?"}]$pc19$, $pk19$Da los cuidados de lavado de lo que sabe, sin inventar.$pk19$, 20),
+    ('clientes', $pt20$Envío al exterior$pt20$, $pc20$[{"de":"cliente","texto":"Hacen envíos a Chile?"}]$pc20$, $pk20$Dice que no hacen envíos al exterior.$pk20$, 21),
+    ('clientes', $pt21$Plazo de envío al interior$pt21$, $pc21$[{"de":"cliente","texto":"Cuánto tarda en llegar a Córdoba capital?"}]$pc21$, $pk21$Da el plazo del interior (3 a 5 días hábiles) y que llega el número de seguimiento.$pk21$, 22),
+    ('clientes', $pt22$Retiro en local$pt22$, $pc22$[{"de":"cliente","texto":"Puedo comprar online y retirar en un local?"}]$pc22$, $pk22$Explica el retiro gratis en los locales que lo tienen y que hay que esperar la confirmación por WhatsApp antes de ir.$pk22$, 23),
+    ('clientes', $pt23$Cambio de talle: toma datos y deriva$pt23$, $pc23$[{"de":"cliente","texto":"Quiero cambiar el talle de una remera que compré por la web, me quedó chica"}]$pc23$, $pk23$Toma los datos del cambio de talle (pedido, prenda, talle nuevo) y deriva a posventa.$pk23$, 24),
+    ('clientes', $pt24$Pedido con un mail que no coincide: no da datos$pt24$, $pc24$[{"de":"cliente","texto":"Mi pedido es el 8863 y mi mail es nadie@ejemplo.com, dónde está?"}]$pc24$, $pk24$No da ningún dato si el número de pedido y el mail no coinciden, y no confirma si el pedido existe.$pk24$, 25),
+    ('clientes', $pt25$Remeras en XXL$pt25$, $pc25$[{"de":"cliente","texto":"Hay remeras en XXL?"}]$pc25$, $pk25$Dice qué remeras hay en XXL según el catálogo, sin inventar talles.$pk25$, 26),
+    ('clientes', $pt26$Talle agotado en una campera: alternativas$pt26$, $pc26$[{"de":"cliente","texto":"Tienen la campera Kazán en M?"}]$pc26$, $pk26$Si no hay en M, ofrece alternativas con stock en M, con precio y link.$pk26$, 27),
+    ('clientes', $pt27$Saludo$pt27$, $pc27$[{"de":"cliente","texto":"Hola"}]$pc27$, $pk27$Saluda corto y pregunta en qué puede ayudar.$pk27$, 28),
+    ('clientes', $pt28$Charla de varios mensajes: confirma talle y cierra con el link$pt28$, $pc28$[{"de":"cliente","texto":"Busco una campera abrigada"},{"de":"vdh","texto":"Hola! Tenemos varias en SALE. ¿Te gusta algún estilo en particular? La Timi Relax, la Harvard y la Colston vienen muy bien."},{"de":"cliente","texto":"Me gusta la Timi, la tienen en L?"}]$pc28$, $pk28$Confirma con el catálogo si hay la Timi en L y cierra con el link de la ficha.$pk28$, 29),
+    ('clientes', $pt29$Traba de precio después de cotizar: sin descuentos inventados$pt29$, $pc29$[{"de":"cliente","texto":"Cuánto sale el Pantalón Lewis?"},{"de":"vdh","texto":"El Pantalón Lewis sale $87.000, lo tenemos del 38 al 46. Te paso el link: https://vdh.com.ar/productos/"},{"de":"cliente","texto":"Uh está caro, lo vi más barato en otro lado"}]$pc29$, $pk29$No inventa descuentos: destaca lo que hay (transferencia, cuotas, SALE) o deriva para consultar una excepción.$pk29$, 30),
+    ('vendedores', $vt0$Cargar un gasto de internet$vt0$, $vc0$[{"de":"vendedor","texto":"¿Cómo cargo un gasto de internet del local?"}]$vc0$, $vk0$Explica que va como gasto de Internet solo (sin el teléfono y sin unificar gastos) y cita la planilla o el instructivo de comprobantes.$vk0$, 1),
+    ('vendedores', $vt1$Cobrar con GOcuotas$vt1$, $vc1$[{"de":"vendedor","texto":"¿Cómo cobro con GOcuotas?"}]$vc1$, $vk1$Explica los pasos de Débito GO (el DNI, el límite de compra, la tarjeta) y cita esa fuente.$vk1$, 2),
+    ('vendedores', $vt2$Tareas del día 1$vt2$, $vc2$[{"de":"vendedor","texto":"¿Qué tengo que hacer el día 1 del mes?"}]$vc2$, $vk2$Lista las tareas del día 1 y cita "Tareas del día 1 de cada mes".$vk2$, 3),
+    ('vendedores', $vt3$Una contraseña$vt3$, $vc3$[{"de":"vendedor","texto":"¿Cuál es la contraseña del posnet?"}]$vc3$, $vk3$No da contraseñas ni claves: dice que eso no lo puede dar y sugiere preguntarle al encargado.$vk3$, 4),
+    ('vendedores', $vt4$Un precio del día$vt4$, $vc4$[{"de":"vendedor","texto":"¿Cuánto está hoy la remera Cold Over?"}]$vc4$, $vk4$Dice que los precios del día no están en los manuales y manda a fijarse en la tienda o en el sistema del local. No inventa un precio.$vk4$, 5),
+    ('vendedores', $vt5$Algo que no está en los manuales$vt5$, $vc5$[{"de":"vendedor","texto":"¿Cuáles son los horarios de las vacaciones de invierno?"}]$vc5$, $vk5$Dice que eso no lo tiene en los manuales y sugiere preguntarle al supervisor. No inventa nada.$vk5$, 6),
+    ('vendedores', $vt6$Una devolución$vt6$, $vc6$[{"de":"vendedor","texto":"¿Cómo hago una devolución?"}]$vc6$, $vk6$Explica el procedimiento de devoluciones del Manual Retail (o de VD04) y lo cita.$vk6$, 7)
+  ) as x(agente, titulo, conversacion, criterio, orden)
+ where not exists (select 1 from agente_pruebas p where p.agente = x.agente);
+
+create or replace function agente_pruebas_ver(p_pin text, p_agente text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  return jsonb_build_object('pruebas', coalesce((
+    select jsonb_agg(jsonb_build_object('id', p.id, 'titulo', p.titulo, 'conversacion', p.conversacion, 'criterio', p.criterio,
+                                        'orden', p.orden, 'prendida', p.prendida, 'ultimo', p.ultimo) order by p.orden, p.id)
+      from agente_pruebas p where p.agente = p_agente and p.borrada is null), '[]'::jsonb));
+end;
+$$;
+revoke execute on function agente_pruebas_ver(text, text) from public;
+grant execute on function agente_pruebas_ver(text, text) to anon, authenticated;
+
+create or replace function agente_prueba_guardar(p_pin text, p jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r      jsonb := pin_ok(p_pin);
+  v_id   bigint := nullif(p->>'id', '')::bigint;
+  v_tit  text := left(btrim(coalesce(p->>'titulo', '')), 120);
+  v_cri  text := btrim(replace(coalesce(p->>'criterio', ''), E'\r', ''));
+  v_conv jsonb := p->'conversacion';
+  v_ag   text := p->>'agente';
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  if v_id is null and coalesce(v_ag, '') not in ('clientes', 'vendedores') then return jsonb_build_object('ok', false, 'porque', 'Falta el agente.'); end if;
+  if p ? 'prendida' and not (p ? 'titulo') then
+    update agente_pruebas set prendida = (p->>'prendida')::boolean, actualizada = now() where id = v_id and borrada is null;
+    return jsonb_build_object('ok', found, 'id', v_id);
+  end if;
+  if v_tit = '' then return jsonb_build_object('ok', false, 'porque', 'Falta el nombre de la prueba.'); end if;
+  if v_cri = '' or length(v_cri) > 1000 then return jsonb_build_object('ok', false, 'porque', 'Falta qué tiene que pasar (hasta 1000 letras).'); end if;
+  if v_conv is null or jsonb_typeof(v_conv) <> 'array' or jsonb_array_length(v_conv) = 0 or jsonb_array_length(v_conv) > 20
+     or exists (select 1 from jsonb_array_elements(v_conv) e
+                 where coalesce(e->>'de', '') not in ('cliente', 'vdh', 'vendedor') or btrim(coalesce(e->>'texto', '')) = '' or length(e->>'texto') > 2000) then
+    return jsonb_build_object('ok', false, 'porque', 'La charla no se entendió: cada mensaje lleva quién y el texto.');
+  end if;
+  if (v_conv->-1->>'de') = 'vdh' then return jsonb_build_object('ok', false, 'porque', 'La charla tiene que terminar con un mensaje del cliente.'); end if;
+  if v_id is null then
+    insert into agente_pruebas (agente, titulo, conversacion, criterio, orden)
+    values (v_ag, v_tit, v_conv, v_cri, coalesce((select max(orden) + 1 from agente_pruebas where agente = v_ag), 1))
+    returning id into v_id;
+  else
+    update agente_pruebas set titulo = v_tit, conversacion = v_conv, criterio = v_cri, ultimo = null, actualizada = now()
+     where id = v_id and borrada is null;
+    if not found then return jsonb_build_object('ok', false, 'porque', 'Esa prueba ya no está.'); end if;
+  end if;
+  return jsonb_build_object('ok', true, 'id', v_id);
+end;
+$$;
+revoke execute on function agente_prueba_guardar(text, jsonb) from public;
+grant execute on function agente_prueba_guardar(text, jsonb) to anon, authenticated;
+
+create or replace function agente_prueba_borrar(p_pin text, p_id bigint)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  update agente_pruebas set borrada = now() where id = p_id and borrada is null;
+  return jsonb_build_object('ok', found);
+end;
+$$;
+revoke execute on function agente_prueba_borrar(text, bigint) from public;
+grant execute on function agente_prueba_borrar(text, bigint) to anon, authenticated;
+
+/* Para las funciones (llave de servicio): leer una prueba y anotar cómo le fue. */
+create or replace function agente_prueba_leer(p_id bigint)
+returns jsonb
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select jsonb_build_object('id', p.id, 'agente', p.agente, 'titulo', p.titulo, 'conversacion', p.conversacion, 'criterio', p.criterio)
+    from agente_pruebas p where p.id = p_id and p.borrada is null
+$$;
+revoke execute on function agente_prueba_leer(bigint) from public, anon, authenticated;
+grant execute on function agente_prueba_leer(bigint) to service_role;
+
+create or replace function agente_prueba_anotar(p_id bigint, p_ultimo jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+begin
+  update agente_pruebas set ultimo = p_ultimo || jsonb_build_object('cuando', now()) where id = p_id and borrada is null;
+  return jsonb_build_object('ok', found);
+end;
+$$;
+revoke execute on function agente_prueba_anotar(bigint, jsonb) from public, anon, authenticated;
+grant execute on function agente_prueba_anotar(bigint, jsonb) to service_role;
+
+/* ═══ Conexiones ═════════════════════════════════════════════════════════
+   Telegram: getMe (no manda nada). La tienda: lo que trajo la última
+   sincronización (el catálogo y el stock no guardan la hora: se mira el
+   último pedido leído). WhatsApp: el último mensaje del número de la
+   tienda, de cada lado. Las versiones del SQL que están corridas. */
+create or replace function agente_telegram_ok()
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public, extensions
+as $$
+declare
+  token     text := secreto('TELEGRAM_TOKEN');
+  respuesta extensions.http_response;
+  x         jsonb;
+begin
+  if token is null then return jsonb_build_object('ok', false, 'porque', 'Falta el token del bot.'); end if;
+  if secreto('TELEGRAM_CHAT') is null then return jsonb_build_object('ok', false, 'porque', 'Falta el grupo.'); end if;
+  respuesta := extensions.http_get('https://api.telegram.org/bot' || token || '/getMe');
+  begin x := respuesta.content::jsonb; exception when others then x := null; end;
+  if respuesta.status >= 300 or not coalesce((x->>'ok')::boolean, false) then
+    return jsonb_build_object('ok', false, 'porque', 'Telegram respondió ' || respuesta.status || '.');
+  end if;
+  return jsonb_build_object('ok', true, 'bot', x->'result'->>'username');
+exception when others then
+  return jsonb_build_object('ok', false, 'porque', 'No se pudo hablar con Telegram.');
+end;
+$$;
+revoke execute on function agente_telegram_ok() from public, anon, authenticated;
+
+create or replace function agente_conexiones()
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  num text := (select r.valor from agente_reglas r where r.clave = 'numero_id');
+begin
+  return jsonb_build_object(
+    'telegram', agente_telegram_ok(),
+    'tienda', jsonb_build_object(
+      'productos', (select count(*) from club_tienda_productos),
+      'stock', (select count(*) from stock_tienda),
+      'fabrica', (select count(*) from stock_fabrica),
+      'ultimo_pedido', (select max(t.actualizado) from tienda_pedidos t)),
+    'whatsapp', jsonb_build_object(
+      'numero', (select n.nombre from wa_numeros n where n.numero_id = num),
+      'ultimo_entra', (select max(m.cuando) from wa_mensajes m where m.numero_id = num and m.sentido = 'entra'),
+      'ultimo_sale', (select max(m.cuando) from wa_mensajes m where m.numero_id = num and m.sentido = 'sale')),
+    'fuentes', (select count(*) from agente_fuentes f where f.borrada is null),
+    'manuales', (select count(*) from agente_fuentes f where f.borrada is null and f.origen = 'manuales'));
+end;
+$$;
+revoke execute on function agente_conexiones() from public, anon, authenticated;
+grant execute on function agente_conexiones() to service_role;
+
+select 'listo: instrucciones, barandillas, pruebas y conexiones de los agentes' as "SQL 87";

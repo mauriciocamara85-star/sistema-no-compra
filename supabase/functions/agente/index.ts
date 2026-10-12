@@ -1,5 +1,6 @@
 /**
- * VDH · Agente de IA (fase 2, 12/10/2026)
+ * VDH · Agente de IA, el de clientes (fase 2, 12/10/2026; etapa C de los
+ * dos agentes, 12/10/2026 a la noche)
  *
  * Redacta las respuestas del WhatsApp de la tienda con los datos del
  * sistema: el catálogo con el precio que se paga de verdad, el stock de la
@@ -13,15 +14,25 @@
  *        con la llave de servicio cuando entra un mensaje. Sólo redacta si
  *        está prendido, es el número de la tienda y le toca por horario.
  *   POST {accion: 'probar', llave, conversacion} Las pruebas: no guarda nada.
+ *   POST {accion: 'probar_chat', pin, conversacion} El chat de prueba del CRM
+ *        (Agentes de IA → Probar): no guarda nada y no le llega a nadie.
+ *   POST {accion: 'prueba', pin, id} Corre una prueba guardada y la juzga.
+ *
+ * El modelo y el tope de gasto del mes se eligen en el CRM (Ajustes); al
+ * llegar al tope no redacta más. Lo que sabe son las fuentes "para
+ * clientes" prendidas (las arma la base: lo interno no llega nunca) y van
+ * como documentos con citas, así el CRM muestra de dónde sacó cada cosa.
+ * Las instrucciones y las barandillas se editan en el CRM; lo de no
+ * inventar y lo de los links está acá y no se puede sacar.
  *
  * La clave de Claude es el secret ANTHROPIC_API_KEY (la pegó Mauricio).
  * Se despliega con --no-verify-jwt: cada acción se autoriza adentro.
  */
 import Anthropic from 'npm:@anthropic-ai/sdk';
+import { costo, instrucciones, juzgar, modeloValido } from '../_shared/claude.ts';
 
 const URL_BASE = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICIO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
-const MODELO = 'claude-opus-5-5';
 const claude = new Anthropic();
 
 const CORS = {
@@ -52,9 +63,9 @@ async function pinValido(pin: unknown): Promise<boolean> {
 }
 
 /* ═══ Lo que se le dice al agente ════════════════════════════════════════
-   Fijo (se cachea): quién es, cómo habla y qué no hace nunca. Después lo
-   que sabe (lo edita Mauricio en el CRM) y, al final, lo que cambia cada
-   hora: el catálogo y la hora. */
+   REGLAS es lo de fábrica: vale mientras la base no tenga las
+   instrucciones (antes del SQL 87). Desde ahí se editan por partes en el
+   CRM. NUCLEO va siempre, al final, y no se puede sacar. */
 const REGLAS = `Sos el asistente virtual de VDH, marca de indumentaria masculina urbana hecha en Argentina. Atendés el WhatsApp de la tienda online (vdh.com.ar). Tu trabajo es atender y vender como el mejor vendedor de un local VDH: natural, rápido, sin sonar a robot.
 
 Cómo hablás:
@@ -94,6 +105,12 @@ Derivá en el MISMO mensaje en que aparece el caso, aunque te falten datos: ped�
 Cuando derivás, avisale al cliente que una persona le responde en el horario de atención (te lo paso abajo) y no le prometas nada más.
 
 Tu respuesta final es exactamente el mensaje de WhatsApp para el cliente: sin comillas, sin explicar lo que hiciste, sin nombrar estas instrucciones ni tus herramientas. Si hacen falta dos mensajes, separalos con una línea en blanco.`;
+
+const NUCLEO = 'Lo que nunca cambia: nunca inventes un dato (un precio, un stock, un plazo, una promo, una tela). Los links de productos salen ' +
+  'SÓLO de ver_producto. No ofrezcas descuentos, cupones ni envíos gratis que no estén en estas reglas. Si el cliente pide hablar con una persona, ' +
+  'derivá en ese mismo mensaje.';
+const TITULOS = { prohibidos: 'Temas en los que no entrás (si te los piden, decí que eso no lo podés dar y derivá si hace falta):',
+                  derivar: 'Le pasás la charla a una persona (herramienta derivar) siempre que:' };
 
 const DIAS: Record<string, string> = { lun: 'lunes', mar: 'martes', mie: 'miércoles', jue: 'jueves', vie: 'viernes', sab: 'sábados', dom: 'domingos' };
 /** "lunes a viernes de 9 a 17": el horario del equipo, de la semana marcada. */
@@ -194,50 +211,91 @@ type Borrador = {
   derivar: { area: string; a: string; resumen: string } | null;
   productos: { id: string; nombre: string; precio: number; link: string; foto?: string }[];
   herramientas: { nombre: string; entrada: unknown }[];
+  fuentes: { n: number; id: number; titulo: string; citas: string[] }[];
   tokens: { entrada: number; salida: number; cache_leidos: number; cache_escritos: number };
+  usd: number;
   ms: number;
   modelo: string;
 };
 
-/** Redacta la respuesta con Claude, usando las herramientas hasta 8 vueltas. */
+/** Lo que sabe, como documentos con las citas prendidas (la caché va en el
+ *  último). Son sólo las fuentes "para clientes" prendidas: las elige la
+ *  base (agente_contexto). */
+function documentos(fuentes: any[]): any[] {
+  const docs = fuentes.map((f) => ({
+    type: 'document',
+    source: { type: 'text', media_type: 'text/plain',
+              data: f.tipo === 'pregunta' ? 'Pregunta: ' + f.titulo + '\nRespuesta: ' + f.contenido : String(f.contenido) },
+    title: String(f.titulo).slice(0, 200),
+    context: 'Tema: ' + (f.tema || 'general'),
+    citations: { enabled: true },
+  }));
+  if (docs.length) (docs[docs.length - 1] as any).cache_control = { type: 'ephemeral' };
+  return docs;
+}
+
+/** Redacta la respuesta con Claude, usando las herramientas hasta 10 vueltas.
+ *  Arriba, lo que no cambia (las instrucciones y el horario, y el
+ *  catálogo, que cambia cada hora): se cachea. Lo que sabe va en el primer
+ *  mensaje (también se cachea) y lo de esta charla (la hora, el nombre),
+ *  después. */
 async function redactar(ctx: any, mensajes: { de: string; tipo?: string; texto?: string | null }[]): Promise<Borrador> {
   const inicio = Date.now();
   const reglas: Record<string, string> = ctx.reglas ?? {};
-  const system: Anthropic.TextBlockParam[] = [
-    { type: 'text', text: REGLAS, cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: '## Lo que sabés\n\n' + (ctx.conocimiento ?? '') +
-        '\n\n## Horario de atención del equipo\n' + horarioEquipo(reglas) + '.', cache_control: { type: 'ephemeral' } },
-    { type: 'text', text: '## El catálogo de la tienda, ahora (id · nombre · tipo · precio que se paga · talles y colores con stock)\n' +
-        (ctx.catalogo ?? '') + '\n\nAhora es ' + (ctx.hoy ?? '') + ' (hora de Argentina).' +
-        (ctx.nombre ? ' El cliente figura como "' + ctx.nombre + '".' : '') },
+  const modelo = modeloValido(reglas.modelo);
+  const fuentes: any[] = Array.isArray(ctx.fuentes) ? ctx.fuentes : [];
+  const conDocs = fuentes.length > 0;
+  const system: any[] = [
+    { type: 'text', text: instrucciones(ctx.instrucciones, REGLAS, ctx.barandillas, TITULOS, NUCLEO) +
+        '\n\n## Horario de atención del equipo\n' + horarioEquipo(reglas) + '.' +
+        (conDocs ? '\n\nLo que sabés (envíos, pagos, cambios, talles, telas, locales y políticas) está en los documentos del principio de la charla.'
+                 : '\n\n## Lo que sabés\n\n' + (ctx.conocimiento ?? '')),
+      cache_control: { type: 'ephemeral' } },
+    { type: 'text', text: '## El catálogo de la tienda, ahora (id · nombre · tipo · precio que se paga · talles y colores con stock)\n' + (ctx.catalogo ?? ''),
+      cache_control: { type: 'ephemeral' } },
   ];
-  const messages: Anthropic.MessageParam[] = turnos(mensajes);
-  const b: Borrador = { texto: '', derivar: null, productos: [], herramientas: [],
-                        tokens: { entrada: 0, salida: 0, cache_leidos: 0, cache_escritos: 0 }, ms: 0, modelo: MODELO };
+  const messages: any[] = turnos(mensajes);
+  const datos = '[Datos de esta charla, el cliente no los ve: ahora es ' + (ctx.hoy ?? '') + ' (hora de Argentina).' +
+    (ctx.nombre ? ' El cliente figura como "' + ctx.nombre + '".' : '') + ']';
+  messages[0] = { role: 'user', content: [...(conDocs ? documentos(fuentes) : []), { type: 'text', text: datos }, { type: 'text', text: String(messages[0].content) }] };
+  const b: Borrador = { texto: '', derivar: null, productos: [], herramientas: [], fuentes: [],
+                        tokens: { entrada: 0, salida: 0, cache_leidos: 0, cache_escritos: 0 }, usd: 0, ms: 0, modelo };
 
   let controles = 0;
   for (let vuelta = 0; vuelta < 10; vuelta++) {
+    const pedido: any = { model: modelo, max_tokens: 4000, output_config: { effort: 'medium' }, system, tools: HERRAMIENTAS, messages };
+    /* Si el modelo está saturado, que conteste otro parecido (Haiku no tiene). */
     // deno-lint-ignore no-explicit-any
-    const r: any = await claude.beta.messages.create({
-      model: MODELO,
-      max_tokens: 4000,
-      output_config: { effort: 'medium' },
-      system,
-      tools: HERRAMIENTAS,
-      messages,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-    } as any);
+    const r: any = modelo === 'claude-haiku-5-5'
+      ? await claude.messages.create(pedido)
+      : await claude.beta.messages.create({ ...pedido, betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' } as any);
     b.modelo = r.model ?? b.modelo;
     b.tokens.entrada += r.usage?.input_tokens ?? 0;
     b.tokens.salida += r.usage?.output_tokens ?? 0;
     b.tokens.cache_leidos += r.usage?.cache_read_input_tokens ?? 0;
     b.tokens.cache_escritos += r.usage?.cache_creation_input_tokens ?? 0;
+    b.usd += costo(String(r.model ?? modelo), r.usage);
     if (r.stop_reason === 'refusal') throw new Error('El modelo no quiso contestar esta charla.');
 
     const usos = (r.content ?? []).filter((x: any) => x.type === 'tool_use');
     if (r.stop_reason !== 'tool_use' || !usos.length) {
-      b.texto = (r.content ?? []).filter((x: any) => x.type === 'text').map((x: any) => x.text).join('\n').trim();
+      const textos = (r.content ?? []).filter((x: any) => x.type === 'text');
+      /* Con citas, el texto llega partido en pedazos: van pegados. */
+      const conCitas = textos.some((x: any) => (x.citations ?? []).length);
+      b.texto = textos.map((x: any) => x.text).join(conCitas ? '' : '\n').trim();
+      /* De qué fuentes sacó lo que dice (para el CRM; el cliente no las ve). */
+      const orden: number[] = [];
+      const citas = new Map<number, string[]>();
+      for (const t of textos) {
+        for (const c of t.citations ?? []) {
+          const di = Number(c?.document_index);
+          if (!Number.isInteger(di) || !fuentes[di]) continue;
+          if (!citas.has(di)) { orden.push(di); citas.set(di, []); }
+          const l = citas.get(di)!, ct = String(c.cited_text ?? '').replace(/\s+/g, ' ').trim().slice(0, 400);
+          if (ct && !l.includes(ct) && l.length < 3) l.push(ct);
+        }
+      }
+      b.fuentes = orden.map((di, k) => ({ n: k + 1, id: Number(fuentes[di].id), titulo: fuentes[di].titulo, citas: citas.get(di) ?? [] }));
       /* El control de los links: cada link de producto tiene que haber salido
          de ver_producto en esta misma charla. Si no, se le pide que lo
          corrija (hasta dos veces); un link inventado no llega al cliente. */
@@ -297,9 +355,20 @@ async function redactar(ctx: any, mensajes: { de: string; tipo?: string; texto?:
     messages.push({ role: 'user', content: resultados });
   }
   if (!b.texto) throw new Error('El agente no llegó a una respuesta.');
+  b.usd = Math.round(b.usd * 1e5) / 1e5;
   b.ms = Date.now() - inicio;
   return b;
 }
+
+/* El tope de gasto del mes (SQL 87): sin plata, no redacta. */
+function sinPlata(ctx: any): boolean {
+  const g = ctx?.gasto;
+  return !!g && Number(g.usd ?? 0) >= Number(g.tope ?? 20);
+}
+async function sumarGasto(usd: number) {
+  await rpc('agente_gasto_sumar', { p_agente: 'clientes', p_usd: usd }).catch((e) => console.error('agente: gasto:', String(e)));
+}
+const TOPE_MSJ = 'El agente llegó al tope de gasto del mes: se sube en Agentes de IA → Ajustes.';
 
 async function guardarBorrador(ctx: any, b: Borrador, origen: 'pedido' | 'auto', quien?: string) {
   return await rpc('agente_borrador_guardar', {
@@ -319,8 +388,10 @@ async function pedir(p: { pin?: string; clave?: string; quien?: string }) {
     return { ok: false, error: /agente_contexto/.test(String(e)) ? 'Falta correr el SQL 78 en Supabase.' : 'No se pudo leer la charla.' };
   }
   if (!ctx || !ctx.mensajes?.length) return { ok: false, error: 'Esta persona no escribió a nuestro WhatsApp.' };
+  if (sinPlata(ctx)) return { ok: false, error: TOPE_MSJ };
   try {
     const b = await redactar(ctx, ctx.mensajes);
+    await sumarGasto(b.usd);
     const g = await guardarBorrador(ctx, b, 'pedido', p.quien);
     return { ok: true, borrador: { id: g?.id, texto: b.texto, derivar: b.derivar, productos: b.productos, origen: 'pedido',
                                    pedido_por: p.quien ?? null, creado: new Date().toISOString(), viejo: false } };
@@ -344,7 +415,9 @@ async function auto(p: { tel?: string; numero_id?: string }) {
   if (!ctx || ctx.ultimo_entra_id !== ultimo) return;
   const ult = ctx.mensajes[ctx.mensajes.length - 1];
   if (!ult || ult.de !== 'cliente') return;
+  if (sinPlata(ctx)) return;
   const b = await redactar(ctx, ctx.mensajes);
+  await sumarGasto(b.usd);
   await guardarBorrador(ctx, b, 'auto');
 }
 
@@ -357,7 +430,57 @@ async function probar(p: { llave?: string; conversacion?: { de: string; texto: s
   if (!conv.length) return { ok: false, error: 'Falta la charla.' };
   ctx.nombre = null;
   const b = await redactar(ctx, conv);
+  await sumarGasto(b.usd);
   return { ok: true, borrador: b };
+}
+
+/* El chat de prueba del CRM: la charla la arma el CRM (lo que escribió quien
+   prueba y lo que fue contestando el agente). No guarda nada. */
+async function probarChat(p: any) {
+  if (!(await pinValido(p.pin))) return { ok: false, error: 'PIN incorrecto.', pin: true };
+  const conv = (Array.isArray(p.conversacion) ? p.conversacion : []).slice(-30)
+    .map((m: any) => ({ de: m?.de === 'vdh' ? 'vdh' : 'cliente', tipo: 'text', texto: String(m?.texto ?? '').slice(0, 2000) }))
+    .filter((m: any) => m.texto.trim());
+  if (!conv.length || conv[conv.length - 1].de !== 'cliente') return { ok: false, error: 'Falta el mensaje del cliente.' };
+  let ctx: any;
+  try { ctx = await rpc('agente_contexto', { p_clave: '1100000000' }); } catch { return { ok: false, error: 'No se pudo leer la base.' }; }
+  if (sinPlata(ctx)) return { ok: false, error: TOPE_MSJ };
+  ctx.nombre = null;
+  try {
+    const b = await redactar(ctx, conv);
+    await sumarGasto(b.usd);
+    return { ok: true, borrador: { texto: b.texto, derivar: b.derivar, productos: b.productos, herramientas: b.herramientas,
+                                   fuentes: b.fuentes, uso: { modelo: b.modelo, usd: b.usd, ms: b.ms } } };
+  } catch (e) {
+    console.error('agente probar_chat:', String(e));
+    return { ok: false, error: 'El agente no pudo contestar: ' + String(e).slice(0, 160) };
+  }
+}
+
+/* Una prueba guardada: la charla, la respuesta y el juez. Anota cómo le fue. */
+async function prueba(p: any) {
+  if (!(await pinValido(p.pin))) return { ok: false, error: 'PIN incorrecto.', pin: true };
+  const t = await rpc('agente_prueba_leer', { p_id: Number(p.id) || 0 });
+  if (!t || t.agente !== 'clientes') return { ok: false, error: 'Esa prueba ya no está.' };
+  const ctx = await rpc('agente_contexto', { p_clave: '1100000000' });
+  if (sinPlata(ctx)) return { ok: false, error: TOPE_MSJ };
+  ctx.nombre = null;
+  const conv = (t.conversacion ?? []).map((m: any) => ({ de: m.de === 'vdh' ? 'vdh' : 'cliente', tipo: 'text', texto: String(m.texto ?? '') }));
+  let b: Borrador, j: { ok: boolean; porque: string; usd: number };
+  try {
+    b = await redactar(ctx, conv);
+    j = await juzgar(claude, { criterio: t.criterio, conversacion: t.conversacion, respuesta: b.texto, derivar: b.derivar,
+                               herramientas: b.herramientas, fuentes: b.fuentes });
+  } catch (e) {
+    console.error('agente prueba:', String(e));
+    return { ok: false, error: 'No se pudo correr: ' + String(e).slice(0, 160) };
+  }
+  const usd = Math.round((b.usd + j.usd) * 1e5) / 1e5;
+  await sumarGasto(usd);
+  const ultimo = { ok: j.ok, porque: j.porque, respuesta: b.texto, derivar: b.derivar, herramientas: b.herramientas.map((h) => h.nombre),
+                   productos: b.productos.map((x) => x.nombre), fuentes: b.fuentes, modelo: b.modelo, usd, ms: b.ms };
+  await rpc('agente_prueba_anotar', { p_id: t.id, p_ultimo: ultimo });
+  return { ok: true, resultado: ultimo };
 }
 
 Deno.serve(async (req) => {
@@ -369,6 +492,8 @@ Deno.serve(async (req) => {
     switch (p.accion) {
       case 'pedir': return json(await pedir(p));
       case 'probar': return json(await probar(p));
+      case 'probar_chat': return json(await probarChat(p));
+      case 'prueba': return json(await prueba(p));
       case 'auto': {
         if (!SERVICIO || req.headers.get('x-agente') !== SERVICIO) return json({ ok: false }, 401);
         const tarea = auto(p).catch((e) => console.error('agente auto:', String(e)));

@@ -976,6 +976,71 @@
   .agp-mala { justify-self: start; font-size: 12.5px; color: var(--bad-txt); }
   .agp-error { padding: 8px 10px; border-radius: 8px; background: var(--bad-soft); color: var(--bad-txt); font-size: 13px; }
   .agp-pensando { font-size: 13px; color: var(--txt-3); }
+  .agp-deriva { font-size: 12.5px; line-height: 1.45; padding: 6px 9px; border-radius: 8px; background: var(--info-soft); color: var(--txt-2); }
+  /* ── Etapa C: Instrucciones, Barandillas, Pruebas y Conexiones ── */
+  .agi { display: grid; gap: 8px; }
+  .agi-cab { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .agi-cab h3 { margin: 0; }
+  .agi-cab span { font-size: 12px; color: var(--txt-3); }
+  .agi textarea { min-height: 90px; font-size: 13.5px; line-height: 1.5; resize: vertical; }
+  .agi-acc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .agi-hueco { flex: 1; }
+  .agi-hist { display: grid; gap: 6px; }
+  .agi-hist details { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 6px 10px; background: var(--surface-2); }
+  .agi-hist summary { cursor: pointer; font-size: 13px; font-weight: 600; color: var(--txt-2); }
+  .agi-hist pre, .agt pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 400 12.5px/1.5 var(--sans); color: var(--txt-2); margin: 6px 0; }
+  .agi-fijo ul { margin: 6px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13.5px; }
+  .agi-fijo li::marker { content: '🔒 '; }
+  .agb-sub { margin-top: -2px; }
+  .agt-resumen { display: grid; gap: 10px; }
+  .agt-cifras { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .agt-cifras div { padding: 8px 10px; border-radius: var(--r-sm); background: var(--surface-2); }
+  .agt-cifras b { display: block; font: 700 20px var(--display); }
+  .agt-cifras span { font-size: 12px; color: var(--txt-3); }
+  .agt-cifras .bien b { color: var(--ok-txt); }
+  .agt-cifras .mal b { color: var(--bad-txt); }
+  .agt-correr { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .agt-progreso { font-size: 13.5px; font-weight: 600; }
+  .agt-lista { display: grid; gap: 8px; }
+  .agt { display: grid; gap: 6px; padding: 12px 14px; border: 1px solid var(--line); border-left: 4px solid var(--line-alta); border-radius: var(--r-sm); background: var(--surface); }
+  .agt.bien { border-left-color: var(--ok); }
+  .agt.mal { border-left-color: var(--bad); }
+  .agt.corre { border-left-color: var(--warn); }
+  .agt.apagada { opacity: .6; }
+  .agt-cab { display: flex; align-items: center; gap: 8px; }
+  .agt-cab b { flex: 1; min-width: 0; font-size: 14.5px; overflow-wrap: anywhere; }
+  .agt-estado { flex: none; padding: 1px 8px; border-radius: var(--r-pill); font: 700 11.5px var(--sans); background: var(--surface-3); color: var(--txt-2); }
+  .agt-estado.bien { background: var(--ok-soft); color: var(--ok-txt); }
+  .agt-estado.mal { background: var(--bad-soft); color: var(--bad-txt); }
+  .agt-estado.corre { background: var(--warn-soft); color: var(--warn-txt); }
+  .agt-charla p { font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+  .agt-charla span, .agt-crit span { font-weight: 700; color: var(--txt-3); }
+  .agt-charla .vdh { color: var(--txt-2); }
+  .agt-crit { font-size: 13px; line-height: 1.45; }
+  .agt-res { padding: 8px 10px; border-radius: 8px; font-size: 13px; line-height: 1.45; }
+  .agt-res.bien { background: var(--ok-soft); }
+  .agt-res.mal { background: var(--bad-soft); }
+  .agt-res summary { cursor: pointer; font-weight: 600; margin-top: 4px; }
+  .agt-mas { font-size: 12px; color: var(--txt-3); }
+  .agt-acc { display: flex; gap: 10px; justify-content: flex-end; align-items: center; }
+  .agt-ed-charla { display: grid; gap: 6px; }
+  .agt-ed-msj { display: grid; grid-template-columns: 120px minmax(0, 1fr) auto; gap: 6px; align-items: start; }
+  .agt-ed-msj textarea { min-height: 46px; font-size: 14px; }
+  @media (max-width: 599px) { .agt-cifras { grid-template-columns: repeat(2, minmax(0, 1fr)); } .agt-ed-msj { grid-template-columns: minmax(0, 1fr) auto; } .agt-ed-msj select { grid-column: 1 / -1; } }
+  .agc-barra { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .agc-grilla { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  @media (max-width: 799px) { .agc-grilla { grid-template-columns: minmax(0, 1fr); } }
+  .agc { border-left: 4px solid var(--line-alta); }
+  .agc.ok { border-left-color: var(--ok); }
+  .agc.ojo { border-left-color: var(--warn); }
+  .agc.no { border-left-color: var(--bad); }
+  .agc-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .agc-cab h3 { margin: 0; }
+  .agc-estado { padding: 1px 9px; border-radius: var(--r-pill); font: 700 12px var(--sans); }
+  .agc-estado.ok { background: var(--ok-soft); color: var(--ok-txt); }
+  .agc-estado.ojo { background: var(--warn-soft); color: var(--warn-txt); }
+  .agc-estado.no { background: var(--bad-soft); color: var(--bad-txt); }
+  .agc ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 4px; font-size: 13px; line-height: 1.45; color: var(--txt-2); }
   .agx-dock, .agx-dock-velo { display: none; }
   @media (min-width: 1200px) {
     .agx.con-dock { grid-template-columns: minmax(0, 1fr) 340px; }
@@ -1774,6 +1839,19 @@
       <button type="button" class="btn btn-sec agf-borrar" id="agfBorrar" hidden>Borrar</button>
       <button type="button" class="btn btn-sec" id="agfNo">Cancelar</button>
       <button type="button" class="btn btn-pri" id="agfOk">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Una prueba guardada de un agente (SQL 87): nueva o editar. -->
+<div class="modal" id="modalPrueba" hidden>
+  <div class="modal-caja agf-modal agt-modal" role="dialog" aria-modal="true" aria-labelledby="agtTit">
+    <h2 id="agtTit">Nueva prueba</h2>
+    <div id="agtIn"></div>
+    <div class="modal-pie">
+      <button type="button" class="btn btn-sec agf-borrar" id="agtBorrar" hidden>Borrar</button>
+      <button type="button" class="btn btn-sec" id="agtNo">Cancelar</button>
+      <button type="button" class="btn btn-pri" id="agtOk">Guardar</button>
     </div>
   </div>
 </div>
@@ -6617,12 +6695,19 @@
     w.sugeridas = jsonAg(r.asis_sugeridas, []);
     w.accesos = jsonAg(r.asis_accesos, []);
     w.asis_tope_usd = r.asis_tope_usd == null ? '' : String(r.asis_tope_usd);
+    /* SQL 87: las barandillas de cada uno y el tope del de clientes. */
+    w.barandillas = jsonAg(r.barandillas, null);
+    w.asis_barandillas = jsonAg(r.asis_barandillas, null);
+    w.tope_usd = r.tope_usd == null ? '' : String(r.tope_usd);
     return w;
   }
 
   function cargarAgente() {
     AGF.lista = null; AGF.error = '';
     AGMK.lista = null; AGMK.error = '';
+    AGI.clientes = AGI.vendedores = null; AGI.error = {};
+    if (!AGT.cola) { AGT.clientes = AGT.vendedores = null; AGT.error = {}; }
+    AGC.datos = null;
     pintarAgente();
     base.agenteConfig(pinGuardado())
       .then(function (d) { AG.datos = d; AG.error = ''; AG.w = trabajoAgente(d); if (vista === 'agente') { pintarVistas(); pintarAgente(); } })
@@ -6780,7 +6865,7 @@
   /* El chat de prueba: en Probar ocupa la página; en las demás queda a la
      derecha (en una pantalla angosta, se abre encima con "Probar"). */
   function htmlChatPrueba(enDock) {
-    var a = AGENTES_IA[AGX.cual], conectado = AGX.cual === 'vendedores';
+    var a = AGENTES_IA[AGX.cual], conectado = true;
     var P = AGP[AGX.cual];
     return '<div class="agx-chat' + (enDock ? ' en-dock' : '') + '">' +
       '<div class="agx-chat-cab"><div><b>Chat de prueba</b><span>' + esc(a.t) + ' · no le llega a nadie</span></div>' +
@@ -6800,7 +6885,7 @@
   }
 
   /* ── Las páginas de "Atención al cliente" que ya existían ──────────── */
-  function pagAjustesClientes(d) {
+  function pagAjustesClientes(d, w) {
     var prendido = d.reglas.prendido === 'si', ah = ahoraAgente(d.ahora);
     return '<div class="ag-estado ' + ah[0] + '"><b>' + esc(ah[1]) + '</b><span>' + esc(ah[2]) + '</span>' +
         '<span class="ag-fase1">Por ahora redacta sólo cuando se lo piden desde Mensajes (✦ Agente), y una persona lo aprueba antes de que salga.</span></div>' +
@@ -6811,7 +6896,8 @@
       '<div class="ficha-bloque"><h3>Cómo contesta</h3><div class="ag-modo-op">' +
         '<div class="ag-op sel"><b>En prueba</b><span>Redacta la respuesta y una persona la aprueba antes de que salga.</span></div>' +
         '<div class="ag-op no" aria-disabled="true"><b>Automático</b><span>Contesta solo. Se habilita cuando haya pasado las pruebas.</span></div>' +
-      '</div><p class="ag-nota">Atiende el WhatsApp de ' + esc(d.numero || 'la tienda') + '. El de No Compra, no.</p></div>';
+      '</div><p class="ag-nota">Atiende el WhatsApp de ' + esc(d.numero || 'la tienda') + '. El de No Compra, no.</p></div>' +
+      htmlModeloTope(d, w || AG.w, 'clientes');
   }
   function pagHorarios(d, w) {
     var horario = DIAS_AG.map(function (x) {
@@ -6862,8 +6948,8 @@
   }
   /* Las páginas que salen de la configuración (agente_config). */
   var PAGINAS_CON_DATOS = {
-    clientes: { ajustes: pagAjustesClientes, horarios: pagHorarios, reglas: pagReglas },
-    vendedores: { ajustes: pagAjustesAsis, portada: pagPortada }
+    clientes: { ajustes: pagAjustesClientes, horarios: pagHorarios, reglas: pagReglas, barandillas: pagBarandillas },
+    vendedores: { ajustes: pagAjustesAsis, portada: pagPortada, barandillas: pagBarandillas }
   };
 
   /* Lo que todavía no está hecho. */
@@ -6881,6 +6967,12 @@
       cuerpo = pagConocimiento();
     } else if (pg.p === 'marcadas') {
       cuerpo = pagMarcadas();
+    } else if (pg.p === 'instrucciones') {
+      cuerpo = pagInstrucciones();
+    } else if (pg.p === 'pruebas') {
+      cuerpo = pagPruebas();
+    } else if (pg.p === 'conexiones') {
+      cuerpo = pagConexiones();
     } else if (PAGINAS_CON_DATOS[AGX.cual][pg.p]) {
       if (AG.error) {
         cuerpo = '<div class="vacio-vista"><b>' + (AG.error === 'falta' ? 'Falta un paso' : 'No se pudo traer el agente') + '</b>' +
@@ -6922,6 +7014,7 @@
           else if (k === 'fechas') { AG.w.fechas = jsonAg(r.reglas.fechas, AG.w.fechas); }
           else if (k === 'asis_sugeridas') { AG.w.sugeridas = jsonAg(r.reglas.asis_sugeridas, AG.w.sugeridas); }
           else if (k === 'asis_accesos') { AG.w.accesos = jsonAg(r.reglas.asis_accesos, AG.w.accesos); }
+          else if (k === 'barandillas' || k === 'asis_barandillas') { AG.w[k] = jsonAg(r.reglas[k], AG.w[k]); }
           else { AG.w[k] = r.reglas[k] == null ? '' : String(r.reglas[k]); }
         });
         avisar('ok', listo || 'Guardado.');
@@ -6992,6 +7085,10 @@
     cablearChatPrueba(v);
     cablearConocimiento(v);
     cablearAsistente(v);
+    cablearInstrucciones(v);
+    cablearBarandillas(v);
+    cablearPruebas(v);
+    cablearConexiones(v);
   }
 
   /* ═══ Lo que saben los agentes: las fuentes (SQL 85) ═════════════════════
@@ -7502,10 +7599,7 @@
     return String(id || '');
   }
   function pagAjustesAsis(d, w) {
-    var r = d.reglas || {}, prendido = r.asis_prendido === 'si', modelo = r.asis_modelo || 'claude-sonnet-5-5';
-    var g = (d.gasto && d.gasto.vendedores) || { usd: 0, consultas: 0 };
-    var tope = Number(r.asis_tope_usd) || 20, usado = Number(g.usd) || 0, pct = Math.min(100, Math.round(usado * 100 / tope));
-    var bytes = d.fuentes ? Number(d.fuentes.bytes) || 0 : 0;
+    var r = d.reglas || {}, prendido = r.asis_prendido === 'si';
     return '<div class="ag-estado ' + (prendido ? 'on' : 'off') + '"><b>' + (prendido ? 'Prendido: los vendedores lo pueden usar' : 'Apagado') + '</b>' +
         '<span>' + (prendido ? 'Está en la barra de cada local → Asistente. Es libre: no pide PIN.'
                              : 'En los locales dice "El Asistente está apagado por ahora". El chat de prueba de acá anda igual.') + '</span></div>' +
@@ -7514,19 +7608,7 @@
         '<button type="button" class="llave" role="switch" id="agAsisPrendido" aria-checked="' + prendido + '">' +
           '<i aria-hidden="true"></i><span>' + (prendido ? 'Prendido' : 'Apagado') + '</span></button></div>' +
         '<p class="ag-nota"><a href="asistente.html" target="_blank" rel="noopener">Abrir el Asistente como lo ven los locales</a></p></div>' +
-      '<div class="ficha-bloque"><h3>El modelo</h3><div class="agx-modelos" role="radiogroup" aria-label="Modelo">' + MODELOS_AG.map(function (m) {
-          var c = costoAg(m, bytes), sel = m.id === modelo;
-          return '<button type="button" role="radio" aria-checked="' + sel + '" class="agx-modelo' + (sel ? ' sel' : '') + '" data-ag-modelo="' + m.id + '">' +
-            '<b>' + m.t + (m.id === 'claude-sonnet-5-5' ? ' <span class="pill">De fábrica</span>' : '') + '</b><span>' + esc(m.d) + '</span>' +
-            '<small>≈ ' + usdAg(c.tibio) + ' por respuesta · la primera de cada rato, ≈ ' + usdAg(c.frio) + '</small></button>';
-        }).join('') + '</div>' +
-        '<p class="ag-nota">Es un cálculo aproximado con lo que lee hoy (' + kbAg(bytes) + ' de fuentes prendidas). La clave de Claude está guardada en Supabase: no pasa por acá.</p></div>' +
-      '<div class="ficha-bloque ag-topes"><h3>Tope de gasto del mes</h3>' +
-        '<div class="ag-tope">No gasta más de <span class="ag-par">USD <input type="text" inputmode="numeric" data-k="asis_tope_usd" value="' + esc(w.asis_tope_usd) + '" aria-label="Tope del mes en dólares"></span> por mes.</div>' +
-        '<div class="agx-gasto"><div class="agx-barra' + (pct >= 80 ? ' alto' : '') + '"><i style="width:' + pct + '%"></i></div>' +
-          '<span>Este mes: ' + usdAg(usado) + ' de ' + usdAg(tope) + ' · ' + (Number(g.consultas) || 0) + ' respuestas (con las del chat de prueba)</span></div>' +
-        '<p class="ag-nota">Al 80 % avisa por Telegram. Al llegar al tope deja de contestar hasta el mes que viene, o hasta que lo subas.</p>' +
-        '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" id="agAsisTopeOk">Guardar el tope</button></div></div>';
+      htmlModeloTope(d, w, 'vendedores');
   }
   function pagPortada(d, w) {
     var sug = w.sugeridas || [], acc = w.accesos || [];
@@ -7563,11 +7645,17 @@
     [].forEach.call(v.querySelectorAll('[data-ag-modelo]'), function (b) {
       b.onclick = function () {
         if (b.getAttribute('aria-checked') === 'true') { return; }
-        guardarReglasAgente({ asis_modelo: b.dataset.agModelo }, b, 'Ahora contesta con ' + nombreModeloAg(b.dataset.agModelo) + '.');
+        var o = {};
+        o[b.dataset.agClave] = b.dataset.agModelo;
+        guardarReglasAgente(o, b, 'Ahora contesta con ' + nombreModeloAg(b.dataset.agModelo) + '.');
       };
     });
-    en('agAsisTopeOk', function () {
-      guardarReglasAgente({ asis_tope_usd: String(AG.w.asis_tope_usd || '').replace(/[^0-9]/g, '') }, this, 'Tope guardado.');
+    [].forEach.call(v.querySelectorAll('[data-ag-tope]'), function (b) {
+      b.onclick = function () {
+        var k = b.dataset.agTope, o = {};
+        o[k] = String(AG.w[k] || '').replace(/[^0-9]/g, '');
+        guardarReglasAgente(o, b, 'Tope guardado.');
+      };
     });
     /* La portada: lo escrito vive en AG.w, así agregar o sacar no lo pierde. */
     if ($('agpSaludo')) { $('agpSaludo').oninput = function () { AG.w.asis_saludo = this.value; }; }
@@ -7623,7 +7711,8 @@
      cada cosa, con la cita, y lo que costó. "Marcar como mala" guarda la
      respuesta buena como una pregunta en Conocimiento. */
   function enLineaAg(s) {
-    return esc(s).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/\[(\d{1,2})\]/g, '<sup class="agp-ref">$1</sup>');
+    return esc(s).replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>').replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,;:!?]|$)/g, '$1<b>$2</b>')
+      .replace(/\[(\d{1,2})\]/g, '<sup class="agp-ref">$1</sup>');
   }
   function mdAg(t) {
     var html = '', lista = '', parrafo = [];
@@ -7655,6 +7744,12 @@
           return '<details><summary><em>' + x.n + '</em> ' + esc(x.titulo) + '</summary>' +
             (x.citas || []).map(function (c) { return '<q>“' + esc(c) + '”</q>'; }).join('') + '</details>';
         }).join('') + '</div>' : '<p class="agp-sin">Sin fuentes: no sacó nada de ningún documento.</p>') +
+        (m.derivar ? '<p class="agp-deriva"><b>Le pasaría la charla a ' + esc(m.derivar.a || '') + '</b> (' + esc(m.derivar.area || '') + '): ' + esc(m.derivar.resumen || '') + '</p>' : '') +
+        ((m.herramientas || []).length ? '<p class="agp-uso">Consultó: ' + m.herramientas.map(function (h) {
+          var en = h.entrada || {};
+          return esc(h.nombre) + (h.nombre === 'ver_producto' ? ' ' + esc((m.productos || []).filter(function (x) { return String(x.id) === String(en.id); }).map(function (x) { return x.nombre; })[0] || en.id || '')
+                                  : en.texto ? ' "' + esc(en.texto) + '"' : '');
+        }).join(' · ') + '</p>' : '') +
         (m.uso ? '<p class="agp-uso">' + esc(nombreModeloAg(m.uso.modelo)) + ' · ' + usdAg(m.uso.usd) + ' · ' +
           String(Math.round((Number(m.uso.ms) || 0) / 100) / 10).replace('.', ',') + ' s</p>' : '') +
         (m.corregida ? '<p class="agp-ok">La corrección quedó en Conocimiento.</p>'
@@ -7670,7 +7765,7 @@
       m.innerHTML = htmlMsgsPrueba();
       m.scrollTop = m.scrollHeight;
       var b = c.querySelector('[data-agp-mandar]');
-      if (b) { b.disabled = P.esperando || AGX.cual !== 'vendedores'; }
+      if (b) { b.disabled = P.esperando; }
       var n = c.querySelector('[data-agp-nueva]');
       if (n) { n.hidden = !P.msgs.length; }
     });
@@ -7678,20 +7773,24 @@
   }
   function mandarPrueba(texto) {
     var cual = AGX.cual, P = AGP[cual], t = String(texto || '').trim();
-    if (!t || P.esperando || cual !== 'vendedores') { return false; }
-    var historial = [];
+    if (!t || P.esperando) { return false; }
+    var historial = [], conv = [];
     for (var i = 0; i + 1 < P.msgs.length; i++) {
       if (P.msgs[i].rol === 'yo' && P.msgs[i + 1].rol === 'ia') { historial.push({ pregunta: P.msgs[i].texto, respuesta: P.msgs[i + 1].texto }); }
     }
+    /* El de clientes recibe la charla entera, como la de WhatsApp. */
+    P.msgs.forEach(function (m) { if (m.rol === 'yo') { conv.push({ de: 'cliente', texto: m.texto }); } else if (m.rol === 'ia') { conv.push({ de: 'vdh', texto: m.texto }); } });
+    conv.push({ de: 'cliente', texto: t });
     P.msgs.push({ rol: 'yo', texto: t });
     P.esperando = true;
     repintarChats();
-    base.asistenteProbar(pinGuardado(), historial.slice(-6), t)
+    (cual === 'clientes' ? base.agenteProbarChat(pinGuardado(), conv.slice(-30)) : base.asistenteProbar(pinGuardado(), historial.slice(-6), t))
       .then(function (r) {
         P.esperando = false;
-        P.msgs.push({ rol: 'ia', texto: r.texto, fuentes: r.fuentes || [], uso: r.uso || null, pregunta: t });
+        P.msgs.push({ rol: 'ia', texto: r.texto, fuentes: r.fuentes || [], uso: r.uso || null, pregunta: t,
+                      derivar: r.derivar || null, herramientas: r.herramientas || [], productos: r.productos || [] });
         if (AG.datos && AG.datos.gasto && r.uso) {
-          var g = AG.datos.gasto.vendedores || (AG.datos.gasto.vendedores = { usd: 0, consultas: 0 });
+          var g = AG.datos.gasto[cual] || (AG.datos.gasto[cual] = { usd: 0, consultas: 0 });
           g.usd = (Number(g.usd) || 0) + (Number(r.uso.usd) || 0);
           g.consultas = (Number(g.consultas) || 0) + 1;
         }
@@ -7699,7 +7798,7 @@
       })
       .catch(function (err) {
         P.esperando = false;
-        if (err && err.pin) { caducada(); return; }
+        if (err && err.pin) { cerrarFuente(); caducada(); return; }
         P.msgs.push({ rol: 'error', texto: (err && err.message) || 'No se pudo contestar.' });
         repintarChats();
       });
@@ -7733,6 +7832,545 @@
       var msgs = c.querySelector('.agx-chat-msgs');
       if (msgs) { msgs.scrollTop = msgs.scrollHeight; }
     });
+  }
+
+  /* ═══ Etapa C (SQL 87): Instrucciones, Barandillas, Pruebas, Conexiones ═══
+     Lo que se le dice a cada agente se edita por partes y cada cambio queda
+     guardado (volver a una versión vieja es guardarla otra vez). Las
+     barandillas son dos listas por agente; lo que no se puede sacar (no
+     inventar, los links, los topes, lo interno) está en el código de cada
+     función y acá sólo se muestra. Las pruebas son charlas guardadas con lo
+     que tiene que pasar: las corre la función del agente y las juzga Haiku. */
+  var SECCIONES_AG = {
+    clientes: [['quien', 'Quién es'], ['habla', 'Cómo habla'], ['datos', 'De dónde saca los datos'], ['stock', 'El stock'],
+               ['vende', 'Cómo vende'], ['pedidos', 'Pedidos ya hechos'], ['deriva', 'Cuándo le pasa la charla a una persona'],
+               ['final', 'Cómo arma la respuesta']],
+    vendedores: [['quien', 'Quién es'], ['como', 'Cómo contesta'], ['limites', 'Lo que no hace']]
+  };
+  var NUCLEO_AG = {
+    clientes: ['Nunca inventa un dato: ni un precio, ni un stock, ni un plazo, ni una promo.',
+               'Los links de productos salen sólo del catálogo: si inventa uno, el sistema se lo hace corregir antes de que salga.',
+               'No ofrece descuentos, cupones ni envíos gratis fuera de las reglas. Los topes de venta los controla la base.',
+               'Si el cliente pide una persona, le pasa la charla en ese mismo mensaje.',
+               'Lo "solo interno" no le llega nunca: lo elige la base.'],
+    vendedores: ['Contesta sólo con los documentos y dice de cuál sacó cada cosa.',
+                 'Si algo no está en los documentos, lo dice y manda a preguntarle al supervisor.',
+                 'Nunca inventa un dato.']
+  };
+  var AGI = { clientes: null, vendedores: null, error: {}, cargando: {}, w: { clientes: {}, vendedores: {} }, hist: {} };
+  var AGT = { clientes: null, vendedores: null, error: {}, cargando: {}, corriendo: {}, cola: null, ed: null, borrar: 0 };
+  var AGC = { datos: null, wa: null, error: '', cargando: false, cuando: null };
+  function liAg(t) { return '<li>' + esc(t) + '</li>'; }
+  function falta87(err, fn) { return faltaSqlAg(err, fn) ? 'falta' : 'red'; }
+  function errorPaginaAg(e, que) {
+    return e === 'falta' ? vacioAg('Falta un paso', 'Para ' + que + ' hay que correr el SQL 87 en Supabase.')
+                         : vacioAg('No se pudo traer', 'Revisá la conexión y tocá actualizar.');
+  }
+
+  /* ── Instrucciones ── */
+  function cargarInstrucciones(cual) {
+    AGI.cargando[cual] = true;
+    base.agenteInstrucciones(pinGuardado(), cual)
+      .then(function (r) {
+        AGI.cargando[cual] = false;
+        if (pinDelAgente(r)) { return; }
+        AGI[cual] = (r && r.secciones) || [];
+        AGI.error[cual] = '';
+        if (enPaginaAg('instrucciones') && AGX.cual === cual) { pintarAgente(); }
+      })
+      .catch(function (err) {
+        AGI.cargando[cual] = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        AGI.error[cual] = falta87(err, 'agente_instrucciones_ver');
+        if (enPaginaAg('instrucciones') && AGX.cual === cual) { pintarAgente(); }
+      });
+  }
+  function pagInstrucciones() {
+    var cual = AGX.cual;
+    if (AGI.error[cual]) { return errorPaginaAg(AGI.error[cual], 'editar las instrucciones'); }
+    if (!AGI[cual]) {
+      if (!AGI.cargando[cual]) { cargarInstrucciones(cual); }
+      return '<div class="skel"></div><div class="skel"></div>';
+    }
+    var por = {};
+    AGI[cual].forEach(function (s) { por[s.seccion] = s; });
+    return '<p class="agx-intro">Lo que se le dice al agente, por partes. Cada cambio queda guardado, con quién lo hizo: se puede volver a una versión anterior. ' +
+        'Después de cambiar algo, probalo en el chat de la derecha o corré las Pruebas.</p>' +
+      SECCIONES_AG[cual].map(function (x) {
+        var s = por[x[0]] || { texto: '', versiones: 0 }, w = AGI.w[cual][x[0]];
+        var txt = w != null ? w : s.texto, cambiado = w != null && w !== s.texto, h = AGI.hist[cual + ':' + x[0]];
+        return '<div class="ficha-bloque agi" data-agi="' + x[0] + '">' +
+          '<div class="agi-cab"><h3>' + esc(x[1]) + '</h3><span>' + (Number(s.versiones) ? 'versión ' + s.versiones + ' · ' + esc(fechaAg(s.creado, true)) +
+            (s.quien ? ' · ' + esc(s.quien) : '') : 'sin escribir') + '</span></div>' +
+          '<textarea data-agi-txt="' + x[0] + '" aria-label="' + esc(x[1]) + '" spellcheck="true">' + esc(txt) + '</textarea>' +
+          '<div class="agi-acc">' +
+            (Number(s.versiones) > 1 ? '<button type="button" class="btn-link" data-agi-hist="' + x[0] + '">' + (h ? 'Cerrar el historial' : 'Historial (' + s.versiones + ')') + '</button>' : '') +
+            '<span class="agi-hueco"></span>' +
+            '<button type="button" class="btn btn-sec btn-chico" data-agi-deshacer="' + x[0] + '"' + (cambiado ? '' : ' hidden') + '>Deshacer</button>' +
+            '<button type="button" class="btn btn-pri btn-chico" data-agi-ok="' + x[0] + '"' + (cambiado ? '' : ' disabled') + '>Guardar</button></div>' +
+          (h ? htmlHistorialAg(x[0], h) : '') + '</div>';
+      }).join('') +
+      '<div class="ficha-bloque agi-fijo"><h3>Lo que no se puede sacar</h3><p class="ag-nota">Va siempre, al final, aunque se borre algo de arriba:</p><ul>' +
+        NUCLEO_AG[cual].map(liAg).join('') + '</ul><p class="ag-nota">Los temas prohibidos y cuándo pasa la charla, en Barandillas.</p></div>';
+  }
+  function htmlHistorialAg(sec, h) {
+    if (h === 'cargando') { return '<div class="skel"></div>'; }
+    return '<div class="agi-hist">' + h.map(function (v, i) {
+      return '<details' + (i === 1 ? ' open' : '') + '><summary>' + (i === 0 ? 'La de ahora' : 'La del ' + esc(fechaAg(v.creado, true))) +
+        (v.quien ? ' · ' + esc(v.quien) : '') + '</summary><pre>' + esc(v.texto) + '</pre>' +
+        (i === 0 ? '' : '<button type="button" class="btn btn-sec btn-chico" data-agi-volver="' + sec + ':' + v.id + '">Volver a esta</button>') + '</details>';
+    }).join('') + '</div>';
+  }
+  function altoTextoAg(t) { t.style.height = 'auto'; t.style.height = Math.min(Math.max(t.scrollHeight + 2, 90), 520) + 'px'; }
+  function cablearInstrucciones(v) {
+    var cual = AGX.cual;
+    [].forEach.call(v.querySelectorAll('[data-agi-txt]'), function (t) {
+      altoTextoAg(t);
+      t.oninput = function () {
+        var sec = t.dataset.agiTxt, s = (AGI[cual] || []).filter(function (x) { return x.seccion === sec; })[0] || { texto: '' };
+        AGI.w[cual][sec] = t.value;
+        var cambiado = t.value !== s.texto, caja = t.closest('.agi');
+        caja.querySelector('[data-agi-ok]').disabled = !cambiado;
+        caja.querySelector('[data-agi-deshacer]').hidden = !cambiado;
+        altoTextoAg(t);
+      };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agi-deshacer]'), function (b) {
+      b.onclick = function () { delete AGI.w[cual][b.dataset.agiDeshacer]; pintarAgente(); };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agi-ok]'), function (b) {
+      b.onclick = function () { guardarInstruccionAg(cual, b.dataset.agiOk, AGI.w[cual][b.dataset.agiOk], b, 'Guardado: desde ahora le dice esto.'); };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agi-hist]'), function (b) {
+      b.onclick = function () {
+        var sec = b.dataset.agiHist, k = cual + ':' + sec;
+        if (AGI.hist[k]) { delete AGI.hist[k]; pintarAgente(); return; }
+        AGI.hist[k] = 'cargando';
+        pintarAgente();
+        base.agenteInstruccionHistorial(pinGuardado(), cual, sec)
+          .then(function (r) {
+            if (pinDelAgente(r)) { return; }
+            AGI.hist[k] = (r && r.versiones) || [];
+            if (enPaginaAg('instrucciones')) { pintarAgente(); }
+          })
+          .catch(function (err) { delete AGI.hist[k]; avisar('err', (err && err.message) || 'No se pudo traer el historial.'); pintarAgente(); });
+      };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agi-volver]'), function (b) {
+      b.onclick = function () {
+        var p = b.dataset.agiVolver.split(':'), k = cual + ':' + p[0];
+        var vieja = (AGI.hist[k] || []).filter(function (x) { return String(x.id) === p[1]; })[0];
+        if (vieja) { guardarInstruccionAg(cual, p[0], vieja.texto, b, 'Volvió a la del ' + fechaAg(vieja.creado, true) + '.'); }
+      };
+    });
+  }
+  function guardarInstruccionAg(cual, sec, texto, boton, listo) {
+    if (texto == null) { return; }
+    if (boton) { boton.disabled = true; }
+    base.agenteInstruccionGuardar(pinGuardado(), cual, sec, texto, quien || null)
+      .then(function (r) {
+        if (boton) { boton.disabled = false; }
+        if (pinDelAgente(r)) { return; }
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+        delete AGI.w[cual][sec];
+        delete AGI.hist[cual + ':' + sec];
+        AGI[cual] = null;
+        avisar('ok', r.igual ? 'No había cambios.' : listo);
+        if (vista === 'agente') { pintarAgente(); }
+      })
+      .catch(function (err) {
+        if (boton) { boton.disabled = false; }
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', faltaSqlAg(err, 'agente_instruccion_guardar') ? 'Para guardar falta correr el SQL 87 en Supabase.' : (err && err.message) || 'No se pudo guardar.');
+      });
+  }
+
+  /* ── Barandillas ── */
+  function claveBarandillas(cual) { return cual === 'clientes' ? 'barandillas' : 'asis_barandillas'; }
+  function pagBarandillas(d, w) {
+    var cual = AGX.cual, k = claveBarandillas(cual);
+    if (!d.reglas || d.reglas[k] == null) { return vacioAg('Falta un paso', 'Para las barandillas hay que correr el SQL 87 en Supabase.'); }
+    var b = w[k] || { prohibidos: [], derivar: [] };
+    var lista = function (campo, titulo, sub, ej) {
+      var l = b[campo] || [];
+      return '<div class="ficha-bloque"><h3>' + esc(titulo) + ' <span class="agx-cuenta">' + l.length + ' de 12</span></h3>' +
+        '<p class="ag-nota agb-sub">' + esc(sub) + '</p><div class="agx-lista-ed">' + l.map(function (t, i) {
+          return '<div class="agx-ed-fila"><input type="text" maxlength="200" data-agb="' + campo + ':' + i + '" value="' + esc(t) + '" aria-label="' + esc(titulo) + ' ' + (i + 1) + '">' +
+            '<button type="button" class="agx-x" data-agb-x="' + campo + ':' + i + '" aria-label="Sacar">' + ICO_AG.cerrar + '</button></div>';
+        }).join('') + '</div>' +
+        (l.length < 12 ? '<button type="button" class="btn-link agx-mas" data-agb-mas="' + campo + '">+ Agregar (por ejemplo: ' + esc(ej) + ')</button>' : '') + '</div>';
+    };
+    return (cual === 'clientes'
+      ? lista('prohibidos', 'Temas en los que no entra', 'Si se los piden, dice que eso no lo puede dar y deriva si hace falta.', 'precios mayoristas') +
+        lista('derivar', 'Siempre le pasa la charla a una persona cuando', 'Lo hace en el mismo mensaje, con un resumen para que no le vuelvan a preguntar.', 'pide factura A')
+      : lista('prohibidos', 'Lo que nunca da', 'Aunque esté en un documento: dice que eso no lo puede dar y que lo consulten con el encargado.', 'contraseñas') +
+        lista('derivar', 'Manda a consultarlo con el supervisor cuando', 'En vez de contestar algo que no está claro.', 'una excepción a una política')) +
+      '<div class="ficha-bloque agi-fijo"><h3>Lo que no se puede sacar</h3><ul>' + NUCLEO_AG[cual].map(liAg).join('') + '</ul></div>' +
+      '<div class="ag-acciones"><button type="button" class="btn btn-pri btn-chico" id="agbOk">Guardar las barandillas</button></div>';
+  }
+  function cablearBarandillas(v) {
+    var k = claveBarandillas(AGX.cual);
+    if (!AG.w || !AG.w[k]) { return; }
+    var b = AG.w[k];
+    [].forEach.call(v.querySelectorAll('[data-agb]'), function (inp) {
+      inp.oninput = function () { var p = inp.dataset.agb.split(':'); b[p[0]][+p[1]] = inp.value; };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agb-x]'), function (x) {
+      x.onclick = function () { var p = x.dataset.agbX.split(':'); b[p[0]].splice(+p[1], 1); pintarAgente(); };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agb-mas]'), function (x) {
+      x.onclick = function () {
+        var c = x.dataset.agbMas;
+        (b[c] = b[c] || []).push('');
+        pintarAgente();
+        var l = v.querySelectorAll('[data-agb^="' + c + ':"]');
+        if (l.length) { l[l.length - 1].focus(); }
+      };
+    });
+    var ok = $('agbOk');
+    if (ok) {
+      ok.onclick = function () {
+        var limpia = function (l) { return (l || []).map(function (t) { return String(t || '').trim(); }).filter(Boolean); };
+        var o = {};
+        o[k] = { prohibidos: limpia(b.prohibidos), derivar: limpia(b.derivar) };
+        guardarReglasAgente(o, this, 'Barandillas guardadas.');
+      };
+    }
+  }
+
+  /* ── Pruebas ── */
+  function cargarPruebas(cual) {
+    AGT.cargando[cual] = true;
+    base.agentePruebas(pinGuardado(), cual)
+      .then(function (r) {
+        AGT.cargando[cual] = false;
+        if (pinDelAgente(r)) { return; }
+        AGT[cual] = (r && r.pruebas) || [];
+        AGT.error[cual] = '';
+        if (enPaginaAg('pruebas') && AGX.cual === cual) { pintarAgente(); }
+      })
+      .catch(function (err) {
+        AGT.cargando[cual] = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        AGT.error[cual] = falta87(err, 'agente_pruebas_ver');
+        if (enPaginaAg('pruebas') && AGX.cual === cual) { pintarAgente(); }
+      });
+  }
+  function quienHablaAg(de, cual) { return de === 'vdh' ? (cual === 'clientes' ? 'VDH' : 'Asistente') : (cual === 'clientes' ? 'Cliente' : 'Vendedor'); }
+  function pagPruebas() {
+    var cual = AGX.cual;
+    if (AGT.error[cual]) { return errorPaginaAg(AGT.error[cual], 'las pruebas'); }
+    if (!AGT[cual]) {
+      if (!AGT.cargando[cual]) { cargarPruebas(cual); }
+      return '<div class="skel"></div><div class="skel"></div>';
+    }
+    var l = AGT[cual], pr = l.filter(function (p) { return p.prendida; });
+    var bien = pr.filter(function (p) { return p.ultimo && p.ultimo.ok; }).length, malas = pr.filter(function (p) { return p.ultimo && !p.ultimo.ok; }).length;
+    var cola = AGT.cola && AGT.cola.cual === cual ? AGT.cola : null;
+    var gasto = l.reduce(function (a, p) { return a + (p.ultimo ? Number(p.ultimo.usd) || 0 : 0); }, 0);
+    return '<div class="ficha-bloque agt-resumen"><div class="agt-cifras">' +
+        '<div><b>' + pr.length + '</b><span>prendidas</span></div>' +
+        '<div class="bien"><b>' + bien + '</b><span>pasaron</span></div>' +
+        '<div class="mal"><b>' + malas + '</b><span>no pasaron</span></div>' +
+        '<div><b>' + (pr.length - bien - malas) + '</b><span>sin correr</span></div></div>' +
+        '<div class="agt-correr">' + (cola
+          ? '<span class="agt-progreso">Corriendo ' + Math.min(cola.hechas + 1, cola.total) + ' de ' + cola.total + '…</span><button type="button" class="btn btn-sec btn-chico" id="agtFrenar">Frenar</button>'
+          : '<button type="button" class="btn btn-pri btn-chico" id="agtTodas"' + (pr.length ? '' : ' disabled') + '>Correr las ' + pr.length + '</button>' +
+            (malas ? '<button type="button" class="btn btn-sec btn-chico" id="agtMalas">Sólo las que no pasaron</button>' : '')) +
+          '<button type="button" class="btn btn-sec btn-chico" id="agtNueva">+ Nueva prueba</button></div>' +
+        '<p class="ag-nota">Cada una la contesta el agente de verdad (sin mandar nada a nadie) y la juzga otro modelo. ' +
+          'Correrlas todas cuesta unos USD ' + (cual === 'clientes' ? '0,50 a 1' : '0,10 a 0,30') + ' y se suma al gasto del mes' +
+          (gasto ? ' (la última vez: ' + usdAg(gasto) + ')' : '') + '.</p></div>' +
+      '<div class="agt-lista">' + l.map(function (p) { return htmlPruebaAg(p, cual); }).join('') + '</div>';
+  }
+  function htmlPruebaAg(p, cual) {
+    var u = p.ultimo, corre = !!AGT.corriendo[p.id];
+    var estado = corre ? ['corre', 'Corriendo…'] : !u ? ['nada', 'Sin correr'] : u.ok ? ['bien', 'Pasó'] : ['mal', 'No pasó'];
+    var conv = p.conversacion || [];
+    return '<div class="agt' + (p.prendida ? '' : ' apagada') + ' ' + estado[0] + '" data-agt="' + p.id + '">' +
+      '<div class="agt-cab"><span class="agt-estado ' + estado[0] + '">' + estado[1] + '</span><b>' + esc(p.titulo) + '</b>' +
+        '<button type="button" class="llave agf-llave" role="switch" aria-checked="' + !!p.prendida + '" data-agt-prender="' + p.id + '" title="' + (p.prendida ? 'Prendida' : 'Apagada: no se corre con las demás') + '" aria-label="' + esc(p.titulo) + '"><i aria-hidden="true"></i></button></div>' +
+      '<div class="agt-charla">' + conv.map(function (m) {
+          return '<p class="' + (m.de === 'vdh' ? 'vdh' : 'cli') + '"><span>' + quienHablaAg(m.de, cual) + ':</span> ' + esc(m.texto) + '</p>';
+        }).join('') + '</div>' +
+      '<p class="agt-crit"><span>Tiene que:</span> ' + esc(p.criterio) + '</p>' +
+      (u && !corre ? '<div class="agt-res ' + (u.ok ? 'bien' : 'mal') + '"><p><b>' + (u.ok ? 'Pasó' : 'No pasó') + ':</b> ' + esc(u.porque || '') + '</p>' +
+        (u.respuesta ? '<details><summary>Lo que contestó' + (u.cuando ? ' (' + esc(fechaAg(u.cuando, true)) + ')' : '') + '</summary><pre>' + esc(u.respuesta) + '</pre>' +
+          (u.derivar ? '<p class="agt-mas">Le pasó la charla a ' + esc(u.derivar.a || '') + ' (' + esc(u.derivar.area || '') + ').</p>' : '') +
+          ((u.herramientas || []).length ? '<p class="agt-mas">Consultó: ' + esc(u.herramientas.join(', ')) + '</p>' : '') +
+          ((u.fuentes || []).length ? '<p class="agt-mas">Citó: ' + u.fuentes.map(function (f) { return esc(f.titulo); }).join(' · ') + '</p>' : '') +
+          (u.usd ? '<p class="agt-mas">' + esc(nombreModeloAg(u.modelo)) + ' · ' + usdAg(u.usd) + '</p>' : '') + '</details>' : '') + '</div>' : '') +
+      '<div class="agt-acc"><button type="button" class="btn-link" data-agt-editar="' + p.id + '">Editar</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-agt-correr="' + p.id + '"' + (corre || (AGT.cola && AGT.cola.cual === cual) ? ' disabled' : '') + '>Correr</button></div>' +
+    '</div>';
+  }
+  function repintarPruebaAg(id) {
+    var cual = AGX.cual, p = (AGT[cual] || []).filter(function (x) { return +x.id === +id; })[0];
+    var el = $('vistaAgente').querySelector('[data-agt="' + id + '"]');
+    if (!p || !el || !enPaginaAg('pruebas')) { return; }
+    var tmp = document.createElement('div');
+    tmp.innerHTML = htmlPruebaAg(p, cual);
+    el.parentNode.replaceChild(tmp.firstChild, el);
+    cablearPruebas($('vistaAgente'));
+  }
+  function correrPruebaAg(cual, id) {
+    var p = (AGT[cual] || []).filter(function (x) { return +x.id === +id; })[0];
+    if (!p) { return Promise.resolve(); }
+    AGT.corriendo[id] = true;
+    repintarPruebaAg(id);
+    return base.agentePruebaCorrer(pinGuardado(), cual, id)
+      .then(function (r) { p.ultimo = Object.assign({}, r, { cuando: new Date().toISOString() }); })
+      .catch(function (err) {
+        /* Lo que frena todo: el aviso es el del motivo, no el resumen. */
+        if (err && err.pin) { if (AGT.cola) { AGT.cola.frenar = true; AGT.cola.callado = true; } caducada(); return; }
+        if (err && err.sinFuncion) { if (AGT.cola) { AGT.cola.frenar = true; AGT.cola.callado = true; } avisar('err', err.message); return; }
+        p.ultimo = { ok: false, porque: (err && err.message) || 'No se pudo correr.', error: true, cuando: new Date().toISOString() };
+      })
+      .then(function () {
+        delete AGT.corriendo[id];
+        if (AGX.cual === cual) { repintarPruebaAg(id); }
+      });
+  }
+  /* De a dos a la vez: así no se tarda tanto y no se satura nada. */
+  function correrVariasAg(cual, ids) {
+    if (!ids.length || AGT.cola) { return; }
+    AGT.cola = { cual: cual, total: ids.length, hechas: 0, frenar: false };
+    var pend = ids.slice(), activos = 0;
+    pintarAgente();
+    var siguiente = function () {
+      if (!AGT.cola) { return; }
+      if (AGT.cola.frenar || !pend.length) {
+        if (!activos) {
+          var c = AGT.cola;
+          AGT.cola = null;
+          var l = AGT[cual] || [], bien = l.filter(function (p) { return p.prendida && p.ultimo && p.ultimo.ok; }).length;
+          if (!c.callado) {
+            avisar(c.frenar ? 'info' : 'ok', (c.frenar ? 'Frenado. ' : 'Listo. ') + bien + ' de ' + l.filter(function (p) { return p.prendida; }).length + ' pasaron.');
+          }
+          if (enPaginaAg('pruebas') && AGX.cual === cual) { pintarAgente(); }
+        }
+        return;
+      }
+      var id = pend.shift();
+      activos++;
+      correrPruebaAg(cual, id).then(function () {
+        activos--;
+        if (AGT.cola) { AGT.cola.hechas++; var pg = $('vistaAgente').querySelector('.agt-progreso'); if (pg) { pg.textContent = 'Corriendo ' + Math.min(AGT.cola.hechas + 1, AGT.cola.total) + ' de ' + AGT.cola.total + '…'; } }
+        siguiente();
+      });
+    };
+    siguiente(); siguiente();
+  }
+  function cablearPruebas(v) {
+    var cual = AGX.cual, en = function (id, fn) { var el = $(id); if (el) { el.onclick = fn; } };
+    en('agtTodas', function () { correrVariasAg(cual, (AGT[cual] || []).filter(function (p) { return p.prendida; }).map(function (p) { return p.id; })); });
+    en('agtMalas', function () { correrVariasAg(cual, (AGT[cual] || []).filter(function (p) { return p.prendida && p.ultimo && !p.ultimo.ok; }).map(function (p) { return p.id; })); });
+    en('agtFrenar', function () { if (AGT.cola) { AGT.cola.frenar = true; this.disabled = true; this.textContent = 'Frenando…'; } });
+    en('agtNueva', function () { abrirPruebaAg(null); });
+    [].forEach.call(v.querySelectorAll('[data-agt-correr]'), function (b) { b.onclick = function () { correrPruebaAg(cual, +b.dataset.agtCorrer); }; });
+    [].forEach.call(v.querySelectorAll('[data-agt-editar]'), function (b) {
+      b.onclick = function () { abrirPruebaAg((AGT[cual] || []).filter(function (p) { return +p.id === +b.dataset.agtEditar; })[0]); };
+    });
+    [].forEach.call(v.querySelectorAll('[data-agt-prender]'), function (b) {
+      b.onclick = function () {
+        var p = (AGT[cual] || []).filter(function (x) { return +x.id === +b.dataset.agtPrender; })[0];
+        if (!p) { return; }
+        b.disabled = true;
+        base.agentePruebaGuardar(pinGuardado(), { id: p.id, prendida: !p.prendida })
+          .then(function (r) {
+            b.disabled = false;
+            if (pinDelAgente(r)) { return; }
+            if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo cambiar.'); return; }
+            p.prendida = !p.prendida;
+            pintarAgente();
+          })
+          .catch(function (err) { b.disabled = false; avisar('err', (err && err.message) || 'No se pudo cambiar.'); });
+      };
+    });
+  }
+  /* La ventanita de una prueba: nombre, la charla (el último mensaje es del
+     cliente o del vendedor) y lo que tiene que pasar. */
+  function abrirPruebaAg(p) {
+    var cual = AGX.cual;
+    AGT.ed = { cual: cual, id: p ? p.id : null, titulo: p ? p.titulo : '', criterio: p ? p.criterio : '',
+               conversacion: p ? JSON.parse(JSON.stringify(p.conversacion || [])) : [{ de: cual === 'clientes' ? 'cliente' : 'vendedor', texto: '' }] };
+    AGT.borrar = 0;
+    $('agtTit').textContent = p ? 'Editar la prueba' : 'Nueva prueba';
+    $('agtBorrar').hidden = !p;
+    $('agtBorrar').textContent = 'Borrar';
+    pintarPruebaEdAg();
+    $('modalPrueba').hidden = false;
+    $('agtTitulo').focus();
+  }
+  function cerrarPruebaAg() { $('modalPrueba').hidden = true; AGT.ed = null; }
+  function pintarPruebaEdAg() {
+    var e = AGT.ed, yo = e.cual === 'clientes' ? 'cliente' : 'vendedor';
+    $('agtIn').innerHTML =
+      '<div class="campo"><label for="agtTitulo">Nombre</label><input id="agtTitulo" type="text" maxlength="120" value="' + esc(e.titulo) + '" placeholder="Por ejemplo: pide un descuento"></div>' +
+      '<div class="campo"><label>La charla</label><div class="agt-ed-charla">' + e.conversacion.map(function (m, i) {
+          return '<div class="agt-ed-msj"><select data-agte-de="' + i + '" aria-label="Quién escribe">' +
+              '<option value="' + yo + '"' + (m.de !== 'vdh' ? ' selected' : '') + '>' + quienHablaAg(yo, e.cual) + '</option>' +
+              '<option value="vdh"' + (m.de === 'vdh' ? ' selected' : '') + '>' + quienHablaAg('vdh', e.cual) + '</option></select>' +
+            '<textarea data-agte-txt="' + i + '" maxlength="2000" rows="2" aria-label="Mensaje ' + (i + 1) + '">' + esc(m.texto) + '</textarea>' +
+            (e.conversacion.length > 1 ? '<button type="button" class="agx-x" data-agte-x="' + i + '" aria-label="Sacar el mensaje">' + ICO_AG.cerrar + '</button>' : '') + '</div>';
+        }).join('') + '</div>' +
+        (e.conversacion.length < 20 ? '<button type="button" class="btn-link" id="agteMas">+ Agregar un mensaje</button>' : '') +
+        '<p class="ag-nota">El último mensaje tiene que ser del ' + quienHablaAg(yo, e.cual).toLowerCase() + ': es lo que contesta el agente.</p></div>' +
+      '<div class="campo"><label for="agtCriterio">Qué tiene que pasar</label><textarea id="agtCriterio" maxlength="1000" placeholder="Por ejemplo: no ofrece descuentos inventados y deriva">' + esc(e.criterio) + '</textarea></div>';
+    $('agtTitulo').oninput = function () { e.titulo = this.value; };
+    $('agtCriterio').oninput = function () { e.criterio = this.value; };
+    [].forEach.call($('agtIn').querySelectorAll('[data-agte-de]'), function (s) { s.onchange = function () { e.conversacion[+s.dataset.agteDe].de = s.value; }; });
+    [].forEach.call($('agtIn').querySelectorAll('[data-agte-txt]'), function (t) { t.oninput = function () { e.conversacion[+t.dataset.agteTxt].texto = t.value; }; });
+    [].forEach.call($('agtIn').querySelectorAll('[data-agte-x]'), function (x) { x.onclick = function () { e.conversacion.splice(+x.dataset.agteX, 1); pintarPruebaEdAg(); }; });
+    if ($('agteMas')) {
+      $('agteMas').onclick = function () {
+        var ult = e.conversacion[e.conversacion.length - 1];
+        e.conversacion.push({ de: ult && ult.de !== 'vdh' ? 'vdh' : yo, texto: '' });
+        pintarPruebaEdAg();
+        var l = $('agtIn').querySelectorAll('[data-agte-txt]');
+        l[l.length - 1].focus();
+      };
+    }
+  }
+  function guardarPruebaAg() {
+    var e = AGT.ed;
+    if (!e) { return; }
+    var conv = e.conversacion.map(function (m) { return { de: m.de, texto: String(m.texto || '').trim() }; }).filter(function (m) { return m.texto; });
+    if (!String(e.titulo).trim()) { avisar('err', 'Falta el nombre de la prueba.'); $('agtTitulo').focus(); return; }
+    if (!conv.length) { avisar('err', 'Falta el mensaje.'); return; }
+    if (conv[conv.length - 1].de === 'vdh') { avisar('err', 'La charla tiene que terminar con un mensaje del ' + (e.cual === 'clientes' ? 'cliente' : 'vendedor') + '.'); return; }
+    if (!String(e.criterio).trim()) { avisar('err', 'Falta qué tiene que pasar.'); $('agtCriterio').focus(); return; }
+    var obj = { titulo: e.titulo.trim(), conversacion: conv, criterio: e.criterio.trim() };
+    if (e.id) { obj.id = e.id; } else { obj.agente = e.cual; }
+    $('agtOk').disabled = true;
+    base.agentePruebaGuardar(pinGuardado(), obj)
+      .then(function (r) {
+        $('agtOk').disabled = false;
+        if (pinDelAgente(r)) { return; }
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
+        var cual = e.cual;
+        cerrarPruebaAg();
+        AGT[cual] = null;
+        avisar('ok', e.id ? 'Prueba guardada (hay que volver a correrla).' : 'Prueba agregada.');
+        if (vista === 'agente') { pintarAgente(); }
+      })
+      .catch(function (err) {
+        $('agtOk').disabled = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.message) || 'No se pudo guardar.');
+      });
+  }
+  function borrarPruebaAg() {
+    var e = AGT.ed, b = $('agtBorrar');
+    if (!e || !e.id) { return; }
+    if (!AGT.borrar || Date.now() - AGT.borrar > 5000) { AGT.borrar = Date.now(); b.textContent = '¿Seguro? Tocá de nuevo'; return; }
+    b.disabled = true;
+    base.agentePruebaBorrar(pinGuardado(), e.id)
+      .then(function (r) {
+        b.disabled = false;
+        if (pinDelAgente(r)) { return; }
+        var cual = e.cual;
+        cerrarPruebaAg();
+        AGT[cual] = null;
+        avisar('ok', 'Prueba borrada.');
+        if (vista === 'agente') { pintarAgente(); }
+      })
+      .catch(function (err) { b.disabled = false; avisar('err', (err && err.message) || 'No se pudo borrar.'); });
+  }
+  $('agtOk').onclick = guardarPruebaAg;
+  $('agtNo').onclick = cerrarPruebaAg;
+  $('agtBorrar').onclick = borrarPruebaAg;
+
+  /* ── Conexiones ── */
+  function cargarConexiones() {
+    AGC.cargando = true;
+    if (enPaginaAg('conexiones')) { pintarAgente(); }
+    Promise.all([
+      base.agenteConexiones(pinGuardado()).catch(function (e) { return { falla: e }; }),
+      base.waEstado().catch(function () { return { falla: { message: 'No respondió.' } }; })
+    ]).then(function (r) {
+      AGC.cargando = false;
+      if (r[0] && r[0].falla && r[0].falla.pin) { caducada(); return; }
+      AGC.datos = r[0];
+      AGC.wa = r[1];
+      AGC.cuando = new Date();
+      if (enPaginaAg('conexiones')) { pintarAgente(); }
+    });
+  }
+  function tarjetaConexion(nombre, estado, lineas) {
+    var t = { ok: ['ok', 'Anda'], ojo: ['ojo', 'Revisar'], no: ['no', 'No anda'] }[estado];
+    return '<div class="ficha-bloque agc ' + t[0] + '"><div class="agc-cab"><h3>' + esc(nombre) + '</h3><span class="agc-estado ' + t[0] + '">' + t[1] + '</span></div>' +
+      '<ul>' + lineas.filter(Boolean).map(function (l) { return '<li>' + l + '</li>'; }).join('') + '</ul></div>';
+  }
+  function haceAg(ts) {
+    if (!ts) { return 'nunca'; }
+    var m = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
+    return m < 1 ? 'recién' : m < 60 ? 'hace ' + m + ' min' : m < 1440 ? 'hace ' + Math.round(m / 60) + ' h' : 'el ' + fechaAg(ts, true);
+  }
+  function pagConexiones() {
+    if (!AGC.datos && !AGC.cargando) { cargarConexiones(); }
+    if (AGC.cargando && !AGC.datos) { return '<div class="skel"></div><div class="skel"></div>'; }
+    var d = AGC.datos || {}, falla = d.falla, b = d.base || {}, tar = [];
+    var numeroId = AG.datos && AG.datos.reglas ? String(AG.datos.reglas.numero_id || '') : '';
+    if (falla) {
+      tar.push(tarjetaConexion('Claude', 'no', [esc(falla.sinFuncion ? 'La función "asistente" todavía no está desplegada: sin ella no se puede mirar Claude, la tienda ni Telegram.' : falla.message || 'No respondió.')]));
+    } else {
+      var cl = d.claude || {}, mods = cl.modelos || [];
+      tar.push(tarjetaConexion('Claude', !cl.clave ? 'no' : mods.every(function (m) { return m.ok; }) ? 'ok' : mods.some(function (m) { return m.ok; }) ? 'ojo' : 'no',
+        [cl.clave ? 'La clave está en los Secrets de Supabase (no pasa por acá).' : 'Falta la clave de Claude en los Secrets de Supabase.'].concat(mods.map(function (m) {
+          return esc(nombreModeloAg(m.id)) + ': ' + (m.ok ? 'responde' : esc(m.porque || 'no responde'));
+        }))));
+      tar.push(tarjetaConexion('Supabase', b.error ? 'ojo' : 'ok', b.error ? [esc(b.error)] :
+        ['La base responde.', Number(b.fuentes) + ' fuentes · ' + Number(b.manuales) + ' manuales del Asistente' + (Number(b.manuales) ? '' : ' (falta el SQL 86)') + '.']));
+      if (!b.error) {
+        var ti = b.tienda || {};
+        tar.push(tarjetaConexion('Tienda Nube', Number(ti.productos) ? 'ok' : 'no', [Number(ti.productos) + ' productos en el catálogo · ' + Number(ti.stock) + ' filas de stock de la tienda · ' +
+          Number(ti.fabrica) + ' de la fábrica.', 'Último pedido leído de la tienda: ' + esc(haceAg(ti.ultimo_pedido)) + '. El catálogo y el stock se leen solos cada hora.']));
+        var tg = b.telegram || {};
+        tar.push(tarjetaConexion('Telegram', tg.ok ? 'ok' : 'no', [tg.ok ? 'El bot @' + esc(tg.bot || '') + ' responde. Ahí llegan los avisos del gasto y las consultas del agente.' : esc(tg.porque || 'No responde.')]));
+      }
+    }
+    var wa = AGC.wa || {}, nums = [];
+    (wa.cuentas || []).forEach(function (c) { ((c.numeros && c.numeros.data) || []).forEach(function (n) { nums.push(n); }); });
+    var tienda = nums.filter(function (n) { return String(n.id) === numeroId; })[0];
+    var wb = (b && b.whatsapp) || {};
+    tar.push(tarjetaConexion('WhatsApp', wa.falla || !tienda ? (wa.falla ? 'no' : 'ojo') : (tienda.status && tienda.status !== 'CONNECTED' ? 'ojo' : 'ok'),
+      wa.falla ? ['La función "whatsapp" no respondió.'] : !tienda ? ['No se encontró el número de la tienda en las cuentas de Meta.'] : [
+        esc(tienda.verified_name || 'Tienda') + ' · ' + esc(tienda.display_phone_number || '') + (tienda.status ? ' · ' + esc(tienda.status === 'CONNECTED' ? 'conectado' : tienda.status) : ''),
+        tienda.quality_rating ? 'Calidad para Meta: ' + esc({ GREEN: 'buena', YELLOW: 'media', RED: 'mala' }[tienda.quality_rating] || tienda.quality_rating) + '.' : '',
+        tienda.is_on_biz_app ? 'También está en la app del celular (convivencia): lo que se manda desde el celular llega al CRM.' : '',
+        'Último mensaje que entró: ' + esc(haceAg(wb.ultimo_entra)) + ' · que salió: ' + esc(haceAg(wb.ultimo_sale)) + '.']));
+    return '<div class="agc-barra"><span class="ag-nota">' + (AGC.cuando ? 'Mirado ' + esc(haceAg(AGC.cuando)) + '.' : '') + '</span>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="agcOtraVez"' + (AGC.cargando ? ' disabled' : '') + '>' + (AGC.cargando ? 'Mirando…' : 'Volver a mirar') + '</button></div>' +
+      '<div class="agc-grilla">' + tar.join('') + '</div>';
+  }
+  function cablearConexiones() {
+    var b = $('agcOtraVez');
+    if (b) { b.onclick = function () { cargarConexiones(); }; }
+  }
+
+  /* ── Ajustes: el modelo y el tope, para los dos agentes ── */
+  function htmlModeloTope(d, w, cual) {
+    var r = d.reglas || {}, kM = cual === 'clientes' ? 'modelo' : 'asis_modelo', kT = cual === 'clientes' ? 'tope_usd' : 'asis_tope_usd';
+    var modelo = r[kM] || 'claude-sonnet-5-5';
+    var g = (d.gasto && d.gasto[cual]) || { usd: 0, consultas: 0 };
+    var tope = Number(r[kT]) || 20, usado = Number(g.usd) || 0, pct = Math.min(100, Math.round(usado * 100 / tope));
+    var bytes = d.fuentes ? Number(cual === 'clientes' ? d.fuentes.bytes_clientes : d.fuentes.bytes) || 0 : 0;
+    if (cual === 'clientes') { bytes += 12000; }
+    return '<div class="ficha-bloque"><h3>El modelo</h3><div class="agx-modelos" role="radiogroup" aria-label="Modelo">' + MODELOS_AG.map(function (m) {
+          var c = costoAg(m, bytes), sel = m.id === modelo;
+          return '<button type="button" role="radio" aria-checked="' + sel + '" class="agx-modelo' + (sel ? ' sel' : '') + '" data-ag-modelo="' + m.id + '" data-ag-clave="' + kM + '">' +
+            '<b>' + m.t + (m.id === 'claude-sonnet-5-5' ? ' <span class="pill">De fábrica</span>' : '') + '</b><span>' + esc(m.d) + '</span>' +
+            '<small>≈ ' + usdAg(c.tibio) + ' por respuesta · la primera de cada rato, ≈ ' + usdAg(c.frio) + (cual === 'clientes' ? ' (más si consulta productos)' : '') + '</small></button>';
+        }).join('') + '</div>' +
+        '<p class="ag-nota">Es un cálculo aproximado con lo que lee hoy. La clave de Claude está guardada en Supabase: no pasa por acá.' +
+          (cual === 'clientes' ? ' Antes de cambiarlo con clientes de verdad, corré las Pruebas.' : '') + '</p></div>' +
+      '<div class="ficha-bloque ag-topes"><h3>Tope de gasto del mes</h3>' +
+        '<div class="ag-tope">No gasta más de <span class="ag-par">USD <input type="text" inputmode="numeric" data-k="' + kT + '" value="' + esc(w[kT]) + '" aria-label="Tope del mes en dólares"></span> por mes.</div>' +
+        '<div class="agx-gasto"><div class="agx-barra' + (pct >= 80 ? ' alto' : '') + '"><i style="width:' + pct + '%"></i></div>' +
+          '<span>Este mes: ' + usdAg(usado) + ' de ' + usdAg(tope) + ' · ' + (Number(g.consultas) || 0) + ' respuestas (con las del chat de prueba y las pruebas)</span></div>' +
+        '<p class="ag-nota">Al 80 % avisa por Telegram. Al llegar al tope deja de contestar hasta el mes que viene, o hasta que lo subas.</p>' +
+        '<div class="ag-acciones"><button type="button" class="btn btn-sec btn-chico" data-ag-tope="' + kT + '">Guardar el tope</button></div></div>';
   }
 
   function pintarPronto(v) {
@@ -8719,6 +9357,7 @@
       if (arr) { cancelarArrastre(); return; }
       if (!$('modalQuien').hidden) { $('quienCancelar').onclick(); return; }
       if (!$('modalFuente').hidden) { cerrarFuente(); return; }
+      if (!$('modalPrueba').hidden) { cerrarPruebaAg(); return; }
       if (!$('modalPlantilla').hidden) { $('modalPlantilla').hidden = true; return; }
       if (!$('modalPerdida').hidden) { cancelarPerdida(); return; }
       if (!$('modalWsp').hidden) { $('modalWsp').hidden = true; return; }
