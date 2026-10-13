@@ -10,7 +10,7 @@ Se entra desde el botón **Impecable** de la barra del No Compra (la administrac
 | `impecable-admin.html` + `impecable-admin.js` | La administración: Cómo está el local · Orden · Cajas · Productos testigo · Ajustes (sólo el administrador). Misma entrada (PIN) que la app. |
 | `impecable-comun.js`, `impecable.css` | Lo que comparten las dos (sesión, base, fotos, fechas; los estilos). |
 | `vendedores.webmanifest`, `sw-vendedores.js`, `impecable-*.png` | Se instala como app aparte del No Compra (su nombre, su ícono, su service worker). Las notificaciones van por su propio service worker: el `sw.js` del No Compra no se tocó. |
-| `app-vendedores/supabase/` | La base (migraciones 1 a 12), las Edge Functions y los armadores de los SQL. |
+| `app-vendedores/supabase/` | La base (migraciones 1 a 13), las Edge Functions y los armadores de los SQL. |
 
 ## SQL (los corre Mauricio, en este orden)
 
@@ -22,6 +22,7 @@ Se entra desde el botón **Impecable** de la barra del No Compra (la administrac
 | 95 | corrido 13/10 (~01:10), verificado 13/13 | Nadie ve ni toca nada del local hasta que lo aprueban: ni quien se da de alta ni quien crea su PIN. Al aprobar a un vendedor, se suma a la Carga. Y los arreglos de base de la ronda 1. | Sí: agrega la columna `aprobado` y reemplaza funciones; no borra datos. |
 | 96 | corrido 13/10 | **Fuera de la app, en el No Compra:** el historial (`log`) y los ajustes pasan a ser sólo de la gente de `usuarios` (hoy, vos). Hoy cualquier sesión de Impecable (aunque esté sin aprobar) lee el historial con datos de socios y puede cambiar los ajustes. El panel no cambia (no lee esas tablas con la sesión). Ensayado contra la base real con rollback: 6 de 6. | Sí: volver a crear las 4 reglas con `using (true)`. |
 | 97 | corrido 13/10 | La aprobación, segunda vuelta (ronda 2 del árbitro): "No fue" para el PIN de alguien que ya estaba (borra ese PIN y la sesión del que lo creó, sin sacar a la persona real); "Borrar PIN" también cierra la sesión; un administrador nuevo espera aprobación; aprobar sólo sirve para quien espera; fotos de caja de hoy y ayer para el vendedor; gerencia con local no toca cajas; avisos de altas al administrador si el supervisor no entró. Ensayado con el 96 contra la base real con rollback: 9 de 9. | Sí: agrega 2 columnas y reemplaza funciones; sólo borra cuentas internas de Impecable de quien se rechaza. |
+| 99 | **sin correr** (13/10) | El mapa del local: cuántos módulos hay en cada pared y lo de adentro (la caja, los percheros); el reparto (qué módulo es de cada sector, quién lo tiene y quién lo cubre); los recordatorios de cada día. Ensayado contra la base real con rollback: 14 de 14 (no toca ningún módulo de Rivadavia hasta que se arme el mapa). | Sí: agrega una tabla (`orden_recordatorios`), dos columnas (`orden_config.mapa`, `orden_modulos.isla`) y tres funciones; no borra datos. Los módulos que sobran al achicar se apagan, no se borran. |
 | 94 | **corrido 13/10, antes de lo previsto**: el reloj está prendido, pero llama a `tick` y a los resúmenes, que NO están subidos (contestan 404), así que no genera nada. Se sube `tick` el día que empiecen. | Prende el reloj (pg_cron cada 15 min, resumen de cajas a las 23:30, resumen semanal los lunes 8:30). | Sí: `select cron.unschedule(jobname) from cron.job where jobname like 'orden-%';` |
 
 (El 92 es de la otra parte del sistema: Difusiones del CRM.)
@@ -50,11 +51,13 @@ No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA`
   - Quien se anotó solo: "Es de acá" / "No lo conozco" (lo saca).
   - Quien ya estaba (Lautaro, Nano…) y creó su PIN: "Sí, fue" / "No fue". El aviso pide confirmarlo en persona, porque cualquiera con el enlace puede crear el PIN de otro. "No fue" borra ese PIN y la sesión del que lo creó; la persona real sigue en la lista.
   - En "Esperan tu OK" sólo aparece quien ya entró o se anotó solo. Lautaro, Nano, Seba y Mel, mientras no entren, siguen en "Por vendedor" como siempre.
+- **El mapa del local (SQL 99)**: se arma y se reparte en la computadora (No Compra → Impecable → Por local → "Cambiar la forma y la cantidad" / "Repartir los módulos"), por el supervisor del local o el administrador; la gerencia sólo mira. En el celular: el vendedor lo ve en "Hoy" con lo suyo de su color (toca su módulo con la cámara y saca la foto) y el supervisor lo ve en Equipo → "El mapa del local", para mirar. Los módulos del salón se agregan o se sacan desde el mapa (en Ajustes → Sectores ya no hay "Agregar módulo" para el salón; en el depósito sí). Entre todas las paredes, hasta 100 módulos (lo de adentro va del 101). Mientras no se arme el mapa de un local, los módulos se dibujan en las paredes a ojo y lo avisa.
+- **Los recordatorios de cada día (SQL 99)**: Ajustes → "Recordatorios por día", por local. Ese día le aparecen a todo el local arriba en "Hoy".
 - **El freno del PIN quedó como lo pediste** (5 mal → 5 minutos, por persona). El árbitro avisó que así se puede dejar a alguien afuera a propósito y que un PIN de 4 números aguanta pocos días de prueba sistemática: es una decisión tuya, no lo toqué.
 
 ## Pendiente (necesita a Mauricio)
 
-1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10).
+1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10). **Correr el SQL 99** (el mapa) y después publicar la rama `impecable` (con tu OK).
 2. El día que empiecen los chicos: subir **`tick`, `resumen-semanal` y `resumen-cajas`** (el 94 ya está). Las otras 2 ya están subidas. Antes: (`entrar` de nuevo y las 4 que faltan); después, el día que empiecen, correr el **SQL 94**.
 3. ~~Publicar~~ (hecho el 13/10, 41f1594).
 4. ~~"Impecable" en la barra del No Compra~~ (hecho: entre Socios y Config.). La pestaña "Orden" en Estadísticas no se hizo (él eligió sólo el botón).

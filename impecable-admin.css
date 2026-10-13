@@ -232,3 +232,32 @@
 
 /* Los locales sin módulos, nombrados abajo del Panorama. */
 .imp-enlace { padding: 0; border: 0; background: none; color: var(--txt); font: 600 14px var(--sans); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+
+/* El mapa del local (SQL 99) */
+.imp-mapa { margin: 0 0 16px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); color: var(--txt-2); }
+.imp-mapa-acc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+.imp-mapa-dibujos { display: grid; gap: 14px; align-items: start; }
+@media (min-width: 1100px) { .imp-mapa-dibujos { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
+.imp .mapa-svg, .ventana .mapa-svg { width: 100%; max-width: 560px; height: auto; display: block; margin: 0 auto; }
+.imp .mapa-svg.cuadrado { max-width: 620px; }
+.imp .mapa-svg.deposito { max-width: 440px; }
+.imp .mapa-svg .mapa-mod { cursor: pointer; }
+.imp .mapa-ley, .ventana .mapa-ley { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; margin: 12px 0 0; }
+.imp .mapa-sec, .ventana .mapa-sec { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--txt); font: 500 13.5px var(--sans); text-align: left; }
+.imp button.mapa-sec, .ventana button.mapa-sec { cursor: pointer; }
+.imp button.mapa-sec:hover, .ventana button.mapa-sec:hover { border-color: var(--acc); }
+.ventana .mapa-sec.actual { border: 2px solid var(--acc); }
+.imp .mapa-sec i, .ventana .mapa-sec i { width: 16px; height: 16px; border-radius: 5px; flex: none; }
+.imp .mapa-sec small, .ventana .mapa-sec small { display: block; margin-top: 2px; color: var(--txt-3); font-size: 12px; }
+.imp textarea { resize: vertical; }
+.imp-mapa-vista { margin: 0 0 14px; padding: 10px; border: 1px dashed var(--line-alta); border-radius: var(--r-sm); color: var(--txt-2); }
+/* Los formularios adentro de las ventanas */
+.ventana .campo { display: grid; gap: 5px; margin: 0 0 12px; }
+.ventana .campo > span { font: 600 12.5px var(--sans); color: var(--txt-2); }
+.ventana .campo input, .ventana .campo select, .ventana .campo textarea { width: 100%; min-height: 42px; padding: 8px 11px; border: 1px solid var(--line-campo); border-radius: var(--r-sm); background: var(--campo); color: var(--txt); font: 500 14px var(--sans); box-sizing: border-box; }
+.ventana .renglon { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; margin: 0 0 10px; }
+.ventana .renglon .campo { margin: 0; }
+.ventana .renglon .campo.c-chico { width: 110px; }
+.ventana .renglon .campo.c-medio { width: 230px; }
+.ventana .renglon .campo.c-grande { flex: 1 1 260px; }
+.ventana .boton.lima { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }

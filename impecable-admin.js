@@ -378,7 +378,8 @@ function verLocal() {
     leer('/orden_v_estado_local?select=*&local_id=eq.' + L + '&order=sector_tipo.desc,sector_numero.asc,modulo_numero.asc'),
     llamar('orden_resumen_semanal', { p_local: _local.id, p_semana: lunesAR() }).catch(function () { return null; }),
     leer('/orden_v_persona_semana?select=semana,controles,controles_a_tiempo,controles_tarde,controles_vencidos,puntos,nivel_semana&local_id=eq.' + L + '&semana=gte.' + sumarDias(lunesAR(), -49))
-      .catch(function () { return []; })
+      .catch(function () { return []; }),
+    cargarMapa(_local.id).catch(function () { return null; })
   ]).then(function (r) {
     if (_solapa !== 'local') return;
     var mods = r[0] || [], res = r[1] || {};
@@ -388,6 +389,8 @@ function verLocal() {
       '<div class="numero"><span>Tareas pendientes</span><b>' + (res.tareas_pendientes != null ? res.tareas_pendientes : '—') + '</b></div>' +
       '<div class="numero"><span>Fotos sin revisar</span><b>' + (res.sin_revisar != null ? res.sin_revisar : '—') + '</b></div></div>';
     html += graficoLocal(r[2]);
+    _mapaLocal = r[3];
+    html += '<div id="zonaMapa"></div>';
     if (!mods.length) html += '<div class="vacio">Este local todavía no tiene módulos cargados. Se cargan en Ajustes → Sectores y módulos.</div>';
     [['salon', 'Salón'], ['deposito', 'Depósito']].forEach(function (g) {
       var lista = mods.filter(function (m) { return m.sector_tipo === g[0]; });
@@ -407,6 +410,8 @@ function verLocal() {
     var porId = {};
     mods.forEach(function (m) { porId[m.modulo_id] = m; });
     c.querySelectorAll('[data-modulo]').forEach(function (b) { b.onclick = function () { verModulo(porId[b.dataset.modulo]); }; });
+    _porIdLocal = porId;
+    dibujarMapaLocal();
   }).catch(function (e) { error(e, verLocal); });
 }
 
@@ -697,7 +702,8 @@ function verTestigo() {
    AJUSTES (sólo el administrador; la base no deja a nadie más)
    ════════════════════════════════════════════════════════════════════════ */
 
-var SUBAJUSTES = [['personas', 'Personas'], ['sectores', 'Sectores y módulos'], ['horarios', 'Horarios y funciones'], ['reglas', 'Reglas de orden'],
+var SUBAJUSTES = [['personas', 'Personas'], ['sectores', 'Sectores y módulos'], ['recordatorios', 'Recordatorios por día'],
+                  ['horarios', 'Horarios y funciones'], ['reglas', 'Reglas de orden'],
                   ['colores', 'Regla de colores'], ['tableros', 'Ideas (tableros)'], ['exhibidores', 'Exhibidores'], ['preguntas', 'Preguntas del desafío']];
 var _sub = 'personas';
 
@@ -707,7 +713,7 @@ function verAjustes() {
     return '<button data-sub="' + s[0] + '" class="' + (s[0] === _sub ? 'activa' : '') + '">' + s[1] + '</button>';
   }).join('') + '</div><div id="ajuste"><p class="cargando">Cargando…</p></div>';
   c.querySelectorAll('[data-sub]').forEach(function (b) { b.onclick = function () { _sub = b.dataset.sub; verAjustes(); }; });
-  ({ personas: ajPersonas, sectores: ajSectores, horarios: ajHorarios, reglas: ajReglas, colores: ajColores,
+  ({ personas: ajPersonas, recordatorios: ajRecordatorios, sectores: ajSectores, horarios: ajHorarios, reglas: ajReglas, colores: ajColores,
      tableros: ajTableros, exhibidores: ajExhibidores, preguntas: ajPreguntas })[_sub]();
 }
 
@@ -779,8 +785,10 @@ function ajSectores() {
     return (ids.length ? leer('/orden_modulos?select=*&sector_id=in.(' + ids.join(',') + ')&order=numero.asc') : Promise.resolve([])).then(function (mods) {
       var html = '<p class="bajada">Cada sector tiene un responsable y un suplente (el que lo cubre en sus francos). Los controles le llegan a quien esté ese día.</p>';
       sectores.forEach(function (s) {
+        /* Los del salón se agregan desde el mapa (van numerados por todo el local, pared por pared). */
         html += '<div class="seccion">' + (s.tipo === 'salon' ? 'Salón' : 'Depósito') + ' · sector ' + s.numero + '</div><div data-sector="' + esc(s.id) + '"></div><div data-modulos="' + esc(s.id) + '"></div>' +
-          '<button class="boton chico" data-agregar-modulo="' + esc(s.id) + '">Agregar módulo a este sector</button>';
+          (s.tipo === 'salon' ? '<button class="boton chico" data-al-mapa>Agregar o sacar módulos: en el mapa del local</button>'
+                              : '<button class="boton chico" data-agregar-modulo="' + esc(s.id) + '">Agregar módulo a este sector</button>');
       });
       html += '<div class="seccion">Agregar un sector</div><div class="renglon" id="nuevoSector">' +
         campoHTML({ k: 'tipo', t: 'Tipo', tipo: 'sel', ops: [['salon', 'Salón'], ['deposito', 'Depósito']] }, { tipo: 'salon' }) +
@@ -805,6 +813,7 @@ function ajSectores() {
           accion: function (f) { return fotoReferencia(f); } });
       });
       cargarFotos(z);
+      z.querySelectorAll('[data-al-mapa]').forEach(function (b) { b.onclick = function () { ir('local'); }; });
       z.querySelectorAll('[data-agregar-modulo]').forEach(function (b) {
         unaVez(b, function () {
           var sid = b.dataset.agregarModulo;
@@ -935,3 +944,147 @@ function ajPreguntas() {
 /* ════════════════════════════════════════════════════════════════════════ */
 
 inicio();
+
+/* ════════════════════════════════════════════════════════════════════════
+   EL MAPA DEL LOCAL (SQL 99), en "Por local": lo arman y reparten el
+   supervisor del local o el administrador. La gerencia, sólo mira.
+   ════════════════════════════════════════════════════════════════════════ */
+
+var _mapaLocal = null, _porIdLocal = {}, _repartir = false;
+
+function dibujarMapaLocal() {
+  var z = document.getElementById('zonaMapa'), d = _mapaLocal;
+  if (!z || !d) return;
+  var puede = !soloMira();
+  if (!puede) _repartir = false;
+  z.innerHTML = '<div class="seccion">El mapa del local</div><div class="imp-mapa">' +
+    (puede ? '<div class="imp-mapa-acc"><button class="boton chico' + (_repartir ? ' lima' : '') + '" id="btnRepartir">' + (_repartir ? 'Listo, terminé de repartir' : 'Repartir los módulos') + '</button>' +
+      '<button class="boton chico" id="btnFormaMapa">Cambiar la forma y la cantidad</button></div>' : '') +
+    (_repartir ? '<p class="bajada">Tocá un módulo para elegir de quién es. Tocá un sector (abajo) para elegir quién lo tiene, quién lo cubre y, en el depósito, qué tiene.</p>' : '') +
+    (d.modulos.length ? '<div class="imp-mapa-dibujos">' + svgMapa(d) + svgDeposito(d) + '</div>'
+                      : '<div class="vacio">Este local todavía no tiene módulos' + (puede ? ': tocá "Cambiar la forma y la cantidad".' : '.') + '</div>') +
+    (d.aprox && d.pared.length ? '<p class="bajada">Todavía no se armó el mapa: los módulos están en las paredes a ojo.</p>' : '') +
+    (_repartir ? '<div class="seccion">Salón</div>' + leyendaMapa(d, true) + (d.deposito.length ? '<div class="seccion">Depósito</div>' + listaDeposito(d, true) : '')
+               : leyendaPersonas(d)) +
+    '</div>';
+  var b = document.getElementById('btnRepartir');
+  if (b) b.onclick = function () { _repartir = !_repartir; dibujarMapaLocal(); };
+  b = document.getElementById('btnFormaMapa');
+  if (b) b.onclick = function () { editarMapa(d); };
+  z.querySelectorAll('.mapa-mod').forEach(function (g) {
+    g.onclick = function () {
+      if (_repartir) elegirSectorAdmin(d, g.dataset.mod);
+      else if (_porIdLocal[g.dataset.mod]) verModulo(_porIdLocal[g.dataset.mod]);
+    };
+  });
+  if (_repartir) z.querySelectorAll('[data-sector]').forEach(function (s) { s.onclick = function () { elegirGenteAdmin(d, s.dataset.sector); }; });
+}
+
+function recargarMapaLocal() {
+  cargarMapa(_local.id).then(function (d) { _mapaLocal = d; dibujarMapaLocal(); }).catch(function (e) { avisar(mensajeDe(e)); });
+}
+
+function elegirSectorAdmin(d, modId) {
+  var m = d.modulos.filter(function (x) { return x.id === modId; })[0];
+  if (!m) return;
+  var tipo = d.sectorDe[m.sector_id].tipo, lista = tipo === 'deposito' ? d.deposito : d.salon;
+  var f = ventana('<h1>¿De quién es ' + esc(m.isla ? m.nombre : tipo === 'deposito' ? nombreSector(d.sectorDe[m.sector_id]) : 'el módulo ' + m.numero) + '?</h1>' +
+    '<p class="bajada">Elegí el sector. Cada sector tiene su responsable y quién lo cubre.</p><div class="mapa-ley">' + lista.map(function (s) {
+      var resp = d.persona[s.responsable_id], sup = d.persona[s.suplente_id];
+      return '<button class="mapa-sec' + (s.id === m.sector_id ? ' actual' : '') + '" data-a="' + esc(s.id) + '"><i style="background:' + d.color[s.id] + '"></i><span><b>' +
+        esc(nombreSector(s) + ' · ' + (resp ? nombreLista(resp) : 'sin responsable')) + '</b><small>' + esc(sup ? 'Lo cubre ' + nombreLista(sup) : s.id === m.sector_id ? 'Es el de ahora' : '') + '</small></span></button>';
+    }).join('') + '</div>');
+  f.querySelectorAll('[data-a]').forEach(function (b) {
+    unaVez(b, function () {
+      if (b.dataset.a === m.sector_id) { f.remove(); return; }
+      return llamar('orden_mover_modulo', { p_modulo: m.id, p_sector: b.dataset.a }).then(function () {
+        f.remove(); avisar('Listo: ' + (m.isla ? m.nombre : 'el módulo ' + m.numero) + ' cambió de sector.'); recargarMapaLocal();
+      });
+    });
+  });
+}
+
+function elegirGenteAdmin(d, secId) {
+  var s = d.salon.concat(d.deposito).filter(function (x) { return x.id === secId; })[0];
+  if (!s) return;
+  var gente = Object.keys(d.persona).map(function (k) { return d.persona[k]; })
+    .filter(function (p) { return p.rol === 'vendedor' || p.rol === 'supervisor'; });
+  var opciones = function (sel) {
+    return '<option value="">Nadie</option>' + gente.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(nombreLista(p)) + '</option>';
+    }).join('');
+  };
+  var f = ventana('<h1>' + esc(nombreSector(s)) + '</h1>' +
+    '<label class="campo"><span>Lo tiene</span><select id="vResp">' + opciones(s.responsable_id) + '</select></label>' +
+    '<label class="campo"><span>Lo cubre (franco o ausencia)</span><select id="vSup">' + opciones(s.suplente_id) + '</select></label>' +
+    (s.tipo === 'deposito' ? '<label class="campo"><span>Qué tiene</span><input id="vCat" maxlength="80" value="' + esc(s.nombre || '') + '" placeholder="Remeras, camisas y buzos"></label>' : '') +
+    '<button class="boton lima" id="vGuardar">Guardar</button>');
+  unaVez(f.querySelector('#vGuardar'), function () {
+    var cat = f.querySelector('#vCat');
+    return llamar('orden_sector_gente', { p_sector: s.id, p_responsable: f.querySelector('#vResp').value || null,
+                                          p_suplente: f.querySelector('#vSup').value || null, p_nombre: cat ? cat.value : null })
+      .then(function () { f.remove(); avisar('Guardado.'); recargarMapaLocal(); });
+  });
+}
+
+/** La forma del local y cuántos módulos hay en cada pared, con la vista previa. */
+function editarMapa(d) {
+  var m = d.mapa || {};
+  var f = ventana('<h1>La forma y la cantidad</h1><p class="bajada">El local visto desde arriba, con la entrada (la vidriera) abajo y la caja atrás. ' +
+    'Los módulos se numeran desde la entrada dando la vuelta: pared izquierda → fondo → pared derecha → frente. Lo de adentro (la caja, los percheros) va aparte.</p>' +
+    '<div class="renglon"><label class="campo c-medio"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
+      '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
+      PAREDES.map(function (p) {
+        return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" value="' + (+m[p[0]] || 0) + '"></label>';
+      }).join('') +
+      '<label class="campo c-grande"><span>Adentro del local (uno por renglón)</span><textarea id="eIslas" rows="3" placeholder="Caja&#10;Perchero 1">' +
+        esc(d.islas.map(function (x) { return x.nombre; }).join('\n')) + '</textarea></label></div>' +
+    '<p class="bajada" id="eTotal"></p><div class="imp-mapa-vista" id="eVista"></div><button class="boton lima" id="eGuardar">Guardar</button>');
+  function leerForm() {
+    var mm = { forma: f.querySelector('#eForma').value };
+    f.querySelectorAll('[data-pared]').forEach(function (i) { mm[i.dataset.pared] = Math.max(0, Math.min(40, parseInt(i.value, 10) || 0)); });
+    var islas = f.querySelector('#eIslas').value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+    return { mapa: mm, islas: islas };
+  }
+  function vista() {
+    var x = leerForm(), total = PAREDES.reduce(function (s, p) { return s + x.mapa[p[0]]; }, 0);
+    var pared = [], ultimo = d.salon[0] ? d.salon[0].id : null;
+    for (var n = 1; n <= total; n++) {
+      var ex = d.pared.filter(function (k) { return k.numero === n; })[0];
+      if (ex) ultimo = ex.sector_id;
+      pared.push(ex || { id: 'nuevo' + n, numero: n, nombre: 'Módulo ' + n, sector_id: ultimo, isla: false });
+    }
+    var islas = x.islas.map(function (nom, k) {
+      return d.islas.filter(function (i) { return i.nombre.toLowerCase() === nom.toLowerCase(); })[0] ||
+        { id: 'isla' + k, numero: 101 + k, nombre: nom, isla: true, sector_id: d.salon[0] ? d.salon[0].id : null };
+    }).sort(function (p, q) { return (esCaja(q) ? 1 : 0) - (esCaja(p) ? 1 : 0); });
+    var dv = Object.assign({}, d, { mapa: x.mapa, pared: pared, islas: islas });
+    f.querySelector('#eVista').innerHTML = svgMapa(dv, { vacios: true });
+    var dif = total - d.pared.length;
+    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' + (islas.length ? ' y ' + islas.length + ' adentro' : '') +
+      (dif > 0 ? ' (' + dif + ' nuevos: van al sector del anterior, después se reparten)' : dif < 0 ? ' (se apagan ' + (-dif) + ': no se borran, quedan sus fotos)' : '') + '.';
+  }
+  f.querySelectorAll('[data-pared], #eIslas, #eForma').forEach(function (i) { i.addEventListener('input', vista); i.addEventListener('change', vista); });
+  vista();
+  unaVez(f.querySelector('#eGuardar'), function () {
+    var x = leerForm();
+    return llamar('orden_mapa_guardar', { p_local: _local.id, p_mapa: x.mapa, p_islas: x.islas }).then(function (r) {
+      f.remove();
+      avisar('Mapa guardado' + (r && r.creados ? ': ' + r.creados + (r.creados === 1 ? ' módulo nuevo.' : ' módulos nuevos.') : '.'));
+      verLocal();
+    });
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   AJUSTES · LOS RECORDATORIOS DE CADA DÍA (SQL 99)
+   ════════════════════════════════════════════════════════════════════════ */
+
+var DIAS_OPS = [[1, 'Lunes'], [2, 'Martes'], [3, 'Miércoles'], [4, 'Jueves'], [5, 'Viernes'], [6, 'Sábado'], [7, 'Domingo']];
+function ajRecordatorios() {
+  ajLista({ ruta: '/orden_recordatorios?select=*&local_id=eq.' + valor(_local.id) + '&order=dia.asc,creado_en.asc', tabla: '/orden_recordatorios',
+    texto: 'Lo que hay que acordarse cada día en ' + esc(_local.nombre) + ' (martes entra mercadería, jueves cambio de imagen…). Ese día le aparece a todo el local arriba en "Hoy".',
+    cols: [{ k: 'dia', t: 'Día', tipo: 'sel', numero: true, ops: DIAS_OPS }, { k: 'texto', t: 'El recordatorio', tipo: 'texto', ancho: 'grande' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
+    validar: function (f) { return String(f.texto || '').trim().length < 2 ? 'Escribí el recordatorio.' : null; },
+    nueva: function () { return { local_id: _local.id, dia: 2, texto: 'Nuevo recordatorio (escribilo y guardá)', activo: false }; } });
+}

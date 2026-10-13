@@ -318,3 +318,217 @@ function llamarFuncion(nombre, cuerpo) {
     return r.json().catch(function () { return {}; }).then(function (d) { d = d || {}; d._ok = r.ok; d._status = r.status; return d; });
   });
 }
+
+/* ════════════════════════════════════════════════════════════════════════
+   EL MAPA DEL LOCAL, visto desde arriba (SQL 99)
+
+   Lo usan la app (cada vendedor ve el local con lo suyo marcado y toca un
+   módulo para mandar la foto) y la administración (el supervisor o el
+   administrador lo arma y reparte). La entrada (la vidriera) está abajo y la
+   caja, atrás. Los módulos de las paredes van en orden desde la entrada,
+   dando la vuelta: pared izquierda (de la entrada al fondo) → fondo → pared
+   derecha → frente. Las "islas" (la caja, los percheros) van adentro, contra
+   el fondo. Locales de calle: un rectángulo largo; de shopping: más
+   cuadrado. El depósito, un cuadrado aparte. Cada persona tiene su color, el
+   mismo en el salón y en el depósito.
+   ════════════════════════════════════════════════════════════════════════ */
+
+var COLORES_PERSONA = ['#4D9FFF', '#2FE38A', '#F0C66A', '#B38BFF', '#FF8A65', '#4DD0E1', '#F06292', '#AED581', '#FFD54F', '#90A4AE'];
+var GRIS_SIN_RESPONSABLE = '#BDB8AE';
+var PAREDES = [['izquierda', 'Pared izquierda'], ['fondo', 'Fondo'], ['derecha', 'Pared derecha'], ['frente', 'Frente (vidriera)']];
+
+function nombreLista(p) { return p ? p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '') : ''; }
+function nombreSector(s) { return s.tipo === 'deposito' ? 'Depósito ' + s.numero : (s.nombre || 'Sector ' + s.numero); }
+/** 1, 2, 3, 5 → "1–3, 5" */
+function rangos(nums) {
+  var n = nums.slice().sort(function (a, b) { return a - b; }).filter(function (x, i, a) { return a.indexOf(x) === i; });
+  var out = [], i = 0;
+  while (i < n.length) { var j = i; while (j + 1 < n.length && n[j + 1] === n[j] + 1) j++; out.push(j > i ? n[i] + '–' + n[j] : String(n[i])); i = j + 1; }
+  return out.join(', ');
+}
+function esCaja(m) { return /caja/i.test(m.nombre || ''); }
+
+/** Lo que hace falta para dibujar. Sin mapa guardado, reparte los módulos en las paredes a ojo (aprox). */
+function datosMapa(config, sectores, modulos, gente) {
+  var porNumero = function (a, b) { return a.numero - b.numero; };
+  var salon = (sectores || []).filter(function (s) { return s.tipo === 'salon'; }).sort(porNumero);
+  var deposito = (sectores || []).filter(function (s) { return s.tipo === 'deposito'; }).sort(porNumero);
+  var todos = salon.concat(deposito), sectorDe = {}, persona = {}, colorPersona = {}, color = {}, k = 0;
+  todos.forEach(function (s) { sectorDe[s.id] = s; });
+  (gente || []).forEach(function (p) { persona[p.id] = p; });
+  todos.forEach(function (s) { if (s.responsable_id && !colorPersona[s.responsable_id]) colorPersona[s.responsable_id] = COLORES_PERSONA[k++ % COLORES_PERSONA.length]; });
+  todos.forEach(function (s) { color[s.id] = colorPersona[s.responsable_id] || GRIS_SIN_RESPONSABLE; });
+  var mods = (modulos || []).filter(function (m) { return m.activo !== false && sectorDe[m.sector_id]; });
+  var enSalon = function (m) { return sectorDe[m.sector_id].tipo === 'salon'; };
+  var pared = mods.filter(function (m) { return enSalon(m) && !m.isla; }).sort(porNumero);
+  var islas = mods.filter(function (m) { return enSalon(m) && m.isla; })
+    .sort(function (a, b) { return (esCaja(b) ? 1 : 0) - (esCaja(a) ? 1 : 0) || a.numero - b.numero; });
+  var dep = mods.filter(function (m) { return !enSalon(m); })
+    .sort(function (a, b) { return sectorDe[a.sector_id].numero - sectorDe[b.sector_id].numero || a.numero - b.numero; });
+  var mapa = config && config.mapa, aprox = false;
+  if (!mapa) {
+    aprox = true;
+    var n = pared.length, iz = Math.ceil(n * 0.4), fo = Math.round(n * 0.2);
+    mapa = { forma: 'rectangulo', izquierda: iz, fondo: fo, derecha: Math.max(0, n - iz - fo), frente: 0 };
+  }
+  return { mapa: mapa, aprox: aprox, pared: pared, islas: islas, dep: dep, salon: salon, deposito: deposito,
+           sectorDe: sectorDe, persona: persona, colorPersona: colorPersona, color: color, modulos: mods };
+}
+
+/** Los datos del mapa de un local (lo que deja ver la base a quien pregunta). */
+function cargarMapa(localId) {
+  var L = valor(localId);
+  return Promise.all([
+    leer('/orden_config?select=*&local_id=eq.' + L).catch(function () { return []; }),
+    leer('/orden_sectores?select=id,tipo,numero,nombre,responsable_id,suplente_id&local_id=eq.' + L + '&activo=is.true&order=tipo.asc,numero.asc'),
+    leer('/orden_personas?select=id,nombre,inicial,rol&local_id=eq.' + L + '&activo=is.true&order=nombre.asc').catch(function () { return []; })
+  ]).then(function (r) {
+    var sectores = r[1] || [], config = (r[0] || [])[0];
+    if (!sectores.length) return datosMapa(config, [], [], r[2]);
+    return leer('/orden_modulos?select=*&activo=is.true&sector_id=in.(' + sectores.map(function (s) { return valor(s.id); }).join(',') + ')&order=numero.asc')
+      .then(function (mods) { return datosMapa(config, sectores, mods, r[2]); });
+  });
+}
+
+/* Una marca arriba a la derecha de un módulo: falta la foto (cámara), ya está
+   (✓), hay que corregir (!), se pasó (×). */
+function marcaModulo(tipo, x, y) {
+  var t = 'translate(' + x.toFixed(1) + ',' + y.toFixed(1) + ') scale(1.4)';
+  if (tipo === 'listo') return '<g transform="' + t + '"><circle r="9" fill="#2FE38A" stroke="#111" stroke-width="1.4"/><path d="M-4 0.5l2.6 2.6L4.2-3" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>';
+  if (tipo === 'corregir') return '<g transform="' + t + '"><circle r="9" fill="#FF9AA0" stroke="#111" stroke-width="1.4"/><text y="4.5" text-anchor="middle" font-size="13" font-weight="800" fill="#111">!</text></g>';
+  if (tipo === 'vencido') return '<g transform="' + t + '"><circle r="9" fill="#8A857C" stroke="#111" stroke-width="1.4"/><text y="4.5" text-anchor="middle" font-size="13" font-weight="800" fill="#111">×</text></g>';
+  return '<g transform="' + t + '"><circle r="9.5" fill="' + (tipo === 'sorpresa' ? '#F0C66A' : '#FFFFFF') + '" stroke="#111" stroke-width="1.4"/>' +
+    '<rect x="-5.2" y="-3" width="10.4" height="7.2" rx="1.6" fill="#111"/><rect x="-2" y="-5" width="4" height="2.4" rx=".6" fill="#111"/><circle cy=".6" r="2.1" fill="#fff"/></g>';
+}
+
+/* Un módulo dibujado. op.resaltar: un sector; op.mios: {id: true} (lo demás
+   queda apagado); op.marcas: {id: 'pendiente'|'sorpresa'|'listo'|'corregir'|'vencido'}. */
+function cajaModulo(d, op, m, r, etiqueta, sub) {
+  var s = d.sectorDe[m.sector_id], resp = s && d.persona[s.responsable_id];
+  var apagado = (op.resaltar && m.sector_id !== op.resaltar) || (op.mios && !op.mios[m.id]);
+  var fs = Math.max(10, Math.min(20, r.h * (sub ? 0.3 : 0.62), r.w * (etiqueta.length > 3 ? 0.16 : 0.5)));
+  var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  var out = '<g class="mapa-mod' + (op.marcas && op.marcas[m.id] ? ' con-marca' : '') + '" data-mod="' + esc(m.id) + '"' + (apagado ? ' opacity=".3"' : '') + '><title>' +
+    esc((m.isla ? m.nombre : s && s.tipo === 'deposito' ? nombreSector(s) : 'Módulo ' + m.numero) + (resp ? ' · ' + nombreLista(resp) : ' · sin responsable')) + '</title>' +
+    '<rect x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) + '" rx="7" fill="' + (d.color[m.sector_id] || GRIS_SIN_RESPONSABLE) + '" stroke="rgba(0,0,0,.35)"/>' +
+    '<text x="' + cx.toFixed(1) + '" y="' + (cy + (sub ? -3 : fs * 0.36)).toFixed(1) + '" text-anchor="middle" font-size="' + fs.toFixed(1) + '" font-weight="700" fill="#111">' + esc(etiqueta) + '</text>' +
+    (sub ? '<text x="' + cx.toFixed(1) + '" y="' + (cy + 13).toFixed(1) + '" text-anchor="middle" font-size="10.5" fill="#111">' + esc(sub) + '</text>' : '');
+  if (op.marcas && op.marcas[m.id]) out += marcaModulo(op.marcas[m.id], r.x + r.w - 11, r.y + 11);
+  return out + '</g>';
+}
+
+/** El salón, en SVG. op.vacios: los lugares sin módulo, punteados. */
+function svgMapa(d, op) {
+  op = op || {};
+  var cuadrado = (d.mapa || {}).forma === 'cuadrado';
+  var W = cuadrado ? 600 : 520, H = cuadrado ? 560 : 700, M = 16, P = 50, G = 5, ABAJO = 28;
+  var c = {};
+  PAREDES.forEach(function (p) { c[p[0]] = Math.max(0, +(d.mapa || {})[p[0]] || 0); });
+  var x0 = M, y0 = M, x1 = W - M, y1 = H - M - ABAJO;
+  var arriba = c.fondo ? y0 + P : y0, abajo = c.frente ? y1 - P : y1;
+  var lugares = [];
+  function tramo(n, horiz, fijo, desde, hasta) {
+    if (!n) return;
+    var paso = Math.abs(hasta - desde) / n, signo = hasta >= desde ? 1 : -1;
+    for (var i = 0; i < n; i++) {
+      var a = desde + signo * i * paso, lo = Math.min(a, a + signo * paso) + G / 2, tam = paso - G;
+      lugares.push(horiz ? { x: lo, y: fijo + G / 2, w: tam, h: P - G } : { x: fijo + G / 2, y: lo, w: P - G, h: tam });
+    }
+  }
+  tramo(c.izquierda, false, x0, abajo, arriba);                                            // de la entrada al fondo
+  tramo(c.fondo, true, y0, x0, x1);                                                         // de izquierda a derecha
+  tramo(c.derecha, false, x1 - P, arriba, abajo);                                           // del fondo a la entrada
+  tramo(c.frente, true, y1 - P, x1 - (c.derecha ? P : 0), x0 + (c.izquierda ? P : 0));      // de derecha a izquierda
+  var out = '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>' +
+    '<text x="' + (W / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" fill-opacity=".75">▲ Entrada · vidriera</text>';
+  /* Con el mapa armado, cada módulo va a su lugar por número (si uno está
+     apagado, queda el hueco); sin mapa, uno detrás del otro. */
+  var enPared = [], sobran = [];
+  d.pared.forEach(function (m, i) {
+    var k = d.aprox ? i : m.numero - 1;
+    if (k >= 0 && k < lugares.length && !enPared[k]) enPared[k] = m; else sobran.push(m);
+  });
+  lugares.forEach(function (v, j) {
+    if (enPared[j]) out += cajaModulo(d, op, enPared[j], v, String(enPared[j].numero));
+    else if (op.vacios) out += '<rect x="' + v.x.toFixed(1) + '" y="' + v.y.toFixed(1) + '" width="' + Math.max(4, v.w).toFixed(1) + '" height="' + Math.max(4, v.h).toFixed(1) + '" rx="7" fill="none" stroke="currentColor" stroke-opacity=".4" stroke-dasharray="4 3"/>';
+  });
+  /* Adentro, contra el fondo: la caja primero, después lo demás (y los de las paredes que no entraron). */
+  var adentro = d.islas.concat(sobran);
+  var ix0 = x0 + (c.izquierda ? P : 0) + 14, ix1 = x1 - (c.derecha ? P : 0) - 14, iy0 = arriba + 14;
+  var bw = 96, bh = 38, porFila = Math.max(1, Math.floor((ix1 - ix0 + 10) / (bw + 10)));
+  adentro.forEach(function (m, k) {
+    var fila = Math.floor(k / porFila), col = k % porFila, enFila = Math.min(porFila, adentro.length - fila * porFila);
+    var izq = ix0 + ((ix1 - ix0) - (enFila * (bw + 10) - 10)) / 2 + col * (bw + 10);
+    var et = m.isla ? (m.nombre.length > 12 ? m.nombre.slice(0, 11) + '…' : m.nombre) : String(m.numero);
+    out += cajaModulo(d, op, m, { x: izq, y: iy0 + fila * (bh + 10), w: bw, h: bh }, et);
+  });
+  return '<svg class="mapa-svg' + (cuadrado ? ' cuadrado' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El salón, visto desde arriba">' + out + '</svg>';
+}
+
+/** El depósito: un cuadrado aparte, con cada sector y lo que tiene. */
+function svgDeposito(d, op) {
+  op = op || {};
+  if (!d.dep.length) return '';
+  var n = d.dep.length, cols = n <= 2 ? n : n <= 4 ? 2 : 3, filas = Math.ceil(n / cols);
+  var W = 420, M = 12, T = 30, gap = 10, tw = (W - 2 * M - (cols + 1) * gap) / cols, th = 72;
+  var H = T + filas * (th + gap) + gap + M;
+  var out = '<text x="' + M + '" y="20" font-size="14" font-weight="700" fill="currentColor" fill-opacity=".8">Depósito</text>' +
+    '<rect x="' + M + '" y="' + T + '" width="' + (W - 2 * M) + '" height="' + (H - T - M) + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>';
+  d.dep.forEach(function (m, k) {
+    var s = d.sectorDe[m.sector_id], fila = Math.floor(k / cols), col = k % cols;
+    var cat = s.nombre || '';
+    out += cajaModulo(d, op, m, { x: M + gap + col * (tw + gap), y: T + gap + fila * (th + gap), w: tw, h: th }, 'Sector ' + s.numero,
+      cat.length > 22 ? cat.slice(0, 21) + '…' : cat);
+  });
+  return '<svg class="mapa-svg deposito" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El depósito">' + out + '</svg>';
+}
+
+/** Quién tiene qué: una fila por persona, con su color (para mirar). */
+function leyendaPersonas(d) {
+  var lista = Object.keys(d.colorPersona).map(function (pid) {
+    var secs = d.salon.concat(d.deposito).filter(function (s) { return s.responsable_id === pid; });
+    var ids = {}; secs.forEach(function (s) { ids[s.id] = true; });
+    var nums = d.pared.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.numero; });
+    var islas = d.islas.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.nombre; });
+    var deps = secs.filter(function (s) { return s.tipo === 'deposito'; }).map(function (s) { return 'Depósito ' + s.numero + (s.nombre ? ' (' + s.nombre + ')' : ''); });
+    var cubre = secs.map(function (s) { return nombreLista(d.persona[s.suplente_id]); }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
+    var partes = (nums.length ? ['Módulos ' + rangos(nums)] : []).concat(islas.length ? [islas.join(', ')] : []).concat(deps);
+    return '<div class="mapa-sec"><i style="background:' + d.colorPersona[pid] + '"></i><span><b>' + esc(nombreLista(d.persona[pid]) || 'Alguien que ya no está') + '</b><small>' +
+      esc((partes.join(' · ') || 'Sin módulos') + (cubre.length ? ' · lo cubre ' + cubre.join(', ') : '')) + '</small></span></div>';
+  });
+  var sin = d.salon.concat(d.deposito).filter(function (s) { return !s.responsable_id; });
+  var sinMods = d.modulos.filter(function (m) { return sin.some(function (s) { return s.id === m.sector_id; }); });
+  if (sinMods.length) {
+    lista.push('<div class="mapa-sec"><i style="background:' + GRIS_SIN_RESPONSABLE + '"></i><span><b>Sin responsable</b><small>' +
+      esc(sinMods.map(function (m) { return m.isla ? m.nombre : d.sectorDe[m.sector_id].tipo === 'deposito' ? nombreSector(d.sectorDe[m.sector_id]) : 'Módulo ' + m.numero; }).join(', ')) + '</small></span></div>');
+  }
+  return lista.length ? '<div class="mapa-ley">' + lista.join('') + '</div>' : '';
+}
+
+/** Cada sector, con su gente (para repartir: tocable). */
+function leyendaMapa(d, tocable) {
+  var tag = tocable ? 'button' : 'div';
+  return '<div class="mapa-ley">' + d.salon.map(function (s) {
+    var n = d.modulos.filter(function (m) { return m.sector_id === s.id; }).length;
+    var resp = d.persona[s.responsable_id], sup = d.persona[s.suplente_id];
+    return '<' + tag + ' class="mapa-sec" data-sector="' + esc(s.id) + '"><i style="background:' + d.color[s.id] + '"></i><span><b>' +
+      esc(nombreSector(s) + ' · ' + (resp ? nombreLista(resp) : 'sin responsable')) + '</b><small>' + n + (n === 1 ? ' módulo' : ' módulos') +
+      (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '') + '</small></span></' + tag + '>';
+  }).join('') + '</div>';
+}
+
+/** El depósito, como la planilla: cada sector con su gente y lo que tiene. */
+function listaDeposito(d, tocable) {
+  if (!d.deposito.length) return '';
+  var tag = tocable ? 'button' : 'div';
+  return '<div class="mapa-ley">' + d.deposito.map(function (s) {
+    var resp = d.persona[s.responsable_id], sup = d.persona[s.suplente_id];
+    return '<' + tag + ' class="mapa-sec" data-sector="' + esc(s.id) + '"><i style="background:' + d.color[s.id] + '"></i><span><b>' +
+      esc('Depósito ' + s.numero + ' · ' + (resp ? nombreLista(resp) : 'sin responsable')) + '</b><small>' + esc(s.nombre || 'Sin categoría') +
+      (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '') + '</small></span></' + tag + '>';
+  }).join('') + '</div>';
+}
+
+var DIAS_SEMANA = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+/** El día de la semana en Argentina: 1 = lunes … 7 = domingo. */
+function diaSemanaAR() { var d = new Date(hoyAR() + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; }

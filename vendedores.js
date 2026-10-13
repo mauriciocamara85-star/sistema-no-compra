@@ -517,13 +517,17 @@ function pantallaHoy() {
     llamar('orden_desafio_mio').catch(nada),
     per.local_id ? leer('/orden_config?select=caja_activa&local_id=eq.' + valor(per.local_id)).catch(nada) : Promise.resolve(null),
     leer('/orden_tareas?select=id&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)').catch(nada),
-    estadoAvisos().catch(function () { return 'no-soportado'; })
+    estadoAvisos().catch(function () { return 'no-soportado'; }),
+    /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
+    per.local_id ? leer('/orden_recordatorios?select=texto&local_id=eq.' + valor(per.local_id) + '&dia=eq.' + diaSemanaAR() + '&activo=is.true&order=creado_en.asc').catch(nada) : Promise.resolve(null),
+    /* SQL 99: el croquis del local, con lo de cada uno marcado. */
+    per.local_id ? cargarMapa(per.local_id).catch(nada) : Promise.resolve(null)
   ]).then(function (r) {
     if (_pestana !== 'hoy') return;
     dibujarHoy({
       controles: r[0] || [], semana: (r[1] || [])[0], tareasIA: r[2] || [],
       sinModulos: Array.isArray(r[3]) && r[3].length === 0, desafio: r[4],
-      caja: !!(r[5] && r[5][0] && r[5][0].caja_activa), tareas: (r[6] || []).length, avisos: r[7]
+      caja: !!(r[5] && r[5][0] && r[5][0].caja_activa), tareas: (r[6] || []).length, avisos: r[7], recordatorios: r[8] || [], mapa: r[9]
     });
   }).catch(function (e) { pantallaError(e, pantallaHoy); });
 }
@@ -554,7 +558,10 @@ function dibujarHoy(x) {
   var hechos = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
   var nivel = x.semana && x.semana.nivel_semana ? NIVEL[x.semana.nivel_semana] : null;
 
-  var html = cabeza('Hola, ' + primerNombre()) + bannerAvisos(x.avisos);
+  var html = cabeza('Hola, ' + primerNombre()) + bannerAvisos(x.avisos) +
+    (x.recordatorios || []).map(function (t) {
+      return '<div class="recordatorio"><b>' + esc(DIAS_SEMANA[diaSemanaAR() - 1]) + '</b>' + esc(t.texto) + '</div>';
+    }).join('');
 
   html += '<div class="resumen">' +
     (total
@@ -563,6 +570,23 @@ function dibujarHoy(x) {
       : '<div class="grande">Hoy no tenés controles</div><div class="progreso"><i style="width:100%"></i></div>') +
     '<div class="chico">' + (nivel ? 'Tu orden esta semana: ' + esc(nivel) : 'Tu orden esta semana: todavía sin fotos') + '</div>' +
     '</div>';
+
+  /* El croquis del local: lo tuyo con tu color, lo demás apagado. Tocás un
+     módulo con la cámara y mandás su foto. */
+  var mapa = x.mapa, mios = {}, marcas = {};
+  if (mapa && mapa.pared.length + mapa.islas.length + mapa.dep.length) {
+    x.controles.forEach(function (c) {
+      var e = estadoDe(c, corregir);
+      marcas[c.modulo_id] = e.hecho ? (c.estado === 'vencido' ? 'vencido' : 'listo') : e.clase === 'corregir' ? 'corregir' : e.clase === 'sorpresa' ? 'sorpresa' : 'pendiente';
+      mios[c.modulo_id] = true;
+    });
+    var yoId = yo().id;
+    mapa.modulos.forEach(function (m) { var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
+    var hayMios = Object.keys(mios).length;
+    html += '<div class="seccion">Tu parte del local</div><div class="mapa-caja" id="mapaHoy">' +
+      svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' +
+      '<p class="bajada">' + (total ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.' : 'Lo tuyo está marcado con tu color.') + '</p>';
+  }
 
   if (x.sinModulos && !total) {
     html += '<div class="nota">Todavía no tenés módulos asignados. Cuando tu supervisor te los asigne, tus controles aparecen acá.</div>';
@@ -583,7 +607,7 @@ function dibujarHoy(x) {
     html += '<button class="tarjeta-accion" id="irCaja"><b>Caja de hoy</b><span>Las fotos del cierre y el efectivo contado.</span></button>';
   }
 
-  [['salon', 'Tus módulos'], ['deposito', 'Depósito']].forEach(function (g) {
+  [['salon', 'En lista'], ['deposito', 'Depósito']].forEach(function (g) {
     var lista = x.controles.filter(function (c) { return c.sector_tipo === g[0]; });
     if (!lista.length) return;
     html += '<div class="seccion">' + g[1] + '</div>';
@@ -612,6 +636,17 @@ function dibujarHoy(x) {
   if ((b = document.getElementById('irCaja'))) b.onclick = pantallaCaja;
   app.querySelectorAll('.camara').forEach(function (bt) {
     bt.onclick = function () { pantallaFoto(_controles[bt.dataset.id]); };
+  });
+  /* Tocar el croquis: si ese módulo tiene tu control pendiente, la cámara; si no, de quién es. */
+  app.querySelectorAll('#mapaHoy .mapa-mod').forEach(function (g) {
+    g.onclick = function () {
+      var c = x.controles.filter(function (k) { return k.modulo_id === g.dataset.mod; })[0];
+      if (c && !estadoDe(c, corregir).hecho) { pantallaFoto(c); return; }
+      var m = mapa.modulos.filter(function (k) { return k.id === g.dataset.mod; })[0], s = m && mapa.sectorDe[m.sector_id];
+      var quien = s && mapa.persona[s.responsable_id];
+      var que = m ? (m.isla ? m.nombre : s.tipo === 'deposito' ? nombreSector(s) : 'Módulo ' + m.numero) : 'Ese módulo';
+      avisar(c ? que + ': ya mandaste la foto de hoy.' : que + (quien ? ' es de ' + nombreLista(quien) + '.' : ' no tiene responsable.'));
+    };
   });
 }
 
@@ -1537,6 +1572,9 @@ function dibujarEquipo(loc, x) {
   var html = cabeza('Equipo', loc.nombre) + selectorLocal(loc) +
     '<div class="pestanitas"><button class="' + (!_equipoMes ? 'activa' : '') + '" id="vSemana">Esta semana</button><button class="' + (_equipoMes ? 'activa' : '') + '" id="vMes">Este mes</button></div>';
 
+  html += '<button class="tarjeta-accion" id="irMapa"><b>El mapa del local</b><span>' +
+    'Quién tiene cada módulo y quién cubre.' + '</span></button>';
+
   if ((x.esperan || []).length) {
     html += '<div class="seccion">Esperan tu OK</div><p class="bajada">Hasta que los apruebes no ven nada del local.</p>' + x.esperan.map(function (p) {
       /* Quien se anotó solo: "¿es de acá?". Quien ya estaba y creó su PIN:
@@ -1600,6 +1638,7 @@ function dibujarEquipo(loc, x) {
   app.innerHTML = html;
   engancharNoSoyYo();
   engancharSelector(pantallaEquipo);
+  document.getElementById('irMapa').onclick = function () { pantallaMapa(loc); };
   document.getElementById('vSemana').onclick = function () { _equipoMes = false; pantallaEquipo(); };
   document.getElementById('vMes').onclick = function () { _equipoMes = true; pantallaEquipo(); };
   app.querySelectorAll('[data-aprobar]').forEach(function (b) {
@@ -1772,3 +1811,23 @@ registroSW().catch(function () { /* sin service worker la app anda igual (sin av
 
 if (_vend && _vend.refresco) entrarApp(false);
 else pantallaLocales();
+
+/* ════════════════════════════════════════════════════════════════════════
+   EL MAPA DEL LOCAL (supervisión, para mirar). La cantidad y el reparto se
+   hacen en la administración, desde la computadora (pedido de Mauricio).
+   ════════════════════════════════════════════════════════════════════════ */
+
+function pantallaMapa(loc) {
+  apagarCamara();
+  barra.hidden = true;
+  app.className = 'app';
+  app.innerHTML = '<button class="enlace" id="volverMapa">‹ Volver a Equipo</button><h1>El mapa de ' + esc(loc.nombre) + '</h1>' +
+    '<p class="bajada">Quién tiene cada módulo y quién cubre. Se reparte desde la computadora: No Compra → Impecable → Por local.</p><div id="mapaZona"><p class="cargando">Cargando…</p></div>';
+  document.getElementById('volverMapa').onclick = function () { irA('equipo'); };
+  cargarMapa(loc.id).then(function (d) {
+    var z = document.getElementById('mapaZona');
+    if (!z) return;
+    z.innerHTML = (d.aprox && d.pared.length ? '<div class="nota">Todavía no se armó el mapa de este local: los módulos están en las paredes a ojo.</div>' : '') +
+      (d.modulos.length ? '<div class="mapa-caja">' + svgMapa(d) + svgDeposito(d) + '</div>' + leyendaPersonas(d) : '<div class="vacio">Este local todavía no tiene módulos cargados.</div>');
+  }).catch(function (e) { pantallaError(e, function () { pantallaMapa(loc); }); });
+}
