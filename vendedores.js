@@ -447,6 +447,7 @@ function irPorEnlace() {
                revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas' };
   if (h === 'desafio' && !esSupervision()) { marcarPestana('hoy'); abrirDesafio(); return true; }
   if (h === 'caja' && !esSupervision()) { marcarPestana('hoy'); pantallaCaja(); return true; }
+  if (h === 'admin' && esSupervision()) { location.replace('impecable-admin.html'); return true; }
   var p = mapa[h];
   if (!p || (esSupervision() ? ['hoy', 'tareas'].indexOf(p) > -1 : ['revisar', 'equipo', 'cajas'].indexOf(p) > -1)) return false;
   irA(p);

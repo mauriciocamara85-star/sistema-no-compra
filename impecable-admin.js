@@ -59,7 +59,7 @@ var DIAS_LARGO = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado
 function pantallaSinSesion(mensaje) {
   app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> Administración</p><h1>Entrá con tu PIN</h1>' +
     '<p class="bajada">' + esc(mensaje || 'Esta parte usa la misma entrada que la app: elegí "Administrador" (o tu local), tu nombre y tu PIN.') + '</p>' +
-    '<a class="boton lima enlace-boton" href="vendedores.html" style="max-width:360px">Entrar a Impecable</a>';
+    '<a class="boton lima enlace-boton" href="vendedores.html#/admin" style="max-width:360px">Entrar a Impecable</a>';
 }
 
 function pantallaNoCorresponde() {
@@ -110,6 +110,7 @@ function cabezaAdmin() {
       (_locales.length > 1 ? '<label class="campo selector"><span>Local</span><select id="selLocal">' + _locales.map(function (l) {
         return '<option value="' + esc(l.id) + '"' + (_local && l.id === _local.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
       }).join('') + '</select></label>' : '') +
+      '<a class="boton chico" href="index.html" style="line-height:44px">No Compra</a>' +
       '<a class="boton chico" href="vendedores.html" style="line-height:44px">Abrir la app</a>' +
       '<button class="boton chico" id="salir">Salir (' + esc(String(per.nombre || '').split(' ')[0]) + ')</button>' +
     '</div></div>' +
