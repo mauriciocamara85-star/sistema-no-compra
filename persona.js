@@ -20,6 +20,7 @@ var persona = (function () {
 
   var K_SESION = 'vdh_vend_sesion';   // la de Impecable: no cambiar el formato sin avisarle
   var K_YO = 'nc_yo';                 // lo que dijo la base de esa persona (rol, local, nombre en la Carga)
+  var K_VEND_DE = 'nc_vend_de';       // la Carga ya eligió el vendedor para esta persona (index.html)
 
   var ROL = { vendedor: 'Vendedor', supervisor: 'Encargado', atencion: 'Atención al cliente', admin: 'Administrador', gerencia: 'Gerencia' };
 
@@ -101,6 +102,7 @@ var persona = (function () {
   function olvidar() {
     _ses = null;
     guardarLS(K_SESION, null);
+    try { localStorage.removeItem(K_VEND_DE); } catch (e) {}
     fijarYo(null);
   }
 
@@ -162,6 +164,10 @@ var persona = (function () {
     }
   }
 
+  function sesionRechazada(e) {
+    return !!(e && e.delServidor && (e.status === 401 || e.status === 403 || /JWT/i.test(e.message)));
+  }
+
   function refrescar() {
     if (!leerLS(K_SESION)) { if (_ses || _yo) olvidar(); return Promise.resolve(null); }
     return token()
@@ -175,8 +181,9 @@ var persona = (function () {
       })
       .catch(function (e) {
         if (e && e.sinSesion) return null;
-        /* El token ya no vale (le borraron la cuenta): afuera. */
-        if (e && e.delServidor && /JWT|token/i.test(e.message)) { cerrarSesion(); return null; }
+        /* La sesión ya no vale (le borraron la cuenta, o la base no reconoce
+           la firma): afuera. Por el estado, no por el texto. */
+        if (sesionRechazada(e)) { cerrarSesion(); return null; }
         /* Sin señal, o la base todavía sin el SQL 101: se sigue con lo
            guardado. Nada de esto puede frenar la pantalla. */
         return vigente(_yo) ? _yo : null;
@@ -213,7 +220,15 @@ var persona = (function () {
   }
 
   function salir() {
-    return soltarAvisos().then(cerrarSesion);
+    /* Si en "quién carga" quedó su nombre, se saca: el que sigue en este
+       aparato no tiene que cargar a nombre de otro sin darse cuenta. */
+    var y = _yo;
+    return soltarAvisos().then(function () {
+      try {
+        if (y && y.vendedor && localStorage.getItem('nc_vendedor') === y.vendedor) localStorage.removeItem('nc_vendedor');
+      } catch (e) {}
+      cerrarSesion();
+    });
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -339,6 +354,9 @@ var persona = (function () {
   function prolijo(t) { return String(t || '').trim().replace(/\s+/g, ' '); }
 
   function entrar() {
+    /* Ya hay alguien adentro (o esperando el OK): se muestra quién, con su
+       "No soy", en vez de abrir otra sesión encima de la que hay. */
+    if (_ses && _yo) { abrirFicha(); return; }
     var c = abrirVelo();
     var aparato = '';
     try { aparato = localStorage.getItem('nc_local') || ''; } catch (e) {}
@@ -618,6 +636,10 @@ var persona = (function () {
     else arrancar();
   });
 
+  /* La Carga mandó la sesión y la base no la aceptó (datos.js): se pregunta
+     de nuevo, y si tampoco vale, se cierra. */
+  document.addEventListener('nc-sesion-rechazada', function () { refrescar(); });
+
   /* Entró o salió en otra pestaña (o en Impecable): la barra se pone al día. */
   window.addEventListener('storage', function (e) {
     if (e.key !== K_SESION) return;
@@ -634,6 +656,8 @@ var persona = (function () {
     /** La persona habilitada (activa y aprobada), o null. */
     yo: function () { return vigente(_yo) ? _yo : null; },
     rol: rol,
+    /** Hay una sesión en este aparato (aunque esté esperando el OK). */
+    hay: function () { return !!(_ses && _yo); },
     puede: puede,
     token: token,
     tokenSiHay: tokenSiHay,

@@ -1144,6 +1144,8 @@
         <div class="bienv-pie">
           <button type="button" class="bienv-link" id="bienvVolver">← Cambiar de local</button>
           <button type="button" class="bienv-link" id="bienvNoEstoy">No estoy en la lista</button>
+          <!-- Quien tiene usuario (13/10/2026) entra con su PIN y sale elegido él. -->
+          <button type="button" class="bienv-link" id="bienvUsuario">Entrar con tu usuario</button>
         </div>
       </div>
     </div>
@@ -1796,10 +1798,9 @@
 
   /* ═══ Quién entró (13/10/2026) ═══════════════════════════════════════
      Con usuario, el vendedor sale elegido con esa persona si este aparato
-     es de su local, una vez por apertura: si carga otro, se elige otro
+     es de su local, una vez por entrada: si carga otro, se elige otro
      nombre como siempre y se respeta. Lo que se guarda como "quién cargó"
      lo pone la base con la sesión, aparte del vendedor. */
-  var yoFijado = '';
 
   /** Quien entró, si es de este local (con su nombre de la Carga). */
   function yoDeAca() {
@@ -1814,10 +1815,13 @@
     return y && equipo.indexOf(y.vendedor) === -1 ? equipo.concat([y.vendedor]) : equipo;
   }
 
+  /* Una vez por entrada, y no en cada apertura: si eligió a otro y fue a
+     Cobrar, al volver sigue el que eligió. La marca la borra persona.js
+     cuando la sesión se cierra. */
   function tomarPersona() {
     var y = yoDeAca();
-    if (!y || yoFijado === y.id) return;
-    yoFijado = y.id;
+    if (!y || leer('nc_vend_de') === y.id) return;
+    guardar('nc_vend_de', y.id);
     if (vendedor === y.vendedor && !escribiendo) return;
     escribiendo = false;
     fijarVendedor(y.vendedor);
@@ -2339,6 +2343,8 @@
   }
 
   function abrirBienvenida() {
+    /* Con alguien ya adentro (Atención o la oficina, sin local) no se ofrece entrar otra vez. */
+    $('bienvUsuario').hidden = persona.hay();
     $('bienvLocales').innerHTML = LOCALES.map(function (l) {
       return '<button type="button" class="chip" data-v="' + esc(l.v) + '">' + esc(l.t) + '</button>';
     }).join('');
@@ -2352,6 +2358,7 @@
     $('bienvOficina').onclick = function () { guardar(K_OFICINA, '1'); cerrarBienvenida(); };
     $('bienvVolver').onclick = function () { bienvPaso(1); };
     $('bienvNoEstoy').onclick = function () { bienvEscribe = true; pintarBienvPaso2(); };
+    $('bienvUsuario').onclick = function () { cerrarBienvenida(); persona.entrar(); };
     $('bienvEmpezar').onclick = bienvEscrito;
     $('bienvNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); bienvEscrito(); } };
     /* Con local ya elegido (una caja habilitada, o alguien que nunca puso

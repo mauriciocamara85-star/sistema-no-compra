@@ -298,9 +298,10 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
-/* Desactivar o reactivar. Desactivado no entra ni en el No Compra ni en
-   Impecable, sale del desplegable de la Carga y se le cierran las sesiones
-   abiertas. Reactivado entra con el mismo PIN. */
+/* Desactivar (el admin o el encargado) o reactivar (sólo el admin).
+   Desactivado no entra ni en el No Compra ni en Impecable, sale del
+   desplegable de la Carga y se le cierran las sesiones abiertas. Reactivado
+   entra con el mismo PIN. */
 create or replace function nc_usuario_activar(p_persona uuid, p_activo boolean)
 returns jsonb language plpgsql volatile security definer set search_path = public as $$
 declare yo orden_personas := nc_quien_maneja(); p orden_personas;
@@ -312,6 +313,12 @@ begin
   end if;
   if p.id = yo.id then return jsonb_build_object('ok', false, 'porque', 'No podés desactivarte a vos mismo.'); end if;
   if p_activo is null or p.activo = p_activo then return jsonb_build_object('ok', true); end if;
+  /* Reactivar es del administrador, como en Impecable ("lo reactiva el
+     administrador"): el encargado desactiva, pero no vuelve a dejar entrar
+     a alguien que sacó otro, ni a un desconocido que rechazó. */
+  if p_activo and yo.rol <> 'admin' then
+    return jsonb_build_object('ok', false, 'porque', 'Reactivar a alguien lo hace el administrador.');
+  end if;
 
   update orden_personas set activo = p_activo where id = p.id;
   if p.equipo_id is not null then

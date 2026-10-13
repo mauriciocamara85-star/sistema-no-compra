@@ -114,7 +114,11 @@ function funcion(nombre, args, sesion) {
       return r.text().then(function (t) {
         var msg = t;
         try { msg = JSON.parse(t).message || t; } catch (e) {}
-        throw rechazo(msg);
+        /* El estado va con el error: un 401 es "esa sesión no vale", diga lo
+           que diga el texto (13/10/2026). */
+        var e = rechazo(msg);
+        e.status = r.status;
+        throw e;
       });
     }
     return r.json();
@@ -353,11 +357,16 @@ var base = {
       p_producto_codigo: d.producto_codigo || null, p_color: d.color || null
     };
     /* Con el usuario de quien está cargando (13/10/2026), la base anota
-       quién cargó. Un token que la base no acepta —vencido, o de una cuenta
-       que ya no existe— no puede costar el cliente: se manda sin usuario,
-       como siempre. */
+       quién cargó. Una sesión que la base no acepta —vencida, de una cuenta
+       que ya no existe, o con una firma que no reconoce— no puede costar el
+       cliente: se manda sin usuario, como siempre, y se avisa para que
+       persona.js cierre esa sesión. Se mira el estado y no el texto, que
+       cambia según la causa. */
     return funcion('cargar_registro', args, sesion).catch(function (err) {
-      if (sesion && err && err.delServidor && /JWT|token/i.test(err.message)) return funcion('cargar_registro', args);
+      if (sesion && err && err.delServidor && (err.status === 401 || err.status === 403 || /JWT/i.test(err.message))) {
+        try { document.dispatchEvent(new Event('nc-sesion-rechazada')); } catch (e) {}
+        return funcion('cargar_registro', args);
+      }
       throw err;
     }).then(function (filas) {
       var f = Array.isArray(filas) ? filas[0] : filas;

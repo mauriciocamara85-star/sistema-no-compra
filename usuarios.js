@@ -41,6 +41,10 @@ var usuarios = (function () {
     var c = cuerpo();
     if (!c) return;
     var yo = persona.yo();
+    if (!yo && persona.hay()) {
+      c.innerHTML = bloque('Usuarios', 'Tu usuario está esperando el OK. Cuando te aprueben, si sos encargado o administrador, acá vas a ver la lista.');
+      return;
+    }
     if (!yo) {
       c.innerHTML = bloque('Usuarios',
         'Cada persona entra con su local, su nombre y su PIN. Los usuarios los crean el administrador (a todos) y los encargados (a los vendedores de su local).',
@@ -112,7 +116,7 @@ var usuarios = (function () {
 
     var sub = admin
       ? 'Todos los que entran al No Compra y a Impecable. El rol y el local los cambiás vos.'
-      : 'Los vendedores de ' + esc(nombreLocal(datos.yo.local_id)) + '. Podés crearlos, aprobarlos, borrarles el PIN y desactivarlos.';
+      : 'Los vendedores de ' + esc(nombreLocal(datos.yo.local_id)) + '. Podés crearlos, aprobarlos, borrarles el PIN y desactivarlos. Reactivar a alguien lo hace el administrador.';
     var filtros = '';
     if (admin) {
       filtros = '<div class="us-filtros"><select id="usFiltroLocal" aria-label="Local">' +
@@ -173,7 +177,9 @@ var usuarios = (function () {
     if (toca && p.activo && (p.pin || !p.en_lista)) {
       acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="pin">' + (p.en_lista ? 'Borrar PIN' : 'Poner en la lista') + '</button>';
     }
-    if (toca) acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="' + (p.activo ? 'desactivar' : 'reactivar') + '">' + (p.activo ? 'Desactivar' : 'Reactivar') + '</button>';
+    /* Reactivar es del administrador, como en Impecable: el encargado
+       desactiva, pero no vuelve a dejar entrar a alguien que sacó otro. */
+    if (toca && (p.activo || admin)) acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="' + (p.activo ? 'desactivar' : 'reactivar') + '">' + (p.activo ? 'Desactivar' : 'Reactivar') + '</button>';
     return '<div class="us-fila' + (p.activo ? '' : ' apagada') + '" data-id="' + esc(p.id) + '">' +
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */

@@ -879,10 +879,12 @@
   /** Devuelve true si cambió lo que se ve (hay que volver a cargar). */
   function aplicarRol() {
     var f = localFijo();
-    if (f === rolAplicado) { return false; }
+    var y = persona.yo();
+    var deUnLocal = !!(y && (y.rol === 'vendedor' || y.rol === 'supervisor'));
+    if (f === rolAplicado && deUnLocal === !!rolAplicado) { return false; }
     rolAplicado = f;
     if (f) { estado.local = f; }
-    var ocultar = function (el) { if (el) { el.style.display = f ? 'none' : ''; } };
+    var ocultar = function (el) { if (el) { el.style.display = deUnLocal ? 'none' : ''; } };
     ocultar(document.querySelector('.pestana[href="club-numeros.html"]'));
     ocultar(document.querySelector('.pestana[data-est="gc"]'));
     ocultar($('selLocal'));
@@ -1221,9 +1223,14 @@
     aplicarRol();
     aplicarVista();
     pintarPeriodos();
-    cargar();
+    /* Un vendedor o encargado que entró por Impecable todavía no tiene su
+       local acá (lo dice la base): se espera, para no pedir antes los
+       números de todos los locales. */
+    var y0 = persona.yo();
+    var esperarLocal = !!(y0 && !y0.local && (y0.rol === 'vendedor' || y0.rol === 'supervisor'));
+    if (!esperarLocal) { cargar(); }
     /* Cuando la base confirma quién entró (o le cambiaron el rol). */
-    persona.listo.then(function () { if (aplicarRol()) { aplicarVista(); cargar(); } });
+    persona.listo.then(function () { if (aplicarRol() || esperarLocal) { aplicarVista(); cargar(); } });
     document.addEventListener('persona', function () { if (aplicarRol()) { aplicarVista(); cargar(); } });
     iniciarPWA();
   })();
