@@ -11,7 +11,8 @@
 --     día aparecen arriba en "Hoy".
 --   · Hasta que armes el mapa de un local, no cambia ningún módulo.
 --   · No toca nada de No Compra. Reversible: agrega una tabla, dos columnas y
---     tres funciones; no borra datos.
+--     cuatro funciones. No borra módulos (los que sobran se apagan); sólo se
+--     sacan los controles pendientes, sin foto, de lo que se apaga.
 
 -- =====================================================================
 -- Módulo VDH · Migración 13 (SQL 99): el mapa del local, el reparto de los
@@ -29,8 +30,15 @@
 --   · Los recordatorios de cada día (martes entra mercadería, jueves cambio
 --     de imagen, domingo limpieza general…): se cargan por local y ese día
 --     aparecen arriba en "Hoy".
--- Se puede correr más de una vez. No borra nada: los módulos que sobran se
--- apagan (sus fotos e historia quedan).
+-- Se puede correr más de una vez. No borra módulos: los que sobran se apagan
+-- (sus fotos e historia quedan). Lo único que se saca son los controles de
+-- hoy en adelante, todavía sin foto, de lo que se apaga. Al cambiar el
+-- reparto, esos controles pasan a quien le toca ahora.
+--
+-- Revisado por el árbitro (13/10): sin bloqueantes; se corrigieron los
+-- importantes (Ajustes ya no cambia el número ni el "Activo" de los módulos
+-- del salón; un módulo de un sector apagado vuelve a la pared en vez de
+-- duplicarse; los controles pendientes siguen al reparto) y varios menores.
 -- =====================================================================
 
 alter table orden_config add column if not exists mapa jsonb;        -- {"forma":"rectangulo","izquierda":5,"fondo":5,"derecha":5,"frente":0}
@@ -46,6 +54,8 @@ declare
   v_fr int := coalesce(nullif(p_mapa->>'frente', '')::int, 0);
   v_forma text := case when p_mapa->>'forma' = 'cuadrado' then 'cuadrado' else 'rectangulo' end;
   v_total int; v_sec uuid; v_n int; v_isla text; v_islas int := 0; v_creados int := 0; v_id uuid; v_num int;
+  v_activo boolean; v_dest uuid; v_vistas text[] := '{}';
+  v_hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
 begin
   if not orden_es_supervisor_de(p_local) then raise exception 'Sólo el supervisor del local arma el mapa'; end if;
   if not exists (select 1 from orden_locales where id = p_local) then raise exception 'No encontramos ese local'; end if;
@@ -71,20 +81,23 @@ begin
   end if;
 
   -- Los de las paredes, del 1 al total. Uno nuevo va al sector del anterior
-  -- (así quedan en bloque); si no hay anterior, al primer sector.
+  -- (así quedan en bloque); si no hay anterior, al primer sector. Si el que
+  -- tiene ese número quedó en un sector apagado, vuelve a la pared en uno
+  -- activo (el mismo módulo, con su historia: nunca dos con el mismo número).
   for v_n in 1..v_total loop
-    select m.id into v_id from orden_modulos m join orden_sectores s on s.id = m.sector_id
-     where s.local_id = p_local and s.tipo = 'salon' and s.activo and not m.isla and m.numero = v_n
-     order by m.activo desc, s.numero limit 1;
-    if v_id is not null then
-      update orden_modulos set activo = true where id = v_id and not activo;
-    else
-      insert into orden_modulos (sector_id, numero, nombre)
-      values (coalesce((select m.sector_id from orden_modulos m join orden_sectores s on s.id = m.sector_id
+    v_id := null;
+    select m.id, s.activo into v_id, v_activo from orden_modulos m join orden_sectores s on s.id = m.sector_id
+     where s.local_id = p_local and s.tipo = 'salon' and not m.isla and m.numero = v_n
+     order by s.activo desc, m.activo desc, s.numero limit 1;
+    v_dest := coalesce((select m.sector_id from orden_modulos m join orden_sectores s on s.id = m.sector_id
                          where s.local_id = p_local and s.tipo = 'salon' and s.activo and not m.isla and m.numero < v_n
-                         order by m.numero desc limit 1), v_sec),
-              v_n, 'Módulo ' || v_n);
+                         order by m.numero desc limit 1), v_sec);
+    if v_id is null then
+      insert into orden_modulos (sector_id, numero, nombre) values (v_dest, v_n, 'Módulo ' || v_n);
       v_creados := v_creados + 1;
+    else
+      update orden_modulos set activo = true, sector_id = case when v_activo then sector_id else v_dest end
+       where id = v_id and (not activo or not v_activo);
     end if;
   end loop;
   -- Los que sobran se apagan (no se borran: sus fotos y su historia quedan).
@@ -100,15 +113,17 @@ begin
      and not (lower(trim(m.nombre)) = any (select lower(trim(x)) from unnest(coalesce(p_islas, '{}'::text[])) x));
   foreach v_isla in array coalesce(p_islas, '{}'::text[]) loop
     v_isla := nullif(trim(v_isla), '');
-    continue when v_isla is null;
+    continue when v_isla is null or lower(v_isla) = any (v_vistas);
     if length(v_isla) > 40 then raise exception 'El nombre "%" es muy largo', left(v_isla, 40); end if;
+    v_vistas := v_vistas || lower(v_isla);
     v_islas := v_islas + 1;
     v_id := null;
-    select m.id into v_id from orden_modulos m join orden_sectores s on s.id = m.sector_id
-     where s.local_id = p_local and s.activo and m.isla and lower(trim(m.nombre)) = lower(v_isla)
-     order by m.activo desc limit 1;
+    select m.id, s.activo into v_id, v_activo from orden_modulos m join orden_sectores s on s.id = m.sector_id
+     where s.local_id = p_local and s.tipo = 'salon' and m.isla and lower(trim(m.nombre)) = lower(v_isla)
+     order by s.activo desc, m.activo desc limit 1;
     if v_id is not null then
-      update orden_modulos set activo = true where id = v_id and not activo;
+      update orden_modulos set activo = true, sector_id = case when v_activo then sector_id else v_sec end
+       where id = v_id and (not activo or not v_activo);
     else
       select greatest(100, coalesce(max(m.numero), 0)) + 1 into v_num
         from orden_modulos m join orden_sectores s on s.id = m.sector_id where s.local_id = p_local;
@@ -117,10 +132,32 @@ begin
     end if;
   end loop;
 
+  -- Lo que quedó apagado ya no pide foto: se sacan sus controles de hoy en
+  -- adelante que todavía no tienen ninguna (los que tienen foto quedan).
+  delete from orden_controles c
+   using orden_modulos m, orden_sectores s
+   where m.id = c.modulo_id and s.id = m.sector_id and s.local_id = p_local and s.tipo = 'salon' and not m.activo
+     and c.estado = 'pendiente' and c.enviado_en is null and c.fecha >= v_hoy
+     and not exists (select 1 from orden_fotos f where f.control_id = c.id);
+
   return jsonb_build_object('ok', true, 'modulos', v_total, 'islas', v_islas, 'creados', v_creados);
 end $$;
 
 -- ---------- Repartir (el supervisor del local, o el administrador) ----------
+-- Al cambiar el reparto, los controles de hoy en adelante que todavía no
+-- tienen foto pasan a quien le toca ahora (el responsable, o el que cubre si
+-- el responsable está de franco). Uso interno: no se llama desde la app.
+create or replace function orden_controles_reasignar(p_sector uuid)
+returns void language sql volatile security definer set search_path = public as $$
+  update orden_controles c set persona_id = orden_asignado(m.sector_id, c.fecha)
+    from orden_modulos m
+   where m.id = c.modulo_id and m.sector_id = p_sector
+     and c.estado = 'pendiente' and c.enviado_en is null
+     and c.fecha >= (now() at time zone 'America/Argentina/Buenos_Aires')::date
+     and not exists (select 1 from orden_fotos f where f.control_id = c.id)
+     and c.persona_id is distinct from orden_asignado(m.sector_id, c.fecha)
+$$;
+
 -- Pasar un módulo a otro sector del mismo local (y del mismo tipo).
 create or replace function orden_mover_modulo(p_modulo uuid, p_sector uuid)
 returns void language plpgsql volatile security definer set search_path = public as $$
@@ -138,6 +175,7 @@ begin
     raise exception 'En ese sector ya hay un módulo con el número %', m.numero;
   end if;
   update orden_modulos set sector_id = hacia.id where id = m.id;
+  perform orden_controles_reasignar(hacia.id);
 end $$;
 
 -- Quién es el responsable de un sector, quién lo cubre (el franquero) y, en
@@ -153,13 +191,15 @@ begin
   if exists (select 1 from unnest(array[p_responsable, p_suplente]) x(id)
               where x.id is not null and not exists (
                 select 1 from orden_personas p where p.id = x.id and p.activo and p.local_id = s.local_id
-                  and p.rol in ('vendedor', 'supervisor'))) then
+                  and p.rol in ('vendedor', 'supervisor')
+                  and not (p.alta_propia and not p.aprobado))) then   -- quien se anotó solo y todavía espera el "¿es de acá?", no
     raise exception 'Esa persona no es del local';
   end if;
   update orden_sectores
      set responsable_id = p_responsable, suplente_id = p_suplente,
          nombre = case when p_nombre is null then nombre else nullif(left(trim(p_nombre), 80), '') end
    where id = s.id;
+  perform orden_controles_reasignar(s.id);
 end $$;
 
 -- ---------- Los recordatorios de cada día ----------
@@ -183,6 +223,8 @@ begin
   revoke all on table orden_recordatorios from anon;
   grant select, insert, update, delete on table orden_recordatorios to authenticated;
   grant all on table orden_recordatorios to service_role;
+  revoke all on function orden_controles_reasignar(uuid) from public, anon, authenticated;
+  grant execute on function orden_controles_reasignar(uuid) to service_role;
   revoke all on function orden_mapa_guardar(uuid, jsonb, text[]) from public, anon;
   revoke all on function orden_mover_modulo(uuid, uuid) from public, anon;
   revoke all on function orden_sector_gente(uuid, uuid, uuid, text) from public, anon;

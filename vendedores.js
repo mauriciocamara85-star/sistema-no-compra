@@ -575,9 +575,12 @@ function dibujarHoy(x) {
      módulo con la cámara y mandás su foto. */
   var mapa = x.mapa, mios = {}, marcas = {};
   if (mapa && mapa.pared.length + mapa.islas.length + mapa.dep.length) {
+    /* Si un módulo tiene dos controles (el del día y una sorpresa), manda lo que falta hacer. */
+    var PESO = { corregir: 5, sorpresa: 4, pendiente: 3, vencido: 2, listo: 1 };
     x.controles.forEach(function (c) {
       var e = estadoDe(c, corregir);
-      marcas[c.modulo_id] = e.hecho ? (c.estado === 'vencido' ? 'vencido' : 'listo') : e.clase === 'corregir' ? 'corregir' : e.clase === 'sorpresa' ? 'sorpresa' : 'pendiente';
+      var marca = e.hecho ? (c.estado === 'vencido' ? 'vencido' : 'listo') : e.clase === 'corregir' ? 'corregir' : e.clase === 'sorpresa' ? 'sorpresa' : 'pendiente';
+      if (!marcas[c.modulo_id] || PESO[marca] > PESO[marcas[c.modulo_id]]) marcas[c.modulo_id] = marca;
       mios[c.modulo_id] = true;
     });
     var yoId = yo().id;
@@ -585,7 +588,8 @@ function dibujarHoy(x) {
     var hayMios = Object.keys(mios).length;
     html += '<div class="seccion">Tu parte del local</div><div class="mapa-caja" id="mapaHoy">' +
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' +
-      '<p class="bajada">' + (total ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.' : 'Lo tuyo está marcado con tu color.') + '</p>';
+      '<p class="bajada">' + (total ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.'
+                                    : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
   }
 
   if (x.sinModulos && !total) {
@@ -640,12 +644,14 @@ function dibujarHoy(x) {
   /* Tocar el croquis: si ese módulo tiene tu control pendiente, la cámara; si no, de quién es. */
   app.querySelectorAll('#mapaHoy .mapa-mod').forEach(function (g) {
     g.onclick = function () {
-      var c = x.controles.filter(function (k) { return k.modulo_id === g.dataset.mod; })[0];
-      if (c && !estadoDe(c, corregir).hecho) { pantallaFoto(c); return; }
+      var suyos = x.controles.filter(function (k) { return k.modulo_id === g.dataset.mod; });
+      var falta = suyos.filter(function (k) { return !estadoDe(k, corregir).hecho; })[0];
+      if (falta) { pantallaFoto(falta); return; }
       var m = mapa.modulos.filter(function (k) { return k.id === g.dataset.mod; })[0], s = m && mapa.sectorDe[m.sector_id];
       var quien = s && mapa.persona[s.responsable_id];
       var que = m ? (m.isla ? m.nombre : s.tipo === 'deposito' ? nombreSector(s) : 'Módulo ' + m.numero) : 'Ese módulo';
-      avisar(c ? que + ': ya mandaste la foto de hoy.' : que + (quien ? ' es de ' + nombreLista(quien) + '.' : ' no tiene responsable.'));
+      avisar(!suyos.length ? que + (quien ? ' es de ' + nombreLista(quien) + '.' : ' no tiene responsable.')
+        : suyos.some(function (k) { return k.estado === 'vencido'; }) ? que + ': la foto de hoy ya venció.' : que + ': ya mandaste la foto de hoy.');
     };
   });
 }

@@ -801,10 +801,12 @@ function ajSectores() {
                  { k: 'suplente_id', t: 'Suplente', tipo: 'sel', ops: ops }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
           guardar: function (f, c) { return guardarFila('/orden_sectores?id=eq.' + valor(f.id), c); } });
         var suyos = (mods || []).filter(function (m) { return m.sector_id === s.id; });
+        /* En el salón, el número y si está prendido los maneja el mapa (si no, el mapa los pisa al guardar). */
+        var delMapa = s.tipo === 'salon';
         editor({ cont: z.querySelector('[data-modulos="' + s.id + '"]'), filas: suyos, vacio: 'Sin módulos.',
-          cols: [{ k: 'numero', t: 'N.º', tipo: 'num', ancho: 'chico' }, { k: 'nombre', t: 'Módulo', tipo: 'texto' },
+          cols: [{ k: 'numero', t: 'N.º', tipo: 'num', ancho: 'chico', fijo: delMapa }, { k: 'nombre', t: 'Módulo', tipo: 'texto' },
                  { k: 'exhibidor_id', t: 'Exhibidor', tipo: 'sel', ops: [[null, '—']].concat(exh.map(function (e) { return [e.id, e.nombre]; })) },
-                 { k: 'reglas_extra', t: 'Algo propio de este módulo', tipo: 'texto', nulo: true, ancho: 'grande' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
+                 { k: 'reglas_extra', t: 'Algo propio de este módulo', tipo: 'texto', nulo: true, ancho: 'grande' }, { k: 'activo', t: 'Activo', tipo: 'bool', fijo: delMapa }],
           guardar: function (f, c) { return guardarFila('/orden_modulos?id=eq.' + valor(f.id), c); },
           extra: function (f) {
             return (f.foto_referencia_path ? '<img class="ref-mini" data-foto="' + esc(f.foto_referencia_path) + '" alt="Referencia">' : '') +
@@ -1008,7 +1010,7 @@ function elegirGenteAdmin(d, secId) {
   var s = d.salon.concat(d.deposito).filter(function (x) { return x.id === secId; })[0];
   if (!s) return;
   var gente = Object.keys(d.persona).map(function (k) { return d.persona[k]; })
-    .filter(function (p) { return p.rol === 'vendedor' || p.rol === 'supervisor'; });
+    .filter(function (p) { return (p.rol === 'vendedor' || p.rol === 'supervisor') && !(p.alta_propia && !p.aprobado); });
   var opciones = function (sel) {
     return '<option value="">Nadie</option>' + gente.map(function (p) {
       return '<option value="' + esc(p.id) + '"' + (p.id === sel ? ' selected' : '') + '>' + esc(nombreLista(p)) + '</option>';
@@ -1037,17 +1039,27 @@ function editarMapa(d) {
       PAREDES.map(function (p) {
         return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" value="' + (+m[p[0]] || 0) + '"></label>';
       }).join('') +
-      '<label class="campo c-grande"><span>Adentro del local (uno por renglón)</span><textarea id="eIslas" rows="3" placeholder="Caja&#10;Perchero 1">' +
+      '<label class="campo c-grande"><span>Adentro del local (uno por renglón)</span><textarea id="eIslas" rows="3" placeholder="Por ejemplo: Caja (uno por renglón)">' +
         esc(d.islas.map(function (x) { return x.nombre; }).join('\n')) + '</textarea></label></div>' +
     '<p class="bajada" id="eTotal"></p><div class="imp-mapa-vista" id="eVista"></div><button class="boton lima" id="eGuardar">Guardar</button>');
   function leerForm() {
-    var mm = { forma: f.querySelector('#eForma').value };
+    var mm = { forma: f.querySelector('#eForma').value }, vistas = {};
     f.querySelectorAll('[data-pared]').forEach(function (i) { mm[i.dataset.pared] = Math.max(0, Math.min(40, parseInt(i.value, 10) || 0)); });
-    var islas = f.querySelector('#eIslas').value.split('\n').map(function (x) { return x.trim(); }).filter(Boolean);
+    var islas = f.querySelector('#eIslas').value.split('\n').map(function (x) { return x.trim(); })
+      .filter(function (x) { var k = x.toLowerCase(); if (!x || vistas[k]) return false; vistas[k] = true; return true; });
     return { mapa: mm, islas: islas };
   }
+  /** Qué cambia al guardar: los números nuevos y los que se apagan. */
+  function cambios(x) {
+    var total = PAREDES.reduce(function (s, p) { return s + x.mapa[p[0]]; }, 0), hay = {}, nuevos = 0;
+    d.pared.forEach(function (k) { hay[k.numero] = true; });
+    for (var n = 1; n <= total; n++) if (!hay[n]) nuevos++;
+    var apagan = d.pared.filter(function (k) { return k.numero > total; }).length +
+      d.islas.filter(function (i) { return !x.islas.some(function (nom) { return nom.toLowerCase() === i.nombre.toLowerCase(); }); }).length;
+    return { total: total, nuevos: nuevos, apagan: apagan };
+  }
   function vista() {
-    var x = leerForm(), total = PAREDES.reduce(function (s, p) { return s + x.mapa[p[0]]; }, 0);
+    var x = leerForm(), total = cambios(x).total;
     var pared = [], ultimo = d.salon[0] ? d.salon[0].id : null;
     for (var n = 1; n <= total; n++) {
       var ex = d.pared.filter(function (k) { return k.numero === n; })[0];
@@ -1060,14 +1072,16 @@ function editarMapa(d) {
     }).sort(function (p, q) { return (esCaja(q) ? 1 : 0) - (esCaja(p) ? 1 : 0); });
     var dv = Object.assign({}, d, { mapa: x.mapa, pared: pared, islas: islas });
     f.querySelector('#eVista').innerHTML = svgMapa(dv, { vacios: true });
-    var dif = total - d.pared.length;
-    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' + (islas.length ? ' y ' + islas.length + ' adentro' : '') +
-      (dif > 0 ? ' (' + dif + ' nuevos: van al sector del anterior, después se reparten)' : dif < 0 ? ' (se apagan ' + (-dif) + ': no se borran, quedan sus fotos)' : '') + '.';
+    var c = cambios(x);
+    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' + (islas.length ? ' y ' + islas.length + ' adentro' : '') + '.' +
+      (c.nuevos ? ' Se crean ' + c.nuevos + ' (van al sector del anterior; después se reparten).' : '') +
+      (c.apagan ? ' Se apagan ' + c.apagan + ': no se borran, quedan sus fotos, y vuelven si los ponés de nuevo.' : '');
   }
   f.querySelectorAll('[data-pared], #eIslas, #eForma').forEach(function (i) { i.addEventListener('input', vista); i.addEventListener('change', vista); });
   vista();
   unaVez(f.querySelector('#eGuardar'), function () {
-    var x = leerForm();
+    var x = leerForm(), c = cambios(x);
+    if (c.apagan && !confirm('Se apagan ' + c.apagan + (c.apagan === 1 ? ' módulo' : ' módulos') + ' (no se borran: quedan sus fotos). ¿Guardar igual?')) return;
     return llamar('orden_mapa_guardar', { p_local: _local.id, p_mapa: x.mapa, p_islas: x.islas }).then(function (r) {
       f.remove();
       avisar('Mapa guardado' + (r && r.creados ? ': ' + r.creados + (r.creados === 1 ? ' módulo nuevo.' : ' módulos nuevos.') : '.'));
@@ -1083,7 +1097,7 @@ function editarMapa(d) {
 var DIAS_OPS = [[1, 'Lunes'], [2, 'Martes'], [3, 'Miércoles'], [4, 'Jueves'], [5, 'Viernes'], [6, 'Sábado'], [7, 'Domingo']];
 function ajRecordatorios() {
   ajLista({ ruta: '/orden_recordatorios?select=*&local_id=eq.' + valor(_local.id) + '&order=dia.asc,creado_en.asc', tabla: '/orden_recordatorios',
-    texto: 'Lo que hay que acordarse cada día en ' + esc(_local.nombre) + ' (martes entra mercadería, jueves cambio de imagen…). Ese día le aparece a todo el local arriba en "Hoy".',
+    texto: 'Lo que hay que acordarse cada día en ' + esc(_local.nombre) + ' (martes entra mercadería, jueves cambio de imagen…). Ese día les aparece a los vendedores del local arriba en "Hoy".',
     cols: [{ k: 'dia', t: 'Día', tipo: 'sel', numero: true, ops: DIAS_OPS }, { k: 'texto', t: 'El recordatorio', tipo: 'texto', ancho: 'grande' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
     validar: function (f) { return String(f.texto || '').trim().length < 2 ? 'Escribí el recordatorio.' : null; },
     nueva: function () { return { local_id: _local.id, dia: 2, texto: 'Nuevo recordatorio (escribilo y guardá)', activo: false }; } });

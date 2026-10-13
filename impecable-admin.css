@@ -251,6 +251,7 @@
 .imp .mapa-sec small, .ventana .mapa-sec small { display: block; margin-top: 2px; color: var(--txt-3); font-size: 12px; }
 .imp textarea { resize: vertical; }
 .imp-mapa-vista { margin: 0 0 14px; padding: 10px; border: 1px dashed var(--line-alta); border-radius: var(--r-sm); color: var(--txt-2); }
+.ventana .imp-mapa-vista .mapa-svg { width: 100%; max-width: none; height: 300px; }
 /* Los formularios adentro de las ventanas */
 .ventana .campo { display: grid; gap: 5px; margin: 0 0 12px; }
 .ventana .campo > span { font: 600 12.5px var(--sans); color: var(--txt-2); }

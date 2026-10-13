@@ -367,8 +367,12 @@ function datosMapa(config, sectores, modulos, gente) {
     .sort(function (a, b) { return sectorDe[a.sector_id].numero - sectorDe[b.sector_id].numero || a.numero - b.numero; });
   var mapa = config && config.mapa, aprox = false;
   if (!mapa) {
+    /* Hasta el número más alto (si hay huecos, quedan vacíos): así el primer
+       "Guardar" no apaga ninguno sin querer. */
     aprox = true;
-    var n = pared.length, iz = Math.ceil(n * 0.4), fo = Math.round(n * 0.2);
+    var n = pared.length ? Math.max.apply(null, pared.map(function (m) { return m.numero; })) : 0;
+    if (n > 100) n = pared.length;
+    var iz = Math.ceil(n * 0.4), fo = Math.round(n * 0.2);
     mapa = { forma: 'rectangulo', izquierda: iz, fondo: fo, derecha: Math.max(0, n - iz - fo), frente: 0 };
   }
   return { mapa: mapa, aprox: aprox, pared: pared, islas: islas, dep: dep, salon: salon, deposito: deposito,
@@ -381,7 +385,7 @@ function cargarMapa(localId) {
   return Promise.all([
     leer('/orden_config?select=*&local_id=eq.' + L).catch(function () { return []; }),
     leer('/orden_sectores?select=id,tipo,numero,nombre,responsable_id,suplente_id&local_id=eq.' + L + '&activo=is.true&order=tipo.asc,numero.asc'),
-    leer('/orden_personas?select=id,nombre,inicial,rol&local_id=eq.' + L + '&activo=is.true&order=nombre.asc').catch(function () { return []; })
+    leer('/orden_personas?select=id,nombre,inicial,rol,aprobado,alta_propia&local_id=eq.' + L + '&activo=is.true&order=nombre.asc').catch(function () { return []; })
   ]).then(function (r) {
     var sectores = r[1] || [], config = (r[0] || [])[0];
     if (!sectores.length) return datosMapa(config, [], [], r[2]);
@@ -441,11 +445,10 @@ function svgMapa(d, op) {
   tramo(c.frente, true, y1 - P, x1 - (c.derecha ? P : 0), x0 + (c.izquierda ? P : 0));      // de derecha a izquierda
   var out = '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>' +
     '<text x="' + (W / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" fill-opacity=".75">▲ Entrada · vidriera</text>';
-  /* Con el mapa armado, cada módulo va a su lugar por número (si uno está
-     apagado, queda el hueco); sin mapa, uno detrás del otro. */
+  /* Cada módulo va a su lugar por número (si uno está apagado, queda el hueco). */
   var enPared = [], sobran = [];
-  d.pared.forEach(function (m, i) {
-    var k = d.aprox ? i : m.numero - 1;
+  d.pared.forEach(function (m) {
+    var k = m.numero - 1;
     if (k >= 0 && k < lugares.length && !enPared[k]) enPared[k] = m; else sobran.push(m);
   });
   lugares.forEach(function (v, j) {

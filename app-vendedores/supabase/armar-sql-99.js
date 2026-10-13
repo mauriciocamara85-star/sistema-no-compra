@@ -21,7 +21,8 @@ const sql = `-- ═══ SQL 99 (13/10/2026) · Impecable: el mapa del local, e
 --     día aparecen arriba en "Hoy".
 --   · Hasta que armes el mapa de un local, no cambia ningún módulo.
 --   · No toca nada de No Compra. Reversible: agrega una tabla, dos columnas y
---     tres funciones; no borra datos.
+--     cuatro funciones. No borra módulos (los que sobran se apagan); sólo se
+--     sacan los controles pendientes, sin foto, de lo que se apaga.
 
 ` + cuerpo + `
 select 'listo: el mapa del local, el reparto y los recordatorios' as "SQL 99";
