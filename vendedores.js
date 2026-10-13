@@ -115,29 +115,42 @@ function preguntarTexto(titulo, opcional) {
 function confirmar(texto, si) { return preguntar({ texto: texto, si: si || 'Sí', no: 'No' }); }
 
 /* El "atrás" de Android cierra lo que está encima (una ventanita, la foto
-   grande, los avisos, el perfil) en vez de salir de la app: cada cosa que se
-   abre deja una marca en el historial, y el "atrás" la saca y la cierra. */
-var _capas = [], _ignorarAtras = 0;
-function abrirCapa(alAtras) {
-  _capas.push(alAtras);
-  try { history.pushState({ capa: _capas.length }, ''); } catch (e) {}
+   grande, los avisos, el perfil) en vez de salir de la app. Mientras haya
+   algo encima hay UNA sola marca en el historial (nunca se acumulan): el
+   "atrás" la saca y cierra lo de más arriba; si queda algo, se vuelve a
+   poner. Cuando lo de encima se cierra con un botón o al cambiar de
+   pantalla, la marca se saca sola, así ningún "atrás" queda sin hacer nada. */
+var _capas = [], _marca = false, _quitando = 0;
+function ponerMarca() {
+  if (_marca) return;
+  try { history.pushState({ vdhCapa: true }, ''); _marca = true; } catch (e) {}
 }
-/** Se cerró con un botón de la app: se saca su marca del historial. */
+function sacarMarca() {
+  if (!_marca) return;
+  _marca = false;
+  _quitando++;
+  try { history.back(); } catch (e) { _quitando--; }
+}
+function abrirCapa(alAtras) { _capas.push(alAtras); ponerMarca(); }
+/** Se cerró con un botón de la app. */
 function soltarCapa(alAtras) {
   var i = _capas.lastIndexOf(alAtras);
-  if (i < 0) return;
-  _capas.splice(i, 1);
-  _ignorarAtras++;
-  try { history.back(); } catch (e) { _ignorarAtras--; }
+  if (i > -1) _capas.splice(i, 1);
+  if (!_capas.length) sacarMarca();
 }
 /** Al cambiar de pantalla se cierra todo lo que estaba encima. */
 function cerrarCapas() {
   _capas.splice(0).reverse().forEach(function (c) { try { c(true); } catch (e) {} });
+  sacarMarca();
 }
 window.addEventListener('popstate', function () {
-  if (_ignorarAtras) { _ignorarAtras--; return; }
+  if (_quitando) { _quitando--; return; }   // la sacó la app
+  _marca = false;
+  /* Un aviso tocado llega con #/tareas y también pasa por acá: de eso se
+     ocupa hashchange (que cierra lo de encima y lleva adonde dice). */
+  if (/^#\/./.test(location.hash)) return;
   var c = _capas.pop();
-  if (c) c(false);
+  if (c) { c(false); if (_capas.length) ponerMarca(); }
 });
 /** Un festejo: papelitos de colores que caen y un cartel (si acertaste todo el test, si terminaste lo del día). */
 var _ultimoFestejo = 0;
@@ -647,9 +660,15 @@ function engancharCabeza() {
 
 /* Avisos y el Perfil del vendedor se abren desde arriba, no son pestañas:
    "‹ Volver" y el "atrás" de Android vuelven a la pestaña de antes. */
-var _deDonde = 'hoy', _capaAparte = null;
+var _deDonde = null, _capaAparte = null;
+/** Una pestaña de esta persona (la supervisión y el vendedor tienen barras distintas). */
+function pestanaValida(p) {
+  var lista = (esSupervision() ? PESTANAS_SUPERVISION : pestanasVendedor()).map(function (x) { return x[0]; });
+  return lista.indexOf(p) > -1 && p !== 'perfil' ? p : lista[0];
+}
 function abrirAparte(nombre) {
-  if (_pestana !== nombre && ['avisos', 'perfil'].indexOf(_pestana) < 0) _deDonde = _pestana || 'hoy';
+  if (_pestana !== nombre && ['avisos', 'perfil'].indexOf(_pestana) < 0) _deDonde = _pestana;
+  _deDonde = pestanaValida(_deDonde);
   if (!_capaAparte) {
     _capaAparte = function (porNavegar) { _capaAparte = null; if (!porNavegar) irA(_deDonde); };
     abrirCapa(_capaAparte);
@@ -745,12 +764,12 @@ function pantallaHoy() {
                                 leer('/orden_cajas?select=estado&local_id=eq.' + valor(per.local_id) + '&fecha=eq.' + hoy)]).catch(fallo) : Promise.resolve(null)
   ]).then(function (r) {
     if (_pestana !== 'hoy') return;
-    var incompleto = [r[1], r[3], r[4], r[7], r[8]].indexOf(FALLO) > -1;
+    var incompleto = [r[3], r[4], r[7], r[8]].indexOf(FALLO) > -1, semanaFallo = r[1] === FALLO;
     r = r.map(function (v) { return v === FALLO ? null : v; });
     var testigos = (r[7] || []).filter(function (s) { return (s.testigo_items || []).length; });
     dibujarHoy({
       controles: r[0] || [], semana: (r[1] || [])[0], sinModulos: Array.isArray(r[2]) && r[2].length === 0, desafio: r[3],
-      tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], incompleto: incompleto,
+      tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], incompleto: incompleto, semanaFallo: semanaFallo,
       caja: r[8] ? { activa: !!(r[8][0] && r[8][0][0] && r[8][0][0].caja_activa), hoy: (r[8][1] || [])[0] || null } : null,
       testigoPend: testigos.filter(function (s) { return !s.cargada_en && s.fecha <= hoy; })[0] || null,
       testigoMan: testigos.filter(function (s) { return !s.cargada_en && s.fecha > hoy; })[0] || null,
@@ -779,7 +798,8 @@ function bannerAvisos(estado) {
 function horaAR() { return Number(new Intl.DateTimeFormat('en-US', { timeZone: ZONA, hour: 'numeric', hourCycle: 'h23' }).format(new Date())); }
 
 /** "Tu orden esta semana": la tarjeta de colores, del color del nivel. */
-function tarjetaOrden(s) {
+function tarjetaOrden(s, fallo) {
+  if (fallo) return '<div class="resumen"><div class="chico">Tu orden esta semana</div><div class="grande">—</div><div class="chico">Con esta señal no se pudo cargar.</div></div>';
   var nivel = s && s.nivel_semana;
   return '<div class="resumen' + (nivel ? ' nivel-' + esc(nivel) : '') + '">' +
     '<div class="chico">Tu orden esta semana</div>' +
@@ -884,7 +904,7 @@ function dibujarHoy(x) {
   }
   /* Mañana hay producto testigo: para saberlo (todavía no se carga). */
   if (x.testigoMan) html += tarjetaTestigoHoy(x.testigoMan);
-  html += tarjetaOrden(x.semana);
+  html += tarjetaOrden(x.semana, x.semanaFallo);
 
   app.innerHTML = html;
   engancharCabeza();
@@ -1321,6 +1341,7 @@ function pantallaAvisos() {
   var arriba = '<button class="volver" id="volver">‹ Volver</button><h1>Avisos</h1>';
   app.innerHTML = arriba + '<p class="cargando">Cargando…</p>';
   document.getElementById('volver').onclick = volverDeAparte;
+  var alAbrir = new Date().toISOString();
   leer('/orden_avisos?select=id,titulo,cuerpo,url,creado_en,leido_en&persona_id=eq.' + valor(yo().id) + '&order=creado_en.desc&limit=30').then(function (avisos) {
     if (_pestana !== 'avisos') return;
     avisos = avisos || [];
@@ -1337,7 +1358,7 @@ function pantallaAvisos() {
     });
     /* Quedan leídos todos los sin leer (también los más viejos que no entran en la lista): si no, el número no se va nunca. */
     _sinLeer = 0; _sinLeerEn = Date.now(); _sinLeerDe = yo().id;
-    leer('/orden_avisos?select=id&persona_id=eq.' + valor(yo().id) + '&leido_en=is.null&limit=1000').then(function (f) {
+    leer('/orden_avisos?select=id&persona_id=eq.' + valor(yo().id) + '&leido_en=is.null&creado_en=lte.' + alAbrir + '&limit=1000').then(function (f) {
       var ids = (f || []).map(function (a) { return a.id; });
       if (ids.length) return llamar('orden_marcar_avisos_leidos', { p_ids: ids });
     }).catch(function () { _sinLeerEn = 0; });
@@ -1445,6 +1466,7 @@ function mostrarTablero(t, caja) {
     if (r && r.enlace) { link.href = r.enlace; link.hidden = false; }
     if (!(r && r.ok)) {
       if (r && r.motivo === 'no-es-tablero') sinFotos('Este tablero está mal cargado: avisale a tu supervisor.');
+      else if (r && r.motivo === 'no-existe') sinFotos('Este tablero no existe o es secreto: avisale a tu supervisor.');
       else deNuevo();
       return;
     }
