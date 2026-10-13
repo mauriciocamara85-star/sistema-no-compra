@@ -69,7 +69,7 @@ No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA`
 
 ## Pendiente (necesita a Mauricio)
 
-1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10). ~~Correr el SQL 99 y publicar el mapa~~ (hecho el 13/10, sw v119). **Correr el SQL 102** y después publicar la rama `impecable` (con tu OK; el sw.js del No Compra sube a la versión que siga en ese momento).
+1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10). ~~Correr el SQL 99 y publicar el mapa~~ (hecho el 13/10, sw v119). **Correr el SQL 102** y después publicar la rama `impecable` (publicado el 13/10, sw v121).
 2. El día que empiecen los chicos: subir **`tick`, `resumen-semanal` y `resumen-cajas`** (el 94 ya está). Las otras 2 ya están subidas. Antes: (`entrar` de nuevo y las 4 que faltan); después, el día que empiecen, correr el **SQL 94**.
 3. ~~Publicar~~ (hecho el 13/10, 41f1594).
 4. ~~"Impecable" en la barra del No Compra~~ (hecho: entre Socios y Config.). La pestaña "Orden" en Estadísticas no se hizo (él eligió sólo el botón).
