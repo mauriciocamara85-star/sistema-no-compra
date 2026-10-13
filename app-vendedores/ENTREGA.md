@@ -1,4 +1,4 @@
-# Impecable · estado de la app (PUBLICADA el 13/10/2026, 41f1594)
+# Impecable · estado de la app (PUBLICADA el 13/10/2026; el mapa del local, publicado el 13/10 con el SQL 99 corrido)
 
 Se entra desde el botón **Impecable** de la barra del No Compra (la administración) o directo a `vendedores.html` (la app).
 
@@ -22,7 +22,7 @@ Se entra desde el botón **Impecable** de la barra del No Compra (la administrac
 | 95 | corrido 13/10 (~01:10), verificado 13/13 | Nadie ve ni toca nada del local hasta que lo aprueban: ni quien se da de alta ni quien crea su PIN. Al aprobar a un vendedor, se suma a la Carga. Y los arreglos de base de la ronda 1. | Sí: agrega la columna `aprobado` y reemplaza funciones; no borra datos. |
 | 96 | corrido 13/10 | **Fuera de la app, en el No Compra:** el historial (`log`) y los ajustes pasan a ser sólo de la gente de `usuarios` (hoy, vos). Hoy cualquier sesión de Impecable (aunque esté sin aprobar) lee el historial con datos de socios y puede cambiar los ajustes. El panel no cambia (no lee esas tablas con la sesión). Ensayado contra la base real con rollback: 6 de 6. | Sí: volver a crear las 4 reglas con `using (true)`. |
 | 97 | corrido 13/10 | La aprobación, segunda vuelta (ronda 2 del árbitro): "No fue" para el PIN de alguien que ya estaba (borra ese PIN y la sesión del que lo creó, sin sacar a la persona real); "Borrar PIN" también cierra la sesión; un administrador nuevo espera aprobación; aprobar sólo sirve para quien espera; fotos de caja de hoy y ayer para el vendedor; gerencia con local no toca cajas; avisos de altas al administrador si el supervisor no entró. Ensayado con el 96 contra la base real con rollback: 9 de 9. | Sí: agrega 2 columnas y reemplaza funciones; sólo borra cuentas internas de Impecable de quien se rechaza. |
-| 99 | **sin correr** (13/10) | El mapa del local: cuántos módulos hay en cada pared y lo de adentro (la caja, los percheros); el reparto (qué módulo es de cada sector, quién lo tiene y quién lo cubre); los recordatorios de cada día. Revisado por el árbitro (sin bloqueantes; los importantes, corregidos). Base de prueba 33/33; ensayado contra la base real con rollback: 14 de 14 (no toca ningún módulo de Rivadavia hasta que se arme el mapa). | Sí: agrega una tabla (`orden_recordatorios`), dos columnas (`orden_config.mapa`, `orden_modulos.isla`) y cuatro funciones. No borra módulos: los que sobran al achicar se apagan; sólo se sacan sus controles pendientes sin foto. |
+| 99 | corrido 13/10 (~12:30), verificado 8/8 (sólo lectura) | El mapa del local: cuántos módulos hay en cada pared y lo de adentro (la caja, los percheros); el reparto (qué módulo es de cada sector, quién lo tiene y quién lo cubre); los recordatorios de cada día. Revisado por el árbitro (sin bloqueantes; los importantes, corregidos). Base de prueba 33/33; ensayado contra la base real con rollback: 14 de 14 (no toca ningún módulo de Rivadavia hasta que se arme el mapa). | Sí: agrega una tabla (`orden_recordatorios`), dos columnas (`orden_config.mapa`, `orden_modulos.isla`) y cuatro funciones. No borra módulos: los que sobran al achicar se apagan; sólo se sacan sus controles pendientes sin foto. |
 | 94 | **corrido 13/10, antes de lo previsto**: el reloj está prendido, pero llama a `tick` y a los resúmenes, que NO están subidos (contestan 404), así que no genera nada. Se sube `tick` el día que empiecen. | Prende el reloj (pg_cron cada 15 min, resumen de cajas a las 23:30, resumen semanal los lunes 8:30). | Sí: `select cron.unschedule(jobname) from cron.job where jobname like 'orden-%';` |
 
 (El 92 es de la otra parte del sistema: Difusiones del CRM.)
@@ -60,7 +60,7 @@ No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA`
 
 ## Pendiente (necesita a Mauricio)
 
-1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10). **Correr el SQL 99** (el mapa) y después publicar la rama `impecable` (con tu OK).
+1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10). ~~Correr el SQL 99 y publicar el mapa~~ (hecho el 13/10, sw v119).
 2. El día que empiecen los chicos: subir **`tick`, `resumen-semanal` y `resumen-cajas`** (el 94 ya está). Las otras 2 ya están subidas. Antes: (`entrar` de nuevo y las 4 que faltan); después, el día que empiecen, correr el **SQL 94**.
 3. ~~Publicar~~ (hecho el 13/10, 41f1594).
 4. ~~"Impecable" en la barra del No Compra~~ (hecho: entre Socios y Config.). La pestaña "Orden" en Estadísticas no se hizo (él eligió sólo el botón).
