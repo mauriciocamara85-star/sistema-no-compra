@@ -43,7 +43,8 @@ const BASICOS = [
   './manifest.json',
   './icono-192.png',
   './icono-512.png',
-  './icono-apple.png'
+  './icono-apple.png',
+  './logo-vdh.png'
 ];
 
 self.addEventListener('install', (evento) => {

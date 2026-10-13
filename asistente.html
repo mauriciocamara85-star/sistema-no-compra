@@ -33,28 +33,67 @@
      La PC del local es de todos: cada uno dice quién es con un toque al
      abrir, y ve sólo sus charlas (y sólo las de esa PC). Después de un rato
      sin usarlo, lo vuelve a preguntar, así el que se sienta después no ve
-     las charlas del anterior. */
+     las charlas del anterior.
+     13/10/2026, el diseño nuevo (pedido de Mauricio, con una captura del
+     de Chatbase: "con un poco más de color y vida, más moderno"): el logo
+     de VDH arriba, el saludo grande, la caja alta con un brillo de colores
+     abajo, las sugeridas en una tira que se corre, los accesos con color,
+     y la columna de las charlas más liviana. El color vive en el brillo, el
+     saludo y los íconos; lo que se aprieta sigue en carbón. */
+  :root {
+    --au1: #7C3AED; --au2: #DB2777; --au3: #EA580C; --au4: #0D9488; --au5: #2563EB;
+    --au-suave1: rgba(124, 58, 237, .16); --au-suave2: rgba(219, 39, 119, .13); --au-suave3: rgba(234, 88, 12, .12);
+    --au-suave4: rgba(13, 148, 136, .12); --au-suave5: rgba(37, 99, 235, .12);
+    --brillo-op: .62;
+  }
+  html[data-theme="dark"] {
+    --au1: #A78BFA; --au2: #F472B6; --au3: #FB923C; --au4: #2DD4BF; --au5: #60A5FA;
+    --au-suave1: rgba(167, 139, 250, .16); --au-suave2: rgba(244, 114, 182, .12); --au-suave3: rgba(251, 146, 60, .10);
+    --au-suave4: rgba(45, 212, 191, .10); --au-suave5: rgba(96, 165, 250, .12);
+    --brillo-op: .42;
+  }
   body.asis { padding-bottom: 0; }
   .asis-app { display: grid; grid-template-columns: minmax(0, 1fr); height: calc(100dvh - var(--nav) - env(safe-area-inset-bottom)); }
   @media (min-width: 900px) {
-    .asis-app { grid-template-columns: 252px minmax(0, 1fr); height: 100dvh; }
+    .asis-app { grid-template-columns: 264px minmax(0, 1fr); height: 100dvh; }
   }
 
   /* ── La columna de las charlas ── */
-  .asis-lado { display: flex; flex-direction: column; gap: 10px; min-height: 0; padding: 16px 12px; border-right: 1px solid var(--line); background: var(--surface-2); }
-  .asis-nueva { width: 100%; gap: 8px; }
-  .asis-nueva svg { width: 18px; height: 18px; }
-  .asis-lado h3 { font-size: 11.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; margin: 8px 4px 0; }
+  .asis-lado { display: flex; flex-direction: column; gap: 6px; min-height: 0; padding: 18px 12px 14px; border-right: 1px solid var(--line); background: var(--surface-2); }
+  .asis-lado-cab { display: flex; align-items: center; gap: 10px; padding: 2px 6px 12px; }
+  .asis-lado-cab img { height: 22px; width: auto; }
+  .asis-lado-cab span { font: 600 12px var(--sans); letter-spacing: .6px; text-transform: uppercase; color: var(--txt-3); padding-left: 10px; border-left: 1px solid var(--line-alta); }
+  .asis-nueva { position: relative; width: 100%; justify-content: flex-start; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 14px;
+                border: 1px solid var(--line); background: var(--surface); color: var(--txt); font: 600 14px var(--sans); box-shadow: 0 1px 2px rgba(20, 20, 18, .05);
+                transition: transform .2s var(--curva), box-shadow .2s var(--curva), border-color .2s; }
+  .asis-nueva i { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+                  background: linear-gradient(135deg, var(--au1), var(--au2) 55%, var(--au3)); }
+  .asis-nueva svg { width: 15px; height: 15px; }
+  .asis-nueva:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--line-alta); box-shadow: 0 8px 20px -12px rgba(20, 20, 18, .35); }
+  .asis-nueva:disabled { opacity: .55; }
+  /* Los accesos también acá, como en Chatbase: a un toque desde cualquier charla. */
+  .asis-lado-accesos { display: grid; gap: 2px; margin-top: 6px; }
+  .asis-lado-accesos:empty { display: none; }
+  .asis-lado-accesos a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; color: var(--txt); text-decoration: none; font: 500 13.5px var(--sans); }
+  .asis-lado-accesos a:hover { background: var(--surface-3); }
+  .asis-lado-accesos i { flex: none; width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; color: #fff; }
+  .asis-lado-accesos i svg { width: 13px; height: 13px; }
+  .asis-lado-accesos span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .asis-lado h3 { font-size: 11.5px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .6px; margin: 14px 10px 4px; }
   .asis-charlas { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 2px; }
-  .asis-ch { display: grid; gap: 1px; width: 100%; padding: 8px 10px; border-radius: 10px; text-align: left; color: var(--txt-2); }
+  .asis-ch { position: relative; display: grid; gap: 1px; width: 100%; padding: 8px 10px 8px 12px; border-radius: 10px; text-align: left; color: var(--txt-2); }
   .asis-ch:hover { background: var(--surface-3); color: var(--txt); }
   .asis-ch.sel { background: var(--surface); color: var(--txt); box-shadow: 0 1px 3px rgba(0, 0, 0, .08); }
+  .asis-ch.sel::before { content: ''; position: absolute; left: 3px; top: 9px; bottom: 9px; width: 3px; border-radius: 3px;
+                         background: linear-gradient(180deg, var(--au1), var(--au2)); }
   .asis-ch b { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .asis-ch small { font-size: 11.5px; color: var(--txt-3); }
-  .asis-ch-vacio { font-size: 12.5px; color: var(--txt-3); padding: 4px; line-height: 1.5; }
-  .asis-yo { padding: 10px; border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--line); font-size: 12.5px; color: var(--txt-2); line-height: 1.4; }
+  .asis-ch-vacio { font-size: 12.5px; color: var(--txt-3); padding: 4px 10px; line-height: 1.5; }
+  .asis-yo { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); font-size: 12.5px; color: var(--txt-2); line-height: 1.35; }
+  .asis-yo-av { flex: none; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff; font: 700 14px var(--sans);
+                background: linear-gradient(135deg, var(--au5), var(--au1)); }
   .asis-yo b { display: block; font-size: 13.5px; color: var(--txt); }
-  .asis-yo button { margin-top: 4px; background: none; border: 0; padding: 0; font: 600 12.5px var(--sans); color: var(--txt); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .asis-yo button { margin-top: 2px; background: none; border: 0; padding: 0; font: 600 12.5px var(--sans); color: var(--txt); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   @media (max-width: 899px) {
     .asis-lado { position: fixed; top: 0; bottom: 0; left: 0; z-index: 72; width: min(300px, 86vw); transform: translateX(-105%);
                  transition: transform .25s var(--curva); border-radius: 0 var(--r) var(--r) 0; }
@@ -65,83 +104,145 @@
   @media (min-width: 900px) { .asis-velo { display: none; } }
 
   /* ── La columna del chat ── */
-  .asis-main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-  .asis-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); }
-  .asis-cab b { font: 700 16px var(--display); }
+  .asis-main { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+  /* La aurora: manchas de color muy suaves que se mueven despacio, sólo en la portada. */
+  .asis-main::before { content: ''; position: absolute; z-index: -1; inset: -20% -10% auto -10%; height: 75%; pointer-events: none; opacity: 0;
+                       background:
+                         radial-gradient(38% 46% at 18% 30%, var(--au-suave1), transparent 70%),
+                         radial-gradient(34% 42% at 82% 22%, var(--au-suave2), transparent 70%),
+                         radial-gradient(36% 44% at 56% 58%, var(--au-suave5), transparent 72%),
+                         radial-gradient(30% 40% at 34% 70%, var(--au-suave4), transparent 72%);
+                       transition: opacity .6s ease; animation: aurora 22s ease-in-out infinite alternate; }
+  .asis-main.vacia::before { opacity: 1; }
+  @keyframes aurora {
+    0%   { transform: translate3d(0, 0, 0) scale(1); }
+    50%  { transform: translate3d(3%, 2%, 0) scale(1.06); }
+    100% { transform: translate3d(-3%, -1%, 0) scale(1.02); }
+  }
+  .asis-cab { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .asis-cab b { display: flex; align-items: center; gap: 8px; font: 700 15px var(--display); }
+  .asis-cab b img { height: 16px; width: auto; }
   .asis-cab button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; padding: 0 12px; border-radius: var(--r-pill);
                      border: 1px solid var(--line); background: var(--surface); font: 600 13.5px var(--sans); color: var(--txt); }
   .asis-cab svg { width: 17px; height: 17px; }
   /* En la compu las charlas ya están a la izquierda: la barra de arriba sobra. */
   @media (min-width: 900px) { .asis-cab { display: none; } }
   .asis-cuerpo { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; padding: 18px 16px 8px; }
-  .asis-ancho { width: 100%; max-width: 760px; margin: 0 auto; }
+  .asis-ancho { width: 100%; max-width: 780px; margin: 0 auto; }
 
-  /* La portada: el saludo arriba, la caja y lo de abajo. */
+  /* La portada: el logo, el saludo, la caja y lo de abajo. */
   .asis-main.vacia .asis-cuerpo { justify-content: center; }
-  .asis-portada { text-align: center; padding: 8px 0 14px; }
-  .asis-logo { width: 52px; height: 52px; margin: 0 auto 12px; border-radius: 50%; display: grid; place-items: center; background: var(--acc); color: var(--acc-ink); }
-  .asis-logo svg { width: 26px; height: 26px; }
-  .asis-portada h1 { font: 700 26px/1.2 var(--display); letter-spacing: -.4px; }
-  .asis-portada p { margin-top: 6px; font-size: 15px; color: var(--txt-2); }
-  .asis-abajo { padding: 14px 0 6px; display: grid; gap: 18px; }
-  .asis-sug { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
-  .asis-sug button { min-height: 38px; padding: 7px 14px; border-radius: var(--r-pill); border: 1px solid var(--line); background: var(--surface);
-                     font: 500 13.5px/1.35 var(--sans); color: var(--txt); text-align: left; }
-  .asis-sug button:hover { border-color: var(--acc); }
-  .asis-accesos { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
-  .asis-acceso { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: var(--r-sm); border: 1px solid var(--line);
-                 background: var(--surface); color: var(--txt); text-decoration: none; text-align: left; }
-  .asis-acceso:hover { border-color: var(--acc); }
-  .asis-acceso i { flex: none; width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; background: var(--surface-2); color: var(--txt); }
-  .asis-acceso i svg { width: 18px; height: 18px; }
-  .asis-acceso b { display: block; font-size: 14px; font-weight: 600; }
-  .asis-acceso small { display: block; font-size: 12px; color: var(--txt-3); }
+  .asis-portada { text-align: center; padding: 8px 0 22px; }
+  .asis-marca { display: block; height: 58px; width: auto; margin: 0 auto 18px; }
+  html[data-theme="dark"] .asis-marca, html[data-theme="dark"] .asis-lado-cab img, html[data-theme="dark"] .asis-cab b img { filter: invert(1) brightness(.96); }
+  .asis-hola { display: inline-block; font: 700 21px/1.3 var(--display); letter-spacing: -.2px;
+               background: linear-gradient(90deg, var(--au1), var(--au2), var(--au3), var(--au2), var(--au1)); background-size: 300% 100%;
+               -webkit-background-clip: text; background-clip: text; color: transparent; animation: correr 9s linear infinite; }
+  @keyframes correr { to { background-position: 300% 0; } }
+  .asis-pregunta { margin-top: 2px; font: 700 40px/1.12 var(--display); letter-spacing: -1.2px; color: var(--txt); text-wrap: balance; }
+  .asis-abajo { padding: 22px 0 6px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 22px; }
+
+  /* Las sugeridas: una tira que se corre (con flechas en la compu). */
+  .asis-carrusel { position: relative; display: flex; align-items: center; gap: 6px; }
+  .asis-carrusel:not(.hay) { display: none; }
+  .asis-sug { flex: 1; min-width: 0; display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x proximity; scroll-behavior: smooth;
+              scrollbar-width: none; padding: 4px 2px 8px; }
+  .asis-sug::-webkit-scrollbar { display: none; }
+  .asis-carrusel.mas-der .asis-sug { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 56px), transparent); }
+  .asis-carrusel.mas-izq .asis-sug { -webkit-mask-image: linear-gradient(90deg, transparent, #000 56px); mask-image: linear-gradient(90deg, transparent, #000 56px); }
+  .asis-carrusel.mas-izq.mas-der .asis-sug { -webkit-mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent);
+                                             mask-image: linear-gradient(90deg, transparent, #000 56px, #000 calc(100% - 56px), transparent); }
+  .asis-sug button { flex: none; scroll-snap-align: start; min-height: 42px; padding: 9px 18px; border-radius: var(--r-pill); border: 1px solid var(--line);
+                     background: color-mix(in srgb, var(--surface) 88%, transparent); font: 500 14px/1.35 var(--sans); color: var(--txt); white-space: nowrap;
+                     transition: transform .2s var(--curva), border-color .2s, box-shadow .2s var(--curva); }
+  .asis-sug button:hover { transform: translateY(-2px); border-color: transparent;
+                           background: linear-gradient(var(--surface), var(--surface)) padding-box,
+                                       linear-gradient(90deg, var(--au1), var(--au2), var(--au3)) border-box;
+                           box-shadow: 0 10px 22px -14px rgba(124, 58, 237, .55); }
+  .asis-flecha { flex: none; width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center; border: 1px solid var(--line);
+                 background: var(--surface); color: var(--txt); box-shadow: 0 4px 12px -6px rgba(20, 20, 18, .3); }
+  .asis-flecha[hidden] { display: none; }
+  .asis-flecha svg { width: 18px; height: 18px; }
+  .asis-flecha:hover { border-color: var(--line-alta); }
+
+  /* Los accesos: tarjetas con su color. */
+  .asis-accesos { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+  .asis-acceso { position: relative; display: flex; align-items: center; gap: 14px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line);
+                 background: color-mix(in srgb, var(--surface) 92%, transparent); color: var(--txt); text-decoration: none; text-align: left;
+                 transition: transform .22s var(--curva), box-shadow .22s var(--curva), border-color .2s; }
+  .asis-acceso:hover { transform: translateY(-3px); border-color: var(--line-alta); box-shadow: 0 16px 30px -20px rgba(20, 20, 18, .45); }
+  .asis-acceso i { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; color: #fff; box-shadow: 0 6px 14px -8px rgba(20, 20, 18, .5); }
+  .asis-acceso i svg { width: 20px; height: 20px; }
+  .asis-acceso b { display: block; font-size: 14.5px; font-weight: 600; }
+  .asis-acceso small { display: block; font-size: 12.5px; color: var(--txt-3); }
+  .asis-acceso > span { flex: 1; min-width: 0; }
+  .asis-acceso .ir { flex: none; width: 18px; height: 18px; color: var(--txt-3); transition: transform .2s var(--curva); }
+  .asis-acceso:hover .ir { transform: translateX(3px); color: var(--txt); }
+  .t-objetivo { background: linear-gradient(135deg, #10B981, var(--au4) 60%, #0E7490); }
+  .t-carpeta  { background: linear-gradient(135deg, #F59E0B, var(--au3) 60%, #DB2777); }
+  .t-enlace   { background: linear-gradient(135deg, var(--au5), var(--au1)); }
   .asis-main:not(.vacia) .asis-portada, .asis-main:not(.vacia) .asis-abajo { display: none; }
   .asis-main.vacia .asis-msgs { display: none; }
 
   /* La caja para preguntar. */
-  .asis-caja { display: flex; align-items: flex-end; gap: 6px; padding: 8px 8px 8px 14px; border-radius: 22px; border: 1px solid var(--line-campo);
-               background: var(--campo); box-shadow: var(--sombra); }
+  .asis-caja { display: flex; align-items: flex-end; gap: 6px; padding: 8px 8px 8px 16px; border-radius: 22px; border: 1px solid var(--line-campo);
+               background: var(--campo); box-shadow: var(--sombra); transition: border-color .2s, box-shadow .25s var(--curva); }
   .asis-caja:focus-within { border-color: var(--foco); }
   .asis-caja textarea { flex: 1; min-height: 40px; max-height: 168px; padding: 9px 0; border: 0; background: none; resize: none; box-shadow: none;
                         font: 400 15.5px/1.45 var(--sans); color: var(--txt); outline: none; }
   .asis-caja textarea:focus { box-shadow: none; }
-  .asis-boton { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--txt-2); }
+  /* La de la portada: alta, con los botones abajo a la derecha (como Chatbase)
+     y el brillo de colores debajo. Al escribir, el borde toma los colores. */
+  .asis-brillo { position: relative; isolation: isolate; }
+  .asis-brillo::after { content: ''; position: absolute; z-index: -1; left: 6%; right: 6%; bottom: -26px; height: 70px; border-radius: 50%; pointer-events: none;
+                        background: linear-gradient(90deg, var(--au1), var(--au2), var(--au3), #FACC15, #34D399, var(--au5), var(--au1));
+                        background-size: 200% 100%; filter: blur(30px); opacity: var(--brillo-op);
+                        animation: correr 12s linear infinite; transition: opacity .3s ease, bottom .3s var(--curva); }
+  .asis-brillo:focus-within::after { opacity: calc(var(--brillo-op) + .2); bottom: -32px; }
+  .asis-caja-grande { flex-wrap: wrap; justify-content: flex-end; padding: 14px 12px 10px 20px; border-radius: 26px; border-color: var(--line); }
+  .asis-caja-grande textarea { flex: 1 1 100%; min-height: 58px; font-size: 16.5px; padding: 4px 0 6px; }
+  .asis-caja-grande:focus-within { border-color: transparent;
+                                   background: linear-gradient(var(--campo), var(--campo)) padding-box,
+                                               linear-gradient(90deg, var(--au1), var(--au2), var(--au3), var(--au5)) border-box; }
+  .asis-boton { flex: none; width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center; color: var(--txt-2); transition: background .2s, transform .15s; }
   .asis-boton svg { width: 20px; height: 20px; }
   .asis-boton:hover { background: var(--surface-2); color: var(--txt); }
   .asis-mandar { background: var(--acc); color: var(--acc-ink); }
   .asis-mandar:hover { background: var(--acc-2); color: var(--acc-ink); }
+  .asis-mandar:not(:disabled):active { transform: scale(.94); }
   .asis-mandar:disabled { background: var(--surface-3); color: var(--txt-3); cursor: default; }
   .asis-mic.escucha { background: var(--bad-soft); color: var(--bad-txt); animation: latir 1.4s ease-in-out infinite; }
   @keyframes latir { 50% { box-shadow: 0 0 0 6px rgba(160, 15, 30, .12); } }
   .asis-pie { padding: 6px 16px 12px; text-align: center; font-size: 12px; color: var(--txt-3); }
   .asis-abajo-caja { padding: 0 16px; }
   .asis-main.vacia .asis-abajo-caja { display: none; }
-  .asis-main:not(.vacia) .asis-cuerpo .asis-caja { display: none; }
+  .asis-main:not(.vacia) .asis-cuerpo .asis-brillo { display: none; }
 
   /* Los mensajes. */
-  .asis-msgs { display: grid; gap: 18px; padding-bottom: 8px; }
-  .asis-yo-msg { justify-self: end; max-width: 82%; padding: 10px 14px; border-radius: 18px 18px 4px 18px; background: var(--acc); color: var(--acc-ink);
-                 font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
-  .asis-ia { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 10px; }
-  .asis-ia-ico { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: var(--surface-2); border: 1px solid var(--line); }
-  .asis-ia-ico svg { width: 16px; height: 16px; }
-  .asis-md { font-size: 15px; line-height: 1.6; color: var(--txt); overflow-wrap: anywhere; }
+  .asis-msgs { display: grid; gap: 20px; padding-bottom: 8px; }
+  .asis-yo-msg { justify-self: end; max-width: 82%; padding: 10px 15px; border-radius: 20px 20px 6px 20px; background: var(--acc); color: var(--acc-ink);
+                 font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; animation: entrar .28s var(--curva) both; }
+  .asis-ia { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 12px; animation: entrar .32s var(--curva) both; }
+  @keyframes entrar { from { opacity: 0; transform: translateY(8px); } }
+  .asis-ia-ico { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+                 background: linear-gradient(135deg, var(--au1), var(--au2) 55%, var(--au3)); box-shadow: 0 6px 14px -8px rgba(124, 58, 237, .7); }
+  .asis-ia-ico svg { width: 17px; height: 17px; }
+  .asis-md { font-size: 15px; line-height: 1.65; color: var(--txt); overflow-wrap: anywhere; padding-top: 5px; }
   .asis-md p + p, .asis-md p + ul, .asis-md ul + p, .asis-md p + ol, .asis-md ol + p { margin-top: 8px; }
   .asis-md ul, .asis-md ol { padding-left: 20px; display: grid; gap: 3px; }
   .asis-md h4 { font-size: 15px; font-weight: 700; margin: 10px 0 4px; }
-  .asis-md a { color: var(--txt); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+  .asis-md a { color: var(--txt); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--au2); }
   .asis-ref { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; margin-left: 2px; border-radius: 6px;
-              vertical-align: 2px; background: var(--surface-3); color: var(--txt-2); font: 700 11px var(--sans); border: 0; cursor: pointer; }
-  .asis-ref:hover { background: var(--acc); color: var(--acc-ink); }
+              vertical-align: 2px; background: var(--au-suave1); color: var(--txt); font: 700 11px var(--sans); border: 0; cursor: pointer; }
+  .asis-ref:hover { background: var(--au1); color: #fff; }
   .asis-fuentes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 10px; }
   .asis-fuentes > span { font-size: 12px; font-weight: 700; color: var(--txt-3); }
   .asis-fuente { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 30px; padding: 3px 10px 3px 4px; border-radius: var(--r-pill);
                  border: 1px solid var(--line); background: var(--surface); font: 500 12.5px var(--sans); color: var(--txt-2); }
-  .asis-fuente:hover, .asis-fuente[aria-expanded="true"] { border-color: var(--acc); color: var(--txt); }
-  .asis-fuente em { font-style: normal; display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 50%; background: var(--surface-3); font-weight: 700; font-size: 11px; }
+  .asis-fuente:hover, .asis-fuente[aria-expanded="true"] { border-color: var(--au1); color: var(--txt); }
+  .asis-fuente em { font-style: normal; display: inline-grid; place-items: center; min-width: 22px; height: 22px; border-radius: 50%; background: var(--au-suave1); color: var(--txt); font-weight: 700; font-size: 11px; }
   .asis-fuente span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .asis-cita { margin-top: 8px; padding: 10px 12px; border-left: 3px solid var(--line-alta); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--surface-2);
+  .asis-cita { margin-top: 8px; padding: 10px 12px; border-left: 3px solid var(--au1); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--surface-2);
                font-size: 13.5px; line-height: 1.55; color: var(--txt-2); }
   .asis-cita b { display: block; font-size: 12px; color: var(--txt); margin-bottom: 4px; }
   .asis-cita q { display: block; quotes: none; white-space: pre-wrap; }
@@ -158,16 +259,30 @@
   .asis-gracias { margin-top: 6px; font-size: 12.5px; color: var(--ok-txt); font-weight: 600; }
   .asis-error { justify-self: start; padding: 10px 14px; border-radius: var(--r-sm); background: var(--bad-soft); color: var(--bad-txt); font-size: 14px; }
   .asis-error button { margin-left: 8px; background: none; border: 0; padding: 0; font: 700 14px var(--sans); color: var(--bad-txt); text-decoration: underline; cursor: pointer; }
-  .asis-pensando { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: var(--txt-3); padding-top: 6px; }
-  .asis-pensando i { width: 6px; height: 6px; border-radius: 50%; background: var(--txt-3); animation: puntito 1.2s infinite ease-in-out; }
-  .asis-pensando i:nth-child(2) { animation-delay: .15s; }
-  .asis-pensando i:nth-child(3) { animation-delay: .3s; }
+  /* "Buscando en los manuales": el texto con un brillo que lo recorre. */
+  .asis-pensando { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 500; padding-top: 7px;
+                   background: linear-gradient(90deg, var(--txt-3) 0%, var(--txt-3) 35%, var(--au1) 50%, var(--au2) 58%, var(--txt-3) 72%, var(--txt-3) 100%);
+                   background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: barrer 1.8s linear infinite; }
+  @keyframes barrer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+  .asis-pensando i { width: 6px; height: 6px; border-radius: 50%; background: var(--au1); animation: puntito 1.2s infinite ease-in-out; }
+  .asis-pensando i:nth-child(2) { animation-delay: .15s; background: var(--au2); }
+  .asis-pensando i:nth-child(3) { animation-delay: .3s; background: var(--au3); }
   @keyframes puntito { 0%, 80%, 100% { opacity: .25; transform: none; } 40% { opacity: 1; transform: translateY(-3px); } }
-  .asis-aviso { padding: 12px 14px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn-txt); font-size: 14px; line-height: 1.5; text-align: left; margin-bottom: 12px; }
+  .asis-aviso { padding: 12px 14px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn-txt); font-size: 14px; line-height: 1.5; text-align: left; margin-bottom: 14px; }
+
+  /* La portada entra de a poco. */
+  .asis-main.vacia:not(.eligiendo) .asis-portada > *, .asis-main.vacia:not(.eligiendo) .asis-brillo,
+  .asis-main.vacia:not(.eligiendo) .asis-abajo > * { animation: subir .6s var(--curva) both; }
+  .asis-main.vacia .asis-portada > :nth-child(2) { animation-delay: .06s; }
+  .asis-main.vacia .asis-portada > :nth-child(3) { animation-delay: .12s; }
+  .asis-main.vacia .asis-brillo { animation-delay: .18s; }
+  .asis-main.vacia .asis-abajo > :nth-child(1) { animation-delay: .26s; }
+  .asis-main.vacia .asis-abajo > :nth-child(2) { animation-delay: .34s; }
+  @keyframes subir { from { opacity: 0; transform: translateY(14px); } }
 
   /* ── ¿Quién sos? ── */
   .asis-elegir { width: 100%; max-width: 640px; margin: auto; text-align: center; }
-  .asis-elegir h2 { font: 700 22px/1.2 var(--display); }
+  .asis-elegir h2 { font: 700 24px/1.2 var(--display); letter-spacing: -.4px; }
   .asis-elegir p { font-size: 14px; color: var(--txt-2); margin: 6px 0 16px; line-height: 1.5; }
   .asis-elegir .chips { justify-content: center; gap: 8px; }
   .asis-elegir-nuevo { display: flex; gap: 8px; max-width: 420px; margin: 14px auto 0; }
@@ -176,12 +291,29 @@
   .asis-link { margin: 14px 8px 0; background: none; border: 0; padding: 0; font: 600 13.5px var(--sans); color: var(--txt-2);
                text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
   .asis-main.eligiendo .asis-portada, .asis-main.eligiendo .asis-abajo, .asis-main.eligiendo .asis-msgs,
-  .asis-main.eligiendo .asis-caja, .asis-main.eligiendo .asis-abajo-caja, .asis-main.eligiendo .asis-pie { display: none; }
+  .asis-main.eligiendo .asis-brillo, .asis-main.eligiendo .asis-abajo-caja, .asis-main.eligiendo .asis-pie { display: none; }
   .asis-main:not(.eligiendo) .asis-elegir { display: none; }
   @media (max-width: 599px) {
-    .asis-portada h1 { font-size: 22px; }
+    .asis-marca { height: 44px; margin-bottom: 14px; }
+    .asis-hola { font-size: 18px; }
+    .asis-pregunta { font-size: 29px; letter-spacing: -.8px; }
     .asis-accesos { grid-template-columns: minmax(0, 1fr); }
     .asis-yo-msg { max-width: 92%; }
+    .asis-flecha { display: none; }
+    .asis-sug button { font-size: 13.5px; padding: 8px 15px; }
+  }
+  /* Alto justo (la PC del local, 1366×768): todo un poco más junto. */
+  @media (min-width: 900px) and (max-height: 700px) {
+    .asis-marca { height: 46px; margin-bottom: 12px; }
+    .asis-pregunta { font-size: 34px; }
+    .asis-portada { padding-bottom: 16px; }
+    .asis-abajo { padding-top: 18px; gap: 16px; }
+    .asis-caja-grande textarea { min-height: 48px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .asis-main::before, .asis-hola, .asis-brillo::after, .asis-pensando, .asis-pensando i,
+    .asis-main.vacia .asis-portada > *, .asis-main.vacia .asis-brillo, .asis-main.vacia .asis-abajo > *,
+    .asis-yo-msg, .asis-ia { animation: none; }
   }
 </style>
 </head>
@@ -237,10 +369,12 @@
 <main class="asis-app" id="asisApp">
   <!-- Las charlas de quien está usando la PC. -->
   <aside class="asis-lado" id="asisLado" aria-label="Tus charlas">
-    <button type="button" class="btn btn-pri asis-nueva" id="asisNueva">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+    <div class="asis-lado-cab"><img src="logo-vdh.png" alt="VDH" width="509" height="151"><span>Asistente</span></div>
+    <button type="button" class="btn asis-nueva" id="asisNueva">
+      <i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i>
       Nueva charla
     </button>
+    <nav class="asis-lado-accesos" id="asisLadoAccesos" aria-label="Accesos"></nav>
     <h3>Tus charlas</h3>
     <div class="asis-charlas" id="asisCharlas"></div>
     <div class="asis-yo" id="asisYo"></div>
@@ -254,7 +388,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
         Charlas
       </button>
-      <b>Asistente</b>
+      <b><img src="logo-vdh.png" alt="VDH" width="509" height="151">Asistente</b>
       <button type="button" id="asisNuevaCel" aria-label="Nueva charla">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
         Nueva
@@ -285,16 +419,15 @@
 
       <div class="asis-ancho">
         <div class="asis-portada">
-          <div class="asis-logo" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z"/><path d="M19 14.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></svg>
-          </div>
-          <h1 id="asisHola">Hola</h1>
-          <p id="asisSaludo">¿En qué te ayudo?</p>
+          <img class="asis-marca" src="logo-vdh.png" alt="VDH" width="509" height="151">
+          <p class="asis-hola" id="asisHola">Hola</p>
+          <h1 class="asis-pregunta" id="asisSaludo">¿En qué te ayudo?</h1>
         </div>
         <div class="asis-aviso" id="asisAviso" hidden></div>
         <div class="asis-msgs" id="asisMsgs" aria-live="polite"></div>
-        <form class="asis-caja" id="asisCajaArriba" data-caja>
-          <textarea rows="1" placeholder="Preguntá lo que necesites…" aria-label="Tu pregunta" maxlength="2000"></textarea>
+        <div class="asis-brillo">
+        <form class="asis-caja asis-caja-grande" id="asisCajaArriba" data-caja>
+          <textarea rows="2" placeholder="Preguntá lo que necesites…" aria-label="Tu pregunta" maxlength="2000"></textarea>
           <button type="button" class="asis-boton asis-mic" data-mic aria-label="Hablar" title="Hablar" hidden>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></svg>
           </button>
@@ -302,8 +435,18 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
           </button>
         </form>
+        </div>
         <div class="asis-abajo">
-          <div class="asis-sug" id="asisSug"></div>
+          <!-- Las sugeridas, en una tira que se corre. -->
+          <div class="asis-carrusel" id="asisCarrusel">
+            <button type="button" class="asis-flecha" data-mover="-1" aria-label="Ver las anteriores" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+            </button>
+            <div class="asis-sug" id="asisSug"></div>
+            <button type="button" class="asis-flecha" data-mover="1" aria-label="Ver más preguntas" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>
+            </button>
+          </div>
           <div class="asis-accesos" id="asisAccesos"></div>
         </div>
       </div>
@@ -371,7 +514,8 @@
     copiar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
     enlace: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>',
     carpeta: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>',
-    objetivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>'
+    objetivo: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></svg>',
+    ir: '<svg class="ir" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6"/></svg>'
   };
 
   /* ═══ Quién está usando la PC ════════════════════════════════════════ */
@@ -518,16 +662,39 @@
     Array.prototype.forEach.call($('asisSug').children, function (b) {
       b.onclick = function () { preguntar(sug[+b.dataset.sug]); };
     });
+    $('asisCarrusel').classList.toggle('hay', sug.length > 0);
+    $('asisSug').scrollLeft = 0;
+    marcarFlechas();
     var acc = (p.accesos || []).filter(function (a) { return a && a.titulo && /^https:\/\//i.test(a.url || ''); }).slice(0, 6);
+    /* Cada acceso con su color: el objetivo verde, el Drive naranja, lo demás violeta. */
+    var tipo = function (a) { return /drive\.google|docs\.google/i.test(a.url) ? 'carpeta' : (/objetivo/i.test(a.titulo + a.url) ? 'objetivo' : 'enlace'); };
     $('asisAccesos').innerHTML = acc.map(function (a) {
-      var ico = /drive\.google|docs\.google/i.test(a.url) ? ICO.carpeta : (/objetivo/i.test(a.titulo + a.url) ? ICO.objetivo : ICO.enlace);
-      return '<a class="asis-acceso" href="' + esc(a.url) + '" target="_blank" rel="noopener"><i aria-hidden="true">' + ico + '</i>' +
-        '<span><b>' + esc(a.titulo) + '</b><small>' + esc(a.nota || 'Se abre en otra pestaña') + '</small></span></a>';
+      var t = tipo(a);
+      return '<a class="asis-acceso" href="' + esc(a.url) + '" target="_blank" rel="noopener"><i class="t-' + t + '" aria-hidden="true">' + ICO[t] + '</i>' +
+        '<span><b>' + esc(a.titulo) + '</b><small>' + esc(a.nota || 'Se abre en otra pestaña') + '</small></span>' + ICO.ir + '</a>';
+    }).join('');
+    $('asisLadoAccesos').innerHTML = acc.map(function (a) {
+      var t = tipo(a);
+      return '<a href="' + esc(a.url) + '" target="_blank" rel="noopener"><i class="t-' + t + '" aria-hidden="true">' + ICO[t] + '</i><span>' + esc(a.titulo) + '</span></a>';
     }).join('');
     var apagado = !!p.error || p.prendido === false || p.habilitada === false;
     Array.prototype.forEach.call(document.querySelectorAll('[data-caja] textarea'), function (t) { t.disabled = apagado; });
     marcarMandar();
   }
+
+  function marcarFlechas() {
+    var t = $('asisSug'), c = $('asisCarrusel');
+    var izq = t.scrollLeft > 4, der = t.scrollLeft + t.clientWidth < t.scrollWidth - 4;
+    c.classList.toggle('mas-izq', izq);
+    c.classList.toggle('mas-der', der);
+    c.querySelector('[data-mover="-1"]').hidden = !izq;
+    c.querySelector('[data-mover="1"]').hidden = !der;
+  }
+  Array.prototype.forEach.call(document.querySelectorAll('[data-mover]'), function (b) {
+    b.onclick = function () { var t = $('asisSug'); t.scrollBy({ left: +b.dataset.mover * Math.max(200, t.clientWidth * 0.7), behavior: 'smooth' }); };
+  });
+  $('asisSug').addEventListener('scroll', marcarFlechas, { passive: true });
+  window.addEventListener('resize', marcarFlechas);
 
   /* ═══ Las charlas de quien está ══════════════════════════════════════ */
   function traerCharlas() {
@@ -557,7 +724,8 @@
       b.onclick = function () { abrirCharla(b.dataset.ch); };
     });
     $('asisYo').innerHTML = hay
-      ? '<b>' + esc(S.vendedor) + '</b>' + esc(nombreLocal(S.local)) + '<br><button type="button" id="asisNoSoy">No soy ' + esc(S.vendedor.split(' ')[0]) + '</button>'
+      ? '<span class="asis-yo-av" aria-hidden="true">' + esc(S.vendedor.charAt(0).toUpperCase()) + '</span>' +
+        '<span><b>' + esc(S.vendedor) + '</b>' + esc(nombreLocal(S.local)) + '<br><button type="button" id="asisNoSoy">No soy ' + esc(S.vendedor.split(' ')[0]) + '</button></span>'
       : 'Sin elegir quién sos.';
     if ($('asisNoSoy')) { $('asisNoSoy').onclick = cambiarYo; }
     $('asisNueva').disabled = !hay;
