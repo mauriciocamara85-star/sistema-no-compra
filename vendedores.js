@@ -334,13 +334,91 @@ function irA(p) {
 
 function irInicio() { irA(esSupervision() ? 'revisar' : 'hoy'); }
 
+window.addEventListener('hashchange', function () {
+  if (!_vend || !_vend.refresco) return;
+  if (yo().aprobado === false) { revisarAprobacion(true); return; }
+  irPorEnlace();
+});
+document.addEventListener('visibilitychange', function () {
+  /* Al volver a la app (desde otra o desde un aviso), se vuelve a cargar la
+     pestaña que está a la vista. No se toca si está en la cámara, en un
+     formulario de pantalla completa o con algo escrito a medias. */
+  if (document.visibilityState !== 'visible' || !_vend || !_vend.refresco) return;
+  if (yo().aprobado === false) { revisarAprobacion(true); return; }
+  if (barra.hidden || hayAlgoEscrito()) return;
+  irA(_pestana);
+});
+
+function hayAlgoEscrito() {
+  return Array.prototype.some.call(app.querySelectorAll('input, textarea'), function (x) {
+    if (x.type === 'file' || x.type === 'hidden') return false;
+    if (x.type === 'checkbox' || x.type === 'radio') return x.checked !== x.defaultChecked;
+    return x.value !== x.defaultValue;
+  });
+}
+
 /** Al entrar (recién o con la sesión guardada). */
 function entrarApp(recien) {
+  if (yo().aprobado === false) { pantallaEspera(); return; }
+  refrescarYo();
   armarBarra();
   avisosAlDia();
   var per = yo();
   if (recien && !bienvenidaVista(per.id)) { pantallaBienvenida(irInicio); return; }
   if (!irPorEnlace()) irInicio();
+}
+
+/* La persona guardada en el teléfono puede quedar vieja (le cambiaron el rol o
+   el local, o lo desaprobaron): se relee en silencio y, si cambió, se rearma. */
+function refrescarYo() {
+  var per = yo();
+  leer('/orden_personas?select=nombre,rol,local_id,aprobado,activo&id=eq.' + valor(per.id)).then(function (f) {
+    var x = (f || [])[0];
+    if (!x || !x.rol) return;
+    /* Desactivado cuenta como sin aprobar: la base ya no le muestra nada. */
+    var aprobado = !!(x.aprobado && x.activo);
+    var cambio = x.rol !== per.rol || x.local_id !== per.local_id || aprobado !== (per.aprobado !== false);
+    if (!cambio) return;
+    per.rol = x.rol; per.local_id = x.local_id; per.aprobado = aprobado;
+    anotarVend_({ access_token: _vend.token, refresh_token: _vend.refresco, expires_at: Math.floor(_vend.vence / 1000) + 60 }, per);
+    entrarApp(false);
+  }).catch(function () {});
+}
+
+/* Quien entró por primera vez espera el OK de su supervisor (o del
+   administrador): hasta entonces la base no le muestra nada del local. */
+function pantallaEspera() {
+  barra.hidden = true;
+  app.className = 'app';
+  var quien = yo().rol === 'vendedor' ? 'Tu supervisor' : 'El administrador';
+  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>Esperando la aprobación</h1>' +
+    '<p class="bajada">Hola, ' + esc(primerNombre()) + '. ' + quien + ' tiene que confirmar que sos del equipo. Ya le avisamos: cuando te apruebe, tocá el botón de abajo.</p>' +
+    '<button class="boton lima" id="yaMe">Ya me aprobaron</button>' +
+    '<button class="boton" id="salirEspera" style="margin-top:10px">No soy yo</button>';
+  document.getElementById('salirEspera').onclick = preguntarSalir;
+  unaVez(document.getElementById('yaMe'), function () { return revisarAprobacion(false); });
+  /* Si ya lo aprobaron mientras la app estaba cerrada, entra solo. */
+  revisarAprobacion(true);
+}
+
+/** ¿Ya lo aprobaron? Si sí, entra; si no, lo dice (salvo en silencio). */
+function revisarAprobacion(silencio) {
+  return leer('/orden_personas?select=aprobado,activo,rol,local_id&id=eq.' + valor(yo().id)).then(function (f) {
+    var x = (f || [])[0];
+    if (yo().aprobado !== false) return;   // ya entró por otro lado
+    if (x && x.aprobado && x.activo) {
+      var per = yo();
+      per.aprobado = true; per.rol = x.rol; per.local_id = x.local_id;
+      anotarVend_({ access_token: _vend.token, refresh_token: _vend.refresco, expires_at: Math.floor(_vend.vence / 1000) + 60 }, per);
+      entrarApp(true);
+    } else if (silencio) {
+      return;
+    } else if (x && !x.activo) {
+      avisar('No confirmaron tu alta. Si es un error, hablá con tu supervisor.');
+    } else {
+      avisar('Todavía no te aprobaron. Probá en un rato.');
+    }
+  }, function (e) { if (!silencio) throw e; });
 }
 
 /* Los avisos traen a qué pantalla llevan ("/tareas", "/revisar"…): llegan
@@ -1247,7 +1325,6 @@ function fotoCaja(caja, tipo, input, boton) {
       var f = input.files && input.files[0];
       if (!f) { ok(); return; }
       boton.querySelector('.chip').textContent = 'Leyendo…';
-      var per = yo();
       archivoAJpeg(f)
         .then(function (blob) { return subirArchivo(caja.local_id + '/cajas/' + caja.fecha + '/' + tipo + '-' + nombreArchivo(), blob); })
         .then(function (ruta) { return llamar('orden_caja_registrar_foto', { p_caja: caja.id, p_tipo: tipo, p_foto_path: ruta }); })
@@ -1268,8 +1345,7 @@ function fotoCaja(caja, tipo, input, boton) {
           }
           boton.querySelector('.chip').className = 'chip listo';
           ok();
-        }, mal);
-      void per;
+        }, function (e) { boton.querySelector('.chip').textContent = 'Probá de nuevo'; mal(e); });
     };
     input.click();
   });
@@ -1384,11 +1460,22 @@ function dibujarRevisar(loc, cola) {
   cargarFotos(app);
   var s = document.getElementById('saltear');
   if (s) s.onclick = function () { _revisarSaltear++; dibujarRevisar(loc, cola); };
-  app.querySelectorAll('[data-nivel]').forEach(function (b) {
+  var niveles = app.querySelectorAll('[data-nivel]');
+  niveles.forEach(function (b) {
     unaVez(b, function () {
+      /* Uno a la vez: dos niveles tocados casi juntos dejaban un nivel y avisaban otro. */
+      niveles.forEach(function (x) { x.disabled = true; });
       return llamar('orden_revisar_control', { p_control: c.id, p_nivel: b.dataset.nivel, p_comentario: document.getElementById('coment').value || null })
-        .then(function () { avisar(c.modulo_nombre + ': ' + NIVEL[b.dataset.nivel]); pantallaRevisar(); });
+        .then(function () { avisar(c.modulo_nombre + ': ' + NIVEL[b.dataset.nivel]); pantallaRevisar(); },
+              function (e) { niveles.forEach(function (x) { x.disabled = false; }); throw e; });
     });
+    /* unaVez traba sólo el botón tocado, y la acción arranca un instante
+       después: si ya se está mandando otro nivel, este toque no cuenta. */
+    var tocar = b.onclick;
+    b.onclick = function () {
+      if (Array.prototype.some.call(niveles, function (x) { return x.disabled; })) return;
+      return tocar.apply(this, arguments);
+    };
   });
 }
 
@@ -1404,7 +1491,7 @@ function pantallaEquipo() {
     var L = valor(loc.id);
     var desde = _equipoMes ? lunesAR(hoyAR().slice(0, 8) + '01') : lunesAR();
     return Promise.all([
-      leer('/orden_personas?select=id,nombre,apellido,inicial&local_id=eq.' + L + '&activo=is.true&rol=eq.vendedor&order=nombre.asc'),
+      leer('/orden_personas?select=id,nombre,apellido,inicial,aprobado&local_id=eq.' + L + '&activo=is.true&rol=eq.vendedor&order=nombre.asc'),
       leer('/orden_v_persona_semana?select=persona_id,semana,controles,controles_a_tiempo,nivel_semana,tareas,tareas_a_tiempo,tareas_fuera_de_plazo,desafio_puntaje,desafio_total' +
            '&local_id=eq.' + L + '&semana=gte.' + desde),
       leer('/orden_controles?select=persona_id&local_id=eq.' + L + '&estado=eq.pendiente&fecha=eq.' + hoyAR()),
@@ -1413,7 +1500,9 @@ function pantallaEquipo() {
       leer('/orden_v_tareas?select=id,titulo,persona_nombre,origen,vence_en,estado&local_id=eq.' + L + '&estado=in.(pendiente,vencida)&order=vence_en.asc&limit=40')
     ]).then(function (r) {
       if (_pestana !== 'equipo') return;
-      dibujarEquipo(loc, { gente: r[0] || [], semanas: r[1] || [], pendientes: r[2] || [], prorrogas: r[3] || [], faltas: r[4] || [], tareas: r[5] || [] });
+      var todos = r[0] || [];
+      dibujarEquipo(loc, { gente: todos.filter(function (p) { return p.aprobado !== false; }), esperan: todos.filter(function (p) { return p.aprobado === false; }),
+                           semanas: r[1] || [], pendientes: r[2] || [], prorrogas: r[3] || [], faltas: r[4] || [], tareas: r[5] || [] });
     });
   }).catch(function (e) { pantallaError(e, pantallaEquipo); });
 }
@@ -1426,6 +1515,13 @@ function dibujarEquipo(loc, x) {
   var mira = soloMira();
   var html = cabeza('Equipo', loc.nombre) + selectorLocal(loc) +
     '<div class="pestanitas"><button class="' + (!_equipoMes ? 'activa' : '') + '" id="vSemana">Esta semana</button><button class="' + (_equipoMes ? 'activa' : '') + '" id="vMes">Este mes</button></div>';
+
+  if ((x.esperan || []).length) {
+    html += '<div class="seccion">Esperan tu OK</div><p class="bajada">Entraron a la app por primera vez. Hasta que los apruebes no ven nada del local.</p>' + x.esperan.map(function (p) {
+      return '<div class="tarea"><div class="nombre">' + esc(p.nombre + (p.apellido ? ' ' + p.apellido : '')) + '</div>' +
+        (mira ? '' : '<div class="botones"><button class="boton lima chico" data-aprobar="' + esc(p.id) + '" data-si="1">Es de acá</button><button class="boton chico" data-aprobar="' + esc(p.id) + '" data-si="0">No lo conozco</button></div>') + '</div>';
+    }).join('');
+  }
 
   /* Por vendedor: se suman las semanas del período. */
   var tot = {};
@@ -1479,6 +1575,14 @@ function dibujarEquipo(loc, x) {
   engancharSelector(pantallaEquipo);
   document.getElementById('vSemana').onclick = function () { _equipoMes = false; pantallaEquipo(); };
   document.getElementById('vMes').onclick = function () { _equipoMes = true; pantallaEquipo(); };
+  app.querySelectorAll('[data-aprobar]').forEach(function (b) {
+    unaVez(b, function () {
+      var si = b.dataset.si === '1';
+      if (!si && !confirm('¿No lo conocés? Se le cierra el acceso a la app.')) return;
+      return llamar('orden_aprobar_persona', { p_persona: b.dataset.aprobar, p_aprobar: si })
+        .then(function () { avisar(si ? 'Aprobado: ya puede usar la app.' : 'Listo: no va a poder entrar.'); pantallaEquipo(); });
+    });
+  });
   app.querySelectorAll('[data-recordar]').forEach(function (b) {
     unaVez(b, function () {
       return llamar('orden_recordar', { p_persona: b.dataset.recordar }).then(function (ok) {

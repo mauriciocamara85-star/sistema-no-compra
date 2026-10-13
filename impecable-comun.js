@@ -66,23 +66,39 @@ var _renovando = null;
  * borra si Supabase dice que el refresco ya no vale.
  */
 function tokenVend() {
+  /* Otra pestaña (la app y la administración abiertas a la vez) puede haber
+     renovado la sesión: se mira lo guardado antes de usar el refresco, que es
+     de un solo uso. */
+  var guardada = leerVend_();
+  if (guardada && _vend && guardada.refresco !== _vend.refresco) _vend = guardada;
   if (!_vend || !_vend.refresco) return Promise.reject(sinSesionVend_());
   if (Date.now() < _vend.vence) return Promise.resolve(_vend.token);
-  if (_renovando) return _renovando;
-  _renovando = fetch(BASE + '/auth/v1/token?grant_type=refresh_token', {
-    method: 'POST',
-    headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refresh_token: _vend.refresco })
-  }).then(function (r) {
-    if (r.status === 400 || r.status === 401) { guardarVend_(null); throw sinSesionVend_(); }
-    if (!r.ok) throw new Error('Supabase respondió ' + r.status);
-    return r.json();
-  }).then(function (d) {
-    anotarVend_({ access_token: d.access_token, refresh_token: d.refresh_token, expires_at: d.expires_at });
-    return _vend.token;
-  });
-  _renovando.then(function () { _renovando = null; }, function () { _renovando = null; });
-  return _renovando;
+  if (!_renovando) {
+    var refresco = _vend.refresco;
+    _renovando = fetch(BASE + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refresco })
+    }).then(function (r) {
+      if (r.status === 400 || r.status === 401) {
+        /* Si mientras tanto otra pestaña la renovó, se sigue con ésa en vez de cerrar todo. */
+        var otra = leerVend_();
+        if (otra && otra.refresco && otra.refresco !== refresco) { _vend = otra; return null; }
+        guardarVend_(null);
+        throw sinSesionVend_();
+      }
+      if (!r.ok) throw new Error('Supabase respondió ' + r.status);
+      return r.json().then(function (d) {
+        anotarVend_({ access_token: d.access_token, refresh_token: d.refresh_token, expires_at: d.expires_at });
+        return _vend.token;
+      });
+    });
+    /* Se suelta antes que cualquier otra espera (se anota primero). */
+    _renovando.then(function () { _renovando = null; }, function () { _renovando = null; });
+  }
+  /* null: la renovó otra pestaña. Se vuelve a empezar con la de ella, que
+     puede estar vigente o necesitar otra renovación. */
+  return _renovando.then(function (t) { return t || tokenVend(); });
 }
 
 /** Leer una tabla o vista con la sesión de quien entró (la seguridad la pone la base). */
@@ -125,7 +141,8 @@ function cerrarSesion() {
   var t = _vend && _vend.token;
   guardarVend_(null);
   if (t) {
-    fetch(BASE + '/auth/v1/logout', { method: 'POST', headers: { apikey: CLAVE, Authorization: 'Bearer ' + t } })
+    /* scope=local: cierra sólo este aparato (sin eso, Supabase cierra la sesión en todos). */
+    fetch(BASE + '/auth/v1/logout?scope=local', { method: 'POST', headers: { apikey: CLAVE, Authorization: 'Bearer ' + t } })
       .catch(function () {});
   }
 }

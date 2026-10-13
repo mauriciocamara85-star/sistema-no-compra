@@ -104,7 +104,7 @@ export async function enviarAvisosPendientes(sb: SupabaseClient, limite = 300): 
 
     if (a.canal.includes("telegram") && a.persona?.telegram_chat_id) {
       try {
-        const link = a.url && appUrl ? `\n${appUrl}${a.url}` : "";
+        const link = a.url && appUrl ? `\n${appUrl}/vendedores.html#${a.url}` : "";
         await enviarTelegram(a.persona.telegram_chat_id, `${a.titulo}${a.cuerpo ? `\n${a.cuerpo}` : ""}${link}`, sb);
         alguno = true;
       } catch (e) {

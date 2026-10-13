@@ -56,9 +56,17 @@ Deno.serve(async (req) => {
         email: r.mail, password: clave, email_confirm: true,
         user_metadata: { persona_id: r.persona_id },
       });
-      if (error || !data.user) throw new Error(error?.message ?? "no se pudo crear la cuenta");
-      uid = data.user.id;
-      await vincular(uid, clave);
+      if (error || !data.user) {
+        /* Si una vez anterior se creó la cuenta pero se cortó antes de anotarla,
+           Supabase dice que el mail ya existe: se la busca y se sigue con ésa. */
+        const { data: existente } = await sb.rpc("orden_cuenta_de", { p_persona: r.persona_id });
+        if (!existente) throw new Error(error?.message ?? "no se pudo crear la cuenta");
+        uid = existente as string;
+        clave = await claveNueva(uid);
+      } else {
+        uid = data.user.id;
+        await vincular(uid, clave);
+      }
     } else if (!clave) {
       clave = await claveNueva(uid);
     }
@@ -85,7 +93,7 @@ Deno.serve(async (req) => {
     access_token: s.session.access_token,
     refresh_token: s.session.refresh_token,
     expires_at: s.session.expires_at,
-    persona: { id: r.persona_id, nombre: r.nombre, rol: r.rol, local_id: r.local_id },
+    persona: { id: r.persona_id, nombre: r.nombre, rol: r.rol, local_id: r.local_id, aprobado: r.aprobado !== false },
   });
 
   async function vincular(id: string, c: string) {

@@ -485,11 +485,11 @@ function errAjuste(e) { error(e, verAjustes); }
 function ajPersonas() {
   var L = valor(_local.id);
   Promise.all([
-    leer('/orden_personas?select=id,nombre,apellido,inicial,rol,local_id,dias_libres,telegram_chat_id,activo,auth_user_id&or=(local_id.eq.' + L + ',local_id.is.null)&order=local_id.nullsfirst,nombre.asc'),
+    leer('/orden_personas?select=id,nombre,apellido,inicial,rol,local_id,dias_libres,telegram_chat_id,activo,aprobado,auth_user_id&or=(local_id.eq.' + L + ',local_id.is.null)&order=local_id.nullsfirst,nombre.asc'),
     leer('/orden_locales?select=id,nombre&order=nombre.asc')
   ]).then(function (r) {
     var gente = r[0] || [], locs = r[1] || [];
-    var z = zonaAjuste('<p class="bajada">Las de ' + esc(_local.nombre) + ' y las que no tienen local (administración y gerencia). Para cambiar a alguien de local, elegí otro y guardá. "Borrar PIN": la próxima vez que entre, crea uno nuevo.</p>' +
+    var z = zonaAjuste('<p class="bajada">Las de ' + esc(_local.nombre) + ' y las que no tienen local (administración y gerencia). Para cambiar a alguien de local, elegí otro y guardá. "Borrar PIN": la próxima vez que entre, crea uno nuevo (y hay que volver a aprobarlo). "Aprobado": quien entra por primera vez no ve nada del local hasta que se lo aprueba (a los vendedores también los aprueba su supervisor desde la app).</p>' +
       '<div id="filasPersonas"></div><div class="seccion">Agregar a alguien</div><div class="renglon" id="nuevaPersona">' +
       campoHTML({ k: 'nombre', t: 'Nombre', tipo: 'texto' }, {}) + campoHTML({ k: 'apellido', t: 'Apellido', tipo: 'texto' }, {}) +
       campoHTML({ k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador']] }, { rol: 'vendedor' }) +
@@ -501,10 +501,17 @@ function ajPersonas() {
              { k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador']] },
              { k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) },
              { k: 'dias_libres', t: 'Francos', tipo: 'dias' }, { k: 'telegram_chat_id', t: 'Telegram (id)', tipo: 'texto', nulo: true },
-             { k: 'activo', t: 'Activo', tipo: 'bool' }, { k: 'auth_user_id', t: 'Entró a la app', tipo: 'ver', ver: function (f) { return f.auth_user_id ? 'Sí' : 'Todavía no'; } }],
+             { k: 'activo', t: 'Activo', tipo: 'bool' }, { k: 'aprobado', t: 'Aprobado', tipo: 'bool' },
+             { k: 'auth_user_id', t: 'Entró a la app', tipo: 'ver', ver: function (f) { return f.auth_user_id ? 'Sí' : 'Todavía no'; } }],
       guardar: function (f, c) {
         if ('apellido' in c) c.inicial = c.apellido ? c.apellido.charAt(0).toUpperCase() : null;
-        return guardarFila('/orden_personas?id=eq.' + valor(f.id), c);
+        /* Aprobar pasa por la base, como cuando aprueba el supervisor: a un
+           vendedor además lo suma al equipo de la Carga de No Compra. */
+        var aprobar = c.aprobado === true && f.aprobado === false;
+        var resto = Object.assign({}, c);
+        if (aprobar) delete resto.aprobado;
+        var antes = Object.keys(resto).length ? guardarFila('/orden_personas?id=eq.' + valor(f.id), resto) : Promise.resolve();
+        return antes.then(function () { if (aprobar) return llamar('orden_aprobar_persona', { p_persona: f.id, p_aprobar: true }); });
       },
       extra: function () { return '<button class="boton chico" data-accion="pin">Borrar PIN</button>'; },
       accion: function (f) {
