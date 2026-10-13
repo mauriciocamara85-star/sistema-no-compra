@@ -705,8 +705,9 @@ function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
 
   html += '<div class="seccion">' + esc(_local.nombre) + '</div>';
   if (!sem) {
-    html += '<div class="vacio">' + esc(_local.nombre) + ' no tiene producto testigo esta semana.</div>' +
-      (soloMira() ? '' : '<button class="boton chico" id="empezar" style="margin-top:12px">Empezar una planilla vacía</button>');
+    /* Se arma con "Programar un control" (con su día: si no, el local no lo ve). */
+    html += '<div class="vacio">' + esc(_local.nombre) + ' no tiene producto testigo esta semana.' +
+      (soloMira() ? '' : ' Para armarlo, tocá "Programar un control".') + '</div>';
   } else {
     html += '<div class="nota">' + (sem.fecha ? 'Se cuenta el ' + esc(diaYFecha(sem.fecha)) + '. ' : '') +
       (sem.cargada_en ? 'Mandado' + (quien ? ' por ' + esc(nombreLista(quien)) : '') + ' el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '.'
@@ -730,10 +731,6 @@ function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
   });
   var b = document.getElementById('programar');
   if (b) b.onclick = programarTestigo;
-  b = document.getElementById('empezar');
-  if (b) unaVez(b, function () {
-    return escribir('/testigo_semanas', 'POST', { local_id: _local.id, semana: _semanaTestigo, cargado_por: yo().id }).then(verTestigo);
-  });
   if (!sem) return;
   editor({
     cont: document.getElementById('itemsTestigo'), filas: items, vacio: 'Todavía no hay productos en esta semana.',
@@ -745,7 +742,18 @@ function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
            { k: 'diferencia', t: 'Diferencia', tipo: 'ver', ver: function (f) { return textoDiferencia(f.diferencia) || '—'; } },
            { k: 'desvio', t: 'Desvío', tipo: 'ver', ver: function (f) { return textoDesvio(f.desvio) || '—'; } },
            { k: 'observacion', t: 'Observaciones', tipo: 'texto', nulo: true, ancho: 'grande' }],
-    guardar: function (f, cambios) { return guardarFila('/testigo_items?id=eq.' + valor(f.id), cambios).then(verTestigo); }
+    guardar: function (f, cambios) {
+      /* Números enteros y no negativos, como en la app; vacío en dev/salieron/entraron es 0. */
+      var malo = null;
+      ['enviada', 'stock_sistema', 'cantidad_real', 'vendida', 'dev_fabrica', 'salieron', 'entraron'].forEach(function (k) {
+        if (!(k in cambios)) return;
+        if (cambios[k] == null) { if (['dev_fabrica', 'salieron', 'entraron'].indexOf(k) > -1) cambios[k] = 0; return; }
+        if (!(Number.isInteger(cambios[k]) && cambios[k] >= 0 && cambios[k] <= 99999)) malo = malo || k;
+      });
+      if (malo) return Promise.reject(rechazo('En "' + ({ enviada: 'Enviada', stock_sistema: 'Stock sistema', cantidad_real: 'Cantidad real', vendida: 'Vendida',
+        dev_fabrica: 'Dev. a fábrica', salieron: 'Salieron', entraron: 'Entraron' })[malo] + '" va un número entero, sin negativos.'));
+      return guardarFila('/testigo_items?id=eq.' + valor(f.id), cambios).then(verTestigo);
+    }
   });
   c.querySelectorAll('[data-video]').forEach(function (bv) {
     bv.onclick = function () { verVideoTestigo(items.filter(function (f) { return f.id === bv.dataset.video; })[0]); };
@@ -753,7 +761,10 @@ function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
   var a = document.getElementById('agregarItem');
   if (a) unaVez(a, function () {
     var n = items.reduce(function (m, x) { return Math.max(m, x.item); }, 0) + 1;
-    return escribir('/testigo_items', 'POST', { semana_id: sem.id, item: n, producto: 'Producto ' + n }).then(verTestigo);
+    /* Con día: como programarlo (si ya lo habían mandado, vuelve a quedar para cargar el nuevo). Una planilla vieja sin día, directo. */
+    return (sem.fecha ? llamar('testigo_programar', { p_fecha: sem.fecha, p_locales: [_local.id], p_productos: [{ producto: 'Producto ' + n }] })
+                      : escribir('/testigo_items', 'POST', { semana_id: sem.id, item: n, producto: 'Producto ' + n }))
+      .then(function () { avisar('Agregado "Producto ' + n + '": cambiale el nombre y guardá.'); verTestigo(); });
   });
 }
 
@@ -1075,7 +1086,7 @@ function dibujarMapaLocal() {
       '<button class="boton chico" id="btnFormaMapa">Cambiar la forma y la cantidad</button></div>' : '') +
     (_repartir ? '<p class="bajada">"Repartir parejo" divide los módulos en partes iguales, en bloques seguidos (22 entre 3: 7, 7 y 8). ' +
                  'Para hacerlo a mano o ponerle nombre a un módulo ("Vidriera"), tocalo. Tocá un sector (abajo) para elegir quién lo tiene, quién lo cubre y, en el depósito, qué tiene.</p>' : '') +
-    (d.modulos.length ? '<div class="imp-mapa-dibujos">' + svgMapa(d) + svgDeposito(d) + '</div>'
+    (d.modulos.length ? '<div class="imp-mapa-dibujos">' + svgMapa(d) + svgDeposito(d) + '</div>' + leyendaNombres(d)
                       : '<div class="vacio">Este local todavía no tiene módulos' + (puede ? ': tocá "Cambiar la forma y la cantidad".' : '.') + '</div>') +
     (d.aprox && d.pared.length ? '<p class="bajada">Todavía no se armó el mapa: los módulos están en las paredes a ojo.</p>' : '') +
     (_repartir ? '<div class="seccion">Salón</div>' + leyendaMapa(d, true) + (d.deposito.length ? '<div class="seccion">Depósito</div>' + listaDeposito(d, true) : '')

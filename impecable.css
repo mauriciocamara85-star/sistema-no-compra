@@ -339,3 +339,4 @@ button.mapa-sec { cursor: pointer; }
 .disparar.grabar.grabando { border-radius: 18px; animation: latido 1s infinite; }
 .cuenta-video { min-width: 60px; text-align: right; font-weight: 800; color: var(--texto); }
 .video-testigo { display: block; width: 100%; max-height: 60vh; border-radius: 16px; background: #000; margin: 6px 0 14px; }
+.mapa-nombres { margin: 8px 2px 4px; font-size: 13px; line-height: 1.5; color: var(--suave); }

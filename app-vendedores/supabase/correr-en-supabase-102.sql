@@ -59,6 +59,12 @@ do $$ begin
   alter table orden_config add constraint orden_config_dias_guardar_videos_check check (dias_guardar_videos >= 7);
 exception when duplicate_object then null; end $$;
 
+-- Los números de la planilla, nunca negativos (la administración escribe directo en la tabla).
+do $$ begin
+  alter table testigo_items add constraint testigo_items_no_negativos check (coalesce(enviada, 0) >= 0 and coalesce(stock_sistema, 0) >= 0
+    and coalesce(cantidad_real, 0) >= 0 and coalesce(vendida, 0) >= 0 and dev_fabrica >= 0 and salieron >= 0 and entraron >= 0);
+exception when duplicate_object then null; end $$;
+
 -- Videos reemplazados ("grabar de nuevo"): el reloj los borra del bucket.
 create table if not exists testigo_videos_viejos (
   path   text primary key,
@@ -92,8 +98,8 @@ declare
   v_semana date; v_loc uuid; v_sem testigo_semanas; v_p jsonb; v_prod text; v_color text;
   v_n_loc int := 0; v_nuevos int := 0; v_aca int; v_item int;
 begin
-  if p_fecha is null or p_fecha < v_hoy - 60 or p_fecha > v_hoy + 60 then
-    raise exception 'Elegí un día de los próximos dos meses';
+  if p_fecha is null or p_fecha < v_hoy - 7 or p_fecha > v_hoy + 60 then
+    raise exception 'Elegí un día entre la semana pasada y los próximos dos meses';
   end if;
   if coalesce(array_length(p_locales, 1), 0) = 0 then raise exception 'Elegí al menos un local'; end if;
   if jsonb_typeof(p_productos) is distinct from 'array' or jsonb_array_length(p_productos) = 0 then
@@ -105,6 +111,13 @@ begin
     if not exists (select 1 from orden_locales where id = v_loc) then raise exception 'No encontramos uno de los locales'; end if;
     if not orden_es_supervisor_de(v_loc) or orden_es_gerencia() then
       raise exception 'No podés programar el control en %', (select nombre from orden_locales where id = v_loc);
+    end if;
+    -- Es un control por semana y local: si esa semana ya tiene otro día, no se mueve (lo de ese día quedaría trabado).
+    if exists (select 1 from testigo_semanas where local_id = v_loc and semana = p_fecha - (extract(isodow from p_fecha)::int - 1)
+                 and fecha is not null and fecha <> p_fecha) then
+      raise exception 'En % ya hay un control esa semana, el %: sumá los productos a ese día o programalo en otra semana',
+        (select nombre from orden_locales where id = v_loc),
+        (select to_char(fecha, 'DD/MM') from testigo_semanas where local_id = v_loc and semana = p_fecha - (extract(isodow from p_fecha)::int - 1));
     end if;
   end loop;
   for v_p in select * from jsonb_array_elements(p_productos) loop
@@ -123,8 +136,8 @@ begin
     if not found then
       insert into testigo_semanas (local_id, semana, fecha, cargado_por) values (v_loc, v_semana, p_fecha, orden_yo_id())
       returning * into v_sem;
-    else
-      update testigo_semanas set fecha = p_fecha where id = v_sem.id;
+    elsif v_sem.fecha is null then
+      update testigo_semanas set fecha = p_fecha where id = v_sem.id;   -- una planilla vieja (sin día)
     end if;
     v_n_loc := v_n_loc + 1;
     v_aca := 0;
@@ -144,6 +157,24 @@ begin
   return jsonb_build_object('ok', true, 'locales', v_n_loc, 'productos', jsonb_array_length(p_productos), 'nuevos', v_nuevos, 'semana', v_semana);
 end $$;
 
+-- ---------- ¿El vendedor puede cargar? (el supervisor y el administrador, siempre) ----------
+-- Desde el día del control y durante una semana, hasta que la manda. Después,
+-- lo corrige el supervisor o el administrador (así no se pisa lo que corrigieron).
+create or replace function testigo_abierto_(s testigo_semanas)
+returns void language plpgsql stable security definer set search_path = public as $$
+declare v_hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+begin
+  if not (orden_es_del_local(s.local_id) or orden_es_supervisor_de(s.local_id)) or orden_es_gerencia() then
+    raise exception 'Este control no es de tu local';
+  end if;
+  if s.cerrada then raise exception 'Esta semana ya está cerrada'; end if;
+  if orden_es_supervisor_de(s.local_id) then return; end if;
+  if s.fecha is null then raise exception 'Este control lo carga el supervisor'; end if;
+  if s.fecha > v_hoy then raise exception 'Se carga el día del control (el %)', to_char(s.fecha, 'DD/MM'); end if;
+  if s.cargada_en is not null then raise exception 'Ya lo mandaron: si hay que corregir algo, avisale a tu supervisor'; end if;
+  if v_hoy > s.fecha + 6 then raise exception 'Este control ya cerró (era del %): avisale a tu supervisor', to_char(s.fecha, 'DD/MM'); end if;
+end $$;
+
 -- ---------- El local carga los números de un producto ----------
 create or replace function testigo_entero_(p jsonb, k text, p_nulo boolean) returns integer
 language plpgsql immutable as $$
@@ -156,18 +187,12 @@ end $$;
 
 create or replace function testigo_cargar(p_item uuid, p_datos jsonb)
 returns jsonb language plpgsql volatile security definer set search_path = public as $$
-declare i testigo_items; s testigo_semanas; v_hoy date := (now() at time zone 'America/Argentina/Buenos_Aires')::date; r jsonb;
+declare i testigo_items; s testigo_semanas; r jsonb;
 begin
   select * into i from testigo_items where id = p_item for update;
   if not found then raise exception 'No encontramos ese producto'; end if;
   select * into s from testigo_semanas where id = i.semana_id;
-  if not (orden_es_del_local(s.local_id) or orden_es_supervisor_de(s.local_id)) or orden_es_gerencia() then
-    raise exception 'Este control no es de tu local';
-  end if;
-  if s.cerrada then raise exception 'Esta semana ya está cerrada'; end if;
-  if s.fecha is not null and s.fecha > v_hoy and not orden_es_supervisor_de(s.local_id) then
-    raise exception 'Se carga el día del control (el %)', to_char(s.fecha, 'DD/MM');
-  end if;
+  perform testigo_abierto_(s);
   update testigo_items set
     enviada       = testigo_entero_(p_datos, 'enviada', true),
     stock_sistema = testigo_entero_(p_datos, 'stock_sistema', true),
@@ -192,14 +217,11 @@ begin
   select * into i from testigo_items where id = p_item for update;
   if not found then raise exception 'No encontramos ese producto'; end if;
   select * into s from testigo_semanas where id = i.semana_id;
-  if not (orden_es_del_local(s.local_id) or orden_es_supervisor_de(s.local_id)) or orden_es_gerencia() then
-    raise exception 'Este control no es de tu local';
-  end if;
-  if s.cerrada then raise exception 'Esta semana ya está cerrada'; end if;
+  perform testigo_abierto_(s);
   if p_path is null or p_path not like s.local_id::text || '/' || s.id::text || '/' || i.id::text || '-%' or p_path like '%..%' then
     raise exception 'Ese video no es de este producto';
   end if;
-  if i.video_path is not null and i.video_path <> p_path and not i.video_borrado then
+  if i.video_path is not null and i.video_path <> p_path and not i.video_borrado and i.video_path like s.local_id::text || '/%' then
     insert into testigo_videos_viejos (path) values (i.video_path) on conflict do nothing;
   end if;
   update testigo_items set video_path = p_path, video_subido_en = now(), video_borrado = false where id = i.id;
@@ -212,10 +234,7 @@ declare s testigo_semanas; v_falta int; v_texto text; v_dif int; v_local text;
 begin
   select * into s from testigo_semanas where id = p_semana for update;
   if not found then raise exception 'No encontramos ese control'; end if;
-  if not (orden_es_del_local(s.local_id) or orden_es_supervisor_de(s.local_id)) or orden_es_gerencia() then
-    raise exception 'Este control no es de tu local';
-  end if;
-  if s.cerrada then raise exception 'Esta semana ya está cerrada'; end if;
+  perform testigo_abierto_(s);
   select count(*) into v_falta from testigo_items where semana_id = s.id and (stock_sistema is null or cantidad_real is null);
   if v_falta > 0 then
     raise exception 'Falta cargar el stock del sistema o la cantidad real de % producto%', v_falta, case when v_falta = 1 then '' else 's' end;
@@ -247,7 +266,7 @@ begin
   -- Sólo de 10 a 20 h: nada de avisos a la noche.
   if extract(hour from v_ahora) < 10 or extract(hour from v_ahora) >= 20 then return jsonb_build_object('avisos', 0); end if;
   for r in
-    select s.id, s.local_id, s.fecha, p.id as persona_id
+    select s.id, s.local_id, s.fecha, p.id as persona_id, p.rol
       from testigo_semanas s
       join orden_personas p on p.local_id = s.local_id and p.activo and p.aprobado and p.rol in ('vendedor', 'supervisor')
      where s.fecha in (v_hoy, v_hoy + 1) and s.cargada_en is null and not s.cerrada
@@ -256,7 +275,8 @@ begin
     select string_agg(producto || coalesce(' ' || color, ''), ', ' order by item) into v_lista from testigo_items where semana_id = r.id;
     if orden_encolar_aviso(r.persona_id, 'testigo',
          case when r.fecha = v_hoy then 'Hoy tienen producto testigo' else 'Mañana tienen producto testigo' end,
-         left('Se cuentan: ' || v_lista || '. Cargalo en la app y grabá el video de cada uno.', 300), '/testigo',
+         left('Se cuentan: ' || v_lista || '. Cargalo en la app y grabá el video de cada uno.', 300),
+         case when r.rol = 'supervisor' then '/admin-testigo' else '/testigo' end,
          'testigo-' || case when r.fecha = v_hoy then 'hoy' else 'manana' end || ':' || r.id || ':' || r.fecha || ':' || r.persona_id,
          2::smallint) is not null then
       v_n := v_n + 1;
@@ -300,6 +320,7 @@ with check (
        or exists (select 1 from orden_personas p
                    where p.auth_user_id = auth.uid() and p.activo and p.aprobado and p.rol in ('vendedor', 'supervisor')
                      and p.local_id::text = (storage.foldername(name))[1]))
+  and exists (select 1 from testigo_semanas t where t.id::text = (storage.foldername(name))[2] and t.local_id::text = (storage.foldername(name))[1])
 );
 drop policy if exists "testigo: ver videos de mi local" on storage.objects;
 create policy "testigo: ver videos de mi local" on storage.objects
@@ -476,7 +497,7 @@ begin
   delete from orden_controles c
    using orden_modulos m, orden_sectores s
    where m.id = c.modulo_id and s.id = m.sector_id and s.local_id = p_local and not m.activo
-     and c.estado = 'pendiente' and c.enviado_en is null and c.fecha >= v_hoy
+     and c.estado = 'pendiente' and c.enviado_en is null and (c.fecha >= v_hoy or c.vence_en > now())
      and not exists (select 1 from orden_fotos f where f.control_id = c.id);
 
   return jsonb_build_object('ok', true, 'modulos', v_total, 'islas', v_islas, 'deposito', v_dep, 'creados', v_creados);
@@ -546,9 +567,26 @@ begin
   return jsonb_build_object('ok', true, 'modulos', v_n, 'sectores', v_k, 'reparto', v_res);
 end $$;
 
+-- Los controles que siguen abiertos (los de hoy en adelante y los del depósito
+-- de la semana, que vencen el viernes) pasan a quien le toca ahora. (Reemplaza la del SQL 99.)
+create or replace function orden_controles_reasignar(p_sector uuid)
+returns void language sql volatile security definer set search_path = public as $$
+  update orden_controles c set persona_id = orden_asignado(m.sector_id, greatest(c.fecha, (now() at time zone 'America/Argentina/Buenos_Aires')::date))
+    from orden_modulos m
+   where m.id = c.modulo_id and m.sector_id = p_sector
+     and c.estado = 'pendiente' and c.enviado_en is null
+     and (c.fecha >= (now() at time zone 'America/Argentina/Buenos_Aires')::date or c.vence_en > now())
+     and not exists (select 1 from orden_fotos f where f.control_id = c.id)
+     and c.persona_id is distinct from orden_asignado(m.sector_id, greatest(c.fecha, (now() at time zone 'America/Argentina/Buenos_Aires')::date))
+$$;
+
 -- ---------- Permisos ----------
 do $$
 begin
+  revoke all on function orden_controles_reasignar(uuid) from public, anon, authenticated;
+  grant execute on function orden_controles_reasignar(uuid) to service_role;
+  revoke all on function testigo_abierto_(testigo_semanas) from public, anon, authenticated;
+  grant execute on function testigo_abierto_(testigo_semanas) to service_role;
   revoke all on function orden_modulo_nombre(uuid, text) from public, anon;
   revoke all on function orden_mapa_repartir(uuid, text) from public, anon;
   grant execute on function orden_modulo_nombre(uuid, text) to authenticated, service_role;

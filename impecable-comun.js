@@ -580,6 +580,16 @@ function svgDeposito(d, op) {
   return '<svg class="mapa-svg deposito" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El depósito">' + out + '</svg>';
 }
 
+/** Los módulos con nombre, enteros: en las paredes de costado se ven cortados ("Vidri…"). */
+function leyendaNombres(d) {
+  var con = d.pared.concat(d.dep).filter(function (m) { return nombrePropio(m); });
+  if (!con.length) return '';
+  return '<p class="mapa-nombres"><b>Con nombre:</b> ' + con.map(function (m) {
+    var s = d.sectorDe[m.sector_id];
+    return esc((s && s.tipo === 'deposito' ? 'Depósito ' : '') + m.numero + ' · ' + nombrePropio(m));
+  }).join(' — ') + '</p>';
+}
+
 /** Quién tiene qué: una fila por persona, con su color (para mirar). */
 function leyendaPersonas(d) {
   var lista = Object.keys(d.colorPersona).map(function (pid) {

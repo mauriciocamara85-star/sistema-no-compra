@@ -626,7 +626,7 @@ function dibujarHoy(x) {
     mapa.modulos.forEach(function (m) { var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
     var hayMios = Object.keys(mios).length;
     html += '<div class="seccion">Tu parte del local</div><div class="mapa-caja" id="mapaHoy">' +
-      svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' +
+      svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' + leyendaNombres(mapa) +
       '<p class="bajada">' + (total ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.'
                                     : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
   }
@@ -1873,7 +1873,7 @@ function pantallaMapa(loc) {
     var z = document.getElementById('mapaZona');
     if (!z) return;
     z.innerHTML = (d.aprox && d.pared.length ? '<div class="nota">Todavía no se armó el mapa de este local: los módulos están en las paredes a ojo.</div>' : '') +
-      (d.modulos.length ? '<div class="mapa-caja">' + svgMapa(d) + svgDeposito(d) + '</div>' + leyendaPersonas(d) : '<div class="vacio">Este local todavía no tiene módulos cargados.</div>');
+      (d.modulos.length ? '<div class="mapa-caja">' + svgMapa(d) + svgDeposito(d) + '</div>' + leyendaNombres(d) + leyendaPersonas(d) : '<div class="vacio">Este local todavía no tiene módulos cargados.</div>');
   }).catch(function (e) { pantallaError(e, function () { pantallaMapa(loc); }); });
 }
 
@@ -1926,13 +1926,16 @@ function pantallaTestigo(semId) {
 }
 
 function dibujarTestigo(sem, items) {
-  var hoy = hoyAR(), antes = !!(sem.fecha && sem.fecha > hoy), bloqueado = antes || sem.cerrada;
+  /* El vendedor carga desde el día del control, durante una semana, hasta mandarla. Después la corrige el supervisor. */
+  var hoy = hoyAR(), antes = !!(sem.fecha && sem.fecha > hoy), cerro = !!(sem.fecha && sumarDias(sem.fecha, 6) < hoy);
+  var bloqueado = antes || sem.cerrada || !!sem.cargada_en || cerro || !sem.fecha;
   var html = '<button class="volver" id="volver">‹ Volver a Hoy</button><h1>Producto testigo</h1>' +
     '<p class="bajada">' + (sem.fecha ? esc(diaYFecha(sem.fecha)).replace(/^./, function (c) { return c.toUpperCase(); }) + ' · ' : '') +
     'Copiá los números del sistema, contá lo que hay y grabá un video cortito de cada producto.</p>';
   if (antes) html += '<div class="nota">Se carga el ' + esc(diaYFecha(sem.fecha)) + '. Mientras, ya podés ver qué productos son.</div>';
   else if (sem.cerrada) html += '<div class="nota">Esta semana ya está cerrada.</div>';
-  else if (sem.cargada_en) html += '<div class="nota">Ya la mandaron el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '. Si corregís algo, volvé a tocar "Listo, mandar".</div>';
+  else if (sem.cargada_en) html += '<div class="nota">Ya la mandaron el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '. Si hay que corregir algo, avisale a tu supervisor.</div>';
+  else if (cerro || !sem.fecha) html += '<div class="nota">Este control ya cerró' + (sem.fecha ? ' (era del ' + esc(diaYFecha(sem.fecha)) + ')' : '') + '. Si hay que cargar algo, avisale a tu supervisor.</div>';
   html += items.map(function (it) { return tarjetaTestigo(it, bloqueado); }).join('');
   if (!items.length) html += '<div class="vacio">Todavía no hay productos cargados.</div>';
   if (!bloqueado && items.length) {
@@ -2076,7 +2079,8 @@ function grabarVideo(sem, it, alTerminar) {
   archivo.onchange = function () {
     var f = archivo.files && archivo.files[0];
     if (!f) return;
-    if (f.size > 20 * 1024 * 1024) { avisar('El video pesa ' + megas(f.size) + ': grabalo más corto (hasta 20 segundos).'); return; }
+    /* Con la cámara del teléfono los videos pesan mucho más que grabados en la app (20 s en alta calidad, unos 40 MB). */
+    if (f.size > 20 * 1024 * 1024) { avisar('El video pesa ' + megas(f.size) + ': grabalo más corto, de unos 10 segundos.'); return; }
     apagarCamara();
     verVideoGrabado(sem, it, f, tipoDeVideo(f.type, f.name), alTerminar);
   };
