@@ -1,4 +1,6 @@
-# Impecable · estado de la app (rama `impecable`, sin publicar)
+# Impecable · estado de la app (PUBLICADA el 13/10/2026, 41f1594)
+
+Se entra desde el botón **Impecable** de la barra del No Compra (la administración) o directo a `vendedores.html` (la app).
 
 ## Qué hay
 
@@ -18,9 +20,9 @@
 | 91 | corrido 12/10 | Cada uno crea su PIN; "Supervisión". | Sí. |
 | 93 | corrido 13/10 (de madrugada) | Los 14 locales en la app, el alta propia del vendedor y el apellido. | Sí: borrar los `orden_locales` nuevos que no tengan gente. |
 | 95 | corrido 13/10 (~01:10), verificado 13/13 | Nadie ve ni toca nada del local hasta que lo aprueban: ni quien se da de alta ni quien crea su PIN. Al aprobar a un vendedor, se suma a la Carga. Y los arreglos de base de la ronda 1. | Sí: agrega la columna `aprobado` y reemplaza funciones; no borra datos. |
-| **96** | **correr YA** | **Fuera de la app, en el No Compra:** el historial (`log`) y los ajustes pasan a ser sólo de la gente de `usuarios` (hoy, vos). Hoy cualquier sesión de Impecable (aunque esté sin aprobar) lee el historial con datos de socios y puede cambiar los ajustes. El panel no cambia (no lee esas tablas con la sesión). Ensayado contra la base real con rollback: 6 de 6. | Sí: volver a crear las 4 reglas con `using (true)`. |
-| **97** | **correr después del 96** | La aprobación, segunda vuelta (ronda 2 del árbitro): "No fue" para el PIN de alguien que ya estaba (borra ese PIN y la sesión del que lo creó, sin sacar a la persona real); "Borrar PIN" también cierra la sesión; un administrador nuevo espera aprobación; aprobar sólo sirve para quien espera; fotos de caja de hoy y ayer para el vendedor; gerencia con local no toca cajas; avisos de altas al administrador si el supervisor no entró. Ensayado con el 96 contra la base real con rollback: 9 de 9. | Sí: agrega 2 columnas y reemplaza funciones; sólo borra cuentas internas de Impecable de quien se rechaza. |
-| **94** | **correr EL DÍA QUE EMPIEZAN** (después del 97) | Prende el reloj (pg_cron cada 15 min, resumen de cajas a las 23:30, resumen semanal los lunes 8:30). | Sí: `select cron.unschedule(jobname) from cron.job where jobname like 'orden-%';` |
+| 96 | corrido 13/10 | **Fuera de la app, en el No Compra:** el historial (`log`) y los ajustes pasan a ser sólo de la gente de `usuarios` (hoy, vos). Hoy cualquier sesión de Impecable (aunque esté sin aprobar) lee el historial con datos de socios y puede cambiar los ajustes. El panel no cambia (no lee esas tablas con la sesión). Ensayado contra la base real con rollback: 6 de 6. | Sí: volver a crear las 4 reglas con `using (true)`. |
+| 97 | corrido 13/10 | La aprobación, segunda vuelta (ronda 2 del árbitro): "No fue" para el PIN de alguien que ya estaba (borra ese PIN y la sesión del que lo creó, sin sacar a la persona real); "Borrar PIN" también cierra la sesión; un administrador nuevo espera aprobación; aprobar sólo sirve para quien espera; fotos de caja de hoy y ayer para el vendedor; gerencia con local no toca cajas; avisos de altas al administrador si el supervisor no entró. Ensayado con el 96 contra la base real con rollback: 9 de 9. | Sí: agrega 2 columnas y reemplaza funciones; sólo borra cuentas internas de Impecable de quien se rechaza. |
+| 94 | **corrido 13/10, antes de lo previsto**: el reloj está prendido, pero llama a `tick` y a los resúmenes, que NO están subidos (contestan 404), así que no genera nada. Se sube `tick` el día que empiecen. | Prende el reloj (pg_cron cada 15 min, resumen de cajas a las 23:30, resumen semanal los lunes 8:30). | Sí: `select cron.unschedule(jobname) from cron.job where jobname like 'orden-%';` |
 
 (El 92 es de la otra parte del sistema: Difusiones del CRM.)
 
@@ -28,9 +30,10 @@
 
 | Función | Estado |
 |---|---|
-| `entrar` | subida (12/10). **Volver a subir con OK** (no es urgente: la de hoy anda con el 95): ahora recupera una cuenta que creó y no llegó a anotar, y le dice a la app si la persona está aprobada. |
+| `entrar` | subida de nuevo el 13/10: recupera una cuenta que creó y no llegó a anotar, y le dice a la app si la persona está aprobada. Probada en vivo: 10 de 10. |
 | `analizar-foto` | subida (12/10). |
-| `leer-caja`, `tick`, `resumen-semanal`, `resumen-cajas` | **para subir con OK** (antes del SQL 94). Pasan `deno check`. Comando: `npx supabase functions deploy entrar leer-caja tick resumen-semanal resumen-cajas --project-ref gfjdjupuwxohkgchqykx --no-verify-jwt --workdir app-vendedores --use-api` |
+| `leer-caja` | subida el 13/10 (sin sesión: 403). |
+| `tick`, `resumen-semanal`, `resumen-cajas` | **NO subir hasta el día que empiecen los chicos**: con el SQL 94 ya corrido, subir `tick` prende los controles y los avisos. Pasan `deno check`. Comando: `npx supabase functions deploy entrar leer-caja tick resumen-semanal resumen-cajas --project-ref gfjdjupuwxohkgchqykx --no-verify-jwt --workdir app-vendedores --use-api` |
 
 No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA` (ya están), y el token de Telegram y la clave del reloj los leen de la base (SQL 94).
 
@@ -51,11 +54,11 @@ No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA`
 
 ## Pendiente (necesita a Mauricio)
 
-1. Correr el **SQL 96** (ya: es del No Compra, por eso va aparte) y después el **SQL 97**.
-2. OK para **subir las 5 funciones** (`entrar` de nuevo y las 4 que faltan); después, el día que empiecen, correr el **SQL 94**.
-3. OK para **publicar** (merge a main) la rama. Antes, el 96 y el 97 corridos: la app nueva lee columnas del 97.
-4. OK para sumar **"Impecable" a la barra del No Compra** y la pestaña **"Orden" en Estadísticas** (son pantallas de otros).
-5. **Borrar el vendedor de prueba "Prueba"** (lo pidió él; borrar datos necesita su OK).
+1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10).
+2. El día que empiecen los chicos: subir **`tick`, `resumen-semanal` y `resumen-cajas`** (el 94 ya está). Las otras 2 ya están subidas. Antes: (`entrar` de nuevo y las 4 que faltan); después, el día que empiecen, correr el **SQL 94**.
+3. ~~Publicar~~ (hecho el 13/10, 41f1594).
+4. ~~"Impecable" en la barra del No Compra~~ (hecho: entre Socios y Config.). La pestaña "Orden" en Estadísticas no se hizo (él eligió sólo el botón).
+5. **Borrar el vendedor de prueba "Prueba"**: el 13/10 dijo "dejalo por ahora".
 6. Para los avisos por Telegram: el `chat_id` de cada supervisor y el grupo de las cajas (`TELEGRAM_GRUPO_CAJAS`).
 7. Productos testigo: cómo se calcula el **Desvío** de la planilla (sigue pendiente, como en el README).
 
