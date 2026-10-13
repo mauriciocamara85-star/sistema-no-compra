@@ -3,19 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>VDH · Vendedores</title>
-<meta name="description" content="La app de los vendedores: el orden de los módulos con fotos, las tareas y los avisos.">
+<title>Impecable · VDH</title>
+<meta name="description" content="Impecable: la app de los vendedores de VDH para el orden de los módulos, las tareas y los avisos.">
 <meta name="theme-color" content="#0E1116">
 <!-- Que el iPhone no convierta fechas y horas ("12/10", "18:00") en enlaces de teléfono azules -->
 <meta name="format-detection" content="telephone=no, date=no">
-<link rel="manifest" href="manifest.json">
-<link rel="apple-touch-icon" href="icono-apple.png">
-<link rel="icon" href="icono-192.png">
+<!-- Su propio archivo de app: se instala aparte del Sistema No Compra (otro nombre, otro ícono) -->
+<link rel="manifest" href="vendedores.webmanifest">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Impecable">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="impecable-180.png">
+<link rel="icon" href="impecable-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
-  /* ── La app de los vendedores (12/10/2026) ─────────────────────────────
+  /* ── Impecable, la app de los vendedores (12/10/2026) ──────────────────
      El diseño es el de "Módulo VDH - Pantallas", el que le gustó a Mauricio:
      fondo oscuro, acento lima, estilo iPhone y Manrope. No usa estilos.css
      a propósito: es otra paleta, y ese archivo lo comparten todas las demás
@@ -39,15 +44,16 @@
     font: 16px/1.4 Manrope, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     min-height: 100svh;
   }
-  button { font: inherit; color: inherit; }
+  button, input, select, textarea { font: inherit; color: inherit; }
   [hidden] { display: none !important; }
+  a { color: var(--lima); }
 
   .app { max-width: 480px; margin: 0 auto; padding: max(20px, env(safe-area-inset-top)) 16px 24px; }
   .app.con-barra { padding-bottom: calc(var(--barra) + 24px + env(safe-area-inset-bottom)); }
 
   h1 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.02em; }
   .bajada { color: var(--suave); margin: 0 0 20px; }
-  .marca { display: flex; align-items: center; gap: 10px; color: var(--suave); font-weight: 700; font-size: 14px; }
+  .marca { display: flex; align-items: center; gap: 8px; color: var(--suave); font-weight: 700; font-size: 14px; }
   .marca b { color: var(--lima); }
 
   /* Las listas del login: botones grandes, uno por renglón */
@@ -61,6 +67,21 @@
   .opcion:active { border-color: var(--lima); }
   .opcion::after { content: "›"; color: var(--suave); font-size: 26px; line-height: 1; }
   .volver { background: none; border: 0; color: var(--suave); padding: 10px 0; min-height: 44px; cursor: pointer; font-weight: 600; }
+
+  /* Los campos */
+  .campo { display: grid; gap: 6px; margin: 0 0 14px; }
+  .campo > span { font-size: 14px; font-weight: 700; color: var(--suave); }
+  .campo input, .campo textarea, .campo select {
+    width: 100%; min-height: 48px; padding: 10px 14px; border-radius: 14px;
+    background: var(--tarjeta); border: 1px solid var(--borde); outline: none;
+  }
+  .campo input:focus, .campo textarea:focus, .campo select:focus { border-color: var(--lima); }
+  .campo textarea { resize: vertical; }
+  .fila-campo { grid-template-columns: 1fr 150px; align-items: center; margin: 0; padding: 6px 0; }
+  .fila-campo input { text-align: right; }
+  .selector { margin-top: 12px; }
+  .check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; cursor: pointer; }
+  .check input { width: 22px; height: 22px; accent-color: var(--lima); }
 
   /* El PIN */
   .puntos { display: flex; justify-content: center; gap: 18px; margin: 28px 0 10px; }
@@ -86,19 +107,24 @@
   .cabeza { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
   .noesyo { background: none; border: 1px solid var(--borde); border-radius: 999px; color: var(--suave);
             padding: 0 14px; min-height: 44px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-  .resumen { background: var(--lima); color: var(--sobre-lima); border-radius: 22px; padding: 18px 20px; margin: 16px 0 24px; }
+  .resumen { background: var(--lima); color: var(--sobre-lima); border-radius: 22px; padding: 18px 20px; margin: 16px 0 16px; }
   .resumen .grande { font-size: 30px; font-weight: 800; letter-spacing: -.02em; }
   .resumen .chico { font-weight: 600; opacity: .8; }
   .progreso { height: 8px; border-radius: 99px; background: rgba(14, 17, 22, .18); margin: 12px 0 10px; overflow: hidden; }
   .progreso > i { display: block; height: 100%; background: var(--sobre-lima); border-radius: 99px; }
+  .banner { display: block; width: 100%; text-align: left; margin: 14px 0 0; padding: 12px 14px; border-radius: 14px; cursor: pointer;
+            background: rgba(245, 184, 75, .12); border: 1px solid var(--ambar); color: var(--ambar); font-weight: 700; }
+  .tarjeta-accion { display: grid; gap: 2px; width: 100%; text-align: left; padding: 14px 16px; margin: 0 0 10px; border-radius: 16px; cursor: pointer;
+                    background: var(--tarjeta); border: 1px solid var(--lima); }
+  .tarjeta-accion span { color: var(--suave); font-size: 14px; }
   .seccion { font-size: 13px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: var(--suave); margin: 22px 0 10px; }
   .modulo {
     display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-radius: 16px;
     background: var(--tarjeta); border: 1px solid var(--borde); margin-bottom: 10px;
   }
   .modulo .que { flex: 1; min-width: 0; }
-  .modulo .nombre { font-weight: 700; }
-  .modulo .info { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+  .nombre { font-weight: 700; }
+  .info { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
   .chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }
   .chip.listo { color: var(--verde); }
   .chip.corregir { color: var(--ambar); }
@@ -106,6 +132,10 @@
   .chip.pendiente { color: var(--suave); }
   .chip.vencido { color: var(--rojo); }
   .chip.vence { color: var(--suave); border-color: transparent; padding-left: 0; }
+  .chip.nivel-impecable { color: var(--lima); }
+  .chip.nivel-bien { color: var(--verde); }
+  .chip.nivel-a_mejorar { color: var(--ambar); }
+  .chip.nivel-fuera_de_estandar { color: var(--rojo); }
   .camara {
     width: 52px; height: 52px; flex: none; border-radius: 14px; border: 0; cursor: pointer;
     background: var(--lima); color: var(--sobre-lima); display: grid; place-items: center;
@@ -113,24 +143,82 @@
   .camara svg { width: 26px; height: 26px; }
   .modulo.hecho .camara { display: none; }
   .vacio { text-align: center; color: var(--suave); padding: 28px 12px; border: 1px dashed var(--borde); border-radius: 16px; }
-  .nota { color: var(--suave); font-size: 14px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 12px 14px; margin-top: 16px; }
+  .nota { color: var(--suave); font-size: 14px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 12px 14px; margin: 12px 0; }
+  .nota.alerta { color: var(--ambar); border-color: var(--ambar); }
 
-  /* Perfil */
-  .perfil { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 18px; padding: 18px; margin: 16px 0; }
-  .perfil .nombre { font-size: 20px; font-weight: 800; }
+  /* Botones */
   .boton {
-    width: 100%; min-height: 52px; border-radius: 16px; border: 1px solid var(--borde);
-    background: var(--tarjeta); font-weight: 700; cursor: pointer;
+    display: block; width: 100%; min-height: 52px; border-radius: 16px; border: 1px solid var(--borde);
+    background: var(--tarjeta); font-weight: 700; cursor: pointer; text-align: center; text-decoration: none; color: var(--texto);
   }
+  .enlace-boton { line-height: 50px; }
   .boton.lima { background: var(--lima); color: var(--sobre-lima); border-color: var(--lima); }
+  .boton.suave { color: var(--suave); }
+  .boton.chico { display: inline-block; width: auto; min-height: 44px; padding: 0 14px; border-radius: 12px; font-size: 14px; }
+  .boton:disabled { opacity: .45; }
+  .acciones { display: grid; gap: 10px; margin-top: 16px; }
+  .niveles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .boton.nivel { min-height: 56px; }
+  .boton.nivel-impecable { border-color: var(--lima); color: var(--lima); }
+  .boton.nivel-bien { border-color: var(--verde); color: var(--verde); }
+  .boton.nivel-a_mejorar { border-color: var(--ambar); color: var(--ambar); }
+  .boton.nivel-fuera_de_estandar { border-color: var(--rojo); color: var(--rojo); }
+  .pestanitas { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 14px 0 0; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 4px; }
+  .pestanitas button { min-height: 40px; border: 0; border-radius: 10px; background: none; color: var(--suave); font-weight: 700; cursor: pointer; }
+  .pestanitas button.activa { background: var(--borde); color: var(--texto); }
 
-  /* La barra de abajo */
+  /* Tareas y listas */
+  .tarea { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; }
+  .tarea .origen { color: var(--suave); font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+  .detalle { color: var(--suave); font-size: 14px; margin-top: 4px; }
+  .botones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .avisos { display: grid; gap: 8px; }
+  .aviso { display: grid; gap: 2px; padding: 10px 14px; border-radius: 14px; background: var(--tarjeta); border: 1px solid var(--borde); }
+  .aviso span { font-size: 14px; color: var(--suave); }
+  .aviso small { font-size: 12px; color: var(--suave); }
+  .aviso.nuevo { border-color: var(--lima); }
+  .aviso.nuevo b::before { content: "● "; color: var(--lima); }
+  .fila { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; padding: 12px 0; border-bottom: 1px solid var(--borde); }
+  .fila small { flex-basis: 100%; color: var(--suave); font-size: 13px; }
+  .fila > span small { display: block; flex-basis: auto; }
+  .fila-boton { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--borde); cursor: pointer; text-align: left; justify-content: flex-start; }
+  .perfil { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 18px; padding: 16px; margin: 12px 0; }
+  .perfil > .nombre { font-size: 20px; font-weight: 800; }
+  .grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tablero { display: grid; place-items: center; min-height: 88px; padding: 12px; border-radius: 16px; text-align: center; text-decoration: none;
+             background: var(--tarjeta); border: 1px solid var(--borde); color: var(--texto); font-weight: 700; }
+  .tablero.destacado { min-height: 120px; margin-bottom: 10px; background: var(--lima); color: var(--sobre-lima); border-color: var(--lima); font-size: 20px; }
+  .color { display: flex; align-items: center; gap: 12px; padding: 6px 0; }
+  .color i { width: 36px; height: 36px; border-radius: 10px; border: 1px solid var(--borde); }
+  .pasos { display: grid; gap: 10px; margin: 0 0 16px; }
+  .paso { display: flex; gap: 12px; align-items: flex-start; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 12px 14px; }
+  .paso > b { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--lima); color: var(--sobre-lima); display: grid; place-items: center; }
+
+  /* Desafío */
+  .pregunta-desafio { font-size: 22px; line-height: 1.3; margin-bottom: 18px; }
+  .opcion-desafio { min-height: 60px; padding: 12px 16px; border-radius: 16px; background: var(--tarjeta); border: 1px solid var(--borde);
+                    text-align: left; font-weight: 700; cursor: pointer; }
+  .opcion-desafio.correcta { border-color: var(--verde); background: rgba(91, 214, 138, .14); }
+  .opcion-desafio.incorrecta { border-color: var(--rojo); background: rgba(255, 138, 138, .12); }
+
+  /* Caja */
+  .foto-caja { display: grid; gap: 8px; justify-items: start; min-height: 88px; padding: 12px; border-radius: 16px; cursor: pointer; text-align: left;
+               background: var(--tarjeta); border: 1px solid var(--borde); }
+  .tabla-caja .fila { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; flex-wrap: nowrap; font-size: 14px; }
+  .tabla-caja .fila span:not(:first-child) { text-align: right; }
+  .tabla-caja .cab { color: var(--suave); font-weight: 700; font-size: 12px; }
+  .rojo { color: var(--rojo); font-weight: 700; }
+  .foto-chica { margin: 0; }
+  .foto-chica img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px; background: var(--tarjeta); }
+  .foto-chica figcaption { font-size: 12px; color: var(--suave); margin-top: 4px; }
+
+  /* La barra de abajo (las pestañas las arma la app según quién entró) */
   .barra {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 5;
     background: rgba(14, 17, 22, .94); backdrop-filter: blur(10px); border-top: 1px solid var(--borde);
     padding-bottom: env(safe-area-inset-bottom);
   }
-  .barra nav { max-width: 480px; margin: 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); }
+  .barra nav { max-width: 480px; margin: 0 auto; display: grid; }
   .pestana { height: var(--barra); background: none; border: 0; color: var(--suave); font-size: 12px; font-weight: 700;
              display: grid; place-items: center; align-content: center; gap: 3px; cursor: pointer; }
   .pestana svg { width: 24px; height: 24px; }
@@ -169,21 +257,16 @@
   .hallazgo.sugerencia b::before { content: "○ "; color: var(--suave); }
   .pregunta { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--borde); }
   .pregunta:first-of-type { border-top: 0; }
-  .pregunta span { flex: 1; font-weight: 600; }
+  .pregunta > span { flex: 1; font-weight: 600; }
+  .pregunta .info { margin-top: 0; justify-content: flex-end; }
   .sino { display: flex; gap: 6px; }
   .sino button { min-width: 56px; min-height: 44px; border-radius: 12px; border: 1px solid var(--borde); background: var(--fondo); font-weight: 700; cursor: pointer; }
   .sino button.si.elegido { background: var(--verde); color: var(--fondo); border-color: var(--verde); }
   .sino button.no.elegido { background: var(--rojo); color: var(--fondo); border-color: var(--rojo); }
-  .acciones { display: grid; gap: 10px; margin-top: 16px; }
-  .boton:disabled { opacity: .45; }
-  .chip.nivel-impecable { color: var(--lima); }
-  .chip.nivel-bien { color: var(--verde); }
-  .chip.nivel-a_mejorar { color: var(--ambar); }
-  .chip.nivel-fuera_de_estandar { color: var(--rojo); }
 
   /* El cartelito de abajo */
   .cartel {
-    position: fixed; left: 16px; right: 16px; bottom: calc(var(--barra) + 16px + env(safe-area-inset-bottom)); z-index: 6;
+    position: fixed; left: 16px; right: 16px; bottom: calc(var(--barra) + 16px + env(safe-area-inset-bottom)); z-index: 20;
     max-width: 448px; margin: 0 auto; background: var(--texto); color: var(--fondo);
     border-radius: 14px; padding: 12px 16px; font-weight: 600; text-align: center;
     pointer-events: none;   /* es sólo para leer: no puede comerse el toque de un botón que tape */
@@ -193,20 +276,10 @@
 </head>
 <body>
 <main class="app" id="app" aria-live="polite"><p class="cargando">Cargando…</p></main>
-<div class="barra" id="barra" hidden>
-  <nav>
-    <button class="pestana" data-pestana="hoy">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/></svg>Hoy</button>
-    <button class="pestana" data-pestana="tareas">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3 8-8"/><path d="M20 12v6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h9"/></svg>Tareas</button>
-    <button class="pestana" data-pestana="ideas">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/></svg>Ideas</button>
-    <button class="pestana" data-pestana="perfil">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>Perfil</button>
-  </nav>
-</div>
+<div class="barra" id="barra" hidden></div>
 <div class="cartel" id="cartel" hidden></div>
 <script src="datos.js"></script>
+<script src="impecable-comun.js"></script>
 <script src="vendedores.js"></script>
 </body>
 </html>

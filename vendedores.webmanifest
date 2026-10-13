@@ -1,0 +1,19 @@
+{
+  "id": "impecable",
+  "name": "Impecable · VDH",
+  "short_name": "Impecable",
+  "description": "La app de los vendedores de VDH: el orden de los módulos con fotos, las tareas y los avisos.",
+  "start_url": "vendedores.html",
+  "scope": "vendedores",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0E1116",
+  "theme_color": "#0E1116",
+  "lang": "es-AR",
+  "categories": ["business", "productivity"],
+  "icons": [
+    { "src": "impecable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "impecable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "impecable-mask-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
