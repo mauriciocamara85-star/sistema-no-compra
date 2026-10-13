@@ -898,8 +898,16 @@ un segmento entero.
     = `dif:<id>`, que Meta devuelve en sus avisos) y la función lo cuenta
     apenas sale.
   - Si la función se corta a mitad de tanda, el aviso de Meta lo anota
-    igual (`wa_procesar`). Lo que Meta no avisó en media hora no salió, y
-    vuelve a la cola (`crm_difusion_revisar`, que corre con el reloj).
+    igual (`wa_procesar`). Lo hace SÓLO con la marca: un aviso sin ella
+    puede ser una respuesta de Kommo o del celular, y queda como siempre.
+  - Lo que quedó "enviando" media hora (`crm_difusion_revisar`, que corre
+    con el reloj) se resuelve así:
+    - si en la charla está lo de la difusión, salió;
+    - si justo salió algo por otra app, "no se sabe si le llegó" y no se le
+      vuelve a mandar;
+    - si no hay nada, vuelve a la cola.
+  - Los intentos son los pedidos de verdad a Meta: una tanda cortada
+    devuelve sin sumar.
   - Si Meta no contesta, el mensaje no se reintenta: queda "enviando"
     hasta que se sepa. Cada mensaje va por una conexión nueva, porque el
     cliente de Deno reintenta solo un POST en una conexión reusada que se

@@ -9036,7 +9036,7 @@
           : !cuentas.length ? '<p class="num-vacio">' + esc(PLM.error || 'No hay ningún número de WhatsApp conectado al CRM.') + '</p>'
           : (cuentas.length > 1
               ? '<select id="difCuenta" aria-label="Desde qué número">' + cuentas.map(function (x) {
-                  return '<option value="' + esc(x.id) + '"' + (x.id === c.id ? ' selected' : '') + '>Desde ' + esc(etiquetaCuenta(x)) + '</option>';
+                  return '<option value="' + esc(x.id) + '"' + (x.id === c.id ? ' selected' : '') + '>' + esc(etiquetaCuenta(x)) + '</option>';
                 }).join('') + '</select>'
               : '<p class="dif-desde">Sale desde <b>' + esc(etiquetaCuenta(c)) + '</b>.</p>') +
             (aprobadas.length
@@ -9208,7 +9208,7 @@
       return 'Meta no acepta la plantilla (' + (ERROR_META[m.slice(10)] || 'código ' + m.slice(10)) + '). Revisala en Plantillas; cuando esté bien, tocá Seguir.';
     }
     if (m.indexOf('errores:') === 0) {
-      return 'No salió a los primeros 5 y a ninguno más (' + (ERROR_META[m.slice(8)] || 'código ' + (m.slice(8) || '?')) + '): el problema no parece de las personas. Revisá la plantilla y tocá Seguir.';
+      return 'Fallaron los primeros 5 envíos y no salió ninguno (' + (ERROR_META[m.slice(8)] || 'código ' + (m.slice(8) || '?')) + '). El problema no parece de las personas: revisá la plantilla y tocá Seguir.';
     }
     return m;
   }
@@ -9235,7 +9235,7 @@
           '<span><b>' + miles(d.leidos) + '</b> leídos</span>' + (noLlegaron ? '<span><b>' + miles(noLlegaron) + '</b> no llegaron</span>' : '') + '</p>' +
         (errores ? '<p class="dif-err">' + esc(errores) + '</p>' : '') +
         (d.estado === 'pausada' && d.motivo ? '<p class="dif-motivo">' + esc(motivoDif(d)) + '</p>' : '') +
-        (hoyLleno ? '<p class="dif-motivo suave">Hoy ya salieron ' + miles(d.hoy) + ' (el tope del día): sigue mañana sola.</p>' : '') +
+        (hoyLleno ? '<p class="dif-motivo suave">Hoy ya salieron ' + miles(d.hoy) + ' plantillas desde este número (el tope del día): sigue mañana sola.</p>' : '') +
         (d.estado === 'mandando' && !Number(d.pendientes)
           ? '<p class="dif-motivo suave">Ya salieron todos. En unos minutos queda terminada (por si Meta avisa que alguno no llegó).</p>' : '') +
         (d.estado === 'mandando' || d.estado === 'pausada'

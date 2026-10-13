@@ -625,23 +625,31 @@ async function difusionLote() {
       await contar({ id: it.id, wamid });
       continue;
     }
-    const codigo = String(r?.error?.codigo ?? '');
+    if (!r?.error) {
+      /* Meta contestó "bien" pero sin decir qué mensaje (la respuesta llegó
+         cortada): no se sabe si salió. Como si no hubiera contestado. */
+      console.error('whatsapp: difusión, Meta contestó sin el mensaje');
+      cortada = 'sin_respuesta';
+      continue;
+    }
+    const codigo = String(r.error.codigo ?? '');
+    /* "intento": se le pidió a Meta de verdad (cuenta para los intentos). */
     if (ERRORES_CUENTA.has(codigo) || ERRORES_PLANTILLA.has(codigo)) {
       cortada = codigo;
       console.error('whatsapp: difusión cortada por la cuenta o la plantilla:', codigo);
-      await contar({ id: it.id, devolver: true,
+      await contar({ id: it.id, devolver: true, intento: true,
                      pausar: codigo === '131042' ? 'pago' : (ERRORES_CUENTA.has(codigo) ? 'cuenta:' : 'plantilla:') + codigo });
       continue;
     }
-    if (ERRORES_PASAJEROS.has(codigo) || (!codigo && Number(r?.error?.http) >= 500)) {
-      /* Meta anda mal: vuelve a la cola; si a la misma persona ya le pasó 3
-         veces seguidas, se pausa para no insistir. */
+    if (ERRORES_PASAJEROS.has(codigo) || (!codigo && Number(r.error.http) >= 500)) {
+      /* Meta anda mal: vuelve a la cola; si a la misma persona ya le pasó en
+         los 2 intentos anteriores, se pausa para no insistir. */
       cortada = 'meta';
-      console.error('whatsapp: difusión, error pasajero de Meta:', codigo || r?.error?.http);
-      await contar({ id: it.id, devolver: true, ...(Number(it.intentos) >= 3 ? { pausar: 'meta' } : {}) });
+      console.error('whatsapp: difusión, error pasajero de Meta:', codigo || r.error.http);
+      await contar({ id: it.id, devolver: true, intento: true, ...(Number(it.intentos) >= 2 ? { pausar: 'meta' } : {}) });
       continue;
     }
-    await contar({ id: it.id, error: String(r?.error?.usuario || r?.error?.mensaje || 'WhatsApp no lo aceptó.').slice(0, 300), codigo });
+    await contar({ id: it.id, error: String(r.error.usuario || r.error.mensaje || 'WhatsApp no lo aceptó.').slice(0, 300), codigo });
   }
   if (devueltos.length) {
     try { await rpc('crm_difusion_resultado', { p: devueltos }); } catch (e) {

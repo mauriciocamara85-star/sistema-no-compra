@@ -10661,8 +10661,11 @@ revoke execute on function crm_difusion_error_cuenta(text) from public, anon, au
    Lo llaman el reloj (cada minuto) y crm_difusion_tomar, antes de dar una
    tanda. De a uno por vez (el candado), así dos pedidos juntos no se pisan.
      a. Lo que quedó "enviando" hace más de media hora (la función se cortó
-        a mitad de tanda). Meta avisa de cada mensaje que acepta: si avisó,
-        salió y queda anotado; si no avisó nada, no salió y vuelve a la cola.
+        a mitad de tanda, o Meta no contestó). Si en la charla está lo de la
+        difusión, salió y queda anotado. Si hay algo que salió por otra app
+        (Kommo, o un aviso sin la marca de la difusión), no se puede saber
+        si fue esto: queda "no salió" con ese motivo y NO se vuelve a mandar.
+        Si no hay nada, no salió y vuelve a la cola.
      b. A quien le pusieron "No escribir" (o dijo que no a las promociones,
         si es de marketing) después de armar la lista: no se le manda.
      c. Las fallas de la cuenta que Meta avisa después (falta la tarjeta…):
@@ -10685,16 +10688,22 @@ begin
   with x as (
     select e.id, d.estado as dif,
            (select m.wamid from wa_mensajes m
-             where m.numero_id = d.numero_id and m.sentido = 'sale' and m.desde in ('difusion', 'otra_app')
+             where m.numero_id = d.numero_id and m.sentido = 'sale' and m.desde = 'difusion'
                and club_tel10(m.tel) = e.clave and m.cuando >= e.tomado - interval '1 minute'
-             order by m.cuando, m.id limit 1) as wamid
+             order by m.cuando, m.id limit 1) as wamid,
+           exists (select 1 from wa_mensajes m
+                    where m.numero_id = d.numero_id and m.sentido = 'sale' and m.desde = 'otra_app'
+                      and club_tel10(m.tel) = e.clave and m.cuando >= e.tomado - interval '1 minute') as dudoso
       from crm_difusion_envios e join crm_difusiones d on d.id = e.difusion
      where e.estado = 'enviando' and e.wamid is null and e.tomado < now() - interval '30 minutes'
   )
   update crm_difusion_envios e
-     set estado  = case when x.wamid is not null then 'enviado' when x.dif = 'cancelada' then 'cancelado' else 'pendiente' end,
+     set estado  = case when x.wamid is not null then 'enviado' when x.dudoso then 'fallido'
+                        when x.dif = 'cancelada' then 'cancelado' else 'pendiente' end,
          wamid   = x.wamid,
-         enviado = case when x.wamid is not null then (select m.cuando from wa_mensajes m where m.wamid = x.wamid) end
+         enviado = case when x.wamid is not null then (select m.cuando from wa_mensajes m where m.wamid = x.wamid) end,
+         error   = case when x.wamid is null and x.dudoso then 'No se sabe si le llegó (justo salió algo por otra app): no se le vuelve a mandar.' else e.error end,
+         codigo  = case when x.wamid is null and x.dudoso then 'duda' else e.codigo end
     from x where x.id = e.id;
 
   -- b.
@@ -10748,10 +10757,28 @@ $$;
 revoke execute on function crm_difusion_revisar() from public, anon, authenticated;
 
 /* ═══ 3. La tanda que toca ═══════════════════════════════════════════════
-   (Sólo la función whatsapp, con la llave de servicio.) Como mucho p_max
-   por minuto entre todas, y el tope por día de cada difusión contando todo
-   lo que salió de ese número en 24 horas: las plantillas a cada persona
-   (también las del CRM y las del agente) y lo que está saliendo. */
+   Lo que salió de un número en 24 horas, para el tope por día: las
+   plantillas a cada persona (también las del CRM y las del agente, sin
+   las que fallaron) y lo que está saliendo. La usan la tanda y la lista. */
+create or replace function crm_difusion_hoy(p_numero text)
+returns integer
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select ((select count(distinct club_tel10(m.tel)) from wa_mensajes m
+            where m.numero_id = p_numero and m.sentido = 'sale' and m.tipo = 'template'
+              and m.cuando > now() - interval '24 hours' and m.estado is distinct from 'failed')
+        + (select count(*) from crm_difusion_envios e join crm_difusiones x on x.id = e.difusion
+            where x.numero_id = p_numero and e.estado = 'enviando'))::integer
+$$;
+revoke execute on function crm_difusion_hoy(text) from public, anon, authenticated;
+
+/* (Sólo la función whatsapp, con la llave de servicio.) Como mucho p_max
+   por minuto entre todas, y el tope por día de cada difusión (ver arriba).
+   "intentos" son las veces que de verdad se le pidió a Meta: tomar a
+   alguien no cuenta, porque una tanda cortada lo devuelve sin intentarlo. */
 create or replace function crm_difusion_tomar(p_max integer default 40)
 returns jsonb
 language plpgsql
@@ -10771,12 +10798,7 @@ begin
   select count(*) into v_min from crm_difusion_envios
    where (estado = 'enviando' and tomado > now() - interval '1 minute') or enviado > now() - interval '1 minute';
   for d in select * from crm_difusiones where estado = 'mandando' order by id loop
-    select (select count(distinct club_tel10(m.tel)) from wa_mensajes m
-             where m.numero_id = d.numero_id and m.sentido = 'sale' and m.tipo = 'template'
-               and m.cuando > now() - interval '24 hours' and m.estado is distinct from 'failed')
-         + (select count(*) from crm_difusion_envios e join crm_difusiones x on x.id = e.difusion
-             where x.numero_id = d.numero_id and e.estado = 'enviando')
-      into v_dia;
+    v_dia := crm_difusion_hoy(d.numero_id);
     v_lugar := least(d.tope_dia - v_dia, coalesce(p_max, 40) - v_min - jsonb_array_length(v_lote));
     if v_lugar > 0 then
       with t as (
@@ -10785,7 +10807,7 @@ begin
          order by e.id limit v_lugar
          for update skip locked
       ), u as (
-        update crm_difusion_envios e set estado = 'enviando', tomado = now(), intentos = e.intentos + 1
+        update crm_difusion_envios e set estado = 'enviando', tomado = now()
           from t where e.id = t.id
         returning e.id, e.tel, e.clave, e.nombre, e.intentos
       )
@@ -10828,9 +10850,16 @@ begin
     select e.difusion into v_dif from crm_difusion_envios e where e.id = v_id;
     if v_dif is null then continue; end if;
     v_ids := v_ids || v_dif;
+    /* Un intento de verdad (se le pidió a Meta): suma, esté como esté. */
+    if nullif(x->>'wamid', '') is not null or x ? 'error' or coalesce((x->>'intento')::boolean, false) then
+      update crm_difusion_envios set intentos = intentos + 1 where id = v_id;
+    end if;
+    /* Salió: sólo si todavía estaba saliendo. Si el aviso de Meta ya lo
+       anotó (con la marca), queda como está; si Meta ya avisó que falló
+       por la cuenta y volvió a la cola, no se lo vuelve a dar por salido. */
     if nullif(x->>'wamid', '') is not null then
       update crm_difusion_envios set estado = 'enviado', wamid = x->>'wamid', enviado = coalesce(enviado, now()), error = null, codigo = null
-       where id = v_id and (wamid is null or wamid = x->>'wamid');
+       where id = v_id and estado = 'enviando';
     elsif coalesce((x->>'devolver')::boolean, false) then
       update crm_difusion_envios e set estado = case when d.estado = 'cancelada' then 'cancelado' else 'pendiente' end
         from crm_difusiones d
@@ -11533,22 +11562,15 @@ begin
         for s in select * from jsonb_array_elements(coalesce(v->'statuses', '[]'::jsonb)) loop
           /* SQL 98: el de una difusión. Al mandarlo se marca con el envío
              ("dif:<id>"): así queda como salido aunque la función se haya
-             cortado antes de anotarlo. Si Meta no devolviera la marca, sirve
-             que esa persona esté saliendo ahora en una difusión de ese número. */
+             cortado antes de anotarlo. SÓLO con la marca: un aviso sin ella
+             puede ser una respuesta de Kommo o del celular, y queda como
+             siempre (árbitro, ronda 2). */
           v_env := null;
           if coalesce(s->>'biz_opaque_callback_data', '') ~ '^dif:[0-9]{1,18}$' then
             v_env := substr(s->>'biz_opaque_callback_data', 5)::bigint;
-          elsif s->>'recipient_id' is not null and not exists (select 1 from wa_mensajes w where w.wamid = s->>'id') then
-            select e.id into v_env
-              from crm_difusion_envios e join crm_difusiones d on d.id = e.difusion
-             where e.estado = 'enviando' and e.wamid is null and e.clave = club_tel10(s->>'recipient_id')
-               and d.numero_id = v_numero_id
-             order by e.tomado desc limit 1;
-          end if;
-          if v_env is not null then
             update crm_difusion_envios e
                set wamid = s->>'id', estado = 'enviado', enviado = coalesce(e.enviado, now()), error = null, codigo = null
-             where e.id = v_env and (e.wamid is null or e.wamid = s->>'id');
+             where e.id = v_env and e.estado = 'enviando' and e.wamid is null;
           end if;
           update wa_mensajes w
              set estado = s->>'status', error = coalesce(s->'errors', w.error)
@@ -11770,5 +11792,48 @@ end;
 $$;
 revoke execute on function crm_difusion_crear(text, jsonb) from public;
 grant execute on function crm_difusion_crear(text, jsonb) to anon, authenticated;
+
+create or replace function crm_difusiones_listar(p_pin text, p_limite integer default 20)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  return jsonb_build_object('difusiones', coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', d.id, 'nombre', d.nombre, 'plantilla', d.plantilla, 'categoria', d.categoria, 'numero', d.numero,
+             'estado', d.estado, 'motivo', d.motivo, 'total', d.total, 'tope_dia', d.tope_dia, 'texto', d.texto,
+             'creada', d.creada, 'creada_por', d.creada_por, 'terminada', d.terminada,
+             'pendientes', c.pendientes, 'enviados', c.enviados, 'no_salieron', c.no_salieron, 'cancelados', c.cancelados,
+             'entregados', c.entregados, 'leidos', c.leidos, 'fallaron', c.fallaron, 'hoy', crm_difusion_hoy(d.numero_id),   -- SQL 98: todo el número, como el tope
+             'errores', c.errores) order by d.id desc)
+      from (select * from crm_difusiones order by id desc limit greatest(coalesce(p_limite, 20), 1)) d
+      cross join lateral (
+        select count(*) filter (where e.estado in ('pendiente', 'enviando')) as pendientes,
+               count(*) filter (where e.estado = 'enviado') as enviados,
+               count(*) filter (where e.estado = 'fallido') as no_salieron,
+               count(*) filter (where e.estado = 'cancelado') as cancelados,
+               count(*) filter (where w.estado in ('delivered', 'read')) as entregados,
+               count(*) filter (where w.estado = 'read') as leidos,
+               count(*) filter (where w.estado = 'failed') as fallaron,
+               count(*) filter (where e.enviado > now() - interval '24 hours') as hoy,
+               coalesce((select jsonb_agg(jsonb_build_object('codigo', z.codigo, 'n', z.n) order by z.n desc)
+                           from (select coalesce(w2.error->0->>'code', e2.codigo) as codigo, count(*) as n
+                                   from crm_difusion_envios e2
+                                   left join wa_mensajes w2 on w2.wamid = e2.wamid
+                                  where e2.difusion = d.id and (e2.estado = 'fallido' or w2.estado = 'failed')
+                                  group by 1 order by 2 desc limit 3) z), '[]'::jsonb) as errores
+          from crm_difusion_envios e
+          left join wa_mensajes w on w.wamid = e.wamid
+         where e.difusion = d.id) c), '[]'::jsonb));
+end;
+$$;
+revoke execute on function crm_difusiones_listar(text, integer) from public;
+grant execute on function crm_difusiones_listar(text, integer) to anon, authenticated;
 
 select 'listo: difusiones más seguras (SQL 98)' as "SQL 98";
