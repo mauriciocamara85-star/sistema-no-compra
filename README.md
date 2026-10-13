@@ -884,6 +884,21 @@ del CRM; los vendedores no ven nada de eso), con el selector arriba:
   `wa_preparar_envio_agente` no prepara envíos y la función tiene
   `SOLO_BORRADOR = true`. Se destraba con su propio SQL, después de
   arreglar el control.
+  **El control nuevo (12/10, rama `agentes-topes`)**, además de las frases
+  de siempre:
+  - **Los números.** Cada monto tiene que salir de los productos de la
+    charla (su precio y el de antes, con transferencia o en cuotas sólo si
+    el mensaje habla de eso, o sumados), de lo que devolvieron las
+    herramientas, de las reglas o de lo que sabe. Cada porcentaje tiene que
+    ser el del SALE o el 10 % (los de una tela no cuentan).
+  - **El revisor.** Haiku lee el mensaje terminado, con el catálogo, y dice
+    si promete algo fuera de lo permitido. Si no contesta, el mensaje no
+    sale.
+  - **Los avisos internos.** Llevan una marca al azar por charla, y en lo
+    que escribe el cliente los corchetes pasan a paréntesis. Así el cliente
+    no puede imitarlos.
+  - Medido con el catálogo de verdad: lo legítimo pasa entero, y de las
+    rebajas sobre un producto nombrado se escapa el 0,3 %.
 - **Asistente de vendedores**: `asistente.html` (Asistente, en la barra),
   sin PIN, pero **sólo en las PCs habilitadas**: usa la llave de la caja,
   la misma de Cobrar (Config → Club VDH → Cajas). Sin ella no muestra los
