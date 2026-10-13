@@ -8886,7 +8886,7 @@
                      '131056': 'demasiados mensajes a la misma persona', '132001': 'la plantilla no existe o no está aprobada',
                      '132000': 'faltan datos de la plantilla', '132012': 'un dato que la plantilla no acepta', '131047': 'pasaron más de 24 horas',
                      '132015': 'la plantilla está pausada', '132016': 'la plantilla está desactivada', '131008': 'falta un dato de la plantilla',
-                     '100': 'un dato que Meta no acepta' };
+                     '100': 'un dato que Meta no acepta', duda: 'no se sabe si le llegó (no se le vuelve a mandar)' };
   var ESTADO_DIF = { mandando: ['Saliendo', 'pill-info'], pausada: ['Pausada', 'pill-warn'], terminada: ['Terminada', 'pill-ok'], cancelada: ['Cancelada', 'pill-neutra'] };
   /* Las condiciones de un segmento, para la base. */
   function reglasDe(sg) { return !sg ? null : sg.guardado ? (sg.guardado.reglas || {}) : sg.buscar ? { etiqueta: sg.buscar } : { fuente: sg.fuente }; }

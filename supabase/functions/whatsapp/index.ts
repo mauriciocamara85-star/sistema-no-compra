@@ -544,7 +544,7 @@ async function enviarPlantilla(p: any) {
    devuelve en sus avisos) y se cuenta apenas sale; la respuesta dice si la
    pausaron o la cancelaron, y ahí se deja de mandar. Si Meta no contesta
    (red, demora), no se sabe si salió: queda "enviando", y la base lo
-   resuelve con el aviso de Meta o, si no llega, a la media hora. */
+   resuelve con el aviso de Meta o, si no llega, a las 3 horas. */
 const ERRORES_CUENTA = new Set(['131042', '131031', '131048', '368', '130429', '80007', '4', '190', '10']);
 /* De la plantilla (no existe, pausada, datos que no acepta): le pasa a todos. */
 const ERRORES_PLANTILLA = new Set(['132000', '132001', '132005', '132007', '132012', '132015', '132016', '131008']);

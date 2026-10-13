@@ -10626,7 +10626,7 @@ select 'listo: difusiones de verdad, y condiciones nuevas para los segmentos' as
 --
 --   1. Nadie la recibe dos veces. Cada mensaje sale marcado con su envío y
 --      se anota apenas sale; si la función se corta a mitad de tanda, el
---      aviso de Meta lo anota igual, y lo que Meta no avisó en media hora
+--      aviso de Meta lo anota igual, y lo que Meta no avisó en 3 horas
 --      vuelve a la cola. Dos pedidos juntos se hacen de a uno (candado).
 --   2. "Seguir" anda: las fallas de la cuenta se cuentan desde el último
 --      "Seguir", y los mensajes que no salieron por la cuenta (la tarjeta)
@@ -10660,7 +10660,7 @@ revoke execute on function crm_difusion_error_cuenta(text) from public, anon, au
 /* ═══ 2. El orden de la cola ═════════════════════════════════════════════
    Lo llaman el reloj (cada minuto) y crm_difusion_tomar, antes de dar una
    tanda. De a uno por vez (el candado), así dos pedidos juntos no se pisan.
-     a. Lo que quedó "enviando" hace más de media hora (la función se cortó
+     a. Lo que quedó "enviando" hace más de 3 horas (la función se cortó
         a mitad de tanda, o Meta no contestó). Si en la charla está lo de la
         difusión, salió y queda anotado. Si hay algo que salió por otra app
         (Kommo, o un aviso sin la marca de la difusión), no se puede saber
@@ -10695,7 +10695,7 @@ begin
                     where m.numero_id = d.numero_id and m.sentido = 'sale' and m.desde = 'otra_app'
                       and club_tel10(m.tel) = e.clave and m.cuando >= e.tomado - interval '1 minute') as dudoso
       from crm_difusion_envios e join crm_difusiones d on d.id = e.difusion
-     where e.estado = 'enviando' and e.wamid is null and e.tomado < now() - interval '30 minutes'
+     where e.estado = 'enviando' and e.wamid is null and e.tomado < now() - interval '3 hours'
   )
   update crm_difusion_envios e
      set estado  = case when x.wamid is not null then 'enviado' when x.dudoso then 'fallido'
@@ -11568,9 +11568,14 @@ begin
           v_env := null;
           if coalesce(s->>'biz_opaque_callback_data', '') ~ '^dif:[0-9]{1,18}$' then
             v_env := substr(s->>'biz_opaque_callback_data', 5)::bigint;
+            /* También si ya había vuelto a la cola sin saber nada (el aviso
+               llegó tarde, árbitro ronda 3): salió, no se manda otra vez.
+               No si volvió porque Meta avisó que falló por la cuenta (ése
+               tiene el código de la falla). */
             update crm_difusion_envios e
                set wamid = s->>'id', estado = 'enviado', enviado = coalesce(e.enviado, now()), error = null, codigo = null
-             where e.id = v_env and e.estado = 'enviando' and e.wamid is null;
+             where e.id = v_env and e.wamid is null
+               and (e.estado = 'enviando' or (e.estado = 'pendiente' and e.codigo is null));
           end if;
           update wa_mensajes w
              set estado = s->>'status', error = coalesce(s->'errors', w.error)
