@@ -66,8 +66,10 @@ function unaVez(boton, accion) {
 function preguntar(op) {
   return new Promise(function (listo) {
     var conCampo = op.campo != null;
+    /* Una sola a la vez: un segundo toque no abre otra encima. */
+    if (document.querySelector('.dialogo-capa')) { listo(conCampo ? null : false); return; }
     var capa = document.createElement('div');
-    capa.className = 'dialogo-capa';
+    capa.className = 'dialogo-capa' + (conCampo ? ' con-campo' : '');
     capa.innerHTML = '<div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="dialogoTexto">' +
       '<p class="dialogo-texto" id="dialogoTexto">' + esc(op.texto) + '</p>' +
       (conCampo ? '<textarea class="dialogo-campo" rows="3" maxlength="500" placeholder="' + esc(op.campo) + '"></textarea>' : '') +
@@ -75,9 +77,16 @@ function preguntar(op) {
       '<button type="button" class="boton lima" data-r="si">' + esc(op.si || 'Aceptar') + '</button></div></div>';
     document.body.appendChild(capa);
     var campo = capa.querySelector('.dialogo-campo');
-    function cerrar(r) {
+    var cerrada = false;
+    /* El "atrás" de Android (o cambiar de pantalla) la cierra como "Cancelar". */
+    var alAtras = function () { cerrar(conCampo ? null : false, true); };
+    abrirCapa(alAtras);
+    function cerrar(r, sinHistoria) {
+      if (cerrada) return;
+      cerrada = true;
       document.removeEventListener('keydown', tecla, true);
       capa.remove();
+      if (!sinHistoria) soltarCapa(alAtras);
       listo(r);
     }
     function no() { cerrar(conCampo ? null : false); }
@@ -105,8 +114,35 @@ function preguntarTexto(titulo, opcional) {
 /** ¿Sí o no?, en una ventanita: true o false. */
 function confirmar(texto, si) { return preguntar({ texto: texto, si: si || 'Sí', no: 'No' }); }
 
+/* El "atrás" de Android cierra lo que está encima (una ventanita, la foto
+   grande, los avisos, el perfil) en vez de salir de la app: cada cosa que se
+   abre deja una marca en el historial, y el "atrás" la saca y la cierra. */
+var _capas = [], _ignorarAtras = 0;
+function abrirCapa(alAtras) {
+  _capas.push(alAtras);
+  try { history.pushState({ capa: _capas.length }, ''); } catch (e) {}
+}
+/** Se cerró con un botón de la app: se saca su marca del historial. */
+function soltarCapa(alAtras) {
+  var i = _capas.lastIndexOf(alAtras);
+  if (i < 0) return;
+  _capas.splice(i, 1);
+  _ignorarAtras++;
+  try { history.back(); } catch (e) { _ignorarAtras--; }
+}
+/** Al cambiar de pantalla se cierra todo lo que estaba encima. */
+function cerrarCapas() {
+  _capas.splice(0).reverse().forEach(function (c) { try { c(true); } catch (e) {} });
+}
+window.addEventListener('popstate', function () {
+  if (_ignorarAtras) { _ignorarAtras--; return; }
+  var c = _capas.pop();
+  if (c) c(false);
+});
 /** Un festejo: papelitos de colores que caen y un cartel (si acertaste todo el test, si terminaste lo del día). */
+var _ultimoFestejo = 0;
 function festejar(texto) {
+  _ultimoFestejo = Date.now();
   var capa = document.createElement('div');
   capa.className = 'festejo';
   capa.setAttribute('aria-hidden', 'true');
@@ -422,6 +458,7 @@ function revisarCaja() {
 
 function irA(p) {
   apagarCamara();
+  cerrarCapas();
   marcarPestana(p);
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   if (p === 'hoy') pantallaHoy();
@@ -595,7 +632,7 @@ function cabeza(titulo, debajo) {
     '</div><div class="cabeza-botones">' +
     '<button class="campanita" id="campanita" aria-label="' + textoCampanita() + '">' + CAMPANA +
       '<i class="sin-leer"' + (sinLeer() ? '' : ' hidden') + '>' + (sinLeer() > 9 ? '9+' : sinLeer()) + '</i></button>' +
-    '<button class="avatar" id="avatar" aria-label="Tu perfil">' + esc(inicial) + '</button></div></div>';
+    (esSupervision() ? '' : '<button class="avatar" id="avatar" aria-label="Tu perfil">' + esc(inicial) + '</button>') + '</div></div>';
 }
 function sinLeer() { return _sinLeerDe === yo().id ? _sinLeer : 0; }
 function textoCampanita() { var n = sinLeer(); return 'Avisos' + (n ? ' (' + (n > 9 ? 'más de 9' : n) + ' sin leer)' : ''); }
@@ -604,8 +641,25 @@ function engancharCabeza() {
   var b = document.getElementById('campanita');
   if (b) b.onclick = function () { pantallaAvisos(); };
   var a = document.getElementById('avatar');
-  if (a) a.onclick = function () { irA('perfil'); };
+  if (a) a.onclick = function () { apagarCamara(); cerrarCapas(); pantallaPerfil(); };
   contarSinLeer();
+}
+
+/* Avisos y el Perfil del vendedor se abren desde arriba, no son pestañas:
+   "‹ Volver" y el "atrás" de Android vuelven a la pestaña de antes. */
+var _deDonde = 'hoy', _capaAparte = null;
+function abrirAparte(nombre) {
+  if (_pestana !== nombre && ['avisos', 'perfil'].indexOf(_pestana) < 0) _deDonde = _pestana || 'hoy';
+  if (!_capaAparte) {
+    _capaAparte = function (porNavegar) { _capaAparte = null; if (!porNavegar) irA(_deDonde); };
+    abrirCapa(_capaAparte);
+  }
+}
+function volverDeAparte() {
+  var c = _capaAparte;
+  _capaAparte = null;
+  if (c) soltarCapa(c);
+  irA(_deDonde);
 }
 
 /** Cuántos avisos sin leer (se pregunta como mucho cada 30 segundos). */
@@ -631,7 +685,7 @@ function pintarSinLeer() {
 
 function preguntarSalir() {
   var nombre = String(yo().nombre || '').split(' ')[0];
-  confirmar('¿No sos ' + nombre + '? Se cierra la sesión y para volver a entrar hace falta el PIN.', 'Cerrar sesión').then(function (si) {
+  return confirmar('¿No sos ' + nombre + '? Se cierra la sesión y para volver a entrar hace falta el PIN.', 'Cerrar sesión').then(function (si) {
     if (!si) return;
     /* Las notificaciones de este celular dejan de llegarle a esa persona: si
        no, el próximo que entre recibiría las de otro. */
@@ -639,6 +693,7 @@ function preguntarSalir() {
       cerrarSesion();
       barra.innerHTML = '';
       _sinLeer = 0; _sinLeerEn = 0;
+      cerrarCapas();
       pantallaLocales();
     });
   });
@@ -664,33 +719,39 @@ function pantallaHoy() {
   var hoy = hoyAR();
   var id = valor(per.id);
   var nada = function () { return null; };
+  /* Lo que no cargó (sin señal) se anota: así Hoy no dice "¡Listo!" por error. */
+  var FALLO = {}, fallo = function () { return FALLO; };
   /* Desde cuándo cuenta "hoy" (la Argentina está en UTC−3 todo el año). */
   var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString();
   Promise.all([
     /* Lo de hoy y lo que quedó pendiente (el depósito vence el viernes). */
     leer('/orden_v_controles?select=id,estado,vence_en&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente)'),
-    leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(nada),
+    leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(fallo),
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
-    llamar('orden_desafio_mio').catch(nada),
+    llamar('orden_desafio_mio').catch(fallo),
     /* Las tareas abiertas y las que se cerraron hoy (para tacharlas). */
     leer('/orden_v_tareas?select=id,titulo,estado,completada_en&persona_id=eq.' + id +
-         '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + desdeHoy + ')&order=vence_en.asc').catch(nada),
+         '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + desdeHoy + ')&order=vence_en.asc').catch(fallo),
     estadoAvisos().catch(function () { return 'no-soportado'; }),
     /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
     per.local_id ? leer('/orden_recordatorios?select=texto&local_id=eq.' + valor(per.local_id) + '&dia=eq.' + diaSemanaAR() + '&activo=is.true&order=creado_en.asc').catch(nada) : Promise.resolve(null),
     /* SQL 102: producto testigo de mañana, de hoy, uno atrasado sin mandar, o el que se mandó hoy. */
     per.local_id ? leer('/testigo_semanas?select=id,fecha,cargada_en,testigo_items(item,producto,color)&local_id=eq.' + valor(per.local_id) +
                         '&fecha=gte.' + sumarDias(hoy, -6) + '&fecha=lte.' + sumarDias(hoy, 1) + '&cerrada=is.false' +
-                        '&or=(cargada_en.is.null,cargada_en.gte.' + desdeHoy + ')&order=fecha.asc').catch(nada)
+                        '&or=(cargada_en.is.null,cargada_en.gte.' + desdeHoy + ')&order=fecha.asc').catch(fallo)
                  : Promise.resolve(null),
-    /* La caja de hoy, si el local la controla. */
-    per.local_id && cajaActiva() ? leer('/orden_cajas?select=estado&local_id=eq.' + valor(per.local_id) + '&fecha=eq.' + hoy).catch(nada) : Promise.resolve(null)
+    /* La caja de hoy y si el local la controla (se pregunta acá: la primera vez en un celular todavía no se sabe). */
+    per.local_id ? Promise.all([leer('/orden_config?select=caja_activa&local_id=eq.' + valor(per.local_id)),
+                                leer('/orden_cajas?select=estado&local_id=eq.' + valor(per.local_id) + '&fecha=eq.' + hoy)]).catch(fallo) : Promise.resolve(null)
   ]).then(function (r) {
     if (_pestana !== 'hoy') return;
+    var incompleto = [r[1], r[3], r[4], r[7], r[8]].indexOf(FALLO) > -1;
+    r = r.map(function (v) { return v === FALLO ? null : v; });
     var testigos = (r[7] || []).filter(function (s) { return (s.testigo_items || []).length; });
     dibujarHoy({
       controles: r[0] || [], semana: (r[1] || [])[0], sinModulos: Array.isArray(r[2]) && r[2].length === 0, desafio: r[3],
-      tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], caja: r[8],
+      tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], incompleto: incompleto,
+      caja: r[8] ? { activa: !!(r[8][0] && r[8][0][0] && r[8][0][0].caja_activa), hoy: (r[8][1] || [])[0] || null } : null,
       testigoPend: testigos.filter(function (s) { return !s.cargada_en && s.fecha <= hoy; })[0] || null,
       testigoMan: testigos.filter(function (s) { return !s.cargada_en && s.fecha > hoy; })[0] || null,
       testigoHecho: testigos.filter(function (s) { return s.cargada_en; })[0] || null
@@ -731,7 +792,8 @@ function tarjetaOrden(s) {
 function festejarUnaVez(clave, texto) {
   var k = 'vdh_vend_festejo_' + yo().id;
   try { if (localStorage.getItem(k) === clave) return; localStorage.setItem(k, clave); } catch (e) { return; }
-  setTimeout(function () { festejar(texto); }, 300);
+  /* Si recién hubo otro (el del test), espera a que termine. */
+  setTimeout(function () { festejar(texto); }, Math.max(300, 4600 - (Date.now() - _ultimoFestejo)));
 }
 
 /* Hoy (13/10, pedido de Mauricio): sólo lo que hay que hacer hoy, como una
@@ -744,11 +806,14 @@ function dibujarHoy(x) {
   var pend = x.controles.filter(function (c) { return c.estado === 'pendiente'; });
   var env = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
   if (total) {
+    /* Lo que venció sin foto no se tacha: queda con una cruz (y no hay festejo). */
+    var vencidas = total - env - pend.length;
     var vence = pend.map(function (c) { return c.vence_en; }).filter(Boolean).sort()[0];
-    filas.push({ id: 'hFotos', titulo: 'Fotos de tus módulos', hecho: !pend.length,
+    filas.push({ id: 'hFotos', titulo: 'Fotos de tus módulos', hecho: !pend.length && !vencidas, perdido: !pend.length && vencidas > 0,
       texto: pend.length ? env + ' de ' + total + ' mandadas' + (vence ? ' · ' + textoVence(vence) : '')
-           : env === total ? (total === 1 ? 'Mandaste la foto.' : 'Mandaste las ' + total + '.')
-           : 'Mandaste ' + env + ' de ' + total + '; las otras vencieron.' });
+           : !vencidas ? (total === 1 ? 'Mandaste la foto.' : 'Mandaste las ' + total + '.')
+           : env ? 'Mandaste ' + env + ' de ' + total + '; ' + (vencidas === 1 ? 'una venció' : vencidas + ' vencieron') + ' sin foto.'
+           : (vencidas === 1 ? 'Venció sin foto.' : 'Vencieron las ' + vencidas + ' sin foto.') });
   }
 
   if (x.testigoPend) {
@@ -779,27 +844,39 @@ function dibujarHoy(x) {
     filas.push({ id: 'hTest', titulo: 'Test de conocimiento', hecho: true, texto: 'Acertaste ' + d.puntaje + ' de ' + d.total + '.' });
   }
 
-  if (x.caja && cajaActiva()) {
-    var caja = x.caja[0];
+  if (x.caja && x.caja.activa) {
+    var caja = x.caja.hoy;
     if (caja && caja.estado !== 'pendiente') filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: true, texto: 'Guardada.' });
     else if (horaAR() >= 19) filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: false, texto: 'Las fotos del cierre y el efectivo que contaste.' });
+    else filas.push({ id: 'hCaja', titulo: 'Caja del día', luego: true, texto: 'Desde las 19 h: las fotos del cierre y el efectivo.' });
   }
 
-  var faltan = filas.filter(function (f) { return !f.hecho; }).length;
+  var faltan = filas.filter(function (f) { return !f.hecho && !f.perdido && !f.luego; }).length;
+  var perdidos = filas.filter(function (f) { return f.perdido; }).length;
+  var luego = filas.filter(function (f) { return f.luego; }).length;
+  var titulo = x.incompleto ? 'No pudimos cargar todo'
+    : faltan ? (faltan === 1 ? 'Te falta 1 cosa' : 'Te faltan ' + faltan + ' cosas')
+    : perdidos ? 'Hoy quedó algo sin hacer'
+    : luego ? 'Por ahora, listo'
+    : '¡Listo por hoy!';
   var html = cabeza('Hola, ' + primerNombre()) + bannerAvisos(x.avisos) +
     (x.recordatorios || []).map(function (r) {
       return '<div class="recordatorio"><b>' + esc(DIAS_SEMANA[diaSemanaAR() - 1]) + '</b>' + esc(r.texto) + '</div>';
     }).join('');
 
+  if (x.incompleto) {
+    html += '<div class="nota alerta">Con esta señal no se cargó todo: puede faltar algo en la lista. <button class="boton chico" id="reintentarHoy" style="margin-top:8px">Probar de nuevo</button></div>';
+  }
   if (filas.length) {
-    html += '<div class="seccion">' + (faltan ? (faltan === 1 ? 'Te falta 1 cosa' : 'Te faltan ' + faltan + ' cosas') : '¡Listo por hoy!') + '</div>' +
+    html += '<div class="seccion">' + titulo + '</div>' +
       '<div class="lista-hoy">' + filas.map(function (f) {
-        return '<button class="item-hoy' + (f.hecho ? ' hecho' : '') + (f.alerta && !f.hecho ? ' alerta' : '') + '" id="' + f.id + '"' +
-          ' aria-label="' + esc((f.hecho ? 'Hecho: ' : 'Falta: ') + f.titulo + '. ' + f.texto) + '">' +
-          '<i class="tilde" aria-hidden="true">' + (f.hecho ? '✓' : '') + '</i>' +
+        var estado = f.hecho ? 'Hecho: ' : f.perdido ? 'No se hizo: ' : f.luego ? 'Más tarde: ' : 'Falta: ';
+        return '<button class="item-hoy' + (f.hecho ? ' hecho' : '') + (f.perdido ? ' perdido' : '') + (f.luego ? ' luego' : '') + (f.alerta && !f.hecho ? ' alerta' : '') + '" id="' + f.id + '"' +
+          ' aria-label="' + esc(estado + f.titulo + '. ' + f.texto) + '">' +
+          '<i class="tilde" aria-hidden="true">' + (f.hecho ? '✓' : f.perdido ? '✕' : '') + '</i>' +
           '<span><b>' + esc(f.titulo) + '</b><small>' + esc(f.texto) + '</small></span><em aria-hidden="true">›</em></button>';
       }).join('') + '</div>';
-  } else if (!x.sinModulos) {
+  } else if (!x.sinModulos && !x.incompleto) {
     html += '<div class="vacio">Hoy no tenés nada pendiente.</div>';
   }
   if (x.sinModulos && !total) {
@@ -822,8 +899,9 @@ function dibujarHoy(x) {
   var b;
   if ((b = document.getElementById('banner'))) b.onclick = function () { pantallaBienvenida(pantallaHoy); };
   if ((b = document.getElementById('irTestigo'))) b.onclick = function () { pantallaTestigo(x.testigoMan.id); };
-  /* Con todo lo de hoy hecho: el festejo, una vez por día. */
-  if (filas.length && !faltan) festejarUnaVez('dia-' + hoy, '¡Terminaste todo lo de hoy!');
+  if ((b = document.getElementById('reintentarHoy'))) b.onclick = pantallaHoy;
+  /* Con todo lo de hoy hecho (y todo cargado): el festejo, una vez por día. */
+  if (filas.length && !x.incompleto && filas.every(function (f) { return f.hecho; })) festejarUnaVez('dia-' + hoy, '¡Terminaste todo lo de hoy!');
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -885,8 +963,9 @@ function dibujarFotos(x) {
     var hayMios = Object.keys(mios).length;
     html += '<div class="mapa-caja" id="mapaFotos">' +
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' + leyendaNombres(mapa) +
-      '<p class="bajada">' + (total ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.'
-                                    : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
+      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.'
+                              : total ? 'Por hoy no te queda ninguna foto para mandar.'
+                              : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
   }
 
   /* La lista: sin croquis, todo; con croquis, sólo lo que no está dibujado. */
@@ -1234,14 +1313,14 @@ function dibujarTareas(tareas) {
    pantalla. Al verlos quedan leídos.
    ════════════════════════════════════════════════════════════════════════ */
 
-function pantallaAvisos(volverA) {
+function pantallaAvisos() {
   apagarCamara();
   adentro();
-  volverA = volverA || (_pestana !== 'avisos' && _pestana !== 'perfil' ? _pestana : null) || (esSupervision() ? 'revisar' : 'hoy');
+  abrirAparte('avisos');
   marcarPestana('avisos');
   var arriba = '<button class="volver" id="volver">‹ Volver</button><h1>Avisos</h1>';
   app.innerHTML = arriba + '<p class="cargando">Cargando…</p>';
-  document.getElementById('volver').onclick = function () { irA(volverA); };
+  document.getElementById('volver').onclick = volverDeAparte;
   leer('/orden_avisos?select=id,titulo,cuerpo,url,creado_en,leido_en&persona_id=eq.' + valor(yo().id) + '&order=creado_en.desc&limit=30').then(function (avisos) {
     if (_pestana !== 'avisos') return;
     avisos = avisos || [];
@@ -1252,14 +1331,17 @@ function pantallaAvisos(volverA) {
         (a.cuerpo ? '<span>' + esc(a.cuerpo) + '</span>' : '') +
         '<small>' + esc(diaMes(a.creado_en) + ' ' + hora(a.creado_en)) + '</small></' + tag + '>';
     }).join('') + '</div>' : '<div class="vacio">Todavía no tenés avisos.</div>');
-    document.getElementById('volver').onclick = function () { irA(volverA); };
+    document.getElementById('volver').onclick = volverDeAparte;
     app.querySelectorAll('.aviso[data-k]').forEach(function (b) {
       b.onclick = function () { if (!irAEnlace(avisos[+b.dataset.k].url)) avisar('Ese aviso ya no lleva a ningún lado.'); };
     });
-    var nuevos = avisos.filter(function (a) { return !a.leido_en; }).map(function (a) { return a.id; });
+    /* Quedan leídos todos los sin leer (también los más viejos que no entran en la lista): si no, el número no se va nunca. */
     _sinLeer = 0; _sinLeerEn = Date.now(); _sinLeerDe = yo().id;
-    if (nuevos.length) llamar('orden_marcar_avisos_leidos', { p_ids: nuevos }).catch(function () { _sinLeerEn = 0; });
-  }).catch(function (e) { pantallaError(e, function () { pantallaAvisos(volverA); }); });
+    leer('/orden_avisos?select=id&persona_id=eq.' + valor(yo().id) + '&leido_en=is.null&limit=1000').then(function (f) {
+      var ids = (f || []).map(function (a) { return a.id; });
+      if (ids.length) return llamar('orden_marcar_avisos_leidos', { p_ids: ids });
+    }).catch(function () { _sinLeerEn = 0; });
+  }).catch(function (e) { pantallaError(e, pantallaAvisos); });
 }
 
 function accionTarea(t, accion, boton) {
@@ -1317,7 +1399,8 @@ function pantallaIdeas() {
   app.innerHTML = cabeza('Ideas', '') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   Promise.all([
-    leer('/orden_tableros?select=id,titulo,url,destacado&activo=is.true&order=destacado.desc,orden.asc'),
+    /* Sin la dirección: el enlace para "Ver en Pinterest" lo da la función, limpio (el de "Compartir" deja editar el tablero). */
+    leer('/orden_tableros?select=id,titulo,destacado&activo=is.true&order=destacado.desc,orden.asc'),
     leer('/orden_colores?select=nombre,hex&activo=is.true&order=orden.asc')
   ]).then(function (r) {
     if (_pestana !== 'ideas') return;
@@ -1347,33 +1430,39 @@ function pantallaIdeas() {
 }
 
 var _fotosIdeas = {};   // tablero → lo que trajo la función (mientras la app está abierta)
-/** El enlace, salvo que sea uno para sumarse a editar el tablero (ésos no se reparten). */
-function enlaceSinInvitacion(url) { return /^https:\/\//i.test(url || '') && !/pin\.it\/|invite/i.test(url) ? url : ''; }
 function mostrarTablero(t, caja) {
   if (!caja) return;
   var lugar = caja.querySelector('.fotos-ideas'), link = caja.querySelector('.ver-pinterest');
-  var poner = function (enlace) { if (enlace) { link.href = enlace; link.hidden = false; } };
   var sinFotos = function (texto) { lugar.innerHTML = '<p class="bajada" style="margin:0">' + esc(texto) + '</p>'; };
+  var deNuevo = function () {
+    lugar.innerHTML = '<p class="bajada" style="margin:0 0 8px">No pudimos traer las fotos' + (link.hidden ? '.' : ': también podés verlas en Pinterest.') + '</p>' +
+      '<button class="boton chico" data-de-nuevo>Probar de nuevo</button>';
+    lugar.querySelector('[data-de-nuevo]').onclick = function () { lugar.innerHTML = '<p class="cargando">Cargando las fotos…</p>'; mostrarTablero(t, caja); };
+  };
   (_fotosIdeas[t.id] ? Promise.resolve(_fotosIdeas[t.id]) : llamarFuncion('ideas-tablero', { tablero_id: t.id })).then(function (r) {
     if (r && r.ok) _fotosIdeas[t.id] = r;
     if (!document.body.contains(caja)) return;
-    poner((r && r.enlace) || enlaceSinInvitacion(t.url));
-    var fotos = (r && r.ok && r.fotos) || [];
-    if (!fotos.length) { sinFotos(r && r.ok ? 'Este tablero todavía no tiene fotos.' : 'No pudimos traer las fotos: miralas en Pinterest.'); return; }
+    if (r && r.enlace) { link.href = r.enlace; link.hidden = false; }
+    if (!(r && r.ok)) {
+      if (r && r.motivo === 'no-es-tablero') sinFotos('Este tablero está mal cargado: avisale a tu supervisor.');
+      else deNuevo();
+      return;
+    }
+    var fotos = r.fotos || [];
+    if (!fotos.length) { sinFotos('Este tablero todavía no tiene fotos.'); return; }
     lugar.innerHTML = fotos.map(function (f, i) {
       return '<button class="foto-idea" data-i="' + i + '" aria-label="Ver la idea ' + (i + 1) + ' grande">' +
         '<img src="' + esc(f.chica) + '" loading="lazy" referrerpolicy="no-referrer" alt="' + esc(f.titulo || '') + '" onerror="this.parentNode.hidden=true"></button>';
     }).join('');
     lugar.querySelectorAll('.foto-idea').forEach(function (b) { b.onclick = function () { verIdea(fotos, +b.dataset.i); }; });
   }, function () {
-    if (!document.body.contains(caja)) return;
-    poner(enlaceSinInvitacion(t.url));
-    sinFotos('No pudimos traer las fotos: miralas en Pinterest.');
+    if (document.body.contains(caja)) deNuevo();
   });
 }
 
 /** Una idea grande, a pantalla completa: ‹ › (o deslizando) para pasar; "Cerrar" o tocar afuera para volver. */
 function verIdea(fotos, i) {
+  if (document.querySelector('.visor-idea')) return;   // dos toques: no abre otro encima
   var v = document.createElement('div');
   v.className = 'visor-idea';
   v.setAttribute('role', 'dialog');
@@ -1388,7 +1477,13 @@ function verIdea(fotos, i) {
       '<button data-paso="cerrar">Cerrar</button></div>';
   }
   function pasar(n) { i = (i + n + fotos.length) % fotos.length; dibujar(); }
-  function cerrar() { document.removeEventListener('keydown', tecla, true); v.remove(); }
+  var alAtras = function () { cerrar(true); };
+  function cerrar(sinHistoria) {
+    if (!v.parentNode) return;
+    document.removeEventListener('keydown', tecla, true);
+    v.remove();
+    if (!sinHistoria) soltarCapa(alAtras);
+  }
   function tecla(e) {
     if (e.key === 'Escape') cerrar();
     else if (varias && e.key === 'ArrowLeft') pasar(-1);
@@ -1409,6 +1504,7 @@ function verIdea(fotos, i) {
   });
   document.addEventListener('keydown', tecla, true);
   document.body.appendChild(v);
+  abrirCapa(alAtras);
   dibujar();
   var c = v.querySelector('[data-paso="cerrar"]');
   if (c) c.focus();
@@ -1419,10 +1515,14 @@ function verIdea(fotos, i) {
    ════════════════════════════════════════════════════════════════════════ */
 
 function pantallaPerfil() {
+  if (!esSupervision()) abrirAparte('perfil');   // el vendedor llega desde la inicial de arriba
   marcarPestana('perfil');
   adentro();
   var per = yo();
-  app.innerHTML = '<h1>Perfil</h1><p class="cargando">Cargando…</p>';
+  var volver = esSupervision() ? '' : '<button class="volver" id="volverPerfil">‹ Volver</button>';
+  app.innerHTML = volver + '<h1>Perfil</h1><p class="cargando">Cargando…</p>';
+  var bv = document.getElementById('volverPerfil');
+  if (bv) bv.onclick = volverDeAparte;
   var id = valor(per.id);
   Promise.all([
     esSupervision() ? Promise.resolve([]) :
@@ -1433,7 +1533,7 @@ function pantallaPerfil() {
   ]).then(function (r) {
     if (_pestana !== 'perfil') return;
     var semanas = r[0] || [], faltas = r[1] || [], avisos = r[2];
-    var html = '<h1>Perfil</h1>' +
+    var html = volver + '<h1>Perfil</h1>' +
       '<div class="perfil"><div class="nombre">' + esc(per.nombre) + '</div>' +
       '<div class="bajada" style="margin:4px 0 0">' + esc((per.local || SIN_LOCAL) + ' · ' + (ROL[per.rol] || '')) + '</div></div>';
 
@@ -1470,7 +1570,8 @@ function pantallaPerfil() {
 
     html += '<button class="boton" id="salir" style="margin-top:22px">No soy yo</button>';
     app.innerHTML = html;
-    document.getElementById('salir').onclick = preguntarSalir;
+    if ((bv = document.getElementById('volverPerfil'))) bv.onclick = volverDeAparte;
+    unaVez(document.getElementById('salir'), preguntarSalir);
     var b;
     if ((b = document.getElementById('activar'))) b.onclick = function () { pantallaBienvenida(pantallaPerfil); };
     if ((b = document.getElementById('instalar'))) b.onclick = instalarApp;
@@ -1617,7 +1718,7 @@ function abrirDesafio() {
   }).catch(function (e) { pantallaError(e, pantallaHoy); });
 }
 
-function pantallaDesafio(d) {
+function pantallaDesafio(d, recien) {
   barra.hidden = true;
   app.className = 'app';
   var preguntas = d.preguntas || [];
@@ -1628,7 +1729,7 @@ function pantallaDesafio(d) {
       '<p class="bajada">' + (ok === preguntas.length ? '¡Impecable!' : 'Lo que erraste te vuelve a aparecer más adelante, para que lo aprendas.') + '</p>' +
       '<button class="boton lima" id="fin">Volver a Hoy</button>';
     document.getElementById('fin').onclick = function () { irA('hoy'); };
-    if (preguntas.length && ok === preguntas.length) setTimeout(function () { festejar('¡' + ok + ' de ' + ok + '!'); }, 250);
+    if (recien && preguntas.length && ok === preguntas.length) setTimeout(function () { festejar('¡' + ok + ' de ' + ok + '!'); }, 250);
     return;
   }
   var q = preguntas[i];
@@ -1658,7 +1759,7 @@ function pantallaDesafio(d) {
         document.getElementById('explicacion').innerHTML =
           '<div class="revision"><div class="titulo">' + (r.acerto ? '¡Bien!' : 'Casi') + '</div><div>' + esc(r.explicacion || '') + '</div></div>' +
           '<button class="boton lima" id="siguiente">' + (r.terminado ? 'Ver cómo te fue' : 'Siguiente') + '</button>';
-        document.getElementById('siguiente').onclick = function () { pantallaDesafio(d); };
+        document.getElementById('siguiente').onclick = function () { pantallaDesafio(d, !!r.terminado); };
       }).catch(function (e) {
         if (/Ya respondiste/i.test(mensajeDe(e))) { abrirDesafio(); return; }
         botones.forEach(function (x) { x.disabled = false; });
@@ -1691,8 +1792,10 @@ var _tolCaja = 100;
 function numeroCaja(v) {
   var t = String(v == null ? '' : v).replace(/[\s$]/g, '');
   if (!t || !/\d/.test(t) || /[^0-9.,-]/.test(t)) return null;
-  if (t.indexOf(',') > -1) t = t.replace(/\./g, '').replace(/,/g, '.');          // 1.440.100,50
-  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');          // 95.000
+  var coma = t.lastIndexOf(','), punto = t.lastIndexOf('.');
+  if (coma > -1 && punto > -1) t = coma > punto ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');   // 1.440.100,50 o 1,440,100.50
+  else if (coma > -1) t = t.replace(',', '.');                                                                       // 95,5
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');                                            // 95.000
   var n = Number(t);
   return isFinite(n) ? n : null;
 }
@@ -1702,7 +1805,11 @@ function revisarFilasCaja() {
   app.querySelectorAll('.caja-fila').forEach(function (fila) {
     var ins = fila.querySelectorAll('input'), el = fila.querySelector('.caja-da');
     var a = numeroCaja(ins[0].value), b = numeroCaja(ins[1].value);
-    if (a == null || b == null) { el.className = 'caja-da'; el.textContent = ''; return; }
+    var nada = function () { el.className = 'caja-da'; el.textContent = ''; };
+    if (a == null && b == null) { nada(); return; }
+    /* Como en la base, lo vacío cuenta como 0: si el sistema dice algo y falta el comprobante, ya es diferencia. */
+    if (b == null) { if (Math.abs(a) <= _tolCaja) nada(); else { el.className = 'caja-da falta'; el.textContent = 'Sin cargar: así faltan ' + pesos(a); } return; }
+    if (a == null) { if (Math.abs(b) <= _tolCaja) nada(); else { el.className = 'caja-da sobra'; el.textContent = 'Falta lo del sistema: así sobran ' + pesos(b); } return; }
     var d = a - b;
     if (Math.abs(d) <= _tolCaja) { el.className = 'caja-da da'; el.textContent = '✓ Da'; }
     else if (d > 0) { el.className = 'caja-da falta'; el.textContent = 'Faltan ' + pesos(d); }

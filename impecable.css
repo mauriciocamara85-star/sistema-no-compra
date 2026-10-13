@@ -366,6 +366,10 @@ button.mapa-sec { cursor: pointer; }
 .item-hoy.alerta .tilde { border-color: var(--ambar); }
 .item-hoy.hecho .tilde { background: var(--verde); border-color: var(--verde); color: #111; }
 .item-hoy.hecho b { color: var(--suave); text-decoration: line-through; text-decoration-thickness: 2px; }
+.item-hoy.perdido { border-color: var(--rojo); }
+.item-hoy.perdido .tilde { border-color: var(--rojo); color: var(--rojo); }
+.item-hoy.luego .tilde { border-style: dashed; border-color: var(--suave); }
+.item-hoy.luego b { color: var(--suave); }
 .resumen { margin-top: 22px; }
 .resumen.nivel-bien { background: var(--verde); }
 .resumen.nivel-a_mejorar { background: var(--ambar); }
@@ -388,14 +392,17 @@ button.mapa-sec { cursor: pointer; }
 .dialogo-campo.falta { border-color: var(--rojo); }
 .dialogo-botones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .dialogo-botones .boton { margin: 0; }
+/* Con texto, arriba: abajo la taparía el teclado del celular. */
+.dialogo-capa.con-campo { align-items: flex-start; padding-top: max(16px, 8vh); }
 @media (min-width: 700px) { .dialogo-capa { align-items: center; } }
 
 /* ── El festejo ────────────────────────────────────────────────────── */
 .festejo { position: fixed; inset: 0; z-index: 90; pointer-events: none; overflow: hidden; }
 .festejo i { position: absolute; top: -24px; border-radius: 2px; animation-name: festejo-caer; animation-timing-function: linear; animation-fill-mode: forwards; }
 @keyframes festejo-caer { from { transform: translate(0, 0) rotate(0); } to { transform: translate(var(--x, 0), 110vh) rotate(var(--giro, 360deg)); } }
-.festejo-texto { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(.6); opacity: 0; white-space: nowrap;
-  background: var(--lima); color: var(--sobre-lima); font-size: 26px; font-weight: 800; padding: 16px 26px; border-radius: 22px;
+.festejo-texto { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(.6); opacity: 0;
+  width: max-content; max-width: calc(100vw - 48px); text-align: center; line-height: 1.2;
+  background: var(--lima); color: var(--sobre-lima); font-size: clamp(20px, 6.5vw, 26px); font-weight: 800; padding: 16px 22px; border-radius: 22px;
   box-shadow: 0 12px 40px rgba(0, 0, 0, .4); animation: festejo-aparecer .5s cubic-bezier(.2, 1.4, .4, 1) .1s forwards, festejo-irse .4s ease-in 3.5s forwards; }
 @keyframes festejo-aparecer { to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 @keyframes festejo-irse { to { opacity: 0; } }

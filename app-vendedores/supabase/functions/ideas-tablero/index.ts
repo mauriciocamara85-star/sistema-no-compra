@@ -9,7 +9,8 @@ import { clienteUsuario, cors, json } from "../_shared/comun.ts";
 import { type FotoIdea, leerRss, tableroDe } from "../_shared/pinterest.ts";
 
 // Mientras la función sigue prendida, el mismo tablero no se pide de nuevo por media hora.
-const guardados = new Map<string, { hasta: number; fotos: FotoIdea[] }>();
+// Si Pinterest no contesta, se recuerda 2 minutos: así no espera cada vendedor 8 segundos.
+const guardados = new Map<string, { hasta: number; fotos: FotoIdea[]; fallo?: boolean }>();
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
@@ -32,7 +33,7 @@ Deno.serve(async (req) => {
   // El enlace para "Ver en Pinterest", sin el código para sumarse a editar el tablero.
   const enlace = `https://ar.pinterest.com/${t.usuario}/${t.tablero}/`;
   const ya = guardados.get(enlace);
-  if (ya && ya.hasta > Date.now()) return json({ ok: true, enlace, fotos: ya.fotos });
+  if (ya && ya.hasta > Date.now()) return json(ya.fallo ? { ok: false, enlace, motivo: "pinterest" } : { ok: true, enlace, fotos: ya.fotos });
 
   try {
     const r = await fetch(`https://ar.pinterest.com/${t.usuario}/${t.tablero}.rss`, {
@@ -45,6 +46,7 @@ Deno.serve(async (req) => {
     return json({ ok: true, enlace, fotos });
   } catch (e) {
     console.error("ideas-tablero", enlace, e);
+    guardados.set(enlace, { hasta: Date.now() + 2 * 60_000, fotos: [], fallo: true });
     return json({ ok: false, enlace, motivo: "pinterest" });
   }
 });

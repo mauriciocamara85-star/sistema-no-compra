@@ -6,9 +6,9 @@ export type FotoIdea = { foto: string; chica: string; pin: string; titulo: strin
 /** "https://ar.pinterest.com/usuario/tablero/" → { usuario, tablero }; null si no es un tablero. */
 export function tableroDe(url: string): { usuario: string; tablero: string } | null {
   const m = String(url || "").trim().match(
-    /^https:\/\/(?:[a-z]{2,3}\.)?pinterest\.[a-z.]{2,8}\/([A-Za-z0-9_.-]{1,60})\/([A-Za-z0-9_.%-]{1,120})\/?(?:[?#].*)?$/,
+    /^https:\/\/(?:[a-z]{2,3}\.)?pinterest\.[a-z.]{2,8}\/([A-Za-z0-9_.-]{1,60})\/([A-Za-z0-9_.%-]{1,120})\/?(?:[?#].*)?$/i,
   );
-  if (!m || m[1] === "pin" || m[1] === "search" || m[1] === "ideas") return null;
+  if (!m || ["pin", "search", "ideas"].indexOf(m[1].toLowerCase()) > -1) return null;
   return { usuario: m[1], tablero: m[2] };
 }
 

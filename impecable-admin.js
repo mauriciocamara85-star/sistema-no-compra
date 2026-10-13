@@ -1051,7 +1051,10 @@ function ajTableros() {
       var u = String(f.url || '').trim();
       if (!/^https:\/\/\S+$/i.test(u)) return 'El enlace tiene que empezar con https://';
       /* El de "Compartir" de Pinterest (pin.it o con invite_code) deja sumarse a editar el tablero: no se reparte. */
-      if (/pin\.it\/|invite_code|collab/i.test(u)) return 'Ese enlace es para invitar a editar el tablero. Abrí el tablero en Pinterest y copiá la dirección de arriba (por ejemplo https://ar.pinterest.com/Mauu_Camara/vdh-ideas/).';
+      if (/pin\.it\/|invite_code/i.test(u)) return 'Ese enlace es para invitar a editar el tablero. Abrí el tablero en Pinterest y copiá la dirección de arriba (por ejemplo https://ar.pinterest.com/Mauu_Camara/vdh-ideas/).';
+      /* Lo mismo que sabe leer la función ideas-tablero: un tablero entero (usuario/tablero), sin secciones ni pines sueltos. */
+      var m = u.match(/^https:\/\/(?:[a-z]{2,3}\.)?pinterest\.[a-z.]{2,8}\/([A-Za-z0-9_.-]{1,60})\/([A-Za-z0-9_.%-]{1,120})\/?$/i);
+      if (!m || ['pin', 'search', 'ideas'].indexOf(m[1].toLowerCase()) > -1) return 'Tiene que ser la dirección de un tablero entero de Pinterest, como https://ar.pinterest.com/Mauu_Camara/vdh-ideas/';
       return null;
     },
     nueva: function (f) { return { titulo: 'Nuevo tablero', url: 'https://www.pinterest.com/', orden: f.length + 1, activo: false }; } });
