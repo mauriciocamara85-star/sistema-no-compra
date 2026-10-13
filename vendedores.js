@@ -306,17 +306,9 @@ function pantallaAlta(local) {
   };
 }
 
-function pantallaPin(local, persona, extra) {
-  var pin = '';
-  var ocupado = false;
-  var crear = !!persona.nuevo;   // todavía no tiene PIN: lo crea, poniéndolo dos veces
-  var primero = null;
-  var primerNombre = String(persona.nombre).split(' ')[0];
-  app.innerHTML =
-    '<button class="volver" id="volver">‹ ' + (extra.alta ? 'Volver' : 'No soy ' + esc(primerNombre)) + '</button>' +
-    '<h1 id="tituloPin"></h1>' +
-    '<p class="bajada" id="bajadaPin"></p>' +
-    '<div class="puntos" id="puntos"><i class="punto"></i><i class="punto"></i><i class="punto"></i><i class="punto"></i></div>' +
+/** Los puntos y el teclado del PIN (4 números; 6 para admin, Atención y gerencia, SQL 110). */
+function tecladoPin(largo) {
+  return '<div class="puntos' + (largo > 4 ? ' seis' : '') + '" id="puntos">' + new Array(largo + 1).join('<i class="punto"></i>') + '</div>' +
     '<p class="aviso-pin" id="avisoPin"></p>' +
     '<div class="teclado" id="teclado">' +
       [1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) { return '<button class="tecla" data-n="' + n + '">' + n + '</button>'; }).join('') +
@@ -324,6 +316,20 @@ function pantallaPin(local, persona, extra) {
       '<button class="tecla" data-n="0">0</button>' +
       '<button class="tecla borrar" data-n="x" aria-label="Borrar">⌫</button>' +
     '</div>';
+}
+
+function pantallaPin(local, persona, extra) {
+  var pin = '';
+  var ocupado = false;
+  var crear = !!persona.nuevo;   // todavía no tiene PIN: lo crea, poniéndolo dos veces
+  var primero = null;
+  var primerNombre = String(persona.nombre).split(' ')[0];
+  var largo = persona.digitos === 6 ? 6 : 4;   // cuántos números (la lista lo dice desde el SQL 110)
+  app.innerHTML =
+    '<button class="volver" id="volver">‹ ' + (extra.alta ? 'Volver' : 'No soy ' + esc(primerNombre)) + '</button>' +
+    '<h1 id="tituloPin"></h1>' +
+    '<p class="bajada" id="bajadaPin"></p>' +
+    tecladoPin(largo);
   document.getElementById('volver').onclick = function () {
     if (extra.alta) pantallaAlta(local); else pantallaPersonas(local);
   };
@@ -335,9 +341,9 @@ function pantallaPin(local, persona, extra) {
     document.getElementById('tituloPin').textContent =
       !crear ? 'Hola, ' + primerNombre : (primero === null ? 'Creá tu PIN' : 'Repetí tu PIN');
     document.getElementById('bajadaPin').textContent =
-      !crear ? 'Poné tu PIN de 4 números. Te lo pide una sola vez en este celular.'
-      : (primero === null ? 'Hola, ' + primerNombre + '. Elegí 4 números que te acuerdes: es tu PIN para entrar.'
-                          : 'Poné los mismos 4 números otra vez.');
+      !crear ? 'Poné tu PIN de ' + largo + ' números. Te lo pide una sola vez en este celular.'
+      : (primero === null ? 'Hola, ' + primerNombre + '. Elegí ' + largo + ' números que te acuerdes: es tu PIN para entrar.'
+                          : 'Poné los mismos ' + largo + ' números otra vez.');
   }
   textos();
 
@@ -384,6 +390,8 @@ function pantallaPin(local, persona, extra) {
         var p = x.d.persona || {};
         p.local = local.id ? local.nombre : '';
         anotarVend_(x.d, p);
+        /* Entró con el PIN de 4 de antes y su rol pide 6: lo cambia ya. */
+        if (x.d.cambiar_pin || p.cambiar_pin) { pantallaCambiarPin(function () { entrarApp(true); }); return; }
         entrarApp(true);
         return;
       }
@@ -422,13 +430,61 @@ function pantallaPin(local, persona, extra) {
     t.onclick = function () {
       if (ocupado) return;
       if (t.dataset.n === 'x') { pin = pin.slice(0, -1); }
-      else if (pin.length < 4) { pin += t.dataset.n; }
+      else if (pin.length < largo) { pin += t.dataset.n; }
       aviso.textContent = '';
       dibujar();
-      if (pin.length < 4) return;
+      if (pin.length < largo) return;
       if (crear && primero === null) { primero = pin; pin = ''; dibujar(); textos(); return; }
       if (crear && pin !== primero) { primero = null; textos(); mal('No coinciden. Empezá de nuevo.'); return; }
       mandar();
+    };
+  });
+}
+
+/* El PIN de 4 de antes por uno de 6 (admin, Atención y gerencia, SQL 110):
+   se pide apenas entra, con la sesión ya abierta. No se puede saltear: si
+   cierra la app, se lo vuelve a pedir al abrirla. */
+function pantallaCambiarPin(despues) {
+  barra.hidden = true;
+  app.className = 'app';
+  var largo = 6, pin = '', primero = null, ocupado = false;
+  app.innerHTML = '<p class="marca"><b>Equipo</b> VDH</p><h1 id="tituloPin"></h1><p class="bajada" id="bajadaPin"></p>' + tecladoPin(largo);
+  var puntos = document.getElementById('puntos'), aviso = document.getElementById('avisoPin');
+  function textos() {
+    document.getElementById('tituloPin').textContent = primero === null ? 'Tu PIN ahora es de 6 números' : 'Repetí tu PIN nuevo';
+    document.getElementById('bajadaPin').textContent = primero === null
+      ? 'Con tu PIN entrás también al CRM, los socios y las gift cards: por eso ahora es más largo. Elegí 6 números que te acuerdes.'
+      : 'Poné los mismos 6 números otra vez.';
+  }
+  function dibujar() { puntos.querySelectorAll('.punto').forEach(function (p, i) { p.classList.toggle('lleno', i < pin.length); }); }
+  function mal(texto) {
+    pin = ''; primero = null; textos(); dibujar();
+    puntos.classList.remove('mal'); void puntos.offsetWidth; puntos.classList.add('mal');
+    aviso.className = 'aviso-pin error'; aviso.textContent = texto;
+  }
+  textos();
+  app.querySelectorAll('.tecla[data-n]').forEach(function (t) {
+    t.onclick = function () {
+      if (ocupado) return;
+      if (t.dataset.n === 'x') pin = pin.slice(0, -1);
+      else if (pin.length < largo) pin += t.dataset.n;
+      aviso.textContent = '';
+      dibujar();
+      if (pin.length < largo) return;
+      if (primero === null) { primero = pin; pin = ''; dibujar(); textos(); return; }
+      if (pin !== primero) { mal('No coinciden. Empezá de nuevo.'); return; }
+      ocupado = true;
+      puntos.classList.add('esperando');
+      aviso.className = 'aviso-pin'; aviso.textContent = 'Guardando…';
+      llamar('orden_pin_cambiar', { p_nuevo: pin }).then(function (r) {
+        ocupado = false; puntos.classList.remove('esperando');
+        if (!r || !r.ok) { mal((r && r.porque) || 'No se pudo cambiar. Probá de nuevo.'); return; }
+        avisar('Listo: tu PIN nuevo es de 6 números.');
+        despues();
+      }, function (e) {
+        ocupado = false; puntos.classList.remove('esperando');
+        mal(esDeRed(e) ? 'Sin conexión. Probá de nuevo cuando haya señal.' : mensajeDe(e));
+      });
     };
   });
 }
@@ -549,9 +605,18 @@ function hayAlgoEscrito() {
 }
 
 /** Al entrar (recién o con la sesión guardada). */
+var _pinRevisado = null;   // de quién ya se miró si el PIN tiene los números que pide su rol
 function entrarApp(recien) {
   if (yo().rol === 'atencion') { pantallaSinImpecable(); return; }
   if (yo().aprobado === false) { pantallaEspera(); return; }
+  /* Admin y gerencia con el PIN de 4 de antes (SQL 110): primero, uno de 6. */
+  if ((yo().rol === 'admin' || yo().rol === 'gerencia') && _pinRevisado !== yo().id) {
+    _pinRevisado = yo().id;
+    llamar('orden_pin_estado').then(function (e) {
+      if (e && e.cambiar) pantallaCambiarPin(function () { entrarApp(recien); }); else entrarApp(recien);
+    }, function () { entrarApp(recien); });
+    return;
+  }
   refrescarYo();
   armarBarra();
   revisarCaja();

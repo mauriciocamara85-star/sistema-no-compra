@@ -65,6 +65,7 @@ h1 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.02e
 .puntos { display: flex; justify-content: center; gap: 18px; margin: 28px 0 10px; }
 .punto { width: 18px; height: 18px; border-radius: 50%; border: 2px solid var(--suave); }
 .punto.lleno { background: var(--lima); border-color: var(--lima); }
+.puntos.seis { gap: 12px; }
 .puntos.esperando .punto.lleno { animation: latido 1s infinite; }
 .puntos.mal { animation: sacudir .35s; }
 @keyframes latido { 50% { opacity: .35; } }

@@ -93,7 +93,11 @@ Deno.serve(async (req) => {
     access_token: s.session.access_token,
     refresh_token: s.session.refresh_token,
     expires_at: s.session.expires_at,
-    persona: { id: r.persona_id, nombre: r.nombre, rol: r.rol, local_id: r.local_id, aprobado: r.aprobado !== false },
+    persona: { id: r.persona_id, nombre: r.nombre, rol: r.rol, local_id: r.local_id, aprobado: r.aprobado !== false,
+               cambiar_pin: r.cambiar_pin === true },
+    // SQL 110: entró con el PIN de 4 de antes y su rol pide 6 (admin, Atención,
+    // gerencia): la app le pide uno nuevo ya (orden_pin_cambiar, con esta sesión).
+    cambiar_pin: r.cambiar_pin === true,
   });
 
   async function vincular(id: string, c: string) {
