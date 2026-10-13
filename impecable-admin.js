@@ -1163,7 +1163,7 @@ function dibujarMapaLocal() {
   if (!puede) _repartir = false;
   z.innerHTML = '<div class="seccion">El mapa del local</div><div class="imp-mapa">' +
     (puede ? '<div class="imp-mapa-acc"><button class="boton chico' + (_repartir ? ' lima' : '') + '" id="btnRepartir">' + (_repartir ? 'Listo, terminé' : 'Repartir y ponerles nombre') + '</button>' +
-      (_repartir && d.pared.length ? '<button class="boton chico" id="btnParejo">Repartir parejo el salón entre ' + planReparto(d).length + '</button>' : '') +
+      (_repartir && d.pared.length + d.islas.length ? '<button class="boton chico" id="btnParejo">Repartir parejo el salón entre ' + planReparto(d).length + '</button>' : '') +
       (_repartir && d.dep.length > 1 && depositoNumerado(d) ? '<button class="boton chico" id="btnParejoDep">Repartir parejo el depósito entre ' + planReparto(d, 'deposito').length + '</button>' : '') +
       '<button class="boton chico" id="btnFormaMapa">Cambiar la forma y la cantidad</button></div>' : '') +
     (_repartir ? '<p class="bajada">"Repartir parejo" divide los módulos en partes iguales, en bloques seguidos (22 entre 3: 7, 7 y 8). ' +
@@ -1201,7 +1201,7 @@ function elegirSectorAdmin(d, modId) {
   var tipo = d.sectorDe[m.sector_id].tipo, lista = tipo === 'deposito' ? d.deposito : d.salon;
   /* El nombre: "Vidriera", "Caja"… para identificarlo (en el depósito el nombre es el del sector). */
   var conNombre = true;
-  var f = ventana('<h1>' + esc(nombreModulo(m, d.sectorDe[m.sector_id])) + '</h1>' +
+  var f = ventana('<h1>' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '</h1>' +
     (conNombre ? '<div class="renglon"><label class="campo c-grande"><span>' + (m.isla ? 'Nombre' : 'Nombre (opcional): para reconocerlo') + '</span>' +
       '<input id="mNombre" maxlength="40" value="' + esc(m.isla ? m.nombre : nombrePropio(m) || '') + '" placeholder="' + (tipo === 'deposito' ? 'Estantería de remeras…' : 'Vidriera, Al lado de la caja…') + '"></label>' +
       '<button class="boton chico" id="mGuardarNombre">Guardar el nombre</button></div>' : '') +
@@ -1215,7 +1215,7 @@ function elegirSectorAdmin(d, modId) {
     unaVez(b, function () {
       if (b.dataset.a === m.sector_id) { f.remove(); return; }
       return llamar('orden_mover_modulo', { p_modulo: m.id, p_sector: b.dataset.a }).then(function () {
-        f.remove(); avisar('Listo: ' + nombreModulo(m, d.sectorDe[m.sector_id]) + ' cambió de sector.'); recargarMapaLocal();
+        f.remove(); avisar('Listo: ' + nombreModulo(m, d.sectorDe[m.sector_id], d) + ' cambió de sector.'); recargarMapaLocal();
       });
     });
   });
@@ -1233,24 +1233,25 @@ function planReparto(d, tipo) {
   var todos = tipo === 'deposito' ? d.deposito : d.salon;
   var secs = todos.filter(function (s) { return s.responsable_id; });
   if (!secs.length) secs = todos.slice();
-  var mods = (tipo === 'deposito' ? d.dep : d.pared).slice().sort(function (a, b) { return a.numero - b.numero; });
+  var mods = tipo === 'deposito' ? d.dep.slice().sort(function (a, b) { return a.numero - b.numero; })
+                                  : d.pared.slice().sort(function (a, b) { return a.numero - b.numero; }).concat(d.islas);
   var k = secs.length, n = mods.length, base = k ? Math.floor(n / k) : 0, extra = k ? n % k : 0, desde = 0;
   return secs.map(function (s, i) {
     var cant = base + (i >= k - extra ? 1 : 0), suyos = mods.slice(desde, desde + cant);
     desde += cant;
-    return { sector: s, cantidad: cant, nums: suyos.map(function (m) { return m.numero; }) };
+    return { sector: s, cantidad: cant, nums: suyos.map(function (m) { return numeroVista(d, m); }) };
   });
 }
 
 function repartirParejo(d, tipo) {
-  var plan = planReparto(d, tipo), mods = tipo === 'deposito' ? d.dep : d.pared;
+  var plan = planReparto(d, tipo), mods = tipo === 'deposito' ? d.dep : d.pared.concat(d.islas);
   if (!plan.length || !mods.length) { avisar('No hay módulos para repartir.'); return; }
   var texto = plan.map(function (p) {
     var resp = d.persona[p.sector.responsable_id];
     return (resp ? nombreLista(resp) : nombreSector(p.sector)) + ': ' + (p.nums.length ? rangos(p.nums) + ' (' + p.cantidad + ')' : 'ninguno');
   }).join('\n');
-  if (!confirm('Repartir los ' + mods.length + (tipo === 'deposito' ? ' módulos del depósito' : ' módulos de las paredes') + ' en partes iguales:\n\n' + texto + '\n\n' +
-               (tipo === 'deposito' ? 'El salón no cambia.' : 'Lo de adentro y el depósito no cambian.') + ' ¿Repartir así?')) return;
+  if (!confirm('Repartir los ' + mods.length + (tipo === 'deposito' ? ' módulos del depósito' : ' módulos del salón (paredes y centro)') + ' en partes iguales:\n\n' + texto + '\n\n' +
+               (tipo === 'deposito' ? 'El salón no cambia.' : 'El depósito no cambia.') + ' ¿Repartir así?')) return;
   return llamar('orden_mapa_repartir', { p_local: _local.id, p_tipo: tipo === 'deposito' ? 'deposito' : 'salon' }).then(function () {
     avisar('Listo: repartido parejo.'); recargarMapaLocal();
   });
@@ -1284,15 +1285,21 @@ function editarMapa(d) {
   var m = d.mapa || {};
   var numerado = depositoNumerado(d);
   var cantDep = m.deposito != null ? +m.deposito : d.dep.length;
+  /* Los del centro, en orden de la caja hacia la vidriera: "+ Agregar" suma uno al final. */
+  var centro = d.islas.map(function (x) { return { id: x.id, nombre: x.nombre, antes: x.nombre }; });
   var f = ventana('<h1>La forma y la cantidad</h1><p class="bajada">El local visto desde arriba, con la entrada (la vidriera) abajo y la caja atrás. ' +
-    'Los módulos se numeran desde la entrada dando la vuelta: pared izquierda → fondo → pared derecha → frente. Lo de adentro (la caja, los percheros) va aparte.</p>' +
+    'Los módulos se numeran desde la entrada dando la vuelta: pared izquierda → fondo → pared derecha → frente. Los del centro van a continuación (si hay 22 en las paredes, el primero del centro es el 23).</p>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
       '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
       PAREDES.map(function (p) {
         return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" value="' + (+m[p[0]] || 0) + '"></label>';
       }).join('') +
-      '<label class="campo c-grande"><span>Adentro del local (uno por renglón)</span><textarea id="eIslas" rows="3" placeholder="Por ejemplo: Caja (uno por renglón)">' +
-        esc(d.islas.map(function (x) { return x.nombre; }).join('\n')) + '</textarea></label></div>' +
+      '</div>' +
+    '<div class="seccion">Módulos del centro del salón</div>' +
+    '<p class="bajada">Exhibidores, mesas, percheros: uno por lugar. Van en fila por el medio, de la caja hacia la vidriera, y se numeran a continuación de las paredes. ' +
+      'Después ponele responsable a cada uno: tocándolo en el mapa o con "Repartir parejo".</p>' +
+    '<div class="imp-islas" id="eIslas"></div>' +
+    '<button type="button" class="boton chico" id="eIslaMas">+ Agregar un módulo en el centro</button>' +
     '<div class="seccion">Depósito</div>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma del depósito</span><select id="eFormaDep"><option value="rectangulo"' + (m.forma_deposito !== 'cuadrado' ? ' selected' : '') + '>Largo</option>' +
       '<option value="cuadrado"' + (m.forma_deposito === 'cuadrado' ? ' selected' : '') + '>Cuadrado</option></select></label>' +
@@ -1300,12 +1307,25 @@ function editarMapa(d) {
       '<p class="bajada" style="flex:1 1 260px;margin:0">Dividilo en partes que entren en una foto cada una. Se numeran 1, 2, 3… y después se reparten entre los vendedores.</p></div>' +
     '<p class="bajada" id="eTotal"></p><div class="imp-mapa-vista" id="eVista"></div><button class="boton lima" id="eGuardar">Guardar</button>');
   function leerForm() {
-    var mm = { forma: f.querySelector('#eForma').value, forma_deposito: f.querySelector('#eFormaDep').value }, vistas = {};
+    var mm = { forma: f.querySelector('#eForma').value, forma_deposito: f.querySelector('#eFormaDep').value };
     f.querySelectorAll('[data-pared]').forEach(function (i) { mm[i.dataset.pared] = Math.max(0, Math.min(40, parseInt(i.value, 10) || 0)); });
     mm.deposito = Math.max(0, Math.min(40, parseInt(f.querySelector('#eDep').value, 10) || 0));
-    var islas = f.querySelector('#eIslas').value.split('\n').map(function (x) { return x.trim(); })
-      .filter(function (x) { var k = x.toLowerCase(); if (!x || vistas[k]) return false; vistas[k] = true; return true; });
-    return { mapa: mm, islas: islas };
+    return { mapa: mm, islas: centro.map(function (c) { return c.nombre.trim(); }) };
+  }
+  /** "Centro 1", "Centro 2"…: el primer nombre libre para uno nuevo (después se cambia). */
+  function nombreLibre() {
+    for (var k = centro.length + 1; ; k++) {
+      var n = 'Centro ' + k;
+      if (!centro.some(function (c) { return c.nombre.trim().toLowerCase() === n.toLowerCase(); })) return n;
+    }
+  }
+  /** La lista del centro: su número, su nombre y "Sacar". */
+  function dibujarCentro() {
+    var total = PAREDES.reduce(function (s, p) { return s + leerForm().mapa[p[0]]; }, 0);
+    f.querySelector('#eIslas').innerHTML = centro.length ? centro.map(function (c, k) {
+      return '<div class="imp-isla"><b>' + (total + k + 1) + '</b><input maxlength="40" data-isla="' + k + '" value="' + esc(c.nombre) + '" placeholder="Mesa, exhibidor, perchero…" aria-label="Nombre del módulo del centro">' +
+        '<button type="button" class="boton chico" data-sacar="' + k + '">Sacar</button></div>';
+    }).join('') : '<p class="bajada">Todavía no hay módulos en el centro.</p>';
   }
   /* El depósito como va a quedar: los de antes (numerados seguidos si todavía eran "uno por sector") y los nuevos. */
   var depAhora = numerado ? d.dep.slice() : d.dep.map(function (k, i) { return Object.assign({}, k, { numero: i + 1 }); });
@@ -1316,9 +1336,10 @@ function editarMapa(d) {
     depAhora.forEach(function (k) { hayDep[k.numero] = true; });
     for (var n = 1; n <= total; n++) if (!hay[n]) nuevos++;
     for (n = 1; n <= x.mapa.deposito; n++) if (!hayDep[n]) nuevos++;
+    nuevos += centro.filter(function (q) { return !q.id; }).length;
     var apagan = d.pared.filter(function (k) { return k.numero > total; }).length +
       depAhora.filter(function (k) { return k.numero > x.mapa.deposito; }).length +
-      d.islas.filter(function (i) { return !x.islas.some(function (nom) { return nom.toLowerCase() === i.nombre.toLowerCase(); }); }).length;
+      d.islas.filter(function (i) { return !centro.some(function (c) { return c.id === i.id; }); }).length;
     return { total: total, nuevos: nuevos, apagan: apagan };
   }
   function vista() {
@@ -1329,10 +1350,12 @@ function editarMapa(d) {
       if (ex) ultimo = ex.sector_id;
       pared.push(ex || { id: 'nuevo' + n, numero: n, nombre: 'Módulo ' + n, sector_id: ultimo, isla: false });
     }
-    var islas = x.islas.map(function (nom, k) {
-      return d.islas.filter(function (i) { return i.nombre.toLowerCase() === nom.toLowerCase(); })[0] ||
-        { id: 'isla' + k, numero: 101 + k, nombre: nom, isla: true, sector_id: d.salon[0] ? d.salon[0].id : null };
-    }).sort(function (p, q) { return (esCaja(q) ? 1 : 0) - (esCaja(p) ? 1 : 0); });
+    var islas = centro.map(function (c, k) {
+      var ex = c.id && d.islas.filter(function (i) { return i.id === c.id; })[0];
+      return ex ? Object.assign({}, ex, { nombre: c.nombre.trim() || ex.nombre })
+                : { id: 'isla' + k, numero: 1000 + k, nombre: c.nombre.trim() || '?', isla: true, sector_id: d.salon[0] ? d.salon[0].id : null };
+    });
+    f.querySelectorAll('#eIslas .imp-isla b').forEach(function (b, k) { b.textContent = total + k + 1; });
     var secDep = d.deposito[0] || { id: '__deposito', tipo: 'deposito', numero: 1, nombre: null };
     var sectorDe = Object.assign({}, d.sectorDe);
     sectorDe[secDep.id] = secDep;
@@ -1345,17 +1368,55 @@ function editarMapa(d) {
     var dv = Object.assign({}, d, { mapa: x.mapa, pared: pared, islas: islas, dep: dep, sectorDe: sectorDe });
     f.querySelector('#eVista').innerHTML = svgMapa(dv, { vacios: true }) + svgDeposito(dv);
     var c = cambios(x);
-    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' + (islas.length ? ', ' + islas.length + ' adentro' : '') +
+    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' + (islas.length ? ', ' + islas.length + ' en el centro (del ' + (total + 1) + ' al ' + (total + islas.length) + ')' : '') +
       ' y ' + x.mapa.deposito + ' en el depósito.' +
       (c.nuevos ? ' Se crean ' + c.nuevos + ' (van al sector del anterior; después se reparten).' : '') +
       (c.apagan ? ' Se apagan ' + c.apagan + ': no se borran, quedan sus fotos, y vuelven si los ponés de nuevo.' : '');
   }
-  f.querySelectorAll('[data-pared], #eIslas, #eForma, #eFormaDep, #eDep').forEach(function (i) { i.addEventListener('input', vista); i.addEventListener('change', vista); });
+  f.querySelectorAll('[data-pared], #eForma, #eFormaDep, #eDep').forEach(function (i) { i.addEventListener('input', vista); i.addEventListener('change', vista); });
+  var lista = f.querySelector('#eIslas');
+  lista.addEventListener('input', function (e) {
+    var k = e.target.dataset && e.target.dataset.isla;
+    if (k == null || !centro[+k]) return;
+    centro[+k].nombre = e.target.value;
+    vista();
+  });
+  lista.addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-sacar]');
+    if (!b) return;
+    centro.splice(+b.dataset.sacar, 1);
+    dibujarCentro(); vista();
+  });
+  f.querySelector('#eIslaMas').addEventListener('click', function () {
+    if (centro.length >= 30) { avisar('Como mucho 30 en el centro.'); return; }
+    centro.push({ id: null, nombre: nombreLibre(), antes: null });
+    dibujarCentro(); vista();
+    var nuevo = lista.querySelector('[data-isla="' + (centro.length - 1) + '"]');
+    if (nuevo) { nuevo.focus(); nuevo.select(); }
+  });
+  dibujarCentro();
   vista();
   unaVez(f.querySelector('#eGuardar'), function () {
-    var x = leerForm(), c = cambios(x);
+    var x = leerForm(), c = cambios(x), vistos = {};
+    for (var k = 0; k < x.islas.length; k++) {
+      var nom = x.islas[k], l = nom.toLowerCase();
+      if (!nom) { avisar('Ponele nombre al módulo ' + (c.total + k + 1) + ' (el del centro).'); return; }
+      if (vistos[l]) { avisar('Hay dos en el centro que se llaman "' + nom + '": cambiale el nombre a uno.'); return; }
+      vistos[l] = true;
+    }
+    /* Si sacás uno y le ponés su nombre a otro en la misma vez, la base no los distingue (van por nombre). */
+    var choca = d.islas.filter(function (i) { return !centro.some(function (q) { return q.id === i.id; }) && vistos[i.nombre.trim().toLowerCase()]; })[0];
+    if (choca) { avisar('"' + choca.nombre + '" lo estás sacando: guardá primero sin él y después usá ese nombre para otro.'); return; }
     if (c.apagan && !confirm('Se apagan ' + c.apagan + (c.apagan === 1 ? ' módulo' : ' módulos') + ' (no se borran: quedan sus fotos). ¿Guardar igual?')) return;
-    return llamar('orden_mapa_guardar', { p_local: _local.id, p_mapa: x.mapa, p_islas: x.islas }).then(function (r) {
+    /* A los que ya estaban y les cambiaste el nombre, primero el nombre: así siguen siendo los mismos (con su responsable y sus fotos). */
+    var renombrar = centro.filter(function (q) { return q.id && q.nombre.trim() !== q.antes; });
+    return renombrar.reduce(function (p, q) {
+      return p.then(function () {
+        return llamar('orden_modulo_nombre', { p_modulo: q.id, p_nombre: q.nombre.trim() }).then(function () { q.antes = q.nombre.trim(); });
+      });
+    }, Promise.resolve()).then(function () {
+      return llamar('orden_mapa_guardar', { p_local: _local.id, p_mapa: x.mapa, p_islas: x.islas });
+    }).then(function (r) {
       f.remove();
       avisar('Mapa guardado' + (r && r.creados ? ': ' + r.creados + (r.creados === 1 ? ' módulo nuevo.' : ' módulos nuevos.') : '.'));
       verLocal();

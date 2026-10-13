@@ -252,6 +252,13 @@
 .imp textarea { resize: vertical; }
 .imp-mapa-vista { margin: 0 0 14px; padding: 10px; border: 1px dashed var(--line-alta); border-radius: var(--r-sm); color: var(--txt-2); }
 .ventana .imp-mapa-vista .mapa-svg { width: 100%; max-width: none; height: 300px; }
+/* Los módulos del centro, en el editor de la forma: número, nombre y "Sacar". */
+.imp-islas { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
+.imp-islas .bajada { margin: 0; }
+.imp-isla { display: flex; align-items: center; gap: 8px; }
+.imp-isla b { flex: 0 0 auto; min-width: 38px; height: 38px; display: grid; place-items: center; border-radius: var(--r-sm); border: 1px solid var(--line-campo); font: 700 14px var(--sans); color: var(--txt); }
+.ventana .imp-isla input { flex: 1 1 auto; min-width: 0; min-height: 42px; padding: 8px 11px; border: 1px solid var(--line-campo); border-radius: var(--r-sm); background: var(--campo); color: var(--txt); font: 500 14px var(--sans); box-sizing: border-box; }
+#eIslaMas { margin: 0 0 6px; }
 /* Los formularios adentro de las ventanas */
 .ventana .campo { display: grid; gap: 5px; margin: 0 0 12px; }
 .ventana .campo > span { font: 600 12.5px var(--sans); color: var(--txt-2); }

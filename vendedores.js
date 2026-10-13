@@ -698,7 +698,7 @@ function dibujarHoy(x) {
       if (falta) { pantallaFoto(falta); return; }
       var m = mapa.modulos.filter(function (k) { return k.id === g.dataset.mod; })[0], s = m && mapa.sectorDe[m.sector_id];
       var quien = s && mapa.persona[s.responsable_id];
-      var que = nombreModulo(m, s);
+      var que = nombreModulo(m, s, mapa);
       avisar(!suyos.length ? que + (quien ? ' es de ' + nombreLista(quien) + '.' : ' no tiene responsable.')
         : suyos.some(function (k) { return k.estado === 'vencido'; }) ? que + ': la foto de hoy ya venció.' : que + ': ya mandaste la foto de hoy.');
     };
