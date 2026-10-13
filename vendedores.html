@@ -136,11 +136,57 @@
   .pestana svg { width: 24px; height: 24px; }
   .pestana.activa { color: var(--lima); }
 
+  /* La cámara: a pantalla completa, con el recuadro guía */
+  .camara-vista { position: fixed; inset: 0; z-index: 10; background: #000; display: flex; flex-direction: column; }
+  .camara-vista video { flex: 1; width: 100%; min-height: 0; object-fit: cover; }
+  .camara-arriba { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center;
+                   padding: max(12px, env(safe-area-inset-top)) 16px 12px; background: linear-gradient(rgba(0,0,0,.6), transparent); }
+  .camara-arriba .volver { color: var(--texto); }
+  .camara-arriba .titulo { font-weight: 800; }
+  .guia { position: absolute; left: 8%; right: 8%; top: 16%; bottom: 24%; border: 2px dashed var(--lima); border-radius: 18px; pointer-events: none; }
+  .guia span { position: absolute; top: -30px; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 700; color: var(--lima); }
+  .referencia { position: absolute; right: 16px; top: calc(max(12px, env(safe-area-inset-top)) + 52px); width: 84px; border-radius: 10px;
+                border: 2px solid var(--texto); box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+  .camara-abajo { position: absolute; left: 0; right: 0; bottom: 0; display: grid; place-items: center; gap: 8px;
+                  padding: 16px 16px max(20px, env(safe-area-inset-bottom)); background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+  .disparar { width: 76px; height: 76px; border-radius: 50%; border: 5px solid var(--texto); background: var(--lima); cursor: pointer; }
+  .disparar:active { transform: scale(.94); }
+  .enlace { background: none; border: 0; color: var(--suave); text-decoration: underline; min-height: 44px; cursor: pointer; font-size: 14px; }
+
+  /* La revisión */
+  .foto-grande { width: 100%; border-radius: 18px; display: block; background: var(--tarjeta); aspect-ratio: 3 / 4; object-fit: cover; }
+  .revision { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 18px; padding: 16px; margin: 14px 0; }
+  .revision .titulo { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-weight: 800; margin-bottom: 8px; }
+  .revision.mala { border-color: var(--rojo); }
+  .revisando { display: flex; align-items: center; gap: 10px; color: var(--suave); }
+  .ruedita { width: 20px; height: 20px; border-radius: 50%; border: 3px solid var(--borde); border-top-color: var(--lima); animation: girar .8s linear infinite; }
+  @keyframes girar { to { transform: rotate(360deg); } }
+  .hallazgo { padding: 10px 0; border-top: 1px solid var(--borde); }
+  .hallazgo:first-of-type { border-top: 0; }
+  .hallazgo b { display: block; }
+  .hallazgo small { color: var(--suave); }
+  .hallazgo.corregir b::before { content: "● "; color: var(--ambar); }
+  .hallazgo.sugerencia b::before { content: "○ "; color: var(--suave); }
+  .pregunta { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--borde); }
+  .pregunta:first-of-type { border-top: 0; }
+  .pregunta span { flex: 1; font-weight: 600; }
+  .sino { display: flex; gap: 6px; }
+  .sino button { min-width: 56px; min-height: 44px; border-radius: 12px; border: 1px solid var(--borde); background: var(--fondo); font-weight: 700; cursor: pointer; }
+  .sino button.si.elegido { background: var(--verde); color: var(--fondo); border-color: var(--verde); }
+  .sino button.no.elegido { background: var(--rojo); color: var(--fondo); border-color: var(--rojo); }
+  .acciones { display: grid; gap: 10px; margin-top: 16px; }
+  .boton:disabled { opacity: .45; }
+  .chip.nivel-impecable { color: var(--lima); }
+  .chip.nivel-bien { color: var(--verde); }
+  .chip.nivel-a_mejorar { color: var(--ambar); }
+  .chip.nivel-fuera_de_estandar { color: var(--rojo); }
+
   /* El cartelito de abajo */
   .cartel {
     position: fixed; left: 16px; right: 16px; bottom: calc(var(--barra) + 16px + env(safe-area-inset-bottom)); z-index: 6;
     max-width: 448px; margin: 0 auto; background: var(--texto); color: var(--fondo);
     border-radius: 14px; padding: 12px 16px; font-weight: 600; text-align: center;
+    pointer-events: none;   /* es sólo para leer: no puede comerse el toque de un botón que tape */
   }
   .cargando { text-align: center; color: var(--suave); padding: 40px 0; }
 </style>
