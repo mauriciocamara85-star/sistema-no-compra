@@ -1,0 +1,234 @@
+/* ════════════════════════════════════════════════════════════════════════
+   Impecable · la administración, con la imagen del No Compra (13/10/2026).
+
+   Pedido de Mauricio: "se tendría que ver la pantalla completa en la
+   computadora", como las Estadísticas del CRM. Usa los colores y las
+   tarjetas de estilos.css (fondo claro, tarjetas negras, claro y oscuro) y
+   un menú a la izquierda como el del CRM.
+
+   Todo va adentro de .imp: varias clases de la administración se llaman
+   igual que otras del No Compra (campo, vacio, marca) y no tienen que
+   pisarse. Las pastillas de estado son .est y no .chip (en el No Compra,
+   .chip es el botón redondeado de los períodos, que acá también se usa).
+   ════════════════════════════════════════════════════════════════════════ */
+
+.hoja.imp { max-width: none; padding-bottom: 48px; }
+@media (min-width: 900px) { .hoja.imp { padding: 22px 26px 48px; } }
+
+/* ── El menú y el cuerpo ── */
+.imp-grid { display: grid; gap: 18px; }
+/* Sin esto, una tabla ancha estira la columna y la página se sale de costado en el celular. */
+.imp-grid > *, .imp-cuerpo { min-width: 0; }
+@media (min-width: 1000px) { .imp-grid { grid-template-columns: 232px minmax(0, 1fr); align-items: start; } }
+.imp-menu {
+  display: flex; flex-direction: column; gap: 2px; padding: 10px 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+}
+@media (min-width: 1000px) { .imp-menu { position: sticky; top: 16px; } }
+.imp-menu-cab { padding: 4px 10px 8px; font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
+.imp-item {
+  display: flex; align-items: center; gap: 11px; min-height: 42px; padding: 0 12px;
+  border: 0; border-radius: var(--r-sm); background: none; color: var(--txt-2);
+  font: 600 14.5px var(--sans); text-align: left; text-decoration: none; cursor: pointer; white-space: nowrap;
+}
+.imp-item svg { width: 19px; height: 19px; flex: none; }
+.imp-item:hover { background: var(--surface-2); color: var(--txt); }
+.imp-item.activa { background: var(--surface-3); color: var(--txt); box-shadow: inset 3px 0 0 var(--acc); }
+.imp-menu-pie { margin-top: 8px; padding: 10px 4px 2px; border-top: 1px solid var(--line); display: grid; gap: 2px; }
+.imp-quien { padding: 0 8px 6px; font-size: 12.5px; color: var(--txt-3); line-height: 1.35; }
+.imp-quien b { display: block; color: var(--txt); font-size: 13.5px; }
+/* En el celular el menú es una tira que se desliza. */
+@media (max-width: 999px) {
+  .imp-menu { flex-direction: row; overflow-x: auto; padding: 6px; scrollbar-width: none; }
+  .imp-menu::-webkit-scrollbar { display: none; }
+  .imp-menu-cab, .imp-quien { display: none; }
+  .imp-menu-pie { display: contents; }
+  .imp-item.activa { box-shadow: inset 0 -3px 0 var(--acc); }
+}
+
+/* ── La cabecera de cada vista ── */
+.imp-cab { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 10px 16px; margin-bottom: 14px; }
+.imp-cab h2 { margin: 0; font: 700 23px/1.15 var(--display); letter-spacing: -.4px; color: var(--txt); }
+.imp-sub { display: block; margin-top: 2px; font-size: 13px; color: var(--txt-3); }
+.imp-cab-der { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.imp select, .imp input, .imp textarea { font-family: var(--sans); }
+.imp-sel {
+  min-height: 42px; padding: 0 36px 0 12px; border: 1px solid var(--line-campo); border-radius: var(--r-sm);
+  background: var(--campo); color: var(--txt); font: 600 14px var(--sans);
+}
+
+/* ── Números: las tarjetas negras del No Compra (.kpi de estilos.css) ── */
+.imp-kpis, .imp .numeros { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin: 0 0 18px; }
+/* En el celular, de a dos (como las tarjetas del No Compra). */
+@media (max-width: 599px) {
+  .imp-kpis, .imp .numeros { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .imp .kpi .kpi-n, .imp .numero b { font-size: 22px; }
+}
+.imp .numero {
+  --txt: #F4F2EC; --txt-2: #D2CDC3; --txt-3: #B8B2A7;
+  background: var(--tablero-negro, var(--platino)); color: #F4F2EC;
+  border: 1px solid rgba(255, 255, 255, .10); border-left: 3px solid rgba(255, 255, 255, .12);
+  border-radius: var(--r-sm); padding: 14px 16px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07), 0 14px 30px -14px rgba(0, 0, 0, .9);
+}
+.imp .numero b { display: block; font: 700 25px/1.1 var(--display); letter-spacing: -.6px; margin: 3px 0 2px; }
+.imp .numero span { font-size: 12px; font-weight: 600; color: #D2CDC3; }
+.imp .numero span + b + span { font-weight: 500; color: #B8B2A7; font-size: 11.5px; }
+.imp .kpi .kpi-n small { font-size: 15px; font-weight: 600; letter-spacing: 0; color: #D2CDC3; }
+.imp .kpi.es-ok { border-left-color: #8FD1AE; }
+.imp .kpi.es-pend { border-left-color: #F0C66A; }
+.imp .kpi.es-mal { border-left-color: #FF9AA0; }
+.imp .kpi.es-mal .kpi-n { color: #FF9AA0; }
+
+/* ── Botones de período y de vista: los .chip del No Compra ── */
+.imp .solapas { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 14px; }
+.imp .solapas button {
+  min-height: 38px; padding: 0 14px; border: 1px solid var(--chip-line); border-radius: var(--r-pill);
+  background: var(--chip); color: var(--txt); font: 600 13.5px var(--sans); cursor: pointer;
+}
+.imp .solapas button:hover { border-color: var(--acc); }
+.imp .solapas button.activa { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); box-shadow: var(--glow); }
+.imp-filtros { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 0 0 14px; }
+.imp-filtros .solapas { margin: 0; }
+.imp-filtros .imp-sel { min-height: 38px; width: auto; min-width: 170px; }
+
+/* ── Textos ── */
+.imp .seccion { margin: 22px 0 10px; font: 700 12.5px var(--sans); text-transform: uppercase; letter-spacing: .6px; color: var(--txt-3); }
+.imp .bajada { margin: 0 0 14px; color: var(--txt-2); font-size: 14px; }
+.imp .cargando { padding: 40px 0; text-align: center; color: var(--txt-3); }
+.imp .vacio { padding: 26px 14px; text-align: center; color: var(--txt-3); border: 1px dashed var(--line-alta); border-radius: var(--r); background: none; font-size: 14px; }
+.imp .nota { margin: 0 0 14px; padding: 12px 14px; border-radius: var(--r-sm); background: var(--info-soft); color: var(--txt-2); font-size: 14px; }
+.imp .nota.alerta { background: var(--warn-soft); color: var(--warn-txt); }
+.imp .rojo { color: var(--bad-txt); font-weight: 700; }
+
+/* ── Pastillas de estado (niveles, cajas, tareas) ── */
+.imp .est {
+  display: inline-flex; align-items: center; gap: 4px; padding: 4px 9px; border-radius: var(--r-pill);
+  font: 600 12px/1.2 var(--sans); white-space: nowrap; background: var(--surface-2); color: var(--txt-2);
+}
+.imp .est.nivel-impecable { background: var(--oro-soft); color: var(--oro-txt); }
+.imp .est.nivel-bien, .imp .est.listo { background: var(--ok-soft); color: var(--ok-txt); }
+.imp .est.nivel-a_mejorar, .imp .est.corregir, .imp .est.sorpresa { background: var(--warn-soft); color: var(--warn-txt); }
+.imp .est.nivel-fuera_de_estandar, .imp .est.vencido { background: var(--bad-soft); color: var(--bad-txt); }
+.imp .info { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+
+/* ── Botones ── */
+.imp .boton {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: auto;
+  min-height: 44px; padding: 0 16px; border: 1px solid var(--line-alta); border-radius: var(--r-sm);
+  background: var(--surface); color: var(--txt); font: 600 14px var(--sans); text-decoration: none; cursor: pointer;
+}
+.imp .boton:hover { border-color: var(--acc); }
+.imp .boton.lima { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.imp .boton.chico { min-height: 38px; padding: 0 12px; font-size: 13.5px; }
+.imp .boton:disabled { opacity: .5; cursor: default; }
+.imp .botones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+/* ── Tablas ── */
+.imp .desliza { overflow-x: auto; -webkit-overflow-scrolling: touch; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.imp .tabla-datos { width: 100%; border-collapse: collapse; font-size: 13.5px; color: var(--txt); }
+.imp .tabla-datos th, .imp .tabla-datos td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+.imp .tabla-datos thead th { font-size: 12px; font-weight: 700; color: var(--txt-3); background: var(--surface-2); }
+.imp .tabla-datos tbody tr:last-child td { border-bottom: 0; }
+.imp .tabla-datos td.n, .imp .tabla-datos th.n { text-align: right; white-space: nowrap; }
+.imp .tabla-datos tr[data-caja]:hover, .imp .tabla-datos tr[data-ir]:hover { background: var(--surface-2); }
+
+/* ── Panorama: los locales semana a semana ── */
+.imp-pano th:first-child, .imp-pano td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; min-width: 150px; }
+.imp-pano thead th:first-child { background: var(--surface-2); }
+.imp-pano td.sem { text-align: center; min-width: 78px; }
+.imp-pano td.sem small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--txt-3); }
+.imp-pano tr[data-ir] { cursor: pointer; }
+.imp-pano tr.apagado td { color: var(--txt-3); }
+.imp-pano .local b { font-size: 14px; }
+.imp-pano .local small { display: block; color: var(--txt-3); font-size: 11.5px; }
+
+/* ── El gráfico de un local ── */
+.imp-grafico { background: var(--tablero-negro, var(--platino)); color: #F4F2EC; border-radius: var(--r); padding: 16px 18px 12px; margin: 0 0 18px; box-shadow: 0 14px 30px -14px rgba(0, 0, 0, .9); }
+.imp-grafico h3 { margin: 0 0 8px; font: 600 14px var(--sans); color: #D2CDC3; }
+.imp-grafico svg { width: 100%; height: auto; display: block; }
+.imp-ley { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: 12px; color: #D2CDC3; }
+.imp-ley i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+
+/* ── Módulos del local y fotos ── */
+.imp .grilla-local, .imp-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
+.imp-fotos { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+.imp .tarjeta-modulo, .imp-foto {
+  display: grid; gap: 6px; padding: 0 0 11px; overflow: hidden; cursor: pointer; text-align: left;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  color: var(--txt); font: inherit;
+}
+.imp .tarjeta-modulo:hover, .imp-foto:hover { border-color: var(--line-alta); }
+.imp .tarjeta-modulo img, .imp .tarjeta-modulo .sin-foto, .imp-foto img {
+  width: 100%; aspect-ratio: 3 / 4; object-fit: contain; background: #111110; display: grid; place-items: center; color: #B8B2A7; font-size: 13px;
+}
+.imp .tarjeta-modulo > b, .imp .tarjeta-modulo > small, .imp .tarjeta-modulo > .info,
+.imp-foto > b, .imp-foto > small, .imp-foto > .info { padding: 0 11px; }
+.imp .tarjeta-modulo > small, .imp-foto > small { color: var(--txt-3); font-size: 12px; line-height: 1.35; }
+.imp .tarjeta-modulo.gris { opacity: .6; }
+
+/* ── La ventana (un módulo, una foto, una caja) ── */
+.ventana-fondo { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(10, 10, 9, .62); }
+.ventana {
+  width: min(860px, 100%); max-height: 92vh; overflow: auto; padding: 20px;
+  background: var(--surface); color: var(--txt); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra-alta);
+  font-family: var(--sans);
+}
+.ventana h1 { margin: 0 0 4px; font: 700 21px var(--display); }
+.ventana .bajada { margin: 0 0 12px; color: var(--txt-2); font-size: 14px; }
+.ventana .seccion { margin: 18px 0 8px; font: 700 12.5px var(--sans); text-transform: uppercase; letter-spacing: .6px; color: var(--txt-3); }
+.ventana .vacio { padding: 22px; text-align: center; color: var(--txt-3); border: 1px dashed var(--line-alta); border-radius: var(--r-sm); }
+.ventana .nota { margin: 0 0 10px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--info-soft); color: var(--txt-2); font-size: 14px; }
+.ventana .nota.alerta { background: var(--warn-soft); color: var(--warn-txt); }
+.ventana .boton { min-height: 44px; padding: 0 18px; border: 1px solid var(--line-alta); border-radius: var(--r-sm); background: var(--surface); color: var(--txt); font: 600 14px var(--sans); cursor: pointer; }
+.ventana .foto-grande { width: 100%; max-height: 64vh; object-fit: contain; background: #111110; border-radius: var(--r-sm); display: block; }
+.ventana .est { display: inline-flex; padding: 4px 9px; border-radius: var(--r-pill); font: 600 12px var(--sans); background: var(--surface-2); color: var(--txt-2); }
+.ventana .est.nivel-impecable { background: var(--oro-soft); color: var(--oro-txt); }
+.ventana .est.nivel-bien { background: var(--ok-soft); color: var(--ok-txt); }
+.ventana .est.nivel-a_mejorar { background: var(--warn-soft); color: var(--warn-txt); }
+.ventana .est.nivel-fuera_de_estandar { background: var(--bad-soft); color: var(--bad-txt); }
+.ventana ul { margin: 6px 0 0; padding-left: 18px; font-size: 14px; color: var(--txt-2); }
+.historia { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; margin-top: 10px; }
+.foto-chica { margin: 0; }
+.foto-chica img { width: 100%; aspect-ratio: 3 / 4; object-fit: contain; border-radius: var(--r-sm); background: #111110; cursor: zoom-in; }
+.foto-chica figcaption { margin-top: 4px; font-size: 12px; color: var(--txt-3); }
+
+/* ── El editor de los ajustes ── */
+.imp .renglon {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; margin-bottom: 10px; padding: 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
+}
+.imp .campo { display: grid; gap: 5px; margin: 0 0 12px; }
+.imp .campo > span { font: 600 12.5px var(--sans); color: var(--txt-2); text-transform: none; letter-spacing: 0; }
+.imp .campo input, .imp .campo select, .imp .campo textarea {
+  width: 100%; min-height: 42px; padding: 8px 11px; border: 1px solid var(--line-campo); border-radius: var(--r-sm);
+  background: var(--campo); color: var(--txt); font: 500 14px var(--sans); box-sizing: border-box;
+}
+.imp .renglon .campo { margin: 0; }
+.imp .renglon .campo.c-chico { width: 90px; }
+.imp .renglon .campo.c-medio { width: 170px; }
+.imp .renglon .campo.c-grande { flex: 1 1 260px; }
+.imp .renglon .campo.c-bool { display: flex; flex-direction: row; align-items: center; gap: 7px; min-height: 42px; font-size: 13.5px; color: var(--txt-2); }
+.imp .renglon .campo.c-bool input { width: 19px; height: 19px; min-height: 0; accent-color: var(--acc); }
+.imp .renglon .acciones-renglon { display: flex; gap: 6px; margin-left: auto; }
+.imp .dias { display: flex; gap: 4px; }
+.imp .dias label { display: grid; place-items: center; width: 34px; height: 42px; border: 1px solid var(--line-campo); border-radius: var(--r-sm); background: var(--campo); color: var(--txt-2); font: 700 13px var(--sans); cursor: pointer; }
+.imp .dias input { display: none; }
+.imp .dias label.si { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.imp .ref-mini { width: 54px; height: 72px; object-fit: cover; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
+
+/* ── Entrar (sin sesión) ── */
+.imp-entrar { max-width: 520px; margin: 40px auto; padding: 26px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.imp-entrar h2 { margin: 0 0 6px; font: 700 22px var(--display); }
+.imp-entrar p { margin: 0 0 16px; color: var(--txt-2); font-size: 14.5px; }
+
+/* ── El cartel (avisos cortos) ── */
+.imp-cartel {
+  position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 70; max-width: calc(100% - 32px);
+  padding: 12px 18px; border-radius: var(--r-pill); background: var(--acc); color: var(--acc-ink);
+  font: 600 14px var(--sans); box-shadow: var(--sombra-alta);
+}
+@media (max-width: 899px) { .imp-cartel { bottom: calc(var(--nav, 54px) + 18px); } }
+
+/* Los locales sin módulos, nombrados abajo del Panorama. */
+.imp-enlace { padding: 0; border: 0; background: none; color: var(--txt); font: 600 14px var(--sans); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
