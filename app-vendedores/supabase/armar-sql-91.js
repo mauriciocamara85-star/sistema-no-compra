@@ -23,7 +23,7 @@ select 'listo: cada uno crea su PIN la primera vez, y "Supervisión"' as "SQL 91
 fs.writeFileSync(salida, sql);
 console.log('escrito: ' + salida);
 if (!process.argv[2]) {
-  const escritorio = path.join(__dirname, '..', '..', '..', 'correr-en-supabase-91.sql');
+  const escritorio = path.join(require('os').homedir(), 'OneDrive', 'Informes', 'Desktop', 'correr-en-supabase-91.sql');
   fs.writeFileSync(escritorio, sql);
   console.log('copiado: ' + escritorio);
 }

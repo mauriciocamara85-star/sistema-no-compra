@@ -56,8 +56,8 @@ export function formatear(r: Resumen): string {
 }
 
 Deno.serve(async (req) => {
-  if (!esLlamadaDelReloj(req)) return json({ error: "No autorizado" }, 401);
   const sb = clienteServicio();
+  if (!(await esLlamadaDelReloj(req, sb))) return json({ error: "No autorizado" }, 401);
   const semana = new URL(req.url).searchParams.get("semana") ?? lunesAnterior();
 
   const { data: locales, error } = await sb.from("orden_locales").select("id, nombre").eq("activo", true);
@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     const destinos = [...new Set([...(admins ?? []), ...(sups ?? [])].map((p) => p.telegram_chat_id as string))];
     for (const chat of destinos) {
       try {
-        await enviarTelegram(chat, texto);
+        await enviarTelegram(chat, texto, sb);
       } catch (err) {
         console.error("resumen-semanal", l.nombre, chat, err);
       }

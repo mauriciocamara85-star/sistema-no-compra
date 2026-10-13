@@ -1,9 +1,12 @@
 // Envío de avisos: notificación push (web push, para la app de los vendedores)
 // y Telegram (para supervisores y admins).
 //
-// Variables: VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT (ej. mailto:alguien@vdh.com.ar),
-//            TELEGRAM_BOT_TOKEN (opcional), APP_URL (ej. https://orden.vdh.com.ar)
-// Para generar las claves VAPID una sola vez:  npx web-push generate-vapid-keys
+// Las llaves VAPID son las MISMAS del VDH Club (mandar-avisos): la pública va acá
+// y en la app (impecable-comun.js); la privada es el secreto VAPID_PRIVADA, que ya
+// está cargado en Supabase. Rotarlas obliga a todos a volver a activar los avisos.
+// Telegram usa el bot del No Compra: su token se lee del Vault (TELEGRAM_TOKEN) con
+// orden_telegram_token() (SQL 94), o de TELEGRAM_BOT_TOKEN si se carga.
+// APP_URL (opcional): la dirección de la app para los enlaces de Telegram.
 import webpush from "npm:web-push@3.6.7";
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
@@ -18,21 +21,34 @@ type Aviso = {
 };
 type Sub = { id: string; persona_id: string; endpoint: string; p256dh: string; auth: string };
 
+const VAPID_PUBLICA = "BCG_mGNkME20VL9WrdVAUqSnPOPdNqQOIdyDGnY3UG8WbC-CbxV87N83mGVW71SZW_wrRYXMv2ZGkEWzRGLBxoo";
+
 let vapidListo = false;
 function prepararVapid(): boolean {
   if (vapidListo) return true;
-  const pub = Deno.env.get("VAPID_PUBLIC_KEY");
-  const priv = Deno.env.get("VAPID_PRIVATE_KEY");
-  const subject = Deno.env.get("VAPID_SUBJECT");
-  if (!pub || !priv || !subject) return false;
+  const pub = Deno.env.get("VAPID_PUBLIC_KEY") ?? VAPID_PUBLICA;
+  const priv = (Deno.env.get("VAPID_PRIVATE_KEY") ?? Deno.env.get("VAPID_PRIVADA") ?? "").trim();
+  const subject = Deno.env.get("VAPID_SUBJECT") ?? "mailto:mauriciocamara85@gmail.com";
+  if (!priv) return false;
   webpush.setVapidDetails(subject, pub, priv);
   vapidListo = true;
   return true;
 }
 
-export async function enviarTelegram(chatId: string, texto: string): Promise<void> {
-  const token = Deno.env.get("TELEGRAM_BOT_TOKEN");
-  if (!token) throw new Error("Falta TELEGRAM_BOT_TOKEN");
+let tokenTelegram: string | null = null;
+async function leerTokenTelegram(sb?: SupabaseClient): Promise<string | null> {
+  if (tokenTelegram) return tokenTelegram;
+  tokenTelegram = Deno.env.get("TELEGRAM_BOT_TOKEN") ?? null;
+  if (!tokenTelegram && sb) {
+    const { data } = await sb.rpc("orden_telegram_token");
+    tokenTelegram = typeof data === "string" && data ? data : null;
+  }
+  return tokenTelegram;
+}
+
+export async function enviarTelegram(chatId: string, texto: string, sb?: SupabaseClient): Promise<void> {
+  const token = await leerTokenTelegram(sb);
+  if (!token) throw new Error("Falta el token de Telegram");
   const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -78,8 +94,9 @@ export async function enviarAvisosPendientes(sb: SupabaseClient, limite = 300): 
           alguno = true;
         } catch (e) {
           const status = (e as { statusCode?: number }).statusCode;
-          // 404/410: la suscripción ya no existe (desinstaló la app o cambió de teléfono)
-          if (status === 404 || status === 410) await sb.from("orden_push_subs").delete().eq("id", s.id);
+          // 404/410: la suscripción ya no existe (desinstaló la app o cambió de teléfono).
+          // 403: se hizo con OTRA llave VAPID; tampoco va a andar nunca (lo aprendió el Club).
+          if (status === 403 || status === 404 || status === 410) await sb.from("orden_push_subs").delete().eq("id", s.id);
           else errores.push(`push ${status ?? ""} ${String(e).slice(0, 120)}`);
         }
       }
@@ -88,7 +105,7 @@ export async function enviarAvisosPendientes(sb: SupabaseClient, limite = 300): 
     if (a.canal.includes("telegram") && a.persona?.telegram_chat_id) {
       try {
         const link = a.url && appUrl ? `\n${appUrl}${a.url}` : "";
-        await enviarTelegram(a.persona.telegram_chat_id, `${a.titulo}${a.cuerpo ? `\n${a.cuerpo}` : ""}${link}`);
+        await enviarTelegram(a.persona.telegram_chat_id, `${a.titulo}${a.cuerpo ? `\n${a.cuerpo}` : ""}${link}`, sb);
         alguno = true;
       } catch (e) {
         errores.push(String(e).slice(0, 200));

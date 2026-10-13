@@ -39,20 +39,22 @@ export function formatearCajas(r: Resumen): string {
 }
 
 Deno.serve(async (req) => {
-  if (!esLlamadaDelReloj(req)) return json({ error: "No autorizado" }, 401);
+  const sb = clienteServicio();
+  if (!(await esLlamadaDelReloj(req, sb))) return json({ error: "No autorizado" }, 401);
   const grupos = (Deno.env.get("TELEGRAM_GRUPO_CAJAS") ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  if (!grupos.length) return json({ error: "Falta TELEGRAM_GRUPO_CAJAS" }, 500);
+  // Sin grupo cargado no hay a quién mandarlo: no es un error (el reloj corre igual todas las noches).
+  if (!grupos.length) return json({ omitido: "sin grupo de Telegram para las cajas (TELEGRAM_GRUPO_CAJAS)" });
 
   // Fecha de hoy en Argentina (o ?fecha=AAAA-MM-DD para reenviar un día)
   const fecha = new URL(req.url).searchParams.get("fecha") ??
     new Date(Date.now() - 3 * 3600_000).toISOString().slice(0, 10);
 
-  const { data, error } = await clienteServicio().rpc("orden_resumen_cajas_dia", { p_fecha: fecha });
+  const { data, error } = await sb.rpc("orden_resumen_cajas_dia", { p_fecha: fecha });
   if (error) return json({ error: error.message }, 500);
   const r = data as Resumen;
   if (!r.locales) return json({ fecha, omitido: "ningún local con control de caja activo" });
 
   const texto = formatearCajas(r);
-  for (const g of grupos) await enviarTelegram(g, texto);
+  for (const g of grupos) await enviarTelegram(g, texto, sb);
   return json({ fecha, enviado: grupos.length });
 });

@@ -9,8 +9,8 @@ import { BUCKET, clienteServicio, esLlamadaDelReloj, json } from "../_shared/com
 import { enviarAvisosPendientes } from "../_shared/envios.ts";
 
 Deno.serve(async (req) => {
-  if (!esLlamadaDelReloj(req)) return json({ error: "No autorizado" }, 401);
   const sb = clienteServicio();
+  if (!(await esLlamadaDelReloj(req, sb))) return json({ error: "No autorizado" }, 401);
   try {
     const { data: resumen, error } = await sb.rpc("orden_tick");
     if (error) throw new Error(error.message);

@@ -24,7 +24,7 @@ select 'listo: los 14 locales, el alta propia y "Administrador"' as "SQL 93";
 fs.writeFileSync(salida, sql);
 console.log('escrito: ' + salida);
 if (!process.argv[2]) {
-  const escritorio = path.join(__dirname, '..', '..', '..', 'correr-en-supabase-93.sql');
+  const escritorio = path.join(require('os').homedir(), 'OneDrive', 'Informes', 'Desktop', 'correr-en-supabase-93.sql');
   fs.writeFileSync(escritorio, sql);
   console.log('copiado: ' + escritorio);
 }
