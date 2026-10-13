@@ -12,7 +12,7 @@
 --     cuántos números se creó (orden_pins.digitos; vacío = 4, los de antes).
 --   · NO se borra ningún PIN. Quien tiene uno de 4 y su rol pide 6 entra con
 --     el de 4 una última vez y la app le pide en el momento uno de 6
---     (orden_pin_cambiar, con su sesión). Así no queda un rato en que
+--     (orden_pin_cambiar, con su sesión y el PIN de ahora). Así no queda un rato en que
 --     cualquiera pueda crearle el PIN al administrador (que entra sin esperar
 --     aprobación).
 --   · El freno de esos tres roles es escalonado: 5 mal → 5 minutos; otros 5
@@ -188,16 +188,29 @@ begin
                             'cambiar_pin', v_dig < v_rol, 'digitos', v_rol);
 end $$;
 
--- ---------- Cambiar el PIN, con la sesión (el de 4 de antes por uno de 6) ----------
-create or replace function orden_pin_cambiar(p_nuevo text)
+-- ---------- Cambiar el PIN, con la sesión y el PIN de ahora (el de 4 por uno de 6) ----------
+-- Pide también el PIN de ahora (revisión de la otra sesión): si no, en una
+-- PC compartida, el que se sienta después de alguien que quedó adentro
+-- podría ponerle un PIN nuevo y quedarse con la cuenta. El de ahora se
+-- revisa con el mismo freno que la entrada (si está mal, cuenta).
+drop function if exists orden_pin_cambiar(text);
+create or replace function orden_pin_cambiar(p_actual text, p_nuevo text)
 returns jsonb language plpgsql volatile security definer set search_path = public, extensions as $$
-declare p orden_personas; v_rol int;
+declare p orden_personas; v_rol int; v_r jsonb;
 begin
   select * into p from orden_personas where id = orden_yo_id();
   if not found then return jsonb_build_object('ok', false, 'porque', 'Entrá de nuevo con tu PIN.'); end if;
+  if not exists (select 1 from orden_pins where persona_id = p.id and hash is not null) then
+    return jsonb_build_object('ok', false, 'porque', 'No tenés PIN: entrá de nuevo y creá uno.');
+  end if;
   v_rol := orden_pin_digitos(p.rol);
   if coalesce(p_nuevo, '') !~ ('^[0-9]{' || v_rol || '}$') then
-    return jsonb_build_object('ok', false, 'porque', 'El PIN tiene que tener ' || v_rol || ' números.');
+    return jsonb_build_object('ok', false, 'porque', 'El PIN nuevo tiene que tener ' || v_rol || ' números.');
+  end if;
+  v_r := orden_login_probar(p.id, p_actual);
+  if not coalesce((v_r ->> 'ok')::boolean, false) then
+    return jsonb_build_object('ok', false, 'actual', true, 'espera', v_r -> 'espera', 'restantes', v_r -> 'restantes',
+      'porque', case when coalesce((v_r ->> 'espera')::int, 0) > 0 then v_r ->> 'porque' else 'Tu PIN de ahora no es ése.' end);
   end if;
   update orden_pins set hash = crypt(p_nuevo, gen_salt('bf', 8)), digitos = v_rol, fallos = 0, bloqueado_hasta = null,
                         nivel_freno = 0, cambiado_en = now()
@@ -237,8 +250,8 @@ begin
   grant execute on function orden_texto_espera(interval) to authenticated, service_role;
   revoke all on function orden_pin_reiniciar(uuid) from public, anon, authenticated;
   grant execute on function orden_pin_reiniciar(uuid) to service_role;
-  revoke all on function orden_pin_cambiar(text) from public, anon;
-  grant execute on function orden_pin_cambiar(text) to authenticated, service_role;
+  revoke all on function orden_pin_cambiar(text, text) from public, anon;
+  grant execute on function orden_pin_cambiar(text, text) to authenticated, service_role;
   revoke all on function orden_pin_estado() from public, anon;
   grant execute on function orden_pin_estado() to authenticated, service_role;
   /* La función del trigger de los tableros (SQL 111) quedó abierta para quien
