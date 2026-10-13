@@ -1042,10 +1042,18 @@ function ajColores() {
 }
 
 function ajTableros() {
-  ajLista({ ruta: '/orden_tableros?select=*&order=destacado.desc,orden.asc', tabla: '/orden_tableros', texto: 'Los tableros de Pinterest que ven los vendedores en Ideas. Uno destacado: "Frontales de la semana".',
+  ajLista({ ruta: '/orden_tableros?select=*&order=destacado.desc,orden.asc', tabla: '/orden_tableros',
+    texto: 'Los tableros de Pinterest que ven los vendedores en Ideas, con sus fotos adentro de la app. Pegá la dirección del tablero ' +
+      '(por ejemplo https://ar.pinterest.com/Mauu_Camara/vdh-ideas/), no el enlace de "Compartir": ése es para invitar a editarlo. El destacado va primero.',
     cols: [{ k: 'titulo', t: 'Título', tipo: 'texto' }, { k: 'url', t: 'Enlace (https://…)', tipo: 'texto', ancho: 'grande' },
            { k: 'destacado', t: 'Destacado', tipo: 'bool' }, { k: 'orden', t: 'Orden', tipo: 'num', ancho: 'chico' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
-    validar: function (f) { return /^https:\/\/\S+$/i.test(f.url || '') ? null : 'El enlace tiene que empezar con https://'; },
+    validar: function (f) {
+      var u = String(f.url || '').trim();
+      if (!/^https:\/\/\S+$/i.test(u)) return 'El enlace tiene que empezar con https://';
+      /* El de "Compartir" de Pinterest (pin.it o con invite_code) deja sumarse a editar el tablero: no se reparte. */
+      if (/pin\.it\/|invite_code|collab/i.test(u)) return 'Ese enlace es para invitar a editar el tablero. Abrí el tablero en Pinterest y copiá la dirección de arriba (por ejemplo https://ar.pinterest.com/Mauu_Camara/vdh-ideas/).';
+      return null;
+    },
     nueva: function (f) { return { titulo: 'Nuevo tablero', url: 'https://www.pinterest.com/', orden: f.length + 1, activo: false }; } });
 }
 

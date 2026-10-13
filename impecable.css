@@ -340,3 +340,95 @@ button.mapa-sec { cursor: pointer; }
 .cuenta-video { min-width: 60px; text-align: right; font-weight: 800; color: var(--texto); }
 .video-testigo { display: block; width: 100%; max-height: 60vh; border-radius: 16px; background: #000; margin: 6px 0 14px; }
 .mapa-nombres { margin: 8px 2px 4px; font-size: 13px; line-height: 1.5; color: var(--suave); }
+
+/* ── Reorganización (13/10): arriba la campanita y la inicial ───────── */
+.cabeza-botones { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
+.campanita, .avatar { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--borde); background: var(--tarjeta); color: var(--texto);
+  display: grid; place-items: center; cursor: pointer; position: relative; padding: 0; }
+.campanita svg { width: 22px; height: 22px; }
+.campanita .sin-leer { position: absolute; top: -4px; right: -4px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px;
+  background: var(--rojo); color: #111; font: 800 11px/20px var(--sans, inherit); font-style: normal; text-align: center; }
+.campanita .sin-leer[hidden] { display: none; }
+.avatar { background: var(--lima); color: var(--sobre-lima); border-color: var(--lima); font-size: 18px; font-weight: 800; }
+.aviso.con-enlace { width: 100%; text-align: left; color: var(--texto); font: inherit; cursor: pointer; }
+
+/* ── Hoy: la lista para tachar ─────────────────────────────────────── */
+.lista-hoy { display: grid; gap: 8px; }
+.item-hoy { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px; border-radius: 16px; text-align: left; cursor: pointer;
+  background: var(--tarjeta); border: 1px solid var(--borde); color: var(--texto); font: inherit; }
+.item-hoy .tilde { flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; border: 2px solid var(--lima); display: grid; place-items: center;
+  font-style: normal; font-weight: 800; font-size: 15px; }
+.item-hoy span { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.item-hoy b { font-size: 16px; }
+.item-hoy small { color: var(--suave); font-size: 14px; }
+.item-hoy em { font-style: normal; color: var(--suave); font-size: 22px; }
+.item-hoy.alerta { border-color: var(--ambar); }
+.item-hoy.alerta .tilde { border-color: var(--ambar); }
+.item-hoy.hecho .tilde { background: var(--verde); border-color: var(--verde); color: #111; }
+.item-hoy.hecho b { color: var(--suave); text-decoration: line-through; text-decoration-thickness: 2px; }
+.resumen { margin-top: 22px; }
+.resumen.nivel-bien { background: var(--verde); }
+.resumen.nivel-a_mejorar { background: var(--ambar); }
+.resumen.nivel-fuera_de_estandar { background: var(--rojo); }
+.resumen .grande { margin: 2px 0 4px; }
+
+/* ── Fotos ─────────────────────────────────────────────────────────── */
+.progreso-fotos { margin: 14px 0 12px; padding: 14px 16px; border-radius: 16px; background: var(--tarjeta); border: 1px solid var(--borde); }
+.progreso-fotos b { font-size: 18px; }
+.progreso-fotos .progreso { background: var(--borde); margin: 10px 0 0; }
+.progreso-fotos .progreso > i { background: var(--lima); }
+
+/* ── Las ventanitas (en vez de las del navegador) ──────────────────── */
+.dialogo-capa { position: fixed; inset: 0; z-index: 70; background: rgba(0, 0, 0, .65); display: flex; align-items: flex-end; justify-content: center; padding: 16px; }
+.dialogo { width: min(480px, 100%); background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 22px; padding: 20px 18px 16px;
+  margin-bottom: env(safe-area-inset-bottom); box-shadow: 0 18px 50px rgba(0, 0, 0, .45); }
+.dialogo-texto { margin: 0 0 14px; font-size: 17px; font-weight: 700; line-height: 1.35; }
+.dialogo-campo { width: 100%; box-sizing: border-box; min-height: 84px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--borde);
+  background: var(--fondo); color: var(--texto); font: inherit; font-size: 16px; resize: vertical; margin-bottom: 14px; }
+.dialogo-campo.falta { border-color: var(--rojo); }
+.dialogo-botones { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.dialogo-botones .boton { margin: 0; }
+@media (min-width: 700px) { .dialogo-capa { align-items: center; } }
+
+/* ── El festejo ────────────────────────────────────────────────────── */
+.festejo { position: fixed; inset: 0; z-index: 90; pointer-events: none; overflow: hidden; }
+.festejo i { position: absolute; top: -24px; border-radius: 2px; animation-name: festejo-caer; animation-timing-function: linear; animation-fill-mode: forwards; }
+@keyframes festejo-caer { from { transform: translate(0, 0) rotate(0); } to { transform: translate(var(--x, 0), 110vh) rotate(var(--giro, 360deg)); } }
+.festejo-texto { position: absolute; left: 50%; top: 40%; transform: translate(-50%, -50%) scale(.6); opacity: 0; white-space: nowrap;
+  background: var(--lima); color: var(--sobre-lima); font-size: 26px; font-weight: 800; padding: 16px 26px; border-radius: 22px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .4); animation: festejo-aparecer .5s cubic-bezier(.2, 1.4, .4, 1) .1s forwards, festejo-irse .4s ease-in 3.5s forwards; }
+@keyframes festejo-aparecer { to { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
+@keyframes festejo-irse { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .festejo-texto { animation: festejo-irse .4s ease-in 3.5s forwards; transform: translate(-50%, -50%); opacity: 1; } }
+
+/* ── Ideas: las fotos del tablero ──────────────────────────────────── */
+.tablero-ideas { margin: 18px 0 6px; }
+.tablero-cabeza { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 0 0 10px; }
+.tablero-cabeza h2 { margin: 0; font-size: 19px; }
+.tablero-ideas.destacado .tablero-cabeza h2 { color: var(--lima); }
+.ver-pinterest { color: var(--lima); font-weight: 700; font-size: 14px; text-decoration: none; white-space: nowrap; }
+.fotos-ideas { columns: 2; column-gap: 8px; }
+.fotos-ideas .cargando, .fotos-ideas .bajada { column-span: all; }
+.foto-idea { display: block; width: 100%; margin: 0 0 8px; padding: 0; border: 0; border-radius: 14px; overflow: hidden; background: var(--tarjeta);
+  break-inside: avoid; cursor: pointer; }
+.foto-idea img { display: block; width: 100%; height: auto; min-height: 120px; object-fit: cover; background: var(--borde); }
+.visor-idea { position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, .95); display: flex; flex-direction: column; align-items: center; justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom)); }
+.visor-idea img { max-width: 100%; max-height: calc(100% - 76px); object-fit: contain; border-radius: 10px; }
+.visor-barra { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: #fff; font-weight: 700; }
+.visor-barra button { min-width: 52px; min-height: 48px; padding: 0 16px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .35);
+  background: rgba(255, 255, 255, .08); color: #fff; font: inherit; font-size: 18px; cursor: pointer; }
+
+/* ── Caja: 4 renglones ─────────────────────────────────────────────── */
+.caja-filas { padding: 4px 16px; }
+.caja-fila { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 12px 0; border-bottom: 1px solid var(--borde); }
+.caja-fila:last-child { border-bottom: 0; }
+.caja-nombre { grid-column: 1 / -1; font-weight: 800; font-size: 16px; }
+.campo.caja-monto { margin: 0; gap: 4px; }
+.campo.caja-monto > span { font-size: 12px; font-weight: 600; }
+.campo.caja-monto input { width: 100%; box-sizing: border-box; text-align: right; min-width: 0; }
+.caja-da { grid-column: 1 / -1; min-height: 0; font-weight: 800; font-size: 14px; }
+.caja-da:empty { display: none; }
+.caja-da.da { color: var(--verde); }
+.caja-da.falta { color: var(--rojo); }
+.caja-da.sobra { color: var(--ambar); }

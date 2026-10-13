@@ -58,9 +58,76 @@ function unaVez(boton, accion) {
   };
 }
 
-function preguntarTexto(titulo) {
-  var t = window.prompt(titulo);
-  return t == null ? null : String(t).trim();
+/* Las preguntas van en una ventanita de la app: la del navegador muestra
+   arriba la dirección de la página ("mauriciocamara85-star.github.io dice").
+   op: { texto, campo (si pide un texto: lo que dice adentro), opcional, si, no }.
+   Devuelve una promesa: sin campo, true o false; con campo, el texto (sin
+   espacios de más) o null si se cancela. */
+function preguntar(op) {
+  return new Promise(function (listo) {
+    var conCampo = op.campo != null;
+    var capa = document.createElement('div');
+    capa.className = 'dialogo-capa';
+    capa.innerHTML = '<div class="dialogo" role="dialog" aria-modal="true" aria-labelledby="dialogoTexto">' +
+      '<p class="dialogo-texto" id="dialogoTexto">' + esc(op.texto) + '</p>' +
+      (conCampo ? '<textarea class="dialogo-campo" rows="3" maxlength="500" placeholder="' + esc(op.campo) + '"></textarea>' : '') +
+      '<div class="dialogo-botones"><button type="button" class="boton" data-r="no">' + esc(op.no || 'Cancelar') + '</button>' +
+      '<button type="button" class="boton lima" data-r="si">' + esc(op.si || 'Aceptar') + '</button></div></div>';
+    document.body.appendChild(capa);
+    var campo = capa.querySelector('.dialogo-campo');
+    function cerrar(r) {
+      document.removeEventListener('keydown', tecla, true);
+      capa.remove();
+      listo(r);
+    }
+    function no() { cerrar(conCampo ? null : false); }
+    function si() {
+      if (!conCampo) { cerrar(true); return; }
+      var t = campo.value.trim();
+      if (!t && !op.opcional) { campo.classList.add('falta'); campo.focus(); return; }
+      cerrar(t);
+    }
+    function tecla(e) { if (e.key === 'Escape') { e.preventDefault(); no(); } }
+    document.addEventListener('keydown', tecla, true);
+    capa.addEventListener('click', function (e) {
+      var b = e.target.closest ? e.target.closest('[data-r]') : null;
+      if (b) { if (b.dataset.r === 'si') si(); else no(); return; }
+      /* Tocar afuera cierra, salvo que ya haya algo escrito. */
+      if (e.target === capa && !(campo && campo.value.trim())) no();
+    });
+    (campo || capa.querySelector('[data-r="si"]')).focus();
+  });
+}
+/** Pide un texto en una ventanita: el texto, o null si cancela. */
+function preguntarTexto(titulo, opcional) {
+  return preguntar({ texto: titulo, campo: opcional ? 'Opcional' : 'Escribilo acá', opcional: !!opcional, si: 'Listo' });
+}
+/** ¿Sí o no?, en una ventanita: true o false. */
+function confirmar(texto, si) { return preguntar({ texto: texto, si: si || 'Sí', no: 'No' }); }
+
+/** Un festejo: papelitos de colores que caen y un cartel (si acertaste todo el test, si terminaste lo del día). */
+function festejar(texto) {
+  var capa = document.createElement('div');
+  capa.className = 'festejo';
+  capa.setAttribute('aria-hidden', 'true');
+  var quieto = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var colores = ['#C6F432', '#2FE38A', '#4D9FFF', '#F0C66A', '#FF8A65', '#B38BFF', '#FFFFFF'];
+  for (var k = 0; !quieto && k < 90; k++) {
+    var p = document.createElement('i');
+    p.style.left = (Math.random() * 100).toFixed(1) + '%';
+    p.style.background = colores[k % colores.length];
+    p.style.width = (6 + Math.random() * 6).toFixed(1) + 'px';
+    p.style.height = (9 + Math.random() * 8).toFixed(1) + 'px';
+    p.style.animationDelay = (Math.random() * 0.7).toFixed(2) + 's';
+    p.style.animationDuration = (2.2 + Math.random() * 1.6).toFixed(2) + 's';
+    p.style.setProperty('--x', (Math.random() * 140 - 70).toFixed(0) + 'px');
+    p.style.setProperty('--giro', (Math.random() * 900 - 450).toFixed(0) + 'deg');
+    capa.appendChild(p);
+  }
+  if (texto) { var t = document.createElement('div'); t.className = 'festejo-texto'; t.textContent = texto; capa.appendChild(t); }
+  document.body.appendChild(capa);
+  try { if (navigator.vibrate) navigator.vibrate([60, 40, 90]); } catch (e) {}
+  setTimeout(function () { capa.remove(); }, 4300);
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -297,6 +364,7 @@ var ICONO = {
   tareas: '<path d="M9 11l3 3 8-8"/><path d="M20 12v6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h9"/>',
   ideas: '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>',
   perfil: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  fotos: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
   revisar: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><path d="M9 14l2 2 4-4"/>',
   equipo: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
   cajas: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>'
@@ -305,12 +373,14 @@ ICONO.caja = ICONO.cajas;
 var PESTANAS_SUPERVISION = [['revisar', 'Revisar'], ['equipo', 'Equipo'], ['cajas', 'Cajas'], ['ideas', 'Ideas'], ['perfil', 'Perfil']];
 var _pestana = 'hoy';
 
-/* La Caja es una pestaña más del vendedor, sólo en los locales con el control
-   de caja prendido (se recuerda en el teléfono para armar la barra enseguida). */
+/* Las pestañas del vendedor (13/10): Hoy (lo que falta hoy) · Fotos (el mapa
+   con las cámaras) · Tareas · Caja · Ideas. El Perfil, en la inicial de arriba.
+   La Caja, sólo en los locales con el control de caja prendido (se recuerda en
+   el teléfono para armar la barra enseguida). */
 var K_CAJA = 'vdh_vend_caja_activa';
 function cajaActiva() { try { return !!yo().local_id && localStorage.getItem(K_CAJA) === yo().local_id; } catch (e) { return false; } }
 function pestanasVendedor() {
-  return [['hoy', 'Hoy'], ['tareas', 'Tareas']].concat(cajaActiva() ? [['caja', 'Caja']] : []).concat([['ideas', 'Ideas'], ['perfil', 'Perfil']]);
+  return [['hoy', 'Hoy'], ['fotos', 'Fotos'], ['tareas', 'Tareas']].concat(cajaActiva() ? [['caja', 'Caja']] : []).concat([['ideas', 'Ideas']]);
 }
 
 function armarBarra() {
@@ -355,6 +425,8 @@ function irA(p) {
   marcarPestana(p);
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   if (p === 'hoy') pantallaHoy();
+  else if (p === 'fotos') pantallaFotos();
+  else if (p === 'avisos') pantallaAvisos();
   else if (p === 'tareas') pantallaTareas();
   else if (p === 'caja') pantallaCaja();
   else if (p === 'ideas') pantallaIdeas();
@@ -486,16 +558,19 @@ function revisarAprobacion(silencio) {
 
 /* Los avisos traen a qué pantalla llevan ("/tareas", "/revisar"…): llegan
    como #/tareas al tocar la notificación. */
-function irPorEnlace() {
-  var h = String(location.hash || '').replace(/^#\/?/, '');
+function irPorEnlace() { return irAEnlace(location.hash); }
+
+/** "#/tareas", "/tareas", "vendedores.html#/tareas" o "tareas" → esa pantalla. false si no es de esta persona. */
+function irAEnlace(enlace) {
+  var h = String(enlace || '').replace(/^.*#/, '').replace(/^\/+/, '').replace(/[?#].*$/, '');
   if (!h) return false;
-  var mapa = { hoy: 'hoy', tareas: 'tareas', caja: 'caja', ideas: 'ideas', perfil: 'perfil', historial: 'perfil',
+  var mapa = { hoy: 'hoy', fotos: 'fotos', tareas: 'tareas', caja: 'caja', ideas: 'ideas', perfil: 'perfil', historial: 'perfil', avisos: 'avisos',
                revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas' };
   if (h === 'desafio' && !esSupervision()) { marcarPestana('hoy'); abrirDesafio(); return true; }
   if (h === 'testigo' && !esSupervision()) { marcarPestana('hoy'); pantallaTestigo(); return true; }
   if ((h === 'admin' || h === 'admin-testigo') && esSupervision()) { location.replace('impecable-admin.html' + (h === 'admin-testigo' ? '#testigo' : '')); return true; }
   var p = mapa[h];
-  if (!p || (esSupervision() ? ['hoy', 'tareas', 'caja'].indexOf(p) > -1 : ['revisar', 'equipo', 'cajas'].indexOf(p) > -1)) return false;
+  if (!p || (esSupervision() ? ['hoy', 'fotos', 'tareas', 'caja'].indexOf(p) > -1 : ['revisar', 'equipo', 'cajas'].indexOf(p) > -1)) return false;
   irA(p);
   return true;
 }
@@ -505,28 +580,67 @@ function adentro() {
   app.className = 'app con-barra';
 }
 
+/* Arriba de cada pantalla: el título y, a la derecha, la campanita de los
+   avisos (con los nuevos en rojo) y el círculo con la inicial, que abre el
+   Perfil ("No soy yo" está adentro). Pedido de Mauricio (13/10): "No soy yo"
+   arriba todo el tiempo no le gustaba. */
+var CAMPANA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>';
+var _sinLeer = 0, _sinLeerEn = 0, _sinLeerDe = null;   // cuántos, cuándo se preguntó y de quién
 function cabeza(titulo, debajo) {
   var per = yo();
+  var inicial = String(per.nombre || '').trim().charAt(0).toUpperCase() || '?';
   return '<div class="cabeza"><div>' +
     '<h1>' + esc(titulo) + '</h1>' +
     '<p class="bajada" style="margin:0">' + esc(debajo != null ? debajo : [per.local, fechaLarga()].filter(Boolean).join(' · ')) + '</p>' +
-    '</div><button class="noesyo" id="noesyo">No soy yo</button></div>';
+    '</div><div class="cabeza-botones">' +
+    '<button class="campanita" id="campanita" aria-label="' + textoCampanita() + '">' + CAMPANA +
+      '<i class="sin-leer"' + (sinLeer() ? '' : ' hidden') + '>' + (sinLeer() > 9 ? '9+' : sinLeer()) + '</i></button>' +
+    '<button class="avatar" id="avatar" aria-label="Tu perfil">' + esc(inicial) + '</button></div></div>';
+}
+function sinLeer() { return _sinLeerDe === yo().id ? _sinLeer : 0; }
+function textoCampanita() { var n = sinLeer(); return 'Avisos' + (n ? ' (' + (n > 9 ? 'más de 9' : n) + ' sin leer)' : ''); }
+
+function engancharCabeza() {
+  var b = document.getElementById('campanita');
+  if (b) b.onclick = function () { pantallaAvisos(); };
+  var a = document.getElementById('avatar');
+  if (a) a.onclick = function () { irA('perfil'); };
+  contarSinLeer();
 }
 
-function engancharNoSoyYo() {
-  var b = document.getElementById('noesyo');
-  if (b) b.onclick = preguntarSalir;
+/** Cuántos avisos sin leer (se pregunta como mucho cada 30 segundos). */
+function contarSinLeer() {
+  var quien = yo().id;
+  if (_sinLeerDe === quien && Date.now() - _sinLeerEn < 30e3) { pintarSinLeer(); return; }
+  _sinLeerEn = Date.now();
+  leer('/orden_avisos?select=id&persona_id=eq.' + valor(yo().id) + '&leido_en=is.null&limit=10').then(function (f) {
+    if (yo().id !== quien) return;
+    _sinLeer = (f || []).length; _sinLeerDe = quien;
+    pintarSinLeer();
+  }).catch(function () {});
+}
+function pintarSinLeer() {
+  var b = document.getElementById('campanita');
+  if (!b) return;
+  var i = b.querySelector('.sin-leer');
+  var n = sinLeer();
+  i.hidden = !n;
+  i.textContent = n > 9 ? '9+' : String(n);
+  b.setAttribute('aria-label', textoCampanita());
 }
 
 function preguntarSalir() {
   var nombre = String(yo().nombre || '').split(' ')[0];
-  if (!confirm('¿No sos ' + nombre + '? Se cierra la sesión y para volver a entrar hace falta el PIN.')) return;
-  /* Las notificaciones de este celular dejan de llegarle a esa persona: si
-     no, el próximo que entre recibiría las de otro. */
-  soltarAvisos().then(function () {
-    cerrarSesion();
-    barra.innerHTML = '';
-    pantallaLocales();
+  confirmar('¿No sos ' + nombre + '? Se cierra la sesión y para volver a entrar hace falta el PIN.', 'Cerrar sesión').then(function (si) {
+    if (!si) return;
+    /* Las notificaciones de este celular dejan de llegarle a esa persona: si
+       no, el próximo que entre recibiría las de otro. */
+    soltarAvisos().then(function () {
+      cerrarSesion();
+      barra.innerHTML = '';
+      _sinLeer = 0; _sinLeerEn = 0;
+      pantallaLocales();
+    });
   });
 }
 
@@ -545,40 +659,41 @@ function pantallaHoy() {
   adentro();
   var per = yo();
   app.innerHTML = cabeza('Hola, ' + primerNombre()) + '<p class="cargando">Cargando…</p>';
-  engancharNoSoyYo();
+  engancharCabeza();
 
   var hoy = hoyAR();
   var id = valor(per.id);
   var nada = function () { return null; };
+  /* Desde cuándo cuenta "hoy" (la Argentina está en UTC−3 todo el año). */
+  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString();
   Promise.all([
     /* Lo de hoy y lo que quedó pendiente (el depósito vence el viernes). */
-    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,tipo,estado,vence_en,nivel' +
-         '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente)' +
-         '&order=sector_tipo.asc,modulo_numero.asc'),
-    leer('/orden_v_persona_semana?select=nivel_semana,controles&persona_id=eq.' + id + '&semana=eq.' + lunesAR()),
-    /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
-    leer('/orden_tareas?select=modulo_id&persona_id=eq.' + id + '&estado=eq.pendiente&origen=eq.ia'),
-    /* Las extras no frenan Hoy si fallan. */
+    leer('/orden_v_controles?select=id,estado,vence_en&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente)'),
+    leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(nada),
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
     llamar('orden_desafio_mio').catch(nada),
-    Promise.resolve(null),   // (la caja pasó a ser una pestaña: la mira revisarCaja)
-    leer('/orden_tareas?select=id&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)').catch(nada),
+    /* Las tareas abiertas y las que se cerraron hoy (para tacharlas). */
+    leer('/orden_v_tareas?select=id,titulo,estado,completada_en&persona_id=eq.' + id +
+         '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + desdeHoy + ')&order=vence_en.asc').catch(nada),
     estadoAvisos().catch(function () { return 'no-soportado'; }),
     /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
     per.local_id ? leer('/orden_recordatorios?select=texto&local_id=eq.' + valor(per.local_id) + '&dia=eq.' + diaSemanaAR() + '&activo=is.true&order=creado_en.asc').catch(nada) : Promise.resolve(null),
-    /* SQL 99: el croquis del local, con lo de cada uno marcado. */
-    per.local_id ? cargarMapa(per.local_id).catch(nada) : Promise.resolve(null),
-    /* SQL 102: producto testigo de mañana, de hoy o atrasado (sin mandar). */
+    /* SQL 102: producto testigo de mañana, de hoy, uno atrasado sin mandar, o el que se mandó hoy. */
     per.local_id ? leer('/testigo_semanas?select=id,fecha,cargada_en,testigo_items(item,producto,color)&local_id=eq.' + valor(per.local_id) +
-                        '&fecha=gte.' + sumarDias(hoy, -6) + '&fecha=lte.' + sumarDias(hoy, 1) + '&cargada_en=is.null&cerrada=is.false&order=fecha.asc').catch(nada)
-                 : Promise.resolve(null)
+                        '&fecha=gte.' + sumarDias(hoy, -6) + '&fecha=lte.' + sumarDias(hoy, 1) + '&cerrada=is.false' +
+                        '&or=(cargada_en.is.null,cargada_en.gte.' + desdeHoy + ')&order=fecha.asc').catch(nada)
+                 : Promise.resolve(null),
+    /* La caja de hoy, si el local la controla. */
+    per.local_id && cajaActiva() ? leer('/orden_cajas?select=estado&local_id=eq.' + valor(per.local_id) + '&fecha=eq.' + hoy).catch(nada) : Promise.resolve(null)
   ]).then(function (r) {
     if (_pestana !== 'hoy') return;
+    var testigos = (r[7] || []).filter(function (s) { return (s.testigo_items || []).length; });
     dibujarHoy({
-      controles: r[0] || [], semana: (r[1] || [])[0], tareasIA: r[2] || [],
-      sinModulos: Array.isArray(r[3]) && r[3].length === 0, desafio: r[4],
-      tareas: (r[6] || []).length, avisos: r[7], recordatorios: r[8] || [], mapa: r[9],
-      testigo: (r[10] || []).filter(function (s) { return (s.testigo_items || []).length; })[0] || null
+      controles: r[0] || [], semana: (r[1] || [])[0], sinModulos: Array.isArray(r[2]) && r[2].length === 0, desafio: r[3],
+      tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], caja: r[8],
+      testigoPend: testigos.filter(function (s) { return !s.cargada_en && s.fecha <= hoy; })[0] || null,
+      testigoMan: testigos.filter(function (s) { return !s.cargada_en && s.fecha > hoy; })[0] || null,
+      testigoHecho: testigos.filter(function (s) { return s.cargada_en; })[0] || null
     });
     revisarCaja();
   }).catch(function (e) { pantallaError(e, pantallaHoy); });
@@ -600,7 +715,146 @@ function bannerAvisos(estado) {
   return '<button class="banner" id="banner">' + esc(t) + '</button>';
 }
 
+function horaAR() { return Number(new Intl.DateTimeFormat('en-US', { timeZone: ZONA, hour: 'numeric', hourCycle: 'h23' }).format(new Date())); }
+
+/** "Tu orden esta semana": la tarjeta de colores, del color del nivel. */
+function tarjetaOrden(s) {
+  var nivel = s && s.nivel_semana;
+  return '<div class="resumen' + (nivel ? ' nivel-' + esc(nivel) : '') + '">' +
+    '<div class="chico">Tu orden esta semana</div>' +
+    '<div class="grande">' + esc(nivel ? NIVEL[nivel] || nivel : 'Todavía sin fotos') + '</div>' +
+    '<div class="chico">' + (s && s.controles ? s.controles_a_tiempo + ' de ' + s.controles + ' fotos a tiempo' : 'Cuando mandes tus fotos, acá ves cómo vas.') + '</div>' +
+    '</div>';
+}
+
+/** El festejo, una sola vez por cosa (y por persona) en este teléfono. */
+function festejarUnaVez(clave, texto) {
+  var k = 'vdh_vend_festejo_' + yo().id;
+  try { if (localStorage.getItem(k) === clave) return; localStorage.setItem(k, clave); } catch (e) { return; }
+  setTimeout(function () { festejar(texto); }, 300);
+}
+
+/* Hoy (13/10, pedido de Mauricio): sólo lo que hay que hacer hoy, como una
+   lista para ir tachando; cada renglón lleva a su lugar. Aparte, la tarjeta
+   de colores "Tu orden esta semana". Con todo hecho, el festejo. */
 function dibujarHoy(x) {
+  var hoy = hoyAR(), filas = [];
+
+  var total = x.controles.length;
+  var pend = x.controles.filter(function (c) { return c.estado === 'pendiente'; });
+  var env = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
+  if (total) {
+    var vence = pend.map(function (c) { return c.vence_en; }).filter(Boolean).sort()[0];
+    filas.push({ id: 'hFotos', titulo: 'Fotos de tus módulos', hecho: !pend.length,
+      texto: pend.length ? env + ' de ' + total + ' mandadas' + (vence ? ' · ' + textoVence(vence) : '')
+           : env === total ? (total === 1 ? 'Mandaste la foto.' : 'Mandaste las ' + total + '.')
+           : 'Mandaste ' + env + ' de ' + total + '; las otras vencieron.' });
+  }
+
+  if (x.testigoPend) {
+    var s = x.testigoPend, n = (s.testigo_items || []).length;
+    filas.push({ id: 'hTestigo', titulo: 'Producto testigo', hecho: false, alerta: s.fecha < hoy,
+      texto: s.fecha < hoy ? 'Era del ' + diaYFecha(s.fecha) + ': cargalo y mandalo.'
+           : (n === 1 ? '1 producto' : n + ' productos') + ': los números del sistema, contar y un video de cada uno.' });
+  } else if (x.testigoHecho) {
+    filas.push({ id: 'hTestigo', titulo: 'Producto testigo', hecho: true, texto: 'Mandado.' });
+  }
+
+  var abiertas = x.tareas.filter(function (t) { return t.estado === 'pendiente' || t.estado === 'vencida'; });
+  var hechas = x.tareas.filter(function (t) { return t.estado === 'hecha'; });
+  if (abiertas.length) {
+    filas.push({ id: 'hTareas', titulo: abiertas.length === 1 ? '1 tarea' : abiertas.length + ' tareas', hecho: false,
+      alerta: abiertas.some(function (t) { return t.estado === 'vencida'; }),
+      texto: abiertas[0].titulo + (abiertas.length > 1 ? ' y ' + (abiertas.length - 1) + ' más' : '') });
+  } else if (hechas.length) {
+    filas.push({ id: 'hTareas', titulo: 'Tareas', hecho: true, texto: hechas.length === 1 ? 'Hiciste la de hoy.' : 'Hiciste las ' + hechas.length + ' de hoy.' });
+  }
+
+  var d = x.desafio;
+  if (d && !d.terminado_en && new Date(d.vence_en) > new Date()) {
+    var faltanQ = (d.preguntas || []).filter(function (q) { return !q.respondida; }).length;
+    filas.push({ id: 'hTest', titulo: 'Test de conocimiento' + (d.titulo ? ': ' + d.titulo : '') + (d.abiertos > 1 ? ' (+' + (d.abiertos - 1) + ')' : ''), hecho: false,
+      texto: faltanQ === d.total ? d.total + ' preguntas de opción múltiple. Si le errás, no pasa nada.' : 'Te quedan ' + faltanQ + ' preguntas.' });
+  } else if (d && d.terminado_en && hoyAR(new Date(d.terminado_en)) === hoy) {
+    filas.push({ id: 'hTest', titulo: 'Test de conocimiento', hecho: true, texto: 'Acertaste ' + d.puntaje + ' de ' + d.total + '.' });
+  }
+
+  if (x.caja && cajaActiva()) {
+    var caja = x.caja[0];
+    if (caja && caja.estado !== 'pendiente') filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: true, texto: 'Guardada.' });
+    else if (horaAR() >= 19) filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: false, texto: 'Las fotos del cierre y el efectivo que contaste.' });
+  }
+
+  var faltan = filas.filter(function (f) { return !f.hecho; }).length;
+  var html = cabeza('Hola, ' + primerNombre()) + bannerAvisos(x.avisos) +
+    (x.recordatorios || []).map(function (r) {
+      return '<div class="recordatorio"><b>' + esc(DIAS_SEMANA[diaSemanaAR() - 1]) + '</b>' + esc(r.texto) + '</div>';
+    }).join('');
+
+  if (filas.length) {
+    html += '<div class="seccion">' + (faltan ? (faltan === 1 ? 'Te falta 1 cosa' : 'Te faltan ' + faltan + ' cosas') : '¡Listo por hoy!') + '</div>' +
+      '<div class="lista-hoy">' + filas.map(function (f) {
+        return '<button class="item-hoy' + (f.hecho ? ' hecho' : '') + (f.alerta && !f.hecho ? ' alerta' : '') + '" id="' + f.id + '"' +
+          ' aria-label="' + esc((f.hecho ? 'Hecho: ' : 'Falta: ') + f.titulo + '. ' + f.texto) + '">' +
+          '<i class="tilde" aria-hidden="true">' + (f.hecho ? '✓' : '') + '</i>' +
+          '<span><b>' + esc(f.titulo) + '</b><small>' + esc(f.texto) + '</small></span><em aria-hidden="true">›</em></button>';
+      }).join('') + '</div>';
+  } else if (!x.sinModulos) {
+    html += '<div class="vacio">Hoy no tenés nada pendiente.</div>';
+  }
+  if (x.sinModulos && !total) {
+    html += '<div class="nota">Todavía no tenés módulos asignados. Cuando tu supervisor te los asigne, tus fotos de cada día aparecen acá.</div>';
+  }
+  /* Mañana hay producto testigo: para saberlo (todavía no se carga). */
+  if (x.testigoMan) html += tarjetaTestigoHoy(x.testigoMan);
+  html += tarjetaOrden(x.semana);
+
+  app.innerHTML = html;
+  engancharCabeza();
+  var ir = {
+    hFotos: function () { irA('fotos'); },
+    hTestigo: function () { pantallaTestigo((x.testigoPend || x.testigoHecho).id); },
+    hTareas: function () { irA('tareas'); },
+    hTest: function () { pantallaDesafio(d); },
+    hCaja: function () { irA('caja'); }
+  };
+  Object.keys(ir).forEach(function (k) { var b = document.getElementById(k); if (b) b.onclick = ir[k]; });
+  var b;
+  if ((b = document.getElementById('banner'))) b.onclick = function () { pantallaBienvenida(pantallaHoy); };
+  if ((b = document.getElementById('irTestigo'))) b.onclick = function () { pantallaTestigo(x.testigoMan.id); };
+  /* Con todo lo de hoy hecho: el festejo, una vez por día. */
+  if (filas.length && !faltan) festejarUnaVez('dia-' + hoy, '¡Terminaste todo lo de hoy!');
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   FOTOS: el croquis del local con lo tuyo de tu color y las cámaras en lo
+   que falta (13/10: antes estaba en Hoy, con una lista que repetía lo mismo).
+   La lista queda sólo para lo que no está en el croquis (o si el local
+   todavía no tiene el croquis armado).
+   ════════════════════════════════════════════════════════════════════════ */
+
+function pantallaFotos() {
+  if (!_vend) { pantallaLocales(); return; }
+  marcarPestana('fotos');
+  adentro();
+  var per = yo(), hoy = hoyAR(), id = valor(per.id), nada = function () { return null; };
+  app.innerHTML = cabeza('Fotos') + '<p class="cargando">Cargando…</p>';
+  engancharCabeza();
+  Promise.all([
+    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,tipo,estado,vence_en,nivel' +
+         '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente)' +
+         '&order=sector_tipo.asc,modulo_numero.asc'),
+    /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
+    leer('/orden_tareas?select=modulo_id&persona_id=eq.' + id + '&estado=eq.pendiente&origen=eq.ia'),
+    leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
+    per.local_id ? cargarMapa(per.local_id).catch(nada) : Promise.resolve(null)
+  ]).then(function (r) {
+    if (_pestana !== 'fotos') return;
+    dibujarFotos({ controles: r[0] || [], tareasIA: r[1] || [], sinModulos: Array.isArray(r[2]) && r[2].length === 0, mapa: r[3] });
+  }).catch(function (e) { pantallaError(e, pantallaFotos); });
+}
+
+function dibujarFotos(x) {
   var corregir = {};
   x.tareasIA.forEach(function (t) { if (t.modulo_id) corregir[t.modulo_id] = true; });
   _controles = {};
@@ -608,25 +862,16 @@ function dibujarHoy(x) {
 
   var total = x.controles.length;
   var hechos = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
-  var nivel = x.semana && x.semana.nivel_semana ? NIVEL[x.semana.nivel_semana] : null;
-
-  var html = cabeza('Hola, ' + primerNombre()) + bannerAvisos(x.avisos) +
-    (x.recordatorios || []).map(function (t) {
-      return '<div class="recordatorio"><b>' + esc(DIAS_SEMANA[diaSemanaAR() - 1]) + '</b>' + esc(t.texto) + '</div>';
-    }).join('') + tarjetaTestigoHoy(x.testigo);
-
-  html += '<div class="resumen">' +
-    (total
-      ? '<div class="grande">' + hechos + ' de ' + total + ' controles</div>' +
-        '<div class="progreso"><i style="width:' + Math.round(100 * hechos / total) + '%"></i></div>'
-      : '<div class="grande">Hoy no tenés controles</div><div class="progreso"><i style="width:100%"></i></div>') +
-    '<div class="chico">' + (nivel ? 'Tu orden esta semana: ' + esc(nivel) : 'Tu orden esta semana: todavía sin fotos') + '</div>' +
-    '</div>';
+  var html = cabeza('Fotos') + '<div class="progreso-fotos">' + (total
+    ? '<b>' + hechos + ' de ' + total + '</b> ' + (total === 1 ? 'foto mandada' : 'fotos mandadas') +
+      '<div class="progreso"><i style="width:' + Math.round(100 * hechos / total) + '%"></i></div>'
+    : '<b>Hoy no tenés fotos para mandar.</b>') + '</div>';
 
   /* El croquis del local: lo tuyo con tu color, lo demás apagado. Tocás un
      módulo con la cámara y mandás su foto. */
-  var mapa = x.mapa, mios = {}, marcas = {};
-  if (mapa && mapa.pared.length + mapa.islas.length + mapa.dep.length) {
+  var mapa = x.mapa, mios = {}, marcas = {}, enMapa = {};
+  var hayMapa = !!(mapa && mapa.pared.length + mapa.islas.length + mapa.dep.length);
+  if (hayMapa) {
     /* Si un módulo tiene dos controles (el del día y una sorpresa), manda lo que falta hacer. */
     var PESO = { corregir: 5, sorpresa: 4, pendiente: 3, vencido: 2, listo: 1 };
     x.controles.forEach(function (c) {
@@ -636,32 +881,18 @@ function dibujarHoy(x) {
       mios[c.modulo_id] = true;
     });
     var yoId = yo().id;
-    mapa.modulos.forEach(function (m) { var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
+    mapa.modulos.forEach(function (m) { enMapa[m.id] = true; var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
     var hayMios = Object.keys(mios).length;
-    html += '<div class="seccion">Tu parte del local</div><div class="mapa-caja" id="mapaHoy">' +
+    html += '<div class="mapa-caja" id="mapaFotos">' +
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' + leyendaNombres(mapa) +
       '<p class="bajada">' + (total ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.'
                                     : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
   }
 
-  if (x.sinModulos && !total) {
-    html += '<div class="nota">Todavía no tenés módulos asignados. Cuando tu supervisor te los asigne, tus controles aparecen acá.</div>';
-  }
-
-  var d = x.desafio;
-  if (d && !d.terminado_en && new Date(d.vence_en) > new Date()) {
-    var faltan = (d.preguntas || []).filter(function (q) { return !q.respondida; }).length;
-    html += '<button class="tarjeta-accion" id="desafio"><b>' + esc(d.titulo ? 'Test de conocimiento: ' + d.titulo : 'Tu test de conocimiento de la semana') +
-      (d.abiertos > 1 ? ' (+' + (d.abiertos - 1) + ')' : '') + '</b><span>' +
-      (faltan === d.total ? d.total + ' preguntas de opción múltiple. Si le errás, no pasa nada.' : 'Te quedan ' + faltan + ' preguntas.') + '</span></button>';
-  } else if (d && d.terminado_en && d.semana === lunesAR()) {
-    html += '<div class="nota">Test de conocimiento' + (d.titulo ? ' (' + esc(d.titulo) + ')' : '') + ': acertaste ' + d.puntaje + ' de ' + d.total + '.</div>';
-  }
-  if (x.tareas) {
-    html += '<button class="tarjeta-accion" id="irTareas"><b>' + (x.tareas === 1 ? 'Tenés 1 tarea' : 'Tenés ' + x.tareas + ' tareas') + '</b><span>Tocá para verlas.</span></button>';
-  }
-  [['salon', 'En lista'], ['deposito', 'Depósito']].forEach(function (g) {
-    var lista = x.controles.filter(function (c) { return c.sector_tipo === g[0]; });
+  /* La lista: sin croquis, todo; con croquis, sólo lo que no está dibujado. */
+  var sueltos = x.controles.filter(function (c) { return !enMapa[c.modulo_id]; });
+  [['salon', hayMapa ? 'Otros' : 'En el salón'], ['deposito', 'Depósito']].forEach(function (g) {
+    var lista = sueltos.filter(function (c) { return c.sector_tipo === g[0]; });
     if (!lista.length) return;
     html += '<div class="seccion">' + g[1] + '</div>';
     lista.forEach(function (c) {
@@ -676,22 +907,19 @@ function dibujarHoy(x) {
     });
   });
 
-  if (!total && !x.sinModulos) {
+  if (x.sinModulos && !total) {
+    html += '<div class="nota">Todavía no tenés módulos asignados. Cuando tu supervisor te los asigne, tus controles aparecen acá.</div>';
+  } else if (!total && !hayMapa) {
     html += '<div class="vacio">Cuando te toque un control, aparece acá y te llega un aviso.</div>';
   }
 
   app.innerHTML = html;
-  engancharNoSoyYo();
-  var b;
-  if ((b = document.getElementById('banner'))) b.onclick = function () { pantallaBienvenida(pantallaHoy); };
-  if ((b = document.getElementById('desafio'))) b.onclick = function () { pantallaDesafio(d); };
-  if ((b = document.getElementById('irTareas'))) b.onclick = function () { irA('tareas'); };
-  if ((b = document.getElementById('irTestigo'))) b.onclick = function () { pantallaTestigo(x.testigo.id); };
+  engancharCabeza();
   app.querySelectorAll('.camara').forEach(function (bt) {
     bt.onclick = function () { pantallaFoto(_controles[bt.dataset.id]); };
   });
   /* Tocar el croquis: si ese módulo tiene tu control pendiente, la cámara; si no, de quién es. */
-  app.querySelectorAll('#mapaHoy .mapa-mod').forEach(function (g) {
+  app.querySelectorAll('#mapaFotos .mapa-mod').forEach(function (g) {
     g.onclick = function () {
       var suyos = x.controles.filter(function (k) { return k.modulo_id === g.dataset.mod; });
       var falta = suyos.filter(function (k) { return !estadoDe(k, corregir).hecho; })[0];
@@ -743,7 +971,7 @@ function analizar(fotoId) {
 }
 
 function pantallaFoto(c) {
-  if (!c) { pantallaHoy(); return; }
+  if (!c) { irA('fotos'); return; }
   var estado = { intentos: 0, respuestas: {}, url: null, fotoId: null, resultado: null };
   /* Las fotos que ya sacó para este control cuentan para el "Enviar igual". */
   leer('/orden_fotos?select=id&control_id=eq.' + valor(c.id))
@@ -813,7 +1041,7 @@ function camara(titulo, referencia, guia, alSacar, alCerrar) {
 function abrirCamara(c, estado) {
   camara(c.modulo_nombre, c.foto_referencia_path, 'Que entre todo el módulo en el recuadro',
     function (blob) { procesar(c, estado, blob); },
-    function () { if (estado.url) abrirRevision(c, estado); else pantallaHoy(); });
+    function () { if (estado.url) abrirRevision(c, estado); else irA('fotos'); });
 }
 
 function procesar(c, estado, blob) {
@@ -908,7 +1136,7 @@ function abrirRevision(c, estado) {
   html += '</div>';
 
   app.innerHTML = html;
-  document.getElementById('volver').onclick = function () { if (estado.url) URL.revokeObjectURL(estado.url); pantallaHoy(); };
+  document.getElementById('volver').onclick = function () { if (estado.url) URL.revokeObjectURL(estado.url); irA('fotos'); };
   app.querySelectorAll('.sino button').forEach(function (b) {
     b.onclick = function () {
       estado.respuestas[b.dataset.k] = b.dataset.v === '1';
@@ -929,18 +1157,18 @@ function enviarControl(c, estado, preguntas, boton) {
   boton.textContent = 'Enviando…';
   return llamar('orden_enviar_control', { p_control: c.id, p_respuestas: estado.respuestas }).then(function () {
     if (estado.url) URL.revokeObjectURL(estado.url);
-    pantallaHoy();
+    irA('fotos');
     avisar('¡Listo! Mandaste el ' + c.modulo_nombre + '.');
   }, function (e) {
     /* Si ya estaba enviado (se tocó dos veces, o se cortó la señal después de
        que llegara), es lo mismo que "listo". */
-    if (/ya fue enviado/i.test(mensajeDe(e))) { pantallaHoy(); avisar('Ese control ya estaba enviado.'); return; }
+    if (/ya fue enviado/i.test(mensajeDe(e))) { irA('fotos'); avisar('Ese control ya estaba enviado.'); return; }
     throw e;
   });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   TAREAS (y los avisos)
+   TAREAS (los avisos están en la campanita de arriba)
    ════════════════════════════════════════════════════════════════════════ */
 
 var ORIGEN = { ia: 'Detectada por la IA', supervisor: 'Pedida por tu supervisor', admin: 'Pedida por la administración', sistema: 'Del sistema' };
@@ -950,31 +1178,20 @@ function pantallaTareas() {
   marcarPestana('tareas');
   adentro();
   app.innerHTML = cabeza('Tareas', '') + '<p class="cargando">Cargando…</p>';
-  engancharNoSoyYo();
+  engancharCabeza();
   var id = valor(yo().id);
   var semana = new Date(Date.now() - 7 * 864e5).toISOString();
-  Promise.all([
-    leer('/orden_avisos?select=id,titulo,cuerpo,creado_en,leido_en&persona_id=eq.' + id + '&order=creado_en.desc&limit=15'),
-    leer('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,prorroga_estado,local_id,completada_en' +
-         '&persona_id=eq.' + id + '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + semana + ')&order=vence_en.asc')
-  ]).then(function (r) {
+  leer('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,prorroga_estado,local_id,completada_en' +
+       '&persona_id=eq.' + id + '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + semana + ')&order=vence_en.asc').then(function (r) {
     if (_pestana !== 'tareas') return;
-    dibujarTareas(r[0] || [], r[1] || []);
+    dibujarTareas(r || []);
   }).catch(function (e) { pantallaError(e, pantallaTareas); });
 }
 
-function dibujarTareas(avisos, tareas) {
+function dibujarTareas(tareas) {
   var abiertas = tareas.filter(function (t) { return t.estado === 'pendiente' || t.estado === 'vencida'; });
   var cerradas = tareas.filter(function (t) { return t.estado !== 'pendiente' && t.estado !== 'vencida'; });
   var html = cabeza('Tareas', '');
-
-  if (avisos.length) {
-    html += '<div class="seccion">Avisos</div><div class="avisos">' + avisos.slice(0, 8).map(function (a) {
-      return '<div class="aviso' + (a.leido_en ? '' : ' nuevo') + '"><b>' + esc(a.titulo) + '</b>' +
-        (a.cuerpo ? '<span>' + esc(a.cuerpo) + '</span>' : '') +
-        '<small>' + esc(diaMes(a.creado_en) + ' ' + hora(a.creado_en)) + '</small></div>';
-    }).join('') + '</div>';
-  }
 
   html += '<div class="seccion">Para hacer</div>';
   if (!abiertas.length) html += '<div class="vacio">No tenés tareas pendientes.</div>';
@@ -1003,33 +1220,66 @@ function dibujarTareas(avisos, tareas) {
   html += '<input type="file" id="fotoTarea" accept="image/*" capture="environment" hidden>';
 
   app.innerHTML = html;
-  engancharNoSoyYo();
+  engancharCabeza();
   var porId = {};
   tareas.forEach(function (t) { porId[t.id] = t; });
   app.querySelectorAll('.tarea [data-accion]').forEach(function (b) {
     var t = porId[b.closest('.tarea').dataset.id];
     unaVez(b, function () { return accionTarea(t, b.dataset.accion, b); });
   });
+}
 
-  /* Los avisos que se acaban de ver quedan leídos. */
-  var nuevos = avisos.filter(function (a) { return !a.leido_en; }).map(function (a) { return a.id; });
-  if (nuevos.length) llamar('orden_marcar_avisos_leidos', { p_ids: nuevos }).catch(function () {});
+/* ════════════════════════════════════════════════════════════════════════
+   LOS AVISOS (la campanita de arriba): los últimos, y tocar uno lleva a su
+   pantalla. Al verlos quedan leídos.
+   ════════════════════════════════════════════════════════════════════════ */
+
+function pantallaAvisos(volverA) {
+  apagarCamara();
+  adentro();
+  volverA = volverA || (_pestana !== 'avisos' && _pestana !== 'perfil' ? _pestana : null) || (esSupervision() ? 'revisar' : 'hoy');
+  marcarPestana('avisos');
+  var arriba = '<button class="volver" id="volver">‹ Volver</button><h1>Avisos</h1>';
+  app.innerHTML = arriba + '<p class="cargando">Cargando…</p>';
+  document.getElementById('volver').onclick = function () { irA(volverA); };
+  leer('/orden_avisos?select=id,titulo,cuerpo,url,creado_en,leido_en&persona_id=eq.' + valor(yo().id) + '&order=creado_en.desc&limit=30').then(function (avisos) {
+    if (_pestana !== 'avisos') return;
+    avisos = avisos || [];
+    app.innerHTML = arriba + (avisos.length ? '<div class="avisos">' + avisos.map(function (a, k) {
+      var lleva = !!String(a.url || '').replace(/^.*#/, '').replace(/^\/+/, '');
+      var tag = lleva ? 'button' : 'div';
+      return '<' + tag + ' class="aviso' + (a.leido_en ? '' : ' nuevo') + (lleva ? ' con-enlace' : '') + '"' + (lleva ? ' data-k="' + k + '"' : '') + '><b>' + esc(a.titulo) + '</b>' +
+        (a.cuerpo ? '<span>' + esc(a.cuerpo) + '</span>' : '') +
+        '<small>' + esc(diaMes(a.creado_en) + ' ' + hora(a.creado_en)) + '</small></' + tag + '>';
+    }).join('') + '</div>' : '<div class="vacio">Todavía no tenés avisos.</div>');
+    document.getElementById('volver').onclick = function () { irA(volverA); };
+    app.querySelectorAll('.aviso[data-k]').forEach(function (b) {
+      b.onclick = function () { if (!irAEnlace(avisos[+b.dataset.k].url)) avisar('Ese aviso ya no lleva a ningún lado.'); };
+    });
+    var nuevos = avisos.filter(function (a) { return !a.leido_en; }).map(function (a) { return a.id; });
+    _sinLeer = 0; _sinLeerEn = Date.now(); _sinLeerDe = yo().id;
+    if (nuevos.length) llamar('orden_marcar_avisos_leidos', { p_ids: nuevos }).catch(function () { _sinLeerEn = 0; });
+  }).catch(function (e) { pantallaError(e, function () { pantallaAvisos(volverA); }); });
 }
 
 function accionTarea(t, accion, boton) {
   if (accion === 'nopude') {
-    var m = preguntarTexto('Contá en una línea por qué no pudiste:');
-    if (!m) return;
-    return llamar('orden_no_pude_tarea', { p_tarea: t.id, p_motivo: m }).then(function () { avisar('Le avisamos a tu supervisor.'); pantallaTareas(); });
+    return preguntarTexto('Contá en una línea por qué no pudiste:').then(function (m) {
+      if (!m) return;
+      return llamar('orden_no_pude_tarea', { p_tarea: t.id, p_motivo: m }).then(function () { avisar('Le avisamos a tu supervisor.'); pantallaTareas(); });
+    });
   }
   if (accion === 'tiempo') {
-    var m2 = preguntarTexto('¿Por qué necesitás más tiempo?');
-    if (!m2) return;
-    return llamar('orden_pedir_prorroga', { p_tarea: t.id, p_motivo: m2 }).then(function () { avisar('Le pediste más tiempo a tu supervisor.'); pantallaTareas(); });
+    return preguntarTexto('¿Por qué necesitás más tiempo?').then(function (m) {
+      if (!m) return;
+      return llamar('orden_pedir_prorroga', { p_tarea: t.id, p_motivo: m }).then(function () { avisar('Le pediste más tiempo a tu supervisor.'); pantallaTareas(); });
+    });
   }
   if (!t.requiere_foto) {
-    if (!confirm('¿Ya la terminaste?')) return;
-    return llamar('orden_completar_tarea', { p_tarea: t.id, p_foto_path: null }).then(function () { avisar('¡Bien! Tarea hecha.'); pantallaTareas(); });
+    return confirmar('¿Ya la terminaste?', 'Sí, la terminé').then(function (si) {
+      if (!si) return;
+      return llamar('orden_completar_tarea', { p_tarea: t.id, p_foto_path: null }).then(function () { avisar('¡Bien! Tarea hecha.'); pantallaTareas(); });
+    });
   }
   /* Con foto: la cámara del teléfono, la foto achicada a la carpeta de la tarea. */
   return new Promise(function (ok, mal) {
@@ -1065,21 +1315,21 @@ function pantallaIdeas() {
   marcarPestana('ideas');
   adentro();
   app.innerHTML = cabeza('Ideas', '') + '<p class="cargando">Cargando…</p>';
-  engancharNoSoyYo();
+  engancharCabeza();
   Promise.all([
     leer('/orden_tableros?select=id,titulo,url,destacado&activo=is.true&order=destacado.desc,orden.asc'),
     leer('/orden_colores?select=nombre,hex&activo=is.true&order=orden.asc')
   ]).then(function (r) {
     if (_pestana !== 'ideas') return;
     var tableros = r[0] || [], colores = r[1] || [];
-    var dest = tableros.filter(function (t) { return t.destacado; });
-    var resto = tableros.filter(function (t) { return !t.destacado; });
-    var enlace = function (t, clase) {
-      return /^https:\/\//i.test(t.url) ? '<a class="' + clase + '" href="' + esc(t.url) + '" target="_blank" rel="noopener">' + esc(t.titulo) + '</a>' : '';
-    };
+    /* Cada tablero con sus fotos adentro de la app (pedido de Mauricio, 13/10):
+       las trae la función ideas-tablero; tocás una y se ve grande. */
     var html = cabeza('Ideas', '') +
-      dest.map(function (t) { return enlace(t, 'tablero destacado'); }).join('') +
-      (resto.length ? '<div class="grilla">' + resto.map(function (t) { return enlace(t, 'tablero'); }).join('') + '</div>' : '') +
+      tableros.map(function (t, k) {
+        return '<section class="tablero-ideas' + (t.destacado ? ' destacado' : '') + '" data-k="' + k + '">' +
+          '<div class="tablero-cabeza"><h2>' + esc(t.titulo) + '</h2><a class="ver-pinterest" target="_blank" rel="noopener" hidden>Ver en Pinterest ›</a></div>' +
+          '<div class="fotos-ideas"><p class="cargando">Cargando las fotos…</p></div></section>';
+      }).join('') +
       (!tableros.length ? '<div class="vacio">Todavía no hay tableros cargados.</div>' : '') +
       '<button class="boton" id="verColores" style="margin-top:14px">Regla de colores</button>' +
       '<div id="colores" hidden><p class="bajada" style="margin:14px 0 8px">En los percheros, del más claro al más oscuro:</p>' +
@@ -1087,12 +1337,81 @@ function pantallaIdeas() {
         return '<div class="color"><i style="background:' + esc(c.hex) + '"></i><span>' + esc(c.nombre) + '</span></div>';
       }).join('') + '</div>';
     app.innerHTML = html;
-    engancharNoSoyYo();
+    engancharCabeza();
     document.getElementById('verColores').onclick = function () {
       var c = document.getElementById('colores');
       c.hidden = !c.hidden;
     };
+    tableros.forEach(function (t, k) { mostrarTablero(t, app.querySelector('.tablero-ideas[data-k="' + k + '"]')); });
   }).catch(function (e) { pantallaError(e, pantallaIdeas); });
+}
+
+var _fotosIdeas = {};   // tablero → lo que trajo la función (mientras la app está abierta)
+/** El enlace, salvo que sea uno para sumarse a editar el tablero (ésos no se reparten). */
+function enlaceSinInvitacion(url) { return /^https:\/\//i.test(url || '') && !/pin\.it\/|invite/i.test(url) ? url : ''; }
+function mostrarTablero(t, caja) {
+  if (!caja) return;
+  var lugar = caja.querySelector('.fotos-ideas'), link = caja.querySelector('.ver-pinterest');
+  var poner = function (enlace) { if (enlace) { link.href = enlace; link.hidden = false; } };
+  var sinFotos = function (texto) { lugar.innerHTML = '<p class="bajada" style="margin:0">' + esc(texto) + '</p>'; };
+  (_fotosIdeas[t.id] ? Promise.resolve(_fotosIdeas[t.id]) : llamarFuncion('ideas-tablero', { tablero_id: t.id })).then(function (r) {
+    if (r && r.ok) _fotosIdeas[t.id] = r;
+    if (!document.body.contains(caja)) return;
+    poner((r && r.enlace) || enlaceSinInvitacion(t.url));
+    var fotos = (r && r.ok && r.fotos) || [];
+    if (!fotos.length) { sinFotos(r && r.ok ? 'Este tablero todavía no tiene fotos.' : 'No pudimos traer las fotos: miralas en Pinterest.'); return; }
+    lugar.innerHTML = fotos.map(function (f, i) {
+      return '<button class="foto-idea" data-i="' + i + '" aria-label="Ver la idea ' + (i + 1) + ' grande">' +
+        '<img src="' + esc(f.chica) + '" loading="lazy" referrerpolicy="no-referrer" alt="' + esc(f.titulo || '') + '" onerror="this.parentNode.hidden=true"></button>';
+    }).join('');
+    lugar.querySelectorAll('.foto-idea').forEach(function (b) { b.onclick = function () { verIdea(fotos, +b.dataset.i); }; });
+  }, function () {
+    if (!document.body.contains(caja)) return;
+    poner(enlaceSinInvitacion(t.url));
+    sinFotos('No pudimos traer las fotos: miralas en Pinterest.');
+  });
+}
+
+/** Una idea grande, a pantalla completa: ‹ › (o deslizando) para pasar; "Cerrar" o tocar afuera para volver. */
+function verIdea(fotos, i) {
+  var v = document.createElement('div');
+  v.className = 'visor-idea';
+  v.setAttribute('role', 'dialog');
+  v.setAttribute('aria-modal', 'true');
+  v.setAttribute('aria-label', 'Idea grande');
+  var varias = fotos.length > 1;
+  function dibujar() {
+    var f = fotos[i];
+    v.innerHTML = '<img src="' + esc(f.foto) + '" referrerpolicy="no-referrer" alt="' + esc(f.titulo || 'Idea ' + (i + 1)) + '">' +
+      '<div class="visor-barra">' + (varias ? '<button data-paso="-1" aria-label="La anterior">‹</button>' : '') +
+      '<span>' + (i + 1) + ' de ' + fotos.length + '</span>' + (varias ? '<button data-paso="1" aria-label="La siguiente">›</button>' : '') +
+      '<button data-paso="cerrar">Cerrar</button></div>';
+  }
+  function pasar(n) { i = (i + n + fotos.length) % fotos.length; dibujar(); }
+  function cerrar() { document.removeEventListener('keydown', tecla, true); v.remove(); }
+  function tecla(e) {
+    if (e.key === 'Escape') cerrar();
+    else if (varias && e.key === 'ArrowLeft') pasar(-1);
+    else if (varias && e.key === 'ArrowRight') pasar(1);
+  }
+  v.onclick = function (e) {
+    var b = e.target.closest ? e.target.closest('[data-paso]') : null;
+    if (b) { if (b.dataset.paso === 'cerrar') cerrar(); else pasar(+b.dataset.paso); return; }
+    if (e.target === v) cerrar();
+  };
+  var x0 = null;
+  v.addEventListener('touchstart', function (e) { x0 = e.touches[0].clientX; }, { passive: true });
+  v.addEventListener('touchend', function (e) {
+    if (x0 == null || !varias) return;
+    var dx = e.changedTouches[0].clientX - x0;
+    x0 = null;
+    if (Math.abs(dx) > 50) pasar(dx < 0 ? 1 : -1);
+  });
+  document.addEventListener('keydown', tecla, true);
+  document.body.appendChild(v);
+  dibujar();
+  var c = v.querySelector('[data-paso="cerrar"]');
+  if (c) c.focus();
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1157,9 +1476,10 @@ function pantallaPerfil() {
     if ((b = document.getElementById('instalar'))) b.onclick = instalarApp;
     app.querySelectorAll('[data-descargo]').forEach(function (bt) {
       unaVez(bt, function () {
-        var t = preguntarTexto('Escribí tu descargo (lo lee tu supervisor):');
-        if (!t) return;
-        return llamar('orden_registrar_descargo', { p_falta: bt.dataset.descargo, p_texto: t }).then(function () { avisar('Descargo guardado.'); pantallaPerfil(); });
+        return preguntarTexto('Escribí tu descargo (lo lee tu supervisor):').then(function (t) {
+          if (!t) return;
+          return llamar('orden_registrar_descargo', { p_falta: bt.dataset.descargo, p_texto: t }).then(function () { avisar('Descargo guardado.'); pantallaPerfil(); });
+        });
       });
     });
   }).catch(function (e) { pantallaError(e, pantallaPerfil); });
@@ -1308,6 +1628,7 @@ function pantallaDesafio(d) {
       '<p class="bajada">' + (ok === preguntas.length ? '¡Impecable!' : 'Lo que erraste te vuelve a aparecer más adelante, para que lo aprendas.') + '</p>' +
       '<button class="boton lima" id="fin">Volver a Hoy</button>';
     document.getElementById('fin').onclick = function () { irA('hoy'); };
+    if (preguntas.length && ok === preguntas.length) setTimeout(function () { festejar('¡' + ok + ' de ' + ok + '!'); }, 250);
     return;
   }
   var q = preguntas[i];
@@ -1353,10 +1674,41 @@ function pantallaDesafio(d) {
    ════════════════════════════════════════════════════════════════════════ */
 
 var FOTOS_CAJA = [['sistema', 'Cierre del sistema'], ['lote', 'Cierre de lote (posnet)'], ['mp', 'Mercado Pago'], ['gocuotas', 'Go Cuotas (si hubo)']];
-var CAMPOS_CAJA = [
-  ['Cierre del sistema', [['sis_tarjeta', 'Tarjeta'], ['sis_mp', 'Mercado Pago'], ['sis_gocuotas', 'Go Cuotas'], ['sis_saldo_final_efvo', 'Saldo final en efectivo']]],
-  ['Lo real', [['real_lote', 'Cierre de lote'], ['real_mp', 'Mercado Pago'], ['real_gocuotas', 'Go Cuotas'], ['real_efectivo', 'Efectivo contado']]]
+/* La caja en 4 renglones (13/10, pedido de Mauricio: "Lo real" no se
+   entendía): lo que dice el sistema, lo que dice el comprobante y, al lado,
+   si da. La cuenta es la de la base: sistema − comprobante, con la tolerancia
+   del local ($ 100 si no se cambió). */
+var FILAS_CAJA = [
+  ['Tarjeta', 'sis_tarjeta', 'real_lote', 'Posnet (cierre de lote)'],
+  ['Mercado Pago', 'sis_mp', 'real_mp', 'App de Mercado Pago'],
+  ['Go Cuotas', 'sis_gocuotas', 'real_gocuotas', 'Go Cuotas'],
+  ['Efectivo', 'sis_saldo_final_efvo', 'real_efectivo', 'Lo que contaste']
 ];
+var _tolCaja = 100;
+
+/** "$ 1.440.100,50", "95.000", "95000" o "1440100.5" → número; vacío o raro → null.
+    (La base leía "95.000" como 95: por eso se manda ya convertido.) */
+function numeroCaja(v) {
+  var t = String(v == null ? '' : v).replace(/[\s$]/g, '');
+  if (!t || !/\d/.test(t) || /[^0-9.,-]/.test(t)) return null;
+  if (t.indexOf(',') > -1) t = t.replace(/\./g, '').replace(/,/g, '.');          // 1.440.100,50
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');          // 95.000
+  var n = Number(t);
+  return isFinite(n) ? n : null;
+}
+
+/** Al lado de cada renglón: ✓ si da, o cuánto falta o sobra. */
+function revisarFilasCaja() {
+  app.querySelectorAll('.caja-fila').forEach(function (fila) {
+    var ins = fila.querySelectorAll('input'), el = fila.querySelector('.caja-da');
+    var a = numeroCaja(ins[0].value), b = numeroCaja(ins[1].value);
+    if (a == null || b == null) { el.className = 'caja-da'; el.textContent = ''; return; }
+    var d = a - b;
+    if (Math.abs(d) <= _tolCaja) { el.className = 'caja-da da'; el.textContent = '✓ Da'; }
+    else if (d > 0) { el.className = 'caja-da falta'; el.textContent = 'Faltan ' + pesos(d); }
+    else { el.className = 'caja-da sobra'; el.textContent = 'Sobran ' + pesos(-d); }
+  });
+}
 var LECTURA_A_CAMPO = {
   sistema: { ventas_tarjeta: 'sis_tarjeta', ventas_mercado_pago: 'sis_mp', ventas_debito_go: 'sis_gocuotas', saldo_final_efectivo: 'sis_saldo_final_efvo' },
   lote: { total: 'real_lote' }, mp: { total: 'real_mp' }, gocuotas: { total: 'real_gocuotas' }
@@ -1375,7 +1727,13 @@ function pantallaCaja() {
   adentro();
   marcarPestana('caja');
   app.innerHTML = cabeza('Caja') + '<p class="cargando">Cargando…</p>';
-  engancharNoSoyYo();
+  engancharCabeza();
+  if (yo().local_id) {
+    leer('/orden_config?select=caja_tolerancia_pesos&local_id=eq.' + valor(yo().local_id)).then(function (f) {
+      var v = f && f[0] ? Number(f[0].caja_tolerancia_pesos) : NaN;
+      if (isFinite(v) && v >= 0) { _tolCaja = v; revisarFilasCaja(); }
+    }).catch(function () {});
+  }
   llamar('orden_caja_hoy').then(function (caja) {
     return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(caja.id) + '&order=tomada_en.desc')
       .then(function (f) { if (_pestana === 'caja') dibujarCaja(caja, f || []); });
@@ -1386,7 +1744,7 @@ function dibujarCaja(caja, fotos) {
   var ultima = {};
   fotos.forEach(function (f) { if (!ultima[f.tipo]) ultima[f.tipo] = f; });
   var valores = {};
-  CAMPOS_CAJA.forEach(function (g) { g[1].forEach(function (c) { valores[c[0]] = caja[c[0]] != null ? caja[c[0]] : ''; }); });
+  FILAS_CAJA.forEach(function (f) { [f[1], f[2]].forEach(function (k) { valores[k] = caja[k] != null ? caja[k] : ''; }); });
   /* Lo que la IA leyó precarga lo que todavía está vacío. */
   Object.keys(ultima).forEach(function (tipo) {
     var f = ultima[tipo];
@@ -1405,11 +1763,15 @@ function dibujarCaja(caja, fotos) {
       return '<button class="foto-caja" data-tipo="' + t[0] + '"><b>' + esc(t[1]) + '</b><span class="chip ' + (f ? 'listo' : 'pendiente') + '">' + est + '</span></button>';
     }).join('') + '</div>';
   }
-  CAMPOS_CAJA.forEach(function (g) {
-    html += '<div class="seccion">' + esc(g[0]) + '</div><div class="perfil">' + g[1].map(function (c) {
-      return '<label class="campo fila-campo"><span>' + esc(c[1]) + '</span><input inputmode="decimal" data-campo="' + c[0] + '" value="' + esc(valores[c[0]]) + '"' + (cerrada ? ' disabled' : '') + ' placeholder="$"></label>';
-    }).join('') + '</div>';
-  });
+  var dis = cerrada ? ' disabled' : '';
+  html += '<div class="seccion">Los números</div><div class="perfil caja-filas">' + FILAS_CAJA.map(function (f) {
+    return '<div class="caja-fila"><div class="caja-nombre">' + esc(f[0]) + '</div>' +
+      '<label class="campo caja-monto"><span>Dice el sistema</span><input inputmode="decimal" data-campo="' + f[1] + '" value="' + esc(valores[f[1]]) + '"' + dis +
+        ' placeholder="$" aria-label="' + esc(f[0]) + ': lo que dice el sistema"></label>' +
+      '<label class="campo caja-monto"><span>' + esc(f[3]) + '</span><input inputmode="decimal" data-campo="' + f[2] + '" value="' + esc(valores[f[2]]) + '"' + dis +
+        ' placeholder="$" aria-label="' + esc(f[0] + ': ' + f[3]) + '"></label>' +
+      '<div class="caja-da" aria-live="polite"></div></div>';
+  }).join('') + '</div>';
   html += '<label class="campo"><span>Observaciones</span><textarea id="obs" rows="2"' + (cerrada ? ' disabled' : '') + '>' + esc(caja.observaciones || '') + '</textarea></label>';
   if ((caja.alertas || []).length) {
     html += '<div class="revision mala"><div class="titulo">Para revisar</div>' + caja.alertas.map(function (a) { return '<div>' + esc(textoAlerta(a)) + '</div>'; }).join('') + '</div>';
@@ -1419,8 +1781,10 @@ function dibujarCaja(caja, fotos) {
   if (!cerrada) html += '<button class="boton lima" id="guardarCaja">Guardar</button>';
   html += '<input type="file" id="fotoCaja" accept="image/*" capture="environment" hidden>';
   app.innerHTML = html;
-  engancharNoSoyYo();
+  engancharCabeza();
 
+  app.querySelectorAll('.caja-fila input').forEach(function (i) { i.addEventListener('input', revisarFilasCaja); });
+  revisarFilasCaja();
   var input = document.getElementById('fotoCaja');
   app.querySelectorAll('.foto-caja').forEach(function (b) {
     unaVez(b, function () { return fotoCaja(caja, b.dataset.tipo, input, b); });
@@ -1449,6 +1813,7 @@ function fotoCaja(caja, tipo, input, boton) {
               if (campo && lectura[k] != null) campo.value = lectura[k];
             });
             boton.querySelector('.chip').textContent = 'Leída';
+            revisarFilasCaja();
             avisar('Listo: revisá los números que se cargaron.');
           } else {
             boton.querySelector('.chip').textContent = 'Cargá a mano';
@@ -1463,11 +1828,14 @@ function fotoCaja(caja, tipo, input, boton) {
 }
 
 function guardarCaja(caja, boton) {
-  var valores = {};
+  var valores = {}, malo = null;
   app.querySelectorAll('[data-campo]').forEach(function (c) {
     var v = String(c.value || '').trim();
-    if (v !== '') valores[c.dataset.campo] = v;
+    if (v === '') return;
+    var n = numeroCaja(v);
+    if (n == null) malo = malo || c; else valores[c.dataset.campo] = String(n);
   });
+  if (malo) { malo.focus(); avisar('Hay un monto que no se entiende: escribilo sólo con números.'); return; }
   if (!valores.real_efectivo) { avisar('Falta el efectivo que contaste.'); return; }
   boton.textContent = 'Guardando…';
   return llamar('orden_caja_guardar', { p_caja: caja.id, p_valores: valores, p_observaciones: document.getElementById('obs').value || null })
@@ -1518,9 +1886,9 @@ function pantallaRevisar() {
   marcarPestana('revisar');
   adentro();
   app.innerHTML = cabeza('Revisar', '') + '<p class="cargando">Cargando…</p>';
-  engancharNoSoyYo();
+  engancharCabeza();
   localSup().then(function (loc) {
-    if (!loc) { app.innerHTML = cabeza('Revisar', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharNoSoyYo(); return; }
+    if (!loc) { app.innerHTML = cabeza('Revisar', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharCabeza(); return; }
     return leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,tipo,foto_path,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
                 '&local_id=eq.' + valor(loc.id) + '&limit=60').then(function (cola) {
       if (_pestana !== 'revisar') return;
@@ -1535,7 +1903,7 @@ function dibujarRevisar(loc, cola) {
   var html = cabeza('Revisar', loc.nombre) + selectorLocal(loc);
   if (!c) {
     html += '<div class="vacio">No hay fotos para revisar.</div>';
-    app.innerHTML = html; engancharNoSoyYo(); engancharSelector(pantallaRevisar);
+    app.innerHTML = html; engancharCabeza(); engancharSelector(pantallaRevisar);
     return;
   }
   var ia = c.ia_resultado || {};
@@ -1567,7 +1935,7 @@ function dibujarRevisar(loc, cola) {
   }
   if (cola.length > 1) html += '<button class="boton" id="saltear" style="margin-top:10px">Ver la siguiente</button>';
   app.innerHTML = html;
-  engancharNoSoyYo();
+  engancharCabeza();
   engancharSelector(function () { _revisarSaltear = 0; pantallaRevisar(); });
   cargarFotos(app);
   var s = document.getElementById('saltear');
@@ -1597,9 +1965,9 @@ function pantallaEquipo() {
   marcarPestana('equipo');
   adentro();
   app.innerHTML = cabeza('Equipo', '') + '<p class="cargando">Cargando…</p>';
-  engancharNoSoyYo();
+  engancharCabeza();
   localSup().then(function (loc) {
-    if (!loc) { app.innerHTML = cabeza('Equipo', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharNoSoyYo(); return; }
+    if (!loc) { app.innerHTML = cabeza('Equipo', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharCabeza(); return; }
     var L = valor(loc.id);
     var desde = _equipoMes ? lunesAR(hoyAR().slice(0, 8) + '01') : lunesAR();
     return Promise.all([
@@ -1695,7 +2063,7 @@ function dibujarEquipo(loc, x) {
   if (!mira && x.gente.length) html += '<button class="boton lima" id="nuevaTarea" style="margin-top:16px">Nueva tarea</button>';
 
   app.innerHTML = html;
-  engancharNoSoyYo();
+  engancharCabeza();
   engancharSelector(pantallaEquipo);
   document.getElementById('irMapa').onclick = function () { pantallaMapa(loc); };
   document.getElementById('vSemana').onclick = function () { _equipoMes = false; pantallaEquipo(); };
@@ -1704,12 +2072,14 @@ function dibujarEquipo(loc, x) {
     var mismos = function () { return app.querySelectorAll('[data-aprobar="' + b.dataset.aprobar + '"]'); };
     unaVez(b, function () {
       var si = b.dataset.si === '1', nuevo = b.dataset.nuevo === '1', nombre = b.dataset.nombre;
-      if (!si && !confirm(nuevo ? '¿No conocés a ' + nombre + '? Se le cierra el acceso a la app.'
-                                : '¿No fue ' + nombre + '? Se borra ese PIN y se cierra esa sesión. ' + nombre + ' va a poder crear el suyo.')) return;
-      mismos().forEach(function (x) { x.disabled = true; });
-      return llamar('orden_aprobar_persona', { p_persona: b.dataset.aprobar, p_aprobar: si })
-        .then(function () { avisar(si ? 'Aprobado: ya puede usar la app.' : nuevo ? 'Listo: no va a poder entrar.' : 'Listo: se borró ese PIN.'); pantallaEquipo(); },
-              function (e) { mismos().forEach(function (x) { x.disabled = false; }); throw e; });
+      return (si ? Promise.resolve(true) : confirmar(nuevo ? '¿No conocés a ' + nombre + '? Se le cierra el acceso a la app.'
+                                : '¿No fue ' + nombre + '? Se borra ese PIN y se cierra esa sesión. ' + nombre + ' va a poder crear el suyo.')).then(function (seguro) {
+        if (!seguro) return;
+        mismos().forEach(function (x) { x.disabled = true; });
+        return llamar('orden_aprobar_persona', { p_persona: b.dataset.aprobar, p_aprobar: si })
+          .then(function () { avisar(si ? 'Aprobado: ya puede usar la app.' : nuevo ? 'Listo: no va a poder entrar.' : 'Listo: se borró ese PIN.'); pantallaEquipo(); },
+                function (e) { mismos().forEach(function (x) { x.disabled = false; }); throw e; });
+      });
     });
     /* Los dos botones de la misma persona van juntos: "Sí" y "No" tocados casi
        a la vez mandaban los dos y ganaba el último. */
@@ -1735,18 +2105,20 @@ function dibujarEquipo(loc, x) {
   app.querySelectorAll('[data-falta]').forEach(function (b) {
     unaVez(b, function () {
       var si = b.dataset.si === '1';
-      if (si && !confirm('¿Confirmás la falta? Le llega el aviso al vendedor.')) return;
-      var nota = preguntarTexto(si ? 'Nota (opcional):' : '¿Por qué la descartás? (opcional)');
-      if (nota === null) return;
-      return llamar('orden_decidir_falta', { p_falta: b.dataset.falta, p_confirmar: si, p_tipo: null, p_nota: nota || null })
-        .then(function () { avisar(si ? 'Falta confirmada.' : 'Falta descartada.'); pantallaEquipo(); });
+      return preguntar(si ? { texto: '¿Confirmás la falta? Le llega el aviso al vendedor.', campo: 'Nota (opcional)', opcional: true, si: 'Confirmar la falta' }
+                          : { texto: '¿Por qué la descartás?', campo: 'Opcional', opcional: true, si: 'Descartarla' }).then(function (nota) {
+        if (nota === null) return;
+        return llamar('orden_decidir_falta', { p_falta: b.dataset.falta, p_confirmar: si, p_tipo: null, p_nota: nota || null })
+          .then(function () { avisar(si ? 'Falta confirmada.' : 'Falta descartada.'); pantallaEquipo(); });
+      });
     });
   });
   app.querySelectorAll('[data-cancelar]').forEach(function (b) {
     unaVez(b, function () {
-      var m = preguntarTexto('¿Por qué se cancela la tarea?');
-      if (!m) return;
-      return llamar('orden_cancelar_tarea', { p_tarea: b.dataset.cancelar, p_motivo: m }).then(function () { avisar('Tarea cancelada.'); pantallaEquipo(); });
+      return preguntarTexto('¿Por qué se cancela la tarea?').then(function (m) {
+        if (!m) return;
+        return llamar('orden_cancelar_tarea', { p_tarea: b.dataset.cancelar, p_motivo: m }).then(function () { avisar('Tarea cancelada.'); pantallaEquipo(); });
+      });
     });
   });
   var n = document.getElementById('nuevaTarea');
@@ -1786,9 +2158,9 @@ function pantallaCajasSup() {
   marcarPestana('cajas');
   adentro();
   app.innerHTML = cabeza('Cajas', '') + '<p class="cargando">Cargando…</p>';
-  engancharNoSoyYo();
+  engancharCabeza();
   localSup().then(function (loc) {
-    if (!loc) { app.innerHTML = cabeza('Cajas', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharNoSoyYo(); return; }
+    if (!loc) { app.innerHTML = cabeza('Cajas', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharCabeza(); return; }
     var L = valor(loc.id);
     return Promise.all([
       leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&order=fecha.desc&limit=31'),
@@ -1804,7 +2176,7 @@ function pantallaCajasSup() {
       if (resto.length) html += '<div class="seccion">Últimos días</div>' + resto.map(filaCaja).join('');
       if (!cajas.length) html += '<div class="vacio">Todavía no hay cajas cargadas.</div>';
       app.innerHTML = html;
-      engancharNoSoyYo();
+      engancharCabeza();
       engancharSelector(pantallaCajasSup);
       var porId = {};
       cajas.forEach(function (c) { porId[c.id] = c; });
@@ -1978,13 +2350,16 @@ function dibujarTestigo(sem, items) {
   });
   if (m) unaVez(m, function () {
     var sinVideo = items.filter(function (it) { return !it.video_path || it.video_borrado; }).length;
-    if (sinVideo && !confirm(sinVideo === items.length ? 'Todavía no grabaste ningún video. ¿Mandar igual, sólo con los números?'
-                                                       : 'Falta el video de ' + sinVideo + (sinVideo === 1 ? ' producto' : ' productos') + '. ¿Mandar igual?')) return;
-    return guardarTestigo(items).then(function () { return llamar('testigo_terminar', { p_semana: sem.id }); }).then(function (r) {
-      avisar(r && r.con_diferencia
-        ? 'Mandado. ' + (r.con_diferencia === 1 ? 'Un producto dio diferencia' : r.con_diferencia + ' productos dieron diferencia') + ': le avisamos a tu supervisor.'
-        : 'Mandado: dio todo justo.');
-      irA('hoy');
+    return (sinVideo ? confirmar(sinVideo === items.length ? 'Todavía no grabaste ningún video. ¿Mandar igual, sólo con los números?'
+                                                          : 'Falta el video de ' + sinVideo + (sinVideo === 1 ? ' producto' : ' productos') + '. ¿Mandar igual?', 'Mandar igual')
+                     : Promise.resolve(true)).then(function (seguro) {
+      if (!seguro) return;
+      return guardarTestigo(items).then(function () { return llamar('testigo_terminar', { p_semana: sem.id }); }).then(function (r) {
+        avisar(r && r.con_diferencia
+          ? 'Mandado. ' + (r.con_diferencia === 1 ? 'Un producto dio diferencia' : r.con_diferencia + ' productos dieron diferencia') + ': le avisamos a tu supervisor.'
+          : 'Mandado: dio todo justo.');
+        irA('hoy');
+      });
     });
   });
 }
