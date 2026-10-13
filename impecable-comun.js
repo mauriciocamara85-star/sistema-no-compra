@@ -1,5 +1,5 @@
 /**
- * Impecable · lo que comparten la app (vendedores.html) y la administración
+ * Equipo VDH (antes "Impecable") · lo que comparten la app (vendedores.html) y la administración
  * (impecable-admin.html): la sesión, las llamadas a la base, las fotos y los
  * formatos de fecha.
  *
@@ -8,7 +8,7 @@
  * Panel (por mail): si compartieran el lugar, una pisaría a la otra.
  */
 
-var NOMBRE_APP = 'Impecable';
+var NOMBRE_APP = 'Equipo VDH';
 var K_VEND = 'vdh_vend_sesion';
 var ZONA = 'America/Argentina/Buenos_Aires';
 var BUCKET = 'orden-fotos';

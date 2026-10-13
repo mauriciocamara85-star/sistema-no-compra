@@ -1,5 +1,5 @@
 /**
- * Impecable · la app de los vendedores (y del supervisor del local).
+ * Equipo VDH (antes "Impecable") · la app de los vendedores (y del supervisor del local).
  *
  * Usa impecable-comun.js (sesión, base, fotos, fechas) y, de datos.js,
  * BASE, CLAVE, pedir() y funcion().
@@ -35,7 +35,7 @@ function pantallaError(e, reintentar) {
   if (e && e.sinSesion) { guardarVend_(null); pantallaLocales(e.message); return; }
   barra.hidden = !_vend;
   app.innerHTML =
-    '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p>' +
+    '<p class="marca"><b>Equipo</b> VDH</p>' +
     '<h1>' + (esDeRed(e) ? 'Sin conexión' : 'Algo falló') + '</h1>' +
     '<p class="bajada">' + esc(esDeRed(e) ? 'No hay señal o internet anda lento. Probá de nuevo en un rato.' : mensajeDe(e)) + '</p>' +
     '<button class="boton lima" id="reintentar">Probar de nuevo</button>';
@@ -76,7 +76,7 @@ function pantallaLocales(mensaje) {
   app.innerHTML = '<p class="cargando">Cargando…</p>';
   funcion('orden_login_locales', {}).then(function (locales) {
     app.innerHTML =
-      '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p>' +
+      '<p class="marca"><b>Equipo</b> VDH</p>' +
       '<h1>¿En qué local trabajás?</h1>' +
       '<p class="bajada">' + esc(mensaje || 'Elegí tu local. Esto se hace una sola vez en este celular.') + '</p>' +
       '<div class="lista">' + locales.map(function (l, i) {
@@ -428,12 +428,12 @@ function refrescarYo() {
 }
 
 /* Atención al cliente entra al No Compra con el mismo usuario (y la misma
-   sesión), pero Impecable es de los locales: no ve nada de acá. */
+   sesión), pero Equipo VDH es de los locales: no ve nada de acá. */
 function pantallaSinImpecable() {
   barra.hidden = true;
   app.className = 'app';
-  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>Sin acceso a Impecable</h1>' +
-    '<p class="bajada">Hola, ' + esc(primerNombre()) + '. Tu usuario es de Atención al cliente: Impecable es para los locales. Lo tuyo está en el No Compra.</p>' +
+  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>Sin acceso a Equipo VDH</h1>' +
+    '<p class="bajada">Hola, ' + esc(primerNombre()) + '. Tu usuario es de Atención al cliente: Equipo VDH es para los locales. Lo tuyo está en el No Compra.</p>' +
     '<a class="boton lima" href="panel.html">Ir al No Compra</a>' +
     '<button class="boton" id="salirSin" style="margin-top:10px">No soy yo</button>';
   document.getElementById('salirSin').onclick = preguntarSalir;
@@ -651,10 +651,11 @@ function dibujarHoy(x) {
   var d = x.desafio;
   if (d && !d.terminado_en && new Date(d.vence_en) > new Date()) {
     var faltan = (d.preguntas || []).filter(function (q) { return !q.respondida; }).length;
-    html += '<button class="tarjeta-accion" id="desafio"><b>Tu desafío de la semana</b><span>' +
-      (faltan === d.total ? d.total + ' preguntas rápidas. Si le errás, no pasa nada.' : 'Te quedan ' + faltan + ' preguntas.') + '</span></button>';
+    html += '<button class="tarjeta-accion" id="desafio"><b>' + esc(d.titulo ? 'Test de conocimiento: ' + d.titulo : 'Tu test de conocimiento de la semana') +
+      (d.abiertos > 1 ? ' (+' + (d.abiertos - 1) + ')' : '') + '</b><span>' +
+      (faltan === d.total ? d.total + ' preguntas de opción múltiple. Si le errás, no pasa nada.' : 'Te quedan ' + faltan + ' preguntas.') + '</span></button>';
   } else if (d && d.terminado_en && d.semana === lunesAR()) {
-    html += '<div class="nota">Desafío de la semana: acertaste ' + d.puntaje + ' de ' + d.total + '.</div>';
+    html += '<div class="nota">Test de conocimiento' + (d.titulo ? ' (' + esc(d.titulo) + ')' : '') + ': acertaste ' + d.puntaje + ' de ' + d.total + '.</div>';
   }
   if (x.tareas) {
     html += '<button class="tarjeta-accion" id="irTareas"><b>' + (x.tareas === 1 ? 'Tenés 1 tarea' : 'Tenés ' + x.tareas + ' tareas') + '</b><span>Tocá para verlas.</span></button>';
@@ -1134,7 +1135,7 @@ function pantallaPerfil() {
             return '<div class="fila"><span>Semana del ' + esc(diaMes(s.semana)) + '</span>' +
               (s.nivel_semana ? '<span class="chip nivel-' + esc(s.nivel_semana) + '">' + esc(NIVEL[s.nivel_semana]) + '</span>' : '<span class="chip pendiente">Sin fotos</span>') +
               '<small>Controles a tiempo ' + s.controles_a_tiempo + ' de ' + s.controles + ' · Tareas a tiempo ' + s.tareas_a_tiempo + ' de ' + s.tareas +
-              (s.desafio_total ? ' · Desafío ' + s.desafio_puntaje + '/' + s.desafio_total : '') + '</small></div>';
+              (s.desafio_total ? ' · Test ' + s.desafio_puntaje + '/' + s.desafio_total : '') + '</small></div>';
           }).join('') + '</div>'
         : '<div class="vacio">Todavía no hay semanas para mostrar.</div>');
     }
@@ -1292,7 +1293,7 @@ function pantallaBienvenida(despues) {
 
 function abrirDesafio() {
   llamar('orden_desafio_mio').then(function (d) {
-    if (d && !d.terminado_en) pantallaDesafio(d); else { pantallaHoy(); avisar('No tenés un desafío abierto.'); }
+    if (d && !d.terminado_en) pantallaDesafio(d); else { pantallaHoy(); avisar('No tenés un test abierto.'); }
   }).catch(function (e) { pantallaError(e, pantallaHoy); });
 }
 
@@ -1303,7 +1304,7 @@ function pantallaDesafio(d) {
   var i = preguntas.findIndex(function (q) { return !q.respondida; });
   if (i < 0) {
     var ok = preguntas.filter(function (q) { return q.elegida === q.correcta; }).length;
-    app.innerHTML = '<p class="marca"><b>Desafío</b> de la semana</p><h1>Acertaste ' + ok + ' de ' + preguntas.length + '</h1>' +
+    app.innerHTML = '<p class="marca"><b>Test</b> de conocimiento' + (d.titulo ? ' · ' + esc(d.titulo) : '') + '</p><h1>Acertaste ' + ok + ' de ' + preguntas.length + '</h1>' +
       '<p class="bajada">' + (ok === preguntas.length ? '¡Impecable!' : 'Lo que erraste te vuelve a aparecer más adelante, para que lo aprendas.') + '</p>' +
       '<button class="boton lima" id="fin">Volver a Hoy</button>';
     document.getElementById('fin').onclick = function () { irA('hoy'); };
@@ -1661,7 +1662,7 @@ function dibujarEquipo(loc, x) {
     return '<div class="fila"><span><b>' + esc(nombres[p.id]) + '</b></span>' +
       (t.nivel ? '<span class="chip nivel-' + esc(t.nivel) + '">' + esc(NIVEL[t.nivel]) + '</span>' : '<span class="chip pendiente">Sin fotos</span>') +
       '<small>Controles a tiempo ' + t.a_tiempo + ' de ' + t.controles + ' · Tareas a tiempo ' + t.tareas_ok + ' de ' + t.tareas +
-      (t.desT ? ' · Desafío ' + t.des + '/' + t.desT : '') + '</small></div>';
+      (t.desT ? ' · Test ' + t.des + '/' + t.desT : '') + '</small></div>';
   }).join('');
 
   var pend = {};
@@ -1880,7 +1881,7 @@ function pantallaMapa(loc) {
   barra.hidden = true;
   app.className = 'app';
   app.innerHTML = '<button class="enlace" id="volverMapa">‹ Volver a Equipo</button><h1>El mapa de ' + esc(loc.nombre) + '</h1>' +
-    '<p class="bajada">Quién tiene cada módulo y quién cubre. Se reparte desde la computadora: No Compra → Impecable → Por local.</p><div id="mapaZona"><p class="cargando">Cargando…</p></div>';
+    '<p class="bajada">Quién tiene cada módulo y quién cubre. Se reparte desde la computadora: No Compra → Equipo VDH → Por local.</p><div id="mapaZona"><p class="cargando">Cargando…</p></div>';
   document.getElementById('volverMapa').onclick = function () { irA('equipo'); };
   cargarMapa(loc.id).then(function (d) {
     var z = document.getElementById('mapaZona');

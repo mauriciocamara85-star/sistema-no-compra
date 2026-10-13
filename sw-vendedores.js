@@ -1,5 +1,5 @@
 /**
- * Impecable · service worker propio de la app de los vendedores.
+ * Equipo VDH (antes "Impecable") · service worker propio de la app de los vendedores.
  *
  * Es aparte del sw.js del Sistema No Compra a propósito: así la app se
  * instala como otra app (su scope es "vendedores…") y las notificaciones no
@@ -13,7 +13,7 @@
  *
  * Estrategia: RED PRIMERO, como el del No Compra. Al tocar la app, subir CACHE.
  */
-const CACHE = 'impecable-v6';
+const CACHE = 'impecable-v7';
 
 const BASICOS = [
   './vendedores.html',
@@ -66,7 +66,7 @@ self.addEventListener('fetch', (evento) => {
 self.addEventListener('push', (evento) => {
   let d = {};
   try { d = evento.data ? evento.data.json() : {}; } catch (e) { d = { titulo: evento.data && evento.data.text() }; }
-  evento.waitUntil(self.registration.showNotification(d.titulo || 'Impecable', {
+  evento.waitUntil(self.registration.showNotification(d.titulo || 'Equipo VDH', {
     body: d.cuerpo || '',
     icon: 'impecable-192.png',
     badge: 'impecable-192.png',

@@ -1,5 +1,5 @@
 /**
- * Impecable · la administración (impecable-admin.html).
+ * Equipo VDH (antes "Impecable") · la administración (impecable-admin.html).
  *
  * Para el administrador, los supervisores y la gerencia: cómo está cada
  * local, los números del orden, las cajas, los productos testigo y los
@@ -58,8 +58,8 @@ var DIAS_LARGO = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado
 
 function pantallaSinSesion(mensaje) {
   app.innerHTML = '<div class="imp-entrar"><h2>Entrá con tu PIN</h2>' +
-    '<p>' + esc(mensaje || 'Impecable usa su propia entrada: elegí "Administrador" (o tu local), tu nombre y tu PIN. Queda guardada en esta computadora.') + '</p>' +
-    '<a class="boton lima enlace-boton" href="vendedores.html#/admin">Entrar a Impecable</a></div>';
+    '<p>' + esc(mensaje || 'Equipo VDH usa su propia entrada: elegí "Administrador" (o tu local), tu nombre y tu PIN. Queda guardada en esta computadora.') + '</p>' +
+    '<a class="boton lima enlace-boton" href="vendedores.html#/admin">Entrar a Equipo VDH</a></div>';
 }
 
 function pantallaNoCorresponde() {
@@ -133,7 +133,7 @@ function cabezaAdmin() {
   var actual = SOLAPAS.filter(function (x) { return x[0] === _solapa; })[0] || SOLAPAS[0];
   /* El local se elige en todo salvo en el Panorama, que es de todos. */
   var conLocal = _solapa !== 'panorama' && _locales.length > 1;
-  return '<div class="imp-grid"><nav class="imp-menu" aria-label="Impecable"><div class="imp-menu-cab">Impecable</div>' +
+  return '<div class="imp-grid"><nav class="imp-menu" aria-label="Equipo VDH"><div class="imp-menu-cab">Equipo VDH</div>' +
     solapas.map(function (x) {
       return '<button class="imp-item' + (x[0] === _solapa ? ' activa' : '') + '" data-solapa="' + x[0] + '">' + svgMenu(x[0]) + esc(x[1]) + '</button>';
     }).join('') +
@@ -477,7 +477,7 @@ function verOrden() {
     if (!gente.length) html += '<div class="vacio">Todavía no hay vendedores en este local.</div>';
     else {
       html += '<div class="desliza"><table class="tabla-datos"><thead><tr><th>Vendedor</th>' + semanas.map(function (s) { return '<th>' + esc(diaMes(s)) + '</th>'; }).join('') +
-        '<th class="n">Controles a tiempo</th><th class="n">Tareas a tiempo</th><th class="n">Desafío</th></tr></thead><tbody>' +
+        '<th class="n">Controles a tiempo</th><th class="n">Tareas a tiempo</th><th class="n">Test</th></tr></thead><tbody>' +
         gente.map(function (p) {
           var t = { c: 0, ca: 0, t: 0, ta: 0, d: 0, dt: 0 };
           var celdas = semanas.map(function (s) {
@@ -832,7 +832,7 @@ function programarTestigo() {
 
 var SUBAJUSTES = [['personas', 'Personas'], ['sectores', 'Sectores y módulos'], ['recordatorios', 'Recordatorios por día'],
                   ['horarios', 'Horarios y funciones'], ['reglas', 'Reglas de orden'],
-                  ['colores', 'Regla de colores'], ['tableros', 'Ideas (tableros)'], ['exhibidores', 'Exhibidores'], ['preguntas', 'Preguntas del desafío']];
+                  ['colores', 'Regla de colores'], ['tableros', 'Ideas (tableros)'], ['exhibidores', 'Exhibidores'], ['preguntas', 'Preguntas de los tests']];
 var _sub = 'personas';
 
 function verAjustes() {
@@ -995,7 +995,7 @@ function ajHorarios() {
     editor({ cont: z.querySelector('#ajCfg2'), filas: [cfg],
       cols: [{ k: 'ia_activa', t: 'Revisión con IA', tipo: 'bool' }, { k: 'ia_crea_tareas', t: 'La IA crea tareas', tipo: 'bool' },
              { k: 'ia_sugerencias', t: 'Sugerencias de estilo de la IA', tipo: 'bool' }, { k: 'modo_prueba', t: 'Modo prueba (sin faltas)', tipo: 'bool' },
-             { k: 'desafio_activo', t: 'Desafío semanal', tipo: 'bool' }, { k: 'caja_activa', t: 'Control de caja', tipo: 'bool' }],
+             { k: 'desafio_activo', t: 'Test semanal', tipo: 'bool' }, { k: 'caja_activa', t: 'Control de caja', tipo: 'bool' }],
       guardar: g });
     editor({ cont: z.querySelector('#ajCfg3'), filas: [cfg],
       cols: [{ k: 'ventana_faltas_dias', t: 'Se mira (días)', tipo: 'num', ancho: 'chico' }, { k: 'umbral_tareas_vencidas', t: 'Días con tareas fuera de plazo', tipo: 'num', ancho: 'chico' },
@@ -1056,11 +1056,93 @@ function ajExhibidores() {
     nueva: function (f) { return { nombre: 'Exhibidor ' + (f.length + 1) }; } });
 }
 
+var TEMAS_PREG = [['tela', 'Telas'], ['molderia', 'Molderías'], ['retail', 'Cómo trabajamos']];
 function ajPreguntas() {
-  ajLista({ ruta: '/orden_preguntas?select=id,tema,dificultad,pregunta,activo&order=tema.asc,dificultad.asc', tabla: '/orden_preguntas',
-    texto: 'Las preguntas del desafío (salen de los manuales de VDH). Se pueden apagar las que no sirvan.',
-    cols: [{ k: 'tema', t: 'Tema', tipo: 'ver', ver: function (f) { return { tela: 'Telas', molderia: 'Molderías', retail: 'Cómo trabajamos' }[f.tema] || f.tema; } },
-           { k: 'dificultad', t: 'Nivel', tipo: 'ver' }, { k: 'pregunta', t: 'Pregunta', tipo: 'ver' }, { k: 'activo', t: 'Activa', tipo: 'bool' }] });
+  ajLista({ ruta: '/orden_preguntas?select=id,tema,dificultad,pregunta,grupo,activo&order=grupo.asc.nullsfirst,tema.asc,dificultad.asc', tabla: '/orden_preguntas',
+    texto: 'Las preguntas de los tests de conocimiento (opción múltiple; si le erran, la app explica la correcta). El test de la semana sale solo. ' +
+      'Para uno especial (por ejemplo, la colección nueva), cargá sus preguntas con el mismo <b>grupo</b> ("Colección verano") y tocá "Mandar un test ahora". ' +
+      'Se pueden apagar las que no sirvan.<br><span class="imp-mapa-acc" style="margin-top:10px"><button class="boton chico lima" id="mandarTest">Mandar un test ahora</button>' +
+      '<button class="boton chico" id="nuevaPregunta">Nueva pregunta</button></span>',
+    cols: [{ k: 'tema', t: 'Tema', tipo: 'ver', ver: function (f) { return ({ tela: 'Telas', molderia: 'Molderías', retail: 'Cómo trabajamos' })[f.tema] || f.tema; } },
+           { k: 'dificultad', t: 'Nivel', tipo: 'ver' }, { k: 'pregunta', t: 'Pregunta', tipo: 'ver' },
+           { k: 'grupo', t: 'Grupo (test especial)', tipo: 'texto', nulo: true }, { k: 'activo', t: 'Activa', tipo: 'bool' }] });
+  /* Los botones de arriba (la lista se dibuja después: se engancha en el contenedor). */
+  document.getElementById('ajuste').onclick = function (e) {
+    if (e.target.closest('#mandarTest')) mandarTest();
+    else if (e.target.closest('#nuevaPregunta')) nuevaPregunta();
+  };
+}
+
+/** Una pregunta nueva: 2 a 4 opciones, cuál es la correcta y la explicación (la ven al responder). */
+function nuevaPregunta() {
+  var f = ventana('<h1>Nueva pregunta</h1><p class="bajada">De opción múltiple. La explicación la ven después de responder: así aprenden.</p>' +
+    '<div class="renglon"><label class="campo c-medio"><span>Tema</span><select id="nqTema">' + TEMAS_PREG.map(function (t) { return '<option value="' + t[0] + '">' + t[1] + '</option>'; }).join('') + '</select></label>' +
+      '<label class="campo c-grande"><span>Grupo (para un test especial, opcional)</span><input id="nqGrupo" maxlength="60" placeholder="Colección verano"></label></div>' +
+    '<label class="campo"><span>La pregunta</span><textarea id="nqPregunta" rows="2" maxlength="300"></textarea></label>' +
+    [1, 2, 3, 4].map(function (n) {
+      return '<div class="renglon"><label class="imp-check" style="width:110px"><input type="radio" name="nqCorrecta" value="' + n + '"' + (n === 1 ? ' checked' : '') + '> Correcta</label>' +
+        '<label class="campo c-grande"><span>Opción ' + n + (n > 2 ? ' (opcional)' : '') + '</span><input data-op="' + n + '" maxlength="120"></label></div>';
+    }).join('') +
+    '<label class="campo"><span>Explicación (opcional)</span><textarea id="nqExplica" rows="2" maxlength="400"></textarea></label>' +
+    '<button class="boton lima" id="nqGuardar">Guardar la pregunta</button>');
+  unaVez(f.querySelector('#nqGuardar'), function () {
+    var ops = [], correcta = 0;
+    f.querySelectorAll('[data-op]').forEach(function (i) {
+      var v = i.value.trim();
+      if (!v) return;
+      ops.push(v);
+      if (f.querySelector('input[name="nqCorrecta"][value="' + i.dataset.op + '"]').checked) correcta = ops.length;
+    });
+    var preg = f.querySelector('#nqPregunta').value.trim();
+    if (preg.length < 5) { avisar('Escribí la pregunta.'); return; }
+    if (ops.length < 2) { avisar('Hacen falta al menos 2 opciones.'); return; }
+    if (!correcta) { avisar('Marcá cuál es la correcta (en una opción escrita).'); return; }
+    return escribir('/orden_preguntas', 'POST', { tema: f.querySelector('#nqTema').value, dificultad: 1, pregunta: preg, opciones: ops, correcta: correcta,
+      explicacion: f.querySelector('#nqExplica').value.trim() || null, grupo: f.querySelector('#nqGrupo').value.trim() || null, activo: true })
+      .then(function () { f.remove(); avisar('Pregunta guardada.'); ajPreguntas(); });
+  });
+}
+
+/** "Tenés un test de conocimiento: Colección verano": a los vendedores de los locales elegidos. */
+function mandarTest() {
+  leer('/orden_preguntas?select=grupo&activo=is.true&grupo=not.is.null').then(function (filas) {
+    var grupos = {};
+    (filas || []).forEach(function (g) { var k = String(g.grupo).trim(); if (k) grupos[k] = (grupos[k] || 0) + 1; });
+    var nombres = Object.keys(grupos).sort();
+    var f = ventana('<h1>Mandar un test ahora</h1><p class="bajada">Les llega a los vendedores de los locales que marques: "Tenés un test de conocimiento: …". ' +
+        'Todos reciben las mismas preguntas. Se suma al de la semana.</p>' +
+      '<div class="renglon"><label class="campo c-grande"><span>Título</span><input id="mtTitulo" maxlength="60" placeholder="Colección verano"></label>' +
+        '<label class="campo c-medio"><span>Las preguntas</span><select id="mtDe">' +
+          nombres.map(function (g) { return '<option value="g:' + esc(g) + '">Grupo "' + esc(g) + '" (' + grupos[g] + ')</option>'; }).join('') +
+          '<option value="t:producto">Telas y molderías</option><option value="t:retail">Cómo trabajamos</option><option value="t:todo">De todo</option></select></label>' +
+        '<label class="campo c-chico"><span>Cuántas</span><input id="mtCant" type="number" min="1" max="20" value="5"></label>' +
+        '<label class="campo c-chico"><span>Días para hacerlo</span><input id="mtDias" type="number" min="1" max="14" value="2"></label></div>' +
+      '<div class="seccion">Locales</div>' +
+      (_locales.length > 1 ? '<div class="imp-mapa-acc"><button class="boton chico" id="mtTodos">Todos</button><button class="boton chico" id="mtNinguno">Ninguno</button></div>' : '') +
+      '<div class="imp-locales">' + _locales.map(function (l) {
+        return '<label class="imp-check"><input type="checkbox" data-loc="' + esc(l.id) + '" checked> ' + esc(l.nombre) + '</label>';
+      }).join('') + '</div>' +
+      '<button class="boton lima" id="mtMandar">Mandar el test</button>');
+    var de = f.querySelector('#mtDe'), titulo = f.querySelector('#mtTitulo');
+    /* Si eligen un grupo, el título sale de ahí (se puede cambiar). */
+    var ponerTitulo = function () { if (de.value.indexOf('g:') === 0 && !titulo.value.trim()) titulo.value = de.value.slice(2); };
+    de.onchange = ponerTitulo; ponerTitulo();
+    var marcar = function (si) { f.querySelectorAll('[data-loc]').forEach(function (x) { x.checked = si; }); };
+    if (_locales.length > 1) { f.querySelector('#mtTodos').onclick = function () { marcar(true); }; f.querySelector('#mtNinguno').onclick = function () { marcar(false); }; }
+    unaVez(f.querySelector('#mtMandar'), function () {
+      var locales = [].filter.call(f.querySelectorAll('[data-loc]'), function (x) { return x.checked; }).map(function (x) { return x.dataset.loc; });
+      var v = de.value, esGrupo = v.indexOf('g:') === 0;
+      if (!titulo.value.trim()) { avisar('Ponele un título.'); return; }
+      if (!locales.length) { avisar('Marcá al menos un local.'); return; }
+      return llamar('orden_test_mandar', { p_locales: locales, p_titulo: titulo.value.trim(), p_grupo: esGrupo ? v.slice(2) : null, p_tema: esGrupo ? 'todo' : v.slice(2),
+                                           p_cantidad: parseInt(f.querySelector('#mtCant').value, 10) || 5, p_dias: parseInt(f.querySelector('#mtDias').value, 10) || 2 })
+        .then(function (r) {
+          f.remove();
+          avisar(r && r.personas ? 'Listo: le llegó a ' + r.personas + (r.personas === 1 ? ' vendedor' : ' vendedores') + ' (' + r.preguntas + ' preguntas).'
+                                 : 'No hay vendedores aprobados en esos locales todavía.');
+        });
+    });
+  }).catch(function (e) { avisar(mensajeDe(e)); });
 }
 
 /* ════════════════════════════════════════════════════════════════════════ */
