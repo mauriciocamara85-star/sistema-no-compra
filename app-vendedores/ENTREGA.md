@@ -31,7 +31,10 @@ Se entra desde el botón **Equipo VDH** de la barra del No Compra (la administra
 | 103 | corrido 13/10 | Sólo trabaja quien está aprobado (`orden_trabaja`), y **Rivadavia listo para probar con "Prueba"**: sector 1 y depósito 2 a su cargo (eran de Lautaro: **devolvérselos al arrancar**), hora límite 20:30 (era 18:00), testigo de hoy, recordatorio, tarea y test. | Sí, a mano: volver los sectores a Lautaro y la hora a 18:00. |
 | 104 | corrido 13/10 | Atención al cliente no aparece en la entrada de la app. | Sí. |
 | 105 | corrido 13/10 | Test de conocimiento: grupos de preguntas, "Mandar un test ahora" con aviso, y los textos con "Equipo VDH" (el nivel "Impecable" de las fotos no cambia). | Sí: agrega columnas y una función. |
-| 106 | **sin correr** (13/10) | "Repartir parejo" incluye los módulos del centro, al final de la numeración. Base de prueba 10/10; real con rollback 4/4. | Sí: cambia una sola función. |
+| 106 | corrido 13/10 (noche) | "Repartir parejo" incluye los módulos del centro, al final de la numeración. Base de prueba 10/10; real con rollback 4/4. | Sí: cambia una sola función. |
+| 107–109 | (de la otra sesión) | Los usuarios del No Compra, parte 3. | — |
+| 110 | **por escribir** | El PIN de 6 números para administración, Atención y gerencia, con el freno escalonado y `orden_pin_reiniciar` (acordado con la otra sesión; falta su confirmación). | — |
+| 111 | **sin correr** (13/10) | Los tableros de Ideas no guardan el enlace de "Compartir" de Pinterest (pin.it o con `invite_code`), que deja sumarse a editar el tablero: al de invitación le saca el código, un pin.it lo rechaza. Base de prueba 16/16 (con el 106); real con rollback 7/7. | Sí: agrega un trigger. No borra datos. |
 
 (El 92 es de la otra parte del sistema: Difusiones del CRM. El 100 y el 101, de los usuarios del No Compra.)
 
@@ -86,7 +89,7 @@ No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA`
 
 ## Pendiente (necesita a Mauricio)
 
-1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10). ~~Correr el SQL 99 y publicar el mapa~~ (hecho el 13/10, sw v119). ~~Correr el SQL 102~~ (hecho; publicado el 13/10, sw v121). **Correr el SQL 106**; después, su OK para publicar la reorganización y desplegar `ideas-tablero`.
+1. ~~Correr el SQL 96 y el 97~~ (hecho el 13/10). ~~Correr el SQL 99 y publicar el mapa~~ (hecho el 13/10, sw v119). ~~Correr el SQL 102~~ (hecho; publicado el 13/10, sw v121). ~~Correr el SQL 106~~ (hecho). **Correr el SQL 111**; su OK para publicar la reorganización (sw No Compra v127, Equipo VDH impecable-v9) y desplegar `ideas-tablero`.
 1b. **Al arrancar de verdad**: devolverle a Lautaro el sector 1 y el depósito 2, y la hora límite a 18:00 (el SQL 103 los dejó para "Prueba").
 2. El día que empiecen los chicos: subir **`tick`, `resumen-semanal` y `resumen-cajas`** (el 94 ya está). Las otras 2 ya están subidas. Antes: (`entrar` de nuevo y las 4 que faltan); después, el día que empiecen, correr el **SQL 94**.
 3. ~~Publicar~~ (hecho el 13/10, 41f1594).
@@ -110,3 +113,9 @@ No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA`
   3. Repartir el depósito no pasaba los controles del depósito de la semana (se crean el lunes y vencen el viernes) y achicar dejaba pendientes de módulos apagados → ahora siguen al reparto (o se sacan) todos los que siguen abiertos.
   - Menores corregidos: videos sólo en la carpeta de un control de ese local; al grabar de nuevo no se manda a borrar un video de otro local; ya no hay "planilla vacía" (sin día, el local no la veía): se arma con "Programar un control", y "Agregar un producto" va por el mismo camino; fechas de la semana pasada a dos meses; la planilla de la administración avisa si un número no es entero (y la base no acepta negativos); el aviso del día antes lleva al supervisor a la administración; los nombres de los módulos, enteros en una línea abajo del mapa; el video grabado con la cámara del teléfono pide "unos 10 segundos".
   - Quedan (menores): un video que se sube pero no llega a anotarse queda suelto en el bucket; un .mov de iPhone grabado con la cámara del teléfono (no con la app) puede no verse en Chrome de Windows.
+
+## Revisión de la reorganización (2 rondas, 13/10 noche)
+
+- **Ronda 1**: 1 bloqueante (con las fotos vencidas sin mandar, Hoy las tachaba como hechas y festejaba), 6 importantes (con mala señal decía "¡Listo por hoy!"; la campanita trabada en "9+"; en la caja, un comprobante vacío no avisaba nada aunque la base lo marca; el "atrás" de Android cerraba la app; el enlace de invitación del tablero viajaba a los celulares; Ideas sin fotos ni enlace con un pin.it) y 10 menores. Todos corregidos (a8cb503).
+- **Ronda 2**: 16 de 17 cerrados; el del enlace, a medias (la columna `url` la lee cualquiera con sesión) → **SQL 111**. Dos importantes nuevos que trajo el arreglo del "atrás" (se acumulaban "atrás" muertos; con Avisos o el Perfil abiertos, una notificación llevaba a otro lado) y 4 menores: corregidos. No hubo ronda 3 (la regla es 2): lo corregido después lo probé yo (app 129/129, testigo 30, administración 76, foto, base de prueba 16/16, real con rollback 7/7).
+- **Quedan sin tocar (fuera de lo pedido, para consultarle)**: el "atrás" en la cámara, el producto testigo, el test y el login sigue saliendo de la app; en los locales con caja, el festejo del día sólo puede salir después de guardar la caja de la noche; los avisos de controles de la base llevan a `/hoy` (podrían ir a `/fotos`); sin señal, Ideas entera dice "Sin conexión" aunque las fotos ya estén en memoria; la base no deja borrar un monto de caja ya guardado; Pinterest manda sólo los últimos ~25 pines por tablero.
