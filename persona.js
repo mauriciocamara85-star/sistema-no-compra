@@ -495,7 +495,7 @@ var persona = (function () {
     function textos() {
       c.querySelector('#ncpTit').textContent = !crear ? 'Hola, ' + nom : (primero === null ? 'Creá tu PIN' : 'Repetí tu PIN');
       c.querySelector('[data-bajada]').textContent = !crear ? 'Poné tu PIN de 4 números.'
-        : (primero === null ? 'Hola, ' + nom + '. Elegí 4 números que te acuerdes: es tu PIN para entrar (también a Impecable).'
+        : (primero === null ? 'Hola, ' + nom + '. Elegí 4 números que te acuerdes: es tu PIN para entrar (también a Equipo VDH).'
                             : 'Poné los mismos 4 números otra vez.');
     }
     function dibujar() {

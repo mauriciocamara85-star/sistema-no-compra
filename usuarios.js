@@ -18,8 +18,8 @@ var usuarios = (function () {
 
   var ROL = persona.ROL;
   var ROLES_ADMIN = ['vendedor', 'supervisor', 'atencion', 'gerencia', 'admin'];
-  var QUE_VE = 'Vendedor: Carga, Cobrar, Gift Cards, Asistente, las estadísticas de su local e Impecable. ' +
-               'Encargado: lo mismo, y crea los vendedores de su local. Atención al cliente: todo menos Impecable. ' +
+  var QUE_VE = 'Vendedor: Carga, Cobrar, Gift Cards, Asistente, las estadísticas de su local y Equipo VDH. ' +
+               'Encargado: lo mismo, y crea los vendedores de su local. Atención al cliente: todo menos Equipo VDH. ' +
                'Administrador y Gerencia: todo.';
 
   var datos = null;
@@ -115,7 +115,7 @@ var usuarios = (function () {
     }
 
     var sub = admin
-      ? 'Todos los que entran al No Compra y a Impecable. El rol y el local los cambiás vos.'
+      ? 'Todos los que entran al No Compra y a Equipo VDH. El rol y el local los cambiás vos.'
       : 'Los vendedores de ' + esc(nombreLocal(datos.yo.local_id)) + '. Podés crearlos, aprobarlos, borrarles el PIN y desactivarlos. Reactivar a alguien lo hace el administrador.';
     var filtros = '';
     if (admin) {
@@ -293,7 +293,7 @@ var usuarios = (function () {
           hacer('nc_usuario_pin_borrar', { p_persona: p.id }, p.en_lista ? 'PIN borrado: la próxima vez crea uno nuevo.' : nom + ' ya aparece para crear su PIN.');
           break;
         case 'desactivar':
-          if (!confirm('¿Desactivar a ' + nom + '? No va a poder entrar (ni acá ni en Impecable) y sale de la lista de la Carga. ' +
+          if (!confirm('¿Desactivar a ' + nom + '? No va a poder entrar (ni acá ni en Equipo VDH) y sale de la lista de la Carga. ' +
                        (esAdmin() ? 'Se puede reactivar.' : 'Para volver a activarlo, se lo pedís al administrador.'))) return;
           hacer('nc_usuario_activar', { p_persona: p.id, p_activo: false }, nom + ' quedó desactivado.');
           break;
