@@ -1345,6 +1345,22 @@ var base = {
   },
   crmSegmentoBorrar: function (pin, id) { return funcion('crm_segmento_borrar', { p_pin: pin, p_id: id }); },
 
+  /* ── Las difusiones (SQL 92): mandarle una plantilla a un segmento entero.
+     No tiran error con el PIN malo: devuelven {error: 'pin', porque, mal}. ── */
+  /** A cuántos les llega (con teléfono, sin "No escribir" y, si es de
+   *  marketing, sin los que dijeron que no a las promociones). */
+  crmDifusionPrevia: function (pin, reglas, categoria) {
+    return funcion('crm_difusion_previa', { p_pin: pin, p_reglas: reglas, p_categoria: categoria || 'MARKETING' });
+  },
+  /** Guardarla con la lista de esta hora: sale de a tandas. */
+  crmDifusionCrear: function (pin, datos) { return funcion('crm_difusion_crear', { p_pin: pin, p: datos }); },
+  /** Las últimas, con cómo van. */
+  crmDifusionesListar: function (pin) { return funcion('crm_difusiones_listar', { p_pin: pin, p_limite: 20 }); },
+  /** 'pausar', 'seguir' o 'cancelar'. */
+  crmDifusionAccion: function (pin, id, accion, quien) {
+    return funcion('crm_difusion_accion', { p_pin: pin, p_id: id, p_accion: accion, p_quien: quien || null });
+  },
+
   /** Las conversaciones de WhatsApp (SQL 63), la última arriba. Con
    *  "numero", sólo las de ese número nuestro (SQL 67): sin él no se manda,
    *  así anda igual con la base de antes. */
@@ -1583,6 +1599,10 @@ var base = {
   /** Las aprobadas con las que se le puede escribir a una persona (SQL 65). */
   waPlantillasPara: function (pin, clave) { return base.waAccion('plantillas_para', { pin: pin, clave: clave }); },
   waEnviarPlantilla: function (pin, datos) { return base.waAccion('enviar_plantilla', Object.assign({ pin: pin }, datos)); },
+  /** Que salga ya la primera tanda de una difusión (si no, sale con el reloj
+      de la base, al minuto). No pide PIN: manda sólo lo que la base tiene
+      listo para salir (SQL 92). */
+  waDifusionLote: function () { return base.waAccion('difusion_lote', {}); },
 
   /** El descuento atado al teléfono, desde la ficha de un No Compra: va por
       el registro, así queda el local y el vendedor. */

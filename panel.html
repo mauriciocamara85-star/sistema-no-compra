@@ -1176,6 +1176,34 @@
   .dif-resumen { font-size: 14px; line-height: 1.6; color: var(--txt); }
   .dif-resumen b { font-variant-numeric: tabular-nums; }
   .dif-falta { font-size: 13px; line-height: 1.5; color: var(--warn-txt); background: var(--warn-soft); border-radius: var(--r-sm); padding: 10px 12px; }
+  .dif-cuantos, .dif-desde { font-size: 14px; color: var(--txt); }
+  .dif-cuantos b { font-variant-numeric: tabular-nums; }
+  .dif-cuantos span { font-size: 13px; color: var(--txt-3); }
+  .dif-datos { display: grid; gap: 10px; }
+  .dif-dato { display: grid; gap: 6px; }
+  .dif-dato b { font-size: 13px; color: var(--txt-2); }
+  @media (min-width: 600px) { .dif-dato { grid-template-columns: 150px minmax(0, 1fr) minmax(0, 1fr); align-items: center; } }
+  .dif-dato select, .dif-dato input { min-height: 40px; font-size: 14px; }
+  .dif-tope .sg-dias input { width: 92px; }
+  .dif-prueba { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .dif-prueba label { font-size: 13.5px; font-weight: 600; color: var(--txt-2); }
+  .dif-prueba input { flex: 1 1 160px; max-width: 220px; min-height: 40px; font-size: 14px; }
+  .dif-confirma { padding: 12px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn-txt); display: grid; gap: 8px; }
+  .dif-confirma p { font-size: 14px; line-height: 1.45; }
+  .dif-confirma div { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+  .dif-hist { display: grid; gap: 10px; }
+  .dif-card { display: grid; gap: 6px; }
+  .dif-card-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+  .dif-card-cab b { font-size: 15px; }
+  .dif-card-sub { font-size: 12.5px; color: var(--txt-3); }
+  .dif-barra { height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+  .dif-barra i { display: block; height: 100%; background: var(--ok); border-radius: 99px; }
+  .dif-nums { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 13px; color: var(--txt-2); }
+  .dif-nums b { color: var(--txt); font-variant-numeric: tabular-nums; }
+  .dif-err { font-size: 12.5px; color: var(--txt-3); }
+  .dif-motivo { font-size: 13px; line-height: 1.45; padding: 8px 10px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn-txt); }
+  .dif-motivo.suave { background: var(--surface-2); color: var(--txt-2); }
+  .dif-card .seguro { background: var(--bad-soft); border-color: var(--bad); }
 
   /* ── Plantillas: las de WhatsApp (Meta) y las respuestas rápidas ── */
   .pl-solapas { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px; background: var(--surface-3); border-radius: var(--r-pill); }
@@ -2016,13 +2044,25 @@
           <button type="button" class="chip" data-nivel="Gold">Gold</button>
           <button type="button" class="chip" data-nivel="Black">Black</button>
         </span></div>
+      <div class="sg-fila"><label>Tipo</label>
+        <span class="sg-niveles" id="sgTipos">
+          <button type="button" class="chip" data-tipo="nuevo">Nuevo</button>
+          <button type="button" class="chip" data-tipo="habitual">Habitual</button>
+          <button type="button" class="chip" data-tipo="vip">VIP</button>
+          <button type="button" class="chip" data-tipo="ocasional">Ocasional</button>
+          <button type="button" class="chip" data-tipo="dormido">Dormido</button>
+        </span></div>
       <label class="sg-check"><input type="checkbox" id="sgCumple"> Cumple años este mes</label>
+      <label class="sg-check"><input type="checkbox" id="sgRecuperar"> Para recuperar: ya tendría que haber vuelto, según cada cuánto compra</label>
+      <div class="sg-check-fila"><label class="sg-check"><input type="checkbox" id="sgPuntos"> Se le vencen los puntos</label>
+        <span class="sg-dias" id="sgPuntosDiasCaja">en los próximos <input id="sgPuntosDias" type="number" min="1" max="365" value="60" aria-label="Días"> días</span></div>
     </div>
     <div class="sg-bloque"><h3>Otras cosas que hizo</h3>
       <div class="sg-check-fila"><label class="sg-check"><input type="checkbox" id="sgCarrito"> Dejó un carrito</label>
         <span class="sg-dias" id="sgCarritoDiasCaja">en los últimos <input id="sgCarritoDias" type="number" min="1" placeholder="—" aria-label="Días"> días</span></div>
       <div class="sg-check-fila"><label class="sg-check"><input type="checkbox" id="sgNoCompra"> Vino al local y no compró</label>
         <span class="sg-dias" id="sgNoCompraDiasCaja">en los últimos <input id="sgNoCompraDias" type="number" min="1" placeholder="—" aria-label="Días"> días</span></div>
+      <label class="sg-check"><input type="checkbox" id="sgCarritoStock"> Dejó un carrito (en los últimos 60 días) y hoy hay stock de lo que eligió</label>
       <label class="sg-check"><input type="checkbox" id="sgWsp"> Nos escribió por WhatsApp</label>
       <label class="sg-check"><input type="checkbox" id="sgAcepta"> Aceptó recibir promociones</label>
     </div>
@@ -2434,7 +2474,7 @@
       { v: 'no_compra', t: 'No Compra', nt: 'Sin contactar' },
       { v: 'carrito', t: 'Carritos abandonados', nt: 'Sin contactar' },
       { v: 'tienda', t: 'Tienda online', nt: 'Esperan respuesta' }] },
-    { v: 'segmentos', t: 'Segmentos', i: ICO.seg, marca: 'Beta' },
+    { v: 'segmentos', t: 'Segmentos', i: ICO.seg },
     { v: 'contactos', t: 'Contactos', i: ICO.gente },
     { v: 'cupones', t: 'Cupones', i: ICO.cupon },
     { v: 'agente', t: 'Agentes de IA', i: ICO.ia, marca: 'Beta' },
@@ -8535,9 +8575,15 @@
     { id: 'recuperar_tienda', t: 'De la tienda, sin comprar hace 60 días', d: 'Compraron en vdh.com.ar y hace más de 60 días que no vuelven.',
       reglas: { donde: 'tienda', sin_comprar_dias: 60 } },
     { id: 'mejores', t: 'Socios Gold y Black', d: 'Los mejores clientes del Club.', reglas: { socio: true, niveles: ['Gold', 'Black'] } },
-    { id: 'cumple', t: 'Cumplen años este mes', d: 'Socios del Club, para saludarlos con un beneficio.', reglas: { socio: true, cumple_mes: true } }
+    { id: 'cumple', t: 'Cumplen años este mes', d: 'Socios del Club, para saludarlos con un beneficio.', reglas: { socio: true, cumple_mes: true } },
+    { id: 'recuperar_ritmo', t: 'Para recuperar (según su ritmo)', d: 'Socios que ya tendrían que haber vuelto, según cada cuánto compran.', reglas: { socio: true, recuperar: true } },
+    { id: 'dormidos', t: 'Socios dormidos', d: 'Hace mucho que no vuelven: para invitarlos con algo.', reglas: { socio: true, tipos_club: ['dormido'] } },
+    { id: 'puntos', t: 'Se les vencen los puntos', d: 'Socios con puntos que se les vencen en los próximos 60 días.', reglas: { puntos_vencen_dias: 60 } },
+    { id: 'carrito_stock', t: 'Carritos con stock', d: 'Dejaron un carrito en los últimos 60 días y hoy hay stock de lo que eligieron.', reglas: { carrito_stock: true } }
   ];
   var SEG = { cuentas: null, vip: null, guardados: null, locales: [], falta66: false, error: '', pedido: 0 };
+  var TIPO_CLUB = { nuevo: 'Nuevo', habitual: 'Habitual', vip: 'VIP', ocasional: 'Ocasional', dormido: 'Dormido' };
+  var FUENTE_DIF = { tienda: 'la tienda online', club: 'el Club', carrito: 'un carrito', no_compra: 'un No Compra', whatsapp: 'WhatsApp' };
   var miles = function (n) { return Number(n || 0).toLocaleString('es-AR'); };
   function cargarSegmentos(despues) {
     var n = ++SEG.pedido, pin = pinGuardado();
@@ -8596,6 +8642,13 @@
     if (r.socio === true) { d.push(r.niveles && r.niveles.length ? 'socio ' + r.niveles.join(' o ') : 'socio del Club'); }
     if (r.socio === false) { d.push('no es socio del Club'); }
     if (r.cumple_mes) { d.push('cumple años este mes'); }
+    if (r.tipos_club && r.tipos_club.length) {
+      d.push('socio ' + r.tipos_club.map(function (t) { return (TIPO_CLUB[t] || t).toLowerCase(); }).join(' o '));
+    }
+    if (r.recuperar) { d.push('para recuperar según su ritmo'); }
+    if (r.puntos_vencen_dias) { d.push('se le vencen los puntos en los próximos ' + r.puntos_vencen_dias + ' días'); }
+    if (r.carrito_stock) { d.push('su carrito tiene stock hoy'); }
+    if (r.fuente) { d.push('vino de ' + (FUENTE_DIF[r.fuente] || r.fuente)); }
     if (r.carrito_dias !== undefined && r.carrito_dias !== null) { d.push('dejó un carrito' + (r.carrito_dias ? ' en los últimos ' + r.carrito_dias + ' días' : '')); }
     if (r.no_compra_dias !== undefined && r.no_compra_dias !== null) { d.push('vino al local y no compró' + (r.no_compra_dias ? ' en los últimos ' + r.no_compra_dias + ' días' : '')); }
     if (r.whatsapp) { d.push('nos escribió por WhatsApp'); }
@@ -8667,7 +8720,7 @@
 
   /* La ventanita para armar un segmento: las condiciones se suman, y mientras
      se arma dice cuántos son hoy. */
-  var SEGE = { id: null, niveles: [], espera: 0, pedido: 0, borrarHasta: 0 };
+  var SEGE = { id: null, niveles: [], tipos: [], espera: 0, pedido: 0, borrarHasta: 0 };
   function abrirSegmento(seg, preset) {
     var r = (seg && seg.reglas) || (preset && preset.reglas) || {};
     SEGE.id = seg ? seg.id : null;
@@ -8685,6 +8738,11 @@
     $('sgSocio').value = r.socio === true ? 'si' : r.socio === false ? 'no' : '';
     SEGE.niveles = (r.niveles || []).slice();
     $('sgCumple').checked = !!r.cumple_mes;
+    SEGE.tipos = (r.tipos_club || []).slice();
+    $('sgRecuperar').checked = !!r.recuperar;
+    $('sgPuntos').checked = r.puntos_vencen_dias !== undefined && r.puntos_vencen_dias !== null;
+    $('sgPuntosDias').value = r.puntos_vencen_dias || 60;
+    $('sgCarritoStock').checked = !!r.carrito_stock;
     $('sgCarrito').checked = r.carrito_dias !== undefined && r.carrito_dias !== null;
     $('sgCarritoDias').value = r.carrito_dias || '';
     $('sgNoCompra').checked = r.no_compra_dias !== undefined && r.no_compra_dias !== null;
@@ -8723,6 +8781,10 @@
     if ($('sgNoCompra').checked) { r.no_compra_dias = num('sgNoCompraDias') > 0 ? num('sgNoCompraDias') : 0; }
     if ($('sgWsp').checked) { r.whatsapp = true; }
     if ($('sgAcepta').checked) { r.acepta = true; }
+    if (SEGE.tipos.length) { r.tipos_club = SEGE.tipos.slice(); }
+    if ($('sgRecuperar').checked) { r.recuperar = true; }
+    if ($('sgPuntos').checked) { r.puntos_vencen_dias = num('sgPuntosDias') > 0 ? num('sgPuntosDias') : 60; }
+    if ($('sgCarritoStock').checked) { r.carrito_stock = true; }
     if ($('sgEtq').value.trim()) { r.etiqueta = $('sgEtq').value.trim(); }
     if ($('sgSinEtq').value.trim()) { r.sin_etiqueta = $('sgSinEtq').value.trim(); }
     return r;
@@ -8739,6 +8801,11 @@
       b.classList.toggle('sel', SEGE.niveles.indexOf(b.dataset.nivel) > -1);
     });
     $('sgCarritoDiasCaja').hidden = !$('sgCarrito').checked;
+    $('sgPuntosDiasCaja').hidden = !$('sgPuntos').checked;
+    [].forEach.call($('sgTipos').querySelectorAll('[data-tipo]'), function (b) {
+      b.classList.toggle('sel', SEGE.tipos.indexOf(b.dataset.tipo) > -1);
+      b.setAttribute('aria-pressed', String(SEGE.tipos.indexOf(b.dataset.tipo) > -1));
+    });
     $('sgNoCompraDiasCaja').hidden = !$('sgNoCompra').checked;
   }
   /* Cuántos son: a la base, con un respiro para no preguntar en cada tecla. */
@@ -8799,50 +8866,396 @@
       .then(function () { $('segBorrar').disabled = false; });
   }
 
-  /* ═══ Difusiones ═════════════════════════════════════════════════════════
-     Mandarle una plantilla aprobada a un segmento entero. Se arma acá con
-     números de verdad (a cuántos les llega y cuánto sale); mandar queda para
-     cuando la cuenta tenga la tarjeta y la empresa esté verificada (sin
-     verificar, Meta deja escribirle primero a 250 personas por día). */
-  var DIF = { segmento: '', plantilla: '' };
+  /* ═══ Difusiones (SQL 92) ════════════════════════════════════════════════
+     Mandarle una plantilla aprobada a un segmento entero. Se arma en cuatro
+     pasos (a quién; desde qué número y con qué plantilla; cómo se completa
+     cada dato; antes de mandar, con una prueba a tu número) y sale de a
+     tandas: la base pone el ritmo (40 por minuto y el tope por día) y el
+     reloj la manda. Abajo, cómo va cada una, con Pausar, Seguir y Cancelar.
+     Si Meta rechaza por la cuenta (falta la tarjeta), se pausa sola. */
+  var DIF = { segmento: '', cuenta: '', plantilla: '', valores: {}, tope: 250, previa: null, previaDe: '', pedido: 0,
+              confirmar: false, mandando: false, probando: false, lista: null, listaError: '', listaPedida: false, reloj: 0, cancelarHasta: {} };
+  var K_DIF_TEL = 'nc_dif_tel';
   /* USD por mensaje en Argentina (calculadora de Kommo, 10/10/2026). */
   var PRECIO_PL = { MARKETING: 0.0618, UTILITY: 0.026 };
   var usd = function (x) { return Number(x || 0).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); };
+  /* Por qué no llegó, en castellano (los códigos de Meta). */
+  var ERROR_META = { '131026': 'el número no tiene WhatsApp', '131049': 'Meta no la entregó para cuidar la experiencia (pasa con las de marketing)',
+                     '131050': 'pidió no recibir promociones', '131042': 'falta la tarjeta en Meta', '131048': 'demasiados envíos juntos',
+                     '131056': 'demasiados mensajes a la misma persona', '132001': 'la plantilla no existe o no está aprobada',
+                     '132000': 'faltan datos de la plantilla', '132012': 'un dato que la plantilla no acepta', '131047': 'pasaron más de 24 horas' };
+  var ESTADO_DIF = { mandando: ['Saliendo', 'pill-info'], pausada: ['Pausada', 'pill-warn'], terminada: ['Terminada', 'pill-ok'], cancelada: ['Cancelada', 'pill-neutra'] };
+  /* Las condiciones de un segmento, para la base. */
+  function reglasDe(sg) { return !sg ? null : sg.guardado ? (sg.guardado.reglas || {}) : sg.buscar ? { etiqueta: sg.buscar } : { fuente: sg.fuente }; }
+  function cuentasConectadas() { return (PLM.datos || []).filter(cuentaConectada); }
+  function cuentaDif() {
+    var l = cuentasConectadas();
+    return l.filter(function (c) { return c.id === DIF.cuenta; })[0] || l[0] || null;
+  }
+  function numeroDif() { var c = cuentaDif(); return c ? (c.numeros || []).filter(function (n) { return n.conectado; })[0] || null : null; }
+  /* Lo que una difusión todavía no completa sola: una foto o un video arriba,
+     un botón con un link que cambia o un código, o una de autenticación. */
+  function plantillaRara(t) {
+    if (!t || String(t.category || '').toUpperCase() === 'AUTHENTICATION') { return true; }
+    return (t.components || []).some(function (c) {
+      var ty = String(c.type || '').toUpperCase(), f = String(c.format || '').toUpperCase();
+      if (ty === 'HEADER') { return !!f && f !== 'TEXT'; }
+      if (ty === 'BUTTONS') {
+        return (c.buttons || []).some(function (b) {
+          var bt = String(b.type || '').toUpperCase();
+          return (bt === 'URL' && /\{\{/.test(b.url || '')) || ['COPY_CODE', 'OTP', 'CATALOG', 'MPM', 'FLOW'].indexOf(bt) > -1;
+        });
+      }
+      return ty === 'CAROUSEL' || ty === 'LIMITED_TIME_OFFER';
+    });
+  }
+  function plantillaDif() {
+    var c = cuentaDif();
+    return c ? (c.plantillas || []).filter(function (t) { return t.status === 'APPROVED' && t.name === DIF.plantilla; })[0] || null : null;
+  }
+  /* Los datos de la plantilla: los del título y los del cuerpo, en orden. */
+  function varsDif(t) {
+    var p = partesPl(t), conNombre = String(t.parameter_format || '').toUpperCase() === 'NAMED';
+    var ord = function (l) { if (!conNombre) { l.sort(function (a, b) { return +a - +b; }); } return l; };
+    return { conNombre: conNombre, titulo: ord(varsDe(p.titulo)), cuerpo: ord(varsDe(p.cuerpo)), p: p };
+  }
+  /* Cada dato: "el nombre de cada uno" (con lo que va si no tiene) o un texto igual para todos. */
+  function valorDif(k, esTitulo) {
+    var key = (esTitulo ? 't:' : 'c:') + k;
+    if (!DIF.valores[key]) {
+      DIF.valores[key] = { fuente: !esTitulo && (k === 'nombre' || k === '1') ? 'nombre' : 'texto', texto: '', defecto: '' };
+    }
+    return DIF.valores[key];
+  }
+  function datosListos(v) {
+    var falta = function (k, t) { var x = valorDif(k, t); return x.fuente === 'nombre' ? !x.defecto.trim() : !x.texto.trim(); };
+    return !v.titulo.some(function (k) { return falta(k, true); }) && !v.cuerpo.some(function (k) { return falta(k, false); });
+  }
+  /* Cómo se guarda cada dato (en las viejas, {{1}} del título es "t1"). */
+  function nombreDato(v, k, esTitulo) { return esTitulo && !v.conNombre ? 't' + k : k; }
+  function specDif(v) {
+    var spec = function (l, esTitulo) {
+      return l.map(function (k) {
+        var x = valorDif(k, esTitulo), nombre = nombreDato(v, k, esTitulo);
+        return x.fuente === 'nombre' ? { nombre: nombre, fuente: 'nombre', defecto: x.defecto.trim() } : { nombre: nombre, fuente: 'texto', texto: x.texto.trim() };
+      });
+    };
+    return { titulo: spec(v.titulo, true), cuerpo: spec(v.cuerpo, false) };
+  }
+  /* El texto: con un nombre de ejemplo, o con las marcas (para guardar). */
+  function textoDif(v, ejemplo) {
+    var llenar = function (txt, esTitulo) {
+      return String(txt || '').replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/g, function (m, k) {
+        if (!ejemplo) { return '{{' + nombreDato(v, k, esTitulo) + '}}'; }
+        var x = valorDif(k, esTitulo);
+        return x.fuente === 'nombre' ? ejemplo : (x.texto.trim() || m);
+      });
+    };
+    return [llenar(v.p.titulo, true), llenar(v.p.cuerpo, false)].filter(Boolean).join('\n\n');
+  }
+  function pinMalDif(r) {
+    if (!r || r.error !== 'pin') { return false; }
+    if (r.mal) { caducada(); } else { avisar('err', r.porque || 'Esperá un momento y probá de nuevo.'); }
+    return true;
+  }
+  /* A cuántos les llega: se pregunta cuando cambia el segmento o el tipo de plantilla. */
+  function pedirPrevia() {
+    var sg = segmento(DIF.segmento), t = plantillaDif(), reglas = reglasDe(sg), cat = t ? t.category : 'MARKETING';
+    if (!reglas) { DIF.previa = null; DIF.previaDe = ''; return; }
+    var clave = JSON.stringify([reglas, cat]);
+    if (DIF.previaDe === clave) { return; }
+    DIF.previaDe = clave; DIF.previa = 'cargando';
+    var n = ++DIF.pedido;
+    base.crmDifusionPrevia(pinGuardado(), reglas, cat)
+      .then(function (r) {
+        if (n !== DIF.pedido) return;
+        if (pinMalDif(r)) { DIF.previa = null; DIF.previaDe = ''; return; }
+        DIF.previa = r;
+      })
+      .catch(function (err) {
+        if (n !== DIF.pedido) return;
+        if (err && err.sinSesion) { caducada(); return; }
+        DIF.previa = { error: /crm_difusion_previa|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red' };
+      })
+      .then(function () { if (n === DIF.pedido && vista === 'difusiones') { pintarDifusiones(); } });
+  }
+  function llegaDif() { return DIF.previa && typeof DIF.previa === 'object' && !DIF.previa.error ? Number(DIF.previa.llegan) || 0 : null; }
+  function cuantosDifHtml(t) {
+    var pv = DIF.previa;
+    if (pv === 'cargando') { return 'Contando…'; }
+    if (!pv) { return ''; }
+    if (pv.error === 'falta') { return 'Para mandar difusiones hay que correr el SQL 92 en Supabase.'; }
+    if (pv.error) { return 'No se pudo contar. Revisá la conexión.'; }
+    var n = Number(pv.llegan) || 0, sinTel = Number(pv.total) - Number(pv.con_telefono);
+    return 'Le llega a <b>' + miles(n) + '</b> ' + personas(n) +
+      (sinTel > 0 ? ' <span>· ' + miles(sinTel) + ' no tienen teléfono</span>' : '') +
+      ((!t || t.category === 'MARKETING') && Number(pv.no_aceptan) > 0 ? ' <span>· ' + miles(pv.no_aceptan) + ' dijeron que no a las promociones</span>' : '');
+  }
   function pintarDifusiones() {
     if (!SEG.cuentas && !SEG.error) { cargarSegmentos(function () { if (vista === 'difusiones') { pintarDifusiones(); } }); }
     if (!PLM.datos && !PLM.error && !PLM.cargando) { cargarPlantillasMeta(function () { if (vista === 'difusiones') { pintarDifusiones(); } }); }
+    if (!DIF.lista && !DIF.listaError && !DIF.listaPedida) { cargarDifusiones(); }
+    pedirPrevia();
     var opcion = function (id, t, c) {
       return '<option value="' + esc(id) + '"' + (id === DIF.segmento ? ' selected' : '') + '>' + esc(t) + (c === null ? '' : ' (' + miles(c) + ')') + '</option>';
     };
-    var aprobadas = plantillasAprobadas();
-    var s = segmento(DIF.segmento), t = aprobadas.filter(function (x) { return x.name === DIF.plantilla; })[0];
-    var n = cuantosSegmento(s);
-    var costo = t && n !== null ? n * (PRECIO_PL[t.category] || PRECIO_PL.MARKETING) : null;
+    var sg = segmento(DIF.segmento), c = cuentaDif(), cuentas = cuentasConectadas();
+    var aprobadas = c ? (c.plantillas || []).filter(function (x) { return x.status === 'APPROVED'; }) : [];
+    var t = plantillaDif(), v = t && !plantillaRara(t) ? varsDif(t) : null;
+    var dato = function (k, esTitulo) {
+      var x = valorDif(k, esTitulo), d = datoPl(k);
+      var etq = (esTitulo ? 'Título · ' : '') + (d ? d.t : (/^\d+$/.test(k) ? 'Dato ' + k : k));
+      var at = ' data-k="' + esc(k) + '" data-t="' + (esTitulo ? 1 : 0) + '"';
+      return '<div class="dif-dato"><b>' + esc(etq) + '</b>' +
+        '<select data-dif-modo' + at + ' aria-label="Cómo se completa: ' + esc(etq) + '">' +
+          '<option value="nombre"' + (x.fuente === 'nombre' ? ' selected' : '') + '>El nombre de cada uno</option>' +
+          '<option value="texto"' + (x.fuente === 'texto' ? ' selected' : '') + '>Un texto igual para todos</option></select>' +
+        (x.fuente === 'nombre'
+          ? '<input type="text" data-dif-def' + at + ' maxlength="60" value="' + esc(x.defecto) + '" placeholder="Si no tiene nombre (ej.: amigo)" aria-label="Si no tiene nombre: ' + esc(etq) + '">'
+          : '<input type="text" data-dif-txt' + at + ' maxlength="200" value="' + esc(x.texto) + '" placeholder="' + (d ? 'Ej.: ' + esc(d.ej) : 'El texto') + '" aria-label="' + esc(etq) + '">') +
+        '</div>';
+    };
+    var tel = leer(K_DIF_TEL) || '';
     $('vistaDifusiones').innerHTML = '<div class="dif">' +
       '<div class="pronto-cab"><small>Automatizaciones</small><h2>Difusiones</h2>' +
-        '<p>Mandarle una plantilla aprobada a un segmento entero, de una vez. Meta cobra cada mensaje: USD 0,0618 los de marketing y USD 0,026 los de utilidad.</p></div>' +
+        '<p>Mandarle una plantilla aprobada a un segmento entero. Sale de a tandas y abajo se ve cómo va. Meta cobra cada mensaje: USD 0,0618 los de marketing y USD 0,026 los de utilidad.</p></div>' +
       '<div class="ficha-bloque dif-paso"><h3><i>1</i>A quién</h3>' +
         '<select id="difSeg" aria-label="Segmento"><option value="">Elegí un segmento…</option>' +
           (SEG.guardados && SEG.guardados.length ? '<optgroup label="Tus segmentos">' + SEG.guardados.map(function (x) {
             return opcion('g:' + x.id, x.nombre, Number(x.total) || 0);
           }).join('') + '</optgroup>' : '') +
           '<optgroup label="De dónde vino cada uno">' + SEGMENTOS.map(function (x) { return opcion(x.id, x.t, cuantosSegmento(x)); }).join('') +
-          '</optgroup></select></div>' +
-      '<div class="ficha-bloque dif-paso"><h3><i>2</i>Con qué plantilla</h3>' + (aprobadas.length
-        ? '<select id="difPl" aria-label="Plantilla"><option value="">Elegí una plantilla aprobada…</option>' + aprobadas.map(function (x) {
-            return '<option value="' + esc(x.name) + '"' + (x.name === DIF.plantilla ? ' selected' : '') + '>' + esc(nombrePl(x.name)) + ' · ' + (CAT_PL[x.category] || x.category) + '</option>';
-          }).join('') + '</select>'
-        : '<p class="num-vacio">' + (PLM.cargando || (!PLM.datos && !PLM.error) ? 'Buscando las plantillas…'
-            : 'Todavía no hay plantillas aprobadas. Creá una en Automatizaciones → Plantillas: Meta suele aprobarlas en minutos.') + '</p>') + '</div>' +
-      '<div class="ficha-bloque dif-paso"><h3><i>3</i>Antes de mandar</h3>' +
-        '<p class="dif-resumen">' + (s && t
-          ? 'Le llegaría a <b>' + miles(n) + '</b> ' + (n === 1 ? 'persona' : 'personas') + ', menos las que tienen "No escribir" o no aceptaron promociones. Costo aproximado: <b>USD ' + usd(costo) + '</b>.'
-          : 'Elegí el segmento y la plantilla para ver a cuántos les llega y cuánto sale.') + '</p>' +
-        '<div class="dif-falta">Mandar difusiones va a estar pronto. Antes hay que <b>cargar una tarjeta</b> en la cuenta de WhatsApp de VDH Indumentaria (en Meta) y <b>verificar la empresa</b> (Black Fish): sin verificar, Meta deja escribirle primero a 250 personas por día.</div>' +
-        '<div><button type="button" class="btn btn-wsp" disabled>Mandar difusión</button></div></div>' +
+          '</optgroup></select>' +
+        (sg ? '<p class="dif-cuantos" id="difCuantos">' + cuantosDifHtml(t) + '</p>' : '') + '</div>' +
+      '<div class="ficha-bloque dif-paso"><h3><i>2</i>Desde qué número y con qué plantilla</h3>' +
+        (PLM.cargando || (!PLM.datos && !PLM.error) ? '<p class="num-vacio">Buscando las plantillas…</p>'
+          : !cuentas.length ? '<p class="num-vacio">' + esc(PLM.error || 'No hay ningún número de WhatsApp conectado al CRM.') + '</p>'
+          : (cuentas.length > 1
+              ? '<select id="difCuenta" aria-label="Desde qué número">' + cuentas.map(function (x) {
+                  return '<option value="' + esc(x.id) + '"' + (x.id === c.id ? ' selected' : '') + '>Desde ' + esc(etiquetaCuenta(x)) + '</option>';
+                }).join('') + '</select>'
+              : '<p class="dif-desde">Sale desde <b>' + esc(etiquetaCuenta(c)) + '</b>.</p>') +
+            (aprobadas.length
+              ? '<select id="difPl" aria-label="Plantilla"><option value="">Elegí una plantilla aprobada…</option>' + aprobadas.map(function (x) {
+                  var rara = plantillaRara(x);
+                  return '<option value="' + esc(x.name) + '"' + (x.name === DIF.plantilla ? ' selected' : '') + (rara ? ' disabled' : '') + '>' +
+                    esc(nombrePl(x.name)) + ' · ' + esc(CAT_PL[x.category] || x.category) + (rara ? ' (tiene una foto, un código o un link que cambia: todavía no)' : '') + '</option>';
+                }).join('') + '</select>'
+              : '<p class="num-vacio">Este número todavía no tiene plantillas aprobadas. Creá una en Automatizaciones → Plantillas: Meta suele aprobarlas en minutos.</p>')) +
+        '</div>' +
+      (v ? '<div class="ficha-bloque dif-paso"><h3><i>3</i>Los datos</h3>' +
+          (v.titulo.length || v.cuerpo.length
+            ? '<div class="dif-datos">' + v.titulo.map(function (k) { return dato(k, true); }).join('') + v.cuerpo.map(function (k) { return dato(k, false); }).join('') + '</div>'
+            : '<p class="num-vacio">Esta plantilla no lleva datos: les llega igual a todos.</p>') +
+          '<div class="plm-tel"><div class="plm-burbuja" id="difPrevia"></div><div class="plm-btns">' +
+            v.p.botones.map(function (b) { return '<span>' + esc(b.texto) + '</span>'; }).join('') + '</div></div></div>' : '') +
+      (v ? '<div class="ficha-bloque dif-paso"><h3><i>4</i>Antes de mandar</h3>' +
+          '<p class="dif-resumen" id="difResumen"></p>' +
+          '<div class="sg-fila dif-tope"><label for="difTope">Por día</label><span class="sg-dias">hasta <input id="difTope" type="number" min="1" max="1000" value="' + DIF.tope + '" aria-label="Mensajes por día"> mensajes <span id="difDias"></span></span></div>' +
+          '<p class="sg-nota">Mientras la empresa no esté verificada en Meta, WhatsApp deja escribirle primero a 250 personas por día.</p>' +
+          '<div class="dif-prueba"><label for="difTel">Mandame una prueba a</label>' +
+            '<input id="difTel" type="tel" inputmode="numeric" autocomplete="off" placeholder="11 2345 6789" value="' + esc(tel) + '">' +
+            '<button type="button" class="btn btn-sec btn-chico" id="difProbar"' + (DIF.probando ? ' disabled' : '') + '>' + (DIF.probando ? 'Mandando…' : 'Mandar prueba') + '</button></div>' +
+          (DIF.confirmar
+            ? '<div class="dif-confirma" role="alertdialog" aria-labelledby="difConfTit"><b id="difConfTit">¿Se la mandamos a ' + miles(llegaDif()) + ' ' + personas(llegaDif()) + '?</b>' +
+                '<p>Cuesta unos USD ' + usd((llegaDif() || 0) * (PRECIO_PL[t.category] || PRECIO_PL.MARKETING)) + '. Lo que ya salió no se puede borrar; lo que falta se puede pausar o cancelar.</p>' +
+                '<div><button type="button" class="btn btn-sec btn-chico" id="difNo">No</button>' +
+                '<button type="button" class="btn btn-wsp btn-chico" id="difSi"' + (DIF.mandando ? ' disabled' : '') + '>' + (DIF.mandando ? 'Mandando…' : 'Sí, mandar') + '</button></div></div>'
+            : '<div><button type="button" class="btn btn-wsp" id="difMandar" disabled>Mandar difusión</button></div>') +
+          '<p class="sg-nota">Si a la cuenta le falta la tarjeta en Meta, los mensajes no se entregan: la difusión se pausa sola y lo dice abajo.</p></div>' : '') +
+      '<h3 class="num-tit">Las que salieron</h3><div class="dif-hist" id="difHist">' + listaDifHtml() + '</div>' +
     '</div>';
-    $('difSeg').onchange = function () { DIF.segmento = this.value; pintarDifusiones(); };
-    if ($('difPl')) { $('difPl').onchange = function () { DIF.plantilla = this.value; pintarDifusiones(); }; }
+    $('difSeg').onchange = function () { DIF.segmento = this.value; DIF.confirmar = false; pintarDifusiones(); };
+    if ($('difCuenta')) { $('difCuenta').onchange = function () { DIF.cuenta = this.value; DIF.plantilla = ''; DIF.valores = {}; DIF.confirmar = false; pintarDifusiones(); }; }
+    if ($('difPl')) { $('difPl').onchange = function () { DIF.plantilla = this.value; DIF.valores = {}; DIF.confirmar = false; pintarDifusiones(); }; }
+    [].forEach.call($('vistaDifusiones').querySelectorAll('[data-dif-modo]'), function (el) {
+      el.onchange = function () { valorDif(el.dataset.k, el.dataset.t === '1').fuente = el.value; DIF.confirmar = false; pintarDifusiones(); };
+    });
+    [].forEach.call($('vistaDifusiones').querySelectorAll('[data-dif-def], [data-dif-txt]'), function (el) {
+      el.oninput = function () {
+        var x = valorDif(el.dataset.k, el.dataset.t === '1');
+        if (el.hasAttribute('data-dif-def')) { x.defecto = el.value; } else { x.texto = el.value; }
+        refrescarDif();
+      };
+    });
+    if ($('difTope')) {
+      $('difTope').oninput = function () { var n = parseInt(this.value, 10); DIF.tope = n > 0 ? Math.min(n, 1000) : 250; refrescarDif(); };
+    }
+    if ($('difProbar')) { $('difProbar').onclick = probarDif; }
+    if ($('difTel')) { $('difTel').onkeydown = function (ev) { if (ev.key === 'Enter') { probarDif(); } }; }
+    if ($('difMandar')) { $('difMandar').onclick = function () { DIF.confirmar = true; pintarDifusiones(); if ($('difNo')) { $('difNo').focus(); } }; }
+    if ($('difNo')) { $('difNo').onclick = function () { DIF.confirmar = false; pintarDifusiones(); }; }
+    if ($('difSi')) { $('difSi').onclick = confirmarDif; }
+    cablearListaDif();
+    refrescarDif();
+  }
+  /* Lo que cambia mientras se escribe, sin volver a pintar los campos. */
+  function refrescarDif() {
+    var sg = segmento(DIF.segmento), t = plantillaDif(), v = t && !plantillaRara(t) ? varsDif(t) : null;
+    if (!v) { return; }
+    var ej = 'Juan';
+    var llenar = function (txt, esTitulo) {
+      return esc(String(txt || '')).replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/g, function (m, k) {
+        var x = valorDif(k, esTitulo), d = datoPl(k);
+        var val = x.fuente === 'nombre' ? ej : x.texto.trim();
+        return '<span class="pl-dato">' + esc(val || (d ? d.t : (/^\d+$/.test(k) ? 'dato ' + k : k))) + '</span>';
+      });
+    };
+    if ($('difPrevia')) {
+      $('difPrevia').innerHTML = (v.p.titulo ? '<span class="t">' + llenar(v.p.titulo, true) + '</span>' : '') + llenar(v.p.cuerpo, false) +
+        (v.p.pie ? '<span class="p">' + esc(v.p.pie) + '</span>' : '');
+    }
+    var n = llegaDif();
+    if ($('difResumen')) {
+      $('difResumen').innerHTML = !sg ? 'Elegí a quién para ver a cuántos les llega.'
+        : n === null ? 'Contando a cuántos les llega…'
+        : 'Le llega a <b>' + miles(n) + '</b> ' + personas(n) + '. Costo aproximado: <b>USD ' + usd(n * (PRECIO_PL[t.category] || PRECIO_PL.MARKETING)) + '</b>.';
+    }
+    if ($('difDias')) { $('difDias').textContent = n > DIF.tope ? '· tarda unos ' + Math.ceil(n / DIF.tope) + ' días' : ''; }
+    if ($('difMandar')) { $('difMandar').disabled = !(sg && n && datosListos(v)) || DIF.mandando; }
+  }
+  function telDif(x) { var n = normalizarTel(x); return /^549\d{10}$/.test(n) ? n.slice(3) : ''; }
+  /* La prueba: a tu número, desde el número de la difusión, con tu nombre. */
+  function probarDif() {
+    var t = plantillaDif(), v = t && !plantillaRara(t) ? varsDif(t) : null, num = numeroDif();
+    if (!v || !num) { return; }
+    if (!datosListos(v)) { avisar('err', 'Completá los datos de la plantilla antes de probar.'); return; }
+    var tel = telDif($('difTel').value);
+    if (!tel) { avisar('err', 'Poné tu celular: la característica y el número (por ejemplo, 11 2345 6789).'); $('difTel').focus(); return; }
+    guardar(K_DIF_TEL, tel);
+    var ej = primerNombre(quien) || 'Juan';
+    var lista = function (l, esTitulo) {
+      return l.map(function (k) {
+        var x = valorDif(k, esTitulo), val = x.fuente === 'nombre' ? ej : x.texto.trim();
+        return v.conNombre ? { nombre: k, texto: val } : { texto: val };
+      });
+    };
+    DIF.probando = true;
+    $('difProbar').disabled = true; $('difProbar').textContent = 'Mandando…';
+    base.waEnviarPlantilla(pinGuardado(), {
+      clave: tel, nombre: t.name, idioma: t.language, formato: v.conNombre ? 'named' : 'positional', numero_id: num.id,
+      parametros: { titulo: lista(v.titulo, true), cuerpo: lista(v.cuerpo, false) }, texto: textoDif(v, ej), quien: quien
+    })
+      .then(function () { avisar('ok', 'Listo: te mandamos la prueba. Mirá tu WhatsApp.'); })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.message) || 'No se pudo mandar la prueba.');
+      })
+      .then(function () {
+        DIF.probando = false;
+        if ($('difProbar')) { $('difProbar').disabled = false; $('difProbar').textContent = 'Mandar prueba'; }
+      });
+  }
+  /* "Sí, mandar": se guarda con la lista de esta hora y sale la primera tanda. */
+  function confirmarDif() {
+    var sg = segmento(DIF.segmento), t = plantillaDif(), v = t && !plantillaRara(t) ? varsDif(t) : null, c = cuentaDif(), num = numeroDif();
+    if (!sg || !v || !num || !datosListos(v) || DIF.mandando) { return; }
+    DIF.mandando = true;
+    $('difSi').disabled = true; $('difSi').textContent = 'Mandando…';
+    base.crmDifusionCrear(pinGuardado(), {
+      nombre: sg.t, reglas: reglasDe(sg), plantilla: t.name, idioma: t.language, categoria: t.category,
+      formato: v.conNombre ? 'named' : 'positional', datos: specDif(v), texto: textoDif(v, null),
+      cuenta: c.id, numero_id: num.id, numero: num.display, tope_dia: DIF.tope, quien: quien
+    })
+      .then(function (r) {
+        if (pinMalDif(r)) { return; }
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo mandar.'); return; }
+        avisar('ok', 'Listo: la difusión empezó a salir (' + miles(r.total) + ' ' + personas(r.total) + ').');
+        DIF.plantilla = ''; DIF.valores = {};
+        base.waDifusionLote().catch(function () {}).then(function () { cargarDifusiones(); });
+        cargarDifusiones();
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', /crm_difusion_crear|PGRST202|Could not find/i.test(String(err && err.message))
+          ? 'Para mandar difusiones hay que correr el SQL 92 en Supabase.' : (err && err.message) || 'No se pudo mandar.');
+      })
+      .then(function () { DIF.mandando = false; DIF.confirmar = false; if (vista === 'difusiones') { pintarDifusiones(); } });
+  }
+  /* Cómo van: se pregunta al entrar y, mientras alguna sale, cada 20 segundos. */
+  function cargarDifusiones() {
+    DIF.listaPedida = true;
+    clearTimeout(DIF.reloj);
+    base.crmDifusionesListar(pinGuardado())
+      .then(function (r) {
+        if (pinMalDif(r)) { return; }
+        DIF.lista = (r && r.difusiones) || []; DIF.listaError = '';
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        DIF.listaError = /crm_difusiones_listar|PGRST202|Could not find/i.test(String(err && err.message)) ? 'falta' : 'red';
+      })
+      .then(function () {
+        DIF.listaPedida = false;
+        if (vista !== 'difusiones') { return; }
+        if ($('difHist')) { $('difHist').innerHTML = listaDifHtml(); cablearListaDif(); }
+        if ((DIF.lista || []).some(function (d) { return d.estado === 'mandando'; })) {
+          DIF.reloj = setTimeout(function () { if (vista === 'difusiones') { cargarDifusiones(); } }, 20000);
+        }
+      });
+  }
+  function motivoDif(d) {
+    var m = String(d.motivo || '');
+    if (m === 'pago') { return 'Meta no las entrega: falta cargar la tarjeta en la cuenta de WhatsApp (en Meta). Cuando esté, tocá Seguir.'; }
+    if (m.indexOf('cuenta:') === 0) { return 'Meta frenó la cuenta (código ' + m.slice(7) + '). Revisalo en Meta y tocá Seguir.'; }
+    if (m === 'numero') { return 'El número se desconectó del CRM. Cuando vuelva, tocá Seguir.'; }
+    return m;
+  }
+  function listaDifHtml() {
+    if (DIF.listaError === 'falta') { return '<p class="num-vacio">Para mandar difusiones hay que correr el SQL 92 en Supabase.</p>'; }
+    if (DIF.listaError && !DIF.lista) { return '<p class="num-vacio">No se pudo traer cómo van. Revisá la conexión.</p>'; }
+    if (!DIF.lista) { return '<div class="skel"></div>'; }
+    if (!DIF.lista.length) { return '<p class="num-vacio">Todavía no mandaste ninguna.</p>'; }
+    return DIF.lista.map(function (d) {
+      var e = ESTADO_DIF[d.estado] || [d.estado, 'pill-neutra'];
+      var total = Number(d.total) || 0, salieron = Number(d.enviados) || 0, noLlegaron = (Number(d.no_salieron) || 0) + (Number(d.fallaron) || 0);
+      var pct = total ? Math.min(100, Math.round(100 * (salieron + (Number(d.no_salieron) || 0)) / total)) : 0;
+      var hoyLleno = d.estado === 'mandando' && Number(d.pendientes) > 0 && Number(d.hoy) >= Number(d.tope_dia);
+      var errores = (d.errores || []).map(function (x) { return miles(x.n) + ': ' + (ERROR_META[x.codigo] || 'código ' + x.codigo); }).join(' · ');
+      var boton = function (acc, txt) {
+        return '<button type="button" class="btn btn-sec btn-chico' + (acc === 'cancelar' && DIF.cancelarHasta[d.id] > Date.now() ? ' seguro' : '') + '" data-dif-acc="' + acc + '" data-id="' + d.id + '">' +
+          (acc === 'cancelar' && DIF.cancelarHasta[d.id] > Date.now() ? '¿Seguro? Tocá de nuevo' : txt) + '</button>';
+      };
+      return '<div class="ficha-bloque dif-card">' +
+        '<div class="dif-card-cab"><b>' + esc(d.nombre) + '</b><span class="pill ' + e[1] + '">' + esc(e[0]) + '</span></div>' +
+        '<p class="dif-card-sub">' + esc(nombrePl(d.plantilla)) + ' · ' + esc(fechaAg(d.creada, true)) + (d.creada_por ? ' · ' + esc(d.creada_por) : '') + '</p>' +
+        '<div class="dif-barra" role="progressbar" aria-label="Cuántos salieron" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + pct + '"><i style="width:' + pct + '%"></i></div>' +
+        '<p class="dif-nums"><span><b>' + miles(salieron) + '</b> de ' + miles(total) + ' salieron</span><span><b>' + miles(d.entregados) + '</b> entregados</span>' +
+          '<span><b>' + miles(d.leidos) + '</b> leídos</span>' + (noLlegaron ? '<span><b>' + miles(noLlegaron) + '</b> no llegaron</span>' : '') + '</p>' +
+        (errores ? '<p class="dif-err">' + esc(errores) + '</p>' : '') +
+        (d.estado === 'pausada' && d.motivo ? '<p class="dif-motivo">' + esc(motivoDif(d)) + '</p>' : '') +
+        (hoyLleno ? '<p class="dif-motivo suave">Hoy ya salieron ' + miles(d.hoy) + ' (el tope del día): sigue mañana sola.</p>' : '') +
+        (d.estado === 'mandando' || d.estado === 'pausada'
+          ? '<div class="seg-acc">' + (d.estado === 'mandando' ? boton('pausar', 'Pausar') : boton('seguir', 'Seguir')) + boton('cancelar', 'Cancelar') + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+  function cablearListaDif() {
+    [].forEach.call(($('difHist') || document.createElement('div')).querySelectorAll('[data-dif-acc]'), function (b) {
+      b.onclick = function () { accionDif(+b.dataset.id, b.dataset.difAcc, b); };
+    });
+  }
+  function accionDif(id, acc, b) {
+    if (acc === 'cancelar' && !(DIF.cancelarHasta[id] > Date.now())) {
+      DIF.cancelarHasta[id] = Date.now() + 4000;
+      b.classList.add('seguro'); b.textContent = '¿Seguro? Tocá de nuevo';
+      return;
+    }
+    delete DIF.cancelarHasta[id];
+    b.disabled = true;
+    base.crmDifusionAccion(pinGuardado(), id, acc, quien)
+      .then(function (r) {
+        if (pinMalDif(r)) { return; }
+        if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo.'); return; }
+        avisar('ok', acc === 'pausar' ? 'Pausada: no sale nada más hasta que toques Seguir.'
+          : acc === 'seguir' ? 'Sigue saliendo.' : 'Cancelada: los que faltaban no la reciben.');
+        if (acc === 'seguir') { base.waDifusionLote().catch(function () {}); }
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.message) || 'No se pudo.');
+      })
+      .then(function () { cargarDifusiones(); });
   }
 
   /* ═══ Plantillas de WhatsApp (Meta) ══════════════════════════════════════
@@ -9527,11 +9940,19 @@
     $('plmeCancelar').onclick = function () { $('modalPlmEnviar').hidden = true; };
     $('plmeOk').onclick = mandarPlantillaElegida;
     /* Armar un segmento: cada cambio vuelve a contar. */
-    ['sgDonde', 'sgCuando', 'sgLocal', 'sgSocio', 'sgCumple', 'sgCarrito', 'sgNoCompra', 'sgWsp', 'sgAcepta'].forEach(function (id) {
+    ['sgDonde', 'sgCuando', 'sgLocal', 'sgSocio', 'sgCumple', 'sgCarrito', 'sgNoCompra', 'sgWsp', 'sgAcepta',
+     'sgRecuperar', 'sgPuntos', 'sgCarritoStock'].forEach(function (id) {
       $(id).onchange = cambioSegmento;
     });
-    ['sgDias', 'sgCompras', 'sgGasto', 'sgCarritoDias', 'sgNoCompraDias', 'sgEtq', 'sgSinEtq'].forEach(function (id) {
+    ['sgDias', 'sgCompras', 'sgGasto', 'sgCarritoDias', 'sgNoCompraDias', 'sgEtq', 'sgSinEtq', 'sgPuntosDias'].forEach(function (id) {
       $(id).oninput = cambioSegmento;
+    });
+    [].forEach.call($('sgTipos').querySelectorAll('[data-tipo]'), function (b) {
+      b.onclick = function () {
+        var i = SEGE.tipos.indexOf(b.dataset.tipo);
+        if (i > -1) { SEGE.tipos.splice(i, 1); } else { SEGE.tipos.push(b.dataset.tipo); }
+        cambioSegmento();
+      };
     });
     [].forEach.call($('sgNiveles').querySelectorAll('[data-nivel]'), function (b) {
       b.onclick = function () {

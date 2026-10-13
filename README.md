@@ -858,6 +858,42 @@ En el celular la barra de guardar se apoya **arriba** del rail acostado. El
 aire de seguridad del iPhone lo reserva el rail, que es el que toca el borde;
 si lo reservaran los dos quedaría un escalón vacío entre las dos barras.
 
+## Segmentos y difusiones
+
+CRM → **Segmentos**: grupos de contactos que se arman solos con
+condiciones que se suman (SQL 66): dónde compró y hace cuánto, el local, el
+Club, los carritos, los No Compra, WhatsApp y las etiquetas. El SQL 92 suma
+más condiciones:
+- el tipo de socio (nuevo, habitual, VIP, ocasional, dormido);
+- "para recuperar": según cada cuánto compra (`club_ritmo`);
+- los puntos que se le vencen en N días;
+- un carrito con stock hoy.
+
+Los que tienen "No escribir" quedan afuera siempre.
+
+CRM → Automatizaciones → **Difusiones** (SQL 92): una plantilla aprobada a
+un segmento entero.
+- **Cuatro pasos:**
+  1. a quién;
+  2. desde qué número y con qué plantilla;
+  3. cada dato: "el nombre de cada uno", con lo que va si no tiene, o un
+     texto igual para todos;
+  4. antes de mandar: el costo, el tope por día y una prueba a tu número.
+- **Mandar** pide confirmar. La lista se arma en ese momento, una vez por
+  persona, con teléfono y, si es de marketing, sin los que dijeron que no.
+- **Cómo sale:** de a tandas. La base pone el ritmo (`crm_difusion_tomar`:
+  40 por minuto, y el tope por día contando todo lo que salió de ese número
+  en 24 h). El reloj (`crm-difusiones`, cada minuto) le pide la tanda a la
+  función `whatsapp` (`difusion_lote`).
+- **Si Meta rechaza por la cuenta** (falta la tarjeta, cuenta bloqueada,
+  demasiados envíos), la difusión se pausa sola y dice por qué.
+- **Lo que sale** queda "desde difusión": se ve en la charla de cada uno,
+  pero no llena la bandeja de Mensajes (la charla aparece si contesta), no
+  hace "nos escribió por WhatsApp" en Contactos y no mueve las tarjetas de
+  la tienda.
+- Abajo, cómo va cada una (salieron, entregados, leídos, no llegaron y por
+  qué), con Pausar, Seguir y Cancelar.
+
 ## Los agentes de IA
 
 Son dos, y los dos se configuran en el CRM → **Agentes de IA** (con el PIN

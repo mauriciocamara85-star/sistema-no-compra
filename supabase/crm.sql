@@ -9867,3 +9867,755 @@ revoke execute on function asistente_votar(text, text, bigint, integer, text) fr
 grant execute on function asistente_votar(text, text, bigint, integer, text) to anon, authenticated;
 
 select 'listo: el agente de clientes, sólo en borrador; el Asistente, sólo en las PCs habilitadas' as "SQL 89";
+
+
+-- ─────────────────────────── PARTE 92 (12/10/2026) ───────────────────────────
+-- ══════════════════════════════════════════════════════════════════════════
+-- VDH · CRM: MANDAR DIFUSIONES, Y CONDICIONES NUEVAS PARA LOS SEGMENTOS
+--
+-- Correr en el editor SQL de Supabase. Se puede correr dos veces.
+--
+--   1. Condiciones nuevas para armar segmentos (crm_cumple):
+--        fuente              de dónde vino (tienda, club, carrito, no_compra, whatsapp)
+--        tipos_club          ["nuevo", "dormido", "vip", "habitual", "ocasional"]
+--        recuperar           socios que hay que recuperar según su ritmo de compra
+--        puntos_vencen_dias  socios con puntos que se les vencen en los próximos N días
+--        carrito_stock       el carrito que dejó (últimos 60 días) tiene stock hoy
+--   2. Difusiones: mandarle una plantilla aprobada a un segmento entero.
+--        · crm_difusion_previa: a cuántos les llega (con teléfono, sin "No
+--          escribir" y, si es de marketing, sin los que dijeron que no).
+--        · crm_difusion_crear: guarda la difusión y la lista de esa hora
+--          (una vez por persona).
+--        · Sale de a tandas: el reloj (cada minuto) le pide a la función
+--          whatsapp que mande la tanda que toca. Como mucho 40 por minuto y
+--          el tope por día de cada difusión (250 de entrada: lo que deja Meta
+--          sin la empresa verificada), contando todo lo que salió de ese
+--          número en las últimas 24 horas.
+--        · Si Meta rechaza por la cuenta (falta la tarjeta, cuenta bloqueada,
+--          demasiados envíos), la difusión se pausa sola y dice por qué.
+--        · Pausar, seguir y cancelar, desde el CRM.
+--   3. Lo que sale en una difusión queda "desde difusión": se ve en la charla
+--      de cada uno, pero no llena la bandeja de Mensajes (la charla aparece
+--      si la persona contesta), no lo hace "nos escribió por WhatsApp" en
+--      Contactos y no mueve las tarjetas de la tienda.
+--
+-- Para deshacerlo: cron.unschedule('crm-difusiones'), borrar las dos tablas
+-- y las funciones crm_difusion_*, y volver a correr las versiones anteriores
+-- de crm_personas y crm_cumple (66), crm_contactos_base, crm_mensajes y
+-- wa_anotar_envio (88). Los atributos nuevos de crm_persona pueden quedar.
+-- ══════════════════════════════════════════════════════════════════════════
+
+/* ═══ 1. Las condiciones nuevas ══════════════════════════════════════════ */
+do $tipo92$
+begin
+  if not exists (select 1 from pg_type t join pg_attribute a on a.attrelid = t.typrelid
+                  where t.typname = 'crm_persona' and a.attname = 'tipo_club' and not a.attisdropped) then
+    alter type crm_persona add attribute tipo_club text, add attribute recuperar boolean, add attribute puntos integer,
+                           add attribute puntos_vencen date, add attribute carrito_stock boolean;
+  end if;
+end
+$tipo92$;
+
+create or replace function crm_personas()
+returns setof crm_persona
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with b as (select * from crm_contactos_base()),
+  e as (
+    select b.clave, array_agg(distinct x order by x) as etiquetas
+      from b, unnest(b.etiquetas) x
+     where nullif(trim(x), '') is not null
+     group by b.clave
+  ),
+  cu as (
+    select distinct on (club_tel10(c.telefono)) club_tel10(c.telefono) as t10, c.cumple
+      from club_clientes c
+     where c.baja is null and club_tel10(c.telefono) is not null
+     order by club_tel10(c.telefono), c.creado
+  ),
+  /* SQL 92: lo del Club (el tipo de socio, si hay que recuperarlo según su
+     ritmo, los puntos y cuándo se le vencen) y si el carrito que dejó tiene
+     stock hoy. */
+  sc as (
+    select distinct on (club_tel10(v.telefono)) club_tel10(v.telefono) as t10, t.tipo,
+           coalesce(r.a_recuperar, false) as recuperar, greatest(coalesce(v.puntos, 0), 0)::integer as puntos,
+           case when coalesce(v.puntos, 0) > 0 and vm.meses > 0
+                then (coalesce(v.ultima_compra, v.creado) + make_interval(months => vm.meses))::date end as vence
+      from v_club_clientes v
+      cross join (select coalesce((select nullif(cr.valor, '')::integer from club_reglas cr where cr.clave = 'vence_meses'), 0) as meses) vm
+      left join club_tipos() t on t.cliente = v.id
+      left join club_ritmo() r on r.cliente = v.id
+     where v.baja is null and club_tel10(v.telefono) is not null
+     order by club_tel10(v.telefono), v.creado
+  ),
+  ks as (
+    select distinct club_tel10(k.telefono) as t10
+      from crm_carritos k
+      cross join lateral jsonb_array_elements(case when jsonb_typeof(k.productos) = 'array' then k.productos else '[]'::jsonb end) pr
+      join stock_tienda s on s.codigo = pr->>'sku' and coalesce(s.stock, 0) > 0
+     where not k.compro and k.creado > now() - interval '60 days' and club_tel10(k.telefono) is not null
+  ),
+  g as (
+    select b.clave,
+           (array_agg(b.nombre order by (b.fuente = 'whatsapp'), b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           max(b.tel) as tel,
+           (array_agg(b.mail order by b.cuando desc) filter (where b.mail is not null))[1] as mail,
+           array_agg(distinct b.fuente) as fuentes,
+           max(b.cuando) as ultima,
+           (array_agg(b.datos || jsonb_build_object('fuente', b.fuente, 'ref', b.ref) order by b.cuando desc))[1] as ultimo,
+           max(b.cuando) filter (where b.fuente = 'club' and b.datos->>'tipo' = 'compra') as ult_local,
+           (count(*) filter (where b.fuente = 'club' and b.datos->>'tipo' = 'compra'))::integer as n_local,
+           coalesce(sum(b.monto) filter (where b.fuente = 'club' and b.datos->>'tipo' = 'compra'), 0) as gasto_local,
+           max(b.cuando) filter (where b.fuente = 'tienda') as ult_tienda,
+           (count(*) filter (where b.fuente = 'tienda'))::integer as n_tienda,
+           coalesce(sum(b.monto) filter (where b.fuente = 'tienda'), 0) as gasto_tienda,
+           coalesce(bool_or(b.fuente = 'club' and b.datos->>'tipo' = 'alta'), false) as socio,
+           max(b.nivel) as nivel,
+           max(b.cuando) filter (where b.fuente = 'carrito') as ult_carrito,
+           max(b.cuando) filter (where b.fuente = 'no_compra') as ult_no_compra,
+           coalesce(bool_or(b.fuente = 'whatsapp'), false) as whatsapp,
+           coalesce(array_agg(distinct lower(trim(b.datos->>'local'))) filter (where nullif(trim(b.datos->>'local'), '') is not null),
+                    '{}'::text[]) as locales,
+           coalesce(array_agg(distinct lower(trim(b.datos->>'local')))
+                      filter (where b.fuente = 'club' and b.datos->>'tipo' = 'compra' and nullif(trim(b.datos->>'local'), '') is not null),
+                    '{}'::text[]) as locales_compra,
+           bool_or(b.acepta) as acepta
+      from b
+     group by b.clave
+  )
+  select g.clave, g.nombre, g.tel, g.mail, g.fuentes, g.ultima, g.ultimo, g.ult_local, g.n_local, g.gasto_local,
+         g.ult_tienda, g.n_tienda, g.gasto_tienda, g.socio, g.nivel, cu.cumple, g.ult_carrito, g.ult_no_compra, g.whatsapp,
+         g.locales, g.locales_compra, coalesce(e.etiquetas, '{}'::text[]),
+         coalesce((select array_agg(distinct lower(trim(x))) from unnest(e.etiquetas) x), '{}'::text[]),
+         g.acepta,
+         sc.tipo, sc.recuperar, sc.puntos, sc.vence, (ks.t10 is not null)
+    from g
+    left join e on e.clave = g.clave
+    left join cu on cu.t10 = g.clave
+    left join sc on sc.t10 = g.clave
+    left join ks on ks.t10 = g.clave
+$$;
+revoke execute on function crm_personas() from public, anon, authenticated;
+
+create or replace function crm_cumple(p crm_persona, r jsonb)
+returns boolean
+language sql
+stable
+set search_path = public
+as $$
+  select not coalesce('no escribir' = any((p).etq), false)
+     and (coalesce(r->>'donde', '') = '' or x.n > 0)
+     and (r->>'sin_comprar_dias' is null or (x.ult is not null and x.ult < now() - make_interval(days => (r->>'sin_comprar_dias')::integer)))
+     and (r->>'compro_dias' is null or (x.ult is not null and x.ult >= now() - make_interval(days => (r->>'compro_dias')::integer)))
+     and (r->>'compras_min' is null or x.n >= (r->>'compras_min')::integer)
+     and (r->>'gasto_min' is null or x.gasto >= (r->>'gasto_min')::numeric)
+     and (coalesce(r->>'local', '') = ''
+          or coalesce(lower(trim(r->>'local')) = any(case when r->>'donde' = 'local' then (p).locales_compra else (p).locales end), false))
+     and (r->>'socio' is null or coalesce((p).socio, false) = (r->>'socio')::boolean)
+     and (coalesce(jsonb_array_length(r->'niveles'), 0) = 0 or coalesce((r->'niveles') ? (p).nivel, false))
+     and (not coalesce((r->>'cumple_mes')::boolean, false)
+          or ((p).cumple is not null
+              and extract(month from (p).cumple) = extract(month from (now() at time zone 'America/Argentina/Buenos_Aires'))))
+     and (r->>'carrito_dias' is null
+          or ((p).ult_carrito is not null
+              and ((r->>'carrito_dias')::integer = 0
+                   or (p).ult_carrito >= now() - make_interval(days => (r->>'carrito_dias')::integer))))
+     and (r->>'no_compra_dias' is null
+          or ((p).ult_no_compra is not null
+              and ((r->>'no_compra_dias')::integer = 0
+                   or (p).ult_no_compra >= now() - make_interval(days => (r->>'no_compra_dias')::integer))))
+     and (not coalesce((r->>'whatsapp')::boolean, false) or coalesce((p).whatsapp, false))
+     and (coalesce(r->>'etiqueta', '') = '' or coalesce(lower(trim(r->>'etiqueta')) = any((p).etq), false))
+     and (coalesce(r->>'sin_etiqueta', '') = '' or not coalesce(lower(trim(r->>'sin_etiqueta')) = any((p).etq), false))
+     and (not coalesce((r->>'acepta')::boolean, false) or coalesce((p).acepta, false))
+     /* SQL 92 */
+     and (coalesce(r->>'fuente', '') = '' or coalesce((r->>'fuente') = any((p).fuentes), false))
+     and (coalesce(jsonb_array_length(r->'tipos_club'), 0) = 0 or coalesce((r->'tipos_club') ? (p).tipo_club, false))
+     and (not coalesce((r->>'recuperar')::boolean, false) or coalesce((p).recuperar, false))
+     and (r->>'puntos_vencen_dias' is null
+          or (coalesce((p).puntos, 0) > 0 and (p).puntos_vencen is not null
+              and (p).puntos_vencen <= (now() at time zone 'America/Argentina/Buenos_Aires')::date + (r->>'puntos_vencen_dias')::integer))
+     and (not coalesce((r->>'carrito_stock')::boolean, false) or coalesce((p).carrito_stock, false))
+    from (select
+            case r->>'donde'
+              when 'local' then (p).ult_local
+              when 'tienda' then (p).ult_tienda
+              else greatest((p).ult_local, (p).ult_tienda) end as ult,
+            case r->>'donde'
+              when 'local' then coalesce((p).n_local, 0)
+              when 'tienda' then coalesce((p).n_tienda, 0)
+              else coalesce((p).n_local, 0) + coalesce((p).n_tienda, 0) end as n,
+            case r->>'donde'
+              when 'local' then coalesce((p).gasto_local, 0)
+              when 'tienda' then coalesce((p).gasto_tienda, 0)
+              else coalesce((p).gasto_local, 0) + coalesce((p).gasto_tienda, 0) end as gasto) x
+$$;
+revoke execute on function crm_cumple(crm_persona, jsonb) from public, anon, authenticated;
+
+create or replace function crm_contactos_base()
+returns table (clave text, fuente text, ref bigint, cuando timestamptz, nombre text, tel text, mail text,
+               datos jsonb, monto numeric, abierta boolean, etiquetas text[], nivel text, acepta boolean)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with f as (
+    select 'no_compra'::text as fuente, r.id as ref, r.creado as cuando, nullif(trim(r.nombre), '') as nombre,
+           club_tel10(r.whatsapp) as tel, nullif(lower(trim(r.mail)), '') as mail,
+           jsonb_build_object('local', r.sucursal, 'producto', r.producto, 'talle', r.talle, 'motivo', r.motivo::text,
+                              'columna', crm_columna(r.estado, r.contactado), 'monto', r.monto) as datos,
+           case when r.compro then r.monto end as monto,
+           crm_columna(r.estado, r.contactado) not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado') as abierta,
+           coalesce(r.etiquetas, '{}'::text[]) as etiquetas, null::text as nivel, null::boolean as acepta
+      from registros r
+    union all
+    select 'carrito', k.id, k.creado, nullif(trim(k.nombre), ''), club_tel10(k.telefono), nullif(lower(trim(k.mail)), ''),
+           jsonb_build_object('total', k.total, 'producto', k.productos->0->>'nombre',
+                              'mas', greatest(jsonb_array_length(k.productos) - 1, 0), 'casi_pago', k.casi_pago,
+                              'columna', crm_columna(k.estado, k.contactado), 'monto', k.monto),
+           case when k.compro then k.monto end,
+           crm_columna(k.estado, k.contactado) not in ('Cerrado - compró', 'Cerrado - no compró', 'Descartado'),
+           coalesce(k.etiquetas, '{}'::text[]), null, null
+      from crm_carritos k
+    union all
+    select 'club', c.id, c.creado, nullif(trim(c.nombre), ''), club_tel10(c.telefono), nullif(lower(trim(c.mail)), ''),
+           jsonb_build_object('tipo', 'alta', 'local', c.local_alta, 'nivel', v.nivel, 'puntos', v.puntos),
+           null, false, '{}'::text[], v.nivel, (c.acepta_promos and c.revocado is null)
+      from club_clientes c join v_club_clientes v on v.id = c.id
+     where c.baja is null
+    union all
+    select 'club', m.id, m.creado, nullif(trim(c.nombre), ''), club_tel10(c.telefono), nullif(lower(trim(c.mail)), ''),
+           jsonb_build_object('tipo', 'compra', 'local', m.local, 'importe', m.importe, 'puntos', m.puntos),
+           m.importe, false, '{}'::text[], null, null
+      from club_movimientos m join club_clientes c on c.id = m.cliente
+     where m.tipo::text = 'compra' and m.anulado is null and c.baja is null
+    union all
+    select 'tienda', t.id, coalesce(t.pagado, t.creado), t.nombre, club_tel10(t.telefono), t.mail,
+           jsonb_build_object('numero', t.numero, 'total', t.total, 'producto', t.productos->0->>'nombre',
+                              'mas', greatest(jsonb_array_length(t.productos) - 1, 0)),
+           t.total, false, '{}'::text[], null, t.acepta
+      from tienda_pedidos t
+     where t.pago = 'paid' and coalesce(t.estado, '') <> 'cancelled'
+    union all
+    /* SQL 63: los que escribieron por WhatsApp, una fila por conversación.
+       El nombre (sólo si no hay otro): el de la agenda del celular de la
+       tienda (SQL 68) o, si no, el del perfil de WhatsApp. */
+    select 'whatsapp', max(w.id), max(w.cuando),
+           coalesce(wa_agenda_nombre(club_tel10(w.tel)),
+                    (array_agg(nullif(trim(w.perfil), '') order by w.cuando desc) filter (where nullif(trim(w.perfil), '') is not null))[1]),
+           club_tel10(w.tel), null,
+           jsonb_build_object('mensajes', count(*),
+                              'texto', (array_agg(w.texto order by w.cuando desc, w.id desc))[1],
+                              'tipo', (array_agg(w.tipo order by w.cuando desc, w.id desc))[1],
+                              'desde', (array_agg(w.desde order by w.cuando desc, w.id desc))[1],
+                              'sentido', (array_agg(w.sentido order by w.cuando desc, w.id desc))[1]),
+           null, false, '{}'::text[], null, null
+      from wa_mensajes w
+     where w.desde <> 'difusion'
+     group by club_tel10(w.tel)
+  ),
+  /* El teléfono de cada mail: así el que una vez dejó sólo el mail cae en
+     la misma persona que cuando dejó el teléfono. */
+  mt as (
+    select distinct on (mail) mail, tel from f
+     where mail is not null and tel is not null
+     order by mail, cuando desc
+  )
+  select coalesce(f.tel, mt.tel, 'm:' || f.mail) as clave, f.*
+    from f left join mt on mt.mail = f.mail
+   where coalesce(f.tel, mt.tel, f.mail) is not null
+$$;
+revoke execute on function crm_contactos_base() from public, anon, authenticated;
+
+create or replace function crm_mensajes(p_pin text, p_buscar text default null, p_limite integer default 200,
+                                        p_numero text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  q  text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
+  qd text := nullif(regexp_replace(coalesce(p_buscar, ''), '[^0-9]', '', 'g'), '');
+  v_num text := nullif(trim(coalesce(p_numero, '')), '');
+  salida jsonb;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  /* SQL 92: los mensajes de una difusión no cuentan para la bandeja: si la
+     persona no contesta, no aparece; si ya hablaban, no sube. */
+  with w as (select club_tel10(m.tel) as clave, m.* from wa_mensajes m where m.desde <> 'difusion'),
+  ult as (
+    select distinct on (w.clave) w.clave, w.id, w.tel, w.numero_id, w.sentido, w.desde, w.tipo, w.texto, w.estado, w.cuando, w.historial
+      from w order by w.clave, w.cuando desc, w.id desc
+  ),
+  conv as (
+    select w.clave, count(*) as n,
+           (array_agg(nullif(trim(w.perfil), '') order by w.cuando desc) filter (where nullif(trim(w.perfil), '') is not null))[1] as perfil,
+           max(w.cuando) filter (where w.sentido = 'sale') as ultima_sale,
+           max(w.cuando) filter (where w.sentido = 'entra') as ultima_entra
+      from w group by w.clave
+  ),
+  /* Por cuáles de nuestros números habló, el último primero. */
+  nums as (
+    select x.clave, array_agg(x.numero_id order by x.ult desc) as numeros
+      from (select w.clave, w.numero_id, max(w.cuando) as ult from w group by w.clave, w.numero_id) x
+     group by x.clave
+  ),
+  pend as (
+    select w.clave, count(*) as pendientes
+      from w join conv c on c.clave = w.clave
+     where w.sentido = 'entra' and not w.historial and w.tipo <> 'reaction'
+       and w.cuando > coalesce(c.ultima_sale, '-infinity'::timestamptz)
+     group by w.clave
+  ),
+  nm as (
+    select b.clave,
+           (array_agg(b.nombre order by b.cuando desc) filter (where b.nombre is not null))[1] as nombre,
+           array_agg(distinct b.fuente) as fuentes, max(b.nivel) as nivel
+      from crm_contactos_base() b
+     where b.fuente <> 'whatsapp' and b.clave in (select conv.clave from conv)
+     group by b.clave
+  ),
+  x as (
+    select c.clave, u.tel, coalesce(nm.nombre, wa_agenda_nombre(c.clave), c.perfil) as nombre, c.perfil,
+           coalesce(nm.fuentes, '{}'::text[]) as fuentes, nm.nivel, c.n,
+           coalesce(p.pendientes, 0) as pendientes, (coalesce(p.pendientes, 0) > 0) as sin_contestar,
+           u.cuando as ultima, c.ultima_entra, u.numero_id, ns.numeros,
+           jsonb_build_object('texto', u.texto, 'tipo', u.tipo, 'sentido', u.sentido, 'desde', u.desde, 'estado', u.estado) as ultimo
+      from conv c
+      join ult u on u.clave = c.clave
+      join nums ns on ns.clave = c.clave
+      left join pend p on p.clave = c.clave
+      left join nm on nm.clave = c.clave
+  ),
+  f as (
+    select * from x
+     where (v_num is null or v_num = any(x.numeros))
+       and (q is null
+            or lower(coalesce(x.nombre, '')) like '%' || q || '%'
+            or lower(coalesce(x.perfil, '')) like '%' || q || '%'
+            or (qd is not null and length(qd) >= 3 and x.tel like '%' || qd || '%')
+            or exists (select 1 from w where w.clave = x.clave and lower(coalesce(w.texto, '')) like '%' || q || '%'))
+  )
+  select jsonb_build_object(
+           'cuentas', jsonb_build_object('todas', (select count(*) from x),
+                                         'sin_contestar', (select count(*) from x where x.sin_contestar)),
+           'numeros', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'id', nu.numero_id, 'nombre', nu.nombre, 'telefono', nu.telefono, 'tablero', nu.tablero,
+                      'todas', (select count(*) from x where nu.numero_id = any(x.numeros)),
+                      'sin_contestar', (select count(*) from x where x.sin_contestar and x.numero_id = nu.numero_id))
+                    order by nu.orden)
+               from wa_numeros nu), '[]'::jsonb),
+           'ultimo_id', (select max(m.id) from wa_mensajes m),
+           'conversaciones', coalesce((
+             select jsonb_agg(jsonb_build_object(
+                      'clave', y.clave, 'tel', y.tel, 'nombre', y.nombre, 'perfil', y.perfil,
+                      'fuentes', to_jsonb(y.fuentes), 'nivel', y.nivel, 'n', y.n, 'pendientes', y.pendientes,
+                      'sin_contestar', y.sin_contestar, 'ultima', y.ultima, 'ultima_entra', y.ultima_entra,
+                      'numero', y.numero_id, 'numeros', to_jsonb(y.numeros), 'ultimo', y.ultimo)
+                    order by y.ultima desc)
+               from (select * from f order by f.ultima desc limit greatest(coalesce(p_limite, 200), 1)) y), '[]'::jsonb))
+    into salida;
+  return salida;
+end;
+$$;
+grant execute on function crm_mensajes(text, text, integer, text) to anon, authenticated;
+
+create or replace function wa_anotar_envio(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_id bigint;
+begin
+  insert into wa_mensajes (wamid, numero_id, numero, tel, sentido, desde, tipo, texto, media, quien, cuando)
+  values (p->>'wamid', p->>'numero_id', p->>'numero', p->>'tel', 'sale',
+          case when p->>'desde' in ('agente', 'difusion') then p->>'desde' else 'crm' end, coalesce(nullif(p->>'tipo', ''), 'text'),
+          p->>'texto', p->'media', nullif(trim(p->>'quien'), ''), now())
+  on conflict (wamid) do update
+    set desde = excluded.desde, tipo = excluded.tipo, texto = excluded.texto, media = excluded.media, quien = excluded.quien
+    where wa_mensajes.desde = 'otra_app'
+  returning id into v_id;
+  /* SQL 92: lo de una difusión no mueve las tarjetas de la tienda. */
+  if coalesce(p->>'desde', '') <> 'difusion' then
+    perform crm_consulta_mensaje(p->>'tel', p->>'numero_id', 'sale', p->>'texto', now(), nullif(trim(p->>'quien'), ''));
+  end if;
+  return jsonb_build_object('id', v_id);
+end;
+$function$;
+revoke execute on function wa_anotar_envio(jsonb) from public, anon, authenticated;
+grant  execute on function wa_anotar_envio(jsonb) to service_role;
+
+/* ═══ 2. Las difusiones ══════════════════════════════════════════════════ */
+create table if not exists crm_difusiones (
+  id         bigserial primary key,
+  nombre     text not null,                       -- el del segmento
+  reglas     jsonb not null default '{}'::jsonb,
+  plantilla  text not null,
+  idioma     text not null default 'es_AR',
+  categoria  text not null default 'MARKETING',
+  formato    text not null default 'named',       -- 'named' ({{nombre}}) o 'positional' ({{1}})
+  datos      jsonb not null default '{}'::jsonb,  -- cómo se completa cada dato: {titulo: [...], cuerpo: [...]}
+  texto      text,                                -- cómo se ve, para el CRM
+  cuenta     text,
+  numero_id  text not null,
+  numero     text,
+  tope_dia   integer not null default 250 check (tope_dia between 1 and 1000),
+  estado     text not null default 'mandando' check (estado in ('mandando', 'pausada', 'terminada', 'cancelada')),
+  motivo     text,
+  total      integer not null default 0,
+  creada     timestamptz not null default now(),
+  creada_por text,
+  terminada  timestamptz
+);
+create table if not exists crm_difusion_envios (
+  id        bigserial primary key,
+  difusion  bigint not null references crm_difusiones(id) on delete cascade,
+  clave     text not null,
+  tel       text not null,
+  nombre    text,
+  estado    text not null default 'pendiente' check (estado in ('pendiente', 'enviando', 'enviado', 'fallido', 'cancelado')),
+  wamid     text,
+  error     text,
+  codigo    text,
+  intentos  integer not null default 0,
+  tomado    timestamptz,
+  enviado   timestamptz,
+  unique (difusion, clave)
+);
+create index if not exists crm_difusion_envios_cola on crm_difusion_envios (difusion, estado, id);
+create index if not exists crm_difusion_envios_wamid on crm_difusion_envios (wamid) where wamid is not null;
+create index if not exists crm_difusion_envios_salidos on crm_difusion_envios (enviado) where enviado is not null;
+alter table crm_difusiones enable row level security;
+alter table crm_difusion_envios enable row level security;
+revoke all on crm_difusiones, crm_difusion_envios from anon, authenticated;
+
+/* Los errores de Meta que son de la cuenta y no de la persona: con uno de
+   éstos no tiene sentido seguir (falta la tarjeta, cuenta bloqueada,
+   demasiados envíos). */
+create or replace function crm_difusion_error_cuenta(p_codigo text)
+returns boolean
+language sql
+immutable
+as $$ select coalesce(p_codigo, '') in ('131042', '131031', '131048', '368', '130429', '80007', '4', '190', '10') $$;
+
+/* A cuántos les llega: con teléfono, sin "No escribir" (crm_cumple) y, si
+   es de marketing, sin los que dijeron que no a las promociones. */
+create or replace function crm_difusion_previa(p_pin text, p_reglas jsonb, p_categoria text default 'MARKETING')
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+  s jsonb;
+  v_mkt boolean := upper(coalesce(p_categoria, 'MARKETING')) = 'MARKETING';
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  select jsonb_build_object(
+           'total', count(*),
+           'con_telefono', count(*) filter (where p.clave ~ '^[0-9]{10}$'),
+           'no_aceptan', count(*) filter (where p.clave ~ '^[0-9]{10}$' and p.acepta = false),
+           'llegan', count(*) filter (where p.clave ~ '^[0-9]{10}$' and (not v_mkt or p.acepta is distinct from false)))
+    into s
+    from crm_personas() p
+   where crm_cumple(p, coalesce(p_reglas, '{}'::jsonb));
+  return s;
+end;
+$$;
+revoke execute on function crm_difusion_previa(text, jsonb, text) from public;
+grant execute on function crm_difusion_previa(text, jsonb, text) to anon, authenticated;
+
+/* Guarda la difusión y la lista de esta hora (una vez por persona). Empieza
+   a salir con el reloj (o cuando el CRM le pide la primera tanda). */
+create or replace function crm_difusion_crear(p_pin text, p jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r       jsonb := pin_ok(p_pin);
+  v_reg   jsonb := p->'reglas';
+  v_pl    text := lower(trim(coalesce(p->>'plantilla', '')));
+  v_cat   text := upper(coalesce(nullif(p->>'categoria', ''), 'MARKETING'));
+  v_fmt   text := coalesce(nullif(p->>'formato', ''), 'named');
+  v_num   text := nullif(trim(coalesce(p->>'numero_id', '')), '');
+  v_tope  integer := coalesce(nullif(p->>'tope_dia', '')::integer, 250);
+  v_datos jsonb := coalesce(p->'datos', '{}'::jsonb);
+  v_nom   text := left(nullif(trim(coalesce(p->>'nombre', '')), ''), 120);
+  x       jsonb;
+  v_id    bigint;
+  n       integer;
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  if v_pl !~ '^[a-z0-9_]+$' or length(v_pl) > 512 then return jsonb_build_object('ok', false, 'porque', 'Falta elegir la plantilla.'); end if;
+  if v_num is null then return jsonb_build_object('ok', false, 'porque', 'Falta el número desde el que sale.'); end if;
+  if v_reg is null or jsonb_typeof(v_reg) <> 'object' then return jsonb_build_object('ok', false, 'porque', 'Falta el segmento.'); end if;
+  if v_nom is null then return jsonb_build_object('ok', false, 'porque', 'Falta el nombre del segmento.'); end if;
+  if v_cat not in ('MARKETING', 'UTILITY') then return jsonb_build_object('ok', false, 'porque', 'Sólo plantillas de marketing o de utilidad.'); end if;
+  if v_fmt not in ('named', 'positional') then return jsonb_build_object('ok', false, 'porque', 'La plantilla no se entendió.'); end if;
+  if v_tope < 1 or v_tope > 1000 then return jsonb_build_object('ok', false, 'porque', 'El tope por día va de 1 a 1000.'); end if;
+  /* Cada dato: el nombre de cada uno (con un "si no tiene nombre") o un texto fijo. */
+  for x in select e from jsonb_array_elements(coalesce(v_datos->'titulo', '[]'::jsonb) || coalesce(v_datos->'cuerpo', '[]'::jsonb)) e loop
+    if coalesce(x->>'fuente', '') not in ('nombre', 'texto') then
+      return jsonb_build_object('ok', false, 'porque', 'Falta decir cómo se completa un dato de la plantilla.');
+    end if;
+    if x->>'fuente' = 'texto' and nullif(trim(coalesce(x->>'texto', '')), '') is null then
+      return jsonb_build_object('ok', false, 'porque', 'Completá todos los datos de la plantilla.');
+    end if;
+    if x->>'fuente' = 'nombre' and nullif(trim(coalesce(x->>'defecto', '')), '') is null then
+      return jsonb_build_object('ok', false, 'porque', 'Falta qué poner cuando alguien no tiene el nombre cargado.');
+    end if;
+  end loop;
+  /* Dos toques seguidos no la mandan dos veces. */
+  if exists (select 1 from crm_difusiones d where d.plantilla = v_pl and d.reglas = v_reg and d.numero_id = v_num
+                                             and d.estado in ('mandando', 'pausada') and d.creada > now() - interval '10 minutes') then
+    return jsonb_build_object('ok', false, 'porque', 'Ya hay una difusión igual saliendo: mirala abajo.');
+  end if;
+  insert into crm_difusiones (nombre, reglas, plantilla, idioma, categoria, formato, datos, texto, cuenta, numero_id, numero, tope_dia, creada_por)
+  values (v_nom, v_reg, v_pl, coalesce(nullif(p->>'idioma', ''), 'es_AR'), v_cat, v_fmt, v_datos, left(p->>'texto', 4000),
+          nullif(p->>'cuenta', ''), v_num, nullif(p->>'numero', ''), v_tope, left(nullif(trim(coalesce(p->>'quien', '')), ''), 60))
+  returning id into v_id;
+  insert into crm_difusion_envios (difusion, clave, tel, nombre)
+  select v_id, pe.clave, coalesce(w.tel, '549' || pe.clave), pe.nombre
+    from crm_personas() pe
+    left join lateral (select m.tel from wa_mensajes m where club_tel10(m.tel) = pe.clave order by m.cuando desc, m.id desc limit 1) w on true
+   where crm_cumple(pe, v_reg) and pe.clave ~ '^[0-9]{10}$'
+     and (v_cat <> 'MARKETING' or pe.acepta is distinct from false)
+  on conflict do nothing;
+  get diagnostics n = row_count;
+  if n = 0 then
+    delete from crm_difusiones where id = v_id;
+    return jsonb_build_object('ok', false, 'porque', 'En este segmento no hay nadie a quien escribirle.');
+  end if;
+  update crm_difusiones set total = n where id = v_id;
+  return jsonb_build_object('ok', true, 'id', v_id, 'total', n);
+end;
+$$;
+revoke execute on function crm_difusion_crear(text, jsonb) from public;
+grant execute on function crm_difusion_crear(text, jsonb) to anon, authenticated;
+
+/* Las últimas difusiones, con cómo van (lo de Meta sale de wa_mensajes). */
+create or replace function crm_difusiones_listar(p_pin text, p_limite integer default 20)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  return jsonb_build_object('difusiones', coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', d.id, 'nombre', d.nombre, 'plantilla', d.plantilla, 'categoria', d.categoria, 'numero', d.numero,
+             'estado', d.estado, 'motivo', d.motivo, 'total', d.total, 'tope_dia', d.tope_dia, 'texto', d.texto,
+             'creada', d.creada, 'creada_por', d.creada_por, 'terminada', d.terminada,
+             'pendientes', c.pendientes, 'enviados', c.enviados, 'no_salieron', c.no_salieron, 'cancelados', c.cancelados,
+             'entregados', c.entregados, 'leidos', c.leidos, 'fallaron', c.fallaron, 'hoy', c.hoy,
+             'errores', c.errores) order by d.id desc)
+      from (select * from crm_difusiones order by id desc limit greatest(coalesce(p_limite, 20), 1)) d
+      cross join lateral (
+        select count(*) filter (where e.estado in ('pendiente', 'enviando')) as pendientes,
+               count(*) filter (where e.estado = 'enviado') as enviados,
+               count(*) filter (where e.estado = 'fallido') as no_salieron,
+               count(*) filter (where e.estado = 'cancelado') as cancelados,
+               count(*) filter (where w.estado in ('delivered', 'read')) as entregados,
+               count(*) filter (where w.estado = 'read') as leidos,
+               count(*) filter (where w.estado = 'failed') as fallaron,
+               count(*) filter (where e.enviado > now() - interval '24 hours') as hoy,
+               coalesce((select jsonb_agg(jsonb_build_object('codigo', z.codigo, 'n', z.n) order by z.n desc)
+                           from (select coalesce(w2.error->0->>'code', e2.codigo) as codigo, count(*) as n
+                                   from crm_difusion_envios e2
+                                   left join wa_mensajes w2 on w2.wamid = e2.wamid
+                                  where e2.difusion = d.id and (e2.estado = 'fallido' or w2.estado = 'failed')
+                                  group by 1 order by 2 desc limit 3) z), '[]'::jsonb) as errores
+          from crm_difusion_envios e
+          left join wa_mensajes w on w.wamid = e.wamid
+         where e.difusion = d.id) c), '[]'::jsonb));
+end;
+$$;
+revoke execute on function crm_difusiones_listar(text, integer) from public;
+grant execute on function crm_difusiones_listar(text, integer) to anon, authenticated;
+
+/* Pausar, seguir o cancelar. */
+create or replace function crm_difusion_accion(p_pin text, p_id bigint, p_accion text, p_quien text default null)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+  d crm_difusiones%rowtype;
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  select * into d from crm_difusiones where id = p_id for update;
+  if not found then return jsonb_build_object('ok', false, 'porque', 'Esa difusión ya no está.'); end if;
+  if p_accion = 'pausar' and d.estado = 'mandando' then
+    update crm_difusiones set estado = 'pausada', motivo = 'La pausó ' || coalesce(nullif(trim(coalesce(p_quien, '')), ''), 'alguien del equipo') || '.' where id = p_id;
+  elsif p_accion = 'seguir' and d.estado = 'pausada' then
+    update crm_difusiones set estado = 'mandando', motivo = null where id = p_id;
+  elsif p_accion = 'cancelar' and d.estado in ('mandando', 'pausada') then
+    update crm_difusion_envios set estado = 'cancelado' where difusion = p_id and estado = 'pendiente';
+    update crm_difusiones set estado = 'cancelada', terminada = now(),
+           motivo = 'La canceló ' || coalesce(nullif(trim(coalesce(p_quien, '')), ''), 'alguien del equipo') || '.' where id = p_id;
+  else
+    return jsonb_build_object('ok', false, 'porque', 'No se puede: está ' || d.estado || '.');
+  end if;
+  return jsonb_build_object('ok', true, 'estado', (select estado from crm_difusiones where id = p_id));
+end;
+$$;
+revoke execute on function crm_difusion_accion(text, bigint, text, text) from public;
+grant execute on function crm_difusion_accion(text, bigint, text, text) to anon, authenticated;
+
+/* La tanda que toca (sólo la función whatsapp, con la llave de servicio).
+   Como mucho p_max por minuto entre todas, y el tope por día de cada
+   difusión contando todo lo que salió de ese número en las últimas 24 h.
+   Si una difusión junta 3 fallas de la cuenta (las avisa Meta después),
+   se pausa. */
+create or replace function crm_difusion_tomar(p_max integer default 40)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  d       record;
+  v_lote  jsonb := '[]'::jsonb;
+  v_min   integer;
+  v_dia   integer;
+  v_lugar integer;
+  v_cod   text;
+begin
+  /* Lo que quedó "enviando" hace más de 10 minutos, sin salir, vuelve a la cola. */
+  update crm_difusion_envios set estado = 'pendiente'
+   where estado = 'enviando' and wamid is null and tomado < now() - interval '10 minutes';
+  select count(*) into v_min from crm_difusion_envios
+   where (estado = 'enviando' and tomado > now() - interval '1 minute') or enviado > now() - interval '1 minute';
+  for d in select * from crm_difusiones where estado = 'mandando' order by id loop
+    select w.error->0->>'code' into v_cod
+      from crm_difusion_envios e join wa_mensajes w on w.wamid = e.wamid
+     where e.difusion = d.id and w.estado = 'failed' and crm_difusion_error_cuenta(w.error->0->>'code')
+     group by 1 having count(*) >= 3 limit 1;
+    if v_cod is not null then
+      update crm_difusiones set estado = 'pausada',
+             motivo = case v_cod when '131042' then 'pago' else 'cuenta:' || v_cod end where id = d.id;
+      continue;
+    end if;
+    select count(*) into v_dia from crm_difusion_envios e join crm_difusiones x on x.id = e.difusion
+     where x.numero_id = d.numero_id
+       and ((e.estado = 'enviando' and e.tomado > now() - interval '24 hours') or e.enviado > now() - interval '24 hours');
+    v_lugar := least(d.tope_dia - v_dia, coalesce(p_max, 40) - v_min - jsonb_array_length(v_lote));
+    if v_lugar > 0 then
+      with t as (
+        select e.id from crm_difusion_envios e
+         where e.difusion = d.id and e.estado = 'pendiente'
+         order by e.id limit v_lugar
+         for update skip locked
+      ), u as (
+        update crm_difusion_envios e set estado = 'enviando', tomado = now(), intentos = e.intentos + 1
+          from t where e.id = t.id
+        returning e.id, e.tel, e.clave, e.nombre
+      )
+      select v_lote || coalesce(jsonb_agg(jsonb_build_object(
+               'id', u.id, 'difusion', d.id, 'tel', u.tel, 'clave', u.clave, 'nombre', u.nombre,
+               'plantilla', d.plantilla, 'idioma', d.idioma, 'formato', d.formato, 'datos', d.datos,
+               'numero_id', d.numero_id, 'texto', d.texto, 'quien', 'Difusión: ' || d.nombre) order by u.id), '[]'::jsonb)
+        into v_lote from u;
+    end if;
+    if not exists (select 1 from crm_difusion_envios e where e.difusion = d.id and e.estado in ('pendiente', 'enviando')) then
+      update crm_difusiones set estado = 'terminada', terminada = now() where id = d.id;
+    end if;
+  end loop;
+  return v_lote;
+end;
+$$;
+revoke execute on function crm_difusion_tomar(integer) from public, anon, authenticated;
+grant execute on function crm_difusion_tomar(integer) to service_role;
+
+/* Lo que pasó con cada uno de la tanda: salió (wamid), no salió (error) o
+   vuelve a la cola ("devolver": era un problema de la cuenta, no de la
+   persona). "pausar" pausa la difusión con ese motivo. */
+create or replace function crm_difusion_resultado(p jsonb)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  x jsonb;
+  n integer := 0;
+begin
+  for x in select e from jsonb_array_elements(coalesce(p, '[]'::jsonb)) e loop
+    if nullif(x->>'wamid', '') is not null then
+      update crm_difusion_envios set estado = 'enviado', wamid = x->>'wamid', enviado = now(), error = null, codigo = null
+       where id = (x->>'id')::bigint and estado = 'enviando';
+    elsif coalesce((x->>'devolver')::boolean, false) then
+      update crm_difusion_envios set estado = 'pendiente' where id = (x->>'id')::bigint and estado = 'enviando';
+    else
+      update crm_difusion_envios set estado = 'fallido', error = left(x->>'error', 300), codigo = left(x->>'codigo', 20)
+       where id = (x->>'id')::bigint and estado = 'enviando';
+    end if;
+    n := n + 1;
+    if nullif(x->>'pausar', '') is not null then
+      update crm_difusiones set estado = 'pausada', motivo = left(x->>'pausar', 300)
+       where id = (select e.difusion from crm_difusion_envios e where e.id = (x->>'id')::bigint) and estado = 'mandando';
+    end if;
+  end loop;
+  update crm_difusiones d set estado = 'terminada', terminada = now()
+   where d.estado = 'mandando'
+     and not exists (select 1 from crm_difusion_envios e where e.difusion = d.id and e.estado in ('pendiente', 'enviando'));
+  return jsonb_build_object('ok', true, 'n', n);
+end;
+$$;
+revoke execute on function crm_difusion_resultado(jsonb) from public, anon, authenticated;
+grant execute on function crm_difusion_resultado(jsonb) to service_role;
+
+/* El reloj: si hay algo para mandar, le pide la tanda a la función whatsapp.
+   La función toma lo que la base le da (crm_difusion_tomar): llamarla de
+   más no manda de más. */
+create or replace function crm_difusion_despachar()
+returns bigint
+language plpgsql
+volatile
+security definer
+set search_path = public, extensions
+as $$
+declare
+  v_pedido bigint;
+begin
+  if not exists (select 1 from crm_difusiones d where d.estado = 'mandando'
+                   and exists (select 1 from crm_difusion_envios e where e.difusion = d.id and e.estado = 'pendiente')) then
+    return null;
+  end if;
+  select net.http_post(
+           url := 'https://gfjdjupuwxohkgchqykx.supabase.co/functions/v1/whatsapp',
+           body := '{"accion":"difusion_lote"}'::jsonb,
+           headers := '{"Content-Type":"application/json"}'::jsonb) into v_pedido;
+  return v_pedido;
+end;
+$$;
+revoke execute on function crm_difusion_despachar() from public, anon, authenticated;
+
+select cron.schedule('crm-difusiones', '* * * * *', 'select crm_difusion_despachar()');
+
+select 'listo: difusiones de verdad, y condiciones nuevas para los segmentos' as "SQL 92";

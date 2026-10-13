@@ -26,7 +26,10 @@
  *       "plantilla_borrar"      Borrarla.
  *       "plantillas_para"       Las aprobadas con las que se le puede
  *                               escribir a una persona, y desde qué número.
- *       "enviar_plantilla"      Mandarle una (SQL 65).
+ *       "enviar_plantilla"      Mandarle una (SQL 65). Con numero_id, desde
+ *                               ese número (la prueba de una difusión).
+ *   POST {accion: "difusion_lote"} La tanda de difusiones que toca (SQL 92):
+ *                               la base dice qué y cuánto; sin PIN.
  *
  * ── Siempre contesta 200 a Meta ───────────────────────────────────────────
  * Igual que el de Kommo: un aviso que recibe un error se reintenta, y si el
@@ -484,7 +487,15 @@ async function enviarPlantilla(p: any) {
   if (!/^[a-z0-9_]{1,512}$/.test(nombre)) return { ok: false, error: 'Falta elegir la plantilla.' };
   const x = await prepararPlantilla(p);
   if (x.error) return x.error;
-  const { prep, num } = x as { prep: any; num: Numero };
+  const { prep } = x as { prep: any; num: Numero };
+  let { num } = x as { prep: any; num: Numero };
+  /* La prueba de una difusión (SQL 92) sale desde el número de la difusión:
+     la plantilla es de esa cuenta. */
+  if (p.numero_id) {
+    const elegido = (await numeros()).find((n) => n.id === String(p.numero_id) && n.conectado);
+    if (!elegido) return { ok: false, error: 'Ese número no está conectado al CRM.' };
+    num = elegido;
+  }
   const conNombre = p.formato === 'named';
   const parametros = (l: unknown) => (Array.isArray(l) ? l : []).map((v: any) => conNombre
     ? { type: 'text', parameter_name: String(v?.nombre ?? ''), text: limpio(v?.texto) }
@@ -508,6 +519,78 @@ async function enviarPlantilla(p: any) {
                  texto: String(p.texto ?? '').slice(0, 4000), media: { plantilla: nombre, idioma: String(p.idioma || 'es_AR') },
                  quien: String(p.quien ?? '').slice(0, 60) });
   return { ok: true, wamid };
+}
+
+/* ═══ Difusiones (12/10/2026, SQL 92) ════════════════════════════════════
+   Una plantilla aprobada a un segmento entero, de a tandas. La base dice qué
+   toca (crm_difusion_tomar: como mucho 40 por minuto y el tope por día de
+   cada difusión); acá se manda y se le cuenta qué pasó con cada uno. No pide
+   PIN: sólo manda lo que ya se aprobó con el PIN en el CRM, al ritmo que
+   pone la base (la llama el reloj cada minuto, y el CRM al crearla).
+   Si Meta rechaza por la cuenta (falta la tarjeta, cuenta bloqueada,
+   demasiados envíos), se corta la tanda, lo que faltaba vuelve a la cola y
+   la difusión se pausa con el motivo. Lo que sale queda "desde difusión". */
+const ERRORES_CUENTA = new Set(['131042', '131031', '131048', '368', '130429', '80007', '4', '190', '10']);
+/** El primer nombre, si parece un nombre ("juan pérez" → "Juan"); si no, nada. */
+function primerNombre(n: unknown): string {
+  const p = String(n ?? '').trim().split(/\s+/)[0] ?? '';
+  if (!/^[\p{L}'-]{2,30}$/u.test(p)) return '';
+  return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
+}
+async function difusionLote() {
+  let lote: any[];
+  try { lote = await rpc('crm_difusion_tomar', { p_max: 40 }); } catch (e) {
+    console.error('whatsapp: difusión, no se pudo leer la cola:', String(e));
+    return { ok: false, error: 'No se pudo leer la cola.' };
+  }
+  if (!Array.isArray(lote) || !lote.length) return { ok: true, n: 0 };
+  const nums = await numeros();
+  const resultados: Record<string, unknown>[] = [];
+  let cortada = '';
+  for (const it of lote) {
+    if (cortada) { resultados.push({ id: it.id, devolver: true }); continue; }
+    const num = nums.find((n) => n.id === String(it.numero_id) && n.conectado);
+    if (!num) { cortada = 'numero'; resultados.push({ id: it.id, devolver: true, pausar: 'numero' }); continue; }
+    const conNombre = it.formato === 'named';
+    const valor = (d: any) => (d?.fuente === 'nombre' ? (primerNombre(it.nombre) || limpio(d?.defecto)) : limpio(d?.texto));
+    const datos = [...(Array.isArray(it.datos?.titulo) ? it.datos.titulo : []), ...(Array.isArray(it.datos?.cuerpo) ? it.datos.cuerpo : [])];
+    const params = (l: unknown) => (Array.isArray(l) ? l : []).map((d: any) => conNombre
+      ? { type: 'text', parameter_name: String(d?.nombre ?? ''), text: valor(d) }
+      : { type: 'text', text: valor(d) });
+    const titulo = params(it.datos?.titulo), cuerpo = params(it.datos?.cuerpo);
+    const componentes: unknown[] = [];
+    if (titulo.length) componentes.push({ type: 'header', parameters: titulo });
+    if (cuerpo.length) componentes.push({ type: 'body', parameters: cuerpo });
+    const r = await meta('/' + num.id + '/messages', 'POST', {
+      messaging_product: 'whatsapp', recipient_type: 'individual', to: String(it.tel), type: 'template',
+      template: { name: String(it.plantilla), language: { code: String(it.idioma || 'es_AR') }, ...(componentes.length ? { components: componentes } : {}) },
+    }, num.token, true);
+    const wamid = r?.messages?.[0]?.id;
+    if (wamid) {
+      /* Cómo se vio, para la charla del CRM: el texto con los datos de esta persona. */
+      const texto = String(it.texto ?? '').replace(/\{\{\s*([a-z0-9_]+)\s*\}\}/g, (m: string, k: string) => {
+        const d = datos.find((x: any) => String(x?.nombre ?? '') === k);
+        return d ? valor(d) : m;
+      });
+      await anotar({ wamid, numero_id: num.id, numero: num.digitos, tel: String(it.tel), tipo: 'template', texto: texto.slice(0, 4000),
+                     media: { plantilla: it.plantilla, idioma: it.idioma || 'es_AR', difusion: it.difusion }, quien: String(it.quien ?? '').slice(0, 60),
+                     desde: 'difusion' });
+      resultados.push({ id: it.id, wamid });
+      continue;
+    }
+    const codigo = String(r?.error?.codigo ?? '');
+    if (ERRORES_CUENTA.has(codigo)) {
+      cortada = codigo;
+      console.error('whatsapp: difusión cortada por la cuenta:', codigo);
+      resultados.push({ id: it.id, devolver: true, pausar: codigo === '131042' ? 'pago' : 'cuenta:' + codigo });
+      continue;
+    }
+    resultados.push({ id: it.id, error: String(r?.error?.usuario || r?.error?.mensaje || 'WhatsApp no lo aceptó.').slice(0, 300), codigo });
+  }
+  try { await rpc('crm_difusion_resultado', { p: resultados }); } catch (e) {
+    console.error('whatsapp: difusión, no se pudo anotar el resultado:', String(e));
+  }
+  return { ok: true, n: resultados.filter((x) => x.wamid).length, cortada: cortada || undefined };
 }
 
 Deno.serve(async (req) => {
@@ -558,6 +641,7 @@ Deno.serve(async (req) => {
       case 'plantilla_borrar': return json(await plantillaBorrar(pedido));
       case 'plantillas_para': return json(await plantillasPara(pedido));
       case 'enviar_plantilla': return json(await enviarPlantilla(pedido));
+      case 'difusion_lote': return json(await difusionLote());
       case 'estado': return json(await estado());
       case 'suscribir': return json(await suscribir());
       case 'webhook': return json(await webhook());
