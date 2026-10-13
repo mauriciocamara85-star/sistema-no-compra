@@ -126,7 +126,11 @@ grant insert on log to anon, authenticated;
 grant select on log to authenticated;
 
 create policy "dejar constancia"   on log for insert to anon, authenticated with check (true);
-create policy "leer el historial"  on log for select to authenticated using (true);
+/* SQL 96 (13/10/2026): "de adentro" ya no es cualquier sesión. Desde la app
+   de los vendedores (Impecable) cada vendedor tiene su cuenta, y cualquiera
+   que se anote con el enlace recibe una sesión. De adentro = la tabla
+   usuarios, con la misma pregunta de siempre: mi_rol(). */
+create policy "leer el historial"  on log for select to authenticated using (mi_rol() is not null);
 
 
 -- ════════════════════════════════════════════════════════════════════════
@@ -138,9 +142,10 @@ create policy "leer el historial"  on log for select to authenticated using (tru
 
 grant select, insert, update on ajustes to authenticated;
 
-create policy "ver los ajustes"     on ajustes for select to authenticated using (true);
-create policy "cambiar los ajustes" on ajustes for insert to authenticated with check (true);
-create policy "corregir un ajuste"  on ajustes for update to authenticated using (true) with check (true);
+/* SQL 96: sólo la gente de usuarios (ver "LOG" arriba). */
+create policy "ver los ajustes"     on ajustes for select to authenticated using (mi_rol() is not null);
+create policy "cambiar los ajustes" on ajustes for insert to authenticated with check (mi_rol() is not null);
+create policy "corregir un ajuste"  on ajustes for update to authenticated using (mi_rol() is not null) with check (mi_rol() is not null);
 
 
 -- ════════════════════════════════════════════════════════════════════════

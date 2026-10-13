@@ -339,13 +339,21 @@ window.addEventListener('hashchange', function () {
   if (yo().aprobado === false) { revisarAprobacion(true); return; }
   irPorEnlace();
 });
+/* Cuándo se usó por última vez un campo de foto: al sacar una foto con la
+   cámara del teléfono la app queda "oculta" y vuelve sola. */
+var _ultimoArchivo = 0, _oculta = 0;
+document.addEventListener('click', function (e) { if (e.target && e.target.type === 'file') _ultimoArchivo = Date.now(); }, true);
+document.addEventListener('change', function (e) { if (e.target && e.target.type === 'file') _ultimoArchivo = Date.now(); }, true);
 document.addEventListener('visibilitychange', function () {
   /* Al volver a la app (desde otra o desde un aviso), se vuelve a cargar la
-     pestaña que está a la vista. No se toca si está en la cámara, en un
-     formulario de pantalla completa o con algo escrito a medias. */
-  if (document.visibilityState !== 'visible' || !_vend || !_vend.refresco) return;
+     pestaña que está a la vista. No se toca si estuvo afuera un ratito, si
+     vuelve de la cámara, si algo se está mandando, si está en un formulario
+     de pantalla completa o con algo escrito a medias. */
+  if (document.visibilityState !== 'visible') { _oculta = Date.now(); return; }
+  if (!_vend || !_vend.refresco) return;
   if (yo().aprobado === false) { revisarAprobacion(true); return; }
-  if (barra.hidden || hayAlgoEscrito()) return;
+  if (Date.now() - _ultimoArchivo < 10 * 60e3 || Date.now() - _oculta < 30e3) return;
+  if (barra.hidden || hayAlgoEscrito() || app.querySelector('button:disabled')) return;
   irA(_pestana);
 });
 
@@ -377,9 +385,9 @@ function refrescarYo() {
     if (!x || !x.rol) return;
     /* Desactivado cuenta como sin aprobar: la base ya no le muestra nada. */
     var aprobado = !!(x.aprobado && x.activo);
-    var cambio = x.rol !== per.rol || x.local_id !== per.local_id || aprobado !== (per.aprobado !== false);
+    var cambio = x.rol !== per.rol || x.local_id !== per.local_id || aprobado !== (per.aprobado !== false) || x.activo !== (per.activo !== false);
     if (!cambio) return;
-    per.rol = x.rol; per.local_id = x.local_id; per.aprobado = aprobado;
+    per.rol = x.rol; per.local_id = x.local_id; per.aprobado = aprobado; per.activo = x.activo;
     anotarVend_({ access_token: _vend.token, refresh_token: _vend.refresco, expires_at: Math.floor(_vend.vence / 1000) + 60 }, per);
     entrarApp(false);
   }).catch(function () {});
@@ -391,12 +399,15 @@ function pantallaEspera() {
   barra.hidden = true;
   app.className = 'app';
   var quien = yo().rol === 'vendedor' ? 'Tu supervisor' : 'El administrador';
-  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>Esperando la aprobación</h1>' +
-    '<p class="bajada">Hola, ' + esc(primerNombre()) + '. ' + quien + ' tiene que confirmar que sos del equipo. Ya le avisamos: cuando te apruebe, tocá el botón de abajo.</p>' +
-    '<button class="boton lima" id="yaMe">Ya me aprobaron</button>' +
+  var afuera = yo().activo === false;
+  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>' + (afuera ? 'Sin acceso' : 'Esperando la aprobación') + '</h1>' +
+    '<p class="bajada">Hola, ' + esc(primerNombre()) + '. ' +
+    (afuera ? 'Tu acceso a la app está cerrado. Si es un error, hablá con tu supervisor.'
+            : quien + ' tiene que confirmar que sos del equipo. Ya le avisamos: cuando te apruebe, tocá el botón de abajo.') + '</p>' +
+    (afuera ? '' : '<button class="boton lima" id="yaMe">Ya me aprobaron</button>') +
     '<button class="boton" id="salirEspera" style="margin-top:10px">No soy yo</button>';
   document.getElementById('salirEspera').onclick = preguntarSalir;
-  unaVez(document.getElementById('yaMe'), function () { return revisarAprobacion(false); });
+  if (!afuera) unaVez(document.getElementById('yaMe'), function () { return revisarAprobacion(false); });
   /* Si ya lo aprobaron mientras la app estaba cerrada, entra solo. */
   revisarAprobacion(true);
 }
@@ -408,13 +419,19 @@ function revisarAprobacion(silencio) {
     if (yo().aprobado !== false) return;   // ya entró por otro lado
     if (x && x.aprobado && x.activo) {
       var per = yo();
-      per.aprobado = true; per.rol = x.rol; per.local_id = x.local_id;
+      per.aprobado = true; per.activo = true; per.rol = x.rol; per.local_id = x.local_id;
       anotarVend_({ access_token: _vend.token, refresh_token: _vend.refresco, expires_at: Math.floor(_vend.vence / 1000) + 60 }, per);
       entrarApp(true);
+    } else if (x && !x.activo) {
+      /* Lo desactivaron: la pantalla deja de decir "ya le avisamos". */
+      if (yo().activo !== false) {
+        var p2 = yo(); p2.activo = false;
+        anotarVend_({ access_token: _vend.token, refresh_token: _vend.refresco, expires_at: Math.floor(_vend.vence / 1000) + 60 }, p2);
+        pantallaEspera();
+      }
+      if (!silencio) avisar('Tu acceso a la app está cerrado. Si es un error, hablá con tu supervisor.');
     } else if (silencio) {
       return;
-    } else if (x && !x.activo) {
-      avisar('No confirmaron tu alta. Si es un error, hablá con tu supervisor.');
     } else {
       avisar('Todavía no te aprobaron. Probá en un rato.');
     }
@@ -1491,7 +1508,7 @@ function pantallaEquipo() {
     var L = valor(loc.id);
     var desde = _equipoMes ? lunesAR(hoyAR().slice(0, 8) + '01') : lunesAR();
     return Promise.all([
-      leer('/orden_personas?select=id,nombre,apellido,inicial,aprobado&local_id=eq.' + L + '&activo=is.true&rol=eq.vendedor&order=nombre.asc'),
+      leer('/orden_personas?select=id,nombre,apellido,inicial,aprobado,alta_propia,auth_user_id&local_id=eq.' + L + '&activo=is.true&rol=eq.vendedor&order=nombre.asc'),
       leer('/orden_v_persona_semana?select=persona_id,semana,controles,controles_a_tiempo,nivel_semana,tareas,tareas_a_tiempo,tareas_fuera_de_plazo,desafio_puntaje,desafio_total' +
            '&local_id=eq.' + L + '&semana=gte.' + desde),
       leer('/orden_controles?select=persona_id&local_id=eq.' + L + '&estado=eq.pendiente&fecha=eq.' + hoyAR()),
@@ -1500,8 +1517,11 @@ function pantallaEquipo() {
       leer('/orden_v_tareas?select=id,titulo,persona_nombre,origen,vence_en,estado&local_id=eq.' + L + '&estado=in.(pendiente,vencida)&order=vence_en.asc&limit=40')
     ]).then(function (r) {
       if (_pestana !== 'equipo') return;
+      /* Esperan el OK los que ya entraron (crearon su PIN) o se anotaron solos.
+         Los que todavía no entraron siguen en el equipo como siempre. */
       var todos = r[0] || [];
-      dibujarEquipo(loc, { gente: todos.filter(function (p) { return p.aprobado !== false; }), esperan: todos.filter(function (p) { return p.aprobado === false; }),
+      var espera = function (p) { return p.aprobado === false && (!!p.auth_user_id || !!p.alta_propia); };
+      dibujarEquipo(loc, { gente: todos.filter(function (p) { return !espera(p); }), esperan: todos.filter(espera),
                            semanas: r[1] || [], pendientes: r[2] || [], prorrogas: r[3] || [], faltas: r[4] || [], tareas: r[5] || [] });
     });
   }).catch(function (e) { pantallaError(e, pantallaEquipo); });
@@ -1517,9 +1537,15 @@ function dibujarEquipo(loc, x) {
     '<div class="pestanitas"><button class="' + (!_equipoMes ? 'activa' : '') + '" id="vSemana">Esta semana</button><button class="' + (_equipoMes ? 'activa' : '') + '" id="vMes">Este mes</button></div>';
 
   if ((x.esperan || []).length) {
-    html += '<div class="seccion">Esperan tu OK</div><p class="bajada">Entraron a la app por primera vez. Hasta que los apruebes no ven nada del local.</p>' + x.esperan.map(function (p) {
+    html += '<div class="seccion">Esperan tu OK</div><p class="bajada">Hasta que los apruebes no ven nada del local.</p>' + x.esperan.map(function (p) {
+      /* Quien se anotó solo: "¿es de acá?". Quien ya estaba y creó su PIN:
+         "¿fue él?" (cualquiera con el enlace podría haberlo creado). */
+      var nuevo = !!p.alta_propia;
+      var datos = ' data-aprobar="' + esc(p.id) + '" data-nombre="' + esc(p.nombre) + '" data-nuevo="' + (nuevo ? '1' : '0') + '"';
       return '<div class="tarea"><div class="nombre">' + esc(p.nombre + (p.apellido ? ' ' + p.apellido : '')) + '</div>' +
-        (mira ? '' : '<div class="botones"><button class="boton lima chico" data-aprobar="' + esc(p.id) + '" data-si="1">Es de acá</button><button class="boton chico" data-aprobar="' + esc(p.id) + '" data-si="0">No lo conozco</button></div>') + '</div>';
+        '<div class="detalle">' + (nuevo ? 'Se anotó solo en la app.' : 'Creó su PIN. Confirmá en persona que fue quien lo creó.') + '</div>' +
+        (mira ? '' : '<div class="botones"><button class="boton lima chico"' + datos + ' data-si="1">' + (nuevo ? 'Es de acá' : 'Sí, fue') + '</button>' +
+                     '<button class="boton chico"' + datos + ' data-si="0">' + (nuevo ? 'No lo conozco' : 'No fue') + '</button></div>') + '</div>';
     }).join('');
   }
 
@@ -1576,12 +1602,23 @@ function dibujarEquipo(loc, x) {
   document.getElementById('vSemana').onclick = function () { _equipoMes = false; pantallaEquipo(); };
   document.getElementById('vMes').onclick = function () { _equipoMes = true; pantallaEquipo(); };
   app.querySelectorAll('[data-aprobar]').forEach(function (b) {
+    var mismos = function () { return app.querySelectorAll('[data-aprobar="' + b.dataset.aprobar + '"]'); };
     unaVez(b, function () {
-      var si = b.dataset.si === '1';
-      if (!si && !confirm('¿No lo conocés? Se le cierra el acceso a la app.')) return;
+      var si = b.dataset.si === '1', nuevo = b.dataset.nuevo === '1', nombre = b.dataset.nombre;
+      if (!si && !confirm(nuevo ? '¿No conocés a ' + nombre + '? Se le cierra el acceso a la app.'
+                                : '¿No fue ' + nombre + '? Se borra ese PIN y se cierra esa sesión. ' + nombre + ' va a poder crear el suyo.')) return;
+      mismos().forEach(function (x) { x.disabled = true; });
       return llamar('orden_aprobar_persona', { p_persona: b.dataset.aprobar, p_aprobar: si })
-        .then(function () { avisar(si ? 'Aprobado: ya puede usar la app.' : 'Listo: no va a poder entrar.'); pantallaEquipo(); });
+        .then(function () { avisar(si ? 'Aprobado: ya puede usar la app.' : nuevo ? 'Listo: no va a poder entrar.' : 'Listo: se borró ese PIN.'); pantallaEquipo(); },
+              function (e) { mismos().forEach(function (x) { x.disabled = false; }); throw e; });
     });
+    /* Los dos botones de la misma persona van juntos: "Sí" y "No" tocados casi
+       a la vez mandaban los dos y ganaba el último. */
+    var tocar = b.onclick;
+    b.onclick = function () {
+      if (Array.prototype.some.call(mismos(), function (x) { return x.disabled; })) return;
+      return tocar.apply(this, arguments);
+    };
   });
   app.querySelectorAll('[data-recordar]').forEach(function (b) {
     unaVez(b, function () {

@@ -2,8 +2,8 @@
 -- ⚠ Correrlo recién EL DÍA QUE LOS VENDEDORES EMPIEZAN a usar la app, y
 --   después de subir las Edge Functions tick, resumen-cajas y resumen-semanal.
 --   Desde ese momento se generan los controles y salen los avisos solos.
--- Va después del 93. Pegalo entero en el editor SQL de Supabase. Se puede
--- correr más de una vez. Para apagarlo, ver "PARA APAGARLO" más abajo.
+-- Va después del 95, 96 y 97 (no pisa nada de ellos). Pegalo entero en el
+-- editor SQL de Supabase. Se puede correr más de una vez. Para apagarlo, ver "PARA APAGARLO" más abajo.
 
 -- =====================================================================
 -- Módulo VDH · Migración 10 (SQL 94): PRENDER EL RELOJ de Impecable

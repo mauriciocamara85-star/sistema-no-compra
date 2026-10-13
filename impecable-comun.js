@@ -147,6 +147,12 @@ function cerrarSesion() {
   }
 }
 
+/* Las fotos chicas (cajas, historial) se abren enteras al tocarlas. */
+document.addEventListener('click', function (e) {
+  var img = e.target && e.target.closest && e.target.closest('.foto-chica img');
+  if (img && img.src) window.open(img.src, '_blank', 'noopener');
+});
+
 function yo() { return (_vend && _vend.persona) || {}; }
 function esSupervision() { var r = yo().rol; return r === 'supervisor' || r === 'admin' || r === 'gerencia'; }
 /** Gerencia (los dueños) ve todo y no cambia nada. */

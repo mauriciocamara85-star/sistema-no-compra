@@ -187,7 +187,9 @@ h1 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.02e
 .tabla-caja .cab { color: var(--suave); font-weight: 700; font-size: 12px; }
 .rojo { color: var(--rojo); font-weight: 700; }
 .foto-chica { margin: 0; }
-.foto-chica img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px; background: var(--tarjeta); }
+/* contain y no cover: el cierre del sistema sacado apaisado se ve entero (con
+   franjas), no recortado justo donde están los montos. Tocándola se abre grande. */
+.foto-chica img { width: 100%; aspect-ratio: 3 / 4; object-fit: contain; border-radius: 12px; background: #000; cursor: zoom-in; }
 .foto-chica figcaption { font-size: 12px; color: var(--suave); margin-top: 4px; }
 
 /* La barra de abajo (las pestañas las arma la app según quién entró) */
