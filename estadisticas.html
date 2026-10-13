@@ -215,6 +215,8 @@
     .cn-grilla > .ancho, .cn-sub > .ancho { grid-column: 1 / -1; }
   }
 </style>
+<!-- Quién entró (13/10/2026): marca el rol antes de pintar la barra. Ver persona.js. -->
+<script src="persona.js"></script>
 </head>
 <body class="hay-rail">
 
@@ -552,7 +554,10 @@
   /* Las dos vistas comparten el período y el local: se carga la que se
      está mirando. */
   var pedidoEst = 0;
-  function cargar() { var n = ++pedidoEst; return vista === 'gc' ? cargarGC(n) : cargarNC(n); }
+  function cargar() {
+    if (rolAplicado) { estado.local = rolAplicado; }
+    var n = ++pedidoEst; return vista === 'gc' ? cargarGC(n) : cargarNC(n);
+  }
   /* ¿Sigue valiendo esta respuesta? Si después se pidió otra cosa (otro
      período, la otra pestaña), no. */
   function vale(n, v) { return n === pedidoEst && vista === v; }
@@ -859,7 +864,31 @@
      Cards pide el PIN, porque es plata. El Club es otra página
      (club-numeros.html), con estas mismas pestañas. */
   var vista = 'nc', datosGC = null;
-  function leerVista() { return location.hash === '#giftcards' ? 'gc' : 'nc'; }
+  function leerVista() { return location.hash === '#giftcards' && !localFijo() ? 'gc' : 'nc'; }
+
+  /* ═══ Con usuario de un local (13/10/2026) ═══════════════════════════
+     El vendedor y el encargado ven el No Compra de SU local: sin el
+     selector, sin la tabla de los otros locales y sin las pestañas Club y
+     Gift Cards. Es lo que muestra la pantalla: la consulta sigue siendo la
+     libre de siempre (cerrarla en la base es la parte 3). */
+  var rolAplicado = null;
+  function localFijo() {
+    var y = persona.yo();
+    return y && (y.rol === 'vendedor' || y.rol === 'supervisor') && y.local ? y.local : '';
+  }
+  /** Devuelve true si cambió lo que se ve (hay que volver a cargar). */
+  function aplicarRol() {
+    var f = localFijo();
+    if (f === rolAplicado) { return false; }
+    rolAplicado = f;
+    if (f) { estado.local = f; }
+    var ocultar = function (el) { if (el) { el.style.display = f ? 'none' : ''; } };
+    ocultar(document.querySelector('.pestana[href="club-numeros.html"]'));
+    ocultar(document.querySelector('.pestana[data-est="gc"]'));
+    ocultar($('selLocal'));
+    ocultar($('cajaLocales'));
+    return true;
+  }
   function aplicarVista() {
     vista = leerVista();
     $('vistaNC').hidden = vista !== 'nc';
@@ -1189,9 +1218,13 @@
     $('gcPin').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); entrarGC(); } };
     window.addEventListener('hashchange', function () { aplicarVista(); cargar(); });
     $('btnRefrescar').onclick = cargar;
+    aplicarRol();
     aplicarVista();
     pintarPeriodos();
     cargar();
+    /* Cuando la base confirma quién entró (o le cambiaron el rol). */
+    persona.listo.then(function () { if (aplicarRol()) { aplicarVista(); cargar(); } });
+    document.addEventListener('persona', function () { if (aplicarRol()) { aplicarVista(); cargar(); } });
     iniciarPWA();
   })();
 </script>

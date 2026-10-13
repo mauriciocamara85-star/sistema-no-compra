@@ -410,6 +410,8 @@
   }
 
 </style>
+<!-- Quién entró (13/10/2026): marca el rol antes de pintar la barra. Ver persona.js. -->
+<script src="persona.js"></script>
 </head>
 <body class="hay-rail">
 
@@ -497,7 +499,16 @@
   <div class="secciones" role="tablist" aria-label="Secciones de configuración">
     <button type="button" role="tab" id="tabLocal" data-seccion="local" aria-controls="secLocal" aria-selected="true">Locales y equipo</button>
     <button type="button" role="tab" id="tabClub" data-seccion="club" aria-controls="secClub" aria-selected="false">Club VDH</button>
+    <button type="button" role="tab" id="tabUsuarios" data-seccion="usuarios" aria-controls="secUsuarios" aria-selected="false">Usuarios</button>
   </div>
+
+  <!-- ══ USUARIOS (13/10/2026) ═════════════════════════════════════════
+       Un usuario por persona, con su rol. La arma usuarios.js; quién puede
+       qué lo decide la base (supabase/personas.sql). El encargado ve sólo
+       esta pestaña. -->
+  <section class="seccion" id="secUsuarios" role="tabpanel" aria-labelledby="tabUsuarios" hidden>
+    <div id="usuariosCuerpo"></div>
+  </section>
 
   <!-- ══ LOCALES Y EQUIPO ═══════════════════════════════════════════════ -->
   <section class="seccion" id="secLocal" role="tabpanel" aria-labelledby="tabLocal">
@@ -804,6 +815,7 @@
 
 <script src="comun.js"></script>
 <script src="datos.js"></script>
+<script src="usuarios.js"></script>
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
@@ -2038,26 +2050,43 @@
      la dirección abre directo el Club, para un enlace o un acceso directo. */
   function engancharSecciones() {
     var K_SECCION = 'nc_config_seccion';
+    var actual = 'local';
+    /* El encargado entra sólo a Usuarios (13/10/2026): lo demás de Config
+       (objetivos, el Club) es de la administración. */
+    var soloUsuarios = function () { return persona.rol() === 'supervisor'; };
     var mostrar = function (s) {
-      var club = s === 'club';
-      $('secLocal').hidden = club;
-      $('secClub').hidden = !club;
-      $('tabLocal').setAttribute('aria-selected', club ? 'false' : 'true');
-      $('tabClub').setAttribute('aria-selected', club ? 'true' : 'false');
+      if (soloUsuarios()) { s = 'usuarios'; }
+      if (s !== 'club' && s !== 'usuarios') { s = 'local'; }
+      actual = s;
+      $('secLocal').hidden = s !== 'local';
+      $('secClub').hidden = s !== 'club';
+      $('secUsuarios').hidden = s !== 'usuarios';
+      $('tabLocal').hidden = $('tabClub').hidden = soloUsuarios();
+      $('tabLocal').setAttribute('aria-selected', String(s === 'local'));
+      $('tabClub').setAttribute('aria-selected', String(s === 'club'));
+      $('tabUsuarios').setAttribute('aria-selected', String(s === 'usuarios'));
       try { localStorage.setItem(K_SECCION, s); } catch (e) {}
-      if (club) { mostrarClub(rutaClub()); }
+      if (s === 'club') { mostrarClub(rutaClub()); }
+      if (s === 'usuarios') { usuarios.mostrar(); }
     };
-    var inicial = /^#club/.test(location.hash) ? 'club' : location.hash === '#locales' ? 'local' : null;
+    /* Salir del Club con algo sin guardar pregunta antes; y deja de estar
+       en una pantalla del Club. */
+    var dejarClub = function () {
+      if (!dejarSinGuardar()) { return false; }
+      if (/^#club\//.test(location.hash)) { history.replaceState(null, '', '#club'); seccionAbierta = ''; }
+      return true;
+    };
+    var inicial = /^#club/.test(location.hash) ? 'club' : location.hash === '#locales' ? 'local'
+                : location.hash === '#usuarios' ? 'usuarios' : null;
     if (!inicial) {
       try { inicial = localStorage.getItem(K_SECCION); } catch (e) {}
     }
-    mostrar(inicial === 'club' ? 'club' : 'local');
-    $('tabLocal').onclick = function () {
-      if (!dejarSinGuardar()) { return; }
-      if (/^#club\//.test(location.hash)) { history.replaceState(null, '', '#club'); seccionAbierta = ''; }
-      mostrar('local');
-    };
+    mostrar(inicial);
+    $('tabLocal').onclick = function () { if (dejarClub()) { mostrar('local'); } };
     $('tabClub').onclick = function () { mostrar('club'); };
+    $('tabUsuarios').onclick = function () { if (dejarClub()) { mostrar('usuarios'); } };
+    /* Entró, salió o le cambiaron el rol: se vuelve a armar lo que se ve. */
+    document.addEventListener('persona', function () { mostrar(actual); });
   }
 
   /* ═══ Club VDH: el menú y sus pantallas (30/09/2026) ════════════════════

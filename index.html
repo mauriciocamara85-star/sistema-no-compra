@@ -901,6 +901,8 @@
   }
 
 </style>
+<!-- Quién entró (13/10/2026): marca el rol antes de pintar la barra. Ver persona.js. -->
+<script src="persona.js"></script>
 </head>
 <body class="hay-rail">
 
@@ -1763,6 +1765,7 @@
    * forma de avisarle.
    */
   function pintarQuien() {
+    var equipo = conYo();
     var aMano = escribiendo || (!!vendedor && equipo.indexOf(vendedor) === -1);
 
     cadaQuien(function (caja, sel, txt, nuevo) {
@@ -1789,6 +1792,35 @@
       nuevo.hidden = !aMano;
       if (aMano && document.activeElement !== txt) txt.value = vendedor;
     });
+  }
+
+  /* ═══ Quién entró (13/10/2026) ═══════════════════════════════════════
+     Con usuario, el vendedor sale elegido con esa persona si este aparato
+     es de su local, una vez por apertura: si carga otro, se elige otro
+     nombre como siempre y se respeta. Lo que se guarda como "quién cargó"
+     lo pone la base con la sesión, aparte del vendedor. */
+  var yoFijado = '';
+
+  /** Quien entró, si es de este local (con su nombre de la Carga). */
+  function yoDeAca() {
+    var y = persona.yo();
+    return y && y.local && y.vendedor && y.local === local ? y : null;
+  }
+
+  /* El equipo del local, con quien entró aunque todavía no figure (un
+     encargado que nunca cargó): la base lo suma con su primer registro. */
+  function conYo() {
+    var y = yoDeAca();
+    return y && equipo.indexOf(y.vendedor) === -1 ? equipo.concat([y.vendedor]) : equipo;
+  }
+
+  function tomarPersona() {
+    var y = yoDeAca();
+    if (!y || yoFijado === y.id) return;
+    yoFijado = y.id;
+    if (vendedor === y.vendedor && !escribiendo) return;
+    escribiendo = false;
+    fijarVendedor(y.vendedor);
   }
 
   /** Quién está cargando, de acá en adelante. Es todo el trámite. */
@@ -2177,6 +2209,7 @@
     // local y se pide el actualizado de fondo.
     escribiendo = false;
     equipo = equipoGuardado();
+    tomarPersona();   // si eligió el local de quien entró, sale elegido él
     pintarQuien();
     traerEquipo();
 
@@ -2436,11 +2469,13 @@
      celular y se reintenta solo al volver la señal. */
   function cola() { return leerJSON(K_COLA, []); }
 
-  function encolar(datos) {
+  function encolar(datos, quien) {
     var c = cola();
     // Id propio y no la hora: dos registros cargados en el mismo milisegundo
     // tendrían la misma marca y al sacar uno se borraría el otro.
-    c.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2), datos: datos });
+    // `quien`: el usuario que lo cargó. Al mandarlo, va con la sesión sólo si
+    // sigue siendo esa persona: si no, sale sin usuario (no a nombre de otro).
+    c.push({ id: Date.now() + '-' + Math.random().toString(36).slice(2), datos: datos, quien: quien || null });
     guardarJSON(K_COLA, c);
     pintarCola();
   }
@@ -2483,7 +2518,10 @@
       if (!pend.length || sinSenal) return Promise.resolve();
       var item = pend[0];
 
-      return base.cargar(item.datos)
+      var y = persona.yo();
+      var mio = !!(item.quien && y && y.id === item.quien);
+      return (mio ? persona.tokenSiHay() : Promise.resolve(null))
+        .then(function (sesion) { return base.cargar(item.datos, sesion); })
         .then(function (res) {
           sacarDeCola(item.id);
           enviados++;
@@ -2745,7 +2783,9 @@
       return;
     }
 
-    base.cargar(datos)
+    var quien = persona.yo();
+    persona.tokenSiHay()
+      .then(function (sesion) { return base.cargar(datos, sesion); })
       .then(function (res) {
         restaurar();
         guardarUltimo(datos, res);
@@ -2759,7 +2799,7 @@
         if (err && err.delServidor) { avisar('err', err.message); return; }
         // Sin señal: se guarda en el celular. Para el vendedor está cargado,
         // porque desde su lado el trabajo está hecho.
-        encolar(datos);
+        encolar(datos, quien && quien.id);
         listo(datos, true);
       });
   }
@@ -2876,11 +2916,13 @@
       traerEquipo();
       cargarMetricas();
     }
+    tomarPersona();
     pintarQuien();
     conectarQuien();
     pintarIdentidad();
     pintarUltimos();
     if (debeDarBienvenida()) { abrirBienvenida(); }
+    persona.listo.then(function () { tomarPersona(); pintarQuien(); });
 
     // Enter en un campo del formulario pasa al siguiente, no guarda: es
     // demasiado fácil mandar el registro a medio llenar desde el teclado.

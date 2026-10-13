@@ -1318,3 +1318,153 @@ select {
 }
 .col-item-barra button:disabled { opacity: .35; cursor: default; }
 .col-item select { width: calc(100% - 12px); margin: 0 6px 6px; font-size: 12.5px; min-height: 32px; }
+
+/* ── QUIÉN ENTRÓ (persona.js, 13/10/2026) ─────────────────────────────────
+   Cada persona entra con su usuario y la barra muestra lo que usa su rol.
+   persona.js pone el rol en <html> ANTES de pintar, así lo que no va nunca
+   llega a verse. Sin usuario no hay rol y se ve todo, como siempre. */
+html[data-nc-rol="vendedor"] .rail-item[href="panel.html"],
+html[data-nc-rol="vendedor"] .rail-item[href^="club-numeros.html"],
+html[data-nc-rol="vendedor"] .rail-item[href="config.html"],
+html[data-nc-rol="supervisor"] .rail-item[href="panel.html"],
+html[data-nc-rol="supervisor"] .rail-item[href^="club-numeros.html"],
+html[data-nc-rol="atencion"] .rail-item[data-impecable],
+html[data-nc-rol="atencion"] .rail-item[href="impecable-admin.html"] { display: none; }
+
+/* El botón de quién entró es el último de la barra. Es un <button> y no un
+   enlace: se le saca lo que el navegador le pone a los botones. */
+button.rail-item { border: 0; background: none; cursor: pointer; }
+.rail-yo.adentro .rail-icono { background: var(--ok-soft); color: var(--ok-txt); }
+.rail-yo.espera .rail-icono { background: var(--warn-soft); color: var(--warn-txt); }
+@media (min-width: 900px) {
+  /* En el rail oscuro: el mismo verde de la luz de "conectado". */
+  .rail-yo.adentro .rail-icono { background: rgba(47, 227, 138, .14); color: #7EEBB5; }
+  .rail-yo.espera .rail-icono { background: rgba(232, 200, 119, .16); color: #E8C877; }
+  button.rail-item:hover { background: rgba(255, 255, 255, .05); }
+}
+
+/* En la Carga, en la PC ancha, el rail ya va justo de alto con su pie (quién
+   carga y cambiar de local): una sección más lo hacía salirse por abajo en la
+   PC del local (1366×658). Ahí quien entró es un botón redondo en el mismo
+   renglón que "Cambiar de local", sin sumar alto; en las otras pantallas, y
+   entre 900 y 1200 (donde el pie no se muestra), sigue siendo el último de la
+   barra. La clase con-pie la pone persona.js. */
+.rail-fila { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
+/* En un renglón y sin partirse: partido, el pie crecía 17 px y la barra se
+   volvía a salir por abajo. */
+.rail-fila .rail-cambiar { margin-top: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  padding-left: 4px; padding-right: 4px; font-size: 11px; }
+.rail-yo-mini { display: none; }
+@media (min-width: 1200px) {
+  .rail.con-pie .rail-in .rail-yo { display: none; }
+  .rail-yo-mini {
+    display: grid; place-items: center; flex: 0 0 auto;
+    width: 28px; height: 28px; border-radius: 50%; cursor: pointer;
+    border: 1px solid var(--rail-line); background: rgba(255, 255, 255, .06); color: var(--rail-txt-2);
+  }
+  .rail-yo-mini svg { width: 16px; height: 16px; }
+  .rail-yo-mini:hover { background: rgba(255, 255, 255, .13); color: var(--rail-txt); }
+  .rail-yo-mini.adentro { background: rgba(47, 227, 138, .14); border-color: rgba(47, 227, 138, .35); color: #7EEBB5; }
+  .rail-yo-mini.espera { background: rgba(232, 200, 119, .16); border-color: rgba(232, 200, 119, .4); color: #E8C877; }
+}
+
+/* La ventana para entrar (local → nombre → PIN), la de quién entró y la de
+   esperar el OK. Encima de todo menos de los avisos (130). */
+.ncp-velo {
+  position: fixed; inset: 0; z-index: 100;
+  display: grid; place-items: center;
+  padding: 16px; overflow-y: auto;
+  background: rgba(20, 20, 18, .5);
+}
+.ncp-caja {
+  position: relative;
+  width: min(460px, 100%);
+  background: var(--surface); color: var(--txt);
+  border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .45);
+  padding: 22px 20px 20px;
+}
+.ncp-caja h2 { font: 700 20px/1.25 var(--display); margin: 0 40px 4px 0; }
+.ncp-caja:focus { outline: none; }
+.ncp-bajada { font-size: 14px; color: var(--txt-2); margin: 0 0 14px; }
+.ncp-x {
+  position: absolute; top: 12px; right: 12px;
+  width: 36px; height: 36px; border: 0; border-radius: 50%;
+  background: var(--surface-2); color: var(--txt-2);
+  font: 400 22px/1 var(--sans); cursor: pointer;
+}
+.ncp-x:hover { color: var(--txt); background: var(--surface-3); }
+.ncp-volver {
+  border: 0; background: none; padding: 0 0 10px; cursor: pointer;
+  color: var(--txt-2); font: 600 13.5px var(--sans);
+}
+.ncp-volver:hover { color: var(--txt); }
+.ncp-lista { max-height: min(52vh, 420px); overflow-y: auto; padding: 2px; }
+.ncp-nuevo { margin-top: 12px; }
+.ncp-vacio, .ncp-cargando { color: var(--txt-2); font-size: 14px; padding: 8px 0; margin: 0; }
+.ncp-campos { display: grid; gap: 12px; }
+.ncp-aviso { min-height: 20px; margin: 10px 0 0; font-size: 13.5px; font-weight: 600; color: var(--txt-2); text-align: center; }
+.ncp-aviso.mal { color: var(--bad-txt); }
+.ncp-pie { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 16px; }
+.ncp-nota { font-size: 13.5px; color: var(--txt-2); background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 12px; margin: 0; }
+.ncp-puntos { display: flex; justify-content: center; gap: 14px; margin: 8px 0 2px; }
+.ncp-puntos i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-alta); transition: background .15s, border-color .15s; }
+.ncp-puntos i.lleno { background: var(--txt); border-color: var(--txt); }
+.ncp-puntos.esperando i { animation: ncp-latir 1s ease-in-out infinite; }
+.ncp-puntos.mal { animation: ncp-temblar .35s; }
+.ncp-teclado { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 300px; margin: 12px auto 0; }
+.ncp-teclado button {
+  height: 56px; border-radius: 16px; cursor: pointer;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--txt);
+  font: 600 22px var(--sans);
+}
+.ncp-teclado button:hover:not(:disabled) { border-color: var(--line-alta); }
+.ncp-teclado button:active:not(:disabled) { transform: scale(.95); background: var(--surface-3); }
+.ncp-teclado button:disabled { opacity: .45; cursor: not-allowed; }
+@keyframes ncp-temblar { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-8px); } 75% { transform: translateX(8px); } }
+@keyframes ncp-latir { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) {
+  .ncp-puntos.mal, .ncp-puntos.esperando i { animation: none; }
+}
+
+/* Config → Usuarios (usuarios.js). En la PC, la lista a la izquierda y lo
+   que se hace (aprobar, crear) a la derecha. */
+.us-grilla { display: grid; gap: 12px; align-items: start; }
+@media (min-width: 1100px) { .us-grilla { grid-template-columns: minmax(0, 1fr) 400px; } }
+.us-col > .bloque:last-child { margin-bottom: 0; }
+.us-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
+.us-filtros select { width: auto; min-width: 220px; max-width: 100%; }
+.us-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--txt-2); cursor: pointer; }
+.us-check input { width: 18px; height: 18px; accent-color: var(--acc); }
+.us-lista { display: grid; gap: 8px; }
+.us-grupo { font: 700 12px/1 var(--sans); letter-spacing: .6px; text-transform: uppercase; color: var(--txt-3); margin: 10px 2px 0; }
+.us-grupo:first-child { margin-top: 0; }
+.us-fila {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+  padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface);
+}
+.us-fila.apagada { background: var(--surface-2); }
+.us-fila.apagada .us-quien b { color: var(--txt-2); }
+.us-pend { border-color: var(--warn); background: var(--warn-soft); }
+.us-quien { flex: 1 1 180px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.us-quien b { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.us-quien b small { font-weight: 500; color: var(--txt-3); font-size: 12.5px; }
+.us-quien span { font-size: 13px; color: var(--txt-2); }
+.us-acciones, .us-editor { display: flex; flex-wrap: wrap; gap: 6px; }
+.us-acciones { flex: 0 1 auto; }
+.us-editor { flex: 1 1 100%; }
+.us-editor select { width: auto; flex: 1 1 160px; min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
+.us-editor select[hidden] { display: none; }
+.us-vacio { font-size: 14px; color: var(--txt-2); margin: 0; }
+.us-nota { font-size: 13px; color: var(--txt-3); margin: 14px 0 0; }
+.us-fijo { font-size: 15px; font-weight: 600; padding: 4px 0; }
+#usCampoLocal[hidden] { display: none; }
+
+/* Llegó con la dirección a una pantalla que no es de su rol: la tapa entera,
+   con la salida a mano. */
+.ncp-sinacceso {
+  position: fixed; inset: 0; z-index: 95;
+  display: grid; place-items: center; padding: 16px;
+  background: var(--bg);
+}

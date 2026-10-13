@@ -345,12 +345,20 @@ var base = {
    * deja saber al vendedor sobre lo que acaba de escribir — y lo que después
    * le permite corregirlo.
    */
-  cargar: function (d) {
-    return funcion('cargar_registro', {
+  cargar: function (d, sesion) {
+    var args = {
       p_sucursal: d.sucursal, p_vendedor: d.vendedor, p_whatsapp: d.whatsapp,
       p_nombre: d.nombre, p_mail: d.mail, p_producto: d.producto,
       p_talle: d.talle, p_obs: d.obs, p_motivo: d.motivo,
       p_producto_codigo: d.producto_codigo || null, p_color: d.color || null
+    };
+    /* Con el usuario de quien está cargando (13/10/2026), la base anota
+       quién cargó. Un token que la base no acepta —vencido, o de una cuenta
+       que ya no existe— no puede costar el cliente: se manda sin usuario,
+       como siempre. */
+    return funcion('cargar_registro', args, sesion).catch(function (err) {
+      if (sesion && err && err.delServidor && /JWT|token/i.test(err.message)) return funcion('cargar_registro', args);
+      throw err;
     }).then(function (filas) {
       var f = Array.isArray(filas) ? filas[0] : filas;
       if (!f || !f.id) throw new Error('La base no devolvió el registro.');
