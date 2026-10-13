@@ -893,6 +893,33 @@ un segmento entero.
   la tienda.
 - Abajo, cómo va cada una (salieron, entregados, leídos, no llegaron y por
   qué), con Pausar, Seguir y Cancelar.
+- **Que nadie la reciba dos veces (SQL 96):**
+  - Cada mensaje sale marcado con su envío (`biz_opaque_callback_data`
+    = `dif:<id>`, que Meta devuelve en sus avisos) y la función lo cuenta
+    apenas sale.
+  - Si la función se corta a mitad de tanda, el aviso de Meta lo anota
+    igual (`wa_procesar`). Lo que Meta no avisó en media hora no salió, y
+    vuelve a la cola (`crm_difusion_revisar`, que corre con el reloj).
+  - Si Meta no contesta, el mensaje no se reintenta: queda "enviando"
+    hasta que se sepa. Cada mensaje va por una conexión nueva, porque el
+    cliente de Deno reintenta solo un POST en una conexión reusada que se
+    cortó.
+- **Pausar y Cancelar** frenan también la tanda que está saliendo: después
+  de cada mensaje la base le dice a la función cómo está la difusión.
+- **"Seguir"** cuenta las fallas de la cuenta desde cero. Los mensajes que
+  no salieron por la cuenta (la tarjeta) vuelven a la cola, hasta 4 veces.
+- **"No escribir"**, o el "no" a las promociones, puesto después de crearla
+  la frena para esa persona.
+- **Errores:**
+  - Si fallan los primeros 5 y no salió ninguno, se pausa.
+  - Un error de la plantilla (132xxx) también la pausa.
+  - Un error pasajero de Meta vuelve a la cola y, al tercer intento
+    seguido, la pausa.
+- **Termina** 15 minutos después del último envío, por si Meta avisa tarde
+  que alguno no salió.
+- **Lo que sale no cuenta como respuesta nuestra** en el tablero de la
+  tienda (`crm_tienda`), en el numerito de Mensajes (`crm_mensajes_ultimo`)
+  ni en Estadísticas (`crm_insights`). Tampoco hace recargar el CRM.
 
 ## Los agentes de IA
 

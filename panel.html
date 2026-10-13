@@ -1172,7 +1172,7 @@
   .dif-paso h3 { display: flex; align-items: center; gap: 8px; }
   .dif-paso h3 i { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; font: 700 11px var(--sans);
                    font-style: normal; background: var(--acc); color: var(--acc-ink); }
-  .dif-paso select { max-width: 100%; }
+  .dif-paso select { width: 100%; max-width: 100%; text-overflow: ellipsis; }
   .dif-resumen { font-size: 14px; line-height: 1.6; color: var(--txt); }
   .dif-resumen b { font-variant-numeric: tabular-nums; }
   .dif-falta { font-size: 13px; line-height: 1.5; color: var(--warn-txt); background: var(--warn-soft); border-radius: var(--r-sm); padding: 10px 12px; }
@@ -5326,7 +5326,8 @@
       var tipo = m.tipo === 'template' ? 'Plantilla' : TIPO_MENSAJE[m.tipo];
       var cuerpo = otra ? 'Mensaje enviado desde Kommo. El texto no nos llega.'
         : (tipo ? '<span class="burbuja-tipo">' + tipo + '</span>' : '') + esc(m.texto || (tipo ? '' : 'Un mensaje que WhatsApp no deja ver acá'));
-      var pie = horaChat(f) + (m.sentido === 'sale' ? ' · ' + (QUIEN_MANDO[m.desde] || 'Nosotros') +
+      /* Lo de una difusión dice de cuál ("Difusión: Socios dormidos"). */
+      var pie = horaChat(f) + (m.sentido === 'sale' ? ' · ' + (m.desde === 'difusion' ? esc(m.quien || 'Difusión') : QUIEN_MANDO[m.desde] || 'Nosotros') +
                 (m.desde === 'crm' && m.quien ? ' · ' + esc(m.quien) : '') + vistoChat(m) : '');
       return sep + '<div class="burbuja ' + (m.sentido === 'entra' ? 'entra' : 'sale') + (otra ? ' otra' : '') + '">' +
         cuerpo + '<span class="burbuja-pie">' + pie + '</span></div>';
@@ -8883,7 +8884,9 @@
   var ERROR_META = { '131026': 'el número no tiene WhatsApp', '131049': 'Meta no la entregó para cuidar la experiencia (pasa con las de marketing)',
                      '131050': 'pidió no recibir promociones', '131042': 'falta la tarjeta en Meta', '131048': 'demasiados envíos juntos',
                      '131056': 'demasiados mensajes a la misma persona', '132001': 'la plantilla no existe o no está aprobada',
-                     '132000': 'faltan datos de la plantilla', '132012': 'un dato que la plantilla no acepta', '131047': 'pasaron más de 24 horas' };
+                     '132000': 'faltan datos de la plantilla', '132012': 'un dato que la plantilla no acepta', '131047': 'pasaron más de 24 horas',
+                     '132015': 'la plantilla está pausada', '132016': 'la plantilla está desactivada', '131008': 'falta un dato de la plantilla',
+                     '100': 'un dato que Meta no acepta' };
   var ESTADO_DIF = { mandando: ['Saliendo', 'pill-info'], pausada: ['Pausada', 'pill-warn'], terminada: ['Terminada', 'pill-ok'], cancelada: ['Cancelada', 'pill-neutra'] };
   /* Las condiciones de un segmento, para la base. */
   function reglasDe(sg) { return !sg ? null : sg.guardado ? (sg.guardado.reglas || {}) : sg.buscar ? { etiqueta: sg.buscar } : { fuente: sg.fuente }; }
@@ -9004,7 +9007,8 @@
     var t = plantillaDif(), v = t && !plantillaRara(t) ? varsDif(t) : null;
     var dato = function (k, esTitulo) {
       var x = valorDif(k, esTitulo), d = datoPl(k);
-      var etq = (esTitulo ? 'Título · ' : '') + (d ? d.t : (/^\d+$/.test(k) ? 'Dato ' + k : k));
+      var lindo = String(k).replace(/_/g, ' ');
+      var etq = (esTitulo ? 'Título · ' : '') + (d ? d.t : (/^\d+$/.test(k) ? 'Dato ' + k : lindo.charAt(0).toUpperCase() + lindo.slice(1)));
       var at = ' data-k="' + esc(k) + '" data-t="' + (esTitulo ? 1 : 0) + '"';
       return '<div class="dif-dato"><b>' + esc(etq) + '</b>' +
         '<select data-dif-modo' + at + ' aria-label="Cómo se completa: ' + esc(etq) + '">' +
@@ -9199,6 +9203,13 @@
     if (m === 'pago') { return 'Meta no las entrega: falta cargar la tarjeta en la cuenta de WhatsApp (en Meta). Cuando esté, tocá Seguir.'; }
     if (m.indexOf('cuenta:') === 0) { return 'Meta frenó la cuenta (código ' + m.slice(7) + '). Revisalo en Meta y tocá Seguir.'; }
     if (m === 'numero') { return 'El número se desconectó del CRM. Cuando vuelva, tocá Seguir.'; }
+    if (m === 'meta') { return 'WhatsApp (Meta) anda con problemas y no la deja salir. Probá Seguir en un rato.'; }
+    if (m.indexOf('plantilla:') === 0) {
+      return 'Meta no acepta la plantilla (' + (ERROR_META[m.slice(10)] || 'código ' + m.slice(10)) + '). Revisala en Plantillas; cuando esté bien, tocá Seguir.';
+    }
+    if (m.indexOf('errores:') === 0) {
+      return 'No salió a los primeros 5 y a ninguno más (' + (ERROR_META[m.slice(8)] || 'código ' + (m.slice(8) || '?')) + '): el problema no parece de las personas. Revisá la plantilla y tocá Seguir.';
+    }
     return m;
   }
   function listaDifHtml() {
@@ -9225,6 +9236,8 @@
         (errores ? '<p class="dif-err">' + esc(errores) + '</p>' : '') +
         (d.estado === 'pausada' && d.motivo ? '<p class="dif-motivo">' + esc(motivoDif(d)) + '</p>' : '') +
         (hoyLleno ? '<p class="dif-motivo suave">Hoy ya salieron ' + miles(d.hoy) + ' (el tope del día): sigue mañana sola.</p>' : '') +
+        (d.estado === 'mandando' && !Number(d.pendientes)
+          ? '<p class="dif-motivo suave">Ya salieron todos. En unos minutos queda terminada (por si Meta avisa que alguno no llegó).</p>' : '') +
         (d.estado === 'mandando' || d.estado === 'pausada'
           ? '<div class="seg-acc">' + (d.estado === 'mandando' ? boton('pausar', 'Pausar') : boton('seguir', 'Seguir')) + boton('cancelar', 'Cancelar') + '</div>' : '') +
         '</div>';

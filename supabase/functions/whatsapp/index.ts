@@ -105,8 +105,9 @@ function iguales(a: string, b: string): boolean {
 
 /** Una llamada a Meta con el token del usuario del sistema. Los mensajes y
  *  las plantillas van en JSON (tienen partes adentro); lo demás, como
- *  formulario. GET y DELETE llevan el token en la dirección. */
-async function meta(ruta: string, metodo = 'GET', datos?: Record<string, unknown>, token = TOKEN, enJson = false): Promise<any> {
+ *  formulario. GET y DELETE llevan el token en la dirección. Con "espera"
+ *  (ms), si Meta no contesta a tiempo se corta (y tira el error). */
+async function meta(ruta: string, metodo = 'GET', datos?: Record<string, unknown>, token = TOKEN, enJson = false, espera?: number): Promise<any> {
   const url = new URL(GRAPH + ruta);
   let cuerpo: URLSearchParams | string | undefined;
   const cabeceras: Record<string, string> = {};
@@ -116,15 +117,19 @@ async function meta(ruta: string, metodo = 'GET', datos?: Record<string, unknown
     cuerpo = JSON.stringify(datos ?? {});
     cabeceras['Content-Type'] = 'application/json';
     cabeceras['Authorization'] = 'Bearer ' + token;
+    /* Con "espera" (las difusiones): una conexión nueva por mensaje. Si Meta
+       cortara una conexión reusada sin contestar, el cliente la reintenta
+       solo, y el mensaje saldría dos veces (SQL 96). */
+    if (espera) cabeceras['Connection'] = 'close';
   } else {
     cuerpo = new URLSearchParams({ ...(datos as Record<string, string> ?? {}), access_token: token });
   }
-  const r = await fetch(url, { method: metodo, body: cuerpo, headers: cabeceras });
+  const r = await fetch(url, { method: metodo, body: cuerpo, headers: cabeceras, signal: espera ? AbortSignal.timeout(espera) : undefined });
   const x = await r.json().catch(() => ({}));
   // Los errores de Meta traen mensaje y código (y a veces una explicación
   // para la persona: error_user_msg); nunca el token.
   if (!r.ok) {
-    return { error: { mensaje: x?.error?.message, codigo: x?.error?.code, sub: x?.error?.error_subcode,
+    return { error: { mensaje: x?.error?.message, codigo: x?.error?.code, sub: x?.error?.error_subcode, http: r.status,
                       usuario: [x?.error?.error_user_title, x?.error?.error_user_msg].filter(Boolean).join(': ') } };
   }
   return x;
@@ -515,9 +520,13 @@ async function enviarPlantilla(p: any) {
     return { ok: false, error: 'WhatsApp no la aceptó' + (r?.error?.usuario || r?.error?.mensaje ? ': ' + (r.error.usuario || r.error.mensaje) : '.'),
              codigo: r?.error?.codigo };
   }
+  /* La prueba de una difusión queda "desde difusión" (SQL 96): no llena la
+     bandeja ni mueve tarjetas de quien la pidió. */
+  const prueba = !!p.numero_id;
   await anotar({ wamid, numero_id: num.id, numero: num.digitos, tel: prep.tel, tipo: 'template',
                  texto: String(p.texto ?? '').slice(0, 4000), media: { plantilla: nombre, idioma: String(p.idioma || 'es_AR') },
-                 quien: String(p.quien ?? '').slice(0, 60) });
+                 quien: (prueba ? 'Prueba de difusión' + (String(p.quien ?? '').trim() ? ': ' + String(p.quien).trim() : '') : String(p.quien ?? '')).slice(0, 60),
+                 ...(prueba ? { desde: 'difusion' } : {}) });
   return { ok: true, wamid };
 }
 
@@ -528,9 +537,21 @@ async function enviarPlantilla(p: any) {
    PIN: sólo manda lo que ya se aprobó con el PIN en el CRM, al ritmo que
    pone la base (la llama el reloj cada minuto, y el CRM al crearla).
    Si Meta rechaza por la cuenta (falta la tarjeta, cuenta bloqueada,
-   demasiados envíos), se corta la tanda, lo que faltaba vuelve a la cola y
-   la difusión se pausa con el motivo. Lo que sale queda "desde difusión". */
+   demasiados envíos) o por la plantilla, se corta la tanda, lo que faltaba
+   vuelve a la cola y la difusión se pausa con el motivo. Lo que sale queda
+   "desde difusión".
+   SQL 96: cada mensaje sale marcado con su envío ("dif:<id>", que Meta
+   devuelve en sus avisos) y se cuenta apenas sale; la respuesta dice si la
+   pausaron o la cancelaron, y ahí se deja de mandar. Si Meta no contesta
+   (red, demora), no se sabe si salió: queda "enviando", y la base lo
+   resuelve con el aviso de Meta o, si no llega, a la media hora. */
 const ERRORES_CUENTA = new Set(['131042', '131031', '131048', '368', '130429', '80007', '4', '190', '10']);
+/* De la plantilla (no existe, pausada, datos que no acepta): le pasa a todos. */
+const ERRORES_PLANTILLA = new Set(['132000', '132001', '132005', '132007', '132012', '132015', '132016', '131008']);
+/* Pasajeros de Meta: no es de la persona; vuelve a la cola. */
+const ERRORES_PASAJEROS = new Set(['1', '2', '131000', '131016', '133004']);
+const TANDA_MS = 100_000;   // una Edge Function corta a los 150 s
+const META_MS = 20_000;
 /** El primer nombre, si parece un nombre ("juan pérez" → "Juan"); si no, nada. */
 function primerNombre(n: unknown): string {
   const p = String(n ?? '').trim().split(/\s+/)[0] ?? '';
@@ -538,6 +559,7 @@ function primerNombre(n: unknown): string {
   return p.charAt(0).toUpperCase() + p.slice(1).toLowerCase();
 }
 async function difusionLote() {
+  const inicio = Date.now();
   let lote: any[];
   try { lote = await rpc('crm_difusion_tomar', { p_max: 40 }); } catch (e) {
     console.error('whatsapp: difusión, no se pudo leer la cola:', String(e));
@@ -545,12 +567,26 @@ async function difusionLote() {
   }
   if (!Array.isArray(lote) || !lote.length) return { ok: true, n: 0 };
   const nums = await numeros();
-  const resultados: Record<string, unknown>[] = [];
+  const devueltos: Record<string, unknown>[] = [];   // lo que vuelve a la cola sin intentarlo
+  const paradas = new Set<string>();                  // difusiones pausadas o canceladas mientras salía la tanda
   let cortada = '';
+  let enviados = 0;
+  /* Cada uno se cuenta apenas sale. Si la base no contesta, no se manda
+     más: lo que quedó se resuelve en la base (ver arriba). */
+  const contar = async (x: Record<string, unknown>) => {
+    try {
+      const r = await rpc('crm_difusion_resultado', { p: [x] });
+      for (const [id, estado] of Object.entries(r?.estados ?? {})) if (estado !== 'mandando') paradas.add(id);
+    } catch (e) {
+      console.error('whatsapp: difusión, no se pudo anotar el resultado:', String(e));
+      cortada = cortada || 'base';
+    }
+  };
   for (const it of lote) {
-    if (cortada) { resultados.push({ id: it.id, devolver: true }); continue; }
+    if (cortada || paradas.has(String(it.difusion))) { devueltos.push({ id: it.id, devolver: true }); continue; }
+    if (Date.now() - inicio > TANDA_MS) { cortada = 'tiempo'; devueltos.push({ id: it.id, devolver: true }); continue; }
     const num = nums.find((n) => n.id === String(it.numero_id) && n.conectado);
-    if (!num) { cortada = 'numero'; resultados.push({ id: it.id, devolver: true, pausar: 'numero' }); continue; }
+    if (!num) { cortada = 'numero'; await contar({ id: it.id, devolver: true, pausar: 'numero' }); continue; }
     const conNombre = it.formato === 'named';
     const valor = (d: any) => (d?.fuente === 'nombre' ? (primerNombre(it.nombre) || limpio(d?.defecto)) : limpio(d?.texto));
     const datos = [...(Array.isArray(it.datos?.titulo) ? it.datos.titulo : []), ...(Array.isArray(it.datos?.cuerpo) ? it.datos.cuerpo : [])];
@@ -561,10 +597,20 @@ async function difusionLote() {
     const componentes: unknown[] = [];
     if (titulo.length) componentes.push({ type: 'header', parameters: titulo });
     if (cuerpo.length) componentes.push({ type: 'body', parameters: cuerpo });
-    const r = await meta('/' + num.id + '/messages', 'POST', {
-      messaging_product: 'whatsapp', recipient_type: 'individual', to: String(it.tel), type: 'template',
-      template: { name: String(it.plantilla), language: { code: String(it.idioma || 'es_AR') }, ...(componentes.length ? { components: componentes } : {}) },
-    }, num.token, true);
+    let r: any;
+    try {
+      r = await meta('/' + num.id + '/messages', 'POST', {
+        messaging_product: 'whatsapp', recipient_type: 'individual', to: String(it.tel), type: 'template',
+        template: { name: String(it.plantilla), language: { code: String(it.idioma || 'es_AR') }, ...(componentes.length ? { components: componentes } : {}) },
+        biz_opaque_callback_data: 'dif:' + it.id,
+      }, num.token, true, META_MS);
+    } catch (e) {
+      /* Sin respuesta de Meta: no se sabe si salió. No se cuenta (queda
+         "enviando") y se corta la tanda. */
+      console.error('whatsapp: difusión, Meta no contestó:', String(e));
+      cortada = 'sin_respuesta';
+      continue;
+    }
     const wamid = r?.messages?.[0]?.id;
     if (wamid) {
       /* Cómo se vio, para la charla del CRM: el texto con los datos de esta persona. */
@@ -575,22 +621,34 @@ async function difusionLote() {
       await anotar({ wamid, numero_id: num.id, numero: num.digitos, tel: String(it.tel), tipo: 'template', texto: texto.slice(0, 4000),
                      media: { plantilla: it.plantilla, idioma: it.idioma || 'es_AR', difusion: it.difusion }, quien: String(it.quien ?? '').slice(0, 60),
                      desde: 'difusion' });
-      resultados.push({ id: it.id, wamid });
+      enviados++;
+      await contar({ id: it.id, wamid });
       continue;
     }
     const codigo = String(r?.error?.codigo ?? '');
-    if (ERRORES_CUENTA.has(codigo)) {
+    if (ERRORES_CUENTA.has(codigo) || ERRORES_PLANTILLA.has(codigo)) {
       cortada = codigo;
-      console.error('whatsapp: difusión cortada por la cuenta:', codigo);
-      resultados.push({ id: it.id, devolver: true, pausar: codigo === '131042' ? 'pago' : 'cuenta:' + codigo });
+      console.error('whatsapp: difusión cortada por la cuenta o la plantilla:', codigo);
+      await contar({ id: it.id, devolver: true,
+                     pausar: codigo === '131042' ? 'pago' : (ERRORES_CUENTA.has(codigo) ? 'cuenta:' : 'plantilla:') + codigo });
       continue;
     }
-    resultados.push({ id: it.id, error: String(r?.error?.usuario || r?.error?.mensaje || 'WhatsApp no lo aceptó.').slice(0, 300), codigo });
+    if (ERRORES_PASAJEROS.has(codigo) || (!codigo && Number(r?.error?.http) >= 500)) {
+      /* Meta anda mal: vuelve a la cola; si a la misma persona ya le pasó 3
+         veces seguidas, se pausa para no insistir. */
+      cortada = 'meta';
+      console.error('whatsapp: difusión, error pasajero de Meta:', codigo || r?.error?.http);
+      await contar({ id: it.id, devolver: true, ...(Number(it.intentos) >= 3 ? { pausar: 'meta' } : {}) });
+      continue;
+    }
+    await contar({ id: it.id, error: String(r?.error?.usuario || r?.error?.mensaje || 'WhatsApp no lo aceptó.').slice(0, 300), codigo });
   }
-  try { await rpc('crm_difusion_resultado', { p: resultados }); } catch (e) {
-    console.error('whatsapp: difusión, no se pudo anotar el resultado:', String(e));
+  if (devueltos.length) {
+    try { await rpc('crm_difusion_resultado', { p: devueltos }); } catch (e) {
+      console.error('whatsapp: difusión, no se pudo devolver a la cola:', String(e));
+    }
   }
-  return { ok: true, n: resultados.filter((x) => x.wamid).length, cortada: cortada || undefined };
+  return { ok: true, n: enviados, cortada: cortada || undefined };
 }
 
 Deno.serve(async (req) => {
