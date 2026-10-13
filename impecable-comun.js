@@ -17,7 +17,7 @@ var BUCKET = 'orden-fotos';
 var VAPID_PUBLICA = 'BCG_mGNkME20VL9WrdVAUqSnPOPdNqQOIdyDGnY3UG8WbC-CbxV87N83mGVW71SZW_wrRYXMv2ZGkEWzRGLBxoo';
 
 var NIVEL = { impecable: 'Impecable', bien: 'Bien', a_mejorar: 'A mejorar', fuera_de_estandar: 'Fuera de estándar' };
-var ROL = { vendedor: 'Vendedor', supervisor: 'Supervisor', admin: 'Administrador', gerencia: 'Gerencia' };
+var ROL = { vendedor: 'Vendedor', supervisor: 'Supervisor', admin: 'Administrador', gerencia: 'Gerencia', atencion: 'Atención al cliente' };
 /* La gente sin local (vos, los dueños) va en un grupo aparte. La base lo
    llama "Administrador" desde el SQL 93 (antes "Oficina" o "Supervisión"). */
 var SIN_LOCAL = 'Administrador';

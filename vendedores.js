@@ -399,6 +399,7 @@ function hayAlgoEscrito() {
 
 /** Al entrar (recién o con la sesión guardada). */
 function entrarApp(recien) {
+  if (yo().rol === 'atencion') { pantallaSinImpecable(); return; }
   if (yo().aprobado === false) { pantallaEspera(); return; }
   refrescarYo();
   armarBarra();
@@ -424,6 +425,18 @@ function refrescarYo() {
     anotarVend_({ access_token: _vend.token, refresh_token: _vend.refresco, expires_at: Math.floor(_vend.vence / 1000) + 60 }, per);
     entrarApp(false);
   }).catch(function () {});
+}
+
+/* Atención al cliente entra al No Compra con el mismo usuario (y la misma
+   sesión), pero Impecable es de los locales: no ve nada de acá. */
+function pantallaSinImpecable() {
+  barra.hidden = true;
+  app.className = 'app';
+  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>Sin acceso a Impecable</h1>' +
+    '<p class="bajada">Hola, ' + esc(primerNombre()) + '. Tu usuario es de Atención al cliente: Impecable es para los locales. Lo tuyo está en el No Compra.</p>' +
+    '<a class="boton lima" href="panel.html">Ir al No Compra</a>' +
+    '<button class="boton" id="salirSin" style="margin-top:10px">No soy yo</button>';
+  document.getElementById('salirSin').onclick = preguntarSalir;
 }
 
 /* Quien entró por primera vez espera el OK de su supervisor (o del

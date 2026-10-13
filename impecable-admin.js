@@ -858,13 +858,13 @@ function ajPersonas() {
     var z = zonaAjuste('<p class="bajada">Las de ' + esc(_local.nombre) + ' y las que no tienen local (administración y gerencia). Para cambiar a alguien de local, elegí otro y guardá. "Borrar PIN": la próxima vez que entre, crea uno nuevo (y hay que volver a aprobarlo). "Aprobado": quien entra por primera vez no ve nada del local hasta que se lo aprueba (a los vendedores también los aprueba su supervisor desde la app).</p>' +
       '<div id="filasPersonas"></div><div class="seccion">Agregar a alguien</div><div class="renglon" id="nuevaPersona">' +
       campoHTML({ k: 'nombre', t: 'Nombre', tipo: 'texto' }, {}) + campoHTML({ k: 'apellido', t: 'Apellido', tipo: 'texto' }, {}) +
-      campoHTML({ k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador']] }, { rol: 'vendedor' }) +
+      campoHTML({ k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador'], ['atencion', 'Atención al cliente']] }, { rol: 'vendedor' }) +
       campoHTML({ k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) }, { local_id: _local.id }) +
       '<div class="acciones-renglon"><button class="boton chico lima" id="agregarPersona">Agregar</button></div></div>');
     editor({
       cont: z.querySelector('#filasPersonas'), filas: gente,
       cols: [{ k: 'nombre', t: 'Nombre', tipo: 'texto' }, { k: 'apellido', t: 'Apellido', tipo: 'texto', nulo: true },
-             { k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador']] },
+             { k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador'], ['atencion', 'Atención al cliente']] },
              { k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) },
              { k: 'dias_libres', t: 'Francos', tipo: 'dias' }, { k: 'telegram_chat_id', t: 'Telegram (id)', tipo: 'texto', nulo: true },
              { k: 'activo', t: 'Activo', tipo: 'bool' }, { k: 'aprobado', t: 'Aprobado', tipo: 'bool' },
