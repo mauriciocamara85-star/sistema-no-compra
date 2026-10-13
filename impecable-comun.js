@@ -274,6 +274,64 @@ function subirArchivo(ruta, blob) {
   });
 }
 
+/** Sube un archivo a otro bucket (los videos de productos testigo, SQL 102). Devuelve la ruta. */
+function subirArchivoEn(bucket, ruta, blob, tipo) {
+  return tokenVend().then(function (t) {
+    return fetch(BASE + '/storage/v1/object/' + bucket + '/' + ruta, {
+      method: 'POST',
+      headers: { apikey: CLAVE, Authorization: 'Bearer ' + t, 'Content-Type': tipo, 'x-upsert': 'false' },
+      body: blob
+    });
+  }).then(function (r) {
+    if (!r.ok) return r.text().then(function () { throw rechazo(r.status === 413 ? 'El video pesa demasiado: grabalo más corto.' : 'No se pudo subir (' + r.status + ').'); });
+    return ruta;
+  });
+}
+
+/** Como urlFirmada, pero de otro bucket. */
+function urlFirmadaEn(bucket, ruta) {
+  if (!ruta) return Promise.resolve(null);
+  var clave = bucket + '|' + ruta, g = _firmadas[clave];
+  if (g && g.hasta > Date.now()) return Promise.resolve(g.url);
+  return tokenVend().then(function (t) {
+    return fetch(BASE + '/storage/v1/object/sign/' + bucket + '/' + ruta, {
+      method: 'POST', headers: { apikey: CLAVE, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ expiresIn: 3600 })
+    });
+  }).then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (d) {
+      var u = d && d.signedURL ? BASE + '/storage/v1' + d.signedURL : null;
+      if (u) _firmadas[clave] = { url: u, hasta: Date.now() + 50 * 60 * 1000 };
+      return u;
+    }).catch(function () { return null; });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PRODUCTOS TESTIGO (SQL 102): lo que comparten la app y la administración
+   ════════════════════════════════════════════════════════════════════════ */
+
+var VIDEOS_TESTIGO = 'testigo-videos';
+
+/** Stock sistema − cantidad real: "Faltan 2", "Sobra 1", "Da justo". */
+function textoDiferencia(dif) {
+  if (dif == null || dif === '' || isNaN(dif)) return '';
+  dif = Number(dif);
+  if (dif === 0) return 'Da justo';
+  if (dif > 0) return dif === 1 ? 'Falta 1' : 'Faltan ' + dif;
+  return dif === -1 ? 'Sobra 1' : 'Sobran ' + (-dif);
+}
+
+/** La diferencia sobre lo enviado: "13,3 %". */
+function textoDesvio(desvio) {
+  if (desvio == null || desvio === '' || isNaN(desvio)) return '';
+  return String(Math.round(Number(desvio) * 10) / 10).replace('.', ',') + ' %';
+}
+
+/** "jueves 16/10" (de una fecha AAAA-MM-DD). */
+function diaYFecha(f) {
+  return new Intl.DateTimeFormat('es-AR', { timeZone: 'UTC', weekday: 'long' }).format(new Date(f + 'T12:00:00Z')) + ' ' + diaMes(f);
+}
+
 function nombreArchivo() {
   return Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.jpg';
 }
@@ -363,8 +421,9 @@ function datosMapa(config, sectores, modulos, gente) {
   var pared = mods.filter(function (m) { return enSalon(m) && !m.isla; }).sort(porNumero);
   var islas = mods.filter(function (m) { return enSalon(m) && m.isla; })
     .sort(function (a, b) { return (esCaja(b) ? 1 : 0) - (esCaja(a) ? 1 : 0) || a.numero - b.numero; });
+  /* El depósito, por número (desde el SQL 102 van 1, 2, 3… en todo el local); antes, uno por sector. */
   var dep = mods.filter(function (m) { return !enSalon(m); })
-    .sort(function (a, b) { return sectorDe[a.sector_id].numero - sectorDe[b.sector_id].numero || a.numero - b.numero; });
+    .sort(function (a, b) { return a.numero - b.numero || sectorDe[a.sector_id].numero - sectorDe[b.sector_id].numero; });
   var mapa = config && config.mapa, aprox = false;
   if (!mapa) {
     /* Hasta el número más alto (si hay huecos, quedan vacíos): así el primer
@@ -407,17 +466,49 @@ function marcaModulo(tipo, x, y) {
 
 /* Un módulo dibujado. op.resaltar: un sector; op.mios: {id: true} (lo demás
    queda apagado); op.marcas: {id: 'pendiente'|'sorpresa'|'listo'|'corregir'|'vencido'}. */
+/** El nombre propio de un módulo ("Vidriera", "Estantería de remeras"), o null si es el de siempre ("Módulo 7", "Depósito 3"). */
+function nombrePropio(m) {
+  var n = String((m && m.nombre) || '').trim();
+  return !m || m.isla || !n || /^(m[oó]dulo|dep[oó]sito)( sector)? \d+$/i.test(n) ? null : n;
+}
+/** "Vidriera (módulo 1)", "Módulo 7", "Caja", "Depósito 3". s: su sector (para saber si es del depósito). */
+function nombreModulo(m, s) {
+  if (!m) return 'Ese módulo';
+  if (m.isla) return m.nombre;
+  var p = nombrePropio(m);
+  if (s && s.tipo === 'deposito') return p ? p + ' (depósito ' + m.numero + ')' : (m.nombre || 'Depósito ' + m.numero);
+  return p ? p + ' (módulo ' + m.numero + ')' : 'Módulo ' + m.numero;
+}
+/** ¿El depósito ya va numerado 1, 2, 3…? (antes del SQL 102 había uno por sector, todos "1"). */
+function depositoNumerado(d) {
+  var vistos = {};
+  return d.dep.every(function (m) { if (vistos[m.numero]) return false; vistos[m.numero] = true; return true; });
+}
+function recortar(t, n) { t = String(t || ''); return t.length > n ? t.slice(0, Math.max(1, n - 1)) + '…' : t; }
+
 function cajaModulo(d, op, m, r, etiqueta, sub) {
   var s = d.sectorDe[m.sector_id], resp = s && d.persona[s.responsable_id];
   var apagado = (op.resaltar && m.sector_id !== op.resaltar) || (op.mios && !op.mios[m.id]);
-  var fs = Math.max(10, Math.min(20, r.h * (sub ? 0.3 : 0.62), r.w * (etiqueta.length > 3 ? 0.16 : 0.5)));
+  /* Con nombre en un módulo parado (pared de costado): el número arriba y el nombre de costado. */
+  var parado = !!sub && r.h > r.w * 1.2;
+  var fs = parado ? Math.max(10, Math.min(15, r.w * 0.34)) : Math.max(10, Math.min(20, r.h * (sub ? 0.3 : 0.62), r.w * (etiqueta.length > 3 ? 0.16 : 0.5)));
   var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
   var out = '<g class="mapa-mod' + (op.marcas && op.marcas[m.id] ? ' con-marca' : '') + '" data-mod="' + esc(m.id) + '"' + (apagado ? ' opacity=".3"' : '') + '><title>' +
-    esc((m.isla ? m.nombre : s && s.tipo === 'deposito' ? nombreSector(s) : 'Módulo ' + m.numero) + (resp ? ' · ' + nombreLista(resp) : ' · sin responsable')) + '</title>' +
-    '<rect x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) + '" rx="7" fill="' + (d.color[m.sector_id] || GRIS_SIN_RESPONSABLE) + '" stroke="rgba(0,0,0,.35)"/>' +
-    '<text x="' + cx.toFixed(1) + '" y="' + (cy + (sub ? -3 : fs * 0.36)).toFixed(1) + '" text-anchor="middle" font-size="' + fs.toFixed(1) + '" font-weight="700" fill="#111">' + esc(etiqueta) + '</text>' +
-    (sub ? '<text x="' + cx.toFixed(1) + '" y="' + (cy + 13).toFixed(1) + '" text-anchor="middle" font-size="10.5" fill="#111">' + esc(sub) + '</text>' : '');
-  if (op.marcas && op.marcas[m.id]) out += marcaModulo(op.marcas[m.id], r.x + r.w - 11, r.y + 11);
+    esc(nombreModulo(m, s) + (resp ? ' · ' + nombreLista(resp) : ' · sin responsable')) + '</title>' +
+    '<rect x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) + '" rx="7" fill="' + (d.color[m.sector_id] || GRIS_SIN_RESPONSABLE) + '" stroke="rgba(0,0,0,.35)"/>';
+  if (parado) {
+    var largo = Math.max(2, Math.floor((r.h - fs - 8) / 5.8));
+    out += '<text x="' + cx.toFixed(1) + '" y="' + (r.y + fs + 2).toFixed(1) + '" text-anchor="middle" font-size="' + fs.toFixed(1) + '" font-weight="700" fill="#111">' + esc(etiqueta) + '</text>' +
+      '<text transform="translate(' + (cx + 3.5).toFixed(1) + ',' + (r.y + fs + 4 + (r.h - fs - 4) / 2).toFixed(1) + ') rotate(-90)" text-anchor="middle" font-size="9.5" font-weight="600" fill="#111">' + esc(recortar(sub, largo)) + '</text>';
+  } else {
+    out += '<text x="' + cx.toFixed(1) + '" y="' + (cy + (sub ? -3 : fs * 0.36)).toFixed(1) + '" text-anchor="middle" font-size="' + fs.toFixed(1) + '" font-weight="700" fill="#111">' + esc(etiqueta) + '</text>' +
+      (sub ? '<text x="' + cx.toFixed(1) + '" y="' + (cy + 13).toFixed(1) + '" text-anchor="middle" font-size="10.5" fill="#111">' + esc(recortar(sub, Math.max(3, Math.floor(r.w / 6.2)))) + '</text>' : '');
+  }
+  /* La marca (cámara, ✓…): arriba a la derecha; en un módulo parado con nombre, al costado, del lado de adentro del local. */
+  if (op.marcas && op.marcas[m.id]) {
+    out += parado ? marcaModulo(op.marcas[m.id], cx < (op._mitad || 260) ? r.x + r.w + 9 : r.x - 9, cy)
+                  : marcaModulo(op.marcas[m.id], r.x + r.w - 11, r.y + 11);
+  }
   return out + '</g>';
 }
 
@@ -426,6 +517,7 @@ function svgMapa(d, op) {
   op = op || {};
   var cuadrado = (d.mapa || {}).forma === 'cuadrado';
   var W = cuadrado ? 600 : 520, H = cuadrado ? 560 : 700, M = 16, P = 50, G = 5, ABAJO = 28;
+  op = Object.assign({}, op, { _mitad: W / 2 });
   var c = {};
   PAREDES.forEach(function (p) { c[p[0]] = Math.max(0, +(d.mapa || {})[p[0]] || 0); });
   var x0 = M, y0 = M, x1 = W - M, y1 = H - M - ABAJO;
@@ -452,7 +544,7 @@ function svgMapa(d, op) {
     if (k >= 0 && k < lugares.length && !enPared[k]) enPared[k] = m; else sobran.push(m);
   });
   lugares.forEach(function (v, j) {
-    if (enPared[j]) out += cajaModulo(d, op, enPared[j], v, String(enPared[j].numero));
+    if (enPared[j]) out += cajaModulo(d, op, enPared[j], v, String(enPared[j].numero), nombrePropio(enPared[j]));
     else if (op.vacios) out += '<rect x="' + v.x.toFixed(1) + '" y="' + v.y.toFixed(1) + '" width="' + Math.max(4, v.w).toFixed(1) + '" height="' + Math.max(4, v.h).toFixed(1) + '" rx="7" fill="none" stroke="currentColor" stroke-opacity=".4" stroke-dasharray="4 3"/>';
   });
   /* Adentro, contra el fondo: la caja primero, después lo demás (y los de las paredes que no entraron). */
@@ -472,16 +564,18 @@ function svgMapa(d, op) {
 function svgDeposito(d, op) {
   op = op || {};
   if (!d.dep.length) return '';
-  var n = d.dep.length, cols = n <= 2 ? n : n <= 4 ? 2 : 3, filas = Math.ceil(n / cols);
-  var W = 420, M = 12, T = 30, gap = 10, tw = (W - 2 * M - (cols + 1) * gap) / cols, th = 72;
+  /* La forma: largo (dos filas) o cuadrado. Numerado 1, 2, 3… desde el SQL 102; antes, uno por sector. */
+  var n = d.dep.length, cuadrado = (d.mapa || {}).forma_deposito === 'cuadrado', numerado = depositoNumerado(d);
+  var cols = cuadrado ? Math.ceil(Math.sqrt(n)) : Math.min(6, n <= 3 ? n : Math.ceil(n / 2)), filas = Math.ceil(n / cols);
+  var W = 420, M = 12, T = 30, gap = 10, tw = (W - 2 * M - (cols + 1) * gap) / cols, th = cols > 4 ? 58 : 72;
   var H = T + filas * (th + gap) + gap + M;
   var out = '<text x="' + M + '" y="20" font-size="14" font-weight="700" fill="currentColor" fill-opacity=".8">Depósito</text>' +
     '<rect x="' + M + '" y="' + T + '" width="' + (W - 2 * M) + '" height="' + (H - T - M) + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>';
   d.dep.forEach(function (m, k) {
     var s = d.sectorDe[m.sector_id], fila = Math.floor(k / cols), col = k % cols;
-    var cat = s.nombre || '';
-    out += cajaModulo(d, op, m, { x: M + gap + col * (tw + gap), y: T + gap + fila * (th + gap), w: tw, h: th }, 'Sector ' + s.numero,
-      cat.length > 22 ? cat.slice(0, 21) + '…' : cat);
+    var sub = (numerado && nombrePropio(m)) || s.nombre || '';
+    out += cajaModulo(d, op, m, { x: M + gap + col * (tw + gap), y: T + gap + fila * (th + gap), w: tw, h: th },
+      numerado ? String(m.numero) : 'Sector ' + s.numero, sub);
   });
   return '<svg class="mapa-svg deposito" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El depósito">' + out + '</svg>';
 }
@@ -493,7 +587,10 @@ function leyendaPersonas(d) {
     var ids = {}; secs.forEach(function (s) { ids[s.id] = true; });
     var nums = d.pared.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.numero; });
     var islas = d.islas.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.nombre; });
-    var deps = secs.filter(function (s) { return s.tipo === 'deposito'; }).map(function (s) { return 'Depósito ' + s.numero + (s.nombre ? ' (' + s.nombre + ')' : ''); });
+    var numDep = d.dep.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.numero; });
+    var cats = secs.filter(function (s) { return s.tipo === 'deposito' && s.nombre; }).map(function (s) { return s.nombre; });
+    var deps = !numDep.length ? [] : depositoNumerado(d) ? ['Depósito ' + rangos(numDep) + (cats.length ? ' (' + cats.join(', ') + ')' : '')]
+      : secs.filter(function (s) { return s.tipo === 'deposito'; }).map(function (s) { return 'Depósito ' + s.numero + (s.nombre ? ' (' + s.nombre + ')' : ''); });
     var cubre = secs.map(function (s) { return nombreLista(d.persona[s.suplente_id]); }).filter(function (x, i, a) { return x && a.indexOf(x) === i; });
     var partes = (nums.length ? ['Módulos ' + rangos(nums)] : []).concat(islas.length ? [islas.join(', ')] : []).concat(deps);
     return '<div class="mapa-sec"><i style="background:' + d.colorPersona[pid] + '"></i><span><b>' + esc(nombreLista(d.persona[pid]) || 'Alguien que ya no está') + '</b><small>' +
@@ -503,7 +600,7 @@ function leyendaPersonas(d) {
   var sinMods = d.modulos.filter(function (m) { return sin.some(function (s) { return s.id === m.sector_id; }); });
   if (sinMods.length) {
     lista.push('<div class="mapa-sec"><i style="background:' + GRIS_SIN_RESPONSABLE + '"></i><span><b>Sin responsable</b><small>' +
-      esc(sinMods.map(function (m) { return m.isla ? m.nombre : d.sectorDe[m.sector_id].tipo === 'deposito' ? nombreSector(d.sectorDe[m.sector_id]) : 'Módulo ' + m.numero; }).join(', ')) + '</small></span></div>');
+      esc(sinMods.map(function (m) { return nombreModulo(m, d.sectorDe[m.sector_id]); }).join(', ')) + '</small></span></div>');
   }
   return lista.length ? '<div class="mapa-ley">' + lista.join('') + '</div>' : '';
 }

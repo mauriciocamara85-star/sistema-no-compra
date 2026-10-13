@@ -262,3 +262,18 @@
 .ventana .renglon .campo.c-medio { width: 230px; }
 .ventana .renglon .campo.c-grande { flex: 1 1 260px; }
 .ventana .boton.lima { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+
+/* Productos testigo (SQL 102) */
+.imp-testigo-locales { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; margin: 0 0 14px; }
+.imp-testigo-local { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--txt);
+                     font: 600 13.5px var(--sans); text-align: left; cursor: pointer; }
+.imp-testigo-local small { color: var(--txt-3); font-weight: 500; font-size: 12px; }
+.imp-testigo-local.bien small { color: var(--ok-txt); }
+.imp-testigo-local.mal small { color: var(--bad-txt); }
+.imp-testigo-local.actual { border: 2px solid var(--acc); }
+.imp-locales { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 12px; margin: 6px 0 10px; }
+.imp-check { display: flex; align-items: center; gap: 8px; font: 500 14px var(--sans); color: var(--txt); cursor: pointer; }
+.imp-check input { width: 18px; height: 18px; }
+.ventana .imp-prod { margin-bottom: 6px; }
+.imp-video { display: block; width: 100%; max-height: 70vh; background: #000; border-radius: var(--r-sm); }
+.ventana .imp-mapa-vista .mapa-svg.deposito { height: auto; max-height: 230px; margin-top: 10px; }

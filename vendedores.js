@@ -301,12 +301,20 @@ var ICONO = {
   equipo: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
   cajas: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>'
 };
-var PESTANAS_VENDEDOR = [['hoy', 'Hoy'], ['tareas', 'Tareas'], ['ideas', 'Ideas'], ['perfil', 'Perfil']];
+ICONO.caja = ICONO.cajas;
 var PESTANAS_SUPERVISION = [['revisar', 'Revisar'], ['equipo', 'Equipo'], ['cajas', 'Cajas'], ['ideas', 'Ideas'], ['perfil', 'Perfil']];
 var _pestana = 'hoy';
 
+/* La Caja es una pestaña más del vendedor, sólo en los locales con el control
+   de caja prendido (se recuerda en el teléfono para armar la barra enseguida). */
+var K_CAJA = 'vdh_vend_caja_activa';
+function cajaActiva() { try { return !!yo().local_id && localStorage.getItem(K_CAJA) === yo().local_id; } catch (e) { return false; } }
+function pestanasVendedor() {
+  return [['hoy', 'Hoy'], ['tareas', 'Tareas']].concat(cajaActiva() ? [['caja', 'Caja']] : []).concat([['ideas', 'Ideas'], ['perfil', 'Perfil']]);
+}
+
 function armarBarra() {
-  var lista = esSupervision() ? PESTANAS_SUPERVISION : PESTANAS_VENDEDOR;
+  var lista = esSupervision() ? PESTANAS_SUPERVISION : pestanasVendedor();
   barra.innerHTML = '<nav style="grid-template-columns:repeat(' + lista.length + ',1fr)">' + lista.map(function (p) {
     return '<button class="pestana" data-pestana="' + p[0] + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
            'stroke-linecap="round" stroke-linejoin="round">' + ICONO[p[0]] + '</svg>' + p[1] + '</button>';
@@ -319,12 +327,36 @@ function marcarPestana(p) {
   barra.querySelectorAll('.pestana').forEach(function (b) { b.classList.toggle('activa', b.dataset.pestana === p); });
 }
 
+/* ¿El local tiene el control de caja? Y, desde las 19, si falta guardar la de
+   hoy: un puntito en la pestaña. */
+function revisarCaja() {
+  var per = yo();
+  if (esSupervision() || !per.local_id) return Promise.resolve();
+  var L = valor(per.local_id);
+  return Promise.all([
+    leer('/orden_config?select=caja_activa&local_id=eq.' + L),
+    leer('/orden_cajas?select=estado&local_id=eq.' + L + '&fecha=eq.' + hoyAR())
+  ]).then(function (r) {
+    var activa = !!(r[0] && r[0][0] && r[0][0].caja_activa);
+    if (activa !== cajaActiva()) {
+      try { if (activa) localStorage.setItem(K_CAJA, per.local_id); else localStorage.removeItem(K_CAJA); } catch (e) {}
+      armarBarra();
+      marcarPestana(_pestana);
+    }
+    var horaAR = Number(new Intl.DateTimeFormat('en-US', { timeZone: ZONA, hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
+    var caja = (r[1] || [])[0];
+    var b = barra.querySelector('[data-pestana="caja"]');
+    if (b) b.classList.toggle('con-punto', activa && horaAR >= 19 && (!caja || caja.estado === 'pendiente'));
+  }).catch(function () {});
+}
+
 function irA(p) {
   apagarCamara();
   marcarPestana(p);
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   if (p === 'hoy') pantallaHoy();
   else if (p === 'tareas') pantallaTareas();
+  else if (p === 'caja') pantallaCaja();
   else if (p === 'ideas') pantallaIdeas();
   else if (p === 'perfil') pantallaPerfil();
   else if (p === 'revisar') pantallaRevisar();
@@ -370,6 +402,7 @@ function entrarApp(recien) {
   if (yo().aprobado === false) { pantallaEspera(); return; }
   refrescarYo();
   armarBarra();
+  revisarCaja();
   avisosAlDia();
   var per = yo();
   if (recien && !bienvenidaVista(per.id)) { pantallaBienvenida(irInicio); return; }
@@ -443,13 +476,13 @@ function revisarAprobacion(silencio) {
 function irPorEnlace() {
   var h = String(location.hash || '').replace(/^#\/?/, '');
   if (!h) return false;
-  var mapa = { hoy: 'hoy', tareas: 'tareas', ideas: 'ideas', perfil: 'perfil', historial: 'perfil',
+  var mapa = { hoy: 'hoy', tareas: 'tareas', caja: 'caja', ideas: 'ideas', perfil: 'perfil', historial: 'perfil',
                revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas' };
   if (h === 'desafio' && !esSupervision()) { marcarPestana('hoy'); abrirDesafio(); return true; }
-  if (h === 'caja' && !esSupervision()) { marcarPestana('hoy'); pantallaCaja(); return true; }
-  if (h === 'admin' && esSupervision()) { location.replace('impecable-admin.html'); return true; }
+  if (h === 'testigo' && !esSupervision()) { marcarPestana('hoy'); pantallaTestigo(); return true; }
+  if ((h === 'admin' || h === 'admin-testigo') && esSupervision()) { location.replace('impecable-admin.html' + (h === 'admin-testigo' ? '#testigo' : '')); return true; }
   var p = mapa[h];
-  if (!p || (esSupervision() ? ['hoy', 'tareas'].indexOf(p) > -1 : ['revisar', 'equipo', 'cajas'].indexOf(p) > -1)) return false;
+  if (!p || (esSupervision() ? ['hoy', 'tareas', 'caja'].indexOf(p) > -1 : ['revisar', 'equipo', 'cajas'].indexOf(p) > -1)) return false;
   irA(p);
   return true;
 }
@@ -515,20 +548,26 @@ function pantallaHoy() {
     /* Las extras no frenan Hoy si fallan. */
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
     llamar('orden_desafio_mio').catch(nada),
-    per.local_id ? leer('/orden_config?select=caja_activa&local_id=eq.' + valor(per.local_id)).catch(nada) : Promise.resolve(null),
+    Promise.resolve(null),   // (la caja pasó a ser una pestaña: la mira revisarCaja)
     leer('/orden_tareas?select=id&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)').catch(nada),
     estadoAvisos().catch(function () { return 'no-soportado'; }),
     /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
     per.local_id ? leer('/orden_recordatorios?select=texto&local_id=eq.' + valor(per.local_id) + '&dia=eq.' + diaSemanaAR() + '&activo=is.true&order=creado_en.asc').catch(nada) : Promise.resolve(null),
     /* SQL 99: el croquis del local, con lo de cada uno marcado. */
-    per.local_id ? cargarMapa(per.local_id).catch(nada) : Promise.resolve(null)
+    per.local_id ? cargarMapa(per.local_id).catch(nada) : Promise.resolve(null),
+    /* SQL 102: producto testigo de mañana, de hoy o atrasado (sin mandar). */
+    per.local_id ? leer('/testigo_semanas?select=id,fecha,cargada_en,testigo_items(item,producto,color)&local_id=eq.' + valor(per.local_id) +
+                        '&fecha=gte.' + sumarDias(hoy, -6) + '&fecha=lte.' + sumarDias(hoy, 1) + '&cargada_en=is.null&cerrada=is.false&order=fecha.asc').catch(nada)
+                 : Promise.resolve(null)
   ]).then(function (r) {
     if (_pestana !== 'hoy') return;
     dibujarHoy({
       controles: r[0] || [], semana: (r[1] || [])[0], tareasIA: r[2] || [],
       sinModulos: Array.isArray(r[3]) && r[3].length === 0, desafio: r[4],
-      caja: !!(r[5] && r[5][0] && r[5][0].caja_activa), tareas: (r[6] || []).length, avisos: r[7], recordatorios: r[8] || [], mapa: r[9]
+      tareas: (r[6] || []).length, avisos: r[7], recordatorios: r[8] || [], mapa: r[9],
+      testigo: (r[10] || []).filter(function (s) { return (s.testigo_items || []).length; })[0] || null
     });
+    revisarCaja();
   }).catch(function (e) { pantallaError(e, pantallaHoy); });
 }
 
@@ -561,7 +600,7 @@ function dibujarHoy(x) {
   var html = cabeza('Hola, ' + primerNombre()) + bannerAvisos(x.avisos) +
     (x.recordatorios || []).map(function (t) {
       return '<div class="recordatorio"><b>' + esc(DIAS_SEMANA[diaSemanaAR() - 1]) + '</b>' + esc(t.texto) + '</div>';
-    }).join('');
+    }).join('') + tarjetaTestigoHoy(x.testigo);
 
   html += '<div class="resumen">' +
     (total
@@ -607,10 +646,6 @@ function dibujarHoy(x) {
   if (x.tareas) {
     html += '<button class="tarjeta-accion" id="irTareas"><b>' + (x.tareas === 1 ? 'Tenés 1 tarea' : 'Tenés ' + x.tareas + ' tareas') + '</b><span>Tocá para verlas.</span></button>';
   }
-  if (x.caja) {
-    html += '<button class="tarjeta-accion" id="irCaja"><b>Caja de hoy</b><span>Las fotos del cierre y el efectivo contado.</span></button>';
-  }
-
   [['salon', 'En lista'], ['deposito', 'Depósito']].forEach(function (g) {
     var lista = x.controles.filter(function (c) { return c.sector_tipo === g[0]; });
     if (!lista.length) return;
@@ -637,7 +672,7 @@ function dibujarHoy(x) {
   if ((b = document.getElementById('banner'))) b.onclick = function () { pantallaBienvenida(pantallaHoy); };
   if ((b = document.getElementById('desafio'))) b.onclick = function () { pantallaDesafio(d); };
   if ((b = document.getElementById('irTareas'))) b.onclick = function () { irA('tareas'); };
-  if ((b = document.getElementById('irCaja'))) b.onclick = pantallaCaja;
+  if ((b = document.getElementById('irTestigo'))) b.onclick = function () { pantallaTestigo(x.testigo.id); };
   app.querySelectorAll('.camara').forEach(function (bt) {
     bt.onclick = function () { pantallaFoto(_controles[bt.dataset.id]); };
   });
@@ -649,7 +684,7 @@ function dibujarHoy(x) {
       if (falta) { pantallaFoto(falta); return; }
       var m = mapa.modulos.filter(function (k) { return k.id === g.dataset.mod; })[0], s = m && mapa.sectorDe[m.sector_id];
       var quien = s && mapa.persona[s.responsable_id];
-      var que = m ? (m.isla ? m.nombre : s.tipo === 'deposito' ? nombreSector(s) : 'Módulo ' + m.numero) : 'Ese módulo';
+      var que = nombreModulo(m, s);
       avisar(!suyos.length ? que + (quien ? ' es de ' + nombreLista(quien) + '.' : ' no tiene responsable.')
         : suyos.some(function (k) { return k.estado === 'vencido'; }) ? que + ': la foto de hoy ya venció.' : que + ': ya mandaste la foto de hoy.');
     };
@@ -681,6 +716,7 @@ var CHECK = { dobladas: 'Doblado', frontales: 'Frontales', etiquetas: 'Etiquetas
 
 var _stream = null;
 function apagarCamara() {
+  pararGrabador();   // si estaba grabando un video de producto testigo, se descarta
   if (_stream) { _stream.getTracks().forEach(function (t) { t.stop(); }); _stream = null; }
 }
 
@@ -1319,13 +1355,16 @@ function textoAlerta(a) {
   return 'Revisar.';
 }
 
+/* La Caja, como pestaña (pedido de Mauricio, 13/10): antes era una tarjeta en Hoy. */
 function pantallaCaja() {
-  barra.hidden = true;
-  app.className = 'app';
-  app.innerHTML = '<p class="cargando">Cargando…</p>';
+  apagarCamara();
+  adentro();
+  marcarPestana('caja');
+  app.innerHTML = cabeza('Caja') + '<p class="cargando">Cargando…</p>';
+  engancharNoSoyYo();
   llamar('orden_caja_hoy').then(function (caja) {
     return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(caja.id) + '&order=tomada_en.desc')
-      .then(function (f) { dibujarCaja(caja, f || []); });
+      .then(function (f) { if (_pestana === 'caja') dibujarCaja(caja, f || []); });
   }).catch(function (e) { pantallaError(e, pantallaCaja); });
 }
 
@@ -1343,8 +1382,7 @@ function dibujarCaja(caja, fotos) {
   });
   var cerrada = caja.estado === 'controlada';
 
-  var html = '<button class="volver" id="volver">‹ Volver a Hoy</button>' +
-    '<h1>Caja del ' + esc(diaMes(caja.fecha)) + '</h1>' +
+  var html = cabeza('Caja del ' + diaMes(caja.fecha)) +
     '<p class="bajada">' + (cerrada ? 'Tu supervisor ya la controló.' : 'Sacá las fotos del cierre: los números se cargan solos. Revisalos y escribí el efectivo que contaste.') + '</p>';
   if (!cerrada) {
     html += '<div class="grilla">' + FOTOS_CAJA.map(function (t) {
@@ -1367,8 +1405,8 @@ function dibujarCaja(caja, fotos) {
   if (!cerrada) html += '<button class="boton lima" id="guardarCaja">Guardar</button>';
   html += '<input type="file" id="fotoCaja" accept="image/*" capture="environment" hidden>';
   app.innerHTML = html;
+  engancharNoSoyYo();
 
-  document.getElementById('volver').onclick = function () { irA('hoy'); };
   var input = document.getElementById('fotoCaja');
   app.querySelectorAll('.foto-caja').forEach(function (b) {
     unaVez(b, function () { return fotoCaja(caja, b.dataset.tipo, input, b); });
@@ -1421,6 +1459,7 @@ function guardarCaja(caja, boton) {
   return llamar('orden_caja_guardar', { p_caja: caja.id, p_valores: valores, p_observaciones: document.getElementById('obs').value || null })
     .then(function (c) {
       avisar((c.alertas || []).length ? 'Guardada, con cosas para revisar.' : 'Guardada. Dio bien.');
+      revisarCaja();
       return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc')
         .then(function (f) { dibujarCaja(c, f || []); });
     });
@@ -1836,4 +1875,273 @@ function pantallaMapa(loc) {
     z.innerHTML = (d.aprox && d.pared.length ? '<div class="nota">Todavía no se armó el mapa de este local: los módulos están en las paredes a ojo.</div>' : '') +
       (d.modulos.length ? '<div class="mapa-caja">' + svgMapa(d) + svgDeposito(d) + '</div>' + leyendaPersonas(d) : '<div class="vacio">Este local todavía no tiene módulos cargados.</div>');
   }).catch(function (e) { pantallaError(e, function () { pantallaMapa(loc); }); });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PRODUCTO TESTIGO (SQL 102). Desde la administración se programa el día y
+   los productos; el local copia los números del sistema, cuenta lo que hay y
+   graba un video cortito de cada producto (en el celular). Anda igual en la
+   PC del local. La diferencia y el desvío se calculan solos.
+   ════════════════════════════════════════════════════════════════════════ */
+
+var CAMPOS_TESTIGO = [['enviada', 'Cantidad enviada'], ['stock_sistema', 'Stock sistema'], ['vendida', 'Cantidad vendida'],
+                      ['cantidad_real', 'Cantidad real (contada)'], ['dev_fabrica', 'Dev. a fábrica'], ['salieron', 'Salieron'], ['entraron', 'Entraron']];
+/* Lo escrito y todavía sin guardar, por producto: sobrevive a ir a grabar un video. */
+var _borradorTestigo = {};
+
+/** La tarjeta de Hoy: mañana, hoy o atrasado. */
+function tarjetaTestigoHoy(s) {
+  if (!s) return '';
+  var hoy = hoyAR(), n = (s.testigo_items || []).length;
+  var lista = (s.testigo_items || []).slice().sort(function (a, b) { return a.item - b.item; })
+    .map(function (i) { return i.producto + (i.color ? ' ' + i.color : ''); }).join(', ');
+  var titulo = s.fecha > hoy ? 'Mañana tienen producto testigo' : s.fecha === hoy ? 'Hoy: producto testigo' : 'Producto testigo sin mandar';
+  var texto = s.fecha > hoy ? lista
+    : s.fecha === hoy ? (n === 1 ? '1 producto' : n + ' productos') + ': copiá los números del sistema, contá y grabá un video de cada uno.'
+    : 'Era del ' + diaYFecha(s.fecha) + '. Cargalo y mandalo.';
+  return '<button class="tarjeta-accion testigo' + (s.fecha < hoy ? ' alerta' : '') + '" id="irTestigo"><b>' + esc(titulo) + '</b><span>' + esc(texto) + '</span></button>';
+}
+
+function pantallaTestigo(semId) {
+  apagarCamara();
+  barra.hidden = true;
+  app.className = 'app';
+  app.innerHTML = '<p class="cargando">Cargando…</p>';
+  var per = yo(), hoy = hoyAR();
+  var buscar = semId
+    ? leer('/testigo_semanas?select=*&id=eq.' + valor(semId))
+    : leer('/testigo_semanas?select=*&local_id=eq.' + valor(per.local_id) + '&fecha=lte.' + sumarDias(hoy, 1) + '&fecha=gte.' + sumarDias(hoy, -6) +
+           '&cerrada=is.false&order=cargada_en.desc.nullsfirst,fecha.desc&limit=1');
+  buscar.then(function (s) {
+    var sem = (s || [])[0];
+    if (!sem) {
+      app.innerHTML = '<button class="volver" id="volver">‹ Volver a Hoy</button><h1>Producto testigo</h1>' +
+        '<div class="vacio">No hay ningún producto testigo para cargar. Cuando lo programen, te aparece en Hoy.</div>';
+      document.getElementById('volver').onclick = function () { irA('hoy'); };
+      return;
+    }
+    return leer('/testigo_v_items?select=*&semana_id=eq.' + valor(sem.id) + '&order=item.asc')
+      .then(function (items) { dibujarTestigo(sem, items || []); });
+  }).catch(function (e) { pantallaError(e, function () { pantallaTestigo(semId); }); });
+}
+
+function dibujarTestigo(sem, items) {
+  var hoy = hoyAR(), antes = !!(sem.fecha && sem.fecha > hoy), bloqueado = antes || sem.cerrada;
+  var html = '<button class="volver" id="volver">‹ Volver a Hoy</button><h1>Producto testigo</h1>' +
+    '<p class="bajada">' + (sem.fecha ? esc(diaYFecha(sem.fecha)).replace(/^./, function (c) { return c.toUpperCase(); }) + ' · ' : '') +
+    'Copiá los números del sistema, contá lo que hay y grabá un video cortito de cada producto.</p>';
+  if (antes) html += '<div class="nota">Se carga el ' + esc(diaYFecha(sem.fecha)) + '. Mientras, ya podés ver qué productos son.</div>';
+  else if (sem.cerrada) html += '<div class="nota">Esta semana ya está cerrada.</div>';
+  else if (sem.cargada_en) html += '<div class="nota">Ya la mandaron el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '. Si corregís algo, volvé a tocar "Listo, mandar".</div>';
+  html += items.map(function (it) { return tarjetaTestigo(it, bloqueado); }).join('');
+  if (!items.length) html += '<div class="vacio">Todavía no hay productos cargados.</div>';
+  if (!bloqueado && items.length) {
+    html += '<button class="boton" id="tGuardar">Guardar</button>' +
+            '<button class="boton lima" id="tMandar" style="margin-top:10px">Listo, mandar</button>';
+  }
+  app.innerHTML = html;
+  document.getElementById('volver').onclick = function () { irA('hoy'); };
+  var porId = {};
+  items.forEach(function (it) { porId[it.id] = it; });
+  app.querySelectorAll('.testigo-item').forEach(function (card) {
+    card.addEventListener('input', function (e) {
+      var k = e.target.dataset && e.target.dataset.k;
+      if (!k) return;
+      var b = _borradorTestigo[card.dataset.item] = _borradorTestigo[card.dataset.item] || {};
+      b[k] = e.target.value;
+      resultadoTestigo(card);
+    });
+    resultadoTestigo(card);
+    var bv = card.querySelector('[data-video]');
+    if (bv) bv.onclick = function () { grabarVideo(sem, porId[card.dataset.item], function () { pantallaTestigo(sem.id); }); };
+  });
+  var g = document.getElementById('tGuardar'), m = document.getElementById('tMandar');
+  if (g) unaVez(g, function () {
+    return guardarTestigo(items).then(function (n) { avisar(n ? 'Guardado.' : 'No había nada nuevo para guardar.'); });
+  });
+  if (m) unaVez(m, function () {
+    var sinVideo = items.filter(function (it) { return !it.video_path || it.video_borrado; }).length;
+    if (sinVideo && !confirm(sinVideo === items.length ? 'Todavía no grabaste ningún video. ¿Mandar igual, sólo con los números?'
+                                                       : 'Falta el video de ' + sinVideo + (sinVideo === 1 ? ' producto' : ' productos') + '. ¿Mandar igual?')) return;
+    return guardarTestigo(items).then(function () { return llamar('testigo_terminar', { p_semana: sem.id }); }).then(function (r) {
+      avisar(r && r.con_diferencia
+        ? 'Mandado. ' + (r.con_diferencia === 1 ? 'Un producto dio diferencia' : r.con_diferencia + ' productos dieron diferencia') + ': le avisamos a tu supervisor.'
+        : 'Mandado: dio todo justo.');
+      irA('hoy');
+    });
+  });
+}
+
+function tarjetaTestigo(it, bloqueado) {
+  var b = _borradorTestigo[it.id] || {};
+  var val = function (k) { return b[k] != null ? b[k] : it[k] == null ? '' : it[k]; };
+  var conVideo = it.video_path && !it.video_borrado;
+  return '<div class="testigo-item" data-item="' + esc(it.id) + '">' +
+    '<div class="ti-cab"><b>' + esc(it.item + ' · ' + it.producto) + '</b>' + (it.color ? '<span class="chip pendiente">' + esc(it.color) + '</span>' : '') + '</div>' +
+    '<div class="ti-grilla">' + CAMPOS_TESTIGO.map(function (c) {
+      return '<label class="campo"><span>' + esc(c[1]) + '</span><input inputmode="numeric" maxlength="5" autocomplete="off" data-k="' + c[0] + '" value="' + esc(val(c[0])) + '"' + (bloqueado ? ' disabled' : '') + '></label>';
+    }).join('') + '</div>' +
+    '<label class="campo"><span>Observaciones</span><input maxlength="300" autocomplete="off" data-k="observacion" value="' + esc(val('observacion')) + '"' + (bloqueado ? ' disabled' : '') + '></label>' +
+    '<div class="ti-res" data-res></div>' +
+    (bloqueado ? '' : '<button class="boton chico' + (conVideo ? '' : ' lima') + '" data-video>' + (conVideo ? 'Video listo ✓ · Grabar de nuevo' : 'Grabar el video (hasta 20 s)') + '</button>') +
+    '</div>';
+}
+
+/** Diferencia y desvío mientras escriben, como en la planilla. */
+function resultadoTestigo(card) {
+  var n = function (k) { var v = String((card.querySelector('[data-k="' + k + '"]') || {}).value || '').trim(); return /^\d{1,5}$/.test(v) ? Number(v) : null; };
+  var stock = n('stock_sistema'), real = n('cantidad_real'), env = n('enviada'), res = card.querySelector('[data-res]');
+  if (stock == null || real == null) { res.textContent = ''; res.className = 'ti-res'; return; }
+  var dif = stock - real;
+  res.textContent = textoDiferencia(dif) + (env > 0 && dif !== 0 ? ' · desvío ' + textoDesvio(100 * dif / env) : '');
+  res.className = 'ti-res ' + (dif > 0 ? 'falta' : dif < 0 ? 'sobra' : 'justo');
+}
+
+/** Guarda los productos que cambiaron. Devuelve cuántos guardó. */
+function guardarTestigo(items) {
+  var porId = {}, cambios = [], malo = null;
+  items.forEach(function (it) { porId[it.id] = it; });
+  app.querySelectorAll('.testigo-item').forEach(function (card) {
+    var it = porId[card.dataset.item], datos = {}, distinto = false;
+    card.querySelectorAll('[data-k]').forEach(function (inp) {
+      var k = inp.dataset.k, v = String(inp.value || '').trim();
+      datos[k] = v;
+      if (v !== String(it[k] == null ? '' : it[k])) distinto = true;
+      if (k !== 'observacion' && v !== '' && !/^\d{1,5}$/.test(v) && !malo) {
+        malo = it.producto + ': en "' + CAMPOS_TESTIGO.filter(function (c) { return c[0] === k; })[0][1] + '" va un número entero.';
+      }
+    });
+    if (distinto) cambios.push({ it: it, datos: datos });
+  });
+  if (malo) return Promise.reject(rechazo(malo));
+  return cambios.reduce(function (p, c) {
+    return p.then(function () {
+      return llamar('testigo_cargar', { p_item: c.it.id, p_datos: c.datos }).then(function (fila) {
+        if (fila) Object.keys(fila).forEach(function (k) { c.it[k] = fila[k]; });
+        delete _borradorTestigo[c.it.id];
+      });
+    });
+  }, Promise.resolve()).then(function () { return cambios.length; });
+}
+
+/* ---------- El video: hasta 20 segundos, liviano (640×480), sin sonido ---------- */
+
+var _grabador = null;
+
+function tipoGrabable() {
+  if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return null;
+  return ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm'].filter(function (t) {
+    try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
+  })[0] || null;
+}
+
+function tipoDeVideo(t, nombre) {
+  t = String(t || '').split(';')[0];
+  if (t === 'video/webm' || t === 'video/mp4' || t === 'video/quicktime') return t;
+  return /\.webm$/i.test(nombre || '') ? 'video/webm' : /\.mov$/i.test(nombre || '') ? 'video/quicktime' : 'video/mp4';
+}
+
+function megas(n) { return String(Math.max(0.1, Math.round(n / 104857.6) / 10)).replace('.', ',') + ' MB'; }
+
+function pararGrabador() {
+  if (!_grabador) return;
+  var r = _grabador;
+  _grabador = null;
+  r.onstop = null;
+  clearInterval(r._reloj);
+  try { if (r.state !== 'inactive') r.stop(); } catch (e) {}
+}
+
+function grabarVideo(sem, it, alTerminar) {
+  pararGrabador();
+  apagarCamara();
+  barra.hidden = true;
+  app.className = 'app';
+  app.innerHTML =
+    '<div class="camara-vista" id="vista">' +
+      '<video id="video" playsinline muted autoplay></video>' +
+      '<div class="guia"><span id="guiaV">Mostrá y contá las prendas: hasta 20 segundos</span></div>' +
+      '<div class="camara-arriba"><button class="volver" id="cerrar">‹ Volver</button><span class="titulo">' + esc(it.producto + (it.color ? ' ' + it.color : '')) + '</span>' +
+        '<span class="cuenta-video" id="cuenta"></span></div>' +
+      '<div class="camara-abajo">' +
+        '<button class="disparar grabar" id="grabar" aria-label="Grabar el video"></button>' +
+        '<button class="enlace" id="otra">¿No anda la cámara?</button>' +
+      '</div>' +
+      '<input type="file" id="archivo" accept="video/*" capture="environment" hidden>' +
+    '</div>';
+  var video = document.getElementById('video'), archivo = document.getElementById('archivo'), grabar = document.getElementById('grabar');
+  var tipo = tipoGrabable();
+  document.getElementById('cerrar').onclick = function () { pararGrabador(); apagarCamara(); alTerminar(false); };
+  document.getElementById('otra').onclick = function () { pararGrabador(); archivo.click(); };
+  archivo.onchange = function () {
+    var f = archivo.files && archivo.files[0];
+    if (!f) return;
+    if (f.size > 20 * 1024 * 1024) { avisar('El video pesa ' + megas(f.size) + ': grabalo más corto (hasta 20 segundos).'); return; }
+    apagarCamara();
+    verVideoGrabado(sem, it, f, tipoDeVideo(f.type, f.name), alTerminar);
+  };
+  /* Sin cámara adentro de la app (o sin poder grabar): la del teléfono. */
+  function sinGrabar() {
+    var g = document.getElementById('guiaV');
+    if (g) g.textContent = 'Tocá el botón para grabar con la cámara del teléfono (hasta 20 segundos)';
+    grabar.onclick = function () { archivo.click(); };
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !tipo) { sinGrabar(); return; }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
+    .then(function (s) {
+      if (!document.getElementById('video')) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+      _stream = s;
+      video.srcObject = s;
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+    }).catch(sinGrabar);
+  grabar.onclick = function () {
+    if (_grabador) { if (_grabador.state === 'recording') _grabador.stop(); return; }
+    if (!_stream) { archivo.click(); return; }
+    var partes = [], seg = 20, rec;
+    try { rec = new MediaRecorder(_stream, { mimeType: tipo, videoBitsPerSecond: 900000 }); } catch (e) { sinGrabar(); return; }
+    _grabador = rec;
+    rec.ondataavailable = function (e) { if (e.data && e.data.size) partes.push(e.data); };
+    rec.onstop = function () {
+      clearInterval(rec._reloj);
+      _grabador = null;
+      var base = tipo.split(';')[0];
+      var blob = new Blob(partes, { type: base });
+      apagarCamara();
+      if (!blob.size) { avisar('No se grabó nada. Probá de nuevo.'); grabarVideo(sem, it, alTerminar); return; }
+      verVideoGrabado(sem, it, blob, base, alTerminar);
+    };
+    rec.start(1000);
+    grabar.classList.add('grabando');
+    document.getElementById('guiaV').textContent = 'Grabando… tocá de nuevo para terminar';
+    var cuenta = document.getElementById('cuenta');
+    cuenta.textContent = seg + ' s';
+    rec._reloj = setInterval(function () {
+      seg--;
+      if (cuenta) cuenta.textContent = Math.max(0, seg) + ' s';
+      if (seg <= 0 && rec.state === 'recording') rec.stop();
+    }, 1000);
+  };
+}
+
+function verVideoGrabado(sem, it, blob, tipo, alTerminar) {
+  barra.hidden = true;
+  app.className = 'app';
+  var url = URL.createObjectURL(blob);
+  app.innerHTML = '<button class="volver" id="volverV">‹ Volver</button><h1>' + esc(it.producto + (it.color ? ' ' + it.color : '')) + '</h1>' +
+    '<p class="bajada">Fijate que se vean bien las prendas. Pesa ' + megas(blob.size) + '.</p>' +
+    '<video class="video-testigo" id="videoV" src="' + url + '" controls playsinline></video>' +
+    '<button class="boton lima" id="mandarV">Mandar el video</button>' +
+    '<button class="boton" id="otraV" style="margin-top:10px">Grabar de nuevo</button>';
+  var salir = function (ok) { URL.revokeObjectURL(url); alTerminar(ok); };
+  document.getElementById('volverV').onclick = function () { salir(false); };
+  document.getElementById('otraV').onclick = function () { URL.revokeObjectURL(url); grabarVideo(sem, it, alTerminar); };
+  unaVez(document.getElementById('mandarV'), function () {
+    var ext = tipo === 'video/webm' ? 'webm' : tipo === 'video/quicktime' ? 'mov' : 'mp4';
+    var ruta = sem.local_id + '/' + sem.id + '/' + it.id + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.' + ext;
+    document.getElementById('mandarV').textContent = 'Mandando…';
+    return subirArchivoEn(VIDEOS_TESTIGO, ruta, blob, tipo)
+      .then(function () { return llamar('testigo_video_guardar', { p_item: it.id, p_path: ruta }); })
+      .then(function () { avisar('Video mandado.'); salir(true); });
+  });
 }

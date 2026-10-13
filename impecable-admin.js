@@ -652,50 +652,167 @@ function editor(cfg) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   PRODUCTOS TESTIGO (carga semanal, con la forma de la planilla)
+   PRODUCTOS TESTIGO (SQL 102): se programa acá; lo cargan los locales en la app
    ════════════════════════════════════════════════════════════════════════ */
 
 var _semanaTestigo = null;
 function verTestigo() {
   _semanaTestigo = _semanaTestigo || lunesAR();
-  var L = valor(_local.id);
-  leer('/testigo_semanas?select=*&local_id=eq.' + L + '&semana=eq.' + _semanaTestigo).then(function (s) {
-    var sem = (s || [])[0];
-    var c = document.getElementById('cuerpo');
-    var semanas = [];
-    for (var i = 0; i < 6; i++) semanas.push(sumarDias(lunesAR(), -7 * i));
-    var cab = '<div class="solapas chicas">' + semanas.map(function (w) { return '<button data-semana="' + w + '" class="' + (w === _semanaTestigo ? 'activa' : '') + '">Semana del ' + diaMes(w) + '</button>'; }).join('') + '</div>' +
-      '<p class="bajada">Vendida = Enviada − Dev. a fábrica − Salieron + Entraron − Stock sistema. Diferencia = Stock sistema − Cantidad real (positivo: falta mercadería). El desvío de la planilla queda pendiente: falta saber cómo se calcula.</p>';
-    var engancharSemanas = function () { c.querySelectorAll('[data-semana]').forEach(function (b) { b.onclick = function () { _semanaTestigo = b.dataset.semana; verTestigo(); }; }); };
-    if (!sem) {
-      c.innerHTML = cab + '<div class="vacio">No hay carga para esta semana.</div>' + (soloMira() ? '' : '<button class="boton lima" id="empezar" style="max-width:320px;margin-top:12px">Empezar la carga de esta semana</button>');
-      engancharSemanas();
-      var b = document.getElementById('empezar');
-      if (b) unaVez(b, function () {
-        return escribir('/testigo_semanas', 'POST', { local_id: _local.id, semana: _semanaTestigo, cargado_por: yo().id }).then(verTestigo);
-      });
-      return;
-    }
-    return leer('/testigo_v_items?select=*&semana_id=eq.' + valor(sem.id) + '&order=item.asc').then(function (items) {
-      c.innerHTML = cab + (sem.cerrada ? '<div class="nota">Esta semana está cerrada.</div>' : '') + '<div id="itemsTestigo"></div>' +
-        (soloMira() || sem.cerrada ? '' : '<button class="boton" id="agregarItem" style="max-width:320px">Agregar un producto</button>');
-      engancharSemanas();
-      editor({
-        cont: document.getElementById('itemsTestigo'), filas: items || [], vacio: 'Todavía no hay productos en esta semana.',
-        cols: [{ k: 'item', t: 'Ítem', tipo: 'num', ancho: 'chico' }, { k: 'producto', t: 'Producto', tipo: 'texto', ancho: 'grande' }, { k: 'color', t: 'Color', tipo: 'texto', nulo: true },
-               { k: 'enviada', t: 'Enviada', tipo: 'num', ancho: 'chico' }, { k: 'stock_sistema', t: 'Stock sistema', tipo: 'num', ancho: 'chico' },
-               { k: 'cantidad_real', t: 'Cantidad real', tipo: 'num', ancho: 'chico' }, { k: 'dev_fabrica', t: 'Dev. a fábrica', tipo: 'num', ancho: 'chico' },
-               { k: 'salieron', t: 'Salieron', tipo: 'num', ancho: 'chico' }, { k: 'entraron', t: 'Entraron', tipo: 'num', ancho: 'chico' },
-               { k: 'vendida', t: 'Vendida', tipo: 'ver' }, { k: 'diferencia', t: 'Diferencia', tipo: 'ver' }],
-        guardar: function (f, cambios) { return guardarFila('/testigo_items?id=eq.' + valor(f.id), cambios).then(verTestigo); }
-      });
-      var a = document.getElementById('agregarItem');
-      if (a) unaVez(a, function () {
-        var n = (items || []).reduce(function (m, x) { return Math.max(m, x.item); }, 0) + 1;
-        return escribir('/testigo_items', 'POST', { semana_id: sem.id, item: n, producto: 'Producto ' + n }).then(verTestigo);
-      });
+  var L = valor(_local.id), c = document.getElementById('cuerpo'), hoy = hoyAR();
+  var semanas = [sumarDias(lunesAR(), 7)];
+  for (var i = 0; i < 6; i++) semanas.push(sumarDias(lunesAR(), -7 * i));
+  if (semanas.indexOf(_semanaTestigo) < 0) semanas.unshift(_semanaTestigo);
+  Promise.all([
+    leer('/testigo_semanas?select=*&local_id=eq.' + L + '&semana=eq.' + _semanaTestigo),
+    /* Cómo va esa semana en cada local (el supervisor sólo tiene el suyo). */
+    _locales.length > 1 ? leer('/testigo_semanas?select=id,local_id,fecha,cargada_en&semana=eq.' + _semanaTestigo) : Promise.resolve([])
+  ]).then(function (r) {
+    var sem = (r[0] || [])[0], todas = r[1] || [];
+    var difs = todas.length ? leer('/testigo_v_items?select=semana_id,diferencia&semana_id=in.(' + todas.map(function (s) { return valor(s.id); }).join(',') + ')') : Promise.resolve([]);
+    var items = sem ? leer('/testigo_v_items?select=*&semana_id=eq.' + valor(sem.id) + '&order=item.asc') : Promise.resolve([]);
+    var quien = sem && sem.cargada_por ? leer('/orden_personas?select=nombre,inicial&id=eq.' + valor(sem.cargada_por)).catch(function () { return []; }) : Promise.resolve([]);
+    return Promise.all([difs, items, quien]).then(function (x) {
+      if (_solapa !== 'testigo') return;
+      dibujarTestigoAdmin(c, semanas, sem, todas, x[0] || [], x[1] || [], (x[2] || [])[0], hoy);
     });
   }).catch(function (e) { error(e, verTestigo); });
+}
+
+function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
+  var html = (soloMira() ? '' : '<div class="imp-mapa-acc"><button class="boton chico lima" id="programar">Programar un control</button></div>') +
+    '<div class="solapas chicas">' + semanas.map(function (w) {
+      return '<button data-semana="' + w + '" class="' + (w === _semanaTestigo ? 'activa' : '') + '">Semana del ' + diaMes(w) + '</button>';
+    }).join('') + '</div>' +
+    '<p class="bajada">Los locales cargan los números del sistema y la cantidad real, con un video por producto. Diferencia = Stock sistema − Cantidad real (positivo: falta). ' +
+    'Desvío = la diferencia sobre la cantidad enviada. Acá se puede corregir cualquier casillero.</p>';
+
+  /* Todos los locales de esa semana, de un vistazo. */
+  if (todas.length) {
+    var conDif = {};
+    difs.forEach(function (d) { if (d.diferencia) conDif[d.semana_id] = (conDif[d.semana_id] || 0) + 1; });
+    var nombre = {};
+    _locales.forEach(function (l) { nombre[l.id] = l.nombre; });
+    html += '<div class="seccion">Esta semana en los locales</div><div class="imp-testigo-locales">' + todas.slice().sort(function (a, b) {
+      return String(nombre[a.local_id] || '').localeCompare(String(nombre[b.local_id] || ''));
+    }).map(function (s) {
+      var estado = s.cargada_en ? 'mandado el ' + diaMes(s.cargada_en) + (conDif[s.id] ? ' · ' + conDif[s.id] + ' con diferencia' : ' · sin diferencias')
+        : s.fecha && s.fecha < hoy ? 'sin mandar (era el ' + diaMes(s.fecha) + ')' : s.fecha ? 'se cuenta el ' + diaYFecha(s.fecha) : 'sin día';
+      var clase = s.cargada_en ? (conDif[s.id] ? 'mal' : 'bien') : s.fecha && s.fecha < hoy ? 'mal' : '';
+      return '<button class="imp-testigo-local ' + clase + (s.local_id === _local.id ? ' actual' : '') + '" data-local="' + esc(s.local_id) + '"><b>' +
+        esc(nombre[s.local_id] || 'Otro local') + '</b><small>' + esc(estado) + '</small></button>';
+    }).join('') + '</div>';
+  }
+
+  html += '<div class="seccion">' + esc(_local.nombre) + '</div>';
+  if (!sem) {
+    html += '<div class="vacio">' + esc(_local.nombre) + ' no tiene producto testigo esta semana.</div>' +
+      (soloMira() ? '' : '<button class="boton chico" id="empezar" style="margin-top:12px">Empezar una planilla vacía</button>');
+  } else {
+    html += '<div class="nota">' + (sem.fecha ? 'Se cuenta el ' + esc(diaYFecha(sem.fecha)) + '. ' : '') +
+      (sem.cargada_en ? 'Mandado' + (quien ? ' por ' + esc(nombreLista(quien)) : '') + ' el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '.'
+                      : 'El local todavía no lo mandó.') + (sem.cerrada ? ' Semana cerrada.' : '') + '</div>' +
+      '<div id="itemsTestigo"></div>' +
+      (soloMira() || sem.cerrada ? '' : '<button class="boton chico" id="agregarItem">Agregar un producto a ' + esc(_local.nombre) + '</button>');
+    var conVideo = items.filter(function (f) { return f.video_path && !f.video_borrado; });
+    if (conVideo.length) {
+      html += '<div class="seccion">Videos</div><div class="imp-mapa-acc">' + conVideo.map(function (f) {
+        return '<button class="boton chico" data-video="' + esc(f.id) + '">▶ ' + esc(f.item + ' · ' + f.producto + (f.color ? ' ' + f.color : '')) + '</button>';
+      }).join('') + '</div>';
+    }
+    var borrados = items.filter(function (f) { return f.video_borrado; }).length;
+    if (borrados) html += '<p class="bajada">' + borrados + (borrados === 1 ? ' video ya se borró' : ' videos ya se borraron') + ' (se guardan 14 días; los que dieron diferencia, 90).</p>';
+  }
+  c.innerHTML = html;
+
+  c.querySelectorAll('[data-semana]').forEach(function (b) { b.onclick = function () { _semanaTestigo = b.dataset.semana; verTestigo(); }; });
+  c.querySelectorAll('[data-local]').forEach(function (b) {
+    b.onclick = function () { if (b.dataset.local !== _local.id) { elegirLocal(b.dataset.local); ir('testigo'); } };
+  });
+  var b = document.getElementById('programar');
+  if (b) b.onclick = programarTestigo;
+  b = document.getElementById('empezar');
+  if (b) unaVez(b, function () {
+    return escribir('/testigo_semanas', 'POST', { local_id: _local.id, semana: _semanaTestigo, cargado_por: yo().id }).then(verTestigo);
+  });
+  if (!sem) return;
+  editor({
+    cont: document.getElementById('itemsTestigo'), filas: items, vacio: 'Todavía no hay productos en esta semana.',
+    cols: [{ k: 'item', t: 'Ítem', tipo: 'num', ancho: 'chico' }, { k: 'producto', t: 'Producto', tipo: 'texto', ancho: 'grande' }, { k: 'color', t: 'Color', tipo: 'texto', nulo: true, ancho: 'chico' },
+           { k: 'enviada', t: 'Enviada', tipo: 'num', ancho: 'chico' }, { k: 'stock_sistema', t: 'Stock sistema', tipo: 'num', ancho: 'chico' },
+           { k: 'cantidad_real', t: 'Cantidad real', tipo: 'num', ancho: 'chico' }, { k: 'dev_fabrica', t: 'Dev. a fábrica', tipo: 'num', ancho: 'chico' },
+           { k: 'salieron', t: 'Salieron', tipo: 'num', ancho: 'chico' }, { k: 'entraron', t: 'Entraron', tipo: 'num', ancho: 'chico' },
+           { k: 'vendida', t: 'Vendida', tipo: 'num', ancho: 'chico' },
+           { k: 'diferencia', t: 'Diferencia', tipo: 'ver', ver: function (f) { return textoDiferencia(f.diferencia) || '—'; } },
+           { k: 'desvio', t: 'Desvío', tipo: 'ver', ver: function (f) { return textoDesvio(f.desvio) || '—'; } },
+           { k: 'observacion', t: 'Observaciones', tipo: 'texto', nulo: true, ancho: 'grande' }],
+    guardar: function (f, cambios) { return guardarFila('/testigo_items?id=eq.' + valor(f.id), cambios).then(verTestigo); }
+  });
+  c.querySelectorAll('[data-video]').forEach(function (bv) {
+    bv.onclick = function () { verVideoTestigo(items.filter(function (f) { return f.id === bv.dataset.video; })[0]); };
+  });
+  var a = document.getElementById('agregarItem');
+  if (a) unaVez(a, function () {
+    var n = items.reduce(function (m, x) { return Math.max(m, x.item); }, 0) + 1;
+    return escribir('/testigo_items', 'POST', { semana_id: sem.id, item: n, producto: 'Producto ' + n }).then(verTestigo);
+  });
+}
+
+function verVideoTestigo(f) {
+  if (!f) return;
+  var v = ventana('<h1>' + esc(f.item + ' · ' + f.producto + (f.color ? ' ' + f.color : '')) + '</h1>' +
+    '<p class="bajada">' + esc((f.video_subido_en ? 'Grabado el ' + diaMes(f.video_subido_en) + ' a las ' + hora(f.video_subido_en) + '. ' : '') +
+      (f.stock_sistema != null && f.cantidad_real != null ? 'Sistema ' + f.stock_sistema + ', contaron ' + f.cantidad_real + ': ' + textoDiferencia(f.diferencia) + '.' : '')) + '</p>' +
+    '<video class="imp-video" id="videoTestigo" controls playsinline></video><p class="bajada" id="videoEstado">Cargando el video…</p>');
+  urlFirmadaEn(VIDEOS_TESTIGO, f.video_path).then(function (u) {
+    var el = v.querySelector('#videoTestigo'), est = v.querySelector('#videoEstado');
+    if (!el) return;
+    if (u) { el.src = u; est.textContent = ''; } else est.textContent = 'No se pudo abrir el video (puede que ya se haya borrado).';
+  });
+}
+
+/** "Este jueves se controlan estos productos": para todos los locales o los elegidos. */
+function programarTestigo() {
+  /* El ejemplo, sólo en el primero: en todos parecía que ya estaban cargados. */
+  var fila = function (ejemplo) {
+    return '<div class="renglon imp-prod"><label class="campo c-grande"><span>Producto</span><input data-p="producto" maxlength="80"' + (ejemplo ? ' placeholder="Por ejemplo: Last Chance"' : '') + '></label>' +
+           '<label class="campo c-chico"><span>Color</span><input data-p="color" maxlength="30"' + (ejemplo ? ' placeholder="NE"' : '') + '></label></div>';
+  };
+  var varios = _locales.length > 1;
+  var f = ventana('<h1>Programar un control</h1><p class="bajada">Elegí el día y los productos. A los locales que marques les aparece en la app (y el día antes les llega el aviso): ' +
+      'no tienen que cargar los productos, sólo los números y el video.</p>' +
+    '<div class="renglon"><label class="campo c-medio"><span>Día</span><input type="date" id="pFecha" value="' + sumarDias(hoyAR(), 1) + '"></label></div>' +
+    '<div class="seccion">Productos</div><div id="pProds">' + fila(true) + fila() + fila() + fila() + '</div>' +
+    '<button class="boton chico" id="pMas">Agregar otro producto</button>' +
+    '<div class="seccion">Locales</div>' +
+    (varios ? '<div class="imp-mapa-acc"><button class="boton chico" id="pTodos">Todos</button><button class="boton chico" id="pNinguno">Ninguno</button></div>' : '') +
+    '<div class="imp-locales">' + _locales.map(function (l) {
+      return '<label class="imp-check"><input type="checkbox" data-loc="' + esc(l.id) + '" checked> ' + esc(l.nombre) + '</label>';
+    }).join('') + '</div>' +
+    '<p class="bajada">Si a un local no le llegó un producto, destildalo acá y después cambiale el producto en su planilla.</p>' +
+    '<button class="boton lima" id="pGuardar">Programar</button>');
+  f.querySelector('#pMas').onclick = function () { f.querySelector('#pProds').insertAdjacentHTML('beforeend', fila()); };
+  var marcar = function (si) { f.querySelectorAll('[data-loc]').forEach(function (x) { x.checked = si; }); };
+  if (varios) {
+    f.querySelector('#pTodos').onclick = function () { marcar(true); };
+    f.querySelector('#pNinguno').onclick = function () { marcar(false); };
+  }
+  unaVez(f.querySelector('#pGuardar'), function () {
+    var fecha = f.querySelector('#pFecha').value;
+    var prods = [].map.call(f.querySelectorAll('.imp-prod'), function (r) {
+      return { producto: r.querySelector('[data-p="producto"]').value.trim(), color: r.querySelector('[data-p="color"]').value.trim() };
+    }).filter(function (p) { return p.producto; });
+    var locales = [].filter.call(f.querySelectorAll('[data-loc]'), function (x) { return x.checked; }).map(function (x) { return x.dataset.loc; });
+    if (!fecha) { avisar('Elegí el día.'); return; }
+    if (!prods.length) { avisar('Escribí al menos un producto.'); return; }
+    if (!locales.length) { avisar('Marcá al menos un local.'); return; }
+    return llamar('testigo_programar', { p_fecha: fecha, p_locales: locales, p_productos: prods }).then(function (r) {
+      f.remove();
+      avisar('Listo: ' + prods.length + (prods.length === 1 ? ' producto' : ' productos') + ' en ' + r.locales + (r.locales === 1 ? ' local' : ' locales') +
+             ' para el ' + diaYFecha(fecha) + '.');
+      _semanaTestigo = lunesAR(fecha);
+      verTestigo();
+    });
+  });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -785,10 +902,9 @@ function ajSectores() {
     return (ids.length ? leer('/orden_modulos?select=*&sector_id=in.(' + ids.join(',') + ')&order=numero.asc') : Promise.resolve([])).then(function (mods) {
       var html = '<p class="bajada">Cada sector tiene un responsable y un suplente (el que lo cubre en sus francos). Los controles le llegan a quien esté ese día.</p>';
       sectores.forEach(function (s) {
-        /* Los del salón se agregan desde el mapa (van numerados por todo el local, pared por pared). */
+        /* Los módulos se agregan desde el mapa (van numerados por todo el local: el salón pared por pared, el depósito 1, 2, 3…). */
         html += '<div class="seccion">' + (s.tipo === 'salon' ? 'Salón' : 'Depósito') + ' · sector ' + s.numero + '</div><div data-sector="' + esc(s.id) + '"></div><div data-modulos="' + esc(s.id) + '"></div>' +
-          (s.tipo === 'salon' ? '<button class="boton chico" data-al-mapa>Agregar o sacar módulos: en el mapa del local</button>'
-                              : '<button class="boton chico" data-agregar-modulo="' + esc(s.id) + '">Agregar módulo a este sector</button>');
+          '<button class="boton chico" data-al-mapa>Agregar o sacar módulos: en el mapa del local</button>';
       });
       html += '<div class="seccion">Agregar un sector</div><div class="renglon" id="nuevoSector">' +
         campoHTML({ k: 'tipo', t: 'Tipo', tipo: 'sel', ops: [['salon', 'Salón'], ['deposito', 'Depósito']] }, { tipo: 'salon' }) +
@@ -802,7 +918,7 @@ function ajSectores() {
           guardar: function (f, c) { return guardarFila('/orden_sectores?id=eq.' + valor(f.id), c); } });
         var suyos = (mods || []).filter(function (m) { return m.sector_id === s.id; });
         /* En el salón, el número y si está prendido los maneja el mapa (si no, el mapa los pisa al guardar). */
-        var delMapa = s.tipo === 'salon';
+        var delMapa = true;
         editor({ cont: z.querySelector('[data-modulos="' + s.id + '"]'), filas: suyos, vacio: 'Sin módulos.',
           cols: [{ k: 'numero', t: 'N.º', tipo: 'num', ancho: 'chico', fijo: delMapa }, { k: 'nombre', t: 'Módulo', tipo: 'texto' },
                  { k: 'exhibidor_id', t: 'Exhibidor', tipo: 'sel', ops: [[null, '—']].concat(exh.map(function (e) { return [e.id, e.nombre]; })) },
@@ -816,13 +932,6 @@ function ajSectores() {
       });
       cargarFotos(z);
       z.querySelectorAll('[data-al-mapa]').forEach(function (b) { b.onclick = function () { ir('local'); }; });
-      z.querySelectorAll('[data-agregar-modulo]').forEach(function (b) {
-        unaVez(b, function () {
-          var sid = b.dataset.agregarModulo;
-          var n = Math.max.apply(null, [0].concat((mods || []).filter(function (m) { return m.sector_id === sid; }).map(function (m) { return m.numero; }))) + 1;
-          return escribir('/orden_modulos', 'POST', { sector_id: sid, numero: n, nombre: 'Módulo ' + n }).then(ajSectores);
-        });
-      });
       unaVez(z.querySelector('#agregarSector'), function () {
         var r2 = z.querySelector('#nuevoSector');
         return escribir('/orden_sectores', 'POST', { local_id: _local.id, tipo: r2.querySelector('[data-k=tipo]').value, numero: Number(r2.querySelector('[data-k=numero]').value) })
@@ -960,9 +1069,12 @@ function dibujarMapaLocal() {
   var puede = !soloMira();
   if (!puede) _repartir = false;
   z.innerHTML = '<div class="seccion">El mapa del local</div><div class="imp-mapa">' +
-    (puede ? '<div class="imp-mapa-acc"><button class="boton chico' + (_repartir ? ' lima' : '') + '" id="btnRepartir">' + (_repartir ? 'Listo, terminé de repartir' : 'Repartir los módulos') + '</button>' +
+    (puede ? '<div class="imp-mapa-acc"><button class="boton chico' + (_repartir ? ' lima' : '') + '" id="btnRepartir">' + (_repartir ? 'Listo, terminé' : 'Repartir y ponerles nombre') + '</button>' +
+      (_repartir && d.pared.length ? '<button class="boton chico" id="btnParejo">Repartir parejo el salón entre ' + planReparto(d).length + '</button>' : '') +
+      (_repartir && d.dep.length > 1 && depositoNumerado(d) ? '<button class="boton chico" id="btnParejoDep">Repartir parejo el depósito entre ' + planReparto(d, 'deposito').length + '</button>' : '') +
       '<button class="boton chico" id="btnFormaMapa">Cambiar la forma y la cantidad</button></div>' : '') +
-    (_repartir ? '<p class="bajada">Tocá un módulo para elegir de quién es. Tocá un sector (abajo) para elegir quién lo tiene, quién lo cubre y, en el depósito, qué tiene.</p>' : '') +
+    (_repartir ? '<p class="bajada">"Repartir parejo" divide los módulos en partes iguales, en bloques seguidos (22 entre 3: 7, 7 y 8). ' +
+                 'Para hacerlo a mano o ponerle nombre a un módulo ("Vidriera"), tocalo. Tocá un sector (abajo) para elegir quién lo tiene, quién lo cubre y, en el depósito, qué tiene.</p>' : '') +
     (d.modulos.length ? '<div class="imp-mapa-dibujos">' + svgMapa(d) + svgDeposito(d) + '</div>'
                       : '<div class="vacio">Este local todavía no tiene módulos' + (puede ? ': tocá "Cambiar la forma y la cantidad".' : '.') + '</div>') +
     (d.aprox && d.pared.length ? '<p class="bajada">Todavía no se armó el mapa: los módulos están en las paredes a ojo.</p>' : '') +
@@ -973,6 +1085,10 @@ function dibujarMapaLocal() {
   if (b) b.onclick = function () { _repartir = !_repartir; dibujarMapaLocal(); };
   b = document.getElementById('btnFormaMapa');
   if (b) b.onclick = function () { editarMapa(d); };
+  b = document.getElementById('btnParejo');
+  if (b) unaVez(b, function () { return repartirParejo(d); });
+  b = document.getElementById('btnParejoDep');
+  if (b) unaVez(b, function () { return repartirParejo(d, 'deposito'); });
   z.querySelectorAll('.mapa-mod').forEach(function (g) {
     g.onclick = function () {
       if (_repartir) elegirSectorAdmin(d, g.dataset.mod);
@@ -990,7 +1106,13 @@ function elegirSectorAdmin(d, modId) {
   var m = d.modulos.filter(function (x) { return x.id === modId; })[0];
   if (!m) return;
   var tipo = d.sectorDe[m.sector_id].tipo, lista = tipo === 'deposito' ? d.deposito : d.salon;
-  var f = ventana('<h1>¿De quién es ' + esc(m.isla ? m.nombre : tipo === 'deposito' ? nombreSector(d.sectorDe[m.sector_id]) : 'el módulo ' + m.numero) + '?</h1>' +
+  /* El nombre: "Vidriera", "Caja"… para identificarlo (en el depósito el nombre es el del sector). */
+  var conNombre = true;
+  var f = ventana('<h1>' + esc(nombreModulo(m, d.sectorDe[m.sector_id])) + '</h1>' +
+    (conNombre ? '<div class="renglon"><label class="campo c-grande"><span>' + (m.isla ? 'Nombre' : 'Nombre (opcional): para reconocerlo') + '</span>' +
+      '<input id="mNombre" maxlength="40" value="' + esc(m.isla ? m.nombre : nombrePropio(m) || '') + '" placeholder="' + (tipo === 'deposito' ? 'Estantería de remeras…' : 'Vidriera, Al lado de la caja…') + '"></label>' +
+      '<button class="boton chico" id="mGuardarNombre">Guardar el nombre</button></div>' : '') +
+    '<div class="seccion">¿De quién es?</div>' +
     '<p class="bajada">Elegí el sector. Cada sector tiene su responsable y quién lo cubre.</p><div class="mapa-ley">' + lista.map(function (s) {
       var resp = d.persona[s.responsable_id], sup = d.persona[s.suplente_id];
       return '<button class="mapa-sec' + (s.id === m.sector_id ? ' actual' : '') + '" data-a="' + esc(s.id) + '"><i style="background:' + d.color[s.id] + '"></i><span><b>' +
@@ -1000,9 +1122,44 @@ function elegirSectorAdmin(d, modId) {
     unaVez(b, function () {
       if (b.dataset.a === m.sector_id) { f.remove(); return; }
       return llamar('orden_mover_modulo', { p_modulo: m.id, p_sector: b.dataset.a }).then(function () {
-        f.remove(); avisar('Listo: ' + (m.isla ? m.nombre : 'el módulo ' + m.numero) + ' cambió de sector.'); recargarMapaLocal();
+        f.remove(); avisar('Listo: ' + nombreModulo(m, d.sectorDe[m.sector_id]) + ' cambió de sector.'); recargarMapaLocal();
       });
     });
+  });
+  var gn = f.querySelector('#mGuardarNombre');
+  if (gn) unaVez(gn, function () {
+    var v = f.querySelector('#mNombre').value.trim();
+    return llamar('orden_modulo_nombre', { p_modulo: m.id, p_nombre: v || null }).then(function () {
+      f.remove(); avisar(v ? 'Listo: se llama "' + v + '".' : 'Listo: volvió a su nombre de siempre.'); recargarMapaLocal();
+    });
+  });
+}
+
+/** Cómo quedaría el reparto parejo (lo mismo que hace la base): bloques seguidos, los últimos llevan uno más. */
+function planReparto(d, tipo) {
+  var todos = tipo === 'deposito' ? d.deposito : d.salon;
+  var secs = todos.filter(function (s) { return s.responsable_id; });
+  if (!secs.length) secs = todos.slice();
+  var mods = (tipo === 'deposito' ? d.dep : d.pared).slice().sort(function (a, b) { return a.numero - b.numero; });
+  var k = secs.length, n = mods.length, base = k ? Math.floor(n / k) : 0, extra = k ? n % k : 0, desde = 0;
+  return secs.map(function (s, i) {
+    var cant = base + (i >= k - extra ? 1 : 0), suyos = mods.slice(desde, desde + cant);
+    desde += cant;
+    return { sector: s, cantidad: cant, nums: suyos.map(function (m) { return m.numero; }) };
+  });
+}
+
+function repartirParejo(d, tipo) {
+  var plan = planReparto(d, tipo), mods = tipo === 'deposito' ? d.dep : d.pared;
+  if (!plan.length || !mods.length) { avisar('No hay módulos para repartir.'); return; }
+  var texto = plan.map(function (p) {
+    var resp = d.persona[p.sector.responsable_id];
+    return (resp ? nombreLista(resp) : nombreSector(p.sector)) + ': ' + (p.nums.length ? rangos(p.nums) + ' (' + p.cantidad + ')' : 'ninguno');
+  }).join('\n');
+  if (!confirm('Repartir los ' + mods.length + (tipo === 'deposito' ? ' módulos del depósito' : ' módulos de las paredes') + ' en partes iguales:\n\n' + texto + '\n\n' +
+               (tipo === 'deposito' ? 'El salón no cambia.' : 'Lo de adentro y el depósito no cambian.') + ' ¿Repartir así?')) return;
+  return llamar('orden_mapa_repartir', { p_local: _local.id, p_tipo: tipo === 'deposito' ? 'deposito' : 'salon' }).then(function () {
+    avisar('Listo: repartido parejo.'); recargarMapaLocal();
   });
 }
 
@@ -1032,6 +1189,8 @@ function elegirGenteAdmin(d, secId) {
 /** La forma del local y cuántos módulos hay en cada pared, con la vista previa. */
 function editarMapa(d) {
   var m = d.mapa || {};
+  var numerado = depositoNumerado(d);
+  var cantDep = m.deposito != null ? +m.deposito : d.dep.length;
   var f = ventana('<h1>La forma y la cantidad</h1><p class="bajada">El local visto desde arriba, con la entrada (la vidriera) abajo y la caja atrás. ' +
     'Los módulos se numeran desde la entrada dando la vuelta: pared izquierda → fondo → pared derecha → frente. Lo de adentro (la caja, los percheros) va aparte.</p>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
@@ -1041,20 +1200,31 @@ function editarMapa(d) {
       }).join('') +
       '<label class="campo c-grande"><span>Adentro del local (uno por renglón)</span><textarea id="eIslas" rows="3" placeholder="Por ejemplo: Caja (uno por renglón)">' +
         esc(d.islas.map(function (x) { return x.nombre; }).join('\n')) + '</textarea></label></div>' +
+    '<div class="seccion">Depósito</div>' +
+    '<div class="renglon"><label class="campo c-medio"><span>Forma del depósito</span><select id="eFormaDep"><option value="rectangulo"' + (m.forma_deposito !== 'cuadrado' ? ' selected' : '') + '>Largo</option>' +
+      '<option value="cuadrado"' + (m.forma_deposito === 'cuadrado' ? ' selected' : '') + '>Cuadrado</option></select></label>' +
+      '<label class="campo c-chico"><span>Módulos</span><input type="number" inputmode="numeric" min="0" max="40" id="eDep" value="' + cantDep + '"></label>' +
+      '<p class="bajada" style="flex:1 1 260px;margin:0">Dividilo en partes que entren en una foto cada una. Se numeran 1, 2, 3… y después se reparten entre los vendedores.</p></div>' +
     '<p class="bajada" id="eTotal"></p><div class="imp-mapa-vista" id="eVista"></div><button class="boton lima" id="eGuardar">Guardar</button>');
   function leerForm() {
-    var mm = { forma: f.querySelector('#eForma').value }, vistas = {};
+    var mm = { forma: f.querySelector('#eForma').value, forma_deposito: f.querySelector('#eFormaDep').value }, vistas = {};
     f.querySelectorAll('[data-pared]').forEach(function (i) { mm[i.dataset.pared] = Math.max(0, Math.min(40, parseInt(i.value, 10) || 0)); });
+    mm.deposito = Math.max(0, Math.min(40, parseInt(f.querySelector('#eDep').value, 10) || 0));
     var islas = f.querySelector('#eIslas').value.split('\n').map(function (x) { return x.trim(); })
       .filter(function (x) { var k = x.toLowerCase(); if (!x || vistas[k]) return false; vistas[k] = true; return true; });
     return { mapa: mm, islas: islas };
   }
+  /* El depósito como va a quedar: los de antes (numerados seguidos si todavía eran "uno por sector") y los nuevos. */
+  var depAhora = numerado ? d.dep.slice() : d.dep.map(function (k, i) { return Object.assign({}, k, { numero: i + 1 }); });
   /** Qué cambia al guardar: los números nuevos y los que se apagan. */
   function cambios(x) {
-    var total = PAREDES.reduce(function (s, p) { return s + x.mapa[p[0]]; }, 0), hay = {}, nuevos = 0;
+    var total = PAREDES.reduce(function (s, p) { return s + x.mapa[p[0]]; }, 0), hay = {}, hayDep = {}, nuevos = 0;
     d.pared.forEach(function (k) { hay[k.numero] = true; });
+    depAhora.forEach(function (k) { hayDep[k.numero] = true; });
     for (var n = 1; n <= total; n++) if (!hay[n]) nuevos++;
+    for (n = 1; n <= x.mapa.deposito; n++) if (!hayDep[n]) nuevos++;
     var apagan = d.pared.filter(function (k) { return k.numero > total; }).length +
+      depAhora.filter(function (k) { return k.numero > x.mapa.deposito; }).length +
       d.islas.filter(function (i) { return !x.islas.some(function (nom) { return nom.toLowerCase() === i.nombre.toLowerCase(); }); }).length;
     return { total: total, nuevos: nuevos, apagan: apagan };
   }
@@ -1070,14 +1240,24 @@ function editarMapa(d) {
       return d.islas.filter(function (i) { return i.nombre.toLowerCase() === nom.toLowerCase(); })[0] ||
         { id: 'isla' + k, numero: 101 + k, nombre: nom, isla: true, sector_id: d.salon[0] ? d.salon[0].id : null };
     }).sort(function (p, q) { return (esCaja(q) ? 1 : 0) - (esCaja(p) ? 1 : 0); });
-    var dv = Object.assign({}, d, { mapa: x.mapa, pared: pared, islas: islas });
-    f.querySelector('#eVista').innerHTML = svgMapa(dv, { vacios: true });
+    var secDep = d.deposito[0] || { id: '__deposito', tipo: 'deposito', numero: 1, nombre: null };
+    var sectorDe = Object.assign({}, d.sectorDe);
+    sectorDe[secDep.id] = secDep;
+    var dep = [], ultDep = secDep.id;
+    for (n = 1; n <= x.mapa.deposito; n++) {
+      var exd = depAhora.filter(function (k) { return k.numero === n; })[0];
+      if (exd) ultDep = exd.sector_id;
+      dep.push(exd || { id: 'dnuevo' + n, numero: n, nombre: 'Depósito ' + n, sector_id: ultDep, isla: false });
+    }
+    var dv = Object.assign({}, d, { mapa: x.mapa, pared: pared, islas: islas, dep: dep, sectorDe: sectorDe });
+    f.querySelector('#eVista').innerHTML = svgMapa(dv, { vacios: true }) + svgDeposito(dv);
     var c = cambios(x);
-    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' + (islas.length ? ' y ' + islas.length + ' adentro' : '') + '.' +
+    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' + (islas.length ? ', ' + islas.length + ' adentro' : '') +
+      ' y ' + x.mapa.deposito + ' en el depósito.' +
       (c.nuevos ? ' Se crean ' + c.nuevos + ' (van al sector del anterior; después se reparten).' : '') +
       (c.apagan ? ' Se apagan ' + c.apagan + ': no se borran, quedan sus fotos, y vuelven si los ponés de nuevo.' : '');
   }
-  f.querySelectorAll('[data-pared], #eIslas, #eForma').forEach(function (i) { i.addEventListener('input', vista); i.addEventListener('change', vista); });
+  f.querySelectorAll('[data-pared], #eIslas, #eForma, #eFormaDep, #eDep').forEach(function (i) { i.addEventListener('input', vista); i.addEventListener('change', vista); });
   vista();
   unaVez(f.querySelector('#eGuardar'), function () {
     var x = leerForm(), c = cambios(x);

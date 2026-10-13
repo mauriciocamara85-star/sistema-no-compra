@@ -315,3 +315,27 @@ button.mapa-sec { cursor: pointer; }
 .mapa-sec i { width: 18px; height: 18px; border-radius: 5px; flex: none; }
 .mapa-sec i.dep { background: repeating-linear-gradient(45deg, #8A857C 0 3px, transparent 3px 6px); border: 1px solid #8A857C; }
 .mapa-sec small { display: block; color: var(--suave); font-size: 13px; margin-top: 2px; }
+
+/* La pestaña Caja: un puntito si falta guardar la de hoy (desde las 19) */
+.pestana { position: relative; }
+.pestana.con-punto::after { content: ''; position: absolute; top: 9px; left: calc(50% + 9px); width: 9px; height: 9px; border-radius: 50%; background: var(--rojo); }
+
+/* Producto testigo (SQL 102) */
+.tarjeta-accion.testigo { border-color: var(--lima); }
+.tarjeta-accion.testigo.alerta { border-color: var(--ambar); }
+.testigo-item { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 18px; padding: 14px; margin: 0 0 12px; }
+.ti-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; font-size: 17px; }
+.ti-grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+.ti-grilla .campo { margin-bottom: 10px; }
+.ti-grilla .campo > span { font-size: 12.5px; }
+.ti-grilla input { text-align: right; }
+.testigo-item .campo { margin-bottom: 10px; }
+.ti-res { font-weight: 800; margin: 2px 0 10px; color: var(--suave); min-height: 20px; }
+.ti-res.falta { color: var(--rojo); }
+.ti-res.sobra { color: var(--ambar); }
+.ti-res.justo { color: var(--verde); }
+@media (min-width: 760px) { .ti-grilla { grid-template-columns: repeat(4, 1fr); } }
+.disparar.grabar { background: #E5484D; }
+.disparar.grabar.grabando { border-radius: 18px; animation: latido 1s infinite; }
+.cuenta-video { min-width: 60px; text-align: right; font-weight: 800; color: var(--texto); }
+.video-testigo { display: block; width: 100%; max-height: 60vh; border-radius: 16px; background: #000; margin: 6px 0 14px; }
