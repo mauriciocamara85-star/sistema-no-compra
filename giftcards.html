@@ -62,14 +62,6 @@
   .oficina-txt { font-size: 14.5px; color: var(--txt-2); line-height: 1.5; margin: 8px 0 14px; }
 
   /* ── La venta ── */
-  .proximo {
-    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
-    background: var(--acc-soft); border: 1px solid var(--acc-line); border-radius: var(--r-sm);
-    padding: 13px 15px; margin: 14px 0 16px;
-    font-size: 13.5px; color: var(--txt-2); line-height: 1.5;
-  }
-  .proximo b { font: 700 22px/1 var(--display); color: var(--acc-txt); letter-spacing: -.5px; }
-  .proximo[hidden] { display: none; }
   .gc-codigo { margin: 14px 0 12px; }
   .gc-codigo input { font-size: 17px; letter-spacing: .5px; }
   .gc-tarjeta { margin-top: 8px; padding: 9px 12px; border-radius: var(--r-sm); font-size: 14px; font-weight: 600;
@@ -94,9 +86,6 @@
   /* La última venta queda a la vista: el aviso flotante se va solo. */
   .gc-ultima { margin: 10px 0 0; padding: 9px 13px; border-radius: var(--r-sm); background: var(--ok-soft);
                border: 1px solid var(--ok-borde, var(--ok)); font-size: 13.5px; line-height: 1.45; color: var(--txt); }
-  /* Vender una tarjeta vieja, sin código, se confirma en el mismo botón:
-     sin esto, olvidarse de pasar una impresa la dejaba "sin vender". */
-  .btn.confirmar { background: var(--warn); border-color: var(--warn); color: #1a1300; }
   .gc-ultima[hidden] { display: none; }
 
   /* ── Las vendidas ── */
@@ -257,12 +246,8 @@
              placeholder="Pasá la tarjeta por el lector">
       <div class="gc-tarjeta" id="gcTarjeta" hidden></div>
     </div>
-    <!-- Las tarjetas viejas, sin código: el número lo pone la app y se
-         escribe a mano. -->
-    <p class="proximo" id="proximoViejo">
-      <b id="proximaSerie">…</b>
-      <span>¿Tarjeta vieja, sin código? Escribí este número en la tarjeta, abajo de <strong>VALOR</strong>.</span>
-    </p>
+    <!-- Las tarjetas viejas, sin código, ya no se venden (13/10/2026): sólo
+         las impresas. Las que ya se vendieron se siguen canjeando en Cobrar. -->
     <div class="ficha-campos">
       <div class="campo"><label for="gcValor">Valor de la Gift Card</label>
         <input type="text" inputmode="numeric" id="gcValor" placeholder="$"></div>
@@ -455,11 +440,6 @@
     $('quienLinea').innerHTML = 'Local: <b>' + esc(nombreLocal(local)) + '</b> · Vende: <b>' + esc(vendedor) + '</b>' +
       ' <button type="button" id="btnCambiarQuien">cambiar</button>';
     $('btnCambiarQuien').onclick = function () { abrirElegir(2); };
-    /* Las tarjetas viejas (sin código): el número se muestra ANTES de
-       vender, porque el vendedor lo escribe en la tarjeta. */
-    base.siguienteSerie()
-      .then(function (n) { $('proximaSerie').textContent = n; })
-      .catch(function () { $('proximaSerie').textContent = '—'; });
     var p = pendiente;
     pendiente = null;
     if (p && Date.now() - p.cuando < PENDIENTE_VALE) {
@@ -476,7 +456,6 @@
   var TOPE_GC = 10000000;
   /* El botón dice por cuánto se vende: el vendedor lo ve antes de tocar. */
   function rotuloVender() {
-    if (viejaArmada) { return; }
     var v = plataN('gcValor');
     $('btnVenderOk').textContent = v ? 'Vender la Gift Card de ' + PESOS.format(v) : 'Vender la Gift Card';
   }
@@ -489,7 +468,6 @@
     if (!esCodigoGC(d)) { return false; }
     campo.value = '';
     $('gcCodigo').value = d;
-    desarmarVieja();
     revisarTarjeta();
     avisar('info', 'Eso era el código de la tarjeta: lo pasé a "La tarjeta". Poné el valor.');
     $('gcValor').focus();
@@ -497,25 +475,12 @@
     rotuloVender();
     return true;
   }
-  /* Vender sin pasar ninguna tarjeta es vender una vieja (el número lo pone
-     la app). Se confirma en el mismo botón, y un doble toque rápido no
-     confirma: si alguien se olvidó de pasar una impresa, se da cuenta. */
-  var viejaArmada = 0, relojVieja = 0;
-  function desarmarVieja() {
-    if (!viejaArmada) { return; }
-    viejaArmada = 0;
-    clearTimeout(relojVieja);
-    $('btnVenderOk').classList.remove('confirmar');
-    if (!digitos($('gcCodigo').value)) { mostrarTarjeta(null); }
-    rotuloVender();
-  }
   function mostrarTarjeta(estado, txt) {
     var c = $('gcTarjeta');
-    if (!estado) { c.hidden = true; c.textContent = ''; c.className = 'gc-tarjeta'; $('proximoViejo').hidden = false; return; }
+    if (!estado) { c.hidden = true; c.textContent = ''; c.className = 'gc-tarjeta'; return; }
     c.hidden = false;
     c.className = 'gc-tarjeta' + (estado === 'ok' ? '' : ' ' + estado);
     c.textContent = txt;
-    $('proximoViejo').hidden = true;
   }
   function revisarTarjeta() {
     var d = digitos($('gcCodigo').value), n = ++gcPedido;
@@ -555,52 +520,30 @@
     var cod = digitos($('gcCodigo').value);
     var btn = $('btnVenderOk');
     if (cod && !esCodigoGC(cod)) { avisar('err', 'Ese código no es de una Gift Card VDH: pasá de nuevo la tarjeta.'); $('gcCodigo').focus(); return; }
+    /* Sólo las impresas (las viejas, sin código, ya no se venden: 13/10/2026). */
+    if (!cod) {
+      mostrarTarjeta('mal', 'No pasaste ninguna tarjeta. Pasala por el lector: se venden las Black y Gold.');
+      avisar('err', 'Pasá la tarjeta por el lector.');
+      $('gcCodigo').focus();
+      return;
+    }
     if (!valor) { avisar('err', 'Poné el valor de la Gift Card.'); $('gcValor').focus(); return; }
     if (valor >= TOPE_GC) { avisar('err', 'Ese valor (' + PESOS.format(valor) + ') no parece de una gift card: revisalo.'); $('gcValor').focus(); return; }
     if (!gcPago) { avisar('err', 'Elegí cómo la pagó.'); return; }
     var cobrado = plataN('gcCobrado') || (gcPago === 'efectivo' ? Math.round(valor * 0.9) : valor);
     if (cobrado > valor) { avisar('err', 'Lo cobrado (' + PESOS.format(cobrado) + ') no puede ser más que el valor de la gift card.'); $('gcCobrado').focus(); return; }
-    if (!cod) {
-      var ahora = Date.now();
-      if (!viejaArmada) {
-        viejaArmada = ahora;
-        var nro = $('proximaSerie').textContent;
-        mostrarTarjeta('mal', 'No pasaste ninguna tarjeta. Las Black y Gold se pasan por el lector. Si es una tarjeta vieja, sin código, tocá de nuevo el botón.');
-        btn.textContent = 'Sí, es una tarjeta vieja' + (/^\d+$/.test(nro) ? ': vender la ' + nro : '');
-        btn.classList.add('confirmar');
-        clearTimeout(relojVieja);
-        relojVieja = setTimeout(desarmarVieja, 8000);
-        $('gcCodigo').focus();
-        return;
-      }
-      if (ahora - viejaArmada < 1500) { return; }
-    }
-    clearTimeout(relojVieja);
-    viejaArmada = 0;
-    btn.classList.remove('confirmar');
     var dias = Number($('gcDias').value) || 30;
     btn.disabled = true; btn.textContent = 'Guardando…';
     base.venderGiftcard({
       valor: valor, local: local, vendedor: vendedor, cobrado: cobrado, pago: gcPago, dias: dias,
-      telefono: $('gcTel').value.trim(), nombre: $('gcNombre').value.trim(), codigo: cod || null
+      telefono: $('gcTel').value.trim(), nombre: $('gcNombre').value.trim(), codigo: cod
     })
       .then(function (res) {
         btn.disabled = false;
         if (!res || !res.vendida) { rotuloVender(); avisar('err', (res && res.porque) || 'No se pudo vender.'); return; }
-        var cual;
-        if (res.nro) {
-          cual = 'Gift Card ' + res.color + ' Nº ' + tres(res.nro);
-          avisar('ok', 'Vendida: ' + cual + ', vale ' + PESOS.format(valor) + '.');
-          $('gcCodigo').value = '';
-        } else {
-          cual = 'la tarjeta ' + res.serie + ' (escribí ese número en la tarjeta, abajo de VALOR)';
-          avisar('ok', 'Vendida. Escribí ' + res.serie + ' en la tarjeta.');
-          /* El recuadro de las viejas pasa a decir la PRÓXIMA. */
-          $('proximaSerie').textContent = '…';
-          base.siguienteSerie()
-            .then(function (n) { $('proximaSerie').textContent = n; })
-            .catch(function () { $('proximaSerie').textContent = '—'; });
-        }
+        var cual = res.nro ? 'Gift Card ' + res.color + ' Nº ' + tres(res.nro) : 'la Gift Card ' + (res.serie || '');
+        avisar('ok', 'Vendida: ' + cual + ', vale ' + PESOS.format(valor) + '.');
+        $('gcCodigo').value = '';
         mostrarTarjeta(null);
         $('gcUltima').hidden = false;
         $('gcUltima').textContent = 'Última venta: ' + cual + ' · vale ' + PESOS.format(valor) +
@@ -624,9 +567,9 @@
   /* ═══ La pistola, venga donde venga el foco (árbitro, ronda 2) ═══════
      La pistola escribe 14 números y un Enter, como un teclado. Con el foco
      en un botón, en "Vence en" o en una forma de pago, los números se
-     perdían (o cambiaban el vencimiento) y el Enter tocaba el botón: con
-     "Sí, es una tarjeta vieja" armado, vendía una vieja y la impresa
-     quedaba sin vender. Afuera de los campos de texto, los números se
+     perdían (o cambiaban el vencimiento) y el Enter tocaba el botón (antes,
+     cuando se vendían las viejas, vendía una vieja y la impresa quedaba sin
+     vender). Afuera de los campos de texto, los números se
      juntan y van a "La tarjeta", y ese Enter no toca nada. */
   var rafaga = '', relojRafaga = 0;
   function esCampoDeTexto(el) {
@@ -638,7 +581,6 @@
     /* La venta a la vista: a "La tarjeta". */
     if (!$('gcVender').hidden) {
       $('gcCodigo').value = d;
-      desarmarVieja();
       revisarTarjeta();
       $('gcValor').focus();
       return;
@@ -1093,12 +1035,9 @@
     }
   } catch (e) {}
 
-  $('btnVenderOk').onclick = function (e) {
-    if (viejaArmada && e && e.isTrusted && e.detail === 0) { return; }
-    vender();
-  };
+  $('btnVenderOk').onclick = function () { vender(); };
   /* La pistola escribe los 14 números y un Enter: con el Enter se pasa al valor. */
-  $('gcCodigo').oninput = function () { desarmarVieja(); revisarTarjeta(); };
+  $('gcCodigo').oninput = revisarTarjeta;
   $('gcCodigo').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); $('gcValor').focus(); } };
   $('gcValor').oninput = function () { if (!vigilarPistola($('gcValor'))) { cobradoSugerido(); rotuloVender(); } };
   $('gcCobrado').oninput = function () { vigilarPistola($('gcCobrado')); };
