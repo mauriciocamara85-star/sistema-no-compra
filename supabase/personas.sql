@@ -225,7 +225,9 @@ begin
     return jsonb_build_object('ok', false, 'porque',
       case when exists (select 1 from orden_personas where local_id is not distinct from v_local and not activo
                           and lower(nombre) = lower(v_nom) and lower(coalesce(apellido, '')) = lower(v_ap))
-           then v_nom || ' ' || v_ap || ' ya está, desactivado: buscalo en la lista y reactivalo.'
+           then v_nom || ' ' || v_ap || ' ya está, desactivado: ' ||
+                case when yo.rol = 'admin' then 'buscalo en la lista (Ver desactivados) y reactivalo.'
+                     else 'pedile al administrador que lo reactive.' end
            else v_nom || ' ' || v_ap || ' ya está en la lista.' end);
   end if;
 

@@ -81,7 +81,7 @@ var usuarios = (function () {
      le borraron el PIN). persona.refrescar() cierra la sesión y la pantalla
      vuelve a pedir que entre. */
   function sesionMuerta(e) {
-    if (!(e && e.delServidor && /JWT/i.test(e.message))) return false;
+    if (!(e && e.delServidor && (e.status === 401 || e.status === 403 || /JWT/i.test(e.message)))) return false;
     datos = null;
     persona.refrescar().then(mostrar);
     return true;
@@ -293,7 +293,8 @@ var usuarios = (function () {
           hacer('nc_usuario_pin_borrar', { p_persona: p.id }, p.en_lista ? 'PIN borrado: la próxima vez crea uno nuevo.' : nom + ' ya aparece para crear su PIN.');
           break;
         case 'desactivar':
-          if (!confirm('¿Desactivar a ' + nom + '? No va a poder entrar (ni acá ni en Impecable) y sale de la lista de la Carga. Se puede reactivar.')) return;
+          if (!confirm('¿Desactivar a ' + nom + '? No va a poder entrar (ni acá ni en Impecable) y sale de la lista de la Carga. ' +
+                       (esAdmin() ? 'Se puede reactivar.' : 'Para volver a activarlo, se lo pedís al administrador.'))) return;
           hacer('nc_usuario_activar', { p_persona: p.id, p_activo: false }, nom + ' quedó desactivado.');
           break;
         case 'reactivar':

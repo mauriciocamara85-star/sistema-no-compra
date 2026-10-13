@@ -47,6 +47,26 @@ var persona = (function () {
   }
   function primerNombre(n) { return String(n || '').split(' ')[0]; }
 
+  /* La sesión se cerró por otro lado (el "No soy yo" de Impecable, que
+     comparte la sesión pero no sabe de la Carga): lo que la Carga dejó a
+     nombre de esa persona se limpia como con "No soy" de acá. Si no, el
+     que sigue cargaba sin darse cuenta a nombre del anterior, y cuando el
+     anterior volvía a entrar la Carga ya no lo elegía. Corre antes de que
+     la Carga lea "quién carga" (este archivo va en el <head>). */
+  function limpiarSiSalio() {
+    if (leerLS(K_SESION)) return;
+    var marca = null;
+    try { marca = localStorage.getItem(K_VEND_DE); } catch (e) { return; }
+    if (!marca) return;
+    var y = leerLS(K_YO);
+    try {
+      if (y && y.id === marca && y.vendedor && localStorage.getItem('nc_vendedor') === y.vendedor) localStorage.removeItem('nc_vendedor');
+      localStorage.removeItem(K_VEND_DE);
+      localStorage.removeItem(K_YO);
+    } catch (e) {}
+  }
+  limpiarSiSalio();
+
   var _ses = leerLS(K_SESION);
   var _yo = leerLS(K_YO);
   /* Lo guardado vale sólo si es de la persona de la sesión. Si entró por
@@ -644,7 +664,7 @@ var persona = (function () {
   window.addEventListener('storage', function (e) {
     if (e.key !== K_SESION) return;
     var g = leerLS(K_SESION);
-    if (!g) { _ses = null; fijarYo(null); return; }
+    if (!g) { limpiarSiSalio(); _ses = null; fijarYo(null); return; }
     var otra = !_ses || !_ses.persona || !g.persona || g.persona.id !== _ses.persona.id;
     _ses = g;
     if (otra) refrescar();
