@@ -10620,7 +10620,7 @@ select cron.schedule('crm-difusiones', '* * * * *', 'select crm_difusion_despach
 
 select 'listo: difusiones de verdad, y condiciones nuevas para los segmentos' as "SQL 92";
 
--- ─────────────────────────── PARTE 96 (13/10/2026) ───────────────────────────
+-- ─────────────────────────── PARTE 98 (13/10/2026) ───────────────────────────
 -- ══════════════════════════════════════════════════════════════════════════
 -- VDH · CRM: DIFUSIONES MÁS SEGURAS (lo que encontró el árbitro en el 92)
 --
@@ -10647,7 +10647,7 @@ select 'listo: difusiones de verdad, y condiciones nuevas para los segmentos' as
 -- Para deshacerlo: volver a correr el SQL 92 (deja todo como estaba; las dos
 -- columnas nuevas de crm_difusiones pueden quedar) y, para crm_tienda,
 -- crm_mensajes_ultimo, crm_insights y wa_procesar, la última versión de cada
--- una en supabase/crm.sql antes de la PARTE 96.
+-- una en supabase/crm.sql antes de la PARTE 98.
 -- ══════════════════════════════════════════════════════════════════════════
 
 /* ═══ 1. Lo que hace falta guardar ═══════════════════════════════════════ */
@@ -10948,7 +10948,7 @@ as $$
   sc as (
     select distinct on (club_tel10(v.telefono)) club_tel10(v.telefono) as t10, t.tipo,
            coalesce(r.a_recuperar, false) as recuperar, greatest(coalesce(v.puntos, 0), 0)::integer as puntos,
-           /* SQL 96: en la fecha de Argentina, como el aviso del Club. */
+           /* SQL 98: en la fecha de Argentina, como el aviso del Club. */
            case when coalesce(v.puntos, 0) > 0 and vm.meses > 0
                 then ((coalesce(v.ultima_compra, v.creado) at time zone 'America/Argentina/Buenos_Aires')::date
                       + make_interval(months => vm.meses))::date end as vence
@@ -11045,7 +11045,7 @@ as $$
      and (not coalesce((r->>'recuperar')::boolean, false) or coalesce((p).recuperar, false))
      and (r->>'puntos_vencen_dias' is null
           or (coalesce((p).puntos, 0) > 0 and (p).puntos_vencen is not null
-              /* SQL 96: desde hoy (los que ya vencieron, no) */
+              /* SQL 98: desde hoy (los que ya vencieron, no) */
               and (p).puntos_vencen between (now() at time zone 'America/Argentina/Buenos_Aires')::date
                                         and (now() at time zone 'America/Argentina/Buenos_Aires')::date + (r->>'puntos_vencen_dias')::integer))
      and (not coalesce((r->>'carrito_stock')::boolean, false) or coalesce((p).carrito_stock, false))
@@ -11175,7 +11175,7 @@ begin
   if not (pin_ok(p_pin)->>'ok')::boolean then
     raise exception 'PIN incorrecto.' using errcode = '28000';
   end if;
-  /* SQL 96: lo de una difusión no es una respuesta nuestra (y no hace recargar). */
+  /* SQL 98: lo de una difusión no es una respuesta nuestra (y no hace recargar). */
   with u as (
     select club_tel10(m.tel) as clave, max(m.cuando) filter (where m.sentido = 'sale') as ultima_sale
       from wa_mensajes m
@@ -11234,7 +11234,7 @@ begin
      set columna = 'No compró', cerrada = coalesce(u.ultima, c.creada), movida = now(), sola = true
     from (select c2.id, (select max(w.cuando) from wa_mensajes w
                           where club_tel10(w.tel) = c2.clave and w.numero_id = c2.numero_id
-                            and w.desde <> 'difusion') as ultima   -- SQL 96
+                            and w.desde <> 'difusion') as ultima   -- SQL 98
             from crm_consultas c2 where c2.cerrada is null) u
    where u.id = c.id and coalesce(u.ultima, c.creada) < now() - interval '7 days';
 
@@ -11245,7 +11245,7 @@ begin
   w as (
     select k.id as kid, k.creada, m.*
       from k join wa_mensajes m on club_tel10(m.tel) = k.clave and m.numero_id = k.numero_id
-                                and m.desde <> 'difusion'   -- SQL 96: lo de una difusión no es una respuesta
+                                and m.desde <> 'difusion'   -- SQL 98: lo de una difusión no es una respuesta
   ),
   ult as (
     select distinct on (w.kid) w.kid, w.sentido, w.desde, w.tipo, w.texto, w.estado, w.cuando, w.quien
@@ -11319,7 +11319,7 @@ begin
   end if;
 
   with
-  wa as (select m.* from wa_mensajes m where not m.historial and m.desde <> 'difusion'),   -- SQL 96
+  wa as (select m.* from wa_mensajes m where not m.historial and m.desde <> 'difusion'),   -- SQL 98
   en_rango as (select * from wa where cuando >= p_desde and cuando < p_hasta),
   antes as (select * from wa where cuando >= d0 and cuando < p_desde),
   /* Cuánto tardamos en contestar: cada mensaje del cliente que ARRANCA una
@@ -11531,7 +11531,7 @@ begin
         /* Los estados sólo avanzan: un "entregado" que llega tarde no
            pisa un "leído". "failed" pisa siempre. */
         for s in select * from jsonb_array_elements(coalesce(v->'statuses', '[]'::jsonb)) loop
-          /* SQL 96: el de una difusión. Al mandarlo se marca con el envío
+          /* SQL 98: el de una difusión. Al mandarlo se marca con el envío
              ("dif:<id>"): así queda como salido aunque la función se haya
              cortado antes de anotarlo. Si Meta no devolviera la marca, sirve
              que esa persona esté saliendo ahora en una difusión de ese número. */
@@ -11561,7 +11561,7 @@ begin
              (Kommo): se deja la marca de que se contestó. Salvo si es un
              "failed": eso no llegó a nadie (y al traer el historial, Meta
              manda así las fotos viejas que no pudo bajar; SQL 69). */
-          /* SQL 96: si es de una difusión y llegó antes que lo anotara la
+          /* SQL 98: si es de una difusión y llegó antes que lo anotara la
              función, queda "desde difusión" (también un "failed", que cuenta
              para pausarla) y no mueve las tarjetas de la tienda. */
           if n = 0 and v_env is not null and s->>'recipient_id' is not null
@@ -11689,7 +11689,7 @@ begin
   on conflict (wamid) do update
     set desde = excluded.desde, tipo = excluded.tipo, texto = excluded.texto, media = excluded.media, quien = excluded.quien
     where wa_mensajes.desde = 'otra_app'
-       or (wa_mensajes.desde = 'difusion' and excluded.desde = 'difusion')   -- SQL 96: lo dejó wa_procesar sin el texto
+       or (wa_mensajes.desde = 'difusion' and excluded.desde = 'difusion')   -- SQL 98: lo dejó wa_procesar sin el texto
   returning id into v_id;
   /* SQL 92: lo de una difusión no mueve las tarjetas de la tienda. */
   if coalesce(p->>'desde', '') <> 'difusion' then
@@ -11742,7 +11742,7 @@ begin
       return jsonb_build_object('ok', false, 'porque', 'Falta qué poner cuando alguien no tiene el nombre cargado.');
     end if;
   end loop;
-  /* Dos toques seguidos (o dos PC a la vez: el candado, SQL 96) no la mandan dos veces. */
+  /* Dos toques seguidos (o dos PC a la vez: el candado, SQL 98) no la mandan dos veces. */
   perform pg_advisory_xact_lock(hashtext('crm_difusion_crear'));
   if exists (select 1 from crm_difusiones d where d.plantilla = v_pl and d.reglas = v_reg and d.numero_id = v_num
                                              and d.estado in ('mandando', 'pausada') and d.creada > now() - interval '10 minutes') then
@@ -11771,4 +11771,4 @@ $$;
 revoke execute on function crm_difusion_crear(text, jsonb) from public;
 grant execute on function crm_difusion_crear(text, jsonb) to anon, authenticated;
 
-select 'listo: difusiones más seguras (SQL 96)' as "SQL 96";
+select 'listo: difusiones más seguras (SQL 98)' as "SQL 98";

@@ -119,7 +119,7 @@ async function meta(ruta: string, metodo = 'GET', datos?: Record<string, unknown
     cabeceras['Authorization'] = 'Bearer ' + token;
     /* Con "espera" (las difusiones): una conexión nueva por mensaje. Si Meta
        cortara una conexión reusada sin contestar, el cliente la reintenta
-       solo, y el mensaje saldría dos veces (SQL 96). */
+       solo, y el mensaje saldría dos veces (SQL 98). */
     if (espera) cabeceras['Connection'] = 'close';
   } else {
     cuerpo = new URLSearchParams({ ...(datos as Record<string, string> ?? {}), access_token: token });
@@ -520,7 +520,7 @@ async function enviarPlantilla(p: any) {
     return { ok: false, error: 'WhatsApp no la aceptó' + (r?.error?.usuario || r?.error?.mensaje ? ': ' + (r.error.usuario || r.error.mensaje) : '.'),
              codigo: r?.error?.codigo };
   }
-  /* La prueba de una difusión queda "desde difusión" (SQL 96): no llena la
+  /* La prueba de una difusión queda "desde difusión" (SQL 98): no llena la
      bandeja ni mueve tarjetas de quien la pidió. */
   const prueba = !!p.numero_id;
   await anotar({ wamid, numero_id: num.id, numero: num.digitos, tel: prep.tel, tipo: 'template',
@@ -540,7 +540,7 @@ async function enviarPlantilla(p: any) {
    demasiados envíos) o por la plantilla, se corta la tanda, lo que faltaba
    vuelve a la cola y la difusión se pausa con el motivo. Lo que sale queda
    "desde difusión".
-   SQL 96: cada mensaje sale marcado con su envío ("dif:<id>", que Meta
+   SQL 98: cada mensaje sale marcado con su envío ("dif:<id>", que Meta
    devuelve en sus avisos) y se cuenta apenas sale; la respuesta dice si la
    pausaron o la cancelaron, y ahí se deja de mandar. Si Meta no contesta
    (red, demora), no se sabe si salió: queda "enviando", y la base lo

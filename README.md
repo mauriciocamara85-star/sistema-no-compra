@@ -893,7 +893,7 @@ un segmento entero.
   la tienda.
 - Abajo, cómo va cada una (salieron, entregados, leídos, no llegaron y por
   qué), con Pausar, Seguir y Cancelar.
-- **Que nadie la reciba dos veces (SQL 96):**
+- **Que nadie la reciba dos veces (SQL 98):**
   - Cada mensaje sale marcado con su envío (`biz_opaque_callback_data`
     = `dif:<id>`, que Meta devuelve en sus avisos) y la función lo cuenta
     apenas sale.
