@@ -143,6 +143,35 @@ function cerrarCapas() {
   _capas.splice(0).reverse().forEach(function (c) { try { c(true); } catch (e) {} });
   sacarMarca();
 }
+/* En las pantallas completas (sin la barra de abajo: la cámara y la revisión
+   de la foto, el producto testigo, el test, los pasos de la entrada, las del
+   supervisor), el "atrás" de Android hace lo mismo que su "‹ Volver" (o
+   "Cerrar", o "Volver a Hoy"). Se mira cada vez que cambia la pantalla. */
+var _capaPantalla = null, _mirandoAtras = false;
+function botonVolver() { return app.querySelector('#volver, #cerrar, #fin, #volverMapa'); }
+function revisarAtras() {
+  _mirandoAtras = false;
+  var hace = barra.hidden && !!botonVolver();
+  if (hace && !_capaPantalla) {
+    _capaPantalla = function (porNavegar) {
+      _capaPantalla = null;
+      if (porNavegar) return;
+      var b = botonVolver();
+      if (b) b.click();
+    };
+    abrirCapa(_capaPantalla);
+  } else if (!hace && _capaPantalla) {
+    var c = _capaPantalla;
+    _capaPantalla = null;
+    soltarCapa(c);
+  }
+}
+new MutationObserver(function () {
+  if (_mirandoAtras) return;
+  _mirandoAtras = true;
+  Promise.resolve().then(revisarAtras);
+}).observe(app, { childList: true });
+
 window.addEventListener('popstate', function () {
   if (_quitando) { _quitando--; return; }   // la sacó la app
   _marca = false;
@@ -920,8 +949,12 @@ function dibujarHoy(x) {
   if ((b = document.getElementById('banner'))) b.onclick = function () { pantallaBienvenida(pantallaHoy); };
   if ((b = document.getElementById('irTestigo'))) b.onclick = function () { pantallaTestigo(x.testigoMan.id); };
   if ((b = document.getElementById('reintentarHoy'))) b.onclick = pantallaHoy;
-  /* Con todo lo de hoy hecho (y todo cargado): el festejo, una vez por día. */
-  if (filas.length && !x.incompleto && filas.every(function (f) { return f.hecho; })) festejarUnaVez('dia-' + hoy, '¡Terminaste todo lo de hoy!');
+  /* Con todo lo tuyo hecho (y todo cargado): el festejo, una vez por día. La
+     caja no cuenta: la cierra uno solo y a la noche (si no, casi nadie lo vería). */
+  var propias = filas.filter(function (f) { return f.id !== 'hCaja'; });
+  if (propias.length && !x.incompleto && propias.every(function (f) { return f.hecho; })) {
+    festejarUnaVez('dia-' + hoy, filas.every(function (f) { return f.hecho; }) ? '¡Terminaste todo lo de hoy!' : '¡Terminaste lo tuyo de hoy!');
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -1960,7 +1993,7 @@ function guardarCaja(caja, boton) {
   var valores = {}, malo = null;
   app.querySelectorAll('[data-campo]').forEach(function (c) {
     var v = String(c.value || '').trim();
-    if (v === '') return;
+    if (v === '') { valores[c.dataset.campo] = null; return; }   // vacío: se borra (para corregir)
     var n = numeroCaja(v);
     if (n == null) malo = malo || c; else valores[c.dataset.campo] = String(n);
   });
