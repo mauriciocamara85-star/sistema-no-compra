@@ -239,7 +239,7 @@ var usuarios = (function () {
     return llamar(nombre, args).then(function (r) {
       ocupado = false;
       if (r && r.ok === false) { avisar('err', r.porque || 'No se pudo.'); return false; }
-      if (mensajeOk) avisar('ok', mensajeOk);
+      if (mensajeOk) avisar('ok', typeof mensajeOk === 'function' ? mensajeOk(r) : mensajeOk);
       return traer().then(function () { return true; });
     }).catch(function (e) {
       ocupado = false;
@@ -285,7 +285,10 @@ var usuarios = (function () {
           var rol = f.querySelector('[data-ed="rol"]').value, loc = f.querySelector('[data-ed="local"]').value || null;
           if (p.local_id && loc && loc !== p.local_id && p.rol === 'vendedor' &&
               !confirm('¿Pasar a ' + nom + ' a ' + nombreLocal(loc) + '? Sale de la lista de la Carga de ' + nombreLocal(p.local_id) + ' y entra en la del local nuevo.')) return;
-          hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: rol, p_local: sinLocal(rol) ? null : loc }, 'Guardado.')
+          hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: rol, p_local: sinLocal(rol) ? null : loc }, function (r) {
+            /* SQL 109: el rol nuevo pide un PIN de otro largo (4 o 6 números). */
+            return r && r.pin_borrado ? 'Guardado. El rol nuevo pide un PIN de otro largo: la próxima vez que entre, ' + p.nombre + ' crea uno nuevo (y lo aprobás).' : 'Guardado.';
+          })
             .then(function (ok) { if (ok) { editando = null; document.getElementById('usLista').innerHTML = lista(); } });
           break;
         case 'pin':

@@ -80,6 +80,11 @@ var persona = (function () {
   /* Cuenta sólo quien está activo y aprobado: un PIN recién creado espera. */
   function vigente(y) { return !!(y && y.activo !== false && y.aprobado === true && ROL[y.rol]); }
   function rol() { return vigente(_yo) ? _yo.rol : ''; }
+  /* La oficina: lo que antes abría el PIN compartido (CRM, Socios, el Club,
+     la lista de gift cards) lo abre su usuario. La base dice lo mismo
+     (nc_es_oficina, SQL 107). */
+  var OFICINA = { admin: 1, atencion: 1, gerencia: 1 };
+  function oficina() { return !!OFICINA[rol()]; }
 
   function marcar() {
     var r = rol();
@@ -200,10 +205,11 @@ var persona = (function () {
         return y;
       })
       .catch(function (e) {
-        if (e && e.sinSesion) return null;
         /* La sesión ya no vale (le borraron la cuenta, o la base no reconoce
-           la firma): afuera. Por el estado, no por el texto. */
+           la firma): afuera. Por el estado, no por el texto, y antes que
+           sinSesion, que datos.js también le pone a un 401. */
         if (sesionRechazada(e)) { cerrarSesion(); return null; }
+        if (e && e.sinSesion) return null;
         /* Sin señal, o la base todavía sin el SQL 101: se sigue con lo
            guardado. Nada de esto puede frenar la pantalla. */
         return vigente(_yo) ? _yo : null;
@@ -643,6 +649,38 @@ var persona = (function () {
   }
 
   /* ════════════════════════════════════════════════════════════════════
+     EL PORTÓN de lo que antes pedía el PIN compartido (CRM, Socios, el
+     Club, la lista de gift cards): entrar con su usuario, esperar el OK, o
+     "esto no es de tu usuario". Cada pantalla le pasa dónde va y qué es.
+     ════════════════════════════════════════════════════════════════════ */
+  /* frase: qué es y de quién, entera ("El CRM es de Administración y Atención al cliente."). */
+  function porton(cont, frase) {
+    if (!cont) return;
+    var y = _yo, hay = !!(_ses && _yo), html;
+    if (!hay) {
+      html = '<p class="ncp-porton-txt">' + txt(frase) + ' Entrá con tu usuario.</p>' +
+             '<button type="button" class="btn btn-pri btn-ancho" data-porton="entrar">Entrar con tu usuario</button>';
+    } else if (!vigente(y)) {
+      html = '<p class="ncp-porton-txt">Tu usuario está esperando el OK. Cuando te aprueben, si sos de Administración o de Atención al cliente, vas a poder entrar.</p>' +
+             '<button type="button" class="btn btn-sec btn-ancho" data-porton="ficha">Ver mi usuario</button>';
+    } else if (!oficina()) {
+      html = '<p class="ncp-porton-txt">Entraste como <b>' + txt(y.nombre) + '</b> (' + txt(ROL[y.rol]) + '). ' +
+             txt(frase) + '</p>' +
+             '<button type="button" class="btn btn-sec btn-ancho" data-porton="salir">No soy ' + txt(primerNombre(y.nombre)) + '</button>';
+    } else {
+      html = '';   // es de la oficina: la pantalla ya está entrando
+    }
+    cont.innerHTML = html;
+    var b = cont.querySelector('[data-porton]');
+    if (b) b.onclick = function () {
+      var a = b.getAttribute('data-porton');
+      if (a === 'entrar') entrar();
+      else if (a === 'ficha') abrirFicha();
+      else { b.disabled = true; salir().then(function () { location.reload(); }); }
+    };
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
      ARRANQUE
      ════════════════════════════════════════════════════════════════════ */
 
@@ -667,7 +705,13 @@ var persona = (function () {
     if (!g) { limpiarSiSalio(); _ses = null; fijarYo(null); return; }
     var otra = !_ses || !_ses.persona || !g.persona || g.persona.id !== _ses.persona.id;
     _ses = g;
-    if (otra) refrescar();
+    if (otra) {
+      /* Entró otra persona en otra pestaña: se usa enseguida lo que esa
+         pestaña dejó guardado de ella (su rol), y la base lo confirma. */
+      var c = leerLS(K_YO), p = g.persona || {};
+      fijarYo(c && c.id === p.id ? c : (p.id ? { id: p.id, nombre: p.nombre, rol: p.rol, aprobado: p.aprobado !== false, activo: true, provisorio: true } : null));
+      refrescar();
+    }
   });
 
   return {
@@ -676,6 +720,16 @@ var persona = (function () {
     /** La persona habilitada (activa y aprobada), o null. */
     yo: function () { return vigente(_yo) ? _yo : null; },
     rol: rol,
+    /** Quien entró es de la oficina (Administración, Atención o Gerencia). */
+    oficina: oficina,
+    /** Lo que va en lugar del PIN: la marca de la sesión, o '' si no es de la oficina. */
+    pin: function () { return oficina() ? 'sesion' : ''; },
+    /** El nombre de pila, para el "¿Quién sos?" del CRM ("Ale", "Lau"). */
+    pila: function () {
+      var y = vigente(_yo) ? _yo : null;
+      return y ? (y.pila || String(y.nombre || '').replace(/\s+[A-ZÁÉÍÓÚÑ]\.$/, '')) : '';
+    },
+    porton: porton,
     /** Hay una sesión en este aparato (aunque esté esperando el OK). */
     hay: function () { return !!(_ses && _yo); },
     puede: puede,

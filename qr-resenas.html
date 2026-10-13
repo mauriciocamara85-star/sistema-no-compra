@@ -14,7 +14,7 @@
   cargado en Configuración → Club VDH → Reseñas en Google. Si un enlace
   cambia, se vuelve a imprimir desde acá.
 
-  Se abre desde Configuración, con el PIN ya puesto (queda en la pestaña).
+  Se abre desde Configuración, con un usuario de la oficina (Administración o Atención).
   Siempre en claro: es para papel.
 -->
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap" rel="stylesheet">
@@ -69,15 +69,17 @@
 <div class="hojas" id="hojas"></div>
 
 <script src="comun.js"></script>
+<script src="persona.js"></script>
 <script src="datos.js"></script>
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var pin = '';
-  try { pin = sessionStorage.getItem('nc_pin') || ''; } catch (e) {}
+  /* Sin el PIN compartido (13/10/2026): la marca de la sesión de quien
+     entró, si es de Administración, Atención o Gerencia. */
+  var pin = persona.pin();
 
   if (!pin) {
-    $('aviso').textContent = 'Abrí esta página desde Configuración → Club VDH, con el PIN puesto.';
+    $('aviso').textContent = 'Abrí esta página desde Configuración → Club VDH, después de entrar con tu usuario (Administración o Atención al cliente).';
     return;
   }
 
@@ -108,7 +110,8 @@
       '</div>';
     }).join('');
   }).catch(function (err) {
-    $('aviso').textContent = (err && err.delServidor && err.message) || 'No se pudo abrir. Volvé a Configuración y poné el PIN.';
+    $('aviso').textContent = err && err.sinSesion ? 'Se cerró tu sesión: volvé a Configuración y entrá con tu usuario.'
+      : (err && err.delServidor && err.message) || 'No se pudo abrir. Volvé a Configuración y probá de nuevo.';
   });
 })();
 </script>

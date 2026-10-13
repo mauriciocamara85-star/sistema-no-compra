@@ -327,7 +327,7 @@
   var local = '', vendedor = '';
   /* Un aparato de oficina (el de Atención): puede vender en un local si
      hace falta, pero no se vuelve de local ni anota a nadie en el equipo. */
-  var OFICINA = leer('nc_oficina') === '1';
+  var OFICINA = leer('nc_oficina') === '1' || persona.oficina();
 
   /* Los 14 locales, como en Carga y Cobrar (el código tiene que coincidir
      con la tabla `locales`). */
@@ -352,8 +352,10 @@
     for (var i = 0; i < LOCALES.length; i++) { if (LOCALES[i].v === String(v).trim().toUpperCase()) { return LOCALES[i].t; } }
     return bonito(v);
   }
-  function pinDeVerdad() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
-  function guardarPin(v) { try { if (v) { sessionStorage.setItem(K_PIN, v); } else { sessionStorage.removeItem(K_PIN); } } catch (e) {} }
+  /* Sin el PIN compartido (13/10/2026): en su lugar va la marca de la
+     sesión de quien entró, si es de Administración, Atención o Gerencia. */
+  function pinDeVerdad() { return persona.pin(); }
+  function guardarPin() { /* ya no se guarda nada: es la sesión de la persona */ }
   function llaveCaja() { return leer(K_CAJA); }
   function digitos(t) { return String(t || '').replace(/[^0-9]/g, ''); }
   function esCodigoGC(t) { return /^99\d{12}$/.test(digitos(t)); }
@@ -650,82 +652,37 @@
     }
     if (pinDeVerdad()) { cargarLista(); } else { pintarPorton(''); }
   }
+  /* El portón (13/10/2026): la lista es de la oficina; entra quien tenga
+     usuario de Administración, Atención o Gerencia (persona.porton). Con
+     sinCampo, además "Probar de nuevo" (la señal). */
   function pintarPorton(msg, sinCampo) {
     GL.lista = null;
     $('glCuerpo').innerHTML = '<div class="gl-porton">' +
-      '<p>La lista, lo que se debe, extender y anular son de la oficina: entrá con el PIN.</p>' +
-      (sinCampo ? '' : '<div class="gl-pin"><input type="password" id="glPin" inputmode="numeric" maxlength="24" placeholder="PIN" autocomplete="off" aria-label="PIN">' +
-        '<button type="button" class="btn btn-pri" id="glEntrar">Entrar</button></div>') +
+      '<p>La lista, lo que se debe, extender y anular son de la oficina.</p>' +
+      '<div class="porton-usuario" id="glUsuario"></div>' +
       '<p class="gl-msg" id="glMsg"' + (msg ? '' : ' hidden') + '>' + esc(msg || '') + '</p>' +
       (sinCampo ? '<div><button type="button" class="btn btn-sec btn-chico" id="glOtraVez">Probar de nuevo</button></div>' : '') + '</div>';
-    if (!sinCampo) {
-      $('glEntrar').onclick = entrar;
-      $('glPin').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); entrar(); } };
-      $('glPin').focus({ preventScroll: !GL.bajar });
-    } else {
+    if (pinDeVerdad() && sinCampo) { $('glUsuario').hidden = true; } else { persona.porton($('glUsuario'), 'La lista de gift cards es de Administración y Atención al cliente.'); }
+    if (sinCampo) {
       $('glOtraVez').onclick = function () { if (pinDeVerdad()) { cargarLista(); } else { pintarPorton(''); } };
     }
   }
-  function entrar() {
-    var v = $('glPin').value.trim();
-    if (!v) { $('glPin').focus(); return; }
-    /* La pistola nunca prueba un PIN (árbitro, ronda 4): el PIN es de 4 a 8
-       números (lo que exige Config). Una gift card pasada con el foco acá
-       va adonde corresponde; otra cosa (una etiqueta, una tarjeta del
-       Club) se dice, sin gastar un intento del freno de todos. */
-    if (!/^[0-9]{4,8}$/.test(v)) {
-      $('glPin').value = '';
-      if (esCodigoGC(v)) { tarjetaLeida(digitos(v)); return; }
-      $('glMsg').hidden = false;
-      $('glMsg').textContent = 'Eso no es un PIN: el PIN es de 4 a 8 números.';
-      $('glPin').focus();
-      return;
-    }
-    var b = $('glEntrar'); b.disabled = true; b.textContent = 'Probando…';
-    base.pin.probar(v)
-      .then(function (r) {
-        if (!r || !r.ok) {
-          $('glMsg').hidden = false; $('glMsg').textContent = (r && r.porque) || 'PIN incorrecto.';
-          $('glPin').value = ''; $('glPin').focus();
-          return;
-        }
-        guardarPin(v);
-        cargarLista();
-      })
-      .catch(function () { $('glMsg').hidden = false; $('glMsg').textContent = 'No se pudo probar el PIN: revisá la señal.'; })
-      .then(function () { if ($('glEntrar')) { $('glEntrar').disabled = false; $('glEntrar').textContent = 'Entrar'; } });
-  }
-  /* El SQL 84 no tira un error con el PIN malo: contesta {error: 'pin'}
-     (así queda anotado el intento y el freno corre). "mal" dice si el PIN
-     se llegó a comparar; si se cortó antes por el freno, puede ser el bueno
-     y no se olvida. */
+  function entrar() { persona.entrar(); }
+  /* La base contestó {error: 'pin'}: el usuario no es de la oficina (o la
+     sesión no vale). Lo dice el portón. */
   function errorDePin(r) {
-    var espera = Number(r.espera) || 0;
-    if (r.mal) { guardarPin(''); }
-    if (espera > 0) {
-      pintarPorton(r.mal ? (r.porque || 'Demasiados intentos.') : 'El PIN está frenado por intentos fallidos. Probá de nuevo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).', true);
-      return;
-    }
-    pintarPorton(r.mal ? 'El PIN cambió o venció. Ponelo de nuevo.' : (r.porque || 'PIN incorrecto.'));
+    pintarPorton(r && r.sin_permiso ? '' : ((r && r.porque) || ''));
   }
   function esDePin(err) { return !!(err && err.delServidor && /PIN incorrecto/i.test(err.message || '')); }
   function faltaSql(err) { return !!(err && err.delServidor && /could not find the function|giftcards_listar|does not exist/i.test(err.message || '')); }
-  /* La base dijo "PIN incorrecto": o lo cambiaron, o está frenado por
-     intentos fallidos (de cualquier pantalla), y ahí contesta lo mismo
-     aunque sea el bueno. pin_situacion no gasta intentos: si es el freno,
-     el PIN se guarda. */
-  function pinVencido() {
-    base.pin.situacion()
-      .then(function (s) {
-        var espera = Number(s && s.espera) || 0;
-        if (espera > 0) {
-          pintarPorton('El PIN está frenado por intentos fallidos. Probá de nuevo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).', true);
-          return;
-        }
-        guardarPin('');
-        pintarPorton('El PIN cambió o venció. Ponelo de nuevo.');
-      })
-      .catch(function () { pintarPorton('No se pudo comprobar el PIN: revisá la señal y probá de nuevo.', true); });
+  /* La base dijo "PIN incorrecto": el usuario no es de la oficina (o le
+     cambiaron el rol). Lo dice el portón. */
+  function pinVencido() { pintarPorton(''); }
+  /* La sesión de la persona ya no vale: el portón pide entrar de nuevo. */
+  function sinSesion(err) {
+    if (!(err && err.sinSesion)) { return false; }
+    pintarPorton('Se cerró tu sesión. Entrá de nuevo con tu usuario.');
+    return true;
   }
 
   function cargarLista() {
@@ -740,6 +697,7 @@
         if (GL.bajar) { var bajar = GL.bajar; GL.bajar = null; setTimeout(bajar, 30); }
       })
       .catch(function (err) {
+        if (sinSesion(err)) { return; }
         if (esDePin(err)) { pinVencido(); return; }
         GL.lista = null;
         GL.error = faltaSql(err) ? 'sql' : 'red';
@@ -909,12 +867,15 @@
   function pintarYo() {
     var p = $('glYo');
     if (!p) { return; }
+    /* Con usuario (13/10/2026), es quien entró: no se pregunta. */
+    if (persona.pila()) { p.innerHTML = 'Lo que extiendas o anules queda a nombre de <b>' + esc(persona.pila()) + '</b>.'; return; }
     var q = leer(K_QUIEN);
     p.innerHTML = q ? 'Lo que extiendas o anules queda a nombre de <b>' + esc(q) + '</b>. <button type="button" id="glNoSoy">No soy ' + esc(q) + '</button>'
                     : 'Antes de extender o anular te pregunta quién sos: queda anotado.';
     if ($('glNoSoy')) { $('glNoSoy').onclick = function () { guardar(K_QUIEN, ''); pintarYo(); }; }
   }
   function conQuien(siga) {
+    if (persona.pila()) { siga(persona.pila()); return; }
     var q = leer(K_QUIEN);
     if (q) { siga(q); return; }
     var caja = $('glElegirYo');
@@ -958,6 +919,7 @@
           cargarLista();
         })
         .catch(function (err) {
+          if (sinSesion(err)) { return; }
           if (esDePin(err)) { pinVencido(); return; }
           avisar('err', (err && err.delServidor && err.message) || 'No se pudo anular. Revisá la señal.');
         })
@@ -976,6 +938,7 @@
           cargarLista();
         })
         .catch(function (err) {
+          if (sinSesion(err)) { return; }
           if (esDePin(err)) { pinVencido(); return; }
           avisar('err', (err && err.delServidor && err.message) || 'No se pudo extender. Revisá la señal.');
         })

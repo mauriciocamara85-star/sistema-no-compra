@@ -527,14 +527,13 @@
       <div id="equipoActual"></div>
     </div>
 
-    <!-- ── Atención al cliente (08/10/2026) ──
-         Los que siguen a los clientes en el CRM: es la lista del
-         desplegable "¿Quién sos?" de arriba del CRM. Mirarla es libre;
-         sumar o sacar a alguien pide el PIN. -->
+    <!-- ── Atención al cliente ──
+         Desde el 13/10/2026 son usuarios con el rol "Atención al cliente":
+         entran con su nombre y su PIN, y el CRM sabe quién es cada uno. Se
+         crean en la pestaña Usuarios (antes era una lista de nombres). -->
     <div class="bloque" id="cajaAtencion">
       <h2 class="bloque-tit">Atención al cliente</h2>
-      <p class="bloque-sub">Los que siguen a los clientes en el CRM. Aparecen en su desplegable "¿Quién sos?". Sumar o sacar a alguien pide el PIN.</p>
-      <div id="atencionCuerpo"><div class="skel"></div></div>
+      <p class="bloque-sub">Los que siguen a los clientes en el CRM son usuarios con el rol "Atención al cliente": cada uno entra con su nombre y su PIN, y el CRM ya sabe quién es. Se crean en la pestaña <a href="#usuarios" id="irUsuarios">Usuarios</a>.</p>
     </div>
 
     <!-- ── Cómo se ve ───────────────────────────────────────────────────────
@@ -560,38 +559,27 @@
       <h2 class="bloque-tit">Los avisos por mail</h2>
       <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
     </div>
-    <!-- El acceso discreto al PIN (12/10/2026): un vendedor no lo necesita;
-         el de la oficina sabe dónde está (y ahí lo cambia o sale). -->
-    <p class="pie-pin">¿Sos de Atención o administración? <a href="#club">Entrá con el PIN</a>, en Club VDH.</p>
+    <!-- El Club es de la oficina (13/10/2026: con el usuario de cada uno). -->
+    <p class="pie-pin">¿Sos de Atención o administración? Entrá con tu usuario y abrí <a href="#club">Club VDH</a>.</p>
     </div>
   </section>
 
   <!-- ══ CLUB VDH ═══════════════════════════════════════════════════════ -->
   <section class="seccion" id="secClub" role="tabpanel" aria-labelledby="tabClub" hidden>
-    <!-- El PIN, una vez para todo el Club. Se esconde solo cuando ya está. -->
+    <!-- El portón del Club (13/10/2026): entrar con su usuario, esperar el
+         OK, o "no es de tu usuario" (persona.porton). Antes, el PIN compartido. -->
     <div class="bloque pin-club" id="cajaPinClub" hidden>
       <h2 class="bloque-tit">El Club VDH</h2>
-      <p class="bloque-sub">Acá se manejan los premios, las promociones y los avisos que ven los socios. Pide el PIN porque lo que se cambia lo ven los clientes.</p>
+      <p class="bloque-sub">Acá se manejan los premios, las promociones y los avisos que ven los socios. Es de Administración y Atención al cliente, porque lo que se cambia lo ven los clientes.</p>
       <div id="pinClubCuerpo"></div>
     </div>
-    <!-- La sesión del PIN (12/10/2026): cambiarlo y salir. Vivían en
-         Beneficios; están acá, detrás del PIN, porque "Locales y equipo" se
-         abre sin nada y el PIN no puede estar detrás de una puerta abierta. -->
+    <!-- Quién entró, y "Salir" (13/10/2026). Antes era la sesión del PIN
+         compartido, con "Cambiar el PIN": el PIN de cada uno lo borra el
+         administrador en Usuarios, y la persona crea uno nuevo al entrar. -->
     <div class="bloque pin-sesion" id="cajaSesion" hidden>
       <div class="sesion-fila">
-        <span>Entraste con el PIN</span>
-        <button type="button" class="link-bot" id="btnCambiarPin">Cambiar el PIN</button>
+        <span id="sesionTxt">Entraste con tu usuario</span>
         <button type="button" class="link-bot" id="btnSalirPin">Salir</button>
-      </div>
-      <div class="sesion-cambio" id="cajaCambioPin" hidden>
-        <p class="bloque-sub">El PIN nuevo tiene que ser de 4 a 8 dígitos. Es el mismo para el CRM, Socios y esta pantalla.</p>
-        <div class="campos">
-          <div class="campo"><label for="pinViejo">PIN actual</label>
-            <input type="password" id="pinViejo" inputmode="numeric" maxlength="8" autocomplete="off"></div>
-          <div class="campo"><label for="pinNuevo">PIN nuevo</label>
-            <input type="password" id="pinNuevo" inputmode="numeric" maxlength="8" autocomplete="off"></div>
-          <div class="campo ancho"><button type="button" class="btn btn-pri" id="btnGuardarPin">Cambiar el PIN</button></div>
-        </div>
       </div>
     </div>
     <!-- ── El menú (30/09/2026) ──
@@ -774,7 +762,7 @@
       <div class="pant-cab">
         <a class="pant-volver" href="#club">Club VDH</a>
         <h2 class="pant-tit">Cajas habilitadas</h2>
-        <p class="bloque-sub">Los aparatos de los locales que cobran, suman puntos, buscan socios y entregan el regalo de cumple sin PIN. Cada uno cobra sólo en su local. Lo demás sigue pidiendo tu PIN.</p>
+        <p class="bloque-sub">Los aparatos de los locales que cobran, suman puntos, buscan socios y entregan el regalo de cumple sin que nadie entre con su usuario. Cada uno cobra sólo en su local.</p>
       </div>
       <div class="bloque">
         <h3 class="bloque-tit">Habilitar una caja</h3>
@@ -845,24 +833,18 @@
   /* ═══ Este equipo ═══════════════════════════════════════════════════════ */
   /* ═══ Las promociones del Club ═══════════════════════════════════════
      Lo único de Configuración que sale de esta pantalla y llega a un
-     cliente, así que es lo único que pide el PIN —el mismo del Panel, de
-     Beneficios y de la caja—.
-
-     El PIN vive en sessionStorage y no en localStorage: dura lo que dura la
-     pestaña. En la PC del local, que queda abierta todo el día, guardarlo
-     para siempre sería dejar la llave puesta. */
+     cliente, así que es de la oficina: desde el 13/10/2026 se entra con el
+     usuario de cada uno (Administración, Atención o Gerencia), y no con el
+     PIN compartido de antes. */
   var K_PIN_PROMO = 'nc_pin';
   var editando = null;      // el id que se está editando, o null si es nueva
   var promoAbierta = null;  // la promo que se está editando, tal como vino de la base
 
-  function pinPromo() {
-    try { return sessionStorage.getItem(K_PIN_PROMO) || ''; } catch (e) { return ''; }
-  }
-  function guardarPinPromo(v) {
-    try {
-      if (v) sessionStorage.setItem(K_PIN_PROMO, v); else sessionStorage.removeItem(K_PIN_PROMO);
-    } catch (e) {}
-  }
+  /* Sin el PIN compartido (13/10/2026): la marca de la sesión de quien
+     entró, si es de Administración, Atención o Gerencia (datos.js le suma
+     la sesión; la base lo revisa en pin_ok). */
+  function pinPromo() { return persona.pin(); }
+  function guardarPinPromo() { /* ya no se guarda nada: es la sesión de la persona */ }
 
   function pintarPromo() {
     var caja = $('promoCuerpo');
@@ -876,76 +858,46 @@
         listaPromos(lista || []);
       })
       .catch(function (err) {
-        /* PIN vencido o equivocado: se vuelve a pedir en vez de dejar un
-           cartel de error que no se puede accionar. */
-        guardarPinPromo('');
-        pedirPinPromo((err && err.delServidor && err.message) || '');
+        /* La sesión ya no vale, o el usuario no es de la oficina: el portón
+           lo dice, en vez de dejar un cartel que no se puede accionar. */
+        if (err && (err.sinSesion || (err.delServidor && /PIN/i.test(err.message || '')))) {
+          pedirPinPromo(err.sinSesion ? 'Se cerró tu sesión. Entrá de nuevo con tu usuario.' : '');
+          return;
+        }
+        /* Otra cosa (la señal, algo que falta en la base): se dice acá, y lo
+           demás del Club sigue abierto. */
+        caja.innerHTML = '<p class="bloque-sub">' + esc((err && err.delServidor && err.message) || 'No se pudieron traer las promociones: revisá la señal y probá de nuevo.') + '</p>';
       });
   }
 
-  /* El PIN se pide UNA vez, arriba de todo lo del Club, y no adentro de
-     Promociones. Las secciones de abajo dicen "poné el PIN arriba". */
+  /* El portón del Club, una vez arriba de todo: entrar con su usuario,
+     esperar el OK, o "no es de tu usuario" (persona.porton). Las secciones
+     de abajo dicen "entrá con tu usuario arriba". */
   function pedirPinPromo(error) {
     if ($('cajaPinClub')) { $('cajaPinClub').hidden = false; }
     if ($('cajaSesion')) { $('cajaSesion').hidden = true; }
     mostrarClub(rutaClub());
-    $('promoCuerpo').innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
-    $('pinClubCuerpo').innerHTML =
-      '<div class="campo ancho">' +
-        '<label for="promoPin">PIN <span class="lbl-req">obligatorio</span></label>' +
-        '<input type="password" id="promoPin" inputmode="numeric" maxlength="8" ' +
-               'placeholder="PIN" autocomplete="current-password">' +
-        (error ? '<div class="campo-error">' + esc(error) + '</div>' : '') +
-      '</div>' +
-      '<button type="button" class="btn btn-sec btn-chico" id="promoEntrar" ' +
-              'style="margin-top:10px">Entrar</button>';
-
-    $('promoEntrar').onclick = entrarPromo;
-    $('promoPin').onkeydown = function (e) { if (e.key === 'Enter') entrarPromo(); };
+    $('promoCuerpo').innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
+    $('pinClubCuerpo').innerHTML = '<div id="clubUsuario"></div>' +
+      (error ? '<div class="campo-error">' + esc(error) + '</div>' : '');
+    persona.porton($('clubUsuario'), 'El Club es de Administración y Atención al cliente.');
   }
 
-  function entrarPromo() {
-    var v = $('promoPin').value.trim();
-    if (!v) { avisar('err', 'Escribí el PIN.'); return; }
-    guardarPinPromo(v);
-    mostrarClub(rutaClub());
-    /* Es el mismo PIN y la misma sesión: poniéndolo una vez se abren todas
-       las secciones del Club que lo piden. */
-    pintarTodoElClub();
-  }
+  function entrarPromo() { persona.entrar(); }
 
-  /* La sesión del PIN: se ve sólo con el PIN puesto. */
+  /* Quién entró, con "Salir": se ve sólo con un usuario de la oficina. */
   function pintarSesion() {
-    if ($('cajaSesion')) { $('cajaSesion').hidden = !pinPromo(); }
+    if (!$('cajaSesion')) { return; }
+    $('cajaSesion').hidden = !pinPromo();
+    var y = persona.yo();
+    if (y) { $('sesionTxt').innerHTML = 'Entraste como <b>' + esc(y.nombre) + '</b>'; }
   }
+  /* "Salir" es "No soy yo": cierra la sesión de la persona en este aparato. */
   function salirPin() {
-    guardarPinPromo('');
-    /* Recargar y no esconder a mano: media pantalla depende del PIN. */
-    location.reload();
+    $('btnSalirPin').disabled = true;
+    persona.salir().then(function () { location.reload(); });
   }
-  function guardarPinNuevo() {
-    var viejo = $('pinViejo').value.trim();
-    var nuevo = $('pinNuevo').value.trim();
-    if (!/^[0-9]{4,8}$/.test(nuevo)) { avisar('err', 'El PIN nuevo tiene que ser de 4 a 8 dígitos.'); return; }
-    var b = $('btnGuardarPin');
-    b.disabled = true; b.textContent = 'Cambiando…';
-    base.pin.definir(viejo, nuevo)
-      .then(function (r) {
-        if (!r || !r.cambiado) { avisar('err', (r && r.porque) || 'No se pudo cambiar.'); return; }
-        /* El guardado es el viejo: si no se reemplaza, lo próximo falla. */
-        guardarPinPromo(nuevo);
-        $('pinViejo').value = ''; $('pinNuevo').value = '';
-        $('cajaCambioPin').hidden = true;
-        avisar('ok', 'PIN cambiado.');
-      })
-      .catch(function (err) { avisar('err', (err && err.delServidor && err.message) || 'No se pudo cambiar el PIN.'); })
-      .then(function () { b.disabled = false; b.textContent = 'Cambiar el PIN'; });
-  }
-  if ($('btnCambiarPin')) {
-    $('btnCambiarPin').onclick = function () { var c = $('cajaCambioPin'); c.hidden = !c.hidden; if (!c.hidden) { $('pinViejo').focus(); } };
-    $('btnSalirPin').onclick = salirPin;
-    $('btnGuardarPin').onclick = guardarPinNuevo;
-  }
+  if ($('btnSalirPin')) { $('btnSalirPin').onclick = salirPin; }
 
   /* Todas las secciones a la vez, y no la que se abre: el menú necesita el
      renglón de cada una, y así abrir cualquiera es instantáneo. */
@@ -1800,7 +1752,7 @@
     var caja = $('misionesCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -1855,7 +1807,7 @@
     var caja = $('avisoCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
       return;
     }
 
@@ -1864,9 +1816,14 @@
     base.club.avisosCuantos(pinPromo())
       .then(function (r) { formAviso(r || {}); })
       .catch(function (err) {
-        guardarPinPromo('');
-        pintarPromo();
-        pintarAviso();
+        /* La sesión no vale, o el usuario no es de la oficina: lo dice el
+           portón de arriba. Antes se olvidaba el PIN y se volvía a pintar;
+           sin PIN que olvidar, eso se repetía para siempre (13/10/2026). */
+        if (err && (err.sinSesion || (err.delServidor && /PIN/i.test(err.message || '')))) {
+          pedirPinPromo(err.sinSesion ? 'Se cerró tu sesión. Entrá de nuevo con tu usuario.' : '');
+          return;
+        }
+        caja.innerHTML = '<p class="bloque-sub">No se pudo ver a cuántos les llega: revisá la señal y probá de nuevo.</p>';
         if (err && err.delServidor) { avisar('err', err.message); }
       });
   }
@@ -2086,7 +2043,7 @@
     $('tabClub').onclick = function () { mostrar('club'); };
     $('tabUsuarios').onclick = function () { if (dejarClub()) { mostrar('usuarios'); } };
     /* Entró, salió o le cambiaron el rol: se vuelve a armar lo que se ve. */
-    document.addEventListener('persona', function () { mostrar(actual); });
+    document.addEventListener('persona', function () { mostrar(actual); pintarTodoElClub(); });
   }
 
   /* ═══ Club VDH: el menú y sus pantallas (30/09/2026) ════════════════════
@@ -2183,7 +2140,7 @@
     var caja = $('premiosCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -2389,7 +2346,7 @@
     var caja = $('cajasCuerpo'), nueva = $('cajasNueva');
     if (!caja || !nueva) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
       nueva.innerHTML = '';
       return;
     }
@@ -2402,7 +2359,7 @@
         lista.forEach(function (c) { locs[c.local] = 1; });
         ponerResumen('cajas', lista.length
           ? cuantos(lista.length, 'caja', 'cajas') + ' en ' + cuantos(Object.keys(locs).length, 'local', 'locales')
-          : 'Ninguna todavía: hoy cobran con el PIN', !lista.length);
+          : 'Ninguna todavía: el Club no anda en las cajas de los locales', !lista.length);
         var mia = '';
         try { mia = localStorage.getItem('nc_caja_id') || ''; } catch (e) {}
         var nombreLocal = function (cod) {
@@ -2420,7 +2377,7 @@
         }).join('') : '<p class="bloque-sub">Ninguna todavía.</p>';
         Array.prototype.forEach.call(caja.querySelectorAll('[data-caja-baja]'), function (b) {
           b.onclick = function () {
-            if (!confirm('¿Deshabilitar esta caja? Va a volver a pedir el PIN hasta que la habilites de nuevo.')) { return; }
+            if (!confirm('¿Deshabilitar esta caja? El Club deja de andar en ese aparato hasta que la habilites de nuevo.')) { return; }
             b.disabled = true;
             base.club.cajaDeshabilitar(pinPromo(), +b.dataset.cajaBaja)
               .then(function (x) {
@@ -2498,7 +2455,7 @@
     $('cajaAca').onclick = function () {
       var loc = local(); if (!loc) { return; }
       var nom = (cajasLocales.filter(function (x) { return x.codigo === loc; })[0] || {}).nombre || loc;
-      if (!confirm('¿Habilitar ESTE aparato como caja de ' + nom + '? Va a cobrar sin PIN en ' + nom + '.')) { return; }
+      if (!confirm('¿Habilitar ESTE aparato como caja de ' + nom + '? Va a cobrar con el Club en ' + nom + ', sin que nadie entre con su usuario.')) { return; }
       var ua = navigator.userAgent || '';
       var aparato = (/Mobi|Android|iPhone/i.test(ua) ? 'Celular' : 'Compu') +
                     (/iPhone|iPad|Mac OS/i.test(ua) ? ' Apple' : /Android/i.test(ua) ? ' Android' : /Windows/i.test(ua) ? ' Windows' : '');
@@ -2511,7 +2468,7 @@
             localStorage.setItem('nc_caja_id', String(r.id));
             localStorage.setItem('nc_local', r.local);
           } catch (e) {}
-          avisar('ok', 'Listo: este aparato cobra sin PIN en ' + nom + '.');
+          avisar('ok', 'Listo: este aparato cobra con el Club en ' + nom + '.');
           pintarCajas();
         })
         .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo.'); });
@@ -2522,7 +2479,7 @@
     var caja = $('resenasCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -2609,7 +2566,7 @@
     var caja = $('regalosCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -2704,7 +2661,7 @@
     var caja = $('multiCuerpo');
     if (!caja) { return; }
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Poné el PIN arriba y esto se abre solo.</p>';
+      caja.innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -3118,90 +3075,9 @@
   }
 
   /* ═══ Atención al cliente ═══════════════════════════════════════════════
-     La tabla `atencion` ya existía (la usaba "quién lo creó" de los
-     cupones) pero no tenía pantalla: estaba vacía. Ahora es la lista del
-     CRM. No se borra a nadie: sacarlo lo deja inactivo, y los clientes y
-     cupones que tiene anotados siguen diciendo su nombre. */
-  var atencionPend = null;   // lo que se quería hacer cuando faltó el PIN
-
-  function pintarAtencion() {
-    var caja = $('atencionCuerpo');
-    base.atencion()
-      .then(function (filas) {
-        var nombres = (filas || []).map(function (f) { return f && f.nombre; }).filter(Boolean);
-        caja.innerHTML =
-          (nombres.length
-            ? '<div class="vends">' + nombres.map(function (n) {
-                return '<span class="vend">' + esc(n) +
-                       '<button type="button" data-sacar-at="' + esc(n) + '" title="Sacar a ' + esc(n) + '" aria-label="Sacar a ' + esc(n) + '">' + X + '</button></span>';
-              }).join('') + '</div>'
-            : '<p class="gente-txt flojo">Todavía no hay nadie. Sumá a los que atienden el CRM.</p>') +
-          '<div class="at-fila">' +
-            '<input type="text" id="atNombre" placeholder="Nombre, como lo van a ver" autocomplete="off" autocapitalize="words" aria-label="Nombre">' +
-            '<button type="button" class="btn btn-sec btn-chico" id="atSumar">Sumar</button>' +
-          '</div>' +
-          '<div class="at-fila" id="atPin" hidden>' +
-            '<input type="password" id="atPinTxt" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="current-password" aria-label="PIN">' +
-            '<button type="button" class="btn btn-pri btn-chico" id="atPinOk">Seguir</button>' +
-          '</div>';
-
-        var sumar = function () {
-          var n = $('atNombre').value.trim();
-          if (!n) { avisar('err', 'Escribí el nombre.'); $('atNombre').focus(); return; }
-          atencionHacer(n, true);
-        };
-        $('atSumar').onclick = sumar;
-        $('atNombre').onkeydown = function (e) { if (e.key === 'Enter') { sumar(); } };
-        var conPin = function () {
-          var v = $('atPinTxt').value.trim();
-          if (!v) { $('atPinTxt').focus(); return; }
-          guardarPinPromo(v);
-          var p = atencionPend; atencionPend = null;
-          if (p) { atencionHacer(p[0], p[1], true); }
-        };
-        $('atPinOk').onclick = conPin;
-        $('atPinTxt').onkeydown = function (e) { if (e.key === 'Enter') { conPin(); } };
-        [].forEach.call(caja.querySelectorAll('[data-sacar-at]'), function (b) {
-          b.onclick = function () {
-            var n = b.dataset.sacarAt;
-            if (!confirm('¿Sacar a ' + n + ' de Atención al cliente?\n\nNo se borra nada: los clientes que tiene anotados siguen diciendo su nombre, y se puede volver a sumar.')) { return; }
-            atencionHacer(n, false);
-          };
-        });
-      })
-      .catch(function () {
-        caja.innerHTML = '<p class="gente-txt flojo">No se pudo traer la lista. Revisá la señal y recargá.</p>';
-      });
-  }
-
-  /* Sumar (activo) o sacar. Sin PIN en esta pestaña, lo pide ahí mismo y
-     después sigue solo con lo que se estaba haciendo. */
-  function atencionHacer(nombre, activo, pinNuevo) {
-    if (!pinPromo()) {
-      atencionPend = [nombre, activo];
-      $('atPin').hidden = false;
-      $('atPinTxt').focus();
-      return;
-    }
-    base.atencionGuardar(pinPromo(), nombre, activo)
-      .then(function () {
-        avisar('ok', activo ? nombre + ' ya aparece en el CRM.' : nombre + ' quedó fuera de la lista.');
-        pintarAtencion();
-        /* Es el mismo PIN del Club: puesto acá, la pestaña del Club también se abre. */
-        if (pinNuevo) { pintarTodoElClub(); }
-      })
-      .catch(function (err) {
-        var m = (err && err.delServidor && err.message) || (err && err.message) || 'No se pudo guardar.';
-        if (/PIN/i.test(m)) {
-          guardarPinPromo('');
-          atencionPend = [nombre, activo];
-          $('atPin').hidden = false;
-          $('atPinTxt').value = '';
-          $('atPinTxt').focus();
-        }
-        avisar('err', m);
-      });
-  }
+     Desde el 13/10/2026 son usuarios con ese rol (pestaña Usuarios): la
+     lista de nombres de antes (tabla atencion, atencion_guardar) ya no se
+     maneja desde acá. */
 
   /* ═══ Los locales ═══════════════════════════════════════════════════════ */
   function pintarLocales() {
@@ -3390,7 +3266,9 @@
     iniciarTema();
     pintarEsteEquipo();
     cargar(false);
-    pintarAtencion();
+    /* "Atención al cliente" son usuarios desde el 13/10/2026: el enlace
+       lleva a la pestaña Usuarios. */
+    if ($('irUsuarios')) { $('irUsuarios').onclick = function (e) { e.preventDefault(); $('tabUsuarios').click(); }; }
     /* Viaje aparte del resto: pide PIN y puede fallar sola sin arrastrar a
        los objetivos, que no lo piden. */
     engancharClub();

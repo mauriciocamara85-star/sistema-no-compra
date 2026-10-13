@@ -99,8 +99,27 @@ function pedir(ruta, opciones) {
   });
 }
 
+/* ── SIN EL PIN COMPARTIDO (13/10/2026) ───────────────────────────────────
+   Cada uno entra con su usuario (persona.js). Cuando quien entró es de la
+   oficina (Administración, Atención o Gerencia), las pantallas mandan esta
+   marca en lugar del PIN y acá se le suma su sesión. La base (pin_ok, SQL
+   107) la acepta sólo con esa sesión, y nunca le gasta intentos al PIN. */
+var PIN_SESION = 'sesion';
+
+/** Las cabeceras de una Edge Function: con la sesión si va la marca. */
+function cabecerasCon(pin) {
+  var h = { apikey: CLAVE, 'Content-Type': 'application/json' };
+  if (pin !== PIN_SESION || typeof persona === 'undefined') return Promise.resolve(h);
+  return persona.token().then(function (t) { h.Authorization = 'Bearer ' + t; return h; });
+}
+
 /** Una función de la base (las que devuelven algo sin dejar leer la tabla). */
 function funcion(nombre, args, sesion) {
+  /* La marca de la persona viaja con su sesión. Si no hay sesión, el error
+     dice "sinSesion" y las pantallas vuelven a pedir que entre. */
+  if (!sesion && args && args.p_pin === PIN_SESION && typeof persona !== 'undefined') {
+    return persona.token().then(function (t) { return funcion(nombre, args, t); });
+  }
   return fetch(BASE + '/rest/v1/rpc/' + nombre, {
     method: 'POST',
     headers: {
@@ -115,9 +134,14 @@ function funcion(nombre, args, sesion) {
         var msg = t;
         try { msg = JSON.parse(t).message || t; } catch (e) {}
         /* El estado va con el error: un 401 es "esa sesión no vale", diga lo
-           que diga el texto (13/10/2026). */
+           que diga el texto (13/10/2026). Con una sesión de persona, además,
+           cuenta como sesión cerrada: la pantalla pide entrar de nuevo. */
         var e = rechazo(msg);
         e.status = r.status;
+        if (sesion && r.status === 401) {
+          e.sinSesion = true;
+          try { document.dispatchEvent(new Event('nc-sesion-rechazada')); } catch (x) {}
+        }
         throw e;
       });
     }
@@ -1397,10 +1421,12 @@ var base = {
   /** El agente redacta un borrador para una charla (Edge Function "agente",
    *  fase 2): tarda unos segundos. No manda nada. */
   agentePedir: function (pin, clave, quien) {
-    return fetch(BASE + '/functions/v1/agente', {
-      method: 'POST',
-      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accion: 'pedir', pin: pin, clave: clave, quien: quien || '' })
+    return cabecerasCon(pin).then(function (h) {
+      return fetch(BASE + '/functions/v1/agente', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify({ accion: 'pedir', pin: pin, clave: clave, quien: quien || '' })
+      });
     }).then(function (r) {
       return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el agente.' }; });
     }).then(function (x) {
@@ -1470,14 +1496,16 @@ var base = {
   /** El chat de prueba del Asistente (no guarda la charla). Devuelve
    *  { texto, fuentes, uso }. Rechaza con el porqué (err.pin si es el PIN). */
   asistenteProbar: function (pin, historial, pregunta) {
-    return fetch(BASE + '/functions/v1/asistente', {
-      method: 'POST',
-      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accion: 'probar', pin: pin, historial: historial || [], pregunta: pregunta })
-    }).then(function (r) {
-      return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el Asistente.' }; });
-    }, function () {
-      return { ok: false, error: 'No hay conexión. Revisá internet y probá de nuevo.' };
+    return cabecerasCon(pin).then(function (h) {
+      return fetch(BASE + '/functions/v1/asistente', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify({ accion: 'probar', pin: pin, historial: historial || [], pregunta: pregunta })
+      }).then(function (r) {
+        return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el Asistente.' }; });
+      }, function () {
+        return { ok: false, error: 'No hay conexión. Revisá internet y probá de nuevo.' };
+      });
     }).then(function (x) {
       if (!x || !x.ok) { var e = rechazo((x && x.error) || 'No se pudo hablar con el Asistente.'); e.pin = !!(x && x.pin); throw e; }
       return x;
@@ -1510,15 +1538,17 @@ var base = {
   /** Una Edge Function de los agentes. Rechaza con el porqué; err.pin si es
    *  el PIN, err.sinFuncion si la función todavía no está desplegada. */
   fnAgentes: function (nombre, cuerpo) {
-    return fetch(BASE + '/functions/v1/' + nombre, {
-      method: 'POST',
-      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
-      body: JSON.stringify(cuerpo)
-    }).then(function (r) {
-      if (r.status === 404) { return { ok: false, sinFuncion: true, error: 'La función "' + nombre + '" todavía no está desplegada en Supabase.' }; }
-      return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el agente.' }; });
-    }, function () {
-      return { ok: false, error: 'No hay conexión. Revisá internet y probá de nuevo.' };
+    return cabecerasCon(cuerpo && cuerpo.pin).then(function (h) {
+      return fetch(BASE + '/functions/v1/' + nombre, {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify(cuerpo)
+      }).then(function (r) {
+        if (r.status === 404) { return { ok: false, sinFuncion: true, error: 'La función "' + nombre + '" todavía no está desplegada en Supabase.' }; }
+        return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el agente.' }; });
+      }, function () {
+        return { ok: false, error: 'No hay conexión. Revisá internet y probá de nuevo.' };
+      });
     }).then(function (x) {
       if (!x || !x.ok) {
         var e = rechazo((x && x.error) || 'No se pudo hablar con el agente.');
@@ -1588,10 +1618,12 @@ var base = {
   /** Lo de WhatsApp lo hace la Edge Function "whatsapp", que es la que
    *  tiene el token de Meta; todo con el PIN. Rechaza con el porqué. */
   waAccion: function (accion, datos) {
-    return fetch(BASE + '/functions/v1/whatsapp', {
-      method: 'POST',
-      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.assign({ accion: accion }, datos))
+    return cabecerasCon(datos && datos.pin).then(function (h) {
+      return fetch(BASE + '/functions/v1/whatsapp', {
+        method: 'POST',
+        headers: h,
+        body: JSON.stringify(Object.assign({ accion: accion }, datos))
+      });
     }).then(function (r) {
       return r.json().catch(function () { return { ok: false, error: 'No se pudo conectar con WhatsApp.' }; });
     }).then(function (x) {

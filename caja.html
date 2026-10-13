@@ -379,19 +379,19 @@
 
   /* ═══ El Club en esta caja ════════════════════════════════════════════
      El Club pide una llave: la de una caja habilitada (SQL 49, queda en el
-     aparato) o el PIN de la sesión (si en esta pestaña alguien entró a
-     Config o al CRM). Sin ninguna de las dos, el Club no anda y se dice
-     por qué; los cupones y las gift cards andan igual.
+     aparato) o, en la oficina, el usuario de quien entró si es de
+     Administración, Atención o Gerencia (desde el 13/10/2026; antes, el PIN
+     compartido). Sin ninguna de las dos, el Club no anda y se dice por
+     qué; los cupones y las gift cards andan igual.
 
-     **No hay campo de PIN en el mostrador**: cada intento fallido suma al
-     freno del PIN, que es para todos los aparatos a la vez y deja trabados
-     al CRM y a Config hasta media hora. */
+     **No hay campo de PIN en el mostrador**: la caja se habilita con su
+     enlace (Config → Cajas habilitadas). */
   var K_CAJA = 'nc_caja', K_CAJA_LOCAL = 'nc_caja_local';
   function llaveCaja() { return leer(K_CAJA); }
-  function pinDeVerdad() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
-  /* La llave de la caja va primero (12/10/2026): no pasa por el PIN, así un
-     PIN viejo que quedó en la pestaña (lo cambiaron en otro aparato) no
-     frena al Club ni suma intentos fallidos al freno de todos. */
+  /* La marca de la sesión de quien entró (persona.js), si es de la oficina. */
+  function pinDeVerdad() { return persona.pin(); }
+  /* La llave de la caja va primero (12/10/2026): es la de ESTE aparato, y
+     en una caja el Club anda aunque nadie haya entrado con su usuario. */
   function pinGuardado() { return llaveCaja() || pinDeVerdad(); }
   function clubAnda() { return !!pinGuardado(); }
   function olvidarCaja() { guardar(K_CAJA, ''); guardar(K_CAJA_LOCAL, ''); guardar('nc_caja_id', ''); }
@@ -411,15 +411,20 @@
   /* El aviso de arriba es de la llave o el PIN (freno, sin señal): se borra
      con la primera búsqueda del Club que sale bien. */
   var avisoDeLlave = false;
-  function olvidarPin() { try { sessionStorage.removeItem(K_PIN); } catch (e) {} }
-  /* La llave o el PIN dejaron de servir (deshabilitaron la caja, o
-     cambiaron el PIN): se olvidan acá mismo y se dice. Seguir probando con
-     un PIN malo traba el CRM y Config para todos. Un corte de señal no
+  function olvidarPin() { /* ya no hay PIN que olvidar: es la sesión de la persona */ }
+  /* La llave o el usuario dejaron de servir (deshabilitaron la caja, o al
+     usuario le cambiaron el rol): se dice acá mismo. Un corte de señal no
      cuenta: sólo la respuesta de la base. */
   /* Devuelve qué dejó de servir ('llave' o 'pin'), o nada si el error es
      otro. "queNoSeHizo" va en el aviso flotante (lo de arriba queda fuera
      de la pantalla si hay una ficha abierta). */
   function llaveVencida(err, queNoSeHizo) {
+    if (err && err.sinSesion && !llaveCaja()) {
+      avisoCaja('Se cerró tu sesión: para usar el Club acá, entrá de nuevo con tu usuario. Cupones y gift cards andan igual.');
+      avisoDeLlave = true;
+      pintarClubNota();
+      return 'pin';
+    }
     if (!err || !err.delServidor || !/PIN incorrecto/i.test(err.message || '')) { return false; }
     var decir = function (txt) {
       avisoCaja(txt);
@@ -432,22 +437,9 @@
       decir('Esta caja ya no está habilitada para el Club. Pedile al encargado un enlace nuevo.');
       return 'llave';
     }
-    /* Con el PIN frenado por intentos fallidos (de cualquier pantalla), la
-       base contesta "PIN incorrecto" aunque sea el bueno. pin_situacion no
-       pide PIN ni gasta intentos: si es el freno, el PIN se guarda. */
-    base.pin.situacion()
-      .then(function (s) {
-        var espera = Number(s && s.espera) || 0;
-        if (espera > 0) {
-          decir('El PIN está frenado por intentos fallidos. El Club vuelve a andar solo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).');
-          return;
-        }
-        olvidarPin();
-        decir('El PIN que había quedado en esta pestaña ya no sirve (lo cambiaron o era otro), así que acá no anda el Club. Cupones y gift cards, sí.');
-      })
-      .catch(function () {
-        decir('No se pudo comprobar el PIN: revisá la señal y probá de nuevo.');
-      });
+    /* Era el usuario de quien entró, y la base no lo dejó (le cambiaron el
+       rol, o lo desactivaron). */
+    decir('Tu usuario no tiene acceso al Club en esta compu. Cupones y gift cards andan igual.');
     return 'pin';
   }
   /* Que el Club no anda acá se dice de entrada, debajo del campo. */

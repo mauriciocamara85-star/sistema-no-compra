@@ -1578,10 +1578,10 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/></svg>
   </div>
   <h2>CRM</h2>
-  <p>Acá están los teléfonos y mails de los clientes. Poné el PIN para entrar.</p>
-  <input type="password" id="pinPanel" inputmode="numeric" maxlength="8" placeholder="PIN"
-         autocomplete="off" onkeydown="if(event.key==='Enter') entrar()">
-  <button class="btn btn-pri btn-ancho" id="btnEntrar" onclick="entrar()">Entrar</button>
+  <p>Acá están los teléfonos y mails de los clientes.</p>
+  <!-- Sin el PIN compartido (13/10/2026): cada uno entra con su usuario.
+       Lo arma persona.porton(). -->
+  <div class="porton-usuario" id="portonUsuario"></div>
   <p class="porton-msg" id="portonMsg" hidden></p>
   <p class="pie" style="margin-top:22px">
     ¿Venías a cargar un cliente o a cobrar? <a href="index.html">Carga</a> · <a href="caja.html">Cobrar</a>
@@ -1796,8 +1796,9 @@
   </div>
 </div>
 
-<!-- Borrar un registro (SQL 74): el PIN de nuevo, aunque ya esté adentro, y
-     el motivo. Va a una papelera de 30 días. -->
+<!-- Borrar un registro (SQL 74): el motivo, y queda a nombre de quien entró
+     con su usuario (antes pedía el PIN compartido de nuevo). Va a una
+     papelera de 30 días. -->
 <div class="modal" id="modalBorrar" hidden>
   <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="borrarTit">
     <h2 id="borrarTit">Borrar el registro</h2>
@@ -1808,7 +1809,6 @@
       <button type="button" class="chip" data-motivo="Otro">Otro</button>
     </div>
     <div class="campo" id="borrarNotaCampo" hidden><label for="borrarNota">¿Por qué?</label><input id="borrarNota" maxlength="140" placeholder="En una línea"></div>
-    <div class="campo"><label for="borrarPin">PIN</label><input id="borrarPin" type="password" inputmode="numeric" autocomplete="off"></div>
     <p class="borrar-kommo" id="borrarKommo" hidden></p>
     <p>Sale del tablero, de Contactos y de las estadísticas. Queda 30 días en la papelera, por si hay que volverlo.</p>
     <div class="modal-pie">
@@ -2154,52 +2154,37 @@
    * —el servidor no manda dos seguidos— y el segundo enlace invalida el
    * primero, así que el que ya lo tuviera abierto se quedaría afuera.
    */
-  function entrar() {
-    var v = $('pinPanel').value.trim();
-    if (!v) { avisar('err', 'Escribí el PIN.'); $('pinPanel').focus(); return; }
+  /* Sin el PIN compartido (13/10/2026): se entra con el usuario de cada
+     uno (persona.js). El portón lo arma persona.porton(): entrar, esperar
+     el OK, o "esto no es de tu usuario". */
+  function entrar() { persona.entrar(); }
+  function pintarPorton() { persona.porton($('portonUsuario'), 'El CRM es de Administración y Atención al cliente.'); }
 
-    var btn = $('btnEntrar');
-    btn.disabled = true; btn.textContent = 'Probando…';
+  /* Lo que va en lugar del PIN: la marca de la sesión de quien entró, si es
+     de Administración, Atención o Gerencia (datos.js le suma la sesión y la
+     base lo revisa en pin_ok). Vacío si no: el portón. */
+  function pinGuardado() { return persona.pin(); }
+  function guardarPin() { /* ya no se guarda nada: es la sesión de la persona */ }
 
-    base.pin.probar(v)
-      .then(function (r) {
-        if (!r || !r.ok) {
-          /* El mensaje lo arma la base, que es la que sabe cuántos intentos
-             quedan y cuánto falta para que se destrabe. */
-          $('portonMsg').hidden = false;
-          $('portonMsg').textContent = (r && r.porque) || 'PIN incorrecto.';
-          $('pinPanel').value = '';
-          $('pinPanel').focus();
-          return;
-        }
-        guardarPin(v);
-        $('portonMsg').hidden = true;
-        /* Se pide el resumen, que es la prueba de que se puede leer de
-           verdad. Entrar y que después falle todo es peor que no entrar. */
-        return base.panel(v).then(abrir);
-      })
-      .catch(function (e) {
-        avisar('err', (e && e.message) || 'No se pudo entrar.');
-      })
-      .then(function () { btn.disabled = false; btn.textContent = 'Entrar'; });
-  }
-
-  /* La llave, compartida con Socios y Config.: es el mismo PIN para todo
-     lo de la oficina. Vive en sessionStorage y no en localStorage, así que se
-     olvida al cerrar la pestaña — en una máquina compartida, una sesión que
-     no caduca nunca es peor que volver a tipear cuatro números. */
-  var K_PIN = 'nc_pin';
-  function pinGuardado() {
-    try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; }
-  }
-  function guardarPin(v) {
-    try { if (v) sessionStorage.setItem(K_PIN, v); else sessionStorage.removeItem(K_PIN); } catch (e) {}
+  /* Probar y abrir, con la sesión de quien entró. */
+  function arrancar() {
+    if (!pinGuardado()) { pintarPorton(); return; }
+    persona.porton($('portonUsuario'), 'El CRM es de Administración y Atención al cliente.');
+    base.panel(pinGuardado())
+      .then(abrir)
+      .catch(function (err) {
+        pintarPorton();
+        if (!(err && err.sinSesion)) { avisar('err', (err && err.message) || 'No se pudo entrar.'); }
+      });
   }
 
   /** Abre el panel. Ya hay sesión cuando esto corre. */
   function abrir(res) {
     VOCAB = res.vocab;
-    quien = leer(K_QUIEN);
+    /* El ¿Quién sos? es quien entró (13/10/2026): su nombre de pila, el
+       mismo de la lista de Atención ("Ale", "Lau"), así sus números siguen. */
+    quien = persona.pila() || leer(K_QUIEN);
+    if (persona.pila()) { guardar(K_QUIEN, quien); }
 
     $('porton').hidden = true;
     $('marco').hidden = false;
@@ -2252,13 +2237,12 @@
    * escribiendo una nota ve la pantalla de entrada y cree que se rompió.
    */
   function caducada() {
-    salir();
-    avisar('err', 'Se cerró la sesión. Volvé a poner el PIN.');
+    cerrarPanel();
+    avisar('err', 'Se cerró tu sesión. Entrá de nuevo con tu usuario.');
   }
 
-  function salir() {
-    guardarPin('');
-    sesion.salir();
+  /* Vuelve al portón (la sesión ya no sirve, o le cambiaron el rol). */
+  function cerrarPanel() {
     $('marco').hidden = true;
     document.body.classList.remove('hay-rail');
     $('btnRefrescar').hidden = true;
@@ -2266,8 +2250,13 @@
     cerrarFicha();
     $('porton').hidden = false;
     $('portonMsg').hidden = true;
-    var btn = $('btnEntrar');
-    btn.disabled = false; btn.textContent = 'Entrar';
+    pintarPorton();
+  }
+
+  /* "Salir" es "No soy yo": cierra la sesión de la persona en este aparato. */
+  function salir() {
+    $('btnSalir').disabled = true;
+    persona.salir().then(function () { location.reload(); });
   }
 
   /* El puente con Kommo se cae callado: un token vencido deja de crear leads y
@@ -3222,7 +3211,7 @@
       bloquesCrm(r) +
       /* Al final y discreto (SQL 74): para una prueba o un duplicado. */
       '<div class="ficha-borrar"><button type="button" class="btn-link" id="fichaBorrar">Borrar registro</button>' +
-        '<span>Para pruebas o duplicados. Pide el PIN.</span></div>');
+        '<span>Para pruebas o duplicados. Queda a tu nombre, 30 días en la papelera.</span></div>');
     conectarFicha(r);
     pintarCliente(r);
   }
@@ -3453,9 +3442,9 @@
   }
 
   /* ═══ Borrar un registro y la papelera (SQL 74) ═════════════════════════
-     Pedido de Mauricio (10/10/2026): borrar una prueba o un duplicado. El
-     PIN se tipea de nuevo en el momento —no se usa el guardado: una compu
-     abierta no alcanza para borrar— y el registro va a una papelera de 30
+     Pedido de Mauricio (10/10/2026): borrar una prueba o un duplicado. Va
+     a nombre de quien entró con su usuario (hasta el 13/10/2026 pedía el
+     PIN compartido de nuevo) y el registro va a una papelera de 30
      días. Lo que ya salió no vuelve: el lead de Kommo se borra a mano allá
      (su API no deja), y por eso se avisa ANTES, con el enlace. */
   var papeleraLista = [];
@@ -3477,7 +3466,6 @@
     });
     $('borrarNotaCampo').hidden = true;
     $('borrarNota').value = '';
-    $('borrarPin').value = '';
     $('borrarKommo').hidden = !r.lead;
     $('borrarKommo').innerHTML = r.lead
       ? 'Tiene un lead en Kommo, y Kommo no deja borrarlo desde acá: después <a href="' + esc(enlaceKommo(r.lead)) +
@@ -3485,8 +3473,7 @@
       : '';
     ok.disabled = false;
     ok.onclick = function () {
-      var pin = $('borrarPin').value.trim(), nota = $('borrarNota').value.trim();
-      if (!pin) { avisar('err', 'Poné el PIN.'); $('borrarPin').focus(); return; }
+      var pin = pinGuardado(), nota = $('borrarNota').value.trim();
       if (motivo === 'Otro' && !nota) { avisar('err', 'Contá en una línea por qué se borra.'); $('borrarNota').focus(); return; }
       ok.disabled = true;
       base.registroBorrar(pin, r.id, motivo, nota)
@@ -3502,18 +3489,16 @@
         })
         .catch(function (err) {
           var txt = (err && err.message) || '';
-          avisar('err', /PIN incorrecto/.test(txt) ? 'Ese PIN no es. No se borró nada.'
+          if (err && err.sinSesion) { m.hidden = true; caducada(); return; }
+          avisar('err', /PIN incorrecto/.test(txt) ? 'Tu usuario no puede borrar registros. No se borró nada.'
             : /registro_borrar|PGRST202|Could not find/.test(txt) ? 'Para borrar falta correr el SQL 74 en Supabase.'
             : txt || 'No se pudo borrar.');
-          $('borrarPin').value = '';
-          $('borrarPin').focus();
         })
         .then(function () { ok.disabled = false; });
     };
     $('borrarCancelar').onclick = function () { m.hidden = true; };
-    $('borrarPin').onkeydown = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); ok.click(); } };
     m.hidden = false;
-    $('borrarPin').focus();
+    ok.focus();
   }
 
   /* Sin el SQL 74 la papelera no existe: no hay botón y no se dice nada. */
@@ -4259,6 +4244,14 @@
 
   function pintarWhoami() {
     var sel = $('whoami');
+    /* Con usuario, es él: no se elige. */
+    if (persona.pila()) {
+      sel.innerHTML = '<option value="' + esc(quien) + '">' + esc(quien) + '</option>';
+      sel.value = quien;
+      sel.disabled = true;
+      sel.title = 'Entraste con tu usuario. Para cambiar, "Salir" y entrá con otro.';
+      return;
+    }
     var canon = deLaLista(quien);
     if (canon && canon !== quien) { quien = canon; guardar(K_QUIEN, quien); }
     var nombres = ATENCION.slice();
@@ -7775,7 +7768,7 @@
   function pagAjustesAsis(d, w) {
     var r = d.reglas || {}, prendido = r.asis_prendido === 'si';
     return '<div class="ag-estado ' + (prendido ? 'on' : 'off') + '"><b>' + (prendido ? 'Prendido: los vendedores lo pueden usar' : 'Apagado') + '</b>' +
-        '<span>' + (prendido ? 'Está en la barra de cada local → Asistente. Es libre: no pide PIN.'
+        '<span>' + (prendido ? 'Está en la barra de cada local → Asistente. Es libre: no hace falta entrar con un usuario.'
                              : 'En los locales dice "El Asistente está apagado por ahora". El chat de prueba de acá anda igual.') + '</span></div>' +
       '<div class="ficha-bloque"><h3>Prendido</h3><div class="agx-fila"><p>' +
           (prendido ? 'Contesta a los vendedores con las fuentes de Conocimiento.' : 'Prendelo cuando tenga sus fuentes cargadas y lo hayas probado.') + '</p>' +
@@ -10007,17 +10000,12 @@
 
        El orden importa: primero se recoge lo del # —si no, el token queda
        dando vueltas en la barra— y recién después se prueba lo guardado. */
-    /* Si el PIN sigue en la pestaña —se vino de Beneficios, o se recargó—,
-       se entra sin volver a pedirlo. Y se PRUEBA pidiendo el resumen: un PIN
-       viejo que ya no vale tiene que devolver al portón, no abrir una
-       pantalla que después falla en cada clic. */
-    (function () {
-      var pin = pinGuardado();
-      if (!pin) return;
-      base.panel(pin)
-        .then(abrir)
-        .catch(function () { guardarPin(''); });
-    })();
+    /* Con un usuario de la oficina se entra solo, y se PRUEBA pidiendo el
+       resumen: una sesión que ya no vale tiene que devolver al portón, no
+       abrir una pantalla que después falla en cada clic. */
+    arrancar();
+    /* Entró, salió o le cambiaron el rol en otra pestaña: se vuelve a armar. */
+    document.addEventListener('persona', function () { location.reload(); });
 
     iniciarPWA();
   })();

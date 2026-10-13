@@ -1461,6 +1461,12 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-fijo { font-size: 15px; font-weight: 600; padding: 4px 0; }
 #usCampoLocal[hidden] { display: none; }
 
+/* El portón de lo que antes pedía el PIN compartido (persona.porton). */
+.porton-usuario { width: 100%; }
+.porton-usuario:empty { display: none; }
+.ncp-porton-txt { font-size: 14px; color: var(--txt-2); margin: 0 0 12px; }
+.ncp-porton-txt b { color: var(--txt); }
+
 /* Llegó con la dirección a una pantalla que no es de su rol: la tapa entera,
    con la salida a mano. */
 .ncp-sinacceso {

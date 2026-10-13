@@ -413,9 +413,10 @@
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9v9z"/><path d="M15 3.5A9 9 0 0 1 20.5 9H15z"/></svg>
   </div>
   <h2>El Club en números</h2>
-  <p>Acá hay nombres de socios. Poné el PIN para entrar.</p>
-  <input type="password" id="pinCn" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off">
-  <button class="btn btn-pri btn-ancho" id="btnEntrar">Entrar</button>
+  <p>Acá hay nombres de socios.</p>
+  <!-- Sin el PIN compartido (13/10/2026): cada uno entra con su usuario.
+       Lo arma persona.porton(). -->
+  <div class="porton-usuario" id="portonUsuario"></div>
   <p class="porton-msg" id="portonMsg" hidden></p>
   <!-- Salida para el que entró por error (en la app instalada no hay barra
        del navegador para volver). -->
@@ -694,9 +695,11 @@
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
-  var K_PIN = 'nc_pin';
-  function pinGuardado() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
-  function guardarPin(v) { try { if (v) sessionStorage.setItem(K_PIN, v); else sessionStorage.removeItem(K_PIN); } catch (e) {} }
+  /* Sin el PIN compartido (13/10/2026): en su lugar va la marca de la
+     sesión de quien entró, si es de Administración, Atención o Gerencia
+     (datos.js le suma la sesión; la base lo revisa en pin_ok). */
+  function pinGuardado() { return persona.pin(); }
+  function guardarPin() { /* ya no se guarda nada: es la sesión de la persona */ }
 
   var K_PERIODO = 'nc_cn_periodo', K_LOCAL = 'nc_cn_local';
   var SIN = '__SIN__';
@@ -786,25 +789,12 @@
   }
 
   /* ═══ Arranque ═════════════════════════════════════════════════════════ */
-  function entrar() {
-    var v = $('pinCn').value.trim();
-    if (!v) { avisar('err', 'Escribí el PIN.'); return; }
-    var b = $('btnEntrar'); b.disabled = true; b.textContent = 'Probando…';
-    base.pin.probar(v)
-      .then(function (r) {
-        if (!r || !r.ok) {
-          $('portonMsg').hidden = false; $('portonMsg').textContent = (r && r.porque) || 'PIN incorrecto.';
-          $('pinCn').value = ''; $('pinCn').focus(); return;
-        }
-        guardarPin(v); abrir();
-      })
-      .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo entrar.'); })
-      .then(function () { b.disabled = false; b.textContent = 'Entrar'; });
-  }
+  function entrar() { persona.entrar(); }
+  /* El portón: entrar con su usuario, esperar el OK o "no es de tu usuario". */
   function pedirPin(msg) {
     $('marco').hidden = true; document.body.classList.remove('hay-rail'); $('btnRefrescar').hidden = true;
     $('porton').hidden = false; $('portonMsg').hidden = !msg; $('portonMsg').textContent = msg || '';
-    $('pinCn').focus();
+    persona.porton($('portonUsuario'), 'Socios y los números del Club son de Administración y Atención al cliente.');
   }
   function abrir() {
     $('porton').hidden = true; $('marco').hidden = false; document.body.classList.add('hay-rail');
@@ -827,7 +817,8 @@
     return base.club.estadisticas(pinGuardado(), r[0], r[1], estado.local)
       .then(function (d) { datos = d; pintar(); })
       .catch(function (err) {
-        if (err && err.delServidor && /PIN/.test(err.message)) { guardarPin(''); pedirPin('El PIN cambió o venció. Ponelo de nuevo.'); return; }
+        if (err && err.sinSesion) { pedirPin('Se cerró tu sesión. Entrá de nuevo con tu usuario.'); return; }
+        if (err && err.delServidor && /PIN/.test(err.message)) { pedirPin(''); return; }
         avisar('err', (err && err.delServidor && err.message) || 'No se pudo leer. ¿Se corrió el SQL 24?');
       })
       .then(function () { $('btnRefrescar').classList.remove('girando'); });
@@ -1581,7 +1572,7 @@
   /* Quién escribe: el vendedor que tiene guardado la caja en esta compu, o
      "Números". Queda al lado de cada contacto para que dos personas no le
      escriban al mismo. */
-  function quienSoy() { return leer('nc_vendedor') || 'Números'; }
+  function quienSoy() { return persona.pila() || leer('nc_vendedor') || 'Números'; }
 
   var IC_WSP = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-12.3 7.5L3 21l2-5.7A8.4 8.4 0 1 1 21 11.5Z"/></svg>';
   var IC_CAMPANA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg>';
@@ -1662,6 +1653,8 @@
   var K_QUIEN_ADM = 'nc_quien';
   /* Quién lo hace: el de Atención del CRM, o se pregunta con la lista. */
   function conQuien(siga) {
+    /* Con usuario (13/10/2026), es quien entró: no se pregunta. */
+    if (persona.pila()) { siga(persona.pila()); return; }
     var q = leer(K_QUIEN_ADM);
     if (q) { siga(q); return; }
     var caja = $('fichaAdmin');
@@ -1692,6 +1685,7 @@
   function pintarQuienAdm() {
     var p = $('fichaQuien');
     if (!p) { return; }
+    if (persona.pila()) { p.innerHTML = 'Lo que corrijas o anules queda a nombre de <b>' + esc(persona.pila()) + '</b>.'; return; }
     var q = leer(K_QUIEN_ADM);
     p.innerHTML = q ? 'Lo que corrijas o anules queda a nombre de <b>' + esc(q) + '</b>. <button type="button" id="quienNoSoy">No soy ' + esc(q) + '</button>'
                     : 'Antes de corregir o anular te pregunta quién sos: queda anotado.';
@@ -2004,8 +1998,6 @@
     $('fichaFondo').onclick = cerrarFicha;
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('ficha').hidden) { cerrarFicha(); } });
     $('btnRefrescar').onclick = cargar;
-    $('btnEntrar').onclick = entrar;
-    $('pinCn').onkeydown = function (e) { if (e.key === 'Enter') { entrar(); } };
     /* Las pestañas No Compra y Gift Cards son otra página con sus propios
        filtros: se les pasa lo elegido acá. La tienda online y "sin local
        asignado" son del Club; las fechas a elegir no se guardan. */
@@ -2016,6 +2008,8 @@
       });
     });
     if (pinGuardado()) { abrir(); } else { pedirPin(''); }
+    /* Entró, salió o le cambiaron el rol en otra pestaña: se vuelve a armar. */
+    document.addEventListener('persona', function () { location.reload(); });
     iniciarPWA();
   })();
 

@@ -32,6 +32,7 @@
  */
 import Anthropic from 'npm:@anthropic-ai/sdk';
 import { costo, instrucciones, juzgar, modeloValido, MODELO_JUEZ } from '../_shared/claude.ts';
+import { pinDeLaPersona } from '../_shared/sesion.ts';
 
 const URL_BASE = Deno.env.get('SUPABASE_URL') ?? '';
 /* Lo que espera antes de contestar, por si el cliente sigue escribiendo
@@ -798,6 +799,9 @@ Deno.serve(async (req) => {
   if (req.method !== 'POST') return json({ ok: false, error: 'Sólo POST.' }, 405);
   let p: any = {};
   try { p = await req.json(); } catch { /* vacío */ }
+  /* Sin el PIN compartido (13/10/2026): 'sesion' es la persona que entró;
+     se revisa su sesión y pasa a 'sesion:<id>' (ver _shared/sesion.ts). */
+  if (p && p.pin === 'sesion') p.pin = await pinDeLaPersona(p.pin, req);
   try {
     switch (p.accion) {
       case 'pedir': return json(await pedir(p));

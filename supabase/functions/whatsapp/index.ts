@@ -40,6 +40,8 @@
  * Secrets de Supabase. Nunca se devuelven ni se escriben en el log.
  */
 
+import { pinDeLaPersona } from '../_shared/sesion.ts';
+
 const TOKEN = Deno.env.get('WA_TOKEN') ?? '';
 const SECRETO = Deno.env.get('WA_APP_SECRET') ?? '';
 const VERIFICA = Deno.env.get('WA_VERIFICA') ?? '';
@@ -699,6 +701,9 @@ Deno.serve(async (req) => {
   // Lo que pide el CRM, y la configuración.
   let pedido: { accion?: string; [k: string]: unknown } = {};
   try { pedido = JSON.parse(new TextDecoder().decode(cuerpo)); } catch { /* vacío */ }
+  /* Sin el PIN compartido (13/10/2026): 'sesion' es la persona que entró;
+     se revisa su sesión y pasa a 'sesion:<id>' (ver _shared/sesion.ts). */
+  if (pedido && pedido.pin === 'sesion') pedido.pin = await pinDeLaPersona(pedido.pin, req);
   try {
     switch (pedido.accion) {
       case 'enviar': return json(await enviar(pedido as any));

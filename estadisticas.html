@@ -196,7 +196,7 @@
 
   /* ── Las tres pestañas y la vista de Gift Cards (12/10/2026) ── */
   .gc-porton { max-width: 460px; }
-  .gc-porton[hidden], #gcDatos[hidden], #vistaGC[hidden], #vistaNC[hidden], .gc-pin[hidden], #gcPedirPin[hidden], #gcOtraVez[hidden] { display: none; }
+  .gc-porton[hidden], #gcDatos[hidden], #vistaGC[hidden], #vistaNC[hidden], #gcUsuario[hidden], #gcOtraVez[hidden] { display: none; }
   .gc-pin { display: flex; gap: 8px; margin-top: 4px; }
   .gc-pin input { flex: 1; min-width: 0; text-align: center; font-size: 17px; font-weight: 600; }
   .gc-msg { margin-top: 10px; font-size: 13.5px; font-weight: 600; color: var(--bad-txt); }
@@ -410,16 +410,13 @@
   <p class="pie">Sale de lo que carga el vendedor y de lo que se anota en el <a href="panel.html">CRM</a>. En la hora de Argentina.</p>
   </div><!-- /#vistaNC -->
 
-  <!-- ── Gift Cards (SQL 84): con el PIN, porque es plata ── -->
+  <!-- ── Gift Cards (SQL 84): de la oficina, porque es plata. Desde el
+       13/10/2026 se entra con el usuario (antes, con el PIN compartido). ── -->
   <div id="vistaGC" hidden>
     <div class="bloque gc-porton" id="gcPorton" hidden>
       <h2 class="bloque-tit">Los números de las gift cards</h2>
-      <p class="bloque-sub">Es plata: lo vendido, lo canjeado y lo que se debe. Son de la oficina: piden el PIN.</p>
-      <button type="button" class="btn btn-sec" id="gcPedirPin" hidden>Entrar con el PIN</button>
-      <div class="gc-pin" id="gcPinFila" hidden>
-        <input type="password" id="gcPin" inputmode="numeric" maxlength="24" placeholder="PIN" autocomplete="off" aria-label="PIN">
-        <button type="button" class="btn btn-pri" id="gcEntrar">Entrar</button>
-      </div>
+      <p class="bloque-sub">Es plata: lo vendido, lo canjeado y lo que se debe.</p>
+      <div class="porton-usuario" id="gcUsuario"></div>
       <p class="gc-msg" id="gcMsg" hidden></p>
       <button type="button" class="btn btn-sec btn-chico" id="gcOtraVez" style="margin-top:10px" hidden>Probar de nuevo</button>
     </div>
@@ -861,7 +858,7 @@
 
   /* ═══ Las vistas: No Compra y Gift Cards (12/10/2026) ══════════════════
      No Compra es libre (los vendedores lo miran "tipo competencia"); Gift
-     Cards pide el PIN, porque es plata. El Club es otra página
+     Cards es de la oficina (con su usuario), porque es plata. El Club es otra página
      (club-numeros.html), con estas mismas pestañas. */
   var vista = 'nc', datosGC = null;
   function leerVista() { return location.hash === '#giftcards' && !localFijo() ? 'gc' : 'nc'; }
@@ -910,76 +907,29 @@
   }
 
   /* ── Gift Cards ── */
-  var K_PIN = 'nc_pin';
-  function pinGC() { try { return sessionStorage.getItem(K_PIN) || ''; } catch (e) { return ''; } }
-  function guardarPinGC(v) { try { if (v) { sessionStorage.setItem(K_PIN, v); } else { sessionStorage.removeItem(K_PIN); } } catch (e) {} }
+  /* Sin el PIN compartido (13/10/2026): la marca de la sesión de quien
+     entró, si es de Administración, Atención o Gerencia. */
+  function pinGC() { return persona.pin(); }
   /* "Sin local" es del No Compra: las gift cards siempre tienen local. */
   function localGC() { return estado.local === SIN ? '' : estado.local; }
-  var OFICINA = leer('nc_oficina') === '1', pidioPin = false;
-  /* sinCampo: el freno o algo que falta (el SQL 84, la señal): no se ofrece
-     el campo, sí "Probar de nuevo". Con el campo: en la oficina, si ya se
-     pidió, o si hay algo que decir del PIN; si no, "Entrar con el PIN". */
+  /* El portón (13/10/2026): entrar con su usuario, esperar el OK o "no es
+     de tu usuario" (persona.porton). sinCampo: algo que falta (el SQL 84,
+     la señal): "Probar de nuevo". */
   function mostrarPortonGC(msg, sinCampo) {
     if (vista !== 'gc') { return; }
-    var campo = !sinCampo && (OFICINA || pidioPin || !!msg);
     $('gcDatos').hidden = true;
     $('gcPorton').hidden = false;
-    $('gcPedirPin').hidden = !!sinCampo || campo;
-    $('gcPinFila').hidden = !campo;
+    $('gcUsuario').hidden = !!(sinCampo && pinGC());
+    if (!$('gcUsuario').hidden) { persona.porton($('gcUsuario'), 'Los números de las gift cards son de Administración y Atención al cliente.'); }
     $('gcOtraVez').hidden = !sinCampo;
     $('gcMsg').hidden = !msg;
     $('gcMsg').textContent = msg || '';
     document.querySelector('.cn-controles').classList.add('fuera');
     $('rango').classList.add('fuera');
-    if (campo) { $('gcPin').value = ''; $('gcPin').focus(); }
   }
-  /* El SQL 84 no tira un error con el PIN malo: contesta {error: 'pin'}.
-     "mal" dice si el PIN se llegó a comparar; si se cortó antes por el
-     freno, puede ser el bueno y no se olvida. */
-  function errorDePinGC(r) {
-    var espera = Number(r.espera) || 0;
-    if (r.mal) { guardarPinGC(''); }
-    if (espera > 0) {
-      mostrarPortonGC(r.mal ? (r.porque || 'Demasiados intentos.') : 'El PIN está frenado por intentos fallidos. Probá de nuevo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).', true);
-      return;
-    }
-    mostrarPortonGC(r.mal ? 'El PIN cambió o venció. Ponelo de nuevo.' : (r.porque || 'PIN incorrecto.'));
-  }
-  function entrarGC() {
-    var v = $('gcPin').value.trim();
-    if (!v) { $('gcPin').focus(); return; }
-    /* El PIN es de 4 a 8 números: otra cosa (una tarjeta pasada con la
-       pistola) no se prueba, así no gasta un intento del freno de todos. */
-    if (!/^[0-9]{4,8}$/.test(v)) {
-      $('gcPin').value = '';
-      $('gcMsg').hidden = false;
-      $('gcMsg').textContent = 'Eso no es un PIN: el PIN es de 4 a 8 números.';
-      $('gcPin').focus();
-      return;
-    }
-    var b = $('gcEntrar'); b.disabled = true; b.textContent = 'Probando…';
-    base.pin.probar(v)
-      .then(function (r) {
-        if (!r || !r.ok) { $('gcMsg').hidden = false; $('gcMsg').textContent = (r && r.porque) || 'PIN incorrecto.'; $('gcPin').value = ''; $('gcPin').focus(); return; }
-        guardarPinGC(v);
-        cargar();
-      })
-      .catch(function () { $('gcMsg').hidden = false; $('gcMsg').textContent = 'No se pudo probar el PIN: revisá la señal.'; })
-      .then(function () { b.disabled = false; b.textContent = 'Entrar'; });
-  }
-  /* La base dijo "PIN incorrecto": o lo cambiaron, o está frenado por
-     intentos fallidos, y ahí contesta lo mismo aunque sea el bueno.
-     pin_situacion no gasta intentos: si es el freno, el PIN se guarda. */
-  function pinGCVencido() {
-    return base.pin.situacion()
-      .then(function (s) {
-        var espera = Number(s && s.espera) || 0;
-        if (espera > 0) { mostrarPortonGC('El PIN está frenado por intentos fallidos. Probá de nuevo en ' + Math.max(1, Math.round(espera / 60)) + ' minuto(s).', true); return; }
-        guardarPinGC('');
-        mostrarPortonGC('El PIN cambió o venció. Ponelo de nuevo.');
-      })
-      .catch(function () { mostrarPortonGC('No se pudo comprobar el PIN: revisá la señal y probá de nuevo.', true); });
-  }
+  /* La base contestó {error: 'pin'}: el usuario no es de la oficina. */
+  function errorDePinGC(r) { mostrarPortonGC(r && r.sin_permiso ? '' : ((r && r.porque) || '')); }
+  function pinGCVencido() { mostrarPortonGC(''); return Promise.resolve(); }
   function cargarGC(n) {
     if (!pinGC()) { mostrarPortonGC(''); return Promise.resolve(); }
     $('gcPorton').hidden = true;
@@ -997,6 +947,7 @@
       })
       .catch(function (err) {
         if (!vale(n, 'gc')) { return; }
+        if (err && err.sinSesion) { mostrarPortonGC('Se cerró tu sesión. Entrá de nuevo con tu usuario.'); return; }
         if (err && err.delServidor && /PIN incorrecto/i.test(err.message || '')) { return pinGCVencido(); }
         if (err && err.delServidor && /could not find the function|giftcard_estadisticas/i.test(err.message || '')) {
           mostrarPortonGC('Falta un paso en la base: hay que correr el SQL 84 en Supabase para ver estos números.', true);
@@ -1204,8 +1155,6 @@
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
     };
-    $('gcEntrar').onclick = entrarGC;
-    $('gcPedirPin').onclick = function () { pidioPin = true; mostrarPortonGC(''); };
     $('gcOtraVez').onclick = function () { cargar(); };
     /* La pestaña Club es otra página con sus propios filtros: se le pasa lo
        elegido acá. "Sin local" del No Compra no es el "sin local" de los
@@ -1217,7 +1166,6 @@
         guardar('nc_cn_local', estado.local === SIN ? '' : estado.local);
       });
     }
-    $('gcPin').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); entrarGC(); } };
     window.addEventListener('hashchange', function () { aplicarVista(); cargar(); });
     $('btnRefrescar').onclick = cargar;
     aplicarRol();
