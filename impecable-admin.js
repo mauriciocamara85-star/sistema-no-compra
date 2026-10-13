@@ -1,0 +1,698 @@
+/**
+ * Impecable · la administración (impecable-admin.html).
+ *
+ * Para el administrador, los supervisores y la gerencia: cómo está cada
+ * local, los números del orden, las cajas, los productos testigo y los
+ * ajustes. Entra con la MISMA sesión de la app (el PIN de cada uno): si ya
+ * entró a Impecable en este aparato, no vuelve a pedir nada.
+ *
+ * Lo que cada uno puede ver o cambiar lo decide la base (RLS): la gerencia
+ * mira y no cambia; los ajustes los toca sólo el administrador. Esta página
+ * sólo esconde lo que no corresponde, para no ofrecer botones que fallarían.
+ */
+
+var app = document.getElementById('app');
+var cartel = document.getElementById('cartel');
+
+var _cartelTimer = null;
+function avisar(texto) {
+  cartel.textContent = texto;
+  cartel.hidden = false;
+  clearTimeout(_cartelTimer);
+  _cartelTimer = setTimeout(function () { cartel.hidden = true; }, 3500);
+}
+
+function unaVez(boton, accion) {
+  boton.onclick = function () {
+    if (boton.disabled) return;
+    var texto = boton.textContent;
+    boton.disabled = true;
+    Promise.resolve().then(accion).then(function (r) {
+      if (document.body.contains(boton)) { boton.disabled = r === 'dejar-apagado'; boton.textContent = texto; }
+    }, function (e) {
+      if (document.body.contains(boton)) { boton.disabled = false; boton.textContent = texto; }
+      if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+      avisar(esDeRed(e) ? 'Sin señal: no se guardó. Probá de nuevo.' : mensajeDe(e));
+    });
+  };
+}
+
+/** Escribe y confirma que algo cambió: un PATCH que la seguridad no deja contesta igual que uno que sí. */
+function guardarFila(ruta, cambios) {
+  return tokenVend().then(function (t) { return pedir(ruta, { sesion: t, metodo: 'PATCH', cuerpo: cambios, contar: true }); })
+    .then(function (n) { if (!n) throw rechazo('No se guardó: no tenés permiso para cambiar esto.'); return n; });
+}
+
+function haceDias(ts) {
+  if (!ts) return 'sin foto';
+  var d = Math.floor((Date.now() - new Date(ts).getTime()) / 864e5);
+  return d <= 0 ? 'hoy' : d === 1 ? 'ayer' : 'hace ' + d + ' días';
+}
+
+var DIAS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+var DIAS_LARGO = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+
+/* ════════════════════════════════════════════════════════════════════════
+   ENTRADA
+   ════════════════════════════════════════════════════════════════════════ */
+
+function pantallaSinSesion(mensaje) {
+  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> Administración</p><h1>Entrá con tu PIN</h1>' +
+    '<p class="bajada">' + esc(mensaje || 'Esta parte usa la misma entrada que la app: elegí "Administrador" (o tu local), tu nombre y tu PIN.') + '</p>' +
+    '<a class="boton lima enlace-boton" href="vendedores.html" style="max-width:360px">Entrar a Impecable</a>';
+}
+
+function pantallaNoCorresponde() {
+  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> Administración</p><h1>Esta parte es para supervisión</h1>' +
+    '<p class="bajada">Entraste como ' + esc(yo().nombre || '') + '. Tus controles y tareas están en la app.</p>' +
+    '<a class="boton lima enlace-boton" href="vendedores.html" style="max-width:360px">Ir a la app</a>';
+}
+
+var SOLAPAS = [['local', 'Cómo está el local'], ['orden', 'Orden'], ['cajas', 'Cajas'], ['testigo', 'Productos testigo'], ['ajustes', 'Ajustes']];
+var _solapa = 'local';
+var _locales = [];
+var _local = null;
+var K_LOCAL_SUP = 'vdh_vend_local_sup';
+
+function inicio() {
+  if (!_vend || !_vend.refresco) { pantallaSinSesion(); return; }
+  if (!esSupervision()) { pantallaNoCorresponde(); return; }
+  app.innerHTML = '<p class="cargando">Cargando…</p>';
+  var per = yo();
+  var cargar = per.local_id
+    ? Promise.resolve([{ id: per.local_id, nombre: per.local || 'Tu local' }])
+    : leer('/orden_locales?select=id,nombre&activo=is.true&order=nombre.asc');
+  cargar.then(function (l) {
+    _locales = l || [];
+    var guardado = null;
+    try { guardado = localStorage.getItem(K_LOCAL_SUP); } catch (e) {}
+    _local = _locales.filter(function (x) { return x.id === guardado; })[0] || _locales[0] || null;
+    var h = String(location.hash || '').replace(/^#\/?/, '');
+    if (SOLAPAS.some(function (s) { return s[0] === h; })) _solapa = h;
+    if (_solapa === 'ajustes' && !esAdmin()) _solapa = 'local';
+    ir(_solapa);
+  }).catch(function (e) { error(e, inicio); });
+}
+
+function error(e, reintentar) {
+  if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+  var c = document.getElementById('cuerpo') || app;
+  c.innerHTML = '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin conexión: no se pudo cargar.' : mensajeDe(e)) + '</div><button class="boton chico" id="reintentar">Probar de nuevo</button>';
+  document.getElementById('reintentar').onclick = reintentar;
+}
+
+function cabezaAdmin() {
+  var per = yo();
+  var solapas = SOLAPAS.filter(function (s) { return s[0] !== 'ajustes' || esAdmin(); });
+  return '<div class="cabeza-admin"><div><p class="marca" style="margin:0"><b>' + NOMBRE_APP + '</b> Administración</p>' +
+    '<h1 style="margin:2px 0 0">' + esc(_local ? _local.nombre : 'Sin locales') + '</h1></div>' +
+    '<div class="derecha">' +
+      (_locales.length > 1 ? '<label class="campo selector"><span>Local</span><select id="selLocal">' + _locales.map(function (l) {
+        return '<option value="' + esc(l.id) + '"' + (_local && l.id === _local.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
+      }).join('') + '</select></label>' : '') +
+      '<a class="boton chico" href="vendedores.html" style="line-height:44px">Abrir la app</a>' +
+      '<button class="boton chico" id="salir">Salir (' + esc(String(per.nombre || '').split(' ')[0]) + ')</button>' +
+    '</div></div>' +
+    (soloMira() ? '<div class="nota">Entraste como gerencia: ves todo y no se puede cambiar nada.</div>' : '') +
+    '<div class="solapas">' + solapas.map(function (s) {
+      return '<button data-solapa="' + s[0] + '" class="' + (s[0] === _solapa ? 'activa' : '') + '">' + s[1] + '</button>';
+    }).join('') + '</div><div id="cuerpo"><p class="cargando">Cargando…</p></div>';
+}
+
+function ir(solapa) {
+  _solapa = solapa;
+  try { history.replaceState(null, '', location.pathname + '#' + solapa); } catch (e) {}
+  app.innerHTML = cabezaAdmin();
+  var s = document.getElementById('selLocal');
+  if (s) s.onchange = function () {
+    _local = _locales.filter(function (l) { return l.id === s.value; })[0];
+    try { localStorage.setItem(K_LOCAL_SUP, s.value); } catch (e) {}
+    ir(_solapa);
+  };
+  document.getElementById('salir').onclick = function () {
+    if (!confirm('¿Salir? Para volver a entrar hace falta el PIN.')) return;
+    cerrarSesion();
+    pantallaSinSesion('Saliste. Para volver, entrá de nuevo con tu PIN.');
+  };
+  app.querySelectorAll('[data-solapa]').forEach(function (b) { b.onclick = function () { ir(b.dataset.solapa); }; });
+  if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
+  ({ local: verLocal, orden: verOrden, cajas: verCajas, testigo: verTestigo, ajustes: verAjustes })[solapa]();
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   CÓMO ESTÁ EL LOCAL
+   ════════════════════════════════════════════════════════════════════════ */
+
+function verLocal() {
+  var L = valor(_local.id);
+  Promise.all([
+    leer('/orden_v_estado_local?select=*&local_id=eq.' + L + '&order=sector_tipo.desc,sector_numero.asc,modulo_numero.asc'),
+    llamar('orden_resumen_semanal', { p_local: _local.id, p_semana: lunesAR() }).catch(function () { return null; })
+  ]).then(function (r) {
+    if (_solapa !== 'local') return;
+    var mods = r[0] || [], res = r[1] || {};
+    var html = '<div class="numeros">' +
+      '<div class="numero"><span>Nivel de la semana</span><b>' + esc(res.nivel_local || '—') + '</b></div>' +
+      '<div class="numero"><span>Controles a tiempo</span><b>' + (res.controles ? res.controles_a_tiempo + ' de ' + res.controles : '—') + '</b></div>' +
+      '<div class="numero"><span>Tareas pendientes</span><b>' + (res.tareas_pendientes != null ? res.tareas_pendientes : '—') + '</b></div>' +
+      '<div class="numero"><span>Fotos sin revisar</span><b>' + (res.sin_revisar != null ? res.sin_revisar : '—') + '</b></div></div>';
+    if (!mods.length) html += '<div class="vacio">Este local todavía no tiene módulos cargados. Se cargan en Ajustes → Sectores y módulos.</div>';
+    [['salon', 'Salón'], ['deposito', 'Depósito']].forEach(function (g) {
+      var lista = mods.filter(function (m) { return m.sector_tipo === g[0]; });
+      if (!lista.length) return;
+      html += '<div class="seccion">' + g[1] + '</div><div class="grilla-local">' + lista.map(function (m) {
+        return '<button class="tarjeta-modulo' + (m.sin_foto_reciente ? ' gris' : '') + '" data-modulo="' + esc(m.modulo_id) + '">' +
+          (m.foto_path ? '<img data-foto="' + esc(m.foto_path) + '" alt="">' : '<div class="sin-foto">Sin foto</div>') +
+          '<b>' + esc(m.modulo_nombre) + '</b>' +
+          '<div class="info">' + (m.nivel ? '<span class="chip nivel-' + esc(m.nivel) + '">' + esc(NIVEL[m.nivel]) + '</span>' : '') +
+          (m.tareas_abiertas ? '<span class="chip corregir">' + m.tareas_abiertas + (m.tareas_abiertas == 1 ? ' tarea' : ' tareas') + '</span>' : '') + '</div>' +
+          '<small>' + esc(haceDias(m.tomada_en) + (m.foto_de ? ' · ' + m.foto_de : '') + (m.responsable ? ' · a cargo de ' + m.responsable : '')) + '</small></button>';
+      }).join('') + '</div>';
+    });
+    var c = document.getElementById('cuerpo');
+    c.innerHTML = html;
+    cargarFotos(c);
+    var porId = {};
+    mods.forEach(function (m) { porId[m.modulo_id] = m; });
+    c.querySelectorAll('[data-modulo]').forEach(function (b) { b.onclick = function () { verModulo(porId[b.dataset.modulo]); }; });
+  }).catch(function (e) { error(e, verLocal); });
+}
+
+function ventana(html) {
+  var f = document.createElement('div');
+  f.className = 'ventana-fondo';
+  f.innerHTML = '<div class="ventana">' + html + '<button class="boton" id="cerrarVentana" style="margin-top:14px">Cerrar</button></div>';
+  document.body.appendChild(f);
+  var cerrar = function () { f.remove(); };
+  f.querySelector('#cerrarVentana').onclick = cerrar;
+  f.onclick = function (e) { if (e.target === f) cerrar(); };
+  cargarFotos(f);
+  return f;
+}
+
+function verModulo(m) {
+  leer('/orden_v_controles?select=id,foto_path,tomada_en,nivel,persona_nombre,tipo,estado&modulo_id=eq.' + valor(m.modulo_id) +
+       '&foto_path=not.is.null&order=tomada_en.desc&limit=12').then(function (h) {
+    ventana('<h1>' + esc(m.modulo_nombre) + '</h1><p class="bajada">' + esc((m.responsable ? 'A cargo de ' + m.responsable : '') + (m.tareas_abiertas ? ' · ' + m.tareas_abiertas + ' tareas abiertas' : '')) + '</p>' +
+      (m.foto_path ? '<img class="foto-grande" data-foto="' + esc(m.foto_path) + '" alt="">' : '<div class="vacio">Todavía no hay fotos de este módulo.</div>') +
+      ((h || []).length > 1 ? '<div class="seccion">Fotos anteriores (las que todavía se guardan)</div><div class="historia">' + h.slice(1).map(function (x) {
+        return '<figure class="foto-chica"><img data-foto="' + esc(x.foto_path) + '" alt=""><figcaption>' + esc(diaMes(x.tomada_en) + ' · ' + (x.nivel ? NIVEL[x.nivel] : '—') + ' · ' + (x.persona_nombre || '')) + '</figcaption></figure>';
+      }).join('') + '</div>' : ''));
+  }).catch(function (e) { avisar(mensajeDe(e)); });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   ORDEN (las estadísticas)
+   ════════════════════════════════════════════════════════════════════════ */
+
+var _semanas = 4;
+function verOrden() {
+  var L = valor(_local.id);
+  var desde = sumarDias(lunesAR(), -7 * (_semanas - 1));
+  var desdeTs = new Date(desde + 'T00:00:00-03:00').toISOString();
+  Promise.all([
+    leer('/orden_v_persona_semana?select=*&local_id=eq.' + L + '&semana=gte.' + desde + '&order=semana.asc'),
+    leer('/orden_controles?select=nivel_ia,nivel_final&local_id=eq.' + L + '&estado=eq.revisado&nivel_ia=not.is.null&revisado_en=gte.' + desdeTs),
+    leer('/orden_v_personas?select=id,nombre,inicial,avisos_activos,ultima_foto&local_id=eq.' + L + '&activo=is.true&rol=eq.vendedor&order=nombre.asc'),
+    leer('/orden_v_tareas?select=origen,estado&local_id=eq.' + L + '&creado_en=gte.' + desdeTs)
+  ]).then(function (r) {
+    if (_solapa !== 'orden') return;
+    var filas = r[0] || [], ia = r[1] || [], gente = r[2] || [], tareas = r[3] || [];
+    var semanas = [];
+    for (var i = _semanas - 1; i >= 0; i--) semanas.push(sumarDias(lunesAR(), -7 * i));
+    var por = {};
+    filas.forEach(function (f) { (por[f.persona_id] = por[f.persona_id] || {})[f.semana] = f; });
+    var puntos = { impecable: 4, bien: 3, a_mejorar: 2, fuera_de_estandar: 1 };
+    var exactas = ia.filter(function (x) { return x.nivel_ia === x.nivel_final; }).length;
+    var cerca = ia.filter(function (x) { return Math.abs(puntos[x.nivel_ia] - puntos[x.nivel_final]) <= 1; }).length;
+    var origen = { ia: 0, supervisor: 0, admin: 0, sistema: 0 };
+    tareas.forEach(function (t) { origen[t.origen] = (origen[t.origen] || 0) + 1; });
+    var sinAvisos = gente.filter(function (p) { return !p.avisos_activos; });
+
+    var html = '<div class="solapas chicas">' + [4, 8, 12].map(function (n) {
+      return '<button data-semanas="' + n + '" class="' + (n === _semanas ? 'activa' : '') + '">' + n + ' semanas</button>';
+    }).join('') + '</div>' +
+      '<div class="numeros">' +
+      '<div class="numero"><span>Cuánto acierta la IA (igual que el supervisor)</span><b>' + (ia.length ? Math.round(100 * exactas / ia.length) + '%' : '—') + '</b><span>' + (ia.length ? 'A un nivel o menos: ' + Math.round(100 * cerca / ia.length) + '% · ' + ia.length + ' fotos revisadas' : 'Todavía sin fotos revisadas') + '</span></div>' +
+      '<div class="numero"><span>Tareas del período</span><b>' + tareas.length + '</b><span>IA ' + origen.ia + ' · supervisor ' + origen.supervisor + ' · administración ' + origen.admin + ' · sistema ' + origen.sistema + '</span></div>' +
+      '<div class="numero"><span>Sin los avisos activados</span><b>' + sinAvisos.length + '</b><span>' + esc(sinAvisos.map(function (p) { return p.nombre + (p.inicial ? ' ' + p.inicial + '.' : ''); }).join(', ') || 'Todos los tienen') + '</span></div></div>' +
+      '<div class="seccion">Por vendedor y por semana</div>';
+    if (!gente.length) html += '<div class="vacio">Todavía no hay vendedores en este local.</div>';
+    else {
+      html += '<div class="desliza"><table class="tabla-datos"><thead><tr><th>Vendedor</th>' + semanas.map(function (s) { return '<th>' + esc(diaMes(s)) + '</th>'; }).join('') +
+        '<th class="n">Controles a tiempo</th><th class="n">Tareas a tiempo</th><th class="n">Desafío</th></tr></thead><tbody>' +
+        gente.map(function (p) {
+          var t = { c: 0, ca: 0, t: 0, ta: 0, d: 0, dt: 0 };
+          var celdas = semanas.map(function (s) {
+            var f = (por[p.id] || {})[s];
+            if (!f) return '<td>—</td>';
+            t.c += f.controles; t.ca += f.controles_a_tiempo; t.t += f.tareas; t.ta += f.tareas_a_tiempo; t.d += f.desafio_puntaje || 0; t.dt += f.desafio_total || 0;
+            return '<td>' + (f.nivel_semana ? '<span class="chip nivel-' + esc(f.nivel_semana) + '">' + esc(NIVEL[f.nivel_semana]) + '</span>' : '—') + '</td>';
+          }).join('');
+          var pc = function (a, b) { return b ? a + '/' + b + ' (' + Math.round(100 * a / b) + '%)' : '—'; };
+          return '<tr><td><b>' + esc(p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '')) + '</b></td>' + celdas +
+            '<td class="n">' + pc(t.ca, t.c) + '</td><td class="n">' + pc(t.ta, t.t) + '</td><td class="n">' + (t.dt ? t.d + '/' + t.dt : '—') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    var c = document.getElementById('cuerpo');
+    c.innerHTML = html;
+    c.querySelectorAll('[data-semanas]').forEach(function (b) { b.onclick = function () { _semanas = +b.dataset.semanas; verOrden(); }; });
+  }).catch(function (e) { error(e, verOrden); });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   CAJAS (como la planilla "Control Diario")
+   ════════════════════════════════════════════════════════════════════════ */
+
+var _mes = null;
+function verCajas() {
+  _mes = _mes || hoyAR().slice(0, 7);
+  var L = valor(_local.id);
+  Promise.all([
+    leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&mes=eq.' + _mes + '&order=fecha.asc'),
+    leer('/orden_v_cajas_mes?select=*&local_id=eq.' + L + '&mes=eq.' + _mes),
+    leer('/orden_config?select=caja_activa&local_id=eq.' + L)
+  ]).then(function (r) {
+    if (_solapa !== 'cajas') return;
+    var cajas = r[0] || [], tot = (r[1] || [])[0], activa = !!(r[2] && r[2][0] && r[2][0].caja_activa);
+    var meses = [];
+    for (var i = 0; i < 6; i++) { var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); meses.push(d.toISOString().slice(0, 7)); }
+    var col = function (c, s, rl, dv) {
+      return '<td class="n">' + pesos(c[s]) + '</td><td class="n">' + pesos(c[rl]) + '</td><td class="n' + (Math.abs(Number(c[dv] || 0)) > 0.5 ? ' rojo' : '') + '">' + pesos(c[dv]) + '</td>';
+    };
+    var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → Horarios y funciones).</div>') +
+      '<div class="solapas chicas">' + meses.map(function (m) { return '<button data-mes="' + m + '" class="' + (m === _mes ? 'activa' : '') + '">' + m.slice(5) + '/' + m.slice(0, 4) + '</button>'; }).join('') + '</div>' +
+      (tot ? '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div><div class="numero"><span>Días con alertas</span><b>' + tot.dias_con_alertas + '</b></div><div class="numero"><span>Desvío del mes (efectivo)</span><b>' + pesos(tot.desvio_efectivo) + '</b></div></div>' : '');
+    if (!cajas.length) html += '<div class="vacio">No hay cajas cargadas en este mes.</div>';
+    else {
+      html += '<div class="desliza"><table class="tabla-datos"><thead><tr><th rowspan="2">Día</th><th colspan="3">Mercado Pago</th><th colspan="3">Tarjeta</th><th colspan="3">Go Cuotas</th><th colspan="3">Efectivo</th><th rowspan="2">Estado</th></tr>' +
+        '<tr>' + [1, 2, 3, 4].map(function () { return '<th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th>'; }).join('') + '</tr></thead><tbody>' +
+        cajas.map(function (c) {
+          return '<tr data-caja="' + esc(c.id) + '" style="cursor:pointer"><td><b>' + esc(diaMes(c.fecha)) + '</b></td>' +
+            col(c, 'sis_mp', 'real_mp', 'desvio_mp') + col(c, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta') + col(c, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas') + col(c, 'sis_saldo_final_efvo', 'real_efectivo', 'desvio_efectivo') +
+            '<td>' + (c.estado === 'controlada' ? '<span class="chip listo">Controlada</span>' : c.estado === 'cargada' ? '<span class="chip sorpresa">Sin controlar</span>' : '<span class="chip pendiente">Sin cargar</span>') +
+            ((c.alertas || []).length ? ' <span class="chip vencido">' + c.alertas.length + '</span>' : '') + '</td></tr>';
+        }).join('') +
+        (tot ? '<tr><td><b>Total</b></td>' + col(tot, 'sis_mp', 'real_mp', 'desvio_mp') + col(tot, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta') + col(tot, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas') + col(tot, 'sis_efectivo', 'real_efectivo', 'desvio_efectivo') + '<td></td></tr>' : '') +
+        '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos.</p>';
+    }
+    var c = document.getElementById('cuerpo');
+    c.innerHTML = html;
+    c.querySelectorAll('[data-mes]').forEach(function (b) { b.onclick = function () { _mes = b.dataset.mes; verCajas(); }; });
+    var porId = {};
+    cajas.forEach(function (x) { porId[x.id] = x; });
+    c.querySelectorAll('[data-caja]').forEach(function (tr) {
+      tr.onclick = function () {
+        var k = porId[tr.dataset.caja], f = k.fotos || {};
+        ventana('<h1>Caja del ' + esc(diaMes(k.fecha)) + '</h1><p class="bajada">' + esc((k.cargada_por_nombre ? 'La cargó ' + k.cargada_por_nombre : '') + (k.controlada_por_nombre ? ' · la controló ' + k.controlada_por_nombre : '')) + '</p>' +
+          ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(a.tipo === 'desvio' ? 'Diferencia en ' + a.campo + ': ' + pesos(a.monto) : a.tipo === 'no_coincide_foto' ? 'Un monto no coincide con la foto (' + a.campo + ')' : 'Foto de otro día (' + a.foto + ')'); }).join('<br>') + '</div>' : '') +
+          (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
+          (Object.keys(f).length ? '<div class="historia">' + Object.keys(f).map(function (t) { return '<figure class="foto-chica"><img data-foto="' + esc(f[t]) + '" alt=""><figcaption>' + esc(t) + '</figcaption></figure>'; }).join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
+      };
+    });
+  }).catch(function (e) { error(e, verCajas); });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   EDITOR DE FILAS (lo usan los productos testigo y los ajustes)
+   ════════════════════════════════════════════════════════════════════════ */
+
+function valorCampo(col, fila) {
+  var v = fila[col.k];
+  if (col.tipo === 'hora') return v ? String(v).slice(0, 5) : '';
+  return v;
+}
+
+function campoHTML(col, fila, soloLectura) {
+  var v = valorCampo(col, fila);
+  var dis = soloLectura || col.fijo ? ' disabled' : '';
+  var clase = 'campo ' + (col.ancho ? 'c-' + col.ancho : col.tipo === 'bool' ? 'c-bool' : 'c-medio');
+  if (col.tipo === 'ver') return '<div class="' + clase + '"><span>' + esc(col.t) + '</span><b>' + esc(col.ver ? col.ver(fila) : v) + '</b></div>';
+  if (col.tipo === 'bool') return '<label class="' + clase + '"><input type="checkbox" data-k="' + col.k + '"' + (v ? ' checked' : '') + dis + '> ' + esc(col.t) + '</label>';
+  if (col.tipo === 'dias') {
+    var arr = (v || []).map(Number);
+    return '<div class="campo"><span>' + esc(col.t) + '</span><div class="dias" data-k="' + col.k + '">' + DIAS.map(function (d, i) {
+      return '<label class="' + (arr.indexOf(i + 1) > -1 ? 'si' : '') + '" title="' + DIAS_LARGO[i] + '"><input type="checkbox" value="' + (i + 1) + '"' + (arr.indexOf(i + 1) > -1 ? ' checked' : '') + dis + '>' + d + '</label>';
+    }).join('') + '</div></div>';
+  }
+  if (col.tipo === 'sel') {
+    return '<label class="' + clase + '"><span>' + esc(col.t) + '</span><select data-k="' + col.k + '"' + dis + '>' + col.ops.map(function (o) {
+      return '<option value="' + esc(o[0] == null ? '' : o[0]) + '"' + (String(o[0] == null ? '' : o[0]) === String(v == null ? '' : v) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+    }).join('') + '</select></label>';
+  }
+  var tipo = col.tipo === 'num' ? 'number' : col.tipo === 'hora' ? 'time' : col.tipo === 'color' ? 'color' : 'text';
+  return '<label class="' + clase + '"><span>' + esc(col.t) + '</span><input type="' + tipo + '" data-k="' + col.k + '" value="' + esc(v == null ? '' : v) + '"' +
+         (col.tipo === 'num' ? ' inputmode="numeric" step="any"' : '') + dis + '></label>';
+}
+
+function leerCampo(col, renglon) {
+  if (col.tipo === 'dias') {
+    return [].map.call(renglon.querySelectorAll('.dias[data-k="' + col.k + '"] input:checked'), function (i) { return +i.value; }).sort();
+  }
+  var el = renglon.querySelector('[data-k="' + col.k + '"]');
+  if (!el) return undefined;
+  if (col.tipo === 'bool') return el.checked;
+  var v = String(el.value);
+  if (col.tipo === 'num') return v === '' ? null : Number(v);
+  if (col.tipo === 'sel') return v === '' ? null : (col.numero ? Number(v) : v);
+  if (col.tipo === 'texto' || col.tipo === 'hora' || col.tipo === 'color') { v = v.trim(); return v === '' && col.nulo ? null : v; }
+  return v;
+}
+
+/** El valor de un campo llevado a una sola forma, para comparar el de la base con el de la pantalla. */
+function normalizar(col, v) {
+  if (col.tipo === 'bool') return !!v;
+  if (col.tipo === 'dias') return (v || []).map(Number).sort();
+  if (v == null || v === '') return col.tipo === 'num' || col.tipo === 'sel' || col.nulo ? null : '';
+  if (col.tipo === 'num' || (col.tipo === 'sel' && col.numero)) return Number(v);
+  if (col.tipo === 'hora') return String(v).slice(0, 5);
+  return String(v);
+}
+
+/**
+ * cfg: { cont, filas, cols, guardar(fila, cambios) → promesa, extra(fila) → html, accion(fila, nombre, boton) → promesa }
+ */
+function editor(cfg) {
+  var sl = soloMira();
+  cfg.cont.innerHTML = cfg.filas.map(function (f, i) {
+    return '<div class="renglon" data-i="' + i + '">' + cfg.cols.map(function (c) { return campoHTML(c, f, sl); }).join('') +
+      (sl ? '' : '<div class="acciones-renglon">' + (cfg.extra ? cfg.extra(f) : '') + '<button class="boton chico lima" data-guardar disabled>Guardar</button></div>') + '</div>';
+  }).join('') || '<div class="vacio">' + esc(cfg.vacio || 'Todavía no hay nada cargado.') + '</div>';
+  if (sl) return;
+  cfg.cont.querySelectorAll('.renglon').forEach(function (r) {
+    var fila = cfg.filas[+r.dataset.i];
+    var g = r.querySelector('[data-guardar]');
+    var cambios = function () {
+      var c = {};
+      cfg.cols.forEach(function (col) {
+        if (col.tipo === 'ver' || col.fijo) return;
+        var nuevo = leerCampo(col, r);
+        if (nuevo === undefined) return;
+        if (JSON.stringify(normalizar(col, nuevo)) !== JSON.stringify(normalizar(col, fila[col.k]))) c[col.k] = nuevo;
+      });
+      return c;
+    };
+    var marcar = function () { g.disabled = !Object.keys(cambios()).length; };
+    r.addEventListener('input', marcar);
+    r.addEventListener('change', function (e) {
+      if (e.target.closest('.dias')) e.target.parentNode.classList.toggle('si', e.target.checked);
+      marcar();
+    });
+    unaVez(g, function () {
+      var c = cambios();
+      if (!Object.keys(c).length) return 'dejar-apagado';
+      g.textContent = 'Guardando…';
+      return cfg.guardar(fila, c).then(function () {
+        Object.keys(c).forEach(function (k) { fila[k] = c[k]; });
+        avisar('Guardado.');
+        return 'dejar-apagado';
+      });
+    });
+    r.querySelectorAll('[data-accion]').forEach(function (b) {
+      unaVez(b, function () { return cfg.accion(fila, b.dataset.accion, b); });
+    });
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PRODUCTOS TESTIGO (carga semanal, con la forma de la planilla)
+   ════════════════════════════════════════════════════════════════════════ */
+
+var _semanaTestigo = null;
+function verTestigo() {
+  _semanaTestigo = _semanaTestigo || lunesAR();
+  var L = valor(_local.id);
+  leer('/testigo_semanas?select=*&local_id=eq.' + L + '&semana=eq.' + _semanaTestigo).then(function (s) {
+    var sem = (s || [])[0];
+    var c = document.getElementById('cuerpo');
+    var semanas = [];
+    for (var i = 0; i < 6; i++) semanas.push(sumarDias(lunesAR(), -7 * i));
+    var cab = '<div class="solapas chicas">' + semanas.map(function (w) { return '<button data-semana="' + w + '" class="' + (w === _semanaTestigo ? 'activa' : '') + '">Semana del ' + diaMes(w) + '</button>'; }).join('') + '</div>' +
+      '<p class="bajada">Vendida = Enviada − Dev. a fábrica − Salieron + Entraron − Stock sistema. Diferencia = Stock sistema − Cantidad real (positivo: falta mercadería). El desvío de la planilla queda pendiente: falta saber cómo se calcula.</p>';
+    var engancharSemanas = function () { c.querySelectorAll('[data-semana]').forEach(function (b) { b.onclick = function () { _semanaTestigo = b.dataset.semana; verTestigo(); }; }); };
+    if (!sem) {
+      c.innerHTML = cab + '<div class="vacio">No hay carga para esta semana.</div>' + (soloMira() ? '' : '<button class="boton lima" id="empezar" style="max-width:320px;margin-top:12px">Empezar la carga de esta semana</button>');
+      engancharSemanas();
+      var b = document.getElementById('empezar');
+      if (b) unaVez(b, function () {
+        return escribir('/testigo_semanas', 'POST', { local_id: _local.id, semana: _semanaTestigo, cargado_por: yo().id }).then(verTestigo);
+      });
+      return;
+    }
+    return leer('/testigo_v_items?select=*&semana_id=eq.' + valor(sem.id) + '&order=item.asc').then(function (items) {
+      c.innerHTML = cab + (sem.cerrada ? '<div class="nota">Esta semana está cerrada.</div>' : '') + '<div id="itemsTestigo"></div>' +
+        (soloMira() || sem.cerrada ? '' : '<button class="boton" id="agregarItem" style="max-width:320px">Agregar un producto</button>');
+      engancharSemanas();
+      editor({
+        cont: document.getElementById('itemsTestigo'), filas: items || [], vacio: 'Todavía no hay productos en esta semana.',
+        cols: [{ k: 'item', t: 'Ítem', tipo: 'num', ancho: 'chico' }, { k: 'producto', t: 'Producto', tipo: 'texto', ancho: 'grande' }, { k: 'color', t: 'Color', tipo: 'texto', nulo: true },
+               { k: 'enviada', t: 'Enviada', tipo: 'num', ancho: 'chico' }, { k: 'stock_sistema', t: 'Stock sistema', tipo: 'num', ancho: 'chico' },
+               { k: 'cantidad_real', t: 'Cantidad real', tipo: 'num', ancho: 'chico' }, { k: 'dev_fabrica', t: 'Dev. a fábrica', tipo: 'num', ancho: 'chico' },
+               { k: 'salieron', t: 'Salieron', tipo: 'num', ancho: 'chico' }, { k: 'entraron', t: 'Entraron', tipo: 'num', ancho: 'chico' },
+               { k: 'vendida', t: 'Vendida', tipo: 'ver' }, { k: 'diferencia', t: 'Diferencia', tipo: 'ver' }],
+        guardar: function (f, cambios) { return guardarFila('/testigo_items?id=eq.' + valor(f.id), cambios).then(verTestigo); }
+      });
+      var a = document.getElementById('agregarItem');
+      if (a) unaVez(a, function () {
+        var n = (items || []).reduce(function (m, x) { return Math.max(m, x.item); }, 0) + 1;
+        return escribir('/testigo_items', 'POST', { semana_id: sem.id, item: n, producto: 'Producto ' + n }).then(verTestigo);
+      });
+    });
+  }).catch(function (e) { error(e, verTestigo); });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   AJUSTES (sólo el administrador; la base no deja a nadie más)
+   ════════════════════════════════════════════════════════════════════════ */
+
+var SUBAJUSTES = [['personas', 'Personas'], ['sectores', 'Sectores y módulos'], ['horarios', 'Horarios y funciones'], ['reglas', 'Reglas de orden'],
+                  ['colores', 'Regla de colores'], ['tableros', 'Ideas (tableros)'], ['exhibidores', 'Exhibidores'], ['preguntas', 'Preguntas del desafío']];
+var _sub = 'personas';
+
+function verAjustes() {
+  var c = document.getElementById('cuerpo');
+  c.innerHTML = '<div class="solapas chicas">' + SUBAJUSTES.map(function (s) {
+    return '<button data-sub="' + s[0] + '" class="' + (s[0] === _sub ? 'activa' : '') + '">' + s[1] + '</button>';
+  }).join('') + '</div><div id="ajuste"><p class="cargando">Cargando…</p></div>';
+  c.querySelectorAll('[data-sub]').forEach(function (b) { b.onclick = function () { _sub = b.dataset.sub; verAjustes(); }; });
+  ({ personas: ajPersonas, sectores: ajSectores, horarios: ajHorarios, reglas: ajReglas, colores: ajColores,
+     tableros: ajTableros, exhibidores: ajExhibidores, preguntas: ajPreguntas })[_sub]();
+}
+
+function zonaAjuste(html) { var z = document.getElementById('ajuste'); z.innerHTML = html; return z; }
+function errAjuste(e) { error(e, verAjustes); }
+
+function ajPersonas() {
+  var L = valor(_local.id);
+  Promise.all([
+    leer('/orden_personas?select=id,nombre,apellido,inicial,rol,local_id,dias_libres,telegram_chat_id,activo,auth_user_id&or=(local_id.eq.' + L + ',local_id.is.null)&order=local_id.nullsfirst,nombre.asc'),
+    leer('/orden_locales?select=id,nombre&order=nombre.asc')
+  ]).then(function (r) {
+    var gente = r[0] || [], locs = r[1] || [];
+    var z = zonaAjuste('<p class="bajada">Las de ' + esc(_local.nombre) + ' y las que no tienen local (administración y gerencia). Para cambiar a alguien de local, elegí otro y guardá. "Borrar PIN": la próxima vez que entre, crea uno nuevo.</p>' +
+      '<div id="filasPersonas"></div><div class="seccion">Agregar a alguien</div><div class="renglon" id="nuevaPersona">' +
+      campoHTML({ k: 'nombre', t: 'Nombre', tipo: 'texto' }, {}) + campoHTML({ k: 'apellido', t: 'Apellido', tipo: 'texto' }, {}) +
+      campoHTML({ k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador']] }, { rol: 'vendedor' }) +
+      campoHTML({ k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) }, { local_id: _local.id }) +
+      '<div class="acciones-renglon"><button class="boton chico lima" id="agregarPersona">Agregar</button></div></div>');
+    editor({
+      cont: z.querySelector('#filasPersonas'), filas: gente,
+      cols: [{ k: 'nombre', t: 'Nombre', tipo: 'texto' }, { k: 'apellido', t: 'Apellido', tipo: 'texto', nulo: true },
+             { k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador']] },
+             { k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) },
+             { k: 'dias_libres', t: 'Francos', tipo: 'dias' }, { k: 'telegram_chat_id', t: 'Telegram (id)', tipo: 'texto', nulo: true },
+             { k: 'activo', t: 'Activo', tipo: 'bool' }, { k: 'auth_user_id', t: 'Entró a la app', tipo: 'ver', ver: function (f) { return f.auth_user_id ? 'Sí' : 'Todavía no'; } }],
+      guardar: function (f, c) {
+        if ('apellido' in c) c.inicial = c.apellido ? c.apellido.charAt(0).toUpperCase() : null;
+        return guardarFila('/orden_personas?id=eq.' + valor(f.id), c);
+      },
+      extra: function () { return '<button class="boton chico" data-accion="pin">Borrar PIN</button>'; },
+      accion: function (f) {
+        if (!confirm('¿Borrar el PIN de ' + f.nombre + '? La próxima vez que entre va a crear uno nuevo.')) return;
+        return llamar('orden_pin_borrar', { p_persona: f.id }).then(function () { avisar('PIN borrado: la próxima vez crea uno nuevo.'); });
+      }
+    });
+    unaVez(z.querySelector('#agregarPersona'), function () {
+      var r2 = z.querySelector('#nuevaPersona');
+      var nombre = String(r2.querySelector('[data-k=nombre]').value || '').trim(), apellido = String(r2.querySelector('[data-k=apellido]').value || '').trim();
+      if (!nombre) { avisar('Falta el nombre.'); return; }
+      var id = (crypto.randomUUID ? crypto.randomUUID() : null);
+      if (!id) { avisar('Este navegador no puede agregar personas. Probá con Chrome.'); return; }
+      var rol = r2.querySelector('[data-k=rol]').value, local = r2.querySelector('[data-k=local_id]').value || null;
+      if (rol === 'vendedor' && !local) { avisar('Un vendedor tiene que tener local.'); return; }
+      return escribir('/orden_personas', 'POST', { id: id, nombre: nombre, apellido: apellido || null, inicial: apellido ? apellido.charAt(0).toUpperCase() : null, rol: rol, local_id: local })
+        .then(function () { return llamar('orden_pin_borrar', { p_persona: id }); })   // queda en la lista del login, para crear su PIN
+        .then(function () { avisar(nombre + ' agregado: ya aparece en la app para crear su PIN.'); ajPersonas(); });
+    });
+  }).catch(errAjuste);
+}
+
+function ajSectores() {
+  var L = valor(_local.id);
+  Promise.all([
+    leer('/orden_sectores?select=*&local_id=eq.' + L + '&order=tipo.asc,numero.asc'),
+    leer('/orden_personas?select=id,nombre,inicial&local_id=eq.' + L + '&activo=is.true&order=nombre.asc'),
+    leer('/orden_exhibidores?select=id,nombre&order=nombre.asc')
+  ]).then(function (r) {
+    var sectores = r[0] || [], gente = r[1] || [], exh = r[2] || [];
+    var ops = [[null, '—']].concat(gente.map(function (p) { return [p.id, p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '')]; }));
+    var ids = sectores.map(function (s) { return s.id; });
+    return (ids.length ? leer('/orden_modulos?select=*&sector_id=in.(' + ids.join(',') + ')&order=numero.asc') : Promise.resolve([])).then(function (mods) {
+      var html = '<p class="bajada">Cada sector tiene un responsable y un suplente (el que lo cubre en sus francos). Los controles le llegan a quien esté ese día.</p>';
+      sectores.forEach(function (s) {
+        html += '<div class="seccion">' + (s.tipo === 'salon' ? 'Salón' : 'Depósito') + ' · sector ' + s.numero + '</div><div data-sector="' + esc(s.id) + '"></div><div data-modulos="' + esc(s.id) + '"></div>' +
+          '<button class="boton chico" data-agregar-modulo="' + esc(s.id) + '">Agregar módulo a este sector</button>';
+      });
+      html += '<div class="seccion">Agregar un sector</div><div class="renglon" id="nuevoSector">' +
+        campoHTML({ k: 'tipo', t: 'Tipo', tipo: 'sel', ops: [['salon', 'Salón'], ['deposito', 'Depósito']] }, { tipo: 'salon' }) +
+        campoHTML({ k: 'numero', t: 'Número', tipo: 'num', ancho: 'chico' }, { numero: (sectores.length ? Math.max.apply(null, sectores.map(function (s) { return s.numero; })) : 0) + 1 }) +
+        '<div class="acciones-renglon"><button class="boton chico lima" id="agregarSector">Agregar</button></div></div>';
+      var z = zonaAjuste(html);
+      sectores.forEach(function (s) {
+        editor({ cont: z.querySelector('[data-sector="' + s.id + '"]'), filas: [s],
+          cols: [{ k: 'nombre', t: 'Nombre (opcional)', tipo: 'texto', nulo: true }, { k: 'responsable_id', t: 'Responsable', tipo: 'sel', ops: ops },
+                 { k: 'suplente_id', t: 'Suplente', tipo: 'sel', ops: ops }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
+          guardar: function (f, c) { return guardarFila('/orden_sectores?id=eq.' + valor(f.id), c); } });
+        var suyos = (mods || []).filter(function (m) { return m.sector_id === s.id; });
+        editor({ cont: z.querySelector('[data-modulos="' + s.id + '"]'), filas: suyos, vacio: 'Sin módulos.',
+          cols: [{ k: 'numero', t: 'N.º', tipo: 'num', ancho: 'chico' }, { k: 'nombre', t: 'Módulo', tipo: 'texto' },
+                 { k: 'exhibidor_id', t: 'Exhibidor', tipo: 'sel', ops: [[null, '—']].concat(exh.map(function (e) { return [e.id, e.nombre]; })) },
+                 { k: 'reglas_extra', t: 'Algo propio de este módulo', tipo: 'texto', nulo: true, ancho: 'grande' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
+          guardar: function (f, c) { return guardarFila('/orden_modulos?id=eq.' + valor(f.id), c); },
+          extra: function (f) {
+            return (f.foto_referencia_path ? '<img class="ref-mini" data-foto="' + esc(f.foto_referencia_path) + '" alt="Referencia">' : '') +
+              '<button class="boton chico" data-accion="ref">' + (f.foto_referencia_path ? 'Cambiar la foto de referencia' : 'Foto de referencia') + '</button>';
+          },
+          accion: function (f) { return fotoReferencia(f); } });
+      });
+      cargarFotos(z);
+      z.querySelectorAll('[data-agregar-modulo]').forEach(function (b) {
+        unaVez(b, function () {
+          var sid = b.dataset.agregarModulo;
+          var n = Math.max.apply(null, [0].concat((mods || []).filter(function (m) { return m.sector_id === sid; }).map(function (m) { return m.numero; }))) + 1;
+          return escribir('/orden_modulos', 'POST', { sector_id: sid, numero: n, nombre: 'Módulo ' + n }).then(ajSectores);
+        });
+      });
+      unaVez(z.querySelector('#agregarSector'), function () {
+        var r2 = z.querySelector('#nuevoSector');
+        return escribir('/orden_sectores', 'POST', { local_id: _local.id, tipo: r2.querySelector('[data-k=tipo]').value, numero: Number(r2.querySelector('[data-k=numero]').value) })
+          .then(ajSectores);
+      });
+    });
+  }).catch(errAjuste);
+}
+
+function fotoReferencia(m) {
+  return new Promise(function (ok, mal) {
+    var input = document.createElement('input');
+    input.type = 'file'; input.accept = 'image/*'; input.hidden = true;
+    document.body.appendChild(input);
+    input.onchange = function () {
+      var f = input.files && input.files[0];
+      input.remove();
+      if (!f) { ok(); return; }
+      archivoAJpeg(f)
+        .then(function (b) { return subirArchivo(_local.id + '/referencias/' + m.id + '-' + nombreArchivo(), b); })
+        .then(function (ruta) { return guardarFila('/orden_modulos?id=eq.' + valor(m.id), { foto_referencia_path: ruta }); })
+        .then(function () { avisar('Foto de referencia guardada.'); ajSectores(); ok(); }, mal);
+    };
+    input.click();
+  });
+}
+
+function ajHorarios() {
+  var L = valor(_local.id);
+  Promise.all([leer('/orden_locales?select=*&id=eq.' + L), leer('/orden_config?select=*&local_id=eq.' + L)]).then(function (r) {
+    var loc = (r[0] || [])[0], cfg = (r[1] || [])[0];
+    var z = zonaAjuste('<div class="seccion">El local</div><div id="ajLocal"></div><div class="seccion">Los controles y los avisos</div><div id="ajCfg1"></div>' +
+      '<div class="seccion">Qué está prendido</div><div id="ajCfg2"></div><div class="seccion">Faltas (sólo se sugieren; con el modo prueba prendido, ni eso)</div><div id="ajCfg3"></div>' +
+      '<div class="seccion">Caja y fotos</div><div id="ajCfg4"></div>');
+    var diasOps = DIAS_LARGO.map(function (d, i) { return [i + 1, d]; });
+    var g = function (f, c) { return guardarFila('/orden_config?local_id=eq.' + valor(f.local_id), c); };
+    if (loc) editor({ cont: z.querySelector('#ajLocal'), filas: [loc],
+      cols: [{ k: 'nombre', t: 'Nombre en la app', tipo: 'texto' }, { k: 'dias_abiertos', t: 'Días que abre', tipo: 'dias' },
+             { k: 'hora_apertura', t: 'Abre', tipo: 'hora' }, { k: 'hora_cierre', t: 'Cierra', tipo: 'hora' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
+      guardar: function (f, c) { return guardarFila('/orden_locales?id=eq.' + valor(f.id), c).then(function () { if (c.nombre) { _local.nombre = c.nombre; } }); } });
+    if (!cfg) return;
+    editor({ cont: z.querySelector('#ajCfg1'), filas: [cfg],
+      cols: [{ k: 'dias_control', t: 'Días de control (todos los módulos)', tipo: 'dias' }, { k: 'hora_aviso_1', t: 'Aviso de la mañana', tipo: 'hora' },
+             { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', tipo: 'hora' }, { k: 'hora_limite', t: 'Hora límite', tipo: 'hora' },
+             { k: 'sorpresas_por_semana', t: 'Sorpresas por semana', tipo: 'num', ancho: 'chico' },
+             { k: 'deposito_dia_vence', t: 'El depósito vence el', tipo: 'sel', numero: true, ops: diasOps },
+             { k: 'cambio_imagen_dia', t: 'Cambio de imagen', tipo: 'sel', numero: true, ops: [[null, 'Apagado']].concat(diasOps) },
+             { k: 'max_avisos_dia', t: 'Tope de avisos por día', tipo: 'num', ancho: 'chico' }],
+      guardar: g });
+    editor({ cont: z.querySelector('#ajCfg2'), filas: [cfg],
+      cols: [{ k: 'ia_activa', t: 'Revisión con IA', tipo: 'bool' }, { k: 'ia_crea_tareas', t: 'La IA crea tareas', tipo: 'bool' },
+             { k: 'ia_sugerencias', t: 'Sugerencias de estilo de la IA', tipo: 'bool' }, { k: 'modo_prueba', t: 'Modo prueba (sin faltas)', tipo: 'bool' },
+             { k: 'desafio_activo', t: 'Desafío semanal', tipo: 'bool' }, { k: 'caja_activa', t: 'Control de caja', tipo: 'bool' }],
+      guardar: g });
+    editor({ cont: z.querySelector('#ajCfg3'), filas: [cfg],
+      cols: [{ k: 'ventana_faltas_dias', t: 'Se mira (días)', tipo: 'num', ancho: 'chico' }, { k: 'umbral_tareas_vencidas', t: 'Días con tareas fuera de plazo', tipo: 'num', ancho: 'chico' },
+             { k: 'umbral_dias_sin_control', t: 'Días sin mandar controles', tipo: 'num', ancho: 'chico' }, { k: 'umbral_fuera_estandar', t: 'Días "Fuera de estándar"', tipo: 'num', ancho: 'chico' },
+             { k: 'horas_revision_supervisor', t: 'Horas para revisar', tipo: 'num', ancho: 'chico' }],
+      guardar: g });
+    editor({ cont: z.querySelector('#ajCfg4'), filas: [cfg],
+      cols: [{ k: 'caja_tolerancia_pesos', t: 'Tolerancia de caja ($)', tipo: 'num', ancho: 'chico' }, { k: 'caja_minutos_tolerancia', t: 'Minutos después del cierre', tipo: 'num', ancho: 'chico' },
+             { k: 'dias_guardar_fotos', t: 'Días que se guardan las fotos (mín. 7)', tipo: 'num', ancho: 'chico' }, { k: 'dias_guardar_fotos_problemas', t: '…las de "A mejorar" o peor', tipo: 'num', ancho: 'chico' },
+             { k: 'dias_guardar_fotos_caja', t: '…las de caja', tipo: 'num', ancho: 'chico' }],
+      guardar: g });
+  }).catch(errAjuste);
+}
+
+var CHECKS = [['dobladas', 'Doblado'], ['frontales', 'Frontales'], ['etiquetas', 'Etiquetas'], ['limpieza', 'Limpieza'], ['exhibicion', 'Exhibición'], ['rotulado', 'Rotulado'], ['talles', 'Segmento y talle']];
+
+function ajLista(cfg) {
+  leer(cfg.ruta).then(function (filas) {
+    var z = zonaAjuste((cfg.texto ? '<p class="bajada">' + cfg.texto + '</p>' : '') + '<div id="filasLista"></div>' +
+      (cfg.nueva ? '<button class="boton" id="agregarLista" style="max-width:320px;margin-top:6px">Agregar</button>' : ''));
+    editor({ cont: z.querySelector('#filasLista'), filas: filas || [], cols: cfg.cols,
+      guardar: function (f, c) {
+        if (cfg.validar) { var m = cfg.validar(Object.assign({}, f, c)); if (m) return Promise.reject(rechazo(m)); }
+        return guardarFila(cfg.tabla + '?id=eq.' + valor(f.id), c);
+      } });
+    var a = z.querySelector('#agregarLista');
+    if (a) unaVez(a, function () { return escribir(cfg.tabla, 'POST', cfg.nueva(filas || [])).then(function () { ajLista(cfg); }); });
+  }).catch(errAjuste);
+}
+
+function ajReglas() {
+  ajLista({ ruta: '/orden_reglas?select=*&order=sector_tipo.asc,check_clave.asc,orden.asc', tabla: '/orden_reglas',
+    texto: 'La IA las lee en cada foto. Cambiar una regla cambia lo que mira desde la próxima foto: no hay que entrenar nada.',
+    cols: [{ k: 'sector_tipo', t: 'Dónde', tipo: 'sel', ops: [[null, 'Salón y depósito'], ['salon', 'Salón'], ['deposito', 'Depósito']] },
+           { k: 'check_clave', t: 'Punto', tipo: 'sel', ops: CHECKS }, { k: 'texto', t: 'La regla', tipo: 'texto', ancho: 'grande' },
+           { k: 'orden', t: 'Orden', tipo: 'num', ancho: 'chico' }, { k: 'activo', t: 'Activa', tipo: 'bool' }],
+    nueva: function () { return { sector_tipo: 'salon', check_clave: 'frontales', texto: 'Nueva regla (escribila y guardá)', activo: false }; } });
+}
+
+function ajColores() {
+  ajLista({ ruta: '/orden_colores?select=*&order=orden.asc', tabla: '/orden_colores', texto: 'El degradé de los percheros, del más claro al más oscuro.',
+    cols: [{ k: 'orden', t: 'Orden', tipo: 'num', ancho: 'chico' }, { k: 'nombre', t: 'Color', tipo: 'texto' }, { k: 'hex', t: 'Muestra', tipo: 'color', ancho: 'chico' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
+    nueva: function (f) { return { orden: f.length + 1, nombre: 'Nuevo color', hex: '#808080', activo: false }; } });
+}
+
+function ajTableros() {
+  ajLista({ ruta: '/orden_tableros?select=*&order=destacado.desc,orden.asc', tabla: '/orden_tableros', texto: 'Los tableros de Pinterest que ven los vendedores en Ideas. Uno destacado: "Frontales de la semana".',
+    cols: [{ k: 'titulo', t: 'Título', tipo: 'texto' }, { k: 'url', t: 'Enlace (https://…)', tipo: 'texto', ancho: 'grande' },
+           { k: 'destacado', t: 'Destacado', tipo: 'bool' }, { k: 'orden', t: 'Orden', tipo: 'num', ancho: 'chico' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
+    validar: function (f) { return /^https:\/\/\S+$/i.test(f.url || '') ? null : 'El enlace tiene que empezar con https://'; },
+    nueva: function (f) { return { titulo: 'Nuevo tablero', url: 'https://www.pinterest.com/', orden: f.length + 1, activo: false }; } });
+}
+
+function ajExhibidores() {
+  ajLista({ ruta: '/orden_exhibidores?select=*&order=nombre.asc', tabla: '/orden_exhibidores', texto: 'La cantidad ideal de prendas de cada tipo: ni muy lleno ni muy vacío (la IA la tiene en cuenta).',
+    cols: [{ k: 'nombre', t: 'Exhibidor', tipo: 'texto' }, { k: 'prendas_min', t: 'Mínimo', tipo: 'num', ancho: 'chico' }, { k: 'prendas_max', t: 'Máximo', tipo: 'num', ancho: 'chico' },
+           { k: 'notas', t: 'Notas', tipo: 'texto', nulo: true, ancho: 'grande' }],
+    nueva: function (f) { return { nombre: 'Exhibidor ' + (f.length + 1) }; } });
+}
+
+function ajPreguntas() {
+  ajLista({ ruta: '/orden_preguntas?select=id,tema,dificultad,pregunta,activo&order=tema.asc,dificultad.asc', tabla: '/orden_preguntas',
+    texto: 'Las preguntas del desafío (salen de los manuales de VDH). Se pueden apagar las que no sirvan.',
+    cols: [{ k: 'tema', t: 'Tema', tipo: 'ver', ver: function (f) { return { tela: 'Telas', molderia: 'Molderías', retail: 'Cómo trabajamos' }[f.tema] || f.tema; } },
+           { k: 'dificultad', t: 'Nivel', tipo: 'ver' }, { k: 'pregunta', t: 'Pregunta', tipo: 'ver' }, { k: 'activo', t: 'Activa', tipo: 'bool' }] });
+}
+
+/* ════════════════════════════════════════════════════════════════════════ */
+
+inicio();
