@@ -157,6 +157,11 @@ function pantallaError(e, reintentar) {
    EL LOGIN: LOCAL → NOMBRE → PIN
    ════════════════════════════════════════════════════════════════════════ */
 
+/* La gente sin local (vos, los dueños) va en un grupo aparte. La base lo
+   llama "Oficina" o "Supervisión"; en la app se ve "Administrador". */
+var SIN_LOCAL = 'Administrador';
+function nombreLocal(l) { return l && l.id ? l.nombre : SIN_LOCAL; }
+
 function pantallaLocales(mensaje) {
   barra.hidden = true;
   app.className = 'app';
@@ -167,7 +172,7 @@ function pantallaLocales(mensaje) {
       '<h1>¿En qué local trabajás?</h1>' +
       '<p class="bajada">' + esc(mensaje || 'Elegí tu local. Esto se hace una sola vez en este celular.') + '</p>' +
       '<div class="lista">' + locales.map(function (l, i) {
-        return '<button class="opcion" data-i="' + i + '">' + esc(l.nombre) + '</button>';
+        return '<button class="opcion" data-i="' + i + '">' + esc(nombreLocal(l)) + '</button>';
       }).join('') + '</div>';
     app.querySelectorAll('.opcion').forEach(function (b) {
       b.onclick = function () { pantallaPersonas(locales[+b.dataset.i]); };
@@ -181,7 +186,7 @@ function pantallaPersonas(local) {
     app.innerHTML =
       '<button class="volver" id="volver">‹ Cambiar de local</button>' +
       '<h1>¿Quién sos?</h1>' +
-      '<p class="bajada">' + esc(local.nombre) + '</p>' +
+      '<p class="bajada">' + esc(nombreLocal(local)) + '</p>' +
       '<div class="lista">' + gente.map(function (p, i) {
         return '<button class="opcion" data-i="' + i + '">' + esc(p.nombre) + '</button>';
       }).join('') + '</div>';
@@ -748,7 +753,7 @@ function pantallaPerfil() {
   app.innerHTML =
     '<h1>Perfil</h1>' +
     '<div class="perfil"><div class="nombre">' + esc(per.nombre) + '</div>' +
-    '<div class="bajada" style="margin:4px 0 0">' + esc(per.local || 'Supervisión') + '</div></div>' +
+    '<div class="bajada" style="margin:4px 0 0">' + esc(per.local || SIN_LOCAL) + '</div></div>' +
     '<button class="boton" id="salir">No soy yo</button>' +
     '<p class="nota">Tu historial, tu foto y tus desafíos aparecen acá más adelante.</p>';
   document.getElementById('salir').onclick = preguntarSalir;
