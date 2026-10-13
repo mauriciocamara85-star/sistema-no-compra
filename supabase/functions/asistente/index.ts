@@ -9,9 +9,11 @@
  * manda a preguntarle al supervisor. Sólo consulta: no vende ni le escribe
  * a nadie.
  *
- *   POST {accion: 'preguntar', disp, charla, local, vendedor, pregunta}
- *        Libre, sin PIN (asistente.html, en la PC de cada local). Guarda la
- *        pregunta y la respuesta en la charla de esa persona en esa PC.
+ *   POST {accion: 'preguntar', llave, yo, charla, vendedor, pregunta}
+ *        Sin PIN, pero sólo desde una PC habilitada (asistente.html): "llave"
+ *        es la de la caja (la misma de Cobrar) y "yo", la de la persona, que
+ *        crea la página al elegir el nombre (SQL 89). Guarda la pregunta y la
+ *        respuesta en la charla de esa persona en esa PC.
  *   POST {accion: 'probar', pin, historial, pregunta}
  *        El chat de prueba del CRM (con el PIN). No guarda la charla y
  *        contesta aunque el Asistente esté apagado.
@@ -203,13 +205,22 @@ function corte(ctx: any, prueba: boolean): string | null {
 
 /* Una pregunta desde un local. */
 async function preguntar(p: any) {
-  const disp = String(p.disp ?? '');
+  const yo = String(p.yo ?? '');
   const vendedor = String(p.vendedor ?? '').trim().slice(0, 40);
   const pregunta = String(p.pregunta ?? '').replace(/\r/g, '').trim();
   let charla = UUID.test(String(p.charla ?? '')) ? String(p.charla) : null;
-  if (!DISP.test(disp) || !vendedor) return { ok: false, error: 'Falta quién pregunta: volvé a elegir tu nombre.' };
+  if (!DISP.test(yo) || !vendedor) return { ok: false, error: 'Falta quién pregunta: volvé a elegir tu nombre.' };
   if (!pregunta) return { ok: false, error: 'Falta la pregunta.' };
   if (pregunta.length > 2000) return { ok: false, error: 'La pregunta es muy larga: hasta 2000 letras.' };
+  /* La PC tiene que estar habilitada (la llave de la caja): el Asistente lee
+     los manuales internos, así que desde afuera no se pregunta nada. */
+  let pase: any;
+  try { pase = await rpc('asistente_pase', { p_llave: String(p.llave ?? ''), p_yo: yo }); } catch (e) {
+    return { ok: false, error: /asistente_pase/.test(String(e)) ? 'El Asistente todavía no está listo (falta el SQL 89).' : 'No se pudo leer la base. Probá de nuevo.' };
+  }
+  if (!pase?.ok) return { ok: false, error: 'Esta PC no está habilitada para el Asistente: pedile al encargado el enlace de la caja (el mismo de Cobrar).' };
+  if (pase.frenado) return { ok: false, error: 'Son muchas preguntas seguidas desde esta PC: esperá unos minutos y probá de nuevo.' };
+  const disp = String(pase.disp);
   let ctx: any;
   try { ctx = await rpc('asistente_contexto', { p_disp: disp, p_vendedor: vendedor, p_charla: charla }); } catch (e) {
     return { ok: false, error: /asistente_contexto/.test(String(e)) ? 'El Asistente todavía no está listo (falta el SQL 85).' : 'No se pudo leer la base. Probá de nuevo.' };
@@ -224,7 +235,7 @@ async function preguntar(p: any) {
     console.error('asistente: no pudo contestar:', String(e));
     return { ok: false, error: 'No se pudo contestar. Probá de nuevo en un momento.' };
   }
-  const g = await rpc('asistente_guardar', { p: { disp, vendedor, local: String(p.local ?? '').slice(0, 40), charla, pregunta,
+  const g = await rpc('asistente_guardar', { p: { disp, vendedor, local: String(pase.local ?? '').slice(0, 40), caja: pase.caja, charla, pregunta,
     respuesta: r.texto, fuentes: r.fuentes, modelo: r.modelo, tokens: r.tokens, usd: r.usd, ms: r.ms } });
   await rpc('agente_gasto_sumar', { p_agente: 'vendedores', p_usd: r.usd }).catch((e) => console.error('asistente: gasto:', String(e)));
   return { ok: true, charla: g?.charla ?? charla, id: g?.id ?? null, texto: r.texto, fuentes: r.fuentes };

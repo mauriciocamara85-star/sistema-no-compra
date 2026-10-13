@@ -6968,7 +6968,10 @@
   /* ── Las páginas de "Atención al cliente" que ya existían ──────────── */
   function pagAjustesClientes(d, w) {
     var r = d.reglas || {}, prendido = r.prendido === 'si', ah = ahoraAgente(d.ahora), auto = r.modo === 'auto';
-    var eco = d.eco || null, con88 = r.reanudar != null, puedeAuto = !!(eco && eco.ok);
+    /* SQL 89: la revisión final dejó el automático trabado en la base. */
+    var bloqueo = r.auto_bloqueo || '';
+    var eco = d.eco || null, con88 = r.reanudar != null, puedeAuto = !!(eco && eco.ok) && !bloqueo;
+    if (bloqueo) { auto = false; }
     var vuelve = r.reanudar === 'nunca' ? 'en esa charla no vuelve' : 'vuelve después de ' + (r.reanudar || 2) + ' h sin respuesta';
     return '<div class="ag-estado ' + ah[0] + '"><b>' + esc(ah[1]) + '</b><span>' + esc(ah[2]) + '</span>' +
         '<span class="ag-fase1">' + (auto ? 'En automático: en esos horarios contesta solo, sin que nadie lo apruebe.'
@@ -6983,6 +6986,7 @@
         '<button type="button" role="radio" aria-checked="' + auto + '" class="ag-op' + (auto ? ' sel' : '') + (puedeAuto || auto ? '' : ' no') + '" data-ag-modo="auto"' +
           (puedeAuto || auto ? '' : ' aria-disabled="true"') + '><b>Automático</b><span>' +
           (puedeAuto || auto ? 'Contesta solo, fuera del horario del equipo.'
+            : bloqueo ? 'Trabado: ' + bloqueo
             : con88 ? 'Hace falta que lleguen al CRM los mensajes que se mandan desde el celular de la tienda: así sabe cuándo contestó una persona.'
                     : 'Se habilita con el SQL 88.') + '</span></button></div>' +
         (AGX.confirmarAuto ? '<div class="ag-confirma" role="alertdialog" aria-labelledby="agConfTit"><b id="agConfTit">¿Lo pasamos a automático?</b>' +
@@ -6994,7 +6998,8 @@
             'En cada charla de Mensajes hay un botón para pausarlo.',
             'Nunca contesta en el número de No Compra.',
             'Cuando le pasa una charla a una persona, se pausa en esa charla y avisa por Telegram.',
-            'No ofrece cupones, descuentos ni envíos de regalo: si lo intenta, el sistema lo frena.'].map(liAg).join('') + '</ul>' : '') +
+            bloqueo ? 'Si ofrece un descuento, un cupón, un precio rebajado o un envío de regalo, el sistema a veces lo frena y a veces no: revisá cada borrador antes de mandarlo.'
+              : 'No ofrece cupones, descuentos ni envíos de regalo: si lo intenta, el sistema lo frena.'].map(liAg).join('') + '</ul>' : '') +
         (eco && eco.ok ? '<p class="ag-nota">Los mensajes del celular llegan al CRM: el último, el ' + esc(fechaAg(eco.ultimo, true)) + '.</p>' : '') +
         '<p class="ag-nota">Atiende el WhatsApp de ' + esc(d.numero || 'la tienda') + '. El de No Compra, no.</p></div>' +
       htmlModeloTope(d, w || AG.w, 'clientes');
@@ -7145,9 +7150,9 @@
     [].forEach.call(v.querySelectorAll('[data-ag-modo]'), function (b) {
       b.onclick = function () {
         var actual = (AG.datos && AG.datos.reglas && AG.datos.reglas.modo) || 'prueba', m = b.dataset.agModo;
+        if (b.getAttribute('aria-disabled') === 'true') { avisar('err', b.querySelector('span').textContent); return; }
         if (m === actual) { AGX.confirmarAuto = false; return; }
         if (m === 'prueba') { AGX.confirmarAuto = false; guardarReglasAgente({ modo: 'prueba' }, b, 'En prueba: redacta borradores para aprobar.'); return; }
-        if (b.getAttribute('aria-disabled') === 'true') { avisar('err', b.querySelector('span').textContent); return; }
         AGX.confirmarAuto = true;
         pintarAgente();
       };

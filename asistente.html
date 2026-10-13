@@ -337,7 +337,7 @@
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var K_LOCAL = 'nc_local', K_VENDEDOR = 'nc_vendedor', K_CAJA = 'nc_caja', K_CAJA_LOCAL = 'nc_caja_local';
-  var K_DISP = 'nc_asis_disp', K_YO = 'nc_asis_yo';
+  var K_YO = 'nc_asis_yo';
   var OFICINA = leer('nc_oficina') === '1';
   /* Cuánto vale "quién sos" sin usar el Asistente. */
   var YO_VALE = 30 * 60000;
@@ -375,33 +375,34 @@
   };
 
   /* ═══ Quién está usando la PC ════════════════════════════════════════ */
-  /* La PC: un número al azar que se queda en el navegador. Las charlas
-     quedan atadas a él: desde otro aparato no se ven. */
-  function dispositivo() {
-    var d = leer(K_DISP);
-    if (/^[0-9a-f]{32}$/.test(d)) { return d; }
+  /* La PC: la llave de la caja (la misma de Cobrar). Sin ella el Asistente
+     no contesta, porque lee los manuales internos (SQL 89). */
+  function llaveCaja() { var k = leer(K_CAJA); return /^caja_/.test(k) ? k : ''; }
+  /* La persona: 32 letras al azar que se crean al elegir el nombre y se
+     pierden con "No soy…" o al vencer. Las charlas van atadas a ellas (y a
+     la caja): otra persona en la misma PC, aunque toque el mismo nombre, no
+     las ve. */
+  function nuevoYo() {
     var a = new Uint8Array(16);
     (window.crypto || window.msCrypto).getRandomValues(a);
-    d = Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
-    guardar(K_DISP, d);
-    return d;
+    return Array.prototype.map.call(a, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
   }
   /* Quién es: en la pestaña y con vencimiento (se renueva al usarlo). */
   function yoGuardado() {
     try {
       var y = JSON.parse(sessionStorage.getItem(K_YO) || 'null');
-      if (y && y.vendedor && y.local && Date.now() < Number(y.hasta)) { return y; }
+      if (y && y.vendedor && y.local && /^[0-9a-f]{32}$/.test(y.yo || '') && Date.now() < Number(y.hasta)) { return y; }
     } catch (e) {}
     return null;
   }
   function renovarYo() {
-    if (!S.vendedor) { return; }
-    try { sessionStorage.setItem(K_YO, JSON.stringify({ local: S.local, vendedor: S.vendedor, hasta: Date.now() + YO_VALE })); } catch (e) {}
+    if (!S.vendedor || !S.yo) { return; }
+    try { sessionStorage.setItem(K_YO, JSON.stringify({ local: S.local, vendedor: S.vendedor, yo: S.yo, hasta: Date.now() + YO_VALE })); } catch (e) {}
   }
   function olvidarYo() { try { sessionStorage.removeItem(K_YO); } catch (e) {} }
 
   var S = {
-    disp: dispositivo(), local: '', vendedor: '', equipo: [], escribe: false,
+    yo: '', local: '', vendedor: '', equipo: [], escribe: false,
     portada: null, charlas: [], charla: null, msgs: [], esperando: false, pedido: 0
   };
 
@@ -459,6 +460,7 @@
     S.vendedor = String(nombre || '').trim().slice(0, 40);
     if (!S.vendedor) { return; }
     if (!OFICINA && S.local !== 'OFICINA') { guardar(K_LOCAL, S.local); guardar(K_VENDEDOR, S.vendedor); }
+    S.yo = nuevoYo();
     renovarYo();
     $('asisMain').classList.remove('eligiendo');
     S.charla = null; S.msgs = []; S.charlas = [];
@@ -475,7 +477,7 @@
   /* "No soy yo": vuelve a preguntar y no deja nada a la vista. */
   function cambiarYo() {
     olvidarYo();
-    S.vendedor = ''; S.charla = null; S.msgs = []; S.charlas = [];
+    S.vendedor = ''; S.yo = ''; S.charla = null; S.msgs = []; S.charlas = [];
     cerrarLado();
     abrirElegir(S.local ? 2 : 1);
   }
@@ -486,7 +488,7 @@
 
   /* ═══ La portada: saludo, sugeridas y accesos ════════════════════════ */
   function traerPortada() {
-    base.asistentePortada()
+    base.asistentePortada(llaveCaja())
       .then(function (p) { S.portada = p || {}; pintarPortada(); })
       .catch(function (err) {
         S.portada = { error: /PGRST202|Could not find|asistente_portada/i.test(String(err && err.message)) ? 'falta' : 'red' };
@@ -501,6 +503,11 @@
     var aviso = '';
     if (p.error === 'falta') { aviso = 'El Asistente todavía no está listo: falta un paso en la base de datos. Avisale a la oficina.'; }
     else if (p.error === 'red') { aviso = 'No hay conexión con el Asistente. Revisá internet y volvé a entrar.'; }
+    else if (p.habilitada === false) {
+      aviso = OFICINA || S.local === 'OFICINA'
+        ? 'En la oficina, el Asistente se prueba desde el CRM: Agentes de IA → Asistente de vendedores → Probar.'
+        : 'Esta PC no está habilitada para el Asistente. Se habilita con el mismo enlace de la caja que usa Cobrar: pedíselo al encargado.';
+    }
     else if (p.prendido === false) { aviso = 'El Asistente está apagado por ahora.'; }
     $('asisAviso').hidden = !aviso;
     $('asisAviso').textContent = aviso;
@@ -517,17 +524,17 @@
       return '<a class="asis-acceso" href="' + esc(a.url) + '" target="_blank" rel="noopener"><i aria-hidden="true">' + ico + '</i>' +
         '<span><b>' + esc(a.titulo) + '</b><small>' + esc(a.nota || 'Se abre en otra pestaña') + '</small></span></a>';
     }).join('');
-    var apagado = !!p.error || p.prendido === false;
+    var apagado = !!p.error || p.prendido === false || p.habilitada === false;
     Array.prototype.forEach.call(document.querySelectorAll('[data-caja] textarea'), function (t) { t.disabled = apagado; });
     marcarMandar();
   }
 
   /* ═══ Las charlas de quien está ══════════════════════════════════════ */
   function traerCharlas() {
-    if (!S.vendedor) { return; }
-    var quien = S.vendedor;
-    base.asistenteCharlas(S.disp, S.local, quien)
-      .then(function (l) { if (quien === S.vendedor) { S.charlas = l || []; pintarLado(); } })
+    if (!S.vendedor || !S.yo) { return; }
+    var quien = S.vendedor, yo = S.yo;
+    base.asistenteCharlas(llaveCaja(), yo, quien)
+      .then(function (l) { if (quien === S.vendedor && yo === S.yo) { S.charlas = l || []; pintarLado(); } })
       .catch(function () { /* la lista es un extra: el chat anda igual */ });
   }
   function cuandoCorto(ts) {
@@ -545,7 +552,7 @@
       : (S.charlas.length ? S.charlas.map(function (c) {
           return '<button type="button" class="asis-ch' + (c.id === S.charla ? ' sel' : '') + '" data-ch="' + esc(c.id) + '">' +
             '<b>' + esc(c.titulo || 'Charla') + '</b><small>' + esc(cuandoCorto(c.cuando)) + '</small></button>';
-        }).join('') : '<p class="asis-ch-vacio">Todavía no tenés charlas. Las que hagas quedan acá, sólo en esta PC.</p>');
+        }).join('') : '<p class="asis-ch-vacio">Todavía no tenés charlas. Las que hagas se ven acá mientras estés vos: al tocar «No soy…» (o a la media hora sin usarlo) se guardan y nadie más las ve.</p>');
     Array.prototype.forEach.call($('asisCharlas').querySelectorAll('[data-ch]'), function (b) {
       b.onclick = function () { abrirCharla(b.dataset.ch); };
     });
@@ -562,10 +569,10 @@
     S.charla = id; S.msgs = [];
     pintarLado();
     pintarMsgs(true);
-    var quien = S.vendedor;
-    base.asistenteCharla(S.disp, S.vendedor, id)
+    var quien = S.vendedor, yo = S.yo;
+    base.asistenteCharla(llaveCaja(), yo, quien, id)
       .then(function (l) {
-        if (S.charla !== id || quien !== S.vendedor) { return; }
+        if (S.charla !== id || quien !== S.vendedor || yo !== S.yo) { return; }
         S.msgs = (l || []).map(function (m) {
           return m.rol === 'vendedor' ? { rol: 'yo', texto: m.texto }
             : { rol: 'ia', id: m.id, texto: m.texto, fuentes: m.fuentes || [], voto: Number(m.voto) || 0 };
@@ -589,17 +596,17 @@
   function preguntar(texto, reintento) {
     texto = String(texto || '').trim();
     if (!texto || S.esperando || !S.vendedor) { return; }
-    if (S.portada && (S.portada.error || S.portada.prendido === false)) { return; }
+    if (S.portada && (S.portada.error || S.portada.prendido === false || S.portada.habilitada === false)) { return; }
     renovarYo();
     if (!reintento) { S.msgs.push({ rol: 'yo', texto: texto }); }
     S.esperando = true;
     Array.prototype.forEach.call(document.querySelectorAll('[data-caja] textarea'), function (t) { t.value = ''; ajustarAlto(t); });
     pintarMsgs();
     bajar();
-    var quien = S.vendedor, charla = S.charla;
-    base.asistentePreguntar({ disp: S.disp, charla: charla, local: S.local, vendedor: quien, pregunta: texto })
+    var quien = S.vendedor, charla = S.charla, yo = S.yo;
+    base.asistentePreguntar({ llave: llaveCaja(), yo: yo, charla: charla, vendedor: quien, pregunta: texto })
       .then(function (r) {
-        if (quien !== S.vendedor || charla !== S.charla) { S.esperando = false; return; }
+        if (quien !== S.vendedor || charla !== S.charla || yo !== S.yo) { S.esperando = false; return; }
         S.esperando = false;
         S.charla = r.charla || S.charla;
         S.msgs.push({ rol: 'ia', id: r.id, texto: r.texto, fuentes: r.fuentes || [], voto: 0 });
@@ -608,7 +615,7 @@
         traerCharlas();
       })
       .catch(function (err) {
-        if (quien !== S.vendedor || charla !== S.charla) { S.esperando = false; return; }
+        if (quien !== S.vendedor || charla !== S.charla || yo !== S.yo) { S.esperando = false; return; }
         S.esperando = false;
         S.msgs.push({ rol: 'error', texto: (err && err.message) || 'No se pudo preguntar.', repetir: texto });
         pintarMsgs();
@@ -737,7 +744,7 @@
     });
     var lugar = caja.querySelector('.asis-mal-lugar');
     lugar.innerHTML = '';
-    base.asistenteVotar(S.disp, m.id, nuevo, null)
+    base.asistenteVotar(llaveCaja(), S.yo, m.id, nuevo, null)
       .then(function () {
         if (nuevo === 1) { lugar.innerHTML = '<p class="asis-gracias">¡Gracias!</p>'; }
         if (nuevo === -1) {
@@ -750,7 +757,7 @@
           lugar.querySelector('[data-mal-ok]').onclick = function () {
             var t = lugar.querySelector('textarea').value.trim();
             if (!t) { lugar.innerHTML = ''; return; }
-            base.asistenteVotar(S.disp, m.id, -1, t)
+            base.asistenteVotar(llaveCaja(), S.yo, m.id, -1, t)
               .then(function () { lugar.innerHTML = '<p class="asis-gracias">Le llegó a la oficina. ¡Gracias!</p>'; })
               .catch(function () { avisar('err', 'No se pudo mandar. Probá de nuevo.'); });
           };
@@ -858,7 +865,7 @@
      directo; si no, "¿quién sos?" con el local del aparato ya elegido. */
   var y = yoGuardado();
   if (y) {
-    S.local = y.local; S.vendedor = y.vendedor;
+    S.local = y.local; S.vendedor = y.vendedor; S.yo = y.yo;
     $('asisMain').classList.remove('eligiendo');
     renovarYo();
     traerCharlas();

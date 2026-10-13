@@ -1388,23 +1388,26 @@ var base = {
     return funcion('agente_borrador_resolver', { p_pin: pin, p_id: id, p_estado: estado, p_final: final || null, p_quien: quien || null });
   },
 
-  /* ── El Asistente de los vendedores (12/10/2026): libre, sin PIN ── */
+  /* ── El Asistente de los vendedores (12/10/2026): sin PIN, pero sólo en
+     las PCs habilitadas (SQL 89): "llave" es la de la caja (la misma de
+     Cobrar) y "yo", la de la persona, que se crea al elegir el nombre. ── */
 
-  /** El saludo, las preguntas sugeridas, los accesos y si está prendido. */
-  asistentePortada: function () {
-    return funcion('asistente_portada', {});
+  /** El saludo, las preguntas sugeridas, los accesos y si está prendido.
+   *  Sin una caja habilitada: sólo { habilitada: false, prendido }. */
+  asistentePortada: function (llave) {
+    return funcion('asistente_portada', { p_llave: llave || '' });
   },
   /** Las charlas de esa persona en esa PC (y sólo esas). */
-  asistenteCharlas: function (disp, local, vendedor) {
-    return funcion('asistente_charlas', { p_disp: disp, p_local: local || '', p_vendedor: vendedor || '' });
+  asistenteCharlas: function (llave, yo, vendedor) {
+    return funcion('asistente_charlas', { p_llave: llave || '', p_yo: yo || '', p_vendedor: vendedor || '' });
   },
   /** Los mensajes de una charla, si es de esa persona en esa PC. */
-  asistenteCharla: function (disp, vendedor, charla) {
-    return funcion('asistente_charla', { p_disp: disp, p_vendedor: vendedor || '', p_charla: charla });
+  asistenteCharla: function (llave, yo, vendedor, charla) {
+    return funcion('asistente_charla', { p_llave: llave || '', p_yo: yo || '', p_vendedor: vendedor || '', p_charla: charla });
   },
   /** El pulgar: 1, -1 o 0 (sacarlo), con lo que estuvo mal si lo dicen. */
-  asistenteVotar: function (disp, id, voto, comentario) {
-    return funcion('asistente_votar', { p_disp: disp, p_id: id, p_voto: voto, p_comentario: comentario || null });
+  asistenteVotar: function (llave, yo, id, voto, comentario) {
+    return funcion('asistente_votar', { p_llave: llave || '', p_yo: yo || '', p_id: id, p_voto: voto, p_comentario: comentario || null });
   },
   /* ── Agentes de IA en el CRM (SQL 85): con el PIN. Las que son nuevas no
      tiran error con el PIN malo: devuelven {error: 'pin', porque, mal}. ── */
@@ -1531,7 +1534,7 @@ var base = {
     return fetch(BASE + '/functions/v1/asistente', {
       method: 'POST',
       headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ accion: 'preguntar', disp: d.disp, charla: d.charla || null, local: d.local || '',
+      body: JSON.stringify({ accion: 'preguntar', llave: d.llave || '', yo: d.yo || '', charla: d.charla || null,
                              vendedor: d.vendedor || '', pregunta: d.pregunta })
     }).then(function (r) {
       return r.json().catch(function () { return { ok: false, error: 'No se pudo hablar con el Asistente.' }; });

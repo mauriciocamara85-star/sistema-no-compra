@@ -37,6 +37,10 @@ const URL_BASE = Deno.env.get('SUPABASE_URL') ?? '';
 /* Lo que espera antes de contestar, por si el cliente sigue escribiendo
    (en las pruebas se acorta). */
 const ESPERA = Number(Deno.env.get('AGENTE_ESPERA_MS') ?? '25000');
+/* Revisión final (12/10/2026): el control de descuentos (ofreceAlgo) deja
+   pasar ofertas dichas de otra forma. Hasta revisarlo, SÓLO borradores,
+   diga lo que diga la base (que además no deja elegir "auto", SQL 89). */
+const SOLO_BORRADOR = true;
 const SERVICIO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 const claude = new Anthropic();
 
@@ -486,7 +490,7 @@ async function auto(p: { tel?: string; numero_id?: string }) {
   const b = await redactar(ctx, ctx.mensajes);
   await sumarGasto(b.usd);
   /* Sin el SQL 88 (no hay "puede") nunca manda solo: sólo borradores. */
-  if (ctx.reglas?.modo !== 'auto' || !ctx.puede) {
+  if (SOLO_BORRADOR || ctx.reglas?.modo !== 'auto' || !ctx.puede) {
     await guardarBorrador(ctx, b, 'auto');
     return;
   }

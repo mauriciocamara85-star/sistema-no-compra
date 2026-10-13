@@ -874,14 +874,26 @@ del CRM; los vendedores no ven nada de eso), con el selector arriba:
   sabe son las fuentes "para clientes" prendidas, y las elige la base
   (`agente_contexto`): lo "solo interno" no le llega nunca. En el código
   quedan dos controles que no dependen de lo que se le diga: los links de
-  productos (sólo los de `ver_producto`) y los topes (no ofrece cupones,
-  descuentos ni envíos de regalo: si lo intenta, se corrige o no sale).
+  productos (sólo los de `ver_producto`) y los topes (si ofrece un cupón o
+  un descuento, se le pide corregir).
+  **Por ahora, SÓLO borradores** (SQL 89, 12/10/2026): la revisión final
+  encontró que el control de los topes deja pasar ofertas dichas de otra
+  forma (un precio rebajado, un 2x1, un envío gratis). El automático está
+  trabado en tres lugares: la base no deja elegirlo (la regla
+  `auto_bloqueo` y el disparador `agente_reglas_sin_auto`),
+  `wa_preparar_envio_agente` no prepara envíos y la función tiene
+  `SOLO_BORRADOR = true`. Se destraba con su propio SQL, después de
+  arreglar el control.
 - **Asistente de vendedores**: `asistente.html` (Asistente, en la barra),
-  libre y sin PIN, para la PC de cada local (Edge Function `asistente`).
-  Contesta sólo con las fuentes y cita de cuál sacó cada cosa (las citas
-  las arma la API de Claude: no se pueden inventar). Cada persona ve sólo
-  sus charlas, y sólo en esa PC; después de 30 minutos sin usarlo vuelve a
-  preguntar quién es.
+  sin PIN, pero **sólo en las PCs habilitadas**: usa la llave de la caja,
+  la misma de Cobrar (Config → Club VDH → Cajas). Sin ella no muestra los
+  accesos ni contesta, porque lee los manuales internos. Edge Function
+  `asistente`. Contesta sólo con las fuentes y cita de cuál sacó cada cosa
+  (las citas las arma la API de Claude: no se pueden inventar). Cada
+  persona ve sólo sus charlas: van atadas a la caja y a una llave que se
+  crea al elegir el nombre y se pierde con "No soy…" o a los 30 minutos sin
+  usarlo. Otra persona que toque el mismo nombre no las ve. En la oficina
+  se prueba desde el CRM (Probar).
 
 Para los dos: el modelo (Sonnet 5.5 de fábrica, Haiku 5.5 u Opus 5.5) y el
 tope de gasto del mes (corta, y avisa por Telegram al 80 y al 100 %) se
@@ -893,8 +905,9 @@ y las juzga Haiku 5.5. Lo que comparten las dos funciones está en
 
 SQL: 85 (las fuentes y el Asistente), 86 (los manuales: sólo en el archivo
 que se corre en Supabase, porque el texto es interno), 87 (instrucciones,
-barandillas, pruebas y conexiones) y 88 (WhatsApp y la convivencia con el
-equipo). Las funciones se despliegan con
+barandillas, pruebas y conexiones), 88 (WhatsApp y la convivencia con el
+equipo) y 89 (lo de la revisión final: sólo borradores, el Asistente sólo
+en las PCs habilitadas y las charlas de cada uno). Las funciones se despliegan con
 `npx supabase functions deploy <agente|asistente|whatsapp> --no-verify-jwt --project-ref gfjdjupuwxohkgchqykx`.
 
 ## Respaldo automático
