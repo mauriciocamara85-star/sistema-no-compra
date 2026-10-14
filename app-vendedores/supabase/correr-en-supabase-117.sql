@@ -48,7 +48,7 @@ declare
   v_res jsonb;
 begin
   if not v_servicio and orden_yo_id() is null then raise exception 'Entrá con tu usuario'; end if;
-  if coalesce(array_length(v_todos, 1), 0) = 0 or array_length(v_todos, 1) > 36 then raise exception 'Elegí entre 1 y 24 meses'; end if;
+  if coalesce(array_length(v_todos, 1), 0) = 0 or array_length(v_todos, 1) > 36 then raise exception 'Pedí entre 1 y 36 meses'; end if;
   if exists (select 1 from unnest(v_todos) m where m is null or m !~ '^[0-9]{4}-(0[1-9]|1[0-2])$') then raise exception 'Hay un mes que no es válido'; end if;
   /* Los locales que puede ver quien pregunta (una vez por local, no por fila). */
   select coalesce(array_agg(l.id), '{}') into v_locales
@@ -59,7 +59,7 @@ begin
   v_hasta := ((select max(m) from unnest(v_todos) m) || '-01')::date + interval '1 month';
 
   with sem as (
-    select s.id, s.local_id, to_char(coalesce(s.fecha, s.semana), 'YYYY-MM') as mes, coalesce(s.fecha, s.semana) as dia, s.cargada_en,
+    select s.id, s.local_id, to_char(coalesce(s.fecha, s.semana), 'YYYY-MM') as mes, coalesce(s.fecha, s.semana) as dia, s.fecha, s.cargada_en,
            (s.cargada_en is not null or s.fecha is null) as cuenta
       from testigo_semanas s
      where s.local_id = any(v_locales) and coalesce(s.fecha, s.semana) >= v_desde and coalesce(s.fecha, s.semana) < v_hasta
@@ -70,7 +70,8 @@ begin
   ), ctl as (
     select local_id, mes, count(*) as controles, count(*) filter (where cargada_en is not null) as mandados,
            count(*) filter (where cargada_en is null and fecha_pasada) as sin_mandar
-      from (select sem.*, sem.dia < v_hoy as fecha_pasada from sem) x
+      /* "Sin mandar": con día, y pasada una semana (el local lo puede mandar hasta 6 días después). */
+      from (select sem.*, sem.fecha is not null and sem.fecha + 6 < v_hoy as fecha_pasada from sem) x
      group by local_id, mes
   ), prd as (
     select local_id, mes, count(distinct semana_id) as con_datos, count(*) as productos,
@@ -80,8 +81,9 @@ begin
            coalesce(sum(cantidad_real - stock_sistema) filter (where stock_sistema < cantidad_real), 0) as unidades_sobran
       from it group by local_id, mes
   ), top as (
-    select min(trim(regexp_replace(replace(producto, chr(160), ' '), '\s+', ' ', 'g'))) as producto,
-           nullif(min(trim(regexp_replace(replace(coalesce(color, ''), chr(160), ' '), '\s+', ' ', 'g'))), '') as color, count(*) as veces,
+    /* El nombre que más se usó (con sus mayúsculas y tildes), no el primero por orden alfabético. */
+    select coalesce(nullif(mode() within group (order by trim(regexp_replace(replace(producto, chr(160), ' '), '\s+', ' ', 'g'))), ''), '(sin nombre)') as producto,
+           nullif(mode() within group (order by trim(regexp_replace(replace(coalesce(color, ''), chr(160), ' '), '\s+', ' ', 'g'))), '') as color, count(*) as veces,
            count(*) filter (where stock_sistema > cantidad_real) as con_faltante,
            coalesce(sum(stock_sistema - cantidad_real) filter (where stock_sistema > cantidad_real), 0) as unidades_faltan
       from it where mes = any(p_periodo)
@@ -111,5 +113,3 @@ begin
   revoke all on function testigo_estadisticas(text[], text[], uuid) from public, anon;
   grant execute on function testigo_estadisticas(text[], text[], uuid) to authenticated, service_role;
 end $$;
-
-select 'listo: las estadísticas de los productos testigo' as "SQL 117";

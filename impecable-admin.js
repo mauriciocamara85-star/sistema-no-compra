@@ -889,8 +889,10 @@ function verTestigo() {
   if (sel) sel.style.display = _testigoVista === 'stats' ? 'none' : '';
   if (_testigoVista === 'stats') { verTestigoStats(); return; }
   _semanaTestigo = _semanaTestigo || lunesAR();
-  var L = valor(_local.id), c = document.getElementById('cuerpo'), hoy = hoyAR();
+  var L = valor(_local.id), c = document.getElementById('cuerpo'), hoy = hoyAR(), pedido = ++_pedidoTestigo;
   var semanas = semanasTestigo();
+  /* Sólo dibuja si sigue siendo lo último que se pidió (y en "Por semana"): una respuesta lenta no pisa las estadísticas. */
+  var vale = function () { return pedido === _pedidoTestigo && _solapa === 'testigo' && _testigoVista === 'semana'; };
   Promise.all([
     leer('/testigo_semanas?select=*&local_id=eq.' + L + '&semana=eq.' + _semanaTestigo),
     /* Cómo va esa semana en cada local (el supervisor sólo tiene el suyo). */
@@ -901,10 +903,10 @@ function verTestigo() {
     var items = sem ? leer('/testigo_v_items?select=*&semana_id=eq.' + valor(sem.id) + '&order=item.asc') : Promise.resolve([]);
     var quien = sem && sem.cargada_por ? leer('/orden_personas?select=nombre,inicial&id=eq.' + valor(sem.cargada_por)).catch(function () { return []; }) : Promise.resolve([]);
     return Promise.all([difs, items, quien]).then(function (x) {
-      if (_solapa !== 'testigo') return;
+      if (!vale()) return;
       dibujarTestigoAdmin(c, semanas, sem, todas, x[0] || [], x[1] || [], (x[2] || [])[0], hoy);
     });
-  }).catch(function (e) { error(e, verTestigo); });
+  }).catch(function (e) { if (vale()) error(e, verTestigo); });
 }
 
 function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
@@ -1048,7 +1050,8 @@ function verTestigoStats() {
   if (_locales.length < 2) _testigoLocal = _local.id;
   var todos = _locales.length > 1 && !_testigoLocal;
   llamar('testigo_estadisticas', { p_meses: ult6, p_periodo: meses, p_local: _testigoLocal || null }).then(function (x) { return x || { meses: [], productos: [] }; }, function (e) {
-    if (e && !e.sinSesion && e.delServidor && /testigo_estadisticas|schema cache|PGRST202|does not exist/i.test(e.message || '')) return { falta: true, meses: [], productos: [] };
+    /* Sólo "la función no existe" es que falta el SQL 117 (un "permission denied" es otra cosa). */
+    if (e && !e.sinSesion && e.delServidor && /PGRST202|could not find the function/i.test(e.message || '')) return { falta: true, meses: [], productos: [] };
     throw e;
   }).then(function (r) {
     /* Sólo la última que se pidió (si cambiaron el período dos veces seguidas). */
@@ -1076,10 +1079,10 @@ function verTestigoStats() {
         html += '<div class="vacio">No hay controles de producto testigo en ' + esc(per[1].toLowerCase()) + (_testigoLocal ? ' en ' + esc(nombre[_testigoLocal] || 'este local') : '') + '.</div>';
       } else {
         html += '<div class="numeros">' +
-          '<div class="numero"><span>Productos contados</span><b>' + tot.productos + '</b><span>en ' + tot.con_datos + (tot.con_datos === 1 ? ' control mandado' : ' controles mandados') + '</span></div>' +
+          '<div class="numero"><span>Productos contados</span><b>' + tot.productos + '</b><span>en ' + tot.con_datos + (tot.con_datos === 1 ? ' control' : ' controles') + '</span></div>' +
           '<div class="numero"><span>Con faltante</span><b>' + textoPct(ff) + '</b><span>' + tot.con_faltante + ' de ' + tot.productos + (tot.unidades_faltan ? ' · faltaron ' + tot.unidades_faltan + (tot.unidades_faltan === 1 ? ' unidad' : ' unidades') : '') + '</span></div>' +
           '<div class="numero"><span>Con sobrante</span><b>' + textoPct(fraccion(tot.con_sobrante, tot.productos)) + '</b><span>' + tot.con_sobrante + ' de ' + tot.productos + '</span></div>' +
-          '<div class="numero"><span>Controles sin mandar</span><b>' + tot.sin_mandar + '</b><span>de ' + tot.controles + ' programados (ya pasó el día)</span></div></div>';
+          '<div class="numero"><span>Controles sin mandar</span><b>' + tot.sin_mandar + '</b><span>de ' + tot.controles + ' programados (pasada una semana del día)</span></div></div>';
 
         /* El ranking: los locales del período, del que más le faltan al que menos (por el % exacto). */
         if (todos) {
@@ -1094,14 +1097,14 @@ function verTestigoStats() {
               return (b.fr || 0) - (a.fr || 0) || b.t.unidades_faltan - a.t.unidades_faltan || a.l.nombre.localeCompare(b.l.nombre);
             });
           html += '<h3 class="cierre-titulo">Los locales, del que más le faltan al que menos</h3><div class="desliza"><table class="tabla-datos testigo-ranking"><thead><tr>' +
-            '<th>Local</th><th>Con faltante</th><th class="n">Unidades que faltaron</th><th class="n col-sec">Con sobrante</th><th class="n col-sec">Productos</th><th class="n">Controles</th></tr></thead><tbody>' +
+            '<th>Local</th><th>Con faltante</th><th class="n col-sec">Unidades que faltaron</th><th class="n col-sec">Con sobrante</th><th class="n col-sec">Productos</th><th class="n">Controles</th></tr></thead><tbody>' +
             filas.map(function (x) {
               if (!x.t.controles) return '<tr class="sin-datos"><td><b>' + esc(x.l.nombre) + '</b></td><td colspan="5">Sin controles en el período</td></tr>';
               if (!x.t.productos) return '<tr data-tlocal="' + esc(x.l.id) + '" style="cursor:pointer"><td><b>' + esc(x.l.nombre) + '</b></td><td colspan="4">Ningún producto contado todavía</td>' +
                 '<td class="n">' + x.t.mandados + ' de ' + x.t.controles + (x.t.sin_mandar ? ' <span class="rojo">(' + x.t.sin_mandar + ' sin mandar)</span>' : '') + '</td></tr>';
               return '<tr data-tlocal="' + esc(x.l.id) + '" style="cursor:pointer"><td><b>' + esc(x.l.nombre) + '</b></td>' +
                 '<td><div class="barra-pct ' + claseFaltante(x.fr) + '"><i><s style="width:' + Math.round(100 * (x.fr || 0)) + '%"></s></i><b>' + textoPct(x.fr) + '</b></div></td>' +
-                '<td class="n">' + x.t.unidades_faltan + '</td><td class="n col-sec">' + textoPct(fraccion(x.t.con_sobrante, x.t.productos)) + '</td>' +
+                '<td class="n col-sec">' + x.t.unidades_faltan + '</td><td class="n col-sec">' + textoPct(fraccion(x.t.con_sobrante, x.t.productos)) + '</td>' +
                 '<td class="n col-sec">' + x.t.productos + '</td><td class="n">' + x.t.mandados + ' de ' + x.t.controles + (x.t.sin_mandar ? ' <span class="rojo">(' + x.t.sin_mandar + ' sin mandar)</span>' : '') + '</td></tr>';
             }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Tocá un local para ver sólo el suyo.</p>';
         }
@@ -1154,7 +1157,11 @@ function verTestigoStats() {
     if (pedido !== _pedidoTestigo || _solapa !== 'testigo' || _testigoVista !== 'stats') return;
     if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
     /* Sin señal: los botones de arriba quedan, con "Probar de nuevo". */
-    c.innerHTML = vistaTestigoHTML() + '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin conexión: no se pudieron traer las estadísticas.' : mensajeDe(e)) + '</div><button class="boton chico" id="reintentar">Probar de nuevo</button>';
+    var m = String(e && e.message || '');
+    c.innerHTML = vistaTestigoHTML() + '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin conexión: no se pudieron traer las estadísticas.'
+      : /permission denied/i.test(m) ? 'Tu usuario no tiene acceso a estas estadísticas.'
+      : /statement timeout|canceling statement/i.test(m) ? 'Tardó demasiado: probá con un período más corto o con un solo local.'
+      : mensajeDe(e)) + '</div><button class="boton chico" id="reintentar">Probar de nuevo</button>';
     enganchaVistaTestigo(c);
     document.getElementById('reintentar').onclick = verTestigoStats;
   });
