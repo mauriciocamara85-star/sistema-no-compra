@@ -1485,7 +1485,7 @@ function planReparto(d, tipo) {
   var secs = todos.filter(function (s) { return s.responsable_id; });
   if (!secs.length) secs = todos.slice();
   var mods = tipo === 'deposito' ? d.dep.slice().sort(function (a, b) { return a.numero - b.numero; })
-                                  : d.pared.slice().sort(function (a, b) { return a.numero - b.numero; }).concat(d.islas);
+                                  : d.pared.slice().sort(function (a, b) { return a.numero - b.numero; }).concat(d.islas.filter(function (m) { return !esVidriera(m); }));
   var k = secs.length, n = mods.length, base = k ? Math.floor(n / k) : 0, extra = k ? n % k : 0, desde = 0;
   return secs.map(function (s, i) {
     var cant = base + (i >= k - extra ? 1 : 0), suyos = mods.slice(desde, desde + cant);
@@ -1495,7 +1495,7 @@ function planReparto(d, tipo) {
 }
 
 function repartirParejo(d, tipo) {
-  var plan = planReparto(d, tipo), mods = tipo === 'deposito' ? d.dep : d.pared.concat(d.islas);
+  var plan = planReparto(d, tipo), mods = tipo === 'deposito' ? d.dep : d.pared.concat(d.islas.filter(function (m) { return !esVidriera(m); }));
   if (!plan.length || !mods.length) { avisar('No hay módulos para repartir.'); return; }
   var texto = plan.map(function (p) {
     var resp = d.persona[p.sector.responsable_id];

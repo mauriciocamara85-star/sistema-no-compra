@@ -266,6 +266,7 @@ function visorCaras(pl, r) {
 
 var _visorTodas = false;
 function visorColor(V, m) {
+  if (esVidriera(m)) return COLOR_VIDRIERA;
   var s = V.d.sectorDe[m.sector_id];
   return (s && V.d.color[m.sector_id]) || GRIS_SIN_RESPONSABLE;
 }
@@ -649,6 +650,7 @@ function visorCategoria(V, m) {
     x = dd == null ? VISOR_EDADES[4] : dd <= 1 ? VISOR_EDADES[0] : dd <= 4 ? VISOR_EDADES[1] : dd <= 7 ? VISOR_EDADES[2] : VISOR_EDADES[3];
     return { clave: 'c:' + x[0], texto: x[1], color: x[2] };
   }
+  if (esVidriera(m)) return { clave: 'p:turnos', texto: 'Vidriera (por turnos)', color: COLOR_VIDRIERA };
   var s = V.d.sectorDe[m.sector_id], p = s && s.responsable_id;
   return { clave: 'p:' + (p || 'nadie'), texto: p && V.d.persona[p] ? nombreLista(V.d.persona[p]) : 'Sin responsable', color: visorColor(V, m) };
 }
@@ -719,6 +721,7 @@ function textoHace(ts) {
 function visorDonde(V, m) {
   var it = (V.plano.items || []).filter(function (x) { return x.m && x.m.id === m.id; })[0];
   if (V.tab === 'deposito') return 'Depósito';
+  if (it && it.vidriera) return 'Vidriera';
   if (!it || !it.pared) return 'Adentro del salón';
   return { izquierda: 'Pared izquierda', fondo: 'Fondo', derecha: 'Pared derecha', frente: 'Frente' }[it.pared];
 }
@@ -747,7 +750,7 @@ function abrirFicha(V, id, caja) {
           (V.op.puedeSugerir && resp ? '<button class="cv-boton cv-lima" type="button" id="cvPedirFoto">Pedirle la foto a ' + esc(nombreLista(resp)) + '</button>' : resp ? '' : '<p>No tiene responsable: ' + esc(visorDondeAsignar(V)) + '.</p>') + '</div>') +
       (ref ? '<figure class="cv-foto cv-ref"><div class="cv-foto-img" id="cvFotoRef" data-amplia="ref"></div><figcaption><b>Así se arma en VDH</b></figcaption></figure>' : '') + '</div>' +
       '<div class="cv-datos">' + (e.nivel ? '<span class="cv-nivel nivel-' + esc(e.nivel) + '">' + esc(NIVEL[e.nivel] || e.nivel) + '</span>' : '') +
-        '<span class="cv-persona"><i style="background:' + visorColor(V, m) + '"></i>' + esc(resp ? nombreLista(resp) : 'Sin responsable') + (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '') + '</span>' +
+        '<span class="cv-persona"><i style="background:' + visorColor(V, m) + '"></i>' + (esVidriera(m) ? esc('Por turnos: ' + turnoVidrieraTexto(d)) : esc(resp ? nombreLista(resp) : 'Sin responsable') + (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '')) + '</span>' +
         '<span id="cvTareas"' + (+e.tareas_abiertas ? '' : ' hidden') + '>' + visorTextoTareas(e.tareas_abiertas) + '</span></div>' +
       '<div class="cv-ia" id="cvIa">' + (e.foto_path ? '<p class="cv-gris">Buscando lo que vio la IA…</p>' : '') + '</div>' +
       (V.op.puedeSugerir ? (resp

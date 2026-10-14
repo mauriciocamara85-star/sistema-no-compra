@@ -393,6 +393,8 @@ function llamarFuncion(nombre, cuerpo) {
 
 var COLORES_PERSONA = ['#4D9FFF', '#2FE38A', '#F0C66A', '#B38BFF', '#FF8A65', '#4DD0E1', '#F06292', '#AED581', '#FFD54F', '#90A4AE'];
 var GRIS_SIN_RESPONSABLE = '#BDB8AE';
+/** La vidriera es de todos (SQL 116, por turnos): su propio color, blanco cálido. */
+var COLOR_VIDRIERA = '#F1ECDF';
 var PAREDES = [['izquierda', 'Pared izquierda'], ['fondo', 'Fondo'], ['derecha', 'Pared derecha'], ['frente', 'Frente']];
 
 function nombreLista(p) { return p ? p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '') : ''; }
@@ -488,6 +490,16 @@ var NOMBRES_VIDRIERA = { 1: ['Vidriera'], 2: ['Vidriera izq.', 'Vidriera der.'] 
 function esNombreVidriera(n) { return /^vidriera( izq\.| der\.)?$/i.test(String(n || '').trim()); }
 function esVidriera(m) { return !!m && !!m.isla && esNombreVidriera(m.nombre); }
 /** "1–3, 5, Vidriera izq.": los números en rangos y después los nombres. */
+/** Entre quiénes rota la vidriera: los que tienen sectores del salón, en su orden ("Lautaro G., Seba y Nano"). */
+function turnoVidrieraTexto(d) {
+  var vistos = {}, nombres = [];
+  (d.salon || []).forEach(function (s) {
+    if (!s.responsable_id || vistos[s.responsable_id]) return;
+    vistos[s.responsable_id] = true;
+    nombres.push(nombreLista(d.persona[s.responsable_id]) || 'Alguien');
+  });
+  return nombres.length > 1 ? nombres.slice(0, -1).join(', ') + ' y ' + nombres[nombres.length - 1] : nombres.join('') || 'Nadie todavía';
+}
 function rangosMixtos(l) {
   var nums = l.filter(function (x) { return typeof x === 'number'; }), otros = l.filter(function (x) { return x && typeof x !== 'number'; });
   return [nums.length ? rangos(nums) : ''].concat(otros).filter(Boolean).join(', ');
@@ -799,7 +811,7 @@ function dibujoPieza(tipo, r, texto, frente, attrs, op) {
 function cajaModulo(d, op, m, r, etiqueta, sub, lado) {
   var s = d.sectorDe[m.sector_id], resp = s && d.persona[s.responsable_id], dep = !!(s && s.tipo === 'deposito');
   var apagado = (op.resaltar && m.sector_id !== op.resaltar) || (op.mios && !op.mios[m.id]);
-  var color = d.color[m.sector_id] || GRIS_SIN_RESPONSABLE, parado = r.h > r.w;
+  var color = esVidriera(m) ? COLOR_VIDRIERA : d.color[m.sector_id] || GRIS_SIN_RESPONSABLE, parado = r.h > r.w;
   var out = '<g class="mapa-mod' + (op.marcas && op.marcas[m.id] ? ' con-marca' : '') + '" data-mod="' + esc(m.id) + '"' + (apagado ? ' opacity=".4"' : '') + '><title>' +
     esc(nombreModulo(m, s, d) + (resp ? ' · ' + nombreLista(resp) : ' · sin responsable')) + '</title>';
   /* El neón de quien lo tiene: la luz se derrama sobre el piso, del lado del salón (lo apagado, sin luz). */
@@ -1395,7 +1407,7 @@ function leyendaPersonas(d) {
     var ids = {}; secs.forEach(function (s) { ids[s.id] = true; });
     var nums = d.pared.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.numero; })
       .concat(d.islas.filter(function (m) { return ids[m.sector_id] && !esVidriera(m); }).map(function (m) { return numeroVista(d, m); }));
-    var islas = d.islas.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.nombre; });
+    var islas = d.islas.filter(function (m) { return ids[m.sector_id] && !esVidriera(m); }).map(function (m) { return m.nombre; });
     var numDep = d.dep.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.numero; });
     var cats = secs.filter(function (s) { return s.tipo === 'deposito' && s.nombre; }).map(function (s) { return s.nombre; });
     var deps = !numDep.length ? [] : depositoNumerado(d) ? ['Depósito ' + rangos(numDep) + (cats.length ? ' (' + cats.join(', ') + ')' : '')]
@@ -1405,6 +1417,11 @@ function leyendaPersonas(d) {
     return '<div class="mapa-sec"><i style="background:' + d.colorPersona[pid] + '"></i><span><b>' + esc(nombreLista(d.persona[pid]) || 'Alguien que ya no está') + '</b><small>' +
       esc((partes.join(' · ') || 'Sin módulos') + (cubre.length ? ' · lo cubre ' + cubre.join(', ') : '')) + '</small></span></div>';
   });
+  /* La vidriera: de todos, por turnos (un día de control a cada uno). */
+  if (d.islas.some(esVidriera)) {
+    lista.push('<div class="mapa-sec"><i style="background:' + COLOR_VIDRIERA + ';box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)"></i><span><b>Vidriera · por turnos</b><small>' +
+      esc(turnoVidrieraTexto(d) + ': un día de control a cada uno') + '</small></span></div>');
+  }
   var sin = d.salon.concat(d.deposito).filter(function (s) { return !s.responsable_id; });
   var sinMods = d.modulos.filter(function (m) { return sin.some(function (s) { return s.id === m.sector_id; }); });
   if (sinMods.length) {
