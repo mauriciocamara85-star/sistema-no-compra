@@ -865,9 +865,11 @@ function editor(cfg) {
    ════════════════════════════════════════════════════════════════════════ */
 
 var _semanaTestigo = null, _testigoVista = 'semana', _testigoPeriodo = 'mes', _testigoLocal = '';
-/* Las semanas para elegir: la que viene, ésta y las 25 de antes (medio año), de la más nueva a la más vieja. */
+/* Las semanas para elegir: las 9 que vienen (se programa hasta 60 días antes), ésta y las 25 de antes
+   (medio año), de la más nueva a la más vieja. */
 function semanasTestigo() {
-  var r = [sumarDias(lunesAR(), 7)];
+  var r = [];
+  for (var j = 9; j >= 1; j--) r.push(sumarDias(lunesAR(), 7 * j));
   for (var i = 0; i < 26; i++) r.push(sumarDias(lunesAR(), -7 * i));
   if (_semanaTestigo && r.indexOf(_semanaTestigo) < 0) { r.push(_semanaTestigo); r.sort().reverse(); }
   return r;
@@ -1027,86 +1029,92 @@ function periodosTestigo() {
   return [['mes', 'Este mes', [ms[0]]], ['pasado', 'El mes pasado', [ms[1]]], ['3m', 'Los últimos 3 meses', ms.slice(0, 3)], ['6m', 'Los últimos 6 meses', ms.slice(0, 6)]]
     .concat(ms.slice(2).map(function (m) { return ['m:' + m, nombreMes(m), [m]]; }));
 }
-function leerStats(ruta) {
-  return leer(ruta).then(function (x) { return { filas: x || [] }; }, function (e) {
-    if (e && !e.sinSesion && e.delServidor && /testigo_v_mes|testigo_v_productos|does not exist|schema cache|42P01|PGRST205/i.test(e.message || '')) return { filas: [], falta: true };
-    throw e;
-  });
-}
 function sumarTestigo(filas) {
   return filas.reduce(function (a, f) {
-    ['controles', 'mandados', 'sin_mandar', 'productos', 'con_faltante', 'con_sobrante', 'unidades_faltan', 'unidades_sobran'].forEach(function (k) { a[k] += Number(f[k] || 0); });
+    ['controles', 'mandados', 'sin_mandar', 'con_datos', 'productos', 'con_faltante', 'con_sobrante', 'unidades_faltan', 'unidades_sobran'].forEach(function (k) { a[k] += Number(f[k] || 0); });
     return a;
-  }, { controles: 0, mandados: 0, sin_mandar: 0, productos: 0, con_faltante: 0, con_sobrante: 0, unidades_faltan: 0, unidades_sobran: 0 });
+  }, { controles: 0, mandados: 0, sin_mandar: 0, con_datos: 0, productos: 0, con_faltante: 0, con_sobrante: 0, unidades_faltan: 0, unidades_sobran: 0 });
 }
-function claseFaltante(p) { return p == null ? '' : p === 0 ? 'pct-bien' : p < 20 ? 'pct-medio' : 'pct-mal'; }
-function textoPct(p) { return p == null ? '—' : p + '%'; }
+/* El % sin redondear (para ordenar) y cómo se muestra: "menos de 1 %" no es 0 %. */
+function fraccion(a, b) { return b ? a / b : null; }
+function textoPct(fr) { if (fr == null) return '—'; var p = Math.round(100 * fr); return fr > 0 && p === 0 ? '<1%' : p + '%'; }
+function claseFaltante(fr) { return fr == null ? '' : fr === 0 ? 'pct-bien' : fr < 0.2 ? 'pct-medio' : 'pct-mal'; }
 
+var _pedidoTestigo = 0;
 function verTestigoStats() {
-  var c = document.getElementById('cuerpo');
+  var c = document.getElementById('cuerpo'), pedido = ++_pedidoTestigo;
   var pers = periodosTestigo(), per = pers.filter(function (p) { return p[0] === _testigoPeriodo; })[0] || pers[0];
   var meses = per[2], ult6 = mesesAtras(6);
-  var todos = _locales.length > 1 && !_testigoLocal;
   if (_locales.length < 2) _testigoLocal = _local.id;
-  var mesesLeer = meses.concat(ult6).filter(function (m, i, a) { return a.indexOf(m) === i; });
-  Promise.all([
-    leerStats('/testigo_v_mes?select=*&mes=in.(' + mesesLeer.join(',') + ')'),
-    leerStats('/testigo_v_productos?select=*&mes=in.(' + meses.join(',') + ')' + (_testigoLocal ? '&local_id=eq.' + valor(_testigoLocal) : ''))
-  ]).then(function (r) {
-    if (_solapa !== 'testigo' || _testigoVista !== 'stats') return;
-    var nombre = {};
+  var todos = _locales.length > 1 && !_testigoLocal;
+  llamar('testigo_estadisticas', { p_meses: ult6, p_periodo: meses, p_local: _testigoLocal || null }).then(function (x) { return x || { meses: [], productos: [] }; }, function (e) {
+    if (e && !e.sinSesion && e.delServidor && /testigo_estadisticas|schema cache|PGRST202|does not exist/i.test(e.message || '')) return { falta: true, meses: [], productos: [] };
+    throw e;
+  }).then(function (r) {
+    /* Sólo la última que se pidió (si cambiaron el período dos veces seguidas). */
+    if (pedido !== _pedidoTestigo || _solapa !== 'testigo' || _testigoVista !== 'stats') return;
+    var nombre = {}, todosLos = _locales.slice();
     _locales.forEach(function (l) { nombre[l.id] = l.nombre; });
+    /* Un local dado de baja que tiene datos también entra (si no, los totales no cierran). */
+    (r.meses || []).forEach(function (f) {
+      if (!nombre[f.local_id]) { nombre[f.local_id] = (f.local_nombre || 'Otro local') + ' (de baja)'; todosLos.push({ id: f.local_id, nombre: nombre[f.local_id] }); }
+    });
     var delLocal = function (f) { return !_testigoLocal || f.local_id === _testigoLocal; };
-    var enPer = r[0].filas.filter(function (f) { return meses.indexOf(f.mes) > -1 && delLocal(f); });
-    var tot = sumarTestigo(enPer), pf = pct(tot.con_faltante, tot.productos);
+    var enPer = (r.meses || []).filter(function (f) { return meses.indexOf(f.mes) > -1 && delLocal(f); });
+    var tot = sumarTestigo(enPer), ff = fraccion(tot.con_faltante, tot.productos);
     var html = vistaTestigoHTML() +
       '<div class="testigo-filtros"><label class="campo"><span>Período</span><select class="imp-sel" id="tPeriodo">' + pers.map(function (p) {
         return '<option value="' + p[0] + '"' + (p[0] === per[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>';
       }).join('') + '</select></label>' +
-      (_locales.length > 1 ? '<label class="campo"><span>Local</span><select class="imp-sel" id="tLocal"><option value="">Todos los locales</option>' + _locales.map(function (l) {
+      (_locales.length > 1 ? '<label class="campo"><span>Local</span><select class="imp-sel" id="tLocal"><option value="">Todos los locales</option>' + todosLos.map(function (l) {
         return '<option value="' + esc(l.id) + '"' + (l.id === _testigoLocal ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
       }).join('') + '</select></label>' : '') + '</div>';
-    if (r[0].falta || r[1].falta) {
+    if (r.falta) {
       html += '<div class="nota">Para ver las estadísticas falta correr el SQL 117 en Supabase.</div>';
-    } else if (!tot.controles) {
-      html += '<div class="vacio">No hay controles de producto testigo en ' + esc(per[1].toLowerCase()) + (_testigoLocal ? ' en ' + esc(nombre[_testigoLocal] || 'este local') : '') + '.</div>';
     } else {
-      html += '<div class="numeros">' +
-        '<div class="numero"><span>Productos contados</span><b>' + tot.productos + '</b><span>en ' + tot.mandados + (tot.mandados === 1 ? ' control' : ' controles') + '</span></div>' +
-        '<div class="numero"><span>Con faltante</span><b>' + textoPct(pf) + '</b><span>' + tot.con_faltante + ' de ' + tot.productos + (tot.unidades_faltan ? ' · faltaron ' + tot.unidades_faltan + (tot.unidades_faltan === 1 ? ' unidad' : ' unidades') : '') + '</span></div>' +
-        '<div class="numero"><span>Con sobrante</span><b>' + textoPct(pct(tot.con_sobrante, tot.productos)) + '</b><span>' + tot.con_sobrante + ' de ' + tot.productos + '</span></div>' +
-        '<div class="numero"><span>Controles sin mandar</span><b>' + tot.sin_mandar + '</b><span>de ' + tot.controles + ' programados</span></div></div>';
+      if (!tot.controles) {
+        html += '<div class="vacio">No hay controles de producto testigo en ' + esc(per[1].toLowerCase()) + (_testigoLocal ? ' en ' + esc(nombre[_testigoLocal] || 'este local') : '') + '.</div>';
+      } else {
+        html += '<div class="numeros">' +
+          '<div class="numero"><span>Productos contados</span><b>' + tot.productos + '</b><span>en ' + tot.con_datos + (tot.con_datos === 1 ? ' control mandado' : ' controles mandados') + '</span></div>' +
+          '<div class="numero"><span>Con faltante</span><b>' + textoPct(ff) + '</b><span>' + tot.con_faltante + ' de ' + tot.productos + (tot.unidades_faltan ? ' · faltaron ' + tot.unidades_faltan + (tot.unidades_faltan === 1 ? ' unidad' : ' unidades') : '') + '</span></div>' +
+          '<div class="numero"><span>Con sobrante</span><b>' + textoPct(fraccion(tot.con_sobrante, tot.productos)) + '</b><span>' + tot.con_sobrante + ' de ' + tot.productos + '</span></div>' +
+          '<div class="numero"><span>Controles sin mandar</span><b>' + tot.sin_mandar + '</b><span>de ' + tot.controles + ' programados (ya pasó el día)</span></div></div>';
 
-      /* El ranking: los locales del período, del que más le faltan al que menos. */
-      if (todos) {
-        var porLocal = {};
-        enPer.forEach(function (f) { (porLocal[f.local_id] = porLocal[f.local_id] || []).push(f); });
-        var filas = _locales.map(function (l) {
-          var t = sumarTestigo(porLocal[l.id] || []);
-          return { l: l, t: t, p: pct(t.con_faltante, t.productos) };
-        }).sort(function (a, b) {
-          if ((a.p == null) !== (b.p == null)) return a.p == null ? 1 : -1;
-          return (b.p || 0) - (a.p || 0) || b.t.unidades_faltan - a.t.unidades_faltan || a.l.nombre.localeCompare(b.l.nombre);
-        });
-        html += '<h3 class="cierre-titulo">Los locales, del que más le faltan al que menos</h3><div class="desliza"><table class="tabla-datos testigo-ranking"><thead><tr>' +
-          '<th>Local</th><th>Con faltante</th><th class="n">Unidades que faltaron</th><th class="n">Con sobrante</th><th class="n">Productos</th><th class="n">Controles</th></tr></thead><tbody>' +
-          filas.map(function (x) {
-            if (!x.t.controles) return '<tr class="sin-datos"><td><b>' + esc(x.l.nombre) + '</b></td><td colspan="5">Sin controles en el período</td></tr>';
-            return '<tr data-tlocal="' + esc(x.l.id) + '" style="cursor:pointer"><td><b>' + esc(x.l.nombre) + '</b></td>' +
-              '<td><div class="barra-pct ' + claseFaltante(x.p) + '"><i><s style="width:' + (x.p || 0) + '%"></s></i><b>' + textoPct(x.p) + '</b></div></td>' +
-              '<td class="n">' + x.t.unidades_faltan + '</td><td class="n">' + textoPct(pct(x.t.con_sobrante, x.t.productos)) + '</td>' +
-              '<td class="n">' + x.t.productos + '</td><td class="n">' + x.t.mandados + ' de ' + x.t.controles + (x.t.sin_mandar ? ' <span class="rojo">(' + x.t.sin_mandar + ' sin mandar)</span>' : '') + '</td></tr>';
-          }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Tocá un local para ver sólo el suyo.</p>';
+        /* El ranking: los locales del período, del que más le faltan al que menos (por el % exacto). */
+        if (todos) {
+          var porLocal = {};
+          enPer.forEach(function (f) { (porLocal[f.local_id] = porLocal[f.local_id] || []).push(f); });
+          var filas = todosLos.map(function (l) {
+            var t = sumarTestigo(porLocal[l.id] || []);
+            return { l: l, t: t, fr: fraccion(t.con_faltante, t.productos) };
+          }).filter(function (x) { return x.t.controles || _locales.some(function (l) { return l.id === x.l.id; }); })
+            .sort(function (a, b) {
+              if ((a.fr == null) !== (b.fr == null)) return a.fr == null ? 1 : -1;
+              return (b.fr || 0) - (a.fr || 0) || b.t.unidades_faltan - a.t.unidades_faltan || a.l.nombre.localeCompare(b.l.nombre);
+            });
+          html += '<h3 class="cierre-titulo">Los locales, del que más le faltan al que menos</h3><div class="desliza"><table class="tabla-datos testigo-ranking"><thead><tr>' +
+            '<th>Local</th><th>Con faltante</th><th class="n">Unidades que faltaron</th><th class="n col-sec">Con sobrante</th><th class="n col-sec">Productos</th><th class="n">Controles</th></tr></thead><tbody>' +
+            filas.map(function (x) {
+              if (!x.t.controles) return '<tr class="sin-datos"><td><b>' + esc(x.l.nombre) + '</b></td><td colspan="5">Sin controles en el período</td></tr>';
+              if (!x.t.productos) return '<tr data-tlocal="' + esc(x.l.id) + '" style="cursor:pointer"><td><b>' + esc(x.l.nombre) + '</b></td><td colspan="4">Ningún producto contado todavía</td>' +
+                '<td class="n">' + x.t.mandados + ' de ' + x.t.controles + (x.t.sin_mandar ? ' <span class="rojo">(' + x.t.sin_mandar + ' sin mandar)</span>' : '') + '</td></tr>';
+              return '<tr data-tlocal="' + esc(x.l.id) + '" style="cursor:pointer"><td><b>' + esc(x.l.nombre) + '</b></td>' +
+                '<td><div class="barra-pct ' + claseFaltante(x.fr) + '"><i><s style="width:' + Math.round(100 * (x.fr || 0)) + '%"></s></i><b>' + textoPct(x.fr) + '</b></div></td>' +
+                '<td class="n">' + x.t.unidades_faltan + '</td><td class="n col-sec">' + textoPct(fraccion(x.t.con_sobrante, x.t.productos)) + '</td>' +
+                '<td class="n col-sec">' + x.t.productos + '</td><td class="n">' + x.t.mandados + ' de ' + x.t.controles + (x.t.sin_mandar ? ' <span class="rojo">(' + x.t.sin_mandar + ' sin mandar)</span>' : '') + '</td></tr>';
+            }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Tocá un local para ver sólo el suyo.</p>';
+        }
       }
 
-      /* Mes a mes: el % con faltante de los últimos 6 meses. */
+      /* Mes a mes: el % con faltante de los últimos 6 meses (aunque el período elegido no tenga controles). */
       var ascen = ult6.slice().reverse(), porLM = {};
-      r[0].filas.forEach(function (f) { porLM[f.local_id + '|' + f.mes] = f; });
-      var locMes = _locales.filter(function (l) { return delLocal({ local_id: l.id }) && ascen.some(function (m) { return porLM[l.id + '|' + m]; }); });
+      (r.meses || []).forEach(function (f) { porLM[f.local_id + '|' + f.mes] = f; });
+      var locMes = todosLos.filter(function (l) { return delLocal({ local_id: l.id }) && ascen.some(function (m) { return porLM[l.id + '|' + m]; }); });
       if (locMes.length) {
         var celda = function (fs) {
-          var t = sumarTestigo(fs), p = pct(t.con_faltante, t.productos);
-          return '<td class="n ' + claseFaltante(p) + '">' + textoPct(p) + '</td>';
+          var t = sumarTestigo(fs), fr = fraccion(t.con_faltante, t.productos);
+          return '<td class="n ' + claseFaltante(fr) + '">' + textoPct(fr) + '</td>';
         };
         html += '<h3 class="cierre-titulo">Mes a mes (% con faltante)</h3><div class="desliza"><table class="tabla-datos testigo-meses"><thead><tr><th>Local</th>' +
           ascen.map(function (m) { return '<th class="n">' + esc(nombreMes(m).replace(/ \d{4}$/, '')) + '</th>'; }).join('') + '</tr></thead><tbody>' +
@@ -1114,26 +1122,21 @@ function verTestigoStats() {
             return '<tr><td><b>' + esc(l.nombre) + '</b></td>' + ascen.map(function (m) { return celda(porLM[l.id + '|' + m] ? [porLM[l.id + '|' + m]] : []); }).join('') + '</tr>';
           }).join('') +
           (todos && locMes.length > 1 ? '<tr class="total"><td><b>Todos</b></td>' + ascen.map(function (m) {
-            return celda(r[0].filas.filter(function (f) { return f.mes === m; }));
+            return celda((r.meses || []).filter(function (f) { return f.mes === m; }));
           }).join('') + '</tr>' : '') + '</tbody></table></div>';
       }
 
-      /* Los productos que más faltan en el período. */
-      var prods = {};
-      r[1].filas.forEach(function (f) {
-        var k = String(f.producto || '').toLowerCase() + '|' + String(f.color || '').toLowerCase();
-        var x = prods[k] = prods[k] || { producto: f.producto, color: f.color, veces: 0, con_faltante: 0, unidades_faltan: 0 };
-        x.veces += Number(f.veces || 0); x.con_faltante += Number(f.con_faltante || 0); x.unidades_faltan += Number(f.unidades_faltan || 0);
-      });
-      var top = Object.keys(prods).map(function (k) { return prods[k]; }).filter(function (x) { return x.con_faltante > 0; })
-        .sort(function (a, b) { return b.con_faltante - a.con_faltante || b.unidades_faltan - a.unidades_faltan || String(a.producto).localeCompare(String(b.producto)); }).slice(0, 10);
-      html += '<h3 class="cierre-titulo">Los productos que más faltan</h3>' + (top.length
-        ? '<div class="desliza"><table class="tabla-datos testigo-productos"><thead><tr><th>Producto</th><th class="n">Veces con faltante</th><th class="n">Veces contado</th><th class="n">Unidades que faltaron</th></tr></thead><tbody>' +
-          top.map(function (x) {
-            return '<tr><td><b>' + esc(x.producto) + '</b>' + (x.color ? ' <span class="bajada-chica">' + esc(x.color) + '</span>' : '') + '</td><td class="n rojo">' + x.con_faltante + '</td><td class="n">' + x.veces + '</td><td class="n">' + x.unidades_faltan + '</td></tr>';
-          }).join('') + '</tbody></table></div>'
-        : '<div class="vacio">Ningún producto con faltante en ' + esc(per[1].toLowerCase()) + '.</div>');
-      html += '<p class="bajada" style="margin-top:8px">Con faltante: el stock del sistema es más de lo que se contó. Cuentan los productos con los dos números cargados.</p>';
+      /* Los productos que más faltan en el período (la base ya los manda ordenados, los 10 primeros). */
+      if (tot.controles) {
+        var top = r.productos || [];
+        html += '<h3 class="cierre-titulo">Los productos que más faltan</h3>' + (top.length
+          ? '<div class="desliza"><table class="tabla-datos testigo-productos"><thead><tr><th>Producto</th><th class="n">Veces con faltante</th><th class="n">Veces contado</th><th class="n">Unidades que faltaron</th></tr></thead><tbody>' +
+            top.map(function (x) {
+              return '<tr><td><b>' + esc(x.producto) + '</b>' + (x.color ? ' <span class="bajada-chica">' + esc(x.color) + '</span>' : '') + '</td><td class="n rojo">' + x.con_faltante + '</td><td class="n">' + x.veces + '</td><td class="n">' + x.unidades_faltan + '</td></tr>';
+            }).join('') + '</tbody></table></div>'
+          : '<div class="vacio">Ningún producto con faltante en ' + esc(per[1].toLowerCase()) + '.</div>');
+        html += '<p class="bajada" style="margin-top:8px">Con faltante: el stock del sistema es más de lo que se contó. Cuentan los productos de los controles mandados, con los dos números cargados.</p>';
+      }
       if (_testigoLocal && _locales.length > 1) html += '<div class="botones"><button class="boton chico" id="tVerSemanas">Ver las semanas de ' + esc(nombre[_testigoLocal] || 'este local') + '</button></div>';
     }
     c.innerHTML = html;
@@ -1142,8 +1145,19 @@ function verTestigoStats() {
     if (sp) sp.onchange = function () { _testigoPeriodo = sp.value; verTestigoStats(); };
     if (sl) sl.onchange = function () { _testigoLocal = sl.value; verTestigoStats(); };
     c.querySelectorAll('[data-tlocal]').forEach(function (tr) { tr.onclick = function () { _testigoLocal = tr.dataset.tlocal; verTestigoStats(); }; });
-    if (vs) vs.onclick = function () { elegirLocal(_testigoLocal); _testigoVista = 'semana'; ir('testigo'); };
-  }).catch(function (e) { error(e, verTestigo); });
+    if (vs) vs.onclick = function () {
+      /* Un local de baja no está en la lista de arriba: se queda en el actual. */
+      if (_locales.some(function (l) { return l.id === _testigoLocal; })) elegirLocal(_testigoLocal);
+      _testigoVista = 'semana'; ir('testigo');
+    };
+  }).catch(function (e) {
+    if (pedido !== _pedidoTestigo || _solapa !== 'testigo' || _testigoVista !== 'stats') return;
+    if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+    /* Sin señal: los botones de arriba quedan, con "Probar de nuevo". */
+    c.innerHTML = vistaTestigoHTML() + '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin conexión: no se pudieron traer las estadísticas.' : mensajeDe(e)) + '</div><button class="boton chico" id="reintentar">Probar de nuevo</button>';
+    enganchaVistaTestigo(c);
+    document.getElementById('reintentar').onclick = verTestigoStats;
+  });
 }
 
 function verVideoTestigo(f) {
