@@ -10,9 +10,7 @@
    ════════════════════════════════════════════════════════════════════════ */
 
 var VISOR_INCL = 38;                 // grados de inclinación de la maqueta ("Desde arriba" es 0)
-var VISOR_ALTO = { pared: 58, deposito: 60, centro: 32, fijo: 34, muro: 34 };
-/* La ropa, con color (pedido de Mauricio: "más moderno, con más color"): azul francia, blanco, terracota, mostaza, verde, bordó, marino, celeste y camel. */
-var VISOR_ROPA = ['#2F5BB7', '#F3F0EA', '#C9573A', '#E0A93B', '#2E7D5B', '#8C2F45', '#1F2738', '#86B4DA', '#BF8F5F', '#5B4B9A'];
+var VISOR_ALTO = { pared: 58, deposito: 60, centro: 32, muro: 34 };
 
 /** Abre el modo observador adentro de cont (que ya ocupa toda la pantalla). op: { local: {id, nombre}, puedeSugerir,
     puedeNombrar, puedeEditar, alVolver(), alEditar(d), capa: {abrir(fn), soltar(fn)} } */
@@ -27,6 +25,8 @@ function abrirVisor(cont, op) {
   } catch (e) { V.liviano = false; }
   if (!VISOR_VISTAS[V.vista]) V.vista = 'vendedor';
   cont.innerHTML = '<div class="cv' + (V.liviano ? ' cv-liviano' : '') + (V.inclinado ? '' : ' cv-plano') + '">' +
+    /* La ropa (las mismas siluetas del mapa), una vez: cada prenda de la maqueta la usa. */
+    '<svg class="cv-sprite" aria-hidden="true" focusable="false"><defs>' + simbolosPrendas('cvR') + '</defs></svg>' +
     '<header class="cv-cab"><button class="cv-volver" id="volverMapa" type="button">‹ Volver</button>' +
       '<div class="cv-titulo"><small>Modo observador</small><b>' + esc(op.local.nombre || '') + '</b></div>' +
       '<div class="cv-cab-acc"><div class="cv-seg" id="cvTabs" role="group" aria-label="Qué mirar">' +
@@ -165,25 +165,60 @@ function visorCargar(V) {
 
 /* ── La maqueta ── */
 
-function visorSemilla(s) { var h = 0; s = String(s || ''); for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h; }
-/** La mercadería vista desde arriba (como en la foto de referencia): en las paredes, la ropa colgada de un caño, en
-    tandas del mismo color; adentro, prendas dobladas en pilas sobre la mesa; en el depósito, cajas en estantes. */
-function visorMercaderia(id, vertical, clase) {
-  var s = visorSemilla(id), partes = [], x = 0, i, c;
-  if (clase === 'doblada' || clase === 'cajas') {
-    var tonos = [];
-    for (i = 0; i < 4; i++) tonos.push((clase === 'cajas' ? ['#B98E5E', '#A87E52', '#C7A274', '#9C7449'] : VISOR_ROPA)[(s + i * 3) % (clase === 'cajas' ? 4 : VISOR_ROPA.length)] + ' ' + (i * 25) + '% ' + ((i + 1) * 25) + '%');
-    var junta = clase === 'cajas' ? '#5A4231' : '#5C3F2C';
-    return 'repeating-linear-gradient(90deg, transparent 0 13px, ' + junta + ' 13px 16px), repeating-linear-gradient(0deg, transparent 0 11px, ' + junta + ' 11px 14px), linear-gradient(' + (vertical ? 180 : 90) + 'deg,' + tonos.join(',') + ')';
+/** Un dibujo del mapa (en sus coordenadas) puesto sobre un lugar r: la tapa de un mueble o algo sobre el piso. */
+function visorSvg(r, contenido, clase) {
+  return '<svg class="' + (clase || 'cv-svg') + '" viewBox="' + [r.x, r.y, r.w, r.h].map(n1).join(' ') + '" preserveAspectRatio="none" aria-hidden="true" focusable="false">' + contenido + '</svg>';
+}
+function visorLugar(r) { return 'left:' + n1(r.x) + 'px;top:' + n1(r.y) + 'px;width:' + n1(r.w) + 'px;height:' + n1(r.h) + 'px'; }
+/** El nombre de una pieza, parado de frente a quien mira (como el número de un módulo). */
+function visorNombrePieza(texto) { return texto ? '<div class="cv-rotulo cv-rotulo-pieza"><span>' + esc(texto) + '</span></div>' : ''; }
+
+/* ── Las piezas (lo que no es módulo), con volumen: arriba, el mismo dibujo del mapa ── */
+var VISOR_PIEZA_ALTO = { probador: 50, caja: 30, mesa: 20, perchero: 42, columna: 76, espejo: 64, banco: 12, otro: 34 };
+function visorPieza(pl, it) {
+  var r = it.r, k = it.pieza, caras = visorCaras(pl, r);
+  if (!k) return '<div class="cv-hueco" style="' + visorLugar(r) + '"></div>';
+  var p = PIEZAS[k] || PIEZAS.otro, texto = String(it.texto || '').trim(), propio = texto && texto.toLowerCase() !== p.nombre.toLowerCase();
+  var nombre = propio || k === 'probador' || k === 'caja' || k === 'escalera' || k === 'deposito' || k === 'otro' ? visorNombrePieza(propio ? texto : p.corto || p.nombre) : '';
+  var dibujo = visorSvg(r, dibujoPieza(k, r, texto, it.frente, '', { sinNombre: true }));
+  if (k === 'deposito') return '<div class="cv-piso-pieza" style="' + visorLugar(r) + '">' + dibujo + nombre + '</div>';
+  if (k === 'planta') return visorPlanta(r, caras) + (propio ? '<div class="cv-piso-pieza" style="' + visorLugar(r) + '">' + nombre + '</div>' : '');
+  if (k === 'maniqui') return visorManiqui(r, dibujo) + (propio ? '<div class="cv-piso-pieza" style="' + visorLugar(r) + '">' + nombre + '</div>' : '');
+  if (k === 'escalera') return visorEscalera(r, it.frente, caras, nombre);
+  return visorCaja(r, VISOR_PIEZA_ALTO[k] || 34, 'cv-fijo cv-pz-' + k, 'data-frente="' + (it.frente || 's') + '"', null, dibujo, nombre, '', caras);
+}
+/** Una planta: la maceta y las hojas, en capas (desde arriba se ve la copa; inclinada, con volumen). */
+function visorPlanta(r, caras) {
+  var m = Math.min(r.w, r.h), cx = r.x + r.w / 2, cy = r.y + r.h / 2, s = m * 0.6;
+  return visorCaja({ x: cx - s / 2, y: cy - s / 2, w: s, h: s }, 14, 'cv-fijo cv-pz-maceta', '', null, '', '', '', caras) +
+    [[1.08, 20, 0, 0], [0.88, 29, -0.07, -0.05], [0.6, 37, 0.05, -0.09]].map(function (h) {
+      var d = m * h[0];
+      return '<div class="cv-hoja" style="left:' + n1(cx - d / 2 + h[2] * m) + 'px;top:' + n1(cy - d / 2 + h[3] * m) + 'px;width:' + n1(d) + 'px;height:' + n1(d) + 'px;transform:translateZ(' + h[1] + 'px)"></div>';
+    }).join('');
+}
+/** Un maniquí: parado de frente (con una remera de color); desde arriba se ve el dibujo del mapa en el piso. */
+function visorManiqui(r, dibujo) {
+  var m = Math.min(r.w, r.h), cx = r.x + r.w / 2, cy = r.y + r.h / 2, w = m * 1.05, h = m * 2.4;
+  var ropa = ROPA_COLORES[semillaDe('maniqui' + r.x + r.y) % ROPA_COLORES.length];
+  return '<div class="cv-piso-pieza cv-maniqui-piso" style="' + visorLugar(r) + '">' + dibujo + '</div>' +
+    '<div class="cv-parado" style="left:' + n1(cx - w / 2) + 'px;top:' + n1(cy - h) + 'px;width:' + n1(w) + 'px;height:' + n1(h) + 'px">' +
+    '<svg viewBox="0 0 40 100" preserveAspectRatio="xMidYMax meet" aria-hidden="true"><ellipse cx="20" cy="97" rx="12" ry="3" fill="#2F3237"/><rect x="19" y="60" width="2" height="37" fill="#8E949B"/>' +
+    '<path d="M7.6 40 8.4 57M32.4 40 31.6 57" stroke="#ECE7E0" stroke-width="3.2" stroke-linecap="round"/>' +
+    '<path d="M8 24Q20 19 32 24L34.6 39.6 29.4 41 28.6 60Q20 63 11.4 60L10.6 41 5.4 39.6Z" fill="' + ropa + '" stroke="rgba(0,0,0,.45)" stroke-width=".8" stroke-linejoin="round"/>' +
+    '<rect x="17.6" y="15" width="4.8" height="6.5" fill="#ECE7E0"/><ellipse cx="20" cy="10" rx="6" ry="7.4" fill="#F4F1EC" stroke="rgba(0,0,0,.3)" stroke-width=".6"/></svg></div>';
+}
+/** Una escalera: escalones que suben hacia el lado opuesto a su frente (como la flecha del mapa). */
+function visorEscalera(r, frente, caras, nombre) {
+  var n = 6, out = '';
+  for (var i = 0; i < n; i++) {
+    var f0 = i / n, f1 = (i + 1) / n, e;
+    if (frente === 'n') e = { x: r.x + r.w - f1 * r.w, y: r.y, w: r.w / n, h: r.h };
+    else if (frente === 'e') e = { x: r.x, y: r.y + r.h - f1 * r.h, w: r.w, h: r.h / n };
+    else if (frente === 'o') e = { x: r.x, y: r.y + f0 * r.h, w: r.w, h: r.h / n };
+    else e = { x: r.x + f0 * r.w, y: r.y, w: r.w / n, h: r.h };
+    out += visorCaja(e, 7 + i * 9, 'cv-fijo cv-pz-escalon', '', null, '', i === n - 1 ? nombre : '', '', caras);
   }
-  for (i = 0; i < 14; i++) {
-    c = VISOR_ROPA[(s + Math.floor(i / 2) * 5 + i) % VISOR_ROPA.length];
-    var n = 3 + ((s >> i) & 3);
-    for (var k = 0; k < n; k++) { partes.push(c + ' ' + x + 'px ' + (x + 4) + 'px', 'rgba(0,0,0,.42) ' + (x + 4) + 'px ' + (x + 5) + 'px'); x += 5; }
-  }
-  var caño = vertical ? 'linear-gradient(90deg, transparent calc(50% - 1px), #A9AEB4 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px))'
-                      : 'linear-gradient(0deg, transparent calc(50% - 1px), #A9AEB4 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px))';
-  return caño + ', repeating-linear-gradient(' + (vertical ? 180 : 90) + 'deg,' + partes.join(',') + ')';
+  return out;
 }
 /** Una caja con volumen: la tapa, sus caras y el halo en el piso. frente: qué cara mira al salón. caras: cuáles se
     dibujan ('snoe'): las que nunca quedan de frente a quien mira no se dibujan (cuestan en cada cuadro). */
@@ -226,7 +261,7 @@ function visorDibujar(V, ajustar) {
   V.mundo.style.width = pl.W + 'px';
   V.mundo.style.height = pl.H + 'px';
   /* El piso (cálido, de madera) y las paredes bajas, cortadas para ver adentro; el frente es vidriera. */
-  out += '<div class="cv-piso" style="left:' + pl.x0 + 'px;top:' + pl.y0 + 'px;width:' + (pl.x1 - pl.x0) + 'px;height:' + (pl.y1 - pl.y0) + 'px"></div>';
+  out += '<div class="cv-piso' + (pl.tipo === 'deposito' ? ' cv-piso-dep' : '') + '" style="left:' + pl.x0 + 'px;top:' + pl.y0 + 'px;width:' + (pl.x1 - pl.x0) + 'px;height:' + (pl.y1 - pl.y0) + 'px"></div>';
   var puerta = pl.items.filter(function (x) { return x.tipo === 'puerta'; })[0], g = 11, am = VISOR_ALTO.muro;
   /* De cada pared, la cara de adentro (la de afuera nunca se ve); del frente, también la de la vereda. */
   var adentro = { fondo: 's', izquierda: 'e', derecha: 'o', frente: 'ns' };
@@ -246,25 +281,22 @@ function visorDibujar(V, ajustar) {
   tramos('izquierda', pl.y0, pl.y1, pl.x0 - g, false, false);
   tramos('derecha', pl.y0, pl.y1, pl.x1, false, false);
   tramos('frente', pl.x0 - g, pl.x1 + g, pl.y1, true, pl.tipo === 'salon');
-  if (pl.tipo === 'salon') out += '<div class="cv-vereda" style="left:' + (pl.x0 - 30) + 'px;top:' + (pl.y1 + g) + 'px;width:' + (pl.x1 - pl.x0 + 60) + 'px;height:' + (pl.H - pl.y1 - g + 30) + 'px"><span>Vereda</span></div>';
+  if (pl.tipo === 'salon') out += '<div class="cv-vereda cv-frente-' + (FRENTES[pl.frente] ? pl.frente : 'calle') + '" style="left:' + (pl.x0 - 30) + 'px;top:' + (pl.y1 + g) + 'px;width:' + (pl.x1 - pl.x0 + 60) + 'px;height:' + (pl.H - pl.y1 - g + 30) + 'px"><span>' + esc((FRENTES[pl.frente] || FRENTES.calle).nombre) + '</span></div>';
   pl.items.forEach(function (it) {
     var r = it.r;
     if (it.tipo === 'puerta') {
-      out += '<div class="cv-entrada" style="left:' + r.x.toFixed(1) + 'px;top:' + r.y.toFixed(1) + 'px;width:' + r.w.toFixed(1) + 'px;height:' + r.h.toFixed(1) + 'px"><span>' + (pl.tipo === 'deposito' ? 'Puerta' : 'Entrada') + '</span></div>';
+      out += '<div class="cv-entrada" style="' + visorLugar(r) + '">' + visorSvg(r, dibujoPuerta({ r: r, pared: it.pared }, '', '', pl.tipo !== 'deposito', { sinNombre: true })) +
+        visorNombrePieza(pl.tipo === 'deposito' ? 'Puerta' : 'Entrada') + '</div>';
       return;
     }
-    if (it.tipo === 'fijo') {
-      if (!it.texto) { out += '<div class="cv-hueco" style="left:' + r.x.toFixed(1) + 'px;top:' + r.y.toFixed(1) + 'px;width:' + r.w.toFixed(1) + 'px;height:' + r.h.toFixed(1) + 'px"></div>'; return; }
-      out += visorCaja(r, VISOR_ALTO.fijo, 'cv-fijo', '', null, '<span class="cv-fijo-texto' + (r.h > r.w * 1.2 ? ' parado' : '') + '">' + esc(it.texto) + '</span>', '', '', visorCaras(pl, r));
-      return;
-    }
+    if (it.tipo === 'fijo') { out += visorPieza(pl, it); return; }
     var m = it.m, e = V.estado[m.id] || {}, alto = pl.tipo === 'deposito' ? VISOR_ALTO.deposito : it.pared ? VISOR_ALTO.pared : VISOR_ALTO.centro;
     /* La cara que mira al salón: la de los costados mira al medio; la del frente mira hacia adentro (de espaldas a
        quien mira la maqueta), así que esos llevan la foto arriba. */
     var frente = it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? null : 's';
     var numero = m.isla ? numeroVista(d, m) : m.numero, que = visorEtiqueta(m);
     var rotulo = '<div class="cv-rotulo"><b' + (e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '') + '>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
-    var tapa = '<div class="cv-merca" style="background:' + visorMercaderia(m.id, r.h > r.w, pl.tipo === 'deposito' ? 'cajas' : it.pared ? 'colgada' : 'doblada') + '"></div><div class="cv-foto-cara cv-foto-tapa"></div>';
+    var tapa = visorSvg(r, interiorModulo(d, m, r, 'cvR'), 'cv-merca') + '<div class="cv-foto-cara cv-foto-tapa"></div>';
     out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (frente ? '' : ' foto-arriba'),
       'data-mod="' + esc(m.id) + '" role="button" tabindex="0" aria-label="' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '"',
       frente || 'tapa', tapa, rotulo, visorCategoria(V, m).color, visorCaras(pl, r));

@@ -1340,7 +1340,7 @@ var LADOS_PARED = { izquierda: ['abajo', 'arriba'], fondo: ['a la izquierda', 'a
 function croquisEditable(cq, mods) {
   var e = { paredes: {}, puerta: Object.assign({}, cq.puerta) };
   VUELTA.forEach(function (w) {
-    e.paredes[w] = cq.paredes[w].map(function (l) { return esModuloLugar(l) ? { t: l, id: null } : { t: 'h', h: l.h || '' }; });
+    e.paredes[w] = cq.paredes[w].map(function (l) { return esModuloLugar(l) ? { t: l, id: null } : Object.assign({ t: 'h' }, lugarFijo(l)); });
   });
   var orden = ordenEditable(e), usados = {};
   mods.forEach(function (m) {
@@ -1352,9 +1352,15 @@ function croquisEditable(cq, mods) {
 /** El croquis editable como se guarda ('m', 'd', { h }). */
 function croquisGuardable(e) {
   var paredes = {};
-  VUELTA.forEach(function (w) { paredes[w] = e.paredes[w].map(function (l) { return l.t === 'h' ? { h: l.h } : l.t; }); });
+  VUELTA.forEach(function (w) { paredes[w] = e.paredes[w].map(function (l) { return l.t === 'h' ? lugarFijo(l) : l.t; }); });
   return { paredes: paredes, puerta: Object.assign({}, e.puerta) };
 }
+/** El dibujito de una pieza (para los botones y las listas del editor). */
+function iconoPieza(k) {
+  var t = tamanoPieza(k);
+  return '<svg class="pieza-ico" viewBox="0 0 ' + (t.w + 4) + ' ' + (t.h + 4) + '" aria-hidden="true" focusable="false">' + dibujoPieza(k, { x: 2, y: 2, w: t.w, h: t.h }, '', 's', '', { sinNombre: true }) + '</svg>';
+}
+var NOMBRE_FRENTE = { calle: 'La vereda (local de calle)', galeria: 'El pasillo de una galería', shopping: 'El pasillo de un shopping' };
 /** Los lugares con módulo, en el orden de los números. */
 function ordenEditable(e) {
   return ordenCroquis(croquisGuardable(e)).map(function (x) { return e.paredes[x.pared][x.i]; });
@@ -1402,10 +1408,13 @@ function editarMapa(d) {
   var fijos = (cqGuardado.fijos || []).map(function (x) { return Object.assign({}, x); });
 
   var f = ventana('<h1>El croquis del local</h1><p class="bajada">El local visto desde arriba, como lo ven los vendedores. ' +
-    '<b>Tocá un lugar de una pared</b> para cambiarlo: módulo, módulo doble, hueco o algo fijo (probadores, una columna). ' +
+    '<b>Tocá un lugar de una pared</b> para cambiarlo: módulo, módulo doble, hueco o algo que no es un módulo (probadores, la puerta del depósito, una columna). ' +
     'El 1 es el primero al lado de la entrada, hacia la izquierda, y sigue dando la vuelta. Cada módulo se queda en su lugar con su responsable y sus fotos: si cambia algo, cambia su número.</p>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
       '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
+      '<label class="campo c-medio"><span>Enfrente de la vidriera</span><select id="eFrente">' + Object.keys(NOMBRE_FRENTE).map(function (k) {
+        return '<option value="' + k + '"' + ((cqGuardado.frente || 'calle') === k ? ' selected' : '') + '>' + NOMBRE_FRENTE[k] + '</option>';
+      }).join('') + '</select></label>' +
       PAREDES.map(function (p) {
         return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" aria-label="Lugares en ' + esc(p[1]) + '"></label>';
       }).join('') + '</div>' +
@@ -1419,10 +1428,13 @@ function editarMapa(d) {
       'los que no movés van en fila por el medio, de la caja hacia la vidriera.</p>' +
     '<div class="imp-islas" id="eIslas"></div>' +
     '<button type="button" class="boton chico" id="eIslaMas">+ Agregar un módulo en el centro</button>' +
-    '<div class="seccion">Cosas fijas adentro</div>' +
-    '<p class="bajada">Un mostrador, una escalera, una columna: no son módulos (no llevan foto), están para ubicarse. Arrastralas en el dibujo.</p>' +
+    '<div class="seccion">Muebles y cosas del local</div>' +
+    '<p class="bajada">Los probadores, la caja, las mesas, los percheros, los maniquíes, las plantas: no son módulos (no llevan foto), están para que el croquis se parezca al local. ' +
+      '<b>Tocá una para agregarla</b> y arrastrala en el dibujo hasta donde está; "Girarla" la pone parada o acostada. El nombre es opcional.</p>' +
+    '<div class="imp-lugar-ops imp-piezas" id="ePiezas">' + PIEZAS_ADENTRO.map(function (k) {
+      return '<button type="button" class="boton chico" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
+    }).join('') + '</div>' +
     '<div class="imp-islas" id="eFijos"></div>' +
-    '<button type="button" class="boton chico" id="eFijoMas">+ Agregar algo fijo adentro</button>' +
     '<div class="seccion">Depósito</div>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma del depósito</span><select id="eFormaDep"><option value="rectangulo"' + (m.forma_deposito !== 'cuadrado' ? ' selected' : '') + '>Largo</option>' +
       '<option value="cuadrado"' + (m.forma_deposito === 'cuadrado' ? ' selected' : '') + '>Cuadrado</option></select></label>' +
@@ -1437,11 +1449,11 @@ function editarMapa(d) {
   /* ── Cambios en los lugares ── */
   function sacarModulo(tipo, l) { if (l.t !== 'h' && l.id) st.pila[tipo].push(l.id); }
   function moduloNuevo(tipo, t) { return { t: t || 'm', id: st.pila[tipo].length ? st.pila[tipo].pop() : null }; }
-  function ponerTipo(tipo, w, i, t, texto) {
+  function ponerTipo(tipo, w, i, t, texto, k) {
     var e = st[tipo], l = e.paredes[w][i];
     if (t === 'h') {
       if (l.t !== 'h') sacarModulo(tipo, l);
-      e.paredes[w][i] = { t: 'h', h: texto || '' };
+      e.paredes[w][i] = { t: 'h', h: texto || '', k: k || null, a: l.t === 'h' ? l.a : null };
     } else if (l.t === 'h') e.paredes[w][i] = moduloNuevo(tipo, t);
     else l.t = t;
   }
@@ -1483,7 +1495,8 @@ function editarMapa(d) {
     return c;
   }
   function croquisArmado() {
-    return { v: 1, salon: Object.assign(croquisGuardable(st.salon), { centro: centroMapa(), fijos: fijos.map(function (x) { return { nombre: x.nombre.trim(), x: x.x, y: x.y, vertical: !!x.vertical }; }) }),
+    return { v: 1, salon: Object.assign(croquisGuardable(st.salon), { centro: centroMapa(), frente: f.querySelector('#eFrente').value,
+               fijos: fijos.map(function (x) { return { nombre: x.nombre.trim(), tipo: x.tipo, x: x.x, y: x.y, vertical: !!x.vertical }; }) }),
              deposito: croquisGuardable(st.deposito) };
   }
   function mapaArmado() {
@@ -1544,9 +1557,10 @@ function editarMapa(d) {
     } else f.querySelectorAll('#eIslas .imp-isla b').forEach(function (b, k) { b.textContent = total + k + 1; });
     if (!hayFoco('#eFijos')) {
       f.querySelector('#eFijos').innerHTML = fijos.length ? fijos.map(function (x, k) {
-        return '<div class="imp-isla"><input maxlength="40" data-fijo-nombre="' + k + '" value="' + esc(x.nombre) + '" placeholder="Mostrador, escalera, columna…" aria-label="Qué es">' +
-          '<button type="button" class="boton chico" data-girar="' + k + '">Girarlo</button><button type="button" class="boton chico" data-sacar-fijo="' + k + '">Sacar</button></div>';
-      }).join('') : '<p class="bajada">Nada fijo adentro todavía.</p>';
+        return '<div class="imp-isla">' + iconoPieza(x.tipo) + '<input maxlength="40" data-fijo-nombre="' + k + '" value="' + esc(x.nombre) + '" placeholder="' +
+          esc(x.tipo === 'otro' ? 'Qué es (escribilo)' : PIEZAS[x.tipo].nombre + ' (nombre opcional)') + '" aria-label="' + esc(PIEZAS[x.tipo].nombre) + ': nombre">' +
+          '<button type="button" class="boton chico" data-girar="' + k + '">Girarla</button><button type="button" class="boton chico" data-sacar-fijo="' + k + '">Sacar</button></div>';
+      }).join('') : '<p class="bajada">Todavía no hay muebles adentro.</p>';
     }
   }
   function vista() {
@@ -1584,8 +1598,15 @@ function editarMapa(d) {
         '<button type="button" class="boton chico' + (l.t === 'm' ? ' lima' : '') + '" data-op="m">Módulo</button>' +
         '<button type="button" class="boton chico' + (l.t === 'd' ? ' lima' : '') + '" data-op="d">Módulo doble (el doble de ancho)</button>' +
         '<button type="button" class="boton chico' + (l.t === 'h' && !l.h ? ' lima' : '') + '" data-op="h">Hueco</button></div>' +
-      '<div class="renglon"><label class="campo c-grande"><span>Algo fijo, que no es un módulo</span><input id="lFijo" maxlength="40" value="' + esc(l.t === 'h' ? l.h : '') + '" placeholder="Probadores, columna, puerta del depósito…"></label>' +
+      '<div class="seccion">O algo que no es un módulo</div><div class="imp-lugar-ops imp-piezas">' + PIEZAS_PARED.map(function (k) {
+        var es = l.t === 'h' && (l.h || l.k) && (l.k || tipoPieza(l.h)) === k;
+        return '<button type="button" class="boton chico' + (es ? ' lima' : '') + '" data-op="p:' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
+      }).join('') + '</div>' +
+      '<div class="renglon"><label class="campo c-grande"><span>Otra cosa (escribí qué es)</span><input id="lFijo" maxlength="40" value="' + esc(l.t === 'h' && !l.k ? l.h : '') + '" placeholder="Baño, matafuegos, un exhibidor fijo…"></label>' +
         '<button type="button" class="boton chico" data-op="f">Poner esto</button></div>' +
+      (l.t === 'h' && (l.h || l.k) ? '<div class="imp-lugar-ops"><span class="bajada" style="margin:0;align-self:center">Ocupa</span>' + [1, 2, 3].map(function (a) {
+        return '<button type="button" class="boton chico' + ((l.a || 1) === a ? ' lima' : '') + '" data-op="a:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>';
+      }).join('') + '</div>' : '') +
       '<div class="seccion">Agregar o sacar</div><div class="imp-lugar-ops">' +
         '<button type="button" class="boton chico" data-op="antes">+ Un lugar ' + lados[0] + '</button>' +
         '<button type="button" class="boton chico" data-op="despues">+ Un lugar ' + lados[1] + '</button>' +
@@ -1596,9 +1617,11 @@ function editarMapa(d) {
         var op = b.dataset.op;
         if (op === 'f') {
           var t = g.querySelector('#lFijo').value.trim();
-          if (!t) { avisar('Escribí qué es (probadores, columna…) o elegí "Hueco".'); return; }
+          if (!t) { avisar('Escribí qué es (baño, matafuegos…) o elegí una de arriba.'); return; }
           ponerTipo(tipo, w, i, 'h', t);
-        } else if (op === 'antes' || op === 'despues') {
+        } else if (op.indexOf('p:') === 0) ponerTipo(tipo, w, i, 'h', PIEZAS[op.slice(2)].nombre, op.slice(2));
+        else if (op.indexOf('a:') === 0) { if (l.t === 'h') l.a = +op.slice(2) > 1 ? +op.slice(2) : null; }
+        else if (op === 'antes' || op === 'despues') {
           if (e.paredes[w].length >= 60) { avisar('Como mucho 60 lugares por pared.'); return; }
           agregarLugar(tipo, w, i, op === 'despues');
         } else if (op === 'sacar') sacarLugar(tipo, w, i);
@@ -1749,14 +1772,18 @@ function editarMapa(d) {
     else fijos.splice(+b.dataset.sacarFijo, 1);
     vista();
   });
-  f.querySelector('#eFijoMas').addEventListener('click', function () {
-    if (fijos.length >= 30) { avisar('Como mucho 30 cosas fijas.'); return; }
-    /* A un costado del medio: por el medio va la fila de los del centro. */
-    fijos.push({ nombre: 'Mostrador', x: 0.25, y: 0.5, vertical: false });
+  f.querySelector('#ePiezas').addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-pieza]');
+    if (!b) return;
+    if (fijos.length >= 30) { avisar('Como mucho 30 muebles adentro.'); return; }
+    /* A un costado del medio (por el medio va la fila de los del centro), una debajo de la otra, para que no se tapen. */
+    var k = fijos.length % 6;
+    fijos.push({ nombre: '', tipo: b.dataset.pieza, x: k % 2 ? 0.75 : 0.25, y: 0.2 + Math.floor(k / 2) * 0.25, vertical: false });
     vista();
-    var nuevo = listaF.querySelector('[data-fijo-nombre="' + (fijos.length - 1) + '"]');
-    if (nuevo) { nuevo.focus(); nuevo.select(); }
+    avisar(PIEZAS[b.dataset.pieza].nombre + ': ya está en el dibujo. Arrastrala hasta donde va.');
+    if (b.dataset.pieza === 'otro') { var nuevo = listaF.querySelector('[data-fijo-nombre="' + (fijos.length - 1) + '"]'); if (nuevo) nuevo.focus(); }
   });
+  f.querySelector('#eFrente').addEventListener('change', vista);
   vista();
 
   /* ── Guardar ── */
@@ -1772,7 +1799,7 @@ function editarMapa(d) {
       if (vistos[l]) { avisar('Hay dos en el centro que se llaman "' + nom + '": cambiale el nombre a uno.'); return; }
       vistos[l] = true;
     }
-    if (fijos.some(function (x) { return !x.nombre.trim(); })) { avisar('Hay una cosa fija adentro sin nombre: escribí qué es o sacala.'); return; }
+    if (fijos.some(function (x) { return x.tipo === 'otro' && !x.nombre.trim(); })) { avisar('Hay una "otra cosa" adentro sin nombre: escribí qué es o sacala.'); return; }
     /* Si sacás uno y le ponés su nombre a otro en la misma vez, la base no los distingue (van por nombre). */
     var choca = d.islas.filter(function (i) { return !centro.some(function (q) { return q.id === i.id; }) && vistos[i.nombre.trim().toLowerCase()]; })[0];
     if (choca) { avisar('"' + choca.nombre + '" lo estás sacando: guardá primero sin él y después usá ese nombre para otro.'); return; }
