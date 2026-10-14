@@ -625,7 +625,7 @@ function verCajas() {
   if (!_mes || meses.indexOf(_mes) < 0) _mes = hoyMes;
   /* Con "Todos los locales", el local de arriba no corresponde: se esconde. */
   var sel = document.getElementById('selLocal');
-  if (sel) sel.style.visibility = _cajasTodos && _locales.length > 1 ? 'hidden' : '';
+  if (sel) sel.style.display = _cajasTodos && _locales.length > 1 ? 'none' : '';
   if (_cajasTodos && _locales.length > 1) { verCajasTodos(meses); return; }
   var L = valor(_local.id);
   Promise.all([
@@ -864,13 +864,31 @@ function editor(cfg) {
    PRODUCTOS TESTIGO (SQL 102): se programa acá; lo cargan los locales en la app
    ════════════════════════════════════════════════════════════════════════ */
 
-var _semanaTestigo = null;
+var _semanaTestigo = null, _testigoVista = 'semana', _testigoPeriodo = 'mes', _testigoLocal = '';
+/* Las semanas para elegir: la que viene, ésta y las 25 de antes (medio año), de la más nueva a la más vieja. */
+function semanasTestigo() {
+  var r = [sumarDias(lunesAR(), 7)];
+  for (var i = 0; i < 26; i++) r.push(sumarDias(lunesAR(), -7 * i));
+  if (_semanaTestigo && r.indexOf(_semanaTestigo) < 0) { r.push(_semanaTestigo); r.sort().reverse(); }
+  return r;
+}
+/* Arriba de Productos testigo: "Por semana" o "Estadísticas". */
+function vistaTestigoHTML() {
+  return '<div class="solapas chicas testigo-vista"><button data-tvista="semana" class="' + (_testigoVista === 'semana' ? 'activa' : '') + '">Por semana</button>' +
+    '<button data-tvista="stats" class="' + (_testigoVista === 'stats' ? 'activa' : '') + '">Estadísticas</button></div>';
+}
+function enganchaVistaTestigo(c) {
+  c.querySelectorAll('[data-tvista]').forEach(function (b) { b.onclick = function () { _testigoVista = b.dataset.tvista; verTestigo(); }; });
+}
+
 function verTestigo() {
+  /* En las estadísticas el local se elige abajo (también "Todos"): el de arriba se esconde. */
+  var sel = document.getElementById('selLocal');
+  if (sel) sel.style.display = _testigoVista === 'stats' ? 'none' : '';
+  if (_testigoVista === 'stats') { verTestigoStats(); return; }
   _semanaTestigo = _semanaTestigo || lunesAR();
   var L = valor(_local.id), c = document.getElementById('cuerpo'), hoy = hoyAR();
-  var semanas = [sumarDias(lunesAR(), 7)];
-  for (var i = 0; i < 6; i++) semanas.push(sumarDias(lunesAR(), -7 * i));
-  if (semanas.indexOf(_semanaTestigo) < 0) semanas.unshift(_semanaTestigo);
+  var semanas = semanasTestigo();
   Promise.all([
     leer('/testigo_semanas?select=*&local_id=eq.' + L + '&semana=eq.' + _semanaTestigo),
     /* Cómo va esa semana en cada local (el supervisor sólo tiene el suyo). */
@@ -888,10 +906,21 @@ function verTestigo() {
 }
 
 function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
-  var html = (soloMira() ? '' : '<div class="imp-mapa-acc"><button class="boton chico lima" id="programar">Programar un control</button></div>') +
-    '<div class="solapas chicas">' + semanas.map(function (w) {
-      return '<button data-semana="' + w + '" class="' + (w === _semanaTestigo ? 'activa' : '') + '">Semana del ' + diaMes(w) + '</button>';
-    }).join('') + '</div>' +
+  /* Las semanas en un desplegable, agrupadas por mes, con ‹ › para ir de a una. */
+  var idx = semanas.indexOf(_semanaTestigo), grupos = [], esta = lunesAR(), viene = sumarDias(lunesAR(), 7);
+  semanas.forEach(function (w) {
+    var m = w.slice(0, 7), g = grupos[grupos.length - 1];
+    if (!g || g.m !== m) grupos.push(g = { m: m, ws: [] });
+    g.ws.push(w);
+  });
+  var html = vistaTestigoHTML() + (soloMira() ? '' : '<div class="imp-mapa-acc"><button class="boton chico lima" id="programar">Programar un control</button></div>') +
+    '<div class="testigo-semanas"><button class="boton chico" data-mover="1" aria-label="Semana anterior"' + (idx >= semanas.length - 1 ? ' disabled' : '') + '>‹</button>' +
+    '<select class="imp-sel" id="selSemana" aria-label="Semana">' + grupos.map(function (g) {
+      return '<optgroup label="' + esc(nombreMes(g.m)) + '">' + g.ws.map(function (w) {
+        return '<option value="' + w + '"' + (w === _semanaTestigo ? ' selected' : '') + '>Semana del ' + diaMes(w) + (w === esta ? ' (esta)' : w === viene ? ' (la que viene)' : '') + '</option>';
+      }).join('') + '</optgroup>';
+    }).join('') + '</select>' +
+    '<button class="boton chico" data-mover="-1" aria-label="Semana siguiente"' + (idx <= 0 ? ' disabled' : '') + '>›</button></div>' +
     '<p class="bajada">Los locales cargan los números del sistema y la cantidad real, con un video por producto. Diferencia = Stock sistema − Cantidad real (positivo: falta). ' +
     'Desvío = la diferencia sobre la cantidad enviada. Acá se puede corregir cualquier casillero.</p>';
 
@@ -934,7 +963,12 @@ function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
   }
   c.innerHTML = html;
 
-  c.querySelectorAll('[data-semana]').forEach(function (b) { b.onclick = function () { _semanaTestigo = b.dataset.semana; verTestigo(); }; });
+  enganchaVistaTestigo(c);
+  var ss = document.getElementById('selSemana');
+  if (ss) ss.onchange = function () { _semanaTestigo = ss.value; verTestigo(); };
+  c.querySelectorAll('[data-mover]').forEach(function (b) {
+    b.onclick = function () { var w = semanas[semanas.indexOf(_semanaTestigo) + Number(b.dataset.mover)]; if (w) { _semanaTestigo = w; verTestigo(); } };
+  });
   c.querySelectorAll('[data-local]').forEach(function (b) {
     b.onclick = function () { if (b.dataset.local !== _local.id) { elegirLocal(b.dataset.local); ir('testigo'); } };
   });
@@ -975,6 +1009,141 @@ function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
                       : escribir('/testigo_items', 'POST', { semana_id: sem.id, item: n, producto: 'Producto ' + n }))
       .then(function () { avisar('Agregado "Producto ' + n + '": cambiale el nombre y guardá.'); verTestigo(); });
   });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PRODUCTOS TESTIGO: ESTADÍSTICAS (SQL 117)
+   Qué locales tienen más productos con faltante, en %, por período.
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* Los últimos n meses ('AAAA-MM'), del actual para atrás. */
+function mesesAtras(n) {
+  var a = +hoyAR().slice(0, 4), m = +hoyAR().slice(5, 7), r = [];
+  for (var i = 0; i < n; i++) { r.push(a + '-' + (m < 10 ? '0' : '') + m); m--; if (!m) { m = 12; a--; } }
+  return r;
+}
+function periodosTestigo() {
+  var ms = mesesAtras(12);
+  return [['mes', 'Este mes', [ms[0]]], ['pasado', 'El mes pasado', [ms[1]]], ['3m', 'Los últimos 3 meses', ms.slice(0, 3)], ['6m', 'Los últimos 6 meses', ms.slice(0, 6)]]
+    .concat(ms.slice(2).map(function (m) { return ['m:' + m, nombreMes(m), [m]]; }));
+}
+function leerStats(ruta) {
+  return leer(ruta).then(function (x) { return { filas: x || [] }; }, function (e) {
+    if (e && !e.sinSesion && e.delServidor && /testigo_v_mes|testigo_v_productos|does not exist|schema cache|42P01|PGRST205/i.test(e.message || '')) return { filas: [], falta: true };
+    throw e;
+  });
+}
+function sumarTestigo(filas) {
+  return filas.reduce(function (a, f) {
+    ['controles', 'mandados', 'sin_mandar', 'productos', 'con_faltante', 'con_sobrante', 'unidades_faltan', 'unidades_sobran'].forEach(function (k) { a[k] += Number(f[k] || 0); });
+    return a;
+  }, { controles: 0, mandados: 0, sin_mandar: 0, productos: 0, con_faltante: 0, con_sobrante: 0, unidades_faltan: 0, unidades_sobran: 0 });
+}
+function claseFaltante(p) { return p == null ? '' : p === 0 ? 'pct-bien' : p < 20 ? 'pct-medio' : 'pct-mal'; }
+function textoPct(p) { return p == null ? '—' : p + '%'; }
+
+function verTestigoStats() {
+  var c = document.getElementById('cuerpo');
+  var pers = periodosTestigo(), per = pers.filter(function (p) { return p[0] === _testigoPeriodo; })[0] || pers[0];
+  var meses = per[2], ult6 = mesesAtras(6);
+  var todos = _locales.length > 1 && !_testigoLocal;
+  if (_locales.length < 2) _testigoLocal = _local.id;
+  var mesesLeer = meses.concat(ult6).filter(function (m, i, a) { return a.indexOf(m) === i; });
+  Promise.all([
+    leerStats('/testigo_v_mes?select=*&mes=in.(' + mesesLeer.join(',') + ')'),
+    leerStats('/testigo_v_productos?select=*&mes=in.(' + meses.join(',') + ')' + (_testigoLocal ? '&local_id=eq.' + valor(_testigoLocal) : ''))
+  ]).then(function (r) {
+    if (_solapa !== 'testigo' || _testigoVista !== 'stats') return;
+    var nombre = {};
+    _locales.forEach(function (l) { nombre[l.id] = l.nombre; });
+    var delLocal = function (f) { return !_testigoLocal || f.local_id === _testigoLocal; };
+    var enPer = r[0].filas.filter(function (f) { return meses.indexOf(f.mes) > -1 && delLocal(f); });
+    var tot = sumarTestigo(enPer), pf = pct(tot.con_faltante, tot.productos);
+    var html = vistaTestigoHTML() +
+      '<div class="testigo-filtros"><label class="campo"><span>Período</span><select class="imp-sel" id="tPeriodo">' + pers.map(function (p) {
+        return '<option value="' + p[0] + '"' + (p[0] === per[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>';
+      }).join('') + '</select></label>' +
+      (_locales.length > 1 ? '<label class="campo"><span>Local</span><select class="imp-sel" id="tLocal"><option value="">Todos los locales</option>' + _locales.map(function (l) {
+        return '<option value="' + esc(l.id) + '"' + (l.id === _testigoLocal ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
+      }).join('') + '</select></label>' : '') + '</div>';
+    if (r[0].falta || r[1].falta) {
+      html += '<div class="nota">Para ver las estadísticas falta correr el SQL 117 en Supabase.</div>';
+    } else if (!tot.controles) {
+      html += '<div class="vacio">No hay controles de producto testigo en ' + esc(per[1].toLowerCase()) + (_testigoLocal ? ' en ' + esc(nombre[_testigoLocal] || 'este local') : '') + '.</div>';
+    } else {
+      html += '<div class="numeros">' +
+        '<div class="numero"><span>Productos contados</span><b>' + tot.productos + '</b><span>en ' + tot.mandados + (tot.mandados === 1 ? ' control' : ' controles') + '</span></div>' +
+        '<div class="numero"><span>Con faltante</span><b>' + textoPct(pf) + '</b><span>' + tot.con_faltante + ' de ' + tot.productos + (tot.unidades_faltan ? ' · faltaron ' + tot.unidades_faltan + (tot.unidades_faltan === 1 ? ' unidad' : ' unidades') : '') + '</span></div>' +
+        '<div class="numero"><span>Con sobrante</span><b>' + textoPct(pct(tot.con_sobrante, tot.productos)) + '</b><span>' + tot.con_sobrante + ' de ' + tot.productos + '</span></div>' +
+        '<div class="numero"><span>Controles sin mandar</span><b>' + tot.sin_mandar + '</b><span>de ' + tot.controles + ' programados</span></div></div>';
+
+      /* El ranking: los locales del período, del que más le faltan al que menos. */
+      if (todos) {
+        var porLocal = {};
+        enPer.forEach(function (f) { (porLocal[f.local_id] = porLocal[f.local_id] || []).push(f); });
+        var filas = _locales.map(function (l) {
+          var t = sumarTestigo(porLocal[l.id] || []);
+          return { l: l, t: t, p: pct(t.con_faltante, t.productos) };
+        }).sort(function (a, b) {
+          if ((a.p == null) !== (b.p == null)) return a.p == null ? 1 : -1;
+          return (b.p || 0) - (a.p || 0) || b.t.unidades_faltan - a.t.unidades_faltan || a.l.nombre.localeCompare(b.l.nombre);
+        });
+        html += '<h3 class="cierre-titulo">Los locales, del que más le faltan al que menos</h3><div class="desliza"><table class="tabla-datos testigo-ranking"><thead><tr>' +
+          '<th>Local</th><th>Con faltante</th><th class="n">Unidades que faltaron</th><th class="n">Con sobrante</th><th class="n">Productos</th><th class="n">Controles</th></tr></thead><tbody>' +
+          filas.map(function (x) {
+            if (!x.t.controles) return '<tr class="sin-datos"><td><b>' + esc(x.l.nombre) + '</b></td><td colspan="5">Sin controles en el período</td></tr>';
+            return '<tr data-tlocal="' + esc(x.l.id) + '" style="cursor:pointer"><td><b>' + esc(x.l.nombre) + '</b></td>' +
+              '<td><div class="barra-pct ' + claseFaltante(x.p) + '"><i><s style="width:' + (x.p || 0) + '%"></s></i><b>' + textoPct(x.p) + '</b></div></td>' +
+              '<td class="n">' + x.t.unidades_faltan + '</td><td class="n">' + textoPct(pct(x.t.con_sobrante, x.t.productos)) + '</td>' +
+              '<td class="n">' + x.t.productos + '</td><td class="n">' + x.t.mandados + ' de ' + x.t.controles + (x.t.sin_mandar ? ' <span class="rojo">(' + x.t.sin_mandar + ' sin mandar)</span>' : '') + '</td></tr>';
+          }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Tocá un local para ver sólo el suyo.</p>';
+      }
+
+      /* Mes a mes: el % con faltante de los últimos 6 meses. */
+      var ascen = ult6.slice().reverse(), porLM = {};
+      r[0].filas.forEach(function (f) { porLM[f.local_id + '|' + f.mes] = f; });
+      var locMes = _locales.filter(function (l) { return delLocal({ local_id: l.id }) && ascen.some(function (m) { return porLM[l.id + '|' + m]; }); });
+      if (locMes.length) {
+        var celda = function (fs) {
+          var t = sumarTestigo(fs), p = pct(t.con_faltante, t.productos);
+          return '<td class="n ' + claseFaltante(p) + '">' + textoPct(p) + '</td>';
+        };
+        html += '<h3 class="cierre-titulo">Mes a mes (% con faltante)</h3><div class="desliza"><table class="tabla-datos testigo-meses"><thead><tr><th>Local</th>' +
+          ascen.map(function (m) { return '<th class="n">' + esc(nombreMes(m).replace(/ \d{4}$/, '')) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+          locMes.map(function (l) {
+            return '<tr><td><b>' + esc(l.nombre) + '</b></td>' + ascen.map(function (m) { return celda(porLM[l.id + '|' + m] ? [porLM[l.id + '|' + m]] : []); }).join('') + '</tr>';
+          }).join('') +
+          (todos && locMes.length > 1 ? '<tr class="total"><td><b>Todos</b></td>' + ascen.map(function (m) {
+            return celda(r[0].filas.filter(function (f) { return f.mes === m; }));
+          }).join('') + '</tr>' : '') + '</tbody></table></div>';
+      }
+
+      /* Los productos que más faltan en el período. */
+      var prods = {};
+      r[1].filas.forEach(function (f) {
+        var k = String(f.producto || '').toLowerCase() + '|' + String(f.color || '').toLowerCase();
+        var x = prods[k] = prods[k] || { producto: f.producto, color: f.color, veces: 0, con_faltante: 0, unidades_faltan: 0 };
+        x.veces += Number(f.veces || 0); x.con_faltante += Number(f.con_faltante || 0); x.unidades_faltan += Number(f.unidades_faltan || 0);
+      });
+      var top = Object.keys(prods).map(function (k) { return prods[k]; }).filter(function (x) { return x.con_faltante > 0; })
+        .sort(function (a, b) { return b.con_faltante - a.con_faltante || b.unidades_faltan - a.unidades_faltan || String(a.producto).localeCompare(String(b.producto)); }).slice(0, 10);
+      html += '<h3 class="cierre-titulo">Los productos que más faltan</h3>' + (top.length
+        ? '<div class="desliza"><table class="tabla-datos testigo-productos"><thead><tr><th>Producto</th><th class="n">Veces con faltante</th><th class="n">Veces contado</th><th class="n">Unidades que faltaron</th></tr></thead><tbody>' +
+          top.map(function (x) {
+            return '<tr><td><b>' + esc(x.producto) + '</b>' + (x.color ? ' <span class="bajada-chica">' + esc(x.color) + '</span>' : '') + '</td><td class="n rojo">' + x.con_faltante + '</td><td class="n">' + x.veces + '</td><td class="n">' + x.unidades_faltan + '</td></tr>';
+          }).join('') + '</tbody></table></div>'
+        : '<div class="vacio">Ningún producto con faltante en ' + esc(per[1].toLowerCase()) + '.</div>');
+      html += '<p class="bajada" style="margin-top:8px">Con faltante: el stock del sistema es más de lo que se contó. Cuentan los productos con los dos números cargados.</p>';
+      if (_testigoLocal && _locales.length > 1) html += '<div class="botones"><button class="boton chico" id="tVerSemanas">Ver las semanas de ' + esc(nombre[_testigoLocal] || 'este local') + '</button></div>';
+    }
+    c.innerHTML = html;
+    enganchaVistaTestigo(c);
+    var sp = document.getElementById('tPeriodo'), sl = document.getElementById('tLocal'), vs = document.getElementById('tVerSemanas');
+    if (sp) sp.onchange = function () { _testigoPeriodo = sp.value; verTestigoStats(); };
+    if (sl) sl.onchange = function () { _testigoLocal = sl.value; verTestigoStats(); };
+    c.querySelectorAll('[data-tlocal]').forEach(function (tr) { tr.onclick = function () { _testigoLocal = tr.dataset.tlocal; verTestigoStats(); }; });
+    if (vs) vs.onclick = function () { elegirLocal(_testigoLocal); _testigoVista = 'semana'; ir('testigo'); };
+  }).catch(function (e) { error(e, verTestigo); });
 }
 
 function verVideoTestigo(f) {
