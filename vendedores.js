@@ -450,7 +450,7 @@ function pantallaPin(local, persona, extra) {
    Compra publicado todavía tiene el teclado de 4, y con el PIN de 6 no
    podría entrar ahí (la base sigue aceptando el de 4 mientras no lo cambie).
    Cuando la otra sesión publique su entrada de 6, se pone en false. */
-var PIN_SEIS_OPCIONAL = true;
+var PIN_SEIS_OPCIONAL = false;   // 14/10: la otra sesión publicó la entrada de 6 del No Compra (d0ca1f8)
 function pantallaCambiarPin(despues, actual, largoActual) {
   barra.hidden = true;
   app.className = 'app';
