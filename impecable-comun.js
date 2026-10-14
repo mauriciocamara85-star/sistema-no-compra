@@ -1047,13 +1047,23 @@ function dibujoPuerta(p, texto, attrs, doble, op) {
 }
 
 /** Dónde puede ir la puerta (para "Mover la puerta"): entre cada dos lugares y en las puntas de cada pared con lugares. */
+/** Un lugar de pared sin nada (ni nombre ni pieza): un hueco. */
+function lugarVacio(l) { return !!l && typeof l === 'object' && !l.k && !String(l.h || '').trim(); }
 function marcasPuerta(cq, geo, tipo) {
   var out = '';
+  var marca = function (x, y, dato) {
+    return '<g class="mapa-marca-puerta" data-hueco-puerta="' + dato + '"><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="13" fill="#C6F432" stroke="#111" stroke-width="1.5"/>' +
+      '<text x="' + x.toFixed(1) + '" y="' + (y + 5).toFixed(1) + '" text-anchor="middle" font-size="15" font-weight="800" fill="#111">+</text></g>';
+  };
   VUELTA.forEach(function (w) {
-    var ls = geo.lugares[w];
+    var ls = geo.lugares[w], lg = cq.paredes[w] || [];
     if (!ls.length) return;
     var t = geo.tramos[w], signo = t.hasta >= t.desde ? 1 : -1, G = geo.G;
+    /* En el medio de cada hueco: la entrada va ahí, en lugar del hueco. */
+    lg.forEach(function (l, i) { var r = ls[i]; if (r && lugarVacio(l)) out += marca(r.x + r.w / 2, r.y + r.h / 2, tipo + ':' + w + ':' + i + ':h'); });
     for (var p = 0; p <= ls.length; p++) {
+      /* Pegado a un hueco, no: la entrada quedaría con el hueco al lado. */
+      if (lugarVacio(lg[p - 1]) || lugarVacio(lg[p])) continue;
       var r = ls[Math.min(p, ls.length - 1)], fin = p === ls.length, x, y;
       if (t.horiz) {
         var empieza = signo > 0 ? r.x - G / 2 : r.x + r.w + G / 2, termina = signo > 0 ? r.x + r.w + G / 2 : r.x - G / 2;
@@ -1062,8 +1072,7 @@ function marcasPuerta(cq, geo, tipo) {
         var empiezaY = signo > 0 ? r.y - G / 2 : r.y + r.h + G / 2, terminaY = signo > 0 ? r.y + r.h + G / 2 : r.y - G / 2;
         y = fin ? terminaY : empiezaY; x = r.x + r.w / 2;
       }
-      out += '<g class="mapa-marca-puerta" data-hueco-puerta="' + tipo + ':' + w + ':' + p + '"><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="13" fill="#C6F432" stroke="#111" stroke-width="1.5"/>' +
-        '<text x="' + x.toFixed(1) + '" y="' + (y + 5).toFixed(1) + '" text-anchor="middle" font-size="15" font-weight="800" fill="#111">+</text></g>';
+      out += marca(x, y, tipo + ':' + w + ':' + p);
     }
   });
   return out;

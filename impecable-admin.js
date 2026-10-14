@@ -1410,6 +1410,7 @@ function editarMapa(d) {
   var f = ventana('<h1>El croquis del local</h1><p class="bajada">El local visto desde arriba, como lo ven los vendedores. ' +
     '<b>Tocá un lugar de una pared</b> para cambiarlo: módulo, módulo doble, hueco o algo que no es un módulo (probadores, la puerta del depósito, una columna). ' +
     '<b>Arrastralo</b> hasta otro lugar para cambiarlos de lugar (en el celular, mantenelo apretado un momento y movelo). ' +
+    '<b>Tocá la entrada</b> para elegir cuántos lugares ocupa o ponerla en otro lugar. ' +
     'El 1 es el primero al lado de la entrada, hacia la izquierda, y sigue dando la vuelta. Cada módulo se queda en su lugar con su responsable y sus fotos: si cambia algo, cambia su número.</p>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
       '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
@@ -1425,7 +1426,7 @@ function editarMapa(d) {
         return '<button type="button" class="boton chico" data-ancho-puerta="salon:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span>' +
       '<button type="button" class="boton chico" id="eAcomodar">Acomodar solos los del centro</button></div>' +
     '<p class="nota" id="eNotaCambiar" hidden>Tocá el lugar adonde va (de cualquier pared): los dos cambian de lugar. <button type="button" class="boton chico" id="eCancelarCambio" style="margin-left:6px">Cancelar</button></p>' +
-    '<p class="nota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada. El 1 queda al lado, hacia la izquierda. Para centrarla, dejá la misma cantidad de lugares de cada lado (si hace falta, que ocupe 2).</p>' +
+    '<p class="nota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada. Si tocás el de un hueco, la entrada lo ocupa. El 1 queda al lado, hacia la izquierda.</p>' +
     '<div class="imp-mapa-vista croquis" id="eVista"></div>' +
     '<div class="seccion">Módulos del centro del salón</div>' +
     '<p class="bajada">Exhibidores, mesas, percheros: uno por lugar, numerados a continuación de las paredes. <b>Arrastralos en el dibujo</b> para ponerlos donde están; ' +
@@ -1445,7 +1446,7 @@ function editarMapa(d) {
       '<label class="campo c-chico"><span>Módulos</span><input type="number" inputmode="numeric" min="0" max="40" id="eDep"></label>' +
       '<p class="bajada" style="flex:1 1 260px;margin:0">Dividilo en partes que entren en una foto cada una. Si cambiás la cantidad o la forma, los módulos se vuelven a acomodar alrededor (la puerta queda).</p></div>' +
     '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuertaDep">Mover la puerta del depósito</button>' +
-      '<span class="imp-ancho-puerta" id="eAnchoPuertaDep"><span>Ancho de la puerta</span>' + [1, 2].map(function (a) {
+      '<span class="imp-ancho-puerta" id="eAnchoPuertaDep"><span>Ancho de la puerta</span>' + [1, 2, 3].map(function (a) {
         return '<button type="button" class="boton chico" data-ancho-puerta="deposito:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span></div>' +
     '<p class="nota" id="eNotaPuertaDep" hidden>Tocá un <b>+</b> verde: ahí va la puerta del depósito.</p>' +
     '<div class="imp-mapa-vista croquis" id="eVistaDep"></div>' +
@@ -1652,6 +1653,42 @@ function editarMapa(d) {
     });
   }
 
+  /* ── El menú de la entrada (o de la puerta del depósito): cuántos lugares ocupa y moverla ── */
+  /** Lo que se puede sumar a la entrada: un hueco, o algo fijo que dice "entrada" o "puerta" (no la del depósito). */
+  function sumableAPuerta(l) { return !!l && l.t === 'h' && l.k !== 'deposito' && (lugarVacio(l) || (!l.k && /entrada|puerta/i.test(l.h || ''))); }
+  /** Lo de al lado de la puerta que se puede sumar, pasa a ser parte de ella (hasta 3 lugares). desdeCero: la puerta
+      recién puesta en un hueco toma su ancho (y el de los huecos pegados). */
+  function sumarALaPuerta(tipo, desdeCero) {
+    var e = st[tipo], p = e.puerta, lista = e.paredes[p.pared], a = desdeCero ? 0 : anchoPuerta(p);
+    while (sumableAPuerta(lista[p.pos]) && a + anchoLugar(lista[p.pos]) <= 3) a += anchoLugar(lista.splice(p.pos, 1)[0]);
+    while (p.pos > 0 && sumableAPuerta(lista[p.pos - 1]) && a + anchoLugar(lista[p.pos - 1]) <= 3) { a += anchoLugar(lista.splice(p.pos - 1, 1)[0]); p.pos--; }
+    p.a = a > 1 ? a : null;
+    ajustarPuerta(e);
+  }
+  function menuPuerta(tipo) {
+    var e = st[tipo], p = e.puerta, dep = tipo === 'deposito';
+    if (!p || p.virtual) return;
+    var a = anchoPuerta(p), lista = e.paredes[p.pared] || [];
+    var pegados = [lista[p.pos - 1], lista[p.pos]].filter(sumableAPuerta);
+    var g = ventana('<h1>' + (dep ? 'La puerta del depósito' : 'La entrada') + '</h1>' +
+      '<p class="bajada">El 1 es el módulo de al lado, hacia la izquierda.' + (dep ? '' : ' Para que quede en el medio, dejá la misma cantidad de lugares de cada lado y, si hace falta, que ocupe 2.') + '</p>' +
+      (pegados.length ? '<p class="nota">' + (lugarVacio(pegados[0]) ? 'Al lado de la entrada quedó un hueco.' : 'Al lado está <b>"' + esc(pegados[0].h) + '"</b>, cargado como algo fijo.') +
+        ' Si es parte de la entrada, sumalo: la entrada se agranda y no queda un espacio raro.</p>' +
+        '<div class="imp-lugar-ops"><button type="button" class="boton chico lima" data-op="sumar">Sumarlo a la entrada</button></div>' : '') +
+      '<div class="seccion">¿Cuántos lugares ocupa?</div><div class="imp-lugar-ops">' + [1, 2, 3].map(function (n) {
+        return '<button type="button" class="boton chico' + (n === a ? ' lima' : '') + '" data-op="a:' + n + '">' + n + (n === 1 ? ' lugar' : ' lugares') + '</button>';
+      }).join('') + '</div>' +
+      '<div class="seccion">Moverla</div><div class="imp-lugar-ops"><button type="button" class="boton chico" data-op="mover">Ponerla en otro lugar</button></div>');
+    g.querySelectorAll('[data-op]').forEach(function (b) {
+      b.onclick = function () {
+        if (b.dataset.op === 'mover') { st.mover = tipo; st.cambiar = null; }
+        else if (b.dataset.op === 'sumar') sumarALaPuerta(tipo, false);
+        else { var n = +b.dataset.op.slice(2); p.a = n > 1 ? n : null; }
+        g.remove(); vista();
+      };
+    });
+  }
+
   /* ── Tocar el dibujo ── */
   var soltadoEn = 0;
   function vistaDe(tipo) { return tipo === 'deposito' ? vistaD : vistaS; }
@@ -1673,10 +1710,12 @@ function editarMapa(d) {
     }
     if (t.dataset.huecoPuerta) {
       var p = t.dataset.huecoPuerta.split(':');
-      st[p[0]].puerta = { pared: p[1], pos: +p[2], a: anchoPuerta(st[p[0]].puerta) };
+      var anchoAntes = anchoPuerta(st[p[0]].puerta);
+      st[p[0]].puerta = { pared: p[1], pos: +p[2], a: p[3] === 'h' ? null : anchoAntes > 1 ? anchoAntes : null };
+      if (p[3] === 'h') sumarALaPuerta(p[0], true);
       st.mover = null; vista();
       avisar(p[0] === 'deposito' ? 'Listo: la puerta del depósito va ahí.' : 'Listo: la entrada va ahí. El 1 es el de al lado, hacia la izquierda.');
-    } else if (t.dataset.puerta) { st.mover = t.dataset.puerta; vista(); }
+    } else if (t.dataset.puerta) menuPuerta(t.dataset.puerta);
     else if (!st.mover) { var q = t.dataset.lugar.split(':'); menuLugar(q[0], q[1], +q[2]); }
   }
   vistaS.addEventListener('click', tocar);
