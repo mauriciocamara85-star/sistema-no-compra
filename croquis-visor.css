@@ -335,3 +335,4 @@
 .cv-recorriendo #cvRecorrer { display: none; }
 .cv-vidriera .cv-cara { background: #7B5741; }
 @media (max-width: 899px) { .cv-recorrer { bottom: 66px; } .cv-zoom-acc .cv-chico { min-height: 40px; padding: 0 12px; } }
+.cv-pz-mesalisa .cv-cara { background: #6A4A36; }

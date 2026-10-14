@@ -184,7 +184,7 @@ function visorLugar(r) { return 'left:' + n1(r.x) + 'px;top:' + n1(r.y) + 'px;wi
 function visorNombrePieza(texto) { return texto ? '<div class="cv-rotulo cv-rotulo-pieza"><span>' + esc(texto) + '</span></div>' : ''; }
 
 /* ── Las piezas (lo que no es módulo), con volumen: arriba, el mismo dibujo del mapa ── */
-var VISOR_PIEZA_ALTO = { probador: 50, caja: 30, mesa: 20, perchero: 42, columna: 76, espejo: 64, banco: 12, otro: 34 };
+var VISOR_PIEZA_ALTO = { probador: 50, caja: 30, mesa: 20, mesalisa: 22, perchero: 42, columna: 76, espejo: 64, banco: 12, otro: 34 };
 function visorPieza(pl, it) {
   var r = it.r, k = it.pieza, caras = visorCaras(pl, r);
   if (!k) return '<div class="cv-hueco" style="' + visorLugar(r) + '"></div>';

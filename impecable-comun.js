@@ -628,6 +628,7 @@ var PIEZAS = {
   probador: { nombre: 'Probadores', w: 78, h: 64 },
   caja: { nombre: 'Caja', w: 108, h: 40 },
   mesa: { nombre: 'Mesa', w: 96, h: 50 },
+  mesalisa: { nombre: 'Mesa lisa', w: 84, h: 44 },
   perchero: { nombre: 'Perchero', w: 104, h: 34 },
   maniqui: { nombre: 'Maniquí', w: 40, h: 40 },
   planta: { nombre: 'Planta', w: 40, h: 40 },
@@ -639,9 +640,9 @@ var PIEZAS = {
   otro: { nombre: 'Otra cosa', w: 110, h: 34 }
 };
 /** Las de adentro (en este orden en el editor) y las que van en un lugar de una pared. */
-var PIEZAS_ADENTRO = ['probador', 'caja', 'mesa', 'perchero', 'maniqui', 'planta', 'columna', 'escalera', 'espejo', 'banco', 'otro'];
+var PIEZAS_ADENTRO = ['probador', 'caja', 'mesa', 'mesalisa', 'perchero', 'maniqui', 'planta', 'columna', 'escalera', 'espejo', 'banco', 'otro'];
 var PIEZAS_PARED = ['probador', 'deposito', 'columna', 'escalera', 'espejo'];
-var PIEZAS_DEPOSITO = ['mesa', 'perchero', 'columna', 'escalera', 'banco', 'otro'];
+var PIEZAS_DEPOSITO = ['mesa', 'mesalisa', 'perchero', 'columna', 'escalera', 'banco', 'otro'];
 function piezaValida(k) { return Object.prototype.hasOwnProperty.call(PIEZAS, k) ? k : null; }
 /** El tipo por el nombre (las de antes no tenían tipo: "Mostrador" es la caja). */
 function tipoPieza(texto) {
@@ -657,6 +658,7 @@ function tipoPieza(texto) {
   if (/escaler/.test(t)) return 'escalera';
   if (/espejo/.test(t)) return 'espejo';
   if (/banco|sill[oó]n|puff|asiento/.test(t)) return 'banco';
+  if (/mesa lisa|mesa para (doblar|ordenar)/.test(t)) return 'mesalisa';
   if (/mesa|exhibidor/.test(t)) return 'mesa';
   return 'otro';
 }
@@ -769,6 +771,11 @@ function dibujoPieza(tipo, r, texto, frente, attrs, op) {
     g = '<g transform="' + m.t + '">' + g + '</g>';
   } else if (tipo === 'espejo') {
     g += rectSvg(0, 0, L, F, 2, 'fill="#B9D6E4" stroke="#C9CED4" stroke-width="1.6"') + '<path d="M' + n1(L * 0.18) + ' ' + n1(F - 1.5) + 'L' + n1(L * 0.32) + ' 1.5" stroke="rgba(255,255,255,.75)" stroke-width="1.2"/>';
+    g = '<g transform="' + m.t + '">' + g + '</g>';
+  } else if (tipo === 'mesalisa') {
+    /* La tabla sola: madera con sus vetas y el borde más oscuro. */
+    g += rectSvg(0, 0, L, F, 3, 'fill="#8A6449" stroke="#5E4130" stroke-width="1"') + rectSvg(2, 2, L - 4, F - 4, 2, 'fill="#9A7253"');
+    for (i = 1; i < 6; i++) g += '<path d="M3 ' + n1(F * i / 6) + 'Q' + n1(L * 0.35) + ' ' + n1(F * i / 6 + ((sem >> i) & 1 ? 1.4 : -1.4)) + ' ' + n1(L - 3) + ' ' + n1(F * i / 6) + '" fill="none" stroke="rgba(70,45,28,.22)" stroke-width=".7"/>';
     g = '<g transform="' + m.t + '">' + g + '</g>';
   } else if (tipo === 'banco') {
     g += rectSvg(0, 0, L, F, F * 0.45, 'fill="#7A4B33" stroke="#4E2F20" stroke-width="1"') + rectSvg(F * 0.4, F / 2 - 0.5, L - F * 0.8, 1, 0, 'fill="rgba(255,255,255,.25)"');
