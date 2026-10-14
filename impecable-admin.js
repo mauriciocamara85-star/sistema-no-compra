@@ -1173,6 +1173,7 @@ function dibujarMapaLocal() {
   var puede = !soloMira();
   if (!puede) _repartir = false;
   z.innerHTML = '<div class="seccion">El mapa del local</div><div class="imp-mapa">' +
+    (d.modulos.length ? '<div class="imp-mapa-acc"><button class="boton chico lima" id="btnObservador">Modo observador</button></div>' : '') +
     (puede ? '<div class="imp-mapa-acc"><button class="boton chico' + (_repartir ? ' lima' : '') + '" id="btnRepartir">' + (_repartir ? 'Listo, terminé' : 'Repartir y ponerles nombre') + '</button>' +
       (_repartir && d.pared.length + d.islas.length ? '<button class="boton chico" id="btnParejo">Repartir parejo el salón entre ' + planReparto(d).length + '</button>' : '') +
       (_repartir && d.dep.length > 1 && depositoNumerado(d) ? '<button class="boton chico" id="btnParejoDep">Repartir parejo el depósito entre ' + planReparto(d, 'deposito').length + '</button>' : '') +
@@ -1189,6 +1190,8 @@ function dibujarMapaLocal() {
   if (b) b.onclick = function () { _repartir = !_repartir; dibujarMapaLocal(); };
   b = document.getElementById('btnFormaMapa');
   if (b) b.onclick = function () { editarMapa(d); };
+  b = document.getElementById('btnObservador');
+  if (b) b.onclick = function () { abrirObservador(); };
   b = document.getElementById('btnParejo');
   if (b) unaVez(b, function () { return repartirParejo(d); });
   b = document.getElementById('btnParejoDep');
@@ -1200,6 +1203,20 @@ function dibujarMapaLocal() {
     };
   });
   if (_repartir) z.querySelectorAll('[data-sector]').forEach(function (s) { s.onclick = function () { elegirGenteAdmin(d, s.dataset.sector); }; });
+}
+
+/** El modo observador (croquis-visor.js), a pantalla completa arriba de la administración. "Armar el croquis" aplana
+    la maqueta y abre el editor. */
+function abrirObservador() {
+  var caja = document.createElement('div');
+  document.body.appendChild(caja);
+  var cerrar = function () { caja.remove(); };
+  var v = abrirVisor(caja, {
+    local: _local, puedeSugerir: !soloMira(), puedeNombrar: !soloMira(), puedeEditar: !soloMira(),
+    alVolver: cerrar,
+    alEditar: function (d) { cerrar(); editarMapa(d || _mapaLocal); }
+  });
+  v.raiz.style.zIndex = 55;   // arriba de la administración, abajo de las ventanas y del cartel
 }
 
 function recargarMapaLocal() {

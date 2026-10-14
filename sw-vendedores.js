@@ -19,6 +19,8 @@ const BASICOS = [
   './vendedores.html',
   './vendedores.js',
   './impecable-comun.js',
+  './croquis-visor.js',
+  './croquis-visor.css',
   './impecable.css',
   './datos.js',
   './vendedores.webmanifest',

@@ -787,6 +787,53 @@ function svgDeposito(d, op) {
   return '<svg class="mapa-svg deposito" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El depósito">' + out + p.svg + '</svg>';
 }
 
+/** El plano del salón o del depósito como datos, con la misma cuenta que svgMapa y svgDeposito (el modo
+    observador lo dibuja con volumen). items: { tipo: 'modulo'|'fijo'|'puerta', m, r: {x, y, w, h}, pared
+    ('izquierda'|'fondo'|'derecha'|'frente', o null si está adentro), texto, vertical }. */
+function planoMapa(d, tipo) {
+  var dep = tipo === 'deposito', mm = d.mapa || {}, W, H, x0, y0, x1, y1, P, G;
+  var cuadrado = dep ? mm.forma_deposito === 'cuadrado' : mm.forma === 'cuadrado';
+  if (dep) { W = 420; P = 64; G = 6; x0 = 12; y0 = 30; x1 = W - 12; y1 = y0 + (cuadrado ? W - 24 : 250); H = y1 + 12; }
+  else { W = cuadrado ? 600 : 520; H = cuadrado ? 560 : 700; P = 50; G = 5; x0 = 16; y0 = 16; x1 = W - 16; y1 = H - 16 - 28; }
+  var cq = croquisDe(d, tipo), geo = geometriaCroquis(cq, x0, y0, x1, y1, P, G);
+  var numerado = !dep || depositoNumerado(d);
+  var mods = dep ? (numerado ? d.dep : d.dep.map(function (m, i) { return Object.assign({}, m, { numero: i + 1 }); })) : d.pared;
+  var orden = ordenCroquis(cq), dueno = [], sobran = [], num = {}, items = [];
+  mods.forEach(function (m) { var k = m.numero - 1; if (k >= 0 && k < orden.length && !dueno[k]) dueno[k] = m; else sobran.push(m); });
+  orden.forEach(function (x, k) { num[x.pared + ':' + x.i] = k; });
+  VUELTA.forEach(function (w) {
+    cq.paredes[w].forEach(function (l, i) {
+      var r = geo.lugares[w][i];
+      if (!r) return;
+      if (esModuloLugar(l)) { var m = dueno[num[w + ':' + i]]; if (m) items.push({ tipo: 'modulo', m: m, r: r, pared: w, doble: l === 'd' }); }
+      else items.push({ tipo: 'fijo', r: r, pared: w, texto: l.h || '' });
+    });
+  });
+  if (geo.puerta) items.push({ tipo: 'puerta', r: geo.puerta.r, pared: geo.puerta.pared });
+  if (!dep) {
+    /* Lo de adentro, igual que dibujarCentro. */
+    var a = geo.adentro, mx = 14, ax0 = a.x0 + mx, ay0 = a.y0 + mx;
+    var aw = Math.max(40, a.x1 - a.x0 - 2 * mx), ah = Math.max(40, a.y1 - a.y0 - 2 * mx), libres = [];
+    (cq.fijos || []).forEach(function (f) {
+      var w = f.vertical ? 34 : 110, h = f.vertical ? 110 : 34, cx = ax0 + f.x * aw, cy = ay0 + f.y * ah;
+      items.push({ tipo: 'fijo', r: { x: cx - w / 2, y: cy - h / 2, w: w, h: h }, pared: null, texto: f.nombre || 'Fijo', vertical: f.vertical });
+    });
+    d.islas.forEach(function (m) {
+      var pos = (cq.centro || {})[String(m.nombre || '').toLowerCase()];
+      if (!pos) { libres.push(m); return; }
+      var cx = ax0 + pos.x * aw, cy = ay0 + pos.y * ah;
+      items.push({ tipo: 'modulo', m: m, r: { x: cx - 23, y: cy - 35, w: 46, h: 70 }, pared: null });
+    });
+    var fila = libres.concat(sobran);
+    if (fila.length) {
+      var iy0 = a.y0 + 14, iy1 = a.y1 - 14, paso = Math.max(20, (iy1 - iy0) / fila.length);
+      var alto = Math.max(16, Math.min(paso - 14, 96)), ancho = Math.min(46, alto / 1.35), medio = (a.x0 + a.x1) / 2;
+      fila.forEach(function (m, k) { items.push({ tipo: 'modulo', m: m, r: { x: medio - ancho / 2, y: iy0 + k * paso + (paso - alto) / 2, w: ancho, h: alto }, pared: null }); });
+    }
+  }
+  return { tipo: dep ? 'deposito' : 'salon', W: W, H: H, x0: x0, y0: y0, x1: x1, y1: y1, P: P, cuadrado: cuadrado, items: items, numerado: numerado };
+}
+
 /** Los módulos con nombre, enteros: en las paredes de costado se ven cortados ("Vidri…"). */
 function leyendaNombres(d) {
   var con = d.pared.concat(d.islas, d.dep).filter(function (m) { return m.isla || nombrePropio(m); });

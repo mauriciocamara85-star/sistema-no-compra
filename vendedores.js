@@ -2506,19 +2506,17 @@ else pantallaLocales();
    hacen en la administración, desde la computadora (pedido de Mauricio).
    ════════════════════════════════════════════════════════════════════════ */
 
+/* Desde el 13/10 es el modo observador (croquis-visor.js): el local con volumen, la foto de cada módulo, y tocándolo,
+   su vista de frente para dejarle una sugerencia al que lo tiene. Se arma y se reparte desde la computadora. */
 function pantallaMapa(loc) {
   apagarCamara();
   barra.hidden = true;
   app.className = 'app';
-  app.innerHTML = '<button class="enlace" id="volverMapa">‹ Volver a Equipo</button><h1>El mapa de ' + esc(loc.nombre) + '</h1>' +
-    '<p class="bajada">Quién tiene cada módulo y quién cubre. Se reparte desde la computadora: No Compra → Equipo VDH → Por local.</p><div id="mapaZona"><p class="cargando">Cargando…</p></div>';
-  document.getElementById('volverMapa').onclick = function () { irA('equipo'); };
-  cargarMapa(loc.id).then(function (d) {
-    var z = document.getElementById('mapaZona');
-    if (!z) return;
-    z.innerHTML = (d.aprox && d.pared.length ? '<div class="nota">Todavía no se armó el mapa de este local: los módulos están en las paredes a ojo.</div>' : '') +
-      (d.modulos.length ? '<div class="mapa-caja">' + svgMapa(d) + svgDeposito(d) + '</div>' + leyendaNombres(d) + leyendaPersonas(d) : '<div class="vacio">Este local todavía no tiene módulos cargados.</div>');
-  }).catch(function (e) { pantallaError(e, function () { pantallaMapa(loc); }); });
+  abrirVisor(app, {
+    local: loc, puedeSugerir: !soloMira(), puedeNombrar: !soloMira(), puedeEditar: false,
+    capa: { abrir: abrirCapa, soltar: soltarCapa },
+    alVolver: function () { irA('equipo'); }
+  });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
