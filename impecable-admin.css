@@ -328,3 +328,22 @@
 .pieza-fantasma { position: fixed; z-index: 200; width: 96px; pointer-events: none; transform: translate(-50%, -50%) scale(1.25); filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .45)); }
 .pieza-fantasma .pieza-ico { width: 96px; height: 64px; }
 .ventana .imp-mapa-vista.soltar-aca { border-color: #C6F432; border-style: solid; box-shadow: 0 0 0 3px rgba(198, 244, 50, .35); }
+
+/* ═══ Cajas: el cierre del mes (SQL 115) ═══════════════════════════════ */
+.imp .cajas-vista { margin-bottom: 8px; }
+.imp .cierre-mes { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--sombra); }
+.imp .cierre-cab { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; font-size: 15px; }
+.imp .cierre-obs { margin: 4px 0; font-size: 15px; font-weight: 600; color: var(--txt); }
+.imp .cierre-quien { margin: 4px 0 0; font-size: 13.5px; color: var(--txt-2); }
+.imp .cierre-mes .botones { margin-top: 10px; }
+.imp .solapas button .mes-ok { font-style: normal; font-weight: 800; color: var(--ok-txt); margin-left: 3px; }
+.imp .solapas button.activa .mes-ok { color: inherit; }
+.imp .solapas button .mes-falta { display: inline-block; width: 7px; height: 7px; margin-left: 6px; border-radius: 50%; background: var(--warn-txt); vertical-align: middle; }
+.ventana .cierre-medios { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; margin: 0 0 12px; }
+.ventana .cierre-medios > div { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font-size: 13px; color: var(--txt-2); }
+.ventana .cierre-medios b { font-size: 14px; color: var(--txt); }
+.ventana .rojo { color: var(--bad-txt); font-weight: 700; }
+.ventana .cierre-historia > div { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.ventana .cierre-historia > div:last-child { border-bottom: 0; }
+.ventana .cierre-historia span { margin-left: 8px; font-size: 13px; color: var(--txt-3); }
+.ventana .cierre-historia p { margin: 4px 0 0; font-size: 14px; }

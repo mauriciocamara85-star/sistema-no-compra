@@ -501,25 +501,149 @@ function verOrden() {
    CAJAS (como la planilla "Control Diario")
    ════════════════════════════════════════════════════════════════════════ */
 
-var _mes = null;
+var _mes = null, _cajasTodos = false;
+var NOMBRE_MES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+function nombreMes(m) { var n = NOMBRE_MES[+m.slice(5) - 1]; return n.charAt(0).toUpperCase() + n.slice(1) + ' ' + m.slice(0, 4); }
+/* Los últimos 6 meses ('AAAA-MM'), del actual para atrás, con la fecha de Argentina. */
+function mesesCajas() {
+  var a = +hoyAR().slice(0, 4), m = +hoyAR().slice(5, 7), r = [];
+  for (var i = 0; i < 6; i++) { r.push(a + '-' + (m < 10 ? '0' : '') + m); m--; if (!m) { m = 12; a--; } }
+  return r;
+}
+function mesSiguiente(mes) { var a = +mes.slice(0, 4), m = +mes.slice(5) + 1; if (m > 12) { m = 1; a++; } return a + '-' + (m < 10 ? '0' : '') + m; }
+/* Los cierres del mes (SQL 115). Si todavía no corrió, Cajas anda igual y lo dice. */
+function leerCierres(ruta) {
+  return leer(ruta).then(function (x) { return { filas: x || [] }; }, function (e) {
+    if (e && !e.sinSesion && e.delServidor && /orden_v_cajas_meses|does not exist|schema cache|42P01|PGRST205/i.test(e.message || '')) return { filas: [], falta: true };
+    throw e;
+  });
+}
+
+/* "Todo controlado y ok", o qué faltó o sobró y qué día (como la planilla). */
+var MEDIOS_CAJA = [['desvio_mp', 'Mercado Pago'], ['desvio_tarjeta', 'tarjeta'], ['desvio_gocuotas', 'Go Cuotas'], ['desvio_efectivo', 'efectivo']];
+function textoCierre(cajas, tot) {
+  var partes = [];
+  cajas.forEach(function (c) {
+    MEDIOS_CAJA.forEach(function (md) {
+      var v = Number(c[md[0]] || 0);
+      if (Math.abs(v) > 0.5) partes.push((v > 0 ? 'faltaron ' : 'sobraron ') + pesos(Math.abs(v)) + ' en ' + md[1] + ' el ' + diaMes(c.fecha));
+    });
+  });
+  if (partes.length > 8) partes = partes.slice(0, 8).concat(['y ' + (partes.length - 8) + ' diferencias más']);
+  var t = partes.length ? 'Todo controlado. ' + partes.join('; ').replace(/^./, function (x) { return x.toUpperCase(); }) + '.' : 'Todo controlado y ok';
+  var sin = Number(tot && tot.dias_sin_cargar || 0);
+  if (sin) t += (partes.length ? ' ' : '. ') + (sin === 1 ? 'Quedó 1 día' : 'Quedaron ' + sin + ' días') + ' sin cargar.';
+  return t;
+}
+
+/* La tarjeta del cierre, arriba de los días: en curso, falta cerrar, controlado o reabierto. */
+function tarjetaCierre(cierre, tot, terminado, falta115) {
+  if (falta115) return '<div class="nota">Para dar el mes por controlado falta correr el SQL 115 en Supabase.</div>';
+  if (!tot) return '';
+  var h = (cierre && cierre.historia) || [], ult = h[h.length - 1], cab, txt, botones = '';
+  if (cierre && cierre.estado === 'controlado') {
+    cab = '<span class="est listo">Controlado ✓</span>';
+    txt = '<p class="cierre-obs">' + esc(cierre.observacion) + '</p>' +
+      '<p class="cierre-quien">Lo cerró ' + esc(cierre.controlado_por_nombre || 'Administración') + ' el ' + esc(diaMes(cierre.controlado_en)) + ' a las ' + esc(hora(cierre.controlado_en)) + '. Los montos de esos días quedan trabados.</p>';
+    if (esAdmin()) botones = '<button class="boton chico" id="cajaReabrir">Reabrir el mes</button>';
+  } else if (!terminado) {
+    cab = '<span class="est">En curso</span>';
+    txt = '<p class="cierre-quien">Se da por controlado cuando termine el mes, desde el 1/' + Number(mesSiguiente(_mes).slice(5)) + '.</p>';
+  } else {
+    cab = '<span class="est sorpresa">Falta cerrar</span>';
+    txt = cierre && cierre.estado === 'reabierto' && ult
+      ? '<p class="cierre-quien">Lo reabrió ' + esc(ult.por || 'Administración') + ' el ' + esc(diaMes(ult.en)) + ': ' + esc(ult.texto) + '</p>'
+      : '<p class="cierre-quien">Revisá los totales y los días con diferencias, y dalo por controlado.</p>';
+    if (esAdmin()) botones = '<button class="boton lima chico" id="cajaCerrar">Dar el mes por controlado</button>';
+    else txt += '<p class="cierre-quien">Lo cierra Administración.</p>';
+  }
+  if (h.length > 1) botones += '<button class="boton chico" id="cajaHistoria">Ver la historia</button>';
+  return '<div class="cierre-mes"><div class="cierre-cab"><b>Cierre de ' + esc(nombreMes(_mes).toLowerCase()) + '</b>' + cab + '</div>' + txt +
+    (botones ? '<div class="botones">' + botones + '</div>' : '') + '</div>';
+}
+
+function resumenMedios(tot) {
+  return '<div class="cierre-medios">' + [['Mercado Pago', 'sis_mp', 'real_mp', 'desvio_mp'], ['Tarjeta', 'sis_tarjeta', 'real_lote', 'desvio_tarjeta'],
+    ['Go Cuotas', 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas'], ['Efectivo', 'sis_efectivo', 'real_efectivo', 'desvio_efectivo']].map(function (x) {
+    var d = Number(tot[x[3]] || 0);
+    return '<div><b>' + x[0] + '</b><span>Cierre ' + pesos(tot[x[1]]) + ' · real ' + pesos(tot[x[2]]) + '</span><span class="' + (Math.abs(d) > 0.5 ? 'rojo' : '') + '">Desvío ' + pesos(d) + '</span></div>';
+  }).join('') + '</div>';
+}
+
+/* "Dar el mes por controlado": la observación ya escrita, para corregir si hace falta. */
+function cerrarMesCaja(cajas, tot) {
+  var avisos = [];
+  var n = function (x, uno, varios) { x = Number(x || 0); return x + ' ' + (x === 1 ? uno : varios); };
+  if (tot.dias_sin_cargar) avisos.push(n(tot.dias_sin_cargar, 'día quedó sin cargar', 'días quedaron sin cargar') + ': se puede cerrar igual (ya no se pueden cargar) y la observación lo dice.');
+  if (tot.dias_sin_controlar) avisos.push(n(tot.dias_sin_controlar, 'día no lo marcó como controlado', 'días no los marcó como controlados') + ' el encargado.');
+  if (tot.dias_con_alertas) avisos.push(n(tot.dias_con_alertas, 'día tiene alertas', 'días tienen alertas') + ': tocalos en la tabla para ver qué pasó.');
+  var f = ventana('<h1>Dar ' + esc(nombreMes(_mes).toLowerCase()) + ' por controlado</h1>' +
+    '<p class="bajada">' + esc(_local.nombre) + '. Queda anotado a tu nombre, y los montos de esos días quedan trabados (si hace falta corregir algo, se reabre).</p>' +
+    resumenMedios(tot) +
+    (avisos.length ? '<div class="nota alerta">' + avisos.map(esc).join('<br>') + '</div>' : '') +
+    '<label class="campo"><span>Observación</span><textarea id="cmObs" rows="3" maxlength="600">' + esc(textoCierre(cajas, tot)) + '</textarea></label>' +
+    '<button class="boton lima" id="cmGuardar">Dar por controlado</button>');
+  unaVez(f.querySelector('#cmGuardar'), function () {
+    var obs = f.querySelector('#cmObs').value.trim();
+    if (!obs) { avisar('Escribí la observación (por ejemplo: "Todo controlado y ok").'); return; }
+    return llamar('orden_caja_mes_cerrar', { p_local: _local.id, p_mes: _mes, p_observacion: obs })
+      .then(function () { f.remove(); avisar(nombreMes(_mes) + ' quedó controlado.'); verCajas(); });
+  });
+}
+
+function reabrirMesCaja() {
+  var f = ventana('<h1>Reabrir ' + esc(nombreMes(_mes).toLowerCase()) + '</h1>' +
+    '<p class="bajada">' + esc(_local.nombre) + '. Los montos de esos días se pueden volver a cambiar hasta que lo des por controlado otra vez. Queda anotado quién lo reabrió y por qué.</p>' +
+    '<label class="campo"><span>¿Por qué se reabre?</span><textarea id="rmMot" rows="2" maxlength="600"></textarea></label>' +
+    '<button class="boton lima" id="rmGuardar">Reabrir el mes</button>');
+  unaVez(f.querySelector('#rmGuardar'), function () {
+    var mot = f.querySelector('#rmMot').value.trim();
+    if (!mot) { avisar('Contá por qué se reabre.'); return; }
+    return llamar('orden_caja_mes_reabrir', { p_local: _local.id, p_mes: _mes, p_motivo: mot })
+      .then(function () { f.remove(); avisar(nombreMes(_mes) + ' quedó abierto otra vez.'); verCajas(); });
+  });
+}
+
+function historiaMesCaja(cierre) {
+  ventana('<h1>Historia de ' + esc(nombreMes(_mes).toLowerCase()) + '</h1><p class="bajada">' + esc(_local.nombre) + '</p>' +
+    '<div class="cierre-historia">' + (cierre.historia || []).slice().reverse().map(function (x) {
+      return '<div><b>' + (x.que === 'reabierto' ? 'Reabierto' : 'Controlado') + '</b><span>' + esc((x.por || 'Administración') + ' · ' + diaMes(x.en) + ' ' + hora(x.en)) + '</span><p>' + esc(x.texto || '') + '</p></div>';
+    }).join('') + '</div>');
+}
+
 function verCajas() {
-  _mes = _mes || hoyAR().slice(0, 7);
+  var meses = mesesCajas(), hoyMes = meses[0];
+  if (!_mes || meses.indexOf(_mes) < 0) _mes = hoyMes;
+  /* Con "Todos los locales", el local de arriba no corresponde: se esconde. */
+  var sel = document.getElementById('selLocal');
+  if (sel) sel.style.visibility = _cajasTodos && _locales.length > 1 ? 'hidden' : '';
+  if (_cajasTodos && _locales.length > 1) { verCajasTodos(meses); return; }
   var L = valor(_local.id);
   Promise.all([
     leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&mes=eq.' + _mes + '&order=fecha.asc'),
-    leer('/orden_v_cajas_mes?select=*&local_id=eq.' + L + '&mes=eq.' + _mes),
-    leer('/orden_config?select=caja_activa&local_id=eq.' + L)
+    leer('/orden_v_cajas_mes?select=*&local_id=eq.' + L + '&mes=in.(' + meses.join(',') + ')'),
+    leer('/orden_config?select=caja_activa&local_id=eq.' + L),
+    leerCierres('/orden_v_cajas_meses?select=*&local_id=eq.' + L + '&mes=in.(' + meses.join(',') + ')')
   ]).then(function (r) {
-    if (_solapa !== 'cajas') return;
-    var cajas = r[0] || [], tot = (r[1] || [])[0], activa = !!(r[2] && r[2][0] && r[2][0].caja_activa);
-    var meses = [];
-    for (var i = 0; i < 6; i++) { var d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - i); meses.push(d.toISOString().slice(0, 7)); }
+    if (_solapa !== 'cajas' || _cajasTodos) return;
+    var cajas = r[0] || [], porMes = {}, activa = !!(r[2] && r[2][0] && r[2][0].caja_activa), cierres = {};
+    (r[1] || []).forEach(function (x) { porMes[x.mes] = x; });
+    r[3].filas.forEach(function (x) { cierres[x.mes] = x; });
+    var tot = porMes[_mes], cierre = cierres[_mes], terminado = _mes < hoyMes;
     var col = function (c, s, rl, dv) {
       return '<td class="n">' + pesos(c[s]) + '</td><td class="n">' + pesos(c[rl]) + '</td><td class="n' + (Math.abs(Number(c[dv] || 0)) > 0.5 ? ' rojo' : '') + '">' + pesos(c[dv]) + '</td>';
     };
+    /* La marca de cada mes: ✓ controlado; un punto si terminó, tiene cajas y falta cerrarlo. */
+    var marca = function (m) {
+      if (cierres[m] && cierres[m].estado === 'controlado') return ' <i class="mes-ok" title="Controlado">✓</i>';
+      if (m < hoyMes && porMes[m] && !r[3].falta) return ' <i class="mes-falta" title="Falta cerrar"></i>';
+      return '';
+    };
     var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → Horarios y funciones).</div>') +
-      '<div class="solapas chicas">' + meses.map(function (m) { return '<button data-mes="' + m + '" class="' + (m === _mes ? 'activa' : '') + '">' + m.slice(5) + '/' + m.slice(0, 4) + '</button>'; }).join('') + '</div>' +
-      (tot ? '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div><div class="numero"><span>Días con alertas</span><b>' + tot.dias_con_alertas + '</b></div><div class="numero"><span>Desvío del mes (efectivo)</span><b>' + pesos(tot.desvio_efectivo) + '</b></div></div>' : '');
+      (_locales.length > 1 ? '<div class="solapas chicas cajas-vista"><button data-vista="local" class="activa">' + esc(_local.nombre) + '</button><button data-vista="todos">Todos los locales</button></div>' : '') +
+      '<div class="solapas chicas">' + meses.map(function (m) { return '<button data-mes="' + m + '" class="' + (m === _mes ? 'activa' : '') + '">' + m.slice(5) + '/' + m.slice(0, 4) + marca(m) + '</button>'; }).join('') + '</div>' +
+      (tot ? '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div><div class="numero"><span>Días con alertas</span><b>' + tot.dias_con_alertas + '</b></div><div class="numero"><span>Desvío del mes (efectivo)</span><b>' + pesos(tot.desvio_efectivo) + '</b></div></div>' : '') +
+      tarjetaCierre(cierre, tot, terminado, r[3].falta);
     if (!cajas.length) html += '<div class="vacio">No hay cajas cargadas en este mes.</div>';
     else {
       html += '<div class="desliza"><table class="tabla-datos"><thead><tr><th rowspan="2">Día</th><th colspan="3">Mercado Pago</th><th colspan="3">Tarjeta</th><th colspan="3">Go Cuotas</th><th colspan="3">Efectivo</th><th rowspan="2">Estado</th></tr>' +
@@ -536,6 +660,11 @@ function verCajas() {
     var c = document.getElementById('cuerpo');
     c.innerHTML = html;
     c.querySelectorAll('[data-mes]').forEach(function (b) { b.onclick = function () { _mes = b.dataset.mes; verCajas(); }; });
+    c.querySelectorAll('[data-vista]').forEach(function (b) { b.onclick = function () { _cajasTodos = b.dataset.vista === 'todos'; verCajas(); }; });
+    var bc = document.getElementById('cajaCerrar'), br = document.getElementById('cajaReabrir'), bh = document.getElementById('cajaHistoria');
+    if (bc) bc.onclick = function () { cerrarMesCaja(cajas, tot); };
+    if (br) br.onclick = reabrirMesCaja;
+    if (bh) bh.onclick = function () { historiaMesCaja(cierre); };
     var porId = {};
     cajas.forEach(function (x) { porId[x.id] = x; });
     c.querySelectorAll('[data-caja]').forEach(function (tr) {
@@ -547,6 +676,47 @@ function verCajas() {
           (Object.keys(f).length ? '<div class="historia">' + Object.keys(f).map(function (t) { return '<figure class="foto-chica"><img data-foto="' + esc(f[t]) + '" alt=""><figcaption>' + esc(t) + '</figcaption></figure>'; }).join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
       };
     });
+  }).catch(function (e) { error(e, verCajas); });
+}
+
+/* Todos los locales en un mes: los desvíos y si está cerrado. Tocar uno abre sus días. */
+function verCajasTodos(meses) {
+  var hoyMes = meses[0];
+  Promise.all([
+    leer('/orden_v_cajas_mes?select=*&mes=eq.' + _mes),
+    leerCierres('/orden_v_cajas_meses?select=*&mes=eq.' + _mes)
+  ]).then(function (r) {
+    if (_solapa !== 'cajas' || !_cajasTodos) return;
+    var porLocal = {}, cierres = {}, terminado = _mes < hoyMes;
+    (r[0] || []).forEach(function (x) { porLocal[x.local_id] = x; });
+    r[1].filas.forEach(function (x) { cierres[x.local_id] = x; });
+    var conCajas = _locales.filter(function (l) { return porLocal[l.id]; });
+    var falta = terminado ? conCajas.filter(function (l) { return !(cierres[l.id] && cierres[l.id].estado === 'controlado'); }).length : 0;
+    var efvo = conCajas.reduce(function (a, l) { return a + Number(porLocal[l.id].desvio_efectivo || 0); }, 0);
+    var celda = function (t, k) { var d = Number(t[k] || 0); return '<td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td>'; };
+    var html = '<div class="solapas chicas cajas-vista"><button data-vista="local">' + esc(_local.nombre) + '</button><button data-vista="todos" class="activa">Todos los locales</button></div>' +
+      '<div class="solapas chicas">' + meses.map(function (m) { return '<button data-mes="' + m + '" class="' + (m === _mes ? 'activa' : '') + '">' + m.slice(5) + '/' + m.slice(0, 4) + '</button>'; }).join('') + '</div>' +
+      (r[1].falta ? '<div class="nota">Para dar los meses por controlados falta correr el SQL 115 en Supabase.</div>' : '') +
+      '<div class="numeros"><div class="numero"><span>Locales con cajas</span><b>' + conCajas.length + '</b></div>' +
+        '<div class="numero"><span>' + (terminado ? 'Falta cerrar' : 'El mes sigue en curso') + '</span><b>' + (terminado ? falta : '—') + '</b></div>' +
+        '<div class="numero"><span>Desvío del mes (efectivo, todos)</span><b>' + pesos(efvo) + '</b></div></div>';
+    if (!conCajas.length) html += '<div class="vacio">Ningún local tiene cajas en este mes.</div>';
+    else {
+      html += '<div class="desliza"><table class="tabla-datos"><thead><tr><th>Local</th><th class="n">Mercado Pago</th><th class="n">Tarjeta</th><th class="n">Go Cuotas</th><th class="n">Efectivo</th>' +
+        '<th class="n">Sin cargar</th><th class="n">Sin controlar</th><th>Cierre del mes</th></tr></thead><tbody>' +
+        conCajas.map(function (l) {
+          var t = porLocal[l.id], ci = cierres[l.id];
+          var est = ci && ci.estado === 'controlado' ? '<span class="est listo">Controlado ✓</span>' : terminado ? '<span class="est sorpresa">Falta cerrar</span>' : '<span class="est">En curso</span>';
+          return '<tr data-ir="' + esc(l.id) + '" style="cursor:pointer"><td><b>' + esc(l.nombre) + '</b></td>' + celda(t, 'desvio_mp') + celda(t, 'desvio_tarjeta') + celda(t, 'desvio_gocuotas') + celda(t, 'desvio_efectivo') +
+            '<td class="n">' + Number(t.dias_sin_cargar || 0) + '</td><td class="n">' + Number(t.dias_sin_controlar || 0) + '</td><td>' + est + '</td></tr>';
+        }).join('') +
+        '</tbody></table></div><p class="bajada" style="margin-top:8px">Los desvíos del mes (cierre − real; positivo: falta plata). Tocá un local para ver sus días y darlo por controlado.</p>';
+    }
+    var c = document.getElementById('cuerpo');
+    c.innerHTML = html;
+    c.querySelectorAll('[data-mes]').forEach(function (b) { b.onclick = function () { _mes = b.dataset.mes; verCajas(); }; });
+    c.querySelectorAll('[data-vista]').forEach(function (b) { b.onclick = function () { _cajasTodos = b.dataset.vista === 'todos'; verCajas(); }; });
+    c.querySelectorAll('[data-ir]').forEach(function (tr) { tr.onclick = function () { _cajasTodos = false; elegirLocal(tr.dataset.ir); ir('cajas'); }; });
   }).catch(function (e) { error(e, verCajas); });
 }
 
