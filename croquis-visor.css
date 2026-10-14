@@ -97,7 +97,8 @@
   transform: translateZ(.5px); transition: opacity .2s; }
 .cv-foto-cara { position: absolute; left: 50%; top: 50%; background: #2A2F37 center / cover no-repeat; border: 2px solid var(--cv-nogal-osc); border-radius: 2px; }
 .cv-foto-tapa { left: 3px; top: 3px; right: 3px; bottom: 3px; transform: none; opacity: 0; transition: opacity .3s; }
-.cv-mod.foto-lista.foto-arriba .cv-foto-tapa, .cv-plano .cv-mod.foto-lista .cv-foto-tapa { opacity: 1; }
+/* La foto arriba, sólo en los del frente (su cara al salón no se ve); los demás muestran su ropa arriba y la foto en el frente. */
+.cv-mod.foto-lista.foto-arriba .cv-foto-tapa { opacity: 1; }
 /* Sin foto: la cara del frente lisa, con una camarita. */
 .cv-mod.sin-foto .cv-frente .cv-foto-cara, .cv-mod.foto-no .cv-frente .cv-foto-cara {
   background: repeating-linear-gradient(135deg, #2C323C 0 6px, #262B34 6px 12px); }
@@ -112,8 +113,9 @@
 .cv-mod .cv-o.cv-frente::after { top: 0; bottom: 0; left: 0; width: 5px; }
 .cv-mod:hover .cv-halo, .cv-mod:focus-visible .cv-halo { opacity: 1; }
 .cv-mod:hover .cv-tapa, .cv-mod:hover .cv-cara { filter: brightness(1.14); }
-.cv-muro .cv-cara { background: #ECE6DD; }
-.cv-muro .cv-tapa { background: #2B2D32; box-shadow: none; }
+/* Las paredes gris oliva de los locales, con una luz que baja del techo. */
+.cv-muro .cv-cara { background: linear-gradient(0deg, #4B4D44, #5E6056 70%, #6A6C61); }
+.cv-muro .cv-tapa { background: #2B2C27; box-shadow: none; }
 .cv-muro .cv-halo, .cv-fijo .cv-halo { display: none; }
 .cv-vidrio .cv-cara { background: rgba(150, 205, 240, .28); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .5); }
 .cv-vidrio .cv-tapa { background: #2B2D32; }
@@ -307,3 +309,17 @@
 .cv-plano .cv-parado { opacity: 0; }
 .cv-piso-dep { background: repeating-linear-gradient(90deg, transparent 0 95px, rgba(0, 0, 0, .12) 95px 96px), repeating-linear-gradient(0deg, transparent 0 95px, rgba(0, 0, 0, .12) 95px 96px),
   radial-gradient(ellipse at 50% 40%, #C3BEB6, #A8A39B); box-shadow: inset 0 0 40px rgba(0, 0, 0, .3); }
+
+/* ── Como la foto (14/10): piso de cemento, y "Desde arriba" con perspectiva (se ven las paredes por dentro y el frente
+   de cada módulo, con su foto). ── */
+.cv-piso { background:
+    radial-gradient(circle at 30% 22%, rgba(255, 238, 205, .32), transparent 24%),
+    radial-gradient(circle at 70% 22%, rgba(255, 238, 205, .32), transparent 24%),
+    radial-gradient(circle at 30% 62%, rgba(255, 238, 205, .28), transparent 24%),
+    radial-gradient(circle at 70% 62%, rgba(255, 238, 205, .28), transparent 24%),
+    url("croquis-img/textura-cemento.webp") 0 0 / 150px 150px, #9C9A95;
+  box-shadow: inset 0 0 50px rgba(20, 18, 14, .35); }
+.cv-piso-dep { background: linear-gradient(rgba(43, 42, 38, .18), rgba(43, 42, 38, .18)), url("croquis-img/textura-cemento.webp") 0 0 / 150px 150px, #8E8C87; }
+.cv-liviano .cv-piso { background: #9C9A95; }
+.cv-plano .cv-camara { perspective: 780px; perspective-origin: 50% calc(50% - 29px); }
+.cv-copa { transform: translateZ(30px); }

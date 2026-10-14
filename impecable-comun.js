@@ -615,12 +615,12 @@ function svgCajas(r, sem) {
 
 /** Su nombre y su tamaño en el plano del salón (de 520 de ancho; un módulo de pared mide unos 45 × 65). */
 var PIEZAS = {
-  probador: { nombre: 'Probadores', w: 124, h: 56 },
+  probador: { nombre: 'Probadores', w: 78, h: 64 },
   caja: { nombre: 'Caja', w: 108, h: 40 },
   mesa: { nombre: 'Mesa', w: 96, h: 50 },
-  perchero: { nombre: 'Perchero', w: 104, h: 26 },
-  maniqui: { nombre: 'Maniquí', w: 34, h: 34 },
-  planta: { nombre: 'Planta', w: 34, h: 34 },
+  perchero: { nombre: 'Perchero', w: 104, h: 34 },
+  maniqui: { nombre: 'Maniquí', w: 40, h: 40 },
+  planta: { nombre: 'Planta', w: 40, h: 40 },
   columna: { nombre: 'Columna', w: 30, h: 30 },
   escalera: { nombre: 'Escalera', w: 112, h: 46 },
   espejo: { nombre: 'Espejo', w: 72, h: 12 },
@@ -687,7 +687,12 @@ function dibujoPieza(tipo, r, texto, frente, attrs, op) {
   var m = marcoPieza(r, frente || 's'), L = m.L, F = m.F, g = '', sem = semillaDe(tipo + r.x + r.y), i;
   var nombre = String(texto || '').trim(), propio = nombre && nombre.toLowerCase() !== PIEZAS[tipo].nombre.toLowerCase();
   var conNombre = !op.sinNombre && (propio || tipo === 'probador' || tipo === 'caja' || tipo === 'escalera' || tipo === 'deposito' || tipo === 'otro');
-  if (tipo === 'probador') {
+  if (CROQUIS_IMG && IMAGEN_PIEZA[tipo]) {
+    /* Cada imagen de los probadores son dos: una cada dos veces su fondo (un lugar de pared, una; una pared de 3 lugares, tres). */
+    var cuantas = tipo === 'probador' ? Math.max(1, Math.round(L / (F * 2))) : 1, lista = [];
+    for (i = 0; i < cuantas; i++) lista.push(IMAGEN_PIEZA[tipo]);
+    g = imagenesCroquis(lista, r, frente || 's', tipo === 'probador', 0);
+  } else if (tipo === 'probador') {
     var n = Math.max(1, Math.round(L / 58)), paso = L / n;
     g += rectSvg(0, 0, L, F, 2, 'fill="#CDB797"');
     for (i = 0; i < n; i++) {
@@ -781,7 +786,7 @@ function cajaModulo(d, op, m, r, etiqueta, sub, lado) {
   /* El neón de quien lo tiene: la luz se derrama sobre el piso, del lado del salón (lo apagado, sin luz). */
   if (!apagado) out += luzNeon(r, lado, color, op._neon);
   out += rectSvg(r.x, r.y, Math.max(4, r.w), Math.max(4, r.h), 3, 'class="mapa-cuerpo" fill="' + (dep ? '#7B828B' : op._madera ? 'url(#' + op._madera + ')' : '#6B4A35') + '" stroke="' + (dep ? '#3E444B' : '#2C1D14') +
-    '" stroke-width=".8"' + (op._sombra ? ' filter="' + op._sombra + '"' : '')) + interiorModulo(d, m, r, op._pref || 'mpR');
+    '" stroke-width=".8"' + (op._sombra ? ' filter="' + op._sombra + '"' : '')) + interiorModulo(d, m, r, op._pref || 'mpR', lado);
   if (!apagado) out += lineaNeon(r, lado, color);
   var marca = op.marcas && op.marcas[m.id];
   out += rotuloModulo(r, etiqueta, sub, color, lado, !!marca);
@@ -797,10 +802,36 @@ function esquinaMarca(r, lado) {
   if (lado === 'frente') return [r.x + 13, r.y + r.h + 1];
   return [r.x + r.w - 11, r.y + 11];
 }
-/** Lo de adentro de un módulo: la ropa de lo que dice "qué hay" (o su nombre, si es de ropa); si no dice, ropa colgada; en el depósito, cajas. */
-function interiorModulo(d, m, r, pref) {
+/* ── Las imágenes de cada pieza (14/10, "más parecido a la foto"): vistas desde arriba, con el estilo de los locales
+   (marco de hierro oxidado, estante de madera, riel negro tipo escalera). Están en croquis-img/; sin esa carpeta
+   (CROQUIS_IMG vacío) se usan los dibujos. ── */
+var CROQUIS_IMG = 'croquis-img/';
+/** Qué imagen va según la prenda: las que no tienen la suya usan la parecida. */
+var IMAGEN_PRENDA = { remera: 'remeras', musculosa: 'remeras', buzo: 'buzos', sweater: 'buzos', campera: 'camperas', camisa: 'camisas', jean: 'jeans',
+  pantalon: 'pantalones', bermuda: 'bermudas', vestido: 'mixto', pollera: 'mixto', zapatilla: 'zapatillas', gorra: 'accesorios', medias: 'accesorios', accesorio: 'accesorios' };
+var IMAGEN_PIEZA = { probador: 'probador', caja: 'caja', mesa: 'mesa', perchero: 'perchero', maniqui: 'maniqui', planta: 'planta', escalera: 'escalera' };
+/** Una o más imágenes en el lugar r, del lado del salón hacia frente (ver marcoPieza: la imagen tiene la pared arriba).
+    Varias, una al lado de la otra a lo largo. relleno: llena el lugar recortando (los módulos); si no, entra entera. */
+function imagenesCroquis(nombres, r, frente, relleno, sem) {
+  var mp = marcoPieza(r, frente || 's'), k = nombres.length, paso = mp.L / k, out = '';
+  nombres.forEach(function (n, i) {
+    var al = ['xMinYMid', 'xMidYMid', 'xMaxYMid'][((sem >>> 0) + i) % 3];
+    out += '<image href="' + CROQUIS_IMG + n + '.webp" x="' + n1(i * paso) + '" y="0" width="' + n1(paso) + '" height="' + n1(mp.F) + '" preserveAspectRatio="' + (relleno ? al + ' slice' : 'xMidYMid meet') + '"/>';
+  });
+  return '<g transform="' + mp.t + '">' + out + '</g>';
+}
+/** Lo de adentro de un módulo: la ropa de lo que dice "qué hay" (o su nombre, si es de ropa), con la imagen de esa prenda (dos, si dice dos);
+    si no dice, ropa colgada; en el depósito, la estantería con cajas. lado: la pared del módulo (sin pared, está en el centro). */
+function interiorModulo(d, m, r, pref, lado) {
   var s = d.sectorDe[m.sector_id], dep = !!(s && s.tipo === 'deposito'), a = { x: r.x + 3, y: r.y + 3, w: r.w - 6, h: r.h - 6 }, sem = semillaDe(m.id);
   var tipos = prendasDe(queHay(m) || (m.isla ? m.nombre : nombrePropio(m)) || (dep && s ? s.nombre : ''));
+  if (CROQUIS_IMG) {
+    var nombres = [];
+    (dep ? ['deposito'] : tipos.map(function (t) { return IMAGEN_PRENDA[t]; })).forEach(function (n) { if (n && nombres.indexOf(n) < 0 && nombres.length < 2) nombres.push(n); });
+    if (!nombres.length) nombres = [lado ? 'colgada' : 'mesa'];
+    var b = { x: r.x + 1, y: r.y + 1, w: r.w - 2, h: r.h - 2 };
+    return rectSvg(b.x, b.y, b.w, b.h, 2, 'fill="#6E4A2E"') + imagenesCroquis(nombres, b, lado ? FRENTE_PARED[lado] : r.h > r.w * 1.15 ? 'e' : 's', true, sem);
+  }
   return rectSvg(a.x, a.y, a.w, a.h, 2, 'fill="' + (dep ? '#59606A' : '#4A3326') + '"') + (tipos.length ? svgPrendas(a, tipos, sem, pref) : dep ? svgCajas(a, sem) : svgColgada(a, sem));
 }
 /** La luz del neón sobre el piso, del lado que da al salón (lado: la pared del módulo; sin pared, alrededor). */
@@ -894,7 +925,7 @@ function normalizarCroquis(g) {
     });
   });
   var pu = g.puerta && VUELTA.indexOf(g.puerta.pared) > -1
-    ? { pared: g.puerta.pared, pos: Math.max(0, Math.min(paredes[g.puerta.pared].length, Math.round(+g.puerta.pos) || 0)), virtual: !!g.puerta.virtual }
+    ? { pared: g.puerta.pared, pos: Math.max(0, Math.min(paredes[g.puerta.pared].length, Math.round(+g.puerta.pos) || 0)), virtual: !!g.puerta.virtual, a: anchoPuerta(g.puerta) }
     : { pared: 'frente', pos: paredes.frente.length, virtual: true };
   var centro = {};
   Object.keys(g.centro || {}).forEach(function (k) { var p = g.centro[k]; if (p) centro[String(k).toLowerCase()] = { x: entre01(p.x), y: entre01(p.y) }; });
@@ -915,6 +946,8 @@ function lugarFijo(l) {
 var FRENTES = { calle: { nombre: 'Vereda', fondo: '#3A3E45', texto: 'rgba(255,255,255,.5)' }, galeria: { nombre: 'Galería', fondo: '#CDD1D6', texto: 'rgba(30,34,40,.55)' },
                 shopping: { nombre: 'Pasillo del shopping', fondo: '#D6D8DB', texto: 'rgba(30,34,40,.55)' } };
 
+/** Cuántos lugares ocupa la puerta (1 a 3): con 2, entre dos módulos de cada lado, queda centrada. */
+function anchoPuerta(p) { var a = Math.round(+(p && p.a)); return a === 2 || a === 3 ? a : 1; }
 /** Cuántos módulos tiene un croquis (los dobles cuentan uno). */
 function modulosDeCroquis(cq) {
   return VUELTA.reduce(function (s, w) { return s + cq.paredes[w].filter(esModuloLugar).length; }, 0);
@@ -963,7 +996,7 @@ function geometriaCroquis(cq, x0, y0, x1, y1, P, G) {
   if (cq.puerta && cq.puerta.virtual) cq = sinPuerta(cq);   // la de siempre no ocupa lugar ni se dibuja
   var u = {};
   VUELTA.forEach(function (w) {
-    u[w] = cq.paredes[w].reduce(function (s, l) { return s + anchoLugar(l); }, 0) + (cq.puerta && cq.puerta.pared === w ? 1 : 0);
+    u[w] = cq.paredes[w].reduce(function (s, l) { return s + anchoLugar(l); }, 0) + (cq.puerta && cq.puerta.pared === w ? anchoPuerta(cq.puerta) : 0);
   });
   var arriba = u.fondo ? y0 + P : y0, abajo = u.frente ? y1 - P : y1;
   var izq = u.izquierda ? x0 + P : x0, der = u.derecha ? x1 - P : x1;
@@ -984,10 +1017,10 @@ function geometriaCroquis(cq, x0, y0, x1, y1, P, G) {
       return t.horiz ? { x: lo, y: t.fijo + G / 2, w: tam, h: P - G } : { x: t.fijo + G / 2, y: lo, w: P - G, h: tam };
     }
     cq.paredes[w].forEach(function (l, i) {
-      if (cq.puerta && cq.puerta.pared === w && cq.puerta.pos === i) puerta = { pared: w, r: caja(1) };
+      if (cq.puerta && cq.puerta.pared === w && cq.puerta.pos === i) puerta = { pared: w, r: caja(anchoPuerta(cq.puerta)) };
       lugares[w].push(caja(anchoLugar(l)));
     });
-    if (cq.puerta && cq.puerta.pared === w && cq.puerta.pos >= cq.paredes[w].length) puerta = { pared: w, r: caja(1) };
+    if (cq.puerta && cq.puerta.pared === w && cq.puerta.pos >= cq.paredes[w].length) puerta = { pared: w, r: caja(anchoPuerta(cq.puerta)) };
   });
   return { lugares: lugares, puerta: puerta, adentro: { x0: izq, y0: arriba, x1: der, y1: abajo }, tramos: tramos, G: G };
 }
@@ -1100,7 +1133,10 @@ function dibujarCentro(d, op, cq, geo, sobran) {
 var _mapaN = 0;
 function defsMapa(x0, y0, x1, y1, tipo) {
   var n = ++_mapaN, dep = tipo === 'deposito', w = x1 - x0, h = y1 - y0, luces = '';
-  var piso = dep
+  var piso = CROQUIS_IMG
+    ? '<pattern id="mpP' + n + '" width="150" height="150" patternUnits="userSpaceOnUse" x="' + x0 + '" y="' + y0 + '"><rect width="150" height="150" fill="#9C9A95"/>' +
+      '<image href="' + CROQUIS_IMG + 'textura-cemento.webp" width="150" height="150" preserveAspectRatio="none"/>' + (dep ? '<rect width="150" height="150" fill="#2B2A26" fill-opacity=".16"/>' : '') + '</pattern>'
+    : dep
     ? '<pattern id="mpP' + n + '" width="96" height="96" patternUnits="userSpaceOnUse" x="' + x0 + '" y="' + y0 + '"><rect width="96" height="96" fill="#B5B0A8"/>' +
       '<circle cx="18" cy="22" r="1" fill="rgba(0,0,0,.08)"/><circle cx="61" cy="47" r="1.3" fill="rgba(0,0,0,.07)"/><circle cx="35" cy="78" r="1" fill="rgba(255,255,255,.18)"/><circle cx="82" cy="12" r="1" fill="rgba(255,255,255,.15)"/>' +
       '<path d="M96 0H0V96" fill="none" stroke="rgba(0,0,0,.13)" stroke-width="1"/></pattern>'
@@ -1109,15 +1145,15 @@ function defsMapa(x0, y0, x1, y1, tipo) {
   if (!dep) [0.25, 0.75].forEach(function (lx) { [0.18, 0.5, 0.82].forEach(function (ly) { luces += '<ellipse cx="' + n1(x0 + lx * w) + '" cy="' + n1(y0 + ly * h) + '" rx="' + n1(w * 0.26) + '" ry="' + n1(h * 0.14) + '" fill="url(#mpL' + n + ')"/>'; }); });
   return { sombra: 'url(#mpS' + n + ')', neon: 'url(#mpN' + n + ')', madera: 'mpM' + n, pref: 'mpR' + n,
     svg: '<defs>' + piso +
-      '<radialGradient id="mpL' + n + '"><stop offset="0" stop-color="#FFF6E4" stop-opacity=".7"/><stop offset="1" stop-color="#FFF6E4" stop-opacity="0"/></radialGradient>' +
+      '<radialGradient id="mpL' + n + '"><stop offset="0" stop-color="#FFF3DC" stop-opacity="' + (CROQUIS_IMG ? '.42' : '.7') + '"/><stop offset="1" stop-color="#FFF6E4" stop-opacity="0"/></radialGradient>' +
       '<radialGradient id="mpV' + n + '" cx=".5" cy=".5" r=".72"><stop offset=".5" stop-color="#3C2814" stop-opacity="0"/><stop offset="1" stop-color="#3C2814" stop-opacity="' + (dep ? '.3' : '.24') + '"/></radialGradient>' +
       '<linearGradient id="mpM' + n + '" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#80593F"/><stop offset="1" stop-color="#5A3D2C"/></linearGradient>' +
       '<filter id="mpS' + n + '" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#000" flood-opacity=".35"/></filter>' +
-      '<filter id="mpN' + n + '" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.6"/></filter>' + simbolosPrendas('mpR' + n) + '</defs>',
+      '<filter id="mpN' + n + '" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.6"/></filter>' + (CROQUIS_IMG ? '' : simbolosPrendas('mpR' + n)) + '</defs>',
     piso: '<rect x="' + x0 + '" y="' + y0 + '" width="' + w + '" height="' + h + '" fill="url(#mpP' + n + ')"/>' + luces +
       '<rect x="' + x0 + '" y="' + y0 + '" width="' + w + '" height="' + h + '" fill="url(#mpV' + n + ')"/>' };
 }
-/** Las paredes (oscuras y gruesas, con la cara de adentro clara) alrededor de x0..x1 × y0..y1, abiertas donde está la
+/** Las paredes (gris oliva oscuro, como en los locales, con la cara de adentro un poco más clara) alrededor de x0..x1 × y0..y1, abiertas donde está la
     puerta; con vidrio, el frente es la vidriera. */
 function murosMapa(x0, y0, x1, y1, T, puerta, vidrio) {
   var out = '', hueco = null;
@@ -1129,12 +1165,12 @@ function murosMapa(x0, y0, x1, y1, T, puerta, vidrio) {
       var x = horiz ? c[0] : fijo, y = horiz ? fijo : c[0], ww = horiz ? c[1] - c[0] : T, hh = horiz ? T : c[1] - c[0];
       if (deVidrio) {
         out += rectSvg(x, y + T * 0.3, ww, T * 0.4, 0, 'fill="#A7D6EA" fill-opacity=".75"') + rectSvg(x, y + T * 0.3, ww, 0.9, 0, 'fill="#fff" fill-opacity=".9"');
-        for (var p = c[0] + 70; p < c[1] - 20; p += 70) out += rectSvg(p - 1.5, y, 3, T, 0, 'fill="#2B2E34"');
+        for (var p = c[0] + 70; p < c[1] - 20; p += 70) out += rectSvg(p - 1.5, y, 3, T, 0, 'fill="#30322C"');
       } else {
-        out += rectSvg(x, y, ww, hh, 0, 'fill="#2B2E34"');
+        out += rectSvg(x, y, ww, hh, 0, 'fill="#30322C"');
         /* La cara de adentro, clara. */
-        out += w === 'fondo' ? rectSvg(x, y + T - 1.6, ww, 1.6, 0, 'fill="#EDE7DE"') : w === 'izquierda' ? rectSvg(x + T - 1.6, y, 1.6, hh, 0, 'fill="#EDE7DE"')
-             : w === 'derecha' ? rectSvg(x, y, 1.6, hh, 0, 'fill="#EDE7DE"') : rectSvg(x, y, ww, 1.6, 0, 'fill="#EDE7DE"');
+        out += w === 'fondo' ? rectSvg(x, y + T - 1.6, ww, 1.6, 0, 'fill="#6E7064"') : w === 'izquierda' ? rectSvg(x + T - 1.6, y, 1.6, hh, 0, 'fill="#6E7064"')
+             : w === 'derecha' ? rectSvg(x, y, 1.6, hh, 0, 'fill="#6E7064"') : rectSvg(x, y, ww, 1.6, 0, 'fill="#6E7064"');
       }
     });
   }
@@ -1143,7 +1179,7 @@ function murosMapa(x0, y0, x1, y1, T, puerta, vidrio) {
   tramo('derecha', y0, y1, x1, false, false);
   tramo('frente', x0 - T, x1 + T, y1, true, vidrio);
   /* Las columnas de las esquinas del frente. */
-  if (vidrio) out += rectSvg(x0 - T, y1, T + 2, T, 0, 'fill="#2B2E34"') + rectSvg(x1 - 2, y1, T + 2, T, 0, 'fill="#2B2E34"');
+  if (vidrio) out += rectSvg(x0 - T, y1, T + 2, T, 0, 'fill="#30322C"') + rectSvg(x1 - 2, y1, T + 2, T, 0, 'fill="#30322C"');
   return out;
 }
 

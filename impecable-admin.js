@@ -1420,8 +1420,10 @@ function editarMapa(d) {
       }).join('') + '</div>' +
     '<p class="bajada">Los números de arriba son los <b>lugares</b> de cada pared (módulos, huecos y cosas fijas).</p>' +
     '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuerta">Mover la entrada</button>' +
+      '<span class="imp-ancho-puerta" id="eAnchoPuerta"><span>Ancho de la entrada</span>' + [1, 2, 3].map(function (a) {
+        return '<button type="button" class="boton chico" data-ancho-puerta="salon:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span>' +
       '<button type="button" class="boton chico" id="eAcomodar">Acomodar solos los del centro</button></div>' +
-    '<p class="nota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada. El 1 queda al lado, hacia la izquierda.</p>' +
+    '<p class="nota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada. El 1 queda al lado, hacia la izquierda. Para centrarla, dejá la misma cantidad de lugares de cada lado (si hace falta, que ocupe 2).</p>' +
     '<div class="imp-mapa-vista croquis" id="eVista"></div>' +
     '<div class="seccion">Módulos del centro del salón</div>' +
     '<p class="bajada">Exhibidores, mesas, percheros: uno por lugar, numerados a continuación de las paredes. <b>Arrastralos en el dibujo</b> para ponerlos donde están; ' +
@@ -1440,7 +1442,9 @@ function editarMapa(d) {
       '<option value="cuadrado"' + (m.forma_deposito === 'cuadrado' ? ' selected' : '') + '>Cuadrado</option></select></label>' +
       '<label class="campo c-chico"><span>Módulos</span><input type="number" inputmode="numeric" min="0" max="40" id="eDep"></label>' +
       '<p class="bajada" style="flex:1 1 260px;margin:0">Dividilo en partes que entren en una foto cada una. Si cambiás la cantidad o la forma, los módulos se vuelven a acomodar alrededor (la puerta queda).</p></div>' +
-    '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuertaDep">Mover la puerta del depósito</button></div>' +
+    '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuertaDep">Mover la puerta del depósito</button>' +
+      '<span class="imp-ancho-puerta" id="eAnchoPuertaDep"><span>Ancho de la puerta</span>' + [1, 2].map(function (a) {
+        return '<button type="button" class="boton chico" data-ancho-puerta="deposito:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span></div>' +
     '<p class="nota" id="eNotaPuertaDep" hidden>Tocá un <b>+</b> verde: ahí va la puerta del depósito.</p>' +
     '<div class="imp-mapa-vista croquis" id="eVistaDep"></div>' +
     '<p class="bajada" id="eTotal"></p><button class="boton lima" id="eGuardar">Guardar</button>');
@@ -1573,6 +1577,12 @@ function editarMapa(d) {
     if (document.activeElement !== dep) dep.value = mm.deposito;
     f.querySelector('#eMoverPuerta').textContent = st.mover === 'salon' ? 'Cancelar' : 'Mover la entrada';
     f.querySelector('#eMoverPuertaDep').textContent = st.mover === 'deposito' ? 'Cancelar' : 'Mover la puerta del depósito';
+    /* El ancho, sólo con la puerta puesta (la de siempre, en la esquina, no se dibuja). */
+    [['salon', '#eAnchoPuerta'], ['deposito', '#eAnchoPuertaDep']].forEach(function (x) {
+      var p = st[x[0]].puerta, caja = f.querySelector(x[1]);
+      caja.hidden = !p || p.virtual;
+      caja.querySelectorAll('[data-ancho-puerta]').forEach(function (b) { b.classList.toggle('lima', +b.dataset.anchoPuerta.split(':')[1] === anchoPuerta(p)); });
+    });
     f.querySelector('#eNotaPuerta').hidden = st.mover !== 'salon';
     f.querySelector('#eNotaPuertaDep').hidden = st.mover !== 'deposito';
     var total = dv.pared.length;
@@ -1639,7 +1649,7 @@ function editarMapa(d) {
     if (!t || Date.now() - soltadoEn < 400) return;
     if (t.dataset.huecoPuerta) {
       var p = t.dataset.huecoPuerta.split(':');
-      st[p[0]].puerta = { pared: p[1], pos: +p[2] };
+      st[p[0]].puerta = { pared: p[1], pos: +p[2], a: anchoPuerta(st[p[0]].puerta) };
       st.mover = null; vista();
       avisar(p[0] === 'deposito' ? 'Listo: la puerta del depósito va ahí.' : 'Listo: la entrada va ahí. El 1 es el de al lado, hacia la izquierda.');
     } else if (t.dataset.puerta) { st.mover = t.dataset.puerta; vista(); }
@@ -1710,6 +1720,14 @@ function editarMapa(d) {
   /* ── Los botones y los campos ── */
   f.querySelector('#eMoverPuerta').onclick = function () { st.mover = st.mover === 'salon' ? null : 'salon'; vista(); };
   f.querySelector('#eMoverPuertaDep').onclick = function () { st.mover = st.mover === 'deposito' ? null : 'deposito'; vista(); };
+  f.querySelectorAll('[data-ancho-puerta]').forEach(function (b) {
+    b.onclick = function () {
+      var q = b.dataset.anchoPuerta.split(':'), p = st[q[0]].puerta;
+      if (!p || p.virtual) return;
+      p.a = +q[1] > 1 ? +q[1] : null;
+      vista();
+    };
+  });
   f.querySelector('#eAcomodar').onclick = function () { centro.forEach(function (c) { c.pos = null; }); vista(); };
   f.querySelectorAll('[data-pared]').forEach(function (i) {
     i.addEventListener('change', function () {

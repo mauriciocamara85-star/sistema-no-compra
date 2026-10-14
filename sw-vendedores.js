@@ -13,7 +13,7 @@
  *
  * Estrategia: RED PRIMERO, como el del No Compra. Al tocar la app, subir CACHE.
  */
-const CACHE = 'impecable-v15';
+const CACHE = 'impecable-v16';
 
 const BASICOS = [
   './vendedores.html',
@@ -25,7 +25,28 @@ const BASICOS = [
   './datos.js',
   './vendedores.webmanifest',
   './impecable-192.png',
-  './impecable-512.png'
+  './impecable-512.png',
+  /* Las imágenes del croquis (14/10). */
+  './croquis-img/accesorios.webp',
+  './croquis-img/bermudas.webp',
+  './croquis-img/buzos.webp',
+  './croquis-img/caja.webp',
+  './croquis-img/camisas.webp',
+  './croquis-img/camperas.webp',
+  './croquis-img/colgada.webp',
+  './croquis-img/deposito.webp',
+  './croquis-img/escalera.webp',
+  './croquis-img/jeans.webp',
+  './croquis-img/maniqui.webp',
+  './croquis-img/mesa.webp',
+  './croquis-img/mixto.webp',
+  './croquis-img/pantalones.webp',
+  './croquis-img/perchero.webp',
+  './croquis-img/planta.webp',
+  './croquis-img/probador.webp',
+  './croquis-img/remeras.webp',
+  './croquis-img/textura-cemento.webp',
+  './croquis-img/zapatillas.webp'
 ];
 
 self.addEventListener('install', (evento) => {

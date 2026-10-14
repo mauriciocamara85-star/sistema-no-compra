@@ -10,7 +10,7 @@
    ════════════════════════════════════════════════════════════════════════ */
 
 var VISOR_INCL = 38;                 // grados de inclinación de la maqueta ("Desde arriba" es 0)
-var VISOR_ALTO = { pared: 58, deposito: 60, centro: 32, muro: 34 };
+var VISOR_ALTO = { pared: 58, deposito: 60, centro: 32, muro: 34, muroFoto: 96 };   // muroFoto: "Desde arriba", como la foto (paredes altas)
 
 /** Abre el modo observador adentro de cont (que ya ocupa toda la pantalla). op: { local: {id, nombre}, puedeSugerir,
     puedeNombrar, puedeEditar, alVolver(), alEditar(d), capa: {abrir(fn), soltar(fn)} } */
@@ -61,6 +61,9 @@ function abrirVisor(cont, op) {
     try { localStorage.setItem('vdh_visor_cam', V.inclinado ? 'incl' : 'arriba'); } catch (x) {}
     cont.querySelectorAll('#cvCam [data-cam]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
     V.raiz.classList.toggle('cv-plano', !V.inclinado);
+    /* Desde arriba las paredes son altas (como la foto, con perspectiva): se vuelve a armar la maqueta. */
+    visorDibujar(V, false);
+    V.fit = {};
     visorCamara(V, false);
   };
   var ed = cont.querySelector('#cvEditar');
@@ -189,8 +192,10 @@ function visorPieza(pl, it) {
 }
 /** Una planta: la maceta y las hojas, en capas (desde arriba se ve la copa; inclinada, con volumen). */
 function visorPlanta(r, caras) {
-  var m = Math.min(r.w, r.h), cx = r.x + r.w / 2, cy = r.y + r.h / 2, s = m * 0.6;
-  return visorCaja({ x: cx - s / 2, y: cy - s / 2, w: s, h: s }, 14, 'cv-fijo cv-pz-maceta', '', null, '', '', '', caras) +
+  var m = Math.min(r.w, r.h), cx = r.x + r.w / 2, cy = r.y + r.h / 2, s = m * 0.55;
+  var maceta = visorCaja({ x: cx - s / 2, y: cy - s / 2, w: s, h: s }, 14, 'cv-fijo cv-pz-maceta', '', null, '', '', '', caras);
+  if (CROQUIS_IMG) return maceta + '<div class="cv-piso-pieza cv-copa" style="' + visorLugar(r) + '">' + visorSvg(r, dibujoPieza('planta', r, '', 's', '', { sinNombre: true })) + '</div>';
+  return maceta +
     [[1.08, 20, 0, 0], [0.88, 29, -0.07, -0.05], [0.6, 37, 0.05, -0.09]].map(function (h) {
       var d = m * h[0];
       return '<div class="cv-hoja" style="left:' + n1(cx - d / 2 + h[2] * m) + 'px;top:' + n1(cy - d / 2 + h[3] * m) + 'px;width:' + n1(d) + 'px;height:' + n1(d) + 'px;transform:translateZ(' + h[1] + 'px)"></div>';
@@ -262,7 +267,7 @@ function visorDibujar(V, ajustar) {
   V.mundo.style.height = pl.H + 'px';
   /* El piso (cálido, de madera) y las paredes bajas, cortadas para ver adentro; el frente es vidriera. */
   out += '<div class="cv-piso' + (pl.tipo === 'deposito' ? ' cv-piso-dep' : '') + '" style="left:' + pl.x0 + 'px;top:' + pl.y0 + 'px;width:' + (pl.x1 - pl.x0) + 'px;height:' + (pl.y1 - pl.y0) + 'px"></div>';
-  var puerta = pl.items.filter(function (x) { return x.tipo === 'puerta'; })[0], g = 11, am = VISOR_ALTO.muro;
+  var puerta = pl.items.filter(function (x) { return x.tipo === 'puerta'; })[0], g = 11, am = V.inclinado ? VISOR_ALTO.muro : VISOR_ALTO.muroFoto;
   /* De cada pared, la cara de adentro (la de afuera nunca se ve); del frente, también la de la vereda. */
   var adentro = { fondo: 's', izquierda: 'e', derecha: 'o', frente: 'ns' };
   var muro = function (x, y, w, h, vidrio, lado) { return visorCaja({ x: x, y: y, w: w, h: h }, am, 'cv-muro' + (vidrio ? ' cv-vidrio' : ''), '', null, '', '', '', adentro[lado]); };
@@ -296,7 +301,7 @@ function visorDibujar(V, ajustar) {
     var frente = it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? null : 's';
     var numero = m.isla ? numeroVista(d, m) : m.numero, que = visorEtiqueta(m);
     var rotulo = '<div class="cv-rotulo"><b' + (e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '') + '>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
-    var tapa = visorSvg(r, interiorModulo(d, m, r, 'cvR'), 'cv-merca') + '<div class="cv-foto-cara cv-foto-tapa"></div>';
+    var tapa = visorSvg(r, interiorModulo(d, m, r, 'cvR', it.pared), 'cv-merca') + '<div class="cv-foto-cara cv-foto-tapa"></div>';
     out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (frente ? '' : ' foto-arriba'),
       'data-mod="' + esc(m.id) + '" role="button" tabindex="0" aria-label="' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '"',
       frente || 'tapa', tapa, rotulo, visorCategoria(V, m).color, visorCaras(pl, r));

@@ -308,3 +308,7 @@
 .pieza-ico { width: 34px; height: 24px; flex: none; }
 .imp-isla .pieza-ico { width: 40px; height: 28px; }
 @media (max-width: 560px) { .imp-isla .pieza-ico { display: none; } }
+/* El ancho de la entrada, al lado de "Mover la entrada". */
+.imp-ancho-puerta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.imp-ancho-puerta > span { font: 600 13px var(--sans); color: var(--txt-2); margin: 0 2px 0 6px; }
+.imp-ancho-puerta[hidden] { display: none; }
