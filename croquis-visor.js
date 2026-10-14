@@ -38,6 +38,7 @@ function abrirVisor(cont, op) {
     var b = e.target.closest && e.target.closest('[data-tab]');
     if (!b || b.dataset.tab === V.tab) return;
     V.tab = b.dataset.tab;
+    V.resaltado = null;
     cont.querySelectorAll('#cvTabs [data-tab]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
     visorDibujar(V, true);
   };
@@ -66,9 +67,15 @@ function abrirVisor(cont, op) {
     var b = e.target.closest && e.target.closest('[data-vista]');
     if (b && b.dataset.vista !== V.vista) {
       V.vista = b.dataset.vista;
+      V.resaltado = null;
       try { localStorage.setItem('vdh_visor_vista', V.vista); } catch (x) {}
       visorPintar(V); visorPanel(V);
+      return;
     }
+    /* Tocar a alguien de la leyenda: se iluminan sus módulos y el resto queda atenuado; tocarlo de nuevo, se ve todo. */
+    var r = e.target.closest && e.target.closest('[data-resalta]');
+    if (r) { V.resaltado = V.resaltado === r.dataset.resalta ? null : r.dataset.resalta; visorPintar(V); visorPanel(V); }
+    if (e.target.closest && e.target.closest('#cvVerTodos')) { V.resaltado = null; visorPintar(V); visorPanel(V); }
   });
   V.alTamano = function () { if (V.d) { V.fit = {}; visorCamara(V, true); } };
   window.addEventListener('resize', V.alTamano);
@@ -199,6 +206,7 @@ function visorDibujar(V, ajustar) {
       frente || 'tapa', tapa, rotulo, visorCategoria(V, m).color);
   });
   V.mundo.innerHTML = out;
+  visorPintar(V);
   visorFotos(V);
   visorPanel(V);
   if (ajustar) { V.fit = {}; visorCamara(V, true); }
@@ -345,7 +353,11 @@ function visorCategoria(V, m) {
 function visorPintar(V) {
   V.mundo.querySelectorAll('.cv-caja[data-mod]').forEach(function (c) {
     var m = visorModulo(V, c.dataset.mod);
-    if (m) c.style.setProperty('--halo', visorCategoria(V, m).color);
+    if (!m) return;
+    var k = visorCategoria(V, m);
+    c.style.setProperty('--halo', k.color);
+    c.classList.toggle('cv-resaltado', !!V.resaltado && k.clave === V.resaltado);
+    c.classList.toggle('cv-apagado', !!V.resaltado && k.clave !== V.resaltado);
   });
 }
 function visorModulosTab(V) { return V.tab === 'deposito' ? V.d.dep : V.d.pared.concat(V.d.islas); }
@@ -369,8 +381,9 @@ function visorPanel(V) {
     }).join('') + '</div>' +
     '<div class="cv-ley" role="list">' + lista.map(function (k) {
       var g = grupos[k];
-      return '<span class="cv-ley-item" role="listitem" data-resalta="' + esc(k) + '"><i style="background:' + g.k.color + '"></i><b>' + esc(g.k.texto) + '</b><small>' + g.n + '</small></span>';
+      return '<button type="button" class="cv-ley-item" role="listitem" data-resalta="' + esc(k) + '" aria-pressed="' + (V.resaltado === k) + '"><i style="background:' + g.k.color + '"></i><b>' + esc(g.k.texto) + '</b><small>' + g.n + '</small></button>';
     }).join('') + '</div>' +
+    (V.resaltado ? '<button type="button" class="cv-chico cv-ver-todos" id="cvVerTodos">Ver todos</button>' : '') +
     '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>' +
     '<details class="cv-sec"' + abierto + '><summary>De un vistazo</summary><div class="cv-vistazo"><span><b>' + mods.length + '</b> módulos</span>' +
       (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') + (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div></details>';
