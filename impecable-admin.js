@@ -1445,7 +1445,10 @@ function elegirSectorAdmin(d, modId) {
       /* Qué hay (SQL 114): lo que tiene, que cambia con la temporada; se lee arriba del módulo en el croquis. */
       '<div class="renglon"><label class="campo c-grande"><span>Qué hay (opcional)</span>' +
       '<input id="mQue" maxlength="60" value="' + esc(queHay(m) || '') + '" placeholder="Remeras, buzos de algodón…"></label>' +
-      '<button class="boton chico" id="mGuardarQue">Guardar qué hay</button></div>' : '') +
+      '<button class="boton chico" id="mGuardarQue">Guardar qué hay</button></div>' +
+      /* SQL 118: lo anota la IA con cada foto; si lo escribió una persona, no lo pisa y deja su sugerencia. */
+      (m.contenido_ia ? '<p class="bajada">La IA ve: <b>' + esc(m.contenido_ia) + '</b> <button class="boton chico" id="mUsarIa">Usar esto</button></p>'
+        : queHay(m) && m.contenido_origen === 'ia' ? '<p class="bajada">Lo anotó la IA con la última foto, y lo va actualizando. Si lo escribís vos, deja de cambiarlo y sólo sugiere.</p>' : '') : '') +
     '<div class="seccion">¿De quién es?</div>' +
     '<p class="bajada">Elegí el sector. Cada sector tiene su responsable y quién lo cubre.</p><div class="mapa-ley">' + lista.map(function (s) {
       var resp = d.persona[s.responsable_id], sup = d.persona[s.suplente_id];
@@ -1467,6 +1470,15 @@ function elegirSectorAdmin(d, modId) {
       f.remove(); avisar(v ? 'Listo: en el croquis dice "' + v + '".' : 'Listo: se borró qué hay.'); recargarMapaLocal();
     }, function (e) {
       if (/orden_modulo_contenido|PGRST202|could not find the function/i.test(String(e && e.message))) throw rechazo('Falta correr el SQL 114 en Supabase (está en el Escritorio, en "App Orden").');
+      throw e;
+    });
+  });
+  var ui = f.querySelector('#mUsarIa');
+  if (ui) unaVez(ui, function () {
+    return llamar('orden_modulo_contenido_aceptar', { p_modulo: m.id }).then(function () {
+      f.remove(); avisar('Listo: en el croquis dice "' + m.contenido_ia + '".'); recargarMapaLocal();
+    }, function (e) {
+      if (/orden_modulo_contenido_aceptar|PGRST202|could not find the function/i.test(String(e && e.message))) throw rechazo('Falta correr el SQL 118 en Supabase (está en el Escritorio, en "App Orden").');
       throw e;
     });
   });

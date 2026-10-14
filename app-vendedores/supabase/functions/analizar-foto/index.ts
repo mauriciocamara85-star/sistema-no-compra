@@ -56,7 +56,14 @@ Deno.serve(async (req) => {
       p_modelo: modelo,
     });
     if (error) throw new Error(error.message);
-    return json({ ia_activa: true, ...data });
+    // 5) Qué hay en el módulo (SQL 118): lo pone, lo actualiza o lo deja como sugerencia. Si todavía no está, sigue igual.
+    let queHay: string | null = null;
+    if (resultado.foto_valida && resultado.que_hay) {
+      const q = await sb.rpc("orden_modulo_contenido_ia", { p_foto: fotoId, p_contenido: resultado.que_hay });
+      if (q.error) console.error("que_hay", fotoId, q.error.message);
+      else queHay = q.data as string;
+    }
+    return json({ ia_activa: true, ...data, que_hay: resultado.que_hay ?? null, que_hay_estado: queHay });
   } catch (e) {
     // Si la IA falla, el vendedor NO queda trabado: puede enviar igual y lo revisa el supervisor.
     console.error("analizar-foto", fotoId, e);

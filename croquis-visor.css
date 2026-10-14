@@ -211,6 +211,9 @@
 .cv-que-linea { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 0 0; }
 .cv-que { color: var(--cv-lima); font-weight: 800; }
 .cv-que:empty { display: none; }
+.cv-que-ia { color: var(--cv-suave); font-size: 12px; font-weight: 600; }
+.cv-que-sug { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 0 0; color: var(--cv-suave); font-size: 14px; }
+.cv-que-sug b { color: var(--cv-texto); }
 .cv-enlace { min-height: 32px; padding: 0; border: 0; background: none; color: var(--cv-suave); font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
 .cv-enlace:hover { color: var(--cv-texto); }
 .cv-que-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }

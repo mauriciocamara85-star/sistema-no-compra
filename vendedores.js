@@ -1330,6 +1330,9 @@ function tarjetaRevision(r) {
         }).join('')
       : '<div class="bajada" style="margin:0">No encontró nada para corregir.</div>') +
     (r.tareas_resueltas ? '<div class="bajada" style="margin:8px 0 0">Se cerró sola ' + (r.tareas_resueltas === 1 ? '1 tarea' : r.tareas_resueltas + ' tareas') + ' que ya está bien.</div>' : '') +
+    /* Qué hay (SQL 118): lo anotó en el croquis, o lo deja como sugerencia si lo había escrito alguien. */
+    (r.que_hay && r.que_hay_estado === 'puesto' ? '<div class="bajada" style="margin:8px 0 0">En el croquis anotó qué hay: <b>' + esc(r.que_hay) + '</b>.</div>' : '') +
+    (r.que_hay && r.que_hay_estado === 'sugerido' ? '<div class="bajada" style="margin:8px 0 0">Ve <b>' + esc(r.que_hay) + '</b>, y en el croquis dice otra cosa. Si cambió, en Fotos → Ver el local tocá el módulo y "Usar esto".</div>' : '') +
     '</div>';
 }
 
@@ -2641,7 +2644,13 @@ function pantallaMapa(loc, volverA) {
   app.className = 'app';
   var supervisa = esSupervision() && !soloMira();
   abrirVisor(app, {
-    local: loc, puedeSugerir: supervisa, puedeNombrar: supervisa, puedeEditar: false,
+    local: loc, puedeSugerir: supervisa, puedeEditar: false,
+    /* Qué hay: el supervisor en todos; el vendedor en los suyos (o los que cubre) y en la vidriera, que es de todos (SQL 118). */
+    puedeNombrar: supervisa || (!soloMira() && function (m, d) {
+      if (!('contenido_origen' in m)) return false;   // sin el SQL 118 la base sólo deja al supervisor
+      var s = d.sectorDe[m.sector_id], id = yo().id;
+      return esVidriera(m) || !!(s && id && (s.responsable_id === id || s.suplente_id === id));
+    }),
     dondeAsignar: 'se asigna desde la computadora (No Compra → Equipo VDH → Por local)',
     capa: { abrir: abrirCapa, soltar: soltarCapa },
     alVolver: function () { irA(volverA || 'equipo'); }

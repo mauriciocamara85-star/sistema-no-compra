@@ -30,6 +30,8 @@ export type Resultado = {
   nivel_sugerido: "impecable" | "bien" | "a_mejorar" | "fuera_de_estandar";
   comentario?: string;
   confianza: "alta" | "media" | "baja";
+  /** Qué ropa hay en el módulo ("Remeras", "Buzos y camperas"); vacío si no se distingue (SQL 118). */
+  que_hay?: string;
 };
 
 const NIVELES = ["impecable", "bien", "a_mejorar", "fuera_de_estandar"] as const;
@@ -79,6 +81,7 @@ CÓMO RESPONDER
 - ${etapa}
 - Nivel: impecable = todo bien; bien = un detalle menor; a_mejorar = un problema claro para corregir; fuera_de_estandar = varios problemas o el módulo desarmado.
 - confianza: qué tan seguro estás de lo que viste ("baja" si la foto no deja ver bien).
+- que_hay: qué ropa hay en ${ctx.sector_tipo === "salon" ? "el módulo" : "este sector del depósito"}, en 1 a 4 palabras, como lo diría un vendedor: la prenda que más se ve primero (ej.: "Remeras", "Buzos y camperas", "Jeans", "Accesorios", "Zapatillas"). Sin colores, marcas ni cantidades. Si no se distingue, dejalo vacío.
 Respondé SOLO usando la herramienta informe_modulo.`;
 }
 
@@ -118,6 +121,7 @@ export function armarHerramienta(checks: string[]) {
         nivel_sugerido: { type: "string", enum: [...NIVELES] },
         comentario: { type: "string", description: "Una frase corta para el vendedor." },
         confianza: { type: "string", enum: ["alta", "media", "baja"] },
+        que_hay: { type: "string", description: "Qué ropa hay, en 1 a 4 palabras (\"Remeras\", \"Buzos y camperas\"). Vacío si no se distingue." },
       },
       required: ["foto_valida", "checks", "hallazgos", "nivel_sugerido", "confianza"],
     },
@@ -159,7 +163,16 @@ export function normalizar(r: Partial<Resultado>, ctx: Contexto): Resultado {
     nivel_sugerido: NIVELES.includes(r.nivel_sugerido as never) ? r.nivel_sugerido! : "bien",
     comentario: r.comentario?.trim().slice(0, 200),
     confianza,
+    que_hay: r.foto_valida === false ? undefined : limpiarQueHay(r.que_hay),
   };
+}
+
+/** "remeras  y buzos." → "Remeras y buzos" (sin punto final, la primera en mayúscula, hasta 40 letras). */
+export function limpiarQueHay(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const t = v.replace(/\s+/g, " ").trim().replace(/[.;:,]+$/, "").slice(0, 40).trim();
+  if (!t || /^(no se (ve|distingue)|nada|vac[ií]o|-+)$/i.test(t)) return undefined;
+  return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
 export async function analizarConClaude(opts: {
