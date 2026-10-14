@@ -1230,9 +1230,13 @@ function elegirSectorAdmin(d, modId) {
   /* El nombre: "Vidriera", "Caja"… para identificarlo (en el depósito el nombre es el del sector). */
   var conNombre = true;
   var f = ventana('<h1>' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '</h1>' +
-    (conNombre ? '<div class="renglon"><label class="campo c-grande"><span>' + (m.isla ? 'Nombre' : 'Nombre (opcional): para reconocerlo') + '</span>' +
-      '<input id="mNombre" maxlength="40" value="' + esc(m.isla ? m.nombre : nombrePropio(m) || '') + '" placeholder="' + (tipo === 'deposito' ? 'Estantería de remeras…' : 'Vidriera, Al lado de la caja…') + '"></label>' +
-      '<button class="boton chico" id="mGuardarNombre">Guardar el nombre</button></div>' : '') +
+    (conNombre ? '<div class="renglon"><label class="campo c-grande"><span>' + (m.isla ? 'Nombre' : 'Nombre (opcional): dónde está, para reconocerlo') + '</span>' +
+      '<input id="mNombre" maxlength="40" value="' + esc(m.isla ? m.nombre : nombrePropio(m) || '') + '" placeholder="' + (tipo === 'deposito' ? 'Estantería del fondo…' : 'Vidriera, Al lado de la caja…') + '"></label>' +
+      '<button class="boton chico" id="mGuardarNombre">Guardar el nombre</button></div>' +
+      /* Qué hay (SQL 114): lo que tiene, que cambia con la temporada; se lee arriba del módulo en el croquis. */
+      '<div class="renglon"><label class="campo c-grande"><span>Qué hay (opcional)</span>' +
+      '<input id="mQue" maxlength="60" value="' + esc(queHay(m) || '') + '" placeholder="Remeras, buzos de algodón…"></label>' +
+      '<button class="boton chico" id="mGuardarQue">Guardar qué hay</button></div>' : '') +
     '<div class="seccion">¿De quién es?</div>' +
     '<p class="bajada">Elegí el sector. Cada sector tiene su responsable y quién lo cubre.</p><div class="mapa-ley">' + lista.map(function (s) {
       var resp = d.persona[s.responsable_id], sup = d.persona[s.suplente_id];
@@ -1245,6 +1249,16 @@ function elegirSectorAdmin(d, modId) {
       return llamar('orden_mover_modulo', { p_modulo: m.id, p_sector: b.dataset.a }).then(function () {
         f.remove(); avisar('Listo: ' + nombreModulo(m, d.sectorDe[m.sector_id], d) + ' cambió de sector.'); recargarMapaLocal();
       });
+    });
+  });
+  var gq = f.querySelector('#mGuardarQue');
+  if (gq) unaVez(gq, function () {
+    var v = f.querySelector('#mQue').value.trim();
+    return llamar('orden_modulo_contenido', { p_modulo: m.id, p_contenido: v || null }).then(function () {
+      f.remove(); avisar(v ? 'Listo: en el croquis dice "' + v + '".' : 'Listo: se borró qué hay.'); recargarMapaLocal();
+    }, function (e) {
+      if (/orden_modulo_contenido|PGRST202|could not find the function/i.test(String(e && e.message))) throw rechazo('Falta correr el SQL 114 en Supabase (está en el Escritorio, en "App Orden").');
+      throw e;
     });
   });
   var gn = f.querySelector('#mGuardarNombre');

@@ -198,6 +198,8 @@
   padding: max(16px, env(safe-area-inset-top)) 18px 10px 20px; background: var(--cv-panel); box-shadow: 0 10px 14px -12px rgba(0, 0, 0, .6); }
 .cv-ficha-cab small { color: var(--cv-suave); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .cv-ficha-cab h2 { margin: 2px 0 0; font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
+.cv-nombre { margin: 2px 0 0; font-size: 15px; font-weight: 700; color: var(--cv-texto); }
+.cv-que-et { color: var(--cv-suave); font-weight: 700; }
 .cv-que-linea { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 0 0; }
 .cv-que { color: var(--cv-lima); font-weight: 800; }
 .cv-que:empty { display: none; }

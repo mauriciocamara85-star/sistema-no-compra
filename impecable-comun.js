@@ -470,6 +470,8 @@ function nombrePropio(m) {
   var n = String((m && m.nombre) || '').trim();
   return !m || m.isla || !n || /^(m[oó]dulo|dep[oó]sito)( sector)? \d+$/i.test(n) ? null : n;
 }
+/** Qué hay en el módulo ("Remeras", "Buzos de algodón"), aparte de su nombre (SQL 114), o null. */
+function queHay(m) { var v = String((m && m.contenido) || '').trim(); return v || null; }
 /** "Vidriera (módulo 1)", "Módulo 7", "Caja", "Depósito 3". s: su sector (para saber si es del depósito). */
 /** Cuántos módulos hay en las paredes según el mapa. */
 function totalParedes(d) { var mm = (d && d.mapa) || {}; return PAREDES.reduce(function (s, p) { return s + Math.max(0, +mm[p[0]] || 0); }, 0); }
@@ -760,7 +762,7 @@ function svgMapa(d, op) {
   op._sombra = df.sombra;
   var out = df.svg + '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>' +
     '<text x="' + (W / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" fill-opacity=".75">Frente · vidriera</text>';
-  var p = dibujarParedes(d, op, cq, geo, 'salon', d.pared, function (m) { return String(m.numero); }, nombrePropio);
+  var p = dibujarParedes(d, op, cq, geo, 'salon', d.pared, function (m) { return String(m.numero); }, function (m) { return queHay(m) || nombrePropio(m); });
   var c = dibujarCentro(d, op, cq, geo, p.sobran);
   return '<svg class="mapa-svg' + (cuadrado ? ' cuadrado' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" data-adentro="' + c.caja.map(function (v) { return v.toFixed(1); }).join(' ') +
     '" role="img" aria-label="El salón, visto desde arriba">' + out + c.svg + p.svg + '</svg>';
@@ -848,11 +850,11 @@ function planoMapa(d, tipo) {
 
 /** Los módulos con nombre, enteros: en las paredes de costado se ven cortados ("Vidri…"). */
 function leyendaNombres(d) {
-  var con = d.pared.concat(d.islas, d.dep).filter(function (m) { return m.isla || nombrePropio(m); });
+  var con = d.pared.concat(d.islas, d.dep).filter(function (m) { return m.isla || nombrePropio(m) || queHay(m); });
   if (!con.length) return '';
   return '<p class="mapa-nombres"><b>Con nombre:</b> ' + con.map(function (m) {
-    var s = d.sectorDe[m.sector_id];
-    return esc((s && s.tipo === 'deposito' ? 'Depósito ' : '') + numeroVista(d, m) + ' · ' + (m.isla ? m.nombre : nombrePropio(m)));
+    var s = d.sectorDe[m.sector_id], n = m.isla ? m.nombre : nombrePropio(m), q = queHay(m);
+    return esc((s && s.tipo === 'deposito' ? 'Depósito ' : '') + numeroVista(d, m) + ' · ' + (n && q ? n + ' (' + q + ')' : n || q));
   }).join(' — ') + '</p>';
 }
 

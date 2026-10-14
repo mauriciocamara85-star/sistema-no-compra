@@ -262,7 +262,7 @@ function visorDibujar(V, ajustar) {
     /* La cara que mira al salón: la de los costados mira al medio; la del frente mira hacia adentro (de espaldas a
        quien mira la maqueta), así que esos llevan la foto arriba. */
     var frente = it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? null : 's';
-    var numero = m.isla ? numeroVista(d, m) : m.numero, que = m.isla ? m.nombre : nombrePropio(m);
+    var numero = m.isla ? numeroVista(d, m) : m.numero, que = visorEtiqueta(m);
     var rotulo = '<div class="cv-rotulo"><b' + (e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '') + '>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
     var tapa = '<div class="cv-merca" style="background:' + visorMercaderia(m.id, r.h > r.w, pl.tipo === 'deposito' ? 'cajas' : it.pared ? 'colgada' : 'doblada') + '"></div><div class="cv-foto-cara cv-foto-tapa"></div>';
     out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (frente ? '' : ' foto-arriba'),
@@ -510,13 +510,16 @@ function visorCategoria(V, m) {
   var s = V.d.sectorDe[m.sector_id], p = s && s.responsable_id;
   return { clave: 'p:' + (p || 'nadie'), texto: p && V.d.persona[p] ? nombreLista(V.d.persona[p]) : 'Sin responsable', color: visorColor(V, m) };
 }
-/** Qué hay en cada módulo (los que tienen nombre), enteros: en la maqueta, en el celular, se leen al acercar. */
+/** Lo que se lee arriba de cada módulo: qué hay (SQL 114) o, si no tiene, su nombre. */
+function visorEtiqueta(m) { return queHay(m) || (m.isla ? m.nombre : nombrePropio(m)); }
+/** Qué hay en cada módulo (los que tienen nombre o qué hay), enteros: en la maqueta, en el celular, se leen al acercar. */
 function visorListaQue(V, mods, abierto) {
-  var d = V.d, con = mods.filter(function (m) { return m.isla || nombrePropio(m); });
+  var d = V.d, con = mods.filter(function (m) { return visorEtiqueta(m); });
   if (!con.length) return '';
   return '<details class="cv-sec cv-que-sec"' + abierto + '><summary>Qué hay en cada módulo</summary>' +
     '<p class="cv-ayuda cv-solo-ocultos">En el plano se leen al acercarlo.</p><div class="cv-lista-que">' + con.map(function (m) {
-      return '<button type="button" data-abrir="' + esc(m.id) + '"><b>' + esc(String(m.isla ? numeroVista(d, m) : m.numero)) + '</b>' + esc(m.isla ? m.nombre : nombrePropio(m)) + '</button>';
+      var n = m.isla ? m.nombre : nombrePropio(m), q = queHay(m);
+      return '<button type="button" data-abrir="' + esc(m.id) + '"><b>' + esc(String(m.isla ? numeroVista(d, m) : m.numero)) + '</b>' + esc(n && q ? n + ' · ' + q : n || q) + '</button>';
     }).join('') + '</div></details>';
 }
 /** Cambiar de vista no vuelve a armar la maqueta: sólo cambia los colores (con una transición suave). */
@@ -581,14 +584,15 @@ function abrirFicha(V, id, caja) {
   var m = visorModulo(V, id);
   if (!m) return;
   var d = V.d, e = V.estado[id] || {}, s = d.sectorDe[m.sector_id], resp = s && d.persona[s.responsable_id], sup = s && d.persona[s.suplente_id];
-  var numero = m.isla ? numeroVista(d, m) : m.numero, que = m.isla ? m.nombre : nombrePropio(m);
+  var numero = m.isla ? numeroVista(d, m) : m.numero, nombre = m.isla ? m.nombre : nombrePropio(m), que = queHay(m);
   var titulo = (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero, ref = m.foto_referencia_path;
   var origen = caja.querySelector('.cv-frente, .cv-tapa');
   V.raiz.insertAdjacentHTML('beforeend', '<div class="cv-ficha-fondo"></div><section class="cv-ficha" role="dialog" aria-modal="true" aria-label="' + esc(titulo) + '">' +
     '<header class="cv-ficha-cab"><div><small>' + esc(visorDonde(V, m)) + '</small><h2>' + esc(titulo) + '</h2>' +
-      '<p class="cv-que-linea"><span class="cv-que" id="cvQue">' + esc(que || '') + '</span>' +
-        (V.op.puedeNombrar && !m.isla ? '<button class="cv-enlace" type="button" id="cvCambiarQue">' + (que ? 'Cambiar' : '+ Qué hay en este módulo') + '</button>' : '') + '</p>' +
-      '<form class="cv-que-form" id="cvQueForm" hidden><input id="cvQueInput" maxlength="40" autocomplete="off" placeholder="Remeras, buzos, jeans…" aria-label="Qué hay en este módulo">' +
+      (nombre ? '<p class="cv-nombre">' + esc(nombre) + '</p>' : '') +
+      '<p class="cv-que-linea"' + (que || V.op.puedeNombrar ? '' : ' hidden') + '><span class="cv-que-et"' + (que ? '' : ' hidden') + '>Qué hay:</span><span class="cv-que" id="cvQue">' + esc(que || '') + '</span>' +
+        (V.op.puedeNombrar ? '<button class="cv-enlace" type="button" id="cvCambiarQue">' + (que ? 'Cambiar' : '+ Qué hay en este módulo') + '</button>' : '') + '</p>' +
+      '<form class="cv-que-form" id="cvQueForm" hidden><input id="cvQueInput" maxlength="60" autocomplete="off" placeholder="Remeras, buzos, jeans…" aria-label="Qué hay en este módulo">' +
         '<button class="cv-boton cv-lima" type="submit">Guardar</button><button class="cv-boton" type="button" id="cvQueCancelar">Cancelar</button></form></div>' +
       '<button class="cv-cerrar" type="button" aria-label="Volver al plano">×</button></header>' +
     '<div class="cv-ficha-cuerpo">' +
@@ -794,13 +798,13 @@ function visorFichaSugerencia(V, m, resp) {
   };
 }
 
-/* ── Qué hay en este módulo: su nombre propio (Remeras, Buzos…), que se ve arriba del módulo en la maqueta. Lo de adentro
-      del local (la caja, las mesas) se renombra en el croquis: su nombre es el que el croquis usa para ubicarlo. ── */
+/* ── Qué hay en este módulo (Remeras, Buzos…), aparte de su nombre (SQL 114): se lee arriba del módulo en la maqueta.
+      También en lo de adentro (la caja, las mesas): su nombre, el que los ubica en el croquis, no cambia. ── */
 function visorFichaQue(V, m) {
   var f = V.ficha.el, b = f.querySelector('#cvCambiarQue'), form = f.querySelector('#cvQueForm');
   if (!b || !form) return;
   var input = f.querySelector('#cvQueInput');
-  b.onclick = function () { input.value = nombrePropio(m) || ''; form.hidden = false; b.hidden = true; input.focus(); };
+  b.onclick = function () { input.value = queHay(m) || ''; form.hidden = false; b.hidden = true; input.focus(); };
   f.querySelector('#cvQueCancelar').onclick = function () { form.hidden = true; b.hidden = false; };
   form.onsubmit = function (e) {
     e.preventDefault();
@@ -808,23 +812,25 @@ function visorFichaQue(V, m) {
     if (guardar.disabled) return;
     var v = String(input.value || '').replace(/\s+/g, ' ').trim();
     guardar.disabled = true;
-    llamar('orden_modulo_nombre', { p_modulo: m.id, p_nombre: v || null }).then(function () {
-      var s = V.d.sectorDe[m.sector_id];
-      m.nombre = v || ((s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + m.numero);
-      f.querySelector('#cvQue').textContent = nombrePropio(m) || '';
-      b.textContent = nombrePropio(m) ? 'Cambiar' : '+ Qué hay en este módulo';
+    llamar('orden_modulo_contenido', { p_modulo: m.id, p_contenido: v || null }).then(function () {
+      m.contenido = v || null;
+      f.querySelector('#cvQue').textContent = v;
+      f.querySelector('.cv-que-et').hidden = !v;
+      b.textContent = v ? 'Cambiar' : '+ Qué hay en este módulo';
       form.hidden = true; b.hidden = false; guardar.disabled = false;
-      /* El rótulo de la maqueta también cambia. */
+      /* El rótulo de la maqueta y la lista del panel también cambian. */
       var caja = V.mundo.querySelector('.cv-caja[data-mod="' + m.id + '"] .cv-rotulo');
       if (caja) {
-        var span = caja.querySelector('span'), p = nombrePropio(m);
+        var span = caja.querySelector('span'), p = visorEtiqueta(m);
         if (p) { if (!span) { span = document.createElement('span'); caja.appendChild(span); } span.textContent = recortar(p, 18); }
         else if (span) span.remove();
       }
-      avisarVisor(v ? 'Listo: en el croquis dice "' + v + '".' : 'Listo: volvió a su nombre de siempre.');
+      visorPanel(V);
+      avisarVisor(v ? 'Listo: en el croquis dice "' + v + '".' : 'Listo: se borró qué hay.');
     }, function (err) {
       guardar.disabled = false;
-      avisarVisor(esDeRed(err) ? 'Sin conexión: no se guardó. Probá de nuevo.' : mensajeDe(err));
+      var falta = /orden_modulo_contenido|PGRST202|could not find the function/i.test(String(err && err.message));
+      avisarVisor(falta ? 'Falta correr el SQL 114 en Supabase (está en el Escritorio, en "App Orden").' : esDeRed(err) ? 'Sin conexión: no se guardó. Probá de nuevo.' : mensajeDe(err));
     });
   };
 }
