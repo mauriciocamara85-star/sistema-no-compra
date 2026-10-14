@@ -396,16 +396,19 @@ function abrirFicha(V, id, caja) {
   if (!m) return;
   var d = V.d, e = V.estado[id] || {}, s = d.sectorDe[m.sector_id], resp = s && d.persona[s.responsable_id], sup = s && d.persona[s.suplente_id];
   var numero = m.isla ? numeroVista(d, m) : m.numero, que = m.isla ? m.nombre : nombrePropio(m);
-  var titulo = (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero;
+  var titulo = (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero, ref = m.foto_referencia_path;
   var origen = caja.querySelector('.cv-frente, .cv-tapa');
   V.raiz.insertAdjacentHTML('beforeend', '<div class="cv-ficha-fondo"></div><section class="cv-ficha" role="dialog" aria-modal="true" aria-label="' + esc(titulo) + '">' +
     '<header class="cv-ficha-cab"><div><small>' + esc(visorDonde(V, m)) + '</small><h2>' + esc(titulo) + '</h2>' + (que ? '<p class="cv-que">' + esc(que) + '</p>' : '') + '</div>' +
       '<button class="cv-cerrar" type="button" aria-label="Volver al plano">×</button></header>' +
     '<div class="cv-ficha-cuerpo">' +
+      '<div class="cv-fotos' + (ref ? ' con-ref' : '') + '" id="cvFotos">' +
       (e.foto_path
-        ? '<figure class="cv-foto"><div class="cv-foto-img" id="cvFotoGrande"></div><figcaption>' + esc(textoHace(e.tomada_en) + ' · ' + diaMes(e.tomada_en) + ' ' + hora(e.tomada_en) + (e.foto_de ? ' · sacada por ' + e.foto_de : '')) + '</figcaption></figure>'
+        ? '<figure class="cv-foto cv-ahora"><div class="cv-foto-img" id="cvFotoGrande" data-amplia="ahora"></div><figcaption id="cvFotoPie">' + esc(visorPie(e.tomada_en, e.foto_de)) + '</figcaption>' +
+          '<div class="cv-historia" id="cvHistoria" hidden></div></figure>'
         : '<div class="cv-sin-foto"><div class="cv-sin-foto-ico" aria-hidden="true"></div><p><b>Todavía no hay una foto de este módulo.</b></p>' +
           (V.op.puedeSugerir && resp ? '<button class="cv-boton cv-lima" type="button" id="cvPedirFoto">Pedirle la foto a ' + esc(nombreLista(resp)) + '</button>' : resp ? '' : '<p>No tiene responsable: asignáselo en Por local.</p>') + '</div>') +
+      (ref ? '<figure class="cv-foto cv-ref"><div class="cv-foto-img" id="cvFotoRef" data-amplia="ref"></div><figcaption><b>Así se arma en VDH</b></figcaption></figure>' : '') + '</div>' +
       '<div class="cv-datos">' + (e.nivel ? '<span class="cv-nivel nivel-' + esc(e.nivel) + '">' + esc(NIVEL[e.nivel] || e.nivel) + '</span>' : '') +
         '<span class="cv-persona"><i style="background:' + visorColor(V, m) + '"></i>' + esc(resp ? nombreLista(resp) : 'Sin responsable') + (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '') + '</span>' +
         (+e.tareas_abiertas ? '<span>' + e.tareas_abiertas + (+e.tareas_abiertas === 1 ? ' tarea abierta' : ' tareas abiertas') + '</span>' : '') + '</div>' +
@@ -416,19 +419,17 @@ function abrirFicha(V, id, caja) {
   ficha.querySelector('.cv-cerrar').onclick = function () { cerrarFicha(V); };
   fondo.onclick = function () { cerrarFicha(V); };
   if (V.op.capa) { V.ficha.alAtras = function (porNavegar) { if (!porNavegar) cerrarFicha(V, false, true); }; V.op.capa.abrir(V.ficha.alAtras); }
-  /* La foto: primero la miniatura (ya está), después la grande. */
-  if (e.foto_path) {
-    var grande = ficha.querySelector('#cvFotoGrande');
-    miniaturaFoto(e.foto_path).then(function (u) { if (u && !grande.style.backgroundImage) grande.style.backgroundImage = 'url("' + u + '")'; });
-    urlFirmada(e.foto_path).then(function (u) {
-      if (!u) { grande.classList.add('cv-foto-falla'); grande.textContent = 'No se pudo cargar la foto.'; return; }
-      var img = new Image();
-      img.onload = function () { grande.style.backgroundImage = 'url("' + u + '")'; grande.classList.add('cv-nitida'); };
-      img.onerror = function () { if (!grande.style.backgroundImage) { grande.classList.add('cv-foto-falla'); grande.textContent = 'No se pudo cargar la foto.'; } };
-      img.src = u;
-    });
-    visorIa(V, id);
-  }
+  /* La foto: primero la miniatura (ya está), después la grande. Al lado, la de referencia; tocar una la agranda. */
+  if (e.foto_path) { visorCargarFoto(ficha.querySelector('#cvFotoGrande'), e.foto_path); visorIa(V, id); }
+  if (ref) visorCargarFoto(ficha.querySelector('#cvFotoRef'), ref);
+  var fotos = ficha.querySelector('#cvFotos');
+  fotos.addEventListener('click', function (ev) {
+    var f = ev.target.closest && ev.target.closest('[data-amplia]');
+    if (!f || !fotos.classList.contains('con-ref')) return;
+    var cl = 'amplia-' + f.dataset.amplia, ya = fotos.classList.contains(cl);
+    fotos.classList.remove('amplia-ahora', 'amplia-ref');
+    if (!ya) fotos.classList.add(cl);
+  });
   var pf = ficha.querySelector('#cvPedirFoto');
   if (pf) pf.onclick = function () { visorPedirFoto(V, m, resp, pf); };
   /* El zoom: la ficha sale desde la cara del módulo y crece hasta su lugar. */
@@ -471,9 +472,49 @@ function visorIa(V, id) {
     V.ficha.historia = h || [];
     var z = V.ficha.el.querySelector('#cvIa');
     if (z) z.innerHTML = visorTextoIa((h || [])[0]);
+    visorHistoria(V);
   }).catch(function () {
     var z = V.ficha && V.ficha.id === id && V.ficha.el.querySelector('#cvIa');
     if (z) z.innerHTML = '<p class="cv-gris">Sin conexión: no se pudo ver lo que dijo la IA.</p>';
+  });
+}
+/** "hace 3 días · 10/10 15:32 · sacada por Lautaro". */
+function visorPie(ts, quien) { return ts ? textoHace(ts) + ' · ' + diaMes(ts) + ' ' + hora(ts) + (quien ? ' · sacada por ' + quien : '') : ''; }
+/** Pone una foto en un recuadro: primero la miniatura (si está), después la grande. Si ya no se guarda, lo dice. */
+function visorCargarFoto(div, ruta) {
+  if (!div) return;
+  div.dataset.ruta = ruta;
+  div.classList.remove('cv-nitida', 'cv-foto-falla');
+  div.textContent = '';
+  var sigue = function () { return div.dataset.ruta === ruta; };
+  var falla = function () { if (!sigue()) return; div.style.backgroundImage = ''; div.classList.add('cv-foto-falla'); div.textContent = 'Esta foto ya no está guardada.'; };
+  miniaturaFoto(ruta).then(function (u) { if (u && sigue() && !div.classList.contains('cv-nitida')) div.style.backgroundImage = 'url("' + u + '")'; });
+  urlFirmada(ruta).then(function (u) {
+    if (!sigue()) return;
+    if (!u) { falla(); return; }
+    var img = new Image();
+    img.onload = function () { if (!sigue()) return; div.style.backgroundImage = 'url("' + u + '")'; div.classList.add('cv-nitida'); };
+    img.onerror = falla;
+    img.src = u;
+  });
+}
+/** El deslizador: de la foto más vieja que se guarda (a la izquierda) a la de ahora (a la derecha). */
+function visorHistoria(V) {
+  var f = V.ficha, h = f && f.historia, z = f && f.el.querySelector('#cvHistoria');
+  if (!z || !h || h.length < 2) return;
+  z.hidden = false;
+  z.innerHTML = '<label class="cv-hist-tit" for="cvHist">Cómo estaba antes</label>' +
+    '<input type="range" id="cvHist" min="0" max="' + (h.length - 1) + '" step="1" value="' + (h.length - 1) + '" aria-valuetext="Ahora">' +
+    '<div class="cv-hist-marcas"><span>' + esc(diaMes(h[h.length - 1].tomada_en)) + '</span><span>Ahora</span></div>';
+  var r = z.querySelector('#cvHist'), fig = f.el.querySelector('.cv-ahora'), pie = f.el.querySelector('#cvFotoPie');
+  r.addEventListener('input', function () {
+    var i = h.length - 1 - (+r.value), c = h[i];
+    visorCargarFoto(f.el.querySelector('#cvFotoGrande'), c.foto_path);
+    fig.classList.toggle('cv-antes', i > 0);
+    pie.textContent = (i > 0 ? 'Antes: ' : '') + visorPie(c.tomada_en, c.persona_nombre) + (c.nivel ? ' · ' + (NIVEL[c.nivel] || c.nivel) : '');
+    r.setAttribute('aria-valuetext', i > 0 ? diaMes(c.tomada_en) : 'Ahora');
+    var ia = f.el.querySelector('#cvIa');
+    if (ia) ia.innerHTML = visorTextoIa(c);
   });
 }
 function visorTextoIa(c) {
