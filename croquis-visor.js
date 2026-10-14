@@ -320,10 +320,12 @@ function visorMedir(V, incl) {
     u = u ? { l: Math.min(u.l, r.left), t: Math.min(u.t, r.top), r: Math.max(u.r, r.right), b: Math.max(u.b, r.bottom) } : { l: r.left, t: r.top, r: r.right, b: r.bottom };
   });
   if (!u) return { s: 1, dx: 0, dy: 0 };
-  var s = Math.min((box.width - 24) / (u.r - u.l), (box.height - 24) / (u.b - u.t));
+  /* Abajo queda lugar para los botones de acercar (que no tapen el local). */
+  var abajo = 58, alto = box.height - abajo;
+  var s = Math.min((box.width - 24) / (u.r - u.l), (alto - 20) / (u.b - u.t));
   s = Math.max(0.2, Math.min(s, 1.6));
   /* El centro de lo que se ve, al centro de la escena (lo inclinado sube las tapas). */
-  var cx = (u.l + u.r) / 2 - (box.left + box.width / 2), cy = (u.t + u.b) / 2 - (box.top + box.height / 2);
+  var cx = (u.l + u.r) / 2 - (box.left + box.width / 2), cy = (u.t + u.b) / 2 - (box.top + alto / 2);
   return { s: s, dx: -cx * s, dy: -cy * s };
 }
 function visorCamara(V, sinAnimar) {

@@ -48,6 +48,11 @@
 .cv-panel { min-height: 0; overflow: auto; padding: 16px; background: var(--cv-panel); display: grid; align-content: start; gap: 14px; }
 @media (max-width: 899px) {
   .cv-cuerpo { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  /* El encabezado, en un solo renglón de controles. */
+  .cv-cab { gap: 8px 10px; padding-bottom: 6px; }
+  .cv-cab-acc { width: 100%; flex-wrap: nowrap; justify-content: space-between; gap: 6px; }
+  .cv-cab-acc .cv-seg button { min-height: 38px; padding: 0 9px; font-size: 13.5px; }
+  .cv-cab-acc .cv-chico { min-height: 38px; padding: 0 12px; font-size: 13.5px; }
   .cv-panel { max-height: 36vh; padding: 12px 16px calc(12px + env(safe-area-inset-bottom)); }
   .cv-titulo b { font-size: 18px; }
 }
