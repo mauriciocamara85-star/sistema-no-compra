@@ -1179,7 +1179,9 @@
     if (!esperarLocal) { cargar(); }
     /* Cuando la base confirma quién entró (o le cambiaron el rol). */
     persona.listo.then(function () { if (aplicarRol() || esperarLocal) { aplicarVista(); cargar(); } });
-    document.addEventListener('persona', function () { if (aplicarRol()) { aplicarVista(); cargar(); } });
+    /* Entró o salió alguien (en otra pestaña): con otro rol se rearma todo;
+       con el mismo, la vista de Gift Cards igual (la abre o vuelve el portón). */
+    document.addEventListener('persona', function () { if (aplicarRol()) { aplicarVista(); cargar(); } else if (vista === 'gc') { cargar(); } });
     iniciarPWA();
   })();
 </script>

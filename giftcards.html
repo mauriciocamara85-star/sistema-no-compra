@@ -1027,6 +1027,9 @@
      (desde Estadísticas o el CRM) la muestra y baja hasta ella. */
   var aVendidas = location.hash === '#vendidas';
   if (OFICINA || aVendidas) { mostrarLista(aVendidas); } else { $('glAcceso').hidden = false; }
+  /* Entró o salió alguien (en otra pestaña): la lista a la vista se rearma
+     con quien está ahora (o vuelve el portón); la venta queda como está. */
+  document.addEventListener('persona', function () { if (!$('gcLista').hidden) { GL.lista = null; $('glCuerpo').innerHTML = ''; mostrarLista(false); } });
   iniciarTema();
   iniciarPWA();
 })();
