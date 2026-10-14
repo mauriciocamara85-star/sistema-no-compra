@@ -17,8 +17,9 @@ var VISOR_ROPA = ['#2F5BB7', '#F3F0EA', '#C9573A', '#E0A93B', '#2E7D5B', '#8C2F4
 /** Abre el modo observador adentro de cont (que ya ocupa toda la pantalla). op: { local: {id, nombre}, puedeSugerir,
     puedeNombrar, puedeEditar, alVolver(), alEditar(d), capa: {abrir(fn), soltar(fn)} } */
 function abrirVisor(cont, op) {
-  var V = { op: op, cont: cont, tab: 'salon', inclinado: true, estado: {}, d: null, ficha: null, fit: {} };
-  try { V.liviano = localStorage.getItem('vdh_visor_liviano') === '1'; } catch (e) { V.liviano = false; }
+  var V = { op: op, cont: cont, tab: 'salon', inclinado: true, estado: {}, d: null, ficha: null, fit: {}, vista: 'vendedor' };
+  try { V.liviano = localStorage.getItem('vdh_visor_liviano') === '1'; V.vista = localStorage.getItem('vdh_visor_vista') || 'vendedor'; } catch (e) { V.liviano = false; }
+  if (!VISOR_VISTAS[V.vista]) V.vista = 'vendedor';
   cont.innerHTML = '<div class="cv' + (V.liviano ? ' cv-liviano' : '') + '">' +
     '<header class="cv-cab"><button class="cv-volver" id="volverMapa" type="button">‹ Volver</button>' +
       '<div class="cv-titulo"><small>Modo observador</small><b>' + esc(op.local.nombre || '') + '</b></div>' +
@@ -59,6 +60,15 @@ function abrirVisor(cont, op) {
   V.mundo.addEventListener('click', function (e) {
     var c = e.target.closest && e.target.closest('.cv-caja[data-mod]');
     if (c && !V.ficha) abrirFicha(V, c.dataset.mod, c);
+  });
+  /* El panel: cómo verlo (por vendedor, por estado, por antigüedad). */
+  cont.querySelector('#cvPanel').addEventListener('click', function (e) {
+    var b = e.target.closest && e.target.closest('[data-vista]');
+    if (b && b.dataset.vista !== V.vista) {
+      V.vista = b.dataset.vista;
+      try { localStorage.setItem('vdh_visor_vista', V.vista); } catch (x) {}
+      visorPintar(V); visorPanel(V);
+    }
   });
   V.alTamano = function () { if (V.d) { V.fit = {}; visorCamara(V, true); } };
   window.addEventListener('resize', V.alTamano);
@@ -182,11 +192,11 @@ function visorDibujar(V, ajustar) {
        quien mira la maqueta), así que esos llevan la foto arriba. */
     var frente = it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? null : 's';
     var numero = m.isla ? numeroVista(d, m) : m.numero, que = m.isla ? m.nombre : nombrePropio(m);
-    var rotulo = '<div class="cv-rotulo"><b>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
+    var rotulo = '<div class="cv-rotulo"><b' + (e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '') + '>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
     var tapa = '<div class="cv-merca" style="background:' + visorMercaderia(m.id, r.h > r.w, pl.tipo === 'deposito' ? 'cajas' : it.pared ? 'colgada' : 'doblada') + '"></div><div class="cv-foto-cara cv-foto-tapa"></div>';
     out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (frente ? '' : ' foto-arriba'),
       'data-mod="' + esc(m.id) + '" role="button" tabindex="0" aria-label="' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '"',
-      frente || 'tapa', tapa, rotulo, visorColor(V, m));
+      frente || 'tapa', tapa, rotulo, visorCategoria(V, m).color);
   });
   V.mundo.innerHTML = out;
   visorFotos(V);
@@ -309,15 +319,61 @@ function visorFotos(V) {
   });
 }
 
-/* ── El panel de al lado (las vistas y la leyenda vienen en las etapas siguientes) ── */
+/* ── Cómo verlo: el color de cada módulo (el halo y el borde del número) ──
+   Por vendedor: el de quien lo tiene (el mismo de siempre: identifica a la persona). Por estado del orden: el nivel de
+   la última foto, con los colores de la app. Por antigüedad de la foto: de verde (de hoy) a rojo (más de 7 días). */
+var VISOR_VISTAS = { vendedor: 'Vendedor', estado: 'Estado', antiguedad: 'Antigüedad' };
+var VISOR_ESTADOS = [['impecable', 'Impecable', '#C6F432'], ['bien', 'Bien', '#5BD68A'], ['a_mejorar', 'A mejorar', '#F5B84B'], ['fuera_de_estandar', 'Fuera de estándar', '#FF8A8A'], ['sin', 'Sin foto', '#6E7684']];
+var VISOR_EDADES = [['0', 'Hoy o ayer', '#5BD68A'], ['2', 'De 2 a 4 días', '#B9DE6A'], ['5', 'De 5 a 7 días', '#F5B84B'], ['8', 'Más de 7 días', '#FF8A8A'], ['sin', 'Sin foto', '#6E7684']];
+function visorDias(ts) { return Math.round((new Date(hoyAR() + 'T12:00:00Z') - new Date(hoyAR(new Date(ts)) + 'T12:00:00Z')) / 864e5); }
+/** La categoría de un módulo en la vista elegida: { clave, texto, color }. */
+function visorCategoria(V, m) {
+  var e = V.estado[m.id] || {}, x;
+  if (V.vista === 'estado') {
+    x = VISOR_ESTADOS.filter(function (s) { return s[0] === (e.foto_path && e.nivel ? e.nivel : 'sin'); })[0] || VISOR_ESTADOS[4];
+    return { clave: 'c:' + x[0], texto: x[1], color: x[2] };
+  }
+  if (V.vista === 'antiguedad') {
+    var dd = e.foto_path && e.tomada_en ? visorDias(e.tomada_en) : null;
+    x = dd == null ? VISOR_EDADES[4] : dd <= 1 ? VISOR_EDADES[0] : dd <= 4 ? VISOR_EDADES[1] : dd <= 7 ? VISOR_EDADES[2] : VISOR_EDADES[3];
+    return { clave: 'c:' + x[0], texto: x[1], color: x[2] };
+  }
+  var s = V.d.sectorDe[m.sector_id], p = s && s.responsable_id;
+  return { clave: 'p:' + (p || 'nadie'), texto: p && V.d.persona[p] ? nombreLista(V.d.persona[p]) : 'Sin responsable', color: visorColor(V, m) };
+}
+/** Cambiar de vista no vuelve a armar la maqueta: sólo cambia los colores (con una transición suave). */
+function visorPintar(V) {
+  V.mundo.querySelectorAll('.cv-caja[data-mod]').forEach(function (c) {
+    var m = visorModulo(V, c.dataset.mod);
+    if (m) c.style.setProperty('--halo', visorCategoria(V, m).color);
+  });
+}
+function visorModulosTab(V) { return V.tab === 'deposito' ? V.d.dep : V.d.pared.concat(V.d.islas); }
 
 function visorPanel(V) {
-  var d = V.d, mods = V.tab === 'deposito' ? d.dep : d.pared.concat(d.islas);
+  var mods = visorModulosTab(V), grupos = {}, orden = [];
+  mods.forEach(function (m) {
+    var k = visorCategoria(V, m);
+    if (!grupos[k.clave]) { grupos[k.clave] = { k: k, n: 0 }; orden.push(k.clave); }
+    grupos[k.clave].n++;
+  });
+  /* En las vistas por estado y por antigüedad, la leyenda va en su orden (de lo mejor a lo peor). */
+  var lista = V.vista === 'vendedor' ? orden.sort(function (a, b) { return a === 'p:nadie' ? 1 : b === 'p:nadie' ? -1 : 0; })
+    : (V.vista === 'estado' ? VISOR_ESTADOS : VISOR_EDADES).map(function (x) { return 'c:' + x[0]; }).filter(function (k) { return grupos[k]; });
   var sinFoto = mods.filter(function (m) { var e = V.estado[m.id]; return !e || !e.foto_path; }).length;
   var viejas = mods.filter(function (m) { var e = V.estado[m.id]; return e && e.foto_path && e.sin_foto_reciente; }).length;
-  V.cont.querySelector('#cvPanel').innerHTML = '<p class="cv-ayuda">Tocá un módulo para ver su foto.</p>' +
-    '<div class="cv-vistazo"><span><b>' + mods.length + '</b> módulos</span>' + (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') +
-    (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div>';
+  var abierto = window.innerWidth >= 900 ? ' open' : '';
+  V.cont.querySelector('#cvPanel').innerHTML =
+    '<p class="cv-rotulo-sec">Ver por</p><div class="cv-seg cv-vistas" role="group" aria-label="Ver por">' + Object.keys(VISOR_VISTAS).map(function (k) {
+      return '<button type="button" data-vista="' + k + '" aria-pressed="' + (V.vista === k) + '">' + VISOR_VISTAS[k] + '</button>';
+    }).join('') + '</div>' +
+    '<div class="cv-ley" role="list">' + lista.map(function (k) {
+      var g = grupos[k];
+      return '<span class="cv-ley-item" role="listitem" data-resalta="' + esc(k) + '"><i style="background:' + g.k.color + '"></i><b>' + esc(g.k.texto) + '</b><small>' + g.n + '</small></span>';
+    }).join('') + '</div>' +
+    '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>' +
+    '<details class="cv-sec"' + abierto + '><summary>De un vistazo</summary><div class="cv-vistazo"><span><b>' + mods.length + '</b> módulos</span>' +
+      (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') + (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div></details>';
 }
 
 /* ── La vista de frente de un módulo ── */

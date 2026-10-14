@@ -102,10 +102,13 @@
 /* El rótulo: el número (y qué hay) parado, de frente a quien mira */
 .cv-rotulo { position: absolute; left: 50%; top: 50%; display: grid; justify-items: center; gap: 1px; pointer-events: none;
   transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 12px)) rotateX(calc(var(--incl, 54deg) * -1)) scale(var(--zc, 1)); }
-.cv-rotulo b { min-width: 26px; height: 26px; padding: 0 7px; display: grid; place-items: center; border-radius: 999px; background: rgba(14, 17, 22, .9);
+.cv-rotulo b { position: relative; min-width: 26px; height: 26px; padding: 0 7px; display: grid; place-items: center; border-radius: 999px; background: rgba(14, 17, 22, .9);
   border: 2px solid var(--halo, #6E7684); color: #F4F5F7; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .cv-rotulo span { max-width: 120px; padding: 1px 7px; border-radius: 6px; background: rgba(14, 17, 22, .78); color: #F4F5F7; font-size: 10.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cv-plano .cv-rotulo { transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 2px)) scale(var(--zc, 1)); }
+
+.cv-rotulo b.vieja::after { content: ""; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: #F5B84B; box-shadow: 0 0 0 2px #0E1116; }
+.cv-halo, .cv-rotulo b { transition: background-color .3s, border-color .3s, opacity .2s; }
 
 /* Modo liviano: sin sombras, sin desenfoques ni texturas (para teléfonos lentos) */
 .cv-liviano .cv-halo { filter: none; inset: -3px; opacity: .7; }
@@ -119,6 +122,26 @@
 .cv-vistazo { display: flex; flex-wrap: wrap; gap: 6px; }
 .cv-vistazo span { padding: 6px 11px; border-radius: 999px; background: var(--cv-panel-2); color: var(--cv-suave); font-size: 13px; font-weight: 700; }
 .cv-vistazo b { color: var(--cv-texto); }
+
+.cv-rotulo-sec { margin: 0 0 -6px; color: var(--cv-suave); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.cv-vistas { display: flex; width: 100%; }
+.cv-vistas button { flex: 1 1 0; padding: 0 8px; font-size: 13.5px; }
+.cv-ley { display: grid; gap: 4px; }
+.cv-ley-item { display: flex; align-items: center; gap: 10px; min-height: 40px; padding: 4px 10px; border-radius: 12px; font-size: 14.5px; }
+.cv-ley-item i { flex: none; width: 14px; height: 14px; border-radius: 50%; }
+.cv-ley-item b { font-weight: 700; }
+.cv-ley-item small { margin-left: auto; color: var(--cv-suave); font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.cv-punto-viejo { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #F5B84B; vertical-align: 1px; margin-right: 2px; }
+.cv-sec summary { cursor: pointer; list-style: none; display: flex; align-items: center; justify-content: space-between; min-height: 40px; color: var(--cv-suave); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.cv-sec summary::-webkit-details-marker { display: none; }
+.cv-sec summary::after { content: "+"; font-size: 18px; color: var(--cv-suave); }
+.cv-sec[open] summary::after { content: "–"; }
+@media (max-width: 899px) {
+  .cv-panel { gap: 10px; }
+  .cv-ley { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+  .cv-ley-item { min-height: 34px; padding: 2px 10px; background: var(--cv-panel-2); border-radius: 999px; font-size: 13.5px; }
+  .cv-ley-item small { margin-left: 2px; }
+}
 
 /* La vista de frente de un módulo */
 .cv-ficha-fondo { position: fixed; inset: 0; z-index: 2; background: rgba(5, 7, 10, .68); }
