@@ -27,11 +27,15 @@ function abrirVisor(cont, op) {
         '<button type="button" data-tab="salon" aria-pressed="true">Salón</button><button type="button" data-tab="deposito" aria-pressed="false">Depósito</button></div>' +
         '<button class="cv-chico" id="cvIncl" type="button" aria-pressed="true" title="Ver inclinado o desde arriba">Inclinado</button>' +
         (op.puedeEditar ? '<button class="cv-chico cv-lima" id="cvEditar" type="button">Armar el croquis</button>' : '') + '</div></header>' +
-    '<div class="cv-cuerpo"><div class="cv-escena" id="cvEscena"><div class="cv-camara"><div class="cv-mundo" id="cvMundo"></div></div>' +
+    '<div class="cv-cuerpo"><div class="cv-escena" id="cvEscena"><div class="cv-zoom" id="cvZoom"><div class="cv-camara"><div class="cv-mundo" id="cvMundo"></div></div></div>' +
+      '<div class="cv-zoom-acc"><button type="button" id="cvCentrar" class="cv-chico" hidden>Centrar</button>' +
+        '<button type="button" id="cvMenos" class="cv-redondo" aria-label="Alejar">−</button><button type="button" id="cvMas" class="cv-redondo" aria-label="Acercar">+</button></div>' +
       '<p class="cv-cargando" id="cvCargando">Cargando el local…</p></div>' +
       '<aside class="cv-panel" id="cvPanel"></aside></div></div>';
   V.raiz = cont.querySelector('.cv');
   V.mundo = cont.querySelector('#cvMundo');
+  V.zoomEl = cont.querySelector('#cvZoom');
+  V.z = { k: 1, x: 0, y: 0 };
   V.escena = cont.querySelector('#cvEscena');
   cont.querySelector('#volverMapa').onclick = function () { if (V.ficha) { cerrarFicha(V); return; } visorSalir(V); };
   cont.querySelector('#cvTabs').onclick = function (e) {
@@ -39,6 +43,7 @@ function abrirVisor(cont, op) {
     if (!b || b.dataset.tab === V.tab) return;
     V.tab = b.dataset.tab;
     V.resaltado = null;
+    visorZoom(V, 1, 0, 0, false);   // sin animar: la maqueta nueva se mide enseguida
     cont.querySelectorAll('#cvTabs [data-tab]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
     visorDibujar(V, true);
   };
@@ -60,10 +65,19 @@ function abrirVisor(cont, op) {
   /* Tocar un módulo: su vista de frente. Pasar el mouse lo levanta (CSS). */
   V.mundo.addEventListener('click', function (e) {
     var c = e.target.closest && e.target.closest('.cv-caja[data-mod]');
-    if (c && !V.ficha) abrirFicha(V, c.dataset.mod, c);
+    /* Después de mover la maqueta con el dedo, soltarla arriba de un módulo no lo abre. */
+    if (c && !V.ficha && Date.now() - (V.movidoEn || 0) > 350) abrirFicha(V, c.dataset.mod, c);
   });
+  visorGestos(V);
   /* El panel: cómo verlo (por vendedor, por estado, por antigüedad). */
   cont.querySelector('#cvPanel').addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('#cvLiviano')) {
+      V.liviano = !V.liviano;
+      V.raiz.classList.toggle('cv-liviano', V.liviano);
+      try { localStorage.setItem('vdh_visor_liviano', V.liviano ? '1' : '0'); } catch (x) {}
+      visorPanel(V);
+      return;
+    }
     var b = e.target.closest && e.target.closest('[data-vista]');
     if (b && b.dataset.vista !== V.vista) {
       V.vista = b.dataset.vista;
@@ -77,7 +91,7 @@ function abrirVisor(cont, op) {
     if (r) { V.resaltado = V.resaltado === r.dataset.resalta ? null : r.dataset.resalta; visorPintar(V); visorPanel(V); }
     if (e.target.closest && e.target.closest('#cvVerTodos')) { V.resaltado = null; visorPintar(V); visorPanel(V); }
   });
-  V.alTamano = function () { if (V.d) { V.fit = {}; visorCamara(V, true); } };
+  V.alTamano = function () { if (V.d) { visorZoom(V, 1, 0, 0, false); V.fit = {}; visorCamara(V, true); } };
   window.addEventListener('resize', V.alTamano);
   V.alTecla = function (e) { if (e.key === 'Escape' && V.ficha) cerrarFicha(V); };
   document.addEventListener('keydown', V.alTecla);
@@ -210,6 +224,76 @@ function visorDibujar(V, ajustar) {
   visorFotos(V);
   visorPanel(V);
   if (ajustar) { V.fit = {}; visorCamara(V, true); }
+}
+
+/* ── Acercar y alejar: con dos dedos, con la rueda del mouse o con los botones; acercada, se mueve con un dedo ── */
+function visorZoom(V, k, x, y, animar) {
+  k = Math.max(1, Math.min(3.5, k));
+  if (k === 1) { x = 0; y = 0; }
+  var r = V.escena.getBoundingClientRect(), lx = r.width * (k - 1) / 2 + 80, ly = r.height * (k - 1) / 2 + 80;
+  V.z = { k: k, x: Math.max(-lx, Math.min(lx, x)), y: Math.max(-ly, Math.min(ly, y)) };
+  V.zoomEl.classList.toggle('cv-gesto', !animar);
+  V.zoomEl.style.transform = 'translate(' + V.z.x.toFixed(1) + 'px,' + V.z.y.toFixed(1) + 'px) scale(' + k.toFixed(3) + ')';
+  var ce = V.cont.querySelector('#cvCentrar');
+  if (ce) ce.hidden = k === 1;
+}
+/** Acercar manteniendo quieto el punto f (de la pantalla). */
+function visorZoomEn(V, k2, f, animar) {
+  var r = V.escena.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, z = V.z;
+  k2 = Math.max(1, Math.min(3.5, k2));
+  visorZoom(V, k2, (f.x - cx) - k2 * ((f.x - cx) - z.x) / z.k, (f.y - cy) - k2 * ((f.y - cy) - z.y) / z.k, animar);
+}
+function visorGestos(V) {
+  var esc = V.escena, dedos = {}, ini = null;
+  var centro = function () { var r = esc.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  V.cont.querySelector('#cvMas').onclick = function () { visorZoomEn(V, V.z.k * 1.45, centro(), true); };
+  V.cont.querySelector('#cvMenos').onclick = function () { visorZoomEn(V, V.z.k / 1.45, centro(), true); };
+  V.cont.querySelector('#cvCentrar').onclick = function () { visorZoom(V, 1, 0, 0, true); };
+  esc.addEventListener('wheel', function (e) {
+    if (V.ficha) return;
+    e.preventDefault();
+    visorZoomEn(V, V.z.k * (e.deltaY < 0 ? 1.12 : 1 / 1.12), { x: e.clientX, y: e.clientY }, false);
+  }, { passive: false });
+  esc.addEventListener('pointerdown', function (e) {
+    if (V.ficha || (e.target.closest && e.target.closest('.cv-zoom-acc'))) return;
+    dedos[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(dedos);
+    if (ids.length === 2) {
+      var a = dedos[ids[0]], b = dedos[ids[1]];
+      ini = { dos: true, dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, z: Object.assign({}, V.z) };
+    } else ini = { dos: false, p: { x: e.clientX, y: e.clientY }, z: Object.assign({}, V.z), movio: false };
+    /* Al tocar un módulo con el dedo, se levanta (como al pasar el mouse). */
+    var caja = e.target.closest && e.target.closest('.cv-mod');
+    if (caja && e.pointerType !== 'mouse') { caja.classList.add('cv-tocado'); setTimeout(function () { caja.classList.remove('cv-tocado'); }, 260); }
+  });
+  var mueve = function (e) {
+    if (!dedos[e.pointerId] || !ini) return;
+    dedos[e.pointerId] = { x: e.clientX, y: e.clientY };
+    var ids = Object.keys(dedos), c = centro();
+    if (ini.dos && ids.length >= 2) {
+      var a = dedos[ids[0]], b = dedos[ids[1]], dist = Math.hypot(a.x - b.x, a.y - b.y) || 1, mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      var k2 = Math.max(1, Math.min(3.5, ini.z.k * dist / ini.dist));
+      visorZoom(V, k2, (mid.x - c.x) - k2 * ((ini.mid.x - c.x) - ini.z.x) / ini.z.k, (mid.y - c.y) - k2 * ((ini.mid.y - c.y) - ini.z.y) / ini.z.k, false);
+      V.movidoEn = Date.now();
+    } else if (!ini.dos && V.z.k > 1) {
+      var dx = e.clientX - ini.p.x, dy = e.clientY - ini.p.y;
+      if (!ini.movio && Math.abs(dx) + Math.abs(dy) < 8) return;
+      ini.movio = true;
+      visorZoom(V, V.z.k, ini.z.x + dx, ini.z.y + dy, false);
+      V.movidoEn = Date.now();
+    }
+  };
+  var suelta = function (e) {
+    if (!dedos[e.pointerId]) return;
+    delete dedos[e.pointerId];
+    var ids = Object.keys(dedos);
+    /* Si queda un dedo después de pellizcar, sigue moviendo desde ahí. */
+    ini = ids.length === 1 ? { dos: false, p: dedos[ids[0]], z: Object.assign({}, V.z), movio: true } : null;
+  };
+  esc.addEventListener('pointermove', mueve);
+  esc.addEventListener('pointerup', suelta);
+  esc.addEventListener('pointercancel', suelta);
+  esc.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') suelta(e); });
 }
 
 /* ── La cámara: inclinada o desde arriba, centrada y del tamaño de la pantalla ── */
@@ -386,7 +470,9 @@ function visorPanel(V) {
     (V.resaltado ? '<button type="button" class="cv-chico cv-ver-todos" id="cvVerTodos">Ver todos</button>' : '') +
     '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>' +
     '<details class="cv-sec"' + abierto + '><summary>De un vistazo</summary><div class="cv-vistazo"><span><b>' + mods.length + '</b> módulos</span>' +
-      (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') + (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div></details>';
+      (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') + (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div></details>' +
+    '<details class="cv-sec"><summary>Ajustes de la vista</summary><button type="button" class="cv-interruptor" id="cvLiviano" aria-pressed="' + !!V.liviano + '">' +
+      '<span>Modo liviano</span><small>Sin sombras ni texturas, para teléfonos lentos</small></button></details>';
 }
 
 /* ── La vista de frente de un módulo ── */

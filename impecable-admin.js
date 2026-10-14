@@ -1352,6 +1352,14 @@ function ajustarPuerta(e) {
   p.pos = Math.max(0, Math.min(e.paredes[p.pared].length, p.pos));
 }
 
+/** Lo del centro se imanta a una grilla de 2,5 % (unos 10 cm) y, cerca de una pared, se pega a ella. */
+function imantarCroquis(v) {
+  var g = Math.round(entre01(v) / 0.025) * 0.025;
+  if (g < 0.04) g = 0;
+  if (g > 0.96) g = 1;
+  return Math.max(0, Math.min(1, +g.toFixed(3)));
+}
+
 /** Coordenadas de un toque en el dibujo (las del SVG, no las de la pantalla). */
 function puntoSvg(svg, ev) {
   var p = svg.createSVGPoint();
@@ -1610,11 +1618,21 @@ function editarMapa(d) {
     var svg = t.closest('svg'), caja = (svg.getAttribute('data-adentro') || '').split(' ').map(Number);
     var mover = t.hasAttribute('data-centro') ? [t, t.previousElementSibling] : [t];
     var bb = t.getBBox(), c0 = { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2 }, p0 = puntoSvg(svg, ev), movido = false;
+    /* Dónde queda, ya imantado a la grilla y a las paredes (lo mismo mientras se mueve y al soltar). */
+    var lugar = function (p) {
+      return { x: imantarCroquis((c0.x + p.x - p0.x - caja[0]) / caja[2]), y: imantarCroquis((c0.y + p.y - p0.y - caja[1]) / caja[3]) };
+    };
     function mueve(e2) {
-      var p = puntoSvg(svg, e2), dx = p.x - p0.x, dy = p.y - p0.y;
-      if (!movido && Math.abs(dx) + Math.abs(dy) < 5) return;
+      var p = puntoSvg(svg, e2);
+      if (!movido && Math.abs(p.x - p0.x) + Math.abs(p.y - p0.y) < 5) return;
       movido = true;
-      mover.forEach(function (el) { if (el) el.setAttribute('transform', 'translate(' + dx.toFixed(1) + ',' + dy.toFixed(1) + ')'); });
+      var q = lugar(p), dx = caja[0] + q.x * caja[2] - c0.x, dy = caja[1] + q.y * caja[3] - c0.y;
+      /* Levantado: un poco más grande y con sombra, centrado en su lugar. */
+      mover.forEach(function (el) {
+        if (!el) return;
+        el.classList.add('levantado');
+        el.setAttribute('transform', 'translate(' + (dx + c0.x).toFixed(1) + ',' + (dy + c0.y).toFixed(1) + ') scale(1.06) translate(' + (-c0.x).toFixed(1) + ',' + (-c0.y).toFixed(1) + ')');
+      });
     }
     function suelta(e2) {
       window.removeEventListener('pointermove', mueve); window.removeEventListener('pointerup', suelta); window.removeEventListener('pointercancel', suelta);
@@ -1628,15 +1646,18 @@ function editarMapa(d) {
         return;
       }
       soltadoEn = Date.now();
-      var p = puntoSvg(svg, e2);
-      var pos = { x: entre01((c0.x + p.x - p0.x - caja[0]) / caja[2]), y: entre01((c0.y + p.y - p0.y - caja[1]) / caja[3]) };
-      if (t.hasAttribute('data-fijo')) { var fx = fijos[+t.dataset.fijo]; if (fx) { fx.x = pos.x; fx.y = pos.y; } }
+      var pos = lugar(puntoSvg(svg, e2)), cual = null;
+      if (t.hasAttribute('data-fijo')) { var fx = fijos[+t.dataset.fijo]; if (fx) { fx.x = pos.x; fx.y = pos.y; } cual = '[data-fijo="' + t.dataset.fijo + '"]'; }
       else {
         var mod = t.previousElementSibling && t.previousElementSibling.dataset.mod;
         var c = centro.filter(function (x) { return x.key === mod; })[0];
         if (c) c.pos = pos;
+        cual = '.mapa-mod[data-mod="' + mod + '"]';
       }
       vista();
+      /* Al soltarla, rebota un poquito en su lugar nuevo. */
+      var nuevo = cual && vistaS.querySelector(cual);
+      if (nuevo) nuevo.classList.add('mapa-rebota');
     }
     window.addEventListener('pointermove', mueve);
     window.addEventListener('pointerup', suelta);

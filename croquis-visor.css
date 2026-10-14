@@ -32,7 +32,12 @@
 
 /* El cuerpo: la maqueta y el panel (al costado en la computadora, abajo en el celular) */
 .cv-cuerpo { display: grid; grid-template-columns: minmax(0, 1fr) 330px; min-height: 0; }
-.cv-escena { position: relative; overflow: hidden; min-height: 0; background: radial-gradient(ellipse 80% 70% at 50% 42%, #1C232D 0%, var(--cv-bg) 72%); }
+.cv-escena { position: relative; overflow: hidden; min-height: 0; touch-action: none; background: radial-gradient(ellipse 80% 70% at 50% 42%, #1C232D 0%, var(--cv-bg) 72%); }
+.cv-zoom { position: absolute; inset: 0; transform-origin: 50% 50%; transition: transform .28s cubic-bezier(.2, .8, .2, 1); }
+.cv-zoom.cv-gesto { transition: none; }
+.cv-zoom-acc { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 8px; }
+.cv-redondo { width: 46px; height: 46px; border: 0; border-radius: 50%; background: rgba(27, 33, 42, .92); color: var(--cv-texto); font-size: 24px; font-weight: 700; line-height: 1; cursor: pointer; box-shadow: 0 6px 16px rgba(0, 0, 0, .35); }
+.cv-redondo:hover { background: #232A35; }
 .cv-camara { position: absolute; inset: 0; perspective: 1700px; perspective-origin: 50% 38%; transition: opacity .3s, transform .3s cubic-bezier(.2, .8, .2, 1); }
 .cv-escena.cv-detras .cv-camara { opacity: .4; transform: scale(.97); }
 .cv-mundo { position: absolute; left: 50%; top: 50%; transform-style: preserve-3d;
@@ -86,7 +91,12 @@
 .cv-mod.sin-foto .cv-frente .cv-foto-cara::after, .cv-mod.foto-no .cv-frente .cv-foto-cara::after {
   content: ""; position: absolute; left: 50%; top: 50%; width: 16px; height: 11px; translate: -50% -50%; border: 2px solid rgba(255, 255, 255, .45); border-radius: 3px; }
 .cv-mod { cursor: pointer; }
-.cv-mod:hover, .cv-mod:focus-visible { transform: translateZ(9px); }
+.cv-mod:hover, .cv-mod:focus-visible, .cv-mod.cv-tocado { transform: translateZ(9px); }
+/* La base: el color (del vendedor, del estado o de la antigüedad) al pie de la cara que mira al salón. */
+.cv-mod .cv-frente::after { content: ""; position: absolute; background: var(--halo, #6E7684); transition: background-color .3s; }
+.cv-mod .cv-s.cv-frente::after { left: 0; right: 0; bottom: 0; height: 5px; }
+.cv-mod .cv-e.cv-frente::after { top: 0; bottom: 0; right: 0; width: 5px; }
+.cv-mod .cv-o.cv-frente::after { top: 0; bottom: 0; left: 0; width: 5px; }
 .cv-mod:hover .cv-halo, .cv-mod:focus-visible .cv-halo { opacity: .85; }
 .cv-mod:hover .cv-tapa, .cv-mod:hover .cv-cara { filter: brightness(1.14); }
 .cv-muro .cv-cara { background: #ECE6DD; }
@@ -126,6 +136,11 @@
 .cv-liviano .cv-mod:hover .cv-tapa, .cv-liviano .cv-mod:hover .cv-cara { filter: none; }
 
 /* El panel */
+.cv-interruptor { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px; width: 100%; min-height: 52px; padding: 8px 12px; border: 0; border-radius: 12px; background: var(--cv-panel-2); text-align: left; cursor: pointer; }
+.cv-interruptor span { font-weight: 800; }
+.cv-interruptor small { grid-column: 1; color: var(--cv-suave); font-size: 12.5px; }
+.cv-interruptor::after { content: ""; grid-row: 1 / 3; grid-column: 2; width: 42px; height: 24px; border-radius: 999px; background: #39414D; box-shadow: inset -18px 0 0 3px #39414D, inset -18px 0 0 6px #8B94A3; transition: box-shadow .2s, background-color .2s; }
+.cv-interruptor[aria-pressed="true"]::after { background: var(--cv-lima); box-shadow: inset 18px 0 0 3px var(--cv-lima), inset 18px 0 0 6px var(--cv-sobre-lima); }
 .cv-ayuda { margin: 0; color: var(--cv-suave); font-size: 14px; }
 .cv-vistazo { display: flex; flex-wrap: wrap; gap: 6px; }
 .cv-vistazo span { padding: 6px 11px; border-radius: 999px; background: var(--cv-panel-2); color: var(--cv-suave); font-size: 13px; font-weight: 700; }
@@ -208,5 +223,5 @@
 .cv-gris { margin: 0; color: var(--cv-suave); font-size: 14px; }
 .cv-comentario { margin: 8px 0 0; font-style: italic; color: var(--cv-texto); }
 @media (prefers-reduced-motion: reduce) {
-  .cv-mundo, .cv-caja, .cv-camara, .cv-foto-img, .cv-halo, .cv-foto-tapa { transition: none; }
+  .cv-mundo, .cv-caja, .cv-camara, .cv-foto-img, .cv-halo, .cv-foto-tapa, .cv-zoom { transition: none; }
 }

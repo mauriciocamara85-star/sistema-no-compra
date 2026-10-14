@@ -503,7 +503,7 @@ function cajaModulo(d, op, m, r, etiqueta, sub) {
   var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
   var out = '<g class="mapa-mod' + (op.marcas && op.marcas[m.id] ? ' con-marca' : '') + '" data-mod="' + esc(m.id) + '"' + (apagado ? ' opacity=".3"' : '') + '><title>' +
     esc(nombreModulo(m, s, d) + (resp ? ' · ' + nombreLista(resp) : ' · sin responsable')) + '</title>' +
-    '<rect x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) + '" rx="7" fill="' + (d.color[m.sector_id] || GRIS_SIN_RESPONSABLE) + '" stroke="rgba(0,0,0,.35)"/>';
+    '<rect x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) + '" rx="7" fill="' + (d.color[m.sector_id] || GRIS_SIN_RESPONSABLE) + '" stroke="rgba(0,0,0,.35)"' + (op._sombra ? ' filter="' + op._sombra + '"' : '') + '/>';
   if (parado) {
     var largo = Math.max(2, Math.floor((r.h - fs - 8) / 5.8));
     out += '<text x="' + cx.toFixed(1) + '" y="' + (r.y + fs + 2).toFixed(1) + '" text-anchor="middle" font-size="' + fs.toFixed(1) + '" font-weight="700" fill="#111">' + esc(etiqueta) + '</text>' +
@@ -738,6 +738,16 @@ function dibujarCentro(d, op, cq, geo, sobran) {
   return { svg: out, caja: [ax0, ay0, aw, ah] };
 }
 
+/** El piso y la sombra de un dibujo: una grilla suave (como placas de cerámica) y una sombra leve para los módulos. */
+var _mapaN = 0;
+function defsMapa(x0, y0, x1, y1) {
+  var n = ++_mapaN;
+  return { sombra: 'url(#mpS' + n + ')',
+    svg: '<defs><pattern id="mpP' + n + '" width="24" height="24" patternUnits="userSpaceOnUse" x="' + x0 + '" y="' + y0 + '"><path d="M24 0H0V24" fill="none" stroke="currentColor" stroke-opacity=".08" stroke-width="1"/></pattern>' +
+      '<filter id="mpS' + n + '" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#000" flood-opacity=".28"/></filter></defs>' +
+      '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" rx="10" fill="url(#mpP' + n + ')"/>' };
+}
+
 /** El salón, en SVG. op.vacios, op.editable, op.croquis (el que se está armando), op.moverPuerta ('salon'). */
 function svgMapa(d, op) {
   op = op || {};
@@ -746,8 +756,9 @@ function svgMapa(d, op) {
   op = Object.assign({}, op, { _mitad: W / 2 });
   var cq = op.croquis ? op.croquis.salon : croquisDe(d, 'salon');
   var x0 = M, y0 = M, x1 = W - M, y1 = H - M - ABAJO;
-  var geo = geometriaCroquis(op.moverPuerta === 'salon' ? sinPuerta(cq) : cq, x0, y0, x1, y1, P, G);
-  var out = '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>' +
+  var geo = geometriaCroquis(op.moverPuerta === 'salon' ? sinPuerta(cq) : cq, x0, y0, x1, y1, P, G), df = defsMapa(x0, y0, x1, y1);
+  op._sombra = df.sombra;
+  var out = df.svg + '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>' +
     '<text x="' + (W / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" fill-opacity=".75">Frente · vidriera</text>';
   var p = dibujarParedes(d, op, cq, geo, 'salon', d.pared, function (m) { return String(m.numero); }, nombrePropio);
   var c = dibujarCentro(d, op, cq, geo, p.sobran);
@@ -777,8 +788,9 @@ function svgDeposito(d, op) {
   var W = 420, M = 12, T = 30, P = 64, G = 6, alto = cuadrado ? W - 2 * M : 250, H = T + alto + M;
   op = Object.assign({}, op, { _mitad: W / 2 });
   var x0 = M, y0 = T, x1 = W - M, y1 = T + alto;
-  var geo = geometriaCroquis(op.moverPuerta === 'deposito' ? sinPuerta(cq) : cq, x0, y0, x1, y1, P, G);
-  var out = '<text x="' + M + '" y="20" font-size="14" font-weight="700" fill="currentColor" fill-opacity=".8">Depósito</text>' +
+  var geo = geometriaCroquis(op.moverPuerta === 'deposito' ? sinPuerta(cq) : cq, x0, y0, x1, y1, P, G), df = defsMapa(x0, y0, x1, y1);
+  op._sombra = df.sombra;
+  var out = df.svg + '<text x="' + M + '" y="20" font-size="14" font-weight="700" fill="currentColor" fill-opacity=".8">Depósito</text>' +
     '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + alto + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>';
   var mods = numerado ? d.dep : d.dep.map(function (m, i) { return Object.assign({}, m, { numero: i + 1 }); });
   var p = dibujarParedes(d, op, cq, geo, 'deposito', mods,

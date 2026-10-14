@@ -295,3 +295,10 @@
 .ventana .mapa-svg [data-puerta], .ventana .mapa-marca-puerta { cursor: pointer; }
 .imp-lugar-ops { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 #eFijoMas { margin: 0 0 6px; }
+
+/* Etapa E: lo que se arrastra se levanta con sombra, rebota al soltarlo y se eleva al pasar el mouse. */
+.ventana .mapa-svg .levantado { filter: drop-shadow(0 10px 10px rgba(0, 0, 0, .35)); }
+.ventana .mapa-svg .mapa-rebota { animation: mapaRebota .34s cubic-bezier(.3, 1.6, .5, 1); transform-box: fill-box; transform-origin: center; }
+@keyframes mapaRebota { 0% { transform: scale(1.07); } 55% { transform: scale(.97); } 100% { transform: scale(1); } }
+.ventana .mapa-svg .mapa-mod:has(+ .mapa-toque.arrastrable:hover), .ventana .mapa-svg [data-fijo]:hover { filter: drop-shadow(0 5px 6px rgba(0, 0, 0, .3)); }
+@media (prefers-reduced-motion: reduce) { .ventana .mapa-svg .mapa-rebota { animation: none; } }
