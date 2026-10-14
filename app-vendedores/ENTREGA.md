@@ -101,6 +101,27 @@ presentación e interacción: no cambia cómo se arma el local ni los datos. Un 
 - **3D de verdad** (con una librería como three.js: girar el local, caminarlo): se ve más real, pero pesa más en los teléfonos de los locales y es otra forma de dibujar todo. Lo estimo en 3 a 5 días, con riesgo medio (rendimiento en celulares viejos). Lo de ahora ya tiene volumen y anda liviano.
 - Nombre y "qué hay" separados (hoy son lo mismo): necesita un campo nuevo en la base.
 
+## El croquis como una foto (14/10, rama croquis-real, SIN publicar; sw v134, impecable-v15; sin SQL)
+
+Pedido de Mauricio: "más parecido a la foto" (su referencia de Pinterest: un local de ropa visto desde arriba), que el
+mapa de Por local y el observador "sean lo mismo", poder poner los probadores, la puerta del depósito, la galería
+enfrente y mover las piezas, "algo bien tecnológico donde se vea el color de cada módulo, como si fuera un neón", y
+"si pongo buzos, que aparezcan unos buzitos".
+
+- **Un solo dibujo** (`impecable-comun.js`) para el mapa de Por local, el editor, Fotos del vendedor y la tapa de cada mueble del observador: piso de cerámica con luces (cemento en el depósito), paredes oscuras con la cara de adentro clara, la vidriera de vidrio y muebles de nogal (estantes de metal en el depósito).
+- **La ropa de "qué hay"** (o del nombre, si es de ropa): 15 siluetas (remera, musculosa, buzo, sweater, campera, camisa, jean, pantalón, bermuda, vestido, pollera, zapatilla, gorra, medias, accesorios), mezcladas si dice varias ("Remeras y buzos"). Sin "qué hay", ropa colgada; en el depósito, cajas o la ropa de su categoría.
+- **El neón:** la luz del color de quien tiene el módulo sobre el piso, del lado del salón, y el tubo encendido; el número va montado sobre la línea y "qué hay" adentro, a lo largo. Lo apagado (en el celular, lo de los demás), sin luz.
+- **Las piezas:** probadores (con cortina, del lado del salón), caja, mesa, perchero, maniquí, planta, columna, escalera, espejo, banco, la puerta del depósito y "otra cosa". En el observador tienen volumen: el maniquí parado, la planta con copa, los escalones. Las de antes (sólo con nombre) sacan el tipo del nombre ("Mostrador" es la caja).
+- **El editor:** una bandeja con las piezas (se tocan, aparecen en un lugar libre y se arrastran); en un lugar de la pared, las piezas de pared y cuántos lugares ocupa (1, 2 o 3; también un hueco); "Enfrente de la vidriera": vereda, galería o shopping.
+- **Sin SQL:** `orden_croquis_guardar` guarda el croquis como viene (sólo cuenta los módulos). Lo nuevo va en el mismo croquis: `{h, k, a}` en las paredes, `tipo` en los muebles, `frente`.
+- **Pruebas:** app 156, administración 100, observador 105 (con la medición de fluidez), testigo 30, cámara. Fotos del antes y el después: `scratchpad/foto-croquis.js antes|despues`; página privada: https://claude.ai/artifact/URUhmLQdnV1pSgn5uRk4pt
+
+**Control final (árbitro Opus, esfuerzo alto, usó la app en celular y PC): APROBADO, sin bloqueantes.** Corregí:
+- *Importante:* en el celular, la marca (cámara, ✓, !) tapaba el número en los módulos más anchos que altos: ahora va en la punta del módulo, sobre la pared, y el número del otro lado (probado en un local cuadrado y uno de calle).
+- *Importante:* un lugar que pasaba a "Hueco" se quedaba con lo que ocupaban los probadores y no se podía cambiar: el hueco también dice cuánto ocupa.
+- *Menores:* "qué hay" ya no se pierde en los módulos con marca ni lo tapa el número; los muebles nuevos no caen encima de otros; "Calzado" ya no dibuja pantalones ni "media manga" medias, y se reconocen tops, bodies, mallas, pijamas y polerones; "Entrada" entera en una pared de costado; unos probadores de antes no aparecen dos veces en el menú; en el celular la lista de muebles deja lugar al nombre.
+- *Queda:* un administrador con la versión vieja guardada en el navegador, si guarda el croquis, pierde lo nuevo (el tipo de pieza y cuántos lugares ocupa) hasta que su computadora tome la v134. Tocar una pieza en el observador a veces abre el módulo que queda delante (por la perspectiva).
+
 ## Decisiones que tomé (todas reversibles)
 
 - **Nombre: "Equipo VDH"** (lo eligió él el 13/10; antes "Impecable"). Cambiaron sólo los textos (`NOMBRE_APP`, `<title>`, el manifest, la barra del No Compra); los archivos siguen llamándose `impecable-*`.

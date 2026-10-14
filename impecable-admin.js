@@ -1602,9 +1602,9 @@ function editarMapa(d) {
         var es = l.t === 'h' && (l.h || l.k) && (l.k || tipoPieza(l.h)) === k;
         return '<button type="button" class="boton chico' + (es ? ' lima' : '') + '" data-op="p:' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
       }).join('') + '</div>' +
-      '<div class="renglon"><label class="campo c-grande"><span>Otra cosa (escribí qué es)</span><input id="lFijo" maxlength="40" value="' + esc(l.t === 'h' && !l.k ? l.h : '') + '" placeholder="Baño, matafuegos, un exhibidor fijo…"></label>' +
+      '<div class="renglon"><label class="campo c-grande"><span>Otra cosa (escribí qué es)</span><input id="lFijo" maxlength="40" value="' + esc(l.t === 'h' && !l.k && tipoPieza(l.h) === 'otro' ? l.h : '') + '" placeholder="Baño, matafuegos, un exhibidor fijo…"></label>' +
         '<button type="button" class="boton chico" data-op="f">Poner esto</button></div>' +
-      (l.t === 'h' && (l.h || l.k) ? '<div class="imp-lugar-ops"><span class="bajada" style="margin:0;align-self:center">Ocupa</span>' + [1, 2, 3].map(function (a) {
+      (l.t === 'h' ? '<div class="imp-lugar-ops"><span class="bajada" style="margin:0;align-self:center">Ocupa</span>' + [1, 2, 3].map(function (a) {
         return '<button type="button" class="boton chico' + ((l.a || 1) === a ? ' lima' : '') + '" data-op="a:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>';
       }).join('') + '</div>' : '') +
       '<div class="seccion">Agregar o sacar</div><div class="imp-lugar-ops">' +
@@ -1776,9 +1776,11 @@ function editarMapa(d) {
     var b = ev.target.closest && ev.target.closest('[data-pieza]');
     if (!b) return;
     if (fijos.length >= 30) { avisar('Como mucho 30 muebles adentro.'); return; }
-    /* A un costado del medio (por el medio va la fila de los del centro), una debajo de la otra, para que no se tapen. */
-    var k = fijos.length % 6;
-    fijos.push({ nombre: '', tipo: b.dataset.pieza, x: k % 2 ? 0.75 : 0.25, y: 0.2 + Math.floor(k / 2) * 0.25, vertical: false });
+    /* A un costado del medio (por el medio va la fila de los del centro), en el primer lugar libre: así no cae encima de otro. */
+    var lugares = [], pos = null;
+    [0.25, 0.75, 0.12, 0.88, 0.38, 0.62].forEach(function (x) { [0.15, 0.3, 0.45, 0.6, 0.75, 0.88].forEach(function (y) { lugares.push({ x: x, y: y }); }); });
+    pos = lugares.filter(function (p) { return !fijos.some(function (q) { return Math.abs(q.x - p.x) < 0.1 && Math.abs(q.y - p.y) < 0.09; }); })[0] || { x: 0.25, y: 0.5 };
+    fijos.push({ nombre: '', tipo: b.dataset.pieza, x: pos.x, y: pos.y, vertical: false });
     vista();
     avisar(PIEZAS[b.dataset.pieza].nombre + ': ya está en el dibujo. Arrastrala hasta donde va.');
     if (b.dataset.pieza === 'otro') { var nuevo = listaF.querySelector('[data-fijo-nombre="' + (fijos.length - 1) + '"]'); if (nuevo) nuevo.focus(); }

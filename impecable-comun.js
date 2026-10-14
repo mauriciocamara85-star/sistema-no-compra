@@ -527,11 +527,11 @@ var ROPA_TONOS = {
 };
 /** Qué prendas dice un texto ("Remeras y buzos" → remera, buzo), en el orden en que aparecen; como mucho 3. */
 var PRENDAS = [
-  ['remera', /camiseta|remer|t-?shirt|playera/], ['musculosa', /musculos/], ['buzo', /buzo|hoodie|canguro|frisa/],
+  ['remera', /camiseta|remer|t-?shirt|playera/], ['musculosa', /musculos|\btops?\b|\bbod(y|ies)\b/], ['buzo', /buzo|hoodie|canguro|frisa|poler[oó]n/],
   ['sweater', /sweater|su[eé]ter|pullover|tejid|cardig|polar/], ['campera', /camper|parka|rompeviento|chaleco|abrigo|tapado|\bsaco/],
-  ['camisa', /camisa|chomba|\bpolo/], ['jean', /jean|denim/], ['bermuda', /bermud|short/], ['pantalon', /pantal|jogger|jogging|cargo|chino|calza/],
+  ['camisa', /camisa|chomba|\bpolo/], ['jean', /jean|denim/], ['bermuda', /bermud|short|\bmallas?\b/], ['pantalon', /pantal|jogger|jogging|cargo|chino|\bcalzas?\b|pijama/],
   ['vestido', /vestid|enterit/], ['pollera', /poller|falda/], ['zapatilla', /zapatill|calzado|zapato|\bbota|ojota|sandalia/],
-  ['gorra', /gorr|sombrer|piluso/], ['medias', /\bmedia|soquete/], ['accesorio', /accesori|cintur|billeter|mochil|bolso|carter|lentes|anteojo|bijou|ri[ñn]oner/]
+  ['gorra', /gorr|sombrer|piluso/], ['medias', /\bmedias\b|soquete/], ['accesorio', /accesori|cintur|billeter|mochil|bolso|carter|lentes|anteojo|bijou|ri[ñn]oner/]
 ];
 function prendasDe(texto) {
   var t = String(texto || '').toLowerCase(), hallado = [];
@@ -670,7 +670,7 @@ var FRENTE_PARED = { izquierda: 'e', derecha: 'o', fondo: 's', frente: 'n' };
 function nombrePieza(r, texto, oscuro) {
   if (!texto) return '';
   var parado = r.h > r.w, largo = (parado ? r.h : r.w) - 6, fs = 9.5, t = String(texto);
-  while (fs > 7.5 && t.length * fs * 0.6 + 10 > largo) fs -= 0.5;
+  while (fs > 7 && t.length * fs * 0.6 + 10 > largo) fs -= 0.5;
   if (t.length * fs * 0.6 + 10 > largo) t = recortar(texto, Math.max(3, Math.floor((largo - 10) / (fs * 0.6))));
   var ancho = Math.min(largo, t.length * fs * 0.6 + 10), cx = r.x + r.w / 2, cy = r.y + r.h / 2;
   return '<g class="mapa-pieza-nombre" transform="translate(' + n1(cx) + ',' + n1(cy) + ')' + (parado ? ' rotate(-90)' : '') + '" pointer-events="none">' +
@@ -785,9 +785,17 @@ function cajaModulo(d, op, m, r, etiqueta, sub, lado) {
   if (!apagado) out += lineaNeon(r, lado, color);
   var marca = op.marcas && op.marcas[m.id];
   out += rotuloModulo(r, etiqueta, sub, color, lado, !!marca);
-  /* La marca (cámara, ✓…): arriba, en la punta del lado de la pared (del otro lado está el número). */
-  if (marca) out += marcaModulo(marca, lado === 'izquierda' && parado ? r.x + 11 : r.x + r.w - 11, r.y + 11);
+  /* La marca (cámara, ✓…): en la punta del módulo, montada sobre la pared (el número está del otro lado, sobre el neón). */
+  if (marca) { var em = esquinaMarca(r, lado); out += marcaModulo(marca, em[0], em[1]); }
   return out + '</g>';
+}
+/** Dónde va la marca de un módulo: en las paredes, al principio del módulo y sobre la pared; en el centro, arriba a la derecha. */
+function esquinaMarca(r, lado) {
+  if (lado === 'izquierda') return [r.x - 1, r.y + 13];
+  if (lado === 'derecha') return [r.x + r.w + 1, r.y + 13];
+  if (lado === 'fondo') return [r.x + 13, r.y - 1];
+  if (lado === 'frente') return [r.x + 13, r.y + r.h + 1];
+  return [r.x + r.w - 11, r.y + 11];
 }
 /** Lo de adentro de un módulo: la ropa de lo que dice "qué hay" (o su nombre, si es de ropa); si no dice, ropa colgada; en el depósito, cajas. */
 function interiorModulo(d, m, r, pref) {
@@ -831,8 +839,17 @@ function rotuloModulo(r, etiqueta, sub, color, lado, conMarca) {
       if (parado) { var desde = by + th / 2 + 3; largo = r.y + r.h - desde - 4; ly = desde + largo / 2; }
       else { largo = r.w - 6; ly = by + th / 2 + 9; }
     } else {
-      largo = (parado ? r.h : r.w) - 8 - (conMarca ? 26 : 0);
-      if (conMarca) { if (parado) ly = cy + 13; else lx = cx - 13; }
+      var s0 = (parado ? r.y : r.x) + 4, s1 = (parado ? r.y + r.h : r.x + r.w) - 4;
+      if (!parado && lado === 'izquierda') s1 -= bw / 2 + 2;
+      if (!parado && lado === 'derecha') s0 += bw / 2 + 2;
+      if (parado && lado === 'fondo') s1 -= th / 2 + 2;
+      if (parado && lado === 'frente') s0 += th / 2 + 2;
+      if (conMarca && !parado && lado === 'izquierda') s0 += 14;
+      if (conMarca && !parado && lado === 'derecha') s1 -= 14;
+      if (conMarca && parado && lado === 'fondo') s0 += 14;
+      if (conMarca && parado && lado === 'frente') s1 -= 14;
+      largo = s1 - s0;
+      if (parado) ly = (s0 + s1) / 2; else lx = (s0 + s1) / 2;
     }
     var f2 = 9.5, t = String(sub);
     while (f2 > 8 && t.length * f2 * 0.6 + 10 > largo) f2 -= 0.5;

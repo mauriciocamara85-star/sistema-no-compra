@@ -307,3 +307,4 @@
 .imp-piezas .boton { display: inline-flex; align-items: center; gap: 8px; }
 .pieza-ico { width: 34px; height: 24px; flex: none; }
 .imp-isla .pieza-ico { width: 40px; height: 28px; }
+@media (max-width: 560px) { .imp-isla .pieza-ico { display: none; } }
