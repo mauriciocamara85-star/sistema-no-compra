@@ -669,9 +669,31 @@ function verCajas() {
         (tot ? '<tr><td><b>Total</b></td>' + col(tot, 'sis_mp', 'real_mp', 'desvio_mp') + col(tot, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta') + col(tot, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas') + col(tot, 'sis_efectivo', 'real_efectivo', 'desvio_efectivo') + '<td></td></tr>' : '') +
         '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos.</p>';
     }
+    /* Resumen por mes, como la parte de arriba de la planilla: del más viejo al más nuevo. */
+    var conDatos = meses.slice().reverse().filter(function (m) { return porMes[m]; });
+    if (conDatos.length) {
+      /* Cada medio en una celda: el desvío y, abajo, cierre / real. */
+      var medio = function (t, s, rl, dv) {
+        var d = Number(t[dv] || 0);
+        return '<td class="n"><b class="' + (Math.abs(d) > 0.5 ? 'rojo' : '') + '">' + pesos(d) + '</b><small>' + pesos(t[s]) + ' / ' + pesos(t[rl]) + '</small></td>';
+      };
+      html += '<h3 class="cierre-titulo">Resumen por mes</h3><div class="desliza"><table class="tabla-datos cajas-meses"><thead><tr><th>Mes</th>' +
+        ['Mercado Pago', 'Tarjeta', 'Go Cuotas', 'Efectivo'].map(function (x) { return '<th class="n">' + x + '<small>desvío · cierre / real</small></th>'; }).join('') +
+        '<th>Cierre</th><th>Observación</th></tr></thead><tbody>' +
+        conDatos.map(function (m) {
+          var t = porMes[m], ci = cierres[m], h = (ci && ci.historia) || [], ult = h[h.length - 1];
+          var est = ci && ci.estado === 'controlado' ? '<span class="est listo">Controlado ✓</span><small>' + esc(ci.controlado_por_nombre || '') + (ci.controlado_en ? ' · ' + esc(diaMes(ci.controlado_en)) : '') + '</small>'
+            : m < mesCaja ? '<span class="est sorpresa">Falta cerrar</span>' : '<span class="est">En curso</span>';
+          var obs = ci && ci.estado === 'controlado' ? esc(ci.observacion) : ci && ci.estado === 'reabierto' && ult ? 'Reabierto: ' + esc(ult.texto) : '—';
+          return '<tr data-ir-mes="' + m + '" class="' + (m === _mes ? 'mes-activo' : '') + '" style="cursor:pointer"><td><b>' + esc(nombreMes(m)) + '</b></td>' +
+            medio(t, 'sis_mp', 'real_mp', 'desvio_mp') + medio(t, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta') + medio(t, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas') + medio(t, 'sis_efectivo', 'real_efectivo', 'desvio_efectivo') +
+            '<td class="cierre-est">' + est + '</td><td class="obs">' + obs + '</td></tr>';
+        }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Los últimos 6 meses con cajas. Tocá un mes para ver sus días.</p>';
+    }
     var c = document.getElementById('cuerpo');
     c.innerHTML = html;
     c.querySelectorAll('[data-mes]').forEach(function (b) { b.onclick = function () { _mes = b.dataset.mes; verCajas(); }; });
+    c.querySelectorAll('[data-ir-mes]').forEach(function (tr) { tr.onclick = function () { _mes = tr.dataset.irMes; verCajas(); try { window.scrollTo(0, 0); } catch (e) {} }; });
     c.querySelectorAll('[data-vista]').forEach(function (b) { b.onclick = function () { _cajasTodos = b.dataset.vista === 'todos'; verCajas(); }; });
     var bc = document.getElementById('cajaCerrar'), br = document.getElementById('cajaReabrir'), bh = document.getElementById('cajaHistoria');
     if (bc) bc.onclick = function () { cerrarMesCaja(cajas, tot); };
@@ -696,14 +718,19 @@ function verCajasTodos(meses) {
   var hoyMes = meses[0];
   Promise.all([
     leer('/orden_v_cajas_mes?select=*&mes=eq.' + _mes),
-    leerCierres('/orden_v_cajas_meses?select=*&mes=eq.' + _mes)
+    leerCierres('/orden_v_cajas_meses?select=*&mes=eq.' + _mes),
+    /* El mes del día de caja de cada local (el día 1 antes de que abra, el mes pasado sigue en curso). */
+    Promise.all(_locales.map(function (l) { return llamar('orden_caja_mes_actual', { p_local: l.id }).catch(function () { return null; }); }))
   ]).then(function (r) {
     if (_solapa !== 'cajas' || !_cajasTodos) return;
-    var porLocal = {}, cierres = {}, terminado = _mes < hoyMes;
+    var porLocal = {}, cierres = {}, mesCaja = {};
     (r[0] || []).forEach(function (x) { porLocal[x.local_id] = x; });
     r[1].filas.forEach(function (x) { cierres[x.local_id] = x; });
+    _locales.forEach(function (l, i) { mesCaja[l.id] = /^\d{4}-\d{2}$/.test(r[2][i] || '') ? r[2][i] : hoyMes; });
+    var terminoEn = function (l) { return _mes < mesCaja[l.id]; };
     var conCajas = _locales.filter(function (l) { return porLocal[l.id]; });
-    var falta = terminado ? conCajas.filter(function (l) { return !(cierres[l.id] && cierres[l.id].estado === 'controlado'); }).length : 0;
+    var terminado = conCajas.some(terminoEn);
+    var falta = conCajas.filter(function (l) { return terminoEn(l) && !(cierres[l.id] && cierres[l.id].estado === 'controlado'); }).length;
     var efvo = conCajas.reduce(function (a, l) { return a + Number(porLocal[l.id].desvio_efectivo || 0); }, 0);
     var celda = function (t, k) { var d = Number(t[k] || 0); return '<td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td>'; };
     var html = '<div class="solapas chicas cajas-vista"><button data-vista="local">Un local</button><button data-vista="todos" class="activa">Todos los locales</button></div>' +
@@ -718,7 +745,7 @@ function verCajasTodos(meses) {
         '<th class="n">Sin cargar</th><th class="n">Sin controlar</th><th>Cierre del mes</th></tr></thead><tbody>' +
         conCajas.map(function (l) {
           var t = porLocal[l.id], ci = cierres[l.id];
-          var est = ci && ci.estado === 'controlado' ? '<span class="est listo">Controlado ✓</span>' : terminado ? '<span class="est sorpresa">Falta cerrar</span>' : '<span class="est">En curso</span>';
+          var est = ci && ci.estado === 'controlado' ? '<span class="est listo">Controlado ✓</span>' : terminoEn(l) ? '<span class="est sorpresa">Falta cerrar</span>' : '<span class="est">En curso</span>';
           return '<tr data-ir="' + esc(l.id) + '" style="cursor:pointer"><td><b>' + esc(l.nombre) + '</b></td>' + celda(t, 'desvio_mp') + celda(t, 'desvio_tarjeta') + celda(t, 'desvio_gocuotas') + celda(t, 'desvio_efectivo') +
             '<td class="n">' + Number(t.dias_sin_cargar || 0) + '</td><td class="n">' + Number(t.dias_sin_controlar || 0) + '</td><td>' + est + '</td></tr>';
         }).join('') +

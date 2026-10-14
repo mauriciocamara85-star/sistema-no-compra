@@ -22,9 +22,11 @@
 --     de que abra el local el día 1, todavía se carga la caja del último día).
 --
 -- Reversible: select cron.unschedule('orden-cierre-cajas');
--- drop trigger orden_cajas_mes_trabado on orden_cajas; y borrar las
--- funciones, la vista y la tabla (se pierden los cierres anotados; las
--- cajas no se tocan).
+-- drop trigger orden_cajas_mes_trabado on orden_cajas;
+-- drop trigger orden_caja_fotos_mes_trabado on orden_caja_fotos;
+-- (los dos triggers PRIMERO: si no, las cajas y las fotos fallan) y después
+-- borrar las funciones, la vista y la tabla (se pierden los cierres
+-- anotados; las cajas no se tocan).
 -- =====================================================================
 
 create table if not exists orden_cajas_meses (
