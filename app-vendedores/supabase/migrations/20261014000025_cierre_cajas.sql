@@ -15,10 +15,11 @@
 --   · Con el mes cerrado, los montos de sus días quedan trabados: nadie los
 --     cambia (un trigger en orden_cajas). El encargado igual puede marcar un
 --     día como controlado: eso no cambia plata.
---   · El día 1 (y los siguientes, hasta que se cierre) Administración recibe
---     UN aviso por mes: "Cajas de septiembre para cerrar". Lo manda un job
---     de pg_cron propio (orden-cierre-cajas, 10 h de Argentina); no toca el
---     tick.
+--   · El día 1 Administración recibe UN aviso por mes: "Cajas de septiembre
+--     para cerrar". Lo manda un job de pg_cron propio (orden-cierre-cajas,
+--     12 h de Argentina, con los locales ya abiertos); no toca el tick.
+--   · Un mes se cierra cuando el DÍA DE CAJA ya es del mes siguiente (antes
+--     de que abra el local el día 1, todavía se carga la caja del último día).
 --
 -- Reversible: select cron.unschedule('orden-cierre-cajas');
 -- drop trigger orden_cajas_mes_trabado on orden_cajas; y borrar las
@@ -56,6 +57,13 @@ returns boolean language sql stable security definer set search_path = public as
   select exists (select 1 from orden_personas where id = orden_yo_id() and rol = 'admin' and activo and aprobado)
 $$;
 
+/* El mes del día de caja de un local (antes de que abra, el día de caja es
+   el anterior): la pantalla lo usa para saber si un mes ya terminó. */
+create or replace function orden_caja_mes_actual(p_local uuid)
+returns text language sql stable security definer set search_path = public as $$
+  select to_char(orden_dia_caja(p_local), 'YYYY-MM')
+$$;
+
 /* ═══ Cerrar el mes ════════════════════════════════════════════════════
    Un mes que ya terminó (en la hora del local) y que tiene cajas. Si
    quedaron días sin cargar se puede cerrar igual (un día que nadie cargó no
@@ -70,8 +78,8 @@ begin
   if not orden_es_admin_caja() then raise exception 'Sólo Administración cierra el mes de las cajas'; end if;
   if coalesce(p_mes, '') !~ '^[0-9]{4}-(0[1-9]|1[0-2])$' then raise exception 'El mes no es válido'; end if;
   if not exists (select 1 from orden_locales where id = p_local) then raise exception 'No encontramos ese local'; end if;
-  if p_mes >= to_char(orden_fecha_local(p_local), 'YYYY-MM') then
-    raise exception 'El mes todavía no terminó: se cierra desde el día 1 del mes siguiente';
+  if p_mes >= to_char(orden_dia_caja(p_local), 'YYYY-MM') then
+    raise exception 'El mes todavía no terminó: se cierra el día 1, cuando abre el local (antes todavía se carga la caja del último día)';
   end if;
   if v_obs is null then raise exception 'Escribí la observación (por ejemplo: "Todo controlado y ok")'; end if;
   if length(v_obs) > 600 then raise exception 'La observación es muy larga (hasta 600 letras)'; end if;
@@ -91,7 +99,9 @@ begin
         controlado_por = excluded.controlado_por, controlado_por_nombre = excluded.controlado_por_nombre,
         controlado_en = excluded.controlado_en,
         historia = x.historia || excluded.historia
+    where x.estado <> 'controlado'   -- otro lo cerró recién: no se pisa
   returning * into m;
+  if not found then raise exception 'Ese mes ya estaba cerrado'; end if;
   return to_jsonb(m);
 end $$;
 
@@ -128,13 +138,19 @@ declare
   v_fila orden_cajas := case when tg_op = 'DELETE' then old else new end;
   v_libres text[] := array['estado', 'controlada_por', 'controlada_en', 'nota_control',
                            'desvio_mp', 'desvio_tarjeta', 'desvio_gocuotas', 'desvio_efectivo'];
+  v_n jsonb; v_o jsonb;
 begin
+  /* Se borra el local entero (en cascada): pasa. */
+  if tg_op = 'DELETE' and not exists (select 1 from orden_locales where id = old.local_id) then return old; end if;
   if exists (select 1 from orden_cajas_meses
               where local_id = v_fila.local_id and mes = to_char(v_fila.fecha, 'YYYY-MM') and estado = 'controlado')
      or (tg_op = 'UPDATE' and exists (select 1 from orden_cajas_meses
               where local_id = old.local_id and mes = to_char(old.fecha, 'YYYY-MM') and estado = 'controlado')) then
-    if tg_op = 'UPDATE' and (to_jsonb(new) - v_libres) is not distinct from (to_jsonb(old) - v_libres) then
-      return new;
+    if tg_op = 'UPDATE' then
+      v_n := to_jsonb(new) - v_libres; v_o := to_jsonb(old) - v_libres;
+      /* Se borró la persona que la cargó (on delete set null): pasa. */
+      if new.cargada_por is null then v_n := v_n - 'cargada_por'; v_o := v_o - 'cargada_por'; end if;
+      if v_n is not distinct from v_o then return new; end if;
     end if;
     raise exception 'El mes de esta caja ya está cerrado por Administración: para cambiar algo, que lo reabra';
   end if;
@@ -144,6 +160,20 @@ end $$;
 drop trigger if exists orden_cajas_mes_trabado on orden_cajas;
 create trigger orden_cajas_mes_trabado before insert or update or delete on orden_cajas
   for each row execute function orden_cajas_mes_trabado();
+
+/* Tampoco se agregan fotos (comprobantes) a un día de un mes cerrado. */
+create or replace function orden_caja_fotos_mes_trabado()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  if exists (select 1 from orden_cajas c join orden_cajas_meses m on m.local_id = c.local_id and m.mes = to_char(c.fecha, 'YYYY-MM')
+              where c.id = new.caja_id and m.estado = 'controlado') then
+    raise exception 'El mes de esta caja ya está cerrado por Administración: para cambiar algo, que lo reabra';
+  end if;
+  return new;
+end $$;
+drop trigger if exists orden_caja_fotos_mes_trabado on orden_caja_fotos;
+create trigger orden_caja_fotos_mes_trabado before insert on orden_caja_fotos
+  for each row execute function orden_caja_fotos_mes_trabado();
 
 /* ═══ El aviso del día 1 ══════════════════════════════════════════════
    Un aviso por mes a Administración con los locales que tienen cajas del mes
@@ -171,7 +201,7 @@ begin
     '/admin', 'cierre-cajas:' || v_mes, 2::smallint);
 end $$;
 
-select cron.schedule('orden-cierre-cajas', '0 13 * * *', $c$select orden_cajas_aviso_cierre()$c$);
+select cron.schedule('orden-cierre-cajas', '0 15 * * *', $c$select orden_cajas_aviso_cierre()$c$);
 
 /* ═══ Permisos ═══════════════════════════════════════════════════════════ */
 do $$
@@ -187,6 +217,9 @@ begin
   revoke all on function orden_caja_mes_reabrir(uuid, text, text) from public, anon;
   grant execute on function orden_caja_mes_reabrir(uuid, text, text) to authenticated, service_role;
   revoke all on function orden_cajas_mes_trabado() from public, anon, authenticated;
+  revoke all on function orden_caja_fotos_mes_trabado() from public, anon, authenticated;
+  revoke all on function orden_caja_mes_actual(uuid) from public, anon;
+  grant execute on function orden_caja_mes_actual(uuid) to authenticated, service_role;
   revoke all on function orden_cajas_aviso_cierre(timestamptz) from public, anon, authenticated;
   grant execute on function orden_cajas_aviso_cierre(timestamptz) to service_role;
 end $$;
