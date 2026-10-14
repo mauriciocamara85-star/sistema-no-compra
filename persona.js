@@ -558,15 +558,19 @@ var persona = (function () {
         if (x.ok && x.d.access_token) {
           var per = x.d.persona || {};
           per.local = local.id ? local.nombre : '';   // como lo guarda Impecable
-          anotar(x.d, per);
-          /* Lo que trajo la sesión, hasta que conteste la base (y la barra ya
-             dice quién entró, o que espera el OK). */
-          fijarYo({ id: per.id, nombre: per.nombre, rol: per.rol, aprobado: per.aprobado !== false, activo: true, provisorio: true });
           _teclas = null;
+          var abrir = function () {
+            anotar(x.d, per);
+            /* Lo que trajo la sesión, hasta que conteste la base (y la barra ya
+               dice quién entró, o que espera el OK). */
+            fijarYo({ id: per.id, nombre: per.nombre, rol: per.rol, aprobado: per.aprobado !== false, activo: true, provisorio: true });
+            adentro(c);
+          };
           /* SQL 110: entró con un PIN de 4 y su rol pide 6. Lo cambia con
-             el que acaba de poner (orden_pin_cambiar pide el de ahora). */
-          if (x.d.cambiar_pin || per.cambiar_pin) { pasoCambiarPin(c, 6, cuerpo.pin); return; }
-          adentro(c);
+             el que acaba de poner (orden_pin_cambiar pide el de ahora), y
+             recién entonces se guarda la sesión. */
+          if (x.d.cambiar_pin || per.cambiar_pin) { pasoCambiarPin(c, 6, cuerpo.pin, x.d.access_token, abrir); return; }
+          abrir();
           return;
         }
         var d = x.d || {};
@@ -615,11 +619,11 @@ var persona = (function () {
 
   /* Su rol pide un PIN más largo (SQL 110: 6 números para Administración,
      Atención y Gerencia) y acaba de entrar con el de antes: lo cambia ahora
-     mismo, con la sesión recién abierta y el PIN que acaba de poner (sin
-     volver a pedirlo). SÓLO acá: al abrir una pantalla, la sesión de una PC
-     compartida puede ser de otro. Si cierra la ventana, la próxima vez que
-     entre se lo vuelve a pedir. */
-  function pasoCambiarPin(c, largo, actual) {
+     mismo, con la sesión recién abierta (todavía sin guardar) y el PIN que
+     acaba de poner (sin volver a pedirlo). SÓLO acá: al abrir una pantalla,
+     la sesión de una PC compartida puede ser de otro. La sesión se guarda
+     recién con el PIN cambiado (abrir): si cierra la ventana, no entró. */
+  function pasoCambiarPin(c, largo, actual, tok, abrir) {
     var pin = '', primero = null, ocupado = false;
     c.innerHTML = '<h2 id="ncpTit"></h2><p class="ncp-bajada" data-bajada></p>' + puntosDe(largo) +
       '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' + TECLADO;
@@ -628,7 +632,7 @@ var persona = (function () {
     function textos() {
       c.querySelector('#ncpTit').textContent = primero === null ? 'Tu PIN ahora es de ' + largo + ' números' : 'Repetí tu PIN nuevo';
       c.querySelector('[data-bajada]').textContent = primero === null
-        ? 'Por seguridad, lo de la oficina pide un PIN de ' + largo + ' números. Elegí uno nuevo: el de antes deja de servir.'
+        ? 'Por seguridad, lo de la oficina pide un PIN de ' + largo + ' números. Para entrar, elegí uno nuevo: el de antes deja de servir.'
         : 'Poné los mismos ' + largo + ' números otra vez.';
     }
     function dibujar() { [].forEach.call(puntos.children, function (d, i) { d.classList.toggle('lleno', i < pin.length); }); }
@@ -648,17 +652,17 @@ var persona = (function () {
       if (pin !== primero) { primero = null; textos(); mal('No coinciden. Empezá de nuevo.'); return; }
       ocupado = true;
       aviso.className = 'ncp-aviso'; aviso.textContent = 'Guardando…';
-      token().then(function (t) { return funcion('orden_pin_cambiar', { p_actual: actual, p_nuevo: pin }, t); }).then(function (r) {
+      funcion('orden_pin_cambiar', { p_actual: actual, p_nuevo: pin }, tok).then(function (r) {
         ocupado = false;
         if (!r || !r.ok) {
           primero = null; textos(); mal((r && r.porque) || 'No se pudo cambiar. Probá de nuevo.');
           /* El de ahora no le sirvió (lo cambiaron en otro lado, o quedó
              trabado): que entre de nuevo. */
-          if (r && r.actual) { ocupado = true; setTimeout(function () { salir().then(function () { location.reload(); }); }, 2500); }
+          if (r && r.actual) { ocupado = true; setTimeout(cerrarVelo, 2500); }
           return;
         }
         _teclas = null;
-        adentro(c);
+        abrir();
       }).catch(function (e) {
         ocupado = false; primero = null; textos();
         mal(e && e.delServidor ? e.message : 'Sin conexión. Probá de nuevo cuando haya señal.');
