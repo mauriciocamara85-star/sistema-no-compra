@@ -312,3 +312,13 @@
 .imp-ancho-puerta { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .imp-ancho-puerta > span { font: 600 13px var(--sans); color: var(--txt-2); margin: 0 2px 0 6px; }
 .imp-ancho-puerta[hidden] { display: none; }
+/* Arrastrar un lugar de una pared (14/10): se agarra, y el lugar donde va a caer se marca en lima. */
+.ventana .mapa-toque[data-lugar] { cursor: grab; }
+.ventana .mapa-toque[data-lugar].levantado { cursor: grabbing; }
+.ventana .mapa-svg .mapa-destino { fill: rgba(198, 244, 50, .32); stroke: #C6F432; stroke-width: 3; stroke-dasharray: 6 4; }
+/* Con el dedo, sobre un lugar de una pared la pantalla no se desliza (se arrastra manteniéndolo apretado; para
+   desplazar, se toca el piso o los costados). El lugar elegido para "Cambiar de lugar", marcado. */
+.ventana .mapa-svg [data-lugar] { touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.ventana .mapa-svg .mapa-origen { fill: rgba(198, 244, 50, .38); stroke: #C6F432; stroke-width: 3.5; animation: mapaLatido 1.1s ease-in-out infinite; }
+@keyframes mapaLatido { 50% { fill: rgba(198, 244, 50, .14); } }
+@media (prefers-reduced-motion: reduce) { .ventana .mapa-svg .mapa-origen { animation: none; } }

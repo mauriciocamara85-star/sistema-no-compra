@@ -122,6 +122,31 @@ enfrente y mover las piezas, "algo bien tecnológico donde se vea el color de ca
 - *Menores:* "qué hay" ya no se pierde en los módulos con marca ni lo tapa el número; los muebles nuevos no caen encima de otros; "Calzado" ya no dibuja pantalones ni "media manga" medias, y se reconocen tops, bodies, mallas, pijamas y polerones; "Entrada" entera en una pared de costado; unos probadores de antes no aparecen dos veces en el menú; en el celular la lista de muebles deja lugar al nombre.
 - *Queda:* un administrador con la versión vieja guardada en el navegador, si guarda el croquis, pierde lo nuevo (el tipo de pieza y cuántos lugares ocupa) hasta que su computadora tome la v134. Tocar una pieza en el observador a veces abre el módulo que queda delante (por la perspectiva).
 
+## El croquis con imágenes, "Desde arriba" como la foto y mover los de las paredes (14/10, PUBLICADO: 20a64f6 = v135; el arrastre, v136)
+
+Pedidos de Mauricio (14/10): imágenes realistas de cada pieza ("tenemos créditos, hay que aprovecharlos", con sus fotos
+de los módulos de referencia), "vista como la foto: desde arriba con perspectiva", la entrada de dos lugares para
+centrarla ("el 1 es el módulo siguiente a la puerta") y "los de los costados se tienen que poder mover fácil, como los
+del medio".
+
+- **Imágenes** (`croquis-img/`, 20 WebP, 672 KB): hechas con Higgsfield (GPT Image 2.5, fondo transparente, unos 30
+  créditos), vistas desde arriba y con el estilo de los locales (marco de hierro oxidado, estante de madera, riel negro
+  tipo escalera, piso de cemento, paredes gris oliva). Ropa doblada por prenda, ropa colgada (sin "qué hay"), depósito,
+  perchero, probadores, mesa, maniquí, planta, caja, escalera y el piso. Recortadas y achicadas con
+  `scratchpad/sprites/procesar.js`. Las guarda el celular (sw-vendedores). Sin la carpeta (`CROQUIS_IMG` vacío) vuelven
+  los dibujos.
+- **"Desde arriba" como la foto:** con perspectiva y paredes altas; se ven las paredes por dentro y el frente de cada
+  módulo con su foto.
+- **La entrada (y la puerta del depósito) de 1 a 3 lugares:** "Ancho de la entrada", al lado de "Mover la entrada".
+- **Mover los de las paredes:** se arrastra uno (con el mouse) hasta otro lugar de cualquier pared y los dos cambian de
+  lugar; o, en el menú del lugar, "Cambiar de lugar con otro" y se toca adónde va (anda igual en el celular). Cada
+  módulo se lleva su responsable, sus fotos y qué hay; al guardar se numeran desde la entrada.
+- **Con el dedo:** sobre un lugar de una pared, la pantalla no se desliza (para desplazar, el piso o los costados);
+  mantenerlo apretado lo levanta. **No se pudo comprobar** en Chrome sin pantalla que al soltarlo cambie de lugar (falló
+  3 veces la prueba; regla: no hay tercera vuelta): probarlo en un celular de verdad; mientras, "Cambiar de lugar con otro".
+- **Pruebas:** app 156, administración 110, observador 105 (con el procesador 4 veces más lento, 61 a 69 cuadros por
+  segundo), testigo 30, cámara.
+
 ## Decisiones que tomé (todas reversibles)
 
 - **Nombre: "Equipo VDH"** (lo eligió él el 13/10; antes "Impecable"). Cambiaron sólo los textos (`NOMBRE_APP`, `<title>`, el manifest, la barra del No Compra); los archivos siguen llamándose `impecable-*`.

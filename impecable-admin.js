@@ -1409,6 +1409,7 @@ function editarMapa(d) {
 
   var f = ventana('<h1>El croquis del local</h1><p class="bajada">El local visto desde arriba, como lo ven los vendedores. ' +
     '<b>Tocá un lugar de una pared</b> para cambiarlo: módulo, módulo doble, hueco o algo que no es un módulo (probadores, la puerta del depósito, una columna). ' +
+    '<b>Arrastralo</b> hasta otro lugar para cambiarlos de lugar (en el celular, mantenelo apretado un momento y movelo). ' +
     'El 1 es el primero al lado de la entrada, hacia la izquierda, y sigue dando la vuelta. Cada módulo se queda en su lugar con su responsable y sus fotos: si cambia algo, cambia su número.</p>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
       '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
@@ -1423,6 +1424,7 @@ function editarMapa(d) {
       '<span class="imp-ancho-puerta" id="eAnchoPuerta"><span>Ancho de la entrada</span>' + [1, 2, 3].map(function (a) {
         return '<button type="button" class="boton chico" data-ancho-puerta="salon:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span>' +
       '<button type="button" class="boton chico" id="eAcomodar">Acomodar solos los del centro</button></div>' +
+    '<p class="nota" id="eNotaCambiar" hidden>Tocá el lugar adonde va (de cualquier pared): los dos cambian de lugar. <button type="button" class="boton chico" id="eCancelarCambio" style="margin-left:6px">Cancelar</button></p>' +
     '<p class="nota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada. El 1 queda al lado, hacia la izquierda. Para centrarla, dejá la misma cantidad de lugares de cada lado (si hace falta, que ocupe 2).</p>' +
     '<div class="imp-mapa-vista croquis" id="eVista"></div>' +
     '<div class="seccion">Módulos del centro del salón</div>' +
@@ -1585,6 +1587,12 @@ function editarMapa(d) {
     });
     f.querySelector('#eNotaPuerta').hidden = st.mover !== 'salon';
     f.querySelector('#eNotaPuertaDep').hidden = st.mover !== 'deposito';
+    /* "Cambiar de lugar": el lugar elegido, marcado, y el aviso arriba del dibujo. */
+    f.querySelector('#eNotaCambiar').hidden = !st.cambiar;
+    if (st.cambiar) {
+      var orig = vistaDe(st.cambiar.split(':')[0]).querySelector('[data-lugar="' + st.cambiar + '"]');
+      if (orig) orig.classList.add('mapa-origen'); else st.cambiar = null;
+    }
     var total = dv.pared.length;
     filasCentro(total);
     var c = cambios();
@@ -1620,7 +1628,8 @@ function editarMapa(d) {
       '<div class="seccion">Agregar o sacar</div><div class="imp-lugar-ops">' +
         '<button type="button" class="boton chico" data-op="antes">+ Un lugar ' + lados[0] + '</button>' +
         '<button type="button" class="boton chico" data-op="despues">+ Un lugar ' + lados[1] + '</button>' +
-        '<button type="button" class="boton chico" data-op="sacar">Sacar este lugar</button></div>' +
+        '<button type="button" class="boton chico" data-op="sacar">Sacar este lugar</button>' +
+        '<button type="button" class="boton chico" data-op="cambiar">Cambiar de lugar con otro</button></div>' +
       (l.t !== 'h' && l.id ? '<p class="bajada" style="margin-top:12px">Si lo sacás o lo cambiás por algo que no es un módulo, el módulo se apaga al guardar (no se borra: quedan sus fotos).</p>' : ''));
     g.querySelectorAll('[data-op]').forEach(function (b) {
       b.onclick = function () {
@@ -1635,18 +1644,33 @@ function editarMapa(d) {
           if (e.paredes[w].length >= 60) { avisar('Como mucho 60 lugares por pared.'); return; }
           agregarLugar(tipo, w, i, op === 'despues');
         } else if (op === 'sacar') sacarLugar(tipo, w, i);
+        else if (op === 'cambiar') { st.cambiar = tipo + ':' + w + ':' + i; st.mover = null; }
         else ponerTipo(tipo, w, i, op);
         g.remove(); vista();
+        if (op === 'cambiar') { var mc = vistaDe(tipo).querySelector('.mapa-origen'); if (mc) mc.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
       };
     });
   }
 
   /* ── Tocar el dibujo ── */
   var soltadoEn = 0;
+  function vistaDe(tipo) { return tipo === 'deposito' ? vistaD : vistaS; }
   function tocar(ev) {
     var t = ev.target.closest && ev.target.closest('[data-lugar], [data-puerta], [data-hueco-puerta]');
     /* Al soltar algo que arrastraban encima de una pared, no se abre el menú de ese lugar. */
     if (!t || Date.now() - soltadoEn < 400) return;
+    if (st.cambiar && t.dataset.lugar) {
+      var de = st.cambiar, a = t.dataset.lugar;
+      if (de === a) { st.cambiar = null; vista(); return; }
+      if (de.split(':')[0] !== a.split(':')[0]) { avisar(de.split(':')[0] === 'deposito' ? 'Elegí otro lugar del depósito.' : 'Elegí otro lugar del salón.'); return; }
+      st.cambiar = null;
+      intercambiar(de, a);
+      vista();
+      var nv = vistaDe(a.split(':')[0]).querySelector('[data-lugar="' + a + '"]');
+      if (nv && nv.previousElementSibling) nv.previousElementSibling.classList.add('mapa-rebota');
+      avisar('Listo: cambiaron de lugar. Al guardar se numeran de nuevo desde la entrada (cada módulo sigue con su responsable y sus fotos).');
+      return;
+    }
     if (t.dataset.huecoPuerta) {
       var p = t.dataset.huecoPuerta.split(':');
       st[p[0]].puerta = { pared: p[1], pos: +p[2], a: anchoPuerta(st[p[0]].puerta) };
@@ -1657,6 +1681,115 @@ function editarMapa(d) {
   }
   vistaS.addEventListener('click', tocar);
   vistaD.addEventListener('click', tocar);
+
+  /* ── Arrastrar un lugar de una pared hasta otro: los dos cambian de lugar ── */
+  function intercambiar(a, b) {
+    var p = a.split(':'), q = b.split(':'), tipo = p[0];
+    if (tipo !== q[0] || a === b) return false;
+    var la = st[tipo].paredes[p[1]], lb = st[tipo].paredes[q[1]];
+    if (!la || !lb || !la[+p[2]] || !lb[+q[2]]) return false;
+    var x = la[+p[2]]; la[+p[2]] = lb[+q[2]]; lb[+q[2]] = x;
+    return true;
+  }
+  function arrastreLugar(vistaEl) {
+    var arr = null;
+    function destinoEn(x, y) {
+      var els = document.elementsFromPoint ? document.elementsFromPoint(x, y) : [];
+      for (var k = 0; k < els.length; k++) {
+        var l = els[k].getAttribute && els[k].getAttribute('data-lugar');
+        if (l && l !== arr.lugar && l.split(':')[0] === arr.lugar.split(':')[0]) return els[k];
+      }
+      return null;
+    }
+    function agarrar(tq, x, y, dedo) {
+      var svg = tq.closest('svg');
+      arr = { toque: tq, lugar: tq.getAttribute('data-lugar'), svg: svg, x0: x, y0: y, p0: puntoSvg(svg, { clientX: x, clientY: y }), dedo: dedo, activo: false, destino: null };
+      /* Con el dedo, se mantiene apretado un momento (si no, es deslizar la pantalla). */
+      if (dedo) arr.reloj = setTimeout(function () { if (arr && !arr.activo) empezar(); }, 320);
+    }
+    function empezar() {
+      arr.activo = true;
+      arr.toque.style.pointerEvents = 'none';
+      [arr.toque, arr.toque.previousElementSibling].forEach(function (el) { if (el) el.classList.add('levantado'); });
+      if (arr.dedo && navigator.vibrate) { try { navigator.vibrate(18); } catch (e) {} }
+    }
+    /* Devuelve true si se está arrastrando (para no desplazar la pantalla). */
+    function mover(x, y) {
+      if (!arr) return false;
+      var dx = x - arr.x0, dy = y - arr.y0;
+      if (!arr.activo) {
+        if (arr.dedo) { if (Math.abs(dx) + Math.abs(dy) > 10) terminar(false); return false; }
+        if (Math.abs(dx) + Math.abs(dy) < 6) return false;
+        empezar();
+      }
+      var p = puntoSvg(arr.svg, { clientX: x, clientY: y }), mx = p.x - arr.p0.x, my = p.y - arr.p0.y;
+      [arr.toque, arr.toque.previousElementSibling].forEach(function (el) { if (el) el.setAttribute('transform', 'translate(' + mx.toFixed(1) + ',' + my.toFixed(1) + ')'); });
+      var d = destinoEn(x, y);
+      if (d !== arr.destino) {
+        if (arr.destino) arr.destino.classList.remove('mapa-destino');
+        arr.destino = d;
+        if (d) d.classList.add('mapa-destino');
+      }
+      return true;
+    }
+    function terminar(soltado) {
+      if (!arr) return;
+      var a = arr;
+      arr = null;
+      clearTimeout(a.reloj);
+      if (!a.activo) return;
+      soltadoEn = Date.now();
+      var hecho = soltado && a.destino && intercambiar(a.lugar, a.destino.getAttribute('data-lugar'));
+      var final = hecho ? a.destino.getAttribute('data-lugar') : null;
+      vista();
+      if (hecho) {
+        var nuevo = vistaEl.querySelector('[data-lugar="' + final + '"]');
+        if (nuevo && nuevo.previousElementSibling) nuevo.previousElementSibling.classList.add('mapa-rebota');
+        avisar('Listo: cambiaron de lugar. Al guardar se numeran de nuevo desde la entrada (cada módulo sigue con su responsable y sus fotos).');
+      }
+    }
+    /* El mouse (y el lápiz). */
+    var idMouse = null;
+    function moverMouse(ev) { if (ev.pointerId === idMouse) mover(ev.clientX, ev.clientY); }
+    function soltarMouse(ev) {
+      if (ev.pointerId !== idMouse) return;
+      idMouse = null;
+      window.removeEventListener('pointermove', moverMouse); window.removeEventListener('pointerup', soltarMouse); window.removeEventListener('pointercancel', soltarMouse);
+      terminar(ev.type === 'pointerup');
+    }
+    vistaEl.addEventListener('pointerdown', function (ev) {
+      if (ev.pointerType === 'touch') return;
+      var tq = ev.target.closest && ev.target.closest('[data-lugar]');
+      if (!tq || st.mover || st.cambiar || arr || (ev.button && ev.button !== 0)) return;
+      idMouse = ev.pointerId;
+      agarrar(tq, ev.clientX, ev.clientY, false);
+      window.addEventListener('pointermove', moverMouse);
+      window.addEventListener('pointerup', soltarMouse);
+      window.addEventListener('pointercancel', soltarMouse);
+    });
+    /* El dedo. */
+    vistaEl.addEventListener('touchstart', function (ev) {
+      var tq = ev.target.closest && ev.target.closest('[data-lugar]');
+      if (!tq || st.mover || st.cambiar || arr || ev.touches.length !== 1) { if (arr) terminar(false); return; }
+      agarrar(tq, ev.touches[0].clientX, ev.touches[0].clientY, true);
+    }, { passive: true });
+    vistaEl.addEventListener('touchmove', function (ev) {
+      if (!arr || !arr.dedo) return;
+      if (mover(ev.touches[0].clientX, ev.touches[0].clientY)) ev.preventDefault();
+    }, { passive: false });
+    vistaEl.addEventListener('touchend', function (ev) {
+      if (!arr || !arr.dedo) return;
+      var activo = arr.activo;
+      terminar(true);
+      /* Soltar después de arrastrar no "toca" el lugar de abajo. */
+      if (activo) ev.preventDefault();
+    });
+    vistaEl.addEventListener('touchcancel', function () { if (arr && arr.dedo) terminar(false); });
+    /* Mantener apretado no abre el menú del navegador. */
+    vistaEl.addEventListener('contextmenu', function (ev) { if (ev.target.closest && ev.target.closest('[data-lugar]')) ev.preventDefault(); });
+  }
+  arrastreLugar(vistaS);
+  arrastreLugar(vistaD);
   /* Arrastrar lo del centro y las cosas fijas de adentro (con el dedo o con el mouse). */
   vistaS.addEventListener('touchstart', function (ev) { if (ev.target.closest && ev.target.closest('[data-centro], [data-fijo]')) ev.preventDefault(); }, { passive: false });
   vistaS.addEventListener('pointerdown', function (ev) {
@@ -1718,7 +1851,8 @@ function editarMapa(d) {
   });
 
   /* ── Los botones y los campos ── */
-  f.querySelector('#eMoverPuerta').onclick = function () { st.mover = st.mover === 'salon' ? null : 'salon'; vista(); };
+  f.querySelector('#eCancelarCambio').onclick = function () { st.cambiar = null; vista(); };
+  f.querySelector('#eMoverPuerta').onclick = function () { st.mover = st.mover === 'salon' ? null : 'salon'; st.cambiar = null; vista(); };
   f.querySelector('#eMoverPuertaDep').onclick = function () { st.mover = st.mover === 'deposito' ? null : 'deposito'; vista(); };
   f.querySelectorAll('[data-ancho-puerta]').forEach(function (b) {
     b.onclick = function () {
