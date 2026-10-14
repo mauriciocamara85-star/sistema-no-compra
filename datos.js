@@ -542,7 +542,18 @@ var base = {
    * sesión; ver `beneficios()`.
    */
   beneficio: function (clave) {
-    return funcion('beneficio_buscar', { clave: clave }).then(function (filas) {
+    /* Con alguien adentro (cualquier rol, activo y aprobado), con su sesión:
+       la base le muestra el nombre del cliente (soy_de_adentro, SQL 107).
+       Sin sesión, o si la base no la reconoce, como siempre: sin el nombre. */
+    var conSesion = typeof persona !== 'undefined' && persona.tokenSiHay ? persona.tokenSiHay() : Promise.resolve(null);
+    return conSesion.then(function (t) {
+      return funcion('beneficio_buscar', { clave: clave }, t || undefined).catch(function (err) {
+        if (t && err && err.delServidor && (err.status === 401 || err.status === 403 || /JWT/i.test(err.message))) {
+          return funcion('beneficio_buscar', { clave: clave });
+        }
+        throw err;
+      });
+    }).then(function (filas) {
       return Array.isArray(filas) ? filas : (filas ? [filas] : []);
     });
   },

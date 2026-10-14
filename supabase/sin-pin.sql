@@ -17,9 +17,14 @@
 --     persona. Vale si es Administración, Atención o Gerencia, activa y
 --     aprobada. Si no, se rechaza SIN gastar intentos del PIN compartido:
 --     un vendedor con la pantalla abierta no puede trabar a todos.
---   · 'sesion:<id>' — sólo desde las Edge Functions (service_role), que ya
---     revisaron la sesión de la persona y le pasan su id a las funciones que
---     corren con la service role (ahí no hay auth.uid()).
+--   · 'sesion:<id>:<sello>' — sólo desde las Edge Functions (service_role),
+--     que ya revisaron la sesión de la persona y le pasan su id a las
+--     funciones que corren con la service role (ahí no hay auth.uid()). El
+--     sello lo sabe sólo la base (nc_sello): una marca inventada en la
+--     pantalla no pasa, aunque una función la reenvíe tal cual.
+--
+-- Lo de la oficina pide el PIN de 6 números (SQL 110): con uno de 4 de
+-- antes, la persona no entra hasta cambiarlo (nc_yo dice 'pin_corto').
 --
 -- El PIN compartido sigue andando hasta el SQL 109, que lo apaga con un
 -- ajuste (pin_compartido = 'no'). Se vuelve a prender poniéndolo en 'si'.
@@ -48,23 +53,50 @@
 --      ('digitos', SQL 110): 6 para la oficina, 4 para los locales; el que
 --      todavía tiene uno de 4 de antes, 4 (y al entrar lo cambia).
 --
--- Para deshacerlo: pin_ok y soy_de_adentro vuelven con su versión de antes
--- (pin.sql y beneficios-acciones.sql); nc_yo, con la de personas.sql.
+-- Para deshacerlo: PRIMERO volver a publicar las pantallas de antes (las
+-- nuevas ya no tienen campo de PIN, y mandan la marca: con el pin_ok de
+-- antes cada una contaría como un PIN equivocado). Después, pin_ok y
+-- soy_de_adentro vuelven con su versión de antes (pin.sql y
+-- beneficios-acciones.sql); nc_yo, con la de personas.sql; y
+-- drop function nc_marca_persona(uuid); drop table nc_sello;
 -- ══════════════════════════════════════════════════════════════════════════
 
-/* ═══ 1. Quién es de la oficina ══════════════════════════════════════════ */
-create or replace function nc_es_oficina()
-returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from orden_personas
-                  where auth_user_id = auth.uid() and auth.uid() is not null
-                    and activo and aprobado and rol::text in ('admin', 'atencion', 'gerencia'))
-$$;
-
-/* La misma pregunta por id, para lo que llega de una Edge Function. */
+/* ═══ 1. Quién es de la oficina ══════════════════════════════════════════
+   Administración, Atención o Gerencia, activa, aprobada y con el PIN de los
+   números que pide su rol (6, SQL 110): con uno de 4 de antes no entra
+   hasta cambiarlo, aunque tenga la sesión abierta. */
 create or replace function nc_persona_oficina(p_persona uuid)
 returns boolean language sql stable security definer set search_path = public as $$
-  select exists (select 1 from orden_personas
-                  where id = p_persona and activo and aprobado and rol::text in ('admin', 'atencion', 'gerencia'))
+  select exists (select 1 from orden_personas p join orden_pins k on k.persona_id = p.id
+                  where p.id = p_persona and p.activo and p.aprobado and p.rol::text in ('admin', 'atencion', 'gerencia')
+                    and k.hash is not null and coalesce(k.digitos, 4) >= orden_pin_digitos(p.rol))
+$$;
+
+create or replace function nc_es_oficina()
+returns boolean language sql stable security definer set search_path = public as $$
+  select auth.uid() is not null
+     and nc_persona_oficina((select id from orden_personas where auth_user_id = auth.uid() limit 1))
+$$;
+
+/* El sello de la marca de las Edge Functions: lo sabe sólo la base. La
+   tabla no la lee nadie de afuera (sin permisos y con RLS sin reglas); la
+   función con la service role lo pide con nc_marca_persona. Para cambiarlo:
+   update nc_sello set valor = encode(extensions.gen_random_bytes(24), 'hex'); */
+create table if not exists nc_sello (
+  id    smallint primary key default 1 check (id = 1),
+  valor text not null default encode(extensions.gen_random_bytes(24), 'hex')
+);
+alter table nc_sello enable row level security;
+insert into nc_sello (id) values (1) on conflict (id) do nothing;
+
+/* La marca para una persona, que pide la Edge Function (service role)
+   después de revisar su sesión con nc_yo. Si no es de la oficina (o le
+   falta el PIN de 6), 'sesion:no': pin_ok la rechaza sin gastar intentos. */
+create or replace function nc_marca_persona(p_persona uuid)
+returns text language sql stable security definer set search_path = public as $$
+  select case when nc_persona_oficina(p_persona)
+              then 'sesion:' || p_persona::text || ':' || (select valor from nc_sello where id = 1)
+              else 'sesion:no' end
 $$;
 
 /* ═══ 2. pin_ok ════════════════════════════════════════════════════════════
@@ -77,22 +109,27 @@ declare
   e       pin_estado%rowtype;
   espera  integer;
   v_id    uuid;
+  v_partes text[];
 begin
   /* SQL 107: la persona que entró con su usuario. */
   if p_pin = 'sesion' then
     if nc_es_oficina() then return jsonb_build_object('ok', true, 'persona', true); end if;
     return jsonb_build_object('ok', false, 'sin_permiso', true,
-      'porque', 'Tu usuario no tiene acceso a esto: entrá con uno de Administración o de Atención al cliente.');
+      'porque', 'Tu usuario no tiene acceso a esto: entrá con uno de Administración, Atención al cliente o Gerencia (con el PIN de 6 números).');
   end if;
-  /* Desde una Edge Function, que ya revisó la sesión: sólo con la service role. */
-  if p_pin like 'sesion:%' then
+  /* Desde una Edge Function, que ya revisó la sesión: 'sesion:<id>:<sello>',
+     sólo con la service role y con el sello de la base. Cualquier otra cosa
+     que empiece con "sesion" se rechaza sin tocar el contador. */
+  if p_pin like 'sesion%' then
+    v_partes := string_to_array(p_pin, ':');
     begin
-      v_id := substr(p_pin, 8)::uuid;
+      v_id := case when array_length(v_partes, 1) = 3 then v_partes[2]::uuid end;
     exception when others then
       v_id := null;
     end;
     if v_id is not null
        and coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role', '') = 'service_role'
+       and v_partes[3] = (select valor from nc_sello where id = 1)
        and nc_persona_oficina(v_id) then
       return jsonb_build_object('ok', true, 'persona', true);
     end if;
@@ -163,10 +200,14 @@ returns jsonb language sql stable security definer set search_path = public as $
            'pila', p.nombre,
            'rol', p.rol, 'local_id', p.local_id, 'local', l.codigo, 'local_nombre', l.nombre,
            'vendedor', coalesce(e.vendedor, orden_nombre_lista(p.nombre, p.inicial)),
-           'activo', p.activo, 'aprobado', p.aprobado)
+           'activo', p.activo, 'aprobado', p.aprobado,
+           /* Su PIN tiene menos números de los que pide su rol (SQL 110): lo
+              de la oficina no abre hasta cambiarlo. */
+           'pin_corto', k.hash is not null and coalesce(k.digitos, 4) < orden_pin_digitos(p.rol))
     from orden_personas p
     left join orden_locales l on l.id = p.local_id
     left join equipo e on e.id = p.equipo_id
+    left join orden_pins k on k.persona_id = p.id
    where p.auth_user_id = auth.uid() and auth.uid() is not null
    limit 1
 $$;
@@ -194,6 +235,10 @@ begin
   revoke all on function nc_persona_oficina(uuid) from public, anon, authenticated;
   grant execute on function nc_es_oficina() to service_role;
   grant execute on function nc_persona_oficina(uuid) to service_role;
+  /* El sello: nadie de afuera. La marca: sólo la service role (las Edge Functions). */
+  revoke all on table nc_sello from public, anon, authenticated;
+  revoke all on function nc_marca_persona(uuid) from public, anon, authenticated;
+  grant execute on function nc_marca_persona(uuid) to service_role;
   /* pin_ok, como siempre: la pantalla (anon o con sesión) y las Edge Functions. */
   grant execute on function pin_ok(text) to anon, authenticated, service_role;
   /* soy_de_adentro la llaman otras funciones (definer): desde afuera no hace falta. */

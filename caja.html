@@ -447,6 +447,13 @@
     var n = $('clubNota');
     if (!n) { return; }
     n.hidden = clubAnda();
+    var y = persona.yo();
+    /* De la oficina, con el PIN de 4 de antes: la base no lo deja hasta cambiarlo (SQL 107). */
+    if (!clubAnda() && y && y.pin_corto && persona.oficina()) {
+      n.innerHTML = 'Para usar el Club acá, cambiá tu PIN por uno de 6 números. Cupones y gift cards andan igual. <button type="button" class="btn btn-sec btn-chico" id="clubCambiarPin">Cambiar mi PIN</button>';
+      $('clubCambiarPin').onclick = function () { persona.cambiarPin(); };
+      return;
+    }
     n.textContent = clubAnda() ? '' : 'El Club todavía no anda en esta caja: pedile al encargado el enlace para habilitarla. Cupones y gift cards andan igual.';
   }
 
@@ -1154,6 +1161,8 @@
     }
     abrirCobrar();
   })();
+  /* Cuando la base confirma quién entró (el PIN corto, por ejemplo), la nota del Club se pone al día. */
+  persona.listo.then(pintarClubNota);
 
   iniciarPWA();
 })();

@@ -570,7 +570,7 @@
          OK, o "no es de tu usuario" (persona.porton). Antes, el PIN compartido. -->
     <div class="bloque pin-club" id="cajaPinClub" hidden>
       <h2 class="bloque-tit">El Club VDH</h2>
-      <p class="bloque-sub">Acá se manejan los premios, las promociones y los avisos que ven los socios. Es de Administración y Atención al cliente, porque lo que se cambia lo ven los clientes.</p>
+      <p class="bloque-sub">Acá se manejan los premios, las promociones y los avisos que ven los socios. Es de Administración, Atención al cliente y Gerencia, porque lo que se cambia lo ven los clientes.</p>
       <div id="pinClubCuerpo"></div>
     </div>
     <!-- Quién entró, y "Salir" (13/10/2026). Antes era la sesión del PIN
@@ -880,7 +880,7 @@
     $('promoCuerpo').innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
     $('pinClubCuerpo').innerHTML = '<div id="clubUsuario"></div>' +
       (error ? '<div class="campo-error">' + esc(error) + '</div>' : '');
-    persona.porton($('clubUsuario'), 'El Club es de Administración y Atención al cliente.');
+    persona.porton($('clubUsuario'), 'El Club es de Administración, Atención al cliente y Gerencia.');
   }
 
   function entrarPromo() { persona.entrar(); }
@@ -1478,6 +1478,9 @@
   function pintarAvisosAuto() {
     var caja = $('autoCuerpo');
     if (!caja) { return; }
+    /* Sin alguien de la oficina adentro no se pregunta: con el PIN compartido
+       todavía prendido, un PIN vacío contaría como un intento malo. */
+    if (!pinPromo()) { caja.innerHTML = ''; return; }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
     base.club.avisosAutoVer(pinPromo())
       .then(function (l) {

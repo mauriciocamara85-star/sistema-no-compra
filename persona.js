@@ -177,16 +177,32 @@ var persona = (function () {
      QUIÉN SOY (lo pregunta cada pantalla: el rol pudo cambiar)
      ════════════════════════════════════════════════════════════════════ */
 
-  var _pidioSinPila = false, _recargado = false;
+  var _pidioSinPila = false, _recargado = false, _respondio = false;
+  /* Una recarga automática cada 30 segundos, como mucho (por pestaña). */
+  function unaVezPorPestana() {
+    try {
+      var antes = Number(sessionStorage.getItem('nc_recargo_pila')) || 0, ahora = Date.now();
+      if (ahora - antes < 30000) return false;
+      sessionStorage.setItem('nc_recargo_pila', String(ahora));
+      return sessionStorage.getItem('nc_recargo_pila') === String(ahora);
+    } catch (e) { return false; }
+  }
   function fijarYo(y) {
-    var antes = rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado);
+    var clave = function () { return rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado) + '|' + !!(_yo && _yo.pin_corto); };
+    var antes = clave();
     _yo = y;
     guardarLS(K_YO, y && !y.provisorio ? y : null);
     marcar();
     /* La pantalla ya preguntó por la marca y no la tuvo (faltaba 'pila'):
-       ahora que la base contestó, se rearma una vez. */
-    if (_pidioSinPila && !_recargado && oficina() && _yo && _yo.pila) { _recargado = true; location.reload(); return; }
-    if (antes !== rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado)) {
+       ahora que la base contestó, se rearma una vez. Sólo si 'pila' quedó
+       guardada (si no, al recargar volvería a faltar: sin fin) y no más de
+       una vez cada 30 segundos; si no, el portón ofrece entrar con un toque. */
+    if (_pidioSinPila && !_recargado && oficina() && _yo && _yo.pila) {
+      _recargado = true;
+      var guardado = leerLS(K_YO);
+      if (guardado && guardado.pila && unaVezPorPestana()) { location.reload(); return; }
+    }
+    if (antes !== clave()) {
       pintarBarra();
       revisarAcceso();
       try { document.dispatchEvent(new CustomEvent('persona', { detail: vigente(_yo) ? _yo : null })); } catch (e) {}
@@ -202,6 +218,7 @@ var persona = (function () {
     return token()
       .then(function (t) { return funcion('nc_yo', {}, t); })
       .then(function (y) {
+        _respondio = true;
         /* Null: la sesión ya no es de nadie de la lista (lo desactivaron y
            se le cerró la cuenta). Desactivado: lo mismo. */
         if (!y || y.activo === false) { cerrarSesion(); return null; }
@@ -623,7 +640,40 @@ var persona = (function () {
      acaba de poner (sin volver a pedirlo). SÓLO acá: al abrir una pantalla,
      la sesión de una PC compartida puede ser de otro. La sesión se guarda
      recién con el PIN cambiado (abrir): si cierra la ventana, no entró. */
-  function pasoCambiarPin(c, largo, actual, tok, abrir) {
+  /* "Cambiar mi PIN" del portón: su rol pide 6 números y el suyo es de 4
+     (SQL 107: la base no lo deja entrar a lo de la oficina hasta cambiarlo).
+     Con la sesión abierta, pide primero el PIN de ahora: en una PC
+     compartida, el que se sienta después no puede cambiárselo. */
+  function cambiarMiPin() {
+    var c = abrirVelo();
+    pasoPinActual(c, '');
+  }
+  function pasoPinActual(c, msg) {
+    var pin = '', largo = 4, ocupado = false;
+    c.innerHTML = '<h2 id="ncpTit">Tu PIN de ahora</h2>' +
+      '<p class="ncp-bajada">Lo de la oficina pide un PIN de 6 números. Primero poné el de ahora (el de 4).</p>' +
+      puntosDe(largo) + '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' + TECLADO;
+    var puntos = c.querySelector('[data-puntos]'), aviso = c.querySelector('[data-aviso]');
+    if (msg) { aviso.className = 'ncp-aviso mal'; aviso.textContent = msg; }
+    function dibujar() { [].forEach.call(puntos.children, function (d, i) { d.classList.toggle('lleno', i < pin.length); }); }
+    _teclas = function (n) {
+      if (ocupado) return;
+      if (n === 'x') pin = pin.slice(0, -1);
+      else if (pin.length < largo) pin += n;
+      aviso.textContent = '';
+      dibujar();
+      if (pin.length < largo) return;
+      ocupado = true;
+      pasoCambiarPin(c, 6, pin, null, function () {
+        cargando(c);
+        refrescar().then(function () { cerrarVelo(); location.reload(); });
+      }, function (porque) { pasoPinActual(c, porque); });
+    };
+    [].forEach.call(c.querySelectorAll('.ncp-teclado [data-n]'), function (b) { b.onclick = function () { _teclas(b.dataset.n); }; });
+  }
+
+  /* volver (opcional): el PIN de ahora no le sirvió; si no está, se cierra. */
+  function pasoCambiarPin(c, largo, actual, tok, abrir, volver) {
     var pin = '', primero = null, ocupado = false;
     c.innerHTML = '<h2 id="ncpTit"></h2><p class="ncp-bajada" data-bajada></p>' + puntosDe(largo) +
       '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' + TECLADO;
@@ -652,13 +702,19 @@ var persona = (function () {
       if (pin !== primero) { primero = null; textos(); mal('No coinciden. Empezá de nuevo.'); return; }
       ocupado = true;
       aviso.className = 'ncp-aviso'; aviso.textContent = 'Guardando…';
-      funcion('orden_pin_cambiar', { p_actual: actual, p_nuevo: pin }, tok).then(function (r) {
+      (tok ? Promise.resolve(tok) : token()).then(function (t) {
+        return funcion('orden_pin_cambiar', { p_actual: actual, p_nuevo: pin }, t);
+      }).then(function (r) {
         ocupado = false;
         if (!r || !r.ok) {
           primero = null; textos(); mal((r && r.porque) || 'No se pudo cambiar. Probá de nuevo.');
           /* El de ahora no le sirvió (lo cambiaron en otro lado, o quedó
              trabado): que entre de nuevo. */
-          if (r && r.actual) { ocupado = true; setTimeout(cerrarVelo, 2500); }
+          if (r && r.actual) {
+            ocupado = true;
+            if (volver) { setTimeout(function () { volver(r.porque || 'Tu PIN de ahora no es ése.'); }, 1200); }
+            else { setTimeout(cerrarVelo, 2500); }
+          }
           return;
         }
         _teclas = null;
@@ -731,7 +787,7 @@ var persona = (function () {
      Club, la lista de gift cards): entrar con su usuario, esperar el OK, o
      "esto no es de tu usuario". Cada pantalla le pasa dónde va y qué es.
      ════════════════════════════════════════════════════════════════════ */
-  /* frase: qué es y de quién, entera ("El CRM es de Administración y Atención al cliente."). */
+  /* frase: qué es y de quién, entera ("El CRM es de Administración, Atención al cliente y Gerencia."). */
   function porton(cont, frase) {
     if (!cont) return;
     var y = _yo, hay = !!(_ses && _yo), html;
@@ -739,7 +795,7 @@ var persona = (function () {
       html = '<p class="ncp-porton-txt">' + txt(frase) + ' Entrá con tu usuario.</p>' +
              '<button type="button" class="btn btn-pri btn-ancho" data-porton="entrar">Entrar con tu usuario</button>';
     } else if (!vigente(y)) {
-      html = '<p class="ncp-porton-txt">Tu usuario está esperando el OK. Cuando te aprueben, si sos de Administración o de Atención al cliente, vas a poder entrar.</p>' +
+      html = '<p class="ncp-porton-txt">Tu usuario está esperando el OK. Cuando te aprueben, si sos de Administración, Atención al cliente o Gerencia, vas a poder entrar.</p>' +
              '<button type="button" class="btn btn-sec btn-ancho" data-porton="ficha">Ver mi usuario</button>';
     } else if (!oficina()) {
       html = '<p class="ncp-porton-txt">Entraste como <b>' + txt(y.nombre) + '</b> (' + txt(ROL[y.rol]) + '). ' +
@@ -750,10 +806,23 @@ var persona = (function () {
       _pidioSinPila = true;
       html = '<p class="ncp-porton-txt">Entrando…</p>';
       listo.then(function () {
-        if (cont.isConnected && !(_yo && _yo.pila) && oficina()) {
+        if (!cont.isConnected || !oficina()) return;
+        if (_yo && _yo.pila) {
+          /* Contestó, pero no se pudo recargar sola (ver fijarYo). */
+          cont.innerHTML = '<button type="button" class="btn btn-pri btn-ancho">Entrar</button>';
+        } else if (_respondio) {
           cont.innerHTML = '<p class="ncp-porton-txt">Todavía no se puede entrar con el usuario: falta correr un paso en la base (el SQL 107). Avisale a Mauricio.</p>';
+          return;
+        } else {
+          cont.innerHTML = '<p class="ncp-porton-txt">No se pudo hablar con la base. Revisá la conexión y probá de nuevo.</p>' +
+                           '<button type="button" class="btn btn-sec btn-ancho">Probar de nuevo</button>';
         }
+        cont.querySelector('button').onclick = function () { location.reload(); };
       });
+    } else if (y.pin_corto) {
+      /* SQL 107: su PIN es de 4 y su rol pide 6; la base no lo deja entrar. */
+      html = '<p class="ncp-porton-txt">Tu PIN es de 4 números y lo de la oficina pide uno de 6. Cambialo para entrar.</p>' +
+             '<button type="button" class="btn btn-pri btn-ancho" data-porton="pin">Cambiar mi PIN</button>';
     } else {
       html = '';   // es de la oficina: la pantalla ya está entrando
     }
@@ -763,6 +832,7 @@ var persona = (function () {
       var a = b.getAttribute('data-porton');
       if (a === 'entrar') entrar();
       else if (a === 'ficha') abrirFicha();
+      else if (a === 'pin') cambiarMiPin();
       else { b.disabled = true; salir().then(function () { location.reload(); }); }
     };
   }
@@ -816,6 +886,8 @@ var persona = (function () {
          qué es la marca: antes, la base la contaría como un PIN compartido
          equivocado y trabaría a todos. Si llega después, se recarga (ver fijarYo). */
       if (!(_yo && _yo.pila)) { _pidioSinPila = true; return ''; }
+      /* Su PIN es de 4 y su rol pide 6: la base no lo deja (el portón lo dice). */
+      if (_yo.pin_corto) return '';
       return 'sesion';
     },
     /** El nombre de pila, para el "¿Quién sos?" del CRM ("Ale", "Lau"). */
@@ -830,6 +902,8 @@ var persona = (function () {
     token: token,
     tokenSiHay: tokenSiHay,
     entrar: entrar,
+    /** Cambiar el PIN de 4 por uno de 6 (el de ahora y el nuevo dos veces). */
+    cambiarPin: cambiarMiPin,
     salir: salir,
     refrescar: refrescar
   };

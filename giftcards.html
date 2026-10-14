@@ -662,7 +662,7 @@
       '<div class="porton-usuario" id="glUsuario"></div>' +
       '<p class="gl-msg" id="glMsg"' + (msg ? '' : ' hidden') + '>' + esc(msg || '') + '</p>' +
       (sinCampo ? '<div><button type="button" class="btn btn-sec btn-chico" id="glOtraVez">Probar de nuevo</button></div>' : '') + '</div>';
-    if (pinDeVerdad() && sinCampo) { $('glUsuario').hidden = true; } else { persona.porton($('glUsuario'), 'La lista de gift cards es de Administración y Atención al cliente.'); }
+    if (pinDeVerdad() && sinCampo) { $('glUsuario').hidden = true; } else { persona.porton($('glUsuario'), 'La lista de gift cards es de Administración, Atención al cliente y Gerencia.'); }
     if (sinCampo) {
       $('glOtraVez').onclick = function () { if (pinDeVerdad()) { cargarLista(); } else { pintarPorton(''); } };
     }

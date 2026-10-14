@@ -2158,7 +2158,7 @@
      uno (persona.js). El portón lo arma persona.porton(): entrar, esperar
      el OK, o "esto no es de tu usuario". */
   function entrar() { persona.entrar(); }
-  function pintarPorton() { persona.porton($('portonUsuario'), 'El CRM es de Administración y Atención al cliente.'); }
+  function pintarPorton() { persona.porton($('portonUsuario'), 'El CRM es de Administración, Atención al cliente y Gerencia.'); }
 
   /* Lo que va en lugar del PIN: la marca de la sesión de quien entró, si es
      de Administración, Atención o Gerencia (datos.js le suma la sesión y la
@@ -2169,7 +2169,7 @@
   /* Probar y abrir, con la sesión de quien entró. */
   function arrancar() {
     if (!pinGuardado()) { pintarPorton(); return; }
-    persona.porton($('portonUsuario'), 'El CRM es de Administración y Atención al cliente.');
+    persona.porton($('portonUsuario'), 'El CRM es de Administración, Atención al cliente y Gerencia.');
     base.panel(pinGuardado())
       .then(abrir)
       .catch(function (err) {

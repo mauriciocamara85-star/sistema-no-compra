@@ -703,7 +703,7 @@ Deno.serve(async (req) => {
   try { pedido = JSON.parse(new TextDecoder().decode(cuerpo)); } catch { /* vacío */ }
   /* Sin el PIN compartido (13/10/2026): 'sesion' es la persona que entró;
      se revisa su sesión y pasa a 'sesion:<id>' (ver _shared/sesion.ts). */
-  if (pedido && pedido.pin === 'sesion') pedido.pin = await pinDeLaPersona(pedido.pin, req);
+  if (pedido && typeof pedido.pin === 'string' && pedido.pin.startsWith('sesion')) pedido.pin = await pinDeLaPersona(pedido.pin, req);
   try {
     switch (pedido.accion) {
       case 'enviar': return json(await enviar(pedido as any));
