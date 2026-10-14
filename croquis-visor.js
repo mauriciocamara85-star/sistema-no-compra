@@ -10,13 +10,13 @@
    ════════════════════════════════════════════════════════════════════════ */
 
 var VISOR_INCL = 38;                 // grados de inclinación de la maqueta ("Desde arriba" es 0)
-var VISOR_ALTO = { pared: 58, deposito: 60, centro: 32, muro: 34, muroFoto: 96 };   // muroFoto: "Desde arriba", como la foto (paredes altas)
+var VISOR_ALTO = { pared: 58, deposito: 60, centro: 32, vidriera: 26, muro: 34, muroFoto: 96 };   // muroFoto: "Desde arriba", como la foto (paredes altas)
 
 /** Abre el modo observador adentro de cont (que ya ocupa toda la pantalla). op: { local: {id, nombre}, puedeSugerir,
     puedeNombrar, puedeEditar, alVolver(), alEditar(d), capa: {abrir(fn), soltar(fn)} } */
 function abrirVisor(cont, op) {
   if (_visorActual) visorSalir(_visorActual, true);
-  var V = { op: op, cont: cont, tab: 'salon', inclinado: true, estado: {}, d: null, ficha: null, fit: {}, vista: 'vendedor' };
+  var V = { op: op, cont: cont, tab: 'salon', inclinado: true, estado: {}, d: null, ficha: null, fit: {}, vista: 'vendedor', giro: 0, todas: false, rec: null };
   _visorActual = V;
   try {
     V.liviano = localStorage.getItem('vdh_visor_liviano') === '1';
@@ -35,7 +35,12 @@ function abrirVisor(cont, op) {
           '<button type="button" data-cam="arriba" aria-pressed="' + !V.inclinado + '">Desde arriba</button></div>' +
         (op.puedeEditar ? '<button class="cv-chico cv-lima" id="cvEditar" type="button">Armar el croquis</button>' : '') + '</div></header>' +
     '<div class="cv-cuerpo"><div class="cv-escena" id="cvEscena"><div class="cv-zoom" id="cvZoom"><div class="cv-camara"><div class="cv-mundo" id="cvMundo"></div></div></div>' +
-      '<div class="cv-zoom-acc"><button type="button" id="cvCentrar" class="cv-chico" hidden>Centrar</button>' +
+      '<div class="cv-recorrer" id="cvRecorrerBarra" hidden><button type="button" class="cv-redondo" id="cvAnt" aria-label="Pared anterior">‹</button>' +
+        '<div class="cv-parada"><small id="cvParadaN"></small><b id="cvParada"></b></div><button type="button" class="cv-redondo" id="cvSig" aria-label="Pared siguiente">›</button>' +
+        '<button type="button" class="cv-chico" id="cvSalirRec">Listo</button></div>' +
+      '<div class="cv-zoom-acc"><button type="button" id="cvRecorrer" class="cv-chico cv-lima">Recorrer</button><button type="button" id="cvCentrar" class="cv-chico" hidden>Centrar</button>' +
+        '<button type="button" id="cvGirarIzq" class="cv-redondo" aria-label="Girar el local hacia la izquierda" title="Girar">⟲</button>' +
+        '<button type="button" id="cvGirarDer" class="cv-redondo" aria-label="Girar el local hacia la derecha" title="Girar">⟳</button>' +
         '<button type="button" id="cvMenos" class="cv-redondo" aria-label="Alejar">−</button><button type="button" id="cvMas" class="cv-redondo" aria-label="Acercar">+</button></div>' +
       '<p class="cv-cargando" id="cvCargando">Cargando el local…</p></div>' +
       '<aside class="cv-panel" id="cvPanel"></aside></div></div>';
@@ -49,6 +54,8 @@ function abrirVisor(cont, op) {
     var b = e.target.closest && e.target.closest('[data-tab]');
     if (!b || b.dataset.tab === V.tab) return;
     V.tab = b.dataset.tab;
+    visorSalirRecorrido(V, true);
+    V.giro = 0;
     V.resaltado = null;
     visorZoom(V, 1, 0, 0, false);   // sin animar: la maqueta nueva se mide enseguida
     cont.querySelectorAll('#cvTabs [data-tab]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
@@ -237,13 +244,13 @@ function visorCaja(r, alto, clase, attrs, frente, tapa, rotulo, halo, caras) {
   return '<div class="cv-caja ' + clase + '" ' + attrs + ' style="left:' + r.x.toFixed(1) + 'px;top:' + r.y.toFixed(1) + 'px;width:' + w + 'px;height:' + h + 'px;--alto:' + a + 'px' + (halo ? ';--halo:' + halo : '') + '">' +
     (halo ? '<div class="cv-halo"></div>' : '') +
     cara('s', 'left:0;top:' + (r.h - a).toFixed(1) + 'px;width:' + w + 'px;height:' + a + 'px', frente === 's' ? rotar(0) : '') +
-    cara('n', 'left:0;top:0;width:' + w + 'px;height:' + a + 'px', '') +
+    cara('n', 'left:0;top:0;width:' + w + 'px;height:' + a + 'px', frente === 'n' ? rotar(180) : '') +
     cara('e', 'left:' + (r.w - a).toFixed(1) + 'px;top:0;width:' + a + 'px;height:' + h + 'px', frente === 'e' ? rotar(-90) : '') +
     cara('o', 'left:0;top:0;width:' + a + 'px;height:' + h + 'px', frente === 'o' ? rotar(90) : '') +
     '<div class="cv-tapa">' + (tapa || '') + '</div>' + (rotulo || '') + '</div>';
   /* La foto del frente, derecha: en las caras de costado se gira adentro de la cara. */
   function rotar(g) {
-    var largo = g ? r.h : r.w;
+    var largo = g === 90 || g === -90 ? r.h : r.w;
     return '<div class="cv-foto-cara" style="width:' + largo.toFixed(1) + 'px;height:' + a + 'px;transform:translate(-50%,-50%) rotate(' + g + 'deg)"></div>';
   }
 }
@@ -251,10 +258,13 @@ function visorCaja(r, alto, clase, attrs, frente, tapa, rotulo, halo, caras) {
 /** Qué caras de una caja pueden quedar de frente a quien mira (la cámara está arriba del centro del local): la de abajo
     siempre; la de arriba, si la caja está en la mitad de abajo; las de los costados, según de qué lado del centro esté. */
 function visorCaras(pl, r) {
+  /* Ya girado (o girando), todas: si no, en la mitad de la vuelta faltarían caras. */
+  if (_visorTodas) return 'snoe';
   var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
   return 's' + (cy > pl.H * 0.45 ? 'n' : '') + (cx < pl.W * 0.58 ? 'e' : '') + (cx > pl.W * 0.42 ? 'o' : '');
 }
 
+var _visorTodas = false;
 function visorColor(V, m) {
   var s = V.d.sectorDe[m.sector_id];
   return (s && V.d.color[m.sector_id]) || GRIS_SIN_RESPONSABLE;
@@ -262,6 +272,7 @@ function visorColor(V, m) {
 
 function visorDibujar(V, ajustar) {
   var d = V.d, pl = planoMapa(d, V.tab), out = '';
+  _visorTodas = !!V.todas;
   V.plano = pl;
   V.mundo.style.width = pl.W + 'px';
   V.mundo.style.height = pl.H + 'px';
@@ -295,14 +306,15 @@ function visorDibujar(V, ajustar) {
       return;
     }
     if (it.tipo === 'fijo') { out += visorPieza(pl, it); return; }
-    var m = it.m, e = V.estado[m.id] || {}, alto = pl.tipo === 'deposito' ? VISOR_ALTO.deposito : it.pared ? VISOR_ALTO.pared : VISOR_ALTO.centro;
+    var m = it.m, e = V.estado[m.id] || {}, alto = pl.tipo === 'deposito' ? VISOR_ALTO.deposito : it.vidriera ? VISOR_ALTO.vidriera : it.pared ? VISOR_ALTO.pared : VISOR_ALTO.centro;
     /* La cara que mira al salón: la de los costados mira al medio; la del frente mira hacia adentro (de espaldas a
        quien mira la maqueta), así que esos llevan la foto arriba. */
-    var frente = it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? null : 's';
-    var numero = m.isla ? numeroVista(d, m) : m.numero, que = visorEtiqueta(m);
+    var frente = it.vidriera ? 's' : it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? 'n' : 's';
+    var arriba = it.pared === 'frente' && !it.vidriera;
+    var numero = esVidriera(m) ? m.nombre : m.isla ? numeroVista(d, m) : m.numero, que = esVidriera(m) ? queHay(m) : visorEtiqueta(m);
     var rotulo = '<div class="cv-rotulo"><b' + (e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '') + '>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
     var tapa = visorSvg(r, interiorModulo(d, m, r, 'cvR', it.pared), 'cv-merca') + '<div class="cv-foto-cara cv-foto-tapa"></div>';
-    out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (frente ? '' : ' foto-arriba'),
+    out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (arriba ? ' foto-arriba' : '') + (it.vidriera ? ' cv-vidriera' : ''),
       'data-mod="' + esc(m.id) + '" role="button" tabindex="0" aria-label="' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '"',
       frente || 'tapa', tapa, rotulo, visorCategoria(V, m).color, visorCaras(pl, r));
   });
@@ -314,10 +326,10 @@ function visorDibujar(V, ajustar) {
 }
 
 /* ── Acercar y alejar: con dos dedos, con la rueda del mouse o con los botones; acercada, se mueve con un dedo ── */
-function visorZoom(V, k, x, y, animar) {
+function visorZoom(V, k, x, y, animar, libre) {
   k = Math.max(1, Math.min(3.5, k));
-  if (k === 1) { x = 0; y = 0; }
-  var r = V.escena.getBoundingClientRect(), lx = r.width * (k - 1) / 2 + 80, ly = r.height * (k - 1) / 2 + 80;
+  if (k === 1 && !libre) { x = 0; y = 0; }
+  var r = V.escena.getBoundingClientRect(), lx = r.width * (k - (libre ? 0 : 1)) / 2 + 80, ly = r.height * (k - (libre ? 0 : 1)) / 2 + 80;
   V.z = { k: k, x: Math.max(-lx, Math.min(lx, x)), y: Math.max(-ly, Math.min(ly, y)) };
   V.zoomEl.classList.toggle('cv-gesto', !animar);
   V.zoomEl.style.transform = 'translate(' + V.z.x.toFixed(1) + 'px,' + V.z.y.toFixed(1) + 'px) scale(' + k.toFixed(3) + ')';
@@ -343,13 +355,19 @@ function visorGestos(V) {
   V.cont.querySelector('#cvMas').onclick = function () { visorZoomEn(V, V.z.k * 1.45, centro(), true); };
   V.cont.querySelector('#cvMenos').onclick = function () { visorZoomEn(V, V.z.k / 1.45, centro(), true); };
   V.cont.querySelector('#cvCentrar').onclick = function () { visorZoom(V, 1, 0, 0, true); };
+  V.cont.querySelector('#cvGirarIzq').onclick = function () { visorGirar(V, V.giro - 90); };
+  V.cont.querySelector('#cvGirarDer').onclick = function () { visorGirar(V, V.giro + 90); };
+  V.cont.querySelector('#cvRecorrer').onclick = function () { visorRecorrer(V, 0); };
+  V.cont.querySelector('#cvAnt').onclick = function () { if (V.rec) visorRecorrer(V, V.rec.i - 1); };
+  V.cont.querySelector('#cvSig').onclick = function () { if (V.rec) visorRecorrer(V, V.rec.i + 1); };
+  V.cont.querySelector('#cvSalirRec').onclick = function () { visorSalirRecorrido(V); };
   esc.addEventListener('wheel', function (e) {
     if (V.ficha) return;
     e.preventDefault();
     visorZoomEn(V, V.z.k * (e.deltaY < 0 ? 1.12 : 1 / 1.12), { x: e.clientX, y: e.clientY }, false);
   }, { passive: false });
   esc.addEventListener('pointerdown', function (e) {
-    if (V.ficha || (e.target.closest && e.target.closest('.cv-zoom-acc'))) return;
+    if (V.ficha || (e.target.closest && e.target.closest('.cv-zoom-acc, .cv-recorrer'))) return;
     dedos[e.pointerId] = { x: e.clientX, y: e.clientY };
     var ids = Object.keys(dedos);
     if (ids.length === 2) {
@@ -390,12 +408,98 @@ function visorGestos(V) {
   esc.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') suelta(e); });
 }
 
+/* ── Girar el local y recorrerlo pared por pared ── */
+
+/** El ángulo más cercano al de ahora que apunta a destino (así gira por el camino corto). */
+function visorAngulo(V, destino) {
+  var d = ((destino - V.giro) % 360 + 540) % 360 - 180;
+  return V.giro + d;
+}
+/** Gira el local a g grados (sin acercar). */
+function visorGirar(V, g) {
+  if (!V.d) return;
+  if (!V.todas) { V.todas = true; visorDibujar(V, false); }
+  V.giro = g;
+  visorZoom(V, 1, 0, 0, true);
+  visorCamara(V, false);
+}
+/** Las paradas del recorrido: cada pared con módulos (de la entrada dando la vuelta), la vidriera y el centro. El giro
+    deja esa pared al fondo, de frente a quien mira (con las fotos a la vista). */
+var VISOR_PARADAS = [['izquierda', 'Pared izquierda', 90], ['fondo', 'El fondo', 0], ['derecha', 'Pared derecha', 270], ['frente', 'El frente', 180], ['vidriera', 'La vidriera', 0], ['centro', 'El centro', 0]];
+function visorParadas(V) {
+  var grupos = {};
+  (V.plano ? V.plano.items : []).forEach(function (it) {
+    if (it.tipo !== 'modulo') return;
+    var g = it.vidriera ? 'vidriera' : it.pared || 'centro';
+    (grupos[g] = grupos[g] || []).push(it.m);
+  });
+  return VISOR_PARADAS.filter(function (p) { return grupos[p[0]]; }).map(function (p) {
+    var mods = grupos[p[0]], nums = mods.map(function (m) { return esVidriera(m) ? m.nombre : m.isla ? numeroVista(V.d, m) : m.numero; });
+    return { clave: p[0], nombre: V.tab === 'deposito' && p[0] !== 'centro' ? p[1].replace('El frente', 'La pared de abajo').replace('El fondo', 'La pared de arriba') : p[1],
+             giro: p[2], ids: mods.map(function (m) { return m.id; }), nums: rangosMixtos(nums) };
+  });
+}
+/** Va a la parada i: gira el local y se acerca a esa pared. */
+function visorRecorrer(V, i) {
+  if (!V.d || V.ficha) return;
+  var paradas = visorParadas(V);
+  if (!paradas.length) return;
+  i = (i + paradas.length) % paradas.length;
+  var p = paradas[i];
+  V.rec = { i: i, paradas: paradas };
+  if (!V.todas) { V.todas = true; visorDibujar(V, false); }
+  var mu = V.mundo, antes = { giro: V.giro, z: Object.assign({}, V.z) };
+  /* Se mide cómo queda (sin animar), se vuelve a donde estaba y se anima hasta ahí. */
+  V.giro = visorAngulo(V, p.giro);
+  visorZoom(V, 1, 0, 0, false);
+  visorCamara(V, true);
+  var u = null;
+  p.ids.forEach(function (id) {
+    var c = mu.querySelector('.cv-caja[data-mod="' + id + '"]');
+    if (!c) return;
+    c.querySelectorAll('.cv-tapa, .cv-frente').forEach(function (el) {
+      var r = el.getBoundingClientRect();
+      if (!r.width && !r.height) return;
+      u = u ? { l: Math.min(u.l, r.left), t: Math.min(u.t, r.top), r: Math.max(u.r, r.right), b: Math.max(u.b, r.bottom) } : { l: r.left, t: r.top, r: r.right, b: r.bottom };
+    });
+  });
+  var box = V.escena.getBoundingClientRect(), abajo = 120, k = 1, x = 0, y = 0;
+  if (u) {
+    k = Math.max(1, Math.min(3.2, (box.width - 32) / Math.max(1, u.r - u.l), (box.height - abajo - 24) / Math.max(1, u.b - u.t)));
+    var cx = (u.l + u.r) / 2 - (box.left + box.width / 2), cy = (u.t + u.b) / 2 - (box.top + (box.height - abajo) / 2);
+    x = -k * cx; y = -k * cy;
+  }
+  /* De vuelta a como estaba, sin animar; después, la animación hasta la parada. */
+  var destino = V.giro;
+  V.giro = antes.giro;
+  visorCamara(V, true);
+  visorZoom(V, antes.z.k, antes.z.x, antes.z.y, false, true);
+  void mu.offsetWidth;
+  V.giro = destino;
+  visorCamara(V, false);
+  visorZoom(V, k, x, y, true, true);
+  var barra = V.cont.querySelector('#cvRecorrerBarra');
+  barra.hidden = false;
+  V.raiz.classList.add('cv-recorriendo');
+  V.cont.querySelector('#cvParadaN').textContent = (i + 1) + ' de ' + paradas.length;
+  V.cont.querySelector('#cvParada').textContent = p.nombre + (p.nums ? ' · ' + p.nums : '');
+}
+function visorSalirRecorrido(V, sinAnimar) {
+  if (!V.rec) return;
+  V.rec = null;
+  var barra = V.cont.querySelector('#cvRecorrerBarra');
+  if (barra) barra.hidden = true;
+  V.raiz.classList.remove('cv-recorriendo');
+  if (!sinAnimar) visorZoom(V, 1, 0, 0, true);
+}
+
 /* ── La cámara: inclinada o desde arriba, centrada y del tamaño de la pantalla ── */
 
 function visorMedir(V, incl) {
   var mu = V.mundo, box = V.escena.getBoundingClientRect();
   mu.style.transition = 'none';
   mu.style.setProperty('--incl', incl + 'deg');
+  mu.style.setProperty('--giro', V.giro + 'deg');
   mu.style.setProperty('--s', 1);
   mu.style.setProperty('--dx', '0px'); mu.style.setProperty('--dy', '0px');
   var u = null;
@@ -414,13 +518,14 @@ function visorMedir(V, incl) {
   return { s: s, dx: -cx * s, dy: -cy * s };
 }
 function visorCamara(V, sinAnimar) {
-  var incl = V.inclinado ? VISOR_INCL : 0, clave = String(incl) + V.tab;
+  var incl = V.inclinado ? VISOR_INCL : 0, clave = String(incl) + V.tab + ':' + (((V.giro % 360) + 360) % 360);
   var mu = V.mundo, antes = mu.style.transform;
   if (!V.fit[clave]) V.fit[clave] = visorMedir(V, incl);
   var f = V.fit[clave];
   if (!sinAnimar) { mu.style.transition = 'none'; void mu.offsetWidth; }
   mu.style.transition = sinAnimar ? 'none' : '';
   mu.style.setProperty('--incl', incl + 'deg');
+  mu.style.setProperty('--giro', V.giro + 'deg');
   mu.style.setProperty('--s', f.s.toFixed(3));
   mu.style.setProperty('--dx', f.dx.toFixed(1) + 'px');
   mu.style.setProperty('--dy', f.dy.toFixed(1) + 'px');
@@ -556,6 +661,7 @@ function visorListaQue(V, mods, abierto) {
   return '<details class="cv-sec cv-que-sec"' + abierto + '><summary>Qué hay en cada módulo</summary>' +
     '<p class="cv-ayuda cv-solo-ocultos">En el plano se leen al acercarlo.</p><div class="cv-lista-que">' + con.map(function (m) {
       var n = m.isla ? m.nombre : nombrePropio(m), q = queHay(m);
+      if (esVidriera(m)) return '<button type="button" data-abrir="' + esc(m.id) + '"><b>V</b>' + esc(m.nombre + (q ? ' · ' + q : '')) + '</button>';
       return '<button type="button" data-abrir="' + esc(m.id) + '"><b>' + esc(String(m.isla ? numeroVista(d, m) : m.numero)) + '</b>' + esc(n && q ? n + ' · ' + q : n || q) + '</button>';
     }).join('') + '</div></details>';
 }
@@ -622,7 +728,7 @@ function abrirFicha(V, id, caja) {
   if (!m) return;
   var d = V.d, e = V.estado[id] || {}, s = d.sectorDe[m.sector_id], resp = s && d.persona[s.responsable_id], sup = s && d.persona[s.suplente_id];
   var numero = m.isla ? numeroVista(d, m) : m.numero, nombre = m.isla ? m.nombre : nombrePropio(m), que = queHay(m);
-  var titulo = (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero, ref = m.foto_referencia_path;
+  var titulo = esVidriera(m) ? m.nombre : (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero, ref = m.foto_referencia_path;
   var origen = caja.querySelector('.cv-frente, .cv-tapa');
   V.raiz.insertAdjacentHTML('beforeend', '<div class="cv-ficha-fondo"></div><section class="cv-ficha" role="dialog" aria-modal="true" aria-label="' + esc(titulo) + '">' +
     '<header class="cv-ficha-cab"><div><small>' + esc(visorDonde(V, m)) + '</small><h2>' + esc(titulo) + '</h2>' +

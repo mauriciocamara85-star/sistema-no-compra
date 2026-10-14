@@ -440,3 +440,13 @@ button.mapa-sec { cursor: pointer; }
 .caja-da.da { color: var(--verde); }
 .caja-da.falta { color: var(--rojo); }
 .caja-da.sobra { color: var(--ambar); }
+
+/* Ver su app (14/10): una franja lima arriba, todo el tiempo, con "Salir". */
+.espejo-banda { position: fixed; left: 0; right: 0; top: 0; z-index: 60; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: calc(8px + env(safe-area-inset-top)) 16px 8px; background: #C6F432; color: #0E1116; font-size: 14px; font-weight: 700; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); }
+.espejo-banda b { font-weight: 800; }
+.espejo-banda button { flex: none; min-height: 38px; padding: 0 16px; border: 0; border-radius: 12px; background: #0E1116; color: #F4F5F7; font: inherit; font-weight: 800; cursor: pointer; }
+body.espejo .app { padding-top: calc(62px + env(safe-area-inset-top)); }
+body.espejo .cv { top: calc(54px + env(safe-area-inset-top)); }
+body.espejo [data-descargo], body.espejo #activar, body.espejo #instalar { display: none; }
+.ver-app { margin-left: 8px; min-height: 34px; padding: 0 10px; font-size: 13px; vertical-align: middle; }

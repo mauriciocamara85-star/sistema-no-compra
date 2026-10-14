@@ -393,7 +393,7 @@ function llamarFuncion(nombre, cuerpo) {
 
 var COLORES_PERSONA = ['#4D9FFF', '#2FE38A', '#F0C66A', '#B38BFF', '#FF8A65', '#4DD0E1', '#F06292', '#AED581', '#FFD54F', '#90A4AE'];
 var GRIS_SIN_RESPONSABLE = '#BDB8AE';
-var PAREDES = [['izquierda', 'Pared izquierda'], ['fondo', 'Fondo'], ['derecha', 'Pared derecha'], ['frente', 'Frente (vidriera)']];
+var PAREDES = [['izquierda', 'Pared izquierda'], ['fondo', 'Fondo'], ['derecha', 'Pared derecha'], ['frente', 'Frente']];
 
 function nombreLista(p) { return p ? p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '') : ''; }
 function nombreSector(s) { return s.tipo === 'deposito' ? 'Depósito ' + s.numero : (s.nombre || 'Sector ' + s.numero); }
@@ -478,9 +478,19 @@ function totalParedes(d) { var mm = (d && d.mapa) || {}; return PAREDES.reduce(f
 /** El número que se ve: los de las paredes, el suyo; los del centro, a continuación (22 en las paredes → 23, 24…). */
 function numeroVista(d, m) {
   if (!m || !m.isla || !d) return m ? m.numero : null;
-  var i = -1;
-  (d.islas || []).forEach(function (x, k) { if (x === m || x.id === m.id) i = k; });
+  if (esVidriera(m)) return null;
+  var i = -1, k = 0;
+  (d.islas || []).forEach(function (x) { if (esVidriera(x)) return; if (x === m || x.id === m.id) i = k; k++; });
   return i < 0 ? null : totalParedes(d) + i + 1;
+}
+/** La vidriera: un módulo del centro que se llama "Vidriera", "Vidriera izq." o "Vidriera der." (va contra el vidrio, sin número). */
+var NOMBRES_VIDRIERA = { 1: ['Vidriera'], 2: ['Vidriera izq.', 'Vidriera der.'] };
+function esNombreVidriera(n) { return /^vidriera( izq\.| der\.)?$/i.test(String(n || '').trim()); }
+function esVidriera(m) { return !!m && !!m.isla && esNombreVidriera(m.nombre); }
+/** "1–3, 5, Vidriera izq.": los números en rangos y después los nombres. */
+function rangosMixtos(l) {
+  var nums = l.filter(function (x) { return typeof x === 'number'; }), otros = l.filter(function (x) { return x && typeof x !== 'number'; });
+  return [nums.length ? rangos(nums) : ''].concat(otros).filter(Boolean).join(', ');
 }
 function nombreModulo(m, s, d) {
   if (!m) return 'Ese módulo';
@@ -631,12 +641,14 @@ var PIEZAS = {
 /** Las de adentro (en este orden en el editor) y las que van en un lugar de una pared. */
 var PIEZAS_ADENTRO = ['probador', 'caja', 'mesa', 'perchero', 'maniqui', 'planta', 'columna', 'escalera', 'espejo', 'banco', 'otro'];
 var PIEZAS_PARED = ['probador', 'deposito', 'columna', 'escalera', 'espejo'];
+var PIEZAS_DEPOSITO = ['mesa', 'perchero', 'columna', 'escalera', 'banco', 'otro'];
 function piezaValida(k) { return Object.prototype.hasOwnProperty.call(PIEZAS, k) ? k : null; }
 /** El tipo por el nombre (las de antes no tenían tipo: "Mostrador" es la caja). */
 function tipoPieza(texto) {
   var t = String(texto || '').toLowerCase();
   if (/probador/.test(t)) return 'probador';
   if (/dep[oó]sito/.test(t)) return 'deposito';
+  if (/m[oó]dulo/.test(t)) return 'otro';
   if (/mostrador|\bcaja/.test(t)) return 'caja';
   if (/perch/.test(t)) return 'perchero';
   if (/maniq/.test(t)) return 'maniqui';
@@ -825,6 +837,11 @@ function imagenesCroquis(nombres, r, frente, relleno, sem) {
 function interiorModulo(d, m, r, pref, lado) {
   var s = d.sectorDe[m.sector_id], dep = !!(s && s.tipo === 'deposito'), a = { x: r.x + 3, y: r.y + 3, w: r.w - 6, h: r.h - 6 }, sem = semillaDe(m.id);
   var tipos = prendasDe(queHay(m) || (m.isla ? m.nombre : nombrePropio(m)) || (dep && s ? s.nombre : ''));
+  if (CROQUIS_IMG && esVidriera(m)) {
+    var bv = { x: r.x + 1, y: r.y + 1, w: r.w - 2, h: r.h - 2 }, cuantas = Math.max(1, Math.round(bv.w / (bv.h * 3.6))), lv = [];
+    for (var iv = 0; iv < cuantas; iv++) lv.push(iv % 2 ? 'vidriera-b' : 'vidriera-a');
+    return rectSvg(bv.x, bv.y, bv.w, bv.h, 2, 'fill="#6E4A2E"') + imagenesCroquis(lv, bv, 's', true, sem);
+  }
   if (CROQUIS_IMG) {
     var nombres = [];
     (dep ? ['deposito'] : tipos.map(function (t) { return IMAGEN_PRENDA[t]; })).forEach(function (n) { if (n && nombres.indexOf(n) < 0 && nombres.length < 2) nombres.push(n); });
@@ -933,8 +950,16 @@ function normalizarCroquis(g) {
     var nombre = String((f && f.nombre) || '').slice(0, 40);
     return { nombre: nombre, tipo: piezaValida(f && f.tipo) || tipoPieza(nombre), x: entre01(f && f.x), y: entre01(f && f.y), vertical: !!(f && f.vertical) };
   });
-  return { paredes: paredes, puerta: pu, centro: centro, fijos: fijos, frente: FRENTES[g.frente] ? g.frente : 'calle' };
+  var esq = {};
+  Object.keys(ESQUINAS).forEach(function (k) { var v = (g.esquinas || {})[k]; if (ESQUINAS[k].indexOf(v) > -1 && v !== ESQUINAS[k][0]) esq[k] = v; });
+  return { paredes: paredes, puerta: pu, centro: centro, fijos: fijos, frente: FRENTES[g.frente] ? g.frente : 'calle', esquinas: esq };
 }
+/** Las esquinas: de quién es cada una (la primera, si no se dijo otra cosa). ai: arriba a la izquierda, ad: arriba a la
+    derecha, bi: abajo a la izquierda, bd: abajo a la derecha. */
+var ESQUINAS = { ai: ['fondo', 'izquierda'], ad: ['fondo', 'derecha'], bi: ['frente', 'izquierda'], bd: ['frente', 'derecha'] };
+/** La esquina que toca cada punta de cada pared (la punta 0 es donde arranca la pared en la vuelta). */
+var PUNTAS = { izquierda: ['bi', 'ai'], fondo: ['ai', 'ad'], derecha: ['ad', 'bd'], frente: ['bd', 'bi'] };
+function duenoEsquina(cq, k) { var v = (cq.esquinas || {})[k]; return ESQUINAS[k].indexOf(v) > -1 ? v : ESQUINAS[k][0]; }
 /** Un lugar de una pared que no es módulo: { h: su nombre, k: qué pieza es (probadores, la puerta del depósito…), a: cuántos lugares ocupa (1 a 3) }. Sin nombre ni pieza, un hueco. */
 function lugarFijo(l) {
   var o = { h: String(l.h || '').slice(0, 40) }, k = piezaValida(l.k), a = Math.round(+l.a);
@@ -1000,11 +1025,13 @@ function geometriaCroquis(cq, x0, y0, x1, y1, P, G) {
   });
   var arriba = u.fondo ? y0 + P : y0, abajo = u.frente ? y1 - P : y1;
   var izq = u.izquierda ? x0 + P : x0, der = u.derecha ? x1 - P : x1;
+  /* Cada esquina es de una de sus dos paredes (si la otra no tiene nada, la ocupa la que tiene): así no quedan huecos. */
+  var de = function (k, w) { var d = duenoEsquina(cq, k), otra = ESQUINAS[k][0] === w ? ESQUINAS[k][1] : ESQUINAS[k][0]; return d === w || !u[otra]; };
   var tramos = {
-    izquierda: { horiz: false, fijo: x0, desde: abajo, hasta: arriba },
-    fondo: { horiz: true, fijo: y0, desde: x0, hasta: x1 },
-    derecha: { horiz: false, fijo: x1 - P, desde: arriba, hasta: abajo },
-    frente: { horiz: true, fijo: y1 - P, desde: der, hasta: izq }
+    izquierda: { horiz: false, fijo: x0, desde: de('bi', 'izquierda') ? y1 : abajo, hasta: de('ai', 'izquierda') ? y0 : arriba },
+    fondo: { horiz: true, fijo: y0, desde: de('ai', 'fondo') ? x0 : izq, hasta: de('ad', 'fondo') ? x1 : der },
+    derecha: { horiz: false, fijo: x1 - P, desde: de('ad', 'derecha') ? y0 : arriba, hasta: de('bd', 'derecha') ? y1 : abajo },
+    frente: { horiz: true, fijo: y1 - P, desde: de('bd', 'frente') ? x1 : der, hasta: de('bi', 'frente') ? x0 : izq }
   };
   var lugares = {}, puerta = null;
   VUELTA.forEach(function (w) {
@@ -1049,6 +1076,8 @@ function dibujoPuerta(p, texto, attrs, doble, op) {
 /** Dónde puede ir la puerta (para "Mover la puerta"): entre cada dos lugares y en las puntas de cada pared con lugares. */
 /** Un lugar de pared sin nada (ni nombre ni pieza): un hueco. */
 function lugarVacio(l) { return !!l && typeof l === 'object' && !l.k && !String(l.h || '').trim(); }
+/** Un lugar donde puede ir la entrada: un hueco, o algo fijo cargado como "entrada" o "puerta" (no la del depósito). */
+function lugarParaEntrada(l) { return lugarVacio(l) || (!!l && typeof l === 'object' && !l.k && /entrada|puerta/i.test(l.h || '')); }
 function marcasPuerta(cq, geo, tipo) {
   var out = '';
   var marca = function (x, y, dato) {
@@ -1060,10 +1089,10 @@ function marcasPuerta(cq, geo, tipo) {
     if (!ls.length) return;
     var t = geo.tramos[w], signo = t.hasta >= t.desde ? 1 : -1, G = geo.G;
     /* En el medio de cada hueco: la entrada va ahí, en lugar del hueco. */
-    lg.forEach(function (l, i) { var r = ls[i]; if (r && lugarVacio(l)) out += marca(r.x + r.w / 2, r.y + r.h / 2, tipo + ':' + w + ':' + i + ':h'); });
+    lg.forEach(function (l, i) { var r = ls[i]; if (r && lugarParaEntrada(l)) out += marca(r.x + r.w / 2, r.y + r.h / 2, tipo + ':' + w + ':' + i + ':h'); });
     for (var p = 0; p <= ls.length; p++) {
       /* Pegado a un hueco, no: la entrada quedaría con el hueco al lado. */
-      if (lugarVacio(lg[p - 1]) || lugarVacio(lg[p])) continue;
+      if (lugarParaEntrada(lg[p - 1]) || lugarParaEntrada(lg[p])) continue;
       var r = ls[Math.min(p, ls.length - 1)], fin = p === ls.length, x, y;
       if (t.horiz) {
         var empieza = signo > 0 ? r.x - G / 2 : r.x + r.w + G / 2, termina = signo > 0 ? r.x + r.w + G / 2 : r.x - G / 2;
@@ -1121,6 +1150,7 @@ function dibujarCentro(d, op, cq, geo, sobran) {
       '" width="' + r.w.toFixed(1) + '" height="' + r.h.toFixed(1) + '" fill="transparent"/>' : '';
   }
   d.islas.forEach(function (m) {
+    if (esVidriera(m)) return;
     var pos = (cq.centro || {})[String(m.nombre || '').toLowerCase()];
     if (!pos) { libres.push(m); return; }
     var cx = ax0 + pos.x * aw, cy = ay0 + pos.y * ah, r = { x: cx - 23, y: cy - 35, w: 46, h: 70 };
@@ -1135,6 +1165,18 @@ function dibujarCentro(d, op, cq, geo, sobran) {
       out += (m.isla ? cajaModulo(d, op, m, r, String(numeroVista(d, m) || ''), m.nombre) : cajaModulo(d, op, m, r, String(m.numero))) + toque(m, r);
     });
   }
+  return { svg: out, caja: [ax0, ay0, aw, ah] };
+}
+
+/** Los muebles de adentro del depósito (una mesa, un perchero), donde los pusieron. */
+function fijosAdentro(cq, geo, op) {
+  var a = geo.adentro, mx = 14, out = '';
+  var ax0 = a.x0 + mx, ay0 = a.y0 + mx, aw = Math.max(40, a.x1 - a.x0 - 2 * mx), ah = Math.max(40, a.y1 - a.y0 - 2 * mx);
+  (cq.fijos || []).forEach(function (f, k) {
+    var tp = piezaValida(f.tipo) || tipoPieza(f.nombre), t = tamanoPieza(tp, f.vertical), cx = ax0 + f.x * aw, cy = ay0 + f.y * ah;
+    var r = { x: cx - t.w / 2, y: cy - t.h / 2, w: t.w, h: t.h };
+    out += dibujoPieza(tp, r, f.nombre, frenteAdentro(r, { x: ax0, y: ay0, w: aw, h: ah }), op.editable ? ' data-fijo="' + k + '"' : '');
+  });
   return { svg: out, caja: [ax0, ay0, aw, ah] };
 }
 
@@ -1200,17 +1242,42 @@ function svgMapa(d, op) {
   op = Object.assign({}, op, { _mitad: W / 2 });
   var cq = op.croquis ? op.croquis.salon : croquisDe(d, 'salon');
   var x0 = M, y0 = M, x1 = W - M, y1 = H - M - ABAJO, fr = FRENTES[cq.frente] || FRENTES.calle;
-  var geo = geometriaCroquis(op.moverPuerta === 'salon' ? sinPuerta(cq) : cq, x0, y0, x1, y1, P, G), df = defsMapa(x0, y0, x1, y1, 'salon');
+  /* La vidriera, si hay: el vidrio pasa a yv y el dibujo crece hacia abajo. */
+  var vids = d.islas.filter(esVidriera), yv = vids.length ? y1 + ALTO_VIDRIERA : y1;
+  H += yv - y1;
+  var geo = geometriaCroquis(op.moverPuerta === 'salon' ? sinPuerta(cq) : cq, x0, y0, x1, y1, P, G), df = defsMapa(x0, y0, x1, yv, 'salon');
   op._sombra = df.sombra; op._neon = df.neon; op._madera = df.madera; op._pref = df.pref;
   /* El local como una foto desde arriba: lo de afuera (la vereda o la galería), el piso, las paredes y la vidriera. */
   var out = df.svg + rectSvg(0, 0, W, H, 16, 'fill="#14171C"') +
-    rectSvg(x0 - T - 4, y1 + T, x1 - x0 + 2 * T + 8, H - y1 - T - 5, 6, 'fill="' + fr.fondo + '"') +
+    rectSvg(x0 - T - 4, yv + T, x1 - x0 + 2 * T + 8, H - yv - T - 5, 6, 'fill="' + fr.fondo + '"') +
     '<text class="mapa-afuera" x="' + (W / 2) + '" y="' + (H - 12) + '" text-anchor="middle" font-size="11" font-weight="800" letter-spacing="1.6" fill="' + fr.texto + '">' + esc(fr.nombre.toUpperCase()) + '</text>' +
-    df.piso + murosMapa(x0, y0, x1, y1, T, geo.puerta, true);
+    df.piso + murosMapa(x0, y0, x1, yv, T, geo.puerta, true);
   var p = dibujarParedes(d, op, cq, geo, 'salon', d.pared, function (m) { return String(m.numero); }, function (m) { return queHay(m) || nombrePropio(m); });
   var c = dibujarCentro(d, op, cq, geo, p.sobran);
+  panelesVidriera(vids, x0, x1, y1, yv, geo.puerta, G).forEach(function (x) { c.svg += cajaModulo(d, op, x.m, x.r, x.m.nombre, queHay(x.m), 'frente'); });
   return '<svg class="mapa-svg' + (cuadrado ? ' cuadrado' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" data-adentro="' + c.caja.map(function (v) { return v.toFixed(1); }).join(' ') +
     '" role="img" aria-label="El salón, visto desde arriba">' + out + c.svg + p.svg + '</svg>';
+}
+
+/** Los paneles de la vidriera, entre el local (y1) y el vidrio (yv): "izq." a la izquierda de la entrada, "der." a la
+    derecha; una sola, en el tramo más largo. Si la entrada no está en el frente (o está en una punta), se reparte el frente. */
+var ALTO_VIDRIERA = 40;
+function panelesVidriera(vids, x0, x1, y1, yv, puerta, G) {
+  if (!vids.length) return [];
+  var tramos = [[x0, x1]];
+  if (puerta && puerta.pared === 'frente') tramos = [[x0, puerta.r.x - G / 2], [puerta.r.x + puerta.r.w + G / 2, x1]];
+  var usables = tramos.filter(function (s) { return s[1] - s[0] >= 70; });
+  var largo = function (s) { return s[1] - s[0]; };
+  var mitad = function (s, cual) { var m = (s[0] + s[1]) / 2; return cual ? [m + G / 2, s[1]] : [s[0], m - G / 2]; };
+  var mayor = usables.slice().sort(function (a, b) { return largo(b) - largo(a); })[0] || [x0, x1];
+  var dos = usables.length === 2;
+  var donde = function (m) {
+    var n = String(m.nombre || '').trim().toLowerCase();
+    if (n === 'vidriera izq.') return dos ? usables[0] : mitad(mayor, false);
+    if (n === 'vidriera der.') return dos ? usables[1] : mitad(mayor, true);
+    return mayor;
+  };
+  return vids.map(function (m) { var s = donde(m); return { m: m, r: { x: s[0] + G / 2, y: y1 + 4, w: Math.max(10, s[1] - s[0] - G), h: yv - y1 - 8 } }; });
 }
 
 /** Cuántos módulos del depósito van en cada pared: [arriba, derecha, abajo, izquierda]. Siempre alrededor:
@@ -1243,7 +1310,9 @@ function svgDeposito(d, op) {
   var p = dibujarParedes(d, op, cq, geo, 'deposito', mods,
     function (m) { return numerado ? String(m.numero) : 'Sector ' + d.sectorDe[m.sector_id].numero; },
     function (m) { var s = d.sectorDe[m.sector_id]; return (numerado && nombrePropio(m)) || (s && s.nombre) || ''; });
-  return '<svg class="mapa-svg deposito" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El depósito">' + out + p.svg + '</svg>';
+  var fx = fijosAdentro(cq, geo, op);
+  return '<svg class="mapa-svg deposito" viewBox="0 0 ' + W + ' ' + H + '" data-adentro="' + fx.caja.map(function (v) { return v.toFixed(1); }).join(' ') +
+    '" role="img" aria-label="El depósito">' + out + fx.svg + p.svg + '</svg>';
 }
 
 /** El plano del salón o del depósito como datos, con la misma cuenta que svgMapa y svgDeposito (el modo
@@ -1269,16 +1338,17 @@ function planoMapa(d, tipo) {
     });
   });
   if (geo.puerta) items.push({ tipo: 'puerta', r: geo.puerta.r, pared: geo.puerta.pared });
+  /* Lo de adentro, igual que dibujarCentro (en el depósito, sólo los muebles). */
+  var a = geo.adentro, mx = 14, ax0 = a.x0 + mx, ay0 = a.y0 + mx;
+  var aw = Math.max(40, a.x1 - a.x0 - 2 * mx), ah = Math.max(40, a.y1 - a.y0 - 2 * mx), libres = [];
+  (cq.fijos || []).forEach(function (f) {
+    var tp = piezaValida(f.tipo) || tipoPieza(f.nombre), t = tamanoPieza(tp, f.vertical), cx = ax0 + f.x * aw, cy = ay0 + f.y * ah;
+    var r = { x: cx - t.w / 2, y: cy - t.h / 2, w: t.w, h: t.h };
+    items.push({ tipo: 'fijo', r: r, pared: null, texto: f.nombre || '', vertical: f.vertical, pieza: tp, frente: frenteAdentro(r, { x: ax0, y: ay0, w: aw, h: ah }) });
+  });
   if (!dep) {
-    /* Lo de adentro, igual que dibujarCentro. */
-    var a = geo.adentro, mx = 14, ax0 = a.x0 + mx, ay0 = a.y0 + mx;
-    var aw = Math.max(40, a.x1 - a.x0 - 2 * mx), ah = Math.max(40, a.y1 - a.y0 - 2 * mx), libres = [];
-    (cq.fijos || []).forEach(function (f) {
-      var tp = piezaValida(f.tipo) || tipoPieza(f.nombre), t = tamanoPieza(tp, f.vertical), cx = ax0 + f.x * aw, cy = ay0 + f.y * ah;
-      var r = { x: cx - t.w / 2, y: cy - t.h / 2, w: t.w, h: t.h };
-      items.push({ tipo: 'fijo', r: r, pared: null, texto: f.nombre || '', vertical: f.vertical, pieza: tp, frente: frenteAdentro(r, { x: ax0, y: ay0, w: aw, h: ah }) });
-    });
     d.islas.forEach(function (m) {
+      if (esVidriera(m)) return;
       var pos = (cq.centro || {})[String(m.nombre || '').toLowerCase()];
       if (!pos) { libres.push(m); return; }
       var cx = ax0 + pos.x * aw, cy = ay0 + pos.y * ah;
@@ -1291,7 +1361,13 @@ function planoMapa(d, tipo) {
       fila.forEach(function (m, k) { items.push({ tipo: 'modulo', m: m, r: { x: medio - ancho / 2, y: iy0 + k * paso + (paso - alto) / 2, w: ancho, h: alto }, pared: null }); });
     }
   }
-  return { tipo: dep ? 'deposito' : 'salon', W: W, H: H, x0: x0, y0: y0, x1: x1, y1: y1, P: P, cuadrado: cuadrado, items: items, numerado: numerado, frente: cq.frente || 'calle' };
+  var yv = y1;
+  if (!dep) {
+    var vids = d.islas.filter(esVidriera);
+    if (vids.length) { yv = y1 + ALTO_VIDRIERA; H += ALTO_VIDRIERA; }
+    panelesVidriera(vids, x0, x1, y1, yv, geo.puerta, G).forEach(function (x) { items.push({ tipo: 'modulo', m: x.m, r: x.r, pared: 'frente', vidriera: true }); });
+  }
+  return { tipo: dep ? 'deposito' : 'salon', W: W, H: H, x0: x0, y0: y0, x1: x1, y1: yv, P: P, cuadrado: cuadrado, items: items, numerado: numerado, frente: cq.frente || 'calle' };
 }
 
 /** Los módulos con nombre, enteros: en las paredes de costado se ven cortados ("Vidri…"). */
@@ -1300,6 +1376,7 @@ function leyendaNombres(d) {
   if (!con.length) return '';
   return '<p class="mapa-nombres"><b>Con nombre:</b> ' + con.map(function (m) {
     var s = d.sectorDe[m.sector_id], n = m.isla ? m.nombre : nombrePropio(m), q = queHay(m);
+    if (esVidriera(m)) return esc(m.nombre + (q ? ' (' + q + ')' : ''));
     return esc((s && s.tipo === 'deposito' ? 'Depósito ' : '') + numeroVista(d, m) + ' · ' + (n && q ? n + ' (' + q + ')' : n || q));
   }).join(' — ') + '</p>';
 }
@@ -1310,7 +1387,7 @@ function leyendaPersonas(d) {
     var secs = d.salon.concat(d.deposito).filter(function (s) { return s.responsable_id === pid; });
     var ids = {}; secs.forEach(function (s) { ids[s.id] = true; });
     var nums = d.pared.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.numero; })
-      .concat(d.islas.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return numeroVista(d, m); }));
+      .concat(d.islas.filter(function (m) { return ids[m.sector_id] && !esVidriera(m); }).map(function (m) { return numeroVista(d, m); }));
     var islas = d.islas.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.nombre; });
     var numDep = d.dep.filter(function (m) { return ids[m.sector_id]; }).map(function (m) { return m.numero; });
     var cats = secs.filter(function (s) { return s.tipo === 'deposito' && s.nombre; }).map(function (s) { return s.nombre; });

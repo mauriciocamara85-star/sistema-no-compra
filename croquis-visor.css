@@ -42,7 +42,7 @@
 /* Con un módulo abierto, la maqueta queda quieta detrás (la oscurece el fondo de la ficha): animarla costaría cada cuadro. */
 .cv-escena.cv-detras { pointer-events: none; }
 .cv-mundo { position: absolute; left: 50%; top: 50%; transform-style: preserve-3d;
-  transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--s, 1)) rotateX(var(--incl, 54deg));
+  transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--s, 1)) rotateX(var(--incl, 54deg)) rotateZ(var(--giro, 0deg));
   transition: transform .45s cubic-bezier(.2, .8, .2, 1); }
 .cv-cargando, .cv-vacio { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; text-align: center; color: var(--cv-suave); }
 .cv-panel { min-height: 0; overflow: auto; padding: 16px; background: var(--cv-panel); display: grid; align-content: start; gap: 14px; }
@@ -109,6 +109,7 @@
 /* La base: el color (del vendedor, del estado o de la antigüedad) al pie de la cara que mira al salón. */
 .cv-mod .cv-frente::after { content: ""; position: absolute; background: var(--halo, #6E7684); box-shadow: 0 0 10px 2px var(--halo, #6E7684), inset 0 0 0 1px rgba(255, 255, 255, .45); transition: background-color .3s; }
 .cv-mod .cv-s.cv-frente::after { left: 0; right: 0; bottom: 0; height: 5px; }
+.cv-mod .cv-n.cv-frente::after { left: 0; right: 0; top: 0; height: 5px; }
 .cv-mod .cv-e.cv-frente::after { top: 0; bottom: 0; right: 0; width: 5px; }
 .cv-mod .cv-o.cv-frente::after { top: 0; bottom: 0; left: 0; width: 5px; }
 .cv-mod:hover .cv-halo, .cv-mod:focus-visible .cv-halo { opacity: 1; }
@@ -125,11 +126,11 @@
 /* El rótulo: el número (y qué hay) parado, de frente a quien mira */
 /* El número se puede tocar: abre SU módulo (aunque quede dibujado encima del de al lado). */
 .cv-rotulo { position: absolute; left: 50%; top: 50%; display: grid; justify-items: center; gap: 1px; cursor: pointer;
-  transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 12px)) rotateX(calc(var(--incl, 54deg) * -1)) scale(var(--zc, 1)); }
+  transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 12px)) rotateZ(calc(var(--giro, 0deg) * -1)) rotateX(calc(var(--incl, 54deg) * -1)) scale(var(--zc, 1)); }
 .cv-rotulo b { position: relative; min-width: 26px; height: 26px; padding: 0 7px; display: grid; place-items: center; border-radius: 999px; background: rgba(14, 17, 22, .9);
   border: 2px solid var(--halo, #6E7684); color: #F4F5F7; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .cv-rotulo span { max-width: 120px; padding: 1px 7px; border-radius: 6px; background: rgba(14, 17, 22, .78); color: #F4F5F7; font-size: 11.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cv-plano .cv-rotulo { transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 2px)) scale(var(--zc, 1)); }
+.cv-plano .cv-rotulo { transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 2px)) rotateZ(calc(var(--giro, 0deg) * -1)) scale(var(--zc, 1)); }
 
 .cv-rotulo b.vieja::after { content: ""; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: #F5B84B; box-shadow: 0 0 0 2px #0E1116; }
 .cv-halo, .cv-rotulo b { transition: background-color .3s, border-color .3s, box-shadow .3s, opacity .2s; }
@@ -301,7 +302,7 @@
 .cv-pz-escalon .cv-cara { background: #CFC8BC; }
 .cv-pz-escalon .cv-tapa { background: #E8E2D8; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .15); }
 .cv-hoja { position: absolute; border-radius: 50%; background: radial-gradient(circle at 36% 30%, #86C783 0, #4E9A57 38%, #2F6B3C 75%, #24532F 100%); box-shadow: 0 3px 8px rgba(0, 0, 0, .25); }
-.cv-parado { position: absolute; transform-origin: 50% 100%; transform: rotateX(-90deg); pointer-events: none; }
+.cv-parado { position: absolute; transform-origin: 50% 100%; transform: rotateZ(calc(var(--giro, 0deg) * -1)) rotateX(-90deg); pointer-events: none; }
 .cv-parado svg { display: block; width: 100%; height: 100%; }
 /* Desde arriba, el maniquí parado no se ve (queda de canto): se ve el dibujo del piso. Inclinado, el dibujo del piso sobra. */
 .cv-maniqui-piso { opacity: 0; transition: opacity .3s; }
@@ -323,3 +324,14 @@
 .cv-liviano .cv-piso { background: #9C9A95; }
 .cv-plano .cv-camara { perspective: 780px; perspective-origin: 50% calc(50% - 29px); }
 .cv-copa { transform: translateZ(30px); }
+
+/* ── Girar y recorrer (14/10) ── */
+.cv-zoom-acc { flex-wrap: wrap; justify-content: flex-end; max-width: calc(100% - 24px); }
+.cv-recorrer { position: absolute; left: 12px; right: 12px; bottom: 70px; display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 18px;
+  background: rgba(14, 17, 22, .9); box-shadow: 0 10px 30px rgba(0, 0, 0, .45); max-width: 560px; margin: 0 auto; }
+.cv-parada { flex: 1; min-width: 0; display: grid; text-align: center; line-height: 1.2; }
+.cv-parada small { color: var(--cv-lima); font-size: 11.5px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.cv-parada b { font-size: 15px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-recorriendo #cvRecorrer { display: none; }
+.cv-vidriera .cv-cara { background: #7B5741; }
+@media (max-width: 899px) { .cv-recorrer { bottom: 66px; } .cv-zoom-acc .cv-chico { min-height: 40px; padding: 0 12px; } }

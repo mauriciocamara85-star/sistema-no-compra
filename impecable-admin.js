@@ -487,7 +487,7 @@ function verOrden() {
             return '<td>' + (f.nivel_semana ? '<span class="est nivel-' + esc(f.nivel_semana) + '">' + esc(NIVEL[f.nivel_semana]) + '</span>' : '—') + '</td>';
           }).join('');
           var pc = function (a, b) { return b ? a + '/' + b + ' (' + Math.round(100 * a / b) + '%)' : '—'; };
-          return '<tr><td><b>' + esc(p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '')) + '</b></td>' + celdas +
+          return '<tr><td><b>' + esc(p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '')) + '</b><br><a class="ver-app-admin" href="vendedores.html#/ver/' + esc(p.id) + '" target="_blank" rel="noopener">Ver su app</a></td>' + celdas +
             '<td class="n">' + pc(t.ca, t.c) + '</td><td class="n">' + pc(t.ta, t.t) + '</td><td class="n">' + (t.dt ? t.d + '/' + t.dt : '—') + '</td></tr>';
         }).join('') + '</tbody></table></div>';
     }
@@ -1281,7 +1281,7 @@ function planReparto(d, tipo) {
   return secs.map(function (s, i) {
     var cant = base + (i >= k - extra ? 1 : 0), suyos = mods.slice(desde, desde + cant);
     desde += cant;
-    return { sector: s, cantidad: cant, nums: suyos.map(function (m) { return numeroVista(d, m); }) };
+    return { sector: s, cantidad: cant, nums: suyos.map(function (m) { return numeroVista(d, m) || m.nombre; }) };
   });
 }
 
@@ -1290,7 +1290,7 @@ function repartirParejo(d, tipo) {
   if (!plan.length || !mods.length) { avisar('No hay módulos para repartir.'); return; }
   var texto = plan.map(function (p) {
     var resp = d.persona[p.sector.responsable_id];
-    return (resp ? nombreLista(resp) : nombreSector(p.sector)) + ': ' + (p.nums.length ? rangos(p.nums) + ' (' + p.cantidad + ')' : 'ninguno');
+    return (resp ? nombreLista(resp) : nombreSector(p.sector)) + ': ' + (p.nums.length ? rangosMixtos(p.nums) + ' (' + p.cantidad + ')' : 'ninguno');
   }).join('\n');
   if (!confirm('Repartir los ' + mods.length + (tipo === 'deposito' ? ' módulos del depósito' : ' módulos del salón (paredes y centro)') + ' en partes iguales:\n\n' + texto + '\n\n' +
                (tipo === 'deposito' ? 'El salón no cambia.' : 'El depósito no cambia.') + ' ¿Repartir así?')) return;
@@ -1331,14 +1331,15 @@ function elegirGenteAdmin(d, secId) {
    su número (el 1, al lado de la entrada, hacia la izquierda).
    ════════════════════════════════════════════════════════════════════════ */
 
-var NOMBRE_PARED = { izquierda: 'Pared izquierda', fondo: 'Fondo', derecha: 'Pared derecha', frente: 'Frente (vidriera)' };
+var NOMBRE_PARED = { izquierda: 'Pared izquierda', fondo: 'Fondo', derecha: 'Pared derecha', frente: 'Frente' };
+var NOMBRE_ESQUINA = { ai: 'de arriba a la izquierda', ad: 'de arriba a la derecha', bi: 'de abajo a la izquierda', bd: 'de abajo a la derecha' };
 var NOMBRE_PARED_DEP = { izquierda: 'Pared izquierda', fondo: 'Pared de arriba', derecha: 'Pared derecha', frente: 'Pared de abajo' };
 /* Hacia dónde queda "antes" y "después" en la vuelta, en cada pared (para "+ Un lugar…"). */
 var LADOS_PARED = { izquierda: ['abajo', 'arriba'], fondo: ['a la izquierda', 'a la derecha'], derecha: ['arriba', 'abajo'], frente: ['a la derecha', 'a la izquierda'] };
 
 /** Un croquis para editar: cada lugar con su módulo ({ t: 'm'|'d', id } — id null: uno nuevo) o { t: 'h', h }. */
 function croquisEditable(cq, mods) {
-  var e = { paredes: {}, puerta: Object.assign({}, cq.puerta) };
+  var e = { paredes: {}, puerta: Object.assign({}, cq.puerta), esquinas: Object.assign({}, cq.esquinas || {}) };
   VUELTA.forEach(function (w) {
     e.paredes[w] = cq.paredes[w].map(function (l) { return esModuloLugar(l) ? { t: l, id: null } : Object.assign({ t: 'h' }, lugarFijo(l)); });
   });
@@ -1353,7 +1354,7 @@ function croquisEditable(cq, mods) {
 function croquisGuardable(e) {
   var paredes = {};
   VUELTA.forEach(function (w) { paredes[w] = e.paredes[w].map(function (l) { return l.t === 'h' ? lugarFijo(l) : l.t; }); });
-  return { paredes: paredes, puerta: Object.assign({}, e.puerta) };
+  return { paredes: paredes, puerta: Object.assign({}, e.puerta), esquinas: Object.assign({}, e.esquinas || {}) };
 }
 /** El dibujito de una pieza (para los botones y las listas del editor). */
 function iconoPieza(k) {
@@ -1400,12 +1401,18 @@ function editarMapa(d) {
      (con su historia). Los que hoy no entran en el mapa arrancan acá. */
   var st = { salon: ed.e, deposito: edDep.e, mover: null, pila: { salon: ed.sobran.map(function (x) { return x.id; }).reverse(), deposito: edDep.sobran.map(function (x) { return x.id; }).reverse() } };
   var cqGuardado = (m.croquis && m.croquis.salon) ? normalizarCroquis(m.croquis.salon) : { centro: {}, fijos: [] };
+  var entradaFija = null;
   /* Los del centro (en orden de la caja hacia la vidriera) y las cosas fijas de adentro. */
   var nuevas = 0;
-  var centro = d.islas.map(function (x) {
+  var centro = d.islas.filter(function (x) { return !esVidriera(x); }).map(function (x) {
     return { key: x.id, id: x.id, nombre: x.nombre, antes: x.nombre, pos: cqGuardado.centro[String(x.nombre || '').toLowerCase()] || null };
   });
+  /* La vidriera: sus paneles (módulos con foto y responsable, sin número). */
+  var vidr = d.islas.filter(esVidriera).slice(0, 2).map(function (x) { return { key: x.id, id: x.id, nombre: x.nombre, antes: x.nombre }; });
   var fijos = (cqGuardado.fijos || []).map(function (x) { return Object.assign({}, x); });
+  /* Los muebles del depósito (una mesa, un perchero en el medio). */
+  var fijosDep = (m.croquis && m.croquis.deposito ? normalizarCroquis(m.croquis.deposito).fijos : []).map(function (x) { return Object.assign({}, x); });
+  var fijosDe = { salon: fijos, deposito: fijosDep };
 
   var f = ventana('<h1>El croquis del local</h1><p class="bajada">El local visto desde arriba, como lo ven los vendedores. ' +
     '<b>Tocá un lugar de una pared</b> para cambiarlo: módulo, módulo doble, hueco o algo que no es un módulo (probadores, la puerta del depósito, una columna). ' +
@@ -1417,10 +1424,13 @@ function editarMapa(d) {
       '<label class="campo c-medio"><span>Enfrente de la vidriera</span><select id="eFrente">' + Object.keys(NOMBRE_FRENTE).map(function (k) {
         return '<option value="' + k + '"' + ((cqGuardado.frente || 'calle') === k ? ' selected' : '') + '>' + NOMBRE_FRENTE[k] + '</option>';
       }).join('') + '</select></label>' +
+      '<label class="campo c-medio"><span>Vidriera (con foto)</span><select id="eVidriera">' + [['0', 'Sin vidriera'], ['1', 'Un panel'], ['2', 'Dos paneles (izq. y der.)']].map(function (o) {
+        return '<option value="' + o[0] + '"' + (String(vidr.length) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+      }).join('') + '</select></label>' +
       PAREDES.map(function (p) {
         return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" aria-label="Lugares en ' + esc(p[1]) + '"></label>';
       }).join('') + '</div>' +
-    '<p class="bajada">Los números de arriba son los <b>lugares</b> de cada pared (módulos, huecos y cosas fijas).</p>' +
+    '<p class="bajada">Los números de arriba son los <b>lugares</b> de cada pared (módulos, huecos y cosas fijas). <span id="eNotaVidriera"></span></p>' +
     '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuerta">Mover la entrada</button>' +
       '<span class="imp-ancho-puerta" id="eAnchoPuerta"><span>Ancho de la entrada</span>' + [1, 2, 3].map(function (a) {
         return '<button type="button" class="boton chico" data-ancho-puerta="salon:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span>' +
@@ -1437,7 +1447,7 @@ function editarMapa(d) {
     '<p class="bajada">Los probadores, la caja, las mesas, los percheros, los maniquíes, las plantas: no son módulos (no llevan foto), están para que el croquis se parezca al local. ' +
       '<b>Tocá una para agregarla</b> y arrastrala en el dibujo hasta donde está; "Girarla" la pone parada o acostada. El nombre es opcional.</p>' +
     '<div class="imp-lugar-ops imp-piezas" id="ePiezas">' + PIEZAS_ADENTRO.map(function (k) {
-      return '<button type="button" class="boton chico" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
+      return '<button type="button" class="boton chico" data-en="salon" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
     }).join('') + '</div>' +
     '<div class="imp-islas" id="eFijos"></div>' +
     '<div class="seccion">Depósito</div>' +
@@ -1450,6 +1460,11 @@ function editarMapa(d) {
         return '<button type="button" class="boton chico" data-ancho-puerta="deposito:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span></div>' +
     '<p class="nota" id="eNotaPuertaDep" hidden>Tocá un <b>+</b> verde: ahí va la puerta del depósito.</p>' +
     '<div class="imp-mapa-vista croquis" id="eVistaDep"></div>' +
+    '<div class="seccion">Muebles del depósito</div><p class="bajada">Una mesa o un perchero en el medio: tocalos o <b>arrastralos hasta el dibujo del depósito</b>.</p>' +
+    '<div class="imp-lugar-ops imp-piezas" id="ePiezasDep">' + PIEZAS_DEPOSITO.map(function (k) {
+      return '<button type="button" class="boton chico" data-en="deposito" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
+    }).join('') + '</div>' +
+    '<div class="imp-islas" id="eFijosDep"></div>' +
     '<p class="bajada" id="eTotal"></p><button class="boton lima" id="eGuardar">Guardar</button>');
   var vistaS = f.querySelector('#eVista'), vistaD = f.querySelector('#eVistaDep');
 
@@ -1487,7 +1502,7 @@ function editarMapa(d) {
   function rehacerDeposito(n, cuadrado) {
     var ids = ordenEditable(st.deposito).map(function (l) { return l.id; });
     var p = paredesDeposito(n, cuadrado), c = { izquierda: p[3], fondo: p[0], derecha: p[1], frente: p[2] };
-    var nuevo = { paredes: {}, puerta: st.deposito.puerta.virtual ? null : Object.assign({}, st.deposito.puerta) };
+    var nuevo = { paredes: {}, puerta: st.deposito.puerta.virtual ? null : Object.assign({}, st.deposito.puerta), esquinas: Object.assign({}, st.deposito.esquinas || {}) };
     VUELTA.forEach(function (w) { nuevo.paredes[w] = []; for (var k = 0; k < c[w]; k++) nuevo.paredes[w].push({ t: 'm', id: null }); });
     ajustarPuerta(nuevo);
     for (var k = ids.length - 1; k >= n; k--) if (ids[k]) st.pila.deposito.push(ids[k]);
@@ -1504,7 +1519,7 @@ function editarMapa(d) {
   function croquisArmado() {
     return { v: 1, salon: Object.assign(croquisGuardable(st.salon), { centro: centroMapa(), frente: f.querySelector('#eFrente').value,
                fijos: fijos.map(function (x) { return { nombre: x.nombre.trim(), tipo: x.tipo, x: x.x, y: x.y, vertical: !!x.vertical }; }) }),
-             deposito: croquisGuardable(st.deposito) };
+             deposito: Object.assign(croquisGuardable(st.deposito), { fijos: fijosDep.map(function (x) { return { nombre: x.nombre.trim(), tipo: x.tipo, x: x.x, y: x.y, vertical: !!x.vertical }; }) }) };
   }
   function mapaArmado() {
     var mm = { forma: f.querySelector('#eForma').value, forma_deposito: f.querySelector('#eFormaDep').value };
@@ -1524,7 +1539,10 @@ function editarMapa(d) {
       var ex = c.id && modPorId[c.id];
       return ex ? Object.assign({}, ex, { nombre: c.nombre.trim() || ex.nombre })
                 : { id: c.key, numero: 1000 + k, nombre: c.nombre.trim() || '?', isla: true, sector_id: d.salon[0] ? d.salon[0].id : null };
-    });
+    }).concat(vidr.map(function (v, k) {
+      var ex = v.id && modPorId[v.id];
+      return ex ? Object.assign({}, ex, { nombre: v.nombre }) : { id: v.key, numero: 2000 + k, nombre: v.nombre, isla: true, sector_id: d.salon[0] ? d.salon[0].id : null };
+    }));
     var secDep = d.deposito[0] || { id: '__deposito', tipo: 'deposito', numero: 1, nombre: null };
     var sectorDe = Object.assign({}, d.sectorDe);
     sectorDe[secDep.id] = secDep;
@@ -1548,8 +1566,8 @@ function editarMapa(d) {
       });
       apagan += g[1].filter(function (x) { return !quedan[x.id]; }).length;
     });
-    nuevos += centro.filter(function (q) { return !q.id; }).length;
-    apagan += d.islas.filter(function (i) { return !centro.some(function (c) { return c.id === i.id; }); }).length;
+    nuevos += centro.filter(function (q) { return !q.id; }).length + vidr.filter(function (q) { return !q.id; }).length;
+    apagan += d.islas.filter(function (i) { return !centro.some(function (c) { return c.id === i.id; }) && !vidr.some(function (v) { return v.id === i.id; }); }).length;
     return { nuevos: nuevos, apagan: apagan, renumeran: renumeran };
   }
   function filasCentro(total) {
@@ -1562,13 +1580,15 @@ function editarMapa(d) {
           '<button type="button" class="boton chico" data-sacar="' + k + '">Sacar</button></div>';
       }).join('') : '<p class="bajada">Todavía no hay módulos en el centro.</p>';
     } else f.querySelectorAll('#eIslas .imp-isla b').forEach(function (b, k) { b.textContent = total + k + 1; });
-    if (!hayFoco('#eFijos')) {
-      f.querySelector('#eFijos').innerHTML = fijos.length ? fijos.map(function (x, k) {
-        return '<div class="imp-isla">' + iconoPieza(x.tipo) + '<input maxlength="40" data-fijo-nombre="' + k + '" value="' + esc(x.nombre) + '" placeholder="' +
+    [['salon', '#eFijos', 'Todavía no hay muebles adentro.'], ['deposito', '#eFijosDep', 'Todavía no hay muebles en el depósito.']].forEach(function (z) {
+      if (hayFoco(z[1])) return;
+      var lista = fijosDe[z[0]], en = ' data-en="' + z[0] + '"';
+      f.querySelector(z[1]).innerHTML = lista.length ? lista.map(function (x, k) {
+        return '<div class="imp-isla">' + iconoPieza(x.tipo) + '<input maxlength="40"' + en + ' data-fijo-nombre="' + k + '" value="' + esc(x.nombre) + '" placeholder="' +
           esc(x.tipo === 'otro' ? 'Qué es (escribilo)' : PIEZAS[x.tipo].nombre + ' (nombre opcional)') + '" aria-label="' + esc(PIEZAS[x.tipo].nombre) + ': nombre">' +
-          '<button type="button" class="boton chico" data-girar="' + k + '">Girarla</button><button type="button" class="boton chico" data-sacar-fijo="' + k + '">Sacar</button></div>';
-      }).join('') : '<p class="bajada">Todavía no hay muebles adentro.</p>';
-    }
+          '<button type="button" class="boton chico"' + en + ' data-girar="' + k + '">Girarla</button><button type="button" class="boton chico"' + en + ' data-sacar-fijo="' + k + '">Sacar</button></div>';
+      }).join('') : '<p class="bajada">' + z[2] + '</p>';
+    });
   }
   function vista() {
     var mm = mapaArmado(), dv = datosVista(mm), cq = croquisArmado();
@@ -1588,6 +1608,9 @@ function editarMapa(d) {
     });
     f.querySelector('#eNotaPuerta').hidden = st.mover !== 'salon';
     f.querySelector('#eNotaPuertaDep').hidden = st.mover !== 'deposito';
+    /* Cuántos paneles de vidriera van, según dónde está la entrada. */
+    var pu = st.salon.puerta, enMedio = pu && !pu.virtual && pu.pared === 'frente' && pu.pos > 0 && pu.pos < st.salon.paredes.frente.length;
+    f.querySelector('#eNotaVidriera').textContent = 'Vidriera: ' + (enMedio ? 'con la entrada en el medio del frente, van dos paneles (uno a cada lado).' : 'con la entrada en una punta, va un panel.');
     /* "Cambiar de lugar": el lugar elegido, marcado, y el aviso arriba del dibujo. */
     f.querySelector('#eNotaCambiar').hidden = !st.cambiar;
     if (st.cambiar) {
@@ -1599,6 +1622,7 @@ function editarMapa(d) {
     var c = cambios();
     f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' +
       (centro.length ? ', ' + centro.length + ' en el centro (del ' + (total + 1) + ' al ' + (total + centro.length) + ')' : '') + ' y ' + mm.deposito + ' en el depósito.' +
+      (vidr.length ? ' La vidriera: ' + (vidr.length === 1 ? 'un panel' : 'dos paneles') + ' (piden foto, sin número).' : '') +
       (c.renumeran ? ' Cambian de número ' + c.renumeran + ' (siguen con su responsable y sus fotos).' : '') +
       (c.nuevos ? ' Se crean ' + c.nuevos + ' (van al sector del anterior; después se reparten).' : '') +
       (c.apagan ? ' Se apagan ' + c.apagan + ': no se borran, quedan sus fotos.' : '');
@@ -1612,6 +1636,9 @@ function editarMapa(d) {
     var ahora = l.t === 'h' ? (l.h ? '"' + l.h + '" (no es un módulo)' : 'un hueco (no es un módulo)')
       : (l.t === 'd' ? 'el módulo doble ' : 'el módulo ') + num + (x && nombrePropio(x) ? ' · ' + nombrePropio(x) : '') + (l.id ? '' : ' (nuevo)');
     var lados = LADOS_PARED[w], nombres = tipo === 'deposito' ? NOMBRE_PARED_DEP : NOMBRE_PARED;
+    /* La esquina de esta punta (si es la primera o la última de la pared) y de quién es. */
+    var esquina = i === 0 ? PUNTAS[w][0] : i === e.paredes[w].length - 1 ? PUNTAS[w][1] : null;
+    var esMia = esquina && duenoEsquina({ esquinas: e.esquinas }, esquina) === w;
     var g = ventana('<h1>' + esc((tipo === 'deposito' ? 'Depósito · ' : '') + nombres[w]) + ' · lugar ' + (i + 1) + '</h1><p class="bajada">Ahora es ' + esc(ahora) + '.</p>' +
       '<div class="imp-lugar-ops">' +
         '<button type="button" class="boton chico' + (l.t === 'm' ? ' lima' : '') + '" data-op="m">Módulo</button>' +
@@ -1631,6 +1658,10 @@ function editarMapa(d) {
         '<button type="button" class="boton chico" data-op="despues">+ Un lugar ' + lados[1] + '</button>' +
         '<button type="button" class="boton chico" data-op="sacar">Sacar este lugar</button>' +
         '<button type="button" class="boton chico" data-op="cambiar">Cambiar de lugar con otro</button></div>' +
+      (esquina ? '<div class="seccion">La esquina ' + NOMBRE_ESQUINA[esquina] + '</div><div class="imp-lugar-ops">' +
+        '<button type="button" class="boton chico' + (esMia ? ' lima' : '') + '" data-op="esq:' + w + '">Que esta pared llegue hasta la esquina</button>' +
+        '<button type="button" class="boton chico' + (esMia ? '' : ' lima') + '" data-op="esq:' + (ESQUINAS[esquina][0] === w ? ESQUINAS[esquina][1] : ESQUINAS[esquina][0]) + '">Que la ocupe ' +
+          esc((nombres[ESQUINAS[esquina][0] === w ? ESQUINAS[esquina][1] : ESQUINAS[esquina][0]] || '').toLowerCase()) + '</button></div>' : '') +
       (l.t !== 'h' && l.id ? '<p class="bajada" style="margin-top:12px">Si lo sacás o lo cambiás por algo que no es un módulo, el módulo se apaga al guardar (no se borra: quedan sus fotos).</p>' : ''));
     g.querySelectorAll('[data-op]').forEach(function (b) {
       b.onclick = function () {
@@ -1646,6 +1677,7 @@ function editarMapa(d) {
           agregarLugar(tipo, w, i, op === 'despues');
         } else if (op === 'sacar') sacarLugar(tipo, w, i);
         else if (op === 'cambiar') { st.cambiar = tipo + ':' + w + ':' + i; st.mover = null; }
+        else if (op.indexOf('esq:') === 0) { e.esquinas = e.esquinas || {}; if (op.slice(4) === ESQUINAS[esquina][0]) delete e.esquinas[esquina]; else e.esquinas[esquina] = op.slice(4); }
         else ponerTipo(tipo, w, i, op);
         g.remove(); vista();
         if (op === 'cambiar') { var mc = vistaDe(tipo).querySelector('.mapa-origen'); if (mc) mc.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
@@ -1830,8 +1862,9 @@ function editarMapa(d) {
   arrastreLugar(vistaS);
   arrastreLugar(vistaD);
   /* Arrastrar lo del centro y las cosas fijas de adentro (con el dedo o con el mouse). */
-  vistaS.addEventListener('touchstart', function (ev) { if (ev.target.closest && ev.target.closest('[data-centro], [data-fijo]')) ev.preventDefault(); }, { passive: false });
-  vistaS.addEventListener('pointerdown', function (ev) {
+  function engancharAdentro(vistaEl, en) {
+  vistaEl.addEventListener('touchstart', function (ev) { if (ev.target.closest && ev.target.closest('[data-centro], [data-fijo]')) ev.preventDefault(); }, { passive: false });
+  vistaEl.addEventListener('pointerdown', function (ev) {
     var t = ev.target.closest && ev.target.closest('[data-centro], [data-fijo]');
     if (!t) return;
     ev.preventDefault();
@@ -1864,7 +1897,7 @@ function editarMapa(d) {
       if (e2.type === 'pointercancel') { vista(); return; }
       if (!movido) {
         /* Un toque: su renglón, abajo, para cambiarle el nombre. */
-        var k = t.hasAttribute('data-fijo') ? '[data-fijo-nombre="' + t.dataset.fijo + '"]'
+        var k = t.hasAttribute('data-fijo') ? '[data-en="' + en + '"][data-fijo-nombre="' + t.dataset.fijo + '"]'
           : '[data-isla="' + centro.map(function (c) { return c.key; }).indexOf(t.previousElementSibling && t.previousElementSibling.dataset.mod) + '"]';
         var inp = f.querySelector(k);
         if (inp) { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); inp.focus({ preventScroll: true }); }
@@ -1872,7 +1905,7 @@ function editarMapa(d) {
       }
       soltadoEn = Date.now();
       var pos = lugar(puntoSvg(svg, e2)), cual = null;
-      if (t.hasAttribute('data-fijo')) { var fx = fijos[+t.dataset.fijo]; if (fx) { fx.x = pos.x; fx.y = pos.y; } cual = '[data-fijo="' + t.dataset.fijo + '"]'; }
+      if (t.hasAttribute('data-fijo')) { var fx = fijosDe[en][+t.dataset.fijo]; if (fx) { fx.x = pos.x; fx.y = pos.y; } cual = '[data-fijo="' + t.dataset.fijo + '"]'; }
       else {
         var mod = t.previousElementSibling && t.previousElementSibling.dataset.mod;
         var c = centro.filter(function (x) { return x.key === mod; })[0];
@@ -1881,13 +1914,30 @@ function editarMapa(d) {
       }
       vista();
       /* Al soltarla, rebota un poquito en su lugar nuevo. */
-      var nuevo = cual && vistaS.querySelector(cual);
+      var nuevo = cual && vistaEl.querySelector(cual);
       if (nuevo) nuevo.classList.add('mapa-rebota');
     }
     window.addEventListener('pointermove', mueve);
     window.addEventListener('pointerup', suelta);
     window.addEventListener('pointercancel', suelta);
   });
+
+  }
+  engancharAdentro(vistaS, 'salon');
+  engancharAdentro(vistaD, 'deposito');
+
+  /* Si la entrada no está puesta y hay algo fijo que dice "entrada" ("Puerta de entrada"), pasa a ser la entrada: así el
+     1 es el módulo de al lado, hacia la izquierda (pedido de Mauricio: "desde la puerta hacia la izquierda, siempre el 1"). */
+  if (st.salon.puerta.virtual) {
+    VUELTA.some(function (w) {
+      var i = st.salon.paredes[w].findIndex(function (l) { return l.t === 'h' && !l.k && /entrada/i.test(l.h || ''); });
+      if (i < 0) return false;
+      entradaFija = st.salon.paredes[w][i].h;
+      st.salon.puerta = { pared: w, pos: i, a: null };
+      sumarALaPuerta('salon', true);
+      return true;
+    });
+  }
 
   /* ── Los botones y los campos ── */
   f.querySelector('#eCancelarCambio').onclick = function () { st.cambiar = null; vista(); };
@@ -1949,35 +1999,103 @@ function editarMapa(d) {
     var nuevo = listaC.querySelector('[data-isla="' + (centro.length - 1) + '"]');
     if (nuevo) { nuevo.focus(); nuevo.select(); }
   });
-  listaF.addEventListener('input', function (ev) {
-    var k = ev.target.dataset && ev.target.dataset.fijoNombre;
-    if (k == null || !fijos[+k]) return;
-    fijos[+k].nombre = ev.target.value;
-    vista();
+  [listaF, f.querySelector('#eFijosDep')].forEach(function (lf) {
+    lf.addEventListener('input', function (ev) {
+      var k = ev.target.dataset && ev.target.dataset.fijoNombre, lista = fijosDe[ev.target.dataset.en];
+      if (k == null || !lista || !lista[+k]) return;
+      lista[+k].nombre = ev.target.value;
+      vista();
+    });
+    lf.addEventListener('click', function (ev) {
+      var b = ev.target.closest && ev.target.closest('[data-girar], [data-sacar-fijo]'), lista = b && fijosDe[b.dataset.en];
+      if (!lista) return;
+      soltarFoco();
+      if (b.dataset.girar != null) { var x = lista[+b.dataset.girar]; if (x) x.vertical = !x.vertical; }
+      else lista.splice(+b.dataset.sacarFijo, 1);
+      vista();
+    });
   });
-  listaF.addEventListener('click', function (ev) {
-    var b = ev.target.closest && ev.target.closest('[data-girar], [data-sacar-fijo]');
-    if (!b) return;
-    soltarFoco();
-    if (b.dataset.girar != null) { var x = fijos[+b.dataset.girar]; if (x) x.vertical = !x.vertical; }
-    else fijos.splice(+b.dataset.sacarFijo, 1);
+  /** Un mueble nuevo: donde lo soltaron (pos) o, si lo tocaron, en un lugar libre (en el salón, a los costados del medio:
+      por el medio va la fila de los del centro). */
+  function agregarMueble(en, tipo, pos) {
+    var lista = fijosDe[en];
+    if (lista.length >= 30) { avisar('Como mucho 30 muebles.'); return; }
+    if (!pos) {
+      var lugares = [], xs = en === 'deposito' ? [0.5, 0.3, 0.7] : [0.25, 0.75, 0.12, 0.88, 0.38, 0.62], ys = en === 'deposito' ? [0.5, 0.3, 0.7] : [0.15, 0.3, 0.45, 0.6, 0.75, 0.88];
+      xs.forEach(function (x) { ys.forEach(function (y) { lugares.push({ x: x, y: y }); }); });
+      pos = lugares.filter(function (p) { return !lista.some(function (q) { return Math.abs(q.x - p.x) < 0.1 && Math.abs(q.y - p.y) < 0.09; }); })[0] || { x: 0.5, y: 0.5 };
+    }
+    lista.push({ nombre: '', tipo: tipo, x: pos.x, y: pos.y, vertical: false });
     vista();
-  });
-  f.querySelector('#ePiezas').addEventListener('click', function (ev) {
-    var b = ev.target.closest && ev.target.closest('[data-pieza]');
-    if (!b) return;
-    if (fijos.length >= 30) { avisar('Como mucho 30 muebles adentro.'); return; }
-    /* A un costado del medio (por el medio va la fila de los del centro), en el primer lugar libre: así no cae encima de otro. */
-    var lugares = [], pos = null;
-    [0.25, 0.75, 0.12, 0.88, 0.38, 0.62].forEach(function (x) { [0.15, 0.3, 0.45, 0.6, 0.75, 0.88].forEach(function (y) { lugares.push({ x: x, y: y }); }); });
-    pos = lugares.filter(function (p) { return !fijos.some(function (q) { return Math.abs(q.x - p.x) < 0.1 && Math.abs(q.y - p.y) < 0.09; }); })[0] || { x: 0.25, y: 0.5 };
-    fijos.push({ nombre: '', tipo: b.dataset.pieza, x: pos.x, y: pos.y, vertical: false });
-    vista();
-    avisar(PIEZAS[b.dataset.pieza].nombre + ': ya está en el dibujo. Arrastrala hasta donde va.');
-    if (b.dataset.pieza === 'otro') { var nuevo = listaF.querySelector('[data-fijo-nombre="' + (fijos.length - 1) + '"]'); if (nuevo) nuevo.focus(); }
+    var dib = (en === 'deposito' ? vistaD : vistaS).querySelector('[data-fijo="' + (lista.length - 1) + '"]');
+    if (dib) dib.classList.add('mapa-rebota');
+    if (tipo === 'otro') { var nuevo = f.querySelector('[data-en="' + en + '"][data-fijo-nombre="' + (lista.length - 1) + '"]'); if (nuevo) nuevo.focus(); }
+  }
+  var piezaSoltadaEn = 0;
+  f.querySelectorAll('#ePiezas, #ePiezasDep').forEach(function (bandeja) {
+    bandeja.addEventListener('click', function (ev) {
+      var b = ev.target.closest && ev.target.closest('[data-pieza]');
+      if (!b || Date.now() - piezaSoltadaEn < 500) return;
+      agregarMueble(b.dataset.en, b.dataset.pieza, null);
+      avisar(PIEZAS[b.dataset.pieza].nombre + ': ya está en el dibujo. Arrastrala hasta donde va (o, la próxima, arrastrala directo desde acá).');
+    });
+    /* Agarrarla de la bandeja y llevarla al dibujo: se suelta donde va. */
+    bandeja.addEventListener('pointerdown', function (ev) {
+      var b = ev.target.closest && ev.target.closest('[data-pieza]');
+      if (!b || (ev.button && ev.button !== 0)) return;
+      var en = b.dataset.en, destino = en === 'deposito' ? vistaD : vistaS, x0 = ev.clientX, y0 = ev.clientY, fantasma = null;
+      function mueve(e2) {
+        if (!fantasma) {
+          if (Math.abs(e2.clientX - x0) + Math.abs(e2.clientY - y0) < 8) return;
+          fantasma = document.createElement('div');
+          fantasma.className = 'pieza-fantasma';
+          fantasma.innerHTML = iconoPieza(b.dataset.pieza);
+          document.body.appendChild(fantasma);
+        }
+        e2.preventDefault();
+        fantasma.style.left = e2.clientX + 'px';
+        fantasma.style.top = e2.clientY + 'px';
+        var sobre = document.elementFromPoint(e2.clientX, e2.clientY);
+        destino.classList.toggle('soltar-aca', !!(sobre && destino.contains(sobre)));
+      }
+      function suelta(e2) {
+        window.removeEventListener('pointermove', mueve); window.removeEventListener('pointerup', suelta); window.removeEventListener('pointercancel', suelta);
+        destino.classList.remove('soltar-aca');
+        if (!fantasma) return;
+        fantasma.remove();
+        piezaSoltadaEn = Date.now();
+        if (e2.type !== 'pointerup') return;
+        var sobre = document.elementFromPoint(e2.clientX, e2.clientY), svg = sobre && destino.contains(sobre) && destino.querySelector('svg.mapa-svg');
+        if (!svg) { avisar('Soltala arriba del dibujo' + (en === 'deposito' ? ' del depósito.' : ' del salón.')); return; }
+        var caja = (svg.getAttribute('data-adentro') || '').split(' ').map(Number), p = puntoSvg(svg, e2), t = tamanoPieza(b.dataset.pieza, false);
+        agregarMueble(en, b.dataset.pieza, { x: imantarCroquis((p.x - caja[0]) / caja[2], t.w / 2 / caja[2]), y: imantarCroquis((p.y - caja[1]) / caja[3], t.h / 2 / caja[3]) });
+      }
+      window.addEventListener('pointermove', mueve, { passive: false });
+      window.addEventListener('pointerup', suelta);
+      window.addEventListener('pointercancel', suelta);
+    });
   });
   f.querySelector('#eFrente').addEventListener('change', vista);
+  /** Un panel o dos: el que estaba sigue siendo el mismo (con su historia); "Vidriera" pasa a ser "Vidriera izq." y al revés. */
+  function ponerVidriera(n) {
+    var antes = vidr.slice(), nuevo = [];
+    var tomar = function (prefs) {
+      for (var i = 0; i < prefs.length; i++) {
+        for (var k = 0; k < antes.length; k++) if (antes[k].nombre.trim().toLowerCase() === prefs[i].toLowerCase()) return antes.splice(k, 1)[0];
+      }
+      return null;
+    };
+    (NOMBRES_VIDRIERA[n] || []).forEach(function (nom) {
+      var prefs = nom === 'Vidriera' ? ['Vidriera', 'Vidriera izq.', 'Vidriera der.'] : nom === 'Vidriera izq.' ? ['Vidriera izq.', 'Vidriera'] : ['Vidriera der.'];
+      var v = tomar(prefs) || { key: 'vidriera' + (++nuevas), id: null, antes: null };
+      v.nombre = nom;
+      nuevo.push(v);
+    });
+    vidr = nuevo;
+  }
+  f.querySelector('#eVidriera').addEventListener('change', function (ev) { ponerVidriera(+ev.target.value); vista(); });
   vista();
+  if (entradaFija) avisar('"' + entradaFija + '" pasó a ser la entrada: el 1 es el módulo de al lado, hacia la izquierda. Guardá para que quede así.');
 
   /* ── Guardar ── */
   unaVez(f.querySelector('#eGuardar'), function () {
@@ -1989,12 +2107,15 @@ function editarMapa(d) {
     for (var k = 0; k < islas.length; k++) {
       var nom = islas[k], l = nom.toLowerCase();
       if (!nom) { avisar('Ponele nombre al módulo ' + (total + k + 1) + ' (el del centro).'); return; }
+      if (esNombreVidriera(nom)) { avisar('"' + nom + '" es el nombre de la vidriera: usá otro para el del centro (la vidriera se elige arriba, en "Vidriera").'); return; }
       if (vistos[l]) { avisar('Hay dos en el centro que se llaman "' + nom + '": cambiale el nombre a uno.'); return; }
       vistos[l] = true;
     }
+    vidr.forEach(function (v) { vistos[v.nombre.toLowerCase()] = true; });
+    islas = islas.concat(vidr.map(function (v) { return v.nombre; }));
     if (fijos.some(function (x) { return x.tipo === 'otro' && !x.nombre.trim(); })) { avisar('Hay una "otra cosa" adentro sin nombre: escribí qué es o sacala.'); return; }
     /* Si sacás uno y le ponés su nombre a otro en la misma vez, la base no los distingue (van por nombre). */
-    var choca = d.islas.filter(function (i) { return !centro.some(function (q) { return q.id === i.id; }) && vistos[i.nombre.trim().toLowerCase()]; })[0];
+    var choca = d.islas.filter(function (i) { return !centro.some(function (q) { return q.id === i.id; }) && !vidr.some(function (q) { return q.id === i.id; }) && vistos[i.nombre.trim().toLowerCase()]; })[0];
     if (choca) { avisar('"' + choca.nombre + '" lo estás sacando: guardá primero sin él y después usá ese nombre para otro.'); return; }
     var ojo = [];
     if (c.renumeran) ojo.push(c.renumeran + (c.renumeran === 1 ? ' módulo cambia' : ' módulos cambian') + ' de número. Siguen con su responsable y sus fotos; los vendedores los van a ver con el número nuevo.');
@@ -2002,7 +2123,7 @@ function editarMapa(d) {
     if (ojo.length && !confirm(ojo.join('\n\n') + '\n\n¿Guardar igual?')) return;
     var ordS = ordenEditable(st.salon).map(function (x) { return x.id; }), ordD = ordenEditable(st.deposito).map(function (x) { return x.id; });
     /* A los del centro que les cambiaste el nombre, primero el nombre: así siguen siendo los mismos (con su responsable y sus fotos). */
-    var renombrar = centro.filter(function (q) { return q.id && q.nombre.trim() !== q.antes; });
+    var renombrar = centro.concat(vidr).filter(function (q) { return q.id && q.nombre.trim() !== q.antes; });
     return renombrar.reduce(function (p, q) {
       return p.then(function () {
         return llamar('orden_modulo_nombre', { p_modulo: q.id, p_nombre: q.nombre.trim() }).then(function () { q.antes = q.nombre.trim(); });

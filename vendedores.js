@@ -638,6 +638,7 @@ function hayAlgoEscrito() {
 /** Al entrar (recién o con la sesión guardada). */
 var _pinRevisado = null;   // de quién ya se miró si el PIN tiene los números que pide su rol
 function entrarApp(recien) {
+  if (_espejo) salirEspejo();
   if (yo().rol === 'atencion') { pantallaSinImpecable(); return; }
   if (yo().aprobado === false) { pantallaEspera(); return; }
   /* Admin y gerencia con el PIN de 4 de antes (SQL 110): primero, uno de 6. */
@@ -660,6 +661,7 @@ function entrarApp(recien) {
 /* La persona guardada en el teléfono puede quedar vieja (le cambiaron el rol o
    el local, o lo desaprobaron): se relee en silencio y, si cambió, se rearma. */
 function refrescarYo() {
+  if (_espejo) return;
   var per = yo();
   leer('/orden_personas?select=nombre,rol,local_id,aprobado,activo&id=eq.' + valor(per.id)).then(function (f) {
     var x = (f || [])[0];
@@ -743,6 +745,7 @@ function irAEnlace(enlace) {
                revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas' };
   if (h === 'desafio' && !esSupervision()) { marcarPestana('hoy'); abrirDesafio(); return true; }
   if (h === 'testigo' && !esSupervision()) { marcarPestana('hoy'); pantallaTestigo(); return true; }
+  if (/^ver\/[0-9a-f-]{36}$/i.test(h)) { if (esSupervision() && !_espejo) { verSuAppPorId(h.slice(4)); return true; } return false; }
   if ((h === 'admin' || h === 'admin-testigo') && esSupervision()) { location.replace('impecable-admin.html' + (h === 'admin-testigo' ? '#testigo' : '')); return true; }
   var p = mapa[h];
   if (!p || (esSupervision() ? ['hoy', 'fotos', 'tareas', 'caja'].indexOf(p) > -1 : ['revisar', 'equipo', 'cajas'].indexOf(p) > -1)) return false;
@@ -2291,7 +2294,7 @@ function dibujarEquipo(loc, x) {
   if (!x.gente.length) html += '<div class="vacio">Todavía no hay vendedores en este local.</div>';
   html += x.gente.map(function (p) {
     var t = tot[p.id] || { controles: 0, a_tiempo: 0, tareas: 0, tareas_ok: 0, des: 0, desT: 0, nivel: null };
-    return '<div class="fila"><span><b>' + esc(nombres[p.id]) + '</b></span>' +
+    return '<div class="fila"><span><b>' + esc(nombres[p.id]) + '</b>' + (p.aprobado ? ' <button class="boton chico ver-app" data-ver="' + esc(p.id) + '">Ver su app</button>' : '') + '</span>' +
       (t.nivel ? '<span class="chip nivel-' + esc(t.nivel) + '">' + esc(NIVEL[t.nivel]) + '</span>' : '<span class="chip pendiente">Sin fotos</span>') +
       '<small>Controles a tiempo ' + t.a_tiempo + ' de ' + t.controles + ' · Tareas a tiempo ' + t.tareas_ok + ' de ' + t.tareas +
       (t.desT ? ' · Test ' + t.des + '/' + t.desT : '') + '</small></div>';
@@ -2330,6 +2333,9 @@ function dibujarEquipo(loc, x) {
   engancharCabeza();
   engancharSelector(pantallaEquipo);
   document.getElementById('irMapa').onclick = function () { pantallaMapa(loc); };
+  app.querySelectorAll('[data-ver]').forEach(function (b) {
+    b.onclick = function () { var p = x.gente.filter(function (g) { return g.id === b.dataset.ver; })[0]; if (p) verSuApp(p, loc); };
+  });
   document.getElementById('vSemana').onclick = function () { _equipoMes = false; pantallaEquipo(); };
   document.getElementById('vMes').onclick = function () { _equipoMes = true; pantallaEquipo(); };
   app.querySelectorAll('[data-aprobar]').forEach(function (b) {
@@ -2501,6 +2507,119 @@ function detalleCaja(c) {
 /* ════════════════════════════════════════════════════════════════════════
    ARRANQUE
    ════════════════════════════════════════════════════════════════════════ */
+
+/* ════════════════════════════════════════════════════════════════════════
+   VER SU APP (14/10, pedido de Mauricio: "ver lo que hacen los chicos, cómo les aparece"). La supervisión (y la
+   gerencia) abre la app de un vendedor tal cual la ve él, con sus datos: Hoy, Fotos, Tareas, Caja, Ideas, los avisos y
+   el Perfil. Sólo para mirar: lo que se hace (fotos, tareas, test, caja, producto testigo, descargos, marcar avisos)
+   queda trabado. Lo que se ve lo sigue decidiendo la base (la supervisión lee lo de su local; escribir como otro, no).
+   ════════════════════════════════════════════════════════════════════════ */
+var _espejo = null;
+var _yoReal = yo;
+yo = function () { return _espejo || _yoReal(); };
+function textoEspejo() { return 'Estás mirando la app de ' + (_espejo ? _espejo.nombre : 'otra persona') + ': esto lo hace desde su celular.'; }
+function trabado() { return Promise.reject(rechazo(textoEspejo())); }
+
+/* Lo que escribe, trabado. Lo que se pregunta "como yo" (el test, la caja de hoy), se lee de sus tablas. */
+var _llamarReal = llamar, _escribirReal = escribir, _subirReal = subirArchivo, _subirEnReal = subirArchivoEn, _funcionReal = llamarFuncion;
+llamar = function (nombre, args) {
+  if (!_espejo) return _llamarReal(nombre, args);
+  if (nombre === 'orden_desafio_mio') return desafioEspejo();
+  if (nombre === 'orden_caja_hoy') return cajaEspejo();
+  return trabado();
+};
+escribir = function (ruta, metodo, cuerpo) { return _espejo ? trabado() : _escribirReal(ruta, metodo, cuerpo); };
+subirArchivo = function (ruta, blob) { return _espejo ? trabado() : _subirReal(ruta, blob); };
+subirArchivoEn = function (b, ruta, blob, tipo) { return _espejo ? trabado() : _subirEnReal(b, ruta, blob, tipo); };
+llamarFuncion = function (nombre, cuerpo) { return _espejo && nombre !== 'ideas-tablero' ? trabado() : _funcionReal(nombre, cuerpo); };
+/* Lo que abre la cámara o pregunta algo antes de escribir: ni se abre. */
+[['abrirCamara'], ['accionTarea'], ['abrirDesafio'], ['pantallaDesafio'], ['grabarVideo'], ['activarAvisos'], ['instalarApp']].forEach(function (x) {
+  var real = window[x[0]];
+  window[x[0]] = function () { if (_espejo) { avisar(textoEspejo()); return Promise.resolve(); } return real.apply(this, arguments); };
+});
+/* Sus avisos: si los tiene activados en su celular (no en éste). */
+var _estadoAvisosReal = estadoAvisos;
+estadoAvisos = function () {
+  if (!_espejo) return _estadoAvisosReal();
+  return leer('/orden_v_personas?select=avisos_activos&id=eq.' + valor(_espejo.id)).then(function (f) { return f && f[0] && f[0].avisos_activos ? 'activos' : 'apagados'; }, function () { return 'activos'; });
+};
+/* "No soy yo", en el espejo, es salir del espejo (no cerrar la sesión). */
+var _preguntarSalirReal = preguntarSalir;
+preguntarSalir = function () { if (_espejo) { salirEspejo(); return Promise.resolve(); } return _preguntarSalirReal(); };
+
+/** El test, como lo devuelve orden_desafio_mio (el abierto primero), leído de sus tests. */
+function desafioEspejo() {
+  return leer('/orden_desafios?select=id,semana,titulo,vence_en,terminado_en,puntaje,total,preguntas,respuestas&persona_id=eq.' + valor(_espejo.id) + '&order=creado_en.desc&limit=20').then(function (f) {
+    f = f || [];
+    var ahora = new Date(), abierto = function (d) { return !d.terminado_en && new Date(d.vence_en) > ahora; };
+    var d = f.filter(abierto)[0] || f[0];
+    if (!d) return null;
+    var resp = d.respuestas || {};
+    return { id: d.id, semana: d.semana, titulo: d.titulo, vence_en: d.vence_en, terminado_en: d.terminado_en, puntaje: d.puntaje, total: d.total,
+             abiertos: f.filter(abierto).length, preguntas: (d.preguntas || []).map(function (q) { return { id: q, respondida: Object.prototype.hasOwnProperty.call(resp, q) }; }) };
+  });
+}
+/** La caja de hoy de su local (si todavía no la cargaron, vacía). */
+function cajaEspejo() {
+  if (!_espejo.local_id) return Promise.reject(rechazo('No tiene local.'));
+  return leer('/orden_cajas?select=*&local_id=eq.' + valor(_espejo.local_id) + '&fecha=eq.' + hoyAR()).then(function (f) {
+    return (f || [])[0] || { id: '00000000-0000-0000-0000-000000000000', local_id: _espejo.local_id, fecha: hoyAR(), estado: 'pendiente' };
+  });
+}
+
+/* Mientras se mira: los campos no se pueden tocar, y "No soy yo" dice "Salir". */
+var _vigiaEspejo = new MutationObserver(function () {
+  if (!_espejo) return;
+  app.querySelectorAll('input, textarea, select').forEach(function (x) { x.disabled = true; });
+  var s = document.getElementById('salir');
+  if (s && s.textContent !== 'Salir de la app de ' + _espejo.nombre) s.textContent = 'Salir de la app de ' + _espejo.nombre;
+});
+
+/** Entrar a mirar la app de p (una persona del local loc). */
+function verSuApp(p, loc) {
+  if (!esSupervision() || _espejo) return;
+  apagarCamara();
+  cerrarCapas();
+  _espejo = { id: p.id, nombre: p.nombre, inicial: p.inicial || null, rol: 'vendedor', local_id: loc.id, local: loc.nombre, aprobado: true, activo: true };
+  _espejoVolver = loc;
+  _sinLeer = 0; _sinLeerEn = 0; _sinLeerDe = null;
+  document.body.classList.add('espejo');
+  var banda = document.createElement('div');
+  banda.className = 'espejo-banda';
+  banda.id = 'espejoBanda';
+  banda.innerHTML = '<span>Estás viendo la app de <b>' + esc(nombreCorto(p)) + '</b> · sólo para mirar</span><button type="button" id="salirEspejo">Salir</button>';
+  document.body.appendChild(banda);
+  document.getElementById('salirEspejo').onclick = salirEspejo;
+  _vigiaEspejo.observe(app, { childList: true, subtree: true });
+  armarBarra();
+  revisarCaja();
+  irA('hoy');
+}
+var _espejoVolver = null;
+function salirEspejo() {
+  if (!_espejo) return;
+  _espejo = null;
+  _vigiaEspejo.disconnect();
+  document.body.classList.remove('espejo');
+  var b = document.getElementById('espejoBanda');
+  if (b) b.remove();
+  _sinLeer = 0; _sinLeerEn = 0; _sinLeerDe = null;
+  apagarCamara();
+  cerrarCapas();
+  armarBarra();
+  revisarCaja();
+  irA('equipo');
+}
+/** Desde la administración: vendedores.html#/ver/<id>. */
+function verSuAppPorId(id) {
+  return leer('/orden_personas?select=id,nombre,inicial,rol,local_id,aprobado&id=eq.' + valor(id)).then(function (f) {
+    var p = (f || [])[0];
+    if (!p || !p.local_id) { avisar('No encontramos a esa persona.'); irInicio(); return; }
+    return leer('/orden_locales?select=id,nombre&id=eq.' + valor(p.local_id)).then(function (l) {
+      verSuApp(p, (l || [])[0] || { id: p.local_id, nombre: '' });
+    });
+  }).catch(function (e) { pantallaError(e, irInicio); });
+}
 
 registroSW().catch(function () { /* sin service worker la app anda igual (sin avisos) */ });
 

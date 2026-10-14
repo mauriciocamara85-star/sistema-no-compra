@@ -322,3 +322,9 @@
 .ventana .mapa-svg .mapa-origen { fill: rgba(198, 244, 50, .38); stroke: #C6F432; stroke-width: 3.5; animation: mapaLatido 1.1s ease-in-out infinite; }
 @keyframes mapaLatido { 50% { fill: rgba(198, 244, 50, .14); } }
 @media (prefers-reduced-motion: reduce) { .ventana .mapa-svg .mapa-origen { animation: none; } }
+.imp .ver-app-admin { font: 600 12.5px var(--sans); color: var(--acc); text-decoration: underline; text-underline-offset: 2px; }
+/* Arrastrar un mueble desde la bandeja hasta el dibujo (14/10). */
+.imp-piezas [data-pieza] { touch-action: none; cursor: grab; }
+.pieza-fantasma { position: fixed; z-index: 200; width: 96px; pointer-events: none; transform: translate(-50%, -50%) scale(1.25); filter: drop-shadow(0 10px 14px rgba(0, 0, 0, .45)); }
+.pieza-fantasma .pieza-ico { width: 96px; height: 64px; }
+.ventana .imp-mapa-vista.soltar-aca { border-color: #C6F432; border-style: solid; box-shadow: 0 0 0 3px rgba(198, 244, 50, .35); }
