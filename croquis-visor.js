@@ -140,7 +140,10 @@ function visorCargar(V) {
   var L = valor(V.op.local.id);
   Promise.all([
     cargarMapa(V.op.local.id),
-    leer('/orden_v_estado_local?select=modulo_id,foto_path,tomada_en,nivel,foto_de,responsable,sin_foto_reciente,tareas_abiertas&local_id=eq.' + L).catch(function () { return []; })
+    /* Con el SQL 113, el local entero (también para los vendedores, que de la vista sólo ven sus fotos); sin él, la vista. */
+    llamar('orden_visor_estado', { p_local: V.op.local.id }).catch(function () {
+      return leer('/orden_v_estado_local?select=modulo_id,foto_path,tomada_en,nivel,foto_de,responsable,sin_foto_reciente,tareas_abiertas&local_id=eq.' + L);
+    }).catch(function () { return []; })
   ]).then(function (r) {
     V.d = r[0];
     (r[1] || []).forEach(function (x) { V.estado[x.modulo_id] = x; });
@@ -682,8 +685,10 @@ function cerrarFicha(V, ya, porAtras) {
 
 /** Lo que vio la IA en la última foto (y lo que dijo quien la revisó). */
 function visorIa(V, id) {
-  leer('/orden_v_controles?select=id,foto_path,tomada_en,nivel,nivel_ia,nivel_final,persona_nombre,ia_resultado,comentario&modulo_id=eq.' + valor(id) +
-       '&foto_path=not.is.null&order=tomada_en.desc&limit=12').then(function (h) {
+  llamar('orden_visor_historia', { p_modulo: id }).catch(function () {
+    return leer('/orden_v_controles?select=id,foto_path,tomada_en,nivel,nivel_ia,nivel_final,persona_nombre,ia_resultado,comentario&modulo_id=eq.' + valor(id) +
+                '&foto_path=not.is.null&order=tomada_en.desc&limit=12');
+  }).then(function (h) {
     if (!V.ficha || V.ficha.id !== id) return;
     V.ficha.historia = h || [];
     var z = V.ficha.el.querySelector('#cvIa');

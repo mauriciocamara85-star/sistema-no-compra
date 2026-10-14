@@ -807,13 +807,15 @@ function volverDeAparte() {
 }
 
 /** Cuántos avisos sin leer (se pregunta como mucho cada 30 segundos). */
+/** Los avisos que se ven: los programados (SQL 113: una tarea a alguien de franco) esperan a su hora. */
+function avisosALaVista(lista) { return (lista || []).filter(function (a) { return a.estado !== 'programado'; }); }
 function contarSinLeer() {
   var quien = yo().id;
   if (_sinLeerDe === quien && Date.now() - _sinLeerEn < 30e3) { pintarSinLeer(); return; }
   _sinLeerEn = Date.now();
-  leer('/orden_avisos?select=id&persona_id=eq.' + valor(yo().id) + '&leido_en=is.null&limit=10').then(function (f) {
+  leer('/orden_avisos?select=id,estado&persona_id=eq.' + valor(yo().id) + '&leido_en=is.null&limit=20').then(function (f) {
     if (yo().id !== quien) return;
-    _sinLeer = (f || []).length; _sinLeerDe = quien;
+    _sinLeer = Math.min(10, avisosALaVista(f).length); _sinLeerDe = quien;
     pintarSinLeer();
   }).catch(function () {});
 }
@@ -1114,7 +1116,9 @@ function dibujarFotos(x) {
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' + leyendaNombres(mapa) +
       '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.'
                               : total ? 'Por hoy no te queda ninguna foto para mandar.'
-                              : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
+                              : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>' +
+      /* El modo observador: todo el local con volumen y la foto de cada módulo (para mirar). */
+      '<button class="tarjeta-accion" id="verLocal"><b>Ver el local</b><span>Todos los módulos con su foto, y cómo están</span></button>';
   }
 
   /* La lista: sin croquis, todo; con croquis, sólo lo que no está dibujado. */
@@ -1146,6 +1150,8 @@ function dibujarFotos(x) {
   app.querySelectorAll('.camara').forEach(function (bt) {
     bt.onclick = function () { pantallaFoto(_controles[bt.dataset.id]); };
   });
+  var vl = document.getElementById('verLocal');
+  if (vl) vl.onclick = function () { pantallaMapa({ id: yo().local_id, nombre: yo().local || 'Tu local' }, 'fotos'); };
   /* Tocar el croquis: si ese módulo tiene tu control pendiente, la cámara; si no, de quién es. */
   app.querySelectorAll('#mapaFotos .mapa-mod').forEach(function (g) {
     g.onclick = function () {
@@ -1471,9 +1477,9 @@ function pantallaAvisos() {
   app.innerHTML = arriba + '<p class="cargando">Cargando…</p>';
   document.getElementById('volver').onclick = volverDeAparte;
   var alAbrir = new Date().toISOString();
-  leer('/orden_avisos?select=id,titulo,cuerpo,url,creado_en,leido_en&persona_id=eq.' + valor(yo().id) + '&order=creado_en.desc&limit=30').then(function (avisos) {
+  leer('/orden_avisos?select=id,titulo,cuerpo,url,creado_en,leido_en,estado&persona_id=eq.' + valor(yo().id) + '&order=creado_en.desc&limit=40').then(function (avisos) {
     if (_pestana !== 'avisos') return;
-    avisos = avisos || [];
+    avisos = avisosALaVista(avisos).slice(0, 30);
     app.innerHTML = arriba + (avisos.length ? '<div class="avisos">' + avisos.map(function (a, k) {
       var lleva = !!String(a.url || '').replace(/^.*#/, '').replace(/^\/+/, '');
       var tag = lleva ? 'button' : 'div';
@@ -1487,8 +1493,8 @@ function pantallaAvisos() {
     });
     /* Quedan leídos todos los sin leer (también los más viejos que no entran en la lista): si no, el número no se va nunca. */
     _sinLeer = 0; _sinLeerEn = Date.now(); _sinLeerDe = yo().id;
-    leer('/orden_avisos?select=id&persona_id=eq.' + valor(yo().id) + '&leido_en=is.null&creado_en=lte.' + alAbrir + '&limit=1000').then(function (f) {
-      var ids = (f || []).map(function (a) { return a.id; });
+    leer('/orden_avisos?select=id,estado&persona_id=eq.' + valor(yo().id) + '&leido_en=is.null&creado_en=lte.' + alAbrir + '&limit=1000').then(function (f) {
+      var ids = avisosALaVista(f).map(function (a) { return a.id; });
       if (ids.length) return llamar('orden_marcar_avisos_leidos', { p_ids: ids });
     }).catch(function () { _sinLeerEn = 0; });
   }).catch(function (e) { pantallaError(e, pantallaAvisos); });
@@ -2507,16 +2513,19 @@ else pantallaLocales();
    ════════════════════════════════════════════════════════════════════════ */
 
 /* Desde el 13/10 es el modo observador (croquis-visor.js): el local con volumen, la foto de cada módulo, y tocándolo,
-   su vista de frente para dejarle una sugerencia al que lo tiene. Se arma y se reparte desde la computadora. */
-function pantallaMapa(loc) {
+   su vista de frente para dejarle una sugerencia al que lo tiene. Se arma y se reparte desde la computadora.
+   Desde el 14/10 lo ven también los vendedores (pedido de Mauricio), desde Fotos: sólo para mirar. volverA: la
+   pestaña a la que vuelve ("‹ Volver" y el "atrás" de Android). */
+function pantallaMapa(loc, volverA) {
   apagarCamara();
   barra.hidden = true;
   app.className = 'app';
+  var supervisa = esSupervision() && !soloMira();
   abrirVisor(app, {
-    local: loc, puedeSugerir: !soloMira(), puedeNombrar: !soloMira(), puedeEditar: false,
+    local: loc, puedeSugerir: supervisa, puedeNombrar: supervisa, puedeEditar: false,
     dondeAsignar: 'se asigna desde la computadora (No Compra → Equipo VDH → Por local)',
     capa: { abrir: abrirCapa, soltar: soltarCapa },
-    alVolver: function () { irA('equipo'); }
+    alVolver: function () { irA(volverA || 'equipo'); }
   });
 }
 
