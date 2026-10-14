@@ -79,10 +79,21 @@ presentación e interacción: no cambia cómo se arma el local ni los datos. Un 
 3. **Propuesta de acomodo** (un borrador del croquis al lado del de verdad, que se aprueba): SQL 114 (guardar los borradores con quién los hizo y una función para aprobarlos, que usa la misma de guardar el croquis). Reversible.
 4. **Sacar o subir la foto directo desde el observador** (sin pedírsela a nadie): una función que cree el control del módulo en el momento → SQL 115. Reversible.
 
+**Control final (un árbitro Opus, esfuerzo alto, que usó la app en celular y PC): sin bloqueantes.** Marcó 8 importantes y 16 menores. Corregí los importantes y la mayoría de los menores, y los probé (observador 97, app 148, administración 93, testigo 30, cámara):
+- Tocar el número de un módulo abría a veces el de al lado (y la sugerencia le podía llegar a otro): ahora abre el suyo (probado tocando los 24).
+- Dos "atrás" seguidos dejaban el observador sin "atrás": ahora vuelven a Equipo.
+- En el celular los nombres se tapaban: se leen al acercar, y enteros en "Qué hay en cada módulo" (tocar uno lo abre).
+- El imán metía lo de adentro encima de los módulos de la pared: ahora pega el borde, y sólo imanta el eje que se movió.
+- Una sugerencia repetida a propósito se descartaba: ahora es otra tarea (la búsqueda de "ya llegó" es sólo al reintentar después de un corte).
+- Enter y Espacio abren el módulo; el foco queda en la ficha y vuelve al módulo al cerrarla.
+- Aviso cuando el croquis del local no está armado (los módulos "a ojo").
+- Los botones lima salían grises y la × chica (CSS); la ficha en la PC en dos columnas ("Dejar sugerencia" sin desplazar); letra más grande en el plano; "Desde arriba" se recuerda; el teclado del celular ya no saca el zoom; local sin módulos sin controles; textos del celular; el contador de tareas; las escuchas se limpian; las miniaturas viejas se borran; el historial baja cada foto una sola vez.
+- **Quedan (anotados):** la primera vez en cada teléfono el plano baja las fotos grandes para armar las miniaturas (se arregla con las miniaturas guardadas: punto 1 de arriba); una foto que ya no está guardada se ve como "sin foto" pero en "Estado" cuenta su nivel; "Qué hay en este módulo" y el nombre propio son lo mismo (ver abajo).
+
 **Para que decida Mau:**
 - ¿Los **vendedores** también ven el observador (para mirar, sin sugerencias)? Hoy lo ven el supervisor, el administrador y la gerencia.
 - Si el que tiene el módulo está de franco, ¿la sugerencia le llega igual a él o al que lo cubre?
-- ¿Vista por defecto inclinada o desde arriba?
+- ¿Vista por defecto inclinada o desde arriba? ¿Y "Ver por" arranca en Vendedor o en Estado (el árbitro sugiere Estado para ver "de un vistazo cómo está el orden")?
 - **3D de verdad** (con una librería como three.js: girar el local, caminarlo): se ve más real, pero pesa más en los teléfonos de los locales y es otra forma de dibujar todo. Lo estimo en 3 a 5 días, con riesgo medio (rendimiento en celulares viejos). Lo de ahora ya tiene volumen y anda liviano.
 - Nombre y "qué hay" separados (hoy son lo mismo): necesita un campo nuevo en la base.
 
