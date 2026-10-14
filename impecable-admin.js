@@ -1176,11 +1176,11 @@ function dibujarMapaLocal() {
     (puede ? '<div class="imp-mapa-acc"><button class="boton chico' + (_repartir ? ' lima' : '') + '" id="btnRepartir">' + (_repartir ? 'Listo, terminé' : 'Repartir y ponerles nombre') + '</button>' +
       (_repartir && d.pared.length + d.islas.length ? '<button class="boton chico" id="btnParejo">Repartir parejo el salón entre ' + planReparto(d).length + '</button>' : '') +
       (_repartir && d.dep.length > 1 && depositoNumerado(d) ? '<button class="boton chico" id="btnParejoDep">Repartir parejo el depósito entre ' + planReparto(d, 'deposito').length + '</button>' : '') +
-      '<button class="boton chico" id="btnFormaMapa">Cambiar la forma y la cantidad</button></div>' : '') +
+      '<button class="boton chico" id="btnFormaMapa">Armar el croquis</button></div>' : '') +
     (_repartir ? '<p class="bajada">"Repartir parejo" divide los módulos en partes iguales, en bloques seguidos (22 entre 3: 7, 7 y 8). ' +
                  'Para hacerlo a mano o ponerle nombre a un módulo ("Vidriera"), tocalo. Tocá un sector (abajo) para elegir quién lo tiene, quién lo cubre y, en el depósito, qué tiene.</p>' : '') +
     (d.modulos.length ? '<div class="imp-mapa-dibujos">' + svgMapa(d) + svgDeposito(d) + '</div>' + leyendaNombres(d)
-                      : '<div class="vacio">Este local todavía no tiene módulos' + (puede ? ': tocá "Cambiar la forma y la cantidad".' : '.') + '</div>') +
+                      : '<div class="vacio">Este local todavía no tiene módulos' + (puede ? ': tocá "Armar el croquis".' : '.') + '</div>') +
     (d.aprox && d.pared.length ? '<p class="bajada">Todavía no se armó el mapa: los módulos están en las paredes a ojo.</p>' : '') +
     (_repartir ? '<div class="seccion">Salón</div>' + leyendaMapa(d, true) + (d.deposito.length ? '<div class="seccion">Depósito</div>' + listaDeposito(d, true) : '')
                : leyendaPersonas(d)) +
@@ -1291,38 +1291,378 @@ function elegirGenteAdmin(d, secId) {
   });
 }
 
-/** La forma del local y cuántos módulos hay en cada pared, con la vista previa. */
+/* ════════════════════════════════════════════════════════════════════════
+   EL CROQUIS DEL LOCAL (SQL 112, pedido de Mauricio: "que quede muy parecido
+   a lo real"). Cada pared es una fila de lugares: se toca un lugar para
+   cambiarlo (módulo, módulo doble, hueco, algo fijo), la entrada se pone
+   donde está y lo del centro se arrastra. Cada módulo se queda en su lugar
+   con su historia (nombre, responsable, fotos): al guardar, lo que cambia es
+   su número (el 1, al lado de la entrada, hacia la izquierda).
+   ════════════════════════════════════════════════════════════════════════ */
+
+var NOMBRE_PARED = { izquierda: 'Pared izquierda', fondo: 'Fondo', derecha: 'Pared derecha', frente: 'Frente (vidriera)' };
+var NOMBRE_PARED_DEP = { izquierda: 'Pared izquierda', fondo: 'Pared de arriba', derecha: 'Pared derecha', frente: 'Pared de abajo' };
+/* Hacia dónde queda "antes" y "después" en la vuelta, en cada pared (para "+ Un lugar…"). */
+var LADOS_PARED = { izquierda: ['abajo', 'arriba'], fondo: ['a la izquierda', 'a la derecha'], derecha: ['arriba', 'abajo'], frente: ['a la derecha', 'a la izquierda'] };
+
+/** Un croquis para editar: cada lugar con su módulo ({ t: 'm'|'d', id } — id null: uno nuevo) o { t: 'h', h }. */
+function croquisEditable(cq, mods) {
+  var e = { paredes: {}, puerta: Object.assign({}, cq.puerta) };
+  VUELTA.forEach(function (w) {
+    e.paredes[w] = cq.paredes[w].map(function (l) { return esModuloLugar(l) ? { t: l, id: null } : { t: 'h', h: l.h || '' }; });
+  });
+  var orden = ordenEditable(e), usados = {};
+  mods.forEach(function (m) {
+    var k = m.numero - 1;
+    if (k >= 0 && k < orden.length && !orden[k].id && !usados[m.id]) { orden[k].id = m.id; usados[m.id] = true; }
+  });
+  return { e: e, sobran: mods.filter(function (m) { return !usados[m.id]; }) };
+}
+/** El croquis editable como se guarda ('m', 'd', { h }). */
+function croquisGuardable(e) {
+  var paredes = {};
+  VUELTA.forEach(function (w) { paredes[w] = e.paredes[w].map(function (l) { return l.t === 'h' ? { h: l.h } : l.t; }); });
+  return { paredes: paredes, puerta: Object.assign({}, e.puerta) };
+}
+/** Los lugares con módulo, en el orden de los números. */
+function ordenEditable(e) {
+  return ordenCroquis(croquisGuardable(e)).map(function (x) { return e.paredes[x.pared][x.i]; });
+}
+/** La entrada de siempre (sin marcar) queda al final del frente; una marcada, adentro de su pared. */
+function ajustarPuerta(e) {
+  var p = e.puerta;
+  if (!p || p.virtual || !e.paredes[p.pared]) { e.puerta = { pared: 'frente', pos: e.paredes.frente.length, virtual: true }; return; }
+  p.pos = Math.max(0, Math.min(e.paredes[p.pared].length, p.pos));
+}
+
+/** Coordenadas de un toque en el dibujo (las del SVG, no las de la pantalla). */
+function puntoSvg(svg, ev) {
+  var p = svg.createSVGPoint();
+  p.x = ev.clientX; p.y = ev.clientY;
+  return p.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+/** El croquis del local: la forma, los lugares de cada pared, la entrada, lo del centro y el depósito. */
 function editarMapa(d) {
   var m = d.mapa || {};
-  var numerado = depositoNumerado(d);
-  var cantDep = m.deposito != null ? +m.deposito : d.dep.length;
-  /* Los del centro, en orden de la caja hacia la vidriera: "+ Agregar" suma uno al final. */
-  var centro = d.islas.map(function (x) { return { id: x.id, nombre: x.nombre, antes: x.nombre }; });
-  var f = ventana('<h1>La forma y la cantidad</h1><p class="bajada">El local visto desde arriba, con la entrada (la vidriera) abajo y la caja atrás. ' +
-    'Los módulos se numeran desde la entrada dando la vuelta: pared izquierda → fondo → pared derecha → frente. Los del centro van a continuación (si hay 22 en las paredes, el primero del centro es el 23).</p>' +
+  var modPorId = {};
+  d.modulos.forEach(function (x) { modPorId[x.id] = x; });
+  /* El depósito como va a quedar: numerado seguido si todavía era "uno por sector". */
+  var depAhora = depositoNumerado(d) ? d.dep.slice() : d.dep.map(function (k, i) { return Object.assign({}, k, { numero: i + 1 }); });
+  var ed = croquisEditable(croquisDe(d, 'salon'), d.pared), edDep = croquisEditable(croquisDe(d, 'deposito'), depAhora);
+  /* Los módulos que salen de un lugar quedan a mano: si se vuelve a poner un lugar, vuelve el último que salió
+     (con su historia). Los que hoy no entran en el mapa arrancan acá. */
+  var st = { salon: ed.e, deposito: edDep.e, mover: null, pila: { salon: ed.sobran.map(function (x) { return x.id; }).reverse(), deposito: edDep.sobran.map(function (x) { return x.id; }).reverse() } };
+  var cqGuardado = (m.croquis && m.croquis.salon) ? normalizarCroquis(m.croquis.salon) : { centro: {}, fijos: [] };
+  /* Los del centro (en orden de la caja hacia la vidriera) y las cosas fijas de adentro. */
+  var nuevas = 0;
+  var centro = d.islas.map(function (x) {
+    return { key: x.id, id: x.id, nombre: x.nombre, antes: x.nombre, pos: cqGuardado.centro[String(x.nombre || '').toLowerCase()] || null };
+  });
+  var fijos = (cqGuardado.fijos || []).map(function (x) { return Object.assign({}, x); });
+
+  var f = ventana('<h1>El croquis del local</h1><p class="bajada">El local visto desde arriba, como lo ven los vendedores. ' +
+    '<b>Tocá un lugar de una pared</b> para cambiarlo: módulo, módulo doble, hueco o algo fijo (probadores, una columna). ' +
+    'El 1 es el primero al lado de la entrada, hacia la izquierda, y sigue dando la vuelta. Cada módulo se queda en su lugar con su responsable y sus fotos: si cambia algo, cambia su número.</p>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
       '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
       PAREDES.map(function (p) {
-        return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" value="' + (+m[p[0]] || 0) + '"></label>';
-      }).join('') +
-      '</div>' +
+        return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" aria-label="Lugares en ' + esc(p[1]) + '"></label>';
+      }).join('') + '</div>' +
+    '<p class="bajada">Los números de arriba son los <b>lugares</b> de cada pared (módulos, huecos y cosas fijas).</p>' +
+    '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuerta">Mover la entrada</button>' +
+      '<button type="button" class="boton chico" id="eAcomodar">Acomodar solos los del centro</button></div>' +
+    '<p class="nota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada. El 1 queda al lado, hacia la izquierda.</p>' +
+    '<div class="imp-mapa-vista croquis" id="eVista"></div>' +
     '<div class="seccion">Módulos del centro del salón</div>' +
-    '<p class="bajada">Exhibidores, mesas, percheros: uno por lugar. Van en fila por el medio, de la caja hacia la vidriera, y se numeran a continuación de las paredes. ' +
-      'Después ponele responsable a cada uno: tocándolo en el mapa o con "Repartir parejo".</p>' +
+    '<p class="bajada">Exhibidores, mesas, percheros: uno por lugar, numerados a continuación de las paredes. <b>Arrastralos en el dibujo</b> para ponerlos donde están; ' +
+      'los que no movés van en fila por el medio, de la caja hacia la vidriera.</p>' +
     '<div class="imp-islas" id="eIslas"></div>' +
     '<button type="button" class="boton chico" id="eIslaMas">+ Agregar un módulo en el centro</button>' +
+    '<div class="seccion">Cosas fijas adentro</div>' +
+    '<p class="bajada">Un mostrador, una escalera, una columna: no son módulos (no llevan foto), están para ubicarse. Arrastralas en el dibujo.</p>' +
+    '<div class="imp-islas" id="eFijos"></div>' +
+    '<button type="button" class="boton chico" id="eFijoMas">+ Agregar algo fijo adentro</button>' +
     '<div class="seccion">Depósito</div>' +
     '<div class="renglon"><label class="campo c-medio"><span>Forma del depósito</span><select id="eFormaDep"><option value="rectangulo"' + (m.forma_deposito !== 'cuadrado' ? ' selected' : '') + '>Largo</option>' +
       '<option value="cuadrado"' + (m.forma_deposito === 'cuadrado' ? ' selected' : '') + '>Cuadrado</option></select></label>' +
-      '<label class="campo c-chico"><span>Módulos</span><input type="number" inputmode="numeric" min="0" max="40" id="eDep" value="' + cantDep + '"></label>' +
-      '<p class="bajada" style="flex:1 1 260px;margin:0">Dividilo en partes que entren en una foto cada una. Se numeran 1, 2, 3… y después se reparten entre los vendedores.</p></div>' +
-    '<p class="bajada" id="eTotal"></p><div class="imp-mapa-vista" id="eVista"></div><button class="boton lima" id="eGuardar">Guardar</button>');
-  function leerForm() {
-    var mm = { forma: f.querySelector('#eForma').value, forma_deposito: f.querySelector('#eFormaDep').value };
-    f.querySelectorAll('[data-pared]').forEach(function (i) { mm[i.dataset.pared] = Math.max(0, Math.min(40, parseInt(i.value, 10) || 0)); });
-    mm.deposito = Math.max(0, Math.min(40, parseInt(f.querySelector('#eDep').value, 10) || 0));
-    return { mapa: mm, islas: centro.map(function (c) { return c.nombre.trim(); }) };
+      '<label class="campo c-chico"><span>Módulos</span><input type="number" inputmode="numeric" min="0" max="40" id="eDep"></label>' +
+      '<p class="bajada" style="flex:1 1 260px;margin:0">Dividilo en partes que entren en una foto cada una. Si cambiás la cantidad o la forma, los módulos se vuelven a acomodar alrededor (la puerta queda).</p></div>' +
+    '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuertaDep">Mover la puerta del depósito</button></div>' +
+    '<p class="nota" id="eNotaPuertaDep" hidden>Tocá un <b>+</b> verde: ahí va la puerta del depósito.</p>' +
+    '<div class="imp-mapa-vista croquis" id="eVistaDep"></div>' +
+    '<p class="bajada" id="eTotal"></p><button class="boton lima" id="eGuardar">Guardar</button>');
+  var vistaS = f.querySelector('#eVista'), vistaD = f.querySelector('#eVistaDep');
+
+  /* ── Cambios en los lugares ── */
+  function sacarModulo(tipo, l) { if (l.t !== 'h' && l.id) st.pila[tipo].push(l.id); }
+  function moduloNuevo(tipo, t) { return { t: t || 'm', id: st.pila[tipo].length ? st.pila[tipo].pop() : null }; }
+  function ponerTipo(tipo, w, i, t, texto) {
+    var e = st[tipo], l = e.paredes[w][i];
+    if (t === 'h') {
+      if (l.t !== 'h') sacarModulo(tipo, l);
+      e.paredes[w][i] = { t: 'h', h: texto || '' };
+    } else if (l.t === 'h') e.paredes[w][i] = moduloNuevo(tipo, t);
+    else l.t = t;
   }
+  function agregarLugar(tipo, w, i, despues) {
+    var e = st[tipo], j = despues ? i + 1 : i, p = e.puerta;
+    e.paredes[w].splice(j, 0, moduloNuevo(tipo));
+    /* El lugar nuevo queda pegado al que tocaste: la entrada se corre si estaba de ese lado. */
+    if (!p.virtual && p.pared === w && (despues ? j <= p.pos : j < p.pos)) p.pos++;
+    ajustarPuerta(e);
+  }
+  function sacarLugar(tipo, w, i) {
+    var e = st[tipo], p = e.puerta;
+    sacarModulo(tipo, e.paredes[w].splice(i, 1)[0]);
+    if (!p.virtual && p.pared === w && i < p.pos) p.pos--;
+    ajustarPuerta(e);
+  }
+  function cambiarCantidad(w, n) {
+    var e = st.salon, ls = e.paredes[w];
+    while (ls.length < n) ls.push(moduloNuevo('salon'));
+    while (ls.length > n) sacarModulo('salon', ls.pop());
+    ajustarPuerta(e);
+  }
+  /** El depósito se vuelve a acomodar alrededor con la cantidad y la forma nuevas; la puerta queda donde estaba. */
+  function rehacerDeposito(n, cuadrado) {
+    var ids = ordenEditable(st.deposito).map(function (l) { return l.id; });
+    var p = paredesDeposito(n, cuadrado), c = { izquierda: p[3], fondo: p[0], derecha: p[1], frente: p[2] };
+    var nuevo = { paredes: {}, puerta: st.deposito.puerta.virtual ? null : Object.assign({}, st.deposito.puerta) };
+    VUELTA.forEach(function (w) { nuevo.paredes[w] = []; for (var k = 0; k < c[w]; k++) nuevo.paredes[w].push({ t: 'm', id: null }); });
+    ajustarPuerta(nuevo);
+    for (var k = ids.length - 1; k >= n; k--) if (ids[k]) st.pila.deposito.push(ids[k]);
+    ordenEditable(nuevo).forEach(function (l, k2) { l.id = k2 < Math.min(n, ids.length) ? ids[k2] : (st.pila.deposito.length ? st.pila.deposito.pop() : null); });
+    st.deposito = nuevo;
+  }
+
+  /* ── Lo que se ve ── */
+  function centroMapa() {
+    var c = {};
+    centro.forEach(function (x) { var n = x.nombre.trim().toLowerCase(); if (x.pos && n && !c[n]) c[n] = { x: x.pos.x, y: x.pos.y }; });
+    return c;
+  }
+  function croquisArmado() {
+    return { v: 1, salon: Object.assign(croquisGuardable(st.salon), { centro: centroMapa(), fijos: fijos.map(function (x) { return { nombre: x.nombre.trim(), x: x.x, y: x.y, vertical: !!x.vertical }; }) }),
+             deposito: croquisGuardable(st.deposito) };
+  }
+  function mapaArmado() {
+    var mm = { forma: f.querySelector('#eForma').value, forma_deposito: f.querySelector('#eFormaDep').value };
+    VUELTA.forEach(function (w) { mm[w] = st.salon.paredes[w].filter(function (l) { return l.t !== 'h'; }).length; });
+    mm.deposito = ordenEditable(st.deposito).length;
+    return mm;
+  }
+  /** Los datos para dibujar: cada módulo con el número que va a tener; los nuevos, en el sector del anterior. */
+  function datosVista(mm) {
+    var pared = [], dep = [], ult = d.salon[0] ? d.salon[0].id : null;
+    ordenEditable(st.salon).forEach(function (l, k) {
+      var x = l.id && modPorId[l.id];
+      if (x) ult = x.sector_id;
+      pared.push(x ? Object.assign({}, x, { numero: k + 1 }) : { id: 'nuevo' + k, numero: k + 1, nombre: 'Módulo ' + (k + 1), sector_id: ult, isla: false });
+    });
+    var islas = centro.map(function (c, k) {
+      var ex = c.id && modPorId[c.id];
+      return ex ? Object.assign({}, ex, { nombre: c.nombre.trim() || ex.nombre })
+                : { id: c.key, numero: 1000 + k, nombre: c.nombre.trim() || '?', isla: true, sector_id: d.salon[0] ? d.salon[0].id : null };
+    });
+    var secDep = d.deposito[0] || { id: '__deposito', tipo: 'deposito', numero: 1, nombre: null };
+    var sectorDe = Object.assign({}, d.sectorDe);
+    sectorDe[secDep.id] = secDep;
+    var ultDep = secDep.id;
+    ordenEditable(st.deposito).forEach(function (l, k) {
+      var x = l.id && modPorId[l.id];
+      if (x) ultDep = x.sector_id;
+      dep.push(x ? Object.assign({}, x, { numero: k + 1 }) : { id: 'dnuevo' + k, numero: k + 1, nombre: 'Depósito ' + (k + 1), sector_id: ultDep, isla: false });
+    });
+    return Object.assign({}, d, { mapa: mm, pared: pared, islas: islas, dep: dep, sectorDe: sectorDe });
+  }
+  /** Qué cambia al guardar: los nuevos, los que se apagan y los que cambian de número. */
+  function cambios() {
+    var nuevos = 0, apagan = 0, renumeran = 0, quedan = {};
+    [['salon', d.pared], ['deposito', depAhora]].forEach(function (g) {
+      ordenEditable(st[g[0]]).forEach(function (l, k) {
+        if (!l.id) { nuevos++; return; }
+        quedan[l.id] = true;
+        var antes = g[1].filter(function (x) { return x.id === l.id; })[0];
+        if (antes && antes.numero !== k + 1) renumeran++;
+      });
+      apagan += g[1].filter(function (x) { return !quedan[x.id]; }).length;
+    });
+    nuevos += centro.filter(function (q) { return !q.id; }).length;
+    apagan += d.islas.filter(function (i) { return !centro.some(function (c) { return c.id === i.id; }); }).length;
+    return { nuevos: nuevos, apagan: apagan, renumeran: renumeran };
+  }
+  function filasCentro(total) {
+    /* Mientras escriben un nombre, la lista no se vuelve a dibujar (perderían lo que están tocando). */
+    var hayFoco = function (sel) { var a = document.activeElement; return a && a.tagName === 'INPUT' && a.closest && a.closest(sel); };
+    if (!hayFoco('#eIslas')) {
+      f.querySelector('#eIslas').innerHTML = centro.length ? centro.map(function (c, k) {
+        return '<div class="imp-isla"><b>' + (total + k + 1) + '</b><input maxlength="40" data-isla="' + k + '" value="' + esc(c.nombre) + '" placeholder="Mesa, exhibidor, perchero…" aria-label="Nombre del módulo del centro">' +
+          (c.pos ? '<button type="button" class="boton chico" data-suelta="' + k + '" title="Volver a la fila del medio">A la fila</button>' : '') +
+          '<button type="button" class="boton chico" data-sacar="' + k + '">Sacar</button></div>';
+      }).join('') : '<p class="bajada">Todavía no hay módulos en el centro.</p>';
+    } else f.querySelectorAll('#eIslas .imp-isla b').forEach(function (b, k) { b.textContent = total + k + 1; });
+    if (!hayFoco('#eFijos')) {
+      f.querySelector('#eFijos').innerHTML = fijos.length ? fijos.map(function (x, k) {
+        return '<div class="imp-isla"><input maxlength="40" data-fijo-nombre="' + k + '" value="' + esc(x.nombre) + '" placeholder="Mostrador, escalera, columna…" aria-label="Qué es">' +
+          '<button type="button" class="boton chico" data-girar="' + k + '">Girarlo</button><button type="button" class="boton chico" data-sacar-fijo="' + k + '">Sacar</button></div>';
+      }).join('') : '<p class="bajada">Nada fijo adentro todavía.</p>';
+    }
+  }
+  function vista() {
+    var mm = mapaArmado(), dv = datosVista(mm), cq = croquisArmado();
+    vistaS.innerHTML = svgMapa(dv, { croquis: cq, editable: true, vacios: true, moverPuerta: st.mover === 'salon' ? 'salon' : null });
+    vistaD.innerHTML = svgDeposito(dv, { croquis: cq, editable: true, moverPuerta: st.mover === 'deposito' ? 'deposito' : null }) ||
+      '<p class="bajada">Sin módulos en el depósito.</p>';
+    f.querySelectorAll('[data-pared]').forEach(function (i) { if (document.activeElement !== i) i.value = st.salon.paredes[i.dataset.pared].length; });
+    var dep = f.querySelector('#eDep');
+    if (document.activeElement !== dep) dep.value = mm.deposito;
+    f.querySelector('#eMoverPuerta').textContent = st.mover === 'salon' ? 'Cancelar' : 'Mover la entrada';
+    f.querySelector('#eMoverPuertaDep').textContent = st.mover === 'deposito' ? 'Cancelar' : 'Mover la puerta del depósito';
+    f.querySelector('#eNotaPuerta').hidden = st.mover !== 'salon';
+    f.querySelector('#eNotaPuertaDep').hidden = st.mover !== 'deposito';
+    var total = dv.pared.length;
+    filasCentro(total);
+    var c = cambios();
+    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' +
+      (centro.length ? ', ' + centro.length + ' en el centro (del ' + (total + 1) + ' al ' + (total + centro.length) + ')' : '') + ' y ' + mm.deposito + ' en el depósito.' +
+      (c.renumeran ? ' Cambian de número ' + c.renumeran + ' (siguen con su responsable y sus fotos).' : '') +
+      (c.nuevos ? ' Se crean ' + c.nuevos + ' (van al sector del anterior; después se reparten).' : '') +
+      (c.apagan ? ' Se apagan ' + c.apagan + ': no se borran, quedan sus fotos.' : '');
+  }
+
+  /* ── El menú de un lugar de la pared ── */
+  function menuLugar(tipo, w, i) {
+    var e = st[tipo], l = e.paredes[w][i];
+    if (!l) return;
+    var num = ordenEditable(e).indexOf(l) + 1, x = l.t !== 'h' && l.id ? modPorId[l.id] : null;
+    var ahora = l.t === 'h' ? (l.h ? '"' + l.h + '" (no es un módulo)' : 'un hueco (no es un módulo)')
+      : (l.t === 'd' ? 'el módulo doble ' : 'el módulo ') + num + (x && nombrePropio(x) ? ' · ' + nombrePropio(x) : '') + (l.id ? '' : ' (nuevo)');
+    var lados = LADOS_PARED[w], nombres = tipo === 'deposito' ? NOMBRE_PARED_DEP : NOMBRE_PARED;
+    var g = ventana('<h1>' + esc((tipo === 'deposito' ? 'Depósito · ' : '') + nombres[w]) + ' · lugar ' + (i + 1) + '</h1><p class="bajada">Ahora es ' + esc(ahora) + '.</p>' +
+      '<div class="imp-lugar-ops">' +
+        '<button type="button" class="boton chico' + (l.t === 'm' ? ' lima' : '') + '" data-op="m">Módulo</button>' +
+        '<button type="button" class="boton chico' + (l.t === 'd' ? ' lima' : '') + '" data-op="d">Módulo doble (el doble de ancho)</button>' +
+        '<button type="button" class="boton chico' + (l.t === 'h' && !l.h ? ' lima' : '') + '" data-op="h">Hueco</button></div>' +
+      '<div class="renglon"><label class="campo c-grande"><span>Algo fijo, que no es un módulo</span><input id="lFijo" maxlength="40" value="' + esc(l.t === 'h' ? l.h : '') + '" placeholder="Probadores, columna, puerta del depósito…"></label>' +
+        '<button type="button" class="boton chico" data-op="f">Poner esto</button></div>' +
+      '<div class="seccion">Agregar o sacar</div><div class="imp-lugar-ops">' +
+        '<button type="button" class="boton chico" data-op="antes">+ Un lugar ' + lados[0] + '</button>' +
+        '<button type="button" class="boton chico" data-op="despues">+ Un lugar ' + lados[1] + '</button>' +
+        '<button type="button" class="boton chico" data-op="sacar">Sacar este lugar</button></div>' +
+      (l.t !== 'h' && l.id ? '<p class="bajada" style="margin-top:12px">Si lo sacás o lo cambiás por algo que no es un módulo, el módulo se apaga al guardar (no se borra: quedan sus fotos).</p>' : ''));
+    g.querySelectorAll('[data-op]').forEach(function (b) {
+      b.onclick = function () {
+        var op = b.dataset.op;
+        if (op === 'f') {
+          var t = g.querySelector('#lFijo').value.trim();
+          if (!t) { avisar('Escribí qué es (probadores, columna…) o elegí "Hueco".'); return; }
+          ponerTipo(tipo, w, i, 'h', t);
+        } else if (op === 'antes' || op === 'despues') {
+          if (e.paredes[w].length >= 60) { avisar('Como mucho 60 lugares por pared.'); return; }
+          agregarLugar(tipo, w, i, op === 'despues');
+        } else if (op === 'sacar') sacarLugar(tipo, w, i);
+        else ponerTipo(tipo, w, i, op);
+        g.remove(); vista();
+      };
+    });
+  }
+
+  /* ── Tocar el dibujo ── */
+  var soltadoEn = 0;
+  function tocar(ev) {
+    var t = ev.target.closest && ev.target.closest('[data-lugar], [data-puerta], [data-hueco-puerta]');
+    /* Al soltar algo que arrastraban encima de una pared, no se abre el menú de ese lugar. */
+    if (!t || Date.now() - soltadoEn < 400) return;
+    if (t.dataset.huecoPuerta) {
+      var p = t.dataset.huecoPuerta.split(':');
+      st[p[0]].puerta = { pared: p[1], pos: +p[2] };
+      st.mover = null; vista();
+      avisar(p[0] === 'deposito' ? 'Listo: la puerta del depósito va ahí.' : 'Listo: la entrada va ahí. El 1 es el de al lado, hacia la izquierda.');
+    } else if (t.dataset.puerta) { st.mover = t.dataset.puerta; vista(); }
+    else if (!st.mover) { var q = t.dataset.lugar.split(':'); menuLugar(q[0], q[1], +q[2]); }
+  }
+  vistaS.addEventListener('click', tocar);
+  vistaD.addEventListener('click', tocar);
+  /* Arrastrar lo del centro y las cosas fijas de adentro (con el dedo o con el mouse). */
+  vistaS.addEventListener('touchstart', function (ev) { if (ev.target.closest && ev.target.closest('[data-centro], [data-fijo]')) ev.preventDefault(); }, { passive: false });
+  vistaS.addEventListener('pointerdown', function (ev) {
+    var t = ev.target.closest && ev.target.closest('[data-centro], [data-fijo]');
+    if (!t) return;
+    ev.preventDefault();
+    var svg = t.closest('svg'), caja = (svg.getAttribute('data-adentro') || '').split(' ').map(Number);
+    var mover = t.hasAttribute('data-centro') ? [t, t.previousElementSibling] : [t];
+    var bb = t.getBBox(), c0 = { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2 }, p0 = puntoSvg(svg, ev), movido = false;
+    function mueve(e2) {
+      var p = puntoSvg(svg, e2), dx = p.x - p0.x, dy = p.y - p0.y;
+      if (!movido && Math.abs(dx) + Math.abs(dy) < 5) return;
+      movido = true;
+      mover.forEach(function (el) { if (el) el.setAttribute('transform', 'translate(' + dx.toFixed(1) + ',' + dy.toFixed(1) + ')'); });
+    }
+    function suelta(e2) {
+      window.removeEventListener('pointermove', mueve); window.removeEventListener('pointerup', suelta); window.removeEventListener('pointercancel', suelta);
+      if (e2.type === 'pointercancel') { vista(); return; }
+      if (!movido) {
+        /* Un toque: su renglón, abajo, para cambiarle el nombre. */
+        var k = t.hasAttribute('data-fijo') ? '[data-fijo-nombre="' + t.dataset.fijo + '"]'
+          : '[data-isla="' + centro.map(function (c) { return c.key; }).indexOf(t.previousElementSibling && t.previousElementSibling.dataset.mod) + '"]';
+        var inp = f.querySelector(k);
+        if (inp) { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); inp.focus({ preventScroll: true }); }
+        return;
+      }
+      soltadoEn = Date.now();
+      var p = puntoSvg(svg, e2);
+      var pos = { x: entre01((c0.x + p.x - p0.x - caja[0]) / caja[2]), y: entre01((c0.y + p.y - p0.y - caja[1]) / caja[3]) };
+      if (t.hasAttribute('data-fijo')) { var fx = fijos[+t.dataset.fijo]; if (fx) { fx.x = pos.x; fx.y = pos.y; } }
+      else {
+        var mod = t.previousElementSibling && t.previousElementSibling.dataset.mod;
+        var c = centro.filter(function (x) { return x.key === mod; })[0];
+        if (c) c.pos = pos;
+      }
+      vista();
+    }
+    window.addEventListener('pointermove', mueve);
+    window.addEventListener('pointerup', suelta);
+    window.addEventListener('pointercancel', suelta);
+  });
+
+  /* ── Los botones y los campos ── */
+  f.querySelector('#eMoverPuerta').onclick = function () { st.mover = st.mover === 'salon' ? null : 'salon'; vista(); };
+  f.querySelector('#eMoverPuertaDep').onclick = function () { st.mover = st.mover === 'deposito' ? null : 'deposito'; vista(); };
+  f.querySelector('#eAcomodar').onclick = function () { centro.forEach(function (c) { c.pos = null; }); vista(); };
+  f.querySelectorAll('[data-pared]').forEach(function (i) {
+    i.addEventListener('change', function () {
+      if (i.value === '' || isNaN(parseInt(i.value, 10))) { vista(); return; }
+      cambiarCantidad(i.dataset.pared, Math.max(0, Math.min(40, parseInt(i.value, 10))));
+      vista();
+    });
+  });
+  f.querySelector('#eForma').addEventListener('change', vista);
+  function depCambio() {
+    var i = f.querySelector('#eDep');
+    var n = i.value === '' || isNaN(parseInt(i.value, 10)) ? ordenEditable(st.deposito).length : Math.max(0, Math.min(40, parseInt(i.value, 10)));
+    rehacerDeposito(n, f.querySelector('#eFormaDep').value === 'cuadrado');
+    vista();
+  }
+  f.querySelector('#eDep').addEventListener('change', depCambio);
+  f.querySelector('#eFormaDep').addEventListener('change', depCambio);
+  var listaC = f.querySelector('#eIslas'), listaF = f.querySelector('#eFijos');
+  listaC.addEventListener('input', function (ev) {
+    var k = ev.target.dataset && ev.target.dataset.isla;
+    if (k == null || !centro[+k]) return;
+    centro[+k].nombre = ev.target.value;
+    vista();
+  });
+  /* Al tocar un botón de una lista, se suelta el campo que estaba escribiendo (si no, la lista no se vuelve a dibujar). */
+  function soltarFoco() { var a = document.activeElement; if (a && a.tagName === 'INPUT' && f.contains(a)) a.blur(); }
+  listaC.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-sacar], [data-suelta]');
+    if (!b) return;
+    soltarFoco();
+    if (b.dataset.sacar != null) centro.splice(+b.dataset.sacar, 1);
+    else if (centro[+b.dataset.suelta]) centro[+b.dataset.suelta].pos = null;
+    vista();
+  });
   /** "Centro 1", "Centro 2"…: el primer nombre libre para uno nuevo (después se cambia). */
   function nombreLibre() {
     for (var k = centro.length + 1; ; k++) {
@@ -1330,106 +1670,74 @@ function editarMapa(d) {
       if (!centro.some(function (c) { return c.nombre.trim().toLowerCase() === n.toLowerCase(); })) return n;
     }
   }
-  /** La lista del centro: su número, su nombre y "Sacar". */
-  function dibujarCentro() {
-    var total = PAREDES.reduce(function (s, p) { return s + leerForm().mapa[p[0]]; }, 0);
-    f.querySelector('#eIslas').innerHTML = centro.length ? centro.map(function (c, k) {
-      return '<div class="imp-isla"><b>' + (total + k + 1) + '</b><input maxlength="40" data-isla="' + k + '" value="' + esc(c.nombre) + '" placeholder="Mesa, exhibidor, perchero…" aria-label="Nombre del módulo del centro">' +
-        '<button type="button" class="boton chico" data-sacar="' + k + '">Sacar</button></div>';
-    }).join('') : '<p class="bajada">Todavía no hay módulos en el centro.</p>';
-  }
-  /* El depósito como va a quedar: los de antes (numerados seguidos si todavía eran "uno por sector") y los nuevos. */
-  var depAhora = numerado ? d.dep.slice() : d.dep.map(function (k, i) { return Object.assign({}, k, { numero: i + 1 }); });
-  /** Qué cambia al guardar: los números nuevos y los que se apagan. */
-  function cambios(x) {
-    var total = PAREDES.reduce(function (s, p) { return s + x.mapa[p[0]]; }, 0), hay = {}, hayDep = {}, nuevos = 0;
-    d.pared.forEach(function (k) { hay[k.numero] = true; });
-    depAhora.forEach(function (k) { hayDep[k.numero] = true; });
-    for (var n = 1; n <= total; n++) if (!hay[n]) nuevos++;
-    for (n = 1; n <= x.mapa.deposito; n++) if (!hayDep[n]) nuevos++;
-    nuevos += centro.filter(function (q) { return !q.id; }).length;
-    var apagan = d.pared.filter(function (k) { return k.numero > total; }).length +
-      depAhora.filter(function (k) { return k.numero > x.mapa.deposito; }).length +
-      d.islas.filter(function (i) { return !centro.some(function (c) { return c.id === i.id; }); }).length;
-    return { total: total, nuevos: nuevos, apagan: apagan };
-  }
-  function vista() {
-    var x = leerForm(), total = cambios(x).total;
-    var pared = [], ultimo = d.salon[0] ? d.salon[0].id : null;
-    for (var n = 1; n <= total; n++) {
-      var ex = d.pared.filter(function (k) { return k.numero === n; })[0];
-      if (ex) ultimo = ex.sector_id;
-      pared.push(ex || { id: 'nuevo' + n, numero: n, nombre: 'Módulo ' + n, sector_id: ultimo, isla: false });
-    }
-    var islas = centro.map(function (c, k) {
-      var ex = c.id && d.islas.filter(function (i) { return i.id === c.id; })[0];
-      return ex ? Object.assign({}, ex, { nombre: c.nombre.trim() || ex.nombre })
-                : { id: 'isla' + k, numero: 1000 + k, nombre: c.nombre.trim() || '?', isla: true, sector_id: d.salon[0] ? d.salon[0].id : null };
-    });
-    f.querySelectorAll('#eIslas .imp-isla b').forEach(function (b, k) { b.textContent = total + k + 1; });
-    var secDep = d.deposito[0] || { id: '__deposito', tipo: 'deposito', numero: 1, nombre: null };
-    var sectorDe = Object.assign({}, d.sectorDe);
-    sectorDe[secDep.id] = secDep;
-    var dep = [], ultDep = secDep.id;
-    for (n = 1; n <= x.mapa.deposito; n++) {
-      var exd = depAhora.filter(function (k) { return k.numero === n; })[0];
-      if (exd) ultDep = exd.sector_id;
-      dep.push(exd || { id: 'dnuevo' + n, numero: n, nombre: 'Depósito ' + n, sector_id: ultDep, isla: false });
-    }
-    var dv = Object.assign({}, d, { mapa: x.mapa, pared: pared, islas: islas, dep: dep, sectorDe: sectorDe });
-    f.querySelector('#eVista').innerHTML = svgMapa(dv, { vacios: true }) + svgDeposito(dv);
-    var c = cambios(x);
-    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' + (islas.length ? ', ' + islas.length + ' en el centro (del ' + (total + 1) + ' al ' + (total + islas.length) + ')' : '') +
-      ' y ' + x.mapa.deposito + ' en el depósito.' +
-      (c.nuevos ? ' Se crean ' + c.nuevos + ' (van al sector del anterior; después se reparten).' : '') +
-      (c.apagan ? ' Se apagan ' + c.apagan + ': no se borran, quedan sus fotos, y vuelven si los ponés de nuevo.' : '');
-  }
-  f.querySelectorAll('[data-pared], #eForma, #eFormaDep, #eDep').forEach(function (i) { i.addEventListener('input', vista); i.addEventListener('change', vista); });
-  var lista = f.querySelector('#eIslas');
-  lista.addEventListener('input', function (e) {
-    var k = e.target.dataset && e.target.dataset.isla;
-    if (k == null || !centro[+k]) return;
-    centro[+k].nombre = e.target.value;
-    vista();
-  });
-  lista.addEventListener('click', function (e) {
-    var b = e.target.closest && e.target.closest('[data-sacar]');
-    if (!b) return;
-    centro.splice(+b.dataset.sacar, 1);
-    dibujarCentro(); vista();
-  });
   f.querySelector('#eIslaMas').addEventListener('click', function () {
     if (centro.length >= 30) { avisar('Como mucho 30 en el centro.'); return; }
-    centro.push({ id: null, nombre: nombreLibre(), antes: null });
-    dibujarCentro(); vista();
-    var nuevo = lista.querySelector('[data-isla="' + (centro.length - 1) + '"]');
+    centro.push({ key: 'nueva' + (++nuevas), id: null, nombre: nombreLibre(), antes: null, pos: null });
+    vista();
+    var nuevo = listaC.querySelector('[data-isla="' + (centro.length - 1) + '"]');
     if (nuevo) { nuevo.focus(); nuevo.select(); }
   });
-  dibujarCentro();
+  listaF.addEventListener('input', function (ev) {
+    var k = ev.target.dataset && ev.target.dataset.fijoNombre;
+    if (k == null || !fijos[+k]) return;
+    fijos[+k].nombre = ev.target.value;
+    vista();
+  });
+  listaF.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-girar], [data-sacar-fijo]');
+    if (!b) return;
+    soltarFoco();
+    if (b.dataset.girar != null) { var x = fijos[+b.dataset.girar]; if (x) x.vertical = !x.vertical; }
+    else fijos.splice(+b.dataset.sacarFijo, 1);
+    vista();
+  });
+  f.querySelector('#eFijoMas').addEventListener('click', function () {
+    if (fijos.length >= 30) { avisar('Como mucho 30 cosas fijas.'); return; }
+    /* A un costado del medio: por el medio va la fila de los del centro. */
+    fijos.push({ nombre: 'Mostrador', x: 0.25, y: 0.5, vertical: false });
+    vista();
+    var nuevo = listaF.querySelector('[data-fijo-nombre="' + (fijos.length - 1) + '"]');
+    if (nuevo) { nuevo.focus(); nuevo.select(); }
+  });
   vista();
+
+  /* ── Guardar ── */
   unaVez(f.querySelector('#eGuardar'), function () {
-    var x = leerForm(), c = cambios(x), vistos = {};
-    for (var k = 0; k < x.islas.length; k++) {
-      var nom = x.islas[k], l = nom.toLowerCase();
-      if (!nom) { avisar('Ponele nombre al módulo ' + (c.total + k + 1) + ' (el del centro).'); return; }
+    var mm = mapaArmado(), total = VUELTA.reduce(function (s, w) { return s + mm[w]; }, 0), vistos = {}, c = cambios();
+    if (total > 100) { avisar('Entre todas las paredes, como mucho 100 módulos.'); return; }
+    var llena = VUELTA.filter(function (w) { return mm[w] > 40; })[0];
+    if (llena) { avisar(NOMBRE_PARED[llena] + ': como mucho 40 módulos por pared.'); return; }
+    var islas = centro.map(function (q) { return q.nombre.trim(); });
+    for (var k = 0; k < islas.length; k++) {
+      var nom = islas[k], l = nom.toLowerCase();
+      if (!nom) { avisar('Ponele nombre al módulo ' + (total + k + 1) + ' (el del centro).'); return; }
       if (vistos[l]) { avisar('Hay dos en el centro que se llaman "' + nom + '": cambiale el nombre a uno.'); return; }
       vistos[l] = true;
     }
+    if (fijos.some(function (x) { return !x.nombre.trim(); })) { avisar('Hay una cosa fija adentro sin nombre: escribí qué es o sacala.'); return; }
     /* Si sacás uno y le ponés su nombre a otro en la misma vez, la base no los distingue (van por nombre). */
     var choca = d.islas.filter(function (i) { return !centro.some(function (q) { return q.id === i.id; }) && vistos[i.nombre.trim().toLowerCase()]; })[0];
     if (choca) { avisar('"' + choca.nombre + '" lo estás sacando: guardá primero sin él y después usá ese nombre para otro.'); return; }
-    if (c.apagan && !confirm('Se apagan ' + c.apagan + (c.apagan === 1 ? ' módulo' : ' módulos') + ' (no se borran: quedan sus fotos). ¿Guardar igual?')) return;
-    /* A los que ya estaban y les cambiaste el nombre, primero el nombre: así siguen siendo los mismos (con su responsable y sus fotos). */
+    var ojo = [];
+    if (c.renumeran) ojo.push(c.renumeran + (c.renumeran === 1 ? ' módulo cambia' : ' módulos cambian') + ' de número. Siguen con su responsable y sus fotos; los vendedores los van a ver con el número nuevo.');
+    if (c.apagan) ojo.push('Se apagan ' + c.apagan + (c.apagan === 1 ? ' módulo' : ' módulos') + ' (no se borran: quedan sus fotos).');
+    if (ojo.length && !confirm(ojo.join('\n\n') + '\n\n¿Guardar igual?')) return;
+    var ordS = ordenEditable(st.salon).map(function (x) { return x.id; }), ordD = ordenEditable(st.deposito).map(function (x) { return x.id; });
+    /* A los del centro que les cambiaste el nombre, primero el nombre: así siguen siendo los mismos (con su responsable y sus fotos). */
     var renombrar = centro.filter(function (q) { return q.id && q.nombre.trim() !== q.antes; });
     return renombrar.reduce(function (p, q) {
       return p.then(function () {
         return llamar('orden_modulo_nombre', { p_modulo: q.id, p_nombre: q.nombre.trim() }).then(function () { q.antes = q.nombre.trim(); });
       });
     }, Promise.resolve()).then(function () {
-      return llamar('orden_mapa_guardar', { p_local: _local.id, p_mapa: x.mapa, p_islas: x.islas });
+      return llamar('orden_croquis_guardar', { p_local: _local.id, p_mapa: mm, p_islas: islas, p_orden_salon: ordS, p_orden_deposito: ordD, p_croquis: croquisArmado() })
+        .catch(function (e) {
+          if (/orden_croquis_guardar|PGRST202|could not find the function/i.test(String(e && e.message))) throw rechazo('Falta correr el SQL 112 en Supabase (está en el Escritorio, en "App Orden"). Hasta entonces no se puede guardar el croquis.');
+          throw e;
+        });
     }).then(function (r) {
       f.remove();
-      avisar('Mapa guardado' + (r && r.creados ? ': ' + r.creados + (r.creados === 1 ? ' módulo nuevo.' : ' módulos nuevos.') : '.'));
+      avisar('Croquis guardado' + (r && r.creados ? ': ' + r.creados + (r.creados === 1 ? ' módulo nuevo.' : ' módulos nuevos.') : '.'));
       verLocal();
     });
   });

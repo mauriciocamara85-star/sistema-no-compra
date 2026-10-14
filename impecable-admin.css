@@ -285,3 +285,13 @@
 .imp-video { display: block; width: 100%; max-height: 70vh; background: #000; border-radius: var(--r-sm); }
 .ventana .imp-mapa-vista .mapa-svg.deposito { height: auto; max-height: 230px; margin-top: 10px; }
 .imp .mapa-nombres { margin: 10px 0 0; font: 500 13px var(--sans); line-height: 1.5; color: var(--txt-2); }
+
+/* El croquis (SQL 112): grande para tocar cada lugar; lo del centro y lo fijo se arrastran. */
+.ventana .imp-mapa-vista.croquis .mapa-svg { height: auto; max-height: 76vh; }
+.ventana .imp-mapa-vista.croquis .mapa-svg.deposito { max-height: 60vh; margin-top: 0; }
+.ventana .mapa-toque { cursor: pointer; }
+.ventana .mapa-toque:hover { fill: rgba(198, 244, 50, .2); }
+.ventana .mapa-toque.arrastrable, .ventana .mapa-svg [data-fijo] { cursor: grab; touch-action: none; }
+.ventana .mapa-svg [data-puerta], .ventana .mapa-marca-puerta { cursor: pointer; }
+.imp-lugar-ops { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
+#eFijoMas { margin: 0 0 6px; }

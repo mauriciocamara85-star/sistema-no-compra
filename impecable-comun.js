@@ -520,58 +520,239 @@ function cajaModulo(d, op, m, r, etiqueta, sub) {
   return out + '</g>';
 }
 
-/** Los lugares de n módulos seguidos sobre una pared (de "desde" a "hasta"), de grosor P y con G de aire. */
-function tramoPared(lugares, n, horiz, fijo, desde, hasta, P, G) {
-  if (!n) return;
-  var paso = Math.abs(hasta - desde) / n, signo = hasta >= desde ? 1 : -1;
-  for (var i = 0; i < n; i++) {
-    var a = desde + signo * i * paso, lo = Math.min(a, a + signo * paso) + G / 2, tam = paso - G;
-    lugares.push(horiz ? { x: lo, y: fijo + G / 2, w: tam, h: P - G } : { x: fijo + G / 2, y: lo, w: P - G, h: tam });
-  }
+/* ════════════════════════════════════════════════════════════════════════
+   EL CROQUIS (SQL 112, pedido de Mauricio: "que quede muy parecido a lo
+   real"). Cada pared es una fila de lugares, en el sentido de la vuelta:
+   pared izquierda (de abajo arriba) → fondo (de izquierda a derecha) → pared
+   derecha (de arriba abajo) → frente (de derecha a izquierda). Un lugar es
+   un módulo ('m'), un módulo doble ('d': uno solo, el doble de ancho) o algo
+   que no es módulo ({ h: 'Probadores' }; sin nombre, un hueco). La puerta
+   va entre dos lugares ({ pared, pos }: antes del lugar pos). El 1 es el
+   primer módulo después de la puerta, siguiendo la vuelta ("desde la puerta
+   hacia la izquierda"). En el salón, además, lo del centro donde está (x, y
+   de 0 a 1 adentro) y las cosas fijas para ubicarse (mostrador, escalera).
+   Sin croquis guardado sale de la cantidad por pared, con la puerta en la
+   esquina de abajo a la izquierda: el 1 queda donde estaba siempre.
+   ════════════════════════════════════════════════════════════════════════ */
+
+var VUELTA = ['izquierda', 'fondo', 'derecha', 'frente'];
+function esModuloLugar(l) { return l === 'm' || l === 'd'; }
+function anchoLugar(l) { return l === 'd' ? 2 : 1; }
+function repetido(n, v) { var a = []; for (var i = 0; i < n; i++) a.push(v); return a; }
+function entre01(v) { v = +v; return isFinite(v) ? Math.max(0, Math.min(1, v)) : 0.5; }
+
+/** El croquis guardado, prolijo (lo raro se descarta). */
+function normalizarCroquis(g) {
+  var paredes = {};
+  VUELTA.forEach(function (w) {
+    paredes[w] = ((g.paredes || {})[w] || []).slice(0, 60).map(function (l) {
+      return l === 'd' ? 'd' : (l && typeof l === 'object') ? { h: String(l.h || '').slice(0, 40) } : 'm';
+    });
+  });
+  var pu = g.puerta && VUELTA.indexOf(g.puerta.pared) > -1
+    ? { pared: g.puerta.pared, pos: Math.max(0, Math.min(paredes[g.puerta.pared].length, Math.round(+g.puerta.pos) || 0)), virtual: !!g.puerta.virtual }
+    : { pared: 'frente', pos: paredes.frente.length, virtual: true };
+  var centro = {};
+  Object.keys(g.centro || {}).forEach(function (k) { var p = g.centro[k]; if (p) centro[String(k).toLowerCase()] = { x: entre01(p.x), y: entre01(p.y) }; });
+  var fijos = (g.fijos || []).slice(0, 30).map(function (f) { return { nombre: String((f && f.nombre) || '').slice(0, 40), x: entre01(f && f.x), y: entre01(f && f.y), vertical: !!(f && f.vertical) }; });
+  return { paredes: paredes, puerta: pu, centro: centro, fijos: fijos };
 }
 
-/** El salón, en SVG. op.vacios: los lugares sin módulo, punteados. */
+/** Cuántos módulos tiene un croquis (los dobles cuentan uno). */
+function modulosDeCroquis(cq) {
+  return VUELTA.reduce(function (s, w) { return s + cq.paredes[w].filter(esModuloLugar).length; }, 0);
+}
+
+/** El croquis del salón o del depósito: el guardado (si coincide con la cantidad de módulos) o el de siempre. */
+function croquisDe(d, tipo) {
+  var mm = (d && d.mapa) || {};
+  var g = mm.croquis && mm.croquis[tipo];
+  var esperado = tipo === 'deposito' ? (d.dep || []).length : totalParedes(d);
+  if (g && g.paredes) {
+    var cq = normalizarCroquis(g);
+    /* Si alguien cambió la cantidad con una versión vieja de la administración, el croquis ya no sirve. */
+    if (modulosDeCroquis(cq) === esperado) return cq;
+  }
+  var c = { izquierda: 0, fondo: 0, derecha: 0, frente: 0 };
+  if (tipo === 'deposito') {
+    var p = paredesDeposito(esperado, mm.forma_deposito === 'cuadrado');   // [arriba, derecha, abajo, izquierda]
+    c = { izquierda: p[3], fondo: p[0], derecha: p[1], frente: p[2] };
+  } else {
+    PAREDES.forEach(function (x) { c[x[0]] = Math.max(0, +mm[x[0]] || 0); });
+  }
+  var paredes = {};
+  VUELTA.forEach(function (w) { paredes[w] = repetido(c[w], 'm'); });
+  /* La puerta de siempre (abajo a la izquierda) no se dibuja: sólo marca desde dónde se numera, hasta que la pongan donde está. */
+  return { paredes: paredes, puerta: { pared: 'frente', pos: c.frente, virtual: true }, centro: {}, fijos: [] };
+}
+
+/** Los módulos de las paredes en el orden de los números: el 1 es el primero después de la puerta. */
+function ordenCroquis(cq) {
+  var todos = [], inicio = 0;
+  VUELTA.forEach(function (w) {
+    cq.paredes[w].forEach(function (l, i) {
+      if (cq.puerta && w === cq.puerta.pared && i === cq.puerta.pos) inicio = todos.length;
+      todos.push({ pared: w, i: i, l: l });
+    });
+    if (cq.puerta && w === cq.puerta.pared && cq.puerta.pos >= cq.paredes[w].length) inicio = todos.length;
+  });
+  return todos.slice(inicio).concat(todos.slice(0, inicio)).filter(function (x) { return esModuloLugar(x.l); });
+}
+
+function sinPuerta(cq) { return Object.assign({}, cq, { puerta: null }); }
+
+/** Dónde va cada lugar (y la puerta) en el rectángulo x0..x1 × y0..y1, con paredes de grosor P y G de aire. */
+function geometriaCroquis(cq, x0, y0, x1, y1, P, G) {
+  if (cq.puerta && cq.puerta.virtual) cq = sinPuerta(cq);   // la de siempre no ocupa lugar ni se dibuja
+  var u = {};
+  VUELTA.forEach(function (w) {
+    u[w] = cq.paredes[w].reduce(function (s, l) { return s + anchoLugar(l); }, 0) + (cq.puerta && cq.puerta.pared === w ? 1 : 0);
+  });
+  var arriba = u.fondo ? y0 + P : y0, abajo = u.frente ? y1 - P : y1;
+  var izq = u.izquierda ? x0 + P : x0, der = u.derecha ? x1 - P : x1;
+  var tramos = {
+    izquierda: { horiz: false, fijo: x0, desde: abajo, hasta: arriba },
+    fondo: { horiz: true, fijo: y0, desde: x0, hasta: x1 },
+    derecha: { horiz: false, fijo: x1 - P, desde: arriba, hasta: abajo },
+    frente: { horiz: true, fijo: y1 - P, desde: der, hasta: izq }
+  };
+  var lugares = {}, puerta = null;
+  VUELTA.forEach(function (w) {
+    lugares[w] = [];
+    if (!u[w]) return;
+    var t = tramos[w], paso = Math.abs(t.hasta - t.desde) / u[w], signo = t.hasta >= t.desde ? 1 : -1, k = 0;
+    function caja(n) {
+      var a = t.desde + signo * k * paso, b = t.desde + signo * (k + n) * paso, lo = Math.min(a, b) + G / 2, tam = n * paso - G;
+      k += n;
+      return t.horiz ? { x: lo, y: t.fijo + G / 2, w: tam, h: P - G } : { x: t.fijo + G / 2, y: lo, w: P - G, h: tam };
+    }
+    cq.paredes[w].forEach(function (l, i) {
+      if (cq.puerta && cq.puerta.pared === w && cq.puerta.pos === i) puerta = { pared: w, r: caja(1) };
+      lugares[w].push(caja(anchoLugar(l)));
+    });
+    if (cq.puerta && cq.puerta.pared === w && cq.puerta.pos >= cq.paredes[w].length) puerta = { pared: w, r: caja(1) };
+  });
+  return { lugares: lugares, puerta: puerta, adentro: { x0: izq, y0: arriba, x1: der, y1: abajo }, tramos: tramos, G: G };
+}
+
+/** Un lugar que no es módulo: con nombre (probadores, columna), gris; sin nombre, un hueco punteado. */
+function cajaFija(r, texto, attrs) {
+  var parado = r.h > r.w * 1.2, cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  var out = '<g class="mapa-fijo"' + (attrs || '') + '><rect x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) + '" rx="7" ' +
+    (texto ? 'fill="currentColor" fill-opacity=".13" stroke="currentColor" stroke-opacity=".35"' : 'fill="none" stroke="currentColor" stroke-opacity=".35" stroke-dasharray="3 4"') + '/>';
+  if (texto) {
+    out += parado
+      ? '<text transform="translate(' + cx.toFixed(1) + ',' + cy.toFixed(1) + ') rotate(-90)" text-anchor="middle" dy="3.5" font-size="10" font-weight="600" fill="currentColor" fill-opacity=".8">' + esc(recortar(texto, Math.max(3, Math.floor(r.h / 6.4)))) + '</text>'
+      : '<text x="' + cx.toFixed(1) + '" y="' + (cy + 3.5).toFixed(1) + '" text-anchor="middle" font-size="10.5" font-weight="600" fill="currentColor" fill-opacity=".8">' + esc(recortar(texto, Math.max(3, Math.floor(r.w / 6.2)))) + '</text>';
+  }
+  return out + '</g>';
+}
+
+/** La puerta: un lugar marcado en verde lima, con "Entrada" (o "Puerta"). */
+function dibujoPuerta(p, texto, attrs) {
+  var r = p.r, parado = p.pared === 'izquierda' || p.pared === 'derecha', cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  return '<g class="mapa-puerta"' + (attrs || '') + '><rect x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) + '" rx="7" fill="#C6F432" fill-opacity=".22" stroke="#9BC21F" stroke-dasharray="5 3"/>' +
+    (parado ? '<text transform="translate(' + cx.toFixed(1) + ',' + cy.toFixed(1) + ') rotate(-90)" text-anchor="middle" dy="4" font-size="11" font-weight="700" fill="currentColor">' + esc(texto) + '</text>'
+            : '<text x="' + cx.toFixed(1) + '" y="' + (cy + 4).toFixed(1) + '" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor">' + esc(texto) + '</text>') + '</g>';
+}
+
+/** Dónde puede ir la puerta (para "Mover la puerta"): entre cada dos lugares y en las puntas de cada pared con lugares. */
+function marcasPuerta(cq, geo, tipo) {
+  var out = '';
+  VUELTA.forEach(function (w) {
+    var ls = geo.lugares[w];
+    if (!ls.length) return;
+    var t = geo.tramos[w], signo = t.hasta >= t.desde ? 1 : -1, G = geo.G;
+    for (var p = 0; p <= ls.length; p++) {
+      var r = ls[Math.min(p, ls.length - 1)], fin = p === ls.length, x, y;
+      if (t.horiz) {
+        var empieza = signo > 0 ? r.x - G / 2 : r.x + r.w + G / 2, termina = signo > 0 ? r.x + r.w + G / 2 : r.x - G / 2;
+        x = fin ? termina : empieza; y = r.y + r.h / 2;
+      } else {
+        var empiezaY = signo > 0 ? r.y - G / 2 : r.y + r.h + G / 2, terminaY = signo > 0 ? r.y + r.h + G / 2 : r.y - G / 2;
+        y = fin ? terminaY : empiezaY; x = r.x + r.w / 2;
+      }
+      out += '<g class="mapa-marca-puerta" data-hueco-puerta="' + tipo + ':' + w + ':' + p + '"><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="13" fill="#C6F432" stroke="#111" stroke-width="1.5"/>' +
+        '<text x="' + x.toFixed(1) + '" y="' + (y + 5).toFixed(1) + '" text-anchor="middle" font-size="15" font-weight="800" fill="#111">+</text></g>';
+    }
+  });
+  return out;
+}
+
+/** Los lugares de las paredes: cada módulo en el suyo (por número, desde la puerta), lo que no es módulo y la
+    puerta. op.vacios: los lugares sin módulo, punteados y con el número que les toca; op.editable: se tocan. */
+function dibujarParedes(d, op, cq, geo, tipo, mods, etiqueta, sub) {
+  var orden = ordenCroquis(cq), dueno = [], sobran = [], num = {}, out = '';
+  mods.forEach(function (m) { var k = m.numero - 1; if (k >= 0 && k < orden.length && !dueno[k]) dueno[k] = m; else sobran.push(m); });
+  orden.forEach(function (x, k) { num[x.pared + ':' + x.i] = k; });
+  VUELTA.forEach(function (w) {
+    cq.paredes[w].forEach(function (l, i) {
+      var r = geo.lugares[w][i];
+      if (!r) return;
+      if (esModuloLugar(l)) {
+        var k = num[w + ':' + i], m = dueno[k];
+        if (m) out += cajaModulo(d, op, m, r, etiqueta(m), sub(m));
+        else if (op.vacios) {
+          out += '<g class="mapa-vacio"><rect x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) +
+            '" rx="7" fill="none" stroke="currentColor" stroke-opacity=".45" stroke-dasharray="4 3"/><text x="' + (r.x + r.w / 2).toFixed(1) + '" y="' + (r.y + r.h / 2 + 4).toFixed(1) +
+            '" text-anchor="middle" font-size="12" font-weight="700" fill="currentColor" fill-opacity=".6">' + (k + 1) + '</text></g>';
+        }
+      } else out += cajaFija(r, l.h);
+      if (op.editable) out += '<rect class="mapa-toque" data-lugar="' + tipo + ':' + w + ':' + i + '" x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) + '" width="' + Math.max(4, r.w).toFixed(1) + '" height="' + Math.max(4, r.h).toFixed(1) + '" fill="transparent"/>';
+    });
+  });
+  if (geo.puerta) out += dibujoPuerta(geo.puerta, tipo === 'deposito' ? 'Puerta' : 'Entrada', op.editable ? ' data-puerta="' + tipo + '"' : '');
+  if (op.moverPuerta === tipo) out += marcasPuerta(cq, geo, tipo);
+  return { svg: out, sobran: sobran };
+}
+
+/** Lo de adentro del salón: las cosas fijas (para ubicarse) y los módulos del centro, cada uno donde lo
+    pusieron; los que todavía no tienen lugar, en fila por el medio (de la caja hacia la vidriera). */
+function dibujarCentro(d, op, cq, geo, sobran) {
+  var a = geo.adentro, mx = 14, out = '';
+  var ax0 = a.x0 + mx, ay0 = a.y0 + mx, aw = Math.max(40, a.x1 - a.x0 - 2 * mx), ah = Math.max(40, a.y1 - a.y0 - 2 * mx);
+  (cq.fijos || []).forEach(function (f, k) {
+    var w = f.vertical ? 34 : 110, h = f.vertical ? 110 : 34, cx = ax0 + f.x * aw, cy = ay0 + f.y * ah;
+    out += cajaFija({ x: cx - w / 2, y: cy - h / 2, w: w, h: h }, f.nombre || 'Fijo', op.editable ? ' data-fijo="' + k + '"' : '');
+  });
+  var libres = [];
+  function toque(m, r) {
+    return op.editable && m.isla ? '<rect class="mapa-toque arrastrable" data-centro="' + esc(String(m.nombre || '').toLowerCase()) + '" x="' + r.x.toFixed(1) + '" y="' + r.y.toFixed(1) +
+      '" width="' + r.w.toFixed(1) + '" height="' + r.h.toFixed(1) + '" fill="transparent"/>' : '';
+  }
+  d.islas.forEach(function (m) {
+    var pos = (cq.centro || {})[String(m.nombre || '').toLowerCase()];
+    if (!pos) { libres.push(m); return; }
+    var cx = ax0 + pos.x * aw, cy = ay0 + pos.y * ah, r = { x: cx - 23, y: cy - 35, w: 46, h: 70 };
+    out += cajaModulo(d, op, m, r, String(numeroVista(d, m) || ''), m.nombre) + toque(m, r);
+  });
+  var fila = libres.concat(sobran);
+  if (fila.length) {
+    var iy0 = a.y0 + 14, iy1 = a.y1 - 14, paso = Math.max(20, (iy1 - iy0) / fila.length);
+    var alto = Math.max(16, Math.min(paso - 14, 96)), ancho = Math.min(46, alto / 1.35), medio = (a.x0 + a.x1) / 2;
+    fila.forEach(function (m, k) {
+      var r = { x: medio - ancho / 2, y: iy0 + k * paso + (paso - alto) / 2, w: ancho, h: alto };
+      out += (m.isla ? cajaModulo(d, op, m, r, String(numeroVista(d, m) || ''), m.nombre) : cajaModulo(d, op, m, r, String(m.numero))) + toque(m, r);
+    });
+  }
+  return { svg: out, caja: [ax0, ay0, aw, ah] };
+}
+
+/** El salón, en SVG. op.vacios, op.editable, op.croquis (el que se está armando), op.moverPuerta ('salon'). */
 function svgMapa(d, op) {
   op = op || {};
   var cuadrado = (d.mapa || {}).forma === 'cuadrado';
   var W = cuadrado ? 600 : 520, H = cuadrado ? 560 : 700, M = 16, P = 50, G = 5, ABAJO = 28;
   op = Object.assign({}, op, { _mitad: W / 2 });
-  var c = {};
-  PAREDES.forEach(function (p) { c[p[0]] = Math.max(0, +(d.mapa || {})[p[0]] || 0); });
+  var cq = op.croquis ? op.croquis.salon : croquisDe(d, 'salon');
   var x0 = M, y0 = M, x1 = W - M, y1 = H - M - ABAJO;
-  var arriba = c.fondo ? y0 + P : y0, abajo = c.frente ? y1 - P : y1;
-  var lugares = [];
-  function tramo(n, horiz, fijo, desde, hasta) { tramoPared(lugares, n, horiz, fijo, desde, hasta, P, G); }
-  tramo(c.izquierda, false, x0, abajo, arriba);                                            // de la entrada al fondo
-  tramo(c.fondo, true, y0, x0, x1);                                                         // de izquierda a derecha
-  tramo(c.derecha, false, x1 - P, arriba, abajo);                                           // del fondo a la entrada
-  tramo(c.frente, true, y1 - P, x1 - (c.derecha ? P : 0), x0 + (c.izquierda ? P : 0));      // de derecha a izquierda
+  var geo = geometriaCroquis(op.moverPuerta === 'salon' ? sinPuerta(cq) : cq, x0, y0, x1, y1, P, G);
   var out = '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + (y1 - y0) + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>' +
-    '<text x="' + (W / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" fill-opacity=".75">▲ Entrada · vidriera</text>';
-  /* Cada módulo va a su lugar por número (si uno está apagado, queda el hueco). */
-  var enPared = [], sobran = [];
-  d.pared.forEach(function (m) {
-    var k = m.numero - 1;
-    if (k >= 0 && k < lugares.length && !enPared[k]) enPared[k] = m; else sobran.push(m);
-  });
-  lugares.forEach(function (v, j) {
-    if (enPared[j]) out += cajaModulo(d, op, enPared[j], v, String(enPared[j].numero), nombrePropio(enPared[j]));
-    else if (op.vacios) out += '<rect x="' + v.x.toFixed(1) + '" y="' + v.y.toFixed(1) + '" width="' + Math.max(4, v.w).toFixed(1) + '" height="' + Math.max(4, v.h).toFixed(1) + '" rx="7" fill="none" stroke="currentColor" stroke-opacity=".4" stroke-dasharray="4 3"/>';
-  });
-  /* Los del centro (exhibidores, mesas, percheros): en una sola fila por el medio del salón, de la caja
-     (atrás) hacia la vidriera, parados y uno por lugar, con su número (a continuación de las paredes) y su
-     nombre. Al final, los de las paredes que no entraron. */
-  var adentro = d.islas.concat(sobran);
-  if (adentro.length) {
-    var iy0 = arriba + 14, iy1 = abajo - 14, paso = Math.max(20, (iy1 - iy0) / adentro.length);
-    var alto = Math.max(16, Math.min(paso - 14, 96)), ancho = Math.min(46, alto / 1.35);
-    var medio = (x0 + (c.izquierda ? P : 0) + x1 - (c.derecha ? P : 0)) / 2;
-    adentro.forEach(function (m, k) {
-      var r = { x: medio - ancho / 2, y: iy0 + k * paso + (paso - alto) / 2, w: ancho, h: alto };
-      out += m.isla ? cajaModulo(d, op, m, r, String(numeroVista(d, m) || ''), m.nombre) : cajaModulo(d, op, m, r, String(m.numero));
-    });
-  }
-  return '<svg class="mapa-svg' + (cuadrado ? ' cuadrado' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El salón, visto desde arriba">' + out + '</svg>';
+    '<text x="' + (W / 2) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="13" font-weight="600" fill="currentColor" fill-opacity=".75">Frente · vidriera</text>';
+  var p = dibujarParedes(d, op, cq, geo, 'salon', d.pared, function (m) { return String(m.numero); }, nombrePropio);
+  var c = dibujarCentro(d, op, cq, geo, p.sobran);
+  return '<svg class="mapa-svg' + (cuadrado ? ' cuadrado' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" data-adentro="' + c.caja.map(function (v) { return v.toFixed(1); }).join(' ') +
+    '" role="img" aria-label="El salón, visto desde arriba">' + out + c.svg + p.svg + '</svg>';
 }
 
 /** Cuántos módulos del depósito van en cada pared: [arriba, derecha, abajo, izquierda]. Siempre alrededor:
@@ -585,29 +766,25 @@ function paredesDeposito(n, cuadrado) {
   return [Math.ceil(resto / 2), lado, Math.floor(resto / 2), lado];
 }
 
-/** El depósito: aparte, con los módulos alrededor, contra las paredes, y el medio libre. Se numeran
-    dando la vuelta desde arriba a la izquierda: arriba → derecha → abajo → izquierda. */
+/** El depósito: aparte, con los módulos alrededor, contra las paredes, y el medio libre. Se numeran desde la
+    puerta, hacia la izquierda, dando la vuelta (como el salón). */
 function svgDeposito(d, op) {
-  if (!d.dep.length) return '';
+  op = op || {};
+  var cq = op.croquis ? op.croquis.deposito : croquisDe(d, 'deposito');
+  if (!d.dep.length && !modulosDeCroquis(cq)) return '';
   /* La forma: largo o cuadrado. Numerado 1, 2, 3… desde el SQL 102; antes, uno por sector. */
-  var n = d.dep.length, cuadrado = (d.mapa || {}).forma_deposito === 'cuadrado', numerado = depositoNumerado(d);
+  var cuadrado = (d.mapa || {}).forma_deposito === 'cuadrado', numerado = depositoNumerado(d);
   var W = 420, M = 12, T = 30, P = 64, G = 6, alto = cuadrado ? W - 2 * M : 250, H = T + alto + M;
-  op = Object.assign({}, op || {}, { _mitad: W / 2 });
-  var c = paredesDeposito(n, cuadrado), lugares = [];
+  op = Object.assign({}, op, { _mitad: W / 2 });
   var x0 = M, y0 = T, x1 = W - M, y1 = T + alto;
-  var arriba = c[0] ? y0 + P : y0, abajo = c[2] ? y1 - P : y1;
-  tramoPared(lugares, c[0], true, y0, x0, x1, P, G);              // arriba, de izquierda a derecha
-  tramoPared(lugares, c[1], false, x1 - P, arriba, abajo, P, G);  // derecha, de arriba abajo
-  tramoPared(lugares, c[2], true, y1 - P, x1, x0, P, G);          // abajo, de derecha a izquierda
-  tramoPared(lugares, c[3], false, x0, abajo, arriba, P, G);      // izquierda, de abajo arriba
+  var geo = geometriaCroquis(op.moverPuerta === 'deposito' ? sinPuerta(cq) : cq, x0, y0, x1, y1, P, G);
   var out = '<text x="' + M + '" y="20" font-size="14" font-weight="700" fill="currentColor" fill-opacity=".8">Depósito</text>' +
     '<rect x="' + x0 + '" y="' + y0 + '" width="' + (x1 - x0) + '" height="' + alto + '" rx="10" fill="none" stroke="currentColor" stroke-opacity=".35" stroke-width="2"/>';
-  d.dep.forEach(function (m, k) {
-    var s = d.sectorDe[m.sector_id];
-    var sub = (numerado && nombrePropio(m)) || s.nombre || '';
-    out += cajaModulo(d, op, m, lugares[k], numerado ? String(m.numero) : 'Sector ' + s.numero, sub);
-  });
-  return '<svg class="mapa-svg deposito" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El depósito">' + out + '</svg>';
+  var mods = numerado ? d.dep : d.dep.map(function (m, i) { return Object.assign({}, m, { numero: i + 1 }); });
+  var p = dibujarParedes(d, op, cq, geo, 'deposito', mods,
+    function (m) { return numerado ? String(m.numero) : 'Sector ' + d.sectorDe[m.sector_id].numero; },
+    function (m) { var s = d.sectorDe[m.sector_id]; return (numerado && nombrePropio(m)) || (s && s.nombre) || ''; });
+  return '<svg class="mapa-svg deposito" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="El depósito">' + out + p.svg + '</svg>';
 }
 
 /** Los módulos con nombre, enteros: en las paredes de costado se ven cortados ("Vidri…"). */
