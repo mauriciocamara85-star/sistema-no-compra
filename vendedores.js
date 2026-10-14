@@ -444,17 +444,26 @@ function pantallaPin(local, persona, extra) {
 /* El PIN de 4 de antes por uno de 6 (admin, Atención y gerencia, SQL 110).
    Justo después de entrar, con el PIN que acaba de poner; si abre la app
    con la sesión guardada, primero le pide el de ahora (así nadie que se
-   siente en una PC donde quedó adentro se lo puede cambiar). No se puede
-   saltear: si cierra la app, se lo vuelve a pedir al abrirla. */
+   siente en una PC donde quedó adentro se lo puede cambiar). Si cierra la
+   app, se lo vuelve a pedir al abrirla.
+   Por ahora se puede dejar para más adelante (PIN_SEIS_OPCIONAL): el No
+   Compra publicado todavía tiene el teclado de 4, y con el PIN de 6 no
+   podría entrar ahí (la base sigue aceptando el de 4 mientras no lo cambie).
+   Cuando la otra sesión publique su entrada de 6, se pone en false. */
+var PIN_SEIS_OPCIONAL = true;
 function pantallaCambiarPin(despues, actual, largoActual) {
   barra.hidden = true;
   app.className = 'app';
   var paso = actual ? 'nuevo' : 'actual';   // actual → nuevo → repetir
   var largo = paso === 'actual' ? (largoActual || 4) : 6, pin = '', primero = null, ocupado = false;
   function armar() {
-    app.innerHTML = '<p class="marca"><b>Equipo</b> VDH</p><h1 id="tituloPin"></h1><p class="bajada" id="bajadaPin"></p>' + tecladoPin(largo);
+    app.innerHTML = '<p class="marca"><b>Equipo</b> VDH</p><h1 id="tituloPin"></h1><p class="bajada" id="bajadaPin"></p>' + tecladoPin(largo) +
+      (PIN_SEIS_OPCIONAL ? '<button class="enlace" id="pinLuego" style="display:block;margin:14px auto 0">Cambiarlo más adelante (sigo con el de 4)</button>' : '');
     enganchar();
     textos();
+    var luego = document.getElementById('pinLuego');
+    /* Sigue con el de 4; en esta vez no se lo vuelve a pedir. */
+    if (luego) luego.onclick = function () { if (ocupado) return; _pinRevisado = yo().id; despues(); };
   }
   function textos() {
     document.getElementById('tituloPin').textContent = paso === 'actual' ? 'Tu PIN ahora es de 6 números' : paso === 'nuevo' ? 'Elegí tu PIN nuevo' : 'Repetí tu PIN nuevo';
