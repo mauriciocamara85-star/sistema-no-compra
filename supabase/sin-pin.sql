@@ -23,6 +23,10 @@
 --
 -- El PIN compartido sigue andando hasta el SQL 109, que lo apaga con un
 -- ajuste (pin_compartido = 'no'). Se vuelve a prender poniéndolo en 'si'.
+--
+-- El 107 va DESPUÉS del SQL 110 de Equipo VDH (el PIN de 6 números para
+-- Administración, Atención y Gerencia): usa su orden_pin_digitos y la
+-- columna orden_pins.digitos.
 
 
 -- ─────────────────────────── PARTE 107 (13/10/2026) ───────────────────────────
@@ -38,7 +42,11 @@
 --      de alguien que se anotó solo y todavía no está aprobado.
 --   3. nc_yo devuelve también el nombre de pila: es el "¿Quién sos?" del CRM
 --      ("Ale", "Lau"), igual que el de la lista de Atención, para que sus
---      números sigan.
+--      números sigan. Que esté 'pila' es también la señal para las pantallas
+--      de que este SQL ya corrió (recién ahí mandan la marca 'sesion').
+--   4. La lista para entrar dice cuántos números tiene el PIN de cada uno
+--      ('digitos', SQL 110): 6 para la oficina, 4 para los locales; el que
+--      todavía tiene uno de 4 de antes, 4 (y al entrar lo cambia).
 --
 -- Para deshacerlo: pin_ok y soy_de_adentro vuelven con su versión de antes
 -- (pin.sql y beneficios-acciones.sql); nc_yo, con la de personas.sql.
@@ -163,9 +171,25 @@ returns jsonb language sql stable security definer set search_path = public as $
    limit 1
 $$;
 
+/* ═══ 5. La lista para entrar, con el largo del PIN (SQL 110) ═════════════
+   La misma regla que orden_login_personas: el que ya tiene PIN, con los
+   números de su PIN (los de antes, 4); el que lo crea, con los de su rol. */
+create or replace function nc_login_personas(p_local uuid default null)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial),
+                                               'nuevo', k.hash is null,
+                                               'pide_apellido', k.hash is null and nullif(trim(coalesce(p.apellido, '')), '') is null,
+                                               'digitos', case when k.hash is null then orden_pin_digitos(p.rol) else coalesce(k.digitos, 4) end)
+                            order by p.nombre, p.apellido), '[]'::jsonb)
+  from orden_personas p join orden_pins k on k.persona_id = p.id
+  where p.activo and p.local_id is not distinct from p_local
+$$;
+
 /* ═══ Permisos ═══════════════════════════════════════════════════════════ */
 do $$
 begin
+  revoke all on function nc_login_personas(uuid) from public;
+  grant execute on function nc_login_personas(uuid) to anon, authenticated;
   revoke all on function nc_es_oficina() from public, anon, authenticated;
   revoke all on function nc_persona_oficina(uuid) from public, anon, authenticated;
   grant execute on function nc_es_oficina() to service_role;
@@ -193,9 +217,10 @@ select 'listo: la persona en lugar del PIN (SQL 107)' as "SQL 107";
 --      (sin gastar intentos). La persona que entró con su usuario sigue.
 --   2. Borrar el PIN de alguien (Usuarios) usa orden_pin_reiniciar de
 --      Equipo VDH, que también pone en cero su freno nuevo.
---   3. Cambiar a alguien de rol, si el largo de su PIN cambia (4 números
---      para vendedor y encargado, 6 para Administración, Atención y
---      Gerencia), le borra el PIN: lo crea de nuevo al entrar.
+--
+-- Cambiar a alguien de rol NO le borra el PIN (como el 110: no se borra
+-- ningún PIN). Si el rol nuevo pide 6 números y el suyo es de 4, al entrar
+-- se lo piden cambiar en el momento.
 --
 -- Para deshacerlo (volver a prender el PIN compartido):
 --   update ajustes set valor = 'si' where clave = 'pin_compartido';
@@ -225,64 +250,10 @@ begin
   return jsonb_build_object('ok', true);
 end $$;
 
-/* ═══ 3. Cambiar de rol: si cambia el largo del PIN, se borra ════════════ */
-create or replace function nc_largo_pin(p_rol text)
-returns integer language sql immutable as $$
-  select case when p_rol in ('admin', 'atencion', 'gerencia') then 6 else 4 end
-$$;
-
-create or replace function nc_usuario_cambiar(p_persona uuid, p_rol text, p_local uuid default null)
-returns jsonb language plpgsql volatile security definer set search_path = public as $$
-declare yo orden_personas := nc_quien_maneja(); p orden_personas; v_rol orden_rol; v_local uuid := p_local;
-        v_rol_antes text;
-begin
-  if yo.id is null or yo.rol <> 'admin' then
-    return jsonb_build_object('ok', false, 'porque', 'El rol y el local los cambia el administrador.');
-  end if;
-  select * into p from orden_personas where id = p_persona for update;
-  if not found then return jsonb_build_object('ok', false, 'porque', 'No encontramos a esa persona.'); end if;
-  if coalesce(p_rol, '') not in ('vendedor', 'supervisor', 'atencion', 'admin', 'gerencia') then
-    return jsonb_build_object('ok', false, 'porque', 'Elegí el rol.');
-  end if;
-  v_rol := p_rol::orden_rol;
-  v_rol_antes := p.rol::text;
-  if p.id = yo.id and v_rol <> 'admin' then
-    return jsonb_build_object('ok', false, 'porque', 'No podés sacarte a vos mismo el rol de administrador: pedíselo a otro administrador.');
-  end if;
-  if p_rol in ('atencion', 'admin') then v_local := null; end if;
-  if v_rol in ('vendedor', 'supervisor') and v_local is null then
-    return jsonb_build_object('ok', false, 'porque', 'Elegí el local.');
-  end if;
-  if v_local is not null and not exists (select 1 from orden_locales where id = v_local and activo) then
-    return jsonb_build_object('ok', false, 'porque', 'Ese local no está en la lista.');
-  end if;
-
-  /* Si se muda de local, su fila de la Carga se va con él: la vieja deja
-     de aparecer en el otro local y la nueva se crea (o se reactiva). */
-  if v_local is distinct from p.local_id and p.equipo_id is not null then
-    update equipo set activo = false where id = p.equipo_id;
-    update orden_personas set equipo_id = null where id = p.id;
-  end if;
-  update orden_personas set rol = v_rol, local_id = v_local where id = p.id returning * into p;
-  if p.rol = 'vendedor' and p.local_id is not null and p.aprobado and p.activo and p.equipo_id is null then
-    perform nc_equipo_poner(p.id);
-  end if;
-  /* SQL 109: el PIN de 4 no sirve para un rol que pide 6 (y al revés). */
-  if nc_largo_pin(v_rol_antes) <> nc_largo_pin(p_rol) then
-    insert into orden_pins (persona_id, hash) values (p.id, null) on conflict (persona_id) do nothing;
-    perform orden_pin_reiniciar(p.id);
-    return jsonb_build_object('ok', true, 'pin_borrado', true);
-  end if;
-  return jsonb_build_object('ok', true);
-end $$;
-
 do $$
 begin
   revoke all on function nc_usuario_pin_borrar(uuid) from public, anon;
-  revoke all on function nc_usuario_cambiar(uuid, text, uuid) from public, anon;
-  revoke all on function nc_largo_pin(text) from public, anon, authenticated;
   grant execute on function nc_usuario_pin_borrar(uuid) to authenticated;
-  grant execute on function nc_usuario_cambiar(uuid, text, uuid) to authenticated;
 end $$;
 
 select 'listo: el PIN compartido apagado (SQL 109)' as "SQL 109";

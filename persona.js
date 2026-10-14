@@ -177,11 +177,15 @@ var persona = (function () {
      QUIÉN SOY (lo pregunta cada pantalla: el rol pudo cambiar)
      ════════════════════════════════════════════════════════════════════ */
 
+  var _pidioSinPila = false, _recargado = false;
   function fijarYo(y) {
     var antes = rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado);
     _yo = y;
     guardarLS(K_YO, y && !y.provisorio ? y : null);
     marcar();
+    /* La pantalla ya preguntó por la marca y no la tuvo (faltaba 'pila'):
+       ahora que la base contestó, se rearma una vez. */
+    if (_pidioSinPila && !_recargado && oficina() && _yo && _yo.pila) { _recargado = true; location.reload(); return; }
     if (antes !== rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado)) {
       pintarBarra();
       revisarAcceso();
@@ -482,27 +486,32 @@ var persona = (function () {
     c.querySelector('#ncp_nombre').focus();
   }
 
+  /* Los puntos del PIN: 4 o 6 (SQL 110: 6 para Administración, Atención y
+     Gerencia; la lista dice cuántos tiene el de cada uno). */
+  function puntosDe(largo) { return '<div class="ncp-puntos" data-puntos>' + new Array(largo + 1).join('<i></i>') + '</div>'; }
+  var TECLADO = '<div class="ncp-teclado">' +
+      [1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) { return '<button type="button" data-n="' + n + '">' + n + '</button>'; }).join('') +
+      '<span></span><button type="button" data-n="0">0</button>' +
+      '<button type="button" data-n="x" aria-label="Borrar">⌫</button>' +
+    '</div>';
+
   function pasoPin(c, local, p, extra) {
     var pin = '', ocupado = false, crear = !!p.nuevo, primero = null;
+    var largo = extra.alta ? 4 : (Number(p.digitos) === 6 ? 6 : 4);
     var nom = primerNombre(p.nombre);
     c.innerHTML = '<button type="button" class="ncp-volver" data-volver>‹ ' + (extra.alta ? 'Volver' : 'No soy ' + txt(nom)) + '</button>' +
       '<h2 id="ncpTit"></h2><p class="ncp-bajada" data-bajada></p>' +
-      '<div class="ncp-puntos" data-puntos><i></i><i></i><i></i><i></i></div>' +
-      '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' +
-      '<div class="ncp-teclado">' +
-        [1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (n) { return '<button type="button" data-n="' + n + '">' + n + '</button>'; }).join('') +
-        '<span></span><button type="button" data-n="0">0</button>' +
-        '<button type="button" data-n="x" aria-label="Borrar">⌫</button>' +
-      '</div>';
+      puntosDe(largo) +
+      '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' + TECLADO;
     c.querySelector('[data-volver]').onclick = function () { if (extra.alta) pasoAlta(c, local); else pasoPersonas(c, local); };
     var puntos = c.querySelector('[data-puntos]'), aviso = c.querySelector('[data-aviso]');
     var botones = c.querySelectorAll('.ncp-teclado [data-n]');
 
     function textos() {
       c.querySelector('#ncpTit').textContent = !crear ? 'Hola, ' + nom : (primero === null ? 'Creá tu PIN' : 'Repetí tu PIN');
-      c.querySelector('[data-bajada]').textContent = !crear ? 'Poné tu PIN de 4 números.'
-        : (primero === null ? 'Hola, ' + nom + '. Elegí 4 números que te acuerdes: es tu PIN para entrar (también a Equipo VDH).'
-                            : 'Poné los mismos 4 números otra vez.');
+      c.querySelector('[data-bajada]').textContent = !crear ? 'Poné tu PIN de ' + largo + ' números.'
+        : (primero === null ? 'Hola, ' + nom + '. Elegí ' + largo + ' números que te acuerdes: es tu PIN para entrar (también a Equipo VDH).'
+                            : 'Poné los mismos ' + largo + ' números otra vez.');
     }
     function dibujar() {
       [].forEach.call(puntos.children, function (d, i) { d.classList.toggle('lleno', i < pin.length); });
@@ -554,10 +563,20 @@ var persona = (function () {
              dice quién entró, o que espera el OK). */
           fijarYo({ id: per.id, nombre: per.nombre, rol: per.rol, aprobado: per.aprobado !== false, activo: true, provisorio: true });
           _teclas = null;
+          /* SQL 110: entró con un PIN de 4 y su rol pide 6. Lo cambia con
+             el que acaba de poner (orden_pin_cambiar pide el de ahora). */
+          if (x.d.cambiar_pin || per.cambiar_pin) { pasoCambiarPin(c, 6, cuerpo.pin); return; }
           adentro(c);
           return;
         }
         var d = x.d || {};
+        /* Iba a crearlo y la base pide otro largo (la lista era de antes, o
+           le cambiaron el rol mientras tanto): se vuelve a pedir con ése. */
+        var otroLargo = crear && d.crear && /tener (\d) números/.exec(d.porque || '');
+        if (otroLargo && Number(otroLargo[1]) !== largo) {
+          pasoPin(c, local, Object.assign({}, p, { digitos: Number(otroLargo[1]) }), extra);
+          return;
+        }
         if (extra.alta) {
           primero = null; textos();
           mal(d.error === 'base' ? 'El alta todavía no está habilitada. Avisale a tu encargado.' : (d.porque || 'No se pudo anotar. Probá de nuevo.'));
@@ -582,15 +601,70 @@ var persona = (function () {
     _teclas = function (n) {
       if (ocupado) return;
       if (n === 'x') pin = pin.slice(0, -1);
-      else if (pin.length < 4) pin += n;
+      else if (pin.length < largo) pin += n;
       aviso.textContent = '';
       dibujar();
-      if (pin.length < 4) return;
+      if (pin.length < largo) return;
       if (crear && primero === null) { primero = pin; pin = ''; dibujar(); textos(); return; }
       if (crear && pin !== primero) { primero = null; textos(); mal('No coinciden. Empezá de nuevo.'); return; }
       mandar();
     };
     [].forEach.call(botones, function (t) { t.onclick = function () { _teclas(t.dataset.n); }; });
+    textos();
+  }
+
+  /* Su rol pide un PIN más largo (SQL 110: 6 números para Administración,
+     Atención y Gerencia) y acaba de entrar con el de antes: lo cambia ahora
+     mismo, con la sesión recién abierta y el PIN que acaba de poner (sin
+     volver a pedirlo). SÓLO acá: al abrir una pantalla, la sesión de una PC
+     compartida puede ser de otro. Si cierra la ventana, la próxima vez que
+     entre se lo vuelve a pedir. */
+  function pasoCambiarPin(c, largo, actual) {
+    var pin = '', primero = null, ocupado = false;
+    c.innerHTML = '<h2 id="ncpTit"></h2><p class="ncp-bajada" data-bajada></p>' + puntosDe(largo) +
+      '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' + TECLADO;
+    var puntos = c.querySelector('[data-puntos]'), aviso = c.querySelector('[data-aviso]');
+    var botones = c.querySelectorAll('.ncp-teclado [data-n]');
+    function textos() {
+      c.querySelector('#ncpTit').textContent = primero === null ? 'Tu PIN ahora es de ' + largo + ' números' : 'Repetí tu PIN nuevo';
+      c.querySelector('[data-bajada]').textContent = primero === null
+        ? 'Por seguridad, lo de la oficina pide un PIN de ' + largo + ' números. Elegí uno nuevo: el de antes deja de servir.'
+        : 'Poné los mismos ' + largo + ' números otra vez.';
+    }
+    function dibujar() { [].forEach.call(puntos.children, function (d, i) { d.classList.toggle('lleno', i < pin.length); }); }
+    function mal(texto) {
+      pin = ''; dibujar();
+      puntos.classList.remove('mal'); void puntos.offsetWidth; puntos.classList.add('mal');
+      aviso.className = 'ncp-aviso mal'; aviso.textContent = texto;
+    }
+    _teclas = function (n) {
+      if (ocupado) return;
+      if (n === 'x') pin = pin.slice(0, -1);
+      else if (pin.length < largo) pin += n;
+      aviso.textContent = '';
+      dibujar();
+      if (pin.length < largo) return;
+      if (primero === null) { primero = pin; pin = ''; dibujar(); textos(); return; }
+      if (pin !== primero) { primero = null; textos(); mal('No coinciden. Empezá de nuevo.'); return; }
+      ocupado = true;
+      aviso.className = 'ncp-aviso'; aviso.textContent = 'Guardando…';
+      token().then(function (t) { return funcion('orden_pin_cambiar', { p_actual: actual, p_nuevo: pin }, t); }).then(function (r) {
+        ocupado = false;
+        if (!r || !r.ok) {
+          primero = null; textos(); mal((r && r.porque) || 'No se pudo cambiar. Probá de nuevo.');
+          /* El de ahora no le sirvió (lo cambiaron en otro lado, o quedó
+             trabado): que entre de nuevo. */
+          if (r && r.actual) { ocupado = true; setTimeout(function () { salir().then(function () { location.reload(); }); }, 2500); }
+          return;
+        }
+        _teclas = null;
+        adentro(c);
+      }).catch(function (e) {
+        ocupado = false; primero = null; textos();
+        mal(e && e.delServidor ? e.message : 'Sin conexión. Probá de nuevo cuando haya señal.');
+      });
+    };
+    [].forEach.call(botones, function (b) { b.onclick = function () { _teclas(b.dataset.n); }; });
     textos();
   }
 
@@ -667,6 +741,15 @@ var persona = (function () {
       html = '<p class="ncp-porton-txt">Entraste como <b>' + txt(y.nombre) + '</b> (' + txt(ROL[y.rol]) + '). ' +
              txt(frase) + '</p>' +
              '<button type="button" class="btn btn-sec btn-ancho" data-porton="salir">No soy ' + txt(primerNombre(y.nombre)) + '</button>';
+    } else if (!(y && y.pila)) {
+      /* De la oficina, pero la base todavía no contestó (o le falta el SQL 107). */
+      _pidioSinPila = true;
+      html = '<p class="ncp-porton-txt">Entrando…</p>';
+      listo.then(function () {
+        if (cont.isConnected && !(_yo && _yo.pila) && oficina()) {
+          cont.innerHTML = '<p class="ncp-porton-txt">Todavía no se puede entrar con el usuario: falta correr un paso en la base (el SQL 107). Avisale a Mauricio.</p>';
+        }
+      });
     } else {
       html = '';   // es de la oficina: la pantalla ya está entrando
     }
@@ -723,7 +806,14 @@ var persona = (function () {
     /** Quien entró es de la oficina (Administración, Atención o Gerencia). */
     oficina: oficina,
     /** Lo que va en lugar del PIN: la marca de la sesión, o '' si no es de la oficina. */
-    pin: function () { return oficina() ? 'sesion' : ''; },
+    pin: function () {
+      if (!oficina()) return '';
+      /* 'pila' la devuelve nc_yo recién con el SQL 107, que es el que sabe
+         qué es la marca: antes, la base la contaría como un PIN compartido
+         equivocado y trabaría a todos. Si llega después, se recarga (ver fijarYo). */
+      if (!(_yo && _yo.pila)) { _pidioSinPila = true; return ''; }
+      return 'sesion';
+    },
     /** El nombre de pila, para el "¿Quién sos?" del CRM ("Ale", "Lau"). */
     pila: function () {
       var y = vigente(_yo) ? _yo : null;
