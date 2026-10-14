@@ -55,18 +55,15 @@ begin
 end $$;
 
 do $$
-declare v_def text; v_nuevo text;
-begin
-  /* 1. El reloj: la vidriera fuera del control de cada sector y de las sorpresas; aparte, por turnos. */
-  v_def := replace(pg_get_functiondef('orden_tick(timestamptz)'::regprocedure), chr(13), '');
-  if position('orden_turno_vidriera' in v_def) = 0 then
-    v_nuevo := replace(v_def,
-'          from orden_modulos m where m.sector_id = s.id and m.activo
+declare
+  v_def text; v_nuevo text;
+  /* Las frases, sin los retornos de carro que agrega pegar el texto desde Windows (la base tampoco los tiene en cuenta). */
+  a1 text := replace('          from orden_modulos m where m.sector_id = s.id and m.activo
           on conflict do nothing;
           get diagnostics v_n = row_count; v_generados := v_generados + v_n;
         end loop;
-      end if;',
-'          from orden_modulos m where m.sector_id = s.id and m.activo and not orden_es_vidriera(m.isla, m.nombre)
+      end if;', chr(13), '');
+  b1 text := replace('          from orden_modulos m where m.sector_id = s.id and m.activo and not orden_es_vidriera(m.isla, m.nombre)
           on conflict do nothing;
           get diagnostics v_n = row_count; v_generados := v_generados + v_n;
         end loop;
@@ -80,43 +77,46 @@ begin
           on conflict do nothing;
           get diagnostics v_n = row_count; v_generados := v_generados + v_n;
         end if;
-      end if;');
-    v_nuevo := replace(v_nuevo,
-'select array_agg(m.id order by m.numero) into v_mods from orden_modulos m where m.sector_id = s.id and m.activo;',
-'select array_agg(m.id order by m.numero) into v_mods from orden_modulos m where m.sector_id = s.id and m.activo and not orden_es_vidriera(m.isla, m.nombre);');
-    if v_nuevo <> v_def then execute v_nuevo; end if;
+      end if;', chr(13), '');
+  a2 text := 'select array_agg(m.id order by m.numero) into v_mods from orden_modulos m where m.sector_id = s.id and m.activo;';
+  b2 text := 'select array_agg(m.id order by m.numero) into v_mods from orden_modulos m where m.sector_id = s.id and m.activo and not orden_es_vidriera(m.isla, m.nombre);';
+  a3 text := replace('   where s.local_id = p_local and s.tipo = v_tipo and s.activo and m.activo;
+  v_n := coalesce(array_length(v_ids, 1), 0);', chr(13), '');
+  b3 text := replace('   where s.local_id = p_local and s.tipo = v_tipo and s.activo and m.activo and not orden_es_vidriera(m.isla, m.nombre);
+  v_n := coalesce(array_length(v_ids, 1), 0);', chr(13), '');
+  a4 text := '   where m.id = c.modulo_id and m.sector_id = p_sector';
+  b4 text := '   where m.id = c.modulo_id and m.sector_id = p_sector and not orden_es_vidriera(m.isla, m.nombre)';
+begin
+  /* 1. El reloj: la vidriera fuera del control de cada sector y de las sorpresas; aparte, por turnos. */
+  v_def := replace(pg_get_functiondef('orden_tick(timestamptz)'::regprocedure), chr(13), '');
+  if position('orden_turno_vidriera' in v_def) = 0 then
+    if position(a1 in v_def) = 0 or position(a2 in v_def) = 0 then
+      raise exception 'SQL 116: orden_tick no tiene lo que se esperaba; no se cambió nada. Avisale a Claude.';
+    end if;
+    execute replace(replace(v_def, a1, b1), a2, b2);
   end if;
-  v_def := pg_get_functiondef('orden_tick(timestamptz)'::regprocedure);
-  if position('v_persona := orden_turno_vidriera(l.id, v_hoy);' in v_def) = 0
-     or position('m.sector_id = s.id and m.activo and not orden_es_vidriera(m.isla, m.nombre)
-          on conflict do nothing;' in replace(v_def, chr(13), '')) = 0
-     or position('into v_mods from orden_modulos m where m.sector_id = s.id and m.activo and not orden_es_vidriera(m.isla, m.nombre);' in v_def) = 0 then
-    raise exception 'SQL 116: orden_tick no tiene lo que se esperaba; no se cambió nada. Avisale a Claude.';
+  v_def := replace(pg_get_functiondef('orden_tick(timestamptz)'::regprocedure), chr(13), '');
+  if position(b1 in v_def) = 0 or position(b2 in v_def) = 0 then
+    raise exception 'SQL 116: orden_tick no quedó como se esperaba; no se cambió nada. Avisale a Claude.';
   end if;
 
   /* 2. "Repartir parejo": sin la vidriera. */
   v_def := replace(pg_get_functiondef('orden_mapa_repartir(uuid, text)'::regprocedure), chr(13), '');
   if position('orden_es_vidriera' in v_def) = 0 then
-    v_nuevo := replace(v_def,
-'   where s.local_id = p_local and s.tipo = v_tipo and s.activo and m.activo;
-  v_n := coalesce(array_length(v_ids, 1), 0);',
-'   where s.local_id = p_local and s.tipo = v_tipo and s.activo and m.activo and not orden_es_vidriera(m.isla, m.nombre);
-  v_n := coalesce(array_length(v_ids, 1), 0);');
-    if v_nuevo <> v_def then execute v_nuevo; end if;
+    if position(a3 in v_def) = 0 then raise exception 'SQL 116: orden_mapa_repartir no tiene lo que se esperaba; no se cambió nada. Avisale a Claude.'; end if;
+    execute replace(v_def, a3, b3);
   end if;
-  if position('and m.activo and not orden_es_vidriera(m.isla, m.nombre);' in pg_get_functiondef('orden_mapa_repartir(uuid, text)'::regprocedure)) = 0 then
-    raise exception 'SQL 116: orden_mapa_repartir no tiene lo que se esperaba; no se cambió nada. Avisale a Claude.';
+  if position(b3 in replace(pg_get_functiondef('orden_mapa_repartir(uuid, text)'::regprocedure), chr(13), '')) = 0 then
+    raise exception 'SQL 116: orden_mapa_repartir no quedó como se esperaba; no se cambió nada. Avisale a Claude.';
   end if;
 
   /* 3. Cambiar el responsable de un sector no le pasa la vidriera (es por turnos). */
   v_def := replace(pg_get_functiondef('orden_controles_reasignar(uuid)'::regprocedure), chr(13), '');
   if position('orden_es_vidriera' in v_def) = 0 then
-    v_nuevo := replace(v_def,
-'   where m.id = c.modulo_id and m.sector_id = p_sector',
-'   where m.id = c.modulo_id and m.sector_id = p_sector and not orden_es_vidriera(m.isla, m.nombre)');
-    if v_nuevo <> v_def then execute v_nuevo; end if;
+    if position(a4 in v_def) = 0 then raise exception 'SQL 116: orden_controles_reasignar no tiene lo que se esperaba; no se cambió nada. Avisale a Claude.'; end if;
+    execute replace(v_def, a4, b4);
   end if;
-  if position('m.sector_id = p_sector and not orden_es_vidriera(m.isla, m.nombre)' in pg_get_functiondef('orden_controles_reasignar(uuid)'::regprocedure)) = 0 then
-    raise exception 'SQL 116: orden_controles_reasignar no tiene lo que se esperaba; no se cambió nada. Avisale a Claude.';
+  if position(b4 in replace(pg_get_functiondef('orden_controles_reasignar(uuid)'::regprocedure), chr(13), '')) = 0 then
+    raise exception 'SQL 116: orden_controles_reasignar no quedó como se esperaba; no se cambió nada. Avisale a Claude.';
   end if;
 end $$;
