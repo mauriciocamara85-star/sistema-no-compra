@@ -25,7 +25,8 @@ function abrirVisor(cont, op) {
       '<div class="cv-titulo"><small>Modo observador</small><b>' + esc(op.local.nombre || '') + '</b></div>' +
       '<div class="cv-cab-acc"><div class="cv-seg" id="cvTabs" role="group" aria-label="Qué mirar">' +
         '<button type="button" data-tab="salon" aria-pressed="true">Salón</button><button type="button" data-tab="deposito" aria-pressed="false">Depósito</button></div>' +
-        '<button class="cv-chico" id="cvIncl" type="button" aria-pressed="true" title="Ver inclinado o desde arriba">Inclinado</button>' +
+        '<div class="cv-seg" id="cvCam" role="group" aria-label="Cómo mirar la maqueta"><button type="button" data-cam="incl" aria-pressed="true">Inclinado</button>' +
+          '<button type="button" data-cam="arriba" aria-pressed="false">Desde arriba</button></div>' +
         (op.puedeEditar ? '<button class="cv-chico cv-lima" id="cvEditar" type="button">Armar el croquis</button>' : '') + '</div></header>' +
     '<div class="cv-cuerpo"><div class="cv-escena" id="cvEscena"><div class="cv-zoom" id="cvZoom"><div class="cv-camara"><div class="cv-mundo" id="cvMundo"></div></div></div>' +
       '<div class="cv-zoom-acc"><button type="button" id="cvCentrar" class="cv-chico" hidden>Centrar</button>' +
@@ -47,10 +48,11 @@ function abrirVisor(cont, op) {
     cont.querySelectorAll('#cvTabs [data-tab]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
     visorDibujar(V, true);
   };
-  cont.querySelector('#cvIncl').onclick = function () {
-    V.inclinado = !V.inclinado;
-    this.setAttribute('aria-pressed', V.inclinado);
-    this.textContent = V.inclinado ? 'Inclinado' : 'Desde arriba';
+  cont.querySelector('#cvCam').onclick = function (e) {
+    var b = e.target.closest && e.target.closest('[data-cam]');
+    if (!b || (b.dataset.cam === 'incl') === V.inclinado) return;
+    V.inclinado = b.dataset.cam === 'incl';
+    cont.querySelectorAll('#cvCam [data-cam]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
     V.raiz.classList.toggle('cv-plano', !V.inclinado);
     visorCamara(V, false);
   };
@@ -59,6 +61,7 @@ function abrirVisor(cont, op) {
     /* Para armarlo, la maqueta se aplana hasta el plano de siempre y se abre el editor. */
     V.inclinado = false;
     V.raiz.classList.add('cv-plano');
+    cont.querySelectorAll('#cvCam [data-cam]').forEach(function (x) { x.setAttribute('aria-pressed', x.dataset.cam === 'arriba'); });
     visorCamara(V, false);
     setTimeout(function () { visorSalir(V, true); if (op.alEditar) op.alEditar(V.d); }, 420);
   };
@@ -234,8 +237,14 @@ function visorZoom(V, k, x, y, animar) {
   V.z = { k: k, x: Math.max(-lx, Math.min(lx, x)), y: Math.max(-ly, Math.min(ly, y)) };
   V.zoomEl.classList.toggle('cv-gesto', !animar);
   V.zoomEl.style.transform = 'translate(' + V.z.x.toFixed(1) + 'px,' + V.z.y.toFixed(1) + 'px) scale(' + k.toFixed(3) + ')';
+  visorRotulos(V);
   var ce = V.cont.querySelector('#cvCentrar');
   if (ce) ce.hidden = k === 1;
+}
+/** Los números se leen igual aunque la maqueta quede chica, y al acercar no se agrandan tanto (quedan sobre su módulo). */
+function visorRotulos(V) {
+  var base = Math.max(1, 0.9 / (V.sFit || 1)), k = (V.z && V.z.k) || 1;
+  V.mundo.style.setProperty('--zc', Math.max(0.42, base / Math.pow(k, 0.8)).toFixed(3));
 }
 /** Acercar manteniendo quieto el punto f (de la pantalla). */
 function visorZoomEn(V, k2, f, animar) {
@@ -328,8 +337,8 @@ function visorCamara(V, sinAnimar) {
   mu.style.setProperty('--s', f.s.toFixed(3));
   mu.style.setProperty('--dx', f.dx.toFixed(1) + 'px');
   mu.style.setProperty('--dy', f.dy.toFixed(1) + 'px');
-  /* Los números se leen igual aunque la maqueta quede chica. */
-  mu.style.setProperty('--zc', Math.max(1, 0.9 / f.s).toFixed(2));
+  V.sFit = f.s;
+  visorRotulos(V);
   void antes;
 }
 
@@ -633,7 +642,7 @@ function visorPedirFoto(V, m, resp, boton) {
   boton.textContent = 'Pidiendo…';
   visorMandarTarea(m, resp, titulo, 'Desde el croquis: el módulo no tiene foto.', 'hoy', true).then(function () {
     boton.textContent = 'Listo: le llegó a ' + nombreLista(resp);
-    avisarVisor('Le pedimos la foto a ' + nombreLista(resp) + '.');
+    avisarVisor('Le pedimos la foto a ' + nombreLista(resp).replace(/\.$/, '') + '.');
   }, function (e) {
     boton.disabled = false;
     boton.textContent = 'Pedirle la foto a ' + nombreLista(resp);

@@ -38,8 +38,9 @@
 .cv-zoom-acc { position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 8px; }
 .cv-redondo { width: 46px; height: 46px; border: 0; border-radius: 50%; background: rgba(27, 33, 42, .92); color: var(--cv-texto); font-size: 24px; font-weight: 700; line-height: 1; cursor: pointer; box-shadow: 0 6px 16px rgba(0, 0, 0, .35); }
 .cv-redondo:hover { background: #232A35; }
-.cv-camara { position: absolute; inset: 0; perspective: 1700px; perspective-origin: 50% 38%; transition: opacity .3s, transform .3s cubic-bezier(.2, .8, .2, 1); }
-.cv-escena.cv-detras .cv-camara { opacity: .4; transform: scale(.97); }
+.cv-camara { position: absolute; inset: 0; perspective: 1700px; perspective-origin: 50% 38%; }
+/* Con un módulo abierto, la maqueta queda quieta detrás (la oscurece el fondo de la ficha): animarla costaría cada cuadro. */
+.cv-escena.cv-detras { pointer-events: none; }
 .cv-mundo { position: absolute; left: 50%; top: 50%; transform-style: preserve-3d;
   transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--s, 1)) rotateX(var(--incl, 54deg));
   transition: transform .45s cubic-bezier(.2, .8, .2, 1); }
@@ -171,7 +172,7 @@
 }
 
 /* La vista de frente de un módulo */
-.cv-ficha-fondo { position: fixed; inset: 0; z-index: 2; background: rgba(5, 7, 10, .68); }
+.cv-ficha-fondo { position: fixed; inset: 0; z-index: 2; background: rgba(5, 7, 10, .74); }
 .cv-ficha { position: fixed; z-index: 3; inset: 0; margin: auto; width: min(900px, calc(100% - 40px)); height: fit-content; max-height: calc(100% - 40px); overflow: auto;
   background: var(--cv-panel); border-radius: 22px; box-shadow: 0 30px 90px rgba(0, 0, 0, .65); transform-origin: 50% 50%; overscroll-behavior: contain; }
 @media (max-width: 639px) { .cv-ficha { width: 100%; max-height: 100%; height: 100%; border-radius: 0; } }
@@ -196,8 +197,7 @@
 .cv-historia input[type="range"] { width: 100%; height: 30px; margin: 0; accent-color: var(--cv-lima); cursor: pointer; }
 .cv-hist-marcas { display: flex; justify-content: space-between; color: var(--cv-suave); font-size: 12px; font-weight: 700; }
 .cv-foto { margin: 0; display: grid; gap: 6px; min-width: 0; }
-.cv-foto-img { width: 100%; aspect-ratio: 3 / 4; max-height: 62vh; border-radius: 16px; background: #0A0C10 center / contain no-repeat; filter: blur(5px); transition: filter .35s; }
-.cv-foto-img.cv-nitida, .cv-foto-img.cv-foto-falla { filter: none; }
+.cv-foto-img { width: 100%; aspect-ratio: 3 / 4; max-height: 62vh; border-radius: 16px; background: #0A0C10 center / contain no-repeat; }
 .cv-foto-img.cv-foto-falla { display: grid; place-items: center; color: var(--cv-suave); }
 .cv-foto figcaption { color: var(--cv-suave); font-size: 13.5px; font-weight: 600; }
 .cv-sin-foto { display: grid; justify-items: center; gap: 10px; padding: 34px 18px; border-radius: 18px; background: var(--cv-panel-2); text-align: center; }
