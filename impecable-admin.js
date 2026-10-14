@@ -1637,9 +1637,9 @@ function editarMapa(d) {
         return '<option value="' + o[0] + '"' + (String(vidr.length) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
       }).join('') + '</select></label>' +
       PAREDES.map(function (p) {
-        return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" aria-label="Lugares en ' + esc(p[1]) + '"></label>';
+        return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" aria-label="Módulos en ' + esc(p[1]) + '"></label>';
       }).join('') + '</div>' +
-    '<p class="bajada">Los números de arriba son los <b>lugares</b> de cada pared (módulos, huecos y cosas fijas). <span id="eNotaVidriera"></span></p>' +
+    '<p class="bajada">Los números de arriba son los <b>módulos</b> de cada pared. Los probadores, los huecos y lo que no es un módulo van aparte: no se cuentan. <span id="eNotaVidriera"></span></p>' +
     '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuerta">Mover la entrada</button>' +
       '<span class="imp-ancho-puerta" id="eAnchoPuerta"><span>Ancho de la entrada</span>' + [1, 2, 3].map(function (a) {
         return '<button type="button" class="boton chico" data-ancho-puerta="salon:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span>' +
@@ -1701,10 +1701,17 @@ function editarMapa(d) {
     if (!p.virtual && p.pared === w && i < p.pos) p.pos--;
     ajustarPuerta(e);
   }
+  /** Cuántos módulos hay en una pared (los dobles cuentan uno; los probadores, los huecos y lo fijo, no). */
+  function modulosEn(w) { return st.salon.paredes[w].filter(function (l) { return l.t !== 'h'; }).length; }
+  /** La pared pasa a tener n módulos: se agregan al final, o se sacan los últimos (lo que no es módulo queda). */
   function cambiarCantidad(w, n) {
     var e = st.salon, ls = e.paredes[w];
-    while (ls.length < n) ls.push(moduloNuevo('salon'));
-    while (ls.length > n) sacarModulo('salon', ls.pop());
+    while (modulosEn(w) < n && ls.length < 60) ls.push(moduloNuevo('salon'));
+    while (modulosEn(w) > n) {
+      for (var i = ls.length - 1; i >= 0 && ls[i].t === 'h'; i--) {}
+      if (i < 0) break;
+      sacarLugar('salon', w, i);
+    }
     ajustarPuerta(e);
   }
   /** El depósito se vuelve a acomodar alrededor con la cantidad y la forma nuevas; la puerta queda donde estaba. */
@@ -1804,7 +1811,7 @@ function editarMapa(d) {
     vistaS.innerHTML = svgMapa(dv, { croquis: cq, editable: true, vacios: true, moverPuerta: st.mover === 'salon' ? 'salon' : null });
     vistaD.innerHTML = svgDeposito(dv, { croquis: cq, editable: true, moverPuerta: st.mover === 'deposito' ? 'deposito' : null }) ||
       '<p class="bajada">Sin módulos en el depósito.</p>';
-    f.querySelectorAll('[data-pared]').forEach(function (i) { if (document.activeElement !== i) i.value = st.salon.paredes[i.dataset.pared].length; });
+    f.querySelectorAll('[data-pared]').forEach(function (i) { if (document.activeElement !== i) i.value = modulosEn(i.dataset.pared); });
     var dep = f.querySelector('#eDep');
     if (document.activeElement !== dep) dep.value = mm.deposito;
     f.querySelector('#eMoverPuerta').textContent = st.mover === 'salon' ? 'Cancelar' : 'Mover la entrada';
