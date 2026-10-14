@@ -150,14 +150,17 @@ function visorMercaderia(id, vertical, clase) {
                       : 'linear-gradient(0deg, transparent calc(50% - 1px), #A9AEB4 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px))';
   return caño + ', repeating-linear-gradient(' + (vertical ? 180 : 90) + 'deg,' + partes.join(',') + ')';
 }
-/** Una caja con volumen: la tapa, sus cuatro caras y el halo en el piso. frente: qué cara mira al salón. */
-function visorCaja(r, alto, clase, attrs, frente, tapa, rotulo, halo) {
+/** Una caja con volumen: la tapa, sus caras y el halo en el piso. frente: qué cara mira al salón. caras: cuáles se
+    dibujan ('snoe'): las que nunca quedan de frente a quien mira no se dibujan (cuestan en cada cuadro). */
+function visorCaja(r, alto, clase, attrs, frente, tapa, rotulo, halo, caras) {
   var w = r.w.toFixed(1), h = r.h.toFixed(1), a = alto;
+  caras = caras || 'snoe';
   var cara = function (lado, estilo, contenido) {
+    if (caras.indexOf(lado) < 0 && lado !== frente) return '';
     return '<div class="cv-cara cv-' + lado + (lado === frente ? ' cv-frente' : '') + '" style="' + estilo + '">' + (lado === frente ? contenido || '' : '') + '</div>';
   };
   return '<div class="cv-caja ' + clase + '" ' + attrs + ' style="left:' + r.x.toFixed(1) + 'px;top:' + r.y.toFixed(1) + 'px;width:' + w + 'px;height:' + h + 'px;--alto:' + a + 'px' + (halo ? ';--halo:' + halo : '') + '">' +
-    '<div class="cv-halo"></div>' +
+    (halo ? '<div class="cv-halo"></div>' : '') +
     cara('s', 'left:0;top:' + (r.h - a).toFixed(1) + 'px;width:' + w + 'px;height:' + a + 'px', frente === 's' ? rotar(0) : '') +
     cara('n', 'left:0;top:0;width:' + w + 'px;height:' + a + 'px', '') +
     cara('e', 'left:' + (r.w - a).toFixed(1) + 'px;top:0;width:' + a + 'px;height:' + h + 'px', frente === 'e' ? rotar(-90) : '') +
@@ -168,6 +171,13 @@ function visorCaja(r, alto, clase, attrs, frente, tapa, rotulo, halo) {
     var largo = g ? r.h : r.w;
     return '<div class="cv-foto-cara" style="width:' + largo.toFixed(1) + 'px;height:' + a + 'px;transform:translate(-50%,-50%) rotate(' + g + 'deg)"></div>';
   }
+}
+
+/** Qué caras de una caja pueden quedar de frente a quien mira (la cámara está arriba del centro del local): la de abajo
+    siempre; la de arriba, si la caja está en la mitad de abajo; las de los costados, según de qué lado del centro esté. */
+function visorCaras(pl, r) {
+  var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  return 's' + (cy > pl.H * 0.45 ? 'n' : '') + (cx < pl.W * 0.58 ? 'e' : '') + (cx > pl.W * 0.42 ? 'o' : '');
 }
 
 function visorColor(V, m) {
@@ -183,7 +193,9 @@ function visorDibujar(V, ajustar) {
   /* El piso (cálido, de madera) y las paredes bajas, cortadas para ver adentro; el frente es vidriera. */
   out += '<div class="cv-piso" style="left:' + pl.x0 + 'px;top:' + pl.y0 + 'px;width:' + (pl.x1 - pl.x0) + 'px;height:' + (pl.y1 - pl.y0) + 'px"></div>';
   var puerta = pl.items.filter(function (x) { return x.tipo === 'puerta'; })[0], g = 11, am = VISOR_ALTO.muro;
-  var muro = function (x, y, w, h, vidrio) { return visorCaja({ x: x, y: y, w: w, h: h }, am, 'cv-muro' + (vidrio ? ' cv-vidrio' : ''), '', null, '', '', ''); };
+  /* De cada pared, la cara de adentro (la de afuera nunca se ve); del frente, también la de la vereda. */
+  var adentro = { fondo: 's', izquierda: 'e', derecha: 'o', frente: 'ns' };
+  var muro = function (x, y, w, h, vidrio, lado) { return visorCaja({ x: x, y: y, w: w, h: h }, am, 'cv-muro' + (vidrio ? ' cv-vidrio' : ''), '', null, '', '', '', adentro[lado]); };
   var tramos = function (lado, desde, hasta, fijo, horiz, vidrio) {
     var cortes = [[desde, hasta]];
     if (puerta && puerta.pared === lado) {
@@ -192,7 +204,7 @@ function visorDibujar(V, ajustar) {
     }
     cortes.forEach(function (c) {
       if (c[1] - c[0] < 2) return;
-      out += horiz ? muro(c[0], fijo, c[1] - c[0], g, vidrio) : muro(fijo, c[0], g, c[1] - c[0], vidrio);
+      out += horiz ? muro(c[0], fijo, c[1] - c[0], g, vidrio, lado) : muro(fijo, c[0], g, c[1] - c[0], vidrio, lado);
     });
   };
   tramos('fondo', pl.x0 - g, pl.x1 + g, pl.y0 - g, true, false);
@@ -208,7 +220,7 @@ function visorDibujar(V, ajustar) {
     }
     if (it.tipo === 'fijo') {
       if (!it.texto) { out += '<div class="cv-hueco" style="left:' + r.x.toFixed(1) + 'px;top:' + r.y.toFixed(1) + 'px;width:' + r.w.toFixed(1) + 'px;height:' + r.h.toFixed(1) + 'px"></div>'; return; }
-      out += visorCaja(r, VISOR_ALTO.fijo, 'cv-fijo', '', null, '<span class="cv-fijo-texto' + (r.h > r.w * 1.2 ? ' parado' : '') + '">' + esc(it.texto) + '</span>', '', '');
+      out += visorCaja(r, VISOR_ALTO.fijo, 'cv-fijo', '', null, '<span class="cv-fijo-texto' + (r.h > r.w * 1.2 ? ' parado' : '') + '">' + esc(it.texto) + '</span>', '', '', visorCaras(pl, r));
       return;
     }
     var m = it.m, e = V.estado[m.id] || {}, alto = pl.tipo === 'deposito' ? VISOR_ALTO.deposito : it.pared ? VISOR_ALTO.pared : VISOR_ALTO.centro;
@@ -220,7 +232,7 @@ function visorDibujar(V, ajustar) {
     var tapa = '<div class="cv-merca" style="background:' + visorMercaderia(m.id, r.h > r.w, pl.tipo === 'deposito' ? 'cajas' : it.pared ? 'colgada' : 'doblada') + '"></div><div class="cv-foto-cara cv-foto-tapa"></div>';
     out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (frente ? '' : ' foto-arriba'),
       'data-mod="' + esc(m.id) + '" role="button" tabindex="0" aria-label="' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '"',
-      frente || 'tapa', tapa, rotulo, visorCategoria(V, m).color);
+      frente || 'tapa', tapa, rotulo, visorCategoria(V, m).color, visorCaras(pl, r));
   });
   V.mundo.innerHTML = out;
   visorPintar(V);
@@ -509,7 +521,11 @@ function abrirFicha(V, id, caja) {
   var titulo = (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero, ref = m.foto_referencia_path;
   var origen = caja.querySelector('.cv-frente, .cv-tapa');
   V.raiz.insertAdjacentHTML('beforeend', '<div class="cv-ficha-fondo"></div><section class="cv-ficha" role="dialog" aria-modal="true" aria-label="' + esc(titulo) + '">' +
-    '<header class="cv-ficha-cab"><div><small>' + esc(visorDonde(V, m)) + '</small><h2>' + esc(titulo) + '</h2>' + (que ? '<p class="cv-que">' + esc(que) + '</p>' : '') + '</div>' +
+    '<header class="cv-ficha-cab"><div><small>' + esc(visorDonde(V, m)) + '</small><h2>' + esc(titulo) + '</h2>' +
+      '<p class="cv-que-linea"><span class="cv-que" id="cvQue">' + esc(que || '') + '</span>' +
+        (V.op.puedeNombrar && !m.isla ? '<button class="cv-enlace" type="button" id="cvCambiarQue">' + (que ? 'Cambiar' : '+ Qué hay en este módulo') + '</button>' : '') + '</p>' +
+      '<form class="cv-que-form" id="cvQueForm" hidden><input id="cvQueInput" maxlength="40" autocomplete="off" placeholder="Remeras, buzos, jeans…" aria-label="Qué hay en este módulo">' +
+        '<button class="cv-boton cv-lima" type="submit">Guardar</button><button class="cv-boton" type="button" id="cvQueCancelar">Cancelar</button></form></div>' +
       '<button class="cv-cerrar" type="button" aria-label="Volver al plano">×</button></header>' +
     '<div class="cv-ficha-cuerpo">' +
       '<div class="cv-fotos' + (ref ? ' con-ref' : '') + '" id="cvFotos">' +
@@ -523,6 +539,17 @@ function abrirFicha(V, id, caja) {
         '<span class="cv-persona"><i style="background:' + visorColor(V, m) + '"></i>' + esc(resp ? nombreLista(resp) : 'Sin responsable') + (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '') + '</span>' +
         (+e.tareas_abiertas ? '<span>' + e.tareas_abiertas + (+e.tareas_abiertas === 1 ? ' tarea abierta' : ' tareas abiertas') + '</span>' : '') + '</div>' +
       '<div class="cv-ia" id="cvIa">' + (e.foto_path ? '<p class="cv-gris">Buscando lo que vio la IA…</p>' : '') + '</div>' +
+      (V.op.puedeSugerir ? (resp
+        ? '<div class="cv-acciones"><button class="cv-boton cv-lima" type="button" id="cvSugerir">Dejar sugerencia</button></div>' +
+          '<form class="cv-sugerencia" id="cvSugForm" hidden><h3>Sugerencia para ' + esc(nombreLista(resp)) + '</h3>' +
+            '<textarea id="cvSugTexto" maxlength="300" rows="3" placeholder="Ej.: Pasá los buzos azules al estante de arriba" aria-label="Qué le sugerís"></textarea>' +
+            '<div class="cv-seg cv-plazo" role="group" aria-label="Para cuándo"><button type="button" data-plazo="hoy" aria-pressed="false">Hoy</button>' +
+              '<button type="button" data-plazo="manana" aria-pressed="true">Mañana</button><button type="button" data-plazo="semana" aria-pressed="false">Esta semana</button></div>' +
+            '<label class="cv-check"><input type="checkbox" id="cvSugFoto" checked> Que la devuelva con una foto nueva</label>' +
+            '<div class="cv-fila"><button type="submit" class="cv-boton cv-lima" id="cvSugMandar">Mandar a ' + esc(nombreLista(resp)) + '</button>' +
+              '<button type="button" class="cv-boton" id="cvSugCancelar">Cancelar</button></div></form>' +
+          '<p class="cv-ok" id="cvSugOk" hidden></p>'
+        : (e.foto_path ? '<p class="cv-gris">Este módulo no tiene responsable: asignáselo en Por local para dejarle sugerencias.</p>' : '')) : '') +
     '</div></section>');
   var fondo = V.raiz.querySelector('.cv-ficha-fondo'), ficha = V.raiz.querySelector('.cv-ficha');
   V.ficha = { el: ficha, fondo: fondo, caja: caja, id: id };
@@ -542,6 +569,8 @@ function abrirFicha(V, id, caja) {
   });
   var pf = ficha.querySelector('#cvPedirFoto');
   if (pf) pf.onclick = function () { visorPedirFoto(V, m, resp, pf); };
+  visorFichaSugerencia(V, m, resp);
+  visorFichaQue(V, m);
   /* El zoom: la ficha sale desde la cara del módulo y crece hasta su lugar. */
   var desde = origen.getBoundingClientRect(), hasta = ficha.getBoundingClientRect();
   V.escena.classList.add('cv-detras');
@@ -635,6 +664,84 @@ function visorTextoIa(c) {
     (hall.length ? '<ul>' + hall.map(function (x) { return '<li><span class="cv-grav ' + (x.gravedad === 'corregir' ? 'mal' : '') + '">' + (x.gravedad === 'corregir' ? 'Corregir' : 'Ojo') + '</span>' + esc(x.titulo || '') + '</li>'; }).join('') + '</ul>'
                  : '<p class="cv-gris">' + (c.nivel_ia ? 'No marcó nada para corregir.' : 'Esta foto no pasó por la IA.') + '</p>') +
     (c.comentario ? '<p class="cv-comentario">"' + esc(c.comentario) + '"</p>' : '');
+}
+
+/* ── Dejar sugerencia: una tarea para el que tiene el módulo (con foto si se pide), como las de "Nueva tarea" ── */
+var VISOR_PLAZOS = { hoy: 'hoy', manana: 'mañana', semana: 'esta semana' };
+function visorFichaSugerencia(V, m, resp) {
+  var f = V.ficha.el, abrir = f.querySelector('#cvSugerir'), form = f.querySelector('#cvSugForm');
+  if (!abrir || !form) return;
+  var plazo = 'manana', ok = f.querySelector('#cvSugOk'), texto = f.querySelector('#cvSugTexto'), mandar = f.querySelector('#cvSugMandar');
+  abrir.onclick = function () { abrir.hidden = true; ok.hidden = true; form.hidden = false; texto.focus(); form.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); };
+  f.querySelector('#cvSugCancelar').onclick = function () { form.hidden = true; abrir.hidden = false; };
+  form.querySelector('.cv-plazo').onclick = function (e) {
+    var b = e.target.closest && e.target.closest('[data-plazo]');
+    if (!b) return;
+    plazo = b.dataset.plazo;
+    form.querySelectorAll('[data-plazo]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+  };
+  form.onsubmit = function (e) {
+    e.preventDefault();
+    if (mandar.disabled) return;   // doble toque: una sola vez
+    var s = String(texto.value || '').replace(/\s+/g, ' ').trim();
+    if (s.length < 3) { avisarVisor('Escribí qué le sugerís.'); texto.focus(); return; }
+    var titulo = s.length > 140 ? s.slice(0, 139) + '…' : s;
+    var detalle = 'Sugerencia desde el croquis (' + nombreModulo(m, V.d.sectorDe[m.sector_id], V.d) + ')' + (s.length > 140 ? ': ' + s : '');
+    var antes = mandar.textContent;
+    mandar.disabled = true;
+    mandar.textContent = 'Mandando…';
+    visorMandarTarea(m, resp, titulo, detalle, plazo, f.querySelector('#cvSugFoto').checked).then(function () {
+      form.hidden = true;
+      texto.value = '';
+      ok.hidden = false;
+      ok.textContent = 'Listo: le llegó a ' + nombreLista(resp) + ' como tarea para ' + VISOR_PLAZOS[plazo] + '.';
+      abrir.hidden = false;
+      abrir.textContent = 'Dejar otra sugerencia';
+      mandar.disabled = false;
+      mandar.textContent = antes;
+      var e2 = V.estado[m.id] || (V.estado[m.id] = {});
+      e2.tareas_abiertas = (+e2.tareas_abiertas || 0) + 1;
+    }, function (err) {
+      mandar.disabled = false;
+      mandar.textContent = antes;
+      avisarVisor(esDeRed(err) ? 'Sin conexión: no se mandó. Probá de nuevo (no se va a duplicar).' : mensajeDe(err));
+    });
+  };
+}
+
+/* ── Qué hay en este módulo: su nombre propio (Remeras, Buzos…), que se ve arriba del módulo en la maqueta. Lo de adentro
+      del local (la caja, las mesas) se renombra en el croquis: su nombre es el que el croquis usa para ubicarlo. ── */
+function visorFichaQue(V, m) {
+  var f = V.ficha.el, b = f.querySelector('#cvCambiarQue'), form = f.querySelector('#cvQueForm');
+  if (!b || !form) return;
+  var input = f.querySelector('#cvQueInput');
+  b.onclick = function () { input.value = nombrePropio(m) || ''; form.hidden = false; b.hidden = true; input.focus(); };
+  f.querySelector('#cvQueCancelar').onclick = function () { form.hidden = true; b.hidden = false; };
+  form.onsubmit = function (e) {
+    e.preventDefault();
+    var guardar = form.querySelector('[type="submit"]');
+    if (guardar.disabled) return;
+    var v = String(input.value || '').replace(/\s+/g, ' ').trim();
+    guardar.disabled = true;
+    llamar('orden_modulo_nombre', { p_modulo: m.id, p_nombre: v || null }).then(function () {
+      var s = V.d.sectorDe[m.sector_id];
+      m.nombre = v || ((s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + m.numero);
+      f.querySelector('#cvQue').textContent = nombrePropio(m) || '';
+      b.textContent = nombrePropio(m) ? 'Cambiar' : '+ Qué hay en este módulo';
+      form.hidden = true; b.hidden = false; guardar.disabled = false;
+      /* El rótulo de la maqueta también cambia. */
+      var caja = V.mundo.querySelector('.cv-caja[data-mod="' + m.id + '"] .cv-rotulo');
+      if (caja) {
+        var span = caja.querySelector('span'), p = nombrePropio(m);
+        if (p) { if (!span) { span = document.createElement('span'); caja.appendChild(span); } span.textContent = recortar(p, 18); }
+        else if (span) span.remove();
+      }
+      avisarVisor(v ? 'Listo: en el croquis dice "' + v + '".' : 'Listo: volvió a su nombre de siempre.');
+    }, function (err) {
+      guardar.disabled = false;
+      avisarVisor(esDeRed(err) ? 'Sin conexión: no se guardó. Probá de nuevo.' : mensajeDe(err));
+    });
+  };
 }
 
 /** Sin foto: se le pide al que lo tiene (una tarea con foto, como las de siempre). */

@@ -86,7 +86,7 @@
 .cv-e { transform-origin: 100% 50%; transform: rotateY(90deg); background: #644532; }
 .cv-o { transform-origin: 0 50%; transform: rotateY(-90deg); background: #644532; }
 .cv-tapa { inset: 0; transform: translateZ(var(--alto)); background: linear-gradient(135deg, #8F6849, #73513A); border-radius: 3px; box-shadow: inset 0 0 0 2px rgba(50, 32, 20, .6); }
-.cv-halo { position: absolute; inset: -6px; border-radius: 10px; background: var(--halo, #6E7684); opacity: .5; filter: blur(6px); transform: translateZ(.5px); transition: opacity .2s; }
+.cv-halo { position: absolute; inset: -3px; border-radius: 9px; background: var(--halo, #6E7684); opacity: .5; box-shadow: 0 0 12px 5px var(--halo, #6E7684); transform: translateZ(.5px); transition: opacity .2s; }
 .cv-merca { position: absolute; inset: 4px; border-radius: 2px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .25), inset 0 6px 10px rgba(0, 0, 0, .18); }
 .cv-foto-cara { position: absolute; left: 50%; top: 50%; background: #2A2F37 center / cover no-repeat; border: 2px solid var(--cv-nogal-osc); border-radius: 2px; }
 .cv-foto-tapa { left: 3px; top: 3px; right: 3px; bottom: 3px; transform: none; opacity: 0; transition: opacity .3s; }
@@ -124,7 +124,7 @@
 .cv-plano .cv-rotulo { transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 2px)) scale(var(--zc, 1)); }
 
 .cv-rotulo b.vieja::after { content: ""; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: #F5B84B; box-shadow: 0 0 0 2px #0E1116; }
-.cv-halo, .cv-rotulo b { transition: background-color .3s, border-color .3s, opacity .2s; }
+.cv-halo, .cv-rotulo b { transition: background-color .3s, border-color .3s, box-shadow .3s, opacity .2s; }
 
 /* Resaltar a alguien: lo suyo se levanta y brilla; lo demás queda atenuado. (La opacidad va en cada cara: en la caja
    entera aplanaría el volumen.) */
@@ -135,7 +135,7 @@
 .cv-mod.cv-resaltado .cv-halo { opacity: 1; inset: -9px; }
 
 /* Modo liviano: sin sombras, sin desenfoques ni texturas (para teléfonos lentos) */
-.cv-liviano .cv-halo { filter: none; inset: -3px; opacity: .7; }
+.cv-liviano .cv-halo { box-shadow: none; inset: -3px; opacity: .7; }
 .cv-liviano .cv-piso { background: #C8A37D; box-shadow: none; }
 .cv-liviano .cv-n, .cv-liviano .cv-cara:not(.cv-frente) { background: var(--cv-nogal); }
 .cv-liviano .cv-escena { background: var(--cv-bg); }
@@ -182,10 +182,28 @@
   background: var(--cv-panel); border-radius: 22px; box-shadow: 0 30px 90px rgba(0, 0, 0, .65); transform-origin: 50% 50%; overscroll-behavior: contain; }
 @media (max-width: 639px) { .cv-ficha { width: 100%; max-height: 100%; height: 100%; border-radius: 0; } }
 .cv-ficha-cab { position: sticky; top: 0; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
-  padding: max(16px, env(safe-area-inset-top)) 18px 10px 20px; background: linear-gradient(var(--cv-panel) 75%, rgba(21, 26, 33, 0)); }
+  padding: max(16px, env(safe-area-inset-top)) 18px 10px 20px; background: var(--cv-panel); box-shadow: 0 10px 14px -12px rgba(0, 0, 0, .6); }
 .cv-ficha-cab small { color: var(--cv-suave); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .cv-ficha-cab h2 { margin: 2px 0 0; font-size: 28px; font-weight: 800; letter-spacing: -.02em; }
-.cv-que { margin: 2px 0 0; color: var(--cv-lima); font-weight: 800; }
+.cv-que-linea { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; margin: 2px 0 0; }
+.cv-que { color: var(--cv-lima); font-weight: 800; }
+.cv-que:empty { display: none; }
+.cv-enlace { min-height: 32px; padding: 0; border: 0; background: none; color: var(--cv-suave); font-size: 14px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.cv-enlace:hover { color: var(--cv-texto); }
+.cv-que-form { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+.cv-que-form input, .cv-sugerencia textarea { min-height: 46px; padding: 10px 14px; border: 1px solid var(--cv-linea); border-radius: 14px; background: var(--cv-panel-2); color: var(--cv-texto); font: inherit; outline: none; }
+.cv-que-form input { flex: 1 1 200px; }
+.cv-que-form input:focus, .cv-sugerencia textarea:focus { border-color: var(--cv-lima); }
+.cv-acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+.cv-sugerencia { display: grid; gap: 10px; padding: 16px; border-radius: 18px; background: var(--cv-panel-2); }
+.cv-sugerencia h3 { margin: 0; font-size: 16px; font-weight: 800; }
+.cv-sugerencia textarea { width: 100%; resize: vertical; background: var(--cv-bg); }
+.cv-plazo { display: flex; }
+.cv-plazo button { flex: 1 1 0; padding: 0 6px; font-size: 13.5px; }
+.cv-check { display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 14.5px; cursor: pointer; }
+.cv-check input { width: 20px; height: 20px; accent-color: var(--cv-lima); }
+.cv-fila { display: flex; flex-wrap: wrap; gap: 8px; }
+.cv-ok { margin: 0; padding: 12px 14px; border-radius: 14px; background: rgba(91, 214, 138, .14); color: #CFF7DD; font-weight: 700; }
 .cv-cerrar { flex: none; width: 46px; height: 46px; border: 0; border-radius: 50%; background: var(--cv-panel-2); font-size: 26px; line-height: 1; cursor: pointer; }
 .cv-cerrar:hover { background: #232A35; }
 .cv-ficha-cuerpo { display: grid; gap: 16px; padding: 4px 20px calc(22px + env(safe-area-inset-bottom)); }
