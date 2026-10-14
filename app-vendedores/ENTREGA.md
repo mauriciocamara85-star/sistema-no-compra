@@ -33,9 +33,9 @@ Se entra desde el botón **Equipo VDH** de la barra del No Compra (la administra
 | 105 | corrido 13/10 | Test de conocimiento: grupos de preguntas, "Mandar un test ahora" con aviso, y los textos con "Equipo VDH" (el nivel "Impecable" de las fotos no cambia). | Sí: agrega columnas y una función. |
 | 106 | corrido 13/10 (noche) | "Repartir parejo" incluye los módulos del centro, al final de la numeración. Base de prueba 10/10; real con rollback 4/4. | Sí: cambia una sola función. |
 | 107–109 | (de la otra sesión) | Los usuarios del No Compra, parte 3. | — |
-| 110 | **sin correr** (la app ya está publicada, v128: sin el 110 todos siguen con 4) | El PIN de 6 números para administración, Atención y gerencia, con el freno escalonado (5 min, 30 min, 24 h y aviso) y `orden_pin_reiniciar`; cambiarlo pide el PIN de ahora (acordado con la otra sesión). Base de prueba 32/32; real con rollback. | Sí: agrega 2 columnas y funciones; no borra ningún PIN. |
+| 110 | corrido 13/10 (noche) | El PIN de 6 números para administración, Atención y gerencia, con el freno escalonado (5 min, 30 min, 24 h y aviso) y `orden_pin_reiniciar`; cambiarlo pide el PIN de ahora (acordado con la otra sesión). Base de prueba 32/32; real con rollback. | Sí: agrega 2 columnas y funciones; no borra ningún PIN. |
 | 111 | corrido 13/10 | (1) Los tableros de Ideas no guardan el enlace de "Compartir" de Pinterest (pin.it o con `invite_code`), que deja sumarse a editar el tablero: al de invitación le saca el código, un pin.it lo rechaza. (2) La caja deja borrar un monto ya guardado para corregirlo (vacío lo borra; si una app vieja no manda el campo, queda). (3) Los avisos de las fotos llevan a la pestaña Fotos (si también hay tareas, a Hoy). Cambia frases exactas de `orden_caja_guardar`, `orden_tick` y `orden_recordar` como están en la base, y si no las encuentra frena con un error. Base de prueba 23/23 (con el 106); real con rollback 10/10. | Sí: agrega un trigger y cambia 3 funciones. No borra datos. |
-| 112 | **sin correr** (13/10, noche) | **El croquis del local**: la entrada (en el salón y en el depósito) donde está, y el 1 al lado, hacia la izquierda; huecos y cosas fijas en las paredes (probadores, una columna); módulos dobles; lo del centro donde está y cosas fijas adentro (mostrador, escalera). Cada módulo se queda en su lugar con su historia: al guardar, la base los renumera (`orden_mapa_ordenar_`, que sólo la usa `orden_croquis_guardar`) y arma el mapa como siempre. El dibujo va en `orden_config.mapa.croquis`; la cantidad por pared sigue estando (las apps viejas siguen andando). Base de prueba 34/34; real con rollback 11/11 (Rivadavia quedó igual). | Sí: agrega 2 funciones; sin el croquis guardado el mapa se dibuja como antes. Los números que cambiaron quedan cambiados. |
+| 112 | corrido 13/10 (noche), verificado | **El croquis del local**: la entrada (en el salón y en el depósito) donde está, y el 1 al lado, hacia la izquierda; huecos y cosas fijas en las paredes (probadores, una columna); módulos dobles; lo del centro donde está y cosas fijas adentro (mostrador, escalera). Cada módulo se queda en su lugar con su historia: al guardar, la base los renumera (`orden_mapa_ordenar_`, que sólo la usa `orden_croquis_guardar`) y arma el mapa como siempre. El dibujo va en `orden_config.mapa.croquis`; la cantidad por pared sigue estando (las apps viejas siguen andando). Base de prueba 34/34; real con rollback 11/11 (Rivadavia quedó igual). | Sí: agrega 2 funciones; sin el croquis guardado el mapa se dibuja como antes. Los números que cambiaron quedan cambiados. |
 
 (El 92 es de la otra parte del sistema: Difusiones del CRM. El 100 y el 101, de los usuarios del No Compra.)
 
@@ -50,6 +50,41 @@ Se entra desde el botón **Equipo VDH** de la barra del No Compra (la administra
 | `tick`, `resumen-semanal`, `resumen-cajas` | **SUBIDAS el 13/10 (15:59) para la prueba con "Prueba": el reloj está andando.** Lo que sigue es la nota de antes: **NO subir hasta el día que empiecen los chicos** (y después del SQL 102: `tick` ahora también manda "Mañana tienen producto testigo" y borra los videos viejos; si el 102 no está, sigue igual): con el SQL 94 ya corrido, subir `tick` prende los controles y los avisos. Pasan `deno check`. Comando: `npx supabase functions deploy entrar leer-caja tick resumen-semanal resumen-cajas --project-ref gfjdjupuwxohkgchqykx --no-verify-jwt --workdir app-vendedores --use-api` |
 
 No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA` (ya están), y el token de Telegram y la clave del reloj los leen de la base (SQL 94).
+
+## El modo observador del croquis (14/10, rama `croquis-observador`, sin publicar)
+
+Pedido de Mauricio: "entender rápido cómo está armado el local", ver la foto de cada módulo y dejar sugerencias. Sólo
+presentación e interacción: no cambia cómo se arma el local ni los datos. Un commit por etapa:
+
+- **A. El observador y la vista de frente de cada módulo** (`croquis-visor.js` y `croquis-visor.css`, nuevos). El local con volumen (2.5D con CSS, sin 3D de verdad), paredes oscuras, piso de cerámica, muebles de nogal con la ropa a la vista (colgada en las paredes, doblada en las mesas, cajas en el depósito), la vidriera vidriada y la vereda. La miniatura de la foto en el frente de cada módulo (los del frente, arriba). Tocar un módulo hace zoom hasta su vista de frente: la foto grande (se carga recién ahí), quién lo tiene y quién lo cubre, la fecha, el nivel, lo que vio la IA; la vuelta es la animación inversa. Sin foto: "Pedirle la foto a…" (una tarea con foto). En la app reemplaza a Equipo → "El mapa del local" (supervisión, celular); en la administración, Por local → "Modo observador", con "Armar el croquis" (la maqueta se aplana y se abre el editor).
+- **B. Ver por vendedor, por estado del orden o por antigüedad de la foto.** Sólo cambian los colores (el halo, la base y el borde del número); por vendedor, los de siempre. Leyenda a la vista con cuántos hay en cada uno, y un puntito ámbar en los sin foto reciente.
+- **C. Adentro del módulo:** la foto de ahora junto a la de referencia "Así se arma en VDH" (la de Ajustes → Sectores), tocar una la agranda; un deslizador del historial ("Cómo estaba antes") que cambia la foto, el pie y lo que dijo la IA.
+- **D. Resaltar:** tocar a alguien de la leyenda ilumina lo suyo y atenúa el resto (también "Sin foto", "Más de 7 días"…).
+- **E. Dirección visual:** acercar y alejar (dos dedos, la rueda, + y −, "Centrar"), "Inclinado | Desde arriba" (desde arriba es el estilo de la segunda imagen de referencia), "Modo liviano", el editor del croquis con imán a la grilla y a las paredes, levantar y rebote, y el plano 2D de siempre con piso y sombras suaves. Dos rondas de pulido con fotos en celular (390×844) y PC (1366×768).
+- **F. Dejar sugerencia:** texto, para cuándo y "que la devuelva con una foto nueva". Le llega al que tiene el módulo como una tarea (`orden_crear_tarea`, lo mismo que "Nueva tarea"): ni a otro ni dos veces. "Qué hay en este módulo" (Remeras, Buzos…) se escribe ahí y se lee arriba del módulo.
+- **Rendimiento:** probado con el procesador 4 veces más lento y sin placa de video: abre en menos de 1 s y la animación de entrar a un módulo va a 25–33 cuadros por segundo (mediana; la primera vez, menos). La maqueta de Rivadavia son 290 elementos.
+- **Pruebas:** `probar-visor.js` (85, con una base de mentira y fotos genéricas), app 147, administración 92, testigo 30, cámara.
+
+**Decisiones que tomé (reversibles):**
+- Por defecto se ve **inclinado** (lo pide el texto); "Desde arriba" queda a un toque y se recuerda la elección de vista en cada teléfono.
+- Los niveles se llaman como en la app (Impecable, Bien, A mejorar, Fuera de estándar), no "excelente / bueno / regular / malo".
+- **Sin foto, "Pedirle la foto"** manda una tarea con foto: sacar o subir la foto directo desde el observador necesita una función nueva en la base (abajo).
+- "Qué hay en este módulo" usa el nombre propio del módulo (el mismo de "Repartir y ponerles nombre"). Lo del centro no se renombra desde el observador: su nombre es el que lo ubica en el croquis.
+- Las miniaturas, por ahora, se arman en el teléfono la primera vez (240 px) y quedan guardadas en ese aparato: las próximas veces el plano abre sin bajar las fotos grandes. La foto grande se baja sólo al entrar al módulo.
+- "Cambiarlo más adelante" del PIN de 6 se sacó (la otra sesión ya publicó la entrada de 6 del No Compra).
+
+**Necesita tu OK (tocan la base o las fotos guardadas; no hice nada todavía):**
+1. **Miniaturas guardadas** (para que el plano abra rápido también la primera vez en cada teléfono y en los 14 locales): al sacar una foto, la app sube también una de 240 px al lado (`…foto.mini.jpg`, unos 15 KB); un ajuste en `tick` para que el borrado de fotos viejas borre también su miniatura; y, si querés, armar las de las fotos que ya están. No necesita SQL; sí subir de nuevo `tick`.
+2. **La marca sobre la foto** (círculo o flecha) en la sugerencia: la tarea necesita dónde guardarla → SQL 113 (una columna `marca jsonb` en `orden_tareas` y que `orden_crear_tarea` la acepte). Reversible.
+3. **Propuesta de acomodo** (un borrador del croquis al lado del de verdad, que se aprueba): SQL 114 (guardar los borradores con quién los hizo y una función para aprobarlos, que usa la misma de guardar el croquis). Reversible.
+4. **Sacar o subir la foto directo desde el observador** (sin pedírsela a nadie): una función que cree el control del módulo en el momento → SQL 115. Reversible.
+
+**Para que decida Mau:**
+- ¿Los **vendedores** también ven el observador (para mirar, sin sugerencias)? Hoy lo ven el supervisor, el administrador y la gerencia.
+- Si el que tiene el módulo está de franco, ¿la sugerencia le llega igual a él o al que lo cubre?
+- ¿Vista por defecto inclinada o desde arriba?
+- **3D de verdad** (con una librería como three.js: girar el local, caminarlo): se ve más real, pero pesa más en los teléfonos de los locales y es otra forma de dibujar todo. Lo estimo en 3 a 5 días, con riesgo medio (rendimiento en celulares viejos). Lo de ahora ya tiene volumen y anda liviano.
+- Nombre y "qué hay" separados (hoy son lo mismo): necesita un campo nuevo en la base.
 
 ## Decisiones que tomé (todas reversibles)
 
@@ -100,6 +135,7 @@ No hace falta cargar secretos nuevos: usan `ANTHROPIC_API_KEY` y `VAPID_PRIVADA`
 5. **Borrar el vendedor de prueba "Prueba"**: el 13/10 dijo "dejalo por ahora".
 6. Para los avisos por Telegram: el `chat_id` de cada supervisor y el grupo de las cajas (`TELEGRAM_GRUPO_CAJAS`).
 7. Productos testigo: cómo se calcula el **Desvío** de la planilla (sigue pendiente, como en el README).
+8. **El modo observador**: tu OK para publicarlo (sw No Compra v132, Equipo VDH impecable-v13) y para lo de arriba que toca la base o las fotos guardadas.
 
 ## Revisión del árbitro (2 rondas, 13/10)
 
