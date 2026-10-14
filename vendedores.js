@@ -2514,6 +2514,7 @@ function pantallaMapa(loc) {
   app.className = 'app';
   abrirVisor(app, {
     local: loc, puedeSugerir: !soloMira(), puedeNombrar: !soloMira(), puedeEditar: false,
+    dondeAsignar: 'se asigna desde la computadora (No Compra → Equipo VDH → Por local)',
     capa: { abrir: abrirCapa, soltar: soltarCapa },
     alVolver: function () { irA('equipo'); }
   });

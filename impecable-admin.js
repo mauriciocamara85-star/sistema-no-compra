@@ -1352,12 +1352,13 @@ function ajustarPuerta(e) {
   p.pos = Math.max(0, Math.min(e.paredes[p.pared].length, p.pos));
 }
 
-/** Lo del centro se imanta a una grilla de 2,5 % (unos 10 cm) y, cerca de una pared, se pega a ella. */
-function imantarCroquis(v) {
-  var g = Math.round(entre01(v) / 0.025) * 0.025;
-  if (g < 0.04) g = 0;
-  if (g > 0.96) g = 1;
-  return Math.max(0, Math.min(1, +g.toFixed(3)));
+/** Lo del centro se imanta a una grilla de 2,5 % (unos 10 cm) y, cerca de una pared, se pega a ella: su borde contra
+    la pared (mitad: la mitad de su tamaño, de 0 a 1), sin meterse encima de los módulos de la pared. */
+function imantarCroquis(v, mitad) {
+  var m = Math.max(0, Math.min(0.5, mitad || 0)), g = Math.round(entre01(v) / 0.025) * 0.025;
+  if (g < m + 0.04) g = m;
+  if (g > 1 - m - 0.04) g = 1 - m;
+  return Math.max(0, Math.min(1, +g.toFixed(4)));
 }
 
 /** Coordenadas de un toque en el dibujo (las del SVG, no las de la pantalla). */
@@ -1619,8 +1620,13 @@ function editarMapa(d) {
     var mover = t.hasAttribute('data-centro') ? [t, t.previousElementSibling] : [t];
     var bb = t.getBBox(), c0 = { x: bb.x + bb.width / 2, y: bb.y + bb.height / 2 }, p0 = puntoSvg(svg, ev), movido = false;
     /* Dónde queda, ya imantado a la grilla y a las paredes (lo mismo mientras se mueve y al soltar). */
+    /* La mitad de lo que se mueve (lo del centro queda de 46 × 70; lo fijo, de su tamaño), para que su borde y no su
+       centro sea lo que se pegue a la pared. Un eje que casi no se movió queda como estaba. */
+    var mitadX = (t.hasAttribute('data-fijo') ? bb.width / 2 : 23) / caja[2], mitadY = (t.hasAttribute('data-fijo') ? bb.height / 2 : 35) / caja[3];
+    var x0 = (c0.x - caja[0]) / caja[2], y0 = (c0.y - caja[1]) / caja[3];
     var lugar = function (p) {
-      return { x: imantarCroquis((c0.x + p.x - p0.x - caja[0]) / caja[2]), y: imantarCroquis((c0.y + p.y - p0.y - caja[1]) / caja[3]) };
+      return { x: Math.abs(p.x - p0.x) < 3 ? entre01(x0) : imantarCroquis((c0.x + p.x - p0.x - caja[0]) / caja[2], mitadX),
+               y: Math.abs(p.y - p0.y) < 3 ? entre01(y0) : imantarCroquis((c0.y + p.y - p0.y - caja[1]) / caja[3], mitadY) };
     };
     function mueve(e2) {
       var p = puntoSvg(svg, e2);

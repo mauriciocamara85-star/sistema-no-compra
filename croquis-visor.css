@@ -72,9 +72,9 @@
   box-shadow: inset 0 0 40px rgba(70, 45, 20, .32); }
 .cv-vereda { position: absolute; border-radius: 0 0 10px 10px;
   background: repeating-linear-gradient(90deg, transparent 0 29px, rgba(255, 255, 255, .06) 29px 30px), repeating-linear-gradient(0deg, transparent 0 29px, rgba(255, 255, 255, .06) 29px 30px), #2A2F37; }
-.cv-vereda span { position: absolute; right: 18px; bottom: 8px; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(255, 255, 255, .4); }
+.cv-vereda span { position: absolute; right: 18px; bottom: 8px; font-size: 12px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: rgba(255, 255, 255, .4); }
 .cv-entrada { position: absolute; display: grid; place-items: center; border-radius: 6px; background: rgba(198, 244, 50, .16); border: 2px dashed rgba(198, 244, 50, .75); transform: translateZ(1px); }
-.cv-entrada span { font-size: 11px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #F4F5F7; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.cv-entrada span { transform: scale(var(--zc, 1)); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: #F4F5F7; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
 .cv-hueco { position: absolute; border-radius: 6px; border: 2px dashed rgba(70, 44, 22, .45); transform: translateZ(1px); }
 
 /* Las cajas con volumen */
@@ -112,15 +112,16 @@
 .cv-vidrio .cv-tapa { background: #2B2D32; }
 .cv-fijo .cv-cara { background: #555C67; }
 .cv-fijo .cv-tapa { background: #69717C; display: grid; place-items: center; box-shadow: none; }
-.cv-fijo-texto { font-size: 10px; font-weight: 800; color: #F4F5F7; text-align: center; padding: 2px; }
-.cv-fijo-texto.parado { writing-mode: vertical-rl; transform: rotate(180deg); }
+.cv-fijo-texto { font-size: 11px; font-weight: 800; color: #F4F5F7; text-align: center; padding: 2px; transform: scale(var(--zc, 1)); }
+.cv-fijo-texto.parado { writing-mode: vertical-rl; transform: rotate(180deg) scale(var(--zc, 1)); }
 
 /* El rótulo: el número (y qué hay) parado, de frente a quien mira */
-.cv-rotulo { position: absolute; left: 50%; top: 50%; display: grid; justify-items: center; gap: 1px; pointer-events: none;
+/* El número se puede tocar: abre SU módulo (aunque quede dibujado encima del de al lado). */
+.cv-rotulo { position: absolute; left: 50%; top: 50%; display: grid; justify-items: center; gap: 1px; cursor: pointer;
   transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 12px)) rotateX(calc(var(--incl, 54deg) * -1)) scale(var(--zc, 1)); }
 .cv-rotulo b { position: relative; min-width: 26px; height: 26px; padding: 0 7px; display: grid; place-items: center; border-radius: 999px; background: rgba(14, 17, 22, .9);
   border: 2px solid var(--halo, #6E7684); color: #F4F5F7; font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; }
-.cv-rotulo span { max-width: 120px; padding: 1px 7px; border-radius: 6px; background: rgba(14, 17, 22, .78); color: #F4F5F7; font-size: 10.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cv-rotulo span { max-width: 120px; padding: 1px 7px; border-radius: 6px; background: rgba(14, 17, 22, .78); color: #F4F5F7; font-size: 11.5px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cv-plano .cv-rotulo { transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 2px)) scale(var(--zc, 1)); }
 
 .cv-rotulo b.vieja::after { content: ""; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: #F5B84B; box-shadow: 0 0 0 2px #0E1116; }
@@ -133,6 +134,18 @@
 .cv-cara, .cv-tapa, .cv-rotulo { transition: opacity .25s; }
 .cv-mod.cv-resaltado { transform: translateZ(12px); }
 .cv-mod.cv-resaltado .cv-halo { opacity: 1; inset: -9px; }
+
+/* En el celular, con la maqueta chica, los nombres se tapan: se leen al acercarla (y enteros, en el panel). */
+.cv-nombres-ocultos .cv-rotulo span { display: none; }
+.cv-solo-ocultos { display: none; }
+.cv-nombres-ocultos .cv-solo-ocultos { display: block; }
+.cv-lista-que { display: flex; flex-wrap: wrap; gap: 6px; }
+.cv-lista-que button { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px 0 6px; border: 0; border-radius: 999px; background: var(--cv-panel-2); font-size: 13.5px; font-weight: 700; cursor: pointer; }
+.cv-lista-que b { min-width: 24px; height: 24px; display: grid; place-items: center; border-radius: 999px; background: var(--cv-bg); font-size: 12px; }
+/* El croquis sin armar: un aviso arriba. Sin módulos: sin controles ni panel. */
+.cv-aviso { position: absolute; left: 12px; right: 12px; top: 10px; margin: 0; padding: 10px 14px; border-radius: 14px; background: rgba(245, 184, 75, .16); color: #FFE2B0; font-size: 13.5px; font-weight: 700; z-index: 1; }
+.cv-sin-modulos .cv-cab-acc, .cv-sin-modulos .cv-zoom-acc, .cv-sin-modulos .cv-panel { display: none; }
+.cv-sin-modulos .cv-cuerpo { grid-template-columns: minmax(0, 1fr); }
 
 /* Modo liviano: sin sombras, sin desenfoques ni texturas (para teléfonos lentos) */
 .cv-liviano .cv-halo { box-shadow: none; inset: -3px; opacity: .7; }
@@ -207,6 +220,12 @@
 .cv-cerrar { flex: none; width: 46px; height: 46px; border: 0; border-radius: 50%; background: var(--cv-panel-2); font-size: 26px; line-height: 1; cursor: pointer; }
 .cv-cerrar:hover { background: #232A35; }
 .cv-ficha-cuerpo { display: grid; gap: 16px; padding: 4px 20px calc(22px + env(safe-area-inset-bottom)); }
+/* En la PC, las fotos a la izquierda y los datos, lo de la IA y "Dejar sugerencia" a la derecha (sin desplazar). */
+@media (min-width: 900px) {
+  .cv-ficha-cuerpo { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); align-items: start; column-gap: 22px; }
+  .cv-ficha-cuerpo > .cv-fotos { grid-column: 1; grid-row: 1 / span 8; }
+  .cv-ficha-cuerpo > :not(.cv-fotos) { grid-column: 2; }
+}
 .cv-fotos { display: grid; gap: 12px; }
 .cv-fotos.con-ref { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
 .cv-fotos.amplia-ahora, .cv-fotos.amplia-ref { grid-template-columns: minmax(0, 1fr); }
@@ -231,6 +250,10 @@
 .cv-sin-foto-ico::after { content: ""; position: absolute; left: 10px; top: -9px; width: 16px; height: 6px; border-radius: 3px 3px 0 0; background: var(--cv-suave); }
 .cv-boton { min-height: 48px; padding: 0 20px; border: 0; border-radius: 14px; background: var(--cv-panel-2); font-weight: 800; cursor: pointer; }
 .cv-boton:disabled { opacity: .6; cursor: default; }
+.cv-boton.cv-lima { background: var(--cv-lima); color: var(--cv-sobre-lima); }
+.cv-boton.cv-lima:hover:not(:disabled) { background: #D4FA5E; }
+.cv .cv-cerrar { font-size: 26px; }
+.cv .cv-redondo { font-size: 24px; }
 .cv-datos { display: flex; flex-wrap: wrap; gap: 8px; }
 .cv-datos > span { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 0 12px; border-radius: 999px; background: var(--cv-panel-2); font-size: 14px; font-weight: 700; }
 .cv-persona i { width: 12px; height: 12px; border-radius: 50%; }

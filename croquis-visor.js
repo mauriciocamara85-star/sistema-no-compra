@@ -17,16 +17,22 @@ var VISOR_ROPA = ['#2F5BB7', '#F3F0EA', '#C9573A', '#E0A93B', '#2E7D5B', '#8C2F4
 /** Abre el modo observador adentro de cont (que ya ocupa toda la pantalla). op: { local: {id, nombre}, puedeSugerir,
     puedeNombrar, puedeEditar, alVolver(), alEditar(d), capa: {abrir(fn), soltar(fn)} } */
 function abrirVisor(cont, op) {
+  if (_visorActual) visorSalir(_visorActual, true);
   var V = { op: op, cont: cont, tab: 'salon', inclinado: true, estado: {}, d: null, ficha: null, fit: {}, vista: 'vendedor' };
-  try { V.liviano = localStorage.getItem('vdh_visor_liviano') === '1'; V.vista = localStorage.getItem('vdh_visor_vista') || 'vendedor'; } catch (e) { V.liviano = false; }
+  _visorActual = V;
+  try {
+    V.liviano = localStorage.getItem('vdh_visor_liviano') === '1';
+    V.vista = localStorage.getItem('vdh_visor_vista') || 'vendedor';
+    V.inclinado = localStorage.getItem('vdh_visor_cam') !== 'arriba';
+  } catch (e) { V.liviano = false; }
   if (!VISOR_VISTAS[V.vista]) V.vista = 'vendedor';
-  cont.innerHTML = '<div class="cv' + (V.liviano ? ' cv-liviano' : '') + '">' +
+  cont.innerHTML = '<div class="cv' + (V.liviano ? ' cv-liviano' : '') + (V.inclinado ? '' : ' cv-plano') + '">' +
     '<header class="cv-cab"><button class="cv-volver" id="volverMapa" type="button">‹ Volver</button>' +
       '<div class="cv-titulo"><small>Modo observador</small><b>' + esc(op.local.nombre || '') + '</b></div>' +
       '<div class="cv-cab-acc"><div class="cv-seg" id="cvTabs" role="group" aria-label="Qué mirar">' +
         '<button type="button" data-tab="salon" aria-pressed="true">Salón</button><button type="button" data-tab="deposito" aria-pressed="false">Depósito</button></div>' +
-        '<div class="cv-seg" id="cvCam" role="group" aria-label="Cómo mirar la maqueta"><button type="button" data-cam="incl" aria-pressed="true">Inclinado</button>' +
-          '<button type="button" data-cam="arriba" aria-pressed="false">Desde arriba</button></div>' +
+        '<div class="cv-seg" id="cvCam" role="group" aria-label="Cómo mirar la maqueta"><button type="button" data-cam="incl" aria-pressed="' + V.inclinado + '">Inclinado</button>' +
+          '<button type="button" data-cam="arriba" aria-pressed="' + !V.inclinado + '">Desde arriba</button></div>' +
         (op.puedeEditar ? '<button class="cv-chico cv-lima" id="cvEditar" type="button">Armar el croquis</button>' : '') + '</div></header>' +
     '<div class="cv-cuerpo"><div class="cv-escena" id="cvEscena"><div class="cv-zoom" id="cvZoom"><div class="cv-camara"><div class="cv-mundo" id="cvMundo"></div></div></div>' +
       '<div class="cv-zoom-acc"><button type="button" id="cvCentrar" class="cv-chico" hidden>Centrar</button>' +
@@ -38,7 +44,7 @@ function abrirVisor(cont, op) {
   V.zoomEl = cont.querySelector('#cvZoom');
   V.z = { k: 1, x: 0, y: 0 };
   V.escena = cont.querySelector('#cvEscena');
-  cont.querySelector('#volverMapa').onclick = function () { if (V.ficha) { cerrarFicha(V); return; } visorSalir(V); };
+  cont.querySelector('#volverMapa').onclick = function () { if (V.ficha && !V.ficha.cerrando) { cerrarFicha(V); return; } visorSalir(V); };
   cont.querySelector('#cvTabs').onclick = function (e) {
     var b = e.target.closest && e.target.closest('[data-tab]');
     if (!b || b.dataset.tab === V.tab) return;
@@ -52,6 +58,7 @@ function abrirVisor(cont, op) {
     var b = e.target.closest && e.target.closest('[data-cam]');
     if (!b || (b.dataset.cam === 'incl') === V.inclinado) return;
     V.inclinado = b.dataset.cam === 'incl';
+    try { localStorage.setItem('vdh_visor_cam', V.inclinado ? 'incl' : 'arriba'); } catch (x) {}
     cont.querySelectorAll('#cvCam [data-cam]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
     V.raiz.classList.toggle('cv-plano', !V.inclinado);
     visorCamara(V, false);
@@ -69,7 +76,16 @@ function abrirVisor(cont, op) {
   V.mundo.addEventListener('click', function (e) {
     var c = e.target.closest && e.target.closest('.cv-caja[data-mod]');
     /* Después de mover la maqueta con el dedo, soltarla arriba de un módulo no lo abre. */
-    if (c && !V.ficha && Date.now() - (V.movidoEn || 0) > 350) abrirFicha(V, c.dataset.mod, c);
+    if (!c || Date.now() - (V.movidoEn || 0) <= 350) return;
+    if (V.ficha && V.ficha.cerrando && V.ficha.fin) V.ficha.fin();
+    if (!V.ficha) abrirFicha(V, c.dataset.mod, c);
+  });
+  V.mundo.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var c = e.target.closest && e.target.closest('.cv-caja[data-mod]');
+    if (!c || V.ficha) return;
+    e.preventDefault();
+    abrirFicha(V, c.dataset.mod, c);
   });
   visorGestos(V);
   /* El panel: cómo verlo (por vendedor, por estado, por antigüedad). */
@@ -93,16 +109,27 @@ function abrirVisor(cont, op) {
     var r = e.target.closest && e.target.closest('[data-resalta]');
     if (r) { V.resaltado = V.resaltado === r.dataset.resalta ? null : r.dataset.resalta; visorPintar(V); visorPanel(V); }
     if (e.target.closest && e.target.closest('#cvVerTodos')) { V.resaltado = null; visorPintar(V); visorPanel(V); }
+    var ab = e.target.closest && e.target.closest('[data-abrir]');
+    if (ab && !V.ficha) { var cj = V.mundo.querySelector('.cv-caja[data-mod="' + ab.dataset.abrir + '"]'); if (cj) abrirFicha(V, ab.dataset.abrir, cj); }
   });
-  V.alTamano = function () { if (V.d) { visorZoom(V, 1, 0, 0, false); V.fit = {}; visorCamara(V, true); } };
+  V.alTamano = function () {
+    if (!document.body.contains(V.raiz)) { visorSalir(V, true); return; }
+    if (V.ficha) { V.ajustePendiente = true; return; }
+    if (V.d) { visorZoom(V, 1, 0, 0, false); V.fit = {}; visorCamara(V, true); }
+  };
   window.addEventListener('resize', V.alTamano);
-  V.alTecla = function (e) { if (e.key === 'Escape' && V.ficha) cerrarFicha(V); };
+  V.alTecla = function (e) {
+    if (!document.body.contains(V.raiz)) { visorSalir(V, true); return; }
+    if (e.key === 'Escape' && V.ficha) cerrarFicha(V);
+  };
   document.addEventListener('keydown', V.alTecla);
   visorCargar(V);
   return V;
 }
 
+var _visorActual = null;
 function visorSalir(V, sinVolver) {
+  if (_visorActual === V) _visorActual = null;
   window.removeEventListener('resize', V.alTamano);
   document.removeEventListener('keydown', V.alTecla);
   if (V.ficha) cerrarFicha(V, true);
@@ -119,7 +146,12 @@ function visorCargar(V) {
     (r[1] || []).forEach(function (x) { V.estado[x.modulo_id] = x; });
     var c = V.cont.querySelector('#cvCargando');
     if (c) c.remove();
-    if (!V.d.modulos.length) { V.escena.insertAdjacentHTML('beforeend', '<p class="cv-vacio">Este local todavía no tiene módulos cargados.</p>'); return; }
+    if (!V.d.modulos.length) {
+      V.raiz.classList.add('cv-sin-modulos');
+      V.escena.insertAdjacentHTML('beforeend', '<p class="cv-vacio">Este local todavía no tiene módulos cargados.</p>');
+      return;
+    }
+    if (V.d.aprox) V.escena.insertAdjacentHTML('beforeend', '<p class="cv-aviso">Todavía no se armó el croquis de este local: los módulos están ubicados a ojo.</p>');
     if (!V.d.dep.length) { var t = V.cont.querySelector('#cvTabs'); if (t) t.hidden = true; }
     visorDibujar(V, true);
   }).catch(function (e) {
@@ -257,6 +289,7 @@ function visorZoom(V, k, x, y, animar) {
 function visorRotulos(V) {
   var base = Math.max(1, 0.9 / (V.sFit || 1)), k = (V.z && V.z.k) || 1;
   V.mundo.style.setProperty('--zc', Math.max(0.42, base / Math.pow(k, 0.8)).toFixed(3));
+  if (V.raiz) V.raiz.classList.toggle('cv-nombres-ocultos', (V.sFit || 1) * k < 0.68);
 }
 /** Acercar manteniendo quieto el punto f (de la pantalla). */
 function visorZoomEn(V, k2, f, animar) {
@@ -413,14 +446,32 @@ function miniBase() {
 function miniLeerGuardada(ruta) {
   return miniBase().then(function (db) {
     if (!db) return null;
+    miniLimpiar(db);
     return new Promise(function (ok) {
-      try { var q = db.transaction('fotos').objectStore('fotos').get(ruta); q.onsuccess = function () { ok(q.result || null); }; q.onerror = function () { ok(null); }; }
-      catch (e) { ok(null); }
+      try {
+        var q = db.transaction('fotos').objectStore('fotos').get(ruta);
+        q.onsuccess = function () { var v = q.result; ok(v && v.b ? v.b : v instanceof Blob ? v : null); };
+        q.onerror = function () { ok(null); };
+      } catch (e) { ok(null); }
     });
   });
 }
 function miniGuardar(ruta, blob) {
-  miniBase().then(function (db) { if (db) try { db.transaction('fotos', 'readwrite').objectStore('fotos').put(blob, ruta); } catch (e) {} });
+  miniBase().then(function (db) { if (db) try { db.transaction('fotos', 'readwrite').objectStore('fotos').put({ b: blob, t: Date.now() }, ruta); } catch (e) {} });
+}
+var _miniLimpias = false;
+function miniLimpiar(db) {
+  if (_miniLimpias) return;
+  _miniLimpias = true;
+  var limite = Date.now() - 40 * 864e5;
+  try {
+    db.transaction('fotos', 'readwrite').objectStore('fotos').openCursor().onsuccess = function (e) {
+      var cur = e.target.result;
+      if (!cur) return;
+      if (!cur.value || !cur.value.t || cur.value.t < limite) cur.delete();
+      cur.continue();
+    };
+  } catch (e) {}
 }
 function visorFotos(V) {
   V.mundo.querySelectorAll('.cv-caja[data-mod]').forEach(function (c) {
@@ -455,6 +506,15 @@ function visorCategoria(V, m) {
   }
   var s = V.d.sectorDe[m.sector_id], p = s && s.responsable_id;
   return { clave: 'p:' + (p || 'nadie'), texto: p && V.d.persona[p] ? nombreLista(V.d.persona[p]) : 'Sin responsable', color: visorColor(V, m) };
+}
+/** Qué hay en cada módulo (los que tienen nombre), enteros: en la maqueta, en el celular, se leen al acercar. */
+function visorListaQue(V, mods, abierto) {
+  var d = V.d, con = mods.filter(function (m) { return m.isla || nombrePropio(m); });
+  if (!con.length) return '';
+  return '<details class="cv-sec cv-que-sec"' + abierto + '><summary>Qué hay en cada módulo</summary>' +
+    '<p class="cv-ayuda cv-solo-ocultos">En el plano se leen al acercarlo.</p><div class="cv-lista-que">' + con.map(function (m) {
+      return '<button type="button" data-abrir="' + esc(m.id) + '"><b>' + esc(String(m.isla ? numeroVista(d, m) : m.numero)) + '</b>' + esc(m.isla ? m.nombre : nombrePropio(m)) + '</button>';
+    }).join('') + '</div></details>';
 }
 /** Cambiar de vista no vuelve a armar la maqueta: sólo cambia los colores (con una transición suave). */
 function visorPintar(V) {
@@ -492,6 +552,7 @@ function visorPanel(V) {
     }).join('') + '</div>' +
     (V.resaltado ? '<button type="button" class="cv-chico cv-ver-todos" id="cvVerTodos">Ver todos</button>' : '') +
     '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>' +
+    visorListaQue(V, mods, abierto) +
     '<details class="cv-sec"' + abierto + '><summary>De un vistazo</summary><div class="cv-vistazo"><span><b>' + mods.length + '</b> módulos</span>' +
       (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') + (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div></details>' +
     '<details class="cv-sec"><summary>Ajustes de la vista</summary><button type="button" class="cv-interruptor" id="cvLiviano" aria-pressed="' + !!V.liviano + '">' +
@@ -533,11 +594,11 @@ function abrirFicha(V, id, caja) {
         ? '<figure class="cv-foto cv-ahora"><div class="cv-foto-img" id="cvFotoGrande" data-amplia="ahora"></div><figcaption id="cvFotoPie">' + esc(visorPie(e.tomada_en, e.foto_de)) + '</figcaption>' +
           '<div class="cv-historia" id="cvHistoria" hidden></div></figure>'
         : '<div class="cv-sin-foto"><div class="cv-sin-foto-ico" aria-hidden="true"></div><p><b>Todavía no hay una foto de este módulo.</b></p>' +
-          (V.op.puedeSugerir && resp ? '<button class="cv-boton cv-lima" type="button" id="cvPedirFoto">Pedirle la foto a ' + esc(nombreLista(resp)) + '</button>' : resp ? '' : '<p>No tiene responsable: asignáselo en Por local.</p>') + '</div>') +
+          (V.op.puedeSugerir && resp ? '<button class="cv-boton cv-lima" type="button" id="cvPedirFoto">Pedirle la foto a ' + esc(nombreLista(resp)) + '</button>' : resp ? '' : '<p>No tiene responsable: ' + esc(visorDondeAsignar(V)) + '.</p>') + '</div>') +
       (ref ? '<figure class="cv-foto cv-ref"><div class="cv-foto-img" id="cvFotoRef" data-amplia="ref"></div><figcaption><b>Así se arma en VDH</b></figcaption></figure>' : '') + '</div>' +
       '<div class="cv-datos">' + (e.nivel ? '<span class="cv-nivel nivel-' + esc(e.nivel) + '">' + esc(NIVEL[e.nivel] || e.nivel) + '</span>' : '') +
         '<span class="cv-persona"><i style="background:' + visorColor(V, m) + '"></i>' + esc(resp ? nombreLista(resp) : 'Sin responsable') + (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '') + '</span>' +
-        (+e.tareas_abiertas ? '<span>' + e.tareas_abiertas + (+e.tareas_abiertas === 1 ? ' tarea abierta' : ' tareas abiertas') + '</span>' : '') + '</div>' +
+        '<span id="cvTareas"' + (+e.tareas_abiertas ? '' : ' hidden') + '>' + visorTextoTareas(e.tareas_abiertas) + '</span></div>' +
       '<div class="cv-ia" id="cvIa">' + (e.foto_path ? '<p class="cv-gris">Buscando lo que vio la IA…</p>' : '') + '</div>' +
       (V.op.puedeSugerir ? (resp
         ? '<div class="cv-acciones"><button class="cv-boton cv-lima" type="button" id="cvSugerir">Dejar sugerencia</button></div>' +
@@ -549,12 +610,19 @@ function abrirFicha(V, id, caja) {
             '<div class="cv-fila"><button type="submit" class="cv-boton cv-lima" id="cvSugMandar">Mandar a ' + esc(nombreLista(resp)) + '</button>' +
               '<button type="button" class="cv-boton" id="cvSugCancelar">Cancelar</button></div></form>' +
           '<p class="cv-ok" id="cvSugOk" hidden></p>'
-        : (e.foto_path ? '<p class="cv-gris">Este módulo no tiene responsable: asignáselo en Por local para dejarle sugerencias.</p>' : '')) : '') +
+        : (e.foto_path ? '<p class="cv-gris">Este módulo no tiene responsable: ' + esc(visorDondeAsignar(V)) + ' para dejarle sugerencias.</p>' : '')) : '') +
     '</div></section>');
   var fondo = V.raiz.querySelector('.cv-ficha-fondo'), ficha = V.raiz.querySelector('.cv-ficha');
   V.ficha = { el: ficha, fondo: fondo, caja: caja, id: id };
   ficha.querySelector('.cv-cerrar').onclick = function () { cerrarFicha(V); };
   fondo.onclick = function () { cerrarFicha(V); };
+  ficha.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Tab') return;
+    var f = [].filter.call(ficha.querySelectorAll('button, input, textarea, [tabindex="0"]'), function (x) { return !x.disabled && x.offsetParent !== null; });
+    if (!f.length) return;
+    if (ev.shiftKey && document.activeElement === f[0]) { ev.preventDefault(); f[f.length - 1].focus(); }
+    else if (!ev.shiftKey && document.activeElement === f[f.length - 1]) { ev.preventDefault(); f[0].focus(); }
+  });
   if (V.op.capa) { V.ficha.alAtras = function (porNavegar) { if (!porNavegar) cerrarFicha(V, false, true); }; V.op.capa.abrir(V.ficha.alAtras); }
   /* La foto: primero la miniatura (ya está), después la grande. Al lado, la de referencia; tocar una la agranda. */
   if (e.foto_path) { visorCargarFoto(ficha.querySelector('#cvFotoGrande'), e.foto_path); visorIa(V, id); }
@@ -591,7 +659,16 @@ function cerrarFicha(V, ya, porAtras) {
   if (!f || f.cerrando) return;
   f.cerrando = true;
   if (V.op.capa && f.alAtras && !porAtras) V.op.capa.soltar(f.alAtras);
-  var fin = function () { f.el.remove(); f.fondo.remove(); if (V.ficha === f) V.ficha = null; };
+  var listo = false;
+  var fin = f.fin = function () {
+    if (listo) return;
+    listo = true;
+    f.el.remove(); f.fondo.remove();
+    if (V.ficha === f) V.ficha = null;
+    if (ya) return;
+    if (f.caja && document.body.contains(f.caja)) f.caja.focus({ preventScroll: true });
+    if (V.ajustePendiente) { V.ajustePendiente = false; V.alTamano(); }
+  };
   V.escena.classList.remove('cv-detras');
   var origen = f.caja && document.body.contains(f.caja) ? f.caja.querySelector('.cv-frente, .cv-tapa') : null;
   if (ya || !origen || !visorMovimiento()) { fin(); return; }
@@ -620,14 +697,14 @@ function visorIa(V, id) {
 /** "hace 3 días · 10/10 15:32 · sacada por Lautaro". */
 function visorPie(ts, quien) { return ts ? textoHace(ts) + ' · ' + diaMes(ts) + ' ' + hora(ts) + (quien ? ' · sacada por ' + quien : '') : ''; }
 /** Pone una foto en un recuadro: primero la miniatura (si está), después la grande. Si ya no se guarda, lo dice. */
-function visorCargarFoto(div, ruta) {
+function visorCargarFoto(div, ruta, sinMiniatura) {
   if (!div) return;
   div.dataset.ruta = ruta;
   div.classList.remove('cv-nitida', 'cv-foto-falla');
   div.textContent = '';
   var sigue = function () { return div.dataset.ruta === ruta; };
   var falla = function () { if (!sigue()) return; div.style.backgroundImage = ''; div.classList.add('cv-foto-falla'); div.textContent = 'Esta foto ya no está guardada.'; };
-  miniaturaFoto(ruta).then(function (u) { if (u && sigue() && !div.classList.contains('cv-nitida')) div.style.backgroundImage = 'url("' + u + '")'; });
+  if (!sinMiniatura) miniaturaFoto(ruta).then(function (u) { if (u && sigue() && !div.classList.contains('cv-nitida')) div.style.backgroundImage = 'url("' + u + '")'; });
   urlFirmada(ruta).then(function (u) {
     if (!sigue()) return;
     if (!u) { falla(); return; }
@@ -648,7 +725,7 @@ function visorHistoria(V) {
   var r = z.querySelector('#cvHist'), fig = f.el.querySelector('.cv-ahora'), pie = f.el.querySelector('#cvFotoPie');
   r.addEventListener('input', function () {
     var i = h.length - 1 - (+r.value), c = h[i];
-    visorCargarFoto(f.el.querySelector('#cvFotoGrande'), c.foto_path);
+    visorCargarFoto(f.el.querySelector('#cvFotoGrande'), c.foto_path, i > 0);
     fig.classList.toggle('cv-antes', i > 0);
     pie.textContent = (i > 0 ? 'Antes: ' : '') + visorPie(c.tomada_en, c.persona_nombre) + (c.nivel ? ' · ' + (NIVEL[c.nivel] || c.nivel) : '');
     r.setAttribute('aria-valuetext', i > 0 ? diaMes(c.tomada_en) : 'Ahora');
@@ -687,10 +764,11 @@ function visorFichaSugerencia(V, m, resp) {
     if (s.length < 3) { avisarVisor('Escribí qué le sugerís.'); texto.focus(); return; }
     var titulo = s.length > 140 ? s.slice(0, 139) + '…' : s;
     var detalle = 'Sugerencia desde el croquis (' + nombreModulo(m, V.d.sectorDe[m.sector_id], V.d) + ')' + (s.length > 140 ? ': ' + s : '');
-    var antes = mandar.textContent;
+    var antes = mandar.textContent, clave = titulo + '|' + plazo, reintento = form.dataset.fallo === clave;
     mandar.disabled = true;
     mandar.textContent = 'Mandando…';
-    visorMandarTarea(m, resp, titulo, detalle, plazo, f.querySelector('#cvSugFoto').checked).then(function () {
+    visorMandarTarea(m, resp, titulo, detalle, plazo, f.querySelector('#cvSugFoto').checked, reintento).then(function () {
+      delete form.dataset.fallo;
       form.hidden = true;
       texto.value = '';
       ok.hidden = false;
@@ -701,7 +779,9 @@ function visorFichaSugerencia(V, m, resp) {
       mandar.textContent = antes;
       var e2 = V.estado[m.id] || (V.estado[m.id] = {});
       e2.tareas_abiertas = (+e2.tareas_abiertas || 0) + 1;
+      visorContarTareas(V, e2);
     }, function (err) {
+      if (esDeRed(err)) form.dataset.fallo = clave;
       mandar.disabled = false;
       mandar.textContent = antes;
       avisarVisor(esDeRed(err) ? 'Sin conexión: no se mandó. Probá de nuevo (no se va a duplicar).' : mensajeDe(err));
@@ -746,30 +826,42 @@ function visorFichaQue(V, m) {
 
 /** Sin foto: se le pide al que lo tiene (una tarea con foto, como las de siempre). */
 function visorPedirFoto(V, m, resp, boton) {
-  var titulo = 'Sacale una foto a ' + nombreModulo(m, V.d.sectorDe[m.sector_id], V.d).replace(/^M/, 'm');
+  var titulo = 'Sacale una foto a ' + nombreModulo(m, V.d.sectorDe[m.sector_id], V.d).replace(/^(Módulo|Depósito) /, function (x) { return x.toLowerCase(); });
+  var reintento = boton.dataset.fallo === '1';
   boton.disabled = true;
   boton.textContent = 'Pidiendo…';
-  visorMandarTarea(m, resp, titulo, 'Desde el croquis: el módulo no tiene foto.', 'hoy', true).then(function () {
+  visorMandarTarea(m, resp, titulo, 'Desde el croquis: el módulo no tiene foto.', 'hoy', true, reintento).then(function () {
+    delete boton.dataset.fallo;
+    var e2 = V.estado[m.id] || (V.estado[m.id] = {});
+    e2.tareas_abiertas = (+e2.tareas_abiertas || 0) + 1;
+    visorContarTareas(V, e2);
     boton.textContent = 'Listo: le llegó a ' + nombreLista(resp);
     avisarVisor('Le pedimos la foto a ' + nombreLista(resp).replace(/\.$/, '') + '.');
   }, function (e) {
+    if (esDeRed(e)) boton.dataset.fallo = '1';
     boton.disabled = false;
     boton.textContent = 'Pedirle la foto a ' + nombreLista(resp);
     avisarVisor(esDeRed(e) ? 'Sin conexión: no se mandó. Probá de nuevo.' : mensajeDe(e));
   });
 }
-/** Manda una tarea al responsable del módulo sin duplicarla: si una tarea igual ya llegó en los últimos minutos (por
-    ejemplo, se cortó la conexión después de mandarla), no se manda otra. */
-function visorMandarTarea(m, resp, titulo, detalle, plazo, conFoto) {
+/** Manda una tarea al responsable del módulo. Al reintentar después de un corte, primero se fija si la de antes llegó
+    igual (la base la creó pero no llegó la respuesta): así no se duplica. Si no es un reintento, se manda (una
+    sugerencia repetida a propósito es otra tarea). */
+function visorMandarTarea(m, resp, titulo, detalle, plazo, conFoto, reintento) {
   titulo = String(titulo).trim().slice(0, 140);
+  var mandar = function () { return llamar('orden_crear_tarea', { p_personas: [resp.id], p_titulo: titulo, p_detalle: detalle || null, p_modulo: m.id, p_plazo: plazo, p_requiere_foto: !!conFoto }); };
+  if (!reintento) return mandar();
   var desde = new Date(Date.now() - 15 * 60 * 1000).toISOString();
   return leer('/orden_tareas?select=id&persona_id=eq.' + valor(resp.id) + '&modulo_id=eq.' + valor(m.id) + '&titulo=eq.' + encodeURIComponent(titulo) +
               '&creado_en=gte.' + encodeURIComponent(desde) + '&limit=1').catch(function () { return []; })
-    .then(function (ya) {
-      if (ya && ya.length) return ya;
-      return llamar('orden_crear_tarea', { p_personas: [resp.id], p_titulo: titulo, p_detalle: detalle || null, p_modulo: m.id, p_plazo: plazo, p_requiere_foto: !!conFoto });
-    });
+    .then(function (ya) { return ya && ya.length ? ya : mandar(); });
 }
+function visorTextoTareas(n) { n = +n || 0; return n + (n === 1 ? ' tarea abierta' : ' tareas abiertas'); }
+function visorContarTareas(V, e) {
+  var z = V.ficha && V.ficha.el.querySelector('#cvTareas');
+  if (z) { z.textContent = visorTextoTareas(e.tareas_abiertas); z.hidden = !(+e.tareas_abiertas); }
+}
+function visorDondeAsignar(V) { return V.op.dondeAsignar || 'asignáselo en Por local'; }
 function avisarVisor(texto) {
   if (typeof avisar === 'function') { avisar(texto); return; }
 }
