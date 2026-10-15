@@ -537,7 +537,7 @@ function verModulo(m) {
       (h.length > 1 ? '<div class="seccion">Fotos anteriores (las que todavía se guardan)</div><div class="historia">' + h.slice(1).map(function (x) {
         return '<figure class="foto-chica"><img data-foto="' + esc(x.foto_path) + '" alt=""><figcaption>' + esc(diaMes(x.tomada_en) + ' · ' + (x.nivel ? NIVEL[x.nivel] : '—') + ' · ' + (x.persona_nombre || '')) + '</figcaption>' + usar(x.foto_path) + '</figure>';
       }).join('') + '</div>' : '') +
-      (mod || liq !== null || mb ? '<div class="seccion">Para la IA</div>' : '') +
+      (mod || liq !== null || mb ? '<div class="seccion">' + (mb ? 'Cómo se revisa' : 'Para la IA') + '</div>' : '') +
       (mb ? '<label class="campo vm-mueble"><span>Tipo de mueble</span><select id="vmMueble">' +
         '<option value="">' + esc('Como en el croquis: ' + nombreMueble(muebleDelCroquis(mb))) + '</option>' +
         TIPOS_MUEBLE.filter(function (t) { return t[0] !== 'deposito'; }).map(function (t) {
@@ -558,11 +558,14 @@ function verModulo(m) {
       sm.onchange = function () {
         var nuevo = sm.value;
         sm.disabled = true;
-        llamar('orden_modulo_mueble', { p_modulo: m.modulo_id, p_mueble: nuevo || null }).then(function (queda) {
+        /* Devuelve el mueble que queda y cuántas tareas de la IA canceló (de puntos que ese mueble no tiene). */
+        llamar('orden_modulo_mueble', { p_modulo: m.modulo_id, p_mueble: nuevo || null }).then(function (r) {
+          var queda = r && typeof r === 'object' ? r.mueble : r, canceladas = (r && r.tareas_canceladas) || 0;
           var t = typeof queda === 'string' && CHECKS_MUEBLE[queda] ? queda : nuevo || muebleDelCroquis(mb);
           elegido = nuevo;
           pintarPreguntas(t);
-          avisar('Listo: ' + m.modulo_nombre + ' queda como ' + nombreMueble(t) + '. Las preguntas nuevas van desde el próximo control.');
+          avisar('Listo: ' + m.modulo_nombre + ' queda como ' + nombreMueble(t) + '. Ya se pregunta eso, y la IA lo mira así desde la próxima foto.' +
+                 (canceladas ? ' Se ' + (canceladas === 1 ? 'canceló 1 tarea' : 'cancelaron ' + canceladas + ' tareas') + ' de la IA de puntos que este mueble no tiene.' : ''));
         }, function (e) { sm.value = elegido; avisar(mensajeDe(e)); }).then(function () { sm.disabled = false; });
       };
     }
@@ -1946,10 +1949,10 @@ function ajLista(cfg) {
 var PUNTOS_REGLAS = [
   ['salon', 'dobladas', 'Doblado', 'Las prendas dobladas: cuántas por estante, el alto de la pila, los bordes. En la pared y en las mesas.'],
   ['salon', 'frontales', 'Frontales', 'La prenda que se muestra de frente en cada estante. Sólo en la pared.'],
-  ['salon', 'colgado', 'Colgado', 'Las perchas y las prendas colgadas. En las mesas y en los percheros.'],
+  ['salon', 'colgado', 'Colgado', 'Las perchas y las prendas colgadas. Se le pregunta al vendedor en los percheros; en las mesas lo mira sólo la IA.'],
   ['salon', 'etiquetas', 'Etiquetas', 'En la pared, las mesas y los percheros.'],
-  ['salon', 'limpieza', 'Limpieza', 'En todos los muebles.'],
-  ['salon', 'exhibicion', 'Exhibición', 'Los colores, las cantidades y los percheros. La IA la mira en todo menos la vidriera; en los percheros también se le pregunta al vendedor.'],
+  ['salon', 'limpieza', 'Limpieza', 'En todos los muebles. Las que empiezan con "En la vidriera:" son sólo para la vidriera.'],
+  ['salon', 'exhibicion', 'Exhibición', 'Los colores, las cantidades y los percheros. La IA la mira en todo menos la vidriera; al vendedor se le pregunta en las mesas y en los percheros.'],
   ['salon', 'armado', 'Armado', 'Los maniquíes y las prendas de la vidriera.'],
   ['salon', 'carteles', 'Carteles', 'Los precios y los carteles de la vidriera.'],
   ['salon', 'luces', 'Luces', 'Las luces de la vidriera.'],
@@ -1961,7 +1964,7 @@ var PUNTOS_REGLAS = [
 var NOMBRE_PUNTO = { dobladas: 'Doblado', frontales: 'Frontales', etiquetas: 'Etiquetas', limpieza: 'Limpieza', exhibicion: 'Exhibición', rotulado: 'Rotulado', talles: 'Segmento y talle',
                      colgado: 'Colgado', armado: 'Armado', carteles: 'Carteles', luces: 'Luces' };
 /* Las 4 preguntas del control según el mueble (las mismas que orden_checks_mueble en la base, SQL 129). */
-var CHECKS_MUEBLE = { estantes: ['dobladas', 'frontales', 'etiquetas', 'limpieza'], mesa: ['dobladas', 'colgado', 'etiquetas', 'limpieza'],
+var CHECKS_MUEBLE = { estantes: ['dobladas', 'frontales', 'etiquetas', 'limpieza'], mesa: ['dobladas', 'exhibicion', 'etiquetas', 'limpieza'],
                       perchero: ['colgado', 'exhibicion', 'etiquetas', 'limpieza'], vidriera: ['armado', 'carteles', 'limpieza', 'luces'] };
 /** El mueble que sale del croquis (el mismo criterio que orden_tipo_mueble). */
 function muebleDelCroquis(m) { var n = String(m.nombre || ''); return /vidriera/i.test(n) ? 'vidriera' : /perch/i.test(n) ? 'perchero' : m.isla ? 'mesa' : 'estantes'; }

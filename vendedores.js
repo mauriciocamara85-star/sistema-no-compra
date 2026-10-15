@@ -1087,7 +1087,7 @@ function pantallaFotos() {
   engancharCabeza();
   Promise.all([
     /* Como en Hoy: lo de hoy, lo pendiente y lo que se mandó hoy (tomada_en: la de la foto mandada). */
-    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,mueble,tipo,estado,vence_en,enviado_en,tomada_en,nivel' +
+    leerConMueble('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,mueble,tipo,estado,vence_en,enviado_en,tomada_en,nivel' +
          '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ')' +
          '&order=sector_tipo.asc,modulo_numero.asc'),
     /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
@@ -1233,7 +1233,7 @@ var PREGUNTAS = {
              ['etiquetas', '¿Las etiquetas están adentro y con precio?'],
              ['limpieza', '¿Está limpio y sin faltantes?']],
   mesa: [['dobladas', '¿Las pilas están dobladas y parejas?'],
-         ['colgado', '¿Lo colgado está prolijo y con las perchas iguales?'],
+         ['exhibicion', '¿Está ordenado por color y bien cargado?'],
          ['etiquetas', '¿Las etiquetas están adentro y con precio?'],
          ['limpieza', '¿Está limpio y sin faltantes?']],
   perchero: [['colgado', '¿Las perchas son iguales y miran para el mismo lado?'],
@@ -1253,6 +1253,14 @@ PREGUNTAS.salon = PREGUNTAS.estantes;
 var CHECK = { dobladas: 'Doblado', frontales: 'Frontales', etiquetas: 'Etiquetas', limpieza: 'Limpieza',
               exhibicion: 'Exhibición', rotulado: 'Rotulado', talles: 'Segmento y talle',
               colgado: 'Colgado', armado: 'Armado', carteles: 'Carteles', luces: 'Luces' };
+/* Sin el SQL 129 las vistas no tienen la columna mueble: se lee de nuevo sin ella (y van las del sector). */
+function leerConMueble(ruta) {
+  return leer(ruta).catch(function (e) {
+    var t = (e && e.message) || '';
+    if (e && !e.sinSesion && /mueble/.test(t) && /does not exist|42703/i.test(t)) return leer(ruta.replace(',mueble,', ','));
+    throw e;
+  });
+}
 function preguntasDe(c) { return PREGUNTAS[c.mueble] || PREGUNTAS[c.sector_tipo] || PREGUNTAS.estantes; }
 /** Lo que se le preguntó de verdad: las del mueble, o, si respondió otras (la app de antes, o le cambiaron el
     mueble después), las que respondió, en el orden de siempre. */
@@ -2405,7 +2413,7 @@ function pantallaRevisar() {
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Revisar'); return; }
     return Promise.all([
-      leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,mueble,tipo,foto_path,ultimo_intento_id,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
+      leerConMueble('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,mueble,tipo,foto_path,ultimo_intento_id,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
            '&local_id=eq.' + valor(loc.id) + '&limit=60'),
       /* El producto testigo de los locales que mira: si no se puede leer, Revisar sigue igual. */
       testigosRevisar(loc).catch(function () { return []; })

@@ -10,12 +10,14 @@
 --
 -- Las preguntas (siguen siendo 4: el nivel sale de cuántas dice que sí):
 --   Pared con estantes: Doblado · Frontales · Etiquetas · Limpieza (como antes)
---   Mesa o exhibidor:   Doblado · Colgado · Etiquetas · Limpieza
+--   Mesa o exhibidor:   Doblado · Exhibición (por color y bien cargada) · Etiquetas · Limpieza
 --   Perchero:           Colgado · Exhibición (por color, o por talle) · Etiquetas · Limpieza
 --   Vidriera:           Armado · Carteles · Limpieza · Luces
 --   Depósito:           Doblado · Rotulado · Segmento y talle · Limpieza (como antes)
+-- La mesa no pregunta "Colgado" porque no todas tienen perchero (ronda 1 del
+-- árbitro): la IA sí lo mira, y si no hay nada colgado dice "no se ve".
 -- La IA mira las mismas, más "Exhibición" (colores y cantidades) en la pared
--- y en las mesas.
+-- y "Colgado" en las mesas.
 --
 -- El tipo de mueble sale del croquis (orden_tipo_mueble: isla, o el nombre
 -- dice vidriera o perchero), y desde ahora el supervisor lo puede elegir a
@@ -25,8 +27,11 @@
 -- 2. orden_mueble(): el elegido o el del croquis.
 -- 3. orden_checks_mueble() y orden_checks_ia_mueble(): las preguntas.
 -- 4. orden_modulo_mueble(): lo elige el supervisor del local o Administración.
--- 5. orden_enviar_control: las preguntas del mueble. La app de antes (las 4 del
---    sector) sigue andando: vale el juego de preguntas que respondió entero.
+--    Cancela las tareas pendientes de la IA de puntos que el mueble ya no tiene
+--    (si no, no se cerrarían nunca solas).
+-- 5. orden_enviar_control: las preguntas del mueble. También acepta las del
+--    mueble del croquis (si se lo cambiaron mientras respondía) y las del sector
+--    (la app de antes, que sigue en los teléfonos hasta que se actualiza).
 -- 6. orden_preparar_analisis: a la IA le llegan las del mueble.
 -- 7. orden_v_controles y orden_v_por_revisar: suman la columna mueble.
 -- 8. Reglas para los puntos nuevos (se editan en Ajustes → Reglas de orden).
@@ -38,11 +43,14 @@
 --   volver orden_v_por_revisar y orden_v_controles a las de antes (sin mueble:
 --   drop view orden_v_por_revisar; create or replace view orden_v_controles …;
 --   create view orden_v_por_revisar …, las dos con security_invoker y sus grants);
---   drop function orden_modulo_mueble(uuid, text), orden_checks_ia_mueble(text),
---   orden_checks_mueble(text), orden_mueble(text, boolean, text, orden_sector_tipo);
+--   drop function orden_modulo_mueble(uuid, text), orden_cancelar_tareas_otro_mueble_(uuid, uuid),
+--   orden_checks_ia_mueble(text), orden_checks_mueble(text),
+--   orden_mueble(text, boolean, text, orden_sector_tipo);
 --   alter table orden_modulos drop column mueble;
 --   delete from orden_reglas where check_clave in ('colgado', 'armado', 'carteles', 'luces')
---     or texto = 'En la vidriera: el vidrio sin marcas ni huellas y el piso limpio.';
+--     or texto like 'En la vidriera:%';
+--   (las tareas canceladas por cambio de mueble dicen "el módulo cambió de tipo de
+--   mueble" en motivo_no_pude: se pueden volver a 'pendiente' si hiciera falta)
 -- =====================================================================
 
 -- 1. El tipo de mueble elegido a mano (null = el del croquis)
@@ -65,28 +73,52 @@ grant execute on function orden_mueble(text, boolean, text, orden_sector_tipo) t
 create or replace function orden_checks_mueble(p_mueble text) returns text[]
 language sql immutable set search_path = public as $$
   select case p_mueble
-    when 'mesa'     then array['dobladas', 'colgado', 'etiquetas', 'limpieza']
+    when 'mesa'     then array['dobladas', 'exhibicion', 'etiquetas', 'limpieza']
     when 'perchero' then array['colgado', 'exhibicion', 'etiquetas', 'limpieza']
     when 'vidriera' then array['armado', 'carteles', 'limpieza', 'luces']
     when 'deposito' then orden_checks('deposito')
     else orden_checks('salon') end
 $$;
--- La IA: las mismas, más "exhibicion" (colores y cantidades) donde no está, salvo vidriera y depósito.
+-- La IA: las mismas, más "exhibicion" (colores y cantidades) en la pared y "colgado" en la mesa
+-- (si no tiene nada colgado, la IA dice "no se ve", que nunca es un error).
 create or replace function orden_checks_ia_mueble(p_mueble text) returns text[]
 language sql immutable set search_path = public as $$
-  select case when p_mueble in ('vidriera', 'deposito') or 'exhibicion' = any (orden_checks_mueble(p_mueble))
-              then orden_checks_mueble(p_mueble)
-              else orden_checks_mueble(p_mueble) || array['exhibicion'] end
+  select orden_checks_mueble(p_mueble) || case p_mueble
+    when 'mesa' then array['colgado']
+    when 'perchero' then '{}'::text[]
+    when 'vidriera' then '{}'::text[]
+    when 'deposito' then '{}'::text[]
+    else array['exhibicion'] end
 $$;
+-- Las tareas pendientes de la IA de puntos que el mueble ya no tiene: la IA no los mira más,
+-- así que no se cerrarían nunca solas (y el módulo seguiría diciendo "Corregir").
+create or replace function orden_cancelar_tareas_otro_mueble_(p_modulo uuid, p_por uuid)
+returns integer language plpgsql security definer set search_path = public as $$
+declare v_checks text[]; n integer;
+begin
+  select orden_checks_ia_mueble(orden_mueble(m.mueble, m.isla, m.nombre, s.tipo)) into v_checks
+    from orden_modulos m join orden_sectores s on s.id = m.sector_id where m.id = p_modulo;
+  update orden_tareas t
+     set estado = 'cancelada', motivo_no_pude = 'Cancelada: el módulo cambió de tipo de mueble y ese punto ya no se revisa',
+         completada_en = now(), prorroga_respondida_por = p_por
+   where t.modulo_id = p_modulo and t.origen = 'ia' and t.estado = 'pendiente'
+     and split_part(t.clave, ':', 3) not in ('', 'general')
+     and not (split_part(t.clave, ':', 3) = any (v_checks));
+  get diagnostics n = row_count;
+  return n;
+end $$;
+revoke all on function orden_cancelar_tareas_otro_mueble_(uuid, uuid) from public, anon, authenticated;
+grant execute on function orden_cancelar_tareas_otro_mueble_(uuid, uuid) to service_role;
 revoke all on function orden_checks_mueble(text) from public, anon;
 revoke all on function orden_checks_ia_mueble(text) from public, anon;
 grant execute on function orden_checks_mueble(text) to authenticated, service_role;
 grant execute on function orden_checks_ia_mueble(text) to authenticated, service_role;
 
--- 4. Elegir el mueble a mano (null vuelve al del croquis). Devuelve el que queda.
+-- 4. Elegir el mueble a mano (null vuelve al del croquis). Devuelve el que queda y cuántas
+--    tareas de la IA se cancelaron por ser de puntos que ya no tiene.
 create or replace function orden_modulo_mueble(p_modulo uuid, p_mueble text)
-returns text language plpgsql security definer set search_path = public as $$
-declare m orden_modulos; s orden_sectores; v_mueble text := nullif(trim(p_mueble), '');
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare m orden_modulos; s orden_sectores; v_mueble text := nullif(trim(p_mueble), ''); n integer;
 begin
   select * into m from orden_modulos where id = p_modulo for update;
   if not found then raise exception 'No encontramos ese módulo'; end if;
@@ -99,7 +131,8 @@ begin
     raise exception 'Ese tipo de mueble no existe';
   end if;
   update orden_modulos set mueble = v_mueble where id = m.id;
-  return orden_mueble(v_mueble, m.isla, m.nombre, s.tipo);
+  n := orden_cancelar_tareas_otro_mueble_(m.id, orden_yo_id());
+  return jsonb_build_object('mueble', orden_mueble(v_mueble, m.isla, m.nombre, s.tipo), 'tareas_canceladas', n);
 end $$;
 revoke all on function orden_modulo_mueble(uuid, text) from public, anon;
 grant execute on function orden_modulo_mueble(uuid, text) to authenticated, service_role;
@@ -108,7 +141,7 @@ grant execute on function orden_modulo_mueble(uuid, text) to authenticated, serv
 create or replace function orden_enviar_control(p_control uuid, p_respuestas jsonb)
 returns orden_controles language plpgsql security definer set search_path = public as $$
 declare
-  c orden_controles; v_tipo orden_sector_tipo; v_mueble text; v_checks text[]; v_otro text[]; v_resp jsonb := '{}';
+  c orden_controles; v_tipo orden_sector_tipo; v_mueble text; v_croquis text; v_checks text[]; v_otro text[]; v_resp jsonb := '{}';
   v_ia_checks jsonb; v_nivel_ia orden_nivel; v_decl orden_nivel; v_disc boolean; v_problemas boolean; k text;
   v_nueva uuid; v_reenvio boolean := false;
 begin
@@ -133,15 +166,16 @@ begin
   end if;
   if c.ultimo_intento_id is null then raise exception 'Primero sacá la foto'; end if;
 
-  select s.tipo, orden_mueble(m.mueble, m.isla, m.nombre, s.tipo) into v_tipo, v_mueble
+  select s.tipo, orden_mueble(m.mueble, m.isla, m.nombre, s.tipo), orden_mueble(null, m.isla, m.nombre, s.tipo)
+    into v_tipo, v_mueble, v_croquis
     from orden_modulos m join orden_sectores s on s.id = m.sector_id where m.id = c.modulo_id;
   v_checks := orden_checks_mueble(v_mueble);
-  -- La app de antes manda las 4 del sector, y si el mueble cambió mientras respondía llegan
-  -- las del mueble de antes: vale el juego de preguntas que respondió entero.
+  -- Si no respondió las del mueble, valen también: las del mueble del croquis (se lo eligieron a
+  -- mano mientras respondía) y las del sector (la app de antes). Nada más: así la comparación
+  -- punto a punto con la IA sigue valiendo.
   if exists (select 1 from unnest(v_checks) x where jsonb_typeof(p_respuestas -> x) is distinct from 'boolean') then
     select j.checks into v_otro
-      from unnest(case when v_tipo = 'deposito' then array['deposito'] else array['estantes', 'mesa', 'perchero', 'vidriera'] end)
-           with ordinality t(mueble, n)
+      from unnest(array[v_croquis, case when v_tipo = 'deposito' then 'deposito' else 'estantes' end]) with ordinality t(mueble, n)
       cross join lateral (select orden_checks_mueble(t.mueble) checks) j
      where not exists (select 1 from unnest(j.checks) x where jsonb_typeof(p_respuestas -> x) is distinct from 'boolean')
      order by t.n limit 1;
@@ -312,7 +346,9 @@ create or replace view orden_v_por_revisar with (security_invoker = true) as
   WHERE (estado = 'enviado'::orden_control_estado)
   ORDER BY discrepancia DESC, (orden_puntos(nivel)) NULLS FIRST, enviado_en;
 
--- 8. Reglas para los puntos nuevos: para todos los locales, se editan en Ajustes → Reglas de orden
+-- 8. Reglas para los puntos nuevos: para todos los locales, se editan en Ajustes → Reglas de orden.
+--    Sólo la primera vez: si ese punto ya tiene alguna regla (aunque la hayan cambiado o apagado),
+--    no se vuelven a agregar.
 insert into orden_reglas (sector_tipo, check_clave, texto, orden)
 select 'salon', x.clave, x.texto, x.orden
   from (values
@@ -321,7 +357,14 @@ select 'salon', x.clave, x.texto, x.orden
     ('armado',   'Maniquíes vestidos completos y prolijos: prendas derechas, sin arrugas ni etiquetas a la vista.', 1),
     ('armado',   'La vidriera se ve completa y ordenada, sin huecos ni cosas fuera de lugar.', 2),
     ('carteles', 'Carteles y precios derechos, limpios y a la vista, sin cintas ni papeles sueltos.', 1),
-    ('luces',    'Todas las luces de la vidriera prendidas, ninguna quemada.', 1),
-    ('limpieza', 'En la vidriera: el vidrio sin marcas ni huellas y el piso limpio.', 9)
+    ('luces',    'Todas las luces de la vidriera prendidas, ninguna quemada.', 1)
   ) as x(clave, texto, orden)
- where not exists (select 1 from orden_reglas r where r.check_clave = x.clave and r.texto = x.texto);
+ where not exists (select 1 from orden_reglas r where r.check_clave = x.clave);
+insert into orden_reglas (sector_tipo, check_clave, texto, orden)
+select 'salon', 'limpieza', 'En la vidriera: el vidrio sin marcas ni huellas y el piso limpio.', 9
+ where not exists (select 1 from orden_reglas r where r.check_clave = 'limpieza' and r.texto like 'En la vidriera:%');
+
+-- 9. Por si ya hay tareas de la IA de puntos que el mueble de su módulo no tiene (hoy no hay):
+--    se cancelan como al cambiar el mueble.
+select orden_cancelar_tareas_otro_mueble_(t.modulo_id, null)
+  from (select distinct modulo_id from orden_tareas where origen = 'ia' and estado = 'pendiente' and modulo_id is not null) t;
