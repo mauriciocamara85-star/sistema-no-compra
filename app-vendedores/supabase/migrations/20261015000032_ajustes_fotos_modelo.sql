@@ -122,8 +122,8 @@ end $$;
 insert into orden_reglas (sector_tipo, check_clave, texto, orden, sugerencia)
 select v.sector_tipo::orden_sector_tipo, v.check_clave, v.texto, v.orden, v.sugerencia
 from (values
-  ('salon', 'dobladas', 'Prendas finas (remeras, camisas, buzos finos): 4 por estante, dobladas de forma que la pila quede alta y pareja.', 3, false),
-  ('salon', 'dobladas', 'Prendas gruesas (buzos gruesos, camperas livianas): 3 por estante está bien.', 4, false),
+  ('salon', 'dobladas', 'Prendas finas (remeras, camisas, buzos finos, de tela tipo rústico): 4 prendas apiladas en cada estante, bien dobladas, anchas y con volumen, para que la pila quede alta y pareja.', 3, false),
+  ('salon', 'dobladas', 'Prendas gruesas (buzos gruesos, camperas livianas): 3 prendas apiladas por estante está bien.', 4, false),
   ('salon', 'dobladas', 'Shorts: 4 por pila, que el espacio quede cargado, prolijo y estético.', 5, false),
   ('salon', 'dobladas', 'La pila aprovecha el alto del estante: ni baja ni desparramada.', 6, false),
   ('salon', 'dobladas', 'Todo parejo: bordes alineados y estampas o logos visibles hacia el frente.', 7, false),
