@@ -75,15 +75,11 @@
   .cn-tit { font: 700 26px/1.2 var(--display); letter-spacing: -.5px; }
   .cn-rango { font-size: 14.5px; color: var(--txt-2); font-weight: 600; }
   .cn-controles { display: grid; gap: 10px; margin-bottom: 18px; }
-  .cn-periodos { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-  .cn-periodos::-webkit-scrollbar { display: none; }
-  .cn-periodos .chip { flex: none; min-height: 40px; padding: 8px 15px; font-size: 14px; }
   .cn-fila { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .cn-fila select { flex: 1 1 240px; max-width: 360px; }
-  .cn-fechas { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .cn-fechas[hidden] { display: none; }
-  .cn-fechas input { width: auto; flex: 1 1 150px; max-width: 200px; }
-  .cn-fechas span { font-size: 14px; color: var(--txt-2); }
+  /* El selector de período es el común (interfaz.js). Acá sólo la flecha ›
+     apagada: el período ya llega a hoy y el siguiente todavía no empezó. */
+  .per-flecha:disabled { opacity: .35; cursor: default; background: none; color: var(--txt-3); }
 
   /* ── El aviso de pocos datos ── */
   .pocos {
@@ -497,12 +493,7 @@
   </div>
 
   <div class="cn-controles">
-    <div class="cn-periodos" id="periodos" role="group" aria-label="Período" data-vistas="estadisticas movimientos"></div>
-    <div class="cn-fechas" id="fechas" data-vistas="estadisticas movimientos" hidden>
-      <input type="date" id="fDesde" aria-label="Desde"><span>al</span>
-      <input type="date" id="fHasta" aria-label="Hasta">
-      <button type="button" class="btn btn-sec btn-chico" id="fAplicar">Ver</button>
-    </div>
+    <div id="periodo" data-vistas="estadisticas movimientos"></div>
     <div class="cn-fila">
       <select id="selLocal" aria-label="Local"><option value="">Todos los locales</option></select>
       <button type="button" class="btn btn-sec btn-chico" id="btnExportar" data-vistas="movimientos">
@@ -702,13 +693,16 @@
   function pinGuardado() { return persona.pin(); }
   function guardarPin() { /* ya no se guarda nada: es la sesión de la persona */ }
 
-  var K_PERIODO = 'nc_cn_periodo', K_LOCAL = 'nc_cn_local';
+  /* El período se guarda con otra clave desde el selector común (14/10/2026):
+     la vieja ('nc_cn_periodo') era un código suelto ('30', 'elegir') y ya no
+     se lee. */
+  var K_PERIODO = 'nc_cn_periodo2', K_LOCAL = 'nc_cn_local';
   var SIN = '__SIN__';
   /* Las compras de vdh.com.ar (SQL 27): una fila propia, ni uno de los 14 ni
      "sin local". */
   var TIENDA = 'TIENDA ONLINE';
 
-  var estado = { periodo: leer(K_PERIODO) || '30', desde: '', hasta: '', local: leer(K_LOCAL) || '' };
+  var estado = { local: leer(K_LOCAL) || '' };
   var datos = null, verPlata = false, ordenLoc = { col: 'facturado', desc: true }, verCeros = false;
   var mov = { texto: '', tipo: '', salto: 0, lim: 25, total: 0 };
 
@@ -716,28 +710,49 @@
      y los gráficos esperan. */
   var MIN_COMPRAS = 20, MIN_DIAS = 7;
 
-  var PERIODOS = [
-    ['mes', 'Este mes'], ['7', '7 días'], ['30', '30 días'], ['90', '90 días'],
-    ['anio', 'Este año'], ['todo', 'Todo'], ['elegir', 'Elegir fechas']
-  ];
+  /* ═══ El período ═══════════════════════════════════════════════════════
+     Desde el 14/10/2026 es el selector de todo el sistema (interfaz.js), el
+     mismo de las Estadísticas del No Compra: un botón que dice el período,
+     ‹ › para el anterior y el siguiente, y al tocarlo los atajos y un
+     calendario para elegir un rango (reemplaza a las pastillas y a "Elegir
+     fechas"). Lo comparten las estadísticas y los movimientos. Llega hasta
+     hoy y arranca, como antes, en los últimos 30 días. */
+  var PERIODO_INICIAL = '30';
+  var ATAJOS_PERIODO = ['hoy', 'ayer', 'semana', '7', '30', 'mes', 'mes-pasado', '90', 'anio', 'todo'];
+  var selPeriodo = null;
+  function armarPeriodo() {
+    selPeriodo = Interfaz.periodo($('periodo'), {
+      inicial: PERIODO_INICIAL,
+      atajos: ATAJOS_PERIODO,
+      guardar: K_PERIODO,
+      hastaHoy: true,
+      /* "Todo" son los últimos 1100 días: lo más largo que la base mira de una vez. */
+      desdeTodo: Interfaz.fecha.sumar(Interfaz.fecha.hoy(), -1100),
+      alCambiar: function (r) {
+        /* Un rango entero en el futuro (tocado en el calendario) todavía no
+           empezó: llega con el "desde" después del "hasta". Se muestra hoy. */
+        if (r.desde > r.hasta) {
+          avisar('info', 'Ese período todavía no empezó: te muestro el de hoy.');
+          selPeriodo.poner({ desde: r.hasta, hasta: r.hasta });
+          return;
+        }
+        topePeriodo();
+        cargar();
+      }
+    });
+    topePeriodo();
+  }
+  /* La flecha › se apaga cuando el período ya llega a hoy: el siguiente
+     todavía no empezó. */
+  function topePeriodo() {
+    var b = selPeriodo.elemento.querySelector('[data-mover="1"]');
+    if (b) { b.disabled = selPeriodo.rango().hasta >= Interfaz.fecha.hoy(); }
+  }
+  /** Las dos fechas del período, 'AAAA-MM-DD' (el día de Argentina), con los dos extremos adentro. */
+  function rango() { var r = selPeriodo.rango(); return [r.desde, r.hasta]; }
 
   /* ═══ Fechas ═══════════════════════════════════════════════════════════ */
-  function iso(d) { return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); }
   function deIso(s) { var p = String(s).split('-'); return new Date(+p[0], +p[1] - 1, +p[2]); }
-  function menosDias(d, n) { var x = new Date(d); x.setDate(x.getDate() - n); return x; }
-
-  function rango() {
-    var hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-    switch (estado.periodo) {
-      case 'mes':  return [iso(new Date(hoy.getFullYear(), hoy.getMonth(), 1)), iso(hoy)];
-      case '7':    return [iso(menosDias(hoy, 6)), iso(hoy)];
-      case '90':   return [iso(menosDias(hoy, 89)), iso(hoy)];
-      case 'anio': return [iso(new Date(hoy.getFullYear(), 0, 1)), iso(hoy)];
-      case 'todo': return [iso(menosDias(hoy, 1100)), iso(hoy)];
-      case 'elegir': return [estado.desde || iso(menosDias(hoy, 29)), estado.hasta || iso(hoy)];
-      default:     return [iso(menosDias(hoy, 29)), iso(hoy)];
-    }
-  }
   function fechaLarga(s) { return deIso(s).toLocaleDateString('es-AR', { day: 'numeric', month: 'long' }); }
   function fechaCorta(s) { var d = deIso(s); return d.getDate() + '/' + (d.getMonth() + 1); }
 
@@ -800,15 +815,8 @@
   function abrir() {
     $('porton').hidden = true; $('marco').hidden = false; document.body.classList.add('hay-rail');
     $('btnRefrescar').hidden = false;
-    pintarPeriodos(); cargar();
-  }
-  function pintarPeriodos() {
-    $('periodos').innerHTML = PERIODOS.map(function (p) {
-      return '<button type="button" class="chip' + (estado.periodo === p[0] ? ' sel' : '') + '" data-p="' + p[0] + '"' +
-             ' aria-pressed="' + (estado.periodo === p[0]) + '">' + esc(p[1]) + '</button>';
-    }).join('');
-    $('fechas').hidden = estado.periodo !== 'elegir';
-    var r = rango(); $('fDesde').value = r[0]; $('fHasta').value = r[1];
+    if (!selPeriodo) { armarPeriodo(); }
+    cargar();
   }
 
   function cargar() {
@@ -1908,16 +1916,6 @@
   /* ═══ Los controles ════════════════════════════════════════════════════ */
   (function () {
     iniciarTema();
-    $('periodos').onclick = function (e) {
-      var b = e.target.closest('[data-p]'); if (!b) { return; }
-      estado.periodo = b.dataset.p; guardar(K_PERIODO, estado.periodo);
-      pintarPeriodos();
-      if (estado.periodo !== 'elegir') { cargar(); } else { $('fDesde').focus(); }
-    };
-    $('fAplicar').onclick = function () {
-      if (!$('fDesde').value || !$('fHasta').value) { avisar('err', 'Elegí las dos fechas.'); return; }
-      estado.desde = $('fDesde').value; estado.hasta = $('fHasta').value; cargar();
-    };
     $('selLocal').onchange = function () { estado.local = $('selLocal').value; guardar(K_LOCAL, estado.local); cargar(); };
     $('locales').onclick = function (e) {
       var o = e.target.closest('[data-orden]');
@@ -2001,10 +1999,12 @@
     $('btnRefrescar').onclick = cargar;
     /* Las pestañas No Compra y Gift Cards son otra página con sus propios
        filtros: se les pasa lo elegido acá. La tienda online y "sin local
-       asignado" son del Club; las fechas a elegir no se guardan. */
+       asignado" son del Club: esos no pasan. El período pasa tal cual
+       (también un rango del calendario): las dos usan el mismo selector y lo
+       guardan igual. */
     Array.prototype.forEach.call(document.querySelectorAll('.pestana[href^="estadisticas.html"]'), function (a) {
       a.addEventListener('click', function () {
-        if (estado.periodo !== 'elegir') { guardar('nc_est_periodo', estado.periodo); }
+        guardar('nc_est_periodo2', leer(K_PERIODO) || JSON.stringify({ atajo: PERIODO_INICIAL }));
         guardar('nc_est_local', estado.local === SIN || estado.local === TIENDA ? '' : estado.local);
       });
     });
