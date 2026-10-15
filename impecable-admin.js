@@ -702,15 +702,90 @@ function verCajas() {
     var porId = {};
     cajas.forEach(function (x) { porId[x.id] = x; });
     c.querySelectorAll('[data-caja]').forEach(function (tr) {
-      tr.onclick = function () {
-        var k = porId[tr.dataset.caja], f = k.fotos || {};
-        ventana('<h1>Caja del ' + esc(diaMes(k.fecha)) + '</h1><p class="bajada">' + esc((k.cargada_por_nombre ? 'La cargó ' + k.cargada_por_nombre : '') + (k.controlada_por_nombre ? ' · la controló ' + k.controlada_por_nombre : '')) + '</p>' +
-          ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(a.tipo === 'desvio' ? 'Diferencia en ' + a.campo + ': ' + pesos(a.monto) : a.tipo === 'no_coincide_foto' ? 'Un monto no coincide con la foto (' + a.campo + ')' : 'Foto de otro día (' + a.foto + ')'); }).join('<br>') + '</div>' : '') +
-          (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
-          (Object.keys(f).length ? '<div class="historia">' + Object.keys(f).map(function (t) { return '<figure class="foto-chica"><img data-foto="' + esc(f[t]) + '" alt=""><figcaption>' + esc(t) + '</figcaption></figure>'; }).join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
-      };
+      tr.onclick = function () { ventanaCaja(porId[tr.dataset.caja]); };
     });
   }).catch(function (e) { error(e, verCajas); });
+}
+
+/* ── Un día de caja: los números y las fotos del cierre grandes (14/10, pedido de Mauricio:
+   "que me deje verlo, como cuando manda lo de los módulos"). Debajo de cada foto, lo que
+   leyó la IA y, en rojo, si no coincide con lo que cargaron. Si la IA no la pudo leer,
+   "Leer de nuevo" (sin que el vendedor la saque otra vez). */
+var FOTOS_CIERRE = [
+  ['sistema', 'Cierre del sistema', [['ventas_tarjeta', 'Tarjeta', 'sis_tarjeta'], ['ventas_mercado_pago', 'Mercado Pago', 'sis_mp'], ['ventas_debito_go', 'Go Cuotas', 'sis_gocuotas'],
+    ['ventas_efectivo', 'Ventas en efectivo', null], ['ventas_totales', 'Ventas totales', null], ['saldo_final_efectivo', 'Saldo final en efectivo', 'sis_saldo_final_efvo']]],
+  ['lote', 'Cierre de lote (posnet)', [['total', 'Total', 'real_lote']]],
+  ['mp', 'Mercado Pago', [['total', 'Total', 'real_mp']]],
+  ['gocuotas', 'Go Cuotas', [['total', 'Total', 'real_gocuotas']]]
+];
+var FILAS_DIA_CAJA = [['Mercado Pago', 'sis_mp', 'real_mp', 'desvio_mp'], ['Tarjeta', 'sis_tarjeta', 'real_lote', 'desvio_tarjeta'],
+                      ['Go Cuotas', 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas'], ['Efectivo', 'sis_saldo_final_efvo', 'real_efectivo', 'desvio_efectivo']];
+
+function ventanaCaja(k) {
+  /* Cómo quedó la lectura de cada foto; sin señal, igual se ven las fotos (sin la lectura). */
+  leer('/orden_caja_fotos?select=id,tipo,foto_path,ia_estado,ia_resultado,tomada_en&caja_id=eq.' + valor(k.id) + '&borrada_en=is.null&order=tomada_en.desc')
+    .catch(function () { return null; })
+    .then(function (fs) { dibujarVentanaCaja(k, fs); });
+}
+
+function dibujarVentanaCaja(k, fs) {
+  var ultima = {};
+  if (fs) fs.forEach(function (f) { if (!ultima[f.tipo]) ultima[f.tipo] = f; });
+  else Object.keys(k.fotos || {}).forEach(function (t) { ultima[t] = { tipo: t, foto_path: k.fotos[t] }; });
+  var hay = FOTOS_CIERRE.filter(function (t) { return ultima[t[0]]; });
+  var v = ventana('<h1>Caja del ' + esc(diaMes(k.fecha)) + '</h1><p class="bajada">' + esc((k.local_nombre ? k.local_nombre : '') + (k.cargada_por_nombre ? ' · la cargó ' + k.cargada_por_nombre : '') + (k.controlada_por_nombre ? ' · la controló ' + k.controlada_por_nombre : '')) + '</p>' +
+    ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(a.tipo === 'desvio' ? 'Diferencia en ' + a.campo + ': ' + pesos(a.monto) : a.tipo === 'no_coincide_foto' ? 'Un monto no coincide con la foto (' + a.campo + ')' : 'Foto de otro día (' + a.foto + ')'); }).join('<br>') + '</div>' : '') +
+    (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
+    '<div class="desliza"><table class="caja-dia"><thead><tr><th></th><th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th></tr></thead><tbody>' +
+    FILAS_DIA_CAJA.map(function (f) {
+      var d = Number(k[f[3]] || 0);
+      return '<tr><td>' + f[0] + '</td><td class="n">' + pesos(k[f[1]]) + '</td><td class="n">' + pesos(k[f[2]]) + '</td><td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td></tr>';
+    }).join('') + '</tbody></table></div>' +
+    (hay.length ? '<div class="seccion">Fotos del cierre</div><div class="fotos-cierre">' + hay.map(function (t) {
+      var f = ultima[t[0]];
+      /* El nombre arriba, la foto y, debajo, lo que leyó la IA (al bajar no se mezcla con la siguiente). */
+      return '<figure class="foto-chica foto-cierre" data-tipo="' + t[0] + '"><figcaption><b>' + esc(t[1]) + '</b>' + (f.tomada_en ? ' · ' + esc(hora(f.tomada_en)) : '') + '</figcaption>' +
+        '<img data-foto="' + esc(f.foto_path) + '" alt="' + esc(t[1]) + '">' + lecturaCierre(t, f, k) + '</figure>';
+    }).join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
+  engancharReleer(v, k);
+}
+
+/** Lo que leyó la IA de una foto del cierre, comparado con lo que cargaron. */
+function lecturaCierre(t, f, k) {
+  if (!f.ia_estado) return '';
+  var r = f.ia_resultado || {};
+  if (f.ia_estado === 'invalida') return '<div class="lectura-ia"><span class="rojo">La IA no la pudo leer: ' + esc(r.motivo || 'no es la pantalla pedida o no se ven los números') + '.</span></div>';
+  if (f.ia_estado !== 'ok') {
+    return '<div class="lectura-ia">' + (f.ia_estado === 'pendiente' ? 'Todavía no se leyó.' : 'La IA no la pudo leer.') +
+      (soloMira() ? '' : ' <button class="boton chico" data-releer="' + esc(f.id) + '">Leer de nuevo</button>') + '</div>';
+  }
+  var renglones = t[2].filter(function (c) { return r[c[0]] != null || (c[2] && k[c[2]] != null); }).map(function (c) {
+    var leido = r[c[0]], cargado = c[2] ? k[c[2]] : null;
+    /* Rojo sólo si la IA leyó un número y lo cargado es otro (o no cargaron nada). */
+    var distinto = !!c[2] && leido != null && (cargado == null || Math.abs(Number(leido) - Number(cargado)) > 0.5);
+    return '<li>' + esc(c[1]) + ': <b>' + (leido == null ? 'no se leyó' : esc(pesos(leido))) + '</b>' +
+      (distinto ? ' <span class="rojo">· cargaron ' + esc(pesos(cargado)) + '</span>' : '') + '</li>';
+  });
+  var otroDia = r.fecha && r.fecha !== String(k.fecha).slice(0, 10);
+  return '<div class="lectura-ia">La IA leyó:' + (renglones.length ? '<ul>' + renglones.join('') + '</ul>' : ' ningún monto.') +
+    (otroDia ? '<div class="rojo">La foto dice ' + esc(diaMes(r.fecha)) + ': parece de otro día.</div>' : '') +
+    ((r.dudas || []).length ? '<div>No se leían bien: ' + esc(r.dudas.join(', ')) + '</div>' : '') + '</div>';
+}
+
+function engancharReleer(v, k) {
+  v.querySelectorAll('[data-releer]').forEach(function (b) {
+    unaVez(b, function () {
+      b.textContent = 'Leyendo…';
+      return llamarFuncion('leer-caja', { foto_id: b.dataset.releer }).then(function (d) {
+        if (!d._ok || !d.ok || !d.lectura) { avisar(d.mensaje || d.error || 'No se pudo leer la foto. Probá más tarde.'); return; }
+        var fig = b.closest('.foto-cierre'), t = FOTOS_CIERRE.filter(function (x) { return x[0] === fig.dataset.tipo; })[0];
+        var div = document.createElement('div');
+        div.innerHTML = lecturaCierre(t, { id: b.dataset.releer, ia_estado: d.lectura.foto_valida === false ? 'invalida' : 'ok', ia_resultado: d.lectura }, k);
+        fig.querySelector('.lectura-ia').replaceWith(div.firstChild);
+        avisar(d.lectura.foto_valida === false ? 'La IA dice que esa foto no se lee.' : 'Listo: la IA leyó la foto.');
+      });
+    });
+  });
 }
 
 /* Todos los locales en un mes: los desvíos y si está cerrado. Tocar uno abre sus días. */

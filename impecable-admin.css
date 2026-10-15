@@ -192,6 +192,18 @@
 .foto-chica { margin: 0; }
 .foto-chica img { width: 100%; aspect-ratio: 3 / 4; object-fit: contain; border-radius: var(--r-sm); background: #111110; cursor: zoom-in; }
 .foto-chica figcaption { margin-top: 4px; font-size: 12px; color: var(--txt-3); }
+/* Un día de caja: los números y las fotos del cierre grandes, una debajo de la otra. */
+.ventana .caja-dia { width: 100%; border-collapse: collapse; font-size: 14px; }
+.ventana .caja-dia th, .ventana .caja-dia td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
+.ventana .caja-dia th { font-size: 12px; color: var(--txt-3); background: var(--surface-2); }
+.ventana .caja-dia .n { text-align: right; white-space: nowrap; }
+.fotos-cierre { display: grid; gap: 22px; }
+.foto-cierre img { aspect-ratio: auto; max-height: 72vh; }
+.foto-cierre figcaption { margin: 0 0 6px; font-size: 14px; color: var(--txt-2); }
+.foto-cierre figcaption b { font-size: 15px; color: var(--txt); }
+.lectura-ia { margin-top: 8px; font-size: 14px; color: var(--txt-2); }
+.lectura-ia ul { margin: 4px 0 0; }
+.lectura-ia .boton.chico { min-height: 36px; padding: 0 12px; margin-left: 6px; font-size: 13px; }
 
 /* ── El editor de los ajustes ── */
 .imp .renglon {
