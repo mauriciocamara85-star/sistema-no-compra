@@ -1,6 +1,8 @@
 // Revisión de fotos con la API de Claude (visión).
-// No hay que "entrenar" nada: le mandamos la foto, la foto de referencia del módulo
-// (si hay) y las reglas de orden que están cargadas en la base (orden_reglas).
+// No hay que "entrenar" nada: le mandamos la foto, la foto modelo del módulo (o, si no
+// tiene, la foto ejemplo de su tipo de mueble) y las reglas de orden que están cargadas
+// en la base (orden_reglas). Las reglas marcadas como sugerencia (SQL 123) van aparte y
+// sólo cuando las sugerencias están prendidas: nunca se vuelven "corregir".
 // La respuesta llega siempre con el mismo formato: se pide como JSON con un esquema
 // (structured outputs). Antes era una herramienta forzada (tool_choice), pero Claude
 // Sonnet 5.5 / Opus 5.5 la rechazan con un 400 y ninguna foto se revisaba.
@@ -12,10 +14,14 @@ export type Contexto = {
   sector_tipo: "salon" | "deposito";
   modulo_nombre: string;
   referencia_path: string | null;
+  /** "modulo": la foto modelo de ese módulo; "ejemplo": la de su tipo de mueble (SQL 123). Sin el dato, es la del módulo. */
+  referencia_tipo?: "modulo" | "ejemplo" | null;
+  /** El tipo de mueble ("Módulo de pared con estantes", "Mesa o exhibidor del medio"…), sacado del croquis (SQL 123). */
+  mueble?: string | null;
   reglas_extra: string | null;
   exhibidor: { nombre: string; prendas_min: number | null; prendas_max: number | null; notas: string | null } | null;
   checks: string[];
-  reglas: { check: string; texto: string }[];
+  reglas: { check: string; texto: string; sugerencia?: boolean }[];
   colores: string[];
   ia_activa: boolean;
   ia_sugerencias: boolean;
@@ -49,8 +55,10 @@ const NOMBRE_CHECK: Record<string, string> = {
 };
 
 export function armarSistema(ctx: Contexto): string {
+  const obligatorias = ctx.reglas.filter((r) => !r.sugerencia);
+  const sugerencias = ctx.reglas.filter((r) => r.sugerencia);
   const reglasPorCheck = ctx.checks.map((c) => {
-    const lineas = ctx.reglas.filter((r) => r.check === c).map((r) => `  - ${r.texto}`);
+    const lineas = obligatorias.filter((r) => r.check === c).map((r) => `  - ${r.texto}`);
     return `• ${c} — ${NOMBRE_CHECK[c] ?? c}\n${lineas.join("\n") || "  - (sin reglas cargadas)"}`;
   }).join("\n");
 
@@ -62,6 +70,16 @@ export function armarSistema(ctx: Contexto): string {
       (ctx.exhibidor.notas ? ` ${ctx.exhibidor.notas}` : "")
     : "";
 
+  // Las de estilo ("colores que combinen"): sólo con las sugerencias prendidas, y nunca como algo para corregir.
+  const deEstilo = ctx.ia_sugerencias && sugerencias.length
+    ? `\n\nSUGERENCIAS DE ESTILO (no son errores: si algo de esto no se cumple, como mucho dejá una sugerencia, nunca "corregir"):\n${sugerencias.map((r) => `  - ${r.texto}`).join("\n")}`
+    : "";
+  const mueble = ctx.mueble ? `\nMUEBLE: ${ctx.mueble}.` : "";
+  const guiaReferencia = !ctx.referencia_path ? ""
+    : ctx.referencia_tipo === "ejemplo"
+    ? "\n- La foto de ejemplo es de OTRO mueble del mismo tipo, bien ordenado: usala sólo para ver el nivel de orden que se espera. No marques que la ropa, los colores, la cantidad o la disposición son distintos."
+    : "\n- Compará contra la foto modelo: así tiene que verse este módulo.";
+
   const etapa = ctx.ia_sugerencias
     ? "Además de lo que hay que corregir, podés dejar hasta 2 sugerencias para que quede más lindo (gravedad \"sugerencia\")."
     : "ETAPA ACTUAL: marcá SOLO problemas puntuales que hay que corregir hoy. No des sugerencias de estilo ni de combinación.";
@@ -71,13 +89,13 @@ Revisás la foto que sacó un vendedor de ${ctx.sector_tipo === "salon" ? "un m�
 
 QUÉ MIRAR (cada punto tiene una clave):
 ${reglasPorCheck}
-${ctx.sector_tipo === "salon" && ctx.colores.length ? `\nREGLA DE COLORES (degradé del más claro al más oscuro): ${ctx.colores.join(" → ")}.` : ""}${exhibidor}${ctx.reglas_extra ? `\nPROPIO DE ESTE MÓDULO: ${ctx.reglas_extra}` : ""}
+${ctx.sector_tipo === "salon" && ctx.colores.length ? `\nREGLA DE COLORES (degradé del más claro al más oscuro): ${ctx.colores.join(" → ")}.` : ""}${mueble}${exhibidor}${ctx.reglas_extra ? `\nPROPIO DE ESTE MÓDULO: ${ctx.reglas_extra}` : ""}${deEstilo}
 
 CÓMO RESPONDER
 - Sé estricto pero justo: marcá solo lo que se ve CLARAMENTE en la foto. Ante la duda, no lo marques.
 - Si un punto no se puede ver (por ejemplo, etiquetas adentro de la prenda), ponelo como "no_se_ve". Nunca es un error.
 - Si la foto está borrosa, muy oscura, cortada o no muestra un módulo o un depósito, devolvé foto_valida = false y explicá en una frase cómo sacarla de nuevo.
-- Si hay foto de referencia, compará contra ella.
+- No inventes problemas por no tener una foto para comparar: las reglas alcanzan.${guiaReferencia}
 - Hallazgos: máximo 4, en español rioplatense, cortos y en imperativo (ej.: "Completá el frontal: faltan 2 prendas"). En "detalle", una frase concreta de dónde está el problema.
 - Si un frontal está incompleto, el detalle tiene que decir: "Si no hay más stock, cambiá la prenda por otro producto." Nunca sugieras dejarlo incompleto.
 - ${etapa}
@@ -204,7 +222,9 @@ export async function analizarConClaude(opts: {
 
   const contenido: unknown[] = [];
   if (referencia) {
-    contenido.push({ type: "text", text: "FOTO DE REFERENCIA (así tiene que verse):" });
+    contenido.push({ type: "text", text: ctx.referencia_tipo === "ejemplo"
+      ? "FOTO DE EJEMPLO (otro mueble del mismo tipo, bien ordenado: muestra el nivel de orden que se espera):"
+      : "FOTO MODELO (así tiene que verse este módulo):" });
     contenido.push({ type: "image", source: { type: "base64", ...referencia } });
   }
   contenido.push({ type: "text", text: "FOTO A REVISAR:" });

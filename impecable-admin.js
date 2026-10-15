@@ -86,7 +86,7 @@ var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                ['orden', 'Por vendedor', 'Cada vendedor, semana a semana'],
                ['cajas', 'Cajas', 'Como la planilla del control diario'],
                ['testigo', 'Productos testigo', 'Lo que se cuenta cada semana'],
-               ['ajustes', 'Ajustes', 'La gente, los sectores y módulos, los horarios y las reglas']];
+               ['ajustes', 'Ajustes', 'La gente, cada local, las reglas de orden y los tests']];
 var _solapa = 'panorama';
 function svgMenu(k) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONO_MENU[k] + '</svg>';
@@ -98,8 +98,22 @@ var K_MENU_CHICO = 'nc_panel_equipo';
 
 (function () {
   var b = document.getElementById('btnRefrescar');
-  if (b) b.onclick = function () { if (_vend && _vend.refresco && esSupervision() && _locales.length) ir(_solapa); else inicio(); };
+  if (b) b.onclick = function () { if (!puedeSalir()) return; if (_vend && _vend.refresco && esSupervision() && _locales.length) ir(_solapa); else inicio(); };
+  /* Cerrar o recargar la página con algo sin guardar: el navegador pregunta. */
+  window.addEventListener('beforeunload', function (e) { if (sinGuardar()) { e.preventDefault(); e.returnValue = ''; } });
 })();
+
+/** Lo que quedó escrito sin guardar en la pantalla: un "Guardar" prendido o una regla nueva a medio escribir
+    (15/10/2026: una regla tipeada en Ajustes no se había guardado y nadie se dio cuenta). */
+function sinGuardar() {
+  var c = document.getElementById('cuerpo');
+  if (!c) return 0;
+  return c.querySelectorAll('[data-guardar]:not([disabled])').length +
+    [].filter.call(c.querySelectorAll('[data-nueva-regla] textarea'), function (t) { return t.value.trim(); }).length;
+}
+function puedeSalir() {
+  return !sinGuardar() || confirm('Hay cambios sin guardar. ¿Salir igual? Lo que no guardaste se pierde.');
+}
 
 function inicio() {
   if (!_vend || !_vend.refresco) { pantallaSinSesion(); return; }
@@ -157,13 +171,13 @@ function ir(solapa) {
   try { history.replaceState(null, '', location.pathname + '#' + solapa); } catch (e) {}
   app.innerHTML = cabezaAdmin();
   var s = document.getElementById('selLocal');
-  if (s) s.onchange = function () { elegirLocal(s.value); ir(_solapa); };
+  if (s) s.onchange = function () { if (!puedeSalir()) { s.value = _local.id; return; } elegirLocal(s.value); ir(_solapa); };
   document.getElementById('salir').onclick = function () {
     if (!confirm('¿Salir? Para volver a entrar hace falta el PIN.')) return;
     cerrarSesion();
     pantallaSinSesion('Saliste. Para volver, entrá de nuevo con tu PIN.');
   };
-  app.querySelectorAll('[data-solapa]').forEach(function (b) { b.onclick = function () { ir(b.dataset.solapa); }; });
+  app.querySelectorAll('[data-solapa]').forEach(function (b) { b.onclick = function () { if (puedeSalir()) ir(b.dataset.solapa); }; });
   engancharPlegar();
   asomarMenu();
   if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
@@ -311,7 +325,7 @@ function datosPanorama(rango) {
     });
     var sinMods = lista.filter(function (x) { return !x.mods; });
     lista = lista.filter(function (x) { return x.mods; });
-    if (!lista.length) html += '<div class="vacio">Todavía ningún local tiene módulos cargados: se cargan en Ajustes → Sectores y módulos.</div>';
+    if (!lista.length) html += '<div class="vacio">Todavía ningún local tiene módulos: se arman en Por local, con "Armar el croquis".</div>';
     else html += '<div class="desliza"><table class="tabla-datos imp-pano"><thead><tr><th>Local</th>' +
       semanas.map(function (w) { return '<th class="n" style="text-align:center">' + esc(diaMes(w)) + '</th>'; }).join('') +
       '<th class="n">A tiempo</th><th class="n">Sin revisar</th><th class="n">Tareas</th><th class="n">Cajas con dif.</th></tr></thead><tbody>' +
@@ -330,7 +344,7 @@ function datosPanorama(rango) {
     if (lista.length) html += '<p class="bajada" style="margin-top:10px">Cada casillero es una semana (desde el lunes): el nivel y, de los controles ya hechos, cuántos llegaron a tiempo. Tocá un local para ver sus módulos y sus fotos.</p>';
     if (sinMods.length) html += '<div class="nota imp-sin-mods">Todavía sin módulos (no generan controles): ' + sinMods.map(function (x) {
         return '<button class="imp-enlace" data-ir="' + esc(x.l.id) + '">' + esc(x.l.nombre) + '</button>';
-      }).join(', ') + '. Se cargan en Ajustes → Sectores y módulos.</div>';
+      }).join(', ') + '. Se arman en Por local, con "Armar el croquis".</div>';
     var c = document.getElementById('panTabla');
     c.innerHTML = html;
     c.querySelectorAll('[data-ir]').forEach(function (tr) { tr.onclick = function () { elegirLocal(tr.dataset.ir); ir('local'); }; });
@@ -391,7 +405,7 @@ function verFotos() {
 
 function datosFotos(rango) {
   var L = valor(_local.id), pedido = ++_fotoPedido;
-  leer('/orden_v_controles?select=id,fecha,tipo,estado,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,a_tiempo,comentario' +
+  leer('/orden_v_controles?select=id,fecha,tipo,estado,modulo_id,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,a_tiempo,comentario' +
        '&local_id=eq.' + L + '&foto_path=not.is.null&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + (_fotoNivel ? '&nivel=eq.' + _fotoNivel : '') + '&order=tomada_en.desc&limit=150')
     .then(function (fotos) {
       if (_solapa !== 'fotos' || pedido !== _fotoPedido) return;
@@ -429,7 +443,12 @@ function verFoto(f) {
       (f.nivel_ia ? ' &nbsp; IA: ' + estNivel(f.nivel_ia) : '') +
       (f.nivel_declarado ? ' &nbsp; El vendedor: ' + estNivel(f.nivel_declarado) : '') + '</p>' +
     (hall.length ? '<div class="seccion">Lo que vio la IA</div><ul>' + hall.map(function (h) { return '<li>' + esc(h.titulo) + (h.gravedad === 'sugerencia' ? ' (sugerencia)' : '') + '</li>'; }).join('') + '</ul>' : '') +
-    (f.comentario ? '<div class="seccion">La supervisión</div><div class="nota">' + esc(f.comentario) + '</div>' : ''));
+    (f.comentario ? '<div class="seccion">La supervisión</div><div class="nota">' + esc(f.comentario) + '</div>' : '') +
+    (esAdmin() && f.modulo_id ? '<div class="vm-usar"><button class="boton chico" id="vfModelo">Usar como modelo de este módulo</button></div>' : ''));
+  var b = document.getElementById('vfModelo');
+  if (b) unaVez(b, function () {
+    return usarComoModelo({ id: f.modulo_id }, f.foto_path).then(function () { avisar('Listo: es la foto modelo de ' + f.modulo_nombre + ' (la IA compara con ésta).'); return 'dejar-apagado'; });
+  });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -455,7 +474,7 @@ function verLocal() {
     html += graficoLocal(r[2]);
     _mapaLocal = r[3];
     html += '<div id="zonaMapa"></div>';
-    if (!mods.length) html += '<div class="vacio">Este local todavía no tiene módulos cargados. Se cargan en Ajustes → Sectores y módulos.</div>';
+    if (!mods.length) html += '<div class="vacio">Este local todavía no tiene módulos: se arman en el mapa, con "Armar el croquis".</div>';
     [['salon', 'Salón'], ['deposito', 'Depósito']].forEach(function (g) {
       var lista = mods.filter(function (m) { return m.sector_tipo === g[0]; });
       if (!lista.length) return;
@@ -492,14 +511,86 @@ function ventana(html) {
 }
 
 function verModulo(m) {
-  leer('/orden_v_controles?select=id,foto_path,tomada_en,nivel,persona_nombre,tipo,estado&modulo_id=eq.' + valor(m.modulo_id) +
-       '&foto_path=not.is.null&order=tomada_en.desc&limit=12').then(function (h) {
-    ventana('<h1>' + esc(m.modulo_nombre) + '</h1><p class="bajada">' + esc((m.responsable ? 'A cargo de ' + m.responsable : '') + (m.tareas_abiertas ? ' · ' + m.tareas_abiertas + ' tareas abiertas' : '')) + '</p>' +
-      (m.foto_path ? '<img class="foto-grande" data-foto="' + esc(m.foto_path) + '" alt="">' : '<div class="vacio">Todavía no hay fotos de este módulo.</div>') +
-      ((h || []).length > 1 ? '<div class="seccion">Fotos anteriores (las que todavía se guardan)</div><div class="historia">' + h.slice(1).map(function (x) {
-        return '<figure class="foto-chica"><img data-foto="' + esc(x.foto_path) + '" alt=""><figcaption>' + esc(diaMes(x.tomada_en) + ' · ' + (x.nivel ? NIVEL[x.nivel] : '—') + ' · ' + (x.persona_nombre || '')) + '</figcaption></figure>';
-      }).join('') + '</div>' : ''));
+  var admin = esAdmin();
+  Promise.all([
+    leer('/orden_v_controles?select=id,foto_path,tomada_en,nivel,persona_nombre,tipo,estado&modulo_id=eq.' + valor(m.modulo_id) +
+         '&foto_path=not.is.null&order=tomada_en.desc&limit=12'),
+    /* La foto modelo y "algo propio" (antes en Ajustes → Sectores y módulos): sólo el administrador los cambia. */
+    admin ? leer('/orden_modulos?select=id,foto_referencia_path,reglas_extra&id=eq.' + valor(m.modulo_id)) : Promise.resolve([])
+  ]).then(function (r) {
+    var h = r[0] || [], mod = (r[1] || [])[0] || null;
+    var usar = function (ruta) { return mod ? '<button class="boton chico" data-modelo="' + esc(ruta) + '">Usar como modelo</button>' : ''; };
+    var v = ventana('<h1>' + esc(m.modulo_nombre) + '</h1><p class="bajada">' + esc((m.responsable ? 'A cargo de ' + m.responsable : '') + (m.tareas_abiertas ? ' · ' + m.tareas_abiertas + ' tareas abiertas' : '')) + '</p>' +
+      (m.foto_path ? '<img class="foto-grande" data-foto="' + esc(m.foto_path) + '" alt="">' + (mod ? '<div class="vm-usar">' + usar(m.foto_path) + '</div>' : '') : '<div class="vacio">Todavía no hay fotos de este módulo.</div>') +
+      (h.length > 1 ? '<div class="seccion">Fotos anteriores (las que todavía se guardan)</div><div class="historia">' + h.slice(1).map(function (x) {
+        return '<figure class="foto-chica"><img data-foto="' + esc(x.foto_path) + '" alt=""><figcaption>' + esc(diaMes(x.tomada_en) + ' · ' + (x.nivel ? NIVEL[x.nivel] : '—') + ' · ' + (x.persona_nombre || '')) + '</figcaption>' + usar(x.foto_path) + '</figure>';
+      }).join('') + '</div>' : '') +
+      (mod ? '<div class="seccion">Para la IA</div><div id="vmModelo"></div>' +
+        '<label class="campo"><span>Algo propio de este módulo (opcional: la IA lo lee con cada foto)</span><textarea id="vmPropio" rows="2" maxlength="300" placeholder="Ej.: acá van sólo gorras, colgadas y no dobladas">' + esc(mod.reglas_extra || '') + '</textarea></label>' +
+        '<div class="vm-propio-acc"><button class="boton chico lima" id="vmPropioGuardar" disabled>Guardar lo propio</button></div>' : ''));
+    if (!mod) return;
+    var pintar = function () { dibujarModelo(v.querySelector('#vmModelo'), mod, m); };
+    pintar();
+    v.querySelectorAll('[data-modelo]').forEach(function (b) {
+      unaVez(b, function () {
+        return usarComoModelo(mod, b.dataset.modelo).then(function () { pintar(); avisar('Listo: es la foto modelo de ' + m.modulo_nombre + '.'); });
+      });
+    });
+    var ta = v.querySelector('#vmPropio'), gp = v.querySelector('#vmPropioGuardar');
+    ta.oninput = function () { gp.disabled = ta.value.trim() === String(mod.reglas_extra || '').trim(); };
+    unaVez(gp, function () {
+      var t = ta.value.trim() || null;
+      return guardarFila('/orden_modulos?id=eq.' + valor(mod.id), { reglas_extra: t }).then(function () {
+        mod.reglas_extra = t; avisar('Guardado: la IA lo lee desde la próxima foto.'); return 'dejar-apagado';
+      });
+    });
   }).catch(function (e) { avisar(mensajeDe(e)); });
+}
+
+/** La foto modelo de un módulo: así tiene que quedar (la IA compara con ésta y el vendedor la ve en chiquito al sacar la foto). */
+function dibujarModelo(cont, mod, m) {
+  if (!cont) return;
+  cont.innerHTML = '<div class="vm-modelo">' + (mod.foto_referencia_path ? '<img class="ref-mini" data-foto="' + esc(mod.foto_referencia_path) + '" alt="Foto modelo">' : '<div class="ref-mini sin-foto">Sin foto modelo</div>') +
+    '<div><b>Foto modelo</b><p class="bajada-chica">' + (mod.foto_referencia_path
+      ? 'Así tiene que quedar. La IA compara cada foto con ésta, y al vendedor le aparece en chiquito al sacar la foto.'
+      : 'Todavía no tiene. Tocá "Usar como modelo" en una foto que haya salido bien, o subí una. Mientras tanto, la IA usa la foto ejemplo de su tipo de mueble (Ajustes → Reglas de orden).') + '</p>' +
+    '<div class="imp-mapa-acc"><button class="boton chico" data-subir-modelo>' + (mod.foto_referencia_path ? 'Subir otra' : 'Subir una foto') + '</button>' +
+      (mod.foto_referencia_path ? '<button class="boton chico" data-sacar-modelo>Sacar</button>' : '') + '</div></div></div>';
+  cargarFotos(cont);
+  cont.querySelector('[data-subir-modelo]').onclick = function () {
+    elegirFoto(function (blob) {
+      return subirArchivo(rutaModelo(mod), blob).then(function (ruta) { return ponerModelo(mod, ruta); })
+        .then(function () { dibujarModelo(cont, mod, m); avisar('Foto modelo guardada.'); });
+    });
+  };
+  var s = cont.querySelector('[data-sacar-modelo]');
+  if (s) unaVez(s, function () {
+    if (!confirm('¿Sacar la foto modelo de ' + m.modulo_nombre + '? La IA va a usar la foto ejemplo de su tipo de mueble.')) return;
+    return ponerModelo(mod, null).then(function () { dibujarModelo(cont, mod, m); avisar('Listo: sin foto modelo.'); });
+  });
+}
+function rutaModelo(mod) { return _local.id + '/referencias/' + mod.id + '-' + nombreArchivo(); }
+function ponerModelo(mod, ruta) {
+  return guardarFila('/orden_modulos?id=eq.' + valor(mod.id), { foto_referencia_path: ruta }).then(function () { mod.foto_referencia_path = ruta; });
+}
+/** "Usar como modelo": se copia la foto (las del control se borran a los 30 días; la modelo, nunca). */
+function usarComoModelo(mod, ruta) { return copiarFoto(ruta, rutaModelo(mod)).then(function (nueva) { return ponerModelo(mod, nueva); }); }
+
+/** Copia una foto adentro de orden-fotos. Si el servidor no sabe copiar, la baja y la vuelve a subir. */
+function copiarFoto(desde, hasta) {
+  return tokenVend().then(function (t) {
+    return fetch(BASE + '/storage/v1/object/copy', {
+      method: 'POST', headers: { apikey: CLAVE, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bucketId: BUCKET, sourceKey: desde, destinationKey: hasta })
+    });
+  }).then(function (r) {
+    if (r.ok) return hasta;
+    return urlFirmada(desde).then(function (u) {
+      if (!u) throw rechazo('No se pudo copiar la foto.');
+      return fetch(u).then(function (x) { if (!x.ok) throw rechazo('No se pudo copiar la foto.'); return x.blob(); })
+        .then(function (b) { return subirArchivo(hasta, b); });
+    });
+  });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -820,7 +911,7 @@ function verCajas() {
     r[3].filas.forEach(function (x) { cierres[x.mes] = x; });
     var mesCaja = /^\d{4}-\d{2}$/.test(r[4] || '') ? r[4] : hoyMes;
     var tot = porMes[_mes], cierre = cierres[_mes], terminado = _mes < mesCaja;
-    var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → Horarios y funciones).</div>') +
+    var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → El local).</div>') +
       (_locales.length > 1 ? '<div class="solapas chicas cajas-vista"><button data-vista="local" class="activa">Un local</button><button data-vista="todos">Todos los locales</button></div>' : '') +
       periodoCajasHTML() +
       (tot ? '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div><div class="numero"><span>Días con alertas</span><b>' + tot.dias_con_alertas + '</b></div><div class="numero"><span>Desvío del mes (efectivo)</span><b>' + pesos(tot.desvio_efectivo) + '</b></div></div>' : '') +
@@ -870,7 +961,7 @@ function verCajasRango() {
   ]).then(function (r) {
     if (_solapa !== 'cajas' || _cajasTodos || _cajasRango !== rg) return;
     var cajas = r[0] || [], activa = !!(r[1] && r[1][0] && r[1][0].caja_activa), tot = totalCajas(cajas);
-    var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → Horarios y funciones).</div>') +
+    var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → El local).</div>') +
       (_locales.length > 1 ? '<div class="solapas chicas cajas-vista"><button data-vista="local" class="activa">Un local</button><button data-vista="todos">Todos los locales</button></div>' : '') +
       periodoCajasHTML() +
       '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div>' +
@@ -1094,6 +1185,7 @@ function campoHTML(col, fila, soloLectura) {
   var clase = 'campo ' + (col.ancho ? 'c-' + col.ancho : col.tipo === 'bool' ? 'c-bool' : 'c-medio');
   if (col.tipo === 'ver') return '<div class="' + clase + '"><span>' + esc(col.t) + '</span><b>' + esc(col.ver ? col.ver(fila) : v) + '</b></div>';
   if (col.tipo === 'bool') return '<label class="' + clase + '"><input type="checkbox" data-k="' + col.k + '"' + (v ? ' checked' : '') + dis + '> ' + esc(col.t) + '</label>';
+  if (col.tipo === 'area') return '<label class="' + clase + '"><span>' + esc(col.t) + '</span><textarea data-k="' + col.k + '" rows="1" maxlength="400"' + dis + '>' + esc(v == null ? '' : v) + '</textarea></label>';
   if (col.tipo === 'dias') {
     var arr = (v || []).map(Number);
     return '<div class="campo"><span>' + esc(col.t) + '</span><div class="dias" data-k="' + col.k + '">' + DIAS.map(function (d, i) {
@@ -1110,6 +1202,32 @@ function campoHTML(col, fila, soloLectura) {
          (col.tipo === 'num' ? ' inputmode="numeric" step="any"' : '') + dis + '></label>';
 }
 
+/** Las opciones de una lista, con la elegida. */
+function opcionesHTML(col, v) {
+  return col.ops.map(function (o) {
+    return '<option value="' + esc(o[0] == null ? '' : o[0]) + '"' + (String(o[0] == null ? '' : o[0]) === String(v == null ? '' : v) ? ' selected' : '') + '>' + esc(o[1]) + '</option>';
+  }).join('');
+}
+
+/** Un campo adentro de una frase ("vence a las [21:00]"): sin título arriba; el título queda para el lector de pantalla. */
+function campoFrase(col, fila, soloLectura) {
+  var v = valorCampo(col, fila), dis = soloLectura || col.fijo ? ' disabled' : '', tit = ' aria-label="' + esc(col.t) + '" title="' + esc(col.t) + '"';
+  if (col.tipo === 'bool') return '<label class="frase-si"><input type="checkbox" data-k="' + col.k + '"' + (v ? ' checked' : '') + dis + '><span>' + esc(col.t) + '</span></label>';
+  if (col.tipo === 'dias') {
+    var arr = (v || []).map(Number);
+    return '<span class="dias en-frase" data-k="' + col.k + '" role="group"' + tit + '>' + DIAS.map(function (d, i) {
+      return '<label class="' + (arr.indexOf(i + 1) > -1 ? 'si' : '') + '" title="' + DIAS_LARGO[i] + '"><input type="checkbox" value="' + (i + 1) + '"' + (arr.indexOf(i + 1) > -1 ? ' checked' : '') + dis + '>' + d + '</label>';
+    }).join('') + '</span>';
+  }
+  if (col.tipo === 'sel') return '<select class="en-frase" data-k="' + col.k + '"' + tit + dis + '>' + opcionesHTML(col, v) + '</select>';
+  var tipo = col.tipo === 'num' ? 'number' : col.tipo === 'hora' ? 'time' : 'text';
+  return '<input class="en-frase' + (col.tipo === 'num' ? ' num' : col.tipo === 'hora' ? ' hora' : '') + '" type="' + tipo + '" data-k="' + col.k + '" value="' + esc(v == null ? '' : v) + '"' +
+    (col.tipo === 'num' ? ' inputmode="numeric" step="1"' + (col.min != null ? ' min="' + col.min + '"' : '') + (col.max != null ? ' max="' + col.max + '"' : '') : '') + tit + dis + '>';
+}
+
+/** Un texto largo crece con lo que tiene (una regla de dos renglones se ve entera). */
+function autoAlto(t) { t.style.height = 'auto'; t.style.height = (t.scrollHeight + 2) + 'px'; }
+
 function leerCampo(col, renglon) {
   if (col.tipo === 'dias') {
     return [].map.call(renglon.querySelectorAll('.dias[data-k="' + col.k + '"] input:checked'), function (i) { return +i.value; }).sort();
@@ -1119,14 +1237,14 @@ function leerCampo(col, renglon) {
   if (col.tipo === 'bool') return el.checked;
   var v = String(el.value);
   if (col.tipo === 'num') return v === '' ? null : Number(v);
-  if (col.tipo === 'sel') return v === '' ? null : (col.numero ? Number(v) : v);
-  if (col.tipo === 'texto' || col.tipo === 'hora' || col.tipo === 'color') { v = v.trim(); return v === '' && col.nulo ? null : v; }
+  if (col.tipo === 'sel') return v === '' ? null : (col.numero ? Number(v) : col.booleano ? v === 'true' : v);
+  if (col.tipo === 'texto' || col.tipo === 'area' || col.tipo === 'hora' || col.tipo === 'color') { v = v.trim(); return v === '' && col.nulo ? null : v; }
   return v;
 }
 
 /** El valor de un campo llevado a una sola forma, para comparar el de la base con el de la pantalla. */
 function normalizar(col, v) {
-  if (col.tipo === 'bool') return !!v;
+  if (col.tipo === 'bool' || col.booleano) return !!v && v !== 'false';
   if (col.tipo === 'dias') return (v || []).map(Number).sort();
   if (v == null || v === '') return col.tipo === 'num' || col.tipo === 'sel' || col.nulo ? null : '';
   if (col.tipo === 'num' || (col.tipo === 'sel' && col.numero)) return Number(v);
@@ -1135,14 +1253,19 @@ function normalizar(col, v) {
 }
 
 /**
- * cfg: { cont, filas, cols, guardar(fila, cambios) → promesa, extra(fila) → html, accion(fila, nombre, boton) → promesa }
+ * cfg: { cont, filas, cols, guardar(fila, cambios) → promesa, extra(fila) → html, accion(fila, nombre, boton) → promesa,
+ *        armar(campo, fila) → html: en vez de los campos en fila, frases con cada campo adentro (campo(k) lo dibuja) }
  */
 function editor(cfg) {
   var sl = soloMira();
   cfg.cont.innerHTML = cfg.filas.map(function (f, i) {
-    return '<div class="renglon" data-i="' + i + '">' + cfg.cols.map(function (c) { return campoHTML(c, f, sl); }).join('') +
+    var cuerpo = cfg.armar
+      ? cfg.armar(function (k) { return campoFrase(cfg.cols.filter(function (c) { return c.k === k; })[0], f, sl); }, f)
+      : cfg.cols.map(function (c) { return campoHTML(c, f, sl); }).join('');
+    return '<div class="renglon' + (cfg.armar ? ' frases' : '') + '" data-i="' + i + '">' + cuerpo +
       (sl ? '' : '<div class="acciones-renglon">' + (cfg.extra ? cfg.extra(f) : '') + '<button class="boton chico lima" data-guardar disabled>Guardar</button></div>') + '</div>';
   }).join('') || '<div class="vacio">' + esc(cfg.vacio || 'Todavía no hay nada cargado.') + '</div>';
+  cfg.cont.querySelectorAll('textarea[data-k]').forEach(function (t) { autoAlto(t); t.addEventListener('input', function () { autoAlto(t); }); });
   if (sl) return;
   cfg.cont.querySelectorAll('.renglon').forEach(function (r) {
     var fila = cfg.filas[+r.dataset.i];
@@ -1166,6 +1289,11 @@ function editor(cfg) {
     unaVez(g, function () {
       var c = cambios();
       if (!Object.keys(c).length) return 'dejar-apagado';
+      /* Un número con mínimo vacío o más chico, o una hora vacía, no llegan a la base. */
+      var falla = cfg.cols.filter(function (col) {
+        return col.k in c && ((col.tipo === 'num' && col.min != null && (c[col.k] == null || c[col.k] < col.min)) || (col.tipo === 'hora' && !c[col.k]));
+      })[0];
+      if (falla) { avisar(falla.tipo === 'hora' ? 'Falta la hora: «' + falla.t + '».' : '«' + falla.t + '» tiene que ser ' + falla.min + ' o más.'); return; }
       g.textContent = 'Guardando…';
       return cfg.guardar(fila, c).then(function () {
         Object.keys(c).forEach(function (k) { fila[k] = c[k]; });
@@ -1552,19 +1680,21 @@ function programarTestigo() {
    AJUSTES (sólo el administrador; la base no deja a nadie más)
    ════════════════════════════════════════════════════════════════════════ */
 
-var SUBAJUSTES = [['personas', 'Personas'], ['sectores', 'Sectores y módulos'], ['recordatorios', 'Recordatorios por día'],
-                  ['horarios', 'Horarios y funciones'], ['reglas', 'Reglas de orden'],
-                  ['colores', 'Regla de colores'], ['tableros', 'Ideas (tableros)'], ['exhibidores', 'Exhibidores'], ['preguntas', 'Preguntas de los tests']];
+/* 15/10/2026: de 9 pestañas a 6. "Sectores y módulos" se fue al mapa (la foto modelo y "algo propio", a la ventana del
+   módulo; agregar un sector, a "Repartir"); "Exhibidores" se sacó (vacío, y la nota repetía una regla); los colores y
+   las fotos ejemplo están adentro de Reglas de orden. */
+var SUBAJUSTES = [['personas', 'Personas'], ['local', 'El local'], ['recordatorios', 'Recordatorios por día'],
+                  ['reglas', 'Reglas de orden'], ['tableros', 'Ideas (tableros)'], ['tests', 'Tests']];
 var _sub = 'personas';
 
 function verAjustes() {
   var c = document.getElementById('cuerpo');
+  if (!SUBAJUSTES.some(function (s) { return s[0] === _sub; })) _sub = 'personas';
   c.innerHTML = '<div class="solapas chicas">' + SUBAJUSTES.map(function (s) {
     return '<button data-sub="' + s[0] + '" class="' + (s[0] === _sub ? 'activa' : '') + '">' + s[1] + '</button>';
   }).join('') + '</div><div id="ajuste"><p class="cargando">Cargando…</p></div>';
-  c.querySelectorAll('[data-sub]').forEach(function (b) { b.onclick = function () { _sub = b.dataset.sub; verAjustes(); }; });
-  ({ personas: ajPersonas, recordatorios: ajRecordatorios, sectores: ajSectores, horarios: ajHorarios, reglas: ajReglas, colores: ajColores,
-     tableros: ajTableros, exhibidores: ajExhibidores, preguntas: ajPreguntas })[_sub]();
+  c.querySelectorAll('[data-sub]').forEach(function (b) { b.onclick = function () { if (!puedeSalir()) return; _sub = b.dataset.sub; verAjustes(); }; });
+  ({ personas: ajPersonas, local: ajLocal, recordatorios: ajRecordatorios, reglas: ajReglas, tableros: ajTableros, tests: ajPreguntas })[_sub]();
 }
 
 function zonaAjuste(html) { var z = document.getElementById('ajuste'); z.innerHTML = html; return z; }
@@ -1622,117 +1752,127 @@ function ajPersonas() {
   }).catch(errAjuste);
 }
 
-function ajSectores() {
+/* ── El local (antes "Horarios y funciones"), en frases con el número adentro: "lo de abajo no lo entiendo" ── */
+var DIAS_SEL = DIAS_LARGO.map(function (d, i) { return [i + 1, d]; });
+var LOS_DIAS = ['los lunes', 'los martes', 'los miércoles', 'los jueves', 'los viernes', 'los sábados', 'los domingos'];
+
+function frase(html, clase) { return '<p class="frase' + (clase ? ' ' + clase : '') + '">' + html + '</p>'; }
+
+var COLS_DEL_LOCAL = [{ k: 'nombre', t: 'Nombre en la app', tipo: 'texto' }, { k: 'dias_abiertos', t: 'Días que abre', tipo: 'dias' },
+  { k: 'hora_apertura', t: 'Abre a las', tipo: 'hora' }, { k: 'hora_cierre', t: 'Cierra a las', tipo: 'hora' },
+  { k: 'activo', t: 'Activo: genera controles y aparece en Equipo VDH.', tipo: 'bool' }];
+
+/* Cada bloque se guarda solo y se puede copiar a los otros locales (el nombre y el horario de cada uno, no). */
+var BLOQUES_LOCAL = [
+  { id: 'controles', titulo: 'Los controles',
+    cols: [{ k: 'dias_control', t: 'Días de control', tipo: 'dias' }, { k: 'hora_limite', t: 'Hora límite', tipo: 'hora' },
+           { k: 'hora_aviso_1', t: 'Aviso de la mañana', tipo: 'hora' }, { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', tipo: 'hora' },
+           { k: 'sorpresas_por_semana', t: 'Controles sorpresa por semana', tipo: 'num', min: 0, max: 7 },
+           { k: 'deposito_dia_vence', t: 'El depósito vence el', tipo: 'sel', numero: true, ops: DIAS_SEL },
+           { k: 'cambio_imagen_dia', t: 'Cambio de imagen', tipo: 'sel', numero: true, ops: [[null, 'apagado']].concat(LOS_DIAS.map(function (d, i) { return [i + 1, d]; })) },
+           { k: 'max_avisos_dia', t: 'Tope de avisos por día', tipo: 'num', min: 1 },
+           { k: 'horas_revision_supervisor', t: 'Horas para revisar', tipo: 'num', min: 1 },
+           { k: 'desafio_activo', t: 'Test semanal de conocimiento: a cada vendedor le llega uno por semana, un día y una hora al azar (no cuenta para faltas).', tipo: 'bool' }],
+    armar: function (c) {
+      return frase('Todos los módulos del salón se controlan los días ' + c('dias_control') + ' y el control vence a las ' + c('hora_limite') + '.') +
+        frase('A quien le toca le llega un aviso a las ' + c('hora_aviso_1') + ' y, si todavía no lo hizo, un recordatorio a las ' + c('hora_aviso_2') + '.') +
+        frase('Controles sorpresa por semana, a cada sector: ' + c('sorpresas_por_semana') + ' (un día que no es de control, al azar).') +
+        frase('El depósito se controla una vez por semana y vence el ' + c('deposito_dia_vence') + '.') +
+        frase('Cambio de imagen (la tarea de renovar los frontales, a cada sector del salón): ' + c('cambio_imagen_dia') + '.') +
+        frase('A cada persona le llegan como mucho ' + c('max_avisos_dia') + ' avisos por día (los urgentes llegan igual).') +
+        frase('Si una foto o una caja espera más de ' + c('horas_revision_supervisor') + ' horas que la revise el supervisor, te llega un aviso.') +
+        frase(c('desafio_activo'));
+    } },
+  { id: 'ia', titulo: 'La IA',
+    cols: [{ k: 'ia_activa', t: 'La IA revisa cada foto con las reglas de orden y le dice al vendedor qué corregir.', tipo: 'bool' },
+           { k: 'ia_crea_tareas', t: 'Lo que hay que corregir le queda como tarea al vendedor, con plazo.', tipo: 'bool' },
+           { k: 'ia_sugerencias', t: 'Además deja sugerencias de estilo (las reglas marcadas como sugerencia, como los colores que combinen): son consejos, nunca tareas, y como mucho 2 por foto.', tipo: 'bool' }],
+    armar: function (c) { return frase(c('ia_activa')) + frase(c('ia_crea_tareas')) + frase(c('ia_sugerencias')); } },
+  { id: 'faltas', titulo: 'Las faltas',
+    cols: [{ k: 'modo_prueba', t: 'Modo prueba: por ahora no se sugieren faltas.', tipo: 'bool' },
+           { k: 'ventana_faltas_dias', t: 'Días que se miran', tipo: 'num', min: 1 }, { k: 'umbral_tareas_vencidas', t: 'Días con tareas vencidas', tipo: 'num', min: 1 },
+           { k: 'umbral_dias_sin_control', t: 'Días sin mandar controles', tipo: 'num', min: 1 }, { k: 'umbral_fuera_estandar', t: 'Días con "Fuera de estándar"', tipo: 'num', min: 1 }],
+    armar: function (c) {
+      return frase(c('modo_prueba')) +
+        frase('Se sugiere una falta si en los últimos ' + c('ventana_faltas_dias') + ' días alguien tuvo ' + c('umbral_tareas_vencidas') + ' días con tareas vencidas, ' +
+              c('umbral_dias_sin_control') + ' días sin mandar sus controles o ' + c('umbral_fuera_estandar') + ' días con fotos “Fuera de estándar”.') +
+        frase('Es sólo una sugerencia: les llega a vos y al supervisor, y la decide siempre una persona.', 'aclara');
+    } },
+  { id: 'caja', titulo: 'La caja',
+    cols: [{ k: 'caja_activa', t: 'Control de caja: el local carga cada día la caja, con las fotos del cierre.', tipo: 'bool' },
+           { k: 'caja_tolerancia_pesos', t: 'Diferencia que no avisa ($)', tipo: 'num', min: 0 }, { k: 'caja_minutos_tolerancia', t: 'Minutos después del cierre', tipo: 'num', min: 0 }],
+    armar: function (c) {
+      return frase(c('caja_activa')) + frase('Una diferencia de hasta $ ' + c('caja_tolerancia_pesos') + ' no avisa.') +
+        frase('Si ' + c('caja_minutos_tolerancia') + ' minutos después del cierre no cargaron la caja, les avisa al local y al supervisor.');
+    } },
+  { id: 'fotos', titulo: 'Las fotos guardadas',
+    cols: [{ k: 'dias_guardar_fotos', t: 'Días que se guardan las fotos', tipo: 'num', min: 7 },
+           { k: 'dias_guardar_fotos_problemas', t: 'Días de las de "A mejorar" o peor', tipo: 'num', min: 7 }, { k: 'dias_guardar_fotos_caja', t: 'Días de las de la caja', tipo: 'num', min: 7 }],
+    armar: function (c) {
+      return frase('Las fotos de los módulos se borran solas a los ' + c('dias_guardar_fotos') + ' días; las que salieron “A mejorar” o peor, a los ' + c('dias_guardar_fotos_problemas') +
+                   '. Las de la caja, a los ' + c('dias_guardar_fotos_caja') + '.') +
+        frase('La última foto de cada módulo y las fotos modelo no se borran nunca.', 'aclara');
+    } }
+];
+
+function ajLocal() {
   var L = valor(_local.id);
-  Promise.all([
-    leer('/orden_sectores?select=*&local_id=eq.' + L + '&order=tipo.asc,numero.asc'),
-    leer('/orden_personas?select=id,nombre,inicial&local_id=eq.' + L + '&activo=is.true&order=nombre.asc'),
-    leer('/orden_exhibidores?select=id,nombre&order=nombre.asc')
-  ]).then(function (r) {
-    var sectores = r[0] || [], gente = r[1] || [], exh = r[2] || [];
-    var ops = [[null, '—']].concat(gente.map(function (p) { return [p.id, p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '')]; }));
-    var ids = sectores.map(function (s) { return s.id; });
-    return (ids.length ? leer('/orden_modulos?select=*&sector_id=in.(' + ids.join(',') + ')&order=numero.asc') : Promise.resolve([])).then(function (mods) {
-      var html = '<p class="bajada">Cada sector tiene un responsable y un suplente (el que lo cubre en sus francos). Los controles le llegan a quien esté ese día.</p>';
-      sectores.forEach(function (s) {
-        /* Los módulos se agregan desde el mapa (van numerados por todo el local: el salón pared por pared, el depósito 1, 2, 3…). */
-        html += '<div class="seccion">' + (s.tipo === 'salon' ? 'Salón' : 'Depósito') + ' · sector ' + s.numero + '</div><div data-sector="' + esc(s.id) + '"></div><div data-modulos="' + esc(s.id) + '"></div>' +
-          '<button class="boton chico" data-al-mapa>Agregar o sacar módulos: en el mapa del local</button>';
-      });
-      html += '<div class="seccion">Agregar un sector</div><div class="renglon" id="nuevoSector">' +
-        campoHTML({ k: 'tipo', t: 'Tipo', tipo: 'sel', ops: [['salon', 'Salón'], ['deposito', 'Depósito']] }, { tipo: 'salon' }) +
-        campoHTML({ k: 'numero', t: 'Número', tipo: 'num', ancho: 'chico' }, { numero: (sectores.length ? Math.max.apply(null, sectores.map(function (s) { return s.numero; })) : 0) + 1 }) +
-        '<div class="acciones-renglon"><button class="boton chico lima" id="agregarSector">Agregar</button></div></div>';
-      var z = zonaAjuste(html);
-      sectores.forEach(function (s) {
-        editor({ cont: z.querySelector('[data-sector="' + s.id + '"]'), filas: [s],
-          cols: [{ k: 'nombre', t: 'Nombre (opcional)', tipo: 'texto', nulo: true }, { k: 'responsable_id', t: 'Responsable', tipo: 'sel', ops: ops },
-                 { k: 'suplente_id', t: 'Suplente', tipo: 'sel', ops: ops }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
-          guardar: function (f, c) { return guardarFila('/orden_sectores?id=eq.' + valor(f.id), c); } });
-        var suyos = (mods || []).filter(function (m) { return m.sector_id === s.id; });
-        /* En el salón, el número y si está prendido los maneja el mapa (si no, el mapa los pisa al guardar). */
-        var delMapa = true;
-        editor({ cont: z.querySelector('[data-modulos="' + s.id + '"]'), filas: suyos, vacio: 'Sin módulos.',
-          cols: [{ k: 'numero', t: 'N.º', tipo: 'num', ancho: 'chico', fijo: delMapa }, { k: 'nombre', t: 'Módulo', tipo: 'texto' },
-                 { k: 'exhibidor_id', t: 'Exhibidor', tipo: 'sel', ops: [[null, '—']].concat(exh.map(function (e) { return [e.id, e.nombre]; })) },
-                 { k: 'reglas_extra', t: 'Algo propio de este módulo', tipo: 'texto', nulo: true, ancho: 'grande' }, { k: 'activo', t: 'Activo', tipo: 'bool', fijo: delMapa }],
-          guardar: function (f, c) { return guardarFila('/orden_modulos?id=eq.' + valor(f.id), c); },
-          extra: function (f) {
-            return (f.foto_referencia_path ? '<img class="ref-mini" data-foto="' + esc(f.foto_referencia_path) + '" alt="Referencia">' : '') +
-              '<button class="boton chico" data-accion="ref">' + (f.foto_referencia_path ? 'Cambiar la foto de referencia' : 'Foto de referencia') + '</button>';
-          },
-          accion: function (f) { return fotoReferencia(f); } });
-      });
-      cargarFotos(z);
-      z.querySelectorAll('[data-al-mapa]').forEach(function (b) { b.onclick = function () { ir('local'); }; });
-      unaVez(z.querySelector('#agregarSector'), function () {
-        var r2 = z.querySelector('#nuevoSector');
-        return escribir('/orden_sectores', 'POST', { local_id: _local.id, tipo: r2.querySelector('[data-k=tipo]').value, numero: Number(r2.querySelector('[data-k=numero]').value) })
-          .then(ajSectores);
-      });
+  Promise.all([leer('/orden_locales?select=*&id=eq.' + L), leer('/orden_config?select=*&local_id=eq.' + L)]).then(function (r) {
+    var loc = (r[0] || [])[0], cfg = (r[1] || [])[0], otros = _locales.length - 1;
+    var z = zonaAjuste('<p class="bajada">Lo de ' + esc(_local.nombre) + '. Cada parte se guarda con su botón' +
+        (otros ? '; "Copiar a los otros locales" pone lo mismo en ' + (otros === 1 ? 'el otro' : 'los otros ' + otros) + ' (el nombre y el horario de cada uno no cambian)' : '') + '.</p>' +
+      '<div class="seccion">El local</div><div id="ajLocal"></div>' +
+      (cfg ? BLOQUES_LOCAL.map(function (b) { return '<div class="seccion">' + esc(b.titulo) + '</div><div id="ajb-' + b.id + '"></div>'; }).join('')
+           : '<div class="nota">Este local todavía no tiene los ajustes de los controles.</div>'));
+    if (loc) editor({ cont: z.querySelector('#ajLocal'), filas: [loc], cols: COLS_DEL_LOCAL,
+      armar: function (c) {
+        return frase('En la app se llama ' + c('nombre') + '.') + frase('Abre los días ' + c('dias_abiertos') + ' de ' + c('hora_apertura') + ' a ' + c('hora_cierre') + '.') + frase(c('activo'));
+      },
+      guardar: function (f, c) { return guardarFila('/orden_locales?id=eq.' + valor(f.id), c).then(function () { if (c.nombre) { _local.nombre = c.nombre; } }); } });
+    if (!cfg) return;
+    BLOQUES_LOCAL.forEach(function (b) {
+      editor({ cont: z.querySelector('#ajb-' + b.id), filas: [cfg], cols: b.cols, armar: b.armar,
+        guardar: function (f, c) { return guardarFila('/orden_config?local_id=eq.' + valor(f.local_id), c); },
+        extra: otros ? function () { return '<button class="boton chico" data-accion="copiar">Copiar a los otros locales</button>'; } : null,
+        accion: function (f, nombre, boton) { return copiarAOtros(f, b, boton); } });
     });
   }).catch(errAjuste);
 }
 
-function fotoReferencia(m) {
-  return new Promise(function (ok, mal) {
-    var input = document.createElement('input');
-    input.type = 'file'; input.accept = 'image/*'; input.hidden = true;
-    document.body.appendChild(input);
-    input.onchange = function () {
-      var f = input.files && input.files[0];
-      input.remove();
-      if (!f) { ok(); return; }
-      archivoAJpeg(f)
-        .then(function (b) { return subirArchivo(_local.id + '/referencias/' + m.id + '-' + nombreArchivo(), b); })
-        .then(function (ruta) { return guardarFila('/orden_modulos?id=eq.' + valor(m.id), { foto_referencia_path: ruta }); })
-        .then(function () { avisar('Foto de referencia guardada.'); ajSectores(); ok(); }, mal);
-    };
-    input.click();
+/** "Copiar a los otros locales": lo guardado en un bloque, igual en todos (hoy había que cambiar los 14 de a uno). */
+function copiarAOtros(fila, b, boton) {
+  var g = boton.closest('.renglon').querySelector('[data-guardar]');
+  if (g && !g.disabled) { avisar('Primero guardá los cambios de «' + b.titulo + '».'); return; }
+  var otros = _locales.filter(function (l) { return l.id !== _local.id; });
+  if (!otros.length) return;
+  if (!confirm('¿Poner en ' + (otros.length === 1 ? otros[0].nombre : 'los otros ' + otros.length + ' locales') + ' lo mismo que tiene ' + _local.nombre + ' en «' + b.titulo + '»?')) return;
+  var valores = {};
+  b.cols.forEach(function (c) { valores[c.k] = fila[c.k] === undefined ? null : fila[c.k]; });
+  return guardarFila('/orden_config?local_id=in.(' + otros.map(function (l) { return valor(l.id); }).join(',') + ')', valores).then(function (n) {
+    avisar('Listo: «' + b.titulo + '» quedó igual en ' + n + (n === 1 ? ' local más.' : ' locales más.'));
   });
 }
 
-function ajHorarios() {
-  var L = valor(_local.id);
-  Promise.all([leer('/orden_locales?select=*&id=eq.' + L), leer('/orden_config?select=*&local_id=eq.' + L)]).then(function (r) {
-    var loc = (r[0] || [])[0], cfg = (r[1] || [])[0];
-    var z = zonaAjuste('<div class="seccion">El local</div><div id="ajLocal"></div><div class="seccion">Los controles y los avisos</div><div id="ajCfg1"></div>' +
-      '<div class="seccion">Qué está prendido</div><div id="ajCfg2"></div><div class="seccion">Faltas (sólo se sugieren; con el modo prueba prendido, ni eso)</div><div id="ajCfg3"></div>' +
-      '<div class="seccion">Caja y fotos</div><div id="ajCfg4"></div>');
-    var diasOps = DIAS_LARGO.map(function (d, i) { return [i + 1, d]; });
-    var g = function (f, c) { return guardarFila('/orden_config?local_id=eq.' + valor(f.local_id), c); };
-    if (loc) editor({ cont: z.querySelector('#ajLocal'), filas: [loc],
-      cols: [{ k: 'nombre', t: 'Nombre en la app', tipo: 'texto' }, { k: 'dias_abiertos', t: 'Días que abre', tipo: 'dias' },
-             { k: 'hora_apertura', t: 'Abre', tipo: 'hora' }, { k: 'hora_cierre', t: 'Cierra', tipo: 'hora' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
-      guardar: function (f, c) { return guardarFila('/orden_locales?id=eq.' + valor(f.id), c).then(function () { if (c.nombre) { _local.nombre = c.nombre; } }); } });
-    if (!cfg) return;
-    editor({ cont: z.querySelector('#ajCfg1'), filas: [cfg],
-      cols: [{ k: 'dias_control', t: 'Días de control (todos los módulos)', tipo: 'dias' }, { k: 'hora_aviso_1', t: 'Aviso de la mañana', tipo: 'hora' },
-             { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', tipo: 'hora' }, { k: 'hora_limite', t: 'Hora límite', tipo: 'hora' },
-             { k: 'sorpresas_por_semana', t: 'Sorpresas por semana', tipo: 'num', ancho: 'chico' },
-             { k: 'deposito_dia_vence', t: 'El depósito vence el', tipo: 'sel', numero: true, ops: diasOps },
-             { k: 'cambio_imagen_dia', t: 'Cambio de imagen', tipo: 'sel', numero: true, ops: [[null, 'Apagado']].concat(diasOps) },
-             { k: 'max_avisos_dia', t: 'Tope de avisos por día', tipo: 'num', ancho: 'chico' }],
-      guardar: g });
-    editor({ cont: z.querySelector('#ajCfg2'), filas: [cfg],
-      cols: [{ k: 'ia_activa', t: 'Revisión con IA', tipo: 'bool' }, { k: 'ia_crea_tareas', t: 'La IA crea tareas', tipo: 'bool' },
-             { k: 'ia_sugerencias', t: 'Sugerencias de estilo de la IA', tipo: 'bool' }, { k: 'modo_prueba', t: 'Modo prueba (sin faltas)', tipo: 'bool' },
-             { k: 'desafio_activo', t: 'Test semanal', tipo: 'bool' }, { k: 'caja_activa', t: 'Control de caja', tipo: 'bool' }],
-      guardar: g });
-    editor({ cont: z.querySelector('#ajCfg3'), filas: [cfg],
-      cols: [{ k: 'ventana_faltas_dias', t: 'Se mira (días)', tipo: 'num', ancho: 'chico' }, { k: 'umbral_tareas_vencidas', t: 'Días con tareas fuera de plazo', tipo: 'num', ancho: 'chico' },
-             { k: 'umbral_dias_sin_control', t: 'Días sin mandar controles', tipo: 'num', ancho: 'chico' }, { k: 'umbral_fuera_estandar', t: 'Días "Fuera de estándar"', tipo: 'num', ancho: 'chico' },
-             { k: 'horas_revision_supervisor', t: 'Horas para revisar', tipo: 'num', ancho: 'chico' }],
-      guardar: g });
-    editor({ cont: z.querySelector('#ajCfg4'), filas: [cfg],
-      cols: [{ k: 'caja_tolerancia_pesos', t: 'Tolerancia de caja ($)', tipo: 'num', ancho: 'chico' }, { k: 'caja_minutos_tolerancia', t: 'Minutos después del cierre', tipo: 'num', ancho: 'chico' },
-             { k: 'dias_guardar_fotos', t: 'Días que se guardan las fotos (mín. 7)', tipo: 'num', ancho: 'chico' }, { k: 'dias_guardar_fotos_problemas', t: '…las de "A mejorar" o peor', tipo: 'num', ancho: 'chico' },
-             { k: 'dias_guardar_fotos_caja', t: '…las de caja', tipo: 'num', ancho: 'chico' }],
-      guardar: g });
-  }).catch(errAjuste);
+/** Borra y confirma que se borró (como guardarFila: si la seguridad no deja, la base contesta igual). */
+function borrarFila(ruta) {
+  return tokenVend().then(function (t) { return pedir(ruta, { sesion: t, metodo: 'DELETE', contar: true }); })
+    .then(function (n) { if (!n) throw rechazo('No se borró: no tenés permiso o ya no estaba.'); return n; });
 }
 
-var CHECKS = [['dobladas', 'Doblado'], ['frontales', 'Frontales'], ['etiquetas', 'Etiquetas'], ['limpieza', 'Limpieza'], ['exhibicion', 'Exhibición'], ['rotulado', 'Rotulado'], ['talles', 'Segmento y talle']];
+/** Elegir una foto de la compu o del celular, achicada a JPEG; alElegir(blob) devuelve una promesa. */
+function elegirFoto(alElegir) {
+  var input = document.createElement('input');
+  input.type = 'file'; input.accept = 'image/*'; input.hidden = true;
+  document.body.appendChild(input);
+  input.onchange = function () {
+    var f = input.files && input.files[0];
+    input.remove();
+    if (!f) return;
+    avisar('Subiendo la foto…');
+    archivoAJpeg(f).then(alElegir).catch(function (e) { avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e)); });
+  };
+  input.click();
+}
 
 function ajLista(cfg) {
   leer(cfg.ruta).then(function (filas) {
@@ -1748,19 +1888,185 @@ function ajLista(cfg) {
   }).catch(errAjuste);
 }
 
-function ajReglas() {
-  ajLista({ ruta: '/orden_reglas?select=*&order=sector_tipo.asc,check_clave.asc,orden.asc', tabla: '/orden_reglas',
-    texto: 'La IA las lee en cada foto. Cambiar una regla cambia lo que mira desde la próxima foto: no hay que entrenar nada.',
-    cols: [{ k: 'sector_tipo', t: 'Dónde', tipo: 'sel', ops: [[null, 'Salón y depósito'], ['salon', 'Salón'], ['deposito', 'Depósito']] },
-           { k: 'check_clave', t: 'Punto', tipo: 'sel', ops: CHECKS }, { k: 'texto', t: 'La regla', tipo: 'texto', ancho: 'grande' },
-           { k: 'orden', t: 'Orden', tipo: 'num', ancho: 'chico' }, { k: 'activo', t: 'Activa', tipo: 'bool' }],
-    nueva: function () { return { sector_tipo: 'salon', check_clave: 'frontales', texto: 'Nueva regla (escribila y guardá)', activo: false }; } });
+/* ── Reglas de orden (15/10/2026): agrupadas por punto con "+ Agregar" en cada uno; "Hay que corregir" o "Sugerencia";
+      adentro, la regla de colores (en Exhibición) y las fotos ejemplo para la IA (SQL 123). ── */
+var PUNTOS_REGLAS = [
+  ['salon', 'dobladas', 'Doblado', 'Las prendas dobladas: cuántas por estante, el alto de la pila, los bordes.'],
+  ['salon', 'frontales', 'Frontales', 'La prenda que se muestra de frente en cada estante.'],
+  ['salon', 'etiquetas', 'Etiquetas', ''],
+  ['salon', 'limpieza', 'Limpieza', ''],
+  ['salon', 'exhibicion', 'Exhibición', 'Los colores, las cantidades y los percheros.'],
+  ['deposito', 'dobladas', 'Doblado', ''],
+  ['deposito', 'rotulado', 'Rotulado', ''],
+  ['deposito', 'talles', 'Segmento y talle', ''],
+  ['deposito', 'limpieza', 'Limpieza', '']
+];
+var NOMBRE_PUNTO = { dobladas: 'Doblado', frontales: 'Frontales', etiquetas: 'Etiquetas', limpieza: 'Limpieza', exhibicion: 'Exhibición', rotulado: 'Rotulado', talles: 'Segmento y talle' };
+var TIPOS_MUEBLE = [['estantes', 'Módulo de pared'], ['mesa', 'Mesa o exhibidor del medio'], ['perchero', 'Perchero'], ['vidriera', 'Vidriera'], ['deposito', 'Depósito']];
+var FALTA_123 = 'falta correr el SQL 123 en Supabase (está en el Escritorio, en "App Orden")';
+var _conSugerencia = true;
+
+function colsRegla() {
+  return [{ k: 'texto', t: 'La regla', tipo: 'area', ancho: 'grande' }]
+    .concat(_conSugerencia ? [{ k: 'sugerencia', t: 'Tipo', tipo: 'sel', booleano: true, ancho: 'tipo', ops: [[false, 'Hay que corregir'], [true, 'Sugerencia (consejo)']] }] : [])
+    .concat([{ k: 'activo', t: 'Activa', tipo: 'bool' }]);
 }
 
-function ajColores() {
-  ajLista({ ruta: '/orden_colores?select=*&order=orden.asc', tabla: '/orden_colores', texto: 'El degradé de los percheros, del más claro al más oscuro.',
-    cols: [{ k: 'orden', t: 'Orden', tipo: 'num', ancho: 'chico' }, { k: 'nombre', t: 'Color', tipo: 'texto' }, { k: 'hex', t: 'Muestra', tipo: 'color', ancho: 'chico' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
-    nueva: function (f) { return { orden: f.length + 1, nombre: 'Nuevo color', hex: '#808080', activo: false }; } });
+function ajReglas() {
+  Promise.all([
+    leer('/orden_reglas?select=*&order=orden.asc'),
+    leer('/orden_colores?select=*&order=orden.asc'),
+    leer('/orden_fotos_ejemplo?select=tipo,foto_path').catch(function () { return null; })   // null: todavía no se corrió el SQL 123
+  ]).then(function (r) {
+    var reglas = r[0] || [], colores = r[1] || [];
+    _conSugerencia = !reglas.length || 'sugerencia' in reglas[0];
+    var grupos = {};
+    reglas.forEach(function (x) { var k = (x.sector_tipo || 'ambos') + ':' + x.check_clave; (grupos[k] = grupos[k] || []).push(x); });
+    var conocidos = PUNTOS_REGLAS.map(function (p) { return p[0] + ':' + p[1]; });
+    var otras = Object.keys(grupos).filter(function (k) { return conocidos.indexOf(k) < 0; });
+    var html = '<p class="bajada">Para todos los locales. La IA las lee en cada foto: lo que cambies cuenta desde la próxima, no hay que entrenar nada. ' +
+      'Las que dicen <b>Hay que corregir</b> pueden volverse tareas; las <b>sugerencias</b> le llegan al vendedor como consejo, si el local tiene prendidas las sugerencias (en El local).</p>' +
+      (_conSugerencia ? '' : '<div class="nota">Para marcar una regla como sugerencia ' + FALTA_123 + '.</div>');
+    var grupo = '';
+    PUNTOS_REGLAS.forEach(function (p) {
+      if (p[0] !== grupo) { grupo = p[0]; html += '<h3 class="aj-grupo">' + (grupo === 'salon' ? 'Salón' : 'Depósito') + '</h3>'; }
+      var k = p[0] + ':' + p[1];
+      html += '<div class="seccion">' + esc(p[2]) + '</div>' + (p[3] ? '<p class="bajada-chica aj-bajada">' + esc(p[3]) + '</p>' : '') + '<div data-reglas="' + k + '"></div>' +
+        '<button class="boton chico aj-agregar" data-agregar-regla="' + k + '">+ Agregar una regla</button>' +
+        (k === 'salon:exhibicion' ? '<div class="aj-sub">Regla de colores: el degradé de los percheros, del más claro al más oscuro</div><div id="ajColores" class="aj-colores"></div>' +
+           '<button class="boton chico aj-agregar" id="agregarColor">+ Agregar un color</button>' : '');
+    });
+    if (otras.length) {
+      html += '<h3 class="aj-grupo">Para el salón y el depósito</h3>' + otras.map(function (k) {
+        var p = k.split(':');
+        return '<div class="seccion">' + esc((p[0] === 'ambos' ? '' : (p[0] === 'salon' ? 'Salón · ' : 'Depósito · ')) + (NOMBRE_PUNTO[p[1]] || p[1])) + '</div><div data-reglas="' + esc(k) + '"></div>';
+      }).join('');
+    }
+    html += '<h3 class="aj-grupo">Fotos ejemplo para la IA</h3><div id="ajEjemplos"></div>';
+    var z = zonaAjuste(html);
+    z.querySelectorAll('[data-reglas]').forEach(function (cont) {
+      var filas = grupos[cont.dataset.reglas] || [];
+      cont.dataset.orden = filas.reduce(function (n, x) { return Math.max(n, x.orden || 0); }, 0);
+      pintarReglas(cont, filas);
+    });
+    z.querySelectorAll('[data-agregar-regla]').forEach(function (b) { b.onclick = function () { nuevaRegla(b); }; });
+    pintarColores(z.querySelector('#ajColores'), colores);
+    unaVez(z.querySelector('#agregarColor'), function () {
+      var id = crypto.randomUUID ? crypto.randomUUID() : null;
+      if (!id) { avisar('Este navegador no puede agregar colores. Probá con Chrome.'); return; }
+      var fila = { id: id, orden: colores.reduce(function (n, x) { return Math.max(n, x.orden || 0); }, 0) + 1, nombre: 'Nuevo color', hex: '#808080', activo: false };
+      return escribir('/orden_colores', 'POST', fila).then(function () {
+        colores.push(fila);
+        var d = document.createElement('div');
+        z.querySelector('#ajColores').appendChild(d);
+        pintarColores(d, [fila]);
+        avisar('Color agregado (apagado): ponele nombre, la muestra y prendelo.');
+      });
+    });
+    dibujarEjemplos(z.querySelector('#ajEjemplos'), r[2]);
+  }).catch(errAjuste);
+}
+
+function pintarReglas(cont, filas) {
+  editor({ cont: cont, filas: filas, cols: colsRegla(), vacio: 'Sin reglas todavía.',
+    guardar: function (f, c) {
+      if ('texto' in c && String(c.texto || '').length < 5) return Promise.reject(rechazo('Escribí la regla.'));
+      return guardarFila('/orden_reglas?id=eq.' + valor(f.id), c);
+    },
+    extra: function (f) { return (f.local_id ? '<span class="est">Sólo un local</span>' : '') + '<button class="boton chico" data-accion="borrar">Borrar</button>'; },
+    accion: function (f, nombre, boton) {
+      var t = String(f.texto || '');
+      if (!confirm('¿Borrar la regla "' + (t.length > 80 ? t.slice(0, 80) + '…' : t) + '"?\n\nSi sólo querés dejar de usarla, sacale el tilde de "Activa".')) return;
+      return borrarFila('/orden_reglas?id=eq.' + valor(f.id)).then(function () {
+        var r = boton.closest('.renglon'), cont2 = r.parentNode;
+        r.remove();
+        if (!cont2.querySelector('.renglon') && cont2.hasAttribute('data-reglas')) cont2.innerHTML = '<div class="vacio">Sin reglas todavía.</div>';
+        avisar('Regla borrada.');
+      });
+    } });
+}
+
+/** "+ Agregar una regla": un renglón para escribirla ahí mismo; se guarda recién con "Guardar". */
+function nuevaRegla(boton) {
+  var k = boton.dataset.agregarRegla, cont = boton.parentNode.querySelector('[data-reglas="' + k + '"]');
+  var ya = cont.querySelector('[data-nueva-regla]');
+  if (ya) { ya.querySelector('textarea').focus(); return; }
+  var vacio = cont.querySelector(':scope > .vacio');
+  if (vacio) vacio.remove();
+  var d = document.createElement('div');
+  d.className = 'renglon nueva-regla';
+  d.setAttribute('data-nueva-regla', k);
+  d.innerHTML = '<label class="campo c-grande"><span>La regla nueva</span><textarea rows="2" maxlength="400" placeholder="Escribila como se la dirías a un vendedor"></textarea></label>' +
+    (_conSugerencia ? '<label class="campo c-tipo"><span>Tipo</span><select data-tipo-nueva><option value="false">Hay que corregir</option><option value="true">Sugerencia (consejo)</option></select></label>' : '') +
+    '<div class="acciones-renglon"><button class="boton chico" data-cancelar>Cancelar</button><button class="boton chico lima" data-crear>Guardar</button></div>';
+  cont.appendChild(d);
+  var ta = d.querySelector('textarea');
+  ta.addEventListener('input', function () { autoAlto(ta); });
+  ta.focus();
+  d.querySelector('[data-cancelar]').onclick = function () {
+    d.remove();
+    if (!cont.querySelector('.renglon')) cont.innerHTML = '<div class="vacio">Sin reglas todavía.</div>';
+  };
+  unaVez(d.querySelector('[data-crear]'), function () {
+    var texto = ta.value.trim();
+    if (texto.length < 5) { avisar('Escribí la regla.'); return; }
+    var id = crypto.randomUUID ? crypto.randomUUID() : null;
+    if (!id) { avisar('Este navegador no puede agregar reglas. Probá con Chrome.'); return; }
+    var p = k.split(':'), orden = (+cont.dataset.orden || 0) + 1;
+    var fila = { id: id, sector_tipo: p[0] === 'ambos' ? null : p[0], check_clave: p[1], texto: texto, activo: true, orden: orden };
+    if (_conSugerencia) fila.sugerencia = d.querySelector('[data-tipo-nueva]').value === 'true';
+    return escribir('/orden_reglas', 'POST', fila).then(function () {
+      cont.dataset.orden = orden;
+      var nueva = document.createElement('div');
+      cont.replaceChild(nueva, d);
+      pintarReglas(nueva, [fila]);
+      avisar('Regla guardada: la IA la usa desde la próxima foto.');
+    });
+  });
+}
+
+function pintarColores(cont, filas) {
+  editor({ cont: cont, filas: filas, vacio: 'Sin colores.',
+    cols: [{ k: 'hex', t: 'Muestra', tipo: 'color', ancho: 'chico' }, { k: 'nombre', t: 'Color', tipo: 'texto' }, { k: 'orden', t: 'Orden', tipo: 'num', ancho: 'chico', min: 1 },
+           { k: 'activo', t: 'Activo', tipo: 'bool' }],
+    guardar: function (f, c) { return guardarFila('/orden_colores?id=eq.' + valor(f.id), c); } });
+}
+
+/** Las fotos ejemplo (una por tipo de mueble): la IA las usa con los módulos que todavía no tienen foto modelo. */
+function dibujarEjemplos(cont, ejemplos) {
+  if (!cont) return;
+  if (ejemplos === null) { cont.innerHTML = '<div class="nota">Para las fotos ejemplo ' + FALTA_123 + '.</div>'; return; }
+  var por = {};
+  ejemplos.forEach(function (e) { por[e.tipo] = e.foto_path; });
+  var otraVez = function () { dibujarEjemplos(cont, Object.keys(por).map(function (k) { return { tipo: k, foto_path: por[k] }; })); };
+  cont.innerHTML = '<p class="bajada">La IA compara cada foto con la <b>foto modelo</b> de ese módulo, que se elige en Por local: tocás el módulo y "Usar como modelo" en una foto que salió bien. ' +
+    'Si el módulo todavía no tiene, usa la foto ejemplo de su tipo de mueble. Que sean fotos de VDH bien hechas: las de Pinterest son de otros locales, con otros muebles, y la confunden.</p>' +
+    '<div class="aj-ejemplos">' + TIPOS_MUEBLE.map(function (t) {
+      var ruta = por[t[0]];
+      return '<div class="aj-ejemplo">' + (ruta ? '<img data-foto="' + esc(ruta) + '" alt="Foto ejemplo: ' + esc(t[1]) + '">' : '<div class="sin-foto">Sin foto</div>') +
+        '<b>' + esc(t[1]) + '</b><div class="aj-ejemplo-acc"><button class="boton chico" data-subir-ejemplo="' + t[0] + '">' + (ruta ? 'Cambiar' : 'Subir una foto') + '</button>' +
+        (ruta ? '<button class="boton chico" data-sacar-ejemplo="' + t[0] + '">Sacar</button>' : '') + '</div></div>';
+    }).join('') + '</div>';
+  cargarFotos(cont);
+  cont.querySelectorAll('[data-subir-ejemplo]').forEach(function (b) {
+    b.onclick = function () {
+      var tipo = b.dataset.subirEjemplo;
+      elegirFoto(function (blob) {
+        return subirArchivo('ejemplos/' + tipo + '-' + nombreArchivo(), blob).then(function (ruta) {
+          return (por[tipo] ? guardarFila('/orden_fotos_ejemplo?tipo=eq.' + tipo, { foto_path: ruta, actualizado_en: new Date().toISOString() })
+                            : escribir('/orden_fotos_ejemplo', 'POST', { tipo: tipo, foto_path: ruta }))
+            .then(function () { por[tipo] = ruta; avisar('Foto ejemplo guardada: la IA la usa desde la próxima foto.'); otraVez(); });
+        });
+      });
+    };
+  });
+  cont.querySelectorAll('[data-sacar-ejemplo]').forEach(function (b) {
+    unaVez(b, function () {
+      var tipo = b.dataset.sacarEjemplo;
+      if (!confirm('¿Sacar la foto ejemplo de «' + TIPOS_MUEBLE.filter(function (t) { return t[0] === tipo; })[0][1] + '»?')) return;
+      return borrarFila('/orden_fotos_ejemplo?tipo=eq.' + tipo).then(function () { delete por[tipo]; avisar('Foto ejemplo sacada.'); otraVez(); });
+    });
+  });
 }
 
 function ajTableros() {
@@ -1782,17 +2088,10 @@ function ajTableros() {
     nueva: function (f) { return { titulo: 'Nuevo tablero', url: 'https://www.pinterest.com/', orden: f.length + 1, activo: false }; } });
 }
 
-function ajExhibidores() {
-  ajLista({ ruta: '/orden_exhibidores?select=*&order=nombre.asc', tabla: '/orden_exhibidores', texto: 'La cantidad ideal de prendas de cada tipo: ni muy lleno ni muy vacío (la IA la tiene en cuenta).',
-    cols: [{ k: 'nombre', t: 'Exhibidor', tipo: 'texto' }, { k: 'prendas_min', t: 'Mínimo', tipo: 'num', ancho: 'chico' }, { k: 'prendas_max', t: 'Máximo', tipo: 'num', ancho: 'chico' },
-           { k: 'notas', t: 'Notas', tipo: 'texto', nulo: true, ancho: 'grande' }],
-    nueva: function (f) { return { nombre: 'Exhibidor ' + (f.length + 1) }; } });
-}
-
 var TEMAS_PREG = [['tela', 'Telas'], ['molderia', 'Molderías'], ['retail', 'Cómo trabajamos']];
 function ajPreguntas() {
   ajLista({ ruta: '/orden_preguntas?select=id,tema,dificultad,pregunta,grupo,activo&order=grupo.asc.nullsfirst,tema.asc,dificultad.asc', tabla: '/orden_preguntas',
-    texto: 'Las preguntas de los tests de conocimiento (opción múltiple; si le erran, la app explica la correcta). El test de la semana sale solo. ' +
+    texto: 'Las preguntas de los tests de conocimiento, para todos los locales (opción múltiple; si le erran, la app explica la correcta). El test de la semana sale solo; se prende en cada local, en El local. ' +
       'Para uno especial (por ejemplo, la colección nueva), cargá sus preguntas con el mismo <b>grupo</b> ("Colección verano") y tocá "Mandar un test ahora". ' +
       'Se pueden apagar las que no sirvan.<br><span class="imp-mapa-acc" style="margin-top:10px"><button class="boton chico lima" id="mandarTest">Mandar un test ahora</button>' +
       '<button class="boton chico" id="nuevaPregunta">Nueva pregunta</button></span>',
@@ -1899,6 +2198,7 @@ function dibujarMapaLocal() {
     (puede ? '<div class="imp-mapa-acc"><button class="boton chico' + (_repartir ? ' lima' : '') + '" id="btnRepartir">' + (_repartir ? 'Listo, terminé' : 'Repartir y ponerles nombre') + '</button>' +
       (_repartir && d.pared.length + d.islas.length ? '<button class="boton chico" id="btnParejo">Repartir parejo el salón entre ' + planReparto(d).length + '</button>' : '') +
       (_repartir && d.dep.length > 1 && depositoNumerado(d) ? '<button class="boton chico" id="btnParejoDep">Repartir parejo el depósito entre ' + planReparto(d, 'deposito').length + '</button>' : '') +
+      (_repartir && esAdmin() ? '<button class="boton chico" id="btnNuevoSector">Agregar un sector</button>' : '') +
       '<button class="boton chico" id="btnFormaMapa">Armar el croquis</button></div>' : '') +
     (_repartir ? '<p class="bajada">"Repartir parejo" divide los módulos en partes iguales, en bloques seguidos (22 entre 3: 7, 7 y 8). ' +
                  'Para hacerlo a mano o ponerle nombre a un módulo ("Vidriera"), tocalo. Tocá un sector (abajo) para elegir quién lo tiene, quién lo cubre y, en el depósito, qué tiene.</p>' : '') +
@@ -1918,6 +2218,8 @@ function dibujarMapaLocal() {
   if (b) unaVez(b, function () { return repartirParejo(d); });
   b = document.getElementById('btnParejoDep');
   if (b) unaVez(b, function () { return repartirParejo(d, 'deposito'); });
+  b = document.getElementById('btnNuevoSector');
+  if (b) b.onclick = function () { nuevoSector(); };
   z.querySelectorAll('.mapa-mod').forEach(function (g) {
     g.onclick = function () {
       if (_repartir) elegirSectorAdmin(d, g.dataset.mod);
@@ -2033,6 +2335,27 @@ function repartirParejo(d, tipo) {
   });
 }
 
+/** Un sector nuevo (antes, en Ajustes → Sectores y módulos). Después se toca abajo para elegir quién lo tiene. */
+function nuevoSector() {
+  var f = ventana('<h1>Agregar un sector</h1><p class="bajada">Después lo tocás abajo para elegir quién lo tiene y quién lo cubre, y le pasás módulos (tocando cada uno o con "Repartir parejo").</p>' +
+    '<div class="mapa-ley"><button class="mapa-sec" data-tipo="salon"><span><b>En el salón</b><small>Un sector más para repartir los módulos</small></span></button>' +
+    '<button class="mapa-sec" data-tipo="deposito"><span><b>En el depósito</b><small>Con lo que tiene (remeras, buzos…)</small></span></button></div>');
+  f.querySelectorAll('[data-tipo]').forEach(function (b) {
+    unaVez(b, function () {
+      var tipo = b.dataset.tipo, n = 1;
+      /* El número sigue al más alto, contando los apagados (la base no deja dos iguales). */
+      return leer('/orden_sectores?select=numero&local_id=eq.' + valor(_local.id) + '&tipo=eq.' + tipo + '&order=numero.desc&limit=1').then(function (u) {
+        n = (u && u[0] ? u[0].numero : 0) + 1;
+        return escribir('/orden_sectores', 'POST', { local_id: _local.id, tipo: tipo, numero: n });
+      }).then(function () {
+        f.remove();
+        avisar('Listo: ' + (tipo === 'salon' ? 'sector ' + n + ' del salón' : 'depósito ' + n) + '. Tocalo abajo para elegir quién lo tiene.');
+        recargarMapaLocal();
+      });
+    });
+  });
+}
+
 function elegirGenteAdmin(d, secId) {
   var s = d.salon.concat(d.deposito).filter(function (x) { return x.id === secId; })[0];
   if (!s) return;
@@ -2047,7 +2370,18 @@ function elegirGenteAdmin(d, secId) {
     '<label class="campo"><span>Lo tiene</span><select id="vResp">' + opciones(s.responsable_id) + '</select></label>' +
     '<label class="campo"><span>Lo cubre (franco o ausencia)</span><select id="vSup">' + opciones(s.suplente_id) + '</select></label>' +
     (s.tipo === 'deposito' ? '<label class="campo"><span>Qué tiene</span><input id="vCat" maxlength="80" value="' + esc(s.nombre || '') + '" placeholder="Remeras, camisas y buzos"></label>' : '') +
-    '<button class="boton lima" id="vGuardar">Guardar</button>');
+    '<button class="boton lima" id="vGuardar">Guardar</button>' + (esAdmin() ? '<div class="vm-sacar" id="vSacarZona"></div>' : ''));
+  /* Sacar el sector: sólo si no tiene ningún módulo (ni apagado), porque con él se irían los módulos y su historia. */
+  var zs = f.querySelector('#vSacarZona');
+  if (zs) leer('/orden_modulos?select=id&sector_id=eq.' + valor(s.id) + '&limit=1').then(function (mm) {
+    if (!document.body.contains(zs)) return;
+    if (mm && mm.length) { zs.innerHTML = '<p class="bajada-chica">Para sacar este sector no tiene que tener módulos: pasalos a otro tocando cada uno.</p>'; return; }
+    zs.innerHTML = '<button class="boton chico" id="vSacar">Sacar este sector</button>';
+    unaVez(zs.querySelector('#vSacar'), function () {
+      if (!confirm('¿Sacar ' + nombreSector(s) + '? No tiene módulos.')) return;
+      return borrarFila('/orden_sectores?id=eq.' + valor(s.id)).then(function () { f.remove(); avisar('Sector sacado.'); recargarMapaLocal(); });
+    });
+  }).catch(function () {});
   unaVez(f.querySelector('#vGuardar'), function () {
     var cat = f.querySelector('#vCat');
     return llamar('orden_sector_gente', { p_sector: s.id, p_responsable: f.querySelector('#vResp').value || null,

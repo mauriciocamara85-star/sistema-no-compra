@@ -430,3 +430,48 @@
 .imp .bajada-chica { font-size: 12.5px; color: var(--txt-3); }
 /* En el celular: el local, el % y los controles (lo demás, en la PC). */
 @media (max-width: 600px) { .imp .testigo-ranking .col-sec { display: none; } .imp .barra-pct { min-width: 96px; gap: 6px; } .imp .testigo-ranking th, .imp .testigo-ranking td { padding: 8px 7px; } }
+
+/* ── Ajustes (15/10/2026): El local en frases, las reglas por punto, las fotos ejemplo y la foto modelo ── */
+.imp .renglon.frases { display: block; padding: 14px 16px; }
+.imp .frase { margin: 0 0 8px; font-size: 14.5px; line-height: 2.55; color: var(--txt); }
+.imp .frase.aclara { line-height: 1.5; font-size: 13px; color: var(--txt-3); }
+.imp .frase .en-frase {
+  display: inline-block; width: auto; min-height: 36px; padding: 4px 9px; margin: 0 2px; vertical-align: middle;
+  border: 1px solid var(--line-campo); border-radius: var(--r-sm); background: var(--campo); color: var(--txt); font: 600 14px var(--sans); box-sizing: border-box;
+}
+.imp .frase input.en-frase[type=text] { width: 13em; max-width: 100%; }
+.imp .frase input.en-frase.num { width: 76px; text-align: center; }
+.imp .frase input.en-frase.hora { width: 116px; }
+.imp .frase .dias.en-frase { display: inline-flex; gap: 3px; padding: 0; border: 0; background: none; }
+.imp .frase .dias.en-frase label { width: 32px; height: 36px; }
+.imp .frase-si { display: inline-flex; align-items: flex-start; gap: 9px; line-height: 1.5; cursor: pointer; }
+.imp .frase-si input { width: 19px; height: 19px; margin: 1px 0 0; flex: none; accent-color: var(--acc); }
+.imp .renglon.frases .acciones-renglon { justify-content: flex-end; flex-wrap: wrap; margin: 6px 0 0; }
+.imp .aj-grupo { margin: 30px 0 2px; font: 700 18px var(--display); color: var(--txt); }
+.imp .aj-bajada { margin: -4px 0 8px; }
+.imp .aj-sub { margin: 16px 0 8px; font: 600 13px var(--sans); color: var(--txt-2); }
+.imp .aj-agregar { margin: 0 0 4px; }
+.imp textarea[data-k], .imp .nueva-regla textarea { resize: none; min-height: 42px; line-height: 1.45; overflow: hidden; }
+.imp .renglon .campo.c-tipo { width: 196px; }
+.imp [data-reglas] > .vacio { padding: 10px 14px; }
+.imp .renglon.nueva-regla { border-style: dashed; }
+.imp .aj-colores { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 0 10px; }
+.imp .aj-colores > div:not(.renglon) { display: contents; }   /* los colores que se agregan llegan en su propia caja */
+.imp .aj-colores .campo.c-chico { width: 64px; }
+.imp .aj-colores input[type=color] { padding: 3px; }
+.imp .aj-ejemplos { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 168px)); gap: 12px; }
+.imp .aj-ejemplo { display: grid; gap: 7px; align-content: start; padding: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm); }
+.imp .aj-ejemplo img, .imp .aj-ejemplo .sin-foto { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 8px; background: var(--surface-2); }
+.imp .aj-ejemplo .sin-foto { display: grid; place-items: center; color: var(--txt-3); font-size: 13px; }
+.imp .aj-ejemplo b { font-size: 13.5px; }
+.imp .aj-ejemplo-acc { display: flex; flex-wrap: wrap; gap: 6px; }
+.ventana .vm-usar { margin: 8px 0 0; }
+.ventana .foto-chica .boton { width: 100%; margin-top: 5px; padding-left: 6px; padding-right: 6px; font-size: 12.5px; }
+.ventana .vm-propio-acc { display: flex; justify-content: flex-end; margin: -4px 0 6px; }
+.ventana .boton:disabled { opacity: .5; cursor: default; }
+.ventana .vm-modelo { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 12px; }
+.ventana .vm-modelo .ref-mini { width: 72px; height: 96px; flex: none; object-fit: cover; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
+.ventana .vm-modelo .sin-foto { display: grid; place-items: center; padding: 6px; text-align: center; font-size: 11px; color: var(--txt-3); box-sizing: border-box; }
+.ventana .vm-modelo .bajada-chica { margin: 4px 0 8px; }
+.ventana .vm-modelo .imp-mapa-acc { margin: 0; }
+.ventana .vm-sacar { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--line); }

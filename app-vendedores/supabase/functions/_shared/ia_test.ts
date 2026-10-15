@@ -23,6 +23,28 @@ Deno.test("el texto para la IA incluye reglas, colores, cantidades y la etapa ac
   if (s.includes("piso")) throw new Error("No tiene que mencionar el piso");
 });
 
+Deno.test("las reglas de sugerencia: aparte y sólo con las sugerencias prendidas (SQL 123)", () => {
+  const reglas = [{ check: "dobladas", texto: "Prendas finas: 4 por estante." }, { check: "exhibicion", texto: "Colores que combinen entre pilas vecinas.", sugerencia: true }];
+  const apagadas = armarSistema({ ...ctx, reglas });
+  if (!apagadas.includes("Prendas finas: 4 por estante.")) throw new Error("Falta la obligatoria");
+  if (apagadas.includes("Colores que combinen")) throw new Error("Con las sugerencias apagadas, la de estilo no va");
+  const prendidas = armarSistema({ ...ctx, reglas, ia_sugerencias: true });
+  const corte = prendidas.indexOf("SUGERENCIAS DE ESTILO");
+  if (corte < 0 || prendidas.indexOf("Colores que combinen") < corte) throw new Error("La de estilo va en su bloque, no entre las que se corrigen");
+  if (!prendidas.slice(corte).includes('nunca "corregir"')) throw new Error("Tiene que decir que nunca es para corregir");
+});
+
+Deno.test("la foto modelo y la foto ejemplo se explican distinto, y va el tipo de mueble (SQL 123)", () => {
+  const modelo = armarSistema({ ...ctx, referencia_path: "l/ref.jpg", referencia_tipo: "modulo", mueble: "Módulo de pared con estantes" });
+  if (!modelo.includes("Compará contra la foto modelo") || !modelo.includes("MUEBLE: Módulo de pared con estantes.")) throw new Error("Modelo: " + modelo);
+  const ejemplo = armarSistema({ ...ctx, referencia_path: "ejemplos/x.jpg", referencia_tipo: "ejemplo" });
+  if (!ejemplo.includes("OTRO mueble del mismo tipo") || ejemplo.includes("Compará contra la foto modelo")) throw new Error("Ejemplo: " + ejemplo);
+  const sinFoto = armarSistema(ctx);
+  if (sinFoto.includes("OTRO mueble") || sinFoto.includes("Compará contra la foto modelo")) throw new Error("Sin foto no menciona ninguna");
+  const viejo = armarSistema({ ...ctx, referencia_path: "l/ref.jpg" });   // antes del SQL 123: sin referencia_tipo, es la del módulo
+  if (!viejo.includes("Compará contra la foto modelo")) throw new Error("Sin el dato, es la del módulo");
+});
+
 Deno.test("el formato pide exactamente los puntos del sector", () => {
   igual(armarEsquema(ctx.checks).properties.checks.required, ctx.checks, "checks");
 });
