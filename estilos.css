@@ -1594,6 +1594,8 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .per-flecha:first-child { border-right: 1px solid var(--line); border-radius: var(--r-sm) 0 0 var(--r-sm); }
 .per-flecha[data-mover="1"] { border-left: 1px solid var(--line); border-radius: 0 var(--r-sm) var(--r-sm) 0; }
 .per-flecha:hover, .per-boton:hover { background: var(--surface-2); color: var(--txt); }
+.per-flecha:disabled { opacity: .35; cursor: default; }
+.per-flecha:disabled:hover { background: none; color: var(--txt-3); }
 .per-flecha svg, .per-boton svg { width: 18px; height: 18px; flex: none; }
 .per-boton {
   display: flex; align-items: center; gap: 9px;
@@ -1645,6 +1647,8 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 }
 .per-dia span { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; }
 .per-dia:hover span { background: var(--surface-2); }
+.per-dia:disabled { opacity: .3; cursor: default; }
+.per-dia:disabled:hover span { background: none; }
 .per-dia.otro-mes { color: var(--txt-3); opacity: .65; }
 .per-dia.en-rango { background: var(--surface-3); }
 .per-dia.inicio { background: linear-gradient(90deg, transparent 50%, var(--surface-3) 50%); }

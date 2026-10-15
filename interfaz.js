@@ -184,11 +184,26 @@
   }
   /** ‹ y ›: el período anterior o el siguiente, del mismo tamaño (un mes es un mes, aunque tenga otros días). */
   function mover(r, dir, op) {
-    var a = r._a, b = r._b;
-    if (r.unidad === 'mes') { var m = new Date(a.getFullYear(), a.getMonth() + dir, 1); return armar(m, finMes(m), 'mes', null, op); }
-    if (r.unidad === 'anio') { var y = a.getFullYear() + dir; return armar(new Date(y, 0, 1), new Date(y, 11, 31), 'anio', null, op); }
-    var n = dias(a, b) * dir, a2 = sumar(a, n), b2 = sumar(b, n);
-    return armar(a2, b2, r.unidad === 'todo' ? 'rango' : unidadDe(a2, b2) === 'rango' ? 'rango' : r.unidad, null, op);
+    var a = r._a, b = r._b, x;
+    if (r.unidad === 'mes') { var m = new Date(a.getFullYear(), a.getMonth() + dir, 1); x = [m, finMes(m), 'mes']; }
+    else if (r.unidad === 'anio') { var y = a.getFullYear() + dir; x = [new Date(y, 0, 1), new Date(y, 11, 31), 'anio']; }
+    else {
+      var n = dias(a, b) * dir, a2 = sumar(a, n), b2 = sumar(b, n);
+      x = [a2, b2, r.unidad === 'todo' ? 'rango' : unidadDe(a2, b2) === 'rango' ? 'rango' : r.unidad];
+    }
+    return armar(x[0], x[1], x[2], atajoDe(x[0], x[1], op), op);
+  }
+  /** Si un rango es justo el de un atajo (por ejemplo, al volver con › a "Últimos 7 días"), queda como ese atajo: así se
+      recuerda como atajo y sigue avanzando con los días, en vez de quedar en fechas fijas. */
+  function atajoDe(a, b, op) {
+    var h = hoyAR(), lista = op.atajos || ATAJOS_DE_SIEMPRE;
+    for (var i = 0; i < lista.length; i++) {
+      var k = lista[i];
+      if (!ATAJOS[k] || k === 'todo') continue;
+      var x = ATAJOS[k][1](h, op);
+      if (igual(x[0], a) && igual(x[1], b)) return k;
+    }
+    return null;
   }
   function deAtajo(clave, op) { var x = ATAJOS[clave][1](hoyAR(), op); return armar(x[0], x[1], x[2], clave, op); }
 
@@ -218,7 +233,13 @@
     var caja = host.querySelector('.per'), boton = host.querySelector('.per-boton'), pop = host.querySelector('.per-pop');
     var tmpA = null, tmpB = null, vista = null, encima = null;
 
-    function mostrar() { host.querySelector('.per-txt').textContent = r.texto; }
+    function mostrar() {
+      host.querySelector('.per-txt').textContent = r.texto;
+      /* Con hastaHoy no hay "siguiente" cuando el período ya llega a hoy: quedaría desde después de hasta. */
+      var sig = host.querySelector('[data-mover="1"]'), tope = !!op.hastaHoy && r._b >= hoyAR();
+      sig.disabled = tope;
+      sig.title = tope ? 'Ya llega a hoy' : 'Período siguiente';
+    }
     function poner(nuevo, avisar) {
       r = nuevo;
       if (op.guardar) guardar(op.guardar, JSON.stringify(r.atajo ? { atajo: r.atajo } : { desde: aTexto(r._a), hasta: aTexto(r._b), unidad: r.unidad }));
@@ -260,7 +281,10 @@
         if (a && igual(d, a)) cls.push('inicio');
         if ((b && igual(d, b)) || (!b && a && igual(d, a))) cls.push('fin');
         if (a && b && d > a && d < b) cls.push('en-rango');
-        celdas += '<button type="button" class="' + cls.join(' ') + '" data-d="' + aTexto(d) + '" aria-label="' + d.getDate() + ' de ' + MESES[d.getMonth()] + ' de ' + d.getFullYear() + '"><span>' + d.getDate() + '</span></button>';
+        /* Con hastaHoy, los días que todavía no pasaron no se eligen. */
+        var futuro = !!op.hastaHoy && d > h;
+        celdas += '<button type="button" class="' + cls.join(' ') + '" data-d="' + aTexto(d) + '"' + (futuro ? ' disabled' : '') +
+          ' aria-label="' + d.getDate() + ' de ' + MESES[d.getMonth()] + ' de ' + d.getFullYear() + '"><span>' + d.getDate() + '</span></button>';
       }
       var pie = tmpB ? etiqueta(a, b, unidadDe(a, b), null, h) + (unidadDe(a, b) === 'rango' ? ' · ' + dias(a, b) + ' días' : '') : 'Ahora tocá el último día';
       pop.innerHTML = '<div class="per-atajos">' + atajos.map(function (k) {
@@ -295,7 +319,7 @@
       pop.querySelector('[data-acc="aplicar"]').onclick = function () {
         if (!tmpB) return;
         cerrar(true);
-        poner(armar(tmpA, tmpB, unidadDe(tmpA, tmpB), null, op));
+        poner(armar(tmpA, tmpB, unidadDe(tmpA, tmpB), atajoDe(tmpA, tmpB, op), op));
       };
     }
 
