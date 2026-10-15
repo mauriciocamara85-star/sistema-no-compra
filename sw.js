@@ -14,7 +14,7 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v150';
+const CACHE = 'no-compra-v151';
 
 const BASICOS = [
   './',
@@ -30,6 +30,7 @@ const BASICOS = [
   './comun.js',
   /* Quién entró (13/10/2026): sin él la barra no sabe qué mostrar. */
   './persona.js',
+  './interfaz.js',
   './usuarios.js',
   /* El catálogo de productos. Es el archivo que MÁS importa tener en caché:
      sin él el buscador y la pistola no resuelven nada, y justamente están

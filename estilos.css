@@ -1474,3 +1474,208 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   display: grid; place-items: center; padding: 16px;
   background: var(--bg);
 }
+
+/* ══ INTERFAZ COMÚN (interfaz.js, 15/10/2026) ═══════════════════════════════
+   Pedido de Mauricio: "que todo funcione de la misma manera". Eligió en la
+   maqueta la barra como Supabase, el mismo botón para achicar los paneles y
+   un solo selector de período. Va al final para mandar sobre lo de arriba. */
+
+/* ── La barra negra, angosta ─────────────────────────────────────────────
+   En la compu: sólo los íconos; al pasar el mouse se abre con los nombres por
+   ENCIMA (la pantalla no se mueve) y "Dejarla abierta" la fija (ahí sí corre la
+   pantalla). El nombre de cada sección sigue en el marcado: angosta, mide 0.
+   En el celular sigue siendo la barra de abajo, sin cambios. */
+.rail-fijar { display: none; }
+@media (min-width: 900px) {
+  :root { --rail-ancho: 64px; --rail: 88px; --rail-abierta: 196px; }
+  :root.rail-fija { --rail-ancho: 196px; --rail: 220px; }
+  body.hay-rail { transition: padding-left .2s var(--curva); }
+  .rail {
+    width: var(--rail-ancho);
+    z-index: 70;
+    overflow: hidden;
+    padding: 14px 10px;
+    transition: width .18s var(--curva), box-shadow .18s var(--curva);
+  }
+  .rail.abierta {
+    width: var(--rail-abierta);
+    box-shadow: 0 30px 70px -18px rgba(0, 0, 0, .72), inset 0 1px 0 rgba(255, 255, 255, .06);
+  }
+  .rail-marca { display: flex; align-items: center; justify-content: flex-start; gap: 9px; padding: 0 1px; margin-bottom: 16px; }
+  .rail-marca-icono { flex: none; }
+  .rail-marca-txt {
+    display: block; min-width: 0;
+    font: 700 14px/1.15 var(--display);
+    color: var(--rail-txt);
+    white-space: nowrap; overflow: hidden;
+    opacity: 0; transition: opacity .12s;
+  }
+  .rail-marca-txt small {
+    display: block;
+    font: 600 9.5px/1 var(--sans);
+    letter-spacing: 2px; text-transform: uppercase;
+    color: var(--rail-txt-2);
+    margin-bottom: 3px;
+  }
+  .rail-in { gap: 4px; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+  .rail-in::-webkit-scrollbar { display: none; }
+  .rail-item {
+    flex: 0 0 auto;
+    flex-direction: row; justify-content: flex-start;
+    gap: 10px;
+    padding: 5px;
+    border-radius: 12px;
+    font-size: 0; font-weight: 600;
+    white-space: nowrap;
+  }
+  .rail-icono { width: 34px; height: 32px; border-radius: 10px; flex: none; }
+  .rail-item svg { width: 18px; height: 18px; }
+  .rail.abierta .rail-item, :root.rail-fija .rail-item { font-size: 13.5px; }
+  .rail.abierta .rail-marca-txt, :root.rail-fija .rail-marca-txt { opacity: 1; }
+  /* Abajo de todo: "Dejarla abierta" / "Achicar la barra". */
+  .rail-fijar { display: flex; margin-top: auto; color: var(--rail-txt-2); }
+  .rail-fijar .rail-icono { background: none; }
+  .rail-fijar:hover { color: var(--rail-txt); }
+}
+/* La Carga (index.html, <html class="rail-ficha">) tiene abajo de la barra la
+   ficha de quién carga: en la PC ancha la barra queda abierta siempre, como
+   estaba, porque esa ficha no entra angosta. Entre 900 y 1200 la ficha vive en
+   la barra de identidad del formulario y la barra es la angosta, como en todas. */
+@media (min-width: 1200px) {
+  :root.rail-ficha { --rail-ancho: 168px; --rail: 194px; }
+  :root.rail-ficha .rail-item { font-size: 13.5px; }
+  :root.rail-ficha .rail-marca-txt { opacity: 1; }
+  :root.rail-ficha .rail-fijar { display: none; }
+  :root:not(.rail-ficha):not(.rail-fija) .rail-pie { display: none; }
+}
+@media (min-width: 900px) and (max-height: 760px) {
+  .rail-marca { margin-bottom: 10px; }
+  .rail-in { gap: 2px; }
+  .rail-item { padding-top: 3px; padding-bottom: 3px; }
+  .rail-icono { height: 28px; }
+}
+
+/* ── El panel de cada sección (CRM, Equipo VDH, Asistente) ────────────────
+   El mismo botón, arriba a la derecha del panel, para achicarlo a íconos. */
+:root { --panel-ancho: 240px; --panel-chico: 60px; }
+.plegar-panel {
+  flex: none;
+  width: 34px; height: 34px;
+  display: grid; place-items: center;
+  border: 0; border-radius: 10px;
+  background: none;
+  color: var(--txt-3);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.plegar-panel:hover { background: var(--surface-3); color: var(--txt); }
+.plegar-panel svg { width: 19px; height: 19px; }
+
+/* ── El selector de período ───────────────────────────────────────────────
+   Un botón que dice el período, con ‹ › al costado. Al tocarlo: los atajos a la
+   izquierda y el calendario a la derecha (un día, otro día y "Aplicar"). */
+.per {
+  position: relative;
+  display: inline-flex; align-items: stretch;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(20, 20, 18, .06);
+}
+.per-flecha, .per-boton {
+  border: 0; background: none; color: var(--txt); cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.per-flecha { width: 40px; display: grid; place-items: center; color: var(--txt-3); }
+.per-flecha:first-child { border-right: 1px solid var(--line); border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.per-flecha[data-mover="1"] { border-left: 1px solid var(--line); border-radius: 0 var(--r-sm) var(--r-sm) 0; }
+.per-flecha:hover, .per-boton:hover { background: var(--surface-2); color: var(--txt); }
+.per-flecha svg, .per-boton svg { width: 18px; height: 18px; flex: none; }
+.per-boton {
+  display: flex; align-items: center; gap: 9px;
+  min-width: 0; min-height: 42px;
+  padding: 8px 14px;
+  font: 600 14px/1.2 var(--sans);
+  white-space: nowrap;
+}
+.per-boton > svg:first-child { color: var(--txt-3); }
+.per-txt { overflow: hidden; text-overflow: ellipsis; }
+.per button:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+.per-pop {
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 90;
+  display: grid; grid-template-columns: 172px 300px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--sombra-alta);
+  overflow: hidden;
+  color: var(--txt);
+  text-align: left;
+}
+.per-pop.a-la-izq { left: auto; right: 0; }
+.per-pop[hidden] { display: none; }
+.per-atajos { display: flex; flex-direction: column; gap: 2px; padding: 10px; background: var(--surface-2); border-right: 1px solid var(--line); }
+.per-atajos button {
+  border: 0; background: none; cursor: pointer;
+  text-align: left; padding: 8px 10px; border-radius: 10px;
+  font: 500 13.5px/1.25 var(--sans); color: var(--txt);
+}
+.per-atajos button:hover { background: var(--surface-3); }
+.per-atajos button[aria-pressed="true"] { background: var(--acc); color: var(--acc-ink); font-weight: 600; }
+.per-cal { padding: 12px 14px 10px; }
+.per-cal-cab { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.per-cal-cab b { font: 700 14px/1 var(--display); }
+.per-cal-cab button {
+  border: 0; background: none; cursor: pointer;
+  width: 32px; height: 32px; border-radius: 9px;
+  display: grid; place-items: center; color: var(--txt-3);
+}
+.per-cal-cab button:hover { background: var(--surface-2); color: var(--txt); }
+.per-cal-cab svg { width: 18px; height: 18px; }
+.per-grilla { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); row-gap: 2px; }
+.per-dsem { font: 600 10.5px/1 var(--sans); letter-spacing: .06em; color: var(--txt-3); text-align: center; padding: 6px 0; }
+.per-dia {
+  border: 0; background: none; cursor: pointer;
+  padding: 0; min-width: 0; height: 36px;
+  font: 500 13px/1 var(--sans); font-variant-numeric: tabular-nums; color: var(--txt);
+}
+.per-dia span { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; }
+.per-dia:hover span { background: var(--surface-2); }
+.per-dia.otro-mes { color: var(--txt-3); opacity: .65; }
+.per-dia.en-rango { background: var(--surface-3); }
+.per-dia.inicio { background: linear-gradient(90deg, transparent 50%, var(--surface-3) 50%); }
+.per-dia.fin { background: linear-gradient(90deg, var(--surface-3) 50%, transparent 50%); }
+.per-dia.inicio.fin { background: none; }
+.per-dia.inicio span, .per-dia.fin span { background: var(--acc); color: var(--acc-ink); font-weight: 700; }
+.per-dia.hoy span { box-shadow: inset 0 0 0 1.5px var(--oro-liso); }
+.per-pie {
+  grid-column: 1 / -1;
+  display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+  padding: 10px 14px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-2);
+}
+.per-pie small { color: var(--txt-3); font-size: 12.5px; }
+.per-botones { display: flex; gap: 8px; margin-left: auto; }
+.per-btn {
+  border: 1px solid var(--line); background: var(--surface); color: var(--txt); cursor: pointer;
+  border-radius: 11px; padding: 8px 16px;
+  font: 600 13px/1 var(--sans);
+}
+.per-btn.oscuro { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.per-btn:disabled { opacity: .45; cursor: default; }
+/* En el celular se abre como una hoja abajo, arriba de la barra de secciones. */
+@media (max-width: 640px) {
+  .per-pop {
+    position: fixed; left: 12px; right: 12px; top: auto;
+    bottom: calc(var(--nav) + 12px + env(safe-area-inset-bottom));
+    grid-template-columns: 1fr;
+    max-height: calc(100dvh - 120px); overflow-y: auto;
+  }
+  .per-pop.a-la-izq { right: 12px; }
+  .per-atajos { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rail, body.hay-rail, .rail-marca-txt { transition: none; }
+}
