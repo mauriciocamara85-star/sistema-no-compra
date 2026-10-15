@@ -1449,7 +1449,7 @@ function abrirRevision(c, estado) {
   var listo = !r.revisando && !r.fallo;
 
   var html =
-    '<button class="volver" id="volver">' + (estado.rehacer && !r.cerrado ? '‹ Dejar la que mandé' : '‹ Volver a Hoy') + '</button>' +
+    '<button class="volver" id="volver">' + (r.cerrado ? '‹ Fotos' : estado.rehacer ? '‹ Dejar la que mandé' : '‹ Volver a Hoy') + '</button>' +
     '<h1>' + esc(c.modulo_nombre) + '</h1>' +
     /* Si ya no se puede cambiar, la nueva no queda: no se muestra como si fuera la del módulo. */
     (r.cerrado ? '' : '<img class="foto-grande" src="' + esc(estado.url) + '" alt="La foto que sacaste">') +
