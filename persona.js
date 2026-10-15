@@ -32,6 +32,10 @@ var persona = (function () {
     /* La administración de Impecable es de los encargados: el vendedor usa
        su app (vendedores.html), que es adonde lo lleva la barra. */
     vendedor: ['panel.html', 'club-numeros.html', 'config.html', 'impecable-admin.html'],
+    /* También el supervisor de varios locales (sin local fijo, SQL 120). Mauricio, 14/10:
+       "acceso a todo, excepto la parte del CRM". Socios y los números del Club son de la
+       oficina (la base sólo los abre a Administración, Atención y Gerencia), como para el
+       encargado. */
     supervisor: ['panel.html', 'club-numeros.html'],
     atencion: ['impecable-admin.html'],
     admin: [],
@@ -101,6 +105,8 @@ var persona = (function () {
     var r = rol();
     return !r || NO_VE[r].indexOf(pag || pagina()) < 0;
   }
+  /** "Encargado" es el supervisor de un local; el de varios locales (sin local fijo, SQL 120), "Supervisor". */
+  function nombreRol(y) { return y.rol === 'supervisor' && !y.local_id ? 'Supervisor' : ROL[y.rol]; }
 
   /* ════════════════════════════════════════════════════════════════════
      LA SESIÓN (mismo protocolo que impecable-comun.js)
@@ -324,7 +330,7 @@ var persona = (function () {
     var hay = !!(_ses && _yo);
     var espera = hay && !vigente(_yo);
     var texto = hay ? (espera ? 'En espera' : primerNombre(_yo.nombre)) : 'Entrar';
-    var titulo = hay ? (espera ? 'Esperando el OK' : _yo.nombre + ' · ' + ROL[_yo.rol]) : 'Entrar con tu usuario';
+    var titulo = hay ? (espera ? 'Esperando el OK' : _yo.nombre + ' · ' + nombreRol(_yo)) : 'Entrar con tu usuario';
     var etiqueta = hay ? (espera ? 'Tu usuario está esperando el OK' : 'Entraste como ' + _yo.nombre) : 'Entrar con tu usuario';
     [b, mini].forEach(function (x) {
       if (!x) return;
@@ -348,7 +354,7 @@ var persona = (function () {
     d.className = 'ncp-sinacceso';
     d.innerHTML = '<div class="ncp-caja" role="alert">' +
       '<h2>Esta sección no es para tu usuario</h2>' +
-      '<p>Entraste como <b>' + txt(_yo.nombre) + '</b> (' + txt(ROL[_yo.rol]) + '). Lo que podés usar está en la barra.</p>' +
+      '<p>Entraste como <b>' + txt(_yo.nombre) + '</b> (' + txt(nombreRol(_yo)) + '). Lo que podés usar está en la barra.</p>' +
       '<div class="ncp-pie"><a class="btn btn-pri" href="index.html">Ir a la Carga</a>' +
       '<button type="button" class="btn btn-sec" data-salir>No soy ' + txt(primerNombre(_yo.nombre)) + '</button></div></div>';
     d.querySelector('[data-salir]').onclick = function () { salir().then(function () { location.reload(); }); };
@@ -768,7 +774,7 @@ var persona = (function () {
     var y = _yo;
     var gestiona = y.rol === 'admin' || y.rol === 'supervisor';
     c.innerHTML = '<h2 id="ncpTit">' + txt(y.nombre) + '</h2>' +
-      '<p class="ncp-bajada">' + txt(ROL[y.rol]) + (y.local_nombre ? ' · ' + txt(y.local_nombre) : '') + '</p>' +
+      '<p class="ncp-bajada">' + txt(nombreRol(y)) + (y.local_nombre ? ' · ' + txt(y.local_nombre) : '') + '</p>' +
       (y.rol === 'vendedor' || y.rol === 'supervisor'
         ? '<p class="ncp-nota">En la Carga aparecés como <b>' + txt(y.vendedor || y.nombre) + '</b>. Si carga otro, cambiá el vendedor ahí mismo.</p>' : '') +
       '<div class="ncp-pie">' +
@@ -798,7 +804,7 @@ var persona = (function () {
       html = '<p class="ncp-porton-txt">Tu usuario está esperando el OK. Cuando te aprueben, si sos de Administración, Atención al cliente o Gerencia, vas a poder entrar.</p>' +
              '<button type="button" class="btn btn-sec btn-ancho" data-porton="ficha">Ver mi usuario</button>';
     } else if (!oficina()) {
-      html = '<p class="ncp-porton-txt">Entraste como <b>' + txt(y.nombre) + '</b> (' + txt(ROL[y.rol]) + '). ' +
+      html = '<p class="ncp-porton-txt">Entraste como <b>' + txt(y.nombre) + '</b> (' + txt(nombreRol(y)) + '). ' +
              txt(frase) + '</p>' +
              '<button type="button" class="btn btn-sec btn-ancho" data-porton="salir">No soy ' + txt(primerNombre(y.nombre)) + '</button>';
     } else if (!(y && y.pila)) {
