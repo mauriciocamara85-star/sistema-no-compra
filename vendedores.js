@@ -884,8 +884,9 @@ function pantallaHoy() {
   /* Desde cuándo cuenta "hoy" (la Argentina está en UTC−3 todo el año). */
   var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString();
   Promise.all([
-    /* Lo de hoy y lo que quedó pendiente (el depósito vence el viernes). */
-    leer('/orden_v_controles?select=id,estado,vence_en&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente)'),
+    /* Lo de hoy, lo que quedó pendiente (el depósito vence el viernes) y lo que se mandó hoy (el depósito
+       se crea un día y se manda otro: así no desaparece apenas se manda, y se puede sacar de nuevo). */
+    leer('/orden_v_controles?select=id,estado,vence_en&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ')'),
     leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(fallo),
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
     llamar('orden_desafio_mio').catch(fallo),
@@ -1081,11 +1082,13 @@ function pantallaFotos() {
   marcarPestana('fotos');
   adentro();
   var per = yo(), hoy = hoyAR(), id = valor(per.id), nada = function () { return null; };
+  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString();
   app.innerHTML = cabeza('Fotos') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   Promise.all([
-    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,tipo,estado,vence_en,enviado_en,nivel' +
-         '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente)' +
+    /* Como en Hoy: lo de hoy, lo pendiente y lo que se mandó hoy (tomada_en: la de la foto mandada). */
+    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,tipo,estado,vence_en,enviado_en,tomada_en,nivel' +
+         '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ')' +
          '&order=sector_tipo.asc,modulo_numero.asc'),
     /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
     leer('/orden_tareas?select=modulo_id&persona_id=eq.' + id + '&estado=eq.pendiente&origen=eq.ia'),
@@ -1106,7 +1109,9 @@ function sePuedeRehacer(c) {
 }
 
 function ofrecerRehacer(c) {
-  preguntar({ texto: c.modulo_nombre + ': ya mandaste la foto. Si salió mal, la podés sacar de nuevo hasta las ' + hora(c.vence_en) +
+  /* Se puede hasta el final del día en que se mandó, o antes si vence hoy (el depósito vence el viernes). */
+  var hasta = hoyAR(new Date(c.vence_en)) === hoyAR() ? 'hasta las ' + hora(c.vence_en) : 'hasta el final del día';
+  preguntar({ texto: c.modulo_nombre + ': ya mandaste la foto. Si salió mal, la podés sacar de nuevo ' + hasta +
                      ', mientras tu supervisor no la revise. Hasta que mandes la nueva, queda la que mandaste.',
               si: 'Sacar de nuevo', no: 'Dejarla así' })
     .then(function (si) { if (si) despuesDelAtras(function () { pantallaFoto(c); }); });
@@ -1183,7 +1188,10 @@ function dibujarFotos(x) {
   app.querySelectorAll('.camara').forEach(function (bt) {
     bt.onclick = function () {
       var c = _controles[bt.dataset.id];
-      if (sePuedeRehacer(c)) ofrecerRehacer(c); else pantallaFoto(c);
+      if (sePuedeRehacer(c)) { ofrecerRehacer(c); return; }
+      /* La lista quedó abierta y ya pasó la hora: se avisa sin abrir la cámara. */
+      if (c && (c.estado === 'enviado' || c.estado === 'revisado')) { avisar(c.modulo_nombre + ': ya no se puede cambiar la foto; queda la que mandaste.'); pantallaFotos(); return; }
+      pantallaFoto(c);
     };
   });
   var vl = document.getElementById('verLocal');
@@ -1200,7 +1208,9 @@ function dibujarFotos(x) {
       var quien = s && mapa.persona[s.responsable_id];
       var que = nombreModulo(m, s, mapa);
       avisar(!suyos.length ? que + (quien ? ' es de ' + nombreLista(quien) + '.' : ' no tiene responsable.')
-        : suyos.some(function (k) { return k.estado === 'vencido'; }) ? que + ': la foto de hoy ya venció.' : que + ': ya mandaste la foto de hoy.');
+        : suyos.some(function (k) { return k.estado === 'vencido'; }) ? que + ': la foto de hoy ya venció.'
+        : suyos.some(function (k) { return k.estado === 'revisado'; }) ? que + ': tu supervisor ya revisó la foto.'
+        : que + ': ya mandaste la foto de hoy.');
     };
   });
 }
@@ -1243,16 +1253,20 @@ function apagarCamara() {
    gira sola (iPhone, o el navegador sin instalar), el cuadro ya viene ancho y
    no se toca. _giro: -90 = acostado con la parte de arriba a la izquierda
    (la foto se gira a la izquierda), 90 = a la derecha, 0 = parado. */
-var _giro = 0, _signoY = 1, _grav = null;
+var _giro = 0, _signoY = 1, _calibrado = false, _grav = null;
 function alMoverse(e) {
   var a = e.accelerationIncludingGravity;
   if (!a || a.x == null || a.y == null) return;
   _grav = _grav ? { x: _grav.x * 0.7 + a.x * 0.3, y: _grav.y * 0.7 + a.y * 0.3 } : { x: a.x, y: a.y };
   var x = _grav.x, y = _grav.y, ax = Math.abs(x), ay = Math.abs(y);
-  /* Parado: de ahí sale el signo (hay teléfonos que lo dan al revés). Mirando
-     al piso o al techo (una mesa desde arriba) no se sabe: queda como estaba. */
-  if (ay > 6 && ay > 2 * ax) { _signoY = y > 0 ? 1 : -1; ponerGiro(0); }
-  else if (ax > 6 && ax > 1.5 * ay) ponerGiro(x * _signoY > 0 ? -90 : 90);
+  /* Parado: de ahí sale el signo (hay teléfonos que lo dan al revés). Se toma
+     UNA vez, la primera que lo ve parado: después, dado vuelta para un estante
+     bajo no lo cambia. Mirando al piso o al techo (una mesa desde arriba) no
+     se sabe: queda como estaba. */
+  if (ay > 6 && ay > 2 * ax) {
+    if (!_calibrado) { _signoY = y > 0 ? 1 : -1; _calibrado = true; }
+    ponerGiro(0);
+  } else if (ax > 6 && ax > 1.5 * ay) ponerGiro(x * _signoY > 0 ? -90 : 90);
 }
 function ponerGiro(g) {
   if (window.innerWidth > window.innerHeight) g = 0;   // la pantalla ya giró sola
@@ -1290,8 +1304,9 @@ function pantallaFoto(c) {
   if (!c) { irA('fotos'); return; }
   /* rehacer: ya la había mandado (SQL 126); la nueva reemplaza a esa sólo si la manda. */
   var estado = { intentos: 0, respuestas: {}, url: null, fotoId: null, resultado: null, rehacer: c.estado === 'enviado' };
-  /* Las fotos que ya sacó para este control cuentan para el "Enviar igual". */
-  leer('/orden_fotos?select=id&control_id=eq.' + valor(c.id))
+  /* Las fotos que ya sacó para este control cuentan para el "Enviar igual". Rehaciendo,
+     sólo las de después de la mandada (si no, ya con la primera aparecía "Enviar igual"). */
+  leer('/orden_fotos?select=id&control_id=eq.' + valor(c.id) + (estado.rehacer && c.tomada_en ? '&tomada_en=gt.' + valor(c.tomada_en) : ''))
     .then(function (f) { estado.intentos = Math.max(estado.intentos, (f || []).length); })
     .catch(function () {});
   abrirCamara(c, estado);
@@ -1394,7 +1409,7 @@ function mandarFoto(c, estado) {
   }).catch(function (e) {
     if (e && e.sinSesion) { pantallaError(e); return; }
     /* Ya no se puede cambiar (la revisaron, o pasó la hora): no hay nada que reintentar. */
-    var cerrado = !esDeRed(e) && /ya revisó|Ya enviaste/i.test(mensajeDe(e));
+    var cerrado = !esDeRed(e) && /ya revisó|Ya enviaste|no se puede cambiar/i.test(mensajeDe(e));
     estado.resultado = { fallo: esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e), cerrado: cerrado };
     abrirRevision(c, estado);
   });
@@ -1436,7 +1451,8 @@ function abrirRevision(c, estado) {
   var html =
     '<button class="volver" id="volver">' + (estado.rehacer && !r.cerrado ? '‹ Dejar la que mandé' : '‹ Volver a Hoy') + '</button>' +
     '<h1>' + esc(c.modulo_nombre) + '</h1>' +
-    '<img class="foto-grande" src="' + esc(estado.url) + '" alt="La foto que sacaste">' +
+    /* Si ya no se puede cambiar, la nueva no queda: no se muestra como si fuera la del módulo. */
+    (r.cerrado ? '' : '<img class="foto-grande" src="' + esc(estado.url) + '" alt="La foto que sacaste">') +
     tarjetaRevision(r);
 
   if (estado.rehacer && !r.cerrado) {
@@ -1496,10 +1512,16 @@ function enviarControl(c, estado, preguntas, boton) {
     avisar(estado.rehacer ? '¡Listo! Cambiaste la foto: ' + c.modulo_nombre + '.' : '¡Listo! Mandaste el ' + c.modulo_nombre + '.');
   }, function (e) {
     /* Si ya estaba enviado (se tocó dos veces, o se cortó la señal después de
-       que llegara), es lo mismo que "listo". */
-    if (/ya fue enviado/i.test(mensajeDe(e))) { irA('fotos'); avisar('Ese control ya estaba enviado.'); return; }
-    /* La revisaron mientras sacaba la nueva: queda la que mandó. */
+       que llegara), es lo mismo que "listo". Rehaciendo, quiere decir que la
+       nueva ya llegó. */
+    if (/ya fue enviado/i.test(mensajeDe(e))) {
+      irA('fotos');
+      avisar(estado.rehacer ? '¡Listo! Cambiaste la foto: ' + c.modulo_nombre + '.' : 'Ese control ya estaba enviado.');
+      return;
+    }
+    /* La revisaron, o pasó la hora, mientras sacaba la nueva: queda la que mandó. */
     if (/ya revisó/i.test(mensajeDe(e))) { irA('fotos'); avisar('Tu supervisor ya la revisó: quedó la que habías mandado.'); return; }
+    if (/no se puede cambiar/i.test(mensajeDe(e))) { irA('fotos'); avisar('Ya pasó la hora: no se pudo cambiar y quedó la que habías mandado.'); return; }
     throw e;
   });
 }
@@ -2357,7 +2379,7 @@ function pantallaRevisar() {
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Revisar'); return; }
     return Promise.all([
-      leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,tipo,foto_path,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
+      leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,tipo,foto_path,ultimo_intento_id,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
            '&local_id=eq.' + valor(loc.id) + '&limit=60'),
       /* El producto testigo de los locales que mira: si no se puede leer, Revisar sigue igual. */
       testigosRevisar(loc).catch(function () { return []; })
@@ -2502,9 +2524,13 @@ function dibujarRevisar(loc, cola, testigos) {
     unaVez(b, function () {
       /* Uno a la vez: dos niveles tocados casi juntos dejaban un nivel y avisaban otro. */
       niveles.forEach(function (x) { x.disabled = true; });
-      return llamar('orden_revisar_control', { p_control: c.id, p_nivel: b.dataset.nivel, p_comentario: document.getElementById('coment').value || null })
+      /* p_foto (SQL 126): la foto que está mirando. Si el vendedor la cambió mientras tanto, la base no deja. */
+      return llamar('orden_revisar_control', { p_control: c.id, p_nivel: b.dataset.nivel, p_comentario: document.getElementById('coment').value || null, p_foto: c.ultimo_intento_id || null })
         .then(function () { avisar(c.modulo_nombre + ': ' + NIVEL[b.dataset.nivel]); pantallaRevisar(); },
-              function (e) { niveles.forEach(function (x) { x.disabled = false; }); throw e; });
+              function (e) {
+                if (/cambió la foto/i.test(mensajeDe(e))) { avisar(c.modulo_nombre + ': el vendedor cambió la foto recién. Mirala de nuevo.'); pantallaRevisar(); return; }
+                niveles.forEach(function (x) { x.disabled = false; }); throw e;
+              });
     });
     /* unaVez traba sólo el botón tocado, y la acción arranca un instante
        después: si ya se está mandando otro nivel, este toque no cuenta. */

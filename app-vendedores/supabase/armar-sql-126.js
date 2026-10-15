@@ -6,8 +6,11 @@ const mig = fs.readFileSync(path.join(__dirname, 'migrations/20261015000035_reha
 const cabecera = `-- ═══ SQL 126 (15/10/2026) · Equipo VDH: sacar de nuevo una foto ya mandada ═══
 -- Pegalo entero en el editor SQL de Supabase. Se puede correr más de una vez.
 --   · Mientras el supervisor no la revisó, el vendedor puede sacar de nuevo una foto que ya mandó:
---     sólo el mismo día y antes de la hora límite. Si ya la revisaste, queda como está.
---   · Hasta que mande la nueva, en Revisar se sigue viendo la que mandó. Si se arrepiente, queda esa.
+--     sólo el mismo día que la mandó y antes de la hora límite. Si ya la revisaste, queda como está.
+--   · Hasta que mande la nueva, en Revisar se sigue viendo la que mandó (y el observador también).
+--     Si se arrepiente, queda esa.
+--   · Si la cambia justo mientras la estás mirando en Revisar, no te deja ponerle el nivel a la vieja:
+--     te pide mirarla de nuevo (con la app nueva).
 --   · Hasta que se publique la app nueva, esto no cambia nada de lo que ven: la app de hoy no lo ofrece.
 --   · Reversible (el detalle está abajo).
 
