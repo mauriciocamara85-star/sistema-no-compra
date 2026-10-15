@@ -1792,6 +1792,9 @@ export function montarCroquis3D(cont, pl, d, op) {
   el.addEventListener('mousedown', (e) => {
     if (!mira || !paseo || e.button !== 0) return;
     e.preventDefault();
+    /* La cámara, adonde mira ahora: el último movimiento del mouse se aplica en el próximo cuadro, y en una compu
+       lenta el clic llegaba antes (abría el módulo de recién en vez de caminar). */
+    if (!paseo.tween) { camara.position.copy(paseo.pos); camara.lookAt(paseo.pos.clone().add(mirada())); }
     apuntado = null;
     apuntarCentro();
     const a = apuntado;
