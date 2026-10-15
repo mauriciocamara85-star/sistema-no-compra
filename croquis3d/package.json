@@ -1,0 +1,12 @@
+{
+  "name": "croquis3d",
+  "private": true,
+  "description": "El observador en 3D: npm install y npm run armar dejan ../croquis3d.js (three.js adentro, en un solo archivo).",
+  "scripts": {
+    "armar": "esbuild fuente.js --bundle --format=esm --minify --target=es2019 --outfile=../croquis3d.js"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "three": "0.186.1"
+  }
+}

@@ -370,3 +370,27 @@
 .cv-previa-txt em { color: var(--cv-suave); font-size: 11.5px; font-style: normal; opacity: .8; }
 @media (prefers-reduced-motion: no-preference) { .cv-previa:not([hidden]) { animation: cv-previa .16s ease-out; } }
 @keyframes cv-previa { from { opacity: 0; transform: translateY(4px); } }
+
+/* ── El local en 3D (croquis3d.js): va arriba; la maqueta de siempre no se arma ── */
+.cv-modo-3d #cvZoom { display: none; }
+.cv-3d { position: absolute; inset: 0; }
+.cv-3d canvas { display: block; touch-action: none; outline: none; }
+.cv-caminando .cv-escena, .cv-caminando .cv-escena:active { cursor: crosshair; }
+/* En 3D la ayuda va arriba (abajo están los botones, con Caminar); con el aviso de "ubicados a ojo", debajo de él. */
+.cv-modo-3d .cv-ayuda-raton { top: 14px; bottom: auto; max-width: calc(100% - 28px); text-shadow: 0 1px 6px rgba(0, 0, 0, .85); }
+.cv-modo-3d .cv-escena:has(.cv-aviso) .cv-ayuda-raton { top: 66px; }
+/* Los números de los módulos, de frente a quien mira (los dibuja el 3D en HTML: se leen nítidos). */
+.c3-etiquetas { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.c3-rotulo { display: grid; justify-items: center; transition: opacity .2s; }
+.c3-rotulo b { position: relative; min-width: 26px; height: 26px; padding: 0 7px; box-sizing: border-box; display: grid; place-items: center; border-radius: 999px;
+  background: rgba(14, 17, 22, .9); border: 2px solid; color: var(--cv-texto); font-size: 13px; font-weight: 800; font-variant-numeric: tabular-nums; transition: transform .15s, background-color .15s; }
+.c3-rotulo b.vieja::after { content: ""; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: #F5B84B; box-shadow: 0 0 0 2px #0E1116; }
+.c3-rotulo.encima b { transform: scale(1.18); background: var(--cv-texto); color: var(--cv-bg); }
+.c3-rotulo.resaltado b { transform: scale(1.1); }
+.c3-rotulo.apagado { opacity: .28; }
+#cvCaminar[aria-pressed="true"] { background: var(--cv-texto); color: var(--cv-bg); }
+.cv-sec .cv-interruptor + .cv-interruptor { margin-top: 8px; }
+/* Al pasar por una puerta: un fundido a negro cortito. */
+.cv-fundido { position: absolute; inset: 0; z-index: 5; background: #000; opacity: 0; pointer-events: none; transition: opacity .32s ease; }
+.cv-fundido.negro { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .cv-fundido, .c3-rotulo, .c3-rotulo b { transition: none; } }

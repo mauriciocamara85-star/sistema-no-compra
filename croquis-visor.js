@@ -29,7 +29,10 @@ function abrirVisor(cont, op) {
     V.inclinado = localStorage.getItem('vdh_visor_cam') !== 'arriba';
   } catch (e) { V.liviano = false; }
   if (!VISOR_VISTAS[V.vista]) V.vista = 'vendedor';
-  cont.innerHTML = '<div class="cv' + (V.liviano ? ' cv-liviano' : '') + (V.inclinado ? '' : ' cv-plano') + '">' +
+  /* En 3D, si el equipo puede (y no se apagó en "Ajustes de la vista"); en un teléfono o una compu chica, liviano. */
+  V.usa3d = visor3dElegido();
+  if (V.usa3d && !V.liviano && visor3dLento() && !visorLivianoElegido()) V.liviano = true;
+  cont.innerHTML = '<div class="cv' + (V.liviano ? ' cv-liviano' : '') + (V.inclinado ? '' : ' cv-plano') + (V.usa3d ? ' cv-modo-3d' : '') + '">' +
     /* La ropa (las mismas siluetas del mapa), una vez: cada prenda de la maqueta la usa. */
     '<svg class="cv-sprite" aria-hidden="true" focusable="false"><defs>' + simbolosPrendas('cvR') + '</defs></svg>' +
     '<header class="cv-cab"><button class="cv-volver" id="volverMapa" type="button">‹ Volver</button>' +
@@ -43,23 +46,26 @@ function abrirVisor(cont, op) {
       '<div class="cv-recorrer" id="cvRecorrerBarra" hidden><button type="button" class="cv-redondo" id="cvAnt" aria-label="Pared anterior">‹</button>' +
         '<div class="cv-parada"><small id="cvParadaN"></small><b id="cvParada"></b></div><button type="button" class="cv-redondo" id="cvSig" aria-label="Pared siguiente">›</button>' +
         '<button type="button" class="cv-chico" id="cvSalirRec">Listo</button></div>' +
-      '<div class="cv-zoom-acc"><button type="button" id="cvRecorrer" class="cv-chico cv-lima">Recorrer</button><button type="button" id="cvCentrar" class="cv-chico" hidden>Centrar</button>' +
+      '<div class="cv-zoom-acc"><button type="button" id="cvCaminar" class="cv-chico cv-lima" aria-pressed="false" hidden>Caminar</button>' +
+        '<button type="button" id="cvRecorrer" class="cv-chico cv-lima">Recorrer</button><button type="button" id="cvCentrar" class="cv-chico" hidden>Centrar</button>' +
         '<button type="button" id="cvGirarIzq" class="cv-redondo" aria-label="Girar el local hacia la izquierda" title="Girar">⟲</button>' +
         '<button type="button" id="cvGirarDer" class="cv-redondo" aria-label="Girar el local hacia la derecha" title="Girar">⟳</button>' +
         '<button type="button" id="cvMenos" class="cv-redondo" aria-label="Alejar">−</button><button type="button" id="cvMas" class="cv-redondo" aria-label="Acercar">+</button></div>' +
       /* En la compu, cómo se maneja con el mouse (en el celular, con los dedos, ya se entiende). */
       '<p class="cv-ayuda-raton" id="cvAyudaRaton"><b>Arrastrá</b> para girar e inclinar · <b>Rueda</b> o <b>doble clic</b> para acercar · <b>Clic derecho</b> y arrastrá para mover</p>' +
-      '<p class="cv-cargando" id="cvCargando">Cargando el local…</p></div>' +
+      '<p class="cv-cargando" id="cvCargando">Cargando el local…</p><div class="cv-fundido" id="cvFundido"></div></div>' +
       '<aside class="cv-panel" id="cvPanel"></aside></div></div>';
   V.raiz = cont.querySelector('.cv');
   V.mundo = cont.querySelector('#cvMundo');
   V.zoomEl = cont.querySelector('#cvZoom');
   V.z = { k: 1, x: 0, y: 0 };
   V.escena = cont.querySelector('#cvEscena');
+  V.ayudaRaton = cont.querySelector('#cvAyudaRaton').innerHTML;
   cont.querySelector('#volverMapa').onclick = function () { if (V.ficha && !V.ficha.cerrando) { cerrarFicha(V); return; } visorSalir(V); };
   cont.querySelector('#cvTabs').onclick = function (e) {
     var b = e.target.closest && e.target.closest('[data-tab]');
     if (!b || b.dataset.tab === V.tab) return;
+    if (V.c3 && V.c3.caminando()) V.c3caminar = 'puerta';
     V.tab = b.dataset.tab;
     visorSalirRecorrido(V, true);
     V.giro = 0;
@@ -71,6 +77,17 @@ function abrirVisor(cont, op) {
   cont.querySelector('#cvCam').onclick = function (e) {
     var b = e.target.closest && e.target.closest('[data-cam]');
     if (!b) return;
+    if (V.usa3d) {
+      /* En 3D: inclinado (como siempre) o desde arriba, sin volver a armarlo. */
+      if (!V.c3) return;
+      V.inclinado = b.dataset.cam === 'incl';
+      try { localStorage.setItem('vdh_visor_cam', V.inclinado ? 'incl' : 'arriba'); } catch (x) {}
+      cont.querySelectorAll('#cvCam [data-cam]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+      V.raiz.classList.toggle('cv-plano', !V.inclinado);
+      visorSalirRecorrido(V, true);
+      V.c3.inclinar(!V.inclinado);
+      return;
+    }
     if ((b.dataset.cam === 'incl') === V.inclinado) {
       /* Ya inclinada, pero con otra inclinación (la del mouse): vuelve a la de siempre. */
       if (V.inclinado && Math.abs(V.incl - VISOR_INCL) > 0.5 && V.d) { V.incl = VISOR_INCL; visorZoom(V, 1, 0, 0, true); visorCamara(V, false); }
@@ -113,10 +130,12 @@ function abrirVisor(cont, op) {
   visorPrevia(V);
   /* El panel: cómo verlo (por vendedor, por estado, por antigüedad). */
   cont.querySelector('#cvPanel').addEventListener('click', function (e) {
+    if (e.target.closest && e.target.closest('#cvVer3d')) { visor3dCambiar(V, !V.usa3d); return; }
     if (e.target.closest && e.target.closest('#cvLiviano')) {
       V.liviano = !V.liviano;
       V.raiz.classList.toggle('cv-liviano', V.liviano);
       try { localStorage.setItem('vdh_visor_liviano', V.liviano ? '1' : '0'); } catch (x) {}
+      if (V.c3) visor3dMontar(V, V.c3.caminando() ? V.c3.dondeEstoy() : null);
       visorPanel(V);
       return;
     }
@@ -133,10 +152,12 @@ function abrirVisor(cont, op) {
     if (r) { V.resaltado = V.resaltado === r.dataset.resalta ? null : r.dataset.resalta; visorPintar(V); visorPanel(V); }
     if (e.target.closest && e.target.closest('#cvVerTodos')) { V.resaltado = null; visorPintar(V); visorPanel(V); }
     var ab = e.target.closest && e.target.closest('[data-abrir]');
+    if (ab && !V.ficha && V.usa3d) { var m3 = visorModulo(V, ab.dataset.abrir); if (m3 && V.c3) visor3dAbrir(V, m3); return; }
     if (ab && !V.ficha) { var cj = V.mundo.querySelector('.cv-caja[data-mod="' + ab.dataset.abrir + '"]'); if (cj) abrirFicha(V, ab.dataset.abrir, cj); }
   });
   V.alTamano = function () {
     if (!document.body.contains(V.raiz)) { visorSalir(V, true); return; }
+    if (V.usa3d) { if (V.c3) V.c3.redimensionar(); return; }
     if (V.ficha) { V.ajustePendiente = true; return; }
     if (V.d) { visorZoom(V, 1, 0, 0, false); V.fit = {}; visorCamara(V, true); }
   };
@@ -147,6 +168,15 @@ function abrirVisor(cont, op) {
     /* Con el teclado: ← → giran, ↑ ↓ inclinan, + y − acercan (no mientras se escribe ni con un módulo abierto). */
     var t = e.target, tag = t && t.tagName;
     if (V.ficha || !V.d || e.altKey || e.ctrlKey || e.metaKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+    if (V.usa3d) {
+      /* En 3D, de arriba: ← → giran y + − acercan (caminando, las flechas caminan: las maneja el 3D). */
+      if (!V.c3 || V.c3.caminando()) return;
+      var g = { ArrowLeft: -Math.PI / 12, ArrowRight: Math.PI / 12 }[e.key];
+      if (g) { e.preventDefault(); V.c3.girar(g); }
+      else if (e.key === '+' || e.key === '=') { e.preventDefault(); V.c3.acercar(1.35); }
+      else if (e.key === '-' || e.key === '_') { e.preventDefault(); V.c3.acercar(1 / 1.35); }
+      return;
+    }
     var paso = { ArrowLeft: [-15, 0], ArrowRight: [15, 0], ArrowUp: [0, 6], ArrowDown: [0, -6] }[e.key];
     if (paso) { e.preventDefault(); visorPaso(V, paso[0], paso[1]); return; }
     var r = V.escena.getBoundingClientRect(), c = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
@@ -164,6 +194,7 @@ function visorSalir(V, sinVolver) {
   window.removeEventListener('resize', V.alTamano);
   document.removeEventListener('keydown', V.alTecla);
   if (V.ficha) cerrarFicha(V, true);
+  visor3dSoltar(V);
   if (!sinVolver && V.op.alVolver) V.op.alVolver();
 }
 
@@ -306,6 +337,14 @@ function visorDibujar(V, ajustar) {
   var d = V.d, pl = planoMapa(d, V.tab), out = '';
   _visorTodas = !!V.todas;
   V.plano = pl;
+  if (V.usa3d) {
+    /* En 3D: el panel y el 3D de lo que se mira (si ya está armado, queda como está). */
+    V.mundo.innerHTML = '';
+    visorPanel(V);
+    if (!V.c3 || V.c3tab !== V.tab) visor3dMontar(V, V.c3caminar);
+    V.c3caminar = null;
+    return;
+  }
   V.mundo.style.width = pl.W + 'px';
   V.mundo.style.height = pl.H + 'px';
   /* El piso (cálido, de madera) y las paredes bajas, cortadas para ver adentro; el frente es vidriera. */
@@ -393,19 +432,29 @@ function visorZoomEn(V, k2, f, animar) {
 function visorGestos(V) {
   var sc = V.escena, dedos = {}, ini = null, cuadro = 0;
   var centro = function () { var r = sc.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
-  V.cont.querySelector('#cvMas').onclick = function () { visorZoomEn(V, V.z.k * 1.45, centro(), true); };
-  V.cont.querySelector('#cvMenos').onclick = function () { visorZoomEn(V, V.z.k / 1.45, centro(), true); };
-  V.cont.querySelector('#cvCentrar').onclick = function () { visorZoom(V, 1, 0, 0, true); visorCamara(V, false); };
+  V.cont.querySelector('#cvMas').onclick = function () { if (V.usa3d) { if (V.c3) V.c3.acercar(1.45); return; } visorZoomEn(V, V.z.k * 1.45, centro(), true); };
+  V.cont.querySelector('#cvMenos').onclick = function () { if (V.usa3d) { if (V.c3) V.c3.acercar(1 / 1.45); return; } visorZoomEn(V, V.z.k / 1.45, centro(), true); };
+  V.cont.querySelector('#cvCentrar').onclick = function () {
+    if (V.usa3d) { visorSalirRecorrido(V, true); if (V.c3) V.c3.vistaInicial(); return; }
+    visorZoom(V, 1, 0, 0, true); visorCamara(V, false);
+  };
+  /* Caminar por el local (en 3D), o volver a verlo de arriba. */
+  V.cont.querySelector('#cvCaminar').onclick = function () {
+    if (!V.c3) return;
+    visorSalirRecorrido(V, true);
+    if (V.c3.caminando()) V.c3.dejarDeCaminar(); else V.c3.caminar();
+  };
   /* Los botones llevan al cuarto de vuelta anterior o siguiente (después de girar a mano, quedan derechos otra vez). */
-  V.cont.querySelector('#cvGirarIzq').onclick = function () { visorGirar(V, Math.ceil(V.giro / 90 - 0.01) * 90 - 90); };
-  V.cont.querySelector('#cvGirarDer').onclick = function () { visorGirar(V, Math.floor(V.giro / 90 + 0.01) * 90 + 90); };
+  /* En 3D, un cuarto de vuelta (caminando, la cabeza gira un octavo). */
+  V.cont.querySelector('#cvGirarIzq').onclick = function () { if (V.usa3d) { if (V.c3) V.c3.girar(-Math.PI / (V.c3.caminando() ? 4 : 2)); return; } visorGirar(V, Math.ceil(V.giro / 90 - 0.01) * 90 - 90); };
+  V.cont.querySelector('#cvGirarDer').onclick = function () { if (V.usa3d) { if (V.c3) V.c3.girar(Math.PI / (V.c3.caminando() ? 4 : 2)); return; } visorGirar(V, Math.floor(V.giro / 90 + 0.01) * 90 + 90); };
   V.cont.querySelector('#cvRecorrer').onclick = function () { visorRecorrer(V, 0); };
   V.cont.querySelector('#cvAnt').onclick = function () { if (V.rec) visorRecorrer(V, V.rec.i - 1); };
   V.cont.querySelector('#cvSig').onclick = function () { if (V.rec) visorRecorrer(V, V.rec.i + 1); };
   V.cont.querySelector('#cvSalirRec').onclick = function () { visorSalirRecorrido(V); };
   var afuera = function (e) { return e.target.closest && e.target.closest('.cv-zoom-acc, .cv-recorrer'); };
   sc.addEventListener('wheel', function (e) {
-    if (V.ficha || !V.d) return;
+    if (V.ficha || !V.d || V.usa3d) return;
     e.preventDefault();
     visorPreviaOcultar(V);
     /* La rueda de un mouse da pasos de 100 (o líneas); el panel táctil, muchos pasitos (y con Ctrl, el pellizco). */
@@ -415,7 +464,7 @@ function visorGestos(V) {
   }, { passive: false });
   sc.addEventListener('dblclick', function (e) {
     /* En un módulo, el primer clic ya lo abrió. */
-    if (V.ficha || !V.d || afuera(e) || (e.target.closest && e.target.closest('.cv-caja[data-mod]'))) return;
+    if (V.ficha || !V.d || V.usa3d || afuera(e) || (e.target.closest && e.target.closest('.cv-caja[data-mod]'))) return;
     e.preventDefault();
     var k = e.shiftKey ? V.z.k / 2 : V.z.k >= VISOR_ZOOM_MAX - 0.01 ? 1 : V.z.k * 2;
     if (k <= 1.01) visorZoom(V, 1, 0, 0, true);
@@ -457,7 +506,7 @@ function visorGestos(V) {
   };
 
   sc.addEventListener('pointerdown', function (e) {
-    if (V.ficha || !V.d || afuera(e)) return;
+    if (V.ficha || !V.d || V.usa3d || afuera(e)) return;
     visorPreviaOcultar(V);
     if (e.pointerType === 'mouse') {
       if (e.button > 2) return;
@@ -641,12 +690,13 @@ function visorParadas(V) {
 }
 /** Va a la parada i: gira el local y se acerca a esa pared. */
 function visorRecorrer(V, i) {
-  if (!V.d || V.ficha) return;
+  if (!V.d || V.ficha || (V.usa3d && !V.c3)) return;
   var paradas = visorParadas(V);
   if (!paradas.length) return;
   i = (i + paradas.length) % paradas.length;
   var p = paradas[i];
   V.rec = { i: i, paradas: paradas };
+  if (V.c3) { V.c3.mirarModulos(p.ids); visorBarraRecorrido(V, i, paradas, p); return; }
   if (!V.todas) { V.todas = true; visorDibujar(V, false); }
   var mu = V.mundo, antes = { giro: V.giro, z: Object.assign({}, V.z) };
   /* Se mide cómo queda (sin animar), se vuelve a donde estaba y se anima hasta ahí. */
@@ -678,6 +728,9 @@ function visorRecorrer(V, i) {
   V.giro = destino;
   visorCamara(V, false);
   visorZoom(V, k, x, y, true, true);
+  visorBarraRecorrido(V, i, paradas, p);
+}
+function visorBarraRecorrido(V, i, paradas, p) {
   var barra = V.cont.querySelector('#cvRecorrerBarra');
   barra.hidden = false;
   V.raiz.classList.add('cv-recorriendo');
@@ -690,7 +743,8 @@ function visorSalirRecorrido(V, sinAnimar) {
   var barra = V.cont.querySelector('#cvRecorrerBarra');
   if (barra) barra.hidden = true;
   V.raiz.classList.remove('cv-recorriendo');
-  if (!sinAnimar) visorZoom(V, 1, 0, 0, true);
+  if (sinAnimar) return;
+  if (V.c3) V.c3.vistaInicial(); else if (!V.usa3d) visorZoom(V, 1, 0, 0, true);
 }
 
 /* ── La cámara: inclinada o desde arriba, centrada y del tamaño de la pantalla ── */
@@ -851,13 +905,13 @@ function visorFotos(V) {
 /* ── Pasar el mouse por un módulo (en la compu): su foto al lado, vertical y grande, sin abrirlo ("que desde acá mismo,
       desde el observador, pueda verlo un poquito mejor"). Primero la miniatura; si se queda un rato, la foto entera. ── */
 function visorPrevia(V) {
-  var sc = V.escena, espera = null, nitida = null, caja = null, pos = { x: 0, y: 0 };
+  var sc = V.escena, espera = null, nitida = null, actual = null, pos = { x: 0, y: 0 };
   var el = document.createElement('div');
   el.className = 'cv-previa';
   el.hidden = true;
   el.setAttribute('aria-hidden', 'true');
   sc.appendChild(el);
-  var ocultar = function () { clearTimeout(espera); clearTimeout(nitida); caja = null; el.hidden = true; delete el.dataset.mod; };
+  var ocultar = function () { clearTimeout(espera); clearTimeout(nitida); actual = null; el.hidden = true; delete el.dataset.mod; visor3dEncima(V, null); };
   V.previa = { el: el, ocultar: ocultar };
   /** Al lado del puntero, adentro de la escena (si no entra a la derecha, a la izquierda). */
   var ubicar = function () {
@@ -866,8 +920,8 @@ function visorPrevia(V) {
     el.style.left = Math.max(10, x).toFixed(0) + 'px';
     el.style.top = Math.max(10, Math.min(r.height - h - 10, y)).toFixed(0) + 'px';
   };
-  var mostrar = function (c) {
-    var m = visorModulo(V, c.dataset.mod);
+  var mostrar = function (id) {
+    var m = visorModulo(V, id);
     if (!m || V.ficha || V.gesto) return;
     var d = V.d, e = V.estado[m.id] || {}, s = d.sectorDe[m.sector_id], resp = s && d.persona[s.responsable_id];
     var numero = m.isla ? numeroVista(d, m) : m.numero, nombre = m.isla ? m.nombre : nombrePropio(m), que = queHay(m);
@@ -878,7 +932,7 @@ function visorPrevia(V) {
       '<div class="cv-previa-txt"><b>' + esc(titulo) + '</b>' + (bajada ? '<span>' + esc(bajada) + '</span>' : '') +
         '<small><i style="background:' + visorColor(V, m) + '"></i>' + esc(esVidriera(m) ? 'Por turnos' : resp ? nombreLista(resp) : 'Sin responsable') +
           (e.foto_path && e.tomada_en ? ' · ' + esc(textoHace(e.tomada_en)) : '') + (e.foto_path && e.nivel ? ' · ' + esc(NIVEL[e.nivel] || e.nivel) : '') + '</small>' +
-        '<em>Clic para abrirlo</em></div>';
+        '<em>' + (V.c3 && V.c3.caminando() ? 'Clic para ir hasta ahí' : 'Clic para abrirlo') + '</em></div>';
     var f = el.querySelector('.cv-previa-foto');
     if (e.foto_path) {
       miniaturaFoto(e.foto_path).then(function (u) { if (u && el.dataset.mod === m.id && !f.classList.contains('cv-nitida')) f.style.backgroundImage = 'url("' + u + '")'; });
@@ -887,18 +941,33 @@ function visorPrevia(V) {
     el.hidden = false;
     ubicar();
   };
+  /** El puntero quedó arriba del módulo id (o de ninguno; arriba de la foto misma, la deja). Recién al quedarse un
+      momento (pasar por arriba de varios no los muestra a todos). */
+  var encima = function (id, sobrePrevia) {
+    if (!id) { if (!sobrePrevia) ocultar(); return; }
+    if (id === actual) return;
+    clearTimeout(espera); clearTimeout(nitida);
+    actual = id;
+    visor3dEncima(V, id);
+    espera = setTimeout(function () { if (actual === id) mostrar(id); }, el.hidden ? 180 : 60);
+  };
   sc.addEventListener('pointerover', function (e) {
-    if (e.pointerType !== 'mouse') return;
+    if (e.pointerType !== 'mouse' || V.usa3d) return;
     pos = { x: e.clientX, y: e.clientY };
     var c = !e.buttons && !V.ficha && !V.gesto && e.target.closest && e.target.closest('.cv-caja[data-mod]');
-    if (!c) { if (!(e.target.closest && e.target.closest('.cv-previa'))) ocultar(); return; }
-    if (c === caja) return;
-    clearTimeout(espera); clearTimeout(nitida);
-    caja = c;
-    /* Recién al quedarse un momento (pasar por arriba de varios no los muestra a todos). */
-    espera = setTimeout(function () { if (caja === c) mostrar(c); }, el.hidden ? 180 : 60);
+    encima(c ? c.dataset.mod : null, e.target.closest && e.target.closest('.cv-previa'));
   });
-  sc.addEventListener('pointermove', function (e) { if (e.pointerType !== 'mouse') return; pos = { x: e.clientX, y: e.clientY }; if (!el.hidden) ubicar(); });
+  sc.addEventListener('pointermove', function (e) {
+    if (e.pointerType !== 'mouse') return;
+    pos = { x: e.clientX, y: e.clientY };
+    if (V.usa3d) {
+      /* En 3D (de arriba o caminando): el módulo debajo del puntero; no mientras se arrastra ni arriba de los botones. */
+      var sobre = e.target.closest && e.target.closest('.cv-previa'), fuera = e.target.closest && e.target.closest('.cv-zoom-acc, .cv-recorrer');
+      var m = V.c3 && !e.buttons && !V.ficha && !sobre && !fuera ? V.c3.moduloEn(e.clientX, e.clientY) : null;
+      encima(m ? m.id : null, sobre);
+    }
+    if (!el.hidden) ubicar();
+  });
   sc.addEventListener('pointerleave', ocultar);
 }
 function visorPreviaOcultar(V) { if (V.previa) V.previa.ocultar(); }
@@ -952,6 +1021,7 @@ function visorPintar(V) {
     c.classList.toggle('cv-resaltado', !!V.resaltado && k.clave === V.resaltado);
     c.classList.toggle('cv-apagado', !!V.resaltado && k.clave !== V.resaltado);
   });
+  if (V.c3) V.c3.pintar(function (m) { return visorCategoria(V, m).color; }, V.resaltado ? function (m) { return visorCategoria(V, m).clave === V.resaltado; } : null);
 }
 function visorModulosTab(V) { return V.tab === 'deposito' ? V.d.dep : V.d.pared.concat(V.d.islas); }
 
@@ -981,8 +1051,197 @@ function visorPanel(V) {
     visorListaQue(V, mods, abierto) +
     '<details class="cv-sec"' + abierto + '><summary>De un vistazo</summary><div class="cv-vistazo"><span><b>' + mods.length + '</b> módulos</span>' +
       (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') + (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div></details>' +
-    '<details class="cv-sec"><summary>Ajustes de la vista</summary><button type="button" class="cv-interruptor" id="cvLiviano" aria-pressed="' + !!V.liviano + '">' +
+    '<details class="cv-sec"><summary>Ajustes de la vista</summary>' +
+      (visor3dPuede() ? '<button type="button" class="cv-interruptor" id="cvVer3d" aria-pressed="' + !!V.usa3d + '"><span>Ver en 3D</span><small>El local como es, para recorrerlo caminando</small></button>' : '') +
+      '<button type="button" class="cv-interruptor" id="cvLiviano" aria-pressed="' + !!V.liviano + '">' +
       '<span>Modo liviano</span><small>Sin sombras ni texturas, para teléfonos lentos</small></button></details>';
+}
+
+/* ── El local en 3D (15/10/2026, pedido de Mauricio: "pasalo al motor de verdad, hagámoslo dentro de la aplicación…
+      en modo caminar, que se puedan ver las fotos, cada módulo"). El motor (three.js) está en croquis3d.js, armado
+      desde croquis3d/fuente.js, y cómo es el mueble de cada local, en croquis-locales.js: se bajan la primera vez y
+      quedan en el sitio (andan sin internet). Tocar un módulo abre la misma ficha de siempre, con su foto; pasar el
+      mouse, la foto al lado. La maqueta de siempre queda para los equipos que no pueden con el 3D (o si se apaga en
+      "Ajustes de la vista"). ── */
+var _visorMotor = null, _visorWebgl = null;
+/** ¿Este equipo puede con el 3D? (WebGL 2, el que usa el motor) */
+function visor3dPuede() {
+  if (_visorWebgl === null) {
+    try {
+      var g = document.createElement('canvas').getContext('webgl2'), x = g && g.getExtension('WEBGL_lose_context');
+      _visorWebgl = !!g;
+      if (x) x.loseContext();
+    } catch (e) { _visorWebgl = false; }
+  }
+  return _visorWebgl;
+}
+/** En 3D, salvo que se haya apagado en este equipo. */
+function visor3dElegido() {
+  var g = null;
+  try { g = localStorage.getItem('vdh_visor_3d'); } catch (e) {}
+  return g !== '0' && visor3dPuede();
+}
+/** Un teléfono o una compu con pocos núcleos: el 3D arranca liviano (si no se eligió a mano). */
+function visor3dLento() { return (navigator.hardwareConcurrency || 8) <= 4 || !!(window.matchMedia && window.matchMedia('(max-width: 720px)').matches); }
+function visorLivianoElegido() { try { return localStorage.getItem('vdh_visor_liviano') !== null; } catch (e) { return false; } }
+/** El motor y los locales, una sola vez. El import() se arma en el momento: así un navegador viejo, que no lo conoce, igual
+    lee este archivo (y ve la maqueta de siempre). */
+function visor3dMotor() {
+  if (!_visorMotor) {
+    _visorMotor = new Promise(function (ok) {
+      var importar = new Function('u', 'return import(u)');
+      ok(Promise.all([importar(new URL('croquis3d.js', document.baseURI).href), importar(new URL('croquis-locales.js', document.baseURI).href)]));
+    }).then(function (r) { return { montar: r[0].montarCroquis3D, locales: r[1].LOCALES_3D || {} }; });
+    _visorMotor.catch(function () { _visorMotor = null; });   // sin conexión: la próxima vez prueba de nuevo
+  }
+  return _visorMotor;
+}
+
+/** Arma (o vuelve a armar) el 3D de lo que se está mirando: el salón o el depósito. caminar: 'puerta' (llegó por la
+    puerta) o dónde estaba parado ({x, z, yaw}); sin él, el local de arriba. */
+function visor3dMontar(V, caminar) {
+  if (!V.usa3d || !V.d || !V.d.modulos.length) return;
+  var pide = V.c3pide = (V.c3pide || 0) + 1, tab = V.tab;
+  if (!V.c3 && !V.escena.querySelector('#cv3dCargando')) V.escena.insertAdjacentHTML('beforeend', '<p class="cv-cargando" id="cv3dCargando">Armando el local en 3D…</p>');
+  visor3dMotor().then(function (motor) {
+    if (pide !== V.c3pide || !V.usa3d || _visorActual !== V) return;   // ya se pidió otro, se apagó o se cerró
+    visor3dSoltar(V);
+    var d = V.d, pl = planoMapa(d, tab), salon = pl.tipo !== 'deposito', loc = motor.locales[V.op.local.id] || null;
+    var numero = function (m) { return esVidriera(m) ? 'V' : m.isla ? numeroVista(d, m) : m.numero; };
+    var cont = document.createElement('div');
+    cont.className = 'cv-3d';
+    V.escena.insertBefore(cont, V.zoomEl.nextSibling);
+    V.c3cont = cont;
+    var cam = V.cont.querySelector('#cvCaminar'), acc = V.cont.querySelector('.cv-zoom-acc');
+    if (cam) cam.hidden = false;   // para medir los botones de abajo como van a quedar
+    V.c3 = motor.montar(cont, pl, d, {
+      liviano: !!V.liviano, estilo: pl.frente === 'shopping' ? 'shopping' : 'calle', texturaPiso: 'croquis-img/textura-cemento.webp',
+      /* El local, arriba de los botones de abajo (que no los tape). */
+      abajo: acc ? Math.max(0, V.escena.getBoundingClientRect().bottom - acc.getBoundingClientRect().top + 8) : 0,
+      altoModulos: visorAltoModulos(pl, salon ? VISOR_ALTO.pared : VISOR_ALTO.deposito),
+      color: function (m) { return visorCategoria(V, m).color; },
+      numero: numero,
+      /* El número, con el puntito de "sin foto reciente" (como en la maqueta de siempre). */
+      rotulo: function (m, color) {
+        var e = V.estado[m.id] || {};
+        return '<b style="border-color:' + color + '"' + (e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '') + '>' + esc(String(numero(m) || '')) + '</b>';
+      },
+      tipos: function (m) { return prendasDe(visorEtiqueta(m)); },
+      /* El mueble de cada módulo como el de verdad (de las fotos del local) y lo que va entre módulos; los locales que
+         todavía no están en croquis-locales.js, con los muebles de siempre. */
+      ficha: loc && loc.fichas && salon ? function (m) { return loc.fichas[String(numero(m))] || null; } : null,
+      entre: loc && salon ? loc.entre || null : null,
+      medioDeposito: !!(loc && loc.medioDeposito),
+      quieto: function () { return !!V.ficha; },
+      caminar: caminar || null,
+      alTocar: function (m) { visor3dAbrir(V, m); },
+      alPuerta: function (destino) { visor3dPasar(V, destino); },
+      alCaminar: function (si) { visor3dCaminando(V, si); },
+      /* Si en este equipo va lento, pasa solo a liviano (si no se eligió a mano). */
+      alLento: function () {
+        if (V.liviano || visorLivianoElegido() || !V.c3) return;
+        V.liviano = true;
+        V.raiz.classList.add('cv-liviano');
+        visor3dMontar(V, V.c3.caminando() ? V.c3.dondeEstoy() : null);
+        visorPanel(V);
+        avisarVisor('El 3D iba lento en este equipo: pasó a liviano (se cambia en "Ajustes de la vista").');
+      }
+    });
+    V.c3tab = tab;
+    if (window.ResizeObserver) { V.c3ro = new ResizeObserver(function () { if (V.c3) V.c3.redimensionar(); }); V.c3ro.observe(cont); }
+    if (!caminar && !V.inclinado) V.c3.inclinar(true);
+    visorPintar(V);
+    visor3dBotones(V);
+  }).catch(function (e) {
+    if (pide === V.c3pide && _visorActual === V) visor3dFallo(V, e);
+  }).then(function () {
+    if (pide !== V.c3pide) return;
+    var c = V.escena.querySelector('#cv3dCargando'), fu = V.cont.querySelector('#cvFundido');
+    if (c) c.remove();
+    if (fu && fu.classList.contains('negro')) requestAnimationFrame(function () { fu.classList.remove('negro'); });
+  });
+}
+/** Suelta el 3D (para volver a armarlo, al apagarlo o al salir): la placa de video queda libre. */
+function visor3dSoltar(V) {
+  if (V.c3ro) { V.c3ro.disconnect(); V.c3ro = null; }
+  if (V.c3) { try { V.c3.destruir(); } catch (e) {} V.c3 = null; }
+  if (V.c3cont) { V.c3cont.remove(); V.c3cont = null; }
+  V.c3tab = null;
+}
+/** No anduvo (no bajó o este equipo no pudo dibujarlo): la maqueta de siempre. La próxima vez prueba de nuevo. */
+function visor3dFallo(V, e) {
+  if (window.console && console.warn) console.warn('Observador: el 3D no anduvo', e);
+  visor3dSoltar(V);
+  V.usa3d = false;
+  V.raiz.classList.remove('cv-modo-3d');
+  visor3dBotones(V);
+  if (!V.d) return;
+  visorZoom(V, 1, 0, 0, false);
+  visorDibujar(V, true);
+  /* No bajó el motor (el import() falla con "Failed to fetch…") o no pudo dibujar (el WebGL). */
+  var red = navigator.onLine === false || /fetch|module|import|network/i.test(String((e && e.message) || e));
+  avisarVisor(red ? 'Sin conexión para bajar el 3D: el local se ve como siempre.' : 'Este equipo no pudo mostrar el 3D: el local se ve como siempre.');
+}
+/** Prender o apagar el 3D ("Ajustes de la vista"): queda elegido en este equipo. */
+function visor3dCambiar(V, si) {
+  try { localStorage.setItem('vdh_visor_3d', si ? '1' : '0'); } catch (e) {}
+  visorSalirRecorrido(V, true);
+  visorPreviaOcultar(V);
+  visor3dSoltar(V);
+  V.c3pide = (V.c3pide || 0) + 1;   // si había uno a medio armar, ya no vale
+  V.usa3d = !!si && visor3dPuede();
+  V.raiz.classList.toggle('cv-modo-3d', V.usa3d);
+  visor3dBotones(V);
+  visorZoom(V, 1, 0, 0, false);
+  if (V.d && V.d.modulos.length) visorDibujar(V, true);
+}
+/** Los botones de abajo: en 3D, Caminar; Centrar siempre a mano (vuelve a la vista de arriba). */
+function visor3dBotones(V) {
+  var en3d = !!V.c3, cam = V.cont.querySelector('#cvCaminar'), rec = V.cont.querySelector('#cvRecorrer'), ce = V.cont.querySelector('#cvCentrar');
+  if (cam) cam.hidden = !en3d;
+  if (rec) rec.classList.toggle('cv-lima', !en3d);
+  if (ce) ce.hidden = !en3d && V.z.k === 1;
+  visor3dCaminando(V, en3d && V.c3.caminando());
+}
+/** Caminando o de arriba: el botón y la ayuda de cómo se maneja con el mouse. */
+function visor3dCaminando(V, si) {
+  var cam = V.cont.querySelector('#cvCaminar'), ay = V.cont.querySelector('#cvAyudaRaton');
+  /* Sólo si hay una puerta para pasar (la del depósito en el salón, o la del salón en el depósito). */
+  var puerta = V.c3 && V.c3.puertas.some(function (p) { return p.toque; }) ? ' · <b>Doble clic en la puerta</b> para pasar' : '';
+  if (cam) { cam.setAttribute('aria-pressed', !!si); cam.textContent = si ? 'Ver de arriba' : 'Caminar'; }
+  V.raiz.classList.toggle('cv-caminando', !!si);
+  if (!ay) return;
+  ay.innerHTML = !V.c3 ? V.ayudaRaton : si
+    ? '<b>Clic en el piso</b> para caminar · <b>Arrastrá</b> para mirar · <b>Flechas</b> para moverte · <b>Clic en un módulo</b> para ir y ver su foto' + puerta
+    : '<b>Arrastrá</b> para girar · <b>Rueda</b> o <b>doble clic</b> para acercar · <b>Clic derecho</b> para mover · <b>Clic en un módulo</b> para ver su foto' + puerta;
+}
+/** Tocar un módulo en 3D (o en la lista de qué hay): su ficha, saliendo desde su número. */
+function visor3dAbrir(V, m) {
+  if (V.ficha || !visorModulo(V, m.id)) return;
+  var c = V.c3 && V.c3.cajas.filter(function (x) { return x.m.id === m.id; })[0], b = c && c.el.querySelector('b');
+  abrirFicha(V, m.id, b && document.body.contains(b) && b.getBoundingClientRect().width ? b : V.escena);
+}
+/** El número del módulo que tiene el puntero encima se agranda (como el módulo que se levanta en la maqueta). */
+function visor3dEncima(V, id) {
+  if (!V.c3) return;
+  V.c3.cajas.forEach(function (c) { c.el.classList.toggle('encima', c.m.id === id); });
+}
+/** Pasar por una puerta (doble clic, o caminando hasta ella): funde a negro y aparece del otro lado, caminando. */
+function visor3dPasar(V, destino) {
+  if ((destino !== 'salon' && destino !== 'deposito') || destino === V.tab || V.ficha || !V.d) return;
+  if (destino === 'deposito' && !V.d.dep.length) return;
+  var fu = V.cont.querySelector('#cvFundido');
+  if (fu) fu.classList.add('negro');
+  visorPreviaOcultar(V);
+  setTimeout(function () {
+    if (_visorActual !== V) return;
+    V.tab = destino;
+    V.cont.querySelectorAll('#cvTabs [data-tab]').forEach(function (x) { x.setAttribute('aria-pressed', x.dataset.tab === destino); });
+    visorSalirRecorrido(V, true);
+    V.resaltado = null;
+    V.c3caminar = 'puerta';
+    visorDibujar(V, true);
+  }, visorMovimiento() ? 340 : 0);
 }
 
 /* ── La vista de frente de un módulo ── */
@@ -1008,7 +1267,7 @@ function abrirFicha(V, id, caja) {
   var numero = m.isla ? numeroVista(d, m) : m.numero, nombre = m.isla ? m.nombre : nombrePropio(m), que = queHay(m);
   var titulo = esVidriera(m) ? m.nombre : (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero, ref = m.foto_referencia_path;
   var puedeQue = visorPuedeNombrar(V, m), iaQue = puedeQue ? String(m.contenido_ia || '').trim() : '';
-  var origen = caja.querySelector('.cv-frente, .cv-tapa');
+  var origen = caja.querySelector('.cv-frente, .cv-tapa') || caja;
   V.raiz.insertAdjacentHTML('beforeend', '<div class="cv-ficha-fondo"></div><section class="cv-ficha" role="dialog" aria-modal="true" aria-label="' + esc(titulo) + '">' +
     '<header class="cv-ficha-cab"><div><small>' + esc(visorDonde(V, m)) + '</small><h2>' + esc(titulo) + '</h2>' +
       (nombre ? '<p class="cv-nombre">' + esc(nombre) + '</p>' : '') +
@@ -1105,7 +1364,8 @@ function cerrarFicha(V, ya, porAtras) {
     if (V.ajustePendiente) { V.ajustePendiente = false; V.alTamano(); }
   };
   V.escena.classList.remove('cv-detras');
-  var origen = f.caja && document.body.contains(f.caja) ? f.caja.querySelector('.cv-frente, .cv-tapa') : null;
+  var origen = f.caja && document.body.contains(f.caja) ? f.caja.querySelector('.cv-frente, .cv-tapa') || f.caja : null;
+  if (origen && !origen.getBoundingClientRect().width) origen = null;   // el número quedó fuera de la vista
   if (ya || !origen || !visorMovimiento()) { fin(); return; }
   /* La vuelta: la ficha se achica hasta la cara del módulo. */
   var hasta = origen.getBoundingClientRect(), desde = f.el.getBoundingClientRect();
