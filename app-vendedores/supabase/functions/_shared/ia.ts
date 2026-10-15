@@ -78,7 +78,7 @@ export function armarSistema(ctx: Contexto): string {
   const guiaReferencia = !ctx.referencia_path ? ""
     : ctx.referencia_tipo === "ejemplo"
     ? "\n- La foto de ejemplo es de OTRO mueble del mismo tipo, bien ordenado: usala sólo para ver el nivel de orden que se espera. No marques que la ropa, los colores, la cantidad o la disposición son distintos."
-    : "\n- Compará contra la foto modelo: así tiene que verse este módulo.";
+    : "\n- Compará contra la foto modelo el ORDEN: la disposición, los frontales, el doblado y lo lleno que está. La ropa cambia con la temporada: no marques que las prendas, los colores o los modelos son otros.";
 
   const etapa = ctx.ia_sugerencias
     ? "Además de lo que hay que corregir, podés dejar hasta 2 sugerencias para que quede más lindo (gravedad \"sugerencia\")."
@@ -224,7 +224,7 @@ export async function analizarConClaude(opts: {
   if (referencia) {
     contenido.push({ type: "text", text: ctx.referencia_tipo === "ejemplo"
       ? "FOTO DE EJEMPLO (otro mueble del mismo tipo, bien ordenado: muestra el nivel de orden que se espera):"
-      : "FOTO MODELO (así tiene que verse este módulo):" });
+      : "FOTO MODELO (así tiene que quedar el orden de este módulo; la ropa puede ser otra):" });
     contenido.push({ type: "image", source: { type: "base64", ...referencia } });
   }
   contenido.push({ type: "text", text: "FOTO A REVISAR:" });
@@ -237,7 +237,8 @@ export async function analizarConClaude(opts: {
       model: modelo,
       // El modelo piensa antes de contestar y eso cuenta dentro de max_tokens: margen de sobra.
       max_tokens: 8000,
-      system: armarSistema(ctx),
+      // Si la foto de referencia no se pudo bajar, el texto no la nombra.
+      system: armarSistema(referencia ? ctx : { ...ctx, referencia_path: null }),
       output_config: { format: { type: "json_schema", schema: armarEsquema(ctx.checks) } },
       messages: [{ role: "user", content: contenido }],
     },

@@ -37,6 +37,7 @@ Deno.test("las reglas de sugerencia: aparte y sólo con las sugerencias prendida
 Deno.test("la foto modelo y la foto ejemplo se explican distinto, y va el tipo de mueble (SQL 123)", () => {
   const modelo = armarSistema({ ...ctx, referencia_path: "l/ref.jpg", referencia_tipo: "modulo", mueble: "Módulo de pared con estantes" });
   if (!modelo.includes("Compará contra la foto modelo") || !modelo.includes("MUEBLE: Módulo de pared con estantes.")) throw new Error("Modelo: " + modelo);
+  if (!modelo.includes("La ropa cambia con la temporada")) throw new Error("La foto modelo es del orden, no de la ropa (si no, tareas falsas)");
   const ejemplo = armarSistema({ ...ctx, referencia_path: "ejemplos/x.jpg", referencia_tipo: "ejemplo" });
   if (!ejemplo.includes("OTRO mueble del mismo tipo") || ejemplo.includes("Compará contra la foto modelo")) throw new Error("Ejemplo: " + ejemplo);
   const sinFoto = armarSistema(ctx);

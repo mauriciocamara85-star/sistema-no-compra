@@ -1,4 +1,5 @@
 -- ═══ SQL 123 (15/10/2026) · Equipo VDH: Ajustes más limpios, fotos modelo y reglas que son sugerencia ═══
+-- Corrélo cuando te avise que está publicada la versión nueva (la IA tiene que saber antes qué es una sugerencia).
 -- Pegalo entero en el editor SQL de Supabase. Se puede correr más de una vez.
 --   · Una regla de orden puede ser "Hay que corregir" (como hasta ahora) o "Sugerencia": un consejo, nunca una tarea.
 --   · La IA compara cada foto con la foto modelo del módulo o, si no tiene, con la foto ejemplo de su tipo de mueble

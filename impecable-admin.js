@@ -108,7 +108,7 @@ var K_MENU_CHICO = 'nc_panel_equipo';
 function sinGuardar() {
   var c = document.getElementById('cuerpo');
   if (!c) return 0;
-  return c.querySelectorAll('[data-guardar]:not([disabled])').length +
+  return c.querySelectorAll('[data-guardar]:not([disabled])').length + document.querySelectorAll('.ventana [data-aviso-guardar]:not([disabled])').length +
     [].filter.call(c.querySelectorAll('[data-nueva-regla] textarea'), function (t) { return t.value.trim(); }).length;
 }
 function puedeSalir() {
@@ -503,7 +503,11 @@ function ventana(html) {
   f.className = 'ventana-fondo';
   f.innerHTML = '<div class="ventana">' + html + '<button class="boton" id="cerrarVentana" style="margin-top:14px">Cerrar</button></div>';
   document.body.appendChild(f);
-  var cerrar = function () { f.remove(); };
+  /* Si adentro quedó algo escrito sin guardar ("algo propio" de un módulo), pregunta antes de cerrar. */
+  var cerrar = function () {
+    if (f.querySelector('[data-aviso-guardar]:not([disabled])') && !confirm('Hay cambios sin guardar. ¿Cerrar igual? Lo que no guardaste se pierde.')) return;
+    f.remove();
+  };
   f.querySelector('#cerrarVentana').onclick = cerrar;
   f.onclick = function (e) { if (e.target === f) cerrar(); };
   cargarFotos(f);
@@ -527,7 +531,7 @@ function verModulo(m) {
       }).join('') + '</div>' : '') +
       (mod ? '<div class="seccion">Para la IA</div><div id="vmModelo"></div>' +
         '<label class="campo"><span>Algo propio de este módulo (opcional: la IA lo lee con cada foto)</span><textarea id="vmPropio" rows="2" maxlength="300" placeholder="Ej.: acá van sólo gorras, colgadas y no dobladas">' + esc(mod.reglas_extra || '') + '</textarea></label>' +
-        '<div class="vm-propio-acc"><button class="boton chico lima" id="vmPropioGuardar" disabled>Guardar lo propio</button></div>' : ''));
+        '<div class="vm-propio-acc"><button class="boton chico lima" id="vmPropioGuardar" data-aviso-guardar disabled>Guardar lo propio</button></div>' : ''));
     if (!mod) return;
     var pintar = function () { dibujarModelo(v.querySelector('#vmModelo'), mod, m); };
     pintar();
@@ -1291,9 +1295,12 @@ function editor(cfg) {
       if (!Object.keys(c).length) return 'dejar-apagado';
       /* Un número con mínimo vacío o más chico, o una hora vacía, no llegan a la base. */
       var falla = cfg.cols.filter(function (col) {
-        return col.k in c && ((col.tipo === 'num' && col.min != null && (c[col.k] == null || c[col.k] < col.min)) || (col.tipo === 'hora' && !c[col.k]));
+        return col.k in c && ((col.tipo === 'num' && ((col.min != null && (c[col.k] == null || c[col.k] < col.min)) || (col.max != null && c[col.k] > col.max))) || (col.tipo === 'hora' && !c[col.k]));
       })[0];
-      if (falla) { avisar(falla.tipo === 'hora' ? 'Falta la hora: «' + falla.t + '».' : '«' + falla.t + '» tiene que ser ' + falla.min + ' o más.'); return; }
+      if (falla) {
+        avisar(falla.tipo === 'hora' ? 'Falta la hora: «' + falla.t + '».' : falla.max != null ? '«' + falla.t + '» tiene que ser de ' + (falla.min || 0) + ' a ' + falla.max + '.' : '«' + falla.t + '» tiene que ser ' + falla.min + ' o más.');
+        return;
+      }
       g.textContent = 'Guardando…';
       return cfg.guardar(fila, c).then(function () {
         Object.keys(c).forEach(function (k) { fila[k] = c[k]; });
@@ -1765,14 +1772,14 @@ var COLS_DEL_LOCAL = [{ k: 'nombre', t: 'Nombre en la app', tipo: 'texto' }, { k
 /* Cada bloque se guarda solo y se puede copiar a los otros locales (el nombre y el horario de cada uno, no). */
 var BLOQUES_LOCAL = [
   { id: 'controles', titulo: 'Los controles',
-    cols: [{ k: 'dias_control', t: 'Días de control', tipo: 'dias' }, { k: 'hora_limite', t: 'Hora límite', tipo: 'hora' },
-           { k: 'hora_aviso_1', t: 'Aviso de la mañana', tipo: 'hora' }, { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', tipo: 'hora' },
+    cols: [{ k: 'dias_control', t: 'Días de control', tipo: 'dias', delLocal: true }, { k: 'hora_limite', t: 'Hora límite', tipo: 'hora', delLocal: true },
+           { k: 'hora_aviso_1', t: 'Aviso de la mañana', tipo: 'hora', delLocal: true }, { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', tipo: 'hora', delLocal: true },
            { k: 'sorpresas_por_semana', t: 'Controles sorpresa por semana', tipo: 'num', min: 0, max: 7 },
            { k: 'deposito_dia_vence', t: 'El depósito vence el', tipo: 'sel', numero: true, ops: DIAS_SEL },
            { k: 'cambio_imagen_dia', t: 'Cambio de imagen', tipo: 'sel', numero: true, ops: [[null, 'apagado']].concat(LOS_DIAS.map(function (d, i) { return [i + 1, d]; })) },
            { k: 'max_avisos_dia', t: 'Tope de avisos por día', tipo: 'num', min: 1 },
            { k: 'horas_revision_supervisor', t: 'Horas para revisar', tipo: 'num', min: 1 },
-           { k: 'desafio_activo', t: 'Test semanal de conocimiento: a cada vendedor le llega uno por semana, un día y una hora al azar (no cuenta para faltas).', tipo: 'bool' }],
+           { k: 'desafio_activo', t: 'Test semanal de conocimiento: a cada vendedor le llega uno por semana, un día y una hora al azar (no cuenta para faltas).', corto: 'el test semanal', tipo: 'bool' }],
     armar: function (c) {
       return frase('Todos los módulos del salón se controlan los días ' + c('dias_control') + ' y el control vence a las ' + c('hora_limite') + '.') +
         frase('A quien le toca le llega un aviso a las ' + c('hora_aviso_1') + ' y, si todavía no lo hizo, un recordatorio a las ' + c('hora_aviso_2') + '.') +
@@ -1784,12 +1791,12 @@ var BLOQUES_LOCAL = [
         frase(c('desafio_activo'));
     } },
   { id: 'ia', titulo: 'La IA',
-    cols: [{ k: 'ia_activa', t: 'La IA revisa cada foto con las reglas de orden y le dice al vendedor qué corregir.', tipo: 'bool' },
-           { k: 'ia_crea_tareas', t: 'Lo que hay que corregir le queda como tarea al vendedor, con plazo.', tipo: 'bool' },
-           { k: 'ia_sugerencias', t: 'Además deja sugerencias de estilo (las reglas marcadas como sugerencia, como los colores que combinen): son consejos, nunca tareas, y como mucho 2 por foto.', tipo: 'bool' }],
+    cols: [{ k: 'ia_activa', t: 'La IA revisa cada foto con las reglas de orden y le dice al vendedor qué corregir.', corto: 'la revisión con IA', tipo: 'bool' },
+           { k: 'ia_crea_tareas', t: 'Lo que hay que corregir le queda como tarea al vendedor, con plazo.', corto: 'las tareas de la IA', tipo: 'bool' },
+           { k: 'ia_sugerencias', t: 'Además deja sugerencias de estilo: consejos para que quede más lindo, como las reglas marcadas como sugerencia. Nunca son tareas, y como mucho 2 por foto.', corto: 'las sugerencias de estilo', tipo: 'bool' }],
     armar: function (c) { return frase(c('ia_activa')) + frase(c('ia_crea_tareas')) + frase(c('ia_sugerencias')); } },
   { id: 'faltas', titulo: 'Las faltas',
-    cols: [{ k: 'modo_prueba', t: 'Modo prueba: por ahora no se sugieren faltas.', tipo: 'bool' },
+    cols: [{ k: 'modo_prueba', t: 'Modo prueba: por ahora no se sugieren faltas.', corto: 'el modo prueba', tipo: 'bool' },
            { k: 'ventana_faltas_dias', t: 'Días que se miran', tipo: 'num', min: 1 }, { k: 'umbral_tareas_vencidas', t: 'Días con tareas vencidas', tipo: 'num', min: 1 },
            { k: 'umbral_dias_sin_control', t: 'Días sin mandar controles', tipo: 'num', min: 1 }, { k: 'umbral_fuera_estandar', t: 'Días con "Fuera de estándar"', tipo: 'num', min: 1 }],
     armar: function (c) {
@@ -1799,7 +1806,7 @@ var BLOQUES_LOCAL = [
         frase('Es sólo una sugerencia: les llega a vos y al supervisor, y la decide siempre una persona.', 'aclara');
     } },
   { id: 'caja', titulo: 'La caja',
-    cols: [{ k: 'caja_activa', t: 'Control de caja: el local carga cada día la caja, con las fotos del cierre.', tipo: 'bool' },
+    cols: [{ k: 'caja_activa', t: 'Control de caja: el local carga cada día la caja, con las fotos del cierre.', corto: 'el control de caja', tipo: 'bool' },
            { k: 'caja_tolerancia_pesos', t: 'Diferencia que no avisa ($)', tipo: 'num', min: 0 }, { k: 'caja_minutos_tolerancia', t: 'Minutos después del cierre', tipo: 'num', min: 0 }],
     armar: function (c) {
       return frase(c('caja_activa')) + frase('Una diferencia de hasta $ ' + c('caja_tolerancia_pesos') + ' no avisa.') +
@@ -1820,7 +1827,7 @@ function ajLocal() {
   Promise.all([leer('/orden_locales?select=*&id=eq.' + L), leer('/orden_config?select=*&local_id=eq.' + L)]).then(function (r) {
     var loc = (r[0] || [])[0], cfg = (r[1] || [])[0], otros = _locales.length - 1;
     var z = zonaAjuste('<p class="bajada">Lo de ' + esc(_local.nombre) + '. Cada parte se guarda con su botón' +
-        (otros ? '; "Copiar a los otros locales" pone lo mismo en ' + (otros === 1 ? 'el otro' : 'los otros ' + otros) + ' (el nombre y el horario de cada uno no cambian)' : '') + '.</p>' +
+        (otros ? '; "Copiar a los otros locales" pone lo mismo en ' + (otros === 1 ? 'el otro' : 'los otros ' + otros) + ' (el nombre, el horario y los días y las horas de los controles de cada uno no cambian)' : '') + '.</p>' +
       '<div class="seccion">El local</div><div id="ajLocal"></div>' +
       (cfg ? BLOQUES_LOCAL.map(function (b) { return '<div class="seccion">' + esc(b.titulo) + '</div><div id="ajb-' + b.id + '"></div>'; }).join('')
            : '<div class="nota">Este local todavía no tiene los ajustes de los controles.</div>'));
@@ -1845,9 +1852,12 @@ function copiarAOtros(fila, b, boton) {
   if (g && !g.disabled) { avisar('Primero guardá los cambios de «' + b.titulo + '».'); return; }
   var otros = _locales.filter(function (l) { return l.id !== _local.id; });
   if (!otros.length) return;
-  if (!confirm('¿Poner en ' + (otros.length === 1 ? otros[0].nombre : 'los otros ' + otros.length + ' locales') + ' lo mismo que tiene ' + _local.nombre + ' en «' + b.titulo + '»?')) return;
+  var copia = b.cols.filter(function (c) { return !c.delLocal; }), quedan = b.cols.filter(function (c) { return c.delLocal; });
+  var que = copia.map(function (c) { return c.corto || c.t.toLowerCase(); });
+  if (!confirm('¿Poner en ' + (otros.length === 1 ? otros[0].nombre : 'los otros ' + otros.length + ' locales') + ' lo mismo que tiene ' + _local.nombre + ' en «' + b.titulo + '»?\n\n' +
+               'Se copia: ' + que.join(', ') + '.' + (quedan.length ? '\nNo cambian (son de cada local): los días y las horas de los controles.' : ''))) return;
   var valores = {};
-  b.cols.forEach(function (c) { valores[c.k] = fila[c.k] === undefined ? null : fila[c.k]; });
+  copia.forEach(function (c) { valores[c.k] = fila[c.k] === undefined ? null : fila[c.k]; });
   return guardarFila('/orden_config?local_id=in.(' + otros.map(function (l) { return valor(l.id); }).join(',') + ')', valores).then(function (n) {
     avisar('Listo: «' + b.titulo + '» quedó igual en ' + n + (n === 1 ? ' local más.' : ' locales más.'));
   });
