@@ -55,24 +55,30 @@
   body.asis { padding-bottom: 0; }
   .asis-app { display: grid; grid-template-columns: minmax(0, 1fr); height: calc(100dvh - var(--nav) - env(safe-area-inset-bottom)); }
   @media (min-width: 900px) {
-    .asis-app { grid-template-columns: 264px minmax(0, 1fr); height: 100dvh; }
+    /* El ancho lo pone el panel (abierto o achicado): el chat se queda con el resto. */
+    .asis-app { grid-template-columns: auto minmax(0, 1fr); height: 100dvh; }
   }
 
   /* ── La columna de las charlas ── */
   .asis-lado { display: flex; flex-direction: column; gap: 6px; min-height: 0; padding: 18px 12px 14px; border-right: 1px solid var(--line); background: var(--surface-2); }
-  .asis-lado-cab { display: flex; align-items: center; gap: 10px; padding: 2px 6px 12px; }
-  .asis-lado-cab img { height: 22px; width: auto; }
-  .asis-lado-cab span { font: 600 12px var(--sans); letter-spacing: .6px; text-transform: uppercase; color: var(--txt-3); padding-left: 10px; border-left: 1px solid var(--line-alta); }
+  .asis-lado-cab { display: flex; align-items: center; justify-content: flex-end; gap: 6px; padding: 2px 1px 12px 6px; }
+  /* El logo y el nombre van juntos y se cortan (no empujan) cuando el panel se achica: así el botón no salta.
+     Con flex-end el botón queda pegado a la derecha también achicado (lo que no entra sobra por la izquierda). */
+  .asis-lado-marca { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 10px; overflow: hidden; }
+  .asis-lado-marca img { flex: none; height: 22px; width: auto; }
+  .asis-lado-marca > span { font: 600 12px var(--sans); letter-spacing: .6px; text-transform: uppercase; color: var(--txt-3); padding-left: 10px; border-left: 1px solid var(--line-alta); white-space: nowrap; }
   .asis-nueva { position: relative; width: 100%; justify-content: flex-start; gap: 10px; min-height: 44px; padding: 0 12px; border-radius: 14px;
                 border: 1px solid var(--line); background: var(--surface); color: var(--txt); font: 600 14px var(--sans); box-shadow: 0 1px 2px rgba(20, 20, 18, .05);
                 transition: transform .2s var(--curva), box-shadow .2s var(--curva), border-color .2s; }
   .asis-nueva i { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: #fff;
                   background: linear-gradient(135deg, var(--au1), var(--au2) 55%, var(--au3)); }
   .asis-nueva svg { width: 15px; height: 15px; }
+  .asis-nueva span { min-width: 0; overflow: hidden; white-space: nowrap; }
   .asis-nueva:hover:not(:disabled) { transform: translateY(-1px); border-color: var(--line-alta); box-shadow: 0 8px 20px -12px rgba(20, 20, 18, .35); }
   .asis-nueva:disabled { opacity: .55; }
   /* Los accesos también acá, como en Chatbase: a un toque desde cualquier charla. */
-  .asis-lado-accesos { display: grid; gap: 2px; margin-top: 6px; }
+  /* minmax(0, 1fr): cada enlace mide lo que el panel, no lo que su nombre (si no, achicado quedaba casi todo afuera). */
+  .asis-lado-accesos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 2px; margin-top: 6px; }
   .asis-lado-accesos:empty { display: none; }
   .asis-lado-accesos a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 10px; color: var(--txt); text-decoration: none; font: 500 13.5px var(--sans); }
   .asis-lado-accesos a:hover { background: var(--surface-3); }
@@ -94,14 +100,57 @@
                 background: linear-gradient(135deg, var(--au5), var(--au1)); }
   .asis-yo b { display: block; font-size: 13.5px; color: var(--txt); }
   .asis-yo button { margin-top: 2px; background: none; border: 0; padding: 0; font: 600 12.5px var(--sans); color: var(--txt); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  .asis-yo-av.nadie { background: var(--surface-3); color: var(--txt-3); }
+  /* Achicado: un ícono en lugar de la lista, que vuelve a abrir el panel. */
+  .asis-ver-charlas { display: none; width: 36px; height: 36px; margin-top: 8px; border-radius: 10px; place-items: center; color: var(--txt-2); }
+  .asis-ver-charlas:hover { background: var(--surface-3); color: var(--txt); }
+  .asis-ver-charlas svg { width: 19px; height: 19px; }
   @media (max-width: 899px) {
     .asis-lado { position: fixed; top: 0; bottom: 0; left: 0; z-index: 72; width: min(300px, 86vw); transform: translateX(-105%);
                  transition: transform .25s var(--curva); border-radius: 0 var(--r) var(--r) 0; }
     .asis-app.lado-abierto .asis-lado { transform: none; box-shadow: var(--sombra-alta); }
     .asis-velo { display: none; }
     .asis-app.lado-abierto .asis-velo { display: block; position: fixed; inset: 0; z-index: 71; background: rgba(20, 20, 18, .38); }
+    /* En el celular el panel se abre y se cierra desde "Charlas": no se achica. */
+    .asis-lado .plegar-panel { display: none; }
   }
   @media (min-width: 900px) { .asis-velo { display: none; } }
+
+  /* ── En la compu, el panel se achica a íconos (15/10/2026) ──
+     Pedido de Mauricio: "que se vea el asistente completo", y que todo
+     funcione igual: es el mismo botón que el de los paneles del CRM y de
+     Equipo VDH (Interfaz.botonPanel, arriba a la derecha) y se recuerda en
+     este navegador. La clase vive en <html> (asis-chico) y la pone el <head>
+     antes de pintar: así no se ve abrirse y cerrarse al entrar.
+     Achicado quedan el "+" de Nueva charla, los accesos (el nombre aparece
+     al pasar el mouse), un ícono que vuelve a abrir "Tus charlas" y la
+     inicial de quién está. Los íconos no se mueven: quedan a la izquierda,
+     centrados en los 60px, y lo que se corta al achicar es el texto, como
+     en la barra negra. */
+  @media (min-width: 900px) {
+    .asis-lado { width: var(--panel-ancho, 240px); overflow: hidden; transition: width .2s var(--curva); }
+    /* Que el botón no agrande la cabecera. */
+    .asis-lado-cab .plegar-panel { margin: -6px 0; }
+    .asis-lado-marca, .asis-nueva span, .asis-lado-accesos span { transition: opacity .15s; }
+    .asis-nueva { transition: transform .2s var(--curva), box-shadow .2s var(--curva), border-color .2s, background-color .2s, padding .2s var(--curva); }
+    .asis-lado-accesos a { transition: padding .2s var(--curva); }
+    .asis-yo { transition: padding .2s var(--curva), background-color .2s, border-color .2s; }
+    .asis-yo-txt { min-width: 0; overflow: hidden; white-space: nowrap; padding-bottom: 2px; }
+    .asis-yo-txt b { overflow: hidden; text-overflow: ellipsis; }
+
+    :root.asis-chico .asis-lado { width: var(--panel-chico, 60px); }
+    :root.asis-chico .asis-lado-marca, :root.asis-chico .asis-nueva span, :root.asis-chico .asis-lado-accesos span { opacity: 0; }
+    :root.asis-chico .asis-nueva { padding: 0 4px; border-color: transparent; background-color: transparent; box-shadow: none; }
+    :root.asis-chico .asis-nueva:hover:not(:disabled) { transform: none; border-color: transparent; background-color: var(--surface-3); box-shadow: none; }
+    :root.asis-chico .asis-lado-accesos a { padding-left: 6px; padding-right: 6px; }
+    :root.asis-chico .asis-lado h3, :root.asis-chico .asis-charlas { display: none; }
+    :root.asis-chico .asis-ver-charlas { display: grid; }
+    :root.asis-chico .asis-yo { margin-top: auto; padding-left: 0; padding-right: 0; border-color: transparent; background-color: transparent; }
+    :root.asis-chico .asis-yo-txt { visibility: hidden; }
+  }
+  @media (min-width: 900px) and (prefers-reduced-motion: reduce) {
+    .asis-lado, .asis-lado-marca, .asis-nueva, .asis-nueva span, .asis-lado-accesos a, .asis-lado-accesos span, .asis-yo { transition: none; }
+  }
 
   /* ── La columna del chat ── */
   .asis-main { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -319,6 +368,11 @@
 <!-- Quién entró (13/10/2026): marca el rol antes de pintar la barra. Ver persona.js. -->
 <script src="persona.js"></script>
 <script src="interfaz.js"></script>
+<script>
+  /* El panel de las charlas achicado (se recuerda): la clase va antes de pintar, así no salta al entrar.
+     La misma llave que usa el script de abajo (K_PANEL). */
+  try { if (Interfaz.panelChico('nc_panel_asistente')) { document.documentElement.classList.add('asis-chico'); } } catch (e) {}
+</script>
 </head>
 <body class="hay-rail asis">
 
@@ -376,12 +430,16 @@
 <main class="asis-app" id="asisApp">
   <!-- Las charlas de quien está usando la PC. -->
   <aside class="asis-lado" id="asisLado" aria-label="Tus charlas">
-    <div class="asis-lado-cab"><img src="logo-vdh.png" alt="VDH" width="509" height="151"><span>Asistente</span></div>
-    <button type="button" class="btn asis-nueva" id="asisNueva">
+    <!-- En la compu, el botón para achicar el panel (Interfaz.botonPanel) se suma acá, a la derecha. -->
+    <div class="asis-lado-cab" id="asisLadoCab"><span class="asis-lado-marca"><img src="logo-vdh.png" alt="VDH" width="509" height="151"><span>Asistente</span></span></div>
+    <button type="button" class="btn asis-nueva" id="asisNueva" title="Nueva charla">
       <i aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></i>
-      Nueva charla
+      <span>Nueva charla</span>
     </button>
     <nav class="asis-lado-accesos" id="asisLadoAccesos" aria-label="Accesos"></nav>
+    <button type="button" class="asis-ver-charlas" id="asisVerCharlas" title="Tus charlas" aria-label="Ver tus charlas">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
+    </button>
     <h3>Tus charlas</h3>
     <div class="asis-charlas" id="asisCharlas"></div>
     <div class="asis-yo" id="asisYo"></div>
@@ -682,7 +740,8 @@
     }).join('');
     $('asisLadoAccesos').innerHTML = acc.map(function (a) {
       var t = tipo(a);
-      return '<a href="' + esc(a.url) + '" target="_blank" rel="noopener"><i class="t-' + t + '" aria-hidden="true">' + ICO[t] + '</i><span>' + esc(a.titulo) + '</span></a>';
+      /* El title: con el panel achicado sólo se ve el ícono, y el nombre aparece al pasar el mouse. */
+      return '<a href="' + esc(a.url) + '" target="_blank" rel="noopener" title="' + esc(a.titulo) + '"><i class="t-' + t + '" aria-hidden="true">' + ICO[t] + '</i><span>' + esc(a.titulo) + '</span></a>';
     }).join('');
     var apagado = !!p.error || p.prendido === false || p.habilitada === false;
     Array.prototype.forEach.call(document.querySelectorAll('[data-caja] textarea'), function (t) { t.disabled = apagado; });
@@ -732,8 +791,10 @@
     });
     $('asisYo').innerHTML = hay
       ? '<span class="asis-yo-av" aria-hidden="true">' + esc(S.vendedor.charAt(0).toUpperCase()) + '</span>' +
-        '<span><b>' + esc(S.vendedor) + '</b>' + esc(nombreLocal(S.local)) + '<br><button type="button" id="asisNoSoy">No soy ' + esc(S.vendedor.split(' ')[0]) + '</button></span>'
-      : 'Sin elegir quién sos.';
+        '<span class="asis-yo-txt"><b>' + esc(S.vendedor) + '</b>' + esc(nombreLocal(S.local)) + '<br><button type="button" id="asisNoSoy">No soy ' + esc(S.vendedor.split(' ')[0]) + '</button></span>'
+      : '<span class="asis-yo-av nadie" aria-hidden="true">?</span><span class="asis-yo-txt">Sin elegir quién sos.</span>';
+    /* Con el panel achicado queda sólo la inicial: quién es, al pasar el mouse. */
+    $('asisYo').title = hay ? S.vendedor + ' · ' + nombreLocal(S.local) : 'Sin elegir quién sos';
     if ($('asisNoSoy')) { $('asisNoSoy').onclick = cambiarYo; }
     $('asisNueva').disabled = !hay;
   }
@@ -1019,6 +1080,41 @@
   /* ═══ El celular: las charlas se abren desde arriba ═════════════════ */
   function abrirLado() { $('asisApp').classList.add('lado-abierto'); $('asisAbrirLado').setAttribute('aria-expanded', 'true'); }
   function cerrarLado() { $('asisApp').classList.remove('lado-abierto'); $('asisAbrirLado').setAttribute('aria-expanded', 'false'); }
+
+  /* ═══ La compu: el panel se achica a íconos ═════════════════════════
+     El mismo botón que los paneles del CRM y de Equipo VDH (interfaz.js).
+     La clase vive en <html> (la pone el <head> antes de pintar) y el
+     estado se recuerda en este navegador. En el celular no se ve. */
+  var K_PANEL = 'nc_panel_asistente';
+  function ladoChico() { return document.documentElement.classList.contains('asis-chico'); }
+  function pintarPlegar() {
+    if (!window.Interfaz) { return; }
+    var cab = $('asisLadoCab'), viejo = cab.querySelector('.plegar-panel');
+    var foco = !!viejo && document.activeElement === viejo;
+    if (viejo) { cab.removeChild(viejo); }
+    cab.insertAdjacentHTML('beforeend', Interfaz.botonPanel(ladoChico()));
+    var b = cab.querySelector('.plegar-panel');
+    b.setAttribute('aria-controls', 'asisLado');
+    b.onclick = function () { plegarLado(!ladoChico()); };
+    if (foco) { b.focus(); }
+  }
+  function plegarLado(chico) {
+    document.documentElement.classList.toggle('asis-chico', chico);
+    if (window.Interfaz) { Interfaz.panelChico(K_PANEL, chico); }
+    pintarPlegar();
+    marcarFlechas();
+  }
+  /* La tira de sugeridas cambia de ancho con el panel: las flechas se revisan cuando termina de moverse. */
+  $('asisLado').addEventListener('transitionend', function (e) {
+    if (e.target === $('asisLado') && e.propertyName === 'width') { marcarFlechas(); }
+  });
+  /* Achicado, el ícono de las charlas abre el panel y deja el foco en la charla abierta (o en la primera). */
+  $('asisVerCharlas').onclick = function () {
+    plegarLado(false);
+    var c = $('asisCharlas').querySelector('.asis-ch.sel') || $('asisCharlas').querySelector('.asis-ch') || $('asisLadoCab').querySelector('.plegar-panel');
+    if (c) { c.focus({ preventScroll: true }); }
+  };
+  pintarPlegar();
 
   function pintarTodo() { pintarPortada(); pintarLado(); pintarMsgs(); }
 
