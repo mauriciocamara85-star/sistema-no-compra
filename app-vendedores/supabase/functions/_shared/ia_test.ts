@@ -67,6 +67,27 @@ Deno.test("liquidación: va por talle y no se pide degradé; lo propio del módu
   if (!armarSistema({ ...ctx, reglas_extra: "Va por talle." }).includes("PROPIO DE ESTE MÓDULO (manda sobre las reglas generales): Va por talle.")) throw new Error("Lo propio manda");
 });
 
+Deno.test("las preguntas según el mueble: sin frontales fuera de la pared, y el mueble elegido no es una suposición (SQL 129)", () => {
+  const mesa = armarSistema({ ...ctx, mueble: "Mesa o exhibidor del medio", checks: ["dobladas", "colgado", "etiquetas", "limpieza", "exhibicion"],
+    reglas: [{ check: "colgado", texto: "Perchas iguales, todas mirando para el mismo lado." }, { check: "frontales", texto: "Cada frontal lleva 4 prendas." }] });
+  if (!mesa.includes("• colgado — Lo colgado (perchas y prendas colgadas)") || !mesa.includes("Perchas iguales, todas mirando para el mismo lado.")) throw new Error("Mesa: " + mesa);
+  if (/frontal/i.test(mesa.replace("acá no hay frontales: no los nombres", ""))) throw new Error("En una mesa no se habla de frontales: " + mesa);
+  if (!mesa.includes("Mirá lo esencial de ESTE mueble") || !mesa.includes("los mira después el supervisor")) throw new Error("Lo esencial: " + mesa);
+  const vid = armarSistema({ ...ctx, mueble: "Vidriera", mueble_elegido: true, referencia_path: "l/ref.jpg", referencia_tipo: "modulo", checks: ["armado", "carteles", "limpieza", "luces"] });
+  for (const t of ["• armado — Armado de la vidriera", "• carteles — Carteles y precios", "• luces — Luces", "MUEBLE (lo eligió el supervisor): Vidriera.", "Compará contra la foto modelo el ORDEN: la disposición, el doblado"]) {
+    if (!vid.includes(t)) throw new Error(`Falta en la vidriera: ${t}`);
+  }
+  if (vid.includes("dato aproximado")) throw new Error("Elegido a mano no es aproximado");
+  const pared = armarSistema({ ...ctx, referencia_path: "l/ref.jpg", referencia_tipo: "modulo" });
+  if (!pared.includes("cambiá la prenda por otro producto") || !pared.includes("la disposición, los frontales, el doblado") || pared.includes("acá no hay frontales")) throw new Error("La pared sigue igual: " + pared);
+  igual(armarEsquema(["armado", "carteles", "limpieza", "luces"]).properties.checks.required, ["armado", "carteles", "limpieza", "luces"], "el formato pide los de la vidriera");
+  const r = normalizar({ foto_valida: true, confianza: "alta", nivel_sugerido: "bien", checks: { armado: "ok", luces: "Mal" } as never,
+    hallazgos: [{ check: "frontales", titulo: "Completá el frontal", gravedad: "corregir" }, { check: "Luces", titulo: "Prendé la luz de la izquierda", gravedad: "corregir" }] },
+    { ...ctx, checks: ["armado", "carteles", "limpieza", "luces"] });
+  igual(r.hallazgos.map((h) => h.check), ["luces"], "un hallazgo de un punto que este mueble no tiene se descarta");
+  igual([r.checks.armado, r.checks.luces, r.checks.carteles], ["ok", "mal", "no_se_ve"], "los puntos de la vidriera");
+});
+
 Deno.test("el formato pide exactamente los puntos del sector", () => {
   igual(armarEsquema(ctx.checks).properties.checks.required, ctx.checks, "checks");
 });

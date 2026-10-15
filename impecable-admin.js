@@ -523,22 +523,49 @@ function verModulo(m) {
     admin ? leer('/orden_modulos?select=id,foto_referencia_path,reglas_extra&id=eq.' + valor(m.modulo_id)) : Promise.resolve([]),
     /* Liquidación (SQL 125): va por talle y la IA no pide degradé. La marcan el supervisor y el administrador; sin el SQL no aparece. */
     soloMira() || m.sector_tipo === 'deposito' ? Promise.resolve(null)
-      : leer('/orden_modulos?select=liquidacion&id=eq.' + valor(m.modulo_id)).catch(function () { return null; })
+      : leer('/orden_modulos?select=liquidacion&id=eq.' + valor(m.modulo_id)).catch(function () { return null; }),
+    /* El tipo de mueble (SQL 129): cambia las 4 preguntas del control y lo que mira la IA. Sin el SQL no aparece. */
+    soloMira() || m.sector_tipo === 'deposito' ? Promise.resolve(null)
+      : leer('/orden_modulos?select=mueble,isla,nombre&id=eq.' + valor(m.modulo_id)).catch(function () { return null; })
   ]).then(function (r) {
     var h = r[0] || [], mod = (r[1] || [])[0] || null;
     var liq = r[2] && r[2][0] && typeof r[2][0].liquidacion === 'boolean' ? r[2][0].liquidacion : null;
+    var mb = r[3] && r[3][0] && 'mueble' in r[3][0] ? r[3][0] : null;
     var usar = function (ruta) { return mod ? '<button class="boton chico" data-modelo="' + esc(ruta) + '">Usar como modelo</button>' : ''; };
     var v = ventana('<h1>' + esc(m.modulo_nombre) + '</h1><p class="bajada">' + esc((m.responsable ? 'A cargo de ' + m.responsable : '') + (m.tareas_abiertas ? ' · ' + m.tareas_abiertas + ' tareas abiertas' : '')) + '</p>' +
       (m.foto_path ? '<img class="foto-grande" data-foto="' + esc(m.foto_path) + '" alt="">' + (mod ? '<div class="vm-usar">' + usar(m.foto_path) + '</div>' : '') : '<div class="vacio">Todavía no hay fotos de este módulo.</div>') +
       (h.length > 1 ? '<div class="seccion">Fotos anteriores (las que todavía se guardan)</div><div class="historia">' + h.slice(1).map(function (x) {
         return '<figure class="foto-chica"><img data-foto="' + esc(x.foto_path) + '" alt=""><figcaption>' + esc(diaMes(x.tomada_en) + ' · ' + (x.nivel ? NIVEL[x.nivel] : '—') + ' · ' + (x.persona_nombre || '')) + '</figcaption>' + usar(x.foto_path) + '</figure>';
       }).join('') + '</div>' : '') +
-      (mod || liq !== null ? '<div class="seccion">Para la IA</div>' : '') +
+      (mod || liq !== null || mb ? '<div class="seccion">Para la IA</div>' : '') +
+      (mb ? '<label class="campo vm-mueble"><span>Tipo de mueble</span><select id="vmMueble">' +
+        '<option value="">' + esc('Como en el croquis: ' + nombreMueble(muebleDelCroquis(mb))) + '</option>' +
+        TIPOS_MUEBLE.filter(function (t) { return t[0] !== 'deposito'; }).map(function (t) {
+          return '<option value="' + t[0] + '"' + (mb.mueble === t[0] ? ' selected' : '') + '>' + esc(t[1]) + '</option>';
+        }).join('') + '</select></label><p class="bajada-chica vm-preguntas" id="vmPreguntas"></p>' : '') +
       (liq !== null ? '<label class="vm-liq"><input type="checkbox" id="vmLiq"' + (liq ? ' checked' : '') + '><span><b>Es de liquidación</b>' +
         '<small>Lo colgado va ordenado por talle, no por color: la IA no pide degradé.</small></span></label>' : '') +
       (mod ? '<div id="vmModelo"></div>' +
         '<label class="campo"><span>Algo propio de este módulo (opcional: la IA lo lee con cada foto)</span><textarea id="vmPropio" rows="2" maxlength="300" placeholder="Ej.: acá van sólo gorras, colgadas y no dobladas">' + esc(mod.reglas_extra || '') + '</textarea></label>' +
         '<div class="vm-propio-acc"><button class="boton chico lima" id="vmPropioGuardar" data-aviso-guardar disabled>Guardar lo propio</button></div>' : ''));
+    var sm = v.querySelector('#vmMueble');
+    if (sm) {
+      var pintarPreguntas = function (t) {
+        v.querySelector('#vmPreguntas').textContent = 'Las 4 preguntas del control: ' + (CHECKS_MUEBLE[t] || CHECKS_MUEBLE.estantes).map(function (k) { return NOMBRE_PUNTO[k]; }).join(' · ') + '.';
+      };
+      var elegido = sm.value;
+      pintarPreguntas(elegido || muebleDelCroquis(mb));
+      sm.onchange = function () {
+        var nuevo = sm.value;
+        sm.disabled = true;
+        llamar('orden_modulo_mueble', { p_modulo: m.modulo_id, p_mueble: nuevo || null }).then(function (queda) {
+          var t = typeof queda === 'string' && CHECKS_MUEBLE[queda] ? queda : nuevo || muebleDelCroquis(mb);
+          elegido = nuevo;
+          pintarPreguntas(t);
+          avisar('Listo: ' + m.modulo_nombre + ' queda como ' + nombreMueble(t) + '. Las preguntas nuevas van desde el próximo control.');
+        }, function (e) { sm.value = elegido; avisar(mensajeDe(e)); }).then(function () { sm.disabled = false; });
+      };
+    }
     var cl = v.querySelector('#vmLiq');
     if (cl) cl.onchange = function () {
       var valorNuevo = cl.checked;
@@ -1917,17 +1944,28 @@ function ajLista(cfg) {
 /* ── Reglas de orden (15/10/2026): agrupadas por punto con "+ Agregar" en cada uno; "Hay que corregir" o "Sugerencia";
       adentro, la regla de colores (en Exhibición) y las fotos ejemplo para la IA (SQL 123). ── */
 var PUNTOS_REGLAS = [
-  ['salon', 'dobladas', 'Doblado', 'Las prendas dobladas: cuántas por estante, el alto de la pila, los bordes.'],
-  ['salon', 'frontales', 'Frontales', 'La prenda que se muestra de frente en cada estante.'],
-  ['salon', 'etiquetas', 'Etiquetas', ''],
-  ['salon', 'limpieza', 'Limpieza', ''],
-  ['salon', 'exhibicion', 'Exhibición', 'Los colores, las cantidades y los percheros.'],
+  ['salon', 'dobladas', 'Doblado', 'Las prendas dobladas: cuántas por estante, el alto de la pila, los bordes. En la pared y en las mesas.'],
+  ['salon', 'frontales', 'Frontales', 'La prenda que se muestra de frente en cada estante. Sólo en la pared.'],
+  ['salon', 'colgado', 'Colgado', 'Las perchas y las prendas colgadas. En las mesas y en los percheros.'],
+  ['salon', 'etiquetas', 'Etiquetas', 'En la pared, las mesas y los percheros.'],
+  ['salon', 'limpieza', 'Limpieza', 'En todos los muebles.'],
+  ['salon', 'exhibicion', 'Exhibición', 'Los colores, las cantidades y los percheros. La IA la mira en todo menos la vidriera; en los percheros también se le pregunta al vendedor.'],
+  ['salon', 'armado', 'Armado', 'Los maniquíes y las prendas de la vidriera.'],
+  ['salon', 'carteles', 'Carteles', 'Los precios y los carteles de la vidriera.'],
+  ['salon', 'luces', 'Luces', 'Las luces de la vidriera.'],
   ['deposito', 'dobladas', 'Doblado', ''],
   ['deposito', 'rotulado', 'Rotulado', ''],
   ['deposito', 'talles', 'Segmento y talle', ''],
   ['deposito', 'limpieza', 'Limpieza', '']
 ];
-var NOMBRE_PUNTO = { dobladas: 'Doblado', frontales: 'Frontales', etiquetas: 'Etiquetas', limpieza: 'Limpieza', exhibicion: 'Exhibición', rotulado: 'Rotulado', talles: 'Segmento y talle' };
+var NOMBRE_PUNTO = { dobladas: 'Doblado', frontales: 'Frontales', etiquetas: 'Etiquetas', limpieza: 'Limpieza', exhibicion: 'Exhibición', rotulado: 'Rotulado', talles: 'Segmento y talle',
+                     colgado: 'Colgado', armado: 'Armado', carteles: 'Carteles', luces: 'Luces' };
+/* Las 4 preguntas del control según el mueble (las mismas que orden_checks_mueble en la base, SQL 129). */
+var CHECKS_MUEBLE = { estantes: ['dobladas', 'frontales', 'etiquetas', 'limpieza'], mesa: ['dobladas', 'colgado', 'etiquetas', 'limpieza'],
+                      perchero: ['colgado', 'exhibicion', 'etiquetas', 'limpieza'], vidriera: ['armado', 'carteles', 'limpieza', 'luces'] };
+/** El mueble que sale del croquis (el mismo criterio que orden_tipo_mueble). */
+function muebleDelCroquis(m) { var n = String(m.nombre || ''); return /vidriera/i.test(n) ? 'vidriera' : /perch/i.test(n) ? 'perchero' : m.isla ? 'mesa' : 'estantes'; }
+function nombreMueble(t) { var x = TIPOS_MUEBLE.filter(function (p) { return p[0] === t; })[0]; return x ? x[1] : t; }
 var TIPOS_MUEBLE = [['estantes', 'Módulo de pared'], ['mesa', 'Mesa o exhibidor del medio'], ['perchero', 'Perchero'], ['vidriera', 'Vidriera'], ['deposito', 'Depósito']];
 var FALTA_123 = 'falta correr el SQL 123 en Supabase (está en el Escritorio, en "App Orden")';
 var _conSugerencia = true;

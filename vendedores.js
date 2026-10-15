@@ -1087,7 +1087,7 @@ function pantallaFotos() {
   engancharCabeza();
   Promise.all([
     /* Como en Hoy: lo de hoy, lo pendiente y lo que se mandó hoy (tomada_en: la de la foto mandada). */
-    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,tipo,estado,vence_en,enviado_en,tomada_en,nivel' +
+    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,mueble,tipo,estado,vence_en,enviado_en,tomada_en,nivel' +
          '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ')' +
          '&order=sector_tipo.asc,modulo_numero.asc'),
     /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
@@ -1225,18 +1225,44 @@ function dibujarFotos(x) {
    otra. Si la IA falla, el vendedor no queda trabado.
    ════════════════════════════════════════════════════════════════════════ */
 
+/* Las 4 preguntas según el tipo de mueble (SQL 129): las mismas claves que orden_checks_mueble en la base.
+   Sin el dato del mueble (una vista de antes), las del sector. */
 var PREGUNTAS = {
-  salon: [['dobladas', '¿Las prendas están dobladas y prolijas?'],
-          ['frontales', '¿Los frontales están completos (4 prendas)?'],
-          ['etiquetas', '¿Las etiquetas están adentro y con precio?'],
-          ['limpieza', '¿Está limpio y sin faltantes?']],
+  estantes: [['dobladas', '¿Las prendas están dobladas y prolijas?'],
+             ['frontales', '¿Los frontales están completos (4 prendas)?'],
+             ['etiquetas', '¿Las etiquetas están adentro y con precio?'],
+             ['limpieza', '¿Está limpio y sin faltantes?']],
+  mesa: [['dobladas', '¿Las pilas están dobladas y parejas?'],
+         ['colgado', '¿Lo colgado está prolijo y con las perchas iguales?'],
+         ['etiquetas', '¿Las etiquetas están adentro y con precio?'],
+         ['limpieza', '¿Está limpio y sin faltantes?']],
+  perchero: [['colgado', '¿Las perchas son iguales y miran para el mismo lado?'],
+             ['exhibicion', '¿Está ordenado por color (o por talle, si es liquidación)?'],
+             ['etiquetas', '¿Las etiquetas están adentro y con precio?'],
+             ['limpieza', '¿Está limpio y sin faltantes?']],
+  vidriera: [['armado', '¿Los maniquíes están vestidos completos y prolijos?'],
+             ['carteles', '¿Los carteles y precios están derechos y a la vista?'],
+             ['limpieza', '¿El vidrio y el piso están limpios?'],
+             ['luces', '¿Están todas las luces prendidas?']],
   deposito: [['dobladas', '¿Está doblado en tamaño A4?'],
              ['rotulado', '¿Está rotulado y se lee bien?'],
              ['talles', '¿Está separado por segmento y talle?'],
              ['limpieza', '¿Está limpio y con los pasillos libres?']]
 };
+PREGUNTAS.salon = PREGUNTAS.estantes;
 var CHECK = { dobladas: 'Doblado', frontales: 'Frontales', etiquetas: 'Etiquetas', limpieza: 'Limpieza',
-              exhibicion: 'Exhibición', rotulado: 'Rotulado', talles: 'Segmento y talle' };
+              exhibicion: 'Exhibición', rotulado: 'Rotulado', talles: 'Segmento y talle',
+              colgado: 'Colgado', armado: 'Armado', carteles: 'Carteles', luces: 'Luces' };
+function preguntasDe(c) { return PREGUNTAS[c.mueble] || PREGUNTAS[c.sector_tipo] || PREGUNTAS.estantes; }
+/** Lo que se le preguntó de verdad: las del mueble, o, si respondió otras (la app de antes, o le cambiaron el
+    mueble después), las que respondió, en el orden de siempre. */
+function preguntasRespondidas(c) {
+  var lista = preguntasDe(c), r = c.respuestas || {};
+  var claves = Object.keys(r);
+  if (!claves.length || lista.every(function (q) { return q[0] in r; })) return lista;
+  var orden = Object.keys(CHECK);
+  return claves.sort(function (a, b) { return orden.indexOf(a) - orden.indexOf(b); }).map(function (k) { return [k, CHECK[k] || k]; });
+}
 
 var _stream = null;
 function apagarCamara() {
@@ -1442,7 +1468,7 @@ function abrirRevision(c, estado) {
   barra.hidden = true;
   app.className = 'app';
   var r = estado.resultado || {};
-  var preguntas = PREGUNTAS[c.sector_tipo] || PREGUNTAS.salon;
+  var preguntas = preguntasDe(c);
   var aCorregir = (Array.isArray(r.hallazgos) ? r.hallazgos : []).filter(function (h) { return h.gravedad === 'corregir'; });
   var invalida = r.foto_valida === false;
   var marcada = !invalida && aCorregir.length > 0;
@@ -2379,7 +2405,7 @@ function pantallaRevisar() {
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Revisar'); return; }
     return Promise.all([
-      leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,tipo,foto_path,ultimo_intento_id,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
+      leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,mueble,tipo,foto_path,ultimo_intento_id,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
            '&local_id=eq.' + valor(loc.id) + '&limit=60'),
       /* El producto testigo de los locales que mira: si no se puede leer, Revisar sigue igual. */
       testigosRevisar(loc).catch(function () { return []; })
@@ -2485,7 +2511,7 @@ function dibujarRevisar(loc, cola, testigos) {
   }
   if (testigos.length) html += '<div class="seccion">Fotos</div>';
   var ia = c.ia_resultado || {};
-  var checks = (PREGUNTAS[c.sector_tipo] || PREGUNTAS.salon);
+  var checks = preguntasRespondidas(c);
   html += '<p class="bajada">' + cola.length + (cola.length === 1 ? ' foto para revisar' : ' fotos para revisar') + (soloMira() ? ' (sólo mirar)' : '') + '</p>' +
     '<div class="revision"><div class="titulo">' + esc(c.modulo_nombre) + '<span class="chip pendiente">' + esc(c.persona_nombre || '') + '</span></div>' +
     '<div class="bajada" style="margin:0 0 8px">' + esc((c.tipo === 'sorpresa' ? 'Control sorpresa · ' : '') + 'Enviado ' + diaMes(c.enviado_en) + ' ' + hora(c.enviado_en)) + '</div>' +

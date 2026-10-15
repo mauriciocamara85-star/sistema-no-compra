@@ -18,6 +18,8 @@ export type Contexto = {
   referencia_tipo?: "modulo" | "ejemplo" | null;
   /** El tipo de mueble ("Módulo de pared con estantes", "Mesa o exhibidor del medio"…), sacado del croquis (SQL 123). */
   mueble?: string | null;
+  /** El supervisor eligió el mueble a mano en la ficha (SQL 129): ya no es una suposición del croquis. */
+  mueble_elegido?: boolean | null;
   /** En qué pared está ("izquierda", "fondo", "derecha", "frente") o "centro", "vidriera", "deposito" (SQL 125). */
   lado?: string | null;
   /** Es de liquidación: lo colgado va por talle, no por color (SQL 125). */
@@ -56,6 +58,11 @@ const NOMBRE_CHECK: Record<string, string> = {
   exhibicion: "Exhibición (colores, cantidades, percheros)",
   rotulado: "Rotulado",
   talles: "Separado por segmento y talle",
+  // Los de cada mueble (SQL 129): mesas y percheros, y la vidriera.
+  colgado: "Lo colgado (perchas y prendas colgadas)",
+  armado: "Armado de la vidriera (maniquíes y prendas)",
+  carteles: "Carteles y precios",
+  luces: "Luces",
 };
 
 export function armarSistema(ctx: Contexto): string {
@@ -78,10 +85,14 @@ export function armarSistema(ctx: Contexto): string {
   const deEstilo = ctx.ia_sugerencias && sugerencias.length
     ? `\n\nSUGERENCIAS DE ESTILO (no son errores: si algo de esto no se cumple, como mucho dejá una sugerencia, nunca "corregir"):\n${sugerencias.map((r) => `  - ${r.texto}`).join("\n")}`
     : "";
-  // El tipo de mueble se deduce del croquis y puede fallar (el 20 de Rivadavia es un carro y figura con estantes).
-  const mueble = ctx.mueble
-    ? `\nMUEBLE (dato aproximado, sale del croquis): ${ctx.mueble}. Si en la foto se ve otro mueble (un perchero, un carro, una mesa), revisá el que se ve: nunca invalides la foto por eso.`
-    : "";
+  // El tipo de mueble se deduce del croquis y puede fallar (el 20 de Rivadavia es un carro y figura con estantes);
+  // desde el SQL 129 el supervisor lo puede elegir en la ficha, y entonces es seguro.
+  const mueble = !ctx.mueble ? ""
+    : ctx.mueble_elegido
+    ? `\nMUEBLE (lo eligió el supervisor): ${ctx.mueble}. Si en la foto se ve otro mueble, revisá el que se ve: nunca invalides la foto por eso.`
+    : `\nMUEBLE (dato aproximado, sale del croquis): ${ctx.mueble}. Si en la foto se ve otro mueble (un perchero, un carro, una mesa), revisá el que se ve: nunca invalides la foto por eso.`;
+  // Los frontales son sólo de la pared con estantes: en una mesa, un perchero o una vidriera no se nombran (SQL 129).
+  const conFrontales = ctx.checks.includes("frontales");
   // El sentido del degradé es como lo ve el cliente que entra (SQL 125): el más claro, del lado de la entrada.
   // En la liquidación lo colgado va por talle y no se pide degradé.
   const salon = ctx.sector_tipo === "salon";
@@ -97,7 +108,7 @@ export function armarSistema(ctx: Contexto): string {
   const guiaReferencia = !ctx.referencia_path ? ""
     : ctx.referencia_tipo === "ejemplo"
     ? "\n- La foto de ejemplo es de OTRO mueble del mismo tipo, bien ordenado: usala sólo para ver el nivel de orden que se espera. No marques que la ropa, los colores, la cantidad o la disposición son distintos."
-    : "\n- Compará contra la foto modelo el ORDEN: la disposición, los frontales, el doblado y lo lleno que está. La ropa cambia con la temporada: no marques que las prendas, los colores o los modelos son otros.";
+    : `\n- Compará contra la foto modelo el ORDEN: la disposición, ${conFrontales ? "los frontales, " : ""}el doblado y lo lleno que está. La ropa cambia con la temporada: no marques que las prendas, los colores o los modelos son otros.`;
 
   const etapa = ctx.ia_sugerencias
     ? "Además de lo que hay que corregir, podés dejar hasta 2 sugerencias para que quede más lindo (gravedad \"sugerencia\")."
@@ -112,13 +123,13 @@ ${colores}${sentido}${mueble}${exhibidor}${ctx.reglas_extra ? `\nPROPIO DE ESTE 
 
 CÓMO RESPONDER
 - Sé estricto pero justo: marcá solo lo que se ve CLARAMENTE en la foto. Ante la duda, no lo marques.
+- Mirá lo esencial de ESTE mueble: sólo los puntos de la lista de arriba. No pidas cosas de otro tipo de mueble${conFrontales ? "" : " (acá no hay frontales: no los nombres)"}. Los detalles finos los mira después el supervisor.
 - Si un punto no se puede ver (por ejemplo, etiquetas adentro de la prenda), ponelo como "no_se_ve". Nunca es un error.
 - Si la foto está borrosa, muy oscura, cortada o no muestra ningún mueble con ropa (estantes, perchero, carro, mesa o vidriera) ni un depósito, devolvé foto_valida = false y explicá en una frase cómo sacarla de nuevo.${salon ? `
 - Si en el módulo se ve un cartel de liquidación, "sale" o descuentos, no pidas degradé de color: esos percheros van por talle.` : ""}
 - No inventes problemas por no tener una foto para comparar: las reglas alcanzan.${guiaReferencia}
-- Hallazgos: máximo 4, en español rioplatense, cortos y en imperativo (ej.: "Completá el frontal: faltan 2 prendas"). En "detalle", una frase concreta de dónde está el problema.
-- Si un frontal está incompleto, el detalle tiene que decir: "Si no hay más stock, cambiá la prenda por otro producto." Nunca sugieras dejarlo incompleto.
-- ${etapa}
+- Hallazgos: máximo 4, en español rioplatense, cortos y en imperativo (ej.: ${conFrontales ? '"Completá el frontal: faltan 2 prendas"' : '"Emprolijá las pilas de la mesa"'}). En "detalle", una frase concreta de dónde está el problema.
+${conFrontales ? `- Si un frontal está incompleto, el detalle tiene que decir: "Si no hay más stock, cambiá la prenda por otro producto." Nunca sugieras dejarlo incompleto.\n` : ""}- ${etapa}
 - Nivel: impecable = todo bien; bien = un detalle menor; a_mejorar = un problema claro para corregir; fuera_de_estandar = varios problemas o el módulo desarmado.
 - confianza: qué tan seguro estás de lo que viste ("baja" si la foto no deja ver bien).
 - que_hay: qué ropa hay en ${ctx.sector_tipo === "salon" ? "el módulo" : "este sector del depósito"}, en 1 a 4 palabras, como lo diría un vendedor: la prenda que más se ve primero (ej.: "Remeras", "Buzos y camperas", "Jeans", "Accesorios", "Zapatillas"). Sin colores, marcas ni cantidades. Si no se distingue, dejalo vacío.
