@@ -14,7 +14,7 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v157';
+const CACHE = 'no-compra-v158';
 
 const BASICOS = [
   './',
@@ -26,6 +26,10 @@ const BASICOS = [
   './asistente.html',
   './club-numeros.html',
   './config.html',
+  /* La planilla de ventas de cada local (15/10/2026): la pantalla y sus cuentas. */
+  './ventas.html',
+  './ventas.js',
+  './ventas-calc.js',
   './estilos.css',
   './comun.js',
   /* Quién entró (13/10/2026): sin él la barra no sabe qué mostrar. */

@@ -355,7 +355,7 @@ var persona = (function () {
     d.innerHTML = '<div class="ncp-caja" role="alert">' +
       '<h2>Esta sección no es para tu usuario</h2>' +
       '<p>Entraste como <b>' + txt(_yo.nombre) + '</b> (' + txt(nombreRol(_yo)) + '). Lo que podés usar está en la barra.</p>' +
-      '<div class="ncp-pie"><a class="btn btn-pri" href="index.html">Ir a la Carga</a>' +
+      '<div class="ncp-pie"><a class="btn btn-pri" href="index.html">Ir a No Compra</a>' +
       '<button type="button" class="btn btn-sec" data-salir>No soy ' + txt(primerNombre(_yo.nombre)) + '</button></div></div>';
     d.querySelector('[data-salir]').onclick = function () { salir().then(function () { location.reload(); }); };
     document.body.appendChild(d);
@@ -776,7 +776,7 @@ var persona = (function () {
     c.innerHTML = '<h2 id="ncpTit">' + txt(y.nombre) + '</h2>' +
       '<p class="ncp-bajada">' + txt(nombreRol(y)) + (y.local_nombre ? ' · ' + txt(y.local_nombre) : '') + '</p>' +
       (y.rol === 'vendedor' || y.rol === 'supervisor'
-        ? '<p class="ncp-nota">En la Carga aparecés como <b>' + txt(y.vendedor || y.nombre) + '</b>. Si carga otro, cambiá el vendedor ahí mismo.</p>' : '') +
+        ? '<p class="ncp-nota">En No Compra aparecés como <b>' + txt(y.vendedor || y.nombre) + '</b>. Si carga otro, cambiá el vendedor ahí mismo.</p>' : '') +
       '<div class="ncp-pie">' +
         (gestiona && pagina() !== 'config.html' ? '<a class="btn btn-sec" href="config.html#usuarios">Usuarios</a>' : '') +
         '<button type="button" class="btn btn-pri" data-salir>No soy ' + txt(primerNombre(y.nombre)) + '</button>' +

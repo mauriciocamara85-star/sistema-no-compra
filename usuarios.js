@@ -284,7 +284,7 @@ var usuarios = (function () {
         case 'guardar':
           var rol = f.querySelector('[data-ed="rol"]').value, loc = f.querySelector('[data-ed="local"]').value || null;
           if (p.local_id && loc && loc !== p.local_id && p.rol === 'vendedor' &&
-              !confirm('¿Pasar a ' + nom + ' a ' + nombreLocal(loc) + '? Sale de la lista de la Carga de ' + nombreLocal(p.local_id) + ' y entra en la del local nuevo.')) return;
+              !confirm('¿Pasar a ' + nom + ' a ' + nombreLocal(loc) + '? Sale de la lista de No Compra de ' + nombreLocal(p.local_id) + ' y entra en la del local nuevo.')) return;
           hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: rol, p_local: sinLocal(rol) ? null : loc }, function () {
             /* SQL 110: lo de la oficina pide un PIN de 6 números; el suyo
                queda, y lo cambia la próxima vez que entre. */
@@ -298,7 +298,7 @@ var usuarios = (function () {
           hacer('nc_usuario_pin_borrar', { p_persona: p.id }, p.en_lista ? 'PIN borrado: la próxima vez crea uno nuevo.' : nom + ' ya aparece para crear su PIN.');
           break;
         case 'desactivar':
-          if (!confirm('¿Desactivar a ' + nom + '? No va a poder entrar (ni acá ni en Equipo VDH) y sale de la lista de la Carga. ' +
+          if (!confirm('¿Desactivar a ' + nom + '? No va a poder entrar (ni acá ni en Equipo VDH) y sale de la lista de No Compra. ' +
                        (esAdmin() ? 'Se puede reactivar.' : 'Para volver a activarlo, se lo pedís al administrador.'))) return;
           hacer('nc_usuario_activar', { p_persona: p.id, p_activo: false }, nom + ' quedó desactivado.');
           break;

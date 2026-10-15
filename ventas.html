@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Ventas</title>
+<meta name="description" content="La planilla de ventas de cada local: Ventas, Tráfico, Informe Vendedor e Informe Temporada.">
+<meta name="theme-color" content="#F7F6F3">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icono-apple.png">
+<link rel="icon" href="icono-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- Poppins, la de vdh.com.ar y la del VDH Club (30/09/2026). -->
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
+  } catch (e) {}
+</script>
+<style>
+  /* ── Ventas (15/10/2026) ──────────────────────────────────────────────────
+     Pedido de Mauricio: reemplazar las planillas de Google de cada local
+     (Ventas, Tráfico, Informe Vendedor e Informe Temporada) y que "se vea
+     igual que la planilla", porque los encargados se capacitaron con ella.
+     Es la maqueta que aprobó (artifact del 15/10) conectada a la base: la
+     hoja al medio con los mismos bloques y colores de Sheets, y las pestañas
+     abajo como en Sheets. La hoja tiene un solo tema a propósito: es la
+     planilla que ya conocen. Todo lleva el prefijo vt- para no pisarse con
+     estilos.css (que ya tiene .kpi, .chip, .hoja, .aviso…). */
+  .vt-app {
+    --sel: #1A73E8;               /* el azul de selección de Sheets */
+    --h-titulo: #0F172A; --h-kpi: #1E293B; --h-banda: #1E3A5F; --h-escalon: #073763; --h-ritmo: #4B527E;
+    --h-gris: #F3F3F3; --h-gris2: #EFEFEF; --h-real: #F8FAFC; --h-total: #DBEAFE; --h-azulclaro: #EFF6FF; --h-panel: #F8FBFF;
+    --h-linea: #E3E6EA; --h-linea-osc: rgba(255,255,255,.07);
+    --h-ambar: #C26D05;           /* lo que se carga */
+    --h-azul: #1E40AF;            /* lo que se calcula solo */
+    --h-azul-traf: #185FA5; --h-verde: #047857; --h-verde-kpi: #10B981; --h-verde-pago: #34D399; --h-amarillo: #FBBF24;
+    --h-txt: #111827; --h-txt2: #374151; --h-txt3: #6B7280; --h-gris-kpi: #94A3B8; --h-gris-cab: #64748B;
+    --h-peso-fondo: #F0F0F0; --h-peso-txt: #A3ADBB;
+    --h-oro: #FFD700; --h-plata: #C0C0C0; --h-bronce: #CD7F32;
+    --pos: #34D399; --neg: #F87171; --pos-claro: #047857; --neg-claro: #B91C1C;
+    --hoy: #EEF3FB; --futuro: #F6F7F9; --franco: #E9EBEF; --mal-suave: #FDF2F3; --mal: #A00F1E; --nuevo: #1E5A3E;
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 1;
+    display: flex; flex-direction: column; min-width: 0;
+    background: var(--bg); color: var(--txt);
+    font: 400 13px/1.35 var(--sans);
+  }
+  @media (min-width: 900px) { .vt-app { left: var(--rail); } html.rail-lista .vt-app { transition: left .2s var(--curva); } }
+  /* En el celular, arriba de la barra de abajo. */
+  @media (max-width: 899px) { .vt-app { bottom: calc(var(--nav) + env(safe-area-inset-bottom)); } }
+  .vt-app button, .vt-app select, .vt-app input { font: inherit; }
+  .vt-app [hidden] { display: none !important; }
+
+  /* ── Lo de arriba: el local y el mes ── */
+  .vt-top { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line);
+    padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); }
+  .vt-top h1 { margin: 0; font: 600 17px/1.2 var(--display); letter-spacing: -.01em; }
+  .vt-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--txt); font-size: 13px; font-weight: 600; }
+  .vt-chip select { border: 0; background: transparent; color: inherit; font-weight: 600; padding: 0; cursor: pointer; min-height: 0; }
+  .vt-chip svg { width: 14px; height: 14px; color: var(--txt-3); flex: none; }
+  .vt-der { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--txt-3); }
+  .vt-quien b { color: var(--txt-2); font-weight: 600; }
+  .vt-estado { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .vt-estado::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  .vt-estado.guardando::before { background: var(--warn); }
+  .vt-estado.mal { color: var(--bad-txt); font-weight: 600; }
+  .vt-estado.mal::before { background: var(--bad); }
+  .vt-estado:empty { display: none; }
+  .vt-solo-ver { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--warn-txt); background: var(--warn-soft); border-radius: 4px; padding: 3px 8px; }
+
+  .vt-tira { flex: 0 0 auto; background: var(--surface); border-bottom: 1px solid var(--line); font-size: 12.5px; color: var(--txt-2);
+    padding: 6px max(16px, env(safe-area-inset-right, 0px)) 6px max(16px, env(safe-area-inset-left, 0px)); }
+  .vt-tira details > summary { cursor: pointer; list-style: none; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
+  .vt-tira details > summary::-webkit-details-marker { display: none; }
+  .vt-ver { color: var(--ok-txt); font-weight: 600; white-space: nowrap; margin-left: auto; }
+  .vt-ver::after { content: " ▾"; }
+  .vt-tira details[open] .vt-ver::after { content: " ▴"; }
+  .vt-leyenda { display: inline-flex; gap: 14px; flex-wrap: wrap; }
+  .vt-leyenda i { font-style: normal; display: inline-flex; align-items: center; gap: 5px; }
+  .vt-sw { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: -1px; }
+  .vt-sw.amb { background: #F3F3F3; box-shadow: inset 0 -2px 0 #C26D05; }
+  .vt-sw.calc { background: #DBEAFE; }
+  .vt-sw.fr { background: repeating-linear-gradient(135deg, #E9EBEF 0 3px, #FFFFFF 3px 6px); border: 1px solid #D6D9DE; }
+  .vt-sw.fal { background: #FFFFFF; box-shadow: inset 0 0 0 1.5px #E0A64A; }
+  .vt-cambios { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px 24px; margin: 10px 0 4px; padding: 0; list-style: none; max-width: 1240px; }
+  .vt-cambios li { line-height: 1.45; }
+  .vt-cambios b { color: var(--txt); font-weight: 600; }
+  .vt-cambios .igual { grid-column: 1 / -1; color: var(--txt-3); }
+
+  /* ── El lugar de la hoja ── */
+  .vt-scroll { flex: 1 1 auto; overflow: auto; overscroll-behavior: contain;
+    padding: 14px max(16px, env(safe-area-inset-right, 0px)) 24px max(16px, env(safe-area-inset-left, 0px)); }
+  .vt-caja { max-width: 520px; margin: 40px auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 22px 22px 20px; box-shadow: var(--sombra); }
+  .vt-caja h2 { margin: 0 0 8px; font: 700 19px/1.25 var(--display); }
+  .vt-caja p { margin: 0 0 14px; font-size: 14px; line-height: 1.5; color: var(--txt-2); }
+  .vt-caja .btn + .btn { margin-left: 8px; }
+  .vt-cargando { text-align: center; color: var(--txt-3); font-size: 14px; padding: 60px 0; }
+
+  /* ── La hoja ── */
+  .vt-hoja { min-width: 1080px; max-width: 1240px; margin: 0 auto; background: #FFFFFF; border: 1px solid #DDD9D0; box-shadow: 0 1px 2px rgba(0,0,0,.05); color: var(--h-txt); font-variant-numeric: tabular-nums; color-scheme: light; }
+  .vt-hoja table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  .vt-hoja td, .vt-hoja th { padding: 5px 8px; text-align: center; border: 1px solid var(--h-linea); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 400; height: 28px; }
+  .vt-hoja .izq { text-align: left; }
+  .vt-hoja .titulo { background: var(--h-titulo); color: #FFFFFF; font-size: 18px; font-weight: 600; letter-spacing: .03em; padding: 15px 18px; white-space: pre; }
+  .vt-hoja .titulo small { display: block; font-size: 11.5px; font-weight: 400; letter-spacing: 0; color: var(--h-gris-kpi); margin-top: 3px; white-space: normal; }
+  .vt-hoja .banda { background: var(--h-banda); color: #FFFFFF; font-size: 12.5px; font-weight: 600; letter-spacing: .03em; padding: 8px 14px; white-space: pre; }
+  .vt-hoja .banda.escalon { background: var(--h-titulo); font-size: 13px; margin-top: 14px; }
+  .vt-hoja .banda.ritmo { background: var(--h-ritmo); }
+  .vt-hoja .banda.gris { background: var(--h-kpi); color: var(--h-gris-cab); }
+  .vt-hoja .banda.osc { background: var(--h-titulo); }
+
+  /* tarjetas de arriba */
+  .vt-hoja .vt-kpis { display: grid; gap: 1px; background: #0B1220; }
+  .vt-hoja .vt-kpis.k4 { grid-template-columns: repeat(4, 1fr); }
+  .vt-hoja .vt-kpis.k5 { grid-template-columns: repeat(5, 1fr); }
+  .vt-hoja .vt-kpi { background: var(--h-kpi); color: #FFFFFF; text-align: center; padding: 10px 8px 9px; }
+  .vt-hoja .vt-kpis.k5 .vt-kpi { background: var(--h-titulo); }
+  .vt-hoja .vt-kpi .et { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--h-gris-kpi); }
+  .vt-hoja .vt-kpi .val { font-size: 24px; font-weight: 700; line-height: 1.25; margin: 3px 0 1px; }
+  .vt-hoja .vt-kpi .sub { font-size: 10.5px; color: var(--h-gris-kpi); }
+  .vt-hoja .vt-kpi .val.neg { color: #FCA5A5; }
+
+  /* rankings */
+  .vt-hoja .rankings { display: grid; grid-template-columns: 1fr 1.35fr; gap: 1px; background: #0B1220; }
+  .vt-hoja .rk { background: var(--h-titulo); padding: 8px 10px 10px; }
+  .vt-hoja .rk-tit { color: var(--h-gris-kpi); font-size: 11px; font-weight: 600; letter-spacing: .06em; margin: 0 0 4px 4px; }
+  .vt-hoja .rk-tit span { font-weight: 400; letter-spacing: 0; margin-left: 6px; color: var(--h-gris-cab); }
+  .vt-hoja .rk th { color: var(--h-gris-cab); font-size: 10.5px; font-weight: 600; height: 22px; }
+  .vt-hoja .rk td { color: #FFFFFF; font-weight: 600; font-size: 13px; height: 30px; }
+  .vt-hoja .rk td.med { text-align: left; }
+  .vt-hoja .rk td, .vt-hoja .rk th { border-color: var(--h-linea-osc); }
+  .vt-hoja .m0 { color: var(--h-oro) !important; } .vt-hoja .m1 { color: var(--h-plata) !important; } .vt-hoja .m2 { color: var(--h-bronce) !important; }
+  .vt-hoja .rk .av { color: var(--h-gris-kpi); font-size: 12px; }
+  .vt-hoja .rk .ob { color: var(--h-gris-cab); font-weight: 400; font-size: 12px; }
+
+  /* proyecciones y medios de pago */
+  .vt-hoja .proy { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 1px; background: #0B1220; }
+  .vt-hoja .proy > div { background: var(--h-kpi); display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 8px 10px; gap: 4px 10px; text-align: center; }
+  .vt-hoja .proy .nom { color: var(--h-gris-kpi); font-weight: 600; font-size: 12.5px; }
+  .vt-hoja .proy .v1 { color: var(--h-verde-kpi); font-weight: 700; font-size: 16px; }
+  .vt-hoja .proy .v2 { color: #FFFFFF; font-weight: 700; font-size: 13px; }
+  .vt-hoja .proy .s { color: var(--h-gris-cab); font-size: 10px; display: block; font-weight: 400; }
+  .vt-hoja .proy .pagos { grid-template-columns: auto 1fr 1fr 1fr; }
+  .vt-hoja .proy .pv { font-weight: 700; font-size: 15px; color: var(--h-verde-pago); }
+  .vt-hoja .proy .pv.desc { color: var(--h-amarillo); }
+
+  /* configuración */
+  .vt-hoja .cfg { background: var(--h-gris); padding: 10px 12px 12px; display: grid; gap: 10px; }
+  .vt-hoja .cfg table { background: var(--h-gris); }
+  .vt-hoja .cfg td, .vt-hoja .cfg th { border-color: #E2E2E2; }
+  .vt-hoja .cfg th { color: var(--h-txt); font-size: 12px; font-weight: 400; background: var(--h-gris); }
+  .vt-hoja .cfg-fila { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+  .vt-hoja .calc-m { font-weight: 600; color: var(--h-txt); }
+  .vt-hoja .suma { font-size: 11.5px; font-weight: 600; white-space: normal; line-height: 1.2; }
+  .vt-hoja .suma.ok { color: var(--nuevo); }
+  .vt-hoja .suma.mal { color: var(--mal); }
+  .vt-hoja .btn-add { width: 100%; height: 100%; min-height: 50px; border: 1px dashed #9CA3AF; background: #FFFFFF; color: var(--nuevo); font-weight: 600; font-size: 12px; border-radius: 4px; cursor: pointer; padding: 4px 6px; white-space: normal; }
+  .vt-hoja .btn-add:hover { border-color: var(--nuevo); background: #EAF3EE; }
+  .vt-hoja .quitar { border: 0; background: none; color: var(--mal); font-size: 11px; cursor: pointer; text-decoration: underline; padding: 0; }
+  .vt-hoja .nota { color: var(--h-txt3); font-size: 11px; white-space: normal; line-height: 1.25; }
+  .vt-hoja .aviso-carga { margin: 0; padding: 7px 14px; font-size: 11.5px; color: var(--h-txt3); }
+
+  /* celdas que se cargan */
+  .vt-hoja td.ed { padding: 0; }
+  .vt-hoja td.ed input { display: block; width: 100%; height: 100%; min-height: 27px; border: 0; border-radius: 0; margin: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-align: center; padding: 4px 6px; outline: none; cursor: text; box-shadow: none; }
+  .vt-hoja td.ed input:hover { background: rgba(26,115,232,.05); }
+  .vt-hoja td.ed:focus-within { box-shadow: inset 0 0 0 2px var(--sel); background: #FFFFFF; }
+  .vt-hoja td.ed input::placeholder { color: #B6BCC6; font-weight: 400; }
+  .vt-hoja .amb, .vt-hoja .amb input { color: var(--h-ambar); font-weight: 700; }
+  .vt-hoja .amb.g, .vt-hoja .amb.g input { font-size: 14px; }
+  .vt-hoja td.amb.ed { box-shadow: inset 0 -2px 0 rgba(194,109,5,.35); }
+  .vt-hoja td.amb.ed:focus-within { box-shadow: inset 0 0 0 2px var(--sel); }
+  .vt-hoja .azul { color: var(--h-azul); font-weight: 700; }
+  .vt-hoja .verde { color: var(--h-verde); font-weight: 700; }
+  .vt-hoja td.mal-entrada { animation: vt-sacudir .3s; box-shadow: inset 0 0 0 2px var(--mal) !important; }
+  @keyframes vt-sacudir { 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
+
+  /* semanas */
+  .vt-hoja .semanas-pad { padding: 10px 0 0; display: grid; gap: 10px; }
+  .vt-hoja .sem .pesos td { background: var(--h-peso-fondo); color: var(--h-peso-txt); font-size: 10.5px; height: 20px; padding: 1px 4px; }
+  .vt-hoja .sem .pesos td:first-child { background: #FFFFFF; border-color: transparent var(--h-linea) transparent transparent; }
+  .vt-hoja .sem .pesos td.ed input { min-height: 18px; padding: 0 4px; color: #6B7280; }
+  /* Para el encargado o el supervisor, los % que puede cambiar llevan la raya ámbar de lo que se carga. */
+  .vt-hoja .sem .pesos td.ed { box-shadow: inset 0 -2px 0 rgba(194,109,5,.35); }
+  .vt-hoja .sem .pesos td.ed:focus-within { box-shadow: inset 0 0 0 2px var(--sel); }
+  .vt-hoja .sem .pesos .suma-mal { color: var(--mal); font-weight: 700; }
+  .vt-hoja .sem .cab th { background: var(--h-banda); color: #FFFFFF; font-weight: 600; font-size: 12.5px; border-color: rgba(255,255,255,.12); height: 32px; }
+  .vt-hoja .sem .cab th.hoy { box-shadow: inset 0 -3px 0 #7DD3FC; }
+  .vt-hoja .pill-hoy { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #7DD3FC; color: var(--h-titulo); border-radius: 3px; padding: 1px 5px; margin-left: 4px; vertical-align: 1px; }
+  .vt-hoja .sem .obj td { color: var(--h-txt2); font-size: 12px; }
+  .vt-hoja .sem .real td { background: var(--h-real); font-weight: 700; font-size: 13.5px; }
+  .vt-hoja .sem .desv td { color: var(--h-txt3); font-size: 11px; height: 22px; }
+  .vt-hoja .sem .vend td { color: var(--h-txt2); }
+  .vt-hoja .sem .vend td:first-child { padding-left: 14px; }
+  .vt-hoja .sem td.tot { background: var(--h-total); color: var(--h-txt2); }
+  .vt-hoja .sem .real td.tot { color: var(--h-txt); }
+  .vt-hoja .sem td.col-hoy { background: var(--hoy); }
+  .vt-hoja .sem td.futuro { background: var(--futuro); cursor: not-allowed; }
+  .vt-hoja .sem td.franco { background-image: repeating-linear-gradient(135deg, var(--franco) 0 3px, transparent 3px 7px); position: relative; }
+  .vt-hoja .sem td.franco::after { content: "F"; position: absolute; top: 1px; right: 3px; font-size: 8.5px; font-weight: 700; color: #8A93A3; }
+  .vt-hoja .sem td.falta { box-shadow: inset 0 0 0 1.5px #E0A64A; }
+  .vt-hoja .sem td.vt-vacio { background: #FFFFFF; }
+  .vt-hoja .sem .sinv td { background: var(--mal-suave); color: var(--mal); font-weight: 700; }
+  .vt-hoja .chip-mal { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--mal); }
+  .vt-hoja .sinv select { width: 100%; border: 1px solid #E8B4BA; border-radius: 4px; background: #FFFFFF; color: var(--mal); font-size: 11.5px; font-weight: 600; padding: 3px 4px; cursor: pointer; min-height: 0; }
+  .vt-hoja .sem .peor { color: var(--neg-claro); }
+  .vt-hoja .sem .mejor { color: var(--pos-claro); }
+
+  /* escalón */
+  .vt-hoja .esc th { background: var(--h-escalon); color: #FFFFFF; font-size: 11px; font-weight: 600; height: 26px; }
+  .vt-hoja .esc td { font-size: 12.5px; font-weight: 600; height: 30px; }
+  .vt-hoja .esc tr:nth-child(even) td { background: var(--h-real); }
+  .vt-hoja .esc .ok { color: var(--pos-claro); } .vt-hoja .esc .no { color: #B45309; }
+  .vt-hoja .esc .dias { color: var(--h-azul); }
+
+  /* tráfico */
+  .vt-hoja .tp-nec td, .vt-hoja .tp-nec th { height: 30px; }
+  .vt-hoja .tp-nec th { background: var(--h-kpi); color: var(--h-gris-kpi); font-size: 10.5px; letter-spacing: .05em; font-weight: 600; }
+  .vt-hoja .tp-nec td { background: var(--h-titulo); color: #FFFFFF; font-weight: 600; }
+  .vt-hoja .tp-nec td.grande { font-size: 15px; font-weight: 700; }
+  .vt-hoja .ritmo-t th { background: var(--h-kpi); color: var(--h-gris-kpi); font-size: 10.5px; font-weight: 600; }
+  .vt-hoja .ritmo-t td { background: var(--h-titulo); color: #FFFFFF; height: 38px; }
+  .vt-hoja .ritmo-t .grande { font-size: 19px; font-weight: 700; }
+  .vt-hoja .ritmo-t .chico { color: var(--h-gris-kpi); font-size: 11.5px; }
+  .vt-hoja .ritmo-msg { background: var(--h-titulo); color: #FFFFFF; font-weight: 600; padding: 12px 16px; font-size: 13px; border-top: 1px solid var(--h-linea-osc); white-space: normal; }
+  .vt-hoja .cfg2 { background: var(--h-gris2); padding: 10px 12px; }
+  .vt-hoja .cfg2 table { background: var(--h-gris2); }
+  .vt-hoja .cfg2 th { font-weight: 400; color: var(--h-txt); font-size: 12px; }
+  .vt-hoja .cfg2 td, .vt-hoja .cfg2 th { border-color: #DFDFDF; }
+  .vt-hoja .sem .necf td { color: var(--h-azul-traf); font-weight: 700; }
+
+  /* informe por vendedor */
+  .vt-hoja .res th { background: var(--h-titulo); color: var(--h-gris-kpi); font-size: 11px; font-weight: 600; }
+  .vt-hoja .res td { color: #FFFFFF; font-size: 12px; }
+  .vt-hoja .res tr:nth-child(odd) td { background: var(--h-kpi); }
+  .vt-hoja .res tr:nth-child(even) td { background: var(--h-titulo); }
+  .vt-hoja .res td.tt { font-weight: 700; }
+  .vt-hoja .res td.pos { color: var(--pos); font-weight: 700; } .vt-hoja .res td.neg { color: var(--neg); font-weight: 700; }
+  .vt-hoja .res td, .vt-hoja .res th { border-color: var(--h-linea-osc); }
+  .vt-hoja .iv-cfg { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 12px; background: var(--h-gris2); padding: 10px 12px; }
+  .vt-hoja .iv-cfg table { background: var(--h-gris2); }
+  .vt-hoja .iv-cfg th { font-weight: 400; font-size: 12px; color: var(--h-txt2); text-align: left; }
+  .vt-hoja .iv-cfg .panel th, .vt-hoja .iv-cfg .panel td { background: var(--h-panel); }
+  .vt-hoja .iv-cfg td, .vt-hoja .iv-cfg th { border-color: #DFDFDF; }
+  .vt-hoja .dias-t { background: var(--h-gris2); padding: 10px 12px; }
+  .vt-hoja .dias-t th { font-weight: 600; font-size: 11.5px; color: var(--h-txt2); background: var(--h-gris2); }
+  .vt-hoja .dias-t td, .vt-hoja .dias-t th { border-color: #DFDFDF; }
+  .vt-hoja .dias-t td.hab { color: var(--h-azul); font-weight: 700; }
+  .vt-hoja .vb { margin-top: 14px; }
+  .vt-hoja .vb-nom { background: var(--h-titulo); color: #FFFFFF; font-size: 14px; font-weight: 600; padding: 9px 14px; display: flex; align-items: center; gap: 12px; }
+  .vt-hoja .vb-nom small { font-size: 11px; font-weight: 400; color: var(--h-gris-kpi); }
+  .vt-hoja .vb .cabv th { background: var(--h-banda); color: #FFFFFF; font-size: 11.5px; font-weight: 600; height: 26px; }
+  .vt-hoja .vb tr.o td { background: var(--h-real); color: var(--h-gris-cab); font-size: 11.5px; height: 24px; }
+  .vt-hoja .vb tr.r td { color: var(--h-txt); font-weight: 600; }
+  .vt-hoja .vb tr.r td.blue { background: var(--h-azulclaro); color: var(--h-azul); }
+  .vt-hoja .vb td.futuro { background: var(--futuro); }
+  .vt-hoja .vb tr.r td.pos { color: var(--pos-claro); font-weight: 700; } .vt-hoja .vb tr.r td.neg { color: var(--neg-claro); font-weight: 700; }
+
+  /* informe temporada */
+  .vt-hoja .tp-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; padding: 12px; background: #FFFFFF; }
+  .vt-hoja .tp-grid > div { min-width: 0; }
+  .vt-hoja .tp-tab th { background: var(--h-banda); color: #FFFFFF; font-size: 11px; font-weight: 600; height: 26px; }
+  .vt-hoja .tp-tab td { font-size: 12.5px; height: 28px; }
+  .vt-hoja .tp-tab tr.tot td { background: var(--h-total); font-weight: 700; }
+  .vt-hoja .tp-tab td.futuro { color: #B6BCC6; }
+  .vt-hoja .tp-tab .pos { color: var(--pos-claro); font-weight: 700; } .vt-hoja .tp-tab .neg { color: var(--neg-claro); font-weight: 700; }
+  .vt-hoja .tp-rk td { font-weight: 600; }
+  .vt-hoja .tp-rk td.med { text-align: left; }
+  .vt-hoja .tp-rk tr.sinv td { color: var(--mal); }
+  .vt-hoja .tp-foco td { text-align: left; font-size: 12.5px; }
+  .vt-hoja .tp-foco td:first-child { text-align: center; padding: 0; text-overflow: clip; }
+  .vt-hoja .tp-foco td.v { text-align: right; font-weight: 700; }
+  .vt-hoja .graficos { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1.3fr); gap: 12px; padding: 12px; }
+  .vt-hoja .graf { border: 1px solid var(--h-linea); padding: 10px 10px 6px; min-width: 0; }
+  .vt-hoja .graf h3 { margin: 0 0 6px; font-size: 12px; font-weight: 600; color: var(--h-txt2); text-align: center; }
+  .vt-hoja .graf svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .vt-hoja .graf .ley { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; font-size: 11px; color: var(--h-txt2); margin-top: 6px; }
+  .vt-hoja .graf .ley i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .vt-hoja .graf text { font-family: var(--sans); }
+  .vt-hoja .tp-vacio { padding: 40px 16px; text-align: center; color: var(--h-txt3); }
+
+  /* las pestañas, como en Sheets */
+  .vt-pestanas { flex: 0 0 auto; display: flex; gap: 2px; align-items: stretch; overflow-x: auto; background: #F1F3F4; border-top: 1px solid var(--line);
+    padding: 0 max(12px, env(safe-area-inset-right, 0px)) 0 max(12px, env(safe-area-inset-left, 0px)); color-scheme: light; }
+  .vt-pest { flex: 0 0 auto; border: 0; background: transparent; color: #3C4043; font-size: 12.5px; font-weight: 500; padding: 9px 16px 8px; cursor: pointer; border-radius: 0 0 6px 6px; white-space: nowrap; }
+  .vt-pest:hover { background: #E8EAED; }
+  .vt-pest[aria-selected="true"] { background: #FFFFFF; color: #1E3A5F; font-weight: 600; box-shadow: inset 0 3px 0 #1E3A5F, 0 1px 2px rgba(0,0,0,.08); }
+  .vt-mes-pest { align-self: center; font-size: 11.5px; color: #5F6368; margin-right: 8px; white-space: nowrap; }
+
+  /* sumar un vendedor */
+  .vt-velo { position: fixed; inset: 0; z-index: 70; background: rgba(15, 23, 42, .45); display: grid; place-items: center; padding: 16px; }
+  .vt-dialogo { width: 100%; max-width: 440px; max-height: calc(100vh - 32px); overflow: auto; background: var(--surface); color: var(--txt); border-radius: var(--r); padding: 20px; box-shadow: var(--sombra-alta); }
+  .vt-dialogo h2 { margin: 0 0 4px; font: 700 18px/1.25 var(--display); }
+  .vt-dialogo .sub { margin: 14px 0 8px; font-size: 13px; color: var(--txt-2); font-weight: 600; }
+  .vt-dialogo .lista { display: flex; flex-wrap: wrap; gap: 8px; }
+  .vt-dialogo .lista button { border: 1px solid var(--line-alta); background: var(--surface); color: var(--txt); border-radius: 999px; padding: 7px 14px; font-weight: 600; font-size: 13.5px; cursor: pointer; }
+  .vt-dialogo .lista button:hover { border-color: var(--txt); }
+  .vt-dialogo .fila { display: flex; gap: 8px; }
+  .vt-dialogo .fila input { flex: 1; min-width: 0; }
+  .vt-dialogo .nota { margin: 10px 0 0; font-size: 12.5px; color: var(--txt-3); line-height: 1.45; }
+  .vt-dialogo .pie { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+  @media (max-width: 760px) {
+    .vt-top h1 { font-size: 15px; }
+    .vt-der { margin-left: 0; width: 100%; justify-content: space-between; }
+  }
+  @media (prefers-reduced-motion: reduce) { .vt-app *, .vt-velo * { transition: none !important; animation: none !important; } }
+</style>
+<!-- Quién entró (13/10/2026): marca el rol antes de pintar la barra. Ver persona.js. -->
+<script src="persona.js"></script>
+<script src="interfaz.js"></script>
+</head>
+<body class="hay-rail">
+
+<div class="marco" id="marco">
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <g fill="none" stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/><path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g><circle cx="9.1" cy="8.9" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="8.8" r="1.15" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt"><small>Sistema</small>VDH</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      No Compra
+    </a>
+    <a class="rail-item" href="ventas.html" aria-current="page">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg></span>
+      Ventas
+    </a>
+    <a class="rail-item" href="caja.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Cobrar
+    </a>
+    <a class="rail-item" href="giftcards.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 11 5 12 8c1-3 2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
+      Gift Cards
+    </a>
+    <a class="rail-item" href="asistente.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 6.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg></span>
+      Asistente
+    </a>
+    <a class="rail-item" href="estadisticas.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Estadísticas
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      CRM
+    </a>
+    <a class="rail-item" href="club-numeros.html#socios">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.4l-5.72 3l1.1-6.37L2.75 9.53l6.4-.93z"/></svg></span>
+      Socios
+    </a>
+    <a class="rail-item" href="impecable-admin.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 6.5a2.5 2.5 0 1 1 3.4 2.33c-.55.21-.9.73-.9 1.31V11"/><path d="M12 11 2.9 17.1a1 1 0 0 0 .56 1.9h17.08a1 1 0 0 0 .56-1.9z"/></svg></span>
+      Equipo VDH
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="vt-app" id="vtApp">
+  <header class="vt-top">
+    <h1>Ventas del local</h1>
+    <label class="vt-chip" id="vtLocalChip" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/></svg>
+      <select id="vtLocal" aria-label="Local"></select>
+    </label>
+    <label class="vt-chip" id="vtMesChip" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
+      <select id="vtMes" aria-label="Mes"></select>
+    </label>
+    <div class="vt-der">
+      <span class="vt-solo-ver" id="vtSoloVer" hidden>Sólo para mirar</span>
+      <span class="vt-estado" id="vtEstado" role="status" aria-live="polite"></span>
+      <span class="vt-quien" id="vtQuien"></span>
+    </div>
+  </header>
+
+  <div class="vt-tira" id="vtTira" hidden>
+    <details>
+      <summary>
+        <span class="vt-leyenda"><i><span class="vt-sw amb"></span>se carga</i><i><span class="vt-sw calc"></span>se calcula solo</i><i><span class="vt-sw fr"></span>franco</i><i><span class="vt-sw fal"></span>falta cargar</i></span>
+        <span class="vt-ver">Qué cambia respecto de la planilla</span>
+      </summary>
+      <ul class="vt-cambios">
+        <li><b>Vendedores sin tope.</b> "+ Sumar vendedor" agrega una fila en cada semana y su bloque en Informe Vendedor. Abajo de los % avisa si no suman 100.</li>
+        <li><b>Ventas sin dueño.</b> Lo cargado en la fila sin nombre de la planilla aparece en rojo hasta que alguien diga de quién es.</li>
+        <li><b>Francos a la vista.</b> El día franco de cada uno sale rayado (lo saca de Equipo VDH). Las cuentas no cambian.</li>
+        <li><b>Los días que no llegaron no se pueden cargar.</b> La regla "dejalos vacíos" la cumple el sistema solo.</li>
+        <li><b>El número se escribe como salga.</b> "34.500", "34500" o "$34.500" dan lo mismo. Si no es un número, no lo toma y avisa.</li>
+        <li><b>Se guarda solo, celda por celda,</b> y queda anotado quién cargó cada cosa. Si dos cargan a la vez, cada uno ve lo del otro al rato.</li>
+        <li class="igual">Todo lo demás es igual a la planilla: los bloques, los colores, el ámbar para cargar, las fórmulas, los rankings y el escalón de premios. Enter baja a la celda de abajo, como en Sheets.</li>
+      </ul>
+    </details>
+  </div>
+
+  <div class="vt-scroll" id="vtScroll">
+    <div class="vt-cargando" id="vtCargando">Abriendo…</div>
+    <div class="vt-caja" id="vtCaja" hidden></div>
+    <div class="vt-hoja" id="vtHoja" hidden></div>
+  </div>
+
+  <nav class="vt-pestanas" id="vtPestanas" role="tablist" aria-label="Hojas del mes" hidden>
+    <span class="vt-mes-pest" id="vtMesPest"></span>
+    <button class="vt-pest" type="button" role="tab" data-tab="ventas">Ventas</button>
+    <button class="vt-pest" type="button" role="tab" data-tab="trafico">Tráfico</button>
+    <button class="vt-pest" type="button" role="tab" data-tab="vendedor">Informe Vendedor</button>
+    <button class="vt-pest" type="button" role="tab" data-tab="temporada">Informe Temporada</button>
+  </nav>
+</main>
+
+</div><!-- /.marco -->
+
+<div class="vt-velo" id="vtVelo" hidden><div class="vt-dialogo" id="vtDialogo" role="dialog" aria-modal="true" aria-labelledby="vtDlgTit"></div></div>
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script src="datos.js"></script>
+<script src="ventas-calc.js"></script>
+<script src="ventas.js"></script>
+</body>
+</html>

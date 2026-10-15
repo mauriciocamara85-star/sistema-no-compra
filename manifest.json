@@ -1,7 +1,7 @@
 {
-  "name": "VDH · No Compra",
-  "short_name": "No Compra",
-  "description": "Registro de clientes que se van del local sin encontrar lo que buscaban.",
+  "name": "Sistema VDH",
+  "short_name": "Sistema VDH",
+  "description": "El sistema de los locales VDH: No Compra, ventas, cobros, gift cards, CRM y equipo.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
