@@ -26,6 +26,15 @@
   'use strict';
 
   function def(x) { return x !== undefined && x !== null && x !== ''; }
+  /* El semáforo del dashboard (dashboard-vdh, app.js: UMBRAL_VERDE y UMBRAL_AMARILLO), pedido el 15/10
+     para todos los desvíos de las cuatro hojas: lo real contra el objetivo, 100% o más verde ('sv'),
+     de 85% a 99% amarillo ('sa'), menos de 85% rojo ('sr'). Sin dato o sin objetivo, sin color (''). */
+  var VERDE = 1, AMARILLO = 0.85;
+  function semaforo(real, obj) {
+    if (!def(real) || !def(obj) || !isFinite(real) || !(Number(obj) > 0)) return '';
+    var r = Number(real) / Number(obj);
+    return r >= VERDE - 1e-9 ? 'sv' : r >= AMARILLO - 1e-9 ? 'sa' : 'sr';
+  }
   function n(x) { return def(x) ? Number(x) : null; }
   function cero(x) { return def(x) ? Number(x) || 0 : 0; }       // una celda vacía en una cuenta vale 0
   function suma(a) { var s = 0; for (var i = 0; i < a.length; i++) s += Number(a[i]) || 0; return s; }
@@ -120,7 +129,9 @@
     C.faltan = Math.max(c.obj - C.E4, 0);                                               // G4 (con las 6 semanas)
     C.C22 = todos.filter(function (x) { return x.cargado; }).length;                    // C22 días transcurridos
     var prim = todos.slice(0, C.C22);
-    C.desvAcum = suma(prim.map(function (x) { return x.real; })) - suma(prim.map(function (x) { return x.obj; }));  // I4 = AC26 - AC25
+    C.realHoy = suma(prim.map(function (x) { return x.real; }));                      // AC26: lo vendido en los días cargados
+    C.objHoy = suma(prim.map(function (x) { return x.obj; }));                        // AC25: su objetivo
+    C.desvAcum = C.realHoy - C.objHoy;                                                  // I4 = AC26 - AC25
     C.L18 = Math.max(c.diasHabiles - C.C22, 1);                                         // L18 días restantes
     var fr = suma(todos.filter(function (x) { return x.real > 0; }).map(function (x) { return x.peso * semanas[M.semana(x.d) - 1].peso; }));
     C.proyPond = fr ? C.E4 / fr : null;                                                 // C13
@@ -283,7 +294,8 @@
     return r;
   }
 
-  function estado(real, av) { return !real ? 'sin' : av >= 1 ? 'ok' : av >= 0.95 ? 'cerca' : 'atencion'; }   // H12
+  /* H12, con los umbrales del dashboard (la planilla ponía "Cerca" desde el 95%). */
+  function estado(real, av) { return !real ? 'sin' : { sv: 'ok', sa: 'cerca', sr: 'atencion' }[semaforo(av, 1)]; }
   function norm(s) { return String(s || '').trim().toLowerCase().replace(/\s+/g, ' '); }
 
   function temporada(meses) {
@@ -383,7 +395,7 @@
   }
 
   var api = { calcular: calcular, mesInfo: mesInfo, diaHoy: diaHoy, redondear: redondear, roundup: roundup, def: def,
-              semestre: semestre, temporada: temporada, MESES: MESES };
+              semestre: semestre, temporada: temporada, semaforo: semaforo, MESES: MESES };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.VentasCalc = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);   // globalThis: también en Apps Script (el consolidador lleva una copia)

@@ -149,15 +149,18 @@ create table if not exists ventas_cambios (
 );
 create index if not exists ventas_cambios_local on ventas_cambios (local_id, en desc);
 
-alter table ventas_mes        enable row level security;
-alter table ventas_dias       enable row level security;
-alter table ventas_semanas    enable row level security;
-alter table ventas_vendedores enable row level security;
-alter table ventas_diarias    enable row level security;
-alter table ventas_trafico    enable row level security;
-alter table ventas_semanal    enable row level security;
-alter table ventas_temporada  enable row level security;
-alter table ventas_cambios    enable row level security;
+/* La seguridad de cada tabla se activa sólo si falta: "alter table" traba la tabla entera hasta que termina
+   el SQL, y con los locales cargando, volver a correr este archivo dejaba la pantalla Ventas colgada. */
+do $rls$
+declare t text;
+begin
+  foreach t in array array['ventas_mes', 'ventas_dias', 'ventas_semanas', 'ventas_vendedores', 'ventas_diarias',
+                           'ventas_trafico', 'ventas_semanal', 'ventas_temporada', 'ventas_cambios'] loop
+    if not (select relrowsecurity from pg_class where oid = t::regclass) then
+      execute format('alter table %I enable row level security', t);
+    end if;
+  end loop;
+end $rls$;
 revoke all on ventas_mes, ventas_dias, ventas_semanas, ventas_vendedores, ventas_diarias,
               ventas_trafico, ventas_semanal, ventas_temporada, ventas_cambios from public, anon, authenticated;
 grant all on ventas_mes, ventas_dias, ventas_semanas, ventas_vendedores, ventas_diarias,

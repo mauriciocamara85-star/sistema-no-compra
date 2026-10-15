@@ -57,7 +57,8 @@
   function decLibre(n) { return Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 }); }
   function mill(n) { return '$' + (n / 1e6).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + 'M'; }
   function millCorto(n) { return (n / 1e6).toLocaleString('es-AR', { maximumFractionDigits: 1 }) + 'M'; }
-  function signo(n) { return !def(n) || !isFinite(n) || n === 0 ? '' : n > 0 ? 'pos' : 'neg'; }
+  /* El color de un desvío, con los cortes del dashboard (ventas-calc: semaforo): 'sv' verde, 'sa' amarillo, 'sr' rojo. */
+  function sem(real, obj) { return VC.semaforo(real, obj); }
   function suma(a) { var s = 0; for (var i = 0; i < a.length; i++) s += Number(a[i]) || 0; return s; }
 
   /* ══ Fechas ═════════════════════════════════════════════════════════════ */
@@ -302,7 +303,7 @@
   function hojaVentas(C) {
     var c = C.c, V = nombrados(C), h = titulo('VENTAS');
     h += '<div class="vt-kpis k4">' + kpi('Avance del mes', pc(C.avance, 1), '% cumplimiento') + kpi('Venta acumulada', pesos(C.E4), 'mes a mes') +
-      kpi('Faltan vender', pesos(C.faltan), 'para cerrar el mes') + kpi('Desvío acumulado', pesos(C.desvAcum), 'vs objetivo a hoy', C.desvAcum < 0 ? 'neg' : '') + '</div>';
+      kpi('Faltan vender', pesos(C.faltan), 'para cerrar el mes') + kpi('Desvío acumulado', pesos(C.desvAcum), 'vs objetivo a hoy', sem(C.realHoy, C.objHoy)) + '</div>';
     var hay = C.rkSem.some(function (r) { return Math.trunc(r.venta) > 0; }), hayM = C.rkMes.some(function (r) { return Math.trunc(r.real) > 0; });
     var filaSem = '', filaMes = '';
     for (var i = 0; i < 3; i++) {
@@ -314,9 +315,12 @@
       '<table><colgroup><col><col style="width:30%"><col style="width:18%"></colgroup><tr><th class="izq">Vendedor</th><th>Venta sem</th><th>Av%</th></tr>' + filaSem + '</table></div>' +
       '<div class="rk"><div class="rk-tit">RANKING DEL MES</div><table><colgroup><col><col style="width:22%"><col style="width:22%"><col style="width:15%"></colgroup>' +
       '<tr><th class="izq">Vendedor</th><th>Objetivo</th><th>Real</th><th>Avance</th></tr>' + filaMes + '</table></div></div>';
+    /* El desvío de la proyección va como todos los demás (proyección − objetivo: positivo = pasa el objetivo);
+       la planilla lo restaba al revés (D13 = G18 − C13) y un verde quedaba con signo menos. */
+    function proyDesv(p) { return def(p) ? '<span class="v2 ' + sem(p, c.obj) + '">' + pesosP(p - c.obj) : '<span class="v2">'; }
     h += '<div class="proy">' +
-      '<div><span class="nom">Proyección ponderada</span><span class="v1">' + (def(C.proyPond) ? pesos(C.proyPond) : 'Sin datos') + '</span><span></span><span class="v2">' + (def(C.proyPond) ? pesosP(c.obj - C.proyPond) : '') + '<span class="s">desvío vs objetivo</span></span></div>' +
-      '<div><span class="nom">Proyección lineal</span><span class="v1">' + (def(C.proyLin) ? pesos(C.proyLin) : 'Sin datos') + '</span><span></span><span class="v2">' + (def(C.proyLin) ? pesosP(c.obj - C.proyLin) : '') + '<span class="s">desvío vs objetivo</span></span></div>' +
+      '<div><span class="nom">Proyección ponderada</span><span class="v1">' + (def(C.proyPond) ? pesos(C.proyPond) : 'Sin datos') + '</span><span></span>' + proyDesv(C.proyPond) + '<span class="s">desvío vs objetivo</span></span></div>' +
+      '<div><span class="nom">Proyección lineal</span><span class="v1">' + (def(C.proyLin) ? pesos(C.proyLin) : 'Sin datos') + '</span><span></span>' + proyDesv(C.proyLin) + '<span class="s">desvío vs objetivo</span></span></div>' +
       '<div class="pagos"><span class="nom">Medios de pago</span><span class="pv">' + pc(C.efectivoPct) + '<span class="s">Efectivo</span></span><span class="pv">' + pc(C.tarjetaPct) + '<span class="s">Tarjeta</span></span><span class="pv desc">' + pc(C.descPct) + '<span class="s">Descuento</span></span></div></div>';
 
     /* Configuración */
@@ -362,8 +366,10 @@
       '<table class="esc"><tr><th>Nivel</th><th>Objetivo</th><th>Premio</th><th>Venta acum.</th><th>Falta</th><th>Desvío %</th><th>Días rest.</th><th>Obj. diario</th><th>Ritmo diario</th><th>Estado</th></tr>' +
       C.escalon.map(function (e, i) {
         return '<tr><td>' + e.nivel + '</td><td>' + pesos(e.meta) + '</td>' + entrada('premio', String(i), e.premio, 'money', 'amb', 'aria-label="Premio ' + e.nivel + '"') +
-          '<td>' + pesos(C.E4) + '</td><td>' + pesos(e.falta) + '</td><td>' + pc(e.desv, 1) + '</td><td class="dias">' + C.L18 + '</td><td>' + pesos(e.objDia) + '</td><td>' + pesos(e.ritmo) + '</td>' +
-          '<td class="' + (e.ok ? 'ok' : 'no') + '">' + (e.ok ? '✅ En ritmo' : '⚠️ Acelerar') + '</td></tr>';
+          /* Desvío % es cuánto del nivel ya se vendió (G92): a mitad de mes siempre está lejos, así que sólo se pinta
+             de verde al llegar, como la planilla. El que dice si se va bien es el Estado: el ritmo contra lo que hace falta por día. */
+          '<td>' + pesos(C.E4) + '</td><td>' + pesos(e.falta) + '</td><td class="' + (e.desv >= 1 ? 'sv' : '') + '">' + pc(e.desv, 1) + '</td><td class="dias">' + C.L18 + '</td><td>' + pesos(e.objDia) + '</td><td>' + pesos(e.ritmo) + '</td>' +
+          '<td class="' + (e.objDia > 0 ? sem(e.ritmo, e.objDia) : 'sv') + '">' + (e.ok ? '✅ En ritmo' : '⚠️ Acelerar') + '</td></tr>';
       }).join('') + '</table>';
     return h;
   }
@@ -380,10 +386,14 @@
        locales con la tabla de días trabajados se ajusta por los días que trabajó (ventas-calc, iv). */
     var b = C.sem.indexOf(w), ivDe = {};
     (C.iv || []).forEach(function (x) { ivDe[x.v.id] = x; });
-    function desvioV(v) {
+    function objV(v) {
       var s = ivDe[v.id] && ivDe[v.id].semanas[b];
-      return s && def(s.desvio) ? s.desvio : w.porVend[v.id] - c.obj * v.pct * w.peso;
+      return s && def(s.crudo) ? s.crudo : c.obj * v.pct * w.peso;
     }
+    function desvioV(v) { return w.porVend[v.id] - objV(v); }
+    /* El semáforo de un día o de la semana: sólo con la venta cargada (un día que no llegó queda sin color). */
+    function semDia(x) { return x.cargado ? sem(x.real, x.obj) : ''; }
+    var semSem = w.empezo && w.dias.some(function (x) { return x.cargado; }) ? sem(w.real, w.obj) : '';
     function cel(f) { return cols.map(function (x, k) { return x ? f(x, k) : '<td class="vt-vacio"></td>'; }).join(''); }
     var t = '<table class="sem">' + COLG_SEM + '<tbody>';
     var sDias = suma(w.dias.map(function (x) { return x.peso; }));
@@ -397,13 +407,13 @@
     }).join('') + '<th>Obj. Semanal</th><th>Desvío</th></tr>';
     t += '<tr class="obj"><td class="izq">Objetivo</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + '">' + pesos(x.obj) + '</td>'; }) +
       '<td class="tot">' + pesos(w.obj) + '</td><td class="tot"></td></tr>';
-    t += '<tr class="real"><td class="izq">Venta real</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + '">' + pesos(x.real) + '</td>'; }) +
-      '<td class="tot">' + pesos(w.real) + '</td><td class="tot ' + (w.real - w.obj < 0 ? 'peor' : 'mejor') + '">' + pesosP(w.real - w.obj) + '</td></tr>';
-    t += '<tr class="desv"><td class="izq">Desvío %</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + '">' + (x.real && x.obj ? sp(x.real / x.obj - 1) : '') + '</td>'; }) +
-      '<td>' + (w.real && w.obj ? sp(w.real / w.obj - 1) : '') + '</td><td></td></tr>';
+    t += '<tr class="real"><td class="izq">Venta real</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + ' ' + semDia(x) + '">' + pesos(x.real) + '</td>'; }) +
+      '<td class="tot">' + pesos(w.real) + '</td><td class="tot ' + semSem + '">' + pesosP(w.real - w.obj) + '</td></tr>';
+    t += '<tr class="desv"><td class="izq">Desvío %</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + (x.real && x.obj ? ' ' + semDia(x) : '') + '">' + (x.real && x.obj ? sp(x.real / x.obj - 1) : '') + '</td>'; }) +
+      '<td class="' + (w.real && w.obj ? semSem : '') + '">' + (w.real && w.obj ? sp(w.real / w.obj - 1) : '') + '</td><td></td></tr>';
     V.forEach(function (v, r) {
       t += '<tr class="vend"><td class="izq">' + esc(v.nombre) + '</td>' + cel(function (x, k) { return celdaVenta(C, v, x, r, w, k); }) +
-        '<td class="tot">' + pesos(w.porVend[v.id]) + '</td><td class="tot">' + pesosP(desvioV(v)) + '</td></tr>';
+        '<td class="tot">' + pesos(w.porVend[v.id]) + '</td><td class="tot ' + (semSem ? sem(w.porVend[v.id], objV(v)) : '') + '">' + pesosP(desvioV(v)) + '</td></tr>';
     });
     sin.forEach(function (v) {
       if (!w.dias.some(function (x) { return def((ST.venta[v.id] || {})[x.d]); })) return;
@@ -432,19 +442,21 @@
   function hojaTrafico(C) {
     var c = C.c, T = C.traf, h = titulo('TRAFICO');
     h += '<div class="vt-kpis k5">' + kpi('Tráfico acumulado', T.sumT ? nf(T.sumT) : '—', nf(T.sumT) + ' de ' + nf(T.necTot) + ' necesarios') +
-      kpi('Conversión real', def(T.D4) ? pc(T.D4, 1) : '—', 'objetivo: ' + pc(c.conv)) + kpi('Ticket promedio', def(T.F4) ? pesos(T.F4) : '—', 'objetivo: ' + pesos(c.tp)) +
-      kpi('Proyección tráfico', def(T.H4) ? nf(T.H4) : 'Sin datos', 'necesario: ' + nf(T.necTot)) + kpi('Prendas por ticket', dec(T.pxt, 2), 'objetivo ' + dec(c.pxtObj)) + '</div>';
+      kpi('Conversión real', def(T.D4) ? pc(T.D4, 1) : '—', 'objetivo: ' + pc(c.conv), sem(T.D4, c.conv)) + kpi('Ticket promedio', def(T.F4) ? pesos(T.F4) : '—', 'objetivo: ' + pesos(c.tp), sem(T.F4, c.tp)) +
+      kpi('Proyección tráfico', def(T.H4) ? nf(T.H4) : 'Sin datos', 'necesario: ' + nf(T.necTot), sem(T.H4, T.necTot)) + kpi('Prendas por ticket', dec(T.pxt, 2), 'objetivo ' + dec(c.pxtObj), T.pxt ? sem(T.pxt, c.pxtObj) : '') + '</div>';
     h += '<div class="banda gris">  TICKET PROMEDIO NECESARIO POR OBJETIVO</div><table class="tp-nec"><tr><th>Nivel</th><th>TP necesario</th><th>TP actual</th><th>Desvío</th></tr>' +
       T.tpNec.map(function (r) {
-        return '<tr><td>' + r.nivel + '</td><td class="grande">' + (def(r.nec) ? pesos(r.nec) : '—') + '</td><td>' + (def(r.act) ? pesos(r.act) : '—') + '</td><td>' + (def(r.desv) ? pesosP(r.desv) : '—') + '</td></tr>';
+        return '<tr><td>' + r.nivel + '</td><td class="grande">' + (def(r.nec) ? pesos(r.nec) : '—') + '</td><td>' + (def(r.act) ? pesos(r.act) : '—') + '</td>' +
+          '<td class="' + (def(r.desv) ? sem(r.act, r.nec) : '') + '">' + (def(r.desv) ? pesosP(r.desv) : '—') + '</td></tr>';
       }).join('') + '</table>';
+    /* Los mismos cortes del semáforo (la planilla decía "levemente bajo" hasta −10%). */
     var msg = T.sinDatos ? 'Sin datos de tráfico cargados aún.'
       : T.L5 >= 0 ? '✅  Ritmo de tráfico en línea con el objetivo. Sin necesidad de compensar.'
-      : T.L5 >= -0.1 ? '🟡  Tráfico levemente bajo (' + sp(T.L5) + '). Compensar con conversión o ticket.'
+      : sem(1 + T.L5, 1) === 'sa' ? '🟡  Tráfico levemente bajo (' + sp(T.L5) + '). Compensar con conversión o ticket.'
       : '🔴  Tráfico bajo (' + sp(T.L5) + '). Para llegar igual: conv. a ' + (def(T.convNec) ? pc(T.convNec) : '—') + ' o TP a ' + (def(T.tpComp) ? pesos(T.tpComp) : '—') + '. Activar captación urgente.';
     h += '<div class="banda ritmo">  RITMO DE TRÁFICO</div><table class="ritmo-t"><colgroup><col style="width:22%"><col style="width:22%"><col><col><col><col></colgroup>' +
       '<tr><th>Métrica</th><th>Ritmo actual</th><th colspan="4">Para compensar</th></tr>' +
-      '<tr><td class="grande" style="font-size:14px">Tráfico</td><td class="grande">' + (T.sinDatos ? '—' : sp(T.L5) || '0%') + '</td><td class="chico">Conv. necesaria:</td>' +
+      '<tr><td class="grande" style="font-size:14px">Tráfico</td><td class="grande ' + (T.sinDatos ? '' : sem(1 + T.L5, 1)) + '">' + (T.sinDatos ? '—' : sp(T.L5) || '0%') + '</td><td class="chico">Conv. necesaria:</td>' +
       '<td class="grande" style="font-size:15px">' + (def(T.convNec) ? pc(T.convNec) : '—') + '</td><td class="chico">TP:</td><td class="grande" style="font-size:15px">' + (def(T.tpComp) ? pesos(T.tpComp) : '—') + '</td></tr></table>' +
       '<div class="ritmo-msg">' + esc(msg) + '</div>';
     h += '<div class="banda">  CONFIGURACIÓN  —  conectada a Ventas automáticamente · celdas en ámbar son editables</div><div class="cfg2">' +
@@ -472,9 +484,9 @@
     }).join('') + '<th>Total Sem</th><th>vs Necesario</th></tr>';
     t += '<tr class="necf"><td class="izq">Tráfico necesario</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + '">' + nf(x.nec) + '</td>'; }) + '<td class="tot">' + nf(w.tNec) + '</td><td class="tot"></td></tr>';
     t += '<tr class="real"><td class="izq">Tráfico real</td>' + cel(function (x, k) { return campo(x, k, 0, 'int'); }) + '<td class="tot">' + (def(w.tReal) ? nf(w.tReal) : '') + '</td>' +
-      '<td class="tot ' + (def(w.tReal) && w.tReal < w.tNec ? 'peor' : 'mejor') + '">' + (def(w.tReal) ? (w.tReal - w.tNec > 0 ? '+' : '') + nf(w.tReal - w.tNec) : '-') + '</td></tr>';
-    t += '<tr class="vend"><td class="izq">Conversión real</td>' + cel(function (x, k) { return campo(x, k, 1, 'pct'); }) + '<td class="tot">' + (def(w.tConv) ? pc(w.tConv) : '') + '</td><td class="tot">' + (def(w.tConv) ? sp(w.tConv - c.conv) : '-') + '</td></tr>';
-    t += '<tr class="vend"><td class="izq">Ticket promedio real</td>' + cel(function (x, k) { return campo(x, k, 2, 'money'); }) + '<td class="tot">' + (def(w.tTk) ? pesos(w.tTk) : '') + '</td><td class="tot">' + (def(w.tTk) ? pesos(w.tTk - c.tp) : '-') + '</td></tr>';
+      '<td class="tot ' + (def(w.tReal) ? sem(w.tReal, w.tNec) : '') + '">' + (def(w.tReal) ? (w.tReal - w.tNec > 0 ? '+' : '') + nf(w.tReal - w.tNec) : '-') + '</td></tr>';
+    t += '<tr class="vend"><td class="izq">Conversión real</td>' + cel(function (x, k) { return campo(x, k, 1, 'pct'); }) + '<td class="tot">' + (def(w.tConv) ? pc(w.tConv) : '') + '</td><td class="tot ' + (def(w.tConv) ? sem(w.tConv, c.conv) : '') + '">' + (def(w.tConv) ? sp(w.tConv - c.conv) : '-') + '</td></tr>';
+    t += '<tr class="vend"><td class="izq">Ticket promedio real</td>' + cel(function (x, k) { return campo(x, k, 2, 'money'); }) + '<td class="tot">' + (def(w.tTk) ? pesos(w.tTk) : '') + '</td><td class="tot ' + (def(w.tTk) ? sem(w.tTk, c.tp) : '') + '">' + (def(w.tTk) ? pesos(w.tTk - c.tp) : '-') + '</td></tr>';
     return t + '</tbody></table>';
   }
 
@@ -486,8 +498,10 @@
     var h = titulo('INFORME POR VENDEDOR');
     h += '<div class="banda osc">  📊 RESUMEN DEL LOCAL POR SEMANA</div>';
     function filaR(nom, k, f) {
+      /* Los desvíos son "real / objetivo − 1", menos el de conversión, que es la resta (J7 = I7 − conv. objetivo). */
+      var d = C.resD[k], cl = !def(d) ? '' : k === 'c' ? sem(C.resT.c, c.conv) : sem(1 + d, 1);
       return '<tr><td class="izq">' + nom + '</td>' + C.res.map(function (r) { return '<td>' + (def(r[k]) ? f(r[k]) : '') + '</td>'; }).join('') +
-        '<td class="tt">' + (def(C.resT[k]) ? f(C.resT[k]) : '') + '</td><td class="' + signo(C.resD[k]) + '">' + sp(C.resD[k]) + '</td></tr>';
+        '<td class="tt">' + (def(C.resT[k]) ? f(C.resT[k]) : '') + '</td><td class="' + cl + '">' + sp(d) + '</td></tr>';
     }
     h += '<table class="res">' + colg + '<tr><th class="izq">Métrica</th>' + C.sem.map(function (w) { return '<th>Sem ' + w.n + '</th>'; }).join('') + '<th>Total/Prom</th><th>Desvío</th></tr>' +
       filaR('Venta', 'venta', pesos) + filaR('Tráfico', 't', nf) + filaR('Conversión', 'c', function (x) { return pc(x); }) + filaR('TP', 'tp', pesos) +
@@ -509,21 +523,8 @@
       '<tr><th>% Objetivo mensual</th>' + V.map(function (v) { return '<td class="azul">' + pcIn(v.pct) + '</td>'; }).join('') + relleno(ancho - V.length) + '</tr>' +
       '<tr><th>Peso por semana</th>' + C.sem.map(function (w) { return '<td class="azul">' + pc(w.peso) + '</td>'; }).join('') + relleno(ancho - n) + '</tr></table></div>';
 
-    /* Días trabajados (la tabla que tenía Rivadavia): cambia el objetivo semanal de cada uno. */
-    if (c.conDias) {
-      var porV = {};
-      C.iv.forEach(function (x) { porV[x.v.id] = x; });
-      h += '<div class="banda">  DÍAS TRABAJADOS POR SEMANA  —  ámbar editable · vacío = los días hábiles de la semana</div><div class="dias-t"><table>' + colg +
-        '<tr><th class="izq">Vendedor</th>' + C.sem.map(function (w) { return '<th>Sem ' + w.n + '</th>'; }).join('') + '<th></th><th></th></tr>' +
-        '<tr><td class="izq">Días hábiles</td>' + C.sem.map(function (w) { return '<td class="hab">' + w.hab + '</td>'; }).join('') + '<td></td><td></td></tr>' +
-        V.map(function (v, vi) {
-          var x = porV[v.id];
-          return '<tr><td class="izq">' + esc(v.nombre) + '</td>' + x.semanas.map(function (s, j) {
-            return entrada('dias', v.id + ':' + s.n, s.diasCargado ? s.dias : null, 'dias', 'amb',
-              'placeholder="' + s.hab + '" data-g="d" data-r="' + vi + '" data-c="' + j + '" aria-label="Días que trabajó ' + esc(v.nombre) + ' la semana ' + s.n + '"');
-          }).join('') + '<td></td><td></td></tr>';
-        }).join('') + '</table></div>';
-    }
+    /* La tabla de días trabajados por semana (la que probaba Rivadavia) salió el 15/10: más adelante va una
+       sección de vacaciones. Septiembre de Rivadavia sigue contando los días que tenía (con_dias), como la planilla. */
     h += '<p class="aviso-carga">  Ámbar = editás vos  ·  Azul = se calcula solo (viene de Ventas)  ·  Cargá el real de tráfico, conv, TP, perfumes, boxer y PxT por vendedor</p>';
 
     var METR = [['venta', 'Venta', pesos, null], ['t', 'Tráfico', nf, 'int'], ['c', 'Conversión', function (x) { return pc(x); }, 'pct'], ['tp', 'TP', pesos, 'money'],
@@ -537,12 +538,14 @@
         var k = m[0], f = m[2], tipo = m[3];
         h += '<tr class="o"><td class="izq">' + m[1] + ' · obj</td>' + x.semanas.map(function (s) { return '<td>' + f(s.o[k]) + '</td>'; }).join('') + '<td>' + f(x.ob[k]) + '</td><td></td></tr>';
         var tot = x.tot[k], d = x.desv[k];
+        /* Cada semana contra su objetivo (C27 contra C26, como la planilla) y el desvío del mes (J27 = real / obj − 1). */
         h += '<tr class="r"><td class="izq">' + m[1] + ' · real</td>' + x.semanas.map(function (s, j) {
-          if (k === 'venta') return '<td class="blue">' + (def(s.r.venta) ? pesos(s.r.venta) : '') + '</td>';
+          var cl = s.empezo && def(s.r[k]) ? sem(s.r[k], s.o[k]) : '';
+          if (k === 'venta') return '<td class="blue ' + cl + '">' + (def(s.r.venta) ? pesos(s.r.venta) : '') + '</td>';
           if (!s.empezo) return '<td class="futuro" title="Esta semana todavía no empezó"></td>';
-          return entrada('semanal', x.v.id + ':' + s.n + ':' + CAMPO_IV[k], s.r[k], tipo, '',
+          return entrada('semanal', x.v.id + ':' + s.n + ':' + CAMPO_IV[k], s.r[k], tipo, cl,
             'data-g="iv' + vi + '" data-r="' + mi + '" data-c="' + j + '" aria-label="' + esc(nom) + ', ' + m[1] + ', semana ' + s.n + '"');
-        }).join('') + '<td>' + (def(tot) ? f(tot) : '') + '</td><td class="' + signo(d) + '">' + sp(d) + '</td></tr>';
+        }).join('') + '<td>' + (def(tot) ? f(tot) : '') + '</td><td class="' + (def(d) ? sem(1 + d, 1) : '') + '">' + sp(d) + '</td></tr>';
       });
       h += '</table></div>';
     });
@@ -598,22 +601,25 @@
     var F = T.filas;
     var ESTADO = { sin: '⚪ Sin datos', ok: '🟢 OK', cerca: '🟡 Cerca', atencion: '🔴 Atención' };
     h += '<div class="vt-kpis k4">' +
+      /* La venta total no se pinta: a mitad de semestre se compara contra el semestre anterior entero. */
       kpi('Venta total semestre', pesos(T.real), conSigno(T.antDif) + '  vs semestre anterior') +
-      kpi('Cumplimiento objetivo', pc(T.av, 1), conSigno(T.desv) + '  vs objetivo del semestre', T.desv < 0 ? 'neg' : '') +
+      kpi('Cumplimiento objetivo', pc(T.av, 1), conSigno(T.desv) + '  vs objetivo del semestre', sem(T.real, T.obj)) +
       kpi('Tráfico total', nf(T.t), pc(T.conv) + '  conversión promedio') +
-      kpi('Ticket promedio', pesos(T.tk), conSigno(T.tkDesv) + '  vs objetivo ' + pesos(T.tkObj)) + '</div>';
+      kpi('Ticket promedio', pesos(T.tk), conSigno(T.tkDesv) + '  vs objetivo ' + pesos(T.tkObj), T.tk ? sem(T.tk, T.tkObj) : '') + '</div>';
 
     /* Ventas por mes y tráfico */
     h += '<div class="tp-grid"><div><div class="banda">  📊  VENTAS POR MES   —   con acumulado corrido</div>' +
       '<table class="tp-tab"><colgroup><col style="width:92px"><col><col><col style="width:66px"><col><col><col style="width:96px"></colgroup>' +
       '<tr><th class="izq">Mes</th><th>Objetivo</th><th>Venta Real</th><th>Avance</th><th>Acum. Real</th><th>Desv. Acum.</th><th>Estado</th></tr>' +
       F.map(function (f) {
-        return '<tr><td class="izq">' + f.nombre + '</td><td>' + (f.obj ? pesos(f.obj) : '') + '</td><td>' + (f.hay && f.empezo ? pesos(f.real) : '') + '</td>' +
-          '<td>' + (f.obj && f.hay && f.empezo ? pc(f.av, 1) : '') + '</td><td>' + pesos(f.acum) + '</td><td class="' + signo(f.desvAcum) + '">' + pesos(f.desvAcum) + '</td>' +
+        var con = f.hay && f.empezo;                 // un mes que no empezó queda sin color
+        return '<tr><td class="izq">' + f.nombre + '</td><td>' + (f.obj ? pesos(f.obj) : '') + '</td><td>' + (con ? pesos(f.real) : '') + '</td>' +
+          '<td class="' + (f.obj && con ? sem(f.real, f.obj) : '') + '">' + (f.obj && con ? pc(f.av, 1) : '') + '</td><td>' + pesos(f.acum) + '</td>' +
+          '<td class="' + (con ? sem(f.acum, f.acumObj) : '') + '">' + pesos(f.desvAcum) + '</td>' +
           '<td class="izq">' + ESTADO[f.estado] + '</td></tr>';
       }).join('') +
-      '<tr class="tot"><td class="izq">TOTAL</td><td>' + pesos(T.obj) + '</td><td>' + pesos(T.real) + '</td><td>' + pc(T.av, 1) + '</td><td>' + pesos(T.real) + '</td>' +
-      '<td class="' + signo(T.desv) + '">' + pesos(T.desv) + '</td><td class="izq">' + ESTADO[T.estado] + '</td></tr></table></div>';
+      '<tr class="tot"><td class="izq">TOTAL</td><td>' + pesos(T.obj) + '</td><td>' + pesos(T.real) + '</td><td class="' + sem(T.real, T.obj) + '">' + pc(T.av, 1) + '</td><td>' + pesos(T.real) + '</td>' +
+      '<td class="' + sem(T.real, T.obj) + '">' + pesos(T.desv) + '</td><td class="izq">' + ESTADO[T.estado] + '</td></tr></table></div>';
     h += '<div><div class="banda">  🎯  TRÁFICO · CONVERSIÓN · TICKET</div>' +
       '<table class="tp-tab"><colgroup><col style="width:92px"><col><col><col><col></colgroup>' +
       '<tr><th class="izq">Mes</th><th>Tráfico</th><th>Conv.</th><th>Ticket Prom.</th><th>PxT</th></tr>' +
@@ -639,10 +645,10 @@
       '<tr><td>🟢</td><td>Mejor mes</td><td class="v">' + (T.mejor ? T.mejor.nombre : '—') + '</td></tr>' +
       '<tr><td>🔴</td><td>Peor mes</td><td class="v">' + (T.peor ? T.peor.nombre : '—') + '</td></tr>' +
       '<tr><td>📌</td><td>Meses sobre obj.</td><td class="v">' + T.sobreObj + ' de 6</td></tr>' +
-      '<tr><td>🎯</td><td>Brecha conversión</td><td class="v ' + signo(T.brechaConv) + '">' + sp(T.brechaConv) + '</td></tr>' +
-      '<tr><td>🛍</td><td>Brecha PxT (obj ' + dec(b.pxtObj || 0) + ')</td><td class="v ' + signo(T.brechaPxt) + '">' + (T.brechaPxt > 0 ? '+' : '') + dec(T.brechaPxt, 2) + '</td></tr>' +
-      '<tr><td>🧴</td><td>Perfumes</td><td class="v">' + T.pf + ' vs ' + (def(T.pfObj) ? T.pfObj : '—') + ' obj</td></tr>' +
-      '<tr><td>🩲</td><td>Boxer</td><td class="v">' + T.bx + ' vs ' + (def(T.bxObj) ? T.bxObj : '—') + ' obj</td></tr></table>' +
+      '<tr><td>🎯</td><td>Brecha conversión</td><td class="v ' + (T.conv ? sem(T.conv, b.conv) : '') + '">' + sp(T.brechaConv) + '</td></tr>' +
+      '<tr><td>🛍</td><td>Brecha PxT (obj ' + dec(b.pxtObj || 0) + ')</td><td class="v ' + (T.pxt ? sem(T.pxt, b.pxtObj) : '') + '">' + (T.brechaPxt > 0 ? '+' : '') + dec(T.brechaPxt, 2) + '</td></tr>' +
+      '<tr><td>🧴</td><td>Perfumes</td><td class="v ' + sem(T.pf, T.pfObj) + '">' + T.pf + ' vs ' + (def(T.pfObj) ? T.pfObj : '—') + ' obj</td></tr>' +
+      '<tr><td>🩲</td><td>Boxer</td><td class="v ' + sem(T.bx, T.bxObj) + '">' + T.bx + ' vs ' + (def(T.bxObj) ? T.bxObj : '—') + ' obj</td></tr></table>' +
       '<p class="aviso-carga">Objetivos: conv. ' + pc(b.conv || 0) + ' · PxT ' + dec(b.pxtObj || 0) + ' · perfume ' + (b.perfume ? pesos(b.perfume) : '—') + ' · boxer ' + (b.boxer ? pesos(b.boxer) : '—') + '</p></div></div>';
 
     /* Contra el semestre anterior: lo único que se carga a mano en esta hoja. */
@@ -657,12 +663,13 @@
         var cel = (Dm ? Dm.puede === 'escribir' : edita())
           ? entrada('temporada', '', f.ant, 'money', 'amb', 'data-mes="' + f.mes + '" data-g="tp" data-r="' + i + '" data-c="0" aria-label="Venta de ' + f.nombre + ' del semestre anterior"', true)
           : '<td class="amb"' + (Dm.cerrado ? ' title="' + f.nombre + ' ya cerró: si hay que corregirlo, lo hace Administración."' : '') + '>' + esc(texto(f.ant, 'money')) + '</td>';
+        var clA = con && f.ant ? sem(f.real, f.ant) : '';
         return '<tr><td class="izq">' + f.nombre + '</td>' + cel +
-          '<td>' + (con ? pesos(f.real) : '') + '</td><td class="' + (con ? signo(f.antVar) : '') + '">' + (con && f.ant ? pc(f.antVar, 1) : '') + '</td>' +
-          '<td>' + (con ? pesosP(f.antDif) : '') + '</td><td>' + (con ? pc(f.peso, 1) : '') + '</td><td>' + (con && f.ant ? f.tend : '') + '</td></tr>';
+          '<td>' + (con ? pesos(f.real) : '') + '</td><td class="' + clA + '">' + (con && f.ant ? pc(f.antVar, 1) : '') + '</td>' +
+          '<td class="' + clA + '">' + (con ? pesosP(f.antDif) : '') + '</td><td>' + (con ? pc(f.peso, 1) : '') + '</td><td>' + (con && f.ant ? f.tend : '') + '</td></tr>';
       }).join('') +
-      '<tr class="tot"><td class="izq">TOTAL</td><td>' + pesos(T.ant) + '</td><td>' + pesos(T.real) + '</td><td class="' + signo(T.antVar) + '">' + (T.ant ? pc(T.antVar, 1) : '') + '</td>' +
-      '<td>' + pesosP(T.antDif) + '</td><td>' + (T.real ? '100%' : '') + '</td><td>' + (T.ant ? T.antTend : '') + '</td></tr></table></div></div>';
+      '<tr class="tot"><td class="izq">TOTAL</td><td>' + pesos(T.ant) + '</td><td>' + pesos(T.real) + '</td><td class="' + (T.ant ? sem(T.real, T.ant) : '') + '">' + (T.ant ? pc(T.antVar, 1) : '') + '</td>' +
+      '<td class="' + (T.ant ? sem(T.real, T.ant) : '') + '">' + pesosP(T.antDif) + '</td><td>' + (T.real ? '100%' : '') + '</td><td>' + (T.ant ? T.antTend : '') + '</td></tr></table></div></div>';
 
     /* Los gráficos de la planilla */
     h += '<div class="banda">  📉  EVOLUCIÓN DEL SEMESTRE</div><div class="graficos">' +

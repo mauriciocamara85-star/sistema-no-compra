@@ -123,7 +123,14 @@
   .vt-hoja .vt-kpi .et { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: var(--h-gris-kpi); }
   .vt-hoja .vt-kpi .val { font-size: 24px; font-weight: 700; line-height: 1.25; margin: 3px 0 1px; }
   .vt-hoja .vt-kpi .sub { font-size: 10.5px; color: var(--h-gris-kpi); }
-  .vt-hoja .vt-kpi .val.neg { color: #FCA5A5; }
+  /* El semáforo del dashboard en los desvíos (ventas-calc: semaforo): 100% o más del objetivo verde, de 85% a 99%
+     amarillo, menos de 85% rojo. En las tablas claras pinta la celda, como la planilla; en las oscuras, sólo la letra. */
+  .vt-hoja .sem td.sv, .vt-hoja .esc td.sv, .vt-hoja .vb td.sv, .vt-hoja .tp-tab td.sv { background: #C6EFCE !important; color: #05603A !important; font-weight: 700; }
+  .vt-hoja .sem td.sa, .vt-hoja .esc td.sa, .vt-hoja .vb td.sa, .vt-hoja .tp-tab td.sa { background: #FFEB9C !important; color: #7A4F00 !important; font-weight: 700; }
+  .vt-hoja .sem td.sr, .vt-hoja .esc td.sr, .vt-hoja .vb td.sr, .vt-hoja .tp-tab td.sr { background: #FEE2E2 !important; color: #B91C1C !important; font-weight: 700; }
+  .vt-hoja .vt-kpi .val.sv, .vt-hoja .proy .v2.sv, .vt-hoja .res td.sv, .vt-hoja .tp-nec td.sv, .vt-hoja .ritmo-t td.sv { color: #34D399; font-weight: 700; }
+  .vt-hoja .vt-kpi .val.sa, .vt-hoja .proy .v2.sa, .vt-hoja .res td.sa, .vt-hoja .tp-nec td.sa, .vt-hoja .ritmo-t td.sa { color: #FBBF24; font-weight: 700; }
+  .vt-hoja .vt-kpi .val.sr, .vt-hoja .proy .v2.sr, .vt-hoja .res td.sr, .vt-hoja .tp-nec td.sr, .vt-hoja .ritmo-t td.sr { color: #F87171; font-weight: 700; }
 
   /* rankings */
   .vt-hoja .rankings { display: grid; grid-template-columns: 1fr 1.35fr; gap: 1px; background: #0B1220; }
@@ -213,14 +220,11 @@
   .vt-hoja .sem .sinv td { background: var(--mal-suave); color: var(--mal); font-weight: 700; }
   .vt-hoja .chip-mal { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 600; color: var(--mal); }
   .vt-hoja .sinv select { width: 100%; border: 1px solid #E8B4BA; border-radius: 4px; background: #FFFFFF; color: var(--mal); font-size: 11.5px; font-weight: 600; padding: 3px 4px; cursor: pointer; min-height: 0; }
-  .vt-hoja .sem .peor { color: var(--neg-claro); }
-  .vt-hoja .sem .mejor { color: var(--pos-claro); }
 
   /* escalón */
   .vt-hoja .esc th { background: var(--h-escalon); color: #FFFFFF; font-size: 11px; font-weight: 600; height: 26px; }
   .vt-hoja .esc td { font-size: 12.5px; font-weight: 600; height: 30px; }
   .vt-hoja .esc tr:nth-child(even) td { background: var(--h-real); }
-  .vt-hoja .esc .ok { color: var(--pos-claro); } .vt-hoja .esc .no { color: #B45309; }
   .vt-hoja .esc .dias { color: var(--h-azul); }
 
   /* tráfico */
@@ -245,17 +249,12 @@
   .vt-hoja .res tr:nth-child(odd) td { background: var(--h-kpi); }
   .vt-hoja .res tr:nth-child(even) td { background: var(--h-titulo); }
   .vt-hoja .res td.tt { font-weight: 700; }
-  .vt-hoja .res td.pos { color: var(--pos); font-weight: 700; } .vt-hoja .res td.neg { color: var(--neg); font-weight: 700; }
   .vt-hoja .res td, .vt-hoja .res th { border-color: var(--h-linea-osc); }
   .vt-hoja .iv-cfg { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 12px; background: var(--h-gris2); padding: 10px 12px; }
   .vt-hoja .iv-cfg table { background: var(--h-gris2); }
   .vt-hoja .iv-cfg th { font-weight: 400; font-size: 12px; color: var(--h-txt2); text-align: left; }
   .vt-hoja .iv-cfg .panel th, .vt-hoja .iv-cfg .panel td { background: var(--h-panel); }
   .vt-hoja .iv-cfg td, .vt-hoja .iv-cfg th { border-color: #DFDFDF; }
-  .vt-hoja .dias-t { background: var(--h-gris2); padding: 10px 12px; }
-  .vt-hoja .dias-t th { font-weight: 600; font-size: 11.5px; color: var(--h-txt2); background: var(--h-gris2); }
-  .vt-hoja .dias-t td, .vt-hoja .dias-t th { border-color: #DFDFDF; }
-  .vt-hoja .dias-t td.hab { color: var(--h-azul); font-weight: 700; }
   .vt-hoja .vb { margin-top: 14px; }
   .vt-hoja .vb-nom { background: var(--h-titulo); color: #FFFFFF; font-size: 14px; font-weight: 600; padding: 9px 14px; display: flex; align-items: center; gap: 12px; }
   .vt-hoja .vb-nom small { font-size: 11px; font-weight: 400; color: var(--h-gris-kpi); }
@@ -264,7 +263,6 @@
   .vt-hoja .vb tr.r td { color: var(--h-txt); font-weight: 600; }
   .vt-hoja .vb tr.r td.blue { background: var(--h-azulclaro); color: var(--h-azul); }
   .vt-hoja .vb td.futuro { background: var(--futuro); }
-  .vt-hoja .vb tr.r td.pos { color: var(--pos-claro); font-weight: 700; } .vt-hoja .vb tr.r td.neg { color: var(--neg-claro); font-weight: 700; }
 
   /* informe temporada */
   .vt-hoja .tp-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; padding: 12px; background: #FFFFFF; }
@@ -273,7 +271,6 @@
   .vt-hoja .tp-tab td { font-size: 12.5px; height: 28px; }
   .vt-hoja .tp-tab tr.tot td { background: var(--h-total); font-weight: 700; }
   .vt-hoja .tp-tab td.futuro { color: #B6BCC6; }
-  .vt-hoja .tp-tab .pos { color: var(--pos-claro); font-weight: 700; } .vt-hoja .tp-tab .neg { color: var(--neg-claro); font-weight: 700; }
   .vt-hoja .tp-rk td { font-weight: 600; }
   .vt-hoja .tp-rk td.med { text-align: left; }
   .vt-hoja .tp-rk tr.sinv td { color: var(--mal); }
