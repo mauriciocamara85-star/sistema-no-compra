@@ -678,73 +678,113 @@ function historiaMesCaja(cierre) {
     }).join('') + '</div>');
 }
 
+/* ── El período de Cajas (interfaz común): un mes, con su cierre y su resumen, o cualquier rango
+   (una semana, los últimos 30 días…), con sus días y los totales de esos días. ── */
+var _cajasRango = null;   // null: un mes (_mes); si no, el rango elegido { desde, hasta, atajo, unidad, texto }
+function finDeMes(m) { var d = new Date(+m.slice(0, 4), +m.slice(5), 0).getDate(); return m + '-' + (d < 10 ? '0' : '') + d; }
+function periodoCajasHTML() { return '<div class="cajas-per" id="cajasPer"></div>'; }
+function armarPeriodoCajas() {
+  var host = document.getElementById('cajasPer');
+  if (!host || !window.Interfaz) return;
+  Interfaz.periodo(host, {
+    inicial: _cajasRango ? (_cajasRango.atajo || { desde: _cajasRango.desde, hasta: _cajasRango.hasta }) : { desde: _mes + '-01', hasta: finDeMes(_mes) },
+    atajos: ['mes', 'mes-pasado', 'semana', 'semana-pasada', 'hoy', 'ayer', '30', '3m'],
+    alCambiar: function (r) {
+      if (r.unidad === 'mes') { _mes = r.desde.slice(0, 7); _cajasRango = null; } else _cajasRango = r;
+      verCajas();
+    }
+  });
+}
+
+/* Cada medio, un bloque (14/10, Mauricio: "segmentame bien eso"): su color suave y una línea que lo separa. */
+function colCaja(c, s, rl, dv, g) {
+  return celdaCaja(c, s, rl, 'g-' + g + ' ini') + celdaCaja(c, rl, s, 'g-' + g) + '<td class="n g-' + g + (Math.abs(Number(c[dv] || 0)) > 0.5 ? ' rojo' : '') + '">' + pesos(c[dv]) + '</td>';
+}
+function colsCaja(c, efvo) {
+  return colCaja(c, 'sis_mp', 'real_mp', 'desvio_mp', 'mp') + colCaja(c, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta', 'tarjeta') +
+         colCaja(c, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas', 'gocuotas') + colCaja(c, efvo, 'real_efectivo', 'desvio_efectivo', 'efectivo');
+}
+/** La tabla de los días (como la planilla) con la fila del total. */
+function tablaDiasCaja(cajas, tot) {
+  return '<div class="desliza"><table class="tabla-datos tabla-cajas"><thead><tr><th rowspan="2">Día</th>' +
+    GRUPOS_CAJA.map(function (m) { return '<th colspan="3" class="grupo g-' + m[0] + ' ini">' + m[1] + '</th>'; }).join('') + '<th rowspan="2" class="ini">Estado</th></tr>' +
+    '<tr>' + GRUPOS_CAJA.map(function (m) { return '<th class="n g-' + m[0] + ' ini">Cierre</th><th class="n g-' + m[0] + '">Real</th><th class="n g-' + m[0] + '">Desvío</th>'; }).join('') + '</tr></thead><tbody>' +
+    cajas.map(function (c) {
+      return '<tr data-caja="' + esc(c.id) + '" style="cursor:pointer"><td><b>' + esc(diaMes(c.fecha)) + '</b></td>' + colsCaja(c, 'sis_saldo_final_efvo') +
+        '<td class="ini">' + (c.estado === 'controlada' ? '<span class="est listo">Controlada</span>' : c.estado === 'cargada' ? '<span class="est sorpresa">Sin controlar</span>' : '<span class="est pendiente">Sin cargar</span>') +
+        ((c.alertas || []).length ? ' <span class="est vencido">' + c.alertas.length + '</span>' : '') +
+        (c.diferencia_persona ? ' <span class="est vencido" title="' + esc('Diferencia a cargo de ' + (c.diferencia_persona_nombre || '—') + ': ' + pesos(c.diferencia_monto)) + '">A cargo</span>' : '') + '</td></tr>';
+    }).join('') +
+    (tot ? '<tr class="fila-total"><td><b>Total</b></td>' + colsCaja(tot, 'sis_efectivo') + '<td class="ini"></td></tr>' : '') +
+    '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos.</p>';
+}
+/** (SQL 124) Las diferencias que no tuvieron arreglo: a cargo de quién, en el período. */
+function aCargoCajaHTML(cajas, cuando) {
+  var aCargo = {};
+  cajas.forEach(function (x) {
+    if (!x.diferencia_persona || !(Number(x.diferencia_monto) > 0)) return;
+    var k = x.diferencia_persona_nombre || '—', a = aCargo[k] = aCargo[k] || { total: 0, dias: [] };
+    a.total += Number(x.diferencia_monto); a.dias.push(diaMes(x.fecha) + ' (' + pesos(x.diferencia_monto) + ')');
+  });
+  if (!Object.keys(aCargo).length) return '';
+  return '<h3 class="cierre-titulo">Diferencias a cargo en ' + esc(cuando) + '</h3><div class="desliza"><table class="tabla-datos a-cargo"><thead><tr><th>Persona</th><th class="n">Total</th><th>Días</th></tr></thead><tbody>' +
+    Object.keys(aCargo).sort().map(function (k) { return '<tr><td><b>' + esc(k) + '</b></td><td class="n rojo">' + pesos(aCargo[k].total) + '</td><td>' + esc(aCargo[k].dias.join(' · ')) + '</td></tr>'; }).join('') +
+    '</tbody></table></div><p class="bajada" style="margin-top:8px">Las anota el supervisor al dar la caja por controlada, cuando la diferencia no tuvo arreglo.</p>';
+}
+/** Los totales de unos días (para un rango que no es un mes): lo mismo que da la base para el mes. */
+function totalCajas(cajas) {
+  var t = { dias_sin_cargar: 0, dias_sin_controlar: 0, dias_con_alertas: 0 };
+  ['sis_mp', 'real_mp', 'desvio_mp', 'sis_tarjeta', 'real_lote', 'desvio_tarjeta', 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas', 'real_efectivo', 'desvio_efectivo'].forEach(function (k) {
+    var hay = cajas.filter(function (c) { return c[k] != null; });
+    t[k] = hay.length ? hay.reduce(function (a, c) { return a + Number(c[k]); }, 0) : null;
+  });
+  var se = cajas.filter(function (c) { return c.sis_saldo_final_efvo != null; });
+  t.sis_efectivo = se.length ? se.reduce(function (a, c) { return a + Number(c.sis_saldo_final_efvo); }, 0) : null;
+  cajas.forEach(function (c) {
+    if (c.estado === 'pendiente') t.dias_sin_cargar++;
+    if (c.estado === 'cargada') t.dias_sin_controlar++;
+    if ((c.alertas || []).length) t.dias_con_alertas++;
+  });
+  return t;
+}
+function engancharDiasCaja(c, cajas) {
+  var porId = {};
+  cajas.forEach(function (x) { porId[x.id] = x; });
+  c.querySelectorAll('[data-caja]').forEach(function (tr) { tr.onclick = function () { ventanaCaja(porId[tr.dataset.caja]); }; });
+}
+
 function verCajas() {
   var meses = mesesCajas(), hoyMes = meses[0];
-  if (!_mes || meses.indexOf(_mes) < 0) _mes = hoyMes;
+  if (!_mes) _mes = hoyMes;
   /* Con "Todos los locales", el local de arriba no corresponde: se esconde. */
   var sel = document.getElementById('selLocal');
   if (sel) sel.style.display = _cajasTodos && _locales.length > 1 ? 'none' : '';
   if (_cajasTodos && _locales.length > 1) { verCajasTodos(meses); return; }
+  if (_cajasRango) { verCajasRango(); return; }
   var L = valor(_local.id);
+  /* El mes elegido puede ser más viejo que los 6 del resumen: se pide también. */
+  var mesesQ = meses.indexOf(_mes) < 0 ? meses.concat([_mes]) : meses;
   Promise.all([
     leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&mes=eq.' + _mes + '&order=fecha.asc'),
-    leer('/orden_v_cajas_mes?select=*&local_id=eq.' + L + '&mes=in.(' + meses.join(',') + ')'),
+    leer('/orden_v_cajas_mes?select=*&local_id=eq.' + L + '&mes=in.(' + mesesQ.join(',') + ')'),
     leer('/orden_config?select=caja_activa&local_id=eq.' + L),
-    leerCierres('/orden_v_cajas_meses?select=*&local_id=eq.' + L + '&mes=in.(' + meses.join(',') + ')'),
+    leerCierres('/orden_v_cajas_meses?select=*&local_id=eq.' + L + '&mes=in.(' + mesesQ.join(',') + ')'),
     /* El mes del día de caja: el día 1 antes de que abra el local, todavía es el anterior. */
     llamar('orden_caja_mes_actual', { p_local: _local.id }).catch(function () { return null; })
   ]).then(function (r) {
-    if (_solapa !== 'cajas' || _cajasTodos) return;
+    if (_solapa !== 'cajas' || _cajasTodos || _cajasRango) return;
     var cajas = r[0] || [], porMes = {}, activa = !!(r[2] && r[2][0] && r[2][0].caja_activa), cierres = {};
     (r[1] || []).forEach(function (x) { porMes[x.mes] = x; });
     r[3].filas.forEach(function (x) { cierres[x.mes] = x; });
     var mesCaja = /^\d{4}-\d{2}$/.test(r[4] || '') ? r[4] : hoyMes;
     var tot = porMes[_mes], cierre = cierres[_mes], terminado = _mes < mesCaja;
-    /* Cada medio, un bloque (14/10, Mauricio: "segmentame bien eso"): su color suave y una línea que lo separa. */
-    var col = function (c, s, rl, dv, g) {
-      return celdaCaja(c, s, rl, 'g-' + g + ' ini') + celdaCaja(c, rl, s, 'g-' + g) + '<td class="n g-' + g + (Math.abs(Number(c[dv] || 0)) > 0.5 ? ' rojo' : '') + '">' + pesos(c[dv]) + '</td>';
-    };
-    var cols = function (c, efvo) {
-      return col(c, 'sis_mp', 'real_mp', 'desvio_mp', 'mp') + col(c, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta', 'tarjeta') +
-             col(c, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas', 'gocuotas') + col(c, efvo, 'real_efectivo', 'desvio_efectivo', 'efectivo');
-    };
-    /* La marca de cada mes: ✓ controlado; un punto si terminó, tiene cajas y falta cerrarlo. */
-    var marca = function (m) {
-      if (cierres[m] && cierres[m].estado === 'controlado') return ' <i class="mes-ok" title="Controlado">✓</i>';
-      if (m < mesCaja && porMes[m] && !r[3].falta) return ' <i class="mes-falta" title="Falta cerrar"></i>';
-      return '';
-    };
     var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → Horarios y funciones).</div>') +
       (_locales.length > 1 ? '<div class="solapas chicas cajas-vista"><button data-vista="local" class="activa">Un local</button><button data-vista="todos">Todos los locales</button></div>' : '') +
-      '<div class="solapas chicas">' + meses.map(function (m) { return '<button data-mes="' + m + '" class="' + (m === _mes ? 'activa' : '') + '">' + m.slice(5) + '/' + m.slice(0, 4) + marca(m) + '</button>'; }).join('') + '</div>' +
+      periodoCajasHTML() +
       (tot ? '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div><div class="numero"><span>Días con alertas</span><b>' + tot.dias_con_alertas + '</b></div><div class="numero"><span>Desvío del mes (efectivo)</span><b>' + pesos(tot.desvio_efectivo) + '</b></div></div>' : '') +
       tarjetaCierre(cierre, tot, terminado, r[3].falta, _mes < hoyMes);
     if (!cajas.length) html += '<div class="vacio">No hay cajas cargadas en este mes.</div>';
-    else {
-      html += '<div class="desliza"><table class="tabla-datos tabla-cajas"><thead><tr><th rowspan="2">Día</th>' +
-        GRUPOS_CAJA.map(function (m) { return '<th colspan="3" class="grupo g-' + m[0] + ' ini">' + m[1] + '</th>'; }).join('') + '<th rowspan="2" class="ini">Estado</th></tr>' +
-        '<tr>' + GRUPOS_CAJA.map(function (m) { return '<th class="n g-' + m[0] + ' ini">Cierre</th><th class="n g-' + m[0] + '">Real</th><th class="n g-' + m[0] + '">Desvío</th>'; }).join('') + '</tr></thead><tbody>' +
-        cajas.map(function (c) {
-          return '<tr data-caja="' + esc(c.id) + '" style="cursor:pointer"><td><b>' + esc(diaMes(c.fecha)) + '</b></td>' + cols(c, 'sis_saldo_final_efvo') +
-            '<td class="ini">' + (c.estado === 'controlada' ? '<span class="est listo">Controlada</span>' : c.estado === 'cargada' ? '<span class="est sorpresa">Sin controlar</span>' : '<span class="est pendiente">Sin cargar</span>') +
-            ((c.alertas || []).length ? ' <span class="est vencido">' + c.alertas.length + '</span>' : '') +
-            (c.diferencia_persona ? ' <span class="est vencido" title="' + esc('Diferencia a cargo de ' + (c.diferencia_persona_nombre || '—') + ': ' + pesos(c.diferencia_monto)) + '">A cargo</span>' : '') + '</td></tr>';
-        }).join('') +
-        (tot ? '<tr class="fila-total"><td><b>Total</b></td>' + cols(tot, 'sis_efectivo') + '<td class="ini"></td></tr>' : '') +
-        '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos.</p>';
-      /* (SQL 124) Las diferencias que no tuvieron arreglo: a cargo de quién, en el mes. */
-      var aCargo = {};
-      cajas.forEach(function (x) {
-        if (!x.diferencia_persona || !(Number(x.diferencia_monto) > 0)) return;
-        var k = x.diferencia_persona_nombre || '—', a = aCargo[k] = aCargo[k] || { total: 0, dias: [] };
-        a.total += Number(x.diferencia_monto); a.dias.push(diaMes(x.fecha) + ' (' + pesos(x.diferencia_monto) + ')');
-      });
-      if (Object.keys(aCargo).length) {
-        html += '<h3 class="cierre-titulo">Diferencias a cargo en ' + esc(nombreMes(_mes)) + '</h3><div class="desliza"><table class="tabla-datos a-cargo"><thead><tr><th>Persona</th><th class="n">Total</th><th>Días</th></tr></thead><tbody>' +
-          Object.keys(aCargo).sort().map(function (k) { return '<tr><td><b>' + esc(k) + '</b></td><td class="n rojo">' + pesos(aCargo[k].total) + '</td><td>' + esc(aCargo[k].dias.join(' · ')) + '</td></tr>'; }).join('') +
-          '</tbody></table></div><p class="bajada" style="margin-top:8px">Las anota el supervisor al dar la caja por controlada, cuando la diferencia no tuvo arreglo.</p>';
-      }
-    }
+    else html += tablaDiasCaja(cajas, tot) + aCargoCajaHTML(cajas, nombreMes(_mes));
     /* Resumen por mes, como la parte de arriba de la planilla: del más viejo al más nuevo. */
     var conDatos = meses.slice().reverse().filter(function (m) { return porMes[m]; });
     if (conDatos.length) {
@@ -768,18 +808,38 @@ function verCajas() {
     }
     var c = document.getElementById('cuerpo');
     c.innerHTML = html;
-    c.querySelectorAll('[data-mes]').forEach(function (b) { b.onclick = function () { _mes = b.dataset.mes; verCajas(); }; });
-    c.querySelectorAll('[data-ir-mes]').forEach(function (tr) { tr.onclick = function () { _mes = tr.dataset.irMes; verCajas(); try { window.scrollTo(0, 0); } catch (e) {} }; });
+    armarPeriodoCajas();
+    c.querySelectorAll('[data-ir-mes]').forEach(function (tr) { tr.onclick = function () { _mes = tr.dataset.irMes; _cajasRango = null; verCajas(); try { window.scrollTo(0, 0); } catch (e) {} }; });
     c.querySelectorAll('[data-vista]').forEach(function (b) { b.onclick = function () { _cajasTodos = b.dataset.vista === 'todos'; verCajas(); }; });
     var bc = document.getElementById('cajaCerrar'), br = document.getElementById('cajaReabrir'), bh = document.getElementById('cajaHistoria');
     if (bc) bc.onclick = function () { cerrarMesCaja(cajas, tot); };
     if (br) br.onclick = reabrirMesCaja;
     if (bh) bh.onclick = function () { historiaMesCaja(cierre); };
-    var porId = {};
-    cajas.forEach(function (x) { porId[x.id] = x; });
-    c.querySelectorAll('[data-caja]').forEach(function (tr) {
-      tr.onclick = function () { ventanaCaja(porId[tr.dataset.caja]); };
-    });
+    engancharDiasCaja(c, cajas);
+  }).catch(function (e) { error(e, verCajas); });
+}
+
+/* Un rango que no es un mes (una semana, los últimos 30 días…): los días y sus totales. El cierre es por mes. */
+function verCajasRango() {
+  var L = valor(_local.id), rg = _cajasRango;
+  Promise.all([
+    leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc'),
+    leer('/orden_config?select=caja_activa&local_id=eq.' + L)
+  ]).then(function (r) {
+    if (_solapa !== 'cajas' || _cajasTodos || _cajasRango !== rg) return;
+    var cajas = r[0] || [], activa = !!(r[1] && r[1][0] && r[1][0].caja_activa), tot = totalCajas(cajas);
+    var html = (activa ? '' : '<div class="nota">El control de caja está apagado en este local (se prende en Ajustes → Horarios y funciones).</div>') +
+      (_locales.length > 1 ? '<div class="solapas chicas cajas-vista"><button data-vista="local" class="activa">Un local</button><button data-vista="todos">Todos los locales</button></div>' : '') +
+      periodoCajasHTML() +
+      '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div>' +
+        '<div class="numero"><span>Días con alertas</span><b>' + tot.dias_con_alertas + '</b></div><div class="numero"><span>Desvío (efectivo)</span><b>' + pesos(tot.desvio_efectivo) + '</b></div></div>' +
+      '<p class="bajada">El cierre se da por mes: para darlo por controlado, elegí un mes.</p>' +
+      (cajas.length ? tablaDiasCaja(cajas, tot) + aCargoCajaHTML(cajas, rg.texto.toLowerCase()) : '<div class="vacio">No hay cajas cargadas en este período.</div>');
+    var c = document.getElementById('cuerpo');
+    c.innerHTML = html;
+    armarPeriodoCajas();
+    c.querySelectorAll('[data-vista]').forEach(function (b) { b.onclick = function () { _cajasTodos = b.dataset.vista === 'todos'; verCajas(); }; });
+    engancharDiasCaja(c, cajas);
   }).catch(function (e) { error(e, verCajas); });
 }
 
@@ -892,6 +952,7 @@ function engancharReleer(v, k) {
 
 /* Todos los locales en un mes: los desvíos y si está cerrado. Tocar uno abre sus días. */
 function verCajasTodos(meses) {
+  if (_cajasRango) { verCajasTodosRango(); return; }
   var hoyMes = meses[0];
   Promise.all([
     leer('/orden_v_cajas_mes?select=*&mes=eq.' + _mes),
@@ -899,7 +960,7 @@ function verCajasTodos(meses) {
     /* El mes del día de caja de cada local (el día 1 antes de que abra, el mes pasado sigue en curso). */
     Promise.all(_locales.map(function (l) { return llamar('orden_caja_mes_actual', { p_local: l.id }).catch(function () { return null; }); }))
   ]).then(function (r) {
-    if (_solapa !== 'cajas' || !_cajasTodos) return;
+    if (_solapa !== 'cajas' || !_cajasTodos || _cajasRango) return;
     var porLocal = {}, cierres = {}, mesCaja = {};
     (r[0] || []).forEach(function (x) { porLocal[x.local_id] = x; });
     r[1].filas.forEach(function (x) { cierres[x.local_id] = x; });
@@ -911,7 +972,7 @@ function verCajasTodos(meses) {
     var efvo = conCajas.reduce(function (a, l) { return a + Number(porLocal[l.id].desvio_efectivo || 0); }, 0);
     var celda = function (t, k) { var d = Number(t[k] || 0); return '<td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td>'; };
     var html = '<div class="solapas chicas cajas-vista"><button data-vista="local">Un local</button><button data-vista="todos" class="activa">Todos los locales</button></div>' +
-      '<div class="solapas chicas">' + meses.map(function (m) { return '<button data-mes="' + m + '" class="' + (m === _mes ? 'activa' : '') + '">' + m.slice(5) + '/' + m.slice(0, 4) + '</button>'; }).join('') + '</div>' +
+      periodoCajasHTML() +
       (r[1].falta ? '<div class="nota">Para dar los meses por controlados falta correr el SQL 115 en Supabase.</div>' : '') +
       '<div class="numeros"><div class="numero"><span>Locales con cajas</span><b>' + conCajas.length + '</b></div>' +
         '<div class="numero"><span>' + (terminado ? 'Falta cerrar' : 'El mes sigue en curso') + '</span><b>' + (terminado ? falta : '—') + '</b></div>' +
@@ -930,7 +991,46 @@ function verCajasTodos(meses) {
     }
     var c = document.getElementById('cuerpo');
     c.innerHTML = html;
-    c.querySelectorAll('[data-mes]').forEach(function (b) { b.onclick = function () { _mes = b.dataset.mes; verCajas(); }; });
+    armarPeriodoCajas();
+    c.querySelectorAll('[data-vista]').forEach(function (b) { b.onclick = function () { _cajasTodos = b.dataset.vista === 'todos'; verCajas(); }; });
+    c.querySelectorAll('[data-ir]').forEach(function (tr) { tr.onclick = function () { _cajasTodos = false; elegirLocal(tr.dataset.ir); ir('cajas'); }; });
+  }).catch(function (e) { error(e, verCajas); });
+}
+
+/* Todos los locales en un rango que no es un mes: los desvíos de esos días, por local. */
+function verCajasTodosRango() {
+  var rg = _cajasRango, K = ['desvio_mp', 'desvio_tarjeta', 'desvio_gocuotas', 'desvio_efectivo'];
+  leer('/orden_v_cajas?select=local_id,estado,' + K.join(',') + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta).then(function (filas) {
+    if (_solapa !== 'cajas' || !_cajasTodos || _cajasRango !== rg) return;
+    var porLocal = {};
+    (filas || []).forEach(function (x) {
+      var t = porLocal[x.local_id] = porLocal[x.local_id] || { desvio_mp: 0, desvio_tarjeta: 0, desvio_gocuotas: 0, desvio_efectivo: 0, dias_sin_cargar: 0, dias_sin_controlar: 0 };
+      K.forEach(function (k) { t[k] += Number(x[k] || 0); });
+      if (x.estado === 'pendiente') t.dias_sin_cargar++;
+      if (x.estado === 'cargada') t.dias_sin_controlar++;
+    });
+    var conCajas = _locales.filter(function (l) { return porLocal[l.id]; });
+    var efvo = conCajas.reduce(function (a, l) { return a + porLocal[l.id].desvio_efectivo; }, 0);
+    var celda = function (t, k) { var d = Number(t[k] || 0); return '<td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td>'; };
+    var html = '<div class="solapas chicas cajas-vista"><button data-vista="local">Un local</button><button data-vista="todos" class="activa">Todos los locales</button></div>' +
+      periodoCajasHTML() +
+      '<div class="numeros"><div class="numero"><span>Locales con cajas</span><b>' + conCajas.length + '</b></div>' +
+        '<div class="numero"><span>Desvío (efectivo, todos)</span><b>' + pesos(efvo) + '</b></div></div>' +
+      '<p class="bajada">El cierre se da por mes: para ver cuáles faltan cerrar, elegí un mes.</p>';
+    if (!conCajas.length) html += '<div class="vacio">Ningún local tiene cajas en este período.</div>';
+    else {
+      html += '<div class="desliza"><table class="tabla-datos"><thead><tr><th>Local</th><th class="n">Mercado Pago</th><th class="n">Tarjeta</th><th class="n">Go Cuotas</th><th class="n">Efectivo</th>' +
+        '<th class="n">Sin cargar</th><th class="n">Sin controlar</th></tr></thead><tbody>' +
+        conCajas.map(function (l) {
+          var t = porLocal[l.id];
+          return '<tr data-ir="' + esc(l.id) + '" style="cursor:pointer"><td><b>' + esc(l.nombre) + '</b></td>' + celda(t, 'desvio_mp') + celda(t, 'desvio_tarjeta') + celda(t, 'desvio_gocuotas') + celda(t, 'desvio_efectivo') +
+            '<td class="n">' + t.dias_sin_cargar + '</td><td class="n">' + t.dias_sin_controlar + '</td></tr>';
+        }).join('') +
+        '</tbody></table></div><p class="bajada" style="margin-top:8px">Los desvíos de esos días (cierre − real; positivo: falta plata). Tocá un local para ver sus días.</p>';
+    }
+    var c = document.getElementById('cuerpo');
+    c.innerHTML = html;
+    armarPeriodoCajas();
     c.querySelectorAll('[data-vista]').forEach(function (b) { b.onclick = function () { _cajasTodos = b.dataset.vista === 'todos'; verCajas(); }; });
     c.querySelectorAll('[data-ir]').forEach(function (tr) { tr.onclick = function () { _cajasTodos = false; elegirLocal(tr.dataset.ir); ir('cajas'); }; });
   }).catch(function (e) { error(e, verCajas); });
@@ -1041,16 +1141,8 @@ function editor(cfg) {
    PRODUCTOS TESTIGO (SQL 102): se programa acá; lo cargan los locales en la app
    ════════════════════════════════════════════════════════════════════════ */
 
-var _semanaTestigo = null, _testigoVista = 'semana', _testigoPeriodo = 'mes', _testigoLocal = '';
-/* Las semanas para elegir: las 9 que vienen (se programa hasta 60 días antes), ésta y las 25 de antes
-   (medio año), de la más nueva a la más vieja. */
-function semanasTestigo() {
-  var r = [];
-  for (var j = 9; j >= 1; j--) r.push(sumarDias(lunesAR(), 7 * j));
-  for (var i = 0; i < 26; i++) r.push(sumarDias(lunesAR(), -7 * i));
-  if (_semanaTestigo && r.indexOf(_semanaTestigo) < 0) { r.push(_semanaTestigo); r.sort().reverse(); }
-  return r;
-}
+/* _testigoRango: el período de las estadísticas (interfaz común); null = "Este mes". */
+var _semanaTestigo = null, _testigoVista = 'semana', _testigoRango = null, _testigoLocal = '';
 /* Arriba de Productos testigo: "Por semana" o "Estadísticas". */
 function vistaTestigoHTML() {
   return '<div class="solapas chicas testigo-vista"><button data-tvista="semana" class="' + (_testigoVista === 'semana' ? 'activa' : '') + '">Por semana</button>' +
@@ -1067,7 +1159,6 @@ function verTestigo() {
   if (_testigoVista === 'stats') { verTestigoStats(); return; }
   _semanaTestigo = _semanaTestigo || lunesAR();
   var L = valor(_local.id), c = document.getElementById('cuerpo'), hoy = hoyAR(), pedido = ++_pedidoTestigo;
-  var semanas = semanasTestigo();
   /* Sólo dibuja si sigue siendo lo último que se pidió (y en "Por semana"): una respuesta lenta no pisa las estadísticas. */
   var vale = function () { return pedido === _pedidoTestigo && _solapa === 'testigo' && _testigoVista === 'semana'; };
   Promise.all([
@@ -1081,27 +1172,16 @@ function verTestigo() {
     var quien = sem && sem.cargada_por ? leer('/orden_personas?select=nombre,inicial&id=eq.' + valor(sem.cargada_por)).catch(function () { return []; }) : Promise.resolve([]);
     return Promise.all([difs, items, quien]).then(function (x) {
       if (!vale()) return;
-      dibujarTestigoAdmin(c, semanas, sem, todas, x[0] || [], x[1] || [], (x[2] || [])[0], hoy);
+      dibujarTestigoAdmin(c, sem, todas, x[0] || [], x[1] || [], (x[2] || [])[0], hoy);
     });
   }).catch(function (e) { if (vale()) error(e, verTestigo); });
 }
 
-function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
-  /* Las semanas en un desplegable, agrupadas por mes, con ‹ › para ir de a una. */
-  var idx = semanas.indexOf(_semanaTestigo), grupos = [], esta = lunesAR(), viene = sumarDias(lunesAR(), 7);
-  semanas.forEach(function (w) {
-    var m = w.slice(0, 7), g = grupos[grupos.length - 1];
-    if (!g || g.m !== m) grupos.push(g = { m: m, ws: [] });
-    g.ws.push(w);
-  });
+function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
+  /* La semana, con el selector de período común (interfaz): ‹ › de a una semana; en el calendario,
+     cualquier día lleva a su semana (de lunes a domingo). */
   var html = vistaTestigoHTML() + (soloMira() ? '' : '<div class="imp-mapa-acc"><button class="boton chico lima" id="programar">Programar un control</button></div>') +
-    '<div class="testigo-semanas"><button class="boton chico" data-mover="1" aria-label="Semana anterior"' + (idx >= semanas.length - 1 ? ' disabled' : '') + '>‹</button>' +
-    '<select class="imp-sel" id="selSemana" aria-label="Semana">' + grupos.map(function (g) {
-      return '<optgroup label="' + esc(nombreMes(g.m)) + '">' + g.ws.map(function (w) {
-        return '<option value="' + w + '"' + (w === _semanaTestigo ? ' selected' : '') + '>Semana del ' + diaMes(w) + (w === esta ? ' (esta)' : w === viene ? ' (la que viene)' : '') + '</option>';
-      }).join('') + '</optgroup>';
-    }).join('') + '</select>' +
-    '<button class="boton chico" data-mover="-1" aria-label="Semana siguiente"' + (idx <= 0 ? ' disabled' : '') + '>›</button></div>' +
+    '<div class="testigo-semanas" id="tSemanaPer"></div>' +
     '<p class="bajada">Los locales cargan los números del sistema y la cantidad real, con un video por producto. Diferencia = Stock sistema − Cantidad real (positivo: falta). ' +
     'Desvío = la diferencia sobre la cantidad enviada. Acá se puede corregir cualquier casillero.</p>';
 
@@ -1145,11 +1225,14 @@ function dibujarTestigoAdmin(c, semanas, sem, todas, difs, items, quien, hoy) {
   c.innerHTML = html;
 
   enganchaVistaTestigo(c);
-  var ss = document.getElementById('selSemana');
-  if (ss) ss.onchange = function () { _semanaTestigo = ss.value; verTestigo(); };
-  c.querySelectorAll('[data-mover]').forEach(function (b) {
-    b.onclick = function () { var w = semanas[semanas.indexOf(_semanaTestigo) + Number(b.dataset.mover)]; if (w) { _semanaTestigo = w; verTestigo(); } };
-  });
+  var hs = document.getElementById('tSemanaPer');
+  if (hs && window.Interfaz) {
+    Interfaz.periodo(hs, {
+      inicial: { desde: _semanaTestigo, hasta: sumarDias(_semanaTestigo, 6) },
+      atajos: ['semana', 'semana-pasada'],
+      alCambiar: function (r) { _semanaTestigo = Interfaz.fecha.lunes(r.desde); verTestigo(); }
+    });
+  }
   c.querySelectorAll('[data-local]').forEach(function (b) {
     b.onclick = function () { if (b.dataset.local !== _local.id) { elegirLocal(b.dataset.local); ir('testigo'); } };
   });
@@ -1203,10 +1286,17 @@ function mesesAtras(n) {
   for (var i = 0; i < n; i++) { r.push(a + '-' + (m < 10 ? '0' : '') + m); m--; if (!m) { m = 12; a--; } }
   return r;
 }
-function periodosTestigo() {
-  var ms = mesesAtras(12);
-  return [['mes', 'Este mes', [ms[0]]], ['pasado', 'El mes pasado', [ms[1]]], ['3m', 'Los últimos 3 meses', ms.slice(0, 3)], ['6m', 'Los últimos 6 meses', ms.slice(0, 6)]]
-    .concat(ms.slice(2).map(function (m) { return ['m:' + m, nombreMes(m), [m]]; }));
+/* Los meses ('AAAA-MM') que toca un rango de fechas, del más viejo al más nuevo. */
+function mesesDeRango(desde, hasta) {
+  var r = [], a = +desde.slice(0, 4), m = +desde.slice(5, 7), fa = +hasta.slice(0, 4), fm = +hasta.slice(5, 7);
+  while ((a < fa || (a === fa && m <= fm)) && r.length < 120) { r.push(a + '-' + (m < 10 ? '0' : '') + m); m++; if (m > 12) { m = 1; a++; } }
+  return r;
+}
+/* El período de las estadísticas (interfaz común). Es por mes: si eligen otra cosa, cuentan los meses que toca. */
+function rangoTestigo() {
+  if (_testigoRango) return _testigoRango;
+  var m = mesesAtras(1)[0];
+  return { desde: m + '-01', hasta: hoyAR(), atajo: 'mes', unidad: 'mes', texto: nombreMes(m) };
 }
 function sumarTestigo(filas) {
   return filas.reduce(function (a, f) {
@@ -1222,8 +1312,12 @@ function claseFaltante(fr) { return fr == null ? '' : fr === 0 ? 'pct-bien' : fr
 var _pedidoTestigo = 0;
 function verTestigoStats() {
   var c = document.getElementById('cuerpo'), pedido = ++_pedidoTestigo;
-  var pers = periodosTestigo(), per = pers.filter(function (p) { return p[0] === _testigoPeriodo; })[0] || pers[0];
-  var meses = per[2], ult6 = mesesAtras(6);
+  var rg = rangoTestigo(), ult6 = mesesAtras(6);
+  var meses = mesesDeRango(rg.desde, rg.hasta), recortado = meses.length > 30;
+  if (recortado) meses = meses.slice(-30);   // la base acepta hasta 36 meses en total (con los 6 del mes a mes)
+  /* ¿Son meses enteros (hasta hoy)? Si no, se aclara que se cuentan los meses que toca. */
+  var enteros = rg.desde.slice(8) === '01' && (rg.hasta === finDeMes(rg.hasta.slice(0, 7)) || rg.hasta === hoyAR());
+  var per = [null, rg.texto.charAt(0).toLowerCase() + rg.texto.slice(1)];
   if (_locales.length < 2) _testigoLocal = _local.id;
   var todos = _locales.length > 1 && !_testigoLocal;
   llamar('testigo_estadisticas', { p_meses: ult6, p_periodo: meses, p_local: _testigoLocal || null }).then(function (x) { return x || { meses: [], productos: [] }; }, function (e) {
@@ -1243,12 +1337,12 @@ function verTestigoStats() {
     var enPer = (r.meses || []).filter(function (f) { return meses.indexOf(f.mes) > -1 && delLocal(f); });
     var tot = sumarTestigo(enPer), ff = fraccion(tot.con_faltante, tot.productos);
     var html = vistaTestigoHTML() +
-      '<div class="testigo-filtros"><label class="campo"><span>Período</span><select class="imp-sel" id="tPeriodo">' + pers.map(function (p) {
-        return '<option value="' + p[0] + '"' + (p[0] === per[0] ? ' selected' : '') + '>' + esc(p[1]) + '</option>';
-      }).join('') + '</select></label>' +
+      '<div class="testigo-filtros"><div class="campo"><span>Período</span><div id="tPer" class="testigo-per"></div></div>' +
       (_locales.length > 1 ? '<label class="campo"><span>Local</span><select class="imp-sel" id="tLocal"><option value="">Todos los locales</option>' + todosLos.map(function (l) {
         return '<option value="' + esc(l.id) + '"' + (l.id === _testigoLocal ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
-      }).join('') + '</select></label>' : '') + '</div>';
+      }).join('') + '</select></label>' : '') + '</div>' +
+      (!enteros || recortado ? '<p class="bajada-chica">Las estadísticas son por mes: se cuentan ' + (meses.length === 1 ? 'el mes entero de ' + esc(nombreMes(meses[0]).toLowerCase())
+        : 'los meses enteros de ' + esc(nombreMes(meses[0]).toLowerCase()) + ' a ' + esc(nombreMes(meses[meses.length - 1]).toLowerCase())) + (recortado ? ' (hasta 30 meses)' : '') + '.</p>' : '');
     if (r.falta) {
       html += '<div class="nota">Para ver las estadísticas falta correr el SQL 117 en Supabase.</div>';
     } else {
@@ -1321,8 +1415,14 @@ function verTestigoStats() {
     }
     c.innerHTML = html;
     enganchaVistaTestigo(c);
-    var sp = document.getElementById('tPeriodo'), sl = document.getElementById('tLocal'), vs = document.getElementById('tVerSemanas');
-    if (sp) sp.onchange = function () { _testigoPeriodo = sp.value; verTestigoStats(); };
+    var hp = document.getElementById('tPer'), sl = document.getElementById('tLocal'), vs = document.getElementById('tVerSemanas');
+    if (hp && window.Interfaz) {
+      Interfaz.periodo(hp, {
+        inicial: _testigoRango ? (_testigoRango.atajo || { desde: _testigoRango.desde, hasta: _testigoRango.hasta }) : 'mes',
+        atajos: ['mes', 'mes-pasado', '3m', '6m', 'anio'], hastaHoy: true,
+        alCambiar: function (r) { _testigoRango = r; verTestigoStats(); }
+      });
+    }
     if (sl) sl.onchange = function () { _testigoLocal = sl.value; verTestigoStats(); };
     c.querySelectorAll('[data-tlocal]').forEach(function (tr) { tr.onclick = function () { _testigoLocal = tr.dataset.tlocal; verTestigoStats(); }; });
     if (vs) vs.onclick = function () {
