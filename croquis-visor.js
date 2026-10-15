@@ -890,6 +890,19 @@ function miniLimpiar(db) {
     };
   } catch (e) {}
 }
+/** ¿La foto es horizontal (más ancha que alta)? Desde el 15/10 se puede sacar con el teléfono acostado. Se mide una vez
+    por dirección. */
+var _visorHoriz = {};
+function visorHorizontal(u) {
+  if (!u) return Promise.resolve(false);
+  if (!_visorHoriz[u]) _visorHoriz[u] = new Promise(function (ok) {
+    var i = new Image();
+    i.onload = function () { ok(i.naturalWidth > i.naturalHeight * 1.05); };
+    i.onerror = function () { ok(false); };
+    i.src = u;
+  });
+  return _visorHoriz[u];
+}
 function visorFotos(V) {
   V.mundo.querySelectorAll('.cv-caja[data-mod]').forEach(function (c) {
     var e = V.estado[c.dataset.mod];
@@ -898,6 +911,8 @@ function visorFotos(V) {
       if (!u) { c.classList.add('foto-no'); return; }
       c.querySelectorAll('.cv-foto-cara').forEach(function (f) { f.style.backgroundImage = 'url("' + u + '")'; });
       c.classList.add('foto-lista');
+      /* Horizontal: entera en la cara del módulo (sin cortarle los costados). */
+      visorHorizontal(u).then(function (h) { c.querySelectorAll('.cv-foto-cara').forEach(function (f) { f.classList.toggle('cv-horizontal', h); }); });
     });
   });
 }
@@ -935,7 +950,11 @@ function visorPrevia(V) {
         '<em>' + (V.c3 && V.c3.caminando() ? 'Clic para ir hasta ahí' : 'Clic para abrirlo') + '</em></div>';
     var f = el.querySelector('.cv-previa-foto');
     if (e.foto_path) {
-      miniaturaFoto(e.foto_path).then(function (u) { if (u && el.dataset.mod === m.id && !f.classList.contains('cv-nitida')) f.style.backgroundImage = 'url("' + u + '")'; });
+      miniaturaFoto(e.foto_path).then(function (u) {
+        if (!u || el.dataset.mod !== m.id || f.classList.contains('cv-nitida')) return;
+        f.style.backgroundImage = 'url("' + u + '")';
+        visorHorizontal(u).then(function (h) { if (el.dataset.mod === m.id) { f.classList.toggle('cv-horizontal', h); ubicar(); } });
+      });
       nitida = setTimeout(function () { if (el.dataset.mod === m.id) visorCargarFoto(f, e.foto_path); }, 650);
     }
     el.hidden = false;
@@ -1402,16 +1421,25 @@ function visorPie(ts, quien) { return ts ? textoHace(ts) + ' · ' + diaMes(ts) +
 function visorCargarFoto(div, ruta, sinMiniatura) {
   if (!div) return;
   div.dataset.ruta = ruta;
-  div.classList.remove('cv-nitida', 'cv-foto-falla');
+  div.classList.remove('cv-nitida', 'cv-foto-falla', 'cv-horizontal');
   div.textContent = '';
   var sigue = function () { return div.dataset.ruta === ruta; };
   var falla = function () { if (!sigue()) return; div.style.backgroundImage = ''; div.classList.add('cv-foto-falla'); div.textContent = 'Esta foto ya no está guardada.'; };
-  if (!sinMiniatura) miniaturaFoto(ruta).then(function (u) { if (u && sigue() && !div.classList.contains('cv-nitida')) div.style.backgroundImage = 'url("' + u + '")'; });
+  if (!sinMiniatura) miniaturaFoto(ruta).then(function (u) {
+    if (!u || !sigue() || div.classList.contains('cv-nitida')) return;
+    div.style.backgroundImage = 'url("' + u + '")';
+    visorHorizontal(u).then(function (h) { if (sigue() && !div.classList.contains('cv-nitida')) div.classList.toggle('cv-horizontal', h); });
+  });
   urlFirmada(ruta).then(function (u) {
     if (!sigue()) return;
     if (!u) { falla(); return; }
     var img = new Image();
-    img.onload = function () { if (!sigue()) return; div.style.backgroundImage = 'url("' + u + '")'; div.classList.add('cv-nitida'); };
+    img.onload = function () {
+      if (!sigue()) return;
+      div.style.backgroundImage = 'url("' + u + '")';
+      div.classList.add('cv-nitida');
+      div.classList.toggle('cv-horizontal', img.naturalWidth > img.naturalHeight * 1.05);   // el recuadro, con la forma de la foto
+    };
     img.onerror = falla;
     img.src = u;
   });
