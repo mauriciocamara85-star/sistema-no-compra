@@ -643,7 +643,7 @@ function verCajas() {
     var mesCaja = /^\d{4}-\d{2}$/.test(r[4] || '') ? r[4] : hoyMes;
     var tot = porMes[_mes], cierre = cierres[_mes], terminado = _mes < mesCaja;
     var col = function (c, s, rl, dv) {
-      return '<td class="n">' + pesos(c[s]) + '</td><td class="n">' + pesos(c[rl]) + '</td><td class="n' + (Math.abs(Number(c[dv] || 0)) > 0.5 ? ' rojo' : '') + '">' + pesos(c[dv]) + '</td>';
+      return celdaCaja(c, s, rl) + celdaCaja(c, rl, s) + '<td class="n' + (Math.abs(Number(c[dv] || 0)) > 0.5 ? ' rojo' : '') + '">' + pesos(c[dv]) + '</td>';
     };
     /* La marca de cada mes: ✓ controlado; un punto si terminó, tiene cajas y falta cerrarlo. */
     var marca = function (m) {
@@ -718,29 +718,50 @@ var FOTOS_CIERRE = [
   ['mp', 'Mercado Pago', [['total', 'Total', 'real_mp']]],
   ['gocuotas', 'Go Cuotas', [['total', 'Total', 'real_gocuotas']]]
 ];
+/** Un número de la caja; vacío con el otro lado escrito: "Falta" (falta cargarlo, SQL 122). */
+function celdaCaja(c, k, otro) {
+  if (c[k] == null && c[otro] != null && Number(c[otro]) !== 0) return '<td class="n"><span class="falta-cargar">Falta</span></td>';
+  return '<td class="n">' + pesos(c[k]) + '</td>';
+}
+
+/** El texto de una alerta de caja. */
+function textoAlertaCaja(a) {
+  if (a.tipo === 'desvio') return 'Diferencia en ' + a.campo + ': ' + pesos(a.monto);
+  if (a.tipo === 'falta') return 'Falta cargar ' + a.campo + (a.falta === 'sistema' ? ' (lo que dice el sistema)' : '') + (a.motivo ? ': la foto no se lee. ' + a.motivo : '');
+  if (a.tipo === 'no_coincide_foto') return 'Un monto no coincide con la foto (' + a.campo + ')';
+  return 'Foto de otro día (' + a.foto + ')';
+}
+
 var FILAS_DIA_CAJA = [['Mercado Pago', 'sis_mp', 'real_mp', 'desvio_mp'], ['Tarjeta', 'sis_tarjeta', 'real_lote', 'desvio_tarjeta'],
                       ['Go Cuotas', 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas'], ['Efectivo', 'sis_saldo_final_efvo', 'real_efectivo', 'desvio_efectivo']];
 
 function ventanaCaja(k) {
-  /* Cómo quedó la lectura de cada foto; sin señal, igual se ven las fotos (sin la lectura). */
-  leer('/orden_caja_fotos?select=id,tipo,foto_path,ia_estado,ia_resultado,tomada_en&caja_id=eq.' + valor(k.id) + '&borrada_en=is.null&order=tomada_en.desc')
-    .catch(function () { return null; })
-    .then(function (fs) { dibujarVentanaCaja(k, fs); });
+  /* Cómo quedó la lectura de cada foto; sin señal, igual se ven las fotos (sin la lectura).
+     Y qué números puso la IA (SQL 122; sin ese SQL, no se marca nada). */
+  Promise.all([
+    leer('/orden_caja_fotos?select=id,tipo,foto_path,ia_estado,ia_resultado,tomada_en&caja_id=eq.' + valor(k.id) + '&borrada_en=is.null&order=tomada_en.desc')
+      .catch(function () { return null; }),
+    leer('/orden_cajas?select=ia_campos&id=eq.' + valor(k.id)).catch(function () { return null; })
+  ]).then(function (r) { dibujarVentanaCaja(k, r[0], ((r[1] || [])[0] || {}).ia_campos || []); });
 }
 
-function dibujarVentanaCaja(k, fs) {
+function dibujarVentanaCaja(k, fs, deIA) {
+  deIA = deIA || [];
+  var monto = function (campo) { return pesos(k[campo]) + (deIA.indexOf(campo) > -1 && k[campo] != null ? ' <span class="de-ia" title="Lo cargó la IA desde la foto">IA</span>' : ''); };
   var ultima = {};
   if (fs) fs.forEach(function (f) { if (!ultima[f.tipo]) ultima[f.tipo] = f; });
   else Object.keys(k.fotos || {}).forEach(function (t) { ultima[t] = { tipo: t, foto_path: k.fotos[t] }; });
   var hay = FOTOS_CIERRE.filter(function (t) { return ultima[t[0]]; });
   var v = ventana('<h1>Caja del ' + esc(diaMes(k.fecha)) + '</h1><p class="bajada">' + esc((k.local_nombre ? k.local_nombre : '') + (k.cargada_por_nombre ? ' · la cargó ' + k.cargada_por_nombre : '') + (k.controlada_por_nombre ? ' · la controló ' + k.controlada_por_nombre : '')) + '</p>' +
-    ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(a.tipo === 'desvio' ? 'Diferencia en ' + a.campo + ': ' + pesos(a.monto) : a.tipo === 'no_coincide_foto' ? 'Un monto no coincide con la foto (' + a.campo + ')' : 'Foto de otro día (' + a.foto + ')'); }).join('<br>') + '</div>' : '') +
+    ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(textoAlertaCaja(a)); }).join('<br>') + '</div>' : '') +
     (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
     '<div class="desliza"><table class="caja-dia"><thead><tr><th></th><th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th></tr></thead><tbody>' +
     FILAS_DIA_CAJA.map(function (f) {
       var d = Number(k[f[3]] || 0);
-      return '<tr><td>' + f[0] + '</td><td class="n">' + pesos(k[f[1]]) + '</td><td class="n">' + pesos(k[f[2]]) + '</td><td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td></tr>';
+      var lado = function (a, b) { return k[a] == null && k[b] != null && Number(k[b]) !== 0 ? '<span class="falta-cargar">Falta</span>' : monto(a); };
+      return '<tr><td>' + f[0] + '</td><td class="n">' + lado(f[1], f[2]) + '</td><td class="n">' + lado(f[2], f[1]) + '</td><td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td></tr>';
     }).join('') + '</tbody></table></div>' +
+    (deIA.length ? '<p class="bajada-chica">Los números con <span class="de-ia">IA</span> los cargó la IA desde las fotos: corroboralos con las fotos de abajo.</p>' : '') +
     (hay.length ? '<div class="seccion">Fotos del cierre</div><div class="fotos-cierre">' + hay.map(function (t) {
       var f = ultima[t[0]];
       /* El nombre arriba, la foto y, debajo, lo que leyó la IA (al bajar no se mezcla con la siguiente). */

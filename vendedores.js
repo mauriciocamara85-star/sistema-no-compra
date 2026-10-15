@@ -1996,6 +1996,8 @@ var LECTURA_A_CAMPO = {
 
 function textoAlerta(a) {
   if (a.tipo === 'desvio') return 'Diferencia en ' + a.campo + ': ' + pesos(a.monto) + (Number(a.monto) > 0 ? ' (falta plata)' : ' (sobra)');
+  /* (SQL 122) Un lado tiene número y el otro está vacío: falta cargar, no es un desvío. */
+  if (a.tipo === 'falta') return 'Falta cargar ' + a.campo + (a.falta === 'sistema' ? ' (lo que dice el sistema)' : '') + (a.motivo ? ': la foto no se lee.' : '.');
   if (a.tipo === 'no_coincide_foto') return 'Un monto no coincide con la foto (' + a.campo + ').';
   if (a.tipo === 'foto_otro_dia') return 'La foto de ' + a.foto + ' parece de otro día' + (a.fecha_foto ? ' (' + a.fecha_foto + ')' : '') + '.';
   return 'Revisar.';
@@ -2117,14 +2119,26 @@ function guardarCaja(caja, boton) {
   });
   if (malo) { malo.focus(); avisar('Hay un monto que no se entiende: escribilo sólo con números.'); return; }
   if (!valores.real_efectivo) { avisar('Falta el efectivo que contaste.'); return; }
-  boton.textContent = 'Guardando…';
-  return llamar('orden_caja_guardar', { p_caja: caja.id, p_valores: valores, p_observaciones: document.getElementById('obs').value || null })
-    .then(function (c) {
-      avisar((c.alertas || []).length ? 'Guardada, con cosas para revisar.' : 'Guardada. Dio bien.');
-      revisarCaja();
-      return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc')
-        .then(function (f) { dibujarCaja(c, f || []); });
-    });
+  /* (14/10, pedido de Mauricio) Un renglón con un número de un lado y el otro vacío: falta cargar
+     algo (por ejemplo, la foto de Mercado Pago no se leyó). Se avisa antes de guardar. */
+  var faltan = FILAS_CAJA.filter(function (f) {
+    var s = valores[f[1]], r = valores[f[2]];
+    return (s == null) !== (r == null) && Number(s != null ? s : r) !== 0;
+  }).map(function (f) { return f[0] + ' (' + (valores[f[1]] == null ? 'Dice el sistema' : f[3]) + ')'; });
+  var seguir = faltan.length
+    ? confirmar('Falta ' + faltan.join(' y ') + ': sacá la foto de nuevo o cargalo a mano. ¿Guardar igual?', 'Guardar igual')
+    : Promise.resolve(true);
+  return seguir.then(function (si) {
+    if (!si) return;
+    boton.textContent = 'Guardando…';
+    return llamar('orden_caja_guardar', { p_caja: caja.id, p_valores: valores, p_observaciones: document.getElementById('obs').value || null })
+      .then(function (c) {
+        avisar((c.alertas || []).length ? 'Guardada, con cosas para revisar.' : 'Guardada. Dio bien.');
+        revisarCaja();
+        return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc')
+          .then(function (f) { dibujarCaja(c, f || []); });
+      });
+  });
 }
 
 /* ════════════════════════════════════════════════════════════════════════
