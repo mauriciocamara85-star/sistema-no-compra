@@ -1489,7 +1489,7 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 @media (min-width: 900px) {
   :root { --rail-ancho: 64px; --rail: 88px; --rail-abierta: 196px; }
   :root.rail-fija { --rail-ancho: 196px; --rail: 220px; }
-  body.hay-rail { transition: padding-left .2s var(--curva); }
+  html.rail-lista body.hay-rail { transition: padding-left .2s var(--curva); }
   .rail {
     width: var(--rail-ancho);
     overflow: hidden;
@@ -1619,6 +1619,7 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   text-align: left;
 }
 .per-pop.a-la-izq { left: auto; right: 0; }
+.per-pop.arriba { top: auto; bottom: calc(100% + 8px); }
 .per-pop[hidden] { display: none; }
 .per-atajos { display: flex; flex-direction: column; gap: 2px; padding: 10px; background: var(--surface-2); border-right: 1px solid var(--line); }
 .per-atajos button {

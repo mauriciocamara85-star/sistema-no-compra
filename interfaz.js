@@ -90,6 +90,9 @@
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') rail.classList.remove('abierta'); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', armarRail); else armarRail();
+  /* La pantalla se corre con transición sólo cuando la barra se fija o se achica, no al entrar (el árbitro vio que el
+     CRM y el Club se deslizaban 88 px al abrirse). */
+  window.addEventListener('load', function () { setTimeout(function () { raiz.classList.add('rail-lista'); }, 50); });
 
   /* ══ 2. El panel de cada sección ══════════════════════════════════════
      Cada sección arma su panel a su manera; lo común es el botón (el mismo ícono, arriba a la derecha) y que
@@ -114,6 +117,7 @@
        atajos: ['hoy', 'semana', …],   // cuáles se ofrecen (por omisión, los de siempre)
        guardar: 'nc_algo_periodo',     // opcional: se recuerda en este navegador
        hastaHoy: true,                 // opcional: nunca pasa de hoy (para estadísticas)
+       futuro: true,                   // opcional: deja ir al futuro con › (el testigo se programa para semanas que vienen)
        desdeTodo: '2024-01-01',        // para el atajo "Todo"
        alCambiar: function (r) {}      // r = { desde, hasta, atajo, unidad, texto }
      });
@@ -235,8 +239,10 @@
 
     function mostrar() {
       host.querySelector('.per-txt').textContent = r.texto;
-      /* Con hastaHoy no hay "siguiente" cuando el período ya llega a hoy: quedaría desde después de hasta. */
-      var sig = host.querySelector('[data-mover="1"]'), tope = !!op.hastaHoy && r._b >= hoyAR();
+      /* No hay "siguiente" si sería todo futuro (se vería vacío). Con hastaHoy, tampoco cuando el período ya llega a
+         hoy: quedaría desde después de hasta (lo marcó el árbitro, 15/10). */
+      var h = hoyAR(), sig = host.querySelector('[data-mover="1"]');
+      var tope = op.futuro ? false : op.hastaHoy ? r._b >= h : mover(r, 1, op)._a > h;
       sig.disabled = tope;
       sig.title = tope ? 'Ya llega a hoy' : 'Período siguiente';
     }
@@ -256,10 +262,16 @@
       pop.hidden = false;
       boton.setAttribute('aria-expanded', 'true');
       pintar();
-      /* Si no entra a la derecha, se abre hacia la izquierda. */
-      pop.classList.remove('a-la-izq');
-      var rc = pop.getBoundingClientRect();
+      /* Si no entra a la derecha, se abre hacia la izquierda. Si no entra abajo (en la PC del local, con 658 px de alto,
+         quedaba "Aplicar" debajo del borde: lo marcó el árbitro), se abre hacia arriba; y si tampoco entra arriba, la
+         página se corre lo justo para que se vea entera. En el celular es una hoja fija: no hace falta. */
+      pop.classList.remove('a-la-izq', 'arriba');
+      var rc = pop.getBoundingClientRect(), alto = window.innerHeight || 0;
       if (rc.right > (window.innerWidth || 0) - 8) pop.classList.add('a-la-izq');
+      if (getComputedStyle(pop).position !== 'fixed' && rc.bottom > alto - 8) {
+        if (caja.getBoundingClientRect().top - rc.height - 16 >= 0) pop.classList.add('arriba');
+        else if (pop.scrollIntoView) pop.scrollIntoView({ block: 'nearest' });
+      }
       var p = pop.querySelector('[aria-pressed="true"]') || pop.querySelector('.per-dia.inicio') || pop.querySelector('button');
       if (p) p.focus({ preventScroll: true });
     }

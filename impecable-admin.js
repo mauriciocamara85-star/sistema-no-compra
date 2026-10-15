@@ -136,7 +136,7 @@ function cabezaAdmin() {
   var conLocal = _solapa !== 'panorama' && _locales.length > 1;
   /* En la compu el menú se achica a íconos con el botón de todos los paneles (interfaz.js), y se recuerda. */
   var chico = Interfaz.panelChico(K_MENU_CHICO);
-  return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" aria-label="Equipo VDH"><div class="imp-menu-cab"><span>Equipo VDH</span>' + Interfaz.botonPanel(chico) + '</div>' +
+  return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Equipo VDH"><div class="imp-menu-cab"><span>Equipo VDH</span>' + Interfaz.botonPanel(chico, '', 'menuEquipo') + '</div>' +
     solapas.map(function (x) {
       return '<button class="imp-item' + (x[0] === _solapa ? ' activa' : '') + '" data-solapa="' + x[0] + '" title="' + esc(x[1]) + '">' + svgMenu(x[0]) + '<span>' + esc(x[1]) + '</span></button>';
     }).join('') +
@@ -164,17 +164,26 @@ function ir(solapa) {
     pantallaSinSesion('Saliste. Para volver, entrá de nuevo con tu PIN.');
   };
   app.querySelectorAll('[data-solapa]').forEach(function (b) { b.onclick = function () { ir(b.dataset.solapa); }; });
-  var pl = app.querySelector('.imp-menu .plegar-panel');
-  if (pl) pl.onclick = function () {
-    var g = app.querySelector('.imp-grid'), ch = !g.classList.contains('menu-chico');
-    Interfaz.panelChico(K_MENU_CHICO, ch);
-    g.classList.toggle('menu-chico', ch);
-    pl.outerHTML = Interfaz.botonPanel(ch);
-    app.querySelector('.imp-menu .plegar-panel').onclick = pl.onclick;
-  };
+  engancharPlegar();
   asomarMenu();
   if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
   ({ panorama: verPanorama, local: verLocal, fotos: verFotos, orden: verOrden, cajas: verCajas, testigo: verTestigo, ajustes: verAjustes })[solapa]();
+}
+
+/** El botón del menú: cada vez se busca el que está en la página (al tocarlo se rehace con el texto contrario; el
+    árbitro vio que, desde el 2.º toque, decía lo contrario de lo que hacía). */
+function engancharPlegar() {
+  var pl = app.querySelector('.imp-menu .plegar-panel');
+  if (!pl) return;
+  pl.onclick = function () {
+    var g = app.querySelector('.imp-grid'), ch = !g.classList.contains('menu-chico');
+    Interfaz.panelChico(K_MENU_CHICO, ch);
+    g.classList.toggle('menu-chico', ch);
+    pl.outerHTML = Interfaz.botonPanel(ch, '', 'menuEquipo');
+    engancharPlegar();
+    var nuevo = app.querySelector('.imp-menu .plegar-panel');
+    if (nuevo) nuevo.focus();
+  };
 }
 
 function elegirLocal(id) {
@@ -1230,6 +1239,7 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
     Interfaz.periodo(hs, {
       inicial: { desde: _semanaTestigo, hasta: sumarDias(_semanaTestigo, 6) },
       atajos: ['semana', 'semana-pasada'],
+      futuro: true,   // el testigo se programa para las semanas que vienen
       alCambiar: function (r) { _semanaTestigo = Interfaz.fecha.lunes(r.desde); verTestigo(); }
     });
   }
