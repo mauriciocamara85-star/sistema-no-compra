@@ -399,9 +399,10 @@
 
 /* ═══ Productos testigo: las semanas y las estadísticas (SQL 117) ═════════ */
 .imp .testigo-vista { margin-bottom: 10px; }
-.imp .testigo-semanas { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
-.imp .testigo-semanas select { width: auto; flex: 0 1 300px; min-width: 0; }
-.imp .testigo-semanas .boton { min-width: 44px; font-size: 18px; }
+/* La semana y el período: el selector común (interfaz.js, .per en estilos.css). */
+.imp .testigo-semanas { margin: 0 0 12px; }
+.imp .cajas-per { margin: 2px 0 14px; }
+.imp .testigo-filtros .bajada-chica { flex-basis: 100%; margin: 0; }
 .imp .testigo-filtros { display: flex; flex-wrap: wrap; gap: 10px 14px; margin: 0 0 14px; }
 .imp .testigo-filtros .campo { margin: 0; min-width: 220px; }
 .imp .barra-pct { display: flex; align-items: center; gap: 10px; min-width: 170px; }
