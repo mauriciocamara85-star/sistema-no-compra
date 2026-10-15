@@ -692,16 +692,47 @@ function historiaMesCaja(cierre) {
 var _cajasRango = null;   // null: un mes (_mes); si no, el rango elegido { desde, hasta, atajo, unidad, texto }
 function finDeMes(m) { var d = new Date(+m.slice(0, 4), +m.slice(5), 0).getDate(); return m + '-' + (d < 10 ? '0' : '') + d; }
 function periodoCajasHTML() { return '<div class="cajas-per" id="cajasPer"></div>'; }
+var ATAJOS_CAJAS = ['mes', 'mes-pasado', 'semana', 'semana-pasada', 'hoy', 'ayer', '30', '3m'];
 function armarPeriodoCajas() {
   var host = document.getElementById('cajasPer');
   if (!host || !window.Interfaz) return;
+  guardarPeriodo('nc_eq_cajas_periodo', _cajasRango || (_mes === mesesCajas()[0] ? { atajo: 'mes' } : { desde: _mes + '-01', hasta: finDeMes(_mes), unidad: 'mes' }));
   Interfaz.periodo(host, {
     inicial: _cajasRango ? (_cajasRango.atajo || { desde: _cajasRango.desde, hasta: _cajasRango.hasta }) : { desde: _mes + '-01', hasta: finDeMes(_mes) },
-    atajos: ['mes', 'mes-pasado', 'semana', 'semana-pasada', 'hoy', 'ayer', '30', '3m'],
+    atajos: ATAJOS_CAJAS,
     alCambiar: function (r) {
       if (r.unidad === 'mes') { _mes = r.desde.slice(0, 7); _cajasRango = null; } else _cajasRango = r;
       verCajas();
     }
+  });
+}
+/* El período se recuerda en esta compu (lo marcó el árbitro: los demás lugares ya lo hacían). No va con la opción
+   guardar del selector: ésa gana sobre "inicial", y el mes también cambia desde el resumen por mes. Se guarda como lo
+   guarda el selector, y al entrar se lee con uno suelto (que vuelve a calcular los atajos: "Este mes" sigue siéndolo). */
+function guardarPeriodo(clave, r) {
+  try { localStorage.setItem(clave, JSON.stringify(r.atajo ? { atajo: r.atajo } : { desde: r.desde, hasta: r.hasta, unidad: r.unidad })); } catch (e) {}
+}
+function leerPeriodo(clave, atajos, op) {
+  if (!window.Interfaz) return null;
+  try { if (!localStorage.getItem(clave)) return null; } catch (e) { return null; }
+  return Interfaz.periodo(document.createElement('div'), Object.assign({ guardar: clave, atajos: atajos }, op || {})).rango();
+}
+var _cajasPerLeido = false;
+function leerPeriodoCajas() {
+  if (_cajasPerLeido) return;
+  _cajasPerLeido = true;
+  var r = leerPeriodo('nc_eq_cajas_periodo', ATAJOS_CAJAS);
+  if (!r) return;
+  if (r.unidad === 'mes') { _mes = r.desde.slice(0, 7); _cajasRango = null; } else _cajasRango = r;
+}
+/** Todas las filas de una lectura, de a 1000 (el tope de la API de Supabase). Con los 14 locales, un rango largo pasa
+    ese número y sin esto los totales saldrían cortos sin avisar (lo marcó el árbitro). La ruta lleva su order=. */
+function leerTodas(ruta, desde) {
+  var N = 1000;
+  desde = desde || 0;
+  return leer(ruta + '&limit=' + N + '&offset=' + desde).then(function (f) {
+    f = f || [];
+    return f.length < N ? f : leerTodas(ruta, desde + N).then(function (resto) { return f.concat(resto); });
   });
 }
 
@@ -764,6 +795,7 @@ function engancharDiasCaja(c, cajas) {
 
 function verCajas() {
   var meses = mesesCajas(), hoyMes = meses[0];
+  leerPeriodoCajas();
   if (!_mes) _mes = hoyMes;
   /* Con "Todos los locales", el local de arriba no corresponde: se esconde. */
   var sel = document.getElementById('selLocal');
@@ -832,7 +864,7 @@ function verCajas() {
 function verCajasRango() {
   var L = valor(_local.id), rg = _cajasRango;
   Promise.all([
-    leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc'),
+    leerTodas('/orden_v_cajas?select=*&local_id=eq.' + L + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc,id.asc'),
     leer('/orden_config?select=caja_activa&local_id=eq.' + L)
   ]).then(function (r) {
     if (_solapa !== 'cajas' || _cajasTodos || _cajasRango !== rg) return;
@@ -1009,7 +1041,7 @@ function verCajasTodos(meses) {
 /* Todos los locales en un rango que no es un mes: los desvíos de esos días, por local. */
 function verCajasTodosRango() {
   var rg = _cajasRango, K = ['desvio_mp', 'desvio_tarjeta', 'desvio_gocuotas', 'desvio_efectivo'];
-  leer('/orden_v_cajas?select=local_id,estado,' + K.join(',') + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta).then(function (filas) {
+  leerTodas('/orden_v_cajas?select=local_id,estado,' + K.join(',') + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc,id.asc').then(function (filas) {
     if (_solapa !== 'cajas' || !_cajasTodos || _cajasRango !== rg) return;
     var porLocal = {};
     (filas || []).forEach(function (x) {
@@ -1303,7 +1335,10 @@ function mesesDeRango(desde, hasta) {
   return r;
 }
 /* El período de las estadísticas (interfaz común). Es por mes: si eligen otra cosa, cuentan los meses que toca. */
+var ATAJOS_TESTIGO = ['mes', 'mes-pasado', '3m', '6m', 'anio'], _testigoPerLeido = false;
 function rangoTestigo() {
+  /* El que se eligió la última vez en esta compu (como Cajas). */
+  if (!_testigoPerLeido) { _testigoPerLeido = true; _testigoRango = leerPeriodo('nc_eq_testigo_periodo', ATAJOS_TESTIGO, { hastaHoy: true }) || _testigoRango; }
   if (_testigoRango) return _testigoRango;
   var m = mesesAtras(1)[0];
   return { desde: m + '-01', hasta: hoyAR(), atajo: 'mes', unidad: 'mes', texto: nombreMes(m) };
@@ -1429,8 +1464,8 @@ function verTestigoStats() {
     if (hp && window.Interfaz) {
       Interfaz.periodo(hp, {
         inicial: _testigoRango ? (_testigoRango.atajo || { desde: _testigoRango.desde, hasta: _testigoRango.hasta }) : 'mes',
-        atajos: ['mes', 'mes-pasado', '3m', '6m', 'anio'], hastaHoy: true,
-        alCambiar: function (r) { _testigoRango = r; verTestigoStats(); }
+        atajos: ATAJOS_TESTIGO, hastaHoy: true,
+        alCambiar: function (r) { _testigoRango = r; guardarPeriodo('nc_eq_testigo_periodo', r); verTestigoStats(); }
       });
     }
     if (sl) sl.onchange = function () { _testigoLocal = sl.value; verTestigoStats(); };
