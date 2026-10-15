@@ -99,9 +99,11 @@
     if (arguments.length > 1) { guardar(clave, valor ? '1' : null); return !!valor; }
     return leer(clave) === '1';
   }
-  function botonPanel(chico, extra) {
+  /** controla: el id del panel (para los lectores de pantalla, aria-controls). */
+  function botonPanel(chico, extra, controla) {
     var t = chico ? 'Abrir el panel' : 'Achicar el panel';
-    return '<button type="button" class="plegar-panel' + (extra ? ' ' + extra : '') + '" title="' + t + '" aria-label="' + t + '" aria-expanded="' + String(!chico) + '">' + ICONO.panel + '</button>';
+    return '<button type="button" class="plegar-panel' + (extra ? ' ' + extra : '') + '" title="' + t + '" aria-label="' + t + '" aria-expanded="' + String(!chico) + '"' +
+      (controla ? ' aria-controls="' + esc(controla) + '"' : '') + '>' + ICONO.panel + '</button>';
   }
 
   /* ══ 3. El selector de período ═════════════════════════════════════════

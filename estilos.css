@@ -1571,6 +1571,7 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   transition: background .15s, color .15s;
 }
 .plegar-panel:hover { background: var(--surface-3); color: var(--txt); }
+.plegar-panel:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
 .plegar-panel svg { width: 19px; height: 19px; }
 
 /* ── El selector de período ───────────────────────────────────────────────
