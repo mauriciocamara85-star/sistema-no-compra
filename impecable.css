@@ -333,6 +333,14 @@ button.mapa-sec { cursor: pointer; }
 /* Producto testigo (SQL 102) */
 .tarjeta-accion.testigo { border-color: var(--lima); }
 .tarjeta-accion.testigo.alerta { border-color: var(--ambar); }
+/* El producto testigo en Revisar, para mirar (14/10): cada producto con sus números y su video. */
+.testigo-ver { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; align-items: center; padding: 12px 14px; margin: 0 0 10px;
+               border-radius: 16px; background: var(--tarjeta); border: 1px solid var(--borde); }
+.testigo-ver.falta { border-color: var(--ambar); }
+.testigo-ver .que { display: grid; gap: 2px; min-width: 0; }
+.testigo-ver .que small { color: var(--suave); font-size: 13.5px; }
+.testigo-ver .boton.chico, .testigo-ver .video-testigo, .testigo-ver > small { grid-column: 1 / -1; }
+.testigo-ver .video-testigo { width: 100%; max-height: 60vh; border-radius: 12px; background: #000; }
 .testigo-item { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 18px; padding: 14px; margin: 0 0 12px; }
 .ti-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; font-size: 17px; }
 .ti-grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }

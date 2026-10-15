@@ -2263,23 +2263,112 @@ function pantallaRevisar() {
   engancharCabeza();
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Revisar'); return; }
-    return leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,tipo,foto_path,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
-                '&local_id=eq.' + valor(loc.id) + '&limit=60').then(function (cola) {
+    return Promise.all([
+      leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,tipo,foto_path,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
+           '&local_id=eq.' + valor(loc.id) + '&limit=60'),
+      /* El producto testigo de los locales que mira: si no se puede leer, Revisar sigue igual. */
+      testigosRevisar(loc).catch(function () { return []; })
+    ]).then(function (r) {
       if (_pestana !== 'revisar') return;
-      dibujarRevisar(loc, cola || []);
+      dibujarRevisar(loc, r[0] || [], r[1] || []);
     });
   }).catch(function (e) { pantallaError(e, pantallaRevisar); });
 }
 
-function dibujarRevisar(loc, cola) {
+/* ── El producto testigo en Revisar (14/10, pedido de Mauricio): una tarjeta por local que se
+   mira, cuando tiene uno mañana, hoy, sin mandar (en rojo si se atrasó) o mandado en la última
+   semana ("N con faltante"). Tocándola, el resultado para mirar. Programarlo sigue en la compu. ── */
+function testigosRevisar(loc) {
+  var lista = loc.lista || [{ id: loc.id, nombre: loc.nombre }], hoy = hoyAR(), nombre = {};
+  if (!lista.length) return Promise.resolve([]);
+  lista.forEach(function (l) { nombre[l.id] = l.nombre; });
+  return leer('/testigo_semanas?select=id,local_id,fecha,cargada_en,cerrada,testigo_items(id,stock_sistema,cantidad_real)' +
+      '&local_id=in.(' + lista.map(function (l) { return valor(l.id); }).join(',') + ')' +
+      '&fecha=gte.' + sumarDias(hoy, -7) + '&fecha=lte.' + sumarDias(hoy, 1) + '&order=fecha.desc').then(function (filas) {
+    var porLocal = {};
+    (filas || []).forEach(function (s) {
+      var t = (s.testigo_items || []).length ? estadoTestigoRevisar(s, hoy) : null;
+      if (!t) return;
+      var ya = porLocal[s.local_id];
+      if (!ya || t.orden < ya.orden) { t.sem = s; t.local = nombre[s.local_id] || 'Otro local'; porLocal[s.local_id] = t; }
+    });
+    return Object.keys(porLocal).map(function (k) { return porLocal[k]; })
+      .sort(function (a, b) { return a.orden - b.orden || a.local.localeCompare(b.local); });
+  });
+}
+
+/** Cómo está un control de producto testigo, para la tarjeta (el más urgente primero). */
+function estadoTestigoRevisar(s, hoy) {
+  var items = s.testigo_items || [], n = items.length + (items.length === 1 ? ' producto' : ' productos');
+  if (!s.cargada_en) {
+    if (s.cerrada) return null;
+    if (s.fecha < hoy) return { orden: 0, alerta: true, texto: 'Sin mandar: era el ' + diaYFecha(s.fecha) + ' (' + n + ')' };
+    if (s.fecha === hoy) return { orden: 1, texto: 'Hoy tienen producto testigo (' + n + ')' };
+    return { orden: 2, texto: 'Mañana tienen producto testigo (' + n + ')' };
+  }
+  var falta = items.filter(function (i) { return i.stock_sistema != null && i.cantidad_real != null && Number(i.stock_sistema) > Number(i.cantidad_real); }).length;
+  return { orden: 3, alerta: falta > 0, texto: 'Mandado el ' + diaMes(s.cargada_en) + ': ' + (falta ? falta + ' con faltante' : 'sin faltantes') + ' (' + n + ')' };
+}
+
+function tarjetasTestigoRevisar(ts) {
+  if (!ts.length) return '';
+  return '<div class="seccion">Producto testigo</div>' + ts.map(function (t, i) {
+    return '<button class="tarjeta-accion testigo' + (t.alerta ? ' alerta' : '') + '" data-trev="' + i + '"><b>' + esc(t.local) + '</b><span>' + esc(t.texto) + '</span></button>';
+  }).join('');
+}
+
+/** El resultado de un control de producto testigo, para mirar: los números, la diferencia y los videos. */
+function verTestigoRevisar(t) {
+  barra.hidden = true;
+  app.className = 'app';
+  var volver = function () { var b = document.getElementById('volver'); if (b) b.onclick = function () { irA('revisar'); }; };
+  app.innerHTML = '<button class="volver" id="volver">‹ Volver a Revisar</button><h1>Producto testigo</h1><p class="cargando">Cargando…</p>';
+  volver();
+  return leer('/testigo_v_items?select=*&semana_id=eq.' + valor(t.sem.id) + '&order=item.asc').then(function (items) {
+    var s = t.sem, porId = {};
+    (items || []).forEach(function (it) { porId[it.id] = it; });
+    var html = '<button class="volver" id="volver">‹ Volver a Revisar</button><h1>Producto testigo</h1>' +
+      '<p class="bajada">' + esc(t.local + (s.fecha ? ' · se cuenta el ' + diaYFecha(s.fecha) : '')) + '</p>' +
+      '<div class="nota' + (t.alerta ? ' alerta' : '') + '">' + esc(t.texto) + '</div>' +
+      (items || []).map(function (it) {
+        var dif = Number(it.diferencia), txt = textoDiferencia(it.diferencia);
+        return '<div class="testigo-ver' + (dif > 0 ? ' falta' : '') + '"><div class="que"><b>' + esc(it.item + ' · ' + it.producto + (it.color ? ' ' + it.color : '')) + '</b>' +
+          '<small>' + esc((it.stock_sistema != null && it.cantidad_real != null ? 'Sistema ' + it.stock_sistema + ' · contaron ' + it.cantidad_real : 'Todavía sin contar') +
+                          (it.enviada != null ? ' · enviadas ' + it.enviada : '')) + '</small></div>' +
+          (txt ? '<span class="chip ' + (dif > 0 ? 'vencido' : dif < 0 ? 'pendiente' : 'listo') + '">' + esc(txt) + '</span>' : '') +
+          (it.video_path && !it.video_borrado ? '<button class="boton chico" data-video="' + esc(it.id) + '">▶ Video</button>' : '') + '</div>';
+      }).join('') +
+      '<p class="bajada" style="margin-top:12px">Es para mirar: programarlo y corregir un número se hace en la compu (Equipo VDH → Productos testigo).</p>';
+    app.innerHTML = html;
+    volver();
+    app.querySelectorAll('[data-video]').forEach(function (b) {
+      b.onclick = function () {
+        var it = porId[b.dataset.video], v = document.createElement('video');
+        v.className = 'video-testigo'; v.controls = true; v.setAttribute('playsinline', '');
+        b.replaceWith(v);
+        urlFirmadaEn(VIDEOS_TESTIGO, it.video_path).then(function (u) {
+          if (u) { v.src = u; return; }
+          var p = document.createElement('small'); p.textContent = 'No se pudo abrir el video (puede que ya se haya borrado).'; v.replaceWith(p);
+        });
+      };
+    });
+  }).catch(function (e) { pantallaError(e, function () { verTestigoRevisar(t); }); });
+}
+
+function dibujarRevisar(loc, cola, testigos) {
+  testigos = testigos || [];
   if (_revisarSaltear >= cola.length) _revisarSaltear = 0;
   var c = cola[_revisarSaltear];
-  var html = cabeza('Revisar', loc.nombre) + selectorLocal(loc);
+  var html = cabeza('Revisar', loc.nombre) + selectorLocal(loc) + tarjetasTestigoRevisar(testigos);
+  var engancharTestigo = function () {
+    app.querySelectorAll('[data-trev]').forEach(function (b) { b.onclick = function () { verTestigoRevisar(testigos[+b.dataset.trev]); }; });
+  };
   if (!c) {
-    html += '<div class="vacio">No hay fotos para revisar.</div>';
-    app.innerHTML = html; engancharCabeza(); engancharSelector(pantallaRevisar);
+    html += (testigos.length ? '<div class="seccion">Fotos</div>' : '') + '<div class="vacio">No hay fotos para revisar.</div>';
+    app.innerHTML = html; engancharCabeza(); engancharSelector(pantallaRevisar); engancharTestigo();
     return;
   }
+  if (testigos.length) html += '<div class="seccion">Fotos</div>';
   var ia = c.ia_resultado || {};
   var checks = (PREGUNTAS[c.sector_tipo] || PREGUNTAS.salon);
   html += '<p class="bajada">' + cola.length + (cola.length === 1 ? ' foto para revisar' : ' fotos para revisar') + (soloMira() ? ' (sólo mirar)' : '') + '</p>' +
@@ -2311,9 +2400,10 @@ function dibujarRevisar(loc, cola) {
   app.innerHTML = html;
   engancharCabeza();
   engancharSelector(function () { _revisarSaltear = 0; pantallaRevisar(); });
+  engancharTestigo();
   cargarFotos(app);
   var s = document.getElementById('saltear');
-  if (s) s.onclick = function () { _revisarSaltear++; dibujarRevisar(loc, cola); };
+  if (s) s.onclick = function () { _revisarSaltear++; dibujarRevisar(loc, cola, testigos); };
   var niveles = app.querySelectorAll('[data-nivel]');
   niveles.forEach(function (b) {
     unaVez(b, function () {
