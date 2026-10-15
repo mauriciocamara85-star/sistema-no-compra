@@ -47,13 +47,14 @@ function abrirVisor(cont, op) {
         '<div class="cv-parada"><small id="cvParadaN"></small><b id="cvParada"></b></div><button type="button" class="cv-redondo" id="cvSig" aria-label="Pared siguiente">›</button>' +
         '<button type="button" class="cv-chico" id="cvSalirRec">Listo</button></div>' +
       '<div class="cv-zoom-acc"><button type="button" id="cvCaminar" class="cv-chico cv-lima" aria-pressed="false" hidden>Caminar</button>' +
+        '<button type="button" id="cvMira" class="cv-chico" aria-pressed="false" hidden title="El mouse mueve la vista, como en un juego (Esc lo suelta)">Mira</button>' +
         '<button type="button" id="cvRecorrer" class="cv-chico cv-lima">Recorrer</button><button type="button" id="cvCentrar" class="cv-chico" hidden>Centrar</button>' +
         '<button type="button" id="cvGirarIzq" class="cv-redondo" aria-label="Girar el local hacia la izquierda" title="Girar">⟲</button>' +
         '<button type="button" id="cvGirarDer" class="cv-redondo" aria-label="Girar el local hacia la derecha" title="Girar">⟳</button>' +
         '<button type="button" id="cvMenos" class="cv-redondo" aria-label="Alejar">−</button><button type="button" id="cvMas" class="cv-redondo" aria-label="Acercar">+</button></div>' +
       /* En la compu, cómo se maneja con el mouse (en el celular, con los dedos, ya se entiende). */
       '<p class="cv-ayuda-raton" id="cvAyudaRaton"><b>Arrastrá</b> para girar e inclinar · <b>Rueda</b> o <b>doble clic</b> para acercar · <b>Clic derecho</b> y arrastrá para mover</p>' +
-      '<p class="cv-cargando" id="cvCargando">Cargando el local…</p><div class="cv-fundido" id="cvFundido"></div></div>' +
+      '<p class="cv-cargando" id="cvCargando">Cargando el local…</p><div class="cv-mira" id="cvMiraPunto" aria-hidden="true"><i></i><span id="cvMiraTexto"></span></div><div class="cv-fundido" id="cvFundido"></div></div>' +
       '<aside class="cv-panel" id="cvPanel"></aside></div></div>';
   V.raiz = cont.querySelector('.cv');
   V.mundo = cont.querySelector('#cvMundo');
@@ -131,6 +132,13 @@ function abrirVisor(cont, op) {
   /* El panel: cómo verlo (por vendedor, por estado, por antigüedad). */
   cont.querySelector('#cvPanel').addEventListener('click', function (e) {
     if (e.target.closest && e.target.closest('#cvVer3d')) { visor3dCambiar(V, !V.usa3d); return; }
+    var se = e.target.closest && e.target.closest('[data-sens]');
+    if (se) {
+      try { localStorage.setItem('vdh_visor_sens', se.dataset.sens); } catch (x) {}
+      if (V.c3) V.c3.sensibilidad(visorSensibilidad());
+      [].forEach.call(V.cont.querySelectorAll('[data-sens]'), function (b) { b.setAttribute('aria-pressed', b === se); });
+      return;
+    }
     if (e.target.closest && e.target.closest('#cvLiviano')) {
       V.liviano = !V.liviano;
       V.raiz.classList.toggle('cv-liviano', V.liviano);
@@ -437,6 +445,13 @@ function visorGestos(V) {
   V.cont.querySelector('#cvCentrar').onclick = function () {
     if (V.usa3d) { visorSalirRecorrido(V, true); if (V.c3) V.c3.vistaInicial(); return; }
     visorZoom(V, 1, 0, 0, true); visorCamara(V, false);
+  };
+  /* Modo mira (en la compu): el mouse mueve la vista, como en un juego; Esc lo suelta. */
+  V.cont.querySelector('#cvMira').onclick = function () {
+    if (!V.c3) return;
+    visorSalirRecorrido(V, true);
+    visorPreviaOcultar(V);
+    V.c3.mira(true);
   };
   /* Caminar por el local (en 3D), o volver a verlo de arriba. */
   V.cont.querySelector('#cvCaminar').onclick = function () {
@@ -947,7 +962,7 @@ function visorPrevia(V) {
       '<div class="cv-previa-txt"><b>' + esc(titulo) + '</b>' + (bajada ? '<span>' + esc(bajada) + '</span>' : '') +
         '<small><i style="background:' + visorColor(V, m) + '"></i>' + esc(esVidriera(m) ? 'Por turnos' : resp ? nombreLista(resp) : 'Sin responsable') +
           (e.foto_path && e.tomada_en ? ' · ' + esc(textoHace(e.tomada_en)) : '') + (e.foto_path && e.nivel ? ' · ' + esc(NIVEL[e.nivel] || e.nivel) : '') + '</small>' +
-        '<em>' + (V.c3 && V.c3.caminando() ? 'Clic para ir hasta ahí' : 'Clic para abrirlo') + '</em></div>';
+        '<em>' + (V.c3 && V.c3.caminando() && !V.c3.mirando() ? 'Clic para ir hasta ahí' : 'Clic para abrirlo') + '</em></div>';
     var f = el.querySelector('.cv-previa-foto');
     if (e.foto_path) {
       miniaturaFoto(e.foto_path).then(function (u) {
@@ -970,6 +985,8 @@ function visorPrevia(V) {
     visor3dEncima(V, id);
     espera = setTimeout(function () { if (actual === id) mostrar(id); }, el.hidden ? 180 : 60);
   };
+  /** Mostrarla para el módulo id, al lado del punto x, y (el puntito del modo mira). */
+  V.previa.mostrarEn = function (id, x, y) { pos = { x: x, y: y }; encima(id); if (!el.hidden) ubicar(); };
   sc.addEventListener('pointerover', function (e) {
     if (e.pointerType !== 'mouse' || V.usa3d) return;
     pos = { x: e.clientX, y: e.clientY };
@@ -977,7 +994,7 @@ function visorPrevia(V) {
     encima(c ? c.dataset.mod : null, e.target.closest && e.target.closest('.cv-previa'));
   });
   sc.addEventListener('pointermove', function (e) {
-    if (e.pointerType !== 'mouse') return;
+    if (e.pointerType !== 'mouse' || (V.c3 && V.c3.mirando())) return;   // en mira manda el puntito
     pos = { x: e.clientX, y: e.clientY };
     if (V.usa3d) {
       /* En 3D (de arriba o caminando): el módulo debajo del puntero; no mientras se arrastra ni arriba de los botones. */
@@ -1071,6 +1088,10 @@ function visorPanel(V) {
     '<details class="cv-sec"' + abierto + '><summary>De un vistazo</summary><div class="cv-vistazo"><span><b>' + mods.length + '</b> módulos</span>' +
       (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') + (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div></details>' +
     '<details class="cv-sec"><summary>Ajustes de la vista</summary>' +
+      (V.usa3d ? '<div class="cv-sens"><span>Sensibilidad del mouse</span><div class="cv-seg" role="group" aria-label="Sensibilidad del mouse">' +
+        [['baja', 'Baja'], ['media', 'Media'], ['alta', 'Alta']].map(function (x) {
+          return '<button type="button" data-sens="' + x[0] + '" aria-pressed="' + (visorSensClave() === x[0]) + '">' + x[1] + '</button>';
+        }).join('') + '</div></div>' : '') +
       (visor3dPuede() ? '<button type="button" class="cv-interruptor" id="cvVer3d" aria-pressed="' + !!V.usa3d + '"><span>Ver en 3D</span><small>El local como es, para recorrerlo caminando</small></button>' : '') +
       '<button type="button" class="cv-interruptor" id="cvLiviano" aria-pressed="' + !!V.liviano + '">' +
       '<span>Modo liviano</span><small>Sin sombras ni texturas, para teléfonos lentos</small></button></details>';
@@ -1152,8 +1173,11 @@ function visor3dMontar(V, caminar) {
       entre: loc && salon ? loc.entre || null : null,
       medioDeposito: !!(loc && loc.medioDeposito),
       quieto: function () { return !!V.ficha; },
+      sensibilidad: visorSensibilidad(),
+      alMira: function (si) { visor3dMira(V, si); },
+      alApuntar: function (a) { visor3dApuntar(V, a); },
       caminar: caminar || null,
-      alTocar: function (m) { visor3dAbrir(V, m); },
+      alTocar: function (m, o) { visor3dAbrir(V, m, o && o.desdeMira); },
       alPuerta: function (destino) { visor3dPasar(V, destino); },
       alCaminar: function (si) { visor3dCaminando(V, si); },
       /* Si en este equipo va lento, pasa solo a liviano (si no se eligió a mano). */
@@ -1218,6 +1242,8 @@ function visor3dCambiar(V, si) {
 function visor3dBotones(V) {
   var en3d = !!V.c3, cam = V.cont.querySelector('#cvCaminar'), rec = V.cont.querySelector('#cvRecorrer'), ce = V.cont.querySelector('#cvCentrar');
   if (cam) cam.hidden = !en3d;
+  var mi = V.cont.querySelector('#cvMira');
+  if (mi) mi.hidden = !en3d || !visorPuedeMira();
   if (rec) rec.classList.toggle('cv-lima', !en3d);
   if (ce) ce.hidden = !en3d && V.z.k === 1;
   visor3dCaminando(V, en3d && V.c3.caminando());
@@ -1230,15 +1256,43 @@ function visor3dCaminando(V, si) {
   if (cam) { cam.setAttribute('aria-pressed', !!si); cam.textContent = si ? 'Ver de arriba' : 'Caminar'; }
   V.raiz.classList.toggle('cv-caminando', !!si);
   if (!ay) return;
-  ay.innerHTML = !V.c3 ? V.ayudaRaton : si
-    ? '<b>Clic en el piso</b> para caminar · <b>Arrastrá</b> para mirar · <b>Flechas</b> para moverte · <b>Clic en un módulo</b> para ir y ver su foto' + puerta
+  ay.innerHTML = !V.c3 ? V.ayudaRaton : V.c3.mirando()
+    ? '<b>Mové el mouse</b> para mirar · <b>Flechas</b> o <b>WASD</b> para caminar (<b>Shift</b> corre) · <b>Clic</b>: el módulo del puntito abre su foto, la puerta pasa, el piso camina · <b>Esc</b> suelta el mouse'
+    : si
+    ? '<b>Clic en el piso</b> para caminar · <b>Arrastrá</b> para mirar · <b>Flechas</b> para moverte (<b>Shift</b> corre) · <b>Clic en un módulo</b> para ir y ver su foto' + puerta
     : '<b>Arrastrá</b> para girar · <b>Rueda</b> o <b>doble clic</b> para acercar · <b>Clic derecho</b> para mover · <b>Clic en un módulo</b> para ver su foto' + puerta;
 }
-/** Tocar un módulo en 3D (o en la lista de qué hay): su ficha, saliendo desde su número. */
-function visor3dAbrir(V, m) {
+/** Tocar un módulo en 3D (o en la lista de qué hay): su ficha, saliendo desde su número. Desde el modo mira, al cerrarla
+    se vuelve a mira. */
+function visor3dAbrir(V, m, desdeMira) {
   if (V.ficha || !visorModulo(V, m.id)) return;
+  V.volverMira = !!desdeMira;
   var c = V.c3 && V.c3.cajas.filter(function (x) { return x.m.id === m.id; })[0], b = c && c.el.querySelector('b');
   abrirFicha(V, m.id, b && document.body.contains(b) && b.getBoundingClientRect().width ? b : V.escena);
+}
+/* ── Modo mira y sensibilidad (pedido de Mauricio, 15/10: "un modo mira… un puntito en el medio y que el mouse lo pueda
+      mover para cualquier lado… y bajarle un poco la sensibilidad, está como muy, muy rápido"). ── */
+var VISOR_SENS = { baja: 0.6, media: 1, alta: 1.6 };
+function visorSensClave() { var k = null; try { k = localStorage.getItem('vdh_visor_sens'); } catch (e) {} return VISOR_SENS[k] ? k : 'media'; }
+function visorSensibilidad() { return VISOR_SENS[visorSensClave()]; }
+/** Mira sólo con mouse (en el teléfono no hay puntero que trabar). */
+function visorPuedeMira() { return !!(window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches && window.Element && Element.prototype.requestPointerLock); }
+/** Entró o salió del modo mira: el puntito, el botón y la ayuda. */
+function visor3dMira(V, si) {
+  var b = V.cont.querySelector('#cvMira');
+  if (b) b.setAttribute('aria-pressed', !!si);
+  V.raiz.classList.toggle('cv-mirando', !!si);
+  if (!si) visor3dApuntar(V, null);
+  visor3dCaminando(V, !!(V.c3 && V.c3.caminando()));
+}
+/** En mira, lo que quedó en el puntito: un módulo (su número se agranda y su foto aparece al lado) o una puerta. */
+function visor3dApuntar(V, a) {
+  var p = V.cont.querySelector('#cvMiraPunto'), t = V.cont.querySelector('#cvMiraTexto');
+  if (p) p.classList.toggle('sobre', !!a);
+  if (t) t.textContent = a && a.puerta ? (a.puerta.destino === 'deposito' ? 'Puerta al depósito · clic para pasar' : 'Puerta al salón · clic para pasar') : '';
+  if (!V.previa) return;
+  if (a && a.m) { var r = V.escena.getBoundingClientRect(); V.previa.mostrarEn(a.m.id, r.left + r.width / 2, r.top + r.height / 2); }
+  else V.previa.ocultar();
 }
 /** El número del módulo que tiene el puntero encima se agranda (como el módulo que se levanta en la maqueta). */
 function visor3dEncima(V, id) {
@@ -1383,7 +1437,11 @@ function cerrarFicha(V, ya, porAtras) {
     listo = true;
     f.el.remove(); f.fondo.remove();
     if (V.ficha === f) V.ficha = null;
+    var volver = V.volverMira;
+    V.volverMira = false;
     if (ya) return;
+    /* Se abrió desde el modo mira: vuelve a él. */
+    if (volver && V.c3 && V.c3.caminando()) V.c3.mira(true);
     if (f.caja && document.body.contains(f.caja)) f.caja.focus({ preventScroll: true });
     if (V.ajustePendiente) { V.ajustePendiente = false; V.alTamano(); }
   };

@@ -406,3 +406,17 @@
 .cv-foto-img.cv-horizontal, .cv-previa-foto.cv-horizontal { aspect-ratio: 4 / 3; }
 .cv-previa:has(.cv-horizontal) { width: 300px; }
 .cv-foto-cara.cv-horizontal { background-size: contain; }
+
+/* Modo mira: el puntito del medio (sin flecha del mouse); apuntando a algo, un aro lima y, si es una puerta, a dónde va. */
+.cv-mira { position: absolute; left: 50%; top: 50%; z-index: 3; display: none; place-items: center; transform: translate(-50%, -50%); pointer-events: none; }
+.cv-mirando .cv-mira { display: grid; }
+.cv-mira i { width: 8px; height: 8px; box-sizing: border-box; border-radius: 50%; background: #fff; box-shadow: 0 0 0 2px rgba(0, 0, 0, .55); transition: width .12s, height .12s, background-color .12s; }
+.cv-mira.sobre i { width: 18px; height: 18px; background: rgba(198, 244, 50, .18); border: 3px solid var(--cv-lima); box-shadow: 0 0 0 2px rgba(0, 0, 0, .5), 0 0 14px rgba(198, 244, 50, .55); }
+.cv-mira span { position: absolute; top: calc(100% + 10px); white-space: nowrap; padding: 4px 10px; border-radius: 9px; background: rgba(14, 17, 22, .88); color: var(--cv-texto); font-size: 12.5px; font-weight: 800; }
+.cv-mira span:empty { display: none; }
+.cv-mirando .cv-escena, .cv-mirando .cv-escena:active { cursor: none; }
+#cvMira[aria-pressed="true"] { background: var(--cv-texto); color: var(--cv-bg); }
+/* Sensibilidad del mouse (Ajustes de la vista). */
+.cv-sens { display: grid; gap: 6px; margin-bottom: 10px; }
+.cv-sens > span { color: var(--cv-suave); font-size: 12.5px; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .cv-mira i { transition: none; } }

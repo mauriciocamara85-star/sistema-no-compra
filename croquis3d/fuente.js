@@ -1481,7 +1481,10 @@ export function montarCroquis3D(cont, pl, d, op) {
 
   const camara = new THREE.PerspectiveCamera(36, ancho / alto, 5, 5000);
   const controles = new OrbitControls(camara, renderer.domElement);
-  controles.enableDamping = true; controles.dampingFactor = 0.08;
+  controles.enableDamping = true;
+  let sens = op.sensibilidad || 1;
+  const aplicarSens = () => { controles.rotateSpeed = 0.5 * sens; controles.panSpeed = 0.8 * sens; controles.zoomSpeed = 0.85; controles.dampingFactor = 0.14; };
+  aplicarSens();
   controles.minPolarAngle = 0.05; controles.maxPolarAngle = 1.22;
   controles.screenSpacePanning = true;
   controles.target.set(0, 10, 0);
@@ -1625,6 +1628,7 @@ export function montarCroquis3D(cont, pl, d, op) {
   };
   const dejarDeCaminar = () => {
     if (!paseo) return;
+    salirMira();
     const f = new THREE.Vector3(Math.sin(paseo.yaw), 0, Math.cos(paseo.yaw));
     paseo = null; controles.enabled = true;
     if (escena.userData.techo) escena.userData.techo.visible = false;
@@ -1650,7 +1654,7 @@ export function montarCroquis3D(cont, pl, d, op) {
     if (giro) { paseo.yaw += giro * dt * 1.8; mueve = true; }
     if (ad || lado) {
       const f = new THREE.Vector3(Math.sin(paseo.yaw), 0, Math.cos(paseo.yaw)), der = new THREE.Vector3(-f.z, 0, f.x);
-      const m = f.multiplyScalar(ad * VEL * dt).addScaledVector(der, lado * VEL * dt);
+      const vel = VEL * (t.shift ? 2 : 1), m = f.multiplyScalar(ad * vel * dt).addScaledVector(der, lado * vel * dt);
       moverA(paseo.pos.x + m.x, paseo.pos.z + m.z); paseo.destino = null; mueve = true;
     }
     if (paseo.destino) {
@@ -1668,6 +1672,7 @@ export function montarCroquis3D(cont, pl, d, op) {
     }
     for (const k in t) if (t[k] === 'fin') delete t[k];
     camara.position.copy(paseo.pos); camara.lookAt(paseo.pos.clone().add(mirada()));
+    if (mira) apuntarCentro();
     return mueve || !!paseo.mirando || Object.keys(t).length > 0;
   };
   /** Ir caminando hasta donde se tocó: el piso, o adelante de un módulo (no adentro), o la puerta. */
@@ -1712,7 +1717,7 @@ export function montarCroquis3D(cont, pl, d, op) {
     clicDemorado = setTimeout(() => { if (vivo) op.alTocar(m); }, 320);
   });
   el.addEventListener('pointerdown', (e) => {
-    if (!paseo) return;
+    if (!paseo || mira) return;
     arr = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, id: e.pointerId, movio: false };
     try { el.setPointerCapture(e.pointerId); } catch (x) {}
   });
@@ -1723,7 +1728,7 @@ export function montarCroquis3D(cont, pl, d, op) {
     if (!arr.movio && Math.abs(e.clientX - arr.x0) + Math.abs(e.clientY - arr.y0) < 6) return;
     arr.movio = true; paseo.mirando = true; ultimo = performance.now();
     /* Para arriba, mira para arriba (como subir la cabeza). */
-    paseo.yaw += dx * 0.005; paseo.pitch = Math.max(-1, Math.min(1, paseo.pitch - dy * 0.004));
+    paseo.yaw += dx * 0.0032 * sens; paseo.pitch = Math.max(-1, Math.min(1, paseo.pitch - dy * 0.0026 * sens));
     render();
   });
   const soltar = (e) => {
@@ -1740,7 +1745,58 @@ export function montarCroquis3D(cont, pl, d, op) {
     e.preventDefault();
     camara.fov = Math.max(34, Math.min(80, camara.fov + Math.sign(e.deltaY) * 4)); camara.updateProjectionMatrix(); ultimo = performance.now(); render();
   }, { passive: false });
-  const TECLAS = { arrowup: 1, arrowdown: 1, arrowleft: 1, arrowright: 1, w: 1, a: 1, s: 1, d: 1 };
+  /* ── Modo mira: el puntito del medio y el mouse trabado en el 3D ── */
+  let mira = false, apuntado = null;
+  const centro = () => { const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  /** Qué hay en el puntito: un módulo, una puerta (de las que se pasan) o nada. Avisa sólo si cambió. */
+  const apuntarCentro = () => {
+    if (!mira) return;
+    camara.updateMatrixWorld();
+    const c = centro(), m = moduloEn(c.x, c.y);
+    const hp = !m && toquesPuerta.length ? ray.intersectObjects(toquesPuerta, false)[0] : null;
+    const nuevo = m ? { m, k: 'm' + m.id } : hp ? { puerta: hp.object.userData.puerta, k: 'p' + hp.object.userData.puerta.destino } : null;
+    if ((nuevo && nuevo.k) === (apuntado && apuntado.k)) return;
+    apuntado = nuevo;
+    if (op.alApuntar) op.alApuntar(apuntado);
+  };
+  const salirMira = () => { if (document.pointerLockElement === el && document.exitPointerLock) document.exitPointerLock(); };
+  const entrarMira = () => {
+    if (!el.requestPointerLock) return false;
+    if (!paseo) caminar();
+    try { const p = el.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) { return false; }
+    return true;
+  };
+  const alCambiarMira = () => {
+    const si = !!paseo && document.pointerLockElement === el;
+    if (si === mira) return;
+    mira = si;
+    if (!si && apuntado) { apuntado = null; if (op.alApuntar) op.alApuntar(null); }
+    if (si) apuntarCentro();
+    if (op.alMira) op.alMira(si);
+    render();
+  };
+  document.addEventListener('pointerlockchange', alCambiarMira);
+  /* Mover el mouse: a la derecha gira a la derecha; para arriba, mira para arriba. */
+  el.addEventListener('mousemove', (e) => {
+    if (!mira || !paseo || paseo.tween) return;
+    paseo.yaw -= (e.movementX || 0) * 0.0022 * sens;
+    paseo.pitch = Math.max(-1.2, Math.min(1.2, paseo.pitch - (e.movementY || 0) * 0.0022 * sens));
+    ultimo = performance.now();
+    render();
+  });
+  /* Clic: lo que está en el puntito. Un módulo abre su ficha (y suelta el mouse); una puerta pasa; el piso, va hasta ahí. */
+  el.addEventListener('mousedown', (e) => {
+    if (!mira || !paseo || e.button !== 0) return;
+    e.preventDefault();
+    apuntado = null;
+    apuntarCentro();
+    const a = apuntado;
+    if (a && a.m && op.alTocar) { const m = a.m; salirMira(); op.alTocar(m, { desdeMira: true }); return; }
+    if (a && a.puerta) { pasarPor(a.puerta); return; }
+    const c = centro();
+    irA(c.x, c.y);
+  });
+  const TECLAS = { arrowup: 1, arrowdown: 1, arrowleft: 1, arrowright: 1, w: 1, a: 1, s: 1, d: 1, shift: 1 };
   const teclaAbajo = (e) => {
     const k = String(e.key || '').toLowerCase(), tg = e.target && e.target.tagName;
     if (!paseo || !TECLAS[k] || e.altKey || e.ctrlKey || e.metaKey || tg === 'INPUT' || tg === 'TEXTAREA' || tg === 'SELECT' || (op.quieto && op.quieto())) return;
@@ -1781,6 +1837,7 @@ export function montarCroquis3D(cont, pl, d, op) {
   };
   /** Para volver a armarlo (otro estilo, el depósito, Liviano): suelta todo lo de éste. */
   const destruir = () => {
+    salirMira(); document.removeEventListener('pointerlockchange', alCambiarMira);
     vivo = false; clearTimeout(bueno); cancelAnimationFrame(pedido); controles.dispose(); renderer.dispose(); renderer.forceContextLoss();
     renderer.domElement.remove(); etiquetas.domElement.remove();
     window.removeEventListener('keydown', teclaAbajo); window.removeEventListener('keyup', teclaArriba); window.removeEventListener('blur', sinTeclas);
@@ -1829,5 +1886,7 @@ export function montarCroquis3D(cont, pl, d, op) {
            pintar, acercar, girar, inclinar, mirarModulos,
            caminar: () => caminar(), dejarDeCaminar, caminando: () => !!paseo, puertas, pasarPor,
            moviendo: () => !!viaje || !!(paseo && (paseo.tween || paseo.destino)),
-           dondeEstoy: () => (paseo ? { x: paseo.pos.x, z: paseo.pos.z, yaw: paseo.yaw } : null) };
+           mira: (si) => (si === false ? (salirMira(), true) : entrarMira()), mirando: () => mira, apuntado: () => apuntado,
+           sensibilidad: (f) => { sens = f || 1; aplicarSens(); },
+           dondeEstoy: () => (paseo ? { x: paseo.pos.x, z: paseo.pos.z, yaw: paseo.yaw, pitch: paseo.pitch } : null) };
 }
