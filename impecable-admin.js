@@ -94,6 +94,7 @@ function svgMenu(k) {
 var _locales = [];
 var _local = null;
 var K_LOCAL_SUP = 'vdh_vend_local_sup';
+var K_MENU_CHICO = 'nc_panel_equipo';
 
 (function () {
   var b = document.getElementById('btnRefrescar');
@@ -133,13 +134,15 @@ function cabezaAdmin() {
   var actual = SOLAPAS.filter(function (x) { return x[0] === _solapa; })[0] || SOLAPAS[0];
   /* El local se elige en todo salvo en el Panorama, que es de todos. */
   var conLocal = _solapa !== 'panorama' && _locales.length > 1;
-  return '<div class="imp-grid"><nav class="imp-menu" aria-label="Equipo VDH"><div class="imp-menu-cab">Equipo VDH</div>' +
+  /* En la compu el menú se achica a íconos con el botón de todos los paneles (interfaz.js), y se recuerda. */
+  var chico = Interfaz.panelChico(K_MENU_CHICO);
+  return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" aria-label="Equipo VDH"><div class="imp-menu-cab"><span>Equipo VDH</span>' + Interfaz.botonPanel(chico) + '</div>' +
     solapas.map(function (x) {
-      return '<button class="imp-item' + (x[0] === _solapa ? ' activa' : '') + '" data-solapa="' + x[0] + '">' + svgMenu(x[0]) + esc(x[1]) + '</button>';
+      return '<button class="imp-item' + (x[0] === _solapa ? ' activa' : '') + '" data-solapa="' + x[0] + '" title="' + esc(x[1]) + '">' + svgMenu(x[0]) + '<span>' + esc(x[1]) + '</span></button>';
     }).join('') +
     '<div class="imp-menu-pie"><div class="imp-quien"><b>' + esc(per.nombre || '') + '</b>' + esc(ROL[per.rol] || '') + '</div>' +
-      '<a class="imp-item" href="vendedores.html">' + svgMenu('app') + 'Abrir la app</a>' +
-      '<button class="imp-item" id="salir">' + svgMenu('salir') + 'Salir</button></div></nav>' +
+      '<a class="imp-item" href="vendedores.html" title="Abrir la app">' + svgMenu('app') + '<span>Abrir la app</span></a>' +
+      '<button class="imp-item" id="salir" title="Salir">' + svgMenu('salir') + '<span>Salir</span></button></div></nav>' +
     '<section class="imp-cuerpo"><div class="imp-cab"><div><h2>' + esc(actual[0] === 'local' && _local ? _local.nombre : actual[1]) + '</h2>' +
       '<span class="imp-sub">' + esc(actual[2]) + '</span></div><div class="imp-cab-der">' +
       (conLocal ? '<select class="imp-sel" id="selLocal" aria-label="Local">' + _locales.map(function (l) {
@@ -161,6 +164,14 @@ function ir(solapa) {
     pantallaSinSesion('Saliste. Para volver, entrá de nuevo con tu PIN.');
   };
   app.querySelectorAll('[data-solapa]').forEach(function (b) { b.onclick = function () { ir(b.dataset.solapa); }; });
+  var pl = app.querySelector('.imp-menu .plegar-panel');
+  if (pl) pl.onclick = function () {
+    var g = app.querySelector('.imp-grid'), ch = !g.classList.contains('menu-chico');
+    Interfaz.panelChico(K_MENU_CHICO, ch);
+    g.classList.toggle('menu-chico', ch);
+    pl.outerHTML = Interfaz.botonPanel(ch);
+    app.querySelector('.imp-menu .plegar-panel').onclick = pl.onclick;
+  };
   asomarMenu();
   if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
   ({ panorama: verPanorama, local: verLocal, fotos: verFotos, orden: verOrden, cajas: verCajas, testigo: verTestigo, ajustes: verAjustes })[solapa]();
@@ -204,26 +215,60 @@ function grupoVacio() { return { c: 0, ca: 0, r: 0, pp: 0, pn: 0, malo: false };
 function pct(a, b) { return b ? Math.round(100 * a / b) : null; }
 function estNivel(n) { return n ? '<span class="est nivel-' + esc(n) + '">' + esc(NIVEL[n]) + '</span>' : '<span class="est">Sin fotos</span>'; }
 
-var _panSemanas = 4, _panOrden = 'alfa';   // con 4 entra todo en la PC del local; 8 y 12 se deslizan
+/** Las semanas (sus lunes) que tocan un período, hasta la de hoy y como mucho las últimas 26 (medio año en columnas). */
+function semanasDe(r) {
+  var s = [], tope = lunesAR();
+  for (var w = Interfaz.fecha.lunes(r.desde); w <= r.hasta && w <= tope; w = sumarDias(w, 7)) s.push(w);
+  if (!s.length) s.push(Interfaz.fecha.lunes(r.desde));
+  return s.slice(-26);
+}
+
+/* El período es el selector común (15/10/2026): arranca en las últimas 4 semanas, que es lo que entra en la PC del
+   local; con más, la tabla se desliza. Los números de "esta semana" son siempre de esta semana. */
+var _panOrden = 'alfa', _panPedido = 0;
 function verPanorama() {
-  var semanas = [];
-  for (var i = _panSemanas - 1; i >= 0; i--) semanas.push(sumarDias(lunesAR(), -7 * i));
-  var desde = semanas[0], esta = semanas[semanas.length - 1], pasada = semanas[semanas.length - 2];
+  var c = document.getElementById('cuerpo');
+  c.innerHTML = '<div id="panKpis"><p class="cargando">Cargando…</p></div>' +
+    '<div class="imp-filtros"><div id="panPer"></div><div class="solapas">' + [['alfa', 'Alfabético'], ['nivel', 'Por nivel']].map(function (o) {
+      return '<button data-pan-orden="' + o[0] + '" class="' + (o[0] === _panOrden ? 'activa' : '') + '">' + o[1] + '</button>';
+    }).join('') + '</div></div><div id="panTabla"></div>';
+  var sel = Interfaz.periodo(document.getElementById('panPer'), {
+    inicial: '4s', atajos: ['semana', 'semana-pasada', '4s', '8s', '12s', 'mes', 'mes-pasado', '3m'], guardar: 'nc_eq_panorama',
+    alCambiar: function (r) { datosPanorama(r); }
+  });
+  c.querySelectorAll('[data-pan-orden]').forEach(function (b) {
+    b.onclick = function () {
+      _panOrden = b.dataset.panOrden;
+      c.querySelectorAll('[data-pan-orden]').forEach(function (x) { x.classList.toggle('activa', x === b); });
+      datosPanorama(sel.rango());
+    };
+  });
+  datosPanorama(sel.rango());
+}
+
+function datosPanorama(rango) {
+  var pedido = ++_panPedido;
+  var semanas = semanasDe(rango), enRango = {};
+  semanas.forEach(function (w) { enRango[w] = true; });
+  var esta = lunesAR(), pasada = sumarDias(esta, -7);
+  var desde = semanas[0] < pasada ? semanas[0] : pasada, hasta = semanas[semanas.length - 1] > esta ? semanas[semanas.length - 1] : esta;
+  document.getElementById('panTabla').innerHTML = '<p class="cargando">Cargando…</p>';
   Promise.all([
-    leer('/orden_v_persona_semana?select=local_id,semana,controles,controles_a_tiempo,controles_tarde,controles_vencidos,puntos,nivel_semana&semana=gte.' + desde),
+    leer('/orden_v_persona_semana?select=local_id,semana,controles,controles_a_tiempo,controles_tarde,controles_vencidos,puntos,nivel_semana&semana=gte.' + desde + '&semana=lte.' + hasta),
     leer('/orden_v_estado_local?select=local_id,modulo_id,tareas_abiertas,sin_foto_reciente'),
     leer('/orden_v_por_revisar?select=id,local_id'),
-    leer('/orden_v_cajas?select=local_id,fecha,estado,alertas&fecha=gte.' + desde)
+    leer('/orden_v_cajas?select=local_id,fecha,estado,alertas&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta)
   ]).then(function (r) {
-    if (_solapa !== 'panorama') return;
+    if (_solapa !== 'panorama' || pedido !== _panPedido) return;
     var por = {};
     _locales.forEach(function (l) { por[l.id] = { l: l, sem: {}, tot: grupoVacio(), mods: 0, sinFoto: 0, tareas: 0, revisar: 0, cajasDif: 0 }; });
     var cadena = {}; cadena[esta] = grupoVacio(); cadena[pasada] = grupoVacio();
     (r[0] || []).forEach(function (f) {
       var x = por[f.local_id]; if (!x) return;
+      if (cadena[f.semana]) sumarSemana(cadena[f.semana], f);
+      if (!enRango[f.semana]) return;
       sumarSemana(x.sem[f.semana] || (x.sem[f.semana] = grupoVacio()), f);
       sumarSemana(x.tot, f);
-      if (cadena[f.semana]) sumarSemana(cadena[f.semana], f);
     });
     (r[1] || []).forEach(function (m) { var x = por[m.local_id]; if (!x) return; x.mods++; x.tareas += m.tareas_abiertas || 0; if (m.sin_foto_reciente) x.sinFoto++; });
     (r[2] || []).forEach(function (v) { var x = por[v.local_id]; if (x) x.revisar++; });
@@ -240,14 +285,11 @@ function verPanorama() {
       '<div class="kpi"><div class="kpi-n">' + esc(nc ? NIVEL[nc] : '—') + '</div><div class="kpi-l">Nivel de la cadena esta semana</div><div class="kpi-pie">Lo que vio la IA y confirmó la supervisión</div></div>' +
       '<div class="kpi' + (t.revisar ? ' es-pend' : '') + '"><div class="kpi-n">' + t.revisar + '</div><div class="kpi-l">Fotos sin revisar</div><div class="kpi-pie">En todos los locales, ahora</div></div>' +
       '<div class="kpi' + (t.tareas ? ' es-pend' : '') + '"><div class="kpi-n">' + t.tareas + '</div><div class="kpi-l">Tareas abiertas en los módulos</div><div class="kpi-pie">Pendientes o vencidas</div></div>' +
-      '<div class="kpi' + (t.cajas ? ' es-mal' : '') + '"><div class="kpi-n">' + t.cajas + '</div><div class="kpi-l">Cajas con diferencia</div><div class="kpi-pie">En las últimas ' + _panSemanas + ' semanas</div></div>' +
+      '<div class="kpi' + (t.cajas ? ' es-mal' : '') + '"><div class="kpi-n">' + t.cajas + '</div><div class="kpi-l">Cajas con diferencia</div><div class="kpi-pie">' + esc(rango.texto) + '</div></div>' +
       '<div class="kpi"><div class="kpi-n">' + conMods + '<small> de ' + lista.length + '</small></div><div class="kpi-l">Locales con módulos cargados</div><div class="kpi-pie">Los otros todavía no generan controles</div></div>' +
-      '</div>' +
-      '<div class="imp-filtros"><div class="solapas">' + [4, 8, 12].map(function (n) {
-        return '<button data-pan-sem="' + n + '" class="' + (n === _panSemanas ? 'activa' : '') + '">' + n + ' semanas</button>';
-      }).join('') + '</div><div class="solapas">' + [['alfa', 'Alfabético'], ['nivel', 'Por nivel']].map(function (o) {
-        return '<button data-pan-orden="' + o[0] + '" class="' + (o[0] === _panOrden ? 'activa' : '') + '">' + o[1] + '</button>';
-      }).join('') + '</div></div>';
+      '</div>';
+    document.getElementById('panKpis').innerHTML = html;
+    html = '';
 
     var valorOrden = function (x) {
       for (var j = semanas.length - 1; j >= 0; j--) { var g = x.sem[semanas[j]]; if (g && g.pn) return g.pp / g.pn + (pct(g.ca, g.r) || 0) / 1000; }
@@ -279,10 +321,8 @@ function verPanorama() {
     if (sinMods.length) html += '<div class="nota imp-sin-mods">Todavía sin módulos (no generan controles): ' + sinMods.map(function (x) {
         return '<button class="imp-enlace" data-ir="' + esc(x.l.id) + '">' + esc(x.l.nombre) + '</button>';
       }).join(', ') + '. Se cargan en Ajustes → Sectores y módulos.</div>';
-    var c = document.getElementById('cuerpo');
+    var c = document.getElementById('panTabla');
     c.innerHTML = html;
-    c.querySelectorAll('[data-pan-sem]').forEach(function (b) { b.onclick = function () { _panSemanas = +b.dataset.panSem; verPanorama(); }; });
-    c.querySelectorAll('[data-pan-orden]').forEach(function (b) { b.onclick = function () { _panOrden = b.dataset.panOrden; verPanorama(); }; });
     c.querySelectorAll('[data-ir]').forEach(function (tr) { tr.onclick = function () { elegirLocal(tr.dataset.ir); ir('local'); }; });
   }).catch(function (e) { error(e, verPanorama); });
 }
@@ -317,26 +357,42 @@ function graficoLocal(filas) {
    FOTOS: las de los controles, con lo que dijo la IA
    ════════════════════════════════════════════════════════════════════════ */
 
-var _fotoDias = 7, _fotoNivel = '', _fotoQuien = '';
+/* El período es el selector común (15/10/2026): arranca en los últimos 7 días. */
+var _fotoNivel = '', _fotoQuien = '', _fotoPedido = 0;
 function verFotos() {
-  var L = valor(_local.id);
-  var desde = sumarDias(hoyAR(), -(_fotoDias - 1));
+  var c = document.getElementById('cuerpo');
+  c.innerHTML = '<div class="imp-filtros"><div id="fotoPer"></div><div class="solapas">' +
+    [['', 'Todos los niveles']].concat(NIVELES.slice().reverse().map(function (n) { return [n, NIVEL[n]]; })).map(function (o) {
+      return '<button data-foto-nivel="' + o[0] + '" class="' + (o[0] === _fotoNivel ? 'activa' : '') + '">' + esc(o[1]) + '</button>';
+    }).join('') + '</div><span id="fotoQuienLugar"></span></div><div id="fotoDatos"><p class="cargando">Cargando…</p></div>';
+  var sel = Interfaz.periodo(document.getElementById('fotoPer'), {
+    inicial: '7', atajos: ['hoy', 'ayer', '7', 'semana', 'semana-pasada', '30', 'mes', 'mes-pasado'], hastaHoy: true, guardar: 'nc_eq_fotos',
+    alCambiar: function (r) { datosFotos(r); }
+  });
+  c.querySelectorAll('[data-foto-nivel]').forEach(function (b) {
+    b.onclick = function () {
+      _fotoNivel = b.dataset.fotoNivel;
+      c.querySelectorAll('[data-foto-nivel]').forEach(function (x) { x.classList.toggle('activa', x === b); });
+      datosFotos(sel.rango());
+    };
+  });
+  datosFotos(sel.rango());
+}
+
+function datosFotos(rango) {
+  var L = valor(_local.id), pedido = ++_fotoPedido;
   leer('/orden_v_controles?select=id,fecha,tipo,estado,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,a_tiempo,comentario' +
-       '&local_id=eq.' + L + '&foto_path=not.is.null&fecha=gte.' + desde + (_fotoNivel ? '&nivel=eq.' + _fotoNivel : '') + '&order=tomada_en.desc&limit=150')
+       '&local_id=eq.' + L + '&foto_path=not.is.null&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + (_fotoNivel ? '&nivel=eq.' + _fotoNivel : '') + '&order=tomada_en.desc&limit=150')
     .then(function (fotos) {
-      if (_solapa !== 'fotos') return;
+      if (_solapa !== 'fotos' || pedido !== _fotoPedido) return;
       fotos = fotos || [];
       var quienes = fotos.map(function (f) { return f.persona_nombre; }).filter(function (q, i, a) { return q && a.indexOf(q) === i; }).sort();
       if (_fotoQuien && quienes.indexOf(_fotoQuien) < 0) _fotoQuien = '';
       var vistas = fotos.filter(function (f) { return !_fotoQuien || f.persona_nombre === _fotoQuien; });
-      var html = '<div class="imp-filtros"><div class="solapas">' + [[7, 'Última semana'], [14, '2 semanas'], [30, 'Un mes']].map(function (o) {
-          return '<button data-foto-dias="' + o[0] + '" class="' + (o[0] === _fotoDias ? 'activa' : '') + '">' + o[1] + '</button>';
-        }).join('') + '</div><div class="solapas">' + [['', 'Todos los niveles']].concat(NIVELES.slice().reverse().map(function (n) { return [n, NIVEL[n]]; })).map(function (o) {
-          return '<button data-foto-nivel="' + o[0] + '" class="' + (o[0] === _fotoNivel ? 'activa' : '') + '">' + esc(o[1]) + '</button>';
-        }).join('') + '</div>' +
-        (quienes.length > 1 ? '<select class="imp-sel" id="fotoQuien" aria-label="Quién"><option value="">Todos</option>' + quienes.map(function (q) {
+      document.getElementById('fotoQuienLugar').innerHTML = quienes.length > 1 ? '<select class="imp-sel" id="fotoQuien" aria-label="Quién"><option value="">Todos</option>' + quienes.map(function (q) {
           return '<option' + (q === _fotoQuien ? ' selected' : '') + '>' + esc(q) + '</option>';
-        }).join('') + '</select>' : '') + '</div>';
+        }).join('') + '</select>' : '';
+      var html = '';
       if (!vistas.length) html += '<div class="vacio">No hay fotos en este período' + (_fotoNivel ? ' con ese nivel' : '') + '.</div>';
       else html += '<p class="bajada">' + vistas.length + (vistas.length === 1 ? ' foto' : ' fotos') + '. Tocá una para verla grande.</p><div class="imp-fotos">' + vistas.map(function (f, i) {
         var distinta = f.nivel_ia && f.nivel && f.nivel_ia !== f.nivel;
@@ -344,13 +400,11 @@ function verFotos() {
           '<div class="info">' + estNivel(f.nivel) + (distinta ? '<span class="est">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>' : '') + (f.estado === 'enviado' ? '<span class="est sorpresa">Sin revisar</span>' : '') + '</div>' +
           '<small>' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + (f.tipo === 'sorpresa' ? ' · sorpresa' : '') + (f.a_tiempo === false ? ' · tarde' : '')) + '</small></button>';
       }).join('') + '</div>';
-      var c = document.getElementById('cuerpo');
+      var c = document.getElementById('fotoDatos');
       c.innerHTML = html;
       cargarFotos(c);
-      c.querySelectorAll('[data-foto-dias]').forEach(function (b) { b.onclick = function () { _fotoDias = +b.dataset.fotoDias; verFotos(); }; });
-      c.querySelectorAll('[data-foto-nivel]').forEach(function (b) { b.onclick = function () { _fotoNivel = b.dataset.fotoNivel; verFotos(); }; });
       var q = document.getElementById('fotoQuien');
-      if (q) q.onchange = function () { _fotoQuien = q.value; verFotos(); };
+      if (q) q.onchange = function () { _fotoQuien = q.value; datosFotos(rango); };
       c.querySelectorAll('[data-i]').forEach(function (b) { b.onclick = function () { verFoto(vistas[+b.dataset.i]); }; });
     }).catch(function (e) { error(e, verFotos); });
 }
@@ -442,21 +496,30 @@ function verModulo(m) {
    ORDEN (las estadísticas)
    ════════════════════════════════════════════════════════════════════════ */
 
-var _semanas = 4;
+/* El período es el selector común (15/10/2026): arranca en las últimas 4 semanas. */
+var _ordenPedido = 0;
 function verOrden() {
-  var L = valor(_local.id);
-  var desde = sumarDias(lunesAR(), -7 * (_semanas - 1));
-  var desdeTs = new Date(desde + 'T00:00:00-03:00').toISOString();
+  var c = document.getElementById('cuerpo');
+  c.innerHTML = '<div class="imp-filtros"><div id="ordenPer"></div></div><div id="ordenDatos"><p class="cargando">Cargando…</p></div>';
+  var sel = Interfaz.periodo(document.getElementById('ordenPer'), {
+    inicial: '4s', atajos: ['semana', 'semana-pasada', '4s', '8s', '12s', 'mes', 'mes-pasado', '3m'], guardar: 'nc_eq_vendedor',
+    alCambiar: function (r) { datosOrden(r); }
+  });
+  datosOrden(sel.rango());
+}
+
+function datosOrden(rango) {
+  var L = valor(_local.id), pedido = ++_ordenPedido;
+  var semanas = semanasDe(rango), desde = semanas[0], hastaSem = semanas[semanas.length - 1];
+  var desdeTs = new Date(rango.desde + 'T00:00:00-03:00').toISOString(), hastaTs = new Date(sumarDias(rango.hasta, 1) + 'T00:00:00-03:00').toISOString();
   Promise.all([
-    leer('/orden_v_persona_semana?select=*&local_id=eq.' + L + '&semana=gte.' + desde + '&order=semana.asc'),
-    leer('/orden_controles?select=nivel_ia,nivel_final&local_id=eq.' + L + '&estado=eq.revisado&nivel_ia=not.is.null&revisado_en=gte.' + desdeTs),
+    leer('/orden_v_persona_semana?select=*&local_id=eq.' + L + '&semana=gte.' + desde + '&semana=lte.' + hastaSem + '&order=semana.asc'),
+    leer('/orden_controles?select=nivel_ia,nivel_final&local_id=eq.' + L + '&estado=eq.revisado&nivel_ia=not.is.null&revisado_en=gte.' + desdeTs + '&revisado_en=lt.' + hastaTs),
     leer('/orden_v_personas?select=id,nombre,inicial,avisos_activos,ultima_foto&local_id=eq.' + L + '&activo=is.true&rol=eq.vendedor&order=nombre.asc'),
-    leer('/orden_v_tareas?select=origen,estado&local_id=eq.' + L + '&creado_en=gte.' + desdeTs)
+    leer('/orden_v_tareas?select=origen,estado&local_id=eq.' + L + '&creado_en=gte.' + desdeTs + '&creado_en=lt.' + hastaTs)
   ]).then(function (r) {
-    if (_solapa !== 'orden') return;
+    if (_solapa !== 'orden' || pedido !== _ordenPedido) return;
     var filas = r[0] || [], ia = r[1] || [], gente = r[2] || [], tareas = r[3] || [];
-    var semanas = [];
-    for (var i = _semanas - 1; i >= 0; i--) semanas.push(sumarDias(lunesAR(), -7 * i));
     var por = {};
     filas.forEach(function (f) { (por[f.persona_id] = por[f.persona_id] || {})[f.semana] = f; });
     var puntos = { impecable: 4, bien: 3, a_mejorar: 2, fuera_de_estandar: 1 };
@@ -466,10 +529,7 @@ function verOrden() {
     tareas.forEach(function (t) { origen[t.origen] = (origen[t.origen] || 0) + 1; });
     var sinAvisos = gente.filter(function (p) { return !p.avisos_activos; });
 
-    var html = '<div class="solapas chicas">' + [4, 8, 12].map(function (n) {
-      return '<button data-semanas="' + n + '" class="' + (n === _semanas ? 'activa' : '') + '">' + n + ' semanas</button>';
-    }).join('') + '</div>' +
-      '<div class="numeros">' +
+    var html = '<div class="numeros">' +
       '<div class="numero"><span>Cuánto acierta la IA (igual que el supervisor)</span><b>' + (ia.length ? Math.round(100 * exactas / ia.length) + '%' : '—') + '</b><span>' + (ia.length ? 'A un nivel o menos: ' + Math.round(100 * cerca / ia.length) + '% · ' + ia.length + ' fotos revisadas' : 'Todavía sin fotos revisadas') + '</span></div>' +
       '<div class="numero"><span>Tareas del período</span><b>' + tareas.length + '</b><span>IA ' + origen.ia + ' · supervisor ' + origen.supervisor + ' · administración ' + origen.admin + ' · sistema ' + origen.sistema + '</span></div>' +
       '<div class="numero"><span>Sin los avisos activados</span><b>' + sinAvisos.length + '</b><span>' + esc(sinAvisos.map(function (p) { return p.nombre + (p.inicial ? ' ' + p.inicial + '.' : ''); }).join(', ') || 'Todos los tienen') + '</span></div></div>' +
@@ -491,9 +551,7 @@ function verOrden() {
             '<td class="n">' + pc(t.ca, t.c) + '</td><td class="n">' + pc(t.ta, t.t) + '</td><td class="n">' + (t.dt ? t.d + '/' + t.dt : '—') + '</td></tr>';
         }).join('') + '</tbody></table></div>';
     }
-    var c = document.getElementById('cuerpo');
-    c.innerHTML = html;
-    c.querySelectorAll('[data-semanas]').forEach(function (b) { b.onclick = function () { _semanas = +b.dataset.semanas; verOrden(); }; });
+    document.getElementById('ordenDatos').innerHTML = html;
   }).catch(function (e) { error(e, verOrden); });
 }
 
