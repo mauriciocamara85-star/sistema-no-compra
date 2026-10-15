@@ -10,13 +10,18 @@
    ════════════════════════════════════════════════════════════════════════ */
 
 var VISOR_INCL = 38;                 // grados de inclinación de la maqueta ("Desde arriba" es 0)
+var VISOR_INCL_MIN = 12, VISOR_INCL_MAX = 68;   // lo que se puede inclinar arrastrando el mouse para arriba o para abajo
+var VISOR_ZOOM_MAX = 5;              // lo más que se acerca (para ver la foto de un módulo desde el plano)
 var VISOR_ALTO = { pared: 58, deposito: 60, centro: 32, vidriera: 26, muro: 34, muroFoto: 96 };   // muroFoto: "Desde arriba", como la foto (paredes altas)
+/* Los módulos de las paredes, como los de verdad: más altos que anchos (pedido de Mauricio: "son rectangulares para
+   arriba, no tan cuadrados"). El alto sale del ancho típico de los del local, así la foto del frente queda vertical. */
+var VISOR_MODULO_PROPORCION = 1.7, VISOR_MODULO_TOPE = 96;
 
 /** Abre el modo observador adentro de cont (que ya ocupa toda la pantalla). op: { local: {id, nombre}, puedeSugerir,
     puedeNombrar, puedeEditar, alVolver(), alEditar(d), capa: {abrir(fn), soltar(fn)} } */
 function abrirVisor(cont, op) {
   if (_visorActual) visorSalir(_visorActual, true);
-  var V = { op: op, cont: cont, tab: 'salon', inclinado: true, estado: {}, d: null, ficha: null, fit: {}, vista: 'vendedor', giro: 0, todas: false, rec: null };
+  var V = { op: op, cont: cont, tab: 'salon', inclinado: true, incl: VISOR_INCL, estado: {}, d: null, ficha: null, fit: {}, vista: 'vendedor', giro: 0, todas: false, rec: null };
   _visorActual = V;
   try {
     V.liviano = localStorage.getItem('vdh_visor_liviano') === '1';
@@ -42,6 +47,8 @@ function abrirVisor(cont, op) {
         '<button type="button" id="cvGirarIzq" class="cv-redondo" aria-label="Girar el local hacia la izquierda" title="Girar">⟲</button>' +
         '<button type="button" id="cvGirarDer" class="cv-redondo" aria-label="Girar el local hacia la derecha" title="Girar">⟳</button>' +
         '<button type="button" id="cvMenos" class="cv-redondo" aria-label="Alejar">−</button><button type="button" id="cvMas" class="cv-redondo" aria-label="Acercar">+</button></div>' +
+      /* En la compu, cómo se maneja con el mouse (en el celular, con los dedos, ya se entiende). */
+      '<p class="cv-ayuda-raton" id="cvAyudaRaton"><b>Arrastrá</b> para girar e inclinar · <b>Rueda</b> o <b>doble clic</b> para acercar · <b>Clic derecho</b> y arrastrá para mover</p>' +
       '<p class="cv-cargando" id="cvCargando">Cargando el local…</p></div>' +
       '<aside class="cv-panel" id="cvPanel"></aside></div></div>';
   V.raiz = cont.querySelector('.cv');
@@ -63,7 +70,12 @@ function abrirVisor(cont, op) {
   };
   cont.querySelector('#cvCam').onclick = function (e) {
     var b = e.target.closest && e.target.closest('[data-cam]');
-    if (!b || (b.dataset.cam === 'incl') === V.inclinado) return;
+    if (!b) return;
+    if ((b.dataset.cam === 'incl') === V.inclinado) {
+      /* Ya inclinada, pero con otra inclinación (la del mouse): vuelve a la de siempre. */
+      if (V.inclinado && Math.abs(V.incl - VISOR_INCL) > 0.5 && V.d) { V.incl = VISOR_INCL; visorZoom(V, 1, 0, 0, true); visorCamara(V, false); }
+      return;
+    }
     V.inclinado = b.dataset.cam === 'incl';
     try { localStorage.setItem('vdh_visor_cam', V.inclinado ? 'incl' : 'arriba'); } catch (x) {}
     cont.querySelectorAll('#cvCam [data-cam]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
@@ -98,6 +110,7 @@ function abrirVisor(cont, op) {
     abrirFicha(V, c.dataset.mod, c);
   });
   visorGestos(V);
+  visorPrevia(V);
   /* El panel: cómo verlo (por vendedor, por estado, por antigüedad). */
   cont.querySelector('#cvPanel').addEventListener('click', function (e) {
     if (e.target.closest && e.target.closest('#cvLiviano')) {
@@ -131,6 +144,14 @@ function abrirVisor(cont, op) {
   V.alTecla = function (e) {
     if (!document.body.contains(V.raiz)) { visorSalir(V, true); return; }
     if (e.key === 'Escape' && V.ficha) cerrarFicha(V);
+    /* Con el teclado: ← → giran, ↑ ↓ inclinan, + y − acercan (no mientras se escribe ni con un módulo abierto). */
+    var t = e.target, tag = t && t.tagName;
+    if (V.ficha || !V.d || e.altKey || e.ctrlKey || e.metaKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
+    var paso = { ArrowLeft: [-15, 0], ArrowRight: [15, 0], ArrowUp: [0, 6], ArrowDown: [0, -6] }[e.key];
+    if (paso) { e.preventDefault(); visorPaso(V, paso[0], paso[1]); return; }
+    var r = V.escena.getBoundingClientRect(), c = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    if (e.key === '+' || e.key === '=') { e.preventDefault(); visorZoomEn(V, V.z.k * 1.35, c, true); }
+    else if (e.key === '-' || e.key === '_') { e.preventDefault(); visorZoomEn(V, V.z.k / 1.35, c, true); }
   };
   document.addEventListener('keydown', V.alTecla);
   visorCargar(V);
@@ -264,6 +285,16 @@ function visorCaras(pl, r) {
   return 's' + (cy > pl.H * 0.45 ? 'n' : '') + (cx < pl.W * 0.58 ? 'e' : '') + (cx > pl.W * 0.42 ? 'o' : '');
 }
 
+/** El alto de los módulos de las paredes del plano pl: el ancho típico (el del medio) por la proporción, entre el alto de
+    siempre (minimo) y el tope. El ancho de un módulo es su largo a lo largo de la pared. */
+function visorAltoModulos(pl, minimo) {
+  var anchos = pl.items.filter(function (it) { return it.tipo === 'modulo' && it.pared && !it.vidriera; }).map(function (it) {
+    return it.pared === 'izquierda' || it.pared === 'derecha' ? it.r.h : it.r.w;
+  }).sort(function (a, b) { return a - b; });
+  if (!anchos.length) return minimo;
+  return Math.round(Math.max(minimo, Math.min(VISOR_MODULO_TOPE, anchos[anchos.length >> 1] * VISOR_MODULO_PROPORCION)));
+}
+
 var _visorTodas = false;
 function visorColor(V, m) {
   if (esVidriera(m)) return COLOR_VIDRIERA;
@@ -298,6 +329,7 @@ function visorDibujar(V, ajustar) {
   tramos('izquierda', pl.y0, pl.y1, pl.x0 - g, false, false);
   tramos('derecha', pl.y0, pl.y1, pl.x1, false, false);
   tramos('frente', pl.x0 - g, pl.x1 + g, pl.y1, true, pl.tipo === 'salon');
+  var altoPared = visorAltoModulos(pl, VISOR_ALTO.pared), altoDep = visorAltoModulos(pl, VISOR_ALTO.deposito);
   if (pl.tipo === 'salon') out += '<div class="cv-vereda cv-frente-' + (FRENTES[pl.frente] ? pl.frente : 'calle') + '" style="left:' + (pl.x0 - 30) + 'px;top:' + (pl.y1 + g) + 'px;width:' + (pl.x1 - pl.x0 + 60) + 'px;height:' + (pl.H - pl.y1 - g + 30) + 'px"><span>' + esc((FRENTES[pl.frente] || FRENTES.calle).nombre) + '</span></div>';
   pl.items.forEach(function (it) {
     var r = it.r;
@@ -307,7 +339,7 @@ function visorDibujar(V, ajustar) {
       return;
     }
     if (it.tipo === 'fijo') { out += visorPieza(pl, it); return; }
-    var m = it.m, e = V.estado[m.id] || {}, alto = pl.tipo === 'deposito' ? VISOR_ALTO.deposito : it.vidriera ? VISOR_ALTO.vidriera : it.pared ? VISOR_ALTO.pared : VISOR_ALTO.centro;
+    var m = it.m, e = V.estado[m.id] || {}, alto = pl.tipo === 'deposito' ? altoDep : it.vidriera ? VISOR_ALTO.vidriera : it.pared ? altoPared : VISOR_ALTO.centro;
     /* La cara que mira al salón: la de los costados mira al medio; la del frente mira hacia adentro (de espaldas a
        quien mira la maqueta), así que esos llevan la foto arriba. */
     var frente = it.vidriera ? 's' : it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? 'n' : 's';
@@ -326,9 +358,10 @@ function visorDibujar(V, ajustar) {
   if (ajustar) { V.fit = {}; visorCamara(V, true); }
 }
 
-/* ── Acercar y alejar: con dos dedos, con la rueda del mouse o con los botones; acercada, se mueve con un dedo ── */
+/* ── Acercar y alejar: con dos dedos, con la rueda del mouse, con doble clic o con los botones; acercada, se mueve con un
+      dedo (en la compu, con el clic derecho) ── */
 function visorZoom(V, k, x, y, animar, libre) {
-  k = Math.max(1, Math.min(3.5, k));
+  k = Math.max(1, Math.min(VISOR_ZOOM_MAX, k));
   if (k === 1 && !libre) { x = 0; y = 0; }
   var r = V.escena.getBoundingClientRect(), lx = r.width * (k - (libre ? 0 : 1)) / 2 + 80, ly = r.height * (k - (libre ? 0 : 1)) / 2 + 80;
   V.z = { k: k, x: Math.max(-lx, Math.min(lx, x)), y: Math.max(-ly, Math.min(ly, y)) };
@@ -347,66 +380,232 @@ function visorRotulos(V) {
 /** Acercar manteniendo quieto el punto f (de la pantalla). */
 function visorZoomEn(V, k2, f, animar) {
   var r = V.escena.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2, z = V.z;
-  k2 = Math.max(1, Math.min(3.5, k2));
+  k2 = Math.max(1, Math.min(VISOR_ZOOM_MAX, k2));
   visorZoom(V, k2, (f.x - cx) - k2 * ((f.x - cx) - z.x) / z.k, (f.y - cy) - k2 * ((f.y - cy) - z.y) / z.k, animar);
 }
+/* Cómo se maneja (pedido de Mauricio: "agarro cualquier lugar del croquis, lo puedo hacer girar y sólo con el mouse ya
+   puedo manejar"):
+   - Mouse: arrastrar gira (de costado) e inclina (para arriba o para abajo); con el clic derecho (o Shift) mueve; la
+     rueda acerca hacia donde apunta, un clic de la rueda un 25 %; doble clic acerca al doble ahí (Shift: aleja).
+   - Dedos: con uno, sin acercar, gira e inclina; acercada, mueve. Con dos, acerca y, retorciéndolos, gira.
+   Al girar o inclinar, el punto del piso que está en el medio de la pantalla queda quieto (se gira alrededor de lo que
+   se está mirando, también acercada). Al soltar sin acercar, el local vuelve a quedar entero y centrado. */
 function visorGestos(V) {
-  var esc = V.escena, dedos = {}, ini = null;
-  var centro = function () { var r = esc.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
+  var sc = V.escena, dedos = {}, ini = null, cuadro = 0;
+  var centro = function () { var r = sc.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; };
   V.cont.querySelector('#cvMas').onclick = function () { visorZoomEn(V, V.z.k * 1.45, centro(), true); };
   V.cont.querySelector('#cvMenos').onclick = function () { visorZoomEn(V, V.z.k / 1.45, centro(), true); };
-  V.cont.querySelector('#cvCentrar').onclick = function () { visorZoom(V, 1, 0, 0, true); };
-  V.cont.querySelector('#cvGirarIzq').onclick = function () { visorGirar(V, V.giro - 90); };
-  V.cont.querySelector('#cvGirarDer').onclick = function () { visorGirar(V, V.giro + 90); };
+  V.cont.querySelector('#cvCentrar').onclick = function () { visorZoom(V, 1, 0, 0, true); visorCamara(V, false); };
+  /* Los botones llevan al cuarto de vuelta anterior o siguiente (después de girar a mano, quedan derechos otra vez). */
+  V.cont.querySelector('#cvGirarIzq').onclick = function () { visorGirar(V, Math.ceil(V.giro / 90 - 0.01) * 90 - 90); };
+  V.cont.querySelector('#cvGirarDer').onclick = function () { visorGirar(V, Math.floor(V.giro / 90 + 0.01) * 90 + 90); };
   V.cont.querySelector('#cvRecorrer').onclick = function () { visorRecorrer(V, 0); };
   V.cont.querySelector('#cvAnt').onclick = function () { if (V.rec) visorRecorrer(V, V.rec.i - 1); };
   V.cont.querySelector('#cvSig').onclick = function () { if (V.rec) visorRecorrer(V, V.rec.i + 1); };
   V.cont.querySelector('#cvSalirRec').onclick = function () { visorSalirRecorrido(V); };
-  esc.addEventListener('wheel', function (e) {
-    if (V.ficha) return;
+  var afuera = function (e) { return e.target.closest && e.target.closest('.cv-zoom-acc, .cv-recorrer'); };
+  sc.addEventListener('wheel', function (e) {
+    if (V.ficha || !V.d) return;
     e.preventDefault();
-    visorZoomEn(V, V.z.k * (e.deltaY < 0 ? 1.12 : 1 / 1.12), { x: e.clientX, y: e.clientY }, false);
+    visorPreviaOcultar(V);
+    /* La rueda de un mouse da pasos de 100 (o líneas); el panel táctil, muchos pasitos (y con Ctrl, el pellizco). */
+    var d = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 600 : 1);
+    d = Math.max(-300, Math.min(300, d));
+    visorZoomEn(V, V.z.k * Math.exp(-d * (e.ctrlKey ? 0.01 : 0.0022)), { x: e.clientX, y: e.clientY }, Math.abs(d) >= 50 && !e.ctrlKey);
   }, { passive: false });
-  esc.addEventListener('pointerdown', function (e) {
-    if (V.ficha || (e.target.closest && e.target.closest('.cv-zoom-acc, .cv-recorrer'))) return;
+  sc.addEventListener('dblclick', function (e) {
+    /* En un módulo, el primer clic ya lo abrió. */
+    if (V.ficha || !V.d || afuera(e) || (e.target.closest && e.target.closest('.cv-caja[data-mod]'))) return;
+    e.preventDefault();
+    var k = e.shiftKey ? V.z.k / 2 : V.z.k >= VISOR_ZOOM_MAX - 0.01 ? 1 : V.z.k * 2;
+    if (k <= 1.01) visorZoom(V, 1, 0, 0, true);
+    else visorZoomEn(V, k, { x: e.clientX, y: e.clientY }, true);
+  });
+  /* El clic derecho sirve para mover: sin el menú del navegador arriba de la maqueta. */
+  sc.addEventListener('contextmenu', function (e) { if (!afuera(e)) e.preventDefault(); });
+
+  /** Empieza un gesto que gira o inclina: ya con todas las caras dibujadas, y el punto del piso a dejar quieto. */
+  var empezar = function (g, x, y) {
+    g.activo = true;
+    V.gesto = true;
+    visorPreviaOcultar(V);
+    if (!V.todas) { V.todas = true; visorDibujar(V, false); }
+    visorZoom(V, V.z.k, V.z.x, V.z.y, false, true);   // corta una animación del zoom que esté en camino
+    V.mundo.style.transition = 'none';
+    g.giro = V.giro; g.incl = V.incl; g.z = Object.assign({}, V.z);
+    var c = x == null ? centro() : { x: x, y: y };
+    g.q = visorPisoEn(V, c.x, c.y);
+    g.t = visorEnPantalla(V, [g.q])[0];
+  };
+  /** Aplica el giro y la inclinación de ahora (una vez por cuadro) y deja quieto el punto del piso. */
+  var aplicar = function () {
+    cuadro = 0;
+    var g = ini;
+    if (!g || !g.activo || g.modo === 'mover') return;
+    visorPose(V);
+    visorClavar(V, g.q, g.t, g.k || V.z.k);
+  };
+  var pedirCuadro = function () { if (!cuadro) cuadro = requestAnimationFrame(aplicar); };
+  var terminar = function (g) {
+    if (cuadro) { cancelAnimationFrame(cuadro); cuadro = 0; ini = g; aplicar(); }
+    ini = null;
+    V.gesto = false;
+    V.movidoEn = Date.now();
+    if (g.modo === 'mover') return;
+    /* Sin acercar, el local vuelve a quedar entero y centrado; acercada, queda donde se dejó. */
+    if (V.z.k <= 1.08) visorReencuadrar(V);
+  };
+
+  sc.addEventListener('pointerdown', function (e) {
+    if (V.ficha || !V.d || afuera(e)) return;
+    visorPreviaOcultar(V);
+    if (e.pointerType === 'mouse') {
+      if (e.button > 2) return;
+      if (e.button === 1) e.preventDefault();   // sin el desplazamiento automático de la rueda
+      ini = { raton: true, id: e.pointerId, p: { x: e.clientX, y: e.clientY }, z: Object.assign({}, V.z), activo: false,
+              modo: e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey ? 'mover' : 'girar' };
+      return;
+    }
     dedos[e.pointerId] = { x: e.clientX, y: e.clientY };
     var ids = Object.keys(dedos);
     if (ids.length === 2) {
-      var a = dedos[ids[0]], b = dedos[ids[1]];
-      ini = { dos: true, dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, z: Object.assign({}, V.z) };
-    } else ini = { dos: false, p: { x: e.clientX, y: e.clientY }, z: Object.assign({}, V.z), movio: false };
+      var a = dedos[ids[0]], b = dedos[ids[1]], mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      ini = { dos: true, dist: Math.hypot(a.x - b.x, a.y - b.y) || 1, ang: Math.atan2(b.y - a.y, b.x - a.x), z: Object.assign({}, V.z), torcido: false, giroExtra: 0 };
+      empezar(ini, mid.x, mid.y);
+    } else if (ids.length === 1) ini = { dos: false, p: { x: e.clientX, y: e.clientY }, z: Object.assign({}, V.z), activo: false, modo: V.z.k > 1.02 ? 'mover' : 'girar' };
     /* Al tocar un módulo con el dedo, se levanta (como al pasar el mouse). */
     var caja = e.target.closest && e.target.closest('.cv-mod');
-    if (caja && e.pointerType !== 'mouse') { caja.classList.add('cv-tocado'); setTimeout(function () { caja.classList.remove('cv-tocado'); }, 260); }
+    if (caja) { caja.classList.add('cv-tocado'); setTimeout(function () { caja.classList.remove('cv-tocado'); }, 260); }
   });
-  var mueve = function (e) {
-    if (!dedos[e.pointerId] || !ini) return;
+  /** Arrastrar con un dedo o con el mouse: girar e inclinar, o mover. */
+  var arrastrar = function (e, umbral) {
+    var dx = e.clientX - ini.p.x, dy = e.clientY - ini.p.y;
+    if (!ini.activo) {
+      if (Math.abs(dx) + Math.abs(dy) < umbral) return;
+      if (ini.modo === 'mover') { ini.activo = true; V.gesto = true; visorPreviaOcultar(V); }
+      else { visorSalirRecorrido(V, true); empezar(ini); }
+      /* Ya arrastrando: el resto del gesto es de la maqueta, aunque el mouse salga de ella (y al soltar no abre nada). */
+      try { sc.setPointerCapture(e.pointerId); } catch (x) {}
+    }
+    V.movidoEn = Date.now();
+    if (ini.modo === 'mover') { visorZoom(V, V.z.k, ini.z.x + dx, ini.z.y + dy, false, true); return; }
+    V.giro = ini.giro - dx * 0.3;
+    if (V.inclinado) V.incl = Math.max(VISOR_INCL_MIN, Math.min(VISOR_INCL_MAX, ini.incl - dy * 0.22));
+    pedirCuadro();
+  };
+  sc.addEventListener('pointermove', function (e) {
+    if (!ini) return;
+    if (ini.raton) { if (e.pointerId === ini.id) arrastrar(e, 5); return; }
+    if (!dedos[e.pointerId]) return;
     dedos[e.pointerId] = { x: e.clientX, y: e.clientY };
-    var ids = Object.keys(dedos), c = centro();
+    var ids = Object.keys(dedos);
     if (ini.dos && ids.length >= 2) {
       var a = dedos[ids[0]], b = dedos[ids[1]], dist = Math.hypot(a.x - b.x, a.y - b.y) || 1, mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-      var k2 = Math.max(1, Math.min(3.5, ini.z.k * dist / ini.dist));
-      visorZoom(V, k2, (mid.x - c.x) - k2 * ((ini.mid.x - c.x) - ini.z.x) / ini.z.k, (mid.y - c.y) - k2 * ((ini.mid.y - c.y) - ini.z.y) / ini.z.k, false);
+      /* Retorcer los dedos gira, pero recién pasados 8° (pellizcar solo, para acercar, no gira de casualidad). */
+      var dg = (Math.atan2(b.y - a.y, b.x - a.x) - ini.ang) * 180 / Math.PI;
+      dg = ((dg + 540) % 360) - 180;
+      if (!ini.torcido && Math.abs(dg) > 8) { ini.torcido = true; ini.giroExtra = -dg; visorSalirRecorrido(V, true); }
+      if (ini.torcido) V.giro = ini.giro + dg + ini.giroExtra;
+      ini.k = Math.max(1, Math.min(VISOR_ZOOM_MAX, ini.z.k * dist / ini.dist));
+      ini.t = [mid.x, mid.y];
       V.movidoEn = Date.now();
-    } else if (!ini.dos && V.z.k > 1) {
-      var dx = e.clientX - ini.p.x, dy = e.clientY - ini.p.y;
-      if (!ini.movio && Math.abs(dx) + Math.abs(dy) < 8) return;
-      ini.movio = true;
-      visorZoom(V, V.z.k, ini.z.x + dx, ini.z.y + dy, false);
-      V.movidoEn = Date.now();
-    }
-  };
+      pedirCuadro();
+    } else if (!ini.dos) arrastrar(e, 8);
+  });
   var suelta = function (e) {
+    if (ini && ini.raton) {
+      if (e.pointerId !== ini.id) return;
+      var g = ini;
+      if (g.activo) terminar(g); else ini = null;
+      return;
+    }
     if (!dedos[e.pointerId]) return;
     delete dedos[e.pointerId];
-    var ids = Object.keys(dedos);
-    /* Si queda un dedo después de pellizcar, sigue moviendo desde ahí. */
-    ini = ids.length === 1 ? { dos: false, p: dedos[ids[0]], z: Object.assign({}, V.z), movio: true } : null;
+    var ids = Object.keys(dedos), antes = ini;
+    if (antes && antes.activo) terminar(antes);
+    /* Si queda un dedo después de pellizcar, sigue moviendo desde ahí (si quedó acercada). */
+    ini = ids.length === 1 && antes && antes.dos ? { dos: false, p: dedos[ids[0]], z: Object.assign({}, V.z), activo: V.z.k > 1.02, modo: 'mover' } : null;
   };
-  esc.addEventListener('pointermove', mueve);
-  esc.addEventListener('pointerup', suelta);
-  esc.addEventListener('pointercancel', suelta);
-  esc.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') suelta(e); });
+  sc.addEventListener('pointerup', suelta);
+  sc.addEventListener('pointercancel', suelta);
+  sc.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse' && ini && ini.raton && !ini.activo) ini = null; });
+}
+
+/** Gira e inclina la maqueta en el acto, durante un gesto (la escala y el centro quedan como estaban). */
+function visorPose(V) {
+  var mu = V.mundo;
+  mu.style.transition = 'none';
+  mu.style.setProperty('--giro', V.giro.toFixed(2) + 'deg');
+  mu.style.setProperty('--incl', (V.inclinado ? V.incl : 0).toFixed(2) + 'deg');
+}
+/** Un paso con el teclado: gira dg grados e inclina di (alrededor de lo que está en el medio de la pantalla). */
+function visorPaso(V, dg, di) {
+  if (!V.d || V.ficha) return;
+  visorSalirRecorrido(V, true);
+  if (!V.todas) { V.todas = true; visorDibujar(V, false); }
+  var nuevaIncl = V.inclinado ? Math.max(VISOR_INCL_MIN, Math.min(VISOR_INCL_MAX, V.incl + di)) : V.incl;
+  if (V.z.k <= 1.08) { V.giro += dg; V.incl = nuevaIncl; visorZoom(V, 1, 0, 0, true); visorCamara(V, false); return; }
+  var r = V.escena.getBoundingClientRect();
+  visorZoom(V, V.z.k, V.z.x, V.z.y, false, true);
+  var q = visorPisoEn(V, r.left + r.width / 2, r.top + r.height / 2), t = visorEnPantalla(V, [q])[0];
+  V.giro += dg; V.incl = nuevaIncl;
+  visorPose(V);
+  visorClavar(V, q, t, V.z.k);
+}
+
+/* ── Dónde cae cada cosa en la pantalla (para girar alrededor de lo que se mira) ── */
+
+/** Dónde se ven ahora en la pantalla unos puntos del piso (en las coordenadas del plano): unas marcas invisibles en el
+    piso de la maqueta, medidas de una vez. */
+function visorEnPantalla(V, pts) {
+  var mu = V.mundo, marcas = mu.querySelectorAll('.cv-marca');
+  for (var i = marcas.length; i < pts.length; i++) mu.insertAdjacentHTML('beforeend', '<i class="cv-marca" aria-hidden="true"></i>');
+  marcas = mu.querySelectorAll('.cv-marca');
+  pts.forEach(function (p, j) { marcas[j].style.left = p[0].toFixed(2) + 'px'; marcas[j].style.top = p[1].toFixed(2) + 'px'; });
+  return pts.map(function (p, j) { var r = marcas[j].getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; });
+}
+/** El punto del piso (en las coordenadas del plano, adentro del local) que se ve en (sx, sy) de la pantalla. El piso es
+    un plano: con cuatro de sus puntos se arma cómo se proyecta (una homografía) y se invierte. */
+function visorPisoEn(V, sx, sy) {
+  var pl = V.plano, q = [[pl.x0, pl.y0], [pl.x1, pl.y0], [pl.x1, pl.y1], [pl.x0, pl.y1]];
+  var h = visorHomografia(visorEnPantalla(V, q), q), p = h ? h(sx, sy) : null;
+  if (!p || !isFinite(p[0]) || !isFinite(p[1])) return [(pl.x0 + pl.x1) / 2, (pl.y0 + pl.y1) / 2];
+  return [Math.max(pl.x0, Math.min(pl.x1, p[0])), Math.max(pl.y0, Math.min(pl.y1, p[1]))];
+}
+/** La homografía que lleva los 4 puntos de a los 4 de b (resuelve el sistema de 8 ecuaciones). */
+function visorHomografia(a, b) {
+  var M = [], i, j, c;
+  for (i = 0; i < 4; i++) {
+    var x = a[i][0], y = a[i][1], u = b[i][0], v = b[i][1];
+    M.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u], [0, 0, 0, x, y, 1, -v * x, -v * y, v]);
+  }
+  for (c = 0; c < 8; c++) {
+    var piv = c;
+    for (i = c + 1; i < 8; i++) if (Math.abs(M[i][c]) > Math.abs(M[piv][c])) piv = i;
+    if (Math.abs(M[piv][c]) < 1e-12) return null;
+    var t = M[c]; M[c] = M[piv]; M[piv] = t;
+    for (i = 0; i < 8; i++) {
+      if (i === c) continue;
+      var f = M[i][c] / M[c][c];
+      for (j = c; j < 9; j++) M[i][j] -= f * M[c][j];
+    }
+  }
+  var h = M.map(function (fila, k) { return fila[8] / fila[k]; });
+  return function (x, y) { var w = h[6] * x + h[7] * y + 1; return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w]; };
+}
+/** Dónde se vería un punto de la pantalla sin el zoom (el acercamiento es lo último que se aplica: una escala y un
+    corrimiento alrededor del centro de la escena). Lee el zoom que se ve de verdad, aunque esté animándose. */
+function visorSinZoom(V, x, y) {
+  var r = V.escena.getBoundingClientRect(), ox = r.left + r.width / 2, oy = r.top + r.height / 2;
+  var m = (getComputedStyle(V.zoomEl).transform || '').match(/matrix\(([^)]+)\)/), v = m ? m[1].split(',').map(Number) : [1, 0, 0, 1, 0, 0];
+  var k = v[0] || 1;
+  return [ox + (x - ox - v[4]) / k, oy + (y - oy - v[5]) / k];
+}
+/** Deja el punto q del piso en el lugar t de la pantalla, con el zoom k (corriendo el zoom, no la maqueta). */
+function visorClavar(V, q, t, k) {
+  var p = visorEnPantalla(V, [q])[0], b = visorSinZoom(V, p[0], p[1]);
+  var r = V.escena.getBoundingClientRect(), ox = r.left + r.width / 2, oy = r.top + r.height / 2;
+  visorZoom(V, k, t[0] - ox - k * (b[0] - ox), t[1] - oy - k * (b[1] - oy), false, true);
 }
 
 /* ── Girar el local y recorrerlo pared por pared ── */
@@ -510,6 +709,9 @@ function visorMedir(V, incl) {
     u = u ? { l: Math.min(u.l, r.left), t: Math.min(u.t, r.top), r: Math.max(u.r, r.right), b: Math.max(u.b, r.bottom) } : { l: r.left, t: r.top, r: r.right, b: r.bottom };
   });
   if (!u) return { s: 1, dx: 0, dy: 0 };
+  /* Como se vería sin el zoom (si estaba acercada, o alejándose todavía): el encuadre es del local entero. */
+  var a = visorSinZoom(V, u.l, u.t), b = visorSinZoom(V, u.r, u.b);
+  u = { l: a[0], t: a[1], r: b[0], b: b[1] };
   /* Abajo queda lugar para los botones de acercar (que no tapen el local). */
   var abajo = 58, alto = box.height - abajo;
   var s = Math.min((box.width - 24) / (u.r - u.l), (alto - 20) / (u.b - u.t));
@@ -519,9 +721,16 @@ function visorMedir(V, incl) {
   return { s: s, dx: -cx * s, dy: -cy * s };
 }
 function visorCamara(V, sinAnimar) {
-  var incl = V.inclinado ? VISOR_INCL : 0, clave = String(incl) + V.tab + ':' + (((V.giro % 360) + 360) % 360);
-  var mu = V.mundo, antes = mu.style.transform;
-  if (!V.fit[clave]) V.fit[clave] = visorMedir(V, incl);
+  var incl = V.inclinado ? V.incl : 0;
+  /* Girado o inclinado a mano, los ángulos no son redondos: se guarda el encuadre por décima de grado. */
+  var clave = (Math.round(incl * 10) / 10) + V.tab + ':' + (Math.round((((V.giro % 360) + 360) % 360) * 10) / 10);
+  var mu = V.mundo;
+  if (!V.fit[clave]) {
+    /* Medir mueve la maqueta: después se vuelve a como estaba, así la animación sale de ahí (y no da un salto). */
+    var antes = ['--incl', '--giro', '--s', '--dx', '--dy'].map(function (k) { return [k, mu.style.getPropertyValue(k)]; });
+    V.fit[clave] = visorMedir(V, incl);
+    antes.forEach(function (a) { if (a[1]) mu.style.setProperty(a[0], a[1]); });
+  }
   var f = V.fit[clave];
   if (!sinAnimar) { mu.style.transition = 'none'; void mu.offsetWidth; }
   mu.style.transition = sinAnimar ? 'none' : '';
@@ -532,13 +741,21 @@ function visorCamara(V, sinAnimar) {
   mu.style.setProperty('--dy', f.dy.toFixed(1) + 'px');
   V.sFit = f.s;
   visorRotulos(V);
-  void antes;
+}
+/** Después de girar o inclinar con el mouse sin acercar: el local vuelve a quedar entero y centrado, de a poco. */
+function visorReencuadrar(V) {
+  visorZoom(V, 1, 0, 0, true);
+  visorCamara(V, false);
 }
 
 /* ── Las fotos de los módulos: una miniatura liviana para la maqueta; la grande, sólo al entrar al módulo ── */
 
 var _miniaturas = {}, _miniCola = [], _miniActivas = 0;
-/** Una miniatura (240 px) de la foto: se arma una vez en el teléfono y queda guardada en este aparato. */
+/** Una miniatura de la foto: se arma una vez en el teléfono y queda guardada en este aparato. Es de 360 px (antes 240):
+    con los módulos más altos y el zoom hasta 5 veces, la de 240 se veía borrosa. Se guarda con otro nombre (la de 240
+    no sirve) y las viejas se borran solas a los 40 días. */
+var MINI_LADO = 360;
+function miniClave(ruta) { return ruta + '@' + MINI_LADO; }
 function miniaturaFoto(ruta) {
   if (!ruta) return Promise.resolve(null);
   if (_miniaturas[ruta]) return _miniaturas[ruta];
@@ -561,7 +778,7 @@ function miniSiguiente() {
     img.crossOrigin = 'anonymous';
     img.onload = function () {
       try {
-        var lado = 240, esc2 = Math.min(1, lado / Math.max(img.naturalWidth, img.naturalHeight));
+        var lado = MINI_LADO, esc2 = Math.min(1, lado / Math.max(img.naturalWidth, img.naturalHeight));
         var c = document.createElement('canvas');
         c.width = Math.max(1, Math.round(img.naturalWidth * esc2)); c.height = Math.max(1, Math.round(img.naturalHeight * esc2));
         c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
@@ -595,7 +812,7 @@ function miniLeerGuardada(ruta) {
     miniLimpiar(db);
     return new Promise(function (ok) {
       try {
-        var q = db.transaction('fotos').objectStore('fotos').get(ruta);
+        var q = db.transaction('fotos').objectStore('fotos').get(miniClave(ruta));
         q.onsuccess = function () { var v = q.result; ok(v && v.b ? v.b : v instanceof Blob ? v : null); };
         q.onerror = function () { ok(null); };
       } catch (e) { ok(null); }
@@ -603,7 +820,7 @@ function miniLeerGuardada(ruta) {
   });
 }
 function miniGuardar(ruta, blob) {
-  miniBase().then(function (db) { if (db) try { db.transaction('fotos', 'readwrite').objectStore('fotos').put({ b: blob, t: Date.now() }, ruta); } catch (e) {} });
+  miniBase().then(function (db) { if (db) try { db.transaction('fotos', 'readwrite').objectStore('fotos').put({ b: blob, t: Date.now() }, miniClave(ruta)); } catch (e) {} });
 }
 var _miniLimpias = false;
 function miniLimpiar(db) {
@@ -630,6 +847,61 @@ function visorFotos(V) {
     });
   });
 }
+
+/* ── Pasar el mouse por un módulo (en la compu): su foto al lado, vertical y grande, sin abrirlo ("que desde acá mismo,
+      desde el observador, pueda verlo un poquito mejor"). Primero la miniatura; si se queda un rato, la foto entera. ── */
+function visorPrevia(V) {
+  var sc = V.escena, espera = null, nitida = null, caja = null, pos = { x: 0, y: 0 };
+  var el = document.createElement('div');
+  el.className = 'cv-previa';
+  el.hidden = true;
+  el.setAttribute('aria-hidden', 'true');
+  sc.appendChild(el);
+  var ocultar = function () { clearTimeout(espera); clearTimeout(nitida); caja = null; el.hidden = true; delete el.dataset.mod; };
+  V.previa = { el: el, ocultar: ocultar };
+  /** Al lado del puntero, adentro de la escena (si no entra a la derecha, a la izquierda). */
+  var ubicar = function () {
+    var r = sc.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight, x = pos.x - r.left + 22, y = pos.y - r.top - h * 0.35;
+    if (x + w > r.width - 10) x = pos.x - r.left - 22 - w;
+    el.style.left = Math.max(10, x).toFixed(0) + 'px';
+    el.style.top = Math.max(10, Math.min(r.height - h - 10, y)).toFixed(0) + 'px';
+  };
+  var mostrar = function (c) {
+    var m = visorModulo(V, c.dataset.mod);
+    if (!m || V.ficha || V.gesto) return;
+    var d = V.d, e = V.estado[m.id] || {}, s = d.sectorDe[m.sector_id], resp = s && d.persona[s.responsable_id];
+    var numero = m.isla ? numeroVista(d, m) : m.numero, nombre = m.isla ? m.nombre : nombrePropio(m), que = queHay(m);
+    var titulo = esVidriera(m) ? m.nombre : (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero;
+    var bajada = esVidriera(m) ? que : que && nombre && que !== nombre ? nombre + ' · ' + que : que || nombre;
+    el.dataset.mod = m.id;
+    el.innerHTML = '<div class="cv-previa-foto' + (e.foto_path ? '' : ' sin') + '">' + (e.foto_path ? '' : '<span>Todavía no hay foto</span>') + '</div>' +
+      '<div class="cv-previa-txt"><b>' + esc(titulo) + '</b>' + (bajada ? '<span>' + esc(bajada) + '</span>' : '') +
+        '<small><i style="background:' + visorColor(V, m) + '"></i>' + esc(esVidriera(m) ? 'Por turnos' : resp ? nombreLista(resp) : 'Sin responsable') +
+          (e.foto_path && e.tomada_en ? ' · ' + esc(textoHace(e.tomada_en)) : '') + (e.foto_path && e.nivel ? ' · ' + esc(NIVEL[e.nivel] || e.nivel) : '') + '</small>' +
+        '<em>Clic para abrirlo</em></div>';
+    var f = el.querySelector('.cv-previa-foto');
+    if (e.foto_path) {
+      miniaturaFoto(e.foto_path).then(function (u) { if (u && el.dataset.mod === m.id && !f.classList.contains('cv-nitida')) f.style.backgroundImage = 'url("' + u + '")'; });
+      nitida = setTimeout(function () { if (el.dataset.mod === m.id) visorCargarFoto(f, e.foto_path); }, 650);
+    }
+    el.hidden = false;
+    ubicar();
+  };
+  sc.addEventListener('pointerover', function (e) {
+    if (e.pointerType !== 'mouse') return;
+    pos = { x: e.clientX, y: e.clientY };
+    var c = !e.buttons && !V.ficha && !V.gesto && e.target.closest && e.target.closest('.cv-caja[data-mod]');
+    if (!c) { if (!(e.target.closest && e.target.closest('.cv-previa'))) ocultar(); return; }
+    if (c === caja) return;
+    clearTimeout(espera); clearTimeout(nitida);
+    caja = c;
+    /* Recién al quedarse un momento (pasar por arriba de varios no los muestra a todos). */
+    espera = setTimeout(function () { if (caja === c) mostrar(c); }, el.hidden ? 180 : 60);
+  });
+  sc.addEventListener('pointermove', function (e) { if (e.pointerType !== 'mouse') return; pos = { x: e.clientX, y: e.clientY }; if (!el.hidden) ubicar(); });
+  sc.addEventListener('pointerleave', ocultar);
+}
+function visorPreviaOcultar(V) { if (V.previa) V.previa.ocultar(); }
 
 /* ── Cómo verlo: el color de cada módulo (el halo y el borde del número) ──
    Por vendedor: el de quien lo tiene (el mismo de siempre: identifica a la persona). Por estado del orden: el nivel de
@@ -774,9 +1046,11 @@ function abrirFicha(V, id, caja) {
         : (e.foto_path ? '<p class="cv-gris">Este módulo no tiene responsable: ' + esc(visorDondeAsignar(V)) + ' para dejarle sugerencias.</p>' : '')) : '') +
     '</div></section>');
   var fondo = V.raiz.querySelector('.cv-ficha-fondo'), ficha = V.raiz.querySelector('.cv-ficha');
-  V.ficha = { el: ficha, fondo: fondo, caja: caja, id: id };
+  visorPreviaOcultar(V);
+  V.ficha = { el: ficha, fondo: fondo, caja: caja, id: id, desde: Date.now() };
   ficha.querySelector('.cv-cerrar').onclick = function () { cerrarFicha(V); };
-  fondo.onclick = function () { cerrarFicha(V); };
+  /* Un doble clic en un módulo: el primero lo abre y el segundo cae en el fondo; ése no lo cierra. */
+  fondo.onclick = function () { if (V.ficha && Date.now() - V.ficha.desde < 450) return; cerrarFicha(V); };
   ficha.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Tab') return;
     var f = [].filter.call(ficha.querySelectorAll('button, input, textarea, [tabindex="0"]'), function (x) { return !x.disabled && x.offsetParent !== null; });
