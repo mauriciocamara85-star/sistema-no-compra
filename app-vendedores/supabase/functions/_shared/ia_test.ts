@@ -73,7 +73,8 @@ Deno.test("las preguntas según el mueble: sin frontales fuera de la pared, y el
     reglas: [{ check: "colgado", texto: "Perchas iguales, todas mirando para el mismo lado." }, { check: "frontales", texto: "Cada frontal lleva 4 prendas." }, vidrio] });
   if (!mesa.includes("• colgado — Lo colgado (perchas y prendas colgadas)") || !mesa.includes("Perchas iguales, todas mirando para el mismo lado.")) throw new Error("Mesa: " + mesa);
   if (/frontal/i.test(mesa.replace(/ \(acá no hay frontales[^)]*\)/, ""))) throw new Error("En una mesa no se habla de frontales: " + mesa);
-  if (!mesa.includes("si una regla habla de estantes o frontales y este mueble no los tiene, no la apliques")) throw new Error("Las reglas de la pared, en la mesa: " + mesa);
+  if (!mesa.includes("lo que dicen las reglas de los estantes vale para las pilas de la mesa") || mesa.includes("no la apliques")) throw new Error("Las reglas de los estantes, en la mesa, valen para las pilas (ronda 2): " + mesa);
+  if (!mesa.includes("• dobladas — Prendas dobladas (pilas parejas y completas)") || mesa.includes("estantes completos")) throw new Error("En la mesa, el doblado son las pilas: " + mesa);
   if (!mesa.includes("Mirá lo esencial de ESTE mueble") || !mesa.includes("los mira después el supervisor")) throw new Error("Lo esencial: " + mesa);
   if (!mesa.includes("Emprolijá las pilas de la mesa") || mesa.includes("vidrio")) throw new Error("Mesa: el ejemplo de la mesa y sin la regla del vidrio: " + mesa);
   const vid = armarSistema({ ...ctx, mueble: "Vidriera", mueble_elegido: true, referencia_path: "l/ref.jpg", referencia_tipo: "modulo", lado: "vidriera",
@@ -88,7 +89,15 @@ Deno.test("las preguntas según el mueble: sin frontales fuera de la pared, y el
   const perchero = armarSistema({ ...ctx, mueble: "Perchero", lado: "izquierda", referencia_path: "l/ref.jpg", referencia_tipo: "modulo",
     checks: ["colgado", "exhibicion", "etiquetas", "limpieza"], reglas: [vidrio] });
   if (!perchero.includes("la disposición y lo lleno que está") || /doblado/i.test(perchero) || !perchero.includes("Blanco → Beige → Negro") ||
-      !perchero.includes("LADO DEL LOCAL") || !perchero.includes("perchas mirando para el mismo lado") || perchero.includes("vidrio")) throw new Error("Perchero: " + perchero);
+      !perchero.includes("LADO DEL LOCAL") || !perchero.includes("perchas mirando para el mismo lado") || perchero.includes("vidrio") ||
+      !perchero.includes("acá no hay estantes ni frontales")) throw new Error("Perchero: " + perchero);
+  const dep = armarSistema({ ...ctx, sector_tipo: "deposito", lado: "deposito", mueble: "Depósito", checks: ["dobladas", "rotulado", "talles", "limpieza"], reglas: [vidrio] });
+  for (const t of ["Separá por talle las remeras del segundo estante", "• dobladas — Prendas dobladas y estantes completos", "(acá no hay frontales: no los nombres)"]) {
+    if (!dep.includes(t)) throw new Error(`Falta en el depósito (ronda 2): ${t}\n${dep}`);
+  }
+  for (const t of ["pilas de la mesa", "no la apliques", "vidrio"]) {
+    if (dep.includes(t)) throw new Error(`En el depósito no va (tiene estantes; no es una mesa): ${t}\n${dep}`);
+  }
   const pared = armarSistema({ ...ctx, referencia_path: "l/ref.jpg", referencia_tipo: "modulo", reglas: [...ctx.reglas, vidrio] });
   if (!pared.includes("cambiá la prenda por otro producto") || !pared.includes("la disposición, los frontales, el doblado y lo lleno que está") ||
       pared.includes("acá no hay frontales") || pared.includes("piso")) throw new Error("La pared sigue igual: " + pared);

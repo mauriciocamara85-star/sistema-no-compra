@@ -1233,7 +1233,7 @@ var PREGUNTAS = {
              ['etiquetas', '¿Las etiquetas están adentro y con precio?'],
              ['limpieza', '¿Está limpio y sin faltantes?']],
   mesa: [['dobladas', '¿Las pilas están dobladas y parejas?'],
-         ['exhibicion', '¿Está ordenado por color y bien cargado?'],
+         ['exhibicion', '¿Está ordenado por color (o por talle, si es liquidación) y bien cargado?'],
          ['etiquetas', '¿Las etiquetas están adentro y con precio?'],
          ['limpieza', '¿Está limpio y sin faltantes?']],
   perchero: [['colgado', '¿Las perchas son iguales y miran para el mismo lado?'],

@@ -9,11 +9,12 @@ const cabecera = `-- ═══ SQL 129 (15/10/2026) · Equipo VDH: las 4 pregunt
 --     las mesas preguntan Exhibición (por color y bien cargada) en vez de Frontales; los
 --     percheros, Colgado y Exhibición; las vidrieras, Armado, Carteles, Limpieza y Luces.
 --     El depósito, igual que antes.
---   · Desde que lo corras, la IA ya mira lo de cada mueble (en una mesa no busca frontales).
---     Los chicos ven las preguntas nuevas cuando se publique la app; hasta entonces responden
---     las de antes y se aceptan igual.
---   · Si el supervisor le cambia el mueble a un módulo, se cancelan solas las tareas de la IA
---     de puntos que ese mueble ya no tiene (por ejemplo, "Frontales" en un perchero).
+--   · Correlo DESPUÉS de que esté subida la IA nueva (analizar-foto): desde ahí la IA mira lo
+--     de cada mueble (en una mesa no busca frontales). Los chicos ven las preguntas nuevas
+--     cuando se publique la app; hasta entonces responden las de antes y se aceptan igual.
+--   · Si a un módulo le cambia el mueble (lo elige el supervisor, lo renombran o lo mueven en
+--     el croquis), se cancelan solas las tareas de la IA de puntos que ese mueble ya no tiene
+--     (por ejemplo, "Frontales" en un perchero).
 --   · Suma reglas para los puntos nuevos (perchas, maniquíes, carteles, luces, el vidrio):
 --     las podés cambiar en Ajustes → Reglas de orden.
 --   · Al final te muestra cada local con sus tipos de mueble y las preguntas de cada uno.

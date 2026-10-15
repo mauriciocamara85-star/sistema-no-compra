@@ -77,9 +77,16 @@ export function armarSistema(ctx: Contexto): string {
   const esVidriera = ctx.checks.includes("armado");
   const obligatorias = ctx.reglas.filter((r) => !r.sugerencia && (esVidriera || !/^En la vidriera:/i.test(r.texto)));
   const sugerencias = ctx.reglas.filter((r) => r.sugerencia);
+  // Los frontales son sólo de la pared con estantes, y el doblado de la pared, la mesa y el depósito:
+  // en los muebles que no los tienen no se nombran (SQL 129). En la mesa, el doblado son las pilas.
+  const conFrontales = ctx.checks.includes("frontales");
+  const conDoblado = ctx.checks.includes("dobladas");
+  const deposito = ctx.sector_tipo === "deposito";
+  const esMesa = conDoblado && !conFrontales && !deposito;
+  const nombre = (c: string) => esMesa && c === "dobladas" ? "Prendas dobladas (pilas parejas y completas)" : NOMBRE_CHECK[c] ?? c;
   const reglasPorCheck = ctx.checks.map((c) => {
     const lineas = obligatorias.filter((r) => r.check === c).map((r) => `  - ${r.texto}`);
-    return `• ${c} — ${NOMBRE_CHECK[c] ?? c}\n${lineas.join("\n") || "  - (sin reglas cargadas)"}`;
+    return `• ${c} — ${nombre(c)}\n${lineas.join("\n") || "  - (sin reglas cargadas)"}`;
   }).join("\n");
 
   const exhibidor = ctx.exhibidor
@@ -100,10 +107,6 @@ export function armarSistema(ctx: Contexto): string {
     : ctx.mueble_elegido
     ? `\nMUEBLE (lo eligió el supervisor): ${ctx.mueble}. Si en la foto se ve otro mueble, revisá el que se ve: nunca invalides la foto por eso.`
     : `\nMUEBLE (dato aproximado, sale del croquis): ${ctx.mueble}. Si en la foto se ve otro mueble (un perchero, un carro, una mesa), revisá el que se ve: nunca invalides la foto por eso.`;
-  // Los frontales son sólo de la pared con estantes, y el doblado de la pared, la mesa y el depósito:
-  // en los muebles que no los tienen no se nombran (SQL 129).
-  const conFrontales = ctx.checks.includes("frontales");
-  const conDoblado = ctx.checks.includes("dobladas");
   // El sentido del degradé es como lo ve el cliente que entra (SQL 125): el más claro, del lado de la entrada.
   // En la liquidación lo colgado va por talle y no se pide degradé. En la vidriera, nada de eso.
   const salon = ctx.sector_tipo === "salon" && !esVidriera;
@@ -123,8 +126,15 @@ export function armarSistema(ctx: Contexto): string {
   // El ejemplo de hallazgo, del mueble que se revisa
   const ejemplo = conFrontales ? '"Completá el frontal: faltan 2 prendas"'
     : esVidriera ? '"Acomodá la remera del maniquí de la izquierda"'
+    : deposito ? '"Separá por talle las remeras del segundo estante"'
     : conDoblado ? '"Emprolijá las pilas de la mesa"'
     : '"Poné las perchas mirando para el mismo lado"';
+  // Lo que no tiene este mueble (ronda 2 del árbitro: en la mesa, las reglas de los estantes valen para las pilas;
+  // el depósito sí tiene estantes).
+  const otroMueble = conFrontales ? ""
+    : deposito ? " (acá no hay frontales: no los nombres)"
+    : esMesa ? " (acá no hay frontales: no los nombres; lo que dicen las reglas de los estantes vale para las pilas de la mesa)"
+    : " (acá no hay estantes ni frontales: no los nombres; si una regla habla de ellos, no la apliques)";
 
   const etapa = ctx.ia_sugerencias
     ? "Además de lo que hay que corregir, podés dejar hasta 2 sugerencias para que quede más lindo (gravedad \"sugerencia\")."
@@ -139,7 +149,7 @@ ${colores}${sentido}${mueble}${exhibidor}${ctx.reglas_extra ? `\nPROPIO DE ESTE 
 
 CÓMO RESPONDER
 - Sé estricto pero justo: marcá solo lo que se ve CLARAMENTE en la foto. Ante la duda, no lo marques.
-- Mirá lo esencial de ESTE mueble: sólo los puntos de la lista de arriba. No pidas cosas de otro tipo de mueble${conFrontales ? "" : " (acá no hay frontales: no los nombres; si una regla habla de estantes o frontales y este mueble no los tiene, no la apliques)"}. Los detalles finos los mira después el supervisor.
+- Mirá lo esencial de ESTE mueble: sólo los puntos de la lista de arriba. No pidas cosas de otro tipo de mueble${otroMueble}. Los detalles finos los mira después el supervisor.
 - Si un punto no se puede ver (por ejemplo, etiquetas adentro de la prenda), ponelo como "no_se_ve". Nunca es un error.
 - Si la foto está borrosa, muy oscura, cortada o no muestra ningún mueble con ropa (estantes, perchero, carro, mesa o vidriera) ni un depósito, devolvé foto_valida = false y explicá en una frase cómo sacarla de nuevo.${salon ? `
 - Si en el módulo se ve un cartel de liquidación, "sale" o descuentos, no pidas degradé de color: esos percheros van por talle.` : ""}

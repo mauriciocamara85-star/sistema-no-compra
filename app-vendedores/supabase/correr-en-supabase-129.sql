@@ -4,11 +4,12 @@
 --     las mesas preguntan Exhibición (por color y bien cargada) en vez de Frontales; los
 --     percheros, Colgado y Exhibición; las vidrieras, Armado, Carteles, Limpieza y Luces.
 --     El depósito, igual que antes.
---   · Desde que lo corras, la IA ya mira lo de cada mueble (en una mesa no busca frontales).
---     Los chicos ven las preguntas nuevas cuando se publique la app; hasta entonces responden
---     las de antes y se aceptan igual.
---   · Si el supervisor le cambia el mueble a un módulo, se cancelan solas las tareas de la IA
---     de puntos que ese mueble ya no tiene (por ejemplo, "Frontales" en un perchero).
+--   · Correlo DESPUÉS de que esté subida la IA nueva (analizar-foto): desde ahí la IA mira lo
+--     de cada mueble (en una mesa no busca frontales). Los chicos ven las preguntas nuevas
+--     cuando se publique la app; hasta entonces responden las de antes y se aceptan igual.
+--   · Si a un módulo le cambia el mueble (lo elige el supervisor, lo renombran o lo mueven en
+--     el croquis), se cancelan solas las tareas de la IA de puntos que ese mueble ya no tiene
+--     (por ejemplo, "Frontales" en un perchero).
 --   · Suma reglas para los puntos nuevos (perchas, maniquíes, carteles, luces, el vidrio):
 --     las podés cambiar en Ajustes → Reglas de orden.
 --   · Al final te muestra cada local con sus tipos de mueble y las preguntas de cada uno.
@@ -44,7 +45,8 @@
 -- 3. orden_checks_mueble() y orden_checks_ia_mueble(): las preguntas.
 -- 4. orden_modulo_mueble(): lo elige el supervisor del local o Administración.
 --    Cancela las tareas pendientes de la IA de puntos que el mueble ya no tiene
---    (si no, no se cerrarían nunca solas).
+--    (si no, no se cerrarían nunca solas). También al renombrarlo o moverlo en el
+--    croquis (un disparador en orden_modulos).
 -- 5. orden_enviar_control: las preguntas del mueble. También acepta las del
 --    mueble del croquis (si se lo cambiaron mientras respondía) y las del sector
 --    (la app de antes, que sigue en los teléfonos hasta que se actualiza).
@@ -59,7 +61,8 @@
 --   volver orden_v_por_revisar y orden_v_controles a las de antes (sin mueble:
 --   drop view orden_v_por_revisar; create or replace view orden_v_controles …;
 --   create view orden_v_por_revisar …, las dos con security_invoker y sus grants);
---   drop function orden_modulo_mueble(uuid, text), orden_cancelar_tareas_otro_mueble_(uuid, uuid),
+--   drop trigger orden_modulos_cambio_mueble on orden_modulos;
+--   drop function orden_modulos_cambio_mueble_(), orden_modulo_mueble(uuid, text), orden_cancelar_tareas_otro_mueble_(uuid, uuid),
 --   orden_checks_ia_mueble(text), orden_checks_mueble(text),
 --   orden_mueble(text, boolean, text, orden_sector_tipo);
 --   alter table orden_modulos drop column mueble;
@@ -125,14 +128,40 @@ begin
 end $$;
 revoke all on function orden_cancelar_tareas_otro_mueble_(uuid, uuid) from public, anon, authenticated;
 grant execute on function orden_cancelar_tareas_otro_mueble_(uuid, uuid) to service_role;
+-- El mueble también cambia al renombrar el módulo ("Perchero de jeans") o al moverlo en el croquis
+-- (al centro, a otra pared): un disparador cancela ahí las mismas tareas (ronda 2 del árbitro).
+-- Lleva la cuenta en orden.tareas_canceladas, para que orden_modulo_mueble la pueda avisar.
+create or replace function orden_modulos_cambio_mueble_() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare v_antes text; v_ahora text; n integer;
+begin
+  select orden_mueble(old.mueble, old.isla, old.nombre, s.tipo) into v_antes from orden_sectores s where s.id = old.sector_id;
+  select orden_mueble(new.mueble, new.isla, new.nombre, s.tipo) into v_ahora from orden_sectores s where s.id = new.sector_id;
+  if v_antes is distinct from v_ahora then
+    n := orden_cancelar_tareas_otro_mueble_(new.id, orden_yo_id());
+    perform set_config('orden.tareas_canceladas',
+      (coalesce(nullif(current_setting('orden.tareas_canceladas', true), ''), '0')::integer + n)::text, true);
+  end if;
+  return null;
+end $$;
+revoke all on function orden_modulos_cambio_mueble_() from public, anon, authenticated;
+drop trigger if exists orden_modulos_cambio_mueble on orden_modulos;
+create trigger orden_modulos_cambio_mueble
+  after update of mueble, isla, nombre, sector_id on orden_modulos
+  for each row
+  when (old.mueble is distinct from new.mueble or old.isla is distinct from new.isla
+        or old.nombre is distinct from new.nombre or old.sector_id is distinct from new.sector_id)
+  execute function orden_modulos_cambio_mueble_();
 revoke all on function orden_checks_mueble(text) from public, anon;
 revoke all on function orden_checks_ia_mueble(text) from public, anon;
 grant execute on function orden_checks_mueble(text) to authenticated, service_role;
 grant execute on function orden_checks_ia_mueble(text) to authenticated, service_role;
 
 -- 4. Elegir el mueble a mano (null vuelve al del croquis). Devuelve el que queda y cuántas
---    tareas de la IA se cancelaron por ser de puntos que ya no tiene.
-create or replace function orden_modulo_mueble(p_modulo uuid, p_mueble text)
+--    tareas de la IA se cancelaron por ser de puntos que ya no tiene (las cancela el disparador).
+--    Se borra antes: una versión de prueba devolvía text, y create or replace no cambia el tipo.
+drop function if exists orden_modulo_mueble(uuid, text);
+create function orden_modulo_mueble(p_modulo uuid, p_mueble text)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare m orden_modulos; s orden_sectores; v_mueble text := nullif(trim(p_mueble), ''); n integer;
 begin
@@ -146,8 +175,9 @@ begin
   if v_mueble is not null and v_mueble not in ('estantes', 'mesa', 'perchero', 'vidriera') then
     raise exception 'Ese tipo de mueble no existe';
   end if;
+  perform set_config('orden.tareas_canceladas', '0', true);
   update orden_modulos set mueble = v_mueble where id = m.id;
-  n := orden_cancelar_tareas_otro_mueble_(m.id, orden_yo_id());
+  n := coalesce(nullif(current_setting('orden.tareas_canceladas', true), ''), '0')::integer;
   return jsonb_build_object('mueble', orden_mueble(v_mueble, m.isla, m.nombre, s.tipo), 'tareas_canceladas', n);
 end $$;
 revoke all on function orden_modulo_mueble(uuid, text) from public, anon;
@@ -199,6 +229,11 @@ begin
   end if;
   foreach k in array v_checks loop
     if jsonb_typeof(p_respuestas -> k) is distinct from 'boolean' then
+      -- Respondió 4, pero de otro mueble: se lo cambiaron mientras respondía (ronda 2 del árbitro).
+      if (case when jsonb_typeof(p_respuestas) = 'object'
+               then (select count(*) from jsonb_each(p_respuestas) e where jsonb_typeof(e.value) = 'boolean') else 0 end) >= 4 then
+        raise exception 'Cambiaron las preguntas de este módulo: volvé a Fotos y respondelas de nuevo';
+      end if;
       raise exception 'Respondé las 4 preguntas antes de enviar';
     end if;
     v_resp := v_resp || jsonb_build_object(k, p_respuestas -> k);
