@@ -20,7 +20,7 @@ var NIVEL = { impecable: 'Impecable', bien: 'Bien', a_mejorar: 'A mejorar', fuer
 var ROL = { vendedor: 'Vendedor', supervisor: 'Supervisor', admin: 'Administrador', gerencia: 'Gerencia', atencion: 'Atención al cliente' };
 /* La gente sin local (vos, los dueños) va en un grupo aparte. La base lo
    llama "Administrador" desde el SQL 93 (antes "Oficina" o "Supervisión"). */
-var SIN_LOCAL = 'Administrador';
+var SIN_LOCAL = 'Supervisores y administración';   // los que no son de un local (SQL 120: también los supervisores)
 
 /* ════════════════════════════════════════════════════════════════════════
    LA SESIÓN

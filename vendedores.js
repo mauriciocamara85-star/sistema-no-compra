@@ -649,6 +649,7 @@ function entrarApp(recien) {
     }, function () { entrarApp(recien); });
     return;
   }
+  _locales = null;
   refrescarYo();
   armarBarra();
   revisarCaja();
@@ -700,8 +701,11 @@ function pantallaEspera() {
     (afuera ? 'Tu acceso a la app está cerrado. Si es un error, hablá con tu supervisor.'
             : quien + ' tiene que confirmar que sos del equipo. Ya le avisamos: cuando te apruebe, tocá el botón de abajo.') + '</p>' +
     (afuera ? '' : '<button class="boton lima" id="yaMe">Ya me aprobaron</button>') +
+    (afuera || !esSupervisorZona() ? '' : '<button class="boton" id="misLocalesEspera" style="margin-top:10px">Mientras tanto, elegí tus locales</button>') +
     '<button class="boton" id="salirEspera" style="margin-top:10px">No soy yo</button>';
   document.getElementById('salirEspera').onclick = preguntarSalir;
+  var ml = document.getElementById('misLocalesEspera');
+  if (ml) ml.onclick = function () { pantallaMisLocales(pantallaEspera); };
   if (!afuera) unaVez(document.getElementById('yaMe'), function () { return revisarAprobacion(false); });
   /* Si ya lo aprobaron mientras la app estaba cerrada, entra solo. */
   revisarAprobacion(true);
@@ -1698,7 +1702,7 @@ function pantallaPerfil() {
     var semanas = r[0] || [], faltas = r[1] || [], avisos = r[2];
     var html = volver + '<h1>Perfil</h1>' +
       '<div class="perfil"><div class="nombre">' + esc(per.nombre) + '</div>' +
-      '<div class="bajada" style="margin:4px 0 0">' + esc((per.local || SIN_LOCAL) + ' · ' + (ROL[per.rol] || '')) + '</div></div>';
+      '<div class="bajada" style="margin:4px 0 0">' + esc(per.local ? per.local + ' · ' + (ROL[per.rol] || '') : ROL[per.rol] || '') + '</div></div>';
 
     html += '<div class="seccion">Avisos</div><div class="perfil">' +
       (avisos === 'activos' ? '<div>Los avisos están activados en este celular.</div>'
@@ -1707,6 +1711,11 @@ function pantallaPerfil() {
          '<button class="boton lima" id="activar">Activar los avisos</button>') +
       (_instalar ? '<button class="boton" id="instalar" style="margin-top:10px">Instalar la app</button>' : '') + '</div>';
 
+    if (esSupervisorZona()) {
+      html += '<div class="seccion">Mis locales</div>' +
+        '<button class="boton" id="misLocales">Elegir mis locales</button>' +
+        '<p class="bajada" style="margin:8px 0 0">Los que supervisás. Los nuevos los aprueba el administrador.</p>';
+    }
     if (esSupervision()) {
       html += '<div class="seccion">Administración</div>' +
         '<a class="boton enlace-boton" href="impecable-admin.html">Abrir la administración</a>' +
@@ -1737,6 +1746,7 @@ function pantallaPerfil() {
     unaVez(document.getElementById('salir'), preguntarSalir);
     var b;
     if ((b = document.getElementById('activar'))) b.onclick = function () { pantallaBienvenida(pantallaPerfil); };
+    if ((b = document.getElementById('misLocales'))) b.onclick = function () { pantallaMisLocales(function () { irA('perfil'); }); };
     if ((b = document.getElementById('instalar'))) b.onclick = instalarApp;
     app.querySelectorAll('[data-descargo]').forEach(function (bt) {
       unaVez(bt, function () {
@@ -2119,7 +2129,8 @@ function guardarCaja(caja, boton) {
 
 /* ════════════════════════════════════════════════════════════════════════
    SUPERVISIÓN: Revisar · Equipo · Cajas
-   El supervisor ve su local; el administrador y la gerencia eligen el local.
+   El encargado (supervisor con local fijo) ve su local; el administrador y la gerencia eligen entre todos; el
+   supervisor de varios locales (SQL 120), entre los que eligió y le aprobaron.
    ════════════════════════════════════════════════════════════════════════ */
 
 var K_LOCAL_SUP = 'vdh_vend_local_sup';
@@ -2129,12 +2140,70 @@ var _locales = null;
 function localSup() {
   var per = yo();
   if (per.local_id) return Promise.resolve({ id: per.local_id, nombre: per.local || '', fijo: true });
-  var cargar = _locales ? Promise.resolve(_locales) : leer('/orden_locales?select=id,nombre&activo=is.true&order=nombre.asc').then(function (l) { _locales = l || []; return _locales; });
+  var cargar = _locales ? Promise.resolve(_locales) : llamar('orden_mis_locales').catch(function (e) {
+    /* Sin el SQL 120 todavía: todos, como antes (sólo el administrador y la gerencia llegan acá). */
+    if (!/orden_mis_locales|PGRST202|could not find the function/i.test(String(e && e.message))) throw e;
+    return leer('/orden_locales?select=id,nombre&activo=is.true&order=nombre.asc');
+  }).then(function (l) { _locales = Array.isArray(l) ? l : []; return _locales; });
   return cargar.then(function (lista) {
     var guardado = null;
     try { guardado = localStorage.getItem(K_LOCAL_SUP); } catch (e) {}
     var l = lista.filter(function (x) { return x.id === guardado; })[0] || lista[0];
     return l ? { id: l.id, nombre: l.nombre, lista: lista } : null;
+  });
+}
+
+/** Sin locales para mirar: el supervisor de varios locales todavía no eligió los suyos, o esperan el OK. */
+function sinLocales(titulo) {
+  var elige = esSupervisorZona();
+  app.innerHTML = cabeza(titulo, '') + (elige
+    ? '<div class="vacio">Todavía no tenés locales para mirar. Elegí los tuyos: cuando el administrador los apruebe, aparecen acá.</div>' +
+      '<button class="boton lima" id="irMisLocales">Elegir mis locales</button>'
+    : '<div class="vacio">No hay locales cargados.</div>');
+  engancharCabeza();
+  var b = document.getElementById('irMisLocales');
+  if (b) b.onclick = function () { pantallaMisLocales(); };
+}
+
+/** Supervisor sin local fijo: elige sus locales (SQL 120). El que tiene local fijo es el encargado de ese local. */
+function esSupervisorZona() { return yo().rol === 'supervisor' && !yo().local_id; }
+
+/* ── Mis locales (SQL 120): los marca el supervisor; los nuevos esperan el OK del administrador (le llega el aviso). ── */
+function pantallaMisLocales(alVolver) {
+  alVolver = alVolver || function () { irA(_pestana || 'revisar'); };
+  barra.hidden = true;
+  app.className = 'app';
+  app.innerHTML = '<button class="volver" id="volver">‹ Volver</button><h1>Mis locales</h1><p class="cargando">Cargando…</p>';
+  document.getElementById('volver').onclick = alVolver;
+  llamar('orden_supervision_mia').then(function (m) {
+    var locs = (m && m.locales) || [];
+    app.innerHTML = '<button class="volver" id="volver">‹ Volver</button><h1>Mis locales</h1>' +
+      '<p class="bajada">Marcá los locales que supervisás. Los nuevos los aprueba el administrador: hasta entonces no ves nada de ellos.</p>' +
+      '<div class="lista-locales">' + locs.map(function (l) {
+        return '<label class="check-local"><input type="checkbox" value="' + esc(l.id) + '"' + (l.estado ? ' checked' : '') + '><span>' + esc(l.nombre) + '</span>' +
+          (l.estado === 'si' ? '<small class="chip listo">Ya lo ves</small>' : l.estado === 'pedido' ? '<small class="chip pendiente">Esperando el OK</small>' : '') + '</label>';
+      }).join('') + '</div>' +
+      '<button class="boton lima" id="guardarLocales" style="margin-top:16px">Guardar</button>';
+    document.getElementById('volver').onclick = alVolver;
+    unaVez(document.getElementById('guardarLocales'), function () {
+      var ids = [].map.call(app.querySelectorAll('.check-local input:checked'), function (x) { return x.value; });
+      var saca = locs.filter(function (l) { return l.estado === 'si' && ids.indexOf(l.id) < 0; }).map(function (l) { return l.nombre; });
+      return (saca.length ? confirmar('Vas a dejar de ver ' + saca.join(', ') + '. Para volver a verlo, lo tiene que aprobar de nuevo el administrador.') : Promise.resolve(true)).then(function (seguro) {
+        if (!seguro) return;
+        return llamar('orden_supervision_pedir', { p_locales: ids }).then(function (r) {
+          _locales = null;
+          avisar(r && r.pedidos ? 'Listo: le avisamos al administrador para que apruebe ' + (r.pedidos === 1 ? 'el local nuevo.' : 'los ' + r.pedidos + ' locales nuevos.') : 'Listo: guardado.');
+          pantallaMisLocales(alVolver);
+        });
+      });
+    });
+  }).catch(function (e) {
+    if (/orden_supervision_mia|PGRST202|could not find the function/i.test(String(e && e.message))) {
+      app.innerHTML = '<button class="volver" id="volver">‹ Volver</button><h1>Mis locales</h1><div class="vacio">Falta correr el SQL 120 en Supabase.</div>';
+      document.getElementById('volver').onclick = alVolver;
+      return;
+    }
+    pantallaError(e, function () { pantallaMisLocales(alVolver); });
   });
 }
 
@@ -2158,7 +2227,7 @@ function pantallaRevisar() {
   app.innerHTML = cabeza('Revisar', '') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   localSup().then(function (loc) {
-    if (!loc) { app.innerHTML = cabeza('Revisar', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharCabeza(); return; }
+    if (!loc) { sinLocales('Revisar'); return; }
     return leer('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,tipo,foto_path,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
                 '&local_id=eq.' + valor(loc.id) + '&limit=60').then(function (cola) {
       if (_pestana !== 'revisar') return;
@@ -2237,7 +2306,7 @@ function pantallaEquipo() {
   app.innerHTML = cabeza('Equipo', '') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   localSup().then(function (loc) {
-    if (!loc) { app.innerHTML = cabeza('Equipo', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharCabeza(); return; }
+    if (!loc) { sinLocales('Equipo'); return; }
     var L = valor(loc.id);
     var desde = _equipoMes ? lunesAR(hoyAR().slice(0, 8) + '01') : lunesAR();
     return Promise.all([
@@ -2247,7 +2316,9 @@ function pantallaEquipo() {
       leer('/orden_controles?select=persona_id&local_id=eq.' + L + '&estado=eq.pendiente&fecha=eq.' + hoyAR()),
       leer('/orden_v_tareas?select=id,titulo,persona_nombre,prorroga_motivo,vence_en&local_id=eq.' + L + '&prorroga_estado=eq.pedida&estado=in.(pendiente,vencida)'),
       leer('/orden_faltas?select=id,persona_id,tipo,motivo,creado_en&local_id=eq.' + L + '&estado=eq.sugerida&order=creado_en.desc'),
-      leer('/orden_v_tareas?select=id,titulo,persona_nombre,origen,vence_en,estado&local_id=eq.' + L + '&estado=in.(pendiente,vencida)&order=vence_en.asc&limit=40')
+      leer('/orden_v_tareas?select=id,titulo,persona_nombre,origen,vence_en,estado&local_id=eq.' + L + '&estado=in.(pendiente,vencida)&order=vence_en.asc&limit=40'),
+      /* Los supervisores de varios locales y lo que esperan (SQL 120; sin él, nada). */
+      esAdmin() ? llamar('orden_supervision_lista').catch(function () { return []; }) : Promise.resolve([])
     ]).then(function (r) {
       if (_pestana !== 'equipo') return;
       /* Esperan el OK los que ya entraron (crearon su PIN) o se anotaron solos.
@@ -2255,7 +2326,8 @@ function pantallaEquipo() {
       var todos = r[0] || [];
       var espera = function (p) { return p.aprobado === false && (!!p.auth_user_id || !!p.alta_propia); };
       dibujarEquipo(loc, { gente: todos.filter(function (p) { return !espera(p); }), esperan: todos.filter(espera),
-                           semanas: r[1] || [], pendientes: r[2] || [], prorrogas: r[3] || [], faltas: r[4] || [], tareas: r[5] || [] });
+                           semanas: r[1] || [], pendientes: r[2] || [], prorrogas: r[3] || [], faltas: r[4] || [], tareas: r[5] || [],
+                           supervisores: Array.isArray(r[6]) ? r[6] : [] });
     });
   }).catch(function (e) { pantallaError(e, pantallaEquipo); });
 }
@@ -2282,6 +2354,27 @@ function dibujarEquipo(loc, x) {
         '<div class="detalle">' + (nuevo ? 'Se anotó solo en la app.' : 'Creó su PIN. Confirmá en persona que fue quien lo creó.') + '</div>' +
         (mira ? '' : '<div class="botones"><button class="boton lima chico"' + datos + ' data-si="1">' + (nuevo ? 'Es de acá' : 'Sí, fue') + '</button>' +
                      '<button class="boton chico"' + datos + ' data-si="0">' + (nuevo ? 'No lo conozco' : 'No fue') + '</button></div>') + '</div>';
+    }).join('');
+  }
+
+  /* Supervisores y administración sin local (SQL 120): su PIN y los locales que piden, para aprobar. No son de
+     este local: se ven en cualquiera. */
+  var sups = x.supervisores || [];
+  var esperanSup = sups.filter(function (p) { return (p.aprobado === false && p.entro) || (p.locales || []).some(function (l) { return !l.aprobado; }); });
+  if (esperanSup.length && !mira) {
+    html += '<div class="seccion">Supervisores: esperan tu OK</div>' + esperanSup.map(function (p) {
+      var nom = p.nombre + (p.apellido ? ' ' + p.apellido : ''), pend = (p.locales || []).filter(function (l) { return !l.aprobado; });
+      var datos = ' data-aprobar="' + esc(p.id) + '" data-nombre="' + esc(p.nombre) + '" data-nuevo="0"';
+      var sup = ' data-sup="' + esc(p.id) + '" data-nombre="' + esc(p.nombre) + '"';
+      return '<div class="tarea"><div class="nombre">' + esc(nom) + (p.rol && p.rol !== 'supervisor' ? ' · ' + esc(ROL[p.rol] || p.rol) : '') + '</div>' +
+        (p.aprobado === false && p.entro
+          ? '<div class="detalle">Creó su PIN. Confirmá en persona que fue quien lo creó.</div><div class="botones">' +
+            '<button class="boton lima chico"' + datos + ' data-si="1">Sí, fue</button><button class="boton chico"' + datos + ' data-si="0">No fue</button></div>' : '') +
+        (pend.length ? '<div class="detalle">Pide ver estos locales:</div>' + pend.map(function (l) {
+            return '<div class="fila"><span>' + esc(l.nombre) + '</span><span class="botones"><button class="boton lima chico"' + sup + ' data-sup-local="' + esc(l.id) + '" data-si="1">Sí</button>' +
+              '<button class="boton chico"' + sup + ' data-sup-local="' + esc(l.id) + '" data-si="0">No</button></span></div>';
+          }).join('') + (pend.length > 1 ? '<div class="botones"><button class="boton lima chico"' + sup + ' data-sup-local="" data-si="1">Aprobar los ' + pend.length + '</button></div>' : '') : '') +
+        '</div>';
     }).join('');
   }
 
@@ -2332,6 +2425,20 @@ function dibujarEquipo(loc, x) {
   }).join('');
   if (!mira && x.gente.length) html += '<button class="boton lima" id="nuevaTarea" style="margin-top:16px">Nueva tarea</button>';
 
+  /* Todos los supervisores de varios locales, con lo que ven (tocar un local se lo saca). */
+  var supsLista = sups.filter(function (p) { return p.rol === 'supervisor'; });
+  if (supsLista.length) {
+    html += '<div class="seccion">Supervisores</div>' + supsLista.map(function (p) {
+      var ve = (p.locales || []).filter(function (l) { return l.aprobado; });
+      return '<div class="tarea"><div class="nombre">' + esc(p.nombre + (p.apellido ? ' ' + p.apellido : '')) + '</div>' +
+        (ve.length ? '<div class="botones">' + ve.map(function (l) {
+            return mira ? '<span class="chip listo">' + esc(l.nombre) + '</span>'
+              : '<button class="boton chico" data-sup="' + esc(p.id) + '" data-nombre="' + esc(p.nombre) + '" data-sup-local="' + esc(l.id) + '" data-local-nombre="' + esc(l.nombre) + '" data-si="0" data-sacar="1">' + esc(l.nombre) + ' ×</button>';
+          }).join('') + '</div>'
+          : '<div class="detalle">' + (!p.entro ? 'Todavía no entró a la app.' : (p.locales || []).length ? 'Esperan tu OK sus locales.' : 'Todavía no eligió sus locales.') + '</div>') + '</div>';
+    }).join('');
+  }
+
   app.innerHTML = html;
   engancharCabeza();
   engancharSelector(pantallaEquipo);
@@ -2361,6 +2468,18 @@ function dibujarEquipo(loc, x) {
       if (Array.prototype.some.call(mismos(), function (x) { return x.disabled; })) return;
       return tocar.apply(this, arguments);
     };
+  });
+  app.querySelectorAll('[data-sup]').forEach(function (b) {
+    unaVez(b, function () {
+      var si = b.dataset.si === '1', local = b.dataset.supLocal || null, nombre = b.dataset.nombre;
+      return (b.dataset.sacar ? confirmar('¿Sacarle ' + b.dataset.localNombre + ' a ' + nombre + '? Deja de verlo.') : Promise.resolve(true)).then(function (seguro) {
+        if (!seguro) return;
+        return llamar('orden_supervision_aprobar', { p_persona: b.dataset.sup, p_local: local, p_aprobar: si }).then(function () {
+          avisar(si ? 'Listo: ' + nombre + ' ya lo ve.' : b.dataset.sacar ? 'Listo: ' + nombre + ' ya no lo ve.' : 'Listo: no se lo aprobaste.');
+          pantallaEquipo();
+        });
+      });
+    });
   });
   app.querySelectorAll('[data-recordar]').forEach(function (b) {
     unaVez(b, function () {
@@ -2433,7 +2552,7 @@ function pantallaCajasSup() {
   app.innerHTML = cabeza('Cajas', '') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   localSup().then(function (loc) {
-    if (!loc) { app.innerHTML = cabeza('Cajas', '') + '<div class="vacio">No hay locales cargados.</div>'; engancharCabeza(); return; }
+    if (!loc) { sinLocales('Cajas'); return; }
     var L = valor(loc.id);
     return Promise.all([
       leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&order=fecha.desc&limit=31'),
