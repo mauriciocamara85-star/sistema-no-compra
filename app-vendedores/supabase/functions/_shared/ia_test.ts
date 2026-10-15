@@ -1,5 +1,5 @@
 // Pruebas sin red de la parte de IA:  deno test supabase/functions/_shared/ia_test.ts
-import { armarHerramienta, armarSistema, type Contexto, normalizar } from "./ia.ts";
+import { armarEsquema, armarSistema, type Contexto, normalizar } from "./ia.ts";
 
 function igual(a: unknown, b: unknown, msg: string) {
   if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`);
@@ -23,8 +23,17 @@ Deno.test("el texto para la IA incluye reglas, colores, cantidades y la etapa ac
   if (s.includes("piso")) throw new Error("No tiene que mencionar el piso");
 });
 
-Deno.test("la herramienta pide exactamente los puntos del sector", () => {
-  igual(armarHerramienta(ctx.checks).input_schema.properties.checks.required, ctx.checks, "checks");
+Deno.test("el formato pide exactamente los puntos del sector", () => {
+  igual(armarEsquema(ctx.checks).properties.checks.required, ctx.checks, "checks");
+});
+
+Deno.test("lo que la IA manda como null (el esquema estricto no deja que falte) queda como si no estuviera", () => {
+  const r = normalizar({
+    foto_valida: true, confianza: "alta", nivel_sugerido: "bien", checks: {} as never,
+    motivo_foto_invalida: null, prendas_por_frontal: null, comentario: null, que_hay: "",
+    hallazgos: [{ check: "frontales", titulo: "Completá el frontal", detalle: null, gravedad: "corregir" }],
+  } as never, ctx);
+  igual([r.motivo_foto_invalida, r.prendas_por_frontal, r.comentario, r.que_hay, r.hallazgos[0].detalle], [undefined, undefined, undefined, undefined, undefined], "nulls");
 });
 
 Deno.test("sugerencias apagadas: solo quedan las cosas para corregir", () => {

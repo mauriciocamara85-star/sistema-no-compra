@@ -1,6 +1,8 @@
 // Lectura de fotos del cierre de caja con la API de Claude.
 // La IA solo LEE números: quien cierra los confirma, y la base compara lo leído con lo cargado.
-import type { Imagen } from "./ia.ts";
+// La respuesta se pide como JSON con un esquema (structured outputs): la herramienta forzada
+// de antes (tool_choice) la rechazan Claude Sonnet 5.5 / Opus 5.5.
+import { type Imagen, pedirJson } from "./ia.ts";
 
 export type TipoFoto = "sistema" | "lote" | "mp" | "gocuotas";
 
@@ -32,30 +34,21 @@ const QUE_ES: Record<TipoFoto, string> = {
   gocuotas: "el resumen de cobros de Go Cuotas del día",
 };
 
-export function herramientaCaja(tipo: TipoFoto) {
-  const montos = Object.fromEntries(
-    Object.entries(CAMPOS[tipo]).map(([k, etiqueta]) => [k, { type: ["number", "null"], description: etiqueta }]),
-  );
-  return {
-    name: "lectura_caja",
-    description: "Montos leídos de la foto.",
-    input_schema: {
-      type: "object",
-      properties: {
-        foto_valida: { type: "boolean", description: "false si no se leen los números o no es la pantalla pedida" },
-        motivo: { type: "string" },
-        fecha: { type: ["string", "null"], description: "Fecha que aparece en la foto, formato AAAA-MM-DD; null si no aparece" },
-        ...montos,
-        suma_operaciones: {
-          type: ["number", "null"],
-          description: "Solo Mercado Pago/Go Cuotas: si NO hay total y se ve una lista, la suma de los montos visibles",
-        },
-        lista_cortada: { type: "boolean", description: "true si la lista sigue fuera de la foto (no se ven todas)" },
-        dudas: { type: "array", items: { type: "string" }, description: "Números que no se leen bien" },
-      },
-      required: ["foto_valida"],
-    },
+const numeroONulo = (description: string) => ({ anyOf: [{ type: "number" }, { type: "null" }], description });
+
+/** El formato de la lectura (structured outputs): objeto cerrado y todas las propiedades obligatorias. */
+export function esquemaCaja(tipo: TipoFoto) {
+  const montos = Object.fromEntries(Object.entries(CAMPOS[tipo]).map(([k, etiqueta]) => [k, numeroONulo(etiqueta)]));
+  const properties = {
+    foto_valida: { type: "boolean", description: "false si no se leen los números o no es la pantalla pedida" },
+    motivo: { anyOf: [{ type: "string" }, { type: "null" }], description: "Si foto_valida es false, cómo sacarla de nuevo; si no, null" },
+    fecha: { anyOf: [{ type: "string" }, { type: "null" }], description: "Fecha que aparece en la foto, formato AAAA-MM-DD; null si no aparece" },
+    ...montos,
+    suma_operaciones: numeroONulo("Solo Mercado Pago/Go Cuotas: si NO hay total y se ve una lista, la suma de los montos visibles; si no, null"),
+    lista_cortada: { type: "boolean", description: "true si la lista sigue fuera de la foto (no se ven todas)" },
+    dudas: { type: "array", items: { type: "string" }, description: "Números que no se leen bien (vacío si no hay)" },
   };
+  return { type: "object", properties, required: Object.keys(properties), additionalProperties: false };
 }
 
 export function sistemaCaja(tipo: TipoFoto, fechaCaja: string, local: string): string {
@@ -65,21 +58,21 @@ Esta foto debería ser ${QUE_ES[tipo]}.
 - Copiá SOLO lo que se lee claramente. Si un número no se lee bien, dejalo en null y anotalo en "dudas". Nunca inventes ni calcules un monto que no está.
 - Si en la foto aparece una fecha, devolvela (sirve para detectar fotos de otro día).
 - Si la foto no es la pantalla pedida o no se lee, foto_valida = false y explicá en "motivo" cómo sacarla de nuevo.
-Respondé SOLO con la herramienta lectura_caja.`;
+Respondé SOLO con la lectura, en el formato JSON pedido.`;
 }
 
 export async function leerFotoCaja(opts: {
-  tipo: TipoFoto; fecha: string; local: string; foto: Imagen; modelo: string; apiKey: string;
+  tipo: TipoFoto; fecha: string; local: string; foto: Imagen; modelo: string; apiKey: string; pedir?: typeof fetch;
 }): Promise<Record<string, unknown>> {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": opts.apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
+  const r = await pedirJson({
+    apiKey: opts.apiKey,
+    pedir: opts.pedir,
+    cuerpo: {
       model: opts.modelo,
-      max_tokens: 1200,
+      // El modelo piensa antes de contestar y eso cuenta dentro de max_tokens: margen de sobra.
+      max_tokens: 8000,
       system: sistemaCaja(opts.tipo, opts.fecha, opts.local),
-      tools: [herramientaCaja(opts.tipo)],
-      tool_choice: { type: "tool", name: "lectura_caja" },
+      output_config: { format: { type: "json_schema", schema: esquemaCaja(opts.tipo) } },
       messages: [{
         role: "user",
         content: [
@@ -87,13 +80,8 @@ export async function leerFotoCaja(opts: {
           { type: "text", text: "Leé los montos de esta foto." },
         ],
       }],
-    }),
+    },
   });
-  if (!res.ok) throw new Error(`API ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  const msg = await res.json();
-  const bloque = (msg.content ?? []).find((b: { type: string }) => b.type === "tool_use");
-  if (!bloque) throw new Error("La IA no devolvió la lectura");
-  const r = bloque.input as Record<string, unknown>;
 
   // Montos: siempre número o null (por si la IA devuelve "1.440.100,00" como texto)
   for (const k of [...Object.keys(CAMPOS[opts.tipo]), "suma_operaciones"]) r[k] = aNumero(r[k]);

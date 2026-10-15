@@ -1,7 +1,9 @@
 // Revisión de fotos con la API de Claude (visión).
 // No hay que "entrenar" nada: le mandamos la foto, la foto de referencia del módulo
 // (si hay) y las reglas de orden que están cargadas en la base (orden_reglas).
-// La respuesta llega siempre con el mismo formato gracias a una herramienta forzada.
+// La respuesta llega siempre con el mismo formato: se pide como JSON con un esquema
+// (structured outputs). Antes era una herramienta forzada (tool_choice), pero Claude
+// Sonnet 5.5 / Opus 5.5 la rechazan con un 400 y ninguna foto se revisaba.
 
 export type Contexto = {
   foto_id: string;
@@ -82,49 +84,55 @@ CÓMO RESPONDER
 - Nivel: impecable = todo bien; bien = un detalle menor; a_mejorar = un problema claro para corregir; fuera_de_estandar = varios problemas o el módulo desarmado.
 - confianza: qué tan seguro estás de lo que viste ("baja" si la foto no deja ver bien).
 - que_hay: qué ropa hay en ${ctx.sector_tipo === "salon" ? "el módulo" : "este sector del depósito"}, en 1 a 4 palabras, como lo diría un vendedor: la prenda que más se ve primero (ej.: "Remeras", "Buzos y camperas", "Jeans", "Accesorios", "Zapatillas"). Sin colores, marcas ni cantidades. Si no se distingue, dejalo vacío.
-Respondé SOLO usando la herramienta informe_modulo.`;
+Respondé SOLO con el informe, en el formato JSON pedido.`;
 }
 
-export function armarHerramienta(checks: string[]) {
+/** Un valor que puede faltar: va como null (en el esquema estricto todas las propiedades son obligatorias). */
+function oNulo(t: Record<string, unknown>) {
+  const { description, ...resto } = t;
+  return { anyOf: [resto, { type: "null" }], ...(description ? { description } : {}) };
+}
+
+/** El formato del informe (structured outputs): todos los objetos cerrados y todas las propiedades obligatorias. */
+export function armarEsquema(checks: string[]) {
   return {
-    name: "informe_modulo",
-    description: "Informe del control de orden de la foto.",
-    input_schema: {
-      type: "object",
-      properties: {
-        foto_valida: { type: "boolean" },
-        motivo_foto_invalida: { type: "string", description: "Solo si foto_valida es false." },
-        checks: {
-          type: "object",
-          properties: Object.fromEntries(checks.map((c) => [c, { type: "string", enum: ["ok", "mal", "no_se_ve"] }])),
-          required: checks,
-        },
-        prendas_por_frontal: {
-          type: "array",
-          items: { type: "integer" },
-          description: "Solo salón: cuántas prendas ves en cada frontal, de izquierda a derecha.",
-        },
-        hallazgos: {
-          type: "array",
-          maxItems: 4,
-          items: {
-            type: "object",
-            properties: {
-              check: { type: "string", enum: checks },
-              titulo: { type: "string" },
-              detalle: { type: "string" },
-              gravedad: { type: "string", enum: ["corregir", "sugerencia"] },
-            },
-            required: ["check", "titulo", "gravedad"],
-          },
-        },
-        nivel_sugerido: { type: "string", enum: [...NIVELES] },
-        comentario: { type: "string", description: "Una frase corta para el vendedor." },
-        confianza: { type: "string", enum: ["alta", "media", "baja"] },
-        que_hay: { type: "string", description: "Qué ropa hay, en 1 a 4 palabras (\"Remeras\", \"Buzos y camperas\"). Vacío si no se distingue." },
+    type: "object",
+    properties: {
+      foto_valida: { type: "boolean" },
+      motivo_foto_invalida: oNulo({ type: "string", description: "Solo si foto_valida es false; si no, null." }),
+      checks: {
+        type: "object",
+        properties: Object.fromEntries(checks.map((c) => [c, { type: "string", enum: ["ok", "mal", "no_se_ve"] }])),
+        required: checks,
+        additionalProperties: false,
       },
-      required: ["foto_valida", "checks", "hallazgos", "nivel_sugerido", "confianza"],
+      prendas_por_frontal: oNulo({
+        type: "array",
+        items: { type: "integer" },
+        description: "Solo salón: cuántas prendas ves en cada frontal, de izquierda a derecha; null si no aplica.",
+      }),
+      hallazgos: {
+        type: "array",
+        description: "Máximo 4.",
+        items: {
+          type: "object",
+          properties: {
+            check: checks.length ? { type: "string", enum: checks } : { type: "string" },
+            titulo: { type: "string" },
+            detalle: oNulo({ type: "string" }),
+            gravedad: { type: "string", enum: ["corregir", "sugerencia"] },
+          },
+          required: ["check", "titulo", "detalle", "gravedad"],
+          additionalProperties: false,
+        },
+      },
+      nivel_sugerido: { type: "string", enum: [...NIVELES] },
+      comentario: oNulo({ type: "string", description: "Una frase corta para el vendedor." }),
+      confianza: { type: "string", enum: ["alta", "media", "baja"] },
+      que_hay: { type: "string", description: "Qué ropa hay, en 1 a 4 palabras (\"Remeras\", \"Buzos y camperas\"). Vacío si no se distingue." },
     },
+    required: ["foto_valida", "motivo_foto_invalida", "checks", "prendas_por_frontal", "hallazgos", "nivel_sugerido", "comentario", "confianza", "que_hay"],
+    additionalProperties: false,
   };
 }
 
@@ -193,38 +201,60 @@ export async function analizarConClaude(opts: {
   contenido.push({ type: "image", source: { type: "base64", ...foto } });
   contenido.push({ type: "text", text: `Revisá "${ctx.modulo_nombre}" y completá el informe.` });
 
-  const cuerpo = {
-    model: modelo,
-    max_tokens: 1500,
-    system: armarSistema(ctx),
-    tools: [armarHerramienta(ctx.checks)],
-    tool_choice: { type: "tool", name: "informe_modulo" },
-    messages: [{ role: "user", content: contenido }],
-  };
+  const r = await pedirJson({
+    apiKey,
+    cuerpo: {
+      model: modelo,
+      // El modelo piensa antes de contestar y eso cuenta dentro de max_tokens: margen de sobra.
+      max_tokens: 8000,
+      system: armarSistema(ctx),
+      output_config: { format: { type: "json_schema", schema: armarEsquema(ctx.checks) } },
+      messages: [{ role: "user", content: contenido }],
+    },
+  });
+  return normalizar(r as Partial<Resultado>, ctx);
+}
 
+/**
+ * Pide a Claude una respuesta en JSON (structured outputs) y la devuelve ya leída.
+ * Reintenta si la API está saturada o hubo un error del servidor. Lo usan las fotos de
+ * los módulos y las del cierre de caja.
+ */
+export async function pedirJson(opts: {
+  apiKey: string;
+  cuerpo: Record<string, unknown>;
+  pedir?: typeof fetch;
+  espera?: number;
+}): Promise<Record<string, unknown>> {
+  const pedir = opts.pedir ?? fetch;
   let ultimoError = "";
   for (let intento = 1; intento <= 3; intento++) {
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
+    const res = await pedir("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
+        "x-api-key": opts.apiKey,
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
       },
-      body: JSON.stringify(cuerpo),
+      body: JSON.stringify(opts.cuerpo),
     });
     if (res.ok) {
       const msg = await res.json();
-      const bloque = (msg.content ?? []).find((b: { type: string; name?: string }) =>
-        b.type === "tool_use" && b.name === "informe_modulo"
-      );
-      if (!bloque) throw new Error("La IA no devolvió el informe");
-      return normalizar(bloque.input as Partial<Resultado>, ctx);
+      if (msg.stop_reason === "max_tokens") throw new Error("La IA se quedó sin lugar para contestar (max_tokens)");
+      if (msg.stop_reason === "refusal") throw new Error("La IA no quiso revisar la foto (refusal)");
+      // Antes del JSON pueden venir bloques de "thinking": se toma el texto.
+      const texto = (msg.content ?? []).filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("");
+      if (!texto.trim()) throw new Error("La IA no devolvió el informe");
+      try {
+        return JSON.parse(texto);
+      } catch {
+        throw new Error(`La IA devolvió algo que no es JSON: ${texto.slice(0, 120)}`);
+      }
     }
     ultimoError = `API ${res.status}: ${(await res.text()).slice(0, 300)}`;
     // Reintenta solo si está saturada o hubo un error del servidor
     if (![429, 500, 502, 503, 529].includes(res.status)) break;
-    await new Promise((r) => setTimeout(r, 1500 * intento));
+    await new Promise((r) => setTimeout(r, (opts.espera ?? 1500) * intento));
   }
   throw new Error(ultimoError);
 }
