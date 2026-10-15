@@ -4,6 +4,8 @@
 --   · Crea las tablas ventas_* (vacías) y las funciones que usa la pantalla Ventas. No toca nada de lo que ya existe.
 --   · Quién carga: cualquiera del local (con su usuario) o la compu habilitada del local (la misma llave de Cobrar).
 --     El encargado, los supervisores de ese local, Administración y Atención al cliente también. Gerencia mira.
+--   · Un mes pasado se completa hasta el 7 del mes siguiente; después lo corrige sólo Administración.
+--     Antes de septiembre de 2026 no hay nada (el sistema empieza ahí).
 --   · El dashboard sigue con las planillas: la conexión es otro archivo (ventas-dashboard.sql), para más adelante.
 --   · Reversible: borrar las tablas ventas_* y las funciones ventas_* (la lista está al final).
 
@@ -268,9 +270,11 @@ returns void language plpgsql immutable as $$
 begin
   if a->>'puede' = 'escribir' then return; end if;
   if coalesce((a->>'por_cierre')::boolean, false) then
-    raise exception 'ventas: ese mes ya cerró'
-      using hint = case when a->>'carga_hasta' is null then 'El sistema empezó en septiembre de 2026.'
-                        else 'Se cargaba hasta el ' || to_char((a->>'carga_hasta')::date, 'DD/MM') || '. Si hay que corregir algo, lo hace Administración.' end;
+    if a->>'carga_hasta' is null then
+      raise exception 'ventas: ese mes es de antes del sistema (empezó en septiembre de 2026)';
+    end if;
+    raise exception 'ventas: ese mes ya cerró (se cargaba hasta el %): si hay que corregir algo, lo hace Administración',
+      to_char((a->>'carga_hasta')::date, 'DD/MM');
   end if;
   raise exception 'ventas: no podés cargar en este local' using hint = 'Entrá con tu usuario del local o usá la compu habilitada.';
 end $$;
@@ -516,7 +520,9 @@ begin
       raise exception 'ventas: dato desconocido (%)', p_clave;
     end if;
     if v_num < 0 then raise exception 'ventas: no puede ser negativo'; end if;
-    if p_clave in ('conversion', 'factor') and v_num > 5 then raise exception 'ventas: va como fracción (0,5 = 50%%)'; end if;
+    if p_clave in ('conversion', 'factor') and v_num > 5 then
+      raise exception 'ventas: es demasiado: va como %% (50%% es la mitad)';
+    end if;
     if p_clave = 'dias_habiles' and v_num > 31 then raise exception 'ventas: el mes no tiene tantos días'; end if;
     if p_clave in ('dias_habiles', 'q_lineas', 'q_prendas') then v_num := round(v_num); end if;
     execute format('select (%I)::text from ventas_mes where local_id = $1 and mes = $2', p_clave) into v_antes using p_local, v_mes;
@@ -552,6 +558,7 @@ begin
     if ventas_mes_de(v_fecha) <> v_mes then raise exception 'ventas: ese día no es de este mes'; end if;
     if v_fecha > v_hoy then raise exception 'ventas: ese día todavía no llegó' using hint = 'Se carga el día que pasó.'; end if;
     if v_num < 0 then raise exception 'ventas: no puede ser negativo'; end if;
+    if v_campo = 'conversion' and v_num > 5 then raise exception 'ventas: es demasiado: la conversión va como %% (50%% es la mitad)'; end if;
     if v_campo = 'trafico' then v_num := round(v_num); end if;
     execute format('select (%I)::text from ventas_trafico where local_id = $1 and fecha = $2', v_campo) into v_antes using p_local, v_fecha;
     insert into ventas_trafico (local_id, fecha, cargado_por) values (p_local, v_fecha, a->>'quien') on conflict do nothing;
@@ -575,6 +582,7 @@ begin
       raise exception 'ventas: esa semana todavía no empezó';
     end if;
     if v_num < 0 then raise exception 'ventas: no puede ser negativo'; end if;
+    if v_campo = 'conversion' and v_num > 5 then raise exception 'ventas: es demasiado: la conversión va como %% (50%% es la mitad)'; end if;
     if v_campo in ('trafico', 'perfumes', 'boxer') then v_num := round(v_num); end if;
     execute format('select (%I)::text from ventas_semanal where vendedor_id = $1 and semana = $2', v_campo) into v_antes using v_vend, v_sem;
     insert into ventas_semanal (vendedor_id, semana, cargado_por) values (v_vend, v_sem, a->>'quien') on conflict do nothing;
@@ -657,6 +665,8 @@ exception
   /* Un número que no entra en la columna (tráfico de 10 cifras, PxT de 4): dicho claro, no el error de Postgres. */
   when numeric_value_out_of_range then
     raise exception 'ventas: el número es demasiado grande para ese lugar';
+  when check_violation then
+    raise exception 'ventas: ese número no va en ese lugar: revisá que esté bien escrito';
 end $$;
 
 /** Suma un vendedor al mes (sin tope). Si es de Equipo VDH, se lo vincula (así se ven sus francos). */

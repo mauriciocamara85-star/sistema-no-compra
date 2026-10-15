@@ -199,6 +199,7 @@
       var firma = JSON.stringify(D);
       if (silencioso && ST.D && firma === ST.firma) return;        // nada cambió
       ST.D = D; ST.firma = firma;
+      if (ST.temp && ST.temp.meses.indexOf(mesDeDatos(D)) >= 0) ST.temp.D[mesDeDatos(D)] = D;
       pintarQuien();
       if (!D.cfg) {
         cajaMsg('<h2>' + nombreMes(ST.mes) + ' todavía no tiene planilla</h2><p>Se abre sola la primera vez que alguien del local entra a cargar.</p>');
@@ -277,10 +278,11 @@
     if (tipo === 'int') return nf(v);
     return String(v);
   }
-  function entrada(que, clave, v, tipo, cl, extra) {
+  function entrada(que, clave, v, tipo, cl, extra, puede) {
     cl = cl || ''; extra = extra || '';
-    if (!edita()) return '<td class="' + cl + '">' + esc(texto(v, tipo)) + '</td>';
-    return '<td class="ed ' + cl + '"><input data-k="' + esc(que + '|' + clave) + '" data-t="' + tipo + '" value="' + esc(texto(v, tipo)) + '"' +
+    var tit = tipo === 'txt' && v ? ' title="' + esc(v) + '"' : '';     // un nombre que no entra se lee al pasar el mouse
+    if (!(puede === undefined ? edita() : puede)) return '<td class="' + cl + '"' + tit + '>' + esc(texto(v, tipo)) + '</td>';
+    return '<td class="ed ' + cl + '"' + tit + '><input data-k="' + esc(que + '|' + clave) + '" data-t="' + tipo + '" value="' + esc(texto(v, tipo)) + '"' +
       (tipo === 'txt' ? ' maxlength="60"' : ' inputmode="decimal"') + ' autocomplete="off" spellcheck="false" ' + extra + '></td>';
   }
   function kpi(et, val, sub, cl) {
@@ -327,7 +329,7 @@
       '<th>Conversión</th>' + entrada('config', 'conversion', c.conv || null, 'pct', 'amb g', 'aria-label="Conversión objetivo"') +
       '<th>Ticket Prom.</th>' + entrada('config', 'ticket', c.tp || null, 'money', 'amb g', 'aria-label="Ticket promedio objetivo"') + '</tr></table>' +
       /* Con muchos vendedores la caja de Efectivo baja y cada uno tiene su ancho (si igual no entran, la tabla se desliza sola). */
-      '<div class="cfg-fila' + (V.length > 6 ? ' muchos' : '') + '"><div class="cfg-vend-env"><table class="cfg-vend" style="min-width:' + (150 + V.length * 88 + (edita() ? 150 : 0)) + 'px"><colgroup><col style="width:150px">' + colsV + (edita() ? '<col style="width:150px">' : '') + '</colgroup>' +
+      '<div class="cfg-fila' + (V.length > 5 ? ' muchos' : '') + '"><div class="cfg-vend-env"><table class="cfg-vend" style="min-width:' + (150 + V.length * 110 + (edita() ? 150 : 0)) + 'px"><colgroup><col style="width:150px">' + colsV + (edita() ? '<col style="width:150px">' : '') + '</colgroup>' +
       '<tr><th class="izq">Vendedores</th>' + V.map(function (v) {
         return entrada('vendedor', v.id + ':nombre', v.nombre, 'txt', 'amb', 'placeholder="Nombre" aria-label="Nombre del vendedor"');
       }).join('') + (edita() ? '<td rowspan="2" style="padding:4px"><button type="button" class="btn-add" data-acc="agregar">+ Sumar vendedor</button></td>' : '') + '</tr>' +
@@ -410,7 +412,7 @@
         cel(function (x) { var m = (ST.venta[v.id] || {})[x.d]; return '<td>' + (def(m) ? pesos(m) : '') + '</td>'; }) +
         (edita() && V.length ? '<td colspan="2" style="padding:3px 6px"><select data-acc="asignar" data-desde="' + v.id + '" aria-label="¿De quién es la venta sin vendedor?" title="Pasa los ' + pesos(total) + ' sin vendedor del mes">' +
           '<option value="">¿De quién es?</option>' + V.map(function (o) { return '<option value="' + o.id + '">' + esc(o.nombre) + '</option>'; }).join('') + '</select></td>'
-          : '<td class="tot">' + pesos(w.sinV) + '</td><td class="tot"></td>') + '</tr>';
+          : '<td class="tot">' + pesos(w.sinV) + '</td><td class="tot">' + pesosP(w.sinV) + '</td>') + '</tr>';
     });
     return t + '</tbody></table>';
   }
@@ -492,7 +494,7 @@
       filaR('Perfumes', 'pf', nf) + filaR('Boxer', 'bx', nf) + filaR('PxT', 'pxt', function (x) { return dec(x); }) + '</table>';
     var ancho = Math.max(V.length, n), relleno = function (k) { var s = ''; for (var j = 0; j < k; j++) s += '<td></td>'; return s; };
     var colsP = ''; for (var q = 0; q < ancho; q++) colsP += '<col>';
-    h += '<div class="banda">  CONFIGURACIÓN  —  ámbar editable · azul se calcula solo</div><div class="iv-cfg' + (V.length > 6 ? ' muchos' : '') + '">' +
+    h += '<div class="banda">  CONFIGURACIÓN  —  ámbar editable · azul se calcula solo</div><div class="iv-cfg' + (V.length > 5 ? ' muchos' : '') + '">' +
       '<table><colgroup><col style="width:150px"><col></colgroup>' +
       '<tr><th>Objetivo Mensual</th><td class="azul">' + pesos(c.obj) + '</td></tr>' +
       '<tr><th>PxT objetivo</th>' + entrada('config', 'pxt_obj', c.pxtObj || null, 'dec', 'amb', 'aria-label="PxT objetivo"') + '</tr>' +
@@ -548,23 +550,38 @@
   }
 
   /* ── Hoja Informe Temporada ──────────────────────────────────────────── */
-  function cargarTemporada() {
-    var meses = VC.semestre(ST.mes), clave = ST.local.id + '|' + meses[0];
-    if (ST.temp && ST.temp.clave === clave) return;
-    var t = ST.temp = { clave: clave, meses: meses, D: {}, listo: false, error: null };
+  function cargarTemporada(refrescar) {
+    var meses = VC.semestre(ST.mes), clave = ST.local.id + '|' + meses[0], t = ST.temp;
+    if (t && t.clave === clave && !refrescar) return;
+    if (!t || t.clave !== clave) {
+      t = ST.temp = { clave: clave, meses: meses, D: {}, listo: false, error: null };
+      if (ST.D && ST.D.cfg && meses.indexOf(mesDeDatos(ST.D)) >= 0) t.D[mesDeDatos(ST.D)] = ST.D;
+    }
+    if (t.leyendo) return;
+    t.leyendo = true;
+    var local = ST.local.id, actual = ST.mes;
     Promise.all(meses.map(function (m) {
-      if (m === ST.mes) return Promise.resolve(null);
-      return llamar('ventas_mes_leer', { p_local: ST.local.id, p_mes: m, p_abrir: false });
+      if (m === actual) return Promise.resolve(null);
+      return llamar('ventas_mes_leer', { p_local: local, p_mes: m, p_abrir: false });
     })).then(function (lista) {
+      t.leyendo = false;
       lista.forEach(function (D, i) { if (D) t.D[meses[i]] = D; });
-      t.listo = true;
-      if (ST.temp === t && ST.hoja === 'temporada') redibujar();
+      var primera = !t.listo;
+      t.listo = true; t.error = null;
+      if (ST.temp !== t || ST.hoja !== 'temporada') return;
+      redibujar();
+      if (primera) setTimeout(function () { if (ST.hoja === 'temporada' && !$('vtHoja').hidden) posicionar(); }, 0);
     }).catch(function (e) {
+      t.leyendo = false;
+      if (t.listo) return;                       // un refresco que falló: queda lo que había
       t.error = motivo(e);
       if (ST.temp === t && ST.hoja === 'temporada') redibujar();
     });
   }
-  function mesTemp(m) { return m === ST.mes ? ST.D : ST.temp && ST.temp.D[m]; }
+  function mesDeDatos(D) { return String(D && D.mes || '').slice(0, 10); }
+  /* Los datos de un mes del semestre: el que se está mirando (ST.D) o el que juntó Temporada.
+     Nunca ST.D con otro mes adentro (mientras se lee el mes nuevo, ST.D es todavía el de antes). */
+  function mesTemp(m) { return ST.D && mesDeDatos(ST.D) === m ? ST.D : ST.temp && ST.temp.D[m]; }
 
   function hojaTemporada() {
     cargarTemporada();
@@ -576,7 +593,7 @@
     if (!t.listo) return h + '<div class="tp-vacio">Juntando los 6 meses del semestre…</div>';
     var T = VC.temporada(meses.map(function (m) {
       var D = mesTemp(m);
-      return { mes: m, D: D || null, C: D && D.cfg ? (m === ST.mes ? ST.C : VC.calcular(D)) : null };
+      return { mes: m, D: D || null, C: D && D.cfg ? (D === ST.D && ST.C ? ST.C : VC.calcular(D)) : null };
     }));
     var F = T.filas;
     var ESTADO = { sin: '⚪ Sin datos', ok: '🟢 OK', cerca: '🟡 Cerca', atencion: '🔴 Atención' };
@@ -637,8 +654,8 @@
       F.map(function (f, i) {
         var con = f.hay && f.empezo, Dm = mesTemp(f.mes);
         /* Cada fila es de su mes: la de un mes cerrado no se escribe, aunque el mes que se mira esté abierto. */
-        var cel = !Dm || Dm.puede === 'escribir'
-          ? entrada('temporada', '', f.ant, 'money', 'amb', 'data-mes="' + f.mes + '" data-g="tp" data-r="' + i + '" data-c="0" aria-label="Venta de ' + f.nombre + ' del semestre anterior"')
+        var cel = (Dm ? Dm.puede === 'escribir' : edita())
+          ? entrada('temporada', '', f.ant, 'money', 'amb', 'data-mes="' + f.mes + '" data-g="tp" data-r="' + i + '" data-c="0" aria-label="Venta de ' + f.nombre + ' del semestre anterior"', true)
           : '<td class="amb"' + (Dm.cerrado ? ' title="' + f.nombre + ' ya cerró: si hay que corregirlo, lo hace Administración."' : '') + '>' + esc(texto(f.ant, 'money')) + '</td>';
         return '<tr><td class="izq">' + f.nombre + '</td>' + cel +
           '<td>' + (con ? pesos(f.real) : '') + '</td><td class="' + (con ? signo(f.antVar) : '') + '">' + (con && f.ant ? pc(f.antVar, 1) : '') + '</td>' +
@@ -778,12 +795,22 @@
   /* Lo que no se guardó queda a la vista (en rojo, arriba) hasta que esa misma celda se guarde bien:
      un "Guardado" de otra celda no lo tapa. clave → lo que se escribió y dónde. */
   var sinGuardar = {};
+  /* Dónde estaba lo que no se guardó, si no es el local y mes que se mira. */
+  function dondeNoSeGuardo(x) {
+    if (!x.local || (ST.local && x.local === ST.local.id && x.mes === ST.mes)) return x.desc;
+    return 'en ' + x.localNombre + ', ' + nombreMes(x.mes).toLowerCase() + ': ' + x.desc;
+  }
   function pintarGuardado() {
     var ks = Object.keys(sinGuardar);
     if (ks.length) {
-      var todo = ks.map(function (k) { return sinGuardar[k]; });
+      var todo = ks.map(function (k) { return dondeNoSeGuardo(sinGuardar[k]); });
       estado('No se guardó: ' + todo[0] + (todo.length > 1 ? ' y ' + (todo.length - 1) + ' más' : '') + '. Volvé a cargarlo.', 'mal');
       $('vtEstado').title = 'No se guardó: ' + todo.join(' · ');
+      /* Si decide dejarlo como está (o ya no se puede cargar), lo saca él: no queda pegado hasta recargar. */
+      var x = document.createElement('button');
+      x.type = 'button'; x.className = 'vt-estado-x'; x.setAttribute('data-acc', 'descartar');
+      x.textContent = 'Entendido'; x.title = 'Sacar el aviso: lo que no se guardó no queda guardado';
+      $('vtEstado').appendChild(x);
     } else {
       estado('Guardado ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
       $('vtEstado').title = '';
@@ -792,7 +819,7 @@
   function guardarCelda(que, clave, valor, mes, desc) {
     pendientes++;
     estado('Guardando…', 'guardando');
-    var local = ST.local.id, k = local + '|' + mes + '|' + que + '|' + clave;
+    var local = ST.local.id, localNombre = ST.local.nombre || '', k = local + '|' + mes + '|' + que + '|' + clave;
     var p = cola.then(function () {
       return llamar('ventas_guardar', { p_local: local, p_mes: mes, p_que: que, p_clave: clave, p_valor: valor });
     });
@@ -804,8 +831,11 @@
       return r;
     }, function (e) {
       pendientes--;
-      sinGuardar[k] = desc || 'una celda';
-      pintarGuardado();
+      /* Lo que la base rechaza por una regla (mes cerrado, un número que no va) no se puede volver a cargar igual:
+         se avisa y la celda vuelve a lo que tiene la base. Lo que no llegó (internet, la base caída) queda en rojo. */
+      var regla = e && e.delServidor && /^ventas:/.test(String(e.message || ''));
+      if (!regla) sinGuardar[k] = { desc: desc || 'una celda', local: local, localNombre: localNombre, mes: mes };
+      if (Object.keys(sinGuardar).length) pintarGuardado(); else if (!pendientes) estado('');
       throw e;
     });
   }
@@ -822,6 +852,7 @@
       : tipo === 'dias' && val > 7 ? 'Una semana tiene hasta 7 días.'
       : que === 'config' && clave === 'dias_habiles' && val > 31 ? 'El mes no tiene tantos días.'
       : que === 'config' && (clave === 'conversion' || clave === 'factor') && val > 5 ? 'Es demasiado: ' + (clave === 'conversion' ? 'la conversión' : 'el factor') + ' va como % (50% es la mitad). Quedó como estaba.'
+      : (que === 'trafico' || que === 'semanal') && /:conversion$/.test(clave) && val > 5 ? 'Es demasiado: la conversión va como % (50% es la mitad). Quedó como estaba.'
       : typeof val === 'number' && val >= 1e10 ? 'El número es demasiado grande: quedó como estaba.'
       : '';
     if (mal) {
@@ -831,7 +862,12 @@
       return;
     }
     var antes = leerNum(el.defaultValue, tipo);
-    if (antes === val) { redibujar(); return; }              // lo mismo, escrito de otra forma
+    if (antes === val) {                                     // lo mismo, escrito de otra forma
+      /* Si esa celda había quedado sin guardar, escribir lo que tiene la base es dejarla así: se va el rojo. */
+      var kNo = ST.local.id + '|' + mes + '|' + que + '|' + clave;
+      if (sinGuardar[kNo]) { delete sinGuardar[kNo]; if (!pendientes) { if (Object.keys(sinGuardar).length) pintarGuardado(); else estado(''); } }
+      redibujar(); return;
+    }
     var D = que === 'temporada' ? mesTemp(mes) : ST.D;
     if (D) ponerLocal(D, que, clave, val);
     if (que === 'temporada' && mes === ST.mes) ST.D.venta_anterior = val === undefined ? null : val;
@@ -844,7 +880,7 @@
          vuelve a leer el mes entero, aunque la base no haya cambiado (sin internet, queda lo de antes). */
       if (D) ponerLocal(D, que, clave, antes);
       if (que === 'temporada' && mes === ST.mes) ST.D.venta_anterior = antes === undefined ? null : antes;
-      if (que === 'temporada') ST.temp = null;
+      if (que === 'temporada' && ST.temp) cargarTemporada(true);
       redibujar();
       ST.firma = null;
       cargarMes(true);
@@ -941,6 +977,11 @@
     else if (b.getAttribute('data-acc') === 'reintentar' && ST.reintentar) ST.reintentar();
   });
   $('vtVelo').addEventListener('click', function (e) { if (e.target === $('vtVelo')) cerrarDialogo(); });
+  $('vtEstado').addEventListener('click', function (e) {
+    if (!e.target.closest('[data-acc="descartar"]')) return;
+    sinGuardar = {};
+    estado(''); $('vtEstado').title = '';
+  });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('vtVelo').hidden) cerrarDialogo(); });
   [].forEach.call(document.querySelectorAll('.vt-pest'), function (b) {
     b.addEventListener('click', function () {
@@ -960,6 +1001,7 @@
   });
   $('vtMes').addEventListener('change', function () {
     recordarPos();
+    if (ST.temp && ST.D && ST.D.cfg && ST.temp.meses.indexOf(mesDeDatos(ST.D)) >= 0) ST.temp.D[mesDeDatos(ST.D)] = ST.D;
     ST.mes = this.value;
     if (ST.temp && ST.temp.meses.indexOf(ST.mes) < 0) ST.temp = null;
     cargarMes();
@@ -971,7 +1013,7 @@
     return ST.D && ST.D.cfg && !pendientes && $('vtVelo').hidden && document.visibilityState !== 'hidden' &&
       !(a && a.closest && a.closest('#vtHoja') && a.tagName === 'INPUT');
   }
-  setInterval(function () { if (quieto()) { if (ST.hoja === 'temporada') ST.temp = null; cargarMes(true); } }, 60000);
+  setInterval(function () { if (quieto()) { if (ST.hoja === 'temporada' && ST.temp) cargarTemporada(true); cargarMes(true); } }, 60000);
   window.addEventListener('focus', function () { if (quieto() && Date.now() - ST.leido > 20000) cargarMes(true); });
 
   /* Arranque */
