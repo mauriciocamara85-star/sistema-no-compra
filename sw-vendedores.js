@@ -13,7 +13,7 @@
  *
  * Estrategia: RED PRIMERO, como el del No Compra. Al tocar la app, subir CACHE.
  */
-const CACHE = 'impecable-v25';
+const CACHE = 'impecable-v26';
 
 const BASICOS = [
   './vendedores.html',
