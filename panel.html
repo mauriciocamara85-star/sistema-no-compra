@@ -672,31 +672,14 @@
      menú se abre desde el botón de la sección, por encima de todo. El
      numerito es lo que espera: lo que nadie contactó o contestó todavía. */
   .crm-cuerpo { min-width: 0; }
-  /* ── El CRM a pantalla completa (pedido de Mauricio, 10/10/2026) ──
-     Sin el rail negro a la izquierda, como Kommo: el CRM ya tiene su propio
-     menú. El rail no desaparece —es la única salida a Carga, Club o
-     Configuración—: se abre encima con el botón de arriba a la izquierda y
-     se cierra tocando afuera o con Escape. En el celular el rail es la
-     barra de abajo y se queda como está. */
-  .btn-sistema { display: none; }
-  .rail-velo { display: none; }
-  /* Con el botón adelante son tres en la cabecera: el título se queda
-     pegado al botón, a la izquierda, y no en el medio. */
-  .app-head-in > .marca { margin-right: auto; }
-  @media (min-width: 900px) {
-    body.hay-rail.crm-completo { padding-left: 0; }
-    body.crm-completo .rail { display: none; }
-    body.crm-completo.hay-rail .btn-sistema { display: grid; margin-right: 4px; }
-    body.crm-completo.rail-abierto .rail { display: flex; z-index: 96; }
-    body.crm-completo.rail-abierto .rail-velo { display: block; position: fixed; inset: 0; z-index: 95; background: rgba(20, 20, 18, .32); }
-  }
+  /* La barra negra (15/10/2026): la misma angosta de todas las secciones
+     (interfaz.js), que se abre al pasar el mouse. Ya no va el CRM "a
+     pantalla completa" con el botón ☰ que la abría encima: a Mauricio no le
+     gustaba que "te come la pantalla". */
   .crm-menu { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; background: var(--surface);
               border: 1px solid var(--line); border-radius: var(--r); }
   .crm-menu-cab { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px 10px; }
   .crm-menu-cab b { font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
-  .crm-plegar { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; color: var(--txt-3); }
-  .crm-plegar:hover { background: var(--surface-2); color: var(--txt); }
-  .crm-plegar svg { width: 16px; height: 16px; transition: transform .2s var(--curva); }
   .crm-item, .crm-subitem { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px;
                             padding: 7px 10px; border-radius: 10px; text-align: left; font: 600 13px var(--sans); color: var(--txt-2); }
   .crm-item:hover, .crm-subitem:hover { background: var(--surface-2); color: var(--txt); }
@@ -719,14 +702,16 @@
   .crm-grupo.abierto .crm-sub { display: flex; }
   .crm-seccion, .crm-velo { display: none; }
   @media (min-width: 900px) {
-    .crm { display: grid; grid-template-columns: 248px minmax(0, 1fr); gap: 18px; align-items: start; }
+    /* Los anchos del panel son los de todas las secciones (estilos.css,
+       15/10/2026): abierto y achicado miden lo mismo en el CRM, en Equipo VDH
+       y en el Asistente. */
+    .crm { display: grid; grid-template-columns: var(--panel-ancho) minmax(0, 1fr); gap: 18px; align-items: start; }
     .crm-menu { position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto; }
     /* Achicado: sólo los íconos, con el numerito encima. */
-    .crm.chico { grid-template-columns: 58px minmax(0, 1fr); }
+    .crm.chico { grid-template-columns: var(--panel-chico) minmax(0, 1fr); }
     .crm.chico .crm-menu { padding: 10px 6px; }
     .crm.chico .crm-menu-cab { justify-content: center; padding: 2px 0 8px; }
     .crm.chico .crm-menu-cab b, .crm.chico .crm-txt, .crm.chico .crm-marca, .crm.chico .crm-flecha, .crm.chico .crm-sub { display: none; }
-    .crm.chico .crm-plegar svg { transform: rotate(180deg); }
     .crm.chico .crm-item { justify-content: center; padding: 7px 0; }
     .crm.chico .crm-item .cuenta, .crm.chico .crm-punto { position: absolute; top: 1px; right: 1px; padding: 0 5px; font-size: 10px; }
     .crm.chico .crm-grupo .crm-punto:not(.cero) { display: block; }
@@ -741,7 +726,8 @@
                 overflow-y: auto; transform: translateX(-105%); transition: transform .25s var(--curva); }
     .crm.menu-abierto .crm-menu { transform: none; box-shadow: var(--sombra-alta); }
     .crm.menu-abierto .crm-velo { display: block; position: fixed; inset: 0; z-index: 71; background: rgba(20, 20, 18, .38); }
-    .crm-plegar { display: none; }
+    /* Achicar es cosa de la compu: acá el menú se abre y se cierra entero. */
+    .crm-menu-cab .plegar-panel { display: none; }
     .crm-item, .crm-subitem { min-height: 44px; font-size: 15px; }
   }
 
@@ -1284,11 +1270,6 @@
 
   /* ══ Números del CRM ══ */
   .num-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 16px; }
-  .periodos { display: flex; gap: 6px; flex-wrap: wrap; }
-  .periodos .chip { min-height: 36px; padding: 7px 13px; font-size: 13px; }
-  .num-fechas { display: flex; align-items: center; gap: 6px; color: var(--txt-2); font-size: 13px; }
-  .num-fechas[hidden] { display: none; }
-  .num-fechas input { width: 150px; }
   .num-filtros select { width: auto; min-width: 190px; }
   @media (min-width: 900px) { .num-filtros select { margin-left: auto; } }
   .num-tit { font-size: 12px; font-weight: 700; color: var(--txt-3); text-transform: uppercase; letter-spacing: .4px; margin: 4px 2px 9px; }
@@ -1415,8 +1396,12 @@
   .ficha-stock.hay b { color: var(--ok-txt); }
   .ficha-stock small { display: block; margin-top: 2px; font-size: 12px; color: var(--txt-3); }
 
-  /* ── La ficha del cliente: un panel que entra por la derecha ── */
-  .capa { position: fixed; inset: 0; z-index: 60; display: flex; justify-content: flex-end; background: rgba(20, 20, 18, .38); }
+  /* ── La ficha del cliente: un panel que entra por la derecha ──
+     z-index 70, el de la barra negra en la compu (interfaz.js, 15/10/2026):
+     como viene después en la página, la tapa, y la ficha completa no queda
+     cortada a la izquierda. Las ventanitas (.modal, también 70) vienen
+     después todavía, así que se siguen abriendo encima de la ficha. */
+  .capa { position: fixed; inset: 0; z-index: 70; display: flex; justify-content: flex-end; background: rgba(20, 20, 18, .38); }
   .capa[hidden] { display: none; }
   .ficha { width: min(520px, 100%); height: 100%; overflow: auto; background: var(--bg); box-shadow: var(--sombra-alta);
            padding: 0 0 30px; animation: entrarDer .25s var(--curva); }
@@ -1539,15 +1524,10 @@
 <script src="persona.js"></script>
 <script src="interfaz.js"></script>
 </head>
-<body class="crm-completo">
+<body>
 
 <header class="app-head">
   <div class="app-head-in">
-    <!-- El menú del sistema (Carga, Estadísticas, Club…): el CRM va a
-         pantalla completa y el rail se abre desde acá. Sólo en la compu. -->
-    <button type="button" class="btn-icono btn-sistema" id="btnSistema" aria-label="Menú del sistema" aria-expanded="false" title="Carga, Cobrar, Estadísticas, Socios, Config.">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
-    </button>
     <div class="marca">
       <div class="marca-icono">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -1646,8 +1626,6 @@
     </a>
   </div>
 </nav>
-<!-- Con el rail abierto encima (CRM a pantalla completa): tocar afuera lo cierra. -->
-<div class="rail-velo" id="railVelo"></div>
 
 <main class="hoja" id="app">
   <div class="aviso" id="avisoCrm" hidden></div>
@@ -1722,10 +1700,8 @@
     <!-- Las categorías, como los Insights de Kommo (11/10/2026). -->
     <div class="atajos num-solapas" id="numSolapas"></div>
     <div class="num-filtros">
-      <div class="periodos" id="periodos"></div>
-      <div class="num-fechas" id="numFechas" hidden>
-        <input type="date" id="numDesde" aria-label="Desde"> <span>a</span> <input type="date" id="numHasta" aria-label="Hasta">
-      </div>
+      <!-- El período: el selector de todo el sistema (interfaz.js). -->
+      <div id="numPeriodo"></div>
       <select id="numQuien" aria-label="Persona"><option value="">Todo el equipo</option></select>
     </div>
     <div id="numeros"></div>
@@ -2130,23 +2106,6 @@
      necesita el navegador para armar un enlace, no el servidor. */
   var KOMMO = 'https://marketingvdh.kommo.com';
 
-  /* El CRM a pantalla completa (10/10/2026): el rail del sistema se abre
-     encima con el botón de arriba a la izquierda, y se cierra tocando
-     afuera o con Escape. */
-  (function () {
-    var b = $('btnSistema'), velo = $('railVelo');
-    if (!b || !velo) { return; }
-    function poner(abierto) {
-      document.body.classList.toggle('rail-abierto', abierto);
-      b.setAttribute('aria-expanded', abierto ? 'true' : 'false');
-    }
-    b.onclick = function () { poner(!document.body.classList.contains('rail-abierto')); };
-    velo.onclick = function () { poner(false); };
-    document.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Escape' && document.body.classList.contains('rail-abierto')) { poner(false); }
-    });
-  })();
-
   /* ═══ Ingreso ═══════════════════════════════════════════════════════════ */
   /**
    * Pide el enlace. No abre nada: el que abre es el mail.
@@ -2202,7 +2161,7 @@
        vez arranca en la primera del menú, Mensajes (como Kommo, 10/10). */
     vista = VISTAS.indexOf(leer(K_VISTA)) > -1 ? leer(K_VISTA) : VISTAS[0];
     guardar(K_VISTA, vista);
-    $('crm').classList.toggle('chico', leer(K_MENU_CHICO) === '1');
+    $('crm').classList.toggle('chico', Interfaz.panelChico(K_MENU_CHICO));
     if (!MS.reloj) {
       MS.reloj = setInterval(function () {
         if (document.visibilityState === 'visible' && !$('marco').hidden) { revisarMensajes(); }
@@ -2460,7 +2419,6 @@
     auto: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.5"/><circle cx="18" cy="6" r="2.5"/><circle cx="12" cy="18" r="2.5"/><path d="M6 8.5v1.5a3 3 0 0 0 3 3h6a3 3 0 0 0 3-3V8.5M12 13v2.5"/></svg>',
     est: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.2 15.9A10 10 0 1 1 8 2.8"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>',
     flecha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
-    plegar: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m11 17-5-5 5-5M18 17l-5-5 5-5"/></svg>',
     menu: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>',
     cupon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9V7a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v2a3 3 0 0 0 0 6v2a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-2a3 3 0 0 0 0-6z"/><path d="M14 5v2M14 11v2M14 17v2"/></svg>'
   };
@@ -2506,8 +2464,7 @@
       '</button>';
     };
     $('vistas').innerHTML =
-      '<div class="crm-menu-cab"><b>CRM</b><button type="button" class="crm-plegar" id="crmPlegar" aria-label="Achicar el menú" title="Achicar el menú">' +
-        ICO.plegar + '</button></div>' +
+      '<div class="crm-menu-cab"><b>CRM</b>' + Interfaz.botonPanel($('crm').classList.contains('chico')) + '</div>' +
       MENU_CRM.map(function (o) {
         if (!o.hijos) { return item(o); }
         var activo = o.hijos.some(function (h) { return h.v === vista; });
@@ -2526,7 +2483,7 @@
     [].forEach.call($('vistas').querySelectorAll('[data-grupo]'), function (b) {
       b.onclick = function () { tocarGrupo(b.dataset.grupo); };
     });
-    $('crmPlegar').onclick = function () { achicarMenu(!$('crm').classList.contains('chico')); };
+    conectarPlegar();
     /* En el celular, el botón de la sección dice dónde estás. */
     var n = cuantos[vista];
     $('crmSeccion').innerHTML = ICO.menu + '<span>' + esc(tituloVista(vista)) + '</span>' +
@@ -2547,9 +2504,26 @@
     guardar(K_GRUPOS, JSON.stringify(cerrados));
     pintarVistas();
   }
+  /* Achicar el menú a los íconos (15/10/2026): el mismo botón, el mismo
+     ícono y el mismo lugar (arriba a la derecha) que el panel de Equipo VDH
+     y el del Asistente; lo arma interfaz.js. La llave sigue siendo
+     nc_crm_menu_chico, así cada uno lo encuentra como lo dejó. */
+  function conectarPlegar() {
+    var b = $('vistas').querySelector('.plegar-panel');
+    if (b) { b.onclick = function () { achicarMenu(!$('crm').classList.contains('chico')); }; }
+  }
   function achicarMenu(si) {
     $('crm').classList.toggle('chico', !!si);
-    guardar(K_MENU_CHICO, si ? '1' : '');
+    Interfaz.panelChico(K_MENU_CHICO, !!si);
+    /* El botón dice lo contrario ("Abrir el panel" / "Achicar el panel"): se
+       cambia por uno nuevo, y si tenía el foco (el teclado), lo conserva. */
+    var b = $('vistas').querySelector('.plegar-panel');
+    if (b) {
+      var foco = document.activeElement === b;
+      b.outerHTML = Interfaz.botonPanel(!!si);
+      conectarPlegar();
+      if (foco) { $('vistas').querySelector('.plegar-panel').focus(); }
+    }
     ajustarAltoMensajes();
   }
   /* El menú en el celular: se abre desde el botón de la sección. */
@@ -4355,41 +4329,36 @@
      escribir, primer contacto, plata en juego en carritos). Por local y por
      persona en tablas, no en gráficos: con pocos datos, un gráfico vacío no
      dice nada y una tabla sí. */
-  var periodo = 'semana', quienNum = '';
-  var PERIODOS = [['hoy', 'Hoy'], ['ayer', 'Ayer'], ['semana', 'Semana'], ['mes', 'Mes'], ['fechas', 'Elegir fechas']];
+  var quienNum = '';
 
-  function pintarPeriodos() {
-    $('periodos').innerHTML = PERIODOS.map(function (o) {
-      return '<button type="button" class="chip' + (o[0] === periodo ? ' sel' : '') + '" data-p="' + o[0] + '">' + o[1] + '</button>';
-    }).join('');
-    [].forEach.call($('periodos').children, function (b) {
-      b.onclick = function () {
-        periodo = b.dataset.p;
-        if (periodo === 'fechas' && !$('numDesde').value) {
-          var h = new Date(), d = new Date(); d.setDate(d.getDate() - 6);
-          $('numDesde').value = isoDia(d); $('numHasta').value = isoDia(h);
-        }
-        cargarNumeros();
-      };
-    });
-    $('numFechas').hidden = periodo !== 'fechas';
+  /* El período (15/10/2026): el selector de todo el sistema (interfaz.js),
+     con ‹ › y el calendario, en lugar de los botones y las dos fechas. Se
+     arma una vez y se recuerda en esta compu. hastaHoy: "Esta semana" y
+     "Este mes" terminan hoy (como con los botones de antes), no el domingo
+     ni el 31; así la base recibe el mismo rango de siempre y "vs el período
+     anterior" compara la misma cantidad de días. */
+  var selPer = null;
+  function selPeriodo() {
+    if (!selPer) {
+      selPer = Interfaz.periodo($('numPeriodo'), {
+        inicial: 'semana',
+        atajos: ['hoy', 'ayer', 'semana', 'semana-pasada', 'mes', 'mes-pasado', '30', '90'],
+        guardar: 'nc_crm_periodo',
+        hastaHoy: true,
+        alCambiar: function () { cargarNumeros(); }
+      });
+    }
+    return selPer;
   }
   function isoDia(d) {
     return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
   }
-  /* Del período elegido: [desde, hasta) en la hora de acá. */
+  /* Del período elegido: [desde, hasta), de las 0 h del primer día a las 0 h
+     del día siguiente al último, en la hora de Argentina (como lo arma
+     impecable-admin.js). Los días que da el selector ya son los de acá. */
   function rangoNumeros() {
-    var hoy = new Date(); hoy.setHours(0, 0, 0, 0);
-    var manana = new Date(hoy); manana.setDate(manana.getDate() + 1);
-    if (periodo === 'hoy') { return [hoy, manana]; }
-    if (periodo === 'ayer') { var a = new Date(hoy); a.setDate(a.getDate() - 1); return [a, hoy]; }
-    if (periodo === 'semana') { var l = new Date(hoy); l.setDate(l.getDate() - ((l.getDay() + 6) % 7)); return [l, manana]; }
-    if (periodo === 'mes') { return [new Date(hoy.getFullYear(), hoy.getMonth(), 1), manana]; }
-    var d = $('numDesde').value, h = $('numHasta').value;
-    if (!d || !h) { return null; }
-    var desde = new Date(d + 'T00:00:00'), hasta = new Date(h + 'T00:00:00');
-    hasta.setDate(hasta.getDate() + 1);
-    return desde < hasta ? [desde, hasta] : [hasta, desde];
+    var r = selPeriodo().rango();
+    return [new Date(r.desde + 'T00:00:00-03:00'), new Date(Interfaz.fecha.sumar(r.hasta, 1) + 'T00:00:00-03:00')];
   }
   function duracion(h) {
     if (h === null || h === undefined || h === '') { return '—'; }
@@ -4417,10 +4386,8 @@
     $('numQuien').style.display = numTab === 'resumen' ? '' : 'none';
   }
   function cargarNumeros() {
-    pintarPeriodos();
     pintarSolapasNum();
     var rg = rangoNumeros();
-    if (!rg) { return; }
     $('numeros').innerHTML = '<div class="skel"></div><div class="skel"></div>';
     var pin = pinGuardado();
     var pIns = base.crmInsights(pin, rg[0].toISOString(), rg[1].toISOString())
@@ -4654,8 +4621,7 @@
       return '<div class="kpi ' + (t.cls || '') + '" style="animation-delay:' + (i * 40) + 'ms">' +
         '<div class="kpi-n">' + esc(t.n) + '</div><div class="kpi-l">' + esc(t.l) + '</div><div class="kpi-pie">' + esc(t.pie) + '</div></div>';
     };
-    var nombre = (PERIODOS.filter(function (o) { return o[0] === periodo; })[0] || ['', ''])[1];
-    var periodoTxt = periodo === 'fechas' ? 'Entre fechas' : nombre;
+    var periodoTxt = selPeriodo().rango().texto;
 
     var pasaron = [
       { n: suma('entraron'), l: 'Entraron', pie: partes('entraron') },
@@ -6940,8 +6906,7 @@
   function pintarMenuAgentes() {
     var pg = pagAgente();
     $('vistas').innerHTML =
-      '<div class="crm-menu-cab"><b>Agentes de IA</b><button type="button" class="crm-plegar" id="crmPlegar" aria-label="Achicar el menú" title="Achicar el menú">' +
-        ICO.plegar + '</button></div>' +
+      '<div class="crm-menu-cab"><b>Agentes de IA</b>' + Interfaz.botonPanel($('crm').classList.contains('chico')) + '</div>' +
       '<button type="button" class="crm-item agx-volver" id="agxVolver" title="Volver al CRM">' +
         '<span class="crm-ico" aria-hidden="true">' + ICO_AG.volver + '</span><span class="crm-txt">Volver al CRM</span></button>' +
       '<div class="agx-cual" role="radiogroup" aria-label="Qué agente">' +
@@ -6968,7 +6933,7 @@
     [].forEach.call($('vistas').querySelectorAll('[data-agx-pag]'), function (b) {
       b.onclick = function () { cerrarMenuCrm(); irAgente(null, b.dataset.agxPag); };
     });
-    $('crmPlegar').onclick = function () { achicarMenu(!$('crm').classList.contains('chico')); };
+    conectarPlegar();
     $('crmSeccion').innerHTML = ICO.menu + '<span>' + esc(AGENTES_IA[AGX.cual].t) + ' · ' + esc(pg.t) + '</span>';
   }
 
@@ -9873,8 +9838,6 @@
     $('busca').oninput = function () { clearTimeout(t); t = setTimeout(pintar, 180); };
     $('filtroLocal').onchange = pintar;
     $('numQuien').onchange = function () { quienNum = this.value; cargarNumeros(); };
-    $('numDesde').onchange = cargarNumeros;
-    $('numHasta').onchange = cargarNumeros;
 
     /* Las ventanitas y la ficha. */
     $('wspTexto').oninput = actualizarWsp;
