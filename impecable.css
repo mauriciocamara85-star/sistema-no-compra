@@ -127,6 +127,8 @@ h1 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.02e
 }
 .camara svg { width: 26px; height: 26px; }
 .modulo.hecho .camara { display: none; }
+/* Mandada y todavía sin revisar (SQL 126): se puede sacar de nuevo; más suave que una pendiente. */
+.modulo.hecho .camara.otra-vez { display: grid; background: transparent; color: var(--lima); box-shadow: inset 0 0 0 2px var(--lima); }
 .vacio { text-align: center; color: var(--suave); padding: 28px 12px; border: 1px dashed var(--borde); border-radius: 16px; }
 .nota { color: var(--suave); font-size: 14px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 12px 14px; margin: 12px 0; }
 .nota.alerta { color: var(--ambar); border-color: var(--ambar); }
@@ -223,6 +225,10 @@ h1 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.02e
 .camara-arriba .titulo { font-weight: 800; }
 .guia { position: absolute; left: 8%; right: 8%; top: 16%; bottom: 24%; border: 2px dashed var(--lima); border-radius: 18px; pointer-events: none; }
 .guia span { position: absolute; top: -30px; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 700; color: var(--lima); }
+/* Teléfono acostado (la app sigue en vertical): el cartel va del lado de arriba de quien mira y se lee derecho. */
+.acostado-izq .guia span, .acostado-der .guia span { top: 50%; right: auto; width: max-content; white-space: nowrap; }
+.acostado-izq .guia span { left: 100%; transform: translate(-50%, -50%) rotate(90deg) translateY(-18px); }
+.acostado-der .guia span { left: 0; transform: translate(-50%, -50%) rotate(-90deg) translateY(-18px); }
 .referencia { position: absolute; right: 16px; top: calc(max(12px, env(safe-area-inset-top)) + 52px); width: 84px; border-radius: 10px;
               border: 2px solid var(--texto); box-shadow: 0 4px 16px rgba(0,0,0,.5); }
 .camara-abajo { position: absolute; left: 0; right: 0; bottom: 0; display: grid; place-items: center; gap: 8px;

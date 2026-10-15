@@ -138,6 +138,13 @@ function soltarCapa(alAtras) {
   if (i > -1) _capas.splice(i, 1);
   if (!_capas.length) sacarMarca();
 }
+/** Hace fn cuando terminó el "atrás" que la app pidió al cerrar algo (es asincrónico).
+    Abrir enseguida una pantalla completa pondría su marca antes, y ese "atrás"
+    atrasado se la comería: al salir, la app haría un "atrás" de más (y se cerraría). */
+function despuesDelAtras(fn) {
+  var desde = Date.now();
+  (function mirar() { if (!_quitando || Date.now() - desde > 800) fn(); else setTimeout(mirar, 20); })();
+}
 /** Al cambiar de pantalla se cierra todo lo que estaba encima. */
 function cerrarCapas() {
   _capas.splice(0).reverse().forEach(function (c) { try { c(true); } catch (e) {} });
@@ -1077,7 +1084,7 @@ function pantallaFotos() {
   app.innerHTML = cabeza('Fotos') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   Promise.all([
-    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,tipo,estado,vence_en,nivel' +
+    leer('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,tipo,estado,vence_en,enviado_en,nivel' +
          '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente)' +
          '&order=sector_tipo.asc,modulo_numero.asc'),
     /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
@@ -1088,6 +1095,21 @@ function pantallaFotos() {
     if (_pestana !== 'fotos') return;
     dibujarFotos({ controles: r[0] || [], tareasIA: r[1] || [], sinModulos: Array.isArray(r[2]) && r[2].length === 0, mapa: r[3] });
   }).catch(function (e) { pantallaError(e, pantallaFotos); });
+}
+
+/* Sacar de nuevo una foto ya mandada (SQL 126, 15/10, pedido de Mauricio:
+   "durante el día la podés sacar de vuelta… solo mientras no la revisé").
+   La regla de verdad está en la base; esto es para ofrecerlo. */
+function sePuedeRehacer(c) {
+  return !!c && c.estado === 'enviado' && c.tipo !== 'correccion' && !!c.enviado_en && !!c.vence_en &&
+    new Date(c.vence_en) > new Date() && hoyAR(new Date(c.enviado_en)) === hoyAR();
+}
+
+function ofrecerRehacer(c) {
+  preguntar({ texto: c.modulo_nombre + ': ya mandaste la foto. Si salió mal, la podés sacar de nuevo hasta las ' + hora(c.vence_en) +
+                     ', mientras tu supervisor no la revise. Hasta que mandes la nueva, queda la que mandaste.',
+              si: 'Sacar de nuevo', no: 'Dejarla así' })
+    .then(function (si) { if (si) despuesDelAtras(function () { pantallaFoto(c); }); });
 }
 
 function dibujarFotos(x) {
@@ -1119,10 +1141,11 @@ function dibujarFotos(x) {
     var yoId = yo().id;
     mapa.modulos.forEach(function (m) { enMapa[m.id] = true; var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
     var hayMios = Object.keys(mios).length;
+    var otraVez = x.controles.some(sePuedeRehacer) ? ' Si una salió mal, tocala y la sacás de nuevo.' : '';
     html += '<div class="mapa-caja" id="mapaFotos">' +
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' + leyendaNombres(mapa) +
-      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.'
-                              : total ? 'Por hoy no te queda ninguna foto para mandar.'
+      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.' + otraVez
+                              : total ? 'Por hoy no te queda ninguna foto para mandar.' + otraVez
                               : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>' +
       /* El modo observador: todo el local con volumen y la foto de cada módulo (para mirar). */
       '<button class="tarjeta-accion" id="verLocal"><b>Ver el local</b><span>Todos los módulos con su foto, y cómo están</span></button>';
@@ -1137,11 +1160,14 @@ function dibujarFotos(x) {
     lista.forEach(function (c) {
       var e = estadoDe(c, corregir);
       var vence = !e.hecho && c.vence_en ? textoVence(c.vence_en) : '';
+      /* Mandada: la cámara sólo si todavía se puede sacar de nuevo (si no, la base la rechaza). */
+      var otra = sePuedeRehacer(c), cerrada = !otra && (c.estado === 'enviado' || c.estado === 'revisado');
       html += '<div class="modulo' + (e.hecho ? ' hecho' : '') + '">' +
         '<div class="que"><div class="nombre">' + esc(c.modulo_nombre) + '</div>' +
         '<div class="info"><span class="chip ' + e.clase + '">' + e.texto + '</span>' +
         (vence ? '<span class="chip vence">' + esc(vence) + '</span>' : '') + '</div></div>' +
-        '<button class="camara" data-id="' + esc(c.id) + '" aria-label="Sacar foto de ' + esc(c.modulo_nombre) + '">' + CAMARA + '</button>' +
+        (cerrada ? '' : '<button class="camara' + (otra ? ' otra-vez' : '') + '" data-id="' + esc(c.id) + '" aria-label="' +
+                        (otra ? 'Sacar de nuevo la foto de ' : 'Sacar foto de ') + esc(c.modulo_nombre) + '">' + CAMARA + '</button>') +
         '</div>';
     });
   });
@@ -1155,7 +1181,10 @@ function dibujarFotos(x) {
   app.innerHTML = html;
   engancharCabeza();
   app.querySelectorAll('.camara').forEach(function (bt) {
-    bt.onclick = function () { pantallaFoto(_controles[bt.dataset.id]); };
+    bt.onclick = function () {
+      var c = _controles[bt.dataset.id];
+      if (sePuedeRehacer(c)) ofrecerRehacer(c); else pantallaFoto(c);
+    };
   });
   var vl = document.getElementById('verLocal');
   if (vl) vl.onclick = function () { pantallaMapa({ id: yo().local_id, nombre: yo().local || 'Tu local' }, 'fotos'); };
@@ -1165,6 +1194,8 @@ function dibujarFotos(x) {
       var suyos = x.controles.filter(function (k) { return k.modulo_id === g.dataset.mod; });
       var falta = suyos.filter(function (k) { return !estadoDe(k, corregir).hecho; })[0];
       if (falta) { pantallaFoto(falta); return; }
+      var deNuevo = suyos.filter(sePuedeRehacer)[0];
+      if (deNuevo) { ofrecerRehacer(deNuevo); return; }
       var m = mapa.modulos.filter(function (k) { return k.id === g.dataset.mod; })[0], s = m && mapa.sectorDe[m.sector_id];
       var quien = s && mapa.persona[s.responsable_id];
       var que = nombreModulo(m, s, mapa);
@@ -1200,7 +1231,51 @@ var CHECK = { dobladas: 'Doblado', frontales: 'Frontales', etiquetas: 'Etiquetas
 var _stream = null;
 function apagarCamara() {
   pararGrabador();   // si estaba grabando un video de producto testigo, se descarta
+  window.removeEventListener('devicemotion', alMoverse);
   if (_stream) { _stream.getTracks().forEach(function (t) { t.stop(); }); _stream = null; }
+}
+
+/* La foto horizontal (15/10, pedido de Mauricio, para los módulos más anchos
+   que altos). La app está trabada en vertical (el manifest): con el teléfono
+   acostado la pantalla no gira, la cámara sigue dando un cuadro vertical y la
+   foto salía de costado. El sensor dice hacia dónde está acostado: la guía se
+   gira para leerse derecha y la foto se endereza al sacarla. Si la pantalla
+   gira sola (iPhone, o el navegador sin instalar), el cuadro ya viene ancho y
+   no se toca. _giro: -90 = acostado con la parte de arriba a la izquierda
+   (la foto se gira a la izquierda), 90 = a la derecha, 0 = parado. */
+var _giro = 0, _signoY = 1, _grav = null;
+function alMoverse(e) {
+  var a = e.accelerationIncludingGravity;
+  if (!a || a.x == null || a.y == null) return;
+  _grav = _grav ? { x: _grav.x * 0.7 + a.x * 0.3, y: _grav.y * 0.7 + a.y * 0.3 } : { x: a.x, y: a.y };
+  var x = _grav.x, y = _grav.y, ax = Math.abs(x), ay = Math.abs(y);
+  /* Parado: de ahí sale el signo (hay teléfonos que lo dan al revés). Mirando
+     al piso o al techo (una mesa desde arriba) no se sabe: queda como estaba. */
+  if (ay > 6 && ay > 2 * ax) { _signoY = y > 0 ? 1 : -1; ponerGiro(0); }
+  else if (ax > 6 && ax > 1.5 * ay) ponerGiro(x * _signoY > 0 ? -90 : 90);
+}
+function ponerGiro(g) {
+  if (window.innerWidth > window.innerHeight) g = 0;   // la pantalla ya giró sola
+  if (g === _giro) return;
+  _giro = g;
+  var v = document.getElementById('vista');
+  if (v) { v.classList.toggle('acostado-izq', g === -90); v.classList.toggle('acostado-der', g === 90); }
+}
+
+/** Como aJpeg, pero girada 90° a la izquierda (giro -90) o a la derecha (90). */
+function aJpegGirado(fuente, ancho, alto, giro) {
+  if (!giro) return aJpeg(fuente, ancho, alto);
+  var escala = Math.min(1, 1280 / Math.max(ancho, alto));
+  var w = Math.round(ancho * escala), h = Math.round(alto * escala);
+  var cv = document.createElement('canvas');
+  cv.width = h;
+  cv.height = w;
+  var x = cv.getContext('2d');
+  if (giro < 0) { x.translate(0, w); x.rotate(-Math.PI / 2); } else { x.translate(h, 0); x.rotate(Math.PI / 2); }
+  x.drawImage(fuente, 0, 0, w, h);
+  return new Promise(function (ok, mal) {
+    cv.toBlob(function (b) { b ? ok(b) : mal(new Error('No se pudo procesar la foto')); }, 'image/jpeg', 0.75);
+  });
 }
 
 function analizar(fotoId) {
@@ -1213,7 +1288,8 @@ function analizar(fotoId) {
 
 function pantallaFoto(c) {
   if (!c) { irA('fotos'); return; }
-  var estado = { intentos: 0, respuestas: {}, url: null, fotoId: null, resultado: null };
+  /* rehacer: ya la había mandado (SQL 126); la nueva reemplaza a esa sólo si la manda. */
+  var estado = { intentos: 0, respuestas: {}, url: null, fotoId: null, resultado: null, rehacer: c.estado === 'enviado' };
   /* Las fotos que ya sacó para este control cuentan para el "Enviar igual". */
   leer('/orden_fotos?select=id&control_id=eq.' + valor(c.id))
     .then(function (f) { estado.intentos = Math.max(estado.intentos, (f || []).length); })
@@ -1240,6 +1316,9 @@ function camara(titulo, referencia, guia, alSacar, alCerrar) {
     '</div>';
   var video = document.getElementById('video');
   var archivo = document.getElementById('archivo');
+  _giro = 0;
+  _grav = null;
+  window.addEventListener('devicemotion', alMoverse);
   document.getElementById('cerrar').onclick = function () { apagarCamara(); alCerrar(); };
   document.getElementById('otra').onclick = function () { archivo.click(); };
   archivo.onchange = function () {
@@ -1268,7 +1347,9 @@ function camara(titulo, referencia, guia, alSacar, alCerrar) {
 
   disparar.onclick = function () {
     if (!_stream || !video.videoWidth) { archivo.click(); return; }
-    aJpeg(video, video.videoWidth, video.videoHeight).then(function (b) { apagarCamara(); alSacar(b); }, function (e) { avisar(e.message); });
+    /* Acostado con el cuadro vertical: se endereza (ver alMoverse). */
+    var giro = video.videoHeight > video.videoWidth ? _giro : 0;
+    aJpegGirado(video, video.videoWidth, video.videoHeight, giro).then(function (b) { apagarCamara(); alSacar(b); }, function (e) { avisar(e.message); });
   };
 
   /* Sin permiso o sin cámara adentro de la app: la del teléfono. */
@@ -1312,7 +1393,9 @@ function mandarFoto(c, estado) {
     abrirRevision(c, estado);
   }).catch(function (e) {
     if (e && e.sinSesion) { pantallaError(e); return; }
-    estado.resultado = { fallo: esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e) };
+    /* Ya no se puede cambiar (la revisaron, o pasó la hora): no hay nada que reintentar. */
+    var cerrado = !esDeRed(e) && /ya revisó|Ya enviaste/i.test(mensajeDe(e));
+    estado.resultado = { fallo: esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e), cerrado: cerrado };
     abrirRevision(c, estado);
   });
 }
@@ -1320,7 +1403,7 @@ function mandarFoto(c, estado) {
 function tarjetaRevision(r) {
   var hallazgos = Array.isArray(r.hallazgos) ? r.hallazgos : [];
   if (r.revisando) return '<div class="revision"><div class="revisando"><i class="ruedita"></i>Revisando la foto…</div></div>';
-  if (r.fallo) return '<div class="revision mala"><div class="titulo">No se pudo mandar</div><div>' + esc(r.fallo) + '</div></div>';
+  if (r.fallo) return '<div class="revision mala"><div class="titulo">' + (r.cerrado ? 'Ya no se puede cambiar' : 'No se pudo mandar') + '</div><div>' + esc(r.fallo) + '</div></div>';
   if (r.ia_activa === false) return '<div class="revision"><div class="titulo">Revisión automática apagada</div><div class="bajada" style="margin:0">La revisa tu supervisor.</div></div>';
   if (r.error_ia) return '<div class="revision"><div class="titulo">Revisión automática</div><div class="bajada" style="margin:0">' + esc(r.mensaje || 'No pudimos revisar la foto. Podés enviarla igual.') + '</div></div>';
   if (r.foto_valida === false) return '<div class="revision mala"><div class="titulo">Esta foto no sirve</div><div>' + esc(r.motivo || 'Sacala de nuevo, que se vea todo el módulo.') + '</div></div>';
@@ -1351,10 +1434,14 @@ function abrirRevision(c, estado) {
   var listo = !r.revisando && !r.fallo;
 
   var html =
-    '<button class="volver" id="volver">‹ Volver a Hoy</button>' +
+    '<button class="volver" id="volver">' + (estado.rehacer && !r.cerrado ? '‹ Dejar la que mandé' : '‹ Volver a Hoy') + '</button>' +
     '<h1>' + esc(c.modulo_nombre) + '</h1>' +
     '<img class="foto-grande" src="' + esc(estado.url) + '" alt="La foto que sacaste">' +
     tarjetaRevision(r);
+
+  if (estado.rehacer && !r.cerrado) {
+    html += '<div class="nota">Ya habías mandado una foto de este módulo. Si mandás esta, reemplaza a la otra; si volvés sin mandarla, queda la que mandaste.</div>';
+  }
 
   if (!r.fallo) {
     html += '<div class="revision"><div class="titulo">Antes de enviar</div>' +
@@ -1369,13 +1456,15 @@ function abrirRevision(c, estado) {
   html += '<div class="acciones">';
   if (r.revisando) {
     html += '<button class="boton lima" disabled>Esperá la revisión…</button>';
+  } else if (r.cerrado) {
+    html += '<button class="boton lima" id="aFotos">Volver a Fotos</button>';
   } else if (r.fallo) {
     html += '<button class="boton lima" id="reintentar">Reintentar</button><button class="boton" id="repetir">Sacar otra foto</button>';
   } else if (marcada || invalida) {
     html += '<button class="boton lima" id="repetir">' + (invalida ? 'Sacar otra foto' : 'Corregí y sacá otra foto') + '</button>';
     if (estado.intentos >= 2) html += '<button class="boton" id="enviar">Enviar igual</button>';
   } else {
-    html += '<button class="boton lima" id="enviar">Enviar</button><button class="boton" id="repetir">Repetir foto</button>';
+    html += '<button class="boton lima" id="enviar">' + (estado.rehacer ? 'Mandar esta en lugar de la otra' : 'Enviar') + '</button><button class="boton" id="repetir">Repetir foto</button>';
   }
   html += '</div>';
 
@@ -1391,6 +1480,8 @@ function abrirRevision(c, estado) {
   if (bRep) bRep.onclick = function () { abrirCamara(c, estado); };
   var bRe = document.getElementById('reintentar');
   if (bRe) bRe.onclick = function () { mandarFoto(c, estado); };
+  var bFotos = document.getElementById('aFotos');
+  if (bFotos) bFotos.onclick = function () { document.getElementById('volver').click(); };
   var bEnv = document.getElementById('enviar');
   if (bEnv && listo) unaVez(bEnv, function () { return enviarControl(c, estado, preguntas, bEnv); });
 }
@@ -1402,11 +1493,13 @@ function enviarControl(c, estado, preguntas, boton) {
   return llamar('orden_enviar_control', { p_control: c.id, p_respuestas: estado.respuestas }).then(function () {
     if (estado.url) URL.revokeObjectURL(estado.url);
     irA('fotos');
-    avisar('¡Listo! Mandaste el ' + c.modulo_nombre + '.');
+    avisar(estado.rehacer ? '¡Listo! Cambiaste la foto: ' + c.modulo_nombre + '.' : '¡Listo! Mandaste el ' + c.modulo_nombre + '.');
   }, function (e) {
     /* Si ya estaba enviado (se tocó dos veces, o se cortó la señal después de
        que llegara), es lo mismo que "listo". */
     if (/ya fue enviado/i.test(mensajeDe(e))) { irA('fotos'); avisar('Ese control ya estaba enviado.'); return; }
+    /* La revisaron mientras sacaba la nueva: queda la que mandó. */
+    if (/ya revisó/i.test(mensajeDe(e))) { irA('fotos'); avisar('Tu supervisor ya la revisó: quedó la que habías mandado.'); return; }
     throw e;
   });
 }
