@@ -36,7 +36,8 @@ Deno.test("las reglas de sugerencia: aparte y sólo con las sugerencias prendida
 
 Deno.test("la foto modelo y la foto ejemplo se explican distinto, y va el tipo de mueble (SQL 123)", () => {
   const modelo = armarSistema({ ...ctx, referencia_path: "l/ref.jpg", referencia_tipo: "modulo", mueble: "Módulo de pared con estantes" });
-  if (!modelo.includes("Compará contra la foto modelo") || !modelo.includes("MUEBLE: Módulo de pared con estantes.")) throw new Error("Modelo: " + modelo);
+  if (!modelo.includes("Compará contra la foto modelo") || !modelo.includes("MUEBLE (dato aproximado, sale del croquis): Módulo de pared con estantes.")) throw new Error("Modelo: " + modelo);
+  if (!modelo.includes("nunca invalides la foto por eso")) throw new Error("El mueble es una pista: no invalida la foto (SQL 125)");
   if (!modelo.includes("La ropa cambia con la temporada")) throw new Error("La foto modelo es del orden, no de la ropa (si no, tareas falsas)");
   const ejemplo = armarSistema({ ...ctx, referencia_path: "ejemplos/x.jpg", referencia_tipo: "ejemplo" });
   if (!ejemplo.includes("OTRO mueble del mismo tipo") || ejemplo.includes("Compará contra la foto modelo")) throw new Error("Ejemplo: " + ejemplo);
@@ -44,6 +45,26 @@ Deno.test("la foto modelo y la foto ejemplo se explican distinto, y va el tipo d
   if (sinFoto.includes("OTRO mueble") || sinFoto.includes("Compará contra la foto modelo")) throw new Error("Sin foto no menciona ninguna");
   const viejo = armarSistema({ ...ctx, referencia_path: "l/ref.jpg" });   // antes del SQL 123: sin referencia_tipo, es la del módulo
   if (!viejo.includes("Compará contra la foto modelo")) throw new Error("Sin el dato, es la del módulo");
+});
+
+Deno.test("el sentido del degradé según el lado del local, como lo ve el cliente (SQL 125)", () => {
+  const izq = armarSistema({ ...ctx, lado: "izquierda" }), der = armarSistema({ ...ctx, lado: "derecha" });
+  if (!izq.includes("pared izquierda") || !izq.includes("del lado IZQUIERDO de la foto")) throw new Error("Izquierda: " + izq);
+  if (!der.includes("pared derecha") || !der.includes("del lado DERECHO de la foto") || !der.includes("nunca pidas invertirlo")) throw new Error("Derecha: " + der);
+  for (const lado of ["fondo", "frente", "centro", "vidriera", null, undefined]) {
+    const s = armarSistema({ ...ctx, lado });
+    if (!s.includes("puede arrancar de cualquier lado") || s.includes("LADO DEL LOCAL")) throw new Error(`Sin sentido fijo (${lado}): ` + s);
+  }
+  const dep = armarSistema({ ...ctx, sector_tipo: "deposito", lado: "deposito" });
+  if (dep.includes("degradé") || dep.includes("REGLA DE COLORES") || dep.includes("liquidación")) throw new Error("En el depósito no se habla de degradé: " + dep);
+});
+
+Deno.test("liquidación: va por talle y no se pide degradé; lo propio del módulo manda (SQL 125)", () => {
+  const liq = armarSistema({ ...ctx, lado: "derecha", liquidacion: true });
+  if (!liq.includes("LIQUIDACIÓN") || !liq.includes("por TALLE")) throw new Error("Liquidación: " + liq);
+  if (liq.includes("REGLA DE COLORES") || liq.includes("LADO DEL LOCAL") || liq.includes("Blanco → Beige")) throw new Error("Con liquidación no va el degradé: " + liq);
+  if (!armarSistema(ctx).includes('cartel de liquidación, "sale"')) throw new Error("Un cartel de liquidación también lo saca del degradé");
+  if (!armarSistema({ ...ctx, reglas_extra: "Va por talle." }).includes("PROPIO DE ESTE MÓDULO (manda sobre las reglas generales): Va por talle.")) throw new Error("Lo propio manda");
 });
 
 Deno.test("el formato pide exactamente los puntos del sector", () => {

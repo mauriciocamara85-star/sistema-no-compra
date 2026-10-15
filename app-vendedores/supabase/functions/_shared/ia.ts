@@ -18,6 +18,10 @@ export type Contexto = {
   referencia_tipo?: "modulo" | "ejemplo" | null;
   /** El tipo de mueble ("Módulo de pared con estantes", "Mesa o exhibidor del medio"…), sacado del croquis (SQL 123). */
   mueble?: string | null;
+  /** En qué pared está ("izquierda", "fondo", "derecha", "frente") o "centro", "vidriera", "deposito" (SQL 125). */
+  lado?: string | null;
+  /** Es de liquidación: lo colgado va por talle, no por color (SQL 125). */
+  liquidacion?: boolean | null;
   reglas_extra: string | null;
   exhibidor: { nombre: string; prendas_min: number | null; prendas_max: number | null; notas: string | null } | null;
   checks: string[];
@@ -74,7 +78,22 @@ export function armarSistema(ctx: Contexto): string {
   const deEstilo = ctx.ia_sugerencias && sugerencias.length
     ? `\n\nSUGERENCIAS DE ESTILO (no son errores: si algo de esto no se cumple, como mucho dejá una sugerencia, nunca "corregir"):\n${sugerencias.map((r) => `  - ${r.texto}`).join("\n")}`
     : "";
-  const mueble = ctx.mueble ? `\nMUEBLE: ${ctx.mueble}.` : "";
+  // El tipo de mueble se deduce del croquis y puede fallar (el 20 de Rivadavia es un carro y figura con estantes).
+  const mueble = ctx.mueble
+    ? `\nMUEBLE (dato aproximado, sale del croquis): ${ctx.mueble}. Si en la foto se ve otro mueble (un perchero, un carro, una mesa), revisá el que se ve: nunca invalides la foto por eso.`
+    : "";
+  // El sentido del degradé es como lo ve el cliente que entra (SQL 125): el más claro, del lado de la entrada.
+  // En la liquidación lo colgado va por talle y no se pide degradé.
+  const salon = ctx.sector_tipo === "salon";
+  const colores = salon && !ctx.liquidacion && ctx.colores.length
+    ? `\nREGLA DE COLORES (el orden del degradé, del más claro al más oscuro): ${ctx.colores.join(" → ")}.`
+    : "";
+  const sentido = !salon ? ""
+    : ctx.liquidacion
+    ? "\nLIQUIDACIÓN: este módulo es de liquidación: lo colgado va ordenado por TALLE, no por color. No pidas degradé ni que los colores combinen o coincidan con los estantes; sí mirá que esté prolijo, completo y limpio."
+    : ctx.lado === "izquierda" || ctx.lado === "derecha"
+    ? `\nLADO DEL LOCAL: pared ${ctx.lado} (mirando desde la entrada). El degradé arranca con el más claro del lado ${ctx.lado === "izquierda" ? "IZQUIERDO" : "DERECHO"} de la foto y va oscureciendo hacia el ${ctx.lado === "izquierda" ? "derecho" : "izquierdo"}: así lo ve el cliente que entra. Si ya está así, está bien: nunca pidas invertirlo.`
+    : "\nSENTIDO DEL DEGRADÉ: en este mueble puede arrancar de cualquier lado; mirá sólo que sea un degradé parejo, sin colores cortados.";
   const guiaReferencia = !ctx.referencia_path ? ""
     : ctx.referencia_tipo === "ejemplo"
     ? "\n- La foto de ejemplo es de OTRO mueble del mismo tipo, bien ordenado: usala sólo para ver el nivel de orden que se espera. No marques que la ropa, los colores, la cantidad o la disposición son distintos."
@@ -89,12 +108,13 @@ Revisás la foto que sacó un vendedor de ${ctx.sector_tipo === "salon" ? "un m�
 
 QUÉ MIRAR (cada punto tiene una clave):
 ${reglasPorCheck}
-${ctx.sector_tipo === "salon" && ctx.colores.length ? `\nREGLA DE COLORES (degradé del más claro al más oscuro): ${ctx.colores.join(" → ")}.` : ""}${mueble}${exhibidor}${ctx.reglas_extra ? `\nPROPIO DE ESTE MÓDULO: ${ctx.reglas_extra}` : ""}${deEstilo}
+${colores}${sentido}${mueble}${exhibidor}${ctx.reglas_extra ? `\nPROPIO DE ESTE MÓDULO (manda sobre las reglas generales): ${ctx.reglas_extra}` : ""}${deEstilo}
 
 CÓMO RESPONDER
 - Sé estricto pero justo: marcá solo lo que se ve CLARAMENTE en la foto. Ante la duda, no lo marques.
 - Si un punto no se puede ver (por ejemplo, etiquetas adentro de la prenda), ponelo como "no_se_ve". Nunca es un error.
-- Si la foto está borrosa, muy oscura, cortada o no muestra un módulo o un depósito, devolvé foto_valida = false y explicá en una frase cómo sacarla de nuevo.
+- Si la foto está borrosa, muy oscura, cortada o no muestra ningún mueble con ropa (estantes, perchero, carro, mesa o vidriera) ni un depósito, devolvé foto_valida = false y explicá en una frase cómo sacarla de nuevo.${salon ? `
+- Si en el módulo se ve un cartel de liquidación, "sale" o descuentos, no pidas degradé de color: esos percheros van por talle.` : ""}
 - No inventes problemas por no tener una foto para comparar: las reglas alcanzan.${guiaReferencia}
 - Hallazgos: máximo 4, en español rioplatense, cortos y en imperativo (ej.: "Completá el frontal: faltan 2 prendas"). En "detalle", una frase concreta de dónde está el problema.
 - Si un frontal está incompleto, el detalle tiene que decir: "Si no hay más stock, cambiá la prenda por otro producto." Nunca sugieras dejarlo incompleto.

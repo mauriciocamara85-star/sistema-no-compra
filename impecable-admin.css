@@ -468,6 +468,10 @@
 .ventana .vm-usar { margin: 8px 0 0; }
 .ventana .foto-chica .boton { width: 100%; margin-top: 5px; padding-left: 6px; padding-right: 6px; font-size: 12.5px; }
 .ventana .vm-propio-acc { display: flex; justify-content: flex-end; margin: -4px 0 6px; }
+.ventana .vm-liq { display: flex; gap: 10px; align-items: flex-start; margin: 0 0 12px; padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-sm); cursor: pointer; }
+.ventana .vm-liq input { width: 18px; height: 18px; margin: 1px 0 0; flex: none; accent-color: var(--lima, #C5F04A); }
+.ventana .vm-liq span { display: grid; gap: 2px; }
+.ventana .vm-liq small { color: var(--txt-3); font-size: 12.5px; }
 .ventana .boton:disabled { opacity: .5; cursor: default; }
 .ventana .vm-modelo { display: flex; gap: 12px; align-items: flex-start; margin: 0 0 12px; }
 .ventana .vm-modelo .ref-mini { width: 72px; height: 96px; flex: none; object-fit: cover; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }

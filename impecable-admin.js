@@ -520,18 +520,34 @@ function verModulo(m) {
     leer('/orden_v_controles?select=id,foto_path,tomada_en,nivel,persona_nombre,tipo,estado&modulo_id=eq.' + valor(m.modulo_id) +
          '&foto_path=not.is.null&order=tomada_en.desc&limit=12'),
     /* La foto modelo y "algo propio" (antes en Ajustes → Sectores y módulos): sólo el administrador los cambia. */
-    admin ? leer('/orden_modulos?select=id,foto_referencia_path,reglas_extra&id=eq.' + valor(m.modulo_id)) : Promise.resolve([])
+    admin ? leer('/orden_modulos?select=id,foto_referencia_path,reglas_extra&id=eq.' + valor(m.modulo_id)) : Promise.resolve([]),
+    /* Liquidación (SQL 125): va por talle y la IA no pide degradé. La marcan el supervisor y el administrador; sin el SQL no aparece. */
+    soloMira() || m.sector_tipo === 'deposito' ? Promise.resolve(null)
+      : leer('/orden_modulos?select=liquidacion&id=eq.' + valor(m.modulo_id)).catch(function () { return null; })
   ]).then(function (r) {
     var h = r[0] || [], mod = (r[1] || [])[0] || null;
+    var liq = r[2] && r[2][0] && typeof r[2][0].liquidacion === 'boolean' ? r[2][0].liquidacion : null;
     var usar = function (ruta) { return mod ? '<button class="boton chico" data-modelo="' + esc(ruta) + '">Usar como modelo</button>' : ''; };
     var v = ventana('<h1>' + esc(m.modulo_nombre) + '</h1><p class="bajada">' + esc((m.responsable ? 'A cargo de ' + m.responsable : '') + (m.tareas_abiertas ? ' · ' + m.tareas_abiertas + ' tareas abiertas' : '')) + '</p>' +
       (m.foto_path ? '<img class="foto-grande" data-foto="' + esc(m.foto_path) + '" alt="">' + (mod ? '<div class="vm-usar">' + usar(m.foto_path) + '</div>' : '') : '<div class="vacio">Todavía no hay fotos de este módulo.</div>') +
       (h.length > 1 ? '<div class="seccion">Fotos anteriores (las que todavía se guardan)</div><div class="historia">' + h.slice(1).map(function (x) {
         return '<figure class="foto-chica"><img data-foto="' + esc(x.foto_path) + '" alt=""><figcaption>' + esc(diaMes(x.tomada_en) + ' · ' + (x.nivel ? NIVEL[x.nivel] : '—') + ' · ' + (x.persona_nombre || '')) + '</figcaption>' + usar(x.foto_path) + '</figure>';
       }).join('') + '</div>' : '') +
-      (mod ? '<div class="seccion">Para la IA</div><div id="vmModelo"></div>' +
+      (mod || liq !== null ? '<div class="seccion">Para la IA</div>' : '') +
+      (liq !== null ? '<label class="vm-liq"><input type="checkbox" id="vmLiq"' + (liq ? ' checked' : '') + '><span><b>Es de liquidación</b>' +
+        '<small>Lo colgado va ordenado por talle, no por color: la IA no pide degradé.</small></span></label>' : '') +
+      (mod ? '<div id="vmModelo"></div>' +
         '<label class="campo"><span>Algo propio de este módulo (opcional: la IA lo lee con cada foto)</span><textarea id="vmPropio" rows="2" maxlength="300" placeholder="Ej.: acá van sólo gorras, colgadas y no dobladas">' + esc(mod.reglas_extra || '') + '</textarea></label>' +
         '<div class="vm-propio-acc"><button class="boton chico lima" id="vmPropioGuardar" data-aviso-guardar disabled>Guardar lo propio</button></div>' : ''));
+    var cl = v.querySelector('#vmLiq');
+    if (cl) cl.onchange = function () {
+      var valorNuevo = cl.checked;
+      cl.disabled = true;
+      llamar('orden_modulo_liquidacion', { p_modulo: m.modulo_id, p_valor: valorNuevo }).then(function () {
+        avisar(valorNuevo ? 'Listo: ' + m.modulo_nombre + ' es de liquidación. La IA no pide degradé desde la próxima foto.'
+                          : 'Listo: ' + m.modulo_nombre + ' ya no es de liquidación.');
+      }, function (e) { cl.checked = !valorNuevo; avisar(mensajeDe(e)); }).then(function () { cl.disabled = false; });
+    };
     if (!mod) return;
     var pintar = function () { dibujarModelo(v.querySelector('#vmModelo'), mod, m); };
     pintar();
