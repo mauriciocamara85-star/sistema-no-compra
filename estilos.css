@@ -1492,12 +1492,14 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   body.hay-rail { transition: padding-left .2s var(--curva); }
   .rail {
     width: var(--rail-ancho);
-    z-index: 70;
     overflow: hidden;
     padding: 14px 10px;
     transition: width .18s var(--curva), box-shadow .18s var(--curva);
   }
+  /* Abierta va por encima de la pantalla (la cabecera es 30) pero por debajo de las ventanas (60 en adelante):
+     angosta se queda en 45, como siempre, para que el fondo oscuro de una ventana la tape. */
   .rail.abierta {
+    z-index: 58;
     width: var(--rail-abierta);
     box-shadow: 0 30px 70px -18px rgba(0, 0, 0, .72), inset 0 1px 0 rgba(255, 255, 255, .06);
   }

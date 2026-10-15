@@ -285,7 +285,9 @@
           pintar();
           var f = pop.querySelector('[data-d="' + aTexto(d) + '"]'); if (f) f.focus({ preventScroll: true });
         };
-        x.onmouseenter = function () { if (tmpA && !tmpB) { encima = d; pintar(); } };
+        /* Sólo si cambió el día: al repintar, el día nuevo vuelve a recibir mouseenter y, sin esto, se repintaba sin
+           parar y el clic del segundo día caía en un botón que ya no existía (lo encontró el ayudante del CRM). */
+        x.onmouseenter = function () { if (tmpA && !tmpB && !igual(encima, d)) { encima = d; pintar(); } };
       });
       pop.querySelector('[data-acc="cancelar"]').onclick = function () { cerrar(true); };
       pop.querySelector('[data-acc="aplicar"]').onclick = function () {
