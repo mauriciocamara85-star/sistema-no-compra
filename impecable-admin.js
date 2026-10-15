@@ -263,10 +263,11 @@ function datosPanorama(rango) {
   var desde = semanas[0] < pasada ? semanas[0] : pasada, hasta = semanas[semanas.length - 1] > esta ? semanas[semanas.length - 1] : esta;
   document.getElementById('panTabla').innerHTML = '<p class="cargando">Cargando…</p>';
   Promise.all([
-    leer('/orden_v_persona_semana?select=local_id,semana,controles,controles_a_tiempo,controles_tarde,controles_vencidos,puntos,nivel_semana&semana=gte.' + desde + '&semana=lte.' + hasta),
+    /* De a 1000 (leerTodas): con 12 semanas o 3 meses y los 14 locales se pasa el tope de filas de la base. */
+    leerTodas('/orden_v_persona_semana?select=local_id,semana,controles,controles_a_tiempo,controles_tarde,controles_vencidos,puntos,nivel_semana&semana=gte.' + desde + '&semana=lte.' + hasta + '&order=semana.asc,local_id.asc,persona_id.asc'),
     leer('/orden_v_estado_local?select=local_id,modulo_id,tareas_abiertas,sin_foto_reciente'),
     leer('/orden_v_por_revisar?select=id,local_id'),
-    leer('/orden_v_cajas?select=local_id,fecha,estado,alertas&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta)
+    leerTodas('/orden_v_cajas?select=local_id,fecha,estado,alertas&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + '&order=fecha.asc,local_id.asc')
   ]).then(function (r) {
     if (_solapa !== 'panorama' || pedido !== _panPedido) return;
     var por = {};
