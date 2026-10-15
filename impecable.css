@@ -192,6 +192,9 @@ h1 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.02e
 .tabla-caja .fila { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; flex-wrap: nowrap; font-size: 14px; }
 .tabla-caja .fila span:not(:first-child) { text-align: right; }
 .tabla-caja .cab { color: var(--suave); font-weight: 700; font-size: 12px; }
+/* (SQL 122) Un número que falta cargar. */
+.falta-cargar { color: var(--ambar); font-weight: 800; }
+#corregirCaja { margin-top: 12px; }
 .rojo { color: var(--rojo); font-weight: 700; }
 .foto-chica { margin: 0; }
 /* contain y no cover: el cierre del sistema sacado apaisado se ve entero (con

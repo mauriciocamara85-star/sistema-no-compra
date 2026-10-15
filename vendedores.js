@@ -2022,7 +2022,9 @@ function pantallaCaja() {
   }).catch(function (e) { pantallaError(e, pantallaCaja); });
 }
 
-function dibujarCaja(caja, fotos) {
+/* corrige (SQL 124): el supervisor corrige (o carga) la caja de un día desde Revisar → Cajas:
+   la misma pantalla, con "‹ Volver a la caja" y, al guardar, vuelve al día. */
+function dibujarCaja(caja, fotos, corrige) {
   var ultima = {};
   fotos.forEach(function (f) { if (!ultima[f.tipo]) ultima[f.tipo] = f; });
   var valores = {};
@@ -2036,8 +2038,11 @@ function dibujarCaja(caja, fotos) {
   });
   var cerrada = caja.estado === 'controlada';
 
-  var html = cabeza('Caja del ' + diaMes(caja.fecha)) +
-    '<p class="bajada">' + (cerrada ? 'Tu supervisor ya la controló.' : 'Sacá las fotos del cierre: los números se cargan solos. Revisalos y escribí el efectivo que contaste.') + '</p>';
+  var html = corrige
+    ? '<button class="volver" id="volverCaja">‹ Volver a la caja</button><h1>' + (caja.estado === 'pendiente' ? 'Cargar' : 'Corregir') + ' la caja del ' + esc(diaMes(caja.fecha)) + '</h1>' +
+      '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.') + '</p>'
+    : cabeza('Caja del ' + diaMes(caja.fecha)) +
+      '<p class="bajada">' + (cerrada ? 'Tu supervisor ya la controló.' : 'Sacá las fotos del cierre: los números se cargan solos. Revisalos y escribí el efectivo que contaste.') + '</p>';
   if (!cerrada) {
     html += '<div class="grilla">' + FOTOS_CAJA.map(function (t) {
       var f = ultima[t[0]];
@@ -2063,7 +2068,8 @@ function dibujarCaja(caja, fotos) {
   if (!cerrada) html += '<button class="boton lima" id="guardarCaja">Guardar</button>';
   html += '<input type="file" id="fotoCaja" accept="image/*" capture="environment" hidden>';
   app.innerHTML = html;
-  engancharCabeza();
+  if (corrige) document.getElementById('volverCaja').onclick = function () { volverAlDiaCaja(caja.id); };
+  else engancharCabeza();
 
   app.querySelectorAll('.caja-fila input').forEach(function (i) { i.addEventListener('input', revisarFilasCaja); });
   revisarFilasCaja();
@@ -2072,7 +2078,21 @@ function dibujarCaja(caja, fotos) {
     unaVez(b, function () { return fotoCaja(caja, b.dataset.tipo, input, b); });
   });
   var g = document.getElementById('guardarCaja');
-  if (g) unaVez(g, function () { return guardarCaja(caja, g); });
+  if (g) unaVez(g, function () { return guardarCaja(caja, g, corrige); });
+}
+
+/** (SQL 124) Corregir o cargar la caja de un día desde Revisar → Cajas (supervisor y administración). */
+function corregirCaja(c) {
+  app.innerHTML = '<p class="cargando">Cargando…</p>';
+  return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc')
+    .then(function (f) { dibujarCaja(c, f || [], true); }, function (e) { detalleCaja(c); throw e; });
+}
+
+/** Vuelve al día de la caja, con lo que quedó guardado. */
+function volverAlDiaCaja(id) {
+  return leer('/orden_v_cajas?select=*&id=eq.' + valor(id)).then(function (r) {
+    if (r && r[0]) detalleCaja(r[0]); else irA('cajas');
+  });
 }
 
 function fotoCaja(caja, tipo, input, boton) {
@@ -2109,7 +2129,7 @@ function fotoCaja(caja, tipo, input, boton) {
   });
 }
 
-function guardarCaja(caja, boton) {
+function guardarCaja(caja, boton, corrige) {
   var valores = {}, malo = null;
   app.querySelectorAll('[data-campo]').forEach(function (c) {
     var v = String(c.value || '').trim();
@@ -2134,6 +2154,7 @@ function guardarCaja(caja, boton) {
     return llamar('orden_caja_guardar', { p_caja: caja.id, p_valores: valores, p_observaciones: document.getElementById('obs').value || null })
       .then(function (c) {
         avisar((c.alertas || []).length ? 'Guardada, con cosas para revisar.' : 'Guardada. Dio bien.');
+        if (corrige) return volverAlDiaCaja(c.id);
         revisarCaja();
         return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc')
           .then(function (f) { dibujarCaja(c, f || []); });
@@ -2607,10 +2628,15 @@ function detalleCaja(c) {
     '<p class="bajada">' + esc(c.local_nombre + (c.cargada_por_nombre ? ' · la cargó ' + c.cargada_por_nombre : '')) + '</p>' +
     '<div class="tabla-caja"><div class="fila cab"><span></span><span>Cierre</span><span>Real</span><span>Desvío</span></div>' + filas.map(function (f) {
       var d = Number(c[f[3]] || 0);
-      return '<div class="fila"><span>' + f[0] + '</span><span>' + pesos(c[f[1]]) + '</span><span>' + pesos(c[f[2]]) + '</span><span class="' + (Math.abs(d) > 0.5 ? 'rojo' : '') + '">' + pesos(d) + '</span></div>';
+      /* (SQL 122) Vacío con el otro lado escrito: falta cargarlo. */
+      var lado = function (a, b) { return c[a] == null && c[b] != null && Number(c[b]) !== 0 ? '<b class="falta-cargar">Falta</b>' : pesos(c[a]); };
+      return '<div class="fila"><span>' + f[0] + '</span><span>' + lado(f[1], f[2]) + '</span><span>' + lado(f[2], f[1]) + '</span><span class="' + (Math.abs(d) > 0.5 ? 'rojo' : '') + '">' + pesos(d) + '</span></div>';
     }).join('') + '</div>' +
     ((c.alertas || []).length ? '<div class="revision mala"><div class="titulo">Alertas</div>' + c.alertas.map(function (a) { return '<div>' + esc(textoAlerta(a)) + '</div>'; }).join('') + '</div>' : '') +
-    (c.observaciones ? '<div class="nota">' + esc(c.observaciones) + '</div>' : '');
+    (c.observaciones ? '<div class="nota">' + esc(c.observaciones) + '</div>' : '') +
+    /* (SQL 124) Corregirla con el cierre nuevo o a mano, o cargarla si no la cargaron. */
+    (c.estado !== 'controlada' && !soloMira()
+      ? '<button class="boton" id="corregirCaja">' + (c.estado === 'pendiente' ? 'Cargar la caja' : 'Corregir: cierre nuevo o a mano') + '</button>' : '');
   var fotos = c.fotos || {};
   if (Object.keys(fotos).length) {
     html += '<div class="seccion">Fotos</div><div class="grilla">' + FOTOS_CAJA.filter(function (t) { return fotos[t[0]]; }).map(function (t) {
@@ -2623,20 +2649,55 @@ function detalleCaja(c) {
         esc(Object.keys(h.antes || {}).map(function (k) { return k.replace(/^(sis|real)_/, '') + ' ' + pesos(h.antes[k]); }).join(' · ')) + '</small></div>';
     }).join('');
   }
+  /* Lo que falta de plata: la suma de los desvíos positivos (el sistema dice más de lo que hay). */
+  var faltaPlata = (c.alertas || []).reduce(function (s, a) { return s + (a.tipo === 'desvio' && Number(a.monto) > 0 ? Number(a.monto) : 0); }, 0);
   if (c.estado === 'controlada') {
-    html += '<div class="nota">Controlada' + (c.controlada_por_nombre ? ' por ' + esc(c.controlada_por_nombre) : '') + (c.nota_control ? ': ' + esc(c.nota_control) : '.') + '</div>';
+    html += '<div class="nota">Controlada' + (c.controlada_por_nombre ? ' por ' + esc(c.controlada_por_nombre) : '') + (c.nota_control ? ': ' + esc(c.nota_control) : '.') +
+      (c.diferencia_persona ? '<br><b>Diferencia a cargo de ' + esc(c.diferencia_persona_nombre || '—') + ': ' + pesos(c.diferencia_monto) + '</b>' : '') + '</div>';
   } else if (c.estado === 'cargada' && !soloMira()) {
-    html += '<label class="campo"><span>' + ((c.alertas || []).length ? 'Qué pasó (obligatorio: tiene alertas)' : 'Nota (opcional)') + '</span><textarea id="notaCaja" rows="2"></textarea></label>' +
-      '<button class="boton lima" id="controlar">Dar por controlada</button>';
+    html += '<label class="campo"><span>' + ((c.alertas || []).length ? 'Qué pasó (obligatorio: tiene alertas)' : 'Nota (opcional)') + '</span><textarea id="notaCaja" rows="2"></textarea></label>';
+    /* (SQL 124) Si la diferencia no tiene arreglo: quién se hace cargo y cuánto. */
+    if ((c.alertas || []).length) {
+      html += '<label class="campo"><span>Si la diferencia no tiene arreglo, ¿quién se hace cargo?</span><select id="aCargo"><option value="">Nadie: se resolvió o no corresponde</option></select></label>' +
+        '<label class="campo" id="montoCargoCampo" hidden><span>Monto a su cargo</span><input inputmode="decimal" id="montoCargo" value="' + (faltaPlata > 0 ? esc(String(Math.round(faltaPlata))) : '') + '" placeholder="$"></label>';
+    }
+    html += '<button class="boton lima" id="controlar">Dar por controlada</button>';
   }
   app.innerHTML = html;
   cargarFotos(app);
   document.getElementById('volver').onclick = function () { irA('cajas'); };
+  var bc = document.getElementById('corregirCaja');
+  if (bc) unaVez(bc, function () { return corregirCaja(c); });
+  var sel = document.getElementById('aCargo');
+  if (sel) {
+    var montoCampo = document.getElementById('montoCargoCampo');
+    sel.onchange = function () { montoCampo.hidden = !sel.value; };
+    /* La gente del local; de entrada, quien la cargó (si falta plata). */
+    leer('/orden_personas?select=id,nombre,inicial,rol&local_id=eq.' + valor(c.local_id) + '&activo=is.true&order=nombre.asc').then(function (gente) {
+      (gente || []).forEach(function (p) {
+        var o = document.createElement('option'); o.value = p.id; o.textContent = nombreLista(p); sel.appendChild(o);
+      });
+      if (faltaPlata > 0 && c.cargada_por && (gente || []).some(function (p) { return p.id === c.cargada_por; })) { sel.value = c.cargada_por; montoCampo.hidden = false; }
+    }).catch(function () {});
+  }
   var b = document.getElementById('controlar');
   if (b) unaVez(b, function () {
     var nota = document.getElementById('notaCaja').value;
     if ((c.alertas || []).length && !String(nota).trim()) { avisar('Tiene alertas: escribí qué pasó.'); return; }
-    return llamar('orden_caja_controlar', { p_caja: c.id, p_nota: nota || null }).then(function () { avisar('Caja controlada.'); irA('cajas'); });
+    var persona = sel ? sel.value : '', monto = null;
+    if (persona) {
+      monto = numeroCaja(document.getElementById('montoCargo').value);
+      if (!(monto > 0)) { avisar('Escribí cuánto queda a su cargo.'); return; }
+    }
+    var seguir = persona
+      ? confirmar('La diferencia de ' + pesos(monto) + ' queda a cargo de ' + sel.selectedOptions[0].textContent + '. ¿Confirmás?', 'Sí, confirmar')
+      : Promise.resolve(true);
+    return seguir.then(function (si) {
+      if (!si) return;
+      var args = { p_caja: c.id, p_nota: nota || null };
+      if (persona) { args.p_persona = persona; args.p_monto = monto; }
+      return llamar('orden_caja_controlar', args).then(function () { avisar('Caja controlada.'); irA('cajas'); });
+    });
   });
 }
 

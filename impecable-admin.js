@@ -642,8 +642,13 @@ function verCajas() {
     r[3].filas.forEach(function (x) { cierres[x.mes] = x; });
     var mesCaja = /^\d{4}-\d{2}$/.test(r[4] || '') ? r[4] : hoyMes;
     var tot = porMes[_mes], cierre = cierres[_mes], terminado = _mes < mesCaja;
-    var col = function (c, s, rl, dv) {
-      return celdaCaja(c, s, rl) + celdaCaja(c, rl, s) + '<td class="n' + (Math.abs(Number(c[dv] || 0)) > 0.5 ? ' rojo' : '') + '">' + pesos(c[dv]) + '</td>';
+    /* Cada medio, un bloque (14/10, Mauricio: "segmentame bien eso"): su color suave y una línea que lo separa. */
+    var col = function (c, s, rl, dv, g) {
+      return celdaCaja(c, s, rl, 'g-' + g + ' ini') + celdaCaja(c, rl, s, 'g-' + g) + '<td class="n g-' + g + (Math.abs(Number(c[dv] || 0)) > 0.5 ? ' rojo' : '') + '">' + pesos(c[dv]) + '</td>';
+    };
+    var cols = function (c, efvo) {
+      return col(c, 'sis_mp', 'real_mp', 'desvio_mp', 'mp') + col(c, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta', 'tarjeta') +
+             col(c, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas', 'gocuotas') + col(c, efvo, 'real_efectivo', 'desvio_efectivo', 'efectivo');
     };
     /* La marca de cada mes: ✓ controlado; un punto si terminó, tiene cajas y falta cerrarlo. */
     var marca = function (m) {
@@ -658,36 +663,49 @@ function verCajas() {
       tarjetaCierre(cierre, tot, terminado, r[3].falta, _mes < hoyMes);
     if (!cajas.length) html += '<div class="vacio">No hay cajas cargadas en este mes.</div>';
     else {
-      html += '<div class="desliza"><table class="tabla-datos"><thead><tr><th rowspan="2">Día</th><th colspan="3">Mercado Pago</th><th colspan="3">Tarjeta</th><th colspan="3">Go Cuotas</th><th colspan="3">Efectivo</th><th rowspan="2">Estado</th></tr>' +
-        '<tr>' + [1, 2, 3, 4].map(function () { return '<th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th>'; }).join('') + '</tr></thead><tbody>' +
+      html += '<div class="desliza"><table class="tabla-datos tabla-cajas"><thead><tr><th rowspan="2">Día</th>' +
+        GRUPOS_CAJA.map(function (m) { return '<th colspan="3" class="grupo g-' + m[0] + ' ini">' + m[1] + '</th>'; }).join('') + '<th rowspan="2" class="ini">Estado</th></tr>' +
+        '<tr>' + GRUPOS_CAJA.map(function (m) { return '<th class="n g-' + m[0] + ' ini">Cierre</th><th class="n g-' + m[0] + '">Real</th><th class="n g-' + m[0] + '">Desvío</th>'; }).join('') + '</tr></thead><tbody>' +
         cajas.map(function (c) {
-          return '<tr data-caja="' + esc(c.id) + '" style="cursor:pointer"><td><b>' + esc(diaMes(c.fecha)) + '</b></td>' +
-            col(c, 'sis_mp', 'real_mp', 'desvio_mp') + col(c, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta') + col(c, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas') + col(c, 'sis_saldo_final_efvo', 'real_efectivo', 'desvio_efectivo') +
-            '<td>' + (c.estado === 'controlada' ? '<span class="est listo">Controlada</span>' : c.estado === 'cargada' ? '<span class="est sorpresa">Sin controlar</span>' : '<span class="est pendiente">Sin cargar</span>') +
-            ((c.alertas || []).length ? ' <span class="est vencido">' + c.alertas.length + '</span>' : '') + '</td></tr>';
+          return '<tr data-caja="' + esc(c.id) + '" style="cursor:pointer"><td><b>' + esc(diaMes(c.fecha)) + '</b></td>' + cols(c, 'sis_saldo_final_efvo') +
+            '<td class="ini">' + (c.estado === 'controlada' ? '<span class="est listo">Controlada</span>' : c.estado === 'cargada' ? '<span class="est sorpresa">Sin controlar</span>' : '<span class="est pendiente">Sin cargar</span>') +
+            ((c.alertas || []).length ? ' <span class="est vencido">' + c.alertas.length + '</span>' : '') +
+            (c.diferencia_persona ? ' <span class="est vencido" title="' + esc('Diferencia a cargo de ' + (c.diferencia_persona_nombre || '—') + ': ' + pesos(c.diferencia_monto)) + '">A cargo</span>' : '') + '</td></tr>';
         }).join('') +
-        (tot ? '<tr><td><b>Total</b></td>' + col(tot, 'sis_mp', 'real_mp', 'desvio_mp') + col(tot, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta') + col(tot, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas') + col(tot, 'sis_efectivo', 'real_efectivo', 'desvio_efectivo') + '<td></td></tr>' : '') +
+        (tot ? '<tr class="fila-total"><td><b>Total</b></td>' + cols(tot, 'sis_efectivo') + '<td class="ini"></td></tr>' : '') +
         '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos.</p>';
+      /* (SQL 124) Las diferencias que no tuvieron arreglo: a cargo de quién, en el mes. */
+      var aCargo = {};
+      cajas.forEach(function (x) {
+        if (!x.diferencia_persona || !(Number(x.diferencia_monto) > 0)) return;
+        var k = x.diferencia_persona_nombre || '—', a = aCargo[k] = aCargo[k] || { total: 0, dias: [] };
+        a.total += Number(x.diferencia_monto); a.dias.push(diaMes(x.fecha) + ' (' + pesos(x.diferencia_monto) + ')');
+      });
+      if (Object.keys(aCargo).length) {
+        html += '<h3 class="cierre-titulo">Diferencias a cargo en ' + esc(nombreMes(_mes)) + '</h3><div class="desliza"><table class="tabla-datos a-cargo"><thead><tr><th>Persona</th><th class="n">Total</th><th>Días</th></tr></thead><tbody>' +
+          Object.keys(aCargo).sort().map(function (k) { return '<tr><td><b>' + esc(k) + '</b></td><td class="n rojo">' + pesos(aCargo[k].total) + '</td><td>' + esc(aCargo[k].dias.join(' · ')) + '</td></tr>'; }).join('') +
+          '</tbody></table></div><p class="bajada" style="margin-top:8px">Las anota el supervisor al dar la caja por controlada, cuando la diferencia no tuvo arreglo.</p>';
+      }
     }
     /* Resumen por mes, como la parte de arriba de la planilla: del más viejo al más nuevo. */
     var conDatos = meses.slice().reverse().filter(function (m) { return porMes[m]; });
     if (conDatos.length) {
       /* Cada medio en una celda: el desvío y, abajo, cierre / real. */
-      var medio = function (t, s, rl, dv) {
+      var medio = function (t, s, rl, dv, g) {
         var d = Number(t[dv] || 0);
-        return '<td class="n"><b class="' + (Math.abs(d) > 0.5 ? 'rojo' : '') + '">' + pesos(d) + '</b><small>' + pesos(t[s]) + ' / ' + pesos(t[rl]) + '</small></td>';
+        return '<td class="n g-' + g + ' ini"><b class="' + (Math.abs(d) > 0.5 ? 'rojo' : '') + '">' + pesos(d) + '</b><small>' + pesos(t[s]) + ' / ' + pesos(t[rl]) + '</small></td>';
       };
-      html += '<h3 class="cierre-titulo">Resumen por mes</h3><div class="desliza"><table class="tabla-datos cajas-meses"><thead><tr><th>Mes</th>' +
-        ['Mercado Pago', 'Tarjeta', 'Go Cuotas', 'Efectivo'].map(function (x) { return '<th class="n">' + x + '<small>desvío · cierre / real</small></th>'; }).join('') +
-        '<th>Cierre</th><th>Observación</th></tr></thead><tbody>' +
+      html += '<h3 class="cierre-titulo">Resumen por mes</h3><div class="desliza"><table class="tabla-datos cajas-meses tabla-cajas"><thead><tr><th>Mes</th>' +
+        GRUPOS_CAJA.map(function (m) { return '<th class="n grupo g-' + m[0] + ' ini">' + m[1] + '<small>desvío · cierre / real</small></th>'; }).join('') +
+        '<th class="ini">Cierre</th><th>Observación</th></tr></thead><tbody>' +
         conDatos.map(function (m) {
           var t = porMes[m], ci = cierres[m], h = (ci && ci.historia) || [], ult = h[h.length - 1];
           var est = ci && ci.estado === 'controlado' ? '<span class="est listo">Controlado ✓</span><small>' + esc(ci.controlado_por_nombre || '') + (ci.controlado_en ? ' · ' + esc(diaMes(ci.controlado_en)) : '') + '</small>'
             : m < mesCaja ? '<span class="est sorpresa">Falta cerrar</span>' : '<span class="est">En curso</span>';
           var obs = ci && ci.estado === 'controlado' ? esc(ci.observacion) : ci && ci.estado === 'reabierto' && ult ? 'Reabierto: ' + esc(ult.texto) : '—';
           return '<tr data-ir-mes="' + m + '" class="' + (m === _mes ? 'mes-activo' : '') + '" style="cursor:pointer"><td><b>' + esc(nombreMes(m)) + '</b></td>' +
-            medio(t, 'sis_mp', 'real_mp', 'desvio_mp') + medio(t, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta') + medio(t, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas') + medio(t, 'sis_efectivo', 'real_efectivo', 'desvio_efectivo') +
-            '<td class="cierre-est">' + est + '</td><td class="obs">' + obs + '</td></tr>';
+            medio(t, 'sis_mp', 'real_mp', 'desvio_mp', 'mp') + medio(t, 'sis_tarjeta', 'real_lote', 'desvio_tarjeta', 'tarjeta') + medio(t, 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas', 'gocuotas') + medio(t, 'sis_efectivo', 'real_efectivo', 'desvio_efectivo', 'efectivo') +
+            '<td class="cierre-est ini">' + est + '</td><td class="obs">' + obs + '</td></tr>';
         }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Los últimos 6 meses con cajas. Tocá un mes para ver sus días.</p>';
     }
     var c = document.getElementById('cuerpo');
@@ -718,10 +736,14 @@ var FOTOS_CIERRE = [
   ['mp', 'Mercado Pago', [['total', 'Total', 'real_mp']]],
   ['gocuotas', 'Go Cuotas', [['total', 'Total', 'real_gocuotas']]]
 ];
+/** Los medios de la caja, cada uno con su color (en la tabla y en el resumen por mes). */
+var GRUPOS_CAJA = [['mp', 'Mercado Pago'], ['tarjeta', 'Tarjeta'], ['gocuotas', 'Go Cuotas'], ['efectivo', 'Efectivo']];
+
 /** Un número de la caja; vacío con el otro lado escrito: "Falta" (falta cargarlo, SQL 122). */
-function celdaCaja(c, k, otro) {
-  if (c[k] == null && c[otro] != null && Number(c[otro]) !== 0) return '<td class="n"><span class="falta-cargar">Falta</span></td>';
-  return '<td class="n">' + pesos(c[k]) + '</td>';
+function celdaCaja(c, k, otro, clase) {
+  var cl = 'n' + (clase ? ' ' + clase : '');
+  if (c[k] == null && c[otro] != null && Number(c[otro]) !== 0) return '<td class="' + cl + '"><span class="falta-cargar">Falta</span></td>';
+  return '<td class="' + cl + '">' + pesos(c[k]) + '</td>';
 }
 
 /** El texto de una alerta de caja. */
@@ -755,6 +777,7 @@ function dibujarVentanaCaja(k, fs, deIA) {
   var v = ventana('<h1>Caja del ' + esc(diaMes(k.fecha)) + '</h1><p class="bajada">' + esc((k.local_nombre ? k.local_nombre : '') + (k.cargada_por_nombre ? ' · la cargó ' + k.cargada_por_nombre : '') + (k.controlada_por_nombre ? ' · la controló ' + k.controlada_por_nombre : '')) + '</p>' +
     ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(textoAlertaCaja(a)); }).join('<br>') + '</div>' : '') +
     (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
+    (k.diferencia_persona ? '<div class="nota alerta"><b>Diferencia a cargo de ' + esc(k.diferencia_persona_nombre || '—') + ': ' + pesos(k.diferencia_monto) + '</b></div>' : '') +
     '<div class="desliza"><table class="caja-dia"><thead><tr><th></th><th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th></tr></thead><tbody>' +
     FILAS_DIA_CAJA.map(function (f) {
       var d = Number(k[f[3]] || 0);

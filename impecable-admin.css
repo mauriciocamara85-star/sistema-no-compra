@@ -372,6 +372,31 @@
 .imp .cajas-meses td.cierre-est small { display: block; margin-top: 3px; font-size: 11.5px; color: var(--txt-3); }
 .imp .cajas-meses tr.mes-activo td { background: var(--surface-2); }
 
+/* ── Cajas: cada medio de pago, un bloque (14/10, Mauricio: "segmentame bien eso … un color
+   delicado para diferenciar los segmentos"). Un fondo apenas teñido, una rayita de su color
+   arriba del título y una línea que lo separa del siguiente. Sirve en claro y en oscuro. ── */
+.imp .tabla-cajas { --g-mp: 0, 158, 227; --g-tarjeta: 124, 92, 255; --g-gocuotas: 38, 166, 110; --g-efectivo: 214, 150, 30; }
+.imp .tabla-cajas .g-mp       { background: rgba(var(--g-mp), .045); }
+.imp .tabla-cajas .g-tarjeta  { background: rgba(var(--g-tarjeta), .045); }
+.imp .tabla-cajas .g-gocuotas { background: rgba(var(--g-gocuotas), .045); }
+.imp .tabla-cajas .g-efectivo { background: rgba(var(--g-efectivo), .055); }
+.imp .tabla-cajas thead th.g-mp       { background: rgba(var(--g-mp), .10); }
+.imp .tabla-cajas thead th.g-tarjeta  { background: rgba(var(--g-tarjeta), .10); }
+.imp .tabla-cajas thead th.g-gocuotas { background: rgba(var(--g-gocuotas), .10); }
+.imp .tabla-cajas thead th.g-efectivo { background: rgba(var(--g-efectivo), .12); }
+.imp .tabla-cajas th.grupo { text-align: center; color: var(--txt); font-size: 13px; letter-spacing: .2px; }
+.imp .tabla-cajas th.grupo small { text-align: center; }
+.imp .tabla-cajas th.grupo.g-mp       { box-shadow: inset 0 3px 0 rgb(var(--g-mp)); }
+.imp .tabla-cajas th.grupo.g-tarjeta  { box-shadow: inset 0 3px 0 rgb(var(--g-tarjeta)); }
+.imp .tabla-cajas th.grupo.g-gocuotas { box-shadow: inset 0 3px 0 rgb(var(--g-gocuotas)); }
+.imp .tabla-cajas th.grupo.g-efectivo { box-shadow: inset 0 3px 0 rgb(var(--g-efectivo)); }
+.imp .tabla-cajas .ini { border-left: 1px solid var(--line-alta); }
+.imp .tabla-cajas tr.fila-total td { font-weight: 700; border-top: 2px solid var(--line-alta); }
+.imp .tabla-cajas.cajas-meses td.n { text-align: center; }
+/* El mes que se está viendo: una rayita a la izquierda (el fondo de cada medio queda). */
+.imp .tabla-cajas.cajas-meses tr.mes-activo td:first-child { box-shadow: inset 3px 0 0 var(--acc); }
+.imp .a-cargo td:last-child { white-space: normal; color: var(--txt-2); }
+
 /* ═══ Productos testigo: las semanas y las estadísticas (SQL 117) ═════════ */
 .imp .testigo-vista { margin-bottom: 10px; }
 .imp .testigo-semanas { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; }
