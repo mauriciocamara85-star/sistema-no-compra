@@ -50,6 +50,18 @@ Deno.test("sugerencias apagadas: solo quedan las cosas para corregir", () => {
   igual(r.checks.etiquetas, "no_se_ve", "lo que falta queda como no_se_ve");
 });
 
+Deno.test("los valores de las listas valen con otra mayúscula (OK, Impecable, Corregir, Frontales)", () => {
+  const r = normalizar({
+    foto_valida: true, confianza: "Alta" as never, nivel_sugerido: "Impecable" as never,
+    checks: { dobladas: "OK", frontales: "Mal", etiquetas: "No_se_ve" } as never,
+    hallazgos: [{ check: "Frontales", titulo: "Completá el frontal", gravedad: "Corregir" as never }],
+  }, ctx);
+  igual(r.nivel_sugerido, "impecable", "nivel");
+  igual(r.confianza, "alta", "confianza");
+  igual([r.checks.dobladas, r.checks.frontales, r.checks.etiquetas], ["ok", "mal", "no_se_ve"], "checks");
+  igual(r.hallazgos.map((h) => [h.check, h.gravedad]), [["frontales", "corregir"]], "el hallazgo sigue siendo para corregir, con el punto como está en la base");
+});
+
 Deno.test("con confianza baja no se generan tareas", () => {
   const r = normalizar({
     foto_valida: true, confianza: "baja", nivel_sugerido: "a_mejorar", checks: {} as never,

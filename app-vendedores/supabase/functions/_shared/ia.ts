@@ -139,21 +139,26 @@ export function armarEsquema(checks: string[]) {
 /** Deja la respuesta prolija y aplica reglas de seguridad para no generar tareas injustas. */
 export function normalizar(r: Partial<Resultado>, ctx: Contexto): Resultado {
   const checks: Resultado["checks"] = {};
+  // Con el formato JSON la IA puede devolver un valor de la lista con otra mayúscula ("OK", "Impecable"):
+  // se compara siempre en minúscula (lo avisa la documentación de structured outputs).
   for (const c of ctx.checks) {
-    const v = r.checks?.[c];
+    const v = minuscula(r.checks?.[c]);
     checks[c] = v === "ok" || v === "mal" || v === "no_se_ve" ? v : "no_se_ve";
   }
-  const confianza = r.confianza === "alta" || r.confianza === "media" || r.confianza === "baja" ? r.confianza : "media";
+  const conf = minuscula(r.confianza);
+  const confianza = conf === "alta" || conf === "media" || conf === "baja" ? conf : "media";
+  const checkDe = (v: unknown) => ctx.checks.find((c) => c.toLowerCase() === minuscula(v));
 
   let hallazgos = (Array.isArray(r.hallazgos) ? r.hallazgos : [])
-    .filter((h) => h && ctx.checks.includes(h.check) && typeof h.titulo === "string" && h.titulo.trim())
+    .filter((h) => h && checkDe(h.check) && typeof h.titulo === "string" && h.titulo.trim())
     .slice(0, 4)
     .map((h) => ({
-      check: h.check,
+      check: checkDe(h.check)!,
       titulo: h.titulo.trim().slice(0, 100),
       detalle: h.detalle?.trim().slice(0, 300),
-      gravedad: h.gravedad === "corregir" ? "corregir" as const : "sugerencia" as const,
+      gravedad: minuscula(h.gravedad) === "corregir" ? "corregir" as const : "sugerencia" as const,
     }));
+  const nivel = minuscula(r.nivel_sugerido);
 
   // Con confianza baja, nada se convierte en tarea: quedan como sugerencias.
   if (confianza === "baja") hallazgos = hallazgos.map((h) => ({ ...h, gravedad: "sugerencia" as const }));
@@ -168,11 +173,16 @@ export function normalizar(r: Partial<Resultado>, ctx: Contexto): Resultado {
     checks,
     prendas_por_frontal: Array.isArray(r.prendas_por_frontal) ? r.prendas_por_frontal.filter(Number.isInteger) : undefined,
     hallazgos,
-    nivel_sugerido: NIVELES.includes(r.nivel_sugerido as never) ? r.nivel_sugerido! : "bien",
+    nivel_sugerido: NIVELES.includes(nivel as never) ? nivel as Resultado["nivel_sugerido"] : "bien",
     comentario: r.comentario?.trim().slice(0, 200),
     confianza,
     que_hay: r.foto_valida === false ? undefined : limpiarQueHay(r.que_hay),
   };
+}
+
+/** Un valor de una lista, en minúscula y sin espacios alrededor ("" si no es texto). */
+function minuscula(v: unknown): string {
+  return typeof v === "string" ? v.trim().toLowerCase() : "";
 }
 
 /** "remeras  y buzos." → "Remeras y buzos" (sin punto final, la primera en mayúscula, hasta 40 letras). */
