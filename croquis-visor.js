@@ -159,9 +159,6 @@ function abrirVisor(cont, op) {
     var r = e.target.closest && e.target.closest('[data-resalta]');
     if (r) { V.resaltado = V.resaltado === r.dataset.resalta ? null : r.dataset.resalta; visorPintar(V); visorPanel(V); }
     if (e.target.closest && e.target.closest('#cvVerTodos')) { V.resaltado = null; visorPintar(V); visorPanel(V); }
-    var ab = e.target.closest && e.target.closest('[data-abrir]');
-    if (ab && !V.ficha && V.usa3d) { var m3 = visorModulo(V, ab.dataset.abrir); if (m3 && V.c3) visor3dAbrir(V, m3); return; }
-    if (ab && !V.ficha) { var cj = V.mundo.querySelector('.cv-caja[data-mod="' + ab.dataset.abrir + '"]'); if (cj) abrirFicha(V, ab.dataset.abrir, cj); }
   });
   V.alTamano = function () {
     if (!document.body.contains(V.raiz)) { visorSalir(V, true); return; }
@@ -1036,17 +1033,6 @@ function visorEtiqueta(m) { return queHay(m) || (m.isla ? m.nombre : nombrePropi
 /** ¿Puede escribir qué hay en este módulo? op.puedeNombrar es sí o no (el supervisor), o una función: el vendedor, en
     sus módulos (o los que cubre) y en la vidriera, que es de todos (SQL 118). */
 function visorPuedeNombrar(V, m) { var p = V.op.puedeNombrar; return typeof p === 'function' ? !!p(m, V.d) : !!p; }
-/** Qué hay en cada módulo (los que tienen nombre o qué hay), enteros: en la maqueta, en el celular, se leen al acercar. */
-function visorListaQue(V, mods, abierto) {
-  var d = V.d, con = mods.filter(function (m) { return visorEtiqueta(m); });
-  if (!con.length) return '';
-  return '<details class="cv-sec cv-que-sec"' + abierto + '><summary>Qué hay en cada módulo</summary>' +
-    '<p class="cv-ayuda cv-solo-ocultos">En el plano se leen al acercarlo.</p><div class="cv-lista-que">' + con.map(function (m) {
-      var n = m.isla ? m.nombre : nombrePropio(m), q = queHay(m);
-      if (esVidriera(m)) return '<button type="button" data-abrir="' + esc(m.id) + '"><b>V</b>' + esc(m.nombre + (q ? ' · ' + q : '')) + '</button>';
-      return '<button type="button" data-abrir="' + esc(m.id) + '"><b>' + esc(String(m.isla ? numeroVista(d, m) : m.numero)) + '</b>' + esc(n && q ? n + ' · ' + q : n || q) + '</button>';
-    }).join('') + '</div></details>';
-}
 /** Cambiar de vista no vuelve a armar la maqueta: sólo cambia los colores (con una transición suave). */
 function visorPintar(V) {
   V.mundo.querySelectorAll('.cv-caja[data-mod]').forEach(function (c) {
@@ -1071,9 +1057,8 @@ function visorPanel(V) {
   /* En las vistas por estado y por antigüedad, la leyenda va en su orden (de lo mejor a lo peor). */
   var lista = V.vista === 'vendedor' ? orden.sort(function (a, b) { return a === 'p:nadie' ? 1 : b === 'p:nadie' ? -1 : 0; })
     : (V.vista === 'estado' ? VISOR_ESTADOS : VISOR_EDADES).map(function (x) { return 'c:' + x[0]; }).filter(function (k) { return grupos[k]; });
-  var sinFoto = mods.filter(function (m) { var e = V.estado[m.id]; return !e || !e.foto_path; }).length;
-  var viejas = mods.filter(function (m) { var e = V.estado[m.id]; return e && e.foto_path && e.sin_foto_reciente; }).length;
-  var abierto = window.innerWidth >= 900 ? ' open' : '';
+  /* "Qué hay en cada módulo" y "De un vistazo" se sacaron (Mauricio, 15/10: "esas opciones las sacaría"): lo que hay se
+     lee en cada módulo y en su ficha. */
   V.cont.querySelector('#cvPanel').innerHTML =
     '<p class="cv-rotulo-sec">Ver por</p><div class="cv-seg cv-vistas" role="group" aria-label="Ver por">' + Object.keys(VISOR_VISTAS).map(function (k) {
       return '<button type="button" data-vista="' + k + '" aria-pressed="' + (V.vista === k) + '">' + VISOR_VISTAS[k] + '</button>';
@@ -1084,9 +1069,6 @@ function visorPanel(V) {
     }).join('') + '</div>' +
     (V.resaltado ? '<button type="button" class="cv-chico cv-ver-todos" id="cvVerTodos">Ver todos</button>' : '') +
     '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>' +
-    visorListaQue(V, mods, abierto) +
-    '<details class="cv-sec"' + abierto + '><summary>De un vistazo</summary><div class="cv-vistazo"><span><b>' + mods.length + '</b> módulos</span>' +
-      (sinFoto ? '<span><b>' + sinFoto + '</b> sin foto</span>' : '') + (viejas ? '<span><b>' + viejas + '</b> con la foto de hace más de 7 días</span>' : '') + '</div></details>' +
     '<details class="cv-sec"><summary>Ajustes de la vista</summary>' +
       (V.usa3d ? '<div class="cv-sens"><span>Sensibilidad del mouse</span><div class="cv-seg" role="group" aria-label="Sensibilidad del mouse">' +
         [['baja', 'Baja'], ['media', 'Media'], ['alta', 'Alta']].map(function (x) {

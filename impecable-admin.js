@@ -2550,59 +2550,93 @@ function editarMapa(d) {
   var fijosDep = (m.croquis && m.croquis.deposito ? normalizarCroquis(m.croquis.deposito).fijos : []).map(function (x) { return Object.assign({}, x); });
   var fijosDe = { salon: fijos, deposito: fijosDep };
 
-  var f = ventana('<h1>El croquis del local</h1><p class="bajada">El local visto desde arriba, como lo ven los vendedores. ' +
-    '<b>Tocá un lugar de una pared</b> para cambiarlo: módulo, módulo doble, hueco o algo que no es un módulo (probadores, la puerta del depósito, una columna). ' +
-    '<b>Arrastralo</b> hasta otro lugar para cambiarlos de lugar (en el celular, mantenelo apretado un momento y movelo). ' +
-    '<b>Tocá la entrada</b> para elegir cuántos lugares ocupa o ponerla en otro lugar. ' +
-    'El 1 es el primero al lado de la entrada, hacia la izquierda, y sigue dando la vuelta. Cada módulo se queda en su lugar con su responsable y sus fotos: si cambia algo, cambia su número.</p>' +
-    '<div class="renglon"><label class="campo c-medio"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
-      '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
-      '<label class="campo c-medio"><span>Enfrente de la vidriera</span><select id="eFrente">' + Object.keys(NOMBRE_FRENTE).map(function (k) {
-        return '<option value="' + k + '"' + ((cqGuardado.frente || 'calle') === k ? ' selected' : '') + '>' + NOMBRE_FRENTE[k] + '</option>';
-      }).join('') + '</select></label>' +
-      '<label class="campo c-medio"><span>Vidriera (con foto)</span><select id="eVidriera">' + [['0', 'Sin vidriera'], ['1', 'Un panel'], ['2', 'Dos paneles (izq. y der.)']].map(function (o) {
-        return '<option value="' + o[0] + '"' + (String(vidr.length) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
-      }).join('') + '</select></label>' +
-      PAREDES.map(function (p) {
-        return '<label class="campo c-chico"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" aria-label="Módulos en ' + esc(p[1]) + '"></label>';
-      }).join('') + '</div>' +
-    '<p class="bajada">Los números de arriba son los <b>módulos</b> de cada pared. Los probadores, los huecos y lo que no es un módulo van aparte: no se cuentan. <span id="eNotaVidriera"></span></p>' +
-    '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuerta">Mover la entrada</button>' +
-      '<span class="imp-ancho-puerta" id="eAnchoPuerta"><span>Ancho de la entrada</span>' + [1, 2, 3].map(function (a) {
-        return '<button type="button" class="boton chico" data-ancho-puerta="salon:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span>' +
-      '<button type="button" class="boton chico" id="eAcomodar">Acomodar solos los del centro</button></div>' +
-    '<p class="nota" id="eNotaCambiar" hidden>Tocá el lugar adonde va (de cualquier pared): los dos cambian de lugar. <button type="button" class="boton chico" id="eCancelarCambio" style="margin-left:6px">Cancelar</button></p>' +
-    '<p class="nota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada. Si tocás el de un hueco, la entrada lo ocupa. El 1 queda al lado, hacia la izquierda.</p>' +
-    '<div class="imp-mapa-vista croquis" id="eVista"></div>' +
-    '<div class="seccion">Módulos del centro del salón</div>' +
-    '<p class="bajada">Exhibidores, mesas, percheros: uno por lugar, numerados a continuación de las paredes. <b>Arrastralos en el dibujo</b> para ponerlos donde están; ' +
-      'los que no movés van en fila por el medio, de la caja hacia la vidriera.</p>' +
-    '<div class="imp-islas" id="eIslas"></div>' +
-    '<button type="button" class="boton chico" id="eIslaMas">+ Agregar un módulo en el centro</button>' +
-    '<div class="seccion">Muebles y cosas del local</div>' +
-    '<p class="bajada">Los probadores, la caja, las mesas, los percheros, los maniquíes, las plantas: no son módulos (no llevan foto), están para que el croquis se parezca al local. ' +
-      '<b>Tocá una para agregarla</b> y arrastrala en el dibujo hasta donde está; "Girarla" la pone parada o acostada. El nombre es opcional.</p>' +
-    '<div class="imp-lugar-ops imp-piezas" id="ePiezas">' + PIEZAS_ADENTRO.map(function (k) {
-      return '<button type="button" class="boton chico" data-en="salon" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
-    }).join('') + '</div>' +
-    '<div class="imp-islas" id="eFijos"></div>' +
-    '<div class="seccion">Depósito</div>' +
-    '<div class="renglon"><label class="campo c-medio"><span>Forma del depósito</span><select id="eFormaDep"><option value="rectangulo"' + (m.forma_deposito !== 'cuadrado' ? ' selected' : '') + '>Largo</option>' +
-      '<option value="cuadrado"' + (m.forma_deposito === 'cuadrado' ? ' selected' : '') + '>Cuadrado</option></select></label>' +
-      '<label class="campo c-chico"><span>Módulos</span><input type="number" inputmode="numeric" min="0" max="40" id="eDep"></label>' +
-      '<p class="bajada" style="flex:1 1 260px;margin:0">Dividilo en partes que entren en una foto cada una. Si cambiás la cantidad o la forma, los módulos se vuelven a acomodar alrededor (la puerta queda).</p></div>' +
-    '<div class="imp-mapa-acc"><button type="button" class="boton chico" id="eMoverPuertaDep">Mover la puerta del depósito</button>' +
-      '<span class="imp-ancho-puerta" id="eAnchoPuertaDep"><span>Ancho de la puerta</span>' + [1, 2, 3].map(function (a) {
-        return '<button type="button" class="boton chico" data-ancho-puerta="deposito:' + a + '">' + a + (a === 1 ? ' lugar' : ' lugares') + '</button>'; }).join('') + '</span></div>' +
-    '<p class="nota" id="eNotaPuertaDep" hidden>Tocá un <b>+</b> verde: ahí va la puerta del depósito.</p>' +
-    '<div class="imp-mapa-vista croquis" id="eVistaDep"></div>' +
-    '<div class="seccion">Muebles del depósito</div><p class="bajada">Una mesa o un perchero en el medio: tocalos o <b>arrastralos hasta el dibujo del depósito</b>.</p>' +
-    '<div class="imp-lugar-ops imp-piezas" id="ePiezasDep">' + PIEZAS_DEPOSITO.map(function (k) {
-      return '<button type="button" class="boton chico" data-en="deposito" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
-    }).join('') + '</div>' +
-    '<div class="imp-islas" id="eFijosDep"></div>' +
-    '<p class="bajada" id="eTotal"></p><button class="boton lima" id="eGuardar">Guardar</button>');
+  /* A pantalla completa (Mauricio, 15/10: "que sea pantalla completa… más práctico y más rápido para armarlo", "a la
+     gente no le gusta leer"): el dibujo grande, al costado lo que se cambia, y el salón y el depósito en dos solapas. */
+  var sec = function (titulo, cuerpo, cerrada) { return '<details class="ed-sec"' + (cerrada ? '' : ' open') + '><summary>' + titulo + '</summary>' + cuerpo + '</details>'; };
+  var anchoPuertaHtml = function (id, tipo) {
+    return '<span class="imp-ancho-puerta" id="' + id + '"><span>Ocupa</span>' + [1, 2, 3].map(function (a) {
+      return '<button type="button" class="boton chico" data-ancho-puerta="' + tipo + ':' + a + '">' + a + '</button>'; }).join('') + '</span>';
+  };
+  var bandeja = function (id, tipo, piezas) {
+    return '<div class="imp-piezas ed-piezas" id="' + id + '">' + piezas.map(function (k) {
+      return '<button type="button" class="boton chico" data-en="' + tipo + '" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
+    }).join('') + '</div>';
+  };
+  var f = document.createElement('div');
+  f.className = 'ventana-fondo editor-fondo';
+  f.innerHTML = '<div class="ventana editor" role="dialog" aria-label="Armar el croquis">' +
+    '<header class="ed-cab">' +
+      '<button type="button" class="boton chico" id="eVolver">‹ Volver</button>' +
+      '<h1>Armar el croquis<small>' + esc(_local ? _local.nombre : '') + '</small></h1>' +
+      '<div class="ed-solapas" role="tablist" aria-label="Qué parte">' +
+        '<button type="button" role="tab" data-solapa="salon" aria-selected="true">Salón</button>' +
+        '<button type="button" role="tab" data-solapa="deposito" aria-selected="false">Depósito</button></div>' +
+      '<p class="ed-total" id="eTotal"></p>' +
+      '<button class="boton lima" id="eGuardar">Guardar</button>' +
+    '</header>' +
+    '<div class="ed-cuerpo">' +
+      '<div class="ed-dibujo">' +
+        '<p class="nota ed-flota" id="eNotaCambiar" hidden>Tocá el lugar adonde va: los dos cambian de lugar. <button type="button" class="boton chico" id="eCancelarCambio">Cancelar</button></p>' +
+        '<p class="nota ed-flota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada.</p>' +
+        '<p class="nota ed-flota" id="eNotaPuertaDep" hidden>Tocá un <b>+</b> verde: ahí va la puerta.</p>' +
+        '<div class="imp-mapa-vista croquis" id="eVista" data-de="salon"></div>' +
+        '<div class="imp-mapa-vista croquis" id="eVistaDep" data-de="deposito" hidden></div>' +
+      '</div>' +
+      '<aside class="ed-panel">' +
+        '<div data-de="salon">' +
+          sec('El local',
+            '<label class="campo"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
+              '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
+            '<label class="campo"><span>Enfrente de la vidriera</span><select id="eFrente">' + Object.keys(NOMBRE_FRENTE).map(function (k) {
+              return '<option value="' + k + '"' + ((cqGuardado.frente || 'calle') === k ? ' selected' : '') + '>' + NOMBRE_FRENTE[k] + '</option>';
+            }).join('') + '</select></label>' +
+            '<label class="campo"><span>Vidriera</span><select id="eVidriera">' + [['0', 'Sin vidriera'], ['1', 'Un panel'], ['2', 'Dos paneles (izq. y der.)']].map(function (o) {
+              return '<option value="' + o[0] + '"' + (String(vidr.length) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+            }).join('') + '</select></label><p class="ed-chico" id="eNotaVidriera"></p>') +
+          sec('Módulos por pared', '<div class="ed-paredes">' + PAREDES.map(function (p) {
+              return '<label class="campo"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" aria-label="Módulos en ' + esc(p[1]) + '"></label>';
+            }).join('') + '</div><p class="ed-chico">Sin contar probadores ni huecos.</p>') +
+          sec('Entrada', '<div class="imp-lugar-ops"><button type="button" class="boton chico" id="eMoverPuerta">Mover la entrada</button>' + anchoPuertaHtml('eAnchoPuerta', 'salon') + '</div>') +
+          sec('Centro del salón', '<div class="imp-islas" id="eIslas"></div>' +
+            '<div class="imp-lugar-ops"><button type="button" class="boton chico" id="eIslaMas">+ Agregar</button>' +
+            '<button type="button" class="boton chico" id="eAcomodar">Acomodarlos solos</button></div>') +
+          sec('Muebles', '<p class="ed-chico">Arrastralos al dibujo (o tocalos).</p>' + bandeja('ePiezas', 'salon', PIEZAS_ADENTRO) + '<div class="imp-islas" id="eFijos"></div>') +
+          sec('¿Cómo se usa?', '<ul class="ed-ayuda"><li><b>Tocá</b> un lugar de la pared para cambiarlo.</li>' +
+            '<li><b>Arrastralo</b> a otro lugar y cambian de lugar.</li>' +
+            '<li>El <b>1</b> es el primero a la izquierda de la entrada.</li>' +
+            '<li>Si un módulo cambia de número, sigue con su responsable y sus fotos.</li></ul>', true) +
+        '</div>' +
+        '<div data-de="deposito" hidden>' +
+          sec('El depósito',
+            '<label class="campo"><span>Forma</span><select id="eFormaDep"><option value="rectangulo"' + (m.forma_deposito !== 'cuadrado' ? ' selected' : '') + '>Largo</option>' +
+              '<option value="cuadrado"' + (m.forma_deposito === 'cuadrado' ? ' selected' : '') + '>Cuadrado</option></select></label>' +
+            '<label class="campo"><span>Módulos</span><input type="number" inputmode="numeric" min="0" max="40" id="eDep"></label>' +
+            '<p class="ed-chico">Cada módulo, lo que entra en una foto.</p>') +
+          sec('Puerta', '<div class="imp-lugar-ops"><button type="button" class="boton chico" id="eMoverPuertaDep">Mover la puerta</button>' + anchoPuertaHtml('eAnchoPuertaDep', 'deposito') + '</div>') +
+          sec('Muebles', '<p class="ed-chico">Arrastralos al dibujo (o tocalos).</p>' + bandeja('ePiezasDep', 'deposito', PIEZAS_DEPOSITO) + '<div class="imp-islas" id="eFijosDep"></div>') +
+        '</div>' +
+      '</aside>' +
+    '</div></div>';
+  document.body.appendChild(f);
+  cargarFotos(f);
   var vistaS = f.querySelector('#eVista'), vistaD = f.querySelector('#eVistaDep');
+
+  /* Las dos solapas: se ve el salón o el depósito (lo que estaba a medio hacer en la otra se cancela). */
+  function ponerSolapa(t) {
+    f.querySelectorAll('[data-solapa]').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.solapa === t)); });
+    f.querySelectorAll('[data-de]').forEach(function (el) { el.hidden = el.dataset.de !== t; });
+    if (st.mover && st.mover !== t) st.mover = null;
+    if (st.cambiar && st.cambiar.split(':')[0] !== t) st.cambiar = null;
+    vista();
+  }
+  f.querySelectorAll('[data-solapa]').forEach(function (b) { b.onclick = function () { ponerSolapa(b.dataset.solapa); }; });
+  /* Volver: si cambió algo sin guardar, pregunta. */
+  var firmaInicial = null;
+  function firma() { return JSON.stringify([mapaArmado(), croquisArmado(), centro.map(function (c) { return c.nombre; }), vidr.map(function (v) { return v.nombre; })]); }
+  f.querySelector('#eVolver').onclick = function () {
+    if (firmaInicial !== null && firma() !== firmaInicial && !confirm('Hay cambios sin guardar. ¿Salir igual? Lo que no guardaste se pierde.')) return;
+    f.remove();
+  };
 
   /* ── Cambios en los lugares ── */
   function sacarModulo(tipo, l) { if (l.t !== 'h' && l.id) st.pila[tipo].push(l.id); }
@@ -2742,7 +2776,7 @@ function editarMapa(d) {
     var dep = f.querySelector('#eDep');
     if (document.activeElement !== dep) dep.value = mm.deposito;
     f.querySelector('#eMoverPuerta').textContent = st.mover === 'salon' ? 'Cancelar' : 'Mover la entrada';
-    f.querySelector('#eMoverPuertaDep').textContent = st.mover === 'deposito' ? 'Cancelar' : 'Mover la puerta del depósito';
+    f.querySelector('#eMoverPuertaDep').textContent = st.mover === 'deposito' ? 'Cancelar' : 'Mover la puerta';
     /* El ancho, sólo con la puerta puesta (la de siempre, en la esquina, no se dibuja). */
     [['salon', '#eAnchoPuerta'], ['deposito', '#eAnchoPuertaDep']].forEach(function (x) {
       var p = st[x[0]].puerta, caja = f.querySelector(x[1]);
@@ -2753,7 +2787,7 @@ function editarMapa(d) {
     f.querySelector('#eNotaPuertaDep').hidden = st.mover !== 'deposito';
     /* Cuántos paneles de vidriera van, según dónde está la entrada. */
     var pu = st.salon.puerta, enMedio = pu && !pu.virtual && pu.pared === 'frente' && pu.pos > 0 && pu.pos < st.salon.paredes.frente.length;
-    f.querySelector('#eNotaVidriera').textContent = 'Vidriera: ' + (enMedio ? 'con la entrada en el medio del frente, van dos paneles (uno a cada lado).' : 'con la entrada en una punta, va un panel.');
+    f.querySelector('#eNotaVidriera').textContent = enMedio ? 'Con la entrada en el medio del frente van dos paneles.' : 'Con la entrada en una punta va un panel.';
     /* "Cambiar de lugar": el lugar elegido, marcado, y el aviso arriba del dibujo. */
     f.querySelector('#eNotaCambiar').hidden = !st.cambiar;
     if (st.cambiar) {
@@ -2763,12 +2797,10 @@ function editarMapa(d) {
     var total = dv.pared.length;
     filasCentro(total);
     var c = cambios();
-    f.querySelector('#eTotal').textContent = total + (total === 1 ? ' módulo' : ' módulos') + ' en las paredes' +
-      (centro.length ? ', ' + centro.length + ' en el centro (del ' + (total + 1) + ' al ' + (total + centro.length) + ')' : '') + ' y ' + mm.deposito + ' en el depósito.' +
-      (vidr.length ? ' La vidriera: ' + (vidr.length === 1 ? 'un panel' : 'dos paneles') + ' (piden foto, sin número).' : '') +
-      (c.renumeran ? ' Cambian de número ' + c.renumeran + ' (siguen con su responsable y sus fotos).' : '') +
-      (c.nuevos ? ' Se crean ' + c.nuevos + ' (van al sector del anterior; después se reparten).' : '') +
-      (c.apagan ? ' Se apagan ' + c.apagan + ': no se borran, quedan sus fotos.' : '');
+    /* Arriba, corto: cuántos hay y qué cambia al guardar (el detalle lo pregunta al guardar). */
+    var tot = [total + ' en las paredes'].concat(centro.length ? [centro.length + ' en el centro'] : [], [mm.deposito + ' en el depósito']).join(' · ');
+    var cam = [].concat(c.nuevos ? ['se crean ' + c.nuevos] : [], c.renumeran ? ['cambian de número ' + c.renumeran] : [], c.apagan ? ['se apagan ' + c.apagan] : []).join(' · ');
+    f.querySelector('#eTotal').innerHTML = esc(tot) + (cam ? '<b>Al guardar: ' + esc(cam) + '</b>' : '');
   }
 
   /* ── El menú de un lugar de la pared ── */
@@ -3042,7 +3074,8 @@ function editarMapa(d) {
         /* Un toque: su renglón, abajo, para cambiarle el nombre. */
         var k = t.hasAttribute('data-fijo') ? '[data-en="' + en + '"][data-fijo-nombre="' + t.dataset.fijo + '"]'
           : '[data-isla="' + centro.map(function (c) { return c.key; }).indexOf(t.previousElementSibling && t.previousElementSibling.dataset.mod) + '"]';
-        var inp = f.querySelector(k);
+        var inp = f.querySelector(k), det = inp && inp.closest('details');
+        if (det) det.open = true;
         if (inp) { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); inp.focus({ preventScroll: true }); }
         return;
       }
@@ -3081,6 +3114,8 @@ function editarMapa(d) {
       return true;
     });
   }
+  /* Lo de recién (la entrada que se pone sola) no cuenta como un cambio: "Volver" pregunta sólo si tocaron algo. */
+  firmaInicial = firma();
 
   /* ── Los botones y los campos ── */
   f.querySelector('#eCancelarCambio').onclick = function () { st.cambiar = null; vista(); };
@@ -3180,7 +3215,7 @@ function editarMapa(d) {
       var b = ev.target.closest && ev.target.closest('[data-pieza]');
       if (!b || Date.now() - piezaSoltadaEn < 500) return;
       agregarMueble(b.dataset.en, b.dataset.pieza, null);
-      avisar(PIEZAS[b.dataset.pieza].nombre + ': ya está en el dibujo. Arrastrala hasta donde va (o, la próxima, arrastrala directo desde acá).');
+      avisar(PIEZAS[b.dataset.pieza].nombre + ': ya está en el dibujo. Arrastrala hasta donde va.');
     });
     /* Agarrarla de la bandeja y llevarla al dibujo: se suelta donde va. */
     bandeja.addEventListener('pointerdown', function (ev) {

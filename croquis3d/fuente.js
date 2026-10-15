@@ -1509,7 +1509,11 @@ export function montarCroquis3D(cont, pl, d, op) {
     camara.position.setFromSphericalCoords(radio, polar, azim).add(controles.target);
     controles.update();
   };
-  encuadrar(op.polar || 0.6, op.azimut || 0);
+  /* Acostado si así entra más grande (Mauricio, 15/10: "que se vea mejor desde arriba, así vemos los muebles"): en una
+     pantalla ancha, un local largo se gira un cuarto de vuelta (la vidriera queda a la izquierda, como entrando); en el
+     celular parado, uno ancho. Así los muebles se ven casi el doble de grandes. */
+  const util = Math.max(1, alto - (op.abajo || 0)), acostado = (ancho > util * 1.1 && al > aw * 1.15) || (util > ancho * 1.1 && aw > al * 1.15);
+  encuadrar(op.polar || 0.6, op.azimut != null ? op.azimut : acostado ? Math.PI / 2 : 0);
 
   let composer = null;
   if (!op.liviano) {
@@ -1864,11 +1868,16 @@ export function montarCroquis3D(cont, pl, d, op) {
     const off = camara.position.clone().sub(controles.target).applyAxisAngle(new THREE.Vector3(0, 1, 0), rad);
     viajar(controles.target, 0, controles.target.clone().add(off));
   };
-  /** Inclinado (como siempre) o desde arriba (casi derecho para abajo). */
+  /** Inclinado (como siempre) o desde arriba: el local entero otra vez, del mismo lado. Desde arriba con una inclinación
+      chica (no derecho para abajo): así se ven los frentes de los muebles y no sólo el techo (Mauricio, 15/10). */
   const inclinar = (arriba) => {
     if (paseo) dejarDeCaminar();
-    const t = controles.target, r = camara.position.distanceTo(t), az = Math.atan2(camara.position.x - t.x, camara.position.z - t.z);
-    viajar(t, 0, new THREE.Vector3().setFromSphericalCoords(r, arriba ? 0.06 : 0.6, az).add(t));
+    const t = controles.target, az = Math.atan2(camara.position.x - t.x, camara.position.z - t.z);
+    const p0 = camara.position.clone(), t0 = t.clone();
+    encuadrar(arriba ? 0.3 : 0.6, az);
+    const p1 = camara.position.clone(), t1 = t.clone();
+    camara.position.copy(p0); t.copy(t0); camara.lookAt(t);
+    viajar(t1, 0, p1);
   };
   /** Ir a mirar unos módulos (Recorrer): de frente a su pared, desde el medio del local, que entren todos. */
   const mirarModulos = (ids) => {
