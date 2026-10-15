@@ -1267,6 +1267,8 @@ function abrirFicha(V, id, caja) {
   var numero = m.isla ? numeroVista(d, m) : m.numero, nombre = m.isla ? m.nombre : nombrePropio(m), que = queHay(m);
   var titulo = esVidriera(m) ? m.nombre : (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero, ref = m.foto_referencia_path;
   var puedeQue = visorPuedeNombrar(V, m), iaQue = puedeQue ? String(m.contenido_ia || '').trim() : '';
+  /* Liquidación (SQL 125): con la columna y fuera del depósito; la cambia quien puede escribir qué hay. */
+  var liq = 'liquidacion' in m && !(s && s.tipo === 'deposito');
   var origen = caja.querySelector('.cv-frente, .cv-tapa') || caja;
   V.raiz.insertAdjacentHTML('beforeend', '<div class="cv-ficha-fondo"></div><section class="cv-ficha" role="dialog" aria-modal="true" aria-label="' + esc(titulo) + '">' +
     '<header class="cv-ficha-cab"><div><small>' + esc(visorDonde(V, m)) + '</small><h2>' + esc(titulo) + '</h2>' +
@@ -1278,7 +1280,9 @@ function abrirFicha(V, id, caja) {
       '<p class="cv-que-sug" id="cvQueSug"' + (iaQue ? '' : ' hidden') + '>La IA ve: <b id="cvQueSugTexto">' + esc(iaQue) + '</b>' +
         '<button class="cv-enlace" type="button" id="cvQueUsar">Usar esto</button></p>' +
       '<form class="cv-que-form" id="cvQueForm" hidden><input id="cvQueInput" maxlength="60" autocomplete="off" placeholder="Remeras, buzos, jeans…" aria-label="Qué hay en este módulo">' +
-        '<button class="cv-boton cv-lima" type="submit">Guardar</button><button class="cv-boton" type="button" id="cvQueCancelar">Cancelar</button></form></div>' +
+        '<button class="cv-boton cv-lima" type="submit">Guardar</button><button class="cv-boton" type="button" id="cvQueCancelar">Cancelar</button></form>' +
+      (liq && puedeQue ? '<button type="button" class="cv-interruptor cv-liq" id="cvLiq" aria-pressed="' + !!m.liquidacion + '"><span>Liquidación</span><small>Va por talle, no por color (la IA no pide el degradé)</small></button>'
+        : liq && m.liquidacion ? '<p class="cv-liq-et">Liquidación · va por talle</p>' : '') + '</div>' +
       '<button class="cv-cerrar" type="button" aria-label="Volver al plano">×</button></header>' +
     '<div class="cv-ficha-cuerpo">' +
       '<div class="cv-fotos' + (ref ? ' con-ref' : '') + '" id="cvFotos">' +
@@ -1333,6 +1337,7 @@ function abrirFicha(V, id, caja) {
   if (pf) pf.onclick = function () { visorPedirFoto(V, m, resp, pf); };
   visorFichaSugerencia(V, m, resp);
   visorFichaQue(V, m);
+  visorFichaLiquidacion(V, m);
   /* El zoom: la ficha sale desde la cara del módulo y crece hasta su lugar. */
   var desde = origen.getBoundingClientRect(), hasta = ficha.getBoundingClientRect();
   V.escena.classList.add('cv-detras');
@@ -1541,6 +1546,29 @@ function visorFichaQue(V, m) {
       usar.disabled = false;
       mostrar(v, 'ia');
     }, function (err) { usar.disabled = false; fallo(err); });
+  };
+}
+
+/* ── Liquidación (SQL 125, pedido de Mauricio): los percheros de liquidación van por talle, no por color, y la IA no
+      pide el degradé. Lo marca quien tiene el módulo o el supervisor (los mismos que escriben qué hay). ── */
+function visorFichaLiquidacion(V, m) {
+  var b = V.ficha.el.querySelector('#cvLiq');
+  if (!b) return;
+  b.onclick = function () {
+    if (b.disabled) return;
+    var v = !m.liquidacion;
+    b.disabled = true;
+    b.setAttribute('aria-pressed', v);
+    llamar('orden_modulo_liquidacion', { p_modulo: m.id, p_valor: v }).then(function () {
+      b.disabled = false;
+      m.liquidacion = v;
+      avisarVisor(v ? 'Listo: es de liquidación, va por talle.' : 'Listo: ya no es de liquidación.');
+    }, function (err) {
+      b.disabled = false;
+      b.setAttribute('aria-pressed', !v);
+      var falta = /orden_modulo_liquidacion|PGRST202|could not find the function/i.test(String(err && err.message));
+      avisarVisor(falta ? 'Falta correr el SQL 125 en Supabase (está en el Escritorio, en "App Orden").' : esDeRed(err) ? 'Sin conexión: no se guardó. Probá de nuevo.' : mensajeDe(err));
+    });
   };
 }
 
