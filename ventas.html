@@ -153,6 +153,11 @@
   .vt-hoja .cfg td, .vt-hoja .cfg th { border-color: #E2E2E2; }
   .vt-hoja .cfg th { color: var(--h-txt); font-size: 12px; font-weight: 400; background: var(--h-gris); }
   .vt-hoja .cfg-fila { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+  /* Más de 6 vendedores: la caja de Efectivo va abajo y la tabla de vendedores se desliza si no entra. */
+  .vt-hoja .cfg-fila.muchos { grid-template-columns: minmax(0, 1fr); }
+  .vt-hoja .cfg-fila.muchos .cfg-caja { max-width: 300px; }
+  .vt-hoja .cfg-vend-env { overflow-x: auto; min-width: 0; }
+  .vt-hoja .iv-cfg.muchos { grid-template-columns: minmax(0, 1fr); }
   .vt-hoja .calc-m { font-weight: 600; color: var(--h-txt); }
   .vt-hoja .suma { font-size: 11.5px; font-weight: 600; white-space: normal; line-height: 1.2; }
   .vt-hoja .suma.ok { color: var(--nuevo); }

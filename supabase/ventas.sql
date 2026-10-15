@@ -239,6 +239,42 @@ begin
   return jsonb_build_object('puede', null);
 end $$;
 
+/* El mes también manda: un mes pasado se termina de cargar hasta el 7 del mes siguiente (los
+   últimos días y el informe de la última semana); después queda CERRADO y sólo lo corrige
+   Administración. Antes de septiembre de 2026 (el primero que pasó de la planilla) no hay nada.
+   Toma lo que dijo ventas_acceso y le suma 'cerrado' y 'carga_hasta' (y baja a 'ver' si cerró). */
+create or replace function ventas_acceso_mes(a jsonb, p_mes date)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare
+  v_mes   date := ventas_mes_de(p_mes);
+  v_hasta date := (ventas_mes_de(p_mes) + interval '1 month' + interval '6 days')::date;
+  v_cerr  boolean;
+begin
+  if v_mes < date '2026-09-01' then
+    return a || jsonb_build_object('cerrado', true, 'carga_hasta', null, 'por_cierre', a->>'puede' = 'escribir',
+                                   'puede', case when a->>'puede' is null then null else 'ver' end);
+  end if;
+  v_cerr := ventas_hoy() > v_hasta;
+  a := a || jsonb_build_object('cerrado', v_cerr, 'carga_hasta', v_hasta);
+  if v_cerr and a->>'puede' = 'escribir' and not orden_es_admin() then
+    a := a || jsonb_build_object('puede', 'ver', 'por_cierre', true);
+  end if;
+  return a;
+end $$;
+
+/* Corta si quien pide no puede cargar en ese local y mes (lo que devolvió ventas_acceso_mes). */
+create or replace function ventas_exigir(a jsonb)
+returns void language plpgsql immutable as $$
+begin
+  if a->>'puede' = 'escribir' then return; end if;
+  if coalesce((a->>'por_cierre')::boolean, false) then
+    raise exception 'ventas: ese mes ya cerró'
+      using hint = case when a->>'carga_hasta' is null then 'El sistema empezó en septiembre de 2026.'
+                        else 'Se cargaba hasta el ' || to_char((a->>'carga_hasta')::date, 'DD/MM') || '. Si hay que corregir algo, lo hace Administración.' end;
+  end if;
+  raise exception 'ventas: no podés cargar en este local' using hint = 'Entrá con tu usuario del local o usá la compu habilitada.';
+end $$;
+
 /* El reparto de un mes que no tiene: el mismo patrón del mes anterior (el %
    de cada día de la semana); si no hay mes anterior, parejo entre los días
    que abre el local. Dentro de cada semana los días suman 100%, y las
@@ -350,11 +386,11 @@ begin
 end $$;
 
 /** Un mes de un local, entero: lo cargado, el reparto y los vendedores (con sus francos de Equipo VDH).
-    Si el mes no existe y quien pide puede cargar, lo abre (sólo hasta el mes que viene). */
+    Si el mes no existe y quien pide puede cargar, lo abre (sólo hasta el mes que viene; nunca uno cerrado). */
 create or replace function ventas_mes_leer(p_local uuid, p_mes date, p_caja text default null, p_abrir boolean default true)
 returns jsonb language plpgsql volatile security definer set search_path = public as $$
 declare
-  a      jsonb := ventas_acceso(p_local, p_caja);
+  a      jsonb := ventas_acceso_mes(ventas_acceso(p_local, p_caja), p_mes);
   v_mes  date  := ventas_mes_de(p_mes);
 begin
   if a->>'puede' is null then
@@ -385,6 +421,8 @@ begin
     'existe', m.local_id is not null,
     'puede', a->>'puede',
     'supervisa', coalesce((a->>'supervisa')::boolean, false),
+    'cerrado', coalesce((a->>'cerrado')::boolean, false),
+    'carga_hasta', a->'carga_hasta',
     'quien', a->>'quien',
     'local', (select jsonb_build_object('id', l.id, 'nombre', l.nombre, 'codigo', l.codigo, 'dias_abiertos', l.dias_abiertos)
                 from orden_locales l where l.id = p_local),
@@ -440,7 +478,7 @@ end $$;
 create or replace function ventas_guardar(p_local uuid, p_mes date, p_que text, p_clave text, p_valor text, p_caja text default null)
 returns jsonb language plpgsql volatile security definer set search_path = public as $$
 declare
-  a       jsonb := ventas_acceso(p_local, p_caja);
+  a       jsonb := ventas_acceso_mes(ventas_acceso(p_local, p_caja), p_mes);
   v_mes   date  := ventas_mes_de(p_mes);
   v_hoy   date  := ventas_hoy();
   v_num   numeric;
@@ -452,9 +490,7 @@ declare
   v_campo text;
   v_sem   smallint;
 begin
-  if a->>'puede' is distinct from 'escribir' then
-    raise exception 'ventas: no podés cargar en este local' using hint = 'Entrá con tu usuario del local o usá la compu habilitada.';
-  end if;
+  perform ventas_exigir(a);
   /* La venta del semestre anterior se carga para los 6 meses de una vez (como en la planilla):
      no abre el mes. Todo lo demás, hasta el mes que viene. */
   if p_que = 'temporada' then
@@ -617,18 +653,22 @@ begin
 
   perform ventas_anotar(p_local, v_mes, a, p_que, p_clave, v_antes, coalesce(v_txt, v_num::text));
   return jsonb_build_object('ok', true);
+exception
+  /* Un número que no entra en la columna (tráfico de 10 cifras, PxT de 4): dicho claro, no el error de Postgres. */
+  when numeric_value_out_of_range then
+    raise exception 'ventas: el número es demasiado grande para ese lugar';
 end $$;
 
 /** Suma un vendedor al mes (sin tope). Si es de Equipo VDH, se lo vincula (así se ven sus francos). */
 create or replace function ventas_vendedor_agregar(p_local uuid, p_mes date, p_nombre text, p_persona uuid default null, p_caja text default null)
 returns jsonb language plpgsql volatile security definer set search_path = public as $$
 declare
-  a      jsonb := ventas_acceso(p_local, p_caja);
+  a      jsonb := ventas_acceso_mes(ventas_acceso(p_local, p_caja), p_mes);
   v_mes  date  := ventas_mes_de(p_mes);
   v_nom  text  := left(btrim(coalesce(p_nombre, '')), 60);
   v_id   bigint;
 begin
-  if a->>'puede' is distinct from 'escribir' then raise exception 'ventas: no podés cargar en este local'; end if;
+  perform ventas_exigir(a);
   if v_mes > ventas_mes_de((ventas_hoy() + interval '1 month')::date) then raise exception 'ventas: ese mes todavía no se puede cargar'; end if;
   if p_persona is not null then
     select nombre into v_nom from orden_personas where id = p_persona and local_id = p_local and activo;
@@ -650,11 +690,11 @@ end $$;
 create or replace function ventas_vendedor_quitar(p_local uuid, p_mes date, p_id bigint, p_caja text default null)
 returns jsonb language plpgsql volatile security definer set search_path = public as $$
 declare
-  a     jsonb := ventas_acceso(p_local, p_caja);
+  a     jsonb := ventas_acceso_mes(ventas_acceso(p_local, p_caja), p_mes);
   v_mes date  := ventas_mes_de(p_mes);
   v_nom text;
 begin
-  if a->>'puede' is distinct from 'escribir' then raise exception 'ventas: no podés cargar en este local'; end if;
+  perform ventas_exigir(a);
   select nombre into v_nom from ventas_vendedores where id = p_id and local_id = p_local and mes = v_mes;
   if not found then raise exception 'ventas: ese vendedor no es de este mes'; end if;
   if exists (select 1 from ventas_diarias where vendedor_id = p_id)
@@ -672,11 +712,11 @@ end $$;
 create or replace function ventas_asignar(p_local uuid, p_mes date, p_desde bigint, p_hacia bigint, p_caja text default null)
 returns jsonb language plpgsql volatile security definer set search_path = public as $$
 declare
-  a       jsonb := ventas_acceso(p_local, p_caja);
+  a       jsonb := ventas_acceso_mes(ventas_acceso(p_local, p_caja), p_mes);
   v_mes   date  := ventas_mes_de(p_mes);
   v_total numeric;
 begin
-  if a->>'puede' is distinct from 'escribir' then raise exception 'ventas: no podés cargar en este local'; end if;
+  perform ventas_exigir(a);
   if p_desde = p_hacia or (select count(*) from ventas_vendedores where id in (p_desde, p_hacia) and local_id = p_local and mes = v_mes) <> 2 then
     raise exception 'ventas: esos vendedores no son de este mes';
   end if;
@@ -773,7 +813,8 @@ end $$;
 -- =====================================================================
 -- Permisos de las funciones
 -- =====================================================================
-revoke all on function ventas_acceso(uuid, text), ventas_reparto_inicial(uuid, date), ventas_mes_abrir(uuid, date),
+revoke all on function ventas_acceso(uuid, text), ventas_acceso_mes(jsonb, date), ventas_exigir(jsonb),
+                       ventas_reparto_inicial(uuid, date), ventas_mes_abrir(uuid, date),
                        ventas_anotar(uuid, date, jsonb, text, text, text, text), ventas_importar(uuid, date, jsonb),
                        ventas_mes_datos(uuid, date, jsonb)
   from public, anon, authenticated;
@@ -793,7 +834,8 @@ grant execute on function ventas_locales(text), ventas_mes_leer(uuid, date, text
 --   drop function if exists ventas_locales(text), ventas_mes_leer(uuid, date, text, boolean),
 --     ventas_guardar(uuid, date, text, text, text, text), ventas_vendedor_agregar(uuid, date, text, uuid, text),
 --     ventas_vendedor_quitar(uuid, date, bigint, text), ventas_asignar(uuid, date, bigint, bigint, text),
---     ventas_acceso(uuid, text), ventas_reparto_inicial(uuid, date), ventas_mes_abrir(uuid, date),
+--     ventas_acceso(uuid, text), ventas_acceso_mes(jsonb, date), ventas_exigir(jsonb),
+--     ventas_reparto_inicial(uuid, date), ventas_mes_abrir(uuid, date),
 --     ventas_anotar(uuid, date, jsonb, text, text, text, text), ventas_importar(uuid, date, jsonb), ventas_numero(text), ventas_semana(date),
 --     ventas_mes_datos(uuid, date, jsonb), ventas_mes_de(date), ventas_hoy();
 --   drop table if exists ventas_cambios, ventas_temporada, ventas_semanal, ventas_trafico, ventas_diarias,
