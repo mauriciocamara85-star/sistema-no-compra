@@ -887,12 +887,12 @@ function pantallaHoy() {
     /* Lo de hoy, lo que quedó pendiente (el depósito vence el viernes) y lo que se mandó hoy (el depósito
        se crea un día y se manda otro: así no desaparece apenas se manda, y se puede sacar de nuevo). Y lo que
        venció ayer u hoy: se puede mandar igual al otro día y queda como tarde (Mauricio, 15/10). */
-    leer('/orden_v_controles?select=id,estado,vence_en&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeAyer + '))'),
+    leer('/orden_v_controles?select=id,estado,vence_en,frontal&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeAyer + '))'),
     leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo,controles_tarde&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(fallo),
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
     llamar('orden_desafio_mio').catch(fallo),
     /* Las tareas abiertas y las que se cerraron hoy (para tacharlas). */
-    leer('/orden_v_tareas?select=id,titulo,estado,completada_en&persona_id=eq.' + id +
+    leer('/orden_v_tareas?select=id,titulo,estado,completada_en,correccion&persona_id=eq.' + id +
          '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + desdeHoy + ')&order=vence_en.asc').catch(fallo),
     estadoAvisos().catch(function () { return 'no-soportado'; }),
     /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
@@ -979,7 +979,9 @@ function dibujarHoy(x) {
     /* Lo que venció (ayer u hoy) se puede mandar igual: queda como tarde. No se tacha (y no hay festejo). */
     var vencidas = total - env - pend.length;
     var vence = pend.map(function (c) { return c.vence_en; }).filter(Boolean).sort()[0];
-    filas.push({ id: 'hFotos', titulo: 'Fotos de tus módulos', hecho: !pend.length && !vencidas, alerta: vencidas > 0,
+    /* El día del frontal nuevo (SQL 132): primero se cambia el frontal, después la foto (sirve de las dos cosas). */
+    var frontal = pend.some(function (c) { return c.frontal; });
+    filas.push({ id: 'hFotos', titulo: frontal ? 'Frontal nuevo: cambialo y sacale la foto' : 'Fotos de tus módulos', hecho: !pend.length && !vencidas, alerta: vencidas > 0,
       texto: pend.length || vencidas
            ? env + ' de ' + total + ' mandadas' + (pend.length && vence ? ' · ' + textoVence(vence) : '') +
              (vencidas ? ' · ' + (vencidas === 1 ? '1 vencida: mandala igual' : vencidas + ' vencidas: mandalas igual') : '')
@@ -1000,7 +1002,11 @@ function dibujarHoy(x) {
   if (abiertas.length) {
     filas.push({ id: 'hTareas', titulo: abiertas.length === 1 ? '1 tarea' : abiertas.length + ' tareas', hecho: false,
       alerta: abiertas.some(function (t) { return t.estado === 'vencida'; }),
-      texto: abiertas[0].titulo + (abiertas.length > 1 ? ' y ' + (abiertas.length - 1) + ' más' : '') });
+      /* La que el supervisor mandó a corregir va primero (SQL 132). */
+      texto: (function () {
+        var corr = abiertas.filter(function (t) { return t.correccion; })[0], t = corr || abiertas[0];
+        return (corr ? 'Para corregir: ' : '') + t.titulo + (abiertas.length > 1 ? ' y ' + (abiertas.length - 1) + ' más' : '');
+      })() });
   } else if (hechas.length) {
     filas.push({ id: 'hTareas', titulo: 'Tareas', hecho: true, texto: hechas.length === 1 ? 'Hiciste la de hoy.' : 'Hiciste las ' + hechas.length + ' de hoy.' });
   }
@@ -1095,7 +1101,7 @@ function pantallaFotos() {
   engancharCabeza();
   Promise.all([
     /* Como en Hoy: lo de hoy, lo pendiente, lo que se mandó hoy (tomada_en: la de la foto mandada) y lo que venció ayer u hoy. */
-    leerConMueble('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,mueble,tipo,estado,vence_en,enviado_en,tomada_en,nivel' +
+    leerConMueble('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,mueble,tipo,estado,vence_en,enviado_en,tomada_en,nivel,frontal' +
          '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeAyer + '))' +
          '&order=sector_tipo.asc,modulo_numero.asc'),
     /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
@@ -1158,7 +1164,7 @@ function dibujarFotos(x) {
        supervisor y el encargado (Equipo → El mapa del local). */
     html += '<div class="mapa-caja" id="mapaFotos">' +
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' +
-      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? 'Tocá un módulo con la cámara para mandar su foto.'
+      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? (x.controles.some(function (c) { return c.frontal && !estadoDe(c, corregir).hecho; }) ? 'Hoy toca frontal nuevo: cambialo y tocá el módulo con la cámara para mandar su foto.' : 'Tocá un módulo con la cámara para mandar su foto.')
                               : total ? 'Por hoy no te queda ninguna foto para mandar.'
                               : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
   }
@@ -1413,7 +1419,7 @@ function camara(titulo, referencia, guia, alSacar, alCerrar) {
 }
 
 function abrirCamara(c, estado) {
-  camara(c.modulo_nombre, c.foto_referencia_path, 'Que entre todo el módulo en el recuadro',
+  camara(c.modulo_nombre + (c.frontal ? ' · frontal nuevo' : ''), c.foto_referencia_path, c.frontal ? 'Con el frontal nuevo puesto: que entre todo el módulo' : 'Que entre todo el módulo en el recuadro',
     function (blob) { procesar(c, estado, blob); },
     function () { if (estado.url) abrirRevision(c, estado); else irA('fotos'); });
 }
@@ -1638,7 +1644,7 @@ function pantallaTareas() {
   engancharCabeza();
   var id = valor(yo().id);
   var semana = new Date(Date.now() - 7 * 864e5).toISOString();
-  leer('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,prorroga_estado,local_id,completada_en' +
+  leer('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,prorroga_estado,local_id,completada_en,correccion' +
        '&persona_id=eq.' + id + '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + semana + ')&order=vence_en.asc').then(function (r) {
     if (_pestana !== 'tareas') return;
     dibujarTareas(r || []);
@@ -1661,6 +1667,8 @@ function dibujarTareas(tareas) {
       '<small class="origen">' + esc(ORIGEN[t.origen] || '') + '</small>' +
       '<div class="nombre">' + esc(t.titulo) + '</div>' +
       (t.detalle ? '<div class="detalle">' + esc(t.detalle) + '</div>' : '') +
+      /* El supervisor la mandó a corregir (SQL 132): lo que pidió, bien a la vista. */
+      (t.correccion ? '<div class="nota alerta tarea-corregir"><b>Corregí:</b> ' + esc(t.correccion) + '</div>' : '') +
       '<div class="info">' + chips + '</div>' +
       '<div class="botones">' +
         '<button class="boton lima chico" data-accion="hecha">' + (t.requiere_foto ? 'Hecha + foto' : 'Hecha') + '</button>' +
@@ -2477,13 +2485,15 @@ function pantallaRevisar() {
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Revisar'); return; }
     return Promise.all([
-      leerConMueble('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,mueble,tipo,foto_path,ultimo_intento_id,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en' +
+      leerConMueble('/orden_v_por_revisar?select=id,modulo_nombre,persona_nombre,sector_tipo,mueble,tipo,foto_path,ultimo_intento_id,nivel_ia,nivel_declarado,respuestas,ia_resultado,discrepancia,enviado_en,frontal' +
            '&local_id=eq.' + valor(loc.id) + '&limit=60'),
       /* El producto testigo de los locales que mira: si no se puede leer, Revisar sigue igual. */
-      testigosRevisar(loc).catch(function () { return []; })
+      testigosRevisar(loc).catch(function () { return []; }),
+      /* Las tareas con foto (SQL 132): sin ese SQL, null y no se muestra la tarjeta. */
+      tareasConFoto(loc.id).catch(function () { return null; })
     ]).then(function (r) {
       if (_pestana !== 'revisar') return;
-      dibujarRevisar(loc, r[0] || [], r[1] || []);
+      dibujarRevisar(loc, r[0] || [], r[1] || [], r[2]);
     });
   }).catch(function (e) { pantallaError(e, pantallaRevisar); });
 }
@@ -2568,20 +2578,98 @@ function verTestigoRevisar(t) {
   }).catch(function (e) { pantallaError(e, function () { verTestigoRevisar(t); }); });
 }
 
-function dibujarRevisar(loc, cola, testigos) {
+/* ── Las tareas con foto (16/10, pedido de Mauricio): el supervisor mira la foto de cada tarea hecha y la da
+   por buena, o se la manda a corregir con un mensaje ("corregí esto"); le vuelve como pendiente hasta que manda
+   otra foto (SQL 132). Las hechas en las últimas 2 semanas y las que esperan la corrección. ── */
+function tareasConFoto(L) {
+  var desde = new Date(Date.now() - 14 * 864e5).toISOString();
+  return leer('/orden_v_tareas?select=id,titulo,detalle,estado,persona_nombre,foto_path,completada_en,completada_a_tiempo,correccion,correccion_en,correcciones,revisada_en' +
+    '&local_id=eq.' + valor(L) + '&foto_path=not.is.null&or=(and(estado.eq.hecha,completada_en.gte.' + desde + '),and(estado.in.(pendiente,vencida),correccion.not.is.null))' +
+    '&order=completada_en.desc.nullslast&limit=80');
+}
+/** Hecha y todavía sin mirar (o vuelta a mandar después de una corrección). */
+function tareaParaMirar(t) { return t.estado === 'hecha' && (!t.revisada_en || new Date(t.revisada_en) < new Date(t.completada_en)); }
+
+function tarjetaTareasFoto(tareas) {
+  if (!tareas) return '';
+  var mirar = tareas.filter(tareaParaMirar).length, corrigiendo = tareas.filter(function (t) { return t.estado !== 'hecha'; }).length;
+  return '<div class="seccion">Tareas con foto</div><button class="tarjeta-accion tareas-foto' + (mirar ? ' alerta' : '') + '" id="verTareasFoto"><b>' +
+    (mirar ? (mirar === 1 ? '1 para mirar' : mirar + ' para mirar') : 'Nada nuevo para mirar') + '</b><span>' +
+    (corrigiendo ? (corrigiendo === 1 ? '1 esperando la corrección' : corrigiendo + ' esperando la corrección') : 'Las fotos de las tareas hechas') + '</span></button>';
+}
+
+function pantallaTareasFoto(loc) {
+  barra.hidden = true;
+  app.className = 'app';
+  var arriba = '<button class="volver" id="volver">‹ Volver a Revisar</button><h1>Tareas con foto</h1><p class="bajada">' + esc(loc.nombre) + '</p>';
+  var volver = function () { document.getElementById('volver').onclick = function () { irA('revisar'); }; };
+  app.innerHTML = arriba + '<p class="cargando">Cargando…</p>';
+  volver();
+  return tareasConFoto(loc.id).then(function (lista) {
+    lista = lista || [];
+    var porId = {};
+    lista.forEach(function (t) { porId[t.id] = t; });
+    var mirar = lista.filter(tareaParaMirar), corrigiendo = lista.filter(function (t) { return t.estado !== 'hecha'; }),
+        vistas = lista.filter(function (t) { return t.estado === 'hecha' && !tareaParaMirar(t); });
+    var html = arriba + '<div class="seccion">Para mirar</div>' +
+      (mirar.length ? mirar.map(tarjetaTareaFoto).join('') : '<div class="vacio">No hay tareas nuevas para mirar.</div>');
+    if (corrigiendo.length) html += '<div class="seccion">Esperando la corrección</div>' + corrigiendo.map(tarjetaTareaFoto).join('');
+    if (vistas.length) html += '<details class="tareas-vistas"><summary>Ya miradas (' + vistas.length + ')</summary>' + vistas.map(tarjetaTareaFoto).join('') + '</details>';
+    app.innerHTML = html;
+    volver();
+    cargarFotos(app);
+    app.querySelectorAll('.tarea-foto').forEach(function (caja) {
+      var t = porId[caja.dataset.id], bien = caja.querySelector('[data-bien]'), corr = caja.querySelector('[data-corregir]'),
+          form = caja.querySelector('.corregir-form'), mandar = caja.querySelector('[data-mandar]');
+      if (bien) unaVez(bien, function () {
+        return llamar('orden_tarea_revisar', { p_tarea: t.id, p_bien: true, p_mensaje: null }).then(function () {
+          avisar('Listo: «' + t.titulo + '» está bien.'); return pantallaTareasFoto(loc);
+        });
+      });
+      if (corr) corr.onclick = function () { form.hidden = false; corr.hidden = true; form.querySelector('textarea').focus(); };
+      if (mandar) unaVez(mandar, function () {
+        var msg = String(form.querySelector('textarea').value || '').trim();
+        if (!msg) { avisar('Escribí qué tiene que corregir.'); return; }
+        return llamar('orden_tarea_revisar', { p_tarea: t.id, p_bien: false, p_mensaje: msg }).then(function () {
+          avisar('Se la mandaste a corregir' + (t.persona_nombre ? ' a ' + t.persona_nombre : '') + '.'); return pantallaTareasFoto(loc);
+        });
+      });
+    });
+  }).catch(function (e) { pantallaError(e, function () { pantallaTareasFoto(loc); }); });
+}
+
+function tarjetaTareaFoto(t) {
+  var hecha = t.estado === 'hecha', puede = tareaParaMirar(t) && !soloMira(), vueltas = (t.correcciones || []).length;
+  return '<div class="revision tarea-foto" data-id="' + esc(t.id) + '"><div class="titulo">' + esc(t.titulo) + '<span class="chip pendiente">' + esc(t.persona_nombre || '') + '</span></div>' +
+    '<div class="bajada" style="margin:0 0 8px">' + esc(hecha
+      ? 'Hecha ' + diaMes(t.completada_en) + ' ' + hora(t.completada_en) + (t.completada_a_tiempo === false ? ' · tarde' : '') + (vueltas ? ' · corregida' : '')
+      : 'Se la mandaste a corregir el ' + diaMes(t.correccion_en) + ' ' + hora(t.correccion_en)) + '</div>' +
+    '<img class="foto-grande" data-foto="' + esc(t.foto_path) + '" alt="La foto de la tarea">' +
+    (t.detalle ? '<div class="bajada" style="margin:8px 0 0">' + esc(t.detalle) + '</div>' : '') +
+    (t.correccion ? '<div class="nota' + (hecha ? '' : ' alerta') + '"><b>' + (hecha ? 'Le habías pedido:' : 'Le pediste:') + '</b> ' + esc(t.correccion) + '</div>' : '') +
+    (puede ? '<div class="botones"><button class="boton lima chico" data-bien>Está bien</button><button class="boton chico" data-corregir>Corregir</button></div>' +
+      '<div class="corregir-form" hidden><label class="campo"><span>Qué tiene que corregir</span><textarea rows="2" maxlength="500" placeholder="Ej.: falta el frontal del módulo 3"></textarea></label>' +
+      '<button class="boton lima chico" data-mandar>Mandar a corregir</button></div>' : '') +
+    '</div>';
+}
+
+function dibujarRevisar(loc, cola, testigos, tareas) {
   testigos = testigos || [];
   if (_revisarSaltear >= cola.length) _revisarSaltear = 0;
   var c = cola[_revisarSaltear];
-  var html = cabeza('Revisar', loc.nombre) + selectorLocal(loc) + tarjetasTestigoRevisar(testigos);
+  var html = cabeza('Revisar', loc.nombre) + selectorLocal(loc) + tarjetasTestigoRevisar(testigos) + tarjetaTareasFoto(tareas);
+  var conTarjetas = testigos.length || !!tareas;
   var engancharTestigo = function () {
     app.querySelectorAll('[data-trev]').forEach(function (b) { b.onclick = function () { verTestigoRevisar(testigos[+b.dataset.trev]); }; });
+    var vt = document.getElementById('verTareasFoto');
+    if (vt) vt.onclick = function () { pantallaTareasFoto(loc); };
   };
   if (!c) {
-    html += (testigos.length ? '<div class="seccion">Fotos</div>' : '') + '<div class="vacio">No hay fotos para revisar.</div>';
+    html += (conTarjetas ? '<div class="seccion">Fotos</div>' : '') + '<div class="vacio">No hay fotos para revisar.</div>';
     app.innerHTML = html; engancharCabeza(); engancharSelector(pantallaRevisar); engancharTestigo();
     return;
   }
-  if (testigos.length) html += '<div class="seccion">Fotos</div>';
+  if (conTarjetas) html += '<div class="seccion">Fotos</div>';
   var ia = c.ia_resultado || {};
   /* Desde el SQL 130 no se pregunta nada al mandar: sin respuestas, los puntos que miró la IA. */
   var respondio = !!c.respuestas && Object.keys(c.respuestas).length > 0;
@@ -2592,7 +2680,7 @@ function dibujarRevisar(loc, cola, testigos) {
     : Object.keys(ia.checks || {}).sort(function (a, b) { return lugar(a) - lugar(b); }).map(function (k) { return [k, CHECK[k] || k]; });
   html += '<p class="bajada">' + cola.length + (cola.length === 1 ? ' foto para revisar' : ' fotos para revisar') + (soloMira() ? ' (sólo mirar)' : '') + '</p>' +
     '<div class="revision"><div class="titulo">' + esc(c.modulo_nombre) + '<span class="chip pendiente">' + esc(c.persona_nombre || '') + '</span></div>' +
-    '<div class="bajada" style="margin:0 0 8px">' + esc((c.tipo === 'sorpresa' ? 'Control sorpresa · ' : '') + 'Enviado ' + diaMes(c.enviado_en) + ' ' + hora(c.enviado_en)) + '</div>' +
+    '<div class="bajada" style="margin:0 0 8px">' + esc((c.tipo === 'sorpresa' ? 'Control sorpresa · ' : '') + (c.frontal ? 'Frontal nuevo · ' : '') + 'Enviado ' + diaMes(c.enviado_en) + ' ' + hora(c.enviado_en)) + '</div>' +
     (c.foto_path ? '<img class="foto-grande" data-foto="' + esc(c.foto_path) + '" alt="La foto del módulo">' : '<div class="vacio">Sin foto</div>') +
     (c.discrepancia ? '<div class="nota alerta">Lo que respondió no coincide con lo que vio la IA: miralo con atención.</div>' : '') +
     '<div class="info" style="margin:10px 0">' +
@@ -2627,7 +2715,7 @@ function dibujarRevisar(loc, cola, testigos) {
   engancharTestigo();
   cargarFotos(app);
   var s = document.getElementById('saltear');
-  if (s) s.onclick = function () { _revisarSaltear++; dibujarRevisar(loc, cola, testigos); };
+  if (s) s.onclick = function () { _revisarSaltear++; dibujarRevisar(loc, cola, testigos, tareas); };
   var niveles = app.querySelectorAll('[data-nivel]');
   niveles.forEach(function (b) {
     unaVez(b, function () {
@@ -2881,7 +2969,8 @@ function pantallaNuevaTarea(loc, gente) {
     '<label class="campo"><span>Qué hay que hacer</span><input id="titulo" maxlength="140"></label>' +
     '<label class="campo"><span>Detalle (opcional)</span><textarea id="detalle" rows="2"></textarea></label>' +
     '<label class="campo"><span>Plazo</span><select id="plazo"><option value="hoy">Hoy</option><option value="manana" selected>Mañana</option><option value="semana">Esta semana</option></select></label>' +
-    '<label class="check"><input type="checkbox" id="pideFoto"> Pide foto al terminarla</label>' +
+    /* Con foto de entrada (16/10): con la foto se ve que se hizo. Se destilda para lo que no se puede fotografiar. */
+    '<label class="check"><input type="checkbox" id="pideFoto" checked> Pide foto al terminarla</label>' +
     '<button class="boton lima" id="crear" style="margin-top:14px">Mandar la tarea</button>';
   document.getElementById('volver').onclick = function () { irA('equipo'); };
   var b = document.getElementById('crear');

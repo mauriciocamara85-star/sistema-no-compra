@@ -343,6 +343,13 @@ button.mapa-sec { cursor: pointer; }
 /* Producto testigo (SQL 102) */
 .tarjeta-accion.testigo { border-color: var(--lima); }
 .tarjeta-accion.testigo.alerta { border-color: var(--ambar); }
+/* Tareas con foto (SQL 132): la tarjeta en Revisar, lo que pidió corregir el supervisor y su formulario */
+.tarjeta-accion.tareas-foto.alerta { border-color: var(--ambar); }
+.tarea-corregir { margin: 8px 0 0; }
+.tarea-foto .botones { margin-top: 10px; }
+.corregir-form { margin-top: 10px; }
+.tareas-vistas { margin: 14px 0; }
+.tareas-vistas > summary { cursor: pointer; color: var(--suave); font-weight: 600; padding: 8px 0; }
 /* El producto testigo en Revisar, para mirar (14/10): cada producto con sus números y su video. */
 .testigo-ver { display: grid; grid-template-columns: 1fr auto; gap: 8px 10px; align-items: center; padding: 12px 14px; margin: 0 0 10px;
                border-radius: 16px; background: var(--tarjeta); border: 1px solid var(--borde); }

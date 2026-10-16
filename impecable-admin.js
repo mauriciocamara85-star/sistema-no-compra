@@ -392,16 +392,19 @@ function graficoLocal(filas) {
    ════════════════════════════════════════════════════════════════════════ */
 
 /* El período es el selector común (15/10/2026): arranca en los últimos 7 días. */
-var _fotoNivel = '', _fotoQuien = '', _fotoPedido = 0;
+var _fotoNivel = '', _fotoQuien = '', _fotoPedido = 0, _fotoDe = 'modulos';
 function verFotos() {
   var c = document.getElementById('cuerpo');
-  c.innerHTML = '<div class="imp-filtros"><div id="fotoPer"></div><div class="solapas">' +
+  /* Módulos | Tareas (16/10): las fotos de las tareas hechas, para mirarlas y mandar a corregir (SQL 132). */
+  c.innerHTML = '<div class="imp-filtros"><div class="solapas" id="fotoDe">' + [['modulos', 'Módulos'], ['tareas', 'Tareas']].map(function (o) {
+      return '<button data-foto-de="' + o[0] + '" class="' + (o[0] === _fotoDe ? 'activa' : '') + '">' + o[1] + '</button>';
+    }).join('') + '</div><div id="fotoPer"></div><div class="solapas"' + (_fotoDe === 'tareas' ? ' hidden' : '') + '>' +
     [['', 'Todos los niveles']].concat(NIVELES.slice().reverse().map(function (n) { return [n, NIVEL[n]]; })).map(function (o) {
       return '<button data-foto-nivel="' + o[0] + '" class="' + (o[0] === _fotoNivel ? 'activa' : '') + '">' + esc(o[1]) + '</button>';
     }).join('') + '</div><span id="fotoQuienLugar"></span></div><div id="fotoDatos"><p class="cargando">Cargando…</p></div>';
   var sel = Interfaz.periodo(document.getElementById('fotoPer'), {
     inicial: '7', atajos: ['hoy', 'ayer', '7', 'semana', 'semana-pasada', '30', 'mes', 'mes-pasado'], hastaHoy: true, guardar: 'nc_eq_fotos',
-    alCambiar: function (r) { datosFotos(r); }
+    alCambiar: function (r) { (_fotoDe === 'tareas' ? datosTareasFoto : datosFotos)(r); }
   });
   c.querySelectorAll('[data-foto-nivel]').forEach(function (b) {
     b.onclick = function () {
@@ -410,12 +413,15 @@ function verFotos() {
       datosFotos(sel.rango());
     };
   });
-  datosFotos(sel.rango());
+  c.querySelectorAll('[data-foto-de]').forEach(function (b) {
+    b.onclick = function () { if (b.dataset.fotoDe !== _fotoDe) { _fotoDe = b.dataset.fotoDe; verFotos(); } };
+  });
+  (_fotoDe === 'tareas' ? datosTareasFoto : datosFotos)(sel.rango());
 }
 
 function datosFotos(rango) {
   var L = valor(_local.id), pedido = ++_fotoPedido;
-  leer('/orden_v_controles?select=id,fecha,tipo,estado,modulo_id,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,a_tiempo,comentario' +
+  leer('/orden_v_controles?select=id,fecha,tipo,estado,modulo_id,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,a_tiempo,comentario,frontal' +
        '&local_id=eq.' + L + '&foto_path=not.is.null&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + (_fotoNivel ? '&nivel=eq.' + _fotoNivel : '') + '&order=tomada_en.desc&limit=150')
     .then(function (fotos) {
       if (_solapa !== 'fotos' || pedido !== _fotoPedido) return;
@@ -432,7 +438,7 @@ function datosFotos(rango) {
         var distinta = f.nivel_ia && f.nivel && f.nivel_ia !== f.nivel;
         return '<button class="imp-foto" data-i="' + i + '"><img data-foto="' + esc(f.foto_path) + '" alt=""><b>' + esc(f.modulo_nombre) + '</b>' +
           '<div class="info">' + estNivel(f.nivel, 'Esperando revisión') + (distinta ? '<span class="est">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>' : '') + (f.estado === 'enviado' && f.nivel ? '<span class="est sorpresa">Sin revisar</span>' : '') + '</div>' +
-          '<small>' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + (f.tipo === 'sorpresa' ? ' · sorpresa' : '') + (f.a_tiempo === false ? ' · tarde' : '')) + '</small></button>';
+          '<small>' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + (f.tipo === 'sorpresa' ? ' · sorpresa' : '') + (f.frontal ? ' · frontal nuevo' : '') + (f.a_tiempo === false ? ' · tarde' : '')) + '</small></button>';
       }).join('') + '</div>';
       var c = document.getElementById('fotoDatos');
       c.innerHTML = html;
@@ -458,6 +464,64 @@ function verFoto(f) {
   var b = document.getElementById('vfModelo');
   if (b) unaVez(b, function () {
     return usarComoModelo({ id: f.modulo_id }, f.foto_path).then(function () { avisar('Listo: es la foto modelo de ' + f.modulo_nombre + ' (la IA compara con ésta).'); return 'dejar-apagado'; });
+  });
+}
+
+/* ── Las tareas con foto (16/10): las hechas en el período y las que esperan la corrección, para mirarlas y,
+   si algo no está bien, mandarlas a corregir con un mensaje (SQL 132). ── */
+function tareaParaMirar(t) { return t.estado === 'hecha' && (!t.revisada_en || new Date(t.revisada_en) < new Date(t.completada_en)); }
+function estTarea(t) {
+  if (t.estado !== 'hecha') return '<span class="est vencido">Para corregir</span>';
+  return tareaParaMirar(t) ? '<span class="est sorpresa">Para mirar</span>' : '<span class="est listo">Bien</span>';
+}
+
+function datosTareasFoto(rango) {
+  var L = valor(_local.id), pedido = ++_fotoPedido;
+  var desdeTs = new Date(rango.desde + 'T00:00:00-03:00').toISOString(), hastaTs = new Date(sumarDias(rango.hasta, 1) + 'T00:00:00-03:00').toISOString();
+  leer('/orden_v_tareas?select=id,titulo,detalle,estado,persona_nombre,foto_path,completada_en,completada_a_tiempo,correccion,correccion_en,correcciones,revisada_en' +
+       '&local_id=eq.' + L + '&foto_path=not.is.null&or=(and(completada_en.gte.' + desdeTs + ',completada_en.lt.' + hastaTs + '),and(estado.in.(pendiente,vencida),correccion.not.is.null))' +
+       '&order=completada_en.desc.nullslast&limit=150')
+    .then(function (lista) {
+      if (_solapa !== 'fotos' || pedido !== _fotoPedido || _fotoDe !== 'tareas') return;
+      lista = lista || [];
+      var mirar = lista.filter(tareaParaMirar).length, c = document.getElementById('fotoDatos');
+      c.innerHTML = !lista.length ? '<div class="vacio">No hay fotos de tareas en este período.</div>'
+        : '<p class="bajada">' + lista.length + (lista.length === 1 ? ' tarea con foto' : ' tareas con foto') + (mirar ? ' · ' + mirar + ' para mirar' : '') +
+          '. Tocá una para verla grande.</p><div class="imp-fotos">' + lista.map(function (t, i) {
+            return '<button class="imp-foto" data-t="' + i + '"><img data-foto="' + esc(t.foto_path) + '" alt=""><b>' + esc(t.titulo) + '</b>' +
+              '<div class="info">' + estTarea(t) + '</div>' +
+              '<small>' + esc((t.estado === 'hecha' ? diaMes(t.completada_en) : 'a corregir desde el ' + diaMes(t.correccion_en)) + ' · ' + (t.persona_nombre || '') +
+                              (t.estado === 'hecha' && t.completada_a_tiempo === false ? ' · tarde' : '') + ((t.correcciones || []).length && t.estado === 'hecha' ? ' · corregida' : '')) + '</small></button>';
+          }).join('') + '</div>';
+      cargarFotos(c);
+      c.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { verTareaFoto(lista[+b.dataset.t], rango); }; });
+    }).catch(function (e) { error(e, verFotos); });
+}
+
+function verTareaFoto(t, rango) {
+  var hecha = t.estado === 'hecha', mirar = tareaParaMirar(t), puede = hecha && !soloMira(), hist = t.correcciones || [];
+  var f = ventana('<h1>' + esc(t.titulo) + '</h1><p class="bajada">' + esc((t.persona_nombre || '') + ' · ' +
+      (hecha ? 'hecha el ' + diaMes(t.completada_en) + ' a las ' + hora(t.completada_en) + (t.completada_a_tiempo === false ? ' (tarde)' : '') : 'esperando la corrección')) + '</p>' +
+    '<p>' + estTarea(t) + '</p>' +
+    '<img class="foto-grande" data-foto="' + esc(t.foto_path) + '" alt="">' +
+    (t.detalle ? '<div class="seccion">La tarea</div><p class="bajada">' + esc(t.detalle) + '</p>' : '') +
+    (hist.length ? '<div class="seccion">Lo que se le pidió corregir</div>' + hist.map(function (h) {
+      return '<div class="nota">' + esc(diaMes(h.en) + ' ' + hora(h.en) + ': ' + h.mensaje) + '</div>';
+    }).join('') : '') +
+    (puede ? '<div class="seccion">' + (mirar ? '¿Está bien hecha?' : '¿Viste algo mal?') + '</div>' +
+      '<label class="campo"><span>Qué tiene que corregir (sólo si hace falta)</span><textarea id="vtMsg" rows="2" maxlength="500" placeholder="Ej.: falta el frontal del módulo 3"></textarea></label>' +
+      '<div class="vm-usar">' + (mirar ? '<button class="boton lima chico" id="vtBien">Está bien</button> ' : '') + '<button class="boton chico" id="vtCorregir">Mandar a corregir</button></div>' : ''));
+  var listo = function (texto) { avisar(texto); f.remove(); datosTareasFoto(rango); return 'dejar-apagado'; };
+  var b = f.querySelector('#vtBien'), m = f.querySelector('#vtCorregir');
+  if (b) unaVez(b, function () {
+    return llamar('orden_tarea_revisar', { p_tarea: t.id, p_bien: true, p_mensaje: null }).then(function () { return listo('Listo: «' + t.titulo + '» está bien.'); });
+  });
+  if (m) unaVez(m, function () {
+    var msg = String(f.querySelector('#vtMsg').value || '').trim();
+    if (!msg) { avisar('Escribí qué tiene que corregir.'); f.querySelector('#vtMsg').focus(); return; }
+    return llamar('orden_tarea_revisar', { p_tarea: t.id, p_bien: false, p_mensaje: msg }).then(function () {
+      return listo('Se la mandaste a corregir' + (t.persona_nombre ? ' a ' + t.persona_nombre : '') + '.');
+    });
   });
 }
 
@@ -1239,7 +1303,8 @@ function verCajasTodosRango() {
 function valorCampo(col, fila) {
   var v = fila[col.k];
   if (col.tipo === 'hora') return v ? String(v).slice(0, 5) : '';
-  return v;
+  /* mostrar: cómo se muestra lo guardado (la semana del frontal: la próxima que le toca). */
+  return col.mostrar ? col.mostrar(v, fila) : v;
 }
 
 function campoHTML(col, fila, soloLectura) {
@@ -1339,7 +1404,7 @@ function editor(cfg) {
         if (col.tipo === 'ver' || col.fijo) return;
         var nuevo = leerCampo(col, r);
         if (nuevo === undefined) return;
-        if (JSON.stringify(normalizar(col, nuevo)) !== JSON.stringify(normalizar(col, fila[col.k]))) c[col.k] = nuevo;
+        if (JSON.stringify(normalizar(col, nuevo)) !== JSON.stringify(normalizar(col, valorCampo(col, fila)))) c[col.k] = nuevo;
       });
       return c;
     };
@@ -1828,6 +1893,19 @@ var COLS_DEL_LOCAL = [{ k: 'nombre', t: 'Nombre en la app', tipo: 'texto' }, { k
   { k: 'hora_apertura', t: 'Abre a las', tipo: 'hora' }, { k: 'hora_cierre', t: 'Cierra a las', tipo: 'hora' },
   { k: 'activo', t: 'Activo: genera controles y aparece en Equipo VDH.', tipo: 'bool' }];
 
+/* Frontal nuevo (SQL 132): la semana en que arranca, entre ésta y las 9 que siguen. Lo guardado puede ser una semana
+   vieja: se muestra la próxima que le toca (la misma cuenta, cada N semanas). */
+var SEMANAS_FRONTAL = [[null, 'elegí la semana']].concat([0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(function (i) {
+  var l = sumarDias(lunesAR(), 7 * i);
+  return [l, i === 0 ? 'esta semana' : i === 1 ? 'la semana que viene' : 'la semana del ' + diaMes(l)];
+}));
+function verSemanaFrontal(v, fila) {
+  if (!v) return v;
+  var l = lunesAR(String(v).slice(0, 10)), n = Math.max(1, Number(fila.frontal_cada_semanas) || 1), hoy = lunesAR();
+  while (l < hoy) l = sumarDias(l, 7 * n);
+  return l;
+}
+
 /* Cada bloque se guarda solo y se puede copiar a los otros locales (el nombre y el horario de cada uno, no). */
 var BLOQUES_LOCAL = [
   { id: 'controles', titulo: 'Los controles',
@@ -1835,7 +1913,8 @@ var BLOQUES_LOCAL = [
            { k: 'hora_aviso_1', t: 'Aviso de la mañana', tipo: 'hora', delLocal: true }, { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', tipo: 'hora', delLocal: true },
            { k: 'sorpresas_por_semana', t: 'Controles sorpresa por semana', tipo: 'num', min: 0, max: 7 },
            { k: 'deposito_dia_vence', t: 'El depósito vence el', tipo: 'sel', numero: true, ops: DIAS_SEL },
-           { k: 'cambio_imagen_dia', t: 'Cambio de imagen', tipo: 'sel', numero: true, ops: [[null, 'apagado']].concat(LOS_DIAS.map(function (d, i) { return [i + 1, d]; })) },
+           { k: 'frontal_cada_semanas', t: 'Frontal nuevo', tipo: 'sel', numero: true, ops: [[null, 'apagado'], [1, 'todas las semanas'], [2, 'cada 2 semanas'], [3, 'cada 3 semanas'], [4, 'cada 4 semanas']] },
+           { k: 'frontal_desde', t: 'Desde la semana', tipo: 'sel', ops: SEMANAS_FRONTAL, mostrar: verSemanaFrontal },
            { k: 'max_avisos_dia', t: 'Tope de avisos por día', tipo: 'num', min: 1 },
            { k: 'horas_revision_supervisor', t: 'Horas para revisar', tipo: 'num', min: 1 },
            { k: 'desafio_activo', t: 'Test semanal de conocimiento: a cada vendedor le llega uno por semana, un día y una hora al azar (no cuenta para faltas).', corto: 'el test semanal', tipo: 'bool' }],
@@ -1844,7 +1923,7 @@ var BLOQUES_LOCAL = [
         frase('A quien le toca le llega un aviso a las ' + c('hora_aviso_1') + ' y, si todavía no lo hizo, un recordatorio a las ' + c('hora_aviso_2') + '.') +
         frase('Controles sorpresa por semana, a cada sector: ' + c('sorpresas_por_semana') + ' (un día que no es de control, al azar).') +
         frase('El depósito se controla una vez por semana y vence el ' + c('deposito_dia_vence') + '.') +
-        frase('Cambio de imagen (la tarea de renovar los frontales, a cada sector del salón): ' + c('cambio_imagen_dia') + '.') +
+        frase('Frontal nuevo: ' + c('frontal_cada_semanas') + ', desde ' + c('frontal_desde') + '. El primer día de control de esa semana cambian el frontal de cada módulo, y la foto del control sirve de prueba (sin fotos de más).') +
         frase('A cada persona le llegan como mucho ' + c('max_avisos_dia') + ' avisos por día (los urgentes llegan igual).') +
         frase('Si una foto o una caja espera más de ' + c('horas_revision_supervisor') + ' horas que la revise el supervisor, te llega un aviso.') +
         frase(c('desafio_activo'));
