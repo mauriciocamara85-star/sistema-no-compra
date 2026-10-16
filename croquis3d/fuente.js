@@ -1491,10 +1491,13 @@ export function montarCroquis3D(cont, pl, d, op) {
   /** La cámara a la distancia justa para que el local entero entre en la pantalla (se prueba y se corrige). */
   const esquinas = [];
   for (const x of [-aw / 2 - 12, aw / 2 + 12]) for (const z of [-al / 2 - 12, al / 2 + 14]) for (const y of [0, 100]) esquinas.push(new THREE.Vector3(x, y, z));
+  /* abajo y arriba: un número, o una función que se mide cada vez (la ayuda de arriba aparece o se va al cambiar el
+     tamaño; árbitro, ronda 2). */
+  const medir = (v) => Math.max(0, +(typeof v === 'function' ? v() : v) || 0);
   const encuadrar = (polar, azim) => {
     let radio = Math.max(aw, al) * 1.6;
-    const fa = Math.min(0.3, Math.max(0, (op.abajo || 0) / Math.max(1, cont.clientHeight)));   // lo que tapan los botones de abajo
-    const fb = Math.min(0.15, Math.max(0, (op.arriba || 0) / Math.max(1, cont.clientHeight)));   // y la ayuda de arriba
+    const fa = Math.min(0.3, medir(op.abajo) / Math.max(1, cont.clientHeight));    // lo que tapan los botones de abajo
+    const fb = Math.min(0.15, medir(op.arriba) / Math.max(1, cont.clientHeight));  // y la ayuda de arriba
     for (let k = 0; k < 12; k++) {
       camara.position.setFromSphericalCoords(radio, polar, azim).add(controles.target);
       camara.lookAt(controles.target); camara.updateMatrixWorld();
@@ -1516,7 +1519,7 @@ export function montarCroquis3D(cont, pl, d, op) {
      croquis de Fotos, tenga el teléfono que tenga (árbitro, 15/10). */
   const ladoInicial = () => {
     if (op.azimut != null) return op.azimut;
-    const w = cont.clientWidth || ancho, h = cont.clientHeight || alto, util = Math.max(1, h - (op.abajo || 0) - (op.arriba || 0));
+    const w = cont.clientWidth || ancho, h = cont.clientHeight || alto, util = Math.max(1, h - medir(op.abajo) - medir(op.arriba));
     if (w < 640) return 0;
     return (w > util * 1.1 && al > aw * 1.15) || (util > w * 1.1 && aw > al * 1.15) ? Math.PI / 2 : 0;
   };

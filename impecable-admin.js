@@ -96,6 +96,7 @@ var _local = null;
 var K_LOCAL_SUP = 'vdh_vend_local_sup';
 var K_MENU_CHICO = 'nc_panel_equipo';
 
+var _atrasPropio = 0;
 (function () {
   var b = document.getElementById('btnRefrescar');
   if (b) b.onclick = function () { if (!puedeSalir()) return; if (_vend && _vend.refresco && esSupervision() && _locales.length) ir(_solapa); else inicio(); };
@@ -104,8 +105,10 @@ var K_MENU_CHICO = 'nc_panel_equipo';
   /* Los "atrás" que pide el editor del croquis al cerrarse llegan después (son asincrónicos): se marcan, para que no
      cierren un editor que se abrió enseguida. */
   window.addEventListener('popstate', function (e) { if (_atrasPropio) { _atrasPropio--; e.vdhPropio = true; } });
+  /* Se recargó con el editor abierto: su marca quedó en el historial y el primer "atrás" no hacía nada (árbitro,
+     ronda 2). Se saca. */
+  if (history.state && history.state.vdhEditor) { _atrasPropio++; try { history.back(); } catch (e) { _atrasPropio--; } }
 })();
-var _atrasPropio = 0;
 
 /** Lo que quedó escrito sin guardar en la pantalla: un "Guardar" prendido o una regla nueva a medio escribir
     (15/10/2026: una regla tipeada en Ajustes no se había guardado y nadie se dio cuenta). */
@@ -2643,7 +2646,13 @@ function editarMapa(d, op) {
   var firmaInicial = null, conMarca = false;
   function firma() { return JSON.stringify([mapaArmado(), croquisArmado(), centro.map(function (c) { return c.nombre; }), vidr.map(function (v) { return v.nombre; })]); }
   f.cambiado = function () { return firmaInicial !== null && firma() !== firmaInicial; };
-  function ponerMarca() { try { history.pushState({ vdhEditor: true }, ''); conMarca = true; } catch (e) {} }
+  /* Si todavía no llegó el "atrás" de un editor que se cerró recién, se espera: si no, ese "atrás" se come esta marca
+     (árbitro, ronda 2). Más de medio segundo es que no va a llegar. */
+  function ponerMarca(intento) {
+    if (_atrasPropio > 0 && (intento || 0) < 25) { setTimeout(function () { if (f.isConnected) ponerMarca((intento || 0) + 1); }, 20); return; }
+    if (_atrasPropio > 0) _atrasPropio = 0;
+    try { history.pushState({ vdhEditor: true }, ''); conMarca = true; } catch (e) {}
+  }
   function cerrarEditor() {
     window.removeEventListener('popstate', alAtras);
     document.removeEventListener('keydown', alEscape);
@@ -2665,7 +2674,10 @@ function editarMapa(d, op) {
     if (!salir()) ponerMarca();
   }
   function alEscape(ev) {
-    if (ev.key !== 'Escape' || ev.defaultPrevented || document.querySelector('.ventana-fondo:not(.editor-fondo)')) return;
+    if (ev.key !== 'Escape' || ev.defaultPrevented) return;
+    /* Con el menú de un lugar abierto, Escape cierra sólo ese menú (como el "atrás"; árbitro, ronda 2). */
+    var encima = [].slice.call(document.querySelectorAll('.ventana-fondo:not(.editor-fondo)')).pop();
+    if (encima) { var c = encima.querySelector('#cerrarVentana'); if (c) c.click(); else encima.remove(); return; }
     var a = document.activeElement;
     if (a && f.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) { a.blur(); return; }
     /* Primero cancela lo que estaba a medio hacer ("Cambiar de lugar", "Mover la entrada"). */
@@ -2894,7 +2906,9 @@ function editarMapa(d, op) {
         else if (op.indexOf('esq:') === 0) { e.esquinas = e.esquinas || {}; if (op.slice(4) === ESQUINAS[esquina][0]) delete e.esquinas[esquina]; else e.esquinas[esquina] = op.slice(4); }
         else ponerTipo(tipo, w, i, op);
         g.remove(); vista();
-        if (op === 'cambiar') { var mc = vistaDe(tipo).querySelector('.mapa-origen'); if (mc) mc.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+        /* En el celular, el dibujo justo debajo de la cabecera, con el aviso a la vista (centrando el lugar, en los
+           de 384 px o menos la cabecera tapaba el aviso; árbitro, ronda 2). */
+        if (op === 'cambiar' && !verDibujo(true)) { var mc = vistaDe(tipo).querySelector('.mapa-origen'); if (mc) mc.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
       };
     });
   }
@@ -3158,11 +3172,13 @@ function editarMapa(d, op) {
 
   /* ── Los botones y los campos ── */
   f.querySelector('#eCancelarCambio').onclick = function () { st.cambiar = null; vista(); };
-  /* En el celular el dibujo queda arriba del panel: al empezar a mover la entrada, sube hasta el dibujo (los + verdes). */
-  function verDibujo() {
-    if (!st.mover || !window.matchMedia || !matchMedia('(max-width: 860px)').matches) return;
+  /* En el celular el dibujo queda arriba del panel: al empezar a mover la entrada (o a cambiar de lugar), sube hasta el
+     dibujo (los + verdes), con el aviso a la vista. Dice si lo hizo. */
+  function verDibujo(cambiando) {
+    if (!(cambiando || st.mover) || !window.matchMedia || !matchMedia('(max-width: 860px)').matches) return false;
     var sc = f.querySelector('.ventana.editor'), dib = f.querySelector('.ed-dibujo'), cab = f.querySelector('.ed-cab');
     sc.scrollBy({ top: dib.getBoundingClientRect().top - sc.getBoundingClientRect().top - cab.offsetHeight, behavior: 'smooth' });
+    return true;
   }
   f.querySelector('#eMoverPuerta').onclick = function () { st.mover = st.mover === 'salon' ? null : 'salon'; st.cambiar = null; vista(); verDibujo(); };
   f.querySelector('#eMoverPuertaDep').onclick = function () { st.mover = st.mover === 'deposito' ? null : 'deposito'; vista(); verDibujo(); };

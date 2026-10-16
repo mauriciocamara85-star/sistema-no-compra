@@ -1141,7 +1141,7 @@ function visor3dMontar(V, caminar) {
       /* El local, arriba de los botones de abajo (que no los tape). */
       abajo: acc ? Math.max(0, V.escena.getBoundingClientRect().bottom - acc.getBoundingClientRect().top + 8) : 0,
       /* Ni debajo de la ayuda de arriba ("Arrastrá para girar…", en la compu): tapaba los números de la pared del fondo. */
-      arriba: visorAltoAyuda(V),
+      arriba: function () { return visorAltoAyuda(V); },   // se mide cada vez (aparece o se va al cambiar el tamaño)
       altoModulos: visorAltoModulos(pl, salon ? VISOR_ALTO.pared : VISOR_ALTO.deposito),
       color: function (m) { return visorCategoria(V, m).color; },
       numero: numero,
