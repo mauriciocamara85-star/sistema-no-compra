@@ -1109,7 +1109,8 @@ function verCajasRango() {
    "Leer de nuevo" (sin que el vendedor la saque otra vez). */
 var FOTOS_CIERRE = [
   ['sistema', 'Cierre del sistema', [['ventas_tarjeta', 'Tarjeta', 'sis_tarjeta'], ['ventas_mercado_pago', 'Mercado Pago', 'sis_mp'], ['ventas_debito_go', 'Go Cuotas', 'sis_gocuotas'],
-    ['ventas_efectivo', 'Ventas en efectivo', null], ['ventas_totales', 'Ventas totales', null], ['saldo_final_efectivo', 'Saldo final en efectivo', 'sis_saldo_final_efvo']]],
+    ['ventas_efectivo', 'Ventas en efectivo', null], ['ventas_totales', 'Ventas totales', null], ['saldo_final_efectivo', 'Saldo final en efectivo', 'sis_saldo_final_efvo'],
+    ['total_efectivo', 'Total efectivo (lo contado)', 'real_efectivo']]],
   ['lote', 'Cierre de lote (posnet)', [['total', 'Total', 'real_lote']]],
   ['mp', 'Mercado Pago', [['total', 'Total', 'real_mp']]],
   ['gocuotas', 'Go Cuotas', [['total', 'Total', 'real_gocuotas']]]
@@ -1181,7 +1182,7 @@ function lecturaCierre(t, f, k) {
     return '<div class="lectura-ia">' + (f.ia_estado === 'pendiente' ? 'Todavía no se leyó.' : 'La IA no la pudo leer.') +
       (soloMira() ? '' : ' <button class="boton chico" data-releer="' + esc(f.id) + '">Leer de nuevo</button>') + '</div>';
   }
-  var renglones = t[2].filter(function (c) { return r[c[0]] != null || (c[2] && k[c[2]] != null); }).map(function (c) {
+  var renglones = t[2].filter(function (c) { return r[c[0]] != null || (c[2] && k[c[2]] != null && (c[0] in r || c[0] !== 'total_efectivo')); }).map(function (c) {
     var leido = r[c[0]], cargado = c[2] ? k[c[2]] : null;
     /* Rojo sólo si la IA leyó un número y lo cargado es otro (o no cargaron nada). */
     var distinto = !!c[2] && leido != null && (cargado == null || Math.abs(Number(leido) - Number(cargado)) > 0.5);

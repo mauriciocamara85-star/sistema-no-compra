@@ -21,6 +21,11 @@ const CAMPOS: Record<TipoFoto, Record<string, string>> = {
     otras_salidas: "Otras salidas",
     descuentos: "Descuentos",
     saldo_final_efectivo: "Saldo Final en Efectivo",
+    // (16/10) El efectivo contado: el recuadro de la izquierda de la pantalla "Cierre de caja".
+    total_efectivo:
+      'TOTAL EFECTIVO: el recuadro de la izquierda, arriba del mensaje de sobrante o faltante (es el efectivo que se contó; no es "Saldo Final en Efectivo"). null si no aparece en la foto',
+    sobrante_faltante:
+      'El mensaje debajo de TOTAL EFECTIVO: 0 si dice "No hay sobrante ni faltante de caja"; si dice sobrante, el monto en positivo; si dice faltante, el monto en negativo; null si no se ve',
   },
   lote: { total: "Total en pesos del cierre de lote" },
   mp: { total: "Total cobrado en el día (si la pantalla muestra un total)" },
@@ -28,7 +33,8 @@ const CAMPOS: Record<TipoFoto, Record<string, string>> = {
 };
 
 const QUE_ES: Record<TipoFoto, string> = {
-  sistema: 'la pantalla "Resultados del día" del cierre de caja del sistema del local',
+  sistema:
+    'la pantalla "Cierre de caja" del sistema del local: a la derecha "Resultados del día" y a la izquierda el recuadro "TOTAL EFECTIVO" con el mensaje de sobrante o faltante (puede verse sólo "Resultados del día")',
   lote: "el cierre de lote del posnet (Payway u otro)",
   mp: "el resumen de cobros de Mercado Pago del día",
   gocuotas: "el resumen de cobros de Go Cuotas del día",
@@ -89,8 +95,20 @@ export async function leerFotoCaja(opts: {
   if ((opts.tipo === "mp" || opts.tipo === "gocuotas") && r.total == null && typeof r.suma_operaciones === "number" && !r.lista_cortada) {
     r.total = r.suma_operaciones;
   }
+  if (opts.tipo === "sistema") efectivoContado(r);
   r.fecha = fechaValida(r.fecha);
   return r;
+}
+
+/** (16/10) El efectivo contado de la foto del sistema. Si TOTAL EFECTIVO no se lee pero el mensaje dice
+ *  "No hay sobrante ni faltante", es el saldo final. En $ 0 con saldo final, todavía no se había contado: null. */
+export function efectivoContado(r: Record<string, unknown>) {
+  const saldo = r.saldo_final_efectivo, dif = r.sobrante_faltante;
+  if (r.total_efectivo == null && dif === 0 && typeof saldo === "number" && saldo > 0) r.total_efectivo = saldo;
+  else if (r.total_efectivo === 0 && typeof saldo === "number" && saldo > 0) {
+    r.total_efectivo = null;
+    r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), "TOTAL EFECTIVO en $ 0: todavía no se había contado el efectivo"];
+  }
 }
 
 /** "1.440.100,00" | "$ 708.000" | 708000 → número; cualquier otra cosa → null */

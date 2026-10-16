@@ -1023,7 +1023,7 @@ function dibujarHoy(x) {
   if (x.caja && x.caja.activa) {
     var caja = x.caja.hoy;
     if (caja && caja.estado !== 'pendiente') filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: true, texto: 'Guardada.' });
-    else if (horaAR() >= 19) filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: false, texto: 'Las fotos del cierre y el efectivo que contaste.' });
+    else if (horaAR() >= 19) filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: false, texto: 'Las fotos del cierre: los números se cargan solos.' });
     else filas.push({ id: 'hCaja', titulo: 'Caja del día', luego: true, texto: 'Desde las 19 h: las fotos del cierre y el efectivo.' });
   }
 
@@ -2211,7 +2211,7 @@ function revisarFilasCaja() {
   });
 }
 var LECTURA_A_CAMPO = {
-  sistema: { ventas_tarjeta: 'sis_tarjeta', ventas_mercado_pago: 'sis_mp', ventas_debito_go: 'sis_gocuotas', saldo_final_efectivo: 'sis_saldo_final_efvo' },
+  sistema: { ventas_tarjeta: 'sis_tarjeta', ventas_mercado_pago: 'sis_mp', ventas_debito_go: 'sis_gocuotas', saldo_final_efectivo: 'sis_saldo_final_efvo', total_efectivo: 'real_efectivo' },
   lote: { total: 'real_lote' }, mp: { total: 'real_mp' }, gocuotas: { total: 'real_gocuotas' }
 };
 
@@ -2263,7 +2263,7 @@ function dibujarCaja(caja, fotos, corrige) {
     ? '<button class="volver" id="volverCaja">‹ Volver a la caja</button><h1>' + (caja.estado === 'pendiente' ? 'Cargar' : 'Corregir') + ' la caja del ' + esc(diaMes(caja.fecha)) + '</h1>' +
       '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.') + '</p>'
     : cabeza('Caja del ' + diaMes(caja.fecha)) +
-      '<p class="bajada">' + (cerrada ? 'Tu supervisor ya la controló.' : 'Sacá las fotos del cierre: los números se cargan solos. Revisalos y escribí el efectivo que contaste.') + '</p>';
+      '<p class="bajada">' + (cerrada ? 'Tu supervisor ya la controló.' : 'Sacá las fotos del cierre: los números se cargan solos, también el efectivo. Revisalos y guardá.') + '</p>';
   if (!cerrada) {
     html += '<div class="grilla">' + FOTOS_CAJA.map(function (t) {
       var f = ultima[t[0]];
@@ -2337,7 +2337,8 @@ function fotoCaja(caja, tipo, input, boton) {
             });
             boton.querySelector('.chip').textContent = 'Leída';
             revisarFilasCaja();
-            avisar('Listo: revisá los números que se cargaron.');
+            var sinEfectivo = tipo === 'sistema' && !String(app.querySelector('[data-campo="real_efectivo"]').value || '').trim();
+            avisar(sinEfectivo ? 'Listo, pero no se leyó el TOTAL EFECTIVO: escribí el efectivo que contaste.' : 'Listo: revisá los números que se cargaron.');
           } else {
             boton.querySelector('.chip').textContent = 'Cargá a mano';
             avisar(lectura && lectura.motivo ? lectura.motivo : 'No pudimos leer la foto: cargá los números a mano.');
@@ -2359,7 +2360,7 @@ function guardarCaja(caja, boton, corrige) {
     if (n == null) malo = malo || c; else valores[c.dataset.campo] = String(n);
   });
   if (malo) { malo.focus(); avisar('Hay un monto que no se entiende: escribilo sólo con números.'); return; }
-  if (!valores.real_efectivo) { avisar('Falta el efectivo que contaste.'); return; }
+  if (!valores.real_efectivo) { avisar('Falta el efectivo que contaste: sacá la foto del cierre del sistema (con el TOTAL EFECTIVO a la vista) o escribilo.'); return; }
   /* (14/10, pedido de Mauricio) Un renglón con un número de un lado y el otro vacío: falta cargar
      algo (por ejemplo, la foto de Mercado Pago no se leyó). Se avisa antes de guardar. */
   var faltan = FILAS_CAJA.filter(function (f) {

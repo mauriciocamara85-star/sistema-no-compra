@@ -174,7 +174,7 @@ Deno.test("foto inválida trae un motivo para el vendedor", () => {
   if (!r.motivo_foto_invalida) throw new Error("Falta el motivo");
 });
 
-import { aNumero, fechaValida } from "./caja_ia.ts";
+import { aNumero, efectivoContado, esquemaCaja, fechaValida } from "./caja_ia.ts";
 
 Deno.test("caja: montos en formato argentino y fechas imposibles", () => {
   igual(aNumero("$ 1.440.100,00"), 1440100, "con miles y decimales");
@@ -184,4 +184,18 @@ Deno.test("caja: montos en formato argentino y fechas imposibles", () => {
   igual(fechaValida("2026-10-11"), "2026-10-11", "fecha válida");
   igual(fechaValida("2026-13-10"), null, "mes 13");
   igual(fechaValida("2026-02-30"), null, "30 de febrero");
+});
+
+Deno.test("caja: el efectivo contado sale del TOTAL EFECTIVO de la foto del sistema (16/10)", () => {
+  const props = (esquemaCaja("sistema") as { properties: Record<string, unknown>; required: string[] });
+  igual("total_efectivo" in props.properties && props.required.includes("sobrante_faltante"), true, "el esquema lo pide");
+  igual("total_efectivo" in esquemaCaja("lote").properties, false, "el lote no");
+  const leido = (r: Record<string, unknown>) => (efectivoContado(r), r);
+  igual(leido({ total_efectivo: 143100, sobrante_faltante: 0, saldo_final_efectivo: 143100 }).total_efectivo, 143100, "se lee");
+  igual(leido({ total_efectivo: null, sobrante_faltante: 0, saldo_final_efectivo: 143100 }).total_efectivo, 143100, "en verde sin número: el saldo final");
+  igual(leido({ total_efectivo: null, sobrante_faltante: -500, saldo_final_efectivo: 143100 }).total_efectivo, null, "con faltante no se calcula");
+  const cero = leido({ total_efectivo: 0, sobrante_faltante: -143100, saldo_final_efectivo: 143100, dudas: [] });
+  igual(cero.total_efectivo, null, "en $ 0 todavía no se contó");
+  igual((cero.dudas as string[]).length, 1, "y queda en dudas");
+  igual(leido({ total_efectivo: 0, sobrante_faltante: 0, saldo_final_efectivo: 0 }).total_efectivo, 0, "sin efectivo de verdad: 0");
 });
