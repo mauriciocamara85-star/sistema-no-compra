@@ -161,6 +161,15 @@
 .imp-grafico svg { width: 100%; height: auto; display: block; }
 .imp-ley { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 6px; font-size: 12px; color: #D2CDC3; }
 .imp-ley i { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+/* En Por local va al final, cerrado y más chico: lo principal es el croquis (15/10). */
+.imp-grafico-det { margin: 22px 0 0; }
+.imp-grafico-det > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px; list-style: none; cursor: pointer;
+                             border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); color: var(--txt-2); font: 600 13.5px var(--sans); }
+.imp-grafico-det > summary::-webkit-details-marker { display: none; }
+.imp-grafico-det > summary::before { content: '▸'; color: var(--txt-3); }
+.imp-grafico-det[open] > summary::before { content: '▾'; }
+.imp-grafico-det > summary:hover { color: var(--txt); }
+.imp-grafico-det .imp-grafico { max-width: 720px; margin: 12px 0 0; }
 
 /* ── Módulos del local y fotos ── */
 .imp .grilla-local, .imp-fotos { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; }
@@ -498,7 +507,7 @@
 .ed-solapas button[aria-selected="true"] { background: var(--acc); color: var(--acc-ink); box-shadow: var(--glow); }
 .ed-total { flex: 1 1 220px; margin: 0; font: 500 13px var(--sans); color: var(--txt-3); text-align: right; }
 .ed-total b { display: block; font-weight: 700; color: var(--warn-txt); }
-.ed-cuerpo { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 340px; }
+.ed-cuerpo { flex: 1; min-height: 0; display: grid; grid-template-columns: 188px minmax(0, 1fr) 300px; }
 .ed-dibujo { position: relative; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: 10px; padding: 14px; background: var(--surface-2); }
 .ventana.editor .ed-dibujo .imp-mapa-vista { flex: 1; min-width: 0; min-height: 0; margin: 0; padding: 4px; border: 2px dashed transparent; display: flex; align-items: center; justify-content: center; }
 .ventana.editor .ed-dibujo .imp-mapa-vista[hidden] { display: none; }
@@ -510,27 +519,74 @@
                             padding: 8px 14px; border: 1px solid var(--line); background: var(--surface); color: var(--txt); font-weight: 600; box-shadow: var(--sombra-alta); }
 .ventana.editor .ed-flota .boton { margin-left: 10px; vertical-align: middle; }
 .ventana.editor .ed-flota[hidden] { display: none; }
-.ed-panel { min-height: 0; overflow: auto; padding: 2px 16px 24px; border-left: 1px solid var(--line); background: var(--surface); }
-.ed-sec { border-bottom: 1px solid var(--line); }
-.ed-sec[open] { padding-bottom: 12px; }
-.ed-sec > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; min-height: 46px; cursor: pointer;
-                    font: 700 12.5px var(--sans); text-transform: uppercase; letter-spacing: .6px; color: var(--txt-2); }
-.ed-sec > summary::-webkit-details-marker { display: none; }
-.ed-sec > summary::after { content: '+'; font: 600 19px var(--sans); color: var(--txt-3); }
-.ed-sec[open] > summary::after { content: '−'; }
-.ed-sec > summary:hover { color: var(--txt); }
-.ed-paredes { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
-.ventana.editor .ed-paredes .campo { margin-bottom: 8px; }
-.ventana.editor .ed-panel .imp-lugar-ops { margin-bottom: 4px; }
-.ed-piezas { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 0 0 8px; }
-.ventana.editor .ed-piezas .boton { min-height: 50px; padding: 0 8px; justify-content: flex-start; font-size: 13px; text-align: left; line-height: 1.15; }
-.ed-chico { margin: 0 0 8px; font: 500 12.5px var(--sans); color: var(--txt-3); }
+.ed-panel { min-height: 0; overflow: auto; padding: 14px 16px 20px; border-left: 1px solid var(--line); background: var(--surface); }
+/* Lo de la derecha (15/10, "como un juego… sin tanta lectura"): grupos chicos, con botones y nada para escribir. */
+.ed-grupo { margin: 0 0 14px; padding: 0 0 14px; border-bottom: 1px solid var(--line); }
+.ed-grupo:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: 0; }
+.ed-grupo[hidden] { display: none; }
+.ed-grupo h4 { margin: 0 0 8px; font: 700 12px var(--sans); text-transform: uppercase; letter-spacing: .6px; color: var(--txt-3); }
+.ed-oculto { position: absolute !important; width: 1px !important; height: 1px !important; opacity: 0; pointer-events: none; }
+.ed-tira { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.ed-tira button { flex: 1 1 0; min-width: 0; min-height: 38px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 6px;
+                  border: 0; border-radius: 9px; background: transparent; color: var(--txt-2); font: 700 13px var(--sans); cursor: pointer; transition: background .15s, color .15s; }
+.ed-tira button:hover { color: var(--txt); }
+.ed-tira button[aria-pressed="true"] { background: var(--acc); color: var(--acc-ink); box-shadow: var(--glow); }
+.ed-tira svg { width: 18px; height: 15px; flex: none; }
+/* Las cuatro paredes alrededor del local, cada una con su − n +. */
+.ed-plano { display: grid; grid-template-columns: auto minmax(36px, 1fr) auto; grid-template-areas: ". f ." "i c d" ". v ."; gap: 6px; align-items: center; justify-items: center; }
+.ed-lado { display: grid; justify-items: center; gap: 3px; }
+.ed-lado small { font: 600 11px var(--sans); color: var(--txt-3); }
+.ed-lado[data-lado="fondo"] { grid-area: f; }
+.ed-lado[data-lado="izquierda"] { grid-area: i; }
+.ed-lado[data-lado="derecha"] { grid-area: d; }
+.ed-lado[data-lado="frente"] { grid-area: v; }
+.ed-plano-local { grid-area: c; align-self: stretch; justify-self: stretch; min-height: 58px; display: flex; align-items: flex-end; justify-content: center;
+                  border: 2px solid var(--line); border-bottom: 4px solid var(--acc); border-radius: 6px; background: var(--surface-2); }
+.ed-plano-local span { padding-bottom: 3px; font: 700 9.5px var(--sans); text-transform: uppercase; letter-spacing: .5px; color: var(--txt-3); }
+.ed-paso { display: inline-flex; align-items: center; overflow: hidden; border: 1px solid var(--line-campo); border-radius: 10px; background: var(--campo); }
+.ed-paso button { width: 30px; height: 34px; border: 0; background: var(--surface-2); color: var(--txt); font: 700 17px var(--sans); cursor: pointer; transition: background .12s, color .12s; }
+.ed-paso button:hover { background: var(--acc); color: var(--acc-ink); }
+.ed-paso button:active { transform: scale(.92); }
+.ventana.editor .ed-paso input { width: 36px; min-height: 0; height: 34px; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--txt);
+                                 font: 700 15px var(--sans); text-align: center; box-shadow: none; -moz-appearance: textfield; appearance: textfield; }
+.ed-paso input::-webkit-outer-spin-button, .ed-paso input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.ventana.editor .ed-panel .imp-lugar-ops { margin-bottom: 0; }
+.ed-chico { margin: 8px 0 0; font: 500 12px var(--sans); color: var(--txt-3); }
 .ed-chico:empty { display: none; }
-.ed-ayuda { margin: 0; padding-left: 18px; font-size: 13.5px; line-height: 1.55; color: var(--txt-2); }
-/* Los renglones de lo del centro y de los muebles: si no entra, los botones bajan (no se parten ni aprietan el nombre). */
-.ed-panel .imp-isla { flex-wrap: wrap; }
-.ventana.editor .ed-panel .imp-isla input { flex: 1 1 120px; }
-.ventana.editor .ed-panel .imp-isla .boton { padding: 0 12px; white-space: nowrap; }
+
+/* La caja de muebles (izquierda): fichas grandes con su dibujito, para arrastrar al local "como un juego". */
+.ed-bandeja { position: relative; min-height: 0; overflow: auto; padding: 12px 10px; border-right: 1px solid var(--line); background: var(--surface); }
+.ed-bandeja-tit { margin: 0 2px 10px; font: 700 12px var(--sans); text-transform: uppercase; letter-spacing: .6px; color: var(--txt-3); }
+.ventana.editor .ed-bandeja .ed-piezas { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 0; }
+.ed-ficha { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-width: 0; min-height: 64px; padding: 8px 4px 6px;
+            border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); color: var(--txt); font: 600 12px var(--sans); line-height: 1.1; text-align: center;
+            cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; transition: transform .12s, box-shadow .12s, border-color .12s; }
+.ed-ficha:hover { transform: translateY(-2px); border-color: var(--acc); box-shadow: var(--sombra-alta); }
+.ed-ficha:active { cursor: grabbing; transform: scale(.95); }
+.ed-ficha .pieza-ico { width: 52px; height: 36px; }
+.ed-ficha > * { pointer-events: none; }
+.ed-ficha-mod { grid-column: 1 / -1; flex-direction: row; gap: 10px; min-height: 56px; border-color: var(--acc); }
+.ed-ficha-mod span { font-size: 13.5px; font-weight: 700; }
+/* Mientras se arrastra algo del dibujo, la caja es el tacho: soltarlo ahí lo saca. */
+.ed-tacho { display: none; }
+.editor-fondo.arrastrando .ed-tacho { position: absolute; inset: 8px; z-index: 2; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 10px;
+  border: 2px dashed var(--bad); border-radius: 14px; background: var(--surface); color: var(--bad-txt); font: 700 13px var(--sans); text-align: center; transition: background .12s, transform .12s; }
+.ed-tacho svg { width: 34px; height: 34px; }
+.ed-bandeja.tacho-activo .ed-tacho { background: var(--bad-soft); transform: scale(1.03); }
+.mapa-svg .a-sacar { opacity: .35; }
+/* Lo que se tocó en el dibujo: resaltado, y su globito al lado. */
+.mapa-svg .ed-elegido { filter: drop-shadow(0 0 2px #fff) drop-shadow(0 0 7px #F2D27A); }
+.ed-burbuja { position: absolute; z-index: 4; width: 236px; display: grid; gap: 8px; padding: 10px 10px 10px 12px; border: 1px solid var(--line); border-radius: 14px;
+              background: var(--surface); color: var(--txt); box-shadow: var(--sombra-alta); }
+.ed-burbuja[hidden] { display: none; }
+.ed-burbuja-tit { padding-right: 26px; font: 700 13.5px var(--sans); }
+.ed-burbuja-x { position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; border: 0; border-radius: 50%; background: transparent; color: var(--txt-3); font: 500 20px/1 var(--sans); cursor: pointer; }
+.ed-burbuja-x:hover { background: var(--surface-2); color: var(--txt); }
+.ventana.editor .ed-burbuja input { width: 100%; min-height: 38px; padding: 7px 10px; border: 1px solid var(--line-campo); border-radius: var(--r-sm); background: var(--campo); color: var(--txt);
+                                    font: 500 14px var(--sans); box-sizing: border-box; }
+.ed-burbuja-ops { display: flex; gap: 6px; }
+.ventana.editor .ed-burbuja-ops .boton { flex: 1; }
+.ed-pista { flex: none; margin: 0; text-align: center; font: 500 12px var(--sans); color: var(--txt-3); }
 /* En el celular, una columna: arriba fijo, el dibujo grande y lo que se cambia, abajo. */
 @media (max-width: 860px) {
   .ventana.editor { overflow: auto; }
@@ -542,4 +598,12 @@
   .ed-cuerpo { display: block; flex: none; }
   .ed-dibujo { height: 62vh; min-height: 320px; padding: 8px; }
   .ed-panel { overflow: visible; border-left: 0; border-top: 1px solid var(--line); }
+  /* La caja de muebles, en una tira que se desliza de costado (arrastrar para abajo la lleva al dibujo). */
+  .ed-bandeja { overflow-x: auto; overflow-y: hidden; padding: 8px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .ed-bandeja-tit { display: none; }
+  .ventana.editor .ed-bandeja .ed-piezas { display: flex; gap: 6px; }
+  .ed-ficha { flex: none; width: 74px; min-height: 60px; touch-action: pan-x; }
+  .ed-ficha-mod { width: auto; padding: 0 12px; }
+  .editor-fondo.arrastrando .ed-tacho { inset: 4px; flex-direction: row; }
+  .ed-pista { display: none; }
 }

@@ -383,7 +383,7 @@ function graficoLocal(filas) {
     puntos.map(function (p) { return p ? '<circle cx="' + X(p.j).toFixed(1) + '" cy="' + Y(p.p).toFixed(1) + '" r="6" fill="' + (COLOR_NIVEL[p.n] || '#8A857C') + '" stroke="#0A0A09" stroke-width="2"><title>' + esc((p.n ? NIVEL[p.n] : 'Esperando revisión') + ' · ' + p.p + '% a tiempo') + '</title></circle>' : ''; }).join('') +
     semanas.map(function (w, j) { return '<text x="' + X(j).toFixed(1) + '" y="' + (H - 10) + '" fill="#B8B2A7" font-size="11" text-anchor="middle">' + esc(diaMes(w)) + '</text>'; }).join('') +
     '</svg>';
-  return '<div class="imp-grafico"><h3>Semana a semana: controles a tiempo y nivel</h3>' + svg +
+  return '<div class="imp-grafico">' + svg +
     '<div class="imp-ley">' + NIVELES.slice().reverse().map(function (n) { return '<span><i style="background:' + COLOR_NIVEL[n] + '"></i>' + esc(NIVEL[n]) + '</span>'; }).join('') + '</div></div>';
 }
 
@@ -481,7 +481,8 @@ function verLocal() {
       '<div class="numero"><span>Controles a tiempo</span><b>' + (res.controles ? res.controles_a_tiempo + ' de ' + res.controles : '—') + '</b></div>' +
       '<div class="numero"><span>Tareas pendientes</span><b>' + (res.tareas_pendientes != null ? res.tareas_pendientes : '—') + '</b></div>' +
       '<div class="numero"><span>Fotos sin revisar</span><b>' + (res.sin_revisar != null ? res.sin_revisar : '—') + '</b></div></div>';
-    html += graficoLocal(r[2]);
+    /* El croquis es lo principal (Mauricio, 15/10: "que el protagonista sea el croquis"): va arriba; el gráfico semana a
+       semana, al final y cerrado. */
     _mapaLocal = r[3];
     html += '<div id="zonaMapa"></div>';
     if (!mods.length) html += '<div class="vacio">Este local todavía no tiene módulos: se arman en el mapa, con "Armar el croquis".</div>';
@@ -497,6 +498,8 @@ function verLocal() {
           '<small>' + esc(haceDias(m.tomada_en) + (m.foto_de ? ' · ' + m.foto_de : '') + (m.responsable ? ' · a cargo de ' + m.responsable : '')) + '</small></button>';
       }).join('') + '</div>';
     });
+    var gr = graficoLocal(r[2]);
+    if (gr) html += '<details class="imp-grafico-det"><summary>Semana a semana: controles a tiempo y nivel</summary>' + gr + '</details>';
     var c = document.getElementById('cuerpo');
     c.innerHTML = html;
     cargarFotos(c);
@@ -2507,6 +2510,13 @@ function iconoPieza(k) {
   var t = tamanoPieza(k);
   return '<svg class="pieza-ico" viewBox="0 0 ' + (t.w + 4) + ' ' + (t.h + 4) + '" aria-hidden="true" focusable="false">' + dibujoPieza(k, { x: 2, y: 2, w: t.w, h: t.h }, '', 's', '', { sinNombre: true }) + '</svg>';
 }
+/** El dibujito de un módulo del centro (la ficha "Módulo" de la caja de muebles). */
+function iconoModulo() {
+  return '<svg class="pieza-ico" viewBox="0 0 74 50" aria-hidden="true" focusable="false">' +
+    '<rect x="2" y="2" width="70" height="46" rx="5" fill="none" style="stroke:var(--acc)" stroke-width="3"/>' +
+    '<rect x="5" y="5" width="64" height="40" rx="3" fill="#6E4A2E"/>' +
+    (CROQUIS_IMG ? imagenesCroquis(['mesa'], { x: 6, y: 6, w: 62, h: 38 }, 's', true, 0) : '') + '</svg>';
+}
 var NOMBRE_FRENTE = { calle: 'La vereda (local de calle)', galeria: 'El pasillo de una galería', shopping: 'El pasillo de un shopping' };
 /** Los lugares con módulo, en el orden de los números. */
 function ordenEditable(e) {
@@ -2561,17 +2571,38 @@ function editarMapa(d, op) {
   var fijosDep = (m.croquis && m.croquis.deposito ? normalizarCroquis(m.croquis.deposito).fijos : []).map(function (x) { return Object.assign({}, x); });
   var fijosDe = { salon: fijos, deposito: fijosDep };
 
-  /* A pantalla completa (Mauricio, 15/10: "que sea pantalla completa… más práctico y más rápido para armarlo", "a la
-     gente no le gusta leer"): el dibujo grande, al costado lo que se cambia, y el salón y el depósito en dos solapas. */
-  var sec = function (titulo, cuerpo, cerrada) { return '<details class="ed-sec"' + (cerrada ? '' : ' open') + '><summary>' + titulo + '</summary>' + cuerpo + '</details>'; };
+  /* A pantalla completa y "como un juego" (Mauricio, 15/10: "que sea pantalla completa… más práctico y más rápido";
+     "los mueblecitos… al alcance para que yo los pueda deslizar… que te den ganas de hacerlo… sin tanta lectura"): a la
+     izquierda la caja de muebles para arrastrar, en el medio el dibujo, a la derecha sólo la forma del local, y el salón
+     y el depósito en dos solapas. Lo que se pone se toca en el dibujo (un globito con lo suyo) y se saca arrastrándolo
+     de vuelta a la caja. */
+  var grupo = function (titulo, cuerpo, id) { return '<div class="ed-grupo"' + (id ? ' id="' + id + '"' : '') + '>' + (titulo ? '<h4>' + titulo + '</h4>' : '') + cuerpo + '</div>'; };
+  /* Los botones de a uno (Largo | Cuadrado…) manejan un desplegable escondido: lo demás sigue leyendo de ahí. */
+  var tira = function (id, valor, ops) {
+    return '<select id="' + id + '" class="ed-oculto" tabindex="-1" aria-hidden="true">' + ops.map(function (o) {
+        return '<option value="' + o[0] + '"' + (o[0] === valor ? ' selected' : '') + '>' + esc(o[2]) + '</option>'; }).join('') + '</select>' +
+      '<div class="ed-tira" role="group" data-tira="' + id + '">' + ops.map(function (o) {
+        return '<button type="button" data-valor="' + o[0] + '" aria-pressed="' + (o[0] === valor) + '" title="' + esc(o[2]) + '">' + (o[3] || '') + '<span>' + esc(o[1]) + '</span></button>'; }).join('') + '</div>';
+  };
+  /* − 3 +: para no escribir números. */
+  var paso = function (attrs, etiqueta) {
+    return '<span class="ed-paso"><button type="button" data-paso="-1" aria-label="Uno menos">−</button>' +
+      '<input type="number" inputmode="numeric" min="0" max="40" ' + attrs + ' aria-label="' + esc(etiqueta) + '">' +
+      '<button type="button" data-paso="1" aria-label="Uno más">+</button></span>';
+  };
+  var icoForma = function (cuadrado) {
+    return '<svg viewBox="0 0 20 16" aria-hidden="true"><rect x="' + (cuadrado ? 3 : 6) + '" y="1.5" width="' + (cuadrado ? 14 : 8) + '" height="13" rx="1.5" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>';
+  };
   var anchoPuertaHtml = function (id, tipo) {
     return '<span class="imp-ancho-puerta" id="' + id + '"><span>Ocupa</span>' + [1, 2, 3].map(function (a) {
       return '<button type="button" class="boton chico" data-ancho-puerta="' + tipo + ':' + a + '">' + a + '</button>'; }).join('') + '</span>';
   };
-  var bandeja = function (id, tipo, piezas) {
-    return '<div class="imp-piezas ed-piezas" id="' + id + '">' + piezas.map(function (k) {
-      return '<button type="button" class="boton chico" data-en="' + tipo + '" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
-    }).join('') + '</div>';
+  var fichas = function (id, tipo, piezas, conModulo) {
+    return '<div class="ed-piezas" id="' + id + '">' +
+      (conModulo ? '<button type="button" class="ed-ficha ed-ficha-mod" id="eIslaMas" data-nuevo="modulo" title="Un módulo en el centro (mesa, exhibidor…): con foto y responsable">' + iconoModulo() + '<span>Módulo</span></button>' : '') +
+      piezas.map(function (k) {
+        return '<button type="button" class="ed-ficha" data-en="' + tipo + '" data-pieza="' + k + '">' + iconoPieza(k) + '<span>' + esc(PIEZAS[k].nombre) + '</span></button>';
+      }).join('') + '</div>';
   };
   var f = document.createElement('div');
   f.className = 'ventana-fondo editor-fondo';
@@ -2586,45 +2617,37 @@ function editarMapa(d, op) {
       '<button class="boton lima" id="eGuardar">Guardar</button>' +
     '</header>' +
     '<div class="ed-cuerpo">' +
+      '<aside class="ed-bandeja" aria-label="Muebles para arrastrar">' +
+        '<div data-de="salon"><p class="ed-bandeja-tit">Arrastrá al local</p>' + fichas('ePiezas', 'salon', PIEZAS_ADENTRO, true) + '</div>' +
+        '<div data-de="deposito" hidden><p class="ed-bandeja-tit">Arrastrá al depósito</p>' + fichas('ePiezasDep', 'deposito', PIEZAS_DEPOSITO) + '</div>' +
+        '<div class="ed-tacho" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>' +
+          '<span>Soltalo acá para sacarlo</span></div>' +
+      '</aside>' +
       '<div class="ed-dibujo">' +
         '<p class="nota ed-flota" id="eNotaCambiar" hidden>Tocá el lugar adonde va: los dos cambian de lugar. <button type="button" class="boton chico" id="eCancelarCambio">Cancelar</button></p>' +
         '<p class="nota ed-flota" id="eNotaPuerta" hidden>Tocá un <b>+</b> verde: ahí va la entrada.</p>' +
         '<p class="nota ed-flota" id="eNotaPuertaDep" hidden>Tocá un <b>+</b> verde: ahí va la puerta.</p>' +
         '<div class="imp-mapa-vista croquis" id="eVista" data-de="salon"></div>' +
         '<div class="imp-mapa-vista croquis" id="eVistaDep" data-de="deposito" hidden></div>' +
+        '<div class="ed-burbuja" id="eBurbuja" role="dialog" aria-label="Lo que tocaste" hidden></div>' +
+        '<p class="ed-pista">Tocá para cambiar · Arrastrá para mover</p>' +
       '</div>' +
       '<aside class="ed-panel">' +
         '<div data-de="salon">' +
-          sec('El local',
-            '<label class="campo"><span>Forma</span><select id="eForma"><option value="rectangulo"' + (m.forma !== 'cuadrado' ? ' selected' : '') + '>De calle (largo)</option>' +
-              '<option value="cuadrado"' + (m.forma === 'cuadrado' ? ' selected' : '') + '>De shopping (cuadrado)</option></select></label>' +
-            '<label class="campo"><span>Enfrente de la vidriera</span><select id="eFrente">' + Object.keys(NOMBRE_FRENTE).map(function (k) {
-              return '<option value="' + k + '"' + ((cqGuardado.frente || 'calle') === k ? ' selected' : '') + '>' + NOMBRE_FRENTE[k] + '</option>';
-            }).join('') + '</select></label>' +
-            '<label class="campo"><span>Vidriera</span><select id="eVidriera">' + [['0', 'Sin vidriera'], ['1', 'Un panel'], ['2', 'Dos paneles (izq. y der.)']].map(function (o) {
-              return '<option value="' + o[0] + '"' + (String(vidr.length) === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
-            }).join('') + '</select></label><p class="ed-chico" id="eNotaVidriera"></p>') +
-          sec('Módulos por pared', '<div class="ed-paredes">' + PAREDES.map(function (p) {
-              return '<label class="campo"><span>' + esc(p[1]) + '</span><input type="number" inputmode="numeric" min="0" max="40" data-pared="' + p[0] + '" aria-label="Módulos en ' + esc(p[1]) + '"></label>';
-            }).join('') + '</div><p class="ed-chico">Sin contar probadores ni huecos.</p>') +
-          sec('Entrada', '<div class="imp-lugar-ops"><button type="button" class="boton chico" id="eMoverPuerta">Mover la entrada</button>' + anchoPuertaHtml('eAnchoPuerta', 'salon') + '</div>') +
-          sec('Centro del salón', '<div class="imp-islas" id="eIslas"></div>' +
-            '<div class="imp-lugar-ops"><button type="button" class="boton chico" id="eIslaMas">+ Agregar</button>' +
-            '<button type="button" class="boton chico" id="eAcomodar">Acomodarlos solos</button></div>') +
-          sec('Muebles', '<p class="ed-chico">Arrastralos al dibujo (o tocalos).</p>' + bandeja('ePiezas', 'salon', PIEZAS_ADENTRO) + '<div class="imp-islas" id="eFijos"></div>') +
-          sec('¿Cómo se usa?', '<ul class="ed-ayuda"><li><b>Tocá</b> un lugar de la pared para cambiarlo.</li>' +
-            '<li><b>Arrastralo</b> a otro lugar y cambian de lugar.</li>' +
-            '<li>El <b>1</b> es el primero a la izquierda de la entrada.</li>' +
-            '<li>Si un módulo cambia de número, sigue con su responsable y sus fotos.</li></ul>', true) +
+          grupo('Forma', tira('eForma', m.forma === 'cuadrado' ? 'cuadrado' : 'rectangulo', [['rectangulo', 'Largo', 'De calle (largo)', icoForma(false)], ['cuadrado', 'Cuadrado', 'De shopping (cuadrado)', icoForma(true)]])) +
+          grupo('Módulos en cada pared', '<div class="ed-plano">' + [['fondo', 'Fondo'], ['izquierda', 'Izquierda'], ['derecha', 'Derecha'], ['frente', 'Frente']].map(function (p) {
+              return '<div class="ed-lado" data-lado="' + p[0] + '">' + paso('data-pared="' + p[0] + '"', 'Módulos en ' + NOMBRE_PARED[p[0]]) + '<small>' + p[1] + '</small></div>';
+            }).join('') + '<div class="ed-plano-local" aria-hidden="true"><span>Vidriera</span></div></div>') +
+          grupo('Vidriera', tira('eVidriera', String(vidr.length), [['0', 'Sin', 'Sin vidriera'], ['1', '1 panel', 'Un panel'], ['2', '2 paneles', 'Dos paneles (izq. y der.)']]) +
+            '<p class="ed-chico" id="eNotaVidriera"></p>') +
+          grupo('Enfrente', tira('eFrente', NOMBRE_FRENTE[cqGuardado.frente] ? cqGuardado.frente : 'calle', [['calle', 'Vereda', NOMBRE_FRENTE.calle], ['galeria', 'Galería', NOMBRE_FRENTE.galeria], ['shopping', 'Shopping', NOMBRE_FRENTE.shopping]])) +
+          grupo('Entrada', '<div class="imp-lugar-ops"><button type="button" class="boton chico" id="eMoverPuerta">Mover la entrada</button>' + anchoPuertaHtml('eAnchoPuerta', 'salon') + '</div>') +
+          grupo('', '<button type="button" class="boton chico" id="eAcomodar">Los del centro, en fila</button>', 'eGrupoCentro') +
         '</div>' +
         '<div data-de="deposito" hidden>' +
-          sec('El depósito',
-            '<label class="campo"><span>Forma</span><select id="eFormaDep"><option value="rectangulo"' + (m.forma_deposito !== 'cuadrado' ? ' selected' : '') + '>Largo</option>' +
-              '<option value="cuadrado"' + (m.forma_deposito === 'cuadrado' ? ' selected' : '') + '>Cuadrado</option></select></label>' +
-            '<label class="campo"><span>Módulos</span><input type="number" inputmode="numeric" min="0" max="40" id="eDep"></label>' +
-            '<p class="ed-chico">Cada módulo, lo que entra en una foto.</p>') +
-          sec('Puerta', '<div class="imp-lugar-ops"><button type="button" class="boton chico" id="eMoverPuertaDep">Mover la puerta</button>' + anchoPuertaHtml('eAnchoPuertaDep', 'deposito') + '</div>') +
-          sec('Muebles', '<p class="ed-chico">Arrastralos al dibujo (o tocalos).</p>' + bandeja('ePiezasDep', 'deposito', PIEZAS_DEPOSITO) + '<div class="imp-islas" id="eFijosDep"></div>') +
+          grupo('Forma', tira('eFormaDep', m.forma_deposito === 'cuadrado' ? 'cuadrado' : 'rectangulo', [['rectangulo', 'Largo', 'Largo', icoForma(false)], ['cuadrado', 'Cuadrado', 'Cuadrado', icoForma(true)]])) +
+          grupo('Módulos', paso('id="eDep"', 'Módulos del depósito') + '<p class="ed-chico">Cada uno, lo que entra en una foto.</p>') +
+          grupo('Puerta', '<div class="imp-lugar-ops"><button type="button" class="boton chico" id="eMoverPuertaDep">Mover la puerta</button>' + anchoPuertaHtml('eAnchoPuertaDep', 'deposito') + '</div>') +
         '</div>' +
       '</aside>' +
     '</div></div>';
@@ -2636,6 +2659,7 @@ function editarMapa(d, op) {
   function ponerSolapa(t) {
     f.querySelectorAll('[data-solapa]').forEach(function (b) { b.setAttribute('aria-selected', String(b.dataset.solapa === t)); });
     f.querySelectorAll('[data-de]').forEach(function (el) { el.hidden = el.dataset.de !== t; });
+    cerrarBurbuja();
     if (st.mover && st.mover !== t) st.mover = null;
     if (st.cambiar && st.cambiar.split(':')[0] !== t) st.cambiar = null;
     vista();
@@ -2671,6 +2695,7 @@ function editarMapa(d, op) {
     /* Con una ventanita encima (el menú de un lugar), el "atrás" cierra sólo esa. */
     var encima = [].slice.call(document.querySelectorAll('.ventana-fondo:not(.editor-fondo)')).pop();
     if (encima) { var c = encima.querySelector('#cerrarVentana'); if (c) c.click(); else encima.remove(); ponerMarca(); return; }
+    if (elegido) { cerrarBurbuja(); ponerMarca(); return; }
     if (!salir()) ponerMarca();
   }
   function alEscape(ev) {
@@ -2678,6 +2703,7 @@ function editarMapa(d, op) {
     /* Con el menú de un lugar abierto, Escape cierra sólo ese menú (como el "atrás"; árbitro, ronda 2). */
     var encima = [].slice.call(document.querySelectorAll('.ventana-fondo:not(.editor-fondo)')).pop();
     if (encima) { var c = encima.querySelector('#cerrarVentana'); if (c) c.click(); else encima.remove(); return; }
+    if (elegido) { var a0 = document.activeElement; if (a0 && burbuja.contains(a0)) a0.blur(); cerrarBurbuja(); return; }
     var a = document.activeElement;
     if (a && f.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) { a.blur(); return; }
     /* Primero cancela lo que estaba a medio hacer ("Cambiar de lugar", "Mover la entrada"). */
@@ -2798,26 +2824,6 @@ function editarMapa(d, op) {
     apagan += d.islas.filter(function (i) { return !centro.some(function (c) { return c.id === i.id; }) && !vidr.some(function (v) { return v.id === i.id; }); }).length;
     return { nuevos: nuevos, apagan: apagan, renumeran: renumeran };
   }
-  function filasCentro(total) {
-    /* Mientras escriben un nombre, la lista no se vuelve a dibujar (perderían lo que están tocando). */
-    var hayFoco = function (sel) { var a = document.activeElement; return a && a.tagName === 'INPUT' && a.closest && a.closest(sel); };
-    if (!hayFoco('#eIslas')) {
-      f.querySelector('#eIslas').innerHTML = centro.length ? centro.map(function (c, k) {
-        return '<div class="imp-isla"><b>' + (total + k + 1) + '</b><input maxlength="40" data-isla="' + k + '" value="' + esc(c.nombre) + '" placeholder="Mesa, exhibidor, perchero…" aria-label="Nombre del módulo del centro">' +
-          (c.pos ? '<button type="button" class="boton chico" data-suelta="' + k + '" title="Volver a la fila del medio">A la fila</button>' : '') +
-          '<button type="button" class="boton chico" data-sacar="' + k + '">Sacar</button></div>';
-      }).join('') : '<p class="bajada">Todavía no hay módulos en el centro.</p>';
-    } else f.querySelectorAll('#eIslas .imp-isla b').forEach(function (b, k) { b.textContent = total + k + 1; });
-    [['salon', '#eFijos', 'Todavía no hay muebles adentro.'], ['deposito', '#eFijosDep', 'Todavía no hay muebles en el depósito.']].forEach(function (z) {
-      if (hayFoco(z[1])) return;
-      var lista = fijosDe[z[0]], en = ' data-en="' + z[0] + '"';
-      f.querySelector(z[1]).innerHTML = lista.length ? lista.map(function (x, k) {
-        return '<div class="imp-isla">' + iconoPieza(x.tipo) + '<input maxlength="40"' + en + ' data-fijo-nombre="' + k + '" value="' + esc(x.nombre) + '" placeholder="' +
-          esc(x.tipo === 'otro' ? 'Qué es (escribilo)' : PIEZAS[x.tipo].nombre + ' (nombre opcional)') + '" aria-label="' + esc(PIEZAS[x.tipo].nombre) + ': nombre">' +
-          '<button type="button" class="boton chico"' + en + ' data-girar="' + k + '">Girarla</button><button type="button" class="boton chico"' + en + ' data-sacar-fijo="' + k + '">Sacar</button></div>';
-      }).join('') : '<p class="bajada">' + z[2] + '</p>';
-    });
-  }
   function vista() {
     var mm = mapaArmado(), dv = datosVista(mm), cq = croquisArmado();
     vistaS.innerHTML = svgMapa(dv, { croquis: cq, editable: true, vacios: true, moverPuerta: st.mover === 'salon' ? 'salon' : null });
@@ -2846,12 +2852,18 @@ function editarMapa(d, op) {
       if (orig) orig.classList.add('mapa-origen'); else st.cambiar = null;
     }
     var total = dv.pared.length;
-    filasCentro(total);
+    /* Los botones de a uno, como dicen los desplegables escondidos. */
+    f.querySelectorAll('[data-tira]').forEach(function (t) {
+      var v = f.querySelector('#' + t.dataset.tira).value;
+      t.querySelectorAll('[data-valor]').forEach(function (b) { b.setAttribute('aria-pressed', String(b.dataset.valor === v)); });
+    });
+    f.querySelector('#eGrupoCentro').hidden = !centro.length;
     var c = cambios();
     /* Arriba, corto: cuántos hay y qué cambia al guardar (el detalle lo pregunta al guardar). */
     var tot = [total + ' en las paredes'].concat(centro.length ? [centro.length + ' en el centro'] : [], [mm.deposito + ' en el depósito']).join(' · ');
     var cam = [].concat(c.nuevos ? ['se crean ' + c.nuevos] : [], c.renumeran ? ['cambian de número ' + c.renumeran] : [], c.apagan ? ['se apagan ' + c.apagan] : []).join(' · ');
     f.querySelector('#eTotal').innerHTML = esc(tot) + (cam ? '<b>Al guardar: ' + esc(cam) + '</b>' : '');
+    posBurbuja();
   }
 
   /* ── El menú de un lugar de la pared ── */
@@ -3111,28 +3123,37 @@ function editarMapa(d, op) {
     function mueve(e2) {
       var p = puntoSvg(svg, e2);
       if (!movido && Math.abs(p.x - p0.x) + Math.abs(p.y - p0.y) < 5) return;
+      if (!movido) { cerrarBurbuja(); f.classList.add('arrastrando'); }
       movido = true;
+      var tacho = sobreBandeja(e2);
+      bandejaEl.classList.toggle('tacho-activo', tacho);
       var q = lugar(p), dx = caja[0] + q.x * caja[2] - c0.x, dy = caja[1] + q.y * caja[3] - c0.y;
       /* Levantado: un poco más grande y con sombra, centrado en su lugar. */
       mover.forEach(function (el) {
         if (!el) return;
         el.classList.add('levantado');
+        el.classList.toggle('a-sacar', tacho);
         el.setAttribute('transform', 'translate(' + (dx + c0.x).toFixed(1) + ',' + (dy + c0.y).toFixed(1) + ') scale(1.06) translate(' + (-c0.x).toFixed(1) + ',' + (-c0.y).toFixed(1) + ')');
       });
     }
     function suelta(e2) {
       window.removeEventListener('pointermove', mueve); window.removeEventListener('pointerup', suelta); window.removeEventListener('pointercancel', suelta);
+      f.classList.remove('arrastrando'); bandejaEl.classList.remove('tacho-activo');
       if (e2.type === 'pointercancel') { vista(); return; }
       if (!movido) {
-        /* Un toque: su renglón, abajo, para cambiarle el nombre. */
-        var k = t.hasAttribute('data-fijo') ? '[data-en="' + en + '"][data-fijo-nombre="' + t.dataset.fijo + '"]'
-          : '[data-isla="' + centro.map(function (c) { return c.key; }).indexOf(t.previousElementSibling && t.previousElementSibling.dataset.mod) + '"]';
-        var inp = f.querySelector(k), det = inp && inp.closest('details');
-        if (det) det.open = true;
-        if (inp) { inp.scrollIntoView({ block: 'center', behavior: 'smooth' }); inp.focus({ preventScroll: true }); }
+        /* Un toque: su globito (el nombre, girarlo, sacarlo). */
+        abrirBurbuja(t.hasAttribute('data-fijo') ? { en: en, tipo: 'fijo', k: +t.dataset.fijo }
+                                                 : { en: en, tipo: 'centro', key: t.previousElementSibling && t.previousElementSibling.dataset.mod });
         return;
       }
       soltadoEn = Date.now();
+      /* Soltado arriba de la caja de muebles: se saca (como tirarlo al tacho). */
+      if (sobreBandeja(e2)) {
+        if (t.hasAttribute('data-fijo')) fijosDe[en].splice(+t.dataset.fijo, 1);
+        else { var kc = centroDe(t.previousElementSibling && t.previousElementSibling.dataset.mod); if (kc > -1) centro.splice(kc, 1); }
+        vista();
+        return;
+      }
       var pos = lugar(puntoSvg(svg, e2)), cual = null;
       if (t.hasAttribute('data-fijo')) { var fx = fijosDe[en][+t.dataset.fijo]; if (fx) { fx.x = pos.x; fx.y = pos.y; } cual = '[data-fijo="' + t.dataset.fijo + '"]'; }
       else {
@@ -3207,23 +3228,91 @@ function editarMapa(d, op) {
   }
   f.querySelector('#eDep').addEventListener('change', depCambio);
   f.querySelector('#eFormaDep').addEventListener('change', depCambio);
-  var listaC = f.querySelector('#eIslas'), listaF = f.querySelector('#eFijos');
-  listaC.addEventListener('input', function (ev) {
-    var k = ev.target.dataset && ev.target.dataset.isla;
-    if (k == null || !centro[+k]) return;
-    centro[+k].nombre = ev.target.value;
+  /* ── El globito de lo que se tocó en el dibujo: su nombre, girarlo, sacarlo ── */
+  var burbuja = f.querySelector('#eBurbuja'), bandejaEl = f.querySelector('.ed-bandeja');
+  var elegido = null;   // { en, tipo: 'centro', key } o { en, tipo: 'fijo', k }
+  function centroDe(key) { for (var k = 0; k < centro.length; k++) if (centro[k].key === key) return k; return -1; }
+  function elegidoEl() {
+    if (!elegido) return null;
+    var v = vistaDe(elegido.en);
+    return elegido.tipo === 'fijo' ? v.querySelector('[data-fijo="' + elegido.k + '"]') : v.querySelector('.mapa-mod[data-mod="' + elegido.key + '"]');
+  }
+  function cerrarBurbuja() {
+    elegido = null;
+    burbuja.hidden = true;
+    burbuja.innerHTML = '';
+    f.querySelectorAll('.ed-elegido').forEach(function (el) { el.classList.remove('ed-elegido'); });
+  }
+  /** escribir: con el nombre listo para escribir encima (lo nuevo del centro, "otra cosa"). */
+  function abrirBurbuja(sel, escribir) {
+    var html, en = ' data-en="' + sel.en + '"';
+    if (sel.tipo === 'centro') {
+      var k = centroDe(sel.key), c = centro[k];
+      if (!c) { cerrarBurbuja(); return; }
+      html = '<b class="ed-burbuja-tit">Módulo ' + (ordenEditable(st.salon).length + k + 1) + ' · en el centro</b>' +
+        '<input maxlength="40" data-isla="' + k + '" value="' + esc(c.nombre) + '" placeholder="Mesa, exhibidor, perchero…" aria-label="Nombre del módulo del centro">' +
+        '<div class="ed-burbuja-ops">' + (c.pos ? '<button type="button" class="boton chico" data-suelta="' + k + '" title="Volver a la fila del medio">A la fila</button>' : '') +
+        '<button type="button" class="boton chico" data-sacar="' + k + '">Sacar</button></div>';
+    } else {
+      var x = fijosDe[sel.en] && fijosDe[sel.en][sel.k];
+      if (!x) { cerrarBurbuja(); return; }
+      html = '<b class="ed-burbuja-tit">' + esc(PIEZAS[x.tipo].nombre) + '</b>' +
+        '<input maxlength="40"' + en + ' data-fijo-nombre="' + sel.k + '" value="' + esc(x.nombre) + '" placeholder="' + esc(x.tipo === 'otro' ? 'Qué es (escribilo)' : 'Nombre (opcional)') +
+          '" aria-label="' + esc(PIEZAS[x.tipo].nombre) + ': nombre">' +
+        '<div class="ed-burbuja-ops"><button type="button" class="boton chico"' + en + ' data-girar="' + sel.k + '">Girar</button>' +
+        '<button type="button" class="boton chico"' + en + ' data-sacar-fijo="' + sel.k + '">Sacar</button></div>';
+    }
+    elegido = sel;
+    burbuja.innerHTML = '<button type="button" class="ed-burbuja-x" data-cerrar aria-label="Cerrar">×</button>' + html;
+    posBurbuja();
+    if (escribir) { var i = burbuja.querySelector('input'); if (i) { i.focus({ preventScroll: true }); i.select(); } }
+  }
+  /** Al lado de lo elegido (arriba; si no entra, abajo), sin salirse del dibujo. */
+  function posBurbuja() {
+    if (!elegido) return;
+    var el = elegidoEl();
+    if (!el || !el.getBoundingClientRect().width) { cerrarBurbuja(); return; }
+    f.querySelectorAll('.ed-elegido').forEach(function (x) { if (x !== el) x.classList.remove('ed-elegido'); });
+    el.classList.add('ed-elegido');
+    burbuja.hidden = false;
+    var caja = burbuja.parentNode.getBoundingClientRect(), r = el.getBoundingClientRect(), bw = burbuja.offsetWidth, bh = burbuja.offsetHeight;
+    var x = r.left + r.width / 2 - caja.left - bw / 2, y = r.top - caja.top - bh - 10;
+    if (y < 6) y = r.bottom - caja.top + 10;
+    burbuja.style.left = Math.round(Math.max(6, Math.min(caja.width - bw - 6, x))) + 'px';
+    burbuja.style.top = Math.round(Math.max(6, Math.min(caja.height - bh - 6, y))) + 'px';
+  }
+  burbuja.addEventListener('input', function (ev) {
+    var t = ev.target, k, l;
+    if (t.dataset.isla != null) { k = +t.dataset.isla; if (centro[k]) centro[k].nombre = t.value; }
+    else if (t.dataset.fijoNombre != null) { l = fijosDe[t.dataset.en]; k = +t.dataset.fijoNombre; if (l && l[k]) l[k].nombre = t.value; }
+    else return;
     vista();
   });
-  /* Al tocar un botón de una lista, se suelta el campo que estaba escribiendo (si no, la lista no se vuelve a dibujar). */
-  function soltarFoco() { var a = document.activeElement; if (a && a.tagName === 'INPUT' && f.contains(a)) a.blur(); }
-  listaC.addEventListener('click', function (ev) {
-    var b = ev.target.closest && ev.target.closest('[data-sacar], [data-suelta]');
+  burbuja.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); cerrarBurbuja(); } });
+  burbuja.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('button');
     if (!b) return;
-    soltarFoco();
-    if (b.dataset.sacar != null) centro.splice(+b.dataset.sacar, 1);
-    else if (centro[+b.dataset.suelta]) centro[+b.dataset.suelta].pos = null;
-    vista();
+    var q = b.dataset, lista = q.en ? fijosDe[q.en] : null;
+    if (q.cerrar != null) cerrarBurbuja();
+    else if (q.sacar != null) { centro.splice(+q.sacar, 1); cerrarBurbuja(); vista(); }
+    else if (q.suelta != null) { if (centro[+q.suelta]) centro[+q.suelta].pos = null; vista(); abrirBurbuja(elegido); }
+    else if (q.girar != null && lista) {
+      if (lista[+q.girar]) lista[+q.girar].vertical = !lista[+q.girar].vertical;
+      vista();
+      var el = elegidoEl();
+      if (el) el.classList.add('mapa-rebota');
+    } else if (q.sacarFijo != null && lista) { lista.splice(+q.sacarFijo, 1); cerrarBurbuja(); vista(); }
   });
+  /* Tocar el dibujo fuera de lo elegido (o de otra cosa de adentro, que abre la suya) cierra el globito. */
+  f.querySelector('.ed-dibujo').addEventListener('click', function (ev) {
+    if (!elegido || burbuja.contains(ev.target) || (ev.target.closest && ev.target.closest('[data-centro], [data-fijo]'))) return;
+    cerrarBurbuja();
+  });
+  /** ¿Lo están soltando arriba de la caja de muebles? (ahí se saca). */
+  function sobreBandeja(ev) {
+    var r = bandejaEl.getBoundingClientRect();
+    return r.width > 0 && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom;
+  }
   /** "Centro 1", "Centro 2"…: el primer nombre libre para uno nuevo (después se cambia). */
   function nombreLibre() {
     for (var k = centro.length + 1; ; k++) {
@@ -3231,28 +3320,41 @@ function editarMapa(d, op) {
       if (!centro.some(function (c) { return c.nombre.trim().toLowerCase() === n.toLowerCase(); })) return n;
     }
   }
-  f.querySelector('#eIslaMas').addEventListener('click', function () {
-    if (centro.length >= 30) { avisar('Como mucho 30 en el centro.'); return; }
-    centro.push({ key: 'nueva' + (++nuevas), id: null, nombre: nombreLibre(), antes: null, pos: null });
+  /** Un módulo nuevo en el centro: donde lo soltaron o, si tocaron la ficha, en la fila del medio. */
+  function nuevoCentro(pos) {
+    if (centro.length >= 30) { avisar('Como mucho 30 en el centro.'); return null; }
+    var c = { key: 'nueva' + (++nuevas), id: null, nombre: nombreLibre(), antes: null, pos: pos || null };
+    centro.push(c);
     vista();
-    var nuevo = listaC.querySelector('[data-isla="' + (centro.length - 1) + '"]');
-    if (nuevo) { nuevo.focus(); nuevo.select(); }
+    var g = vistaS.querySelector('.mapa-mod[data-mod="' + c.key + '"]');
+    if (g) g.classList.add('mapa-rebota');
+    return c;
+  }
+  f.querySelector('#eIslaMas').addEventListener('click', function () {
+    if (Date.now() - piezaSoltadaEn < 500) return;
+    var c = nuevoCentro(null);
+    if (c) abrirBurbuja({ en: 'salon', tipo: 'centro', key: c.key }, true);
   });
-  [listaF, f.querySelector('#eFijosDep')].forEach(function (lf) {
-    lf.addEventListener('input', function (ev) {
-      var k = ev.target.dataset && ev.target.dataset.fijoNombre, lista = fijosDe[ev.target.dataset.en];
-      if (k == null || !lista || !lista[+k]) return;
-      lista[+k].nombre = ev.target.value;
-      vista();
+  /* Los botones de a uno: cambian el desplegable escondido (y su "change" hace lo de siempre). */
+  f.querySelectorAll('[data-tira]').forEach(function (t) {
+    t.addEventListener('click', function (ev) {
+      var b = ev.target.closest && ev.target.closest('[data-valor]'), s = f.querySelector('#' + t.dataset.tira);
+      if (!b || s.value === b.dataset.valor) return;
+      s.value = b.dataset.valor;
+      s.dispatchEvent(new Event('change', { bubbles: true }));
     });
-    lf.addEventListener('click', function (ev) {
-      var b = ev.target.closest && ev.target.closest('[data-girar], [data-sacar-fijo]'), lista = b && fijosDe[b.dataset.en];
-      if (!lista) return;
-      soltarFoco();
-      if (b.dataset.girar != null) { var x = lista[+b.dataset.girar]; if (x) x.vertical = !x.vertical; }
-      else lista.splice(+b.dataset.sacarFijo, 1);
-      vista();
-    });
+  });
+  /* − n +: uno más o uno menos (el lugar nuevo de la pared rebota). */
+  f.addEventListener('click', function (ev) {
+    var b = ev.target.closest && ev.target.closest('[data-paso]');
+    if (!b) return;
+    var i = b.parentNode.querySelector('input');
+    i.value = String(Math.max(0, Math.min(40, (parseInt(i.value, 10) || 0) + +b.dataset.paso)));
+    i.dispatchEvent(new Event('change', { bubbles: true }));
+    if (+b.dataset.paso > 0 && i.dataset.pared) {
+      var ls = st.salon.paredes[i.dataset.pared], nv = vistaS.querySelector('[data-lugar="salon:' + i.dataset.pared + ':' + (ls.length - 1) + '"]');
+      if (nv && nv.previousElementSibling) nv.previousElementSibling.classList.add('mapa-rebota');
+    }
   });
   /** Un mueble nuevo: donde lo soltaron (pos) o, si lo tocaron, en un lugar libre (en el salón, a los costados del medio:
       por el medio va la fila de los del centro). */
@@ -3268,7 +3370,7 @@ function editarMapa(d, op) {
     vista();
     var dib = (en === 'deposito' ? vistaD : vistaS).querySelector('[data-fijo="' + (lista.length - 1) + '"]');
     if (dib) dib.classList.add('mapa-rebota');
-    if (tipo === 'otro') { var nuevo = f.querySelector('[data-en="' + en + '"][data-fijo-nombre="' + (lista.length - 1) + '"]'); if (nuevo) nuevo.focus(); }
+    if (tipo === 'otro') abrirBurbuja({ en: en, tipo: 'fijo', k: lista.length - 1 }, true);
   }
   var piezaSoltadaEn = 0;
   f.querySelectorAll('#ePiezas, #ePiezasDep').forEach(function (bandeja) {
@@ -3276,19 +3378,19 @@ function editarMapa(d, op) {
       var b = ev.target.closest && ev.target.closest('[data-pieza]');
       if (!b || Date.now() - piezaSoltadaEn < 500) return;
       agregarMueble(b.dataset.en, b.dataset.pieza, null);
-      avisar(PIEZAS[b.dataset.pieza].nombre + ': ya está en el dibujo. Arrastrala hasta donde va.');
+      if (b.dataset.pieza !== 'otro') avisar(PIEZAS[b.dataset.pieza].nombre + ': ya está en el local. Arrastrala adonde va.');
     });
     /* Agarrarla de la bandeja y llevarla al dibujo: se suelta donde va. */
     bandeja.addEventListener('pointerdown', function (ev) {
-      var b = ev.target.closest && ev.target.closest('[data-pieza]');
+      var b = ev.target.closest && ev.target.closest('[data-pieza], [data-nuevo]');
       if (!b || (ev.button && ev.button !== 0)) return;
-      var en = b.dataset.en, destino = en === 'deposito' ? vistaD : vistaS, x0 = ev.clientX, y0 = ev.clientY, fantasma = null;
+      var en = b.dataset.en || 'salon', destino = en === 'deposito' ? vistaD : vistaS, x0 = ev.clientX, y0 = ev.clientY, fantasma = null;
       function mueve(e2) {
         if (!fantasma) {
           if (Math.abs(e2.clientX - x0) + Math.abs(e2.clientY - y0) < 8) return;
           fantasma = document.createElement('div');
           fantasma.className = 'pieza-fantasma';
-          fantasma.innerHTML = iconoPieza(b.dataset.pieza);
+          fantasma.innerHTML = b.dataset.nuevo ? iconoModulo() : iconoPieza(b.dataset.pieza);
           document.body.appendChild(fantasma);
         }
         e2.preventDefault();
@@ -3306,8 +3408,9 @@ function editarMapa(d, op) {
         if (e2.type !== 'pointerup') return;
         var sobre = document.elementFromPoint(e2.clientX, e2.clientY), svg = sobre && destino.contains(sobre) && destino.querySelector('svg.mapa-svg');
         if (!svg) { avisar('Soltala arriba del dibujo' + (en === 'deposito' ? ' del depósito.' : ' del salón.')); return; }
-        var caja = (svg.getAttribute('data-adentro') || '').split(' ').map(Number), p = puntoSvg(svg, e2), t = tamanoPieza(b.dataset.pieza, false);
-        agregarMueble(en, b.dataset.pieza, { x: imantarCroquis((p.x - caja[0]) / caja[2], t.w / 2 / caja[2]), y: imantarCroquis((p.y - caja[1]) / caja[3], t.h / 2 / caja[3]) });
+        var caja = (svg.getAttribute('data-adentro') || '').split(' ').map(Number), p = puntoSvg(svg, e2), t = b.dataset.nuevo ? { w: 46, h: 70 } : tamanoPieza(b.dataset.pieza, false);
+        var pos = { x: imantarCroquis((p.x - caja[0]) / caja[2], t.w / 2 / caja[2]), y: imantarCroquis((p.y - caja[1]) / caja[3], t.h / 2 / caja[3]) };
+        if (b.dataset.nuevo) nuevoCentro(pos); else agregarMueble(en, b.dataset.pieza, pos);
       }
       window.addEventListener('pointermove', mueve, { passive: false });
       window.addEventListener('pointerup', suelta);
@@ -3346,7 +3449,7 @@ function editarMapa(d, op) {
     for (var k = 0; k < islas.length; k++) {
       var nom = islas[k], l = nom.toLowerCase();
       if (!nom) { avisar('Ponele nombre al módulo ' + (total + k + 1) + ' (el del centro).'); return; }
-      if (esNombreVidriera(nom)) { avisar('"' + nom + '" es el nombre de la vidriera: usá otro para el del centro (la vidriera se elige arriba, en "Vidriera").'); return; }
+      if (esNombreVidriera(nom)) { avisar('"' + nom + '" es el nombre de la vidriera: usá otro para el del centro (la vidriera se elige a la derecha, en "Vidriera").'); return; }
       if (vistos[l]) { avisar('Hay dos en el centro que se llaman "' + nom + '": cambiale el nombre a uno.'); return; }
       vistos[l] = true;
     }
