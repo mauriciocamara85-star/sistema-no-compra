@@ -1494,12 +1494,13 @@ export function montarCroquis3D(cont, pl, d, op) {
   const encuadrar = (polar, azim) => {
     let radio = Math.max(aw, al) * 1.6;
     const fa = Math.min(0.3, Math.max(0, (op.abajo || 0) / Math.max(1, cont.clientHeight)));   // lo que tapan los botones de abajo
+    const fb = Math.min(0.15, Math.max(0, (op.arriba || 0) / Math.max(1, cont.clientHeight)));   // y la ayuda de arriba
     for (let k = 0; k < 12; k++) {
       camara.position.setFromSphericalCoords(radio, polar, azim).add(controles.target);
       camara.lookAt(controles.target); camara.updateMatrixWorld();
       let x0 = 9, x1 = -9, y0 = 9, y1 = -9;
       esquinas.forEach((e) => { const p = e.clone().project(camara); x0 = Math.min(x0, p.x); x1 = Math.max(x1, p.x); y0 = Math.min(y0, p.y); y1 = Math.max(y1, p.y); });
-      const mx = (x1 - x0) / 2 / 0.96, my = (y1 - y0) / 2 / (0.94 * (1 - fa)), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2 - fa;
+      const mx = (x1 - x0) / 2 / 0.96, my = (y1 - y0) / 2 / (0.94 * (1 - fa - fb)), cx = (x0 + x1) / 2, cy = (y0 + y1) / 2 - fa + fb;
       const der = new THREE.Vector3().setFromMatrixColumn(camara.matrixWorld, 0), arr = new THREE.Vector3().setFromMatrixColumn(camara.matrixWorld, 1);
       const paso = radio * Math.tan(THREE.MathUtils.degToRad(camara.fov / 2));
       controles.target.addScaledVector(der, cx * paso * camara.aspect * 0.9).addScaledVector(arr, cy * paso * 0.9);
@@ -1509,11 +1510,20 @@ export function montarCroquis3D(cont, pl, d, op) {
     camara.position.setFromSphericalCoords(radio, polar, azim).add(controles.target);
     controles.update();
   };
-  /* Acostado si así entra más grande (Mauricio, 15/10: "que se vea mejor desde arriba, así vemos los muebles"): en una
-     pantalla ancha, un local largo se gira un cuarto de vuelta (la vidriera queda a la izquierda, como entrando); en el
-     celular parado, uno ancho. Así los muebles se ven casi el doble de grandes. */
-  const util = Math.max(1, alto - (op.abajo || 0)), acostado = (ancho > util * 1.1 && al > aw * 1.15) || (util > ancho * 1.1 && aw > al * 1.15);
-  encuadrar(op.polar || 0.6, op.azimut != null ? op.azimut : acostado ? Math.PI / 2 : 0);
+  /* Acostado si así entra más grande (Mauricio, 15/10: "que se vea mejor desde arriba, así vemos los muebles"): en la
+     compu, un local largo se gira un cuarto de vuelta (la vidriera queda a la izquierda, como entrando) y los muebles se
+     ven casi el doble de grandes. En el celular, siempre parado: ahí casi no se gana y cada vendedor lo ve igual que el
+     croquis de Fotos, tenga el teléfono que tenga (árbitro, 15/10). */
+  const ladoInicial = () => {
+    if (op.azimut != null) return op.azimut;
+    const w = cont.clientWidth || ancho, h = cont.clientHeight || alto, util = Math.max(1, h - (op.abajo || 0) - (op.arriba || 0));
+    if (w < 640) return 0;
+    return (w > util * 1.1 && al > aw * 1.15) || (util > w * 1.1 && aw > al * 1.15) ? Math.PI / 2 : 0;
+  };
+  encuadrar(op.polar || 0.6, ladoInicial());
+  /* El último encuadre automático (al abrir, Inclinado o Desde arriba, Centrar): si nadie movió la cámara desde ahí y
+     cambia el tamaño de la pantalla, se vuelve a encuadrar (al achicar la ventana el local no se corta). */
+  let auto = { polar: op.polar || 0.6, p: camara.position.clone(), t: controles.target.clone() };
 
   let composer = null;
   if (!op.liviano) {
@@ -1639,7 +1649,7 @@ export function montarCroquis3D(cont, pl, d, op) {
     if (escena.userData.rieles) escena.userData.rieles.visible = false;
     camara.fov = 36; camara.updateProjectionMatrix();
     controles.target.copy(camara.position).addScaledVector(f, 70).setY(10);
-    viajar(inicial.t, 0, inicial.p);
+    viajar(auto.t, 0, auto.p);
     if (op.alCaminar) op.alCaminar(false);
   };
   /** Un cuadro del paseo: la llegada desde arriba, las teclas, el ir hasta donde se tocó. */
@@ -1828,8 +1838,16 @@ export function montarCroquis3D(cont, pl, d, op) {
     viajar(new THREE.Vector3(p.x, 10, p.z), Math.max(controles.minDistance || 60, r * (e.shiftKey ? 2 : 0.5)));
   });
   controles.minDistance = 50; controles.maxDistance = Math.max(aw, al) * 4;
-  const inicial = { t: controles.target.clone(), p: camara.position.clone() };
-  const vistaInicial = () => { if (paseo) dejarDeCaminar(); else viajar(inicial.t, 0, inicial.p); };
+  /** Va (con un viaje) al local entero con esa inclinación, mirando desde azim, y lo anota como el encuadre automático. */
+  const irAEncuadre = (polar, azim) => {
+    const t = controles.target, p0 = camara.position.clone(), t0 = t.clone();
+    encuadrar(polar, azim);
+    auto = { polar, p: camara.position.clone(), t: t.clone() };
+    camara.position.copy(p0); t.copy(t0); camara.lookAt(t);
+    viajar(auto.t, 0, auto.p);
+  };
+  /** Centrar: el local entero, como se ve de entrada pero con el tamaño de ahora (con polar, la inclinación elegida). */
+  const vistaInicial = (polar) => { if (paseo) dejarDeCaminar(); else irAEncuadre(polar || 0.6, ladoInicial()); };
   /* Si se llegó por una puerta: ya caminando, del lado de adentro de esa puerta. */
   if (op.caminar === 'puerta') caminar(Object.assign(entrada(pl.tipo === 'deposito' ? 'salon' : 'deposito'), { directo: true }));
   else if (op.caminar === 'entrada') caminar(Object.assign(entrada(pl.tipo === 'deposito' ? 'salon' : 'calle'), { directo: true }));
@@ -1839,8 +1857,12 @@ export function montarCroquis3D(cont, pl, d, op) {
   const redimensionar = () => {
     const w = cont.clientWidth, h = cont.clientHeight;
     if (!w || !h) return;
+    const quieta = !paseo && !viaje && camara.position.distanceTo(auto.p) < 2 && controles.target.distanceTo(auto.t) < 2;
     renderer.setSize(w, h); etiquetas.setSize(w, h); if (composer) composer.setSize(w, h);
-    camara.aspect = w / h; camara.updateProjectionMatrix(); render();
+    camara.aspect = w / h; camara.updateProjectionMatrix();
+    /* Nadie la movió desde el último encuadre: otra vez el local entero, con el tamaño nuevo (y acostado o no, según). */
+    if (quieta) { encuadrar(auto.polar, ladoInicial()); auto = { polar: auto.polar, p: camara.position.clone(), t: controles.target.clone() }; }
+    render();
   };
   /** Para volver a armarlo (otro estilo, el depósito, Liviano): suelta todo lo de éste. */
   const destruir = () => {
@@ -1874,13 +1896,10 @@ export function montarCroquis3D(cont, pl, d, op) {
   /** Inclinado (como siempre) o desde arriba: el local entero otra vez, del mismo lado. Desde arriba con una inclinación
       chica (no derecho para abajo): así se ven los frentes de los muebles y no sólo el techo (Mauricio, 15/10). */
   const inclinar = (arriba) => {
-    if (paseo) dejarDeCaminar();
-    const t = controles.target, az = Math.atan2(camara.position.x - t.x, camara.position.z - t.z);
-    const p0 = camara.position.clone(), t0 = t.clone();
-    encuadrar(arriba ? 0.3 : 0.6, az);
-    const p1 = camara.position.clone(), t1 = t.clone();
-    camara.position.copy(p0); t.copy(t0); camara.lookAt(t);
-    viajar(t1, 0, p1);
+    /* Caminando, del lado de siempre (si no, quedaba en diagonal, según adónde se miraba). */
+    if (paseo) { dejarDeCaminar(); irAEncuadre(arriba ? 0.3 : 0.6, ladoInicial()); return; }
+    const t = controles.target;
+    irAEncuadre(arriba ? 0.3 : 0.6, Math.atan2(camara.position.x - t.x, camara.position.z - t.z));
   };
   /** Ir a mirar unos módulos (Recorrer): de frente a su pared, desde el medio del local, que entren todos. */
   const mirarModulos = (ids) => {

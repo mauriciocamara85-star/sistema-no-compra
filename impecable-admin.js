@@ -101,14 +101,20 @@ var K_MENU_CHICO = 'nc_panel_equipo';
   if (b) b.onclick = function () { if (!puedeSalir()) return; if (_vend && _vend.refresco && esSupervision() && _locales.length) ir(_solapa); else inicio(); };
   /* Cerrar o recargar la página con algo sin guardar: el navegador pregunta. */
   window.addEventListener('beforeunload', function (e) { if (sinGuardar()) { e.preventDefault(); e.returnValue = ''; } });
+  /* Los "atrás" que pide el editor del croquis al cerrarse llegan después (son asincrónicos): se marcan, para que no
+     cierren un editor que se abrió enseguida. */
+  window.addEventListener('popstate', function (e) { if (_atrasPropio) { _atrasPropio--; e.vdhPropio = true; } });
 })();
+var _atrasPropio = 0;
 
 /** Lo que quedó escrito sin guardar en la pantalla: un "Guardar" prendido o una regla nueva a medio escribir
     (15/10/2026: una regla tipeada en Ajustes no se había guardado y nadie se dio cuenta). */
 function sinGuardar() {
+  /* El croquis a medio armar (editarMapa) también cuenta. */
+  var ed = [].filter.call(document.querySelectorAll('.editor-fondo'), function (e) { return e.cambiado && e.cambiado(); }).length;
   var c = document.getElementById('cuerpo');
-  if (!c) return 0;
-  return c.querySelectorAll('[data-guardar]:not([disabled])').length + document.querySelectorAll('.ventana [data-aviso-guardar]:not([disabled])').length +
+  if (!c) return ed;
+  return ed + c.querySelectorAll('[data-guardar]:not([disabled])').length + document.querySelectorAll('.ventana [data-aviso-guardar]:not([disabled])').length +
     [].filter.call(c.querySelectorAll('[data-nueva-regla] textarea'), function (t) { return t.value.trim(); }).length;
 }
 function puedeSalir() {
@@ -2306,7 +2312,8 @@ function abrirObservador() {
   var v = abrirVisor(caja, {
     local: _local, puedeSugerir: !soloMira(), puedeNombrar: !soloMira(), puedeEditar: !soloMira(),
     alVolver: cerrar,
-    alEditar: function (d) { cerrar(); editarMapa(d || _mapaLocal); }
+    /* Al salir del editor (con o sin guardar) se vuelve al observador, que es de donde se vino. */
+    alEditar: function (d) { cerrar(); editarMapa(d || _mapaLocal, { alSalir: abrirObservador }); }
   });
   v.raiz.style.zIndex = 55;   // arriba de la administración, abajo de las ventanas y del cartel
 }
@@ -2526,7 +2533,8 @@ function puntoSvg(svg, ev) {
 }
 
 /** El croquis del local: la forma, los lugares de cada pared, la entrada, lo del centro y el depósito. */
-function editarMapa(d) {
+function editarMapa(d, op) {
+  op = op || {};
   var m = d.mapa || {};
   var modPorId = {};
   d.modulos.forEach(function (x) { modPorId[x.id] = x; });
@@ -2630,13 +2638,44 @@ function editarMapa(d) {
     vista();
   }
   f.querySelectorAll('[data-solapa]').forEach(function (b) { b.onclick = function () { ponerSolapa(b.dataset.solapa); }; });
-  /* Volver: si cambió algo sin guardar, pregunta. */
-  var firmaInicial = null;
+  /* Volver: si cambió algo sin guardar, pregunta. Lo mismo con el "atrás" del navegador o del teléfono, con Escape y al
+     cerrar la pestaña (sinGuardar): el editor parece una página y el reflejo es tocar "atrás" (árbitro, 15/10). */
+  var firmaInicial = null, conMarca = false;
   function firma() { return JSON.stringify([mapaArmado(), croquisArmado(), centro.map(function (c) { return c.nombre; }), vidr.map(function (v) { return v.nombre; })]); }
-  f.querySelector('#eVolver').onclick = function () {
-    if (firmaInicial !== null && firma() !== firmaInicial && !confirm('Hay cambios sin guardar. ¿Salir igual? Lo que no guardaste se pierde.')) return;
+  f.cambiado = function () { return firmaInicial !== null && firma() !== firmaInicial; };
+  function ponerMarca() { try { history.pushState({ vdhEditor: true }, ''); conMarca = true; } catch (e) {} }
+  function cerrarEditor() {
+    window.removeEventListener('popstate', alAtras);
+    document.removeEventListener('keydown', alEscape);
     f.remove();
-  };
+    if (conMarca) { conMarca = false; _atrasPropio++; try { history.back(); } catch (e) { _atrasPropio--; } }
+  }
+  function salir() {
+    if (f.cambiado() && !confirm('Hay cambios sin guardar. ¿Salir igual? Lo que no guardaste se pierde.')) return false;
+    cerrarEditor();
+    if (op.alSalir) op.alSalir();
+    return true;
+  }
+  function alAtras(e) {
+    if (e && e.vdhPropio) return;   // el de un editor anterior, que se cerró recién
+    conMarca = false;   // ese "atrás" ya la sacó
+    /* Con una ventanita encima (el menú de un lugar), el "atrás" cierra sólo esa. */
+    var encima = [].slice.call(document.querySelectorAll('.ventana-fondo:not(.editor-fondo)')).pop();
+    if (encima) { var c = encima.querySelector('#cerrarVentana'); if (c) c.click(); else encima.remove(); ponerMarca(); return; }
+    if (!salir()) ponerMarca();
+  }
+  function alEscape(ev) {
+    if (ev.key !== 'Escape' || ev.defaultPrevented || document.querySelector('.ventana-fondo:not(.editor-fondo)')) return;
+    var a = document.activeElement;
+    if (a && f.contains(a) && /^(INPUT|SELECT|TEXTAREA)$/.test(a.tagName)) { a.blur(); return; }
+    /* Primero cancela lo que estaba a medio hacer ("Cambiar de lugar", "Mover la entrada"). */
+    if (st.cambiar || st.mover) { st.cambiar = null; st.mover = null; vista(); return; }
+    salir();
+  }
+  ponerMarca();
+  window.addEventListener('popstate', alAtras);
+  document.addEventListener('keydown', alEscape);
+  f.querySelector('#eVolver').onclick = salir;
 
   /* ── Cambios en los lugares ── */
   function sacarModulo(tipo, l) { if (l.t !== 'h' && l.id) st.pila[tipo].push(l.id); }
@@ -2787,7 +2826,7 @@ function editarMapa(d) {
     f.querySelector('#eNotaPuertaDep').hidden = st.mover !== 'deposito';
     /* Cuántos paneles de vidriera van, según dónde está la entrada. */
     var pu = st.salon.puerta, enMedio = pu && !pu.virtual && pu.pared === 'frente' && pu.pos > 0 && pu.pos < st.salon.paredes.frente.length;
-    f.querySelector('#eNotaVidriera').textContent = enMedio ? 'Con la entrada en el medio del frente van dos paneles.' : 'Con la entrada en una punta va un panel.';
+    f.querySelector('#eNotaVidriera').textContent = !vidr.length ? '' : enMedio ? 'Con la entrada en el medio del frente van dos paneles.' : 'Con la entrada en una punta va un panel.';
     /* "Cambiar de lugar": el lugar elegido, marcado, y el aviso arriba del dibujo. */
     f.querySelector('#eNotaCambiar').hidden = !st.cambiar;
     if (st.cambiar) {
@@ -3119,8 +3158,14 @@ function editarMapa(d) {
 
   /* ── Los botones y los campos ── */
   f.querySelector('#eCancelarCambio').onclick = function () { st.cambiar = null; vista(); };
-  f.querySelector('#eMoverPuerta').onclick = function () { st.mover = st.mover === 'salon' ? null : 'salon'; st.cambiar = null; vista(); };
-  f.querySelector('#eMoverPuertaDep').onclick = function () { st.mover = st.mover === 'deposito' ? null : 'deposito'; vista(); };
+  /* En el celular el dibujo queda arriba del panel: al empezar a mover la entrada, sube hasta el dibujo (los + verdes). */
+  function verDibujo() {
+    if (!st.mover || !window.matchMedia || !matchMedia('(max-width: 860px)').matches) return;
+    var sc = f.querySelector('.ventana.editor'), dib = f.querySelector('.ed-dibujo'), cab = f.querySelector('.ed-cab');
+    sc.scrollBy({ top: dib.getBoundingClientRect().top - sc.getBoundingClientRect().top - cab.offsetHeight, behavior: 'smooth' });
+  }
+  f.querySelector('#eMoverPuerta').onclick = function () { st.mover = st.mover === 'salon' ? null : 'salon'; st.cambiar = null; vista(); verDibujo(); };
+  f.querySelector('#eMoverPuertaDep').onclick = function () { st.mover = st.mover === 'deposito' ? null : 'deposito'; vista(); verDibujo(); };
   f.querySelectorAll('[data-ancho-puerta]').forEach(function (b) {
     b.onclick = function () {
       var q = b.dataset.anchoPuerta.split(':'), p = st[q[0]].puerta;
@@ -3313,9 +3358,10 @@ function editarMapa(d) {
           throw e;
         });
     }).then(function (r) {
-      f.remove();
+      cerrarEditor();
       avisar('Croquis guardado' + (r && r.creados ? ': ' + r.creados + (r.creados === 1 ? ' módulo nuevo.' : ' módulos nuevos.') : '.'));
       verLocal();
+      if (op.alSalir) op.alSalir();
     });
   });
 }

@@ -382,8 +382,9 @@
 .c3-rotulo.encima b { transform: scale(1.18); background: var(--cv-texto); color: var(--cv-bg); }
 .c3-rotulo.resaltado b { transform: scale(1.1); }
 .c3-rotulo.apagado { opacity: .28; }
-/* En el celular el local se ve chico: los números, más chicos, para que no tapen los muebles (Mauricio, 15/10). */
-@media (max-width: 639px) {
+/* En el celular el local se ve chico: los números, más chicos, para que no tapen los muebles (Mauricio, 15/10). También
+   con el celular acostado, que deja el 3D muy bajito. */
+@media (max-width: 639px), (max-height: 480px) {
   .c3-rotulo b { min-width: 20px; height: 20px; padding: 0 5px; border-width: 1.5px; font-size: 11px; }
   .c3-rotulo b.vieja::after { top: -3px; right: -3px; width: 8px; height: 8px; }
 }

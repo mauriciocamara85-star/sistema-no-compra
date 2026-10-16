@@ -440,7 +440,7 @@ function visorGestos(V) {
   V.cont.querySelector('#cvMas').onclick = function () { if (V.usa3d) { if (V.c3) V.c3.acercar(1.45); return; } visorZoomEn(V, V.z.k * 1.45, centro(), true); };
   V.cont.querySelector('#cvMenos').onclick = function () { if (V.usa3d) { if (V.c3) V.c3.acercar(1 / 1.45); return; } visorZoomEn(V, V.z.k / 1.45, centro(), true); };
   V.cont.querySelector('#cvCentrar').onclick = function () {
-    if (V.usa3d) { visorSalirRecorrido(V, true); if (V.c3) V.c3.vistaInicial(); return; }
+    if (V.usa3d) { visorSalirRecorrido(V, true); if (V.c3) V.c3.vistaInicial(V.inclinado ? 0.6 : 0.3); return; }
     visorZoom(V, 1, 0, 0, true); visorCamara(V, false);
   };
   /* Modo mira (en la compu): el mouse mueve la vista, como en un juego; Esc lo suelta. */
@@ -756,7 +756,7 @@ function visorSalirRecorrido(V, sinAnimar) {
   if (barra) barra.hidden = true;
   V.raiz.classList.remove('cv-recorriendo');
   if (sinAnimar) return;
-  if (V.c3) V.c3.vistaInicial(); else if (!V.usa3d) visorZoom(V, 1, 0, 0, true);
+  if (V.c3) V.c3.vistaInicial(V.inclinado ? 0.6 : 0.3); else if (!V.usa3d) visorZoom(V, 1, 0, 0, true);
 }
 
 /* ── La cámara: inclinada o desde arriba, centrada y del tamaño de la pantalla ── */
@@ -1140,6 +1140,8 @@ function visor3dMontar(V, caminar) {
       liviano: !!V.liviano, estilo: pl.frente === 'shopping' ? 'shopping' : 'calle', texturaPiso: 'croquis-img/textura-cemento.webp',
       /* El local, arriba de los botones de abajo (que no los tape). */
       abajo: acc ? Math.max(0, V.escena.getBoundingClientRect().bottom - acc.getBoundingClientRect().top + 8) : 0,
+      /* Ni debajo de la ayuda de arriba ("Arrastrá para girar…", en la compu): tapaba los números de la pared del fondo. */
+      arriba: visorAltoAyuda(V),
       altoModulos: visorAltoModulos(pl, salon ? VISOR_ALTO.pared : VISOR_ALTO.deposito),
       color: function (m) { return visorCategoria(V, m).color; },
       numero: numero,
@@ -1229,6 +1231,13 @@ function visor3dBotones(V) {
   if (rec) rec.classList.toggle('cv-lima', !en3d);
   if (ce) ce.hidden = !en3d && V.z.k === 1;
   visor3dCaminando(V, en3d && V.c3.caminando());
+}
+/** Cuánto tapa arriba la ayuda del mouse (0 si no se ve o si no está arriba). */
+function visorAltoAyuda(V) {
+  var ay = V.cont.querySelector('#cvAyudaRaton');
+  if (!ay || getComputedStyle(ay).display === 'none') return 0;
+  var e = V.escena.getBoundingClientRect(), r = ay.getBoundingClientRect();
+  return r.height && r.top - e.top < e.height / 2 ? Math.max(0, r.bottom - e.top + 6) : 0;
 }
 /** Caminando o de arriba: el botón y la ayuda de cómo se maneja con el mouse. */
 function visor3dCaminando(V, si) {
