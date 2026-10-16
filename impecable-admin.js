@@ -236,7 +236,8 @@ function sumarSemana(g, f) {
 }
 function grupoVacio() { return { c: 0, ca: 0, r: 0, pp: 0, pn: 0, malo: false }; }
 function pct(a, b) { return b ? Math.round(100 * a / b) : null; }
-function estNivel(n) { return n ? '<span class="est nivel-' + esc(n) + '">' + esc(NIVEL[n]) + '</span>' : '<span class="est">Sin fotos</span>'; }
+/* sin: lo que dice si no tiene nivel (una foto mandada que la IA no pudo calificar y nadie revisó: "Esperando revisión"). */
+function estNivel(n, sin) { return n ? '<span class="est nivel-' + esc(n) + '">' + esc(NIVEL[n]) + '</span>' : '<span class="est">' + esc(sin || 'Sin fotos') + '</span>'; }
 
 /** Las semanas (sus lunes) que tocan un período, hasta la de hoy y como mucho las últimas 26 (medio año en columnas). */
 function semanasDe(r) {
@@ -336,7 +337,7 @@ function datosPanorama(rango) {
             var g = x.sem[w];
             if (!g || !g.c) return '<td class="sem">—</td>';
             if (!g.r) return '<td class="sem"><span class="est">Por hacer</span><small>' + g.c + (g.c === 1 ? ' control' : ' controles') + '</small></td>';
-            return '<td class="sem">' + estNivel(nivelDeGrupo(g)) + '<small>' + pct(g.ca, g.r) + '% a tiempo</small></td>';
+            return '<td class="sem">' + estNivel(nivelDeGrupo(g), 'Esperando revisión') + '<small>' + pct(g.ca, g.r) + '% a tiempo</small></td>';
           }).join('') +
           '<td class="n">' + (a == null ? '—' : a + '%') + '</td><td class="n">' + (x.revisar || '—') + '</td><td class="n">' + (x.tareas || '—') + '</td>' +
           '<td class="n' + (x.cajasDif ? ' rojo' : '') + '">' + (x.cajasDif || '—') + '</td></tr>';
@@ -370,7 +371,7 @@ function graficoLocal(filas) {
   var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Controles a tiempo por semana">' +
     [0, 50, 100].map(function (p) { return '<line x1="' + x0 + '" x2="' + x1 + '" y1="' + Y(p) + '" y2="' + Y(p) + '" stroke="rgba(255,255,255,.12)"/><text x="' + (x0 - 8) + '" y="' + (Y(p) + 4) + '" fill="#B8B2A7" font-size="11" text-anchor="end">' + p + '%</text>'; }).join('') +
     tramos.map(function (t) { return '<polyline points="' + t.join(' ') + '" fill="none" stroke="#F4F2EC" stroke-width="2.2" stroke-linejoin="round"/>'; }).join('') +
-    puntos.map(function (p) { return p ? '<circle cx="' + X(p.j).toFixed(1) + '" cy="' + Y(p.p).toFixed(1) + '" r="6" fill="' + (COLOR_NIVEL[p.n] || '#8A857C') + '" stroke="#0A0A09" stroke-width="2"><title>' + esc((p.n ? NIVEL[p.n] : 'Sin fotos') + ' · ' + p.p + '% a tiempo') + '</title></circle>' : ''; }).join('') +
+    puntos.map(function (p) { return p ? '<circle cx="' + X(p.j).toFixed(1) + '" cy="' + Y(p.p).toFixed(1) + '" r="6" fill="' + (COLOR_NIVEL[p.n] || '#8A857C') + '" stroke="#0A0A09" stroke-width="2"><title>' + esc((p.n ? NIVEL[p.n] : 'Esperando revisión') + ' · ' + p.p + '% a tiempo') + '</title></circle>' : ''; }).join('') +
     semanas.map(function (w, j) { return '<text x="' + X(j).toFixed(1) + '" y="' + (H - 10) + '" fill="#B8B2A7" font-size="11" text-anchor="middle">' + esc(diaMes(w)) + '</text>'; }).join('') +
     '</svg>';
   return '<div class="imp-grafico"><h3>Semana a semana: controles a tiempo y nivel</h3>' + svg +
@@ -421,7 +422,7 @@ function datosFotos(rango) {
       else html += '<p class="bajada">' + vistas.length + (vistas.length === 1 ? ' foto' : ' fotos') + '. Tocá una para verla grande.</p><div class="imp-fotos">' + vistas.map(function (f, i) {
         var distinta = f.nivel_ia && f.nivel && f.nivel_ia !== f.nivel;
         return '<button class="imp-foto" data-i="' + i + '"><img data-foto="' + esc(f.foto_path) + '" alt=""><b>' + esc(f.modulo_nombre) + '</b>' +
-          '<div class="info">' + estNivel(f.nivel) + (distinta ? '<span class="est">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>' : '') + (f.estado === 'enviado' ? '<span class="est sorpresa">Sin revisar</span>' : '') + '</div>' +
+          '<div class="info">' + estNivel(f.nivel, 'Esperando revisión') + (distinta ? '<span class="est">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>' : '') + (f.estado === 'enviado' && f.nivel ? '<span class="est sorpresa">Sin revisar</span>' : '') + '</div>' +
           '<small>' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + (f.tipo === 'sorpresa' ? ' · sorpresa' : '') + (f.a_tiempo === false ? ' · tarde' : '')) + '</small></button>';
       }).join('') + '</div>';
       var c = document.getElementById('fotoDatos');
@@ -439,7 +440,7 @@ function verFoto(f) {
   ventana('<h1>' + esc(f.modulo_nombre) + '</h1><p class="bajada">' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + ' · ' + ({ programado: 'control', sorpresa: 'sorpresa', deposito: 'depósito', correccion: 'corrección' }[f.tipo] || f.tipo)) + '</p>' +
     '<img class="foto-grande" data-foto="' + esc(f.foto_path) + '" alt="">' +
     '<div class="seccion">Los niveles</div><p class="bajada">' +
-      'Final: ' + estNivel(f.nivel) +
+      'Final: ' + estNivel(f.nivel, 'Esperando revisión') +
       (f.nivel_ia ? ' &nbsp; IA: ' + estNivel(f.nivel_ia) : '') +
       (f.nivel_declarado ? ' &nbsp; El vendedor: ' + estNivel(f.nivel_declarado) : '') + '</p>' +
     (hall.length ? '<div class="seccion">Lo que vio la IA</div><ul>' + hall.map(function (h) { return '<li>' + esc(h.titulo) + (h.gravedad === 'sugerencia' ? ' (sugerencia)' : '') + '</li>'; }).join('') + '</ul>' : '') +

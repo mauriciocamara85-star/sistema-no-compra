@@ -882,12 +882,13 @@ function pantallaHoy() {
   /* Lo que no cargó (sin señal) se anota: así Hoy no dice "¡Listo!" por error. */
   var FALLO = {}, fallo = function () { return FALLO; };
   /* Desde cuándo cuenta "hoy" (la Argentina está en UTC−3 todo el año). */
-  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString();
+  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString(), desdeAyer = new Date(sumarDias(hoy, -1) + 'T03:00:00Z').toISOString();
   Promise.all([
     /* Lo de hoy, lo que quedó pendiente (el depósito vence el viernes) y lo que se mandó hoy (el depósito
-       se crea un día y se manda otro: así no desaparece apenas se manda, y se puede sacar de nuevo). */
-    leer('/orden_v_controles?select=id,estado,vence_en&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ')'),
-    leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(fallo),
+       se crea un día y se manda otro: así no desaparece apenas se manda, y se puede sacar de nuevo). Y lo que
+       venció ayer u hoy: se puede mandar igual al otro día y queda como tarde (Mauricio, 15/10). */
+    leer('/orden_v_controles?select=id,estado,vence_en&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeAyer + '))'),
+    leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo,controles_tarde&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(fallo),
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
     llamar('orden_desafio_mio').catch(fallo),
     /* Las tareas abiertas y las que se cerraron hoy (para tacharlas). */
@@ -922,8 +923,11 @@ function pantallaHoy() {
 }
 
 function estadoDe(c, corregir) {
-  if (c.estado === 'enviado' || c.estado === 'revisado') return { clase: 'listo', texto: 'Listo', hecho: true };
-  if (c.estado === 'vencido') return { clase: 'vencido', texto: 'No se mandó', hecho: true };
+  if (c.estado === 'enviado' || c.estado === 'revisado') {
+    return { clase: 'listo', texto: c.enviado_en && c.vence_en && c.enviado_en > c.vence_en ? 'Mandada tarde' : 'Listo', hecho: true };
+  }
+  /* Vencida: se puede mandar igual (ayer u hoy) y queda como tarde (Mauricio, 15/10). */
+  if (c.estado === 'vencido') return { clase: 'vencido', texto: 'Vencida: mandala igual' };
   if (corregir[c.modulo_id]) return { clase: 'corregir', texto: 'Corregir' };
   if (c.tipo === 'sorpresa') return { clase: 'sorpresa', texto: 'Control sorpresa' };
   return { clase: 'pendiente', texto: 'Pendiente' };
@@ -945,10 +949,14 @@ function tarjetaOrden(s, fallo) {
   var nivel = s && s.nivel_semana;
   return '<div class="resumen' + (nivel ? ' nivel-' + esc(nivel) : '') + '">' +
     '<div class="chico">Tu orden esta semana</div>' +
-    '<div class="grande">' + esc(nivel ? NIVEL[nivel] || nivel : 'Todavía sin fotos') + '</div>' +
+    '<div class="grande">' + esc(nivel ? NIVEL[nivel] || nivel : mandoFotos(s) ? 'Esperando revisión' : 'Todavía sin fotos') + '</div>' +
     '<div class="chico">' + (s && s.controles ? s.controles_a_tiempo + ' de ' + s.controles + ' fotos a tiempo' : 'Cuando mandes tus fotos, acá ves cómo vas.') + '</div>' +
     '</div>';
 }
+
+/** Si en esa semana mandó alguna foto (a tiempo o tarde): sin nivel todavía, es que espera la revisión (la IA dijo que no
+    sirve, o falló, y nadie la revisó), no que no haya fotos. */
+function mandoFotos(s) { return !!s && (Number(s.controles_a_tiempo) || 0) + (Number(s.controles_tarde) || 0) > 0; }
 
 /** El festejo, una sola vez por cosa (y por persona) en este teléfono. */
 function festejarUnaVez(clave, texto) {
@@ -968,14 +976,14 @@ function dibujarHoy(x) {
   var pend = x.controles.filter(function (c) { return c.estado === 'pendiente'; });
   var env = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
   if (total) {
-    /* Lo que venció sin foto no se tacha: queda con una cruz (y no hay festejo). */
+    /* Lo que venció (ayer u hoy) se puede mandar igual: queda como tarde. No se tacha (y no hay festejo). */
     var vencidas = total - env - pend.length;
     var vence = pend.map(function (c) { return c.vence_en; }).filter(Boolean).sort()[0];
-    filas.push({ id: 'hFotos', titulo: 'Fotos de tus módulos', hecho: !pend.length && !vencidas, perdido: !pend.length && vencidas > 0,
-      texto: pend.length ? env + ' de ' + total + ' mandadas' + (vence ? ' · ' + textoVence(vence) : '')
-           : !vencidas ? (total === 1 ? 'Mandaste la foto.' : 'Mandaste las ' + total + '.')
-           : env ? 'Mandaste ' + env + ' de ' + total + '; ' + (vencidas === 1 ? 'una venció' : vencidas + ' vencieron') + ' sin foto.'
-           : (vencidas === 1 ? 'Venció sin foto.' : 'Vencieron las ' + vencidas + ' sin foto.') });
+    filas.push({ id: 'hFotos', titulo: 'Fotos de tus módulos', hecho: !pend.length && !vencidas, alerta: vencidas > 0,
+      texto: pend.length || vencidas
+           ? env + ' de ' + total + ' mandadas' + (pend.length && vence ? ' · ' + textoVence(vence) : '') +
+             (vencidas ? ' · ' + (vencidas === 1 ? '1 vencida: mandala igual' : vencidas + ' vencidas: mandalas igual') : '')
+           : (total === 1 ? 'Mandaste la foto.' : 'Mandaste las ' + total + '.') });
   }
 
   if (x.testigoPend) {
@@ -1082,13 +1090,13 @@ function pantallaFotos() {
   marcarPestana('fotos');
   adentro();
   var per = yo(), hoy = hoyAR(), id = valor(per.id), nada = function () { return null; };
-  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString();
+  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString(), desdeAyer = new Date(sumarDias(hoy, -1) + 'T03:00:00Z').toISOString();
   app.innerHTML = cabeza('Fotos') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   Promise.all([
-    /* Como en Hoy: lo de hoy, lo pendiente y lo que se mandó hoy (tomada_en: la de la foto mandada). */
+    /* Como en Hoy: lo de hoy, lo pendiente, lo que se mandó hoy (tomada_en: la de la foto mandada) y lo que venció ayer u hoy. */
     leerConMueble('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,mueble,tipo,estado,vence_en,enviado_en,tomada_en,nivel' +
-         '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ')' +
+         '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeAyer + '))' +
          '&order=sector_tipo.asc,modulo_numero.asc'),
     /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
     leer('/orden_tareas?select=modulo_id&persona_id=eq.' + id + '&estado=eq.pendiente&origen=eq.ia'),
@@ -1139,14 +1147,15 @@ function dibujarFotos(x) {
     var PESO = { corregir: 5, sorpresa: 4, pendiente: 3, vencido: 2, listo: 1 };
     x.controles.forEach(function (c) {
       var e = estadoDe(c, corregir);
-      var marca = e.hecho ? (c.estado === 'vencido' ? 'vencido' : 'listo') : e.clase === 'corregir' ? 'corregir' : e.clase === 'sorpresa' ? 'sorpresa' : 'pendiente';
+      var marca = c.estado === 'vencido' ? 'vencido' : e.hecho ? 'listo' : e.clase === 'corregir' ? 'corregir' : e.clase === 'sorpresa' ? 'sorpresa' : 'pendiente';
       if (!marcas[c.modulo_id] || PESO[marca] > PESO[marcas[c.modulo_id]]) marcas[c.modulo_id] = marca;
       mios[c.modulo_id] = true;
     });
     var yoId = yo().id;
     mapa.modulos.forEach(function (m) { enMapa[m.id] = true; var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
     var hayMios = Object.keys(mios).length;
-    var otraVez = x.controles.some(sePuedeRehacer) ? ' Si una salió mal, tocala y la sacás de nuevo.' : '';
+    var otraVez = (x.controles.some(sePuedeRehacer) ? ' Si una salió mal, tocala y la sacás de nuevo.' : '') +
+      (x.controles.some(function (c) { return c.estado === 'vencido'; }) ? ' Las vencidas (en rojo) las podés mandar igual: quedan como tarde.' : '');
     html += '<div class="mapa-caja" id="mapaFotos">' +
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' + leyendaNombres(mapa) +
       '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.' + otraVez
@@ -1164,7 +1173,7 @@ function dibujarFotos(x) {
     html += '<div class="seccion">' + g[1] + '</div>';
     lista.forEach(function (c) {
       var e = estadoDe(c, corregir);
-      var vence = !e.hecho && c.vence_en ? textoVence(c.vence_en) : '';
+      var vence = !e.hecho && c.estado !== 'vencido' && c.vence_en ? textoVence(c.vence_en) : '';
       /* Mandada: la cámara sólo si todavía se puede sacar de nuevo (si no, la base la rechaza). */
       var otra = sePuedeRehacer(c), cerrada = !otra && (c.estado === 'enviado' || c.estado === 'revisado');
       html += '<div class="modulo' + (e.hecho ? ' hecho' : '') + '">' +
@@ -1200,7 +1209,8 @@ function dibujarFotos(x) {
   app.querySelectorAll('#mapaFotos .mapa-mod').forEach(function (g) {
     g.onclick = function () {
       var suyos = x.controles.filter(function (k) { return k.modulo_id === g.dataset.mod; });
-      var falta = suyos.filter(function (k) { return !estadoDe(k, corregir).hecho; })[0];
+      var falta = suyos.filter(function (k) { return !estadoDe(k, corregir).hecho && k.estado !== 'vencido'; })[0] ||
+                  suyos.filter(function (k) { return k.estado === 'vencido'; })[0];
       if (falta) { pantallaFoto(falta); return; }
       var deNuevo = suyos.filter(sePuedeRehacer)[0];
       if (deNuevo) { ofrecerRehacer(deNuevo); return; }
@@ -1339,7 +1349,7 @@ function pantallaFoto(c) {
   if (!c) { irA('fotos'); return; }
   /* rehacer: ya la había mandado (SQL 126); la nueva reemplaza a esa sólo si la manda.
      ia: lo que dice la IA de la foto (llega aparte: no hace falta esperarla para mandar). */
-  var estado = { url: null, fotoId: null, resultado: null, ia: null, rehacer: c.estado === 'enviado', vista: ++_revisiones };
+  var estado = { url: null, fotoId: null, resultado: null, ia: null, rehacer: c.estado === 'enviado', tarde: c.estado === 'vencido', vista: ++_revisiones };
   abrirCamara(c, estado);
 }
 
@@ -1501,7 +1511,7 @@ function recordatorioFoto(c) {
   return '<p class="ayuda-foto">Para que salga bien: ' + preguntasDe(c).map(function (q) { return esc(CHECK[q[0]] || q[0]); }).join(' · ') + '.</p>';
 }
 function textoListo(c, estado) {
-  return (estado.rehacer ? '¡Listo! Cambiaste la foto: ' : '¡Listo! Mandaste la foto: ') + c.modulo_nombre + '.';
+  return (estado.rehacer ? '¡Listo! Cambiaste la foto: ' : '¡Listo! Mandaste la foto: ') + c.modulo_nombre + (estado.tarde ? ' (tarde).' : '.');
 }
 
 /* La foto que sacó: sólo "Enviar" (y "Sacar otra" si quiere). Nada la frena: ni lo que diga la IA, ni preguntas
@@ -1900,7 +1910,7 @@ function pantallaPerfil() {
   var id = valor(per.id);
   Promise.all([
     esSupervision() ? Promise.resolve([]) :
-      leer('/orden_v_persona_semana?select=semana,nivel_semana,controles,controles_a_tiempo,tareas,tareas_a_tiempo,desafio_puntaje,desafio_total' +
+      leer('/orden_v_persona_semana?select=semana,nivel_semana,controles,controles_a_tiempo,controles_tarde,tareas,tareas_a_tiempo,desafio_puntaje,desafio_total' +
            '&persona_id=eq.' + id + '&order=semana.desc&limit=8'),
     leer('/orden_faltas?select=id,tipo,motivo,decidida_en,descargo&persona_id=eq.' + id + '&estado=eq.confirmada&order=creado_en.desc'),
     estadoAvisos().catch(function () { return 'no-soportado'; })
@@ -1931,7 +1941,7 @@ function pantallaPerfil() {
       html += '<div class="seccion">Mi historial</div>' + (semanas.length
         ? '<div class="tabla">' + semanas.map(function (s) {
             return '<div class="fila"><span>Semana del ' + esc(diaMes(s.semana)) + '</span>' +
-              (s.nivel_semana ? '<span class="chip nivel-' + esc(s.nivel_semana) + '">' + esc(NIVEL[s.nivel_semana]) + '</span>' : '<span class="chip pendiente">Sin fotos</span>') +
+              (s.nivel_semana ? '<span class="chip nivel-' + esc(s.nivel_semana) + '">' + esc(NIVEL[s.nivel_semana]) + '</span>' : '<span class="chip pendiente">' + (mandoFotos(s) ? 'Esperando revisión' : 'Sin fotos') + '</span>') +
               '<small>Controles a tiempo ' + s.controles_a_tiempo + ' de ' + s.controles + ' · Tareas a tiempo ' + s.tareas_a_tiempo + ' de ' + s.tareas +
               (s.desafio_total ? ' · Test ' + s.desafio_puntaje + '/' + s.desafio_total : '') + '</small></div>';
           }).join('') + '</div>'
@@ -2658,7 +2668,7 @@ function pantallaEquipo() {
     var desde = _equipoMes ? lunesAR(hoyAR().slice(0, 8) + '01') : lunesAR();
     return Promise.all([
       leer('/orden_personas?select=id,nombre,apellido,inicial,aprobado,alta_propia,auth_user_id&local_id=eq.' + L + '&activo=is.true&rol=eq.vendedor&order=nombre.asc'),
-      leer('/orden_v_persona_semana?select=persona_id,semana,controles,controles_a_tiempo,nivel_semana,tareas,tareas_a_tiempo,tareas_fuera_de_plazo,desafio_puntaje,desafio_total' +
+      leer('/orden_v_persona_semana?select=persona_id,semana,controles,controles_a_tiempo,controles_tarde,nivel_semana,tareas,tareas_a_tiempo,tareas_fuera_de_plazo,desafio_puntaje,desafio_total' +
            '&local_id=eq.' + L + '&semana=gte.' + desde),
       leer('/orden_controles?select=persona_id&local_id=eq.' + L + '&estado=eq.pendiente&fecha=eq.' + hoyAR()),
       leer('/orden_v_tareas?select=id,titulo,persona_nombre,prorroga_motivo,vence_en&local_id=eq.' + L + '&prorroga_estado=eq.pedida&estado=in.(pendiente,vencida)'),
@@ -2731,14 +2741,14 @@ function dibujarEquipo(loc, x) {
     var t = tot[s.persona_id] || (tot[s.persona_id] = { controles: 0, a_tiempo: 0, tareas: 0, tareas_ok: 0, fuera: 0, des: 0, desT: 0, nivel: null, semana: '' });
     t.controles += s.controles; t.a_tiempo += s.controles_a_tiempo; t.tareas += s.tareas; t.tareas_ok += s.tareas_a_tiempo;
     t.fuera += s.tareas_fuera_de_plazo; t.des += s.desafio_puntaje || 0; t.desT += s.desafio_total || 0;
-    if (s.semana >= t.semana) { t.semana = s.semana; t.nivel = s.nivel_semana; }
+    if (s.semana >= t.semana) { t.semana = s.semana; t.nivel = s.nivel_semana; t.mando = mandoFotos(s); }
   });
   html += '<div class="seccion">Por vendedor</div>';
   if (!x.gente.length) html += '<div class="vacio">Todavía no hay vendedores en este local.</div>';
   html += x.gente.map(function (p) {
     var t = tot[p.id] || { controles: 0, a_tiempo: 0, tareas: 0, tareas_ok: 0, des: 0, desT: 0, nivel: null };
     return '<div class="fila"><span><b>' + esc(nombres[p.id]) + '</b>' + (p.aprobado ? ' <button class="boton chico ver-app" data-ver="' + esc(p.id) + '">Ver su app</button>' : '') + '</span>' +
-      (t.nivel ? '<span class="chip nivel-' + esc(t.nivel) + '">' + esc(NIVEL[t.nivel]) + '</span>' : '<span class="chip pendiente">Sin fotos</span>') +
+      (t.nivel ? '<span class="chip nivel-' + esc(t.nivel) + '">' + esc(NIVEL[t.nivel]) + '</span>' : '<span class="chip pendiente">' + (t.mando ? 'Esperando revisión' : 'Sin fotos') + '</span>') +
       '<small>Controles a tiempo ' + t.a_tiempo + ' de ' + t.controles + ' · Tareas a tiempo ' + t.tareas_ok + ' de ' + t.tareas +
       (t.desT ? ' · Test ' + t.des + '/' + t.desT : '') + '</small></div>';
   }).join('');
