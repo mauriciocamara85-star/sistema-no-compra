@@ -1336,13 +1336,9 @@ function analizar(fotoId) {
 
 function pantallaFoto(c) {
   if (!c) { irA('fotos'); return; }
-  /* rehacer: ya la había mandado (SQL 126); la nueva reemplaza a esa sólo si la manda. */
-  var estado = { intentos: 0, respuestas: {}, url: null, fotoId: null, resultado: null, rehacer: c.estado === 'enviado' };
-  /* Las fotos que ya sacó para este control cuentan para el "Enviar igual". Rehaciendo,
-     sólo las de después de la mandada (si no, ya con la primera aparecía "Enviar igual"). */
-  leer('/orden_fotos?select=id&control_id=eq.' + valor(c.id) + (estado.rehacer && c.tomada_en ? '&tomada_en=gt.' + valor(c.tomada_en) : ''))
-    .then(function (f) { estado.intentos = Math.max(estado.intentos, (f || []).length); })
-    .catch(function () {});
+  /* rehacer: ya la había mandado (SQL 126); la nueva reemplaza a esa sólo si la manda.
+     ia: lo que dice la IA de la foto (llega aparte: no hace falta esperarla para mandar). */
+  var estado = { url: null, fotoId: null, resultado: null, ia: null, rehacer: c.estado === 'enviado' };
   abrirCamara(c, estado);
 }
 
@@ -1416,20 +1412,23 @@ function abrirCamara(c, estado) {
 }
 
 function procesar(c, estado, blob) {
-  estado.intentos++;
   if (estado.url) URL.revokeObjectURL(estado.url);
   estado.url = URL.createObjectURL(blob);
   estado.blob = blob;
   estado.fotoId = null;
   estado.ruta = null;
   estado.resultado = null;
+  estado.ia = null;
+  estado.salio = false;
   mandarFoto(c, estado);
 }
 
-/* Sube, registra y pide la revisión. Si se corta la señal, "Reintentar"
-   sigue desde donde quedó (la misma foto, sin subirla dos veces si ya subió). */
+/* Sube y registra la foto; con eso ya se puede mandar, salga como salga (Mauricio, 15/10: "que la suba, por más
+   que esté mal, y después nosotros se la corregimos"). La IA la revisa aparte y lo que dice se muestra después de
+   mandarla, como sugerencia. Si se corta la señal, "Reintentar" sigue desde donde quedó (la misma foto, sin
+   subirla dos veces si ya subió). */
 function mandarFoto(c, estado) {
-  estado.resultado = { revisando: true };
+  estado.resultado = { subiendo: true };
   abrirRevision(c, estado);
   var subida = estado.ruta ? Promise.resolve(estado.ruta)
     : subirArchivo(c.local_id + '/' + hoyAR() + '/' + c.id + '/' + nombreArchivo(), estado.blob)
@@ -1437,95 +1436,96 @@ function mandarFoto(c, estado) {
   var paso = estado.fotoId ? Promise.resolve(estado.fotoId)
     : subida.then(function (ruta) { return llamar('orden_registrar_foto', { p_control: c.id, p_foto_path: ruta }); })
         .then(function (id) { estado.fotoId = id; return id; });
-  paso.then(analizar).then(function (r) {
-    estado.resultado = r || {};
-    abrirRevision(c, estado);
+  paso.then(function (id) {
+    estado.resultado = {};
+    if (!estado.enviado && !estado.salio) abrirRevision(c, estado);
+    if (estado.ia && !estado.ia.error_ia) return;   // ya la revisó (o la está revisando): un "Reintentar" no la pide de nuevo
+    estado.ia = { revisando: true };
+    analizar(id).then(function (r) { return r || {}; }, function () {
+      return { error_ia: true };
+    }).then(function (r) {
+      if (estado.fotoId !== id) return;   // sacó otra mientras tanto
+      estado.ia = r;
+      if (estado.enviado) pantallaMandada(c, estado);
+    });
   }).catch(function (e) {
     if (e && e.sinSesion) { pantallaError(e); return; }
     /* Ya no se puede cambiar (la revisaron, o pasó la hora): no hay nada que reintentar. */
     var cerrado = !esDeRed(e) && /ya revisó|Ya enviaste|no se puede cambiar/i.test(mensajeDe(e));
     estado.resultado = { fallo: esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e), cerrado: cerrado };
-    abrirRevision(c, estado);
+    if (!estado.salio) abrirRevision(c, estado);
   });
 }
 
-function tarjetaRevision(r) {
-  var hallazgos = Array.isArray(r.hallazgos) ? r.hallazgos : [];
-  if (r.revisando) return '<div class="revision"><div class="revisando"><i class="ruedita"></i>Revisando la foto…</div></div>';
-  if (r.fallo) return '<div class="revision mala"><div class="titulo">' + (r.cerrado ? 'Ya no se puede cambiar' : 'No se pudo mandar') + '</div><div>' + esc(r.fallo) + '</div></div>';
-  if (r.ia_activa === false) return '<div class="revision"><div class="titulo">Revisión automática apagada</div><div class="bajada" style="margin:0">La revisa tu supervisor.</div></div>';
-  if (r.error_ia) return '<div class="revision"><div class="titulo">Revisión automática</div><div class="bajada" style="margin:0">' + esc(r.mensaje || 'No pudimos revisar la foto. Podés enviarla igual.') + '</div></div>';
-  if (r.foto_valida === false) return '<div class="revision mala"><div class="titulo">Esta foto no sirve</div><div>' + esc(r.motivo || 'Sacala de nuevo, que se vea todo el módulo.') + '</div></div>';
-  return '<div class="revision"><div class="titulo">Revisión automática' +
-    (r.nivel ? '<span class="chip nivel-' + esc(r.nivel) + '">' + esc(r.nivel_texto || NIVEL[r.nivel] || '') + '</span>' : '') + '</div>' +
-    (r.comentario ? '<div class="bajada" style="margin:0 0 6px">' + esc(r.comentario) + '</div>' : '') +
-    (hallazgos.length
-      ? hallazgos.map(function (h) {
-          return '<div class="hallazgo ' + (h.gravedad === 'corregir' ? 'corregir' : 'sugerencia') + '"><b>' + esc(h.titulo) + '</b>' +
-                 (h.detalle ? '<small>' + esc(h.detalle) + '</small>' : '') + '</div>';
+/** Lo que dice la IA, como sugerencia para la próxima (nunca frena: la foto ya se mandó). */
+function tarjetaSugerencias(ia) {
+  if (ia.revisando) return '<div class="revision"><div class="revisando"><i class="ruedita"></i>La IA la está revisando…</div></div>';
+  if (ia.foto_valida === false) {
+    return '<div class="revision"><div class="titulo">Para la próxima</div><div class="bajada" style="margin:0">' +
+      esc(ia.motivo || 'Que entre todo el módulo en la foto.') + '</div></div>';
+  }
+  var hs = Array.isArray(ia.hallazgos) ? ia.hallazgos : [], tareas = Array.isArray(ia.tareas_creadas) ? ia.tareas_creadas.length : 0;
+  return '<div class="revision"><div class="titulo">Sugerencias de la IA</div>' +
+    (ia.comentario ? '<div class="bajada" style="margin:0 0 6px">' + esc(ia.comentario) + '</div>' : '') +
+    (hs.length
+      ? hs.map(function (h) {
+          return '<div class="hallazgo sugerencia"><b>' + esc(h.titulo) + '</b>' + (h.detalle ? '<small>' + esc(h.detalle) + '</small>' : '') + '</div>';
         }).join('')
-      : '<div class="bajada" style="margin:0">No encontró nada para corregir.</div>') +
-    (r.tareas_resueltas ? '<div class="bajada" style="margin:8px 0 0">Se cerró sola ' + (r.tareas_resueltas === 1 ? '1 tarea' : r.tareas_resueltas + ' tareas') + ' que ya está bien.</div>' : '') +
+      : '<div class="bajada" style="margin:0">No encontró nada para mejorar.</div>') +
+    (tareas ? '<div class="bajada" style="margin:8px 0 0">' + (tareas === 1 ? 'Quedó 1 tarea' : 'Quedaron ' + tareas + ' tareas') + ' en Tareas.</div>' : '') +
+    (ia.tareas_resueltas ? '<div class="bajada" style="margin:8px 0 0">Se cerró sola ' + (ia.tareas_resueltas === 1 ? '1 tarea' : ia.tareas_resueltas + ' tareas') + ' que ya está bien.</div>' : '') +
     /* Qué hay (SQL 118): lo anotó en el croquis, o lo deja como sugerencia si lo había escrito alguien. */
-    (r.que_hay && r.que_hay_estado === 'puesto' ? '<div class="bajada" style="margin:8px 0 0">En el croquis anotó qué hay: <b>' + esc(r.que_hay) + '</b>.</div>' : '') +
-    (r.que_hay && r.que_hay_estado === 'sugerido' ? '<div class="bajada" style="margin:8px 0 0">Ve <b>' + esc(r.que_hay) + '</b>, y en el croquis dice otra cosa. Si cambió, en Fotos → Ver el local tocá el módulo y "Usar esto".</div>' : '') +
+    (ia.que_hay && ia.que_hay_estado === 'puesto' ? '<div class="bajada" style="margin:8px 0 0">En el croquis anotó qué hay: <b>' + esc(ia.que_hay) + '</b>.</div>' : '') +
+    (ia.que_hay && ia.que_hay_estado === 'sugerido' ? '<div class="bajada" style="margin:8px 0 0">Ve <b>' + esc(ia.que_hay) + '</b>, y en el croquis dice otra cosa. Si cambió, en Fotos → Ver el local tocá el módulo y "Usar esto".</div>' : '') +
     '</div>';
 }
+/** Si lo que volvió de la IA es una revisión (no un error, ni la IA apagada, ni "ya se revisó"). */
+function iaUtil(ia) { return !!ia && !ia.error_ia && ia.ia_activa !== false && !ia.ya_analizada; }
+/** Si la IA tiene algo para sugerir después de mandarla (lo que sólo informa, como una tarea que se cerró sola,
+    no frena: va directo a Fotos). */
+function iaParaContar(ia) {
+  if (!iaUtil(ia)) return false;
+  return !!(ia.revisando || ia.foto_valida === false || (Array.isArray(ia.hallazgos) && ia.hallazgos.length) ||
+            (Array.isArray(ia.tareas_creadas) && ia.tareas_creadas.length) || ia.que_hay_estado === 'sugerido');
+}
+/** Lo que hay que mirar en ese mueble, como recordatorio (eran las 4 preguntas de "Antes de enviar"; Mauricio,
+    15/10: "sacalas y dejalas como recordatorio, chiquito abajo"). */
+function recordatorioFoto(c) {
+  return '<p class="ayuda-foto">Para que salga bien: ' + preguntasDe(c).map(function (q) { return esc(CHECK[q[0]] || q[0]); }).join(' · ') + '.</p>';
+}
 
+/* La foto que sacó: sólo "Enviar" (y "Sacar otra" si quiere). Nada la frena: ni lo que diga la IA, ni preguntas
+   para responder (15/10, Seba no pudo mandar dos porque la IA marcó cosas "a corregir" y faltaban los Sí/No). */
 function abrirRevision(c, estado) {
   barra.hidden = true;
   app.className = 'app';
   var r = estado.resultado || {};
-  var preguntas = preguntasDe(c);
-  var aCorregir = (Array.isArray(r.hallazgos) ? r.hallazgos : []).filter(function (h) { return h.gravedad === 'corregir'; });
-  var invalida = r.foto_valida === false;
-  var marcada = !invalida && aCorregir.length > 0;
-  var listo = !r.revisando && !r.fallo;
-
   var html =
     '<button class="volver" id="volver">' + (r.cerrado ? '‹ Fotos' : estado.rehacer ? '‹ Dejar la que mandé' : '‹ Volver a Hoy') + '</button>' +
     '<h1>' + esc(c.modulo_nombre) + '</h1>' +
     /* Si ya no se puede cambiar, la nueva no queda: no se muestra como si fuera la del módulo. */
     (r.cerrado ? '' : '<img class="foto-grande" src="' + esc(estado.url) + '" alt="La foto que sacaste">') +
-    tarjetaRevision(r);
+    (r.fallo ? '<div class="revision mala"><div class="titulo">' + (r.cerrado ? 'Ya no se puede cambiar' : 'No se pudo mandar') + '</div><div>' + esc(r.fallo) + '</div></div>' : '');
 
   if (estado.rehacer && !r.cerrado) {
     html += '<div class="nota">Ya habías mandado una foto de este módulo. Si mandás esta, reemplaza a la otra; si volvés sin mandarla, queda la que mandaste.</div>';
   }
 
-  if (!r.fallo) {
-    html += '<div class="revision"><div class="titulo">Antes de enviar</div>' +
-      preguntas.map(function (q) {
-        var v = estado.respuestas[q[0]];
-        return '<div class="pregunta"><span>' + esc(q[1]) + '</span><div class="sino">' +
-          '<button class="si' + (v === true ? ' elegido' : '') + '" data-k="' + q[0] + '" data-v="1">Sí</button>' +
-          '<button class="no' + (v === false ? ' elegido' : '') + '" data-k="' + q[0] + '" data-v="0">No</button></div></div>';
-      }).join('') + '</div>';
-  }
-
   html += '<div class="acciones">';
-  if (r.revisando) {
-    html += '<button class="boton lima" disabled>Esperá la revisión…</button>';
-  } else if (r.cerrado) {
+  if (r.cerrado) {
     html += '<button class="boton lima" id="aFotos">Volver a Fotos</button>';
   } else if (r.fallo) {
     html += '<button class="boton lima" id="reintentar">Reintentar</button><button class="boton" id="repetir">Sacar otra foto</button>';
-  } else if (marcada || invalida) {
-    html += '<button class="boton lima" id="repetir">' + (invalida ? 'Sacar otra foto' : 'Corregí y sacá otra foto') + '</button>';
-    if (estado.intentos >= 2) html += '<button class="boton" id="enviar">Enviar igual</button>';
+  } else if (r.subiendo) {
+    html += '<button class="boton lima" disabled><i class="ruedita"></i> Subiendo la foto…</button>';
   } else {
-    html += '<button class="boton lima" id="enviar">' + (estado.rehacer ? 'Mandar esta en lugar de la otra' : 'Enviar') + '</button><button class="boton" id="repetir">Repetir foto</button>';
+    html += '<button class="boton lima" id="enviar">' + (estado.rehacer ? 'Mandar esta en lugar de la otra' : 'Enviar') + '</button><button class="boton" id="repetir">Sacar otra foto</button>';
   }
-  html += '</div>';
+  html += '</div>' + (r.cerrado ? '' : recordatorioFoto(c));
 
   app.innerHTML = html;
-  document.getElementById('volver').onclick = function () { if (estado.url) URL.revokeObjectURL(estado.url); irA('fotos'); };
-  app.querySelectorAll('.sino button').forEach(function (b) {
-    b.onclick = function () {
-      estado.respuestas[b.dataset.k] = b.dataset.v === '1';
-      b.parentNode.querySelectorAll('button').forEach(function (x) { x.classList.toggle('elegido', x === b); });
-    };
-  });
+  /* salio: se fue mientras subía; cuando termine de subir no se lo trae de vuelta. */
+  document.getElementById('volver').onclick = function () { estado.salio = true; if (estado.url) URL.revokeObjectURL(estado.url); irA('fotos'); };
   var bRep = document.getElementById('repetir');
   if (bRep) bRep.onclick = function () { abrirCamara(c, estado); };
   var bRe = document.getElementById('reintentar');
@@ -1533,24 +1533,23 @@ function abrirRevision(c, estado) {
   var bFotos = document.getElementById('aFotos');
   if (bFotos) bFotos.onclick = function () { document.getElementById('volver').click(); };
   var bEnv = document.getElementById('enviar');
-  if (bEnv && listo) unaVez(bEnv, function () { return enviarControl(c, estado, preguntas, bEnv); });
+  if (bEnv) unaVez(bEnv, function () { return enviarControl(c, estado, bEnv); });
 }
 
-function enviarControl(c, estado, preguntas, boton) {
-  var faltan = preguntas.filter(function (q) { return typeof estado.respuestas[q[0]] !== 'boolean'; });
-  if (faltan.length) { avisar('Respondé las 4 preguntas antes de enviar.'); return; }
+function enviarControl(c, estado, boton) {
   boton.textContent = 'Enviando…';
-  return llamar('orden_enviar_control', { p_control: c.id, p_respuestas: estado.respuestas }).then(function () {
-    if (estado.url) URL.revokeObjectURL(estado.url);
-    irA('fotos');
-    avisar(estado.rehacer ? '¡Listo! Cambiaste la foto: ' + c.modulo_nombre + '.' : '¡Listo! Mandaste el ' + c.modulo_nombre + '.');
+  /* Sin respuestas: las 4 preguntas pasaron a ser un recordatorio (SQL 130). */
+  return llamar('orden_enviar_control', { p_control: c.id, p_respuestas: {} }).then(function () {
+    estado.enviado = true;
+    pantallaMandada(c, estado);
   }, function (e) {
     /* Si ya estaba enviado (se tocó dos veces, o se cortó la señal después de
        que llegara), es lo mismo que "listo". Rehaciendo, quiere decir que la
        nueva ya llegó. */
     if (/ya fue enviado/i.test(mensajeDe(e))) {
+      if (estado.rehacer) { estado.enviado = true; pantallaMandada(c, estado); return; }
       irA('fotos');
-      avisar(estado.rehacer ? '¡Listo! Cambiaste la foto: ' + c.modulo_nombre + '.' : 'Ese control ya estaba enviado.');
+      avisar('Ese control ya estaba enviado.');
       return;
     }
     /* La revisaron, o pasó la hora, mientras sacaba la nueva: queda la que mandó. */
@@ -1558,6 +1557,36 @@ function enviarControl(c, estado, preguntas, boton) {
     if (/no se puede cambiar/i.test(mensajeDe(e))) { irA('fotos'); avisar('Ya pasó la hora: no se pudo cambiar y quedó la que habías mandado.'); return; }
     throw e;
   });
+}
+
+/** Ya mandada: si la IA tiene algo para decir, sus sugerencias para la próxima (Mauricio, 15/10: "la sugerencia va
+    después de que la subió"); si no, directo a Fotos. Si la IA todavía la está revisando, se completa sola. */
+function pantallaMandada(c, estado) {
+  var listo = estado.rehacer ? '¡Listo! Cambiaste la foto: ' + c.modulo_nombre + '.' : '¡Listo! Mandaste el ' + c.modulo_nombre + '.';
+  var ahi = document.getElementById('mandada');
+  if (ahi && ahi.dataset.control !== c.id) return;   // ya está en otra cosa
+  if (!ahi && estado.mostroMandada) return;           // ya tocó "Listo" (la IA llegó tarde)
+  /* Llegó la IA mientras miraba la pantalla: su tarjeta (si no pudo revisarla, se va). */
+  if (ahi) {
+    var t = ahi.querySelector('.revision');
+    if (t) { if (iaUtil(estado.ia)) t.outerHTML = tarjetaSugerencias(estado.ia); else t.remove(); }
+    return;
+  }
+  if (!iaParaContar(estado.ia)) {
+    if (estado.url) URL.revokeObjectURL(estado.url);
+    irA('fotos');
+    avisar(listo);
+    return;
+  }
+  estado.mostroMandada = true;
+  barra.hidden = true;
+  app.className = 'app';
+  app.innerHTML = '<div id="mandada" data-control="' + esc(c.id) + '">' +
+    '<h1>' + esc(listo) + '</h1>' +
+    (estado.url ? '<img class="foto-grande" src="' + esc(estado.url) + '" alt="La foto que mandaste">' : '') +
+    tarjetaSugerencias(estado.ia) +
+    '<div class="acciones"><button class="boton lima" id="fin">Listo</button></div></div>';
+  document.getElementById('fin').onclick = function () { if (estado.url) URL.revokeObjectURL(estado.url); irA('fotos'); };
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2519,7 +2548,13 @@ function dibujarRevisar(loc, cola, testigos) {
   }
   if (testigos.length) html += '<div class="seccion">Fotos</div>';
   var ia = c.ia_resultado || {};
-  var checks = preguntasRespondidas(c);
+  /* Desde el SQL 130 no se pregunta nada al mandar: sin respuestas, los puntos que miró la IA. */
+  var respondio = !!c.respuestas && Object.keys(c.respuestas).length > 0;
+  var orden = preguntasDe(c).map(function (q) { return q[0]; });   // primero las del mueble, en su orden
+  orden = orden.concat(Object.keys(CHECK).filter(function (k) { return orden.indexOf(k) < 0; }));
+  var lugar = function (k) { var i = orden.indexOf(k); return i < 0 ? 99 : i; };
+  var checks = respondio ? preguntasRespondidas(c)
+    : Object.keys(ia.checks || {}).sort(function (a, b) { return lugar(a) - lugar(b); }).map(function (k) { return [k, CHECK[k] || k]; });
   html += '<p class="bajada">' + cola.length + (cola.length === 1 ? ' foto para revisar' : ' fotos para revisar') + (soloMira() ? ' (sólo mirar)' : '') + '</p>' +
     '<div class="revision"><div class="titulo">' + esc(c.modulo_nombre) + '<span class="chip pendiente">' + esc(c.persona_nombre || '') + '</span></div>' +
     '<div class="bajada" style="margin:0 0 8px">' + esc((c.tipo === 'sorpresa' ? 'Control sorpresa · ' : '') + 'Enviado ' + diaMes(c.enviado_en) + ' ' + hora(c.enviado_en)) + '</div>' +
@@ -2530,8 +2565,8 @@ function dibujarRevisar(loc, cola, testigos) {
       (c.nivel_declarado ? '<span class="chip nivel-' + esc(c.nivel_declarado) + '">Según él: ' + esc(NIVEL[c.nivel_declarado]) + '</span>' : '') + '</div>' +
     checks.map(function (q) {
       var dijo = c.respuestas ? c.respuestas[q[0]] : null, vio = ia.checks ? ia.checks[q[0]] : null;
-      return '<div class="pregunta"><span>' + esc(CHECK[q[0]]) + '</span><div class="info">' +
-        '<span class="chip ' + (dijo === true ? 'listo' : dijo === false ? 'vencido' : 'pendiente') + '">' + (dijo === true ? 'Dijo sí' : dijo === false ? 'Dijo no' : '—') + '</span>' +
+      return '<div class="pregunta"><span>' + esc(CHECK[q[0]] || q[0]) + '</span><div class="info">' +
+        (respondio ? '<span class="chip ' + (dijo === true ? 'listo' : dijo === false ? 'vencido' : 'pendiente') + '">' + (dijo === true ? 'Dijo sí' : dijo === false ? 'Dijo no' : '—') + '</span>' : '') +
         (vio ? '<span class="chip ' + (vio === 'ok' ? 'listo' : vio === 'mal' ? 'vencido' : 'pendiente') + '">IA: ' + (vio === 'ok' ? 'bien' : vio === 'mal' ? 'mal' : 'no se ve') + '</span>' : '') +
         '</div></div>';
     }).join('') +
