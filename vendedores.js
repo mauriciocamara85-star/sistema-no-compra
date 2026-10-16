@@ -1334,11 +1334,12 @@ function analizar(fotoId) {
   });
 }
 
+var _revisiones = 0;
 function pantallaFoto(c) {
   if (!c) { irA('fotos'); return; }
   /* rehacer: ya la había mandado (SQL 126); la nueva reemplaza a esa sólo si la manda.
      ia: lo que dice la IA de la foto (llega aparte: no hace falta esperarla para mandar). */
-  var estado = { url: null, fotoId: null, resultado: null, ia: null, rehacer: c.estado === 'enviado' };
+  var estado = { url: null, fotoId: null, resultado: null, ia: null, rehacer: c.estado === 'enviado', vista: ++_revisiones };
   abrirCamara(c, estado);
 }
 
@@ -1419,7 +1420,6 @@ function procesar(c, estado, blob) {
   estado.ruta = null;
   estado.resultado = null;
   estado.ia = null;
-  estado.salio = false;
   mandarFoto(c, estado);
 }
 
@@ -1438,7 +1438,7 @@ function mandarFoto(c, estado) {
         .then(function (id) { estado.fotoId = id; return id; });
   paso.then(function (id) {
     estado.resultado = {};
-    if (!estado.enviado && !estado.salio) abrirRevision(c, estado);
+    if (!estado.enviado && enSuRevision(estado)) abrirRevision(c, estado);
     if (estado.ia && !estado.ia.error_ia) return;   // ya la revisó (o la está revisando): un "Reintentar" no la pide de nuevo
     estado.ia = { revisando: true };
     analizar(id).then(function (r) { return r || {}; }, function () {
@@ -1453,8 +1453,15 @@ function mandarFoto(c, estado) {
     /* Ya no se puede cambiar (la revisaron, o pasó la hora): no hay nada que reintentar. */
     var cerrado = !esDeRed(e) && /ya revisó|Ya enviaste|no se puede cambiar/i.test(mensajeDe(e));
     estado.resultado = { fallo: esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e), cerrado: cerrado };
-    if (!estado.salio) abrirRevision(c, estado);
+    if (enSuRevision(estado)) abrirRevision(c, estado);
   });
+}
+
+/** Si lo que está a la vista es la revisión de esta foto: si se fue ("Volver", el "atrás" del teléfono, un aviso)
+    mientras subía o se mandaba, lo que llega después no se dibuja encima de otra pantalla. */
+function enSuRevision(estado) {
+  var v = document.getElementById('volver');
+  return !!v && v.getAttribute('data-vista') === String(estado.vista);
 }
 
 /** Lo que dice la IA, como sugerencia para la próxima (nunca frena: la foto ya se mandó). */
@@ -1504,7 +1511,7 @@ function abrirRevision(c, estado) {
   app.className = 'app';
   var r = estado.resultado || {};
   var html =
-    '<button class="volver" id="volver">' + (r.cerrado ? '‹ Fotos' : estado.rehacer ? '‹ Dejar la que mandé' : '‹ Volver a Fotos') + '</button>' +
+    '<button class="volver" id="volver" data-vista="' + estado.vista + '">' + (r.cerrado ? '‹ Fotos' : estado.rehacer ? '‹ Dejar la que mandé' : '‹ Volver a Fotos') + '</button>' +
     '<h1>' + esc(c.modulo_nombre) + '</h1>' +
     /* Si ya no se puede cambiar, la nueva no queda: no se muestra como si fuera la del módulo. Más chica que en otras
        pantallas, así "Enviar" entra sin bajar en un celular chico. */
@@ -1528,8 +1535,9 @@ function abrirRevision(c, estado) {
   html += '</div>' + (r.cerrado ? '' : recordatorioFoto(c));
 
   app.innerHTML = html;
-  /* salio: se fue mientras subía; cuando termine de subir no se lo trae de vuelta. */
-  document.getElementById('volver').onclick = function () { estado.salio = true; if (estado.url) URL.revokeObjectURL(estado.url); irA('fotos'); };
+  /* Anda siempre, también mientras sube o se manda: lo que esté en camino sigue y, si ya no está acá, avisa con un
+     cartel cómo terminó (ver enSuRevision). */
+  document.getElementById('volver').onclick = function () { if (estado.url) URL.revokeObjectURL(estado.url); irA('fotos'); };
   var bRep = document.getElementById('repetir');
   if (bRep) bRep.onclick = function () { abrirCamara(c, estado); };
   var bRe = document.getElementById('reintentar');
@@ -1542,41 +1550,39 @@ function abrirRevision(c, estado) {
 
 function enviarControl(c, estado, boton) {
   boton.textContent = 'Enviando…';
-  /* Mientras se manda, ni volver ni sacar otra: la respuesta se dibujaba encima de otra pantalla, o con la foto
-     nueva (árbitro). Si falla, se destraban y el "atrás" del teléfono vuelve a andar. */
-  var trabar = function (si) {
-    ['volver', 'repetir'].forEach(function (id) { var b = document.getElementById(id); if (b) b.disabled = si; });
-    if (!si) revisarAtras();
-  };
-  trabar(true);
+  /* Mientras se manda no se puede sacar otra (la respuesta quedaría con la foto nueva). "Volver" y el "atrás" sí
+     (árbitro, ronda 2: trabados, el "atrás" no hacía nada y el segundo cerraba la app y cortaba el envío). */
+  var bRep = document.getElementById('repetir');
+  if (bRep) bRep.disabled = true;
   var foto = estado.fotoId;
   var mandada = function () {
     estado.enviado = true;
     estado.fotoMandada = foto;
     pantallaMandada(c, estado);
   };
-  /* Sin respuestas: las 4 preguntas pasaron a ser un recordatorio (SQL 130). */
-  return llamar('orden_enviar_control', { p_control: c.id, p_respuestas: {} }).then(mandada, function (e) {
+  /* Sin respuestas: las 4 preguntas pasaron a ser un recordatorio (SQL 130). Con 30 s de tope: si no contesta,
+     queda como "sin señal" y se puede tocar "Enviar" de nuevo (si había llegado, la base dice "ya fue enviado"). */
+  return llamar('orden_enviar_control', { p_control: c.id, p_respuestas: {} }, 30000).then(mandada, function (e) {
+    var aca = enSuRevision(estado), m = mensajeDe(e);
     /* Si ya estaba enviado (se tocó dos veces, o se cortó la señal después de
        que llegara), es lo mismo que "listo". Rehaciendo, quiere decir que la
        nueva ya llegó. */
-    if (/ya fue enviado/i.test(mensajeDe(e))) {
-      if (estado.rehacer) { mandada(); return; }
-      irA('fotos');
-      avisar('Ese control ya estaba enviado.');
-      return;
-    }
+    if (/ya fue enviado/i.test(m)) { mandada(); return; }
     /* La revisaron, o pasó la hora, mientras sacaba la nueva: queda la que mandó. */
-    if (/ya revisó/i.test(mensajeDe(e))) { irA('fotos'); avisar('Tu supervisor ya la revisó: quedó la que habías mandado.'); return; }
-    if (/no se puede cambiar/i.test(mensajeDe(e))) { irA('fotos'); avisar('Ya pasó la hora: no se pudo cambiar y quedó la que habías mandado.'); return; }
-    trabar(false);
+    if (/ya revisó/i.test(m)) { if (aca) irA('fotos'); avisar('Tu supervisor ya la revisó: quedó la que habías mandado.'); return; }
+    if (/no se puede cambiar/i.test(m)) { if (aca) irA('fotos'); avisar('Ya pasó la hora: no se pudo cambiar y quedó la que habías mandado.'); return; }
     /* La base todavía no tiene el SQL 130: pide las respuestas que la app ya no pregunta. */
-    if (/Respondé las 4 preguntas|Cambiaron las preguntas/i.test(mensajeDe(e))) {
-      var falta = new Error('Falta actualizar el sistema: avisale a tu supervisor.');
-      falta.delServidor = true;   // no es "sin señal"
-      throw falta;
+    if (/Respondé las 4 preguntas|Cambiaron las preguntas/i.test(m)) {
+      e = new Error('Falta actualizar el sistema: avisale a tu supervisor.');
+      e.delServidor = true;   // no es "sin señal"
     }
-    throw e;
+    if (aca || (e && e.sinSesion)) {
+      var b = document.getElementById('repetir');
+      if (b) b.disabled = false;
+      throw e;
+    }
+    /* Se fue antes de que terminara: el cartel dice de qué foto es. */
+    avisar('No se mandó la foto de ' + c.modulo_nombre + (esDeRed(e) ? ' (no había señal): sacala de nuevo.' : ': ' + mensajeDe(e)));
   });
 }
 
@@ -1586,10 +1592,15 @@ function enviarControl(c, estado, boton) {
 function pantallaMandada(c, estado) {
   var listo = textoListo(c, estado);
   var ahi = document.getElementById('mandada');
-  if (estado.salio) { avisar(listo); return; }                                // se fue antes de que terminara
   if (ahi && ahi.dataset.foto !== String(estado.fotoMandada)) return;       // la pantalla es de otra foto
-  if (!ahi && estado.mostroMandada) return;                                  // ya tocó "Listo" (la IA llegó tarde)
+  /* Se fue antes de que terminara ("Volver", el "atrás", un aviso), o ya tocó "Listo" y la IA llegó tarde: sólo
+     el cartel, una vez, sin sacarlo de donde está. */
+  if (!ahi && !enSuRevision(estado)) {
+    if (!estado.avisado) { estado.avisado = true; avisar(listo); }
+    return;
+  }
   if (!iaParaContar(estado.ia)) {
+    estado.avisado = true;
     if (estado.url) URL.revokeObjectURL(estado.url);
     irA('fotos');
     avisar(listo);
@@ -1597,7 +1608,7 @@ function pantallaMandada(c, estado) {
   }
   /* Llegó la IA mientras miraba la pantalla: su tarjeta. */
   if (ahi) { var t = ahi.querySelector('.revision'); if (t) t.outerHTML = tarjetaSugerencias(estado.ia); return; }
-  estado.mostroMandada = true;
+  estado.avisado = true;
   barra.hidden = true;
   app.className = 'app';
   app.innerHTML = '<div id="mandada" data-foto="' + esc(String(estado.fotoMandada)) + '">' +
@@ -3020,8 +3031,8 @@ function trabado() { return Promise.reject(rechazo(textoEspejo())); }
 
 /* Lo que escribe, trabado. Lo que se pregunta "como yo" (el test, la caja de hoy), se lee de sus tablas. */
 var _llamarReal = llamar, _escribirReal = escribir, _subirReal = subirArchivo, _subirEnReal = subirArchivoEn, _funcionReal = llamarFuncion;
-llamar = function (nombre, args) {
-  if (!_espejo) return _llamarReal(nombre, args);
+llamar = function (nombre, args, tope) {
+  if (!_espejo) return _llamarReal(nombre, args, tope);
   if (nombre === 'orden_desafio_mio') return desafioEspejo();
   if (nombre === 'orden_caja_hoy') return cajaEspejo();
   return trabado();

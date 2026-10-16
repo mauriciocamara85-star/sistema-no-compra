@@ -116,13 +116,19 @@ function escribir(ruta, metodo, cuerpo) {
  * y las funciones que no devuelven nada (marcar "No pude", pedir más tiempo,
  * el descargo) contestan 204 sin cuerpo: leerla así tira un error y la
  * pantalla diría "falló" cuando en realidad se hizo.
+ *
+ * tope (ms, opcional): si no contesta en ese tiempo se corta, y queda como
+ * "sin señal" (con señal floja el pedido podía no volver nunca).
  */
-function llamar(nombre, args) {
+function llamar(nombre, args, tope) {
+  var corte = tope && window.AbortController ? new AbortController() : null;
+  var reloj = corte ? setTimeout(function () { corte.abort(); }, tope) : 0;
   return tokenVend().then(function (t) {
     return fetch(BASE + '/rest/v1/rpc/' + nombre, {
       method: 'POST',
       headers: { apikey: CLAVE, Authorization: 'Bearer ' + t, 'Content-Type': 'application/json' },
-      body: JSON.stringify(args || {})
+      body: JSON.stringify(args || {}),
+      signal: corte ? corte.signal : undefined
     });
   }).then(function (r) {
     return r.text().then(function (txt) {
@@ -134,7 +140,7 @@ function llamar(nombre, args) {
       if (!txt) return null;
       try { return JSON.parse(txt); } catch (e) { return txt; }
     });
-  });
+  }).then(function (v) { clearTimeout(reloj); return v; }, function (e) { clearTimeout(reloj); throw e; });
 }
 
 function cerrarSesion() {
