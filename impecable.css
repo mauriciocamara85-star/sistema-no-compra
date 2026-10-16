@@ -145,6 +145,7 @@ h1 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.02e
 .boton:disabled { opacity: .45; }
 .acciones { display: grid; gap: 10px; margin-top: 16px; }
 /* Lo que hay que mirar del mueble, chiquito abajo de los botones (eran las preguntas de "Antes de enviar"). */
+.foto-grande.foto-revision { max-height: 50vh; }
 .ayuda-foto { color: var(--suave); font-size: 13px; text-align: center; margin: 14px 0 0; }
 .boton.lima .ruedita { display: inline-block; vertical-align: -3px; width: 16px; height: 16px; margin-right: 8px; border-color: rgba(0,0,0,.2); border-top-color: var(--sobre-lima); }
 .niveles { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }

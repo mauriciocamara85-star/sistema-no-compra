@@ -10,6 +10,8 @@
 -- la subió"; "las cuatro preguntas, sacalas y dejalas como recordatorio,
 -- chiquito abajo… mientras menos fricción tenga, mejor".
 --
+-- 0. Si falta el SQL 129, corta acá sin cambiar nada (sin él, mandar una foto
+--    falla con "column m.mueble does not exist"; árbitro, ronda 1).
 -- 1. orden_enviar_control: ya no pide las respuestas. Si llegan las 4 de un
 --    juego que vale (la app de antes, que sigue en los teléfonos hasta que se
 --    actualiza), se guardan como antes. Si no, el control queda sin respuestas:
@@ -18,16 +20,33 @@
 --    mandada) o el supervisor al revisarla; mientras no tenga ninguno de los
 --    dos, ese control no cuenta en el promedio de la semana (antes contaba lo
 --    que había respondido).
---    Lo demás, igual que en la migración 36 (mandarla de nuevo, la hora límite,
---    "con problemas").
+--    Lo demás, igual que en la migración 36 (mandarla de nuevo, la hora límite).
+-- 2. orden_aplicar_resultado_ia (igual que en la migración 1, más dos cosas):
+--    - la IA de una foto que ya no es la del control (sacó otra mientras la IA
+--      la revisaba) guarda su resultado, pero no crea ni cierra tareas: si no,
+--      la de una foto descartada quedaba pendiente;
+--    - si la foto ya estaba mandada (ahora se manda sin esperar a la IA),
+--      completa "enviado con problemas" con el nivel que llega.
 --
--- Se puede correr más de una vez. Va DESPUÉS del SQL 129 (usa
--- orden_mueble y orden_checks_mueble, que crea ese).
--- Reversible: volver orden_enviar_control a la de la migración 36 (pegar de
--- nuevo esa función). Los controles que se mandaron sin respuestas quedan así
--- (no hay qué recuperar: no se preguntó nada).
+-- Se puede correr más de una vez.
+-- Reversible, en este orden:
+--   PRIMERO volver la app de los vendedores a la de antes (la nueva no tiene
+--   preguntas: contra la función de antes, los vendedores no pueden mandar);
+--   después pegar de nuevo orden_enviar_control de la migración 36 y
+--   orden_aplicar_resultado_ia de la migración 1. Los controles que se mandaron
+--   sin respuestas quedan así (no se preguntó nada: no hay qué recuperar).
 -- =====================================================================
 
+-- 0. El SQL 129 tiene que estar corrido antes
+do $$
+begin
+  if to_regprocedure('orden_checks_mueble(text)') is null or to_regprocedure('orden_mueble(text,boolean,text,orden_sector_tipo)') is null
+     or not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'orden_modulos' and column_name = 'mueble') then
+    raise exception 'Primero corré el SQL 129 (las preguntas según el mueble). Éste, el 130, va después: no se cambió nada.';
+  end if;
+end $$;
+
+-- 1. Enviar (igual que en la migración 36, sin pedir las respuestas)
 create or replace function orden_enviar_control(p_control uuid, p_respuestas jsonb)
 returns orden_controles language plpgsql security definer set search_path = public as $$
 declare
@@ -96,4 +115,89 @@ begin
    where id = c.id
   returning * into c;
   return c;
+end $$;
+
+-- 2. Lo que llega de la IA (igual que en la migración 1, más las dos cosas de arriba)
+create or replace function orden_aplicar_resultado_ia(p_foto uuid, p_resultado jsonb, p_modelo text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  f orden_fotos; c orden_controles; m orden_modulos; cfg orden_config;
+  v_valida boolean; v_nivel orden_nivel; h jsonb; v_clave text; v_claves text[] := '{}';
+  v_tarea uuid; v_creadas jsonb := '[]'; v_resueltas int := 0; v_titulo text; v_descartada boolean;
+begin
+  select * into f from orden_fotos where id = p_foto for update;
+  if not found then raise exception 'No encontramos esa foto'; end if;
+  -- Una foto se analiza una sola vez: para volver a revisar, hay que sacar otra.
+  if f.ia_estado in ('ok', 'invalida') then raise exception 'Esta foto ya fue analizada'; end if;
+  select * into c from orden_controles where id = f.control_id;
+  select * into m from orden_modulos where id = c.modulo_id;
+  select * into cfg from orden_config where local_id = c.local_id;
+
+  v_valida := coalesce((p_resultado ->> 'foto_valida')::boolean, true);
+  v_nivel  := case when v_valida then (p_resultado ->> 'nivel_sugerido')::orden_nivel end;
+
+  update orden_fotos
+     set ia_estado = case when v_valida then 'ok' else 'invalida' end,
+         ia_resultado = p_resultado, ia_nivel = v_nivel, ia_modelo = p_modelo, ia_error = null, analizada_en = now()
+   where id = f.id;
+
+  if not v_valida then
+    return jsonb_build_object('foto_valida', false, 'motivo', p_resultado ->> 'motivo_foto_invalida',
+                              'tareas_creadas', '[]'::jsonb, 'tareas_resueltas', 0);
+  end if;
+
+  if c.ultimo_intento_id = f.id then
+    -- Mandada antes de que llegara la IA (SQL 130): "con problemas" se completa con este nivel.
+    update orden_controles
+       set nivel_ia = v_nivel,
+           enviado_con_problemas = enviado_con_problemas or coalesce(estado in ('enviado', 'revisado') and v_nivel <= 'a_mejorar', false)
+     where id = c.id;
+  end if;
+
+  -- Sacó otra foto mientras la IA revisaba ésta: queda su resultado, pero no crea ni cierra tareas.
+  v_descartada := c.ultimo_intento_id is distinct from f.id
+    and exists (select 1 from orden_fotos x where x.control_id = f.control_id and x.id <> f.id
+                   and x.borrada_en is null and x.tomada_en > f.tomada_en);
+
+  if not v_descartada and coalesce(cfg.ia_crea_tareas, true) and c.persona_id is not null then
+    for h in select * from jsonb_array_elements(coalesce(p_resultado -> 'hallazgos', '[]'::jsonb)) loop
+      continue when coalesce(h ->> 'gravedad', '') <> 'corregir';
+      v_clave := 'ia:' || m.id || ':' || coalesce(nullif(h ->> 'check', ''), 'general');
+      v_claves := v_claves || v_clave;
+      v_titulo := left(m.nombre || ': ' || coalesce(h ->> 'titulo', 'corregir'), 140);
+
+      v_tarea := null;
+      insert into orden_tareas (local_id, persona_id, modulo_id, control_id, foto_origen_id, origen,
+                                titulo, detalle, requiere_foto, plazo, vence_en, clave)
+      values (c.local_id, c.persona_id, m.id, c.id, f.id, 'ia', v_titulo, h ->> 'detalle', true, 'hoy',
+              orden_calcular_vencimiento(c.persona_id, 'hoy'), v_clave)
+      on conflict (persona_id, clave) where estado = 'pendiente' and clave is not null do nothing
+      returning id into v_tarea;
+
+      if v_tarea is not null then
+        v_creadas := v_creadas || jsonb_build_object('id', v_tarea, 'titulo', v_titulo);
+      end if;
+    end loop;
+
+    -- Lo que la IA había marcado antes y ahora se ve BIEN: se cierra solo.
+    -- Solo si la IA está segura y ese punto quedó "ok" (una foto oscura o un "no_se_ve" no cierra nada).
+    if coalesce(p_resultado ->> 'confianza', 'media') <> 'baja' then
+      update orden_tareas t
+         set estado = 'hecha', completada_en = now(), completada_a_tiempo = now() <= t.vence_en, foto_path = f.foto_path
+       where t.modulo_id = m.id and t.origen = 'ia' and t.estado = 'pendiente'
+         and not (t.clave = any(v_claves))
+         and p_resultado -> 'checks' ->> split_part(t.clave, ':', 3) = 'ok';
+      get diagnostics v_resueltas = row_count;
+    end if;
+  end if;
+
+  return jsonb_build_object(
+    'foto_valida', true,
+    'nivel', v_nivel,
+    'nivel_texto', orden_nivel_texto(v_nivel),
+    'checks', p_resultado -> 'checks',
+    'hallazgos', p_resultado -> 'hallazgos',
+    'comentario', p_resultado -> 'comentario',
+    'tareas_creadas', v_creadas,
+    'tareas_resueltas', v_resueltas);
 end $$;

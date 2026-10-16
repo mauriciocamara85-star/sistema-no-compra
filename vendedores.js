@@ -1493,6 +1493,9 @@ function iaParaContar(ia) {
 function recordatorioFoto(c) {
   return '<p class="ayuda-foto">Para que salga bien: ' + preguntasDe(c).map(function (q) { return esc(CHECK[q[0]] || q[0]); }).join(' · ') + '.</p>';
 }
+function textoListo(c, estado) {
+  return (estado.rehacer ? '¡Listo! Cambiaste la foto: ' : '¡Listo! Mandaste la foto: ') + c.modulo_nombre + '.';
+}
 
 /* La foto que sacó: sólo "Enviar" (y "Sacar otra" si quiere). Nada la frena: ni lo que diga la IA, ni preguntas
    para responder (15/10, Seba no pudo mandar dos porque la IA marcó cosas "a corregir" y faltaban los Sí/No). */
@@ -1501,10 +1504,11 @@ function abrirRevision(c, estado) {
   app.className = 'app';
   var r = estado.resultado || {};
   var html =
-    '<button class="volver" id="volver">' + (r.cerrado ? '‹ Fotos' : estado.rehacer ? '‹ Dejar la que mandé' : '‹ Volver a Hoy') + '</button>' +
+    '<button class="volver" id="volver">' + (r.cerrado ? '‹ Fotos' : estado.rehacer ? '‹ Dejar la que mandé' : '‹ Volver a Fotos') + '</button>' +
     '<h1>' + esc(c.modulo_nombre) + '</h1>' +
-    /* Si ya no se puede cambiar, la nueva no queda: no se muestra como si fuera la del módulo. */
-    (r.cerrado ? '' : '<img class="foto-grande" src="' + esc(estado.url) + '" alt="La foto que sacaste">') +
+    /* Si ya no se puede cambiar, la nueva no queda: no se muestra como si fuera la del módulo. Más chica que en otras
+       pantallas, así "Enviar" entra sin bajar en un celular chico. */
+    (r.cerrado ? '' : '<img class="foto-grande foto-revision" src="' + esc(estado.url) + '" alt="La foto que sacaste">') +
     (r.fallo ? '<div class="revision mala"><div class="titulo">' + (r.cerrado ? 'Ya no se puede cambiar' : 'No se pudo mandar') + '</div><div>' + esc(r.fallo) + '</div></div>' : '');
 
   if (estado.rehacer && !r.cerrado) {
@@ -1538,16 +1542,26 @@ function abrirRevision(c, estado) {
 
 function enviarControl(c, estado, boton) {
   boton.textContent = 'Enviando…';
-  /* Sin respuestas: las 4 preguntas pasaron a ser un recordatorio (SQL 130). */
-  return llamar('orden_enviar_control', { p_control: c.id, p_respuestas: {} }).then(function () {
+  /* Mientras se manda, ni volver ni sacar otra: la respuesta se dibujaba encima de otra pantalla, o con la foto
+     nueva (árbitro). Si falla, se destraban y el "atrás" del teléfono vuelve a andar. */
+  var trabar = function (si) {
+    ['volver', 'repetir'].forEach(function (id) { var b = document.getElementById(id); if (b) b.disabled = si; });
+    if (!si) revisarAtras();
+  };
+  trabar(true);
+  var foto = estado.fotoId;
+  var mandada = function () {
     estado.enviado = true;
+    estado.fotoMandada = foto;
     pantallaMandada(c, estado);
-  }, function (e) {
+  };
+  /* Sin respuestas: las 4 preguntas pasaron a ser un recordatorio (SQL 130). */
+  return llamar('orden_enviar_control', { p_control: c.id, p_respuestas: {} }).then(mandada, function (e) {
     /* Si ya estaba enviado (se tocó dos veces, o se cortó la señal después de
        que llegara), es lo mismo que "listo". Rehaciendo, quiere decir que la
        nueva ya llegó. */
     if (/ya fue enviado/i.test(mensajeDe(e))) {
-      if (estado.rehacer) { estado.enviado = true; pantallaMandada(c, estado); return; }
+      if (estado.rehacer) { mandada(); return; }
       irA('fotos');
       avisar('Ese control ya estaba enviado.');
       return;
@@ -1555,35 +1569,39 @@ function enviarControl(c, estado, boton) {
     /* La revisaron, o pasó la hora, mientras sacaba la nueva: queda la que mandó. */
     if (/ya revisó/i.test(mensajeDe(e))) { irA('fotos'); avisar('Tu supervisor ya la revisó: quedó la que habías mandado.'); return; }
     if (/no se puede cambiar/i.test(mensajeDe(e))) { irA('fotos'); avisar('Ya pasó la hora: no se pudo cambiar y quedó la que habías mandado.'); return; }
+    trabar(false);
+    /* La base todavía no tiene el SQL 130: pide las respuestas que la app ya no pregunta. */
+    if (/Respondé las 4 preguntas|Cambiaron las preguntas/i.test(mensajeDe(e))) {
+      var falta = new Error('Falta actualizar el sistema: avisale a tu supervisor.');
+      falta.delServidor = true;   // no es "sin señal"
+      throw falta;
+    }
     throw e;
   });
 }
 
 /** Ya mandada: si la IA tiene algo para decir, sus sugerencias para la próxima (Mauricio, 15/10: "la sugerencia va
-    después de que la subió"); si no, directo a Fotos. Si la IA todavía la está revisando, se completa sola. */
+    después de que la subió"); si no, directo a Fotos. Si la IA todavía la está revisando, se completa sola; si
+    termina sin nada para decir, vuelve sola a Fotos. */
 function pantallaMandada(c, estado) {
-  var listo = estado.rehacer ? '¡Listo! Cambiaste la foto: ' + c.modulo_nombre + '.' : '¡Listo! Mandaste el ' + c.modulo_nombre + '.';
+  var listo = textoListo(c, estado);
   var ahi = document.getElementById('mandada');
-  if (ahi && ahi.dataset.control !== c.id) return;   // ya está en otra cosa
-  if (!ahi && estado.mostroMandada) return;           // ya tocó "Listo" (la IA llegó tarde)
-  /* Llegó la IA mientras miraba la pantalla: su tarjeta (si no pudo revisarla, se va). */
-  if (ahi) {
-    var t = ahi.querySelector('.revision');
-    if (t) { if (iaUtil(estado.ia)) t.outerHTML = tarjetaSugerencias(estado.ia); else t.remove(); }
-    return;
-  }
+  if (estado.salio) { avisar(listo); return; }                                // se fue antes de que terminara
+  if (ahi && ahi.dataset.foto !== String(estado.fotoMandada)) return;       // la pantalla es de otra foto
+  if (!ahi && estado.mostroMandada) return;                                  // ya tocó "Listo" (la IA llegó tarde)
   if (!iaParaContar(estado.ia)) {
     if (estado.url) URL.revokeObjectURL(estado.url);
     irA('fotos');
     avisar(listo);
     return;
   }
+  /* Llegó la IA mientras miraba la pantalla: su tarjeta. */
+  if (ahi) { var t = ahi.querySelector('.revision'); if (t) t.outerHTML = tarjetaSugerencias(estado.ia); return; }
   estado.mostroMandada = true;
   barra.hidden = true;
   app.className = 'app';
-  app.innerHTML = '<div id="mandada" data-control="' + esc(c.id) + '">' +
+  app.innerHTML = '<div id="mandada" data-foto="' + esc(String(estado.fotoMandada)) + '">' +
     '<h1>' + esc(listo) + '</h1>' +
-    (estado.url ? '<img class="foto-grande" src="' + esc(estado.url) + '" alt="La foto que mandaste">' : '') +
     tarjetaSugerencias(estado.ia) +
     '<div class="acciones"><button class="boton lima" id="fin">Listo</button></div></div>';
   document.getElementById('fin').onclick = function () { if (estado.url) URL.revokeObjectURL(estado.url); irA('fotos'); };
@@ -2561,8 +2579,13 @@ function dibujarRevisar(loc, cola, testigos) {
     (c.foto_path ? '<img class="foto-grande" data-foto="' + esc(c.foto_path) + '" alt="La foto del módulo">' : '<div class="vacio">Sin foto</div>') +
     (c.discrepancia ? '<div class="nota alerta">Lo que respondió no coincide con lo que vio la IA: miralo con atención.</div>' : '') +
     '<div class="info" style="margin:10px 0">' +
-      (c.nivel_ia ? '<span class="chip nivel-' + esc(c.nivel_ia) + '">IA: ' + esc(NIVEL[c.nivel_ia]) + '</span>' : '<span class="chip pendiente">Sin revisión de la IA</span>') +
+      (c.nivel_ia ? '<span class="chip nivel-' + esc(c.nivel_ia) + '">IA: ' + esc(NIVEL[c.nivel_ia]) + '</span>'
+        /* Desde el SQL 130 la foto que no sirve se manda igual: que se vea que la IA la miró y por qué no sirve. */
+        : ia.foto_valida === false ? '<span class="chip vencido">IA: la foto no sirve</span>'
+        : '<span class="chip pendiente">Sin revisión de la IA</span>') +
       (c.nivel_declarado ? '<span class="chip nivel-' + esc(c.nivel_declarado) + '">Según él: ' + esc(NIVEL[c.nivel_declarado]) + '</span>' : '') + '</div>' +
+    (!c.nivel_ia && ia.foto_valida === false && (ia.motivo_foto_invalida || ia.motivo)
+      ? '<div class="bajada" style="margin:0 0 8px">' + esc(ia.motivo_foto_invalida || ia.motivo) + '</div>' : '') +
     checks.map(function (q) {
       var dijo = c.respuestas ? c.respuestas[q[0]] : null, vio = ia.checks ? ia.checks[q[0]] : null;
       return '<div class="pregunta"><span>' + esc(CHECK[q[0]] || q[0]) + '</span><div class="info">' +

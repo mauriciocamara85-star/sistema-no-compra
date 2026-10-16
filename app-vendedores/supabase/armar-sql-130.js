@@ -5,22 +5,26 @@ const mig = fs.readFileSync(path.join(__dirname, 'migrations/20261015000037_foto
 
 const cabecera = `-- ═══ SQL 130 (15/10/2026) · Equipo VDH: la foto se manda siempre, sin las 4 preguntas ═══
 -- Pegalo entero en el editor SQL de Supabase. Se puede correr más de una vez.
---   · Correlo DESPUÉS del SQL 129 (usa lo que crea ese).
+--   · Correlo DESPUÉS del SQL 129. Si el 129 no está, corta enseguida con "Primero corré el
+--     SQL 129" y no cambia nada.
 --   · Al mandar la foto ya no se piden las 4 preguntas (Sí/No): en la app quedan como un
 --     recordatorio chiquito abajo. Si llegan igual (la app de antes, hasta que se actualiza),
 --     se guardan como siempre.
 --   · Sin respuestas, el nivel lo pone la IA (aunque llegue después de mandarla) o el
 --     supervisor al revisarla.
+--   · Si el vendedor saca otra foto mientras la IA revisa la anterior, lo de la anterior ya no
+--     le deja tareas.
 --   · Que la IA no frene el envío es de la app nueva, no de este SQL.
---   · Al final te muestra "true" si quedó la versión nueva.
---   · Reversible (el detalle está abajo).
+--   · Al final te muestra dos "true" si quedó todo.
+--   · Reversible (el detalle está abajo): primero hay que volver la app.
 
 `;
 
 const fin = `
 
--- Lo que quedó: true = ya no pide las respuestas
-select pg_get_functiondef('orden_enviar_control(uuid, jsonb)'::regprocedure) like '%Las respuestas ya no se piden%' as ya_no_pide_respuestas;
+-- Lo que quedó: los dos en true
+select pg_get_functiondef('orden_enviar_control(uuid, jsonb)'::regprocedure) like '%Las respuestas ya no se piden%' as ya_no_pide_respuestas,
+       pg_get_functiondef('orden_aplicar_resultado_ia(uuid, jsonb, text)'::regprocedure) like '%v_descartada%' as foto_descartada_sin_tareas;
 `;
 
 const salida = cabecera + mig.trimEnd() + fin;
