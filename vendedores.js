@@ -1154,15 +1154,13 @@ function dibujarFotos(x) {
     var yoId = yo().id;
     mapa.modulos.forEach(function (m) { enMapa[m.id] = true; var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
     var hayMios = Object.keys(mios).length;
-    var otraVez = (x.controles.some(sePuedeRehacer) ? ' Si una salió mal, tocala y la sacás de nuevo.' : '') +
-      (x.controles.some(function (c) { return c.estado === 'vencido'; }) ? ' Las vencidas (en rojo) las podés mandar igual: quedan como tarde.' : '');
+    /* Simple (16/10): sólo la instrucción. Sin la lista de nombres ni "Ver el local": el mapa entero es para el
+       supervisor y el encargado (Equipo → El mapa del local). */
     html += '<div class="mapa-caja" id="mapaFotos">' +
-      svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' + leyendaNombres(mapa) +
-      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? 'Tocá un módulo con la cámara para mandar su foto. Los que tienen ✓ ya están.' + otraVez
-                              : total ? 'Por hoy no te queda ninguna foto para mandar.' + otraVez
-                              : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>' +
-      /* El modo observador: todo el local con volumen y la foto de cada módulo (para mirar). */
-      '<button class="tarjeta-accion" id="verLocal"><b>Ver el local</b><span>Todos los módulos con su foto, y cómo están</span></button>';
+      svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' +
+      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? 'Tocá un módulo con la cámara para mandar su foto.'
+                              : total ? 'Por hoy no te queda ninguna foto para mandar.'
+                              : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
   }
 
   /* La lista: sin croquis, todo; con croquis, sólo lo que no está dibujado. */
@@ -1203,8 +1201,6 @@ function dibujarFotos(x) {
       pantallaFoto(c);
     };
   });
-  var vl = document.getElementById('verLocal');
-  if (vl) vl.onclick = function () { pantallaMapa({ id: yo().local_id, nombre: yo().local || 'Tu local' }, 'fotos'); };
   /* Tocar el croquis: si ese módulo tiene tu control pendiente, la cámara; si no, de quién es. */
   app.querySelectorAll('#mapaFotos .mapa-mod').forEach(function (g) {
     g.onclick = function () {
@@ -1493,7 +1489,7 @@ function tarjetaSugerencias(ia) {
     (ia.tareas_resueltas ? '<div class="bajada" style="margin:8px 0 0">Se cerró sola ' + (ia.tareas_resueltas === 1 ? '1 tarea' : ia.tareas_resueltas + ' tareas') + ' que ya está bien.</div>' : '') +
     /* Qué hay (SQL 118): lo anotó en el croquis, o lo deja como sugerencia si lo había escrito alguien. */
     (ia.que_hay && ia.que_hay_estado === 'puesto' ? '<div class="bajada" style="margin:8px 0 0">En el croquis anotó qué hay: <b>' + esc(ia.que_hay) + '</b>.</div>' : '') +
-    (ia.que_hay && ia.que_hay_estado === 'sugerido' ? '<div class="bajada" style="margin:8px 0 0">Ve <b>' + esc(ia.que_hay) + '</b>, y en el croquis dice otra cosa. Si cambió, en Fotos → Ver el local tocá el módulo y "Usar esto".</div>' : '') +
+    (ia.que_hay && ia.que_hay_estado === 'sugerido' ? '<div class="bajada" style="margin:8px 0 0">Ve <b>' + esc(ia.que_hay) + '</b>, y en el croquis dice otra cosa: queda para que lo vea tu supervisor.</div>' : '') +
     '</div>';
 }
 /** Si lo que volvió de la IA es una revisión (no un error, ni la IA apagada, ni "ya se revisó"). */
