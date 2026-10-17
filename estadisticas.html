@@ -883,13 +883,14 @@
   var rolAplicado = null;
   function localFijo() {
     var y = persona.yo();
-    return y && (y.rol === 'vendedor' || y.rol === 'supervisor') && y.local ? y.local : '';
+    /* SQL 135: el que además atiende clientes ve todos los locales, como Atención. */
+    return y && (y.rol === 'vendedor' || y.rol === 'supervisor') && !y.tambien_atencion && y.local ? y.local : '';
   }
   /** Devuelve true si cambió lo que se ve (hay que volver a cargar). */
   function aplicarRol() {
     var f = localFijo();
     var y = persona.yo();
-    var deUnLocal = !!(y && (y.rol === 'vendedor' || y.rol === 'supervisor'));
+    var deUnLocal = !!(y && (y.rol === 'vendedor' || y.rol === 'supervisor') && !y.tambien_atencion);
     if (f === rolAplicado && deUnLocal === !!rolAplicado) { return false; }
     rolAplicado = f;
     if (f) { estado.local = f; }
@@ -1178,7 +1179,7 @@
        local acá (lo dice la base): se espera, para no pedir antes los
        números de todos los locales. */
     var y0 = persona.yo();
-    var esperarLocal = !!(y0 && !y0.local && (y0.rol === 'vendedor' || y0.rol === 'supervisor'));
+    var esperarLocal = !!(y0 && !y0.local && (y0.rol === 'vendedor' || y0.rol === 'supervisor') && !y0.tambien_atencion);
     if (!esperarLocal) { cargar(); }
     /* Cuando la base confirma quién entró (o le cambiaron el rol). */
     persona.listo.then(function () { if (aplicarRol() || esperarLocal) { aplicarVista(); cargar(); } });

@@ -15,6 +15,9 @@
  * que vino de afuera), y una sesión que no sirve, pasan a 'sesion:no': pin_ok
  * lo rechaza sin gastar un intento del PIN compartido (con un pin vacío, en
  * cambio, lo contaría).
+ *
+ * SQL 135 (17/10/2026): también el vendedor o encargado con la casilla
+ * "También atiende clientes" (nc_yo trae tambien_atencion).
  */
 const OFICINA = ['admin', 'atencion', 'gerencia'];
 
@@ -34,7 +37,8 @@ export async function pinDeLaPersona(pin: unknown, req: Request): Promise<unknow
     });
     if (!r.ok) return 'sesion:no';
     const y = await r.json();
-    if (!y || typeof y.id !== 'string' || y.activo === false || y.aprobado !== true || !OFICINA.includes(String(y.rol))) return 'sesion:no';
+    if (!y || typeof y.id !== 'string' || y.activo === false || y.aprobado !== true ||
+        !(OFICINA.includes(String(y.rol)) || y.tambien_atencion === true)) return 'sesion:no';
     /* La marca, con el sello: la arma la base, que vuelve a mirar que sea de
        la oficina (y que tenga el PIN de 6). */
     const m = await fetch(url + '/rest/v1/rpc/nc_marca_persona', {

@@ -1323,11 +1323,12 @@ select {
    Cada persona entra con su usuario y la barra muestra lo que usa su rol.
    persona.js pone el rol en <html> ANTES de pintar, así lo que no va nunca
    llega a verse. Sin usuario no hay rol y se ve todo, como siempre. */
-html[data-nc-rol="vendedor"] .rail-item[href="panel.html"],
-html[data-nc-rol="vendedor"] .rail-item[href^="club-numeros.html"],
-html[data-nc-rol="vendedor"] .rail-item[href="config.html"],
-html[data-nc-rol="supervisor"] .rail-item[href="panel.html"],
-html[data-nc-rol="supervisor"] .rail-item[href^="club-numeros.html"],
+/* SQL 135: el vendedor o encargado que además atiende clientes (data-nc-atencion) ve también lo de Atención. */
+html[data-nc-rol="vendedor"]:not([data-nc-atencion]) .rail-item[href="panel.html"],
+html[data-nc-rol="vendedor"]:not([data-nc-atencion]) .rail-item[href^="club-numeros.html"],
+html[data-nc-rol="vendedor"]:not([data-nc-atencion]) .rail-item[href="config.html"],
+html[data-nc-rol="supervisor"]:not([data-nc-atencion]) .rail-item[href="panel.html"],
+html[data-nc-rol="supervisor"]:not([data-nc-atencion]) .rail-item[href^="club-numeros.html"],
 html[data-nc-rol="atencion"] .rail-item[data-impecable],
 html[data-nc-rol="atencion"] .rail-item[href="impecable-admin.html"] { display: none; }
 
@@ -1455,7 +1456,9 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-acciones { flex: 0 1 auto; }
 .us-editor { flex: 1 1 100%; }
 .us-editor select { width: auto; flex: 1 1 160px; min-height: 40px; padding-top: 8px; padding-bottom: 8px; }
-.us-editor select[hidden] { display: none; }
+/* "También atiende clientes" (SQL 135): en su renglón, debajo; Guardar y Cancelar quedan al lado de los selectores. */
+.us-editor .us-check { order: 10; flex: 1 1 100%; padding: 2px 2px 0; }
+.us-editor select[hidden], .us-editor .us-check[hidden] { display: none; }
 .us-vacio { font-size: 14px; color: var(--txt-2); margin: 0; }
 .us-nota { font-size: 13px; color: var(--txt-3); margin: 14px 0 0; }
 .us-fijo { font-size: 15px; font-weight: 600; padding: 4px 0; }

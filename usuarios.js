@@ -20,7 +20,11 @@ var usuarios = (function () {
   var ROLES_ADMIN = ['vendedor', 'supervisor', 'atencion', 'gerencia', 'admin'];
   var QUE_VE = 'Vendedor: Carga, Cobrar, Gift Cards, Asistente, las estadísticas de su local y Equipo VDH. ' +
                'Encargado: lo mismo, y crea los vendedores de su local. Atención al cliente: todo menos Equipo VDH. ' +
-               'Administrador y Gerencia: todo.';
+               'Administrador y Gerencia: todo. Un vendedor o encargado que además atiende clientes ' +
+               '("También atiende clientes", en Cambiar) suma lo de Atención, con un PIN de 6 números.';
+  /* SQL 135: la casilla es para quien tiene local; Atención, Administración y Gerencia ya ven todo eso. */
+  function puedeAtencion(rol) { return rol === 'vendedor' || rol === 'supervisor'; }
+  function rolDe(p) { return (ROL[p.rol] || p.rol) + (p.tambien_atencion && puedeAtencion(p.rol) ? ' + Atención al cliente' : ''); }
 
   var datos = null;
   var filtro = { local: '', desactivados: false };
@@ -106,7 +110,7 @@ var usuarios = (function () {
         '<div class="us-lista">' + pend.map(function (p) {
           return '<div class="us-fila us-pend" data-id="' + esc(p.id) + '">' +
             '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b>' +
-            '<span>' + esc(ROL[p.rol] || p.rol) + ' · ' + esc(nombreLocal(p.local_id)) + (p.alta_propia ? ' · se anotó solo' : '') + '</span></div>' +
+            '<span>' + esc(rolDe(p)) + ' · ' + esc(nombreLocal(p.local_id)) + (p.alta_propia ? ' · se anotó solo' : '') + '</span></div>' +
             '<div class="us-acciones">' +
               '<button type="button" class="btn btn-pri btn-chico" data-acc="aprobar">Sí, es ' + (p.alta_propia ? 'de acá' : 'él o ella') + '</button>' +
               '<button type="button" class="btn btn-sec btn-chico" data-acc="rechazar">' + (p.alta_propia ? 'No lo conozco' : 'No fue') + '</button>' +
@@ -183,7 +187,7 @@ var usuarios = (function () {
     return '<div class="us-fila' + (p.activo ? '' : ' apagada') + '" data-id="' + esc(p.id) + '">' +
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */
-      '<span>' + esc(ROL[p.rol] || p.rol) + '</span></div>' +
+      '<span>' + esc(rolDe(p)) + '</span></div>' +
       '<span class="pill pill-' + e[0] + '">' + esc(e[1]) + '</span>' +
       (acc ? '<div class="us-acciones">' + acc + '</div>' : '') +
       '</div>';
@@ -200,10 +204,12 @@ var usuarios = (function () {
 
   function filaEditor(p) {
     return '<div class="us-fila us-editando" data-id="' + esc(p.id) + '">' +
-      '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Cambiar el rol o el local</span></div>' +
+      '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Cambiar el rol, el local o si también atiende clientes</span></div>' +
       '<div class="us-editor">' +
         '<select data-ed="rol" aria-label="Rol">' + opcionesRol(p.rol) + '</select>' +
         '<select data-ed="local" aria-label="Local"' + (sinLocal(p.rol) ? ' hidden' : '') + '>' + opcionesLocal(p.local_id || '', p.rol === 'gerencia') + '</select>' +
+        '<label class="us-check" data-ed-atencion' + (puedeAtencion(p.rol) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
+          '<input type="checkbox" data-ed="atencion"' + (p.tambien_atencion ? ' checked' : '') + '> También atiende clientes</label>' +
         '<button type="button" class="btn btn-pri btn-chico" data-acc="guardar">Guardar</button>' +
         '<button type="button" class="btn btn-sec btn-chico" data-acc="cancelar">Cancelar</button>' +
       '</div></div>';
@@ -285,12 +291,23 @@ var usuarios = (function () {
           var rol = f.querySelector('[data-ed="rol"]').value, loc = f.querySelector('[data-ed="local"]').value || null;
           if (p.local_id && loc && loc !== p.local_id && p.rol === 'vendedor' &&
               !confirm('¿Pasar a ' + nom + ' a ' + nombreLocal(loc) + '? Sale de la lista de No Compra de ' + nombreLocal(p.local_id) + ' y entra en la del local nuevo.')) return;
+          var cas = f.querySelector('[data-ed="atencion"]');
+          var conAt = puedeAtencion(rol) && !!(cas && cas.checked), cambiaAt = conAt !== !!p.tambien_atencion;
           hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: rol, p_local: sinLocal(rol) ? null : loc }, function () {
             /* SQL 110: lo de la oficina pide un PIN de 6 números; el suyo
                queda, y lo cambia la próxima vez que entre. */
             var seis = { admin: 1, atencion: 1, gerencia: 1 };
-            return p.pin && seis[rol] && !seis[p.rol] ? 'Guardado. La próxima vez que entre, ' + p.nombre + ' cambia su PIN por uno de 6 números.' : 'Guardado.';
+            return p.pin && seis[rol] && !seis[p.rol] && !p.tambien_atencion ? 'Guardado. La próxima vez que entre, ' + p.nombre + ' cambia su PIN por uno de 6 números.' : 'Guardado.';
           })
+            /* SQL 135: la casilla va aparte (sólo la pone el administrador). */
+            .then(function (ok) {
+              if (!ok || !cambiaAt) return ok;
+              return hacer('nc_usuario_atencion', { p_persona: p.id, p_si: conAt }, function (r) {
+                if (!conAt) return 'Guardado: ' + p.nombre + ' ya no entra a lo de Atención al cliente.';
+                return 'Guardado: ' + p.nombre + ' también atiende clientes (CRM, Socios, el Club y Gift Cards).' +
+                  (r && r.pin_corto ? ' La próxima vez que entre, cambia su PIN por uno de 6 números.' : '');
+              });
+            })
             .then(function (ok) { if (ok) { editando = null; document.getElementById('usLista').innerHTML = lista(); } });
           break;
         case 'pin':
@@ -313,6 +330,8 @@ var usuarios = (function () {
       if (s.dataset && s.dataset.ed === 'rol') {
         var loc = s.closest('.us-editor').querySelector('[data-ed="local"]');
         loc.hidden = sinLocal(s.value);
+        var at = s.closest('.us-editor').querySelector('[data-ed-atencion]');
+        if (at) at.hidden = !puedeAtencion(s.value);
         loc.innerHTML = opcionesLocal(loc.value, s.value === 'gerencia');
       }
     };

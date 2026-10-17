@@ -84,16 +84,21 @@ var persona = (function () {
   /* Cuenta sólo quien está activo y aprobado: un PIN recién creado espera. */
   function vigente(y) { return !!(y && y.activo !== false && y.aprobado === true && ROL[y.rol]); }
   function rol() { return vigente(_yo) ? _yo.rol : ''; }
+  /* SQL 135: un vendedor (o encargado) que además atiende clientes: ve lo de su rol y lo de Atención. */
+  function conAtencion() { return vigente(_yo) && _yo.tambien_atencion === true; }
   /* La oficina: lo que antes abría el PIN compartido (CRM, Socios, el Club,
      la lista de gift cards) lo abre su usuario. La base dice lo mismo
-     (nc_es_oficina, SQL 107). */
+     (nc_es_oficina, SQL 107; con la casilla de Atención, SQL 135). */
   var OFICINA = { admin: 1, atencion: 1, gerencia: 1 };
-  function oficina() { return !!OFICINA[rol()]; }
+  function oficina() { return !!OFICINA[rol()] || conAtencion(); }
 
   function marcar() {
     var r = rol();
     if (r) document.documentElement.setAttribute('data-nc-rol', r);
     else document.documentElement.removeAttribute('data-nc-rol');
+    /* Con la casilla de Atención, estilos.css no esconde el CRM ni el Club. */
+    if (conAtencion()) document.documentElement.setAttribute('data-nc-atencion', '');
+    else document.documentElement.removeAttribute('data-nc-atencion');
   }
   marcar();
 
@@ -102,11 +107,15 @@ var persona = (function () {
     return p || 'index.html';
   }
   function puede(pag) {
-    var r = rol();
-    return !r || NO_VE[r].indexOf(pag || pagina()) < 0;
+    var r = rol(), p = pag || pagina();
+    return !r || NO_VE[r].indexOf(p) < 0 || (conAtencion() && NO_VE.atencion.indexOf(p) < 0);
   }
-  /** "Encargado" es el supervisor de un local; el de varios locales (sin local fijo, SQL 120), "Supervisor". */
-  function nombreRol(y) { return y.rol === 'supervisor' && !y.local_id ? 'Supervisor' : ROL[y.rol]; }
+  /** "Encargado" es el supervisor de un local; el de varios locales (sin local fijo, SQL 120), "Supervisor".
+      Con la casilla de Atención (SQL 135): "Vendedor y Atención al cliente". */
+  function nombreRol(y) {
+    var n = y.rol === 'supervisor' && !y.local_id ? 'Supervisor' : ROL[y.rol];
+    return y.tambien_atencion === true && !OFICINA[y.rol] ? n + ' y Atención al cliente' : n;
+  }
 
   /* ════════════════════════════════════════════════════════════════════
      LA SESIÓN (mismo protocolo que impecable-comun.js)
@@ -194,7 +203,7 @@ var persona = (function () {
     } catch (e) { return false; }
   }
   function fijarYo(y) {
-    var clave = function () { return rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado) + '|' + !!(_yo && _yo.pin_corto); };
+    var clave = function () { return rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado) + '|' + !!(_yo && _yo.pin_corto) + '|' + !!(_yo && _yo.tambien_atencion); };
     var antes = clave();
     _yo = y;
     guardarLS(K_YO, y && !y.provisorio ? y : null);
@@ -883,7 +892,7 @@ var persona = (function () {
     /** La persona habilitada (activa y aprobada), o null. */
     yo: function () { return vigente(_yo) ? _yo : null; },
     rol: rol,
-    /** Quien entró es de la oficina (Administración, Atención o Gerencia). */
+    /** Quien entró es de la oficina (Administración, Atención o Gerencia, o un vendedor con la casilla de Atención). */
     oficina: oficina,
     /** Lo que va en lugar del PIN: la marca de la sesión, o '' si no es de la oficina. */
     pin: function () {
