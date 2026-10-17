@@ -318,6 +318,19 @@
 .imp-locales { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 6px 12px; margin: 6px 0 10px; }
 .imp-check { display: flex; align-items: center; gap: 8px; font: 500 14px var(--sans); color: var(--txt); cursor: pointer; }
 .imp-check input { width: 18px; height: 18px; }
+/* Crear tarea (17/10): cuántos hay en la app en cada local, y las que se mandaron. */
+.imp-check small { color: var(--txt-3); font-weight: 400; font-size: 12.5px; }
+.imp-check.ct-sin { color: var(--txt-3); }
+.imp .renglon.ct-form .campo.c-todo { flex: 1 1 100%; }
+.imp .renglon.ct-bloque { display: block; padding: 14px 16px; }
+.imp .renglon.ct-bloque .imp-locales { margin-bottom: 4px; }
+.imp .renglon.ct-bloque .bajada { margin: 8px 0 0; }
+.imp .ct-mandada { display: grid; gap: 8px; padding: 12px 14px; margin: 0 0 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.imp .ct-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.imp .ct-cab small { color: var(--txt-3); font-size: 13px; }
+.imp .ct-estados { display: flex; flex-wrap: wrap; gap: 6px; }
+.imp .ct-mandada summary { cursor: pointer; font-size: 13px; color: var(--txt-2); }
+.imp .ct-mandada ul { margin: 6px 0 0; padding-left: 18px; font-size: 13.5px; color: var(--txt-2); }
 .ventana .imp-prod { margin-bottom: 6px; }
 .imp-video { display: block; width: 100%; max-height: 70vh; background: #000; border-radius: var(--r-sm); }
 .ventana .imp-mapa-vista .mapa-svg.deposito { height: auto; max-height: 230px; margin-top: 10px; }

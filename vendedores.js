@@ -1023,7 +1023,7 @@ function dibujarHoy(x) {
   if (x.caja && x.caja.activa) {
     var caja = x.caja.hoy;
     if (caja && caja.estado !== 'pendiente') filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: true, texto: 'Guardada.' });
-    else if (horaAR() >= 19) filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: false, texto: 'Las fotos del cierre: los números se cargan solos.' });
+    else if (horaAR() >= 19) filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: false, texto: 'Las fotos del cierre y los números del día.' });
     else filas.push({ id: 'hCaja', titulo: 'Caja del día', luego: true, texto: 'Desde las 19 h: las fotos del cierre y el efectivo.' });
   }
 
@@ -2180,6 +2180,14 @@ var FILAS_CAJA = [
   ['Efectivo', 'sis_saldo_final_efvo', 'real_efectivo', 'Lo que contaste']
 ];
 var _tolCaja = 100;
+/* (SQL 134) La IA de la caja se puede apagar por local (Ajustes → El local → La caja): las fotos se guardan y los
+   números se cargan a mano. Sin el dato (todavía sin el SQL), prendida. */
+var _cajaIA = true;
+function iaDeCaja(cfg) { return !(cfg && cfg.caja_ia === false); }
+function textoBajadaCaja() {
+  return _cajaIA ? 'Sacá las fotos del cierre: los números se cargan solos, también el efectivo. Revisalos y guardá.'
+                 : 'Sacá las fotos del cierre y cargá los números a mano.';
+}
 
 /** "$ 1.440.100,50", "95.000", "95000" o "1440100.5" → número; vacío o raro → null.
     (La base leía "95.000" como 95: por eso se manda ya convertido.) */
@@ -2232,9 +2240,13 @@ function pantallaCaja() {
   app.innerHTML = cabeza('Caja') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   if (yo().local_id) {
-    leer('/orden_config?select=caja_tolerancia_pesos&local_id=eq.' + valor(yo().local_id)).then(function (f) {
+    /* select=*: así también trae caja_ia (SQL 134) sin romperse si todavía no está. */
+    leer('/orden_config?select=*&local_id=eq.' + valor(yo().local_id)).then(function (f) {
       var v = f && f[0] ? Number(f[0].caja_tolerancia_pesos) : NaN;
       if (isFinite(v) && v >= 0) { _tolCaja = v; revisarFilasCaja(); }
+      _cajaIA = iaDeCaja(f && f[0]);
+      var b = document.getElementById('bajadaCaja');
+      if (b) b.textContent = textoBajadaCaja();
     }).catch(function () {});
   }
   llamar('orden_caja_hoy').then(function (caja) {
@@ -2261,9 +2273,11 @@ function dibujarCaja(caja, fotos, corrige) {
 
   var html = corrige
     ? '<button class="volver" id="volverCaja">‹ Volver a la caja</button><h1>' + (caja.estado === 'pendiente' ? 'Cargar' : 'Corregir') + ' la caja del ' + esc(diaMes(caja.fecha)) + '</h1>' +
-      '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.') + '</p>'
+      '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + (_cajaIA
+        ? 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.'
+        : 'Corregí los números a mano (si se corrigió en el sistema, sacá también la foto del cierre nuevo). Al guardar queda anotado quién cambió qué.')) + '</p>'
     : cabeza('Caja del ' + diaMes(caja.fecha)) +
-      '<p class="bajada">' + (cerrada ? 'Tu supervisor ya la controló.' : 'Sacá las fotos del cierre: los números se cargan solos, también el efectivo. Revisalos y guardá.') + '</p>';
+      (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>');
   if (!cerrada) {
     html += '<div class="grilla">' + FOTOS_CAJA.map(function (t) {
       var f = ultima[t[0]];
@@ -2295,8 +2309,16 @@ function dibujarCaja(caja, fotos, corrige) {
   app.querySelectorAll('.caja-fila input').forEach(function (i) { i.addEventListener('input', revisarFilasCaja); });
   revisarFilasCaja();
   var input = document.getElementById('fotoCaja');
+  /* Sin unaVez: al terminar, unaVez vuelve a poner el texto de antes y se borraba la etiqueta ("Leída", "Guardada"). */
   app.querySelectorAll('.foto-caja').forEach(function (b) {
-    unaVez(b, function () { return fotoCaja(caja, b.dataset.tipo, input, b); });
+    b.onclick = function () {
+      if (b.disabled) return;
+      b.disabled = true;
+      fotoCaja(caja, b.dataset.tipo, input, b).catch(function (e) {
+        if (e && e.sinSesion) { pantallaError(e); return; }
+        avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e));
+      }).then(function () { b.disabled = false; });
+    };
   });
   var g = document.getElementById('guardarCaja');
   if (g) unaVez(g, function () { return guardarCaja(caja, g, corrige); });
@@ -2305,8 +2327,10 @@ function dibujarCaja(caja, fotos, corrige) {
 /** (SQL 124) Corregir o cargar la caja de un día desde Revisar → Cajas (supervisor y administración). */
 function corregirCaja(c) {
   app.innerHTML = '<p class="cargando">Cargando…</p>';
-  return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc')
-    .then(function (f) { dibujarCaja(c, f || [], true); }, function (e) { detalleCaja(c); throw e; });
+  /* La IA de la caja de ESE local (SQL 134): si está apagada, la foto se guarda y se corrige a mano. */
+  var ia = leer('/orden_config?select=*&local_id=eq.' + valor(c.local_id)).then(function (r) { return iaDeCaja(r && r[0]); }, function () { return true; });
+  return Promise.all([leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(c.id) + '&order=tomada_en.desc'), ia])
+    .then(function (r) { _cajaIA = r[1]; dibujarCaja(c, r[0] || [], true); }, function (e) { detalleCaja(c); throw e; });
 }
 
 /** Vuelve al día de la caja, con lo que quedó guardado. */
@@ -2319,15 +2343,23 @@ function volverAlDiaCaja(id) {
 function fotoCaja(caja, tipo, input, boton) {
   return new Promise(function (ok, mal) {
     input.value = '';
+    input.oncancel = function () { ok(); };   // cerraron la cámara sin sacar la foto: el botón no queda trabado
     input.onchange = function () {
       var f = input.files && input.files[0];
       if (!f) { ok(); return; }
-      boton.querySelector('.chip').textContent = 'Leyendo…';
+      boton.querySelector('.chip').textContent = _cajaIA ? 'Leyendo…' : 'Subiendo…';
       archivoAJpeg(f)
         .then(function (blob) { return subirArchivo(caja.local_id + '/cajas/' + caja.fecha + '/' + tipo + '-' + nombreArchivo(), blob); })
         .then(function (ruta) { return llamar('orden_caja_registrar_foto', { p_caja: caja.id, p_tipo: tipo, p_foto_path: ruta }); })
-        .then(function (fotoId) { return llamarFuncion('leer-caja', { foto_id: fotoId }); })
+        .then(function (fotoId) { return _cajaIA ? llamarFuncion('leer-caja', { foto_id: fotoId }) : { apagada: true }; })
         .then(function (r) {
+          if (r && r.apagada) {
+            boton.querySelector('.chip').textContent = 'Guardada';
+            boton.querySelector('.chip').className = 'chip listo';
+            avisar('Foto guardada: cargá los números del cierre.');
+            ok();
+            return;
+          }
           var lectura = r && r.ok ? r.lectura : null;
           if (lectura && lectura.foto_valida !== false) {
             var mapa = LECTURA_A_CAMPO[tipo] || {};
@@ -2360,7 +2392,7 @@ function guardarCaja(caja, boton, corrige) {
     if (n == null) malo = malo || c; else valores[c.dataset.campo] = String(n);
   });
   if (malo) { malo.focus(); avisar('Hay un monto que no se entiende: escribilo sólo con números.'); return; }
-  if (!valores.real_efectivo) { avisar('Falta el efectivo que contaste: sacá la foto del cierre del sistema (con el TOTAL EFECTIVO a la vista) o escribilo.'); return; }
+  if (!valores.real_efectivo) { avisar(_cajaIA ? 'Falta el efectivo que contaste: sacá la foto del cierre del sistema (con el TOTAL EFECTIVO a la vista) o escribilo.' : 'Falta el efectivo que contaste.'); return; }
   /* (14/10, pedido de Mauricio) Un renglón con un número de un lado y el otro vacío: falta cargar
      algo (por ejemplo, la foto de Mercado Pago no se leyó). Se avisa antes de guardar. */
   var faltan = FILAS_CAJA.filter(function (f) {
