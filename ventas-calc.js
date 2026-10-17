@@ -394,8 +394,166 @@
     return T;
   }
 
+  /* ═══ E-commerce ═══
+     La hoja "[Mes] E-commerce" de la planilla del e-commerce (pedido de Mauricio, 17/10/2026). Entra lo que
+     devuelve ventas_ecom_leer: lo tipeado (lo ámbar, el reparto, las visitas de cada día y los carritos de cada
+     semana), la tienda ([día, venta, cantidad], de los pedidos pagados) y Meta ([día, inversión, facturación,
+     ventas, visitas, carritos]). Al lado de cada cuenta, la celda de la planilla.
+     Diferencias con la planilla, a propósito:
+       · la venta y la Q ya no se tipean: llegan solas y lo de HOY todavía está entrando. Por eso lo que es
+         "a hoy" (días transcurridos, desvío acumulado, ritmo real, proyección) usa los días completos, hasta
+         ayer: es lo que pasaba cuando a la mañana se cargaba el día anterior. La planilla contaba los días
+         con visitas cargadas (C20);
+       · la conversión cuenta las ventas de los días que tienen las visitas cargadas: si no, la Q de hoy (o de
+         un día sin visitas) la inflaba. La planilla dividía todas las ventas por todas las visitas;
+       · el desvío acumulado (G4) y la proyección (C13) suman todos los días: la planilla dejaba afuera el
+         domingo de la 5.ª semana y la 6.ª entera;
+       · el desvío de la proyección es proyección − objetivo, como en los locales (D13 lo restaba al revés). */
+  function ecom(D) {
+    var M = mesInfo(D.mes), HOY = diaHoy(D.hoy, M), cf = D.cfg || {};
+    var pasado = String(D.hoy).slice(0, 7) > String(D.mes).slice(0, 7);
+    var c = {
+      obj: cero(cf.objetivo), tp: cero(cf.ticket), conv: cero(cf.conversion),
+      diasMes: def(cf.dias_mes) ? Number(cf.dias_mes) : M.dias,                         // G20
+      imp: def(cf.impuesto) ? Number(cf.impuesto) : 0.08,                               // D102
+      premios: (cf.premios || [null, null, null, null]).map(n),
+      bench: (cf.bench || [0.065, 0.26, 0.015]).map(cero),                              // E118:E120
+      beRoas: def(cf.be_roas) ? Number(cf.be_roas) : 2.8                                // Temporada C45
+    };
+    var C = { M: M, hoy: HOY, cerrado: HOY >= M.dias, pasado: pasado, c: c, ecom: true };
+    var COMPLETOS = pasado ? M.dias : Math.max(HOY - 1, 0);
+
+    var pesoDia = {}, vis = {}, pesoSem = {}, car = {}, tienda = {}, meta = {};
+    (D.dias || []).forEach(function (r) { pesoDia[r[0]] = cero(r[1]); vis[r[0]] = n(r[2]); });
+    (D.semanas || []).forEach(function (r) { pesoSem[r[0]] = cero(r[1]); car[r[0]] = n(r[2]); });
+    /* La venta del día sin centavos, como se cargaba a mano. */
+    (D.tienda || []).forEach(function (r) { tienda[r[0]] = { v: Math.floor(limpio(cero(r[1]))), q: cero(r[2]) }; });
+    (D.meta || []).forEach(function (r) { meta[r[0]] = { inv: cero(r[1]), fact: cero(r[2]), vtas: cero(r[3]), vis: cero(r[4]), car: cero(r[5]) }; });
+    C.hayMeta = (D.meta || []).length > 0;
+
+    C.C19 = c.tp && c.conv ? c.obj / c.tp / c.conv : 0;                                 // C19 Tráfico necesario
+    C.G19 = c.diasMes ? c.obj / c.diasMes : 0;                                          // G19 Venta objetivo/día
+    C.J19 = c.tp ? c.obj / c.tp : 0;                                                    // J19 Q Ventas objetivo
+    C.J20 = c.diasMes ? C.C19 / c.diasMes : 0;                                          // J20 Visitas objetivo/día
+
+    /* Los bloques semanales (filas 22 a 80). */
+    var semanas = [];
+    for (var s = 1; s <= M.semanas; s++) semanas.push({ n: s, peso: pesoSem[s] || 0, car: def(car[s]) ? car[s] : null, dias: [] });
+    for (var d = 1; d <= M.dias; d++) {
+      var w = semanas[M.semana(d) - 1], t = tienda[d], fut = d > HOY;
+      var x = {
+        d: d, k: M.dow(d), peso: pesoDia[d] || 0, obj: c.obj * (pesoDia[d] || 0) * w.peso,   // F24 = $G$18 * $J$22 * F22
+        real: fut ? null : t ? t.v : 0, q: fut ? null : t ? t.q : 0,                          // F25, F28 (llegan solas)
+        vis: def(vis[d]) ? vis[d] : null, futuro: fut, completo: d <= COMPLETOS,              // F27 (a mano)
+        meta: meta[d] || null
+      };
+      x.desvPct = x.real && x.obj ? x.real / x.obj - 1 : null;                         // F26 = IF(F25=0, "", F25/F24-1)
+      x.conv = x.vis > 0 ? (x.q || 0) / x.vis : null;                                   // F29 = IFERROR(F28/F27, 0)
+      x.tk = x.q > 0 ? x.real / x.q : null;                                             // F30 = IFERROR(F25/F28, 0)
+      w.dias.push(x);
+    }
+    var todos = [];
+    semanas.forEach(function (w) {
+      var L = w.dias;
+      w.obj = suma(L.map(function (x) { return x.obj; }));                              // J24
+      w.real = suma(L.map(function (x) { return x.real; }));                            // J25
+      w.desv = w.real - w.obj;                                                          // K25
+      w.desvPct = w.real && w.obj ? w.real / w.obj - 1 : null;                          // J26
+      w.vis = suma(L.map(function (x) { return x.vis; }));                              // J27
+      w.hayVis = L.some(function (x) { return def(x.vis); });
+      w.q = suma(L.map(function (x) { return x.q; }));                                  // J28
+      w.qConVis = suma(L.filter(function (x) { return x.vis > 0; }).map(function (x) { return x.q; }));
+      w.conv = w.vis ? w.qConVis / w.vis : 0;                                           // J29
+      w.tk = w.q ? w.real / w.q : 0;                                                    // J30
+      w.visNec = C.C19 * w.peso;
+      w.desvVis = w.vis - w.visNec;                                                     // K27 = J27 - $C$19 * $J$22
+      w.qNec = c.tp ? w.obj / c.tp : 0;
+      w.desvQ = w.q - w.qNec;                                                           // K28 = J28 - J24 / $I$18
+      w.desvConv = w.conv - c.conv;                                                     // K29 = J29 - $K$18
+      w.desvTk = w.tk - c.tp;                                                           // K30 = J30 - $I$18
+      w.empezo = L[0].d <= HOY;
+      w.completa = L[L.length - 1].d <= COMPLETOS;
+      /* Meta de la semana (filas 103 a 114). */
+      var mi = { inv: 0, fact: 0, vtas: 0, vis: 0, car: 0 };
+      L.forEach(function (x) { if (x.meta) ['inv', 'fact', 'vtas', 'vis', 'car'].forEach(function (k) { mi[k] += x.meta[k]; }); });
+      w.meta = metaCuentas(mi, c.imp, w.real);
+      todos = todos.concat(L);
+    });
+    C.sem = semanas; C.todos = todos;
+
+    C.E4 = suma(semanas.map(function (w) { return w.real; }));                          // E4
+    C.avance = c.obj ? C.E4 / c.obj : 0;                                                // C4
+    var comp = todos.filter(function (x) { return x.completo; });
+    C.C20 = comp.length;                                                                // C20 Días transcurridos
+    C.realHoy = suma(comp.map(function (x) { return x.real; }));
+    C.objHoy = suma(comp.map(function (x) { return x.obj; }));
+    C.desvAcum = C.realHoy - C.objHoy;                                                  // G4
+    C.desvAcumPct = C.objHoy ? C.realHoy / C.objHoy - 1 : null;                         // G5
+    C.E20 = Math.max(c.diasMes - C.C20, 1);                                             // E20 = L18 Días restantes
+    C.ritmoNec = Math.max(c.obj - C.E4, 0) / C.E20;                                     // I4
+    C.ventaDia = C.realHoy / Math.max(C.C20, 1);                                        // I10 (I5: ritmo real)
+    C.visTot = suma(semanas.map(function (w) { return w.vis; }));                       // D9
+    C.qTot = suma(semanas.map(function (w) { return w.q; }));                           // D10
+    C.convTot = C.visTot ? suma(semanas.map(function (w) { return w.qConVis; })) / C.visTot : 0;   // D11
+    C.tkTot = C.qTot ? C.E4 / C.qTot : 0;                                               // I9
+    C.trafRest = c.tp && c.conv ? Math.max(c.obj - C.E4, 0) / c.tp / c.conv : 0;        // I11
+    var fr = suma(comp.filter(function (x) { return x.real > 0; }).map(function (x) { return x.peso * semanas[M.semana(x.d) - 1].peso; }));
+    C.proyPond = fr ? C.realHoy / fr : null;                                            // C13
+
+    /* Escalón de objetivos (filas 84 a 87). */
+    C.escalon = [1, 1.1, 1.2, 1.3].map(function (k, i) {
+      var meta = c.obj * k, falta = Math.max(meta - C.E4, 0), objDia = falta / C.E20;
+      return { nivel: i ? '+' + i * 10 + '%' : 'Objetivo', meta: meta, premio: c.premios[i], falta: falta,
+               desv: meta ? C.E4 / meta : 0, diasRest: C.E20, objDia: objDia, ritmo: C.ventaDia, ok: C.ventaDia >= objDia };
+    });
+
+    /* Embudo de la tienda por semana (filas 92 a 99). */
+    function embudo(vis, car, com, comVis, fact) {
+      return { vis: vis, car: car, com: com, fact: fact,
+               carVis: vis ? cero(car) / vis : 0,                                       // D96 = IFERROR(D93/D92, 0)
+               comCar: car ? com / car : 0,                                             // D97 = IFERROR(D94/D93, 0)
+               conv: vis ? comVis / vis : 0,                                            // D98 = IFERROR(D94/D92, 0)
+               tk: com ? fact / com : 0 };                                              // D99 = IFERROR(D95/D94, 0)
+    }
+    C.emb = semanas.map(function (w) { return embudo(w.vis, w.car, w.q, w.qConVis, w.real); });
+    var carT = semanas.some(function (w) { return def(w.car); }) ? suma(semanas.map(function (w) { return w.car; })) : null;
+    C.embT = embudo(C.visTot, carT, C.qTot, suma(semanas.map(function (w) { return w.qConVis; })), C.E4);   // J92:J99
+
+    /* Meta Ads del mes (J103:J114) y lo de arriba (F13, G13). */
+    var mt = { inv: 0, fact: 0, vtas: 0, vis: 0, car: 0 };
+    semanas.forEach(function (w) { ['inv', 'fact', 'vtas', 'vis', 'car'].forEach(function (k) { mt[k] += w.meta[k]; }); });
+    C.metaT = metaCuentas(mt, c.imp, C.E4);
+
+    /* Diagnóstico del embudo (filas 118 a 121). */
+    var res = [C.embT.carVis, C.embT.comCar, C.embT.conv];
+    C.diag = res.map(function (r, i) {
+      var b = c.bench[i], g = b ? r / b : 0;                                            // G118 = IFERROR(C118/E118, 0)
+      return { res: r, ref: b, pct: g, estado: !r ? 'sin' : g >= 1 ? 'nivel' : g >= 0.7 ? 'cerca' : 'flojo' };   // I118
+    });
+    C.cuello = !(res[0] + res[1]) ? null : C.diag[0].pct <= C.diag[1].pct ? 'visitas' : 'carrito';               // B121
+
+    /* Orgánico contra pago (filas 125 a 128). */
+    C.org = semanas.map(function (w) {
+      return { meta: w.meta.fact, org: Math.max(w.real - w.meta.fact, 0), dep: w.real ? w.meta.fact / w.real : 0 };   // D126, D127
+    });
+    C.orgT = { meta: C.metaT.fact, org: Math.max(C.E4 - C.metaT.fact, 0), dep: C.E4 ? C.metaT.fact / C.E4 : 0 };
+    return C;
+  }
+
+  /* Las cuentas de Meta de una semana o del mes (filas 103 a 114). fact = la facturación de la tienda (D95). */
+  function metaCuentas(m, imp, factTienda) {
+    var invImp = m.inv * (1 + imp);                                                     // D104 = D103 * (1 + $D$102)
+    return { inv: m.inv, invImp: invImp, fact: m.fact, vtas: m.vtas, vis: m.vis, car: m.car,
+             roas: m.inv ? m.fact / m.inv : 0,                                          // D109
+             roasImp: invImp ? m.fact / invImp : 0,                                     // D110
+             cpa: m.vtas ? m.inv / m.vtas : 0,                                          // D111
+             cCar: m.car ? m.inv / m.car : 0,                                           // D112
+             cVis: m.vis ? m.inv / m.vis : 0,                                           // D113
+             pctInv: factTienda ? invImp / factTienda : 0 };                            // D114 = D104 / D95
+  }
+
   var api = { calcular: calcular, mesInfo: mesInfo, diaHoy: diaHoy, redondear: redondear, roundup: roundup, def: def,
-              semestre: semestre, temporada: temporada, semaforo: semaforo, MESES: MESES };
+              semestre: semestre, temporada: temporada, semaforo: semaforo, MESES: MESES, ecom: ecom };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else raiz.VentasCalc = api;
 })(typeof globalThis !== 'undefined' ? globalThis : this);   // globalThis: también en Apps Script (el consolidador lleva una copia)

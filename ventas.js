@@ -17,6 +17,11 @@
    pantalla no espera a la base para recalcular. Si la base dice que no, se
    avisa y se vuelve a leer el mes. Cada minuto, si nadie está escribiendo,
    se vuelve a leer: así dos compus del mismo local ven lo del otro.
+
+   E-commerce (17/10/2026): una opción más del selector, sólo para Atención al
+   cliente y Administración (ventas_ecom_puede). Es la hoja "[Mes] E-commerce"
+   de su planilla; la venta y la Q llegan solas de la tienda y lo de Meta lo
+   trae el robot de cada hora (ventas-ecom.sql, ventas-calc: ecom).
    ═══════════════════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
@@ -37,6 +42,9 @@
     locales: [], local: null, mes: null, D: null, C: null, firma: '',
     hoja: 'ventas', temp: null, pedido: 0, arranco: false, leido: 0
   };
+  /* El e-commerce en el selector: no es un local de la base (ventas_ecom_*). */
+  var ECOM = { id: 'ecommerce', nombre: 'E-commerce', codigo: 'ECOMMERCE', ecom: true };
+  function esEcom() { return !!(ST.local && ST.local.ecom); }
 
   /* ══ Formatos (los de la planilla) ═══════════════════════════════════════ */
   function nf(n) { return Math.round(n).toLocaleString('es-AR'); }
@@ -52,6 +60,13 @@
     if (!def(n) || !isFinite(n)) return '';
     if (n === 0) return '-';
     return (n > 0 ? '+' : '-') + Math.abs(Math.round(n * 100)) + '%';
+  }
+  /* +0.0%;-0.0% (y con d decimales) */
+  function spd(n, d) {
+    if (!def(n) || !isFinite(n)) return '';
+    d = d === undefined ? 1 : d;
+    var t = Math.abs(n * 100).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d });
+    return (Math.round(n * 100 * Math.pow(10, d)) === 0 ? '' : n > 0 ? '+' : '-') + t + '%';
   }
   function dec(n, d) { d = d === undefined ? 1 : d; return Number(n).toLocaleString('es-AR', { minimumFractionDigits: d, maximumFractionDigits: d }); }
   function decLibre(n) { return Number(n).toLocaleString('es-AR', { maximumFractionDigits: 2 }); }
@@ -154,8 +169,14 @@
   /* ══ Arranque: qué locales ve y cuál abre ═══════════════════════════════ */
   function cargarLocales() {
     cargando('Abriendo…');
-    llamar('ventas_locales', {}).then(function (lista) {
-      ST.locales = lista || [];
+    /* El e-commerce va al final de la lista, sólo para Atención al cliente y Administración. Si la base todavía
+       no lo tiene (o falla), la lista queda como siempre. */
+    Promise.all([
+      llamar('ventas_locales', {}),
+      llamar('ventas_ecom_puede', {}).catch(function () { return null; })
+    ]).then(function (r) {
+      ST.locales = (r[0] || []).slice();
+      if (r[1] === 'escribir') ST.locales.push(ECOM);
       if (!ST.locales.length) { porton(); return; }
       var guardado = leer(K_LOCAL), codCaja = String(leer('nc_caja_local') || '').trim().toUpperCase();
       var y = persona.yo(), elegido = null;
@@ -175,7 +196,8 @@
   function pintarSelectores() {
     var sl = $('vtLocal');
     sl.innerHTML = ST.locales.map(function (l) {
-      return '<option value="' + esc(l.id) + '"' + (l.id === ST.local.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
+      return (l.ecom && ST.locales.length > 1 ? '<option disabled>──────────</option>' : '') +
+        '<option value="' + esc(l.id) + '"' + (l.id === ST.local.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
     }).join('');
     sl.disabled = ST.locales.length < 2;
     $('vtLocalChip').hidden = false;
@@ -194,7 +216,9 @@
   function cargarMes(silencioso) {
     var pedido = ++ST.pedido;
     if (!silencioso) cargando('Abriendo la planilla de ' + nombreMes(ST.mes) + '…');
-    return llamar('ventas_mes_leer', { p_local: ST.local.id, p_mes: ST.mes, p_abrir: true }).then(function (D) {
+    var ec = esEcom();
+    return (ec ? llamar('ventas_ecom_leer', { p_mes: ST.mes, p_abrir: true })
+               : llamar('ventas_mes_leer', { p_local: ST.local.id, p_mes: ST.mes, p_abrir: true })).then(function (D) {
       if (pedido !== ST.pedido) return;
       ST.leido = Date.now();
       var firma = JSON.stringify(D);
@@ -203,7 +227,7 @@
       if (ST.temp && ST.temp.meses.indexOf(mesDeDatos(D)) >= 0) ST.temp.D[mesDeDatos(D)] = D;
       pintarQuien();
       if (!D.cfg) {
-        cajaMsg('<h2>' + nombreMes(ST.mes) + ' todavía no tiene planilla</h2><p>Se abre sola la primera vez que alguien del local entra a cargar.</p>');
+        cajaMsg('<h2>' + nombreMes(ST.mes) + ' todavía no tiene planilla</h2><p>' + (ec ? 'Se abre sola cuando llega el mes.' : 'Se abre sola la primera vez que alguien del local entra a cargar.') + '</p>');
         return;
       }
       if (silencioso) redibujar(); else dibujar(true);
@@ -219,15 +243,23 @@
   function editaPesos() { return edita() && !!ST.D.supervisa; }
 
   function dibujar(arriba) {
-    var D = ST.D;
-    ST.C = VC.calcular(D);
-    /* Lo cargado, a mano para las celdas. */
-    ST.venta = {}; ST.tiene = {};
-    (D.ventas || []).forEach(function (r) { (ST.venta[r[0]] = ST.venta[r[0]] || {})[r[1]] = Number(r[2]); ST.tiene[r[0]] = true; });
+    var D = ST.D, ec = !!D.ecom;
+    /* El e-commerce tiene su hoja; al volver a un local, vuelve a la pestaña que tenía. */
+    $('vtApp').classList.toggle('ecom', ec);
+    if (ec) { if (ST.hoja !== 'ecom') ST.hojaLocal = ST.hoja; ST.hoja = 'ecom'; }
+    else if (ST.hoja === 'ecom') ST.hoja = ST.hojaLocal || 'ventas';
+    if (ec) ST.C = VC.ecom(D);
+    else {
+      ST.C = VC.calcular(D);
+      /* Lo cargado, a mano para las celdas. */
+      ST.venta = {}; ST.tiene = {};
+      (D.ventas || []).forEach(function (r) { (ST.venta[r[0]] = ST.venta[r[0]] || {})[r[1]] = Number(r[2]); ST.tiene[r[0]] = true; });
+    }
     document.querySelectorAll('.vt-pest').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-tab') === ST.hoja)); });
     $('vtMesPest').textContent = nombreMes(ST.mes);
     var h = $('vtHoja');
-    if (ST.hoja === 'temporada') h.innerHTML = hojaTemporada();
+    if (ec) h.innerHTML = hojaEcom(ST.C);
+    else if (ST.hoja === 'temporada') h.innerHTML = hojaTemporada();
     else h.innerHTML = ST.hoja === 'trafico' ? hojaTrafico(ST.C) : ST.hoja === 'vendedor' ? hojaVendedor(ST.C) : hojaVentas(ST.C);
     mostrar('hoja');
     if (arriba) posicionar();
@@ -242,7 +274,7 @@
     var sc = $('vtScroll'), antes = posDe[clavePos()];
     if (antes !== undefined) { sc.scrollTop = antes; return; }
     sc.scrollTop = 0;
-    var th = (ST.hoja === 'ventas' || ST.hoja === 'trafico') ? $('vtHoja').querySelector('th.hoy') : null;
+    var th = (ST.hoja === 'ventas' || ST.hoja === 'trafico' || ST.hoja === 'ecom') ? $('vtHoja').querySelector('th.hoy') : null;
     if (th) sc.scrollTop = Math.max(0, th.closest('table').getBoundingClientRect().top - sc.getBoundingClientRect().top - 8);
   }
 
@@ -275,6 +307,7 @@
     if (!def(v)) return '';
     if (tipo === 'money') return pesos(v);
     if (tipo === 'pct') return pcIn(v);
+    if (tipo === 'pctc') return (v * 100).toLocaleString('es-AR', { maximumFractionDigits: 2 }) + '%';
     if (tipo === 'dec' || tipo === 'dias') return decLibre(v);
     if (tipo === 'int') return nf(v);
     return String(v);
@@ -680,6 +713,200 @@
     return h;
   }
 
+  /* ── Hoja E-commerce ─────────────────────────────────────────────────── */
+  /* La hoja "[Mes] E-commerce" de la planilla del e-commerce, con los mismos bloques y en el mismo orden.
+     Pedido de Mauricio (17/10): el panel del embudo es lo de la tienda y el de abajo, lo de Meta. La venta y
+     la Q llegan solas de los pedidos pagados; las visitas y los carritos se cargan del panel de Tienda Nube
+     (su API no los da); lo de Meta lo trae el robot de cada hora. Las cuentas, en ventas-calc (ecom). */
+  var ESTADO_DIAG = { sin: '⚪ sin datos', nivel: '🟢 en nivel', cerca: '🟡 cerca', flojo: '🔴 flojo' };
+  var ETAPAS = ['Visitas → Carrito', 'Carrito → Compra', 'Conversión total'];
+  /* +#,##0;-#,##0 (visitas y ventas de más o de menos) */
+  function nSigno(n) { var r = Math.round(n); return r === 0 ? '0' : (r > 0 ? '+' : '-') + nf(Math.abs(r)); }
+  function fechaHora(ts) {
+    try { return new Date(ts).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+    catch (e) { return String(ts || '').slice(0, 16).replace('T', ' '); }
+  }
+
+  function hojaEcom(C) {
+    var c = C.c, D = ST.D, h = titulo('VENTAS'), conDias = C.C20 > 0;
+    h += '<div class="vt-kpis k4">' + kpi('Avance del mes', pc(C.avance, 1), '% del objetivo') + kpi('Venta acumulada', pesos(C.E4), 'en el mes') +
+      kpi('Desvío acumulado', pesos(C.desvAcum), C.objHoy ? spd(C.desvAcumPct) + '  vs objetivo a hoy' : 'aún sin días completos', sem(C.realHoy, C.objHoy)) +
+      /* El ritmo que hace falta, pintado contra el que se lleva (como el Estado del escalón). */
+      kpi('Ritmo necesario', pesos(C.ritmoNec), conDias ? pesos(C.ventaDia) + '  ritmo real' : 'por día · aún sin días completos',
+        !conDias ? '' : C.ritmoNec > 0 ? sem(C.ventaDia, C.ritmoNec) : 'sv') + '</div>';
+
+    /* Métricas del mes: se pintan las tasas (lo acumulado contra el objetivo del mes entero estaría siempre en rojo). */
+    h += '<div class="banda osc">  MÉTRICAS DEL MES</div>' +
+      '<table class="res ecm-met"><colgroup><col style="width:17%"><col><col><col style="width:17%"><col><col></colgroup>' +
+      '<tr><th class="izq">Métrica</th><th>Total</th><th>Objetivo</th><th class="izq">Métrica</th><th>Total</th><th>Objetivo</th></tr>' +
+      '<tr><td class="izq">Visitas</td><td class="tt">' + nf(C.visTot) + '</td><td>' + nf(C.C19) + '</td>' +
+      '<td class="izq">Ticket prom.</td><td class="tt ' + (C.qTot ? sem(C.tkTot, c.tp) : '') + '">' + pesos(C.tkTot) + '</td><td>' + pesos(c.tp) + '</td></tr>' +
+      '<tr><td class="izq">Q Ventas</td><td class="tt">' + nf(C.qTot) + '</td><td>' + nf(C.J19) + '</td>' +
+      '<td class="izq">Venta/día</td><td class="tt ' + (conDias ? sem(C.ventaDia, C.G19) : '') + '">' + pesos(C.ventaDia) + '</td><td>' + pesos(C.G19) + '</td></tr>' +
+      '<tr><td class="izq">Conversión</td><td class="tt ' + (C.visTot ? sem(C.convTot, c.conv) : '') + '">' + pc(C.convTot, 2) + '</td><td>' + pc(c.conv, 2) + '</td>' +
+      '<td class="izq">Tráfico rest.</td><td class="tt">' + nf(C.trafRest) + '</td><td>' + nf(C.C19) + '</td></tr></table>';
+
+    var mt = C.metaT, e = C.embT;
+    h += '<div class="proy">' +
+      '<div><span class="nom">Proyección ponderada</span><span class="v1">' + (def(C.proyPond) ? pesos(C.proyPond) : 'Sin datos') + '</span><span></span>' +
+      (def(C.proyPond) ? '<span class="v2 ' + sem(C.proyPond, c.obj) + '">' + pesosP(C.proyPond - c.obj) : '<span class="v2">') + '<span class="s">desvío vs objetivo</span></span></div>' +
+      '<div class="tres"><span class="nom">Meta Ads</span>' +
+      '<span class="pv blanco ' + (mt.inv ? sem(mt.roas, c.beRoas) : '') + '">' + (mt.inv ? dec(mt.roas, 2) : '—') + '<span class="s">ROAS</span></span>' +
+      '<span class="pv blanco">' + (mt.vtas ? pesos(mt.cpa) : '—') + '<span class="s">Costo por compra</span></span></div>' +
+      '<div class="pagos"><span class="nom">Embudo de ventas</span>' +
+      '<span class="pv">' + pc(e.carVis, 1) + '<span class="s">' + ETAPAS[0] + '</span></span>' +
+      '<span class="pv">' + pc(e.comCar, 1) + '<span class="s">' + ETAPAS[1] + '</span></span>' +
+      '<span class="pv">' + pc(e.conv, 2) + '<span class="s">' + ETAPAS[2] + '</span></span></div></div>';
+
+    /* Configuración */
+    var colg = '<colgroup><col style="width:150px"><col><col style="width:150px"><col><col style="width:150px"><col><col style="width:150px"><col></colgroup>';
+    h += '<div class="banda">  CONFIGURACIÓN  —  celdas en ámbar son editables</div><div class="cfg">' +
+      '<table>' + colg + '<tr><th class="izq">Nombre del canal</th><td class="amb">E-COMMERCE</td>' +
+      '<th>Objetivo Mensual</th>' + entrada('config', 'objetivo', c.obj || null, 'money', 'amb g', 'aria-label="Objetivo mensual del e-commerce"') +
+      '<th>Ticket Promedio</th>' + entrada('config', 'ticket', c.tp || null, 'money', 'amb g', 'aria-label="Ticket promedio objetivo"') +
+      '<th>Conversión obj.</th>' + entrada('config', 'conversion', c.conv || null, 'pctc', 'amb g', 'aria-label="Conversión objetivo"') + '</tr></table>' +
+      '<table>' + colg + '<tr><th class="izq">Tráfico necesario</th><td class="azul">' + nf(C.C19) + '</td>' +
+      '<th>Venta objetivo/día</th><td class="azul">' + pesos(C.G19) + '</td><th>Q Ventas objetivo</th><td class="azul">' + nf(C.J19) + '</td>' +
+      '<th>Visitas objetivo/día</th><td class="azul">' + nf(C.J20) + '</td></tr>' +
+      '<tr><th class="izq">Días transcurridos</th><td class="azul" title="Los días completos: lo de hoy todavía está entrando">' + C.C20 + '</td>' +
+      '<th>Días restantes</th><td class="azul">' + C.E20 + '</td>' +
+      '<th>Días del mes</th>' + entrada('config', 'dias_mes', c.diasMes || null, 'int', 'amb g', 'aria-label="Días del mes"') + '<td colspan="2" style="border:0"></td></tr></table></div>' +
+      '<p class="aviso-carga">⚠️ La venta y la Q ventas llegan solas de la tienda (los pedidos pagados). Las visitas se cargan del panel de Tienda Nube el día que pasó. ' +
+      'Lo que es "a hoy" (días transcurridos, desvío acumulado, ritmo, proyección) cuenta hasta ayer: lo de hoy todavía está entrando.</p>';
+    if (editaPesos()) {
+      var sSem = suma(C.sem.map(function (w) { return w.peso; }));
+      if (Math.abs(sSem - 1) > 0.0005) h += '<p class="aviso-carga" style="padding-top:0"><b style="color:var(--mal)">Las semanas suman ' + pcIn(sSem) + ', no 100%.</b></p>';
+    }
+
+    h += '<div class="semanas-pad">' + C.sem.map(function (w) { return semanaEcom(C, w); }).join('') + '</div>';
+
+    h += '<div class="banda escalon">  ESCALÓN DE OBJETIVOS  ·  Premio · Falta · Ritmo</div>' +
+      '<table class="esc"><tr><th>Nivel</th><th>Objetivo</th><th>Premio</th><th>Venta acum.</th><th>Falta</th><th>Desvío %</th><th>Días rest.</th><th>Obj. diario</th><th>Ritmo diario</th><th>Estado</th></tr>' +
+      C.escalon.map(function (x, i) {
+        return '<tr><td>' + x.nivel + '</td><td>' + pesos(x.meta) + '</td>' + entrada('premio', String(i), x.premio, 'money', 'amb', 'aria-label="Premio ' + x.nivel + '"') +
+          '<td>' + pesos(C.E4) + '</td><td>' + pesos(x.falta) + '</td><td class="' + (x.desv >= 1 ? 'sv' : '') + '">' + pc(x.desv, 1) + '</td><td class="dias">' + x.diasRest + '</td>' +
+          '<td>' + pesos(x.objDia) + '</td><td>' + pesos(x.ritmo) + '</td>' +
+          '<td class="' + (x.objDia > 0 ? (conDias ? sem(x.ritmo, x.objDia) : '') : 'sv') + '">' + (x.ok ? '✅ En ritmo' : '⚠️ Acelerar') + '</td></tr>';
+      }).join('') + '</table>';
+
+    /* Los paneles semanales de abajo: una columna por semana y el total del mes. */
+    var S = C.sem, colS = '<colgroup><col style="width:220px">' + S.map(function () { return '<col>'; }).join('') + '<col style="width:140px"></colgroup>';
+    var cabS = '<tr><th class="izq">Métrica</th>' + S.map(function (w) { return '<th>Semana ' + w.n + '</th>'; }).join('') + '<th>TOTAL MES</th></tr>';
+    function fila(nom, f, tot, totCl) {
+      return '<tr><td class="izq">' + nom + '</td>' + S.map(function (w, i) { return w.empezo ? f(w, i) : '<td class="futuro"></td>'; }).join('') +
+        '<td class="tot ' + (totCl || '') + '">' + tot + '</td></tr>';
+    }
+    function td(txt, cl) { return '<td' + (cl ? ' class="' + cl + '"' : '') + '>' + txt + '</td>'; }
+
+    /* Embudo de la tienda */
+    var carT = def(e.car);
+    h += '<div class="banda escalon">  🛒  EMBUDO DE LA TIENDA  ·  vdh.com.ar</div><table class="ecm">' + colS + cabS +
+      fila('Visitas', function (w) { return td(w.hayVis ? nf(w.vis) : ''); }, C.visTot ? nf(C.visTot) : '') +
+      fila('Carritos creados', function (w) {
+        return entrada('carritos', String(w.n), w.car, 'int', 'amb', 'aria-label="Carritos creados de la semana ' + w.n + '"');
+      }, carT ? nf(e.car) : '') +
+      fila('Compras', function (w) { return td(nf(w.q)); }, nf(C.qTot)) +
+      fila('Facturación', function (w) { return td(pesos(w.real)); }, pesos(C.E4)) +
+      fila('% Carritos / Visitas', function (w, i) { return td(def(w.car) && w.vis ? pc(C.emb[i].carVis, 1) : ''); }, carT && C.visTot ? pc(e.carVis, 1) : '') +
+      fila('% Compras / Carritos', function (w, i) { return td(w.car ? pc(C.emb[i].comCar, 1) : ''); }, e.car ? pc(e.comCar, 1) : '') +
+      fila('Conversión total', function (w, i) { return td(w.vis ? pc(C.emb[i].conv, 2) : ''); }, C.visTot ? pc(e.conv, 2) : '') +
+      fila('Ticket promedio', function (w, i) { return td(w.q ? pesos(C.emb[i].tk) : ''); }, C.qTot ? pesos(e.tk) : '') + '</table>' +
+      '<p class="aviso-carga">Compras y facturación llegan solas de la tienda. Visitas (en cada semana, día por día) y carritos creados se cargan del panel de Tienda Nube.</p>';
+
+    /* Meta Ads */
+    var me = D.meta_estado || {}, est;
+    if (me.error) est = '<span class="mal">⚠️ La última vez no se pudo leer Meta (' + esc(fechaHora(me.error_en)) + '): ' + esc(me.error) + '.</span>' +
+      (me.ultima ? ' Lo de abajo es lo que llegó el ' + esc(fechaHora(me.ultima)) + '.' : '');
+    else if (me.ultima) est = 'Llega solo de la cuenta de anuncios de Meta (VDH Prepago), todos los días. Última lectura: ' + esc(fechaHora(me.ultima)) + '.';
+    else if (C.hayMeta) est = 'Lo de Meta está cargado hasta el ' + (D.meta[D.meta.length - 1][0]) + '/' + String(D.mes).slice(5, 7) +
+      ': todavía no llega solo (falta conectar la cuenta de anuncios).';
+    else est = 'Meta todavía no está conectado: cuando lo esté, este panel se llena solo todos los días.';
+    function hayM(w) { return w.dias.some(function (x) { return x.meta; }); }
+    function m(k, f) { return function (w) { return td(hayM(w) ? f(w.meta[k]) : ''); }; }
+    function roasCl(r, inv) { return inv ? sem(r, c.beRoas) : ''; }
+    var nada = !C.hayMeta, nota = '<td colspan="' + S.length + '" class="izq nota">';
+    h += '<div class="banda escalon">  📣  META ADS</div><p class="ecm-est">' + est + '</p><table class="ecm">' + colS + cabS +
+      '<tr><td class="izq">Impuesto sobre pauta</td>' + entrada('config', 'impuesto', c.imp, 'pctc', 'amb', 'aria-label="Impuesto sobre la pauta"') + nota + '←  editable · se suma a la inversión con impuestos</td></tr>' +
+      '<tr><td class="izq">ROAS mínimo (rentable)</td>' + entrada('be_roas', '', c.beRoas, 'dec', 'amb', 'aria-label="ROAS mínimo para que sea rentable"') + nota + '←  editable · el ROAS se pinta contra este número</td></tr>' +
+      fila('Inversión Meta (sin imp.)', m('inv', pesos), nada ? '' : pesos(mt.inv)) +
+      fila('Inversión Meta (con imp.)', m('invImp', pesos), nada ? '' : pesos(mt.invImp)) +
+      fila('Facturación Meta', m('fact', pesos), nada ? '' : pesos(mt.fact)) +
+      fila('Ventas Meta', m('vtas', nf), nada ? '' : nf(mt.vtas)) +
+      fila('Visitas Meta', m('vis', nf), nada ? '' : nf(mt.vis)) +
+      fila('Carritos Meta', m('car', nf), nada ? '' : nf(mt.car)) +
+      fila('ROAS', function (w) { return td(hayM(w) ? dec(w.meta.roas, 2) : '', roasCl(w.meta.roas, hayM(w) && w.meta.inv)); }, nada ? '' : dec(mt.roas, 2), nada ? '' : roasCl(mt.roas, mt.inv)) +
+      fila('ROAS (con imp.)', m('roasImp', function (x) { return dec(x, 2); }), nada ? '' : dec(mt.roasImp, 2)) +
+      fila('Costo por compra', m('cpa', pesos), nada ? '' : pesos(mt.cpa)) +
+      fila('Costo por carrito', m('cCar', pesos), nada ? '' : pesos(mt.cCar)) +
+      fila('Costo por visita', m('cVis', pesos), nada ? '' : pesos(mt.cVis)) +
+      fila('% Inversión / Facturación', m('pctInv', function (x) { return pc(x, 1); }), nada ? '' : pc(mt.pctInv, 1)) + '</table>' +
+      '<p class="aviso-carga">La inversión con impuestos y el % sobre la facturación usan el impuesto de arriba; la facturación es la de la tienda.</p>';
+
+    /* Diagnóstico del embudo */
+    var cuello = C.cuello === 'visitas' ? 'Cuello de botella: ' + ETAPAS[0] + '   ·   mirá ficha de producto, fotos, precio y disponibilidad de talles.'
+      : C.cuello === 'carrito' ? 'Cuello de botella: ' + ETAPAS[1] + '   ·   mirá costo de envío, medios de pago y pasos del checkout.'
+      : 'Sin datos suficientes para diagnosticar.';
+    h += '<div class="banda escalon">  🔎  DIAGNÓSTICO DEL EMBUDO  ·  referencias del rubro indumentaria</div>' +
+      '<table class="ecm"><colgroup><col style="width:220px"><col><col><col><col></colgroup>' +
+      '<tr><th class="izq">Etapa</th><th>Tu resultado</th><th>Referencia rubro</th><th>% del benchmark</th><th>Estado</th></tr>' +
+      C.diag.map(function (g, i) {
+        return '<tr><td class="izq">' + ETAPAS[i] + '</td><td class="tot">' + pc(g.res, i === 2 ? 2 : 1) + '</td>' +
+          entrada('bench', String(i), g.ref, 'pctc', 'amb', 'aria-label="Referencia del rubro: ' + ETAPAS[i] + '"') +
+          '<td>' + (g.res ? pc(g.pct) : '') + '</td><td>' + ESTADO_DIAG[g.estado] + '</td></tr>';
+      }).join('') + '<tr class="cuello"><td colspan="5" class="izq">' + cuello + '</td></tr></table>';
+
+    /* Orgánico contra pago */
+    h += '<div class="banda escalon">  ⚖️  ORGÁNICO vs PAGO</div><table class="ecm">' + colS + cabS +
+      fila('Facturación Meta', function (w) { return td(hayM(w) ? pesos(w.meta.fact) : ''); }, nada ? '' : pesos(C.orgT.meta)) +
+      fila('Facturación orgánica', function (w, i) { return td(hayM(w) ? pesos(C.org[i].org) : ''); }, nada ? '' : pesos(C.orgT.org)) +
+      fila('% dependencia de Meta', function (w, i) { return td(hayM(w) && w.real ? pc(C.org[i].dep) : ''); }, nada || !C.E4 ? '' : pc(C.orgT.dep)) +
+      '<tr class="cuello"><td colspan="' + (S.length + 2) + '" class="izq">' +
+      (nada ? 'Falta lo de Meta para calcularlo.' : !C.E4 ? 'Sin facturación todavía.'
+        : pc(C.orgT.dep) + ' de la venta del mes vino de Meta.  Cuanto más alto, más te expone una suba del costo por compra.') + '</td></tr></table>';
+    return h + '<div style="height:14px"></div>';
+  }
+
+  function semanaEcom(C, w) {
+    var c = C.c, cols = colsDe(w), ep = editaPesos(), ed = edita();
+    function cel(f) { return cols.map(function (x, k) { return x ? f(x, k) : '<td class="vt-vacio"></td>'; }).join(''); }
+    /* El semáforo de un día sólo con el día completo: el de hoy todavía está entrando. */
+    function semDia(x) { return x.completo ? sem(x.real, x.obj) : ''; }
+    var algun = w.dias.some(function (x) { return x.completo; }), semSem = algun ? sem(w.real, w.obj) : '';
+    var FUT = '<td class="futuro" title="Todavía no llegó"></td>';
+    var t = '<table class="sem">' + COLG_SEM + '<tbody>';
+    var sDias = suma(w.dias.map(function (x) { return x.peso; }));
+    t += '<tr class="pesos"><td></td>' + cols.map(function (x, k) {
+      if (!x) return '<td></td>';
+      return ep ? entrada('peso_dia', String(x.d), x.peso, 'pct', '', 'aria-label="% del ' + DIAS[k] + ' ' + x.d + ' en la semana"') : '<td>' + pc(x.peso) + '</td>';
+    }).join('') + (ep ? entrada('peso_semana', String(w.n), w.peso, 'pct', '', 'aria-label="% de la semana ' + w.n + ' en el mes"') : '<td>' + pc(w.peso) + '</td>') +
+      '<td>' + (ep && Math.abs(sDias - 1) > 0.0005 ? '<span class="suma-mal" title="Los días de la semana tienen que sumar 100%">Σ ' + pcIn(sDias) + '</span>' : '') + '</td></tr>';
+    t += '<tr class="cab"><th class="izq">  Semana ' + w.n + '</th>' + cols.map(function (x, k) {
+      return x ? '<th class="' + (esHoy(C, x) ? 'hoy' : '') + '">' + DIAS[k] + ' ' + x.d + (esHoy(C, x) ? '<span class="pill-hoy">hoy</span>' : '') + '</th>' : '<th></th>';
+    }).join('') + '<th>Obj. Semanal</th><th>Desvío</th></tr>';
+    t += '<tr class="obj"><td class="izq">Objetivo</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + '">' + pesos(x.obj) + '</td>'; }) +
+      '<td class="tot">' + pesos(w.obj) + '</td><td class="tot"></td></tr>';
+    t += '<tr class="real"><td class="izq">Venta real</td>' + cel(function (x) {
+      if (x.futuro) return FUT;
+      return '<td class="' + hoyCl(C, x) + ' ' + semDia(x) + '"' + (x.completo ? '' : ' title="Hoy: todavía está entrando"') + '>' + pesos(x.real) + '</td>';
+    }) + '<td class="tot">' + pesos(w.real) + '</td><td class="tot ' + semSem + '">' + pesosP(w.desv) + '</td></tr>';
+    t += '<tr class="desv"><td class="izq">Desvío %</td>' + cel(function (x) {
+      return '<td class="' + hoyCl(C, x) + (def(x.desvPct) ? ' ' + semDia(x) : '') + '">' + (def(x.desvPct) ? sp(x.desvPct) : '') + '</td>';
+    }) + '<td class="' + (def(w.desvPct) ? semSem : '') + '">' + (def(w.desvPct) ? sp(w.desvPct) : '') + '</td><td></td></tr>';
+    t += '<tr class="vend"><td class="izq">Visitas</td>' + cel(function (x, k) {
+      if (x.futuro) return '<td class="futuro" title="Todavía no llegó: las visitas se cargan el día que pasó"></td>';
+      var falta = ed && x.completo && !def(x.vis), cl = hoyCl(C, x) + (falta ? ' falta' : '');
+      if (!ed) return '<td class="' + cl + '">' + (def(x.vis) ? nf(x.vis) : '') + '</td>';
+      return entrada('visitas', String(x.d), x.vis, 'int', cl, 'aria-label="Visitas del ' + DIAS[k] + ' ' + x.d + '"' + (falta ? ' title="Falta cargar"' : ''));
+    }) + '<td class="tot">' + (w.hayVis ? nf(w.vis) : '') + '</td><td class="tot ' + (w.hayVis && algun ? sem(w.vis, w.visNec) : '') + '">' + (w.hayVis ? nSigno(w.desvVis) : '') + '</td></tr>';
+    t += '<tr class="vend"><td class="izq">Q Ventas</td>' + cel(function (x) { return x.futuro ? FUT : '<td class="' + hoyCl(C, x) + '">' + nf(x.q) + '</td>'; }) +
+      '<td class="tot">' + nf(w.q) + '</td><td class="tot ' + (algun ? sem(w.q, w.qNec) : '') + '">' + (w.empezo ? nSigno(w.desvQ) : '') + '</td></tr>';
+    t += '<tr class="vend"><td class="izq">Conversión</td>' + cel(function (x) { return x.futuro ? FUT : '<td class="' + hoyCl(C, x) + '">' + (def(x.conv) ? pc(x.conv, 2) : '') + '</td>'; }) +
+      '<td class="tot">' + (w.vis ? pc(w.conv, 2) : '') + '</td><td class="tot ' + (w.vis ? sem(w.conv, c.conv) : '') + '">' + (w.vis ? spd(w.desvConv, 2) : '') + '</td></tr>';
+    t += '<tr class="vend"><td class="izq">Ticket prom.</td>' + cel(function (x) { return x.futuro ? FUT : '<td class="' + hoyCl(C, x) + '">' + (def(x.tk) ? pesos(x.tk) : '') + '</td>'; }) +
+      '<td class="tot">' + (w.q ? pesos(w.tk) : '') + '</td><td class="tot ' + (w.q ? sem(w.tk, c.tp) : '') + '">' + (w.q ? pesosP(w.desvTk) : '') + '</td></tr>';
+    return t + '</tbody></table>';
+  }
+
   /* ══ Gráficos (SVG a mano, como en Estadísticas) ═══════════════════════ */
   var PALETA = ['#1E3A5F', '#2563EB', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#64748B'];
   function graficoDona(T) {
@@ -762,6 +989,8 @@
     if (!isFinite(n) || s === '') return null;
     /* Como Sheets y Excel con una celda en %: de 1 para arriba es el % ("1" = 1%, "50" = 50%); menos de 1, la fracción ("0,5" = 50%). */
     if (tipo === 'pct') return conPct || n >= 1 ? n / 100 : n;
+    /* Los % chicos del e-commerce (conversión 0,8%, impuesto, referencias): el número es siempre el %, "0,8" = 0,8%. */
+    if (tipo === 'pctc') return n / 100;
     if (tipo === 'int') return Math.round(n);
     if (tipo === 'dias') return Math.round(n * 2) / 2;
     return n;
@@ -771,8 +1000,15 @@
   function ponerLocal(D, que, clave, v) {
     var p = clave.split(':'), x, i;
     if (v === undefined) v = null;
-    if (que === 'config') D.cfg[clave] = v;
+    if (que === 'config') D.cfg[clave] = clave === 'impuesto' && v === null ? 0 : v;      // vacío, la base lo deja en 0
     else if (que === 'premio') { D.cfg.premios = (D.cfg.premios || [null, null, null, null]).slice(); D.cfg.premios[+clave] = v; }
+    else if (que === 'bench') { D.cfg.bench = (D.cfg.bench || [0.065, 0.26, 0.015]).slice(); D.cfg.bench[+clave] = v; }
+    else if (que === 'be_roas') D.cfg.be_roas = v;
+    else if (que === 'visitas' || que === 'carritos') {            // e-commerce: [día, peso, visitas] y [semana, peso, carritos]
+      var L = que === 'visitas' ? (D.dias = D.dias || []) : (D.semanas = D.semanas || []);
+      for (i = 0; i < L.length; i++) if (Number(L[i][0]) === Number(clave)) x = L[i];
+      if (x) x[2] = v; else L.push([Number(clave), 0, v]);
+    }
     else if (que === 'vendedor') {
       D.vendedores.forEach(function (o) { if (Number(o.id) === Number(p[0])) o[p[1]] = p[1] === 'pct' ? (v || 0) : v; });
     } else if (que === 'venta') {
@@ -828,6 +1064,7 @@
     estado('Guardando…', 'guardando');
     var local = ST.local.id, localNombre = ST.local.nombre || '', k = local + '|' + mes + '|' + que + '|' + clave;
     var p = cola.then(function () {
+      if (local === ECOM.id) return llamar('ventas_ecom_guardar', { p_mes: mes, p_que: que, p_clave: clave, p_valor: valor });
       return llamar('ventas_guardar', { p_local: local, p_mes: mes, p_que: que, p_clave: clave, p_valor: valor });
     });
     cola = p.catch(function () {});
@@ -856,6 +1093,11 @@
       : tipo === 'txt' && !val ? 'El nombre no puede quedar vacío.'
       : typeof val === 'number' && val < 0 ? 'No puede ser negativo: quedó como estaba.'
       : tipo === 'pct' && (que === 'vendedor' || que === 'peso_dia' || que === 'peso_semana') && val > 1 ? 'El % va de 0 a 100: quedó como estaba.'
+      : tipo === 'pctc' && val > 1 ? 'El % va de 0 a 100: quedó como estaba.'
+      : esEcom() && que === 'config' && clave === 'conversion' && val > 0.2 ? 'Es demasiado para la conversión del e-commerce (anda cerca del 1%): quedó como estaba.'
+      : que === 'config' && clave === 'dias_mes' && (val < 1 || val > 31) ? 'El mes tiene de 1 a 31 días.'
+      : que === 'be_roas' && val === undefined ? 'El ROAS mínimo no puede quedar vacío: quedó como estaba.'
+      : que === 'be_roas' && val > 100 ? 'Es demasiado para un ROAS: quedó como estaba.'
       : tipo === 'dias' && val > 7 ? 'Una semana tiene hasta 7 días.'
       : que === 'config' && clave === 'dias_habiles' && val > 31 ? 'El mes no tiene tantos días.'
       : que === 'config' && (clave === 'conversion' || clave === 'factor') && val > 5 ? 'Es demasiado: ' + (clave === 'conversion' ? 'la conversión' : 'el factor') + ' va como % (50% es la mitad). Quedó como estaba.'
@@ -994,7 +1236,7 @@
     b.addEventListener('click', function () {
       recordarPos();
       ST.hoja = b.getAttribute('data-tab');
-      guardar(K_HOJA, ST.hoja);
+      if (ST.hoja !== 'ecom') guardar(K_HOJA, ST.hoja);
       if (ST.D && ST.D.cfg) dibujar(true);
     });
   });
