@@ -31,6 +31,9 @@ Deno.serve(async (req) => {
   } catch (e) {
     console.error("leer-caja", fotoId, e);
     await sb.from("orden_caja_fotos").update({ ia_estado: "error" }).eq("id", fotoId);
+    // (SQL 139) Por qué falló, para verlo después. Aparte: sin la columna, esto falla solo y lo de arriba queda.
+    const motivo = (e instanceof Error ? e.message : String(e)).slice(0, 1000);
+    await sb.from("orden_caja_fotos").update({ ia_error: motivo }).eq("id", fotoId);
     // Si la IA falla, se cargan los números a mano: no se traba el cierre.
     return json({ ok: false, mensaje: "No pudimos leer la foto. Cargá los números a mano." });
   }
