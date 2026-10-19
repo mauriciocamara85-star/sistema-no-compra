@@ -42,15 +42,23 @@ const QUE_ES: Record<TipoFoto, string> = {
 
 const numeroONulo = (description: string) => ({ anyOf: [{ type: "number" }, { type: "null" }], description });
 
+/** (18/10) La API rechaza el esquema ("Schema is too complex for compilation", 400) con más de 16 propiedades
+ *  con anyOf. Con total_efectivo y sobrante_faltante el del sistema llegó a 18 y la foto del 17/10 no se leyó:
+ *  sólo los montos van con anyOf; motivo y fecha son texto (vacío si no hay). */
+export const MAX_UNIONES = 16;
+
 /** El formato de la lectura (structured outputs): objeto cerrado y todas las propiedades obligatorias. */
 export function esquemaCaja(tipo: TipoFoto) {
   const montos = Object.fromEntries(Object.entries(CAMPOS[tipo]).map(([k, etiqueta]) => [k, numeroONulo(etiqueta)]));
+  const conLista = tipo === "mp" || tipo === "gocuotas";
   const properties = {
     foto_valida: { type: "boolean", description: "false si no se leen los números o no es la pantalla pedida" },
-    motivo: { anyOf: [{ type: "string" }, { type: "null" }], description: "Si foto_valida es false, cómo sacarla de nuevo; si no, null" },
-    fecha: { anyOf: [{ type: "string" }, { type: "null" }], description: "Fecha que aparece en la foto, formato AAAA-MM-DD; null si no aparece" },
+    motivo: { type: "string", description: 'Si foto_valida es false, cómo sacarla de nuevo; si no, ""' },
+    fecha: { type: "string", description: 'Fecha que aparece en la foto, formato AAAA-MM-DD; "" si no aparece' },
     ...montos,
-    suma_operaciones: numeroONulo("Solo Mercado Pago/Go Cuotas: si NO hay total y se ve una lista, la suma de los montos visibles; si no, null"),
+    ...(conLista
+      ? { suma_operaciones: numeroONulo("Si NO hay total y se ve una lista, la suma de los montos visibles; si no, null") }
+      : {}),
     lista_cortada: { type: "boolean", description: "true si la lista sigue fuera de la foto (no se ven todas)" },
     dudas: { type: "array", items: { type: "string" }, description: "Números que no se leen bien (vacío si no hay)" },
   };
@@ -62,8 +70,8 @@ export function sistemaCaja(tipo: TipoFoto, fechaCaja: string, local: string): s
 Esta foto debería ser ${QUE_ES[tipo]}.
 - Los montos están en pesos argentinos con formato "$ 1.440.100,00": el punto separa miles y la coma, decimales. Devolvé números simples (1440100).
 - Copiá SOLO lo que se lee claramente. Si un número no se lee bien, dejalo en null y anotalo en "dudas". Nunca inventes ni calcules un monto que no está.
-- Si en la foto aparece una fecha, devolvela (sirve para detectar fotos de otro día).
-- Si la foto no es la pantalla pedida o no se lee, foto_valida = false y explicá en "motivo" cómo sacarla de nuevo.
+- Si en la foto aparece una fecha, devolvela (sirve para detectar fotos de otro día); si no, "".
+- Si la foto no es la pantalla pedida o no se lee, foto_valida = false y explicá en "motivo" cómo sacarla de nuevo; si está bien, "".
 Respondé SOLO con la lectura, en el formato JSON pedido.`;
 }
 
@@ -97,6 +105,8 @@ export async function leerFotoCaja(opts: {
   }
   if (opts.tipo === "sistema") efectivoContado(r);
   r.fecha = fechaValida(r.fecha);
+  // Sin motivo, null como antes (la base y la app preguntan si hay motivo).
+  if (typeof r.motivo !== "string" || !r.motivo.trim()) r.motivo = null;
   return r;
 }
 

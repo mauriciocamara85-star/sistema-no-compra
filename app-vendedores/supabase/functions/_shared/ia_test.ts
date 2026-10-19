@@ -174,7 +174,47 @@ Deno.test("foto inválida trae un motivo para el vendedor", () => {
   if (!r.motivo_foto_invalida) throw new Error("Falta el motivo");
 });
 
-import { aNumero, efectivoContado, esquemaCaja, fechaValida } from "./caja_ia.ts";
+import { aNumero, efectivoContado, esquemaCaja, fechaValida, leerFotoCaja, MAX_UNIONES } from "./caja_ia.ts";
+
+/** Las propiedades con anyOf o con una lista de tipos, en todo el esquema (la API acepta hasta 16). */
+function uniones(s: unknown): number {
+  if (Array.isArray(s)) return s.reduce((n, x) => n + uniones(x), 0);
+  if (!s || typeof s !== "object") return 0;
+  const o = s as Record<string, unknown>;
+  const propia = Array.isArray(o.anyOf) || Array.isArray(o.type) ? 1 : 0;
+  return propia + Object.values(o).reduce((n: number, x) => n + uniones(x), 0);
+}
+
+Deno.test("los esquemas no pasan el límite de anyOf de la API (18/10: el del sistema tenía 18)", () => {
+  for (const tipo of ["sistema", "lote", "mp", "gocuotas"] as const) {
+    const n = uniones(esquemaCaja(tipo));
+    if (n > MAX_UNIONES) throw new Error(`caja ${tipo}: ${n} anyOf (máximo ${MAX_UNIONES})`);
+  }
+  igual(uniones(esquemaCaja("sistema")), 15, "el sistema: sólo los 15 montos");
+  igual("suma_operaciones" in esquemaCaja("sistema").properties, false, "la suma de la lista es sólo de MP y Go Cuotas");
+  igual("suma_operaciones" in esquemaCaja("mp").properties, true, "MP la tiene");
+  const n = uniones(armarEsquema(ctx.checks));
+  if (n > MAX_UNIONES) throw new Error(`fotos del local: ${n} anyOf`);
+});
+
+Deno.test("caja: motivo y fecha vacíos vuelven como null, como antes (18/10)", async () => {
+  const respuesta = (lectura: Record<string, unknown>) => (async () =>
+    new Response(JSON.stringify({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify(lectura) }],
+    }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch;
+  const base = { foto_valida: true, lista_cortada: false, dudas: [] as string[] };
+  const r = await leerFotoCaja({
+    tipo: "sistema", fecha: "2026-10-17", local: "Rivadavia", foto: { media_type: "image/jpeg", data: "eA==" },
+    modelo: "m", apiKey: "k", pedir: respuesta({ ...base, motivo: "", fecha: "", saldo_final_efectivo: 143100, total_efectivo: 143100, sobrante_faltante: 0 }),
+  });
+  igual([r.motivo, r.fecha, r.suma_operaciones, r.total_efectivo], [null, null, null, 143100], "sistema");
+  const mp = await leerFotoCaja({
+    tipo: "mp", fecha: "2026-10-17", local: "Rivadavia", foto: { media_type: "image/jpeg", data: "eA==" },
+    modelo: "m", apiKey: "k", pedir: respuesta({ ...base, foto_valida: false, motivo: "Sacala de más cerca", fecha: "2026-10-17", total: null, suma_operaciones: null }),
+  });
+  igual([mp.motivo, mp.fecha], ["Sacala de más cerca", "2026-10-17"], "mp inválida con motivo");
+});
 
 Deno.test("caja: montos en formato argentino y fechas imposibles", () => {
   igual(aNumero("$ 1.440.100,00"), 1440100, "con miles y decimales");
