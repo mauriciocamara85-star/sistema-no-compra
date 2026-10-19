@@ -722,8 +722,14 @@
   var ETAPAS = ['Visitas → Carrito', 'Carrito → Compra', 'Conversión total'];
   /* +#,##0;-#,##0 (visitas y ventas de más o de menos) */
   function nSigno(n) { var r = Math.round(n); return r === 0 ? '0' : (r > 0 ? '+' : '-') + nf(Math.abs(r)); }
+  /* '19/10 a las 19:20' (hora de Argentina, de 0 a 23) */
   function fechaHora(ts) {
-    try { return new Date(ts).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+    try {
+      var p = {};
+      new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit',
+        hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(ts)).forEach(function (x) { p[x.type] = x.value; });
+      return p.day + '/' + p.month + ' a las ' + p.hour + ':' + p.minute;
+    }
     catch (e) { return String(ts || '').slice(0, 16).replace('T', ' '); }
   }
 
@@ -815,12 +821,12 @@
 
     /* Meta Ads */
     var me = D.meta_estado || {}, est;
-    if (me.error) est = '<span class="mal">⚠️ La última vez no se pudo leer Meta (' + esc(fechaHora(me.error_en)) + '): ' + esc(me.error) + '.</span>' +
+    if (me.error) est = '<span class="mal">⚠️ La última vez no se pudo leer Meta (' + esc(fechaHora(me.error_en)) + '): ' + esc(String(me.error).replace(/[.\s]+$/, '')) + '.</span>' +
       (me.ultima ? ' Lo de abajo es lo que llegó el ' + esc(fechaHora(me.ultima)) + '.' : '');
-    else if (me.ultima) est = 'Llega solo de la cuenta de anuncios de Meta (VDH Prepago), todos los días. Última lectura: ' + esc(fechaHora(me.ultima)) + '.';
+    else if (me.ultima) est = 'Llega solo cada hora de la cuenta de anuncios de Meta (VDH Prepago). Última lectura: ' + esc(fechaHora(me.ultima)) + '.';
     else if (C.hayMeta) est = 'Lo de Meta está cargado hasta el ' + (D.meta[D.meta.length - 1][0]) + '/' + String(D.mes).slice(5, 7) +
       ': todavía no llega solo (falta conectar la cuenta de anuncios).';
-    else est = 'Meta todavía no está conectado: cuando lo esté, este panel se llena solo todos los días.';
+    else est = 'Meta todavía no está conectado: cuando lo esté, este panel se llena solo cada hora.';
     function hayM(w) { return w.dias.some(function (x) { return x.meta; }); }
     function m(k, f) { return function (w) { return td(hayM(w) ? f(w.meta[k]) : ''); }; }
     function roasCl(r, inv) { return inv ? sem(r, c.beRoas) : ''; }
