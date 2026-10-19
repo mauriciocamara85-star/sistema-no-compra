@@ -576,6 +576,8 @@
   .ct-resumen { margin-top: 8px; color: var(--txt-2); }
   .ct-noacepta { margin-top: 6px; color: var(--txt-3); font-size: 12.5px; }
   .hist li.h-compra::before { background: var(--ok); }
+  /* El cupón de la tienda que se le dio (SQL 138): azul, como Tienda online. */
+  .hist li.h-cupon_tienda::before { background: #3E6FB0; }
 
   /* Las notas del historial: cada una con su fecha y quién la escribió. */
   .nota-fila { display: flex; gap: 8px; align-items: flex-end; }
@@ -1102,10 +1104,33 @@
   .cu-nota { font-size: 12.5px; color: var(--txt-3); margin-top: 8px; line-height: 1.5; }
   .modal-caja.cu-modal { width: min(560px, 100%); }
   .cu-quien .btn-link { font-size: 12.5px; }
+  /* "Dar un cupón" con dos solapas (17/10/2026, SQL 138): En los locales · En
+     la tienda online. La de la tienda es la lista de cupones de vdh.com.ar. */
+  .pl-solapas.cu-lugar { margin-bottom: 0; justify-self: start; max-width: 100%; }
+  .cu-cuerpo { display: grid; gap: 10px; min-width: 0; }
+  .cu-cuerpo .cu-sub { margin: 0; }
+  .cu-cuerpo .cu-nuevo { margin-top: 0; }
+  .tn-lista { display: grid; }
+  .tn-fila { display: grid; grid-template-columns: 86px minmax(0, 1fr) auto; gap: 4px 12px; align-items: center;
+             padding: 10px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .tn-lista > .tn-fila:first-child { border-top: 0; }
+  .tn-fila[hidden] { display: none; }
+  .tn-fila .cu-que.tn-envio { font-size: 13.5px; line-height: 1.2; }
+  .tn-cod { display: block; font: 700 15px var(--display); letter-spacing: .4px; overflow-wrap: anywhere; }
+  .tn-fila small { display: block; font-size: 12.5px; color: var(--txt-3); line-height: 1.45; }
+  .tn-acc { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; }
+  .tn-acc .btn-link { font-size: 12.5px; }
+  .tn-ocultos summary { cursor: pointer; font-size: 13.5px; font-weight: 600; color: var(--txt-2); padding: 4px 0; }
+  .tn-falta { padding: 12px; border-radius: var(--r-sm); background: var(--surface-2); border: 1px solid var(--line);
+              font-size: 13.5px; line-height: 1.5; color: var(--txt-2); }
+  .tn-falta.ojo { background: var(--warn-soft); color: var(--warn-txt); border-color: transparent; }
+  .tn-sin { font-size: 13.5px; color: var(--txt-3); padding: 6px 0; }
   @media (max-width: 599px) {
     .cu-campos { grid-template-columns: minmax(0, 1fr); }
     .cu-fila { grid-template-columns: 72px minmax(0, 1fr); }
     .cu-acc { grid-column: 1 / -1; justify-content: flex-start; }
+    .tn-fila { grid-template-columns: 64px minmax(0, 1fr); }
+    .tn-acc { grid-column: 1 / -1; justify-content: flex-end; }
   }
 
   /* ── Segmentos (Beta): grupos de contactos que se arman solos ── */
@@ -3153,9 +3178,10 @@
                 (r.beneficio.usado ? 'usado' : r.beneficio.anulado ? 'anulado' : r.beneficio.vencido ? 'vencido' : 'dado') + '</span>'
             : '') +
           /* "Dar un cupón" (12/10/2026, era "Dar 20%"): el formulario de
-             Cupones con este cliente puesto. Con uno vivo no
-             se ofrece: la base no deja dar dos. */
-          (r.beneficio && r.beneficio.vive ? '' : '<button type="button" class="btn btn-sec btn-chico" id="fichaDar">Dar un cupón</button>') +
+             Cupones con este cliente puesto. Desde el 17/10 (SQL 138) está
+             siempre, porque también ofrece los de la tienda online; con uno
+             de los locales vivo abre en ésos (la base no deja dar dos). */
+          '<button type="button" class="btn btn-sec btn-chico" id="fichaDar">Dar un cupón</button>' +
         '</div>' +
         etiquetasFicha(r) +
       '</div>' +
@@ -3207,6 +3233,8 @@
           (r.whatsapp ? '<button type="button" class="btn btn-sec btn-chico" id="fichaContacto">Guardar contacto</button>' : '') +
           (r.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(r.mail) + '">Mail</a>' : '') +
           (r.url ? '<a class="btn btn-sec btn-chico" target="_blank" rel="noopener" href="' + esc(r.url) + '">Ver el carrito</a>' : '') +
+          /* 17/10/2026 (SQL 138): un cupón de la tienda para que termine la compra. */
+          (r.whatsapp || r.mail ? '<button type="button" class="btn btn-sec btn-chico" id="fichaDar">Dar un cupón</button>' : '') +
         '</div>' +
         etiquetasFicha(r) +
       '</div>' +
@@ -3565,9 +3593,18 @@
     var dar = $('fichaDar');
     if (dar) {
       dar.onclick = function () {
+        var luego = function () { cargar(); cargarHistorial(); };
+        if (r.fuente === 'carrito') {
+          /* El que dejó el carrito compra por la tienda: abre en ésos. */
+          abrirDarCupon({ lugar: 'tienda', tel: r.whatsapp, mail: r.mail, nombre: r.nombre, fuente: 'carrito', ref: r.id, alListo: luego });
+          return;
+        }
         /* El de "para este cliente" va por el registro: así queda el local y
-           el vendedor, y cuenta como venta recuperada cuando vuelve. */
-        abrirDarCupon({ registro: r.id, tel: r.whatsapp, nombre: r.nombre, alListo: function () { cargar(); } });
+           el vendedor, y cuenta como venta recuperada cuando vuelve. Con uno
+           de los locales sin usar, abre en los de la tienda. */
+        var vivo = r.beneficio && r.beneficio.vive;
+        abrirDarCupon({ registro: r.id, tel: r.whatsapp, mail: r.mail, nombre: r.nombre, fuente: 'no_compra', ref: r.id,
+                        lugar: vivo ? 'tienda' : 'local', yaTiene: vivo ? r.beneficio.pct + '%' : '', alListo: luego });
       };
     }
     Array.prototype.forEach.call($('fichaIn').querySelectorAll('select[data-c]'), function (s) {
@@ -3761,6 +3798,10 @@
         que = 'Guardó el contacto';
       } else if (h.tipo === 'nota') {
         que = '<span class="hist-nota">' + esc(h.detalle || '') + '</span>';
+      } else if (h.tipo === 'cupon_tienda') {
+        /* El detalle viene "CODIGO · 20%" (crm_historial, SQL 138). */
+        var pc = String(h.detalle || '').split(' · ');
+        que = esc(cuponTiendaTxt(pc[0], pc.slice(1).join(' · ')));
       } else {
         que = esc(h.detalle || '');
       }
@@ -5074,7 +5115,12 @@
       if (d.desde === 'otra_app') { return 'Le contestaron por Kommo'; }
       return (d.sentido === 'sale' ? 'Le contestaron por WhatsApp: ' : 'Escribió por WhatsApp: ') + textoMensaje(d);
     }
+    if (fuente === 'cupon_tienda') { return cuponTiendaTxt(d.codigo, d.descuento); }
     return d.texto || '';
+  }
+  /* El cupón de vdh.com.ar que le dieron desde "Dar un cupón" (SQL 138). */
+  function cuponTiendaTxt(codigo, descuento) {
+    return 'Le dieron el cupón ' + (codigo || '') + (descuento ? ' (' + descuento + ')' : '') + ' de vdh.com.ar';
   }
 
   /* Un mensaje en una línea: el texto, o qué era si no es texto. */
@@ -5691,9 +5737,9 @@
     var f = fichaContactoHtml(d, c);
     info.innerHTML = '<div class="ms-info-cab"><b>Ficha</b>' +
         '<button type="button" class="ficha-x ms-info-x" aria-label="Cerrar la ficha"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg></button></div>' +
-      f.contacto + bloqueRecPersona(d) + '<div class="ficha-bloque"><h3>Lo que pasó</h3>' + historiaContacto(d.historia || []) + '</div>';
+      f.contacto + bloqueRecPersona(d) + '<div class="ficha-bloque"><h3>Lo que pasó</h3><div data-hist-ct>' + historiaContacto(d.historia || []) + '</div></div>';
     info.querySelector('.ms-info-x').onclick = function () { $('vistaMensajes').classList.remove('con-info'); };
-    cablearFicha(info, d.persona, f.nom, f.tel);
+    cablearFicha(info, d.persona, f.nom, f.tel, d);
     cablearRecPersona(info, d);
   }
   /* Llegó algo con una conversación abierta: se rearma el chat (no la
@@ -5760,9 +5806,9 @@
     $('fichaIn').innerHTML =
       '<div class="fc-izq"><div class="fc-contacto">' + f.contacto + '</div>' +
         bloqueRecPersona(d) +
-        '<div class="ficha-bloque fc-hist"><h3>Lo que pasó</h3>' + historiaContacto(h) + '</div></div>' +
+        '<div class="ficha-bloque fc-hist"><h3>Lo que pasó</h3><div data-hist-ct>' + historiaContacto(h) + '</div></div></div>' +
       '<div class="fc-der">' + chatContacto(d) + '</div>';
-    cablearFicha($('fichaIn'), d.persona, f.nom, f.tel);
+    cablearFicha($('fichaIn'), d.persona, f.nom, f.tel, d);
     cablearRecPersona($('fichaIn'), d);
     var b = $('chatBloque');
     conectarChat(d.persona.clave, b, function () { refrescarChat(d.persona.clave); });
@@ -5884,9 +5930,10 @@
           '</select></div>' : '') +
         '<div class="ficha-acc" style="margin-top:12px">' +
           (tel ? '<a class="btn btn-wsp btn-chico" target="_blank" rel="noopener" href="https://wa.me/' + esc(tel) + '">Escribirle por WhatsApp</a>' +
-                 '<button type="button" class="btn btn-sec btn-chico ct-plantilla">Plantilla de WhatsApp</button>' +
-                 '<button type="button" class="btn btn-sec btn-chico ct-cupon">Dar un cupón</button>' +
-                 '<button type="button" class="btn btn-sec btn-chico ct-guardar">Guardar contacto</button>' : '') +
+                 '<button type="button" class="btn btn-sec btn-chico ct-plantilla">Plantilla de WhatsApp</button>' : '') +
+          /* Con sólo el mail también: el de la tienda se le puede mandar (SQL 138). */
+          (tel || p.mail ? '<button type="button" class="btn btn-sec btn-chico ct-cupon">Dar un cupón</button>' : '') +
+          (tel ? '<button type="button" class="btn btn-sec btn-chico ct-guardar">Guardar contacto</button>' : '') +
           (p.mail ? '<a class="btn btn-sec btn-chico" href="mailto:' + esc(p.mail) + '">Mail</a>' : '') +
         '</div>' +
         ((p.etiquetas || []).length ? '<div class="tj-etq" style="margin-top:12px">' + p.etiquetas.map(function (e) {
@@ -5894,12 +5941,10 @@
       '</div>' };
   }
   /* Los botones de la ficha: "Guardar contacto" y los "Abrir" de lo que pasó. */
-  function cablearFicha(raiz, p, nom, tel) {
+  function cablearFicha(raiz, p, nom, tel, d) {
     var g = raiz.querySelector('.ct-guardar');
     if (g) { g.onclick = function () { guardarContacto({ fuente: 'contacto', nombre: nom, whatsapp: tel, mail: p.mail }); }; }
-    [].forEach.call(raiz.querySelectorAll('[data-abrir]'), function (b) {
-      b.onclick = function () { var x = b.dataset.abrir.split(':'); irAFicha(x[0], Number(x[1])); };
-    });
+    cablearAbrirHist(raiz);
     var tm = raiz.querySelector('.ti-mover-ficha');
     if (tm) {
       tm.dataset.antes = tm.value;
@@ -5909,7 +5954,40 @@
     var cu = raiz.querySelector('.ct-cupon');
     /* El número de WhatsApp con el + adelante: así uno del exterior se guarda
        entero (SQL 82); los de acá quedan igual. */
-    if (cu) { cu.onclick = function () { abrirDarCupon({ tel: p.wa_tel ? '+' + String(p.wa_tel).replace(/\D/g, '') : (p.tel || tel), nombre: p.nombre || '' }); }; }
+    if (cu) {
+      cu.onclick = function () {
+        /* Abre en los de la tienda si la persona es de ahí: su charla es por
+           el número de la tienda, o lo último fue un carrito, o compró en
+           vdh.com.ar. Sin WhatsApp, también: los de los locales van por él. */
+        var h = (d && d.historia) || [];
+        var ult = h.filter(function (x) { return x.fuente === 'carrito' || x.fuente === 'no_compra'; })
+          .sort(function (a, b) { return new Date(b.cuando) - new Date(a.cuando); })[0];
+        var seg = d ? segmentoDe(p.clave, numeroRespuesta(d), ult ? [ult.fuente] : []) : '';
+        var deTienda = !tel || seg === 'tienda' || seg === 'carrito' ||
+          (!seg && h.some(function (x) { return x.fuente === 'tienda'; }));
+        abrirDarCupon({ tel: tel ? (p.wa_tel ? '+' + String(p.wa_tel).replace(/\D/g, '') : (p.tel || tel)) : '',
+                        nombre: p.nombre || '', mail: p.mail || '', clave: p.clave || '', lugar: deTienda ? 'tienda' : 'local',
+                        alListo: function () { refrescarHistContacto(raiz, p.clave); } });
+      };
+    }
+  }
+  function cablearAbrirHist(raiz) {
+    [].forEach.call(raiz.querySelectorAll('[data-abrir]'), function (b) {
+      b.onclick = function () { var x = b.dataset.abrir.split(':'); irAFicha(x[0], Number(x[1])); };
+    });
+  }
+  /* "Lo que pasó" de la ficha de una persona, de nuevo: después de darle
+     un cupón de la tienda, que se vea ahí mismo. */
+  function refrescarHistContacto(raiz, clave) {
+    if (!clave) { return; }
+    base.crmContacto(pinGuardado(), clave)
+      .then(function (d) {
+        var w = raiz.querySelector('[data-hist-ct]');
+        if (!w || !d || !raiz.isConnected || (d.persona && d.persona.clave !== clave)) { return; }
+        w.innerHTML = historiaContacto(d.historia || []);
+        cablearAbrirHist(w);
+      })
+      .catch(function () {});
   }
 
   /* Todo lo que pasó con la persona, lo último arriba. Lo que es una tarjeta
@@ -5920,7 +5998,7 @@
       var d = x.datos || {};
       var tarjeta = x.fuente === 'no_compra' || x.fuente === 'carrito';
       var clase = x.fuente === 'nota' ? 'nota' : (x.fuente === 'tienda' || d.tipo === 'compra') ? 'compra' : x.fuente;
-      var pie = cuandoHist(x.cuando) + (x.fuente === 'nota' && d.quien ? ' · ' + d.quien : '') +
+      var pie = cuandoHist(x.cuando) + ((x.fuente === 'nota' || x.fuente === 'cupon_tienda') && d.quien ? ' · ' + d.quien : '') +
                 (tarjeta && d.columna ? ' · ' + tituloDe(d.columna) : '');
       return '<li class="h-' + esc(clase) + '">' +
         '<span class="hist-que">' + (x.fuente === 'nota' ? '<span class="hist-nota">' + esc(d.texto || '') + '</span>' : esc(queFue(x.fuente, d))) + '</span>' +
@@ -6459,11 +6537,25 @@
   function mostrarNuevoCu(raiz, ctx, res, d) {
     var caja = raiz.querySelector('[data-cu-nuevo]');
     if (!caja) { return; }
-    var t = ctx.tipo, cod = res.codigo || '', hasta = d.campana ? d.campana.hasta : enDiasIso(d.dias);
+    var t = ctx.tipo, cod = res.codigo || '', hasta = d.tienda ? d.tienda.hasta : d.campana ? d.campana.hasta : enDiasIso(d.dias);
     var nom = d.nombre ? String(d.nombre).trim().split(/\s+/)[0] : '';
     var hola = '¡Hola' + (nom ? ' ' + nom : '') + '! ';
     var det, msg;
-    if (t === 'campana') {
+    if (d.tienda) {
+      /* El de vdh.com.ar: lo pone él al pagar. Las condiciones que
+         Tienda Nube le va a pedir, dichas antes, para que no se frustre. */
+      var tc = d.tienda, extra = [];
+      if (tc.primera_compra) { extra.push('Es para tu primera compra en la tienda.'); }
+      if (Number(tc.compra_minima) > 0) { extra.push('Vale con una compra desde ' + plata(tc.compra_minima) + '.'); }
+      if (tc.restringido) { extra.push('Vale en algunas prendas.'); }
+      if (hasta) { extra.push('Vence el ' + ddmm(hasta) + '.'); }
+      var que = tc.tipo === 'shipping' ? 'el envío te sale gratis'
+        : 'tenés ' + (tc.tipo === 'percentage' ? 'un ' : '') + tc.descuento + ' de descuento';
+      det = (tc.tipo === 'shipping' ? 'Envío gratis' : tc.descuento + ' de descuento') + ' en vdh.com.ar' +
+        (hasta ? ', hasta el ' + ddmm(hasta) : '') + '. Queda anotado en "Lo que pasó".';
+      msg = hola + 'Te dejamos el código ' + cod + ' para la tienda online: ' + que + ' en vdh.com.ar. ' +
+        'Lo ponés al pagar, en el casillero del cupón de descuento.' + (extra.length ? ' ' + extra.join(' ') : '');
+    } else if (t === 'campana') {
       det = d.pct + '% · ' + vecesCu(d.campana.porCliente) + (d.campana.usosMax ? ' · hasta ' + d.campana.usosMax + ' usos' : '') +
         ' · ' + (d.campana.desde ? 'del ' + ddmm(d.campana.desde) + ' ' : '') + 'al ' + ddmm(hasta) + (d.campana.enApp ? ' · se ve en la app del Club' : '');
       msg = 'Con el código ' + cod + ' tenés un ' + d.pct + '% de descuento en VDH hasta el ' + ddmm(hasta) + '.';
@@ -6533,16 +6625,214 @@
     return t && !t.disabled ? t : null;
   }
 
-  /* "Dar un cupón", desde una ficha. */
+  /* "Dar un cupón", desde una ficha. Desde el 17/10/2026 (SQL 138) con dos
+     solapas: "En los locales" (el formulario de siempre) y "En la tienda
+     online" (los cupones de vdh.com.ar). ctx.lugar dice con cuál abre;
+     ctx.clave, ctx.fuente y ctx.ref son para anotar el de la tienda. */
   function abrirDarCupon(ctx) {
     ctx.donde = 'ficha';
     ctx.tipo = 'cliente';
+    ctx.lugar = ctx.lugar === 'tienda' ? 'tienda' : 'local';
     cargarLocalesCu();
     var raiz = $('cuModalIn');
-    raiz.innerHTML = htmlFormCu(ctx);
-    cablearFormCu(raiz, ctx);
+    raiz.innerHTML = '<div class="cu-cuerpo">' +
+        '<div class="pl-solapas cu-lugar" role="tablist" aria-label="Dónde lo usa">' +
+          '<button type="button" role="tab" data-cu-lugar="local">En los locales</button>' +
+          '<button type="button" role="tab" data-cu-lugar="tienda">En la tienda online</button>' +
+        '</div><div class="cu-cuerpo" data-cu-cuerpo></div></div>';
+    var cuerpo = raiz.querySelector('[data-cu-cuerpo]');
+    var poner = function (lugar) {
+      /* Lo escrito en el de los locales no se pierde al ir y volver. */
+      if (ctx.lugar === 'local' && lugar !== 'local' && cuerpo.querySelector('[data-cu-crear]')) { ctx.valores = valoresCu(cuerpo); }
+      ctx.lugar = lugar;
+      [].forEach.call(raiz.querySelectorAll('[data-cu-lugar]'), function (b) {
+        var si = b.dataset.cuLugar === lugar;
+        b.classList.toggle('sel', si);
+        b.setAttribute('aria-selected', String(si));
+      });
+      if (lugar === 'tienda') { pintarTiendaCu(cuerpo, ctx); return; }
+      /* Con uno de los locales sin usar, la base no deja dar otro; sin
+         WhatsApp, en la caja no lo encontrarían. Se dice antes de llenar nada. */
+      if (ctx.yaTiene || (!ctx.tel && !ctx.registro)) {
+        cuerpo.innerHTML = '<div class="tn-falta">' + esc(ctx.yaTiene
+          ? 'Ya tiene un cupón de los locales sin usar (' + ctx.yaTiene + '). Para darle otro, anulalo o extendelo desde Cupones.'
+          : 'Sin su WhatsApp no se le puede dar uno de los locales: en la caja lo encuentran por el teléfono.') + '</div>';
+        return;
+      }
+      cuerpo.innerHTML = htmlFormCu(ctx);
+      cablearFormCu(cuerpo, ctx);
+    };
+    [].forEach.call(raiz.querySelectorAll('[data-cu-lugar]'), function (b) {
+      b.onclick = function () { if (b.dataset.cuLugar !== ctx.lugar) { poner(b.dataset.cuLugar); } };
+    });
+    var lugar = ctx.lugar;
+    ctx.lugar = '';
+    poner(lugar);
     $('modalCupon').hidden = false;
-    setTimeout(function () { var b = raiz.querySelector('[data-cu-crear]'); if (b) { b.focus(); } }, 50);
+    setTimeout(function () {
+      var b = raiz.querySelector('[data-cu-crear]') || raiz.querySelector('[data-cu-lugar].sel');
+      if (b) { b.focus(); }
+    }, 50);
+  }
+
+  /* ═══ Los cupones de la tienda online (17/10/2026, SQL 138) ════════════
+     Pedido de Mauricio: que "Dar un cupón" también ofrezca los cupones de
+     vdh.com.ar que hay, para dárselos al cliente sin ir a buscarlos a Tienda
+     Nube ni saber cuál es. Los trae el robot de cada hora (sólo los que se
+     pueden usar muchas veces); acá se elige uno, queda anotado en "Lo que
+     pasó" y sale el mensaje armado, como el de los locales. Un
+     administrador oculta los que no se regalan (los de influencers, los de
+     uso interno); los de 50 % o más ya arrancan ocultos. */
+  var TNC = { datos: null, cuando: 0, pidiendo: null };
+  function cargarTiendaCu(forzar) {
+    /* La lista cambia una vez por hora: cinco minutos guardada alcanza. */
+    if (!forzar && TNC.datos && Date.now() - TNC.cuando < 5 * 60 * 1000) { return Promise.resolve(TNC.datos); }
+    if (TNC.pidiendo) { return TNC.pidiendo; }
+    TNC.pidiendo = base.crmTiendaCupones(pinGuardado())
+      .then(function (d) {
+        TNC.pidiendo = null;
+        TNC.datos = d || { cupones: [], ocultos: [] };
+        TNC.cuando = Date.now();
+        return TNC.datos;
+      }, function (err) { TNC.pidiendo = null; throw err; });
+    return TNC.pidiendo;
+  }
+  function pintarTiendaCu(cuerpo, ctx) {
+    if (!TNC.datos) { cuerpo.innerHTML = '<p class="tn-sin">Trayendo los cupones de la tienda…</p>'; }
+    cargarTiendaCu().then(function (d) {
+      if (ctx.lugar !== 'tienda' || !cuerpo.isConnected) { return; }
+      var abiertos = !!cuerpo.querySelector('.tn-ocultos[open]');
+      cuerpo.innerHTML = htmlTiendaCu(d, ctx);
+      if (abiertos && cuerpo.querySelector('.tn-ocultos')) { cuerpo.querySelector('.tn-ocultos').open = true; }
+      cablearTiendaCu(cuerpo, ctx, d);
+    }).catch(function (err) {
+      if (err && err.sinSesion) { caducada(); return; }
+      if (ctx.lugar !== 'tienda' || !cuerpo.isConnected) { return; }
+      var falta = /crm_tienda_cupones|PGRST202|Could not find/i.test(String(err && err.message));
+      cuerpo.innerHTML = '<div class="tn-falta">' + (falta
+        ? 'Falta un paso para ver los cupones de la tienda: correr el SQL 138 en Supabase.'
+        : 'No se pudieron traer los cupones de la tienda. Revisá la conexión y tocá de nuevo "En la tienda online".') + '</div>';
+    });
+  }
+  /* Lo que conviene saber antes de darlo, en una línea. */
+  function detalleTiendaCu(c) {
+    var x = [];
+    if (c.primera_compra) { x.push('sólo para la primera compra'); }
+    if (Number(c.compra_minima) > 0) { x.push('compras desde ' + plata(c.compra_minima)); }
+    if (c.restringido) { x.push('en algunas prendas'); }
+    if (c.incluye_envio && c.tipo === 'percentage') { x.push('también sobre el envío'); }
+    if (c.hasta) { x.push('hasta el ' + ddmm(c.hasta)); }
+    if (c.max_usos) { x.push('le quedan ' + (Number(c.max_usos) - Number(c.usados || 0)) + ' usos'); }
+    x.push(Number(c.usados) ? 'usado ' + (Number(c.usados) === 1 ? '1 vez' : c.usados + ' veces') : 'sin usar todavía');
+    return x.join(' · ');
+  }
+  function filaTiendaCu(c, admin, oculto) {
+    return '<div class="tn-fila" data-tn="' + Number(c.id) + '" data-tn-buscar="' + esc(llanoCu(c.codigo + ' ' + c.descuento)) + '">' +
+      '<span class="cu-que' + (c.tipo === 'shipping' ? ' tn-envio' : '') + '">' + esc(c.descuento) + '</span>' +
+      '<span class="cu-quien"><span class="tn-cod">' + esc(c.codigo) + '</span><small>' + esc(detalleTiendaCu(c)) +
+        (oculto && c.oculto_por ? ' · lo ocultó ' + esc(c.oculto_por) : '') + '</small></span>' +
+      '<span class="tn-acc">' +
+        (admin ? '<button type="button" class="btn-link" data-tn-ocultar="' + (oculto ? 'no' : 'si') + '">' + (oculto ? 'Volver a mostrar' : 'Ocultar') + '</button>' : '') +
+        (oculto ? '' : '<button type="button" class="btn btn-pri btn-chico" data-tn-dar>Dar este</button>') +
+      '</span></div>';
+  }
+  function htmlTiendaCu(d, ctx) {
+    var l = d.cupones || [], oc = d.ocultos || [];
+    var h = '<div class="cu-para">Para <b>' + esc(ctx.nombre || 'este cliente') + '</b>' + (ctx.tel ? ' · +' + esc(telVista(ctx.tel)) : '') + '</div>' +
+      '<div class="cu-nuevo" data-cu-nuevo hidden></div>';
+    var permiso = '<div class="tn-falta ojo">Tienda Nube no deja leer los cupones: a la llave le falta el permiso "Cupones: leer". ' +
+      'Un administrador lo tilda en la app del Portal de Socios de Tienda Nube y vuelve a correr conectar-tienda-nube.ps1.' +
+      (l.length ? ' Hasta entonces, esta lista puede estar vieja.' : '') + '</div>';
+    if (d.error === 'permiso') { h += permiso; }
+    if (!l.length) {
+      if (d.error !== 'permiso') {
+        h += '<div class="tn-falta">' + (d.cuando
+          ? 'La tienda no tiene cupones para dar ahora: prendidos, en fecha y que se puedan usar muchas veces.' + (oc.length ? ' Hay ' + oc.length + ' ocultos, acá abajo.' : '')
+          : 'Todavía no llegaron los cupones de la tienda: los trae Tienda Nube solo, cada hora.') + '</div>';
+      }
+    } else {
+      h += '<p class="cu-sub">Los códigos de vdh.com.ar que se pueden usar muchas veces. El cliente lo pone al pagar.</p>';
+      if (l.length > 6) {
+        h += '<input type="search" class="buscador" data-tn-filtro placeholder="Buscar un código o un %" aria-label="Buscar un código" autocomplete="off">';
+      }
+      h += '<div class="tn-lista" data-tn-lista>' + l.map(function (c) { return filaTiendaCu(c, d.admin, false); }).join('') + '</div>' +
+        '<p class="tn-sin" data-tn-nada hidden>Ninguno con eso.</p>';
+    }
+    if (d.admin && oc.length) {
+      h += '<details class="tn-ocultos"><summary>Ocultos (' + oc.length + '): no se ofrecen</summary><div class="tn-lista">' +
+        oc.map(function (c) { return filaTiendaCu(c, true, true); }).join('') + '</div></details>';
+    }
+    var nota = (d.cuando ? 'Los trae Tienda Nube solo, cada hora (lo último: ' + esc(cuandoHist(d.cuando)) + '). ' : '') +
+      (l.length ? 'Para sacar uno de esta lista, apagalo en Tienda Nube' + (d.admin ? ' u ocultalo acá.' : ' o pedile a un administrador que lo oculte.') : '');
+    if (nota) { h += '<p class="cu-nota">' + nota + '</p>'; }
+    return h;
+  }
+  function cablearTiendaCu(cuerpo, ctx, d) {
+    var porId = function (id) {
+      return (d.cupones || []).concat(d.ocultos || []).filter(function (c) { return Number(c.id) === id; })[0];
+    };
+    var f = cuerpo.querySelector('[data-tn-filtro]');
+    if (f) {
+      f.oninput = function () {
+        var t = llanoCu(f.value.trim()), n = 0;
+        [].forEach.call(cuerpo.querySelectorAll('[data-tn-lista] > .tn-fila'), function (x) {
+          x.hidden = !!t && x.dataset.tnBuscar.indexOf(t) < 0;
+          if (!x.hidden) { n++; }
+        });
+        cuerpo.querySelector('[data-tn-nada]').hidden = n > 0;
+      };
+    }
+    [].forEach.call(cuerpo.querySelectorAll('[data-tn-dar]'), function (b) {
+      b.onclick = function () { darTiendaCu(cuerpo, ctx, porId(Number(b.closest('[data-tn]').dataset.tn)), b); };
+    });
+    [].forEach.call(cuerpo.querySelectorAll('[data-tn-ocultar]'), function (b) {
+      b.onclick = function () { ocultarTiendaCu(cuerpo, ctx, porId(Number(b.closest('[data-tn]').dataset.tn)), b.dataset.tnOcultar === 'si', b); };
+    });
+  }
+  function ocultarTiendaCu(cuerpo, ctx, c, si, b) {
+    if (!c) { return; }
+    if (!exigirQuien(function () { ocultarTiendaCu(cuerpo, ctx, c, si, b); })) { return; }
+    b.disabled = true;
+    base.crmTiendaCuponOcultar(pinGuardado(), c.id, si, quien || null)
+      .then(function () {
+        avisar('ok', si ? c.codigo + ' ya no se ofrece. En la tienda sigue igual.' : c.codigo + ' se vuelve a ofrecer.');
+        return cargarTiendaCu(true);
+      })
+      .then(function () { if (ctx.lugar === 'tienda') { pintarTiendaCu(cuerpo, ctx); } })
+      .catch(function (err) {
+        b.disabled = false;
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo. Revisá la conexión.');
+      });
+  }
+  function darTiendaCu(cuerpo, ctx, c, b) {
+    if (!c) { return; }
+    if (!exigirQuien(function () { darTiendaCu(cuerpo, ctx, c, b); })) { return; }
+    /* La persona como en Contactos: los 10 números, o el mail. */
+    var clave = ctx.clave || claveTel(ctx.tel) || (ctx.mail ? 'm:' + String(ctx.mail).trim().toLowerCase() : '');
+    if (!clave) { avisar('err', 'No tiene WhatsApp ni mail: no hay a quién dárselo.'); return; }
+    var txt = b.textContent;
+    b.disabled = true;
+    b.textContent = 'Dando…';
+    base.crmTiendaCuponDar(pinGuardado(), clave, c.id, quien || null, ctx.fuente || null, ctx.ref || null)
+      .then(function (r) {
+        if (!r || !r.ok) {
+          /* Se apagó o se gastó desde la última vez: la lista se pone al día. */
+          avisar('err', 'No se dio: ' + ((r && r.porque) || 'probá de nuevo') + '.');
+          cargarTiendaCu(true).then(function () { if (ctx.lugar === 'tienda') { pintarTiendaCu(cuerpo, ctx); } }).catch(function () {});
+          return;
+        }
+        mostrarNuevoCu(cuerpo, ctx, { codigo: r.codigo || c.codigo }, { tienda: c, nombre: ctx.nombre, tel: ctx.tel });
+        var caja = cuerpo.querySelector('[data-cu-nuevo]');
+        if (caja && caja.scrollIntoView) { caja.scrollIntoView({ block: 'nearest' }); }
+        avisar('ok', 'Listo: queda anotado en "Lo que pasó".');
+        if (ctx.alListo) { ctx.alListo(r); }
+      })
+      .catch(function (err) {
+        if (err && err.sinSesion) { caducada(); return; }
+        avisar('err', (err && err.delServidor && err.message) || 'No se pudo anotar. Revisá la conexión.');
+      })
+      .then(function () { b.disabled = false; b.textContent = txt; });
   }
   if ($('cuModalCerrar')) {
     $('cuModalCerrar').onclick = function () { $('modalCupon').hidden = true; };

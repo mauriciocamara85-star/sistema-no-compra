@@ -1681,6 +1681,25 @@ var base = {
     });
   },
 
+  /* ── Los cupones de la tienda online (SQL 138) ── */
+  /** Los de vdh.com.ar que se pueden dar hoy (los trae el robot de cada
+      hora); al administrador, también los ocultos. */
+  crmTiendaCupones: function (pin) {
+    return funcion('crm_tienda_cupones', { p_pin: pin });
+  },
+  /** Ocultar uno, o volver a mostrarlo (sólo un administrador). */
+  crmTiendaCuponOcultar: function (pin, id, oculto, quien) {
+    return funcion('crm_tienda_cupon_ocultar', { p_pin: pin, p_id: id, p_oculto: !!oculto, p_quien: quien || null });
+  },
+  /** Darle uno a una persona: queda en "Lo que pasó" (y en la tarjeta desde
+      la que se dio, si fue desde un No Compra o un carrito). */
+  crmTiendaCuponDar: function (pin, clave, id, quien, fuente, ref) {
+    return funcion('crm_tienda_cupon_dar', {
+      p_pin: pin, p_clave: clave, p_cupon: id, p_quien: quien || null,
+      p_fuente: fuente || null, p_ref: ref || null
+    });
+  },
+
   /* ── La papelera de registros (SQL 74) ── */
   /** Borrar un registro (una prueba, un duplicado): va 30 días a la
       papelera. El PIN es el que se tipea en el momento, no el guardado. */

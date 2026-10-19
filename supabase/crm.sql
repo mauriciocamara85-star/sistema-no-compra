@@ -11842,3 +11842,415 @@ revoke execute on function crm_difusiones_listar(text, integer) from public;
 grant execute on function crm_difusiones_listar(text, integer) to anon, authenticated;
 
 select 'listo: difusiones más seguras (SQL 98)' as "SQL 98";
+
+-- ─────────────────────────── PARTE 138 (17/10/2026) ───────────────────────────
+-- =====================================================================
+-- VDH · CRM · SQL 138 (17/10/2026): los cupones de la tienda online en
+-- "Dar un cupón".
+--
+-- Pedido de Mauricio (17/10): "Dar un cupón" da cupones para los locales;
+-- que el sistema detecte los cupones disponibles de vdh.com.ar y aparezcan
+-- ahí, para dárselos al cliente sin ir a buscarlos ni saber cuál es.
+--
+-- 1. tienda_cupones: los cupones de Tienda Nube que se pueden usar muchas
+--    veces. Los trae el robot de cada hora (vdh-respaldos,
+--    tienda-cupones.js) con tienda_cupones_cargar. Los de un solo uso (los
+--    de bienvenida, que ya son de alguien) no se guardan.
+-- 2. crm_tienda_cupones: los que se pueden dar hoy (prendidos en la tienda,
+--    dentro de sus fechas, con usos libres y sin ocultar).
+-- 3. crm_tienda_cupon_ocultar: un administrador saca uno de la lista sin
+--    apagarlo en la tienda (los de influencers, los de uso interno). Los de
+--    50 % o más arrancan ocultos: DTOCAMBIO es de 100 %.
+-- 4. crm_tienda_cupon_dar + tienda_cupones_dados: queda anotado a quién se
+--    le dio, cuál y quién lo dio. Se ve en "Lo que pasó": en Contactos y
+--    Mensajes (crm_contacto) y en la ficha del No Compra o del carrito
+--    desde la que se dio (crm_historial).
+--
+-- No lleva begin/commit: pegado entero corre como un solo bloque, y si algo
+-- falla no queda nada. Si crm_contacto o crm_historial cambiaron desde que
+-- se armó este archivo (otro SQL las tocó), frena sin cambiar nada.
+--
+-- Reversible: deshacer-138.sql deja todo como estaba.
+-- =====================================================================
+
+/* ═══ 1. Los cupones de la tienda ═══════════════════════════════════════
+   Sólo los que se pueden usar muchas veces: los de un solo uso son los de
+   bienvenida (un código por cada persona que se anotó) y ya son de alguien. */
+create table if not exists tienda_cupones (
+  id             bigint primary key,                 -- el de Tienda Nube
+  codigo         text not null,
+  tipo           text not null,                      -- percentage | absolute | shipping
+  valor          numeric,                            -- el % o los pesos; en los de envío, nada
+  usados         integer not null default 0,
+  max_usos       integer,                            -- null = sin límite
+  desde          date,
+  hasta          date,
+  compra_minima  numeric,
+  primera_compra boolean not null default false,     -- sólo la primera compra en la tienda
+  incluye_envio  boolean not null default false,     -- el % también va sobre el envío
+  restringido    boolean not null default false,     -- sólo algunas categorías o productos
+  prendido       boolean not null default true,      -- "valid" de Tienda Nube: false = lo apagaron
+  oculto         boolean not null default false,     -- no se ofrece en el CRM (lo decide un administrador)
+  oculto_por     text,
+  oculto_en      timestamptz,
+  visto          timestamptz not null default now()  -- la última carga que lo trajo
+);
+alter table tienda_cupones enable row level security;
+revoke all on tienda_cupones from anon, authenticated;
+
+/* La última carga: para que el CRM diga de cuándo es la lista, o por qué
+   no hay ninguna (la llave sin el permiso de cupones). */
+create table if not exists tienda_cupones_carga (
+  id       smallint primary key default 1 check (id = 1),
+  cuando   timestamptz,     -- la última carga buena
+  total    integer,         -- cuántos cupones trajo de la tienda (de todas las clases)
+  error    text,            -- 'permiso': la llave no deja leer cupones; null si la última anduvo
+  error_en timestamptz
+);
+alter table tienda_cupones_carga enable row level security;
+revoke all on tienda_cupones_carga from anon, authenticated;
+
+/* A quién se le dio cuál: va a "Lo que pasó". La clave es la de Contactos
+   (los 10 números, o 'm:' y el mail). Sin clave foránea al cupón: en la
+   tienda se puede borrar, y lo que se dio queda. */
+create table if not exists tienda_cupones_dados (
+  id        bigint generated always as identity primary key,
+  clave     text not null,
+  cupon     bigint,
+  codigo    text not null,
+  descuento text not null,          -- cómo era al darlo: "20%", "Envío gratis", "$ 2.000"
+  quien     text,
+  fuente    text check (fuente in ('no_compra', 'carrito')),   -- la tarjeta desde la que se dio, si fue desde una
+  ref       bigint,
+  cuando    timestamptz not null default now()
+);
+create index if not exists tienda_cupones_dados_clave on tienda_cupones_dados (clave);
+create index if not exists tienda_cupones_dados_ref on tienda_cupones_dados (fuente, ref);
+alter table tienda_cupones_dados enable row level security;
+revoke all on tienda_cupones_dados from anon, authenticated;
+
+/** El descuento dicho corto: "20%", "$ 2.000", "Envío gratis". */
+create or replace function tienda_cupon_descuento(p_tipo text, p_valor numeric)
+returns text language sql immutable set search_path = public as $$
+  select case
+    when p_tipo = 'shipping' then 'Envío gratis'
+    when p_tipo = 'absolute' then '$ ' || replace(to_char(round(coalesce(p_valor, 0)), 'FM999,999,999'), ',', '.')
+    else trim_scale(coalesce(p_valor, 0))::text || '%'
+  end
+$$;
+
+/** Si hoy se puede dar: prendido en la tienda, dentro de sus fechas (las de
+    Argentina) y con usos libres. */
+create or replace function tienda_cupon_vivo(t tienda_cupones)
+returns boolean language sql stable set search_path = public as $$
+  select t.prendido
+     and (t.desde is null or t.desde <= (now() at time zone 'America/Argentina/Buenos_Aires')::date)
+     and (t.hasta is null or t.hasta >= (now() at time zone 'America/Argentina/Buenos_Aires')::date)
+     and (t.max_usos is null or t.usados < t.max_usos)
+$$;
+
+/** Un cupón para la pantalla. */
+create or replace function tienda_cupon_json(t tienda_cupones)
+returns jsonb language sql stable set search_path = public as $$
+  select jsonb_build_object('id', t.id, 'codigo', t.codigo, 'tipo', t.tipo, 'valor', t.valor,
+                            'descuento', tienda_cupon_descuento(t.tipo, t.valor),
+                            'usados', t.usados, 'max_usos', t.max_usos, 'hasta', t.hasta,
+                            'compra_minima', t.compra_minima, 'primera_compra', t.primera_compra,
+                            'incluye_envio', t.incluye_envio, 'restringido', t.restringido,
+                            'oculto_por', t.oculto_por)
+$$;
+
+/* ═══ 2. La carga (sólo el robot de cada hora) ══════════════════════════
+   Trae TODOS los cupones de la tienda y acá se queda con los de muchos
+   usos. Lo que ya no vino se borra (lo borraron en la tienda, o pasó a ser
+   de un solo uso). Lo oculto se respeta; los nuevos de 50 % o más arrancan
+   ocultos (DTOCAMBIO es de 100 %: es para los cambios, no para regalar).
+   {"error": "permiso"} anota que la llave no deja leer cupones. */
+create or replace function tienda_cupones_cargar(p jsonb)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_total integer; v_ids bigint[]; v_nuevos integer := 0; v_act integer := 0; v_borrados integer := 0;
+begin
+  if p ? 'error' then
+    insert into tienda_cupones_carga (id, error, error_en) values (1, left(p ->> 'error', 200), now())
+    on conflict (id) do update set error = excluded.error, error_en = excluded.error_en;
+    return jsonb_build_object('anotado', p ->> 'error');
+  end if;
+  if jsonb_typeof(p -> 'cupones') is distinct from 'array' then
+    raise exception 'Faltan los cupones.';
+  end if;
+  v_total := jsonb_array_length(p -> 'cupones');
+  /* Una tienda que tiene cupones no queda vacía por una respuesta rara. */
+  if v_total = 0 then
+    return jsonb_build_object('total', 0, 'porque', 'vino vacío: no se tocó nada');
+  end if;
+
+  /* Sin tabla temporal (en una función security definer, mejor no): los de
+     muchos usos se leen del jsonb dos veces, para los ids y para guardar. */
+  select coalesce(array_agg(distinct (e ->> 'id')::bigint), '{}') into v_ids
+    from jsonb_array_elements(p -> 'cupones') e
+   where (e ->> 'id') ~ '^[0-9]+$'
+     and coalesce(trim(e ->> 'codigo'), '') <> ''
+     and (nullif(e ->> 'max_usos', '') is null or (e ->> 'max_usos')::integer > 1);
+
+  with c as (
+    select distinct on ((e ->> 'id')::bigint)
+           (e ->> 'id')::bigint as id,
+           upper(trim(e ->> 'codigo')) as codigo,
+           coalesce(nullif(e ->> 'tipo', ''), 'percentage') as tipo,
+           nullif(e ->> 'valor', '')::numeric as valor,
+           coalesce(nullif(e ->> 'usados', '')::integer, 0) as usados,
+           nullif(e ->> 'max_usos', '')::integer as max_usos,
+           case when e ->> 'desde' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then (e ->> 'desde')::date end as desde,
+           case when e ->> 'hasta' ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' then (e ->> 'hasta')::date end as hasta,
+           nullif(nullif(e ->> 'compra_minima', '')::numeric, 0) as compra_minima,
+           coalesce((e ->> 'primera_compra')::boolean, false) as primera_compra,
+           coalesce((e ->> 'incluye_envio')::boolean, false) as incluye_envio,
+           coalesce((e ->> 'restringido')::boolean, false) as restringido,
+           coalesce((e ->> 'prendido')::boolean, true) as prendido
+      from jsonb_array_elements(p -> 'cupones') e
+     where e ->> 'id' = any (v_ids::text[])     -- como texto: así un id raro no llega a convertirse
+     order by (e ->> 'id')::bigint
+  ),
+  ins as (
+    insert into tienda_cupones as t (id, codigo, tipo, valor, usados, max_usos, desde, hasta, compra_minima,
+                                     primera_compra, incluye_envio, restringido, prendido, oculto, visto)
+    select c.id, c.codigo, c.tipo, c.valor, c.usados, c.max_usos, c.desde, c.hasta, c.compra_minima,
+           c.primera_compra, c.incluye_envio, c.restringido, c.prendido,
+           (c.tipo = 'percentage' and coalesce(c.valor, 0) >= 50), now()
+      from c
+    on conflict (id) do update set
+      codigo = excluded.codigo, tipo = excluded.tipo, valor = excluded.valor, usados = excluded.usados,
+      max_usos = excluded.max_usos, desde = excluded.desde, hasta = excluded.hasta,
+      compra_minima = excluded.compra_minima, primera_compra = excluded.primera_compra,
+      incluye_envio = excluded.incluye_envio, restringido = excluded.restringido,
+      prendido = excluded.prendido, visto = now()
+      -- "oculto" no se toca: lo decide un administrador.
+    returning (xmax = 0) as nuevo
+  )
+  select count(*) filter (where nuevo), count(*) filter (where not nuevo) into v_nuevos, v_act from ins;
+
+  delete from tienda_cupones where id <> all (v_ids);
+  get diagnostics v_borrados = row_count;
+
+  insert into tienda_cupones_carga (id, cuando, total, error, error_en) values (1, now(), v_total, null, null)
+  on conflict (id) do update set cuando = excluded.cuando, total = excluded.total, error = null, error_en = null;
+
+  return jsonb_build_object('total', v_total, 'de_muchos_usos', coalesce(array_length(v_ids, 1), 0),
+                            'nuevos', v_nuevos, 'actualizados', v_act, 'borrados', v_borrados);
+end $$;
+revoke all on function tienda_cupones_cargar(jsonb) from public, anon, authenticated;
+
+/* ═══ 3. Para el CRM ══════════════════════════════════════════════════ */
+
+/** Los cupones de la tienda que se pueden dar hoy: los de descuento
+    primero, del más grande al más chico, y el más nuevo arriba. Al
+    administrador, también los ocultos (para volver a mostrarlos). */
+create or replace function crm_tienda_cupones(p_pin text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_admin boolean; c tienda_cupones_carga;
+begin
+  if not (pin_ok(p_pin) ->> 'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  v_admin := orden_es_admin();
+  select * into c from tienda_cupones_carga where id = 1;
+  return jsonb_build_object(
+    'cuando', c.cuando, 'error', c.error, 'error_en', c.error_en, 'admin', v_admin,
+    'cupones', coalesce((
+      select jsonb_agg(tienda_cupon_json(t)
+                       order by case t.tipo when 'percentage' then 0 when 'absolute' then 1 else 2 end,
+                                t.valor desc nulls last, t.id desc)
+        from tienda_cupones t where tienda_cupon_vivo(t) and not t.oculto), '[]'::jsonb),
+    'ocultos', case when v_admin then coalesce((
+      select jsonb_agg(tienda_cupon_json(t) order by t.codigo)
+        from tienda_cupones t where tienda_cupon_vivo(t) and t.oculto), '[]'::jsonb) else '[]'::jsonb end);
+end $$;
+revoke all on function crm_tienda_cupones(text) from public;
+grant execute on function crm_tienda_cupones(text) to anon, authenticated;
+
+/** Ocultar o volver a mostrar uno (sólo un administrador). En la tienda
+    sigue igual: es sólo para que Atención no lo ofrezca. */
+create or replace function crm_tienda_cupon_ocultar(p_pin text, p_id bigint, p_oculto boolean, p_quien text)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if not (pin_ok(p_pin) ->> 'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if not orden_es_admin() then
+    raise exception 'Sólo un administrador puede ocultar cupones de la tienda.' using errcode = '42501';
+  end if;
+  update tienda_cupones
+     set oculto = coalesce(p_oculto, false),
+         oculto_por = case when coalesce(p_oculto, false) then nullif(trim(p_quien), '') end,
+         oculto_en = case when coalesce(p_oculto, false) then now() end
+   where id = p_id;
+  return found;
+end $$;
+revoke all on function crm_tienda_cupon_ocultar(text, bigint, boolean, text) from public;
+grant execute on function crm_tienda_cupon_ocultar(text, bigint, boolean, text) to anon, authenticated;
+
+/** Darle uno a una persona: queda anotado (a quién, cuál, quién) y vuelve
+    el código y el descuento para armar el mensaje. Uno oculto, apagado,
+    vencido o sin usos libres no se da. */
+create or replace function crm_tienda_cupon_dar(p_pin text, p_clave text, p_cupon bigint, p_quien text,
+                                                p_fuente text, p_ref bigint)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare t tienda_cupones; v_clave text := lower(trim(p_clave)); v_id bigint; v_desc text;
+begin
+  if not (pin_ok(p_pin) ->> 'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if v_clave is null or not (v_clave ~ '^[0-9]{10}$' or v_clave ~ '^m:[^@[:space:]]+@[^@[:space:]]+$') then
+    raise exception 'Falta a quién: el WhatsApp (10 números) o el mail.';
+  end if;
+  select * into t from tienda_cupones where id = p_cupon;
+  if not found then
+    return jsonb_build_object('ok', false, 'porque', 'ese cupón ya no está en la tienda');
+  end if;
+  if t.oculto or not tienda_cupon_vivo(t) then
+    return jsonb_build_object('ok', false, 'porque', 'ese cupón ya no se puede dar (está oculto, apagado, vencido o sin usos)');
+  end if;
+  v_desc := tienda_cupon_descuento(t.tipo, t.valor);
+  insert into tienda_cupones_dados (clave, cupon, codigo, descuento, quien, fuente, ref)
+  values (v_clave, t.id, t.codigo, v_desc, nullif(trim(p_quien), ''),
+          case when p_fuente in ('no_compra', 'carrito') and p_ref is not null then p_fuente end,
+          case when p_fuente in ('no_compra', 'carrito') and p_ref is not null then p_ref end)
+  returning id into v_id;
+  return jsonb_build_object('ok', true, 'id', v_id, 'codigo', t.codigo, 'descuento', v_desc);
+end $$;
+revoke all on function crm_tienda_cupon_dar(text, text, bigint, text, text, bigint) from public;
+grant execute on function crm_tienda_cupon_dar(text, text, bigint, text, text, bigint) to anon, authenticated;
+
+/* ═══ 4. "Lo que pasó" ═════════════════════════════════════════════════
+   La definición viva de cada una, con los cupones dados agregados. */
+CREATE OR REPLACE FUNCTION public.crm_contacto(p_pin text, p_clave text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  /* Con prefijo: "tel" y "mail" son también columnas de lo que se consulta,
+     y PL/pgSQL no sabría a cuál le hablan. */
+  v_filas jsonb; v_tel text; v_mail text; v_nombre text; v_acepta boolean; v_etq jsonb;
+  socio_id bigint; socio jsonb; historia jsonb;
+  v_mensajes jsonb; v_ventana timestamptz; v_numeros jsonb; v_consulta jsonb; v_wa_tel text;
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  if coalesce(trim(p_clave), '') = '' then return null; end if;
+
+  select coalesce(jsonb_agg(to_jsonb(b) order by b.cuando desc), '[]'::jsonb) into v_filas
+    from crm_contactos_base() b where b.clave = p_clave;
+  if jsonb_array_length(v_filas) = 0 then return null; end if;
+
+  select max(x.e->>'tel'),
+         (array_agg(x.e->>'mail' order by x.i) filter (where x.e->>'mail' is not null))[1],
+         (array_agg(x.e->>'nombre' order by (x.e->>'fuente' = 'whatsapp'), x.i) filter (where x.e->>'nombre' is not null))[1],
+         bool_or((x.e->>'acepta')::boolean)
+    into v_tel, v_mail, v_nombre, v_acepta
+    from jsonb_array_elements(v_filas) with ordinality as x(e, i);
+  select coalesce(to_jsonb(array_agg(distinct t order by t)), '[]'::jsonb) into v_etq
+    from jsonb_array_elements(v_filas) as x(e), jsonb_array_elements_text(x.e->'etiquetas') as t;
+
+  select c.id into socio_id from club_clientes c
+   where c.baja is null
+     and ((v_tel is not null and club_tel10(c.telefono) = v_tel) or (v_mail is not null and lower(trim(c.mail)) = v_mail))
+   order by (v_tel is not null and club_tel10(c.telefono) = v_tel) desc, c.creado
+   limit 1;
+  if socio_id is not null then
+    select jsonb_build_object('nombre', v.nombre, 'nivel', v.nivel, 'puntos', v.puntos, 'compras', v.compras,
+                              'gastado', v.gastado, 'ultima_compra', v.ultima_compra, 'desde', v.creado, 'local', v.local_alta)
+      into socio from v_club_clientes v where v.id = socio_id;
+  end if;
+
+  select coalesce(jsonb_agg(h order by (h->>'cuando')::timestamptz desc), '[]'::jsonb) into historia
+    from (
+      select jsonb_build_object('fuente', x.e->>'fuente', 'ref', (x.e->>'ref')::bigint, 'cuando', x.e->'cuando',
+                                'datos', x.e->'datos') as h
+        from jsonb_array_elements(v_filas) as x(e)
+       where x.e->>'fuente' <> 'whatsapp'
+      union all
+      select jsonb_build_object('fuente', 'nota', 'ref', ev.ref, 'cuando', ev.cuando,
+                                'datos', jsonb_build_object('de', ev.fuente, 'quien', ev.quien, 'texto', ev.detalle))
+        from crm_eventos ev
+       where ev.tipo = 'nota'
+         and exists (select 1 from jsonb_array_elements(v_filas) as x(e)
+                      where x.e->>'fuente' = ev.fuente and (x.e->>'ref')::bigint = ev.ref)
+      union all
+      /* SQL 138: los cupones de la tienda online que se le dieron. */
+      select jsonb_build_object('fuente', 'cupon_tienda', 'ref', cd.id, 'cuando', cd.cuando,
+                                'datos', jsonb_build_object('codigo', cd.codigo, 'descuento', cd.descuento, 'quien', cd.quien))
+        from tienda_cupones_dados cd
+       where cd.clave = p_clave
+    ) t;
+
+  /* La conversación de WhatsApp (las últimas 200, en orden) y hasta cuándo
+     se le puede contestar gratis: 24 h desde que escribió. */
+  if v_tel is not null then
+    select coalesce(jsonb_agg(jsonb_build_object('id', w.id, 'sentido', w.sentido, 'desde', w.desde, 'tipo', w.tipo,
+                                                 'texto', w.texto, 'estado', w.estado, 'cuando', w.cuando, 'quien', w.quien,
+                                                 'error', w.error, 'numero_id', w.numero_id, 'historial', w.historial)
+                              order by w.cuando, w.id), '[]'::jsonb)
+      into v_mensajes
+      from (select * from wa_mensajes m where club_tel10(m.tel) = v_tel order by m.cuando desc, m.id desc limit 200) w;
+    select max(m.cuando) + interval '24 hours' into v_ventana
+      from wa_mensajes m where club_tel10(m.tel) = v_tel and m.sentido = 'entra';
+    /* SQL 71: el número como lo da WhatsApp (con el país): es el bueno para
+       mostrar y para wa.me, también si es del exterior. */
+    select m.tel into v_wa_tel
+      from wa_mensajes m where club_tel10(m.tel) = v_tel
+     order by m.cuando desc, m.id desc
+     limit 1;
+    select jsonb_build_object('id', c.id, 'columna', c.columna, 'creada', c.creada, 'cerrada', c.cerrada,
+                              'sola', c.sola, 'pedido', c.pedido)
+      into v_consulta
+      from crm_consultas c where c.clave = v_tel
+     order by (c.cerrada is null) desc, c.creada desc
+     limit 1;
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object('id', n.numero_id, 'nombre', n.nombre, 'telefono', n.telefono, 'tablero', n.tablero)
+                            order by n.orden), '[]'::jsonb)
+    into v_numeros from wa_numeros n;
+  return jsonb_build_object(
+    'persona', jsonb_build_object('clave', p_clave, 'nombre', v_nombre, 'tel', v_tel, 'mail', v_mail,
+                                  'acepta', v_acepta, 'etiquetas', v_etq, 'wa_tel', v_wa_tel),
+    'socio', socio, 'historia', historia,
+    'mensajes', coalesce(v_mensajes, '[]'::jsonb), 'ventana', v_ventana,
+    'numeros', v_numeros, 'consulta', v_consulta,
+    /* SQL 75: su recordatorio, para la ficha. */
+    'recordatorio', (select jsonb_build_object('fecha', rc.fecha, 'nota', rc.nota, 'quien', rc.quien)
+                       from crm_recordatorios rc where rc.clave = p_clave));
+end;
+$function$
+;
+
+CREATE OR REPLACE FUNCTION public.crm_historial(p_pin text, p_fuente text, p_ref bigint)
+ RETURNS json
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  if not (pin_ok(p_pin)->>'ok')::boolean then
+    raise exception 'PIN incorrecto.' using errcode = '28000';
+  end if;
+  return coalesce((
+    select json_agg(x order by x.cuando desc, x.n desc) from (
+      select m.cuando, 'movimiento'::text as tipo, m.de, m.a, m.quien, null::text as detalle, m.id as n
+        from crm_movimientos m where m.fuente = p_fuente and m.ref = p_ref
+      union all
+      select e.cuando, e.tipo, null, null, e.quien, e.detalle, e.id
+        from crm_eventos e where e.fuente = p_fuente and e.ref = p_ref
+      union all
+      /* SQL 138: el cupón de la tienda online que se le dio desde esta tarjeta. */
+      select d.cuando, 'cupon_tienda', null, null, d.quien, d.codigo || ' · ' || d.descuento, d.id
+        from tienda_cupones_dados d where d.fuente = p_fuente and d.ref = p_ref
+    ) x), '[]'::json);
+end;
+$function$
+;
+
+select 'listo: los cupones de la tienda online en "Dar un cupón" (SQL 138)' as "SQL 138";
