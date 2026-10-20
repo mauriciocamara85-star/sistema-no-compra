@@ -179,6 +179,8 @@ function cabezaAdmin() {
 function ir(solapa) {
   _solapa = solapa;
   try { history.replaceState(null, '', location.pathname + '#' + solapa); } catch (e) {}
+  /* Para el "‹ Volver al sistema" de la app (vendedores.js): adónde volver desde "Abrir la app" o "Ver su app". */
+  try { sessionStorage.setItem('vdh_volver_sistema', 'impecable-admin.html#' + solapa); } catch (e) {}
   app.innerHTML = cabezaAdmin();
   var s = document.getElementById('selLocal');
   if (s) s.onchange = function () { if (!puedeSalir()) { s.value = _local.id; return; } elegirLocal(s.value); ir(_solapa); };
@@ -776,7 +778,7 @@ function datosOrden(rango) {
             return '<td>' + (f.nivel_semana ? '<span class="est nivel-' + esc(f.nivel_semana) + '">' + esc(NIVEL[f.nivel_semana]) + '</span>' : '—') + '</td>';
           }).join('');
           var pc = function (a, b) { return b ? a + '/' + b + ' (' + Math.round(100 * a / b) + '%)' : '—'; };
-          return '<tr><td><b>' + esc(p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '')) + '</b><br><a class="ver-app-admin" href="vendedores.html#/ver/' + esc(p.id) + '" target="_blank" rel="noopener">Ver su app</a></td>' + celdas +
+          return '<tr><td><b>' + esc(p.nombre + (p.inicial ? ' ' + p.inicial + '.' : '')) + '</b><br><a class="ver-app-admin" href="vendedores.html#/ver/' + esc(p.id) + '">Ver su app</a></td>' + celdas +
             '<td class="n">' + pc(t.ca, t.c) + '</td><td class="n">' + pc(t.ta, t.t) + '</td><td class="n">' + (t.dt ? t.d + '/' + t.dt : '—') + '</td></tr>';
         }).join('') + '</tbody></table></div>';
     }

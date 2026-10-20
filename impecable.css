@@ -45,6 +45,8 @@ h1 { font-size: 26px; font-weight: 800; margin: 8px 0 4px; letter-spacing: -.02e
 .opcion:active { border-color: var(--lima); }
 .opcion::after { content: "›"; color: var(--suave); font-size: 26px; line-height: 1; }
 .volver { background: none; border: 0; color: var(--suave); padding: 10px 0; min-height: 44px; cursor: pointer; font-weight: 600; }
+a.volver { display: inline-flex; align-items: center; text-decoration: none; }
+.cabeza .volver-sistema { margin: -10px 0 0; }
 
 /* Los campos */
 .campo { display: grid; gap: 6px; margin: 0 0 14px; }

@@ -778,13 +778,21 @@ var _sinLeer = 0, _sinLeerEn = 0, _sinLeerDe = null;   // cuántos, cuándo se p
 function cabeza(titulo, debajo) {
   var per = yo();
   var inicial = String(per.nombre || '').trim().charAt(0).toUpperCase() || '?';
-  return '<div class="cabeza"><div>' +
+  return '<div class="cabeza"><div>' + volverAlSistema() +
     '<h1>' + esc(titulo) + '</h1>' +
     '<p class="bajada" style="margin:0">' + esc(debajo != null ? debajo : [per.local, fechaLarga()].filter(Boolean).join(' · ')) + '</p>' +
     '</div><div class="cabeza-botones">' +
     '<button class="campanita" id="campanita" aria-label="' + textoCampanita() + '">' + CAMPANA +
       '<i class="sin-leer"' + (sinLeer() ? '' : ' hidden') + '>' + (sinLeer() > 9 ? '9+' : sinLeer()) + '</i></button>' +
     (esSupervision() ? '' : '<button class="avatar" id="avatar" aria-label="Tu perfil">' + esc(inicial) + '</button>') + '</div></div>';
+}
+/* Si a la app se llegó desde Supervisión de la compu (impecable-admin.js lo anota en la pestaña), arriba de todo
+   "‹ Volver al sistema" (Mauricio, 20/10: "acá no tengo manera de salir de vuelta al sistema"). Al vendedor, nunca. */
+function volverAlSistema() {
+  var v = null;
+  try { v = sessionStorage.getItem('vdh_volver_sistema'); } catch (e) {}
+  if (!esSupervision() || !v || !/^impecable-admin\.html(#[a-z]+)?$/.test(v)) return '';
+  return '<a class="volver volver-sistema" id="volverSistema" href="' + esc(v) + '">‹ Volver al sistema</a>';
 }
 function sinLeer() { return _sinLeerDe === yo().id ? _sinLeer : 0; }
 function textoCampanita() { var n = sinLeer(); return 'Avisos' + (n ? ' (' + (n > 9 ? 'más de 9' : n) + ' sin leer)' : ''); }
@@ -1937,7 +1945,7 @@ function pantallaPerfil() {
   marcarPestana('perfil');
   adentro();
   var per = yo();
-  var volver = esSupervision() ? '' : '<button class="volver" id="volverPerfil">‹ Volver</button>';
+  var volver = esSupervision() ? volverAlSistema() : '<button class="volver" id="volverPerfil">‹ Volver</button>';
   app.innerHTML = volver + '<h1>Perfil</h1><p class="cargando">Cargando…</p>';
   var bv = document.getElementById('volverPerfil');
   if (bv) bv.onclick = volverDeAparte;
@@ -2820,9 +2828,7 @@ function pantallaEquipo() {
       leer('/orden_controles?select=persona_id&local_id=eq.' + L + '&estado=eq.pendiente&fecha=eq.' + hoyAR()),
       leer('/orden_v_tareas?select=id,titulo,persona_nombre,prorroga_motivo,vence_en&local_id=eq.' + L + '&prorroga_estado=eq.pedida&estado=in.(pendiente,vencida)'),
       leer('/orden_faltas?select=id,persona_id,tipo,motivo,creado_en&local_id=eq.' + L + '&estado=eq.sugerida&order=creado_en.desc'),
-      leer('/orden_v_tareas?select=id,titulo,persona_nombre,origen,vence_en,estado&local_id=eq.' + L + '&estado=in.(pendiente,vencida)&order=vence_en.asc&limit=40'),
-      /* Los supervisores de varios locales y lo que esperan (SQL 120; sin él, nada). */
-      esAdmin() ? llamar('orden_supervision_lista').catch(function () { return []; }) : Promise.resolve([])
+      leer('/orden_v_tareas?select=id,titulo,persona_nombre,origen,vence_en,estado&local_id=eq.' + L + '&estado=in.(pendiente,vencida)&order=vence_en.asc&limit=40')
     ]).then(function (r) {
       if (_pestana !== 'equipo') return;
       /* Esperan el OK los que ya entraron (crearon su PIN) o se anotaron solos.
@@ -2830,8 +2836,7 @@ function pantallaEquipo() {
       var todos = r[0] || [];
       var espera = function (p) { return p.aprobado === false && (!!p.auth_user_id || !!p.alta_propia); };
       dibujarEquipo(loc, { gente: todos.filter(function (p) { return !espera(p); }), esperan: todos.filter(espera),
-                           semanas: r[1] || [], pendientes: r[2] || [], prorrogas: r[3] || [], faltas: r[4] || [], tareas: r[5] || [],
-                           supervisores: Array.isArray(r[6]) ? r[6] : [] });
+                           semanas: r[1] || [], pendientes: r[2] || [], prorrogas: r[3] || [], faltas: r[4] || [], tareas: r[5] || [] });
     });
   }).catch(function (e) { pantallaError(e, pantallaEquipo); });
 }
@@ -2861,26 +2866,8 @@ function dibujarEquipo(loc, x) {
     }).join('');
   }
 
-  /* Supervisores y administración sin local (SQL 120): su PIN y los locales que piden, para aprobar. No son de
-     este local: se ven en cualquiera. */
-  var sups = x.supervisores || [];
-  var esperanSup = sups.filter(function (p) { return (p.aprobado === false && p.entro) || (p.locales || []).some(function (l) { return !l.aprobado; }); });
-  if (esperanSup.length && !mira) {
-    html += '<div class="seccion">Supervisores: esperan tu OK</div>' + esperanSup.map(function (p) {
-      var nom = p.nombre + (p.apellido ? ' ' + p.apellido : ''), pend = (p.locales || []).filter(function (l) { return !l.aprobado; });
-      var datos = ' data-aprobar="' + esc(p.id) + '" data-nombre="' + esc(p.nombre) + '" data-nuevo="0"';
-      var sup = ' data-sup="' + esc(p.id) + '" data-nombre="' + esc(p.nombre) + '"';
-      return '<div class="tarea"><div class="nombre">' + esc(nom) + (p.rol && p.rol !== 'supervisor' ? ' · ' + esc(ROL[p.rol] || p.rol) : '') + '</div>' +
-        (p.aprobado === false && p.entro
-          ? '<div class="detalle">Creó su PIN. Confirmá en persona que fue quien lo creó.</div><div class="botones">' +
-            '<button class="boton lima chico"' + datos + ' data-si="1">Sí, fue</button><button class="boton chico"' + datos + ' data-si="0">No fue</button></div>' : '') +
-        (pend.length ? '<div class="detalle">Pide ver estos locales:</div>' + pend.map(function (l) {
-            return '<div class="fila"><span>' + esc(l.nombre) + '</span><span class="botones"><button class="boton lima chico"' + sup + ' data-sup-local="' + esc(l.id) + '" data-si="1">Sí</button>' +
-              '<button class="boton chico"' + sup + ' data-sup-local="' + esc(l.id) + '" data-si="0">No</button></span></div>';
-          }).join('') + (pend.length > 1 ? '<div class="botones"><button class="boton lima chico"' + sup + ' data-sup-local="" data-si="1">Aprobar los ' + pend.length + '</button></div>' : '') : '') +
-        '</div>';
-    }).join('');
-  }
+  /* Los supervisores de varios locales (su PIN y sus locales) se manejan en el sistema, en Usuarios: en la app no
+     van (Mauricio, 20/10: "desde la aplicación no me interesa"). */
 
   /* Por vendedor: se suman las semanas del período. */
   var tot = {};
@@ -2929,20 +2916,6 @@ function dibujarEquipo(loc, x) {
   }).join('');
   if (!mira && x.gente.length) html += '<button class="boton lima" id="nuevaTarea" style="margin-top:16px">Nueva tarea</button>';
 
-  /* Todos los supervisores de varios locales, con lo que ven (tocar un local se lo saca). */
-  var supsLista = sups.filter(function (p) { return p.rol === 'supervisor'; });
-  if (supsLista.length) {
-    html += '<div class="seccion">Supervisores</div>' + supsLista.map(function (p) {
-      var ve = (p.locales || []).filter(function (l) { return l.aprobado; });
-      return '<div class="tarea"><div class="nombre">' + esc(p.nombre + (p.apellido ? ' ' + p.apellido : '')) + '</div>' +
-        (ve.length ? '<div class="botones">' + ve.map(function (l) {
-            return mira ? '<span class="chip listo">' + esc(l.nombre) + '</span>'
-              : '<button class="boton chico" data-sup="' + esc(p.id) + '" data-nombre="' + esc(p.nombre) + '" data-sup-local="' + esc(l.id) + '" data-local-nombre="' + esc(l.nombre) + '" data-si="0" data-sacar="1">' + esc(l.nombre) + ' ×</button>';
-          }).join('') + '</div>'
-          : '<div class="detalle">' + (!p.entro ? 'Todavía no entró a la app.' : (p.locales || []).length ? 'Esperan tu OK sus locales.' : 'Todavía no eligió sus locales.') + '</div>') + '</div>';
-    }).join('');
-  }
-
   app.innerHTML = html;
   engancharCabeza();
   engancharSelector(pantallaEquipo);
@@ -2972,18 +2945,6 @@ function dibujarEquipo(loc, x) {
       if (Array.prototype.some.call(mismos(), function (x) { return x.disabled; })) return;
       return tocar.apply(this, arguments);
     };
-  });
-  app.querySelectorAll('[data-sup]').forEach(function (b) {
-    unaVez(b, function () {
-      var si = b.dataset.si === '1', local = b.dataset.supLocal || null, nombre = b.dataset.nombre;
-      return (b.dataset.sacar ? confirmar('¿Sacarle ' + b.dataset.localNombre + ' a ' + nombre + '? Deja de verlo.') : Promise.resolve(true)).then(function (seguro) {
-        if (!seguro) return;
-        return llamar('orden_supervision_aprobar', { p_persona: b.dataset.sup, p_local: local, p_aprobar: si }).then(function () {
-          avisar(si ? 'Listo: ' + nombre + ' ya lo ve.' : b.dataset.sacar ? 'Listo: ' + nombre + ' ya no lo ve.' : 'Listo: no se lo aprobaste.');
-          pantallaEquipo();
-        });
-      });
-    });
   });
   app.querySelectorAll('[data-recordar]').forEach(function (b) {
     unaVez(b, function () {
