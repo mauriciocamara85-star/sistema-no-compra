@@ -303,6 +303,8 @@ var persona = (function () {
 
   var ICONO_YO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>';
   var ICONO_ENTRAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><path d="M10 17l5-5-5-5"/><path d="M15 12H3"/></svg>';
+  /* Supervisión lleva un local con un tilde (en los HTML); al vendedor, el mismo botón lo lleva a Equipo VDH y le muestra la percha de siempre. */
+  var DIBUJO_PERCHA = '<path d="M9.5 6.5a2.5 2.5 0 1 1 3.4 2.33c-.55.21-.9.73-.9 1.31V11"/><path d="M12 11 2.9 17.1a1 1 0 0 0 .56 1.9h17.08a1 1 0 0 0 .56-1.9z"/>';
 
   function pintarBarra() {
     var rail = document.querySelector('.rail-in');
@@ -315,6 +317,12 @@ var persona = (function () {
       /* La parte de la compu es "Supervisión"; la app de los chicos sigue siendo "Equipo VDH" (Mauricio, 19/10). */
       var etiqueta = Array.prototype.filter.call(imp.childNodes, function (n) { return n.nodeType === 3 && n.textContent.trim(); })[0];
       if (etiqueta) etiqueta.textContent = '\n      ' + (rol() === 'vendedor' ? 'Equipo VDH' : 'Supervisión') + '\n    ';
+      var dibujo = imp.querySelector('.rail-icono svg');
+      if (dibujo) {
+        if (dibujo._local == null) { dibujo._local = dibujo.innerHTML; dibujo._cual = 'local'; }
+        var cual = rol() === 'vendedor' ? 'percha' : 'local';
+        if (dibujo._cual !== cual) { dibujo.innerHTML = cual === 'percha' ? DIBUJO_PERCHA : dibujo._local; dibujo._cual = cual; }
+      }
     }
     var b = rail.querySelector('.rail-yo');
     if (!b) {
