@@ -890,7 +890,9 @@
   .agf-tema { background: var(--info-soft); color: var(--txt-2); font-weight: 600; }
   .agf-inicio { font-size: 12.5px; color: var(--txt-2); line-height: 1.45; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
   .agf-aviso { font-size: 12.5px; line-height: 1.45; padding: 6px 9px; border-radius: 8px; background: var(--warn-soft); color: var(--warn-txt); }
-  .agf-nolee { font-size: 12px; font-weight: 600; color: var(--txt-3); }
+  .agf-otro { font-weight: 600; }
+  .agf-falta { border-color: var(--warn-txt); background: var(--warn-soft); }
+  .agf-falta b, .agf-falta span { color: var(--warn-txt); }
   .llave.agf-llave { min-height: 34px; padding: 4px; border-color: transparent; background: none; flex: none; }
   .agf-nada { font-size: 13.5px; color: var(--txt-3); padding: 8px 2px; }
   /* La ventanita de una fuente. */
@@ -913,10 +915,13 @@
   .agf-op b { display: block; font-size: 14px; }
   .agf-op span { display: block; font-size: 12.5px; color: var(--txt-2); margin-top: 2px; line-height: 1.4; }
   .agf-op.sel { border-color: var(--sel-borde); background: var(--acc-soft); box-shadow: inset 0 0 0 1px var(--sel-borde); }
-  .agf-fila2 { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; }
-  .agf-fila2 .campo { flex: 1 1 220px; }
   .agf-prendida { display: flex; align-items: center; gap: 8px; font-size: 13.5px; min-height: 44px; }
   .agf-prendida input { width: 18px; height: 18px; }
+  .agf-prendida.no { color: var(--txt-3); }
+  .agf-prendida small { font-size: 12px; color: var(--txt-3); }
+  /* Quién la lee: un interruptor por agente (SQL 144). */
+  .agf-leen { display: flex; flex-wrap: wrap; gap: 0 18px; align-items: center; }
+  .agf-leen > b { font-size: 13px; font-weight: 600; color: var(--txt-2); }
   .agf-borrar { margin-right: auto; color: var(--bad-txt); }
   @media (max-width: 599px) { .agf-pubs { grid-template-columns: minmax(0, 1fr); } }
   /* Respuestas marcadas. */
@@ -7158,7 +7163,7 @@
     { p: 'instrucciones', t: 'Instrucciones', i: ICO_AG.instr,
       sub: 'Quién es, cómo habla y cómo contesta. Por partes, con el historial de cada cambio y la vuelta atrás.' },
     { p: 'conocimiento', t: 'Conocimiento', i: ICO_AG.libro,
-      sub: 'Lo que sabe: archivos, textos y preguntas con su respuesta.' },
+      sub: 'Lo que sabe: archivos, textos y preguntas con su respuesta. Cada agente prende o apaga las suyas.' },
     { p: 'portada', t: 'Portada del chat', i: ICO_AG.portada, solo: 'vendedores',
       sub: 'Lo que ven los vendedores al abrir el Asistente: el saludo, las preguntas sugeridas y los accesos rápidos.' },
     { p: 'horarios', t: 'Horarios y derivación', i: ICO_AG.reloj, solo: 'clientes',
@@ -7202,7 +7207,10 @@
     var d = AG.datos, n = 0, t = '';
     if (!d) { return ''; }
     if (p === 'marcadas' && AGX.cual === 'vendedores') { n = Number(d.marcadas) || 0; t = 'Para revisar'; }
-    if (p === 'conocimiento' && d.fuentes) { n = Number(d.fuentes.avisos) || 0; t = 'Fuentes para revisar'; }
+    if (p === 'conocimiento' && d.fuentes) {
+      n = Number(AGX.cual === 'clientes' && d.fuentes.avisos_clientes != null ? d.fuentes.avisos_clientes : d.fuentes.avisos) || 0;
+      t = 'Fuentes para revisar';
+    }
     return n ? '<span class="cuenta" title="' + t + '">' + n + '</span>' : '';
   }
   function pintarMenuAgentes() {
@@ -7526,14 +7534,16 @@
     cablearConexiones(v);
   }
 
-  /* ═══ Lo que saben los agentes: las fuentes (SQL 85) ═════════════════════
-     Una sola lista para los dos agentes. Cada fuente dice quién la lee:
-     "Para clientes", los dos; "Solo interno", sólo el Asistente de los
-     vendedores. Lo del agente de clientes lo arma la base
-     (agente_contexto): lo interno no le llega nunca, aunque lo pidan.
+  /* ═══ Lo que saben los agentes: las fuentes (SQL 85 y 144) ═══════════════
+     Cada fuente dice quién la puede leer: "Para clientes", los dos; "Solo
+     interno", sólo el Asistente de los vendedores. Y cada agente tiene su
+     interruptor (SQL 144): apagar una en uno no la apaga en el otro. En
+     Atención al cliente se ven sólo las "Para clientes". Lo del agente de
+     clientes lo arma la base (agente_contexto): lo interno no le llega
+     nunca, aunque lo pidan.
      Los archivos (Word, PDF, Excel, texto) se leen acá, en el navegador, y
      se guarda el texto: se puede revisar antes de guardar. */
-  var AGF = { lista: null, error: '', cargando: false, busca: '', filtro: 'todas', ed: null, leyendo: false, borrar: 0 };
+  var AGF = { lista: null, error: '', cargando: false, busca: '', filtro: 'todas', ed: null, leyendo: false, borrar: 0, con144: null };
   var AGMK = { lista: null, error: '', cargando: false };
   var AGP = { clientes: { msgs: [], esperando: false }, vendedores: { msgs: [], esperando: false } };
   var TIPOS_AGF = { archivo: 'Archivo', texto: 'Texto', pregunta: 'Pregunta y respuesta' };
@@ -7580,6 +7590,7 @@
         AGF.cargando = false;
         if (pinDelAgente(r)) { return; }
         AGF.lista = (r && r.fuentes) || [];
+        AGF.con144 = !AGF.lista.length || 'lee_asistente' in AGF.lista[0];
         AGF.error = '';
         resumenFuentesAg();
         if (vista === 'agente') { pintarVistas(); }
@@ -7593,15 +7604,28 @@
       });
   }
 
-  /* El resumen de la configuración (cuánto leen, cuántas para revisar), al
-     día con la lista. */
+  /* ¿La lee este agente? Sin el SQL 144 la fuente trae sólo "prendida",
+     que valía para los dos. */
+  function leeAg(f, cual) {
+    if (!f) { return false; }
+    if (cual === 'clientes') { return f.publico === 'clientes' && !!('lee_clientes' in f ? f.lee_clientes : f.prendida); }
+    return !!('lee_asistente' in f ? f.lee_asistente : f.prendida);
+  }
+  /* Las que se ven en cada agente: en Atención al cliente, sólo las que le
+     pueden llegar a un cliente. */
+  function deAgenteAg(f, cual) { return cual !== 'clientes' || f.publico === 'clientes'; }
+  function nombreAg(cual) { return cual === 'clientes' ? 'Atención al cliente' : 'el Asistente'; }
+  /* El resumen de la configuración (cuánto lee cada uno, cuántas para
+     revisar), al día con la lista. */
   function resumenFuentesAg() {
     if (!AG.datos || !AGF.lista) { return; }
-    var pr = AGF.lista.filter(function (f) { return f.prendida; });
+    var l = AGF.lista;
     var suma = function (x) { return x.reduce(function (a, f) { return a + (Number(f.bytes) || 0); }, 0); };
-    AG.datos.fuentes = { n: AGF.lista.length, prendidas: pr.length, bytes: suma(pr),
-                         bytes_clientes: suma(pr.filter(function (f) { return f.publico === 'clientes'; })),
-                         avisos: AGF.lista.filter(function (f) { return f.aviso; }).length };
+    var asis = l.filter(function (f) { return leeAg(f, 'vendedores'); }), cli = l.filter(function (f) { return leeAg(f, 'clientes'); });
+    AG.datos.fuentes = { n: l.length, n_clientes: l.filter(function (f) { return f.publico === 'clientes'; }).length,
+                         prendidas: asis.length, prendidas_clientes: cli.length, bytes: suma(asis), bytes_clientes: suma(cli),
+                         avisos: l.filter(function (f) { return f.aviso; }).length,
+                         avisos_clientes: l.filter(function (f) { return f.aviso && f.publico === 'clientes'; }).length };
   }
   function pagConocimiento() {
     if (AGF.error) {
@@ -7612,19 +7636,24 @@
       if (!AGF.cargando) { cargarFuentes(); }
       return '<div class="skel"></div><div class="skel"></div>';
     }
-    var l = AGF.lista, cli = AGX.cual === 'clientes';
+    var cual = AGX.cual, cli = cual === 'clientes';
+    var l = AGF.lista.filter(function (f) { return deAgenteAg(f, cual); });
     var suma = function (x) { return x.reduce(function (a, f) { return a + (Number(f.bytes) || 0); }, 0); };
-    var prendidas = l.filter(function (f) { return f.prendida; });
-    var bCli = suma(prendidas.filter(function (f) { return f.publico === 'clientes'; })), bTodas = suma(prendidas);
+    var leidas = l.filter(function (f) { return leeAg(f, cual); });
     var cuenta = { todas: l.length, clientes: 0, interno: 0, revisar: 0, apagadas: 0 };
-    l.forEach(function (f) { cuenta[f.publico]++; if (f.aviso) { cuenta.revisar++; } if (!f.prendida) { cuenta.apagadas++; } });
-    if (!cuenta[AGF.filtro]) { AGF.filtro = 'todas'; }
-    var FILTROS = [['todas', 'Todas'], ['clientes', 'Para clientes'], ['interno', 'Solo interno'], ['revisar', 'Para revisar'], ['apagadas', 'Apagadas']];
-    return '<div class="ficha-bloque agf-lee"><b>' +
-        (cli ? 'Este agente lee ' + kbAg(bCli) + ': las fuentes "Para clientes" prendidas.' : 'El Asistente lee ' + kbAg(bTodas) + ': todas las fuentes prendidas.') + '</b>' +
-        '<span>' + (cli ? 'Las "Solo interno" son del Asistente de los vendedores: a este agente no le llegan nunca, ni aunque un cliente las pida. ' +
-                          'El stock, los precios y las promos no van acá: los lee en vivo de la tienda.'
-                        : 'También las "Para clientes". Si algo no está en ninguna, lo dice y manda a preguntarle al supervisor.') + '</span></div>' +
+    l.forEach(function (f) { cuenta[f.publico]++; if (f.aviso) { cuenta.revisar++; } if (!leeAg(f, cual)) { cuenta.apagadas++; } });
+    var FILTROS = cli ? [['todas', 'Todas'], ['revisar', 'Para revisar'], ['apagadas', 'Apagadas']]
+                      : [['todas', 'Todas'], ['clientes', 'Para clientes'], ['interno', 'Solo interno'], ['revisar', 'Para revisar'], ['apagadas', 'Apagadas']];
+    if (!cuenta[AGF.filtro] || !FILTROS.some(function (x) { return x[0] === AGF.filtro; })) { AGF.filtro = 'todas'; }
+    var nLee = leidas.length + (leidas.length === 1 ? ' fuente' : ' fuentes') + ' (' + kbAg(suma(leidas)) + ')';
+    var sola = AGF.con144 === false ? '' : cli ? 'Apagar una acá no la apaga para el Asistente. ' : 'Cada agente tiene su interruptor: apagar una acá no la apaga para Atención al cliente. ';
+    return (AGF.con144 === false ? '<div class="ficha-bloque agf-lee agf-falta"><b>Falta un paso</b>' +
+        '<span>Para que cada agente tenga su propio interruptor hay que correr el SQL 144 en Supabase. Hasta entonces no se pueden prender ni apagar acá.</span></div>' : '') +
+      '<div class="ficha-bloque agf-lee"><b>' +
+        (cli ? 'Este agente lee ' + nLee + ': las que tienen prendido su interruptor.' : 'El Asistente lee ' + nLee + ': las que tienen prendido su interruptor.') + '</b>' +
+        '<span>' + (cli ? 'Acá están sólo las "Para clientes". Los manuales y todo lo "Solo interno" son del Asistente de los vendedores: a este agente no le llegan nunca, ni aunque un cliente los pida. ' +
+                          sola + 'El stock, los precios y las promos no van acá: los lee en vivo de la tienda.'
+                        : 'Las "Para clientes" y las "Solo interno". ' + sola + 'Si algo no está en ninguna, lo dice y manda a preguntarle al supervisor.') + '</span></div>' +
       '<div class="agf-barra">' +
         '<div class="buscador agf-busca"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>' +
           '<input type="search" id="agfBusca" placeholder="Buscar por título, tema o texto…" autocomplete="off" value="' + esc(AGF.busca) + '" aria-label="Buscar fuentes"></div>' +
@@ -7640,34 +7669,43 @@
       '<div class="agf-lista" id="agfLista">' + htmlListaFuentes() + '</div>';
   }
   function fuentesFiltradas() {
-    var q = llanoAg(String(AGF.busca || '').trim());
+    var q = llanoAg(String(AGF.busca || '').trim()), cual = AGX.cual;
     return (AGF.lista || []).filter(function (f) {
+      if (!deAgenteAg(f, cual)) { return false; }
       if (AGF.filtro === 'clientes' && f.publico !== 'clientes') { return false; }
       if (AGF.filtro === 'interno' && f.publico !== 'interno') { return false; }
       if (AGF.filtro === 'revisar' && !f.aviso) { return false; }
-      if (AGF.filtro === 'apagadas' && f.prendida) { return false; }
+      if (AGF.filtro === 'apagadas' && leeAg(f, cual)) { return false; }
       return !q || llanoAg([f.titulo, f.tema, f.archivo, f.inicio].join(' ')).indexOf(q) > -1;
     });
   }
   function htmlListaFuentes() {
-    var l = fuentesFiltradas(), cli = AGX.cual === 'clientes';
-    if (!AGF.lista.length) { return vacioAg('Todavía no hay fuentes', 'Subí un archivo, escribí un texto o cargá una pregunta con su respuesta.'); }
+    var l = fuentesFiltradas(), cual = AGX.cual, cli = cual === 'clientes';
+    if (!AGF.lista.some(function (f) { return deAgenteAg(f, cual); })) {
+      return vacioAg('Todavía no hay fuentes', cli ? 'Subí un archivo, escribí un texto o cargá una pregunta con su respuesta: lo que este agente le puede contar a un cliente.'
+                                                   : 'Subí un archivo, escribí un texto o cargá una pregunta con su respuesta.');
+    }
     if (!l.length) { return '<p class="agf-nada">Ninguna fuente con eso.</p>'; }
     return l.map(function (f) {
-      var noLee = cli && f.publico === 'interno';
-      return '<div class="agf-fila' + (f.prendida ? '' : ' apagada') + (noLee ? ' no-lee' : '') + '">' +
+      var lee = leeAg(f, cual);
+      /* Sólo si el otro agente no la lee: lo normal no se anota. */
+      var otro = cli ? (leeAg(f, 'vendedores') ? '' : 'El Asistente no la lee')
+                     : (f.publico === 'clientes' && !leeAg(f, 'clientes') ? 'Atención al cliente no la lee' : '');
+      return '<div class="agf-fila' + (lee ? '' : ' apagada') + '">' +
         '<span class="agf-ico" aria-hidden="true">' + (ICO_AGF[f.tipo] || ICO_AGF.texto) + '</span>' +
         '<div class="agf-cuerpo">' +
           '<button type="button" class="agf-tit" data-agf-abrir="' + f.id + '">' + esc(f.titulo) + '</button>' +
-          '<div class="agf-meta"><span class="agf-pub ' + (f.publico === 'clientes' ? 'clientes' : 'interno') + '">' + (f.publico === 'clientes' ? 'Para clientes' : 'Solo interno') + '</span>' +
+          '<div class="agf-meta">' +
+            (cli ? '' : '<span class="agf-pub ' + (f.publico === 'clientes' ? 'clientes' : 'interno') + '">' + (f.publico === 'clientes' ? 'Para clientes' : 'Solo interno') + '</span>') +
             (f.tema ? '<span class="agf-tema">' + esc(f.tema) + '</span>' : '') +
-            '<span>' + esc(TIPOS_AGF[f.tipo] || '') + (f.archivo ? ' · ' + esc(f.archivo) : '') + ' · ' + kbAg(f.bytes) + ' · ' + esc(fechaAg(f.actualizada)) + '</span></div>' +
+            '<span>' + esc(TIPOS_AGF[f.tipo] || '') + (f.archivo ? ' · ' + esc(f.archivo) : '') + ' · ' + kbAg(f.bytes) + ' · ' + esc(fechaAg(f.actualizada)) + '</span>' +
+            (otro ? '<span class="agf-otro">' + otro + '</span>' : '') + '</div>' +
           (f.inicio ? '<p class="agf-inicio">' + esc(f.inicio) + '</p>' : '') +
           (f.aviso ? '<p class="agf-aviso"><b>Para revisar:</b> ' + esc(f.aviso) + '</p>' : '') +
-          (noLee ? '<p class="agf-nolee">Este agente no la lee: es solo interna.</p>' : '') +
         '</div>' +
-        '<button type="button" class="llave agf-llave" role="switch" aria-checked="' + !!f.prendida + '" data-agf-prender="' + f.id + '" ' +
-          'title="' + (f.prendida ? 'Prendida: tocá para apagarla' : 'Apagada: tocá para prenderla') + '" aria-label="' + esc(f.titulo) + '"><i aria-hidden="true"></i></button>' +
+        '<button type="button" class="llave agf-llave" role="switch" aria-checked="' + lee + '" data-agf-prender="' + f.id + '" ' +
+          'title="' + (lee ? 'Prendida para ' + nombreAg(cual) + ': tocá para apagarla' : 'Apagada para ' + nombreAg(cual) + ': tocá para prenderla') + '" ' +
+          'aria-label="' + esc(f.titulo) + ': la lee ' + nombreAg(cual) + '"><i aria-hidden="true"></i></button>' +
       '</div>';
     }).join('');
   }
@@ -7693,19 +7731,27 @@
       x.onclick = function () { prenderFuente(+x.dataset.agfPrender, x); };
     });
   }
+  /* El interruptor del agente que se está mirando: el otro queda igual. */
   function prenderFuente(id, boton) {
-    var f = (AGF.lista || []).filter(function (x) { return +x.id === id; })[0];
+    var f = (AGF.lista || []).filter(function (x) { return +x.id === id; })[0], cual = AGX.cual;
     if (!f) { return; }
-    var nuevo = !f.prendida;
+    if (AGF.con144 === false) { avisar('err', 'Para que cada agente tenga su interruptor falta correr el SQL 144 en Supabase.'); return; }
+    var k = cual === 'clientes' ? 'lee_clientes' : 'lee_asistente', nuevo = !leeAg(f, cual), p = { id: id, quien: quien || null };
+    p[k] = nuevo;
     boton.disabled = true;
-    base.agenteFuenteGuardar(pinGuardado(), { id: id, prendida: nuevo, quien: quien || null })
+    base.agenteFuenteGuardar(pinGuardado(), p)
       .then(function (r) {
         boton.disabled = false;
         if (pinDelAgente(r)) { return; }
         if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo cambiar.'); return; }
-        f.prendida = nuevo;
+        f[k] = nuevo;
+        if ('lee_clientes' in r) { f.lee_clientes = !!r.lee_clientes; f.lee_asistente = !!r.lee_asistente; }
+        f.prendida = !!(f.lee_clientes || f.lee_asistente);
         resumenFuentesAg();
-        avisar('ok', nuevo ? 'Prendida: los agentes la leen.' : 'Apagada: ningún agente la lee.');
+        var otro = cual === 'clientes' ? 'vendedores' : 'clientes', otroNombre = cual === 'clientes' ? 'El Asistente' : 'Atención al cliente';
+        avisar('ok', nuevo ? 'Prendida para ' + nombreAg(cual) + '.'
+                           : 'Apagada para ' + nombreAg(cual) + (f.publico !== 'clientes' ? ': ningún agente la lee.'
+                             : leeAg(f, otro) ? '. ' + otroNombre + ' la sigue leyendo.' : '. ' + otroNombre + ' tampoco la lee.'));
         if (enPaginaAg('conocimiento')) { pintarAgente(); }
       })
       .catch(function (err) {
@@ -7729,11 +7775,15 @@
       });
   }
   /* f: una fuente (con id: editar) o lo que va de una nueva. "marcada" y
-     "prueba" dicen de dónde vino una corrección. */
+     "prueba" dicen de dónde vino una corrección. Una nueva desde Atención
+     al cliente la leen los dos (los vendedores también tienen que saber de
+     envíos o de cambios); desde el Asistente, sólo el Asistente. */
   function abrirFuente(f) {
-    var nueva = !f.id;
+    var nueva = !f.id, cli = AGX.cual === 'clientes', pub = f.publico || (cli ? 'clientes' : 'interno');
     AGF.ed = { id: f.id || null, tipo: f.tipo || 'texto', titulo: f.titulo || '', contenido: f.contenido || '', archivo: f.archivo || '',
-               publico: f.publico || (AGX.cual === 'clientes' ? 'clientes' : 'interno'), tema: f.tema || '', prendida: f.prendida !== false,
+               publico: pub, publicoGuardado: nueva ? '' : pub, tema: f.tema || '',
+               lee_clientes: nueva ? cli && pub === 'clientes' : leeAg(f, 'clientes'),
+               lee_asistente: nueva ? true : leeAg(f, 'vendedores'),
                aviso: f.aviso || '', avisoQuitar: false, origen: f.origen || '', marcada: f.marcada || null, prueba: f.prueba || null };
     AGF.borrar = 0;
     AGF.leyendo = false;
@@ -7750,7 +7800,7 @@
   }
   function cerrarFuente() { $('modalFuente').hidden = true; AGF.ed = null; AGF.leyendo = false; }
   function pintarFuente() {
-    var e = AGF.ed, preg = e.tipo === 'pregunta', temas = {};
+    var e = AGF.ed, preg = e.tipo === 'pregunta', temas = {}, interna = e.publico !== 'clientes';
     (AGF.lista || []).forEach(function (f) { if (f.tema) { temas[f.tema] = 1; } });
     ['Correcciones', 'Cambios', 'Caja', 'Telas', 'Talles', 'Locales'].forEach(function (t) { temas[t] = 1; });
     $('agfIn').innerHTML =
@@ -7766,20 +7816,33 @@
           (preg ? 'Lo que tiene que contestar' : e.tipo === 'archivo' ? 'Acá aparece el texto del archivo' : 'Lo que tiene que saber') + '">' + esc(e.contenido) + '</textarea></div>' +
       '<div class="agf-pubs" role="radiogroup" aria-label="Quién la lee">' +
         '<button type="button" role="radio" class="agf-op' + (e.publico === 'clientes' ? ' sel' : '') + '" aria-checked="' + (e.publico === 'clientes') + '" data-agf-pub="clientes">' +
-          '<b>Para clientes</b><span>La leen los dos agentes. El de WhatsApp se la puede contar a un cliente.</span></button>' +
+          '<b>Para clientes</b><span>La pueden leer los dos agentes. El de WhatsApp se la puede contar a un cliente.</span></button>' +
         '<button type="button" role="radio" class="agf-op' + (e.publico === 'interno' ? ' sel' : '') + '" aria-checked="' + (e.publico === 'interno') + '" data-agf-pub="interno">' +
           '<b>Solo interno</b><span>Sólo el Asistente de los vendedores. Al agente de clientes no le llega nunca.</span></button></div>' +
-      '<div class="agf-fila2"><div class="campo"><label for="agfTema">Tema</label>' +
-          '<input id="agfTema" type="text" maxlength="40" list="agfTemas" value="' + esc(e.tema) + '" placeholder="Cambios, Telas, Caja…">' +
-          '<datalist id="agfTemas">' + Object.keys(temas).sort().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist></div>' +
-        '<label class="agf-prendida"><input type="checkbox" id="agfPrendida"' + (e.prendida ? ' checked' : '') + '> Prendida: la leen los agentes</label></div>' +
+      '<div class="agf-leen" role="group" aria-labelledby="agfLeenT"><b id="agfLeenT">Quién la lee:</b>' +
+        '<label class="agf-prendida' + (interna ? ' no' : '') + '"><input type="checkbox" id="agfLeeCli"' + (e.lee_clientes && !interna ? ' checked' : '') + (interna ? ' disabled' : '') + '> ' +
+          'Atención al cliente' + (interna ? ' <small>(no: es solo interna)</small>' : '') + '</label>' +
+        '<label class="agf-prendida"><input type="checkbox" id="agfLeeAsis"' + (e.lee_asistente ? ' checked' : '') + '> Asistente de vendedores</label></div>' +
+      '<div class="campo"><label for="agfTema">Tema</label>' +
+        '<input id="agfTema" type="text" maxlength="40" list="agfTemas" value="' + esc(e.tema) + '" placeholder="Cambios, Telas, Caja…">' +
+        '<datalist id="agfTemas">' + Object.keys(temas).sort().map(function (t) { return '<option value="' + esc(t) + '">'; }).join('') + '</datalist></div>' +
       (e.aviso && !e.avisoQuitar ? '<p class="agf-aviso"><b>Para revisar:</b> ' + esc(e.aviso) +
         ' <button type="button" class="btn-link" id="agfRevisado">Ya lo revisé</button></p>' : '');
     var g = function (id, k) { var el = $(id); if (el) { el.oninput = function () { e[k] = el.value; if (k === 'contenido') { tamFuente(); } }; } };
     g('agfTitulo', 'titulo'); g('agfContenido', 'contenido'); g('agfTema', 'tema');
-    $('agfPrendida').onchange = function () { e.prendida = this.checked; };
+    $('agfLeeCli').onchange = function () { e.lee_clientes = this.checked; };
+    $('agfLeeAsis').onchange = function () { e.lee_asistente = this.checked; };
+    /* Al pasarla a "Solo interno" se le apaga al de clientes; si vuelve a
+       "Para clientes", queda como estaba antes. */
     [].forEach.call($('agfIn').querySelectorAll('[data-agf-pub]'), function (b) {
-      b.onclick = function () { e.publico = b.dataset.agfPub; pintarFuente(); };
+      b.onclick = function () {
+        var nuevo = b.dataset.agfPub;
+        if (nuevo !== e.publico) {
+          if (nuevo === 'interno') { e.leeCliAntes = e.lee_clientes; e.lee_clientes = false; } else { e.lee_clientes = !!e.leeCliAntes; }
+        }
+        e.publico = nuevo;
+        pintarFuente();
+      };
     });
     if ($('agfRevisado')) { $('agfRevisado').onclick = function () { e.avisoQuitar = true; pintarFuente(); }; }
     if ($('agfArchivo')) { $('agfArchivo').onchange = function () { leerArchivoFuente(this.files && this.files[0]); }; }
@@ -7886,7 +7949,8 @@
     e.titulo = $('agfTitulo').value.trim();
     e.contenido = $('agfContenido').value;
     e.tema = $('agfTema').value.trim();
-    e.prendida = $('agfPrendida').checked;
+    e.lee_clientes = e.publico === 'clientes' && $('agfLeeCli').checked;
+    e.lee_asistente = $('agfLeeAsis').checked;
     if (e.tipo === 'archivo' && !e.id && !e.contenido.trim()) { avisar('err', 'Elegí el archivo (o pegá el texto).'); return; }
     if (!e.titulo) { avisar('err', e.tipo === 'pregunta' ? 'Falta la pregunta.' : 'Falta el título.'); $('agfTitulo').focus(); return; }
     if (!e.contenido.trim()) {
@@ -7894,7 +7958,10 @@
       return;
     }
     if (bytesAg(e.contenido) > TOPE_FUENTE) { avisar('err', 'Es muy grande: hasta 400 KB por fuente. Partila en dos.'); return; }
-    var obj = { titulo: e.titulo, contenido: e.contenido, publico: e.publico, tema: e.tema, prendida: e.prendida, quien: quien || null };
+    /* Van los dos interruptores. "prendida" es para la base sin el SQL 144
+       (con el 144, los dos interruptores mandan sobre ella). */
+    var obj = { titulo: e.titulo, contenido: e.contenido, publico: e.publico, tema: e.tema, lee_clientes: e.lee_clientes, lee_asistente: e.lee_asistente,
+                prendida: e.lee_clientes || e.lee_asistente, quien: quien || null };
     if (e.id) { obj.id = e.id; } else { obj.tipo = e.tipo; obj.archivo = e.archivo || null; obj.origen = e.origen || 'crm'; }
     if (e.avisoQuitar) { obj.aviso = ''; }
     var b = $('agfOk');
@@ -7905,7 +7972,10 @@
         if (pinDelAgente(r)) { return; }
         if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo guardar.'); return; }
         cerrarFuente();
-        avisar('ok', e.id ? 'Guardada.' : e.prendida ? 'Agregada: desde ahora la leen los agentes.' : 'Agregada, apagada.');
+        avisar('ok', e.id ? 'Guardada.'
+          : e.lee_clientes && e.lee_asistente ? 'Agregada: desde ahora la leen Atención al cliente y el Asistente.'
+          : e.lee_clientes ? 'Agregada: desde ahora la lee Atención al cliente.'
+          : e.lee_asistente ? 'Agregada: desde ahora la lee el Asistente.' : 'Agregada, apagada para los dos.');
         AGF.lista = null;
         if (e.marcada) { revisarMarcada(e.marcada, true, true); }
         if (e.prueba && AGP[e.prueba.cual].msgs[e.prueba.i]) { AGP[e.prueba.cual].msgs[e.prueba.i].corregida = true; }
@@ -7924,7 +7994,8 @@
     if (!e || !e.id) { return; }
     if (!AGF.borrar || Date.now() - AGF.borrar > 5000) {
       AGF.borrar = Date.now();
-      b.textContent = '¿Seguro? Tocá de nuevo';
+      /* Una "Para clientes" está en la lista de los dos: se borra de los dos. */
+      b.textContent = e.publicoGuardado === 'clientes' ? '¿Seguro? Se borra de los dos agentes: tocá de nuevo' : '¿Seguro? Tocá de nuevo';
       setTimeout(function () { if (AGF.ed === e && Date.now() - AGF.borrar >= 5000) { b.textContent = 'Borrar'; } }, 5100);
       return;
     }
