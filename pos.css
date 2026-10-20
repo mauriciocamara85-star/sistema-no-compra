@@ -64,6 +64,61 @@
   .pos-item.activa { box-shadow: inset 0 -3px 0 var(--acc); }
 }
 
+/* ── El mostrador: el POS solo, sin la barra del sistema (Mauricio, 20/10) ──
+   "Que cuando se abra el POS la barra del No Compra no esté: que quede sólo el
+   POS abierto a pantalla completa." El camino de vuelta ("‹ Sistema") va
+   arriba del menú; abajo, el modo prueba y quién entró. */
+body.pos-sin-barra { padding-left: 0; }
+@media (max-width: 899px) { body.pos-sin-barra { padding-bottom: env(safe-area-inset-bottom); } }
+@media (min-width: 900px) { body.pos-sin-barra .hoja.pos { padding-left: 12px; } }
+.pos-marca {
+  flex: none; width: 26px; height: 26px; border-radius: 50%;
+  display: grid; place-items: center; background: var(--oro); color: var(--oro-ink);
+}
+.pos-marca svg { width: 17px; height: 17px; }
+.pos-marca + span { flex: 1; color: var(--txt); font-size: 13px; letter-spacing: .8px; }
+.pos-volver { color: var(--txt-3); }
+[data-pos="mostrador"] .pos-menu > .pos-grupo { height: 1px; padding: 0; margin: 6px 10px; background: var(--line); }
+.pos-menu-pie { display: flex; flex-direction: column; gap: 1px; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }
+label.pos-item { margin: 0; }
+.pos-modo .pos-switch { margin-left: auto; }
+.pos-switch.chico { width: 34px; height: 20px; }
+.pos-switch.chico i::after { width: 14px; height: 14px; }
+.pos-switch.chico input:checked + i::after { transform: translateX(14px); }
+.pos-modo .pos-switch input:checked + i { background: var(--warn); border-color: var(--warn); }
+/* Prendido se nota también con el menú achicado (ahí sólo queda el frasco). */
+html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-txt); }
+@media (min-width: 1000px) {
+  /* El menú del mostrador ocupa el alto entero, así el pie queda siempre abajo. */
+  [data-pos="mostrador"] .pos-menu { top: 10px; height: calc(100vh - 22px); max-height: none; }
+  .menu-chico .pos-marca + span { display: none; }
+  .menu-chico .pos-menu-pie { padding-top: 6px; }
+}
+@media (max-width: 999px) {
+  .pos-menu-pie { flex-direction: row; margin: 0 0 0 auto; padding: 0 0 0 6px; border-top: 0; border-left: 1px solid var(--line); }
+}
+
+/* ── Gestión: los grupos se despliegan y se pliegan ("en Artículos, que se
+   despliegue las tres cosas… si en algún momento tenemos más") ── */
+.pos-grupo-btn {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px; width: 100%;
+  margin-top: 4px; padding: 7px 10px; border: 0; border-radius: 8px; background: none; cursor: pointer; text-align: left;
+}
+.pos-grupo-btn:hover { color: var(--txt); background: var(--surface-2); }
+.pos-grupo-btn svg { width: 14px; height: 14px; flex: none; transition: transform .15s var(--curva); }
+.pos-grupo-btn[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.pos-grupo-items { display: flex; flex-direction: column; gap: 1px; }
+.pos-grupo-items.cerrado { display: none; }
+@media (min-width: 1000px) {
+  /* Achicado: todos los íconos a la vista (con 1 px de alto el grupo no se puede tocar). */
+  .menu-chico .pos-grupo-btn { pointer-events: none; }
+  .menu-chico .pos-grupo-btn svg { display: none; }
+  .menu-chico .pos-grupo-items.cerrado { display: flex; }
+}
+@media (max-width: 999px) {
+  .pos-grupo-items, .pos-grupo-items.cerrado { display: contents; }
+}
+
 /* ── La cabecera de cada pantalla ── */
 .pos-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 10px; }
 .pos-cab h2 { margin: 0; font: 700 21px/1.15 var(--display); letter-spacing: -.3px; color: var(--txt); }
@@ -210,7 +265,8 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 
 /* ═════════ LAS LISTAS (tickets, precios, sucursales) ═════════ */
 .pos-filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 10px; }
-.pos-filtros .pos-f { min-width: 150px; }
+/* Tickets tiene seis filtros y el período: a 1366 entran en un renglón con el menú abierto. */
+.pos-filtros .pos-f { min-width: 124px; }
 .pos-filtros .pos-f.ancho { flex: 1; min-width: 200px; }
 .pos-check { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; font: 600 13px var(--sans); color: var(--txt-2); cursor: pointer; }
 .pos-check input { width: 17px; height: 17px; accent-color: var(--acc); }
@@ -328,3 +384,25 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-ticket-datos span { display: block; font-size: 11.5px; font-weight: 600; color: var(--txt-3); }
 .pos-ticket-tot { display: grid; justify-content: end; gap: 3px; margin-top: 10px; font-size: 14px; text-align: right; }
 .pos-ticket-tot b { font-size: 19px; }
+
+/* ═════════ EL MODO PRUEBA (SQL 147) ═════════
+   La venta hace el mismo camino que una de verdad, pero numera aparte (P-1,
+   P-2…) y no cuenta. Que no haya forma de confundirse: un marco ámbar en toda
+   la pantalla (no toma los clics), el total rayado y las pastillas en ámbar. */
+html.pos-en-prueba body::after {
+  content: ''; position: fixed; inset: 0; z-index: 95; pointer-events: none;
+  border: 4px solid var(--warn);
+}
+/* El total, rayado. Los marrones son fijos (como el negro del tablero): el blanco encima da 8:1 con los dos temas. */
+html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg, #6B4403 0 12px, #7A4F08 12px 24px); }
+.pos-tag.prueba { border: 1px solid var(--warn); }
+.pos-hecho.prueba { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-txt); }
+.pos-hecho.prueba button { color: var(--warn-txt); }
+.pos-cartel.prueba { background: var(--warn-soft); border-color: transparent; color: var(--warn-txt); }
+.pos-cartel.prueba b { color: inherit; }
+.pos-tabla tr.prueba td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+
+/* Lo cobrado por comprobante (Factura A, Factura B, la X), debajo de los totales. */
+.pos-por-letra { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -2px 2px 10px; font-size: 13px; color: var(--txt-3); }
+.pos-por-letra b { color: var(--txt-2); font-variant-numeric: tabular-nums; }
+.pos-porton-volver { justify-self: start; }

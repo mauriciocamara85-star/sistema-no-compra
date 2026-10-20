@@ -1332,7 +1332,16 @@ html[data-nc-rol="supervisor"]:not([data-nc-atencion]) .rail-item[href^="club-nu
 html[data-nc-rol="atencion"] .rail-item[data-impecable],
 html[data-nc-rol="atencion"] .rail-item[href="impecable-admin.html"] { display: none; }
 /* El POS, mientras está en construcción (20/10), lo ve sólo Administración: ni siquiera sin usuario. */
-html:not([data-nc-rol="admin"]) .rail-item[href="pos.html"] { display: none; }
+html:not([data-nc-rol="admin"]) .rail-item[href="pos.html"],
+html:not([data-nc-rol="admin"]) .rail-item[href="gestion.html"] { display: none; }
+/* "Venta fallida" desde el POS abre la Carga con ?volver=pos: arriba, el camino de vuelta (interfaz.js). */
+.volver-pos {
+  display: flex; width: fit-content; justify-self: start; align-items: center; gap: 6px; margin: 0 0 12px; padding: 7px 14px 7px 10px;
+  border-radius: 999px; background: var(--tablero-negro); color: #FFFFFF;
+  font: 600 13.5px var(--sans); text-decoration: none;
+}
+.volver-pos svg { width: 16px; height: 16px; }
+.volver-pos:hover { opacity: .9; }
 
 /* El botón de quién entró es el último de la barra. Es un <button> y no un
    enlace: se le saca lo que el navegador le pone a los botones. */

@@ -17,6 +17,15 @@
    · Por ahora lo usa sólo Administración: la barra lo esconde a los demás
      (persona.js) y la base lo frena (pos_permiso).
 
+   Dos pantallas con el mismo código (Mauricio, 20/10: "que cuando se abra
+   el POS, la barra del sistema no esté… y que el POS quede sólo con nueva
+   venta, tickets, cambios, venta fallida"):
+   · pos.html, el mostrador: a pantalla completa, sin la barra negra.
+   · gestion.html, la parte de atrás (artículos, stock, caja, clientes y
+     configuración), adentro del sistema, con los grupos que se despliegan.
+   Y el SQL 147: la letra X (el comprobante interno de BlueSoft, sólo con
+   efectivo) y el modo prueba (numera aparte y no cuenta para nada).
+
    La plata va en CENTAVOS (enteros) en toda la cuenta: la base vuelve a
    sumar y exige que los pagos den el total al centavo.
 
@@ -29,23 +38,36 @@
   var app = document.getElementById('app');
   function $(id) { return document.getElementById(id); }
 
-  var K_MENU = 'nc_panel_pos';             // el menú achicado (interfaz.js), en todas las pantallas menos la venta
+  /* pos.html (el mostrador) o gestion.html (la parte de atrás): lo dice el <body>. */
+  var MODO = document.body.getAttribute('data-pos') === 'gestion' ? 'gestion' : 'mostrador';
+  var PAGINA = { mostrador: 'pos.html', gestion: 'gestion.html' };
+
+  var K_MENU = MODO === 'gestion' ? 'nc_panel_gestion' : 'nc_panel_pos';   // el menú achicado (interfaz.js), menos en la venta
   var K_MENU_VENTA = 'nc_panel_pos_venta'; // en la venta arranca achicado: necesita el ancho, como el ticket de BlueSoft
+  var K_GRUPOS = 'nc_gestion_grupos';      // los grupos de Gestión que se abrieron o se cerraron a mano
   var K_RECUERDO = 'pos_recuerdo';         // la sucursal y el vendedor de cada una
   var K_BORRADOR = 'pos_borrador';         // la venta a medio armar: si se cierra la pestaña, sigue ahí
+  var K_PRUEBA = 'pos_prueba';             // el modo prueba, en sessionStorage: se apaga solo al cerrar la ventana
 
-  /* ── El menú: las secciones de Tango y Dragonfish, con los nombres de BlueSoft ── */
-  var MENU = [
-    ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
-                ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida', 'index.html']]],
-    ['Caja', [['cierre', 'Cierre de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
-    ['Stock', [['stock', 'Stock', 'stock'], ['envios', 'Envíos', 'envio'],
-               ['recepcion', 'Recepción', 'recepcion'], ['inventario', 'Inventario', 'inventario']]],
-    ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
-    ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['reportes', 'Reportes', 'reportes']]],
-    ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
-  ];
+  /* ── Los menús: las secciones de Tango y Dragonfish, con los nombres de BlueSoft ── */
+  var MENUS = {
+    mostrador: [
+      ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
+                  ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida', 'index.html?volver=pos']]]
+    ],
+    gestion: [
+      ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
+      ['Stock', [['stock', 'Stock', 'stock'], ['envios', 'Envíos', 'envio'],
+                 ['recepcion', 'Recepción', 'recepcion'], ['inventario', 'Inventario', 'inventario']]],
+      ['Caja', [['cierre', 'Cierre de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
+      ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['reportes', 'Reportes', 'reportes']]],
+      ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
+    ]
+  };
+  var MENU = MENUS[MODO];
+  var INICIO = { mostrador: 'venta', gestion: 'listas' };
   var HECHAS = { venta: 1, tickets: 1, listas: 1, promos: 1, sucursales: 1 };
+  var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
   var PRONTO = {
@@ -95,7 +117,7 @@
       'Ventas por sucursal, por vendedor, por producto y por medio de pago.',
       'Por día, por semana y por mes, comparado con el año pasado.',
       'La conversión con el No Compra (los que compraron sobre los que entraron).',
-      'Que alimente sola la planilla de Ventas, sin cargar nada a mano.'], 'Mientras tanto, los tickets del día y sus totales están en <a href="#tickets">Tickets</a>.'],
+      'Que alimente sola la planilla de Ventas, sin cargar nada a mano.'], 'Mientras tanto, los tickets del día y sus totales están en <a href="pos.html#tickets">POS → Tickets</a>.'],
     medios: ['Medios de pago', [
       'Las tarjetas y sus cuotas, con recargo o sin interés.',
       'Mercado Pago: probar el Point Smart conectado a la caja (es el único posnet que se puede integrar sin instalar nada).',
@@ -142,8 +164,17 @@
     medios: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
     arca: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
-    ok: '<path d="M20 6 9 17l-5-5"/>'
+    ok: '<path d="M20 6 9 17l-5-5"/>',
+    volver: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+    prueba: '<path d="M9 3h6M10 3v6l-5.4 9.4A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.4-2.6L14 9V3"/><path d="M7.2 15h9.6"/>',
+    yo: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    abajo: '<path d="m6 9 6 6 6-6"/>'
   };
+  /* La bolsa de la marca, la misma del rail (en el mostrador no hay rail). */
+  var BOLSA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<g stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/>' +
+    '<path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g>' +
+    '<circle cx="9.1" cy="8.9" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="8.8" r="1.15" fill="currentColor" stroke="none"/></svg>';
   function icono(n) {
     return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (TRAZO[n] || '') + '</svg>';
   }
@@ -181,6 +212,20 @@
     try { if (window.crypto && crypto.randomUUID) return crypto.randomUUID(); } catch (e) {}
     return 'v' + Date.now().toString(36) + Math.random().toString(36).slice(2, 12);
   }
+  /* El número que se ve: cada serie numera aparte (SQL 147). Las facturas "Nº 12", las X "X-4" y las pruebas "P-3". */
+  function refCorta(v) { return v.serie === 'prueba' ? 'P-' + v.numero : v.serie === 'x' ? 'X-' + v.numero : String(v.numero); }
+  function ref(v) { return v.serie === 'prueba' || v.serie === 'x' ? refCorta(v) : 'Nº ' + v.numero; }
+  function nombreVenta(v) { return (v.serie === 'prueba' ? 'Prueba ' : 'Venta ') + ref(v); }
+
+  /* ── El modo prueba: la venta hace el mismo camino que una de verdad, pero no cuenta ──
+     Vive en sessionStorage: al cerrar la ventana vuelve solo a lo de verdad, así no queda
+     prendido de un día para el otro. */
+  function enPrueba() {
+    if (MODO !== 'mostrador') return false;
+    try { return sessionStorage.getItem(K_PRUEBA) === '1'; } catch (e) { return false; }
+  }
+  function marcarPrueba() { document.documentElement.classList.toggle('pos-en-prueba', enPrueba()); }
+  marcarPrueba();
 
   /* ── El catálogo (catalogo.js: [código, nombre, rubro, "S,M,L", "NE:NEGRO|BL:BLANCO"]) ── */
   var PROD = {};
@@ -209,7 +254,9 @@
   function esDeRed(e) { return !(e && (e.delServidor || e.sinSesion)); }
   function mensajeDe(e) {
     var m = String((e && e.message) || e || '');
-    if (/Could not find the function|schema cache|PGRST202/.test(m)) return 'Todavía falta correr el SQL 146 (el del POS) en Supabase.';
+    /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe. */
+    if (/Could not find the function|schema cache|PGRST202/.test(m)) return 'Todavía falta correr el SQL ' + (/pos_tickets|pos_pruebas_borrar/.test(m) ? '147' : '146') + ' (el del POS) en Supabase.';
+    if (/tiene que ser A o B/.test(m)) return 'Todavía falta correr el SQL 147 (el de la X) en Supabase.';
     if (esDeRed(e)) return 'Sin conexión: no se pudo hablar con la base.';
     return m.replace(/^La base respondió \d+: /, '');
   }
@@ -252,16 +299,21 @@
       ir(vistaDelHash());
     }).catch(function (e) {
       if (e && e.sinSesion) { pantallaPorton(null); return; }
-      app.innerHTML = '<div class="pos-porton"><h2>POS</h2><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="reintentar">Probar de nuevo</button></div>';
+      app.innerHTML = '<div class="pos-porton"><h2>' + (MODO === 'gestion' ? 'Gestión' : 'POS') + '</h2><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="reintentar">Probar de nuevo</button>' +
+        (MODO === 'mostrador' ? '<a class="btn btn-sec btn-chico pos-porton-volver" href="index.html">‹ Volver al sistema</a>' : '') + '</div>';
       $('reintentar').onclick = arrancar;
     });
   }
 
   function pantallaPorton(y) {
-    app.innerHTML = '<section class="pos-porton"><h2>POS</h2>' +
-      '<p>El punto de venta propio, para reemplazar a BlueSoft en las sucursales. Todavía está en construcción.</p>' +
-      '<div id="posPorton"></div></section>';
+    var titulo = MODO === 'gestion' ? 'Gestión' : 'POS';
+    app.innerHTML = '<section class="pos-porton"><h2>' + titulo + '</h2>' +
+      '<p>' + (MODO === 'gestion' ? 'La parte de atrás del POS: precios, promociones, stock y sucursales.' :
+                                    'El punto de venta propio, para reemplazar a BlueSoft en las sucursales.') + ' Todavía está en construcción.</p>' +
+      '<div id="posPorton"></div>' +
+      /* En el mostrador no hay barra: el camino de vuelta va acá. */
+      (MODO === 'mostrador' ? '<a class="btn btn-sec btn-chico pos-porton-volver" href="index.html">‹ Volver al sistema</a>' : '') + '</section>';
     var c = $('posPorton');
     if (y) {
       c.innerHTML = '<p class="ncp-porton-txt">Entraste como <b>' + esc(y.nombre) + '</b>. Por ahora lo usa sólo Administración: cuando se pruebe en tu local, va a aparecer en la barra.</p>';
@@ -270,11 +322,14 @@
     persona.porton(c, 'Por ahora lo usa sólo Administración.');
   }
 
-  function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || 'venta'; }
-  function existe(v) { return MENU.some(function (g) { return g[1].some(function (it) { return it[0] === v && !it[3]; }); }); }
+  function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || INICIO[MODO]; }
+  function enMenu(menu, v) { return menu.some(function (g) { return g[1].some(function (it) { return it[0] === v && !it[3]; }); }); }
 
   function ir(v) {
-    if (!existe(v)) v = 'venta';
+    /* Una dirección vieja (pos.html#listas) o un enlace a la otra pantalla: se va para allá. */
+    var otro = MODO === 'gestion' ? 'mostrador' : 'gestion';
+    if (!enMenu(MENU, v) && enMenu(MENUS[otro], v)) { location.replace(PAGINA[otro] + '#' + v); return; }
+    if (!enMenu(MENU, v)) v = INICIO[MODO];
     S.vista = v;
     try { history.replaceState(null, '', location.pathname + location.search + '#' + v); } catch (e) {}
     cerrarVentana();
@@ -285,23 +340,66 @@
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
 
+  function ponerPrueba(si) {
+    try { if (si) sessionStorage.setItem(K_PRUEBA, '1'); else sessionStorage.removeItem(K_PRUEBA); } catch (e) {}
+    /* El cartel de la última venta guardada es de la otra numeración: no se mezcla. */
+    S.ultimo = null;
+    marcarPrueba();
+    ir(S.vista);
+    avisar('info', si ? 'Modo prueba: lo que guardes numera aparte (P-1, P-2…) y no cuenta para nada.' : 'Listo: volviste a las ventas de verdad.');
+  }
+
   /* ── El menú de la izquierda ── */
   function menuChico() { return S.vista === 'venta' ? leer(K_MENU_VENTA) !== 'abierto' : Interfaz.panelChico(K_MENU); }
   function guardarMenu(ch) { if (S.vista === 'venta') guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else Interfaz.panelChico(K_MENU, ch); }
 
+  function item(it) {
+    var activa = it[0] === S.vista;
+    var dentro = icono(it[2]) + '<span>' + esc(it[1]) + '</span>' + (HECHAS[it[0]] || it[3] ? '' : '<em class="pos-pronto">Pronto</em>');
+    if (it[3]) return '<a class="pos-item" href="' + it[3] + '" title="' + esc(it[1]) + ' (el No Compra)">' + dentro + '</a>';
+    return '<button type="button" class="pos-item' + (activa ? ' activa' : '') + '" data-ir="' + it[0] + '" title="' + esc(it[1]) + '"' +
+      (activa ? ' aria-current="page"' : '') + '>' + dentro + '</button>';
+  }
+  /* Gestión: cada grupo se despliega y se pliega (Mauricio, 20/10: "que se despliegue… si en algún
+     momento tenemos más"). Arranca abierto el de la sección en la que está; lo demás, como lo dejó. */
+  function grupoAbierto(g) {
+    if (g[1].some(function (it) { return it[0] === S.vista; })) return true;
+    return (leerJSON(K_GRUPOS, {}) || {})[g[0]] === 1;
+  }
+  /** Adónde vuelve "‹ Sistema": a la pantalla de la que vino (si es del sistema), o a la Carga. */
+  function volverAlSistema() {
+    try {
+      var r = new URL(document.referrer);
+      var p = r.pathname.split('/').pop();
+      if (r.origin === location.origin && /\.html$/.test(p) && p !== 'pos.html') return p + r.hash;
+    } catch (e) {}
+    return 'index.html';
+  }
+
   function marco() {
-    var chico = menuChico();
+    var chico = menuChico(), y = persona.yo();
+    var cab = MODO === 'gestion'
+      ? '<div class="pos-menu-cab"><span>Gestión</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>'
+      : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>' +
+        '<a class="pos-item pos-volver" href="' + esc(volverAlSistema()) + '" title="Volver al sistema">' + icono('volver') + '<span>Sistema</span></a>';
+    var cuerpo = MODO === 'gestion'
+      ? MENU.map(function (g) {
+          var ab = grupoAbierto(g);
+          return '<button type="button" class="pos-grupo pos-grupo-btn" data-grupo="' + esc(g[0]) + '" aria-expanded="' + ab + '">' +
+            '<span>' + esc(g[0]) + '</span>' + icono('abajo') + '</button>' +
+            '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(item).join('') + '</div>';
+        }).join('')
+      : '<div class="pos-grupo" aria-hidden="true"></div>' + MENU[0][1].map(item).join('') +
+        /* Abajo: el modo prueba y quién entró (en el mostrador no hay barra que lo diga). */
+        '<div class="pos-menu-pie">' +
+          '<label class="pos-item pos-modo" title="Modo prueba: lo que guardes no cuenta para nada">' + icono('prueba') + '<span>Modo prueba</span>' +
+            '<span class="pos-switch chico"><input type="checkbox" id="posPrueba"' + (enPrueba() ? ' checked' : '') + ' aria-label="Modo prueba"><i></i></span></label>' +
+          '<button type="button" class="pos-item pos-yo" id="posYo" title="' + esc(y ? y.nombre + ' · No soy yo' : 'Entrar') + '">' + icono('yo') +
+            '<span>' + esc(y ? String(y.nombre || '').split(' ')[0] : 'Entrar') + '</span></button>' +
+        '</div>';
     return '<div class="pos-grid' + (chico ? ' menu-chico' : '') + '">' +
-      '<nav class="pos-menu" id="menuPos" aria-label="Secciones del POS"><div class="pos-menu-cab"><span>POS</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>' +
-      MENU.map(function (g) {
-        return '<div class="pos-grupo">' + esc(g[0]) + '</div>' + g[1].map(function (it) {
-          var activa = it[0] === S.vista;
-          var dentro = icono(it[2]) + '<span>' + esc(it[1]) + '</span>' + (HECHAS[it[0]] || it[3] ? '' : '<em class="pos-pronto">Pronto</em>');
-          if (it[3]) return '<a class="pos-item" href="' + it[3] + '" title="' + esc(it[1]) + ' (el No Compra)">' + dentro + '</a>';
-          return '<button type="button" class="pos-item' + (activa ? ' activa' : '') + '" data-ir="' + it[0] + '" title="' + esc(it[1]) + '"' +
-            (activa ? ' aria-current="page"' : '') + '>' + dentro + '</button>';
-        }).join('');
-      }).join('') + '</nav><section class="pos-cuerpo" id="cuerpo"></section></div>';
+      '<nav class="pos-menu" id="menuPos" aria-label="Secciones ' + (MODO === 'gestion' ? 'de Gestión' : 'del POS') + '">' + cab + cuerpo + '</nav>' +
+      '<section class="pos-cuerpo" id="cuerpo"></section></div>';
   }
 
   /** El botón de achicar: se busca cada vez el que está (al tocarlo se rehace con el texto contrario). */
@@ -317,6 +415,20 @@
       if (nuevo) nuevo.focus();
     };
     app.querySelectorAll('.pos-menu [data-ir]').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; });
+    app.querySelectorAll('.pos-menu [data-grupo]').forEach(function (b) {
+      b.onclick = function () {
+        var cont = b.nextElementSibling, ab = cont.classList.contains('cerrado');
+        cont.classList.toggle('cerrado', !ab);
+        b.setAttribute('aria-expanded', String(ab));
+        var e = leerJSON(K_GRUPOS, {}) || {};
+        e[b.getAttribute('data-grupo')] = ab ? 1 : 0;
+        guardarJSON(K_GRUPOS, e);
+      };
+    });
+    var pr = $('posPrueba');
+    if (pr) pr.onchange = function () { ponerPrueba(pr.checked); };
+    var yo = $('posYo');
+    if (yo) yo.onclick = function () { persona.entrar(); };
     /* En el celular el menú es una tira: que se vea la sección abierta. */
     var m = app.querySelector('.pos-menu'), a = m && m.querySelector('.activa');
     if (m && a && m.scrollWidth > m.clientWidth + 1) m.scrollLeft = Math.max(0, a.offsetLeft - (m.clientWidth - a.offsetWidth) / 2);
@@ -393,6 +505,8 @@
     var b = leerJSON(K_BORRADOR, null);
     if (b && b.v === 1 && b.clave && Array.isArray(b.lineas) && localDe(b.local_id) && listaPorId(b.lista_id)) {
       b.sacadas = b.sacadas || {}; b.manuales = b.manuales || []; b.pago = b.pago || {};
+      if (!LETRAS[b.letra]) b.letra = 'B';
+      if (b.letra === 'X' && b.forma !== 'efectivo') { b.forma = 'efectivo'; b.multiples = null; }
       return b;
     }
     return ventaNueva();
@@ -495,19 +609,21 @@
     return lista.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(actual) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('');
   }
 
+  function textoGuardar() { return (enPrueba() ? 'Guardar prueba' : 'Guardar y nueva') + ' <span class="pos-tecla">F9</span>'; }
+
   function verVenta() {
     V = cargarBorrador();
-    var c = $('cuerpo');
+    var c = $('cuerpo'), prueba = enPrueba();
     c.innerHTML =
       /* El cartel de la venta guardada va en la cabecera: abajo empujaría la venta fuera de la pantalla del local. */
-      cabeza('Nueva venta', '<span id="vSub"></span>',
+      cabeza('Nueva venta' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="vSub"></span>',
         '<div id="vHecho"></div>' +
         '<button type="button" class="btn btn-sec btn-chico" id="vLimpiar">Limpiar</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" id="vGuardar" title="Guardar la venta y empezar otra (F9)">Guardar y nueva <span class="pos-tecla">F9</span></button>') +
+        '<button type="button" class="btn btn-pri btn-chico" id="vGuardar" title="Guardar la venta y empezar otra (F9)">' + textoGuardar() + '</button>') +
       '<div class="tk">' +
         '<section class="tk-izq" aria-label="Los datos del ticket"><div class="tk-datos">' +
           campo('c4', 'Fecha', '<input type="text" id="vFecha" readonly>') +
-          campo('c4', 'Comprobante', '<select id="vLetra"><option value="B">Factura B</option><option value="A">Factura A</option></select>') +
+          campo('c4', 'Comprobante', '<select id="vLetra">' + opciones([['B', LETRAS.B], ['A', LETRAS.A], ['X', LETRAS.X]], V.letra) + '</select>') +
           campo('c4', 'Referencia', '<input type="text" id="vRef" readonly title="El número lo da la base al guardar (uno seguido por sucursal)">') +
           campo('c8', 'Vendedor', '<select id="vVend"></select>') +
           campo('c4', 'Estado', '<input type="text" value="Cobrada" readonly>') +
@@ -524,7 +640,7 @@
           '<div class="tk-caja"><span>Neto</span><b id="tNeto">$0</b></div>' +
           '<button type="button" class="tk-caja" id="tDescBtn" title="Agregar un descuento a mano"><span>Descuentos</span><b id="tDesc">$0</b></button>' +
           '<div class="tk-caja"><span>Productos</span><b id="tCant">0</b></div>' +
-          '<div class="tk-caja gordo"><span>Total a pagar</span><b id="tTotal">$0</b></div>' +
+          '<div class="tk-caja gordo"><span>' + (prueba ? 'Total · prueba' : 'Total a pagar') + '</span><b id="tTotal">$0</b></div>' +
         '</div></section>' +
         '<section class="tk-der" aria-label="Los productos">' +
           '<div class="tk-prod">' + campo('', 'Producto', '<input type="search" id="vProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="vSug" title="F2">') +
@@ -547,6 +663,13 @@
     $('vLetra').onchange = function () {
       if (this.value === 'A' && !clienteParaA(V.cliente)) { this.value = V.letra; abrirCliente(true); return; }
       V.letra = this.value;
+      /* La X va sólo con efectivo (como en BlueSoft: "X: en efectivo, sin factura"). */
+      if (V.letra === 'X' && V.forma !== 'efectivo') {
+        V.forma = 'efectivo';
+        V.multiples = null;
+        pintarPago();
+        avisar('info', 'La X va sólo con efectivo: la forma de pago pasó a Efectivo.');
+      }
       pintar();
     };
     $('vVend').onchange = function () {
@@ -640,6 +763,8 @@
     $('vCliente').textContent = textoCliente(V.cliente);
     $('vCliente').title = $('vCliente').textContent;
     $('vForma').value = V.forma;
+    $('vForma').disabled = V.letra === 'X';
+    $('vForma').title = V.letra === 'X' ? 'La X va sólo con efectivo' : '';
     $('tNeto').textContent = plata(c.neto);
     $('tDesc').textContent = c.descuento ? '−' + plata(c.descuento) : '$0';
     $('tCant').textContent = c.cantidad;
@@ -682,7 +807,9 @@
     if (mt) mt.textContent = (V.multiples || []).map(function (x) { return MEDIOS[x.medio] + ' ' + plata(x.monto); }).join(' + ') || '—';
 
     var cl = V.cliente;
-    $('vNota').innerHTML = '<b>La factura de ARCA todavía no está conectada:</b> la venta queda registrada en el POS y la factura la sigue haciendo BlueSoft.' +
+    $('vNota').innerHTML = enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
+      V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va sólo con efectivo.' :
+      '<b>La factura de ARCA todavía no está conectada:</b> la venta queda registrada en el POS y la factura la sigue haciendo BlueSoft.' +
       (cl && cl.envio === 'mail' && cl.email ? ' Cuando esté, va por mail a ' + esc(cl.email) + '.' : '') +
       (cl && cl.envio === 'whatsapp' && cl.tel ? ' Cuando esté, va por WhatsApp al ' + esc(cl.tel) + '.' : '');
     guardarBorrador();
@@ -691,7 +818,7 @@
   function pintarHecho() {
     var u = S.ultimo, h = $('vHecho');
     if (!h) return;
-    h.innerHTML = u ? '<div class="pos-hecho" role="status">' + icono('ok') + '<span>Venta Nº ' + esc(u.numero) + ' guardada · ' + plata(u.total) +
+    h.innerHTML = u ? '<div class="pos-hecho' + (u.serie === 'prueba' ? ' prueba' : '') + '" role="status">' + icono('ok') + '<span>' + esc(nombreVenta(u)) + ' guardada · ' + plata(u.total) +
       (u.ya ? ' (ya estaba guardada: no se duplicó)' : '') + '</span><button type="button" id="vVerUltimo">Ver el ticket</button></div>' : '';
     if (u) $('vVerUltimo').onclick = function () { abrirTicket(u.id); };
   }
@@ -984,7 +1111,7 @@
     function marcar() { caja.querySelectorAll('[data-envio]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-envio') === envio); }); }
     marcar();
     caja.querySelector('#clEnvio').onclick = function (e) { var b = e.target.closest('[data-envio]'); if (b) { envio = envio === b.getAttribute('data-envio') ? '' : b.getAttribute('data-envio'); marcar(); } };
-    caja.querySelector('#clGenerico').onclick = function () { V.cliente = null; V.letra = 'B'; cerrarVentana(); pintar(); };
+    caja.querySelector('#clGenerico').onclick = function () { V.cliente = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
     function listo() {
       var x = {
         nombre: caja.querySelector('#clNombre').value.trim(),
@@ -995,7 +1122,8 @@
         envio: envio,
         acepta: caja.querySelector('#clAcepta').checked
       };
-      var quiereA = paraA || V.letra === 'A' || x.condicion === 'responsable_inscripto';
+      /* Con la X elegida, un responsable inscripto no la pasa solo a factura A: la X la eligió el vendedor. */
+      var quiereA = paraA || V.letra === 'A' || (V.letra !== 'X' && x.condicion === 'responsable_inscripto');
       var mal = '';
       if (x.doc && x.doc.length !== 11 && (x.doc.length < 7 || x.doc.length > 8)) mal = 'El CUIT tiene 11 números y el DNI, 7 u 8.';
       else if (quiereA && x.condicion === 'consumidor_final') mal = 'A un consumidor final se le hace factura B. Cambiá la condición o elegí Factura B.';
@@ -1017,6 +1145,7 @@
 
   /* "Pago múltiple" de BlueSoft: varios medios en el mismo ticket. */
   function abrirMultiple() {
+    if (V.letra === 'X') { avisar('info', 'La X va sólo con efectivo.'); return; }
     /* Con varios medios no va la promo de un medio (el 10 % es pagando TODO en efectivo). */
     var c = cuenta(Object.assign({}, V, { forma: 'multiple' }));
     if (!c.total) { avisar('info', 'Primero cargá los productos.'); return; }
@@ -1101,13 +1230,14 @@
       !V.lineas.length ? 'La venta no tiene productos.' :
       V.lineas.some(function (l) { return !l.precio; }) ? 'Hay una prenda sin precio: escribilo en «Precio unit.».' :
       V.letra === 'A' && !clienteParaA(V.cliente) ? 'La factura A necesita el cliente con su CUIT: tocá «Cargar».' :
+      V.letra === 'X' && V.forma !== 'efectivo' ? 'La X va sólo con efectivo.' :
       V.forma === 'tarjeta' && !V.pago.tarjeta ? 'Elegí qué tarjeta es.' :
       V.forma === 'efectivo' && V.pago.recibido && V.pago.recibido < c.total ? 'Lo recibido en efectivo es menos que el total.' :
       V.forma === 'multiple' && sumaPagos(V.multiples) !== c.total ? 'Los pagos no suman el total: tocá «Cambiar» en Pagos.' : '';
     if (mal) { avisar('err', mal); return; }
     var l0 = localDe(V.local_id);
     var p = {
-      clave: V.clave, local_id: V.local_id, vendedor: V.vendedor, letra: V.letra, lista_id: V.lista_id,
+      clave: V.clave, prueba: enPrueba(), local_id: V.local_id, vendedor: V.vendedor, letra: V.letra, lista_id: V.lista_id,
       cliente_nombre: cl.nombre || '', cliente_doc: cl.doc || '', cliente_condicion: cl.condicion || 'consumidor_final',
       cliente_email: cl.email || '', cliente_tel: cl.tel || '', envio: cl.envio || '', observaciones: V.observaciones || '',
       items: V.lineas.map(function (l) {
@@ -1124,15 +1254,15 @@
     var b = $('vGuardar');
     if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
     llamar('pos_venta_guardar', { p: p }).then(function (r) {
-      S.ultimo = { id: r.id, numero: r.numero, total: c.total, local: nombreLocal(l0), ya: !!r.ya };
+      S.ultimo = { id: r.id, numero: r.numero, serie: r.serie || 'factura', total: c.total, local: nombreLocal(l0), ya: !!r.ya };
       V = ventaNueva(V);
       guardarBorrador();
       S.guardando = false;
-      avisar('ok', 'Venta Nº ' + r.numero + ' guardada.');
+      avisar('ok', nombreVenta(S.ultimo) + ' guardada.');
       if (S.vista === 'venta') verVenta();
     }).catch(function (e) {
       S.guardando = false;
-      if (b && b.isConnected) { b.disabled = false; b.innerHTML = 'Guardar y nueva <span class="pos-tecla">F9</span>'; }
+      if (b && b.isConnected) { b.disabled = false; b.innerHTML = textoGuardar(); }
       if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
       avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
     });
@@ -1160,8 +1290,10 @@
         if (g.recibido) x += ' · recibido ' + plata(cent(g.recibido)) + ', vuelto ' + plata(cent(g.vuelto || 0));
         return '<li>' + esc(x) + ' — <b>' + plata(cent(g.monto)) + '</b></li>';
       }).join('');
-      dentro.innerHTML = '<h3 id="posVentTit">Ticket Nº ' + esc(t.numero) + ' · Factura ' + esc(t.letra) + ' ' +
-          (anulada ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</h3>' +
+      dentro.innerHTML = '<h3 id="posVentTit">Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' ' +
+          (anulada ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') +
+          (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
+        (t.prueba ? '<div class="pos-cartel prueba">Es una venta de prueba: no cuenta en ningún total y se borra con «Borrar las pruebas».</div>' : '') +
         '<div class="pos-ticket-datos">' +
           '<div><span>Fecha</span>' + esc(fechaHora(t.fecha)) + '</div>' +
           '<div><span>Sucursal</span>' + esc(bonito(t.local)) + '</div>' +
@@ -1169,7 +1301,7 @@
           '<div><span>Cargó</span>' + esc(t.cargado_por_nombre || '—') + '</div>' +
           '<div><span>Cliente</span>' + esc(t.cliente_nombre || 'Consumidor final') + (t.cliente_doc ? '<br>' + esc(t.cliente_doc.length === 11 ? 'CUIT ' + cuit(t.cliente_doc) : 'DNI ' + t.cliente_doc) : '') + '</div>' +
           '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
-          '<div><span>ARCA</span>' + (t.factura ? 'Con CAE' : 'Sin factura (la hace BlueSoft)') + '</div>' +
+          '<div><span>ARCA</span>' + (t.factura ? 'Con CAE' : t.letra === 'X' ? 'No va (comprobante interno)' : t.prueba ? 'No va (es una prueba)' : 'Sin factura (la hace BlueSoft)') + '</div>' +
         '</div>' +
         '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th><th class="c">Cant.</th><th class="n">Precio unit.</th><th class="n">Total</th></tr></thead><tbody>' +
           (t.items || []).map(function (i) {
@@ -1192,7 +1324,7 @@
         var z = dentro.querySelector('#tkAnular');
         z.innerHTML = '<div class="pos-cartel" style="margin-top:12px">La venta queda en la lista, tachada, con quién la anuló y por qué. No se puede deshacer.' +
           campo('', '¿Por qué se anula?', '<textarea id="tkMotivo" maxlength="300" rows="2"></textarea>') + '<div class="pos-error" id="tkError"></div>' +
-          '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="tkConfirmar">Anular la venta Nº ' + esc(t.numero) + '</button></div></div>';
+          '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="tkConfirmar">Anular la venta ' + esc(ref(t)) + '</button></div></div>';
         var m = z.querySelector('#tkMotivo');
         m.focus();
         z.querySelector('#tkConfirmar').onclick = function () {
@@ -1200,7 +1332,7 @@
           if (!errorEn(dentro, 'tkError', motivo.length < 3 ? 'Escribí por qué se anula.' : '')) return;
           bt.disabled = true;
           llamar('pos_venta_anular', { p_id: t.id, p_motivo: motivo }).then(function () {
-            avisar('ok', 'La venta Nº ' + t.numero + ' quedó anulada.');
+            avisar('ok', 'La venta ' + ref(t) + ' quedó anulada.');
             if (alCambiar) alCambiar();
             abrirTicket(t.id, alCambiar);
           }).catch(function (e) { bt.disabled = false; errorEn(dentro, 'tkError', mensajeDe(e)); });
@@ -1215,53 +1347,78 @@
      TICKETS (el listado de BlueSoft)
      ════════════════════════════════════════════════════════════════════ */
   function verTickets() {
-    var c = $('cuerpo'), todos = {};
+    var c = $('cuerpo'), todos = {}, prueba = enPrueba();
     Object.keys(S.ini.vendedores || {}).forEach(function (k) { (S.ini.vendedores[k] || []).forEach(function (n) { todos[n] = 1; }); });
-    c.innerHTML = cabeza('Tickets', 'Las ventas del POS de todas las sucursales.',
+    c.innerHTML = cabeza('Tickets' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Las ventas del POS de todas las sucursales.',
+        '<button type="button" class="btn btn-sec btn-chico" id="tkBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-pri btn-chico" data-ir="venta">Nueva venta</button>' +
-        '<a class="btn btn-sec btn-chico" href="index.html" title="El No Compra">Venta fallida</a>') +
+        '<a class="btn btn-sec btn-chico" href="index.html?volver=pos" title="El No Compra">Venta fallida</a>') +
       '<div class="pos-filtros"><div id="tkPer"></div>' +
         campo('', 'Sucursal', '<select id="tkLocal"><option value="">Todas</option>' + opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), '') + '</select>') +
         campo('', 'Vendedor', '<select id="tkVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
+        campo('', 'Comprobante', '<select id="tkLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B], ['X', LETRAS.X]], '') + '</select>') +
         campo('', 'Forma de pago', '<select id="tkMedio"><option value="">Todas</option>' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), '') + '</select>') +
         campo('', 'Estado', '<select id="tkEstado"><option value="">Todos</option><option value="cobrada">Cobradas</option><option value="anulada">Anuladas</option></select>') +
+        /* Las de verdad y las de prueba no se mezclan nunca; con el modo prueba prendido arranca en las de prueba. */
+        campo('', 'Ventas', '<select id="tkPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="tkLista"><p class="cargando">Cargando…</p></div>';
     c.querySelector('[data-ir="venta"]').onclick = function () { ir('venta'); };
     var per = Interfaz.periodo($('tkPer'), { inicial: 'hoy', guardar: 'pos_tickets_periodo', hastaHoy: true, alCambiar: cargar });
-    ['tkLocal', 'tkVend', 'tkMedio', 'tkEstado'].forEach(function (id) { $(id).onchange = cargar; });
+    ['tkLocal', 'tkVend', 'tkLetra', 'tkMedio', 'tkEstado', 'tkPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    $('tkBorrar').onclick = function () {
+      var loc = $('tkLocal').value, l = loc && localDe(loc), bt = this;
+      if (!confirm('¿Borrar ' + (l ? 'las ventas de prueba de ' + nombreLocal(l) : 'todas las ventas de prueba') +
+                   ' (de cualquier día)? Las de verdad no se tocan. No se puede deshacer.')) return;
+      bt.disabled = true;
+      llamar('pos_pruebas_borrar', { p_local: loc || null }).then(function (n) {
+        bt.disabled = false;
+        avisar('ok', n ? 'Listo: se ' + (n === 1 ? 'borró 1 venta de prueba.' : 'borraron ' + n + ' ventas de prueba.') : 'No había ventas de prueba para borrar.');
+        if (S.ultimo && S.ultimo.serie === 'prueba') S.ultimo = null;
+        cargar();
+      }).catch(function (e) { bt.disabled = false; avisar('err', mensajeDe(e)); });
+    };
     var pedido = 0;
+    function deLaPrueba() { return $('tkPrueba').value === '1'; }
     function cargar() {
       var r = per.rango(), n = ++pedido;
       $('tkLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('tkBorrar').hidden = !deLaPrueba();
       llamar('pos_tickets', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('tkLocal').value || null, p_vendedor: $('tkVend').value || null,
-                              p_medio: $('tkMedio').value || null, p_estado: $('tkEstado').value || null }).then(function (d) {
+                              p_medio: $('tkMedio').value || null, p_estado: $('tkEstado').value || null,
+                              p_letra: $('tkLetra').value || null, p_prueba: deLaPrueba() }).then(function (d) {
         if (n !== pedido || !$('tkLista')) return;
         pintarTickets(d);
       }).catch(function (e) { if ($('tkLista')) $('tkLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
     function pintarTickets(d) {
-      var t = d.totales || {};
+      var t = d.totales || {}, pl = d.por_letra || {};
+      var letras = ['A', 'B', 'X'].filter(function (l) { return pl[l] != null; });
+      var porLetra = letras.length ? '<p class="pos-por-letra">' + letras.map(function (l) {
+        return '<span>' + esc(LETRAS[l]) + ' <b>' + plata(cent(pl[l])) + '</b></span>'; }).join('') + '</p>' : '';
+      var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas de <b>prueba</b>: no cuentan en ningún total de verdad. ' +
+        '«Borrar las pruebas» las borra' + ($('tkLocal').value ? ' (las de esa sucursal)' : ' todas') + ', de cualquier día.</div>' : '';
       var kpis = '<div class="pos-totales">' +
         '<div class="pos-kpi"><span>Tickets</span><b>' + (t.tickets || 0) + '</b></div>' +
         '<div class="pos-kpi"><span>Productos</span><b>' + (t.productos || 0) + '</b></div>' +
         '<div class="pos-kpi"><span>Neto</span><b>' + plata(cent(t.neto || 0)) + '</b></div>' +
         '<div class="pos-kpi"><span>Descuentos</span><b>' + plata(cent(t.descuentos || 0)) + '</b></div>' +
         '<div class="pos-kpi fuerte"><span>Total</span><b>' + plata(cent(t.total || 0)) + '</b></div>' +
-        (t.anulados ? '<div class="pos-kpi"><span>Anulados</span><b>' + t.anulados + '</b></div>' : '') + '</div>';
+        (t.anulados ? '<div class="pos-kpi"><span>Anulados</span><b>' + t.anulados + '</b></div>' : '') + '</div>' + porLetra + aviso;
       if (!d.filas || !d.filas.length) {
-        $('tkLista').innerHTML = kpis + '<div class="pos-cartel">No hay ventas en ese período con esos filtros.</div>';
+        $('tkLista').innerHTML = kpis + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas de prueba en ese período con esos filtros.' : 'No hay ventas en ese período con esos filtros.') + '</div>';
         return;
       }
       $('tkLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th class="n">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
         '<th>Cliente</th><th>Comprobante</th><th>Forma de pago</th><th>Estado</th><th class="n">Cant.</th><th class="n">Total</th><th>ARCA</th></tr></thead><tbody>' +
         d.filas.map(function (f) {
-          var an = f.estado === 'anulada';
-          return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (an ? ' class="anulada"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td class="n">' + esc(f.numero) + '</td>' +
-            '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td>' + esc(f.cliente) + '</td><td>Factura ' + esc(f.letra) + '</td>' +
+          var an = f.estado === 'anulada', clases = (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '');
+          return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td class="n">' + esc(refCorta(f)) + '</td>' +
+            '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td>' + esc(f.cliente) + '</td><td>' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
             '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS[m] || m; }).join(' + ') || '—') + '</td>' +
             '<td>' + (an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
             '<td class="n">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
-            '<td class="apagado" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td></tr>';
+            (f.letra === 'X' || f.prueba ? '<td class="apagado" title="' + (f.prueba ? 'Es una prueba' : 'La X es un comprobante interno') + '">No va</td>'
+              : '<td class="apagado" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>';
         }).join('') + '</tbody></table></div>' +
         (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
       $('tkLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {

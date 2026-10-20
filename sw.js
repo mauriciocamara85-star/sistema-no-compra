@@ -32,6 +32,7 @@ const BASICOS = [
   './ventas-calc.js',
   /* El POS (20/10/2026), en construcción: por ahora lo usa sólo Administración. */
   './pos.html',
+  './gestion.html',
   './pos.js',
   './pos.css',
   './estilos.css',

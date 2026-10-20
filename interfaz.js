@@ -94,6 +94,21 @@
      CRM y el Club se deslizaban 88 px al abrirse). */
   window.addEventListener('load', function () { setTimeout(function () { raiz.classList.add('rail-lista'); }, 50); });
 
+  /* Viniendo del POS (20/10): "Venta fallida" abre la Carga con ?volver=pos. Como el POS va sin la barra,
+     arriba de la hoja queda el camino de vuelta a la venta. */
+  function armarVolver() {
+    if (!/[?&]volver=pos(&|$)/.test(location.search) || document.getElementById('volverPos')) return;
+    var hoja = document.querySelector('main.hoja');
+    if (!hoja) return;
+    var a = document.createElement('a');
+    a.id = 'volverPos';
+    a.className = 'volver-pos';
+    a.href = 'pos.html#venta';
+    a.innerHTML = svg('<path d="M19 12H5M12 19l-7-7 7-7"/>') + 'Volver al POS';
+    hoja.insertBefore(a, hoja.firstChild);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', armarVolver); else armarVolver();
+
   /* ══ 2. El panel de cada sección ══════════════════════════════════════
      Cada sección arma su panel a su manera; lo común es el botón (el mismo ícono, arriba a la derecha) y que
      el estado se recuerda por sección. Uso: Interfaz.panelChico('nc_panel_equipo') → true/false;

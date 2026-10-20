@@ -14,6 +14,18 @@
 --  Quién lo usa: por ahora SÓLO Administración (orden_es_admin). Las tablas
 --  no tienen permisos directos: todo pasa por las funciones de abajo.
 --
+--  SQL 147 (20/10/2026, Mauricio: "una base de prueba… una parte de las X,
+--  en efectivo… se pueden anular, así lo tiene BlueSoft"):
+--    · la letra X: el comprobante interno de BlueSoft ("X: en efectivo, sin
+--      factura"). No es factura y no va a ARCA; va sólo con efectivo.
+--    · el modo prueba: la venta hace el mismo camino que una de verdad, pero
+--      queda marcada, numera aparte (P-1, P-2…), no suma en ningún total y
+--      se borra con pos_pruebas_borrar.
+--    · cada local numera por separado sus facturas (A y B), sus X y sus
+--      pruebas (la "serie"), como en BlueSoft cada letra con su numeración.
+--  Este archivo queda como está después del 147; el cambio en sí (los alter)
+--  está en App Orden/correr-en-supabase-147.sql.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -87,11 +99,15 @@ create table pos_promos (
 );
 
 -- ── La venta ─────────────────────────────────────────────────────────────
--- El número de ticket es correlativo POR SUCURSAL (como la "Referencia" de
--- BlueSoft). Cuando se conecte ARCA, la factura va en `factura`.
+-- El número de ticket es correlativo POR SUCURSAL Y POR SERIE (como la
+-- "Referencia" de BlueSoft, donde cada letra tiene la suya): 'factura' (A y
+-- B), 'x' (el comprobante interno) y 'prueba' (el modo prueba, P-1, P-2…).
+-- Cuando se conecte ARCA, la factura va en `factura`.
 create table pos_numeros (
-  local_id  uuid primary key references orden_locales(id),
-  ultimo    bigint not null default 0
+  local_id  uuid not null references orden_locales(id),
+  serie     text not null default 'factura' check (serie in ('factura', 'x', 'prueba')),
+  ultimo    bigint not null default 0,
+  primary key (local_id, serie)
 );
 
 create table pos_ventas (
@@ -100,7 +116,9 @@ create table pos_ventas (
   numero             bigint not null,
   fecha              timestamptz not null default now(),
   dia                date not null,
-  letra              text not null check (letra in ('A', 'B')),
+  letra              text not null check (letra in ('A', 'B', 'X')),   -- X: comprobante interno (SQL 147)
+  prueba             boolean not null default false,                   -- modo prueba: no cuenta (SQL 147)
+  serie              text not null default 'factura',
   cliente_nombre     text,
   cliente_doc        text,
   cliente_condicion  text not null default 'consumidor_final'
@@ -123,7 +141,8 @@ create table pos_ventas (
   factura            jsonb,
   observaciones      text,
   clave              text unique,
-  unique (local_id, numero)
+  constraint pos_ventas_serie_check check (serie = case when prueba then 'prueba' when letra = 'X' then 'x' else 'factura' end),
+  constraint pos_ventas_local_serie_numero_key unique (local_id, serie, numero)
 );
 create index pos_ventas_dia on pos_ventas (dia, local_id);
 
@@ -332,15 +351,17 @@ begin
 end $$;
 
 /* Guardar una venta. La pantalla manda todo armado; acá se revisa que las
-   cuentas cierren al centavo y se le da el número de la sucursal. Con la
-   misma `clave` dos veces (se cortó internet después de guardar) devuelve
-   la que ya estaba, no la duplica. */
+   cuentas cierren al centavo y se le da el número de la sucursal (de su
+   serie: facturas, X o pruebas). Con la misma `clave` dos veces (se cortó
+   internet después de guardar) devuelve la que ya estaba, no la duplica. */
 create or replace function pos_venta_guardar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
   v_local   uuid := nullif(p->>'local_id', '')::uuid;
   v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
   v_letra   text := coalesce(nullif(p->>'letra', ''), 'B');
+  v_prueba  boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_serie   text;
   v_cond    text := coalesce(nullif(p->>'cliente_condicion', ''), 'consumidor_final');
   v_doc     text := nullif(regexp_replace(coalesce(p->>'cliente_doc', ''), '[^0-9]', '', 'g'), '');
   v_vend    text := nullif(trim(coalesce(p->>'vendedor', '')), '');
@@ -366,7 +387,8 @@ begin
   if v_clave is not null then
     select * into v_ya from pos_ventas where clave = v_clave;
     if found then
-      return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'fecha', v_ya.fecha, 'ya', true);
+      return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'serie', v_ya.serie, 'prueba', v_ya.prueba,
+                                'fecha', v_ya.fecha, 'ya', true);
     end if;
   end if;
 
@@ -374,7 +396,7 @@ begin
     raise exception 'Elegí la sucursal.';
   end if;
   if v_vend is null then raise exception 'Elegí el vendedor.'; end if;
-  if v_letra not in ('A', 'B') then raise exception 'El comprobante tiene que ser A o B.'; end if;
+  if v_letra not in ('A', 'B', 'X') then raise exception 'El comprobante tiene que ser A, B o X.'; end if;
   if v_cond not in ('consumidor_final', 'responsable_inscripto', 'monotributo', 'exento') then
     raise exception 'La condición de IVA del cliente no es válida.';
   end if;
@@ -415,6 +437,9 @@ begin
     if coalesce(x->>'medio', '') not in ('efectivo', 'tarjeta', 'mercadopago', 'modo', 'go_cuotas', 'transferencia') then
       raise exception 'Hay una forma de pago que no existe.';
     end if;
+    if v_letra = 'X' and x->>'medio' <> 'efectivo' then
+      raise exception 'La X (el comprobante interno) va sólo con efectivo.';
+    end if;
     if x->>'medio' = 'tarjeta' then
       if nullif(trim(coalesce(x->>'tarjeta', '')), '') is null then raise exception 'Falta qué tarjeta es.'; end if;
       if coalesce(x->>'tipo_tarjeta', '') not in ('credito', 'debito') then raise exception 'Falta si la tarjeta es de crédito o de débito.'; end if;
@@ -430,14 +455,16 @@ begin
     raise exception 'Los pagos ($%) no suman el total ($%).', to_char(v_pagado, 'FM999G999G990D00'), to_char(v_total, 'FM999G999G990D00');
   end if;
 
-  insert into pos_numeros (local_id, ultimo) values (v_local, 1)
-  on conflict (local_id) do update set ultimo = pos_numeros.ultimo + 1
+  /* Cada serie con su número: las pruebas (de cualquier letra) aparte, las X aparte, y A y B juntas. */
+  v_serie := case when v_prueba then 'prueba' when v_letra = 'X' then 'x' else 'factura' end;
+  insert into pos_numeros (local_id, serie, ultimo) values (v_local, v_serie, 1)
+  on conflict (local_id, serie) do update set ultimo = pos_numeros.ultimo + 1
   returning ultimo into v_num;
 
-  insert into pos_ventas (local_id, numero, dia, letra, cliente_nombre, cliente_doc, cliente_condicion, cliente_email,
+  insert into pos_ventas (local_id, numero, serie, prueba, dia, letra, cliente_nombre, cliente_doc, cliente_condicion, cliente_email,
                           cliente_tel, envio, vendedor, cargado_por, lista_id, neto, descuentos, total, cantidad,
                           observaciones, clave)
-  values (v_local, v_num, pos_hoy(), v_letra, nullif(trim(coalesce(p->>'cliente_nombre', '')), ''), v_doc, v_cond,
+  values (v_local, v_num, v_serie, v_prueba, pos_hoy(), v_letra, nullif(trim(coalesce(p->>'cliente_nombre', '')), ''), v_doc, v_cond,
           nullif(lower(trim(coalesce(p->>'cliente_email', ''))), ''), nullif(trim(coalesce(p->>'cliente_tel', '')), ''),
           nullif(p->>'envio', ''), v_vend, orden_yo_id(), nullif(p->>'lista_id', '')::int, v_neto, v_desc, v_total, v_cant,
           nullif(trim(coalesce(p->>'observaciones', '')), ''), v_clave)
@@ -472,12 +499,14 @@ begin
             case when nullif(x->>'recibido', '') is not null then (x->>'recibido')::numeric - round((x->>'monto')::numeric, 2) end);
   end loop;
 
-  return jsonb_build_object('id', v_id, 'numero', v_num, 'fecha', now(), 'ya', false);
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'serie', v_serie, 'prueba', v_prueba, 'fecha', now(), 'ya', false);
 end $$;
 
-/* El listado de tickets (como "Tickets de venta" de BlueSoft), con los totales. */
+/* El listado de tickets (como "Tickets de venta" de BlueSoft), con los totales.
+   Las de verdad y las de prueba no se mezclan nunca: p_prueba elige cuáles. */
 create or replace function pos_tickets(p_desde date, p_hasta date, p_local uuid default null, p_vendedor text default null,
-                                       p_medio text default null, p_estado text default null) returns jsonb
+                                       p_medio text default null, p_estado text default null, p_letra text default null,
+                                       p_prueba boolean default false) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 begin
   perform pos_permiso();
@@ -487,15 +516,17 @@ begin
     with v as (
       select x.* from pos_ventas x
        where x.dia between p_desde and p_hasta
+         and x.prueba = coalesce(p_prueba, false)
          and (p_local is null or x.local_id = p_local)
          and (p_vendedor is null or lower(x.vendedor) = lower(p_vendedor))
          and (p_estado is null or x.estado = p_estado)
+         and (p_letra is null or x.letra = p_letra)
          and (p_medio is null or exists (select 1 from pos_venta_pagos g where g.venta_id = x.id and g.medio = p_medio))
     )
     select jsonb_build_object(
       'filas', coalesce((
         select jsonb_agg(jsonb_build_object(
-                 'id', v.id, 'numero', v.numero, 'fecha', v.fecha, 'local', l.nombre, 'local_id', v.local_id,
+                 'id', v.id, 'numero', v.numero, 'serie', v.serie, 'prueba', v.prueba, 'fecha', v.fecha, 'local', l.nombre, 'local_id', v.local_id,
                  'vendedor', v.vendedor, 'cliente', coalesce(v.cliente_nombre, 'Consumidor final'), 'letra', v.letra,
                  'medios', (select jsonb_agg(g.medio order by g.orden) from pos_venta_pagos g where g.venta_id = v.id),
                  'estado', v.estado, 'neto', v.neto, 'descuentos', v.descuentos, 'total', v.total, 'cantidad', v.cantidad,
@@ -508,6 +539,9 @@ begin
                     'neto', coalesce(sum(neto) filter (where estado = 'cobrada'), 0),
                     'descuentos', coalesce(sum(descuentos) filter (where estado = 'cobrada'), 0),
                     'total', coalesce(sum(total) filter (where estado = 'cobrada'), 0)) from v),
+      /* Lo cobrado por comprobante: {"A": …, "B": …, "X": …}. */
+      'por_letra', (select coalesce(jsonb_object_agg(z.letra, z.total), '{}'::jsonb)
+                      from (select letra, sum(total) total from v where estado = 'cobrada' group by letra) z),
       'mas', (select count(*) > 500 from v)
     )
   );
@@ -550,14 +584,29 @@ begin
   return true;
 end $$;
 
+/* Borrar las ventas de prueba (todas, o las de un local). Las de verdad no
+   se tocan nunca: ésas se anulan. Las pruebas vuelven a empezar en la P-1. */
+create or replace function pos_pruebas_borrar(p_local uuid default null) returns int
+language plpgsql volatile security definer set search_path = public as $$
+declare n int;
+begin
+  perform pos_permiso();
+  delete from pos_ventas where prueba and (p_local is null or local_id = p_local);
+  get diagnostics n = row_count;
+  delete from pos_numeros where serie = 'prueba' and (p_local is null or local_id = p_local);
+  return n;
+end $$;
+
 revoke all on function pos_permiso(), pos_inicio(), pos_precios(int), pos_precio_guardar(int, text, numeric),
                        pos_lista_guardar(int, numeric, int), pos_sucursal_guardar(uuid, int, int, boolean),
                        pos_promo_guardar(jsonb), pos_venta_guardar(jsonb),
-                       pos_tickets(date, date, uuid, text, text, text), pos_venta(uuid), pos_venta_anular(uuid, text)
+                       pos_tickets(date, date, uuid, text, text, text, text, boolean), pos_venta(uuid), pos_venta_anular(uuid, text),
+                       pos_pruebas_borrar(uuid)
        from public, anon;
 grant execute on function pos_inicio(), pos_precios(int), pos_precio_guardar(int, text, numeric),
                           pos_lista_guardar(int, numeric, int), pos_sucursal_guardar(uuid, int, int, boolean),
                           pos_promo_guardar(jsonb), pos_venta_guardar(jsonb),
-                          pos_tickets(date, date, uuid, text, text, text), pos_venta(uuid), pos_venta_anular(uuid, text)
+                          pos_tickets(date, date, uuid, text, text, text, text, boolean), pos_venta(uuid), pos_venta_anular(uuid, text),
+                          pos_pruebas_borrar(uuid)
        to authenticated;
 revoke all on function pos_permiso() from authenticated;
