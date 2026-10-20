@@ -1581,6 +1581,7 @@ export function montarCroquis3D(cont, pl, d, op) {
     else if (!moviendo && resBaja) { resBaja = false; renderer.setPixelRatio(prBase); }
     if (composer && !moviendo) composer.render(); else renderer.render(escena, camara);
     etiquetas.render(escena, camara);
+    if (op.alDibujar) op.alDibujar();   // lo que va pegado a un módulo (la foto del modo mira) se mueve en el mismo cuadro
     if (moviendo) {
       /* ¿Va lenta? Si los cuadros tardan mucho, se avisa (para pasar a Liviano). */
       tiempos.push(performance.now() - t0); if (tiempos.length > 30) tiempos.shift();
@@ -1603,6 +1604,45 @@ export function montarCroquis3D(cont, pl, d, op) {
     return h.object.userData.m;
   };
   const pisoEn = (x, y) => { apuntar(x, y); return ray.ray.intersectPlane(suelo, new THREE.Vector3()); };
+  /** Dónde cae un módulo en la pantalla (su caja invisible), como getBoundingClientRect: { left, top, right, bottom }.
+      Sólo las caras que se ven desde donde se mira (nunca la de abajo ni, en la pared, la del fondo): mirando la pared
+      de costado, la caja entera se ve más ancha que el módulo y se encima con los de al lado. Caminando pegado a un
+      módulo, lo que queda detrás de la cámara se corta en el plano de adelante. */
+  const rectDe = (id) => {
+    const c = cajas.find((x) => x.m.id === id);
+    if (!c) return null;
+    camara.updateMatrixWorld();
+    const b = new THREE.Box3().setFromObject(c.toque), n = c.pared && HACIA[c.pared], cerca = -camara.near * 1.01;
+    const lo = [b.min.x, b.min.y, b.min.z], hi = [b.max.x, b.max.y, b.max.z], ojo = camara.getWorldPosition(new THREE.Vector3()).toArray();
+    const fondo = n ? (n[0] ? [0, n[0] > 0 ? 0 : 1] : [2, n[1] > 0 ? 0 : 1]) : null;   // [eje, lado] de la cara contra la pared
+    let caras = [];
+    for (let eje = 0; eje < 3; eje++) {
+      for (let lado = 0; lado < 2; lado++) {
+        if ((eje === 1 && lado === 0) || (fondo && fondo[0] === eje && fondo[1] === lado)) continue;
+        if (lado ? ojo[eje] > hi[eje] : ojo[eje] < lo[eje]) caras.push([eje, lado]);
+      }
+    }
+    if (!caras.length) caras = [[0, 0], [0, 1], [1, 1], [2, 0], [2, 1]];   // adentro de la caja: toda
+    const vis = [];
+    caras.forEach(([eje, lado]) => {
+      const a1 = (eje + 1) % 3, a2 = (eje + 2) % 3, q = [];
+      [[0, 0], [1, 0], [1, 1], [0, 1]].forEach(([u, v]) => {
+        const p = [0, 0, 0]; p[eje] = lado ? hi[eje] : lo[eje]; p[a1] = u ? hi[a1] : lo[a1]; p[a2] = v ? hi[a2] : lo[a2];
+        q.push(new THREE.Vector3().fromArray(p).applyMatrix4(camara.matrixWorldInverse));
+      });
+      /* Los puntos de adelante y, en los bordes que cruzan el plano de adelante, el punto donde lo cruzan. */
+      q.forEach((p, i) => {
+        const s = q[(i + 1) % 4];
+        if (p.z <= cerca) vis.push(p.clone());
+        if ((p.z <= cerca) !== (s.z <= cerca)) vis.push(p.clone().lerp(s, (cerca - p.z) / (s.z - p.z)));
+      });
+    });
+    if (!vis.length) return null;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    vis.forEach((v) => { v.applyMatrix4(camara.projectionMatrix); x0 = Math.min(x0, v.x); x1 = Math.max(x1, v.x); y0 = Math.min(y0, v.y); y1 = Math.max(y1, v.y); });
+    const r = renderer.domElement.getBoundingClientRect();
+    return { left: r.left + ((x0 + 1) / 2) * r.width, right: r.left + ((x1 + 1) / 2) * r.width, top: r.top + ((1 - y1) / 2) * r.height, bottom: r.top + ((1 - y0) / 2) * r.height };
+  };
   /* ── Caminar adentro del local (como Google Earth a la altura de la calle): tocás el piso y vas, arrastrás y mirás
         alrededor, con las flechas (o W A S D) te movés; doble clic en la puerta del depósito y pasás. ── */
   const OJOS = 62, VEL = 150, margen = 10;   // la altura de los ojos (1,55 m) y lo que se camina por segundo
@@ -1916,7 +1956,7 @@ export function montarCroquis3D(cont, pl, d, op) {
     const t = new THREE.Vector3(centro.x, 40, centro.z);
     viajar(t, 0, new THREE.Vector3(centro.x + n[0] * dist, 40 + dist * 0.45, centro.z + n[1] * dist));
   };
-  return { render, dibujar, camara, controles, renderer, encuadrar, cajas, escena, moduloEn, pisoEn, viajar, vistaInicial, redimensionar, destruir,
+  return { render, dibujar, camara, controles, renderer, encuadrar, cajas, escena, moduloEn, pisoEn, rectDe, viajar, vistaInicial, redimensionar, destruir,
            pintar, acercar, girar, inclinar, mirarModulos,
            caminar: () => caminar(), dejarDeCaminar, caminando: () => !!paseo, puertas, pasarPor,
            moviendo: () => !!viaje || !!(paseo && (paseo.tween || paseo.destino)),

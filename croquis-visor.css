@@ -362,6 +362,12 @@
 .cv-previa-txt em { color: var(--cv-suave); font-size: 11.5px; font-style: normal; opacity: .8; }
 @media (prefers-reduced-motion: no-preference) { .cv-previa:not([hidden]) { animation: cv-previa .16s ease-out; } }
 @keyframes cv-previa { from { opacity: 0; transform: translateY(4px); } }
+/* En mira, la foto va arriba del mismo módulo y el módulo queda marcado en lima (al lado del puntito tapaba el módulo
+   de al lado y no se sabía cuál era cuál; Mauricio, 19/10). El puntito, arriba de la foto. */
+.cv-previa.cv-previa-sobre { box-shadow: 0 18px 44px rgba(0, 0, 0, .55), 0 0 0 1.5px rgba(198, 244, 50, .75); }
+.cv-previa-marco { position: absolute; box-sizing: border-box; border: 2px solid var(--cv-lima); border-radius: 12px; pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35), 0 0 18px rgba(198, 244, 50, .35), inset 0 0 18px rgba(198, 244, 50, .16); }
+.cv-mirando .cv-mira { z-index: 5; }
 
 /* ── El local en 3D (croquis3d.js): va arriba; la maqueta de siempre no se arma ── */
 .cv-modo-3d #cvZoom { display: none; }

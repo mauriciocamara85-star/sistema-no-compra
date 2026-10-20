@@ -932,16 +932,60 @@ function visorFotos(V) {
 /* ── Pasar el mouse por un módulo (en la compu): su foto al lado, vertical y grande, sin abrirlo ("que desde acá mismo,
       desde el observador, pueda verlo un poquito mejor"). Primero la miniatura; si se queda un rato, la foto entera. ── */
 function visorPrevia(V) {
-  var sc = V.escena, espera = null, nitida = null, actual = null, pos = { x: 0, y: 0 };
+  var sc = V.escena, espera = null, nitida = null, actual = null, pos = { x: 0, y: 0 }, sobre = false, extra = 90;
   var el = document.createElement('div');
   el.className = 'cv-previa';
   el.hidden = true;
   el.setAttribute('aria-hidden', 'true');
   sc.appendChild(el);
-  var ocultar = function () { clearTimeout(espera); clearTimeout(nitida); actual = null; el.hidden = true; delete el.dataset.mod; visor3dEncima(V, null); };
+  var marco = document.createElement('div');
+  marco.className = 'cv-previa-marco';
+  marco.hidden = true;
+  marco.setAttribute('aria-hidden', 'true');
+  sc.appendChild(marco);
+  var ocultar = function () {
+    clearTimeout(espera); clearTimeout(nitida); actual = null; sobre = false;
+    el.hidden = true; marco.hidden = true; el.classList.remove('cv-previa-sobre'); delete el.dataset.mod; visor3dEncima(V, null);
+  };
   V.previa = { el: el, ocultar: ocultar };
+  /** En mira: arriba del mismo módulo, del ancho del módulo y sin taparle el número, con un marco lima alrededor del
+      módulo. Al lado del puntito tapaba el módulo de al lado y no se sabía cuál era cuál (Mauricio, 19/10). */
+  var ubicarSobre = function () {
+    var id = el.dataset.mod, q = id && V.c3 && V.c3.rectDe ? V.c3.rectDe(id) : null;
+    if (!q) return false;
+    var r = sc.getBoundingClientRect(), W = r.width, H = r.height;
+    var L = Math.max(0, q.left - r.left), T = Math.max(0, q.top - r.top), R = Math.min(W, q.right - r.left), B = Math.min(H, q.bottom - r.top);
+    if (R - L < 4 || B - T < 4) return false;
+    /* El marco va en el 3D, debajo de los números (si no, su borde de arriba le pasaba por encima al número). */
+    var capa = V.c3cont && V.c3cont.querySelector('.c3-etiquetas');
+    if (capa && marco.nextSibling !== capa) V.c3cont.insertBefore(marco, capa);
+    marco.style.left = L.toFixed(0) + 'px'; marco.style.top = T.toFixed(0) + 'px';
+    marco.style.width = (R - L).toFixed(0) + 'px'; marco.style.height = (B - T).toFixed(0) + 'px';
+    marco.hidden = R - L > W * 0.7 || B - T > H * 0.9;   // pegado al módulo, que ya llena la vista, no hace falta
+    /* Entre la ayuda de arriba y los botones de abajo. */
+    var acc = V.cont.querySelector('.cv-zoom-acc'), ab = acc && acc.offsetParent ? acc.getBoundingClientRect() : null;
+    var arriba = Math.max(10, visorAltoAyuda(V)), abajo = ab && ab.height && ab.top - r.top > H / 2 ? ab.top - r.top - 8 : H - 10;
+    /* Debajo del número del módulo (si está arriba, como en la pared). */
+    var c = V.c3.cajas.filter(function (x) { return x.m.id === id; })[0], nb = c && c.el.getBoundingClientRect(), tope = T + 8;
+    if (nb && nb.width && nb.bottom - r.top < B - 60) tope = Math.max(tope, nb.bottom - r.top + 8);
+    tope = Math.max(arriba, tope);
+    var piso = Math.min(abajo, B - 8);
+    /* La foto, del alto que entre en el módulo y no más ancha que él; con un mínimo para que se vea de lejos. */
+    var f = el.querySelector('.cv-previa-foto'), prop = f && f.classList.contains('cv-horizontal') ? 3 / 4 : f && f.classList.contains('sin') ? 2 / 3 : 4 / 3;
+    var maximo = Math.max(200, Math.min(W * 0.5, (Math.min(H * 0.72, abajo - arriba) - extra) / prop + 16, W - 20));
+    var w = Math.max(200, Math.min(maximo, R - L - 12, (piso - tope - extra) / prop + 16));
+    el.style.width = w.toFixed(0) + 'px';
+    var h = el.offsetHeight, y = h <= piso - tope ? tope + (piso - tope - h) / 2 : tope;
+    if (f && f.offsetHeight) extra = h - f.offsetHeight;
+    el.style.left = Math.max(10, Math.min(W - w - 10, (L + R) / 2 - w / 2)).toFixed(0) + 'px';
+    el.style.top = Math.max(arriba, Math.min(abajo - h, y)).toFixed(0) + 'px';
+    return true;
+  };
   /** Al lado del puntero, adentro de la escena (si no entra a la derecha, a la izquierda). */
   var ubicar = function () {
+    if (sobre && ubicarSobre()) return;
+    marco.hidden = true;
+    el.style.width = '';
     var r = sc.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight, x = pos.x - r.left + 22, y = pos.y - r.top - h * 0.35;
     if (x + w > r.width - 10) x = pos.x - r.left - 22 - w;
     el.style.left = Math.max(10, x).toFixed(0) + 'px';
@@ -955,6 +999,7 @@ function visorPrevia(V) {
     var titulo = esVidriera(m) ? m.nombre : (s && s.tipo === 'deposito' ? 'Depósito ' : 'Módulo ') + numero;
     var bajada = esVidriera(m) ? que : que && nombre && que !== nombre ? nombre + ' · ' + que : que || nombre;
     el.dataset.mod = m.id;
+    el.classList.toggle('cv-previa-sobre', sobre);
     el.innerHTML = '<div class="cv-previa-foto' + (e.foto_path ? '' : ' sin') + '">' + (e.foto_path ? '' : '<span>Todavía no hay foto</span>') + '</div>' +
       '<div class="cv-previa-txt"><b>' + esc(titulo) + '</b>' + (bajada ? '<span>' + esc(bajada) + '</span>' : '') +
         '<small><i style="background:' + visorColor(V, m) + '"></i>' + esc(esVidriera(m) ? 'Por turnos' : resp ? nombreLista(resp) : 'Sin responsable') +
@@ -982,8 +1027,10 @@ function visorPrevia(V) {
     visor3dEncima(V, id);
     espera = setTimeout(function () { if (actual === id) mostrar(id); }, el.hidden ? 180 : 60);
   };
-  /** Mostrarla para el módulo id, al lado del punto x, y (el puntito del modo mira). */
-  V.previa.mostrarEn = function (id, x, y) { pos = { x: x, y: y }; encima(id); if (!el.hidden) ubicar(); };
+  /** Mostrarla arriba del módulo id (el que quedó en el puntito del modo mira). */
+  V.previa.mostrarSobre = function (id) { sobre = true; encima(id); if (!el.hidden) ubicar(); };
+  /** El 3D dibujó un cuadro: en mira, la foto sigue a su módulo (girando la vista o caminando). */
+  V.previa.seguir = function () { if (sobre && !el.hidden) ubicar(); };
   sc.addEventListener('pointerover', function (e) {
     if (e.pointerType !== 'mouse' || V.usa3d) return;
     pos = { x: e.clientX, y: e.clientY };
@@ -1160,6 +1207,7 @@ function visor3dMontar(V, caminar) {
       sensibilidad: visorSensibilidad(),
       alMira: function (si) { visor3dMira(V, si); },
       alApuntar: function (a) { visor3dApuntar(V, a); },
+      alDibujar: function () { if (V.previa) V.previa.seguir(); },
       caminar: caminar || null,
       alTocar: function (m, o) { visor3dAbrir(V, m, o && o.desdeMira); },
       alPuerta: function (destino) { visor3dPasar(V, destino); },
@@ -1276,13 +1324,13 @@ function visor3dMira(V, si) {
   if (!si) visor3dApuntar(V, null);
   visor3dCaminando(V, !!(V.c3 && V.c3.caminando()));
 }
-/** En mira, lo que quedó en el puntito: un módulo (su número se agranda y su foto aparece al lado) o una puerta. */
+/** En mira, lo que quedó en el puntito: un módulo (su número se agranda y su foto aparece arriba de él) o una puerta. */
 function visor3dApuntar(V, a) {
   var p = V.cont.querySelector('#cvMiraPunto'), t = V.cont.querySelector('#cvMiraTexto');
   if (p) p.classList.toggle('sobre', !!a);
   if (t) t.textContent = a && a.puerta ? (a.puerta.destino === 'deposito' ? 'Puerta al depósito · clic para pasar' : 'Puerta al salón · clic para pasar') : '';
   if (!V.previa) return;
-  if (a && a.m) { var r = V.escena.getBoundingClientRect(); V.previa.mostrarEn(a.m.id, r.left + r.width / 2, r.top + r.height / 2); }
+  if (a && a.m) V.previa.mostrarSobre(a.m.id);
   else V.previa.ocultar();
 }
 /** El número del módulo que tiene el puntero encima se agranda (como el módulo que se levanta en la maqueta). */
