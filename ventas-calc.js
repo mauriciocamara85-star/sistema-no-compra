@@ -397,9 +397,13 @@
   /* ═══ E-commerce ═══
      La hoja "[Mes] E-commerce" de la planilla del e-commerce (pedido de Mauricio, 17/10/2026). Entra lo que
      devuelve ventas_ecom_leer: lo tipeado (lo ámbar, el reparto, las visitas de cada día y los carritos de cada
-     semana), la tienda ([día, venta, cantidad], de los pedidos pagados) y Meta ([día, inversión, facturación,
-     ventas, visitas, carritos]). Al lado de cada cuenta, la celda de la planilla.
+     semana), la tienda ([día, venta, cantidad], de los pedidos pagados), Meta ([día, inversión, facturación,
+     ventas, visitas, carritos]) y Google Analytics ([día, sesiones, agregados al carrito]). Al lado de cada
+     cuenta, la celda de la planilla.
      Diferencias con la planilla, a propósito:
+       · las visitas de un día y los carritos de una semana, si nadie los escribió, son los de Analytics (todo
+         el tráfico de vdh.com.ar, aparte de los de Meta; pedido de Mauricio, 19/10). Sólo de los días
+         completos, como se cargaban: el de hoy todavía está entrando. Lo escrito gana;
        · la venta y la Q ya no se tipean: llegan solas y lo de HOY todavía está entrando. Por eso lo que es
          "a hoy" (días transcurridos, desvío acumulado, ritmo real, proyección) usa los días completos, hasta
          ayer: es lo que pasaba cuando a la mañana se cargaba el día anterior. La planilla contaba los días
@@ -423,13 +427,15 @@
     var C = { M: M, hoy: HOY, cerrado: HOY >= M.dias, pasado: pasado, c: c, ecom: true };
     var COMPLETOS = pasado ? M.dias : Math.max(HOY - 1, 0);
 
-    var pesoDia = {}, vis = {}, pesoSem = {}, car = {}, tienda = {}, meta = {};
+    var pesoDia = {}, vis = {}, pesoSem = {}, car = {}, tienda = {}, meta = {}, ga = {};
     (D.dias || []).forEach(function (r) { pesoDia[r[0]] = cero(r[1]); vis[r[0]] = n(r[2]); });
     (D.semanas || []).forEach(function (r) { pesoSem[r[0]] = cero(r[1]); car[r[0]] = n(r[2]); });
     /* La venta del día sin centavos, como se cargaba a mano. */
     (D.tienda || []).forEach(function (r) { tienda[r[0]] = { v: Math.floor(limpio(cero(r[1]))), q: cero(r[2]) }; });
     (D.meta || []).forEach(function (r) { meta[r[0]] = { inv: cero(r[1]), fact: cero(r[2]), vtas: cero(r[3]), vis: cero(r[4]), car: cero(r[5]) }; });
+    (D.ga || []).forEach(function (r) { ga[r[0]] = { vis: cero(r[1]), car: cero(r[2]) }; });
     C.hayMeta = (D.meta || []).length > 0;
+    C.hayGA = (D.ga || []).length > 0;
 
     C.C19 = c.tp && c.conv ? c.obj / c.tp / c.conv : 0;                                 // C19 Tráfico necesario
     C.G19 = c.diasMes ? c.obj / c.diasMes : 0;                                          // G19 Venta objetivo/día
@@ -440,12 +446,12 @@
     var semanas = [];
     for (var s = 1; s <= M.semanas; s++) semanas.push({ n: s, peso: pesoSem[s] || 0, car: def(car[s]) ? car[s] : null, dias: [] });
     for (var d = 1; d <= M.dias; d++) {
-      var w = semanas[M.semana(d) - 1], t = tienda[d], fut = d > HOY;
+      var w = semanas[M.semana(d) - 1], t = tienda[d], fut = d > HOY, g = d <= COMPLETOS ? ga[d] : null;
       var x = {
         d: d, k: M.dow(d), peso: pesoDia[d] || 0, obj: c.obj * (pesoDia[d] || 0) * w.peso,   // F24 = $G$18 * $J$22 * F22
         real: fut ? null : t ? t.v : 0, q: fut ? null : t ? t.q : 0,                          // F25, F28 (llegan solas)
-        vis: def(vis[d]) ? vis[d] : null, futuro: fut, completo: d <= COMPLETOS,              // F27 (a mano)
-        meta: meta[d] || null
+        vis: def(vis[d]) ? vis[d] : g ? g.vis : null, futuro: fut, completo: d <= COMPLETOS,  // F27 (escrita o de Analytics)
+        visGA: !def(vis[d]) && !!g, meta: meta[d] || null
       };
       x.desvPct = x.real && x.obj ? x.real / x.obj - 1 : null;                         // F26 = IF(F25=0, "", F25/F24-1)
       x.conv = x.vis > 0 ? (x.q || 0) / x.vis : null;                                   // F29 = IFERROR(F28/F27, 0)
@@ -455,6 +461,9 @@
     var todos = [];
     semanas.forEach(function (w) {
       var L = w.dias;
+      /* Los carritos de la semana: los escritos; si no hay, los de Analytics de sus días completos (D93). */
+      var gc = L.filter(function (x) { return x.completo && ga[x.d]; });
+      if (!def(w.car) && gc.length) { w.car = suma(gc.map(function (x) { return ga[x.d].car; })); w.carGA = true; }
       w.obj = suma(L.map(function (x) { return x.obj; }));                              // J24
       w.real = suma(L.map(function (x) { return x.real; }));                            // J25
       w.desv = w.real - w.obj;                                                          // K25

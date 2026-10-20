@@ -6,8 +6,11 @@
 --   · Lo que se llena solo: la venta y la cantidad de ventas de cada día salen de los pedidos pagados de
 --     vdh.com.ar (tienda_pedidos, los trae el robot de cada hora); lo de Meta (inversión, facturación,
 --     ventas, visitas y carritos) lo trae el mismo robot desde la cuenta publicitaria (ventas_ecom_meta).
---   · Lo que se carga a mano: las visitas de cada día y los carritos creados de cada semana (salen del
---     panel de Tienda Nube: su API no los da), y lo ámbar (objetivo, ticket, conversión, impuesto).
+--   · Las visitas de cada día y los carritos creados de cada semana (Tienda Nube no los da por su API) los
+--     trae el mismo robot de Google Analytics 4 de vdh.com.ar (ventas_ecom_ga, desde el SQL 140): sesiones y
+--     agregados al carrito de todo el tráfico, aparte de los de Meta (pedido de Mauricio, 19/10). Si alguien
+--     escribe otro número en la hoja, gana el escrito.
+--   · Lo que se carga a mano: lo ámbar (objetivo, ticket, conversión, impuesto, premios).
 --   · Un mes pasado se completa hasta el 7 del mes siguiente; después lo corrige sólo Administración.
 --   · Reversible: la lista está al final.
 
@@ -75,19 +78,42 @@ create table if not exists ventas_ecom_meta_estado (
   error_en  timestamptz
 );
 
+-- ---------- Google Analytics 4 de vdh.com.ar, día por día (lo trae el robot de cada hora) ----------
+-- Todo el tráfico de la tienda (anuncios, Google, Instagram, directo): las visitas y los carritos que el
+-- panel de Tienda Nube muestra y su API no da. Los de Meta van aparte (ventas_ecom_meta).
+create table if not exists ventas_ecom_ga (
+  fecha      date primary key,
+  sesiones   integer not null default 0 check (sesiones >= 0),    -- las visitas de la tienda
+  usuarios   integer not null default 0 check (usuarios >= 0),
+  carritos   integer not null default 0 check (carritos >= 0),    -- agregados al carrito (add_to_cart)
+  checkouts  integer not null default 0 check (checkouts >= 0),   -- pagos empezados (begin_checkout)
+  compras    integer not null default 0 check (compras >= 0),
+  leido_en   timestamptz not null default now()
+);
+
+-- ---------- Cómo le fue al robot con Analytics la última vez ----------
+create table if not exists ventas_ecom_ga_estado (
+  id        smallint primary key default 1 check (id = 1),
+  ultima    timestamptz,
+  error     text,
+  error_en  timestamptz
+);
+
 do $rls$
 declare t text;
 begin
   foreach t in array array['ventas_ecom_mes', 'ventas_ecom_dias', 'ventas_ecom_semanas', 'ventas_ecom_meta',
-                           'ventas_ecom_meta_estado'] loop
+                           'ventas_ecom_meta_estado', 'ventas_ecom_ga', 'ventas_ecom_ga_estado'] loop
     if not (select relrowsecurity from pg_class where oid = t::regclass) then
       execute format('alter table %I enable row level security', t);
     end if;
   end loop;
 end $rls$;
-revoke all on ventas_ecom_mes, ventas_ecom_dias, ventas_ecom_semanas, ventas_ecom_meta, ventas_ecom_meta_estado
+revoke all on ventas_ecom_mes, ventas_ecom_dias, ventas_ecom_semanas, ventas_ecom_meta, ventas_ecom_meta_estado,
+              ventas_ecom_ga, ventas_ecom_ga_estado
   from public, anon, authenticated;
-grant all on ventas_ecom_mes, ventas_ecom_dias, ventas_ecom_semanas, ventas_ecom_meta, ventas_ecom_meta_estado
+grant all on ventas_ecom_mes, ventas_ecom_dias, ventas_ecom_semanas, ventas_ecom_meta, ventas_ecom_meta_estado,
+             ventas_ecom_ga, ventas_ecom_ga_estado
   to service_role;
 
 -- =====================================================================
@@ -214,7 +240,8 @@ end $$;
 
 /** Lo que devuelve ventas_ecom_leer, sin mirar quién pide (a = lo que dijo ventas_ecom_acceso). Interna.
     tienda: los pedidos PAGADOS de vdh.com.ar por día de creación en hora de Argentina, como ventas_dashboard:
-    [día, suma de los totales, cantidad]. meta: [día, inversión, facturación, ventas, visitas, carritos]. */
+    [día, suma de los totales, cantidad]. meta: [día, inversión, facturación, ventas, visitas, carritos].
+    ga: [día, sesiones, agregados al carrito] (la pantalla los usa donde nadie escribió las visitas o los carritos). */
 create or replace function ventas_ecom_datos(p_mes date, a jsonb)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare
@@ -259,6 +286,11 @@ begin
         from ventas_ecom_meta t where t.fecha >= v_mes and t.fecha < v_fin), '[]'::jsonb),
     'meta_estado', (select jsonb_build_object('ultima', e.ultima, 'error', e.error, 'error_en', e.error_en)
                       from ventas_ecom_meta_estado e where e.id = 1),
+    'ga', coalesce((
+      select jsonb_agg(jsonb_build_array(extract(day from g.fecha)::int, g.sesiones, g.carritos) order by g.fecha)
+        from ventas_ecom_ga g where g.fecha >= v_mes and g.fecha < v_fin), '[]'::jsonb),
+    'ga_estado', (select jsonb_build_object('ultima', e.ultima, 'error', e.error, 'error_en', e.error_en)
+                    from ventas_ecom_ga_estado e where e.id = 1),
     'tienda_ultima', (select max(p.actualizado) from tienda_pedidos p)
   ) into r;
   return r;
@@ -415,6 +447,36 @@ returns void language sql volatile security definer set search_path = public as 
   on conflict (id) do update set error = left(p_error, 300), error_en = now()
 $$;
 
+/* Carga lo que trajo de Google Analytics (ga4-analytics.js):
+   { filas: [{fecha, sesiones, usuarios, carritos, checkouts, compras}] }. Cada día se pisa entero
+   (Analytics termina de procesar un día hasta dos días después: el robot vuelve a pedir la última semana). */
+create or replace function ventas_ecom_ga_cargar(p jsonb)
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+declare
+  f   jsonb;
+  v_n int := 0;
+begin
+  for f in select * from jsonb_array_elements(coalesce(p->'filas', '[]'::jsonb)) loop
+    insert into ventas_ecom_ga (fecha, sesiones, usuarios, carritos, checkouts, compras, leido_en)
+    values ((f->>'fecha')::date, coalesce((f->>'sesiones')::numeric, 0)::int, coalesce((f->>'usuarios')::numeric, 0)::int,
+            coalesce((f->>'carritos')::numeric, 0)::int, coalesce((f->>'checkouts')::numeric, 0)::int,
+            coalesce((f->>'compras')::numeric, 0)::int, now())
+    on conflict (fecha) do update set sesiones = excluded.sesiones, usuarios = excluded.usuarios, carritos = excluded.carritos,
+      checkouts = excluded.checkouts, compras = excluded.compras, leido_en = now();
+    v_n := v_n + 1;
+  end loop;
+  insert into ventas_ecom_ga_estado (id, ultima, error, error_en) values (1, now(), null, null)
+  on conflict (id) do update set ultima = now(), error = null, error_en = null;
+  return jsonb_build_object('dias', v_n);
+end $$;
+
+/* Anota que la lectura de Analytics falló (la pantalla lo avisa debajo del embudo de la tienda). */
+create or replace function ventas_ecom_ga_fallo(p_error text)
+returns void language sql volatile security definer set search_path = public as $$
+  insert into ventas_ecom_ga_estado (id, error, error_en) values (1, left(p_error, 300), now())
+  on conflict (id) do update set error = left(p_error, 300), error_en = now()
+$$;
+
 -- =====================================================================
 -- Pasar un mes de la planilla al sistema
 -- =====================================================================
@@ -460,7 +522,7 @@ end $$;
 -- =====================================================================
 revoke all on function ventas_ecom_acceso(text), ventas_ecom_reparto_inicial(date), ventas_ecom_abrir(date),
                        ventas_ecom_datos(date, jsonb), ventas_ecom_meta_cargar(jsonb), ventas_ecom_meta_fallo(text),
-                       ventas_ecom_importar(date, jsonb)
+                       ventas_ecom_ga_cargar(jsonb), ventas_ecom_ga_fallo(text), ventas_ecom_importar(date, jsonb)
   from public, anon, authenticated;
 revoke all on function ventas_ecom_puede(text), ventas_ecom_leer(date, text, boolean),
                        ventas_ecom_guardar(date, text, text, text, text)
@@ -474,6 +536,9 @@ grant execute on function ventas_ecom_puede(text), ventas_ecom_leer(date, text, 
 --   drop function if exists ventas_ecom_puede(text), ventas_ecom_leer(date, text, boolean),
 --     ventas_ecom_guardar(date, text, text, text, text), ventas_ecom_acceso(text), ventas_ecom_reparto_inicial(date),
 --     ventas_ecom_abrir(date), ventas_ecom_datos(date, jsonb), ventas_ecom_meta_cargar(jsonb), ventas_ecom_meta_fallo(text),
---     ventas_ecom_importar(date, jsonb), ventas_ecom_id();
---   drop table if exists ventas_ecom_meta_estado, ventas_ecom_meta, ventas_ecom_semanas, ventas_ecom_dias, ventas_ecom_mes;
+--     ventas_ecom_ga_cargar(jsonb), ventas_ecom_ga_fallo(text), ventas_ecom_importar(date, jsonb), ventas_ecom_id();
+--   drop table if exists ventas_ecom_ga_estado, ventas_ecom_ga, ventas_ecom_meta_estado, ventas_ecom_meta,
+--     ventas_ecom_semanas, ventas_ecom_dias, ventas_ecom_mes;
+--   Sólo lo de Analytics (SQL 140): drop function ventas_ecom_ga_cargar(jsonb), ventas_ecom_ga_fallo(text);
+--     drop table ventas_ecom_ga_estado, ventas_ecom_ga; y volver a correr el 136 (ventas_ecom_datos sin 'ga').
 --   delete from ventas_cambios where local_id = '00000000-0000-0000-0000-0000000000ec';

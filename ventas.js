@@ -20,8 +20,9 @@
 
    E-commerce (17/10/2026): una opción más del selector, sólo para Atención al
    cliente y Administración (ventas_ecom_puede). Es la hoja "[Mes] E-commerce"
-   de su planilla; la venta y la Q llegan solas de la tienda y lo de Meta lo
-   trae el robot de cada hora (ventas-ecom.sql, ventas-calc: ecom).
+   de su planilla; la venta y la Q llegan solas de la tienda, y lo de Meta y
+   las visitas y los carritos de Google Analytics (19/10) los trae el robot
+   de cada hora (ventas-ecom.sql, ventas-calc: ecom).
    ═══════════════════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
@@ -716,8 +717,9 @@
   /* ── Hoja E-commerce ─────────────────────────────────────────────────── */
   /* La hoja "[Mes] E-commerce" de la planilla del e-commerce, con los mismos bloques y en el mismo orden.
      Pedido de Mauricio (17/10): el panel del embudo es lo de la tienda y el de abajo, lo de Meta. La venta y
-     la Q llegan solas de los pedidos pagados; las visitas y los carritos se cargan del panel de Tienda Nube
-     (su API no los da); lo de Meta lo trae el robot de cada hora. Las cuentas, en ventas-calc (ecom). */
+     la Q llegan solas de los pedidos pagados; lo de Meta y las visitas y los carritos de Google Analytics
+     (19/10: Tienda Nube no los da por su API) los trae el robot de cada hora. Lo de Analytics sale en azul
+     y se puede pisar escribiendo otro número; borrándolo, vuelve. Las cuentas, en ventas-calc (ecom). */
   var ESTADO_DIAG = { sin: '⚪ sin datos', nivel: '🟢 en nivel', cerca: '🟡 cerca', flojo: '🔴 flojo' };
   var ETAPAS = ['Visitas → Carrito', 'Carrito → Compra', 'Conversión total'];
   /* +#,##0;-#,##0 (visitas y ventas de más o de menos) */
@@ -732,6 +734,15 @@
     }
     catch (e) { return String(ts || '').slice(0, 16).replace('T', ' '); }
   }
+  /* Cómo le fue al robot con Meta o con Analytics: el error de la última vez, o la hora de la última lectura buena (null si nunca leyó). */
+  function estadoRobot(e, fuente, bien) {
+    e = e || {};
+    if (e.error) return '<span class="mal">⚠️ La última vez no se pudo leer ' + fuente + ' (' + esc(fechaHora(e.error_en)) + '): ' + esc(String(e.error).replace(/[.\s]+$/, '')) + '.</span>' +
+      (e.ultima ? ' Lo de abajo es lo que llegó el ' + esc(fechaHora(e.ultima)) + '.' : '');
+    return e.ultima ? bien + ' Última lectura: ' + esc(fechaHora(e.ultima)) + '.' : null;
+  }
+  /* Lo de Analytics (en azul) se puede pisar: lo escrito gana, y borrándolo vuelve el de Analytics. */
+  var GA_TIT = 'De Google Analytics. Si escribís otro número, queda el tuyo; si lo borrás, vuelve el de Analytics.';
 
   function hojaEcom(C) {
     var c = C.c, D = ST.D, h = titulo('VENTAS'), conDias = C.C20 > 0;
@@ -777,7 +788,7 @@
       '<tr><th class="izq">Días transcurridos</th><td class="azul" title="Los días completos: lo de hoy todavía está entrando">' + C.C20 + '</td>' +
       '<th>Días restantes</th><td class="azul">' + C.E20 + '</td>' +
       '<th>Días del mes</th>' + entrada('config', 'dias_mes', c.diasMes || null, 'int', 'amb g', 'aria-label="Días del mes"') + '<td colspan="2" style="border:0"></td></tr></table></div>' +
-      '<p class="aviso-carga">⚠️ La venta y la Q ventas llegan solas de la tienda (los pedidos pagados). Las visitas se cargan del panel de Tienda Nube el día que pasó. ' +
+      '<p class="aviso-carga">⚠️ La venta y la Q ventas llegan solas de la tienda (los pedidos pagados); las visitas, de Google Analytics, al día siguiente. ' +
       'Lo que es "a hoy" (días transcurridos, desvío acumulado, ritmo, proyección) cuenta hasta ayer: lo de hoy todavía está entrando.</p>';
     if (editaPesos()) {
       var sSem = suma(C.sem.map(function (w) { return w.peso; }));
@@ -806,10 +817,14 @@
 
     /* Embudo de la tienda */
     var carT = def(e.car);
-    h += '<div class="banda escalon">  🛒  EMBUDO DE LA TIENDA  ·  vdh.com.ar</div><table class="ecm">' + colS + cabS +
+    var estGA = estadoRobot(D.ga_estado, 'Google Analytics', 'Las visitas y los carritos llegan solos cada hora de Google Analytics (vdh.com.ar), hasta ayer.') ||
+      (C.hayGA ? 'Las visitas y los carritos llegan de Google Analytics (vdh.com.ar), hasta ayer.'
+        : 'Google Analytics todavía no está conectado: hasta que lo esté, las visitas y los carritos se cargan a mano.');
+    h += '<div class="banda escalon">  🛒  EMBUDO DE LA TIENDA  ·  vdh.com.ar</div><p class="ecm-est">' + estGA + '</p><table class="ecm">' + colS + cabS +
       fila('Visitas', function (w) { return td(w.hayVis ? nf(w.vis) : ''); }, C.visTot ? nf(C.visTot) : '') +
       fila('Carritos creados', function (w) {
-        return entrada('carritos', String(w.n), w.car, 'int', 'amb', 'aria-label="Carritos creados de la semana ' + w.n + '"');
+        return entrada('carritos', String(w.n), w.car, 'int', w.carGA ? 'ga' : 'amb',
+          'aria-label="Carritos creados de la semana ' + w.n + '"' + (w.carGA ? ' data-ga="1" title="' + GA_TIT + '"' : ''));
       }, carT ? nf(e.car) : '') +
       fila('Compras', function (w) { return td(nf(w.q)); }, nf(C.qTot)) +
       fila('Facturación', function (w) { return td(pesos(w.real)); }, pesos(C.E4)) +
@@ -817,16 +832,14 @@
       fila('% Compras / Carritos', function (w, i) { return td(w.car ? pc(C.emb[i].comCar, 1) : ''); }, e.car ? pc(e.comCar, 1) : '') +
       fila('Conversión total', function (w, i) { return td(w.vis ? pc(C.emb[i].conv, 2) : ''); }, C.visTot ? pc(e.conv, 2) : '') +
       fila('Ticket promedio', function (w, i) { return td(w.q ? pesos(C.emb[i].tk) : ''); }, C.qTot ? pesos(e.tk) : '') + '</table>' +
-      '<p class="aviso-carga">Compras y facturación llegan solas de la tienda. Visitas (en cada semana, día por día) y carritos creados se cargan del panel de Tienda Nube.</p>';
+      '<p class="aviso-carga">Compras y facturación llegan solas de la tienda. Visitas (en cada semana, día por día) y carritos creados, de Google Analytics: ' +
+      'todo el tráfico de la tienda, aparte de los de Meta de abajo. Lo de Analytics sale en azul; si escribís otro número, queda el tuyo.</p>';
 
     /* Meta Ads */
-    var me = D.meta_estado || {}, est;
-    if (me.error) est = '<span class="mal">⚠️ La última vez no se pudo leer Meta (' + esc(fechaHora(me.error_en)) + '): ' + esc(String(me.error).replace(/[.\s]+$/, '')) + '.</span>' +
-      (me.ultima ? ' Lo de abajo es lo que llegó el ' + esc(fechaHora(me.ultima)) + '.' : '');
-    else if (me.ultima) est = 'Llega solo cada hora de la cuenta de anuncios de Meta (VDH Prepago). Última lectura: ' + esc(fechaHora(me.ultima)) + '.';
-    else if (C.hayMeta) est = 'Lo de Meta está cargado hasta el ' + (D.meta[D.meta.length - 1][0]) + '/' + String(D.mes).slice(5, 7) +
-      ': todavía no llega solo (falta conectar la cuenta de anuncios).';
-    else est = 'Meta todavía no está conectado: cuando lo esté, este panel se llena solo cada hora.';
+    var est = estadoRobot(D.meta_estado, 'Meta', 'Llega solo cada hora de la cuenta de anuncios de Meta (VDH Prepago).') ||
+      (C.hayMeta ? 'Lo de Meta está cargado hasta el ' + (D.meta[D.meta.length - 1][0]) + '/' + String(D.mes).slice(5, 7) +
+        ': todavía no llega solo (falta conectar la cuenta de anuncios).'
+        : 'Meta todavía no está conectado: cuando lo esté, este panel se llena solo cada hora.');
     function hayM(w) { return w.dias.some(function (x) { return x.meta; }); }
     function m(k, f) { return function (w) { return td(hayM(w) ? f(w.meta[k]) : ''); }; }
     function roasCl(r, inv) { return inv ? sem(r, c.beRoas) : ''; }
@@ -899,10 +912,12 @@
       return '<td class="' + hoyCl(C, x) + (def(x.desvPct) ? ' ' + semDia(x) : '') + '">' + (def(x.desvPct) ? sp(x.desvPct) : '') + '</td>';
     }) + '<td class="' + (def(w.desvPct) ? semSem : '') + '">' + (def(w.desvPct) ? sp(w.desvPct) : '') + '</td><td></td></tr>';
     t += '<tr class="vend"><td class="izq">Visitas</td>' + cel(function (x, k) {
-      if (x.futuro) return '<td class="futuro" title="Todavía no llegó: las visitas se cargan el día que pasó"></td>';
-      var falta = ed && x.completo && !def(x.vis), cl = hoyCl(C, x) + (falta ? ' falta' : '');
-      if (!ed) return '<td class="' + cl + '">' + (def(x.vis) ? nf(x.vis) : '') + '</td>';
-      return entrada('visitas', String(x.d), x.vis, 'int', cl, 'aria-label="Visitas del ' + DIAS[k] + ' ' + x.d + '"' + (falta ? ' title="Falta cargar"' : ''));
+      if (x.futuro) return '<td class="futuro" title="Todavía no llegó"></td>';
+      var falta = ed && x.completo && !def(x.vis), cl = hoyCl(C, x) + (falta ? ' falta' : '') + (x.visGA ? ' ga' : '');
+      var tit = x.visGA ? GA_TIT : falta ? 'Falta cargar' : !x.completo && !def(x.vis) && C.hayGA ? 'Las de hoy llegan mañana, de Google Analytics' : '';
+      if (!ed) return '<td class="' + cl + '"' + (tit ? ' title="' + tit + '"' : '') + '>' + (def(x.vis) ? nf(x.vis) : '') + '</td>';
+      return entrada('visitas', String(x.d), x.vis, 'int', cl, 'aria-label="Visitas del ' + DIAS[k] + ' ' + x.d + '"' +
+        (x.visGA ? ' data-ga="1"' : '') + (tit ? ' title="' + tit + '"' : ''));
     }) + '<td class="tot">' + (w.hayVis ? nf(w.vis) : '') + '</td><td class="tot ' + (w.hayVis && algun ? sem(w.vis, w.visNec) : '') + '">' + (w.hayVis ? nSigno(w.desvVis) : '') + '</td></tr>';
     t += '<tr class="vend"><td class="izq">Q Ventas</td>' + cel(function (x) { return x.futuro ? FUT : '<td class="' + hoyCl(C, x) + '">' + nf(x.q) + '</td>'; }) +
       '<td class="tot">' + nf(w.q) + '</td><td class="tot ' + (algun ? sem(w.q, w.qNec) : '') + '">' + (w.empezo ? nSigno(w.desvQ) : '') + '</td></tr>';
@@ -1116,7 +1131,9 @@
       el.value = el.defaultValue;
       return;
     }
-    var antes = leerNum(el.defaultValue, tipo);
+    /* Una celda con lo de Google Analytics no tiene nada escrito: borrarla no cambia nada (sigue lo de Analytics),
+       y si no se guarda lo que se escribe, vuelve a quedar vacía (no se queda el número de Analytics como escrito). */
+    var antes = el.hasAttribute('data-ga') ? undefined : leerNum(el.defaultValue, tipo);
     if (antes === val) {                                     // lo mismo, escrito de otra forma
       /* Si esa celda había quedado sin guardar, escribir lo que tiene la base es dejarla así: se va el rojo. */
       var kNo = ST.local.id + '|' + mes + '|' + que + '|' + clave;
