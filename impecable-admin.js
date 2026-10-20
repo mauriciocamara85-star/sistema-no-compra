@@ -975,7 +975,7 @@ function tablaDiasCaja(cajas, tot) {
         (c.diferencia_persona ? ' <span class="est vencido" title="' + esc('Diferencia a cargo de ' + (c.diferencia_persona_nombre || '—') + ': ' + pesos(c.diferencia_monto)) + '">A cargo</span>' : '') + '</td></tr>';
     }).join('') +
     (tot ? '<tr class="fila-total"><td><b>Total</b></td>' + colsCaja(tot, 'sis_efectivo') + '<td class="ini"></td></tr>' : '') +
-    '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos.</p>';
+    '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos o corregir los números.</p>';
 }
 /** (SQL 124) Las diferencias que no tuvieron arreglo: a cargo de quién, en el período. */
 function aCargoCajaHTML(cajas, cuando) {
@@ -1148,7 +1148,6 @@ function ventanaCaja(k) {
 
 function dibujarVentanaCaja(k, fs, deIA) {
   deIA = deIA || [];
-  var monto = function (campo) { return pesos(k[campo]) + (deIA.indexOf(campo) > -1 && k[campo] != null ? ' <span class="de-ia" title="Lo cargó la IA desde la foto">IA</span>' : ''); };
   var ultima = {};
   if (fs) fs.forEach(function (f) { if (!ultima[f.tipo]) ultima[f.tipo] = f; });
   else Object.keys(k.fotos || {}).forEach(function (t) { ultima[t] = { tipo: t, foto_path: k.fotos[t] }; });
@@ -1157,12 +1156,13 @@ function dibujarVentanaCaja(k, fs, deIA) {
     ((k.alertas || []).length ? '<div class="nota alerta">' + k.alertas.map(function (a) { return esc(textoAlertaCaja(a)); }).join('<br>') + '</div>' : '') +
     (k.observaciones ? '<div class="nota">' + esc(k.observaciones) + '</div>' : '') + (k.nota_control ? '<div class="nota">Control: ' + esc(k.nota_control) + '</div>' : '') +
     (k.diferencia_persona ? '<div class="nota alerta"><b>Diferencia a cargo de ' + esc(k.diferencia_persona_nombre || '—') + ': ' + pesos(k.diferencia_monto) + '</b></div>' : '') +
-    '<div class="desliza"><table class="caja-dia"><thead><tr><th></th><th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th></tr></thead><tbody>' +
-    FILAS_DIA_CAJA.map(function (f) {
-      var d = Number(k[f[3]] || 0);
-      var lado = function (a, b) { return k[a] == null && k[b] != null && Number(k[b]) !== 0 ? '<span class="falta-cargar">Falta</span>' : monto(a); };
-      return '<tr><td>' + f[0] + '</td><td class="n">' + lado(f[1], f[2]) + '</td><td class="n">' + lado(f[2], f[1]) + '</td><td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td></tr>';
-    }).join('') + '</tbody></table></div>' +
+    /* (SQL 142) Editar cualquier número a mano, por si la IA no leyó algo o leyó mal (19/10, Mauricio:
+       "está bueno que se pueda editar cualquier dato. Que aparezca editar y listo"). */
+    (soloMira() ? '' : '<div class="caja-dia-acc"><button class="boton chico" id="cajaEditar">Editar</button>' +
+      '<button class="boton chico lima" id="cajaListo" data-aviso-guardar disabled hidden>Listo</button>' +
+      '<button class="boton chico" id="cajaCancelar" hidden>Cancelar</button></div>') +
+    '<div class="desliza"><table class="caja-dia"><thead><tr><th></th><th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th></tr></thead><tbody id="cajaDiaCuerpo">' +
+    filasDiaCaja(k, deIA, false) + '</tbody></table></div>' +
     (deIA.length ? '<p class="bajada-chica">Los números con <span class="de-ia">IA</span> los cargó la IA desde las fotos: corroboralos con las fotos de abajo.</p>' : '') +
     (hay.length ? '<div class="seccion">Fotos del cierre</div><div class="fotos-cierre">' + hay.map(function (t) {
       var f = ultima[t[0]];
@@ -1171,6 +1171,80 @@ function dibujarVentanaCaja(k, fs, deIA) {
         '<img data-foto="' + esc(f.foto_path) + '" alt="' + esc(t[1]) + '">' + lecturaCierre(t, f, k) + '</figure>';
     }).join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
   engancharReleer(v, k);
+  engancharEdicionCaja(v, k, deIA);
+}
+
+/** Los 4 renglones de la caja del día; editando, cada monto es un casillero para escribir. */
+function filasDiaCaja(k, deIA, editando) {
+  var monto = function (campo) { return pesos(k[campo]) + (deIA.indexOf(campo) > -1 && k[campo] != null ? ' <span class="de-ia" title="Lo cargó la IA desde la foto">IA</span>' : ''); };
+  return FILAS_DIA_CAJA.map(function (f) {
+    var d = Number(k[f[3]] || 0);
+    var lado = function (a, b) {
+      if (editando) return '<input class="monto-caja" data-campo="' + a + '" inputmode="decimal" autocomplete="off" value="' + (k[a] == null ? '' : esc(String(Number(k[a])))) + '">';
+      return k[a] == null && k[b] != null && Number(k[b]) !== 0 ? '<span class="falta-cargar">Falta</span>' : monto(a);
+    };
+    return '<tr><td>' + f[0] + '</td><td class="n">' + lado(f[1], f[2]) + '</td><td class="n">' + lado(f[2], f[1]) + '</td><td class="n' + (Math.abs(d) > 0.5 ? ' rojo' : '') + '">' + pesos(d) + '</td></tr>';
+  }).join('');
+}
+
+/** "$ 1.440.100,50", "95.000", "95000" o "1440100.5" → número; vacío o raro → null (el mismo de la app). */
+function numeroCaja(v) {
+  var t = String(v == null ? '' : v).replace(/[\s$]/g, '');
+  if (!t || !/\d/.test(t) || /[^0-9.,-]/.test(t)) return null;
+  var coma = t.lastIndexOf(','), punto = t.lastIndexOf('.');
+  if (coma > -1 && punto > -1) t = coma > punto ? t.replace(/\./g, '').replace(',', '.') : t.replace(/,/g, '');   // 1.440.100,50 o 1,440,100.50
+  else if (coma > -1) t = t.replace(',', '.');                                                                    // 95,5
+  else if (/^-?\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');                                             // 95.000
+  var n = Number(t);
+  return isFinite(n) ? n : null;
+}
+
+/** Qué cambió en los casilleros contra lo que tenía la caja (vacío = borrar ese dato). */
+function cambiosCajaDia(cuerpo, k) {
+  var valores = {}, malo = null;
+  cuerpo.querySelectorAll('[data-campo]').forEach(function (i) {
+    var t = String(i.value || '').trim(), antes = k[i.dataset.campo] == null ? null : Number(k[i.dataset.campo]);
+    if (t === '') { if (antes != null) valores[i.dataset.campo] = null; return; }
+    var n = numeroCaja(t);
+    if (n == null) { malo = malo || i; return; }
+    if (n !== antes) valores[i.dataset.campo] = String(n);
+  });
+  return { valores: valores, malo: malo };
+}
+
+/* (SQL 142) "Editar": los montos pasan a casilleros y "Listo" guarda SÓLO lo que cambió, con
+   orden_caja_guardar (el mismo de la app: queda el historial, las alertas se recalculan y lo
+   escrito deja de ser "de la IA"). Con el mes cerrado o sin permiso, la base frena y acá se
+   muestra el motivo. Lo que no se toca no se manda: no pierde su marca IA. */
+function engancharEdicionCaja(v, k, deIA) {
+  var be = v.querySelector('#cajaEditar');
+  if (!be) return;
+  var bl = v.querySelector('#cajaListo'), bc = v.querySelector('#cajaCancelar'), cuerpo = v.querySelector('#cajaDiaCuerpo');
+  var modo = function (editando) {
+    cuerpo.innerHTML = filasDiaCaja(k, deIA, editando);
+    be.hidden = editando; bl.hidden = !editando; bc.hidden = !editando;
+    bl.disabled = true;
+    if (editando) { var p = cuerpo.querySelector('[data-campo]'); if (p) p.focus(); }
+  };
+  cuerpo.addEventListener('input', function () {
+    var c = cambiosCajaDia(cuerpo, k);
+    bl.disabled = !c.malo && !Object.keys(c.valores).length;
+  });
+  be.onclick = function () { modo(true); };
+  bc.onclick = function () { modo(false); };
+  unaVez(bl, function () {
+    var c = cambiosCajaDia(cuerpo, k);
+    if (c.malo) { c.malo.focus(); avisar('Hay un monto que no se entiende: escribilo sólo con números.'); return; }
+    if (!Object.keys(c.valores).length) { modo(false); return 'dejar-apagado'; }
+    bl.textContent = 'Guardando…';
+    return llamar('orden_caja_guardar', { p_caja: k.id, p_valores: c.valores, p_observaciones: null }).then(function (fila) {
+      if (fila) Object.keys(fila).forEach(function (x) { k[x] = fila[x]; });
+      v.remove();
+      avisar('Guardado.');
+      ventanaCaja(k);      /* la ventana de nuevo, con los desvíos y la marca IA al día */
+      verCajas();          /* y la tabla de atrás */
+    });
+  });
 }
 
 /** Lo que leyó la IA de una foto del cierre, comparado con lo que cargaron. */
@@ -1937,11 +2011,15 @@ var BLOQUES_LOCAL = [
         frase('Si una foto o una caja espera más de ' + c('horas_revision_supervisor') + ' horas que la revise el supervisor, te llega un aviso.') +
         frase(c('desafio_activo'));
     } },
-  { id: 'ia', titulo: 'La IA',
+  { id: 'ia', titulo: 'La IA de las fotos',
     cols: [{ k: 'ia_activa', t: 'La IA revisa cada foto con las reglas de orden y le dice al vendedor qué corregir.', corto: 'la revisión con IA', tipo: 'bool' },
            { k: 'ia_crea_tareas', t: 'Lo que hay que corregir le queda como tarea al vendedor, con plazo.', corto: 'las tareas de la IA', tipo: 'bool' },
            { k: 'ia_sugerencias', t: 'Además deja sugerencias de estilo: consejos para que quede más lindo, como las reglas marcadas como sugerencia. Nunca son tareas, y como mucho 2 por foto.', corto: 'las sugerencias de estilo', tipo: 'bool' }],
-    armar: function (c) { return frase(c('ia_activa')) + frase(c('ia_crea_tareas')) + frase(c('ia_sugerencias')); } },
+    armar: function (c) {
+      return frase(c('ia_activa')) + frase(c('ia_crea_tareas')) + frase(c('ia_sugerencias')) +
+        /* (19/10, Mauricio): que apagar una IA no parezca apagar la otra. Son dos llaves distintas en la base. */
+        frase('Esto es sólo la IA que revisa las fotos de los módulos. La que lee los cierres de caja se prende y apaga aparte, abajo en «La caja»: apagar una no apaga la otra.', 'aclara');
+    } },
   { id: 'faltas', titulo: 'Las faltas',
     cols: [{ k: 'modo_prueba', t: 'Modo prueba: por ahora no se sugieren faltas.', corto: 'el modo prueba', tipo: 'bool' },
            { k: 'ventana_faltas_dias', t: 'Días que se miran', tipo: 'num', min: 1 }, { k: 'umbral_tareas_vencidas', t: 'Días con tareas vencidas', tipo: 'num', min: 1 },
@@ -1957,7 +2035,9 @@ var BLOQUES_LOCAL = [
            { k: 'caja_ia', t: 'La IA lee las fotos del cierre y completa los números, también el efectivo contado. Apagada, se cargan a mano.', corto: 'la lectura con IA', tipo: 'bool' },
            { k: 'caja_tolerancia_pesos', t: 'Diferencia que no avisa ($)', tipo: 'num', min: 0 }, { k: 'caja_minutos_tolerancia', t: 'Minutos después del cierre', tipo: 'num', min: 0 }],
     armar: function (c) {
-      return frase(c('caja_activa')) + frase(c('caja_ia')) + frase('Una diferencia de hasta $ ' + c('caja_tolerancia_pesos') + ' no avisa.') +
+      return frase(c('caja_activa')) + frase(c('caja_ia')) +
+        frase('La lectura con IA de la caja va aparte de «La IA de las fotos» de arriba: se prende y apaga sólo acá.', 'aclara') +
+        frase('Una diferencia de hasta $ ' + c('caja_tolerancia_pesos') + ' no avisa.') +
         frase('Si ' + c('caja_minutos_tolerancia') + ' minutos después del cierre no cargaron la caja, les avisa al local y al supervisor.');
     } },
   { id: 'fotos', titulo: 'Las fotos guardadas',

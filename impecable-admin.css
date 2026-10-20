@@ -218,6 +218,13 @@
 .ventana .caja-dia th, .ventana .caja-dia td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; }
 .ventana .caja-dia th { font-size: 12px; color: var(--txt-3); background: var(--surface-2); }
 .ventana .caja-dia .n { text-align: right; white-space: nowrap; }
+/* Editar la caja a mano (SQL 142): los botones arriba a la derecha y los casilleros de montos. */
+.caja-dia-acc { display: flex; justify-content: flex-end; gap: 8px; margin: 10px 0 2px; }
+.ventana .caja-dia input.monto-caja {
+  width: 130px; max-width: 100%; padding: 6px 8px; text-align: right;
+  border: 1px solid var(--line-campo); border-radius: var(--r-sm);
+  background: var(--campo); color: var(--txt); font: 600 14px var(--sans);
+}
 .fotos-cierre { display: grid; gap: 22px; }
 .foto-cierre img { aspect-ratio: auto; max-height: 72vh; }
 .foto-cierre figcaption { margin: 0 0 6px; font-size: 14px; color: var(--txt-2); }
