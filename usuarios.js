@@ -17,14 +17,35 @@ var usuarios = (function () {
   'use strict';
 
   var ROL = persona.ROL;
-  var ROLES_ADMIN = ['vendedor', 'supervisor', 'atencion', 'gerencia', 'admin'];
+  /* SQL 141: en la base, el encargado y el supervisor son el mismo rol ('supervisor'): el encargado
+     tiene su local y el supervisor no, y sus locales van aparte (orden_supervision). En la pantalla
+     son dos opciones; 'zona' es la del supervisor. Gerencia ya no se ofrece (Mauricio, 19/10): sólo
+     aparece si alguien ya la tiene. */
+  var ROLES_ADMIN = ['vendedor', 'supervisor', 'zona', 'atencion', 'admin'];
+  var NOMBRE_ROL = { vendedor: 'Vendedor', supervisor: 'Encargado (un local)', zona: 'Supervisor (varios locales)',
+                     atencion: 'Atención al cliente', admin: 'Administrador', gerencia: 'Gerencia' };
   var QUE_VE = 'Vendedor: Carga, Cobrar, Gift Cards, Asistente, las estadísticas de su local y Equipo VDH. ' +
-               'Encargado: lo mismo, y crea los vendedores de su local. Atención al cliente: todo menos Equipo VDH. ' +
-               'Administrador y Gerencia: todo. Un vendedor o encargado que además atiende clientes ' +
-               '("También atiende clientes", en Cambiar) suma lo de Atención, con un PIN de 6 números.';
-  /* SQL 135: la casilla es para quien tiene local; Atención, Administración y Gerencia ya ven todo eso. */
-  function puedeAtencion(rol) { return rol === 'vendedor' || rol === 'supervisor'; }
-  function rolDe(p) { return (ROL[p.rol] || p.rol) + (p.tambien_atencion && puedeAtencion(p.rol) ? ' + Atención al cliente' : ''); }
+               'Encargado: lo mismo, y crea los vendedores de su local. Supervisor: como el encargado, en los ' +
+               'locales que le elijas (las planillas de Ventas, el No Compra y Equipo VDH de cada uno), sin crear usuarios. ' +
+               'Atención al cliente: todo menos Equipo VDH. Administrador: todo. Un vendedor, encargado o supervisor ' +
+               'que además atiende clientes ("También atiende clientes", en Cambiar) suma lo de Atención, con un PIN de 6 números.';
+  function esZona(p) { return p.rol === 'supervisor' && !p.local_id; }
+  /** El rol como lo muestra la pantalla: el supervisor sin local es 'zona'. */
+  function rolEd(p) { return esZona(p) ? 'zona' : p.rol; }
+  /* SQL 135: la casilla es para quien es de un local; Atención y Administración ya ven todo eso. */
+  function puedeAtencion(rol) { return rol === 'vendedor' || rol === 'supervisor' || rol === 'zona'; }
+  /** Los locales de un supervisor, por nombre ("Flores, Ituzaingó, Morón"); los que pidió y nadie aprobó, marcados. */
+  function susLocales(p) {
+    return (p.supervisa || []).map(function (s) { return { n: nombreLocal(s.id), ok: s.aprobado }; })
+      .sort(function (a, b) { return a.n.localeCompare(b.n, 'es'); })
+      .map(function (s) { return s.n + (s.ok ? '' : ' (lo pidió)'); }).join(', ');
+  }
+  function rolDe(p) {
+    var r = esZona(p) ? 'Supervisor' : (ROL[p.rol] || p.rol);
+    if (p.tambien_atencion && puedeAtencion(p.rol)) r += ' + Atención al cliente';
+    if (esZona(p)) r += ' · ' + (susLocales(p) || 'sin locales todavía');
+    return r;
+  }
 
   var datos = null;
   var filtro = { local: '', desactivados: false };
@@ -57,9 +78,13 @@ var usuarios = (function () {
       document.getElementById('usEntrar').onclick = function () { persona.entrar(); };
       return;
     }
-    if (yo.rol !== 'admin' && yo.rol !== 'supervisor') {
+    /* El supervisor de varios locales no maneja usuarios (nc_quien_maneja): los de sus locales los crean
+       los encargados. Se lo reconoce por la 'zona' de nc_yo (SQL 141): el encargado que recién entró por
+       Equipo VDH todavía no tiene su local acá. */
+    var zonaYo = yo.rol === 'supervisor' && Array.isArray(yo.zona);
+    if (yo.rol !== 'admin' && (yo.rol !== 'supervisor' || zonaYo)) {
       c.innerHTML = bloque('Usuarios', 'Los usuarios los manejan el administrador y los encargados. Entraste como ' +
-        esc(yo.nombre) + ' (' + esc(ROL[yo.rol]) + ').');
+        esc(yo.nombre) + ' (' + esc(zonaYo ? 'Supervisor' : ROL[yo.rol]) + ').');
       return;
     }
     if (!datos) c.innerHTML = '<div class="bloque"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>';
@@ -110,7 +135,7 @@ var usuarios = (function () {
         '<div class="us-lista">' + pend.map(function (p) {
           return '<div class="us-fila us-pend" data-id="' + esc(p.id) + '">' +
             '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b>' +
-            '<span>' + esc(rolDe(p)) + ' · ' + esc(nombreLocal(p.local_id)) + (p.alta_propia ? ' · se anotó solo' : '') + '</span></div>' +
+            '<span>' + esc(rolDe(p)) + (esZona(p) ? '' : ' · ' + esc(nombreLocal(p.local_id))) + (p.alta_propia ? ' · se anotó solo' : '') + '</span></div>' +
             '<div class="us-acciones">' +
               '<button type="button" class="btn btn-pri btn-chico" data-acc="aprobar">Sí, es ' + (p.alta_propia ? 'de acá' : 'él o ella') + '</button>' +
               '<button type="button" class="btn btn-sec btn-chico" data-acc="rechazar">' + (p.alta_propia ? 'No lo conozco' : 'No fue') + '</button>' +
@@ -126,6 +151,7 @@ var usuarios = (function () {
       filtros = '<div class="us-filtros"><select id="usFiltroLocal" aria-label="Local">' +
         '<option value="">Todos los locales</option>' +
         datos.locales.map(function (l) { return '<option value="' + esc(l.id) + '"' + (filtro.local === l.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>'; }).join('') +
+        '<option value="z"' + (filtro.local === 'z' ? ' selected' : '') + '>Supervisores</option>' +
         '<option value="-"' + (filtro.local === '-' ? ' selected' : '') + '>Sin local (Administración y Atención)</option></select>' +
         '<label class="us-check"><input type="checkbox" id="usVerDesact"' + (filtro.desactivados ? ' checked' : '') + '> Ver desactivados</label></div>';
     } else {
@@ -140,23 +166,27 @@ var usuarios = (function () {
 
   function lista() {
     var admin = esAdmin();
+    /* Un local muestra también a los supervisores que lo tienen (SQL 141). */
+    var supervisa = function (p, id) { return (p.supervisa || []).some(function (s) { return s.id === id; }); };
     var gente = datos.personas.filter(function (p) {
       if (!filtro.desactivados && !p.activo) return false;
-      if (filtro.local === '-') return !p.local_id;
-      if (filtro.local) return p.local_id === filtro.local;
+      if (filtro.local === 'z') return esZona(p);
+      if (filtro.local === '-') return !p.local_id && !esZona(p);
+      if (filtro.local) return p.local_id === filtro.local || (esZona(p) && supervisa(p, filtro.local));
       return true;
     });
-    if (!gente.length) return '<p class="us-vacio">No hay nadie' + (filtro.local ? ' en este local' : '') + '. Crealo con el formulario.</p>';
-    /* Con "todos", agrupados por local (los sin local, al final). */
+    if (!gente.length) return '<p class="us-vacio">No hay nadie' + (filtro.local && filtro.local !== 'z' && filtro.local !== '-' ? ' en este local' : '') + '. Crealo con el formulario.</p>';
+    /* Con "todos", agrupados por local; después los supervisores y, al final, los sin local. */
+    var orden = function (p) { return p.local_id ? 0 : esZona(p) ? 1 : 2; };
     gente.sort(function (a, b) {
-      return (!a.local_id - !b.local_id) ||
+      return (orden(a) - orden(b)) ||
         nombreLocal(a.local_id).localeCompare(nombreLocal(b.local_id), 'es') ||
         (b.activo - a.activo) || String(a.nombre).localeCompare(b.nombre, 'es');
     });
     var html = '', grupo = null;
     gente.forEach(function (p) {
       if (admin && !filtro.local) {
-        var g = p.local_id ? nombreLocal(p.local_id) : 'Administración y Atención';
+        var g = p.local_id ? nombreLocal(p.local_id) : esZona(p) ? 'Supervisores' : 'Administración y Atención';
         if (g !== grupo) { html += '<h3 class="us-grupo">' + esc(g) + '</h3>'; grupo = g; }
       }
       html += fila(p);
@@ -198,17 +228,37 @@ var usuarios = (function () {
       datos.locales.map(function (l) { return '<option value="' + esc(l.id) + '"' + (sel === l.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>'; }).join('');
   }
   function opcionesRol(sel) {
-    return ROLES_ADMIN.map(function (r) { return '<option value="' + r + '"' + (sel === r ? ' selected' : '') + '>' + esc(ROL[r]) + '</option>'; }).join('');
+    var roles = ROLES_ADMIN.concat(sel === 'gerencia' ? ['gerencia'] : []);
+    return roles.map(function (r) { return '<option value="' + r + '"' + (sel === r ? ' selected' : '') + '>' + esc(NOMBRE_ROL[r]) + '</option>'; }).join('');
   }
-  function sinLocal(rol) { return rol === 'atencion' || rol === 'admin'; }
+  function sinLocal(rol) { return rol === 'atencion' || rol === 'admin' || rol === 'zona'; }
+  /** Las casillas de los locales del supervisor (SQL 141). marcados: {id: true|'pidio'}. */
+  function casillasLocales(marcados) {
+    return datos.locales.map(function (l) {
+      var m = marcados[l.id];
+      return '<label class="us-loc"><input type="checkbox" value="' + esc(l.id) + '"' + (m ? ' checked' : '') + '> ' +
+        esc(l.nombre) + (m === 'pidio' ? ' <small>(lo pidió)</small>' : '') + '</label>';
+    }).join('');
+  }
+  function marcadosDe(p) {
+    var m = {};
+    (p.supervisa || []).forEach(function (s) { m[s.id] = s.aprobado ? true : 'pidio'; });
+    return m;
+  }
+  function tildados(cont) {
+    return Array.prototype.map.call(cont.querySelectorAll('.us-locales input:checked'), function (i) { return i.value; });
+  }
 
   function filaEditor(p) {
+    var r = rolEd(p);
     return '<div class="us-fila us-editando" data-id="' + esc(p.id) + '">' +
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Cambiar el rol, el local o si también atiende clientes</span></div>' +
       '<div class="us-editor">' +
-        '<select data-ed="rol" aria-label="Rol">' + opcionesRol(p.rol) + '</select>' +
-        '<select data-ed="local" aria-label="Local"' + (sinLocal(p.rol) ? ' hidden' : '') + '>' + opcionesLocal(p.local_id || '', p.rol === 'gerencia') + '</select>' +
-        '<label class="us-check" data-ed-atencion' + (puedeAtencion(p.rol) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
+        '<select data-ed="rol" aria-label="Rol">' + opcionesRol(r) + '</select>' +
+        '<select data-ed="local" aria-label="Local"' + (sinLocal(r) ? ' hidden' : '') + '>' + opcionesLocal(p.local_id || '', r === 'gerencia') + '</select>' +
+        '<div class="us-locales" data-ed-locales role="group" aria-label="Sus locales"' + (r === 'zona' ? '' : ' hidden') + '>' +
+          '<span class="us-locales-tit">Sus locales</span>' + casillasLocales(marcadosDe(p)) + '</div>' +
+        '<label class="us-check" data-ed-atencion' + (puedeAtencion(r) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
           '<input type="checkbox" data-ed="atencion"' + (p.tambien_atencion ? ' checked' : '') + '> También atiende clientes</label>' +
         '<button type="button" class="btn btn-pri btn-chico" data-acc="guardar">Guardar</button>' +
         '<button type="button" class="btn btn-sec btn-chico" data-acc="cancelar">Cancelar</button>' +
@@ -224,7 +274,9 @@ var usuarios = (function () {
         '<div class="campo"><label for="usApellido">Apellido</label><input type="text" id="usApellido" maxlength="30" autocomplete="off" autocapitalize="words"></div>' +
         (admin
           ? '<div class="campo"><label for="usRol">Rol</label><select id="usRol">' + opcionesRol('vendedor') + '</select></div>' +
-            '<div class="campo" id="usCampoLocal"><label for="usLocal">Local</label><select id="usLocal">' + opcionesLocal('', false) + '</select></div>'
+            '<div class="campo" id="usCampoLocal"><label for="usLocal">Local</label><select id="usLocal">' + opcionesLocal('', false) + '</select></div>' +
+            '<div class="campo ancho" id="usCampoLocales" hidden><span class="campo-lbl">Sus locales</span>' +
+              '<div class="us-locales" role="group" aria-label="Sus locales">' + casillasLocales({}) + '</div></div>'
           : '<div class="campo ancho"><span class="campo-lbl">Rol</span><span class="us-fijo">Vendedor de ' + esc(nombreLocal(datos.yo.local_id)) + '</span></div>') +
         '<div class="campo ancho"><button type="button" class="btn btn-pri" id="usCrear">Crear usuario</button></div>' +
       '</div>' +
@@ -245,7 +297,9 @@ var usuarios = (function () {
     return llamar(nombre, args).then(function (r) {
       ocupado = false;
       if (r && r.ok === false) { avisar('err', r.porque || 'No se pudo.'); return false; }
-      if (mensajeOk) avisar('ok', typeof mensajeOk === 'function' ? mensajeOk(r) : mensajeOk);
+      /* Sin mensaje (o la función no devuelve nada): sigue otro paso, que avisa él. */
+      var m = typeof mensajeOk === 'function' ? mensajeOk(r) : mensajeOk;
+      if (m) avisar('ok', m);
       return traer().then(function () { return true; });
     }).catch(function (e) {
       ocupado = false;
@@ -289,16 +343,31 @@ var usuarios = (function () {
           break;
         case 'guardar':
           var rol = f.querySelector('[data-ed="rol"]').value, loc = f.querySelector('[data-ed="local"]').value || null;
-          if (p.local_id && loc && loc !== p.local_id && p.rol === 'vendedor' &&
+          var zona = rol === 'zona', locs = zona ? tildados(f) : [];
+          if (zona && !locs.length) { avisar('err', 'Tildá al menos un local para ' + p.nombre + '.'); return; }
+          if (p.local_id && loc && loc !== p.local_id && p.rol === 'vendedor' && !sinLocal(rol) &&
               !confirm('¿Pasar a ' + nom + ' a ' + nombreLocal(loc) + '? Sale de la lista de No Compra de ' + nombreLocal(p.local_id) + ' y entra en la del local nuevo.')) return;
+          if (zona && p.local_id &&
+              !confirm('¿Pasar a ' + nom + ' a supervisor de varios locales? Deja de estar fijo en ' + nombreLocal(p.local_id) +
+                       (p.rol === 'vendedor' ? ' y sale de su lista de No Compra.' : '.'))) return;
+          if (!zona && esZona(p) && (p.supervisa || []).length &&
+              !confirm('¿Sacarle a ' + nom + ' los locales que supervisa (' + susLocales(p) + ')?')) return;
           var cas = f.querySelector('[data-ed="atencion"]');
           var conAt = puedeAtencion(rol) && !!(cas && cas.checked), cambiaAt = conAt !== !!p.tambien_atencion;
-          hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: rol, p_local: sinLocal(rol) ? null : loc }, function () {
+          hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: zona ? 'supervisor' : rol, p_local: sinLocal(rol) ? null : loc }, function () {
+            if (zona) return null;   // avisa el paso de los locales
             /* SQL 110: lo de la oficina pide un PIN de 6 números; el suyo
                queda, y lo cambia la próxima vez que entre. */
             var seis = { admin: 1, atencion: 1, gerencia: 1 };
             return p.pin && seis[rol] && !seis[p.rol] && !p.tambien_atencion ? 'Guardado. La próxima vez que entre, ' + p.nombre + ' cambia su PIN por uno de 6 números.' : 'Guardado.';
           })
+            /* SQL 141: los locales del supervisor van aparte, ya aprobados. */
+            .then(function (ok) {
+              if (!ok || !zona) return ok;
+              return hacer('nc_usuario_locales', { p_persona: p.id, p_locales: locs }, function (r) {
+                return 'Guardado: ' + p.nombre + ' supervisa ' + ((r && r.locales) || 'sus locales') + '.';
+              });
+            })
             /* SQL 135: la casilla va aparte (sólo la pone el administrador). */
             .then(function (ok) {
               if (!ok || !cambiaAt) return ok;
@@ -324,14 +393,17 @@ var usuarios = (function () {
           break;
       }
     };
-    /* En el editor, el local se esconde para los roles que no tienen. */
+    /* En el editor, el local se esconde para los roles que no tienen; el supervisor tilda los suyos. */
     c.onchange = function (ev) {
       var s = ev.target;
       if (s.dataset && s.dataset.ed === 'rol') {
-        var loc = s.closest('.us-editor').querySelector('[data-ed="local"]');
+        var ed = s.closest('.us-editor');
+        var loc = ed.querySelector('[data-ed="local"]');
         loc.hidden = sinLocal(s.value);
-        var at = s.closest('.us-editor').querySelector('[data-ed-atencion]');
+        var at = ed.querySelector('[data-ed-atencion]');
         if (at) at.hidden = !puedeAtencion(s.value);
+        var locs = ed.querySelector('[data-ed-locales]');
+        if (locs) locs.hidden = s.value !== 'zona';
         loc.innerHTML = opcionesLocal(loc.value, s.value === 'gerencia');
       }
     };
@@ -340,6 +412,9 @@ var usuarios = (function () {
     if (rolSel) rolSel.onchange = function () {
       var l = document.getElementById('usLocal');
       document.getElementById('usCampoLocal').hidden = sinLocal(rolSel.value);
+      document.getElementById('usCampoLocales').hidden = rolSel.value !== 'zona';
+      /* Sin el campo Local, el rol ocupa la fila: "Supervisor (varios locales)" no entra en media. */
+      rolSel.parentNode.classList.toggle('ancho', sinLocal(rolSel.value));
       l.innerHTML = opcionesLocal(l.value, rolSel.value === 'gerencia');
     };
     var crear = function () {
@@ -348,11 +423,24 @@ var usuarios = (function () {
       if (!a) { avisar('err', 'Escribí el apellido.'); document.getElementById('usApellido').focus(); return; }
       var rol = rolSel ? rolSel.value : 'vendedor';
       var loc = rolSel ? (document.getElementById('usLocal').value || null) : datos.yo.local_id;
+      var zona = rol === 'zona', locs = zona ? tildados(document.getElementById('usCampoLocales')) : [], nuevo = null;
       if ((rol === 'vendedor' || rol === 'supervisor') && !loc) { avisar('err', 'Elegí el local.'); document.getElementById('usLocal').focus(); return; }
+      if (zona && !locs.length) { avisar('err', 'Tildá al menos un local.'); return; }
       var b = document.getElementById('usCrear');
       b.disabled = true;
-      hacer('nc_usuario_crear', { p_nombre: n, p_apellido: a, p_rol: rol, p_local: sinLocal(rol) ? null : loc },
-            n + ' quedó creado. Decile que entre con su local y su nombre, y que cree su PIN.')
+      hacer('nc_usuario_crear', { p_nombre: n, p_apellido: a, p_rol: zona ? 'supervisor' : rol, p_local: sinLocal(rol) ? null : loc },
+            function (r) {
+              nuevo = r && r.id;
+              return zona ? null : n + ' quedó creado. Decile que entre con su local y su nombre, y que cree su PIN.';
+            })
+        /* SQL 141: al supervisor nuevo, sus locales (ya aprobados). Para entrar, su nombre aparece en
+           cada uno de ellos (nc_login_personas, SQL 121). */
+        .then(function (ok) {
+          if (!ok || !zona) return ok;
+          return hacer('nc_usuario_locales', { p_persona: nuevo, p_locales: locs }, function (r) {
+            return n + ' quedó creado, con ' + ((r && r.locales) || 'sus locales') + '. Decile que entre con su nombre y que cree su PIN.';
+          });
+        })
         .then(function (ok) {
           var b2 = document.getElementById('usCrear');
           if (b2) b2.disabled = false;

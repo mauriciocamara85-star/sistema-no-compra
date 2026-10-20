@@ -1462,7 +1462,16 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-vacio { font-size: 14px; color: var(--txt-2); margin: 0; }
 .us-nota { font-size: 13px; color: var(--txt-3); margin: 14px 0 0; }
 .us-fijo { font-size: 15px; font-weight: 600; padding: 4px 0; }
-#usCampoLocal[hidden] { display: none; }
+#usCampoLocal[hidden], #usCampoLocales[hidden] { display: none; }
+/* Los locales del supervisor de varios locales (SQL 141): casillas en columnas. En el editor,
+   en su renglón, entre los selectores y "También atiende clientes". */
+.us-locales { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; }
+.us-locales[hidden] { display: none; }
+.us-editor .us-locales { order: 9; flex: 1 1 100%; padding: 4px 2px 0; }
+.us-locales-tit { grid-column: 1 / -1; font-size: 13px; font-weight: 600; color: var(--txt-2); margin-bottom: 2px; }
+.us-loc { font-size: 14px; font-weight: 500; color: var(--txt); cursor: pointer; min-height: 34px; gap: 8px; }
+.us-loc input { width: 18px; height: 18px; flex: none; accent-color: var(--acc); }
+.us-loc small { font-weight: 500; color: var(--txt-3); font-size: 12px; }
 
 /* El portón de lo que antes pedía el PIN compartido (persona.porton). */
 .porton-usuario { width: 100%; }

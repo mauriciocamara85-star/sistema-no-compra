@@ -203,7 +203,11 @@ var persona = (function () {
     } catch (e) { return false; }
   }
   function fijarYo(y) {
-    var clave = function () { return rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado) + '|' + !!(_yo && _yo.pin_corto) + '|' + !!(_yo && _yo.tambien_atencion); };
+    /* SQL 141: también los locales del supervisor (Estadísticas le muestra sólo esos). */
+    var clave = function () {
+      return rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado) + '|' + !!(_yo && _yo.pin_corto) + '|' + !!(_yo && _yo.tambien_atencion) +
+        '|' + (_yo && _yo.zona ? _yo.zona.map(function (z) { return z.codigo; }).join(',') : '');
+    };
     var antes = clave();
     _yo = y;
     guardarLS(K_YO, y && !y.provisorio ? y : null);
@@ -781,9 +785,12 @@ var persona = (function () {
     var c = abrirVelo();
     if (!vigente(_yo)) { pasoEspera(c); return; }
     var y = _yo;
-    var gestiona = y.rol === 'admin' || y.rol === 'supervisor';
+    /* El supervisor de varios locales (nc_yo le trae 'zona', aunque esté vacía) no maneja usuarios:
+       sólo el administrador y el encargado (nc_quien_maneja). */
+    var gestiona = y.rol === 'admin' || (y.rol === 'supervisor' && !y.zona);
+    var zona = y.zona && y.zona.length ? y.zona.map(function (z) { return z.nombre; }).join(', ') : '';
     c.innerHTML = '<h2 id="ncpTit">' + txt(y.nombre) + '</h2>' +
-      '<p class="ncp-bajada">' + txt(nombreRol(y)) + (y.local_nombre ? ' · ' + txt(y.local_nombre) : '') + '</p>' +
+      '<p class="ncp-bajada">' + txt(nombreRol(y)) + (y.local_nombre ? ' · ' + txt(y.local_nombre) : zona ? ' · ' + txt(zona) : '') + '</p>' +
       (y.rol === 'vendedor' || y.rol === 'supervisor'
         ? '<p class="ncp-nota">En No Compra aparecés como <b>' + txt(y.vendedor || y.nombre) + '</b>. Si carga otro, cambiá el vendedor ahí mismo.</p>' : '') +
       '<div class="ncp-pie">' +

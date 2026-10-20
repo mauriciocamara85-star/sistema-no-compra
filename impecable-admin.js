@@ -1840,17 +1840,21 @@ function ajPersonas() {
     leer('/orden_locales?select=id,nombre&order=nombre.asc')
   ]).then(function (r) {
     var gente = r[0] || [], locs = r[1] || [];
-    var z = zonaAjuste('<p class="bajada">Las de ' + esc(_local.nombre) + ' y las que no tienen local (administración y gerencia). Para cambiar a alguien de local, elegí otro y guardá. "Borrar PIN": la próxima vez que entre, crea uno nuevo (y hay que volver a aprobarlo). "Aprobado": quien entra por primera vez no ve nada del local hasta que se lo aprueba (a los vendedores también los aprueba su supervisor desde la app).' +
+    /* Gerencia ya no se ofrece (Mauricio, 19/10): sólo si alguien de la lista ya la tiene. */
+    var roles = [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['admin', 'Administrador'], ['atencion', 'Atención al cliente']]
+      .concat(gente.some(function (p) { return p.rol === 'gerencia'; }) ? [['gerencia', 'Gerencia']] : []);
+    var z = zonaAjuste('<p class="bajada">Las de ' + esc(_local.nombre) + ' y las que no tienen local (administración, atención y los supervisores de varios locales). Para cambiar a alguien de local, elegí otro y guardá. "Borrar PIN": la próxima vez que entre, crea uno nuevo (y hay que volver a aprobarlo). "Aprobado": quien entra por primera vez no ve nada del local hasta que se lo aprueba (a los vendedores también los aprueba su supervisor desde la app).' +
+      ' Un supervisor con local es el encargado de ese local; sin local, es el de varios locales, y sus locales se eligen en la compu (Config → Usuarios).' +
       (esAdmin() ? ' "También atiende clientes": un vendedor o encargado que además entra al CRM, Socios, el Club y Gift Cards; su PIN pasa a ser de 6 números (si el suyo es de 4, lo cambia la próxima vez que entre).' : '') + '</p>' +
       '<div id="filasPersonas"></div><div class="seccion">Agregar a alguien</div><div class="renglon" id="nuevaPersona">' +
       campoHTML({ k: 'nombre', t: 'Nombre', tipo: 'texto' }, {}) + campoHTML({ k: 'apellido', t: 'Apellido', tipo: 'texto' }, {}) +
-      campoHTML({ k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador'], ['atencion', 'Atención al cliente']] }, { rol: 'vendedor' }) +
+      campoHTML({ k: 'rol', t: 'Rol', tipo: 'sel', ops: roles.filter(function (o) { return o[0] !== 'gerencia'; }) }, { rol: 'vendedor' }) +
       campoHTML({ k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) }, { local_id: _local.id }) +
       '<div class="acciones-renglon"><button class="boton chico lima" id="agregarPersona">Agregar</button></div></div>');
     editor({
       cont: z.querySelector('#filasPersonas'), filas: gente,
       cols: [{ k: 'nombre', t: 'Nombre', tipo: 'texto' }, { k: 'apellido', t: 'Apellido', tipo: 'texto', nulo: true },
-             { k: 'rol', t: 'Rol', tipo: 'sel', ops: [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['gerencia', 'Gerencia'], ['admin', 'Administrador'], ['atencion', 'Atención al cliente']] },
+             { k: 'rol', t: 'Rol', tipo: 'sel', ops: roles },
              { k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) },
              { k: 'dias_libres', t: 'Francos', tipo: 'dias' }, { k: 'telegram_chat_id', t: 'Telegram (id)', tipo: 'texto', nulo: true },
              { k: 'activo', t: 'Activo', tipo: 'bool' }, { k: 'aprobado', t: 'Aprobado', tipo: 'bool' }]

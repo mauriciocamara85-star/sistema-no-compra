@@ -564,7 +564,7 @@
      está mirando. */
   var pedidoEst = 0;
   function cargar() {
-    if (rolAplicado) { estado.local = rolAplicado; }
+    if (rolAplicado) { estado.local = rolAplicado; } else if (zonaCod && !enZona(estado.local)) { estado.local = zonaCod[0]; }
     var n = ++pedidoEst; return vista === 'gc' ? cargarGC(n) : cargarNC(n);
   }
   /* ¿Sigue valiendo esta respuesta? Si después se pidió otra cosa (otro
@@ -610,10 +610,11 @@
 
   function pintarSelectorLocal() {
     var lista = datos.por_local || [], sl = datos.sin_local || {};
-    var haySin = Number(sl.cargados) || estado.local === SIN;
-    $('selLocal').innerHTML = '<option value="">Todos los locales</option>' + lista.map(function (l) {
-      return '<option value="' + esc(l.local) + '"' + (l.local === estado.local ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
-    }).join('') + (haySin ? '<option value="' + SIN + '"' + (estado.local === SIN ? ' selected' : '') + '>Sin local</option>' : '');
+    var haySin = !zonaCod && (Number(sl.cargados) || estado.local === SIN);
+    $('selLocal').innerHTML = (zonaCod ? '' : '<option value="">Todos los locales</option>') +
+      lista.filter(function (l) { return enZona(l.local); }).map(function (l) {
+        return '<option value="' + esc(l.local) + '"' + (l.local === estado.local ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
+      }).join('') + (haySin ? '<option value="' + SIN + '"' + (estado.local === SIN ? ' selected' : '') + '>Sin local</option>' : '');
   }
 
   /* ═══ 1. Los cinco números ═════════════════════════════════════════════ */
@@ -724,7 +725,8 @@
     ['recuperado', 'Recuperado'], ['top', 'Motivo principal']
   ];
   function pintarLocales() {
-    var lista0 = (datos.por_local || []).slice(), c = ordenLoc.col;
+    /* El supervisor (SQL 141): sólo sus locales, todos (aunque estén en cero), sin "Sin local". */
+    var lista0 = (datos.por_local || []).filter(function (l) { return enZona(l.local); }), c = ordenLoc.col;
     var valor = function (x) { return c === 'nombre' || c === 'top' ? String(x[c] || '') : Number(x[c]) || 0; };
     lista0.sort(function (x, y) {
       var a = valor(x), b = valor(y);
@@ -735,9 +737,9 @@
     /* Los locales sin nada van juntos en un renglón: al arrancar son casi
        todos, y catorce filas de ceros tapan las que dicen algo. */
     var vacio = function (l) { return !Number(l.cargados); };
-    var ceros = lista0.filter(vacio);
+    var ceros = zonaCod ? [] : lista0.filter(vacio);
     if (!verCeros && ceros.length > 1) { lista0 = lista0.filter(function (l) { return !vacio(l); }); }
-    var sl = datos.sin_local || {};
+    var sl = zonaCod ? {} : (datos.sin_local || {});
     if (Number(sl.cargados)) { lista0.push(Object.assign({ sinlocal: true }, sl)); }
     var celda = function (n, txt) { return '<td' + (Number(n) ? '' : ' class="cero"') + '>' + txt + '</td>'; };
     var conPct = function (n, de) { return miles(n) + (Number(de) ? '<small>' + pct(n, de) + ' %</small>' : ''); };
@@ -873,32 +875,42 @@
      Cards es de la oficina (con su usuario), porque es plata. El Club es otra página
      (club-numeros.html), con estas mismas pestañas. */
   var vista = 'nc', datosGC = null;
-  function leerVista() { return location.hash === '#giftcards' && !localFijo() ? 'gc' : 'nc'; }
+  function leerVista() { return location.hash === '#giftcards' && !localFijo() && !zonaCodigos() ? 'gc' : 'nc'; }
 
   /* ═══ Con usuario de un local (13/10/2026) ═══════════════════════════
      El vendedor y el encargado ven el No Compra de SU local: sin el
      selector, sin la tabla de los otros locales y sin las pestañas Club y
      Gift Cards. Es lo que muestra la pantalla: la consulta sigue siendo la
      libre de siempre (cerrarla en la base es la parte 3). */
-  var rolAplicado = null;
+  var rolAplicado = null, zonaAplicada = null, deUnLocalAplicado = null;
   function localFijo() {
     var y = persona.yo();
     /* SQL 135: el que además atiende clientes ve todos los locales, como Atención. */
     return y && (y.rol === 'vendedor' || y.rol === 'supervisor') && !y.tambien_atencion && y.local ? y.local : '';
   }
+  /* SQL 141: el supervisor de varios locales ve los suyos, de a uno: el selector y la tabla
+     traen sólo esos (nc_yo le trae 'zona', con el código de cada uno). */
+  var zonaCod = null;
+  function zonaCodigos() {
+    var y = persona.yo();
+    if (!(y && y.rol === 'supervisor' && !y.local && !y.tambien_atencion && y.zona && y.zona.length)) { return null; }
+    return y.zona.map(function (z) { return z.codigo; });
+  }
+  function enZona(codigo) { return !zonaCod || zonaCod.indexOf(codigo) >= 0; }
   /** Devuelve true si cambió lo que se ve (hay que volver a cargar). */
   function aplicarRol() {
-    var f = localFijo();
+    var f = localFijo(), z = zonaCodigos(), zz = z ? z.join('|') : '';
     var y = persona.yo();
     var deUnLocal = !!(y && (y.rol === 'vendedor' || y.rol === 'supervisor') && !y.tambien_atencion);
-    if (f === rolAplicado && deUnLocal === !!rolAplicado) { return false; }
-    rolAplicado = f;
+    if (f === rolAplicado && zz === zonaAplicada && deUnLocal === deUnLocalAplicado) { return false; }
+    rolAplicado = f; zonaAplicada = zz; deUnLocalAplicado = deUnLocal; zonaCod = z;
     if (f) { estado.local = f; }
-    var ocultar = function (el) { if (el) { el.style.display = deUnLocal ? 'none' : ''; } };
-    ocultar(document.querySelector('.pestana[href="club-numeros.html"]'));
-    ocultar(document.querySelector('.pestana[data-est="gc"]'));
-    ocultar($('selLocal'));
-    ocultar($('cajaLocales'));
+    if (z && !enZona(estado.local)) { estado.local = z[0]; }
+    var ocultar = function (el, si) { if (el) { el.style.display = si ? 'none' : ''; } };
+    ocultar(document.querySelector('.pestana[href="club-numeros.html"]'), deUnLocal);
+    ocultar(document.querySelector('.pestana[data-est="gc"]'), deUnLocal);
+    ocultar($('selLocal'), deUnLocal && !z);
+    ocultar($('cajaLocales'), deUnLocal && !z);
     return true;
   }
   function aplicarVista() {
@@ -1131,7 +1143,8 @@
       }
       var f = e.target.closest('tr[data-local]');
       if (f && f.dataset.local) {
-        estado.local = estado.local === f.dataset.local ? '' : f.dataset.local;
+        /* El supervisor no tiene "todos": tocar el suyo lo deja elegido. */
+        estado.local = estado.local === f.dataset.local && !zonaCod ? '' : f.dataset.local;
         guardar(K_LOCAL, estado.local); cargar();
         window.scrollTo({ top: 0, behavior: 'smooth' });
       }
