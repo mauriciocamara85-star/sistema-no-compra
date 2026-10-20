@@ -884,7 +884,7 @@ function pantallaHoy() {
   /* Desde cuándo cuenta "hoy" (la Argentina está en UTC−3 todo el año). */
   var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString(), desdeAyer = new Date(sumarDias(hoy, -1) + 'T03:00:00Z').toISOString();
   Promise.all([
-    /* Lo de hoy, lo que quedó pendiente (el depósito vence el viernes) y lo que se mandó hoy (el depósito
+    /* Lo de hoy, lo que quedó pendiente y lo que se mandó hoy (el depósito
        se crea un día y se manda otro: así no desaparece apenas se manda, y se puede sacar de nuevo). Y lo que
        venció ayer u hoy: se puede mandar igual al otro día y queda como tarde (Mauricio, 15/10). */
     leer('/orden_v_controles?select=id,estado,vence_en,frontal&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeAyer + '))'),
@@ -1123,7 +1123,7 @@ function sePuedeRehacer(c) {
 }
 
 function ofrecerRehacer(c) {
-  /* Se puede hasta el final del día en que se mandó, o antes si vence hoy (el depósito vence el viernes). */
+  /* Se puede hasta el final del día en que se mandó, o antes si vence hoy. */
   var hasta = hoyAR(new Date(c.vence_en)) === hoyAR() ? 'hasta las ' + hora(c.vence_en) : 'hasta el final del día';
   preguntar({ texto: c.modulo_nombre + ': ya mandaste la foto. Si salió mal, la podés sacar de nuevo ' + hasta +
                      ', mientras tu supervisor no la revise. Hasta que mandes la nueva, queda la que mandaste.',
@@ -1146,7 +1146,7 @@ function dibujarFotos(x) {
 
   /* El croquis del local: lo tuyo con tu color, lo demás apagado. Tocás un
      módulo con la cámara y mandás su foto. */
-  var mapa = x.mapa, mios = {}, marcas = {}, enMapa = {};
+  var mapa = x.mapa, mios = {}, marcas = {}, enMapa = {}, vidrieras = [];
   var hayMapa = !!(mapa && mapa.pared.length + mapa.islas.length + mapa.dep.length);
   if (hayMapa) {
     /* Si un módulo tiene dos controles (el del día y una sorpresa), manda lo que falta hacer. */
@@ -1159,6 +1159,10 @@ function dibujarFotos(x) {
     });
     var yoId = yo().id;
     mapa.modulos.forEach(function (m) { enMapa[m.id] = true; var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
+    /* La vidriera es de todos (SQL 145, Mauricio 20/10: "que eso siempre esté habilitado"): cualquiera del local le
+       saca foto, cualquier día. Con la cámara mientras no tenga una suya de hoy (con una, su marca). */
+    vidrieras = yo().local_id ? mapa.modulos.filter(esVidriera) : [];
+    vidrieras.forEach(function (m) { mios[m.id] = true; if (!marcas[m.id]) marcas[m.id] = 'pendiente'; });
     var hayMios = Object.keys(mios).length;
     /* Simple (16/10): sólo la instrucción. Sin la lista de nombres ni "Ver el local": el mapa entero es para el
        supervisor y el encargado (Equipo → El mapa del local). */
@@ -1166,7 +1170,8 @@ function dibujarFotos(x) {
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' +
       '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? (x.controles.some(function (c) { return c.frontal && !estadoDe(c, corregir).hecho; }) ? 'Hoy toca frontal nuevo: cambialo y tocá el módulo con la cámara para mandar su foto.' : 'Tocá un módulo con la cámara para mandar su foto.')
                               : total ? 'Por hoy no te queda ninguna foto para mandar.'
-                              : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') + '</p>';
+                              : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') +
+      (vidrieras.length ? ' La vidriera es de todos: tocala para mandarle una foto cuando quieras.' : '') + '</p>';
   }
 
   /* La lista: sin croquis, todo; con croquis, sólo lo que no está dibujado. */
@@ -1217,6 +1222,8 @@ function dibujarFotos(x) {
       var deNuevo = suyos.filter(sePuedeRehacer)[0];
       if (deNuevo) { ofrecerRehacer(deNuevo); return; }
       var m = mapa.modulos.filter(function (k) { return k.id === g.dataset.mod; })[0], s = m && mapa.sectorDe[m.sector_id];
+      /* La vidriera, de todos (SQL 145): una foto nueva (también si ya mandó una y se la revisaron). */
+      if (esVidriera(m) && vidrieras.length) { pantallaFoto(vidrieraLibre(m)); return; }
       var quien = s && mapa.persona[s.responsable_id];
       var que = nombreModulo(m, s, mapa);
       avisar(!suyos.length ? que + (quien ? ' es de ' + nombreLista(quien) + '.' : ' no tiene responsable.')
@@ -1355,6 +1362,28 @@ function pantallaFoto(c) {
   abrirCamara(c, estado);
 }
 
+/** La foto de la vidriera sin control todavía (SQL 145): el control nace cuando se registra la foto
+    (orden_vidriera_foto). Así, si abre la cámara y se arrepiente, no queda nada pendiente. */
+function vidrieraLibre(m) {
+  return { id: null, libre: true, local_id: yo().local_id, modulo_id: m.id, modulo_nombre: m.nombre, foto_referencia_path: m.foto_referencia_path || null,
+           sector_tipo: 'salon', mueble: 'vidriera', tipo: 'programado', estado: 'pendiente', frontal: false };
+}
+
+/** Registra la foto en su control; la de la vidriera libre, en el suyo de hoy (o en uno nuevo). */
+function registrarFoto(c, estado, ruta) {
+  if (c.id) return llamar('orden_registrar_foto', { p_control: c.id, p_foto_path: ruta });
+  return llamar('orden_vidriera_foto', { p_modulo: c.modulo_id, p_foto_path: ruta }).then(function (r) {
+    c.id = r.control;
+    /* Ya había mandado una hoy y todavía se puede cambiar: la nueva va a ese control y la reemplaza si la manda. */
+    if (r.estado === 'enviado') { c.estado = 'enviado'; estado.rehacer = true; }
+    return r.foto;
+  }, function (e) {
+    /* La base todavía no tiene el SQL 145. */
+    if (/orden_vidriera_foto/.test(mensajeDe(e))) { e = new Error('Falta actualizar el sistema: avisale a tu supervisor.'); e.delServidor = true; }
+    throw e;
+  });
+}
+
 /** La cámara a pantalla completa. alSacar(blob) recibe la foto ya achicada. */
 function camara(titulo, referencia, guia, alSacar, alCerrar) {
   apagarCamara();
@@ -1443,10 +1472,10 @@ function mandarFoto(c, estado) {
   estado.resultado = { subiendo: true };
   abrirRevision(c, estado);
   var subida = estado.ruta ? Promise.resolve(estado.ruta)
-    : subirArchivo(c.local_id + '/' + hoyAR() + '/' + c.id + '/' + nombreArchivo(), estado.blob)
+    : subirArchivo(c.local_id + '/' + hoyAR() + '/' + (c.id || 'vidriera-' + c.modulo_id) + '/' + nombreArchivo(), estado.blob)
         .then(function (ruta) { estado.ruta = ruta; return ruta; });
   var paso = estado.fotoId ? Promise.resolve(estado.fotoId)
-    : subida.then(function (ruta) { return llamar('orden_registrar_foto', { p_control: c.id, p_foto_path: ruta }); })
+    : subida.then(function (ruta) { return registrarFoto(c, estado, ruta); })
         .then(function (id) { estado.fotoId = id; return id; });
   paso.then(function (id) {
     estado.resultado = {};
@@ -1513,7 +1542,8 @@ function recordatorioFoto(c) {
   return '<p class="ayuda-foto">Para que salga bien: ' + preguntasDe(c).map(function (q) { return esc(CHECK[q[0]] || q[0]); }).join(' · ') + '.</p>';
 }
 function textoListo(c, estado) {
-  return (estado.rehacer ? '¡Listo! Cambiaste la foto: ' : '¡Listo! Mandaste la foto: ') + c.modulo_nombre + (estado.tarde ? ' (tarde).' : '.');
+  /* "Vidriera izq." ya termina en punto: sin otro. */
+  return (estado.rehacer ? '¡Listo! Cambiaste la foto: ' : '¡Listo! Mandaste la foto: ') + c.modulo_nombre + (estado.tarde ? ' (tarde).' : /\.$/.test(c.modulo_nombre) ? '' : '.');
 }
 
 /* La foto que sacó: sólo "Enviar" (y "Sacar otra" si quiere). Nada la frena: ni lo que diga la IA, ni preguntas

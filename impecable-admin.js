@@ -1993,20 +1993,21 @@ function verSemanaFrontal(v, fila) {
 /* Cada bloque se guarda solo y se puede copiar a los otros locales (el nombre y el horario de cada uno, no). */
 var BLOQUES_LOCAL = [
   { id: 'controles', titulo: 'Los controles',
-    cols: [{ k: 'dias_control', t: 'Días de control', tipo: 'dias', delLocal: true }, { k: 'hora_limite', t: 'Hora límite', tipo: 'hora', delLocal: true },
+    cols: [{ k: 'dias_control', t: 'Días del salón', tipo: 'dias', delLocal: true }, { k: 'hora_limite', t: 'Hora límite', tipo: 'hora', delLocal: true },
            { k: 'hora_aviso_1', t: 'Aviso de la mañana', tipo: 'hora', delLocal: true }, { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', tipo: 'hora', delLocal: true },
            { k: 'sorpresas_por_semana', t: 'Controles sorpresa por semana', tipo: 'num', min: 0, max: 7 },
-           { k: 'deposito_dia_vence', t: 'El depósito vence el', tipo: 'sel', numero: true, ops: DIAS_SEL },
+           { k: 'deposito_dia_vence', t: 'Día del depósito', tipo: 'sel', numero: true, ops: DIAS_SEL },
            { k: 'frontal_cada_semanas', t: 'Frontal nuevo', tipo: 'sel', numero: true, ops: [[null, 'apagado'], [1, 'todas las semanas'], [2, 'cada 2 semanas'], [3, 'cada 3 semanas'], [4, 'cada 4 semanas']] },
            { k: 'frontal_desde', t: 'Desde la semana', tipo: 'sel', ops: SEMANAS_FRONTAL, mostrar: verSemanaFrontal },
            { k: 'max_avisos_dia', t: 'Tope de avisos por día', tipo: 'num', min: 1 },
            { k: 'horas_revision_supervisor', t: 'Horas para revisar', tipo: 'num', min: 1 },
            { k: 'desafio_activo', t: 'Test semanal de conocimiento: a cada vendedor le llega uno por semana, un día y una hora al azar (no cuenta para faltas).', corto: 'el test semanal', tipo: 'bool' }],
     armar: function (c) {
-      return frase('Todos los módulos del salón se controlan los días ' + c('dias_control') + ' y el control vence a las ' + c('hora_limite') + '.') +
+      /* SQL 145 (Mauricio, 20/10): martes el salón, jueves el depósito; con franco, el día anterior; la vidriera, de todos. */
+      return frase('El salón se controla ' + c('dias_control') + ' y el depósito el ' + c('deposito_dia_vence') + '. La foto vence a las ' + c('hora_limite') + ' de ese día.') +
+        frase('Al que tiene franco ese día le toca el día anterior que trabaja. La vidriera es de todos: cualquiera del local le saca foto, cualquier día.', 'aclara') +
         frase('A quien le toca le llega un aviso a las ' + c('hora_aviso_1') + ' y, si todavía no lo hizo, un recordatorio a las ' + c('hora_aviso_2') + '.') +
         frase('Controles sorpresa por semana, a cada sector: ' + c('sorpresas_por_semana') + ' (un día que no es de control, al azar).') +
-        frase('El depósito se controla una vez por semana y vence el ' + c('deposito_dia_vence') + '.') +
         frase('Frontal nuevo: ' + c('frontal_cada_semanas') + ', desde ' + c('frontal_desde') + '. El primer día de control de esa semana cambian el frontal de cada módulo, y la foto del control sirve de prueba (sin fotos de más).') +
         frase('A cada persona le llegan como mucho ' + c('max_avisos_dia') + ' avisos por día (los urgentes llegan igual).') +
         frase('Si una foto o una caja espera más de ' + c('horas_revision_supervisor') + ' horas que la revise el supervisor, te llega un aviso.') +

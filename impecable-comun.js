@@ -399,7 +399,7 @@ function llamarFuncion(nombre, cuerpo) {
 
 var COLORES_PERSONA = ['#4D9FFF', '#2FE38A', '#F0C66A', '#B38BFF', '#FF8A65', '#4DD0E1', '#F06292', '#AED581', '#FFD54F', '#90A4AE'];
 var GRIS_SIN_RESPONSABLE = '#BDB8AE';
-/** La vidriera es de todos (SQL 116, por turnos): su propio color, blanco cálido. */
+/** La vidriera es de todos (SQL 145: cualquiera le saca foto, cuando quiera): su propio color, blanco cálido. */
 var COLOR_VIDRIERA = '#F1ECDF';
 var PAREDES = [['izquierda', 'Pared izquierda'], ['fondo', 'Fondo'], ['derecha', 'Pared derecha'], ['frente', 'Frente']];
 
@@ -496,7 +496,7 @@ var NOMBRES_VIDRIERA = { 1: ['Vidriera'], 2: ['Vidriera izq.', 'Vidriera der.'] 
 function esNombreVidriera(n) { return /^vidriera( izq\.| der\.)?$/i.test(String(n || '').trim()); }
 function esVidriera(m) { return !!m && !!m.isla && esNombreVidriera(m.nombre); }
 /** "1–3, 5, Vidriera izq.": los números en rangos y después los nombres. */
-/** Entre quiénes rota la vidriera: los que tienen sectores del salón, en su orden ("Lautaro G., Seba y Nano"). */
+/** Los que comparten la vidriera: los que tienen sectores del salón, en su orden ("Lautaro G., Seba y Nano"). */
 function turnoVidrieraTexto(d) {
   var vistos = {}, nombres = [];
   (d.salon || []).forEach(function (s) {
@@ -1423,10 +1423,10 @@ function leyendaPersonas(d) {
     return '<div class="mapa-sec"><i style="background:' + d.colorPersona[pid] + '"></i><span><b>' + esc(nombreLista(d.persona[pid]) || 'Alguien que ya no está') + '</b><small>' +
       esc((partes.join(' · ') || 'Sin módulos') + (cubre.length ? ' · lo cubre ' + cubre.join(', ') : '')) + '</small></span></div>';
   });
-  /* La vidriera: de todos, por turnos (un día de control a cada uno). */
+  /* La vidriera: de todos (SQL 145): cualquiera del local le saca foto, cualquier día. */
   if (d.islas.some(esVidriera)) {
-    lista.push('<div class="mapa-sec"><i style="background:' + COLOR_VIDRIERA + ';box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)"></i><span><b>Vidriera · por turnos</b><small>' +
-      esc(turnoVidrieraTexto(d) + ': un día de control a cada uno') + '</small></span></div>');
+    lista.push('<div class="mapa-sec"><i style="background:' + COLOR_VIDRIERA + ';box-shadow:inset 0 0 0 1px rgba(0,0,0,.25)"></i><span><b>Vidriera · de todos</b><small>' +
+      esc(turnoVidrieraTexto(d) + ': cualquiera le saca foto, cuando quiera') + '</small></span></div>');
   }
   var sin = d.salon.concat(d.deposito).filter(function (s) { return !s.responsable_id; });
   var sinMods = d.modulos.filter(function (m) { return sin.some(function (s) { return s.id === m.sector_id; }); });

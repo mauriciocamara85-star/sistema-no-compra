@@ -1002,7 +1002,7 @@ function visorPrevia(V) {
     el.classList.toggle('cv-previa-sobre', sobre);
     el.innerHTML = '<div class="cv-previa-foto' + (e.foto_path ? '' : ' sin') + '">' + (e.foto_path ? '' : '<span>Todavía no hay foto</span>') + '</div>' +
       '<div class="cv-previa-txt"><b>' + esc(titulo) + '</b>' + (bajada ? '<span>' + esc(bajada) + '</span>' : '') +
-        '<small><i style="background:' + visorColor(V, m) + '"></i>' + esc(esVidriera(m) ? 'Por turnos' : resp ? nombreLista(resp) : 'Sin responsable') +
+        '<small><i style="background:' + visorColor(V, m) + '"></i>' + esc(esVidriera(m) ? 'De todos' : resp ? nombreLista(resp) : 'Sin responsable') +
           (e.foto_path && e.tomada_en ? ' · ' + esc(textoHace(e.tomada_en)) : '') + (e.foto_path && e.nivel ? ' · ' + esc(NIVEL[e.nivel] || e.nivel) : '') + '</small>' +
         '<em>' + (V.c3 && V.c3.caminando() && !V.c3.mirando() ? 'Clic para ir hasta ahí' : 'Clic para abrirlo') + '</em></div>';
     var f = el.querySelector('.cv-previa-foto');
@@ -1071,7 +1071,7 @@ function visorCategoria(V, m) {
     x = dd == null ? VISOR_EDADES[4] : dd <= 1 ? VISOR_EDADES[0] : dd <= 4 ? VISOR_EDADES[1] : dd <= 7 ? VISOR_EDADES[2] : VISOR_EDADES[3];
     return { clave: 'c:' + x[0], texto: x[1], color: x[2] };
   }
-  if (esVidriera(m)) return { clave: 'p:turnos', texto: 'Vidriera (por turnos)', color: COLOR_VIDRIERA };
+  if (esVidriera(m)) return { clave: 'p:turnos', texto: 'Vidriera (de todos)', color: COLOR_VIDRIERA };
   var s = V.d.sectorDe[m.sector_id], p = s && s.responsable_id;
   return { clave: 'p:' + (p || 'nadie'), texto: p && V.d.persona[p] ? nombreLista(V.d.persona[p]) : 'Sin responsable', color: visorColor(V, m) };
 }
@@ -1405,7 +1405,7 @@ function abrirFicha(V, id, caja) {
           (V.op.puedeSugerir && resp ? '<button class="cv-boton cv-lima" type="button" id="cvPedirFoto">Pedirle la foto a ' + esc(nombreLista(resp)) + '</button>' : resp ? '' : '<p>No tiene responsable: ' + esc(visorDondeAsignar(V)) + '.</p>') + '</div>') +
       (ref ? '<figure class="cv-foto cv-ref"><div class="cv-foto-img" id="cvFotoRef" data-amplia="ref"></div><figcaption><b>Así se arma en VDH</b></figcaption></figure>' : '') + '</div>' +
       '<div class="cv-datos">' + (e.nivel ? '<span class="cv-nivel nivel-' + esc(e.nivel) + '">' + esc(NIVEL[e.nivel] || e.nivel) + '</span>' : '') +
-        '<span class="cv-persona"><i style="background:' + visorColor(V, m) + '"></i>' + (esVidriera(m) ? esc('Por turnos: ' + turnoVidrieraTexto(d)) : esc(resp ? nombreLista(resp) : 'Sin responsable') + (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '')) + '</span>' +
+        '<span class="cv-persona"><i style="background:' + visorColor(V, m) + '"></i>' + (esVidriera(m) ? esc('De todos: ' + turnoVidrieraTexto(d)) : esc(resp ? nombreLista(resp) : 'Sin responsable') + (sup ? ' · lo cubre ' + esc(nombreLista(sup)) : '')) + '</span>' +
         '<span id="cvTareas"' + (+e.tareas_abiertas ? '' : ' hidden') + '>' + visorTextoTareas(e.tareas_abiertas) + '</span></div>' +
       '<div class="cv-ia" id="cvIa">' + (e.foto_path ? '<p class="cv-gris">Buscando lo que vio la IA…</p>' : '') + '</div>' +
       (V.op.puedeSugerir ? (resp
