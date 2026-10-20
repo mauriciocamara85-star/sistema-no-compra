@@ -929,24 +929,33 @@
   }
 
   /* ══ Gráficos (SVG a mano, como en Estadísticas) ═══════════════════════ */
-  var PALETA = ['#1E3A5F', '#2563EB', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#64748B'];
+  /* Los colores de cada tema (el oscuro, 20/10/2026). La paleta oscura son los mismos trabajos en pasos para el
+     fondo oscuro: el azul de la venta real primero, y validada (luz, croma, daltonismo y contraste ≥ 3:1 contra
+     el recuadro del gráfico). El "corte" entre porciones de la dona es el fondo del recuadro. */
+  var GRAF = {
+    light: { serie: ['#1E3A5F', '#2563EB', '#0EA5E9', '#10B981', '#F59E0B', '#8B5CF6', '#EC4899', '#64748B'], gris: '#CBD5E1', corte: '#FFFFFF',
+      centro: '#111827', apoyo: '#6B7280', mes: '#374151', grilla: '#E3E6EA', ok: '#047857', obj: '#CBD5E1', objLinea: '#94A3B8', real: '#1E3A5F' },
+    dark: { serie: ['#3987E5', '#199E70', '#C98500', '#D55181', '#9085E9', '#D95926', '#1A9BB8', '#E66767'], gris: '#56657B', corte: '#111824',
+      centro: '#F1F5F9', apoyo: '#96A1B1', mes: '#BCC5D2', grilla: '#1F2A3A', ok: '#5ADBA0', obj: '#56657B', objLinea: '#8391A6', real: '#3987E5' }
+  };
+  function colGraf() { return document.documentElement.dataset.theme === 'dark' ? GRAF.dark : GRAF.light; }
   function graficoDona(T) {
     var items = T.rk.map(function (r) { return { nombre: r.nombre, v: r.venta }; });
     if (T.sinV > 0) items.push({ nombre: 'Sin vendedor', v: T.sinV, gris: true });
     if (T.otros > 0) items.push({ nombre: 'Otros', v: T.otros, gris: true });
     var tot = suma(items.map(function (x) { return x.v; }));
     if (!tot) return '<div class="tp-vacio">Sin ventas todavía</div>';
-    var cx = 110, cy = 100, R = 88, r = 54, a = -Math.PI / 2, svg = '';
+    var G = colGraf(), cx = 110, cy = 100, R = 88, r = 54, a = -Math.PI / 2, svg = '';
     items.forEach(function (x, i) {
-      var col = x.gris ? '#CBD5E1' : PALETA[i % PALETA.length], frac = x.v / tot;
+      var col = x.gris ? G.gris : G.serie[i % G.serie.length], frac = x.v / tot;
       if (frac >= 0.9999) { svg += '<circle cx="' + cx + '" cy="' + cy + '" r="' + ((R + r) / 2) + '" fill="none" stroke="' + col + '" stroke-width="' + (R - r) + '"/>'; x.col = col; return; }
       var b = a + frac * 2 * Math.PI, g = frac > 0.5 ? 1 : 0;
       var p = function (rad, ang) { return (cx + rad * Math.cos(ang)).toFixed(2) + ' ' + (cy + rad * Math.sin(ang)).toFixed(2); };
-      svg += '<path d="M' + p(R, a) + ' A' + R + ' ' + R + ' 0 ' + g + ' 1 ' + p(R, b) + ' L' + p(r, b) + ' A' + r + ' ' + r + ' 0 ' + g + ' 0 ' + p(r, a) + 'Z" fill="' + col + '" stroke="#FFFFFF" stroke-width="1.5"><title>' + esc(x.nombre) + ': ' + pesos(x.v) + '</title></path>';
+      svg += '<path d="M' + p(R, a) + ' A' + R + ' ' + R + ' 0 ' + g + ' 1 ' + p(R, b) + ' L' + p(r, b) + ' A' + r + ' ' + r + ' 0 ' + g + ' 0 ' + p(r, a) + 'Z" fill="' + col + '" stroke="' + G.corte + '" stroke-width="1.5"><title>' + esc(x.nombre) + ': ' + pesos(x.v) + '</title></path>';
       x.col = col; a = b;
     });
-    svg += '<text x="' + cx + '" y="' + (cy - 2) + '" text-anchor="middle" font-size="15" font-weight="700" fill="#111827">' + millCorto(tot) + '</text>' +
-      '<text x="' + cx + '" y="' + (cy + 15) + '" text-anchor="middle" font-size="10" fill="#6B7280">del semestre</text>';
+    svg += '<text x="' + cx + '" y="' + (cy - 2) + '" text-anchor="middle" font-size="15" font-weight="700" fill="' + G.centro + '">' + millCorto(tot) + '</text>' +
+      '<text x="' + cx + '" y="' + (cy + 15) + '" text-anchor="middle" font-size="10" fill="' + G.apoyo + '">del semestre</text>';
     return '<svg viewBox="0 0 220 200" role="img" aria-label="Participación de cada vendedor en la venta del semestre">' + svg + '</svg>' +
       '<div class="ley">' + items.map(function (x) {
         return '<span><i style="background:' + x.col + '"></i>' + esc(x.gris ? x.nombre : String(x.nombre).split(' ')[0]) + ' ' + pc(x.v / tot) + '</span>';
@@ -956,44 +965,44 @@
   function graficoBarras(F) {
     var W = 360, H = 200, x0 = 40, y0 = 14, ah = H - 34 - y0, aw = W - x0 - 6;
     var max = ejeMax(Math.max.apply(null, F.map(function (f) { return Math.max(f.obj, f.real); }).concat([1])));
-    var svg = '', paso = aw / F.length, bw = Math.min(18, paso / 3);
+    var G = colGraf(), svg = '', paso = aw / F.length, bw = Math.min(18, paso / 3);
     [0, 0.5, 1].forEach(function (k) {
       var y = y0 + ah - k * ah;
-      svg += '<line x1="' + x0 + '" x2="' + (W - 6) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="#E3E6EA"/>' +
-        '<text x="' + (x0 - 5) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="#6B7280">' + millCorto(max * k) + '</text>';
+      svg += '<line x1="' + x0 + '" x2="' + (W - 6) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="' + G.grilla + '"/>' +
+        '<text x="' + (x0 - 5) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="' + G.apoyo + '">' + millCorto(max * k) + '</text>';
     });
     F.forEach(function (f, i) {
       var cx = x0 + paso * i + paso / 2, ho = f.obj / max * ah, hr = f.real / max * ah;
-      svg += '<rect x="' + (cx - bw - 1).toFixed(1) + '" y="' + (y0 + ah - ho).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + ho.toFixed(1) + '" fill="#CBD5E1"><title>' + f.nombre + ' · objetivo ' + pesos(f.obj) + '</title></rect>' +
-        '<rect x="' + (cx + 1).toFixed(1) + '" y="' + (y0 + ah - hr).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + hr.toFixed(1) + '" fill="#1E3A5F"><title>' + f.nombre + ' · real ' + pesos(f.real) + '</title></rect>' +
-        '<text x="' + cx.toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle" font-size="10" fill="#374151">' + f.nombre.slice(0, 3) + '</text>' +
-        (f.real ? '<text x="' + cx.toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="9" fill="' + (f.av >= 1 ? '#047857' : '#6B7280') + '">' + pc(f.av) + '</text>' : '');
+      svg += '<rect x="' + (cx - bw - 1).toFixed(1) + '" y="' + (y0 + ah - ho).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + ho.toFixed(1) + '" fill="' + G.obj + '"><title>' + f.nombre + ' · objetivo ' + pesos(f.obj) + '</title></rect>' +
+        '<rect x="' + (cx + 1).toFixed(1) + '" y="' + (y0 + ah - hr).toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + hr.toFixed(1) + '" fill="' + G.real + '"><title>' + f.nombre + ' · real ' + pesos(f.real) + '</title></rect>' +
+        '<text x="' + cx.toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle" font-size="10" fill="' + G.mes + '">' + f.nombre.slice(0, 3) + '</text>' +
+        (f.real ? '<text x="' + cx.toFixed(1) + '" y="' + (H - 6) + '" text-anchor="middle" font-size="9" fill="' + (f.av >= 1 ? G.ok : G.apoyo) + '">' + pc(f.av) + '</text>' : '');
     });
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Objetivo contra venta real de cada mes">' + svg + '</svg>' +
-      '<div class="ley"><span><i style="background:#CBD5E1"></i>Objetivo</span><span><i style="background:#1E3A5F"></i>Venta real</span></div>';
+      '<div class="ley"><span><i style="background:' + G.obj + '"></i>Objetivo</span><span><i style="background:' + G.real + '"></i>Venta real</span></div>';
   }
   function graficoLinea(F) {
     var W = 360, H = 200, x0 = 40, y0 = 14, ah = H - 34 - y0, aw = W - x0 - 14;
     var conObj = F.filter(function (f) { return f.obj; }), conReal = F.filter(function (f) { return f.hay && f.empezo; });
     var max = ejeMax(Math.max.apply(null, F.map(function (f) { return Math.max(f.acumObj, f.acum); }).concat([1])));
-    var paso = aw / (F.length - 1), svg = '';
+    var G = colGraf(), paso = aw / (F.length - 1), svg = '';
     function px(i) { return x0 + paso * i; }
     function py(v) { return y0 + ah - v / max * ah; }
     [0, 0.5, 1].forEach(function (k) {
       var y = py(max * k);
-      svg += '<line x1="' + x0 + '" x2="' + (W - 6) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="#E3E6EA"/>' +
-        '<text x="' + (x0 - 5) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="#6B7280">' + millCorto(max * k) + '</text>';
+      svg += '<line x1="' + x0 + '" x2="' + (W - 6) + '" y1="' + y.toFixed(1) + '" y2="' + y.toFixed(1) + '" stroke="' + G.grilla + '"/>' +
+        '<text x="' + (x0 - 5) + '" y="' + (y + 3).toFixed(1) + '" text-anchor="end" font-size="9" fill="' + G.apoyo + '">' + millCorto(max * k) + '</text>';
     });
-    F.forEach(function (f, i) { svg += '<text x="' + px(i).toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle" font-size="10" fill="#374151">' + f.nombre.slice(0, 3) + '</text>'; });
+    F.forEach(function (f, i) { svg += '<text x="' + px(i).toFixed(1) + '" y="' + (H - 18) + '" text-anchor="middle" font-size="10" fill="' + G.mes + '">' + f.nombre.slice(0, 3) + '</text>'; });
     function trazo(lista, k, col, punteado) {
       if (!lista.length) return '';
       var pts = lista.map(function (f) { return px(F.indexOf(f)).toFixed(1) + ',' + py(f[k]).toFixed(1); });
       return '<polyline points="' + pts.join(' ') + '" fill="none" stroke="' + col + '" stroke-width="2.2"' + (punteado ? ' stroke-dasharray="5 4"' : '') + ' stroke-linejoin="round"/>' +
         lista.map(function (f) { return '<circle cx="' + px(F.indexOf(f)).toFixed(1) + '" cy="' + py(f[k]).toFixed(1) + '" r="3" fill="' + col + '"><title>' + f.nombre + ': ' + pesos(f[k]) + '</title></circle>'; }).join('');
     }
-    svg += trazo(conObj, 'acumObj', '#94A3B8', true) + trazo(conReal, 'acum', '#1E3A5F', false);
+    svg += trazo(conObj, 'acumObj', G.objLinea, true) + trazo(conReal, 'acum', G.real, false);
     return '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Venta acumulada contra objetivo acumulado">' + svg + '</svg>' +
-      '<div class="ley"><span><i style="background:#1E3A5F"></i>Acumulado real</span><span><i style="background:#94A3B8"></i>Objetivo acumulado</span></div>';
+      '<div class="ley"><span><i style="background:' + G.real + '"></i>Acumulado real</span><span><i style="background:' + G.objLinea + '"></i>Objetivo acumulado</span></div>';
   }
 
   /* ══ Cargar una celda ═══════════════════════════════════════════════════ */
@@ -1300,5 +1309,6 @@
     clearTimeout(tPersona);
     tPersona = setTimeout(cargarLocales, 150);
   });
+  iniciarTema();                          // en oscuro, también la barra del navegador (theme-color)
   iniciarPWA();
 })();

@@ -27,9 +27,9 @@
      igual que la planilla", porque los encargados se capacitaron con ella.
      Es la maqueta que aprobó (artifact del 15/10) conectada a la base: la
      hoja al medio con los mismos bloques y colores de Sheets, y las pestañas
-     abajo como en Sheets. La hoja tiene un solo tema a propósito: es la
-     planilla que ya conocen. Todo lleva el prefijo vt- para no pisarse con
-     estilos.css (que ya tiene .kpi, .chip, .hoja, .aviso…). */
+     abajo como en Sheets. En claro es la planilla que ya conocen; el oscuro
+     (20/10) está al final, y sólo cambia colores. Todo lleva el prefijo vt-
+     para no pisarse con estilos.css (que ya tiene .kpi, .chip, .hoja, .aviso…). */
   .vt-app {
     --sel: #1A73E8;               /* el azul de selección de Sheets */
     --h-titulo: #0F172A; --h-kpi: #1E293B; --h-banda: #1E3A5F; --h-escalon: #073763; --h-ritmo: #4B527E;
@@ -323,6 +323,85 @@
   .vt-dialogo .fila input { flex: 1; min-width: 0; }
   .vt-dialogo .nota { margin: 10px 0 0; font-size: 12.5px; color: var(--txt-3); line-height: 1.45; }
   .vt-dialogo .pie { display: flex; justify-content: flex-end; margin-top: 16px; }
+
+  /* ── Modo oscuro (20/10/2026) ────────────────────────────────────────────
+     Pedido de Mauricio: con el sistema en oscuro el fondo se ponía negro pero la
+     planilla seguía blanca. Ahora la hoja tiene su oscuro propio, "muy pro": un
+     azul noche que sigue a las bandas de la planilla, con los mismos bloques y
+     el mismo trabajo para cada color (ámbar = se carga, azul = se calcula solo,
+     el semáforo del dashboard en los desvíos). Sólo se pisan colores: el armado
+     y el claro no cambian. Las bandas y tarjetas que en claro ya eran oscuras
+     suben un escalón para despegarse de la hoja. Contrastes medidos contra la
+     celda en que viven (el más flojo, las ayudas, ~7:1). */
+  html[data-theme="dark"] .vt-app {
+    --sel: #5B9BFF;
+    --h-hoja: #0E131B; --h-sep: #070B12;
+    --h-titulo: #0B1A31; --h-kpi: #12213B; --h-banda: #183760; --h-escalon: #0F4174; --h-ritmo: #3A4377;
+    --h-gris: #111824; --h-gris2: #111824; --h-real: #121925; --h-total: #15243D; --h-azulclaro: #12203A; --h-panel: #111C2E;
+    --h-linea: #1E2735; --h-linea-osc: rgba(255,255,255,.07);
+    --h-ambar: #F5B041;
+    --h-azul: #8DB6FF;
+    --h-azul-traf: #7DB9F2; --h-verde: #5ADBA0;
+    --h-txt: #E6EAF0; --h-txt2: #BCC5D2; --h-txt3: #96A1B1; --h-gris-kpi: #A3B0C2; --h-gris-cab: #8D9AAE;
+    --h-peso-fondo: #0A0F16; --h-peso-txt: #8F9BAD;
+    --hoy: #0F2231; --futuro: #0A0E14; --franco: rgba(255,255,255,.08); --mal-suave: #2A1519; --mal: #FF8A93; --nuevo: #6FD3A1;
+  }
+  html[data-theme="dark"] .vt-hoja { background: var(--h-hoja); border-color: rgba(255,255,255,.08); border-radius: 10px; overflow: hidden; color-scheme: dark;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 30px 70px -32px rgba(0,0,0,.95); }
+  /* El título con una raya de luz abajo, y las tarjetas con su brillo arriba. */
+  html[data-theme="dark"] .vt-hoja .titulo { background: linear-gradient(100deg, #0B1A31 0%, #143058 55%, #0C1C36 100%);
+    border-bottom: 2px solid transparent; border-image: linear-gradient(90deg, #2F6FE0, #22C3E6 55%, rgba(34, 195, 230, 0) 100%) 1; }
+  html[data-theme="dark"] .vt-hoja .vt-kpis, html[data-theme="dark"] .vt-hoja .rankings, html[data-theme="dark"] .vt-hoja .proy { background: var(--h-sep); }
+  html[data-theme="dark"] .vt-hoja .vt-kpi { background: linear-gradient(180deg, #172A4C 0%, #10203A 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
+  html[data-theme="dark"] .vt-hoja .vt-kpis.k5 .vt-kpi { background: linear-gradient(180deg, #112240 0%, #0B1A31 100%); }
+  html[data-theme="dark"] .vt-hoja .vt-kpi .val.sv { text-shadow: 0 0 22px rgba(52, 211, 153, .45); }
+  html[data-theme="dark"] .vt-hoja .vt-kpi .val.sa { text-shadow: 0 0 22px rgba(251, 191, 36, .40); }
+  html[data-theme="dark"] .vt-hoja .vt-kpi .val.sr { text-shadow: 0 0 22px rgba(248, 113, 113, .45); }
+  html[data-theme="dark"] .vt-hoja .proy .v1 { text-shadow: 0 0 18px rgba(16, 185, 129, .35); }
+  html[data-theme="dark"] .vt-hoja .banda { background: linear-gradient(90deg, #1B3D69 0%, #152F52 100%); }
+  html[data-theme="dark"] .vt-hoja .banda.escalon, html[data-theme="dark"] .vt-hoja .banda.osc { background: linear-gradient(90deg, #102444 0%, #0B1A31 100%); }
+  html[data-theme="dark"] .vt-hoja .banda.ritmo { background: linear-gradient(90deg, #424C85 0%, #333B69 100%); }
+  html[data-theme="dark"] .vt-hoja .banda.gris { background: var(--h-kpi); }
+  /* El semáforo en las tablas de la hoja: la celda en un tono hondo y la letra encendida (en claro es el relleno de la planilla). */
+  html[data-theme="dark"] .vt-hoja .sem td.sv, html[data-theme="dark"] .vt-hoja .esc td.sv, html[data-theme="dark"] .vt-hoja .vb td.sv, html[data-theme="dark"] .vt-hoja .tp-tab td.sv, html[data-theme="dark"] .vt-hoja .ecm td.sv { background: #0F3527 !important; color: #6EEDB2 !important; }
+  html[data-theme="dark"] .vt-hoja .sem td.sa, html[data-theme="dark"] .vt-hoja .esc td.sa, html[data-theme="dark"] .vt-hoja .vb td.sa, html[data-theme="dark"] .vt-hoja .tp-tab td.sa, html[data-theme="dark"] .vt-hoja .ecm td.sa { background: #372C0C !important; color: #FFD45E !important; }
+  html[data-theme="dark"] .vt-hoja .sem td.sr, html[data-theme="dark"] .vt-hoja .esc td.sr, html[data-theme="dark"] .vt-hoja .vb td.sr, html[data-theme="dark"] .vt-hoja .tp-tab td.sr, html[data-theme="dark"] .vt-hoja .ecm td.sr { background: #3D161B !important; color: #FF9BA3 !important; }
+  /* Las celdas que se cargan */
+  html[data-theme="dark"] .vt-hoja .cfg td, html[data-theme="dark"] .vt-hoja .cfg th, html[data-theme="dark"] .vt-hoja .cfg2 td, html[data-theme="dark"] .vt-hoja .cfg2 th,
+  html[data-theme="dark"] .vt-hoja .iv-cfg td, html[data-theme="dark"] .vt-hoja .iv-cfg th { border-color: #232D3D; }
+  html[data-theme="dark"] .vt-hoja td.ed input:hover { background: rgba(91, 155, 255, .08); }
+  html[data-theme="dark"] .vt-hoja td.ed:focus-within { background: #16233B; }
+  html[data-theme="dark"] .vt-hoja td.ed input::placeholder { color: #657084; }
+  html[data-theme="dark"] .vt-hoja td.amb.ed, html[data-theme="dark"] .vt-hoja .sem .pesos td.ed { box-shadow: inset 0 -2px 0 rgba(245, 176, 65, .50); }
+  html[data-theme="dark"] .vt-hoja td.amb.ed:focus-within, html[data-theme="dark"] .vt-hoja .sem .pesos td.ed:focus-within { box-shadow: inset 0 0 0 2px var(--sel); }
+  html[data-theme="dark"] .vt-hoja .btn-add { background: transparent; border-color: #3E4B60; }
+  html[data-theme="dark"] .vt-hoja .btn-add:hover { background: rgba(111, 211, 161, .10); border-color: var(--nuevo); }
+  /* Las semanas */
+  html[data-theme="dark"] .vt-hoja .sem .pesos td:first-child { background: var(--h-hoja); }
+  html[data-theme="dark"] .vt-hoja .sem .pesos td.ed input { color: #AAB4C3; }
+  html[data-theme="dark"] .vt-hoja .sem .cab th { border-color: rgba(255,255,255,.08); }
+  html[data-theme="dark"] .vt-hoja .sem .cab th.hoy { box-shadow: inset 0 -3px 0 #7DD3FC, inset 0 -16px 18px -14px rgba(125, 211, 252, .45); }
+  html[data-theme="dark"] .vt-hoja .sem td.franco::after { color: #8590A2; }
+  html[data-theme="dark"] .vt-hoja .sem td.falta { box-shadow: inset 0 0 0 1.5px #E8A53C; }
+  html[data-theme="dark"] .vt-hoja .sem td.vt-vacio { background: #0B1018; }
+  html[data-theme="dark"] .vt-hoja .sinv select { background: #1A1013; border-color: #5C2730; }
+  html[data-theme="dark"] .vt-hoja .vb tr.o td { color: #A0ACBE; }
+  html[data-theme="dark"] .vt-hoja .ecm tr.cuello td { background: #182131; }
+  /* Temporada y los gráficos */
+  html[data-theme="dark"] .vt-hoja .tp-grid { background: var(--h-hoja); }
+  html[data-theme="dark"] .vt-hoja .tp-tab td.futuro { color: #4E5A6D; }
+  html[data-theme="dark"] .vt-hoja .graf { background: #111824; border-color: #1E2735; border-radius: 8px; }
+  /* Las pestañas: la elegida, del color de la hoja con su raya azul. */
+  html[data-theme="dark"] .vt-pestanas { background: #0A0D12; border-top-color: #1E2735; color-scheme: dark; }
+  html[data-theme="dark"] .vt-pest { color: #A9B3C2; }
+  html[data-theme="dark"] .vt-pest:hover { background: #141B26; }
+  html[data-theme="dark"] .vt-pest[aria-selected="true"] { background: #16213A; color: #FFFFFF; box-shadow: inset 0 3px 0 #5B9BFF, 0 8px 20px -10px rgba(91, 155, 255, .55); }
+  html[data-theme="dark"] .vt-mes-pest { color: #939EAE; }
+  /* Los cuadraditos de la leyenda de arriba, con los colores de la hoja oscura. */
+  html[data-theme="dark"] .vt-sw.amb { background: #111824; box-shadow: inset 0 -2px 0 #F5B041; }
+  html[data-theme="dark"] .vt-sw.calc { background: #15243D; box-shadow: inset 0 0 0 1px #2B4470; }
+  html[data-theme="dark"] .vt-sw.fr { background: repeating-linear-gradient(135deg, #2A3342 0 3px, #0E131B 3px 6px); border-color: #3A4556; }
+  html[data-theme="dark"] .vt-sw.fal { background: #0E131B; box-shadow: inset 0 0 0 1.5px #E8A53C; }
 
   @media (max-width: 760px) {
     .vt-top h1 { font-size: 15px; }
