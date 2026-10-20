@@ -2594,7 +2594,7 @@ function verTestigoRevisar(t) {
           (txt ? '<span class="chip ' + (dif > 0 ? 'vencido' : dif < 0 ? 'pendiente' : 'listo') + '">' + esc(txt) + '</span>' : '') +
           (it.video_path && !it.video_borrado ? '<button class="boton chico" data-video="' + esc(it.id) + '">▶ Video</button>' : '') + '</div>';
       }).join('') +
-      '<p class="bajada" style="margin-top:12px">Es para mirar: programarlo y corregir un número se hace en la compu (Equipo VDH → Productos testigo).</p>';
+      '<p class="bajada" style="margin-top:12px">Es para mirar: programarlo y corregir un número se hace en la compu (Supervisión → Productos testigo).</p>';
     app.innerHTML = html;
     volver();
     app.querySelectorAll('[data-video]').forEach(function (b) {
@@ -3285,7 +3285,7 @@ function pantallaMapa(loc, volverA) {
       var s = d.sectorDe[m.sector_id], id = yo().id;
       return esVidriera(m) || !!(s && id && (s.responsable_id === id || s.suplente_id === id));
     }),
-    dondeAsignar: 'se asigna desde la computadora (No Compra → Equipo VDH → Por local)',
+    dondeAsignar: 'se asigna desde la computadora (No Compra → Supervisión → Por local)',
     capa: { abrir: abrirCapa, soltar: soltarCapa },
     alVolver: function () { irA(volverA || 'equipo'); }
   });

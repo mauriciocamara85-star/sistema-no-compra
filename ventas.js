@@ -1173,7 +1173,7 @@
       '<p class="sub">' + (eq.length ? 'O escribí el nombre' : 'Nombre') + '</p>' +
       '<form class="fila" id="vtDlgForm"><input class="campo" id="vtDlgNom" maxlength="60" autocomplete="off" placeholder="Nombre y apellido" aria-label="Nombre del vendedor">' +
       '<button type="submit" class="btn btn-pri">Sumar</button></form>' +
-      '<p class="nota">Arranca con 0% del objetivo: después le ponés su % en Configuración. Los del equipo traen sus francos de Equipo VDH.</p>' +
+      '<p class="nota">Arranca con 0% del objetivo: después le ponés su % en Configuración. Los del equipo traen sus francos de Supervisión.</p>' +
       '<div class="pie"><button type="button" class="btn btn-sec" data-cerrar>Cancelar</button></div>';
     $('vtVelo').hidden = false;
     var primero = d.querySelector('[data-persona]') || $('vtDlgNom');

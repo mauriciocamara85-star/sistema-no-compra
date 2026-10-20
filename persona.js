@@ -312,6 +312,9 @@ var persona = (function () {
     if (imp) {
       imp.setAttribute('data-impecable', '1');
       imp.setAttribute('href', rol() === 'vendedor' ? 'vendedores.html' : 'impecable-admin.html');
+      /* La parte de la compu es "Supervisión"; la app de los chicos sigue siendo "Equipo VDH" (Mauricio, 19/10). */
+      var etiqueta = Array.prototype.filter.call(imp.childNodes, function (n) { return n.nodeType === 3 && n.textContent.trim(); })[0];
+      if (etiqueta) etiqueta.textContent = '\n      ' + (rol() === 'vendedor' ? 'Equipo VDH' : 'Supervisión') + '\n    ';
     }
     var b = rail.querySelector('.rail-yo');
     if (!b) {

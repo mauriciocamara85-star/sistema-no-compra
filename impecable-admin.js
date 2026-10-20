@@ -1,5 +1,6 @@
 /**
- * Equipo VDH (antes "Impecable") · la administración (impecable-admin.html).
+ * Supervisión (en la compu; antes "Equipo VDH", y antes "Impecable") · la administración (impecable-admin.html).
+ * La app de los vendedores sigue llamándose Equipo VDH (Mauricio, 19/10: "los chicos no la van a ver").
  *
  * Para el administrador, los supervisores y la gerencia: cómo está cada
  * local, los números del orden, las cajas, los productos testigo y los
@@ -58,8 +59,8 @@ var DIAS_LARGO = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado
 
 function pantallaSinSesion(mensaje) {
   app.innerHTML = '<div class="imp-entrar"><h2>Entrá con tu PIN</h2>' +
-    '<p>' + esc(mensaje || 'Equipo VDH usa su propia entrada: elegí "Administrador" (o tu local), tu nombre y tu PIN. Queda guardada en esta computadora.') + '</p>' +
-    '<a class="boton lima enlace-boton" href="vendedores.html#/admin">Entrar a Equipo VDH</a></div>';
+    '<p>' + esc(mensaje || 'Supervisión usa la misma entrada que la app Equipo VDH: elegí "' + SIN_LOCAL + '" (o tu local), tu nombre y tu PIN. Queda guardada en esta computadora.') + '</p>' +
+    '<a class="boton lima enlace-boton" href="vendedores.html#/admin">Entrar con tu PIN</a></div>';
 }
 
 function pantallaNoCorresponde() {
@@ -159,7 +160,7 @@ function cabezaAdmin() {
   var conLocal = _solapa !== 'panorama' && _locales.length > 1;
   /* En la compu el menú se achica a íconos con el botón de todos los paneles (interfaz.js), y se recuerda. */
   var chico = Interfaz.panelChico(K_MENU_CHICO);
-  return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Equipo VDH"><div class="imp-menu-cab"><span>Equipo VDH</span>' + Interfaz.botonPanel(chico, '', 'menuEquipo') + '</div>' +
+  return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Supervisión"><div class="imp-menu-cab"><span>Supervisión</span>' + Interfaz.botonPanel(chico, '', 'menuEquipo') + '</div>' +
     solapas.map(function (x) {
       return '<button class="imp-item' + (x[0] === _solapa ? ' activa' : '') + '" data-solapa="' + x[0] + '" title="' + esc(x[1]) + '">' + svgMenu(x[0]) + '<span>' + esc(x[1]) + '</span></button>';
     }).join('') +
@@ -1974,7 +1975,7 @@ function frase(html, clase) { return '<p class="frase' + (clase ? ' ' + clase : 
 
 var COLS_DEL_LOCAL = [{ k: 'nombre', t: 'Nombre en la app', tipo: 'texto' }, { k: 'dias_abiertos', t: 'Días que abre', tipo: 'dias' },
   { k: 'hora_apertura', t: 'Abre a las', tipo: 'hora' }, { k: 'hora_cierre', t: 'Cierra a las', tipo: 'hora' },
-  { k: 'activo', t: 'Activo: genera controles y aparece en Equipo VDH.', tipo: 'bool' }];
+  { k: 'activo', t: 'Activo: genera controles y aparece en Supervisión y en la app Equipo VDH.', tipo: 'bool' }];
 
 /* Frontal nuevo (SQL 132): la semana en que arranca, entre ésta y las 9 que siguen. Lo guardado puede ser una semana
    vieja: se muestra la próxima que le toca (la misma cuenta, cada N semanas). */

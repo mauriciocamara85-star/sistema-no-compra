@@ -24,10 +24,10 @@ var usuarios = (function () {
   var ROLES_ADMIN = ['vendedor', 'supervisor', 'zona', 'atencion', 'admin'];
   var NOMBRE_ROL = { vendedor: 'Vendedor', supervisor: 'Encargado (un local)', zona: 'Supervisor (varios locales)',
                      atencion: 'Atención al cliente', admin: 'Administrador', gerencia: 'Gerencia' };
-  var QUE_VE = 'Vendedor: Carga, Cobrar, Gift Cards, Asistente, las estadísticas de su local y Equipo VDH. ' +
-               'Encargado: lo mismo, y crea los vendedores de su local. Supervisor: como el encargado, en los ' +
-               'locales que le elijas (las planillas de Ventas, el No Compra y Equipo VDH de cada uno), sin crear usuarios. ' +
-               'Atención al cliente: todo menos Equipo VDH. Administrador: todo. Un vendedor, encargado o supervisor ' +
+  var QUE_VE = 'Vendedor: Carga, Cobrar, Gift Cards, Asistente, las estadísticas de su local y la app Equipo VDH. ' +
+               'Encargado: lo mismo, más Supervisión de su local, y crea los vendedores de su local. Supervisor: como el encargado, en los ' +
+               'locales que le elijas (las planillas de Ventas, el No Compra y Supervisión de cada uno), sin crear usuarios. ' +
+               'Atención al cliente: todo menos Supervisión y Equipo VDH. Administrador: todo. Un vendedor, encargado o supervisor ' +
                'que además atiende clientes ("También atiende clientes", en Cambiar) suma lo de Atención, con un PIN de 6 números.';
   function esZona(p) { return p.rol === 'supervisor' && !p.local_id; }
   /** El rol como lo muestra la pantalla: el supervisor sin local es 'zona'. */
