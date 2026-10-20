@@ -1,0 +1,330 @@
+/* ════════════════════════════════════════════════════════════════════════
+   El POS · los estilos (20/10/2026).
+
+   Pedido de Mauricio (20/10): "armá la sección POS", con Tango y Dragonfish
+   de referencia y 14 sucursales. Usa la interfaz común (la barra negra y un
+   panel que se achica, como Supervisión y el CRM) y los colores de
+   estilos.css. Adentro de cada pantalla, los mismos campos en los mismos
+   lugares que BlueSoft (lo decidió el 05/10: "si ven todo como BlueSoft,
+   agarran confianza").
+
+   El alto manda: en la PC del local (1366×768, unos 657 px de pantalla útil)
+   la venta con tarjeta entra entera sin bajar. Por eso, en la compu, los
+   campos son más bajos que en el resto del sistema (en el celular quedan de
+   16 px: con menos, el iPhone hace zoom al tocar el campo).
+
+   Todo va con el prefijo pos- o tk- (el ticket), adentro de .pos.
+   ════════════════════════════════════════════════════════════════════════ */
+
+.hoja.pos { max-width: none; padding-bottom: 32px; }
+@media (min-width: 900px) { .hoja.pos { padding: 10px 22px 12px; } }
+
+/* ── El menú y el cuerpo ── */
+.pos-grid { display: grid; gap: 16px; }
+.pos-grid > *, .pos-cuerpo { min-width: 0; }
+@media (min-width: 1000px) {
+  .pos-grid { grid-template-columns: var(--panel-ancho) minmax(0, 1fr); align-items: start; transition: grid-template-columns .2s var(--curva); }
+  .pos-grid.menu-chico { grid-template-columns: var(--panel-chico) minmax(0, 1fr); }
+}
+.pos-menu {
+  display: flex; flex-direction: column; gap: 1px; padding: 10px 8px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+}
+/* Son 18 secciones: en la compu el menú se queda quieto y, si no entra, se desliza solo él. */
+@media (min-width: 1000px) {
+  .pos-menu { position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto; scrollbar-width: thin; }
+}
+.pos-menu-cab { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 0 4px 10px; font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
+.pos-menu-cab > span { white-space: nowrap; overflow: hidden; }
+.pos-grupo { padding: 9px 10px 3px; font: 700 10.5px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .6px; white-space: nowrap; }
+.pos-item {
+  display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; flex: none;
+  border: 0; border-radius: 10px; background: none; color: var(--txt-2);
+  font: 600 13.5px var(--sans); text-align: left; text-decoration: none; cursor: pointer; white-space: nowrap;
+}
+.pos-item svg { width: 18px; height: 18px; flex: none; }
+.pos-item:hover { background: var(--surface-2); color: var(--txt); }
+.pos-item.activa { background: var(--surface-3); color: var(--txt); box-shadow: inset 3px 0 0 var(--acc); }
+.pos-item > span { overflow: hidden; text-overflow: ellipsis; }
+.pos-pronto { margin-left: auto; padding-left: 6px; font: 600 10.5px var(--sans); font-style: normal; color: var(--txt-3); }
+/* Achicado (interfaz.js): sólo los íconos; el nombre queda en el title. */
+@media (min-width: 1000px) {
+  .menu-chico .pos-menu { padding-left: 6px; padding-right: 6px; }
+  .menu-chico .pos-menu-cab { justify-content: center; padding: 0 0 4px; }
+  .menu-chico .pos-menu-cab > span, .menu-chico .pos-item > span, .menu-chico .pos-pronto { display: none; }
+  .menu-chico .pos-item { justify-content: center; padding: 0; }
+  .menu-chico .pos-grupo { height: 1px; padding: 0; margin: 6px 6px; background: var(--line); font-size: 0; }
+}
+/* En el celular el menú es una tira que se desliza. */
+@media (max-width: 999px) {
+  .pos-menu { flex-direction: row; overflow-x: auto; padding: 6px; scrollbar-width: none; }
+  .pos-menu::-webkit-scrollbar { display: none; }
+  .pos-menu-cab, .pos-grupo, .pos-pronto { display: none; }
+  .pos-item { min-height: 40px; }
+  .pos-item.activa { box-shadow: inset 0 -3px 0 var(--acc); }
+}
+
+/* ── La cabecera de cada pantalla ── */
+.pos-cab { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 14px; margin-bottom: 10px; }
+.pos-cab h2 { margin: 0; font: 700 21px/1.15 var(--display); letter-spacing: -.3px; color: var(--txt); }
+.pos-sub { display: block; margin-top: 2px; font-size: 12.5px; color: var(--txt-3); }
+.pos-acciones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pos-tecla { font: 600 11px var(--sans); opacity: .7; }
+
+/* ── Los campos (más bajos en la compu) ── */
+/* align-items: stretch, porque estilos.css centra todo <label> (es flex con align-items: center). */
+.pos-f { display: flex; flex-direction: column; align-items: stretch; gap: 3px; min-width: 0; text-align: left; }
+.pos-f > span:first-child, .pos-lbl { font: 600 11.5px/1.25 var(--sans); color: var(--txt-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pos input[readonly] { background: var(--surface-2); color: var(--txt-2); }
+.pos select:disabled { background-color: var(--surface-2); color: var(--txt-2); opacity: 1; }
+@media (min-width: 900px) {
+  .pos input[type=text], .pos input[type=tel], .pos input[type=email], .pos input[type=number],
+  .pos input[type=search], .pos input[type=date], .pos select, .pos textarea {
+    font-size: 14px; padding: 7px 10px; border-radius: 9px;
+  }
+  .pos select { padding-right: 28px; background-position: right 10px center; }
+  .pos textarea { min-height: 0; }
+}
+.pos-num { font-variant-numeric: tabular-nums; }
+.pos .chip { min-height: 36px; padding: 7px 12px; font-size: 13.5px; }
+.pos .cargando, .pos-caja .cargando { padding: 30px 0; text-align: center; color: var(--txt-3); font-size: 14px; }
+.pos .apagado { color: var(--txt-3); }
+/* Sólo para el lector de pantalla. */
+.pos .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ═════════ LA VENTA (el ticket de BlueSoft) ═════════ */
+.tk { display: grid; gap: 12px; }
+@media (min-width: 1000px) { .tk { grid-template-columns: 372px minmax(0, 1fr); align-items: stretch; } }
+.tk-izq, .tk-der { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* La cabecera: una grilla de 12 para poder partir en mitades, tercios y cuartos. */
+.tk-datos {
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px;
+  padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+}
+/* Los campos del pago van adentro de .tk-pagox (display: contents): por eso los anchos se buscan
+   en cualquier nivel y no sólo en los hijos directos. */
+.tk-datos > *, .tk-pagox > * { grid-column: span 12; }
+.tk-datos .c3 { grid-column: span 3; }
+.tk-datos .c4 { grid-column: span 4; }
+.tk-datos .c5 { grid-column: span 5; }
+.tk-datos .c6 { grid-column: span 6; }
+.tk-datos .c8 { grid-column: span 8; }
+.tk-pagox { display: contents; }
+@media (max-width: 520px) {
+  .tk-datos .c3, .tk-datos .c4, .tk-datos .c5, .tk-datos .c6, .tk-datos .c8 { grid-column: span 6; }
+}
+.tk-cliente { display: flex; gap: 6px; }
+.tk-cliente-txt {
+  flex: 1; min-width: 0; display: flex; align-items: center; padding: 0 10px; min-height: 34px;
+  border: 1px solid var(--line-campo); border-radius: 9px; background: var(--surface-2);
+  font: 500 14px var(--sans); color: var(--txt); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.tk-cliente .btn { flex: none; }
+.tk-aviso-pago { grid-column: span 12; font-size: 12px; font-weight: 600; color: var(--bad-txt); }
+.tk-vuelto input { font-weight: 700; color: var(--ok-txt); }
+
+/* Los totales: abajo a la izquierda, como en BlueSoft. */
+.tk-tot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.tk-caja {
+  display: flex; flex-direction: column; gap: 1px; padding: 7px 10px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-align: left;
+  font-family: var(--sans); color: var(--txt);
+}
+.tk-caja span { font-size: 11px; font-weight: 600; color: var(--txt-3); white-space: nowrap; }
+.tk-caja b { font: 700 16px/1.2 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+button.tk-caja { cursor: pointer; }
+button.tk-caja:hover { border-color: var(--line-alta); }
+button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt-2); }
+.tk-caja.gordo { grid-column: 1 / -1; flex-direction: row; align-items: baseline; justify-content: space-between; padding: 10px 14px; background: var(--tablero-negro); border-color: transparent; color: #FFFFFF; }
+.tk-caja.gordo span { font-size: 13px; color: rgba(255, 255, 255, .78); }
+.tk-caja.gordo b { font-size: 26px; letter-spacing: -.5px; color: #FFFFFF; }
+
+/* El producto: un solo campo para buscar o dispararle a la etiqueta. */
+.tk-prod { position: relative; display: flex; gap: 8px; align-items: flex-end; }
+.tk-prod .pos-f { flex: 1; }
+.tk-prod .btn { flex: none; min-height: 34px; }
+.tk-sug {
+  position: absolute; left: 0; right: 0; top: 100%; z-index: 20; margin-top: 4px; padding: 4px;
+  background: var(--surface); border: 1px solid var(--line-alta); border-radius: 12px; box-shadow: var(--sombra-alta);
+  max-height: 330px; overflow-y: auto;
+}
+.tk-sug button {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; width: 100%;
+  padding: 8px 10px; border: 0; border-radius: 8px; background: none; text-align: left; cursor: pointer;
+  font: 500 13.5px var(--sans); color: var(--txt);
+}
+.tk-sug button.on, .tk-sug button:hover { background: var(--surface-3); }
+.tk-sug small { color: var(--txt-3); font-size: 12px; }
+.tk-sug .n { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tk-sug .sin { color: var(--bad-txt); font-weight: 600; }
+
+/* La grilla de renglones. */
+.tk-grilla {
+  flex: 1 1 auto; min-height: 190px; overflow: auto;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+}
+@media (min-width: 1000px) { .tk-grilla { min-height: 0; height: 0; } }
+.tk-tabla { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tk-tabla th {
+  position: sticky; top: 0; z-index: 1; background: var(--surface-2); text-align: left; white-space: nowrap;
+  padding: 8px 8px; border-bottom: 1px solid var(--line); font: 700 11.5px var(--sans); color: var(--txt-2);
+}
+.tk-tabla td { padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.tk-tabla .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tk-tabla .c { text-align: center; }
+.tk-tabla .tk-cod { white-space: nowrap; font-weight: 600; }
+.tk-tabla .tk-desc { min-width: 120px; }
+.tk-tabla input { min-height: 0; }
+.tk-tabla input.tk-cant { width: 56px; text-align: center; padding: 4px 4px; }
+.tk-tabla input.tk-precio { width: 100px; text-align: right; padding: 4px 8px; }
+.tk-tabla input.tk-precio.sin { border-color: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+.tk-desc-l { color: var(--ok-txt); font-weight: 600; }
+.tk-quitar {
+  width: 28px; height: 28px; border: 0; border-radius: 50%; background: none; color: var(--txt-3);
+  display: grid; place-items: center; cursor: pointer;
+}
+.tk-quitar:hover { background: var(--bad-soft); color: var(--bad-txt); }
+.tk-quitar svg { width: 15px; height: 15px; }
+.tk-fila-d td { background: var(--ok-soft); color: var(--ok-txt); font-weight: 600; }
+.tk-fila-d.manual td { background: var(--warn-soft); color: var(--warn-txt); }
+.tk-fila-sacada td { color: var(--txt-3); font-size: 12.5px; padding-top: 6px; padding-bottom: 6px; }
+.tk-fila-sacada button { border: 0; background: none; padding: 0; color: var(--txt); font: 600 12.5px var(--sans); text-decoration: underline; cursor: pointer; }
+.tk-vacia td { padding: 34px 12px; text-align: center; color: var(--txt-3); border-bottom: 0; }
+.tk-vacia b { display: block; color: var(--txt-2); font-size: 14.5px; margin-bottom: 3px; }
+
+.tk-pie { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; align-items: start; }
+@media (max-width: 700px) { .tk-pie { grid-template-columns: 1fr; } }
+.tk-pie textarea { height: 58px; resize: none; }
+.tk-nota { font-size: 12px; line-height: 1.45; color: var(--txt-3); padding-top: 18px; }
+.tk-nota b { color: var(--txt-2); }
+
+/* La venta guardada: en la cabecera, al lado de los botones. */
+.pos-hecho {
+  display: flex; align-items: center; gap: 6px 10px; padding: 6px 12px; min-height: 34px;
+  background: var(--ok-soft); border: 1px solid var(--ok-borde); border-radius: 10px; color: var(--ok-txt); font-weight: 600; font-size: 13.5px;
+}
+.pos-hecho svg { width: 17px; height: 17px; flex: none; }
+.pos-hecho button { border: 0; background: none; padding: 0; color: var(--ok-txt); font: 700 13.5px var(--sans); text-decoration: underline; cursor: pointer; white-space: nowrap; }
+@media (max-width: 700px) { #vHecho { flex: 1 1 100%; order: -1; } }
+
+/* ═════════ LAS LISTAS (tickets, precios, sucursales) ═════════ */
+.pos-filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 10px; }
+.pos-filtros .pos-f { min-width: 150px; }
+.pos-filtros .pos-f.ancho { flex: 1; min-width: 200px; }
+.pos-check { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; font: 600 13px var(--sans); color: var(--txt-2); cursor: pointer; }
+.pos-check input { width: 17px; height: 17px; accent-color: var(--acc); }
+
+.pos-totales { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.pos-kpi { padding: 8px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; min-width: 110px; }
+.pos-kpi span { display: block; font-size: 11.5px; font-weight: 600; color: var(--txt-3); }
+.pos-kpi b { font: 700 18px/1.25 var(--sans); font-variant-numeric: tabular-nums; }
+.pos-kpi.fuerte { background: var(--tablero-negro); border-color: transparent; color: #FFFFFF; }
+.pos-kpi.fuerte span { color: rgba(255, 255, 255, .78); }
+
+.pos-marco-tabla { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.pos-tabla { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.pos-tabla th { text-align: left; white-space: nowrap; padding: 9px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); font: 700 11.5px var(--sans); color: var(--txt-2); }
+.pos-tabla td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.pos-tabla tr:last-child td { border-bottom: 0; }
+.pos-tabla .n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pos-tabla .c { text-align: center; }
+.pos-tabla tr[data-ticket] { cursor: pointer; }
+.pos-tabla tr[data-ticket]:hover td { background: var(--surface-2); }
+.pos-tabla tr.anulada td { color: var(--txt-3); }
+.pos-tabla tr.anulada td.tachar { text-decoration: line-through; }
+.pos-tabla select, .pos-tabla input { min-width: 0; }
+.pos-tabla input.pos-precio-in { width: 110px; text-align: right; }
+.pos-tabla .pos-acc { white-space: nowrap; text-align: right; }
+.pos-link { border: 0; background: none; padding: 0; color: var(--txt); font: 600 13px var(--sans); text-decoration: underline; cursor: pointer; }
+.pos-link + .pos-link { margin-left: 10px; }
+.pos-mas { padding: 10px 2px; font-size: 13px; color: var(--txt-3); }
+
+.pos-cartel { padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); font-size: 14px; color: var(--txt-2); line-height: 1.5; margin-bottom: 10px; }
+.pos-cartel.mal { background: var(--bad-soft); border-color: transparent; color: var(--bad-txt); font-weight: 600; }
+.pos-cartel b { color: var(--txt); }
+.pos-cartel.mal b { color: inherit; }
+
+/* Las listas de precios. */
+.pos-listas-elegir { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+.pos-calc { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; padding: 12px; margin-bottom: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.pos-calc p { flex: 1 1 260px; margin: 0; font-size: 13.5px; color: var(--txt-2); line-height: 1.45; }
+.pos-calc .pos-f { width: 120px; }
+
+/* Las promociones. */
+.pos-promos { display: grid; gap: 8px; }
+.pos-promo {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+}
+.pos-promo.apagada { opacity: .62; box-shadow: none; }
+.pos-promo b { display: block; font-size: 15px; }
+.pos-promo small { display: block; font-size: 12.5px; color: var(--txt-3); margin-top: 2px; line-height: 1.4; }
+.pos-switch { position: relative; width: 42px; height: 24px; flex: none; }
+.pos-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.pos-switch i { position: absolute; inset: 0; border-radius: 999px; background: var(--surface-3); border: 1px solid var(--line-alta); transition: background .15s; pointer-events: none; }
+.pos-switch i::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #FFFFFF; box-shadow: 0 1px 3px rgba(0, 0, 0, .3); transition: transform .15s var(--curva); }
+.pos-switch input:checked + i { background: var(--ok); border-color: var(--ok); }
+.pos-switch input:checked + i::after { transform: translateX(18px); }
+.pos-switch input:focus-visible + i { outline: 2px solid var(--foco); outline-offset: 2px; }
+
+/* "En construcción": qué va a tener cada sección. */
+.pos-pronto-caja { max-width: 760px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.pos-pronto-caja h3 { margin: 0 0 8px; font: 700 15px var(--sans); }
+.pos-pronto-caja ul { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; line-height: 1.5; color: var(--txt-2); }
+.pos-pronto-caja p { margin: 0; font-size: 13.5px; color: var(--txt-3); line-height: 1.5; }
+.pos-pronto-caja a { color: var(--txt); font-weight: 600; }
+.pos-tag { display: inline-block; margin-left: 8px; padding: 3px 9px; border-radius: 999px; background: var(--warn-soft); color: var(--warn-txt); font: 700 11px var(--sans); vertical-align: middle; letter-spacing: .2px; }
+
+/* La entrada: sin usuario, o con uno que no es de Administración. */
+.pos-porton { max-width: 520px; margin: 40px auto; padding: 22px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); display: grid; gap: 10px; }
+.pos-porton h2 { margin: 0; font: 700 21px var(--display); }
+.pos-porton p { margin: 0; font-size: 14px; color: var(--txt-2); line-height: 1.5; }
+
+/* ═════════ LAS VENTANAS ═════════ */
+.pos-velo {
+  position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+  padding: 16px; overflow-y: auto; background: rgba(20, 20, 18, .5);
+}
+.pos-caja {
+  position: relative; width: min(520px, 100%); max-height: calc(100vh - 32px); overflow-y: auto;
+  background: var(--surface); color: var(--txt); border: 1px solid var(--line); border-radius: var(--r);
+  box-shadow: 0 24px 60px -20px rgba(0, 0, 0, .45); padding: 18px 18px 16px;
+}
+.pos-caja.ancha { width: min(780px, 100%); }
+.pos-caja:focus { outline: none; }
+.pos-caja h3 { margin: 0 40px 2px 0; font: 700 18px/1.25 var(--display); }
+.pos-caja .pos-bajada { margin: 0 0 12px; font-size: 13.5px; color: var(--txt-2); line-height: 1.45; }
+.pos-x {
+  position: absolute; top: 12px; right: 12px; width: 34px; height: 34px; border: 0; border-radius: 50%;
+  background: var(--surface-2); color: var(--txt-2); display: grid; place-items: center; cursor: pointer;
+}
+.pos-x:hover { color: var(--txt); background: var(--surface-3); }
+.pos-x svg { width: 16px; height: 16px; }
+.pos-campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 10px; }
+/* En las ventanas los chips son más chicos: la de la promo, con los 22 rubros, tiene que entrar en la PC del local. */
+.pos-caja .chips { gap: 6px; }
+.pos-caja .chip { min-height: 32px; padding: 5px 11px; font-size: 13px; }
+.pos-campos > .ancho { grid-column: 1 / -1; }
+@media (max-width: 460px) { .pos-campos { grid-template-columns: 1fr; } }
+.pos-pie { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.pos-pie .izq { margin-right: auto; }
+.pos-error { margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--bad-txt); }
+.pos-error:empty { display: none; }
+.pos-ayuda { font-size: 12px; color: var(--txt-3); line-height: 1.4; }
+
+/* El pago múltiple. */
+.pos-pagos { display: grid; gap: 8px; }
+.pos-pago-fila { display: grid; grid-template-columns: 150px 130px minmax(0, 1fr) 30px; gap: 8px; align-items: end; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+@media (max-width: 620px) { .pos-pago-fila { grid-template-columns: 1fr 1fr; } .pos-pago-fila .pos-pago-mas { grid-column: 1 / -1; } }
+.pos-pago-mas { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.pos-pago-cuenta { display: flex; justify-content: space-between; gap: 10px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 14px; font-weight: 600; }
+.pos-pago-cuenta.ok { background: var(--ok-soft); color: var(--ok-txt); }
+.pos-pago-cuenta.mal { background: var(--warn-soft); color: var(--warn-txt); }
+
+/* El ticket guardado. */
+.pos-ticket-datos { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px 14px; margin: 10px 0 12px; }
+.pos-ticket-datos div { font-size: 13.5px; }
+.pos-ticket-datos span { display: block; font-size: 11.5px; font-weight: 600; color: var(--txt-3); }
+.pos-ticket-tot { display: grid; justify-content: end; gap: 3px; margin-top: 10px; font-size: 14px; text-align: right; }
+.pos-ticket-tot b { font-size: 19px; }

@@ -31,15 +31,16 @@ var persona = (function () {
   var NO_VE = {
     /* La administración de Impecable es de los encargados: el vendedor usa
        su app (vendedores.html), que es adonde lo lleva la barra. */
-    vendedor: ['panel.html', 'club-numeros.html', 'config.html', 'impecable-admin.html'],
+    /* El POS (pos.html, 20/10), mientras está en construcción, es sólo de Administración. */
+    vendedor: ['panel.html', 'club-numeros.html', 'config.html', 'impecable-admin.html', 'pos.html'],
     /* También el supervisor de varios locales (sin local fijo, SQL 120). Mauricio, 14/10:
        "acceso a todo, excepto la parte del CRM". Socios y los números del Club son de la
        oficina (la base sólo los abre a Administración, Atención y Gerencia), como para el
        encargado. */
-    supervisor: ['panel.html', 'club-numeros.html'],
-    atencion: ['impecable-admin.html'],
+    supervisor: ['panel.html', 'club-numeros.html', 'pos.html'],
+    atencion: ['impecable-admin.html', 'pos.html'],
     admin: [],
-    gerencia: []
+    gerencia: ['pos.html']
   };
 
   function leerLS(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
