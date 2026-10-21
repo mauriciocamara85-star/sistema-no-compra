@@ -1724,7 +1724,7 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
       return String(nombre[a.local_id] || '').localeCompare(String(nombre[b.local_id] || ''));
     }).map(function (s) {
       var estado = s.cargada_en ? 'mandado el ' + diaMes(s.cargada_en) + (conDif[s.id] ? ' · ' + conDif[s.id] + ' con diferencia' : ' · sin diferencias')
-        : s.fecha && s.fecha < hoy ? 'sin mandar (era el ' + diaMes(s.fecha) + ')' : s.fecha ? 'se cuenta el ' + diaYFecha(s.fecha) : 'sin día';
+        : s.fecha && s.fecha < hoy ? 'sin mandar (venció el ' + diaMes(s.fecha) + ')' : s.fecha ? 'hasta el ' + diaYFecha(s.fecha) : 'sin fecha límite';
       var clase = s.cargada_en ? (conDif[s.id] ? 'mal' : 'bien') : s.fecha && s.fecha < hoy ? 'mal' : '';
       return '<button class="imp-testigo-local ' + clase + (s.local_id === _local.id ? ' actual' : '') + '" data-local="' + esc(s.local_id) + '"><b>' +
         esc(nombre[s.local_id] || 'Otro local') + '</b><small>' + esc(estado) + '</small></button>';
@@ -1733,11 +1733,11 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
 
   html += '<div class="seccion">' + esc(_local.nombre) + '</div>';
   if (!sem) {
-    /* Se arma con "Programar un control" (con su día: si no, el local no lo ve). */
+    /* Se arma con "Programar un control" (con su fecha límite: si no, el local no lo ve). */
     html += '<div class="vacio">' + esc(_local.nombre) + ' no tiene producto testigo esta semana.' +
       (soloMira() ? '' : ' Para armarlo, tocá "Programar un control".') + '</div>';
   } else {
-    html += '<div class="nota">' + (sem.fecha ? 'Se cuenta el ' + esc(diaYFecha(sem.fecha)) + '. ' : '') +
+    html += '<div class="nota">' + (sem.fecha ? 'Fecha límite: ' + esc(diaYFecha(sem.fecha)) + '. ' : '') +
       (sem.cargada_en ? 'Mandado' + (quien ? ' por ' + esc(nombreLista(quien)) : '') + ' el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '.'
                       : 'El local todavía no lo mandó.') + (sem.cerrada ? ' Semana cerrada.' : '') + '</div>' +
       '<div id="itemsTestigo"></div>' +
@@ -1771,7 +1771,8 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
   if (!sem) return;
   editor({
     cont: document.getElementById('itemsTestigo'), filas: items, vacio: 'Todavía no hay productos en esta semana.',
-    cols: [{ k: 'item', t: 'Ítem', tipo: 'num', ancho: 'chico' }, { k: 'producto', t: 'Producto', tipo: 'texto', ancho: 'grande' }, { k: 'color', t: 'Color', tipo: 'texto', nulo: true, ancho: 'chico' },
+    cols: [{ k: 'item', t: 'Ítem', tipo: 'num', ancho: 'chico' }, { k: 'rubro', t: 'Rubro', tipo: 'texto', nulo: true, ancho: 'medio' },
+           { k: 'producto', t: 'Producto', tipo: 'texto', ancho: 'grande' }, { k: 'color', t: 'Color', tipo: 'texto', nulo: true, ancho: 'chico' },
            { k: 'enviada', t: 'Enviada', tipo: 'num', ancho: 'chico' }, { k: 'stock_sistema', t: 'Stock sistema', tipo: 'num', ancho: 'chico' },
            { k: 'cantidad_real', t: 'Cantidad real', tipo: 'num', ancho: 'chico' }, { k: 'dev_fabrica', t: 'Dev. a fábrica', tipo: 'num', ancho: 'chico' },
            { k: 'salieron', t: 'Salieron', tipo: 'num', ancho: 'chico' }, { k: 'entraron', t: 'Entraron', tipo: 'num', ancho: 'chico' },
@@ -1798,7 +1799,7 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
   var a = document.getElementById('agregarItem');
   if (a) unaVez(a, function () {
     var n = items.reduce(function (m, x) { return Math.max(m, x.item); }, 0) + 1;
-    /* Con día: como programarlo (si ya lo habían mandado, vuelve a quedar para cargar el nuevo). Una planilla vieja sin día, directo. */
+    /* Con fecha límite: como programarlo (si ya lo habían mandado, vuelve a quedar para cargar el nuevo). Una planilla vieja sin fecha, directo. */
     return (sem.fecha ? llamar('testigo_programar', { p_fecha: sem.fecha, p_locales: [_local.id], p_productos: [{ producto: 'Producto ' + n }] })
                       : escribir('/testigo_items', 'POST', { semana_id: sem.id, item: n, producto: 'Producto ' + n }))
       .then(function () { avisar('Agregado "Producto ' + n + '": cambiale el nombre y guardá.'); verTestigo(); });
@@ -1990,45 +1991,154 @@ function verVideoTestigo(f) {
   });
 }
 
-/** "Este jueves se controlan estos productos": para todos los locales o los elegidos. */
+/* El catálogo (catalogo.js) para programar el testigo: por nombre, su rubro y sus colores ("NE" → "NEGRO"). */
+var _catTestigo = null;
+function catalogoTestigo() {
+  if (_catTestigo) return _catTestigo;
+  var porNombre = {}, rubros = {};
+  (window.CATALOGO || []).forEach(function (p) {
+    var nom = String(p[1] || '').trim(), k = nom.toLowerCase();
+    if (!nom) return;
+    var x = porNombre[k] = porNombre[k] || { nombre: nom, rubro: p[2] || '', colores: [] };
+    if (!x.rubro && p[2]) x.rubro = p[2];
+    String(p[4] || '').split('|').forEach(function (c) {
+      var cc = c.split(':');
+      if (cc[0] && !x.colores.some(function (y) { return y[0] === cc[0]; })) x.colores.push([cc[0], cc[1] || '']);
+    });
+    if (p[2]) rubros[p[2]] = 1;
+  });
+  return (_catTestigo = { porNombre: porNombre, rubros: Object.keys(rubros).sort() });
+}
+
+/** "Hasta el jueves se controlan estos productos" (SQL 152, planilla de Mauricio: Rubro, Producto, Color, Fecha límite):
+    la fecha límite, los locales y los productos. Cada producto va a todos los locales marcados, o se le saca alguno
+    (si a un local no le llegó, o le llegó en otro color: otra fila con ese color sólo para ese local). */
 function programarTestigo() {
+  var cat = catalogoTestigo(), varios = _locales.length > 1, n = 0, hoy = hoyAR();
+  var fuera = {};   // por fila: los locales que se le sacaron a ese producto
+  var nombre = {};
+  _locales.forEach(function (l) { nombre[l.id] = l.nombre; });
   /* El ejemplo, sólo en el primero: en todos parecía que ya estaban cargados. */
   var fila = function (ejemplo) {
-    return '<div class="renglon imp-prod"><label class="campo c-grande"><span>Producto</span><input data-p="producto" maxlength="80"' + (ejemplo ? ' placeholder="Por ejemplo: Last Chance"' : '') + '></label>' +
-           '<label class="campo c-chico"><span>Color</span><input data-p="color" maxlength="30"' + (ejemplo ? ' placeholder="NE"' : '') + '></label></div>';
+    n++;
+    fuera[n] = {};
+    return '<div class="renglon imp-prod" data-fila="' + n + '">' +
+      '<label class="campo c-rubro"><span>Rubro</span><input data-p="rubro" maxlength="40" list="pRubros" autocomplete="off"' + (ejemplo ? ' placeholder="Remeras"' : '') + '></label>' +
+      '<label class="campo c-grande"><span>Producto</span><input data-p="producto" maxlength="80" list="pCatalogo" autocomplete="off"' + (ejemplo ? ' placeholder="Por ejemplo: Cactus Over"' : '') + '></label>' +
+      '<label class="campo c-chico"><span>Color</span><input data-p="color" maxlength="30" list="pColores' + n + '" autocomplete="off"' + (ejemplo ? ' placeholder="AO"' : '') + '></label>' +
+      '<datalist id="pColores' + n + '"></datalist>' +
+      (varios ? '<div class="campo imp-prod-loc"><span>Locales</span><button type="button" class="boton chico" data-plocs aria-expanded="false">Todos</button></div>' +
+                '<div class="imp-prod-elegir" hidden></div>' : '') +
+      '</div>';
   };
-  var varios = _locales.length > 1;
-  var f = ventana('<h1>Programar un control</h1><p class="bajada">Elegí el día y los productos. A los locales que marques les aparece en la app (y el día antes les llega el aviso): ' +
-      'no tienen que cargar los productos, sólo los números y el video.</p>' +
-    '<div class="renglon"><label class="campo c-medio"><span>Día</span><input type="date" id="pFecha" value="' + sumarDias(hoyAR(), 1) + '"></label></div>' +
-    '<div class="seccion">Productos</div><div id="pProds">' + fila(true) + fila() + fila() + fila() + '</div>' +
-    '<button class="boton chico" id="pMas">Agregar otro producto</button>' +
+  var f = ventana('<h1>Programar un control</h1><p class="bajada">Elegí la fecha límite, los locales y los productos. A los locales les aparece en la app apenas lo programás ' +
+      'y lo cuentan cualquier día hasta esa fecha (el día antes y ese día les llega el aviso). No tienen que cargar los productos, sólo los números y el video.</p>' +
+    '<div class="renglon"><label class="campo c-medio"><span>Fecha límite</span><input type="date" id="pFecha" min="' + hoy + '" value="' + sumarDias(hoy, 1) + '"></label></div>' +
     '<div class="seccion">Locales</div>' +
     (varios ? '<div class="imp-mapa-acc"><button class="boton chico" id="pTodos">Todos</button><button class="boton chico" id="pNinguno">Ninguno</button></div>' : '') +
     '<div class="imp-locales">' + _locales.map(function (l) {
       return '<label class="imp-check"><input type="checkbox" data-loc="' + esc(l.id) + '" checked> ' + esc(l.nombre) + '</label>';
     }).join('') + '</div>' +
-    '<p class="bajada">Si a un local no le llegó un producto, destildalo acá y después cambiale el producto en su planilla.</p>' +
+    '<div class="seccion">Productos</div><div id="pProds">' + fila(true) + fila() + fila() + fila() + '</div>' +
+    '<datalist id="pRubros">' + cat.rubros.map(function (r) { return '<option value="' + esc(r) + '">'; }).join('') + '</datalist>' +
+    '<datalist id="pCatalogo">' + Object.keys(cat.porNombre).sort().map(function (k) {
+      var p = cat.porNombre[k];
+      return '<option value="' + esc(p.nombre) + '">' + esc(p.rubro) + '</option>';
+    }).join('') + '</datalist>' +
+    '<button class="boton chico" id="pMas">Agregar otro producto</button>' +
+    (varios ? '<p class="bajada">Si a un local no le llegó un producto, o le llegó en otro color: en ese producto tocá «Locales» y sacale ese local. ' +
+              'Para el otro color, agregá otra fila con ese color sólo para ese local.</p>' : '') +
     '<button class="boton lima" id="pGuardar">Programar</button>');
-  f.querySelector('#pMas').onclick = function () { f.querySelector('#pProds').insertAdjacentHTML('beforeend', fila()); };
-  var marcar = function (si) { f.querySelectorAll('[data-loc]').forEach(function (x) { x.checked = si; }); };
+
+  var marcados = function () { return [].filter.call(f.querySelectorAll('[data-loc]'), function (x) { return x.checked; }).map(function (x) { return x.dataset.loc; }); };
+  var deFila = function (i) { return marcados().filter(function (id) { return !fuera[i][id]; }); };
+  /* El botón de cada producto dice a qué locales va: "Todos", "Sin Flores", "Sólo Rivadavia" o "3 locales". */
+  var textoLocales = function (i) {
+    var m = marcados(), van = deFila(i);
+    if (!m.length || !van.length) return 'Ninguno';
+    if (van.length === m.length) return 'Todos';
+    if (van.length === 1) return 'Sólo ' + nombre[van[0]];
+    if (m.length - van.length === 1) return 'Sin ' + nombre[m.filter(function (id) { return fuera[i][id]; })[0]];
+    return van.length + ' locales';
+  };
+  var pintarFila = function (r) {
+    var i = +r.dataset.fila, b = r.querySelector('[data-plocs]'), el = r.querySelector('.imp-prod-elegir');
+    if (!b) return;
+    b.textContent = textoLocales(i);
+    b.classList.toggle('cambiado', b.textContent !== 'Todos');
+    if (el.hidden) return;
+    el.innerHTML = '<div class="imp-prod-cab"><span>¿A qué locales va este producto?</span>' +
+      '<button type="button" class="boton chico" data-ptodos>Todos</button><button type="button" class="boton chico" data-pninguno>Ninguno</button></div>' +
+      '<div class="imp-locales">' + marcados().map(function (id) {
+        return '<label class="imp-check"><input type="checkbox" data-ploc="' + esc(id) + '"' + (fuera[i][id] ? '' : ' checked') + '> ' + esc(nombre[id]) + '</label>';
+      }).join('') + '</div>';
+  };
+  var pintarTodas = function () { f.querySelectorAll('.imp-prod').forEach(pintarFila); };
+  /* Con el producto del catálogo: el rubro (si no lo escribieron a mano) y sus colores para elegir. */
+  var delCatalogo = function (r) {
+    var pi = r.querySelector('[data-p="producto"]'), ri = r.querySelector('[data-p="rubro"]');
+    var p = cat.porNombre[pi.value.trim().toLowerCase()];
+    r.querySelector('datalist').innerHTML = p ? p.colores.map(function (c) { return '<option value="' + esc(c[0]) + '">' + esc(c[1]) + '</option>'; }).join('') : '';
+    if (!p) return;
+    if (pi.value !== p.nombre && document.activeElement !== pi) pi.value = p.nombre;
+    if (p.rubro && (!ri.value.trim() || ri.dataset.auto === '1')) { ri.value = p.rubro; ri.dataset.auto = '1'; }
+  };
+
+  f.querySelector('#pMas').onclick = function () { f.querySelector('#pProds').insertAdjacentHTML('beforeend', fila()); pintarTodas(); };
+  var marcar = function (si) { f.querySelectorAll('[data-loc]').forEach(function (x) { x.checked = si; }); pintarTodas(); };
   if (varios) {
     f.querySelector('#pTodos').onclick = function () { marcar(true); };
     f.querySelector('#pNinguno').onclick = function () { marcar(false); };
+    f.querySelector('.imp-locales').addEventListener('change', pintarTodas);
   }
+  var prods = f.querySelector('#pProds');
+  prods.addEventListener('input', function (e) {
+    var r = e.target.closest('.imp-prod');
+    if (!r) return;
+    if (e.target.dataset.p === 'rubro') e.target.dataset.auto = '';
+    if (e.target.dataset.p === 'producto') delCatalogo(r);
+  });
+  prods.addEventListener('change', function (e) {
+    var r = e.target.closest('.imp-prod');
+    if (!r) return;
+    if (e.target.dataset.p === 'producto') delCatalogo(r);
+    if (e.target.dataset.ploc) { fuera[+r.dataset.fila][e.target.dataset.ploc] = !e.target.checked; pintarFila(r); }
+  });
+  prods.addEventListener('click', function (e) {
+    var r = e.target.closest('.imp-prod'), i = r && +r.dataset.fila;
+    if (!r) return;
+    if (e.target.closest('[data-plocs]')) {
+      var el = r.querySelector('.imp-prod-elegir');
+      el.hidden = !el.hidden;
+      e.target.closest('[data-plocs]').setAttribute('aria-expanded', String(!el.hidden));
+      pintarFila(r);
+    } else if (e.target.closest('[data-ptodos]') || e.target.closest('[data-pninguno]')) {
+      var si = !!e.target.closest('[data-ptodos]');
+      fuera[i] = {};
+      if (!si) marcados().forEach(function (id) { fuera[i][id] = true; });
+      pintarFila(r);
+    }
+  });
+
   unaVez(f.querySelector('#pGuardar'), function () {
     var fecha = f.querySelector('#pFecha').value;
-    var prods = [].map.call(f.querySelectorAll('.imp-prod'), function (r) {
-      return { producto: r.querySelector('[data-p="producto"]').value.trim(), color: r.querySelector('[data-p="color"]').value.trim() };
+    var lista = [].map.call(f.querySelectorAll('.imp-prod'), function (r) {
+      var v = function (k) { return r.querySelector('[data-p="' + k + '"]').value.trim(); };
+      return { rubro: v('rubro'), producto: v('producto'), color: v('color'), locales: deFila(+r.dataset.fila) };
     }).filter(function (p) { return p.producto; });
-    var locales = [].filter.call(f.querySelectorAll('[data-loc]'), function (x) { return x.checked; }).map(function (x) { return x.dataset.loc; });
-    if (!fecha) { avisar('Elegí el día.'); return; }
-    if (!prods.length) { avisar('Escribí al menos un producto.'); return; }
+    var locales = marcados();
+    if (!fecha) { avisar('Elegí la fecha límite.'); return; }
+    if (fecha < hoy) { avisar('La fecha límite ya pasó: elegí hoy o un día que viene.'); return; }
+    if (!lista.length) { avisar('Escribí al menos un producto.'); return; }
     if (!locales.length) { avisar('Marcá al menos un local.'); return; }
-    return llamar('testigo_programar', { p_fecha: fecha, p_locales: locales, p_productos: prods }).then(function (r) {
+    var sinLocal = lista.filter(function (p) { return !p.locales.length; })[0];
+    if (sinLocal) { avisar('«' + sinLocal.producto + '» no va a ningún local: tocá «Locales» en ese producto y marcale alguno.'); return; }
+    /* Sólo los locales que reciben algún producto. */
+    var usados = locales.filter(function (id) { return lista.some(function (p) { return p.locales.indexOf(id) > -1; }); });
+    return llamar('testigo_programar', { p_fecha: fecha, p_locales: usados, p_productos: lista }).then(function (r) {
       f.remove();
-      avisar('Listo: ' + prods.length + (prods.length === 1 ? ' producto' : ' productos') + ' en ' + r.locales + (r.locales === 1 ? ' local' : ' locales') +
-             ' para el ' + diaYFecha(fecha) + '.');
+      avisar('Listo: ' + lista.length + (lista.length === 1 ? ' producto' : ' productos') + ' en ' + r.locales + (r.locales === 1 ? ' local' : ' locales') +
+             ', con fecha límite el ' + diaYFecha(fecha) + '.');
       _semanaTestigo = lunesAR(fecha);
       verTestigo();
     });

@@ -911,9 +911,9 @@ function pantallaHoy() {
     estadoAvisos().catch(function () { return 'no-soportado'; }),
     /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
     per.local_id ? leer('/orden_recordatorios?select=texto&local_id=eq.' + valor(per.local_id) + '&dia=eq.' + diaSemanaAR() + '&activo=is.true&order=creado_en.asc').catch(nada) : Promise.resolve(null),
-    /* SQL 102: producto testigo de mañana, de hoy, uno atrasado sin mandar, o el que se mandó hoy. */
+    /* SQL 102/151: producto testigo para contar (desde que se programa hasta la fecha límite), uno vencido sin mandar, o el que se mandó hoy. */
     per.local_id ? leer('/testigo_semanas?select=id,fecha,cargada_en,testigo_items(item,producto,color)&local_id=eq.' + valor(per.local_id) +
-                        '&fecha=gte.' + sumarDias(hoy, -6) + '&fecha=lte.' + sumarDias(hoy, 1) + '&cerrada=is.false' +
+                        '&fecha=gte.' + sumarDias(hoy, -6) + '&cerrada=is.false' +
                         '&or=(cargada_en.is.null,cargada_en.gte.' + desdeHoy + ')&order=fecha.asc').catch(fallo)
                  : Promise.resolve(null),
     /* La caja de hoy y si el local la controla (se pregunta acá: la primera vez en un celular todavía no se sabe). */
@@ -932,8 +932,7 @@ function pantallaHoy() {
       controles: r[0] || [], semana: (r[1] || [])[0], sinModulos: Array.isArray(r[2]) && r[2].length === 0, desafio: r[3],
       tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], incompleto: incompleto, semanaFallo: semanaFallo, sugerencias: r[9] || [],
       caja: r[8] ? { activa: !!(r[8][0] && r[8][0][0] && r[8][0][0].caja_activa), hoy: (r[8][1] || [])[0] || null } : null,
-      testigoPend: testigos.filter(function (s) { return !s.cargada_en && s.fecha <= hoy; })[0] || null,
-      testigoMan: testigos.filter(function (s) { return !s.cargada_en && s.fecha > hoy; })[0] || null,
+      testigoPend: testigos.filter(function (s) { return !s.cargada_en; })[0] || null,
       testigoHecho: testigos.filter(function (s) { return s.cargada_en; })[0] || null
     });
     revisarCaja();
@@ -1007,10 +1006,12 @@ function dibujarHoy(x) {
   }
 
   if (x.testigoPend) {
+    /* SQL 152: se cuenta cualquier día hasta la fecha límite; vencido, todavía se manda. */
     var s = x.testigoPend, n = (s.testigo_items || []).length;
     filas.push({ id: 'hTestigo', titulo: 'Producto testigo', hecho: false, alerta: s.fecha < hoy,
-      texto: s.fecha < hoy ? 'Era del ' + diaYFecha(s.fecha) + ': cargalo y mandalo.'
-           : (n === 1 ? '1 producto' : n + ' productos') + ': los números del sistema, contar y un video de cada uno.' });
+      texto: s.fecha < hoy ? 'Venció el ' + diaYFecha(s.fecha) + ': cargalo y mandalo igual.'
+           : (s.fecha === hoy ? 'Vence hoy · ' : 'Hasta el ' + diaYFecha(s.fecha) + ' · ') +
+             (n === 1 ? '1 producto' : n + ' productos') + ': los números del sistema, contar y un video de cada uno.' });
   } else if (x.testigoHecho) {
     filas.push({ id: 'hTestigo', titulo: 'Producto testigo', hecho: true, texto: 'Mandado.' });
   }
@@ -1081,8 +1082,6 @@ function dibujarHoy(x) {
     return '<button class="sugerencia-sup" data-sug="' + i + '"><b>Sugerencia de tu supervisor · ' + esc(s.modulo_nombre) + (s.nivel_final ? ' (' + esc(NIVEL[s.nivel_final]) + ')' : '') + '</b>' +
       '<span>' + esc(s.comentario || 'Te marcó algo en la foto.') + '</span><em>Ver la foto ›</em></button>';
   }).join('');
-  /* Mañana hay producto testigo: para saberlo (todavía no se carga). */
-  if (x.testigoMan) html += tarjetaTestigoHoy(x.testigoMan);
   html += tarjetaOrden(x.semana, x.semanaFallo);
 
   app.innerHTML = html;
@@ -1097,7 +1096,6 @@ function dibujarHoy(x) {
   Object.keys(ir).forEach(function (k) { var b = document.getElementById(k); if (b) b.onclick = ir[k]; });
   var b;
   if ((b = document.getElementById('banner'))) b.onclick = function () { pantallaBienvenida(pantallaHoy); };
-  if ((b = document.getElementById('irTestigo'))) b.onclick = function () { pantallaTestigo(x.testigoMan.id); };
   if ((b = document.getElementById('reintentarHoy'))) b.onclick = pantallaHoy;
   app.querySelectorAll('[data-sug]').forEach(function (s) { s.onclick = function () { verRevision(x.sugerencias[+s.dataset.sug].id); }; });
   /* Con todo lo tuyo hecho (y todo cargado): el festejo, una vez por día. La
@@ -2713,15 +2711,16 @@ function pantallaRevisar() {
 }
 
 /* ── El producto testigo en Revisar (14/10, pedido de Mauricio): una tarjeta por local que se
-   mira, cuando tiene uno mañana, hoy, sin mandar (en rojo si se atrasó) o mandado en la última
-   semana ("N con faltante"). Tocándola, el resultado para mirar. Programarlo sigue en la compu. ── */
+   mira, cuando tiene uno para contar (SQL 152: hasta su fecha límite), sin mandar (en rojo si
+   venció) o mandado en la última semana ("N con faltante"). Tocándola, el resultado para mirar.
+   Programarlo sigue en la compu. ── */
 function testigosRevisar(loc) {
   var lista = loc.lista || [{ id: loc.id, nombre: loc.nombre }], hoy = hoyAR(), nombre = {};
   if (!lista.length) return Promise.resolve([]);
   lista.forEach(function (l) { nombre[l.id] = l.nombre; });
   return leer('/testigo_semanas?select=id,local_id,fecha,cargada_en,cerrada,testigo_items(id,stock_sistema,cantidad_real)' +
       '&local_id=in.(' + lista.map(function (l) { return valor(l.id); }).join(',') + ')' +
-      '&fecha=gte.' + sumarDias(hoy, -7) + '&fecha=lte.' + sumarDias(hoy, 1) + '&order=fecha.desc').then(function (filas) {
+      '&fecha=gte.' + sumarDias(hoy, -7) + '&order=fecha.desc').then(function (filas) {
     var porLocal = {};
     (filas || []).forEach(function (s) {
       var t = (s.testigo_items || []).length ? estadoTestigoRevisar(s, hoy) : null;
@@ -2739,9 +2738,9 @@ function estadoTestigoRevisar(s, hoy) {
   var items = s.testigo_items || [], n = items.length + (items.length === 1 ? ' producto' : ' productos');
   if (!s.cargada_en) {
     if (s.cerrada) return null;
-    if (s.fecha < hoy) return { orden: 0, alerta: true, texto: 'Sin mandar: era el ' + diaYFecha(s.fecha) + ' (' + n + ')' };
-    if (s.fecha === hoy) return { orden: 1, texto: 'Hoy tienen producto testigo (' + n + ')' };
-    return { orden: 2, texto: 'Mañana tienen producto testigo (' + n + ')' };
+    if (s.fecha < hoy) return { orden: 0, alerta: true, texto: 'Sin mandar: venció el ' + diaYFecha(s.fecha) + ' (' + n + ')' };
+    if (s.fecha === hoy) return { orden: 1, texto: 'Vence hoy, sin mandar (' + n + ')' };
+    return { orden: 2, texto: 'Hasta el ' + diaYFecha(s.fecha) + ', sin mandar (' + n + ')' };
   }
   var falta = items.filter(function (i) { return i.stock_sistema != null && i.cantidad_real != null && Number(i.stock_sistema) > Number(i.cantidad_real); }).length;
   return { orden: 3, alerta: falta > 0, texto: 'Mandado el ' + diaMes(s.cargada_en) + ': ' + (falta ? falta + ' con faltante' : 'sin faltantes') + ' (' + n + ')' };
@@ -2765,12 +2764,12 @@ function verTestigoRevisar(t) {
     var s = t.sem, porId = {};
     (items || []).forEach(function (it) { porId[it.id] = it; });
     var html = '<button class="volver" id="volver">‹ Volver a Revisar</button><h1>Producto testigo</h1>' +
-      '<p class="bajada">' + esc(t.local + (s.fecha ? ' · se cuenta el ' + diaYFecha(s.fecha) : '')) + '</p>' +
+      '<p class="bajada">' + esc(t.local + (s.fecha ? ' · fecha límite: ' + diaYFecha(s.fecha) : '')) + '</p>' +
       '<div class="nota' + (t.alerta ? ' alerta' : '') + '">' + esc(t.texto) + '</div>' +
       (items || []).map(function (it) {
         var dif = Number(it.diferencia), txt = textoDiferencia(it.diferencia);
         return '<div class="testigo-ver' + (dif > 0 ? ' falta' : '') + '"><div class="que"><b>' + esc(it.item + ' · ' + it.producto + (it.color ? ' ' + it.color : '')) + '</b>' +
-          '<small>' + esc((it.stock_sistema != null && it.cantidad_real != null ? 'Sistema ' + it.stock_sistema + ' · contaron ' + it.cantidad_real : 'Todavía sin contar') +
+          '<small>' + esc((it.rubro ? it.rubro + ' · ' : '') + (it.stock_sistema != null && it.cantidad_real != null ? 'Sistema ' + it.stock_sistema + ' · contaron ' + it.cantidad_real : 'Todavía sin contar') +
                           (it.enviada != null ? ' · enviadas ' + it.enviada : '')) + '</small></div>' +
           (txt ? '<span class="chip ' + (dif > 0 ? 'vencido' : dif < 0 ? 'pendiente' : 'listo') + '">' + esc(txt) + '</span>' : '') +
           (it.video_path && !it.video_borrado ? '<button class="boton chico" data-video="' + esc(it.id) + '">▶ Video</button>' : '') + '</div>';
@@ -3475,29 +3474,17 @@ var CAMPOS_TESTIGO = [['enviada', 'Cantidad enviada'], ['stock_sistema', 'Stock 
 /* Lo escrito y todavía sin guardar, por producto: sobrevive a ir a grabar un video. */
 var _borradorTestigo = {};
 
-/** La tarjeta de Hoy: mañana, hoy o atrasado. */
-function tarjetaTestigoHoy(s) {
-  if (!s) return '';
-  var hoy = hoyAR(), n = (s.testigo_items || []).length;
-  var lista = (s.testigo_items || []).slice().sort(function (a, b) { return a.item - b.item; })
-    .map(function (i) { return i.producto + (i.color ? ' ' + i.color : ''); }).join(', ');
-  var titulo = s.fecha > hoy ? 'Mañana tienen producto testigo' : s.fecha === hoy ? 'Hoy: producto testigo' : 'Producto testigo sin mandar';
-  var texto = s.fecha > hoy ? lista
-    : s.fecha === hoy ? (n === 1 ? '1 producto' : n + ' productos') + ': copiá los números del sistema, contá y grabá un video de cada uno.'
-    : 'Era del ' + diaYFecha(s.fecha) + '. Cargalo y mandalo.';
-  return '<button class="tarjeta-accion testigo' + (s.fecha < hoy ? ' alerta' : '') + '" id="irTestigo"><b>' + esc(titulo) + '</b><span>' + esc(texto) + '</span></button>';
-}
-
 function pantallaTestigo(semId) {
   apagarCamara();
   barra.hidden = true;
   app.className = 'app';
   app.innerHTML = '<p class="cargando">Cargando…</p>';
   var per = yo(), hoy = hoyAR();
+  /* Sin uno elegido: el que falta mandar con la fecha límite más cercana (SQL 152: se ve apenas se programa). */
   var buscar = semId
     ? leer('/testigo_semanas?select=*&id=eq.' + valor(semId))
-    : leer('/testigo_semanas?select=*&local_id=eq.' + valor(per.local_id) + '&fecha=lte.' + sumarDias(hoy, 1) + '&fecha=gte.' + sumarDias(hoy, -6) +
-           '&cerrada=is.false&order=cargada_en.desc.nullsfirst,fecha.desc&limit=1');
+    : leer('/testigo_semanas?select=*&local_id=eq.' + valor(per.local_id) + '&fecha=gte.' + sumarDias(hoy, -6) +
+           '&cerrada=is.false&order=cargada_en.desc.nullsfirst,fecha.asc&limit=1');
   buscar.then(function (s) {
     var sem = (s || [])[0];
     if (!sem) {
@@ -3512,16 +3499,17 @@ function pantallaTestigo(semId) {
 }
 
 function dibujarTestigo(sem, items) {
-  /* El vendedor carga desde el día del control, durante una semana, hasta mandarla. Después la corrige el supervisor. */
-  var hoy = hoyAR(), antes = !!(sem.fecha && sem.fecha > hoy), cerro = !!(sem.fecha && sumarDias(sem.fecha, 6) < hoy);
-  var bloqueado = antes || sem.cerrada || !!sem.cargada_en || cerro || !sem.fecha;
+  /* SQL 152: el vendedor carga desde que se programa hasta la fecha límite (vencido, seis días más), hasta mandarla.
+     Después la corrige el supervisor. */
+  var hoy = hoyAR(), cerro = !!(sem.fecha && sumarDias(sem.fecha, 6) < hoy);
+  var bloqueado = sem.cerrada || !!sem.cargada_en || cerro || !sem.fecha;
   var html = '<button class="volver" id="volver">‹ Volver a Hoy</button><h1>Producto testigo</h1>' +
-    '<p class="bajada">' + (sem.fecha ? esc(diaYFecha(sem.fecha)).replace(/^./, function (c) { return c.toUpperCase(); }) + ' · ' : '') +
+    '<p class="bajada">' + (sem.fecha ? 'Fecha límite: ' + esc(sem.fecha === hoy ? 'hoy, ' + diaYFecha(sem.fecha) : diaYFecha(sem.fecha)) + ' · ' : '') +
     'Copiá los números del sistema, contá lo que hay y grabá un video cortito de cada producto.</p>';
-  if (antes) html += '<div class="nota">Se carga el ' + esc(diaYFecha(sem.fecha)) + '. Mientras, ya podés ver qué productos son.</div>';
-  else if (sem.cerrada) html += '<div class="nota">Esta semana ya está cerrada.</div>';
+  if (sem.cerrada) html += '<div class="nota">Esta semana ya está cerrada.</div>';
   else if (sem.cargada_en) html += '<div class="nota">Ya la mandaron el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '. Si hay que corregir algo, avisale a tu supervisor.</div>';
-  else if (cerro || !sem.fecha) html += '<div class="nota">Este control ya cerró' + (sem.fecha ? ' (era del ' + esc(diaYFecha(sem.fecha)) + ')' : '') + '. Si hay que cargar algo, avisale a tu supervisor.</div>';
+  else if (cerro || !sem.fecha) html += '<div class="nota">Este control ya cerró' + (sem.fecha ? ' (la fecha límite era el ' + esc(diaYFecha(sem.fecha)) + ')' : '') + '. Si hay que cargar algo, avisale a tu supervisor.</div>';
+  else if (sem.fecha < hoy) html += '<div class="nota alerta">Venció el ' + esc(diaYFecha(sem.fecha)) + ': cargalo y mandalo igual.</div>';
   html += items.map(function (it) { return tarjetaTestigo(it, bloqueado); }).join('');
   if (!items.length) html += '<div class="vacio">Todavía no hay productos cargados.</div>';
   if (!bloqueado && items.length) {
@@ -3569,6 +3557,7 @@ function tarjetaTestigo(it, bloqueado) {
   var val = function (k) { return b[k] != null ? b[k] : it[k] == null ? '' : it[k]; };
   var conVideo = it.video_path && !it.video_borrado;
   return '<div class="testigo-item" data-item="' + esc(it.id) + '">' +
+    (it.rubro ? '<small class="ti-rubro">' + esc(it.rubro) + '</small>' : '') +
     '<div class="ti-cab"><b>' + esc(it.item + ' · ' + it.producto) + '</b>' + (it.color ? '<span class="chip pendiente">' + esc(it.color) + '</span>' : '') + '</div>' +
     '<div class="ti-grilla">' + CAMPOS_TESTIGO.map(function (c) {
       return '<label class="campo"><span>' + esc(c[1]) + '</span><input inputmode="numeric" maxlength="5" autocomplete="off" data-k="' + c[0] + '" value="' + esc(val(c[0])) + '"' + (bloqueado ? ' disabled' : '') + '></label>';
