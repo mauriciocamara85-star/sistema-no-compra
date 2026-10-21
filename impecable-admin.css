@@ -225,6 +225,8 @@
   border: 1px solid var(--line-campo); border-radius: var(--r-sm);
   background: var(--campo); color: var(--txt); font: 600 14px var(--sans);
 }
+/* Dar la caja por controlada desde la compu, como en la app (21/10). */
+.ventana .caja-control { margin: 0 0 18px; }
 .fotos-cierre { display: grid; gap: 22px; }
 .foto-cierre img { aspect-ratio: auto; max-height: 72vh; }
 .foto-cierre figcaption { margin: 0 0 6px; font-size: 14px; color: var(--txt-2); }

@@ -1167,6 +1167,7 @@ function dibujarVentanaCaja(k, fs, deIA) {
     '<div class="desliza"><table class="caja-dia"><thead><tr><th></th><th class="n">Cierre</th><th class="n">Real</th><th class="n">Desvío</th></tr></thead><tbody id="cajaDiaCuerpo">' +
     filasDiaCaja(k, deIA, false) + '</tbody></table></div>' +
     (deIA.length ? '<p class="bajada-chica">Los números con <span class="de-ia">IA</span> los cargó la IA desde las fotos: corroboralos con las fotos de abajo.</p>' : '') +
+    controlCajaHTML(k) +
     (hay.length ? '<div class="seccion">Fotos del cierre</div><div class="fotos-cierre">' + hay.map(function (t) {
       var f = ultima[t[0]];
       /* El nombre arriba, la foto y, debajo, lo que leyó la IA (al bajar no se mezcla con la siguiente). */
@@ -1175,6 +1176,55 @@ function dibujarVentanaCaja(k, fs, deIA) {
     }).join('') + '</div>' : '<div class="vacio">Sin fotos guardadas.</div>'));
   engancharReleer(v, k);
   engancharEdicionCaja(v, k, deIA);
+  engancharControlCaja(v, k);
+}
+
+/* Dar la caja por controlada desde la compu, igual que en la app (21/10, Mauricio: "no me deja poner como
+   controlada el cierre de caja… en la app está todo, tendría que ser lo mismo desde el sistema"). La misma función
+   de la base (orden_caja_controlar, SQL 124): con alertas, "qué pasó" es obligatorio y, si la diferencia no tuvo
+   arreglo, quién se hace cargo y cuánto. Quién puede lo decide la base (el administrador y los supervisores del local). */
+function controlCajaHTML(k) {
+  if (k.estado !== 'cargada' || soloMira()) return '';
+  var alertas = (k.alertas || []).length;
+  return '<div class="caja-control" id="cajaControl"><div class="seccion">Dar por controlada</div>' +
+    '<label class="campo"><span>' + (alertas ? 'Qué pasó (obligatorio: tiene alertas)' : 'Nota (opcional)') + '</span><textarea id="notaCaja" rows="2" maxlength="600"></textarea></label>' +
+    (alertas ? '<div class="renglon"><label class="campo c-grande"><span>Si la diferencia no tiene arreglo, ¿quién se hace cargo?</span>' +
+        '<select id="aCargo"><option value="">Nadie: se resolvió o no corresponde</option></select></label>' +
+      '<label class="campo c-medio" id="montoCargoCampo" hidden><span>Monto a su cargo</span><input id="montoCargo" inputmode="decimal" autocomplete="off" placeholder="$"></label></div>' : '') +
+    '<button class="boton lima" id="cajaControlar">Dar por controlada</button></div>';
+}
+
+function engancharControlCaja(v, k) {
+  var b = v.querySelector('#cajaControlar');
+  if (!b) return;
+  var sel = v.querySelector('#aCargo'), montoCampo = v.querySelector('#montoCargoCampo'), monto = v.querySelector('#montoCargo');
+  /* Lo que falta de plata: la suma de los desvíos positivos (el sistema dice más de lo que hay). */
+  var faltaPlata = (k.alertas || []).reduce(function (s, a) { return s + (a.tipo === 'desvio' && Number(a.monto) > 0 ? Number(a.monto) : 0); }, 0);
+  if (sel) {
+    if (faltaPlata > 0) monto.value = String(Math.round(faltaPlata));
+    sel.onchange = function () { montoCampo.hidden = !sel.value; };
+    /* La gente del local; de entrada, quien la cargó (si falta plata). */
+    leer('/orden_personas?select=id,nombre,inicial&local_id=eq.' + valor(k.local_id) + '&activo=is.true&order=nombre.asc').then(function (gente) {
+      (gente || []).forEach(function (p) {
+        var o = document.createElement('option'); o.value = p.id; o.textContent = nombreVendedor(p); sel.appendChild(o);
+      });
+      if (faltaPlata > 0 && k.cargada_por && (gente || []).some(function (p) { return p.id === k.cargada_por; })) { sel.value = k.cargada_por; montoCampo.hidden = false; }
+    }).catch(function () {});
+  }
+  unaVez(b, function () {
+    var nota = v.querySelector('#notaCaja').value.trim();
+    if ((k.alertas || []).length && !nota) { v.querySelector('#notaCaja').focus(); avisar('Tiene alertas: escribí qué pasó.'); return; }
+    var persona = sel ? sel.value : '', m = null;
+    if (persona) {
+      m = numeroCaja(monto.value);
+      if (!(m > 0)) { monto.focus(); avisar('Escribí cuánto queda a su cargo.'); return; }
+      if (!confirm('La diferencia de ' + pesos(m) + ' queda a cargo de ' + sel.selectedOptions[0].textContent + '. ¿Confirmás?')) return;
+    }
+    b.textContent = 'Guardando…';
+    var args = { p_caja: k.id, p_nota: nota || null };
+    if (persona) { args.p_persona = persona; args.p_monto = m; }
+    return llamar('orden_caja_controlar', args).then(function () { v.remove(); avisar('Caja controlada.'); verCajas(); });
+  });
 }
 
 /** Los 4 renglones de la caja del día; editando, cada monto es un casillero para escribir. */
@@ -1223,9 +1273,11 @@ function engancharEdicionCaja(v, k, deIA) {
   var be = v.querySelector('#cajaEditar');
   if (!be) return;
   var bl = v.querySelector('#cajaListo'), bc = v.querySelector('#cajaCancelar'), cuerpo = v.querySelector('#cajaDiaCuerpo');
+  var ctl = v.querySelector('#cajaControl');
   var modo = function (editando) {
     cuerpo.innerHTML = filasDiaCaja(k, deIA, editando);
     be.hidden = editando; bl.hidden = !editando; bc.hidden = !editando;
+    if (ctl) ctl.hidden = editando;      /* no se controla un número a medio corregir */
     bl.disabled = true;
     if (editando) { var p = cuerpo.querySelector('[data-campo]'); if (p) p.focus(); }
   };
