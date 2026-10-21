@@ -7,6 +7,10 @@
  * nc_usuario_*, en supabase/personas.sql): esta pantalla sólo no ofrece lo
  * que después se va a rechazar.
  *
+ * Los francos de cada uno también se cargan acá (SQL 154, 21/10): el
+ * administrador a cualquiera y el encargado a sus vendedores. Antes estaban
+ * en Supervisión → Ajustes → Personas, que se sacó porque repetía esta pantalla.
+ *
  * Crear un usuario no le pone el PIN: la persona lo crea la primera vez que
  * entra, y ahí queda esperando que alguien confirme en persona que fue ella
  * (es lo que impide que alguien cree el PIN de otro). Aprobar es la misma
@@ -46,6 +50,20 @@ var usuarios = (function () {
     if (esZona(p)) r += ' · ' + (susLocales(p) || 'sin locales todavía');
     return r;
   }
+  /* SQL 154: los francos (antes en Supervisión → Ajustes → Personas). Los tiene quien es de un local, el
+     vendedor y el encargado: los usan los vencimientos de Equipo VDH, los avisos y la planilla de Ventas.
+     En la base van de 1 (lunes) a 7 (domingo). */
+  var DIAS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  var DIAS_LARGO = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
+  var LOS_DIAS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados', 'domingos'];
+  function tieneFranco(rol) { return rol === 'vendedor' || rol === 'supervisor'; }
+  function conFranco(p) { return !!p.local_id && tieneFranco(p.rol); }
+  /** "los martes", "los lunes, viernes, sábados y domingos". */
+  function losDias(dias) {
+    var d = dias.map(function (k) { return LOS_DIAS[k - 1]; });
+    return 'los ' + (d.length > 1 ? d.slice(0, -1).join(', ') + ' y ' + d[d.length - 1] : d[0]);
+  }
+  function francoDe(p) { return (p.francos || []).length ? 'franco ' + losDias(p.francos) : 'sin franco fijo'; }
 
   var datos = null;
   var filtro = { local: '', desactivados: false };
@@ -123,6 +141,8 @@ var usuarios = (function () {
     return 'Otro local';
   }
   function esAdmin() { return datos && datos.yo.rol === 'admin'; }
+  /* Sin el SQL 154, nc_usuarios no trae los francos: no se muestran ni se ofrecen. */
+  function hayFrancos() { return !!datos && datos.personas.some(function (p) { return 'francos' in p; }); }
 
   function dibujar() {
     var admin = esAdmin();
@@ -144,8 +164,9 @@ var usuarios = (function () {
     }
 
     var sub = admin
-      ? 'Todos los que entran al No Compra y a Equipo VDH. El rol y el local los cambiás vos.'
-      : 'Los vendedores de ' + esc(nombreLocal(datos.yo.local_id)) + '. Podés crearlos, aprobarlos, borrarles el PIN y desactivarlos. Reactivar a alguien lo hace el administrador.';
+      ? 'Todos los que entran al No Compra y a Equipo VDH. ' + (hayFrancos() ? 'El rol, el local y los francos' : 'El rol y el local') + ' los cambiás vos.'
+      : 'Los vendedores de ' + esc(nombreLocal(datos.yo.local_id)) + '. Podés crearlos, aprobarlos, ' + (hayFrancos() ? 'cambiarles los francos, ' : '') +
+        'borrarles el PIN y desactivarlos. Reactivar a alguien lo hace el administrador.';
     var filtros = '';
     if (admin) {
       filtros = '<div class="us-filtros"><select id="usFiltroLocal" aria-label="Local">' +
@@ -208,6 +229,8 @@ var usuarios = (function () {
     var acc = '';
     if (editando === p.id) return filaEditor(p);
     if (admin && !p.soy) acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="cambiar">Cambiar</button>';
+    /* El encargado sólo cambia los francos de sus vendedores (SQL 154). */
+    else if (!admin && toca && p.activo && hayFrancos()) acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="cambiar">Francos</button>';
     if (toca && p.activo && (p.pin || !p.en_lista)) {
       acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="pin">' + (p.en_lista ? 'Borrar PIN' : 'Poner en la lista') + '</button>';
     }
@@ -217,7 +240,7 @@ var usuarios = (function () {
     return '<div class="us-fila' + (p.activo ? '' : ' apagada') + '" data-id="' + esc(p.id) + '">' +
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */
-      '<span>' + esc(rolDe(p)) + '</span></div>' +
+      '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + '</span></div>' +
       '<span class="pill pill-' + e[0] + '">' + esc(e[1]) + '</span>' +
       (acc ? '<div class="us-acciones">' + acc + '</div>' : '') +
       '</div>';
@@ -248,20 +271,42 @@ var usuarios = (function () {
   function tildados(cont) {
     return Array.prototype.map.call(cont.querySelectorAll('.us-locales input:checked'), function (i) { return i.value; });
   }
+  /** Los 7 días para marcar los francos (SQL 154): como en Supervisión, botones que se prenden. */
+  function casillasDias(marcados) {
+    return '<div class="us-dias-fila">' + DIAS.map(function (d, i) {
+      return '<label class="us-dia" title="' + DIAS_LARGO[i] + '"><input type="checkbox" value="' + (i + 1) + '" aria-label="' + DIAS_LARGO[i] + '"' +
+        (marcados.indexOf(i + 1) > -1 ? ' checked' : '') + '><span aria-hidden="true">' + d + '</span></label>';
+    }).join('') + '</div>';
+  }
+  function diasTildados(cont) {
+    return Array.prototype.map.call(cont.querySelectorAll('.us-dias input:checked'), function (i) { return +i.value; })
+      .sort(function (a, b) { return a - b; });
+  }
+  function mismosDias(a, b) { return (a || []).join() === (b || []).slice().sort(function (x, y) { return x - y; }).join(); }
 
   function filaEditor(p) {
-    var r = rolEd(p);
+    var r = rolEd(p), fr = hayFrancos();
+    var dias = fr ? '<div class="us-dias" data-ed-dias role="group" aria-label="Francos"' + (tieneFranco(r) ? '' : ' hidden') + '>' +
+      '<span class="us-dias-tit">Francos</span>' + casillasDias(p.francos || []) + '</div>' : '';
+    var botones = '<button type="button" class="btn btn-pri btn-chico" data-acc="guardar">Guardar</button>' +
+      '<button type="button" class="btn btn-sec btn-chico" data-acc="cancelar">Cancelar</button>';
+    /* El encargado, con uno de sus vendedores: sólo los francos. */
+    if (!esAdmin()) {
+      return '<div class="us-fila us-editando" data-id="' + esc(p.id) + '">' +
+        '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Los días de la semana que no trabaja</span></div>' +
+        '<div class="us-editor solo-dias">' + dias + botones + '</div></div>';
+    }
     return '<div class="us-fila us-editando" data-id="' + esc(p.id) + '">' +
-      '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Cambiar el rol, el local o si también atiende clientes</span></div>' +
+      '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Cambiar el rol, el local' + (fr ? ', los francos' : '') + ' o si también atiende clientes</span></div>' +
       '<div class="us-editor">' +
         '<select data-ed="rol" aria-label="Rol">' + opcionesRol(r) + '</select>' +
         '<select data-ed="local" aria-label="Local"' + (sinLocal(r) ? ' hidden' : '') + '>' + opcionesLocal(p.local_id || '', r === 'gerencia') + '</select>' +
         '<div class="us-locales" data-ed-locales role="group" aria-label="Sus locales"' + (r === 'zona' ? '' : ' hidden') + '>' +
           '<span class="us-locales-tit">Sus locales</span>' + casillasLocales(marcadosDe(p)) + '</div>' +
+        dias +
         '<label class="us-check" data-ed-atencion' + (puedeAtencion(r) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
           '<input type="checkbox" data-ed="atencion"' + (p.tambien_atencion ? ' checked' : '') + '> También atiende clientes</label>' +
-        '<button type="button" class="btn btn-pri btn-chico" data-acc="guardar">Guardar</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" data-acc="cancelar">Cancelar</button>' +
+        botones +
       '</div></div>';
   }
 
@@ -278,6 +323,9 @@ var usuarios = (function () {
             '<div class="campo ancho" id="usCampoLocales" hidden><span class="campo-lbl">Sus locales</span>' +
               '<div class="us-locales" role="group" aria-label="Sus locales">' + casillasLocales({}) + '</div></div>'
           : '<div class="campo ancho"><span class="campo-lbl">Rol</span><span class="us-fijo">Vendedor de ' + esc(nombreLocal(datos.yo.local_id)) + '</span></div>') +
+        /* SQL 154: los francos, si ya los sabés (se pueden poner después, en Cambiar). */
+        (hayFrancos() ? '<div class="campo ancho" id="usCampoFrancos"><span class="campo-lbl">Francos <small>(si tiene fijos)</small></span>' +
+          '<div class="us-dias" role="group" aria-label="Francos">' + casillasDias([]) + '</div></div>' : '') +
         '<div class="campo ancho"><button type="button" class="btn btn-pri" id="usCrear">Crear usuario</button></div>' +
       '</div>' +
       (admin ? '<p class="us-nota">' + esc(QUE_VE) + '</p>' : ''));
@@ -307,6 +355,14 @@ var usuarios = (function () {
       if (sesionMuerta(e)) return false;
       avisar('err', e && e.delServidor ? e.message : 'Sin conexión. Probá de nuevo.');
       return false;
+    });
+  }
+
+  /** Los francos (SQL 154): el administrador a cualquiera, el encargado a sus vendedores. Sin cambios, no llama. */
+  function guardarFrancos(p, dias) {
+    if (mismosDias(dias, p.francos)) return Promise.resolve(true);
+    return hacer('nc_usuario_francos', { p_persona: p.id, p_dias: dias }, function () {
+      return 'Guardado: ' + p.nombre + (dias.length ? ' tiene franco ' + losDias(dias) + '.' : ' no tiene franco fijo.');
     });
   }
 
@@ -342,7 +398,12 @@ var usuarios = (function () {
           document.getElementById('usLista').innerHTML = lista();
           break;
         case 'guardar':
+          if (!esAdmin()) {
+            guardarFrancos(p, diasTildados(f)).then(function (ok) { if (ok) { editando = null; document.getElementById('usLista').innerHTML = lista(); } });
+            break;
+          }
           var rol = f.querySelector('[data-ed="rol"]').value, loc = f.querySelector('[data-ed="local"]').value || null;
+          var dias = hayFrancos() && tieneFranco(rol) ? diasTildados(f) : null;
           var zona = rol === 'zona', locs = zona ? tildados(f) : [];
           if (zona && !locs.length) { avisar('err', 'Tildá al menos un local para ' + p.nombre + '.'); return; }
           if (p.local_id && loc && loc !== p.local_id && p.rol === 'vendedor' && !sinLocal(rol) &&
@@ -377,6 +438,8 @@ var usuarios = (function () {
                   (r && r.pin_corto ? ' La próxima vez que entre, cambia su PIN por uno de 6 números.' : '');
               });
             })
+            /* SQL 154: los francos, también aparte (si no cambiaron, no llama). */
+            .then(function (ok) { return ok && dias ? guardarFrancos(p, dias) : ok; })
             .then(function (ok) { if (ok) { editando = null; document.getElementById('usLista').innerHTML = lista(); } });
           break;
         case 'pin':
@@ -404,6 +467,8 @@ var usuarios = (function () {
         if (at) at.hidden = !puedeAtencion(s.value);
         var locs = ed.querySelector('[data-ed-locales]');
         if (locs) locs.hidden = s.value !== 'zona';
+        var di = ed.querySelector('[data-ed-dias]');
+        if (di) di.hidden = !tieneFranco(s.value);
         loc.innerHTML = opcionesLocal(loc.value, s.value === 'gerencia');
       }
     };
@@ -413,6 +478,8 @@ var usuarios = (function () {
       var l = document.getElementById('usLocal');
       document.getElementById('usCampoLocal').hidden = sinLocal(rolSel.value);
       document.getElementById('usCampoLocales').hidden = rolSel.value !== 'zona';
+      var cf = document.getElementById('usCampoFrancos');
+      if (cf) cf.hidden = !tieneFranco(rolSel.value);
       /* Sin el campo Local, el rol ocupa la fila: "Supervisor (varios locales)" no entra en media. */
       rolSel.parentNode.classList.toggle('ancho', sinLocal(rolSel.value));
       l.innerHTML = opcionesLocal(l.value, rolSel.value === 'gerencia');
@@ -426,16 +493,26 @@ var usuarios = (function () {
       var zona = rol === 'zona', locs = zona ? tildados(document.getElementById('usCampoLocales')) : [], nuevo = null;
       if ((rol === 'vendedor' || rol === 'supervisor') && !loc) { avisar('err', 'Elegí el local.'); document.getElementById('usLocal').focus(); return; }
       if (zona && !locs.length) { avisar('err', 'Tildá al menos un local.'); return; }
+      var cf = document.getElementById('usCampoFrancos');
+      var dias = cf && tieneFranco(rol) ? diasTildados(cf) : [];
+      if (dias.length === 7) { avisar('err', 'Con los 7 días de franco no trabajaría nunca: dejale al menos uno.'); return; }
+      /* SQL 148: Atención entra por "E-commerce"; Administración, por su botón. */
+      var por = rol === 'atencion' ? 'que entre por "E-commerce", toque su nombre' :
+                rol === 'admin' ? 'que entre por "Administración", toque su nombre' : 'que entre con su local y su nombre';
       var b = document.getElementById('usCrear');
       b.disabled = true;
       hacer('nc_usuario_crear', { p_nombre: n, p_apellido: a, p_rol: zona ? 'supervisor' : rol, p_local: sinLocal(rol) ? null : loc },
             function (r) {
               nuevo = r && r.id;
-              /* SQL 148: Atención entra por "E-commerce"; Administración, por su botón. */
-              var por = rol === 'atencion' ? 'que entre por "E-commerce", toque su nombre' :
-                        rol === 'admin' ? 'que entre por "Administración", toque su nombre' : 'que entre con su local y su nombre';
-              return zona ? null : n + ' quedó creado. Decile ' + por + ' y que cree su PIN.';
+              return zona || dias.length ? null : n + ' quedó creado. Decile ' + por + ' y que cree su PIN.';
             })
+        /* SQL 154: sus francos, si se marcaron (avisa este paso). */
+        .then(function (ok) {
+          if (!ok || !dias.length) return ok;
+          return hacer('nc_usuario_francos', { p_persona: nuevo, p_dias: dias }, function () {
+            return n + ' quedó creado, con franco ' + losDias(dias) + '. Decile ' + por + ' y que cree su PIN.';
+          });
+        })
         /* SQL 141: al supervisor nuevo, sus locales (ya aprobados). Para entrar, su nombre aparece en
            cada uno de ellos (nc_login_personas, SQL 121). */
         .then(function (ok) {

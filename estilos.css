@@ -1485,6 +1485,26 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-loc { font-size: 14px; font-weight: 500; color: var(--txt); cursor: pointer; min-height: 34px; gap: 8px; }
 .us-loc input { width: 18px; height: 18px; flex: none; accent-color: var(--acc); }
 .us-loc small { font-weight: 500; color: var(--txt-3); font-size: 12px; }
+/* Los francos (SQL 154): los 7 días como botones que se prenden, como en Supervisión. En el editor, en su
+   renglón; el del encargado tiene sólo esto, y Guardar y Cancelar van al lado. */
+.us-dias { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.us-dias[hidden], #usCampoFrancos[hidden] { display: none; }
+.us-editor .us-dias { order: 9; flex: 1 1 100%; padding: 4px 2px 0; }
+.us-editor.solo-dias { align-items: center; }
+.us-editor.solo-dias .us-dias { order: 0; flex: 0 1 auto; padding: 0 6px 0 0; }
+.us-dias-tit { font-size: 13px; font-weight: 600; color: var(--txt-2); }
+.us-dias-fila { display: flex; gap: 4px; }
+.us-dia { position: relative; display: block; cursor: pointer; }
+.us-dia input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.us-dia span {
+  display: grid; place-items: center; width: 38px; height: 40px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2);
+  color: var(--txt-2); font: 700 14px var(--sans);
+}
+.us-dia:hover span { border-color: var(--line-alta); }
+.us-dia input:checked + span { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
+.us-dia input:focus-visible + span { outline: 2px solid var(--acc); outline-offset: 2px; }
+.campo-lbl small { font-weight: 500; color: var(--txt-3); }
 
 /* El portón de lo que antes pedía el PIN compartido (persona.porton). */
 .porton-usuario { width: 100%; }

@@ -2264,83 +2264,24 @@ function programarTestigo() {
 
 /* 15/10/2026: de 9 pestañas a 6. "Sectores y módulos" se fue al mapa (la foto modelo y "algo propio", a la ventana del
    módulo; agregar un sector, a "Repartir"); "Exhibidores" se sacó (vacío, y la nota repetía una regla); los colores y
-   las fotos ejemplo están adentro de Reglas de orden. 17/10: "Crear tarea" (para un local, varios o todos). */
-var SUBAJUSTES = [['personas', 'Personas'], ['local', 'El local'], ['recordatorios', 'Recordatorios por día'], ['tarea', 'Crear tarea'],
+   las fotos ejemplo están adentro de Reglas de orden. 17/10: "Crear tarea" (para un local, varios o todos).
+   21/10: "Personas" se sacó: repetía Config → Usuarios, y los francos de cada uno pasaron allá (SQL 154). */
+var SUBAJUSTES = [['local', 'El local'], ['recordatorios', 'Recordatorios por día'], ['tarea', 'Crear tarea'],
                   ['reglas', 'Reglas de orden'], ['tableros', 'Ideas (tableros)'], ['tests', 'Tests']];
-var _sub = 'personas';
+var _sub = 'local';
 
 function verAjustes() {
   var c = document.getElementById('cuerpo');
-  if (!SUBAJUSTES.some(function (s) { return s[0] === _sub; })) _sub = 'personas';
+  if (!SUBAJUSTES.some(function (s) { return s[0] === _sub; })) _sub = 'local';
   c.innerHTML = '<div class="solapas chicas">' + SUBAJUSTES.map(function (s) {
     return '<button data-sub="' + s[0] + '" class="' + (s[0] === _sub ? 'activa' : '') + '">' + s[1] + '</button>';
   }).join('') + '</div><div id="ajuste"><p class="cargando">Cargando…</p></div>';
   c.querySelectorAll('[data-sub]').forEach(function (b) { b.onclick = function () { if (!puedeSalir()) return; _sub = b.dataset.sub; verAjustes(); }; });
-  ({ personas: ajPersonas, local: ajLocal, recordatorios: ajRecordatorios, tarea: ajCrearTarea, reglas: ajReglas, tableros: ajTableros, tests: ajPreguntas })[_sub]();
+  ({ local: ajLocal, recordatorios: ajRecordatorios, tarea: ajCrearTarea, reglas: ajReglas, tableros: ajTableros, tests: ajPreguntas })[_sub]();
 }
 
 function zonaAjuste(html) { var z = document.getElementById('ajuste'); z.innerHTML = html; return z; }
 function errAjuste(e) { error(e, verAjustes); }
-
-function ajPersonas() {
-  var L = valor(_local.id);
-  Promise.all([
-    /* tambien_atencion: SQL 135. */
-    leer('/orden_personas?select=id,nombre,apellido,inicial,rol,local_id,dias_libres,telegram_chat_id,activo,aprobado,auth_user_id,tambien_atencion&or=(local_id.eq.' + L + ',local_id.is.null)&order=local_id.nullsfirst,nombre.asc'),
-    leer('/orden_locales?select=id,nombre&order=nombre.asc')
-  ]).then(function (r) {
-    var gente = r[0] || [], locs = r[1] || [];
-    /* Gerencia ya no se ofrece (Mauricio, 19/10): sólo si alguien de la lista ya la tiene. */
-    var roles = [['vendedor', 'Vendedor'], ['supervisor', 'Supervisor'], ['admin', 'Administrador'], ['atencion', 'Atención al cliente']]
-      .concat(gente.some(function (p) { return p.rol === 'gerencia'; }) ? [['gerencia', 'Gerencia']] : []);
-    var z = zonaAjuste('<p class="bajada">Las de ' + esc(_local.nombre) + ' y las que no tienen local (administración, atención y los supervisores de varios locales). Para cambiar a alguien de local, elegí otro y guardá. "Borrar PIN": la próxima vez que entre, crea uno nuevo (y hay que volver a aprobarlo). "Aprobado": quien entra por primera vez no ve nada del local hasta que se lo aprueba (a los vendedores también los aprueba su supervisor desde la app).' +
-      ' Un supervisor con local es el encargado de ese local; sin local, es el de varios locales, y sus locales se eligen en la compu (Config → Usuarios).' +
-      (esAdmin() ? ' "También atiende clientes": un vendedor o encargado que además entra al CRM, Socios, el Club y Gift Cards; su PIN pasa a ser de 6 números (si el suyo es de 4, lo cambia la próxima vez que entre).' : '') + '</p>' +
-      '<div id="filasPersonas"></div><div class="seccion">Agregar a alguien</div><div class="renglon" id="nuevaPersona">' +
-      campoHTML({ k: 'nombre', t: 'Nombre', tipo: 'texto' }, {}) + campoHTML({ k: 'apellido', t: 'Apellido', tipo: 'texto' }, {}) +
-      campoHTML({ k: 'rol', t: 'Rol', tipo: 'sel', ops: roles.filter(function (o) { return o[0] !== 'gerencia'; }) }, { rol: 'vendedor' }) +
-      campoHTML({ k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) }, { local_id: _local.id }) +
-      '<div class="acciones-renglon"><button class="boton chico lima" id="agregarPersona">Agregar</button></div></div>');
-    editor({
-      cont: z.querySelector('#filasPersonas'), filas: gente,
-      cols: [{ k: 'nombre', t: 'Nombre', tipo: 'texto' }, { k: 'apellido', t: 'Apellido', tipo: 'texto', nulo: true },
-             { k: 'rol', t: 'Rol', tipo: 'sel', ops: roles },
-             { k: 'local_id', t: 'Local', tipo: 'sel', ops: [[null, 'Sin local']].concat(locs.map(function (l) { return [l.id, l.nombre]; })) },
-             { k: 'dias_libres', t: 'Francos', tipo: 'dias' }, { k: 'telegram_chat_id', t: 'Telegram (id)', tipo: 'texto', nulo: true },
-             { k: 'activo', t: 'Activo', tipo: 'bool' }, { k: 'aprobado', t: 'Aprobado', tipo: 'bool' }]
-        /* SQL 135: sólo el administrador (la base no deja a nadie más). */
-        .concat(esAdmin() ? [{ k: 'tambien_atencion', t: 'También atiende clientes', tipo: 'bool' }] : [])
-        .concat([{ k: 'auth_user_id', t: 'Entró a la app', tipo: 'ver', ver: function (f) { return f.auth_user_id ? 'Sí' : 'Todavía no'; } }]),
-      guardar: function (f, c) {
-        if ('apellido' in c) c.inicial = c.apellido ? c.apellido.charAt(0).toUpperCase() : null;
-        /* Aprobar pasa por la base, como cuando aprueba el supervisor: a un
-           vendedor además lo suma al equipo de la Carga de No Compra. */
-        var aprobar = c.aprobado === true && f.aprobado === false;
-        var resto = Object.assign({}, c);
-        if (aprobar) delete resto.aprobado;
-        var antes = Object.keys(resto).length ? guardarFila('/orden_personas?id=eq.' + valor(f.id), resto) : Promise.resolve();
-        return antes.then(function () { if (aprobar) return llamar('orden_aprobar_persona', { p_persona: f.id, p_aprobar: true }); });
-      },
-      extra: function () { return '<button class="boton chico" data-accion="pin">Borrar PIN</button>'; },
-      accion: function (f) {
-        if (!confirm('¿Borrar el PIN de ' + f.nombre + '? La próxima vez que entre va a crear uno nuevo.')) return;
-        return llamar('orden_pin_borrar', { p_persona: f.id }).then(function () { avisar('PIN borrado: la próxima vez crea uno nuevo.'); });
-      }
-    });
-    unaVez(z.querySelector('#agregarPersona'), function () {
-      var r2 = z.querySelector('#nuevaPersona');
-      var nombre = String(r2.querySelector('[data-k=nombre]').value || '').trim(), apellido = String(r2.querySelector('[data-k=apellido]').value || '').trim();
-      if (!nombre) { avisar('Falta el nombre.'); return; }
-      var id = (crypto.randomUUID ? crypto.randomUUID() : null);
-      if (!id) { avisar('Este navegador no puede agregar personas. Probá con Chrome.'); return; }
-      var rol = r2.querySelector('[data-k=rol]').value, local = r2.querySelector('[data-k=local_id]').value || null;
-      if (rol === 'vendedor' && !local) { avisar('Un vendedor tiene que tener local.'); return; }
-      return escribir('/orden_personas', 'POST', { id: id, nombre: nombre, apellido: apellido || null, inicial: apellido ? apellido.charAt(0).toUpperCase() : null, rol: rol, local_id: local })
-        .then(function () { return llamar('orden_pin_borrar', { p_persona: id }); })   // queda en la lista del login, para crear su PIN
-        .then(function () { avisar(nombre + ' agregado: ya aparece en la app para crear su PIN.'); ajPersonas(); });
-    });
-  }).catch(errAjuste);
-}
 
 /* ── El local (antes "Horarios y funciones"), en frases con el número adentro: "lo de abajo no lo entiendo" ── */
 var DIAS_SEL = DIAS_LARGO.map(function (d, i) { return [i + 1, d]; });
