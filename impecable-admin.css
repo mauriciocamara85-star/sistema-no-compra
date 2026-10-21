@@ -671,3 +671,33 @@
 .ventana .est.listo { background: var(--ok-soft); color: var(--ok-txt); }
 .ventana .est.vencido { background: var(--bad-soft); color: var(--bad-txt); }
 .ventana .est.sorpresa, .ventana .est.corregir { background: var(--warn-soft); color: var(--warn-txt); }
+
+/* ── La ventana de la foto como Revisar en la app (21/10): cómo está, lo que vio la IA, las fotos anteriores que se
+   abren, y "Para mejorar la IA" al final y cerrado. ── */
+.ventana .vf-estado { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 10px; }
+.ventana .vf-aviso { margin-top: 12px; }
+.ventana .vf-ia { margin: 0 0 14px; padding: 2px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.ventana .pregunta { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.ventana .pregunta:first-child { border-top: 0; }
+.ventana .pregunta > span { flex: 1; font-weight: 600; }
+.ventana .pregunta .info { display: flex; flex-wrap: wrap; gap: 6px; }
+.ventana .hallazgo { padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+.ventana .hallazgo:first-child { border-top: 0; }
+.ventana .hallazgo b { display: block; }
+.ventana .hallazgo small { display: block; margin-top: 2px; color: var(--txt-3); font-size: 13px; }
+.ventana .hallazgo.corregir b::before { content: '● '; color: var(--warn-txt); }
+.ventana .hallazgo.sugerencia b::before { content: '○ '; color: var(--txt-3); }
+.ventana .vf-revisar { margin-top: 4px; }
+.ventana button.foto-chica { display: grid; gap: 5px; justify-items: start; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.ventana button.foto-chica img { cursor: pointer; }
+.ventana button.foto-chica:hover img { outline: 2px solid var(--acc); outline-offset: 1px; }
+.ventana .fc-pie { font-size: 12px; color: var(--txt-3); }
+.ventana .vm-ia { margin: 22px 0 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.ventana .vm-ia > summary { display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 0 16px; list-style: none; cursor: pointer;
+                            border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--surface); color: var(--txt-2); font: 600 13.5px var(--sans); }
+.ventana .vm-ia > summary::-webkit-details-marker { display: none; }
+.ventana .vm-ia > summary::before { content: '▸'; color: var(--txt-3); }
+.ventana .vm-ia[open] > summary::before { content: '▾'; }
+.ventana .vm-ia > summary:hover { color: var(--txt); }
+.ventana .vm-ia-cuerpo { margin-top: 12px; }
+.ventana .vm-ia-bajada { margin: 0 0 12px; }

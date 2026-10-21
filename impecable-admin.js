@@ -423,12 +423,16 @@ function verFotos() {
   (_fotoDe === 'tareas' ? datosTareasFoto : datosFotos)(sel.rango());
 }
 
+/* Lo que hace falta de una foto para la ventana de la foto (Fotos y el módulo de Por local). SQL 150: las marcas, si
+   se pidió la corrección y, en la foto de una corrección, de qué tarea es. */
+var COLS_FOTO = 'id,fecha,tipo,estado,modulo_id,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,enviado_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,respuestas,discrepancia,a_tiempo,comentario,frontal,ultimo_intento_id,revisado_en';
+var COLS_FOTO_150 = 'marcas,correccion_pedida,tarea_id';
+
 function datosFotos(rango) {
   var L = valor(_local.id), pedido = ++_fotoPedido;
-  /* SQL 150: las marcas, si se pidió la corrección y, en la foto de una corrección, de qué tarea es. */
-  leer150('/orden_v_controles?select=id,fecha,tipo,estado,modulo_id,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,a_tiempo,comentario,frontal,ultimo_intento_id,revisado_en' +
+  leer150('/orden_v_controles?select=' + COLS_FOTO +
        '&local_id=eq.' + L + '&foto_path=not.is.null&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + (_fotoNivel ? '&nivel=eq.' + _fotoNivel : '') + '&order=tomada_en.desc&limit=150',
-       'marcas,correccion_pedida,tarea_id')
+       COLS_FOTO_150)
     .then(function (fotos) {
       if (_solapa !== 'fotos' || pedido !== _fotoPedido) return;
       fotos = fotos || [];
@@ -453,7 +457,9 @@ function datosFotos(rango) {
       cargarFotos(c);
       var q = document.getElementById('fotoQuien');
       if (q) q.onchange = function () { _fotoQuien = q.value; datosFotos(rango); };
-      c.querySelectorAll('[data-i]').forEach(function (b) { b.onclick = function () { verFoto(vistas[+b.dataset.i], rango); }; });
+      c.querySelectorAll('[data-i]').forEach(function (b) {
+        b.onclick = function () { ventanaFoto(vistas[+b.dataset.i], { alTerminar: function () { datosFotos(rango); } }); };
+      });
     }).catch(function (e) { error(e, verFotos); });
 }
 
@@ -463,45 +469,88 @@ function estCorreccion(f) {
   return f.comentario ? '<span class="est vencido">Corrección: pidió otra</span>' : '<span class="est listo">Corrección: quedó bien</span>';
 }
 
-/* La foto grande. SQL 150 (Mauricio, 21/10: "tendría que poder revisarlo del sistema también"): la que espera
-   revisión se revisa acá mismo, igual que en la app (marcas en la foto, sugerencia o corrección, "que lo corrija y
-   mande otra foto" y el nivel); la ya revisada tiene "Cambiar la revisión". La foto de una corrección se mira con su
-   tarea, Antes | Ahora. */
-function verFoto(f, rango) {
-  var ia = f.ia_resultado || {};
+/* La ventana de una foto, igual que Revisar en la app. Mauricio, 21/10: "me gustaría verlo como figura en la
+   aplicación del teléfono"; "ahora me aparecen un montón de cosas que no son para controlar". Es la misma desde Fotos
+   y desde un módulo de Por local: la foto con sus marcas, cómo está (esperando revisión o revisada, lo que vio la IA,
+   lo que dijo él), y abajo la sugerencia o corrección, "Que lo corrija y mande otra foto" y los cuatro niveles. La ya
+   revisada tiene "Cambiar la revisión"; la foto de una corrección se mira con su tarea, Antes | Ahora. Lo que es para
+   la IA (el mueble, liquidación, la foto modelo, algo propio) va al final y cerrado, en "Para mejorar la IA".
+   op: { modulo (su fila de Por local: a cargo de quién, tareas abiertas), historia (las fotos anteriores del módulo),
+   alTerminar (qué recargar después de revisar) }. Sin f.id es un módulo sin fotos todavía. */
+var TIPO_CONTROL = { programado: 'control', sorpresa: 'sorpresa', deposito: 'depósito', correccion: 'corrección' };
+function ventanaFoto(f, op) {
+  op = op || {};
+  var ia = f.ia_resultado || {}, m = op.modulo, alTerminar = op.alTerminar || function () {};
   var hall = (ia.hallazgos || []).filter(function (h) { return h && h.titulo; });
   var corr = f.tipo === 'correccion', revisada = f.estado === 'revisado';
-  var puede = !soloMira() && !corr && (f.estado === 'enviado' || revisada);
-  var w = ventana('<h1>' + esc(f.modulo_nombre) + '</h1><p class="bajada">' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + ' · ' + ({ programado: 'control', sorpresa: 'sorpresa', deposito: 'depósito', correccion: 'corrección' }[f.tipo] || f.tipo)) + '</p>' +
-    fotoConMarcas(f.foto_path, f.marcas, { clase: 'fm-grande', alt: 'La foto del módulo' }) +
-    (puede ? '<p class="ayuda-marcas" id="vfAyuda"' + (revisada ? ' hidden' : '') + '>Tocá la foto para marcar dónde. Tocá una marca para sacarla.</p>' : '') +
-    '<div class="seccion">Los niveles</div><p class="bajada">' +
-      (corr ? estCorreccion(f) : 'Final: ' + estNivel(f.nivel, 'Esperando revisión')) +
-      (f.nivel_ia ? ' &nbsp; IA: ' + estNivel(f.nivel_ia) : '') +
-      (f.nivel_declarado ? ' &nbsp; El vendedor: ' + estNivel(f.nivel_declarado) : '') + '</p>' +
-    (hall.length ? '<div class="seccion">Lo que vio la IA</div><ul>' + hall.map(function (h) { return '<li>' + esc(h.titulo) + (h.gravedad === 'sugerencia' ? ' (sugerencia)' : '') + '</li>'; }).join('') + '</ul>' : '') +
-    (f.comentario ? '<div class="seccion">' + (f.correccion_pedida || corr ? 'Lo que se le pidió corregir' : 'La sugerencia') + '</div><div class="nota">' + esc(f.comentario) + '</div>'
-      : f.correccion_pedida ? '<div class="nota alerta">Se le pidió que lo corrija y mande otra foto.</div>' : '') +
-    (corr && f.tarea_id ? '<div class="vm-usar"><button class="boton' + (f.estado === 'enviado' && !soloMira() ? ' lima' : '') + ' chico" id="vfTarea">' +
-      (f.estado === 'enviado' && !soloMira() ? 'Mirar la corrección (Antes | Ahora)' : 'Ver la corrección (Antes | Ahora)') + '</button></div>' : '') +
-    (puede && revisada ? '<div class="vm-usar"><button class="boton chico" id="vfCambiar">Cambiar la revisión</button></div>' : '') +
-    (puede ? '<div class="vf-revisar"' + (revisada ? ' hidden' : '') + '><div class="seccion">' + (revisada ? 'Cambiar la revisión' : 'Revisar') + '</div>' +
-      '<label class="campo"><span>Sugerencia o corrección</span><textarea id="vfComent" rows="2" maxlength="500" placeholder="Ej.: 1) falta una camisa en cada pila, que sean 4"></textarea></label>' +
-      '<label class="check pedir-correccion"><input type="checkbox" id="vfCorregir"> Que lo corrija y mande otra foto</label>' +
-      '<p class="ayuda-chica">Con «A mejorar» o «Fuera de estándar» se le pide siempre. Si cambiás más de un nivel de lo que vio la IA, contá por qué.</p>' +
-      '<div class="niveles">' + ['impecable', 'bien', 'a_mejorar', 'fuera_de_estandar'].map(function (n) {
-        return '<button class="boton nivel nivel-' + n + '" data-nivel="' + n + '">' + NIVEL[n] + '</button>';
-      }).join('') + '</div></div>' : '') +
-    (esAdmin() && f.modulo_id ? '<div class="vm-usar"><button class="boton chico" id="vfModelo">Usar como modelo de este módulo</button></div>' : ''));
-  var b = w.querySelector('#vfModelo');
-  if (b) unaVez(b, function () {
-    return usarComoModelo({ id: f.modulo_id }, f.foto_path).then(function () { avisar('Listo: es la foto modelo de ' + f.modulo_nombre + ' (la IA compara con ésta).'); return 'dejar-apagado'; });
+  var puede = !!f.id && !soloMira() && !corr && (f.estado === 'enviado' || revisada);
+  var cuando = f.enviado_en || f.tomada_en;
+  var bajada = [f.persona_nombre, f.id ? TIPO_CONTROL[f.tipo] || f.tipo : '', f.frontal ? 'frontal nuevo' : '',
+                cuando ? diaMes(cuando) + ' ' + hora(cuando) : f.fecha ? diaMes(f.fecha) : '', f.a_tiempo === false ? 'tarde' : '',
+                m && m.responsable ? 'a cargo de ' + m.responsable : '',
+                m && m.tareas_abiertas ? m.tareas_abiertas + (m.tareas_abiertas == 1 ? ' tarea abierta' : ' tareas abiertas') : '']
+    .filter(Boolean).join(' · ');
+  /* Las preguntas: lo que respondió (la app de antes) o lo que miró la IA, en el orden de siempre. */
+  var respondio = !!f.respuestas && Object.keys(f.respuestas).length > 0;
+  var orden = Object.keys(NOMBRE_PUNTO);
+  var lugar = function (k) { var i = orden.indexOf(k); return i < 0 ? 99 : i; };
+  var puntos = Object.keys(respondio ? f.respuestas : ia.checks || {}).sort(function (a, b) { return lugar(a) - lugar(b); });
+  var estado = corr ? estCorreccion(f)
+    : revisada ? '<span class="est nivel-' + esc(f.nivel_final || f.nivel) + '">Revisada: ' + esc(NIVEL[f.nivel_final || f.nivel] || '—') + '</span>'
+    : '<span class="est sorpresa">Esperando revisión</span>';
+  var conIA = !soloMira() && !!f.modulo_id && (esAdmin() || f.sector_tipo !== 'deposito');
+  var w = ventana('<h1>' + esc(f.modulo_nombre) + '</h1>' + (bajada ? '<p class="bajada">' + esc(bajada) + '</p>' : '') +
+    (!f.id ? '<div class="vacio">Todavía no hay fotos de este módulo.</div>' :
+      fotoConMarcas(f.foto_path, f.marcas, { clase: 'fm-grande', alt: 'La foto del módulo' }) +
+      (puede ? '<p class="ayuda-marcas" id="vfAyuda"' + (revisada ? ' hidden' : '') + '>Tocá la foto para marcar dónde. Tocá una marca para sacarla.</p>' : '') +
+      (f.discrepancia ? '<div class="nota alerta vf-aviso">Lo que respondió no coincide con lo que vio la IA: miralo con atención.</div>' : '') +
+      '<div class="vf-estado">' + estado +
+        (f.nivel_ia ? '<span class="est nivel-' + esc(f.nivel_ia) + '">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>'
+          : ia.foto_valida === false ? '<span class="est vencido">IA: la foto no sirve</span>'
+          : corr ? '' : '<span class="est">Sin revisión de la IA</span>') +
+        (f.nivel_declarado ? '<span class="est nivel-' + esc(f.nivel_declarado) + '">Según él: ' + esc(NIVEL[f.nivel_declarado]) + '</span>' : '') + '</div>' +
+      (!f.nivel_ia && ia.foto_valida === false && (ia.motivo_foto_invalida || ia.motivo) ? '<p class="bajada">' + esc(ia.motivo_foto_invalida || ia.motivo) + '</p>' : '') +
+      (puntos.length || hall.length ? '<div class="vf-ia">' + puntos.map(function (k) {
+          var dijo = respondio ? f.respuestas[k] : null, vio = ia.checks ? ia.checks[k] : null;
+          return '<div class="pregunta"><span>' + esc(NOMBRE_PUNTO[k] || k) + '</span><div class="info">' +
+            (respondio ? '<span class="est ' + (dijo === true ? 'listo' : dijo === false ? 'vencido' : '') + '">' + (dijo === true ? 'Dijo sí' : dijo === false ? 'Dijo no' : '—') + '</span>' : '') +
+            (vio ? '<span class="est ' + (vio === 'ok' ? 'listo' : vio === 'mal' ? 'vencido' : '') + '">IA: ' + (vio === 'ok' ? 'bien' : vio === 'mal' ? 'mal' : 'no se ve') + '</span>' : '') +
+            '</div></div>';
+        }).join('') + hall.map(function (h) {
+          return '<div class="hallazgo ' + (h.gravedad === 'corregir' ? 'corregir' : 'sugerencia') + '"><b>' + esc(h.titulo) + '</b>' + (h.detalle ? '<small>' + esc(h.detalle) + '</small>' : '') + '</div>';
+        }).join('') + '</div>' : '') +
+      (f.comentario ? '<div class="seccion">' + (f.correccion_pedida || corr ? 'Lo que se le pidió corregir' : 'La sugerencia') + '</div><div class="nota">' + esc(f.comentario) + '</div>'
+        : f.correccion_pedida ? '<div class="nota alerta">Se le pidió que lo corrija y mande otra foto.</div>' : '') +
+      (corr && f.tarea_id ? '<div class="vm-usar"><button class="boton' + (f.estado === 'enviado' && !soloMira() ? ' lima' : '') + ' chico" id="vfTarea">' +
+        (f.estado === 'enviado' && !soloMira() ? 'Mirar la corrección (Antes | Ahora)' : 'Ver la corrección (Antes | Ahora)') + '</button></div>' : '') +
+      (puede && revisada ? '<div class="vm-usar"><button class="boton chico" id="vfCambiar">Cambiar la revisión</button></div>' : '') +
+      (puede ? '<div class="vf-revisar"' + (revisada ? ' hidden' : '') + '>' + (revisada ? '<div class="seccion">Cambiar la revisión</div>' : '') +
+        '<label class="campo"><span>Sugerencia o corrección</span><textarea id="vfComent" rows="2" maxlength="500" placeholder="Ej.: 1) falta una camisa en cada pila, que sean 4"></textarea></label>' +
+        '<label class="check pedir-correccion"><input type="checkbox" id="vfCorregir"> Que lo corrija y mande otra foto</label>' +
+        '<p class="ayuda-chica">Con «A mejorar» o «Fuera de estándar» se le pide siempre. Si cambiás más de un nivel de lo que vio la IA, contá por qué.</p>' +
+        '<div class="niveles">' + ['impecable', 'bien', 'a_mejorar', 'fuera_de_estandar'].map(function (n) {
+          return '<button class="boton nivel nivel-' + n + '" data-nivel="' + n + '">' + NIVEL[n] + '</button>';
+        }).join('') + '</div></div>' : '')) +
+    (op.historia && op.historia.length ? '<div class="seccion">Fotos anteriores</div><div class="historia">' + op.historia.map(function (x, i) {
+      return '<button class="foto-chica" data-hist="' + i + '"><img data-foto="' + esc(x.foto_path) + '" alt="">' +
+        '<span class="fc-pie">' + esc(diaMes(x.tomada_en) + ' · ' + (x.persona_nombre || '')) + '</span>' +
+        (x.tipo === 'correccion' ? estCorreccion(x) : x.estado === 'enviado' ? '<span class="est sorpresa">Sin revisar</span>' : estNivel(x.nivel, '—')) + '</button>';
+    }).join('') + '</div>' : '') +
+    (conIA ? '<details class="vm-ia"><summary>Para mejorar la IA</summary><div class="vm-ia-cuerpo"><p class="bajada">Cargando…</p></div></details>' : ''));
+  /* Lo de la IA se carga recién al abrirlo. */
+  var det = w.querySelector('.vm-ia');
+  if (det) det.addEventListener('toggle', function () {
+    if (det.open && !det.dataset.cargado) { det.dataset.cargado = '1'; paraLaIA(det.querySelector('.vm-ia-cuerpo'), f); }
+  });
+  /* Una foto anterior se abre arriba de ésta; si se revisa ahí, se cierran las dos. */
+  w.querySelectorAll('[data-hist]').forEach(function (b) {
+    b.onclick = function () { ventanaFoto(op.historia[+b.dataset.hist], { alTerminar: function () { w.remove(); alTerminar(); } }); };
   });
   var vt = w.querySelector('#vfTarea');
   if (vt) unaVez(vt, function () {
     return tareaDeCorreccion(f.tarea_id).then(function (t) {
       if (!t) { avisar('No encontramos la tarea de esta corrección.'); return; }
-      w.remove(); verTareaFoto(t, rango, function () { datosFotos(rango); });
+      w.remove(); verTareaFoto(t, null, alTerminar);
     });
   });
   if (!puede) return;
@@ -526,9 +575,9 @@ function verFoto(f, rango) {
       return revisarControl(f, n, texto, corregir, marcador && marcador.marcas())
         .then(function () {
           avisar(f.modulo_nombre + ': ' + NIVEL[n] + (corregir && f.persona_nombre ? '. Le pediste a ' + f.persona_nombre + ' que lo corrija.' : corregir ? '. Le pediste que lo corrija.' : '.'));
-          w.remove(); datosFotos(rango); return 'dejar-apagado';
+          w.remove(); alTerminar(); return 'dejar-apagado';
         }, function (e) {
-          if (/cambió la foto/i.test(mensajeDe(e))) { avisar(f.modulo_nombre + ': el vendedor cambió la foto recién. Mirala de nuevo.'); w.remove(); datosFotos(rango); return 'dejar-apagado'; }
+          if (/cambió la foto/i.test(mensajeDe(e))) { avisar(f.modulo_nombre + ': el vendedor cambió la foto recién. Mirala de nuevo.'); w.remove(); alTerminar(); return 'dejar-apagado'; }
           niveles.forEach(function (x) { x.disabled = false; }); throw e;
         });
     });
@@ -692,30 +741,34 @@ function ventana(html) {
   return f;
 }
 
+/* Un módulo de Por local: su última foto en la ventana de la foto (la misma de Fotos, como Revisar en la app), con
+   las anteriores abajo. Después de revisar se recarga Por local. */
 function verModulo(m) {
-  var admin = esAdmin();
+  leer150('/orden_v_controles?select=' + COLS_FOTO + '&modulo_id=eq.' + valor(m.modulo_id) + '&foto_path=not.is.null&order=tomada_en.desc&limit=12', COLS_FOTO_150)
+    .then(function (h) {
+      h = h || [];
+      var f = h[0] || { modulo_id: m.modulo_id, modulo_nombre: m.modulo_nombre, sector_tipo: m.sector_tipo };
+      ventanaFoto(f, { modulo: m, historia: h.slice(1), alTerminar: function () { if (_solapa === 'local') verLocal(); } });
+    }).catch(function (e) { avisar(mensajeDe(e)); });
+}
+
+/* "Para mejorar la IA" (abajo y cerrado en la ventana de la foto): lo que la IA tiene en cuenta con las fotos de este
+   módulo. Antes estaba suelto debajo de la foto ("Cómo se revisa"), mezclado con el control. */
+function paraLaIA(cont, f) {
+  var admin = esAdmin(), dep = f.sector_tipo === 'deposito', M = valor(f.modulo_id);
   Promise.all([
-    leer('/orden_v_controles?select=id,foto_path,tomada_en,nivel,persona_nombre,tipo,estado&modulo_id=eq.' + valor(m.modulo_id) +
-         '&foto_path=not.is.null&order=tomada_en.desc&limit=12'),
     /* La foto modelo y "algo propio" (antes en Ajustes → Sectores y módulos): sólo el administrador los cambia. */
-    admin ? leer('/orden_modulos?select=id,foto_referencia_path,reglas_extra&id=eq.' + valor(m.modulo_id)) : Promise.resolve([]),
+    admin ? leer('/orden_modulos?select=id,foto_referencia_path,reglas_extra&id=eq.' + M) : Promise.resolve([]),
     /* Liquidación (SQL 125): va por talle y la IA no pide degradé. La marcan el supervisor y el administrador; sin el SQL no aparece. */
-    soloMira() || m.sector_tipo === 'deposito' ? Promise.resolve(null)
-      : leer('/orden_modulos?select=liquidacion&id=eq.' + valor(m.modulo_id)).catch(function () { return null; }),
+    dep ? Promise.resolve(null) : leer('/orden_modulos?select=liquidacion&id=eq.' + M).catch(function () { return null; }),
     /* El tipo de mueble (SQL 129): cambia las 4 preguntas del control y lo que mira la IA. Sin el SQL no aparece. */
-    soloMira() || m.sector_tipo === 'deposito' ? Promise.resolve(null)
-      : leer('/orden_modulos?select=mueble,isla,nombre&id=eq.' + valor(m.modulo_id)).catch(function () { return null; })
+    dep ? Promise.resolve(null) : leer('/orden_modulos?select=mueble,isla,nombre&id=eq.' + M).catch(function () { return null; })
   ]).then(function (r) {
-    var h = r[0] || [], mod = (r[1] || [])[0] || null;
-    var liq = r[2] && r[2][0] && typeof r[2][0].liquidacion === 'boolean' ? r[2][0].liquidacion : null;
-    var mb = r[3] && r[3][0] && 'mueble' in r[3][0] ? r[3][0] : null;
-    var usar = function (ruta) { return mod ? '<button class="boton chico" data-modelo="' + esc(ruta) + '">Usar como modelo</button>' : ''; };
-    var v = ventana('<h1>' + esc(m.modulo_nombre) + '</h1><p class="bajada">' + esc((m.responsable ? 'A cargo de ' + m.responsable : '') + (m.tareas_abiertas ? ' · ' + m.tareas_abiertas + ' tareas abiertas' : '')) + '</p>' +
-      (m.foto_path ? '<img class="foto-grande" data-foto="' + esc(m.foto_path) + '" alt="">' + (mod ? '<div class="vm-usar">' + usar(m.foto_path) + '</div>' : '') : '<div class="vacio">Todavía no hay fotos de este módulo.</div>') +
-      (h.length > 1 ? '<div class="seccion">Fotos anteriores (las que todavía se guardan)</div><div class="historia">' + h.slice(1).map(function (x) {
-        return '<figure class="foto-chica"><img data-foto="' + esc(x.foto_path) + '" alt=""><figcaption>' + esc(diaMes(x.tomada_en) + ' · ' + (x.nivel ? NIVEL[x.nivel] : '—') + ' · ' + (x.persona_nombre || '')) + '</figcaption>' + usar(x.foto_path) + '</figure>';
-      }).join('') + '</div>' : '') +
-      (mod || liq !== null || mb ? '<div class="seccion">' + (mb ? 'Cómo se revisa' : 'Para la IA') + '</div>' : '') +
+    var mod = (r[0] || [])[0] || null;
+    var liq = r[1] && r[1][0] && typeof r[1][0].liquidacion === 'boolean' ? r[1][0].liquidacion : null;
+    var mb = r[2] && r[2][0] && 'mueble' in r[2][0] ? r[2][0] : null;
+    if (!mod && liq === null && !mb) { cont.innerHTML = '<p class="bajada">No hay nada para ajustar en este módulo.</p>'; return; }
+    cont.innerHTML = '<p class="bajada-chica vm-ia-bajada">No cambia la revisión: es lo que la IA tiene en cuenta cuando mira las fotos de este módulo.</p>' +
       (mb ? '<label class="campo vm-mueble"><span>Tipo de mueble</span><select id="vmMueble">' +
         '<option value="">' + esc('Como en el croquis: ' + nombreMueble(muebleDelCroquis(mb))) + '</option>' +
         TIPOS_MUEBLE.filter(function (t) { return t[0] !== 'deposito'; }).map(function (t) {
@@ -725,11 +778,11 @@ function verModulo(m) {
         '<small>Lo colgado va ordenado por talle, no por color: la IA no pide degradé.</small></span></label>' : '') +
       (mod ? '<div id="vmModelo"></div>' +
         '<label class="campo"><span>Algo propio de este módulo (opcional: la IA lo lee con cada foto)</span><textarea id="vmPropio" rows="2" maxlength="300" placeholder="Ej.: acá van sólo gorras, colgadas y no dobladas">' + esc(mod.reglas_extra || '') + '</textarea></label>' +
-        '<div class="vm-propio-acc"><button class="boton chico lima" id="vmPropioGuardar" data-aviso-guardar disabled>Guardar lo propio</button></div>' : ''));
-    var sm = v.querySelector('#vmMueble');
+        '<div class="vm-propio-acc"><button class="boton chico lima" id="vmPropioGuardar" data-aviso-guardar disabled>Guardar lo propio</button></div>' : '');
+    var sm = cont.querySelector('#vmMueble');
     if (sm) {
       var pintarPreguntas = function (t) {
-        v.querySelector('#vmPreguntas').textContent = 'Las 4 preguntas del control: ' + (CHECKS_MUEBLE[t] || CHECKS_MUEBLE.estantes).map(function (k) { return NOMBRE_PUNTO[k]; }).join(' · ') + '.';
+        cont.querySelector('#vmPreguntas').textContent = 'Las 4 preguntas del control: ' + (CHECKS_MUEBLE[t] || CHECKS_MUEBLE.estantes).map(function (k) { return NOMBRE_PUNTO[k]; }).join(' · ') + '.';
       };
       var elegido = sm.value;
       pintarPreguntas(elegido || muebleDelCroquis(mb));
@@ -737,34 +790,28 @@ function verModulo(m) {
         var nuevo = sm.value;
         sm.disabled = true;
         /* Devuelve el mueble que queda y cuántas tareas de la IA canceló (de puntos que ese mueble no tiene). */
-        llamar('orden_modulo_mueble', { p_modulo: m.modulo_id, p_mueble: nuevo || null }).then(function (r) {
+        llamar('orden_modulo_mueble', { p_modulo: f.modulo_id, p_mueble: nuevo || null }).then(function (r) {
           var queda = r && typeof r === 'object' ? r.mueble : r, canceladas = (r && r.tareas_canceladas) || 0;
           var t = typeof queda === 'string' && CHECKS_MUEBLE[queda] ? queda : nuevo || muebleDelCroquis(mb);
           elegido = nuevo;
           pintarPreguntas(t);
-          avisar('Listo: ' + m.modulo_nombre + ' queda como ' + nombreMueble(t) + '. Ya se pregunta eso, y la IA lo mira así desde la próxima foto.' +
+          avisar('Listo: ' + f.modulo_nombre + ' queda como ' + nombreMueble(t) + '. Ya se pregunta eso, y la IA lo mira así desde la próxima foto.' +
                  (canceladas ? ' Se ' + (canceladas === 1 ? 'canceló 1 tarea' : 'cancelaron ' + canceladas + ' tareas') + ' de la IA de puntos que este mueble no tiene.' : ''));
         }, function (e) { sm.value = elegido; avisar(mensajeDe(e)); }).then(function () { sm.disabled = false; });
       };
     }
-    var cl = v.querySelector('#vmLiq');
+    var cl = cont.querySelector('#vmLiq');
     if (cl) cl.onchange = function () {
       var valorNuevo = cl.checked;
       cl.disabled = true;
-      llamar('orden_modulo_liquidacion', { p_modulo: m.modulo_id, p_valor: valorNuevo }).then(function () {
-        avisar(valorNuevo ? 'Listo: ' + m.modulo_nombre + ' es de liquidación. La IA no pide degradé desde la próxima foto.'
-                          : 'Listo: ' + m.modulo_nombre + ' ya no es de liquidación.');
+      llamar('orden_modulo_liquidacion', { p_modulo: f.modulo_id, p_valor: valorNuevo }).then(function () {
+        avisar(valorNuevo ? 'Listo: ' + f.modulo_nombre + ' es de liquidación. La IA no pide degradé desde la próxima foto.'
+                          : 'Listo: ' + f.modulo_nombre + ' ya no es de liquidación.');
       }, function (e) { cl.checked = !valorNuevo; avisar(mensajeDe(e)); }).then(function () { cl.disabled = false; });
     };
     if (!mod) return;
-    var pintar = function () { dibujarModelo(v.querySelector('#vmModelo'), mod, m); };
-    pintar();
-    v.querySelectorAll('[data-modelo]').forEach(function (b) {
-      unaVez(b, function () {
-        return usarComoModelo(mod, b.dataset.modelo).then(function () { pintar(); avisar('Listo: es la foto modelo de ' + m.modulo_nombre + '.'); });
-      });
-    });
-    var ta = v.querySelector('#vmPropio'), gp = v.querySelector('#vmPropioGuardar');
+    dibujarModelo(cont.querySelector('#vmModelo'), mod, f, f.foto_path);
+    var ta = cont.querySelector('#vmPropio'), gp = cont.querySelector('#vmPropioGuardar');
     ta.oninput = function () { gp.disabled = ta.value.trim() === String(mod.reglas_extra || '').trim(); };
     unaVez(gp, function () {
       var t = ta.value.trim() || null;
@@ -772,29 +819,39 @@ function verModulo(m) {
         mod.reglas_extra = t; avisar('Guardado: la IA lo lee desde la próxima foto.'); return 'dejar-apagado';
       });
     });
-  }).catch(function (e) { avisar(mensajeDe(e)); });
+  }).catch(function (e) {
+    cont.innerHTML = '<p class="bajada">' + esc(mensajeDe(e)) + '</p>';
+    delete cont.parentNode.dataset.cargado;   // al cerrarlo y abrirlo de nuevo, lo vuelve a intentar
+  });
 }
 
-/** La foto modelo de un módulo: así tiene que quedar (la IA compara con ésta y el vendedor la ve en chiquito al sacar la foto). */
-function dibujarModelo(cont, mod, m) {
+/** La foto modelo de un módulo: así tiene que quedar (la IA compara con ésta y el vendedor la ve en chiquito al sacar la foto).
+    actual: la foto de la ventana, para "Usar la foto de arriba". */
+function dibujarModelo(cont, mod, m, actual) {
   if (!cont) return;
   cont.innerHTML = '<div class="vm-modelo">' + (mod.foto_referencia_path ? '<img class="ref-mini" data-foto="' + esc(mod.foto_referencia_path) + '" alt="Foto modelo">' : '<div class="ref-mini sin-foto">Sin foto modelo</div>') +
     '<div><b>Foto modelo</b><p class="bajada-chica">' + (mod.foto_referencia_path
       ? 'Así tiene que quedar. La IA compara cada foto con ésta, y al vendedor le aparece en chiquito al sacar la foto.'
-      : 'Todavía no tiene. Tocá "Usar como modelo" en una foto que haya salido bien, o subí una. Mientras tanto, la IA usa la foto ejemplo de su tipo de mueble (Ajustes → Reglas de orden).') + '</p>' +
-    '<div class="imp-mapa-acc"><button class="boton chico" data-subir-modelo>' + (mod.foto_referencia_path ? 'Subir otra' : 'Subir una foto') + '</button>' +
+      : 'Todavía no tiene. ' + (actual ? 'Si la foto de arriba salió bien, usala; si no, subí una.' : 'Subí una que haya salido bien.') +
+        ' Mientras tanto, la IA usa la foto ejemplo de su tipo de mueble (Ajustes → Reglas de orden).') + '</p>' +
+    '<div class="imp-mapa-acc">' + (actual ? '<button class="boton chico" data-usar-actual>Usar la foto de arriba</button>' : '') +
+      '<button class="boton chico" data-subir-modelo>' + (mod.foto_referencia_path ? 'Subir otra' : 'Subir una foto') + '</button>' +
       (mod.foto_referencia_path ? '<button class="boton chico" data-sacar-modelo>Sacar</button>' : '') + '</div></div></div>';
   cargarFotos(cont);
+  var u = cont.querySelector('[data-usar-actual]');
+  if (u) unaVez(u, function () {
+    return usarComoModelo(mod, actual).then(function () { dibujarModelo(cont, mod, m, actual); avisar('Listo: es la foto modelo de ' + m.modulo_nombre + ' (la IA compara con ésta).'); });
+  });
   cont.querySelector('[data-subir-modelo]').onclick = function () {
     elegirFoto(function (blob) {
       return subirArchivo(rutaModelo(mod), blob).then(function (ruta) { return ponerModelo(mod, ruta); })
-        .then(function () { dibujarModelo(cont, mod, m); avisar('Foto modelo guardada.'); });
+        .then(function () { dibujarModelo(cont, mod, m, actual); avisar('Foto modelo guardada.'); });
     });
   };
   var s = cont.querySelector('[data-sacar-modelo]');
   if (s) unaVez(s, function () {
     if (!confirm('¿Sacar la foto modelo de ' + m.modulo_nombre + '? La IA va a usar la foto ejemplo de su tipo de mueble.')) return;
-    return ponerModelo(mod, null).then(function () { dibujarModelo(cont, mod, m); avisar('Listo: sin foto modelo.'); });
+    return ponerModelo(mod, null).then(function () { dibujarModelo(cont, mod, m, actual); avisar('Listo: sin foto modelo.'); });
   });
 }
 function rutaModelo(mod) { return _local.id + '/referencias/' + mod.id + '-' + nombreArchivo(); }
@@ -2552,7 +2609,7 @@ function dibujarEjemplos(cont, ejemplos) {
   var por = {};
   ejemplos.forEach(function (e) { por[e.tipo] = e.foto_path; });
   var otraVez = function () { dibujarEjemplos(cont, Object.keys(por).map(function (k) { return { tipo: k, foto_path: por[k] }; })); };
-  cont.innerHTML = '<p class="bajada">La IA compara cada foto con la <b>foto modelo</b> de ese módulo, que se elige en Por local: tocás el módulo y "Usar como modelo" en una foto que salió bien. ' +
+  cont.innerHTML = '<p class="bajada">La IA compara cada foto con la <b>foto modelo</b> de ese módulo, que se elige en Por local: tocás el módulo, abrís "Para mejorar la IA" y "Usar la foto de arriba" si salió bien. ' +
     'Si el módulo todavía no tiene, usa la foto ejemplo de su tipo de mueble. Que sean fotos de VDH bien hechas: las de Pinterest son de otros locales, con otros muebles, y la confunden.</p>' +
     '<div class="aj-ejemplos">' + TIPOS_MUEBLE.map(function (t) {
       var ruta = por[t[0]];
