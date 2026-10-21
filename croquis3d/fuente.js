@@ -239,10 +239,16 @@ function geos() {
 }
 
 /* ── El armado ── */
+/** Mientras se arma un módulo: la caja de todo lo que se le pone (el mueble y la ropa), para marcarlo justo en Mira.
+    lote: el del local; lo que va con la pared (el aire acondicionado de atrás de la caja) no es del mueble. */
+let medida = null;
 /** Junta las piezas de todo el local en pocas (una por material): así se dibuja rápido. */
 class Lote {
   constructor() { this.por = new Map(); }
-  add(mat, geo, m) { const g = geo.index ? geo.toNonIndexed() : geo.clone(); g.applyMatrix4(m); for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k); if (!this.por.has(mat)) this.por.set(mat, []); this.por.get(mat).push(g); }
+  add(mat, geo, m) {
+    const g = geo.index ? geo.toNonIndexed() : geo.clone(); g.applyMatrix4(m); for (const k of Object.keys(g.attributes)) if (k !== 'position' && k !== 'normal' && k !== 'uv') g.deleteAttribute(k); if (!this.por.has(mat)) this.por.set(mat, []); this.por.get(mat).push(g);
+    if (medida && medida.lote === this) { g.computeBoundingBox(); medida.caja.union(g.boundingBox); }
+  }
   caja(mat, w, h, d, x, y, z, ry) {
     const g = new THREE.BoxGeometry(w, h, d);
     if (mat.userData.veta) {   // la veta a lo largo del lado más largo, del tamaño de verdad
@@ -267,7 +273,10 @@ class Lote {
 /** Las prendas y los accesorios de todo el local: una pieza por forma, con un color cada una (instancias). */
 class Ropa {
   constructor() { this.por = {}; }
-  add(forma, m, color) { (this.por[forma] = this.por[forma] || []).push([m, color]); }
+  add(forma, m, color) {
+    (this.por[forma] = this.por[forma] || []).push([m, color]);
+    if (medida) { const g = geos()[forma]; if (!g.boundingBox) g.computeBoundingBox(); medida.caja.union(g.boundingBox.clone().applyMatrix4(m)); }
+  }
   armar(escena) {
     const g = geos(), c = new THREE.Color();
     for (const forma in this.por) {
@@ -917,6 +926,7 @@ function maniquiFigura(L, p, ry, sem, o) {
   if (o.solo === 'torso') g.position.y -= 32;
   const h = new THREE.Group(); h.add(g); h.position.set(p[0], p[1], p[2]); h.rotation.y = ry || 0;
   L.escena.add(h);
+  if (medida) medida.caja.union(new THREE.Box3().setFromObject(h));
 }
 /** El de antes (una pieza "maniquí" del croquis, la vidriera): parado en (x, z), mirando a giro. */
 function maniqui(L, x, z, sem, giro, y0, conGorro, o) {
@@ -1345,6 +1355,7 @@ function armarEscena(pl, op) {
     }
     const m = it.m, sem = semilla(m.id), tipos = op.tipos(m);
     let info;
+    medida = { caja: new THREE.Box3(), lote: L.lote };
     /* El mueble de cada uno: el de pared (o el nicho del shopping), el exhibidor de malla, uno o dos percheros, o una mesa. */
     const f = (op.ficha && op.ficha(m, it)) || {}, colgadaC = tipos.some((t) => t === 'camisa' || t === 'campera' || t === 'vestido');
     const mueble = f.tipo || (op.mueble && op.mueble(m, it)) || (it.pared ? 'pared' : colgadaC ? 'perchero' : 'mesa'), calle = estilo === 'calle';
@@ -1374,6 +1385,8 @@ function armarEscena(pl, op) {
         info = { centro: [cx, mueble === 'mesa' ? 44 : 60, cz], frente: [cx, 0, cz] };
       }
     }
+    const mueble3d = medida.caja.isEmpty() ? null : medida.caja; medida = null;
+    if (mueble3d) mueble3d.min.y = Math.max(0, mueble3d.min.y);
     /* El neón: una línea del color de quien lo tiene, en el piso, delante del módulo. */
     const color = op.color(m), horiz = it.pared === 'fondo' || it.pared === 'frente';
     let tira = null, halo = null;
@@ -1391,7 +1404,7 @@ function armarEscena(pl, op) {
     const rot = new CSS2DObject(el); rot.position.set(info.centro[0], info.centro[1] + 8, info.centro[2]); escena.add(rot);
     const toque = new THREE.Mesh(new THREE.BoxGeometry(Math.max(8, r.w), it.vidriera ? 60 : it.pared ? alto : 40, Math.max(8, r.h)), MAT.toque);
     const [tx, tz] = L.mundo(r.x + r.w / 2, r.y + r.h / 2); toque.position.set(tx, toque.geometry.parameters.height / 2, tz); toque.userData.m = m; escena.add(toque);
-    cajas.push({ m, el, toque, tira, halo, pared: it.pared || null });
+    cajas.push({ m, el, toque, tira, halo, pared: it.pared || null, mueble: mueble3d });
   });
   const muros = Object.keys(paredes).map((lado) => {
     const gr = new THREE.Group(); paredes[lado].armar(gr);
@@ -1604,7 +1617,8 @@ export function montarCroquis3D(cont, pl, d, op) {
     return h.object.userData.m;
   };
   const pisoEn = (x, y) => { apuntar(x, y); return ray.ray.intersectPlane(suelo, new THREE.Vector3()); };
-  /** Dónde cae un módulo en la pantalla (su caja invisible), como getBoundingClientRect: { left, top, right, bottom }.
+  /** Dónde cae un módulo en la pantalla, como getBoundingClientRect: { left, top, right, bottom }. La caja de su mueble
+      (no la invisible, que es todo su lugar en la pared, con lo de al lado y hasta el piso: el marco quedaba lejísimos).
       Sólo las caras que se ven desde donde se mira (nunca la de abajo ni, en la pared, la del fondo): mirando la pared
       de costado, la caja entera se ve más ancha que el módulo y se encima con los de al lado. Caminando pegado a un
       módulo, lo que queda detrás de la cámara se corta en el plano de adelante. */
@@ -1612,7 +1626,7 @@ export function montarCroquis3D(cont, pl, d, op) {
     const c = cajas.find((x) => x.m.id === id);
     if (!c) return null;
     camara.updateMatrixWorld();
-    const b = new THREE.Box3().setFromObject(c.toque), n = c.pared && HACIA[c.pared], cerca = -camara.near * 1.01;
+    const b = c.mueble ? c.mueble.clone() : new THREE.Box3().setFromObject(c.toque), n = c.pared && HACIA[c.pared], cerca = -camara.near * 1.01;
     const lo = [b.min.x, b.min.y, b.min.z], hi = [b.max.x, b.max.y, b.max.z], ojo = camara.getWorldPosition(new THREE.Vector3()).toArray();
     const fondo = n ? (n[0] ? [0, n[0] > 0 ? 0 : 1] : [2, n[1] > 0 ? 0 : 1]) : null;   // [eje, lado] de la cara contra la pared
     let caras = [];
