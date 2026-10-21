@@ -1798,7 +1798,9 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
       (sem.cargada_en ? 'Mandado' + (quien ? ' por ' + esc(nombreLista(quien)) : '') + ' el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '.'
                       : 'El local todavía no lo mandó.') + (sem.cerrada ? ' Semana cerrada.' : '') + '</div>' +
       '<div id="itemsTestigo"></div>' +
-      (soloMira() || sem.cerrada ? '' : '<button class="boton chico" id="agregarItem">Agregar un producto a ' + esc(_local.nombre) + '</button>');
+      (soloMira() || sem.cerrada ? '' : '<div class="imp-mapa-acc"><button class="boton chico" id="agregarItem">Agregar un producto a ' + esc(_local.nombre) + '</button>' +
+        /* Borrarlo entero (SQL 155), mientras el local no cargó nada; si ya empezó, se corrige casillero por casillero. */
+        (sem.cargada_en || items.some(testigoCargado) ? '' : '<button class="boton chico" id="borrarControl">Borrar el control de ' + esc(_local.nombre) + '</button>') + '</div>');
     var conVideo = items.filter(function (f) { return f.video_path && !f.video_borrado; });
     if (conVideo.length) {
       html += '<div class="seccion">Videos</div><div class="imp-mapa-acc">' + conVideo.map(function (f) {
@@ -1861,6 +1863,22 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
                       : escribir('/testigo_items', 'POST', { semana_id: sem.id, item: n, producto: 'Producto ' + n }))
       .then(function () { avisar('Agregado "Producto ' + n + '": cambiale el nombre y guardá.'); verTestigo(); });
   });
+  var bb = document.getElementById('borrarControl');
+  if (bb) unaVez(bb, function () {
+    if (!confirm('¿Borrar el producto testigo de ' + _local.nombre + ' de esta semana (' + items.length + (items.length === 1 ? ' producto' : ' productos') +
+                 (sem.fecha ? ', fecha límite el ' + diaYFecha(sem.fecha) : '') + ')?\n\nLe desaparece de la app. Para volver a ponerlo, programalo de nuevo.')) return;
+    return llamar('testigo_borrar', { p_semana: sem.id }).then(function () {
+      avisar('Listo: se borró el control de ' + _local.nombre + '.');
+      verTestigo();
+    });
+  });
+}
+
+/** ¿El local ya cargó algo en este producto? Lo mismo que mira testigo_borrar en la base (SQL 155). */
+function testigoCargado(f) {
+  return f.enviada != null || f.stock_sistema != null || f.cantidad_real != null || f.vendida != null ||
+    Number(f.dev_fabrica || 0) !== 0 || Number(f.salieron || 0) !== 0 || Number(f.entraron || 0) !== 0 ||
+    !!f.video_path || !!String(f.observacion || '').trim() || !!f.cargado_en;
 }
 
 /* ════════════════════════════════════════════════════════════════════════
@@ -2192,6 +2210,14 @@ function programarTestigo() {
     if (sinLocal) { avisar('«' + sinLocal.producto + '» no va a ningún local: tocá «Locales» en ese producto y marcale alguno.'); return; }
     /* Sólo los locales que reciben algún producto. */
     var usados = locales.filter(function (id) { return lista.some(function (p) { return p.locales.indexOf(id) > -1; }); });
+    /* Antes de programar, dónde va (21/10: se programó sin querer en los 14 en vez de sólo en Rivadavia). */
+    var nombres = usados.map(function (id) { return nombre[id]; });
+    var yLista = function (xs) { return xs.length > 1 ? xs.slice(0, -1).join(', ') + ' y ' + xs[xs.length - 1] : xs[0]; };
+    var donde = usados.length > 1 && usados.length === _locales.length ? 'en los ' + usados.length + ' locales (todos)'
+      : nombres.length > 6 ? 'en ' + nombres.length + ' locales: ' + nombres.slice(0, 5).join(', ') + ' y ' + (nombres.length - 5) + ' más'
+      : 'en ' + yLista(nombres);
+    if (!confirm('¿Programar ' + lista.length + (lista.length === 1 ? ' producto ' : ' productos ') + donde + ', con fecha límite el ' + diaYFecha(fecha) + '?\n\n' +
+                 (usados.length === 1 ? 'Le aparece' : 'A cada uno le aparece') + ' en la app enseguida.')) return;
     return llamar('testigo_programar', { p_fecha: fecha, p_locales: usados, p_productos: lista }).then(function (r) {
       f.remove();
       avisar('Listo: ' + lista.length + (lista.length === 1 ? ' producto' : ' productos') + ' en ' + r.locales + (r.locales === 1 ? ' local' : ' locales') +
