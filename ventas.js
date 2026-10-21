@@ -23,6 +23,9 @@
    de su planilla; la venta y la Q llegan solas de la tienda, y lo de Meta y
    las visitas y los carritos de Google Analytics (19/10) los trae el robot
    de cada hora (ventas-ecom.sql, ventas-calc: ecom).
+   Desde el SQL 148 (21/10/2026), Atención al cliente ve sólo esta hoja: las
+   de los locales ya no (ventas_acceso). El vendedor con la casilla de
+   Atención ve la de su local y esta.
    ═══════════════════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
@@ -138,7 +141,7 @@
         '<button type="button" class="btn btn-sec" data-acc="entrar">Ver mi usuario</button>';
     } else {
       html += '<p>Entraste como <b>' + esc(y.nombre) + '</b>. La planilla de cada local la abren su gente, su supervisor, ' +
-        'Atención al cliente, Administración y Gerencia.</p>' +
+        'Administración y Gerencia; la del E-commerce, Atención al cliente y Administración.</p>' +
         '<button type="button" class="btn btn-sec" data-acc="entrar">Ver mi usuario</button>';
     }
     cajaMsg(html);

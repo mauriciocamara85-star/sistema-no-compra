@@ -431,13 +431,15 @@ var persona = (function () {
   var RE_NOMBRE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{2,30}$/;
   function prolijo(t) { return String(t || '').trim().replace(/\s+/g, ' '); }
 
-  function entrar() {
+  /* cual: el código donde arrancar (la bienvenida de la Carga manda 'ECOMMERCE');
+     si no viene, el local de este aparato. */
+  function entrar(cual) {
     /* Ya hay alguien adentro (o esperando el OK): se muestra quién, con su
        "No soy", en vez de abrir otra sesión encima de la que hay. */
     if (_ses && _yo) { abrirFicha(); return; }
     var c = abrirVelo();
-    var aparato = '';
-    try { aparato = localStorage.getItem('nc_local') || ''; } catch (e) {}
+    var aparato = typeof cual === 'string' ? cual : '';
+    if (!aparato) try { aparato = localStorage.getItem('nc_local') || ''; } catch (e) {}
     pasoLocales(c, aparato);
   }
 
@@ -450,10 +452,17 @@ var persona = (function () {
           if (locales[i].codigo && locales[i].codigo === saltarA) { pasoPersonas(c, locales[i]); return; }
         }
       }
+      /* SQL 148: al final, "E-commerce" (Atención al cliente) y "Administración", con una raya que los separa
+         de los locales. Sin el 148 hay un solo botón, "Administración", con todos los sin local. */
+      var conEcom = locales.some(function (l) { return l.grupo === 'atencion'; }), raya = false;
       c.innerHTML = '<h2 id="ncpTit">Entrá con tu usuario</h2>' +
-        '<p class="ncp-bajada">¿En qué local trabajás? Atención y administración están al final.</p>' +
+        '<p class="ncp-bajada">' + (conEcom
+          ? '¿En qué local trabajás? Al final están E-commerce (atención al cliente) y Administración.'
+          : '¿En qué local trabajás? Atención y administración están al final.') + '</p>' +
         '<div class="chips-local ncp-lista">' + locales.map(function (l, i) {
-          return '<button type="button" class="chip" data-i="' + i + '">' + txt(l.nombre) + '</button>';
+          var antes = '';
+          if (!l.id && !raya && i > 0) { raya = true; antes = '<span class="ncp-raya" aria-hidden="true"></span>'; }
+          return antes + '<button type="button" class="chip" data-i="' + i + '">' + txt(l.nombre) + '</button>';
         }).join('') + '</div>';
       [].forEach.call(c.querySelectorAll('[data-i]'), function (b) {
         b.onclick = function () { pasoPersonas(c, locales[+b.dataset.i]); };
@@ -464,7 +473,8 @@ var persona = (function () {
   function pasoPersonas(c, local) {
     _teclas = null;
     cargando(c);
-    funcion('nc_login_personas', { p_local: local.id }).then(function (gente) {
+    /* SQL 148: "E-commerce" y "Administración" no tienen id: se piden por su grupo. */
+    funcion('nc_login_personas', local.grupo ? { p_local: null, p_grupo: local.grupo } : { p_local: local.id }).then(function (gente) {
       c.innerHTML = '<button type="button" class="ncp-volver" data-volver>‹ Otro local</button>' +
         '<h2 id="ncpTit">¿Quién sos?</h2><p class="ncp-bajada">' + txt(local.nombre) + '</p>' +
         (gente.length

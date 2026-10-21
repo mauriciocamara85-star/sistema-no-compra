@@ -27,7 +27,7 @@ var usuarios = (function () {
   var QUE_VE = 'Vendedor: Carga, Cobrar, Gift Cards, Asistente, las estadísticas de su local y la app Equipo VDH. ' +
                'Encargado: lo mismo, más Supervisión de su local, y crea los vendedores de su local. Supervisor: como el encargado, en los ' +
                'locales que le elijas (las planillas de Ventas, el No Compra y Supervisión de cada uno), sin crear usuarios. ' +
-               'Atención al cliente: todo menos Supervisión y Equipo VDH. Administrador: todo. Un vendedor, encargado o supervisor ' +
+               'Atención al cliente: todo menos Supervisión y Equipo VDH; en Ventas, sólo el E-commerce (entra por "E-commerce"). Administrador: todo. Un vendedor, encargado o supervisor ' +
                'que además atiende clientes ("También atiende clientes", en Cambiar) suma lo de Atención, con un PIN de 6 números.';
   function esZona(p) { return p.rol === 'supervisor' && !p.local_id; }
   /** El rol como lo muestra la pantalla: el supervisor sin local es 'zona'. */
@@ -431,7 +431,10 @@ var usuarios = (function () {
       hacer('nc_usuario_crear', { p_nombre: n, p_apellido: a, p_rol: zona ? 'supervisor' : rol, p_local: sinLocal(rol) ? null : loc },
             function (r) {
               nuevo = r && r.id;
-              return zona ? null : n + ' quedó creado. Decile que entre con su local y su nombre, y que cree su PIN.';
+              /* SQL 148: Atención entra por "E-commerce"; Administración, por su botón. */
+              var por = rol === 'atencion' ? 'que entre por "E-commerce", toque su nombre' :
+                        rol === 'admin' ? 'que entre por "Administración", toque su nombre' : 'que entre con su local y su nombre';
+              return zona ? null : n + ' quedó creado. Decile ' + por + ' y que cree su PIN.';
             })
         /* SQL 141: al supervisor nuevo, sus locales (ya aprobados). Para entrar, su nombre aparece en
            cada uno de ellos (nc_login_personas, SQL 121). */
