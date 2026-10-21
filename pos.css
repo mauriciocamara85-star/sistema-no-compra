@@ -261,7 +261,26 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 }
 .pos-hecho svg { width: 17px; height: 17px; flex: none; }
 .pos-hecho button { border: 0; background: none; padding: 0; color: var(--ok-txt); font: 700 13.5px var(--sans); text-decoration: underline; cursor: pointer; white-space: nowrap; }
-@media (max-width: 700px) { #vHecho { flex: 1 1 100%; order: -1; } }
+@media (max-width: 700px) { #vHecho, #cbHecho { flex: 1 1 100%; order: -1; } }
+
+/* ═════════ EL CAMBIO (el "Ticket de cambio" de BlueSoft) ═════════
+   Las mismas piezas que la venta, con dos grillas a la derecha: arriba lo
+   que vuelve y abajo lo que se lleva. En la compu se reparten el alto. */
+.cb-icono { flex: none; align-self: flex-end; width: 34px; height: 34px; border-radius: 9px; display: grid; place-items: center; }
+.cb-icono svg { width: 19px; height: 19px; }
+.cb-icono.vuelve { background: var(--info-soft); color: var(--info-txt); }
+.cb-icono.sale { background: var(--ok-soft); color: var(--ok-txt); }
+.cb-subtot { flex: none; align-self: flex-end; min-height: 34px; display: flex; align-items: center; gap: 4px; padding: 0 2px; font-size: 13px; color: var(--txt-2); white-space: nowrap; }
+.cb-subtot b { color: var(--txt); font-variant-numeric: tabular-nums; }
+.cb-lista { display: block; margin-top: 1px; font-size: 11px; font-weight: 600; color: var(--txt-3); white-space: nowrap; }
+.tk-caja.gordo.neg b { color: #FF9D8F; }
+.tk-nota.cb-mal { color: var(--bad-txt); }
+.tk-nota.cb-mal b { color: var(--bad-txt); }
+.tk-nota .btn { display: flex; margin-top: 6px; }
+@media (max-width: 520px) { .cb-subtot { display: none; } }
+/* En el listado: qué volvió y qué se llevó, sin estirar la tabla. */
+.pos-tabla td.cb-que { min-width: 140px; max-width: 240px; white-space: normal; font-size: 13px; }
+.pos-tabla tr.cb-sep td { background: var(--surface-2); font: 700 12px var(--sans); color: var(--txt-2); }
 
 /* ═════════ LAS LISTAS (tickets, precios, sucursales) ═════════ */
 .pos-filtros { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; margin-bottom: 10px; }

@@ -28,6 +28,10 @@
    El SQL 149 (21/10, "dalee"): el cierre de caja de BlueSoft en el
    mostrador, con el conteo a ciegas, el pase a la caja fuerte y los gastos
    de la caja chica; en Gestión, el listado de cierres y los movimientos.
+   El SQL 151 (21/10, "hagámoslo igual… bien básico ahora"): el "Ticket de
+   cambio" de BlueSoft, con lo que vuelve arriba y lo que se lleva abajo. Lo
+   que vuelve entra al precio de lista; si sale más se cobra la diferencia,
+   y si sale menos no se guarda (no se devuelve plata).
 
    La plata va en CENTAVOS (enteros) en toda la cuenta: la base vuelve a
    sumar y exige que los pagos den el total al centavo.
@@ -50,6 +54,7 @@
   var K_GRUPOS = 'nc_gestion_grupos';      // los grupos de Gestión que se abrieron o se cerraron a mano
   var K_RECUERDO = 'pos_recuerdo';         // la sucursal y el vendedor de cada una
   var K_BORRADOR = 'pos_borrador';         // la venta a medio armar: si se cierra la pestaña, sigue ahí
+  var K_CAMBIO = 'pos_borrador_cambio';    // el cambio a medio armar, igual
   var K_PRUEBA = 'pos_prueba';             // el modo prueba, en sessionStorage: se apaga solo al cerrar la ventana
 
   /* ── Los menús: las secciones de Tango y Dragonfish, con los nombres de BlueSoft ── */
@@ -70,18 +75,14 @@
     ]
   };
   var MENU = MENUS[MODO];
+  /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
+  var DENTRO = { mostrador: { cambio: 'cambios' }, gestion: {} };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
-  var HECHAS = { venta: 1, tickets: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1 };
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
   var PRONTO = {
-    cambios: ['Cambios y devoluciones', [
-      'Buscar el ticket original (por número, por cliente o por la prenda) y elegir qué vuelve.',
-      'Cambio por otra prenda: si sale lo mismo, sin plata de por medio; si sale más, se cobra la diferencia.',
-      'La nota de crédito atada a la factura, dentro de los 15 días (lo pide ARCA).',
-      'El ticket de cambio con un código único para el cliente (lo pide la ley de CABA).',
-      'La prenda que vuelve entra al stock del local.'], 'Mientras tanto, los cambios se siguen haciendo en BlueSoft.'],
     stock: ['Consulta de stock', [
       'El stock de cada sucursal por producto, talle y color.',
       'Cada local ve el suyo; la oficina, todos.',
@@ -164,6 +165,8 @@
     prueba: '<path d="M9 3h6M10 3v6l-5.4 9.4A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.4-2.6L14 9V3"/><path d="M7.2 15h9.6"/>',
     yo: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
     candado: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    entra: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+    sale: '<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/>',
     abajo: '<path d="m6 9 6 6 6-6"/>'
   };
   /* La bolsa de la marca, la misma del rail (en el mostrador no hay rail). */
@@ -212,6 +215,8 @@
   function refCorta(v) { return v.serie === 'prueba' ? 'P-' + v.numero : v.serie === 'x' ? 'X-' + v.numero : String(v.numero); }
   function ref(v) { return v.serie === 'prueba' || v.serie === 'x' ? refCorta(v) : 'Nº ' + v.numero; }
   function nombreVenta(v) { return (v.serie === 'prueba' ? 'Prueba ' : 'Venta ') + ref(v); }
+  /* Los cambios numeran aparte de las ventas (SQL 151): "C-4", y las pruebas "CP-2". */
+  function refCambio(c) { return (c.prueba ? 'CP-' : 'C-') + c.numero; }
 
   /* ── El modo prueba: la venta hace el mismo camino que una de verdad, pero no cuenta ──
      Vive en sessionStorage: al cerrar la ventana vuelve solo a lo de verdad, así no queda
@@ -241,8 +246,10 @@
   }
 
   /* ── La base ── */
-  var S = { ini: null, precios: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, cajaHecho: null };
-  var V = null;   // la venta que se está armando
+  var S = { ini: null, precios: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, cajaHecho: null,
+            cambioHecho: null, cbFoco: null, cbPagoHay: null };
+  var V = null;    // la venta que se está armando
+  var CB = null;   // el cambio que se está armando
 
   function llamar(nombre, args) {
     return persona.token().then(function (t) { return funcion(nombre, args || {}, t); });
@@ -253,7 +260,7 @@
     /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe.
        El 149 suma la caja (pos_caja…, pos_cierre…). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
+      return 'Todavía falta correr el SQL ' + (/pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
     }
     if (/tiene que ser A o B/.test(m)) return 'Todavía falta correr el SQL 147 (el de la X) en Supabase.';
     if (esDeRed(e)) return 'Sin conexión: no se pudo hablar con la base.';
@@ -324,38 +331,43 @@
   function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || INICIO[MODO]; }
   function enMenu(menu, v) { return menu.some(function (g) { return g[1].some(function (it) { return it[0] === v && !it[3]; }); }); }
 
+  function esDe(modo, v) { return enMenu(MENUS[modo], v) || !!DENTRO[modo][v]; }
+
   function ir(v) {
     /* Una dirección vieja (pos.html#listas) o un enlace a la otra pantalla: se va para allá. */
     var otro = MODO === 'gestion' ? 'mostrador' : 'gestion';
-    if (!enMenu(MENU, v) && enMenu(MENUS[otro], v)) { location.replace(PAGINA[otro] + '#' + v); return; }
-    if (!enMenu(MENU, v)) v = INICIO[MODO];
+    if (!esDe(MODO, v) && esDe(otro, v)) { location.replace(PAGINA[otro] + '#' + v); return; }
+    if (!esDe(MODO, v)) v = INICIO[MODO];
     S.vista = v;
     try { history.replaceState(null, '', location.pathname + location.search + '#' + v); } catch (e) {}
     cerrarVentana();
     app.innerHTML = marco();
     engancharMenu();
-    var ver = { venta: verVenta, tickets: verTickets, cierre: verCierre, cierres: verCierres, movimientos: verMovimientos,
-                listas: verListas, promos: verPromos, sucursales: verSucursales }[v];
+    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, cierre: verCierre, cierres: verCierres,
+                movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales }[v];
     if (ver) ver(); else verPronto(v);
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
 
   function ponerPrueba(si) {
     try { if (si) sessionStorage.setItem(K_PRUEBA, '1'); else sessionStorage.removeItem(K_PRUEBA); } catch (e) {}
-    /* El cartel de la última venta guardada (y el del último cierre) es de la otra numeración: no se mezcla. */
+    /* El cartel de la última venta guardada (y el del último cierre y el del último cambio) es de la otra numeración: no se mezcla. */
     S.ultimo = null;
     S.cajaHecho = null;
+    S.cambioHecho = null;
     marcarPrueba();
     ir(S.vista);
     avisar('info', si ? 'Modo prueba: lo que guardes numera aparte (P-1, P-2…) y no cuenta para nada.' : 'Listo: volviste a las ventas de verdad.');
   }
 
   /* ── El menú de la izquierda ── */
-  function menuChico() { return S.vista === 'venta' ? leer(K_MENU_VENTA) !== 'abierto' : Interfaz.panelChico(K_MENU); }
-  function guardarMenu(ch) { if (S.vista === 'venta') guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else Interfaz.panelChico(K_MENU, ch); }
+  /* La venta y el cambio necesitan el ancho (el ticket de BlueSoft): arrancan con el menú achicado. */
+  function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio'; }
+  function menuChico() { return vistaAncha() ? leer(K_MENU_VENTA) !== 'abierto' : Interfaz.panelChico(K_MENU); }
+  function guardarMenu(ch) { if (vistaAncha()) guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else Interfaz.panelChico(K_MENU, ch); }
 
   function item(it) {
-    var activa = it[0] === S.vista;
+    var activa = it[0] === S.vista || it[0] === DENTRO[MODO][S.vista];
     var dentro = icono(it[2]) + '<span>' + esc(it[1]) + '</span>' + (HECHAS[it[0]] || it[3] ? '' : '<em class="pos-pronto">Pronto</em>');
     if (it[3]) return '<a class="pos-item" href="' + it[3] + '" title="' + esc(it[1]) + ' (el No Compra)">' + dentro + '</a>';
     return '<button type="button" class="pos-item' + (activa ? ' activa' : '') + '" data-ir="' + it[0] + '" title="' + esc(it[1]) + '"' +
@@ -464,8 +476,8 @@
     _velo = null;
     var f = _alCerrar; _alCerrar = null;
     if (f) f();
-    var p = $('vProd');
-    if (p && S.vista === 'venta') p.focus();
+    var p = S.vista === 'venta' ? $('vProd') : S.vista === 'cambio' ? $(S.cbFoco || 'cbVuelve') : null;
+    if (p) p.focus();
   }
   function errorEn(caja, id, txt) { var e = caja.querySelector('#' + id); if (e) e.textContent = txt || ''; return !txt; }
 
@@ -473,11 +485,12 @@
      LA VENTA
      ════════════════════════════════════════════════════════════════════ */
   function recuerdo() { return leerJSON(K_RECUERDO, {}) || {}; }
-  function recordar() {
-    var r = recuerdo();
-    r.local = V.local_id;
+  /* Con cb, los del cambio (CB) en vez de los de la venta (V). */
+  function recordar(cb) {
+    var X = cb ? CB : V, r = recuerdo();
+    r.local = X.local_id;
     r.vendedor = r.vendedor || {};
-    if (V.vendedor) r.vendedor[V.local_id] = V.vendedor;
+    if (X.vendedor) r.vendedor[X.local_id] = X.vendedor;
     guardarJSON(K_RECUERDO, r);
   }
   function localInicial() {
@@ -590,14 +603,15 @@
     return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, sacadas: sacadas, descuento: neto - resto, total: resto };
   }
 
-  /** Los pagos que se mandan a la base (en centavos). */
-  function pagosDe(total) {
+  /** Los pagos que se mandan a la base (en centavos). X: la venta (V) o el cambio (CB). */
+  function pagosDe(total, X) {
+    X = X || V;
     if (total <= 0) return [];
-    if (V.forma === 'multiple') return (V.multiples || []).map(function (x) { return Object.assign({}, x); });
-    var p = { medio: V.forma, monto: total };
-    if (V.forma === 'efectivo' && V.pago.recibido) p.recibido = V.pago.recibido;
-    if (V.forma === 'tarjeta') { p.tarjeta = V.pago.tarjeta || ''; p.tipo_tarjeta = tipoTarjeta(p.tarjeta); p.cuotas = Number(V.pago.cuotas) || 1; p.cupon = V.pago.cupon || ''; }
-    else if (V.forma !== 'efectivo') p.cupon = V.pago.operacion || '';
+    if (X.forma === 'multiple') return (X.multiples || []).map(function (x) { return Object.assign({}, x); });
+    var p = { medio: X.forma, monto: total };
+    if (X.forma === 'efectivo' && X.pago.recibido) p.recibido = X.pago.recibido;
+    if (X.forma === 'tarjeta') { p.tarjeta = X.pago.tarjeta || ''; p.tipo_tarjeta = tipoTarjeta(p.tarjeta); p.cuotas = Number(X.pago.cuotas) || 1; p.cupon = X.pago.cupon || ''; }
+    else if (X.forma !== 'efectivo') p.cupon = X.pago.operacion || '';
     return [p];
   }
   function tipoTarjeta(t) { var x = TARJETAS.filter(function (y) { return y[0] === t; })[0]; return x ? x[1] : ''; }
@@ -697,7 +711,7 @@
       cambiarLista(listaDe(l));
     };
     $('tDescBtn').onclick = abrirDescuento;
-    $('vLinea').onclick = abrirLineaLibre;
+    $('vLinea').onclick = function () { abrirLineaLibre(); };
     $('vObs').oninput = function () { V.observaciones = this.value; guardarBorrador(); };
     $('vLimpiar').onclick = function () {
       if (V.lineas.length && !confirm('¿Borrar la venta que estás armando?')) return;
@@ -715,24 +729,24 @@
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('vProd'); if (p) p.focus(); }, 0);
   }
 
-  function llenarVendedores() {
-    var vs = vendedoresDe(V.local_id);
-    if (V.vendedor && vs.indexOf(V.vendedor) < 0) vs.push(V.vendedor);
-    $('vVend').innerHTML = '<option value="">Elegí quién vende…</option>' + opciones(vs.map(function (n) { return [n, n]; }), V.vendedor) +
-      '<option value="__otro">Otro (escribirlo)…</option>';
+  function llenarVendedores(cb) {
+    var X = cb ? CB : V, vs = vendedoresDe(X.local_id);
+    if (X.vendedor && vs.indexOf(X.vendedor) < 0) vs.push(X.vendedor);
+    $(cb ? 'cbVend' : 'vVend').innerHTML = '<option value="">' + (cb ? 'Elegí quién hace el cambio…' : 'Elegí quién vende…') + '</option>' +
+      opciones(vs.map(function (n) { return [n, n]; }), X.vendedor) + '<option value="__otro">Otro (escribirlo)…</option>';
   }
-  function pedirVendedor() {
+  function pedirVendedor(cb) {
     var caja = ventana('<h3 id="posVentTit">¿Quién vende?</h3><p class="pos-bajada">Si no está en la lista del local, escribí su nombre como lo usa en la Carga.</p>' +
       campo('', 'Nombre', '<input type="text" id="pvNombre" maxlength="40" autofocus>') + '<div class="pos-error" id="pvError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="pvOk">Listo</button></div>');
     function listo() {
       var n = caja.querySelector('#pvNombre').value.trim();
       if (!errorEn(caja, 'pvError', n.length < 2 ? 'Escribí el nombre.' : '')) return;
-      V.vendedor = n;
-      recordar();
-      llenarVendedores();
+      (cb ? CB : V).vendedor = n;
+      recordar(cb);
+      llenarVendedores(cb);
       cerrarVentana();
-      pintar();
+      if (cb) pintarCambio(); else pintar();
     }
     caja.querySelector('#pvOk').onclick = listo;
     caja.querySelector('#pvNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); listo(); } };
@@ -824,30 +838,31 @@
     if (u) $('vVerUltimo').onclick = function () { abrirTicket(u.id); };
   }
 
-  /* ── El pago (abajo de "Forma de pago") ── */
-  function pintarPago() {
-    var x = $('vPagoX'), p = V.pago;
+  /* ── El pago (abajo de "Forma de pago"). Con cb, el del cambio (sus campos empiezan con "cb"). ── */
+  function pintarPago(cb) {
+    var X = cb ? CB : V, pre = cb ? 'cb' : 'v', repintar = cb ? pintarCambio : pintar, guardarB = cb ? guardarBorradorCb : guardarBorrador;
+    var x = $(pre + 'PagoX'), p = X.pago;
     if (!x) return;
-    if (V.forma === 'efectivo') {
-      x.innerHTML = campo('c6', 'Recibido', '<input type="text" inputmode="decimal" id="vRecibido" placeholder="Opcional" value="' + plataCampo(p.recibido) + '">') +
-        campo('c6 tk-vuelto', 'Vuelto', '<input type="text" id="vVuelto" readonly>');
-    } else if (V.forma === 'tarjeta') {
-      x.innerHTML = campo('c5', 'Tarjeta', '<select id="vTarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), p.tarjeta) + '</select>') +
-        campo('c3', 'Cuotas', '<select id="vCuotas">' + opciones(CUOTAS.map(function (n) { return [n, n]; }), p.cuotas || 1) + '</select>') +
-        campo('c4', 'Cupón', '<input type="text" id="vCupon" inputmode="numeric" maxlength="20" placeholder="Del posnet" value="' + esc(p.cupon || '') + '">');
-    } else if (V.forma === 'multiple') {
+    if (X.forma === 'efectivo') {
+      x.innerHTML = campo('c6', 'Recibido', '<input type="text" inputmode="decimal" id="' + pre + 'Recibido" placeholder="Opcional" value="' + plataCampo(p.recibido) + '">') +
+        campo('c6 tk-vuelto', 'Vuelto', '<input type="text" id="' + pre + 'Vuelto" readonly>');
+    } else if (X.forma === 'tarjeta') {
+      x.innerHTML = campo('c5', 'Tarjeta', '<select id="' + pre + 'Tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), p.tarjeta) + '</select>') +
+        campo('c3', 'Cuotas', '<select id="' + pre + 'Cuotas">' + opciones(CUOTAS.map(function (n) { return [n, n]; }), p.cuotas || 1) + '</select>') +
+        campo('c4', 'Cupón', '<input type="text" id="' + pre + 'Cupon" inputmode="numeric" maxlength="20" placeholder="Del posnet" value="' + esc(p.cupon || '') + '">');
+    } else if (X.forma === 'multiple') {
       x.innerHTML = '<div class="pos-f"><span>Pagos</span><div class="tk-cliente"><div class="tk-cliente-txt" id="vMultTxt"></div>' +
         '<button type="button" class="btn btn-sec btn-chico" id="vMultBtn">Cambiar</button></div></div>';
       $('vMultBtn').onclick = abrirMultiple;
     } else {
-      x.innerHTML = campo('', 'Nº de operación', '<input type="text" id="vOper" maxlength="30" placeholder="Opcional" value="' + esc(p.operacion || '') + '">');
+      x.innerHTML = campo('', 'Nº de operación', '<input type="text" id="' + pre + 'Oper" maxlength="30" placeholder="Opcional" value="' + esc(p.operacion || '') + '">');
     }
-    x.insertAdjacentHTML('beforeend', '<div class="tk-aviso-pago" id="vPagoAviso" role="status"></div>');
-    var r = $('vRecibido');
-    if (r) r.oninput = function () { var v = leerPlata(r.value); V.pago.recibido = isNaN(v) ? 0 : v; pintar(); };
-    [['vTarjeta', 'tarjeta'], ['vCuotas', 'cuotas'], ['vCupon', 'cupon'], ['vOper', 'operacion']].forEach(function (k) {
-      var e = $(k[0]);
-      if (e) e[e.tagName === 'SELECT' ? 'onchange' : 'oninput'] = function () { V.pago[k[1]] = e.value; guardarBorrador(); };
+    x.insertAdjacentHTML('beforeend', '<div class="tk-aviso-pago" id="' + pre + 'PagoAviso" role="status"></div>');
+    var r = $(pre + 'Recibido');
+    if (r) r.oninput = function () { var v = leerPlata(r.value); X.pago.recibido = isNaN(v) ? 0 : v; repintar(); };
+    [['Tarjeta', 'tarjeta'], ['Cuotas', 'cuotas'], ['Cupon', 'cupon'], ['Oper', 'operacion']].forEach(function (k) {
+      var e = $(pre + k[0]);
+      if (e) e[e.tagName === 'SELECT' ? 'onchange' : 'oninput'] = function () { X.pago[k[1]] = e.value; guardarB(); };
     });
   }
 
@@ -857,7 +872,6 @@
      del No Compra, el talle y el color de la etiqueta SÍ son los buenos: es
      la prenda que se lleva. */
   var ESCANEO = /^([A-Za-z]{1,4}\d[A-Za-z0-9]*)\s+(\S+)\s+(\S+)$/;
-  var _sug = [], _mira = 0, _tEsc = null;
 
   function leerEscaneo(txt) {
     var m = String(txt || '').trim().match(ESCANEO);
@@ -879,72 +893,80 @@
     return res.slice(0, 8).map(function (x) { return x[1]; });
   }
 
-  function engancharProducto() {
-    var campoP = $('vProd'), caja = $('vSug');
-    function cerrar() { caja.hidden = true; _sug = []; campoP.removeAttribute('aria-activedescendant'); }
+  /** El campo de producto de la venta. El cambio tiene dos: lo que vuelve y lo que se lleva. */
+  function prodVenta() { return { campo: 'vProd', sug: 'vSug', lista: function () { return V.lista_id; }, agregar: agregar }; }
+
+  /* o: { campo, sug (los id), lista() y agregar(p, talle, color, cantidad) }. Cada campo con sus sugerencias. */
+  function engancharProducto(o) {
+    o = o || prodVenta();
+    var campoP = $(o.campo), caja = $(o.sug), sug = [], mira = 0, tEsc = null;
+    function cerrar() { caja.hidden = true; sug = []; campoP.removeAttribute('aria-activedescendant'); }
+    function elegir(p) { abrirDetalle(p, o); }
     function pintarSug() {
-      if (!_sug.length) { cerrar(); return; }
-      caja.innerHTML = _sug.map(function (p, i) {
-        var pr = precioDe(p[0]);
-        return '<button type="button" role="option" id="vSug' + i + '" data-sug="' + i + '" class="' + (i === _mira ? 'on' : '') + '" aria-selected="' + (i === _mira) + '">' +
+      if (!sug.length) { cerrar(); return; }
+      caja.innerHTML = sug.map(function (p, i) {
+        var pr = precioDe(p[0], o.lista());
+        return '<button type="button" role="option" id="' + o.sug + i + '" data-sug="' + i + '" class="' + (i === mira ? 'on' : '') + '" aria-selected="' + (i === mira) + '">' +
           '<span>' + esc(p[1]) + ' <small>' + esc(p[2] || '') + '</small></span><small>' + esc(p[0]) + '</small>' +
           (pr ? '<span class="n">' + plata(pr) + '</span>' : '<span class="sin">Sin precio</span>') + '</button>';
       }).join('');
       caja.hidden = false;
-      campoP.setAttribute('aria-activedescendant', 'vSug' + _mira);
+      campoP.setAttribute('aria-activedescendant', o.sug + mira);
     }
+    /* Después de agregar: el campo vacío y sin sugerencias, listo para el próximo disparo. */
+    campoP.limpiar = function () { clearTimeout(tEsc); campoP.value = ''; cerrar(); };
     campoP.oninput = function () {
-      clearTimeout(_tEsc);
+      clearTimeout(tEsc);
       var d = leerEscaneo(campoP.value);
       /* Algunas pistolas no mandan Enter: si el texto ya es un disparo completo (el talle y el color
          existen en esa prenda), se agrega solo, cuando deja de escribir. */
       if (d && PROD[d.codigo] && tallesDe(PROD[d.codigo]).indexOf(d.talle) >= 0 &&
           coloresDe(PROD[d.codigo]).some(function (x) { return x.cod === d.color; })) {
         var antes = campoP.value;
-        _tEsc = setTimeout(function () { if (campoP.value === antes) agregarEscaneo(d); }, 150);
+        tEsc = setTimeout(function () { if (campoP.value === antes) agregarEscaneo(d, o); }, 150);
         cerrar();
         return;
       }
-      _sug = buscarProductos(campoP.value);
-      _mira = 0;
+      sug = buscarProductos(campoP.value);
+      mira = 0;
       pintarSug();
     };
     campoP.onkeydown = function (e) {
-      if (e.key === 'ArrowDown' && _sug.length) { e.preventDefault(); _mira = (_mira + 1) % _sug.length; pintarSug(); return; }
-      if (e.key === 'ArrowUp' && _sug.length) { e.preventDefault(); _mira = (_mira + _sug.length - 1) % _sug.length; pintarSug(); return; }
+      if (e.key === 'ArrowDown' && sug.length) { e.preventDefault(); mira = (mira + 1) % sug.length; pintarSug(); return; }
+      if (e.key === 'ArrowUp' && sug.length) { e.preventDefault(); mira = (mira + sug.length - 1) % sug.length; pintarSug(); return; }
       if (e.key === 'Escape') { cerrar(); return; }
       if (e.key !== 'Enter') return;
       /* El Enter NUNCA guarda la venta: lo manda la pistola al final de cada disparo. */
       e.preventDefault();
-      clearTimeout(_tEsc);
+      clearTimeout(tEsc);
       var d = leerEscaneo(campoP.value);
-      if (d) { agregarEscaneo(d); return; }
+      if (d) { agregarEscaneo(d, o); return; }
       var cod = campoP.value.trim().toUpperCase();
-      if (PROD[cod]) { abrirDetalle(PROD[cod]); return; }
+      if (PROD[cod]) { elegir(PROD[cod]); return; }
       /* Si las sugerencias se cerraron (salió del campo y volvió), se buscan de nuevo. */
-      if (!_sug.length) { _sug = buscarProductos(campoP.value); _mira = 0; }
-      if (_sug.length) { abrirDetalle(_sug[_mira]); return; }
+      if (!sug.length) { sug = buscarProductos(campoP.value); mira = 0; }
+      if (sug.length) { elegir(sug[mira]); return; }
       if (cod) {
         avisar('err', 'No encontré «' + campoP.value.trim() + '» en el catálogo. Si es un artículo suelto, cargalo con «Nueva línea».');
         campoP.select();   // el próximo disparo lo reemplaza
       }
     };
     caja.onmousedown = function (e) { e.preventDefault(); };   // que el campo no pierda el foco antes del click
-    caja.onclick = function (e) { var b = e.target.closest('[data-sug]'); if (b) abrirDetalle(_sug[Number(b.getAttribute('data-sug'))]); };
+    caja.onclick = function (e) { var b = e.target.closest('[data-sug]'); if (b) elegir(sug[Number(b.getAttribute('data-sug'))]); };
     campoP.onblur = function () { setTimeout(function () { if (document.activeElement !== campoP) cerrar(); }, 120); };
-    campoP.onfocus = function () { if (!_sug.length && !leerEscaneo(campoP.value)) { _sug = buscarProductos(campoP.value); _mira = 0; pintarSug(); } };
+    campoP.onfocus = function () { if (!sug.length && !leerEscaneo(campoP.value)) { sug = buscarProductos(campoP.value); mira = 0; pintarSug(); } };
   }
 
-  function agregarEscaneo(d) {
+  function agregarEscaneo(d, o) {
     var p = PROD[d.codigo];
     if (!p) {
       avisar('err', 'El código ' + d.codigo + ' no está en el catálogo. Si es un artículo suelto, cargalo con «Nueva línea».');
-      var c = $('vProd');
+      var c = $(o.campo);
       if (c) c.select();   // el próximo disparo lo reemplaza
       return;
     }
     var col = coloresDe(p).filter(function (x) { return x.cod === d.color; })[0];
-    agregar(p, d.talle, col ? col.cod : d.color, 1);
+    o.agregar(p, d.talle, col ? col.cod : d.color, 1);
   }
 
   function agregar(p, talle, color, cant) {
@@ -954,17 +976,16 @@
     else V.lineas.push({ codigo: cod, descripcion: p[1], rubro: p[2] || '', talle: talle || '', color: color || '', color_nom: nombreColor(color, cod),
                          cantidad: cant || 1, precio: precioDe(cod) || 0, propio: false });
     var campoP = $('vProd');
-    campoP.value = '';
-    $('vSug').hidden = true;
-    _sug = [];
+    campoP.limpiar();
     pintar();
     if (!precioDe(cod)) avisar('info', p[1] + ' no tiene precio en esta lista: escribilo en «Precio unit.».');
     campoP.focus();
   }
 
   /* "Agregar detalle…" de BlueSoft: el talle y el color, con chips en vez de desplegables. */
-  function abrirDetalle(p) {
-    var talles = tallesDe(p), colores = coloresDe(p), pr = precioDe(p[0]);
+  function abrirDetalle(p, o) {
+    o = o || prodVenta();
+    var talles = tallesDe(p), colores = coloresDe(p), pr = precioDe(p[0], o.lista());
     var sel = { talle: talles.length === 1 ? talles[0] : '', color: colores.length === 1 ? colores[0].cod : '' };
     var caja = ventana('<h3 id="posVentTit">' + esc(p[1]) + '</h3><p class="pos-bajada">' + esc(p[0]) + ' · ' + esc(p[2] || 'Sin rubro') + ' · ' +
         (pr ? plata(pr) : '<b>sin precio en esta lista</b> (se escribe en la grilla)') + '</p>' +
@@ -995,15 +1016,15 @@
       if (!errorEn(caja, 'dtError', talles.length && !talle ? 'Elegí el talle.' : colores.length && !sel.color ? 'Elegí el color.' :
                                       !(n >= 1 && n <= 999) ? 'La cantidad va de 1 a 999.' : '')) return;
       cerrarVentana();
-      agregar(p, talle, sel.color, n);
+      o.agregar(p, talle, sel.color, n);
     }
     caja.querySelector('#dtOk').onclick = listo;
     caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); listo(); } });
     setTimeout(function () { var b = caja.querySelector(sel.talle ? (colores.length > 1 ? '[data-color]' : '#dtOk') : '[data-talle], #dtOtro'); if (b) b.focus(); }, 0);
   }
 
-  /* "Nueva línea": un artículo que no está en el catálogo. */
-  function abrirLineaLibre() {
+  /* "Nueva línea": un artículo que no está en el catálogo. alAgregar(línea): en el cambio, a la grilla que corresponde. */
+  function abrirLineaLibre(alAgregar) {
     var caja = ventana('<h3 id="posVentTit">Nueva línea</h3><p class="pos-bajada">Un artículo que no está en el catálogo. Queda en el ticket con lo que escribas.</p>' +
       '<div class="pos-campos">' +
         campo('ancho', 'Descripción', '<input type="text" id="llDesc" maxlength="80" autofocus>') +
@@ -1016,9 +1037,11 @@
     function listo() {
       var d = caja.querySelector('#llDesc').value.trim(), n = parseInt(caja.querySelector('#llCant').value, 10), pr = leerPlata(caja.querySelector('#llPrecio').value);
       if (!errorEn(caja, 'llError', !d ? 'Escribí qué es.' : !(n >= 1 && n <= 999) ? 'La cantidad va de 1 a 999.' : !(pr > 0) ? 'Escribí el precio.' : '')) return;
-      V.lineas.push({ codigo: caja.querySelector('#llCod').value.trim().toUpperCase(), descripcion: d, rubro: '', talle: caja.querySelector('#llTalle').value.trim().toUpperCase(),
-                      color: '', color_nom: '', cantidad: n, precio: pr, propio: true, libre: true });
+      var l = { codigo: caja.querySelector('#llCod').value.trim().toUpperCase(), descripcion: d, rubro: '', talle: caja.querySelector('#llTalle').value.trim().toUpperCase(),
+                color: '', color_nom: '', cantidad: n, precio: pr, propio: true, libre: true };
       cerrarVentana();
+      if (alAgregar) { alAgregar(l); return; }
+      V.lineas.push(l);
       pintar();
     }
     caja.querySelector('#llOk').onclick = listo;
@@ -1270,9 +1293,14 @@
   }
 
   document.addEventListener('keydown', function (e) {
-    if (S.vista !== 'venta' || _velo || !S.ini) return;
-    if (e.key === 'F9') { e.preventDefault(); guardarVenta(); }
-    else if (e.key === 'F2') { e.preventDefault(); var p = $('vProd'); if (p) p.focus(); }
+    if (!vistaAncha() || _velo || !S.ini) return;
+    if (e.key === 'F9') { e.preventDefault(); if (S.vista === 'venta') guardarVenta(); else guardarCambio(); }
+    else if (e.key === 'F2') {
+      e.preventDefault();
+      /* En el cambio, F2 pasa de un campo al otro (lo que vuelve ↔ lo que se lleva). */
+      var p = S.vista === 'venta' ? $('vProd') : $(document.activeElement && document.activeElement.id === 'cbVuelve' ? 'cbSale' : 'cbVuelve');
+      if (p) p.focus();
+    }
   });
 
   /* ════════════════════════════════════════════════════════════════════
@@ -1347,12 +1375,28 @@
   /* ════════════════════════════════════════════════════════════════════
      TICKETS (el listado de BlueSoft)
      ════════════════════════════════════════════════════════════════════ */
+  /** "Borrar las pruebas" (en Tickets y en Cambios): las ventas y los cambios de prueba, con su caja de prueba. */
+  function borrarPruebas(loc, bt, despues) {
+    var l = loc && localDe(loc);
+    if (!confirm('¿Borrar ' + (l ? 'las pruebas de ' + nombreLocal(l) : 'todas las pruebas') +
+                 ' (ventas y cambios, de cualquier día), con su caja de prueba? Las de verdad no se tocan. No se puede deshacer.')) return;
+    bt.disabled = true;
+    llamar('pos_pruebas_borrar', { p_local: loc || null }).then(function (n) {
+      bt.disabled = false;
+      avisar('ok', n ? 'Listo: se ' + (n === 1 ? 'borró 1 prueba.' : 'borraron ' + n + ' pruebas.') : 'No había pruebas para borrar.');
+      if (S.ultimo && S.ultimo.serie === 'prueba') S.ultimo = null;
+      if (S.cambioHecho && S.cambioHecho.prueba) S.cambioHecho = null;
+      despues();
+    }).catch(function (e) { bt.disabled = false; avisar('err', mensajeDe(e)); });
+  }
+
   function verTickets() {
     var c = $('cuerpo'), todos = {}, prueba = enPrueba();
     Object.keys(S.ini.vendedores || {}).forEach(function (k) { (S.ini.vendedores[k] || []).forEach(function (n) { todos[n] = 1; }); });
     c.innerHTML = cabeza('Tickets' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Las ventas del POS de todas las sucursales.',
         '<button type="button" class="btn btn-sec btn-chico" id="tkBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-pri btn-chico" data-ir="venta">Nueva venta</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="cambio" title="Ticket de cambio: lo que vuelve y lo que se lleva">Cambio</button>' +
         '<a class="btn btn-sec btn-chico" href="index.html?volver=pos" title="El No Compra">Venta fallida</a>') +
       '<div class="pos-filtros"><div id="tkPer"></div>' +
         campo('', 'Sucursal', '<select id="tkLocal"><option value="">Todas</option>' + opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), '') + '</select>') +
@@ -1363,21 +1407,10 @@
         /* Las de verdad y las de prueba no se mezclan nunca; con el modo prueba prendido arranca en las de prueba. */
         campo('', 'Ventas', '<select id="tkPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="tkLista"><p class="cargando">Cargando…</p></div>';
-    c.querySelector('[data-ir="venta"]').onclick = function () { ir('venta'); };
+    c.querySelectorAll('.pos-acciones [data-ir]').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; });
     var per = Interfaz.periodo($('tkPer'), { inicial: 'hoy', guardar: 'pos_tickets_periodo', hastaHoy: true, alCambiar: cargar });
     ['tkLocal', 'tkVend', 'tkLetra', 'tkMedio', 'tkEstado', 'tkPrueba'].forEach(function (id) { $(id).onchange = cargar; });
-    $('tkBorrar').onclick = function () {
-      var loc = $('tkLocal').value, l = loc && localDe(loc), bt = this;
-      if (!confirm('¿Borrar ' + (l ? 'las ventas de prueba de ' + nombreLocal(l) : 'todas las ventas de prueba') +
-                   ' (de cualquier día), con su caja de prueba? Las de verdad no se tocan. No se puede deshacer.')) return;
-      bt.disabled = true;
-      llamar('pos_pruebas_borrar', { p_local: loc || null }).then(function (n) {
-        bt.disabled = false;
-        avisar('ok', n ? 'Listo: se ' + (n === 1 ? 'borró 1 venta de prueba.' : 'borraron ' + n + ' ventas de prueba.') : 'No había ventas de prueba para borrar.');
-        if (S.ultimo && S.ultimo.serie === 'prueba') S.ultimo = null;
-        cargar();
-      }).catch(function (e) { bt.disabled = false; avisar('err', mensajeDe(e)); });
-    };
+    $('tkBorrar').onclick = function () { borrarPruebas($('tkLocal').value, this, cargar); };
     var pedido = 0;
     function deLaPrueba() { return $('tkPrueba').value === '1'; }
     function cargar() {
@@ -1428,6 +1461,471 @@
       });
     }
     cargar();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     LOS CAMBIOS (SQL 151)
+     El "Ticket de cambio" de BlueSoft: arriba lo que vuelve (productos
+     entrantes) y abajo lo que se lleva (productos salientes). Mauricio
+     (21/10): "hagámoslo igual… bien básico". Lo que vuelve entra al precio
+     de lista; si sale más, se cobra la diferencia; si sale menos, no se
+     guarda: se sube el precio de lo que se lleva hasta que da $0 ("y
+     pierde la plata").
+     ════════════════════════════════════════════════════════════════════ */
+  var SENTIDO = {
+    vuelve: { campo: 'cbVuelve', sug: 'cbSugV', filas: 'cbFilasV', sub: 'cbSubV', icono: 'entra', titulo: 'Productos entrantes', ayuda: 'lo que vuelve',
+              vacia: '<b>Todavía no vuelve nada</b>Dispará la pistola a la etiqueta de la prenda que trae el cliente.' },
+    sale: { campo: 'cbSale', sug: 'cbSugS', filas: 'cbFilasS', sub: 'cbSubS', icono: 'sale', titulo: 'Productos salientes', ayuda: 'lo que se lleva',
+            vacia: '<b>Todavía no se lleva nada</b>Dispará la pistola a la prenda nueva.' }
+  };
+
+  function cambioNuevo(antes) {
+    var l = (antes && localDe(antes.local_id)) || localInicial();
+    return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
+             lista_id: listaDe(l), cliente: '', vuelve: [], sale: [], forma: 'efectivo', pago: {}, observaciones: '' };
+  }
+  function cargarCambio() {
+    var b = leerJSON(K_CAMBIO, null);
+    if (b && b.v === 1 && b.clave && Array.isArray(b.vuelve) && Array.isArray(b.sale) && localDe(b.local_id) && listaPorId(b.lista_id)) {
+      b.pago = b.pago || {};
+      if (!MEDIOS[b.forma]) b.forma = 'efectivo';
+      return b;
+    }
+    return cambioNuevo();
+  }
+  function guardarBorradorCb() { guardarJSON(K_CAMBIO, CB); }
+
+  /** La cuenta del cambio, en centavos. dif = lo que se lleva − lo que vuelve: lo que se cobra (negativa, no se guarda). */
+  function cuentaCambio(cb) {
+    var r = { vuelve: 0, sale: 0, cv: 0, cs: 0 };
+    cb.vuelve.forEach(function (l) { r.vuelve += l.precio * l.cantidad; r.cv += l.cantidad; });
+    cb.sale.forEach(function (l) { r.sale += l.precio * l.cantidad; r.cs += l.cantidad; });
+    r.dif = r.sale - r.vuelve;
+    return r;
+  }
+  /** Las reglas del precio (las mismas de la base): lo que vuelve, a lista o menos; lo que se lleva, a lista o más. */
+  function precioMal(s, l, c) {
+    if (l.lista == null) return '';
+    if (s === 'vuelve' && c > l.lista) return 'Lo que vuelve entra al precio de lista (' + plata(l.lista) + ') o menos.';
+    if (s === 'sale' && c < l.lista) return 'Lo que se lleva no puede ir más barato que la lista (' + plata(l.lista) + ').';
+    return '';
+  }
+  function conSigno(c) { return (c < 0 ? '−' : '') + plata(Math.abs(c)); }
+  function textoGuardarCb() { return (enPrueba() ? 'Guardar prueba' : 'Guardar cambio') + ' <span class="pos-tecla">F9</span>'; }
+
+  function verCambio() {
+    CB = cargarCambio();
+    S.cbFoco = 'cbVuelve';
+    var c = $('cuerpo'), prueba = enPrueba();
+    function bloque(s) {
+      var x = SENTIDO[s];
+      return '<div class="tk-prod cb-prod">' +
+          '<span class="cb-icono ' + s + '" aria-hidden="true">' + icono(x.icono) + '</span>' +
+          campo('', x.titulo + ' <span class="lbl-opc">· ' + x.ayuda + '</span>', '<input type="search" id="' + x.campo + '" autocomplete="off" spellcheck="false" ' +
+            'placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="' + x.sug + '" title="F2: el otro campo">') +
+          '<span class="cb-subtot" id="' + x.sub + '"></span>' +
+          '<button type="button" class="btn btn-sec btn-chico" data-linea="' + s + '" title="Un artículo que no está en el catálogo">Nueva línea</button>' +
+          '<div class="tk-sug" id="' + x.sug + '" role="listbox" aria-label="Productos" hidden></div></div>' +
+        '<div class="tk-grilla"><table class="tk-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th>' +
+          '<th class="c">Cant.</th><th class="n">Precio unit.</th><th class="n">Total</th><th><span class="sr">Quitar</span></th></tr></thead>' +
+          '<tbody id="' + x.filas + '"></tbody></table></div>';
+    }
+    c.innerHTML =
+      cabeza('Ticket de cambio' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="cbSubt"></span>',
+        '<div id="cbHecho"></div>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="cbLimpiar">Limpiar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="cbGuardar" title="Guardar el cambio y empezar otro (F9)">' + textoGuardarCb() + '</button>') +
+      '<div class="tk cb">' +
+        '<section class="tk-izq" aria-label="Los datos del cambio"><div class="tk-datos">' +
+          campo('c4', 'Fecha', '<input type="text" id="cbFecha" readonly>') +
+          campo('c4', 'Comprobante', '<input type="text" value="Cambio" readonly title="Comprobante interno: el cambio no es una factura y no va a ARCA">') +
+          campo('c4', 'Referencia', '<input type="text" id="cbRef" readonly title="El número lo da la base al guardar (C-1, C-2… por sucursal)">') +
+          campo('c8', 'Vendedor', '<select id="cbVend"></select>') +
+          campo('c4', 'Estado', '<input type="text" value="Cobrada" readonly>') +
+          campo('', 'Cliente', '<input type="text" id="cbCliente" maxlength="120" placeholder="Consumidor final" autocomplete="off">') +
+          campo('', 'Lista de precios', '<select id="cbLista"></select>') +
+          campo('', 'Forma de pago', '<select id="cbForma">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), CB.forma) + '</select>') +
+          '<div class="tk-pagox" id="cbPagoX"></div>' +
+          campo('c6', 'Sucursal', '<select id="cbLocal"></select>') +
+          campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="El stock todavía no está en el POS">') +
+          campo('c3', 'Caja', '<input type="text" value="Chica" readonly title="La caja chica del local">') +
+        '</div>' +
+        '<div class="tk-tot">' +
+          '<div class="tk-caja"><span>Neto</span><b id="cbNeto">$0</b></div>' +
+          '<div class="tk-caja"><span>Descuentos</span><b>$0</b></div>' +
+          '<div class="tk-caja"><span>Productos</span><b id="cbCant">0</b></div>' +
+          '<div class="tk-caja gordo" id="cbTotCaja"><span>' + (prueba ? 'Total · prueba' : 'Total a pagar') + '</span><b id="cbTotal">$0</b></div>' +
+        '</div></section>' +
+        '<section class="tk-der" aria-label="Los productos">' + bloque('vuelve') + bloque('sale') +
+          '<div class="tk-pie">' + campo('', 'Observaciones', '<textarea id="cbObs" maxlength="500"></textarea>') + '<div class="tk-nota" id="cbNota" role="status"></div></div>' +
+        '</section>' +
+      '</div>';
+
+    $('cbFecha').value = fechaCorta(S.ini.hoy);
+    $('cbLocal').innerHTML = opcionesLocales(CB.local_id);
+    $('cbLista').innerHTML = opciones(S.ini.listas.map(function (l) { return [l.id, l.nombre]; }), CB.lista_id);
+    $('cbCliente').value = CB.cliente || '';
+    $('cbObs').value = CB.observaciones || '';
+    llenarVendedores(true);
+    pintarHechoCb();
+
+    $('cbVend').onchange = function () {
+      if (this.value === '__otro') { this.value = CB.vendedor; pedirVendedor(true); return; }
+      CB.vendedor = this.value;
+      recordar(true);
+      pintarCambio();
+    };
+    $('cbCliente').oninput = function () { CB.cliente = this.value; guardarBorradorCb(); };
+    $('cbLista').onchange = function () { cambiarListaCb(Number(this.value)); };
+    $('cbForma').onchange = function () { CB.forma = this.value; pintarPago(true); pintarCambio(); };
+    $('cbLocal').onchange = function () {
+      var l = localDe(this.value);
+      CB.local_id = l.id;
+      CB.vendedor = vendedorInicial(l);
+      recordar(true);
+      llenarVendedores(true);
+      cambiarListaCb(listaDe(l));
+    };
+    $('cbObs').oninput = function () { CB.observaciones = this.value; guardarBorradorCb(); };
+    $('cbLimpiar').onclick = function () {
+      if ((CB.vuelve.length || CB.sale.length) && !confirm('¿Borrar el cambio que estás armando?')) return;
+      CB = cambioNuevo(CB);
+      guardarBorradorCb();
+      verCambio();
+    };
+    $('cbGuardar').onclick = guardarCambio;
+    ['vuelve', 'sale'].forEach(function (s) {
+      var x = SENTIDO[s];
+      engancharProducto({ campo: x.campo, sug: x.sug, lista: function () { return CB.lista_id; }, agregar: agregarCb(s) });
+      $(x.campo).addEventListener('focus', function () { S.cbFoco = x.campo; });
+      engancharFilasCb(s);
+    });
+    c.querySelectorAll('[data-linea]').forEach(function (b) {
+      b.onclick = function () {
+        var s = b.getAttribute('data-linea');
+        S.cbFoco = SENTIDO[s].campo;
+        abrirLineaLibre(function (l) {
+          /* Si escribieron un código de la lista, valen las mismas reglas del precio. */
+          l.lista = l.codigo ? precioDe(l.codigo, CB.lista_id) : null;
+          var mal = precioMal(s, l, l.precio);
+          if (mal) { l.precio = l.lista; avisar('info', mal + ' Quedó a ' + plata(l.lista) + '.'); }
+          l.propio = l.precio !== l.lista;
+          CB[s].push(l);
+          pintarCambio();
+        });
+      };
+    });
+    pintarPago(true);
+    $('cbFilasV').innerHTML = $('cbFilasS').innerHTML = '<tr class="tk-vacia"><td colspan="9">Cargando los precios…</td></tr>';
+    asegurarPrecios(CB.lista_id).then(function () { pintarCambio(); }, function (e) { pintarCambio(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
+    /* En la compu, el foco en lo que vuelve: la pistola dispara sin tocar nada. En el celular no (abriría el teclado). */
+    if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('cbVuelve'); if (p) p.focus(); }, 0);
+  }
+
+  function agregarCb(s) {
+    return function (p, talle, color, cant) {
+      var cod = p[0], pl = precioDe(cod, CB.lista_id), ls = CB[s];
+      var ya = ls.filter(function (l) { return !l.libre && !l.propio && l.codigo === cod && l.talle === talle && l.color === color; })[0];
+      if (ya) ya.cantidad = Math.min(999, ya.cantidad + (cant || 1));
+      else ls.push({ codigo: cod, descripcion: p[1], rubro: p[2] || '', talle: talle || '', color: color || '', color_nom: nombreColor(color, cod),
+                     cantidad: cant || 1, precio: pl || 0, lista: pl, propio: false });
+      var campoP = $(SENTIDO[s].campo);
+      campoP.limpiar();
+      pintarCambio();
+      if (!pl) avisar('info', p[1] + ' no tiene precio en esta lista: escribilo en «Precio unit.».');
+      campoP.focus();
+    };
+  }
+
+  /** Otra lista: todo lo del catálogo pasa al precio de esa lista (también lo que se había ajustado). */
+  function cambiarListaCb(lista) {
+    CB.lista_id = lista;
+    $('cbLista').value = String(lista);
+    asegurarPrecios(lista).then(function () {
+      CB.vuelve.concat(CB.sale).forEach(function (l) {
+        if (l.libre) return;
+        l.lista = precioDe(l.codigo, lista);
+        l.precio = l.lista || 0;
+        l.propio = false;
+      });
+      pintarCambio();
+    }, function (e) { avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); pintarCambio(); });
+  }
+
+  /* Cada grilla: cantidad y precio se cambian ahí mismo (con las reglas del precio); la ✕ quita el renglón. */
+  function engancharFilasCb(s) {
+    var t = $(SENTIDO[s].filas);
+    t.addEventListener('change', function (e) {
+      var tr = e.target.closest('tr[data-i]');
+      if (!tr) return;
+      var l = CB[s][Number(tr.getAttribute('data-i'))];
+      if (e.target.classList.contains('tk-cant')) {
+        var n = parseInt(e.target.value, 10);
+        if (n >= 1 && n <= 999) l.cantidad = n; else avisar('err', 'La cantidad va de 1 a 999.');
+      } else if (e.target.classList.contains('tk-precio')) {
+        var c = leerPlata(e.target.value);
+        var mal = isNaN(c) || c >= 10000000000 ? 'Ese precio no se entiende. Escribilo así: 20000 o 16.333,33' : precioMal(s, l, c);
+        if (mal) avisar('err', mal);
+        else { l.precio = c; l.propio = c !== l.lista; }
+      }
+      pintarCambio();
+    });
+    t.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && e.target.matches('.tk-cant, .tk-precio')) { e.preventDefault(); e.target.blur(); $(SENTIDO[s].campo).focus(); }
+    });
+    t.addEventListener('click', function (e) {
+      var b = e.target.closest('[data-quitar]');
+      if (!b) return;
+      CB[s].splice(Number(b.getAttribute('data-quitar')), 1);
+      pintarCambio();
+      $(SENTIDO[s].campo).focus();
+    });
+  }
+
+  /* ── Lo que cambia cada vez ── */
+  function pintarCambio() {
+    if (!$('cbFilasV')) return;
+    var k = cuentaCambio(CB), l0 = localDe(CB.local_id), li = listaPorId(CB.lista_id), n = 0, cobra = k.dif > 0;
+    $('cbSubt').textContent = nombreLocal(l0) + ' · ' + (li ? li.nombre : '');
+    $('cbRef').value = 'Al guardar';
+    $('cbNeto').textContent = conSigno(k.dif);
+    $('cbCant').textContent = k.cs - k.cv;
+    $('cbTotal').textContent = conSigno(k.dif);
+    $('cbTotCaja').classList.toggle('neg', k.dif < 0);
+    /* La forma de pago, sólo si hay diferencia para cobrar. */
+    $('cbForma').value = CB.forma;
+    $('cbForma').disabled = !cobra;
+    $('cbForma').title = cobra ? '' : 'Sin diferencia no se cobra nada';
+    $('cbPagoX').querySelectorAll('input:not([readonly]), select').forEach(function (e) { e.disabled = !cobra; });
+    var vuelto = $('cbVuelto');
+    if (vuelto) vuelto.value = cobra && CB.pago.recibido && CB.pago.recibido >= k.dif ? plata(CB.pago.recibido - k.dif) : '';
+    var av = $('cbPagoAviso');
+    if (av) av.textContent = cobra && CB.forma === 'efectivo' && CB.pago.recibido && CB.pago.recibido < k.dif ? 'Lo recibido es menos que la diferencia.' : '';
+
+    ['vuelve', 'sale'].forEach(function (s) {
+      var x = SENTIDO[s], ls = CB[s], cant = 0, tot = 0;
+      $(x.filas).innerHTML = ls.length ? ls.map(function (l, i) {
+        n++;
+        cant += l.cantidad;
+        tot += l.precio * l.cantidad;
+        var aj = l.lista != null && l.precio !== l.lista;
+        return '<tr data-i="' + i + '"><td class="pos-num">' + ('00' + n).slice(-3) + '</td>' +
+          '<td class="tk-cod">' + esc(l.codigo || '—') + '</td><td class="tk-desc">' + esc(l.descripcion) + '</td>' +
+          '<td class="c">' + esc(l.talle || '') + '</td><td>' + esc(l.color_nom || l.color || '') + '</td>' +
+          '<td class="c"><input type="number" class="tk-cant" min="1" max="999" value="' + l.cantidad + '" aria-label="Cantidad de ' + esc(l.descripcion) + '"></td>' +
+          '<td class="n"><input type="text" inputmode="decimal" class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
+            (l.precio ? '' : ' placeholder="Sin precio"') + ' aria-label="Precio unitario de ' + esc(l.descripcion) + '">' +
+            (aj ? '<small class="cb-lista">lista ' + plata(l.lista) + '</small>' : '') + '</td>' +
+          '<td class="n"><b>' + plata(l.precio * l.cantidad) + '</b></td>' +
+          '<td><button type="button" class="tk-quitar" data-quitar="' + i + '" title="Quitar" aria-label="Quitar ' + esc(l.descripcion) + '">' + icono('x') + '</button></td></tr>';
+      }).join('') : '<tr class="tk-vacia"><td colspan="9">' + x.vacia + '</td></tr>';
+      $(x.sub).innerHTML = ls.length ? cant + (cant === 1 ? ' prenda' : ' prendas') + ' · <b>' + plata(tot) + '</b>' : '';
+    });
+
+    /* Abajo a la derecha: si da negativo, por qué no se guarda y el botón para dejarlo en $0. */
+    var nota = $('cbNota');
+    if (k.dif < 0 && CB.sale.length) {
+      nota.className = 'tk-nota cb-mal';
+      nota.innerHTML = '<b>Lo que se lleva vale ' + plata(-k.dif) + ' menos que lo que vuelve.</b> Así no se guarda: no se devuelve plata. ' +
+        'Que se lleve algo más, o dejalo en $0 (el cliente pierde la diferencia).' +
+        '<button type="button" class="btn btn-sec btn-chico" id="cbCero" title="Sube el precio de lo que se lleva hasta que el cambio da $0">Dejar en $0</button>';
+      $('cbCero').onclick = dejarEnCero;
+    } else {
+      nota.className = 'tk-nota';
+      nota.innerHTML = enPrueba() ? '<b>Modo prueba:</b> el cambio numera aparte (CP-1, CP-2…), no cuenta para nada y se borra desde Cambios.' :
+        CB.vuelve.length && !CB.sale.length ? '<b>Ahora, lo que se lleva:</b> dispará la pistola en «Productos salientes» (F2 pasa de un campo al otro).' :
+        '<b>Como en BlueSoft:</b> lo que vuelve entra al precio de la lista de hoy, aunque lo haya comprado con promo. Si se lleva algo más caro, se cobra la diferencia y entra en el cierre de caja.';
+    }
+    guardarBorradorCb();
+  }
+
+  /* "Ajustamos el ticket para que dé cero" (Mauricio): sube el precio de lo que se lleva; lo que vuelve sigue a precio de lista. */
+  function dejarEnCero() {
+    var falta = -cuentaCambio(CB).dif, ls = CB.sale, l = null, i;
+    if (falta <= 0 || !ls.length) return;
+    for (i = ls.length - 1; i >= 0 && !l; i--) if (ls[i].cantidad === 1) l = ls[i];
+    for (i = ls.length - 1; i >= 0 && !l; i--) if (falta % ls[i].cantidad === 0) l = ls[i];
+    if (!l) { avisar('err', 'No se puede repartir justo entre las prendas: cambiá a mano el precio de lo que se lleva.'); return; }
+    l.precio += falta / l.cantidad;
+    l.propio = true;
+    pintarCambio();
+    avisar('ok', l.descripcion + ' quedó a ' + plata(l.precio) + ': el cambio da $0.');
+  }
+
+  function pintarHechoCb() {
+    var u = S.cambioHecho, h = $('cbHecho');
+    if (!h) return;
+    h.innerHTML = u ? '<div class="pos-hecho' + (u.prueba ? ' prueba' : '') + '" role="status">' + icono('ok') + '<span>Cambio ' + esc(refCambio(u)) + ' guardado · ' +
+      (u.diferencia ? 'se cobró ' + plata(u.diferencia) : 'sin diferencia') + (u.ya ? ' (ya estaba guardado: no se duplicó)' : '') +
+      '</span><button type="button" id="cbVerUltimo">Ver</button></div>' : '';
+    if (u) $('cbVerUltimo').onclick = function () { abrirCambio(u.id); };
+  }
+
+  /* ── Guardar ── */
+  function itemCb(s, l) {
+    return { sentido: s, codigo: l.codigo || '', descripcion: l.descripcion, talle: l.talle || '', color: l.color || '', cantidad: l.cantidad, precio: aPesos(l.precio) };
+  }
+  function guardarCambio() {
+    if (S.guardando || !CB) return;
+    var k = cuentaCambio(CB), cobra = k.dif > 0;
+    var mal = !CB.local_id ? 'Elegí la sucursal.' :
+      !CB.vendedor ? 'Elegí quién hace el cambio.' :
+      !CB.vuelve.length ? 'Falta lo que vuelve: escaneá la prenda que trae el cliente (arriba).' :
+      !CB.sale.length ? 'Falta lo que se lleva (abajo): en un cambio no se devuelve plata.' :
+      CB.vuelve.concat(CB.sale).some(function (l) { return !l.precio; }) ? 'Hay una prenda sin precio: escribilo en «Precio unit.».' :
+      k.dif < 0 ? 'Lo que se lleva vale ' + plata(-k.dif) + ' menos que lo que vuelve: así no se guarda. Que se lleve algo más, o tocá «Dejar en $0».' :
+      cobra && CB.forma === 'tarjeta' && !CB.pago.tarjeta ? 'Elegí qué tarjeta es.' :
+      cobra && CB.forma === 'efectivo' && CB.pago.recibido && CB.pago.recibido < k.dif ? 'Lo recibido en efectivo es menos que la diferencia.' : '';
+    if (mal) { avisar('err', mal); return; }
+    var p = {
+      clave: CB.clave, prueba: enPrueba(), local_id: CB.local_id, vendedor: CB.vendedor, lista_id: CB.lista_id,
+      cliente_nombre: String(CB.cliente || '').trim(), observaciones: CB.observaciones || '',
+      items: CB.vuelve.map(function (l) { return itemCb('vuelve', l); }).concat(CB.sale.map(function (l) { return itemCb('sale', l); })),
+      pagos: pagosDe(k.dif, CB).map(function (x) {
+        var y = Object.assign({}, x, { monto: aPesos(x.monto) });
+        if (y.recibido) y.recibido = aPesos(y.recibido); else delete y.recibido;
+        return y;
+      })
+    };
+    S.guardando = true;
+    var b = $('cbGuardar');
+    if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
+    llamar('pos_cambio_guardar', { p: p }).then(function (r) {
+      S.cambioHecho = { id: r.id, numero: r.numero, prueba: !!r.prueba, diferencia: cent(r.diferencia), ya: !!r.ya };
+      CB = cambioNuevo(CB);
+      guardarBorradorCb();
+      S.guardando = false;
+      avisar('ok', 'Cambio ' + refCambio(S.cambioHecho) + ' guardado.');
+      if (S.vista === 'cambio') verCambio();
+    }).catch(function (e) {
+      S.guardando = false;
+      if (b && b.isConnected) { b.disabled = false; b.innerHTML = textoGuardarCb(); }
+      if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo. El cambio sigue armado.'); persona.entrar(); return; }
+      avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
+    });
+  }
+
+  /* ── El listado de cambios ── */
+  function verCambios() {
+    var c = $('cuerpo'), prueba = enPrueba();
+    c.innerHTML = cabeza('Cambios' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Los cambios de todas las sucursales: lo que vuelve y lo que se lleva.',
+        '<button type="button" class="btn btn-sec btn-chico" id="cmBorrar" hidden>Borrar las pruebas</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" data-ir="cambio">Nuevo cambio</button>') +
+      '<div class="pos-filtros"><div id="cmPer"></div>' +
+        campo('', 'Sucursal', '<select id="cmLocal"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        /* Los de verdad y los de prueba no se mezclan nunca; con el modo prueba prendido arranca en los de prueba. */
+        campo('', 'Cambios', '<select id="cmPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
+      '</div><div id="cmLista"><p class="cargando">Cargando…</p></div>';
+    c.querySelector('[data-ir="cambio"]').onclick = function () { ir('cambio'); };
+    var per = Interfaz.periodo($('cmPer'), { inicial: 'hoy', guardar: 'pos_cambios_periodo', hastaHoy: true, alCambiar: cargar });
+    ['cmLocal', 'cmPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    $('cmBorrar').onclick = function () { borrarPruebas($('cmLocal').value, this, cargar); };
+    var pedido = 0;
+    function dePrueba() { return $('cmPrueba').value === '1'; }
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('cmLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('cmBorrar').hidden = !dePrueba();
+      llamar('pos_cambios', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('cmLocal').value || null, p_prueba: dePrueba() }).then(function (d) {
+        if (n !== pedido || !$('cmLista')) return;
+        pintarLista(d);
+      }).catch(function (e) { if ($('cmLista')) $('cmLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function pintarLista(d) {
+      var t = d.totales || {};
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi"><span>Cambios</span><b>' + (t.cambios || 0) + '</b></div>' +
+        '<div class="pos-kpi"><span>Prendas que volvieron</span><b>' + (t.vuelven || 0) + '</b></div>' +
+        '<div class="pos-kpi"><span>Prendas que salieron</span><b>' + (t.salen || 0) + '</b></div>' +
+        '<div class="pos-kpi fuerte"><span>Diferencia cobrada</span><b>' + plata(cent(t.diferencia || 0)) + '</b></div>' +
+        (t.anulados ? '<div class="pos-kpi"><span>Anulados</span><b>' + t.anulados + '</b></div>' : '') + '</div>' +
+        (dePrueba() ? '<div class="pos-cartel prueba">Los cambios de <b>prueba</b>: no cuentan para nada. «Borrar las pruebas» los borra' +
+          ($('cmLocal').value ? ' (los de esa sucursal)' : ' todos') + ', con las ventas de prueba.</div>' : '');
+      if (!d.filas || !d.filas.length) {
+        $('cmLista').innerHTML = kpis + '<div class="pos-cartel">' + (dePrueba() ? 'No hay cambios de prueba en ese período.' : 'No hay cambios en ese período.') + '</div>';
+        return;
+      }
+      $('cmLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th class="n">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
+        '<th>Cliente</th><th>Vuelve</th><th>Se lleva</th><th>Forma de pago</th><th>Estado</th><th class="n">Diferencia</th></tr></thead><tbody>' +
+        d.filas.map(function (f) {
+          var an = f.estado === 'anulado', clases = (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '');
+          return '<tr data-cambio="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td>' +
+            '<td class="n">' + esc(refCambio(f)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td>' + esc(f.cliente) + '</td>' +
+            '<td class="cb-que">' + esc(f.vuelven || '') + '</td><td class="cb-que">' + esc(f.salen || '') + '</td>' +
+            '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS[m] || m; }).join(' + ') || '—') + '</td>' +
+            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Hecho</span>') + '</td>' +
+            '<td class="n tachar"><b>' + plata(cent(f.diferencia)) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+      $('cmLista').querySelectorAll('tr[data-cambio]').forEach(function (tr) {
+        tr.onclick = function () { abrirCambio(tr.getAttribute('data-cambio'), cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    cargar();
+  }
+
+  /* ── Un cambio guardado: verlo y anularlo (sólo mientras la caja está abierta) ── */
+  function abrirCambio(id, alCambiar) {
+    var caja = ventana('<h3 id="posVentTit">Cambio</h3><p class="cargando">Cargando…</p>', true);
+    var dentro = caja.querySelector('.pos-caja-in');
+    llamar('pos_cambio', { p_id: id }).then(function (t) {
+      if (!_velo || !caja.isConnected) return;
+      var an = t.estado === 'anulado', p = function (n) { return plata(cent(n || 0)); };
+      var pagos = (t.pagos || []).map(function (g) {
+        var x = MEDIOS[g.medio] || g.medio;
+        if (g.medio === 'tarjeta') x += ' ' + (g.tarjeta || '') + (g.cuotas > 1 ? ' · ' + g.cuotas + ' cuotas' : '');
+        if (g.cupon) x += ' · ' + (g.medio === 'tarjeta' ? 'cupón ' : 'op. ') + g.cupon;
+        if (g.recibido) x += ' · recibido ' + p(g.recibido) + ', vuelto ' + p(g.vuelto);
+        return '<li>' + esc(x) + ' — <b>' + p(g.monto) + '</b></li>';
+      }).join('');
+      function filas(s, titulo) {
+        return '<tr class="cb-sep"><td colspan="8">' + titulo + '</td></tr>' + (t.items || []).filter(function (i) { return i.sentido === s; }).map(function (i) {
+          var aj = i.precio_lista != null && Number(i.precio_lista) !== Number(i.precio);
+          return '<tr><td>' + ('00' + i.item).slice(-3) + '</td><td>' + esc(i.codigo || '—') + '</td><td>' + esc(i.descripcion) + '</td><td class="c">' + esc(i.talle || '') + '</td>' +
+            '<td>' + esc(i.color ? nombreColor(i.color, i.codigo) : '') + '</td><td class="c">' + i.cantidad + '</td>' +
+            '<td class="n">' + p(i.precio) + (aj ? '<small class="cb-lista">lista ' + p(i.precio_lista) + '</small>' : '') + '</td><td class="n">' + p(i.total) + '</td></tr>';
+        }).join('');
+      }
+      dentro.innerHTML = '<h3 id="posVentTit">Cambio ' + esc(refCambio(t)) + ' ' +
+          (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Hecho</span>') +
+          (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
+        (t.prueba ? '<div class="pos-cartel prueba">Es un cambio de prueba: no cuenta para nada y se borra con «Borrar las pruebas».</div>' : '') +
+        '<div class="pos-ticket-datos">' +
+          '<div><span>Fecha</span>' + esc(fechaHora(t.fecha)) + '</div>' +
+          '<div><span>Sucursal</span>' + esc(bonito(t.local)) + '</div>' +
+          '<div><span>Vendedor</span>' + esc(t.vendedor) + '</div>' +
+          '<div><span>Cargó</span>' + esc(t.cargado_por_nombre || '—') + '</div>' +
+          '<div><span>Cliente</span>' + esc(t.cliente_nombre || 'Consumidor final') + '</div>' +
+          '<div><span>Lista de precios</span>' + esc(t.lista || '—') + '</div>' +
+          '<div><span>Caja</span>' + (t.cierre ? 'Entró en el cierre ' + esc(refCierre(t.cierre)) : 'Abierta (todavía no se cerró)') + '</div>' +
+        '</div>' +
+        '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th><th class="c">Cant.</th>' +
+          '<th class="n">Precio unit.</th><th class="n">Total</th></tr></thead><tbody>' +
+          filas('vuelve', 'Vuelve (productos entrantes)') + filas('sale', 'Se lleva (productos salientes)') + '</tbody></table></div>' +
+        '<div class="pos-ticket-tot"><span>Vuelve ' + p(t.vuelve) + ' · Se lleva ' + p(t.se_lleva) + '</span><b>Diferencia ' + p(t.diferencia) + '</b></div>' +
+        (pagos ? '<p class="pos-lbl" style="margin:10px 0 4px">Se cobró</p><ul style="margin:0;padding-left:18px;font-size:14px;display:grid;gap:3px">' + pagos + '</ul>' : '') +
+        (t.observaciones ? '<p style="font-size:14px;margin:10px 0 0"><b>Observaciones:</b> ' + esc(t.observaciones) + '</p>' : '') +
+        (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulado el ' + esc(fechaHora(t.anulado_en)) + (t.anulado_por_nombre ? ' por ' + esc(t.anulado_por_nombre) : '') + ': ' + esc(t.anulado_motivo || '') + '</div>' :
+          t.cierre ? '<div class="pos-cartel" style="margin-top:12px">Ya entró en el cierre ' + esc(refCierre(t.cierre)) + ': para anularlo, hay que anular el cierre.</div>' : '') +
+        '<div id="cbAnular"></div>' +
+        '<div class="pos-pie">' + (an || t.cierre ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="cbAnularBtn">Anular el cambio</button>') +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var ab = dentro.querySelector('#cbAnularBtn');
+      if (ab) ab.onclick = function () {
+        ab.remove();
+        pedirMotivo(dentro.querySelector('#cbAnular'), 'El cambio queda en la lista, tachado, con quién lo anuló y por qué' +
+            (Number(t.diferencia) ? ', y lo que se cobró sale de la caja' : '') + '. No se puede deshacer.', 'Anular el cambio ' + refCambio(t), function (motivo) {
+          return llamar('pos_cambio_anular', { p_id: t.id, p_motivo: motivo }).then(function () {
+            avisar('ok', 'El cambio ' + refCambio(t) + ' quedó anulado.');
+            if (alCambiar) alCambiar();
+            abrirCambio(t.id, alCambiar);
+          });
+        });
+      };
+    }).catch(function (e) {
+      if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Cambio</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+    });
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -1552,7 +2050,7 @@
       var d = K.d, k = K.k;
       if (!d) return;
       var x = k || d, v = x.ventas, p = function (n) { return plata(cent(n || 0)); };
-      var nm = (d.movimientos || []).length;
+      var nm = (d.movimientos || []).length, nc = Number(x.cambios) || 0;
       $('cjRes').innerHTML = '<h3 class="cj-res-tit">Resultados del día</h3>' +
         filaRes('Saldo inicial', d.primer ? (k ? p(k.saldo_inicial) : '<i class="cj-oculto">en el Paso 1</i>') : p(d.saldo_inicial), 'fuerte') +
         filaRes('Ventas Tarjeta', p(v.tarjeta)) +
@@ -1568,7 +2066,10 @@
         filaRes('Descuentos', p(x.descuentos), 'info') +
         filaRes('Otros ingresos', p(x.otros_ingresos)) +
         filaRes('Saldo final en efectivo', k ? p(k.esperado) : OCULTO, 'barra') +
-        '<p class="cj-res-pie">' + x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets') + '. Los descuentos ya están restados de las ventas.</p>';
+        /* Los cambios van en el pie y no en un renglón: con uno más, el cierre no entra en la PC del local. Lo cobrado, recién al contar. */
+        '<p class="cj-res-pie">' + x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets') +
+          (nc ? ' y ' + nc + (nc === 1 ? ' cambio' : ' cambios') + (k ? ' (se cobró ' + p(k.cambios_diferencia) + ', ya sumado en las ventas)' : '') : '') +
+          '. Los descuentos ya están restados de las ventas.</p>';
       $('cjMovs').onclick = abrirMovsCaja;
     }
     function pintarPasos() {
@@ -1768,7 +2269,7 @@
           '<div><span>Responsable</span>' + esc(c.responsable_nombre || '—') + '</div>' +
           '<div><span>Caja</span>Caja chica</div>' +
           '<div><span>Desde</span>' + esc(fechaHora(c.desde)) + '</div>' +
-          '<div><span>Tickets</span>' + c.tickets + '</div>' +
+          '<div><span>Tickets</span>' + c.tickets + (c.cambios ? ' y ' + c.cambios + (c.cambios === 1 ? ' cambio' : ' cambios') : '') + '</div>' +
         '</div>' +
         '<div class="cj-det">' +
           '<div class="cj-res"><h3 class="cj-res-tit">Resultados del día</h3>' +
@@ -1778,7 +2279,9 @@
             filaRes('Ventas MODO', p(c.ventas_modo)) + filaRes('Ventas Go Cuotas', p(c.ventas_go_cuotas)) +
             filaRes('Ventas totales del día', p(c.ventas_total), 'barra') +
             filaRes('Gastos en efectivo', p(c.gastos)) + filaRes('Otras salidas', p(c.otras_salidas)) +
-            filaRes('Descuentos', p(c.descuentos), 'info') + filaRes('Otros ingresos', p(c.otros_ingresos)) +
+            filaRes('Descuentos', p(c.descuentos), 'info') +
+            (c.cambios ? filaRes('Cobrado en cambios (' + c.cambios + ')', p(c.cambios_diferencia), 'info') : '') +
+            filaRes('Otros ingresos', p(c.otros_ingresos)) +
             filaRes('Saldo final en efectivo', p(c.esperado), 'barra') + '</div>' +
           '<div class="cj-det-der">' +
             '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b><span>Tendría que haber ' + p(c.esperado) + ' y contaron ' + p(c.contado) + '.</span></div>' +
@@ -1799,7 +2302,7 @@
       var ab = dentro.querySelector('#ciAnularBtn');
       if (ab) ab.onclick = function () {
         ab.remove();
-        pedirMotivo(dentro.querySelector('#ciAnular'), 'El cierre queda en la lista, tachado. Sus ventas y sus gastos vuelven a la caja abierta, para cerrarla de nuevo.',
+        pedirMotivo(dentro.querySelector('#ciAnular'), 'El cierre queda en la lista, tachado. Sus ventas, sus cambios y sus gastos vuelven a la caja abierta, para cerrarla de nuevo.',
           'Anular el cierre ' + refCierre(c), function (motivo) {
             return llamar('pos_cierre_anular', { p_id: c.id, p_motivo: motivo }).then(function () {
               avisar('ok', 'El cierre ' + refCierre(c) + ' quedó anulado.');

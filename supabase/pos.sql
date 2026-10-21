@@ -27,7 +27,11 @@
 --  está en App Orden/correr-en-supabase-147.sql.
 --
 --  SQL 149 (21/10/2026): el cierre de caja, con los gastos de la caja chica
---  y el pase a la caja fuerte. Está al final del archivo.
+--  y el pase a la caja fuerte. Está después de las funciones de la venta.
+--
+--  SQL 151 (21/10/2026): los cambios (el "Ticket de cambio" de BlueSoft).
+--  Está al final del archivo; también toca la caja abierta, el cierre y
+--  borrar las pruebas, que están acá arriba con la nota "SQL 151".
 --
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
@@ -589,14 +593,18 @@ end $$;
 
 /* Borrar las ventas de prueba (todas, o las de un local). Las de verdad no
    se tocan nunca: ésas se anulan. Las pruebas vuelven a empezar en la P-1.
-   SQL 149: también la caja de prueba (sus cierres, sus gastos y sus conteos). */
+   SQL 149: también la caja de prueba (sus cierres, sus gastos y sus conteos).
+   SQL 151: también los cambios de prueba (vuelven a la CP-1); cuenta los dos. */
 create or replace function pos_pruebas_borrar(p_local uuid default null) returns int
 language plpgsql volatile security definer set search_path = public as $$
-declare n int;
+declare n int; nc int;
 begin
   perform pos_permiso();
   delete from pos_ventas where prueba and (p_local is null or local_id = p_local);
   get diagnostics n = row_count;
+  delete from pos_cambios where prueba and (p_local is null or local_id = p_local);
+  get diagnostics nc = row_count;
+  n := n + nc;
   delete from pos_numeros where serie = 'prueba' and (p_local is null or local_id = p_local);
   delete from pos_caja_movimientos where prueba and (p_local is null or local_id = p_local);
   delete from pos_caja_conteos where prueba and (p_local is null or local_id = p_local);
@@ -740,7 +748,9 @@ revoke all on sequence pos_caja_conteos_id_seq from anon, authenticated;
 
 /* La caja abierta de un local (la de verdad o la de prueba): lo que entró
    desde el último cierre. Es para las otras funciones: trae también el
-   efectivo, que la pantalla ve recién después de contar. */
+   efectivo, que la pantalla ve recién después de contar.
+   SQL 151: también lo que se cobró en los cambios (la diferencia), en cada
+   forma de pago y en el total, como una venta más. */
 create or replace function pos_caja_abierta(p_local uuid, p_prueba boolean) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
@@ -761,8 +771,16 @@ begin
     select x.* from pos_ventas x
      where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'cobrada'
        and x.fecha >= v_corte
+  ), cb as (
+    select x.* from pos_cambios x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'hecho'
+       and x.fecha >= v_corte
   ), g as (
-    select pg.medio, sum(pg.monto) monto from pos_venta_pagos pg join v on v.id = pg.venta_id group by pg.medio
+    select z.medio, sum(z.monto) monto from (
+      select pg.medio, pg.monto from pos_venta_pagos pg join v on v.id = pg.venta_id
+      union all
+      select pc.medio, pc.monto from pos_cambio_pagos pc join cb on cb.id = pc.cambio_id) z
+     group by z.medio
   ), m as (
     select x.* from pos_caja_movimientos x
      where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'ok'
@@ -782,8 +800,10 @@ begin
       'modo',          coalesce((select g.monto from g where g.medio = 'modo'), 0),
       'go_cuotas',     coalesce((select g.monto from g where g.medio = 'go_cuotas'), 0),
       'transferencia', coalesce((select g.monto from g where g.medio = 'transferencia'), 0)),
-    'ventas_total', coalesce((select sum(v.total) from v), 0),
+    'ventas_total', coalesce((select sum(v.total) from v), 0) + coalesce((select sum(cb.diferencia) from cb), 0),
     'descuentos', coalesce((select sum(v.descuentos) from v), 0),
+    'cambios', (select count(*) from cb),
+    'cambios_diferencia', coalesce((select sum(cb.diferencia) from cb), 0),
     'gastos', coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
     'otras_salidas', coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
     'otros_ingresos', coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0),
@@ -795,7 +815,8 @@ begin
 end $$;
 
 /* La caja de hoy para la pantalla del cierre: todo menos el efectivo, que se
-   ve recién después de contar (pos_caja_contar). */
+   ve recién después de contar (pos_caja_contar). SQL 151: tampoco lo que se
+   cobró en los cambios (puede ser en efectivo); cuántos cambios hubo, sí. */
 create or replace function pos_caja(p_local uuid, p_prueba boolean default false) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
@@ -807,7 +828,7 @@ begin
     raise exception 'Elegí la sucursal.';
   end if;
   a := pos_caja_abierta(p_local, v_prueba);
-  return ((a #- '{ventas,efectivo}') - 'ventas_total') || jsonb_build_object(
+  return ((a #- '{ventas,efectivo}') - 'ventas_total' - 'cambios_diferencia') || jsonb_build_object(
     'numero', (select coalesce(max(c.numero), 0) + 1 from pos_cierres c where c.local_id = p_local and c.prueba = v_prueba),
     'responsable', (select p.nombre from orden_personas p where p.id = orden_yo_id()),
     'movimientos', coalesce((
@@ -852,7 +873,8 @@ end $$;
 /* Pasos 2 y 3: lo que pasa a la caja fuerte, y cerrar. La cuenta se vuelve a
    hacer acá, con lo que haya en ese momento; el efectivo tiene que ser el
    último que contaron (Paso 1). Con la misma `clave` dos veces (se cortó
-   internet después de cerrar) devuelve el mismo cierre, no lo duplica. */
+   internet después de cerrar) devuelve el mismo cierre, no lo duplica.
+   SQL 151: los cambios entran en el cierre como las ventas. */
 create or replace function pos_caja_cerrar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -928,9 +950,16 @@ begin
    where local_id = v_local and prueba = v_prueba and cierre_id is null and fecha >= v_corte;
   update pos_caja_movimientos set cierre_id = v_id
    where local_id = v_local and prueba = v_prueba and cierre_id is null;
+  update pos_cambios set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null and fecha >= v_corte;
 
   with v as (select * from pos_ventas where cierre_id = v_id and estado = 'cobrada'),
-       g as (select pg.medio, sum(pg.monto) monto from pos_venta_pagos pg join v on v.id = pg.venta_id group by pg.medio),
+       cb as (select * from pos_cambios where cierre_id = v_id and estado = 'hecho'),
+       g as (select z.medio, sum(z.monto) monto from (
+               select pg.medio, pg.monto from pos_venta_pagos pg join v on v.id = pg.venta_id
+               union all
+               select pc.medio, pc.monto from pos_cambio_pagos pc join cb on cb.id = pc.cambio_id) z
+              group by z.medio),
        m as (select * from pos_caja_movimientos where cierre_id = v_id and estado = 'ok')
   update pos_cierres set
     tickets              = (select count(*) from v),
@@ -940,8 +969,10 @@ begin
     ventas_modo          = coalesce((select g.monto from g where g.medio = 'modo'), 0),
     ventas_go_cuotas     = coalesce((select g.monto from g where g.medio = 'go_cuotas'), 0),
     ventas_transferencia = coalesce((select g.monto from g where g.medio = 'transferencia'), 0),
-    ventas_total         = coalesce((select sum(v.total) from v), 0),
+    ventas_total         = coalesce((select sum(v.total) from v), 0) + coalesce((select sum(cb.diferencia) from cb), 0),
     descuentos           = coalesce((select sum(v.descuentos) from v), 0),
+    cambios              = (select count(*) from cb),
+    cambios_diferencia   = coalesce((select sum(cb.diferencia) from cb), 0),
     gastos               = coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
     otras_salidas        = coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
     otros_ingresos       = coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0)
@@ -1077,8 +1108,8 @@ begin
 end $$;
 
 /* Anular un cierre: sólo el último de la sucursal. Queda en la lista,
-   tachado, y lo que tenía (ventas y gastos) vuelve a la caja abierta, para
-   cerrarla de nuevo. */
+   tachado, y lo que tenía (ventas y gastos; desde el SQL 151, también los
+   cambios) vuelve a la caja abierta, para cerrarla de nuevo. */
 create or replace function pos_cierre_anular(p_id uuid, p_motivo text) returns boolean
 language plpgsql volatile security definer set search_path = public as $$
 declare c pos_cierres; d pos_cierres;
@@ -1101,6 +1132,7 @@ begin
    where id = p_id;
   update pos_ventas set cierre_id = null where cierre_id = p_id;
   update pos_caja_movimientos set cierre_id = null where cierre_id = p_id;
+  update pos_cambios set cierre_id = null where cierre_id = p_id;
   return true;
 end $$;
 
@@ -1158,4 +1190,347 @@ revoke all on function pos_caja(uuid, boolean), pos_caja_contar(uuid, boolean, n
 grant execute on function pos_caja(uuid, boolean), pos_caja_contar(uuid, boolean, numeric, numeric), pos_caja_cerrar(jsonb),
                           pos_caja_mov_guardar(jsonb), pos_caja_mov_anular(uuid, text), pos_cierres(date, date, uuid, boolean),
                           pos_cierre(uuid), pos_cierre_anular(uuid, text), pos_caja_movimientos(date, date, uuid, text, boolean)
+       to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 151 (21/10/2026) · LOS CAMBIOS
+--
+--  Mauricio (21/10, sobre las fotos del "Ticket de cambio" de BlueSoft):
+--  "Hagámoslo igual… bien básico ahora, después podemos agregar mejoras."
+--    · Arriba lo que vuelve ("Productos entrantes") y abajo lo que se lleva
+--      ("Productos salientes"), como en BlueSoft. No se pide el ticket de la
+--      compra.
+--    · Lo que vuelve entra al precio de la lista de hoy, "aunque lo haya
+--      comprado con promo".
+--    · Si se lleva algo más caro, se cobra la diferencia y entra en el
+--      cierre de caja, como una venta.
+--    · Si se lleva algo más barato, NO se guarda: no se devuelve plata ni se
+--      hace nota de crédito. "Si hay una diferencia mínima, ajustamos el
+--      ticket para que dé cero y se guarda. Y pierde la plata."
+--
+--  Los precios: lo que vuelve va a precio de lista o menos, y lo que se
+--  lleva, a precio de lista o más. Así el ajuste para que dé cero sube lo
+--  que se lleva (lo que vuelve sigue figurando a precio de lista), y nunca
+--  se puede inventar plata a favor del cliente.
+--
+--  La cuenta (la de BlueSoft: Neto, Descuentos, Total a pagar):
+--    vuelve      = suma de lo que vuelve
+--    se_lleva    = suma de lo que se lleva
+--    diferencia  = se_lleva − vuelve  (nunca negativa)  =  suma de los pagos
+--
+--  Cada local numera sus cambios aparte de las ventas (C-1, C-2…) y sus
+--  pruebas aparte (CP-1…). Todavía sin stock y sin factura.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table pos_cambios (
+  id               uuid primary key default gen_random_uuid(),
+  local_id         uuid not null references orden_locales(id),
+  numero           int not null,
+  prueba           boolean not null default false,
+  fecha            timestamptz not null default clock_timestamp(),
+  dia              date not null,
+  vendedor         text not null,
+  cargado_por      uuid,
+  lista_id         int references pos_listas(id),
+  cliente_nombre   text,
+  vuelve           numeric(12,2) not null check (vuelve >= 0),
+  se_lleva         numeric(12,2) not null check (se_lleva >= 0),
+  diferencia       numeric(12,2) generated always as (se_lleva - vuelve) stored,
+  cantidad_vuelve  int not null,
+  cantidad_sale    int not null,
+  observaciones    text,
+  estado           text not null default 'hecho' check (estado in ('hecho', 'anulado')),
+  anulado_en       timestamptz,
+  anulado_por      uuid,
+  anulado_motivo   text,
+  cierre_id        uuid references pos_cierres(id) on delete set null,
+  clave            text unique,
+  unique (local_id, prueba, numero),
+  check (se_lleva >= vuelve)
+);
+create index pos_cambios_dia on pos_cambios (dia, local_id);
+create index pos_cambios_sin_cierre on pos_cambios (local_id, prueba) where cierre_id is null;
+
+create table pos_cambio_items (
+  cambio_id     uuid not null references pos_cambios(id) on delete cascade,
+  item          int not null,
+  sentido       text not null check (sentido in ('vuelve', 'sale')),
+  codigo        text,
+  descripcion   text not null,
+  talle         text,
+  color         text,
+  cantidad      int not null check (cantidad between 1 and 999),
+  precio        numeric(12,2) not null check (precio >= 0),
+  precio_lista  numeric(12,2),            -- el de la lista ese día, si tenía: se ve si lo cambiaron a mano
+  total         numeric(12,2) not null,
+  primary key (cambio_id, item)
+);
+
+create table pos_cambio_pagos (
+  cambio_id     uuid not null references pos_cambios(id) on delete cascade,
+  orden         int not null,
+  medio         text not null check (medio in ('efectivo', 'tarjeta', 'mercadopago', 'modo', 'go_cuotas', 'transferencia')),
+  monto         numeric(12,2) not null check (monto > 0),
+  tarjeta       text,
+  tipo_tarjeta  text check (tipo_tarjeta in ('credito', 'debito')),
+  cuotas        int check (cuotas between 1 and 24),
+  cupon         text,
+  lote          text,
+  ultimos4      text check (ultimos4 ~ '^[0-9]{4}$'),
+  recibido      numeric(12,2),
+  vuelto        numeric(12,2),
+  primary key (cambio_id, orden)
+);
+
+-- Cuántos cambios entraron en cada cierre y cuánto se cobró en ellos (ya está sumado en las ventas).
+alter table pos_cierres add column cambios int not null default 0;
+alter table pos_cierres add column cambios_diferencia numeric(14,2) not null default 0;
+
+alter table pos_cambios       enable row level security;
+alter table pos_cambio_items  enable row level security;
+alter table pos_cambio_pagos  enable row level security;
+revoke all on pos_cambios, pos_cambio_items, pos_cambio_pagos from anon, authenticated;
+
+/* El precio de un producto en una lista (el mismo que trae pos_precios), o
+   null si no tiene. Es para las otras funciones. */
+create or replace function pos_precio_de(p_lista int, p_codigo text) returns numeric
+language sql stable security definer set search_path = public as $$
+  select coalesce(
+    (select p.precio from pos_precios p where p.lista_id = p_lista and p.codigo = upper(trim(p_codigo))),
+    (select round(b.precio * (1 + l.ajuste / 100) / l.redondeo) * l.redondeo
+       from pos_listas l join pos_precios b on b.lista_id = l.base_id and b.codigo = upper(trim(p_codigo))
+      where l.id = p_lista))
+$$;
+
+/* Guardar un cambio. La pantalla manda lo que vuelve y lo que se lleva; acá
+   se revisan los precios contra la lista, que no dé negativo y que los pagos
+   sumen la diferencia. Con la misma `clave` dos veces (se cortó internet
+   después de guardar) devuelve el que ya estaba, no lo duplica. */
+create or replace function pos_cambio_guardar(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_local   uuid := nullif(p->>'local_id', '')::uuid;
+  v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_prueba  boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_vend    text := nullif(trim(coalesce(p->>'vendedor', '')), '');
+  v_lista   int := nullif(p->>'lista_id', '')::int;
+  v_items   jsonb := coalesce(p->'items', '[]'::jsonb);
+  v_pagos   jsonb := coalesce(p->'pagos', '[]'::jsonb);
+  v_obs     text := nullif(trim(coalesce(p->>'observaciones', '')), '');
+  v_vuelve  numeric := 0;
+  v_sale    numeric := 0;
+  v_cv      int := 0;
+  v_cs      int := 0;
+  v_pagado  numeric := 0;
+  v_dif     numeric;
+  v_num     int;
+  v_id      uuid;
+  v_ya      pos_cambios;
+  x         jsonb;
+  i         int;
+  n         int;
+  pr        numeric;
+  pl        numeric;
+  m         numeric;
+begin
+  perform pos_permiso();
+
+  if v_clave is not null then
+    select * into v_ya from pos_cambios where clave = v_clave;
+    if found then
+      return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'diferencia', v_ya.diferencia,
+                                'fecha', v_ya.fecha, 'ya', true);
+    end if;
+  end if;
+
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_vend is null then raise exception 'Elegí el vendedor.'; end if;
+  if v_lista is null or not exists (select 1 from pos_listas where id = v_lista and activo) then
+    raise exception 'Elegí la lista de precios.';
+  end if;
+  if length(v_obs) > 500 then raise exception 'Las observaciones son demasiado largas.'; end if;
+
+  if jsonb_typeof(v_items) <> 'array' then raise exception 'Los productos no son válidos.'; end if;
+  if jsonb_array_length(v_items) > 200 then raise exception 'Son demasiados renglones para un cambio.'; end if;
+  for x in select * from jsonb_array_elements(v_items) loop
+    n := (x->>'cantidad')::int;
+    pr := round((x->>'precio')::numeric, 2);
+    if coalesce(x->>'sentido', '') not in ('vuelve', 'sale') then raise exception 'Hay un renglón que no dice si vuelve o se lo lleva.'; end if;
+    if n is null or n < 1 or n > 999 then raise exception 'Hay una cantidad que no es válida.'; end if;
+    if pr is null or pr < 0 or pr >= 100000000 then raise exception 'Hay un precio que no es válido.'; end if;
+    if nullif(trim(coalesce(x->>'descripcion', '')), '') is null then raise exception 'Hay un renglón sin descripción.'; end if;
+    pl := pos_precio_de(v_lista, x->>'codigo');
+    if x->>'sentido' = 'vuelve' then
+      if pl is not null and pr > pl then
+        raise exception 'Lo que vuelve entra al precio de lista (o menos): % está a $%.', trim(x->>'descripcion'), to_char(pl, 'FM999G999G990D00');
+      end if;
+      v_vuelve := v_vuelve + pr * n;
+      v_cv := v_cv + n;
+    else
+      if pl is not null and pr < pl then
+        raise exception 'Lo que se lleva no puede ir más barato que la lista: % está a $%.', trim(x->>'descripcion'), to_char(pl, 'FM999G999G990D00');
+      end if;
+      if pr = 0 then raise exception 'Hay una prenda que se lleva sin precio.'; end if;
+      v_sale := v_sale + pr * n;
+      v_cs := v_cs + n;
+    end if;
+  end loop;
+  if v_cv = 0 then raise exception 'Falta lo que vuelve (los productos entrantes).'; end if;
+  if v_cs = 0 then raise exception 'Falta lo que se lleva: en un cambio no se devuelve plata.'; end if;
+  v_dif := v_sale - v_vuelve;
+  if v_dif < 0 then
+    raise exception 'Lo que se lleva ($%) vale menos que lo que vuelve ($%): así no se guarda, porque no se devuelve plata. Que se lleve algo más, o ajustá el precio para que dé $0.',
+      to_char(v_sale, 'FM999G999G990D00'), to_char(v_vuelve, 'FM999G999G990D00');
+  end if;
+
+  if jsonb_typeof(v_pagos) <> 'array' then raise exception 'Los pagos no son válidos.'; end if;
+  if v_dif = 0 and jsonb_array_length(v_pagos) > 0 then raise exception 'Sale lo mismo: no hay nada que cobrar.'; end if;
+  if v_dif > 0 and jsonb_array_length(v_pagos) = 0 then raise exception 'Falta la forma de pago de la diferencia.'; end if;
+  for x in select * from jsonb_array_elements(v_pagos) loop
+    m := round((x->>'monto')::numeric, 2);
+    if m is null or m <= 0 then raise exception 'Hay un pago sin monto.'; end if;
+    if coalesce(x->>'medio', '') not in ('efectivo', 'tarjeta', 'mercadopago', 'modo', 'go_cuotas', 'transferencia') then
+      raise exception 'Hay una forma de pago que no existe.';
+    end if;
+    if x->>'medio' = 'tarjeta' then
+      if nullif(trim(coalesce(x->>'tarjeta', '')), '') is null then raise exception 'Falta qué tarjeta es.'; end if;
+      if coalesce(x->>'tipo_tarjeta', '') not in ('credito', 'debito') then raise exception 'Falta si la tarjeta es de crédito o de débito.'; end if;
+      if coalesce(nullif(x->>'cuotas', '')::int, 1) not between 1 and 24 then raise exception 'Las cuotas van de 1 a 24.'; end if;
+    end if;
+    if x->>'medio' = 'efectivo' and nullif(x->>'recibido', '') is not null and (x->>'recibido')::numeric < m then
+      raise exception 'Lo que recibiste en efectivo es menos que lo que se cobra.';
+    end if;
+    v_pagado := v_pagado + m;
+  end loop;
+  if v_pagado <> v_dif then
+    raise exception 'Los pagos ($%) no suman la diferencia ($%).', to_char(v_pagado, 'FM999G999G990D00'), to_char(v_dif, 'FM999G999G990D00');
+  end if;
+
+  /* Un número por vez en cada local: si dos guardan al mismo tiempo, el segundo espera. */
+  perform pg_advisory_xact_lock(hashtext('pos_cambio:' || v_local::text || ':' || v_prueba::text));
+  if v_clave is not null then
+    select * into v_ya from pos_cambios where clave = v_clave;
+    if found then
+      return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'diferencia', v_ya.diferencia,
+                                'fecha', v_ya.fecha, 'ya', true);
+    end if;
+  end if;
+  select coalesce(max(c.numero), 0) + 1 into v_num from pos_cambios c where c.local_id = v_local and c.prueba = v_prueba;
+
+  insert into pos_cambios (local_id, numero, prueba, dia, vendedor, cargado_por, lista_id, cliente_nombre, vuelve, se_lleva,
+                           cantidad_vuelve, cantidad_sale, observaciones, clave)
+  values (v_local, v_num, v_prueba, pos_hoy(), v_vend, orden_yo_id(), v_lista, nullif(trim(coalesce(p->>'cliente_nombre', '')), ''),
+          v_vuelve, v_sale, v_cv, v_cs, v_obs, v_clave)
+  returning id into v_id;
+
+  i := 0;
+  for x in select * from jsonb_array_elements(v_items) loop
+    i := i + 1;
+    insert into pos_cambio_items (cambio_id, item, sentido, codigo, descripcion, talle, color, cantidad, precio, precio_lista, total)
+    values (v_id, i, x->>'sentido', nullif(upper(trim(coalesce(x->>'codigo', ''))), ''), trim(x->>'descripcion'),
+            nullif(trim(coalesce(x->>'talle', '')), ''), nullif(trim(coalesce(x->>'color', '')), ''),
+            (x->>'cantidad')::int, round((x->>'precio')::numeric, 2), pos_precio_de(v_lista, x->>'codigo'),
+            round((x->>'precio')::numeric, 2) * (x->>'cantidad')::int);
+  end loop;
+
+  i := 0;
+  for x in select * from jsonb_array_elements(v_pagos) loop
+    i := i + 1;
+    insert into pos_cambio_pagos (cambio_id, orden, medio, monto, tarjeta, tipo_tarjeta, cuotas, cupon, lote, ultimos4, recibido, vuelto)
+    values (v_id, i, x->>'medio', round((x->>'monto')::numeric, 2),
+            nullif(trim(coalesce(x->>'tarjeta', '')), ''), nullif(x->>'tipo_tarjeta', ''),
+            case when x->>'medio' = 'tarjeta' then coalesce(nullif(x->>'cuotas', '')::int, 1) end,
+            nullif(trim(coalesce(x->>'cupon', '')), ''), nullif(trim(coalesce(x->>'lote', '')), ''), nullif(x->>'ultimos4', ''),
+            nullif(x->>'recibido', '')::numeric,
+            case when nullif(x->>'recibido', '') is not null then (x->>'recibido')::numeric - round((x->>'monto')::numeric, 2) end);
+  end loop;
+
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'prueba', v_prueba, 'diferencia', v_dif, 'fecha', now(), 'ya', false);
+end $$;
+
+/* El listado de cambios, con los totales. Los de verdad y los de prueba no se mezclan. */
+create or replace function pos_cambios(p_desde date, p_hasta date, p_local uuid default null, p_prueba boolean default false)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with c as (
+      select x.* from pos_cambios x
+       where x.dia between p_desde and p_hasta and x.prueba = coalesce(p_prueba, false)
+         and (p_local is null or x.local_id = p_local)
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', z.id, 'numero', z.numero, 'prueba', z.prueba, 'fecha', z.fecha, 'local', l.nombre, 'local_id', z.local_id,
+                 'vendedor', z.vendedor, 'cliente', coalesce(z.cliente_nombre, 'Consumidor final'),
+                 'vuelven', (select string_agg(i.descripcion || coalesce(' ' || i.talle, '') || case when i.cantidad > 1 then ' ×' || i.cantidad else '' end, ', ' order by i.item)
+                               from pos_cambio_items i where i.cambio_id = z.id and i.sentido = 'vuelve'),
+                 'salen', (select string_agg(i.descripcion || coalesce(' ' || i.talle, '') || case when i.cantidad > 1 then ' ×' || i.cantidad else '' end, ', ' order by i.item)
+                             from pos_cambio_items i where i.cambio_id = z.id and i.sentido = 'sale'),
+                 'medios', (select jsonb_agg(g.medio order by g.orden) from pos_cambio_pagos g where g.cambio_id = z.id),
+                 'vuelve', z.vuelve, 'se_lleva', z.se_lleva, 'diferencia', z.diferencia, 'estado', z.estado) order by z.fecha desc)
+          from (select * from c order by fecha desc limit 500) z join orden_locales l on l.id = z.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object(
+                    'cambios',    count(*) filter (where estado = 'hecho'),
+                    'anulados',   count(*) filter (where estado = 'anulado'),
+                    'vuelven',    coalesce(sum(cantidad_vuelve) filter (where estado = 'hecho'), 0),
+                    'salen',      coalesce(sum(cantidad_sale) filter (where estado = 'hecho'), 0),
+                    'diferencia', coalesce(sum(diferencia) filter (where estado = 'hecho'), 0)) from c),
+      'mas', (select count(*) > 500 from c)
+    )
+  );
+end $$;
+
+/* Un cambio completo, para verlo. */
+create or replace function pos_cambio(p_id uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r jsonb;
+begin
+  perform pos_permiso();
+  select to_jsonb(c) - 'clave'
+         || jsonb_build_object(
+              'local', l.nombre,
+              'lista', (select x.nombre from pos_listas x where x.id = c.lista_id),
+              'cargado_por_nombre', (select pe.nombre from orden_personas pe where pe.id = c.cargado_por),
+              'anulado_por_nombre', (select pe.nombre from orden_personas pe where pe.id = c.anulado_por),
+              'cierre', (select jsonb_build_object('id', k.id, 'numero', k.numero, 'prueba', k.prueba, 'estado', k.estado)
+                           from pos_cierres k where k.id = c.cierre_id),
+              'items', coalesce((select jsonb_agg(to_jsonb(i) - 'cambio_id' order by i.item) from pos_cambio_items i where i.cambio_id = c.id), '[]'::jsonb),
+              'pagos', coalesce((select jsonb_agg(to_jsonb(g) - 'cambio_id' order by g.orden) from pos_cambio_pagos g where g.cambio_id = c.id), '[]'::jsonb))
+    into r
+    from pos_cambios c join orden_locales l on l.id = c.local_id
+   where c.id = p_id;
+  if r is null then raise exception 'No existe ese cambio.'; end if;
+  return r;
+end $$;
+
+/* Anular un cambio (queda en la lista, tachado, con quién y por qué). Sólo
+   mientras la caja está abierta: si ya entró en un cierre, se anula el cierre. */
+create or replace function pos_cambio_anular(p_id uuid, p_motivo text) returns boolean
+language plpgsql volatile security definer set search_path = public as $$
+declare c pos_cambios;
+begin
+  perform pos_permiso();
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
+  select * into c from pos_cambios where id = p_id for update;
+  if not found then raise exception 'No existe ese cambio.'; end if;
+  if c.estado = 'anulado' then raise exception 'Ese cambio ya está anulado.'; end if;
+  if c.cierre_id is not null then
+    raise exception 'Ese cambio ya entró en el cierre %: para anularlo, hay que anular el cierre.',
+      (select case when k.prueba then 'P-' else 'Nº ' end || k.numero from pos_cierres k where k.id = c.cierre_id);
+  end if;
+  update pos_cambios set estado = 'anulado', anulado_en = now(), anulado_por = orden_yo_id(), anulado_motivo = trim(p_motivo)
+   where id = p_id;
+  return true;
+end $$;
+
+revoke all on function pos_precio_de(int, text) from public, anon, authenticated;
+revoke all on function pos_cambio_guardar(jsonb), pos_cambios(date, date, uuid, boolean), pos_cambio(uuid), pos_cambio_anular(uuid, text)
+       from public, anon;
+grant execute on function pos_cambio_guardar(jsonb), pos_cambios(date, date, uuid, boolean), pos_cambio(uuid), pos_cambio_anular(uuid, text)
        to authenticated;
