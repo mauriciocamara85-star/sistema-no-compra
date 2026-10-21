@@ -406,3 +406,98 @@ html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg
 .pos-por-letra { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: -2px 2px 10px; font-size: 13px; color: var(--txt-3); }
 .pos-por-letra b { color: var(--txt-2); font-variant-numeric: tabular-nums; }
 .pos-porton-volver { justify-self: start; }
+
+/* ═════════ EL CIERRE DE CAJA (SQL 149) ═════════
+   El de BlueSoft: los pasos a la izquierda y "Resultados del día" a la
+   derecha. Lo distinto: el efectivo y lo que tendría que haber se ven recién
+   después de contar (el candado), y el pase a la caja fuerte es el Paso 2.
+   En la PC del local (1366×657) entra entero sin bajar. */
+.cj { display: grid; gap: 12px; }
+@media (min-width: 1000px) { .cj { grid-template-columns: minmax(0, 1fr) 330px; align-items: start; } }
+.cj-izq { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+/* Fecha, Sucursal, Número, Caja y Responsable: en la PC, en un renglón (así entran los tres pasos). */
+@media (min-width: 1200px) {
+  .tk-datos.cj-datos { grid-template-columns: 1fr 1.4fr .8fr 1fr 1.4fr; }
+  .tk-datos.cj-datos > * { grid-column: auto; }
+}
+.cj-paso {
+  display: grid; gap: 8px; padding: 11px 12px;
+  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  transition: opacity .15s var(--curva);
+}
+.cj-paso.apagado { opacity: .5; }
+.cj-paso-cab { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.cj-paso-cab b {
+  flex: none; padding: 3px 9px; border-radius: 7px; background: var(--tablero-negro); color: #FFFFFF;
+  font: 700 11.5px var(--sans); letter-spacing: .5px; text-transform: uppercase;
+}
+.cj-paso-cab span { font-size: 13.5px; font-weight: 600; color: var(--txt-2); }
+.cj-fila { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; }
+.cj-saldo:empty { display: none; }
+.cj-monto { width: 170px; }
+.cj-monto input { font-weight: 700; font-variant-numeric: tabular-nums; }
+.cj-fila > .btn { min-height: 34px; }
+.cj-cuenta .pos-ayuda { margin: 0; }
+.cj-dif { display: grid; gap: 1px; padding: 9px 12px; border-radius: 12px; }
+.cj-dif b { font: 700 17px/1.25 var(--sans); font-variant-numeric: tabular-nums; }
+.cj-dif span { font-size: 13px; line-height: 1.4; }
+.cj-dif.ok { background: var(--ok-soft); color: var(--ok-txt); }
+.cj-dif.mal { background: var(--bad-soft); color: var(--bad-txt); }
+.cj-dif.warn { background: var(--warn-soft); color: var(--warn-txt); }
+.cj-queda { margin: 0; padding-bottom: 1px; font-size: 13px; line-height: 1.35; color: var(--txt-2); }
+.cj-queda b { color: var(--txt); font-variant-numeric: tabular-nums; }
+.cj-queda small { display: block; font-size: 12px; color: var(--txt-3); }
+.cj-queda.mal { color: var(--bad-txt); font-weight: 600; }
+.cj-izq textarea { height: 50px; resize: none; }
+.cj-paso-fin { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+.cj-botones { display: flex; gap: 8px; }
+
+/* Resultados del día: la columna de la derecha de BlueSoft. */
+.cj-res { min-width: 0; padding-bottom: 6px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.cj-res-tit { margin: 0 0 4px; padding: 9px 14px; background: var(--tablero-negro); color: #FFFFFF; font: 700 14px var(--sans); }
+.cj-r {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; padding: 4px 14px;
+  border: 0; background: none; text-align: left; font: 500 13px var(--sans); color: var(--txt-2);
+}
+.cj-r b { font-weight: 700; color: var(--txt); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cj-r.fuerte { color: var(--txt); font-weight: 600; }
+.cj-r.barra { margin: 5px 0; padding: 7px 14px; background: var(--surface-3); color: var(--txt); font-weight: 700; }
+.cj-r.barra b { font-size: 15px; }
+.cj-r.info, .cj-r.info b { color: var(--txt-3); font-weight: 600; }
+button.cj-r-btn { cursor: pointer; }
+button.cj-r-btn:hover { background: var(--surface-2); }
+button.cj-r-btn span::after { content: ' ›'; font-weight: 700; color: var(--txt-3); }
+.cj-oculto { display: inline-flex; align-items: center; gap: 4px; font: italic 600 12px var(--sans); color: var(--txt-3); }
+.cj-oculto svg { width: 13px; height: 13px; }
+.cj-res-pie { margin: 6px 14px 4px; font-size: 12px; line-height: 1.4; color: var(--txt-3); }
+/* En el modo prueba, la cabecera rayada, como el total de la venta. */
+html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135deg, #6B4403 0 12px, #7A4F08 12px 24px); }
+
+/* El cierre guardado (la ventana). */
+.cj-det { display: grid; gap: 12px; }
+@media (min-width: 700px) { .cj-det { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+.cj-det .cj-res { box-shadow: none; }
+/* Adentro de la ventana el título no es el de la ventana (que deja lugar para la X). */
+.cj-det .cj-res-tit { margin: 0 0 4px; font: 700 14px var(--sans); }
+.cj-det .cj-r { padding-top: 3px; padding-bottom: 3px; }
+/* Los seis datos en un renglón: así la ventana entra en la PC del local. */
+@media (min-width: 700px) { .cj-det-datos { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+.cj-det-der { display: grid; gap: 8px; min-width: 0; }
+.cj-det-der .cj-res { padding: 4px 0 0; }
+.cj-det-der .pos-lbl { margin: 4px 0 0; }
+.cj-lista { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13px; line-height: 1.4; color: var(--txt-2); }
+.cj-lista .tachado { color: var(--txt-3); text-decoration: line-through; }
+.cj-obs { margin: 0; font-size: 13.5px; line-height: 1.45; }
+
+/* Los listados de Gestión. */
+.cj-tabla th, .cj-tabla td { padding-left: 7px; padding-right: 7px; }
+.cj-tabla td { white-space: nowrap; }
+.cj-tabla td small { display: block; font-size: 12px; color: var(--txt-3); }
+.cj-tabla td small.cj-veces { display: inline; }
+.cj-dv { font-weight: 700; white-space: nowrap; }
+.cj-dv.ok { color: var(--ok-txt); }
+.cj-dv.mal { color: var(--bad-txt); }
+.cj-dv.warn { color: var(--warn-txt); }
+.pos-kpi b.cj-kpi-dif { font-size: 14px; }
+.pos-tabla tr[data-cierre], .pos-tabla tr[data-mov] { cursor: pointer; }
+.pos-tabla tr[data-cierre]:hover td, .pos-tabla tr[data-mov]:hover td { background: var(--surface-2); }

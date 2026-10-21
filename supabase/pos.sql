@@ -26,6 +26,9 @@
 --  Este archivo queda como está después del 147; el cambio en sí (los alter)
 --  está en App Orden/correr-en-supabase-147.sql.
 --
+--  SQL 149 (21/10/2026): el cierre de caja, con los gastos de la caja chica
+--  y el pase a la caja fuerte. Está al final del archivo.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -585,7 +588,8 @@ begin
 end $$;
 
 /* Borrar las ventas de prueba (todas, o las de un local). Las de verdad no
-   se tocan nunca: ésas se anulan. Las pruebas vuelven a empezar en la P-1. */
+   se tocan nunca: ésas se anulan. Las pruebas vuelven a empezar en la P-1.
+   SQL 149: también la caja de prueba (sus cierres, sus gastos y sus conteos). */
 create or replace function pos_pruebas_borrar(p_local uuid default null) returns int
 language plpgsql volatile security definer set search_path = public as $$
 declare n int;
@@ -594,6 +598,9 @@ begin
   delete from pos_ventas where prueba and (p_local is null or local_id = p_local);
   get diagnostics n = row_count;
   delete from pos_numeros where serie = 'prueba' and (p_local is null or local_id = p_local);
+  delete from pos_caja_movimientos where prueba and (p_local is null or local_id = p_local);
+  delete from pos_caja_conteos where prueba and (p_local is null or local_id = p_local);
+  delete from pos_cierres where prueba and (p_local is null or local_id = p_local);
   return n;
 end $$;
 
@@ -610,3 +617,545 @@ grant execute on function pos_inicio(), pos_precios(int), pos_precio_guardar(int
                           pos_pruebas_borrar(uuid)
        to authenticated;
 revoke all on function pos_permiso() from authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 149 (21/10/2026) · EL CIERRE DE CAJA
+--
+--  Mauricio (21/10, "dalee"): el cierre de caja de BlueSoft (las fotos de
+--  03 Caja), con lo que ya habíamos hablado:
+--    · Primero se cuenta el efectivo y recién después se ve cuánto tendría
+--      que haber (en BlueSoft se ve mientras se cuenta). Cada vez que se
+--      cuenta queda anotado: si contaron dos veces, se ve.
+--    · El pase a la caja fuerte es parte del cierre ("¿cuánto pasás a la
+--      caja fuerte?"). En BlueSoft es otra pantalla, que se hace todas las
+--      noches con el cierre.
+--    · Los gastos del local salen de la caja chica (limpieza, bidones…),
+--      con los tipos de gasto de BlueSoft.
+--
+--  La caja de cada local queda "abierta" desde el cierre anterior: entran
+--  todas las ventas y todos los gastos que todavía no tienen cierre. El
+--  primer cierre de un local toma las ventas desde el comienzo de ese día.
+--
+--  La cuenta (el "Saldo final en efectivo" de BlueSoft):
+--    esperado = saldo inicial + ventas en efectivo + otros ingresos
+--               − gastos − otras salidas
+--    desvío   = esperado − contado   (positivo: falta plata, como en
+--               Supervisión → Cajas)
+--    queda    = contado − lo que pasa a la caja fuerte (es el saldo
+--               inicial del cierre que sigue)
+--
+--  Las pruebas (el modo prueba) tienen su propia caja: cuentan sólo las
+--  ventas de prueba, numeran aparte (P-1…) y se borran con
+--  pos_pruebas_borrar.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table pos_cierres (
+  id                    uuid primary key default gen_random_uuid(),
+  local_id              uuid not null references orden_locales(id),
+  numero                int not null,
+  prueba                boolean not null default false,
+  dia                   date not null,             -- el día de trabajo (orden_dia_caja: a las 00:30 sigue siendo el que cerró)
+  fecha                 timestamptz not null default clock_timestamp(),
+  desde                 timestamptz not null,      -- el cierre anterior; en el primero, el comienzo del día
+  responsable           uuid,
+  responsable_nombre    text,
+  caja                  text not null default 'chica',
+  saldo_inicial         numeric(14,2) not null default 0,
+  tickets               int not null default 0,
+  ventas_efectivo       numeric(14,2) not null default 0,
+  ventas_tarjeta        numeric(14,2) not null default 0,
+  ventas_mercadopago    numeric(14,2) not null default 0,
+  ventas_modo           numeric(14,2) not null default 0,
+  ventas_go_cuotas      numeric(14,2) not null default 0,
+  ventas_transferencia  numeric(14,2) not null default 0,
+  ventas_total          numeric(14,2) not null default 0,
+  descuentos            numeric(14,2) not null default 0,
+  gastos                numeric(14,2) not null default 0,
+  otras_salidas         numeric(14,2) not null default 0,
+  otros_ingresos        numeric(14,2) not null default 0,
+  esperado              numeric(14,2) not null default 0,   -- el "Saldo final en efectivo"
+  contado               numeric(14,2) not null check (contado >= 0),
+  desvio                numeric(14,2) generated always as (esperado - contado) stored,
+  conteos               int not null default 1,
+  primer_conteo         numeric(14,2),
+  retiro                numeric(14,2) not null default 0,   -- a la caja fuerte
+  queda                 numeric(14,2) generated always as (contado - retiro) stored,
+  observaciones         text,
+  estado                text not null default 'cerrada' check (estado in ('cerrada', 'anulada')),
+  anulado_en            timestamptz,
+  anulado_por           uuid,
+  anulado_motivo        text,
+  clave                 text unique,
+  unique (local_id, prueba, numero),
+  check (retiro >= 0 and retiro <= contado)
+);
+create index pos_cierres_dia on pos_cierres (dia, local_id);
+
+-- Cada vez que cuentan el efectivo (el Paso 1), con lo que tendría que haber en ese momento.
+create table pos_caja_conteos (
+  id             bigserial primary key,
+  local_id       uuid not null references orden_locales(id),
+  prueba         boolean not null default false,
+  fecha          timestamptz not null default clock_timestamp(),
+  persona        uuid,
+  saldo_inicial  numeric(14,2) not null,
+  contado        numeric(14,2) not null,
+  esperado       numeric(14,2) not null
+);
+create index pos_caja_conteos_local on pos_caja_conteos (local_id, prueba, fecha);
+
+-- Los gastos del local y las otras entradas y salidas de la caja chica.
+create table pos_caja_movimientos (
+  id              uuid primary key default gen_random_uuid(),
+  local_id        uuid not null references orden_locales(id),
+  prueba          boolean not null default false,
+  fecha           timestamptz not null default clock_timestamp(),
+  dia             date not null,
+  tipo            text not null check (tipo in ('gasto', 'salida', 'ingreso')),
+  rubro           text,                 -- el tipo de gasto de BlueSoft (bidones de agua, limpieza…)
+  descripcion     text,
+  monto           numeric(14,2) not null check (monto > 0 and monto < 100000000),
+  persona         uuid,
+  persona_nombre  text,
+  cierre_id       uuid references pos_cierres(id) on delete set null,
+  estado          text not null default 'ok' check (estado in ('ok', 'anulado')),
+  anulado_en      timestamptz,
+  anulado_por     uuid,
+  anulado_motivo  text,
+  clave           text unique,
+  check (tipo <> 'gasto' or rubro is not null)
+);
+create index pos_caja_movimientos_abiertos on pos_caja_movimientos (local_id, prueba) where cierre_id is null;
+create index pos_caja_movimientos_dia on pos_caja_movimientos (dia, local_id);
+
+-- Cada venta, en qué cierre entró.
+alter table pos_ventas add column cierre_id uuid references pos_cierres(id) on delete set null;
+create index pos_ventas_sin_cierre on pos_ventas (local_id, prueba) where cierre_id is null;
+
+alter table pos_cierres           enable row level security;
+alter table pos_caja_conteos      enable row level security;
+alter table pos_caja_movimientos  enable row level security;
+revoke all on pos_cierres, pos_caja_conteos, pos_caja_movimientos from anon, authenticated;
+revoke all on sequence pos_caja_conteos_id_seq from anon, authenticated;
+
+/* La caja abierta de un local (la de verdad o la de prueba): lo que entró
+   desde el último cierre. Es para las otras funciones: trae también el
+   efectivo, que la pantalla ve recién después de contar. */
+create or replace function pos_caja_abierta(p_local uuid, p_prueba boolean) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  u        pos_cierres;
+  v_dia    date := orden_dia_caja(p_local);
+  v_corte  timestamptz;
+  r        jsonb;
+begin
+  select * into u from pos_cierres c
+   where c.local_id = p_local and c.prueba = p_prueba and c.estado = 'cerrada'
+   order by c.fecha desc limit 1;
+  /* Desde dónde se toman las ventas: desde el primer cierre del local (así las de antes del
+     POS no entran nunca) o, si todavía no cerró ninguno, desde el comienzo de hoy. */
+  v_corte := coalesce((select min(c.desde) from pos_cierres c
+                        where c.local_id = p_local and c.prueba = p_prueba and c.estado = 'cerrada'),
+                      orden_en_hora(p_local, v_dia, '00:00'));
+  with v as (
+    select x.* from pos_ventas x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'cobrada'
+       and x.fecha >= v_corte
+  ), g as (
+    select pg.medio, sum(pg.monto) monto from pos_venta_pagos pg join v on v.id = pg.venta_id group by pg.medio
+  ), m as (
+    select x.* from pos_caja_movimientos x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'ok'
+  )
+  select jsonb_build_object(
+    'dia', v_dia,
+    'desde', coalesce(u.fecha, v_corte),
+    'primer', u.id is null,
+    'ultimo', case when u.id is null then null
+                   else jsonb_build_object('id', u.id, 'numero', u.numero, 'fecha', u.fecha, 'queda', u.queda) end,
+    'saldo_inicial', u.queda,
+    'tickets', (select count(*) from v),
+    'ventas', jsonb_build_object(
+      'efectivo',      coalesce((select g.monto from g where g.medio = 'efectivo'), 0),
+      'tarjeta',       coalesce((select g.monto from g where g.medio = 'tarjeta'), 0),
+      'mercadopago',   coalesce((select g.monto from g where g.medio = 'mercadopago'), 0),
+      'modo',          coalesce((select g.monto from g where g.medio = 'modo'), 0),
+      'go_cuotas',     coalesce((select g.monto from g where g.medio = 'go_cuotas'), 0),
+      'transferencia', coalesce((select g.monto from g where g.medio = 'transferencia'), 0)),
+    'ventas_total', coalesce((select sum(v.total) from v), 0),
+    'descuentos', coalesce((select sum(v.descuentos) from v), 0),
+    'gastos', coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
+    'otras_salidas', coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
+    'otros_ingresos', coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0),
+    'conteos', (select count(*) from pos_caja_conteos k
+                 where k.local_id = p_local and k.prueba = p_prueba and k.fecha > coalesce(u.fecha, '-infinity'::timestamptz)),
+    'tolerancia', coalesce((select o.caja_tolerancia_pesos from orden_config o where o.local_id = p_local), 100)
+  ) into r;
+  return r;
+end $$;
+
+/* La caja de hoy para la pantalla del cierre: todo menos el efectivo, que se
+   ve recién después de contar (pos_caja_contar). */
+create or replace function pos_caja(p_local uuid, p_prueba boolean default false) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  a         jsonb;
+  v_prueba  boolean := coalesce(p_prueba, false);
+begin
+  perform pos_permiso();
+  if p_local is null or not exists (select 1 from orden_locales where id = p_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  a := pos_caja_abierta(p_local, v_prueba);
+  return ((a #- '{ventas,efectivo}') - 'ventas_total') || jsonb_build_object(
+    'numero', (select coalesce(max(c.numero), 0) + 1 from pos_cierres c where c.local_id = p_local and c.prueba = v_prueba),
+    'responsable', (select p.nombre from orden_personas p where p.id = orden_yo_id()),
+    'movimientos', coalesce((
+      select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'tipo', m.tipo, 'rubro', m.rubro,
+                                          'descripcion', m.descripcion, 'monto', m.monto, 'persona', m.persona_nombre) order by m.fecha)
+        from pos_caja_movimientos m
+       where m.local_id = p_local and m.prueba = v_prueba and m.cierre_id is null and m.estado = 'ok'), '[]'::jsonb));
+end $$;
+
+/* Paso 1: el efectivo que contaron. Queda anotado (cada vez que cuentan) y
+   recién ahí se devuelve cuánto tendría que haber y la diferencia. En el
+   primer cierre del local también dicen con cuánto arrancó la caja. */
+create or replace function pos_caja_contar(p_local uuid, p_prueba boolean, p_contado numeric, p_saldo_inicial numeric default null)
+returns jsonb language plpgsql volatile security definer set search_path = public as $$
+declare
+  a         jsonb;
+  v_prueba  boolean := coalesce(p_prueba, false);
+  v_cont    numeric := round(p_contado, 2);
+  v_saldo   numeric;
+  v_esp     numeric;
+begin
+  perform pos_permiso();
+  if p_local is null or not exists (select 1 from orden_locales where id = p_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_cont is null or v_cont < 0 or v_cont >= 1000000000 then raise exception 'Escribí cuánto efectivo hay en el local.'; end if;
+  a := pos_caja_abierta(p_local, v_prueba);
+  if (a->>'primer')::boolean then
+    v_saldo := round(coalesce(p_saldo_inicial, 0), 2);
+    if v_saldo < 0 or v_saldo >= 1000000000 then raise exception 'El saldo inicial no es válido.'; end if;
+  else
+    v_saldo := (a->>'saldo_inicial')::numeric;
+  end if;
+  v_esp := v_saldo + (a->'ventas'->>'efectivo')::numeric + (a->>'otros_ingresos')::numeric
+         - (a->>'gastos')::numeric - (a->>'otras_salidas')::numeric;
+  insert into pos_caja_conteos (local_id, prueba, persona, saldo_inicial, contado, esperado)
+  values (p_local, v_prueba, orden_yo_id(), v_saldo, v_cont, v_esp);
+  return a || jsonb_build_object('saldo_inicial', v_saldo, 'esperado', v_esp, 'contado', v_cont,
+                                 'desvio', v_esp - v_cont, 'conteos', (a->>'conteos')::int + 1);
+end $$;
+
+/* Pasos 2 y 3: lo que pasa a la caja fuerte, y cerrar. La cuenta se vuelve a
+   hacer acá, con lo que haya en ese momento; el efectivo tiene que ser el
+   último que contaron (Paso 1). Con la misma `clave` dos veces (se cortó
+   internet después de cerrar) devuelve el mismo cierre, no lo duplica. */
+create or replace function pos_caja_cerrar(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_local    uuid := nullif(p->>'local_id', '')::uuid;
+  v_prueba   boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_cont     numeric := round(nullif(p->>'contado', '')::numeric, 2);
+  v_retiro   numeric := round(coalesce(nullif(p->>'retiro', '')::numeric, 0), 2);
+  v_clave    text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_obs      text := nullif(trim(coalesce(p->>'observaciones', '')), '');
+  u          pos_cierres;
+  c          pos_cierres;
+  k          pos_caja_conteos;
+  v_dia      date;
+  v_corte    timestamptz;
+  v_id       uuid;
+  v_num      int;
+  v_n        int;
+  v_primero  numeric;
+begin
+  perform pos_permiso();
+
+  if v_clave is not null then
+    select * into c from pos_cierres where clave = v_clave;
+    if found then
+      return jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'esperado', c.esperado, 'contado', c.contado,
+                                'desvio', c.desvio, 'retiro', c.retiro, 'queda', c.queda, 'ya', true);
+    end if;
+  end if;
+
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_cont is null or v_cont < 0 then raise exception 'Falta el efectivo que contaste (Paso 1).'; end if;
+  if v_retiro < 0 then raise exception 'Lo que pasa a la caja fuerte no puede ser negativo.'; end if;
+  if v_retiro > v_cont then
+    raise exception 'No se puede pasar a la caja fuerte más de lo que hay ($%).', to_char(v_cont, 'FM999G999G990D00');
+  end if;
+  if length(v_obs) > 500 then raise exception 'Las observaciones son demasiado largas.'; end if;
+
+  /* Un cierre por vez en cada caja: si dos la cierran al mismo tiempo, el segundo espera y frena abajo. */
+  perform pg_advisory_xact_lock(hashtext('pos_caja:' || v_local::text || ':' || v_prueba::text));
+
+  select * into u from pos_cierres x
+   where x.local_id = v_local and x.prueba = v_prueba and x.estado = 'cerrada'
+   order by x.fecha desc limit 1;
+  select * into k from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
+   order by x.fecha desc, x.id desc limit 1;
+  if not found then raise exception 'Primero contá el efectivo y tocá «Ver la cuenta» (Paso 1).'; end if;
+  if k.contado <> v_cont then raise exception 'El efectivo no es el que contaste: tocá «Ver la cuenta» de nuevo.'; end if;
+  select count(*) into v_n from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz);
+  select x.contado into v_primero from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
+   order by x.fecha, x.id limit 1;
+
+  v_dia := orden_dia_caja(v_local);
+  v_corte := coalesce((select min(x.desde) from pos_cierres x
+                        where x.local_id = v_local and x.prueba = v_prueba and x.estado = 'cerrada'),
+                      orden_en_hora(v_local, v_dia, '00:00'));
+  select coalesce(max(x.numero), 0) + 1 into v_num from pos_cierres x where x.local_id = v_local and x.prueba = v_prueba;
+
+  insert into pos_cierres (local_id, numero, prueba, dia, desde, responsable, responsable_nombre, saldo_inicial,
+                           contado, retiro, conteos, primer_conteo, observaciones, clave)
+  values (v_local, v_num, v_prueba, v_dia, coalesce(u.fecha, v_corte), orden_yo_id(),
+          (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()),
+          case when u.id is null then k.saldo_inicial else u.queda end,
+          v_cont, v_retiro, v_n, v_primero, v_obs, v_clave)
+  returning id into v_id;
+
+  /* Lo que entra en este cierre: todo lo que no tenía (también lo anulado, que no suma). */
+  update pos_ventas set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null and fecha >= v_corte;
+  update pos_caja_movimientos set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null;
+
+  with v as (select * from pos_ventas where cierre_id = v_id and estado = 'cobrada'),
+       g as (select pg.medio, sum(pg.monto) monto from pos_venta_pagos pg join v on v.id = pg.venta_id group by pg.medio),
+       m as (select * from pos_caja_movimientos where cierre_id = v_id and estado = 'ok')
+  update pos_cierres set
+    tickets              = (select count(*) from v),
+    ventas_efectivo      = coalesce((select g.monto from g where g.medio = 'efectivo'), 0),
+    ventas_tarjeta       = coalesce((select g.monto from g where g.medio = 'tarjeta'), 0),
+    ventas_mercadopago   = coalesce((select g.monto from g where g.medio = 'mercadopago'), 0),
+    ventas_modo          = coalesce((select g.monto from g where g.medio = 'modo'), 0),
+    ventas_go_cuotas     = coalesce((select g.monto from g where g.medio = 'go_cuotas'), 0),
+    ventas_transferencia = coalesce((select g.monto from g where g.medio = 'transferencia'), 0),
+    ventas_total         = coalesce((select sum(v.total) from v), 0),
+    descuentos           = coalesce((select sum(v.descuentos) from v), 0),
+    gastos               = coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
+    otras_salidas        = coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
+    otros_ingresos       = coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0)
+  where id = v_id;
+  update pos_cierres set esperado = saldo_inicial + ventas_efectivo + otros_ingresos - gastos - otras_salidas
+   where id = v_id
+  returning * into c;
+
+  return jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'esperado', c.esperado, 'contado', c.contado,
+                            'desvio', c.desvio, 'retiro', c.retiro, 'queda', c.queda, 'ya', false);
+end $$;
+
+/* Un gasto del local, otra salida u otro ingreso de la caja chica. Entra en
+   el próximo cierre. Con la misma `clave` dos veces no se duplica. */
+create or replace function pos_caja_mov_guardar(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_local   uuid := nullif(p->>'local_id', '')::uuid;
+  v_prueba  boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_tipo    text := coalesce(p->>'tipo', '');
+  v_rubro   text := nullif(trim(coalesce(p->>'rubro', '')), '');
+  v_desc    text := nullif(trim(coalesce(p->>'descripcion', '')), '');
+  v_monto   numeric := round(nullif(p->>'monto', '')::numeric, 2);
+  v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_id      uuid;
+begin
+  perform pos_permiso();
+  if v_clave is not null then
+    select id into v_id from pos_caja_movimientos where clave = v_clave;
+    if found then return jsonb_build_object('id', v_id, 'ya', true); end if;
+  end if;
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_tipo not in ('gasto', 'salida', 'ingreso') then raise exception 'El movimiento tiene que ser un gasto, otra salida u otro ingreso.'; end if;
+  if v_tipo = 'gasto' and v_rubro is null then raise exception 'Elegí el tipo de gasto.'; end if;
+  if v_tipo <> 'gasto' and v_desc is null then raise exception 'Escribí de qué es.'; end if;
+  if length(v_rubro) > 60 or length(v_desc) > 200 then raise exception 'El texto es demasiado largo.'; end if;
+  if v_monto is null or v_monto <= 0 or v_monto >= 100000000 then raise exception 'Escribí el monto.'; end if;
+  insert into pos_caja_movimientos (local_id, prueba, dia, tipo, rubro, descripcion, monto, persona, persona_nombre, clave)
+  values (v_local, v_prueba, orden_dia_caja(v_local), v_tipo, case when v_tipo = 'gasto' then v_rubro end, v_desc, v_monto,
+          orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_clave)
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'ya', false);
+end $$;
+
+/* Anular un gasto (queda en la lista, tachado, con quién y por qué). Sólo
+   mientras la caja está abierta: si ya entró en un cierre, se anula el cierre. */
+create or replace function pos_caja_mov_anular(p_id uuid, p_motivo text) returns boolean
+language plpgsql volatile security definer set search_path = public as $$
+declare m pos_caja_movimientos;
+begin
+  perform pos_permiso();
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
+  select * into m from pos_caja_movimientos where id = p_id for update;
+  if not found then raise exception 'No existe ese movimiento.'; end if;
+  if m.estado = 'anulado' then raise exception 'Ese movimiento ya está anulado.'; end if;
+  if m.cierre_id is not null then
+    raise exception 'Ese movimiento ya entró en el cierre %: para cambiarlo, hay que anular el cierre.',
+      (select case when c.prueba then 'P-' else 'Nº ' end || c.numero from pos_cierres c where c.id = m.cierre_id);
+  end if;
+  update pos_caja_movimientos set estado = 'anulado', anulado_en = now(), anulado_por = orden_yo_id(), anulado_motivo = trim(p_motivo)
+   where id = p_id;
+  return true;
+end $$;
+
+/* El listado de cierres (como "Cierres de caja" de BlueSoft), con los totales del período. */
+create or replace function pos_cierres(p_desde date, p_hasta date, p_local uuid default null, p_prueba boolean default false)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with c as (
+      select x.*, l.nombre as local,
+             coalesce((select o.caja_tolerancia_pesos from orden_config o where o.local_id = x.local_id), 100) as tolerancia,
+             (x.estado = 'cerrada' and not exists (
+                select 1 from pos_cierres y
+                 where y.local_id = x.local_id and y.prueba = x.prueba and y.estado = 'cerrada' and y.fecha > x.fecha)) as es_ultimo
+        from pos_cierres x join orden_locales l on l.id = x.local_id
+       where x.dia between p_desde and p_hasta and x.prueba = coalesce(p_prueba, false)
+         and (p_local is null or x.local_id = p_local)
+    )
+    select jsonb_build_object(
+      'filas', coalesce((select jsonb_agg(to_jsonb(z) - 'clave' order by z.fecha desc)
+                           from (select * from c order by fecha desc limit 500) z), '[]'::jsonb),
+      'totales', (select jsonb_build_object(
+                    'cierres',     count(*) filter (where estado = 'cerrada'),
+                    'anulados',    count(*) filter (where estado = 'anulada'),
+                    'ventas',      coalesce(sum(ventas_total) filter (where estado = 'cerrada'), 0),
+                    'efectivo',    coalesce(sum(ventas_efectivo) filter (where estado = 'cerrada'), 0),
+                    'tarjeta',     coalesce(sum(ventas_tarjeta) filter (where estado = 'cerrada'), 0),
+                    'mercadopago', coalesce(sum(ventas_mercadopago) filter (where estado = 'cerrada'), 0),
+                    'otros',       coalesce(sum(ventas_modo + ventas_go_cuotas + ventas_transferencia) filter (where estado = 'cerrada'), 0),
+                    'gastos',      coalesce(sum(gastos + otras_salidas) filter (where estado = 'cerrada'), 0),
+                    'retiro',      coalesce(sum(retiro) filter (where estado = 'cerrada'), 0),
+                    'desvio',      coalesce(sum(desvio) filter (where estado = 'cerrada'), 0),
+                    'faltas',      count(*) filter (where estado = 'cerrada' and desvio > tolerancia),
+                    'sobras',      count(*) filter (where estado = 'cerrada' and -desvio > tolerancia)) from c),
+      'mas', (select count(*) > 500 from c)
+    )
+  );
+end $$;
+
+/* Un cierre completo: sus números, sus gastos y cada vez que contaron. */
+create or replace function pos_cierre(p_id uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare r jsonb;
+begin
+  perform pos_permiso();
+  select to_jsonb(c) - 'clave'
+         || jsonb_build_object(
+              'local', l.nombre,
+              'anulado_por_nombre', (select pe.nombre from orden_personas pe where pe.id = c.anulado_por),
+              'tolerancia', coalesce((select o.caja_tolerancia_pesos from orden_config o where o.local_id = c.local_id), 100),
+              'es_ultimo', c.estado = 'cerrada' and not exists (
+                 select 1 from pos_cierres y
+                  where y.local_id = c.local_id and y.prueba = c.prueba and y.estado = 'cerrada' and y.fecha > c.fecha),
+              'movimientos', coalesce((
+                 select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'tipo', m.tipo, 'rubro', m.rubro, 'descripcion', m.descripcion,
+                                                     'monto', m.monto, 'persona', m.persona_nombre, 'estado', m.estado) order by m.fecha)
+                   from pos_caja_movimientos m where m.cierre_id = c.id), '[]'::jsonb),
+              'conteos_detalle', coalesce((
+                 select jsonb_agg(jsonb_build_object('fecha', k.fecha, 'contado', k.contado, 'esperado', k.esperado, 'persona', pe.nombre) order by k.fecha, k.id)
+                   from pos_caja_conteos k left join orden_personas pe on pe.id = k.persona
+                  where k.local_id = c.local_id and k.prueba = c.prueba and k.fecha > c.desde and k.fecha <= c.fecha), '[]'::jsonb))
+    into r
+    from pos_cierres c join orden_locales l on l.id = c.local_id
+   where c.id = p_id;
+  if r is null then raise exception 'No existe ese cierre.'; end if;
+  return r;
+end $$;
+
+/* Anular un cierre: sólo el último de la sucursal. Queda en la lista,
+   tachado, y lo que tenía (ventas y gastos) vuelve a la caja abierta, para
+   cerrarla de nuevo. */
+create or replace function pos_cierre_anular(p_id uuid, p_motivo text) returns boolean
+language plpgsql volatile security definer set search_path = public as $$
+declare c pos_cierres; d pos_cierres;
+begin
+  perform pos_permiso();
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
+  select * into c from pos_cierres where id = p_id;
+  if not found then raise exception 'No existe ese cierre.'; end if;
+  perform pg_advisory_xact_lock(hashtext('pos_caja:' || c.local_id::text || ':' || c.prueba::text));
+  select * into c from pos_cierres where id = p_id for update;
+  if c.estado = 'anulada' then raise exception 'Ese cierre ya está anulado.'; end if;
+  select * into d from pos_cierres y
+   where y.local_id = c.local_id and y.prueba = c.prueba and y.estado = 'cerrada' and y.fecha > c.fecha
+   order by y.fecha limit 1;
+  if found then
+    raise exception 'Sólo se puede anular el último cierre de la sucursal: después vino el %.',
+      case when d.prueba then 'P-' else 'Nº ' end || d.numero;
+  end if;
+  update pos_cierres set estado = 'anulada', anulado_en = now(), anulado_por = orden_yo_id(), anulado_motivo = trim(p_motivo)
+   where id = p_id;
+  update pos_ventas set cierre_id = null where cierre_id = p_id;
+  update pos_caja_movimientos set cierre_id = null where cierre_id = p_id;
+  return true;
+end $$;
+
+/* Los movimientos de la caja chica: los gastos, las otras salidas y entradas,
+   y lo que pasó a la caja fuerte en cada cierre (la "Transferencia de fondos"
+   de BlueSoft). */
+create or replace function pos_caja_movimientos(p_desde date, p_hasta date, p_local uuid default null, p_tipo text default null,
+                                                p_prueba boolean default false) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  if p_tipo is not null and p_tipo not in ('gasto', 'salida', 'ingreso', 'caja_fuerte') then raise exception 'Ese tipo de movimiento no existe.'; end if;
+  return (
+    with t as (
+      select m.id, 'mov'::text as origen, m.fecha, m.local_id, m.tipo, m.rubro, m.descripcion, m.monto, m.persona_nombre as persona,
+             m.estado = 'ok' as vale, m.estado, m.cierre_id, m.anulado_motivo
+        from pos_caja_movimientos m
+       where m.dia between p_desde and p_hasta and m.prueba = coalesce(p_prueba, false) and (p_local is null or m.local_id = p_local)
+      union all
+      select c.id, 'cierre', c.fecha, c.local_id, 'caja_fuerte', null, null, c.retiro, c.responsable_nombre,
+             c.estado = 'cerrada', case when c.estado = 'cerrada' then 'ok' else 'anulado' end, c.id, c.anulado_motivo
+        from pos_cierres c
+       where c.retiro > 0 and c.dia between p_desde and p_hasta and c.prueba = coalesce(p_prueba, false)
+         and (p_local is null or c.local_id = p_local)
+    ), f as (
+      select * from t where p_tipo is null or t.tipo = p_tipo
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', z.id, 'origen', z.origen, 'fecha', z.fecha, 'local', l.nombre, 'local_id', z.local_id, 'tipo', z.tipo,
+                 'rubro', z.rubro, 'descripcion', z.descripcion, 'monto', z.monto, 'persona', z.persona, 'estado', z.estado,
+                 'motivo', z.anulado_motivo,
+                 'cierre', (select jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'estado', c.estado)
+                              from pos_cierres c where c.id = z.cierre_id)) order by z.fecha desc)
+          from (select * from f order by fecha desc limit 500) z join orden_locales l on l.id = z.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object(
+                    'gasto',       coalesce(sum(monto) filter (where vale and tipo = 'gasto'), 0),
+                    'salida',      coalesce(sum(monto) filter (where vale and tipo = 'salida'), 0),
+                    'ingreso',     coalesce(sum(monto) filter (where vale and tipo = 'ingreso'), 0),
+                    'caja_fuerte', coalesce(sum(monto) filter (where vale and tipo = 'caja_fuerte'), 0),
+                    'cantidad',    count(*) filter (where vale)) from f),
+      'mas', (select count(*) > 500 from f)
+    )
+  );
+end $$;
+
+revoke all on function pos_caja_abierta(uuid, boolean) from public, anon, authenticated;
+revoke all on function pos_caja(uuid, boolean), pos_caja_contar(uuid, boolean, numeric, numeric), pos_caja_cerrar(jsonb),
+                       pos_caja_mov_guardar(jsonb), pos_caja_mov_anular(uuid, text), pos_cierres(date, date, uuid, boolean),
+                       pos_cierre(uuid), pos_cierre_anular(uuid, text), pos_caja_movimientos(date, date, uuid, text, boolean)
+       from public, anon;
+grant execute on function pos_caja(uuid, boolean), pos_caja_contar(uuid, boolean, numeric, numeric), pos_caja_cerrar(jsonb),
+                          pos_caja_mov_guardar(jsonb), pos_caja_mov_anular(uuid, text), pos_cierres(date, date, uuid, boolean),
+                          pos_cierre(uuid), pos_cierre_anular(uuid, text), pos_caja_movimientos(date, date, uuid, text, boolean)
+       to authenticated;

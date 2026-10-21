@@ -25,6 +25,9 @@
      configuración), adentro del sistema, con los grupos que se despliegan.
    Y el SQL 147: la letra X (el comprobante interno de BlueSoft, sólo con
    efectivo) y el modo prueba (numera aparte y no cuenta para nada).
+   El SQL 149 (21/10, "dalee"): el cierre de caja de BlueSoft en el
+   mostrador, con el conteo a ciegas, el pase a la caja fuerte y los gastos
+   de la caja chica; en Gestión, el listado de cierres y los movimientos.
 
    La plata va en CENTAVOS (enteros) en toda la cuenta: la base vuelve a
    sumar y exige que los pagos den el total al centavo.
@@ -53,20 +56,22 @@
   var MENUS = {
     mostrador: [
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
-                  ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida', 'index.html?volver=pos']]]
+                  ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida', 'index.html?volver=pos']]],
+      /* El cierre se hace en el mostrador, a la noche (SQL 149); los listados quedan en Gestión. */
+      ['Caja', [['cierre', 'Cierre de caja', 'caja']]]
     ],
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
       ['Stock', [['stock', 'Stock', 'stock'], ['envios', 'Envíos', 'envio'],
                  ['recepcion', 'Recepción', 'recepcion'], ['inventario', 'Inventario', 'inventario']]],
-      ['Caja', [['cierre', 'Cierre de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
+      ['Caja', [['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['reportes', 'Reportes', 'reportes']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
     ]
   };
   var MENU = MENUS[MODO];
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
-  var HECHAS = { venta: 1, tickets: 1, listas: 1, promos: 1, sucursales: 1 };
+  var HECHAS = { venta: 1, tickets: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
@@ -77,16 +82,6 @@
       'La nota de crédito atada a la factura, dentro de los 15 días (lo pide ARCA).',
       'El ticket de cambio con un código único para el cliente (lo pide la ley de CABA).',
       'La prenda que vuelve entra al stock del local.'], 'Mientras tanto, los cambios se siguen haciendo en BlueSoft.'],
-    cierre: ['Cierre de caja', [
-      'Primero se cuenta el efectivo y recién después se ve cuánto tendría que haber (en BlueSoft se ve antes de contar).',
-      'Las ventas del día por medio de pago salen solas de los tickets.',
-      'En el mismo paso, cuánto pasa a la caja fuerte (hoy es otra pantalla).',
-      'La foto del cierre y la diferencia, como en Supervisión → Cajas.'],
-      'Mientras tanto, las cajas del día se controlan en <a href="impecable-admin.html#cajas">Supervisión → Cajas</a>.'],
-    movimientos: ['Movimientos de caja', [
-      'Entradas y salidas de la caja chica: gastos del local, retiros y el pase a la caja fuerte.',
-      'Cada movimiento con quién, cuánto y por qué.',
-      'Los gastos con sus tipos (limpieza, bidones, vidriera, luz…), como en BlueSoft.'], ''],
     stock: ['Consulta de stock', [
       'El stock de cada sucursal por producto, talle y color.',
       'Cada local ve el suyo; la oficina, todos.',
@@ -168,6 +163,7 @@
     volver: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
     prueba: '<path d="M9 3h6M10 3v6l-5.4 9.4A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.4-2.6L14 9V3"/><path d="M7.2 15h9.6"/>',
     yo: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+    candado: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     abajo: '<path d="m6 9 6 6 6-6"/>'
   };
   /* La bolsa de la marca, la misma del rail (en el mostrador no hay rail). */
@@ -245,7 +241,7 @@
   }
 
   /* ── La base ── */
-  var S = { ini: null, precios: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null };
+  var S = { ini: null, precios: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, cajaHecho: null };
   var V = null;   // la venta que se está armando
 
   function llamar(nombre, args) {
@@ -254,8 +250,11 @@
   function esDeRed(e) { return !(e && (e.delServidor || e.sinSesion)); }
   function mensajeDe(e) {
     var m = String((e && e.message) || e || '');
-    /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe. */
-    if (/Could not find the function|schema cache|PGRST202/.test(m)) return 'Todavía falta correr el SQL ' + (/pos_tickets|pos_pruebas_borrar/.test(m) ? '147' : '146') + ' (el del POS) en Supabase.';
+    /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe.
+       El 149 suma la caja (pos_caja…, pos_cierre…). */
+    if (/Could not find the function|schema cache|PGRST202/.test(m)) {
+      return 'Todavía falta correr el SQL ' + (/pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
+    }
     if (/tiene que ser A o B/.test(m)) return 'Todavía falta correr el SQL 147 (el de la X) en Supabase.';
     if (esDeRed(e)) return 'Sin conexión: no se pudo hablar con la base.';
     return m.replace(/^La base respondió \d+: /, '');
@@ -335,15 +334,17 @@
     cerrarVentana();
     app.innerHTML = marco();
     engancharMenu();
-    var ver = { venta: verVenta, tickets: verTickets, listas: verListas, promos: verPromos, sucursales: verSucursales }[v];
+    var ver = { venta: verVenta, tickets: verTickets, cierre: verCierre, cierres: verCierres, movimientos: verMovimientos,
+                listas: verListas, promos: verPromos, sucursales: verSucursales }[v];
     if (ver) ver(); else verPronto(v);
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
 
   function ponerPrueba(si) {
     try { if (si) sessionStorage.setItem(K_PRUEBA, '1'); else sessionStorage.removeItem(K_PRUEBA); } catch (e) {}
-    /* El cartel de la última venta guardada es de la otra numeración: no se mezcla. */
+    /* El cartel de la última venta guardada (y el del último cierre) es de la otra numeración: no se mezcla. */
     S.ultimo = null;
+    S.cajaHecho = null;
     marcarPrueba();
     ir(S.vista);
     avisar('info', si ? 'Modo prueba: lo que guardes numera aparte (P-1, P-2…) y no cuenta para nada.' : 'Listo: volviste a las ventas de verdad.');
@@ -389,7 +390,7 @@
             '<span>' + esc(g[0]) + '</span>' + icono('abajo') + '</button>' +
             '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(item).join('') + '</div>';
         }).join('')
-      : '<div class="pos-grupo" aria-hidden="true"></div>' + MENU[0][1].map(item).join('') +
+      : MENU.map(function (g) { return '<div class="pos-grupo" aria-hidden="true"></div>' + g[1].map(item).join(''); }).join('') +
         /* Abajo: el modo prueba y quién entró (en el mostrador no hay barra que lo diga). */
         '<div class="pos-menu-pie">' +
           '<label class="pos-item pos-modo" title="Modo prueba: lo que guardes no cuenta para nada">' + icono('prueba') + '<span>Modo prueba</span>' +
@@ -1368,7 +1369,7 @@
     $('tkBorrar').onclick = function () {
       var loc = $('tkLocal').value, l = loc && localDe(loc), bt = this;
       if (!confirm('¿Borrar ' + (l ? 'las ventas de prueba de ' + nombreLocal(l) : 'todas las ventas de prueba') +
-                   ' (de cualquier día)? Las de verdad no se tocan. No se puede deshacer.')) return;
+                   ' (de cualquier día), con su caja de prueba? Las de verdad no se tocan. No se puede deshacer.')) return;
       bt.disabled = true;
       llamar('pos_pruebas_borrar', { p_local: loc || null }).then(function (n) {
         bt.disabled = false;
@@ -1427,6 +1428,534 @@
       });
     }
     cargar();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     EL CIERRE DE CAJA (SQL 149)
+     Mauricio (21/10, "dalee"): los pasos de BlueSoft, pero primero se cuenta
+     y recién después se ve cuánto tendría que haber; el pase a la caja
+     fuerte va adentro del cierre, y los gastos de la caja chica se cargan
+     ahí mismo. "Resultados del día" a la derecha, como en BlueSoft.
+     ════════════════════════════════════════════════════════════════════ */
+  var TIPOS_MOV = { gasto: 'Gasto del local', salida: 'Otra salida', ingreso: 'Otro ingreso', caja_fuerte: 'A la caja fuerte' };
+  /* Los tipos de gasto de BlueSoft ("Gasto nuevo" → Tipo de gasto). */
+  var RUBROS_GASTO = [
+    ['Del local', ['Artículos de limpieza', 'Bidones de agua', 'Cámara de seguridad', 'Gas', 'Internet', 'Limpieza', 'Llave locales', 'Luz',
+                   'Mantenimiento del local', 'Municipal o ABL', 'Rentas', 'Seguridad e higiene', 'Teléfono', 'Vidrierista', 'Alarma y monitoreo']],
+    ['Empleados', ['Cargas sociales', 'Comida por horas extras', 'Sueldo básico', 'Sueldo comisiones', 'Vales para empleados']],
+    ['Comercialización y otros', ['Gestor', 'Imprenta', 'Impuesto de publicidad y propaganda', 'Informática', 'Publicidad',
+                                  'Repartidor de volantes', 'Software', 'Otros artículos', 'Varios de comercialización']]
+  ];
+  var OCULTO = '<i class="cj-oculto" title="Se ve después de contar el efectivo (Paso 1)">' + icono('candado') + 'al contar</i>';
+
+  function refCierre(c) { return (c.prueba ? 'P-' : 'Nº ') + c.numero; }
+  /** El desvío en palabras. En centavos; positivo = falta plata (como en Supervisión → Cajas). */
+  function desvioDe(dv, tol) {
+    var a = Math.abs(dv);
+    if (!dv) return { cls: 'ok', txt: 'Cuadra justo', corto: 'Cuadra' };
+    if (a <= tol) return { cls: 'ok', txt: 'Cuadra (' + (dv > 0 ? 'faltan ' : 'sobran ') + plata(a) + ')', corto: (dv > 0 ? '−' : '+') + plata(a) };
+    return dv > 0 ? { cls: 'mal', txt: 'Faltan ' + plata(a), corto: 'Faltan ' + plata(a) } : { cls: 'warn', txt: 'Sobran ' + plata(a), corto: 'Sobran ' + plata(a) };
+  }
+  function recordarLocal(id) { var r = recuerdo(); r.local = id; guardarJSON(K_RECUERDO, r); }
+  function filaRes(lbl, valor, cls) { return '<div class="cj-r' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + valor + '</b></div>'; }
+  function opcionesLocales(actual) { return opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), actual); }
+
+  /** El "¿por qué se anula?" adentro de una ventana: hacer(motivo) devuelve la promesa del pedido. */
+  function pedirMotivo(z, aviso, textoBoton, hacer) {
+    z.innerHTML = '<div class="pos-cartel" style="margin-top:12px">' + aviso +
+      campo('', '¿Por qué se anula?', '<textarea id="pmMotivo" maxlength="300" rows="2"></textarea>') + '<div class="pos-error" id="pmError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="pmConfirmar">' + esc(textoBoton) + '</button></div></div>';
+    var m = z.querySelector('#pmMotivo');
+    m.focus();
+    z.querySelector('#pmConfirmar').onclick = function () {
+      var motivo = m.value.trim(), bt = this;
+      if (!errorEn(z, 'pmError', motivo.length < 3 ? 'Escribí por qué se anula.' : '')) return;
+      bt.disabled = true;
+      hacer(motivo).catch(function (e) { bt.disabled = false; errorEn(z, 'pmError', mensajeDe(e)); });
+    };
+  }
+
+  function verCierre() {
+    var c = $('cuerpo'), prueba = enPrueba();
+    var l = localDe(S.cajaLocal) || localInicial();
+    S.cajaLocal = l.id;
+    /* d: la caja abierta (sin el efectivo); k: lo que devolvió el conteo (con el efectivo). */
+    var K = { d: null, k: null, clave: nuevaClave() }, pedido = 0;
+    c.innerHTML = cabeza('Cierre de caja' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="cjSub">Cargando…</span>',
+        '<div id="cjHecho"></div>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="cjGasto">Agregar gasto…</button>' +
+        '<a class="btn btn-sec btn-chico" href="gestion.html#cierres" title="Los cierres anteriores, en Gestión">Ver los cierres</a>') +
+      '<div class="cj">' +
+        '<section class="cj-izq" aria-label="Los pasos del cierre">' +
+          '<div class="tk-datos cj-datos">' +
+            campo('c3', 'Fecha', '<input type="text" id="cjFecha" readonly>') +
+            campo('c5', 'Sucursal', '<select id="cjLocal">' + opcionesLocales(l.id) + '</select>') +
+            campo('c4', 'Número', '<input type="text" id="cjNum" readonly title="Uno seguido por sucursal">') +
+            campo('c4', 'Caja', '<input type="text" value="Caja chica" readonly>') +
+            campo('c8', 'Responsable', '<input type="text" id="cjResp" readonly title="Quien entró al POS">') +
+          '</div>' +
+          '<div class="cj-paso" id="cjPaso1"><div class="cj-paso-cab"><b>Paso 1</b><span>Ingresá el total de efectivo que hay en el local</span></div>' +
+            '<div class="cj-fila"><div class="cj-saldo" id="cjSaldoIni"></div>' +
+              campo('cj-monto', 'Total efectivo', '<input type="text" inputmode="decimal" id="cjContado" autocomplete="off" placeholder="$0">') +
+              '<button type="button" class="btn btn-pri btn-chico" id="cjContar">Ver la cuenta</button></div>' +
+            '<div class="cj-cuenta" id="cjCuenta" aria-live="polite"></div></div>' +
+          '<div class="cj-paso" id="cjPaso2"><div class="cj-paso-cab"><b>Paso 2</b><span>Ingresá el efectivo que pasa a la caja fuerte</span></div>' +
+            '<div class="cj-fila">' + campo('cj-monto', 'A la caja fuerte', '<input type="text" inputmode="decimal" id="cjRetiro" autocomplete="off" placeholder="$0">') +
+              '<p class="cj-queda" id="cjQueda"></p></div>' +
+            campo('', 'Observaciones', '<textarea id="cjObs" maxlength="500" rows="2"></textarea>', ' id="cjObsL"') + '</div>' +
+          '<div class="cj-paso cj-paso-fin" id="cjPaso3"><div class="cj-paso-cab"><b>Paso 3</b><span id="cjPaso3Txt"></span></div>' +
+            '<div class="cj-botones"><button type="button" class="btn btn-sec btn-chico" id="cjCancelar">Cancelar</button>' +
+              '<button type="button" class="btn btn-pri btn-chico" id="cjCerrar">Cerrar caja</button></div></div>' +
+        '</section>' +
+        '<aside class="cj-res" id="cjRes" aria-label="Resultados del día"><p class="cargando">Cargando…</p></aside>' +
+      '</div>';
+
+    function cargar() {
+      var n = ++pedido;
+      K.k = null;
+      pintarPasos();
+      llamar('pos_caja', { p_local: S.cajaLocal, p_prueba: prueba }).then(function (d) {
+        if (n !== pedido || !$('cjRes')) return;
+        K.d = d;
+        pintarTodo();
+      }).catch(function (e) {
+        if (n !== pedido || !$('cjRes')) return;
+        $('cjRes').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+        $('cjSub').textContent = '';
+      });
+    }
+    function pintarTodo() {
+      var d = K.d, saldo = $('cjSaldo') ? $('cjSaldo').value : '';
+      $('cjFecha').value = fechaCorta(d.dia);
+      $('cjNum').value = (prueba ? 'P-' : '') + d.numero;
+      $('cjResp').value = d.responsable || '';
+      /* En el modo prueba lo dice acá y no en un cartel: con el cartel, el cierre no entra en la PC del local. */
+      $('cjSub').textContent = (prueba ? 'Caja de prueba: sólo las ventas de prueba. ' : '') + (d.primer
+        ? 'El primer cierre de ' + nombreLocal(localDe(S.cajaLocal)) + ' en el POS: toma las ventas de hoy.'
+        : 'La caja está abierta desde el cierre ' + refCierre({ prueba: prueba, numero: d.ultimo.numero }) + ' (' + fechaHora(d.ultimo.fecha) + ').');
+      /* El primer cierre no tiene de dónde sacar el saldo inicial: lo escriben (con cuánto arrancó la caja). */
+      $('cjSaldoIni').innerHTML = d.primer ? campo('cj-monto', 'Saldo inicial', '<input type="text" inputmode="decimal" id="cjSaldo" autocomplete="off" placeholder="$0" title="Con cuánto efectivo arrancó la caja (el cambio)">') : '';
+      if ($('cjSaldo')) { $('cjSaldo').value = saldo; $('cjSaldo').oninput = olvidarCuenta; }
+      pintarHecho();
+      pintarPasos();
+    }
+    function pintarHecho() {
+      var h = S.cajaHecho, z = $('cjHecho');
+      if (!h || h.local !== S.cajaLocal || h.prueba !== prueba) { z.innerHTML = ''; return; }
+      var dv = desvioDe(h.desvio, h.tol);
+      z.innerHTML = '<div class="pos-hecho' + (h.prueba ? ' prueba' : '') + '">' + icono('ok') + '<span>Cierre ' + esc(refCierre(h)) + ' guardado · ' + esc(dv.corto) +
+        ' · quedan ' + plata(h.queda) + '</span><button type="button" id="cjVerHecho">Ver</button></div>';
+      $('cjVerHecho').onclick = function () { abrirCierre(h.id, function () { S.cajaHecho = null; if (S.vista === 'cierre') verCierre(); }); };
+    }
+    /* Los resultados: antes de contar, sin el efectivo; después, con todo (lo que devolvió el conteo, más nuevo). */
+    function pintarRes() {
+      var d = K.d, k = K.k;
+      if (!d) return;
+      var x = k || d, v = x.ventas, p = function (n) { return plata(cent(n || 0)); };
+      var nm = (d.movimientos || []).length;
+      $('cjRes').innerHTML = '<h3 class="cj-res-tit">Resultados del día</h3>' +
+        filaRes('Saldo inicial', d.primer ? (k ? p(k.saldo_inicial) : '<i class="cj-oculto">en el Paso 1</i>') : p(d.saldo_inicial), 'fuerte') +
+        filaRes('Ventas Tarjeta', p(v.tarjeta)) +
+        filaRes('Ventas Transferencia', p(v.transferencia)) +
+        filaRes('Ventas Efectivo', k ? p(v.efectivo) : OCULTO) +
+        filaRes('Ventas Mercado Pago', p(v.mercadopago)) +
+        filaRes('Ventas MODO', p(v.modo)) +
+        filaRes('Ventas Go Cuotas', p(v.go_cuotas)) +
+        filaRes('Ventas totales del día', k ? p(k.ventas_total) : OCULTO, 'barra') +
+        '<button type="button" class="cj-r cj-r-btn" id="cjMovs" title="Ver, agregar o anular los gastos de esta caja"><span>Gastos en efectivo' +
+          (nm ? ' (' + nm + ')' : '') + '</span><b>' + p(x.gastos) + '</b></button>' +
+        filaRes('Otras salidas', p(x.otras_salidas)) +
+        filaRes('Descuentos', p(x.descuentos), 'info') +
+        filaRes('Otros ingresos', p(x.otros_ingresos)) +
+        filaRes('Saldo final en efectivo', k ? p(k.esperado) : OCULTO, 'barra') +
+        '<p class="cj-res-pie">' + x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets') + '. Los descuentos ya están restados de las ventas.</p>';
+      $('cjMovs').onclick = abrirMovsCaja;
+    }
+    function pintarPasos() {
+      var k = K.k, hay = !!k;
+      $('cjPaso2').classList.toggle('apagado', !hay);
+      $('cjPaso3').classList.toggle('apagado', !hay);
+      $('cjRetiro').disabled = !hay;
+      $('cjObs').disabled = !hay;
+      $('cjCerrar').disabled = !hay;
+      $('cjPaso3Txt').textContent = hay ? 'Cerrá la caja' : 'Primero contá el efectivo (Paso 1)';
+      var obsL = $('cjObsL').firstChild;
+      if (!hay) {
+        var n = K.d ? Number(K.d.conteos) : 0;
+        $('cjCuenta').innerHTML = '<p class="pos-ayuda">' + (n ? 'Esta caja ya se contó ' + (n === 1 ? 'una vez' : n + ' veces') + ': cada conteo queda anotado.'
+          : 'Contá la plata del cajón y escribila. Recién ahí se ve cuánto tendría que haber.') + '</p>';
+        obsL.textContent = 'Observaciones';
+      } else {
+        var dv = desvioDe(cent(k.desvio), cent(k.tolerancia));
+        $('cjCuenta').innerHTML = '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b><span>Tendría que haber ' + plata(cent(k.esperado)) +
+          ' y contaste ' + plata(cent(k.contado)) + '.' + (k.conteos > 1 ? ' Se contó ' + k.conteos + ' veces.' : '') + '</span></div>';
+        obsL.textContent = dv.cls === 'ok' ? 'Observaciones' : 'Observaciones: ¿por qué ' + (cent(k.desvio) > 0 ? 'falta' : 'sobra') + '?';
+      }
+      pintarRes();
+      pintarQueda();
+    }
+    function pintarQueda() {
+      var q = $('cjQueda'), k = K.k;
+      if (!k) { q.className = 'cj-queda'; q.innerHTML = ''; return; }
+      var t = $('cjRetiro').value.trim(), r = t ? leerPlata(t) : 0, cont = cent(k.contado);
+      if (isNaN(r)) { q.className = 'cj-queda mal'; q.textContent = 'Escribí un número.'; return; }
+      if (r > cont) { q.className = 'cj-queda mal'; q.textContent = 'Es más de lo que hay (' + plata(cont) + ').'; return; }
+      q.className = 'cj-queda';
+      q.innerHTML = 'Queda en la caja chica: <b>' + plata(cont - r) + '</b><small>Es el saldo inicial del próximo cierre.</small>';
+    }
+    /* Si cambian lo contado (o el saldo inicial) después de ver la cuenta, hay que volver a contar. */
+    function olvidarCuenta() { if (K.k) { K.k = null; pintarPasos(); } }
+
+    function contar() {
+      if (!K.d) return;
+      var cont = leerPlata($('cjContado').value);
+      if (isNaN(cont)) { avisar('err', 'Escribí cuánto efectivo hay en el local.'); $('cjContado').focus(); return; }
+      var saldo = null;
+      if (K.d.primer) {
+        var st = $('cjSaldo').value.trim();
+        saldo = st ? leerPlata(st) : 0;
+        if (isNaN(saldo)) { avisar('err', 'El saldo inicial no es un número.'); $('cjSaldo').focus(); return; }
+      }
+      var b = $('cjContar');
+      b.disabled = true;
+      llamar('pos_caja_contar', { p_local: S.cajaLocal, p_prueba: prueba, p_contado: aPesos(cont), p_saldo_inicial: saldo === null ? null : aPesos(saldo) }).then(function (k) {
+        b.disabled = false;
+        if (!$('cjRes')) return;
+        K.k = k;
+        K.d.conteos = k.conteos;
+        pintarPasos();
+        $('cjRetiro').focus();
+      }).catch(function (e) { b.disabled = false; avisar('err', mensajeDe(e)); });
+    }
+
+    function cerrar() {
+      var k = K.k;
+      if (!k || S.guardando) return;
+      var t = $('cjRetiro').value.trim(), r = t ? leerPlata(t) : 0;
+      if (isNaN(r)) { avisar('err', 'Lo que pasa a la caja fuerte no es un número.'); $('cjRetiro').focus(); return; }
+      if (r > cent(k.contado)) { avisar('err', 'No se puede pasar a la caja fuerte más de lo que hay.'); $('cjRetiro').focus(); return; }
+      var obs = $('cjObs').value.trim(), dv = desvioDe(cent(k.desvio), cent(k.tolerancia));
+      if (dv.cls !== 'ok' && !obs && !confirm(dv.txt + ' y no escribiste nada en Observaciones. ¿Cerrar la caja igual?')) { $('cjObs').focus(); return; }
+      S.guardando = true;
+      var b = $('cjCerrar');
+      b.disabled = true;
+      b.textContent = 'Cerrando…';
+      llamar('pos_caja_cerrar', { p: { clave: K.clave, local_id: S.cajaLocal, prueba: prueba, contado: k.contado, retiro: aPesos(r), observaciones: obs } }).then(function (x) {
+        S.guardando = false;
+        S.cajaHecho = { id: x.id, numero: x.numero, prueba: !!x.prueba, desvio: cent(x.desvio), queda: cent(x.queda), local: S.cajaLocal, tol: cent(k.tolerancia) };
+        avisar('ok', 'Caja cerrada: cierre ' + refCierre(x) + '.');
+        if (S.vista === 'cierre') verCierre();
+      }).catch(function (e) {
+        S.guardando = false;
+        if (b.isConnected) { b.disabled = false; b.textContent = 'Cerrar caja'; }
+        if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo.'); persona.entrar(); return; }
+        avisar('err', esDeRed(e) ? 'No se pudo cerrar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
+      });
+    }
+
+    /* Los gastos de la caja abierta: verlos, agregar y anular. */
+    function abrirMovsCaja() {
+      var ms = (K.d && K.d.movimientos) || [];
+      var caja = ventana('<h3 id="posVentTit">Gastos de la caja</h3><p class="pos-bajada">Los de ' + esc(nombreLocal(localDe(S.cajaLocal))) +
+          ' desde el último cierre: entran en este.</p>' +
+        (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Hora</th><th>Qué es</th><th>Detalle</th><th>Cargó</th><th class="n">Monto</th><th><span class="sr">Anular</span></th></tr></thead><tbody>' +
+          ms.map(function (x) {
+            return '<tr><td>' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(TIPOS_MOV[x.tipo] || x.tipo) + '</td><td>' + esc([x.rubro, x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
+              '<td>' + esc(x.persona || '') + '</td><td class="n">' + (x.tipo === 'ingreso' ? '+' : '−') + plata(cent(x.monto)) + '</td>' +
+              '<td class="pos-acc"><button type="button" class="pos-link" data-anular="' + esc(x.id) + '">Anular</button></td></tr>';
+          }).join('') + '</tbody></table></div>' : '<div class="pos-cartel">Todavía no hay gastos en esta caja.</div>') +
+        '<div id="cjAnular"></div>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="cjNuevoGasto">Agregar gasto…</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
+      caja.querySelector('#cjNuevoGasto').onclick = function () { abrirMovimiento(S.cajaLocal, prueba, cargar); };
+      caja.querySelectorAll('[data-anular]').forEach(function (b) {
+        b.onclick = function () {
+          var x = ms.filter(function (y) { return y.id === b.getAttribute('data-anular'); })[0];
+          pedirMotivo(caja.querySelector('#cjAnular'), 'Anular «' + esc([x.rubro, x.descripcion].filter(Boolean).join(' · ')) + '» de ' + plata(cent(x.monto)) +
+              ': queda en la lista, tachado, con quién lo anuló y por qué.', 'Anular', function (motivo) {
+            return llamar('pos_caja_mov_anular', { p_id: x.id, p_motivo: motivo }).then(function () {
+              avisar('ok', 'Listo: quedó anulado.');
+              cerrarVentana();
+              cargar();
+            });
+          });
+        };
+      });
+    }
+
+    $('cjLocal').onchange = function () { S.cajaLocal = this.value; recordarLocal(this.value); $('cjContado').value = ''; $('cjRetiro').value = ''; cargar(); };
+    $('cjContado').oninput = olvidarCuenta;
+    $('cjContado').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); contar(); } };
+    $('cjContar').onclick = contar;
+    $('cjRetiro').oninput = pintarQueda;
+    $('cjCancelar').onclick = function () {
+      K.k = null;
+      $('cjContado').value = '';
+      $('cjRetiro').value = '';
+      $('cjObs').value = '';
+      pintarPasos();
+      $('cjContado').focus();
+    };
+    $('cjCerrar').onclick = cerrar;
+    $('cjGasto').onclick = function () { abrirMovimiento(S.cajaLocal, prueba, cargar); };
+    cargar();
+    if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var x = $('cjContado'); if (x) x.focus(); }, 0);
+  }
+
+  /* Un gasto del local, otra salida u otro ingreso de la caja chica ("Agregar gasto…" de BlueSoft). */
+  function abrirMovimiento(localId, prueba, alGuardar) {
+    var clave = nuevaClave(), tipo = 'gasto', enGestion = MODO === 'gestion';
+    var caja = ventana('<h3 id="posVentTit">' + (prueba ? 'Gasto de prueba' : 'Agregar gasto') + '</h3>' +
+      '<p class="pos-bajada">Sale de la caja chica, en efectivo, y entra en el próximo cierre.</p>' +
+      '<div class="chips" id="gmTipo" role="group" aria-label="Qué es">' + ['gasto', 'salida', 'ingreso'].map(function (t) {
+        return '<button type="button" class="chip" data-tipo="' + t + '">' + TIPOS_MOV[t] + '</button>'; }).join('') + '</div>' +
+      '<div class="pos-campos" style="margin-top:10px">' +
+        campo('ancho', 'Sucursal', '<select id="gmLocal"' + (enGestion ? '' : ' disabled title="La de la caja que estás cerrando"') + '>' + opcionesLocales(localId) + '</select>') +
+        campo('ancho', 'Tipo de gasto', '<select id="gmRubro"><option value="">Elegí…</option>' + RUBROS_GASTO.map(function (g) {
+          return '<optgroup label="' + esc(g[0]) + '">' + g[1].map(function (r) { return '<option>' + esc(r) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select>', ' id="gmRubroL"') +
+        campo('ancho', 'Descripción', '<input type="text" id="gmDesc" maxlength="200" autocomplete="off">', ' id="gmDescL"') +
+        campo('', 'Total', '<input type="text" inputmode="decimal" id="gmMonto" autocomplete="off" placeholder="$0">') +
+      '</div><div class="pos-error" id="gmError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="gmGuardar">Guardar</button></div>');
+    function marcar() {
+      caja.querySelectorAll('[data-tipo]').forEach(function (b) {
+        var si = b.getAttribute('data-tipo') === tipo;
+        b.classList.toggle('sel', si);
+        b.setAttribute('aria-pressed', String(si));
+      });
+      caja.querySelector('#gmRubroL').hidden = tipo !== 'gasto';
+      caja.querySelector('#gmDescL').firstChild.textContent = tipo === 'gasto' ? 'Descripción (si hace falta)' : '¿De qué es?';
+    }
+    marcar();
+    caja.querySelector('#gmTipo').onclick = function (e) { var b = e.target.closest('[data-tipo]'); if (b) { tipo = b.getAttribute('data-tipo'); marcar(); } };
+    setTimeout(function () { caja.querySelector('#gmRubro').focus(); }, 0);
+    function guardarMov() {
+      var bt = caja.querySelector('#gmGuardar');
+      var loc = caja.querySelector('#gmLocal').value, rubro = caja.querySelector('#gmRubro').value;
+      var desc = caja.querySelector('#gmDesc').value.trim(), monto = leerPlata(caja.querySelector('#gmMonto').value);
+      var mal = tipo === 'gasto' && !rubro ? 'Elegí el tipo de gasto.' :
+        tipo !== 'gasto' && !desc ? 'Escribí de qué es.' :
+        isNaN(monto) || monto <= 0 ? 'Escribí el total.' : '';
+      if (!errorEn(caja, 'gmError', mal) || bt.disabled) return;
+      bt.disabled = true;
+      llamar('pos_caja_mov_guardar', { p: { clave: clave, local_id: loc, prueba: !!prueba, tipo: tipo, rubro: tipo === 'gasto' ? rubro : '', descripcion: desc, monto: aPesos(monto) } }).then(function () {
+        avisar('ok', 'Anotado: ' + TIPOS_MOV[tipo].toLowerCase() + ', ' + plata(monto) + '.');
+        cerrarVentana();
+        if (alGuardar) alGuardar();
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'gmError', mensajeDe(e)); });
+    }
+    caja.querySelector('#gmGuardar').onclick = guardarMov;
+    caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); guardarMov(); } });
+  }
+
+  /* Un cierre guardado: todos sus números, sus gastos, cada vez que contaron, y anularlo (sólo el último). */
+  function abrirCierre(id, alCambiar) {
+    var caja = ventana('<h3 id="posVentTit">Cierre de caja</h3><p class="cargando">Cargando…</p>', true);
+    var dentro = caja.querySelector('.pos-caja-in');
+    llamar('pos_cierre', { p_id: id }).then(function (c) {
+      if (!_velo || !caja.isConnected) return;
+      var an = c.estado === 'anulada', p = function (n) { return plata(cent(n || 0)); };
+      var dv = desvioDe(cent(c.desvio), cent(c.tolerancia));
+      var movs = c.movimientos || [], conteos = c.conteos_detalle || [];
+      dentro.innerHTML = '<h3 id="posVentTit">Cierre ' + esc(refCierre(c)) + ' · ' + esc(bonito(c.local)) + ' ' +
+          (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Cerrado</span>') +
+          (c.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
+        (c.prueba ? '<div class="pos-cartel prueba">Es un cierre de prueba: cuenta sólo las ventas de prueba y se borra con «Borrar las pruebas».</div>' : '') +
+        '<div class="pos-ticket-datos cj-det-datos">' +
+          '<div><span>Fecha</span>' + esc(fechaHora(c.fecha)) + '</div>' +
+          '<div><span>Día</span>' + esc(fechaCorta(c.dia)) + '</div>' +
+          '<div><span>Responsable</span>' + esc(c.responsable_nombre || '—') + '</div>' +
+          '<div><span>Caja</span>Caja chica</div>' +
+          '<div><span>Desde</span>' + esc(fechaHora(c.desde)) + '</div>' +
+          '<div><span>Tickets</span>' + c.tickets + '</div>' +
+        '</div>' +
+        '<div class="cj-det">' +
+          '<div class="cj-res"><h3 class="cj-res-tit">Resultados del día</h3>' +
+            filaRes('Saldo inicial', p(c.saldo_inicial), 'fuerte') +
+            filaRes('Ventas Tarjeta', p(c.ventas_tarjeta)) + filaRes('Ventas Transferencia', p(c.ventas_transferencia)) +
+            filaRes('Ventas Efectivo', p(c.ventas_efectivo)) + filaRes('Ventas Mercado Pago', p(c.ventas_mercadopago)) +
+            filaRes('Ventas MODO', p(c.ventas_modo)) + filaRes('Ventas Go Cuotas', p(c.ventas_go_cuotas)) +
+            filaRes('Ventas totales del día', p(c.ventas_total), 'barra') +
+            filaRes('Gastos en efectivo', p(c.gastos)) + filaRes('Otras salidas', p(c.otras_salidas)) +
+            filaRes('Descuentos', p(c.descuentos), 'info') + filaRes('Otros ingresos', p(c.otros_ingresos)) +
+            filaRes('Saldo final en efectivo', p(c.esperado), 'barra') + '</div>' +
+          '<div class="cj-det-der">' +
+            '<div class="cj-dif ' + dv.cls + '"><b>' + esc(dv.txt) + '</b><span>Tendría que haber ' + p(c.esperado) + ' y contaron ' + p(c.contado) + '.</span></div>' +
+            '<div class="cj-res">' + filaRes('Contado', p(c.contado)) + filaRes('A la caja fuerte', p(c.retiro)) +
+              filaRes('Queda en la caja chica', p(c.queda), 'barra') + '</div>' +
+            (conteos.length > 1 ? '<p class="pos-lbl">Se contó ' + conteos.length + ' veces</p><ul class="cj-lista">' + conteos.map(function (k) {
+              return '<li>' + esc(fechaHora(k.fecha)) + ' — ' + p(k.contado) + (k.persona ? ' (' + esc(k.persona) + ')' : '') + '</li>'; }).join('') + '</ul>' : '') +
+            (movs.length ? '<p class="pos-lbl">Gastos y movimientos</p><ul class="cj-lista">' + movs.map(function (m) {
+              return '<li' + (m.estado === 'anulado' ? ' class="tachado"' : '') + '>' + esc(TIPOS_MOV[m.tipo] || m.tipo) + ': ' + esc([m.rubro, m.descripcion].filter(Boolean).join(' · ')) +
+                ' — ' + (m.tipo === 'ingreso' ? '+' : '−') + p(m.monto) + (m.estado === 'anulado' ? ' (anulado)' : '') + '</li>'; }).join('') + '</ul>' : '') +
+            (c.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(c.observaciones) + '</p>' : '') +
+          '</div>' +
+        '</div>' +
+        (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulado el ' + esc(fechaHora(c.anulado_en)) + (c.anulado_por_nombre ? ' por ' + esc(c.anulado_por_nombre) : '') + ': ' + esc(c.anulado_motivo || '') + '</div>' : '') +
+        '<div id="ciAnular"></div>' +
+        '<div class="pos-pie">' + (c.es_ultimo ? '<button type="button" class="btn btn-sec btn-chico izq" id="ciAnularBtn">Anular el cierre</button>' : '') +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var ab = dentro.querySelector('#ciAnularBtn');
+      if (ab) ab.onclick = function () {
+        ab.remove();
+        pedirMotivo(dentro.querySelector('#ciAnular'), 'El cierre queda en la lista, tachado. Sus ventas y sus gastos vuelven a la caja abierta, para cerrarla de nuevo.',
+          'Anular el cierre ' + refCierre(c), function (motivo) {
+            return llamar('pos_cierre_anular', { p_id: c.id, p_motivo: motivo }).then(function () {
+              avisar('ok', 'El cierre ' + refCierre(c) + ' quedó anulado.');
+              if (alCambiar) alCambiar();
+              abrirCierre(c.id, alCambiar);
+            });
+          });
+      };
+    }).catch(function (e) {
+      if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Cierre de caja</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     GESTIÓN → CIERRES DE CAJA (el listado de BlueSoft) Y MOVIMIENTOS
+     ════════════════════════════════════════════════════════════════════ */
+  function verCierres() {
+    var c = $('cuerpo');
+    c.innerHTML = cabeza('Cierres de caja', 'Los cierres de todas las sucursales. Se hacen en el mostrador, en POS → Cierre de caja.',
+        '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar una caja</a>') +
+      '<div class="pos-filtros"><div id="ciPer"></div>' +
+        campo('', 'Sucursal', '<select id="ciLocal"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Cierres', '<select id="ciPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
+      '</div><div id="ciLista"><p class="cargando">Cargando…</p></div>';
+    var per = Interfaz.periodo($('ciPer'), { inicial: 'mes', guardar: 'pos_cierres_periodo', hastaHoy: true, alCambiar: cargar });
+    ['ciLocal', 'ciPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    var pedido = 0;
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('ciLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_cierres', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('ciLocal').value || null, p_prueba: $('ciPrueba').value === '1' }).then(function (d) {
+        if (n !== pedido || !$('ciLista')) return;
+        pintarCierres(d);
+      }).catch(function (e) { if ($('ciLista')) $('ciLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function pintarCierres(d) {
+      var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); };
+      var dif = t.faltas || t.sobras ? [t.faltas ? t.faltas + ' con falta' : '', t.sobras ? t.sobras + ' con sobra' : ''].filter(Boolean).join(' · ') : 'Todos cuadran';
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi"><span>Cierres</span><b>' + (t.cierres || 0) + '</b></div>' +
+        '<div class="pos-kpi"><span>Ventas</span><b>' + p(t.ventas) + '</b></div>' +
+        '<div class="pos-kpi"><span>En efectivo</span><b>' + p(t.efectivo) + '</b></div>' +
+        '<div class="pos-kpi"><span>En tarjeta</span><b>' + p(t.tarjeta) + '</b></div>' +
+        '<div class="pos-kpi"><span>Mercado Pago</span><b>' + p(t.mercadopago) + '</b></div>' +
+        '<div class="pos-kpi"><span>Gastos</span><b>' + p(t.gastos) + '</b></div>' +
+        '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.retiro) + '</b></div>' +
+        (t.cierres ? '<div class="pos-kpi"><span>Diferencias</span><b class="cj-kpi-dif">' + esc(dif) + '</b></div>' : '') + '</div>' +
+        ($('ciPrueba').value === '1' ? '<div class="pos-cartel prueba">Los cierres de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en POS → Tickets.</div>' : '');
+      if (!d.filas || !d.filas.length) { $('ciLista').innerHTML = kpis + '<div class="pos-cartel">No hay cierres en ese período.</div>'; return; }
+      /* Las columnas de BlueSoft, apretadas para que entren en 1366: el número con la fecha, la sucursal
+         con quién cerró, y "Anulado" en la diferencia. Lo que queda en la caja chica está en el detalle. */
+      $('ciLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Cierre</th><th>Sucursal</th>' +
+        '<th class="n">Inicial</th><th class="n">Ventas</th><th class="n">Efectivo</th><th class="n">Tarjeta</th><th class="n">Mercado Pago</th>' +
+        '<th class="n" title="MODO, Go Cuotas y transferencias">Otros</th><th class="n" title="Gastos y otras salidas">Gastos</th><th class="n">Contado</th><th>Diferencia</th><th class="n">Caja fuerte</th></tr></thead><tbody>' +
+        d.filas.map(function (f) {
+          var an = f.estado === 'anulada', dv = desvioDe(cent(f.desvio), cent(f.tolerancia));
+          return '<tr data-cierre="' + esc(f.id) + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '') + '">' +
+            '<td><b>' + esc(refCierre(f)) + '</b><small>' + esc(fechaHora(f.fecha)) + '</small></td>' +
+            '<td>' + esc(bonito(f.local)) + '<small>' + esc(f.responsable_nombre || '—') + '</small></td>' +
+            '<td class="n">' + p(f.saldo_inicial) + '</td><td class="n tachar"><b>' + p(f.ventas_total) + '</b></td><td class="n">' + p(f.ventas_efectivo) + '</td>' +
+            '<td class="n">' + p(f.ventas_tarjeta) + '</td><td class="n">' + p(f.ventas_mercadopago) + '</td>' +
+            '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia)) + '</td>' +
+            '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas)) + '</td><td class="n">' + p(f.contado) + '</td>' +
+            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="cj-dv ' + dv.cls + '">' + esc(dv.corto) + '</span>' +
+              (f.conteos > 1 ? ' <small class="cj-veces" title="Contaron ' + f.conteos + ' veces">×' + f.conteos + '</small>' : '')) + '</td>' +
+            '<td class="n tachar">' + p(f.retiro) + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+      $('ciLista').querySelectorAll('tr[data-cierre]').forEach(function (tr) {
+        tr.onclick = function () { abrirCierre(tr.getAttribute('data-cierre'), cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    cargar();
+  }
+
+  function verMovimientos() {
+    var c = $('cuerpo');
+    c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, las otras entradas y salidas de la caja chica, y lo que pasó a la caja fuerte en cada cierre.',
+        '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>') +
+      '<div class="pos-filtros"><div id="mvPer"></div>' +
+        campo('', 'Sucursal', '<select id="mvLocal"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +
+        campo('', 'Movimientos', '<select id="mvPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
+      '</div><div id="mvLista"><p class="cargando">Cargando…</p></div>';
+    var per = Interfaz.periodo($('mvPer'), { inicial: 'mes', guardar: 'pos_movimientos_periodo', hastaHoy: true, alCambiar: cargar });
+    ['mvLocal', 'mvTipo', 'mvPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    $('mvNuevo').onclick = function () { abrirMovimiento($('mvLocal').value || localInicial().id, false, cargar); };
+    var pedido = 0;
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('mvLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_caja_movimientos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('mvLocal').value || null, p_tipo: $('mvTipo').value || null,
+                                       p_prueba: $('mvPrueba').value === '1' }).then(function (d) {
+        if (n !== pedido || !$('mvLista')) return;
+        pintarMovs(d);
+      }).catch(function (e) { if ($('mvLista')) $('mvLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function pintarMovs(d) {
+      var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); };
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi"><span>Gastos del local</span><b>' + p(t.gasto) + '</b></div>' +
+        '<div class="pos-kpi"><span>Otras salidas</span><b>' + p(t.salida) + '</b></div>' +
+        '<div class="pos-kpi"><span>Otros ingresos</span><b>' + p(t.ingreso) + '</b></div>' +
+        '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div></div>' +
+        ($('mvPrueba').value === '1' ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada.</div>' : '');
+      if (!d.filas || !d.filas.length) { $('mvLista').innerHTML = kpis + '<div class="pos-cartel">No hay movimientos en ese período con esos filtros.</div>'; return; }
+      $('mvLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th>Tipo</th><th>Detalle</th>' +
+        '<th>Cargó</th><th>Cierre</th><th>Estado</th><th class="n">Monto</th></tr></thead><tbody>' +
+        d.filas.map(function (f, i) {
+          var an = f.estado !== 'ok', cierre = f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') : 'Caja abierta';
+          return '<tr data-mov="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + ($('mvPrueba').value === '1' ? 'prueba' : '') + '">' +
+            '<td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(TIPOS_MOV[f.tipo] || f.tipo) + '</td>' +
+            '<td>' + esc(f.origen === 'cierre' ? 'Del cierre ' + refCierre(f.cierre) : [f.rubro, f.descripcion].filter(Boolean).join(' · ')) + '</td>' +
+            '<td>' + esc(f.persona || '—') + '</td><td>' + esc(f.origen === 'cierre' ? '—' : cierre) + '</td>' +
+            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</td>' +
+            '<td class="n tachar"><b>' + (f.tipo === 'ingreso' ? '+' : '−') + p(f.monto) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+      $('mvLista').querySelectorAll('tr[data-mov]').forEach(function (tr) {
+        var f = d.filas[Number(tr.getAttribute('data-mov'))];
+        tr.onclick = function () { if (f.origen === 'cierre') abrirCierre(f.id, cargar); else abrirMovDetalle(f, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    cargar();
+  }
+
+  /** Un gasto del listado: se ve, y se anula mientras su caja sigue abierta. */
+  function abrirMovDetalle(f, alCambiar) {
+    var an = f.estado !== 'ok', abierto = !f.cierre;
+    var caja = ventana('<h3 id="posVentTit">' + esc(TIPOS_MOV[f.tipo] || f.tipo) + ' · ' + plata(cent(f.monto)) + ' ' +
+        (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</h3>' +
+      '<div class="pos-ticket-datos">' +
+        '<div><span>Fecha</span>' + esc(fechaHora(f.fecha)) + '</div>' +
+        '<div><span>Sucursal</span>' + esc(bonito(f.local)) + '</div>' +
+        '<div><span>Cargó</span>' + esc(f.persona || '—') + '</div>' +
+        '<div><span>Cierre</span>' + esc(abierto ? 'Todavía en la caja abierta' : refCierre(f.cierre)) + '</div>' +
+        (f.rubro ? '<div><span>Tipo de gasto</span>' + esc(f.rubro) + '</div>' : '') +
+        (f.descripcion ? '<div><span>Descripción</span>' + esc(f.descripcion) + '</div>' : '') +
+      '</div>' +
+      (an ? '<div class="pos-cartel mal">Anulado' + (f.motivo ? ': ' + esc(f.motivo) : '') + '</div>' : '') +
+      (!an && !abierto ? '<p class="pos-ayuda">Ya entró en el cierre ' + esc(refCierre(f.cierre)) + ': para cambiarlo, hay que anular ese cierre.</p>' : '') +
+      '<div id="mdAnular"></div><div class="pos-pie">' + (!an && abierto ? '<button type="button" class="btn btn-sec btn-chico izq" id="mdAnularBtn">Anular</button>' : '') +
+        '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>');
+    var ab = caja.querySelector('#mdAnularBtn');
+    if (ab) ab.onclick = function () {
+      ab.remove();
+      pedirMotivo(caja.querySelector('#mdAnular'), 'Queda en la lista, tachado, con quién lo anuló y por qué.', 'Anular', function (motivo) {
+        return llamar('pos_caja_mov_anular', { p_id: f.id, p_motivo: motivo }).then(function () {
+          avisar('ok', 'Listo: quedó anulado.');
+          cerrarVentana();
+          if (alCambiar) alCambiar();
+        });
+      });
+    };
   }
 
   /* ════════════════════════════════════════════════════════════════════
