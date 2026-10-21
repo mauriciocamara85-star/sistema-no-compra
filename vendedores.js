@@ -1244,8 +1244,8 @@ function dibujarFotos(x) {
 
 /* ════════════════════════════════════════════════════════════════════════
    LA FOTO DE UN CONTROL
-   La cámara se abre adentro de la app (getUserMedia), con un recuadro guía
-   y la foto de referencia en chiquito. Si el teléfono no la deja usar, se
+   La cámara se abre adentro de la app (getUserMedia), con un recuadro (la
+   foto es lo de adentro) y la foto de referencia en chiquito. Si el teléfono no la deja usar, se
    abre la cámara del teléfono (capture): igual es cámara, no galería.
    La foto se achica, se sube a orden-fotos, se registra y la IA la revisa
    al instante. Cada foto se revisa UNA vez: para volver a revisar, se saca
@@ -1299,10 +1299,12 @@ function preguntasRespondidas(c) {
   return claves.sort(function (a, b) { return orden.indexOf(a) - orden.indexOf(b); }).map(function (k) { return [k, CHECK[k] || k]; });
 }
 
-var _stream = null;
+var _stream = null, _marcoObs = null;
 function apagarCamara() {
   pararGrabador();   // si estaba grabando un video de producto testigo, se descarta
   window.removeEventListener('devicemotion', alMoverse);
+  window.removeEventListener('resize', ponerMarco);
+  if (_marcoObs) { _marcoObs.disconnect(); _marcoObs = null; }
   if (_stream) { _stream.getTracks().forEach(function (t) { t.stop(); }); _stream = null; }
 }
 
@@ -1337,20 +1339,55 @@ function ponerGiro(g) {
   if (v) { v.classList.toggle('acostado-izq', g === -90); v.classList.toggle('acostado-der', g === 90); }
 }
 
-/** Como aJpeg, pero girada 90° a la izquierda (giro -90) o a la derecha (90). */
-function aJpegGirado(fuente, ancho, alto, giro) {
-  if (!giro) return aJpeg(fuente, ancho, alto);
-  var escala = Math.min(1, 1280 / Math.max(ancho, alto));
-  var w = Math.round(ancho * escala), h = Math.round(alto * escala);
+/** Como aJpeg, pero sólo la parte r del cuadro ({x, y, w, h}, ver recorteMarco) y girada 90° a la
+    izquierda (giro -90) o a la derecha (90). */
+function aJpegGirado(fuente, r, giro) {
+  var escala = Math.min(1, 1280 / Math.max(r.w, r.h));
+  var w = Math.round(r.w * escala), h = Math.round(r.h * escala);
   var cv = document.createElement('canvas');
-  cv.width = h;
-  cv.height = w;
+  cv.width = giro ? h : w;
+  cv.height = giro ? w : h;
   var x = cv.getContext('2d');
-  if (giro < 0) { x.translate(0, w); x.rotate(-Math.PI / 2); } else { x.translate(h, 0); x.rotate(Math.PI / 2); }
-  x.drawImage(fuente, 0, 0, w, h);
+  if (giro < 0) { x.translate(0, w); x.rotate(-Math.PI / 2); } else if (giro > 0) { x.translate(h, 0); x.rotate(Math.PI / 2); }
+  x.drawImage(fuente, r.x, r.y, r.w, r.h, 0, 0, w, h);
   return new Promise(function (ok, mal) {
     cv.toBlob(function (b) { b ? ok(b) : mal(new Error('No se pudo procesar la foto')); }, 'image/jpeg', 0.75);
   });
+}
+
+/* El recuadro (21/10, pedido de Mauricio con la captura de otra app): la
+   cámara llena la pantalla, lo de afuera del recuadro se ve oscurecido y la
+   foto es exactamente lo de adentro. Antes el recuadro era una guía nomás: la
+   pantalla recortaba los costados del cuadro y la foto salía mucho más ancha
+   que lo que se veía. El recuadro es lo más grande que entra entre el cartel
+   y el botón (los módulos son grandes: así no hay que irse tan para atrás) y
+   parado, como los módulos: entre 9:16 y 3:4. Si la pantalla giró sola, al
+   revés. */
+function ponerMarco() {
+  var video = document.getElementById('video'), marco = document.querySelector('.con-marco .guia');
+  if (!video || !marco) return;
+  var W = video.clientWidth, H = video.clientHeight, borde = 14;
+  var arriba = document.querySelector('.con-marco .camara-arriba').offsetHeight + marco.firstChild.offsetHeight + 12;
+  var ancho = W - 2 * borde, alto = H - arriba - borde;
+  if (ancho <= 0 || alto <= 0) return;
+  var min = ancho < alto ? 9 / 16 : 4 / 3, max = ancho < alto ? 3 / 4 : 16 / 9;
+  if (ancho / alto > max) ancho = alto * max;
+  else if (ancho / alto < min) alto = ancho / min;
+  marco.style.left = Math.round((W - ancho) / 2) + 'px';
+  marco.style.top = Math.round(arriba + (H - borde - arriba - alto) / 2) + 'px';
+  marco.style.width = Math.round(ancho) + 'px';
+  marco.style.height = Math.round(alto) + 'px';
+}
+
+/** Lo que se ve adentro del recuadro, en píxeles del cuadro de la cámara (el video se muestra con
+    object-fit: cover, centrado). Sin recuadro, el cuadro entero. */
+function recorteMarco(video) {
+  var vw = video.videoWidth, vh = video.videoHeight, marco = document.querySelector('.con-marco .guia');
+  if (!marco) return { x: 0, y: 0, w: vw, h: vh };
+  var v = video.getBoundingClientRect(), m = marco.getBoundingClientRect();
+  var s = Math.max(v.width / vw, v.height / vh);
+  var x = Math.max(0, (m.left - v.left - (v.width - vw * s) / 2) / s), y = Math.max(0, (m.top - v.top - (v.height - vh * s) / 2) / s);
+  return { x: Math.round(x), y: Math.round(y), w: Math.round(Math.min(vw - x, m.width / s)), h: Math.round(Math.min(vh - y, m.height / s)) };
 }
 
 function analizar(fotoId) {
@@ -1398,12 +1435,15 @@ function camara(titulo, referencia, guia, alSacar, alCerrar) {
   barra.hidden = true;
   app.className = 'app';
   app.innerHTML =
-    '<div class="camara-vista" id="vista">' +
-      '<video id="video" playsinline muted autoplay></video>' +
-      '<div class="guia"><span>' + esc(guia) + '</span></div>' +
-      '<div class="camara-arriba"><button class="volver" id="cerrar">‹ Volver</button><span class="titulo">' + esc(titulo) + '</span><span style="width:60px"></span></div>' +
-      '<img class="referencia" id="ref" alt="Cómo tiene que quedar" hidden>' +
+    '<div class="camara-vista con-marco" id="vista">' +
+      '<div class="visor">' +
+        '<video id="video" playsinline muted autoplay></video>' +
+        '<div class="guia"><span>' + esc(guia) + '</span></div>' +
+        '<div class="camara-arriba"><button class="volver" id="cerrar">‹ Volver</button><span class="titulo">' + esc(titulo) + '</span><span style="width:60px"></span></div>' +
+      '</div>' +
       '<div class="camara-abajo">' +
+        /* La foto modelo, al costado del botón como la última foto en la cámara del teléfono: tocarla la agranda. */
+        '<button class="ref-caja" id="refCaja" type="button" hidden><img class="referencia" id="ref" alt="Cómo tiene que quedar"><small>Modelo</small></button>' +
         '<button class="disparar" id="disparar" aria-label="Sacar la foto"></button>' +
         '<button class="enlace" id="otra">¿No anda la cámara?</button>' +
       '</div>' +
@@ -1414,6 +1454,11 @@ function camara(titulo, referencia, guia, alSacar, alCerrar) {
   _giro = 0;
   _grav = null;
   window.addEventListener('devicemotion', alMoverse);
+  ponerMarco();
+  window.addEventListener('resize', ponerMarco);
+  /* Si cambia el lugar de la imagen (aparece la foto modelo abajo, se esconde la barra del navegador), se rehace. */
+  if (window.ResizeObserver) { _marcoObs = new ResizeObserver(function () { ponerMarco(); }); _marcoObs.observe(video); }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(ponerMarco);   // con la letra, el cartel cambia de alto
   document.getElementById('cerrar').onclick = function () { apagarCamara(); alCerrar(); };
   document.getElementById('otra').onclick = function () { archivo.click(); };
   archivo.onchange = function () {
@@ -1421,10 +1466,12 @@ function camara(titulo, referencia, guia, alSacar, alCerrar) {
     if (!f) return;
     archivoAJpeg(f).then(function (b) { apagarCamara(); alSacar(b); }, function (e) { avisar(e.message); });
   };
+  var refCaja = document.getElementById('refCaja');
+  refCaja.onclick = function () { refCaja.classList.toggle('grande'); };
   if (referencia) {
     urlFirmada(referencia).then(function (u) {
       var ref = document.getElementById('ref');
-      if (u && ref) { ref.src = u; ref.hidden = false; }
+      if (u && ref) { ref.src = u; refCaja.hidden = false; }
     });
   }
 
@@ -1442,15 +1489,17 @@ function camara(titulo, referencia, guia, alSacar, alCerrar) {
 
   disparar.onclick = function () {
     if (!_stream || !video.videoWidth) { archivo.click(); return; }
-    /* Acostado con el cuadro vertical: se endereza (ver alMoverse). */
+    /* Lo de adentro del recuadro; acostado con el cuadro vertical, se endereza (ver alMoverse). */
     var giro = video.videoHeight > video.videoWidth ? _giro : 0;
-    aJpegGirado(video, video.videoWidth, video.videoHeight, giro).then(function (b) { apagarCamara(); alSacar(b); }, function (e) { avisar(e.message); });
+    ponerMarco();   // por si la pantalla recién giró y el recuadro todavía no se rehizo
+    aJpegGirado(video, recorteMarco(video), giro).then(function (b) { apagarCamara(); alSacar(b); }, function (e) { avisar(e.message); });
   };
 
   /* Sin permiso o sin cámara adentro de la app: la del teléfono. */
   function sinCamara() {
     var g = document.querySelector('.guia span');
     if (g) g.textContent = 'Tocá el botón para abrir la cámara del teléfono';
+    ponerMarco();
     disparar.onclick = function () { archivo.click(); };
   }
 }
