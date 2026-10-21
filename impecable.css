@@ -520,3 +520,32 @@ body.espejo .app { padding-top: calc(62px + env(safe-area-inset-top)); }
 body.espejo .cv { top: calc(54px + env(safe-area-inset-top)); }
 body.espejo [data-descargo], body.espejo #activar, body.espejo #instalar { display: none; }
 .ver-app { margin-left: 8px; min-height: 34px; padding: 0 10px; font-size: 13px; vertical-align: middle; }
+
+/* Revisar con corrección (SQL 150): la foto con marcas (círculos rojos con número), Antes | Ahora,
+   la casilla "Que lo corrija" y la sugerencia del supervisor en Hoy. La caja mide lo mismo que la foto. */
+.foto-marcas { position: relative; display: flex; justify-content: center; align-items: center; min-height: 180px; background: #000; border-radius: 18px; overflow: hidden; }
+.fm-caja { position: relative; max-width: 100%; line-height: 0; }
+.fm-caja img { display: block; max-width: 100%; max-height: 62vh; width: auto; height: auto; }
+.fm-caja img:not([src]) { width: 240px; height: 180px; }
+.fm-capa { position: absolute; inset: 0; pointer-events: none; }
+.fm-marca { position: absolute; width: 36px; height: 36px; margin: -18px 0 0 -18px; border: 3px solid #FF453A; border-radius: 50%;
+            background: rgba(255, 69, 58, .18); box-shadow: 0 0 0 2px rgba(0, 0, 0, .55); color: #fff; font: 800 15px/30px Manrope, system-ui, sans-serif;
+            text-align: center; text-shadow: 0 1px 3px #000; pointer-events: auto; cursor: pointer; }
+.foto-marcas.editable .fm-caja { cursor: crosshair; }
+.fm-etiqueta { position: absolute; top: 8px; left: 8px; padding: 2px 9px; border-radius: 99px; background: rgba(0, 0, 0, .7); color: #fff; font-size: 12px; font-weight: 800; line-height: 1.5; }
+.ayuda-marcas { margin: 8px 0 0; color: var(--suave); font-size: 13px; text-align: center; }
+.antes-ahora { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.antes-ahora .foto-marcas { min-height: 140px; }
+.antes-ahora .fm-caja img { max-height: 46vh; }
+.antes-ahora.marcando { grid-template-columns: 1fr; }
+.antes-ahora.marcando .fm-caja img { max-height: 62vh; }
+.check.pedir-correccion { margin: 2px 0 0; }
+.ayuda-chica { margin: 2px 0 12px; color: var(--suave); font-size: 13px; }
+.pedido { margin: 10px 0 0; }
+.sugerencia-sup { display: block; width: 100%; margin: 12px 0; padding: 12px 14px; border: 1px solid var(--lima); border-radius: 16px; background: var(--tarjeta);
+                  color: var(--texto); text-align: left; cursor: pointer; }
+.sugerencia-sup b { display: block; font-weight: 800; }
+.sugerencia-sup span { display: block; color: var(--suave); font-size: 14px; margin-top: 2px; }
+.sugerencia-sup em { display: block; color: var(--lima); font-style: normal; font-weight: 700; font-size: 14px; margin-top: 6px; }
+.tarea .foto-marcas { margin: 10px 0 0; }
+.tarea .foto-marcas .fm-caja img { max-height: 40vh; }

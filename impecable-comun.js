@@ -370,6 +370,80 @@ function cargarFotos(cont) {
   });
 }
 
+/* ════════════════════════════════════════════════════════════════════════
+   LAS MARCAS EN LA FOTO (SQL 150, pedido de Mauricio el 21/10): al revisar,
+   círculos rojos con número donde está lo que hay que corregir ("a esta
+   parte le falta una camisa"). Se guardan como [{x, y}] de 0 a 1 sobre la
+   foto, numeradas en ese orden. La caja mide lo mismo que la foto: así una
+   marca cae en el mismo lugar en el celular y en la compu.
+   ════════════════════════════════════════════════════════════════════════ */
+var MAX_MARCAS = 9;
+
+/** La foto con sus marcas. op: { editable, etiqueta ("Antes", "Ahora"), clase, alt }. */
+function fotoConMarcas(ruta, marcas, op) {
+  op = op || {};
+  return '<div class="foto-marcas' + (op.editable ? ' editable' : '') + (op.clase ? ' ' + op.clase : '') + '">' +
+    '<div class="fm-caja"><img data-foto="' + esc(ruta) + '" alt="' + esc(op.alt || 'La foto') + '">' +
+    '<div class="fm-capa">' + dibujoMarcas(marcas) + '</div></div>' +
+    (op.etiqueta ? '<span class="fm-etiqueta">' + esc(op.etiqueta) + '</span>' : '') + '</div>';
+}
+
+function dibujoMarcas(marcas) {
+  return (marcas || []).map(function (m, i) {
+    return '<span class="fm-marca" data-i="' + i + '" style="left:' + (Number(m.x) * 100).toFixed(2) + '%;top:' + (Number(m.y) * 100).toFixed(2) + '%">' + (i + 1) + '</span>';
+  }).join('');
+}
+
+/** Hace editable la foto de `cont` (un .foto-marcas): tocar la foto agrega una marca y tocar una marca la saca.
+    Devuelve { marcas() } con la lista (null sin marcas), lista para mandar a la base. */
+function marcarEnFoto(cont, inicial) {
+  var lista = (inicial || []).slice(0, MAX_MARCAS).map(function (m) { return { x: Number(m.x), y: Number(m.y) }; });
+  var caja = cont.querySelector('.fm-caja'), capa = cont.querySelector('.fm-capa');
+  cont.classList.add('editable');
+  var pintar = function () { capa.innerHTML = dibujoMarcas(lista); };
+  caja.onclick = function (e) {
+    var marca = e.target.closest('.fm-marca');
+    if (marca) { lista.splice(+marca.dataset.i, 1); pintar(); return; }
+    var img = caja.querySelector('img'), r = img.getBoundingClientRect();
+    if (!img.naturalWidth || !r.width || !r.height) return;   // todavía no cargó
+    var x = (e.clientX - r.left) / r.width, y = (e.clientY - r.top) / r.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    if (lista.length >= MAX_MARCAS) { avisar('Como mucho ' + MAX_MARCAS + ' marcas por foto.'); return; }
+    lista.push({ x: Math.round(x * 10000) / 10000, y: Math.round(y * 10000) / 10000 });
+    pintar();
+  };
+  pintar();
+  return { marcas: function () { return lista.length ? lista.map(function (m) { return { x: m.x, y: m.y }; }) : null; } };
+}
+
+/** Revisar la foto de un control (la app y la compu). Lo nuevo del SQL 150 (pedir la corrección con "Bien" o
+    "Impecable", las marcas) va sólo si se usa: sin eso, el pedido es el de siempre y anda con la base de antes. */
+function revisarControl(c, nivel, comentario, corregir, marcas) {
+  var args = { p_control: c.id, p_nivel: nivel, p_comentario: comentario || null, p_foto: c.ultimo_intento_id || null };
+  if (corregir && nivel !== 'a_mejorar' && nivel !== 'fuera_de_estandar') args.p_corregir = true;
+  if (marcas && marcas.length) args.p_marcas = marcas;
+  return llamar('orden_revisar_control', args).catch(function (e) { throw falta150(e); });
+}
+
+/** Mirar la foto de una tarea hecha: "Quedó bien" o "Pedir otra corrección" (con marcas, SQL 150). */
+function revisarTarea(t, bien, mensaje, marcas) {
+  var args = { p_tarea: t.id, p_bien: bien, p_mensaje: mensaje || null };
+  if (marcas && marcas.length) args.p_marcas = marcas;
+  return llamar('orden_tarea_revisar', args).catch(function (e) { throw falta150(e); });
+}
+
+function falta150(e) {
+  return /schema cache|Could not find the function/i.test(mensajeDe(e)) ? rechazo('Falta actualizar el sistema para pedir correcciones y marcar la foto (SQL 150).') : e;
+}
+
+/** Lee con las columnas del SQL 150; si la base todavía no las tiene, sin ellas (así nada se rompe en el medio). */
+function leer150(ruta, nuevas) {
+  return leer(ruta.replace('select=', 'select=' + nuevas + ',')).catch(function (e) {
+    if (!e || e.sinSesion || esDeRed(e)) throw e;   // sin señal o sin sesión: no es por las columnas
+    return leer(ruta);
+  });
+}
+
 /** Una Edge Function con la sesión. */
 function llamarFuncion(nombre, cuerpo) {
   return tokenVend().then(function (t) {

@@ -629,3 +629,35 @@
   .editor-fondo.arrastrando .ed-tacho { inset: 4px; flex-direction: row; }
   .ed-pista { display: none; }
 }
+
+/* ── Revisar con corrección (SQL 150): la foto con marcas (círculos rojos con número), Antes | Ahora,
+   la casilla "Que lo corrija" y los cuatro niveles, como en la app. La caja mide lo mismo que la foto. ── */
+.ventana .foto-marcas { position: relative; display: flex; justify-content: center; align-items: center; min-height: 180px; background: #111110; border-radius: var(--r-sm); overflow: hidden; }
+.ventana .fm-caja { position: relative; max-width: 100%; line-height: 0; }
+.ventana .fm-caja img { display: block; max-width: 100%; max-height: 64vh; width: auto; height: auto; }
+.ventana .fm-caja img:not([src]) { width: 240px; height: 180px; }
+.ventana .fm-capa { position: absolute; inset: 0; pointer-events: none; }
+.ventana .fm-marca { position: absolute; width: 34px; height: 34px; margin: -17px 0 0 -17px; border: 3px solid #FF453A; border-radius: 50%; box-sizing: border-box;
+                     background: rgba(255, 69, 58, .18); box-shadow: 0 0 0 2px rgba(0, 0, 0, .55); color: #fff; font: 700 14px/28px var(--sans);
+                     text-align: center; text-shadow: 0 1px 3px #000; pointer-events: auto; cursor: pointer; }
+.ventana .foto-marcas.editable .fm-caja { cursor: crosshair; }
+.ventana .fm-etiqueta { position: absolute; top: 8px; left: 8px; padding: 2px 9px; border-radius: var(--r-pill); background: rgba(0, 0, 0, .72); color: #fff; font: 600 12px/1.5 var(--sans); }
+.ventana .ayuda-marcas { margin: 8px 0 0; color: var(--txt-3); font-size: 13px; text-align: center; }
+.ventana .antes-ahora { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ventana .antes-ahora .fm-caja img { max-height: 58vh; }
+@media (max-width: 599px) { .ventana .antes-ahora { grid-template-columns: 1fr; } }
+.ventana .check { display: flex; align-items: center; gap: 8px; margin: 0 0 4px; font-size: 14px; color: var(--txt); cursor: pointer; }
+.ventana .check input { width: 19px; height: 19px; margin: 0; accent-color: var(--acc); }
+.ventana .ayuda-chica { margin: 2px 0 12px; color: var(--txt-3); font-size: 13px; }
+.ventana .niveles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+@media (max-width: 599px) { .ventana .niveles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.ventana .boton.nivel { border-color: transparent; font-weight: 700; }
+.ventana .boton.nivel-impecable { background: var(--oro-soft); color: var(--oro-txt); }
+.ventana .boton.nivel-bien { background: var(--ok-soft); color: var(--ok-txt); }
+.ventana .boton.nivel-a_mejorar { background: var(--warn-soft); color: var(--warn-txt); }
+.ventana .boton.nivel-fuera_de_estandar { background: var(--bad-soft); color: var(--bad-txt); }
+.ventana .boton.nivel:hover:not(:disabled) { border-color: var(--line-alta); }
+.ventana .boton:disabled { opacity: .55; cursor: default; }
+.ventana .est.listo { background: var(--ok-soft); color: var(--ok-txt); }
+.ventana .est.vencido { background: var(--bad-soft); color: var(--bad-txt); }
+.ventana .est.sorpresa, .ventana .est.corregir { background: var(--warn-soft); color: var(--warn-txt); }

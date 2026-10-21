@@ -398,8 +398,9 @@ function graficoLocal(filas) {
 var _fotoNivel = '', _fotoQuien = '', _fotoPedido = 0, _fotoDe = 'modulos';
 function verFotos() {
   var c = document.getElementById('cuerpo');
-  /* Módulos | Tareas (16/10): las fotos de las tareas hechas, para mirarlas y mandar a corregir (SQL 132). */
-  c.innerHTML = '<div class="imp-filtros"><div class="solapas" id="fotoDe">' + [['modulos', 'Módulos'], ['tareas', 'Tareas']].map(function (o) {
+  /* Módulos | Tareas (16/10): las fotos de las tareas hechas, para mirarlas y mandar a corregir (SQL 132).
+     Desde el SQL 150 también las correcciones pedidas al revisar, Antes | Ahora. */
+  c.innerHTML = '<div class="imp-filtros"><div class="solapas" id="fotoDe">' + [['modulos', 'Módulos'], ['tareas', 'Correcciones y tareas']].map(function (o) {
       return '<button data-foto-de="' + o[0] + '" class="' + (o[0] === _fotoDe ? 'activa' : '') + '">' + o[1] + '</button>';
     }).join('') + '</div><div id="fotoPer"></div><div class="solapas"' + (_fotoDe === 'tareas' ? ' hidden' : '') + '>' +
     [['', 'Todos los niveles']].concat(NIVELES.slice().reverse().map(function (n) { return [n, NIVEL[n]]; })).map(function (o) {
@@ -424,8 +425,10 @@ function verFotos() {
 
 function datosFotos(rango) {
   var L = valor(_local.id), pedido = ++_fotoPedido;
-  leer('/orden_v_controles?select=id,fecha,tipo,estado,modulo_id,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,a_tiempo,comentario,frontal' +
-       '&local_id=eq.' + L + '&foto_path=not.is.null&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + (_fotoNivel ? '&nivel=eq.' + _fotoNivel : '') + '&order=tomada_en.desc&limit=150')
+  /* SQL 150: las marcas, si se pidió la corrección y, en la foto de una corrección, de qué tarea es. */
+  leer150('/orden_v_controles?select=id,fecha,tipo,estado,modulo_id,modulo_numero,modulo_nombre,sector_tipo,persona_nombre,foto_path,tomada_en,nivel,nivel_ia,nivel_final,nivel_declarado,ia_resultado,a_tiempo,comentario,frontal,ultimo_intento_id,revisado_en' +
+       '&local_id=eq.' + L + '&foto_path=not.is.null&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + (_fotoNivel ? '&nivel=eq.' + _fotoNivel : '') + '&order=tomada_en.desc&limit=150',
+       'marcas,correccion_pedida,tarea_id')
     .then(function (fotos) {
       if (_solapa !== 'fotos' || pedido !== _fotoPedido) return;
       fotos = fotos || [];
@@ -440,7 +443,9 @@ function datosFotos(rango) {
       else html += '<p class="bajada">' + vistas.length + (vistas.length === 1 ? ' foto' : ' fotos') + '. Tocá una para verla grande.</p><div class="imp-fotos">' + vistas.map(function (f, i) {
         var distinta = f.nivel_ia && f.nivel && f.nivel_ia !== f.nivel;
         return '<button class="imp-foto" data-i="' + i + '"><img data-foto="' + esc(f.foto_path) + '" alt=""><b>' + esc(f.modulo_nombre) + '</b>' +
-          '<div class="info">' + estNivel(f.nivel, 'Esperando revisión') + (distinta ? '<span class="est">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>' : '') + (f.estado === 'enviado' && f.nivel ? '<span class="est sorpresa">Sin revisar</span>' : '') + '</div>' +
+          '<div class="info">' + (f.tipo === 'correccion' ? estCorreccion(f)
+            : estNivel(f.nivel, 'Esperando revisión') + (distinta ? '<span class="est">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>' : '') + (f.estado === 'enviado' && f.nivel ? '<span class="est sorpresa">Sin revisar</span>' : '') +
+              (f.correccion_pedida ? '<span class="est corregir">Corrección pedida</span>' : '')) + '</div>' +
           '<small>' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + (f.tipo === 'sorpresa' ? ' · sorpresa' : '') + (f.frontal ? ' · frontal nuevo' : '') + (f.a_tiempo === false ? ' · tarde' : '')) + '</small></button>';
       }).join('') + '</div>';
       var c = document.getElementById('fotoDatos');
@@ -448,52 +453,132 @@ function datosFotos(rango) {
       cargarFotos(c);
       var q = document.getElementById('fotoQuien');
       if (q) q.onchange = function () { _fotoQuien = q.value; datosFotos(rango); };
-      c.querySelectorAll('[data-i]').forEach(function (b) { b.onclick = function () { verFoto(vistas[+b.dataset.i]); }; });
+      c.querySelectorAll('[data-i]').forEach(function (b) { b.onclick = function () { verFoto(vistas[+b.dataset.i], rango); }; });
     }).catch(function (e) { error(e, verFotos); });
 }
 
-function verFoto(f) {
+/** La foto de una corrección (SQL 150): se mira con su tarea (Antes | Ahora), no se le pone un nivel. */
+function estCorreccion(f) {
+  if (f.estado === 'enviado') return '<span class="est sorpresa">Corrección para mirar</span>';
+  return f.comentario ? '<span class="est vencido">Corrección: pidió otra</span>' : '<span class="est listo">Corrección: quedó bien</span>';
+}
+
+/* La foto grande. SQL 150 (Mauricio, 21/10: "tendría que poder revisarlo del sistema también"): la que espera
+   revisión se revisa acá mismo, igual que en la app (marcas en la foto, sugerencia o corrección, "que lo corrija y
+   mande otra foto" y el nivel); la ya revisada tiene "Cambiar la revisión". La foto de una corrección se mira con su
+   tarea, Antes | Ahora. */
+function verFoto(f, rango) {
   var ia = f.ia_resultado || {};
   var hall = (ia.hallazgos || []).filter(function (h) { return h && h.titulo; });
-  ventana('<h1>' + esc(f.modulo_nombre) + '</h1><p class="bajada">' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + ' · ' + ({ programado: 'control', sorpresa: 'sorpresa', deposito: 'depósito', correccion: 'corrección' }[f.tipo] || f.tipo)) + '</p>' +
-    '<img class="foto-grande" data-foto="' + esc(f.foto_path) + '" alt="">' +
+  var corr = f.tipo === 'correccion', revisada = f.estado === 'revisado';
+  var puede = !soloMira() && !corr && (f.estado === 'enviado' || revisada);
+  var w = ventana('<h1>' + esc(f.modulo_nombre) + '</h1><p class="bajada">' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + ' · ' + ({ programado: 'control', sorpresa: 'sorpresa', deposito: 'depósito', correccion: 'corrección' }[f.tipo] || f.tipo)) + '</p>' +
+    fotoConMarcas(f.foto_path, f.marcas, { clase: 'fm-grande', alt: 'La foto del módulo' }) +
+    (puede ? '<p class="ayuda-marcas" id="vfAyuda"' + (revisada ? ' hidden' : '') + '>Tocá la foto para marcar dónde. Tocá una marca para sacarla.</p>' : '') +
     '<div class="seccion">Los niveles</div><p class="bajada">' +
-      'Final: ' + estNivel(f.nivel, 'Esperando revisión') +
+      (corr ? estCorreccion(f) : 'Final: ' + estNivel(f.nivel, 'Esperando revisión')) +
       (f.nivel_ia ? ' &nbsp; IA: ' + estNivel(f.nivel_ia) : '') +
       (f.nivel_declarado ? ' &nbsp; El vendedor: ' + estNivel(f.nivel_declarado) : '') + '</p>' +
     (hall.length ? '<div class="seccion">Lo que vio la IA</div><ul>' + hall.map(function (h) { return '<li>' + esc(h.titulo) + (h.gravedad === 'sugerencia' ? ' (sugerencia)' : '') + '</li>'; }).join('') + '</ul>' : '') +
-    (f.comentario ? '<div class="seccion">La supervisión</div><div class="nota">' + esc(f.comentario) + '</div>' : '') +
+    (f.comentario ? '<div class="seccion">' + (f.correccion_pedida || corr ? 'Lo que se le pidió corregir' : 'La sugerencia') + '</div><div class="nota">' + esc(f.comentario) + '</div>'
+      : f.correccion_pedida ? '<div class="nota alerta">Se le pidió que lo corrija y mande otra foto.</div>' : '') +
+    (corr && f.tarea_id ? '<div class="vm-usar"><button class="boton' + (f.estado === 'enviado' && !soloMira() ? ' lima' : '') + ' chico" id="vfTarea">' +
+      (f.estado === 'enviado' && !soloMira() ? 'Mirar la corrección (Antes | Ahora)' : 'Ver la corrección (Antes | Ahora)') + '</button></div>' : '') +
+    (puede && revisada ? '<div class="vm-usar"><button class="boton chico" id="vfCambiar">Cambiar la revisión</button></div>' : '') +
+    (puede ? '<div class="vf-revisar"' + (revisada ? ' hidden' : '') + '><div class="seccion">' + (revisada ? 'Cambiar la revisión' : 'Revisar') + '</div>' +
+      '<label class="campo"><span>Sugerencia o corrección</span><textarea id="vfComent" rows="2" maxlength="500" placeholder="Ej.: 1) falta una camisa en cada pila, que sean 4"></textarea></label>' +
+      '<label class="check pedir-correccion"><input type="checkbox" id="vfCorregir"> Que lo corrija y mande otra foto</label>' +
+      '<p class="ayuda-chica">Con «A mejorar» o «Fuera de estándar» se le pide siempre. Si cambiás más de un nivel de lo que vio la IA, contá por qué.</p>' +
+      '<div class="niveles">' + ['impecable', 'bien', 'a_mejorar', 'fuera_de_estandar'].map(function (n) {
+        return '<button class="boton nivel nivel-' + n + '" data-nivel="' + n + '">' + NIVEL[n] + '</button>';
+      }).join('') + '</div></div>' : '') +
     (esAdmin() && f.modulo_id ? '<div class="vm-usar"><button class="boton chico" id="vfModelo">Usar como modelo de este módulo</button></div>' : ''));
-  var b = document.getElementById('vfModelo');
+  var b = w.querySelector('#vfModelo');
   if (b) unaVez(b, function () {
     return usarComoModelo({ id: f.modulo_id }, f.foto_path).then(function () { avisar('Listo: es la foto modelo de ' + f.modulo_nombre + ' (la IA compara con ésta).'); return 'dejar-apagado'; });
+  });
+  var vt = w.querySelector('#vfTarea');
+  if (vt) unaVez(vt, function () {
+    return tareaDeCorreccion(f.tarea_id).then(function (t) {
+      if (!t) { avisar('No encontramos la tarea de esta corrección.'); return; }
+      w.remove(); verTareaFoto(t, rango, function () { datosFotos(rango); });
+    });
+  });
+  if (!puede) return;
+  var form = w.querySelector('.vf-revisar'), marcador = null, coment = w.querySelector('#vfComent'), chk = w.querySelector('#vfCorregir');
+  var abrir = function () {
+    form.hidden = false; w.querySelector('#vfAyuda').hidden = false;
+    marcador = marcarEnFoto(w.querySelector('.fm-grande'), f.marcas);
+  };
+  if (revisada) {
+    /* Cambiar la revisión: arranca con lo que ya tenía. */
+    coment.value = f.comentario || '';
+    chk.checked = !!f.correccion_pedida;
+    w.querySelector('#vfCambiar').onclick = function () { this.parentNode.remove(); abrir(); coment.focus(); };
+  } else abrir();
+  var niveles = w.querySelectorAll('[data-nivel]');
+  niveles.forEach(function (bn) {
+    unaVez(bn, function () {
+      var n = bn.dataset.nivel, texto = String(coment.value || '').trim(), bajo = n === 'a_mejorar' || n === 'fuera_de_estandar';
+      var corregir = bajo || chk.checked;
+      if (corregir && !bajo && !texto) { avisar('Escribí qué tiene que corregir.'); coment.focus(); return; }
+      niveles.forEach(function (x) { x.disabled = true; });
+      return revisarControl(f, n, texto, corregir, marcador && marcador.marcas())
+        .then(function () {
+          avisar(f.modulo_nombre + ': ' + NIVEL[n] + (corregir && f.persona_nombre ? '. Le pediste a ' + f.persona_nombre + ' que lo corrija.' : corregir ? '. Le pediste que lo corrija.' : '.'));
+          w.remove(); datosFotos(rango); return 'dejar-apagado';
+        }, function (e) {
+          if (/cambió la foto/i.test(mensajeDe(e))) { avisar(f.modulo_nombre + ': el vendedor cambió la foto recién. Mirala de nuevo.'); w.remove(); datosFotos(rango); return 'dejar-apagado'; }
+          niveles.forEach(function (x) { x.disabled = false; }); throw e;
+        });
+    });
+    /* Uno a la vez (como en la app): si ya se está mandando otro nivel, este toque no cuenta. */
+    var tocar = bn.onclick;
+    bn.onclick = function () {
+      if (Array.prototype.some.call(niveles, function (x) { return x.disabled; })) return;
+      return tocar.apply(this, arguments);
+    };
   });
 }
 
 /* ── Las tareas con foto (16/10): las hechas en el período y las que esperan la corrección, para mirarlas y,
-   si algo no está bien, mandarlas a corregir con un mensaje (SQL 132). ── */
+   si algo no está bien, mandarlas a corregir con un mensaje (SQL 132). SQL 150: también las correcciones que
+   se pidieron al revisar una foto, con la de antes al lado y sus marcas. ── */
 function tareaParaMirar(t) { return t.estado === 'hecha' && (!t.revisada_en || new Date(t.revisada_en) < new Date(t.completada_en)); }
 function estTarea(t) {
   if (t.estado !== 'hecha') return '<span class="est vencido">Para corregir</span>';
   return tareaParaMirar(t) ? '<span class="est sorpresa">Para mirar</span>' : '<span class="est listo">Bien</span>';
 }
 
+var COLS_TAREA_FOTO = 'id,titulo,detalle,estado,persona_nombre,foto_path,completada_en,completada_a_tiempo,correccion,correccion_en,correcciones,revisada_en,creado_en';
+
+/** La tarea de la foto de una corrección (para abrirla desde Módulos). */
+function tareaDeCorreccion(id) {
+  return leer150('/orden_v_tareas?select=' + COLS_TAREA_FOTO + '&id=eq.' + valor(id), 'foto_antes,marcas,ia_correccion')
+    .then(function (r) { return (r || [])[0] || null; });
+}
+
 function datosTareasFoto(rango) {
   var L = valor(_local.id), pedido = ++_fotoPedido;
   var desdeTs = new Date(rango.desde + 'T00:00:00-03:00').toISOString(), hastaTs = new Date(sumarDias(rango.hasta, 1) + 'T00:00:00-03:00').toISOString();
-  leer('/orden_v_tareas?select=id,titulo,detalle,estado,persona_nombre,foto_path,completada_en,completada_a_tiempo,correccion,correccion_en,correcciones,revisada_en' +
-       '&local_id=eq.' + L + '&foto_path=not.is.null&or=(and(completada_en.gte.' + desdeTs + ',completada_en.lt.' + hastaTs + '),and(estado.in.(pendiente,vencida),correccion.not.is.null))' +
-       '&order=completada_en.desc.nullslast&limit=150')
+  var base = '/orden_v_tareas?select=' + COLS_TAREA_FOTO + '&local_id=eq.' + L + '&order=completada_en.desc.nullslast&limit=150';
+  /* Con el SQL 150, también las correcciones pedidas que todavía no mandó (tienen la foto de antes). */
+  leer(base.replace('select=', 'select=foto_antes,marcas,ia_correccion,') +
+       '&or=(and(foto_path.not.is.null,completada_en.gte.' + desdeTs + ',completada_en.lt.' + hastaTs + '),and(estado.in.(pendiente,vencida),or(correccion.not.is.null,foto_antes.not.is.null)))')
+    .catch(function (e) {
+      if (!e || e.sinSesion || esDeRed(e)) throw e;
+      return leer(base + '&foto_path=not.is.null&or=(and(completada_en.gte.' + desdeTs + ',completada_en.lt.' + hastaTs + '),and(estado.in.(pendiente,vencida),correccion.not.is.null))');
+    })
     .then(function (lista) {
       if (_solapa !== 'fotos' || pedido !== _fotoPedido || _fotoDe !== 'tareas') return;
       lista = lista || [];
       var mirar = lista.filter(tareaParaMirar).length, c = document.getElementById('fotoDatos');
-      c.innerHTML = !lista.length ? '<div class="vacio">No hay fotos de tareas en este período.</div>'
-        : '<p class="bajada">' + lista.length + (lista.length === 1 ? ' tarea con foto' : ' tareas con foto') + (mirar ? ' · ' + mirar + ' para mirar' : '') +
+      c.innerHTML = !lista.length ? '<div class="vacio">No hay correcciones ni fotos de tareas en este período.</div>'
+        : '<p class="bajada">' + lista.length + (lista.length === 1 ? ' corrección o tarea con foto' : ' correcciones y tareas con foto') + (mirar ? ' · ' + mirar + ' para mirar' : '') +
           '. Tocá una para verla grande.</p><div class="imp-fotos">' + lista.map(function (t, i) {
-            return '<button class="imp-foto" data-t="' + i + '"><img data-foto="' + esc(t.foto_path) + '" alt=""><b>' + esc(t.titulo) + '</b>' +
+            return '<button class="imp-foto" data-t="' + i + '"><img data-foto="' + esc(t.estado === 'hecha' ? t.foto_path : t.foto_antes || t.foto_path) + '" alt=""><b>' + esc(t.titulo) + '</b>' +
               '<div class="info">' + estTarea(t) + '</div>' +
-              '<small>' + esc((t.estado === 'hecha' ? diaMes(t.completada_en) : 'a corregir desde el ' + diaMes(t.correccion_en)) + ' · ' + (t.persona_nombre || '') +
+              '<small>' + esc((t.estado === 'hecha' ? diaMes(t.completada_en) : 'a corregir desde el ' + diaMes(t.correccion_en || t.creado_en)) + ' · ' + (t.persona_nombre || '') +
                               (t.estado === 'hecha' && t.completada_a_tiempo === false ? ' · tarde' : '') + ((t.correcciones || []).length && t.estado === 'hecha' ? ' · corregida' : '')) + '</small></button>';
           }).join('') + '</div>';
       cargarFotos(c);
@@ -501,28 +586,41 @@ function datosTareasFoto(rango) {
     }).catch(function (e) { error(e, verFotos); });
 }
 
-function verTareaFoto(t, rango) {
+/** Una tarea con foto: la de antes (con sus marcas) y la que mandó, "Quedó bien" o "Pedir otra corrección".
+    despues: qué recargar al terminar (la lista de tareas, o la de módulos si se abrió desde ahí). */
+function verTareaFoto(t, rango, despues) {
   var hecha = t.estado === 'hecha', mirar = tareaParaMirar(t), puede = hecha && !soloMira(), hist = t.correcciones || [];
+  var antes = !!t.foto_antes, pedido = t.correccion || (antes ? t.detalle : null);
+  var fotos = antes && hecha
+    ? '<div class="antes-ahora">' + fotoConMarcas(t.foto_antes, t.marcas, { etiqueta: 'Antes', alt: 'La foto de antes' }) +
+      fotoConMarcas(t.foto_path, null, { etiqueta: 'Ahora', clase: 'fm-ahora', alt: 'La foto corregida' }) + '</div>'
+    : antes ? fotoConMarcas(t.foto_antes, t.marcas, { etiqueta: 'Antes', clase: 'fm-grande', alt: 'La foto que tiene que corregir' })
+    : fotoConMarcas(t.foto_path, null, { clase: 'fm-ahora fm-grande', alt: 'La foto de la tarea' });
   var f = ventana('<h1>' + esc(t.titulo) + '</h1><p class="bajada">' + esc((t.persona_nombre || '') + ' · ' +
       (hecha ? 'hecha el ' + diaMes(t.completada_en) + ' a las ' + hora(t.completada_en) + (t.completada_a_tiempo === false ? ' (tarde)' : '') : 'esperando la corrección')) + '</p>' +
-    '<p>' + estTarea(t) + '</p>' +
-    '<img class="foto-grande" data-foto="' + esc(t.foto_path) + '" alt="">' +
-    (t.detalle ? '<div class="seccion">La tarea</div><p class="bajada">' + esc(t.detalle) + '</p>' : '') +
-    (hist.length ? '<div class="seccion">Lo que se le pidió corregir</div>' + hist.map(function (h) {
+    '<p>' + estTarea(t) + (antes && hecha && t.ia_correccion ? ' &nbsp; IA: ' + estNivel(t.ia_correccion) : '') + '</p>' +
+    fotos +
+    (pedido ? '<div class="nota' + (hecha ? '' : ' alerta') + '" style="margin-top:12px"><b>' + (hecha ? 'Le habías pedido:' : 'Le pediste:') + '</b> ' + esc(pedido) + '</div>' : '') +
+    (t.detalle && t.detalle !== pedido ? '<div class="seccion">La tarea</div><p class="bajada">' + esc(t.detalle) + '</p>' : '') +
+    (hist.length > 1 || (hist.length && hist[hist.length - 1].mensaje !== pedido) ? '<div class="seccion">Lo que se le pidió corregir</div>' + hist.map(function (h) {
       return '<div class="nota">' + esc(diaMes(h.en) + ' ' + hora(h.en) + ': ' + h.mensaje) + '</div>';
     }).join('') : '') +
-    (puede ? '<div class="seccion">' + (mirar ? '¿Está bien hecha?' : '¿Viste algo mal?') + '</div>' +
-      '<label class="campo"><span>Qué tiene que corregir (sólo si hace falta)</span><textarea id="vtMsg" rows="2" maxlength="500" placeholder="Ej.: falta el frontal del módulo 3"></textarea></label>' +
-      '<div class="vm-usar">' + (mirar ? '<button class="boton lima chico" id="vtBien">Está bien</button> ' : '') + '<button class="boton chico" id="vtCorregir">Mandar a corregir</button></div>' : ''));
-  var listo = function (texto) { avisar(texto); f.remove(); datosTareasFoto(rango); return 'dejar-apagado'; };
+    (puede ? '<div class="seccion">' + (mirar ? (antes ? '¿Quedó bien?' : '¿Está bien hecha?') : '¿Viste algo mal?') + '</div>' +
+      '<p class="ayuda-chica">Si hay que corregir algo, tocá la foto' + (antes ? ' de «Ahora»' : '') + ' para marcar dónde. Tocá una marca para sacarla.</p>' +
+      '<label class="campo"><span>Qué tiene que corregir (sólo si hace falta)</span><textarea id="vtMsg" rows="2" maxlength="500" placeholder="Ej.: 1) la pila de la izquierda sigue con 3"></textarea></label>' +
+      '<div class="vm-usar">' + (mirar ? '<button class="boton lima chico" id="vtBien">' + (antes ? 'Quedó bien' : 'Está bien') + '</button> ' : '') +
+      '<button class="boton chico" id="vtCorregir">' + (antes ? 'Pedir otra corrección' : 'Mandar a corregir') + '</button></div>' : ''));
+  var listo = function (texto) { avisar(texto); f.remove(); (despues || function () { datosTareasFoto(rango); })(); return 'dejar-apagado'; };
+  /* Las marcas van sobre la foto que mandó (con Antes | Ahora, la de la derecha). */
+  var marcador = puede ? marcarEnFoto(f.querySelector('.fm-ahora') || f.querySelector('.foto-marcas')) : null;
   var b = f.querySelector('#vtBien'), m = f.querySelector('#vtCorregir');
   if (b) unaVez(b, function () {
-    return llamar('orden_tarea_revisar', { p_tarea: t.id, p_bien: true, p_mensaje: null }).then(function () { return listo('Listo: «' + t.titulo + '» está bien.'); });
+    return revisarTarea(t, true).then(function () { return listo(antes ? 'Listo: la corrección quedó bien.' : 'Listo: «' + t.titulo + '» está bien.'); });
   });
   if (m) unaVez(m, function () {
     var msg = String(f.querySelector('#vtMsg').value || '').trim();
     if (!msg) { avisar('Escribí qué tiene que corregir.'); f.querySelector('#vtMsg').focus(); return; }
-    return llamar('orden_tarea_revisar', { p_tarea: t.id, p_bien: false, p_mensaje: msg }).then(function () {
+    return revisarTarea(t, false, msg, marcador && marcador.marcas()).then(function () {
       return listo('Se la mandaste a corregir' + (t.persona_nombre ? ' a ' + t.persona_nombre : '') + '.');
     });
   });
