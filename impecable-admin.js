@@ -4043,6 +4043,8 @@ var DIAS_OPS = [[1, 'Lunes'], [2, 'Martes'], [3, 'Miércoles'], [4, 'Jueves'], [
    seleccionar un local o todos los locales". A cada vendedor le llega la suya con un aviso, como cuando la manda
    el supervisor desde la app (orden_crear_tarea; queda con origen "admin"). Abajo, las que se mandaron desde acá:
    cuántas se hicieron, quién, y "Cancelar las que faltan".
+   22/10 (SQL 159): con un local, la foto de un módulo o de la vidriera para todo el equipo ("que les aparezca a los
+   3"): orden_crear_tarea_equipo. El aviso, a los que trabajan ese día; la primera foto la cierra para todos.
    ════════════════════════════════════════════════════════════════════════ */
 var PLAZOS_TAREA = [['hoy', 'Hoy'], ['manana', 'Mañana'], ['semana', 'Esta semana']];
 function nombreLocal(id) { var l = _locales.filter(function (x) { return x.id === id; })[0]; return l ? l.nombre : '—'; }
@@ -4052,7 +4054,7 @@ function ajCrearTarea() {
   var desde = new Date(Date.now() - 30 * 864e5).toISOString();
   Promise.all([
     leer('/orden_personas?select=id,nombre,apellido,inicial,local_id&rol=eq.vendedor&activo=is.true&aprobado=is.true&local_id=not.is.null&order=nombre.asc'),
-    leer('/orden_v_tareas?select=id,local_id,persona_nombre,titulo,estado,creado_en,completada_en,revisada_en&origen=eq.admin&creado_en=gte.' + desde + '&order=creado_en.desc&limit=600')
+    leer159('/orden_v_tareas?select=id,local_id,persona_nombre,titulo,estado,creado_en,completada_en,revisada_en,modulo_nombre,motivo_no_pude&origen=eq.admin&creado_en=gte.' + desde + '&order=creado_en.desc&limit=600')
   ]).then(function (r) {
     if (_sub !== 'tarea') return;
     var porLocal = {};
@@ -4060,7 +4062,8 @@ function ajCrearTarea() {
     var gente = function (id) { return porLocal[id] || []; };
     var varios = _locales.length > 1;
     var z = zonaAjuste('<p class="bajada">Una tarea para el equipo de un local, de varios o de todos. A cada vendedor le llega la suya con un aviso y la ve en Tareas de la app, ' +
-        'como cuando la manda el supervisor. Si pide foto, se mira en Fotos → Tareas y se puede mandar a corregir.</p>' +
+        'como cuando la manda el supervisor. Si pide foto, se mira en Fotos → Tareas y se puede mandar a corregir. ' +
+        'Con un solo local, puede ser la foto de un módulo o de la vidriera para todo el equipo: con que uno la mande, alcanza.</p>' +
       '<div class="seccion">Qué hay que hacer</div>' +
       '<div class="renglon ct-form"><label class="campo c-todo"><span>La tarea</span><input id="ctTitulo" maxlength="140" placeholder="Por ejemplo: renovar los frontales de tus módulos"></label>' +
       '<label class="campo c-todo"><span>Detalle (opcional)</span><textarea id="ctDetalle" rows="2" maxlength="600"></textarea></label>' +
@@ -4079,18 +4082,62 @@ function ajCrearTarea() {
       '<div class="seccion">Las que mandaste (últimos 30 días)</div><div id="ctMandadas"></div>');
 
     var marcados = function () { return [].filter.call(z.querySelectorAll('[data-loc]'), function (x) { return x.checked; }).map(function (x) { return x.dataset.loc; }); };
-    /* Con un solo local se elige a quién (todos tildados); con varios, le llega a todo el equipo de cada uno. */
+    /* La foto de un módulo para todo el equipo (SQL 159): sólo con un local. modulo: el elegido ({id, nombre}). */
+    var mapas = {}, modulo = null;
+    var tituloDe = function (md) { return md ? 'Mandá la foto: ' + md.nombre : ''; };
+    var pintarEquipo = function () {
+      var f = z.querySelector('#ctFoto'), ps = z.querySelector('#ctPersonas'), ayuda = z.querySelector('#ctEquipo');
+      f.disabled = !!modulo;
+      if (modulo) f.checked = true;
+      if (ps) ps.hidden = !!modulo;
+      if (ayuda) ayuda.remove();
+      if (modulo && ps) {
+        var loc = marcados()[0], n = gente(loc).length;
+        ps.insertAdjacentHTML('afterend', '<p class="bajada" id="ctEquipo">Para todo el equipo de ' + esc(nombreLocal(loc)) + ' (' + n + (n === 1 ? ' persona' : ' personas') +
+          '): les aparece a todos, el aviso les llega a los que trabajan ese día, y con que uno mande la foto de ' + esc(modulo.nombre) + ' queda hecha para todos.</p>');
+      }
+    };
+    var pintarModulos = function (loc) {
+      var caja = z.querySelector('#ctModuloCaja');
+      (mapas[loc] = mapas[loc] || cargarMapa(loc)).then(function (d) {
+        if (!caja.isConnected) return;
+        if (!d.modulos.length) { caja.innerHTML = '<p class="bajada">' + esc(nombreLocal(loc)) + ' todavía no tiene el croquis armado: la tarea va para cada uno.</p>'; return; }
+        var vids = d.islas.filter(esVidriera), salon = d.pared.concat(d.islas.filter(function (m) { return !esVidriera(m); }));
+        var nombre = function (m) { return nombreModulo(m, d.sectorDe[m.sector_id], d); };
+        var grupo = function (t, l) {
+          return l.length ? '<optgroup label="' + t + '">' + l.map(function (m) { return '<option value="' + esc(m.id) + '">' + esc(nombre(m)) + '</option>'; }).join('') + '</optgroup>' : '';
+        };
+        caja.innerHTML = '<label class="campo c-medio"><span>De qué módulo</span><select id="ctModulo"><option value="">Ninguno: una tarea para cada uno</option>' +
+          grupo(vids.length > 1 ? 'Vidrieras' : 'Vidriera', vids) + grupo('Salón', salon) + grupo('Depósito', d.dep) + '</select></label>';
+        var sel = caja.querySelector('#ctModulo');
+        sel.onchange = function () {
+          var m = d.modulos.filter(function (x) { return x.id === sel.value; })[0], t = z.querySelector('#ctTitulo'), antes = tituloDe(modulo);
+          modulo = m ? { id: m.id, nombre: nombre(m) } : null;
+          /* Sin título (o con el que se armó solo para otro módulo): uno armado. */
+          if (!t.value.trim() || t.value.trim() === antes) t.value = tituloDe(modulo);
+          pintarEquipo();
+        };
+      }).catch(function () {
+        delete mapas[loc];
+        if (caja.isConnected) caja.innerHTML = '<p class="bajada">No se pudieron cargar los módulos: la tarea va para cada uno.</p>';
+      });
+    };
+    /* Con un solo local se elige a quién (todos tildados) o un módulo para todo el equipo; con varios, le llega a todo el equipo de cada uno. */
     var quien = function () {
       var locs = marcados(), q = z.querySelector('#ctQuien');
+      modulo = null;
       if (locs.length === 1) {
         var ps = gente(locs[0]);
-        q.innerHTML = '<div class="seccion">Para quién</div>' + (ps.length
+        q.innerHTML = (ps.length ? '<div class="seccion">Foto de un módulo (opcional)</div><div id="ctModuloCaja"><p class="bajada">Cargando los módulos…</p></div>' : '') +
+          '<div class="seccion">Para quién</div><div id="ctPersonas">' + (ps.length
           ? '<div class="imp-locales">' + ps.map(function (p) { return '<label class="imp-check"><input type="checkbox" data-persona="' + esc(p.id) + '" checked> ' + esc(nombreVendedor(p)) + '</label>'; }).join('') + '</div>'
-          : '<p class="bajada">En ' + esc(nombreLocal(locs[0])) + ' todavía no hay nadie aprobado en la app: no le llegaría a nadie.</p>');
+          : '<p class="bajada">En ' + esc(nombreLocal(locs[0])) + ' todavía no hay nadie aprobado en la app: no le llegaría a nadie.</p>') + '</div>';
+        if (ps.length) pintarModulos(locs[0]);
       } else if (locs.length) {
         var n = locs.reduce(function (s, id) { return s + gente(id).length; }, 0);
         q.innerHTML = '<p class="bajada">Le llega a todo el equipo de cada local: ' + (n ? n + (n === 1 ? ' persona.' : ' personas.') : 'en esos locales todavía no hay nadie aprobado en la app.') + '</p>';
       } else q.innerHTML = '';
+      pintarEquipo();
     };
     z.querySelectorAll('[data-loc]').forEach(function (x) { x.onchange = quien; });
     if (varios) {
@@ -4104,6 +4151,20 @@ function ajCrearTarea() {
       var titulo = z.querySelector('#ctTitulo').value.trim(), locs = marcados();
       if (!titulo) { avisar('Escribí qué hay que hacer.'); return; }
       if (!locs.length) { avisar('Marcá al menos un local.'); return; }
+      /* La foto de un módulo para todo el equipo (SQL 159). */
+      if (modulo && locs.length === 1) {
+        var k = gente(locs[0]).length;
+        if (!confirm('¿Mandar «' + titulo + '» a todo el equipo de ' + nombreLocal(locs[0]) + ' (' + k + (k === 1 ? ' persona' : ' personas') + ')?\n\n' +
+                     'Con que uno mande la foto de ' + modulo.nombre + ' queda hecha para todos.')) return;
+        return llamar('orden_crear_tarea_equipo', { p_local: locs[0], p_modulo: modulo.id, p_titulo: titulo, p_detalle: z.querySelector('#ctDetalle').value.trim() || null,
+                                                    p_plazo: z.querySelector('#ctPlazo').value })
+          .then(function () {
+            avisar('Listo: le aparece a todo el equipo de ' + nombreLocal(locs[0]) + '. El aviso les llega a los que trabajan hoy.');
+            ajCrearTarea();
+          }, function (e) {
+            throw /schema cache|Could not find the function/i.test(mensajeDe(e)) ? rechazo('Falta actualizar el sistema (SQL 159) para las tareas de todo el equipo.') : e;
+          });
+      }
       var ids = locs.length === 1
         ? [].filter.call(z.querySelectorAll('[data-persona]'), function (x) { return x.checked; }).map(function (x) { return x.dataset.persona; })
         : locs.reduce(function (a, id) { return a.concat(gente(id).map(function (p) { return p.id; })); }, []);
@@ -4127,31 +4188,34 @@ function ajCrearTarea() {
   }).catch(errAjuste);
 }
 
-/** Las tareas mandadas desde acá, de a una por vez que se mandó (las de una misma vez tienen la misma hora exacta). */
+/** Las tareas mandadas desde acá, de a una por vez que se mandó (las de una misma vez tienen la misma hora exacta;
+    las de todo el equipo, el mismo grupo). */
 function dibujarMandadas(cont, lista) {
   var grupos = [], por = {};
   lista.forEach(function (t) {
-    var k = t.titulo + '|' + t.creado_en;
-    if (!por[k]) { por[k] = { titulo: t.titulo, creado_en: t.creado_en, tareas: [] }; grupos.push(por[k]); }
+    var k = t.grupo || t.titulo + '|' + t.creado_en;
+    if (!por[k]) { por[k] = { titulo: t.titulo, creado_en: t.creado_en, equipo: !!t.grupo, modulo: t.modulo_nombre, tareas: [] }; grupos.push(por[k]); }
     por[k].tareas.push(t);
   });
   if (!grupos.length) { cont.innerHTML = '<div class="vacio">Todavía no mandaste tareas desde acá.</div>'; return; }
   var abierta = function (t) { return t.estado === 'pendiente' || t.estado === 'vencida'; };
   var comoVa = function (t) {
     if (t.estado === 'hecha') return 'la hizo el ' + diaMes(t.completada_en) + ' a las ' + hora(t.completada_en) + (tareaParaMirar(t) ? ' (para mirar)' : '');
+    if (hechaPorOtro(t)) return t.motivo_no_pude.replace(/^La hizo/, 'la hizo');
     return { pendiente: 'todavía no', vencida: 'vencida', no_pude: 'no pudo', cancelada: 'cancelada' }[t.estado] || t.estado;
   };
   cont.innerHTML = grupos.map(function (g, i) {
     var cuenta = function (f) { return g.tareas.filter(f).length; };
+    /* Las de todo el equipo: con que uno la haga, alcanza; las de los demás quedan "La hizo X" (no son canceladas). */
     var hechas = cuenta(function (t) { return t.estado === 'hecha'; }), mirar = cuenta(tareaParaMirar), faltan = cuenta(function (t) { return t.estado === 'pendiente'; }),
         vencidas = cuenta(function (t) { return t.estado === 'vencida'; }), nopudo = cuenta(function (t) { return t.estado === 'no_pude'; }),
-        canceladas = cuenta(function (t) { return t.estado === 'cancelada'; });
+        canceladas = cuenta(function (t) { return t.estado === 'cancelada' && !hechaPorOtro(t); });
     var locs = [];
     g.tareas.forEach(function (t) { var n = nombreLocal(t.local_id); if (locs.indexOf(n) < 0) locs.push(n); });
     var est = function (n, uno, varios, cl) { return n ? '<span class="est' + (cl ? ' ' + cl : '') + '">' + n + ' ' + (n === 1 ? uno : varios) + '</span>' : ''; };
     return '<div class="ct-mandada"><div class="ct-cab"><b>' + esc(g.titulo) + '</b><small>' +
         esc(diaMes(g.creado_en) + ' ' + hora(g.creado_en) + ' · ' + (locs.length > 3 ? locs.slice(0, 3).join(', ') + ' y ' + (locs.length - 3) + ' más' : locs.join(', ')) +
-            ' · ' + g.tareas.length + (g.tareas.length === 1 ? ' persona' : ' personas')) + '</small></div>' +
+            (g.equipo ? ' · todo el equipo (' + g.tareas.length + ')' + (g.modulo ? ' · ' + g.modulo : '') : ' · ' + g.tareas.length + (g.tareas.length === 1 ? ' persona' : ' personas'))) + '</small></div>' +
       '<div class="ct-estados">' + est(hechas, 'hecha', 'hechas', 'listo') + est(mirar, 'para mirar', 'para mirar', 'sorpresa') + est(faltan, 'falta', 'faltan') +
         est(vencidas, 'vencida', 'vencidas', 'vencido') + est(nopudo, 'no pudo', 'no pudieron', 'corregir') + est(canceladas, 'cancelada', 'canceladas') + '</div>' +
       '<details><summary>Ver quién</summary><ul>' + g.tareas.map(function (t) {

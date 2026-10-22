@@ -907,8 +907,9 @@ function pantallaHoy() {
     leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo,controles_tarde&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(fallo),
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
     llamar('orden_desafio_mio').catch(fallo),
-    /* Las tareas abiertas y las que se cerraron hoy (para tacharlas). foto_antes (SQL 150): una corrección. */
-    leer150('/orden_v_tareas?select=id,titulo,estado,completada_en,correccion&persona_id=eq.' + id +
+    /* Las tareas abiertas y las que se cerraron hoy (para tacharlas). foto_antes (SQL 150): una corrección. grupo (SQL 159):
+       la de todo el equipo, que la pudo hacer otro. */
+    leer159('/orden_v_tareas?select=id,titulo,estado,completada_en,correccion,motivo_no_pude&persona_id=eq.' + id +
          '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + desdeHoy + ')&order=vence_en.asc', 'foto_antes').catch(fallo),
     estadoAvisos().catch(function () { return 'no-soportado'; }),
     /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
@@ -927,7 +928,9 @@ function pantallaHoy() {
     /* SQL 150: lo que le dejó el supervisor al revisar sus fotos (una sugerencia o marcas, sin pedirle corregir), de los últimos 2 días. */
     leer('/orden_v_controles?select=id,modulo_nombre,nivel_final,comentario,marcas&persona_id=eq.' + id + '&estado=eq.revisado&tipo=neq.correccion' +
          '&correccion_pedida=is.false&revisado_en=gte.' + new Date(Date.now() - 2 * 864e5).toISOString() +
-         '&or=(comentario.not.is.null,marcas.not.is.null)&order=revisado_en.desc&limit=3').catch(nada)
+         '&or=(comentario.not.is.null,marcas.not.is.null)&order=revisado_en.desc&limit=3').catch(nada),
+    /* SQL 159: la vidriera de la semana (sin el 159, null: es libre y no va en Hoy). */
+    per.local_id ? llamar('orden_vidriera_semana', { p_local: per.local_id }).catch(nada) : Promise.resolve(null)
   ]).then(function (r) {
     if (_pestana !== 'hoy') return;
     var incompleto = [r[3], r[4], r[7], r[8]].indexOf(FALLO) > -1, semanaFallo = r[1] === FALLO;
@@ -935,7 +938,7 @@ function pantallaHoy() {
     var testigos = (r[7] || []).filter(function (s) { return (s.testigo_items || []).length; });
     dibujarHoy({
       controles: r[0] || [], semana: (r[1] || [])[0], sinModulos: Array.isArray(r[2]) && r[2].length === 0, desafio: r[3],
-      tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], incompleto: incompleto, semanaFallo: semanaFallo, sugerencias: r[9] || [],
+      tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], incompleto: incompleto, semanaFallo: semanaFallo, sugerencias: r[9] || [], vidriera: r[10],
       caja: r[8] ? { activa: !!(r[8][0] && r[8][0][0] && r[8][0][0].caja_activa), hoy: (r[8][1] || [])[0] || null } : null,
       testigoPend: testigos.filter(function (s) { return !s.cargada_en; })[0] || null,
       testigoHecho: testigos.filter(function (s) { return s.cargada_en; })[0] || null
@@ -1010,6 +1013,23 @@ function dibujarHoy(x) {
            : (total === 1 ? 'Mandaste la foto.' : 'Mandaste las ' + total + '.') });
   }
 
+  /* La vidriera de la semana (SQL 159, Mauricio 22/10): desde el día del salón hasta que alguien la mande. Es de todos:
+     con que uno la mande, alcanza. Tachada el día que la mandaron. */
+  var vid = x.vidriera, lasVid = (vid && vid.vidrieras) || [];
+  var faltaVid = vid && vid.abierta ? lasVid.filter(function (v) { return !v.por; }) : [];
+  if (faltaVid.length) {
+    filas.push({ id: 'hVidriera', titulo: faltaVid.length > 1 ? 'Fotos de las vidrieras' : 'Foto de la vidriera', hecho: false, alerta: !!vid.tarde,
+      texto: (lasVid.length > 1 && faltaVid.length === 1 ? 'Falta la ' + conPunto(faltaVid[0].nombre) + ' ' : '') +
+             (faltaVid.length > 1 ? 'Son de todos: con que uno las mande, alcanza.' : 'Es de todos: con que uno la mande, alcanza.') +
+             (vid.tarde ? (vid.dia === hoy ? ' Ya pasó la hora: mandala igual.' : ' Era el ' + vid.dia_nombre + ': mandala igual.') : '') });
+  } else if (lasVid.length && lasVid.some(function (v) { return v.mandada_en && hoyAR(new Date(v.mandada_en)) === hoy; })) {
+    var otros = [], yoTambien = false, las = lasVid.length > 1;
+    lasVid.forEach(function (v) { if (v.por === yo().id) yoTambien = true; else if (v.por_nombre && otros.indexOf(v.por_nombre) < 0) otros.push(v.por_nombre); });
+    filas.push({ id: 'hVidriera', titulo: las ? 'Fotos de las vidrieras' : 'Foto de la vidriera', hecho: true,
+      texto: yoTambien ? (otros.length ? 'Las mandaron ' + otros.join(' y ') + ' y vos.' : las ? 'Las mandaste vos.' : 'La mandaste vos.')
+                       : (otros.length > 1 ? 'Las mandaron ' + otros.join(' y ') : (las ? 'Las mandó ' : 'La mandó ') + otros[0]) + '.' });
+  }
+
   /* Los videos que el supervisor pidió grabar de nuevo (SQL 157): son para hoy. */
   var regrabar = function (s) { return s ? (s.testigo_items || []).filter(function (it) { return estadoVideoTestigo(it) === 'pedido'; }) : []; };
   var textoRegrabar = function (pv) {
@@ -1035,6 +1055,7 @@ function dibujarHoy(x) {
 
   var abiertas = x.tareas.filter(function (t) { return t.estado === 'pendiente' || t.estado === 'vencida'; });
   var hechas = x.tareas.filter(function (t) { return t.estado === 'hecha'; });
+  var deOtro = x.tareas.filter(hechaPorOtro);
   if (abiertas.length) {
     filas.push({ id: 'hTareas', titulo: abiertas.length === 1 ? '1 tarea' : abiertas.length + ' tareas', hecho: false,
       alerta: abiertas.some(function (t) { return t.estado === 'vencida'; }),
@@ -1045,6 +1066,9 @@ function dibujarHoy(x) {
       })() });
   } else if (hechas.length) {
     filas.push({ id: 'hTareas', titulo: 'Tareas', hecho: true, texto: hechas.length === 1 ? 'Hiciste la de hoy.' : 'Hiciste las ' + hechas.length + ' de hoy.' });
+  } else if (deOtro.length) {
+    /* La de todo el equipo la hizo otro (SQL 159): también está hecha. */
+    filas.push({ id: 'hTareas', titulo: 'Tareas', hecho: true, texto: conPunto(deOtro[0].titulo) + ' ' + deOtro[0].motivo_no_pude + ': ya está para todo el equipo.' });
   }
 
   var d = x.desafio;
@@ -1105,6 +1129,7 @@ function dibujarHoy(x) {
   engancharCabeza();
   var ir = {
     hFotos: function () { irA('fotos'); },
+    hVidriera: function () { irA('fotos'); },
     hTestigo: function () { pantallaTestigo((x.testigoPend || x.testigoHecho).id); },
     hTestigoVideo: function () { pantallaTestigo(x.testigoHecho.id); },
     hTareas: function () { irA('tareas'); },
@@ -1147,10 +1172,15 @@ function pantallaFotos() {
     /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
     leer('/orden_tareas?select=modulo_id&persona_id=eq.' + id + '&estado=eq.pendiente&origen=eq.ia'),
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
-    per.local_id ? cargarMapa(per.local_id).catch(nada) : Promise.resolve(null)
+    per.local_id ? cargarMapa(per.local_id).catch(nada) : Promise.resolve(null),
+    /* SQL 159: la vidriera de la semana y las tareas de foto de todo el equipo (sin el 159: null, como antes). */
+    per.local_id ? llamar('orden_vidriera_semana', { p_local: per.local_id }).catch(nada) : Promise.resolve(null),
+    leer('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,local_id,modulo_id,modulo_nombre,modulo_referencia,grupo' +
+         '&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)&grupo=not.is.null&modulo_id=not.is.null&order=vence_en.asc').catch(nada)
   ]).then(function (r) {
     if (_pestana !== 'fotos') return;
-    dibujarFotos({ controles: r[0] || [], tareasIA: r[1] || [], sinModulos: Array.isArray(r[2]) && r[2].length === 0, mapa: r[3] });
+    dibujarFotos({ controles: r[0] || [], tareasIA: r[1] || [], sinModulos: Array.isArray(r[2]) && r[2].length === 0, mapa: r[3],
+                   vidriera: r[4], tareasEquipo: r[5] || [] });
   }).catch(function (e) { pantallaError(e, pantallaFotos); });
 }
 
@@ -1176,6 +1206,12 @@ function dibujarFotos(x) {
   x.tareasIA.forEach(function (t) { if (t.modulo_id) corregir[t.modulo_id] = true; });
   _controles = {};
   x.controles.forEach(function (c) { _controles[c.id] = c; });
+  /* SQL 159: la vidriera de la semana (quién mandó cada una) y las tareas de foto de todo el equipo, por módulo. */
+  var vid = x.vidriera, porVid = {}, tareaDe = {};
+  ((vid && vid.vidrieras) || []).forEach(function (v) { porVid[v.modulo] = v; });
+  (x.tareasEquipo || []).forEach(function (t) {
+    if (t.grupo && t.modulo_id && (t.estado === 'pendiente' || t.estado === 'vencida') && !tareaDe[t.modulo_id]) tareaDe[t.modulo_id] = t;
+  });
 
   var total = x.controles.length;
   var hechos = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
@@ -1199,11 +1235,36 @@ function dibujarFotos(x) {
     });
     var yoId = yo().id;
     mapa.modulos.forEach(function (m) { enMapa[m.id] = true; var s = mapa.sectorDe[m.sector_id]; if (s && s.responsable_id === yoId) mios[m.id] = true; });
-    /* La vidriera es de todos (SQL 145, Mauricio 20/10: "que eso siempre esté habilitado"): cualquiera del local le
-       saca foto, cualquier día. Con la cámara mientras no tenga una suya de hoy (con una, su marca). */
+    /* La vidriera es de todos (SQL 145): cualquiera del local le saca foto. Desde el SQL 159 (Mauricio, 22/10), una vez
+       por semana: desde el día del salón, y la primera que llega vale para todo el local (a los demás, el ✓). Antes de
+       ese día, apagada; pasado el día, todavía sin mandar, "vencida: mandala igual". Sin el 159, siempre con la cámara. */
     vidrieras = yo().local_id ? mapa.modulos.filter(esVidriera) : [];
-    vidrieras.forEach(function (m) { mios[m.id] = true; if (!marcas[m.id]) marcas[m.id] = 'pendiente'; });
+    vidrieras.forEach(function (m) {
+      if (vid && !vid.abierta) return;
+      mios[m.id] = true;
+      if (!marcas[m.id]) marcas[m.id] = porVid[m.id] && porVid[m.id].por ? 'listo' : vid && vid.tarde ? 'vencido' : 'pendiente';
+    });
+    /* Las tareas de foto de todo el equipo (SQL 159): ese módulo, con la cámara; tocarlo abre la tarea.
+       La de un módulo que no está en el croquis queda sólo en Tareas. */
+    Object.keys(tareaDe).forEach(function (mod) { if (!enMapa[mod]) delete tareaDe[mod]; });
+    Object.keys(tareaDe).forEach(function (mod) {
+      var marca = tareaDe[mod].estado === 'vencida' ? 'vencido' : 'pendiente';
+      mios[mod] = true;
+      if (!marcas[mod] || marcas[mod] === 'listo') marcas[mod] = marca;
+    });
     var hayMios = Object.keys(mios).length;
+    var faltaVid = vidrieras.some(function (m) { return !(porVid[m.id] && porVid[m.id].por); });
+    var textoVid = !vidrieras.length ? ''
+      : !vid ? ' La vidriera es de todos: tocala para mandarle una foto cuando quieras.'
+      : !vid.abierta ? ' La vidriera se manda el ' + vid.dia_nombre + '.'
+      : !faltaVid ? (vidrieras.length > 1 ? ' Las vidrieras de esta semana ya están.' : ' La vidriera de esta semana ya está.')
+      : ' La vidriera es de todos: con que uno la mande esta semana, alcanza.' +
+        (vid.tarde ? (vid.dia === hoyAR() ? ' Ya pasó la hora: mandala igual.' : ' Era el ' + vid.dia_nombre + ': mandala igual.') : '');
+    var equipo = Object.keys(tareaDe).map(function (mod) {
+      var m = mapa.modulos.filter(function (k) { return k.id === mod; })[0];
+      return tareaDe[mod].modulo_nombre || nombreModulo(m, mapa.sectorDe[m.sector_id], mapa);
+    });
+    var textoEquipo = equipo.length ? ' Tarea para todo el equipo: la foto de ' + equipo.join(', ') + ' (con que uno la mande, alcanza).' : '';
     /* Simple (16/10): sólo la instrucción. Sin la lista de nombres ni "Ver el local": el mapa entero es para el
        supervisor y el encargado (Equipo → El mapa del local). */
     html += '<div class="mapa-caja" id="mapaFotos">' +
@@ -1211,7 +1272,7 @@ function dibujarFotos(x) {
       '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? (x.controles.some(function (c) { return c.frontal && !estadoDe(c, corregir).hecho; }) ? 'Hoy toca frontal nuevo: cambialo y tocá el módulo con la cámara para mandar su foto.' : 'Tocá un módulo con la cámara para mandar su foto.')
                               : total ? 'Por hoy no te queda ninguna foto para mandar.'
                               : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') +
-      (vidrieras.length ? ' La vidriera es de todos: tocala para mandarle una foto cuando quieras.' : '') + '</p>';
+      textoEquipo + textoVid + '</p>';
   }
 
   /* La lista: sin croquis, todo; con croquis, sólo lo que no está dibujado. */
@@ -1261,9 +1322,20 @@ function dibujarFotos(x) {
       if (falta) { pantallaFoto(falta); return; }
       var deNuevo = suyos.filter(sePuedeRehacer)[0];
       if (deNuevo) { ofrecerRehacer(deNuevo); return; }
+      /* Una tarea de foto de todo el equipo (SQL 159): la cámara de la tarea. */
+      if (tareaDe[g.dataset.mod]) { accionTarea(tareaDe[g.dataset.mod], 'hecha'); return; }
       var m = mapa.modulos.filter(function (k) { return k.id === g.dataset.mod; })[0], s = m && mapa.sectorDe[m.sector_id];
-      /* La vidriera, de todos (SQL 145): una foto nueva (también si ya mandó una y se la revisaron). */
-      if (esVidriera(m) && vidrieras.length) { pantallaFoto(vidrieraLibre(m)); return; }
+      /* La vidriera, de todos (SQL 145), una vez por semana (SQL 159): si ya la mandó alguien esta semana, quién. */
+      if (esVidriera(m) && vidrieras.length) {
+        var v = porVid[m.id];
+        if (vid && !vid.abierta) { avisar('La foto de la vidriera se manda el ' + vid.dia_nombre + '.'); return; }
+        if (v && v.por) {
+          avisar('La vidriera de esta semana ya la ' + (v.por === yoId ? 'mandaste vos' : 'mandó ' + v.por_nombre) + ' (' + cuandoFue(v.mandada_en) + ').');
+          return;
+        }
+        pantallaFoto(vidrieraLibre(m, !!(vid && vid.tarde)));
+        return;
+      }
       var quien = s && mapa.persona[s.responsable_id];
       var que = nombreModulo(m, s, mapa);
       avisar(!suyos.length ? que + (quien ? ' es de ' + nombreLista(quien) + '.' : ' no tiene responsable.')
@@ -1435,15 +1507,16 @@ function pantallaFoto(c) {
   if (!c) { irA('fotos'); return; }
   /* rehacer: ya la había mandado (SQL 126); la nueva reemplaza a esa sólo si la manda.
      ia: lo que dice la IA de la foto (llega aparte: no hace falta esperarla para mandar). */
-  var estado = { url: null, fotoId: null, resultado: null, ia: null, rehacer: c.estado === 'enviado', tarde: c.estado === 'vencido', vista: ++_revisiones };
+  var estado = { url: null, fotoId: null, resultado: null, ia: null, rehacer: c.estado === 'enviado', tarde: c.estado === 'vencido' || !!c.tarde, vista: ++_revisiones };
   abrirCamara(c, estado);
 }
 
 /** La foto de la vidriera sin control todavía (SQL 145): el control nace cuando se registra la foto
-    (orden_vidriera_foto). Así, si abre la cámara y se arrepiente, no queda nada pendiente. */
-function vidrieraLibre(m) {
+    (orden_vidriera_foto). Así, si abre la cámara y se arrepiente, no queda nada pendiente. tarde: ya pasó el día
+    en que se mandaba (SQL 159): queda como mandada tarde. */
+function vidrieraLibre(m, tarde) {
   return { id: null, libre: true, local_id: yo().local_id, modulo_id: m.id, modulo_nombre: m.nombre, foto_referencia_path: m.foto_referencia_path || null,
-           sector_tipo: 'salon', mueble: 'vidriera', tipo: 'programado', estado: 'pendiente', frontal: false };
+           sector_tipo: 'salon', mueble: 'vidriera', tipo: 'programado', estado: 'pendiente', frontal: false, tarde: !!tarde };
 }
 
 /** Registra la foto en su control; la de la vidriera libre, en el suyo de hoy (o en uno nuevo). */
@@ -1581,8 +1654,11 @@ function mandarFoto(c, estado) {
   }).catch(function (e) {
     if (e && e.sinSesion) { pantallaError(e); return; }
     /* Ya no se puede cambiar (la revisaron, o pasó la hora): no hay nada que reintentar. */
-    var cerrado = !esDeRed(e) && /ya revisó|Ya enviaste|no se puede cambiar/i.test(mensajeDe(e));
-    estado.resultado = { fallo: esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e), cerrado: cerrado };
+    /* La vidriera (SQL 159): otro ya la mandó esta semana, o todavía no es el día. */
+    var cerrado = !esDeRed(e) && /ya revisó|Ya enviaste|no se puede cambiar|esta semana ya la mand|vidriera se manda el/i.test(mensajeDe(e));
+    var yaEsta = !esDeRed(e) && /esta semana ya la mand/i.test(mensajeDe(e));
+    estado.resultado = { fallo: esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : yaEsta ? conPunto(mensajeDe(e)) : mensajeDe(e),
+                         cerrado: cerrado, titulo: yaEsta ? 'Ya está la de esta semana' : null };
     if (enSuRevision(estado)) abrirRevision(c, estado);
   });
 }
@@ -1647,7 +1723,8 @@ function abrirRevision(c, estado) {
     /* Si ya no se puede cambiar, la nueva no queda: no se muestra como si fuera la del módulo. Más chica que en otras
        pantallas, así "Enviar" entra sin bajar en un celular chico. */
     (r.cerrado ? '' : '<img class="foto-grande foto-revision" src="' + esc(estado.url) + '" alt="La foto que sacaste">') +
-    (r.fallo ? '<div class="revision mala"><div class="titulo">' + (r.cerrado ? 'Ya no se puede cambiar' : 'No se pudo mandar') + '</div><div>' + esc(r.fallo) + '</div></div>' : '');
+    /* "Ya está la de esta semana" (SQL 159) no es un error: la vidriera ya la mandó otro. */
+    (r.fallo ? '<div class="revision' + (r.titulo ? '' : ' mala') + '"><div class="titulo">' + (r.titulo || (r.cerrado ? 'Ya no se puede cambiar' : 'No se pudo mandar')) + '</div><div>' + esc(r.fallo) + '</div></div>' : '');
 
   if (estado.rehacer && !r.cerrado) {
     html += '<div class="nota">Ya habías mandado una foto de este módulo. Si mandás esta, reemplaza a la otra; si volvés sin mandarla, queda la que mandaste.</div>';
@@ -1702,6 +1779,8 @@ function enviarControl(c, estado, boton) {
     /* La revisaron, o pasó la hora, mientras sacaba la nueva: queda la que mandó. */
     if (/ya revisó/i.test(m)) { if (aca) irA('fotos'); avisar('Tu supervisor ya la revisó: quedó la que habías mandado.'); return; }
     if (/no se puede cambiar/i.test(m)) { if (aca) irA('fotos'); avisar('Ya pasó la hora: no se pudo cambiar y quedó la que habías mandado.'); return; }
+    /* La vidriera (SQL 159): otro la mandó mientras tanto; vale la suya para todo el local. */
+    if (/esta semana ya la mand/i.test(m)) { if (aca) irA('fotos'); avisar(conPunto(m)); return; }
     /* La base todavía no tiene el SQL 130: pide las respuestas que la app ya no pregunta. */
     if (/Respondé las 4 preguntas|Cambiaron las preguntas/i.test(m)) {
       e = new Error('Falta actualizar el sistema: avisale a tu supervisor.');
@@ -1763,8 +1842,9 @@ function pantallaTareas() {
   engancharCabeza();
   var id = valor(yo().id);
   var semana = new Date(Date.now() - 7 * 864e5).toISOString();
-  /* SQL 150: la foto sobre la que le piden la corrección, con sus marcas, y la foto modelo para la cámara. */
-  leer150('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,prorroga_estado,local_id,completada_en,correccion,modulo_id,modulo_nombre' +
+  /* SQL 150: la foto sobre la que le piden la corrección, con sus marcas, y la foto modelo para la cámara. SQL 159: el
+     grupo (la tarea de todo el equipo) y quién la hizo. */
+  leer159('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,prorroga_estado,local_id,completada_en,correccion,modulo_id,modulo_nombre,motivo_no_pude' +
        '&persona_id=eq.' + id + '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + semana + ')&order=vence_en.asc',
        'foto_antes,marcas,control_nivel,modulo_referencia').then(function (r) {
     if (_pestana !== 'tareas') return;
@@ -1793,20 +1873,26 @@ function dibujarTareas(tareas) {
       '<small class="origen">' + esc(ORIGEN[t.origen] || '') + '</small>' +
       '<div class="nombre">' + esc(t.titulo) + '</div>' +
       (t.detalle && t.detalle !== pedido ? '<div class="detalle">' + esc(t.detalle) + '</div>' : '') +
+      /* SQL 159: la de todo el equipo. */
+      (t.grupo ? '<div class="detalle equipo">' + (t.modulo_nombre && t.titulo.indexOf(t.modulo_nombre) < 0 ? esc(t.modulo_nombre) + ' · ' : '') + 'Es de todo el equipo: con que uno mande la foto, alcanza.</div>' : '') +
       /* El supervisor la mandó a corregir (SQL 132): lo que pidió, bien a la vista. */
       (pedido ? '<div class="nota alerta tarea-corregir"><b>Corregí:</b> ' + esc(pedido) + '</div>' : '') +
       (t.foto_antes ? fotoConMarcas(t.foto_antes, t.marcas, { etiqueta: (t.marcas || []).length ? 'Mirá las marcas' : 'Tu foto', alt: 'Tu foto, con lo que hay que corregir' }) : '') +
       '<div class="info">' + chips + '</div>' +
       '<div class="botones">' +
         '<button class="boton lima chico" data-accion="hecha">' + (t.requiere_foto ? 'Hecha + foto' : 'Hecha') + '</button>' +
-        (t.estado === 'pendiente' ? '<button class="boton chico" data-accion="nopude">No pude</button>' : '') +
-        (t.estado === 'pendiente' && !t.prorroga_estado ? '<button class="boton chico" data-accion="tiempo">Pedir más tiempo</button>' : '') +
+        /* La de todo el equipo (SQL 159): con que uno la mande, alcanza; ni "No pude" ni más tiempo. */
+        (t.estado === 'pendiente' && !t.grupo ? '<button class="boton chico" data-accion="nopude">No pude</button>' : '') +
+        (t.estado === 'pendiente' && !t.prorroga_estado && !t.grupo ? '<button class="boton chico" data-accion="tiempo">Pedir más tiempo</button>' : '') +
       '</div></div>';
   });
 
   if (cerradas.length) {
     html += '<div class="seccion">Últimos 7 días</div>' + cerradas.map(function (t) {
-      return '<div class="fila"><span>' + esc(t.titulo) + '</span><span class="chip ' + (t.estado === 'hecha' ? 'listo' : 'pendiente') + '">' + esc(ESTADO_TAREA[t.estado] || t.estado) + '</span></div>';
+      /* La de todo el equipo que hizo otro (SQL 159): "La hizo Seba", como hecha. */
+      var deOtro = hechaPorOtro(t);
+      return '<div class="fila"><span>' + esc(t.titulo) + '</span><span class="chip ' + (t.estado === 'hecha' || deOtro ? 'listo' : 'pendiente') + '">' +
+        esc(deOtro ? t.motivo_no_pude : ESTADO_TAREA[t.estado] || t.estado) + '</span></div>';
     }).join('');
   }
   html += '<input type="file" id="fotoTarea" accept="image/*" capture="environment" hidden>';
@@ -1881,7 +1967,8 @@ function accionTarea(t, accion, boton) {
   /* La tarea de un módulo (una corrección): la cámara con el recuadro, como en los controles (SQL 150). Así la foto
      nueva sale encuadrada igual que la de antes y se pueden comparar. */
   if (t.modulo_id) {
-    camara((t.modulo_nombre || 'El módulo') + ' · corrección', t.modulo_referencia || null, 'Que entre todo el módulo en el recuadro',
+    /* La de todo el equipo (SQL 159) no es una corrección: es la foto del módulo. */
+    camara((t.modulo_nombre || 'El módulo') + (t.grupo ? '' : ' · corrección'), t.modulo_referencia || null, 'Que entre todo el módulo en el recuadro',
       function (blob) { mandarFotoTarea(t, blob, null); },
       function () { irA('tareas'); });
     return;
@@ -1959,11 +2046,13 @@ function mandarFotoTarea(t, blob, ruta) {
     .then(function (r) {
       /* La IA también la mira (lo que quedó bien de lo que ella había marcado se cierra solo). */
       if (r && r.foto_id) analizar(r.foto_id).catch(function () {});
-      avisar('¡Listo! Mandaste la corrección. Tu supervisor la va a mirar.');
+      avisar(t.grupo ? '¡Listo! Mandaste la foto: queda hecha para todo el equipo.' : '¡Listo! Mandaste la corrección. Tu supervisor la va a mirar.');
       if (aca() || (_pestana === 'tareas' && !barra.hidden)) irA('tareas');
     }, function (e) {
       if (e && e.sinSesion) { pantallaError(e); return; }
       if (/ya está cerrada/i.test(mensajeDe(e))) { if (aca()) irA('tareas'); return; }
+      /* La de todo el equipo, ya la hizo otro (SQL 159). */
+      if (/queda hecha para todo el equipo/i.test(mensajeDe(e))) { if (aca()) irA('tareas'); avisar(conPunto(mensajeDe(e))); return; }
       if (!aca()) { avisar('No se pudo mandar la foto de la corrección: sacala de nuevo desde Tareas.'); return; }
       app.innerHTML = arriba +
         '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e)) + '</div>' +
@@ -3398,6 +3487,8 @@ llamar = function (nombre, args, tope) {
   if (!_espejo) return _llamarReal(nombre, args, tope);
   if (nombre === 'orden_desafio_mio') return desafioEspejo();
   if (nombre === 'orden_caja_hoy') return cajaEspejo();
+  /* Sólo lee (SQL 159): la vidriera de la semana de su local. */
+  if (nombre === 'orden_vidriera_semana') return _llamarReal(nombre, args, tope);
   return trabado();
 };
 escribir = function (ruta, metodo, cuerpo) { return _espejo ? trabado() : _escribirReal(ruta, metodo, cuerpo); };

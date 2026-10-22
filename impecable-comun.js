@@ -361,6 +361,24 @@ function leer157(armar) {
   });
 }
 
+/** Lee las tareas con su grupo (SQL 159: la tarea de foto de todo el equipo) y las columnas del SQL 150 que se pidan;
+    si la base todavía no tiene el grupo, como antes. */
+function leer159(ruta, nuevas150) {
+  return leer(ruta.replace('select=', 'select=' + (nuevas150 ? nuevas150 + ',' : '') + 'grupo,')).catch(function (e) {
+    if (!e || e.sinSesion || esDeRed(e)) throw e;   // sin señal o sin sesión: no es por las columnas
+    return nuevas150 ? leer150(ruta, nuevas150) : leer(ruta);
+  });
+}
+
+/** La de todo el equipo que hizo otro (SQL 159): queda cancelada con "La hizo X", sin nada en contra. */
+function hechaPorOtro(t) { return !!t && !!t.grupo && t.estado === 'cancelada' && /^La hizo /.test(t.motivo_no_pude || ''); }
+
+/** "el martes a las 13:58" (o "hoy a las 13:58") de un momento, en la Argentina. */
+function cuandoFue(ts) {
+  var d = hoyAR(new Date(ts));
+  return (d === hoyAR() ? 'hoy' : 'el ' + DIAS_SEMANA[(new Date(d + 'T12:00:00Z').getUTCDay() + 6) % 7]) + ' a las ' + hora(ts);
+}
+
 /** "jueves 16/10" (de una fecha AAAA-MM-DD). */
 function diaYFecha(f) {
   return new Intl.DateTimeFormat('es-AR', { timeZone: 'UTC', weekday: 'long' }).format(new Date(f + 'T12:00:00Z')) + ' ' + diaMes(f);
