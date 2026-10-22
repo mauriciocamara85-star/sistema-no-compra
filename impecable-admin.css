@@ -488,6 +488,11 @@
 .imp .frase-si { display: inline-flex; align-items: flex-start; gap: 9px; line-height: 1.5; cursor: pointer; }
 .imp .frase-si input { width: 19px; height: 19px; margin: 1px 0 0; flex: none; accent-color: var(--acc); }
 .imp .renglon.frases .acciones-renglon { justify-content: flex-end; flex-wrap: wrap; margin: 6px 0 0; }
+/* 22/10: en una pantalla ancha el Guardar quedaba en el borde, lejos de lo que guarda. */
+.imp #ajuste { max-width: 1000px; }
+/* Lo que no cuenta con otra opción apagada (la IA, el modo prueba, el frontal), en gris. */
+.imp .frase.apagada, .imp .frase .apagado { opacity: .42; }
+.imp .frase.apagada .frase-si, .imp .frase .apagado { cursor: not-allowed; }
 .imp .aj-grupo { margin: 30px 0 2px; font: 700 18px var(--display); color: var(--txt); }
 .imp .aj-bajada { margin: -4px 0 8px; }
 .imp .aj-sub { margin: 16px 0 8px; font: 600 13px var(--sans); color: var(--txt-2); }

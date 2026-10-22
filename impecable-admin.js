@@ -53,6 +53,9 @@ function haceDias(ts) {
 var DIAS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 var DIAS_LARGO = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
 
+/** "a, b y c". */
+function yLista(xs) { return xs.length > 1 ? xs.slice(0, -1).join(', ') + ' y ' + xs[xs.length - 1] : xs[0]; }
+
 /* ════════════════════════════════════════════════════════════════════════
    ENTRADA
    ════════════════════════════════════════════════════════════════════════ */
@@ -87,7 +90,7 @@ var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                ['orden', 'Por vendedor', 'Cada vendedor, semana a semana'],
                ['cajas', 'Cajas', 'Como la planilla del control diario'],
                ['testigo', 'Productos testigo', 'Lo que se cuenta cada semana'],
-               ['ajustes', 'Ajustes', 'La gente, cada local, las reglas de orden y los tests']];
+               ['ajustes', 'Ajustes', 'Cómo funciona cada local, las reglas de orden y los tests']];
 var _solapa = 'panorama';
 function svgMenu(k) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONO_MENU[k] + '</svg>';
@@ -1665,6 +1668,22 @@ function normalizar(col, v) {
   return String(v);
 }
 
+/** 22/10: lo que no hace nada con otra opción apagada (col.si: hace falta prendida; col.siNo: hace falta apagada) se ve
+    en gris y no se toca. Si está en la misma frase que la opción, sólo el campo; si no, la frase entera. */
+function pintarDepende(cols, r, sl) {
+  cols.forEach(function (col) {
+    var k = col.si || col.siNo, de = k && cols.filter(function (c) { return c.k === k; })[0];
+    var el = de && r.querySelector('[data-k="' + col.k + '"]');
+    if (!el) return;
+    var v = leerCampo(de, r), anda = col.si ? v != null && v !== false && v !== '' : !v;
+    if (!sl) el.disabled = !anda;
+    el.title = !anda ? col.porque || 'Depende de ' + (de.corto || de.t) + '.' : col.tipo === 'bool' ? '' : col.t;
+    var fr = el.closest('.frase');
+    if (fr && !fr.querySelector('[data-k="' + k + '"]')) fr.classList.toggle('apagada', !anda);
+    else el.classList.toggle('apagado', !anda);
+  });
+}
+
 /**
  * cfg: { cont, filas, cols, guardar(fila, cambios) → promesa, extra(fila) → html, accion(fila, nombre, boton) → promesa,
  *        armar(campo, fila) → html: en vez de los campos en fila, frases con cada campo adentro (campo(k) lo dibuja) }
@@ -1679,6 +1698,7 @@ function editor(cfg) {
       (sl ? '' : '<div class="acciones-renglon">' + (cfg.extra ? cfg.extra(f) : '') + '<button class="boton chico lima" data-guardar disabled>Guardar</button></div>') + '</div>';
   }).join('') || '<div class="vacio">' + esc(cfg.vacio || 'Todavía no hay nada cargado.') + '</div>';
   cfg.cont.querySelectorAll('textarea[data-k]').forEach(function (t) { autoAlto(t); t.addEventListener('input', function () { autoAlto(t); }); });
+  cfg.cont.querySelectorAll('.renglon').forEach(function (r) { pintarDepende(cfg.cols, r, sl); });
   if (sl) return;
   cfg.cont.querySelectorAll('.renglon').forEach(function (r) {
     var fila = cfg.filas[+r.dataset.i];
@@ -1697,6 +1717,7 @@ function editor(cfg) {
     r.addEventListener('input', marcar);
     r.addEventListener('change', function (e) {
       if (e.target.closest('.dias')) e.target.parentNode.classList.toggle('si', e.target.checked);
+      pintarDepende(cfg.cols, r, sl);
       marcar();
     });
     unaVez(g, function () {
@@ -2242,7 +2263,6 @@ function programarTestigo() {
     var usados = locales.filter(function (id) { return lista.some(function (p) { return p.locales.indexOf(id) > -1; }); });
     /* Antes de programar, dónde va (21/10: se programó sin querer en los 14 en vez de sólo en Rivadavia). */
     var nombres = usados.map(function (id) { return nombre[id]; });
-    var yLista = function (xs) { return xs.length > 1 ? xs.slice(0, -1).join(', ') + ' y ' + xs[xs.length - 1] : xs[0]; };
     var donde = usados.length > 1 && usados.length === _locales.length ? 'en los ' + usados.length + ' locales (todos)'
       : nombres.length > 6 ? 'en ' + nombres.length + ' locales: ' + nombres.slice(0, 5).join(', ') + ' y ' + (nombres.length - 5) + ' más'
       : 'en ' + yLista(nombres);
@@ -2306,42 +2326,52 @@ function verSemanaFrontal(v, fila) {
   return l;
 }
 
-/* Cada bloque se guarda solo y se puede copiar a los otros locales (el nombre y el horario de cada uno, no). */
+/* Cada bloque se guarda solo y se puede copiar a los otros locales (el nombre y el horario de cada uno, no).
+   22/10: "Los controles" se partió en los controles y los avisos; el test semanal pasó a la pestaña Tests. */
 var BLOQUES_LOCAL = [
   { id: 'controles', titulo: 'Los controles',
-    cols: [{ k: 'dias_control', t: 'Días del salón', tipo: 'dias', delLocal: true }, { k: 'hora_limite', t: 'Hora límite', tipo: 'hora', delLocal: true },
-           { k: 'hora_aviso_1', t: 'Aviso de la mañana', tipo: 'hora', delLocal: true }, { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', tipo: 'hora', delLocal: true },
+    cols: [{ k: 'dias_control', t: 'Días del salón', corto: 'los días del salón', tipo: 'dias', delLocal: true },
+           { k: 'hora_limite', t: 'Hora límite', corto: 'la hora límite', tipo: 'hora', delLocal: true },
            { k: 'sorpresas_por_semana', t: 'Controles sorpresa por semana', tipo: 'num', min: 0, max: 7 },
            { k: 'deposito_dia_vence', t: 'Día del depósito', tipo: 'sel', numero: true, ops: DIAS_SEL },
            { k: 'frontal_cada_semanas', t: 'Frontal nuevo', tipo: 'sel', numero: true, ops: [[null, 'apagado'], [1, 'todas las semanas'], [2, 'cada 2 semanas'], [3, 'cada 3 semanas'], [4, 'cada 4 semanas']] },
-           { k: 'frontal_desde', t: 'Desde la semana', tipo: 'sel', ops: SEMANAS_FRONTAL, mostrar: verSemanaFrontal },
-           { k: 'max_avisos_dia', t: 'Tope de avisos por día', tipo: 'num', min: 1 },
-           { k: 'horas_revision_supervisor', t: 'Horas para revisar', tipo: 'num', min: 1 },
-           { k: 'desafio_activo', t: 'Test semanal de conocimiento: a cada vendedor le llega uno por semana, un día y una hora al azar (no cuenta para faltas).', corto: 'el test semanal', tipo: 'bool' }],
+           { k: 'frontal_desde', t: 'Desde la semana', tipo: 'sel', ops: SEMANAS_FRONTAL, mostrar: verSemanaFrontal,
+             si: 'frontal_cada_semanas', porque: 'Elegí primero cada cuántas semanas va el frontal nuevo.' }],
     armar: function (c) {
-      /* SQL 145 (Mauricio, 20/10): martes el salón, jueves el depósito; con franco, el día anterior; la vidriera, de todos. */
+      /* SQL 145 (Mauricio, 20/10): martes el salón, jueves el depósito; con franco, el día anterior.
+         SQL 159 (22/10): la vidriera, una vez por semana, el primer día del salón; la primera foto vale para todo el local. */
       return frase('El salón se controla ' + c('dias_control') + ' y el depósito el ' + c('deposito_dia_vence') + '. La foto vence a las ' + c('hora_limite') + ' de ese día.') +
-        frase('Al que tiene franco ese día le toca el día anterior que trabaja. La vidriera es de todos: cualquiera del local le saca foto, cualquier día.', 'aclara') +
-        frase('A quien le toca le llega un aviso a las ' + c('hora_aviso_1') + ' y, si todavía no lo hizo, un recordatorio a las ' + c('hora_aviso_2') + '.') +
+        frase('Al que tiene franco ese día le toca el día anterior que trabaja. La vidriera va una vez por semana, el primer día del salón: la primera foto vale para todo el local ' +
+              'y, si nadie la manda ese día, sigue pendiente hasta el domingo y queda tarde.', 'aclara') +
         frase('Controles sorpresa por semana, a cada sector: ' + c('sorpresas_por_semana') + ' (un día que no es de control, al azar).') +
-        frase('Frontal nuevo: ' + c('frontal_cada_semanas') + ', desde ' + c('frontal_desde') + '. El primer día de control de esa semana cambian el frontal de cada módulo, y la foto del control sirve de prueba (sin fotos de más).') +
+        frase('Frontal nuevo: ' + c('frontal_cada_semanas') + ', desde ' + c('frontal_desde') + '. El primer día de control de esa semana cambian el frontal de cada módulo, y la foto del control sirve de prueba (sin fotos de más).');
+    } },
+  { id: 'avisos', titulo: 'Los avisos',
+    cols: [{ k: 'hora_aviso_1', t: 'Aviso de la mañana', corto: 'la hora del aviso', tipo: 'hora', delLocal: true },
+           { k: 'hora_aviso_2', t: 'Recordatorio de la tarde', corto: 'la hora del recordatorio', tipo: 'hora', delLocal: true },
+           { k: 'max_avisos_dia', t: 'Tope de avisos por día', tipo: 'num', min: 1 },
+           { k: 'horas_revision_supervisor', t: 'Horas para revisar', tipo: 'num', min: 1 }],
+    armar: function (c) {
+      return frase('A quien le toca un control le llega un aviso a las ' + c('hora_aviso_1') + ' y, si todavía no lo hizo, un recordatorio a las ' + c('hora_aviso_2') + '.') +
         frase('A cada persona le llegan como mucho ' + c('max_avisos_dia') + ' avisos por día (los urgentes llegan igual).') +
-        frase('Si una foto o una caja espera más de ' + c('horas_revision_supervisor') + ' horas que la revise el supervisor, te llega un aviso.') +
-        frase(c('desafio_activo'));
+        frase('Si una foto o una caja espera más de ' + c('horas_revision_supervisor') + ' horas que la revise el supervisor, te llega un aviso.');
     } },
   { id: 'ia', titulo: 'La IA de las fotos',
     cols: [{ k: 'ia_activa', t: 'La IA revisa cada foto con las reglas de orden y le dice al vendedor qué corregir.', corto: 'la revisión con IA', tipo: 'bool' },
-           { k: 'ia_crea_tareas', t: 'Lo que hay que corregir le queda como tarea al vendedor, con plazo.', corto: 'las tareas de la IA', tipo: 'bool' },
-           { k: 'ia_sugerencias', t: 'Además deja sugerencias de estilo: consejos para que quede más lindo, como las reglas marcadas como sugerencia. Nunca son tareas, y como mucho 2 por foto.', corto: 'las sugerencias de estilo', tipo: 'bool' }],
+           { k: 'ia_crea_tareas', t: 'Lo que hay que corregir le queda como tarea al vendedor, con plazo.', corto: 'las tareas de la IA', tipo: 'bool',
+             si: 'ia_activa', porque: 'Con la IA de las fotos apagada no hace nada: prendela arriba.' },
+           { k: 'ia_sugerencias', t: 'Además deja sugerencias de estilo: consejos para que quede más lindo, como las reglas marcadas como sugerencia. Nunca son tareas, y como mucho 2 por foto.', corto: 'las sugerencias de estilo', tipo: 'bool',
+             si: 'ia_activa', porque: 'Con la IA de las fotos apagada no hace nada: prendela arriba.' }],
     armar: function (c) {
       return frase(c('ia_activa')) + frase(c('ia_crea_tareas')) + frase(c('ia_sugerencias')) +
         /* (19/10, Mauricio): que apagar una IA no parezca apagar la otra. Son dos llaves distintas en la base. */
-        frase('Esto es sólo la IA que revisa las fotos de los módulos. La que lee los cierres de caja se prende y apaga aparte, abajo en «La caja»: apagar una no apaga la otra.', 'aclara');
+        frase('Es sólo la IA de las fotos de los módulos. La que lee los cierres de caja va aparte, en «La caja»: apagar una no apaga la otra.', 'aclara');
     } },
   { id: 'faltas', titulo: 'Las faltas',
-    cols: [{ k: 'modo_prueba', t: 'Modo prueba: por ahora no se sugieren faltas.', corto: 'el modo prueba', tipo: 'bool' },
-           { k: 'ventana_faltas_dias', t: 'Días que se miran', tipo: 'num', min: 1 }, { k: 'umbral_tareas_vencidas', t: 'Días con tareas vencidas', tipo: 'num', min: 1 },
-           { k: 'umbral_dias_sin_control', t: 'Días sin mandar controles', tipo: 'num', min: 1 }, { k: 'umbral_fuera_estandar', t: 'Días con "Fuera de estándar"', tipo: 'num', min: 1 }],
+    cols: [{ k: 'modo_prueba', t: 'Modo prueba: por ahora no se sugieren faltas.', corto: 'el modo prueba', tipo: 'bool' }].concat([
+             { k: 'ventana_faltas_dias', t: 'Días que se miran' }, { k: 'umbral_tareas_vencidas', t: 'Días con tareas vencidas' },
+             { k: 'umbral_dias_sin_control', t: 'Días sin mandar controles' }, { k: 'umbral_fuera_estandar', t: 'Días con "Fuera de estándar"' }
+           ].map(function (x) { return Object.assign(x, { tipo: 'num', min: 1, siNo: 'modo_prueba', porque: 'Con el modo prueba no se sugieren faltas: sacalo para que cuente.' }); })),
     armar: function (c) {
       return frase(c('modo_prueba')) +
         frase('Se sugiere una falta si en los últimos ' + c('ventana_faltas_dias') + ' días alguien tuvo ' + c('umbral_tareas_vencidas') + ' días con tareas vencidas, ' +
@@ -2349,12 +2379,14 @@ var BLOQUES_LOCAL = [
         frase('Es sólo una sugerencia: les llega a vos y al supervisor, y la decide siempre una persona.', 'aclara');
     } },
   { id: 'caja', titulo: 'La caja',
+    /* La lectura con IA y la diferencia que no avisa cuentan también con el control apagado (la caja que carga el
+       supervisor, y el POS): sólo el aviso de "no cargaron la caja" depende del control. */
     cols: [{ k: 'caja_activa', t: 'Control de caja: el local carga cada día la caja, con las fotos del cierre.', corto: 'el control de caja', tipo: 'bool' },
            { k: 'caja_ia', t: 'La IA lee las fotos del cierre y completa los números, también el efectivo contado. Apagada, se cargan a mano.', corto: 'la lectura con IA', tipo: 'bool' },
-           { k: 'caja_tolerancia_pesos', t: 'Diferencia que no avisa ($)', tipo: 'num', min: 0 }, { k: 'caja_minutos_tolerancia', t: 'Minutos después del cierre', tipo: 'num', min: 0 }],
+           { k: 'caja_tolerancia_pesos', t: 'Diferencia que no avisa ($)', tipo: 'num', min: 0 },
+           { k: 'caja_minutos_tolerancia', t: 'Minutos después del cierre', tipo: 'num', min: 0, si: 'caja_activa', porque: 'Con el control de caja apagado no se avisa.' }],
     armar: function (c) {
       return frase(c('caja_activa')) + frase(c('caja_ia')) +
-        frase('La lectura con IA de la caja va aparte de «La IA de las fotos» de arriba: se prende y apaga sólo acá.', 'aclara') +
         frase('Una diferencia de hasta $ ' + c('caja_tolerancia_pesos') + ' no avisa.') +
         frase('Si ' + c('caja_minutos_tolerancia') + ' minutos después del cierre no cargaron la caja, les avisa al local y al supervisor.');
     } },
@@ -2373,7 +2405,7 @@ function ajLocal() {
   Promise.all([leer('/orden_locales?select=*&id=eq.' + L), leer('/orden_config?select=*&local_id=eq.' + L)]).then(function (r) {
     var loc = (r[0] || [])[0], cfg = (r[1] || [])[0], otros = _locales.length - 1;
     var z = zonaAjuste('<p class="bajada">Lo de ' + esc(_local.nombre) + '. Cada parte se guarda con su botón' +
-        (otros ? '; "Copiar a los otros locales" pone lo mismo en ' + (otros === 1 ? 'el otro' : 'los otros ' + otros) + ' (el nombre, el horario y los días y las horas de los controles de cada uno no cambian)' : '') + '.</p>' +
+        (otros ? '; "Copiar a los otros locales" pone lo mismo en ' + (otros === 1 ? 'el otro' : 'los otros ' + otros) + ' (el nombre, el horario, los días y las horas de cada uno no cambian)' : '') + '.</p>' +
       '<div class="seccion">El local</div><div id="ajLocal"></div>' +
       (cfg ? BLOQUES_LOCAL.map(function (b) { return '<div class="seccion">' + esc(b.titulo) + '</div><div id="ajb-' + b.id + '"></div>'; }).join('')
            : '<div class="nota">Este local todavía no tiene los ajustes de los controles.</div>'));
@@ -2401,7 +2433,7 @@ function copiarAOtros(fila, b, boton) {
   var copia = b.cols.filter(function (c) { return !c.delLocal; }), quedan = b.cols.filter(function (c) { return c.delLocal; });
   var que = copia.map(function (c) { return c.corto || c.t.toLowerCase(); });
   if (!confirm('¿Poner en ' + (otros.length === 1 ? otros[0].nombre : 'los otros ' + otros.length + ' locales') + ' lo mismo que tiene ' + _local.nombre + ' en «' + b.titulo + '»?\n\n' +
-               'Se copia: ' + que.join(', ') + '.' + (quedan.length ? '\nNo cambian (son de cada local): los días y las horas de los controles.' : ''))) return;
+               'Se copia: ' + yLista(que) + '.' + (quedan.length ? '\nNo cambian (son de cada local): ' + yLista(quedan.map(function (c) { return c.corto || c.t.toLowerCase(); })) + '.' : ''))) return;
   var valores = {};
   copia.forEach(function (c) { valores[c.k] = fila[c.k] === undefined ? null : fila[c.k]; });
   return guardarFila('/orden_config?local_id=in.(' + otros.map(function (l) { return valor(l.id); }).join(',') + ')', valores).then(function (n) {
@@ -2430,9 +2462,10 @@ function elegirFoto(alElegir) {
   input.click();
 }
 
+/** cfg.antes: html arriba de todo; cfg.despues(zona): para llenar eso cuando ya está dibujado. */
 function ajLista(cfg) {
   leer(cfg.ruta).then(function (filas) {
-    var z = zonaAjuste((cfg.texto ? '<p class="bajada">' + cfg.texto + '</p>' : '') + '<div id="filasLista"></div>' +
+    var z = zonaAjuste((cfg.antes || '') + (cfg.texto ? '<p class="bajada">' + cfg.texto + '</p>' : '') + '<div id="filasLista"></div>' +
       (cfg.nueva ? '<button class="boton" id="agregarLista" style="max-width:320px;margin-top:6px">Agregar</button>' : ''));
     editor({ cont: z.querySelector('#filasLista'), filas: filas || [], cols: cfg.cols,
       guardar: function (f, c) {
@@ -2441,6 +2474,7 @@ function ajLista(cfg) {
       } });
     var a = z.querySelector('#agregarLista');
     if (a) unaVez(a, function () { return escribir(cfg.tabla, 'POST', cfg.nueva(filas || [])).then(function () { ajLista(cfg); }); });
+    if (cfg.despues) cfg.despues(z);
   }).catch(errAjuste);
 }
 
@@ -2658,7 +2692,9 @@ function ajTableros() {
 var TEMAS_PREG = [['tela', 'Telas'], ['molderia', 'Molderías'], ['retail', 'Cómo trabajamos']];
 function ajPreguntas() {
   ajLista({ ruta: '/orden_preguntas?select=id,tema,dificultad,pregunta,grupo,activo&order=grupo.asc.nullsfirst,tema.asc,dificultad.asc', tabla: '/orden_preguntas',
-    texto: 'Las preguntas de los tests de conocimiento, para todos los locales (opción múltiple; si le erran, la app explica la correcta). El test de la semana sale solo; se prende en cada local, en El local. ' +
+    antes: '<div class="seccion">El test semanal</div><div id="ajSemanal"><p class="cargando">Cargando…</p></div><div class="seccion">Las preguntas</div>',
+    despues: ajTestSemanal,
+    texto: 'Las preguntas de los tests de conocimiento, para todos los locales (opción múltiple; si le erran, la app explica la correcta). El test de la semana sale solo, con estas preguntas. ' +
       'Para uno especial (por ejemplo, la colección nueva), cargá sus preguntas con el mismo <b>grupo</b> ("Colección verano") y tocá "Mandar un test ahora". ' +
       'Se pueden apagar las que no sirvan.<br><span class="imp-mapa-acc" style="margin-top:10px"><button class="boton chico lima" id="mandarTest">Mandar un test ahora</button>' +
       '<button class="boton chico" id="nuevaPregunta">Nueva pregunta</button></span>',
@@ -2670,6 +2706,50 @@ function ajPreguntas() {
     if (e.target.closest('#mandarTest')) mandarTest();
     else if (e.target.closest('#nuevaPregunta')) nuevaPregunta();
   };
+}
+
+/** 22/10: el test semanal (orden_config.desafio_activo), todos los locales juntos; antes estaba en El local, de a uno. */
+function ajTestSemanal(z) {
+  var cont = z.querySelector('#ajSemanal');
+  if (!cont) return;
+  leer('/orden_config?select=local_id,desafio_activo').then(function (filas) {
+    var antes = {};
+    (filas || []).forEach(function (f) { antes[f.local_id] = !!f.desafio_activo; });
+    var locs = _locales.filter(function (l) { return l.id in antes; }), sl = soloMira();
+    if (!locs.length) { cont.innerHTML = '<div class="nota">Ningún local tiene todavía los ajustes de los controles.</div>'; return; }
+    cont.innerHTML = '<div class="renglon frases">' +
+      frase('A cada vendedor le llega un test de conocimiento por semana, un día y una hora al azar (no cuenta para faltas). Prendido en:') +
+      (locs.length > 1 && !sl ? '<div class="imp-mapa-acc"><button type="button" class="boton chico" data-ts="todos">Todos</button><button type="button" class="boton chico" data-ts="ninguno">Ninguno</button></div>' : '') +
+      '<div class="imp-locales">' + locs.map(function (l) {
+        return '<label class="imp-check"><input type="checkbox" data-ts-loc="' + esc(l.id) + '"' + (antes[l.id] ? ' checked' : '') + (sl ? ' disabled' : '') + '> ' + esc(l.nombre) + '</label>';
+      }).join('') + '</div>' +
+      (sl ? '' : '<div class="acciones-renglon"><button class="boton chico lima" data-guardar disabled>Guardar</button></div>') + '</div>';
+    if (sl) return;
+    var g = cont.querySelector('[data-guardar]');
+    var cajas = function () { return [].slice.call(cont.querySelectorAll('[data-ts-loc]')); };
+    var cambiadas = function () { return cajas().filter(function (x) { return x.checked !== antes[x.dataset.tsLoc]; }); };
+    var marcar = function () { g.disabled = !cambiadas().length; };
+    cont.addEventListener('change', marcar);
+    cont.querySelectorAll('[data-ts]').forEach(function (b) {
+      b.onclick = function () { var si = b.dataset.ts === 'todos'; cajas().forEach(function (x) { x.checked = si; }); marcar(); };
+    });
+    unaVez(g, function () {
+      var cam = cambiadas();
+      if (!cam.length) return 'dejar-apagado';
+      var ruta = function (si) {
+        var ids = cam.filter(function (x) { return x.checked === si; }).map(function (x) { return valor(x.dataset.tsLoc); });
+        return ids.length ? guardarFila('/orden_config?local_id=in.(' + ids.join(',') + ')', { desafio_activo: si }) : null;
+      };
+      g.textContent = 'Guardando…';
+      return Promise.all([ruta(true), ruta(false)]).then(function () {
+        cam.forEach(function (x) { antes[x.dataset.tsLoc] = x.checked; });
+        var n = cajas().filter(function (x) { return x.checked; }).length;
+        avisar(!n ? 'Guardado: el test semanal quedó apagado en todos los locales.'
+                  : 'Guardado: el test semanal está prendido en ' + (n === locs.length && n > 1 ? 'los ' + n + ' locales' : n + (n === 1 ? ' local' : ' locales')) + '.');
+        return 'dejar-apagado';
+      });
+    });
+  }).catch(function (e) { cont.innerHTML = '<div class="nota">' + esc(mensajeDe(e)) + '</div>'; });
 }
 
 /** Una pregunta nueva: 2 a 4 opciones, cuál es la correcta y la explicación (la ven al responder). */
