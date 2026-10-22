@@ -3605,13 +3605,17 @@ function guardarTestigo(items) {
   }, Promise.resolve()).then(function () { return cambios.length; });
 }
 
-/* ---------- El video: hasta 20 segundos, liviano (640×480), sin sonido ---------- */
+/* ---------- El video: hasta 20 segundos, liviano (640×480), con sonido ----------
+   Con sonido desde el 22/10 (pedido de Mauricio: que se escuche cómo cuentan).
+   Si no dejan usar el micrófono, se graba igual, sin sonido. */
 
 var _grabador = null;
 
-function tipoGrabable() {
+function tipoGrabable(conSonido) {
   if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) return null;
-  return ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm'].filter(function (t) {
+  return (conSonido
+    ? ['video/mp4;codecs=avc1,mp4a.40.2', 'video/mp4;codecs=avc1,opus', 'video/webm;codecs=vp8,opus', 'video/mp4', 'video/webm']
+    : ['video/mp4;codecs=avc1', 'video/mp4', 'video/webm;codecs=vp8', 'video/webm']).filter(function (t) {
     try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
   })[0] || null;
 }
@@ -3669,9 +3673,13 @@ function grabarVideo(sem, it, alTerminar) {
     grabar.onclick = function () { archivo.click(); };
   }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !tipo) { sinGrabar(); return; }
-  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: false })
+  var pedir = function (conSonido) {
+    return navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 640 }, height: { ideal: 480 } }, audio: conSonido });
+  };
+  pedir(true).catch(function () { return pedir(false); })
     .then(function (s) {
       if (!document.getElementById('video')) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+      if (s.getAudioTracks().length) tipo = tipoGrabable(true) || tipo;
       _stream = s;
       video.srcObject = s;
       var p = video.play();
@@ -3681,7 +3689,7 @@ function grabarVideo(sem, it, alTerminar) {
     if (_grabador) { if (_grabador.state === 'recording') _grabador.stop(); return; }
     if (!_stream) { archivo.click(); return; }
     var partes = [], seg = 20, rec;
-    try { rec = new MediaRecorder(_stream, { mimeType: tipo, videoBitsPerSecond: 900000 }); } catch (e) { sinGrabar(); return; }
+    try { rec = new MediaRecorder(_stream, { mimeType: tipo, videoBitsPerSecond: 900000, audioBitsPerSecond: 64000 }); } catch (e) { sinGrabar(); return; }
     _grabador = rec;
     rec.ondataavailable = function (e) { if (e.data && e.data.size) partes.push(e.data); };
     rec.onstop = function () {
