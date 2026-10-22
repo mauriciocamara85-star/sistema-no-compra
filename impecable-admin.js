@@ -2291,9 +2291,10 @@ function programarTestigo() {
    módulo; agregar un sector, a "Repartir"); "Exhibidores" se sacó (vacío, y la nota repetía una regla); los colores y
    las fotos ejemplo están adentro de Reglas de orden. 17/10: "Crear tarea" (para un local, varios o todos).
    21/10: "Personas" se sacó: repetía Config → Usuarios, y los francos de cada uno pasaron allá (SQL 154).
-   22/10: "Crear tarea" pasó al menú, como "Tareas": es trabajo de todas las semanas, no un ajuste. */
-var SUBAJUSTES = [['local', 'El local'], ['recordatorios', 'Recordatorios por día'],
-                  ['reglas', 'Reglas de orden'], ['tableros', 'Ideas (tableros)'], ['tests', 'Tests']];
+   22/10: "Crear tarea" pasó al menú, como "Tareas": es trabajo de todas las semanas, no un ajuste. "Recordatorios por
+   día" se sacó: en 9 días nadie cargó ninguno (sólo el vacío de "Agregar", apagado), no avisaba y se confundía con el
+   recordatorio de la tarde de Los avisos. La tabla orden_recordatorios queda en la base. */
+var SUBAJUSTES = [['local', 'El local'], ['reglas', 'Reglas de orden'], ['tableros', 'Ideas (tableros)'], ['tests', 'Tests']];
 var _sub = 'local';
 
 function verAjustes() {
@@ -2303,7 +2304,7 @@ function verAjustes() {
     return '<button data-sub="' + s[0] + '" class="' + (s[0] === _sub ? 'activa' : '') + '">' + s[1] + '</button>';
   }).join('') + '</div><div id="ajuste"><p class="cargando">Cargando…</p></div>';
   c.querySelectorAll('[data-sub]').forEach(function (b) { b.onclick = function () { if (!puedeSalir()) return; _sub = b.dataset.sub; verAjustes(); }; });
-  ({ local: ajLocal, recordatorios: ajRecordatorios, reglas: ajReglas, tableros: ajTableros, tests: ajPreguntas })[_sub]();
+  ({ local: ajLocal, reglas: ajReglas, tableros: ajTableros, tests: ajPreguntas })[_sub]();
 }
 
 function zonaAjuste(html) { var z = document.getElementById('ajuste'); z.innerHTML = html; return z; }
@@ -4059,12 +4060,6 @@ function editarMapa(d, op) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   AJUSTES · LOS RECORDATORIOS DE CADA DÍA (SQL 99)
-   ════════════════════════════════════════════════════════════════════════ */
-
-var DIAS_OPS = [[1, 'Lunes'], [2, 'Martes'], [3, 'Miércoles'], [4, 'Jueves'], [5, 'Viernes'], [6, 'Sábado'], [7, 'Domingo']];
-
-/* ════════════════════════════════════════════════════════════════════════
    TAREAS (17/10/2026, "Crear tarea" en Ajustes; desde el 22/10, en el menú)
    Pedido de Mauricio: "una pestaña como la de recordatorio por día, pero que diga crear tarea, y que pueda
    seleccionar un local o todos los locales". A cada vendedor le llega la suya con un aviso, como cuando la manda
@@ -4266,11 +4261,4 @@ function dibujarMandadas(cont, lista) {
       });
     });
   });
-}
-function ajRecordatorios() {
-  ajLista({ ruta: '/orden_recordatorios?select=*&local_id=eq.' + valor(_local.id) + '&order=dia.asc,creado_en.asc', tabla: '/orden_recordatorios',
-    texto: 'Lo que hay que acordarse cada día en ' + esc(_local.nombre) + ' (martes entra mercadería, sábado limpieza de vidrieras…). Ese día les aparece a los vendedores del local arriba en "Hoy". El frontal nuevo va en El local; una tarea de una vez, en Tareas (en el menú).',
-    cols: [{ k: 'dia', t: 'Día', tipo: 'sel', numero: true, ops: DIAS_OPS }, { k: 'texto', t: 'El recordatorio', tipo: 'texto', ancho: 'grande' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
-    validar: function (f) { return String(f.texto || '').trim().length < 2 ? 'Escribí el recordatorio.' : null; },
-    nueva: function () { return { local_id: _local.id, dia: 2, texto: 'Nuevo recordatorio (escribilo y guardá)', activo: false }; } });
 }

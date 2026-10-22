@@ -1582,5 +1582,3 @@ function listaDeposito(d, tocable) {
 }
 
 var DIAS_SEMANA = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'];
-/** El día de la semana en Argentina: 1 = lunes … 7 = domingo. */
-function diaSemanaAR() { var d = new Date(hoyAR() + 'T12:00:00Z').getUTCDay(); return d === 0 ? 7 : d; }

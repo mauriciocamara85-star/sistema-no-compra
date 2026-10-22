@@ -912,8 +912,6 @@ function pantallaHoy() {
     leer159('/orden_v_tareas?select=id,titulo,estado,completada_en,correccion,motivo_no_pude&persona_id=eq.' + id +
          '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + desdeHoy + ')&order=vence_en.asc', 'foto_antes').catch(fallo),
     estadoAvisos().catch(function () { return 'no-soportado'; }),
-    /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
-    per.local_id ? leer('/orden_recordatorios?select=texto&local_id=eq.' + valor(per.local_id) + '&dia=eq.' + diaSemanaAR() + '&activo=is.true&order=creado_en.asc').catch(nada) : Promise.resolve(null),
     /* SQL 102/151: producto testigo para contar (desde que se programa hasta la fecha límite), uno vencido sin mandar, o el que se mandó hoy.
        Con sus videos (SQL 157): si el supervisor pidió grabar alguno de nuevo, se hace hoy. */
     per.local_id ? leer157(function (x) {
@@ -933,13 +931,13 @@ function pantallaHoy() {
     per.local_id ? llamar('orden_vidriera_semana', { p_local: per.local_id }).catch(nada) : Promise.resolve(null)
   ]).then(function (r) {
     if (_pestana !== 'hoy') return;
-    var incompleto = [r[3], r[4], r[7], r[8]].indexOf(FALLO) > -1, semanaFallo = r[1] === FALLO;
+    var incompleto = [r[3], r[4], r[6], r[7]].indexOf(FALLO) > -1, semanaFallo = r[1] === FALLO;
     r = r.map(function (v) { return v === FALLO ? null : v; });
-    var testigos = (r[7] || []).filter(function (s) { return (s.testigo_items || []).length; });
+    var testigos = (r[6] || []).filter(function (s) { return (s.testigo_items || []).length; });
     dibujarHoy({
       controles: r[0] || [], semana: (r[1] || [])[0], sinModulos: Array.isArray(r[2]) && r[2].length === 0, desafio: r[3],
-      tareas: r[4] || [], avisos: r[5], recordatorios: r[6] || [], incompleto: incompleto, semanaFallo: semanaFallo, sugerencias: r[9] || [], vidriera: r[10],
-      caja: r[8] ? { activa: !!(r[8][0] && r[8][0][0] && r[8][0][0].caja_activa), hoy: (r[8][1] || [])[0] || null } : null,
+      tareas: r[4] || [], avisos: r[5], incompleto: incompleto, semanaFallo: semanaFallo, sugerencias: r[8] || [], vidriera: r[9],
+      caja: r[7] ? { activa: !!(r[7][0] && r[7][0][0] && r[7][0][0].caja_activa), hoy: (r[7][1] || [])[0] || null } : null,
       testigoPend: testigos.filter(function (s) { return !s.cargada_en; })[0] || null,
       testigoHecho: testigos.filter(function (s) { return s.cargada_en; })[0] || null
     });
@@ -1095,10 +1093,7 @@ function dibujarHoy(x) {
     : perdidos ? 'Hoy quedó algo sin hacer'
     : luego ? 'Por ahora, listo'
     : '¡Listo por hoy!';
-  var html = cabeza('Hola, ' + primerNombre()) + bannerAvisos(x.avisos) +
-    (x.recordatorios || []).map(function (r) {
-      return '<div class="recordatorio"><b>' + esc(DIAS_SEMANA[diaSemanaAR() - 1]) + '</b>' + esc(r.texto) + '</div>';
-    }).join('');
+  var html = cabeza('Hola, ' + primerNombre()) + bannerAvisos(x.avisos);
 
   if (x.incompleto) {
     html += '<div class="nota alerta">Con esta señal no se cargó todo: puede faltar algo en la lista. <button class="boton chico" id="reintentarHoy" style="margin-top:8px">Probar de nuevo</button></div>';
