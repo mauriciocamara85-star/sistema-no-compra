@@ -3471,8 +3471,16 @@ function pantallaMapa(loc, volverA) {
 
 var CAMPOS_TESTIGO = [['enviada', 'Cantidad enviada'], ['stock_sistema', 'Stock sistema'], ['vendida', 'Cantidad vendida'],
                       ['cantidad_real', 'Cantidad real (contada)'], ['dev_fabrica', 'Dev. a fábrica'], ['salieron', 'Salieron'], ['entraron', 'Entraron']];
+/* El stock del sistema puede dar negativo (22/10, pedido de Mauricio: "suele pasar,
+   indica que hay algún error en el stock"); los demás números, no. */
+var NEGATIVO_TESTIGO = { stock_sistema: true };
 /* Lo escrito y todavía sin guardar, por producto: sobrevive a ir a grabar un video. */
 var _borradorTestigo = {};
+
+/** El número como lo escribieron, con el menos de cualquier teclado ("− 5" → "-5"). */
+function limpiarNumeroTestigo(v) { return String(v == null ? '' : v).trim().replace(/^[-−–]\s*/, '-'); }
+
+function numeroTestigoOk(k, v) { return (NEGATIVO_TESTIGO[k] ? /^-?\d{1,5}$/ : /^\d{1,5}$/).test(v); }
 
 function pantallaTestigo(semId) {
   apagarCamara();
@@ -3529,6 +3537,15 @@ function dibujarTestigo(sem, items) {
       resultadoTestigo(card);
     });
     resultadoTestigo(card);
+    card.querySelectorAll('[data-signo]').forEach(function (bs) {
+      bs.onclick = function (e) {
+        e.preventDefault();
+        var inp = card.querySelector('[data-k="' + bs.dataset.signo + '"]'), v = limpiarNumeroTestigo(inp.value);
+        inp.value = v.charAt(0) === '-' ? v.slice(1) : '-' + v;
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
+        inp.focus();
+      };
+    });
     var bv = card.querySelector('[data-video]');
     if (bv) bv.onclick = function () { grabarVideo(sem, porId[card.dataset.item], function () { pantallaTestigo(sem.id); }); };
   });
@@ -3560,7 +3577,11 @@ function tarjetaTestigo(it, bloqueado) {
     (it.rubro ? '<small class="ti-rubro">' + esc(it.rubro) + '</small>' : '') +
     '<div class="ti-cab"><b>' + esc(it.item + ' · ' + it.producto) + '</b>' + (it.color ? '<span class="chip pendiente">' + esc(it.color) + '</span>' : '') + '</div>' +
     '<div class="ti-grilla">' + CAMPOS_TESTIGO.map(function (c) {
-      return '<label class="campo"><span>' + esc(c[1]) + '</span><input inputmode="numeric" maxlength="5" autocomplete="off" data-k="' + c[0] + '" value="' + esc(val(c[0])) + '"' + (bloqueado ? ' disabled' : '') + '></label>';
+      var neg = NEGATIVO_TESTIGO[c[0]];
+      /* El ± va después del casillero: así la etiqueta sigue siendo del casillero (en el teclado de números del iPhone no hay "-"). */
+      return '<label class="campo"><span>' + esc(c[1]) + '</span>' + (neg ? '<span class="con-signo">' : '') +
+        '<input inputmode="numeric" maxlength="' + (neg ? 6 : 5) + '" autocomplete="off" data-k="' + c[0] + '" value="' + esc(val(c[0])) + '"' + (bloqueado ? ' disabled' : '') + '>' +
+        (neg ? (bloqueado ? '' : '<button type="button" class="signo" data-signo="' + c[0] + '" aria-label="Poner o sacar el menos (stock negativo)">±</button>') + '</span>' : '') + '</label>';
     }).join('') + '</div>' +
     '<label class="campo"><span>Observaciones</span><input maxlength="300" autocomplete="off" data-k="observacion" value="' + esc(val('observacion')) + '"' + (bloqueado ? ' disabled' : '') + '></label>' +
     '<div class="ti-res" data-res></div>' +
@@ -3570,7 +3591,7 @@ function tarjetaTestigo(it, bloqueado) {
 
 /** Diferencia y desvío mientras escriben, como en la planilla. */
 function resultadoTestigo(card) {
-  var n = function (k) { var v = String((card.querySelector('[data-k="' + k + '"]') || {}).value || '').trim(); return /^\d{1,5}$/.test(v) ? Number(v) : null; };
+  var n = function (k) { var v = limpiarNumeroTestigo((card.querySelector('[data-k="' + k + '"]') || {}).value); return numeroTestigoOk(k, v) ? Number(v) : null; };
   var stock = n('stock_sistema'), real = n('cantidad_real'), env = n('enviada'), res = card.querySelector('[data-res]');
   if (stock == null || real == null) { res.textContent = ''; res.className = 'ti-res'; return; }
   var dif = stock - real;
@@ -3585,11 +3606,11 @@ function guardarTestigo(items) {
   app.querySelectorAll('.testigo-item').forEach(function (card) {
     var it = porId[card.dataset.item], datos = {}, distinto = false;
     card.querySelectorAll('[data-k]').forEach(function (inp) {
-      var k = inp.dataset.k, v = String(inp.value || '').trim();
+      var k = inp.dataset.k, v = k === 'observacion' ? String(inp.value || '').trim() : limpiarNumeroTestigo(inp.value);
       datos[k] = v;
       if (v !== String(it[k] == null ? '' : it[k])) distinto = true;
-      if (k !== 'observacion' && v !== '' && !/^\d{1,5}$/.test(v) && !malo) {
-        malo = it.producto + ': en "' + CAMPOS_TESTIGO.filter(function (c) { return c[0] === k; })[0][1] + '" va un número entero.';
+      if (k !== 'observacion' && v !== '' && !numeroTestigoOk(k, v) && !malo) {
+        malo = it.producto + ': en "' + CAMPOS_TESTIGO.filter(function (c) { return c[0] === k; })[0][1] + '" va un número entero' + (NEGATIVO_TESTIGO[k] ? '.' : ', sin negativos.');
       }
     });
     if (distinto) cambios.push({ it: it, datos: datos });

@@ -399,9 +399,17 @@ button.mapa-sec { cursor: pointer; }
 /* El rubro del producto (SQL 152), chiquito arriba del nombre. */
 .ti-rubro { display: block; margin: 0 0 3px; font-size: 12px; font-weight: 800; letter-spacing: .5px; text-transform: uppercase; color: var(--suave); }
 .ti-grilla { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
-.ti-grilla .campo { margin-bottom: 10px; }
+.ti-grilla .campo { margin-bottom: 10px; align-content: end; }   /* casilleros parejos aunque un título ocupe dos renglones */
 .ti-grilla .campo > span { font-size: 12.5px; }
 .ti-grilla input { text-align: right; }
+/* El stock del sistema puede dar negativo (22/10): un ± adentro del casillero, a la izquierda. */
+.ti-grilla .campo > .con-signo { position: relative; display: block; font-size: inherit; font-weight: inherit; color: inherit; }
+.con-signo input { padding-left: 48px; }
+.con-signo .signo {
+  position: absolute; left: 6px; top: 50%; transform: translateY(-50%); width: 36px; height: 36px; padding: 0;
+  border-radius: 10px; border: 1px solid var(--borde); background: var(--fondo); font-size: 18px; font-weight: 800; line-height: 1; cursor: pointer;
+}
+.con-signo .signo:active { border-color: var(--lima); }
 .testigo-item .campo { margin-bottom: 10px; }
 .ti-res { font-weight: 800; margin: 2px 0 10px; color: var(--suave); min-height: 20px; }
 .ti-res.falta { color: var(--rojo); }

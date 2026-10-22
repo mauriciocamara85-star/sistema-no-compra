@@ -1840,15 +1840,16 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
            { k: 'desvio', t: 'Desvío', tipo: 'ver', ver: function (f) { return textoDesvio(f.desvio) || '—'; } },
            { k: 'observacion', t: 'Observaciones', tipo: 'texto', nulo: true, ancho: 'grande' }],
     guardar: function (f, cambios) {
-      /* Números enteros y no negativos, como en la app; vacío en dev/salieron/entraron es 0. */
+      /* Números enteros y no negativos, como en la app; vacío en dev/salieron/entraron es 0.
+         El stock del sistema sí puede dar negativo (22/10: avisa que hay un error en el stock). */
       var malo = null;
       ['enviada', 'stock_sistema', 'cantidad_real', 'vendida', 'dev_fabrica', 'salieron', 'entraron'].forEach(function (k) {
         if (!(k in cambios)) return;
         if (cambios[k] == null) { if (['dev_fabrica', 'salieron', 'entraron'].indexOf(k) > -1) cambios[k] = 0; return; }
-        if (!(Number.isInteger(cambios[k]) && cambios[k] >= 0 && cambios[k] <= 99999)) malo = malo || k;
+        if (!(Number.isInteger(cambios[k]) && cambios[k] >= (k === 'stock_sistema' ? -99999 : 0) && cambios[k] <= 99999)) malo = malo || k;
       });
       if (malo) return Promise.reject(rechazo('En "' + ({ enviada: 'Enviada', stock_sistema: 'Stock sistema', cantidad_real: 'Cantidad real', vendida: 'Vendida',
-        dev_fabrica: 'Dev. a fábrica', salieron: 'Salieron', entraron: 'Entraron' })[malo] + '" va un número entero, sin negativos.'));
+        dev_fabrica: 'Dev. a fábrica', salieron: 'Salieron', entraron: 'Entraron' })[malo] + '" va un número entero' + (malo === 'stock_sistema' ? '.' : ', sin negativos.')));
       return guardarFila('/testigo_items?id=eq.' + valor(f.id), cambios).then(verTestigo);
     }
   });
