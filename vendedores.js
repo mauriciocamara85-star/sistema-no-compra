@@ -760,6 +760,8 @@ function irAEnlace(enlace) {
   var sinEnlace = function () { try { if (location.hash) history.replaceState(null, '', location.pathname + location.search); } catch (e) {} };
   if (h === 'desafio' && !esSupervision()) { sinEnlace(); marcarPestana('hoy'); abrirDesafio(); return true; }
   if (h === 'testigo' && !esSupervision()) { sinEnlace(); marcarPestana('hoy'); pantallaTestigo(); return true; }
+  /* El aviso de "grabá de nuevo el video" (SQL 157) lleva a ese control, aunque ya esté mandado. */
+  if (/^testigo\/[0-9a-f-]{36}$/i.test(h) && !esSupervision()) { sinEnlace(); marcarPestana('hoy'); pantallaTestigo(h.slice(8)); return true; }
   if (/^ver\/[0-9a-f-]{36}$/i.test(h)) { if (esSupervision() && !_espejo) { verSuAppPorId(h.slice(4)); return true; } return false; }
   /* El aviso de una revisión con sugerencia o marcas (SQL 150): la foto revisada. */
   if (/^revision\/[0-9a-f-]{36}$/i.test(h)) { if (esSupervision()) return false; sinEnlace(); marcarPestana('hoy'); verRevision(h.slice(9)); return true; }
@@ -911,10 +913,13 @@ function pantallaHoy() {
     estadoAvisos().catch(function () { return 'no-soportado'; }),
     /* SQL 99: lo que hay que acordarse hoy (martes entra mercadería…). */
     per.local_id ? leer('/orden_recordatorios?select=texto&local_id=eq.' + valor(per.local_id) + '&dia=eq.' + diaSemanaAR() + '&activo=is.true&order=creado_en.asc').catch(nada) : Promise.resolve(null),
-    /* SQL 102/151: producto testigo para contar (desde que se programa hasta la fecha límite), uno vencido sin mandar, o el que se mandó hoy. */
-    per.local_id ? leer('/testigo_semanas?select=id,fecha,cargada_en,testigo_items(item,producto,color)&local_id=eq.' + valor(per.local_id) +
-                        '&fecha=gte.' + sumarDias(hoy, -6) + '&cerrada=is.false' +
-                        '&or=(cargada_en.is.null,cargada_en.gte.' + desdeHoy + ')&order=fecha.asc').catch(fallo)
+    /* SQL 102/151: producto testigo para contar (desde que se programa hasta la fecha límite), uno vencido sin mandar, o el que se mandó hoy.
+       Con sus videos (SQL 157): si el supervisor pidió grabar alguno de nuevo, se hace hoy. */
+    per.local_id ? leer157(function (x) {
+                     return '/testigo_semanas?select=id,fecha,cargada_en,testigo_items(item,producto,color,video_path,video_borrado,video_subido_en' + x + ')' +
+                       '&local_id=eq.' + valor(per.local_id) + '&fecha=gte.' + sumarDias(hoy, -6) + '&cerrada=is.false' +
+                       '&or=(cargada_en.is.null,cargada_en.gte.' + desdeHoy + ')&order=fecha.asc';
+                   }).catch(fallo)
                  : Promise.resolve(null),
     /* La caja de hoy y si el local la controla (se pregunta acá: la primera vez en un celular todavía no se sabe). */
     per.local_id ? Promise.all([leer('/orden_config?select=caja_activa&local_id=eq.' + valor(per.local_id)),
@@ -1005,14 +1010,26 @@ function dibujarHoy(x) {
            : (total === 1 ? 'Mandaste la foto.' : 'Mandaste las ' + total + '.') });
   }
 
+  /* Los videos que el supervisor pidió grabar de nuevo (SQL 157): son para hoy. */
+  var regrabar = function (s) { return s ? (s.testigo_items || []).filter(function (it) { return estadoVideoTestigo(it) === 'pedido'; }) : []; };
+  var textoRegrabar = function (pv) {
+    return conPunto(pv.map(function (it) { return it.producto + (it.color ? ' ' + it.color : ''); }).join(', ') +
+      (pv.length === 1 && pv[0].video_pedido_msg ? ': ' + pv[0].video_pedido_msg : '')) + ' Es para hoy.';
+  };
   if (x.testigoPend) {
     /* SQL 152: se cuenta cualquier día hasta la fecha límite; vencido, todavía se manda. */
-    var s = x.testigoPend, n = (s.testigo_items || []).length;
-    filas.push({ id: 'hTestigo', titulo: 'Producto testigo', hecho: false, alerta: s.fecha < hoy,
-      texto: s.fecha < hoy ? 'Venció el ' + diaYFecha(s.fecha) + ': cargalo y mandalo igual.'
+    var s = x.testigoPend, n = (s.testigo_items || []).length, pp = regrabar(s);
+    filas.push({ id: 'hTestigo', titulo: 'Producto testigo', hecho: false, alerta: s.fecha < hoy || pp.length > 0,
+      texto: (pp.length ? 'Grabá de nuevo: ' + textoRegrabar(pp) + ' ' : '') +
+             (s.fecha < hoy ? 'Venció el ' + diaYFecha(s.fecha) + ': cargalo y mandalo igual.'
            : (s.fecha === hoy ? 'Vence hoy · ' : 'Hasta el ' + diaYFecha(s.fecha) + ' · ') +
-             (n === 1 ? '1 producto' : n + ' productos') + ': los números del sistema, contar y un video de cada uno.' });
-  } else if (x.testigoHecho) {
+             (n === 1 ? '1 producto' : n + ' productos') + ': los números del sistema, contar y un video de cada uno.') });
+  }
+  var ph = regrabar(x.testigoHecho);
+  if (ph.length) {
+    filas.push({ id: 'hTestigoVideo', titulo: ph.length === 1 ? 'Grabá de nuevo un video del producto testigo' : 'Grabá de nuevo ' + ph.length + ' videos del producto testigo',
+      hecho: false, alerta: true, texto: textoRegrabar(ph) });
+  } else if (x.testigoHecho && !x.testigoPend) {
     filas.push({ id: 'hTestigo', titulo: 'Producto testigo', hecho: true, texto: 'Mandado.' });
   }
 
@@ -1089,6 +1106,7 @@ function dibujarHoy(x) {
   var ir = {
     hFotos: function () { irA('fotos'); },
     hTestigo: function () { pantallaTestigo((x.testigoPend || x.testigoHecho).id); },
+    hTestigoVideo: function () { pantallaTestigo(x.testigoHecho.id); },
     hTareas: function () { irA('tareas'); },
     hTest: function () { pantallaDesafio(d); },
     hCaja: function () { irA('caja'); }
@@ -2718,9 +2736,12 @@ function testigosRevisar(loc) {
   var lista = loc.lista || [{ id: loc.id, nombre: loc.nombre }], hoy = hoyAR(), nombre = {};
   if (!lista.length) return Promise.resolve([]);
   lista.forEach(function (l) { nombre[l.id] = l.nombre; });
-  return leer('/testigo_semanas?select=id,local_id,fecha,cargada_en,cerrada,testigo_items(id,stock_sistema,cantidad_real)' +
+  /* Con cómo está cada video (SQL 157): "N videos para mirar". */
+  return leer157(function (x) {
+    return '/testigo_semanas?select=id,local_id,fecha,cargada_en,cerrada,testigo_items(id,stock_sistema,cantidad_real,video_path,video_borrado,video_subido_en' + x + ')' +
       '&local_id=in.(' + lista.map(function (l) { return valor(l.id); }).join(',') + ')' +
-      '&fecha=gte.' + sumarDias(hoy, -7) + '&order=fecha.desc').then(function (filas) {
+      '&fecha=gte.' + sumarDias(hoy, -7) + '&order=fecha.desc';
+  }).then(function (filas) {
     var porLocal = {};
     (filas || []).forEach(function (s) {
       var t = (s.testigo_items || []).length ? estadoTestigoRevisar(s, hoy) : null;
@@ -2736,14 +2757,17 @@ function testigosRevisar(loc) {
 /** Cómo está un control de producto testigo, para la tarjeta (el más urgente primero). */
 function estadoTestigoRevisar(s, hoy) {
   var items = s.testigo_items || [], n = items.length + (items.length === 1 ? ' producto' : ' productos');
+  /* Los videos que todavía nadie miró (SQL 157; en una semana cerrada ya no se pueden revisar). */
+  var mirar = s.cerrada ? 0 : items.filter(function (i) { return 'video_revisado_en' in i && estadoVideoTestigo(i) === 'para_mirar'; }).length;
+  var videos = mirar ? ' · ' + (mirar === 1 ? '1 video para mirar' : mirar + ' videos para mirar') : '';
   if (!s.cargada_en) {
     if (s.cerrada) return null;
-    if (s.fecha < hoy) return { orden: 0, alerta: true, texto: 'Sin mandar: venció el ' + diaYFecha(s.fecha) + ' (' + n + ')' };
-    if (s.fecha === hoy) return { orden: 1, texto: 'Vence hoy, sin mandar (' + n + ')' };
-    return { orden: 2, texto: 'Hasta el ' + diaYFecha(s.fecha) + ', sin mandar (' + n + ')' };
+    if (s.fecha < hoy) return { orden: 0, alerta: true, texto: 'Sin mandar: venció el ' + diaYFecha(s.fecha) + ' (' + n + ')' + videos };
+    if (s.fecha === hoy) return { orden: 1, texto: 'Vence hoy, sin mandar (' + n + ')' + videos };
+    return { orden: 2, texto: 'Hasta el ' + diaYFecha(s.fecha) + ', sin mandar (' + n + ')' + videos };
   }
   var falta = items.filter(function (i) { return i.stock_sistema != null && i.cantidad_real != null && Number(i.stock_sistema) > Number(i.cantidad_real); }).length;
-  return { orden: 3, alerta: falta > 0, texto: 'Mandado el ' + diaMes(s.cargada_en) + ': ' + (falta ? falta + ' con faltante' : 'sin faltantes') + ' (' + n + ')' };
+  return { orden: 3, alerta: falta > 0, texto: 'Mandado el ' + diaMes(s.cargada_en) + ': ' + (falta ? falta + ' con faltante' : 'sin faltantes') + ' (' + n + ')' + videos };
 }
 
 function tarjetasTestigoRevisar(ts) {
@@ -2767,14 +2791,15 @@ function verTestigoRevisar(t) {
       '<p class="bajada">' + esc(t.local + (s.fecha ? ' · fecha límite: ' + diaYFecha(s.fecha) : '')) + '</p>' +
       '<div class="nota' + (t.alerta ? ' alerta' : '') + '">' + esc(t.texto) + '</div>' +
       (items || []).map(function (it) {
-        var dif = Number(it.diferencia), txt = textoDiferencia(it.diferencia);
-        return '<div class="testigo-ver' + (dif > 0 ? ' falta' : '') + '"><div class="que"><b>' + esc(it.item + ' · ' + it.producto + (it.color ? ' ' + it.color : '')) + '</b>' +
+        var dif = Number(it.diferencia), txt = textoDiferencia(it.diferencia), ev = 'video_revisado_en' in it ? estadoVideoTestigo(it) : null;
+        return '<div class="testigo-ver' + (dif > 0 ? ' falta' : '') + '" data-tv="' + esc(it.id) + '"><div class="que"><b>' + esc(it.item + ' · ' + it.producto + (it.color ? ' ' + it.color : '')) + '</b>' +
           '<small>' + esc((it.rubro ? it.rubro + ' · ' : '') + (it.stock_sistema != null && it.cantidad_real != null ? 'Sistema ' + it.stock_sistema + ' · contaron ' + it.cantidad_real : 'Todavía sin contar') +
                           (it.enviada != null ? ' · enviadas ' + it.enviada : '')) + '</small></div>' +
           (txt ? '<span class="chip ' + (dif > 0 ? 'vencido' : dif < 0 ? 'pendiente' : 'listo') + '">' + esc(txt) + '</span>' : '') +
-          (it.video_path && !it.video_borrado ? '<button class="boton chico" data-video="' + esc(it.id) + '">▶ Video</button>' : '') + '</div>';
+          (it.video_path && !it.video_borrado ? '<button class="boton chico' + (ev === 'para_mirar' ? ' lima' : '') + '" data-video="' + esc(it.id) + '">▶ Video' + (ev ? ' · ' + esc(TEXTO_VIDEO[ev]) : '') + '</button>' : '') + '</div>';
       }).join('') +
-      '<p class="bajada" style="margin-top:12px">Es para mirar: programarlo y corregir un número se hace en la compu (Supervisión → Productos testigo).</p>';
+      '<p class="bajada" style="margin-top:12px">Al abrir cada video, decí si está bien o pedí que lo graben de nuevo (sólo el día que lo grabaron). ' +
+      'Programarlo y corregir un número se hace en la compu (Supervisión → Productos testigo).</p>';
     app.innerHTML = html;
     volver();
     app.querySelectorAll('[data-video]').forEach(function (b) {
@@ -2782,6 +2807,9 @@ function verTestigoRevisar(t) {
         var it = porId[b.dataset.video], v = document.createElement('video');
         v.className = 'video-testigo'; v.controls = true; v.setAttribute('playsinline', '');
         b.replaceWith(v);
+        /* Abajo del video: "Está bien" o "Que lo graben de nuevo" (SQL 157). */
+        v.insertAdjacentHTML('afterend', accionesVideoTestigo(it, s));
+        engancharAccionesVideo(v.parentNode, it, function () { return verTestigoRevisar(t); });
         urlFirmadaEn(VIDEOS_TESTIGO, it.video_path).then(function (u) {
           if (u) { v.src = u; return; }
           var p = document.createElement('small'); p.textContent = 'No se pudo abrir el video (puede que ya se haya borrado).'; v.replaceWith(p);
@@ -2789,6 +2817,42 @@ function verTestigoRevisar(t) {
       };
     });
   }).catch(function (e) { pantallaError(e, function () { verTestigoRevisar(t); }); });
+}
+
+/** Abajo del video en Revisar (SQL 157): "Está bien" o "Que lo graben de nuevo", con un mensaje si quiere. Pedirlo de nuevo, sólo el día que lo grabaron. */
+function accionesVideoTestigo(it, s) {
+  var ev = estadoVideoTestigo(it);
+  if (!ev || !('video_revisado_en' in it) || soloMira() || s.cerrada) return '';
+  var deHoy = videoDeHoy(it), pedir = deHoy && ev !== 'pedido';
+  var botones = (ev !== 'bien' ? '<button class="boton lima chico" data-vbien>Está bien</button>' : '') +
+                (pedir ? '<button class="boton chico" data-vpedir>Que lo graben de nuevo</button>' : '');
+  return '<div class="tv-acciones">' +
+    (ev === 'pedido' ? '<div class="nota pedido alerta"><b>Pediste que lo graben de nuevo' + (it.video_pedido_msg ? ':</b> ' + esc(conPunto(it.video_pedido_msg)) : '.</b>') +
+                       ' Lo tienen que grabar hoy; si ya no hace falta, tocá «Está bien».</div>'
+     : ev === 'pedido_vencido' ? '<div class="nota">Pediste que lo graben de nuevo y ese día no lo grabaron.</div>'
+     : ev === 'bien' ? '<div class="ti-res justo">Está bien ✓</div>' : '') +
+    (botones ? '<div class="botones">' + botones + '</div>' : '') +
+    (pedir ? '<div class="corregir-form" hidden><label class="campo"><span>Qué tienen que cambiar (si querés)</span>' +
+             '<textarea rows="2" maxlength="200" placeholder="Ej.: no se ven las etiquetas, contalas de a una"></textarea></label>' +
+             '<button class="boton lima chico" data-vmandar>Pedir el video de nuevo</button></div>'
+     : !deHoy && ev !== 'pedido' ? '<p class="ayuda-chica">Lo grabaron el ' + esc(diaMes(it.video_subido_en)) + ': pedirlo de nuevo sólo se puede el mismo día. Ahora habría que volver a contar todo.</p>' : '') +
+    '</div>';
+}
+
+function engancharAccionesVideo(caja, it, recargar) {
+  var b = caja.querySelector('[data-vbien]'), p = caja.querySelector('[data-vpedir]'), form = caja.querySelector('.corregir-form'), m = caja.querySelector('[data-vmandar]');
+  var nombre = it.producto + (it.color ? ' ' + it.color : '');
+  if (b) unaVez(b, function () {
+    return llamar('testigo_video_revisar', { p_item: it.id, p_bien: true }).then(function () { avisar('Listo: el video de ' + nombre + ' está bien.'); return recargar(); });
+  });
+  if (p) p.onclick = function () { form.hidden = false; p.hidden = true; form.querySelector('textarea').focus(); };
+  if (m) unaVez(m, function () {
+    var msg = String(form.querySelector('textarea').value || '').trim();
+    return llamar('testigo_video_revisar', { p_item: it.id, p_bien: false, p_mensaje: msg || null }).then(function (r) {
+      avisar(r && r.avisados ? 'Listo: le avisamos al local que graben de nuevo ' + nombre + '.' : 'Listo, queda pedido. No encontramos a quién avisarle en el local: decíselo vos.');
+      return recargar();
+    });
+  });
 }
 
 /* ── Las tareas con foto (16/10, pedido de Mauricio): el supervisor mira la foto de cada tarea hecha y la da
@@ -3518,6 +3582,13 @@ function dibujarTestigo(sem, items) {
   else if (sem.cargada_en) html += '<div class="nota">Ya la mandaron el ' + esc(diaMes(sem.cargada_en)) + ' a las ' + esc(hora(sem.cargada_en)) + '. Si hay que corregir algo, avisale a tu supervisor.</div>';
   else if (cerro || !sem.fecha) html += '<div class="nota">Este control ya cerró' + (sem.fecha ? ' (la fecha límite era el ' + esc(diaYFecha(sem.fecha)) + ')' : '') + '. Si hay que cargar algo, avisale a tu supervisor.</div>';
   else if (sem.fecha < hoy) html += '<div class="nota alerta">Venció el ' + esc(diaYFecha(sem.fecha)) + ': cargalo y mandalo igual.</div>';
+  /* SQL 157: lo que el supervisor pidió grabar de nuevo se puede aunque ya esté mandado, hasta el final del día. */
+  var pedidos = items.filter(function (it) { return estadoVideoTestigo(it) === 'pedido'; });
+  if (pedidos.length) {
+    html += '<div class="nota alerta">Tu supervisor pidió que grabes de nuevo ' +
+      (pedidos.length === 1 ? 'el video de ' + esc(pedidos[0].producto + (pedidos[0].color ? ' ' + pedidos[0].color : '')) : pedidos.length + ' videos') +
+      '. Es para hoy: mañana ya no se puede.</div>';
+  }
   html += items.map(function (it) { return tarjetaTestigo(it, bloqueado); }).join('');
   if (!items.length) html += '<div class="vacio">Todavía no hay productos cargados.</div>';
   if (!bloqueado && items.length) {
@@ -3572,8 +3643,10 @@ function dibujarTestigo(sem, items) {
 function tarjetaTestigo(it, bloqueado) {
   var b = _borradorTestigo[it.id] || {};
   var val = function (k) { return b[k] != null ? b[k] : it[k] == null ? '' : it[k]; };
-  var conVideo = it.video_path && !it.video_borrado;
-  return '<div class="testigo-item" data-item="' + esc(it.id) + '">' +
+  var conVideo = it.video_path && !it.video_borrado, pedido = estadoVideoTestigo(it) === 'pedido';
+  /* Lo grabaron de nuevo hoy, después de que lo pidieron (SQL 157). */
+  var rehecho = !pedido && it.video_pedido_en && videoDeHoy(it) && new Date(it.video_subido_en) > new Date(it.video_pedido_en);
+  return '<div class="testigo-item' + (pedido ? ' pedido' : '') + '" data-item="' + esc(it.id) + '">' +
     (it.rubro ? '<small class="ti-rubro">' + esc(it.rubro) + '</small>' : '') +
     '<div class="ti-cab"><b>' + esc(it.item + ' · ' + it.producto) + '</b>' + (it.color ? '<span class="chip pendiente">' + esc(it.color) + '</span>' : '') + '</div>' +
     '<div class="ti-grilla">' + CAMPOS_TESTIGO.map(function (c) {
@@ -3585,7 +3658,10 @@ function tarjetaTestigo(it, bloqueado) {
     }).join('') + '</div>' +
     '<label class="campo"><span>Observaciones</span><input maxlength="300" autocomplete="off" data-k="observacion" value="' + esc(val('observacion')) + '"' + (bloqueado ? ' disabled' : '') + '></label>' +
     '<div class="ti-res" data-res></div>' +
-    (bloqueado ? '' : '<button class="boton chico' + (conVideo ? '' : ' lima') + '" data-video>' + (conVideo ? 'Video listo ✓ · Grabar de nuevo' : 'Grabar el video (hasta 20 s)') + '</button>') +
+    (pedido ? '<div class="nota pedido alerta"><b>Tu supervisor pidió grabarlo de nuevo' + (it.video_pedido_msg ? ':</b> ' + esc(it.video_pedido_msg) : '.</b>') + '</div>' +
+              '<button class="boton chico lima" data-video>Grabar el video de nuevo</button>'
+     : bloqueado ? (rehecho ? '<div class="ti-res justo">Mandaste el video nuevo ✓</div>' : '')
+     : '<button class="boton chico' + (conVideo ? '' : ' lima') + '" data-video>' + (conVideo ? 'Video listo ✓ · Grabar de nuevo' : 'Grabar el video (hasta 20 s)') + '</button>') +
     '</div>';
 }
 

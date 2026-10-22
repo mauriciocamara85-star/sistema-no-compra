@@ -1803,8 +1803,11 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
         (sem.cargada_en || items.some(testigoCargado) ? '' : '<button class="boton chico" id="borrarControl">Borrar el control de ' + esc(_local.nombre) + '</button>') + '</div>');
     var conVideo = items.filter(function (f) { return f.video_path && !f.video_borrado; });
     if (conVideo.length) {
+      /* Cómo está cada uno (SQL 157): para mirar, está bien o pedido de nuevo. */
       html += '<div class="seccion">Videos</div><div class="imp-mapa-acc">' + conVideo.map(function (f) {
-        return '<button class="boton chico" data-video="' + esc(f.id) + '">▶ ' + esc(f.item + ' · ' + f.producto + (f.color ? ' ' + f.color : '')) + '</button>';
+        var ev = 'video_revisado_en' in f ? estadoVideoTestigo(f) : null;
+        return '<button class="boton chico' + (ev === 'para_mirar' && !soloMira() && !sem.cerrada ? ' lima' : '') + '" data-video="' + esc(f.id) + '">▶ ' + esc(f.item + ' · ' + f.producto + (f.color ? ' ' + f.color : '')) +
+          (ev ? ' · ' + esc(TEXTO_VIDEO[ev]) : '') + '</button>';
       }).join('') + '</div>';
     }
     var borrados = items.filter(function (f) { return f.video_borrado; }).length;
@@ -1854,7 +1857,7 @@ function dibujarTestigoAdmin(c, sem, todas, difs, items, quien, hoy) {
     }
   });
   c.querySelectorAll('[data-video]').forEach(function (bv) {
-    bv.onclick = function () { verVideoTestigo(items.filter(function (f) { return f.id === bv.dataset.video; })[0]); };
+    bv.onclick = function () { verVideoTestigo(items.filter(function (f) { return f.id === bv.dataset.video; })[0], sem); };
   });
   var a = document.getElementById('agregarItem');
   if (a) unaVez(a, function () {
@@ -2054,16 +2057,42 @@ function verTestigoStats() {
   });
 }
 
-function verVideoTestigo(f) {
+/** El video de un producto, con "Está bien" o "Que lo graben de nuevo" (SQL 157; esto último, sólo el día que lo grabaron). */
+function verVideoTestigo(f, sem) {
   if (!f) return;
-  var v = ventana('<h1>' + esc(f.item + ' · ' + f.producto + (f.color ? ' ' + f.color : '')) + '</h1>' +
+  var nombre = f.producto + (f.color ? ' ' + f.color : '');
+  var ev = 'video_revisado_en' in f ? estadoVideoTestigo(f) : null, puede = !!ev && !soloMira() && !(sem && sem.cerrada);
+  var deHoy = videoDeHoy(f), pedir = puede && deHoy && ev !== 'pedido';
+  var est = { para_mirar: 'sorpresa', bien: 'listo', pedido: 'corregir', pedido_vencido: 'vencido' };
+  var v = ventana('<h1>' + esc(f.item + ' · ' + nombre) + '</h1>' +
     '<p class="bajada">' + esc((f.video_subido_en ? 'Grabado el ' + diaMes(f.video_subido_en) + ' a las ' + hora(f.video_subido_en) + '. ' : '') +
       (f.stock_sistema != null && f.cantidad_real != null ? 'Sistema ' + f.stock_sistema + ', contaron ' + f.cantidad_real + ': ' + textoDiferencia(f.diferencia) + '.' : '')) + '</p>' +
-    '<video class="imp-video" id="videoTestigo" controls playsinline></video><p class="bajada" id="videoEstado">Cargando el video…</p>');
+    (ev ? '<p><span class="est ' + est[ev] + '">' + esc(TEXTO_VIDEO[ev]) + '</span></p>' : '') +
+    '<video class="imp-video" id="videoTestigo" controls playsinline></video><p class="bajada" id="videoEstado">Cargando el video…</p>' +
+    (ev === 'pedido' ? '<div class="nota alerta">Pediste que lo graben de nuevo a las ' + esc(hora(f.video_pedido_en)) + (f.video_pedido_msg ? ': «' + esc(f.video_pedido_msg) + '»' : '') +
+                       '. Lo tienen que grabar hoy' + (puede ? '; si ya no hace falta, tocá «Está bien».' : '.') + '</div>'
+     : ev === 'pedido_vencido' ? '<div class="nota">Pediste que lo graben de nuevo' + (f.video_pedido_msg ? ' («' + esc(f.video_pedido_msg) + '»)' : '') + ' y ese día no lo grabaron.</div>' : '') +
+    (puede ? '<div class="seccion">¿Está bien?</div>' +
+      (pedir ? '<label class="campo"><span>Qué tienen que cambiar (si querés que lo graben de nuevo)</span><textarea id="vvMsg" rows="2" maxlength="200" placeholder="Ej.: no se ven las etiquetas, contalas de a una"></textarea></label>' : '') +
+      '<div class="vm-usar">' + (ev !== 'bien' ? '<button class="boton lima chico" id="vvBien">Está bien</button> ' : '') +
+        (pedir ? '<button class="boton chico" id="vvPedir">Que lo graben de nuevo</button>' : '') + '</div>' +
+      (!deHoy && ev !== 'pedido' ? '<p class="ayuda-chica">Lo grabaron el ' + esc(diaMes(f.video_subido_en)) + ': pedir que lo graben de nuevo sólo se puede el mismo día. Ahora habría que volver a contar todo.</p>' : '') : ''));
   urlFirmadaEn(VIDEOS_TESTIGO, f.video_path).then(function (u) {
     var el = v.querySelector('#videoTestigo'), est = v.querySelector('#videoEstado');
     if (!el) return;
     if (u) { el.src = u; est.textContent = ''; } else est.textContent = 'No se pudo abrir el video (puede que ya se haya borrado).';
+  });
+  var listo = function (texto) { avisar(texto); v.remove(); verTestigo(); return 'dejar-apagado'; };
+  var b = v.querySelector('#vvBien'), p = v.querySelector('#vvPedir');
+  if (b) unaVez(b, function () {
+    return llamar('testigo_video_revisar', { p_item: f.id, p_bien: true }).then(function () { return listo('Listo: el video de ' + nombre + ' está bien.'); });
+  });
+  if (p) unaVez(p, function () {
+    var msg = String(v.querySelector('#vvMsg').value || '').trim();
+    return llamar('testigo_video_revisar', { p_item: f.id, p_bien: false, p_mensaje: msg || null }).then(function (r) {
+      return listo(r && r.avisados ? 'Listo: le avisamos a ' + _local.nombre + ' que graben de nuevo ' + nombre + '.'
+                                   : 'Listo, queda pedido. No encontramos a quién avisarle en ' + _local.nombre + ': decíselo vos.');
+    });
   });
 }
 

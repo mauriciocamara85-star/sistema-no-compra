@@ -394,6 +394,13 @@ button.mapa-sec { cursor: pointer; }
 .testigo-ver .que small { color: var(--suave); font-size: 13.5px; }
 .testigo-ver .boton.chico, .testigo-ver .video-testigo, .testigo-ver > small { grid-column: 1 / -1; }
 .testigo-ver .video-testigo { width: 100%; max-height: 60vh; border-radius: 12px; background: #000; }
+/* "Está bien" o "Que lo graben de nuevo" (SQL 157): abajo del video en Revisar; y en la planilla, el producto que hay que grabar de nuevo. */
+.testigo-ver .tv-acciones { grid-column: 1 / -1; }
+.tv-acciones .nota { margin: 0 0 8px; }
+.tv-acciones .botones { margin-top: 4px; }
+.tv-acciones .ayuda-chica { margin: 8px 0 0; }
+.testigo-item.pedido { border-color: var(--ambar); }
+.testigo-item .nota.pedido { margin: 2px 0 10px; }
 .testigo-item { background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 18px; padding: 14px; margin: 0 0 12px; }
 .ti-cab { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 10px; font-size: 17px; }
 /* El rubro del producto (SQL 152), chiquito arriba del nombre. */

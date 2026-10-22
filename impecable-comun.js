@@ -333,6 +333,34 @@ function textoDesvio(desvio) {
   return String(Math.round(Number(desvio) * 10) / 10).replace('.', ',') + ' %';
 }
 
+/* "Está bien" o "Que lo graben de nuevo" (SQL 157, 22/10). Pedirlo de nuevo vale sólo el día que lo grabaron:
+   después habría que volver a contar todo (Mauricio). */
+var COLS_VIDEO_157 = 'video_revisado_en,video_pedido_en,video_pedido_msg';
+var TEXTO_VIDEO = { para_mirar: 'Para mirar', bien: 'Está bien', pedido: 'Pedido de nuevo', pedido_vencido: 'Pedido, no lo grabaron' };
+
+/** Cómo está el video, como video_estado de la base: null (sin video), 'para_mirar', 'bien', 'pedido' (lo graban hoy) o 'pedido_vencido'. */
+function estadoVideoTestigo(it) {
+  if (!it || !it.video_path || it.video_borrado) return null;
+  var t = function (v) { return v ? new Date(v).getTime() : -Infinity; };
+  var p = t(it.video_pedido_en);
+  if (p > t(it.video_subido_en) && p > t(it.video_revisado_en)) return hoyAR(new Date(it.video_pedido_en)) === hoyAR() ? 'pedido' : 'pedido_vencido';
+  return it.video_revisado_en && it.video_subido_en && t(it.video_revisado_en) >= t(it.video_subido_en) ? 'bien' : 'para_mirar';
+}
+
+/** El mensaje con su punto final, sin repetirlo ("Se ve oscuro" → "Se ve oscuro."). */
+function conPunto(t) { t = String(t || '').trim(); return !t || /[.!?…]$/.test(t) ? t : t + '.'; }
+
+/** ¿Lo grabaron hoy? Sólo entonces se puede pedir que lo graben de nuevo. */
+function videoDeHoy(it) { return !!(it && it.video_subido_en) && hoyAR(new Date(it.video_subido_en)) === hoyAR(); }
+
+/** Lee con las columnas del SQL 157; si la base todavía no las tiene, sin ellas. armar(extra) arma la ruta con lo que se suma al select. */
+function leer157(armar) {
+  return leer(armar(',' + COLS_VIDEO_157)).catch(function (e) {
+    if (!e || e.sinSesion || esDeRed(e)) throw e;   // sin señal o sin sesión: no es por las columnas
+    return leer(armar(''));
+  });
+}
+
 /** "jueves 16/10" (de una fecha AAAA-MM-DD). */
 function diaYFecha(f) {
   return new Intl.DateTimeFormat('es-AR', { timeZone: 'UTC', weekday: 'long' }).format(new Date(f + 'T12:00:00Z')) + ' ' + diaMes(f);
