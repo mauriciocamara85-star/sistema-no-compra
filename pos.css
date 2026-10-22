@@ -520,3 +520,156 @@ html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135de
 .pos-kpi b.cj-kpi-dif { font-size: 14px; }
 .pos-tabla tr[data-cierre], .pos-tabla tr[data-mov] { cursor: pointer; }
 .pos-tabla tr[data-cierre]:hover td, .pos-tabla tr[data-mov]:hover td { background: var(--surface-2); }
+
+/* ═════════ EL STOCK Y LOS REMITOS (SQL 160) ═════════
+   Cada producto con su grilla: un renglón por color y una columna por
+   talle (la "Consulta de stock" de BlueSoft, sin buscar talle por talle).
+   La recepción de un remito: los productos a la izquierda y el que se está
+   contando a la derecha; en la PC del local (1366×657) entra sin bajar. */
+.st-tit { margin: 16px 0 8px; font: 700 15px var(--sans); color: var(--txt); }
+.st-tit-fila { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 12px; margin-top: 16px; }
+.st-tit-fila .st-tit { margin: 0 0 8px; }
+.st-tit-fila > div { margin-bottom: 8px; }
+.st-chico { display: block; font-size: 12px; color: var(--txt-3); }
+.st-sale { color: var(--bad-txt); }
+.st-entra { color: var(--ok-txt); }
+.pos-cartel.st-ok { background: var(--ok-soft); border-color: transparent; color: var(--ok-txt); }
+.pos-cartel.st-dif { background: var(--warn-soft); border-color: transparent; color: var(--warn-txt); }
+.pos-cartel.st-ok b, .pos-cartel.st-dif b { color: inherit; }
+.pos-cartel .pos-link { margin-left: 4px; }
+button.pos-kpi { text-align: left; font-family: var(--sans); color: var(--txt); cursor: pointer; }
+button.pos-kpi:hover { border-color: var(--line-alta); }
+.pos-kpi.mal b { color: var(--bad-txt); }
+.pos-tabla tr[data-rec] { cursor: pointer; }
+.pos-tabla tr[data-rec]:hover td { background: var(--surface-2); }
+
+/* En la venta y el cambio: la prenda que según el sistema no está en la sucursal (avisa, no frena). */
+.st-pill {
+  display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; vertical-align: 1px;
+  background: var(--warn-soft); color: var(--warn-txt); font: 700 11px/1.5 var(--sans); white-space: nowrap;
+}
+
+/* Los productos, cada uno con su grilla. */
+.st-prods { display: grid; gap: 10px; }
+@media (min-width: 1100px) { .st-prods { grid-template-columns: repeat(auto-fill, minmax(min(100%, 470px), 1fr)); align-items: start; } }
+.pos-caja .st-prods { grid-template-columns: minmax(0, 1fr); }
+.st-prod { min-width: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.pos-caja .st-prod { box-shadow: none; }
+.st-prod-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-bottom: 6px; }
+.st-prod-cab b { font: 700 14px var(--sans); }
+.st-prod-cab > span:not(.pill) { font-size: 14px; color: var(--txt-2); }
+.st-prod-cab small { font-size: 12px; color: var(--txt-3); }
+.st-prod-cab em { margin-left: auto; font: 700 13px var(--sans); color: var(--txt-2); font-variant-numeric: tabular-nums; }
+.st-prod-cab .pill { margin-left: auto; }
+.st-prod .pos-ayuda { margin: 6px 0 0; }
+.st-scroll { overflow-x: auto; }
+.st-grilla { border-collapse: separate; border-spacing: 0; font-size: 13.5px; }
+.st-grilla th, .st-grilla td { padding: 3px 4px; border-bottom: 1px solid var(--line); }
+.st-grilla thead th { padding: 5px 6px; background: var(--surface-2); font: 700 11.5px var(--sans); color: var(--txt-2); white-space: nowrap; }
+.st-grilla thead th:first-child { border-radius: 8px 0 0 0; }
+.st-grilla thead th:last-child { border-radius: 0 8px 0 0; }
+/* El color, quieto a la izquierda cuando hay muchos talles. */
+.st-grilla tbody th, .st-grilla tfoot th {
+  position: sticky; left: 0; z-index: 1; padding-right: 12px; background: var(--surface);
+  text-align: left; font: 600 13px var(--sans); color: var(--txt); white-space: nowrap;
+}
+.st-grilla thead th:first-child { position: sticky; left: 0; z-index: 2; }
+.st-grilla .c { min-width: 46px; text-align: center; }
+.st-grilla .n { padding-left: 10px; text-align: right; font-variant-numeric: tabular-nums; }
+.st-grilla tbody tr:last-child > * { border-bottom: 0; }
+.st-nada { color: var(--txt-3); }
+.st-n {
+  min-width: 42px; min-height: 30px; padding: 3px 8px; border: 1px solid transparent; border-radius: 8px;
+  background: var(--surface-2); font: 700 14px var(--sans); font-variant-numeric: tabular-nums; color: var(--txt); cursor: pointer;
+}
+.st-n:hover { border-color: var(--line-alta); }
+.st-n.cero { color: var(--txt-3); font-weight: 600; }
+.st-n.neg { background: var(--bad-soft); color: var(--bad-txt); }
+.st-movs { max-height: 300px; overflow: auto; }
+.st-movs th { position: sticky; top: 0; z-index: 1; }
+.st-ajuste { margin: 12px 0 0; }
+.st-ajuste .pos-ayuda { margin: 0 0 8px; }
+
+/* La grilla para escribir cantidades (la recepción y el remito nuevo). */
+.pos .st-grilla input.rc-in {
+  width: 56px; min-height: 0; padding: 5px 4px; text-align: center;
+  font: 700 15px var(--sans); font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield; appearance: textfield;
+}
+.pos .st-grilla input.rc-in::-webkit-inner-spin-button, .pos .st-grilla input.rc-in::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+/* En el celular: cuatro talles entran sin deslizar, y con 16px el iPhone no hace zoom al tocar la casilla. */
+@media (max-width: 520px) {
+  .pos .st-grilla input.rc-in { width: 46px; font-size: 16px; }
+  .st-grilla tbody th, .st-grilla tfoot th { padding-right: 6px; }
+  .rc-grilla td.c { padding-left: 2px; padding-right: 2px; }
+  .rc-grilla .n { padding-left: 6px; }
+}
+.pos .st-grilla input.rc-in.rc-ojo { border-color: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+.pos .st-grilla input.rc-in.rc-sumo { border-color: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.rc-tot { color: var(--txt-2); font-weight: 700; font-variant-numeric: tabular-nums; }
+.rc-grilla tfoot th, .rc-grilla tfoot td { border-top: 1px solid var(--line-alta); border-bottom: 0; padding-top: 5px; }
+.rc-total { font-size: 15px; }
+
+/* Lo que llegó contra lo que dice el remito: arriba lo contado, abajo lo mandado. */
+.rc-c { display: inline-flex; flex-direction: column; align-items: center; min-width: 42px; padding: 3px 6px; border-radius: 8px; line-height: 1.15; }
+.rc-c b { font: 700 15px var(--sans); font-variant-numeric: tabular-nums; }
+.rc-c small { font-size: 11px; font-weight: 600; white-space: nowrap; }
+.rc-c.ok { background: var(--ok-soft); color: var(--ok-txt); }
+.rc-c.mal { background: var(--bad-soft); color: var(--bad-txt); }
+.rm-leyenda { margin: 4px 0 6px; white-space: normal; }
+
+/* La recepción. */
+.rc { display: grid; gap: 12px; }
+@media (min-width: 1000px) { .rc { grid-template-columns: 320px minmax(0, 1fr); align-items: start; } }
+.rc-izq, .rc-der { min-width: 0; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.rc-izq { display: flex; flex-direction: column; gap: 8px; }
+.rc-der { padding: 12px 14px; }
+.rc-avance { margin: 0; font-size: 13px; color: var(--txt-2); }
+.rc-lista { display: grid; gap: 3px; max-height: 360px; overflow-y: auto; }
+@media (min-width: 1000px) { .rc-lista { max-height: calc(100vh - 300px); min-height: 120px; } }
+.rc-prod {
+  display: flex; align-items: flex-start; gap: 9px; width: 100%; padding: 7px 9px; border: 1px solid transparent; border-radius: 10px;
+  background: none; text-align: left; font: 500 13.5px/1.3 var(--sans); color: var(--txt); cursor: pointer;
+}
+.rc-prod:hover { background: var(--surface-2); }
+.rc-prod.sel { background: var(--surface-2); border-color: var(--line-alta); }
+.rc-prod-txt { min-width: 0; }
+.rc-prod small { display: block; margin-top: 1px; font-size: 12px; color: var(--txt-3); }
+.rc-punto { flex: none; width: 11px; height: 11px; margin-top: 4px; border-radius: 50%; border: 2px solid var(--line-alta); }
+.rc-punto.cont { border-color: var(--info-txt); background: var(--info-soft); }
+.rc-punto.ok { border-color: var(--ok); background: var(--ok); }
+.rc-punto.dif { border-color: var(--warn); background: var(--warn); }
+.rc-punto.nc { border-color: var(--bad); background: var(--bad); }
+.rc-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-bottom: 4px; }
+.rc-cab h3 { margin: 0; font: 700 17px/1.25 var(--display); }
+.rc-cab small { font-size: 12.5px; color: var(--txt-3); }
+.rc-ayuda { margin: 0 0 8px; }
+.rc-der .pos-f.rc-obs { margin-top: 10px; }
+.rc-der .pos-cartel { margin-bottom: 8px; }
+.pos select.rc-color { width: auto; min-width: 150px; }
+
+/* El remito nuevo. */
+.tk-datos.rn-datos { margin-bottom: 10px; }
+.tk-datos.rn-datos > * { grid-column: span 6; }
+@media (min-width: 1000px) { .tk-datos.rn-datos > * { grid-column: span 3; } }
+@media (max-width: 520px) { .tk-datos.rn-datos > * { grid-column: span 12; } }
+.tk-prod.rn-prod { margin-bottom: 10px; max-width: 920px; }
+/* En el celular, el campo a todo el ancho y "Pegar o subir un Excel…" arriba: así las sugerencias quedan pegadas al campo. */
+@media (max-width: 520px) {
+  .tk-prod.rn-prod { flex-wrap: wrap; }
+  .tk-prod.rn-prod .pos-f { flex-basis: 100%; }
+  .tk-prod.rn-prod .btn { order: -1; }
+}
+.pos-tabla td.rn-det { white-space: normal; font-size: 13px; line-height: 1.45; min-width: 180px; }
+.rn-det span { display: block; }
+.rn-det b { font-weight: 600; }
+.pos-tabla tr.rn-marca td { background: var(--ok-soft); }
+.rn-tot { margin: 8px 2px 0; font-size: 13.5px; color: var(--txt-2); }
+.pos-pie.rn-imp { justify-content: flex-start; align-items: center; margin-top: 8px; }
+.pos-caja textarea#imTexto, .pos-caja textarea#ipTexto { font: 13px/1.4 ui-monospace, Consolas, monospace; white-space: pre; }
+
+/* El inventario. */
+.inv-tabla { max-height: 340px; overflow: auto; margin-bottom: 4px; }
+.inv-tabla th { position: sticky; top: 0; z-index: 1; }
+#invPrevia .pos-check { margin: 0 0 8px; }
+#invPrevia .cj-paso { margin-top: 10px; }

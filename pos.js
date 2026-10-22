@@ -32,6 +32,11 @@
    cambio" de BlueSoft, con lo que vuelve arriba y lo que se lleva abajo. Lo
    que vuelve entra al precio de lista; si sale más se cobra la diferencia,
    y si sale menos no se guarda (no se devuelve plata).
+   El SQL 160 (22/10, "primero arranquemos con esto, con lo básico"): el
+   stock de cada local y los remitos. La venta y el cambio lo mueven solos;
+   la fábrica (por ahora, la oficina desde Gestión) carga el remito y el
+   local lo cuenta a ciegas, producto por producto: recién ahí entra a su
+   stock. La primera carga sale del Excel de "Consulta de stock" de BlueSoft.
 
    La plata va en CENTAVOS (enteros) en toda la cuenta: la base vuelve a
    sumar y exige que los pagos den el total al centavo.
@@ -56,19 +61,23 @@
   var K_BORRADOR = 'pos_borrador';         // la venta a medio armar: si se cierra la pestaña, sigue ahí
   var K_CAMBIO = 'pos_borrador_cambio';    // el cambio a medio armar, igual
   var K_PRUEBA = 'pos_prueba';             // el modo prueba, en sessionStorage: se apaga solo al cerrar la ventana
+  var K_REMITO = 'pos_borrador_remito';    // el remito nuevo a medio cargar (Gestión)
+  var K_REMITO_VER = 'pos_remito';         // el remito que se está recibiendo, en sessionStorage
+  var K_CONTEO = 'pos_conteo_remito';      // lo contado de cada remito: si se cierra la pestaña, sigue ahí
 
   /* ── Los menús: las secciones de Tango y Dragonfish, con los nombres de BlueSoft ── */
   var MENUS = {
     mostrador: [
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
                   ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida', 'index.html?volver=pos']]],
+      /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene. */
+      ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['stock', 'Stock', 'stock']]],
       /* El cierre se hace en el mostrador, a la noche (SQL 149); los listados quedan en Gestión. */
       ['Caja', [['cierre', 'Cierre de caja', 'caja']]]
     ],
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
-      ['Stock', [['stock', 'Stock', 'stock'], ['envios', 'Envíos', 'envio'],
-                 ['recepcion', 'Recepción', 'recepcion'], ['inventario', 'Inventario', 'inventario']]],
+      ['Stock', [['stock', 'Stock', 'stock'], ['remitos', 'Remitos', 'envio'], ['inventario', 'Inventario', 'inventario']]],
       ['Caja', [['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['reportes', 'Reportes', 'reportes']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
@@ -76,30 +85,14 @@
   };
   var MENU = MENUS[MODO];
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
-  var DENTRO = { mostrador: { cambio: 'cambios' }, gestion: {} };
+  var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos' }, gestion: { remito_nuevo: 'remitos' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1 };
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
+                 stock: 1, remitos: 1, inventario: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
   var PRONTO = {
-    stock: ['Consulta de stock', [
-      'El stock de cada sucursal por producto, talle y color.',
-      'Cada local ve el suyo; la oficina, todos.',
-      'Vender sin stock avisa pero no frena, y queda la lista de los negativos para corregir.',
-      'El cruce con el stock de la fábrica que ya avisa el bot.'], ''],
-    envios: ['Envíos entre sucursales', [
-      'Un local le manda prendas a otro: salen de uno y quedan "en camino".',
-      'El que recibe escanea y confirma; recién ahí entran a su stock.',
-      'Lo que no llegó queda a la vista.'], ''],
-    recepcion: ['Recepción de mercadería', [
-      'La fábrica carga el envío y el local lo ve "por recibir" (hoy son los remitos de compra de BlueSoft).',
-      'Se escanea o se confirma, y entra al stock.',
-      'Las diferencias (vino de menos o de más) quedan anotadas.'], ''],
-    inventario: ['Inventario y ajustes', [
-      'El inventario general de cada seis meses, con la pistola.',
-      'Los ajustes con su motivo (falla, robo, error de carga).',
-      'La temporada nueva sin tener que crear un depósito nuevo cada vez.'], ''],
     productos: ['Productos', [
       'El catálogo que ya está en el sistema (' + (window.CATALOGO ? window.CATALOGO.length : 576) + ' productos), con rubro, talles y colores.',
       'Alta y edición de productos, con varios códigos de barras por artículo.',
@@ -247,7 +240,7 @@
 
   /* ── La base ── */
   var S = { ini: null, precios: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, cajaHecho: null,
-            cambioHecho: null, cbFoco: null, cbPagoHay: null };
+            cambioHecho: null, cbFoco: null, cbPagoHay: null, stock: {} };
   var V = null;    // la venta que se está armando
   var CB = null;   // el cambio que se está armando
 
@@ -258,9 +251,9 @@
   function mensajeDe(e) {
     var m = String((e && e.message) || e || '');
     /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe.
-       El 149 suma la caja (pos_caja…, pos_cierre…). */
+       El 149 suma la caja (pos_caja…, pos_cierre…). El 160, el stock y los remitos. */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
+      return 'Todavía falta correr el SQL ' + (/pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
     }
     if (/tiene que ser A o B/.test(m)) return 'Todavía falta correr el SQL 147 (el de la X) en Supabase.';
     if (esDeRed(e)) return 'Sin conexión: no se pudo hablar con la base.';
@@ -290,6 +283,44 @@
   function olvidarPrecios(lista) {
     delete S.precios[lista];
     S.ini.listas.forEach(function (l) { if (l.base_id === lista) delete S.precios[l.id]; });
+  }
+
+  /* ── El stock del local (SQL 160): para avisar en la venta y el cambio si una prenda no está ──
+     S.stock[local] = { con: si ya tiene stock cargado, m: { "CÓDIGO|TALLE|COLOR": cantidad } }.
+     Nunca frena: sin el SQL 160 o sin conexión, la venta sigue igual y sin el aviso. */
+  function claveVar(cod, talle, color) { return [cod || '', talle || '', color || ''].join('|').toUpperCase(); }
+  function traerStock(local, forzar) {
+    if (!local) return Promise.resolve(null);
+    if (S.stock[local] && !forzar) return Promise.resolve(S.stock[local]);
+    return llamar('pos_stock_local', { p_local: local }).then(function (d) {
+      var m = {};
+      (d.filas || []).forEach(function (f) { m[claveVar(f[0], f[1], f[2])] = f[3]; });
+      return (S.stock[local] = { con: !!d.con_stock, m: m });
+    }, function () { return null; });
+  }
+  /** Cuántas hay de una prenda en el local según el sistema; null si no se sabe (todavía no tiene stock cargado). */
+  function hayEnLocal(local, cod, talle, color) {
+    var x = S.stock[local];
+    return x && x.con && cod ? x.m[claveVar(cod, talle, color)] || 0 : null;
+  }
+  /** En la grilla: "sin stock" o "hay 1" cuando lo que se lleva es más de lo que hay. */
+  function pillStock(local, l) {
+    var h = l.libre ? null : hayEnLocal(local, l.codigo, l.talle, l.color);
+    if (h == null || h >= l.cantidad) return '';
+    return '<span class="st-pill" title="Según el sistema hay ' + h + ' en la sucursal. Se vende igual y queda en negativo.">' + (h > 0 ? 'hay ' + h : 'sin stock') + '</span>';
+  }
+  /** Al agregar una prenda: si no tiene precio, y si el sistema dice que no está en la sucursal. */
+  function avisarAlAgregar(p, local, talle, color, sinPrecio, lineas) {
+    var a = [], cod = p[0];
+    if (sinPrecio) a.push(p[1] + ' no tiene precio en esta lista: escribilo en «Precio unit.».');
+    var h = hayEnLocal(local, cod, talle, color);
+    var n = lineas.filter(function (l) { return !l.libre && l.codigo === cod && l.talle === (talle || '') && l.color === (color || ''); })
+                  .reduce(function (t, l) { return t + l.cantidad; }, 0);
+    if (h != null && h < n) {
+      var nom = p[1] + (talle ? ' ' + talle : '') + (color ? ' ' + nombreColor(color, cod) : '');
+      a.push((sinPrecio ? 'Y según' : 'Según') + ' el sistema ' + (h > 0 ? 'hay sólo ' + h : 'no hay') + (sinPrecio ? '' : ' ' + nom) + ' en la sucursal: se vende igual.');
+    }
+    if (a.length) avisar('info', a.join(' '));
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -344,7 +375,8 @@
     app.innerHTML = marco();
     engancharMenu();
     var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, cierre: verCierre, cierres: verCierres,
-                movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales }[v];
+                movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
+                stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, inventario: verInventario }[v];
     if (ver) ver(); else verPronto(v);
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
@@ -376,7 +408,7 @@
   /* Gestión: cada grupo se despliega y se pliega (Mauricio, 20/10: "que se despliegue… si en algún
      momento tenemos más"). Arranca abierto el de la sección en la que está; lo demás, como lo dejó. */
   function grupoAbierto(g) {
-    if (g[1].some(function (it) { return it[0] === S.vista; })) return true;
+    if (g[1].some(function (it) { return it[0] === S.vista || it[0] === DENTRO[MODO][S.vista]; })) return true;
     return (leerJSON(K_GRUPOS, {}) || {})[g[0]] === 1;
   }
   /** Adónde vuelve "‹ Sistema": a la pantalla de la que vino (si es del sistema), o a la Carga. */
@@ -648,7 +680,7 @@
           campo('', 'Forma de pago', '<select id="vForma">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }).concat([['multiple', 'Múltiple']]), '') + '</select>') +
           '<div class="tk-pagox" id="vPagoX"></div>' +
           campo('c6', 'Sucursal', '<select id="vLocal"></select>') +
-          campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="El stock todavía no está en el POS">') +
+          campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="Lo vendido sale del stock de la sucursal">') +
           campo('c3', 'Caja', '<input type="text" value="Chica" readonly title="La caja chica del local">') +
         '</div>' +
         '<div class="tk-tot">' +
@@ -709,6 +741,7 @@
       recordar();
       llenarVendedores();
       cambiarLista(listaDe(l));
+      traerStock(l.id).then(function () { if (S.vista === 'venta' && V.local_id === l.id) pintar(); });
     };
     $('tDescBtn').onclick = abrirDescuento;
     $('vLinea').onclick = function () { abrirLineaLibre(); };
@@ -724,7 +757,8 @@
     engancharFilas();
     pintarPago();
     $('vFilas').innerHTML = '<tr class="tk-vacia"><td colspan="10">Cargando los precios…</td></tr>';
-    asegurarPrecios(V.lista_id).then(function () { pintar(); }, function (e) { pintar(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
+    /* Los precios y el stock del local (para avisar si una prenda no está) a la vez; el stock nunca falla. */
+    Promise.all([asegurarPrecios(V.lista_id), traerStock(V.local_id)]).then(function () { pintar(); }, function (e) { pintar(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
     /* En la compu, el foco en Producto: la pistola dispara sin tocar nada. En el celular no (abriría el teclado). */
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('vProd'); if (p) p.focus(); }, 0);
   }
@@ -788,7 +822,7 @@
     var filas = V.lineas.map(function (l, i) {
       var d = c.porLinea[i];
       return '<tr data-i="' + i + '"><td class="pos-num">' + ('00' + (i + 1)).slice(-3) + '</td>' +
-        '<td class="tk-cod">' + esc(l.codigo || '—') + '</td><td class="tk-desc">' + esc(l.descripcion) + '</td>' +
+        '<td class="tk-cod">' + esc(l.codigo || '—') + '</td><td class="tk-desc">' + esc(l.descripcion) + pillStock(V.local_id, l) + '</td>' +
         '<td class="c">' + esc(l.talle || '') + '</td><td>' + esc(l.color_nom || l.color || '') + '</td>' +
         '<td class="c"><input type="number" class="tk-cant" min="1" max="999" value="' + l.cantidad + '" aria-label="Cantidad de ' + esc(l.descripcion) + '"></td>' +
         '<td class="n"><input type="text" inputmode="decimal" class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
@@ -896,19 +930,23 @@
   /** El campo de producto de la venta. El cambio tiene dos: lo que vuelve y lo que se lleva. */
   function prodVenta() { return { campo: 'vProd', sug: 'vSug', lista: function () { return V.lista_id; }, agregar: agregar }; }
 
-  /* o: { campo, sug (los id), lista() y agregar(p, talle, color, cantidad) }. Cada campo con sus sugerencias. */
+  /* o: { campo, sug (los id), lista() y agregar(p, talle, color, cantidad) }. Cada campo con sus sugerencias.
+     Los remitos (SQL 160) además le pasan: prod(código) y buscar(texto) en vez del catálogo solo, elegir(p)
+     en vez de "Agregar detalle…", sinPrecio, sinLinea (no tienen «Nueva línea»), noEsta(código) y
+     escaneoLibre (el disparo a una etiqueta que no está en el catálogo entra igual). */
   function engancharProducto(o) {
     o = o || prodVenta();
+    var prodDe = o.prod || function (cod) { return PROD[cod]; }, buscar = o.buscar || buscarProductos;
     var campoP = $(o.campo), caja = $(o.sug), sug = [], mira = 0, tEsc = null;
     function cerrar() { caja.hidden = true; sug = []; campoP.removeAttribute('aria-activedescendant'); }
-    function elegir(p) { abrirDetalle(p, o); }
+    function elegir(p) { if (o.elegir) o.elegir(p); else abrirDetalle(p, o); }
     function pintarSug() {
       if (!sug.length) { cerrar(); return; }
       caja.innerHTML = sug.map(function (p, i) {
-        var pr = precioDe(p[0], o.lista());
+        var pr = o.sinPrecio ? 0 : precioDe(p[0], o.lista());
         return '<button type="button" role="option" id="' + o.sug + i + '" data-sug="' + i + '" class="' + (i === mira ? 'on' : '') + '" aria-selected="' + (i === mira) + '">' +
           '<span>' + esc(p[1]) + ' <small>' + esc(p[2] || '') + '</small></span><small>' + esc(p[0]) + '</small>' +
-          (pr ? '<span class="n">' + plata(pr) + '</span>' : '<span class="sin">Sin precio</span>') + '</button>';
+          (o.sinPrecio ? '' : pr ? '<span class="n">' + plata(pr) + '</span>' : '<span class="sin">Sin precio</span>') + '</button>';
       }).join('');
       caja.hidden = false;
       campoP.setAttribute('aria-activedescendant', o.sug + mira);
@@ -920,14 +958,14 @@
       var d = leerEscaneo(campoP.value);
       /* Algunas pistolas no mandan Enter: si el texto ya es un disparo completo (el talle y el color
          existen en esa prenda), se agrega solo, cuando deja de escribir. */
-      if (d && PROD[d.codigo] && tallesDe(PROD[d.codigo]).indexOf(d.talle) >= 0 &&
-          coloresDe(PROD[d.codigo]).some(function (x) { return x.cod === d.color; })) {
+      var pd = d && prodDe(d.codigo);
+      if (pd && tallesDe(pd).indexOf(d.talle) >= 0 && coloresDe(pd).some(function (x) { return x.cod === d.color; })) {
         var antes = campoP.value;
         tEsc = setTimeout(function () { if (campoP.value === antes) agregarEscaneo(d, o); }, 150);
         cerrar();
         return;
       }
-      sug = buscarProductos(campoP.value);
+      sug = buscar(campoP.value);
       mira = 0;
       pintarSug();
     };
@@ -941,26 +979,28 @@
       clearTimeout(tEsc);
       var d = leerEscaneo(campoP.value);
       if (d) { agregarEscaneo(d, o); return; }
-      var cod = campoP.value.trim().toUpperCase();
-      if (PROD[cod]) { elegir(PROD[cod]); return; }
+      var cod = campoP.value.trim().toUpperCase(), pc = prodDe(cod);
+      if (pc) { elegir(pc); return; }
       /* Si las sugerencias se cerraron (salió del campo y volvió), se buscan de nuevo. */
-      if (!sug.length) { sug = buscarProductos(campoP.value); mira = 0; }
+      if (!sug.length) { sug = buscar(campoP.value); mira = 0; }
       if (sug.length) { elegir(sug[mira]); return; }
+      if (cod && o.noEsta) { o.noEsta(cod); return; }
       if (cod) {
-        avisar('err', 'No encontré «' + campoP.value.trim() + '» en el catálogo. Si es un artículo suelto, cargalo con «Nueva línea».');
+        avisar('err', 'No encontré «' + campoP.value.trim() + '» en el catálogo.' + (o.sinLinea ? '' : ' Si es un artículo suelto, cargalo con «Nueva línea».'));
         campoP.select();   // el próximo disparo lo reemplaza
       }
     };
     caja.onmousedown = function (e) { e.preventDefault(); };   // que el campo no pierda el foco antes del click
     caja.onclick = function (e) { var b = e.target.closest('[data-sug]'); if (b) elegir(sug[Number(b.getAttribute('data-sug'))]); };
     campoP.onblur = function () { setTimeout(function () { if (document.activeElement !== campoP) cerrar(); }, 120); };
-    campoP.onfocus = function () { if (!sug.length && !leerEscaneo(campoP.value)) { sug = buscarProductos(campoP.value); mira = 0; pintarSug(); } };
+    campoP.onfocus = function () { if (!sug.length && !leerEscaneo(campoP.value)) { sug = buscar(campoP.value); mira = 0; pintarSug(); } };
   }
 
   function agregarEscaneo(d, o) {
-    var p = PROD[d.codigo];
+    var p = o.prod ? o.prod(d.codigo) : PROD[d.codigo];
+    if (!p && o.escaneoLibre) p = [d.codigo, d.codigo, '', d.talle, d.color];
     if (!p) {
-      avisar('err', 'El código ' + d.codigo + ' no está en el catálogo. Si es un artículo suelto, cargalo con «Nueva línea».');
+      avisar('err', 'El código ' + d.codigo + ' no está en el catálogo.' + (o.sinLinea ? '' : ' Si es un artículo suelto, cargalo con «Nueva línea».'));
       var c = $(o.campo);
       if (c) c.select();   // el próximo disparo lo reemplaza
       return;
@@ -978,7 +1018,7 @@
     var campoP = $('vProd');
     campoP.limpiar();
     pintar();
-    if (!precioDe(cod)) avisar('info', p[1] + ' no tiene precio en esta lista: escribilo en «Precio unit.».');
+    avisarAlAgregar(p, V.local_id, talle, color, !precioDe(cod), V.lineas);
     campoP.focus();
   }
 
@@ -1279,6 +1319,7 @@
     if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
     llamar('pos_venta_guardar', { p: p }).then(function (r) {
       S.ultimo = { id: r.id, numero: r.numero, serie: r.serie || 'factura', total: c.total, local: nombreLocal(l0), ya: !!r.ya };
+      S.stock = {};   // lo vendido salió del stock: se vuelve a traer
       V = ventaNueva(V);
       guardarBorrador();
       S.guardando = false;
@@ -1351,7 +1392,8 @@
       if (ab) ab.onclick = function () {
         ab.remove();
         var z = dentro.querySelector('#tkAnular');
-        z.innerHTML = '<div class="pos-cartel" style="margin-top:12px">La venta queda en la lista, tachada, con quién la anuló y por qué. No se puede deshacer.' +
+        z.innerHTML = '<div class="pos-cartel" style="margin-top:12px">La venta queda en la lista, tachada, con quién la anuló y por qué.' +
+          (t.serie === 'prueba' ? '' : ' Lo vendido vuelve al stock de la sucursal.') + ' No se puede deshacer.' +
           campo('', '¿Por qué se anula?', '<textarea id="tkMotivo" maxlength="300" rows="2"></textarea>') + '<div class="pos-error" id="tkError"></div>' +
           '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="tkConfirmar">Anular la venta ' + esc(ref(t)) + '</button></div></div>';
         var m = z.querySelector('#tkMotivo');
@@ -1361,6 +1403,7 @@
           if (!errorEn(dentro, 'tkError', motivo.length < 3 ? 'Escribí por qué se anula.' : '')) return;
           bt.disabled = true;
           llamar('pos_venta_anular', { p_id: t.id, p_motivo: motivo }).then(function () {
+            S.stock = {};
             avisar('ok', 'La venta ' + ref(t) + ' quedó anulada.');
             if (alCambiar) alCambiar();
             abrirTicket(t.id, alCambiar);
@@ -1547,7 +1590,7 @@
           campo('', 'Forma de pago', '<select id="cbForma">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), CB.forma) + '</select>') +
           '<div class="tk-pagox" id="cbPagoX"></div>' +
           campo('c6', 'Sucursal', '<select id="cbLocal"></select>') +
-          campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="El stock todavía no está en el POS">') +
+          campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="Lo que vuelve entra al stock de la sucursal y lo que se lleva sale">') +
           campo('c3', 'Caja', '<input type="text" value="Chica" readonly title="La caja chica del local">') +
         '</div>' +
         '<div class="tk-tot">' +
@@ -1585,6 +1628,7 @@
       recordar(true);
       llenarVendedores(true);
       cambiarListaCb(listaDe(l));
+      traerStock(l.id).then(function () { if (S.vista === 'cambio' && CB.local_id === l.id) pintarCambio(); });
     };
     $('cbObs').oninput = function () { CB.observaciones = this.value; guardarBorradorCb(); };
     $('cbLimpiar').onclick = function () {
@@ -1617,7 +1661,7 @@
     });
     pintarPago(true);
     $('cbFilasV').innerHTML = $('cbFilasS').innerHTML = '<tr class="tk-vacia"><td colspan="9">Cargando los precios…</td></tr>';
-    asegurarPrecios(CB.lista_id).then(function () { pintarCambio(); }, function (e) { pintarCambio(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
+    Promise.all([asegurarPrecios(CB.lista_id), traerStock(CB.local_id)]).then(function () { pintarCambio(); }, function (e) { pintarCambio(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
     /* En la compu, el foco en lo que vuelve: la pistola dispara sin tocar nada. En el celular no (abriría el teclado). */
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('cbVuelve'); if (p) p.focus(); }, 0);
   }
@@ -1632,7 +1676,9 @@
       var campoP = $(SENTIDO[s].campo);
       campoP.limpiar();
       pintarCambio();
-      if (!pl) avisar('info', p[1] + ' no tiene precio en esta lista: escribilo en «Precio unit.».');
+      /* Lo que se lleva sale del stock: si no está, que lo sepa (lo que vuelve, entra). */
+      if (s === 'sale') avisarAlAgregar(p, CB.local_id, talle, color, !pl, CB.sale);
+      else if (!pl) avisar('info', p[1] + ' no tiene precio en esta lista: escribilo en «Precio unit.».');
       campoP.focus();
     };
   }
@@ -1710,7 +1756,7 @@
         tot += l.precio * l.cantidad;
         var aj = l.lista != null && l.precio !== l.lista;
         return '<tr data-i="' + i + '"><td class="pos-num">' + ('00' + n).slice(-3) + '</td>' +
-          '<td class="tk-cod">' + esc(l.codigo || '—') + '</td><td class="tk-desc">' + esc(l.descripcion) + '</td>' +
+          '<td class="tk-cod">' + esc(l.codigo || '—') + '</td><td class="tk-desc">' + esc(l.descripcion) + (s === 'sale' ? pillStock(CB.local_id, l) : '') + '</td>' +
           '<td class="c">' + esc(l.talle || '') + '</td><td>' + esc(l.color_nom || l.color || '') + '</td>' +
           '<td class="c"><input type="number" class="tk-cant" min="1" max="999" value="' + l.cantidad + '" aria-label="Cantidad de ' + esc(l.descripcion) + '"></td>' +
           '<td class="n"><input type="text" inputmode="decimal" class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
@@ -1792,6 +1838,7 @@
     if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
     llamar('pos_cambio_guardar', { p: p }).then(function (r) {
       S.cambioHecho = { id: r.id, numero: r.numero, prueba: !!r.prueba, diferencia: cent(r.diferencia), ya: !!r.ya };
+      S.stock = {};
       CB = cambioNuevo(CB);
       guardarBorradorCb();
       S.guardando = false;
@@ -1915,8 +1962,10 @@
       if (ab) ab.onclick = function () {
         ab.remove();
         pedirMotivo(dentro.querySelector('#cbAnular'), 'El cambio queda en la lista, tachado, con quién lo anuló y por qué' +
-            (Number(t.diferencia) ? ', y lo que se cobró sale de la caja' : '') + '. No se puede deshacer.', 'Anular el cambio ' + refCambio(t), function (motivo) {
+            (Number(t.diferencia) ? ', y lo que se cobró sale de la caja' : '') + '.' +
+            (t.prueba ? '' : ' El stock vuelve a como estaba: lo que volvió sale y lo que se llevó vuelve.') + ' No se puede deshacer.', 'Anular el cambio ' + refCambio(t), function (motivo) {
           return llamar('pos_cambio_anular', { p_id: t.id, p_motivo: motivo }).then(function () {
+            S.stock = {};
             avisar('ok', 'El cambio ' + refCambio(t) + ' quedó anulado.');
             if (alCambiar) alCambiar();
             abrirCambio(t.id, alCambiar);
@@ -2675,6 +2724,1207 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════
+     EL STOCK Y LOS REMITOS (SQL 160)
+     Mauricio (22/10): "si me mandan un remito de fábrica… que me llega al
+     local para yo poder verificar la ropa que me entró y darlo por
+     recibido, entonces el stock me ingresa al local". Como hoy en BlueSoft:
+     se busca cada producto del remito, se cuenta por talle y color y, si
+     coincide, queda recibido. Con las dos mejoras que aprobó ("las dos
+     mejoras que proponés… ya no tenemos que utilizar más papel"):
+     · se cuenta A CIEGAS: primero lo que llegó y recién después se compara
+       con el remito, como el efectivo en el cierre de caja;
+     · la hoja de papel la reemplaza el conteo guardado (quién, cuándo, qué).
+     En el mostrador: Remitos (recibir) y Stock (mirar). En Gestión: Stock
+     (con los ajustes), Remitos (cargarlos, verlos y anularlos) e Inventario
+     (la carga desde el Excel de "Consulta de stock" de BlueSoft).
+     Las pruebas no tocan el stock: con el modo prueba no se reciben remitos.
+     ════════════════════════════════════════════════════════════════════ */
+  var ESTADO_REMITO = { pendiente: ['Por recibir', 'pill-warn'], recibido: ['Recibido', 'pill-ok'],
+                        con_diferencias: ['Con diferencias', 'pill-bad'], anulado: ['Anulado', 'pill-bad'] };
+  var MOTIVOS_AJUSTE = ['Falla', 'Robo o faltante', 'Error de carga', 'Apareció', 'Otro'];
+  var ORDEN_TALLES = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL', 'U', 'UNICO', 'ÚNICO'];
+
+  function refRemito(r) { return 'R-' + r.numero; }
+  function pillRemito(e) { var x = ESTADO_REMITO[e] || [e, '']; return '<span class="pill ' + x[1] + '">' + esc(x[0]) + '</span>'; }
+  function sinTildes(s) { return String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, ''); }
+  function normal(s) { return sinTildes(s).toLowerCase().replace(/\s+/g, ' ').trim(); }
+  function unicos(a) { return a.filter(function (x, i) { return a.indexOf(x) === i; }); }
+  /** Con el signo menos de verdad y los miles con punto: −3, 1.250. */
+  function num(n) { n = Number(n) || 0; return (n < 0 ? '−' : '') + miles(Math.abs(n)); }
+  function nombreProd(cod, desc) { return PROD[cod] ? PROD[cod][1] : (desc || cod); }
+  function nombreTalle(t) { return t || 'Único'; }
+  function nombreCol(c, cod) { return c ? nombreColor(c, cod) : 'Sin color'; }
+  function engancharIr(z) { z.querySelectorAll('.pos-acciones [data-ir], [data-ir].pos-link').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; }); }
+  /** La sucursal del stock y los remitos (la última que eligió, o la del local). */
+  function localStock() { var l = localDe(S.stLocal) || localInicial(); S.stLocal = l.id; return l; }
+
+  /* Los talles en el orden del catálogo; si no están, el de siempre (XS, S, M…), y los números de menor a mayor. */
+  function ordenarTalles(ts, cod) {
+    var cat = tallesDe(PROD[cod]);
+    function pos(t) {
+      var i = cat.indexOf(t);
+      if (i >= 0) return [0, i];
+      i = ORDEN_TALLES.indexOf(t);
+      if (i >= 0) return [1, i];
+      return isNaN(parseFloat(t)) ? [3, 0] : [2, parseFloat(t)];
+    }
+    return ts.slice().sort(function (a, b) {
+      var x = pos(a), y = pos(b);
+      return x[0] - y[0] || x[1] - y[1] || String(a).localeCompare(String(b), 'es');
+    });
+  }
+  function ordenarColores(cs, cod) {
+    var cat = coloresDe(PROD[cod]).map(function (x) { return x.cod; });
+    return cs.slice().sort(function (a, b) {
+      var i = cat.indexOf(a), j = cat.indexOf(b);
+      if (i >= 0 || j >= 0) return (i < 0 ? 999 : i) - (j < 0 ? 999 : j);
+      return nombreCol(a, cod).localeCompare(nombreCol(b, cod), 'es');
+    });
+  }
+  /** El color como lo guarda el POS (la sigla del catálogo, "NE"): si viene el nombre ("Negro"), se traduce. */
+  function siglaColor(cod, color) {
+    color = String(color == null ? '' : color).trim().toUpperCase();
+    if (!color) return '';
+    var cs = coloresDe(PROD[cod]);
+    if (cs.some(function (x) { return x.cod === color; })) return color;
+    var n = cs.filter(function (x) { return sinTildes(x.nom).toUpperCase() === sinTildes(color); })[0];
+    return n ? n.cod : color;
+  }
+
+  /* ── Leer un Excel o lo que pegan ─────────────────────────────────────
+     Un .xlsx es un zip con XML adentro: se lee sin librerías, como el
+     respaldo del stock de la fábrica (el navegador descomprime). */
+  function leerExcel(archivo) {
+    if (typeof DecompressionStream !== 'function') return Promise.reject(new Error('Este navegador no puede abrir el Excel: copiá las columnas y usá «Pegar».'));
+    return archivo.arrayBuffer().then(function (ab) {
+      var u = new Uint8Array(ab), dv = new DataView(ab), fin = -1, td = new TextDecoder('utf-8'), i;
+      for (i = u.length - 22; i >= Math.max(0, u.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { fin = i; break; }
+      if (fin < 0) throw new Error('El archivo no es un Excel (.xlsx). Si es un .xls viejo, abrilo y guardalo como .xlsx.');
+      var total = dv.getUint16(fin + 10, true), p = dv.getUint32(fin + 16, true), arch = {};
+      for (var k = 0; k < total && p + 46 <= u.length && dv.getUint32(p, true) === 0x02014b50; k++) {
+        var ln = dv.getUint16(p + 28, true), le = dv.getUint16(p + 30, true), lc = dv.getUint16(p + 32, true);
+        arch[td.decode(u.subarray(p + 46, p + 46 + ln))] = { metodo: dv.getUint16(p + 10, true), comp: dv.getUint32(p + 20, true), local: dv.getUint32(p + 42, true) };
+        p += 46 + ln + le + lc;
+      }
+      function leer(n) {
+        var a = arch[n];
+        if (!a) return Promise.resolve(null);
+        var ini = a.local + 30 + dv.getUint16(a.local + 26, true) + dv.getUint16(a.local + 28, true), datos = u.subarray(ini, ini + a.comp);
+        if (a.metodo !== 8) return Promise.resolve(td.decode(datos));
+        return new Response(new Blob([datos]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+      }
+      var hojas = Object.keys(arch).filter(function (n) { return /^xl\/worksheets\/sheet\d+\.xml$/.test(n); })
+        .sort(function (a, b) { return parseInt(a.replace(/\D/g, ''), 10) - parseInt(b.replace(/\D/g, ''), 10); });
+      var hoja = arch['xl/worksheets/sheet1.xml'] ? 'xl/worksheets/sheet1.xml' : hojas[0];
+      if (!hoja) throw new Error('El Excel no tiene hojas.');
+      return Promise.all([leer('xl/sharedStrings.xml'), leer(hoja)]).then(function (x) { return filasDeXml(x[0], x[1]); });
+    });
+  }
+  function textoXml(s) {
+    return String(s || '').replace(/<[^>]*>/g, '').replace(/&#(\d+);/g, function (m, n) { return String.fromCharCode(Number(n)); })
+      .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  }
+  /* Las filas de la hoja, como listas de textos (cada celda en su columna: A es 0, B es 1…). */
+  function filasDeXml(ss, hoja) {
+    var comp = [];
+    if (ss) ss.split('<si>').slice(1).forEach(function (t) { comp.push(textoXml(t.slice(0, t.indexOf('</si>')))); });
+    return String(hoja || '').split('<row').slice(1).map(function (r) {
+      var fila = [], cierre = r.indexOf('</row>');
+      r.slice(0, cierre > -1 ? cierre : undefined).split('<c ').slice(1).forEach(function (c) {
+        var ref = (/r="([A-Z]+)\d+"/.exec(c) || [])[1];
+        if (!ref) return;
+        var cab = c.slice(0, c.indexOf('>')), tipo = (/\st="([^"]+)"/.exec(' ' + cab) || [])[1];
+        var v = (/<v>([\s\S]*?)<\/v>/.exec(c) || [])[1];
+        if (tipo === 's') v = comp[Number(v)];
+        else if (tipo === 'inlineStr') v = textoXml((/<is>([\s\S]*?)<\/is>/.exec(c) || [])[1] || '');
+        else if (v !== undefined) v = textoXml(v);
+        var col = 0;
+        for (var i = 0; i < ref.length; i++) col = col * 26 + ref.charCodeAt(i) - 64;
+        fila[col - 1] = v === undefined ? '' : String(v).trim();
+      });
+      return fila;
+    });
+  }
+  /** Lo que pegan desde Excel (con tabulaciones), o un CSV, o renglones como los de la pistola ("RM41641 S NE 2"). */
+  function filasDeTexto(t) {
+    var lineas = String(t || '').replace(/\r/g, '').split('\n').filter(function (l) { return l.trim(); });
+    var sep = lineas.some(function (l) { return l.indexOf('\t') >= 0; }) ? '\t' : lineas.some(function (l) { return l.indexOf(';') >= 0; }) ? ';' :
+              lineas.some(function (l) { return l.indexOf(',') >= 0; }) ? ',' : /\s+/;
+    /* Con tabulaciones (o ; o ,) el renglón no se recorta: si la primera celda está vacía (el rubro), las columnas se correrían. */
+    return lineas.map(function (l) { return (typeof sep === 'string' ? l : l.trim()).split(sep).map(function (c) { return c.trim().replace(/^"(.*)"$/, '$1'); }); });
+  }
+  /** Las filas → los renglones {codigo, descripcion, talle, color, cantidad}, y los que no se entienden.
+      Busca la fila de los títulos (la que dice "Código", como la "Consulta de stock" de BlueSoft); sin
+      títulos: Código · Talle · Color · Cantidad (o Código · Cantidad). Con negativos (el inventario), valen. */
+  function leerTabla(filas, negativos) {
+    var iCab = -1, ic = null, i;
+    var esCod = /^(codigo|cod\.?|articulo|sku)$/;
+    for (i = 0; i < Math.min(filas.length, 20); i++) {
+      if ((filas[i] || []).some(function (c) { return esCod.test(normal(c)); })) { iCab = i; break; }
+    }
+    if (iCab >= 0) {
+      var cab = filas[iCab].map(normal);
+      var busca = function (re) { for (var j = 0; j < cab.length; j++) if (re.test(cab[j] || '')) return j; return -1; };
+      ic = { codigo: busca(esCod), desc: busca(/^(descripcion|producto|nombre)$/), talle: busca(/^(talle|talla|tal\.?)$/),
+             color: busca(/^(color|col\.?)$/), cant: busca(/^(cantidad|cant\.?|stock|unidades|existencia|saldo)$/) };
+      if (ic.cant < 0) return { error: 'No encontré la columna Cantidad.', items: [], errores: [] };
+    } else {
+      var ancho = filas.reduce(function (m, f) { return Math.max(m, (f || []).filter(function (c) { return String(c || '').trim(); }).length); }, 0);
+      if (ancho >= 4) ic = { codigo: 0, talle: 1, color: 2, cant: 3, desc: -1 };
+      else if (ancho === 2) ic = { codigo: 0, talle: -1, color: -1, cant: 1, desc: -1 };
+      else return { error: 'No encontré la fila de los títulos: que la primera diga Código, Talle, Color y Cantidad.', items: [], errores: [] };
+    }
+    var items = [], errores = [];
+    filas.slice(iCab + 1).forEach(function (f, j) {
+      if (!f) return;
+      var cod = String(f[ic.codigo] == null ? '' : f[ic.codigo]).trim().toUpperCase(), fila = iCab + 2 + j;
+      if (!cod || /^total/i.test(cod)) return;
+      var txt = String(f[ic.cant] == null ? '' : f[ic.cant]).trim(), n = Number(txt.replace(',', '.'));
+      if (cod.length > 30) { errores.push('Fila ' + fila + ': el código «' + cod.slice(0, 40) + '» es demasiado largo.'); return; }
+      if (txt === '' || !isFinite(n) || Math.round(n) !== n) { errores.push('Fila ' + fila + ': la cantidad de ' + cod + ' («' + txt + '») no es un número entero.'); return; }
+      if (n < 0 && !negativos) { errores.push('Fila ' + fila + ': la cantidad de ' + cod + ' es negativa.'); return; }
+      if (Math.abs(n) > 99999) { errores.push('Fila ' + fila + ': la cantidad de ' + cod + ' es demasiado grande.'); return; }
+      items.push({ codigo: cod, descripcion: ic.desc >= 0 ? String(f[ic.desc] || '').trim().slice(0, 120) : '',
+                   talle: ic.talle >= 0 ? String(f[ic.talle] == null ? '' : f[ic.talle]).trim().toUpperCase().slice(0, 10) : '',
+                   color: ic.color >= 0 ? siglaColor(cod, f[ic.color]).slice(0, 20) : '', cantidad: n });
+    });
+    return { items: items, errores: errores };
+  }
+  /** Un archivo elegido: el .xlsx con su lector; un .csv o .txt, como texto. */
+  function leerArchivo(f) {
+    if (/\.xlsx$/i.test(f.name)) return leerExcel(f);
+    if (/\.(csv|txt|tsv)$/i.test(f.name)) return f.text().then(filasDeTexto);
+    return Promise.reject(new Error('Tiene que ser un Excel (.xlsx) o un .csv.'));
+  }
+
+  /* ── La grilla de un producto: un renglón por color y una columna por talle ── */
+  function cabGrilla(ts, total) {
+    return '<thead><tr><th><span class="sr">Color</span></th>' + ts.map(function (t) { return '<th class="c">' + esc(nombreTalle(t)) + '</th>'; }).join('') +
+      (total ? '<th class="n">Total</th>' : '') + '</tr></thead>';
+  }
+  /** Para mirar un producto de un remito: en cada casilla lo que llegó y, abajo, lo que mandaron (en verde si coincide). */
+  function grillaRemito(cod, celdas) {
+    var ts = ordenarTalles(unicos(celdas.map(function (x) { return x.talle; })), cod);
+    var cs = ordenarColores(unicos(celdas.map(function (x) { return x.color; })), cod), m = {};
+    celdas.forEach(function (x) { m[x.talle + '|' + x.color] = x; });
+    return '<div class="st-scroll"><table class="st-grilla">' + cabGrilla(ts) + '<tbody>' + cs.map(function (c) {
+      return '<tr><th>' + esc(nombreCol(c, cod)) + '</th>' + ts.map(function (t) {
+        var x = m[t + '|' + c];
+        if (!x) return '<td class="c st-nada">·</td>';
+        if (x.contado == null) return '<td class="c"><span class="rc-c"><b>' + x.cantidad + '</b></span></td>';
+        var bien = x.contado === x.cantidad;
+        return '<td class="c"><span class="rc-c ' + (bien ? 'ok' : 'mal') + '" title="Llegaron ' + x.contado + '; el remito dice ' + x.cantidad + '"><b>' + x.contado + '</b>' +
+          '<small>de ' + x.cantidad + '</small></span></td>';
+      }).join('') + '</tr>';
+    }).join('') + '</tbody></table></div>';
+  }
+  /** Para escribir cantidades: valor(talle, color) es lo que ya hay en cada casilla; ojo(talle, color) la marca. */
+  function grillaCarga(cod, ts, cs, valor, ojo) {
+    return '<div class="st-scroll"><table class="st-grilla rc-grilla">' + cabGrilla(ts, true) + '<tbody>' + cs.map(function (c) {
+      return '<tr><th>' + esc(nombreCol(c, cod)) + '</th>' + ts.map(function (t) {
+        var v = valor(t, c), k = t + '|' + c;
+        return '<td class="c"><input type="number" class="rc-in' + (ojo && ojo(t, c) ? ' rc-ojo' : '') + '" min="0" max="9999" inputmode="numeric" data-k="' + esc(k) + '" value="' + (v || '') + '"' +
+          ' aria-label="' + esc(nombreCol(c, cod) + ', talle ' + nombreTalle(t)) + '"></td>';
+      }).join('') + '<td class="n rc-tot" data-tc="' + esc(c) + '"></td></tr>';
+    }).join('') + '</tbody><tfoot><tr><th>Total</th>' + ts.map(function (t) { return '<td class="c rc-tot" data-tt="' + esc(t) + '"></td>'; }).join('') +
+      '<td class="n"><b class="rc-total"></b></td></tr></tfoot></table></div>';
+  }
+  /** Las sumas de una grilla de carga, y el Enter que pasa a la casilla siguiente (al final, a fin()). */
+  function engancharGrilla(z, alCambiar, fin) {
+    var ins = [].slice.call(z.querySelectorAll('.rc-in'));
+    function sumar() {
+      var porC = {}, porT = {}, tot = 0;
+      ins.forEach(function (i) {
+        var n = parseInt(i.value, 10) || 0, k = i.getAttribute('data-k').split('|');
+        porT[k[0]] = (porT[k[0]] || 0) + n; porC[k[1]] = (porC[k[1]] || 0) + n; tot += n;
+      });
+      z.querySelectorAll('[data-tc]').forEach(function (e) { e.textContent = porC[e.getAttribute('data-tc')] || ''; });
+      z.querySelectorAll('[data-tt]').forEach(function (e) { e.textContent = porT[e.getAttribute('data-tt')] || ''; });
+      var t = z.querySelector('.rc-total');
+      if (t) t.textContent = tot;
+      return tot;
+    }
+    ins.forEach(function (inp, i) {
+      inp.oninput = function () {
+        var n = parseInt(inp.value, 10);
+        if (inp.value !== '' && !(n >= 0 && n <= 9999)) inp.value = '';
+        sumar();
+        if (alCambiar) alCambiar(inp.getAttribute('data-k'), parseInt(inp.value, 10) || 0);
+      };
+      inp.onkeydown = function (e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        if (ins[i + 1]) { ins[i + 1].focus(); ins[i + 1].select(); } else if (fin) fin();
+      };
+      inp.onfocus = function () { inp.select(); };
+    });
+    sumar();
+    return { sumar: sumar, valores: function () {
+      var m = {};
+      ins.forEach(function (i) { var n = parseInt(i.value, 10) || 0; if (n > 0) m[i.getAttribute('data-k')] = n; });
+      return m;
+    } };
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     STOCK (la "Consulta de stock" de BlueSoft)
+     ════════════════════════════════════════════════════════════════════ */
+  /** Los códigos del catálogo que coinciden con lo buscado (código, palabras del nombre) y con el rubro. */
+  function codigosDe(q, rubro) {
+    var pal = normal(q).split(' ').filter(Boolean), todo = pal.join(' '), cods = [];
+    (window.CATALOGO || []).forEach(function (p) {
+      if (rubro && p[2] !== rubro) return;
+      var cod = String(p[0]).toLowerCase(), nom = normal(p[1]);
+      if (!pal.length || cod.indexOf(todo) === 0 || pal.every(function (w) { return nom.indexOf(w) >= 0 || cod.indexOf(w) === 0; })) cods.push(p[0]);
+    });
+    return cods.slice(0, 2000);
+  }
+
+  function verStock() {
+    var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
+    var F = S.stF = S.stF || { local: gestion ? '' : l.id, q: '', rubro: '', cero: false, neg: false };
+    if (!gestion && !localDe(F.local)) F.local = l.id;
+    c.innerHTML = cabeza('Stock', gestion ? 'Lo que hay en cada sucursal, por talle y color. Se mueve solo con las ventas, los cambios y los remitos. Tocá un número para ver sus movimientos o ajustarlo.'
+                                          : 'Lo que hay en la sucursal según el sistema, por talle y color. Tocá un número para ver de dónde sale.',
+        gestion ? '<button type="button" class="btn btn-sec btn-chico" data-ir="inventario">Cargar un inventario</button>'
+                : '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">Remitos</button>') +
+      '<div class="pos-filtros">' +
+        campo('', 'Sucursal', '<select id="stLocal">' + (gestion ? '<option value="">Todas</option>' : '') + opcionesLocales(F.local) + '</select>') +
+        campo('ancho', 'Buscar', '<input type="search" id="stBuscar" placeholder="Código o nombre del producto" autocomplete="off" spellcheck="false">') +
+        campo('', 'Rubro', '<select id="stRubro"><option value="">Todos</option>' + opciones(RUBROS.map(function (r) { return [r, r]; }), F.rubro) + '</select>') +
+        '<label class="pos-check"><input type="checkbox" id="stCero"' + (F.cero ? ' checked' : '') + '> Con los que están en 0</label>' +
+        '<label class="pos-check"><input type="checkbox" id="stNeg"' + (F.neg ? ' checked' : '') + '> Sólo los negativos</label>' +
+      '</div><div id="stLista"><p class="cargando">Cargando…</p></div>';
+    engancharIr(c);
+    $('stBuscar').value = F.q;
+    var t = null, pedido = 0;
+    $('stLocal').onchange = function () { F.local = this.value; if (F.local) S.stLocal = F.local; cargar(); };
+    $('stBuscar').oninput = function () { clearTimeout(t); t = setTimeout(function () { F.q = $('stBuscar').value; cargar(); }, 250); };
+    $('stRubro').onchange = function () { F.rubro = this.value; cargar(); };
+    $('stCero').onchange = function () { F.cero = this.checked; cargar(); };
+    $('stNeg').onchange = function () { F.neg = this.checked; cargar(); };
+    function cargar() {
+      var n = ++pedido, q = F.q.trim();
+      $('stLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      /* Con un rubro, sólo los del catálogo; sin rubro, también lo que no está en el catálogo (por código o descripción). */
+      llamar('pos_stock_consulta', { p_local: F.local || null, p_codigos: q || F.rubro ? codigosDe(q, F.rubro) : null, p_buscar: q && !F.rubro ? q : null,
+                                     p_ocultar_sin: !F.cero, p_negativos: F.neg }).then(function (d) {
+        if (n !== pedido || !$('stLista')) return;
+        pintarStock(d);
+      }).catch(function (e) { if ($('stLista')) $('stLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function pintarStock(d) {
+      var tt = d.totales || {}, lo = localDe(F.local), prods = {}, orden = [];
+      (d.filas || []).forEach(function (f) {   // [local, código, talle, color, cantidad, entradas, salidas, descripción]
+        var p = prods[f[1]];
+        if (!p) { p = prods[f[1]] = { cod: f[1], desc: f[7], talles: [], colores: [], celdas: {}, total: 0 }; orden.push(f[1]); }
+        if (p.talles.indexOf(f[2]) < 0) p.talles.push(f[2]);
+        if (p.colores.indexOf(f[3]) < 0) p.colores.push(f[3]);
+        var x = p.celdas[f[2] + '|' + f[3]] || (p.celdas[f[2] + '|' + f[3]] = { n: 0, locales: [] });
+        x.n += f[4];
+        x.locales.push([f[0], f[4]]);
+        p.total += f[4];
+        if (!p.desc && f[7]) p.desc = f[7];
+      });
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi fuerte"><span>Unidades</span><b>' + num(tt.cantidad) + '</b></div>' +
+        '<div class="pos-kpi"><span>Productos</span><b>' + num(orden.length) + '</b></div>' +
+        '<button type="button" class="pos-kpi st-kpi-neg' + (tt.negativos ? ' mal' : '') + '" id="stVerNeg" title="Ver sólo los negativos"><span>En negativo</span><b>' + num(tt.negativos) + '</b></button></div>';
+      if (!d.cargado) {
+        $('stLista').innerHTML = '<div class="pos-cartel"><b>Todavía no hay stock cargado' + (lo ? ' en ' + esc(nombreLocal(lo)) : '') + '.</b> Se carga una vez con un inventario ' +
+          '(Gestión → Inventario: el Excel de «Consulta de stock» de BlueSoft) y desde ahí se mueve solo: las ventas y los cambios lo descuentan, y los remitos lo suman al recibirlos.' +
+          (gestion ? ' <button type="button" class="pos-link" data-ir="inventario">Cargar un inventario</button>' : '') + '</div>';
+        engancharIr($('stLista'));
+        return;
+      }
+      if (!orden.length) {
+        $('stLista').innerHTML = kpis + '<div class="pos-cartel">' + (F.neg ? 'No hay nada en negativo' : 'No hay stock') + (F.q.trim() ? ' de «' + esc(F.q.trim()) + '»' : '') +
+          (F.rubro ? ' en ' + esc(F.rubro) : '') + (F.cero || F.neg ? '' : '. Para ver también los que están en 0, marcá «Con los que están en 0».') + '</div>';
+        $('stVerNeg').onclick = verNeg;
+        return;
+      }
+      $('stLista').innerHTML = kpis + '<div class="st-prods">' + orden.slice(0, 60).map(function (cod) {
+        var p = prods[cod], ts = ordenarTalles(p.talles, cod), cs = ordenarColores(p.colores, cod);
+        return '<div class="st-prod"><div class="st-prod-cab"><b>' + esc(cod) + '</b><span>' + esc(nombreProd(cod, p.desc)) + '</span>' +
+            (PROD[cod] && PROD[cod][2] ? '<small>' + esc(PROD[cod][2]) + '</small>' : '') + '<em>' + num(p.total) + (Math.abs(p.total) === 1 ? ' unidad' : ' unidades') + '</em></div>' +
+          '<div class="st-scroll"><table class="st-grilla">' + cabGrilla(ts) + '<tbody>' + cs.map(function (col) {
+            return '<tr><th>' + esc(nombreCol(col, cod)) + '</th>' + ts.map(function (t) {
+              var x = p.celdas[t + '|' + col];
+              if (!x) return '<td class="c st-nada">·</td>';
+              return '<td class="c"><button type="button" class="st-n' + (x.n < 0 ? ' neg' : x.n === 0 ? ' cero' : '') + '" data-cod="' + esc(cod) + '" data-t="' + esc(t) + '" data-c="' + esc(col) + '"' +
+                ' aria-label="' + esc(cod + ' ' + nombreTalle(t) + ' ' + nombreCol(col, cod) + ': ' + x.n) + '">' + num(x.n) + '</button></td>';
+            }).join('') + '</tr>';
+          }).join('') + '</tbody></table></div></div>';
+      }).join('') + '</div>' +
+        (orden.length > 60 ? '<p class="pos-mas">Se ven 60 de ' + num(orden.length) + ' productos: buscá o elegí un rubro para encontrar el resto.</p>' : '') +
+        (d.mas ? '<p class="pos-mas">Son más de 3.000 renglones: buscá o elegí un rubro para ver todo.</p>' : '');
+      $('stVerNeg').onclick = verNeg;
+      $('stLista').querySelectorAll('.st-n').forEach(function (b) {
+        b.onclick = function () {
+          var cod = b.getAttribute('data-cod'), t = b.getAttribute('data-t'), col = b.getAttribute('data-c');
+          if (F.local) abrirVariante(F.local, cod, t, col, cargar);
+          else abrirVarianteLocales(cod, t, col, prods[cod].celdas[t + '|' + col].locales, prods[cod].desc, cargar);
+        };
+      });
+    }
+    function verNeg() { F.neg = true; $('stNeg').checked = true; cargar(); }
+    cargar();
+    if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var b = $('stBuscar'); if (b) b.focus(); }, 0);
+  }
+
+  /** Con "Todas": cuánto hay en cada sucursal de una variante; cada una abre sus movimientos. */
+  function abrirVarianteLocales(cod, t, col, locales, desc, alCambiar) {
+    var caja = ventana('<h3 id="posVentTit">' + esc(cod) + ' · ' + esc(nombreTalle(t)) + ' · ' + esc(nombreCol(col, cod)) + '</h3>' +
+      '<p class="pos-bajada">' + esc(nombreProd(cod, desc)) + ' · en cada sucursal. Tocá una para ver sus movimientos.</p>' +
+      '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Sucursal</th><th class="n">Hay</th></tr></thead><tbody>' +
+        locales.slice().sort(function (a, b) { return b[1] - a[1]; }).map(function (x) {
+          return '<tr data-ticket="' + esc(x[0]) + '" tabindex="0"><td>' + esc(nombreLocal(localDe(x[0]))) + '</td><td class="n"><b class="' + (x[1] < 0 ? 'st-sale' : '') + '">' + num(x[1]) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>');
+    caja.querySelectorAll('tr[data-ticket]').forEach(function (tr) {
+      tr.onclick = function () { abrirVariante(tr.getAttribute('data-ticket'), cod, t, col, alCambiar); };
+      tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+    });
+  }
+
+  /** Una variante en una sucursal: cuánto hay, de dónde sale ("Ver detalle de movimientos") y, en Gestión, el ajuste. */
+  function abrirVariante(localId, cod, talle, color, alCambiar) {
+    var tit = esc(cod) + ' · ' + esc(nombreTalle(talle)) + ' · ' + esc(nombreCol(color, cod));
+    var caja = ventana('<h3 id="posVentTit">' + tit + '</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
+    llamar('pos_stock_variante', { p_local: localId, p_codigo: cod, p_talle: talle, p_color: color }).then(function (v) {
+      if (!caja.isConnected) return;
+      var s = v.stock || { cantidad: 0, entradas: 0, salidas: 0 }, movs = v.movimientos || [];
+      dentro.innerHTML = '<h3 id="posVentTit">' + tit + '</h3><p class="pos-bajada">' + esc(nombreProd(cod, s.descripcion)) + ' · ' + esc(bonito(v.local || '')) + '</p>' +
+        '<div class="pos-totales"><div class="pos-kpi fuerte"><span>Hay</span><b>' + num(s.cantidad) + '</b></div>' +
+          '<div class="pos-kpi"><span>Entraron</span><b>' + num(s.entradas) + '</b></div><div class="pos-kpi"><span>Salieron</span><b>' + num(s.salidas) + '</b></div></div>' +
+        (movs.length ? '<div class="pos-marco-tabla st-movs"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Qué</th><th>Detalle</th><th>Quién</th><th class="n">Cant.</th></tr></thead><tbody>' +
+            movs.map(function (m) {
+              return '<tr><td>' + esc(fechaHora(m.fecha)) + '</td><td>' + esc(m.ref || m.tipo) + '</td><td>' + esc(m.detalle || '') + '</td><td>' + esc(m.persona || '—') + '</td>' +
+                '<td class="n"><b class="' + (m.cantidad < 0 ? 'st-sale' : 'st-entra') + '">' + (m.cantidad > 0 ? '+' : '−') + miles(Math.abs(m.cantidad)) + '</b></td></tr>';
+            }).join('') + '</tbody></table></div>' + (movs.length >= 200 ? '<p class="pos-mas">Se ven los últimos 200 movimientos.</p>' : '')
+          : '<div class="pos-cartel">Todavía no tuvo movimientos en esta sucursal.</div>') +
+        '<div id="vaAjuste"></div><div class="pos-pie">' +
+          (MODO === 'gestion' ? '<button type="button" class="btn btn-sec btn-chico izq" id="vaAjustar">Ajustar…</button>' : '<span class="pos-ayuda izq">Los ajustes (falla, robo, error de carga) se hacen en Gestión → Stock.</span>') +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var aj = dentro.querySelector('#vaAjustar');
+      if (aj) aj.onclick = function () {
+        aj.remove();
+        var z = dentro.querySelector('#vaAjuste'), clave = nuevaClave();
+        z.innerHTML = '<div class="pos-cartel st-ajuste"><p class="pos-ayuda">Escribí cuántas hay de verdad: el sistema pasa a decir eso y queda anotado con el motivo.</p><div class="pos-campos">' +
+            campo('', 'Hay en realidad', '<input type="number" id="vaHay" min="0" max="99999" value="' + Math.max(0, Number(s.cantidad) || 0) + '">') +
+            campo('', 'Motivo', '<select id="vaMotivo"><option value="">Elegí…</option>' + opciones(MOTIVOS_AJUSTE.map(function (m) { return [m, m]; }), '') + '</select>') +
+            campo('ancho', 'Detalle <span class="lbl-opc">(con «Otro», contá cuál)</span>', '<input type="text" id="vaDetalle" maxlength="200">') +
+          '</div><div class="pos-error" id="vaError"></div><div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="vaOk">Guardar el ajuste</button></div></div>';
+        var hay = z.querySelector('#vaHay');
+        hay.focus(); hay.select();
+        z.querySelector('#vaOk').onclick = function () {
+          var n = hay.value.trim(), mot = z.querySelector('#vaMotivo').value, det = z.querySelector('#vaDetalle').value.trim(), bt = this;
+          if (!errorEn(z, 'vaError', !/^\d{1,5}$/.test(n) ? 'Escribí cuántas hay (de 0 a 99999).' : Number(n) === Number(s.cantidad) ? 'El sistema ya dice ' + s.cantidad + ': no hay nada que ajustar.' :
+                                     !mot ? 'Elegí el motivo.' : mot === 'Otro' && !det ? 'Escribí el motivo.' : '')) return;
+          bt.disabled = true;
+          llamar('pos_stock_ajustar', { p: { local_id: localId, codigo: cod, talle: talle, color: color, cantidad: Number(n), motivo: mot, detalle: det,
+                                             descripcion: PROD[cod] ? PROD[cod][1] : (s.descripcion || ''), clave: clave } }).then(function (r) {
+            avisar('ok', cod + ' ' + nombreTalle(talle) + ' ' + nombreCol(color, cod) + ': ' + (r.ya ? 'ya estaba ajustado.' : 'de ' + r.antes + ' a ' + r.ahora + '.'));
+            delete S.stock[localId];
+            if (alCambiar) alCambiar();
+            abrirVariante(localId, cod, talle, color, alCambiar);
+          }).catch(function (e) { bt.disabled = false; errorEn(z, 'vaError', mensajeDe(e)); });
+        };
+      };
+    }).catch(function (e) {
+      if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">' + tit + '</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     REMITOS: el listado (el mostrador recibe; Gestión los carga y los anula)
+     ════════════════════════════════════════════════════════════════════ */
+  function verRemitos() { if (MODO === 'gestion') verRemitosGestion(); else verRemitosLocal(); }
+
+  function abrirRecepcion(id) {
+    try { sessionStorage.setItem(K_REMITO_VER, id); } catch (e) {}
+    S.recId = id;
+    ir('remito');
+  }
+
+  function verRemitosLocal() {
+    var c = $('cuerpo'), l = localStock(), prueba = enPrueba();
+    c.innerHTML = cabeza('Remitos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+        'Lo que llega de la fábrica o de otro local. Se cuenta producto por producto y, si coincide con el remito, entra al stock.',
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +
+      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="rmLocal">' + opcionesLocales(l.id) + '</select>') + '</div>' +
+      (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se reciben remitos: el stock es de verdad. Apagalo (abajo, en el menú) para recibir.</div>' : '') +
+      '<h3 class="st-tit">Por recibir</h3><div id="rmPend"><p class="cargando">Cargando…</p></div>' +
+      '<div class="st-tit-fila"><h3 class="st-tit">Recibidos</h3><div id="rmPer"></div></div><div id="rmHechos"><p class="cargando">Cargando…</p></div>';
+    engancharIr(c);
+    var per = Interfaz.periodo($('rmPer'), { inicial: 'mes', guardar: 'pos_remitos_periodo', hastaHoy: true, alCambiar: cargarHechos });
+    $('rmLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
+    var pedido = 0;
+    function cargar() { cargarPend(); cargarHechos(); }
+    function cargarPend() {
+      var n = ++pedido, loc = $('rmLocal').value;
+      llamar('pos_remitos', { p_desde: null, p_hasta: null, p_local: loc, p_estado: 'pendiente' }).then(function (d) {
+        if (n !== pedido || !$('rmPend')) return;
+        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc; });
+        $('rmPend').innerHTML = !fs.length ? '<div class="pos-cartel">No hay remitos por recibir en ' + esc(nombreLocal(localDe(loc))) + '.</div>' :
+          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Remito</th><th>Referencia</th><th>Viene de</th><th>Observaciones</th><th>Productos</th><th></th></tr></thead><tbody>' +
+          fs.map(function (f) {
+            return '<tr data-rec="' + esc(f.id) + '" tabindex="0"><td><b>' + esc(refRemito(f)) + '</b><small class="st-chico">' + esc(fechaHora(f.fecha)) + '</small></td>' +
+              '<td>' + esc(f.referencia || '—') + '</td><td>' + esc(bonito(f.origen)) + '</td><td class="cb-que">' + esc(f.observaciones || '') + '</td>' +
+              '<td>' + (f.recibidos ? f.recibidos + ' de ' + f.productos + ' recibidos' : f.productos + (f.productos === 1 ? ' producto' : ' productos')) + '</td>' +
+              '<td class="pos-acc"><button type="button" class="btn btn-pri btn-chico" data-recibir="' + esc(f.id) + '"' + (prueba ? ' disabled title="Con el modo prueba no se reciben remitos"' : '') + '>' +
+                (f.recibidos ? 'Seguir' : 'Recibir') + '</button></td></tr>';
+          }).join('') + '</tbody></table></div>';
+        $('rmPend').querySelectorAll('tr[data-rec]').forEach(function (tr) {
+          var id = tr.getAttribute('data-rec');
+          tr.onclick = function () { if (prueba) abrirRemito(id, cargar); else abrirRecepcion(id); };
+          tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+        });
+      }).catch(function (e) { if ($('rmPend')) $('rmPend').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    var pedidoH = 0;
+    function cargarHechos() {
+      var r = per.rango(), n = ++pedidoH, loc = $('rmLocal').value;
+      $('rmHechos').innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: loc, p_estado: null }).then(function (d) {
+        if (n !== pedidoH || !$('rmHechos')) return;
+        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc && f.estado !== 'pendiente'; });
+        $('rmHechos').innerHTML = !fs.length ? '<div class="pos-cartel">No hay remitos recibidos en ese período.</div>' :
+          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Remito</th><th>Referencia</th><th>Viene de</th><th>Observaciones</th><th>Recibido</th>' +
+            '<th class="n">Llegaron</th><th>Estado</th></tr></thead><tbody>' +
+          fs.map(function (f) {
+            return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (f.estado === 'anulado' ? ' class="anulada"' : '') + '><td><b>' + esc(refRemito(f)) + '</b><small class="st-chico">' + esc(fechaHora(f.fecha)) + '</small></td>' +
+              '<td>' + esc(f.referencia || '—') + '</td><td>' + esc(bonito(f.origen)) + '</td><td class="cb-que">' + esc(f.observaciones || '') + '</td>' +
+              '<td>' + esc(f.recibido_en ? fechaHora(f.recibido_en) : '—') + '</td><td class="n tachar">' + (f.contadas == null ? '—' : num(f.contadas)) + '</td><td>' + pillRemito(f.estado) + '</td></tr>';
+          }).join('') + '</tbody></table></div>' + (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+        $('rmHechos').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
+          tr.onclick = function () { abrirRemito(tr.getAttribute('data-ticket'), cargar); };
+          tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+        });
+      }).catch(function (e) { if ($('rmHechos')) $('rmHechos').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    cargar();
+  }
+
+  function verRemitosGestion() {
+    var c = $('cuerpo');
+    c.innerHTML = cabeza('Remitos', 'Lo que la fábrica manda a cada local y los envíos entre locales. El local los cuenta a ciegas al recibirlos, en POS → Remitos.',
+        '<button type="button" class="btn btn-pri btn-chico" data-ir="remito_nuevo">Nuevo remito</button>') +
+      '<div class="pos-filtros"><div id="rgPer"></div>' +
+        campo('', 'Sucursal', '<select id="rgLocal"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Estado', '<select id="rgEstado"><option value="">Todos</option>' + opciones([['pendiente', 'Por recibir (de cualquier día)'], ['recibido', 'Recibidos'],
+                                                                                              ['con_diferencias', 'Con diferencias'], ['anulado', 'Anulados']], '') + '</select>') +
+      '</div><div id="rgLista"><p class="cargando">Cargando…</p></div>';
+    engancharIr(c);
+    var per = Interfaz.periodo($('rgPer'), { inicial: 'mes', guardar: 'pos_remitos_gestion_periodo', hastaHoy: true, alCambiar: cargar });
+    ['rgLocal', 'rgEstado'].forEach(function (id) { $(id).onchange = cargar; });
+    var pedido = 0;
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('rgLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('rgLocal').value || null, p_estado: $('rgEstado').value || null }).then(function (d) {
+        if (n !== pedido || !$('rgLista')) return;
+        var t = d.totales || {};
+        var kpis = '<div class="pos-totales">' +
+          '<div class="pos-kpi"><span>Remitos</span><b>' + num(t.remitos) + '</b></div>' +
+          '<div class="pos-kpi"><span>Por recibir</span><b>' + num(t.pendientes) + '</b></div>' +
+          '<div class="pos-kpi"><span>Con diferencias</span><b class="' + (t.con_diferencias ? 'st-sale' : '') + '">' + num(t.con_diferencias) + '</b></div>' +
+          '<div class="pos-kpi fuerte"><span>Unidades mandadas</span><b>' + num(t.unidades) + '</b></div></div>';
+        if (!d.filas || !d.filas.length) { $('rgLista').innerHTML = kpis + '<div class="pos-cartel">No hay remitos en ese período con esos filtros.</div>'; return; }
+        $('rgLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Remito</th><th>Referencia</th><th>Sale de</th><th>Llega a</th>' +
+            '<th>Observaciones</th><th>Productos</th><th class="n">Mandaron</th><th class="n">Llegaron</th><th>Estado</th></tr></thead><tbody>' +
+          d.filas.map(function (f) {
+            var dif = f.contadas != null && f.estado !== 'pendiente' && Number(f.contadas) !== Number(f.unidades);
+            return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (f.estado === 'anulado' ? ' class="anulada"' : '') + '><td><b>' + esc(refRemito(f)) + '</b><small>' + esc(fechaHora(f.fecha)) + '</small></td>' +
+              '<td>' + esc(f.referencia || '—') + '</td><td>' + esc(bonito(f.origen)) + '</td><td>' + esc(bonito(f.destino)) + '<small>' + esc(f.creado_nombre || '') + '</small></td>' +
+              '<td class="cb-que">' + esc(f.observaciones || '') + '</td>' +
+              '<td>' + (f.estado === 'pendiente' && f.recibidos ? f.recibidos + ' de ' + f.productos : num(f.productos)) + '</td>' +
+              '<td class="n tachar">' + num(f.unidades) + '</td><td class="n' + (dif ? ' st-sale' : '') + '">' + (f.contadas == null ? '—' : num(f.contadas)) + '</td>' +
+              '<td>' + pillRemito(f.estado) + '</td></tr>';
+          }).join('') + '</tbody></table></div>' + (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+        $('rgLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
+          tr.onclick = function () { abrirRemito(tr.getAttribute('data-ticket'), cargar); };
+          tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+        });
+      }).catch(function (e) { if ($('rgLista')) $('rgLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    cargar();
+  }
+
+  /** Un remito entero, para verlo. En Gestión, con lo que mandaron aunque falte recibir, y para anularlo. */
+  function abrirRemito(id, alCambiar) {
+    var gestion = MODO === 'gestion';
+    var caja = ventana('<h3 id="posVentTit">Remito</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
+    llamar('pos_remito', { p_id: id, p_completo: gestion }).then(function (r) {
+      if (!caja.isConnected) return;
+      var an = r.estado === 'anulado', pend = r.estado === 'pendiente';
+      var prods = (r.productos || []).map(function (p) {
+        var est = p.estado === 'coincide' ? '<span class="pill pill-ok">Coincidió</span>' : p.estado === 'diferencias' ? '<span class="pill pill-bad">Con diferencias</span>' :
+                  '<span class="pill">Falta recibir</span>';
+        var ves = p.celdas && p.celdas.length && 'cantidad' in p.celdas[0];
+        return '<div class="st-prod"><div class="st-prod-cab"><b>' + esc(p.codigo) + '</b><span>' + esc(nombreProd(p.codigo, p.descripcion)) + '</span>' + est +
+            (p.conteos > 1 ? '<small title="Las veces que lo contaron">contado ' + p.conteos + ' veces</small>' : '') + '</div>' +
+          (ves ? grillaRemito(p.codigo, p.celdas) : '<p class="pos-ayuda">Se ve cuando lo reciban.</p>') +
+          (p.estado ? '<p class="pos-ayuda">' + (p.recibido_nombre ? 'Lo recibió ' + esc(p.recibido_nombre) + ', ' : 'Recibido ') + esc(fechaHora(p.recibido_en)) + '.' +
+                      (p.observaciones ? ' <b>' + esc(p.observaciones) + '</b>' : '') + '</p>' : '') + '</div>';
+      }).join('');
+      dentro.innerHTML = '<h3 id="posVentTit">Remito ' + esc(refRemito(r)) + ' ' + pillRemito(r.estado) + '</h3>' +
+        '<div class="pos-ticket-datos">' +
+          '<div><span>Fecha</span>' + esc(fechaHora(r.fecha)) + '</div>' +
+          '<div><span>Referencia</span>' + esc(r.referencia || '—') + '</div>' +
+          '<div><span>Sale de</span>' + esc(bonito(r.origen)) + '</div>' +
+          '<div><span>Llega a</span>' + esc(bonito(r.destino)) + '</div>' +
+          '<div><span>Lo cargó</span>' + esc(r.creado_nombre || '—') + '</div>' +
+          '<div><span>Recibido</span>' + esc(r.recibido_en ? fechaHora(r.recibido_en) : pend ? 'Todavía no' : '—') + '</div>' +
+        '</div>' +
+        (r.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(r.observaciones) + '</p>' : '') +
+        (gestion && pend ? '<div class="pos-cartel">Lo recibe el local en el mostrador (POS → Remitos), contando a ciegas: hasta que no lo reciban, no entra a su stock.' +
+                           (r.origen_local_id ? ' Del stock de ' + esc(bonito(r.origen)) + ' ya salió al mandarlo.' : '') + '</div>' : '') +
+        (!gestion && pend ? '<div class="pos-cartel">Todavía falta recibirlo: lo que mandaron se ve recién al contar.</div>' : '') +
+        '<p class="pos-lbl rm-leyenda">' + (gestion && pend ? 'Lo que mandaron' : 'En cada casilla, lo que llegó; abajo, lo que dice el remito') + '</p>' +
+        '<div class="st-prods">' + prods + '</div>' +
+        (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulado el ' + esc(fechaHora(r.anulado_en)) + (r.anulado_por_nombre ? ' por ' + esc(r.anulado_por_nombre) : '') + ': ' + esc(r.anulado_motivo || '') + '</div>' : '') +
+        '<div id="rmAnular"></div><div class="pos-pie">' +
+          (gestion && !an ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmAnularBtn">Anular el remito</button>' : '') +
+          (!gestion && pend && !enPrueba() ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmRecibir">Recibirlo</button>' : '') +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var rc = dentro.querySelector('#rmRecibir');
+      if (rc) rc.onclick = function () { cerrarVentana(); abrirRecepcion(r.id); };
+      var ab = dentro.querySelector('#rmAnularBtn');
+      if (ab) ab.onclick = function () {
+        ab.remove();
+        pedirMotivo(dentro.querySelector('#rmAnular'), 'El remito queda en la lista, tachado, con quién lo anuló y por qué. Lo que ya entró al stock de ' + esc(bonito(r.destino)) + ' vuelve a salir' +
+          (r.origen_local_id ? ', y a ' + esc(bonito(r.origen)) + ' le vuelve lo que mandó' : '') + '. No se puede deshacer.', 'Anular el remito ' + refRemito(r), function (motivo) {
+          return llamar('pos_remito_anular', { p_id: r.id, p_motivo: motivo }).then(function () {
+            avisar('ok', 'El remito ' + refRemito(r) + ' quedó anulado.');
+            S.stock = {};
+            if (alCambiar) alCambiar();
+            abrirRemito(r.id, alCambiar);
+          });
+        });
+      };
+    }).catch(function (e) {
+      if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Remito</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+    });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     RECIBIR UN REMITO (el mostrador): producto por producto, a ciegas
+     A la izquierda, los productos del remito; a la derecha, el que se está
+     contando: un renglón por color y una columna por talle. Lo que mandaron
+     se ve recién al tocar «Comparar con el remito». Si coincide, entra al
+     stock en el acto y pasa al siguiente; si no, se cuenta de nuevo o se
+     recibe con lo contado. Lo que van escribiendo queda guardado en la
+     compu (si se cierra la pestaña, sigue ahí).
+     ════════════════════════════════════════════════════════════════════ */
+  function verRemito() {
+    var c = $('cuerpo'), id = S.recId;
+    if (!id) { try { id = sessionStorage.getItem(K_REMITO_VER); } catch (e) {} }
+    if (!id) { ir('remitos'); return; }
+    var g = conteosGuardados()[id] || {};
+    S.rec = { id: id, r: null, sel: null, conteo: g.conteo || {}, extras: g.extras || [], colores: g.colores || {}, comp: {}, ojo: {} };
+    c.innerHTML = cabeza('Remito', '', '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">‹ Remitos</button>') + '<p class="cargando">Cargando…</p>';
+    engancharIr(c);
+    cargarRecepcion();
+  }
+  /* Lo contado queda en la compu, uno por remito (los últimos cinco): si se cierra la pestaña, sigue ahí. */
+  function conteosGuardados() { var x = leerJSON(K_CONTEO, {}); return x && typeof x === 'object' && !Array.isArray(x) ? x : {}; }
+  function guardarConteo(borrar) {
+    var R = S.rec, todos = conteosGuardados();
+    if (borrar) delete todos[R.id];
+    else todos[R.id] = { conteo: R.conteo, extras: R.extras, colores: R.colores, t: Date.now() };
+    Object.keys(todos).sort(function (a, b) { return (todos[b].t || 0) - (todos[a].t || 0); }).slice(5).forEach(function (k) { delete todos[k]; });
+    guardarJSON(K_CONTEO, todos);
+  }
+  function cargarRecepcion() {
+    var R = S.rec;
+    return llamar('pos_remito', { p_id: R.id }).then(function (r) {
+      if (S.vista !== 'remito' || S.rec !== R) return;
+      R.r = r;
+      if (r.estado !== 'pendiente') guardarConteo(true);
+      R.extras = R.extras.filter(function (x) { return !r.productos.some(function (p) { return p.codigo === x.codigo; }); });
+      var sel = productoRec(R.sel);
+      if (!sel || sel.estado) R.sel = (productosRec().filter(function (p) { return !p.estado; })[0] || productosRec()[0] || {}).codigo || null;
+      pintarRecepcion();
+    }).catch(function (e) {
+      if (S.vista === 'remito' && $('cuerpo')) {
+        $('cuerpo').innerHTML = cabeza('Remito', '', '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">‹ Remitos</button>') +
+          '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+        engancharIr($('cuerpo'));
+      }
+    });
+  }
+  function productosRec() { var R = S.rec; return R.r ? R.r.productos.concat(R.extras) : []; }
+  function productoRec(cod) { return productosRec().filter(function (p) { return p.codigo === cod; })[0] || null; }
+  function conteoDe(cod) { return S.rec.conteo[cod] || (S.rec.conteo[cod] = {}); }
+  function contando(cod) { var m = S.rec.conteo[cod]; return !!m && Object.keys(m).some(function (k) { return m[k] > 0; }); }
+  /** Los talles y los colores de la grilla: los del remito, los del catálogo (talles), los agregados y lo ya contado. */
+  function ejesRec(p) {
+    var cod = p.codigo, ts = [], cs = [];
+    (p.celdas || []).forEach(function (x) { ts.push(x.talle); cs.push(x.color); });
+    if (!ts.length || ts.some(Boolean)) ts = ts.concat(tallesDe(PROD[cod]));
+    (S.rec.colores[cod] || []).forEach(function (x) { cs.push(x); });
+    Object.keys(S.rec.conteo[cod] || {}).forEach(function (k) { var a = k.split('|'); ts.push(a[0]); cs.push(a[1]); });
+    if (p.extra && !cs.length) cs = coloresDe(PROD[cod]).map(function (x) { return x.cod; });
+    ts = unicos(ts); cs = unicos(cs);
+    if (!ts.length) ts = [''];
+    if (!cs.length) cs = [''];
+    return { ts: ordenarTalles(ts, cod), cs: ordenarColores(cs, cod) };
+  }
+  function conteoLista(cod) {
+    var m = S.rec.conteo[cod] || {};
+    return Object.keys(m).filter(function (k) { return m[k] > 0; }).map(function (k) { var a = k.split('|'); return { talle: a[0], color: a[1], cantidad: m[k] }; });
+  }
+  /** El producto que buscan o escanean: el del remito (aunque no esté en el catálogo) o el del catálogo. */
+  function prodRec(cod) {
+    if (PROD[cod]) return PROD[cod];
+    var p = productoRec(cod);
+    if (!p) return null;
+    var ts = unicos((p.celdas || []).map(function (x) { return x.talle; }).filter(Boolean)), cs = unicos((p.celdas || []).map(function (x) { return x.color; }).filter(Boolean));
+    return [cod, p.descripcion || cod, '', ts.join(','), cs.join('|')];
+  }
+  function buscarRec(q) {
+    var w = normal(q), pal = w.split(' ').filter(Boolean);
+    if (w.length < 2) return [];
+    var deRemito = productosRec().filter(function (p) {
+      var cod = p.codigo.toLowerCase(), nom = normal(nombreProd(p.codigo, p.descripcion));
+      return cod.indexOf(w) === 0 || pal.every(function (x) { return nom.indexOf(x) >= 0; });
+    }).map(function (p) { return prodRec(p.codigo); });
+    var ya = deRemito.map(function (p) { return p[0]; });
+    return deRemito.concat(buscarProductos(q).filter(function (p) { return ya.indexOf(p[0]) < 0; })).slice(0, 8);
+  }
+  /** Elegir un producto para contarlo. Si no está en el remito, se pregunta: es lo que vino de más. */
+  function elegirRec(p, sinPreguntar) {
+    var R = S.rec, cod = p[0];
+    if (!productoRec(cod)) {
+      if (!sinPreguntar && !confirm('«' + p[1] + '» (' + cod + ') no está en este remito. ¿Llegó igual? Contalo y queda anotado como que vino de más.')) return false;
+      R.extras.push({ codigo: cod, descripcion: p[1], estado: null, celdas: [], extra: true });
+      guardarConteo();
+    }
+    R.sel = cod;
+    pintarRecepcion();
+    return true;
+  }
+  /** La pistola en la recepción: suma una prenda en su casilla (contar con la pistola es opcional). */
+  function sumarRec(p, talle, color, n) {
+    var R = S.rec, cod = p[0], x = productoRec(cod);
+    if (x && x.estado) { avisar('info', cod + ' ya está recibido.'); return; }
+    if (R.comp[cod]) { avisar('info', 'Para volver a contar ' + cod + ', tocá «Contar de nuevo».'); return; }
+    if (!x && !elegirRec(p)) return;
+    var m = conteoDe(cod), k = (talle || '') + '|' + (color || '');
+    m[k] = Math.min(9999, (m[k] || 0) + (n || 1));
+    guardarConteo();
+    R.sel = cod;
+    pintarRecepcion();
+    var inp = document.querySelector('.rc-in[data-k="' + k.replace(/"/g, '\\"') + '"]');
+    if (inp) { inp.classList.add('rc-sumo'); setTimeout(function () { inp.classList.remove('rc-sumo'); }, 600); }
+    var campoP = $('rcProd');
+    if (campoP) campoP.focus();
+  }
+
+  function pintarRecepcion() {
+    var R = S.rec, r = R.r, c = $('cuerpo'), prueba = enPrueba(), lista = productosRec(), cerrado = r.estado !== 'pendiente';
+    var hechos = lista.filter(function (p) { return p.estado; }).length;
+    var sub = [r.referencia ? 'Ref. ' + r.referencia : '', 'De ' + bonito(r.origen) + ' a ' + bonito(r.destino), fechaHora(r.fecha), r.observaciones || ''].filter(Boolean).join(' · ');
+    c.innerHTML = cabeza('Remito ' + esc(refRemito(r)) + ' ' + pillRemito(r.estado), esc(sub), '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">‹ Remitos</button>') +
+      (prueba && !cerrado ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se reciben remitos: el stock es de verdad. Podés contar, pero para comparar y recibir, apagalo.</div>' : '') +
+      (r.estado === 'anulado' ? '<div class="pos-cartel mal">Este remito está anulado' + (r.anulado_motivo ? ': ' + esc(r.anulado_motivo) : '') + '.</div>' : '') +
+      (r.estado === 'recibido' ? '<div class="pos-cartel st-ok"><b>Remito recibido:</b> todo coincidió y ya está en el stock de ' + esc(bonito(r.destino)) + '.</div>' : '') +
+      (r.estado === 'con_diferencias' ? '<div class="pos-cartel st-dif"><b>Recibido con diferencias:</b> entró lo que se contó. La oficina lo ve en Gestión → Remitos.</div>' : '') +
+      '<div class="rc">' +
+        '<section class="rc-izq" aria-label="Los productos del remito">' +
+          (!cerrado ? '<div class="tk-prod">' + campo('', 'Producto', '<input type="search" id="rcProd" autocomplete="off" spellcheck="false" placeholder="Escaneá o buscá el producto…" aria-controls="rcSug">') +
+            '<div class="tk-sug" id="rcSug" role="listbox" aria-label="Productos" hidden></div></div>' : '') +
+          '<p class="rc-avance"><b>' + hechos + ' de ' + lista.length + '</b> ' + (lista.length === 1 ? 'producto recibido' : 'productos recibidos') + '</p>' +
+          '<div class="rc-lista">' + lista.map(function (p) {
+            var e = p.estado === 'coincide' ? ['ok', 'Coincidió'] : p.estado === 'diferencias' ? ['dif', 'Con diferencias'] : R.comp[p.codigo] ? ['nc', 'No coincide'] :
+                    contando(p.codigo) ? ['cont', 'Contando…'] : ['', cerrado ? 'Sin recibir' : 'Falta contar'];
+            return '<button type="button" class="rc-prod' + (p.codigo === R.sel ? ' sel' : '') + '" data-prod="' + esc(p.codigo) + '"' + (p.codigo === R.sel ? ' aria-current="true"' : '') + '>' +
+              '<span class="rc-punto ' + e[0] + '" aria-hidden="true"></span><span class="rc-prod-txt"><b>' + esc(p.codigo) + '</b> ' + esc(nombreProd(p.codigo, p.descripcion)) +
+              '<small><span class="rc-est">' + e[1] + '</span>' + (p.extra || (p.celdas || []).every(function (x) { return x.cantidad === 0; }) && p.celdas && p.celdas.length ? ' · no estaba en el remito' : '') + '</small></span></button>';
+          }).join('') + '</div>' +
+        '</section>' +
+        '<section class="rc-der" id="rcDer" aria-live="polite"></section>' +
+      '</div>';
+    engancharIr(c);
+    c.querySelectorAll('[data-prod]').forEach(function (b) { b.onclick = function () { R.sel = b.getAttribute('data-prod'); pintarRecepcion(); }; });
+    if ($('rcProd')) engancharProducto({ campo: 'rcProd', sug: 'rcSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true, prod: prodRec, buscar: buscarRec,
+      elegir: function (p) { $('rcProd').limpiar(); elegirRec(p); },
+      agregar: function (p, talle, color, n) { $('rcProd').limpiar(); sumarRec(p, talle, color, n); } });
+    pintarProductoRec();
+  }
+
+  function pintarProductoRec() {
+    var R = S.rec, der = $('rcDer'), p = productoRec(R.sel), cerrado = R.r.estado !== 'pendiente';
+    if (!p) { der.innerHTML = '<div class="pos-cartel">Elegí un producto de la lista.</div>'; return; }
+    var cod = p.codigo, comp = R.comp[cod];
+    var cab = '<div class="rc-cab"><h3>' + esc(cod) + ' · ' + esc(nombreProd(cod, p.descripcion)) + '</h3>' + (PROD[cod] && PROD[cod][2] ? '<small>' + esc(PROD[cod][2]) + '</small>' : '') + '</div>';
+    if (p.estado) {
+      der.innerHTML = cab + '<div class="pos-cartel ' + (p.estado === 'coincide' ? 'st-ok' : 'st-dif') + '">' +
+          (p.estado === 'coincide' ? '<b>Coincidió con el remito</b> y entró al stock.' : '<b>Recibido con diferencias:</b> entró lo que se contó.') +
+          (p.recibido_nombre ? ' Lo recibió ' + esc(p.recibido_nombre) + ', ' + esc(fechaHora(p.recibido_en)) + '.' : '') + (p.observaciones ? ' «' + esc(p.observaciones) + '»' : '') + '</div>' +
+        '<p class="pos-lbl rm-leyenda">En cada casilla, lo que llegó; abajo, lo que dice el remito</p>' + grillaRemito(cod, p.celdas || []) + siguienteRec();
+      engancharSiguiente();
+      return;
+    }
+    if (cerrado) { der.innerHTML = cab + '<div class="pos-cartel">Este producto no se recibió.</div>'; return; }
+    if (comp) {
+      der.innerHTML = cab + '<div class="pos-cartel mal">No coincide con el remito. Contá de nuevo las casillas en rojo; si está bien contado, recibilo con lo que contaste.</div>' +
+        '<p class="pos-lbl rm-leyenda">En cada casilla, lo que contaste; abajo, lo que dice el remito' + (comp.conteos > 1 ? ' · lo contaron ' + comp.conteos + ' veces' : '') + '</p>' +
+        grillaRemito(cod, comp.celdas) +
+        campo('rc-obs', 'Qué pasó <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rcObs" maxlength="300" placeholder="Por ejemplo: vino una M en vez de una L">') +
+        /* Lo destacado es volver a contar: recibir con diferencias es el último recurso. */
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" id="rcRecibir">Recibir con lo contado</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" id="rcOtraVez">Contar de nuevo</button></div>';
+      $('rcOtraVez').onclick = function () {
+        R.ojo[cod] = {};
+        comp.celdas.forEach(function (x) { if (x.contado !== x.cantidad) R.ojo[cod][x.talle + '|' + x.color] = 1; });
+        delete R.comp[cod];
+        pintarRecepcion();
+        var i = document.querySelector('.rc-in.rc-ojo') || document.querySelector('.rc-in');
+        if (i) i.focus();
+      };
+      $('rcRecibir').onclick = function () { recibirRec(cod, this); };
+      return;
+    }
+    var ej = ejesRec(p), m = conteoDe(cod), ojo = R.ojo[cod] || {};
+    var faltan = coloresDe(PROD[cod]).filter(function (x) { return ej.cs.indexOf(x.cod) < 0; });
+    der.innerHTML = cab + '<p class="pos-ayuda rc-ayuda">Contá cuántas llegaron de cada talle y color y escribilo (o dispará la pistola a cada prenda: suma de a una). ' +
+        'Lo que dice el remito se ve después de comparar' + (Object.keys(ojo).length ? '; las marcadas son las que no coincidieron.' : '.') + '</p>' +
+      grillaCarga(cod, ej.ts, ej.cs, function (t, c) { return m[t + '|' + c]; }, function (t, c) { return ojo[t + '|' + c]; }) +
+      '<div class="pos-pie">' +
+        (faltan.length ? '<select id="rcColor" class="rc-color" aria-label="Agregar otro color"><option value="">＋ Otro color…</option>' +
+          opciones(faltan.map(function (x) { return [x.cod, x.nom]; }), '') + '</select>' : '') +
+        '<button type="button" class="btn btn-sec btn-chico izq" id="rcBorrar">Borrar lo contado</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="rcComparar"' + (enPrueba() ? ' disabled title="Con el modo prueba no se reciben remitos"' : '') + '>Comparar con el remito</button></div>';
+    engancharGrilla(der, function (k, n) {
+      if (n > 0) m[k] = n; else delete m[k];
+      guardarConteo();
+      var b = document.querySelector('.rc-prod.sel .rc-est'), pt = document.querySelector('.rc-prod.sel .rc-punto');
+      if (b) b.textContent = contando(cod) ? 'Contando…' : 'Falta contar';
+      if (pt) pt.className = 'rc-punto' + (contando(cod) ? ' cont' : '');
+    }, function () { var b = $('rcComparar'); if (b && !b.disabled) b.focus(); });
+    var sc = $('rcColor');
+    if (sc) sc.onchange = function () {
+      if (!sc.value) return;
+      (R.colores[cod] = R.colores[cod] || []).push(sc.value);
+      guardarConteo();
+      pintarRecepcion();
+    };
+    $('rcBorrar').onclick = function () {
+      if (contando(cod) && !confirm('¿Borrar lo que contaste de ' + cod + '?')) return;
+      R.conteo[cod] = {};
+      guardarConteo();
+      pintarRecepcion();
+    };
+    $('rcComparar').onclick = function () { compararRec(cod, this); };
+  }
+  function siguienteRec() {
+    var sig = productosRec().filter(function (p) { return !p.estado; })[0];
+    return sig && S.rec.r.estado === 'pendiente' ? '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="rcSig">Seguir con ' + esc(sig.codigo) + '</button></div>' : '';
+  }
+  function engancharSiguiente() {
+    var b = $('rcSig');
+    if (b) b.onclick = function () { S.rec.sel = productosRec().filter(function (p) { return !p.estado; })[0].codigo; pintarRecepcion(); };
+  }
+
+  function compararRec(cod, bt) {
+    var R = S.rec, cont = conteoLista(cod), p = productoRec(cod);
+    if (enPrueba()) { avisar('err', 'Con el modo prueba prendido no se reciben remitos (el stock es de verdad).'); return; }
+    if (!cont.length && !confirm('No contaste nada de ' + cod + '. ¿No llegó ninguna?')) return;
+    bt.disabled = true;
+    bt.textContent = 'Comparando…';
+    llamar('pos_remito_contar', { p_remito: R.id, p_codigo: cod, p_conteo: cont }).then(function (res) {
+      if (S.rec !== R) return;
+      delete S.stock[R.r.destino_local_id];
+      delete R.ojo[cod];
+      if (res.coincide) {
+        delete R.conteo[cod];
+        guardarConteo();
+        avisar('ok', cod + ': coincide con el remito. Entró al stock.' + (res.estado !== 'pendiente' ? ' Remito ' + refRemito(R.r) + ' recibido.' : ''));
+        R.sel = null;
+        cargarRecepcion();
+      } else {
+        R.comp[cod] = { celdas: res.celdas, conteo: cont, conteos: res.conteos, extra: !!(p && p.extra) };
+        pintarRecepcion();
+      }
+    }).catch(function (e) {
+      if (bt.isConnected) { bt.disabled = false; bt.textContent = 'Comparar con el remito'; }
+      avisar('err', esDeRed(e) ? 'No se pudo comparar: sin conexión. Lo contado sigue ahí; probá de nuevo.' : mensajeDe(e));
+    });
+  }
+  function recibirRec(cod, bt) {
+    var R = S.rec, comp = R.comp[cod], p = productoRec(cod), obs = ($('rcObs') || {}).value || '';
+    if (!confirm('¿Recibir ' + cod + ' con lo que contaste? Entra al stock lo contado y queda anotada la diferencia con el remito.')) return;
+    bt.disabled = true;
+    llamar('pos_remito_recibir', { p_remito: R.id, p_codigo: cod, p_conteo: comp.conteo, p_observaciones: obs.trim() || null,
+                                   p_descripcion: p && p.extra ? nombreProd(cod, p.descripcion) : null }).then(function (res) {
+      if (S.rec !== R) return;
+      delete R.comp[cod];
+      delete R.conteo[cod];
+      delete S.stock[R.r.destino_local_id];
+      guardarConteo();
+      avisar('ok', cod + ': recibido con lo que contaste.' + (res.estado !== 'pendiente' ? ' Remito ' + refRemito(R.r) + ' recibido.' : ''));
+      R.sel = null;
+      cargarRecepcion();
+    }).catch(function (e) { bt.disabled = false; avisar('err', mensajeDe(e)); });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     NUEVO REMITO (Gestión): lo que manda la fábrica, o un envío entre locales
+     ════════════════════════════════════════════════════════════════════ */
+  var RN = null;   // el remito que se está cargando
+  function remitoNuevo(antes) {
+    return { v: 1, clave: nuevaClave(), origen: antes ? antes.origen : '', destino: antes ? antes.destino : '', referencia: '', observaciones: '', lineas: [] };
+  }
+  function cargarRemitoNuevo() {
+    var b = leerJSON(K_REMITO, null);
+    if (b && b.v === 1 && b.clave && Array.isArray(b.lineas)) {
+      if (b.origen && !localDe(b.origen)) b.origen = '';
+      if (b.destino && !localDe(b.destino)) b.destino = '';
+      return b;
+    }
+    return remitoNuevo();
+  }
+  function guardarBorradorRn() { guardarJSON(K_REMITO, RN); }
+  function claveRn(l) { return [l.codigo, l.talle || '', l.color || ''].join('|'); }
+  /** Suma renglones al remito (los iguales se juntan). */
+  function sumarRn(items) {
+    items.forEach(function (x) {
+      var ya = RN.lineas.filter(function (l) { return claveRn(l) === claveRn(x); })[0];
+      if (ya) ya.cantidad = Math.min(9999, ya.cantidad + x.cantidad);
+      else RN.lineas.push({ codigo: x.codigo, descripcion: x.descripcion || '', talle: x.talle || '', color: x.color || '', cantidad: Math.min(9999, x.cantidad) });
+    });
+  }
+  function productoRn(cod) {
+    if (PROD[cod]) return PROD[cod];
+    var ls = RN.lineas.filter(function (l) { return l.codigo === cod; });
+    return [cod, (ls[0] && ls[0].descripcion) || cod, '', unicos(ls.map(function (l) { return l.talle; }).filter(Boolean)).join(','),
+            unicos(ls.map(function (l) { return l.color; }).filter(Boolean)).join('|')];
+  }
+
+  function verRemitoNuevo() {
+    RN = cargarRemitoNuevo();
+    var c = $('cuerpo');
+    c.innerHTML = cabeza('Nuevo remito', 'Lo que manda la fábrica (o un local) a un local. Al guardarlo, el local lo ve en POS → Remitos para contarlo y recibirlo.',
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">‹ Remitos</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar">Guardar el remito</button>') +
+      '<div class="tk-datos rn-datos">' +
+        campo('', 'Sale de', '<select id="rnOrigen"><option value="">Fábrica</option>' + opcionesLocales(RN.origen) + '</select>') +
+        campo('', 'Llega a', '<select id="rnDestino"><option value="">Elegí el local…</option>' + opcionesLocales(RN.destino) + '</select>') +
+        campo('', 'Referencia <span class="lbl-opc">(el número de la fábrica)</span>', '<input type="text" id="rnRef" maxlength="40" placeholder="X-0001234" autocomplete="off">') +
+        campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Lo que diga el remito de la fábrica" autocomplete="off">') +
+      '</div>' +
+      '<div class="tk-prod rn-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
+        '<button type="button" class="btn btn-sec btn-chico" id="rnPegar" title="Desde un Excel: Código, Talle, Color y Cantidad">Pegar o subir un Excel…</button>' +
+        '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+      '<div id="rnLista"></div>';
+    engancharIr(c);
+    $('rnRef').value = RN.referencia || '';
+    $('rnObs').value = RN.observaciones || '';
+    $('rnOrigen').onchange = function () { RN.origen = this.value; guardarBorradorRn(); pintarRn(); };
+    $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); };
+    $('rnRef').oninput = function () { RN.referencia = this.value; guardarBorradorRn(); };
+    $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
+    $('rnLimpiar').onclick = function () {
+      if (RN.lineas.length && !confirm('¿Borrar el remito que estás cargando?')) return;
+      RN = remitoNuevo(RN);
+      guardarBorradorRn();
+      verRemitoNuevo();
+    };
+    $('rnGuardar').onclick = guardarRemito;
+    $('rnPegar').onclick = function () { abrirImportar(function (items) { sumarRn(items); guardarBorradorRn(); pintarRn(); }); };
+    /* Un producto nuevo de la fábrica puede no estar todavía en el catálogo: el disparo a su etiqueta entra igual. */
+    engancharProducto({ campo: 'rnProd', sug: 'rnSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true, escaneoLibre: true,
+      prod: function (cod) { return PROD[cod] || (RN.lineas.some(function (l) { return l.codigo === cod; }) ? productoRn(cod) : null); },
+      elegir: function (p) { $('rnProd').limpiar(); editarProductoRn(p); },
+      agregar: function (p, talle, color, n) {
+        $('rnProd').limpiar();
+        sumarRn([{ codigo: p[0], descripcion: p[1], talle: talle, color: color, cantidad: n || 1 }]);
+        guardarBorradorRn();
+        pintarRn(p[0]);
+        $('rnProd').focus();
+      },
+      noEsta: function (cod) {
+        /* Un código (letras y números, sin espacios): si es un nombre que no aparece, no es un producto nuevo. */
+        if (cod.length > 30 || !/^[A-Z0-9][A-Z0-9._\/-]*$/.test(cod) || !/\d/.test(cod)) { avisar('err', 'No encontré «' + cod + '» en el catálogo.'); return; }
+        if (!confirm(cod + ' no está en el catálogo. ¿Agregarlo igual al remito?')) return;
+        $('rnProd').limpiar();
+        editarProductoRn([cod, cod, '', '', '']);
+      } });
+    pintarRn();
+    if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('rnProd'); if (p) p.focus(); }, 0);
+  }
+
+  /** Las cantidades de un producto en el remito, todas juntas en su grilla. */
+  function editarProductoRn(p) {
+    var cod = p[0], ya = {}, ts = tallesDe(p), cs = coloresDe(p).map(function (x) { return x.cod; });
+    RN.lineas.forEach(function (l) { if (l.codigo === cod) { ya[l.talle + '|' + l.color] = l.cantidad; ts.push(l.talle); cs.push(l.color); } });
+    ts = unicos(ts); cs = unicos(cs);
+    if (!ts.length) ts = [''];
+    if (!cs.length) cs = [''];
+    ts = ordenarTalles(ts, cod); cs = ordenarColores(cs, cod);
+    var caja = ventana('<h3 id="posVentTit">' + esc(p[1]) + '</h3><p class="pos-bajada">' + esc(cod) + (p[2] ? ' · ' + esc(p[2]) : '') + ' · cuántas van de cada talle y color.</p>' +
+      grillaCarga(cod, ts, cs, function (t, c) { return ya[t + '|' + c]; }) + '<div class="pos-error" id="gcError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="gcOk">Listo</button></div>', ts.length > 5);
+    var g = engancharGrilla(caja, null, function () { caja.querySelector('#gcOk').focus(); });
+    caja.querySelector('#gcOk').onclick = function () {
+      var m = g.valores();
+      RN.lineas = RN.lineas.filter(function (l) { return l.codigo !== cod; });
+      sumarRn(Object.keys(m).map(function (k) { var a = k.split('|'); return { codigo: cod, descripcion: PROD[cod] ? '' : p[1], talle: a[0], color: a[1], cantidad: m[k] }; }));
+      guardarBorradorRn();
+      cerrarVentana();
+      pintarRn(cod);
+    };
+    setTimeout(function () { var i = caja.querySelector('.rc-in'); if (i) i.focus(); }, 0);
+  }
+
+  function pintarRn(marcar) {
+    var z = $('rnLista');
+    if (!z) return;
+    var prods = [], porCod = {}, total = 0;
+    RN.lineas.forEach(function (l) {
+      var p = porCod[l.codigo];
+      if (!p) { p = porCod[l.codigo] = { cod: l.codigo, desc: l.descripcion, lineas: [], total: 0 }; prods.push(p); }
+      p.lineas.push(l); p.total += l.cantidad; total += l.cantidad;
+    });
+    if (!prods.length) {
+      z.innerHTML = '<div class="pos-cartel"><b>Todavía no hay productos.</b> Buscá cada producto y escribí cuántas van de cada talle y color, dispará la pistola a las etiquetas (suma de a una), ' +
+        'o pegá las columnas de un Excel (Código, Talle, Color y Cantidad).</div>';
+      return;
+    }
+    z.innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla rn-tabla"><thead><tr><th>Código</th><th>Producto</th><th>Talles y colores</th><th class="n">Unidades</th><th></th></tr></thead><tbody>' +
+      prods.map(function (p) {
+        var porColor = {};
+        p.lineas.forEach(function (l) { (porColor[l.color] = porColor[l.color] || []).push(l); });
+        var det = ordenarColores(Object.keys(porColor), p.cod).map(function (c) {
+          var ls = porColor[c], ts = ordenarTalles(ls.map(function (l) { return l.talle; }), p.cod);
+          return '<span>' + (c || ts.some(Boolean) ? '<b>' + esc(nombreCol(c, p.cod)) + ':</b> ' : '') + ts.map(function (t) {
+            var l = ls.filter(function (x) { return x.talle === t; })[0];
+            return (t ? esc(t) + ' ' : '') + l.cantidad;
+          }).join(' · ') + '</span>';
+        }).join('');
+        return '<tr data-cod="' + esc(p.cod) + '"' + (p.cod === marcar ? ' class="rn-marca"' : '') + '><td><b>' + esc(p.cod) + '</b></td><td>' + esc(nombreProd(p.cod, p.desc)) +
+          (PROD[p.cod] ? '' : ' <span class="pill pill-warn" title="No está en el catálogo">Fuera del catálogo</span>') + '</td>' +
+          '<td class="rn-det">' + det + '</td><td class="n"><b>' + num(p.total) + '</b></td>' +
+          '<td class="pos-acc"><button type="button" class="pos-link" data-editar>Cambiar</button><button type="button" class="pos-link" data-quitar>Quitar</button></td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<p class="rn-tot"><b>' + prods.length + (prods.length === 1 ? ' producto' : ' productos') + ' · ' + num(total) + (total === 1 ? ' unidad' : ' unidades') + '</b>' +
+        (RN.origen ? ' · salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' : '') + '</p>';
+    z.querySelector('tbody').onclick = function (e) {
+      var b = e.target.closest('button'), tr = b && b.closest('tr[data-cod]');
+      if (!tr) return;
+      var cod = tr.getAttribute('data-cod');
+      if (b.hasAttribute('data-editar')) editarProductoRn(productoRn(cod));
+      else if (b.hasAttribute('data-quitar')) {
+        RN.lineas = RN.lineas.filter(function (l) { return l.codigo !== cod; });
+        guardarBorradorRn();
+        pintarRn();
+      }
+    };
+    var m = z.querySelector('.rn-marca');
+    if (m && m.scrollIntoView) m.scrollIntoView({ block: 'nearest' });
+  }
+
+  function guardarRemito() {
+    if (S.guardando || !RN) return;
+    var mal = !RN.destino ? 'Elegí a qué local va.' : RN.origen === RN.destino ? 'Sale y llega al mismo local: elegí otro.' :
+              !RN.lineas.length ? 'El remito no tiene productos.' : '';
+    if (mal) { avisar('err', mal); return; }
+    var lo = localDe(RN.origen), ld = localDe(RN.destino), unidades = RN.lineas.reduce(function (s, l) { return s + l.cantidad; }, 0);
+    var aviso = Promise.resolve('');
+    /* Un envío entre locales: si el que lo manda no tiene todo según el sistema, que lo sepa (no frena). */
+    if (lo) aviso = traerStock(lo.id, true).then(function (x) {
+      if (!x || !x.con) return '';
+      var faltan = RN.lineas.filter(function (l) { return (x.m[claveVar(l.codigo, l.talle, l.color)] || 0) < l.cantidad; });
+      return faltan.length ? '\n\nOjo: según el sistema, ' + nombreLocal(lo) + ' no tiene todo (' + faltan.slice(0, 4).map(function (l) {
+        return l.codigo + ' ' + [l.talle, l.color].filter(Boolean).join(' ') + ': hay ' + (x.m[claveVar(l.codigo, l.talle, l.color)] || 0) + ', mandás ' + l.cantidad; }).join('; ') +
+        (faltan.length > 4 ? '…' : '') + '). Si lo mandás igual, queda en negativo.' : '';
+    });
+    aviso.then(function (extra) {
+      if (!confirm('¿Guardar el remito de ' + (lo ? nombreLocal(lo) : 'la fábrica') + ' a ' + nombreLocal(ld) + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
+                   (lo ? ' Salen del stock de ' + nombreLocal(lo) + ' ahora.' : '') + ' ' + nombreLocal(ld) + ' lo recibe contándolo.' + extra)) return;
+      S.guardando = true;
+      var b = $('rnGuardar');
+      if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
+      llamar('pos_remito_guardar', { p: { clave: RN.clave, origen_local_id: RN.origen || null, destino_local_id: RN.destino, referencia: RN.referencia || '',
+                                          observaciones: RN.observaciones || '', items: RN.lineas } }).then(function (r) {
+        S.guardando = false;
+        if (lo) delete S.stock[lo.id];
+        avisar('ok', 'Remito R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': ' + nombreLocal(ld) + ' ya lo ve para recibirlo.');
+        RN = remitoNuevo(RN);
+        guardarBorradorRn();
+        if (S.vista === 'remito_nuevo') ir('remitos');
+      }).catch(function (e) {
+        S.guardando = false;
+        if (b && b.isConnected) { b.disabled = false; b.textContent = 'Guardar el remito'; }
+        avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
+      });
+    });
+  }
+
+  /** Pegar las columnas de un Excel (o subir el archivo): Código, Talle, Color y Cantidad. alListo(items). */
+  function abrirImportar(alListo) {
+    var caja = ventana('<h3 id="posVentTit">Pegar o subir un Excel</h3>' +
+      '<p class="pos-bajada">Copiá las columnas del Excel (con la fila de títulos: Código, Talle, Color y Cantidad) y pegalas acá, o elegí el archivo. Los colores van con la sigla (NE) o el nombre (Negro).</p>' +
+      campo('', 'Lo pegado', '<textarea id="imTexto" rows="7" spellcheck="false" placeholder="Código&#9;Talle&#9;Color&#9;Cantidad&#10;RM41641&#9;S&#9;NE&#9;2"></textarea>') +
+      '<div class="pos-pie rn-imp"><label class="btn btn-sec btn-chico izq">Elegir el archivo…<input type="file" id="imArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
+        '<span class="pos-ayuda" id="imNombre"></span></div>' +
+      '<div id="imPrevia" role="status"></div><div class="pos-error" id="imError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="imOk" disabled>Agregar</button></div>', true);
+    var res = null;
+    function ver(filas) {
+      res = leerTabla(filas, false);
+      var it = res.items, u = it.reduce(function (s, x) { return s + x.cantidad; }, 0), fuera = unicos(it.map(function (x) { return x.codigo; }).filter(function (c) { return !PROD[c]; }));
+      var np = unicos(it.map(function (x) { return x.codigo; })).length;
+      errorEn(caja, 'imError', res.error || '');
+      caja.querySelector('#imPrevia').innerHTML = res.error ? '' : '<div class="pos-cartel' + (it.length ? '' : ' mal') + '">' +
+        (it.length ? '<b>' + it.length + (it.length === 1 ? ' renglón' : ' renglones') + ' · ' + num(u) + (u === 1 ? ' unidad' : ' unidades') + '</b> de ' +
+          np + (np === 1 ? ' producto.' : ' productos.') + (fuera.length ? ' ' + fuera.length + ' no están en el catálogo (' + esc(fuera.slice(0, 5).join(', ')) + (fuera.length > 5 ? '…' : '') + '): van igual.' : '')
+          : 'No encontré renglones para agregar.') +
+        (res.errores.length ? '<br><b>' + (res.errores.length === 1 ? 'No se agrega 1 renglón' : 'No se agregan ' + res.errores.length + ' renglones') + ':</b> ' + esc(res.errores.slice(0, 4).join(' ')) + (res.errores.length > 4 ? '…' : '') : '') + '</div>';
+      caja.querySelector('#imOk').disabled = !(it.length && !res.error);
+    }
+    var t = null;
+    caja.querySelector('#imTexto').oninput = function () { var v = this.value; clearTimeout(t); t = setTimeout(function () { ver(filasDeTexto(v)); }, 200); };
+    caja.querySelector('#imArchivo').onchange = function () {
+      var f = this.files && this.files[0];
+      if (!f) return;
+      caja.querySelector('#imNombre').textContent = f.name;
+      leerArchivo(f).then(ver, function (e) { errorEn(caja, 'imError', e.message || String(e)); });
+    };
+    caja.querySelector('#imOk').onclick = function () {
+      if (!res || !res.items.length) return;
+      cerrarVentana();
+      alListo(res.items);
+      avisar('ok', 'Se agregaron ' + res.items.length + (res.items.length === 1 ? ' renglón.' : ' renglones.'));
+    };
+    setTimeout(function () { caja.querySelector('#imTexto').focus(); }, 0);
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     INVENTARIO (Gestión): lo que hay en un local, contado
+     La primera vez, el Excel de "Consulta de stock" de BlueSoft (una
+     sucursal por vez); después, el inventario de cada seis meses. Lo de la
+     lista reemplaza lo que dice el sistema y queda anotado.
+     ════════════════════════════════════════════════════════════════════ */
+  function verInventario() {
+    var c = $('cuerpo'), l = localDe(S.invLocal) || localInicial();
+    S.invLocal = l.id;
+    c.innerHTML = cabeza('Inventario', 'Lo que hay en una sucursal, contado. La primera vez, el Excel de «Consulta de stock» de BlueSoft; después, el inventario de cada seis meses. Lo de la lista reemplaza lo que dice el sistema.',
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +
+      '<div class="cj-paso"><div class="cj-paso-cab"><b>Paso 1</b><span>La sucursal y la lista</span></div>' +
+        '<div class="cj-fila">' + campo('', 'Sucursal', '<select id="invLocal">' + opcionesLocales(l.id) + '</select>') +
+          '<label class="btn btn-sec btn-chico">Elegir el Excel…<input type="file" id="invArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
+          '<button type="button" class="btn btn-sec btn-chico" id="invPegar">Pegar las columnas…</button>' +
+          '<span class="pos-ayuda" id="invNombre"></span></div>' +
+        '<p class="pos-ayuda">Con las columnas Código, Talle, Color y Cantidad, como «Consulta de stock» de BlueSoft exportada de una sola sucursal. Los colores, con la sigla (NE) o el nombre (Negro).</p></div>' +
+      '<div id="invPrevia"></div>' +
+      '<h3 class="st-tit">Cargas anteriores</h3><div id="invHist"><p class="cargando">Cargando…</p></div>';
+    engancharIr(c);
+    $('invLocal').onchange = function () { S.invLocal = this.value; if (S.inv) previa(); };
+    $('invArchivo').onchange = function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (!f) return;
+      $('invNombre').textContent = 'Leyendo ' + f.name + '…';
+      leerArchivo(f).then(function (filas) { tomar(filas, f.name); }, function (e) { $('invNombre').textContent = ''; avisar('err', e.message || String(e)); });
+    };
+    $('invPegar').onclick = function () {
+      var caja = ventana('<h3 id="posVentTit">Pegar las columnas</h3><p class="pos-bajada">Copiá del Excel las columnas con su fila de títulos (Código, Talle, Color y Cantidad) y pegalas acá.</p>' +
+        campo('', 'Lo pegado', '<textarea id="ipTexto" rows="9" spellcheck="false"></textarea>') +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="ipOk">Revisar</button></div>', true);
+      caja.querySelector('#ipOk').onclick = function () { var v = caja.querySelector('#ipTexto').value; cerrarVentana(); tomar(filasDeTexto(v), 'Pegado'); };
+      setTimeout(function () { caja.querySelector('#ipTexto').focus(); }, 0);
+    };
+    function tomar(filas, origen) {
+      var res = leerTabla(filas, true);
+      $('invNombre').textContent = origen === 'Pegado' ? 'Lo pegado' : origen;
+      if (res.error) { S.inv = null; $('invPrevia').innerHTML = '<div class="pos-cartel mal">' + esc(res.error) + '</div>'; return; }
+      S.inv = { origen: origen, items: res.items, errores: res.errores, resto: false, clave: nuevaClave() };
+      previa();
+    }
+    function previa() {
+      var I = S.inv, loc = $('invLocal').value, z = $('invPrevia');
+      z.innerHTML = '<p class="cargando">Comparando con lo que dice el sistema…</p>';
+      llamar('pos_stock_consulta', { p_local: loc, p_ocultar_sin: false }).then(function (d) {
+        if (S.inv !== I || !$('invPrevia')) return;
+        var ahora = {}, nuevo = {}, desc = {}, filas = [];
+        (d.filas || []).forEach(function (f) { ahora[claveVar(f[1], f[2], f[3])] = f[4]; desc[f[1]] = desc[f[1]] || f[7]; });
+        I.items.forEach(function (x) { var k = claveVar(x.codigo, x.talle, x.color); nuevo[k] = (nuevo[k] || 0) + x.cantidad; if (x.descripcion) desc[x.codigo] = desc[x.codigo] || x.descripcion; });
+        Object.keys(nuevo).forEach(function (k) { if (nuevo[k] !== (ahora[k] || 0)) filas.push([k, ahora[k] || 0, nuevo[k], false]); });
+        var aCero = Object.keys(ahora).filter(function (k) { return !(k in nuevo) && ahora[k] !== 0; });
+        if (I.resto) aCero.forEach(function (k) { filas.push([k, ahora[k], 0, true]); });
+        filas.sort(function (a, b) { return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0; });
+        var unidades = Object.keys(nuevo).reduce(function (s, k) { return s + Math.max(0, nuevo[k]); }, 0);
+        var fuera = unicos(I.items.map(function (x) { return x.codigo; }).filter(function (c) { return !PROD[c]; }));
+        z.innerHTML = '<div class="cj-paso"><div class="cj-paso-cab"><b>Paso 2</b><span>Revisá y cargá</span></div>' +
+          '<div class="pos-totales">' +
+            '<div class="pos-kpi"><span>Renglones</span><b>' + num(Object.keys(nuevo).length) + '</b></div>' +
+            '<div class="pos-kpi fuerte"><span>Unidades</span><b>' + num(unidades) + '</b></div>' +
+            '<div class="pos-kpi"><span>Cambian</span><b>' + num(filas.length) + '</b></div>' +
+            '<div class="pos-kpi"><span>Fuera del catálogo</span><b>' + num(fuera.length) + '</b></div></div>' +
+          (I.errores.length ? '<div class="pos-cartel mal">' + (I.errores.length === 1 ? 'No se carga 1 renglón' : 'No se cargan ' + num(I.errores.length) + ' renglones') + ': ' + esc(I.errores.slice(0, 6).join(' ')) + (I.errores.length > 6 ? '…' : '') + '</div>' : '') +
+          (!d.cargado ? '<div class="pos-cartel">' + esc(nombreLocal(localDe(loc))) + ' todavía no tiene stock: ésta es la carga inicial.</div>' : '') +
+          (aCero.length ? '<label class="pos-check"><input type="checkbox" id="invResto"' + (I.resto ? ' checked' : '') + '> Es el inventario completo de la sucursal: lo que no está en la lista queda en 0 (' +
+            num(aCero.length) + (aCero.length === 1 ? ' variante' : ' variantes') + ')</label>' : '') +
+          (filas.length ? '<div class="pos-marco-tabla inv-tabla"><table class="pos-tabla"><thead><tr><th>Código</th><th>Producto</th><th class="c">Talle</th><th>Color</th>' +
+              '<th class="n">Dice el sistema</th><th class="n">Inventario</th><th class="n">Diferencia</th></tr></thead><tbody>' +
+            filas.slice(0, 200).map(function (f) {
+              var a = f[0].split('|'), dif = f[2] - f[1];
+              return '<tr' + (f[3] ? ' class="anulada"' : '') + '><td><b>' + esc(a[0]) + '</b></td><td>' + esc(nombreProd(a[0], desc[a[0]])) + (f[3] ? ' <small class="st-chico">no está en la lista</small>' : '') + '</td>' +
+                '<td class="c">' + esc(a[1]) + '</td><td>' + esc(a[2] ? nombreColor(a[2], a[0]) : '') + '</td><td class="n">' + num(f[1]) + '</td><td class="n"><b>' + num(f[2]) + '</b></td>' +
+                '<td class="n"><b class="' + (dif < 0 ? 'st-sale' : 'st-entra') + '">' + (dif > 0 ? '+' : '−') + miles(Math.abs(dif)) + '</b></td></tr>';
+            }).join('') + '</tbody></table></div>' + (filas.length > 200 ? '<p class="pos-mas">Se ven 200 de ' + num(filas.length) + ' cambios.</p>' : '')
+            : '<div class="pos-cartel">Todo coincide con lo que dice el sistema: no cambia nada.</div>') +
+          (d.mas ? '<p class="pos-mas">La sucursal tiene más de 3.000 renglones: la comparación de arriba es parcial (la carga, no).</p>' : '') +
+          '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" id="invOtro">Elegir otro</button>' +
+            '<button type="button" class="btn btn-pri btn-chico" id="invCargar"' + (filas.length ? '' : ' disabled') + '>Cargar el inventario en ' + esc(nombreLocal(localDe(loc))) + '</button></div></div>';
+        var rs = $('invResto');
+        if (rs) rs.onchange = function () { I.resto = rs.checked; previa(); };
+        $('invOtro').onclick = function () { S.inv = null; $('invPrevia').innerHTML = ''; $('invNombre').textContent = ''; };
+        $('invCargar').onclick = function () { cargarInv(loc, nuevo, this); };
+      }).catch(function (e) { if ($('invPrevia')) $('invPrevia').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function cargarInv(loc, nuevo, bt) {
+      var I = S.inv, ln = localDe(loc);
+      if (!confirm('¿Cargar el inventario en ' + nombreLocal(ln) + '? Lo de la lista reemplaza lo que dice el sistema' + (I.resto ? ' y lo que no está queda en 0' : '') +
+                   '. Queda anotado quién lo cargó; no se deshace solo.')) return;
+      var desc = {};
+      I.items.forEach(function (x) { if (x.descripcion) desc[x.codigo] = x.descripcion; });
+      var items = Object.keys(nuevo).map(function (k) { var a = k.split('|'); return { codigo: a[0], talle: a[1], color: a[2], cantidad: nuevo[k], descripcion: desc[a[0]] || '' }; });
+      var txt = bt.textContent;
+      bt.disabled = true;
+      bt.textContent = 'Cargando…';
+      llamar('pos_inventario_cargar', { p: { local_id: loc, items: items, resto_a_cero: I.resto, origen: I.origen, clave: I.clave } }).then(function (r) {
+        delete S.stock[loc];
+        S.inv = null;
+        avisar('ok', 'Inventario cargado en ' + nombreLocal(ln) + ': ' + num(r.lineas) + (r.lineas === 1 ? ' renglón, ' : ' renglones, ') + num(r.cambiaron) +
+                     (r.cambiaron === 1 ? ' cambió.' : ' cambiaron.') + (r.ya ? ' (Ya estaba cargado: no se duplicó.)' : ''));
+        if (!$('invPrevia')) return;
+        $('invPrevia').innerHTML = '';
+        $('invNombre').textContent = '';
+        historial();
+      }).catch(function (e) { bt.disabled = false; bt.textContent = txt; avisar('err', esDeRed(e) ? 'No se pudo cargar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e)); });
+    }
+    function historial() {
+      llamar('pos_inventarios', { p_local: null }).then(function (h) {
+        if (!$('invHist')) return;
+        $('invHist').innerHTML = !h.length ? '<div class="pos-cartel">Todavía no se cargó ningún inventario.</div>' :
+          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th>Quién</th><th>De dónde</th><th class="n">Renglones</th>' +
+            '<th class="n">Unidades</th><th class="n">Cambiaron</th><th>Completo</th></tr></thead><tbody>' +
+          h.map(function (x) {
+            return '<tr><td>' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(bonito(x.local)) + '</td><td>' + esc(x.persona || '—') + '</td><td>' + esc(x.origen || '—') + '</td>' +
+              '<td class="n">' + num(x.lineas) + '</td><td class="n">' + num(x.unidades) + '</td><td class="n">' + num(x.cambiaron) + '</td><td>' + (x.resto_a_cero ? 'Sí (el resto a 0)' : '—') + '</td></tr>';
+          }).join('') + '</tbody></table></div>';
+      }).catch(function (e) { if ($('invHist')) $('invHist').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    historial();
+    if (S.inv) previa();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
      LO QUE TODAVÍA NO ESTÁ
      ════════════════════════════════════════════════════════════════════ */
   function verPronto(v) {
@@ -2688,5 +3938,6 @@
   persona.listo.then(arrancar);
 
   /* Para las pruebas: la cuenta del ticket, sin la pantalla. */
-  window.__pos = { cuenta: function (v, ini) { var antes = S.ini; S.ini = ini; try { return cuenta(v); } finally { S.ini = antes; } }, leerPlata: leerPlata, plata: plata };
+  window.__pos = { cuenta: function (v, ini) { var antes = S.ini; S.ini = ini; try { return cuenta(v); } finally { S.ini = antes; } }, leerPlata: leerPlata, plata: plata,
+                  leerTabla: leerTabla, filasDeTexto: filasDeTexto, filasDeXml: filasDeXml, siglaColor: siglaColor, ordenarTalles: ordenarTalles };
 })();
