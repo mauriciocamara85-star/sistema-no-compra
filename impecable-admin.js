@@ -77,6 +77,7 @@ var ICONO_MENU = {
   panorama: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   local: '<path d="M3 9l1.5-5h15L21 9"/><path d="M4 9v11h16V9"/><path d="M9 20v-6h6v6"/>',
   fotos: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  tareas: '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
   orden: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
   cajas: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
   testigo: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
@@ -87,10 +88,13 @@ var ICONO_MENU = {
 var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                ['local', 'Por local', 'Cada módulo con su última foto, y cómo viene el local'],
                ['fotos', 'Fotos', 'Las fotos de los controles, con lo que dijo la IA'],
+               ['tareas', 'Tareas', 'Una tarea para un local, varios o todos, y si la hicieron'],
                ['orden', 'Por vendedor', 'Cada vendedor, semana a semana'],
                ['cajas', 'Cajas', 'Como la planilla del control diario'],
                ['testigo', 'Productos testigo', 'Lo que se cuenta cada semana'],
                ['ajustes', 'Ajustes', 'Cómo funciona cada local, las reglas de orden y los tests']];
+/* Sólo el administrador (22/10: "Tareas" era "Crear tarea", adentro de Ajustes). */
+var SOLO_ADMIN = ['tareas', 'ajustes'];
 var _solapa = 'panorama';
 function svgMenu(k) {
   return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + ICONO_MENU[k] + '</svg>';
@@ -121,8 +125,9 @@ function sinGuardar() {
   var ed = [].filter.call(document.querySelectorAll('.editor-fondo'), function (e) { return e.cambiado && e.cambiado(); }).length;
   var c = document.getElementById('cuerpo');
   if (!c) return ed;
+  /* 22/10: y una tarea escrita sin mandar (en Tareas, un toque en el menú la perdía sin avisar). */
   return ed + c.querySelectorAll('[data-guardar]:not([disabled])').length + document.querySelectorAll('.ventana [data-aviso-guardar]:not([disabled])').length +
-    [].filter.call(c.querySelectorAll('[data-nueva-regla] textarea'), function (t) { return t.value.trim(); }).length;
+    [].filter.call(c.querySelectorAll('[data-nueva-regla] textarea, #ctTitulo, #ctDetalle'), function (t) { return t.value.trim(); }).length;
 }
 function puedeSalir() {
   return !sinGuardar() || confirm('Hay cambios sin guardar. ¿Salir igual? Lo que no guardaste se pierde.');
@@ -143,7 +148,7 @@ function inicio() {
     _local = _locales.filter(function (x) { return x.id === guardado; })[0] || _locales[0] || null;
     var h = String(location.hash || '').replace(/^#\/?/, '');
     if (SOLAPAS.some(function (s) { return s[0] === h; })) _solapa = h;
-    if (_solapa === 'ajustes' && !esAdmin()) _solapa = 'panorama';
+    if (SOLO_ADMIN.indexOf(_solapa) > -1 && !esAdmin()) _solapa = 'panorama';
     ir(_solapa);
   }).catch(function (e) { error(e, inicio); });
 }
@@ -157,10 +162,10 @@ function error(e, reintentar) {
 
 function cabezaAdmin() {
   var per = yo();
-  var solapas = SOLAPAS.filter(function (x) { return x[0] !== 'ajustes' || esAdmin(); });
+  var solapas = SOLAPAS.filter(function (x) { return SOLO_ADMIN.indexOf(x[0]) < 0 || esAdmin(); });
   var actual = SOLAPAS.filter(function (x) { return x[0] === _solapa; })[0] || SOLAPAS[0];
-  /* El local se elige en todo salvo en el Panorama, que es de todos. */
-  var conLocal = _solapa !== 'panorama' && _locales.length > 1;
+  /* El local se elige en todo salvo en el Panorama, que es de todos, y en Tareas, que tiene su lista de locales. */
+  var conLocal = _solapa !== 'panorama' && _solapa !== 'tareas' && _locales.length > 1;
   /* En la compu el menú se achica a íconos con el botón de todos los paneles (interfaz.js), y se recuerda. */
   var chico = Interfaz.panelChico(K_MENU_CHICO);
   return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Supervisión"><div class="imp-menu-cab"><span>Supervisión</span>' + Interfaz.botonPanel(chico, '', 'menuEquipo') + '</div>' +
@@ -196,7 +201,7 @@ function ir(solapa) {
   engancharPlegar();
   asomarMenu();
   if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
-  ({ panorama: verPanorama, local: verLocal, fotos: verFotos, orden: verOrden, cajas: verCajas, testigo: verTestigo, ajustes: verAjustes })[solapa]();
+  ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, testigo: verTestigo, ajustes: verAjustes })[solapa]();
 }
 
 /** El botón del menú: cada vez se busca el que está en la página (al tocarlo se rehace con el texto contrario; el
@@ -2285,8 +2290,9 @@ function programarTestigo() {
 /* 15/10/2026: de 9 pestañas a 6. "Sectores y módulos" se fue al mapa (la foto modelo y "algo propio", a la ventana del
    módulo; agregar un sector, a "Repartir"); "Exhibidores" se sacó (vacío, y la nota repetía una regla); los colores y
    las fotos ejemplo están adentro de Reglas de orden. 17/10: "Crear tarea" (para un local, varios o todos).
-   21/10: "Personas" se sacó: repetía Config → Usuarios, y los francos de cada uno pasaron allá (SQL 154). */
-var SUBAJUSTES = [['local', 'El local'], ['recordatorios', 'Recordatorios por día'], ['tarea', 'Crear tarea'],
+   21/10: "Personas" se sacó: repetía Config → Usuarios, y los francos de cada uno pasaron allá (SQL 154).
+   22/10: "Crear tarea" pasó al menú, como "Tareas": es trabajo de todas las semanas, no un ajuste. */
+var SUBAJUSTES = [['local', 'El local'], ['recordatorios', 'Recordatorios por día'],
                   ['reglas', 'Reglas de orden'], ['tableros', 'Ideas (tableros)'], ['tests', 'Tests']];
 var _sub = 'local';
 
@@ -2297,7 +2303,7 @@ function verAjustes() {
     return '<button data-sub="' + s[0] + '" class="' + (s[0] === _sub ? 'activa' : '') + '">' + s[1] + '</button>';
   }).join('') + '</div><div id="ajuste"><p class="cargando">Cargando…</p></div>';
   c.querySelectorAll('[data-sub]').forEach(function (b) { b.onclick = function () { if (!puedeSalir()) return; _sub = b.dataset.sub; verAjustes(); }; });
-  ({ local: ajLocal, recordatorios: ajRecordatorios, tarea: ajCrearTarea, reglas: ajReglas, tableros: ajTableros, tests: ajPreguntas })[_sub]();
+  ({ local: ajLocal, recordatorios: ajRecordatorios, reglas: ajReglas, tableros: ajTableros, tests: ajPreguntas })[_sub]();
 }
 
 function zonaAjuste(html) { var z = document.getElementById('ajuste'); z.innerHTML = html; return z; }
@@ -4059,30 +4065,34 @@ function editarMapa(d, op) {
 var DIAS_OPS = [[1, 'Lunes'], [2, 'Martes'], [3, 'Miércoles'], [4, 'Jueves'], [5, 'Viernes'], [6, 'Sábado'], [7, 'Domingo']];
 
 /* ════════════════════════════════════════════════════════════════════════
-   AJUSTES · CREAR TAREA (17/10/2026)
+   TAREAS (17/10/2026, "Crear tarea" en Ajustes; desde el 22/10, en el menú)
    Pedido de Mauricio: "una pestaña como la de recordatorio por día, pero que diga crear tarea, y que pueda
    seleccionar un local o todos los locales". A cada vendedor le llega la suya con un aviso, como cuando la manda
    el supervisor desde la app (orden_crear_tarea; queda con origen "admin"). Abajo, las que se mandaron desde acá:
    cuántas se hicieron, quién, y "Cancelar las que faltan".
    22/10 (SQL 159): con un local, la foto de un módulo o de la vidriera para todo el equipo ("que les aparezca a los
    3"): orden_crear_tarea_equipo. El aviso, a los que trabajan ese día; la primera foto la cierra para todos.
+   22/10: pasó de Ajustes al menú ("es trabajo de todas las semanas, no un ajuste"); sigue siendo sólo del admin.
    ════════════════════════════════════════════════════════════════════════ */
 var PLAZOS_TAREA = [['hoy', 'Hoy'], ['manana', 'Mañana'], ['semana', 'Esta semana']];
 function nombreLocal(id) { var l = _locales.filter(function (x) { return x.id === id; })[0]; return l ? l.nombre : '—'; }
 function nombreVendedor(p) { return p.nombre + (p.inicial ? ' ' + p.inicial + '.' : ''); }
 
-function ajCrearTarea() {
+function verTareas() {
   var desde = new Date(Date.now() - 30 * 864e5).toISOString();
   Promise.all([
     leer('/orden_personas?select=id,nombre,apellido,inicial,local_id&rol=eq.vendedor&activo=is.true&aprobado=is.true&local_id=not.is.null&order=nombre.asc'),
     leer159('/orden_v_tareas?select=id,local_id,persona_nombre,titulo,estado,creado_en,completada_en,revisada_en,modulo_nombre,motivo_no_pude&origen=eq.admin&creado_en=gte.' + desde + '&order=creado_en.desc&limit=600')
   ]).then(function (r) {
-    if (_sub !== 'tarea') return;
+    var cuerpo = document.getElementById('cuerpo');
+    if (_solapa !== 'tareas' || !cuerpo) return;
     var porLocal = {};
     (r[0] || []).forEach(function (p) { (porLocal[p.local_id] = porLocal[p.local_id] || []).push(p); });
     var gente = function (id) { return porLocal[id] || []; };
     var varios = _locales.length > 1;
-    var z = zonaAjuste('<p class="bajada">Una tarea para el equipo de un local, de varios o de todos. A cada vendedor le llega la suya con un aviso y la ve en Tareas de la app, ' +
+    cuerpo.innerHTML = '<div id="tareas"></div>';
+    var z = cuerpo.firstChild;
+    z.innerHTML = ('<p class="bajada">Una tarea para el equipo de un local, de varios o de todos. A cada vendedor le llega la suya con un aviso y la ve en Tareas de la app, ' +
         'como cuando la manda el supervisor. Si pide foto, se mira en Fotos → Tareas y se puede mandar a corregir. ' +
         'Con un solo local, puede ser la foto de un módulo o de la vidriera para todo el equipo: con que uno la mande, alcanza.</p>' +
       '<div class="seccion">Qué hay que hacer</div>' +
@@ -4181,7 +4191,7 @@ function ajCrearTarea() {
                                                     p_plazo: z.querySelector('#ctPlazo').value })
           .then(function () {
             avisar('Listo: le aparece a todo el equipo de ' + nombreLocal(locs[0]) + '. El aviso les llega a los que trabajan hoy.');
-            ajCrearTarea();
+            verTareas();
           }, function (e) {
             throw /schema cache|Could not find the function/i.test(mensajeDe(e)) ? rechazo('Falta actualizar el sistema (SQL 159) para las tareas de todo el equipo.') : e;
           });
@@ -4202,11 +4212,11 @@ function ajCrearTarea() {
                                            p_plazo: z.querySelector('#ctPlazo').value, p_requiere_foto: z.querySelector('#ctFoto').checked })
         .then(function () {
           avisar('Listo: se la mandamos a ' + ids.length + (ids.length === 1 ? ' persona.' : ' personas.'));
-          ajCrearTarea();
+          verTareas();
         });
     });
     dibujarMandadas(z.querySelector('#ctMandadas'), r[1] || []);
-  }).catch(errAjuste);
+  }).catch(function (e) { error(e, verTareas); });
 }
 
 /** Las tareas mandadas desde acá, de a una por vez que se mandó (las de una misma vez tienen la misma hora exacta;
@@ -4252,14 +4262,14 @@ function dibujarMandadas(cont, lista) {
         return p.then(function () { return llamar('orden_cancelar_tarea', { p_tarea: t.id, p_motivo: 'La canceló Administración' }); });
       }, Promise.resolve()).then(function () {
         avisar(abiertas.length === 1 ? 'Listo: cancelada.' : 'Listo: ' + abiertas.length + ' canceladas.');
-        ajCrearTarea();
+        verTareas();
       });
     });
   });
 }
 function ajRecordatorios() {
   ajLista({ ruta: '/orden_recordatorios?select=*&local_id=eq.' + valor(_local.id) + '&order=dia.asc,creado_en.asc', tabla: '/orden_recordatorios',
-    texto: 'Lo que hay que acordarse cada día en ' + esc(_local.nombre) + ' (martes entra mercadería, sábado limpieza de vidrieras…). Ese día les aparece a los vendedores del local arriba en "Hoy". El frontal nuevo va en El local; una tarea de una vez, en Crear tarea.',
+    texto: 'Lo que hay que acordarse cada día en ' + esc(_local.nombre) + ' (martes entra mercadería, sábado limpieza de vidrieras…). Ese día les aparece a los vendedores del local arriba en "Hoy". El frontal nuevo va en El local; una tarea de una vez, en Tareas (en el menú).',
     cols: [{ k: 'dia', t: 'Día', tipo: 'sel', numero: true, ops: DIAS_OPS }, { k: 'texto', t: 'El recordatorio', tipo: 'texto', ancho: 'grande' }, { k: 'activo', t: 'Activo', tipo: 'bool' }],
     validar: function (f) { return String(f.texto || '').trim().length < 2 ? 'Escribí el recordatorio.' : null; },
     nueva: function () { return { local_id: _local.id, dia: 2, texto: 'Nuevo recordatorio (escribilo y guardá)', activo: false }; } });
