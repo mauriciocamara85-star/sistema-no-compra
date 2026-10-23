@@ -58,9 +58,56 @@
   .vt-top { flex: 0 0 auto; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line);
     padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px)); }
   .vt-top h1 { margin: 0; font: 600 17px/1.2 var(--display); letter-spacing: -.01em; }
-  .vt-chip { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--txt); font-size: 13px; font-weight: 600; }
-  .vt-chip select { border: 0; background: transparent; color: inherit; font-weight: 600; padding: 0; cursor: pointer; min-height: 0; }
-  .vt-chip svg { width: 14px; height: 14px; color: var(--txt-3); flex: none; }
+  /* El local y el mes (23/10/2026). Pedido de Mauricio: la lista que abría el <select> la dibujaba Windows, apretada
+     y sin estilo. Ahora es un botón con su menú, con la cara del calendario del sistema (interfaz.js): los locales en
+     dos columnas, el E-commerce aparte y los meses por año. El <select> queda escondido y es el que manda (ventas.js:
+     desplegable). Los botones van con .vt-top/.vt-menu delante porque ".vt-app button { font: inherit }" pesa más. */
+  .vt-chip { position: relative; display: inline-flex; font: 600 13px/1.2 var(--sans); }
+  .vt-top .vt-chip-btn { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 10px 0 12px; border: 1px solid var(--line); border-radius: 17px;
+    background: var(--surface); color: var(--txt); white-space: nowrap; cursor: pointer; box-shadow: 0 1px 2px rgba(20, 20, 18, .06); transition: background .15s, border-color .15s; }
+  .vt-top .vt-chip-btn:hover, .vt-chip.abierto .vt-chip-btn { background: var(--surface-2); }
+  .vt-chip.abierto .vt-chip-btn { border-color: var(--acc-line); }
+  .vt-top .vt-chip-btn:focus-visible { outline: 2px solid var(--foco); outline-offset: 2px; }
+  .vt-top .vt-chip-btn:disabled { cursor: default; box-shadow: none; }
+  .vt-top .vt-chip-btn:disabled:hover { background: var(--surface); }
+  .vt-chip-btn svg { width: 15px; height: 15px; color: var(--txt-3); flex: none; }
+  .vt-chip-ico { display: inline-flex; }
+  .vt-chip-btn .vt-chip-flecha { width: 16px; height: 16px; margin-left: -2px; transition: transform .15s; }
+  .vt-chip.abierto .vt-chip-flecha { transform: rotate(180deg); }
+  .vt-chip-btn:disabled .vt-chip-flecha { display: none; }
+  .vt-oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  /* max-content: si no, el menú toma el ancho del botón y corta los nombres. */
+  .vt-menu { position: absolute; top: calc(100% + 8px); left: 0; z-index: 90; width: max-content; min-width: max(100%, 210px); max-width: calc(100vw - 24px);
+    max-height: min(72vh, 520px); overflow-y: auto; overscroll-behavior: contain;
+    padding: 6px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--sombra-alta);
+    font: 500 13.5px/1.25 var(--sans); color: var(--txt); animation: vt-menu .14s ease-out; }
+  .vt-menu.a-la-der { left: auto; right: 0; }
+  @keyframes vt-menu { from { opacity: 0; transform: translateY(-4px); } }
+  .vt-menu-tit { padding: 9px 10px 6px; font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--txt-3); }
+  .vt-menu-lista + .vt-menu-tit { margin-top: 6px; padding-top: 13px; border-top: 1px solid var(--line); }
+  .vt-menu-lista { display: grid; gap: 2px; }
+  .vt-menu-lista.dos { grid-auto-flow: column; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 4px; }
+  .vt-menu .vt-op { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px; padding: 8px 10px; border: 0; border-radius: 10px;
+    background: none; color: inherit; font-weight: 500; text-align: left; white-space: nowrap; cursor: pointer; }
+  .vt-menu .vt-op:hover { background: var(--surface-2); }
+  .vt-menu .vt-op:focus-visible { outline: none; background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--foco); }
+  .vt-menu .vt-op[aria-selected="true"] { background: var(--acc); color: var(--acc-ink); font-weight: 600; }
+  .vt-menu .vt-op[aria-selected="true"]:focus-visible { box-shadow: inset 0 0 0 2px var(--acc), inset 0 0 0 3.5px var(--acc-ink); }
+  .vt-op-txt { flex: 1 1 auto; min-width: 0; }
+  .vt-op-txt small { display: block; margin-top: 2px; font-size: 11.5px; font-weight: 400; color: var(--txt-3); }
+  .vt-op[aria-selected="true"] .vt-op-txt small { color: inherit; opacity: .72; }
+  .vt-op-ico { display: grid; place-items: center; width: 30px; height: 30px; flex: none; border-radius: 9px; background: var(--surface-2); color: var(--txt-2); }
+  .vt-op-ico svg { width: 16px; height: 16px; }
+  .vt-op-marca { flex: none; padding: 3px 8px; border-radius: 999px; background: var(--surface-3); color: var(--txt-2); font-size: 11px; font-weight: 600; }
+  .vt-op[aria-selected="true"] .vt-op-ico, .vt-op[aria-selected="true"] .vt-op-marca { background: color-mix(in srgb, currentColor 16%, transparent); color: inherit; }
+  .vt-op-ok { width: 16px; height: 16px; flex: none; visibility: hidden; }
+  .vt-op[aria-selected="true"] .vt-op-ok { visibility: visible; }
+  /* En el celular se abre como una hoja abajo, arriba de la barra de secciones (como el calendario). */
+  @media (max-width: 640px) {
+    .vt-menu { position: fixed; left: 12px; right: 12px; top: auto; bottom: calc(var(--nav) + 12px + env(safe-area-inset-bottom));
+      width: auto; min-width: 0; max-width: none; max-height: calc(100dvh - 140px); }
+    .vt-menu .vt-op { min-height: 44px; white-space: normal; }
+  }
   .vt-der { margin-left: auto; display: flex; align-items: center; gap: 12px; font-size: 12.5px; color: var(--txt-3); }
   .vt-quien b { color: var(--txt-2); font-weight: 600; }
   .vt-estado { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -481,14 +528,24 @@
 <main class="vt-app" id="vtApp">
   <header class="vt-top">
     <h1>Ventas del local</h1>
-    <label class="vt-chip" id="vtLocalChip" hidden>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/></svg>
-      <select id="vtLocal" aria-label="Local"></select>
-    </label>
-    <label class="vt-chip" id="vtMesChip" hidden>
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg>
-      <select id="vtMes" aria-label="Mes"></select>
-    </label>
+    <div class="vt-chip" id="vtLocalChip" hidden>
+      <select id="vtLocal" aria-label="Local" tabindex="-1" hidden></select>
+      <button type="button" class="vt-chip-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="vtLocalMenu">
+        <span class="vt-chip-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/></svg></span>
+        <span class="vt-oculto">Local: </span><span class="vt-chip-txt"></span>
+        <svg class="vt-chip-flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="vt-menu" id="vtLocalMenu" role="listbox" aria-label="Elegí el local" hidden></div>
+    </div>
+    <div class="vt-chip" id="vtMesChip" hidden>
+      <select id="vtMes" aria-label="Mes" tabindex="-1" hidden></select>
+      <button type="button" class="vt-chip-btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="vtMesMenu">
+        <span class="vt-chip-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="1.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/></svg></span>
+        <span class="vt-oculto">Mes: </span><span class="vt-chip-txt"></span>
+        <svg class="vt-chip-flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </button>
+      <div class="vt-menu" id="vtMesMenu" role="listbox" aria-label="Elegí el mes" hidden></div>
+    </div>
     <div class="vt-der">
       <span class="vt-solo-ver" id="vtSoloVer" hidden>Sólo para mirar</span>
       <span class="vt-estado" id="vtEstado" role="status" aria-live="polite"></span>
