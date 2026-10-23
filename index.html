@@ -31,17 +31,20 @@
      Lo compartido con el panel vive en estilos.css. */
 
   /* Deja aire para que la barra de guardar no tape el último campo ni el pie.
-     La barra mide ~98px (botón de 50 + la nota + los dos padding); 135 deja
-     margen de sobra incluso con el texto del sistema agrandado.
+     La barra mide ~126px (quién lo atendió + el botón de 50 + los dos
+     padding; medido el 23/10); 160 deja margen incluso con el texto del
+     sistema agrandado.
 
      En el celular, abajo de la barra de guardar está además el rail acostado,
      así que el aire es la suma de los dos. Arriba de 900px el rail se para a
      la izquierda y deja de descontar alto. */
-  body { padding-bottom: calc(135px + var(--nav) + env(safe-area-inset-bottom)); }
-  @media (min-width: 900px) { body { padding-bottom: 135px; } }
+  body { padding-bottom: calc(160px + var(--nav) + env(safe-area-inset-bottom)); }
+  @media (min-width: 900px) { body { padding-bottom: 160px; } }
 
-  /* Identidad ya elegida: reemplaza a los dos bloques de arriba para que el
-     vendedor que ya cargó una vez abra la app directo en "el cliente". */
+  /* La barra del local, en el celular y en la PC chica. Desde el 23/10 cada
+     compu queda en su local: la barra sale sólo para elegirlo la primera vez
+     (o para que el administrador lo cambie). Con el local puesto lo dice el
+     título del tablero, y el nombre de quién atendió va al lado de Guardar. */
   .ident {
     display: flex; align-items: center; gap: 12px;
     background: var(--surface);
@@ -82,41 +85,35 @@
   }
   .ident-vend { font-size: 13px; color: var(--txt-2); }
 
-  /* ── Quién está cargando ───────────────────────────────────────────────
-     El mismo control en dos lugares: adentro de la barra de identidad
-     (celular) y abajo del rail (PC). Elegir un nombre de la lista ES el
-     cambio de vendedor: no hay que abrir, buscar ni confirmar nada.
+  /* ── Quién lo atendió ──────────────────────────────────────────────────
+     Al lado de Guardar (23/10/2026). Es un dato del registro —a quién se le
+     anota el cliente— y se mira justo antes de guardar. Antes vivía abajo
+     del rail y en la barra del celular, donde parecía "quién está
+     conectado", que es otra cosa: eso es el muñequito de la sesión, y en la
+     compu del local la sesión queda abierta aunque atienda otro.
 
-     La última opción de la lista abre el campo de texto, para el que todavía
-     no está cargado en el equipo del local. */
-  .quien { margin-top: 8px; }
-  /* El desplegable no decía qué era ni que sin eso no se guarda. El nombre
-     de quien carga SIEMPRE fue obligatorio —validar() frena el registro y
-     pinta el control en rojo—, pero el vendedor se enteraba recién al
-     apretar Guardar. Ahora lo dice antes, con la misma etiqueta que llevan
-     los pasos 1 y 3: si un dato frena el registro, tiene que decirlo desde
-     el principio y no cuando ya escribiste todo. */
-  .quien-lbl {
-    display: flex; align-items: center; flex-wrap: wrap; gap: 7px;
-    margin-bottom: 7px;
-    font: 600 13px/1.2 var(--sans);
-    letter-spacing: .1px;
-    color: var(--txt-2);
-  }
+     Elegir un nombre de la lista ES el cambio: no hay que abrir, buscar ni
+     confirmar nada. Sale elegido con quien entró y queda guardado en el
+     aparato. La última opción abre el campo de texto, para el que todavía no
+     está en el equipo del local. Es obligatorio: sin nombre, validar() frena
+     el registro y lo pinta en rojo. */
+  .quien { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 10px; margin-bottom: 10px; }
+  .quien-lbl { flex: none; font: 600 13px/1.2 var(--sans); letter-spacing: .1px; color: var(--txt-2); }
+  /* Más bajo que un campo del formulario: no es un dato que se carga, es un
+     interruptor. Los 16px de letra se quedan —con menos, iOS hace zoom—. */
+  .quien-sel { flex: 1; min-width: 0; width: auto; padding: 9px 34px 9px 12px; background-position: right 12px center; }
   /* Escribir el nombre y anotarse son un solo gesto, así que el campo y el
      botón van juntos: el que no está en la lista queda en la lista del local
      desde acá, no cuando alguien se acuerde de cargarlo en Configuración. */
-  .quien-nuevo { display: flex; gap: 8px; margin-top: 7px; }
-  .quien-nuevo .quien-txt { flex: 1; min-width: 0; }
+  .quien-nuevo { display: flex; gap: 8px; flex: 1 1 100%; }
+  .quien-nuevo .quien-txt { flex: 1; min-width: 0; padding: 9px 12px; }
   .quien.mal .quien-sel, .quien.mal .quien-txt {
     border-color: var(--bad);
     box-shadow: 0 0 0 4px var(--bad-soft);
   }
-  /* En la barra del celular el control es más bajo que un campo del
-     formulario: no es un dato que se carga, es un interruptor. Los 16px de
-     letra se quedan igual —con menos, iOS hace zoom al tocarlo—. */
-  .ident .quien-sel, .ident .quien-txt { padding: 9px 12px; }
-  .ident .quien-sel { background-position: right 12px center; padding-right: 34px; }
+  /* En la barra fija del celular el nombre ocupa el lugar de "Tarda menos de
+     20 segundos". */
+  .quien:not([hidden]) ~ .barra-nota { display: none; }
 
   /* ── La cabecera del tablero ───────────────────────────────────────────
      De quién son los números: "Hoy en Rivadavia" y la fecha. */
@@ -590,9 +587,8 @@
        vista y la frase pasa a ser relleno. */
     .barra-nota { display: none; }
 
-    /* Sin esa nota, la barra mide ~98px en vez de ~135: el aire de abajo se
-       recalcula para no dejar un colchón que no hace falta. */
-    body { padding-bottom: 110px; }
+    /* El aire de abajo es el de siempre (160): desde el 23/10 la barra
+       lleva arriba del botón el nombre de quién lo atendió y mide ~126px. */
   }
 
   /* ── El tablero ────────────────────────────────────────────────────────
@@ -702,8 +698,20 @@
          la tercera parte, a la izquierda, le queda al pie. */
       flex: 0 0 calc((100% - 24px) / 3 * 2 + 12px);
     }
-    .barra-in { max-width: none; }
-    .barra-in .btn { min-width: 300px; }
+    /* Quién lo atendió va en el MISMO renglón que el botón, a su izquierda:
+       arriba la fila crecía y en la PC del local sobran 3 px de alto. */
+    .barra-in { max-width: none; display: flex; align-items: center; gap: 14px; }
+    .barra-in .quien { margin: 0; flex: 0 1 auto; flex-wrap: nowrap; }
+    .barra-in .quien-sel { flex: 0 1 210px; }
+    .barra-in .quien-nuevo { flex: 0 1 auto; }
+    .barra-in .quien-txt { width: 150px; }
+    .barra-in > .btn { flex: 1; min-width: 240px; }
+    #btnGuardar { white-space: nowrap; }
+    /* Mientras se escribe un nombre que no está en la lista, la frase de la
+       izquierda le deja su lugar a la fila: si no, "Guardar oportunidad" se
+       partía en dos renglones. */
+    .cierre:has(.quien-nuevo:not([hidden])) .pie { display: none; }
+    .cierre:has(.quien-nuevo:not([hidden])) .barra { flex: 1 1 auto; }
   }
 
 
@@ -726,7 +734,7 @@
     #paso3 textarea { min-height: 88px; }
     .chips-motivo { gap: 10px; }
 
-    .barra-in .btn { min-width: 360px; }
+    .barra-in > .btn { min-width: 360px; }
   }
 
   /* Notebook: la misma pantalla en 700 y pico de alto. Se recorta el aire
@@ -997,27 +1005,18 @@
     </a>
   </div>
 
-  <!-- ── Quién carga, en la PC ──
-       Con el rail parado la identidad vive acá abajo, como la ficha del
-       usuario en cualquier tablero: siempre a la vista y fuera del camino.
+  <!-- ── El local, en la PC ──
+       Con el rail parado, abajo de todo dice dónde está esta compu, con su
+       luz, y al lado el botón redondo de quién entró (lo pone persona.js).
 
-       El vendedor se cambia ACÁ MISMO. El desplegable está siempre puesto y
-       elegir un nombre es todo el trámite: antes había que abrir un bloque
-       arriba del formulario, buscarse ahí y volver. Lo único que abre algo es
-       cambiar de local, que pasa una vez cada muerte de obispo.
-
-       En el celular este bloque no existe y manda la barra de identidad, que
-       tiene exactamente el mismo desplegable. -->
+       Cada compu queda en su local (23/10/2026): "Elegir local" sale sólo
+       la primera vez, y con el local puesto lo ve nada más el administrador,
+       como "Cambiar de local". Quién atendió al cliente ya no va acá: va al
+       lado de Guardar, que es un dato del registro y no de la compu. -->
   <div class="rail-pie vacia" id="railPie">
-    <span class="rail-punto"></span>
-    <b class="rail-local" id="railLocal">Elegí tu local</b>
-    <div class="quien" id="quienRail" hidden>
-      <span class="quien-lbl">Quién carga <span class="lbl-req">obligatorio</span></span>
-      <select class="quien-sel" aria-label="Quién está cargando"></select>
-      <div class="quien-nuevo" hidden>
-        <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
-        <button type="button" class="btn btn-pri btn-chico quien-ok">Anotarme</button>
-      </div>
+    <div class="rail-fila">
+      <span class="rail-punto"></span>
+      <b class="rail-local" id="railLocal">Elegí tu local</b>
     </div>
     <button type="button" class="rail-cambiar" id="btnRailLocal" onclick="alternarLocal()">Elegir local</button>
   </div>
@@ -1106,28 +1105,15 @@
     <button type="button" onclick="vaciarCola(true)">Reintentar</button>
   </div>
 
-  <!-- ── Quién carga, en el celular ─────────────────────────────────────────
-       Esta barra está SIEMPRE, con identidad elegida o sin ella, y trae el
-       desplegable de vendedores adentro: cambiar de persona es elegir un
-       nombre acá y listo. En la PC este bloque no se ve —lo reemplaza la
-       ficha del rail, que tiene el mismo desplegable—.
-
-       Escribir el nombre a mano NUNCA deja de ser posible: es la última
-       opción de la lista. El día que entra alguien nuevo un sábado y el
-       encargado no está, esa persona tiene que poder registrar igual. -->
+  <!-- ── El local, en el celular ───────────────────────────────────────────
+       Sale para elegir el local la primera vez; con el local puesto, sólo
+       para el administrador (para cambiarlo). En la PC ancha no se ve: el
+       local lo dice el pie del rail. Quién atendió va al lado de Guardar. -->
   <div class="ident ident-vacia" id="ident">
     <div class="ident-punto"></div>
     <div class="ident-datos">
       <span class="ident-local" id="identLocal">Todavía no elegiste tu local</span>
       <span class="ident-vend" id="identVend">Se elige una sola vez y queda guardado</span>
-      <div class="quien" id="quienBarra" hidden>
-        <span class="quien-lbl">Quién carga <span class="lbl-req">obligatorio</span></span>
-        <select class="quien-sel" aria-label="Quién está cargando"></select>
-        <div class="quien-nuevo" hidden>
-          <input class="quien-txt" type="text" placeholder="Tu nombre" autocomplete="off" autocapitalize="words">
-          <button type="button" class="btn btn-pri btn-chico quien-ok">Anotarme</button>
-        </div>
-      </div>
     </div>
     <button type="button" class="btn btn-sec btn-chico" id="btnIdentLocal" onclick="alternarLocal()">Elegir</button>
   </div>
@@ -1173,7 +1159,7 @@
     <h2 class="bloque-tit">¿En qué local estás? <span class="lbl-req">obligatorio</span></h2>
     <p class="bloque-sub">Se guarda en este dispositivo: lo elegís una sola vez.</p>
     <div class="chips chips-local" id="grillaLocales"></div>
-    <div class="campo-error" id="errLocal" hidden>Eligí el local.</div>
+    <div class="campo-error" id="errLocal" hidden>Elegí el local.</div>
   </section>
 
   <!-- Los tres pasos viven en su propio contenedor: así el reparto en
@@ -1282,6 +1268,18 @@
     <p class="pie">Se guarda al instante y el cliente entra al CRM. <span id="version"></span></p>
     <div class="barra">
       <div class="barra-in">
+        <!-- Quién lo atendió (23/10/2026). Escribir el nombre a mano NUNCA deja
+             de ser posible: es la última opción de la lista. El día que entra
+             alguien nuevo un sábado y el encargado no está, esa persona tiene
+             que poder registrar igual. -->
+        <div class="quien" id="quienCierre" hidden>
+          <label class="quien-lbl" for="quienSel">Lo atendió</label>
+          <select class="quien-sel" id="quienSel"></select>
+          <div class="quien-nuevo" hidden>
+            <input class="quien-txt" type="text" placeholder="Tu nombre" aria-label="Nombre de quien lo atendió" autocomplete="off" autocapitalize="words">
+            <button type="button" class="btn btn-sec btn-chico quien-ok">Anotarme</button>
+          </div>
+        </div>
         <button type="button" class="btn btn-pri btn-ancho" id="btnGuardar" onclick="enviar()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
           Guardar oportunidad
@@ -1753,11 +1751,10 @@
      registrar igual: si sólo hubiera botones, el local dejaría de cargar. */
   var equipo = [], vendedor = '', escribiendo = false;
 
-  /* El mismo control, en dos lugares: la barra de identidad (celular) y la
-     ficha del rail (PC). El navegador no mueve un nodo de un lado al otro,
-     así que son dos copias con el mismo comportamiento; lo que manda es la
-     variable `vendedor`, no el html. */
-  var CAJAS_QUIEN = ['quienBarra', 'quienRail'];
+  /* Quién lo atendió: al lado de Guardar, en el celular y en la PC (23/10;
+     antes eran dos copias, en la barra del celular y en el pie del rail). Lo
+     que manda es la variable `vendedor`, no el html. */
+  var CAJAS_QUIEN = ['quienCierre'];
 
   function cadaQuien(fn) {
     CAJAS_QUIEN.forEach(function (id) {
@@ -1773,7 +1770,7 @@
   }
 
   /**
-   * Dibuja el desplegable de vendedores en sus dos lugares.
+   * Dibuja el desplegable de quién lo atendió.
    *
    * Un nombre guardado que ya no está en la lista —renunció, lo desactivaron,
    * o se escribió a mano— no se borra solo: queda el campo de texto a la
@@ -1799,11 +1796,11 @@
 
       sel.hidden = false;
       sel.innerHTML =
-        '<option value="">Elegí tu nombre…</option>' +
+        '<option value="">Elegí quién…</option>' +
         equipo.map(function (v) {
           return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
         }).join('') +
-        '<option value="' + OTRO + '">No estoy en la lista</option>';
+        '<option value="' + OTRO + '">No está en la lista</option>';
       sel.value = aMano ? OTRO : (vendedor || '');
 
       nuevo.hidden = !aMano;
@@ -2209,12 +2206,16 @@
   }
 
   /* ═══ Identidad ═════════════════════════════════════════════════════════
-     Dos datos: en qué local estás y quién sos.
+     Dos datos: en qué local estás y quién lo atendió.
 
      El local se elige UNA vez por dispositivo y es lo único que abre un
-     bloque —son 14 sucursales, no entran en un desplegable cómodo—. El
-     vendedor cambia todo el tiempo, así que su desplegable está siempre
-     puesto: elegir un nombre es el cambio, no hay nada más que hacer. */
+     bloque —son 14 sucursales, no entran en un desplegable cómodo—. Desde el
+     23/10 cada compu queda en su local: con el local puesto, cambiarlo es
+     cosa del administrador. Quién atendió cambia todo el tiempo, así que su
+     desplegable está siempre puesto al lado de Guardar: elegir un nombre es
+     el cambio, no hay nada más que hacer. */
+  function puedeCambiarLocal() { return persona.rol() === 'admin'; }
+
   function elegirLocal(v) {
     local = v;
     guardar(K_LOCAL, v);
@@ -2244,8 +2245,8 @@
   }
 
   /**
-   * Escribe quién está cargando en los tres lugares donde se dice: la barra
-   * del celular, la ficha del rail y el título del tablero.
+   * Escribe el local en los tres lugares donde se dice: la barra del
+   * celular, el pie del rail y el título del tablero.
    *
    * Son copias y no un nodo movido con CSS porque el navegador no mueve un
    * nodo de un lado al otro, y duplicar tres líneas de texto sale más barato
@@ -2253,18 +2254,23 @@
    */
   function pintarIdentidad() {
     var nom = local ? nombreLocal(local) : '';
-    var listo = !!local && !!vendedor;
+    var cambia = puedeCambiarLocal();
 
-    // La barra del celular
+    // La barra del celular: con el local puesto lo dice el título, así que
+    // queda sólo para el administrador (que puede cambiarlo).
+    $('ident').hidden = !!local && !cambia;
     $('identLocal').textContent = local ? nom : 'Todavía no elegiste tu local';
-    $('identVend').hidden = !!local;          // con local manda el desplegable
-    $('ident').classList.toggle('ident-vacia', !listo);
+    $('identVend').hidden = !!local;
+    $('ident').classList.toggle('ident-vacia', !local);
     $('btnIdentLocal').textContent = local ? 'Cambiar' : 'Elegir';
 
-    // La ficha del rail
+    // El pie del rail: el local siempre; el botón, para elegirlo la primera
+    // vez o, si es el administrador, para cambiarlo.
     $('railLocal').textContent = local ? nom : 'Elegí tu local';
-    $('railPie').classList.toggle('vacia', !listo);
+    $('railPie').classList.toggle('vacia', !local);
+    $('btnRailLocal').hidden = !!local && !cambia;
     $('btnRailLocal').textContent = local ? 'Cambiar de local' : 'Elegir local';
+    if (local && !cambia) $('bloqueLocal').hidden = true;
 
     // Y el título del tablero, que es de quién son los números. Son dos
     // formas de lo mismo: la línea de siempre y, cuando sobra alto, el
@@ -2329,7 +2335,7 @@
     });
   }
 
-  /** El botón de "Cambiar de local", en la barra y en el rail. */
+  /** El botón de "Elegir local" / "Cambiar de local", en la barra y en el rail. */
   function alternarLocal() {
     var b = $('bloqueLocal');
     b.hidden = !b.hidden;
@@ -2384,6 +2390,10 @@
     };
     $('bienvOficina').onclick = function () { guardar(K_OFICINA, '1'); cerrarBienvenida(); };
     $('bienvVolver').onclick = function () { bienvPaso(1); };
+    /* Si la compu ya tenía su local (alguien cerró su sesión y se borró el
+       nombre), "← Cambiar de local" no va: el local lo cambia el
+       administrador (23/10). Recién elegido, sí: es volver un paso. */
+    $('bienvVolver').hidden = !!local && !puedeCambiarLocal();
     $('bienvNoEstoy').onclick = function () { bienvEscribe = true; pintarBienvPaso2(); };
     $('bienvUsuario').onclick = function () { cerrarBienvenida(); persona.entrar(); };
     $('bienvEmpezar').onclick = bienvEscrito;
@@ -2478,8 +2488,8 @@
     marcarQuien(false);
 
     if (!local) { mostrarError('errLocal'); abrirLocal(); ok = false; }
-    // El desplegable está siempre a la vista, en la barra o en el rail: se
-    // marca en rojo y se avisa, no hace falta traer a nadie a ningún lado.
+    // El desplegable está siempre a la vista, al lado de Guardar: se marca
+    // en rojo y se avisa, no hace falta traer a nadie a ningún lado.
     if (!vendedor) { marcarQuien(true); ok = false; }
 
     var malTel = revisarTelefono($('f_wsp').value);
@@ -2490,8 +2500,8 @@
     if (!ok) {
       var primero = document.querySelector('.campo-error:not([hidden])');
       if (primero) primero.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      avisar('err', (!local || !vendedor)
-        ? 'Falta decir quién está cargando.'
+      avisar('err', !local ? 'Falta elegir el local.'
+        : !vendedor ? 'Falta decir quién lo atendió.'
         : 'Faltan datos para guardar.');
     }
     return ok;
@@ -2956,7 +2966,9 @@
     pintarIdentidad();
     pintarUltimos();
     if (debeDarBienvenida()) { abrirBienvenida(); }
-    persona.listo.then(function () { tomarPersona(); pintarQuien(); });
+    persona.listo.then(function () { tomarPersona(); pintarQuien(); pintarIdentidad(); });
+    /* Cambiar de local depende de quién entró (sólo el administrador). */
+    document.addEventListener('persona', pintarIdentidad);
 
     // Enter en un campo del formulario pasa al siguiente, no guarda: es
     // demasiado fácil mandar el registro a medio llenar desde el teclado.

@@ -166,7 +166,6 @@
   --rail-txt:   #FFFFFF;
   --rail-txt-2: rgba(255, 255, 255, .76);   /* 13:1 contra el rail */
   --rail-line:  rgba(255, 255, 255, .10);
-  --rail-campo: #1C1C1A;   /* el desplegable de quién carga, adentro del rail */
   /* Las tarjetas oscuras del tablero, del mismo negro que el panel. */
   --tablero-negro: linear-gradient(135deg, #1E1E1C 0%, #0A0A09 60%, #252522 100%);
 
@@ -562,12 +561,13 @@ a { color: var(--acc-txt); }
     color: #E8C877;
   }
 
-  /* Abajo de todo, separado por el aire que sobra: quién está cargando. Es la
-     tarjeta que en los tableros lleva la foto del usuario.
+  /* Abajo de todo, separado por el aire que sobra: dónde está esta compu, y
+     al lado quién entró. Es la tarjeta que en los tableros lleva la foto del
+     usuario. (Hasta el 23/10 también llevaba el desplegable de quién carga,
+     que pasó al lado de Guardar.)
 
      Aparece recién a 1200 —ver más abajo—: acá el rail mide 84px y el
-     desplegable de vendedores no entra. Entre 900 y 1200 la identidad sigue
-     en su barra, adentro del formulario. */
+     nombre del local no entra. Entre 900 y 1200 el local lo dice el título. */
   .rail-pie {
     display: none;
     margin-top: auto;
@@ -605,9 +605,8 @@ a { color: var(--acc-txt); }
     font: 700 12.5px/1.2 var(--display);
     color: var(--rail-txt);
   }
-  /* Cambiar de local es lo raro —una vez por dispositivo— así que es el
-     botón chico y discreto de abajo. Lo de todos los días, que es cambiar de
-     vendedor, está arriba y es un desplegable. */
+  /* Elegir el local es lo raro —una vez por compu, y cambiarlo sólo el
+     administrador— así que es el botón chico y discreto de abajo. */
   .rail-cambiar {
     width: 100%;
     margin-top: 8px;
@@ -620,8 +619,8 @@ a { color: var(--acc-txt); }
     transition: background .15s var(--curva), color .15s;
   }
   .rail-cambiar:hover { background: rgba(255, 255, 255, .13); color: var(--rail-txt); }
-  /* Sin identidad elegida late en rojo, como la barra del celular: es lo
-     único que falta para poder cargar. */
+  /* Sin local elegido late en rojo, como la barra del celular: sin eso no se
+     puede cargar. */
   /* Va con valor fijo y no con --acc: el token cambia con el tema y acá el
      fondo es el rail, que es oscuro siempre. */
   .rail-pie.vacia .rail-punto {
@@ -631,9 +630,8 @@ a { color: var(--acc-txt); }
       0 0 12px 2px rgba(255, 59, 73, .6);
     animation: latido-rail 2.4s ease-in-out infinite;
   }
-  /* Sin identidad, el texto explica en vez de nombrar, así que puede ocupar
-     dos renglones: cortarlo con puntos suspensivos dejaba "Todavía no dijiste
-     quién …", que no dice nada. */
+  /* Sin local, el texto explica en vez de nombrar, así que puede ocupar
+     dos renglones: cortado con puntos suspensivos no dice nada. */
   .rail-pie.vacia .rail-local {
     font: 700 13px/1.25 var(--display);
     white-space: normal;
@@ -683,59 +681,19 @@ a { color: var(--acc-txt); }
   .rail-icono { width: 32px; height: 32px; border-radius: 10px; }
   .rail-item svg { width: 17px; height: 17px; }
 
-  /* Acá sí entra la ficha de quién está cargando, con su desplegable. */
+  /* Acá sí entra la ficha: el local con su luz y, en el mismo renglón, el
+     botón redondo de quién entró (persona.js lo suma a .rail-fila). */
   .rail-pie { display: block; text-align: left; }
-  .rail-punto { margin: 0 0 7px; }
-  .rail .quien { margin-top: 9px; }
-  /* background-color y no background: el atajo borraría la flechita del
-     desplegable, que es una imagen de fondo. */
-  /* El fondo va OPACO y no con un velo blanco encima del rail. Chrome pinta
-     la lista desplegada con el color de fondo del propio select, y un rgba
-     translúcido se compone contra el blanco del navegador: la lista se abría
-     clara sobre el rail oscuro. Con un color sólido se abre oscura.
-     Las opciones se pintan aparte porque en Windows no lo heredan. */
-  /* En el rail la etiqueta se centra como todo lo de la ficha, y en 146px
-     de ancho la palabra y el cartel no entran en un renglón: se apilan. Los
-     colores se rehacen porque acá adentro los tokens de la hoja no valen —el
-     rail es oscuro también con el tema claro—. */
-  .rail .quien-lbl {
-    justify-content: center;
-    font-size: 11.5px;
-    color: var(--rail-txt-2);
-    gap: 5px;
-    margin-bottom: 6px;
-  }
-  .rail .lbl-req {
-    color: var(--rail-txt-2);
-    background: rgba(255, 255, 255, .08);
-    border-color: rgba(255, 255, 255, .16);
-    padding: 3px 7px;
-  }
-  .rail .quien-sel, .rail .quien-txt {
-    background-color: var(--rail-campo);
-    border: 1px solid rgba(255, 255, 255, .18);
-    color: var(--rail-txt);
-    font-size: 12.5px;
-    padding: 7px 9px;
-    border-radius: 10px;
-  }
-  .rail .quien-sel option { background-color: var(--rail-campo); color: var(--rail-txt); }
-  .rail .quien-sel { padding-right: 24px; background-position: right 8px center; }
-  /* En 146px de ancho el campo y el botón no entran al lado: se apilan. */
-  .rail .quien-nuevo { flex-direction: column; gap: 6px; margin-top: 6px; }
-  .rail .quien-ok { width: 100%; min-height: 32px; padding: 0 8px; font-size: 12.5px; }
-  .rail .quien-sel:focus, .rail .quien-txt:focus {
-    background-color: #3E3D38;
-    border-color: var(--rail-acc);
-    box-shadow: none;
-  }
+  .rail-pie > .rail-fila { margin-top: 0; gap: 8px; }
+  .rail-pie > .rail-fila .rail-punto { margin: 0; flex: none; }
+  .rail-pie > .rail-fila .rail-local { flex: 1; min-width: 0; }
 }
 
 /* Las PC de los locales (1366×768: al navegador le quedan ~658 px de alto)
    con ocho secciones (12/10/2026, se sumó el Asistente): el rail se aprieta
-   de alto para que entren todas y, en Carga, también la ficha de quién
-   carga con su botón de abajo. Sin esto, "Cambiar de local" quedaba debajo
-   del borde de la pantalla. */
+   de alto para que entren todas y, en Carga, también la ficha del local.
+   Sin esto, el botón de abajo de la ficha quedaba debajo del borde de la
+   pantalla. */
 @media (min-width: 900px) and (max-height: 760px) {
   .rail { padding-top: 10px; padding-bottom: 10px; }
   .rail-marca { margin-bottom: 10px; }
@@ -1355,17 +1313,13 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   button.rail-item:hover { background: rgba(255, 255, 255, .05); }
 }
 
-/* En la Carga, en la PC ancha, el rail ya va justo de alto con su pie (quién
-   carga y cambiar de local): una sección más lo hacía salirse por abajo en la
-   PC del local (1366×658). Ahí quien entró es un botón redondo en el mismo
-   renglón que "Cambiar de local", sin sumar alto; en las otras pantallas, y
-   entre 900 y 1200 (donde el pie no se muestra), sigue siendo el último de la
-   barra. La clase con-pie la pone persona.js. */
+/* En la Carga, en la PC ancha, el rail va justo de alto con su pie: una
+   sección más lo hacía salirse por abajo en la PC del local (1366×658). Ahí
+   quien entró es un botón redondo en el mismo renglón que el local, sin sumar
+   alto; en las otras pantallas, y entre 900 y 1200 (donde el pie no se
+   muestra), sigue siendo el último de la barra. La clase con-pie la pone
+   persona.js. */
 .rail-fila { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
-/* En un renglón y sin partirse: partido, el pie crecía 17 px y la barra se
-   volvía a salir por abajo. */
-.rail-fila .rail-cambiar { margin-top: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  padding-left: 4px; padding-right: 4px; font-size: 11px; }
 .rail-yo-mini { display: none; }
 @media (min-width: 1200px) {
   .rail.con-pie .rail-in .rail-yo { display: none; }
@@ -1585,9 +1539,9 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   .rail-fijar:hover { color: var(--rail-txt); }
 }
 /* La Carga (index.html, <html class="rail-ficha">) tiene abajo de la barra la
-   ficha de quién carga: en la PC ancha la barra queda abierta siempre, como
-   estaba, porque esa ficha no entra angosta. Entre 900 y 1200 la ficha vive en
-   la barra de identidad del formulario y la barra es la angosta, como en todas. */
+   ficha del local: en la PC ancha la barra queda abierta siempre, como
+   estaba, porque el nombre del local no entra angosto. Entre 900 y 1200 el
+   local lo dice el título y la barra es la angosta, como en todas. */
 @media (min-width: 1200px) {
   :root.rail-ficha { --rail-ancho: 168px; --rail: 194px; }
   :root.rail-ficha .rail-item { font-size: 13.5px; }

@@ -333,23 +333,17 @@ var persona = (function () {
       b.onclick = function () { if (_ses && _yo) abrirFicha(); else entrar(); };
       rail.appendChild(b);
     }
-    /* En la Carga (la única con pie en el rail) también va uno redondo al
-       lado de "Cambiar de local": en la PC ancha es el que se ve (estilos.css). */
+    /* En la Carga (la única con pie en el rail) también va uno redondo en el
+       renglón del local (23/10; antes, al lado de "Cambiar de local"): en la
+       PC ancha es el que se ve (estilos.css). */
     var pie = document.querySelector('.rail-pie');
     var mini = document.querySelector('.rail-yo-mini');
     if (pie && !mini) {
-      var cambiar = pie.querySelector('.rail-cambiar');
       mini = document.createElement('button');
       mini.type = 'button';
       mini.className = 'rail-yo-mini';
       mini.onclick = b.onclick;
-      if (cambiar) {
-        var fila = document.createElement('div');
-        fila.className = 'rail-fila';
-        cambiar.parentNode.insertBefore(fila, cambiar);
-        fila.appendChild(cambiar);
-        fila.appendChild(mini);
-      } else pie.appendChild(mini);
+      (pie.querySelector('.rail-fila') || pie).appendChild(mini);
       document.querySelector('.rail').classList.add('con-pie');
     }
     var hay = !!(_ses && _yo);
