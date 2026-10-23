@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · Configuración</title>
-<meta name="description" content="Equipo y objetivos de cada local del Sistema VDH.">
+<meta name="description" content="El objetivo de no-compra, el Club VDH y los usuarios del Sistema VDH.">
 <meta name="theme-color" content="#F7F6F3">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icono-apple.png">
@@ -27,8 +27,6 @@
   .sesion-fila .link-bot { background: none; border: 0; padding: 0; font: inherit; font-weight: 600; color: var(--acc-txt); text-decoration: underline; cursor: pointer; }
   .sesion-cambio { margin-top: 12px; }
   .sesion-cambio[hidden] { display: none; }
-  .pie-pin { margin: 4px 2px 0; font-size: 13px; color: var(--txt-3); }
-  .pie-pin a { color: var(--acc-txt); font-weight: 600; }
   /* ── Sólo de esta pantalla ───────────────────────────────────────────── */
 
   /* El único casillero de la app. Toda la fila es clicable: un cuadradito
@@ -46,135 +44,74 @@
   #promoLocalesCaja[hidden], #promoSoloNota[hidden] { display: none; }
 
 
-  /* Este equipo: qué local es. Es una preferencia del dispositivo, no un dato
-     compartido, así que vive arriba de todo y separada del resto. */
-  .esteEquipo {
-    background: var(--surface);
-    border: 1.5px solid var(--acc-line);
-    border-radius: var(--r);
-    padding: 16px;
-    margin-bottom: 14px;
-    box-shadow: var(--sombra);
+  /* ── El objetivo de no-compra (23/10/2026) ─────────────────────────────
+     Antes era una lista de los catorce locales, cada uno con su flecha, y
+     trece decían "sin objetivo": ocupaba la pantalla entera para un solo
+     número. Ahora es un renglón por objetivo que EXISTE: el de todos, que
+     siempre está, y abajo sólo los locales que tienen uno distinto. Cada
+     renglón se edita ahí mismo, sin abrir nada. */
+  .obj-fila {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 0;
   }
-  .esteEquipo-tit { font: 700 17px/1.2 var(--display); margin-bottom: 3px; }
-  .esteEquipo-sub { font-size: 13px; color: var(--txt-3); margin-bottom: 12px; }
-  .esteEquipo-actual {
-    display: flex; align-items: center; gap: 10px;
-    font: 700 19px/1.2 var(--display);
+  .obj-fila + .obj-fila { border-top: 1px solid var(--line); }
+  .obj-nom { font: 700 15px/1.25 var(--display); flex: 1; min-width: 0; }
+  .obj-general .obj-nom { color: var(--acc-txt); }
+  .obj-nom small {
+    display: block;
+    font: 400 12px/1.35 var(--sans);
+    color: var(--txt-3);
+    margin-top: 2px;
   }
-  .esteEquipo-punto {
-    width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0;
-    background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft);
-  }
-
-  /* ── Un local: su gente y su objetivo ──────────────────────────────────
-     Catorce filas iguales se leen mejor como una tabla que sueltas en el
-     aire: una línea entre ellas y el mismo alto siempre.
-
-     Cada fila dice de un vistazo lo que hay adentro —cuánta gente y qué
-     objetivo—, así no hay que abrir las catorce de a una para encontrar al
-     local que falta configurar. */
-  .local { border-top: 1px solid var(--line); }
-  .local:first-child { border-top: 0; }
-  .local-cab {
-    display: flex; align-items: center; gap: 10px;
-    cursor: pointer; user-select: none;
-    padding: 11px 2px;
-  }
-  .local-nom { font: 700 16px/1.2 var(--display); flex: 1; min-width: 0; }
-  .local-datos { display: flex; align-items: center; gap: 7px; flex-shrink: 0; }
-  .local-cuenta {
-    font-size: 12px; font-weight: 700;
-    color: var(--txt-2);
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    border-radius: var(--r-pill);
-    padding: 3px 9px;
-    white-space: nowrap;
-  }
-  /* Lo que todavía no se configuró se dice, pero en voz baja: es una
-     pendiente, no un error. */
-  .local-cuenta.flojo { color: var(--txt-3); background: none; border-style: dashed; }
-  .local-cuenta.es-meta { color: var(--acc-txt); border-color: var(--acc-line); background: var(--acc-soft); }
-  @media (max-width: 520px) {
-    /* En un celular no entran los dos chips al lado del nombre: bajan a su
-       propio renglón, corridos el ancho de la flecha para que queden
-       alineados abajo del nombre y no flotando contra el borde. */
-    .local-cab { flex-wrap: wrap; row-gap: 7px; }
-    .local-datos { flex: 1 0 100%; padding-left: 28px; }
-  }
-  .local-flecha {
-    width: 18px; height: 18px; color: var(--txt-3);
-    transition: transform .2s var(--curva);
-  }
-  .local.abierto .local-flecha { transform: rotate(90deg); }
-  .local-cuerpo { margin-top: 14px; }
-  .local:not(.abierto) .local-cuerpo { display: none; }
-
-  /* Cada vendedor: su nombre y la cruz para sacarlo. */
-  .vends { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-  .vend {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: var(--chip);
-    border: 1.5px solid var(--chip-line);
-    border-radius: var(--r-pill);
-    padding: 8px 8px 8px 14px;
-    font-size: 14px; font-weight: 600;
-  }
-  .vend button {
-    width: 22px; height: 22px; border-radius: 50%;
+  /* El local nuevo se elige en el lugar del nombre, con la letra de los
+     otros campos y no la negrita del nombre. */
+  .obj-nom select { font: 400 16px/1.3 var(--sans); letter-spacing: normal; }
+  .obj-fila input[type=number] { width: 76px; flex: none; text-align: center; padding-left: 8px; padding-right: 8px; }
+  .obj-fila select[data-periodo] { width: auto; flex: none; }
+  .obj-por { font-size: 13px; color: var(--txt-3); flex: none; }
+  .obj-fila .btn { flex: none; }
+  /* La cruz: sacarle el objetivo propio a un local, o no agregar el nuevo. */
+  .obj-x {
+    width: 34px; height: 34px; border-radius: 50%; flex: none;
     display: grid; place-items: center;
-    background: transparent; color: var(--txt-3);
+    background: transparent; border: 0; cursor: pointer;
+    color: var(--txt-3);
     transition: background .15s, color .15s;
   }
-  .vend button:hover { background: var(--bad-soft); color: var(--bad-txt); }
-  .vend button svg { width: 13px; height: 13px; }
-  .vend-vacio { font-size: 13.5px; color: var(--txt-3); font-style: italic; }
-
-  /* La gente del local: se lee, no se carga. Los nombres los pone cada uno
-     desde la pantalla de carga. */
-  .gente { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
-  .gente-txt { font-size: 13.5px; color: var(--txt-2); }
-  .gente-txt b { color: var(--txt); font-weight: 700; }
-  .gente-txt.flojo { color: var(--txt-3); }
-  /* Atención al cliente: sumar a alguien, y el PIN si hace falta. */
-  .at-fila { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
-  .at-fila input { flex: 1; min-width: 0; }
-  .at-fila .btn { flex: none; }
-  #cajaAtencion .gente-txt { margin-top: 2px; }
-  .gente-mas {
-    margin-top: 8px;
-    background: none; border: 0; padding: 0;
-    font-size: 12.5px; font-weight: 700;
+  .obj-x:hover { background: var(--bad-soft); color: var(--bad-txt); }
+  .obj-x svg { width: 15px; height: 15px; }
+  .obj-propios {
+    margin-top: 6px; padding-top: 12px;
+    border-top: 1px solid var(--line);
+  }
+  .obj-propios-tit { font-size: 12.5px; font-weight: 700; color: var(--txt-2); }
+  .obj-vacio { font-size: 13px; color: var(--txt-3); margin-top: 2px; }
+  .obj-mas {
+    margin-top: 10px;
+    background: none; border: 0; padding: 4px 0;
+    font-size: 13.5px; font-weight: 700;
     color: var(--acc-txt);
     text-decoration: underline; text-underline-offset: 3px;
     cursor: pointer;
   }
-  .gente .vends { margin: 10px 0 0; }
+  /* En el celular el nombre va arriba, con la cruz a su lado, y los
+     controles juntos en su renglón: si no, "Guardar" se caía a un tercero. */
+  @media (max-width: 520px) {
+    .obj-fila { flex-wrap: wrap; gap: 8px 6px; }
+    .obj-fila > * { order: 2; }
+    .obj-nom { order: 0; flex: 1 0 100%; }
+    .obj-x { order: 1; margin: -6px -6px -6px 0; }
+    .obj-fila:has(.obj-x) .obj-nom { flex-basis: calc(100% - 40px); }
+    .obj-fila input[type=number] { width: 64px; }
+  }
 
   /* El control de tema, ahora que vive en el cuerpo de la página y no en una
      esquina: al lado va la frase que dice para qué es cada uno. */
   .tema-fila { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .tema-txt { font-size: 13px; color: var(--txt-3); }
 
-  /* Objetivo: cuántos registros se esperan por período. Es lo primero de lo
-     que se abre, así que no lleva línea arriba. */
-  .meta-fila { display: flex; gap: 8px; align-items: flex-end; }
-  .meta-fila .campo { flex: 1; }
+  /* La nota chica abajo de un campo (los avisos y las conexiones del Club). */
   .meta-nota { font-size: 12px; color: var(--txt-3); margin-top: 8px; }
-
-  /* La fila de arriba de todo NO es un local: es el objetivo que rige donde
-     no hay uno propio. Va pintada distinta y con una línea abajo para que
-     nadie la cuente como una sucursal más: son catorce, no quince. */
-  .local-general { padding-bottom: 4px; border-bottom: 1px solid var(--line); }
-  .local-general + .local { border-top: 0; }
-  .local-general .local-nom { color: var(--acc-txt); }
-  .local-sub {
-    display: block;
-    font: 400 12px/1.35 var(--sans);
-    color: var(--txt-3);
-    margin-top: 2px;
-  }
 
   /* El aviso por mail: se lee de un renglón y se cambia una vez por año, así
      que el estado va en texto corrido y el formulario recién aparece cuando
@@ -190,17 +127,18 @@
   #arranque input[type=date] { min-height: 50px; }
 
   @media (min-width: 720px) {
-    .agregar input, .meta-fila .campo { max-width: 260px; }
     /* Un mail es más largo que un objetivo de dos dígitos, pero tampoco tiene
        que cruzar la pantalla entera. */
     #avisos .campo, #arranque .campo, #telegram .campo { max-width: 340px; }
   }
 
-  /* ── Las dos pestañas ──────────────────────────────────────────────────
-     Arriba de todo: "Locales y equipo" y "Club VDH". Son dos trabajos
-     distintos —los objetivos de los locales y el programa de clientes— y
-     el Club solo ya tiene seis secciones. Juntos en una grilla, lo del Club
-     caía donde había lugar y dejaba agujeros del alto de la pantalla. */
+  /* ── Las pestañas ──────────────────────────────────────────────────────
+     Arriba de todo: "General", "Club VDH" y "Usuarios". Son trabajos
+     distintos —el objetivo y cómo se ve, el programa de clientes, la
+     gente— y el Club solo ya tiene seis secciones. Juntos en una grilla, lo
+     del Club caía donde había lugar y dejaba agujeros del alto de la
+     pantalla. "General" se llamaba "Locales y equipo" hasta el 23/10/2026:
+     la gente pasó a Usuarios. */
   .secciones {
     display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 14px;
     border: 1px solid var(--line); border-radius: 999px;
@@ -222,11 +160,14 @@
   /* Cada columna apila sus bloques por su cuenta. Es lo que hace que no
      pueda quedar un agujero: una columna larga no estira a la otra, como
      pasaba con las filas compartidas de la grilla vieja. */
-  .col > .bloque:last-child, .col > .esteEquipo:last-child { margin-bottom: 0; }
+  .col > .bloque:last-child { margin-bottom: 0; }
   /* En el celular las columnas van una abajo de la otra, y sin esto el
      último bloque de una quedaba pegado al primero de la siguiente. En la PC
      el aire lo pone el gap de la grilla. */
   @media (max-width: 1099px) { .col + .col { margin-top: 12px; } }
+  /* General son dos tarjetas chicas: estiradas a todo el ancho quedaban
+     renglones con un número en una punta y el botón en la otra. */
+  #secLocal .col { max-width: 640px; }
 
   /* El PIN del Club, una vez, arriba de todo lo del Club. Antes estaba
      adentro de "Promociones" y las otras cinco secciones decían "poné el
@@ -241,8 +182,8 @@
   @media (min-width: 1100px) {
     :root { --tope: 1440px; }
     .seccion { display: grid; gap: 14px; align-items: start; }
-    /* Locales: la lista se lleva el ancho; lo de este equipo, al costado. */
-    #secLocal { grid-template-columns: minmax(0, 1fr) 380px; }
+    /* General: el objetivo y, al costado, cómo se ve. */
+    #secLocal { grid-template-columns: minmax(0, 640px) 380px; }
     /* Club: el menú arma sus propias columnas; las pantallas, una. */
     #secClub { display: block; }
   }
@@ -507,10 +448,11 @@
 <main class="hoja">
 
   <!-- ── Las pestañas ──
-       Dos trabajos distintos en la misma pantalla: los objetivos de los
-       locales y el Club. La elegida queda recordada en este dispositivo. -->
+       General (el objetivo y cómo se ve), el Club y los usuarios. La elegida
+       queda recordada en este dispositivo. Por dentro General sigue siendo
+       "local" (secLocal, tabLocal): es lo que quedó guardado en cada aparato. -->
   <div class="secciones" role="tablist" aria-label="Secciones de configuración">
-    <button type="button" role="tab" id="tabLocal" data-seccion="local" aria-controls="secLocal" aria-selected="true">Locales y equipo</button>
+    <button type="button" role="tab" id="tabLocal" data-seccion="local" aria-controls="secLocal" aria-selected="true">General</button>
     <button type="button" role="tab" id="tabClub" data-seccion="club" aria-controls="secClub" aria-selected="false">Club VDH</button>
     <button type="button" role="tab" id="tabUsuarios" data-seccion="usuarios" aria-controls="secUsuarios" aria-selected="false">Usuarios</button>
   </div>
@@ -523,39 +465,27 @@
     <div id="usuariosCuerpo"></div>
   </section>
 
-  <!-- ══ LOCALES Y EQUIPO ═══════════════════════════════════════════════ -->
+  <!-- ══ GENERAL (antes "Locales y equipo") ═════════════════════════════
+       23/10/2026: el objetivo en una tarjeta y cómo se ve. Se fueron "Este
+       equipo" (el local de la compu lo cambia el administrador desde la
+       Carga, en la ventana de su sesión), la gente de cada local (sale de
+       Usuarios) y los carteles que sólo decían que eso se hace en otro lado. -->
   <section class="seccion" id="secLocal" role="tabpanel" aria-labelledby="tabLocal">
     <div class="col">
     <div class="bloque" id="cajaLocales">
-      <h2 class="bloque-tit">Los locales</h2>
-      <p class="bloque-sub">Tocá uno para ponerle su objetivo. Lo que cambies acá lo ven todos los locales. Los vendedores se anotan solos desde la pantalla de carga.</p>
-      <div id="locales"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div>
+      <h2 class="bloque-tit">Objetivo de no-compra</h2>
+      <p class="bloque-sub">Cuántos clientes se espera que cargue cada local. La Carga muestra cómo viene.</p>
+      <div id="locales"><div class="skel"></div></div>
     </div>
     </div>
-    <!-- Lo de ESTE dispositivo y lo que se configura en otro lado. -->
     <div class="col">
-    <div class="esteEquipo">
-      <div class="esteEquipo-tit">Este equipo</div>
-      <div class="esteEquipo-sub">Queda guardado acá. El formulario va a abrir directo con los vendedores de este local.</div>
-      <div id="equipoActual"></div>
-    </div>
-
-    <!-- ── Atención al cliente ──
-         Desde el 13/10/2026 son usuarios con el rol "Atención al cliente":
-         entran con su nombre y su PIN, y el CRM sabe quién es cada uno. Se
-         crean en la pestaña Usuarios (antes era una lista de nombres). -->
-    <div class="bloque" id="cajaAtencion">
-      <h2 class="bloque-tit">Atención al cliente</h2>
-      <p class="bloque-sub">Los que siguen a los clientes en el CRM son usuarios con el rol "Atención al cliente", o vendedores con la casilla "También atiende clientes": cada uno entra con su nombre y su PIN, y el CRM ya sabe quién es. Se crean en la pestaña <a href="#usuarios" id="irUsuarios">Usuarios</a>.</p>
-    </div>
-
     <!-- ── Cómo se ve ───────────────────────────────────────────────────────
          Vivía en la esquina de las tres cabeceras. Es una preferencia de este
-         dispositivo y se toca una vez: su lugar es acá, al lado de la otra
-         cosa que se guarda en este celular. -->
+         dispositivo y se toca una vez: su lugar es acá. Es el único lugar del
+         sistema donde se elige. -->
     <div class="bloque">
       <h2 class="bloque-tit">Cómo se ve</h2>
-      <p class="bloque-sub">Queda guardado en este dispositivo, igual que el local.</p>
+      <p class="bloque-sub">Queda guardado en este dispositivo.</p>
       <div class="tema-fila">
         <div class="tema" role="group" aria-label="Tema visual">
           <button type="button" class="tema-btn" data-tema="dark" title="Tema oscuro" aria-label="Tema oscuro">
@@ -568,12 +498,6 @@
         <span class="tema-txt">Oscuro para el local, claro para la oficina.</span>
       </div>
     </div>
-    <div class="bloque">
-      <h2 class="bloque-tit">Los avisos por mail</h2>
-      <p class="bloque-sub">El mail y el grupo de Telegram que reciben cada no-compra se configuran aparte, con el resto de la automatización. No se tocan desde acá.</p>
-    </div>
-    <!-- El Club es de la oficina (13/10/2026: con el usuario de cada uno). -->
-    <p class="pie-pin">¿Sos de Atención o administración? Entrá con tu usuario y abrí <a href="#club">Club VDH</a>.</p>
     </div>
   </section>
 
@@ -820,11 +744,10 @@
 <script>
   var $ = function (id) { return document.getElementById(id); };
 
-  var K_LOCAL = 'nc_local';
-  var datos = null, abierto = '';
+  var datos = null;
+  var agregando = false;   // el renglón de "Ponerle otro a un local" está abierto
 
   var X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>';
-  var FLECHA = '<svg class="local-flecha" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>';
 
   /* ═══ Acá NO se pregunta quién sos ══════════════════════════════════════
      Había un prompt() del navegador que tapaba la pantalla al entrar y pedía
@@ -843,7 +766,6 @@
      nombre se guarda como responsable del seguimiento de cada cliente: es un
      dato del cliente, no una firma al pie de un cambio. */
 
-  /* ═══ Este equipo ═══════════════════════════════════════════════════════ */
   /* ═══ Las promociones del Club ═══════════════════════════════════════
      Lo único de Configuración que sale de esta pantalla y llega a un
      cliente, así que es de la oficina: desde el 13/10/2026 se entra con el
@@ -1212,8 +1134,7 @@
     verDonde();
   }
 
-  /* Los locales para tildar. Se piden una vez: son los mismos 14 de la
-     pantalla de Locales y equipo. */
+  /* Los locales para tildar. Se piden una vez. */
   var localesPromo = null;
   function pintarLocalesPromo(marcados) {
     var caja = $('promoLocales');
@@ -2049,7 +1970,7 @@
       if (/^#club\//.test(location.hash)) { history.replaceState(null, '', '#club'); seccionAbierta = ''; }
       return true;
     };
-    var inicial = /^#club/.test(location.hash) ? 'club' : location.hash === '#locales' ? 'local'
+    var inicial = /^#club/.test(location.hash) ? 'club' : /^#(general|locales)$/.test(location.hash) ? 'local'
                 : location.hash === '#usuarios' ? 'usuarios' : null;
     if (!inicial) {
       try { inicial = localStorage.getItem(K_SECCION); } catch (e) {}
@@ -3061,128 +2982,68 @@
       });
   }
 
-  function pintarEsteEquipo() {
-    var actual = leer(K_LOCAL);
-    if (actual) {
-      $('equipoActual').innerHTML =
-        '<div class="esteEquipo-actual"><span class="esteEquipo-punto"></span>' +
-        esc(bonito(actual)) + '</div>' +
-        '<div style="margin-top:12px"><button type="button" class="btn btn-sec btn-chico" id="btnCambiarEquipo">Cambiar</button></div>';
-      $('btnCambiarEquipo').onclick = function () { guardar(K_LOCAL, ''); pintarEsteEquipo(); };
-      return;
-    }
-    // Sin local elegido: la grilla para elegirlo.
-    var locales = (datos && datos.locales) || [];
-    $('equipoActual').innerHTML = locales.length
-      ? '<div class="chips chips-local" id="grillaEquipo">' + locales.map(function (l) {
-          return '<button type="button" class="chip" data-v="' + esc(l.local) + '">' + esc(bonito(l.local)) + '</button>';
-        }).join('') + '</div>'
-      : '<div class="vend-vacio">Cargando los locales…</div>';
-
-    if ($('grillaEquipo')) {
-      Array.prototype.forEach.call($('grillaEquipo').children, function (b) {
-        b.onclick = function () {
-          guardar(K_LOCAL, b.dataset.v);
-          pintarEsteEquipo();
-          avisar('ok', 'Este equipo quedó como ' + bonito(b.dataset.v) + '.');
-        };
-      });
-    }
-  }
-
-  /* ═══ Atención al cliente ═══════════════════════════════════════════════
-     Desde el 13/10/2026 son usuarios con ese rol (pestaña Usuarios): la
-     lista de nombres de antes (tabla atencion, atencion_guardar) ya no se
-     maneja desde acá. */
-
-  /* ═══ Los locales ═══════════════════════════════════════════════════════ */
+  /* ═══ El objetivo de no-compra ═════════════════════════════════════════
+     23/10/2026: un renglón por cada objetivo que EXISTE. Arriba, el de
+     todos los locales (en la base, la fila con el local vacío), que rige
+     donde no hay uno propio; abajo, sólo los locales que tienen uno
+     distinto, y "Ponerle otro a un local" para sumar uno. Antes eran los
+     catorce locales con su flecha —trece decían "sin objetivo"— más la gente
+     de cada uno, que ahora sale de Usuarios. */
   function pintarLocales() {
-    /* Arriba de los catorce va el OBJETIVO GENERAL: el que rige en el local
-       que no tiene el suyo. Es una fila más y no un bloque aparte porque se
-       configura exactamente igual que las otras; lo único que le falta es la
-       gente. Hasta ahora sólo se podía poner a mano en la planilla —una fila
-       con el local vacío— y nadie fuera de este código sabía que existía. */
+    var propios = datos.locales.filter(function (l) { return l.objetivo; });
+    // Para sumar uno, sólo los locales de verdad: no los nombres viejos que
+    // quedaron en alguna lista de gente.
+    var libres = datos.locales.filter(function (l) { return !l.objetivo && l.activo; });
+    if (!libres.length) { agregando = false; }
+
     $('locales').innerHTML =
-      filaLocal({ local: '*', vendedores: [], objetivo: datos.general }) +
-      datos.locales.map(function (l) { return filaLocal(l); }).join('');
+      filaObjetivo({ local: '*', objetivo: datos.general }) +
+      '<div class="obj-propios">' +
+        '<div class="obj-propios-tit">Con un objetivo distinto</div>' +
+        propios.map(filaObjetivo).join('') +
+        (agregando ? filaNueva(libres) : '') +
+        (propios.length || agregando ? '' : '<p class="obj-vacio">Ninguno: en todos rige el de arriba.</p>') +
+        (agregando || !libres.length ? '' : '<button type="button" class="obj-mas" id="objMas">+ Ponerle otro a un local</button>') +
+      '</div>';
     conectar();
   }
 
-  function filaLocal(l) {
+  function filaObjetivo(l) {
     var esGeneral = l.local === '*';
-    var n = l.vendedores.length;
-    var obj = l.objetivo || {};
-
-    /* Los dos datos que uno viene a mirar, en la fila cerrada: cuánta gente
-       tiene el local y qué objetivo le pusieron. Sin esto las catorce filas
-       decían lo mismo y había que abrirlas de a una. */
-    var chipGente = n
-      ? '<span class="local-cuenta">' + (n === 1 ? '1 vendedor' : n + ' vendedores') + '</span>'
-      : '<span class="local-cuenta flojo">sin gente</span>';
-    var chipMeta = obj.meta
-      ? '<span class="local-cuenta es-meta">' + obj.meta + ' por ' + nombrePeriodo(obj.periodo) + '</span>'
-      : '<span class="local-cuenta flojo">sin objetivo' + (esGeneral ? ' general' : '') + '</span>';
-
-    var titulo = esGeneral
-      ? 'Todos los locales<span class="local-sub">Rige donde no hay un objetivo propio</span>'
-      : esc(bonito(l.local));
-
-    return '<div class="local' + (esGeneral ? ' local-general' : '') +
-             (l.local === abierto ? ' abierto' : '') + '" data-local="' + esc(l.local) + '">' +
-        '<div class="local-cab">' + FLECHA +
-          '<span class="local-nom">' + titulo + '</span>' +
-          '<span class="local-datos">' + (esGeneral ? '' : chipGente) + chipMeta + '</span>' +
-        '</div>' +
-        '<div class="local-cuerpo">' + cuerpoLocal(l) + '</div>' +
+    var nombre = esGeneral ? 'todos los locales' : bonito(l.local);
+    return '<div class="obj-fila' + (esGeneral ? ' obj-general' : '') + '" data-local="' + esc(l.local) + '">' +
+        '<span class="obj-nom">' + (esGeneral
+          ? 'Todos los locales<small>Rige donde no hay uno distinto. En 0, no rige ninguno.</small>'
+          : esc(nombre)) + '</span>' +
+        controles(l.objetivo || { periodo: 'dia', meta: '' }, nombre) +
+        (esGeneral ? '' :
+          '<button type="button" class="obj-x" data-quitar title="Que vuelva al de todos" aria-label="Sacarle el objetivo a ' + esc(nombre) + '">' + X + '</button>') +
       '</div>';
   }
 
-  /**
-   * Lo que se abre al tocar un local.
-   *
-   * Es el OBJETIVO y nada más. Los vendedores ya no se cargan acá: se anotan
-   * solos desde la pantalla de carga —el que no está en la lista escribe su
-   * nombre, toca "Anotarme" y queda—, así que esta pantalla dejó de ser el
-   * trámite entre alguien que entra a trabajar un sábado y poder registrar.
-   *
-   * Lo único que queda de la gente es poder LEER quiénes son y sacar a
-   * alguien, escondido atrás de un botón: con nombres que se escriben solos,
-   * el día que entra un "Jaun" alguien tiene que poder limpiarlo.
-   */
-  function cuerpoLocal(l) {
-    var esGeneral = l.local === '*';
-    var obj = l.objetivo || { periodo: 'dia', meta: '' };
-
-    var meta =
-      '<div class="meta-fila">' +
-        '<div class="campo"><label>Objetivo de registros</label>' +
-          '<input type="number" inputmode="numeric" min="0" placeholder="0" value="' + esc(obj.meta) + '" data-meta></div>' +
-        '<div class="campo"><label>Por</label>' +
-          '<select data-periodo>' + datos.periodos.map(function (p) {
-            return '<option value="' + p + '"' + (p === obj.periodo ? ' selected' : '') + '>' + nombrePeriodo(p) + '</option>';
-          }).join('') + '</select></div>' +
-        '<button type="button" class="btn btn-sec btn-chico" data-guardar>Guardar</button>' +
-      '</div>' +
-      '<div class="meta-nota">' + (esGeneral
-        ? 'Rige en todo local que no tenga el suyo; a los que ya tienen objetivo propio no los toca. En 0 no rige ninguno.'
-        : 'Cuántos no-compra se espera que cargue este local. En 0 queda sin objetivo propio y vuelve a regir el general.') +
-      '</div>';
-
-    // El objetivo general no es de nadie en particular: no lleva gente abajo.
-    if (esGeneral) return meta;
-
-    var gente = l.vendedores.length
-      ? '<p class="gente-txt">En la lista: <b>' + l.vendedores.map(esc).join('</b>, <b>') + '</b>.</p>' +
-        '<button type="button" class="gente-mas" data-editar>Sacar a alguien</button>' +
-        '<div class="vends" data-chips hidden>' +
-          l.vendedores.map(function (v) {
-            return '<span class="vend">' + esc(v) +
-                   '<button type="button" data-sacar="' + esc(v) + '" title="Sacar a ' + esc(v) + '" aria-label="Sacar a ' + esc(v) + '">' + X + '</button></span>';
+  /* El renglón para sumar un local: el desplegable en el lugar del nombre, y
+     el período que ya tiene el de todos, que es lo más probable. */
+  function filaNueva(libres) {
+    var g = datos.general || {};
+    return '<div class="obj-fila obj-nueva" data-local="">' +
+        '<span class="obj-nom"><select class="desplegable" data-nuevo aria-label="Local">' +
+          '<option value="" disabled hidden selected>Elegí el local…</option>' +
+          libres.map(function (l) {
+            return '<option value="' + esc(l.local) + '">' + esc(bonito(l.local)) + '</option>';
           }).join('') +
-        '</div>'
-      : '<p class="gente-txt flojo">Todavía no se anotó nadie. Se anotan solos: el que no está en la lista escribe su nombre en la pantalla de carga y queda.</p>';
+        '</select></span>' +
+        controles({ periodo: g.periodo || 'dia', meta: '' }, 'el local nuevo') +
+        '<button type="button" class="obj-x" data-cancelar title="No agregar" aria-label="No agregar">' + X + '</button>' +
+      '</div>';
+  }
 
-    return meta + '<div class="gente">' + gente + '</div>';
+  function controles(obj, nombre) {
+    return '<input type="number" inputmode="numeric" min="0" placeholder="0" value="' + esc(obj.meta) + '" data-meta aria-label="Objetivo de ' + esc(nombre) + '">' +
+      '<span class="obj-por">por</span>' +
+      '<select data-periodo aria-label="Período">' + datos.periodos.map(function (p) {
+        return '<option value="' + p + '"' + (p === obj.periodo ? ' selected' : '') + '>' + nombrePeriodo(p) + '</option>';
+      }).join('') + '</select>' +
+      '<button type="button" class="btn btn-sec btn-chico" data-guardar>Guardar</button>';
   }
 
   function nombrePeriodo(p) {
@@ -3190,70 +3051,63 @@
   }
 
   function conectar() {
-    Array.prototype.forEach.call(document.querySelectorAll('.local'), function (caja) {
-      var local = caja.dataset.local;
-
-      caja.querySelector('.local-cab').onclick = function () {
-        abierto = caja.classList.contains('abierto') ? '' : local;
+    if ($('objMas')) {
+      $('objMas').onclick = function () {
+        agregando = true;
         pintarLocales();
+        var s = document.querySelector('[data-nuevo]');
+        if (s) { s.focus(); }
+      };
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('.obj-fila'), function (fila) {
+      var nuevo = fila.querySelector('[data-nuevo]');
+      var local = function () { return nuevo ? nuevo.value : fila.dataset.local; };
+
+      var guardarFila = function () {
+        if (!local()) { avisar('err', 'Elegí el local.'); nuevo.focus(); return; }
+        var meta = fila.querySelector('[data-meta]').value;
+        if (nuevo && !Number(meta)) { avisar('err', 'Poné cuántos.'); fila.querySelector('[data-meta]').focus(); return; }
+        mandar(local(), fila.querySelector('[data-periodo]').value, meta);
+      };
+      fila.querySelector('[data-guardar]').onclick = guardarFila;
+      // Enter en el número guarda, como en cualquier formulario.
+      fila.querySelector('[data-meta]').onkeydown = function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); guardarFila(); }
       };
 
-      // Sacar a alguien está escondido: es lo raro, y es lo único que se
-      // puede hacer mal con una lista que se llena sola.
-      var editar = caja.querySelector('[data-editar]');
-      if (editar) {
-        editar.onclick = function () {
-          var chips = caja.querySelector('[data-chips]');
-          chips.hidden = !chips.hidden;
-          editar.textContent = chips.hidden ? 'Sacar a alguien' : 'Listo';
-        };
+      var quitar = fila.querySelector('[data-quitar]');
+      if (quitar) {
+        // Sin confirmación: no se pierde nada que no se vuelva a poner en un
+        // segundo, y el local sigue con el de todos.
+        quitar.onclick = function () { mandar(local(), 'dia', 0); };
       }
-
-      Array.prototype.forEach.call(caja.querySelectorAll('[data-sacar]'), function (b) {
-        b.onclick = function () {
-          var nombre = b.dataset.sacar;
-          // Confirmación en vez de contraseña: esto lo ven los 14 locales, y
-          // un toque sin querer no puede dejar a una sucursal sin gente.
-          if (!confirm('¿Sacar a ' + nombre + ' de ' + bonito(local) + '?\n\nNo se borra nada: queda inactivo y se puede volver a agregar.')) return;
-          mandar({ que: 'sacarVend', local: local, nombre: nombre }, local,
-                  function () { avisar('ok', nombre + ' quedó fuera de la lista.'); });
-        };
-      });
-
-      var btnGuardar = caja.querySelector('[data-guardar]');
-      if (btnGuardar) {
-        btnGuardar.onclick = function () {
-          mandar({
-            que: 'objetivo',
-            local: local,
-            periodo: caja.querySelector('[data-periodo]').value,
-            meta: caja.querySelector('[data-meta]').value
-          }, local, function () {
-            avisar('ok', local === '*' ? 'Objetivo general guardado.' : 'Objetivo guardado.');
-          });
-        };
+      var cancelar = fila.querySelector('[data-cancelar]');
+      if (cancelar) {
+        cancelar.onclick = function () { agregando = false; pintarLocales(); };
       }
     });
   }
 
   /**
-   * Manda un cambio y refresca. La respuesta del servidor es la fuente de
-   * verdad: se vuelve a pedir todo en vez de adivinar cómo quedó la lista,
-   * porque otro local puede haber cambiado algo en el medio.
+   * Pone, cambia o saca un objetivo y vuelve a pedir todo. La respuesta de
+   * la base es la fuente de verdad: otra compu puede haber cambiado algo en
+   * el medio.
    */
-  function mandar(cuerpo, local, alSalirBien) {
-    abierto = local;
+  function mandar(local, periodo, meta) {
+    var botones = document.querySelectorAll('#locales button');
+    Array.prototype.forEach.call(botones, function (b) { b.disabled = true; });
 
-    var hacer = cuerpo.que === 'sacarVend'
-      ? base.sacarVendedor(cuerpo.local, cuerpo.nombre)
-      : base.objetivo(cuerpo.local, cuerpo.periodo, cuerpo.meta);
-
-    hacer
-      .then(function (res) {
-        if (alSalirBien) alSalirBien(res);
-        cargar(true);
+    base.objetivo(local, periodo, meta)
+      .then(function (r) {
+        var nombre = local === '*' ? '' : bonito(local);
+        agregando = false;
+        avisar('ok', r ? (nombre ? 'Objetivo de ' + nombre + ' guardado.' : 'Objetivo de todos los locales guardado.')
+                       : (nombre ? nombre + ' vuelve al de todos.' : 'Ya no rige un objetivo para todos.'));
+        return cargar(true);
       })
       .catch(function (err) {
+        Array.prototype.forEach.call(botones, function (b) { b.disabled = false; });
         /* Si la base lo rechazó dice por qué —una meta imposible, un período
            que no existe— y eso se puede arreglar. Un fallo de red, no. */
         avisar('err', (err && err.delServidor && err.message) ||
@@ -3266,12 +3120,11 @@
     return base.config()
       .then(function (res) {
         datos = res;
-        pintarEsteEquipo();
         pintarLocales();
       })
       .catch(function () {
         if (!silencioso) {
-          $('locales').innerHTML = '<div class="vend-vacio">No se pudo conectar. Revisá la señal y recargá.</div>';
+          $('locales').innerHTML = '<p class="obj-vacio">No se pudo conectar. Revisá la señal y recargá.</p>';
         }
         avisar('err', 'Error de conexión.');
       });
@@ -3280,11 +3133,7 @@
   /* ═══ Arranque ══════════════════════════════════════════════════════════ */
   (function () {
     iniciarTema();
-    pintarEsteEquipo();
     cargar(false);
-    /* "Atención al cliente" son usuarios desde el 13/10/2026: el enlace
-       lleva a la pestaña Usuarios. */
-    if ($('irUsuarios')) { $('irUsuarios').onclick = function (e) { e.preventDefault(); $('tabUsuarios').click(); }; }
     /* Viaje aparte del resto: pide PIN y puede fallar sola sin arrastrar a
        los objetivos, que no lo piden. */
     engancharClub();

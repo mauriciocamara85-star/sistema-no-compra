@@ -1739,10 +1739,13 @@ var base = {
       var equipo = r[1] || [], metas = r[2] || [];
 
       /* Un local que tiene gente cargada pero ya no está en la tabla sigue
-         apareciendo: si cerró, su lista tiene que poder mirarse igual. */
-      var vistos = {};
-      locales.forEach(function (l) { vistos[clave_(l)] = l; });
-      equipo.forEach(function (f) {
+         apareciendo: si cerró, su lista tiene que poder mirarse igual. Lo
+         mismo uno con objetivo propio, para poder sacárselo. `activo` dice
+         si está en la tabla: es lo único que Config ofrece para un objetivo
+         nuevo (23/10/2026). */
+      var vistos = {}, deLaTabla = {};
+      locales.forEach(function (l) { vistos[clave_(l)] = l; deLaTabla[clave_(l)] = true; });
+      equipo.concat(metas).forEach(function (f) {
         var n = String(f.local || '').trim();
         if (n && !vistos[clave_(n)]) vistos[clave_(n)] = n;
       });
@@ -1758,6 +1761,7 @@ var base = {
         locales: Object.keys(vistos).sort().map(function (k) {
           return {
             local: vistos[k],
+            activo: !!deLaTabla[k],
             vendedores: equipo.filter(function (f) {
               return clave_(f.local) === k && f.activo;
             }).map(function (f) { return f.vendedor; }),
@@ -1768,13 +1772,6 @@ var base = {
         general: general
       };
     });
-  },
-
-  /** Saca a alguien de la lista de un local. No lo borra: lo desactiva. */
-  sacarVendedor: function (local, nombre) {
-    return pedir('/equipo?local=eq.' + valor(local) + '&vendedor=eq.' + valor(nombre), {
-      metodo: 'PATCH', cuerpo: { activo: false }
-    }).then(function () { return true; });
   },
 
   /**
