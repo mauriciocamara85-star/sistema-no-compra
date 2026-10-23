@@ -385,6 +385,8 @@ var persona = (function () {
      ════════════════════════════════════════════════════════════════════ */
 
   var _velo = null, _teclas = null;
+  /* Lo que una pantalla suma a la ficha de quién entró (ver ponerEnFicha). */
+  var _enFicha = null;
 
   function abrirVelo() {
     cerrarVelo();
@@ -805,14 +807,17 @@ var persona = (function () {
        sólo el administrador y el encargado (nc_quien_maneja). */
     var gestiona = y.rol === 'admin' || (y.rol === 'supervisor' && !y.zona);
     var zona = y.zona && y.zona.length ? y.zona.map(function (z) { return z.nombre; }).join(', ') : '';
+    var extra = _enFicha && _enFicha(y);
     c.innerHTML = '<h2 id="ncpTit">' + txt(y.nombre) + '</h2>' +
       '<p class="ncp-bajada">' + txt(nombreRol(y)) + (y.local_nombre ? ' · ' + txt(y.local_nombre) : zona ? ' · ' + txt(zona) : '') + '</p>' +
       (y.rol === 'vendedor' || y.rol === 'supervisor'
         ? '<p class="ncp-nota">En No Compra aparecés como <b>' + txt(y.vendedor || y.nombre) + '</b>. Si carga otro, cambiá el vendedor ahí mismo.</p>' : '') +
       '<div class="ncp-pie">' +
         (gestiona && pagina() !== 'config.html' ? '<a class="btn btn-sec" href="config.html#usuarios">Usuarios</a>' : '') +
+        (extra ? '<button type="button" class="btn btn-sec" data-extra>' + txt(extra.texto) + '</button>' : '') +
         '<button type="button" class="btn btn-pri" data-salir>No soy ' + txt(primerNombre(y.nombre)) + '</button>' +
       '</div>';
+    if (extra) c.querySelector('[data-extra]').onclick = function () { cerrarVelo(); extra.hacer(); };
     c.querySelector('[data-salir]').onclick = function () {
       var b = this;
       b.disabled = true;
@@ -934,6 +939,9 @@ var persona = (function () {
       return y ? (y.pila || String(y.nombre || '').replace(/\s+[A-ZÁÉÍÓÚÑ]\.$/, '')) : '';
     },
     porton: porton,
+    /** Un botón más en la ficha de quién entró: fn(yo) devuelve {texto, hacer} o nada.
+        La Carga pone ahí "Local de esta compu" para el administrador (23/10). */
+    ponerEnFicha: function (fn) { _enFicha = fn; },
     /** Hay una sesión en este aparato (aunque esté esperando el OK). */
     hay: function () { return !!(_ses && _yo); },
     puede: puede,

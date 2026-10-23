@@ -1010,9 +1010,10 @@
        luz, y al lado el botón redondo de quién entró (lo pone persona.js).
 
        Cada compu queda en su local (23/10/2026): "Elegir local" sale sólo
-       la primera vez, y con el local puesto lo ve nada más el administrador,
-       como "Cambiar de local". Quién atendió al cliente ya no va acá: va al
-       lado de Guardar, que es un dato del registro y no de la compu. -->
+       la primera vez. Con el local puesto, el administrador lo cambia desde
+       la ventana del botón redondo (ver ponerEnFicha). Quién atendió al
+       cliente ya no va acá: va al lado de Guardar, que es un dato del
+       registro y no de la compu. -->
   <div class="rail-pie vacia" id="railPie">
     <div class="rail-fila">
       <span class="rail-punto"></span>
@@ -1106,9 +1107,10 @@
   </div>
 
   <!-- ── El local, en el celular ───────────────────────────────────────────
-       Sale para elegir el local la primera vez; con el local puesto, sólo
-       para el administrador (para cambiarlo). En la PC ancha no se ve: el
-       local lo dice el pie del rail. Quién atendió va al lado de Guardar. -->
+       Sale sólo para elegir el local la primera vez: con el local puesto lo
+       dice el título, y el administrador lo cambia desde la ventana del
+       botón redondo. En la PC ancha no se ve: el local lo dice el pie del
+       rail. Quién atendió va al lado de Guardar. -->
   <div class="ident ident-vacia" id="ident">
     <div class="ident-punto"></div>
     <div class="ident-datos">
@@ -1144,7 +1146,6 @@
         </div>
         <div class="bienv-pie">
           <button type="button" class="bienv-link" id="bienvVolver">← Cambiar de local</button>
-          <button type="button" class="bienv-link" id="bienvNoEstoy">No estoy en la lista</button>
           <!-- Quien tiene usuario (13/10/2026) entra con su PIN y sale elegido él. -->
           <button type="button" class="bienv-link" id="bienvUsuario">Entrar con tu usuario</button>
         </div>
@@ -1392,11 +1393,6 @@
      acá dijera más, el vendedor vería un botón que la base le va a
      rechazar. */
   var CORREGIR_MS = 24 * 3600000;
-
-  /* Valor de la última opción del desplegable de vendedores. No puede ser un
-     nombre real, así que lleva guiones: si algún día alguien se llama así,
-     tenemos un problema más grande que este. */
-  var OTRO = '__otro__';
 
   /* Sube a mano al publicar. Cuando un vendedor dice "a mí no me anda",
      esto dice qué versión tiene ESE celular: la app es PWA y puede quedar
@@ -1746,10 +1742,11 @@
      último que se vio; y si nunca hubo lista, el nombre se escribe a mano
      como siempre.
 
-     Escribirlo a mano NUNCA deja de ser posible. El día que entra alguien
-     nuevo un sábado y el encargado no está, esa persona tiene que poder
-     registrar igual: si sólo hubiera botones, el local dejaría de cargar. */
-  var equipo = [], vendedor = '', escribiendo = false;
+     Desde el 23/10 no hay "No está en la lista": cada uno tiene su usuario,
+     y la base lo suma a la lista cuando se lo crean en Config → Usuarios o
+     se lo aprueban. Escribirlo a mano queda sólo para un local que todavía
+     no tiene a nadie. */
+  var equipo = [], vendedor = '';
 
   /* Quién lo atendió: al lado de Guardar, en el celular y en la PC (23/10;
      antes eran dos copias, en la barra del celular y en el pie del rail). Lo
@@ -1772,15 +1769,13 @@
   /**
    * Dibuja el desplegable de quién lo atendió.
    *
-   * Un nombre guardado que ya no está en la lista —renunció, lo desactivaron,
-   * o se escribió a mano— no se borra solo: queda el campo de texto a la
-   * vista con lo que había, y el desplegable marcando "no estoy en la lista".
-   * Vaciárselo al vendedor que viene cargando hace semanas sería la peor
-   * forma de avisarle.
+   * "Elegí quién…" se ve con el desplegable cerrado y no adentro de la
+   * lista (hidden): ahí sería un nombre más. Un nombre guardado que ya no
+   * está en la lista —lo sacaron, o se escribió a mano antes del 23/10—
+   * no cuenta: el desplegable vuelve a "Elegí quién…" y Guardar lo pide.
    */
   function pintarQuien() {
     var equipo = conYo();
-    var aMano = escribiendo || (!!vendedor && equipo.indexOf(vendedor) === -1);
 
     cadaQuien(function (caja, sel, txt, nuevo) {
       // Sin local no hay lista de quién: primero se elige el local.
@@ -1795,17 +1790,20 @@
       }
 
       sel.hidden = false;
+      nuevo.hidden = true;
       sel.innerHTML =
-        '<option value="">Elegí quién…</option>' +
+        '<option value="" disabled hidden>Elegí quién…</option>' +
         equipo.map(function (v) {
           return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
-        }).join('') +
-        '<option value="' + OTRO + '">No está en la lista</option>';
-      sel.value = aMano ? OTRO : (vendedor || '');
-
-      nuevo.hidden = !aMano;
-      if (aMano && document.activeElement !== txt) txt.value = vendedor;
+        }).join('');
+      sel.value = quienVale() ? vendedor : '';
     });
+  }
+
+  /** Hay quién lo atendió, y es de la lista (o el local no tiene lista y se escribió). */
+  function quienVale() {
+    var lista = conYo();
+    return !!vendedor && (!lista.length || lista.indexOf(vendedor) > -1);
   }
 
   /* ═══ Quién entró (13/10/2026) ═══════════════════════════════════════
@@ -1834,8 +1832,7 @@
     var y = yoDeAca();
     if (!y || leer('nc_vend_de') === y.id) return;
     guardar('nc_vend_de', y.id);
-    if (vendedor === y.vendedor && !escribiendo) return;
-    escribiendo = false;
+    if (vendedor === y.vendedor) return;
     fijarVendedor(y.vendedor);
   }
 
@@ -1867,18 +1864,8 @@
 
   function conectarQuien() {
     cadaQuien(function (caja, sel, txt, nuevo, ok) {
-      sel.onchange = function () {
-        if (sel.value === OTRO) {
-          escribiendo = true;
-          vendedor = '';
-          pintarQuien();
-          txt.value = '';
-          txt.focus();
-          return;
-        }
-        escribiendo = false;
-        fijarVendedor(sel.value);
-      };
+      sel.onchange = function () { fijarVendedor(sel.value); };
+      // El campo es para un local sin lista (ver pintarQuien).
       // Al salir del campo el nombre ya queda puesto en ESTE dispositivo,
       // aunque no se toque "Anotarme": nadie tiene que quedarse sin poder
       // cargar por no haber apretado un botón.
@@ -1918,7 +1905,6 @@
       .then(function (lista) {
         equipo = lista || equipo;
         guardarJSON(K_EQUIPO, { local: local, vendedores: equipo });
-        escribiendo = false;        // ya está en la lista: se elige como cualquiera
         pintarQuien();
         pintarEquipo(metricas);
         avisar('ok', limpio + ' quedó en la lista de ' + nombreLocal(local) + '.');
@@ -1941,13 +1927,6 @@
       .then(function (lista) {
         equipo = lista || [];
         guardarJSON(K_EQUIPO, { local: local, vendedores: equipo });
-
-        /* El nombre que se escribió a mano entra en la lista del local
-           cuando esa persona guarda su primer registro (lo hace la base,
-           ver cargar_registro). Desde ese momento deja de ser "a mano": se
-           elige del desplegable como cualquiera, y el campo de texto sobra. */
-        if (escribiendo && vendedor && equipo.indexOf(vendedor) > -1) escribiendo = false;
-
         pintarQuien();
         // La lista del equipo también sale de acá: es la que pone a los que
         // todavía no cargaron nada este mes. Ver pintarEquipo().
@@ -2227,7 +2206,6 @@
 
     // El equipo cambia con el local: se muestra lo que haya guardado de ese
     // local y se pide el actualizado de fondo.
-    escribiendo = false;
     equipo = equipoGuardado();
     tomarPersona();   // si eligió el local de quien entró, sale elegido él
     pintarQuien();
@@ -2254,23 +2232,18 @@
    */
   function pintarIdentidad() {
     var nom = local ? nombreLocal(local) : '';
-    var cambia = puedeCambiarLocal();
 
-    // La barra del celular: con el local puesto lo dice el título, así que
-    // queda sólo para el administrador (que puede cambiarlo).
-    $('ident').hidden = !!local && !cambia;
+    // La barra del celular y el botón del rail son para elegir el local la
+    // primera vez. Con el local puesto lo dice el título (y el pie del rail),
+    // y cambiarlo es del administrador, desde la ventana del botón redondo.
+    $('ident').hidden = !!local;
     $('identLocal').textContent = local ? nom : 'Todavía no elegiste tu local';
-    $('identVend').hidden = !!local;
     $('ident').classList.toggle('ident-vacia', !local);
-    $('btnIdentLocal').textContent = local ? 'Cambiar' : 'Elegir';
 
-    // El pie del rail: el local siempre; el botón, para elegirlo la primera
-    // vez o, si es el administrador, para cambiarlo.
     $('railLocal').textContent = local ? nom : 'Elegí tu local';
     $('railPie').classList.toggle('vacia', !local);
-    $('btnRailLocal').hidden = !!local && !cambia;
-    $('btnRailLocal').textContent = local ? 'Cambiar de local' : 'Elegir local';
-    if (local && !cambia) $('bloqueLocal').hidden = true;
+    $('btnRailLocal').hidden = !!local;
+    if (local && !puedeCambiarLocal()) $('bloqueLocal').hidden = true;
 
     // Y el título del tablero, que es de quién son los números. Son dos
     // formas de lo mismo: la línea de siempre y, cuando sobra alto, el
@@ -2335,7 +2308,7 @@
     });
   }
 
-  /** El botón de "Elegir local" / "Cambiar de local", en la barra y en el rail. */
+  /** El botón de "Elegir local", en la barra y en el rail. */
   function alternarLocal() {
     var b = $('bloqueLocal');
     b.hidden = !b.hidden;
@@ -2357,7 +2330,6 @@
      "Oficina" es para los aparatos que no están en un local (el de
      Mauricio): queda anotado y la ventana no vuelve a salir. */
   var bienvEspera = false;      // pidiendo el equipo del local elegido
-  var bienvEscribe = false;     // tocó "No estoy en la lista"
 
   function debeDarBienvenida() {
     /* Quien ya entró y no es de un local (Atención, Administración) no tiene local que elegir (21/10). */
@@ -2394,7 +2366,6 @@
        nombre), "← Cambiar de local" no va: el local lo cambia el
        administrador (23/10). Recién elegido, sí: es volver un paso. */
     $('bienvVolver').hidden = !!local && !puedeCambiarLocal();
-    $('bienvNoEstoy').onclick = function () { bienvEscribe = true; pintarBienvPaso2(); };
     $('bienvUsuario').onclick = function () { cerrarBienvenida(); persona.entrar(); };
     $('bienvEmpezar').onclick = bienvEscrito;
     $('bienvNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); bienvEscrito(); } };
@@ -2416,19 +2387,19 @@
       if (b1) { b1.focus(); }
       return;
     }
-    bienvEscribe = false;
     pintarBienvPaso2();
   }
 
   /* "¿Quién sos?": los del local como botones. Mientras llega la lista,
      "buscando"; si el local todavía no tiene a nadie (o no hay señal la
      primera vez), directo el campo para escribirlo. Se vuelve a pintar
-     cuando llega el equipo (ver traerEquipo). */
+     cuando llega el equipo (ver traerEquipo). El que no está en la lista
+     entra con su usuario (23/10: ya no se anota escribiendo su nombre). */
   function pintarBienvPaso2() {
     if ($('bienvenida').hidden || $('bienvPaso2').hidden) return;
     var nom = '<b>' + esc(nombreLocal(local)) + '</b>', caja = $('bienvVends');
     var conLista = equipo.length > 0;
-    var escribe = bienvEscribe || (!conLista && !bienvEspera);
+    var escribe = !conLista && !bienvEspera;
     if (conLista) {
       $('bienvLocalTxt').innerHTML = 'Estás en ' + nom + '. Tocá tu nombre.';
       caja.innerHTML = equipo.map(function (v) {
@@ -2436,7 +2407,6 @@
       }).join('');
       Array.prototype.forEach.call(caja.children, function (b) {
         b.onclick = function () {
-          escribiendo = false;
           fijarVendedor(b.dataset.v);
           cerrarBienvenida();
         };
@@ -2450,7 +2420,6 @@
     }
     var estabaCerrado = $('bienvNuevo').hidden;
     $('bienvNuevo').hidden = !escribe;
-    $('bienvNoEstoy').hidden = escribe || !conLista;
     if (escribe && estabaCerrado) {
       $('bienvNombre').value = '';
       setTimeout(function () { $('bienvNombre').focus(); }, 30);
@@ -2490,7 +2459,7 @@
     if (!local) { mostrarError('errLocal'); abrirLocal(); ok = false; }
     // El desplegable está siempre a la vista, al lado de Guardar: se marca
     // en rojo y se avisa, no hace falta traer a nadie a ningún lado.
-    if (!vendedor) { marcarQuien(true); ok = false; }
+    if (!quienVale()) { marcarQuien(true); ok = false; }
 
     var malTel = revisarTelefono($('f_wsp').value);
     if (malTel) { mostrarError('errWsp', 'cWsp', malTel); ok = false; }
@@ -2501,7 +2470,7 @@
       var primero = document.querySelector('.campo-error:not([hidden])');
       if (primero) primero.scrollIntoView({ behavior: 'smooth', block: 'center' });
       avisar('err', !local ? 'Falta elegir el local.'
-        : !vendedor ? 'Falta decir quién lo atendió.'
+        : !quienVale() ? 'Falta decir quién lo atendió.'
         : 'Faltan datos para guardar.');
     }
     return ok;
@@ -2969,6 +2938,10 @@
     persona.listo.then(function () { tomarPersona(); pintarQuien(); pintarIdentidad(); });
     /* Cambiar de local depende de quién entró (sólo el administrador). */
     document.addEventListener('persona', pintarIdentidad);
+    /* Y se hace desde la ventana del botón redondo, no desde un botón a la vista (23/10). */
+    persona.ponerEnFicha(function () {
+      return local && puedeCambiarLocal() ? { texto: 'Local de esta compu', hacer: abrirLocal } : null;
+    });
 
     // Enter en un campo del formulario pasa al siguiente, no guarda: es
     // demasiado fácil mandar el registro a medio llenar desde el teclado.
