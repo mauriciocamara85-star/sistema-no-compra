@@ -169,7 +169,7 @@ var usuarios = (function () {
         'borrarles el PIN y desactivarlos. Reactivar a alguien lo hace el administrador.';
     var filtros = '';
     if (admin) {
-      filtros = '<div class="us-filtros"><select id="usFiltroLocal" aria-label="Local">' +
+      filtros = '<div class="us-filtros"><select id="usFiltroLocal" class="desplegable" aria-label="Local">' +
         '<option value="">Todos los locales</option>' +
         datos.locales.map(function (l) { return '<option value="' + esc(l.id) + '"' + (filtro.local === l.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>'; }).join('') +
         '<option value="z"' + (filtro.local === 'z' ? ' selected' : '') + '>Supervisores</option>' +
@@ -300,7 +300,7 @@ var usuarios = (function () {
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Cambiar el rol, el local' + (fr ? ', los francos' : '') + ' o si también atiende clientes</span></div>' +
       '<div class="us-editor">' +
         '<select data-ed="rol" aria-label="Rol">' + opcionesRol(r) + '</select>' +
-        '<select data-ed="local" aria-label="Local"' + (sinLocal(r) ? ' hidden' : '') + '>' + opcionesLocal(p.local_id || '', r === 'gerencia') + '</select>' +
+        '<select data-ed="local" class="desplegable" aria-label="Local"' + (sinLocal(r) ? ' hidden' : '') + '>' + opcionesLocal(p.local_id || '', r === 'gerencia') + '</select>' +
         '<div class="us-locales" data-ed-locales role="group" aria-label="Sus locales"' + (r === 'zona' ? '' : ' hidden') + '>' +
           '<span class="us-locales-tit">Sus locales</span>' + casillasLocales(marcadosDe(p)) + '</div>' +
         dias +
@@ -319,7 +319,7 @@ var usuarios = (function () {
         '<div class="campo"><label for="usApellido">Apellido</label><input type="text" id="usApellido" maxlength="30" autocomplete="off" autocapitalize="words"></div>' +
         (admin
           ? '<div class="campo"><label for="usRol">Rol</label><select id="usRol">' + opcionesRol('vendedor') + '</select></div>' +
-            '<div class="campo" id="usCampoLocal"><label for="usLocal">Local</label><select id="usLocal">' + opcionesLocal('', false) + '</select></div>' +
+            '<div class="campo" id="usCampoLocal"><label for="usLocal">Local</label><select id="usLocal" class="desplegable">' + opcionesLocal('', false) + '</select></div>' +
             '<div class="campo ancho" id="usCampoLocales" hidden><span class="campo-lbl">Sus locales</span>' +
               '<div class="us-locales" role="group" aria-label="Sus locales">' + casillasLocales({}) + '</div></div>'
           : '<div class="campo ancho"><span class="campo-lbl">Rol</span><span class="us-fijo">Vendedor de ' + esc(nombreLocal(datos.yo.local_id)) + '</span></div>') +

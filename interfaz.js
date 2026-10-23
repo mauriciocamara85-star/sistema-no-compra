@@ -12,6 +12,9 @@
    3. Un solo selector de período: un botón que dice el período, con ‹ › para
       el anterior y el siguiente; al tocarlo, los atajos y un calendario para
       elegir un rango (tocás un día, tocás otro y "Aplicar"), como Tienda Nube.
+   4. (23/10/2026) Los desplegables de local: la lista es CSS (select.desplegable
+      en estilos.css); acá se cuida que sus teclas no lleguen a la página y que
+      cerrado mida lo mismo que antes.
 
    No depende de nada: ni de comun.js ni de impecable-comun.js (que tienen
    sus propios leer/esc). Todo vive adentro de window.Interfaz.
@@ -359,6 +362,71 @@
     mostrar();
     return { rango: function () { return publico(r); }, poner: function (x, avisar) { var a = deTexto(x.desde), b = deTexto(x.hasta); poner(armar(a, b, unidadDe(a, b), null, op), avisar); }, elemento: caja };
   }
+
+  /* ══ 4. Los desplegables (23/10/2026) ═══════════════════════════════════
+     La lista de cada <select class="desplegable"> la dibuja la página (estilos.css, appearance: base-select), y
+     por eso las teclas que se apretan con la lista abierta pasan por la página: el Esc que la cierra también
+     cerraba la ventana del POS, y el Enter que elige un local "aceptaba" el formulario. Con la lista de Windows
+     esas teclas nunca llegaban. Mientras la lista está abierta, las teclas son de ella: se cortan acá, antes que
+     cualquier otro oyente. La lista las atiende igual (stopPropagation no le quita su comportamiento). */
+  function listaAbierta(e) {
+    var s = e.target && e.target.closest ? e.target.closest('select') : null;
+    try { return !!s && s.matches(':open'); } catch (x) { return false; }      // un navegador sin :open usa la lista del sistema
+  }
+  ['keydown', 'keyup', 'keypress'].forEach(function (t) {
+    window.addEventListener(t, function (e) { if (listaAbierta(e)) e.stopPropagation(); }, true);
+  });
+
+  /* El ancho de siempre. Cerrado, el select de Windows mide lo que su opción más larga; con base-select mide la
+     elegida, y en las barras de filtros (Tickets, Stock, el encabezado de Supervisión…) todo saltaba al cambiar de
+     local. Se prueba el ancho con cada opción elegida (sin avisarle a nadie: no hay 'change'): si cambia, el ancho
+     sale del contenido y se le pone de piso el de antes, el de la lista de Windows. Si no cambia, el ancho lo pone
+     la pantalla (un formulario, una fila que se reparte) y no se toca. data-ancho="justo": sin piso (las pastillas
+     de Ventas, que abrazan lo elegido a propósito). Se vuelve a medir cuando cambian las opciones, cuando aparece
+     (estaba escondido), al cambiar el tamaño de la ventana y cuando terminan de cargar las letras. */
+  var firmas = new WeakMap(), pedido = 0;
+  function firma(s) { return s.getClientRects().length ? s.options.length + '|' + s.textContent : ''; }
+  function pisoDeAncho(s) {
+    var f = firma(s);
+    if (firmas.get(s) === f) return;
+    firmas.set(s, f);
+    s.style.minInlineSize = '';
+    if (!f || s.options.length < 2 || s.getAttribute('data-ancho') === 'justo') return;
+    var elegida = s.selectedIndex, menor = Infinity, mayor = 0;
+    for (var i = 0; i < s.options.length; i++) {
+      s.selectedIndex = i;
+      var w = s.getBoundingClientRect().width;
+      if (w < menor) menor = w;
+      if (w > mayor) mayor = w;
+    }
+    s.selectedIndex = elegida;
+    if (mayor - menor < 1) return;
+    s.classList.remove('desplegable');
+    var antes = s.getBoundingClientRect().width;
+    s.classList.add('desplegable');
+    s.style.minInlineSize = antes + 'px';
+  }
+  /* Las filas de las dos columnas (estilos.css las arma con grid): "Todos los locales", si va primero, ocupa la de
+     arriba entera; el resto, la mitad de cada lado. Con grupos no: ahí las columnas son de cada grupo. */
+  function filas(s) {
+    var f = '';
+    if (s.options.length >= 8 && !s.querySelector('optgroup')) {
+      var todos = s.options[0].value === '' ? 1 : 0;
+      f = String(todos + Math.ceil((s.options.length - todos) / 2));
+    }
+    if (s.style.getPropertyValue('--filas') !== f) { if (f) s.style.setProperty('--filas', f); else s.style.removeProperty('--filas'); }
+  }
+  function medirTodos() {
+    pedido = 0;
+    [].forEach.call(document.querySelectorAll('select.desplegable'), function (s) {
+      try { if (!s.matches(':open')) { filas(s); pisoDeAncho(s); } } catch (e) { /* sin :open: la lista es la del sistema, no hace falta */ }
+    });
+  }
+  function pedirMedida() { if (!pedido) pedido = requestAnimationFrame(medirTodos); }
+  function medirDeNuevo() { firmas = new WeakMap(); pedirMedida(); }
+  new MutationObserver(pedirMedida).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'style'] });
+  window.addEventListener('resize', medirDeNuevo);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(medirDeNuevo);
 
   window.Interfaz = {
     railFija: railFija,

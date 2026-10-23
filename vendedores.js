@@ -2779,7 +2779,9 @@ function pantallaMisLocales(alVolver) {
 
 function selectorLocal(loc, alCambiar) {
   if (!loc || loc.fijo || !loc.lista) return '';
-  return '<label class="campo selector"><span>Local</span><select id="selLocal">' + loc.lista.map(function (l) {
+  /* --filas: las dos columnas de la lista, de arriba abajo (impecable.css). */
+  var filas = loc.lista.length >= 8 ? ' style="--filas:' + Math.ceil(loc.lista.length / 2) + '"' : '';
+  return '<label class="campo selector"><span>Local</span><select id="selLocal" class="desplegable"' + filas + '>' + loc.lista.map(function (l) {
     return '<option value="' + esc(l.id) + '"' + (l.id === loc.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
   }).join('') + '</select></label>';
 }

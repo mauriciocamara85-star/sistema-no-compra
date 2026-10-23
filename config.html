@@ -2423,7 +2423,7 @@
     try { actual = localStorage.getItem('nc_local') || ''; } catch (e) {}
     nueva.innerHTML =
       '<div class="campos">' +
-        '<div class="campo ancho"><label for="cajaLocal">Local</label><select id="cajaLocal">' +
+        '<div class="campo ancho"><label for="cajaLocal">Local</label><select id="cajaLocal" class="desplegable">' +
           '<option value="">Elegí el local…</option>' +
           cajasLocales.map(function (l) {
             return '<option value="' + esc(l.codigo) + '"' + (l.codigo === actual ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';

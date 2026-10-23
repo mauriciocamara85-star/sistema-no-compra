@@ -1681,7 +1681,7 @@
       <input type="search" id="busca" placeholder="Buscar por nombre, teléfono, producto o vendedor…" autocomplete="off">
     </div>
     <div class="fila-filtros">
-      <select id="filtroLocal" aria-label="Filtrar por local"><option value="">Todos los locales</option></select>
+      <select id="filtroLocal" class="desplegable" aria-label="Filtrar por local"><option value="">Todos los locales</option></select>
     </div>
     <div class="filtros" id="filtros"></div>
   </div>
@@ -2052,7 +2052,7 @@
       <p class="sg-nota" id="sgNotaLocal" hidden>De los locales sólo sabemos las compras de los socios del Club: BlueSoft no dice a quién le vendió. Con el POS propio, de todos.</p>
     </div>
     <div class="sg-bloque"><h3>Local y Club</h3>
-      <div class="sg-fila"><label for="sgLocal">Local</label><select id="sgLocal"></select></div>
+      <div class="sg-fila"><label for="sgLocal">Local</label><select id="sgLocal" class="desplegable"></select></div>
       <div class="sg-fila"><label for="sgSocio">Club</label>
         <select id="sgSocio">
           <option value="">No importa</option>
@@ -6430,7 +6430,7 @@
       h += campo('Compra mínima' + opc, '<input type="text" inputmode="numeric" data-cu="minima" placeholder="$">');
       h += campo('Tope de descuento' + opc, '<input type="text" inputmode="numeric" data-cu="tope" placeholder="$ sin tope">');
       if (t === 'campana') { h += campo('Usos en total' + opc, '<input type="text" inputmode="numeric" data-cu="usosMax" placeholder="Sin límite">'); }
-      h += campo('Dónde vale', '<select data-cu="local"><option value="">En todos los locales</option></select>', t !== 'campana');
+      h += campo('Dónde vale', '<select data-cu="local" class="desplegable"><option value="">En todos los locales</option></select>', t !== 'campana');
     }
     if (t === 'campana') {
       h += '<label class="cu-check ancho"><input type="checkbox" data-cu="acumulable"> Se puede combinar con otras promociones</label>' +

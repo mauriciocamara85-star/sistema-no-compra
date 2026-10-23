@@ -562,3 +562,66 @@ body.espejo [data-descargo], body.espejo #activar, body.espejo #instalar { displ
 .sugerencia-sup em { display: block; color: var(--lima); font-style: normal; font-weight: 700; font-size: 14px; margin-top: 6px; }
 .tarea .foto-marcas { margin: 10px 0 0; }
 .tarea .foto-marcas .fm-caja img { max-height: 40vh; }
+
+/* ── El desplegable del local (23/10/2026) ───────────────────────────────
+   La misma lista que en todo el sistema (select.desplegable de estilos.css:
+   appearance base-select, dos columnas, el elegido marcado con su tilde),
+   con la paleta de la app: tarjeta oscura y el elegido en lima. En el
+   celular se abre como una hoja abajo, arriba de la barra. Donde no existe
+   (el iPhone) sale la lista del sistema. */
+select.desplegable, select.desplegable::picker(select) { appearance: base-select; }
+/* Cerrado, los valores de fábrica de siempre (como en estilos.css): sin esto
+   base-select parte un nombre largo en dos renglones y no recorta el texto. */
+@supports (appearance: base-select) {   /* en el iPhone no hay nada que devolver */
+  :where(select.desplegable) {
+    font: -webkit-small-control; letter-spacing: normal; word-spacing: normal;
+    text-transform: none; text-indent: 0; text-shadow: none;
+    color: FieldText; background-color: Field; border: 1px solid light-dark(#767676, #858585);
+    border-radius: 0; padding: 0; cursor: default;
+    white-space: pre; overflow: clip; overflow-clip-margin: content-box;
+    align-items: center; min-inline-size: auto; min-block-size: auto;
+  }
+}
+/* El select de siempre fuerza el interlineado normal; el nuevo heredaría el del renglón (acá gana el font: inherit de arriba). */
+select.desplegable { line-height: normal; }
+.campo select.desplegable { display: flex; align-items: center; }
+select.desplegable::picker-icon {
+  content: ""; inline-size: 16px; block-size: 16px; margin-inline-start: auto; background: var(--suave);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: rotate .15s;
+}
+select.desplegable:open::picker-icon { rotate: 180deg; }
+select.desplegable:open { border-color: var(--lima); }
+select.desplegable::picker(select) {
+  margin-block: 8px; padding: 6px;
+  background: var(--tarjeta); color: var(--texto);
+  border: 1px solid var(--borde); border-radius: 18px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+  font: 600 15px/1.25 Manrope, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  max-block-size: min(72vh, 520px); max-block-size: stretch;   /* hasta el borde, del lado con más lugar (ver estilos.css) */
+  overflow-y: auto; overscroll-behavior: contain;
+  inline-size: max-content;   /* pegada al borde derecho, se abre para la izquierda (ver estilos.css) */
+}
+select.desplegable:has(> option:nth-of-type(8))::picker(select) { columns: 2; column-gap: 4px; }
+/* Con grid si se sabe cuántas filas son (--filas, lo pone vendedores.js): si no entra de alto se desplaza en vez
+   de abrir otra columna para el costado (ver estilos.css). */
+select.desplegable[style*="--filas"]:open::picker(select) {
+  display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--filas), auto); grid-auto-columns: 1fr;
+  columns: auto; column-gap: 4px; align-content: start;
+}
+select.desplegable option {
+  display: flex; align-items: center; gap: 10px;
+  min-block-size: 44px; margin-block-end: 2px; padding: 8px 12px; border-radius: 12px;
+  break-inside: avoid; cursor: pointer;
+}
+select.desplegable option:hover, select.desplegable option:focus-visible { background: rgba(255, 255, 255, .06); outline: none; }
+select.desplegable option:checked { background: var(--lima); color: var(--sobre-lima); font-weight: 800; }
+select.desplegable option::checkmark { order: 1; margin-inline-start: auto; }
+@media (max-width: 640px) {
+  select.desplegable::picker(select) {
+    position: fixed; position-area: none; position-try-fallbacks: none;
+    inset: auto 12px calc(var(--barra) + 12px + env(safe-area-inset-bottom)) 12px;
+    margin: 0; inline-size: auto; max-block-size: calc(100dvh - 140px);
+  }
+}

@@ -129,7 +129,6 @@
   /* Ni usuario del local ni compu habilitada. */
   function porton() {
     ST.D = null;
-    cerrarMenus();
     $('vtLocalChip').hidden = true; $('vtMesChip').hidden = true;
     $('vtQuien').innerHTML = ''; $('vtSoloVer').hidden = true; estado('');
     var y = persona.yo(), html = '<h2>Ventas del local</h2>';
@@ -200,140 +199,29 @@
 
   function pintarSelectores() {
     var sl = $('vtLocal');
-    sl.innerHTML = ST.locales.map(function (l) {
-      return '<option value="' + esc(l.id) + '"' + (l.id === ST.local.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
-    }).join('');
+    /* La lista es la común (select.desplegable, estilos.css): los locales y el E-commerce en dos grupos. El legend es el
+       título en la lista; el label, en el iPhone. */
+    function op(l) {
+      return '<option value="' + esc(l.id) + '"' + (l.id === ST.local.id ? ' selected' : '') +
+        (l.ecom ? ' data-icono="web" data-sub="vdh.com.ar"' : '') + '>' + esc(l.nombre) + '</option>';
+    }
+    function grupo(t, ls) { return '<optgroup label="' + t + '"><legend>' + t + '</legend>' + ls.map(op).join('') + '</optgroup>'; }
+    var locales = ST.locales.filter(function (l) { return !l.ecom; }), web = ST.locales.filter(function (l) { return l.ecom; });
+    sl.innerHTML = locales.length && web.length ? grupo('Locales', locales) + grupo('Tienda online', web) : ST.locales.map(op).join('');
     sl.disabled = ST.locales.length < 2;
-    /* En el menú, los locales arriba y el E-commerce aparte. */
-    var grupos = [], locales = ST.locales.filter(function (l) { return !l.ecom; });
-    if (locales.length) grupos.push({ titulo: 'Locales', ops: locales.map(function (l) { return { valor: l.id, texto: l.nombre }; }) });
-    if (locales.length < ST.locales.length) grupos.push({ titulo: 'Tienda online', ops: [{ valor: ECOM.id, texto: ECOM.nombre, sub: 'vdh.com.ar', icono: ICO.web }] });
-    menuLocal.pintar(grupos);
     $('vtLocalChip').hidden = false;
     /* Los meses: desde el primero que pasó al sistema hasta el que viene. */
     var hoyMes = mesDe(hoyAR()), hasta = otroMes(hoyMes, 1), m = PRIMER_MES, ops = [];
     while (m <= hasta) { ops.push(m); m = otroMes(m, 1); }
     if (ops.indexOf(ST.mes) < 0) ops.push(ST.mes);
     ops.sort();
-    ops.reverse();
-    $('vtMes').innerHTML = ops.map(function (x) {
-      return '<option value="' + x + '"' + (x === ST.mes ? ' selected' : '') + '>' + nombreMes(x) + ' ' + anioMes(x) + '</option>';
+    $('vtMes').innerHTML = ops.reverse().map(function (x) {
+      var marca = x === hoyMes ? 'Este mes' : x === hasta ? 'Próximo' : '';
+      return '<option value="' + x + '"' + (x === ST.mes ? ' selected' : '') + (marca ? ' data-marca="' + marca + '"' : '') + '>' +
+        nombreMes(x) + ' ' + anioMes(x) + '</option>';
     }).join('');
-    /* En el menú, por año, con "Este mes" y "Próximo". */
-    var anios = [];
-    ops.forEach(function (x) {
-      var g = anios[anios.length - 1];
-      if (!g || g.titulo !== String(anioMes(x))) anios.push(g = { titulo: String(anioMes(x)), ops: [] });
-      g.ops.push({ valor: x, texto: nombreMes(x), marca: x === hoyMes ? 'Este mes' : x === hasta ? 'Próximo' : '' });
-    });
-    menuMes.pintar(anios);
     $('vtMesChip').hidden = false;
   }
-
-  /* ══ Los desplegables del local y del mes (23/10/2026) ══════════════════
-     Pedido de Mauricio: la lista que abría el <select> la dibujaba Windows, apretada y sin estilo. Ahora es un menú
-     propio con la cara del calendario del sistema (interfaz.js). El <select> sigue escondido con sus opciones y su
-     'change', y es el que manda: el menú sólo lo maneja, así que el resto de la pantalla (y las pruebas, que eligen
-     con s.value + 'change') no se enteran. Una lista de más de 6 va en dos columnas, de arriba abajo como se lee. */
-  var ICO = {
-    casa: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 10l9-6 9 6v10H3z"/><path d="M9 20v-6h6v6"/></svg>',
-    web: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/></svg>',
-    ok: '<svg class="vt-op-ok" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>'
-  };
-  var MENUS = [];
-  function cerrarMenus() { MENUS.forEach(function (x) { x.cerrar(); }); }
-  function sinTildes(s) { return String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, ''); }
-  function desplegable(chip, sel, icono) {
-    var boton = chip.querySelector('.vt-chip-btn'), menu = chip.querySelector('.vt-menu'), buscado = '', tBusca = null;
-    function ops() { return [].slice.call(menu.querySelectorAll('.vt-op')); }
-    function abierto() { return !menu.hidden; }
-    function rotulo() {
-      var o = sel.options[sel.selectedIndex];
-      chip.querySelector('.vt-chip-txt').textContent = o ? o.textContent : '';
-      if (icono) chip.querySelector('.vt-chip-ico').innerHTML = icono(sel.value);
-      ops().forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-v') === sel.value)); });
-    }
-    function pintar(grupos) {
-      cerrar();
-      menu.innerHTML = grupos.map(function (g) {
-        var dos = g.ops.length > 6;
-        return '<div class="vt-menu-tit" aria-hidden="true">' + esc(g.titulo) + '</div>' +
-          '<div class="vt-menu-lista' + (dos ? ' dos' : '') + '" role="group" aria-label="' + esc(g.titulo) + '"' +
-            (dos ? ' style="grid-template-rows: repeat(' + Math.ceil(g.ops.length / 2) + ', auto)"' : '') + '>' +
-          g.ops.map(function (o) {
-            return '<button type="button" class="vt-op" role="option" tabindex="-1" data-v="' + esc(o.valor) + '">' +
-              (o.icono ? '<span class="vt-op-ico">' + o.icono + '</span>' : '') +
-              '<span class="vt-op-txt">' + esc(o.texto) + (o.sub ? '<small>' + esc(o.sub) + '</small>' : '') + '</span>' +
-              (o.marca ? '<span class="vt-op-marca">' + esc(o.marca) + '</span>' : '') + ICO.ok + '</button>';
-          }).join('') + '</div>';
-      }).join('');
-      boton.disabled = sel.disabled;
-      rotulo();
-    }
-    function abrir() {
-      if (boton.disabled || abierto()) return;
-      cerrarMenus();
-      menu.hidden = false;
-      chip.classList.add('abierto');
-      boton.setAttribute('aria-expanded', 'true');
-      /* Si no entra a la derecha, se abre hacia la izquierda. En el celular es una hoja abajo: no hace falta. */
-      menu.classList.remove('a-la-der');
-      if (getComputedStyle(menu).position !== 'fixed' && menu.getBoundingClientRect().right > (window.innerWidth || 0) - 8) menu.classList.add('a-la-der');
-      var o = menu.querySelector('[aria-selected="true"]') || ops()[0];
-      if (o) { o.focus({ preventScroll: true }); if (o.scrollIntoView) o.scrollIntoView({ block: 'nearest' }); }
-    }
-    function cerrar(devolverFoco) {
-      if (!abierto()) return;
-      menu.hidden = true;
-      chip.classList.remove('abierto');
-      boton.setAttribute('aria-expanded', 'false');
-      if (devolverFoco) boton.focus();
-    }
-    function elegir(v) {
-      cerrar(true);
-      if (v === sel.value) return;
-      sel.value = v;
-      sel.dispatchEvent(new Event('change'));
-    }
-    boton.addEventListener('click', function () { if (abierto()) cerrar(); else abrir(); });
-    boton.addEventListener('keydown', function (e) { if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); abrir(); } });
-    menu.addEventListener('click', function (e) { var b = e.target.closest('.vt-op'); if (b) elegir(b.getAttribute('data-v')); });
-    menu.addEventListener('keydown', function (e) {
-      var todas = ops(), act = document.activeElement, i = todas.indexOf(act), ir = null;
-      if (e.key === 'Escape' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); cerrar(true); return; }
-      if (e.key === 'ArrowDown') ir = i + 1;
-      else if (e.key === 'ArrowUp') ir = i - 1;
-      else if (e.key === 'Home') ir = 0;
-      else if (e.key === 'End') ir = todas.length - 1;
-      else if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-        /* En dos columnas, a la misma fila de la otra columna. */
-        var lista = act && act.parentNode;
-        if (lista && lista.classList && lista.classList.contains('dos')) {
-          var en = [].slice.call(lista.children), filas = Math.ceil(en.length / 2), j = en.indexOf(act) + (e.key === 'ArrowRight' ? filas : -filas);
-          if (j >= 0 && j < en.length) ir = todas.indexOf(en[j]);
-        }
-      } else if (e.key.length === 1 && /\S/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        /* Tipear la inicial lleva al que empieza así, como en la lista de Windows. */
-        clearTimeout(tBusca);
-        tBusca = setTimeout(function () { buscado = ''; }, 700);
-        buscado += sinTildes(e.key);
-        var desde = buscado.length > 1 ? Math.max(i, 0) : i + 1;
-        for (var n = 0; n < todas.length; n++) {
-          var c = todas[(desde + n) % todas.length];
-          if (sinTildes(c.querySelector('.vt-op-txt').firstChild.textContent).indexOf(buscado) === 0) { ir = (desde + n) % todas.length; break; }
-        }
-      } else return;
-      e.preventDefault();
-      if (ir !== null && todas.length) todas[Math.max(0, Math.min(todas.length - 1, ir))].focus();
-    });
-    document.addEventListener('mousedown', function (e) { if (abierto() && !chip.contains(e.target)) cerrar(); }, true);
-    sel.addEventListener('change', rotulo);
-    var este = { pintar: pintar, cerrar: cerrar };
-    MENUS.push(este);
-    return este;
-  }
-  var menuLocal = desplegable($('vtLocalChip'), $('vtLocal'), function (v) { return v === ECOM.id ? ICO.web : ICO.casa; });
-  var menuMes = desplegable($('vtMesChip'), $('vtMes'));
 
   /* ══ El mes ═════════════════════════════════════════════════════════════ */
   function cargarMes(silencioso) {

@@ -1729,6 +1729,137 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   .per-pop.a-la-izq { right: 12px; }
   .per-atajos { flex-direction: row; flex-wrap: wrap; border-right: 0; border-bottom: 1px solid var(--line); }
 }
+
+/* ── Los desplegables (23/10/2026) ───────────────────────────────────────
+   Pedido de Mauricio: la lista que abría un <select> de local la dibujaba
+   Windows, apretada y sin estilo, y "que todo sea igual". Con appearance:
+   base-select (Chrome 134 en adelante, también en Android) la lista abierta
+   se arma con CSS: la tarjeta del calendario, el elegido en carbón con su
+   tilde y, de 8 opciones en adelante, dos columnas que se leen de arriba
+   abajo. El <select> es el de siempre (teclado, valor, 'change', disabled,
+   hidden): el código de cada pantalla no se entera. Cerrado se ve igual que
+   antes: la flechita sigue siendo la imagen de fondo de arriba. Donde no
+   existe (Safari, el iPhone) sale la lista del sistema.
+   Se usa con class="desplegable" en el <select>. Un grupo con título va
+   <optgroup label="Locales"><legend>Locales</legend>…: el label es para el
+   iPhone, y sin el legend el título se metía en la primera columna. Por
+   opción: data-marca="Este mes" (pastilla), data-sub="vdh.com.ar" (texto
+   suave) y data-icono="web" (el globo). La página tiene que cargar
+   interfaz.js (pieza 4): corta las teclas mientras la lista está abierta,
+   le pone de piso el ancho de antes y las filas de las dos columnas.
+   data-ancho="justo" en el <select>: sin piso, abraza lo elegido (las
+   pastillas de Ventas). */
+select.desplegable, select.desplegable::picker(select) { appearance: base-select; }
+/* base-select también cambia el select CERRADO: hereda la letra del padre
+   (en la ventana del POS salía en negrita), parte un nombre largo en dos
+   renglones y deja de recortar el texto antes de la flechita. Esto le
+   devuelve los valores de fábrica de siempre; con :where() no pesa nada,
+   así que lo que cada pantalla ya le ponía al select sigue mandando. */
+@supports (appearance: base-select) {   /* en el iPhone no hay nada que devolver */
+  :where(select.desplegable) {
+    font: -webkit-small-control; letter-spacing: normal; word-spacing: normal;
+    text-transform: none; text-indent: 0; text-shadow: none;
+    color: FieldText; background-color: Field; border: 1px solid light-dark(#767676, #858585);
+    border-radius: 0; padding: 0; cursor: default;
+    white-space: pre; overflow: clip; overflow-clip-margin: content-box;
+    align-items: center; min-inline-size: auto; min-block-size: auto;
+  }
+}
+select.desplegable::picker-icon { display: none; }
+select.desplegable::picker(select) {
+  margin-block: 8px;
+  padding: 6px;
+  background: var(--surface);
+  color: var(--txt);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: var(--sombra-alta);
+  font: 500 13.5px/1.25 var(--sans);
+  /* Hasta el borde de la pantalla del lado que más lugar tiene, y si no entra
+     se desplaza adentro. Con un alto fijo, cuando no entraba ni arriba ni
+     abajo Chrome la corría encima del select: el clic que la abría se
+     soltaba sobre una opción y la elegía sola. (min() es para un Chrome
+     viejo, que no conoce stretch.) */
+  max-block-size: min(72vh, 520px);
+  max-block-size: stretch;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* El ancho que piden los nombres: si un select pegado al borde derecho no
+     tiene lugar, la lista se abre para la izquierda en vez de apretarlos. */
+  inline-size: max-content;
+}
+/* De 8 opciones en adelante, dos columnas que se leen de arriba abajo. Van con
+   grid y no con columns: cuando la lista no entra de alto, columns abría una
+   tercera columna para el costado, afuera de la pantalla; el grid se desplaza
+   para abajo. Las filas (--filas) las pone interfaz.js; hasta entonces (o sin
+   él), columns. El grid, sólo abierta: puesto siempre, la tarjeta se dibujaba
+   cerrada y el clic no la abría. Adentro de un grupo no hace falta: la tarjeta
+   es la que se desplaza. */
+select.desplegable:has(> option:nth-of-type(8))::picker(select) { columns: 2; column-gap: 4px; }
+select.desplegable[style*="--filas"]:open::picker(select) {
+  display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--filas), auto); grid-auto-columns: 1fr;
+  columns: auto; column-gap: 4px; align-content: start;
+}
+select.desplegable optgroup:has(> option:nth-of-type(7)) { columns: 2; column-gap: 4px; }
+select.desplegable optgroup + optgroup { margin-block-start: 6px; padding-block-start: 6px; border-block-start: 1px solid var(--line); }
+select.desplegable legend {
+  column-span: all; display: block;
+  padding: 9px 10px 6px;
+  font: 600 10.5px/1.2 var(--sans); letter-spacing: .08em; text-transform: uppercase;
+  color: var(--txt-3);
+}
+select.desplegable option {
+  display: flex; align-items: center; gap: 10px;
+  min-block-size: 38px;
+  margin-block-end: 2px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  white-space: nowrap;
+  break-inside: avoid;
+  cursor: pointer;
+}
+/* "Todos los locales" (o "Elegí…") arriba, a todo el ancho. */
+select.desplegable option[value=""] { column-span: all; }
+select.desplegable option[value=""]:first-child { grid-row: 1; grid-column: 1 / span 2; }
+select.desplegable option:hover, select.desplegable option:focus-visible { background: var(--surface-2); outline: none; }
+select.desplegable option:checked { background: var(--acc); color: var(--acc-ink); font-weight: 600; }
+select.desplegable option:checked:focus-visible { box-shadow: inset 0 0 0 2px var(--acc), inset 0 0 0 3.5px var(--acc-ink); }
+select.desplegable option:disabled { opacity: .45; cursor: default; }
+select.desplegable option:disabled:hover { background: none; }
+select.desplegable option::checkmark { order: 1; margin-inline-start: auto; }
+select.desplegable option[data-marca]::after,
+select.desplegable option[data-sub]::after { margin-inline-start: auto; flex: none; }
+select.desplegable option[data-marca]::checkmark,
+select.desplegable option[data-sub]::checkmark { margin-inline-start: 0; }
+select.desplegable option[data-marca]::after {
+  content: attr(data-marca);
+  padding: 3px 8px; border-radius: 999px;
+  background: var(--surface-3); color: var(--txt-2);
+  font-size: 11px; font-weight: 600;
+}
+select.desplegable option[data-sub]::after { content: attr(data-sub); color: var(--txt-3); font-size: 11.5px; font-weight: 400; }
+select.desplegable option:checked[data-marca]::after { background: color-mix(in srgb, currentColor 16%, transparent); color: inherit; }
+select.desplegable option:checked[data-sub]::after { color: inherit; opacity: .72; }
+select.desplegable option[data-icono]::before {
+  content: ""; flex: none;
+  inline-size: 16px; block-size: 16px;
+  background: currentColor;
+  -webkit-mask: var(--ico) center / contain no-repeat; mask: var(--ico) center / contain no-repeat;
+}
+select.desplegable option[data-icono="web"] {
+  --ico: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='12' cy='12' r='9'/%3E%3Cpath d='M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18'/%3E%3C/svg%3E");
+}
+/* En el celular se abre como una hoja abajo, arriba de la barra de secciones (como el calendario). */
+@media (max-width: 640px) {
+  select.desplegable::picker(select) {
+    position: fixed; position-area: none; position-try-fallbacks: none;
+    inset: auto 12px calc(var(--nav, 0px) + 12px + env(safe-area-inset-bottom)) 12px;
+    margin: 0; inline-size: auto;
+    max-block-size: calc(100dvh - 140px);
+  }
+  select.desplegable option { min-block-size: 44px; white-space: normal; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .rail, body.hay-rail, .rail-marca-txt { transition: none; }
 }

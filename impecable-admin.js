@@ -177,7 +177,7 @@ function cabezaAdmin() {
       '<button class="imp-item" id="salir" title="Salir">' + svgMenu('salir') + '<span>Salir</span></button></div></nav>' +
     '<section class="imp-cuerpo"><div class="imp-cab"><div><h2>' + esc(actual[0] === 'local' && _local ? _local.nombre : actual[1]) + '</h2>' +
       '<span class="imp-sub">' + esc(actual[2]) + '</span></div><div class="imp-cab-der">' +
-      (conLocal ? '<select class="imp-sel" id="selLocal" aria-label="Local">' + _locales.map(function (l) {
+      (conLocal ? '<select class="imp-sel desplegable" id="selLocal" aria-label="Local">' + _locales.map(function (l) {
         return '<option value="' + esc(l.id) + '"' + (_local && l.id === _local.id ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
       }).join('') + '</select>' : '') + '</div></div>' +
     (soloMira() ? '<div class="nota">Entraste como gerencia: ves todo y no se puede cambiar nada.</div>' : '') +
@@ -1977,7 +1977,7 @@ function verTestigoStats() {
     var tot = sumarTestigo(enPer), ff = fraccion(tot.con_faltante, tot.productos);
     var html = vistaTestigoHTML() +
       '<div class="testigo-filtros"><div class="campo"><span>Período</span><div id="tPer" class="testigo-per"></div></div>' +
-      (_locales.length > 1 ? '<label class="campo"><span>Local</span><select class="imp-sel" id="tLocal"><option value="">Todos los locales</option>' + todosLos.map(function (l) {
+      (_locales.length > 1 ? '<label class="campo"><span>Local</span><select class="imp-sel desplegable" id="tLocal"><option value="">Todos los locales</option>' + todosLos.map(function (l) {
         return '<option value="' + esc(l.id) + '"' + (l.id === _testigoLocal ? ' selected' : '') + '>' + esc(l.nombre) + '</option>';
       }).join('') + '</select></label>' : '') + '</div>' +
       (!enteros || recortado ? '<p class="bajada-chica">Las estadísticas son por mes: se cuentan ' + (meses.length === 1 ? 'el mes entero de ' + esc(nombreMes(meses[0]).toLowerCase())

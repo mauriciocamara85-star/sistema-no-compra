@@ -679,7 +679,7 @@
           campo('', 'Lista de precios', '<select id="vLista"></select>') +
           campo('', 'Forma de pago', '<select id="vForma">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }).concat([['multiple', 'Múltiple']]), '') + '</select>') +
           '<div class="tk-pagox" id="vPagoX"></div>' +
-          campo('c6', 'Sucursal', '<select id="vLocal"></select>') +
+          campo('c6', 'Sucursal', '<select id="vLocal" class="desplegable"></select>') +
           campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="Lo vendido sale del stock de la sucursal">') +
           campo('c3', 'Caja', '<input type="text" value="Chica" readonly title="La caja chica del local">') +
         '</div>' +
@@ -1442,7 +1442,7 @@
         '<button type="button" class="btn btn-sec btn-chico" data-ir="cambio" title="Ticket de cambio: lo que vuelve y lo que se lleva">Cambio</button>' +
         '<a class="btn btn-sec btn-chico" href="index.html?volver=pos" title="El No Compra">Venta fallida</a>') +
       '<div class="pos-filtros"><div id="tkPer"></div>' +
-        campo('', 'Sucursal', '<select id="tkLocal"><option value="">Todas</option>' + opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), '') + '</select>') +
+        campo('', 'Sucursal', '<select id="tkLocal" class="desplegable"><option value="">Todas</option>' + opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), '') + '</select>') +
         campo('', 'Vendedor', '<select id="tkVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
         campo('', 'Comprobante', '<select id="tkLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B], ['X', LETRAS.X]], '') + '</select>') +
         campo('', 'Forma de pago', '<select id="tkMedio"><option value="">Todas</option>' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), '') + '</select>') +
@@ -1589,7 +1589,7 @@
           campo('', 'Lista de precios', '<select id="cbLista"></select>') +
           campo('', 'Forma de pago', '<select id="cbForma">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), CB.forma) + '</select>') +
           '<div class="tk-pagox" id="cbPagoX"></div>' +
-          campo('c6', 'Sucursal', '<select id="cbLocal"></select>') +
+          campo('c6', 'Sucursal', '<select id="cbLocal" class="desplegable"></select>') +
           campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="Lo que vuelve entra al stock de la sucursal y lo que se lleva sale">') +
           campo('c3', 'Caja', '<input type="text" value="Chica" readonly title="La caja chica del local">') +
         '</div>' +
@@ -1859,7 +1859,7 @@
         '<button type="button" class="btn btn-sec btn-chico" id="cmBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-pri btn-chico" data-ir="cambio">Nuevo cambio</button>') +
       '<div class="pos-filtros"><div id="cmPer"></div>' +
-        campo('', 'Sucursal', '<select id="cmLocal"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="cmLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
         /* Los de verdad y los de prueba no se mezclan nunca; con el modo prueba prendido arranca en los de prueba. */
         campo('', 'Cambios', '<select id="cmPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="cmLista"><p class="cargando">Cargando…</p></div>';
@@ -2036,7 +2036,7 @@
         '<section class="cj-izq" aria-label="Los pasos del cierre">' +
           '<div class="tk-datos cj-datos">' +
             campo('c3', 'Fecha', '<input type="text" id="cjFecha" readonly>') +
-            campo('c5', 'Sucursal', '<select id="cjLocal">' + opcionesLocales(l.id) + '</select>') +
+            campo('c5', 'Sucursal', '<select id="cjLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
             campo('c4', 'Número', '<input type="text" id="cjNum" readonly title="Uno seguido por sucursal">') +
             campo('c4', 'Caja', '<input type="text" value="Caja chica" readonly>') +
             campo('c8', 'Responsable', '<input type="text" id="cjResp" readonly title="Quien entró al POS">') +
@@ -2260,7 +2260,7 @@
       '<div class="chips" id="gmTipo" role="group" aria-label="Qué es">' + ['gasto', 'salida', 'ingreso'].map(function (t) {
         return '<button type="button" class="chip" data-tipo="' + t + '">' + TIPOS_MOV[t] + '</button>'; }).join('') + '</div>' +
       '<div class="pos-campos" style="margin-top:10px">' +
-        campo('ancho', 'Sucursal', '<select id="gmLocal"' + (enGestion ? '' : ' disabled title="La de la caja que estás cerrando"') + '>' + opcionesLocales(localId) + '</select>') +
+        campo('ancho', 'Sucursal', '<select id="gmLocal" class="desplegable"' + (enGestion ? '' : ' disabled title="La de la caja que estás cerrando"') + '>' + opcionesLocales(localId) + '</select>') +
         campo('ancho', 'Tipo de gasto', '<select id="gmRubro"><option value="">Elegí…</option>' + RUBROS_GASTO.map(function (g) {
           return '<optgroup label="' + esc(g[0]) + '">' + g[1].map(function (r) { return '<option>' + esc(r) + '</option>'; }).join('') + '</optgroup>'; }).join('') + '</select>', ' id="gmRubroL"') +
         campo('ancho', 'Descripción', '<input type="text" id="gmDesc" maxlength="200" autocomplete="off">', ' id="gmDescL"') +
@@ -2373,7 +2373,7 @@
     c.innerHTML = cabeza('Cierres de caja', 'Los cierres de todas las sucursales. Se hacen en el mostrador, en POS → Cierre de caja.',
         '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar una caja</a>') +
       '<div class="pos-filtros"><div id="ciPer"></div>' +
-        campo('', 'Sucursal', '<select id="ciLocal"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="ciLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
         campo('', 'Cierres', '<select id="ciPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
       '</div><div id="ciLista"><p class="cargando">Cargando…</p></div>';
     var per = Interfaz.periodo($('ciPer'), { inicial: 'mes', guardar: 'pos_cierres_periodo', hastaHoy: true, alCambiar: cargar });
@@ -2433,7 +2433,7 @@
     c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, las otras entradas y salidas de la caja chica, y lo que pasó a la caja fuerte en cada cierre.',
         '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>') +
       '<div class="pos-filtros"><div id="mvPer"></div>' +
-        campo('', 'Sucursal', '<select id="mvLocal"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="mvLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
         campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +
         campo('', 'Movimientos', '<select id="mvPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
       '</div><div id="mvLista"><p class="cargando">Cargando…</p></div>';
@@ -2989,7 +2989,7 @@
         gestion ? '<button type="button" class="btn btn-sec btn-chico" data-ir="inventario">Cargar un inventario</button>'
                 : '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">Remitos</button>') +
       '<div class="pos-filtros">' +
-        campo('', 'Sucursal', '<select id="stLocal">' + (gestion ? '<option value="">Todas</option>' : '') + opcionesLocales(F.local) + '</select>') +
+        campo('', 'Sucursal', '<select id="stLocal" class="desplegable">' + (gestion ? '<option value="">Todas</option>' : '') + opcionesLocales(F.local) + '</select>') +
         campo('ancho', 'Buscar', '<input type="search" id="stBuscar" placeholder="Código o nombre del producto" autocomplete="off" spellcheck="false">') +
         campo('', 'Rubro', '<select id="stRubro"><option value="">Todos</option>' + opciones(RUBROS.map(function (r) { return [r, r]; }), F.rubro) + '</select>') +
         '<label class="pos-check"><input type="checkbox" id="stCero"' + (F.cero ? ' checked' : '') + '> Con los que están en 0</label>' +
@@ -3152,7 +3152,7 @@
     c.innerHTML = cabeza('Remitos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Lo que llega de la fábrica o de otro local. Se cuenta producto por producto y, si coincide con el remito, entra al stock.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +
-      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="rmLocal">' + opcionesLocales(l.id) + '</select>') + '</div>' +
+      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="rmLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') + '</div>' +
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se reciben remitos: el stock es de verdad. Apagalo (abajo, en el menú) para recibir.</div>' : '') +
       '<h3 class="st-tit">Por recibir</h3><div id="rmPend"><p class="cargando">Cargando…</p></div>' +
       '<div class="st-tit-fila"><h3 class="st-tit">Recibidos</h3><div id="rmPer"></div></div><div id="rmHechos"><p class="cargando">Cargando…</p></div>';
@@ -3211,7 +3211,7 @@
     c.innerHTML = cabeza('Remitos', 'Lo que la fábrica manda a cada local y los envíos entre locales. El local los cuenta a ciegas al recibirlos, en POS → Remitos.',
         '<button type="button" class="btn btn-pri btn-chico" data-ir="remito_nuevo">Nuevo remito</button>') +
       '<div class="pos-filtros"><div id="rgPer"></div>' +
-        campo('', 'Sucursal', '<select id="rgLocal"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="rgLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
         campo('', 'Estado', '<select id="rgEstado"><option value="">Todos</option>' + opciones([['pendiente', 'Por recibir (de cualquier día)'], ['recibido', 'Recibidos'],
                                                                                               ['con_diferencias', 'Con diferencias'], ['anulado', 'Anulados']], '') + '</select>') +
       '</div><div id="rgLista"><p class="cargando">Cargando…</p></div>';
@@ -3611,8 +3611,8 @@
         '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar">Guardar el remito</button>') +
       '<div class="tk-datos rn-datos">' +
-        campo('', 'Sale de', '<select id="rnOrigen"><option value="">Fábrica</option>' + opcionesLocales(RN.origen) + '</select>') +
-        campo('', 'Llega a', '<select id="rnDestino"><option value="">Elegí el local…</option>' + opcionesLocales(RN.destino) + '</select>') +
+        campo('', 'Sale de', '<select id="rnOrigen" class="desplegable"><option value="">Fábrica</option>' + opcionesLocales(RN.origen) + '</select>') +
+        campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesLocales(RN.destino) + '</select>') +
         campo('', 'Referencia <span class="lbl-opc">(el número de la fábrica)</span>', '<input type="text" id="rnRef" maxlength="40" placeholder="X-0001234" autocomplete="off">') +
         campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Lo que diga el remito de la fábrica" autocomplete="off">') +
       '</div>' +
@@ -3815,7 +3815,7 @@
     c.innerHTML = cabeza('Inventario', 'Lo que hay en una sucursal, contado. La primera vez, el Excel de «Consulta de stock» de BlueSoft; después, el inventario de cada seis meses. Lo de la lista reemplaza lo que dice el sistema.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +
       '<div class="cj-paso"><div class="cj-paso-cab"><b>Paso 1</b><span>La sucursal y la lista</span></div>' +
-        '<div class="cj-fila">' + campo('', 'Sucursal', '<select id="invLocal">' + opcionesLocales(l.id) + '</select>') +
+        '<div class="cj-fila">' + campo('', 'Sucursal', '<select id="invLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
           '<label class="btn btn-sec btn-chico">Elegir el Excel…<input type="file" id="invArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
           '<button type="button" class="btn btn-sec btn-chico" id="invPegar">Pegar las columnas…</button>' +
           '<span class="pos-ayuda" id="invNombre"></span></div>' +
