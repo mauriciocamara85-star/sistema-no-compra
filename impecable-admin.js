@@ -2699,11 +2699,11 @@ function ajTableros() {
 var TEMAS_PREG = [['tela', 'Telas'], ['molderia', 'Molderías'], ['retail', 'Cómo trabajamos']];
 function ajPreguntas() {
   ajLista({ ruta: '/orden_preguntas?select=id,tema,dificultad,pregunta,grupo,activo&order=grupo.asc.nullsfirst,tema.asc,dificultad.asc', tabla: '/orden_preguntas',
-    antes: '<div class="seccion">El test semanal</div><div id="ajSemanal"><p class="cargando">Cargando…</p></div><div class="seccion">Las preguntas</div>',
-    despues: ajTestSemanal,
+    antes: '<div class="seccion">El test semanal</div><div id="ajSemanal"><p class="cargando">Cargando…</p></div><div id="ajProgramados"></div><div class="seccion">Las preguntas</div>',
+    despues: function (z) { ajTestSemanal(z); ajProgramados(z); },
     texto: 'Las preguntas de los tests de conocimiento, para todos los locales (opción múltiple; si le erran, la app explica la correcta). El test de la semana sale solo, con estas preguntas. ' +
-      'Para uno especial (por ejemplo, la colección nueva), cargá sus preguntas con el mismo <b>grupo</b> ("Colección verano") y tocá "Mandar un test ahora". ' +
-      'Se pueden apagar las que no sirvan.<br><span class="imp-mapa-acc" style="margin-top:10px"><button class="boton chico lima" id="mandarTest">Mandar un test ahora</button>' +
+      'Para uno especial (por ejemplo, la colección nueva), cargá sus preguntas con el mismo <b>grupo</b> ("Colección verano") y tocá "Mandar un test": sale ahora o el día y la hora que elijas. ' +
+      'Se pueden apagar las que no sirvan.<br><span class="imp-mapa-acc" style="margin-top:10px"><button class="boton chico lima" id="mandarTest">Mandar un test</button>' +
       '<button class="boton chico" id="nuevaPregunta">Nueva pregunta</button></span>',
     cols: [{ k: 'tema', t: 'Tema', tipo: 'ver', ver: function (f) { return ({ tela: 'Telas', molderia: 'Molderías', retail: 'Cómo trabajamos' })[f.tema] || f.tema; } },
            { k: 'dificultad', t: 'Nivel', tipo: 'ver' }, { k: 'pregunta', t: 'Pregunta', tipo: 'ver' },
@@ -2789,13 +2789,13 @@ function nuevaPregunta() {
   });
 }
 
-/** "Tenés un test de conocimiento: Colección verano": a los vendedores de los locales elegidos. */
+/** "Tenés un test de conocimiento: Colección verano": a los vendedores de los locales elegidos, ahora o el día y la hora que se elija (SQL 161). */
 function mandarTest() {
   leer('/orden_preguntas?select=grupo&activo=is.true&grupo=not.is.null').then(function (filas) {
     var grupos = {};
     (filas || []).forEach(function (g) { var k = String(g.grupo).trim(); if (k) grupos[k] = (grupos[k] || 0) + 1; });
-    var nombres = Object.keys(grupos).sort();
-    var f = ventana('<h1>Mandar un test ahora</h1><p class="bajada">Les llega a los vendedores de los locales que marques: "Tenés un test de conocimiento: …". ' +
+    var nombres = Object.keys(grupos).sort(), hoy = hoyAR();
+    var f = ventana('<h1>Mandar un test</h1><p class="bajada">Les llega a los vendedores de los locales que marques: "Tenés un test de conocimiento: …". ' +
         'Todos reciben las mismas preguntas. Se suma al de la semana.</p>' +
       '<div class="renglon"><label class="campo c-grande"><span>Título</span><input id="mtTitulo" maxlength="60" placeholder="Colección verano"></label>' +
         '<label class="campo c-medio"><span>Las preguntas</span><select id="mtDe">' +
@@ -2803,6 +2803,10 @@ function mandarTest() {
           '<option value="t:producto">Telas y molderías</option><option value="t:retail">Cómo trabajamos</option><option value="t:todo">De todo</option></select></label>' +
         '<label class="campo c-chico"><span>Cuántas</span><input id="mtCant" type="number" min="1" max="20" value="5"></label>' +
         '<label class="campo c-chico"><span>Días para hacerlo</span><input id="mtDias" type="number" min="1" max="14" value="2"></label></div>' +
+      '<div class="renglon"><label class="campo c-medio"><span>Cuándo</span><select id="mtCuando"><option value="ahora">Ahora</option><option value="otro">Otro día y hora</option></select></label>' +
+        '<label class="campo c-medio" data-mt-otro hidden><span>Día</span><input type="date" id="mtFecha" min="' + hoy + '" max="' + sumarDias(hoy, 60) + '" value="' + sumarDias(hoy, 1) + '"></label>' +
+        '<label class="campo c-chico" data-mt-otro hidden><span>Hora</span><input type="time" id="mtHora" value="11:00"></label></div>' +
+      '<p class="bajada" id="mtCuandoTexto"></p>' +
       '<div class="seccion">Locales</div>' +
       (_locales.length > 1 ? '<div class="imp-mapa-acc"><button class="boton chico" id="mtTodos">Todos</button><button class="boton chico" id="mtNinguno">Ninguno</button></div>' : '') +
       '<div class="imp-locales">' + _locales.map(function (l) {
@@ -2815,13 +2819,38 @@ function mandarTest() {
     de.onchange = ponerTitulo; ponerTitulo();
     var marcar = function (si) { f.querySelectorAll('[data-loc]').forEach(function (x) { x.checked = si; }); };
     if (_locales.length > 1) { f.querySelector('#mtTodos').onclick = function () { marcar(true); }; f.querySelector('#mtNinguno').onclick = function () { marcar(false); }; }
-    unaVez(f.querySelector('#mtMandar'), function () {
+    /* Cuándo: "Ahora" como siempre, u "Otro día y hora" con el día y la hora a la vista (y el botón dice "Programar"). */
+    var cuando = f.querySelector('#mtCuando'), fecha = f.querySelector('#mtFecha'), horaT = f.querySelector('#mtHora'), boton = f.querySelector('#mtMandar');
+    var pintarCuando = function () {
+      var otro = cuando.value === 'otro', t = f.querySelector('#mtCuandoTexto');
+      f.querySelectorAll('[data-mt-otro]').forEach(function (x) { x.hidden = !otro; });
+      boton.textContent = otro ? 'Programar el test' : 'Mandar el test';
+      t.textContent = !otro ? '' : !fecha.value || !horaT.value ? 'Elegí el día y la hora.'
+        : 'Sale ' + cuandoSale(fecha.value, horaT.value) + '. Hasta entonces no lo ven: es sorpresa. A esa hora les aparece en la app y el aviso al celular llega en los 15 minutos siguientes. ' +
+          'Hasta que salga, lo podés cancelar.';
+    };
+    cuando.onchange = fecha.oninput = horaT.oninput = pintarCuando;
+    pintarCuando();
+    unaVez(boton, function () {
       var locales = [].filter.call(f.querySelectorAll('[data-loc]'), function (x) { return x.checked; }).map(function (x) { return x.dataset.loc; });
-      var v = de.value, esGrupo = v.indexOf('g:') === 0;
+      var v = de.value, esGrupo = v.indexOf('g:') === 0, otro = cuando.value === 'otro';
       if (!titulo.value.trim()) { avisar('Ponele un título.'); return; }
+      if (otro && (!fecha.value || !horaT.value)) { avisar('Elegí el día y la hora.'); return; }
       if (!locales.length) { avisar('Marcá al menos un local.'); return; }
-      return llamar('orden_test_mandar', { p_locales: locales, p_titulo: titulo.value.trim(), p_grupo: esGrupo ? v.slice(2) : null, p_tema: esGrupo ? 'todo' : v.slice(2),
-                                           p_cantidad: parseInt(f.querySelector('#mtCant').value, 10) || 5, p_dias: parseInt(f.querySelector('#mtDias').value, 10) || 2 })
+      var args = { p_locales: locales, p_titulo: titulo.value.trim(), p_grupo: esGrupo ? v.slice(2) : null, p_tema: esGrupo ? 'todo' : v.slice(2),
+                   p_cantidad: parseInt(f.querySelector('#mtCant').value, 10) || 5, p_dias: parseInt(f.querySelector('#mtDias').value, 10) || 2 };
+      if (otro) {
+        args.p_fecha = fecha.value; args.p_hora = horaT.value;
+        return llamar('orden_test_programar', args).then(function () {
+          f.remove();
+          avisar('Programado: sale ' + cuandoSale(fecha.value, horaT.value) + '.');
+          var z = document.getElementById('ajuste');
+          if (z) ajProgramados(z);
+        }, function (e) {
+          throw /PGRST202|could not find the function/i.test(String(e && e.message)) ? rechazo('Para programarlo falta correr el SQL 161 en Supabase (está en el Escritorio, en "App Orden").') : e;
+        });
+      }
+      return llamar('orden_test_mandar', args)
         .then(function (r) {
           f.remove();
           avisar(r && r.personas ? 'Listo: le llegó a ' + r.personas + (r.personas === 1 ? ' vendedor' : ' vendedores') + ' (' + r.preguntas + ' preguntas).'
@@ -2829,6 +2858,54 @@ function mandarTest() {
         });
     });
   }).catch(function (e) { avisar(mensajeDe(e)); });
+}
+
+/** "hoy a las 11:00", "mañana a las 11:00" o "el sábado 25/10 a las 11:00" (día AAAA-MM-DD y hora HH:MM de la Argentina). */
+function cuandoSale(dia, hhmm) {
+  var hoy = hoyAR();
+  return (dia === hoy ? 'hoy' : dia === sumarDias(hoy, 1) ? 'mañana' : 'el ' + diaYFecha(dia)) + ' a las ' + hhmm;
+}
+
+/** Los tests programados (SQL 161): los que faltan, con "Cancelar", y los que salieron la última semana. Sin ninguno (o sin el SQL), no ocupa lugar. */
+function ajProgramados(z) {
+  var cont = z.querySelector('#ajProgramados');
+  if (!cont) return;
+  var desde = new Date(Date.now() - 7 * 864e5).toISOString();
+  leer('/orden_tests_programados?select=id,locales,titulo,grupo,tema,cantidad,dias,sale_en,estado,personas,preguntas,error' +
+       '&estado=neq.cancelado&or=(estado.eq.programado,resuelto_en.gte.' + desde + ')&order=sale_en.asc').then(function (filas) {
+    if (!cont.isConnected) return;
+    if (!filas || !filas.length) { cont.innerHTML = ''; return; }
+    /* Primero los que faltan (el próximo arriba), después los que ya salieron (el último arriba). */
+    var falta = function (t) { return t.estado === 'programado'; };
+    filas = filas.filter(falta).concat(filas.filter(function (t) { return !falta(t); }).reverse());
+    var DE ={ producto: 'de telas y molderías', retail: 'de cómo trabajamos', todo: 'de todo' };
+    var locs = function (ids) {
+      if (ids.length > 1 && ids.length >= _locales.length) return 'los ' + ids.length + ' locales';
+      var n = ids.map(nombreLocal);
+      return n.length > 3 ? n.slice(0, 3).join(', ') + ' y ' + (n.length - 3) + ' más' : yLista(n);
+    };
+    var estado = function (t) {
+      if (t.estado === 'mandado') return t.personas ? '<span class="est listo">Salió: le llegó a ' + t.personas + (t.personas === 1 ? ' vendedor' : ' vendedores') + '</span>'
+                                                    : '<span class="est vencido">Salió, pero no había vendedores aprobados en esos locales</span>';
+      if (t.estado === 'no_salio') return '<span class="est vencido">No salió: ' + esc(t.error || 'falló') + '</span>';
+      return '<span class="est sorpresa">Programado</span>';
+    };
+    cont.innerHTML = '<div class="seccion">Tests programados</div>' + filas.map(function (t) {
+      var sale = cuandoSale(hoyAR(new Date(t.sale_en)), hora(t.sale_en));
+      return '<div class="ct-mandada"><div class="ct-cab"><b>' + esc(t.titulo) + '</b><small>' +
+          esc(sale.charAt(0).toUpperCase() + sale.slice(1) + ' · ' + locs(t.locales) + ' · ' + t.cantidad + (t.cantidad === 1 ? ' pregunta ' : ' preguntas ') +
+              (t.grupo ? 'del grupo "' + t.grupo + '"' : DE[t.tema] || '') + ' · ' + t.dias + (t.dias === 1 ? ' día' : ' días') + ' para hacerlo') + '</small></div>' +
+        '<div class="ct-estados">' + estado(t) + '</div>' +
+        (t.estado === 'programado' && !soloMira() ? '<div class="ct-acc"><button class="boton chico" data-cancelar-test="' + esc(t.id) + '">Cancelar</button></div>' : '') + '</div>';
+    }).join('');
+    cont.querySelectorAll('[data-cancelar-test]').forEach(function (b) {
+      unaVez(b, function () {
+        var t = filas.filter(function (x) { return x.id === b.dataset.cancelarTest; })[0];
+        if (!confirm('¿Cancelar «' + t.titulo + '», que sale ' + cuandoSale(hoyAR(new Date(t.sale_en)), hora(t.sale_en)) + '? No le llega a nadie.')) return;
+        return llamar('orden_test_cancelar', { p_id: t.id }).then(function () { avisar('Cancelado: no le llega a nadie.'); ajProgramados(z); });
+      });
+    });
+  }).catch(function () { cont.innerHTML = ''; });
 }
 
 /* ════════════════════════════════════════════════════════════════════════ */
