@@ -410,8 +410,8 @@ begin
 end $$;
 
 /** Lo que devuelve ventas_mes_leer, sin mirar quién pide (a = lo que dijo ventas_acceso).
-    Interna: la usan ventas_mes_leer y, cuando se conecte el dashboard, ventas_dashboard
-    (ventas-dashboard.sql); nadie de afuera. */
+    Interna: la usan ventas_mes_leer y ventas_tablero (ventas-tablero.sql, lo que lee el dashboard)
+    para armar sus tablas; nadie de afuera. */
 create or replace function ventas_mes_datos(p_local uuid, p_mes date, a jsonb)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare
