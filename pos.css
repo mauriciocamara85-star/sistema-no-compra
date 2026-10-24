@@ -674,3 +674,77 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .inv-tabla th { position: sticky; top: 0; z-index: 1; }
 #invPrevia .pos-check { margin: 0 0 8px; }
 #invPrevia .cj-paso { margin-top: 10px; }
+
+/* ═════════ LAS DIFERENCIAS DE LOS REMITOS (SQL 167) ═════════
+   La planilla de errores: se arma sola al recibir con diferencias, y en
+   Gestión → Diferencias se resuelve. El número del menú, como el de la
+   barra (estilos.css, .rail-cuenta). */
+.pos-cuenta {
+  margin-left: auto; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px;
+  display: grid; place-items: center; flex: none;
+  background: var(--bad); color: var(--bad-ink); font: 700 11px/1 var(--sans); font-style: normal; font-variant-numeric: tabular-nums;
+}
+.pos-item { position: relative; }
+@media (min-width: 1000px) {
+  .menu-chico .pos-cuenta { position: absolute; top: 1px; right: 4px; min-width: 15px; height: 15px; padding: 0 3px; font-size: 9.5px; }
+}
+.df-sobro { color: var(--warn-txt); }
+.cj-tabla td small.df-pend { color: var(--bad-txt); font-weight: 600; }
+
+/* La recepción: quién lo recibe, arriba de la lista; y qué pasó, con botones. */
+.rc-izq .pos-f.rc-quien select { width: 100%; }
+.rc-der .rc-que { margin-top: 10px; }
+.rc-der .rc-que .chips { gap: 6px; }
+
+/* En la ventana del remito: cada diferencia con cómo se resolvió. */
+.rm-difs { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.rm-difs li { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 10px; padding: 6px 8px; border-radius: 8px; background: var(--surface-2); font-size: 13px; }
+.rm-dif-res { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; }
+.rm-dif-res small { font-size: 12px; color: var(--txt-3); }
+
+/* La planilla. */
+.df-tabla td small { display: block; font-size: 12px; color: var(--txt-3); }
+.df-tabla td.df-chk, .df-tabla th.df-chk { width: 34px; padding-right: 0; text-align: center; }
+.df-tabla input[type="checkbox"] { width: 17px; height: 17px; accent-color: var(--acc); cursor: pointer; vertical-align: middle; }
+.df-tabla tr[data-dif] { cursor: pointer; }
+.df-tabla tr[data-dif]:hover td { background: var(--surface-2); }
+.df-tabla tr.sel td { background: var(--surface-3); }
+/* Que entre en 1366 con el menú abierto: los títulos pueden ir en dos renglones. */
+.df-tabla thead th { white-space: normal; vertical-align: bottom; }
+.df-tabla td.df-rem { white-space: nowrap; }
+.df-tabla td.df-prod { min-width: 110px; }
+.df-tabla td.df-est { min-width: 120px; }
+.df-tabla td.df-est .pos-link { margin-top: 2px; font-size: 12px; }
+.df-barra {
+  position: sticky; top: 8px; z-index: 3;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; padding: 8px 10px 8px 14px;
+  background: var(--tablero-negro); color: #FFFFFF; border-radius: 12px; box-shadow: var(--sombra);
+}
+.df-barra[hidden] { display: none; }
+.df-barra span { flex: 1; font-size: 13px; color: rgba(255, 255, 255, .78); }
+.df-barra .btn-sec { background: transparent; color: #FFFFFF; border-color: rgba(255, 255, 255, .35); }
+
+/* Las estadísticas: tres bloques, uno al lado del otro si entran. */
+.df-stats { display: grid; gap: 12px; }
+/* Por sucursal (la tabla ancha) va arriba, a lo ancho; abajo, los productos y qué pasó. */
+@media (min-width: 1200px) { .df-stats { grid-template-columns: 1fr 1fr; align-items: start; } .df-st:first-child { grid-column: 1 / -1; } }
+.df-st { min-width: 0; }
+.df-st h4 { margin: 0 0 6px; font: 700 13px var(--sans); color: var(--txt-2); }
+.df-st .pos-tabla td small { display: block; font-size: 12px; color: var(--txt-3); }
+.df-st .pos-tabla td small.df-pct { display: inline; font-size: 11.5px; color: var(--txt-3); }
+.df-barras { margin: 0; padding: 10px 12px; list-style: none; display: grid; gap: 8px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
+.df-barras li { display: grid; grid-template-columns: minmax(96px, auto) 1fr auto; align-items: center; gap: 10px; font-size: 13px; }
+.df-barras i { display: block; height: 10px; width: var(--w); border-radius: 999px; background: var(--acc); }
+.df-barras b { font-variant-numeric: tabular-nums; }
+.df-st .pos-ayuda { margin: 6px 2px 0; }
+
+/* Resolver: las cuatro formas, como renglones para elegir. */
+.df-resumen { margin: 0 0 10px; padding-left: 18px; font-size: 13.5px; color: var(--txt-2); display: grid; gap: 2px; }
+.df-ops { display: grid; gap: 6px; margin-bottom: 10px; }
+.df-op { display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 12px; cursor: pointer; }
+.df-op:hover { border-color: var(--line-alta); }
+.df-op:has(input:checked) { border-color: var(--sel-borde, var(--acc)); background: var(--surface-2); }
+.df-op input { margin-top: 3px; accent-color: var(--acc); }
+.df-op b { display: block; font: 700 14px var(--sans); }
+.df-op small { display: block; font-size: 12.5px; color: var(--txt-3); line-height: 1.4; }
+.df-op.apagada { cursor: default; opacity: .55; }

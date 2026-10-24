@@ -381,6 +381,95 @@ var persona = (function () {
   }
 
   /* ════════════════════════════════════════════════════════════════════
+     EL AVISO DE LAS DIFERENCIAS DE LOS REMITOS (SQL 167, 24/10/2026)
+     Mauricio: "el mismo sistema tendría que avisar. Cuando abra el
+     sistema, le tendría que aparecer un mensaje". A Administración (la que
+     las resuelve, por ahora): en "Gestión" de la barra, cuántas faltan
+     resolver; y si llegó alguna desde la última vez que las vio, un cartel
+     abajo con lo que pasó, "Ver las diferencias" y la ×. El mail queda para
+     cuando haya una dirección. Nunca frena nada: sin el SQL 167 o sin
+     conexión, no aparece.
+     ════════════════════════════════════════════════════════════════════ */
+
+  var K_DIF_VISTO = 'nc_dif_visto';   // la última diferencia que ya vio (su número): el cartel sale por las que vengan después
+  var _dif = null;
+
+  function enDiferencias() { return pagina() === 'gestion.html' && /^#\/?diferencias$/.test(location.hash); }
+  function difVisto() { try { return Number(localStorage.getItem(K_DIF_VISTO)) || 0; } catch (e) { return 0; } }
+  /** Ya las vio (abrió Gestión → Diferencias, tocó "Ver" o la ×): el cartel se va y no vuelve por éstas. */
+  function difVistas() {
+    var c = document.getElementById('ncpDif');
+    if (c) c.remove();
+    if (_dif && _dif.ultimo > difVisto()) { try { localStorage.setItem(K_DIF_VISTO, String(_dif.ultimo)); } catch (e) {} }
+  }
+
+  function avisoDiferencias() {
+    if (rol() !== 'admin' || !document.querySelector('.rail')) {
+      /* Si entró otro que no es de Administración, lo del anterior se va. */
+      _dif = null;
+      pintarCuentaDif();
+      var c = document.getElementById('ncpDif');
+      if (c) c.remove();
+      return Promise.resolve(null);
+    }
+    return token().then(function (t) { return funcion('pos_diferencias_aviso', {}, t); }).then(function (a) {
+      _dif = { pendientes: Number(a && a.pendientes) || 0, ultimo: Number(a && a.ultimo) || 0, productos: (a && a.productos) || [] };
+      pintarCuentaDif();
+      if (enDiferencias()) difVistas(); else pintarCartelDif();
+      return _dif;
+    }).catch(function () { return null; });
+  }
+
+  /* El número, en la esquina del ícono de "Gestión" (en la barra parada y en la de abajo del celular). */
+  function pintarCuentaDif() {
+    var n = _dif ? _dif.pendientes : 0;
+    document.querySelectorAll('.rail-item[href="gestion.html"] .rail-icono').forEach(function (ic) {
+      var b = ic.querySelector('.rail-cuenta');
+      if (!n) { if (b) b.remove(); return; }
+      if (!b) { b = document.createElement('span'); b.className = 'rail-cuenta'; ic.appendChild(b); }
+      b.textContent = n > 99 ? '99+' : String(n);
+      b.title = n + (n === 1 ? ' diferencia de remitos sin resolver' : ' diferencias de remitos sin resolver');
+    });
+  }
+
+  function fechaCortaDif(ts) {
+    try {
+      return new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false })
+        .format(new Date(ts)).replace(',', '');
+    } catch (e) { return ''; }
+  }
+
+  function pintarCartelDif() {
+    var visto = difVisto(), viejo = document.getElementById('ncpDif');
+    var nuevos = _dif.productos.filter(function (p) { return Number(p.ultimo) > visto; });
+    if (viejo) viejo.remove();
+    if (!_dif.pendientes || !nuevos.length || !document.body) return;
+    /* El nombre del producto, si la pantalla tiene el catálogo (el POS); si no, el que vino en el remito, o el código. */
+    var cat = {};
+    (window.CATALOGO || []).forEach(function (p) { cat[p[0]] = p[1]; });
+    var d = document.createElement('div');
+    d.id = 'ncpDif';
+    d.className = 'ncp-dif';
+    d.setAttribute('role', 'status');
+    d.innerHTML = '<div class="ncp-dif-cab"><b>' + (nuevos.length === 1 ? 'Llegó un producto con diferencias' : 'Llegaron productos con diferencias') + '</b>' +
+        '<button type="button" class="ncp-dif-x" aria-label="Cerrar el aviso" title="Ya lo vi">×</button></div>' +
+      '<ul>' + nuevos.slice(0, 3).map(function (p) {
+        var que = [p.faltan > 0 ? 'faltó ' + p.faltan : '', p.sobran > 0 ? 'sobró ' + p.sobran : ''].filter(Boolean).join(' y ');
+        return '<li><b>' + txt(p.local) + '</b> · R-' + txt(p.numero) + ' · ' + txt(p.codigo) + (cat[p.codigo] || p.descripcion ? ' ' + txt(cat[p.codigo] || p.descripcion) : '') +
+          ': <span class="ncp-dif-que">' + txt(que) + '</span>' +
+          '<small>' + txt([p.recibio ? 'Lo recibió ' + p.recibio : '', fechaCortaDif(p.fecha)].filter(Boolean).join(', ')) + '</small></li>';
+      }).join('') + '</ul>' +
+      (nuevos.length > 3 ? '<p>Y ' + (nuevos.length - 3) + ' más.</p>' : '') +
+      '<div class="ncp-dif-pie"><span>' + _dif.pendientes + (_dif.pendientes === 1 ? ' sin resolver' : ' sin resolver en total') + '</span>' +
+        '<a class="btn btn-pri btn-chico" href="gestion.html#diferencias">Ver las diferencias</a></div>';
+    d.querySelector('.ncp-dif-x').onclick = difVistas;
+    d.querySelector('a').addEventListener('click', difVistas);
+    document.body.appendChild(d);
+  }
+  /* Si llega a Diferencias por la dirección (o con la flecha de atrás), también cuentan como vistas. */
+  window.addEventListener('hashchange', function () { if (_dif && enDiferencias()) difVistas(); });
+
+  /* ════════════════════════════════════════════════════════════════════
      LA VENTANA: entrar, esperar el OK, o ver quién entró
      ════════════════════════════════════════════════════════════════════ */
 
@@ -894,6 +983,11 @@ var persona = (function () {
     else arrancar();
   });
 
+  /* El aviso de las diferencias de los remitos: cuando la base dijo quién es, y de nuevo si entra otro. */
+  var _listoYa = false;
+  listo.then(function () { _listoYa = true; avisoDiferencias(); });
+  document.addEventListener('persona', function () { if (_listoYa) avisoDiferencias(); });
+
   /* La Carga mandó la sesión y la base no la aceptó (datos.js): se pregunta
      de nuevo, y si tampoco vale, se cierra. */
   document.addEventListener('nc-sesion-rechazada', function () { refrescar(); });
@@ -917,6 +1011,9 @@ var persona = (function () {
   return {
     ROL: ROL,
     listo: listo,
+    /** Las diferencias de los remitos (SQL 167): volver a preguntar (el POS, al resolver o anular) y darlas por vistas. */
+    avisoDiferencias: avisoDiferencias,
+    difVistas: difVistas,
     /** La persona habilitada (activa y aprobada), o null. */
     yo: function () { return vigente(_yo) ? _yo : null; },
     rol: rol,

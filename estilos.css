@@ -1398,6 +1398,49 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   button.rail-item:hover { background: rgba(255, 255, 255, .05); }
 }
 
+/* Las diferencias de los remitos sin resolver (SQL 167, persona.js): el
+   número en la esquina del ícono de "Gestión", con un aro del color del rail
+   para que se despegue del ícono. */
+.rail-icono { position: relative; }
+.rail-cuenta {
+  position: absolute; top: -5px; right: -7px;
+  min-width: 17px; height: 17px; padding: 0 4px; border-radius: 999px;
+  display: grid; place-items: center;
+  background: var(--bad); color: var(--bad-ink);
+  font: 700 10.5px/1 var(--sans); font-variant-numeric: tabular-nums;
+  box-shadow: 0 0 0 2px #0B0D11;
+  pointer-events: none;
+}
+/* Y el cartel, cuando llegó alguna nueva desde la última vez: abajo a la
+   derecha en la compu, arriba de la barra de abajo en el celular. */
+.ncp-dif {
+  position: fixed; z-index: 85;  /* debajo de las ventanas y su velo (95-100): no les tapa los botones */
+  left: 12px; right: 12px; bottom: calc(var(--nav) + env(safe-area-inset-bottom) + 12px);
+  padding: 12px 14px 12px;
+  background: var(--surface); color: var(--txt);
+  border: 1px solid var(--line-alta); border-left: 4px solid var(--bad);
+  border-radius: var(--r-sm);
+  box-shadow: var(--sombra-alta);
+  font-size: 13.5px; line-height: 1.4;
+  animation: ncpDifEntra .25s var(--curva);
+}
+@media (min-width: 900px) { .ncp-dif { left: auto; right: 20px; bottom: 20px; width: 380px; } }
+@keyframes ncpDifEntra { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .ncp-dif { animation: none; } }
+.ncp-dif-cab { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.ncp-dif-cab b { font: 700 14.5px var(--sans); }
+.ncp-dif-x {
+  flex: none; width: 28px; height: 28px; margin: -4px -6px 0 0; border: 0; border-radius: 8px;
+  background: none; color: var(--txt-2); font: 400 20px/1 var(--sans); cursor: pointer;
+}
+.ncp-dif-x:hover { background: var(--surface-2); color: var(--txt); }
+.ncp-dif ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.ncp-dif li small { display: block; color: var(--txt-3); font-size: 12px; }
+.ncp-dif-que { font-weight: 700; color: var(--bad-txt); white-space: nowrap; }
+.ncp-dif p { margin: 6px 0 0; color: var(--txt-2); }
+.ncp-dif-pie { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.ncp-dif-pie span { font-size: 12.5px; font-weight: 600; color: var(--txt-2); }
+
 /* En la Carga, en la PC ancha, el rail va justo de alto con su pie: una
    sección más lo hacía salirse por abajo en la PC del local (1366×658). Ahí
    quien entró es un botón redondo en el mismo renglón que el local, sin sumar

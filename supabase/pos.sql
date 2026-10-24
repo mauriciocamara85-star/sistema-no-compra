@@ -38,6 +38,13 @@
 --  carga de inventario. Está al final del archivo; la venta, el cambio y sus
 --  anulaciones mueven el stock (la nota "SQL 160" en cada una).
 --
+--  SQL 167 (24/10/2026): las diferencias de los remitos. Lo que no coincide
+--  al recibir queda anotado solo (la planilla de errores, sin papel), con
+--  quién lo recibió y qué pasó; la oficina lo resuelve (mandar lo que faltó,
+--  el remito estaba mal, que lo devuelvan a la fábrica) y ve las
+--  estadísticas. Está al final del archivo; los remitos de arriba tienen la
+--  nota "SQL 167" donde cambiaron.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -1639,12 +1646,13 @@ create index pos_stock_movs_variante on pos_stock_movs (local_id, codigo, talle,
 create index pos_stock_movs_ref on pos_stock_movs (ref_id) where ref_id is not null;
 
 -- ── Los remitos ("Remitos de compra" y "Envíos internos" de BlueSoft) ────────
--- Sin origen: viene de la fábrica. Numeran todos juntos: R-1, R-2…
+-- Sin origen: viene de la fábrica. Sin destino: vuelve a la fábrica (SQL 167,
+-- "que lo devuelvan"; la oficina lo da por recibido). Numeran todos juntos: R-1, R-2…
 create table pos_remitos (
   id                uuid primary key default gen_random_uuid(),
   numero            int not null unique,
   origen_local_id   uuid references orden_locales(id),
-  destino_local_id  uuid not null references orden_locales(id),
+  destino_local_id  uuid references orden_locales(id),
   referencia        text,                -- el número del remito de la fábrica (en BlueSoft, "X-0001234")
   fecha             timestamptz not null default clock_timestamp(),
   dia               date not null,
@@ -1657,7 +1665,8 @@ create table pos_remitos (
   anulado_por       uuid,
   anulado_motivo    text,
   clave             text unique,
-  check (origen_local_id is null or origen_local_id <> destino_local_id)
+  check (origen_local_id is null or origen_local_id <> destino_local_id),
+  constraint pos_remitos_con_destino check (origen_local_id is not null or destino_local_id is not null)
 );
 create index pos_remitos_destino on pos_remitos (destino_local_id, estado);
 create index pos_remitos_dia on pos_remitos (dia);
@@ -1677,6 +1686,8 @@ create table pos_remito_items (
 );
 
 -- Cada producto recibido: si coincidió con el remito o se recibió con diferencias.
+-- recibido_por/recibido_nombre: el usuario de la compu; recibio: quién del local lo
+-- contó, elegido de la lista (SQL 167: la compu es compartida, como "Lo atendió").
 create table pos_remito_productos (
   remito_id        uuid not null references pos_remitos(id) on delete cascade,
   codigo           text not null,
@@ -1685,6 +1696,8 @@ create table pos_remito_productos (
   recibido_por     uuid,
   recibido_nombre  text,
   observaciones    text,
+  recibio          text,
+  motivo           text check (motivo in ('Vino otro talle', 'Vino otro color', 'Vino fallada', 'Otro')),
   primary key (remito_id, codigo)
 );
 
@@ -1696,7 +1709,8 @@ create table pos_remito_conteos (
   fecha      timestamptz not null default clock_timestamp(),
   persona    uuid,
   conteo     jsonb not null,
-  coincide   boolean not null
+  coincide   boolean not null,
+  recibio    text
 );
 create index pos_remito_conteos_prod on pos_remito_conteos (remito_id, codigo, id);
 
@@ -1963,12 +1977,15 @@ end $$;
 /* Un remito nuevo: de la fábrica (sin origen) o de otro local (un envío), a
    un local. Los renglones repetidos (el mismo código, talle y color) se suman.
    Si sale de un local, a ése se le saca del stock ahora. Con la misma clave
-   dos veces devuelve el que ya estaba. */
+   dos veces devuelve el que ya estaba.
+   SQL 167: con a_fabrica, de un local a la fábrica (una devolución, "que lo
+   devuelvan"): sale del stock del local ahora y la oficina lo da por recibido. */
 create or replace function pos_remito_guardar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
   v_origen   uuid := nullif(p->>'origen_local_id', '')::uuid;
   v_destino  uuid := nullif(p->>'destino_local_id', '')::uuid;
+  v_fabrica  boolean := coalesce(p->>'a_fabrica', '') = 'true';
   v_clave    text := nullif(trim(coalesce(p->>'clave', '')), '');
   v_obs      text := nullif(trim(coalesce(p->>'observaciones', '')), '');
   v_ref      text := nullif(trim(coalesce(p->>'referencia', '')), '');
@@ -1984,7 +2001,10 @@ begin
     select * into v_ya from pos_remitos where clave = v_clave;
     if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'ya', true); end if;
   end if;
-  if v_destino is null or not exists (select 1 from orden_locales where id = v_destino and activo) then
+  if v_fabrica then
+    v_destino := null;
+    if v_origen is null then raise exception 'Para mandarlo a la fábrica, elegí de qué local sale.'; end if;
+  elsif v_destino is null or not exists (select 1 from orden_locales where id = v_destino and activo) then
     raise exception 'Elegí a qué local va.';
   end if;
   if v_origen is not null and not exists (select 1 from orden_locales where id = v_origen and activo) then
@@ -2030,10 +2050,11 @@ begin
             from jsonb_array_elements(v_items) with ordinality e(v, o)) z
    group by z.c, z.t, z.co;
 
-  /* Un envío entre locales: sale ahora del stock del que lo manda. */
+  /* Un envío entre locales (o una devolución a la fábrica): sale ahora del stock del que lo manda. */
   if v_origen is not null then
     for m in select * from pos_remito_items where remito_id = v_id loop
-      perform pos_stock_mover(v_origen, m.codigo, m.talle, m.color, -m.cantidad, 'envio', v_id, 'Envío R-' || v_num, m.descripcion);
+      perform pos_stock_mover(v_origen, m.codigo, m.talle, m.color, -m.cantidad, 'envio', v_id,
+                              case when v_destino is null then 'Devolución R-' else 'Envío R-' end || v_num, m.descripcion);
     end loop;
   end if;
 
@@ -2044,7 +2065,8 @@ end $$;
 
 /* El listado de remitos. p_local: los que llegan a ese local o salen de él.
    "pendiente" trae todos los que faltan recibir, de cualquier día; los demás
-   estados, los del período. */
+   estados, los del período. SQL 167: los que vuelven a la fábrica (sin
+   destino) y las diferencias que faltan resolver de cada uno. */
 create or replace function pos_remitos(p_desde date, p_hasta date, p_local uuid default null, p_estado text default null)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 begin
@@ -2069,15 +2091,16 @@ begin
         select jsonb_agg(jsonb_build_object(
                  'id', z.id, 'numero', z.numero, 'referencia', z.referencia, 'fecha', z.fecha, 'estado', z.estado,
                  'origen_local_id', z.origen_local_id, 'origen', coalesce(lo.nombre, 'Fábrica'),
-                 'destino_local_id', z.destino_local_id, 'destino', ld.nombre,
+                 'destino_local_id', z.destino_local_id, 'destino', coalesce(ld.nombre, 'Fábrica'),
                  'productos', (select count(distinct i.codigo) from pos_remito_items i where i.remito_id = z.id),
                  'recibidos', (select count(*) from pos_remito_productos k where k.remito_id = z.id),
                  'unidades', (select coalesce(sum(i.cantidad), 0) from pos_remito_items i where i.remito_id = z.id),
                  'contadas', (select sum(i.contado) from pos_remito_items i where i.remito_id = z.id),
+                 'dif_pendientes', (select count(*) from pos_remito_diferencias d where d.remito_id = z.id and d.estado = 'pendiente'),
                  'observaciones', z.observaciones, 'creado_nombre', z.creado_nombre, 'recibido_en', z.recibido_en,
                  'anulado_motivo', z.anulado_motivo) order by z.fecha desc)
           from (select * from r order by fecha desc limit 500) z
-          join orden_locales ld on ld.id = z.destino_local_id
+          left join orden_locales ld on ld.id = z.destino_local_id
           left join orden_locales lo on lo.id = z.origen_local_id), '[]'::jsonb),
       'totales', (select jsonb_build_object(
                     'remitos', count(*) filter (where r.estado <> 'anulado'),
@@ -2093,19 +2116,27 @@ end $$;
 
 /* Un remito, producto por producto. A CIEGAS: de lo que todavía no se recibió
    van el talle y el color, pero no cuántas mandaron (se ve al comparar). Con
-   p_completo (Gestión, la oficina), todo. */
+   p_completo (Gestión, la oficina), todo. SQL 167: quién lo recibió, qué pasó
+   y cada diferencia con cómo se resolvió. */
 create or replace function pos_remito(p_id uuid, p_completo boolean default false) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare r jsonb;
 begin
   perform pos_permiso();
   select to_jsonb(x) - 'clave' || jsonb_build_object(
-           'origen', coalesce(lo.nombre, 'Fábrica'), 'destino', ld.nombre,
+           'origen', coalesce(lo.nombre, 'Fábrica'), 'destino', coalesce(ld.nombre, 'Fábrica'),
            'anulado_por_nombre', (select pe.nombre from orden_personas pe where pe.id = x.anulado_por),
            'productos', coalesce((
              select jsonb_agg(jsonb_build_object(
                       'codigo', g.codigo, 'descripcion', g.descripcion,
-                      'estado', k.estado, 'recibido_en', k.recibido_en, 'recibido_nombre', k.recibido_nombre, 'observaciones', k.observaciones,
+                      'estado', k.estado, 'recibido_en', k.recibido_en, 'recibido_nombre', coalesce(k.recibio, k.recibido_nombre),
+                      'observaciones', k.observaciones, 'motivo', k.motivo,
+                      'diferencias', (select jsonb_agg(jsonb_build_object('id', d.id, 'talle', d.talle, 'color', d.color, 'cantidad', d.cantidad,
+                                                                          'contado', d.contado, 'estado', d.estado, 'resolucion', d.resolucion, 'nota', d.nota,
+                                                                          'resuelta_en', d.resuelta_en, 'resuelta_nombre', d.resuelta_nombre,
+                                                                          'remito_nuevo_numero', rn.numero) order by d.color, d.talle)
+                                        from pos_remito_diferencias d left join pos_remitos rn on rn.id = d.remito_nuevo_id
+                                       where d.remito_id = x.id and d.codigo = g.codigo),
                       'conteos', (select count(*) from pos_remito_conteos c where c.remito_id = x.id and c.codigo = g.codigo),
                       'celdas', (select jsonb_agg(case when k.codigo is not null or x.estado = 'anulado' or coalesce(p_completo, false)
                                                        then jsonb_build_object('talle', i.talle, 'color', i.color, 'cantidad', i.cantidad, 'contado', i.contado)
@@ -2118,7 +2149,7 @@ begin
                left join pos_remito_productos k on k.remito_id = x.id and k.codigo = g.codigo), '[]'::jsonb))
     into r
     from pos_remitos x
-    join orden_locales ld on ld.id = x.destino_local_id
+    left join orden_locales ld on ld.id = x.destino_local_id
     left join orden_locales lo on lo.id = x.origen_local_id
    where x.id = p_id;
   if r is null then raise exception 'No existe ese remito.'; end if;
@@ -2152,8 +2183,11 @@ end $$;
 
 /* Recibir un producto con lo que se contó: lo anota en el remito, lo suma al
    stock del local que lo recibe y, si era el último, da el remito por
-   recibido. Es para pos_remito_contar y pos_remito_recibir. */
-create or replace function pos_remito_entrar(r pos_remitos, p_codigo text, p_conteo jsonb, p_estado text, p_obs text, p_descripcion text)
+   recibido. Es para pos_remito_contar y pos_remito_recibir.
+   SQL 167: quién lo recibió y qué pasó; si no coincidió, cada talle y color
+   que no dio queda en pos_remito_diferencias (la planilla de errores). */
+create or replace function pos_remito_entrar(r pos_remitos, p_codigo text, p_conteo jsonb, p_estado text, p_obs text, p_descripcion text,
+                                             p_recibio text default null, p_motivo text default null)
 returns void language plpgsql volatile security definer set search_path = public as $$
 declare
   m       record;
@@ -2175,8 +2209,15 @@ begin
     from jsonb_array_elements(p_conteo) e
    where not exists (select 1 from pos_remito_items i
                       where i.remito_id = r.id and i.codigo = p_codigo and i.talle = e->>'talle' and i.color = e->>'color');
-  insert into pos_remito_productos (remito_id, codigo, estado, recibido_por, recibido_nombre, observaciones)
-  values (r.id, p_codigo, p_estado, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), p_obs);
+  insert into pos_remito_productos (remito_id, codigo, estado, recibido_por, recibido_nombre, observaciones, recibio, motivo)
+  values (r.id, p_codigo, p_estado, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), p_obs,
+          nullif(trim(coalesce(p_recibio, '')), ''), p_motivo);
+  if p_estado = 'diferencias' then
+    insert into pos_remito_diferencias (remito_id, local_id, codigo, talle, color, descripcion, cantidad, contado)
+    select r.id, r.destino_local_id, i.codigo, i.talle, i.color, i.descripcion, i.cantidad, coalesce(i.contado, 0)
+      from pos_remito_items i
+     where i.remito_id = r.id and i.codigo = p_codigo and i.cantidad <> coalesce(i.contado, 0);
+  end if;
   for m in select * from pos_remito_items where remito_id = r.id and codigo = p_codigo and contado > 0 loop
     perform pos_stock_mover(r.destino_local_id, m.codigo, m.talle, m.color, m.contado, 'remito', r.id, 'Remito R-' || r.numero, m.descripcion);
   end loop;
@@ -2196,18 +2237,20 @@ end $$;
    ("si coincide, ponemos recibido y pasamos a otro producto"). Si no, devuelve
    la comparación: se cuenta de nuevo o se recibe con lo contado
    (pos_remito_recibir). Un producto que no está en el remito también se puede
-   contar: es lo que llegó de más. */
-create or replace function pos_remito_contar(p_remito uuid, p_codigo text, p_conteo jsonb) returns jsonb
+   contar: es lo que llegó de más. SQL 167: p_recibio, quién del local lo cuenta. */
+create or replace function pos_remito_contar(p_remito uuid, p_codigo text, p_conteo jsonb, p_recibio text default null) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
   r       pos_remitos;
   v_c     text := upper(trim(coalesce(p_codigo, '')));
+  v_q     text := nullif(trim(coalesce(p_recibio, '')), '');
   v_cont  jsonb;
   v_cel   jsonb;
   v_ok    boolean;
 begin
   perform pos_permiso();
   if v_c = '' or length(v_c) > 30 then raise exception 'Falta el producto.'; end if;
+  if length(v_q) > 60 then raise exception 'El nombre de quién lo recibió es demasiado largo.'; end if;
   v_cont := pos_remito_conteo_limpio(p_conteo);
   /* Un producto por vez en cada remito: si dos lo cuentan al mismo tiempo, el segundo espera. */
   perform pg_advisory_xact_lock(hashtext('pos_remito:' || coalesce(p_remito::text, '')));
@@ -2215,6 +2258,7 @@ begin
   if not found then raise exception 'No existe ese remito.'; end if;
   if r.estado = 'anulado' then raise exception 'Ese remito está anulado.'; end if;
   if r.estado <> 'pendiente' then raise exception 'Ese remito ya está recibido.'; end if;
+  if r.destino_local_id is null then raise exception 'Ese remito vuelve a la fábrica: se da por recibido en Gestión.'; end if;
   if exists (select 1 from pos_remito_productos where remito_id = p_remito and codigo = v_c) then
     raise exception 'Ese producto ya está recibido.';
   end if;
@@ -2230,9 +2274,9 @@ begin
   if jsonb_array_length(v_cel) = 0 then
     raise exception 'Ese producto no está en el remito y no contaste nada.';
   end if;
-  insert into pos_remito_conteos (remito_id, codigo, persona, conteo, coincide) values (p_remito, v_c, orden_yo_id(), v_cont, v_ok);
+  insert into pos_remito_conteos (remito_id, codigo, persona, conteo, coincide, recibio) values (p_remito, v_c, orden_yo_id(), v_cont, v_ok, v_q);
   if v_ok then
-    perform pos_remito_entrar(r, v_c, v_cont, 'coincide', null, null);
+    perform pos_remito_entrar(r, v_c, v_cont, 'coincide', null, null, v_q, null);
   end if;
   return jsonb_build_object('coincide', v_ok, 'celdas', v_cel,
                             'conteos', (select count(*) from pos_remito_conteos where remito_id = p_remito and codigo = v_c),
@@ -2241,39 +2285,49 @@ end $$;
 
 /* Recibir un producto CON DIFERENCIAS: entra lo que contaron. Tiene que ser
    lo último que contaron (con «Comparar con el remito»), como el efectivo en
-   el cierre de caja. */
+   el cierre de caja. SQL 167: quién lo recibió y qué pasó (p_motivo, de la
+   lista; p_observaciones, el texto); cada diferencia queda para la oficina. */
 create or replace function pos_remito_recibir(p_remito uuid, p_codigo text, p_conteo jsonb, p_observaciones text default null,
-                                              p_descripcion text default null) returns jsonb
+                                              p_descripcion text default null, p_recibio text default null, p_motivo text default null) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
   r       pos_remitos;
   k       pos_remito_conteos;
   v_c     text := upper(trim(coalesce(p_codigo, '')));
   v_obs   text := nullif(trim(coalesce(p_observaciones, '')), '');
+  v_q     text := nullif(trim(coalesce(p_recibio, '')), '');
+  v_mot   text := nullif(trim(coalesce(p_motivo, '')), '');
   v_cont  jsonb;
 begin
   perform pos_permiso();
   if v_c = '' or length(v_c) > 30 then raise exception 'Falta el producto.'; end if;
   if length(v_obs) > 300 or length(p_descripcion) > 120 then raise exception 'El texto es demasiado largo.'; end if;
+  if length(v_q) > 60 then raise exception 'El nombre de quién lo recibió es demasiado largo.'; end if;
+  if v_mot is not null and v_mot not in ('Vino otro talle', 'Vino otro color', 'Vino fallada', 'Otro') then
+    raise exception 'Elegí qué pasó de la lista.';
+  end if;
   v_cont := pos_remito_conteo_limpio(p_conteo);
   perform pg_advisory_xact_lock(hashtext('pos_remito:' || coalesce(p_remito::text, '')));
   select * into r from pos_remitos where id = p_remito for update;
   if not found then raise exception 'No existe ese remito.'; end if;
   if r.estado = 'anulado' then raise exception 'Ese remito está anulado.'; end if;
   if r.estado <> 'pendiente' then raise exception 'Ese remito ya está recibido.'; end if;
+  if r.destino_local_id is null then raise exception 'Ese remito vuelve a la fábrica: se da por recibido en Gestión.'; end if;
   if exists (select 1 from pos_remito_productos where remito_id = p_remito and codigo = v_c) then
     raise exception 'Ese producto ya está recibido.';
   end if;
   select * into k from pos_remito_conteos where remito_id = p_remito and codigo = v_c order by id desc limit 1;
   if not found then raise exception 'Primero contá el producto y tocá «Comparar con el remito».'; end if;
   if k.conteo <> v_cont then raise exception 'No es lo último que contaste: tocá «Comparar con el remito» de nuevo.'; end if;
-  perform pos_remito_entrar(r, v_c, v_cont, 'diferencias', v_obs, p_descripcion);
+  perform pos_remito_entrar(r, v_c, v_cont, 'diferencias', v_obs, p_descripcion, coalesce(v_q, k.recibio), v_mot);
   return jsonb_build_object('estado', (select estado from pos_remitos where id = p_remito));
 end $$;
 
 /* Anular un remito (queda en la lista, tachado, con quién y por qué). Lo que
    ya entró al stock vuelve a salir, y si era un envío, al local que lo mandó
-   le vuelve lo que mandó. */
+   le vuelve lo que mandó. SQL 167: si era el que resolvía unas diferencias
+   (lo que faltó, o lo que se devolvía), ésas vuelven a quedar sin resolver;
+   las diferencias del remito anulado dejan de contar. */
 create or replace function pos_remito_anular(p_id uuid, p_motivo text) returns boolean
 language plpgsql volatile security definer set search_path = public as $$
 declare r pos_remitos; m pos_stock_movs;
@@ -2289,20 +2343,329 @@ begin
   end loop;
   update pos_remitos set estado = 'anulado', anulado_en = now(), anulado_por = orden_yo_id(), anulado_motivo = trim(p_motivo)
    where id = p_id;
+  update pos_remito_diferencias
+     set estado = 'pendiente', resolucion = null, nota = null, resuelta_en = null, resuelta_por = null, resuelta_nombre = null, remito_nuevo_id = null
+   where remito_nuevo_id = p_id;
   return true;
 end $$;
 
 revoke all on function pos_stock_mover(uuid, text, text, text, int, text, uuid, text, text, text, text),
                        pos_remito_conteo_limpio(jsonb),
-                       pos_remito_entrar(pos_remitos, text, jsonb, text, text, text)
+                       pos_remito_entrar(pos_remitos, text, jsonb, text, text, text, text, text)
        from public, anon, authenticated;
 revoke all on function pos_stock_local(uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean),
                        pos_stock_variante(uuid, text, text, text), pos_stock_ajustar(jsonb), pos_inventario_cargar(jsonb),
                        pos_inventarios(uuid), pos_remito_guardar(jsonb), pos_remitos(date, date, uuid, text), pos_remito(uuid, boolean),
-                       pos_remito_contar(uuid, text, jsonb), pos_remito_recibir(uuid, text, jsonb, text, text), pos_remito_anular(uuid, text)
+                       pos_remito_contar(uuid, text, jsonb, text), pos_remito_recibir(uuid, text, jsonb, text, text, text, text), pos_remito_anular(uuid, text)
        from public, anon;
 grant execute on function pos_stock_local(uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean),
                           pos_stock_variante(uuid, text, text, text), pos_stock_ajustar(jsonb), pos_inventario_cargar(jsonb),
                           pos_inventarios(uuid), pos_remito_guardar(jsonb), pos_remitos(date, date, uuid, text), pos_remito(uuid, boolean),
-                          pos_remito_contar(uuid, text, jsonb), pos_remito_recibir(uuid, text, jsonb, text, text), pos_remito_anular(uuid, text)
+                          pos_remito_contar(uuid, text, jsonb, text), pos_remito_recibir(uuid, text, jsonb, text, text, text, text), pos_remito_anular(uuid, text)
+       to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 167 (24/10/2026) · LAS DIFERENCIAS DE LOS REMITOS
+--
+--  Mauricio (24/10): "si no da, nosotros tenemos una planilla de error donde
+--  anotamos… para que después sepa la fábrica qué pasó. También estaría bueno
+--  que tenga estadísticas de errores… que puedan editar desde gestión de la
+--  fábrica esa prenda que nos mandaron mal". Y del aviso: "el mismo sistema
+--  tendría que avisar. Cuando abra el sistema, le tendría que aparecer un
+--  mensaje".
+--
+--  · La planilla se arma sola: cuando un local recibe un producto "con lo
+--    contado", cada talle y color que no dio queda acá (pos_remito_entrar),
+--    con quién lo recibió y qué pasó. Nadie carga nada aparte.
+--  · La oficina (por ahora; después, la fábrica con su usuario) la resuelve:
+--      mandar     arma un remito nuevo con lo que faltó, al mismo local;
+--      devolver   arma uno del local a la fábrica con lo que sobró (sale de su
+--                 stock al guardarlo, como un envío);
+--      remito_mal el remito estaba mal: el stock ya está bien (entró lo
+--                 contado) y no se mueve nada;
+--      otra       otra solución, escrita.
+--    El remito original no se toca: la corrección queda aparte, con quién y
+--    cuándo, para que la estadística no se borre.
+--  · Si se anula el remito que la resolvía, la diferencia vuelve a quedar sin
+--    resolver (pos_remito_anular). Las de un remito anulado no cuentan.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table pos_remito_diferencias (
+  id               bigserial primary key,
+  remito_id        uuid not null references pos_remitos(id) on delete cascade,
+  local_id         uuid not null references orden_locales(id),   -- el que lo recibió
+  codigo           text not null,
+  talle            text not null default '',
+  color            text not null default '',
+  descripcion      text,
+  cantidad         int not null,                                  -- lo que decía el remito
+  contado          int not null,                                  -- lo que llegó
+  creado_en        timestamptz not null default clock_timestamp(),
+  estado           text not null default 'pendiente' check (estado in ('pendiente', 'resuelta')),
+  resolucion       text check (resolucion in ('mandar', 'remito_mal', 'devolver', 'otra')),
+  nota             text,
+  resuelta_en      timestamptz,
+  resuelta_por     uuid,
+  resuelta_nombre  text,
+  remito_nuevo_id  uuid references pos_remitos(id),               -- el que manda lo que faltó o devuelve lo que sobró
+  unique (remito_id, codigo, talle, color),
+  check (cantidad <> contado),
+  check ((estado = 'pendiente') = (resolucion is null))
+);
+create index pos_remito_diferencias_estado on pos_remito_diferencias (estado, local_id);
+create index pos_remito_diferencias_nuevo on pos_remito_diferencias (remito_nuevo_id) where remito_nuevo_id is not null;
+
+alter table pos_remito_diferencias enable row level security;
+revoke all on pos_remito_diferencias from anon, authenticated;
+revoke all on sequence pos_remito_diferencias_id_seq from anon, authenticated;
+
+/* La planilla de las diferencias y sus estadísticas. "pendiente" trae las que
+   faltan resolver, de cualquier día; si no, las del período (por el día en que
+   se recibió). Las estadísticas son siempre del período: los remitos que se
+   recibieron, cuántos con diferencias, lo que faltó y sobró, por local, por
+   producto y por qué pasó; y aparte, lo que el local tuvo que contar de nuevo
+   (ésos no son errores de la fábrica: coincidieron al final). */
+create or replace function pos_diferencias(p_desde date, p_hasta date, p_local uuid default null, p_estado text default null)
+returns jsonb language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  if p_estado is not null and p_estado not in ('pendiente', 'resuelta') then raise exception 'Ese estado no existe.'; end if;
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with d as (
+      select x.*, (x.creado_en at time zone 'America/Argentina/Buenos_Aires')::date dia,
+             (x.resuelta_en at time zone 'America/Argentina/Buenos_Aires')::date dia_res
+        from pos_remito_diferencias x join pos_remitos r on r.id = x.remito_id
+       where r.estado <> 'anulado' and (p_local is null or x.local_id = p_local)
+    ),
+    f as (
+      select * from d
+       where case when p_estado = 'pendiente' then d.estado = 'pendiente'
+                  else d.dia between p_desde and p_hasta and (p_estado is null or d.estado = p_estado) end
+    ),
+    dp as (select * from d where d.dia between p_desde and p_hasta),
+    rr as (
+      select r.* from pos_remitos r
+       where r.estado in ('recibido', 'con_diferencias') and r.destino_local_id is not null
+         and (r.recibido_en at time zone 'America/Argentina/Buenos_Aires')::date between p_desde and p_hasta
+         and (p_local is null or r.destino_local_id = p_local)
+    ),
+    -- Los productos que coincidieron recién después de contarlos más de una vez.
+    rc as (
+      select rr.destino_local_id local_id, k.remito_id, k.codigo
+        from pos_remito_productos k join rr on rr.id = k.remito_id
+       where k.estado = 'coincide'
+         and (select count(*) from pos_remito_conteos c where c.remito_id = k.remito_id and c.codigo = k.codigo) > 1
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', z.id, 'remito_id', z.remito_id, 'numero', r.numero, 'referencia', r.referencia, 'cargo', r.creado_nombre,
+                 'local_id', z.local_id, 'local', l.nombre, 'codigo', z.codigo, 'descripcion', z.descripcion, 'talle', z.talle, 'color', z.color,
+                 'cantidad', z.cantidad, 'contado', z.contado, 'fecha', z.creado_en,
+                 'recibio', coalesce(k.recibio, k.recibido_nombre), 'motivo', k.motivo, 'observaciones', k.observaciones,
+                 'estado', z.estado, 'resolucion', z.resolucion, 'nota', z.nota, 'resuelta_en', z.resuelta_en, 'resuelta_nombre', z.resuelta_nombre,
+                 'remito_nuevo_id', z.remito_nuevo_id, 'remito_nuevo_numero', rn.numero, 'remito_nuevo_estado', rn.estado)
+               order by z.creado_en desc, z.codigo, z.color, z.talle)
+          from (select * from f order by creado_en desc, id limit 1000) z
+          join pos_remitos r on r.id = z.remito_id
+          join orden_locales l on l.id = z.local_id
+          left join pos_remito_productos k on k.remito_id = z.remito_id and k.codigo = z.codigo
+          left join pos_remitos rn on rn.id = z.remito_nuevo_id), '[]'::jsonb),
+      'mas', (select count(*) > 1000 from f),
+      'totales', jsonb_build_object(
+        'pendientes', (select count(*) from d where d.estado = 'pendiente'),
+        'remitos', (select count(*) from rr),
+        'con_diferencias', (select count(*) from rr where rr.estado = 'con_diferencias'),
+        'unidades', (select coalesce(sum(i.cantidad), 0) from pos_remito_items i join rr on rr.id = i.remito_id),
+        'faltaron', (select coalesce(sum(cantidad - contado), 0) from dp where contado < cantidad),
+        'sobraron', (select coalesce(sum(contado - cantidad), 0) from dp where contado > cantidad),
+        'resueltas', (select count(*) from d where d.estado = 'resuelta' and d.dia_res between p_desde and p_hasta),
+        'horas_resolver', (select round((avg(extract(epoch from (d.resuelta_en - d.creado_en))) / 3600)::numeric, 1)
+                             from d where d.estado = 'resuelta' and d.dia_res between p_desde and p_hasta),
+        'recontados', (select count(*) from rc)),
+      'por_local', coalesce((
+        select jsonb_agg(jsonb_build_object('local_id', l.id, 'local', l.nombre, 'remitos', a.remitos, 'con_diferencias', a.cd,
+                                            'faltaron', a.falt, 'sobraron', a.sobr, 'recontados', a.rec)
+                         order by a.cd desc, a.falt + a.sobr desc, l.nombre)
+          from orden_locales l
+          cross join lateral (
+            select (select count(*) from rr where rr.destino_local_id = l.id) remitos,
+                   (select count(*) from rr where rr.destino_local_id = l.id and rr.estado = 'con_diferencias') cd,
+                   (select coalesce(sum(cantidad - contado), 0) from dp where dp.local_id = l.id and contado < cantidad) falt,
+                   (select coalesce(sum(contado - cantidad), 0) from dp where dp.local_id = l.id and contado > cantidad) sobr,
+                   (select count(*) from rc where rc.local_id = l.id) rec) a
+         where a.remitos > 0 or a.falt + a.sobr > 0 or a.rec > 0), '[]'::jsonb),
+      'por_producto', coalesce((
+        select jsonb_agg(jsonb_build_object('codigo', g.codigo, 'descripcion', g.descripcion, 'veces', g.veces, 'faltaron', g.falt, 'sobraron', g.sobr)
+                         order by g.falt + g.sobr desc, g.veces desc, g.codigo)
+          from (select * from (select dp.codigo, max(dp.descripcion) descripcion, count(distinct dp.remito_id) veces,
+                                      coalesce(sum(cantidad - contado) filter (where contado < cantidad), 0) falt,
+                                      coalesce(sum(contado - cantidad) filter (where contado > cantidad), 0) sobr
+                                 from dp group by dp.codigo) g0
+                 order by g0.falt + g0.sobr desc, g0.veces desc, g0.codigo limit 10) g), '[]'::jsonb),
+      'por_motivo', coalesce((
+        select jsonb_agg(jsonb_build_object('motivo', m.motivo, 'productos', m.n) order by m.n desc, m.motivo)
+          from (select coalesce(k.motivo, 'Sin decir') motivo, count(*) n
+                  from (select distinct remito_id, codigo from dp) q
+                  join pos_remito_productos k on k.remito_id = q.remito_id and k.codigo = q.codigo
+                 group by 1) m), '[]'::jsonb)
+    )
+  );
+end $$;
+
+/* Resolver diferencias (una o varias, de la planilla). Con «mandar» o
+   «devolver» arma el remito (todas del mismo local); la clave es la de ese
+   remito, así dos clics no arman dos. Si ya estaban todas resueltas, no hace
+   nada (un reintento). */
+create or replace function pos_diferencia_resolver(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_res     text := coalesce(p->>'resolucion', '');
+  v_nota    text := nullif(trim(coalesce(p->>'nota', '')), '');
+  v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_ids     bigint[];
+  v_n       int;
+  v_loc     uuid;
+  v_nloc    int;
+  v_refs    text;
+  v_items   jsonb;
+  v_rem     jsonb;
+begin
+  perform pos_permiso();
+  if v_res not in ('mandar', 'remito_mal', 'devolver', 'otra') then raise exception 'Elegí cómo se resuelve.'; end if;
+  if v_res = 'otra' and v_nota is null then raise exception 'Escribí cómo se resolvió.'; end if;
+  if length(v_nota) > 300 then raise exception 'La nota es demasiado larga.'; end if;
+  if jsonb_typeof(p->'ids') is distinct from 'array' or jsonb_array_length(p->'ids') = 0 then raise exception 'Elegí qué diferencias se resuelven.'; end if;
+  if jsonb_array_length(p->'ids') > 500 then raise exception 'Son demasiadas diferencias juntas.'; end if;
+  if exists (select 1 from jsonb_array_elements_text(p->'ids') e where e !~ '^[0-9]{1,18}$') then raise exception 'Hay una diferencia que no existe.'; end if;
+  select array_agg(distinct e::bigint) into v_ids from jsonb_array_elements_text(p->'ids') e;
+
+  /* Una resolución por vez: si dos resuelven la misma al mismo tiempo, el segundo espera y ve que ya está. */
+  perform pg_advisory_xact_lock(hashtext('pos_diferencias'));
+  select count(*) into v_n from pos_remito_diferencias d join pos_remitos r on r.id = d.remito_id
+   where d.id = any(v_ids) and r.estado <> 'anulado';
+  if v_n <> cardinality(v_ids) then raise exception 'Alguna diferencia ya no está (o se anuló su remito): actualizá la lista.'; end if;
+  if not exists (select 1 from pos_remito_diferencias where id = any(v_ids) and estado = 'pendiente') then
+    return jsonb_build_object('ya', true, 'resueltas', 0);
+  end if;
+  if exists (select 1 from pos_remito_diferencias where id = any(v_ids) and estado <> 'pendiente') then
+    raise exception 'Alguna ya estaba resuelta: actualizá la lista.';
+  end if;
+  perform 1 from pos_remito_diferencias where id = any(v_ids) for update;
+
+  select count(distinct d.local_id), (array_agg(d.local_id))[1], string_agg(distinct 'R-' || r.numero, ', ')
+    into v_nloc, v_loc, v_refs
+    from pos_remito_diferencias d join pos_remitos r on r.id = d.remito_id where d.id = any(v_ids);
+  if v_res in ('mandar', 'devolver') then
+    if v_nloc > 1 then raise exception 'Para armar un remito, elegí diferencias de un solo local.'; end if;
+    if v_res = 'mandar' and exists (select 1 from pos_remito_diferencias where id = any(v_ids) and contado > cantidad) then
+      raise exception '«Mandar lo que faltó» es sólo para lo que faltó.';
+    end if;
+    if v_res = 'devolver' and exists (select 1 from pos_remito_diferencias where id = any(v_ids) and contado < cantidad) then
+      raise exception '«Que lo devuelvan» es sólo para lo que sobró.';
+    end if;
+    select jsonb_agg(jsonb_build_object('codigo', codigo, 'talle', talle, 'color', color, 'descripcion', descripcion,
+                                        'cantidad', abs(contado - cantidad)) order by codigo, color, talle)
+      into v_items from pos_remito_diferencias where id = any(v_ids);
+    v_rem := pos_remito_guardar(jsonb_build_object(
+      'clave', v_clave,
+      'origen_local_id', case when v_res = 'devolver' then v_loc end,
+      'destino_local_id', case when v_res = 'mandar' then v_loc end,
+      'a_fabrica', v_res = 'devolver',
+      'referencia', left('Por ' || v_refs, 40),
+      'observaciones', left((case when v_res = 'mandar' then 'Lo que faltó en ' else 'Lo que sobró en ' end) || v_refs || coalesce('. ' || v_nota, ''), 300),
+      'items', v_items));
+  end if;
+
+  update pos_remito_diferencias
+     set estado = 'resuelta', resolucion = v_res, nota = v_nota, resuelta_en = clock_timestamp(), resuelta_por = orden_yo_id(),
+         resuelta_nombre = (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()),
+         remito_nuevo_id = nullif(v_rem->>'id', '')::uuid
+   where id = any(v_ids);
+  return jsonb_build_object('ya', false, 'resueltas', cardinality(v_ids), 'remito', v_rem);
+end $$;
+
+/* Volver a dejar sin resolver (un clic equivocado). Las que se resolvieron con
+   un remito no: para eso se anula ese remito, que las deja sin resolver solo. */
+create or replace function pos_diferencia_reabrir(p jsonb) returns int
+language plpgsql volatile security definer set search_path = public as $$
+declare v_ids bigint[]; v_ref int; v_n int;
+begin
+  perform pos_permiso();
+  if jsonb_typeof(p->'ids') is distinct from 'array' or jsonb_array_length(p->'ids') = 0 then raise exception 'Elegí qué diferencias.'; end if;
+  if exists (select 1 from jsonb_array_elements_text(p->'ids') e where e !~ '^[0-9]{1,18}$') then raise exception 'Hay una diferencia que no existe.'; end if;
+  select array_agg(distinct e::bigint) into v_ids from jsonb_array_elements_text(p->'ids') e;
+  perform pg_advisory_xact_lock(hashtext('pos_diferencias'));
+  select r.numero into v_ref from pos_remito_diferencias d join pos_remitos r on r.id = d.remito_nuevo_id
+   where d.id = any(v_ids) and d.remito_nuevo_id is not null and r.estado <> 'anulado' limit 1;
+  if v_ref is not null then raise exception 'Se resolvió con el remito R-%: para volver atrás, anulá ese remito.', v_ref; end if;
+  update pos_remito_diferencias
+     set estado = 'pendiente', resolucion = null, nota = null, resuelta_en = null, resuelta_por = null, resuelta_nombre = null, remito_nuevo_id = null
+   where id = any(v_ids) and estado = 'resuelta';
+  get diagnostics v_n = row_count;
+  return v_n;
+end $$;
+
+/* Lo que vuelve a la fábrica ("que lo devuelvan"): como la fábrica todavía no
+   está en el sistema, la oficina lo da por recibido cuando llega. El stock ya
+   salió del local al mandarlo. */
+create or replace function pos_remito_fabrica_recibir(p_id uuid) returns boolean
+language plpgsql volatile security definer set search_path = public as $$
+declare r pos_remitos;
+begin
+  perform pos_permiso();
+  perform pg_advisory_xact_lock(hashtext('pos_remito:' || coalesce(p_id::text, '')));
+  select * into r from pos_remitos where id = p_id for update;
+  if not found then raise exception 'No existe ese remito.'; end if;
+  if r.destino_local_id is not null then raise exception 'Ese remito va a un local: lo recibe el local en el POS.'; end if;
+  if r.estado = 'anulado' then raise exception 'Ese remito está anulado.'; end if;
+  if r.estado <> 'pendiente' then return true; end if;
+  update pos_remito_items set contado = cantidad where remito_id = p_id;
+  insert into pos_remito_productos (remito_id, codigo, estado, recibido_por, recibido_nombre)
+  select distinct p_id, i.codigo, 'coincide', orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id())
+    from pos_remito_items i where i.remito_id = p_id
+  on conflict (remito_id, codigo) do nothing;
+  update pos_remitos set estado = 'recibido', recibido_en = clock_timestamp() where id = p_id;
+  return true;
+end $$;
+
+/* El aviso al abrir el sistema ("cuando abra el sistema, le tendría que
+   aparecer un mensaje"): cuántas faltan resolver y los últimos productos con
+   diferencias. A quien no puede verlas le contesta vacío, sin error (lo pide
+   cada pantalla del sistema). */
+create or replace function pos_diferencias_aviso() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not orden_es_admin() then return jsonb_build_object('pendientes', 0, 'ultimo', 0, 'productos', '[]'::jsonb); end if;
+  return (
+    with d as (
+      select x.* from pos_remito_diferencias x join pos_remitos r on r.id = x.remito_id
+       where x.estado = 'pendiente' and r.estado <> 'anulado'
+    )
+    select jsonb_build_object(
+      'pendientes', (select count(*) from d),
+      'ultimo', coalesce((select max(id) from d), 0),
+      'productos', coalesce((
+        select jsonb_agg(jsonb_build_object('ultimo', z.ultimo, 'fecha', z.fecha, 'local', l.nombre, 'numero', r.numero, 'referencia', r.referencia,
+                                            'codigo', z.codigo, 'descripcion', z.descripcion, 'faltan', z.faltan, 'sobran', z.sobran,
+                                            'recibio', coalesce(k.recibio, k.recibido_nombre), 'celdas', z.celdas)
+                         order by z.ultimo desc)
+          from (select d.remito_id, d.codigo, d.local_id, max(d.id) ultimo, max(d.creado_en) fecha, max(d.descripcion) descripcion,
+                       sum(greatest(d.cantidad - d.contado, 0)) faltan, sum(greatest(d.contado - d.cantidad, 0)) sobran,
+                       jsonb_agg(jsonb_build_object('talle', d.talle, 'color', d.color, 'cantidad', d.cantidad, 'contado', d.contado) order by d.color, d.talle) celdas
+                  from d group by d.remito_id, d.codigo, d.local_id order by max(d.id) desc limit 5) z
+          join pos_remitos r on r.id = z.remito_id
+          join orden_locales l on l.id = z.local_id
+          left join pos_remito_productos k on k.remito_id = z.remito_id and k.codigo = z.codigo), '[]'::jsonb)
+    )
+  );
+end $$;
+
+revoke all on function pos_diferencias(date, date, uuid, text), pos_diferencia_resolver(jsonb), pos_diferencia_reabrir(jsonb),
+                       pos_remito_fabrica_recibir(uuid), pos_diferencias_aviso()
+       from public, anon;
+grant execute on function pos_diferencias(date, date, uuid, text), pos_diferencia_resolver(jsonb), pos_diferencia_reabrir(jsonb),
+                          pos_remito_fabrica_recibir(uuid), pos_diferencias_aviso()
        to authenticated;

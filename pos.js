@@ -37,6 +37,11 @@
    la fábrica (por ahora, la oficina desde Gestión) carga el remito y el
    local lo cuenta a ciegas, producto por producto: recién ahí entra a su
    stock. La primera carga sale del Excel de "Consulta de stock" de BlueSoft.
+   El SQL 167 (24/10, "si no da, tenemos una planilla de error donde
+   anotamos"): las diferencias de los remitos se anotan solas, con quién lo
+   recibió y qué pasó; en Gestión → Diferencias se ven con sus estadísticas
+   y se resuelven (mandar lo que faltó, que devuelvan lo que sobró…), y el
+   sistema avisa al abrirlo (persona.js).
 
    La plata va en CENTAVOS (enteros) en toda la cuenta: la base vuelve a
    sumar y exige que los pagos den el total al centavo.
@@ -77,7 +82,7 @@
     ],
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
-      ['Stock', [['stock', 'Stock', 'stock'], ['remitos', 'Remitos', 'envio'], ['inventario', 'Inventario', 'inventario']]],
+      ['Stock', [['stock', 'Stock', 'stock'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'], ['inventario', 'Inventario', 'inventario']]],
       ['Caja', [['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['reportes', 'Reportes', 'reportes']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
@@ -88,7 +93,7 @@
   var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos' }, gestion: { remito_nuevo: 'remitos' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
-                 stock: 1, remitos: 1, inventario: 1 };
+                 stock: 1, remitos: 1, diferencias: 1, inventario: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
@@ -144,6 +149,7 @@
     envio: '<path d="M1 4h14v12H1z"/><path d="M15 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
     recepcion: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
     inventario: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+    dif: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
     producto: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
     lista: '<path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>',
     promo: '<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
@@ -251,9 +257,11 @@
   function mensajeDe(e) {
     var m = String((e && e.message) || e || '');
     /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe.
-       El 149 suma la caja (pos_caja…, pos_cierre…). El 160, el stock y los remitos. */
+       El 149 suma la caja (pos_caja…, pos_cierre…). El 160, el stock y los remitos. El 167, las diferencias
+       (y quién recibió: p_recibio). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
+      return 'Todavía falta correr el SQL ' + (/pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
+                                             /pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
     }
     if (/tiene que ser A o B/.test(m)) return 'Todavía falta correr el SQL 147 (el de la X) en Supabase.';
     if (esDeRed(e)) return 'Sin conexión: no se pudo hablar con la base.';
@@ -334,6 +342,7 @@
       S.ini = ini;
       if (!ini.locales || !ini.locales.length) { app.innerHTML = '<div class="pos-cartel">No hay sucursales cargadas.</div>'; return; }
       ir(vistaDelHash());
+      cuentaDif();
     }).catch(function (e) {
       if (e && e.sinSesion) { pantallaPorton(null); return; }
       app.innerHTML = '<div class="pos-porton"><h2>' + (MODO === 'gestion' ? 'Gestión' : 'POS') + '</h2><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>' +
@@ -376,7 +385,7 @@
     engancharMenu();
     var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, cierre: verCierre, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
-                stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, inventario: verInventario }[v];
+                stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario }[v];
     if (ver) ver(); else verPronto(v);
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
@@ -400,10 +409,30 @@
 
   function item(it) {
     var activa = it[0] === S.vista || it[0] === DENTRO[MODO][S.vista];
-    var dentro = icono(it[2]) + '<span>' + esc(it[1]) + '</span>' + (HECHAS[it[0]] || it[3] ? '' : '<em class="pos-pronto">Pronto</em>');
+    var dentro = icono(it[2]) + '<span>' + esc(it[1]) + '</span>' + (HECHAS[it[0]] || it[3] ? '' : '<em class="pos-pronto">Pronto</em>') +
+      (it[0] === 'diferencias' && S.difPend ? cuentaHtml(S.difPend) : '');
     if (it[3]) return '<a class="pos-item" href="' + it[3] + '" title="' + esc(it[1]) + ' (el No Compra)">' + dentro + '</a>';
     return '<button type="button" class="pos-item' + (activa ? ' activa' : '') + '" data-ir="' + it[0] + '" title="' + esc(it[1]) + '"' +
       (activa ? ' aria-current="page"' : '') + '>' + dentro + '</button>';
+  }
+  /* Las diferencias de los remitos sin resolver (SQL 167): el número al lado de "Diferencias", en Gestión. */
+  function cuentaHtml(n) {
+    return '<em class="pos-cuenta" title="' + n + (n === 1 ? ' diferencia sin resolver' : ' diferencias sin resolver') + '">' + (n > 99 ? '99+' : n) + '</em>';
+  }
+  function cuentaDif() {
+    if (MODO !== 'gestion') return;
+    llamar('pos_diferencias_aviso').then(function (a) { ponerCuentaDif(Number(a && a.pendientes) || 0); }, function () {});
+  }
+  function ponerCuentaDif(n) {
+    S.difPend = n;
+    var b = app.querySelector('.pos-item[data-ir="diferencias"]'), e = b && b.querySelector('.pos-cuenta');
+    if (e) e.remove();
+    if (b && n) b.insertAdjacentHTML('beforeend', cuentaHtml(n));
+  }
+  /** Cambió algo de las diferencias: se ponen al día el número del menú y el de la barra (persona.js). */
+  function avisoAlDia() {
+    cuentaDif();
+    if (window.persona && persona.avisoDiferencias) persona.avisoDiferencias();
   }
   /* Gestión: cada grupo se despliega y se pliega (Mauricio, 20/10: "que se despliegue… si en algún
      momento tenemos más"). Arranca abierto el de la sección en la que está; lo demás, como lo dejó. */
@@ -2742,6 +2771,10 @@
   var ESTADO_REMITO = { pendiente: ['Por recibir', 'pill-warn'], recibido: ['Recibido', 'pill-ok'],
                         con_diferencias: ['Con diferencias', 'pill-bad'], anulado: ['Anulado', 'pill-bad'] };
   var MOTIVOS_AJUSTE = ['Falla', 'Robo o faltante', 'Error de carga', 'Apareció', 'Otro'];
+  /* Qué pasó cuando un producto llega distinto del remito (SQL 167: la misma lista que la base), y cómo se resolvió. */
+  var MOTIVOS_REM = ['Vino otro talle', 'Vino otro color', 'Vino fallada', 'Otro'];
+  var RESOLUCION = { mandar: 'Mandan lo que faltó', devolver: 'Lo devuelven a la fábrica', remito_mal: 'El remito estaba mal', otra: 'Otra solución' };
+  var RESOLUCION_CORTA = { mandar: 'Lo mandan', devolver: 'Lo devuelven', remito_mal: 'Remito mal', otra: 'Otra solución' };   // en la tabla, para que entre
   var ORDEN_TALLES = ['XXS', 'XS', 'S', 'M', 'L', 'XL', 'XXL', '2XL', 'XXXL', '3XL', '4XL', '5XL', 'U', 'UNICO', 'ÚNICO'];
 
   function refRemito(r) { return 'R-' + r.numero; }
@@ -3208,7 +3241,7 @@
 
   function verRemitosGestion() {
     var c = $('cuerpo');
-    c.innerHTML = cabeza('Remitos', 'Lo que la fábrica manda a cada local y los envíos entre locales. El local los cuenta a ciegas al recibirlos, en POS → Remitos.',
+    c.innerHTML = cabeza('Remitos', 'Lo que la fábrica manda a cada local, los envíos entre locales y lo que vuelve a la fábrica. El local los cuenta a ciegas al recibirlos, en POS → Remitos.',
         '<button type="button" class="btn btn-pri btn-chico" data-ir="remito_nuevo">Nuevo remito</button>') +
       '<div class="pos-filtros"><div id="rgPer"></div>' +
         campo('', 'Sucursal', '<select id="rgLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
@@ -3240,7 +3273,7 @@
               '<td class="cb-que">' + esc(f.observaciones || '') + '</td>' +
               '<td>' + (f.estado === 'pendiente' && f.recibidos ? f.recibidos + ' de ' + f.productos : num(f.productos)) + '</td>' +
               '<td class="n tachar">' + num(f.unidades) + '</td><td class="n' + (dif ? ' st-sale' : '') + '">' + (f.contadas == null ? '—' : num(f.contadas)) + '</td>' +
-              '<td>' + pillRemito(f.estado) + '</td></tr>';
+              '<td>' + pillRemito(f.estado) + (f.dif_pendientes > 0 && f.estado !== 'anulado' ? '<small class="df-pend">' + f.dif_pendientes + ' sin resolver</small>' : '') + '</td></tr>';
           }).join('') + '</tbody></table></div>' + (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
         $('rgLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
           tr.onclick = function () { abrirRemito(tr.getAttribute('data-ticket'), cargar); };
@@ -3257,16 +3290,28 @@
     var caja = ventana('<h3 id="posVentTit">Remito</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
     llamar('pos_remito', { p_id: id, p_completo: gestion }).then(function (r) {
       if (!caja.isConnected) return;
-      var an = r.estado === 'anulado', pend = r.estado === 'pendiente';
+      var an = r.estado === 'anulado', pend = r.estado === 'pendiente', aFabrica = !r.destino_local_id, sinResolver = 0;
       var prods = (r.productos || []).map(function (p) {
         var est = p.estado === 'coincide' ? '<span class="pill pill-ok">Coincidió</span>' : p.estado === 'diferencias' ? '<span class="pill pill-bad">Con diferencias</span>' :
                   '<span class="pill">Falta recibir</span>';
         var ves = p.celdas && p.celdas.length && 'cantidad' in p.celdas[0];
+        /* SQL 167: cada diferencia, con cómo se resolvió (o que falta). */
+        var difs = (p.diferencias || []).map(function (d) {
+          var n = d.contado - d.cantidad, pendiente = d.estado === 'pendiente';
+          if (pendiente && !an) sinResolver++;
+          return '<li><span class="rm-dif-que"><b class="' + (n < 0 ? 'st-sale' : 'df-sobro') + '">' + (n < 0 ? 'Faltó ' + -n : 'Sobró ' + n) + '</b> · ' +
+              esc([d.talle ? 'talle ' + d.talle : '', d.color ? nombreCol(d.color, p.codigo) : ''].filter(Boolean).join(', ') || 'sin talle ni color') + '</span>' +
+            (an ? '' : pendiente ? '<span class="pill pill-warn">Sin resolver</span>' :
+              '<span class="rm-dif-res"><span class="pill pill-ok">' + esc(RESOLUCION[d.resolucion] || d.resolucion) + '</span>' +
+                (d.remito_nuevo_numero ? ' R-' + d.remito_nuevo_numero : '') + '<small>' + esc([d.resuelta_nombre, d.resuelta_en ? fechaHora(d.resuelta_en) : ''].filter(Boolean).join(' · ')) +
+                (d.nota ? ' · «' + esc(d.nota) + '»' : '') + '</small></span>') + '</li>';
+        }).join('');
         return '<div class="st-prod"><div class="st-prod-cab"><b>' + esc(p.codigo) + '</b><span>' + esc(nombreProd(p.codigo, p.descripcion)) + '</span>' + est +
             (p.conteos > 1 ? '<small title="Las veces que lo contaron">contado ' + p.conteos + ' veces</small>' : '') + '</div>' +
           (ves ? grillaRemito(p.codigo, p.celdas) : '<p class="pos-ayuda">Se ve cuando lo reciban.</p>') +
           (p.estado ? '<p class="pos-ayuda">' + (p.recibido_nombre ? 'Lo recibió ' + esc(p.recibido_nombre) + ', ' : 'Recibido ') + esc(fechaHora(p.recibido_en)) + '.' +
-                      (p.observaciones ? ' <b>' + esc(p.observaciones) + '</b>' : '') + '</p>' : '') + '</div>';
+                      (p.motivo ? ' Qué pasó: ' + esc(p.motivo) + '.' : '') + (p.observaciones ? ' <b>' + esc(p.observaciones) + '</b>' : '') + '</p>' : '') +
+          (difs ? '<ul class="rm-difs">' + difs + '</ul>' : '') + '</div>';
       }).join('');
       dentro.innerHTML = '<h3 id="posVentTit">Remito ' + esc(refRemito(r)) + ' ' + pillRemito(r.estado) + '</h3>' +
         '<div class="pos-ticket-datos">' +
@@ -3278,26 +3323,49 @@
           '<div><span>Recibido</span>' + esc(r.recibido_en ? fechaHora(r.recibido_en) : pend ? 'Todavía no' : '—') + '</div>' +
         '</div>' +
         (r.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(r.observaciones) + '</p>' : '') +
-        (gestion && pend ? '<div class="pos-cartel">Lo recibe el local en el mostrador (POS → Remitos), contando a ciegas: hasta que no lo reciban, no entra a su stock.' +
+        (gestion && pend && aFabrica ? '<div class="pos-cartel">Vuelve a la fábrica: del stock de ' + esc(bonito(r.origen)) + ' ya salió al mandarlo. Cuando llegue, tocá «Llegó a la fábrica».</div>' :
+         gestion && pend ? '<div class="pos-cartel">Lo recibe el local en el mostrador (POS → Remitos), contando a ciegas: hasta que no lo reciban, no entra a su stock.' +
                            (r.origen_local_id ? ' Del stock de ' + esc(bonito(r.origen)) + ' ya salió al mandarlo.' : '') + '</div>' : '') +
+        (gestion && sinResolver ? '<div class="pos-cartel st-dif">' + (sinResolver === 1 ? 'Hay una diferencia sin resolver.' : 'Hay ' + sinResolver + ' diferencias sin resolver.') +
+                                  ' <button type="button" class="pos-link" id="rmDifs">' + (sinResolver === 1 ? 'Resolverla' : 'Resolverlas') + ' en Diferencias</button></div>' : '') +
         (!gestion && pend ? '<div class="pos-cartel">Todavía falta recibirlo: lo que mandaron se ve recién al contar.</div>' : '') +
         '<p class="pos-lbl rm-leyenda">' + (gestion && pend ? 'Lo que mandaron' : 'En cada casilla, lo que llegó; abajo, lo que dice el remito') + '</p>' +
         '<div class="st-prods">' + prods + '</div>' +
         (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulado el ' + esc(fechaHora(r.anulado_en)) + (r.anulado_por_nombre ? ' por ' + esc(r.anulado_por_nombre) : '') + ': ' + esc(r.anulado_motivo || '') + '</div>' : '') +
         '<div id="rmAnular"></div><div class="pos-pie">' +
           (gestion && !an ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmAnularBtn">Anular el remito</button>' : '') +
-          (!gestion && pend && !enPrueba() ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmRecibir">Recibirlo</button>' : '') +
-          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+          (!gestion && pend && !enPrueba() && !aFabrica ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmRecibir">Recibirlo</button>' : '') +
+          (gestion && pend && aFabrica ? '<button type="button" class="btn btn-pri btn-chico" id="rmFabrica">Llegó a la fábrica</button>' : '') +
+          '<button type="button" class="btn ' + (gestion && pend && aFabrica ? 'btn-sec' : 'btn-pri') + ' btn-chico" data-cerrar>Cerrar</button></div>';
       var rc = dentro.querySelector('#rmRecibir');
       if (rc) rc.onclick = function () { cerrarVentana(); abrirRecepcion(r.id); };
+      var rd = dentro.querySelector('#rmDifs');
+      if (rd) rd.onclick = function () { cerrarVentana(); ir('diferencias'); };
+      var rf = dentro.querySelector('#rmFabrica');
+      if (rf) rf.onclick = function () {
+        if (!confirm('¿Llegó a la fábrica el remito ' + refRemito(r) + '? Queda recibido (el stock de ' + bonito(r.origen) + ' ya lo había descontado).')) return;
+        rf.disabled = true;
+        llamar('pos_remito_fabrica_recibir', { p_id: r.id }).then(function () {
+          avisar('ok', 'El remito ' + refRemito(r) + ' quedó recibido en la fábrica.');
+          if (alCambiar) alCambiar();
+          abrirRemito(r.id, alCambiar);
+        }).catch(function (e) { rf.disabled = false; avisar('err', mensajeDe(e)); });
+      };
       var ab = dentro.querySelector('#rmAnularBtn');
       if (ab) ab.onclick = function () {
         ab.remove();
-        pedirMotivo(dentro.querySelector('#rmAnular'), 'El remito queda en la lista, tachado, con quién lo anuló y por qué. Lo que ya entró al stock de ' + esc(bonito(r.destino)) + ' vuelve a salir' +
-          (r.origen_local_id ? ', y a ' + esc(bonito(r.origen)) + ' le vuelve lo que mandó' : '') + '. No se puede deshacer.', 'Anular el remito ' + refRemito(r), function (motivo) {
+        /* Lo que se deshace: lo que entró al local que lo recibió, y lo que salió del que lo mandó. */
+        var entro = (r.productos || []).some(function (p) { return p.estado; });
+        var vuelve = [r.destino_local_id && entro ? 'lo que ya entró al stock de ' + esc(bonito(r.destino)) + ' vuelve a salir' : '',
+                      r.origen_local_id ? 'a ' + esc(bonito(r.origen)) + ' le vuelve lo que mandó' : ''].filter(Boolean).join(', y ');
+        pedirMotivo(dentro.querySelector('#rmAnular'), 'El remito queda en la lista, tachado, con quién lo anuló y por qué. ' +
+          (vuelve ? vuelve.charAt(0).toUpperCase() + vuelve.slice(1) + '. ' : '') +
+          (/^Lo que (faltó|sobró) en R-/.test(r.observaciones || '') ? 'Las diferencias que resolvía vuelven a quedar sin resolver. ' : '') + 'No se puede deshacer.',
+          'Anular el remito ' + refRemito(r), function (motivo) {
           return llamar('pos_remito_anular', { p_id: r.id, p_motivo: motivo }).then(function () {
             avisar('ok', 'El remito ' + refRemito(r) + ' quedó anulado.');
             S.stock = {};
+            avisoAlDia();
             if (alCambiar) alCambiar();
             abrirRemito(r.id, alCambiar);
           });
@@ -3306,6 +3374,260 @@
     }).catch(function (e) {
       if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Remito</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
     });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     DIFERENCIAS (Gestión, SQL 167): la planilla de errores de los remitos
+     Mauricio (24/10): "nosotros tenemos una planilla de error donde
+     anotamos… también estaría bueno que tenga estadísticas de errores,
+     porque las estadísticas te sirven para mejorar… y ver qué solución nos
+     dan". Nadie la carga: cada producto que un local recibe con diferencias
+     deja acá un renglón por talle y color, con quién lo recibió y qué pasó.
+     Por ahora la resuelve la oficina; cuando la fábrica tenga su usuario,
+     ella. Arriba, lo que falta resolver; abajo, las estadísticas del período.
+     ════════════════════════════════════════════════════════════════════ */
+  function verDiferencias() {
+    var c = $('cuerpo'), est = S.dfEstado == null ? 'pendiente' : S.dfEstado;
+    c.innerHTML = cabeza('Diferencias', 'Lo que llegó distinto de lo que decía el remito. Se anota solo cuando un local recibe con diferencias; acá se resuelve.',
+        '<button type="button" class="btn btn-sec btn-chico" id="dfBajar" disabled>Bajar para Excel</button>') +
+      '<div class="pos-filtros"><div id="dfPer"></div>' +
+        campo('', 'Sucursal', '<select id="dfLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales(S.dfLocal || '') + '</select>') +
+        campo('', 'Mostrar', '<select id="dfEstado">' + opciones([['pendiente', 'Sin resolver (de cualquier día)'], ['resuelta', 'Resueltas'], ['', 'Todas']], est) + '</select>') +
+      '</div><div id="dfLista"><p class="cargando">Cargando…</p></div>';
+    /* Ya las vio: el aviso de la barra no vuelve a salir por éstas (persona.js). */
+    if (window.persona && persona.difVistas) persona.difVistas();
+    var per = Interfaz.periodo($('dfPer'), { inicial: 'mes', guardar: 'pos_diferencias_periodo', hastaHoy: true, alCambiar: cargar });
+    $('dfLocal').onchange = function () { S.dfLocal = this.value; cargar(); };
+    $('dfEstado').onchange = function () { S.dfEstado = this.value; cargar(); };
+    var pedido = 0, D = null, elegidas = {};
+    $('dfBajar').onclick = function () { if (D) bajarDiferencias(D, per.rango(), $('dfEstado').value); };
+
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      elegidas = {};
+      $('dfLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_diferencias', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('dfLocal').value || null, p_estado: $('dfEstado').value || null }).then(function (d) {
+        if (n !== pedido || !$('dfLista')) return;
+        D = d;
+        $('dfBajar').disabled = !(d.filas || []).length;
+        if (!$('dfLocal').value) ponerCuentaDif(Number(d.totales.pendientes) || 0);
+        pintar();
+      }).catch(function (e) { if ($('dfLista')) $('dfLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+
+    function pintar() {
+      var t = D.totales || {}, filas = D.filas || [], estado = $('dfEstado').value, z = $('dfLista');
+      var pendientes = filas.filter(function (f) { return f.estado === 'pendiente'; });
+      var pct = t.remitos ? Math.round(100 * t.con_diferencias / t.remitos) : 0;
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi' + (t.pendientes ? ' mal' : '') + '" title="De cualquier día"><span>Sin resolver</span><b>' + num(t.pendientes) + '</b></div>' +
+        '<div class="pos-kpi"><span>Remitos recibidos</span><b>' + num(t.remitos) + '</b></div>' +
+        '<div class="pos-kpi" title="Los remitos que llegaron con alguna diferencia"><span>Con diferencias</span><b>' + num(t.con_diferencias) +
+          (t.remitos ? ' <small>(' + pct + ' %)</small>' : '') + '</b></div>' +
+        '<div class="pos-kpi"><span>Faltaron</span><b class="' + (t.faltaron ? 'st-sale' : '') + '">' + num(t.faltaron) + ' u.</b></div>' +
+        '<div class="pos-kpi"><span>Sobraron</span><b>' + num(t.sobraron) + ' u.</b></div>' +
+        '<div class="pos-kpi" title="Desde que el local lo recibió hasta que se resolvió (las resueltas en el período)"><span>Se resuelven en</span><b>' + tiempoRes(t.horas_resolver) + '</b></div>' +
+      '</div>';
+      var tabla = !filas.length ? '<div class="pos-cartel">' + (estado === 'pendiente' ? '<b>No hay diferencias sin resolver.</b> Cuando un local reciba un remito con diferencias, aparecen acá solas.' :
+                                                                'No hay diferencias en ese período con esos filtros.') + '</div>' :
+        '<div class="df-barra" id="dfBarra" hidden></div>' +
+        '<div class="pos-marco-tabla"><table class="pos-tabla df-tabla"><thead><tr>' +
+          '<th class="df-chk">' + (pendientes.length ? '<input type="checkbox" id="dfTodas" aria-label="Elegir todas las sin resolver">' : '<span class="sr">Elegir</span>') + '</th>' +
+          '<th>Recibido</th><th>Sucursal</th><th>Remito</th><th>Producto</th><th>Talle y color</th>' +
+          '<th class="n">Decía</th><th class="n">Llegaron</th><th class="n">Diferencia</th><th>Lo recibió</th><th>Qué pasó</th><th>Estado</th></tr></thead><tbody>' +
+          filas.map(fila).join('') + '</tbody></table></div>' +
+        (D.mas ? '<p class="pos-mas">Se ven las últimas 1000. Achicá el período para ver el resto.</p>' : '');
+      z.innerHTML = kpis + tabla + estadisticasDif(D, per.rango());
+      var todas = $('dfTodas');
+      if (todas) todas.onchange = function () {
+        elegidas = {};
+        if (todas.checked) pendientes.forEach(function (f) { elegidas[f.id] = 1; });
+        z.querySelectorAll('[data-elegir]').forEach(function (cb) { cb.checked = todas.checked; cb.closest('tr').classList.toggle('sel', todas.checked); });
+        barra();
+      };
+      z.querySelectorAll('[data-elegir]').forEach(function (cb) {
+        cb.onchange = function () {
+          var id = cb.getAttribute('data-elegir');
+          if (cb.checked) elegidas[id] = 1; else delete elegidas[id];
+          cb.closest('tr').classList.toggle('sel', cb.checked);
+          if (todas) todas.checked = Object.keys(elegidas).length === pendientes.length;
+          barra();
+        };
+      });
+      z.querySelectorAll('[data-reabrir]').forEach(function (b) {
+        b.onclick = function () {
+          if (!confirm('¿Volver a dejarla sin resolver?')) return;
+          b.disabled = true;
+          llamar('pos_diferencia_reabrir', { p: { ids: [Number(b.getAttribute('data-reabrir'))] } }).then(function () {
+            avisar('ok', 'Volvió a quedar sin resolver.');
+            avisoAlDia();
+            cargar();
+          }).catch(function (e) { b.disabled = false; avisar('err', mensajeDe(e)); });
+        };
+      });
+      /* Tocar el renglón abre su remito (la casilla y los botones hacen lo suyo). */
+      z.querySelectorAll('tr[data-dif]').forEach(function (tr) {
+        var f = filas.filter(function (x) { return String(x.id) === tr.getAttribute('data-dif'); })[0];
+        tr.onclick = function (e) { if (!e.target.closest('input, button, a, label')) abrirRemito(f.remito_id, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter' && e.target === tr) { e.preventDefault(); abrirRemito(f.remito_id, cargar); } };
+      });
+    }
+    function fila(f) {
+      var n = f.contado - f.cantidad, pend = f.estado === 'pendiente';
+      return '<tr data-dif="' + f.id + '" tabindex="0"' + (elegidas[f.id] ? ' class="sel"' : '') + '>' +
+        '<td class="df-chk">' + (pend ? '<input type="checkbox" data-elegir="' + f.id + '" aria-label="Elegir ' + esc(f.codigo + ' ' + f.talle + ' ' + f.color) + '"' + (elegidas[f.id] ? ' checked' : '') + '>' : '') + '</td>' +
+        '<td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(bonito(f.local)) + '</td>' +
+        '<td class="df-rem"><b>R-' + f.numero + '</b>' + (f.referencia ? '<small>' + esc(f.referencia) + '</small>' : '') + '</td>' +
+        '<td class="df-prod"><b>' + esc(f.codigo) + '</b><small>' + esc(nombreProd(f.codigo, f.descripcion)) + '</small></td>' +
+        '<td>' + ([f.talle ? nombreTalle(f.talle) : '', f.color ? nombreCol(f.color, f.codigo) : ''].filter(Boolean).map(esc).join('<br>') || '—') + '</td>' +
+        '<td class="n">' + num(f.cantidad) + '</td><td class="n">' + num(f.contado) + '</td>' +
+        '<td class="n"><b class="' + (n < 0 ? 'st-sale' : 'df-sobro') + '">' + (n < 0 ? 'Faltó ' + -n : 'Sobró ' + n) + '</b></td>' +
+        '<td>' + esc(f.recibio || '—') + '</td>' +
+        '<td class="cb-que">' + esc(f.motivo || '') + (f.observaciones ? '<small>«' + esc(f.observaciones) + '»</small>' : '') + '</td>' +
+        '<td class="df-est">' + (pend ? '<span class="pill pill-warn">Sin resolver</span>' :
+          '<span class="pill pill-ok" title="' + esc(RESOLUCION[f.resolucion] || f.resolucion) + '">' + esc(RESOLUCION_CORTA[f.resolucion] || f.resolucion) + '</span>' +
+          '<small>' + (f.remito_nuevo_numero ? 'R-' + f.remito_nuevo_numero + ' · ' : '') + esc([f.resuelta_nombre, f.resuelta_en ? fechaHora(f.resuelta_en) : ''].filter(Boolean).join(' · ')) + '</small>' +
+          (f.nota ? '<small>«' + esc(f.nota) + '»</small>' : '') +
+          /* Con un remito no: para volver atrás se anula ese remito (y vuelve sola a sin resolver). */
+          (f.remito_nuevo_id ? '' : '<button type="button" class="pos-link" data-reabrir="' + f.id + '">Volver atrás</button>')) + '</td></tr>';
+    }
+    /** Lo elegido, arriba de la tabla: cuántas y el botón para resolverlas. */
+    function barra() {
+      var b = $('dfBarra'), fs = (D.filas || []).filter(function (f) { return elegidas[f.id]; });
+      if (!b) return;
+      b.hidden = !fs.length;
+      if (!fs.length) { b.innerHTML = ''; return; }
+      var falt = fs.reduce(function (s, f) { return s + Math.max(f.cantidad - f.contado, 0); }, 0);
+      var sobr = fs.reduce(function (s, f) { return s + Math.max(f.contado - f.cantidad, 0); }, 0);
+      b.innerHTML = '<b>' + fs.length + (fs.length === 1 ? ' elegida' : ' elegidas') + '</b><span>' + [falt ? 'faltaron ' + falt : '', sobr ? 'sobraron ' + sobr : ''].filter(Boolean).join(' · ') + '</span>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="dfNinguna">Desmarcar</button><button type="button" class="btn btn-pri btn-chico" id="dfResolver">Resolver…</button>';
+      $('dfNinguna').onclick = function () {
+        elegidas = {};
+        $('dfLista').querySelectorAll('[data-elegir], #dfTodas').forEach(function (cb) { cb.checked = false; var tr = cb.closest('tr[data-dif]'); if (tr) tr.classList.remove('sel'); });
+        barra();
+      };
+      $('dfResolver').onclick = function () { resolverDiferencias(fs, cargar); };
+    }
+    cargar();
+  }
+
+  /** Cuánto tardan en resolverse: en horas, o en días si pasan de dos. */
+  function tiempoRes(h) {
+    if (h == null) return '—';
+    h = Number(h);
+    if (h < 1) return 'menos de 1 h';
+    if (h < 48) return Math.round(h) + ' h';
+    return Math.round(h / 24) + ' días';
+  }
+
+  /** Las estadísticas del período: por sucursal, los productos con más diferencias y qué pasó. */
+  function estadisticasDif(d, r) {
+    var pl = d.por_local || [], pp = d.por_producto || [], pm = d.por_motivo || [];
+    var maxM = pm.reduce(function (m, x) { return Math.max(m, x.productos); }, 0);
+    return '<h3 class="st-tit">Las estadísticas · ' + esc(r.texto) + '</h3><div class="df-stats">' +
+      '<section class="df-st"><h4>Por sucursal</h4>' + (!pl.length ? '<p class="pos-ayuda">En el período no se recibieron remitos.</p>' :
+        '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Sucursal</th><th class="n">Recibidos</th><th class="n">Con diferencias</th>' +
+          '<th class="n">Faltaron</th><th class="n">Sobraron</th>' +
+          '<th class="n" title="Coincidieron recién al contarlos otra vez: no son errores de la fábrica, pero muestran dónde se cuenta apurado">Contados de nuevo</th></tr></thead><tbody>' +
+        pl.map(function (l) {
+          var p = l.remitos ? Math.round(100 * l.con_diferencias / l.remitos) : 0;
+          return '<tr><td>' + esc(bonito(l.local)) + '</td><td class="n">' + num(l.remitos) + '</td>' +
+            '<td class="n">' + num(l.con_diferencias) + (l.remitos ? ' <small class="df-pct">' + p + ' %</small>' : '') + '</td>' +
+            '<td class="n' + (l.faltaron ? ' st-sale' : '') + '">' + num(l.faltaron) + '</td><td class="n">' + num(l.sobraron) + '</td><td class="n">' + num(l.recontados) + '</td></tr>';
+        }).join('') + '</tbody></table></div>') + '</section>' +
+      '<section class="df-st"><h4>Los productos con más diferencias</h4>' + (!pp.length ? '<p class="pos-ayuda">Ninguno en el período.</p>' :
+        '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Producto</th><th class="n">Remitos</th><th class="n">Faltaron</th><th class="n">Sobraron</th></tr></thead><tbody>' +
+        pp.map(function (x) {
+          return '<tr><td><b>' + esc(x.codigo) + '</b><small>' + esc(nombreProd(x.codigo, x.descripcion)) + '</small></td><td class="n">' + num(x.veces) + '</td>' +
+            '<td class="n' + (x.faltaron ? ' st-sale' : '') + '">' + num(x.faltaron) + '</td><td class="n">' + num(x.sobraron) + '</td></tr>';
+        }).join('') + '</tbody></table></div>') + '</section>' +
+      '<section class="df-st"><h4>Qué pasó</h4>' + (!pm.length ? '<p class="pos-ayuda">Nada en el período.</p>' :
+        '<ul class="df-barras">' + pm.map(function (x) {
+          return '<li><span>' + esc(x.motivo) + '</span><i style="--w:' + Math.max(4, Math.round(100 * x.productos / (maxM || 1))) + '%"></i><b>' + num(x.productos) + '</b></li>';
+        }).join('') + '</ul><p class="pos-ayuda">En productos recibidos con diferencias. «Sin decir»: no eligieron qué pasó al recibirlo.</p>') + '</section>' +
+    '</div>';
+  }
+
+  /** Resolver las diferencias elegidas: cómo, y una nota. Con «mandar» o «devolver» la base arma el remito. */
+  function resolverDiferencias(fs, alListo) {
+    var falt = fs.every(function (f) { return f.contado < f.cantidad; }), sobr = fs.every(function (f) { return f.contado > f.cantidad; });
+    var unLocal = unicos(fs.map(function (f) { return f.local_id; })).length === 1, loc = bonito(fs[0].local);
+    var uFalt = fs.reduce(function (s, f) { return s + Math.max(f.cantidad - f.contado, 0); }, 0);
+    var uSobr = fs.reduce(function (s, f) { return s + Math.max(f.contado - f.cantidad, 0); }, 0);
+    function u(n) { return n + (n === 1 ? ' unidad' : ' unidades'); }
+    var OPS = [
+      ['mandar', 'Mandar lo que faltó', falt && unLocal ? 'Arma un remito de la fábrica a ' + loc + ' con ' + u(uFalt) + '. El local lo recibe contándolo, como siempre.' :
+                                        !falt ? 'Es sólo para lo que faltó.' : 'Elegí diferencias de un solo local.', falt && unLocal],
+      ['devolver', 'Que lo devuelvan', sobr && unLocal ? 'Arma un remito de ' + loc + ' a la fábrica con ' + u(uSobr) + ': sale de su stock ahora y, cuando llegue, se da por recibido en Remitos.' :
+                                       !sobr ? 'Es sólo para lo que sobró.' : 'Elegí diferencias de un solo local.', sobr && unLocal],
+      ['remito_mal', 'El remito estaba mal', 'Llegó bien y el remito decía otra cosa: el stock ya quedó con lo que se contó y no se mueve nada.', true],
+      ['otra', 'Otra solución', 'Escribila en la nota (por ejemplo: «lo llevó el supervisor»).', true]
+    ];
+    var primera = OPS.filter(function (o) { return o[3] && (o[0] === 'mandar' || o[0] === 'devolver'); })[0];
+    var resumen = fs.length <= 4 ? fs.map(function (f) {
+      var n = f.contado - f.cantidad;
+      return '<li>R-' + f.numero + ' · ' + esc(bonito(f.local)) + ' · <b>' + esc(f.codigo) + '</b> ' + esc([f.talle, f.color ? nombreCol(f.color, f.codigo) : ''].filter(Boolean).join(' ')) +
+        ': ' + (n < 0 ? 'faltó ' + -n : 'sobró ' + n) + '</li>';
+    }).join('') : '<li>' + fs.length + ' diferencias' + (unLocal ? ' de ' + esc(loc) : '') + (uFalt ? ' · faltaron ' + uFalt : '') + (uSobr ? ' · sobraron ' + uSobr : '') + '</li>';
+    var clave = nuevaClave();
+    var caja = ventana('<h3 id="posVentTit">Resolver ' + (fs.length === 1 ? 'la diferencia' : 'las ' + fs.length + ' diferencias') + '</h3>' +
+      '<ul class="df-resumen">' + resumen + '</ul>' +
+      '<div class="df-ops" role="radiogroup" aria-label="Cómo se resuelve">' + OPS.map(function (o) {
+        return '<label class="df-op' + (o[3] ? '' : ' apagada') + '"><input type="radio" name="dfOp" value="' + o[0] + '"' + (o[3] ? '' : ' disabled') +
+          (primera && primera[0] === o[0] ? ' checked' : '') + '><span><b>' + o[1] + '</b><small>' + o[2] + '</small></span></label>';
+      }).join('') + '</div>' +
+      campo('ancho', 'Nota <span class="lbl-opc" id="dfNotaOpc">(opcional)</span>', '<textarea id="dfNota" maxlength="300" rows="2" placeholder="Lo que haga falta saber después"></textarea>') +
+      '<div class="pos-error" id="dfError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="dfOk">Resolver</button></div>');
+    caja.querySelectorAll('input[name="dfOp"]').forEach(function (x) {
+      x.onchange = function () { caja.querySelector('#dfNotaOpc').textContent = x.value === 'otra' ? '(contá qué se hizo)' : '(opcional)'; };
+    });
+    caja.querySelector('#dfOk').onclick = function () {
+      var bt = this, op = (caja.querySelector('input[name="dfOp"]:checked') || {}).value, nota = caja.querySelector('#dfNota').value.trim();
+      if (!errorEn(caja, 'dfError', !op ? 'Elegí cómo se resuelve.' : op === 'otra' && !nota ? 'Escribí en la nota cómo se resolvió.' : '')) return;
+      bt.disabled = true;
+      llamar('pos_diferencia_resolver', { p: { resolucion: op, ids: fs.map(function (f) { return f.id; }), nota: nota, clave: clave } }).then(function (res) {
+        cerrarVentana();
+        avisar('ok', res.ya ? 'Ya estaban resueltas.' :
+                     res.remito ? 'Listo: se armó el remito R-' + res.remito.numero + (op === 'mandar' ? ' de la fábrica a ' + loc + '.' : ' de ' + loc + ' a la fábrica.') :
+                     res.resueltas === 1 ? 'Listo: quedó resuelta.' : 'Listo: quedaron resueltas.');
+        if (op === 'devolver') S.stock = {};
+        avisoAlDia();
+        alListo();
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'dfError', mensajeDe(e)); });
+    };
+  }
+
+  /* Bajar la planilla para Excel: un .csv con punto y coma (el Excel en castellano lo abre en columnas) y con la
+     marca de UTF-8 (si no, las tildes salen mal). */
+  function fechaLarga(ts) {
+    try {
+      return new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+        .format(new Date(ts)).replace(',', '');
+    } catch (e) { return String(ts || '').slice(0, 16).replace('T', ' '); }
+  }
+  function celdaCsv(v) {
+    var s = String(v == null ? '' : v);
+    /* Un texto que empieza con = + - @ sería una fórmula para Excel: va como texto. */
+    if (/^[=+\-@]/.test(s) && isNaN(Number(s))) s = "'" + s;
+    return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+  function bajarDiferencias(d, r, estado) {
+    var cab = ['Recibido', 'Sucursal', 'Remito', 'Referencia', 'Código', 'Producto', 'Talle', 'Color', 'Decía el remito', 'Llegaron', 'Diferencia',
+               'Lo recibió', 'Qué pasó', 'Observaciones', 'Estado', 'Resolución', 'Resuelta por', 'Resuelta el', 'Remito nuevo', 'Nota'];
+    var filas = (d.filas || []).map(function (f) {
+      return [fechaLarga(f.fecha), bonito(f.local), 'R-' + f.numero, f.referencia || '', f.codigo, nombreProd(f.codigo, f.descripcion), f.talle,
+              f.color ? nombreCol(f.color, f.codigo) : '', f.cantidad, f.contado, f.contado - f.cantidad, f.recibio || '', f.motivo || '', f.observaciones || '',
+              f.estado === 'pendiente' ? 'Sin resolver' : 'Resuelta', RESOLUCION[f.resolucion] || '', f.resuelta_nombre || '',
+              f.resuelta_en ? fechaLarga(f.resuelta_en) : '', f.remito_nuevo_numero ? 'R-' + f.remito_nuevo_numero : '', f.nota || ''];
+    });
+    var csv = '\uFEFF' + [cab].concat(filas).map(function (x) { return x.map(celdaCsv).join(';'); }).join('\r\n');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'diferencias-remitos-' + (estado === 'pendiente' ? 'sin-resolver-' + Interfaz.fecha.hoy() : r.desde + '-al-' + r.hasta) + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -3322,7 +3644,9 @@
     if (!id) { try { id = sessionStorage.getItem(K_REMITO_VER); } catch (e) {} }
     if (!id) { ir('remitos'); return; }
     var g = conteosGuardados()[id] || {};
-    S.rec = { id: id, r: null, sel: null, conteo: g.conteo || {}, extras: g.extras || [], colores: g.colores || {}, comp: {}, ojo: {} };
+    /* quien: quién del local lo cuenta (SQL 167; la compu es compartida, como "Lo atendió"); mot: qué pasó, por producto. */
+    S.rec = { id: id, r: null, sel: null, conteo: g.conteo || {}, extras: g.extras || [], colores: g.colores || {}, comp: {}, ojo: {},
+              quien: g.quien || '', mot: {} };
     c.innerHTML = cabeza('Remito', '', '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">‹ Remitos</button>') + '<p class="cargando">Cargando…</p>';
     engancharIr(c);
     cargarRecepcion();
@@ -3332,7 +3656,7 @@
   function guardarConteo(borrar) {
     var R = S.rec, todos = conteosGuardados();
     if (borrar) delete todos[R.id];
-    else todos[R.id] = { conteo: R.conteo, extras: R.extras, colores: R.colores, t: Date.now() };
+    else todos[R.id] = { conteo: R.conteo, extras: R.extras, colores: R.colores, quien: R.quien, t: Date.now() };
     Object.keys(todos).sort(function (a, b) { return (todos[b].t || 0) - (todos[a].t || 0); }).slice(5).forEach(function (k) { delete todos[k]; });
     guardarJSON(K_CONTEO, todos);
   }
@@ -3422,6 +3746,41 @@
     if (campoP) campoP.focus();
   }
 
+  /* "Lo recibe" (SQL 167): la gente del local, como "Lo atendió" en la venta. Queda en cada diferencia: Mauricio,
+     24/10: "el nombre del vendedor tiene que estar, quien recibió el producto y encontró ese error". */
+  function opcionesQuien() {
+    var R = S.rec, vs = vendedoresDe(R.r.destino_local_id);
+    if (R.quien && vs.indexOf(R.quien) < 0) vs.push(R.quien);
+    return '<option value="">Elegí quién lo recibe…</option>' + opciones(vs.map(function (n) { return [n, n]; }), R.quien) +
+      '<option value="__otro">Otro (escribirlo)…</option>';
+  }
+  function pedirQuien() {
+    var R = S.rec;
+    var caja = ventana('<h3 id="posVentTit">¿Quién lo recibe?</h3><p class="pos-bajada">Si no está en la lista del local, escribí su nombre.</p>' +
+      campo('', 'Nombre', '<input type="text" id="pqNombre" maxlength="60" autofocus>') + '<div class="pos-error" id="pqError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="pqOk">Listo</button></div>');
+    /* Si cancela, el desplegable vuelve a quien estaba (no queda en "Otro…"). */
+    _alCerrar = function () { var s = $('rcQuien'); if (s && S.rec === R) s.value = R.quien || ''; };
+    function listo() {
+      var n = caja.querySelector('#pqNombre').value.trim();
+      if (!errorEn(caja, 'pqError', n.length < 2 ? 'Escribí el nombre.' : '')) return;
+      R.quien = n;
+      guardarConteo();
+      cerrarVentana();
+      if (S.rec === R && R.r) pintarRecepcion();
+    }
+    caja.querySelector('#pqOk').onclick = listo;
+    caja.querySelector('#pqNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); listo(); } };
+  }
+  /** Falta elegir quién lo recibe: lo dice y lleva al desplegable. */
+  function faltaQuien() {
+    if (S.rec.quien) return false;
+    avisar('err', 'Elegí quién lo recibe (arriba de la lista, «Lo recibe»).');
+    var q = $('rcQuien');
+    if (q) q.focus();
+    return true;
+  }
+
   function pintarRecepcion() {
     var R = S.rec, r = R.r, c = $('cuerpo'), prueba = enPrueba(), lista = productosRec(), cerrado = r.estado !== 'pendiente';
     var hechos = lista.filter(function (p) { return p.estado; }).length;
@@ -3430,9 +3789,10 @@
       (prueba && !cerrado ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se reciben remitos: el stock es de verdad. Podés contar, pero para comparar y recibir, apagalo.</div>' : '') +
       (r.estado === 'anulado' ? '<div class="pos-cartel mal">Este remito está anulado' + (r.anulado_motivo ? ': ' + esc(r.anulado_motivo) : '') + '.</div>' : '') +
       (r.estado === 'recibido' ? '<div class="pos-cartel st-ok"><b>Remito recibido:</b> todo coincidió y ya está en el stock de ' + esc(bonito(r.destino)) + '.</div>' : '') +
-      (r.estado === 'con_diferencias' ? '<div class="pos-cartel st-dif"><b>Recibido con diferencias:</b> entró lo que se contó. La oficina lo ve en Gestión → Remitos.</div>' : '') +
+      (r.estado === 'con_diferencias' ? '<div class="pos-cartel st-dif"><b>Recibido con diferencias:</b> entró lo que se contó, y las diferencias quedaron anotadas solas para la oficina.</div>' : '') +
       '<div class="rc">' +
         '<section class="rc-izq" aria-label="Los productos del remito">' +
+          (!cerrado ? campo('rc-quien', 'Lo recibe', '<select id="rcQuien" class="desplegable">' + opcionesQuien() + '</select>') : '') +
           (!cerrado ? '<div class="tk-prod">' + campo('', 'Producto', '<input type="search" id="rcProd" autocomplete="off" spellcheck="false" placeholder="Escaneá o buscá el producto…" aria-controls="rcSug">') +
             '<div class="tk-sug" id="rcSug" role="listbox" aria-label="Productos" hidden></div></div>' : '') +
           '<p class="rc-avance"><b>' + hechos + ' de ' + lista.length + '</b> ' + (lista.length === 1 ? 'producto recibido' : 'productos recibidos') + '</p>' +
@@ -3447,6 +3807,12 @@
         '<section class="rc-der" id="rcDer" aria-live="polite"></section>' +
       '</div>';
     engancharIr(c);
+    var sq = $('rcQuien');
+    if (sq) sq.onchange = function () {
+      if (sq.value === '__otro') { pedirQuien(); return; }
+      R.quien = sq.value;
+      guardarConteo();
+    };
     c.querySelectorAll('[data-prod]').forEach(function (b) { b.onclick = function () { R.sel = b.getAttribute('data-prod'); pintarRecepcion(); }; });
     if ($('rcProd')) engancharProducto({ campo: 'rcProd', sug: 'rcSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true, prod: prodRec, buscar: buscarRec,
       elegir: function (p) { $('rcProd').limpiar(); elegirRec(p); },
@@ -3462,7 +3828,8 @@
     if (p.estado) {
       der.innerHTML = cab + '<div class="pos-cartel ' + (p.estado === 'coincide' ? 'st-ok' : 'st-dif') + '">' +
           (p.estado === 'coincide' ? '<b>Coincidió con el remito</b> y entró al stock.' : '<b>Recibido con diferencias:</b> entró lo que se contó.') +
-          (p.recibido_nombre ? ' Lo recibió ' + esc(p.recibido_nombre) + ', ' + esc(fechaHora(p.recibido_en)) + '.' : '') + (p.observaciones ? ' «' + esc(p.observaciones) + '»' : '') + '</div>' +
+          (p.recibido_nombre ? ' Lo recibió ' + esc(p.recibido_nombre) + ', ' + esc(fechaHora(p.recibido_en)) + '.' : '') +
+          (p.motivo ? ' Qué pasó: ' + esc(p.motivo) + '.' : '') + (p.observaciones ? ' «' + esc(p.observaciones) + '»' : '') + '</div>' +
         '<p class="pos-lbl rm-leyenda">En cada casilla, lo que llegó; abajo, lo que dice el remito</p>' + grillaRemito(cod, p.celdas || []) + siguienteRec();
       engancharSiguiente();
       return;
@@ -3472,10 +3839,27 @@
       der.innerHTML = cab + '<div class="pos-cartel mal">No coincide con el remito. Contá de nuevo las casillas en rojo; si está bien contado, recibilo con lo que contaste.</div>' +
         '<p class="pos-lbl rm-leyenda">En cada casilla, lo que contaste; abajo, lo que dice el remito' + (comp.conteos > 1 ? ' · lo contaron ' + comp.conteos + ' veces' : '') + '</p>' +
         grillaRemito(cod, comp.celdas) +
-        campo('rc-obs', 'Qué pasó <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rcObs" maxlength="300" placeholder="Por ejemplo: vino una M en vez de una L">') +
+        /* SQL 167: qué pasó, de una lista (para las estadísticas), y lo que quieran agregar. */
+        '<div class="pos-f ancho rc-que"><span>Qué pasó <span class="lbl-opc">(si se sabe)</span></span><div class="chips" id="rcMot" role="group" aria-label="Qué pasó">' +
+          MOTIVOS_REM.map(function (x) {
+            var s = R.mot[cod] === x;
+            return '<button type="button" class="chip' + (s ? ' sel' : '') + '" data-mot="' + esc(x) + '" aria-pressed="' + s + '">' + esc(x) + '</button>';
+          }).join('') + '</div></div>' +
+        campo('rc-obs', 'Observaciones <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rcObs" maxlength="300" placeholder="Por ejemplo: vino una M en vez de una L">') +
         /* Lo destacado es volver a contar: recibir con diferencias es el último recurso. */
         '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" id="rcRecibir">Recibir con lo contado</button>' +
           '<button type="button" class="btn btn-pri btn-chico" id="rcOtraVez">Contar de nuevo</button></div>';
+      der.querySelectorAll('[data-mot]').forEach(function (b) {
+        b.onclick = function () {
+          var x = b.getAttribute('data-mot');
+          R.mot[cod] = R.mot[cod] === x ? '' : x;
+          der.querySelectorAll('[data-mot]').forEach(function (o) {
+            var s = o.getAttribute('data-mot') === R.mot[cod];
+            o.classList.toggle('sel', s);
+            o.setAttribute('aria-pressed', String(s));
+          });
+        };
+      });
       $('rcOtraVez').onclick = function () {
         R.ojo[cod] = {};
         comp.celdas.forEach(function (x) { if (x.contado !== x.cantidad) R.ojo[cod][x.talle + '|' + x.color] = 1; });
@@ -3531,10 +3915,11 @@
   function compararRec(cod, bt) {
     var R = S.rec, cont = conteoLista(cod), p = productoRec(cod);
     if (enPrueba()) { avisar('err', 'Con el modo prueba prendido no se reciben remitos (el stock es de verdad).'); return; }
+    if (faltaQuien()) return;
     if (!cont.length && !confirm('No contaste nada de ' + cod + '. ¿No llegó ninguna?')) return;
     bt.disabled = true;
     bt.textContent = 'Comparando…';
-    llamar('pos_remito_contar', { p_remito: R.id, p_codigo: cod, p_conteo: cont }).then(function (res) {
+    llamar('pos_remito_contar', { p_remito: R.id, p_codigo: cod, p_conteo: cont, p_recibio: R.quien }).then(function (res) {
       if (S.rec !== R) return;
       delete S.stock[R.r.destino_local_id];
       delete R.ojo[cod];
@@ -3555,13 +3940,15 @@
   }
   function recibirRec(cod, bt) {
     var R = S.rec, comp = R.comp[cod], p = productoRec(cod), obs = ($('rcObs') || {}).value || '';
-    if (!confirm('¿Recibir ' + cod + ' con lo que contaste? Entra al stock lo contado y queda anotada la diferencia con el remito.')) return;
+    if (faltaQuien()) return;
+    if (!confirm('¿Recibir ' + cod + ' con lo que contaste? Entra al stock lo contado, y la diferencia con el remito queda anotada para la oficina.')) return;
     bt.disabled = true;
     llamar('pos_remito_recibir', { p_remito: R.id, p_codigo: cod, p_conteo: comp.conteo, p_observaciones: obs.trim() || null,
-                                   p_descripcion: p && p.extra ? nombreProd(cod, p.descripcion) : null }).then(function (res) {
+                                   p_descripcion: p && p.extra ? nombreProd(cod, p.descripcion) : null, p_recibio: R.quien, p_motivo: R.mot[cod] || null }).then(function (res) {
       if (S.rec !== R) return;
       delete R.comp[cod];
       delete R.conteo[cod];
+      delete R.mot[cod];
       delete S.stock[R.r.destino_local_id];
       guardarConteo();
       avisar('ok', cod + ': recibido con lo que contaste.' + (res.estado !== 'pendiente' ? ' Remito ' + refRemito(R.r) + ' recibido.' : ''));
@@ -3574,6 +3961,7 @@
      NUEVO REMITO (Gestión): lo que manda la fábrica, o un envío entre locales
      ════════════════════════════════════════════════════════════════════ */
   var RN = null;   // el remito que se está cargando
+  var A_FABRICA = 'fabrica';   // "Llega a: Fábrica" (SQL 167): una devolución de un local a la fábrica
   function remitoNuevo(antes) {
     return { v: 1, clave: nuevaClave(), origen: antes ? antes.origen : '', destino: antes ? antes.destino : '', referencia: '', observaciones: '', lineas: [] };
   }
@@ -3581,7 +3969,7 @@
     var b = leerJSON(K_REMITO, null);
     if (b && b.v === 1 && b.clave && Array.isArray(b.lineas)) {
       if (b.origen && !localDe(b.origen)) b.origen = '';
-      if (b.destino && !localDe(b.destino)) b.destino = '';
+      if (b.destino && b.destino !== A_FABRICA && !localDe(b.destino)) b.destino = '';
       return b;
     }
     return remitoNuevo();
@@ -3606,13 +3994,14 @@
   function verRemitoNuevo() {
     RN = cargarRemitoNuevo();
     var c = $('cuerpo');
-    c.innerHTML = cabeza('Nuevo remito', 'Lo que manda la fábrica (o un local) a un local. Al guardarlo, el local lo ve en POS → Remitos para contarlo y recibirlo.',
+    c.innerHTML = cabeza('Nuevo remito', 'Lo que manda la fábrica (o un local) a un local, o lo que un local le devuelve a la fábrica. Al guardarlo, el local lo ve en POS → Remitos para contarlo y recibirlo.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">‹ Remitos</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar">Guardar el remito</button>') +
       '<div class="tk-datos rn-datos">' +
         campo('', 'Sale de', '<select id="rnOrigen" class="desplegable"><option value="">Fábrica</option>' + opcionesLocales(RN.origen) + '</select>') +
-        campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesLocales(RN.destino) + '</select>') +
+        campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesLocales(RN.destino) +
+          '<option value="' + A_FABRICA + '"' + (RN.destino === A_FABRICA ? ' selected' : '') + '>Fábrica (una devolución)</option></select>') +
         campo('', 'Referencia <span class="lbl-opc">(el número de la fábrica)</span>', '<input type="text" id="rnRef" maxlength="40" placeholder="X-0001234" autocomplete="off">') +
         campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Lo que diga el remito de la fábrica" autocomplete="off">') +
       '</div>' +
@@ -3624,7 +4013,7 @@
     $('rnRef').value = RN.referencia || '';
     $('rnObs').value = RN.observaciones || '';
     $('rnOrigen').onchange = function () { RN.origen = this.value; guardarBorradorRn(); pintarRn(); };
-    $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); };
+    $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); pintarRn(); };
     $('rnRef').oninput = function () { RN.referencia = this.value; guardarBorradorRn(); };
     $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
     $('rnLimpiar').onclick = function () {
@@ -3711,7 +4100,8 @@
           '<td class="pos-acc"><button type="button" class="pos-link" data-editar>Cambiar</button><button type="button" class="pos-link" data-quitar>Quitar</button></td></tr>';
       }).join('') + '</tbody></table></div>' +
       '<p class="rn-tot"><b>' + prods.length + (prods.length === 1 ? ' producto' : ' productos') + ' · ' + num(total) + (total === 1 ? ' unidad' : ' unidades') + '</b>' +
-        (RN.origen ? ' · salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' : '') + '</p>';
+        (RN.origen ? ' · salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' : '') +
+        (RN.destino === A_FABRICA ? ' y vuelven a la fábrica' : '') + '</p>';
     z.querySelector('tbody').onclick = function (e) {
       var b = e.target.closest('button'), tr = b && b.closest('tr[data-cod]');
       if (!tr) return;
@@ -3729,10 +4119,12 @@
 
   function guardarRemito() {
     if (S.guardando || !RN) return;
-    var mal = !RN.destino ? 'Elegí a qué local va.' : RN.origen === RN.destino ? 'Sale y llega al mismo local: elegí otro.' :
-              !RN.lineas.length ? 'El remito no tiene productos.' : '';
+    var fab = RN.destino === A_FABRICA;
+    var mal = !RN.destino ? 'Elegí a qué local va.' : fab && !RN.origen ? 'Para mandarlo a la fábrica, elegí de qué local sale.' :
+              RN.origen === RN.destino ? 'Sale y llega al mismo local: elegí otro.' : !RN.lineas.length ? 'El remito no tiene productos.' : '';
     if (mal) { avisar('err', mal); return; }
     var lo = localDe(RN.origen), ld = localDe(RN.destino), unidades = RN.lineas.reduce(function (s, l) { return s + l.cantidad; }, 0);
+    var aDonde = fab ? 'la fábrica' : nombreLocal(ld);
     var aviso = Promise.resolve('');
     /* Un envío entre locales: si el que lo manda no tiene todo según el sistema, que lo sepa (no frena). */
     if (lo) aviso = traerStock(lo.id, true).then(function (x) {
@@ -3743,16 +4135,18 @@
         (faltan.length > 4 ? '…' : '') + '). Si lo mandás igual, queda en negativo.' : '';
     });
     aviso.then(function (extra) {
-      if (!confirm('¿Guardar el remito de ' + (lo ? nombreLocal(lo) : 'la fábrica') + ' a ' + nombreLocal(ld) + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
-                   (lo ? ' Salen del stock de ' + nombreLocal(lo) + ' ahora.' : '') + ' ' + nombreLocal(ld) + ' lo recibe contándolo.' + extra)) return;
+      if (!confirm('¿Guardar el remito de ' + (lo ? nombreLocal(lo) : 'la fábrica') + ' a ' + aDonde + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
+                   (lo ? ' Salen del stock de ' + nombreLocal(lo) + ' ahora.' : '') +
+                   (fab ? ' Cuando llegue, se da por recibido en Gestión → Remitos.' : ' ' + nombreLocal(ld) + ' lo recibe contándolo.') + extra)) return;
       S.guardando = true;
       var b = $('rnGuardar');
       if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
-      llamar('pos_remito_guardar', { p: { clave: RN.clave, origen_local_id: RN.origen || null, destino_local_id: RN.destino, referencia: RN.referencia || '',
-                                          observaciones: RN.observaciones || '', items: RN.lineas } }).then(function (r) {
+      llamar('pos_remito_guardar', { p: { clave: RN.clave, origen_local_id: RN.origen || null, destino_local_id: fab ? null : RN.destino, a_fabrica: fab,
+                                          referencia: RN.referencia || '', observaciones: RN.observaciones || '', items: RN.lineas } }).then(function (r) {
         S.guardando = false;
         if (lo) delete S.stock[lo.id];
-        avisar('ok', 'Remito R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': ' + nombreLocal(ld) + ' ya lo ve para recibirlo.');
+        avisar('ok', 'Remito R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': ' +
+                     (fab ? 'cuando llegue a la fábrica, abrilo y tocá «Llegó a la fábrica».' : nombreLocal(ld) + ' ya lo ve para recibirlo.'));
         RN = remitoNuevo(RN);
         guardarBorradorRn();
         if (S.vista === 'remito_nuevo') ir('remitos');
@@ -3939,5 +4333,6 @@
 
   /* Para las pruebas: la cuenta del ticket, sin la pantalla. */
   window.__pos = { cuenta: function (v, ini) { var antes = S.ini; S.ini = ini; try { return cuenta(v); } finally { S.ini = antes; } }, leerPlata: leerPlata, plata: plata,
-                  leerTabla: leerTabla, filasDeTexto: filasDeTexto, filasDeXml: filasDeXml, siglaColor: siglaColor, ordenarTalles: ordenarTalles };
+                  leerTabla: leerTabla, filasDeTexto: filasDeTexto, filasDeXml: filasDeXml, siglaColor: siglaColor, ordenarTalles: ordenarTalles,
+                  celdaCsv: celdaCsv, tiempoRes: tiempoRes };
 })();
