@@ -73,7 +73,8 @@ body.pos-sin-barra { padding-left: 0; }
 @media (min-width: 900px) { body.pos-sin-barra .hoja.pos { padding-left: 12px; } }
 .pos-marca {
   flex: none; width: 26px; height: 26px; border-radius: 50%;
-  display: grid; place-items: center; background: var(--oro); color: var(--oro-ink);
+  display: grid; place-items: center; background: #0E1115; color: #E8AE85;
+  border: 1.5px solid #E8AE85; box-shadow: 0 0 14px -3px rgba(232, 174, 133, .6);
 }
 .pos-marca svg { width: 17px; height: 17px; }
 .pos-marca + span { flex: 1; color: var(--txt); font-size: 13px; letter-spacing: .8px; }

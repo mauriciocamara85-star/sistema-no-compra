@@ -26,6 +26,16 @@
 
    La marca vive en los tokens de abajo: se cambia ahí y todas las pantallas
    siguen. Ningún archivo escribe un color de marca a mano.
+
+   ── El tema cobre (23/10/2026) ──
+   Mauricio lo trajo de su celular: negro frío, líneas de luz cobre que se
+   apagan en las puntas, tarjetas de números con las esquinas cortadas,
+   números finos en cobre y el objetivo como un arco. Eligió en la maqueta
+   la versión "B completa", con Guardar relleno de cobre (el blanco "no hace
+   tono") y el claro gris frío ("queda más pulido"). Lo que cambió es la piel:
+   la estructura de las pantallas es la misma. El cobre es lo que se aprieta
+   y lo elegido; verde, ámbar y rojo siguen siendo señales, y el oro quedó
+   SÓLO para el nivel Gold de un socio.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── TOKENS ────────────────────────────────────────────────────────────────
@@ -40,49 +50,74 @@
    y se mide contra la TARJETA, no contra el fondo: casi todas las etiquetas
    viven adentro de un panel.
 
-   --acc es lo que se aprieta y va SIEMPRE con --acc-ink encima. En claro es
-   carbón con blanco; en oscuro se invierte (claro con carbón), porque un
-   botón carbón sobre una hoja carbón no existe. */
+   --acc es lo que se aprieta y va SIEMPRE con --acc-ink encima. Desde el
+   tema cobre es el mismo en los dos temas: cobre con letra casi negra. */
 :root {
-  /* El fondo de la app del Club, exacto. Las tarjetas blancas se despegan
-     por su canto (--line, el de la app) y la sombra: en pantallas que
-     apagan el blanco —la notebook de Mauricio muestra #E1E1E1 donde hay
-     #FFFFFF— el tono solo no alcanza. */
-  /* 04/10/2026: un poco más cálido y más oscuro que el del Club, para que
-     las tarjetas blancas se despeguen también en la notebook. */
-  --bg:          #F1EFEA;
+  /* ── El claro del tema cobre: gris frío (23/10/2026) ──
+     Era el beige cálido del Club (#F1EFEA). Las tarjetas blancas se siguen
+     despegando por su canto y la sombra: en pantallas que apagan el blanco
+     —la notebook de Mauricio muestra #E1E1E1 donde hay #FFFFFF— el tono solo
+     no alcanza. */
+  --bg:          #EDEFF2;
   --fondo-luz:   none;
   --surface:     #FFFFFF;
-  --surface-2:   #F6F4F0;
-  --surface-3:   #E9E6E0;
-  --panel-fondo: #FFFFFF;
-  /* El relleno de lo que se escribe: blanco. Beige, los campos parecían
-     deshabilitados. */
-  --campo:       #FFFFFF;
+  --surface-2:   #F4F5F7;
+  --surface-3:   #E6E9ED;
+  --panel-fondo: linear-gradient(180deg, #FFFFFF 0%, #FAFBFC 100%);
+  /* El relleno de lo que se escribe: un gris apenas, como en la maqueta.
+     Beige, los campos parecían deshabilitados; este es casi blanco y frío. */
+  --campo:       #F6F7F9;
 
   /* ── Los dos bordes hacen trabajos distintos ──
      El de la TARJETA sólo separa (la separación la carga la sombra). El del
      CAMPO dice "acá se escribe": 3:1 contra su relleno como mínimo. */
-  --line:       #E0DCD4;
-  --line-alta:  #A39E94;
-  --line-campo: #8A857C;   /* 3,6:1 contra el blanco del campo */
+  --line:       #D5DAE0;
+  --line-alta:  #9AA2AD;
+  --line-campo: #7C8591;   /* 3,5:1 contra el campo, 3,7:1 contra el blanco */
 
-  --txt:   #1C1C1A;        /* 16,9:1 */
-  --txt-2: #46433E;        /*  9,9:1 */
-  --txt-3: #67635B;        /*  6:1 contra la tarjeta, 5,2:1 contra el fondo: la ayuda, más suave (04/10/2026) */
+  --txt:   #14171B;        /* 18:1 */
+  --txt-2: #3F4650;        /*  9,5:1 */
+  --txt-3: #5A626E;        /*  6,2:1 contra la tarjeta, 5,4:1 contra el fondo: la ayuda, como antes */
 
-  /* ── Lo que se aprieta: carbón, como los botones del Club ── */
-  --acc:      #1C1C1A;
-  --acc-2:    #2E2D2A;
-  --acc-ink:  #FFFFFF;
-  --acc-txt:  #1C1C1A;
-  --acc-soft: #EFEDE8;
-  --acc-line: rgba(28, 28, 26, .30);
+  /* ── Lo que se aprieta: cobre ──
+     El relleno es el cobre de la cinta del teléfono; la letra encima, casi
+     negra (8,6:1 en el medio, 7,8:1 en el extremo oscuro). --acc-txt es el
+     cobre que se puede LEER: sobre blanco el cobre de las líneas da 2,9:1,
+     así que la letra va más honda (8,6:1). */
+  --acc:      #E3A177;
+  --acc-2:    #DB976A;
+  --acc-ink:  #1A0F08;
+  --acc-txt:  #743E1C;
+  --acc-soft: rgba(201, 138, 94, .14);
+  --acc-line: rgba(201, 138, 94, .45);
 
-  /* El chip es un BOTÓN: blanco, canto fino y letra carbón. Elegido, se
-     llena de carbón como el botón de guardar. */
+  /* El chip es un BOTÓN: blanco, canto fino y letra casi negra. Elegido, se
+     tiñe de cobre con canto cobre (ver .chip.sel). */
   --chip:      #FFFFFF;
-  --chip-line: #8A857C;
+  --chip-line: #7C8591;
+
+  /* ── Las piezas del cobre ──
+     --cobre es para líneas y aros, NUNCA para letra (2,9:1 sobre blanco).
+     --luz es la línea que se apaga en las puntas, arriba de cada tarjeta.
+     Lo elegido (talle, motivo, filtro) va teñido y no lleno: lleno es sólo
+     lo que se aprieta para guardar. */
+  --cobre:       #C98A5E;
+  --cobre-lleno: linear-gradient(180deg, #F0BE98 0%, #E3A177 50%, #DB976A 100%);
+  --cobre-barra: linear-gradient(90deg, #A8653C 0%, #E3A177 100%);
+  --cobre-ico:   #8A4B22;  /* los íconos de los motivos: 6,8:1 */
+  --sel-fondo:   rgba(201, 138, 94, .14);
+  --sel-borde:   #A8653C;  /* la línea de lo elegido: 4,6:1 sobre blanco (el cobre claro daba 2,2) */
+  --sel-txt:     #743E1C;  /* 7,5:1 sobre el teñido */
+  --sel-glow:    0 0 0 3px rgba(201, 138, 94, .12);
+  --btn-sombra:
+    inset 0 1px 0 rgba(255, 255, 255, .5),
+    inset 0 -1px 0 rgba(90, 45, 15, .3),
+    0 0 0 1px rgba(126, 68, 32, .35),
+    0 12px 26px -12px rgba(168, 101, 60, .6);
+  --luz:      linear-gradient(90deg, rgba(201, 138, 94, 0) 14%, #C98A5E 33%, #E3A177 50%, #C98A5E 67%, rgba(201, 138, 94, 0) 86%);
+  --luz-alto: 2px;
+  --paso-fondo: rgba(201, 138, 94, .08);
+  --paso-glow:  none;
 
   /* ── Los estados ──
      Van apagados a propósito —no son colores de marca, son señales— y sólo
@@ -98,15 +133,15 @@
   --bad-txt:   #A00F1E;    /* 8,1:1 */
   --bad-soft:  #FDF2F3;
   --bad-ink:   #FFFFFF;
-  --info-txt:  #46433E;
-  --info-soft: rgba(28, 28, 26, .06);
+  --info-txt:  #3F4650;
+  --info-soft: rgba(20, 23, 27, .06);
   --ok-borde:  #C4DCCD;
 
   /* El campo elegido: el verde de la app, no un halo gris (pedido de
      Mauricio, 30/09/2026). */
-  /* El foco (04/10/2026): carbón, fino y nítido, sin halo. El verde
+  /* El foco (04/10/2026): casi negro, fino y nítido, sin halo. El verde
      queda para lo que significa algo: guardado, objetivo cumplido. */
-  --foco:        #1C1C1A;
+  --foco:        #14171B;
   --foco-anillo: transparent;
 
   /* ── Los materiales de los niveles del Club ──
@@ -159,48 +194,71 @@
      a Mauricio le gusta así). La sección abierta se marca en blanco. Tiene sus propios tokens de texto porque los --txt de
      arriba están pensados contra --bg, no contra esto. */
   /* 04/10/2026: negro de verdad (era un carbón que tiraba a gris), con un
-     canto de luz; las secciones casi blancas. */
-  --rail-bg:    linear-gradient(180deg, #131312 0%, #050505 100%);
-  --rail-borde: rgba(255, 255, 255, .12);
-  --rail-acc:   #D6AE55;   /* la sección abierta, en oro: 7:1 contra el rail */
+     canto de luz; las secciones casi blancas. 23/10: el negro frío del tema
+     cobre, y en el celular la barra de abajo también es oscura (ver
+     "El tema cobre", al final). */
+  --rail-bg:    linear-gradient(180deg, #101317 0%, #05060A 100%);
+  --rail-borde: rgba(255, 255, 255, .10);
+  --rail-acc:   #E8AE85;   /* la sección abierta, en cobre: 8,5:1 contra el rail */
   --rail-txt:   #FFFFFF;
   --rail-txt-2: rgba(255, 255, 255, .76);   /* 13:1 contra el rail */
   --rail-line:  rgba(255, 255, 255, .10);
-  /* Las tarjetas oscuras del tablero, del mismo negro que el panel. */
-  --tablero-negro: linear-gradient(135deg, #1E1E1C 0%, #0A0A09 60%, #252522 100%);
+  --tabs-bg:    #07080B;   /* la barra de abajo del celular */
+  /* Las tarjetas oscuras del tablero, del mismo negro que el panel. El canto
+     es cobre encendido en las dos esquinas cortadas y se apaga en el medio. */
+  --tablero-negro: linear-gradient(135deg, #1A1D22 0%, #0C0E11 60%, #1E2228 100%);
+  --kpi-canto: linear-gradient(135deg, #F0BE98 0%, rgba(201, 138, 94, .55) 10%, #262B33 26%, #262B33 74%, rgba(201, 138, 94, .55) 90%, #F0BE98 100%);
+  --kpi-num:   #E8AE85;    /* 8,2:1 contra la parte más clara de la tarjeta */
 
   color-scheme: light;
 }
 
 html[data-theme="dark"] {
-  /* ── Carbón, no negro azulado ──────────────────────────────────────────
-     El mismo carbón cálido del Club, sin rojo. Para quien prefiera la
-     pantalla oscura en el local. Todo lo que se aprieta se invierte: claro
-     con letra carbón. */
-  --bg:          #121211;
-  --surface:     #1E1E1C;
-  --surface-2:   #262624;
-  --surface-3:   #302F2C;
-  --panel-fondo: linear-gradient(180deg, #211F1D 0%, #171715 100%);
-  --campo:       #262624;
+  /* ── Negro frío, como el teléfono (23/10/2026) ──────────────────────────
+     Era el carbón cálido del Club (#121211). Mauricio eligió el negro que
+     tira a azul de la maqueta "B completa": el cobre se enciende más contra
+     el frío. Lo que se aprieta ya no se invierte: es el mismo cobre que en
+     claro. */
+  --bg:          #0B0D10;
+  --surface:     #14171B;
+  --surface-2:   #1B1F24;
+  --surface-3:   #262B33;
+  --panel-fondo: linear-gradient(180deg, #171A1F 0%, #101216 100%);
+  --campo:       #1B1F24;
 
-  --line:       #3A3935;
-  --line-alta:  #5C5A54;
-  --line-campo: #7E7A71;   /* 3,4:1 contra el campo */
+  --line:       #2A3038;
+  --line-alta:  #4A525D;
+  --line-campo: #6F7884;   /* 3,7:1 contra el campo */
 
-  --txt:   #F4F2EC;        /* 16:1 */
-  --txt-2: #CFCAC0;        /* 11:1 */
-  --txt-3: #B5AFA4;        /*  7,6:1 contra la tarjeta */
+  --txt:   #EEF1F4;        /* 15:1 */
+  --txt-2: #C4CAD2;        /* 10,6:1 */
+  --txt-3: #A6AEB8;        /*  7,8:1 contra la tarjeta */
 
-  --acc:      #F4F2EC;
-  --acc-2:    #DAD5CB;
-  --acc-ink:  #1C1C1A;
-  --acc-txt:  #F4F2EC;
-  --acc-soft: rgba(244, 242, 236, .10);
-  --acc-line: rgba(244, 242, 236, .35);
+  --acc:      #E3A177;
+  --acc-2:    #DB976A;
+  --acc-ink:  #1A0F08;
+  --acc-txt:  #E8AE85;     /* 9:1 contra la tarjeta */
+  --acc-soft: rgba(232, 174, 133, .14);
+  --acc-line: rgba(232, 174, 133, .40);
 
-  --chip:      #262624;
-  --chip-line: #7E7A71;
+  --chip:      #1B1F24;
+  --chip-line: #6F7884;
+
+  --cobre-barra: linear-gradient(90deg, #A8653C 0%, #E8AE85 100%);
+  --cobre-ico:   #E8AE85;
+  --sel-fondo:   rgba(232, 174, 133, .14);
+  --sel-borde:   #C98A5E;  /* 5,7:1 sobre los campos oscuros */
+  --sel-txt:     #F0BE98;  /* 7,9:1 sobre el teñido: #E8AE85 daba 6,8 */
+  --sel-glow:    0 0 12px -4px rgba(232, 174, 133, .55);
+  --btn-sombra:
+    inset 0 1px 0 rgba(255, 255, 255, .45),
+    inset 0 -1px 0 rgba(90, 45, 15, .35),
+    0 0 0 1px rgba(240, 190, 152, .25),
+    0 12px 30px -10px rgba(232, 174, 133, .55);
+  --luz:      linear-gradient(90deg, rgba(201, 138, 94, 0) 14%, #C98A5E 33%, #F0BE98 50%, #C98A5E 67%, rgba(201, 138, 94, 0) 86%);
+  --luz-alto: 1px;
+  --paso-fondo: transparent;
+  --paso-glow:  0 0 10px -2px rgba(232, 174, 133, .5);
 
   --ok:        #4FB07F;
   --ok-txt:    #8FD1AE;
@@ -213,13 +271,13 @@ html[data-theme="dark"] {
   --bad-txt:   #FF9AA0;
   --bad-soft:  rgba(255, 154, 160, .14);
   --bad-ink:   #2A0508;    /* 5,6:1 sobre el rojo */
-  --info-txt:  #CFCAC0;
+  --info-txt:  #C4CAD2;
   --info-soft: rgba(255, 255, 255, .07);
 
   --oro-txt:   #E8C877;
   --oro-soft:  rgba(214, 174, 85, .18);
   --ok-borde:    rgba(143, 209, 174, .40);
-  --foco:        #F1EEE7;
+  --foco:        #EEF1F4;
   --foco-anillo: transparent;
 
   --sombra:
@@ -231,9 +289,8 @@ html[data-theme="dark"] {
     0 16px 48px -14px rgba(0, 0, 0, .9);
   --glow: 0 8px 22px -12px rgba(0, 0, 0, .8);
 
-  /* En oscuro el rail se despega del fondo con su canto, no con la sombra. */
-  --rail-bg:    linear-gradient(180deg, #131312 0%, #050505 100%);
-  --rail-borde: rgba(255, 255, 255, .12);
+  /* En oscuro el rail se despega del fondo con su canto y la línea cobre, no
+     con la sombra: es el mismo de :root. */
 
   color-scheme: dark;
 }
@@ -302,13 +359,14 @@ a { color: var(--acc-txt); }
   top: 0;
   z-index: 30;
   /* Opaco primero: en un navegador sin color-mix (o sin desenfoque) la barra
-     tiene que quedar sólida, nunca transparente sobre el contenido. */
-  background: var(--bg);
+     tiene que quedar sólida, nunca transparente sobre el contenido. Abajo,
+     la luz cobre del tema (23/10/2026), justo arriba del canto. */
+  background: var(--luz) bottom center / 100% var(--luz-alto) no-repeat, var(--bg);
   border-bottom: 1px solid var(--line);
 }
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   .app-head {
-    background: color-mix(in srgb, var(--bg) 82%, transparent);
+    background: var(--luz) bottom center / 100% var(--luz-alto) no-repeat, color-mix(in srgb, var(--bg) 82%, transparent);
     backdrop-filter: blur(18px) saturate(180%);
     -webkit-backdrop-filter: blur(18px) saturate(180%);
   }
@@ -323,14 +381,19 @@ a { color: var(--acc-txt); }
   gap: 12px;
 }
 .marca { display: flex; align-items: center; gap: 11px; min-width: 0; }
-/* La marca: la bolsa en un CÍRCULO dorado (redondo como los botones de la
-   app; el cuadrado se veía duro). El oro del nivel del Club. */
+/* La marca: la bolsa en un CÍRCULO (redondo como los botones de la app; el
+   cuadrado se veía duro). Desde el tema cobre, negro con aro y bolsa cobre,
+   como el botón redondo del teclado del teléfono: el oro quedó para el
+   nivel Gold. La misma en el rail (.rail-marca-icono). */
+.marca-icono, .rail-marca-icono {
+  background: #0E1115;
+  border: 1.5px solid #E8AE85;
+  color: #E8AE85;
+  box-shadow: 0 0 14px -3px rgba(232, 174, 133, .6);
+}
 .marca-icono {
   width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
-  background: var(--oro);
-  color: var(--oro-ink);
   display: grid; place-items: center;
-  box-shadow: 0 6px 16px -10px rgba(122, 90, 18, .7);
 }
 .marca-icono svg { width: 22px; height: 22px; }
 .marca-txt { min-width: 0; }
@@ -397,24 +460,19 @@ a { color: var(--acc-txt); }
    Las dos formas son el MISMO marcado. Lo único que cambia es el CSS, así no
    hay dos navegaciones que mantener sincronizadas.
 */
+/* En el celular la barra es OSCURA en los dos temas (23/10/2026), como el
+   rail parado de la compu: es el marco, y arriba lleva la cinta cobre doble
+   (ver "El tema cobre", al final). Opaca: no hace falta el desenfoque. */
 .rail {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 45;
-  /* Opaco primero, igual que la cabecera: sin color-mix la barra tiene que
-     quedar sólida y nunca transparente sobre el contenido. */
-  background: var(--bg);
-  border-top: 1px solid var(--line);
+  background: var(--tabs-bg);
+  border-top: 1px solid var(--rail-line);
+  color-scheme: dark;
   padding-bottom: env(safe-area-inset-bottom);
 }
 /* La marca y la identidad son piezas del rail PARADO. En el celular la marca
    ya está en la cabecera y la identidad en su barra, así que acá no existen. */
 .rail-marca, .rail-pie { display: none; }
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  .rail {
-    background: color-mix(in srgb, var(--bg) 88%, transparent);
-    backdrop-filter: blur(18px) saturate(180%);
-    -webkit-backdrop-filter: blur(18px) saturate(180%);
-  }
-}
 .rail-in {
   display: flex;
   height: var(--nav);
@@ -425,7 +483,7 @@ a { color: var(--acc-txt); }
   flex: 1;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 3px;
-  color: var(--txt-2);
+  color: var(--rail-txt-2);
   text-decoration: none;
   font: 600 10.5px/1 var(--sans);
   -webkit-tap-highlight-color: transparent;
@@ -461,12 +519,11 @@ a { color: var(--acc-txt); }
 @media (max-width: 339px) {
   .rail-item { font-size: 9.5px; }
 }
-.rail-item:hover { color: var(--txt); }
+.rail-item:hover { color: var(--rail-txt); }
 .rail-item:active { transform: scale(.94); }
-/* La sección abierta se marca con el color de acento como TEXTO, que para eso
-   está --acc-txt; --acc es relleno y acá no hay tinta encima que lo acompañe. */
-.rail-item[aria-current="page"] { color: var(--txt); }
-.rail-item[aria-current="page"] .rail-icono { background: var(--oro-soft); color: var(--oro-txt); }
+/* La sección abierta, en cobre: la palabra y el ícono en su cajita teñida. */
+.rail-item[aria-current="page"] { color: var(--rail-acc); }
+.rail-item[aria-current="page"] .rail-icono { background: rgba(232, 174, 133, .14); color: var(--rail-acc); }
 
 /* Lo que el rail acostado le tapa al contenido. El formulario suma lo suyo
    aparte en index.html, porque ahí abajo también está la barra de guardar. */
@@ -520,10 +577,7 @@ a { color: var(--acc-txt); }
   }
   .rail-marca-icono {
     width: 40px; height: 40px; border-radius: 50%;
-    background: var(--oro);
-    color: var(--oro-ink);
     display: grid; place-items: center;
-    box-shadow: 0 8px 18px -10px rgba(0, 0, 0, .8);
   }
   .rail-marca-icono svg { width: 25px; height: 25px; }
   .rail-marca-txt { display: none; }
@@ -544,7 +598,7 @@ a { color: var(--acc-txt); }
   }
   .rail-item { position: relative; }
   .rail-item:hover { color: var(--rail-txt); background: rgba(255, 255, 255, .05); }
-  .rail-item[aria-current="page"] { color: var(--rail-txt); background: rgba(255, 255, 255, .10); }
+  .rail-item[aria-current="page"] { color: var(--rail-acc); background: rgba(232, 174, 133, .08); }
   /* La barra del canto. Va de 8 a 8 y no de punta a punta: pegada a los
      extremos se lee como el borde del rail y no como una marca. */
   .rail-item[aria-current="page"]::before {
@@ -557,8 +611,8 @@ a { color: var(--acc-txt); }
   }
   .rail-icono { width: 38px; height: 34px; border-radius: 12px; }
   .rail-item[aria-current="page"] .rail-icono {
-    background: rgba(214, 174, 85, .16);
-    color: #E8C877;
+    background: rgba(232, 174, 133, .14);
+    color: var(--rail-acc);
   }
 
   /* Abajo de todo, separado por el aire que sobra: dónde está esta compu, y
@@ -755,35 +809,19 @@ a { color: var(--acc-txt); }
    los números de colores— se acomoda solo y sigue habiendo un solo lugar
    donde se cambian. */
 .kpi {
-  --txt:   #F4F2EC;
-  --txt-2: #D2CDC3;
-  --txt-3: #B8B2A7;
+  /* Contra la parte más clara de la tarjeta (#1E2228): 15, 9,7 y 7,1:1. */
+  --txt:   #EEF1F4;
+  --txt-2: #C4CAD2;
+  --txt-3: #A6AEB8;
   --line:      rgba(255, 255, 255, .10);
-  /* El canto izquierdo de las tres tarjetas es la MISMA escala: la que no
-     tiene nada especial que decir lo lleva apagado, y las que sí —objetivo
-     y plata— lo llevan lleno. Tres intensidades de lo mismo, no dos pintadas
-     y una sin pintar.
-
-     Blanco y no rojo, por pedido de Mauricio: el rojo en esta franja ya lo
-     pone el resplandor de la tarjeta, y un canto rojo al lado de ese
-     resplandor no agrega un dato, agrega ruido. */
-  /* Bajó de .26 a .12 cuando la tarjeta bajó a negro. No es capricho: un
-     blanco al 26% sobre #2B2E33 era un canto; el MISMO blanco sobre #0E0F11
-     es una chapa clara pegada al borde, y encima la esquina redondeada le
-     dibuja un inglete que se ve como un error de recorte. Lo que cambió no
-     es el canto: es cuánto contrasta, y eso se mide contra el fondo nuevo. */
-  --canto: rgba(255, 255, 255, .12);
-  /* La pista de la barra del objetivo. Ojo con este valor: a 0% no se ve el
-     relleno, así que la pista SOLA es lo que queda, y cruza la tarjeta de
-     lado a lado abajo de todo. Al 10% sobre el negro nuevo parecía un pie de
-     tarjeta gris que no cargó —justo en la única tarjeta que lo tiene, así
-     que se leía como que esa tarjeta estaba rota—. */
   --surface-2: rgba(255, 255, 255, .06);
+  --ok:       #4FB07F;
+  --warn:     #D9A441;
   --ok-txt:   #8FD1AE;
   --warn-txt: #F0C66A;
   --bad-txt:  #FF9AA0;
-  --acc-txt:  #F4F2EC;
-  --info-txt: #D2CDC3;
+  --acc-txt:  #E8AE85;
+  --info-txt: #C4CAD2;
 
   /* Dos capas, de adelante para atrás:
        1. el resplandor rojo, pegado al canto derecho. Ahí no hay texto
@@ -798,69 +836,89 @@ a { color: var(--acc-txt); }
      pantalla del local el 25/09/2026 y no le gustó. Y no hacía falta: el
      resplandor ya hace ese trabajo, y una textura que se NOTA dejó de ser
      textura. */
-  /* 30/09/2026: el material del nivel Platino del Club, el mismo degradado
-     que la franja de su tarjeta. Se fue el resplandor rojo del canto. */
-  background: var(--tablero-negro, var(--platino));
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--canto);
-  border-radius: var(--r-sm);
-  padding: 14px 16px;
+  padding: 14px 16px 14px 18px;
   color: var(--txt);
-  position: relative;
   overflow: hidden;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, .07),
-    0 14px 30px -14px rgba(0, 0, 0, .9);
   animation: aparecer .4s var(--curva) backwards;
 }
-.kpi-n { font: 700 27px/1.05 var(--display); letter-spacing: -.8px; }
+/* ── El material del tablero ──
+   30/09/2026: el material del nivel Platino del Club, el mismo degradado
+   que la franja de su tarjeta. Se fue el resplandor rojo del canto.
+
+   23/10/2026, el tema cobre: las esquinas de arriba a la izquierda y de
+   abajo a la derecha van CORTADAS en diagonal, como los paneles del teclado
+   del teléfono, y el canto es cobre encendido en esas dos puntas que se
+   apaga en el medio. El canto no es un borde: es el fondo de la caja que
+   asoma 1px por afuera del negro (padding-box / border-box), así sigue al
+   corte. Las dos diagonales las dibujan ::before y ::after.
+
+   Lo comparten TODAS las tarjetas de números: .kpi (Carga, Panel), .cn-kpi
+   (Estadísticas y Club en números) e .imp .numero (Supervisión). Cada
+   pantalla pone su letra y su aire; el material vive acá. */
+.kpi, .cn-kpi, .imp .numero {
+  --corte: 14px;
+  background: var(--tablero-negro) padding-box, var(--kpi-canto) border-box;
+  border: 1px solid transparent;
+  border-radius: 0;
+  clip-path: polygon(var(--corte) 0, 100% 0, 100% calc(100% - var(--corte)), calc(100% - var(--corte)) 100%, 0 100%, 0 var(--corte));
+  position: relative;
+}
+/* Las diagonales del corte: una línea de 2px centrada sobre el borde del
+   recorte, así queda 1px adentro, igual que el canto. Se arma acostada y se
+   gira 45° sobre la punta que toca el lado de la caja. */
+.kpi::before, .kpi::after, .cn-kpi::before, .cn-kpi::after, .imp .numero::before, .imp .numero::after {
+  content: "";
+  position: absolute;
+  width: calc(var(--corte) * 1.4142);
+  height: 2px;
+  background: #F0BE98;
+  box-shadow: 0 0 6px rgba(240, 190, 152, .7);
+  pointer-events: none;
+}
+.kpi::before, .cn-kpi::before, .imp .numero::before { left: -1px; top: calc(var(--corte) - 2px); transform-origin: 0 50%; transform: rotate(-45deg); }
+.kpi::after, .cn-kpi::after, .imp .numero::after { right: -1px; bottom: calc(var(--corte) - 2px); transform-origin: 100% 50%; transform: rotate(-45deg); }
+/* Los números finos y en cobre, como el reloj del teléfono. Poppins 300:
+   cada página la pide en su enlace a Google Fonts. */
+.kpi-n { font: 300 30px/1.05 var(--display); letter-spacing: .2px; color: var(--kpi-num); }
 .kpi-l { font-size: 12px; font-weight: 600; color: var(--txt-2); margin-top: 3px; }
 .kpi-pie { font-size: 11.5px; color: var(--txt-3); margin-top: 1px; }
-.kpi.es-pend { border-left-color: var(--warn); }
+/* Los estados siguen siendo señales: el número en su color y una franja de
+   3px adentro del canto izquierdo (el borde ya es el canto cobre). */
+.kpi.es-pend { box-shadow: inset 3px 0 0 var(--warn); }
 .kpi.es-pend .kpi-n { color: var(--warn-txt); }
-.kpi.es-ok { border-left-color: var(--ok); }
+.kpi.es-ok { box-shadow: inset 3px 0 0 var(--ok); }
 .kpi.es-ok .kpi-n { color: var(--ok-txt); }
-.kpi.es-plata { border-left-color: rgba(255, 255, 255, .32); }
-.kpi.es-plata .kpi-n { color: var(--txt); }
-/* Las tarjetas de plata llevan un importe, no un número corto: con 27px un
+/* Las tarjetas de plata llevan un importe, no un número corto: con 30px un
    "$ 1.234.567" se sale de la tarjeta en un celular. */
-.kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 21px; }
+.kpi.es-ok .kpi-n, .kpi.es-plata .kpi-n { font-size: 24px; }
 
-/* Objetivo: el único número que se compara contra otro, así que además del
-   valor lleva la barra. El relleno sí usa --acc, que es para eso. */
-.kpi.es-obj { border-left-color: rgba(255, 255, 255, .32); }
-/* Objetivo cumplido: el verde de "esto ya está" es el mismo que usa el panel
-   para lo cerrado, así el color quiere decir lo mismo en las dos pantallas. */
-.kpi.es-obj.lleno { border-left-color: var(--oro-liso); }
-.kpi.es-obj.lleno .kpi-n { color: #E8C877; }
-.kpi.es-obj.lleno .kpi-barra i { background: var(--oro); }
-/* La barra va pegada al BORDE de abajo y no en la fila del texto. Es la
-   única tarjeta que la lleva: adentro del contenido, las otras dos quedaban
-   con un hueco de casi medio centímetro abajo —mismo alto de grilla, un
-   elemento menos— y eso se lee como algo que no cargó. Como parte del marco
-   las tres terminan parejas, los números siguen en un solo renglón y la
-   tarjeta se ahorra 14px de alto, que en la notebook del local valen. */
-.kpi-barra {
+/* ── El arco del objetivo ──
+   El único número que se compara contra otro lleva, en vez de la barrita de
+   abajo, un arco como los widgets del teléfono: tres cuartos de círculo que
+   se llenan de cobre, con el porcentaje adentro. Lo arma pintarMetricas()
+   (index.html). Cumplido, en verde: lo que salió bien. */
+.kpi.con-arco { padding-right: 76px; }
+.kpi-arco {
   position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 5px;
-  background: var(--surface-2);
-  border-top: 1px solid rgba(255, 255, 255, .05);
-  overflow: hidden;
+  right: 14px; top: 50%;
+  width: 48px; height: 48px;
+  transform: translateY(-50%);
+  overflow: visible;
 }
-/* Con la pista apagada, el relleno queda solo contra el negro y puede ir a
-   pleno: la barra pasó a decirse por lo que está HECHO y no por el hueco que
-   falta, que es como se lee un objetivo. */
-.kpi-barra i {
-  display: block;
-  height: 100%;
-  /* El avance del objetivo, en oro: el logro del día. */
-  background: var(--oro);
-  transition: width .5s var(--curva);
-}
+.kpi-arco circle { fill: none; stroke-width: 4; stroke-linecap: round; }
+.kpi-arco .pista { stroke: rgba(255, 255, 255, .13); }
+.kpi-arco .hecho { stroke: var(--kpi-num); filter: drop-shadow(0 0 3px rgba(232, 174, 133, .5)); }
+.kpi-arco text { fill: var(--kpi-num); font: 500 11px var(--sans); }
+.kpi.es-obj.lleno .kpi-n { color: var(--ok-txt); }
+.kpi.es-obj.lleno .kpi-arco .hecho { stroke: var(--ok-txt); filter: none; }
+.kpi.es-obj.lleno .kpi-arco text { fill: var(--ok-txt); }
 
+/* Arriba de cada tarjeta, la luz cobre que se apaga en las puntas (tema
+   cobre, 23/10/2026). Es una capa más del fondo y no un ::before: así no
+   hace falta position en la tarjeta, que cambiaría a quién se pegan las
+   listas flotantes de adentro. Queda justo debajo del canto de arriba. */
 .bloque {
-  background: var(--panel-fondo);
+  background: var(--luz) top center / 100% var(--luz-alto) no-repeat, var(--panel-fondo);
   border: 1px solid var(--line);
   border-radius: var(--r);
   padding: 18px 16px;
@@ -896,8 +954,10 @@ a { color: var(--acc-txt); }
   font: 600 10.5px/1 var(--sans);
   letter-spacing: .4px;
   text-transform: uppercase;
-  color: var(--txt-3);
-  background: var(--acc-soft);
+  /* Gris y no cobre (23/10/2026): el cobre teñido es lo elegido. 7,8:1 en
+     claro y 8,6:1 en oscuro. */
+  color: var(--txt-2);
+  background: var(--surface-3);
   border: 1px solid transparent;
   border-radius: var(--r-pill);
   padding: 4px 8px;
@@ -958,7 +1018,7 @@ input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 
 select {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7'%3E%3Cpath d='M1 1l4.5 5L10 1' stroke='%238A857C' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='11' height='7'%3E%3Cpath d='M1 1l4.5 5L10 1' stroke='%237C8591' stroke-width='1.8' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 14px center;
   padding-right: 38px;
@@ -991,15 +1051,17 @@ select {
 }
 /* El hover ya no puede usar --line-alta: es el mismo color que el borde
    normal del chip. Un indicio rojo anticipa en qué se va a convertir. */
-.chip:hover { border-color: var(--acc); color: var(--txt); }
+.chip:hover { border-color: var(--sel-borde); color: var(--txt); }
 .chip:active { transform: scale(.95); }
+/* Elegido: teñido de cobre, con canto y letra cobre (tema cobre, 23/10/2026).
+   Lleno queda sólo Guardar, que es lo que se aprieta para terminar. */
 .chip.sel {
-  background: var(--acc);
-  border-color: var(--acc);
-  color: var(--acc-ink);
-  box-shadow: var(--glow);
+  background: var(--sel-fondo);
+  border-color: var(--sel-borde);
+  color: var(--sel-txt);
+  box-shadow: var(--sel-glow);
 }
-.chip.sel:hover { color: var(--acc-ink); }
+.chip.sel:hover { color: var(--sel-txt); }
 
 /* Grilla de locales: en el celular entran de a dos y el dedo no falla. */
 .chips-local { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
@@ -1030,12 +1092,13 @@ select {
 .btn:active:not(:disabled) { transform: scale(.975); }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 
+/* Relleno de cobre, como la cinta del teléfono (tema cobre, 23/10/2026): el
+   mismo en claro y en oscuro. La letra casi negra da 7,8:1 en el extremo
+   oscuro del degradado, que es el punto que manda. */
 .btn-pri {
-  background: linear-gradient(160deg, var(--acc) 0%, var(--acc-2) 100%);
-  /* Blanco: sobre el rojo VDH da 6,8:1, y 9,4:1 en el extremo oscuro del
-     degradado, que es el punto que manda. */
+  background: var(--cobre-lleno);
   color: var(--acc-ink);
-  box-shadow: var(--glow);
+  box-shadow: var(--btn-sombra);
 }
 .btn-sec {
   background: var(--surface-2);
@@ -1304,12 +1367,11 @@ html:not([data-nc-rol="admin"]) .rail-item[href="gestion.html"] { display: none;
 /* El botón de quién entró es el último de la barra. Es un <button> y no un
    enlace: se le saca lo que el navegador le pone a los botones. */
 button.rail-item { border: 0; background: none; cursor: pointer; }
-.rail-yo.adentro .rail-icono { background: var(--ok-soft); color: var(--ok-txt); }
-.rail-yo.espera .rail-icono { background: var(--warn-soft); color: var(--warn-txt); }
+/* En el rail oscuro —que desde el tema cobre también lo es en el celular—:
+   el mismo verde de la luz de "conectado". */
+.rail-yo.adentro .rail-icono { background: rgba(47, 227, 138, .14); color: #7EEBB5; }
+.rail-yo.espera .rail-icono { background: rgba(232, 200, 119, .16); color: #E8C877; }
 @media (min-width: 900px) {
-  /* En el rail oscuro: el mismo verde de la luz de "conectado". */
-  .rail-yo.adentro .rail-icono { background: rgba(47, 227, 138, .14); color: #7EEBB5; }
-  .rail-yo.espera .rail-icono { background: rgba(232, 200, 119, .16); color: #E8C877; }
   button.rail-item:hover { background: rgba(255, 255, 255, .05); }
 }
 
@@ -1403,7 +1465,7 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-filtros { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin-bottom: 12px; }
 .us-filtros select { width: auto; min-width: 220px; max-width: 100%; }
 .us-check { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--txt-2); cursor: pointer; }
-.us-check input { width: 18px; height: 18px; accent-color: var(--acc); }
+.us-check input { width: 18px; height: 18px; accent-color: var(--sel-borde); }
 .us-lista { display: grid; gap: 8px; }
 .us-grupo { font: 700 12px/1 var(--sans); letter-spacing: .6px; text-transform: uppercase; color: var(--txt-3); margin: 10px 2px 0; }
 .us-grupo:first-child { margin-top: 0; }
@@ -1437,7 +1499,7 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-editor .us-locales { order: 9; flex: 1 1 100%; padding: 4px 2px 0; }
 .us-locales-tit { grid-column: 1 / -1; font-size: 13px; font-weight: 600; color: var(--txt-2); margin-bottom: 2px; }
 .us-loc { font-size: 14px; font-weight: 500; color: var(--txt); cursor: pointer; min-height: 34px; gap: 8px; }
-.us-loc input { width: 18px; height: 18px; flex: none; accent-color: var(--acc); }
+.us-loc input { width: 18px; height: 18px; flex: none; accent-color: var(--sel-borde); }
 .us-loc small { font-weight: 500; color: var(--txt-3); font-size: 12px; }
 /* Los francos (SQL 154): los 7 días como botones que se prenden, como en Supervisión. En el editor, en su
    renglón; el del encargado tiene sólo esto, y Guardar y Cancelar van al lado. */
@@ -1457,7 +1519,7 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 }
 .us-dia:hover span { border-color: var(--line-alta); }
 .us-dia input:checked + span { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
-.us-dia input:focus-visible + span { outline: 2px solid var(--acc); outline-offset: 2px; }
+.us-dia input:focus-visible + span { outline: 2px solid var(--foco); outline-offset: 2px; }
 .campo-lbl small { font-weight: 500; color: var(--txt-3); }
 
 /* El portón de lo que antes pedía el PIN compartido (persona.porton). */
@@ -1655,7 +1717,7 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .per-dia.fin { background: linear-gradient(90deg, var(--surface-3) 50%, transparent 50%); }
 .per-dia.inicio.fin { background: none; }
 .per-dia.inicio span, .per-dia.fin span { background: var(--acc); color: var(--acc-ink); font-weight: 700; }
-.per-dia.hoy span { box-shadow: inset 0 0 0 1.5px var(--oro-liso); }
+.per-dia.hoy span { box-shadow: inset 0 0 0 1.5px var(--cobre); }
 .per-pie {
   grid-column: 1 / -1;
   display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
@@ -1812,6 +1874,39 @@ select.desplegable option[data-icono="web"] {
     max-block-size: calc(100dvh - 140px);
   }
   select.desplegable option { min-block-size: 44px; white-space: normal; }
+}
+
+/* ══ EL TEMA COBRE: la cinta de la barra (23/10/2026) ════════════════════════
+   La cinta cobre doble de la pantalla de bloqueo del teléfono: una línea
+   encendida que se apaga en las puntas y otra más fina al lado. En la compu
+   corre por el filo derecho de la barra; en el celular, arriba de la barra de
+   abajo. Son el ::before y el ::after del .rail, que no los usaba. */
+.rail::before, .rail::after { content: ""; position: absolute; pointer-events: none; }
+@media (max-width: 899px) {
+  .rail::before {
+    top: -1px; left: 6%; right: 6%;
+    height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, rgba(201, 138, 94, 0) 0%, #C98A5E 22%, #F0BE98 50%, #C98A5E 78%, rgba(201, 138, 94, 0) 100%);
+    box-shadow: 0 0 10px rgba(232, 174, 133, .5);
+  }
+  .rail::after {
+    top: 4px; left: 22%; right: 22%;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(201, 138, 94, 0) 0%, rgba(232, 174, 133, .55) 50%, rgba(201, 138, 94, 0) 100%);
+  }
+}
+@media (min-width: 900px) {
+  .rail::before {
+    right: 0; top: 9%; bottom: 9%;
+    width: 2px; border-radius: 2px;
+    background: linear-gradient(180deg, rgba(201, 138, 94, 0) 0%, #C98A5E 22%, #F0BE98 50%, #C98A5E 78%, rgba(201, 138, 94, 0) 100%);
+    box-shadow: 0 0 10px rgba(232, 174, 133, .5);
+  }
+  .rail::after {
+    right: 5px; top: 20%; bottom: 20%;
+    width: 1px;
+    background: linear-gradient(180deg, rgba(201, 138, 94, 0) 0%, rgba(232, 174, 133, .6) 50%, rgba(201, 138, 94, 0) 100%);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

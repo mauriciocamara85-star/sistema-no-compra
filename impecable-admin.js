@@ -389,10 +389,10 @@ function graficoLocal(filas) {
   puntos.forEach(function (p) { if (p) tramo.push(X(p.j).toFixed(1) + ',' + Y(p.p).toFixed(1)); else if (tramo.length) { tramos.push(tramo); tramo = []; } });
   if (tramo.length) tramos.push(tramo);
   var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Controles a tiempo por semana">' +
-    [0, 50, 100].map(function (p) { return '<line x1="' + x0 + '" x2="' + x1 + '" y1="' + Y(p) + '" y2="' + Y(p) + '" stroke="rgba(255,255,255,.12)"/><text x="' + (x0 - 8) + '" y="' + (Y(p) + 4) + '" fill="#B8B2A7" font-size="11" text-anchor="end">' + p + '%</text>'; }).join('') +
-    tramos.map(function (t) { return '<polyline points="' + t.join(' ') + '" fill="none" stroke="#F4F2EC" stroke-width="2.2" stroke-linejoin="round"/>'; }).join('') +
-    puntos.map(function (p) { return p ? '<circle cx="' + X(p.j).toFixed(1) + '" cy="' + Y(p.p).toFixed(1) + '" r="6" fill="' + (COLOR_NIVEL[p.n] || '#8A857C') + '" stroke="#0A0A09" stroke-width="2"><title>' + esc((p.n ? NIVEL[p.n] : 'Esperando revisión') + ' · ' + p.p + '% a tiempo') + '</title></circle>' : ''; }).join('') +
-    semanas.map(function (w, j) { return '<text x="' + X(j).toFixed(1) + '" y="' + (H - 10) + '" fill="#B8B2A7" font-size="11" text-anchor="middle">' + esc(diaMes(w)) + '</text>'; }).join('') +
+    [0, 50, 100].map(function (p) { return '<line x1="' + x0 + '" x2="' + x1 + '" y1="' + Y(p) + '" y2="' + Y(p) + '" stroke="rgba(255,255,255,.12)"/><text x="' + (x0 - 8) + '" y="' + (Y(p) + 4) + '" fill="#A6AEB8" font-size="11" text-anchor="end">' + p + '%</text>'; }).join('') +
+    tramos.map(function (t) { return '<polyline points="' + t.join(' ') + '" fill="none" stroke="#E8AE85" stroke-width="2.2" stroke-linejoin="round"/>'; }).join('') +
+    puntos.map(function (p) { return p ? '<circle cx="' + X(p.j).toFixed(1) + '" cy="' + Y(p.p).toFixed(1) + '" r="6" fill="' + (COLOR_NIVEL[p.n] || '#6F7884') + '" stroke="#0C0E11" stroke-width="2"><title>' + esc((p.n ? NIVEL[p.n] : 'Esperando revisión') + ' · ' + p.p + '% a tiempo') + '</title></circle>' : ''; }).join('') +
+    semanas.map(function (w, j) { return '<text x="' + X(j).toFixed(1) + '" y="' + (H - 10) + '" fill="#A6AEB8" font-size="11" text-anchor="middle">' + esc(diaMes(w)) + '</text>'; }).join('') +
     '</svg>';
   return '<div class="imp-grafico">' + svg +
     '<div class="imp-ley">' + NIVELES.slice().reverse().map(function (n) { return '<span><i style="background:' + COLOR_NIVEL[n] + '"></i>' + esc(NIVEL[n]) + '</span>'; }).join('') + '</div></div>';
@@ -3164,7 +3164,7 @@ function iconoPieza(k) {
 /** El dibujito de un módulo del centro (la ficha "Módulo" de la caja de muebles). */
 function iconoModulo() {
   return '<svg class="pieza-ico" viewBox="0 0 74 50" aria-hidden="true" focusable="false">' +
-    '<rect x="2" y="2" width="70" height="46" rx="5" fill="none" style="stroke:var(--acc)" stroke-width="3"/>' +
+    '<rect x="2" y="2" width="70" height="46" rx="5" fill="none" style="stroke:var(--sel-borde)" stroke-width="3"/>' +
     '<rect x="5" y="5" width="64" height="40" rx="3" fill="#6E4A2E"/>' +
     (CROQUIS_IMG ? imagenesCroquis(['mesa'], { x: 6, y: 6, w: 62, h: 38 }, 's', true, 0) : '') + '</svg>';
 }
