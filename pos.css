@@ -760,3 +760,92 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .df-op b { display: block; font: 700 14px var(--sans); }
 .df-op small { display: block; font-size: 12.5px; color: var(--txt-3); line-height: 1.4; }
 .df-op.apagada { cursor: default; opacity: .55; }
+
+/* ═════════ TICKETS CON LAS UBICACIONES DE BLUESOFT (SQL 171) ═════════
+   Mauricio (24/10): "parecido con nuestro estilo, pero con las ubicaciones
+   iguales". La lista al medio; a la derecha Nueva venta, Venta fallida, el
+   tráfico y la conversión; abajo, la barra de totales. En la compu llega
+   hasta abajo como la venta: la tabla se desliza adentro y los totales
+   quedan contra el borde. */
+.tkl { display: grid; gap: 12px; }
+.tkl-lista { min-width: 0; }
+@media (min-width: 1000px) {
+  .tkl { grid-template-columns: minmax(0, 1fr) 236px; align-items: stretch; }
+  .pos-cuerpo.lleno > .tkl { flex: 1 1 auto; min-height: 0; }
+  .tkl-lista { display: flex; flex-direction: column; min-height: 0; }
+  .tkl-lista > .pos-marco-tabla { flex: 1 1 auto; height: 0; min-height: 150px; overflow: auto; }
+  .tkl-lista .pos-tabla th { position: sticky; top: 0; z-index: 1; }
+}
+/* En el celular, los dos botones grandes arriba de la lista. */
+@media (max-width: 999px) { .tkl-panel { order: -1; } }
+.tkl .pos-tabla td, .tkl .pos-tabla th { padding-left: 8px; padding-right: 8px; white-space: nowrap; }
+/* El cliente, cortado con "…" si es largo (en una celda, max-width no corta: va en un span). */
+.tk-cli-n { display: inline-block; max-width: 150px; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+
+.tkl-panel { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.tkl-nueva, .tkl-fallida {
+  display: grid; place-items: center; padding: 0 12px; border: 0; border-radius: var(--r); cursor: pointer;
+  font: 700 19px/1.1 var(--display); letter-spacing: .2px; text-align: center;
+}
+.tkl-nueva { min-height: 66px; background: var(--cobre-lleno); color: var(--acc-ink); box-shadow: var(--btn-sombra); }
+/* El rojo es fijo (como el negro del tablero): con el blanco encima da 7,6:1 en los dos temas. */
+.tkl-fallida, .btn-fallida { background: #A00F1E; color: #FFFFFF; }
+.tkl-fallida { min-height: 50px; font-size: 17px; }
+.tkl-fallida:hover, .btn-fallida:hover:not(:disabled) { background: #860C19; }
+.tkl-nueva:active, .tkl-fallida:active { transform: scale(.985); }
+.tkl-nums { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tkl-num { padding: 9px 8px 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; text-align: center; min-width: 0; }
+.tkl-num b { display: block; font: 700 17px/1.2 var(--sans); font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tkl-num span { display: block; margin-top: 3px; font: 700 10px/1.2 var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
+.tkl-ver { align-self: center; font-size: 12.5px; color: var(--txt-2); }
+
+/* Abajo: los totales, en un renglón (como en BlueSoft). */
+.tkl-pie { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tkl-pie:empty { display: none; }
+.tkl-pie .tk-caja { flex: 1 1 104px; }
+.tkl-pie .tk-caja.fuerte { background: var(--tablero-negro); border-color: transparent; color: #FFFFFF; }
+.tkl-pie .tk-caja.fuerte span { color: rgba(255, 255, 255, .78); }
+.tkl-pie .pos-por-letra { flex: 1 1 170px; margin: 0; padding: 0 4px; align-content: center; gap: 2px 14px; }
+
+/* La marca del Club: en el cliente de la venta, en la lista de tickets y al buscar al socio. */
+.tk-club {
+  display: inline-block; flex: none; margin-right: 7px; padding: 1px 7px; border-radius: 999px;
+  background: var(--tablero-negro); color: #F0BE98; font: 700 11px/1.5 var(--sans); letter-spacing: .2px; white-space: nowrap; vertical-align: 1px;
+}
+.tk-cliente-txt > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.tk-nota-club b { color: var(--txt); }
+
+/* "Cargar": buscar al socio del Club. */
+.so-actual { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 9px 12px; margin-bottom: 10px; border-radius: 12px; background: var(--surface-2); font-size: 14px; }
+.so-actual > span:not(.tk-club) { color: var(--txt-2); font-size: 13px; }
+.so-actual .pos-link { margin-left: auto; }
+.so-lista { display: grid; gap: 4px; margin-top: 8px; max-height: 300px; overflow-y: auto; }
+.so-lista:empty { display: none; }
+.so-item {
+  display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; width: 100%;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); color: var(--txt);
+  font: 500 13.5px var(--sans); text-align: left; cursor: pointer;
+}
+.so-item:hover, .so-item:focus-visible { border-color: var(--line-alta); background: var(--surface-2); }
+.so-nom { min-width: 0; }
+.so-nom b, .so-nom small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.so-nom small { color: var(--txt-3); font-size: 12px; }
+.so-niv { font-weight: 700; font-size: 12.5px; color: var(--txt-2); }
+.so-pts { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.so-nada { margin: 0; padding: 8px 2px; font-size: 13px; color: var(--txt-3); }
+
+/* La ventana de la venta fallida: roja arriba, como la de BlueSoft. */
+.pos-caja.vf { border-top: 6px solid #A00F1E; }
+.pos-caja.vf h3 { color: var(--bad-txt); }
+.pos-caja .vf-motivos .chip { flex: 1 1 auto; }
+.pos-caja.vf .tk-prod { display: block; }
+.vf-sel { display: flex; align-items: center; gap: 8px; margin-top: 6px; padding: 5px 6px 5px 12px; border-radius: 10px; background: var(--surface-2); font-size: 13.5px; }
+.vf-sel small { color: var(--txt-3); font-size: 12px; }
+.vf-sel .tk-quitar { margin-left: auto; }
+/* El talle y el color que buscaba, en un mismo renglón si entran. */
+.vf-vars { display: flex; flex-wrap: wrap; gap: 0 24px; }
+.vf-var { margin-top: 6px; }
+.vf-var > span { display: block; margin-bottom: 4px; font: 600 11.5px var(--sans); color: var(--txt-2); }
+.vf-nc { align-self: center; margin: 0; font-size: 13px; color: var(--txt-2); }
+.vf-nc a { color: var(--txt); font-weight: 700; }
+.pos-tabla td.vf-det { min-width: 160px; max-width: 280px; white-space: normal; font-size: 13px; }

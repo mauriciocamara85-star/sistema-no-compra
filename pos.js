@@ -42,6 +42,15 @@
    recibió y qué pasó; en Gestión → Diferencias se ven con sus estadísticas
    y se resuelven (mandar lo que faltó, que devuelvan lo que sobró…), y el
    sistema avisa al abrirlo (persona.js).
+   El SQL 171 (24/10, "el tráfico son las ventas que vendimos más las ventas
+   fallidas" y los No Compra): la venta fallida propia, como la de BlueSoft
+   (el cliente que se fue sin comprar y no dejó su WhatsApp; el que lo deja
+   va al No Compra); Tickets con las ubicaciones de BlueSoft (a la derecha
+   Nueva venta, Venta fallida, el tráfico y la conversión; abajo los
+   totales, con el ticket promedio); y el socio del Club en "Cargar": se
+   busca o se hace socio ahí, y la venta anota sus puntos. Los SUMA recién
+   cuando se prenda la regla del Club pos_suma_puntos ("los dejamos apagados
+   hasta el lanzamiento"): mientras tanto se cargan en Cobrar.
 
    La plata va en CENTAVOS (enteros) en toda la cuenta: la base vuelve a
    sumar y exige que los pagos den el total al centavo.
@@ -74,7 +83,7 @@
   var MENUS = {
     mostrador: [
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
-                  ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida', 'index.html?volver=pos']]],
+                  ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida']]],
       /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene. */
       ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['stock', 'Stock', 'stock']]],
       /* El cierre se hace en el mostrador, a la noche (SQL 149); los listados quedan en Gestión. */
@@ -92,7 +101,7 @@
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
   var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos' }, gestion: { remito_nuevo: 'remitos' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -104,13 +113,13 @@
       'La etiqueta con el código, el talle y el color.'], 'Los precios ya se cambian en <a href="#listas">Listas de precios</a>.'],
     clientes: ['Clientes', [
       'Buscar por nombre, DNI, CUIT, mail o teléfono.',
-      'El socio del Club adentro de la venta: suma puntos y usa sus beneficios.',
+      'Canjear los premios del Club adentro de la venta (el socio ya se elige con «Cargar»).',
       'Lo que compró cada uno, para el CRM.',
       'La condición de IVA guardada, para la factura A.'], ''],
     reportes: ['Reportes', [
       'Ventas por sucursal, por vendedor, por producto y por medio de pago.',
       'Por día, por semana y por mes, comparado con el año pasado.',
-      'La conversión con el No Compra (los que compraron sobre los que entraron).',
+      'La conversión por sucursal y por vendedor, día por día (la del período ya está en Tickets).',
       'Que alimente sola la planilla de Ventas, sin cargar nada a mano.'], 'Mientras tanto, los tickets del día y sus totales están en <a href="pos.html#tickets">POS → Tickets</a>.'],
     medios: ['Medios de pago', [
       'Las tarjetas y sus cuotas, con recargo o sin interés.',
@@ -136,6 +145,10 @@
                     ['Por pronto pago 50 %', 50], ['Por pronto pago 70 %', 70], ['Descuento de fábrica', 0], ['Cupón de descuento', 0],
                     ['Otros descuentos', 0], ['Redondeo negativo', 0]];
   var TIPOS_PROMO = { lleva_paga: 'Lleva y paga menos (3x2, 4x3…)', segunda: 'La segunda prenda con descuento', medio_pago: 'Pagando con un medio (10 % en efectivo…)' };
+  /* Los motivos de la "Nueva venta fallida" de BlueSoft, en su orden (SQL 171). */
+  var MOTIVOS = [['producto', 'No teníamos el producto'], ['talle', 'No teníamos el talle'], ['color', 'Falta de color'], ['tipo', 'Falta de tipo de producto'],
+                 ['precio', 'Por precio'], ['gusto', 'No le gustaron los productos'], ['mirar', 'Entró a mirar'], ['otro', 'Otro motivo']];
+  function nombreMotivo(m) { var x = MOTIVOS.filter(function (y) { return y[0] === m; })[0]; return x ? x[1] : m; }
 
   /* ── Íconos (trazos de 24×24) ── */
   var TRAZO = {
@@ -197,6 +210,9 @@
     return Math.round(parseFloat(s) * 100);
   }
   function aPesos(c) { return Math.round(c) / 100; }
+  /** 1.8333 → "1,8"; 0.375 (una proporción) → "37,5 %". */
+  function decimal(n) { return String(Math.round(Number(n) * 10) / 10).replace('.', ','); }
+  function porcentaje(x) { return decimal(Number(x) * 100) + ' %'; }
 
   function fechaCorta(iso) { var p = String(iso || '').slice(0, 10).split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : ''; }
   function fechaHora(ts) {
@@ -258,9 +274,10 @@
     var m = String((e && e.message) || e || '');
     /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe.
        El 149 suma la caja (pos_caja…, pos_cierre…). El 160, el stock y los remitos. El 167, las diferencias
-       (y quién recibió: p_recibio). */
+       (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
+      return 'Todavía falta correr el SQL ' + (/pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
+                                             /pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
                                              /pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
     }
     if (/tiene que ser A o B/.test(m)) return 'Todavía falta correr el SQL 147 (el de la X) en Supabase.';
@@ -383,7 +400,7 @@
     cerrarVentana();
     app.innerHTML = marco();
     engancharMenu();
-    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, cierre: verCierre, cierres: verCierres,
+    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, cierre: verCierre, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario }[v];
     if (ver) ver(); else verPronto(v);
@@ -402,8 +419,9 @@
   }
 
   /* ── El menú de la izquierda ── */
-  /* La venta y el cambio necesitan el ancho (el ticket de BlueSoft): arrancan con el menú achicado. */
-  function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio'; }
+  /* La venta y el cambio necesitan el ancho (el ticket de BlueSoft): arrancan con el menú achicado. Tickets también
+     (SQL 171): con el panel de la derecha, la lista entra entera en la PC del local. */
+  function vistaAncha() { return S.vista === 'venta' || S.vista === 'cambio' || S.vista === 'tickets'; }
   function menuChico() { return vistaAncha() ? leer(K_MENU_VENTA) !== 'abierto' : Interfaz.panelChico(K_MENU); }
   function guardarMenu(ch) { if (vistaAncha()) guardar(K_MENU_VENTA, ch ? 'chico' : 'abierto'); else Interfaz.panelChico(K_MENU, ch); }
 
@@ -573,7 +591,7 @@
   function ventaNueva(antes) {
     var l = (antes && localDe(antes.local_id)) || localInicial();
     return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
-             lista_id: listaDe(l), letra: 'B', cliente: null, lineas: [], sacadas: {}, manuales: [],
+             lista_id: listaDe(l), letra: 'B', cliente: null, socio: null, lineas: [], sacadas: {}, manuales: [],
              forma: 'efectivo', pago: {}, multiples: null, observaciones: '' };
   }
   function cargarBorrador() {
@@ -757,7 +775,7 @@
       recordar();
       pintar();
     };
-    $('vCargarCli').onclick = function () { abrirCliente(false); };
+    $('vCargarCli').onclick = abrirSocio;
     $('vLista').onchange = function () { cambiarLista(Number(this.value)); };
     $('vForma').onchange = function () {
       if (this.value === 'multiple') { this.value = V.forma; abrirMultiple(); return; }
@@ -835,6 +853,14 @@
   }
   function clienteParaA(cl) { return !!(cl && cl.doc && cl.doc.length === 11 && cl.condicion && cl.condicion !== 'consumidor_final' && cl.nombre); }
 
+  /* ── El socio del Club (SQL 171) ── */
+  function clubIni() { return (S.ini && S.ini.club) || { suma: false, pesos_por_punto: 100 }; }
+  /** Los puntos de una venta (total en centavos), con la cuenta de Cobrar (club_sumar_compra): el total sobre los pesos
+      por punto, por el multiplicador del socio (su nivel y las promos del día), redondeado una sola vez al final. */
+  function puntosDe(total, factor) { return Math.floor(aPesos(total) / (Number(clubIni().pesos_por_punto) || 100) * (Number(factor) || 1) + 1e-9); }
+  function telCorto(t) { var d = String(t || '').replace(/\D/g, ''); return d ? 'WhatsApp …' + d.slice(-4) : 'Sin WhatsApp'; }
+  function marcaClub(so) { return '<span class="tk-club" title="Socio del Club">Club' + (so.nivel ? ' · ' + esc(so.nivel) : '') + '</span>'; }
+
   /* ── Lo que cambia cada vez ── */
   function pintar() {
     if (!$('vFilas')) return;
@@ -842,8 +868,8 @@
     $('vSub').textContent = nombreLocal(l0) + ' · ' + (li ? li.nombre : '');
     $('vRef').value = 'Al guardar';
     $('vLetra').value = V.letra;
-    $('vCliente').textContent = textoCliente(V.cliente);
-    $('vCliente').title = $('vCliente').textContent;
+    $('vCliente').innerHTML = (V.socio ? marcaClub(V.socio) : '') + '<span>' + esc(textoCliente(V.cliente)) + '</span>';
+    $('vCliente').title = (V.socio ? 'Socio del Club ' + V.socio.nivel + ' · ' : '') + textoCliente(V.cliente);
     $('vForma').value = V.forma;
     $('vForma').disabled = V.letra === 'X';
     $('vForma').title = V.letra === 'X' ? 'La X va sólo con efectivo' : '';
@@ -888,12 +914,17 @@
     var mt = $('vMultTxt');
     if (mt) mt.textContent = (V.multiples || []).map(function (x) { return MEDIOS[x.medio] + ' ' + plata(x.monto); }).join(' + ') || '—';
 
-    var cl = V.cliente;
-    $('vNota').innerHTML = enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
+    var cl = V.cliente, so = V.socio, pts = so ? puntosDe(c.total, so.factor) : 0;
+    /* Los puntos del socio: los anota la venta; los suma recién con la regla del Club prendida (SQL 171). */
+    var club = !so ? '' : '<span class="tk-nota-club"><b>Club:</b> ' + (enPrueba() ? 'en modo prueba no se suman puntos.' :
+      !c.total ? esc(String(so.nombre || '').split(' ')[0]) + ' suma puntos con lo que compre.' :
+      'esta venta le da ' + miles(pts) + (pts === 1 ? ' punto' : ' puntos') + ' a ' + esc(String(so.nombre || '').split(' ')[0]) +
+      (clubIni().suma ? ': se suman al guardar.' : '. Hasta el lanzamiento se cargan en Cobrar.')) + '</span> ';
+    $('vNota').innerHTML = club + (enPrueba() ? '<b>Modo prueba:</b> lo que guardes numera aparte (P-1, P-2…), no cuenta para nada y se borra desde Tickets.' :
       V.letra === 'X' ? '<b>Comprobante X:</b> es interno, no es factura y no va a ARCA. Va sólo con efectivo.' :
       '<b>La factura de ARCA todavía no está conectada:</b> la venta queda registrada en el POS y la factura la sigue haciendo BlueSoft.' +
       (cl && cl.envio === 'mail' && cl.email ? ' Cuando esté, va por mail a ' + esc(cl.email) + '.' : '') +
-      (cl && cl.envio === 'whatsapp' && cl.tel ? ' Cuando esté, va por WhatsApp al ' + esc(cl.tel) + '.' : '');
+      (cl && cl.envio === 'whatsapp' && cl.tel ? ' Cuando esté, va por WhatsApp al ' + esc(cl.tel) + '.' : ''));
     guardarBorrador();
   }
 
@@ -1208,7 +1239,7 @@
     function marcar() { caja.querySelectorAll('[data-envio]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-envio') === envio); }); }
     marcar();
     caja.querySelector('#clEnvio').onclick = function (e) { var b = e.target.closest('[data-envio]'); if (b) { envio = envio === b.getAttribute('data-envio') ? '' : b.getAttribute('data-envio'); marcar(); } };
-    caja.querySelector('#clGenerico').onclick = function () { V.cliente = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    caja.querySelector('#clGenerico').onclick = function () { V.cliente = null; V.socio = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
     function listo() {
       var x = {
         nombre: caja.querySelector('#clNombre').value.trim(),
@@ -1237,6 +1268,98 @@
       pintar();
     }
     caja.querySelector('#clOk').onclick = listo;
+    caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); listo(); } });
+  }
+
+  /* "Cargar" (SQL 171): primero, ¿es socio del Club? Se busca como en Cobrar (su WhatsApp, su nombre, su mail o la
+     tarjeta) o se hace socio ahí mismo. Los datos para la factura A, o para mandarle la factura, siguen en la de siempre. */
+  function abrirSocio() {
+    var so = V.socio, prueba = enPrueba();
+    var caja = ventana('<h3 id="posVentTit">Cliente</h3><p class="pos-bajada">¿Es socio del Club? Buscalo por su WhatsApp, su nombre, su mail o el número de la tarjeta. ' +
+        'Si no es, se hace socio acá mismo.</p>' +
+      (so ? '<div class="so-actual">' + marcaClub(so) + '<b>' + esc(so.nombre) + '</b><span>' + miles(so.puntos) + ' puntos</span>' +
+            '<button type="button" class="pos-link" id="soSacar">Sacarlo de la venta</button></div>' : '') +
+      campo('', 'Buscar socio', '<input type="search" id="soBuscar" autocomplete="off" spellcheck="false" placeholder="WhatsApp, nombre, mail o tarjeta" autofocus>') +
+      '<div class="so-lista" id="soLista"></div><div class="pos-error" id="soError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="soFinal">Consumidor final</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="soFactura" title="La factura A, o mandarle la factura por mail o WhatsApp">Datos para la factura</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="soAlta"' + (prueba ? ' disabled title="En modo prueba no se hacen socios: el alta es de verdad"' : '') + '>Hacerlo socio</button></div>');
+    var campoB = caja.querySelector('#soBuscar'), lista = caja.querySelector('#soLista'), espera = null, pedido = 0, hallados = [];
+    function buscar() {
+      var q = campoB.value.trim(), n = ++pedido;
+      errorEn(caja, 'soError', '');
+      if (q.length < 3) { hallados = []; lista.innerHTML = ''; return; }
+      lista.innerHTML = '<p class="so-nada">Buscando…</p>';
+      llamar('pos_club_buscar', { p_texto: q }).then(function (r) {
+        if (n !== pedido || !caja.isConnected) return;
+        if (r && r.corto) { hallados = []; lista.innerHTML = '<p class="so-nada">' + esc(r.porque) + '</p>'; return; }
+        hallados = r || [];
+        lista.innerHTML = hallados.length ? hallados.map(function (s, i) {
+          return '<button type="button" class="so-item" data-so="' + i + '"><span class="so-nom"><b>' + esc(s.nombre) + '</b>' +
+            '<small>' + esc(telCorto(s.telefono)) + (s.mail ? ' · ' + esc(s.mail) : '') + '</small></span>' +
+            '<span class="so-niv">' + esc(s.nivel || '') + '</span><span class="so-pts">' + miles(Number(s.puntos) || 0) + ' puntos</span></button>';
+        }).join('') : '<p class="so-nada">No hay ningún socio con «' + esc(q) + '».' + (prueba ? '' : ' Si quiere sumarse, tocá «Hacerlo socio».') + '</p>';
+      }).catch(function (e) { if (n === pedido && caja.isConnected) { lista.innerHTML = ''; errorEn(caja, 'soError', mensajeDe(e)); } });
+    }
+    campoB.oninput = function () { clearTimeout(espera); espera = setTimeout(buscar, 300); };
+    campoB.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(espera); buscar(); } };
+    lista.onclick = function (e) {
+      var b = e.target.closest('[data-so]');
+      if (!b) return;
+      elegirSocio(hallados[Number(b.getAttribute('data-so'))]);
+      cerrarVentana();
+      pintar();
+    };
+    var sacar = caja.querySelector('#soSacar');
+    if (sacar) sacar.onclick = function () { V.socio = null; cerrarVentana(); pintar(); };
+    caja.querySelector('#soFinal').onclick = function () { V.cliente = null; V.socio = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    caja.querySelector('#soFactura').onclick = function () { abrirCliente(false); };
+    caja.querySelector('#soAlta').onclick = function () { abrirAltaSocio(campoB.value.trim()); };
+  }
+  /** El socio elegido: su nombre va al ticket (menos en la factura A, que lleva la razón social) y su mail y su
+      WhatsApp quedan a mano para mandarle la factura (con su sí, en «Datos para la factura»). */
+  function elegirSocio(s) {
+    V.socio = { codigo: s.codigo, nombre: s.nombre, nivel: s.nivel || '', puntos: Number(s.puntos) || 0, factor: Number(s.factor) || 1 };
+    var cl = V.cliente || { condicion: 'consumidor_final' };
+    if (V.letra !== 'A') cl.nombre = s.nombre;
+    if (!cl.email && s.mail) cl.email = String(s.mail).toLowerCase();
+    if (!cl.tel && s.telefono) cl.tel = s.telefono;
+    V.cliente = cl;
+  }
+  /* "Hacerlo socio": el alta de siempre del Club (club_alta: el bono de bienvenida y Kommo), con el local de la venta.
+     Es de verdad aunque se esté probando: por eso en modo prueba no se puede. */
+  function abrirAltaSocio(texto) {
+    if (enPrueba()) { avisar('info', 'En modo prueba no se hacen socios: el alta es de verdad.'); return; }
+    var dig = String(texto || '').replace(/\D/g, ''), pal = dig ? [] : String(texto || '').trim().split(/\s+/).filter(Boolean);
+    var caja = ventana('<h3 id="posVentTit">Hacerlo socio del Club</h3><p class="pos-bajada">El alta de siempre del Club: se lleva el bono de bienvenida, ' +
+        'entra a Kommo y suma desde esta compra. Es de verdad, aunque estés probando el POS.</p>' +
+      '<div class="pos-campos">' +
+        campo('', 'Nombre', '<input type="text" id="saNombre" maxlength="40" autocomplete="off" value="' + esc(pal[0] || '') + '">') +
+        campo('', 'Apellido', '<input type="text" id="saApellido" maxlength="40" autocomplete="off" value="' + esc(pal.slice(1).join(' ')) + '">') +
+        campo('', 'WhatsApp', '<input type="tel" id="saTel" maxlength="20" placeholder="Con la característica" value="' + esc(dig.length >= 6 ? texto : '') + '">') +
+        campo('', 'Mail <span class="lbl-opc">(si quiere)</span>', '<input type="email" id="saMail" maxlength="120">') +
+        '<label class="pos-check ancho"><input type="checkbox" id="saAcepta"> Acepta que le escribamos por WhatsApp con promociones y novedades</label>' +
+      '</div><div class="pos-error" id="saError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="saOk">Hacerlo socio</button></div>');
+    /* Lo que ya escribió en el buscador pasa al alta: el foco va al primer campo que falta. */
+    setTimeout(function () { var f = caja.querySelector(pal[1] ? '#saTel' : pal[0] ? '#saApellido' : '#saNombre'); if (f) f.focus(); }, 0);
+    function listo() {
+      var x = { nombre: caja.querySelector('#saNombre').value.trim(), apellido: caja.querySelector('#saApellido').value.trim(),
+                telefono: caja.querySelector('#saTel').value.trim(), mail: caja.querySelector('#saMail').value.trim(),
+                local_id: V.local_id, acepta: caja.querySelector('#saAcepta').checked };
+      if (!errorEn(caja, 'saError', !x.nombre ? 'Falta el nombre.' : !x.apellido ? 'Falta el apellido.' :
+                                    x.telefono.replace(/\D/g, '').length < 8 ? 'Falta el WhatsApp (con la característica).' :
+                                    x.mail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.mail) ? 'Ese mail no se entiende: dejalo vacío si no lo tiene a mano.' : '')) return;
+      var bt = caja.querySelector('#saOk');
+      bt.disabled = true;
+      llamar('pos_club_alta', { p: x }).then(function (r) {
+        elegirSocio(r.socio);
+        cerrarVentana();
+        pintar();
+        avisar(r.nuevo ? 'ok' : 'info', r.nuevo ? 'Listo: ' + r.socio.nombre + ' ya es socio del Club.' : 'Ese WhatsApp ya era socio del Club (' + r.socio.nombre + '): quedó elegido.');
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'saError', mensajeDe(e)); });
+    }
+    caja.querySelector('#saOk').onclick = listo;
     caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); listo(); } });
   }
 
@@ -1337,6 +1460,7 @@
       clave: V.clave, prueba: enPrueba(), local_id: V.local_id, vendedor: V.vendedor, letra: V.letra, lista_id: V.lista_id,
       cliente_nombre: cl.nombre || '', cliente_doc: cl.doc || '', cliente_condicion: cl.condicion || 'consumidor_final',
       cliente_email: cl.email || '', cliente_tel: cl.tel || '', envio: cl.envio || '', observaciones: V.observaciones || '',
+      socio: V.socio ? V.socio.codigo : '',
       items: V.lineas.map(function (l) {
         return { codigo: l.codigo || '', descripcion: l.descripcion, talle: l.talle || '', color: l.color || '', cantidad: l.cantidad, precio: aPesos(l.precio) };
       }),
@@ -1352,13 +1476,17 @@
     if (b) b.disabled = true;
     if (bv) bv.disabled = true;
     if (bx) bx.textContent = 'Guardando…';
+    var socio = V.socio;
     llamar('pos_venta_guardar', { p: p }).then(function (r) {
       S.ultimo = { id: r.id, numero: r.numero, serie: r.serie || 'factura', total: c.total, local: nombreLocal(l0), ya: !!r.ya };
       S.stock = {};   // lo vendido salió del stock: se vuelve a traer
       V = ventaNueva(V);
       guardarBorrador();
       S.guardando = false;
-      avisar('ok', nombreVenta(S.ultimo) + ' guardada.');
+      /* Los puntos del socio (SQL 171): sumados, o anotados para cargarlos en Cobrar mientras la regla esté apagada. */
+      var n = Number(r.socio_puntos) || 0, quien = socio ? String(socio.nombre || '').split(' ')[0] : '';
+      avisar('ok', nombreVenta(S.ultimo) + ' guardada.' + (!socio || !n || p.prueba ? '' :
+        r.puntos_sumados ? ' Le sumó ' + miles(n) + ' puntos a ' + quien + '.' : ' Los ' + miles(n) + ' puntos de ' + quien + ' se cargan en Cobrar.'));
       if (S.vista !== 'venta') return;
       if (!aTickets) { verVenta(); return; }
       /* A Tickets, en "Hoy" (la venta recién hecha tiene que estar en la lista), con la venta marcada arriba. */
@@ -1375,7 +1503,7 @@
   }
 
   document.addEventListener('keydown', function (e) {
-    if (!vistaAncha() || _velo || !S.ini) return;
+    if ((S.vista !== 'venta' && S.vista !== 'cambio') || _velo || !S.ini) return;
     if (e.key === 'F9') { e.preventDefault(); if (S.vista === 'venta') guardarVenta(); else guardarCambio(); }
     else if (e.key === 'F2') {
       e.preventDefault();
@@ -1413,6 +1541,9 @@
           '<div><span>Cliente</span>' + esc(t.cliente_nombre || 'Consumidor final') + (t.cliente_doc ? '<br>' + esc(t.cliente_doc.length === 11 ? 'CUIT ' + cuit(t.cliente_doc) : 'DNI ' + t.cliente_doc) : '') + '</div>' +
           '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
           '<div><span>ARCA</span>' + (t.factura ? 'Con CAE' : t.letra === 'X' ? 'No va (comprobante interno)' : t.prueba ? 'No va (es una prueba)' : 'Sin factura (la hace BlueSoft)') + '</div>' +
+          /* SQL 171: el socio del Club y sus puntos. */
+          (t.socio ? '<div><span>Club</span>' + (t.socio_nivel ? esc(t.socio_nivel) + ' · ' : '') + 'tarjeta ' + esc(t.socio) + '<br>' + miles(Number(t.socio_puntos) || 0) + ' puntos ' +
+            (t.puntos_sumados ? 'sumados' : t.prueba ? '(una prueba no suma)' : anulada ? '(la venta está anulada)' : 'sin sumar (se cargan en Cobrar)') + '</div>' : '') +
         '</div>' +
         '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th><th class="c">Cant.</th><th class="n">Precio unit.</th><th class="n">Total</th></tr></thead><tbody>' +
           (t.items || []).map(function (i) {
@@ -1434,7 +1565,8 @@
         ab.remove();
         var z = dentro.querySelector('#tkAnular');
         z.innerHTML = '<div class="pos-cartel" style="margin-top:12px">La venta queda en la lista, tachada, con quién la anuló y por qué.' +
-          (t.serie === 'prueba' ? '' : ' Lo vendido vuelve al stock de la sucursal.') + ' No se puede deshacer.' +
+          (t.serie === 'prueba' ? '' : ' Lo vendido vuelve al stock de la sucursal.') +
+          (t.puntos_sumados ? ' Al socio se le descuentan los ' + miles(Number(t.socio_puntos) || 0) + ' puntos.' : '') + ' No se puede deshacer.' +
           campo('', '¿Por qué se anula?', '<textarea id="tkMotivo" maxlength="300" rows="2"></textarea>') + '<div class="pos-error" id="tkError"></div>' +
           '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="tkConfirmar">Anular la venta ' + esc(ref(t)) + '</button></div></div>';
         var m = z.querySelector('#tkMotivo');
@@ -1463,7 +1595,7 @@
   function borrarPruebas(loc, bt, despues) {
     var l = loc && localDe(loc);
     if (!confirm('¿Borrar ' + (l ? 'las pruebas de ' + nombreLocal(l) : 'todas las pruebas') +
-                 ' (ventas y cambios, de cualquier día), con su caja de prueba? Las de verdad no se tocan. No se puede deshacer.')) return;
+                 ' (ventas, cambios y ventas fallidas, de cualquier día), con su caja de prueba? Las de verdad no se tocan. No se puede deshacer.')) return;
     bt.disabled = true;
     llamar('pos_pruebas_borrar', { p_local: loc || null }).then(function (n) {
       bt.disabled = false;
@@ -1477,11 +1609,10 @@
   function verTickets() {
     var c = $('cuerpo'), todos = {}, prueba = enPrueba();
     Object.keys(S.ini.vendedores || {}).forEach(function (k) { (S.ini.vendedores[k] || []).forEach(function (n) { todos[n] = 1; }); });
+    c.classList.add('lleno');
     c.innerHTML = cabeza('Tickets' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), 'Las ventas del POS de todas las sucursales.',
         '<button type="button" class="btn btn-sec btn-chico" id="tkBorrar" hidden>Borrar las pruebas</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" data-ir="venta">Nueva venta</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" data-ir="cambio" title="Ticket de cambio: lo que vuelve y lo que se lleva">Cambio</button>' +
-        '<a class="btn btn-sec btn-chico" href="index.html?volver=pos" title="El No Compra">Venta fallida</a>') +
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="cambio" title="Ticket de cambio: lo que vuelve y lo que se lleva">Cambio</button>') +
       '<div class="pos-filtros"><div id="tkPer"></div>' +
         campo('', 'Sucursal', '<select id="tkLocal" class="desplegable"><option value="">Todas</option>' + opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), '') + '</select>') +
         campo('', 'Vendedor', '<select id="tkVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
@@ -1490,11 +1621,24 @@
         campo('', 'Estado', '<select id="tkEstado"><option value="">Todos</option><option value="cobrada">Cobradas</option><option value="anulada">Anuladas</option></select>') +
         /* Las de verdad y las de prueba no se mezclan nunca; con el modo prueba prendido arranca en las de prueba. */
         campo('', 'Ventas', '<select id="tkPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
-      '</div><div id="tkLista"><p class="cargando">Cargando…</p></div>';
-    c.querySelectorAll('.pos-acciones [data-ir]').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; });
+      '</div>' +
+      /* Las ubicaciones de BlueSoft (Mauricio, 24/10: "parecido con nuestro estilo, pero con las ubicaciones iguales"): la
+         lista al medio; a la derecha Nueva venta, Venta fallida, el tráfico y la conversión; abajo los totales. */
+      '<div class="tkl">' +
+        '<div class="tkl-lista" id="tkLista"><p class="cargando">Cargando…</p></div>' +
+        '<aside class="tkl-panel" aria-label="Nueva venta, venta fallida y el tráfico">' +
+          '<button type="button" class="tkl-nueva" data-ir="venta">Nueva venta</button>' +
+          '<button type="button" class="tkl-fallida" id="tkFallida" title="El cliente se fue sin comprar y no dejó su WhatsApp">Venta fallida</button>' +
+          '<div class="tkl-nums" id="tkNums"></div>' +
+          '<button type="button" class="pos-link tkl-ver" data-ir="fallida">Ver las ventas fallidas</button>' +
+        '</aside>' +
+      '</div>' +
+      '<div class="tkl-pie" id="tkPie"></div>';
+    c.querySelectorAll('.pos-acciones [data-ir], .tkl-panel [data-ir]').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; });
     var per = Interfaz.periodo($('tkPer'), { inicial: 'hoy', guardar: 'pos_tickets_periodo', hastaHoy: true, alCambiar: cargar });
     ['tkLocal', 'tkVend', 'tkLetra', 'tkMedio', 'tkEstado', 'tkPrueba'].forEach(function (id) { $(id).onchange = cargar; });
     $('tkBorrar').onclick = function () { borrarPruebas($('tkLocal').value, this, cargar); };
+    $('tkFallida').onclick = function () { abrirFallida({ local: $('tkLocal').value, alGuardar: cargar }); };
     var pedido = 0;
     function deLaPrueba() { return $('tkPrueba').value === '1'; }
     function cargar() {
@@ -1506,32 +1650,49 @@
                               p_letra: $('tkLetra').value || null, p_prueba: deLaPrueba() }).then(function (d) {
         if (n !== pedido || !$('tkLista')) return;
         pintarTickets(d);
-      }).catch(function (e) { if ($('tkLista')) $('tkLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+      }).catch(function (e) {
+        if (!$('tkLista')) return;
+        $('tkLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+        pintarTrafico(null);
+        $('tkPie').innerHTML = '';
+      });
     }
+    /* El panel de la derecha (SQL 171): las ventas fallidas, el monto perdido, el tráfico (ventas + ventas fallidas +
+       No Compra) y la conversión. Va con el período, la sucursal y el vendedor; los demás filtros no lo cambian. */
+    function cifra(lbl, v) { return '<div class="tkl-num"><b>' + v + '</b><span>' + lbl + '</span></div>'; }
+    function pintarTrafico(x) {
+      var sin = '—';
+      $('tkNums').innerHTML = cifra('Ventas fallidas', x ? miles(x.fallidas) : sin) + cifra('Monto perdido', x ? plata(cent(x.perdido)) : sin) +
+        cifra('Tráfico', x ? miles(x.trafico) : sin) + cifra('Conversión', x && x.conversion != null ? porcentaje(x.conversion) : sin);
+      $('tkNums').title = x ? 'Tráfico: ' + x.ventas + (x.ventas === 1 ? ' venta' : ' ventas') + ' + ' + x.fallidas + (x.fallidas === 1 ? ' venta fallida' : ' ventas fallidas') +
+        ' + ' + x.no_compras + ' No Compra. Conversión: las ventas sobre el tráfico.' : '';
+    }
+    /* Abajo, la barra de totales de BlueSoft, con el ticket promedio y las prendas por ticket. */
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
     function pintarTickets(d) {
-      var t = d.totales || {}, pl = d.por_letra || {};
+      var t = d.totales || {}, pl = d.por_letra || {}, n = Number(t.tickets) || 0;
       var letras = ['A', 'B', 'X'].filter(function (l) { return pl[l] != null; });
       var porLetra = letras.length ? '<p class="pos-por-letra">' + letras.map(function (l) {
         return '<span>' + esc(LETRAS[l]) + ' <b>' + plata(cent(pl[l])) + '</b></span>'; }).join('') + '</p>' : '';
+      pintarTrafico(d.trafico || null);
+      $('tkPie').innerHTML = caja('Tickets', n) + caja('Productos', t.productos || 0) + caja('Neto', plata(cent(t.neto || 0))) +
+        caja('Descuentos', plata(cent(t.descuentos || 0))) + caja('Total', plata(cent(t.total || 0)), 'fuerte') +
+        caja('Ticket promedio', n ? plata(Math.round(cent(t.total) / n)) : '—') + caja('Prendas por ticket', n ? decimal(Number(t.productos) / n) : '—') +
+        caja('Anulados', t.anulados || 0) + porLetra;
       var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas de <b>prueba</b>: no cuentan en ningún total de verdad. ' +
         '«Borrar las pruebas» las borra' + ($('tkLocal').value ? ' (las de esa sucursal)' : ' todas') + ', de cualquier día.</div>' : '';
-      var kpis = '<div class="pos-totales">' +
-        '<div class="pos-kpi"><span>Tickets</span><b>' + (t.tickets || 0) + '</b></div>' +
-        '<div class="pos-kpi"><span>Productos</span><b>' + (t.productos || 0) + '</b></div>' +
-        '<div class="pos-kpi"><span>Neto</span><b>' + plata(cent(t.neto || 0)) + '</b></div>' +
-        '<div class="pos-kpi"><span>Descuentos</span><b>' + plata(cent(t.descuentos || 0)) + '</b></div>' +
-        '<div class="pos-kpi fuerte"><span>Total</span><b>' + plata(cent(t.total || 0)) + '</b></div>' +
-        (t.anulados ? '<div class="pos-kpi"><span>Anulados</span><b>' + t.anulados + '</b></div>' : '') + '</div>' + porLetra + aviso;
       if (!d.filas || !d.filas.length) {
-        $('tkLista').innerHTML = kpis + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas de prueba en ese período con esos filtros.' : 'No hay ventas en ese período con esos filtros.') + '</div>';
+        $('tkLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas de prueba en ese período con esos filtros.' : 'No hay ventas en ese período con esos filtros.') + '</div>';
         return;
       }
-      $('tkLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th class="n">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
+      $('tkLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th class="n">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
         '<th>Cliente</th><th>Comprobante</th><th>Forma de pago</th><th>Estado</th><th class="n">Cant.</th><th class="n">Total</th><th>ARCA</th></tr></thead><tbody>' +
         d.filas.map(function (f) {
           var an = f.estado === 'anulada', clases = (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '');
           return '<tr data-ticket="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td class="n">' + esc(refCorta(f)) + '</td>' +
-            '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td>' + esc(f.cliente) + '</td><td>' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
+            '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td class="tk-cli">' + (f.socio ? '<span class="tk-club" title="Socio del Club">Club</span>' : '') +
+              '<span class="tk-cli-n">' + esc(f.cliente) + '</span></td>' +
+            '<td>' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
             '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS[m] || m; }).join(' + ') || '—') + '</td>' +
             '<td>' + (an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
             '<td class="n">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
@@ -1547,6 +1708,202 @@
       var nueva = S.marcar && $('tkLista').querySelector('tr[data-ticket="' + S.marcar + '"]');
       S.marcar = null;
       if (nueva) { nueva.classList.add('recien'); nueva.scrollIntoView({ block: 'nearest' }); }
+    }
+    cargar();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     LA VENTA FALLIDA (SQL 171)
+     La "Nueva venta fallida" de BlueSoft: el cliente que se fue sin
+     comprar y no dejó su WhatsApp (el que lo deja va al No Compra, que le
+     escribe cuando entra lo que buscaba). El motivo, el producto si pidió
+     uno, el detalle y el monto perdido. Suma al tráfico de Tickets.
+     ════════════════════════════════════════════════════════════════════ */
+  /* o: { local, vendedor (los de la anterior, con «Guardar y nueva»), alGuardar() }. */
+  function abrirFallida(o) {
+    o = o || {};
+    var l = localDe(o.local) || localInicial(), prueba = enPrueba();
+    var F = { clave: nuevaClave(), local: l ? l.id : null, vendedor: o.vendedor || vendedorInicial(l), motivo: '', prod: null, talle: '', color: '', montoAuto: '' };
+    var caja = ventana('<h3 id="posVentTit">Nueva venta fallida' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : '') + '</h3>' +
+        '<p class="pos-bajada">' + fechaCorta(S.ini.hoy) + ' · El cliente que se fue sin comprar y no dejó su WhatsApp.</p>' +
+      '<div class="pos-campos">' +
+        campo('', 'Sucursal', '<select id="vfLocal" class="desplegable">' + opcionesLocales(F.local) + '</select>') +
+        campo('', 'Vendedor', '<select id="vfVend"></select>') +
+        '<div class="pos-f ancho"><span>Motivo</span><div class="chips vf-motivos" id="vfMotivos">' + MOTIVOS.map(function (m) {
+          return '<button type="button" class="chip" data-motivo="' + m[0] + '">' + esc(m[1]) + '</button>'; }).join('') + '</div></div>' +
+        '<div class="pos-f ancho"><span>Producto <span class="lbl-opc">(si buscaba uno)</span></span>' +
+          '<div class="tk-prod"><input type="search" id="vfProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="vfSug">' +
+          '<div class="tk-sug" id="vfSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+          '<div id="vfElegido"></div></div>' +
+        campo('', 'Detalle', '<textarea id="vfDetalle" maxlength="500" rows="2" placeholder="Qué buscaba, qué le ofrecimos…"></textarea>') +
+        campo('', 'Monto perdido estimado', '<input type="text" inputmode="decimal" id="vfMonto" placeholder="$">') +
+      '</div>' +
+      '<div class="pos-error" id="vfError"></div>' +
+      /* El aviso del No Compra va al lado de los botones: así la ventana entera entra en la PC del local. */
+      '<div class="pos-pie"><p class="vf-nc izq" title="Así se le escribe cuando entra lo que buscaba.">¿Dejó su WhatsApp? Entonces es un <a href="index.html?volver=pos">No Compra</a>.</p>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="vfOtra">Guardar y nueva</button>' +
+        '<button type="button" class="btn btn-chico btn-fallida" id="vfOk">' + (prueba ? 'Guardar prueba' : 'Guardar') + '</button></div>', true);
+    caja.classList.add('vf');
+    function lista() { return listaDe(localDe(F.local)); }
+    function llenarVend() {
+      var vs = vendedoresDe(F.local);
+      if (F.vendedor && vs.indexOf(F.vendedor) < 0) vs.push(F.vendedor);
+      caja.querySelector('#vfVend').innerHTML = '<option value="">Elegí quién atendió…</option>' + opciones(vs.map(function (n) { return [n, n]; }), F.vendedor);
+    }
+    function marcarMotivo() {
+      caja.querySelectorAll('[data-motivo]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-motivo') === F.motivo); });
+      caja.querySelector('#vfDetalle').placeholder = F.motivo === 'otro' ? 'Contá qué pasó (con «Otro motivo» hace falta)' : 'Qué buscaba, qué le ofrecimos…';
+    }
+    /* El producto que buscaba. Del disparo a la etiqueta se toma sólo la prenda: el talle y el color que buscaba son
+       justamente los que no había, así que se eligen abajo (salvo que tenga uno solo). */
+    function elegirProd(p) {
+      var ts = tallesDe(p), cs = coloresDe(p);
+      F.prod = p;
+      F.talle = ts.length === 1 ? ts[0] : '';
+      F.color = cs.length === 1 ? cs[0].cod : '';
+      caja.querySelector('#vfProd').limpiar();
+      pintarProd();
+      /* El monto perdido: el precio de la prenda, si no escribieron otro. */
+      var m = caja.querySelector('#vfMonto'), pr = precioDe(p[0], lista());
+      if (pr && (!m.value.trim() || m.value === F.montoAuto)) m.value = F.montoAuto = plataCampo(pr);
+    }
+    function pintarProd() {
+      var e = caja.querySelector('#vfElegido'), p = F.prod;
+      if (!p) { e.innerHTML = ''; return; }
+      var ts = tallesDe(p), cs = coloresDe(p);
+      e.innerHTML = '<div class="vf-sel"><b>' + esc(p[1]) + '</b><small>' + esc(p[0]) + '</small>' +
+          '<button type="button" class="tk-quitar" id="vfSacar" title="Sacar el producto" aria-label="Sacar el producto">' + icono('x') + '</button></div><div class="vf-vars">' +
+        (ts.length > 1 ? '<div class="vf-var"><span>Talle que buscaba</span><div class="chips">' + ts.map(function (t) {
+          return '<button type="button" class="chip' + (t === F.talle ? ' sel' : '') + '" data-vt="' + esc(t) + '">' + esc(t) + '</button>'; }).join('') + '</div></div>' : '') +
+        (cs.length > 1 ? '<div class="vf-var"><span>Color que buscaba</span><div class="chips">' + cs.map(function (x) {
+          return '<button type="button" class="chip' + (x.cod === F.color ? ' sel' : '') + '" data-vc="' + esc(x.cod) + '">' + esc(x.nom) + '</button>'; }).join('') + '</div></div>' : '') + '</div>';
+    }
+    llenarVend();
+    engancharProducto({ campo: 'vfProd', sug: 'vfSug', lista: lista, agregar: elegirProd, elegir: elegirProd, sinLinea: true,
+      noEsta: function () {
+        var d = caja.querySelector('#vfDetalle'), t = caja.querySelector('#vfProd').value.trim();
+        if (!d.value.trim()) d.value = t;
+        caja.querySelector('#vfProd').limpiar();
+        avisar('info', 'No está en el catálogo: quedó escrito en «Detalle».');
+        d.focus();
+      } });
+    asegurarPrecios(lista()).catch(function () {});
+    caja.querySelector('#vfLocal').onchange = function () {
+      var x = localDe(this.value);
+      F.local = x.id;
+      F.vendedor = vendedorInicial(x);
+      llenarVend();
+      asegurarPrecios(lista()).catch(function () {});
+    };
+    caja.querySelector('#vfVend').onchange = function () { F.vendedor = this.value; };
+    caja.querySelector('#vfMotivos').onclick = function (e) {
+      var b = e.target.closest('[data-motivo]');
+      if (!b) return;
+      F.motivo = b.getAttribute('data-motivo');
+      marcarMotivo();
+      errorEn(caja, 'vfError', '');
+    };
+    caja.querySelector('#vfElegido').onclick = function (e) {
+      var b = e.target.closest('button');
+      if (!b) return;
+      if (b.id === 'vfSacar') {
+        var m = caja.querySelector('#vfMonto');
+        if (m.value === F.montoAuto) m.value = F.montoAuto = '';
+        F.prod = null; F.talle = ''; F.color = '';
+        caja.querySelector('#vfProd').focus();
+      } else if (b.hasAttribute('data-vt')) F.talle = F.talle === b.getAttribute('data-vt') ? '' : b.getAttribute('data-vt');
+      else if (b.hasAttribute('data-vc')) F.color = F.color === b.getAttribute('data-vc') ? '' : b.getAttribute('data-vc');
+      pintarProd();
+    };
+    function guardarF(otra) {
+      var det = caja.querySelector('#vfDetalle').value.trim(), mt = caja.querySelector('#vfMonto').value.trim(), m = mt ? leerPlata(mt) : null;
+      if (!errorEn(caja, 'vfError', !F.local ? 'Elegí la sucursal.' : !F.vendedor ? 'Elegí quién atendió.' : !F.motivo ? 'Elegí el motivo.' :
+                                     F.motivo === 'otro' && det.length < 3 ? 'Con «Otro motivo», escribí qué pasó en «Detalle».' :
+                                     mt && !(m >= 0) ? 'El monto perdido no se entiende. Escribilo así: 20000 o 16.333,33' : '')) return;
+      var p = { clave: F.clave, prueba: prueba, local_id: F.local, vendedor: F.vendedor, motivo: F.motivo, detalle: det, monto: m == null ? null : aPesos(m),
+                codigo: F.prod ? F.prod[0] : '', descripcion: F.prod ? F.prod[1] : '', talle: F.talle, color: F.color };
+      var b1 = caja.querySelector('#vfOk'), b2 = caja.querySelector('#vfOtra');
+      b1.disabled = b2.disabled = true;
+      llamar('pos_fallida_guardar', { p: p }).then(function (r) {
+        var rc = recuerdo();
+        rc.local = F.local;
+        rc.vendedor = rc.vendedor || {};
+        rc.vendedor[F.local] = F.vendedor;
+        guardarJSON(K_RECUERDO, rc);
+        avisar('ok', (prueba ? 'Venta fallida de prueba guardada' : 'Venta fallida guardada') + (r && r.ya ? ' (ya estaba guardada: no se duplicó).' : '.'));
+        if (otra) abrirFallida({ local: F.local, vendedor: F.vendedor, alGuardar: o.alGuardar }); else cerrarVentana();
+        if (o.alGuardar) o.alGuardar();
+      }).catch(function (e) {
+        if (!caja.isConnected) return;
+        b1.disabled = b2.disabled = false;
+        errorEn(caja, 'vfError', e && e.sinSesion ? 'Se cerró tu sesión: entrá de nuevo.' : mensajeDe(e));
+      });
+    }
+    caja.querySelector('#vfOk').onclick = function () { guardarF(false); };
+    caja.querySelector('#vfOtra').onclick = function () { guardarF(true); };
+    setTimeout(function () { var f = caja.querySelector(F.vendedor ? '[data-motivo]' : '#vfVend'); if (f) f.focus(); }, 0);
+  }
+
+  /* La lista de las ventas fallidas: con qué motivo se fueron y cuánta plata se perdió. Se borra la que se cargó mal. */
+  function verFallidas() {
+    var c = $('cuerpo'), prueba = enPrueba(), todos = {};
+    Object.keys(S.ini.vendedores || {}).forEach(function (k) { (S.ini.vendedores[k] || []).forEach(function (n) { todos[n] = 1; }); });
+    c.innerHTML = cabeza('Ventas fallidas' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+        'Los clientes que se fueron sin comprar y no dejaron su WhatsApp. Los que lo dejan van al No Compra.',
+        '<a class="btn btn-sec btn-chico" href="index.html?volver=pos" title="El cliente dejó su WhatsApp">No Compra</a>' +
+        '<button type="button" class="btn btn-chico btn-fallida" id="vfNueva">Nueva venta fallida</button>') +
+      '<div class="pos-filtros"><div id="vfPer"></div>' +
+        campo('', 'Sucursal', '<select id="vfFLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Vendedor', '<select id="vfFVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
+        campo('', 'Motivo', '<select id="vfFMotivo"><option value="">Todos</option>' + opciones(MOTIVOS, '') + '</select>') +
+        campo('', 'Ventas fallidas', '<select id="vfFPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
+      '</div><div id="vfLista"><p class="cargando">Cargando…</p></div>';
+    var per = Interfaz.periodo($('vfPer'), { inicial: 'hoy', guardar: 'pos_fallidas_periodo', hastaHoy: true, alCambiar: cargar });
+    ['vfFLocal', 'vfFVend', 'vfFMotivo', 'vfFPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    $('vfNueva').onclick = function () { abrirFallida({ local: $('vfFLocal').value, alGuardar: cargar }); };
+    var pedido = 0;
+    function deLaPrueba() { return $('vfFPrueba').value === '1'; }
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('vfLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_fallidas', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('vfFLocal').value || null, p_vendedor: $('vfFVend').value || null,
+                               p_motivo: $('vfFMotivo').value || null, p_prueba: deLaPrueba() }).then(function (d) {
+        if (n !== pedido || !$('vfLista')) return;
+        pintarF(d);
+      }).catch(function (e) { if ($('vfLista')) $('vfLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function pintarF(d) {
+      var t = d.totales || {}, pm = d.por_motivo || {};
+      var arriba = '<div class="pos-totales"><div class="pos-kpi"><span>Ventas fallidas</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div>' +
+          '<div class="pos-kpi"><span>Monto perdido</span><b>' + plata(cent(t.perdido || 0)) + '</b></div></div>' +
+        (Object.keys(pm).length ? '<p class="pos-por-letra">' + MOTIVOS.filter(function (m) { return pm[m[0]]; }).map(function (m) {
+          return '<span>' + esc(m[1]) + ' <b>' + pm[m[0]] + '</b></span>'; }).join('') + '</p>' : '') +
+        (deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas fallidas de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '');
+      if (!d.filas || !d.filas.length) {
+        $('vfLista').innerHTML = arriba + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas fallidas de prueba en ese período con esos filtros.' : 'No hay ventas fallidas en ese período con esos filtros.') + '</div>';
+        return;
+      }
+      $('vfLista').innerHTML = arriba + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th>Vendedor</th><th>Motivo</th>' +
+        '<th>Producto</th><th>Detalle</th><th class="n">Monto perdido</th><th>Cargó</th><th><span class="sr">Borrar</span></th></tr></thead><tbody>' +
+        d.filas.map(function (f) {
+          var prod = f.descripcion ? esc(f.descripcion) + (f.talle ? ' · ' + esc(f.talle) : '') + (f.color ? ' · ' + esc(nombreColor(f.color, f.codigo)) : '') : '<span class="apagado">—</span>';
+          return '<tr data-fallida="' + esc(f.id) + '"' + (f.prueba ? ' class="prueba"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(bonito(f.local)) + '</td>' +
+            '<td>' + esc(f.vendedor) + '</td><td>' + esc(nombreMotivo(f.motivo)) + '</td><td>' + prod + '</td>' +
+            '<td class="vf-det">' + (f.detalle ? esc(f.detalle) : '<span class="apagado">—</span>') + '</td>' +
+            '<td class="n">' + (f.monto != null ? plata(cent(f.monto)) : '<span class="apagado">—</span>') + '</td><td>' + esc(f.cargado_por || '—') + '</td>' +
+            '<td><button type="button" class="tk-quitar" data-borrar="' + esc(f.id) + '" title="Borrar (si se cargó por error)" aria-label="Borrar esta venta fallida">' + icono('x') + '</button></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
+      $('vfLista').querySelectorAll('[data-borrar]').forEach(function (b) {
+        b.onclick = function () {
+          var f = d.filas.filter(function (x) { return x.id === b.getAttribute('data-borrar'); })[0];
+          if (!confirm('¿Borrar la venta fallida de ' + f.vendedor + ' (' + fechaHora(f.fecha) + ', ' + nombreMotivo(f.motivo) + ')? Es para una que se cargó por error. No se puede deshacer.')) return;
+          b.disabled = true;
+          llamar('pos_fallida_borrar', { p_id: f.id }).then(function () { avisar('ok', 'Listo: se borró la venta fallida.'); cargar(); })
+            .catch(function (e) { b.disabled = false; avisar('err', mensajeDe(e)); });
+        };
+      });
     }
     cargar();
   }
@@ -4351,5 +4708,6 @@
   /* Para las pruebas: la cuenta del ticket, sin la pantalla. */
   window.__pos = { cuenta: function (v, ini) { var antes = S.ini; S.ini = ini; try { return cuenta(v); } finally { S.ini = antes; } }, leerPlata: leerPlata, plata: plata,
                   leerTabla: leerTabla, filasDeTexto: filasDeTexto, filasDeXml: filasDeXml, siglaColor: siglaColor, ordenarTalles: ordenarTalles,
-                  celdaCsv: celdaCsv, tiempoRes: tiempoRes };
+                  celdaCsv: celdaCsv, tiempoRes: tiempoRes,
+                  puntosDe: function (total, factor, ini) { var antes = S.ini; S.ini = ini; try { return puntosDe(total, factor); } finally { S.ini = antes; } } };
 })();

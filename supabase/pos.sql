@@ -45,6 +45,14 @@
 --  estadísticas. Está al final del archivo; los remitos de arriba tienen la
 --  nota "SQL 167" donde cambiaron.
 --
+--  SQL 171 (24/10/2026): la venta fallida propia (aparte del No Compra: el
+--  cliente que no deja su WhatsApp), la conversión en Tickets (tráfico =
+--  ventas + ventas fallidas + No Compras) y el socio del Club en la venta
+--  (sus puntos se anotan siempre y se suman sólo con la regla del Club
+--  pos_suma_puntos = 'si', apagada hasta que el POS reemplace a BlueSoft).
+--  Está al final del archivo; la venta, los tickets, anular y borrar las
+--  pruebas tienen la nota "SQL 171" donde cambiaron.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -160,6 +168,9 @@ create table pos_ventas (
   factura            jsonb,
   observaciones      text,
   clave              text unique,
+  socio              text,                                             -- SQL 171: la tarjeta del socio del Club
+  socio_puntos       int,                                              -- SQL 171: los puntos que le da la venta
+  club_mov           bigint,                                           -- SQL 171: el movimiento del Club, si se sumaron
   constraint pos_ventas_serie_check check (serie = case when prueba then 'prueba' when letra = 'X' then 'x' else 'factura' end),
   constraint pos_ventas_local_serie_numero_key unique (local_id, serie, numero)
 );
@@ -255,6 +266,10 @@ begin
                                           'propios', (select count(*) from pos_precios p where p.lista_id = x.id)) order by x.id)
         from pos_listas x where x.activo), '[]'::jsonb),
     'promos', coalesce((select jsonb_agg(to_jsonb(pr) - 'creado_en' order by pr.orden, pr.id) from pos_promos pr), '[]'::jsonb),
+    /* SQL 171: el Club en la venta. "suma": si el POS suma los puntos (la regla pos_suma_puntos). */
+    'club', jsonb_build_object(
+      'suma', coalesce((select valor from club_reglas where clave = 'pos_suma_puntos'), 'no') = 'si',
+      'pesos_por_punto', coalesce((select nullif(valor, '')::numeric from club_reglas where clave = 'pesos_por_punto'), 100)),
     /* Los vendedores de cada local: el equipo del No Compra (los mismos nombres que la Carga). */
     'vendedores', coalesce((
       select jsonb_object_agg(l.id, coalesce(v.nombres, '[]'::jsonb))
@@ -402,6 +417,11 @@ declare
   n         int;
   pr        numeric;
   m         numeric;
+  v_socio   text := nullif(regexp_replace(coalesce(p->>'socio', ''), '[^0-9]', '', 'g'), '');   -- SQL 171
+  v_cli     v_club_clientes%rowtype;
+  v_factor  jsonb;
+  v_gana    int;
+  v_mov     bigint;
 begin
   perform pos_permiso();
 
@@ -409,8 +429,14 @@ begin
     select * into v_ya from pos_ventas where clave = v_clave;
     if found then
       return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'serie', v_ya.serie, 'prueba', v_ya.prueba,
-                                'fecha', v_ya.fecha, 'ya', true);
+                                'fecha', v_ya.fecha, 'ya', true, 'socio_puntos', v_ya.socio_puntos, 'puntos_sumados', v_ya.club_mov is not null);
     end if;
+  end if;
+
+  /* SQL 171: el socio del Club (el número de su tarjeta), si lo eligieron. */
+  if v_socio is not null then
+    select * into v_cli from v_club_clientes where codigo = v_socio and baja is null;
+    if not found then raise exception 'Ese socio del Club no existe o se dio de baja.'; end if;
   end if;
 
   if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
@@ -484,11 +510,11 @@ begin
 
   insert into pos_ventas (local_id, numero, serie, prueba, dia, letra, cliente_nombre, cliente_doc, cliente_condicion, cliente_email,
                           cliente_tel, envio, vendedor, cargado_por, lista_id, neto, descuentos, total, cantidad,
-                          observaciones, clave)
+                          observaciones, clave, socio)
   values (v_local, v_num, v_serie, v_prueba, pos_hoy(), v_letra, nullif(trim(coalesce(p->>'cliente_nombre', '')), ''), v_doc, v_cond,
           nullif(lower(trim(coalesce(p->>'cliente_email', ''))), ''), nullif(trim(coalesce(p->>'cliente_tel', '')), ''),
           nullif(p->>'envio', ''), v_vend, orden_yo_id(), nullif(p->>'lista_id', '')::int, v_neto, v_desc, v_total, v_cant,
-          nullif(trim(coalesce(p->>'observaciones', '')), ''), v_clave)
+          nullif(trim(coalesce(p->>'observaciones', '')), ''), v_clave, v_socio)
   returning id into v_id;
 
   i := 0;
@@ -529,7 +555,28 @@ begin
             case when nullif(x->>'recibido', '') is not null then (x->>'recibido')::numeric - round((x->>'monto')::numeric, 2) end);
   end loop;
 
-  return jsonb_build_object('id', v_id, 'numero', v_num, 'serie', v_serie, 'prueba', v_prueba, 'fecha', now(), 'ya', false);
+  /* SQL 171: los puntos del socio, con la misma cuenta que Cobrar (club_sumar_compra): el total sobre los
+     pesos por punto, por el multiplicador de su nivel y las promos del día, redondeado una vez al final. Se
+     anotan siempre en la venta; se SUMAN sólo con la regla pos_suma_puntos = 'si' (apagada hasta que el POS
+     reemplace a BlueSoft: mientras tanto se cargan en Cobrar, y así no se suman dos veces) y nunca en una prueba. */
+  if v_socio is not null then
+    v_factor := club_factor(v_cli.id);
+    v_gana := floor((v_total / coalesce((select nullif(valor, '')::numeric from club_reglas where clave = 'pesos_por_punto'), 100))
+                    * (v_factor->>'total')::numeric);
+    if not v_prueba and v_gana > 0 and coalesce((select valor from club_reglas where clave = 'pos_suma_puntos'), 'no') = 'si' then
+      insert into club_movimientos (cliente, tipo, puntos, local, vendedor, ticket, importe, obs)
+      values (v_cli.id, 'compra', v_gana, (select codigo from orden_locales where id = v_local), v_vend,
+              'POS ' || case when v_serie = 'x' then 'X-' else 'Nº ' end || v_num, v_total,
+              case when (v_factor->>'extra')::numeric > 1 then
+                (v_factor->>'motivo') || ' ' || replace(trim_scale((v_factor->>'extra')::numeric)::text, '.', ',') || 'x'
+              end)
+      returning id into v_mov;
+    end if;
+    update pos_ventas set socio_puntos = v_gana, club_mov = v_mov where id = v_id;
+  end if;
+
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'serie', v_serie, 'prueba', v_prueba, 'fecha', now(), 'ya', false,
+                            'socio_puntos', v_gana, 'puntos_sumados', v_mov is not null);
 end $$;
 
 /* El listado de tickets (como "Tickets de venta" de BlueSoft), con los totales.
@@ -560,8 +607,30 @@ begin
                  'vendedor', v.vendedor, 'cliente', coalesce(v.cliente_nombre, 'Consumidor final'), 'letra', v.letra,
                  'medios', (select jsonb_agg(g.medio order by g.orden) from pos_venta_pagos g where g.venta_id = v.id),
                  'estado', v.estado, 'neto', v.neto, 'descuentos', v.descuentos, 'total', v.total, 'cantidad', v.cantidad,
-                 'factura', v.factura) order by v.fecha desc)
+                 'factura', v.factura, 'socio', v.socio is not null) order by v.fecha desc)
           from (select * from v order by fecha desc limit 500) v join orden_locales l on l.id = v.local_id), '[]'::jsonb),
+      /* SQL 171: el panel de la derecha de BlueSoft. Tráfico = ventas + ventas fallidas + No Compras (Mauricio,
+         24/10: los que entraron y no compraron son las dos cosas, separadas) del período, de la sucursal y del
+         vendedor elegidos; los demás filtros (comprobante, forma de pago, estado) no cambian a quién entró.
+         Conversión = ventas ÷ tráfico. Las pruebas cuentan sólo con las pruebas (los No Compra no tienen). */
+      'trafico', (
+        select jsonb_build_object('ventas', t.ventas, 'fallidas', f.n, 'perdido', f.perdido, 'no_compras', nc.n,
+                                  'trafico', t.ventas + f.n + nc.n,
+                                  'conversion', case when t.ventas + f.n + nc.n > 0 then round(t.ventas::numeric / (t.ventas + f.n + nc.n), 4) end)
+          from (select count(*) ventas from pos_ventas x
+                 where x.dia between p_desde and p_hasta and x.prueba = coalesce(p_prueba, false) and x.estado = 'cobrada'
+                   and (p_local is null or x.local_id = p_local)
+                   and (p_vendedor is null or lower(x.vendedor) = lower(p_vendedor))) t,
+               (select count(*) n, coalesce(sum(y.monto), 0) perdido from pos_fallidas y
+                 where y.dia between p_desde and p_hasta and y.prueba = coalesce(p_prueba, false)
+                   and (p_local is null or y.local_id = p_local)
+                   and (p_vendedor is null or lower(y.vendedor) = lower(p_vendedor))) f,
+               (select count(*) n from registros r
+                 where not coalesce(p_prueba, false)
+                   and r.creado >= (p_desde::timestamp at time zone 'America/Argentina/Buenos_Aires')
+                   and r.creado < ((p_hasta + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires')
+                   and (p_local is null or lower(trim(r.sucursal)) = (select lower(trim(l.codigo)) from orden_locales l where l.id = p_local))
+                   and (p_vendedor is null or lower(trim(r.vendedor)) = lower(trim(p_vendedor)))) nc),
       'totales', (select jsonb_build_object(
                     'tickets', count(*) filter (where estado = 'cobrada'),
                     'anulados', count(*) filter (where estado = 'anulada'),
@@ -590,7 +659,10 @@ begin
               'anulada_por_nombre', (select p.nombre from orden_personas p where p.id = v.anulada_por),
               'items', coalesce((select jsonb_agg(to_jsonb(i) - 'venta_id' order by i.item) from pos_venta_items i where i.venta_id = v.id), '[]'::jsonb),
               'descuentos_detalle', coalesce((select jsonb_agg(to_jsonb(d) - 'venta_id' order by d.orden) from pos_venta_descuentos d where d.venta_id = v.id), '[]'::jsonb),
-              'pagos', coalesce((select jsonb_agg(to_jsonb(g) - 'venta_id' order by g.orden) from pos_venta_pagos g where g.venta_id = v.id), '[]'::jsonb))
+              'pagos', coalesce((select jsonb_agg(to_jsonb(g) - 'venta_id' order by g.orden) from pos_venta_pagos g where g.venta_id = v.id), '[]'::jsonb),
+              /* SQL 171: el socio, con su nivel de hoy, y si los puntos están sumados (y no se anularon). */
+              'socio_nivel', (select c.nivel from v_club_clientes c where c.codigo = v.socio),
+              'puntos_sumados', exists (select 1 from club_movimientos m where m.id = v.club_mov and m.anulado is null))
     into r
     from pos_ventas v join orden_locales l on l.id = v.local_id
    where v.id = p_id;
@@ -615,13 +687,22 @@ begin
   for m in select * from pos_stock_movs where ref_id = p_id and tipo = 'venta' order by id loop
     perform pos_stock_mover(m.local_id, m.codigo, m.talle, m.color, -m.cantidad, 'venta_anulada', p_id, m.ref || ' (anulada)');
   end loop;
+  /* SQL 171: si la venta le sumó puntos a un socio, se le descuentan: el movimiento del Club queda anulado,
+     como cuando se anula una carga en Cobrar. */
+  if v.club_mov is not null then
+    update club_movimientos
+       set anulado = now(), anulado_por = coalesce((select p.nombre from orden_personas p where p.id = orden_yo_id()), 'POS'),
+           motivo_anul = 'Venta anulada en el POS: ' || trim(p_motivo)
+     where id = v.club_mov and anulado is null;
+  end if;
   return true;
 end $$;
 
 /* Borrar las ventas de prueba (todas, o las de un local). Las de verdad no
    se tocan nunca: ésas se anulan. Las pruebas vuelven a empezar en la P-1.
    SQL 149: también la caja de prueba (sus cierres, sus gastos y sus conteos).
-   SQL 151: también los cambios de prueba (vuelven a la CP-1); cuenta los dos. */
+   SQL 151: también los cambios de prueba (vuelven a la CP-1); cuenta los dos.
+   SQL 171: también las ventas fallidas de prueba; cuenta las tres. */
 create or replace function pos_pruebas_borrar(p_local uuid default null) returns int
 language plpgsql volatile security definer set search_path = public as $$
 declare n int; nc int;
@@ -630,6 +711,10 @@ begin
   delete from pos_ventas where prueba and (p_local is null or local_id = p_local);
   get diagnostics n = row_count;
   delete from pos_cambios where prueba and (p_local is null or local_id = p_local);
+  get diagnostics nc = row_count;
+  n := n + nc;
+  /* SQL 171: también las ventas fallidas de prueba. */
+  delete from pos_fallidas where prueba and (p_local is null or local_id = p_local);
   get diagnostics nc = row_count;
   n := n + nc;
   delete from pos_numeros where serie = 'prueba' and (p_local is null or local_id = p_local);
@@ -2668,4 +2753,205 @@ revoke all on function pos_diferencias(date, date, uuid, text), pos_diferencia_r
        from public, anon;
 grant execute on function pos_diferencias(date, date, uuid, text), pos_diferencia_resolver(jsonb), pos_diferencia_reabrir(jsonb),
                           pos_remito_fabrica_recibir(uuid), pos_diferencias_aviso()
+       to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 171 (24/10/2026) · LA VENTA FALLIDA, LA CONVERSIÓN Y EL SOCIO EN LA VENTA
+--
+--  Mauricio (24/10), con las fotos de BlueSoft:
+--  · "La venta fallida tiene que ser una cosa aparte del No Compra": un
+--    cliente pide una campera en L, no hay, y no quiere dejar el teléfono.
+--    Si deja su WhatsApp es un No Compra (el formulario de siempre); si no,
+--    es una venta fallida. Como la ventana roja de BlueSoft: vendedor,
+--    motivo (los ocho de BlueSoft), el detalle y el monto perdido estimado;
+--    y además, si se sabe, el producto, el talle y el color.
+--  · En Tickets, el panel de la derecha de BlueSoft: ventas fallidas, monto
+--    perdido, tráfico y conversión (está en pos_tickets, con la nota SQL 171).
+--    Tráfico = ventas + ventas fallidas + No Compras.
+--  · El socio del Club en la venta: buscarlo (teléfono, nombre, mail o el
+--    número de la tarjeta) o hacerlo socio ahí mismo. Los puntos se anotan en
+--    la venta siempre y se suman sólo con la regla pos_suma_puntos = 'si'
+--    ("los dejamos apagados hasta el lanzamiento"): hoy los puntos se cargan
+--    en Cobrar con el ticket de BlueSoft y no se tienen que sumar dos veces.
+--    Se prende el día que el POS reemplace a BlueSoft:
+--      update club_reglas set valor = 'si' where clave = 'pos_suma_puntos';
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table pos_fallidas (
+  id           uuid primary key default gen_random_uuid(),
+  local_id     uuid not null references orden_locales(id),
+  fecha        timestamptz not null default now(),
+  dia          date not null,
+  prueba       boolean not null default false,          -- modo prueba: no cuenta, se borra con las pruebas
+  vendedor     text not null,
+  motivo       text not null check (motivo in ('producto', 'talle', 'color', 'tipo', 'precio', 'gusto', 'mirar', 'otro')),
+  detalle      text,
+  monto        numeric(12,2) check (monto is null or monto >= 0),   -- el monto perdido estimado
+  codigo       text,                                    -- el producto, si se sabe
+  descripcion  text,
+  talle        text,
+  color        text,
+  cargado_por  uuid,
+  clave        text unique
+);
+create index pos_fallidas_dia on pos_fallidas (dia, local_id);
+
+alter table pos_fallidas enable row level security;
+revoke all on pos_fallidas from anon, authenticated;
+
+/* El interruptor de los puntos del POS, en las reglas del Club (como el tope y el ticket obligatorio:
+   se cambian en la base, a propósito). Apagado. */
+insert into club_reglas (clave, valor)
+select 'pos_suma_puntos', 'no'
+ where not exists (select 1 from club_reglas where clave = 'pos_suma_puntos');
+
+/* Guardar una venta fallida. Con la misma clave dos veces devuelve la que ya estaba (el botón tocado dos
+   veces, o la red que se cortó a la vuelta). */
+create or replace function pos_fallida_guardar(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_local   uuid := nullif(p->>'local_id', '')::uuid;
+  v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_vend    text := nullif(trim(coalesce(p->>'vendedor', '')), '');
+  v_motivo  text := coalesce(p->>'motivo', '');
+  v_detalle text := nullif(trim(coalesce(p->>'detalle', '')), '');
+  v_monto   numeric := round(nullif(p->>'monto', '')::numeric, 2);
+  v_codigo  text := nullif(upper(trim(coalesce(p->>'codigo', ''))), '');
+  v_id      uuid;
+  v_ya      pos_fallidas;
+begin
+  perform pos_permiso();
+  if v_clave is not null then
+    select * into v_ya from pos_fallidas where clave = v_clave;
+    if found then return jsonb_build_object('id', v_ya.id, 'ya', true); end if;
+  end if;
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_vend is null then raise exception 'Elegí quién atendió.'; end if;
+  if v_motivo not in ('producto', 'talle', 'color', 'tipo', 'precio', 'gusto', 'mirar', 'otro') then raise exception 'Elegí el motivo.'; end if;
+  if v_motivo = 'otro' and length(coalesce(v_detalle, '')) < 3 then raise exception 'Con «Otro motivo», escribí qué pasó.'; end if;
+  if length(coalesce(v_detalle, '')) > 500 then raise exception 'El detalle es muy largo (hasta 500 letras).'; end if;
+  if v_monto is not null and (v_monto < 0 or v_monto >= 100000000) then raise exception 'El monto perdido no es válido.'; end if;
+  insert into pos_fallidas (local_id, dia, prueba, vendedor, motivo, detalle, monto, codigo, descripcion, talle, color, cargado_por, clave)
+  values (v_local, pos_hoy(), coalesce(nullif(p->>'prueba', '')::boolean, false), v_vend, v_motivo, v_detalle, v_monto, v_codigo,
+          nullif(trim(coalesce(p->>'descripcion', '')), ''), nullif(upper(trim(coalesce(p->>'talle', ''))), ''),
+          nullif(upper(trim(coalesce(p->>'color', ''))), ''), orden_yo_id(), v_clave)
+  returning id into v_id;
+  return jsonb_build_object('id', v_id, 'ya', false);
+end $$;
+
+/* Las ventas fallidas de un período, con sus totales y cuántas por motivo. Las de verdad y las de prueba
+   no se mezclan (p_prueba elige). */
+create or replace function pos_fallidas(p_desde date, p_hasta date, p_local uuid default null, p_vendedor text default null,
+                                        p_motivo text default null, p_prueba boolean default false) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with f as (
+      select y.* from pos_fallidas y
+       where y.dia between p_desde and p_hasta
+         and y.prueba = coalesce(p_prueba, false)
+         and (p_local is null or y.local_id = p_local)
+         and (p_vendedor is null or lower(y.vendedor) = lower(p_vendedor))
+         and (p_motivo is null or y.motivo = p_motivo)
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', f.id, 'fecha', f.fecha, 'local', l.nombre, 'local_id', f.local_id, 'vendedor', f.vendedor, 'motivo', f.motivo,
+                 'detalle', f.detalle, 'monto', f.monto, 'codigo', f.codigo, 'descripcion', f.descripcion, 'talle', f.talle, 'color', f.color,
+                 'prueba', f.prueba, 'cargado_por', (select p.nombre from orden_personas p where p.id = f.cargado_por)) order by f.fecha desc)
+          from (select * from f order by fecha desc limit 500) f join orden_locales l on l.id = f.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object('cantidad', count(*), 'perdido', coalesce(sum(monto), 0)) from f),
+      'por_motivo', (select coalesce(jsonb_object_agg(z.motivo, z.n), '{}'::jsonb) from (select motivo, count(*) n from f group by motivo) z),
+      'mas', (select count(*) > 500 from f)
+    )
+  );
+end $$;
+
+/* Borrar una venta fallida cargada por error (no es plata: no se anula, se borra). */
+create or replace function pos_fallida_borrar(p_id uuid) returns boolean
+language plpgsql volatile security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  delete from pos_fallidas where id = p_id;
+  if not found then raise exception 'Esa venta fallida ya no está.'; end if;
+  return true;
+end $$;
+
+/* Buscar al socio desde la venta: la misma búsqueda que Cobrar (club_buscar), con el usuario del POS en
+   vez del PIN. Trae también el multiplicador de hoy (el nivel y las promos del día), así la venta muestra
+   cuántos puntos va a sumar; al guardar la base vuelve a hacer la cuenta. */
+create or replace function pos_club_buscar(p_texto text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  dig text := regexp_replace(coalesce(p_texto, ''), '[^0-9]', '', 'g');
+  txt text := lower(trim(coalesce(p_texto, '')));
+  /* El nombre, sin acentos de los dos lados: "perez" encuentra a "Pérez" (la base no tiene unaccent). */
+  bus text := translate(lower(trim(coalesce(p_texto, ''))), 'áéíóúüñ', 'aeiouun');
+begin
+  perform pos_permiso();
+  if length(txt) < 3 then
+    return jsonb_build_object('corto', true, 'porque', 'Escribí el teléfono entero o al menos 3 letras del nombre.');
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'codigo', codigo, 'nombre', nombre, 'telefono', telefono, 'mail', mail, 'puntos', puntos, 'nivel', nivel,
+             'compras', compras, 'confirmado', confirmado, 'factor', (club_factor(id)->>'total')::numeric)
+           order by confirmado desc, creado desc)
+      from (
+        select * from v_club_clientes
+         where baja is null
+           and ( (length(dig) >= 8 and club_tel(telefono) = club_tel(dig))
+              or (length(dig) = 12 and codigo = dig)
+              or (length(bus) >= 3 and translate(lower(nombre), 'áéíóúüñ', 'aeiouun') like '%' || bus || '%')
+              or (position('@' in txt) > 1 and lower(coalesce(mail, '')) = txt) )
+         order by creado desc
+         limit 10
+      ) t
+  ), '[]'::jsonb);
+end $$;
+
+/* Hacerlo socio desde la venta: el alta de siempre (club_alta: la tarjeta, la bienvenida y Kommo), con el
+   local de la venta. Si el número ya tenía tarjeta, devuelve ese socio para elegirlo. */
+create or replace function pos_club_alta(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_nom  text := nullif(trim(coalesce(p->>'nombre', '')), '');
+  v_ape  text := nullif(trim(coalesce(p->>'apellido', '')), '');
+  v_tel  text := regexp_replace(coalesce(p->>'telefono', ''), '[^0-9]', '', 'g');
+  v_loc  text := (select codigo from orden_locales where id = nullif(p->>'local_id', '')::uuid);
+  v_acep boolean := coalesce(nullif(p->>'acepta', '')::boolean, false);
+  r      jsonb;
+  s      jsonb;
+begin
+  perform pos_permiso();
+  if v_nom is null then raise exception 'Falta el nombre.'; end if;
+  if v_ape is null then raise exception 'Falta el apellido.'; end if;
+  if length(v_tel) < 8 then raise exception 'Falta el WhatsApp (con la característica).'; end if;
+  r := club_alta(v_nom, p->>'telefono', v_loc, null, v_acep, nullif(trim(coalesce(p->>'mail', '')), ''), v_ape);
+  if coalesce((r->>'alta')::boolean, false) and v_acep then
+    update club_clientes set consentimiento_via = 'POS' || coalesce(' · ' || v_loc, '') where codigo = r->>'codigo';
+  end if;
+  select jsonb_build_object('codigo', c.codigo, 'nombre', c.nombre, 'telefono', c.telefono, 'mail', c.mail, 'puntos', c.puntos,
+                            'nivel', c.nivel, 'compras', c.compras, 'confirmado', c.confirmado, 'factor', (club_factor(c.id)->>'total')::numeric)
+    into s
+    from v_club_clientes c
+   where c.baja is null
+     and (c.codigo = r->>'codigo' or (coalesce((r->>'ya_estaba')::boolean, false) and club_tel(c.telefono) = club_tel(v_tel)))
+   order by c.creado desc
+   limit 1;
+  if s is null then raise exception 'Ese WhatsApp era de un socio que se dio de baja: hay que darlo de alta de nuevo desde Socios.'; end if;
+  return jsonb_build_object('nuevo', coalesce((r->>'alta')::boolean, false), 'socio', s);
+end $$;
+
+revoke all on function pos_fallida_guardar(jsonb), pos_fallidas(date, date, uuid, text, text, boolean), pos_fallida_borrar(uuid),
+                       pos_club_buscar(text), pos_club_alta(jsonb)
+       from public, anon;
+grant execute on function pos_fallida_guardar(jsonb), pos_fallidas(date, date, uuid, text, text, boolean), pos_fallida_borrar(uuid),
+                          pos_club_buscar(text), pos_club_alta(jsonb)
        to authenticated;
