@@ -482,6 +482,74 @@ function falta150(e) {
   return /schema cache|Could not find the function/i.test(mensajeDe(e)) ? rechazo('Falta actualizar el sistema para pedir correcciones y marcar la foto (SQL 150).') : e;
 }
 
+/* ── Entrenar a la IA de las fotos (SQL 170; Mauricio, 24/10: "a la IA hay que entrenarla bien antes"). Al revisar,
+   el supervisor dice de cada comentario de la IA si acertó; lo que marca como error, con su por qué, se le pasa a
+   la IA con las fotos que vienen para que no lo repita. ── */
+
+/** El nivel que le dio la IA en modo práctica: no cuenta para el vendedor (no llega al control), pero el supervisor lo ve. */
+function nivelPractica(ia) { return ia && ia.practica && ia.foto_valida !== false && NIVEL[ia.nivel_sugerido] ? ia.nivel_sugerido : null; }
+
+/** Los comentarios de la IA de una foto. op: { foto (el id de la foto que miró la IA), puede (si los puede marcar) }.
+    Los botones arrancan escondidos: los muestra engancharOpinionIA cuando la base los tiene (sin el SQL 170, no). */
+function hallazgosIA(ia, op) {
+  op = op || {};
+  var con = !!(op.foto && op.puede);
+  return (ia && Array.isArray(ia.hallazgos) ? ia.hallazgos : []).map(function (h, i) {
+    if (!h || !h.titulo) return '';
+    return '<div class="hallazgo ' + (h.gravedad === 'corregir' ? 'corregir' : 'sugerencia') + '"' + (con ? ' data-ia-i="' + i + '"' : '') + '><b>' + esc(h.titulo) + '</b>' +
+      (h.detalle ? '<small>' + esc(h.detalle) + '</small>' : '') +
+      (con ? '<div class="ia-opina" hidden><span>¿Acertó?</span>' +
+          '<button type="button" class="ia-op si" data-op="si">Acertó</button><button type="button" class="ia-op no" data-op="no">Se equivocó</button></div>' +
+        '<div class="ia-porque" hidden><input type="text" maxlength="300" aria-label="Qué vio mal la IA" placeholder="¿Qué vio mal? (opcional: así no lo repite)">' +
+          '<button type="button" class="ia-op" data-op="porque">Guardar</button></div>' : '') +
+      '</div>';
+  }).join('');
+}
+
+/** Engancha los botones de hallazgosIA adentro de cont: trae lo que ya se marcó de esa foto y guarda cada toque.
+    Tocar de nuevo el elegido lo desmarca. */
+function engancharOpinionIA(cont, fotoId) {
+  var filas = cont && fotoId ? cont.querySelectorAll('[data-ia-i]') : [];
+  if (!filas.length) return;
+  leer('/orden_ia_opiniones?select=indice,acerto,motivo&foto_id=eq.' + valor(fotoId)).then(function (ops) {
+    var por = {};
+    (ops || []).forEach(function (o) { por[o.indice] = o; });
+    Array.prototype.forEach.call(filas, function (fila) {
+      if (!fila.isConnected) return;
+      var i = +fila.dataset.iaI, caja = fila.querySelector('.ia-opina'), pq = fila.querySelector('.ia-porque'), txt = pq.querySelector('input');
+      var si = caja.querySelector('[data-op="si"]'), no = caja.querySelector('[data-op="no"]'), guardar = pq.querySelector('[data-op="porque"]');
+      var actual = por[i] || null, ocupado = false;
+      var pintar = function () {
+        si.classList.toggle('elegido', !!actual && actual.acerto === true);
+        no.classList.toggle('elegido', !!actual && actual.acerto === false);
+        si.setAttribute('aria-pressed', String(!!actual && actual.acerto === true));
+        no.setAttribute('aria-pressed', String(!!actual && actual.acerto === false));
+        pq.hidden = !(actual && actual.acerto === false);
+        if (!pq.hidden && document.activeElement !== txt) txt.value = actual.motivo || '';
+      };
+      var mandar = function (acerto, motivo) {
+        if (ocupado) return Promise.resolve(null);
+        ocupado = true;
+        return llamar('orden_ia_opinar', { p_foto: fotoId, p_indice: i, p_acerto: acerto, p_motivo: motivo || null })
+          .then(function (r) { actual = r && r.acerto != null ? { acerto: r.acerto, motivo: r.motivo } : null; pintar(); return r || {}; },
+                function (e) { avisar(mensajeDe(e)); return null; })
+          .then(function (r) { ocupado = false; return r; });
+      };
+      caja.hidden = false;
+      pintar();
+      si.onclick = function () { mandar(actual && actual.acerto === true ? null : true); };
+      no.onclick = function () {
+        if (actual && actual.acerto === false) { mandar(null); return; }
+        mandar(false, txt.value).then(function (r) { if (r && !pq.hidden) txt.focus(); });
+      };
+      guardar.onclick = function () {
+        mandar(false, txt.value).then(function (r) { if (r) avisar('Listo: la IA lo va a tener en cuenta con las próximas fotos.'); });
+      };
+      txt.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); guardar.click(); } };
+    });
+  }).catch(function () { /* sin el SQL 170 (o sin señal) los botones no aparecen */ });
+}
+
 /** Lee con las columnas del SQL 150; si la base todavía no las tiene, sin ellas (así nada se rompe en el medio). */
 function leer150(ruta, nuevas) {
   return leer(ruta.replace('select=', 'select=' + nuevas + ',')).catch(function (e) {

@@ -514,6 +514,8 @@ function ventanaFoto(f, op) {
       (f.discrepancia ? '<div class="nota alerta vf-aviso">Lo que respondió no coincide con lo que vio la IA: miralo con atención.</div>' : '') +
       '<div class="vf-estado">' + estado +
         (f.nivel_ia ? '<span class="est nivel-' + esc(f.nivel_ia) + '">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>'
+          /* En modo práctica (SQL 170) el nivel no llega al control: sólo lo ve el supervisor. */
+          : nivelPractica(ia) ? '<span class="est nivel-' + esc(ia.nivel_sugerido) + '">IA, en práctica: ' + esc(NIVEL[ia.nivel_sugerido]) + '</span>'
           : ia.foto_valida === false ? '<span class="est vencido">IA: la foto no sirve</span>'
           : corr ? '' : '<span class="est">Sin revisión de la IA</span>') +
         (f.nivel_declarado ? '<span class="est nivel-' + esc(f.nivel_declarado) + '">Según él: ' + esc(NIVEL[f.nivel_declarado]) + '</span>' : '') + '</div>' +
@@ -524,9 +526,10 @@ function ventanaFoto(f, op) {
             (respondio ? '<span class="est ' + (dijo === true ? 'listo' : dijo === false ? 'vencido' : '') + '">' + (dijo === true ? 'Dijo sí' : dijo === false ? 'Dijo no' : '—') + '</span>' : '') +
             (vio ? '<span class="est ' + (vio === 'ok' ? 'listo' : vio === 'mal' ? 'vencido' : '') + '">IA: ' + (vio === 'ok' ? 'bien' : vio === 'mal' ? 'mal' : 'no se ve') + '</span>' : '') +
             '</div></div>';
-        }).join('') + hall.map(function (h) {
-          return '<div class="hallazgo ' + (h.gravedad === 'corregir' ? 'corregir' : 'sugerencia') + '"><b>' + esc(h.titulo) + '</b>' + (h.detalle ? '<small>' + esc(h.detalle) + '</small>' : '') + '</div>';
-        }).join('') + '</div>' : '') +
+        }).join('') +
+        (ia.practica && hall.length ? '<p class="ia-practica">Modo práctica: el vendedor no vio esto.' + (soloMira() ? '' : ' Decí si la IA acertó, así aprende.') + '</p>' : '') +
+        /* SQL 170: en cada comentario, "Acertó" o "Se equivocó" (lo que se equivocó se le pasa a la IA con las próximas fotos). */
+        hallazgosIA(ia, { foto: f.ultimo_intento_id, puede: !soloMira() }) + '</div>' : '') +
       (f.comentario ? '<div class="seccion">' + (f.correccion_pedida || corr ? 'Lo que se le pidió corregir' : 'La sugerencia') + '</div><div class="nota">' + esc(f.comentario) + '</div>'
         : f.correccion_pedida ? '<div class="nota alerta">Se le pidió que lo corrija y mande otra foto.</div>' : '') +
       (corr && f.tarea_id ? '<div class="vm-usar"><button class="boton' + (f.estado === 'enviado' && !soloMira() ? ' lima' : '') + ' chico" id="vfTarea">' +
@@ -545,6 +548,7 @@ function ventanaFoto(f, op) {
         (x.tipo === 'correccion' ? estCorreccion(x) : x.estado === 'enviado' ? '<span class="est sorpresa">Sin revisar</span>' : estNivel(x.nivel, '—')) + '</button>';
     }).join('') + '</div>' : '') +
     (conIA ? '<details class="vm-ia"><summary>Para mejorar la IA</summary><div class="vm-ia-cuerpo"><p class="bajada">Cargando…</p></div></details>' : ''));
+  engancharOpinionIA(w, f.ultimo_intento_id);
   /* Lo de la IA se carga recién al abrirlo. */
   var det = w.querySelector('.vm-ia');
   if (det) det.addEventListener('toggle', function () {
@@ -910,10 +914,18 @@ function datosOrden(rango) {
     leer('/orden_v_persona_semana?select=*&local_id=eq.' + L + '&semana=gte.' + desde + '&semana=lte.' + hastaSem + '&order=semana.asc'),
     leer('/orden_controles?select=nivel_ia,nivel_final&local_id=eq.' + L + '&estado=eq.revisado&nivel_ia=not.is.null&revisado_en=gte.' + desdeTs + '&revisado_en=lt.' + hastaTs),
     leer('/orden_v_personas?select=id,nombre,inicial,avisos_activos,ultima_foto&local_id=eq.' + L + '&activo=is.true&rol=eq.vendedor&order=nombre.asc'),
-    leer('/orden_v_tareas?select=origen,estado&local_id=eq.' + L + '&creado_en=gte.' + desdeTs + '&creado_en=lt.' + hastaTs)
+    leer('/orden_v_tareas?select=origen,estado&local_id=eq.' + L + '&creado_en=gte.' + desdeTs + '&creado_en=lt.' + hastaTs),
+    /* SQL 170: en modo práctica el nivel de la IA no llega al control (queda en lo que vio), y lo que el supervisor
+       dijo de cada comentario. Sin el SQL, nada. */
+    leer('/orden_v_controles?select=nivel_final,sug:ia_resultado->>nivel_sugerido&local_id=eq.' + L + '&estado=eq.revisado&nivel_ia=is.null' +
+         '&ia_resultado->>practica=eq.true&revisado_en=gte.' + desdeTs + '&revisado_en=lt.' + hastaTs).catch(function () { return []; }),
+    leer('/orden_ia_opiniones?select=acerto&local_id=eq.' + L + '&marcado_en=gte.' + desdeTs + '&marcado_en=lt.' + hastaTs).catch(function () { return null; })
   ]).then(function (r) {
     if (_solapa !== 'orden' || pedido !== _ordenPedido) return;
-    var filas = r[0] || [], ia = r[1] || [], gente = r[2] || [], tareas = r[3] || [];
+    var filas = r[0] || [], gente = r[2] || [], tareas = r[3] || [], opiniones = r[5];
+    var ia = (r[1] || []).concat((r[4] || []).filter(function (x) { return NIVEL[x.sug] && x.nivel_final; })
+      .map(function (x) { return { nivel_ia: x.sug, nivel_final: x.nivel_final }; }));
+    var aciertos = (opiniones || []).filter(function (o) { return o.acerto; }).length;
     var por = {};
     filas.forEach(function (f) { (por[f.persona_id] = por[f.persona_id] || {})[f.semana] = f; });
     var puntos = { impecable: 4, bien: 3, a_mejorar: 2, fuera_de_estandar: 1 };
@@ -925,6 +937,8 @@ function datosOrden(rango) {
 
     var html = '<div class="numeros">' +
       '<div class="numero"><span>Cuánto acierta la IA (igual que el supervisor)</span><b>' + (ia.length ? Math.round(100 * exactas / ia.length) + '%' : '—') + '</b><span>' + (ia.length ? 'A un nivel o menos: ' + Math.round(100 * cerca / ia.length) + '% · ' + ia.length + ' fotos revisadas' : 'Todavía sin fotos revisadas') + '</span></div>' +
+      (opiniones ? '<div class="numero"><span>Comentarios de la IA que acertaron</span><b>' + (opiniones.length ? Math.round(100 * aciertos / opiniones.length) + '%' : '—') + '</b><span>' +
+        (opiniones.length ? aciertos + ' de ' + opiniones.length + ' que marcó el supervisor' : 'Se marcan al revisar: «Acertó» o «Se equivocó»') + '</span></div>' : '') +
       '<div class="numero"><span>Tareas del período</span><b>' + tareas.length + '</b><span>IA ' + origen.ia + ' · supervisor ' + origen.supervisor + ' · administración ' + origen.admin + ' · sistema ' + origen.sistema + '</span></div>' +
       '<div class="numero"><span>Sin los avisos activados</span><b>' + sinAvisos.length + '</b><span>' + esc(sinAvisos.map(function (p) { return p.nombre + (p.inicial ? ' ' + p.inicial + '.' : ''); }).join(', ') || 'Todos los tienen') + '</span></div></div>' +
       '<div class="seccion">Por vendedor y por semana</div>';
@@ -1674,17 +1688,22 @@ function normalizar(col, v) {
 }
 
 /** 22/10: lo que no hace nada con otra opción apagada (col.si: hace falta prendida; col.siNo: hace falta apagada) se ve
-    en gris y no se toca. Si está en la misma frase que la opción, sólo el campo; si no, la frase entera. */
+    en gris y no se toca. Si está en la misma frase que la opción, sólo el campo; si no, la frase entera. Puede depender
+    de las dos (24/10: las tareas de la IA, con la IA prendida y sin el modo práctica); porqueNo es el motivo del siNo. */
 function pintarDepende(cols, r, sl) {
+  var de = function (k) { return k ? cols.filter(function (c) { return c.k === k; })[0] : null; };
   cols.forEach(function (col) {
-    var k = col.si || col.siNo, de = k && cols.filter(function (c) { return c.k === k; })[0];
-    var el = de && r.querySelector('[data-k="' + col.k + '"]');
+    var a = de(col.si), b = de(col.siNo);
+    var el = (a || b) && r.querySelector('[data-k="' + col.k + '"]');
     if (!el) return;
-    var v = leerCampo(de, r), anda = col.si ? v != null && v !== false && v !== '' : !v;
+    var va = a ? leerCampo(a, r) : true, vb = b ? leerCampo(b, r) : false;
+    var andaA = va != null && va !== false && va !== '', andaB = !vb;
+    var anda = andaA && andaB, por = !andaA ? a : b;
     if (!sl) el.disabled = !anda;
-    el.title = !anda ? col.porque || 'Depende de ' + (de.corto || de.t) + '.' : col.tipo === 'bool' ? '' : col.t;
+    el.title = !anda ? (!andaA ? col.porque : col.porqueNo || col.porque) || 'Depende de ' + (por.corto || por.t) + '.' : col.tipo === 'bool' ? '' : col.t;
     var fr = el.closest('.frase');
-    if (fr && !fr.querySelector('[data-k="' + k + '"]')) fr.classList.toggle('apagada', !anda);
+    var suyas = fr && ((a && fr.querySelector('[data-k="' + a.k + '"]')) || (b && fr.querySelector('[data-k="' + b.k + '"]')));
+    if (fr && !suyas) fr.classList.toggle('apagada', !anda);
     else el.classList.toggle('apagado', !anda);
   });
 }
@@ -2364,13 +2383,18 @@ var BLOQUES_LOCAL = [
         frase('Si una foto o una caja espera más de ' + c('horas_revision_supervisor') + ' horas que la revise el supervisor, te llega un aviso.');
     } },
   { id: 'ia', titulo: 'La IA de las fotos',
-    cols: [{ k: 'ia_activa', t: 'La IA revisa cada foto con las reglas de orden y le dice al vendedor qué corregir.', corto: 'la revisión con IA', tipo: 'bool' },
-           { k: 'ia_crea_tareas', t: 'Lo que hay que corregir le queda como tarea al vendedor, con plazo.', corto: 'las tareas de la IA', tipo: 'bool',
+    cols: [{ k: 'ia_activa', t: 'La IA revisa cada foto con las reglas de orden y le dice al vendedor qué corregir (como mucho 2 cosas, cortitas).', corto: 'la revisión con IA', tipo: 'bool' },
+           /* SQL 170 (Mauricio, 24/10): entrenarla antes de que le hable al vendedor. nuevo: sin la columna en la base, no aparece. */
+           { k: 'ia_practica', t: 'Modo práctica: la IA mira cada foto y la anota, pero al vendedor no le llega nada (ni sugerencias, ni nivel, ni tareas). Al revisar, decís si acertó, y así aprende.', corto: 'el modo práctica', tipo: 'bool', nuevo: true,
              si: 'ia_activa', porque: 'Con la IA de las fotos apagada no hace nada: prendela arriba.' },
-           { k: 'ia_sugerencias', t: 'Además deja sugerencias de estilo: consejos para que quede más lindo, como las reglas marcadas como sugerencia. Nunca son tareas, y como mucho 2 por foto.', corto: 'las sugerencias de estilo', tipo: 'bool',
-             si: 'ia_activa', porque: 'Con la IA de las fotos apagada no hace nada: prendela arriba.' }],
-    armar: function (c) {
-      return frase(c('ia_activa')) + frase(c('ia_crea_tareas')) + frase(c('ia_sugerencias')) +
+           { k: 'ia_crea_tareas', t: 'Lo que hay que corregir le queda como tarea al vendedor, con plazo.', corto: 'las tareas de la IA', tipo: 'bool',
+             si: 'ia_activa', porque: 'Con la IA de las fotos apagada no hace nada: prendela arriba.',
+             siNo: 'ia_practica', porqueNo: 'En modo práctica al vendedor no le llega nada: tampoco tareas.' },
+           { k: 'ia_sugerencias', t: 'Además deja sugerencias de estilo: consejos para que quede más lindo, como las reglas marcadas como sugerencia. Nunca son tareas, y entran en las 2 de cada foto.', corto: 'las sugerencias de estilo', tipo: 'bool',
+             si: 'ia_activa', porque: 'Con la IA de las fotos apagada no hace nada: prendela arriba.',
+             siNo: 'ia_practica', porqueNo: 'En modo práctica al vendedor no le llega nada: tampoco sugerencias.' }],
+    armar: function (c, f) {
+      return frase(c('ia_activa')) + ('ia_practica' in f ? frase(c('ia_practica')) : '') + frase(c('ia_crea_tareas')) + frase(c('ia_sugerencias')) +
         /* (19/10, Mauricio): que apagar una IA no parezca apagar la otra. Son dos llaves distintas en la base. */
         frase('Es sólo la IA de las fotos de los módulos. La que lee los cierres de caja va aparte, en «La caja»: apagar una no apaga la otra.', 'aclara');
     } },
@@ -2423,6 +2447,8 @@ function ajLocal() {
       guardar: function (f, c) { return guardarFila('/orden_locales?id=eq.' + valor(f.id), c).then(function () { if (c.nombre) { _local.nombre = c.nombre; } }); } });
     if (!cfg) return;
     BLOQUES_LOCAL.forEach(function (b) {
+      /* Lo nuevo (col.nuevo) sólo si la base ya lo tiene: con la base de antes, todo sigue como estaba. */
+      b = Object.assign({}, b, { cols: b.cols.filter(function (c) { return !c.nuevo || c.k in cfg; }) });
       editor({ cont: z.querySelector('#ajb-' + b.id), filas: [cfg], cols: b.cols, armar: b.armar,
         guardar: function (f, c) { return guardarFila('/orden_config?local_id=eq.' + valor(f.local_id), c); },
         extra: otros ? function () { return '<button class="boton chico" data-accion="copiar">Copiar a los otros locales</button>'; } : null,

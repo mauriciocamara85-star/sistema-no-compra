@@ -293,6 +293,19 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
 .hallazgo small { color: var(--suave); }
 .hallazgo.corregir b::before { content: "● "; color: var(--ambar); }
 .hallazgo.sugerencia b::before { content: "○ "; color: var(--suave); }
+/* Entrenar a la IA (SQL 170): el supervisor dice si cada comentario acertó */
+.ia-practica { margin: 10px 0 2px; color: var(--suave); font-size: 13px; }
+.ia-opina:not([hidden]) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.ia-opina span { color: var(--suave); font-size: 13px; margin-right: 2px; }
+.ia-op { min-height: 34px; padding: 0 12px; border: 1px solid var(--borde); border-radius: 99px; background: transparent;
+         color: var(--texto); font-size: 13px; font-weight: 700; cursor: pointer; }
+.ia-op.si.elegido { border-color: var(--verde); color: var(--verde); background: rgba(91, 214, 138, .12); }
+.ia-op.no.elegido { border-color: var(--rojo); color: var(--rojo); background: rgba(255, 138, 138, .12); }
+.ia-porque:not([hidden]) { display: flex; gap: 6px; margin-top: 8px; }
+/* 16px: con menos, el iPhone hace zoom al tocar el campo */
+.ia-porque input { flex: 1; min-width: 0; min-height: 38px; padding: 6px 10px; border: 1px solid var(--borde); border-radius: 10px;
+                   background: var(--fondo); color: var(--texto); font-size: 16px; outline: none; }
+.ia-porque input:focus { border-color: var(--lima); }
 .pregunta { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-top: 1px solid var(--borde); }
 .pregunta:first-of-type { border-top: 0; }
 .pregunta > span { flex: 1; font-weight: 600; }

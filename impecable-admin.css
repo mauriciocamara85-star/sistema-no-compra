@@ -695,6 +695,18 @@
 .ventana .hallazgo small { display: block; margin-top: 2px; color: var(--txt-3); font-size: 13px; }
 .ventana .hallazgo.corregir b::before { content: '● '; color: var(--warn-txt); }
 .ventana .hallazgo.sugerencia b::before { content: '○ '; color: var(--txt-3); }
+/* Entrenar a la IA (SQL 170): el supervisor dice si cada comentario acertó */
+.ventana .ia-practica { margin: 10px 0 2px; color: var(--txt-3); font-size: 13px; }
+.ventana .ia-opina:not([hidden]) { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.ventana .ia-opina span { color: var(--txt-3); font-size: 12.5px; margin-right: 2px; }
+.ventana .ia-op { min-height: 30px; padding: 0 11px; border: 1px solid var(--line-alta); border-radius: var(--r-pill); background: var(--surface);
+                  color: var(--txt-2); font: 600 12.5px var(--sans); cursor: pointer; }
+.ventana .ia-op:hover { color: var(--txt); }
+.ventana .ia-op.si.elegido { background: var(--ok-soft); border-color: transparent; color: var(--ok-txt); }
+.ventana .ia-op.no.elegido { background: var(--bad-soft); border-color: transparent; color: var(--bad-txt); }
+.ventana .ia-porque:not([hidden]) { display: flex; gap: 6px; margin-top: 7px; }
+.ventana .ia-porque input { flex: 1 1 auto; min-width: 0; min-height: 34px; padding: 6px 10px; border: 1px solid var(--line-campo); border-radius: var(--r-sm);
+                            background: var(--campo); color: var(--txt); font: 500 13.5px var(--sans); box-sizing: border-box; }
 .ventana .vf-revisar { margin-top: 4px; }
 .ventana button.foto-chica { display: grid; gap: 5px; justify-items: start; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .ventana button.foto-chica img { cursor: pointer; }

@@ -3077,6 +3077,8 @@ function dibujarRevisar(loc, cola, testigos, tareas) {
     (c.discrepancia ? '<div class="nota alerta">Lo que respondió no coincide con lo que vio la IA: miralo con atención.</div>' : '') +
     '<div class="info" style="margin:10px 0">' +
       (c.nivel_ia ? '<span class="chip nivel-' + esc(c.nivel_ia) + '">IA: ' + esc(NIVEL[c.nivel_ia]) + '</span>'
+        /* En modo práctica (SQL 170) el nivel no llega al control: sólo lo ve el supervisor. */
+        : nivelPractica(ia) ? '<span class="chip nivel-' + esc(ia.nivel_sugerido) + '">IA, en práctica: ' + esc(NIVEL[ia.nivel_sugerido]) + '</span>'
         /* Desde el SQL 130 la foto que no sirve se manda igual: que se vea que la IA la miró y por qué no sirve. */
         : ia.foto_valida === false ? '<span class="chip vencido">IA: la foto no sirve</span>'
         : '<span class="chip pendiente">Sin revisión de la IA</span>') +
@@ -3090,9 +3092,9 @@ function dibujarRevisar(loc, cola, testigos, tareas) {
         (vio ? '<span class="chip ' + (vio === 'ok' ? 'listo' : vio === 'mal' ? 'vencido' : 'pendiente') + '">IA: ' + (vio === 'ok' ? 'bien' : vio === 'mal' ? 'mal' : 'no se ve') + '</span>' : '') +
         '</div></div>';
     }).join('') +
-    ((ia.hallazgos || []).length ? ia.hallazgos.map(function (h) {
-      return '<div class="hallazgo ' + (h.gravedad === 'corregir' ? 'corregir' : 'sugerencia') + '"><b>' + esc(h.titulo) + '</b>' + (h.detalle ? '<small>' + esc(h.detalle) + '</small>' : '') + '</div>';
-    }).join('') : '') +
+    (ia.practica && (ia.hallazgos || []).length ? '<p class="ia-practica">Modo práctica: el vendedor no vio esto.' + (soloMira() ? '' : ' Decí si la IA acertó, así aprende.') + '</p>' : '') +
+    /* SQL 170: en cada comentario, "Acertó" o "Se equivocó" (lo que se equivocó se le pasa a la IA con las próximas fotos). */
+    hallazgosIA(ia, { foto: c.ultimo_intento_id, puede: !soloMira() }) +
     '</div>';
   if (!soloMira()) {
     /* SQL 150 (Mauricio, 21/10): una sugerencia, o pedirle que lo corrija y mande otra foto aunque esté "Bien". */
@@ -3109,6 +3111,7 @@ function dibujarRevisar(loc, cola, testigos, tareas) {
   engancharSelector(function () { _revisarSaltear = 0; pantallaRevisar(); });
   engancharTestigo();
   cargarFotos(app);
+  engancharOpinionIA(app, c.ultimo_intento_id);
   var s = document.getElementById('saltear');
   if (s) s.onclick = function () { _revisarSaltear++; dibujarRevisar(loc, cola, testigos, tareas); };
   var fotoRev = app.querySelector('.revision .foto-marcas');

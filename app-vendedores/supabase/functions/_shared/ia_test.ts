@@ -156,7 +156,7 @@ Deno.test("con confianza baja no se generan tareas", () => {
   igual(r.hallazgos[0].gravedad, "sugerencia", "baja confianza → sugerencia");
 });
 
-Deno.test("descarta basura de la IA y limita a 4 hallazgos", () => {
+Deno.test("descarta basura de la IA y limita a 2 hallazgos (24/10; antes, 4)", () => {
   const r = normalizar({
     foto_valida: true, confianza: "alta", nivel_sugerido: "otra_cosa" as never, checks: {} as never,
     hallazgos: [
@@ -164,8 +164,61 @@ Deno.test("descarta basura de la IA y limita a 4 hallazgos", () => {
       ...Array.from({ length: 6 }, (_, i) => ({ check: "limpieza", titulo: `cosa ${i}`, gravedad: "corregir" as const })),
     ],
   }, ctx);
-  igual(r.hallazgos.length, 4, "máximo 4");
+  igual(r.hallazgos.map((h) => h.titulo), ["cosa 0", "cosa 1"], "máximo 2, en el orden de la IA");
   igual(r.nivel_sugerido, "bien", "nivel inválido → bien");
+});
+
+Deno.test("de los 2, lo que hay que corregir va primero, aunque la IA lo ponga después (24/10)", () => {
+  const r = normalizar({
+    foto_valida: true, confianza: "alta", nivel_sugerido: "a_mejorar", checks: {} as never,
+    hallazgos: [
+      { check: "exhibicion", titulo: "Probá sumar un cinto", gravedad: "sugerencia" },
+      { check: "exhibicion", titulo: "Probá otro color arriba", gravedad: "sugerencia" },
+      { check: "frontales", titulo: "Completá el frontal", gravedad: "corregir" },
+    ],
+  }, { ...ctx, ia_sugerencias: true });
+  igual(r.hallazgos.map((h) => h.titulo), ["Completá el frontal", "Probá sumar un cinto"], "corregir primero, después una sugerencia");
+  if (!armarSistema(ctx).includes("máximo 2, lo más importante primero")) throw new Error("El pedido tiene que decir máximo 2");
+  const e = armarEsquema(ctx.checks) as unknown as { properties: { hallazgos: { description: string } } };
+  igual(e.properties.hallazgos.description.startsWith("Máximo 2"), true, "el formato también lo dice");
+});
+
+Deno.test("con un conjunto armado (look) no se pide degradé: la regla en el pedido y el filtro (24/10)", () => {
+  const s = armarSistema(ctx);
+  if (!s.includes("CONJUNTOS: si lo colgado está armado por conjuntos") || !s.includes("no pidas degradé")) throw new Error("Falta la regla de los conjuntos: " + s);
+  for (const otro of [armarSistema({ ...ctx, liquidacion: true }), armarSistema({ ...ctx, sector_tipo: "deposito" }), armarSistema({ ...ctx, checks: ["armado", "carteles", "limpieza", "luces"] })]) {
+    if (otro.includes("CONJUNTOS:")) throw new Error("En la liquidación, el depósito y la vidriera no va: " + otro);
+  }
+  const hall = [
+    { check: "exhibicion", titulo: "Ordená en degradé", detalle: "Del más claro al más oscuro.", gravedad: "corregir" as const },
+    { check: "exhibicion", titulo: "Separá los colores", detalle: "Los colores están mezclados en el perchero.", gravedad: "corregir" as const },
+    { check: "exhibicion", titulo: "Poné lo claro a la izquierda", detalle: "Y lo oscuro a la derecha.", gravedad: "corregir" as const },
+    { check: "etiquetas", titulo: "Escondé la etiqueta", detalle: "La del segundo pantalón se ve.", gravedad: "corregir" as const },
+  ];
+  const base = { foto_valida: true, confianza: "alta", nivel_sugerido: "a_mejorar", checks: {} as never, hallazgos: hall };
+  igual(normalizar({ ...base, look: true } as never, ctx).hallazgos.map((h) => h.titulo), ["Escondé la etiqueta"], "con look: fuera lo del degradé");
+  igual(normalizar({ ...base, look: false } as never, ctx).hallazgos.map((h) => h.titulo), ["Ordená en degradé", "Separá los colores"], "sin look, sigue como antes");
+  igual(normalizar({ ...base, look: true } as never, { ...ctx, sector_tipo: "deposito" }).hallazgos.length, 2, "en el depósito no hay look");
+});
+
+Deno.test("las lecciones del supervisor van en el pedido, cortas y en un renglón (SQL 170)", () => {
+  igual(armarSistema(ctx).includes("LO QUE EL SUPERVISOR YA TE CORRIGIÓ"), false, "sin lecciones, no hay bloque");
+  const s = armarSistema({ ...ctx, lecciones: [
+    { titulo: "Ordená en degradé", motivo: "Es un conjunto:\npantalón y remera", modulo: "Módulo 4", este_modulo: true },
+    { titulo: "Completá el frontal", modulo: "Módulo 9" },
+    { titulo: "   " },
+    { titulo: "x".repeat(300), motivo: "y".repeat(500) },
+  ] });
+  const corte = s.indexOf("LO QUE EL SUPERVISOR YA TE CORRIGIÓ");
+  if (corte < 0) throw new Error("Falta el bloque: " + s);
+  const bloque = s.slice(corte);
+  for (const t of ['- "Ordená en degradé" (en este mismo módulo): el supervisor dijo «Es un conjunto: pantalón y remera»', '- "Completá el frontal" (en Módulo 9)']) {
+    if (!bloque.includes(t)) throw new Error(`Falta la lección: ${t}\n${bloque}`);
+  }
+  igual(bloque.split("\n").filter((l) => l.startsWith("  - ")).length, 3, "la vacía no va");
+  igual(bloque.includes("x".repeat(101)) || bloque.includes("y".repeat(201)), false, "con tope");
+  const muchas = armarSistema({ ...ctx, lecciones: Array.from({ length: 20 }, (_, i) => ({ titulo: `cosa ${i}` })) });
+  igual(muchas.split("\n").filter((l) => /^ {2}- "cosa \d+"/.test(l)).length, 12, "hasta 12");
 });
 
 Deno.test("foto inválida trae un motivo para el vendedor", () => {

@@ -3,6 +3,8 @@
 // tiene, la foto ejemplo de su tipo de mueble) y las reglas de orden que están cargadas
 // en la base (orden_reglas). Las reglas marcadas como sugerencia (SQL 123) van aparte y
 // sólo cuando las sugerencias están prendidas: nunca se vuelven "corregir".
+// Desde el SQL 170 también van las "lecciones": lo que marcó y el supervisor dijo que estaba
+// mal (orden_ia_opiniones), para que no lo repita. Es lo que la "entrena".
 // La respuesta llega siempre con el mismo formato: se pide como JSON con un esquema
 // (structured outputs). Antes era una herramienta forzada (tool_choice), pero Claude
 // Sonnet 5.5 / Opus 5.5 la rechazan con un 400 y ninguna foto se revisaba.
@@ -31,7 +33,13 @@ export type Contexto = {
   colores: string[];
   ia_activa: boolean;
   ia_sugerencias: boolean;
+  /** Modo práctica (SQL 170): revisa y anota, pero al vendedor no le llega nada. Sin el SQL, no hay. */
+  ia_practica?: boolean;
+  /** Lo que marcó antes y el supervisor dijo que estaba mal (SQL 170): primero los de este módulo. */
+  lecciones?: Leccion[];
 };
+
+export type Leccion = { titulo: string; detalle?: string | null; motivo?: string | null; modulo?: string | null; este_modulo?: boolean };
 
 export type Imagen = { media_type: string; data: string };
 
@@ -91,6 +99,14 @@ function enLista(partes: (string | false)[]): string {
   return p.length > 1 ? `${p.slice(0, -1).join(", ")} y ${p[p.length - 1]}` : p.join("");
 }
 
+/** Un texto en un solo renglón y con tope, para meterlo en el pedido. */
+function unaLinea(v: unknown, max: number): string {
+  return String(v ?? "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/** Un comentario que habla del degradé o de los colores mezclados: con un conjunto armado no va (Mauricio, 24/10). */
+export const HABLA_DE_DEGRADE = /degrad|claro.{0,30}oscur|oscur.{0,30}clar|\btonos?\b|colores?\s+(est[aá]n\s+)?mezclad|mezcl\w*\s+(los\s+)?colores/i;
+
 export function armarSistema(ctx: Contexto): string {
   // La vidriera se reconoce por sus puntos (SQL 129): ahí no hay degradé ni liquidación, y las
   // reglas que empiezan con "En la vidriera:" son sólo para ella.
@@ -139,6 +155,18 @@ export function armarSistema(ctx: Contexto): string {
     : ctx.lado === "izquierda" || ctx.lado === "derecha"
     ? `\nLADO DEL LOCAL: pared ${ctx.lado} (mirando desde la entrada). El degradé arranca con el más claro del lado ${ctx.lado === "izquierda" ? "IZQUIERDO" : "DERECHO"} de la foto y va oscureciendo hacia el ${ctx.lado === "izquierda" ? "derecho" : "izquierdo"}: así lo ve el cliente que entra. Si ya está así, está bien: nunca pidas invertirlo.`
     : "\nSENTIDO DEL DEGRADÉ: en este mueble puede arrancar de cualquier lado; mirá sólo que sea un degradé parejo, sin colores cortados.";
+  // Mauricio (24/10): la colección nueva va armada por conjuntos (pantalón, remera, pantalón, remera…) y la IA lo
+  // marcaba como un degradé mal hecho. Con conjuntos no se pide degradé (y si igual lo pide, normalizar lo saca).
+  const conjuntos = salon && !ctx.liquidacion
+    ? "\nCONJUNTOS: si lo colgado está armado por conjuntos que se repiten (pantalón, remera, pantalón, remera…) o hay un look completo, como en la colección nueva, el orden es por conjunto: no pidas degradé ni marques que los colores están mezclados; sí mirá que esté prolijo y completo."
+    : "";
+  // Lo que el supervisor ya le corrigió (SQL 170): lo marcó y no era un problema. Primero los de este módulo.
+  const lecciones = (ctx.lecciones ?? []).filter((l) => l && typeof l.titulo === "string" && l.titulo.trim()).slice(0, 12);
+  const deLecciones = lecciones.length
+    ? `\n\nLO QUE EL SUPERVISOR YA TE CORRIGIÓ (lo marcaste y no era un problema: en casos parecidos, no lo vuelvas a marcar):\n${lecciones.map((l) =>
+        `  - "${unaLinea(l.titulo, 100)}"${l.este_modulo ? " (en este mismo módulo)" : l.modulo ? ` (en ${unaLinea(l.modulo, 40)})` : ""}` +
+        (l.motivo ? `: el supervisor dijo «${unaLinea(l.motivo, 200)}»` : "")).join("\n")}`
+    : "";
   const guiaReferencia = !ctx.referencia_path ? ""
     : ctx.referencia_tipo === "ejemplo"
     ? "\n- La foto de ejemplo es de OTRO mueble del mismo tipo, bien ordenado: usala sólo para ver el nivel de orden que se espera. No marques que la ropa, los colores, la cantidad o la disposición son distintos."
@@ -157,7 +185,7 @@ export function armarSistema(ctx: Contexto): string {
     : " (acá no hay estantes ni frontales: no los nombres; si una regla habla de ellos, no la apliques)";
 
   const etapa = ctx.ia_sugerencias
-    ? "Además de lo que hay que corregir, podés dejar hasta 2 sugerencias para que quede más lindo (gravedad \"sugerencia\")."
+    ? "Si queda lugar en los 2, podés dejar una sugerencia para que quede más lindo (gravedad \"sugerencia\"); lo que hay que corregir va siempre primero."
     : "ETAPA ACTUAL: marcá SOLO problemas puntuales que hay que corregir hoy. No des sugerencias de estilo ni de combinación.";
 
   return `Sos el control de orden de los locales de VDH, una marca de ropa urbana para hombres.
@@ -165,7 +193,7 @@ Revisás la foto que sacó un vendedor de ${ctx.sector_tipo === "salon" ? "un m�
 
 QUÉ MIRAR (cada punto tiene una clave):
 ${reglasPorCheck}
-${colores}${sentido}${mueble}${exhibidor}${ctx.reglas_extra ? `\nPROPIO DE ESTE MÓDULO (manda sobre las reglas generales): ${ctx.reglas_extra}` : ""}${deEstilo}
+${colores}${sentido}${conjuntos}${mueble}${exhibidor}${ctx.reglas_extra ? `\nPROPIO DE ESTE MÓDULO (manda sobre las reglas generales): ${ctx.reglas_extra}` : ""}${deEstilo}${deLecciones}
 
 CÓMO RESPONDER
 - Sé estricto pero justo: marcá solo lo que se ve CLARAMENTE en la foto. Ante la duda, no lo marques.
@@ -174,14 +202,14 @@ CÓMO RESPONDER
 - Si la foto está borrosa, muy oscura, cortada o no muestra ningún mueble con ropa (estantes, perchero, carro, mesa o vidriera) ni un depósito, devolvé foto_valida = false y explicá en una frase cómo sacarla de nuevo.${salon ? `
 - Si en el módulo se ve un cartel de liquidación, "sale" o descuentos, no pidas degradé de color: esos percheros van por talle.` : ""}
 - No inventes problemas por no tener una foto para comparar: las reglas alcanzan.${guiaReferencia}
-- Hallazgos: máximo 4, en español rioplatense, cortos y en imperativo (ej.: ${ejemplo}). En "detalle", una frase concreta de dónde está el problema.
+- Hallazgos: máximo 2, lo más importante primero. Cortitos, para que el vendedor los lea de un vistazo: el título de hasta 6 palabras, en español rioplatense y en imperativo (ej.: ${ejemplo}). En "detalle", una sola frase corta de dónde está el problema.
 ${conFrontales ? `- Si un frontal está incompleto, el detalle tiene que decir: "Si no hay más stock, cambiá la prenda por otro producto." Nunca sugieras dejarlo incompleto.\n` : ""}- ${etapa}
 - Nivel: impecable = todo bien; bien = un detalle menor; a_mejorar = un problema claro para corregir; fuera_de_estandar = varios problemas o el módulo desarmado.
 - confianza: qué tan seguro estás de lo que viste ("baja" si la foto no deja ver bien).
 - que_hay: qué ropa hay en ${ctx.sector_tipo === "salon" ? "el módulo" : "este sector del depósito"}, en 1 a 4 palabras, como lo diría un vendedor: la prenda que más se ve primero (ej.: "Remeras", "Buzos y camperas", "Jeans", "Accesorios", "Zapatillas"). Sin colores, marcas ni cantidades. Si no se distingue, dejalo vacío.
 - rubros: los rubros que se ven, de esta lista (${RUBROS.join(", ")}), hasta 4, el que más se ve primero. Los jeans y joggers son "Pantalones"; gorras, cintos, boxers, medias, corbatas, bufandas y billeteras son "Accesorios"; las zapatillas y botas son "Calzado". Vacío si no se distingue.
 - colores: los colores que más se ven en la ropa, de esta lista (${listaColores(ctx.colores).join(", ")}), hasta 4, el que más se ve primero. Una prenda con un dibujo o una estampa grande es "Estampado". Vacío si no se distingue.
-- look: true si hay un conjunto armado con prendas de distintos rubros que van juntas (un maniquí vestido, o un pantalón con su remera y su campera colgados juntos); si no, false.${deposito ? " En el depósito, siempre false." : ""}
+- look: true si hay un conjunto armado con prendas de distintos rubros que van juntas (un maniquí vestido, un pantalón con su remera y su campera colgados juntos, o un perchero armado por conjuntos: pantalón, remera, pantalón, remera…); si no, false.${deposito ? " En el depósito, siempre false." : ""}
 Respondé SOLO con el informe, en el formato JSON pedido.`;
 }
 
@@ -212,7 +240,7 @@ export function armarEsquema(checks: string[], degrade: string[] = []) {
       }),
       hallazgos: {
         type: "array",
-        description: "Máximo 4.",
+        description: "Máximo 2, lo que hay que corregir primero.",
         items: {
           type: "object",
           properties: {
@@ -251,21 +279,26 @@ export function normalizar(r: Partial<Resultado>, ctx: Contexto): Resultado {
   const confianza = conf === "alta" || conf === "media" || conf === "baja" ? conf : "media";
   const checkDe = (v: unknown) => ctx.checks.find((c) => c.toLowerCase() === minuscula(v));
 
+  const conLook = r.foto_valida !== false && ctx.sector_tipo === "salon" && r.look === true;
   let hallazgos = (Array.isArray(r.hallazgos) ? r.hallazgos : [])
     .filter((h) => h && checkDe(h.check) && typeof h.titulo === "string" && h.titulo.trim())
-    .slice(0, 4)
     .map((h) => ({
       check: checkDe(h.check)!,
       titulo: h.titulo.trim().slice(0, 100),
       detalle: h.detalle?.trim().slice(0, 300),
       gravedad: minuscula(h.gravedad) === "corregir" ? "corregir" as const : "sugerencia" as const,
-    }));
+    }))
+    // Con un conjunto armado no se pide degradé: si igual lo pidió, se saca.
+    .filter((h) => !conLook || !HABLA_DE_DEGRADE.test(`${h.titulo} ${h.detalle ?? ""}`));
   const nivel = minuscula(r.nivel_sugerido);
 
   // Con confianza baja, nada se convierte en tarea: quedan como sugerencias.
   if (confianza === "baja") hallazgos = hallazgos.map((h) => ({ ...h, gravedad: "sugerencia" as const }));
   // Sugerencias apagadas en esta etapa: se descartan.
   if (!ctx.ia_sugerencias) hallazgos = hallazgos.filter((h) => h.gravedad === "corregir");
+  // Dos como máximo, para que el vendedor las vea de un vistazo (Mauricio, 24/10; antes eran hasta 4):
+  // lo que hay que corregir primero.
+  hallazgos = [...hallazgos.filter((h) => h.gravedad === "corregir"), ...hallazgos.filter((h) => h.gravedad !== "corregir")].slice(0, 2);
   // Coherencia: si hay algo para corregir en un punto, ese punto no puede estar "ok".
   for (const h of hallazgos) if (h.gravedad === "corregir" && checks[h.check] === "ok") checks[h.check] = "mal";
 

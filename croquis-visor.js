@@ -1533,7 +1533,7 @@ function visorIa(V, id) {
     if (!V.ficha || V.ficha.id !== id) return;
     V.ficha.historia = h || [];
     var z = V.ficha.el.querySelector('#cvIa');
-    if (z) z.innerHTML = visorTextoIa((h || [])[0]);
+    if (z) z.innerHTML = visorTextoIa((h || [])[0], V);
     visorHistoria(V);
   }).catch(function () {
     var z = V.ficha && V.ficha.id === id && V.ficha.el.querySelector('#cvIa');
@@ -1585,7 +1585,7 @@ function visorHistoria(V) {
     pie.textContent = (i > 0 ? 'Antes: ' : '') + visorPie(c.tomada_en, c.persona_nombre) + (c.nivel ? ' · ' + (NIVEL[c.nivel] || c.nivel) : '');
     r.setAttribute('aria-valuetext', i > 0 ? diaMes(c.tomada_en) : 'Ahora');
     var ia = f.el.querySelector('#cvIa');
-    if (ia) ia.innerHTML = visorTextoIa(c);
+    if (ia) ia.innerHTML = visorTextoIa(c, V);
   });
 }
 /** "Remeras y bermudas · Blanco y azul · con un look armado": lo que la IA anota de cada foto desde el 24/10 (rubros,
@@ -1598,14 +1598,18 @@ function visorEnLaFoto(r) {
   };
   return [y(r.rubros), y(r.colores), r.look === true ? 'con un look armado' : ''].filter(Boolean).join(' · ');
 }
-function visorTextoIa(c) {
+function visorTextoIa(c, V) {
   if (!c) return '';
+  /* Modo práctica (SQL 170): lo que vio la IA es sólo para el supervisor; el vendedor no ve nada. */
+  var practica = !!(c.ia_resultado && c.ia_resultado.practica);
+  if (practica && !(V && V.op.puedeSugerir)) return '';
+  var nivelIa = c.nivel_ia || (practica ? nivelPractica(c.ia_resultado) : null);
   var hall = ((c.ia_resultado || {}).hallazgos || []).slice(0, 4), foto = visorEnLaFoto(c.ia_resultado);
-  return '<h3>Lo que vio la IA</h3>' + (c.nivel_ia ? '<p class="cv-gris">Le dio <b>' + esc(NIVEL[c.nivel_ia] || c.nivel_ia) + '</b>' +
-      (c.nivel_final && c.nivel_final !== c.nivel_ia ? '; quien la revisó le dejó <b>' + esc(NIVEL[c.nivel_final] || c.nivel_final) + '</b>' : '') + '.</p>' : '') +
+  return '<h3>Lo que vio la IA</h3>' + (nivelIa ? '<p class="cv-gris">Le dio <b>' + esc(NIVEL[nivelIa] || nivelIa) + '</b>' + (practica ? ' (en práctica: el vendedor no lo vio)' : '') +
+      (c.nivel_final && c.nivel_final !== nivelIa ? '; quien la revisó le dejó <b>' + esc(NIVEL[c.nivel_final] || c.nivel_final) + '</b>' : '') + '.</p>' : '') +
     (foto ? '<p class="cv-en-foto"><span>En la foto:</span> ' + esc(foto) + '</p>' : '') +
     (hall.length ? '<ul>' + hall.map(function (x) { return '<li><span class="cv-grav ' + (x.gravedad === 'corregir' ? 'mal' : '') + '">' + (x.gravedad === 'corregir' ? 'Corregir' : 'Ojo') + '</span>' + esc(x.titulo || '') + '</li>'; }).join('') + '</ul>'
-                 : '<p class="cv-gris">' + (c.nivel_ia ? 'No marcó nada para corregir.' : 'Esta foto no pasó por la IA.') + '</p>') +
+                 : '<p class="cv-gris">' + (nivelIa ? 'No marcó nada para corregir.' : 'Esta foto no pasó por la IA.') + '</p>') +
     (c.comentario ? '<p class="cv-comentario">"' + esc(c.comentario) + '"</p>' : '');
 }
 
