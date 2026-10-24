@@ -134,8 +134,9 @@
   .vt-hoja .banda.gris { background: var(--h-kpi); color: var(--h-gris-cab); }
   .vt-hoja .banda.osc { background: var(--h-titulo); }
 
-  /* tarjetas de arriba */
-  .vt-hoja .vt-kpis { display: grid; gap: 1px; background: #0B1220; }
+  /* tarjetas de arriba. Lo de arriba (tarjetas, rankings, proyecciones) va liso, como la planilla (24/10/2026): un
+     solo fondo, las tarjetas sueltas con aire alrededor y los rankings sin líneas. Antes era una grilla con rayitas. */
+  .vt-hoja .vt-kpis { display: grid; gap: 3px; background: var(--h-titulo); padding: 6px 14px 12px; }
   .vt-hoja .vt-kpis.k4 { grid-template-columns: repeat(4, 1fr); }
   .vt-hoja .vt-kpis.k5 { grid-template-columns: repeat(5, 1fr); }
   .vt-hoja .vt-kpi { background: var(--h-kpi); color: #FFFFFF; text-align: center; padding: 10px 8px 9px; }
@@ -153,20 +154,21 @@
   .vt-hoja .vt-kpi .val.sr, .vt-hoja .proy .v2.sr, .vt-hoja .proy .pv.sr, .vt-hoja .res td.sr, .vt-hoja .tp-nec td.sr, .vt-hoja .ritmo-t td.sr { color: #F87171; font-weight: 700; }
 
   /* rankings */
-  .vt-hoja .rankings { display: grid; grid-template-columns: 1fr 1.35fr; gap: 1px; background: #0B1220; }
-  .vt-hoja .rk { background: var(--h-titulo); padding: 8px 10px 10px; }
-  .vt-hoja .rk-tit { color: var(--h-gris-kpi); font-size: 11px; font-weight: 600; letter-spacing: .06em; margin: 0 0 4px 4px; }
+  .vt-hoja .rankings { display: grid; grid-template-columns: 1fr 1.35fr; gap: 28px; background: var(--h-titulo); padding: 0 14px; }
+  .vt-hoja .rk { background: var(--h-titulo); padding: 2px 0 10px; }
+  .vt-hoja .rk-tit { color: var(--h-gris-kpi); font-size: 11px; font-weight: 600; letter-spacing: .06em; margin: 0 0 4px 8px; }
   .vt-hoja .rk-tit span { font-weight: 400; letter-spacing: 0; margin-left: 6px; color: var(--h-gris-cab); }
   .vt-hoja .rk th { color: var(--h-gris-cab); font-size: 10.5px; font-weight: 600; height: 22px; }
   .vt-hoja .rk td { color: #FFFFFF; font-weight: 600; font-size: 13px; height: 30px; }
   .vt-hoja .rk td.med { text-align: left; }
-  .vt-hoja .rk td, .vt-hoja .rk th { border-color: var(--h-linea-osc); }
+  .vt-hoja .rk td, .vt-hoja .rk th { border: 0; }
   .vt-hoja .m0 { color: var(--h-oro) !important; } .vt-hoja .m1 { color: var(--h-plata) !important; } .vt-hoja .m2 { color: var(--h-bronce) !important; }
   .vt-hoja .rk .av { color: var(--h-gris-kpi); font-size: 12px; }
   .vt-hoja .rk .ob { color: var(--h-gris-cab); font-weight: 400; font-size: 12px; }
 
   /* proyecciones y medios de pago */
-  .vt-hoja .proy { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 1px; background: #0B1220; }
+  .vt-hoja .proy { display: grid; grid-template-columns: 1fr 1fr 1.25fr; gap: 3px; background: var(--h-titulo); padding: 14px; }
+  .vt-hoja .rankings + .proy { padding-top: 0; }
   .vt-hoja .proy > div { background: var(--h-kpi); display: grid; grid-template-columns: 1fr 1fr; align-items: center; padding: 8px 10px; gap: 4px 10px; text-align: center; }
   .vt-hoja .proy .nom { color: var(--h-gris-kpi); font-weight: 600; font-size: 12.5px; }
   .vt-hoja .proy .v1 { color: var(--h-verde-kpi); font-weight: 700; font-size: 16px; }
@@ -355,7 +357,7 @@
      celda en que viven (el más flojo, las ayudas, ~7:1). */
   html[data-theme="dark"] .vt-app {
     --sel: #5B9BFF;
-    --h-hoja: #0E131B; --h-sep: #070B12;
+    --h-hoja: #0E131B;
     --h-titulo: #0B1A31; --h-kpi: #12213B; --h-banda: #183760; --h-escalon: #0F4174; --h-ritmo: #3A4377;
     --h-gris: #111824; --h-gris2: #111824; --h-real: #121925; --h-total: #15243D; --h-azulclaro: #12203A; --h-panel: #111C2E;
     --h-linea: #1E2735; --h-linea-osc: rgba(255,255,255,.07);
@@ -371,7 +373,6 @@
   /* El título con una raya de luz abajo, y las tarjetas con su brillo arriba. */
   html[data-theme="dark"] .vt-hoja .titulo { background: linear-gradient(100deg, #0B1A31 0%, #143058 55%, #0C1C36 100%);
     border-bottom: 2px solid transparent; border-image: linear-gradient(90deg, #2F6FE0, #22C3E6 55%, rgba(34, 195, 230, 0) 100%) 1; }
-  html[data-theme="dark"] .vt-hoja .vt-kpis, html[data-theme="dark"] .vt-hoja .rankings, html[data-theme="dark"] .vt-hoja .proy { background: var(--h-sep); }
   html[data-theme="dark"] .vt-hoja .vt-kpi { background: linear-gradient(180deg, #172A4C 0%, #10203A 100%); box-shadow: inset 0 1px 0 rgba(255,255,255,.06); }
   html[data-theme="dark"] .vt-hoja .vt-kpis.k5 .vt-kpi { background: linear-gradient(180deg, #112240 0%, #0B1A31 100%); }
   html[data-theme="dark"] .vt-hoja .vt-kpi .val.sv { text-shadow: 0 0 22px rgba(52, 211, 153, .45); }
