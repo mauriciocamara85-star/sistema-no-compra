@@ -28,7 +28,7 @@
 }
 .pos-menu {
   display: flex; flex-direction: column; gap: 1px; padding: 10px 8px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
 }
 /* Son 18 secciones: en la compu el menú se queda quieto y, si no entra, se desliza solo él. */
 @media (min-width: 1000px) {
@@ -156,7 +156,7 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 /* La cabecera: una grilla de 12 para poder partir en mitades, tercios y cuartos. */
 .tk-datos {
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 8px;
-  padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  padding: 12px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
 }
 /* Los campos del pago van adentro de .tk-pagox (display: contents): por eso los anchos se buscan
    en cualquier nivel y no sólo en los hijos directos. */
@@ -218,7 +218,7 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 /* La grilla de renglones. */
 .tk-grilla {
   flex: 1 1 auto; min-height: 190px; overflow: auto;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
 }
 @media (min-width: 1000px) { .tk-grilla { min-height: 0; height: 0; } }
 .tk-tabla { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -298,7 +298,7 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-kpi.fuerte { background: var(--tablero-negro); border-color: transparent; color: #FFFFFF; }
 .pos-kpi.fuerte span { color: rgba(255, 255, 255, .78); }
 
-.pos-marco-tabla { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.pos-marco-tabla { overflow-x: auto; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
 .pos-tabla { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .pos-tabla th { text-align: left; white-space: nowrap; padding: 9px 10px; background: var(--surface-2); border-bottom: 1px solid var(--line); font: 700 11.5px var(--sans); color: var(--txt-2); }
 .pos-tabla td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
@@ -331,7 +331,7 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-promos { display: grid; gap: 8px; }
 .pos-promo {
   display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center;
-  padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  padding: 12px 14px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
 }
 .pos-promo.apagada { opacity: .62; box-shadow: none; }
 .pos-promo b { display: block; font-size: 15px; }
@@ -345,7 +345,7 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-switch input:focus-visible + i { outline: 2px solid var(--foco); outline-offset: 2px; }
 
 /* "En construcción": qué va a tener cada sección. */
-.pos-pronto-caja { max-width: 760px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.pos-pronto-caja { max-width: 760px; padding: 18px 20px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
 .pos-pronto-caja h3 { margin: 0 0 8px; font: 700 15px var(--sans); }
 .pos-pronto-caja ul { margin: 0 0 12px; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; line-height: 1.5; color: var(--txt-2); }
 .pos-pronto-caja p { margin: 0; font-size: 13.5px; color: var(--txt-3); line-height: 1.5; }
@@ -353,7 +353,7 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-tag { display: inline-block; margin-left: 8px; padding: 3px 9px; border-radius: 999px; background: var(--warn-soft); color: var(--warn-txt); font: 700 11px var(--sans); vertical-align: middle; letter-spacing: .2px; }
 
 /* La entrada: sin usuario, o con uno que no es de Administración. */
-.pos-porton { max-width: 520px; margin: 40px auto; padding: 22px 20px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); display: grid; gap: 10px; }
+.pos-porton { max-width: 520px; margin: 40px auto; padding: 22px 20px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); display: grid; gap: 10px; }
 .pos-porton h2 { margin: 0; font: 700 21px var(--display); }
 .pos-porton p { margin: 0; font-size: 14px; color: var(--txt-2); line-height: 1.5; }
 
@@ -442,7 +442,7 @@ html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg
 }
 .cj-paso {
   display: grid; gap: 8px; padding: 11px 12px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
   transition: opacity .15s var(--curva);
 }
 .cj-paso.apagado { opacity: .5; }
@@ -473,7 +473,7 @@ html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg
 .cj-botones { display: flex; gap: 8px; }
 
 /* Resultados del día: la columna de la derecha de BlueSoft. */
-.cj-res { min-width: 0; padding-bottom: 6px; overflow: hidden; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.cj-res { min-width: 0; padding-bottom: 6px; overflow: hidden; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
 .cj-res-tit { margin: 0 0 4px; padding: 9px 14px; background: var(--tablero-negro); color: #FFFFFF; font: 700 14px var(--sans); }
 .cj-r {
   display: flex; justify-content: space-between; align-items: baseline; gap: 10px; width: 100%; padding: 4px 14px;
@@ -554,7 +554,7 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .st-prods { display: grid; gap: 10px; }
 @media (min-width: 1100px) { .st-prods { grid-template-columns: repeat(auto-fill, minmax(min(100%, 470px), 1fr)); align-items: start; } }
 .pos-caja .st-prods { grid-template-columns: minmax(0, 1fr); }
-.st-prod { min-width: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.st-prod { min-width: 0; padding: 10px 12px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
 .pos-caja .st-prod { box-shadow: none; }
 .st-prod-cab { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; margin-bottom: 6px; }
 .st-prod-cab b { font: 700 14px var(--sans); }
@@ -622,7 +622,7 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 /* La recepción. */
 .rc { display: grid; gap: 12px; }
 @media (min-width: 1000px) { .rc { grid-template-columns: 320px minmax(0, 1fr); align-items: start; } }
-.rc-izq, .rc-der { min-width: 0; padding: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.rc-izq, .rc-der { min-width: 0; padding: 12px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
 .rc-izq { display: flex; flex-direction: column; gap: 8px; }
 .rc-der { padding: 12px 14px; }
 .rc-avance { margin: 0; font-size: 13px; color: var(--txt-2); }

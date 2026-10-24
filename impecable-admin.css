@@ -25,7 +25,7 @@
 }
 .imp-menu {
   display: flex; flex-direction: column; gap: 2px; padding: 10px 8px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
 }
 @media (min-width: 1000px) { .imp-menu { position: sticky; top: 16px; } }
 .imp-menu-cab { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 0 0 6px 10px; font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
@@ -122,7 +122,9 @@
 .imp .est.nivel-fuera_de_estandar, .imp .est.vencido { background: var(--bad-soft); color: var(--bad-txt); }
 .imp .info { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 
-/* ── Botones ── */
+/* ── Botones ──
+   Las tarjetas de Supervisión (.imp-menu, .renglon y las demás) llevan el canto de la Carga, --borde-tarjeta
+   (24/10/2026). El .renglon no lleva la sombra: en las listas de reglas van uno abajo del otro y se pisarían. */
 .imp .boton {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; width: auto;
   min-height: 44px; padding: 0 16px; border: 1px solid var(--line-alta); border-radius: var(--r-sm);
@@ -132,10 +134,12 @@
 .imp .boton.lima { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
 .imp .boton.chico { min-height: 38px; padding: 0 12px; font-size: 13.5px; }
 .imp .boton:disabled { opacity: .5; cursor: default; }
+/* El Guardar sin nada para guardar: gris, no cobre lavado (24/10/2026). Se pone cobre cuando cambiás algo. */
+.imp .boton.lima:disabled, .ventana .boton.lima:disabled { background: var(--surface-3); border-color: var(--surface-3); color: var(--txt-3); opacity: 1; }
 .imp .botones { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 /* ── Tablas ── */
-.imp .desliza { overflow-x: auto; -webkit-overflow-scrolling: touch; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.imp .desliza { overflow-x: auto; -webkit-overflow-scrolling: touch; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
 .imp .tabla-datos { width: 100%; border-collapse: collapse; font-size: 13.5px; color: var(--txt); }
 .imp .tabla-datos th, .imp .tabla-datos td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
 .imp .tabla-datos thead th { font-size: 12px; font-weight: 700; color: var(--txt-3); background: var(--surface-2); }
@@ -174,7 +178,7 @@
 .imp-fotos { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .imp .tarjeta-modulo, .imp-foto {
   display: grid; gap: 6px; padding: 0 0 11px; overflow: hidden; cursor: pointer; text-align: left;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra);
+  background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra);
   color: var(--txt); font: inherit;
 }
 .imp .tarjeta-modulo:hover, .imp-foto:hover { border-color: var(--line-alta); }
@@ -240,7 +244,7 @@
 /* ── El editor de los ajustes ── */
 .imp .renglon {
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; margin-bottom: 10px; padding: 12px;
-  background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r-sm);
 }
 .imp .campo { display: grid; gap: 5px; margin: 0 0 12px; }
 .imp .campo > span { font: 600 12.5px var(--sans); color: var(--txt-2); text-transform: none; letter-spacing: 0; }
@@ -262,7 +266,7 @@
 .imp .ref-mini { width: 54px; height: 72px; object-fit: cover; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--line); }
 
 /* ── Entrar (sin sesión) ── */
-.imp-entrar { max-width: 520px; margin: 40px auto; padding: 26px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); }
+.imp-entrar { max-width: 520px; margin: 40px auto; padding: 26px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
 .imp-entrar h2 { margin: 0 0 6px; font: 700 22px var(--display); }
 .imp-entrar p { margin: 0 0 16px; color: var(--txt-2); font-size: 14.5px; }
 
@@ -278,7 +282,7 @@
 .imp-enlace { padding: 0; border: 0; background: none; color: var(--txt); font: 600 14px var(--sans); text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 
 /* El mapa del local (SQL 99) */
-.imp-mapa { margin: 0 0 16px; padding: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); box-shadow: var(--sombra); color: var(--txt-2); }
+.imp-mapa { margin: 0 0 16px; padding: 14px; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); color: var(--txt-2); }
 .imp-mapa-acc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 12px; }
 .imp-mapa-dibujos { display: grid; gap: 14px; align-items: start; }
 @media (min-width: 1100px) { .imp-mapa-dibujos { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); } }
@@ -399,7 +403,7 @@
 
 /* ═══ Cajas: el cierre del mes (SQL 115) ═══════════════════════════════ */
 .imp .cajas-vista { margin-bottom: 8px; }
-.imp .cierre-mes { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); box-shadow: var(--sombra); }
+.imp .cierre-mes { margin: 0 0 16px; padding: 14px 16px; border: 1px solid var(--borde-tarjeta); border-radius: var(--r); background: var(--surface); box-shadow: var(--sombra); }
 .imp .cierre-cab { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 6px; font-size: 15px; }
 .imp .cierre-obs { margin: 4px 0; font-size: 15px; font-weight: 600; color: var(--txt); }
 .imp .cierre-quien { margin: 4px 0 0; font-size: 13.5px; color: var(--txt-2); }

@@ -106,7 +106,7 @@
      navegador. */
   .aviso {
     background: var(--surface);
-    border: 1px solid var(--line);
+    border: 1px solid var(--borde-tarjeta);
     border-left: 3px solid var(--bad);
     border-radius: var(--r-sm);
     padding: 13px 14px;
@@ -169,8 +169,8 @@
   /* Ficha de registro */
   .reg {
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-left: 3px solid var(--line);
+    border: 1px solid var(--borde-tarjeta);
+    border-left: 3px solid var(--borde-tarjeta);
     border-radius: var(--r);
     padding: 16px;
     margin-bottom: 12px;
@@ -597,7 +597,7 @@
 
   /* La tarjeta: sin selección de texto ni el menú del toque largo, que
      se pelean con el arrastre. */
-  .tj { position: relative; background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--line);
+  .tj { position: relative; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-left: 3px solid var(--borde-tarjeta);
         border-radius: var(--r-sm); padding: 11px 12px 12px; margin-bottom: 9px; box-shadow: var(--sombra);
         cursor: pointer; animation: aparecer .3s var(--curva) backwards;
         -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
@@ -679,7 +679,7 @@
      pantalla completa" con el botón ☰ que la abría encima: a Mauricio no le
      gustaba que "te come la pantalla". */
   .crm-menu { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; background: var(--surface);
-              border: 1px solid var(--line); border-radius: var(--r); }
+              border: 1px solid var(--borde-tarjeta); border-radius: var(--r); }
   .crm-menu-cab { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px 10px; }
   .crm-menu-cab b { font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
   .crm-item, .crm-subitem { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px;
