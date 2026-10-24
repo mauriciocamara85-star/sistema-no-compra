@@ -34,7 +34,7 @@
     --sel: #1A73E8;               /* el azul de selección de Sheets */
     --h-titulo: #0F172A; --h-kpi: #1E293B; --h-banda: #1E3A5F; --h-escalon: #073763; --h-ritmo: #4B527E;
     --h-gris: #F3F3F3; --h-gris2: #EFEFEF; --h-real: #F8FAFC; --h-total: #DBEAFE; --h-azulclaro: #EFF6FF; --h-panel: #F8FBFF;
-    --h-linea: #E3E6EA; --h-linea-osc: rgba(255,255,255,.07);
+    --h-linea: #E3E6EA;
     --h-ambar: #C26D05;           /* lo que se carga */
     --h-azul: #1E40AF;            /* lo que se calcula solo */
     --h-azul-traf: #185FA5; --h-verde: #047857; --h-verde-kpi: #10B981; --h-verde-pago: #34D399; --h-amarillo: #FBBF24;
@@ -274,7 +274,10 @@
   .vt-hoja .res tr:nth-child(odd) td { background: var(--h-kpi); }
   .vt-hoja .res tr:nth-child(even) td { background: var(--h-titulo); }
   .vt-hoja .res td.tt { font-weight: 700; }
-  .vt-hoja .res td, .vt-hoja .res th { border-color: var(--h-linea-osc); }
+  /* Sin líneas, como la planilla (24/10/2026): los renglones en dos tonos ya separan. La línea transparente que
+     tenía, en claro dejaba ver el blanco de la hoja y salía como una grilla blanca. */
+  .vt-hoja .res td, .vt-hoja .res th { border: 0; }
+  .vt-hoja .res td:first-child, .vt-hoja .res th:first-child { padding-left: 22px; }   /* a la altura del título de la banda */
   .vt-hoja .iv-cfg { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 12px; background: var(--h-gris2); padding: 10px 12px; }
   .vt-hoja .iv-cfg table { background: var(--h-gris2); }
   .vt-hoja .iv-cfg th { font-weight: 400; font-size: 12px; color: var(--h-txt2); text-align: left; }
@@ -361,7 +364,7 @@
     --h-hoja: #0E131B;
     --h-titulo: #0B1A31; --h-kpi: #12213B; --h-banda: #183760; --h-escalon: #0F4174; --h-ritmo: #3A4377;
     --h-gris: #111824; --h-gris2: #111824; --h-real: #121925; --h-total: #15243D; --h-azulclaro: #12203A; --h-panel: #111C2E;
-    --h-linea: #1E2735; --h-linea-osc: rgba(255,255,255,.07);
+    --h-linea: #1E2735;
     --h-ambar: #F5B041;
     --h-azul: #8DB6FF;
     --h-azul-traf: #7DB9F2; --h-verde: #5ADBA0;
