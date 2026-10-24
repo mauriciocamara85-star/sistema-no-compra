@@ -1,5 +1,5 @@
 // Pruebas sin red de la parte de IA:  deno test supabase/functions/_shared/ia_test.ts
-import { armarEsquema, armarSistema, type Contexto, normalizar } from "./ia.ts";
+import { analizarConClaude, armarEsquema, armarSistema, type Contexto, listaColores, normalizar, RUBROS } from "./ia.ts";
 
 function igual(a: unknown, b: unknown, msg: string) {
   if (JSON.stringify(a) !== JSON.stringify(b)) throw new Error(`${msg}: ${JSON.stringify(a)} ≠ ${JSON.stringify(b)}`);
@@ -172,6 +172,62 @@ Deno.test("foto inválida trae un motivo para el vendedor", () => {
   const r = normalizar({ foto_valida: false, confianza: "alta", nivel_sugerido: "bien", checks: {} as never, hallazgos: [] }, ctx);
   igual(r.foto_valida, false, "inválida");
   if (!r.motivo_foto_invalida) throw new Error("Falta el motivo");
+});
+
+Deno.test("rubros, colores y look: de las listas, como en la lista, sin repetir y hasta 4 (24/10)", () => {
+  const base = { foto_valida: true, confianza: "alta", nivel_sugerido: "bien", checks: {} as never, hallazgos: [] };
+  const r = normalizar({ ...base, rubros: ["remeras", "Jeans", "PANTALONES", "Remeras", "short de baño", "Buzos", "Camisas"], colores: ["negro", "Estampado", "Fucsia", "Blanco"], look: true } as never, ctx);
+  igual(r.rubros, ["Remeras", "Pantalones", "Short de Baño", "Buzos"], "rubros: los de la lista, escritos como en el catálogo, hasta 4");
+  igual(r.colores, ["Negro", "Estampado", "Blanco"], "colores: los del degradé y los de afuera; el que no está, afuera");
+  igual(r.look, true, "look");
+  const vacio = normalizar({ ...base, rubros: [], colores: ["Fucsia"], look: false } as never, ctx);
+  igual([vacio.rubros, vacio.colores, vacio.look], [undefined, undefined, false], "nada de la lista: no se guarda");
+  const dep = normalizar({ ...base, rubros: ["Buzos"], look: true } as never, { ...ctx, sector_tipo: "deposito" });
+  igual([dep.rubros, dep.colores, dep.look], [["Buzos"], undefined, false], "en el depósito no hay look");
+  const mala = normalizar({ ...base, foto_valida: false, rubros: ["Buzos"], colores: ["Negro"], look: true } as never, ctx);
+  igual([mala.rubros, mala.colores, mala.look], [undefined, undefined, undefined], "foto inválida: nada");
+  const viejo = normalizar(base as never, ctx);   // una respuesta sin los campos nuevos (o el esquema de antes)
+  igual([viejo.rubros, viejo.colores, viejo.look], [undefined, undefined, undefined], "sin los campos");
+});
+
+Deno.test("el formato pide rubros y colores como listas cerradas, sin sumar anyOf (24/10)", () => {
+  const e = armarEsquema(ctx.checks, ctx.colores) as unknown as { properties: Record<string, { items?: { enum: string[] }; type: string }>; required: string[] };
+  igual(e.properties.rubros.items!.enum, RUBROS, "rubros del catálogo");
+  igual(e.properties.colores.items!.enum, ["Blanco", "Beige", "Negro", "Rojo", "Naranja", "Amarillo", "Verde", "Rosa", "Violeta", "Estampado"], "el degradé y los de afuera");
+  igual(e.properties.look.type, "boolean", "look");
+  igual(["rubros", "colores", "look"].every((k) => e.required.includes(k)), true, "obligatorios (esquema estricto)");
+  igual(uniones(armarEsquema(ctx.checks, ctx.colores)), uniones(armarEsquema(ctx.checks)), "los mismos anyOf de antes");
+  igual(listaColores(["Blanco", "blanco ", "Negro", "Rojo"]), ["Blanco", "Negro", "Rojo", "Naranja", "Amarillo", "Verde", "Rosa", "Violeta", "Estampado"], "sin repetir (aunque cambie la mayúscula)");
+  igual(listaColores([]).includes("Azul marino"), true, "sin degradé en la base: los de siempre");
+  const s = armarSistema(ctx);
+  for (const t of ["rubros: los rubros que se ven, de esta lista (Remeras, Pantalones,", "son \"Pantalones\"", "(Blanco, Beige, Negro, Rojo,", "look: true si hay un conjunto armado"]) {
+    if (!s.includes(t)) throw new Error(`Falta en el prompt: ${t}`);
+  }
+  if (s.includes("En el depósito, siempre false.")) throw new Error("En el salón no se habla del depósito");
+  if (!armarSistema({ ...ctx, sector_tipo: "deposito" }).includes("En el depósito, siempre false.")) throw new Error("En el depósito, el look es false");
+});
+
+Deno.test("si la API rechaza el formato nuevo (400), la foto se revisa igual con el de antes (24/10)", async () => {
+  const informe = { foto_valida: true, motivo_foto_invalida: null, checks: { limpieza: "ok" }, prendas_por_frontal: null, hallazgos: [], nivel_sugerido: "bien", comentario: null, confianza: "alta", que_hay: "Remeras" };
+  const pedidos: Record<string, unknown>[] = [];
+  const api = (rechaza: boolean) => (async (_u: string, init: { body: string }) => {
+    const b = JSON.parse(init.body); pedidos.push(b);
+    const props = b.output_config.format.schema.properties;
+    if (rechaza && "rubros" in props) return new Response('{"error":{"message":"invalid schema"}}', { status: 400 });
+    return new Response(JSON.stringify({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify({ ...informe, ...("rubros" in props ? { rubros: ["Remeras"], colores: ["Negro"], look: false } : {}) }) }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const foto = { media_type: "image/jpeg", data: "eA==" };
+  const bien = await analizarConClaude({ ctx, foto, referencia: null, modelo: "m", apiKey: "k", pedir: api(false) });
+  igual([pedidos.length, bien.rubros, bien.colores], [1, ["Remeras"], ["Negro"]], "con el formato nuevo, un solo pedido");
+  pedidos.length = 0;
+  const plan = await analizarConClaude({ ctx, foto, referencia: null, modelo: "m", apiKey: "k", pedir: api(true) });
+  igual([pedidos.length, plan.que_hay, plan.rubros, plan.nivel_sugerido], [2, "Remeras", undefined, "bien"], "rechazado: el de antes, y la foto se revisa");
+  const viejo = (pedidos[1] as { output_config: { format: { schema: { properties: object; required: string[] } } } }).output_config.format.schema;
+  igual(["rubros" in viejo.properties, viejo.required.includes("look")], [false, false], "el de antes no tiene los campos nuevos");
+  let error = "";
+  try { await analizarConClaude({ ctx, foto, referencia: null, modelo: "m", apiKey: "k", pedir: (async () => new Response("no", { status: 401 })) as unknown as typeof fetch }); }
+  catch (e) { error = (e as Error).message; }
+  igual(error.startsWith("API 401"), true, "otro error no se reintenta: sigue como antes");
 });
 
 import { aNumero, efectivoContado, esquemaCaja, fechaValida, leerFotoCaja, MAX_UNIONES } from "./caja_ia.ts";

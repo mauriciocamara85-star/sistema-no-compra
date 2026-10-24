@@ -1515,6 +1515,55 @@ function planoMapa(d, tipo) {
   return { tipo: dep ? 'deposito' : 'salon', W: W, H: H, x0: x0, y0: y0, x1: x1, y1: yv, P: P, cuadrado: cuadrado, items: items, numerado: numerado, frente: cq.frente || 'calle' };
 }
 
+/* ── Las zonas del salón (24/10/2026, paso 2 del plan de visual merchandising: que después la IA sugiera qué va
+      en cada módulo según dónde está, con las "Reglas de Visual Merchandising VDH"). Salen solas del croquis, por lo
+      hondo que queda cada módulo desde la puerta: el primer cuarto es la entrada, desde el 70 % es el fondo, y las
+      mesas y exhibidores del medio son la zona caliente (salvo los del fondo). Lo que se llama "caja" o "probador"
+      ("Atrás de caja") es la zona de la caja. El supervisor la cambia en la ficha del módulo (orden_modulos.zona,
+      SQL 167): null = la del croquis. ── */
+var ZONAS = [
+  ['vidriera', 'Vidriera', COLOR_VIDRIERA],
+  ['entrada', 'Entrada', '#FF8A5B'],
+  ['caliente', 'Zona caliente', '#FF5C7A'],
+  ['media', 'Zona media', '#F5D04B'],
+  ['fondo', 'Fondo', '#6FA8FF'],
+  ['caja', 'Caja y probadores', '#B48CFF']
+];
+function zonaInfo(k) { return ZONAS.filter(function (z) { return z[0] === k; })[0] || null; }
+/** La zona de cada módulo del salón según el croquis (planoMapa del salón): { id del módulo: clave }. */
+function zonasDelPlano(pl) {
+  var out = {};
+  if (!pl || pl.tipo !== 'salon') return out;
+  var muro = pl.items.filter(function (it) { return it.pared && !it.vidriera && it.tipo !== 'puerta'; });
+  if (!muro.length) return out;
+  var x0 = Math.min.apply(null, muro.map(function (it) { return it.r.x; })), x1 = Math.max.apply(null, muro.map(function (it) { return it.r.x + it.r.w; }));
+  var y0 = Math.min.apply(null, muro.map(function (it) { return it.r.y; })), y1 = Math.max.apply(null, muro.map(function (it) { return it.r.y + it.r.h; }));
+  /* Sin la puerta puesta en el croquis, la de siempre: en el frente. */
+  var pu = pl.items.filter(function (it) { return it.tipo === 'puerta'; })[0], lado = pu ? pu.pared : 'frente';
+  /* Qué tan adentro queda (0 = en la puerta, 1 = la pared de enfrente), medido de la pared de la puerta hacia adentro. */
+  var hondo = function (r) {
+    var cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+    var t = lado === 'fondo' ? (cy - y0) / (y1 - y0) : lado === 'izquierda' ? (cx - x0) / (x1 - x0)
+      : lado === 'derecha' ? (x1 - cx) / (x1 - x0) : (y1 - cy) / (y1 - y0);
+    return Math.max(0, Math.min(1, isFinite(t) ? t : 0.5));
+  };
+  pl.items.forEach(function (it) {
+    if (it.tipo !== 'modulo' || !it.m) return;
+    var m = it.m, h = hondo(it.r);
+    out[m.id] = it.vidriera || esVidriera(m) ? 'vidriera'
+      : /\bcaja\b|probador/i.test(m.nombre || '') ? 'caja'
+      : !it.pared ? (h <= 2 / 3 ? 'caliente' : 'media')
+      : h <= 0.25 ? 'entrada' : h >= 0.7 ? 'fondo' : 'media';
+  });
+  return out;
+}
+/** La zona de un módulo: la que eligió el supervisor o, si no, la del croquis (auto: lo de zonasDelPlano). La
+    vidriera es siempre vidriera. */
+function zonaDe(m, auto) {
+  var a = m && auto ? auto[m.id] || null : null;
+  return !m ? null : a === 'vidriera' || !zonaInfo(m.zona) ? a : m.zona;
+}
+
 /** Los módulos con nombre, enteros: en las paredes de costado se ven cortados ("Vidri…"). */
 function leyendaNombres(d) {
   var con = d.pared.concat(d.islas, d.dep).filter(function (m) { return m.isla || nombrePropio(m) || queHay(m); });

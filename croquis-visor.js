@@ -28,7 +28,7 @@ function abrirVisor(cont, op) {
     V.vista = localStorage.getItem('vdh_visor_vista') || 'vendedor';
     V.inclinado = localStorage.getItem('vdh_visor_cam') !== 'arriba';
   } catch (e) { V.liviano = false; }
-  if (!VISOR_VISTAS[V.vista]) V.vista = 'vendedor';
+  if (!VISOR_VISTAS[V.vista] || (V.vista === 'zona' && !op.puedeSugerir)) V.vista = 'vendedor';
   /* En 3D, si el equipo puede (y no se apagó en "Ajustes de la vista"); en un teléfono o una compu chica, liviano. */
   V.usa3d = visor3dElegido();
   if (V.usa3d && !V.liviano && visor3dLento() && !visorLivianoElegido()) V.liviano = true;
@@ -169,7 +169,8 @@ function abrirVisor(cont, op) {
   window.addEventListener('resize', V.alTamano);
   V.alTecla = function (e) {
     if (!document.body.contains(V.raiz)) { visorSalir(V, true); return; }
-    if (e.key === 'Escape' && V.ficha) cerrarFicha(V);
+    /* Con la lista de la zona abierta, Esc cierra sólo la lista (en la app no está la guardia de interfaz.js). */
+    if (e.key === 'Escape' && V.ficha && !visorListaAbierta()) cerrarFicha(V);
     /* Con el teclado: ← → giran, ↑ ↓ inclinan, + y − acercan (no mientras se escribe ni con un módulo abierto). */
     var t = e.target, tag = t && t.tagName;
     if (V.ficha || !V.d || e.altKey || e.ctrlKey || e.metaKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
@@ -194,6 +195,8 @@ function abrirVisor(cont, op) {
 }
 
 var _visorActual = null;
+/** ¿Hay un desplegable abierto? (:open es de Chrome 133 en adelante: en un navegador viejo, no.) */
+function visorListaAbierta() { try { return !!document.querySelector('select:open'); } catch (e) { return false; } }
 function visorSalir(V, sinVolver) {
   if (_visorActual === V) _visorActual = null;
   window.removeEventListener('resize', V.alTamano);
@@ -1054,8 +1057,9 @@ function visorPreviaOcultar(V) { if (V.previa) V.previa.ocultar(); }
 
 /* ── Cómo verlo: el color de cada módulo (el halo y el borde del número) ──
    Por vendedor: el de quien lo tiene (el mismo de siempre: identifica a la persona). Por estado del orden: el nivel de
-   la última foto, con los colores de la app. Por antigüedad de la foto: de verde (de hoy) a rojo (más de 7 días). */
-var VISOR_VISTAS = { vendedor: 'Vendedor', estado: 'Estado', antiguedad: 'Antigüedad' };
+   la última foto, con los colores de la app. Por antigüedad de la foto: de verde (de hoy) a rojo (más de 7 días). Por
+   zona (sólo el supervisor, 24/10/2026): las del croquis (ZONAS, en impecable-comun.js) o la que eligió en la ficha. */
+var VISOR_VISTAS = { vendedor: 'Vendedor', estado: 'Estado', antiguedad: 'Antigüedad', zona: 'Zonas' };
 var VISOR_ESTADOS = [['impecable', 'Impecable', '#C6F432'], ['bien', 'Bien', '#5BD68A'], ['a_mejorar', 'A mejorar', '#F5B84B'], ['fuera_de_estandar', 'Fuera de estándar', '#FF8A8A'], ['sin', 'Sin foto', '#6E7684']];
 var VISOR_EDADES = [['0', 'Hoy o ayer', '#5BD68A'], ['2', 'De 2 a 4 días', '#B9DE6A'], ['5', 'De 5 a 7 días', '#F5B84B'], ['8', 'Más de 7 días', '#FF8A8A'], ['sin', 'Sin foto', '#6E7684']];
 function visorDias(ts) { return Math.round((new Date(hoyAR() + 'T12:00:00Z') - new Date(hoyAR(new Date(ts)) + 'T12:00:00Z')) / 864e5); }
@@ -1071,9 +1075,20 @@ function visorCategoria(V, m) {
     x = dd == null ? VISOR_EDADES[4] : dd <= 1 ? VISOR_EDADES[0] : dd <= 4 ? VISOR_EDADES[1] : dd <= 7 ? VISOR_EDADES[2] : VISOR_EDADES[3];
     return { clave: 'c:' + x[0], texto: x[1], color: x[2] };
   }
+  if (V.vista === 'zona') {
+    var sec = V.d.sectorDe[m.sector_id];
+    if (sec && sec.tipo === 'deposito') return { clave: 'z:deposito', texto: 'Depósito (sin zonas)', color: '#6E7684' };
+    x = zonaInfo(zonaDe(m, visorZonasAuto(V)));
+    return x ? { clave: 'z:' + x[0], texto: x[1], color: x[2] } : { clave: 'z:sin', texto: 'Sin zona', color: '#6E7684' };
+  }
   if (esVidriera(m)) return { clave: 'p:turnos', texto: 'Vidriera (de todos)', color: COLOR_VIDRIERA };
   var s = V.d.sectorDe[m.sector_id], p = s && s.responsable_id;
   return { clave: 'p:' + (p || 'nadie'), texto: p && V.d.persona[p] ? nombreLista(V.d.persona[p]) : 'Sin responsable', color: visorColor(V, m) };
+}
+/** Las zonas del croquis (zonasDelPlano), una vez por local cargado: { id del módulo: clave }. */
+function visorZonasAuto(V) {
+  if (V.zonasDe !== V.d) { V.zonasDe = V.d; V.zonas = zonasDelPlano(planoMapa(V.d, 'salon')); }
+  return V.zonas;
 }
 /** Lo que se lee arriba de cada módulo: qué hay (SQL 114) o, si no tiene, su nombre. */
 function visorEtiqueta(m) { return queHay(m) || (m.isla ? m.nombre : nombrePropio(m)); }
@@ -1101,13 +1116,16 @@ function visorPanel(V) {
     if (!grupos[k.clave]) { grupos[k.clave] = { k: k, n: 0 }; orden.push(k.clave); }
     grupos[k.clave].n++;
   });
-  /* En las vistas por estado y por antigüedad, la leyenda va en su orden (de lo mejor a lo peor). */
+  /* En las vistas por estado y por antigüedad, la leyenda va en su orden (de lo mejor a lo peor); por zona, de la
+     vidriera hacia adentro. */
   var lista = V.vista === 'vendedor' ? orden.sort(function (a, b) { return a === 'p:nadie' ? 1 : b === 'p:nadie' ? -1 : 0; })
+    : V.vista === 'zona' ? ZONAS.map(function (z) { return 'z:' + z[0]; }).concat(['z:sin', 'z:deposito']).filter(function (k) { return grupos[k]; })
     : (V.vista === 'estado' ? VISOR_ESTADOS : VISOR_EDADES).map(function (x) { return 'c:' + x[0]; }).filter(function (k) { return grupos[k]; });
+  var vistas = Object.keys(VISOR_VISTAS).filter(function (k) { return k !== 'zona' || V.op.puedeSugerir; });
   /* "Qué hay en cada módulo" y "De un vistazo" se sacaron (Mauricio, 15/10: "esas opciones las sacaría"): lo que hay se
      lee en cada módulo y en su ficha. */
   V.cont.querySelector('#cvPanel').innerHTML =
-    '<p class="cv-rotulo-sec">Ver por</p><div class="cv-seg cv-vistas" role="group" aria-label="Ver por">' + Object.keys(VISOR_VISTAS).map(function (k) {
+    '<p class="cv-rotulo-sec">Ver por</p><div class="cv-seg cv-vistas" role="group" aria-label="Ver por">' + vistas.map(function (k) {
       return '<button type="button" data-vista="' + k + '" aria-pressed="' + (V.vista === k) + '">' + VISOR_VISTAS[k] + '</button>';
     }).join('') + '</div>' +
     '<div class="cv-ley" role="list">' + lista.map(function (k) {
@@ -1115,6 +1133,8 @@ function visorPanel(V) {
       return '<button type="button" class="cv-ley-item" role="listitem" data-resalta="' + esc(k) + '" aria-pressed="' + (V.resaltado === k) + '"><i style="background:' + g.k.color + '"></i><b>' + esc(g.k.texto) + '</b><small>' + g.n + '</small></button>';
     }).join('') + '</div>' +
     (V.resaltado ? '<button type="button" class="cv-chico cv-ver-todos" id="cvVerTodos">Ver todos</button>' : '') +
+    (V.vista === 'zona' ? '<p class="cv-ayuda">Salen solas del croquis, según lo lejos que queda cada módulo de la puerta: la entrada es el primer cuarto del local, ' +
+      'el fondo arranca en el 70 % y las mesas del medio son la zona caliente. Si alguna no es así, cambiala en la ficha del módulo.</p>' : '') +
     '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>' +
     '<details class="cv-sec"><summary>Ajustes de la vista</summary>' +
       (V.usa3d ? '<div class="cv-sens"><span>Sensibilidad del mouse</span><div class="cv-seg" role="group" aria-label="Sensibilidad del mouse">' +
@@ -1381,6 +1401,10 @@ function abrirFicha(V, id, caja) {
   var puedeQue = visorPuedeNombrar(V, m), iaQue = puedeQue ? String(m.contenido_ia || '').trim() : '';
   /* Liquidación (SQL 125): con la columna y fuera del depósito; la cambia quien puede escribir qué hay. */
   var liq = 'liquidacion' in m && !(s && s.tipo === 'deposito');
+  /* La zona (SQL 168): la ve y la cambia el supervisor, en el salón; la vidriera es siempre la vidriera. Sin la
+     columna, se lee la del croquis. */
+  var zAuto = visorZonasAuto(V)[m.id] || null, zAhora = zonaInfo(zonaDe(m, visorZonasAuto(V)));
+  var conZona = V.op.puedeSugerir && !(s && s.tipo === 'deposito') && zAuto !== 'vidriera' && !esVidriera(m);
   var origen = caja.querySelector('.cv-frente, .cv-tapa') || caja;
   V.raiz.insertAdjacentHTML('beforeend', '<div class="cv-ficha-fondo"></div><section class="cv-ficha" role="dialog" aria-modal="true" aria-label="' + esc(titulo) + '">' +
     '<header class="cv-ficha-cab"><div><small>' + esc(visorDonde(V, m)) + '</small><h2>' + esc(titulo) + '</h2>' +
@@ -1393,6 +1417,9 @@ function abrirFicha(V, id, caja) {
         '<button class="cv-enlace" type="button" id="cvQueUsar">Usar esto</button></p>' +
       '<form class="cv-que-form" id="cvQueForm" hidden><input id="cvQueInput" maxlength="60" autocomplete="off" placeholder="Remeras, buzos, jeans…" aria-label="Qué hay en este módulo">' +
         '<button class="cv-boton cv-lima" type="submit">Guardar</button><button class="cv-boton" type="button" id="cvQueCancelar">Cancelar</button></form>' +
+      (conZona ? '<p class="cv-zona-linea"><span class="cv-que-et">Zona:</span><i class="cv-zona-punto" id="cvZonaPunto" style="background:' + (zAhora ? zAhora[2] : '#6E7684') + '"></i>' +
+        ('zona' in m ? '<select class="desplegable cv-zona" id="cvZona" aria-label="Zona del módulo">' + visorOpcionesZona(m, zAuto) + '</select>'
+          : '<b>' + esc(zAhora ? zAhora[1] : 'Sin zona') + '</b><small class="cv-que-ia">la puso el croquis</small>') + '</p>' : '') +
       (liq && puedeQue ? '<button type="button" class="cv-interruptor cv-liq" id="cvLiq" aria-pressed="' + !!m.liquidacion + '"><span>Liquidación</span><small>Va por talle, no por color (la IA no pide el degradé)</small></button>'
         : liq && m.liquidacion ? '<p class="cv-liq-et">Liquidación · va por talle</p>' : '') + '</div>' +
       '<button class="cv-cerrar" type="button" aria-label="Volver al plano">×</button></header>' +
@@ -1428,7 +1455,7 @@ function abrirFicha(V, id, caja) {
   fondo.onclick = function () { if (V.ficha && Date.now() - V.ficha.desde < 450) return; cerrarFicha(V); };
   ficha.addEventListener('keydown', function (ev) {
     if (ev.key !== 'Tab') return;
-    var f = [].filter.call(ficha.querySelectorAll('button, input, textarea, [tabindex="0"]'), function (x) { return !x.disabled && x.offsetParent !== null; });
+    var f = [].filter.call(ficha.querySelectorAll('button, input, select, textarea, [tabindex="0"]'), function (x) { return !x.disabled && x.offsetParent !== null; });
     if (!f.length) return;
     if (ev.shiftKey && document.activeElement === f[0]) { ev.preventDefault(); f[f.length - 1].focus(); }
     else if (!ev.shiftKey && document.activeElement === f[f.length - 1]) { ev.preventDefault(); f[0].focus(); }
@@ -1450,6 +1477,7 @@ function abrirFicha(V, id, caja) {
   visorFichaSugerencia(V, m, resp);
   visorFichaQue(V, m);
   visorFichaLiquidacion(V, m);
+  visorFichaZona(V, m);
   /* El zoom: la ficha sale desde la cara del módulo y crece hasta su lugar. */
   var desde = origen.getBoundingClientRect(), hasta = ficha.getBoundingClientRect();
   V.escena.classList.add('cv-detras');
@@ -1560,11 +1588,22 @@ function visorHistoria(V) {
     if (ia) ia.innerHTML = visorTextoIa(c);
   });
 }
+/** "Remeras y bermudas · Blanco y azul · con un look armado": lo que la IA anota de cada foto desde el 24/10 (rubros,
+    colores, look), el historial de qué hubo en el módulo. Vacío en las fotos de antes. */
+function visorEnLaFoto(r) {
+  r = r || {};
+  var y = function (a) {
+    a = (Array.isArray(a) ? a : []).filter(Boolean).map(function (x, i) { return i ? String(x).toLowerCase() : String(x); });
+    return a.length > 1 ? a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1] : a.join('');
+  };
+  return [y(r.rubros), y(r.colores), r.look === true ? 'con un look armado' : ''].filter(Boolean).join(' · ');
+}
 function visorTextoIa(c) {
   if (!c) return '';
-  var hall = ((c.ia_resultado || {}).hallazgos || []).slice(0, 4);
+  var hall = ((c.ia_resultado || {}).hallazgos || []).slice(0, 4), foto = visorEnLaFoto(c.ia_resultado);
   return '<h3>Lo que vio la IA</h3>' + (c.nivel_ia ? '<p class="cv-gris">Le dio <b>' + esc(NIVEL[c.nivel_ia] || c.nivel_ia) + '</b>' +
       (c.nivel_final && c.nivel_final !== c.nivel_ia ? '; quien la revisó le dejó <b>' + esc(NIVEL[c.nivel_final] || c.nivel_final) + '</b>' : '') + '.</p>' : '') +
+    (foto ? '<p class="cv-en-foto"><span>En la foto:</span> ' + esc(foto) + '</p>' : '') +
     (hall.length ? '<ul>' + hall.map(function (x) { return '<li><span class="cv-grav ' + (x.gravedad === 'corregir' ? 'mal' : '') + '">' + (x.gravedad === 'corregir' ? 'Corregir' : 'Ojo') + '</span>' + esc(x.titulo || '') + '</li>'; }).join('') + '</ul>'
                  : '<p class="cv-gris">' + (c.nivel_ia ? 'No marcó nada para corregir.' : 'Esta foto no pasó por la IA.') + '</p>') +
     (c.comentario ? '<p class="cv-comentario">"' + esc(c.comentario) + '"</p>' : '');
@@ -1693,6 +1732,40 @@ function visorFichaLiquidacion(V, m) {
       b.setAttribute('aria-pressed', !v);
       var falta = /orden_modulo_liquidacion|PGRST202|could not find the function/i.test(String(err && err.message));
       avisarVisor(falta ? 'Falta correr el SQL 125 en Supabase (está en el Escritorio, en "App Orden").' : esDeRed(err) ? 'Sin conexión: no se guardó. Probá de nuevo.' : mensajeDe(err));
+    });
+  };
+}
+
+/* ── La zona del módulo (SQL 168, 24/10/2026): la del croquis, o la que elige el supervisor si en su local no es así
+      (un módulo de la entrada que el cliente no ve, una mesa del fondo que se mira mucho). Vuelve a la del croquis
+      con la primera opción. Es lo que después usa "Sugerir" para proponer qué va en cada módulo. ── */
+function visorOpcionesZona(m, auto) {
+  var a = zonaInfo(auto), punto = function (z) { return '<i class="cv-zona-punto" style="background:' + z[2] + '"></i>'; };
+  return '<option value=""' + (zonaInfo(m.zona) ? '' : ' selected') + '>' + (a ? punto(a) + 'La del croquis: ' + esc(a[1]) : 'La del croquis') + '</option>' +
+    ZONAS.filter(function (z) { return z[0] !== 'vidriera'; }).map(function (z) {
+      return '<option value="' + z[0] + '"' + (m.zona === z[0] ? ' selected' : '') + '>' + punto(z) + esc(z[1]) + '</option>';
+    }).join('');
+}
+function visorFichaZona(V, m) {
+  var sel = V.ficha.el.querySelector('#cvZona');
+  if (!sel) return;
+  var antes = sel.value;
+  sel.onchange = function () {
+    var v = sel.value;
+    sel.disabled = true;
+    llamar('orden_modulo_zona', { p_modulo: m.id, p_zona: v || null }).then(function () {
+      sel.disabled = false;
+      antes = v;
+      m.zona = v || null;
+      var z = zonaInfo(zonaDe(m, visorZonasAuto(V))), p = V.ficha && V.ficha.el.querySelector('#cvZonaPunto');
+      if (p && z) p.style.background = z[2];
+      visorPintar(V); visorPanel(V);
+      avisarVisor(!z ? 'Listo.' : v ? 'Listo: la zona es "' + z[1] + '".' : 'Listo: vuelve a la del croquis ("' + z[1] + '").');
+    }, function (err) {
+      sel.disabled = false;
+      sel.value = antes;
+      var falta = /orden_modulo_zona|PGRST202|could not find the function/i.test(String(err && err.message));
+      avisarVisor(falta ? 'Falta correr el SQL 168 en Supabase (está en el Escritorio, en "App Orden").' : esDeRed(err) ? 'Sin conexión: no se guardó. Probá de nuevo.' : mensajeDe(err));
     });
   };
 }

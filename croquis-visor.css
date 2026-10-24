@@ -407,6 +407,43 @@
 .cv-ficha-cab .cv-liq:disabled { opacity: .6; cursor: progress; }
 .cv-liq-et { display: inline-block; margin: 8px 0 0; padding: 4px 10px; border-radius: 999px; background: rgba(245, 184, 75, .16); color: #FFE2B0; font-size: 13px; font-weight: 800; }
 
+/* La zona del módulo (SQL 168): el desplegable de siempre (select.desplegable), con los colores del observador, que
+   es oscuro también adentro de la compu en claro. El punto, el color de la zona en la vista "Zonas". */
+.cv-zona-linea { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 8px 0 0; }
+.cv-zona-punto { display: inline-block; width: 10px; height: 10px; border-radius: 50%; flex: none; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.cv select.cv-zona {
+  display: inline-flex; align-items: center; gap: 8px; width: auto; min-height: 36px; min-inline-size: 14em; padding: 0 10px 0 12px;
+  border: 1px solid var(--cv-linea); border-radius: 10px; background: var(--cv-panel-2); color: var(--cv-texto); box-shadow: none;
+  font-family: inherit; font-size: 14px; font-weight: 700; line-height: normal; cursor: pointer;
+}
+.cv select.cv-zona:focus { border-color: var(--cv-linea); background: var(--cv-panel-2); }   /* sin el foco de los campos de la compu (estilos.css) */
+.cv select.cv-zona:hover { background: #232A35; }
+.cv select.cv-zona:focus-visible { outline: 2px solid var(--cv-lima); outline-offset: 2px; }
+.cv select.cv-zona:open { border-color: var(--cv-lima); }
+.cv select.cv-zona:disabled { opacity: .6; cursor: progress; }
+.cv select.cv-zona::picker-icon {
+  display: block; content: ""; inline-size: 16px; block-size: 16px; margin-inline-start: auto; background: var(--cv-suave);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") center / contain no-repeat;
+  transition: rotate .15s;
+}
+.cv select.cv-zona:open::picker-icon { rotate: 180deg; }
+.cv select.cv-zona::picker(select) {
+  padding: 6px; background: var(--cv-panel); color: var(--cv-texto); border: 1px solid var(--cv-linea); border-radius: 14px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .55); font: 600 14px/1.25 Manrope, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.cv select.cv-zona option { display: flex; align-items: center; gap: 10px; min-block-size: 40px; padding: 8px 12px; border-radius: 10px; }
+.cv select.cv-zona option:hover, .cv select.cv-zona option:focus-visible { background: rgba(255, 255, 255, .06); outline: none; }
+.cv select.cv-zona option:checked { background: var(--cv-lima); color: var(--cv-sobre-lima); font-weight: 800; }
+@media (max-width: 640px) {
+  /* En el celular, la lista abajo como la del local (impecable.css), pero la ficha tapa la barra: hasta el borde. */
+  .cv select.cv-zona::picker(select) { inset: auto 12px calc(12px + env(safe-area-inset-bottom)) 12px; }
+}
+
+/* Lo que la IA anota de cada foto desde el 24/10: rubros, colores y si hay un look. */
+.cv-en-foto { margin: 6px 0 8px; font-size: 14.5px; }
+.cv-en-foto span { color: var(--cv-suave); font-weight: 700; }
+
 /* Fotos horizontales (el teléfono acostado): en la ficha y al pasar el mouse, el recuadro ancho; en la cara del módulo,
    la foto entera (sin cortarle los costados). */
 .cv-foto-img.cv-horizontal, .cv-previa-foto.cv-horizontal { aspect-ratio: 4 / 3; }

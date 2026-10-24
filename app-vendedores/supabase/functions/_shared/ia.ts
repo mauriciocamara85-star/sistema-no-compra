@@ -46,9 +46,29 @@ export type Resultado = {
   confianza: "alta" | "media" | "baja";
   /** Qué ropa hay en el módulo ("Remeras", "Buzos y camperas"); vacío si no se distingue (SQL 118). */
   que_hay?: string;
+  /** Los rubros que se ven, de RUBROS, el que más se ve primero (24/10: el historial de qué hubo en cada módulo). */
+  rubros?: string[];
+  /** Los colores que más se ven, de la lista del degradé más los de afuera (COLORES_EXTRA). */
+  colores?: string[];
+  /** Hay un conjunto armado de prendas de distintos rubros (un maniquí, un look colgado junto). */
+  look?: boolean;
 };
 
 const NIVELES = ["impecable", "bien", "a_mejorar", "fuera_de_estandar"] as const;
+
+/** Los rubros de VDH: los mismos del catálogo (stock_fabrica.rubro, el del POS), para cruzar después lo que hubo en
+    cada módulo con lo que se vendió (paso 4 del plan de visual merchandising, 24/10/2026). */
+export const RUBROS = ["Remeras", "Pantalones", "Bermudas", "Buzos", "Camisas", "Camperas", "Sweaters", "Chombas", "Sacos", "Short de Baño", "Calzado", "Accesorios"];
+/** Los que no están en el degradé pero aparecen en la ropa; "Estampado", la prenda con un dibujo grande. */
+const COLORES_EXTRA = ["Rojo", "Naranja", "Amarillo", "Verde", "Rosa", "Violeta", "Estampado"];
+/** Si la base no manda el degradé (orden_colores vacío), éstos. */
+const COLORES_BASE = ["Blanco", "Crudo", "Beige", "Gris claro", "Celeste", "Camel", "Gris", "Verde oliva", "Azul", "Bordó", "Marrón", "Azul marino", "Negro"];
+/** La lista de colores que puede anotar la IA: los del degradé (o los de base) y los de afuera, sin repetir. */
+export function listaColores(degrade: string[]): string[] {
+  const vistos = new Set<string>();
+  return [...(degrade.length ? degrade : COLORES_BASE), ...COLORES_EXTRA]
+    .map((c) => String(c).trim()).filter((c) => c && !vistos.has(c.toLowerCase()) && vistos.add(c.toLowerCase()));
+}
 
 const NOMBRE_CHECK: Record<string, string> = {
   dobladas: "Prendas dobladas y estantes completos",
@@ -159,6 +179,9 @@ ${conFrontales ? `- Si un frontal está incompleto, el detalle tiene que decir: 
 - Nivel: impecable = todo bien; bien = un detalle menor; a_mejorar = un problema claro para corregir; fuera_de_estandar = varios problemas o el módulo desarmado.
 - confianza: qué tan seguro estás de lo que viste ("baja" si la foto no deja ver bien).
 - que_hay: qué ropa hay en ${ctx.sector_tipo === "salon" ? "el módulo" : "este sector del depósito"}, en 1 a 4 palabras, como lo diría un vendedor: la prenda que más se ve primero (ej.: "Remeras", "Buzos y camperas", "Jeans", "Accesorios", "Zapatillas"). Sin colores, marcas ni cantidades. Si no se distingue, dejalo vacío.
+- rubros: los rubros que se ven, de esta lista (${RUBROS.join(", ")}), hasta 4, el que más se ve primero. Los jeans y joggers son "Pantalones"; gorras, cintos, boxers, medias, corbatas, bufandas y billeteras son "Accesorios"; las zapatillas y botas son "Calzado". Vacío si no se distingue.
+- colores: los colores que más se ven en la ropa, de esta lista (${listaColores(ctx.colores).join(", ")}), hasta 4, el que más se ve primero. Una prenda con un dibujo o una estampa grande es "Estampado". Vacío si no se distingue.
+- look: true si hay un conjunto armado con prendas de distintos rubros que van juntas (un maniquí vestido, o un pantalón con su remera y su campera colgados juntos); si no, false.${deposito ? " En el depósito, siempre false." : ""}
 Respondé SOLO con el informe, en el formato JSON pedido.`;
 }
 
@@ -168,8 +191,9 @@ function oNulo(t: Record<string, unknown>) {
   return { anyOf: [resto, { type: "null" }], ...(description ? { description } : {}) };
 }
 
-/** El formato del informe (structured outputs): todos los objetos cerrados y todas las propiedades obligatorias. */
-export function armarEsquema(checks: string[]) {
+/** El formato del informe (structured outputs): todos los objetos cerrados y todas las propiedades obligatorias.
+    degrade: los colores del degradé (ctx.colores); los rubros y los colores van como listas cerradas, sin anyOf. */
+export function armarEsquema(checks: string[], degrade: string[] = []) {
   return {
     type: "object",
     properties: {
@@ -205,8 +229,11 @@ export function armarEsquema(checks: string[]) {
       comentario: oNulo({ type: "string", description: "Una frase corta para el vendedor." }),
       confianza: { type: "string", enum: ["alta", "media", "baja"] },
       que_hay: { type: "string", description: "Qué ropa hay, en 1 a 4 palabras (\"Remeras\", \"Buzos y camperas\"). Vacío si no se distingue." },
+      rubros: { type: "array", items: { type: "string", enum: RUBROS }, description: "Hasta 4, el que más se ve primero. Vacío si no se distingue." },
+      colores: { type: "array", items: { type: "string", enum: listaColores(degrade) }, description: "Hasta 4, el que más se ve primero. Vacío si no se distingue." },
+      look: { type: "boolean", description: "Hay un conjunto armado de prendas de distintos rubros." },
     },
-    required: ["foto_valida", "motivo_foto_invalida", "checks", "prendas_por_frontal", "hallazgos", "nivel_sugerido", "comentario", "confianza", "que_hay"],
+    required: ["foto_valida", "motivo_foto_invalida", "checks", "prendas_por_frontal", "hallazgos", "nivel_sugerido", "comentario", "confianza", "que_hay", "rubros", "colores", "look"],
     additionalProperties: false,
   };
 }
@@ -252,7 +279,21 @@ export function normalizar(r: Partial<Resultado>, ctx: Contexto): Resultado {
     comentario: r.comentario?.trim().slice(0, 200),
     confianza,
     que_hay: r.foto_valida === false ? undefined : limpiarQueHay(r.que_hay),
+    rubros: r.foto_valida === false ? undefined : deLaLista(r.rubros, RUBROS),
+    colores: r.foto_valida === false ? undefined : deLaLista(r.colores, listaColores(ctx.colores)),
+    look: r.foto_valida === false || typeof r.look !== "boolean" ? undefined : ctx.sector_tipo === "salon" && r.look,
   };
+}
+
+/** Los de la lista, escritos como en la lista (aunque vengan con otra mayúscula), sin repetir y hasta 4; nada si no hay. */
+export function deLaLista(v: unknown, lista: string[]): string[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: string[] = [];
+  for (const x of v) {
+    const c = lista.find((l) => l.toLowerCase() === minuscula(x));
+    if (c && !out.includes(c)) out.push(c);
+  }
+  return out.length ? out.slice(0, 4) : undefined;
 }
 
 /** Un valor de una lista, en minúscula y sin espacios alrededor ("" si no es texto). */
@@ -274,6 +315,7 @@ export async function analizarConClaude(opts: {
   referencia: Imagen | null;
   modelo: string;
   apiKey: string;
+  pedir?: typeof fetch;
 }): Promise<Resultado> {
   const { ctx, foto, referencia, modelo, apiKey } = opts;
 
@@ -288,19 +330,37 @@ export async function analizarConClaude(opts: {
   contenido.push({ type: "image", source: { type: "base64", ...foto } });
   contenido.push({ type: "text", text: `Revisá "${ctx.modulo_nombre}" y completá el informe.` });
 
-  const r = await pedirJson({
+  const pedido = (schema: unknown) => pedirJson({
     apiKey,
+    pedir: opts.pedir,
     cuerpo: {
       model: modelo,
       // El modelo piensa antes de contestar y eso cuenta dentro de max_tokens: margen de sobra.
       max_tokens: 8000,
       // Si la foto de referencia no se pudo bajar, el texto no la nombra.
       system: armarSistema(referencia ? ctx : { ...ctx, referencia_path: null }),
-      output_config: { format: { type: "json_schema", schema: armarEsquema(ctx.checks) } },
+      output_config: { format: { type: "json_schema", schema } },
       messages: [{ role: "user", content: contenido }],
     },
   });
+  const esquema = armarEsquema(ctx.checks, ctx.colores);
+  let r: Record<string, unknown>;
+  try {
+    r = await pedido(esquema);
+  } catch (e) {
+    // Si la API no acepta el formato con los rubros y los colores (24/10), la foto se revisa igual con el de antes:
+    // que no pase lo del 12/10, cuando un 400 dejó todas las fotos sin revisar.
+    if (!/^API 400:/.test(String((e as Error)?.message))) throw e;
+    console.error("analizar-foto: el formato con rubros y colores no pasó; va el de antes", (e as Error).message);
+    r = await pedido(sinHistorial(esquema));
+  }
   return normalizar(r as Partial<Resultado>, ctx);
+}
+
+/** El formato de antes del 24/10: sin rubros, colores ni look. */
+export function sinHistorial(e: ReturnType<typeof armarEsquema>) {
+  const { rubros: _r, colores: _c, look: _l, ...properties } = e.properties;
+  return { ...e, properties, required: e.required.filter((k) => k !== "rubros" && k !== "colores" && k !== "look") };
 }
 
 /**
