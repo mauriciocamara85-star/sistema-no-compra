@@ -151,6 +151,14 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 /* ═════════ LA VENTA (el ticket de BlueSoft) ═════════ */
 .tk { display: grid; gap: 12px; }
 @media (min-width: 1000px) { .tk { grid-template-columns: 372px minmax(0, 1fr); align-items: stretch; } }
+/* La venta y el cambio llegan hasta abajo (Mauricio, 24/10: "podemos aprovechar la pantalla"): en un
+   monitor alto crece la grilla y los totales quedan contra el borde, como en BlueSoft. En 1366×768 ya
+   ocupaba todo. align-content: start, para que los campos no se separen cuando la tarjeta se estira. */
+@media (min-width: 1000px) {
+  .pos-cuerpo.lleno { display: flex; flex-direction: column; min-height: calc(100vh - 22px); }
+  .pos-cuerpo.lleno > .tk { flex: 1 1 auto; }
+  .pos-cuerpo.lleno .tk-datos { flex: 1 1 auto; align-content: start; }
+}
 .tk-izq, .tk-der { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 
 /* La cabecera: una grilla de 12 para poder partir en mitades, tercios y cuartos. */
@@ -309,6 +317,10 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-tabla tr[data-ticket]:hover td { background: var(--surface-2); }
 .pos-tabla tr.anulada td { color: var(--txt-3); }
 .pos-tabla tr.anulada td.tachar { text-decoration: line-through; }
+/* La venta que se acaba de guardar con "Guardar" (24/10): verde, y se apaga sola. */
+.pos-tabla tr.recien td { animation: pos-recien 4s var(--curva); }
+.pos-tabla tr.recien td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+@keyframes pos-recien { 0%, 60% { background: var(--ok-soft); } 100% { background: transparent; } }
 .pos-tabla select, .pos-tabla input { min-width: 0; }
 .pos-tabla input.pos-precio-in { width: 110px; text-align: right; }
 .pos-tabla .pos-acc { white-space: nowrap; text-align: right; }

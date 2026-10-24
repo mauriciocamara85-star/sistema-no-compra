@@ -685,17 +685,20 @@
     return lista.map(function (o) { return '<option value="' + esc(o[0]) + '"' + (String(o[0]) === String(actual) ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('');
   }
 
-  function textoGuardar() { return (enPrueba() ? 'Guardar prueba' : 'Guardar y nueva') + ' <span class="pos-tecla">F9</span>'; }
+  /* Los dos de BlueSoft (Mauricio, 24/10): "Guardar y nueva" deja otra venta vacía; "Guardar" lleva a Tickets. */
+  function textoGuardar(nueva) { return (enPrueba() ? 'Guardar prueba' : 'Guardar') + (nueva ? ' y nueva <span class="pos-tecla">F9</span>' : ''); }
 
   function verVenta() {
     V = cargarBorrador();
     var c = $('cuerpo'), prueba = enPrueba();
+    c.classList.add('lleno');
     c.innerHTML =
       /* El cartel de la venta guardada va en la cabecera: abajo empujaría la venta fuera de la pantalla del local. */
       cabeza('Nueva venta' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="vSub"></span>',
         '<div id="vHecho"></div>' +
         '<button type="button" class="btn btn-sec btn-chico" id="vLimpiar">Limpiar</button>' +
-        '<button type="button" class="btn btn-pri btn-chico" id="vGuardar" title="Guardar la venta y empezar otra (F9)">' + textoGuardar() + '</button>') +
+        '<button type="button" class="btn btn-sec btn-chico" id="vGuardarVer" title="Guardar la venta e ir a Tickets">' + textoGuardar(false) + '</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="vGuardar" title="Guardar la venta y empezar otra (F9)">' + textoGuardar(true) + '</button>') +
       '<div class="tk">' +
         '<section class="tk-izq" aria-label="Los datos del ticket"><div class="tk-datos">' +
           campo('c4', 'Fecha', '<input type="text" id="vFecha" readonly>') +
@@ -781,7 +784,8 @@
       guardarBorrador();
       verVenta();
     };
-    $('vGuardar').onclick = guardarVenta;
+    $('vGuardar').onclick = function () { guardarVenta(false); };
+    $('vGuardarVer').onclick = function () { guardarVenta(true); };
     engancharProducto();
     engancharFilas();
     pintarPago();
@@ -1313,8 +1317,8 @@
     };
   }
 
-  /* ── Guardar ── */
-  function guardarVenta() {
+  /* ── Guardar ── (aTickets: el "Guardar" solo, que termina en Tickets con la venta marcada) */
+  function guardarVenta(aTickets) {
     if (S.guardando || !V) return;
     var c = cuenta(V), cl = V.cliente || {};
     var pagos = pagosDe(c.total);
@@ -1344,8 +1348,10 @@
       })
     };
     S.guardando = true;
-    var b = $('vGuardar');
-    if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
+    var b = $('vGuardar'), bv = $('vGuardarVer'), bx = aTickets ? bv : b;
+    if (b) b.disabled = true;
+    if (bv) bv.disabled = true;
+    if (bx) bx.textContent = 'Guardando…';
     llamar('pos_venta_guardar', { p: p }).then(function (r) {
       S.ultimo = { id: r.id, numero: r.numero, serie: r.serie || 'factura', total: c.total, local: nombreLocal(l0), ya: !!r.ya };
       S.stock = {};   // lo vendido salió del stock: se vuelve a traer
@@ -1353,10 +1359,16 @@
       guardarBorrador();
       S.guardando = false;
       avisar('ok', nombreVenta(S.ultimo) + ' guardada.');
-      if (S.vista === 'venta') verVenta();
+      if (S.vista !== 'venta') return;
+      if (!aTickets) { verVenta(); return; }
+      /* A Tickets, en "Hoy" (la venta recién hecha tiene que estar en la lista), con la venta marcada arriba. */
+      S.marcar = r.id;
+      guardarJSON('pos_tickets_periodo', { atajo: 'hoy' });
+      ir('tickets');
     }).catch(function (e) {
       S.guardando = false;
-      if (b && b.isConnected) { b.disabled = false; b.innerHTML = textoGuardar(); }
+      if (b && b.isConnected) { b.disabled = false; b.innerHTML = textoGuardar(true); }
+      if (bv && bv.isConnected) { bv.disabled = false; bv.innerHTML = textoGuardar(false); }
       if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
       avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
     });
@@ -1531,6 +1543,10 @@
         tr.onclick = function () { abrirTicket(tr.getAttribute('data-ticket'), cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
       });
+      /* La venta que se acaba de guardar con "Guardar": marcada, para encontrarla de un vistazo. */
+      var nueva = S.marcar && $('tkLista').querySelector('tr[data-ticket="' + S.marcar + '"]');
+      S.marcar = null;
+      if (nueva) { nueva.classList.add('recien'); nueva.scrollIntoView({ block: 'nearest' }); }
     }
     cargar();
   }
@@ -1589,6 +1605,7 @@
     CB = cargarCambio();
     S.cbFoco = 'cbVuelve';
     var c = $('cuerpo'), prueba = enPrueba();
+    c.classList.add('lleno');
     function bloque(s) {
       var x = SENTIDO[s];
       return '<div class="tk-prod cb-prod">' +
