@@ -392,7 +392,7 @@
   /* Para qué sirve lo que se acaba de cargar (pedido de Mauricio,
      10/10/2026): si el cliente vuelve y compra, la venta suma al objetivo del
      local y al del que lo cargó. Va acá, en el momento de cargar, y al pie de
-     "El equipo"; las dos son lugares que no le agregan alto a la pantalla. */
+     "El equipo" hasta el 24/10/2026 (ahí ahora van los puntos del Ranking). */
   .exito-valor {
     margin: -6px 0 20px;
     padding: 11px 14px;
@@ -2133,12 +2133,15 @@
     var total = 0;
     filas.forEach(function (v) { total += v.mes; });
     /* Al pie, para qué sirve cargar (Mauricio, 10/10/2026): está siempre a la
-       vista, también en la PC vieja del local, y en un renglón. */
+       vista, también en la PC vieja del local, y en un renglón. Desde el
+       24/10/2026 anuncia los puntos del Ranking: cuentan los registros con un
+       WhatsApp válido y sin repetir en el mes, y el Ranking los suma desde el
+       1/11 (si eso se atrasa, esta frase tiene que cambiar). */
     $('equipoPie').innerHTML = esc(total
       ? (total + (total === 1 ? ' registro' : ' registros') + ' entre ' +
          filas.length + (filas.length === 1 ? ' persona' : ' personas') + '.')
       : 'Este mes todavía no cargó nadie.') +
-      ' <span class="eq-valor">Cada cliente que vuelve y compra suma al objetivo del local y al de quien lo cargó.</span>';
+      ' <span class="eq-valor">Desde noviembre, cada registro con WhatsApp suma puntos en el Ranking del mes.</span>';
 
     lista.innerHTML = filas.map(function (v, i) {
       var mio = yo && v.nombre.toLowerCase() === yo;
