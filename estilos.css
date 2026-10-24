@@ -394,15 +394,22 @@ a { color: var(--acc-txt); }
 }
 .marca { display: flex; align-items: center; gap: 11px; min-width: 0; }
 /* La marca: la bolsa en un CÍRCULO (redondo como los botones de la app; el
-   cuadrado se veía duro). Desde el tema cobre, negro con aro y bolsa cobre,
-   como el botón redondo del teclado del teléfono: el oro quedó para el
-   nivel Gold. La misma en el rail (.rail-marca-icono). */
+   cuadrado se veía duro). Negro, con el aro y la bolsa en oro: más claro
+   arriba a la izquierda, más hondo abajo (el logo B "oro de cinta", 24/10/2026,
+   un poco más dorado que la cinta, que tiraba a cobre; antes, cobre parejo).
+   Es el mismo dibujo de los íconos de la app
+   (icono-oro-*). El aro es un borde transparente sobre dos fondos; la bolsa
+   toma el degradé #oroCintaBolsa, que cada página trae al lado del <body>: si
+   falta, queda el oro parejo. La misma en el rail (.rail-marca-icono). */
 .marca-icono, .rail-marca-icono {
-  background: #0E1115;
-  border: 1.5px solid #E8AE85;
-  color: #E8AE85;
-  box-shadow: 0 0 14px -3px rgba(232, 174, 133, .6);
+  background: linear-gradient(#0E1115, #0E1115) padding-box,
+              linear-gradient(135deg, #FFE7A8 0%, #EDBA5E 28%, #C99446 62%, #EDBA5E 100%) border-box;
+  border: 1.5px solid transparent;
+  color: #EDBA5E;
+  box-shadow: 0 0 14px -3px rgba(237, 186, 94, .55);
 }
+.marca-icono svg, .rail-marca-icono svg { stroke: url(#oroCintaBolsa) #EDBA5E; }
+.marca-icono svg circle[fill="currentColor"], .rail-marca-icono svg circle[fill="currentColor"] { fill: url(#oroCintaBolsa) #EDBA5E; }
 .marca-icono {
   width: 36px; height: 36px; border-radius: 50%; flex-shrink: 0;
   display: grid; place-items: center;
