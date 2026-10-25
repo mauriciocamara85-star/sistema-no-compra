@@ -1876,13 +1876,26 @@ end $$;
 
 /* La consulta de stock (como la de BlueSoft). p_codigos: los que encontró la
    pantalla en el catálogo (por nombre o por rubro); p_buscar: el texto, para
-   los que no están en el catálogo. Sin ninguno de los dos, todo. */
+   los que no están en el catálogo. Sin ninguno de los dos, todo.
+   SQL 172 (Mauricio, 25/10: "mostraba todo el stock que teníamos"): de a tandas
+   de productos (p_desde, p_productos), así la pantalla muestra todo y sigue
+   cargando al bajar; sin p_productos, todo junto (el Excel y la comparación del
+   inventario), hasta 60.000 renglones (antes cortaba en 3.000: con el
+   inventario de un local entero no alcanzaba). p_resumen: un renglón por
+   producto, para la vista "Por rubro". Cambió la firma: la vieja se borra. */
+drop function if exists pos_stock_consulta(uuid, text[], text, boolean, boolean);
 create or replace function pos_stock_consulta(p_local uuid default null, p_codigos text[] default null, p_buscar text default null,
-                                              p_ocultar_sin boolean default true, p_negativos boolean default false)
+                                              p_ocultar_sin boolean default true, p_negativos boolean default false,
+                                              p_desde int default 0, p_productos int default null, p_resumen boolean default false)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
-declare v_q text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
+declare
+  v_q     text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
+  v_desde int := greatest(coalesce(p_desde, 0), 0);
 begin
   perform pos_permiso();
+  if p_productos is not null and (p_productos < 0 or p_productos > 2000) then
+    raise exception 'Se piden de 0 a 2000 productos por vez.';
+  end if;
   return (
     with s as (
       select x.* from pos_stock x
@@ -1892,16 +1905,29 @@ begin
               or (v_q is not null and (lower(x.codigo) like v_q || '%' or lower(coalesce(x.descripcion, '')) like '%' || v_q || '%')))
          and (not coalesce(p_ocultar_sin, true) or x.cantidad <> 0)
          and (not coalesce(p_negativos, false) or x.cantidad < 0)
-    )
+    ),
+    /* SQL 172: los productos en orden de código, numerados desde 0, para pedirlos de a tandas. */
+    p as (select d.codigo, (row_number() over (order by d.codigo) - 1)::int n from (select distinct codigo from s) d),
+    f as (select s.* from s join p on p.codigo = s.codigo
+           where p_productos is null or (p.n >= v_desde and p.n < v_desde + p_productos))
     select jsonb_build_object(
       'filas', coalesce((select jsonb_agg(jsonb_build_array(z.local_id, z.codigo, z.talle, z.color, z.cantidad, z.entradas, z.salidas, z.descripcion)
                                           order by z.codigo, z.color, z.talle, z.local_id)
-                           from (select * from s order by codigo, color, talle, local_id limit 3000) z), '[]'::jsonb),
+                           from (select * from f order by codigo, color, talle, local_id limit 60000) z), '[]'::jsonb),
       'totales', (select jsonb_build_object('cantidad', coalesce(sum(cantidad), 0), 'entradas', coalesce(sum(entradas), 0),
                                             'salidas', coalesce(sum(salidas), 0), 'lineas', count(*),
-                                            'negativos', count(*) filter (where cantidad < 0)) from s),
+                                            'negativos', count(*) filter (where cantidad < 0),
+                                            'productos', count(distinct codigo)) from s),
+      /* SQL 172: un renglón por producto [código, descripción, cantidad, entradas, salidas, renglones, en negativo]. */
+      'resumen', case when coalesce(p_resumen, false) then coalesce((
+                   select jsonb_agg(jsonb_build_array(g.codigo, g.descripcion, g.cantidad, g.entradas, g.salidas, g.lineas, g.negativos) order by g.codigo)
+                     from (select codigo, max(descripcion) descripcion, sum(cantidad) cantidad, sum(entradas) entradas, sum(salidas) salidas,
+                                  count(*) lineas, count(*) filter (where cantidad < 0) negativos
+                             from s group by codigo) g), '[]'::jsonb) end,
       'cargado', exists (select 1 from pos_stock y where p_local is null or y.local_id = p_local),
-      'mas', (select count(*) > 3000 from s)
+      /* Con tandas: si quedan productos después de ésta. Sin tandas: si pasó de 60.000 renglones. */
+      'mas', case when p_productos is null then (select count(*) > 60000 from f)
+                  else (select count(*) > v_desde + p_productos from p) end
     )
   );
 end $$;
@@ -1921,7 +1947,11 @@ begin
                 from pos_stock s where s.local_id = p_local and s.codigo = v_c and s.talle = v_t and s.color = v_co),
     'movimientos', coalesce((
       select jsonb_agg(jsonb_build_object('fecha', m.fecha, 'tipo', m.tipo, 'cantidad', m.cantidad, 'ref', m.ref, 'ref_id', m.ref_id,
-                                          'detalle', m.detalle, 'persona', pe.nombre) order by m.fecha desc, m.id desc)
+                                          'detalle', m.detalle, 'persona', pe.nombre,
+                                          /* SQL 172: quién vendió o atendió (en las ventas y los cambios), para el Detalle. */
+                                          'vendedor', case when m.tipo in ('venta', 'venta_anulada') then (select v.vendedor from pos_ventas v where v.id = m.ref_id)
+                                                           when m.tipo in ('cambio', 'cambio_anulado') then (select k.vendedor from pos_cambios k where k.id = m.ref_id) end)
+               order by m.fecha desc, m.id desc)
         from (select * from pos_stock_movs x
                where x.local_id = p_local and x.codigo = v_c and x.talle = v_t and x.color = v_co
                order by x.fecha desc, x.id desc limit 200) m
@@ -2443,12 +2473,12 @@ revoke all on function pos_stock_mover(uuid, text, text, text, int, text, uuid, 
                        pos_remito_conteo_limpio(jsonb),
                        pos_remito_entrar(pos_remitos, text, jsonb, text, text, text, text, text)
        from public, anon, authenticated;
-revoke all on function pos_stock_local(uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean),
+revoke all on function pos_stock_local(uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean, int, int, boolean),
                        pos_stock_variante(uuid, text, text, text), pos_stock_ajustar(jsonb), pos_inventario_cargar(jsonb),
                        pos_inventarios(uuid), pos_remito_guardar(jsonb), pos_remitos(date, date, uuid, text), pos_remito(uuid, boolean),
                        pos_remito_contar(uuid, text, jsonb, text), pos_remito_recibir(uuid, text, jsonb, text, text, text, text), pos_remito_anular(uuid, text)
        from public, anon;
-grant execute on function pos_stock_local(uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean),
+grant execute on function pos_stock_local(uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean, int, int, boolean),
                           pos_stock_variante(uuid, text, text, text), pos_stock_ajustar(jsonb), pos_inventario_cargar(jsonb),
                           pos_inventarios(uuid), pos_remito_guardar(jsonb), pos_remitos(date, date, uuid, text), pos_remito(uuid, boolean),
                           pos_remito_contar(uuid, text, jsonb, text), pos_remito_recibir(uuid, text, jsonb, text, text, text, text), pos_remito_anular(uuid, text)

@@ -51,6 +51,10 @@
    busca o se hace socio ahí, y la venta anota sus puntos. Los SUMA recién
    cuando se prenda la regla del Club pos_suma_puntos ("los dejamos apagados
    hasta el lanzamiento"): mientras tanto se cargan en Cobrar.
+   El SQL 172 (25/10, "en Bluesoft… una que decía consulta de stock…
+   mostraba todo el stock que teníamos"): Stock con las tres vistas de esa
+   consulta (Por producto, Lista y Por rubro), todo el stock de a tandas al
+   bajar, los totales abajo con el Excel, y quién vendió en los movimientos.
 
    La plata va en CENTAVOS (enteros) en toda la cuenta: la base vuelve a
    sumar y exige que los pagos den el total al centavo.
@@ -274,9 +278,11 @@
     var m = String((e && e.message) || e || '');
     /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe.
        El 149 suma la caja (pos_caja…, pos_cierre…). El 160, el stock y los remitos. El 167, las diferencias
-       (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. */
+       (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
+       y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
+      return 'Todavía falta correr el SQL ' + (/p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
+                                             /pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
                                              /pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
                                              /pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
     }
@@ -3419,10 +3425,19 @@
     return cods.slice(0, 2000);
   }
 
+  /* Las tres vistas de la "Consulta de stock" de BlueSoft (SQL 172; Mauricio, 25/10: "mostraba todo el stock que
+     teníamos"): Por producto (la grilla de talle por color de cada uno), Lista (un renglón por talle y color, con lo
+     que entró y salió) y Por rubro (tocás uno y ves sus productos). Los productos llegan de a tandas al bajar; abajo,
+     los totales de todo lo filtrado (no sólo de lo que se ve) y el Excel. */
+  var ST_VISTAS = [['producto', 'Por producto'], ['lista', 'Lista'], ['rubro', 'Por rubro']], ST_TANDA = 40;
+
   function verStock() {
     var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
     var F = S.stF = S.stF || { local: gestion ? '' : l.id, q: '', rubro: '', cero: false, neg: false };
     if (!gestion && !localDe(F.local)) F.local = l.id;
+    var vista = leerJSON('pos_stock_vista', 'producto');
+    if (!ST_VISTAS.some(function (v) { return v[0] === vista; })) vista = 'producto';
+    c.classList.add('lleno');
     c.innerHTML = cabeza('Stock', gestion ? 'Lo que hay en cada sucursal, por talle y color. Se mueve solo con las ventas, los cambios y los remitos. Tocá un número para ver sus movimientos o ajustarlo.'
                                           : 'Lo que hay en la sucursal según el sistema, por talle y color. Tocá un número para ver de dónde sale.',
         gestion ? '<button type="button" class="btn btn-sec btn-chico" data-ir="inventario">Cargar un inventario</button>'
@@ -3433,80 +3448,238 @@
         campo('', 'Rubro', '<select id="stRubro"><option value="">Todos</option>' + opciones(RUBROS.map(function (r) { return [r, r]; }), F.rubro) + '</select>') +
         '<label class="pos-check"><input type="checkbox" id="stCero"' + (F.cero ? ' checked' : '') + '> Con los que están en 0</label>' +
         '<label class="pos-check"><input type="checkbox" id="stNeg"' + (F.neg ? ' checked' : '') + '> Sólo los negativos</label>' +
-      '</div><div id="stLista"><p class="cargando">Cargando…</p></div>';
+      '</div>' +
+      '<nav class="pestanas st-vistas" aria-label="Cómo ver el stock">' + ST_VISTAS.map(function (v) {
+        return '<button type="button" class="pestana" data-vista="' + v[0] + '"' + (v[0] === vista ? ' aria-current="page"' : '') + '>' + v[1] + '</button>';
+      }).join('') + '</nav>' +
+      /* En el celular los totales van arriba de la lista (pos.css): abajo no se llegaría nunca, porque sigue cargando al bajar. */
+      '<div class="st-zona"><div id="stLista" class="st-lista"><p class="cargando">Cargando…</p></div><div class="tkl-pie st-pie" id="stPie"></div></div>';
     engancharIr(c);
     $('stBuscar').value = F.q;
-    var t = null, pedido = 0;
+    var t = null, pedido = 0, P = {}, orden = [], mirando = null;
     $('stLocal').onchange = function () { F.local = this.value; if (F.local) S.stLocal = F.local; cargar(); };
     $('stBuscar').oninput = function () { clearTimeout(t); t = setTimeout(function () { F.q = $('stBuscar').value; cargar(); }, 250); };
     $('stRubro').onchange = function () { F.rubro = this.value; cargar(); };
     $('stCero').onchange = function () { F.cero = this.checked; cargar(); };
     $('stNeg').onchange = function () { F.neg = this.checked; cargar(); };
-    function cargar() {
-      var n = ++pedido, q = F.q.trim();
-      $('stLista').innerHTML = '<p class="cargando">Cargando…</p>';
-      /* Con un rubro, sólo los del catálogo; sin rubro, también lo que no está en el catálogo (por código o descripción). */
-      llamar('pos_stock_consulta', { p_local: F.local || null, p_codigos: q || F.rubro ? codigosDe(q, F.rubro) : null, p_buscar: q && !F.rubro ? q : null,
-                                     p_ocultar_sin: !F.cero, p_negativos: F.neg }).then(function (d) {
-        if (n !== pedido || !$('stLista')) return;
-        pintarStock(d);
-      }).catch(function (e) { if ($('stLista')) $('stLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    c.querySelectorAll('.st-vistas .pestana').forEach(function (b) { b.onclick = function () { ponerVista(b.getAttribute('data-vista')); }; });
+    /* Un solo oyente para toda la lista, porque los productos se van agregando. */
+    $('stLista').onclick = function (e) {
+      var b = e.target.closest('.st-n, tr[data-var], tr[data-rubro], #stMas');
+      if (!b) return;
+      if (b.id === 'stMas') { masProductos(); return; }
+      if (b.hasAttribute('data-rubro')) { F.rubro = b.getAttribute('data-rubro'); $('stRubro').value = F.rubro; ponerVista('producto'); return; }
+      var cod = b.getAttribute('data-cod'), tl = b.getAttribute('data-t'), col = b.getAttribute('data-c'), lo = b.getAttribute('data-l') || F.local;
+      if (lo) abrirVariante(lo, cod, tl, col, recargar);
+      else abrirVarianteLocales(cod, tl, col, P[cod].celdas[tl + '|' + col].locales, P[cod].desc, recargar);
+    };
+    $('stLista').onkeydown = function (e) {
+      var tr = e.key === 'Enter' && e.target.closest('tr[data-var], tr[data-rubro]');
+      if (tr) { e.preventDefault(); tr.click(); }
+    };
+    function ponerVista(v) {
+      vista = v;
+      guardarJSON('pos_stock_vista', v);
+      c.querySelectorAll('.st-vistas .pestana').forEach(function (b) {
+        if (b.getAttribute('data-vista') === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+      });
+      cargar();
     }
-    function pintarStock(d) {
-      var tt = d.totales || {}, lo = localDe(F.local), prods = {}, orden = [];
+    /* Lo que piden los filtros, sin la tanda (la pantalla y el Excel). */
+    function filtros() {
+      var q = F.q.trim();
+      /* Con un rubro, sólo los del catálogo; sin rubro, también lo que no está en el catálogo (por código o descripción). */
+      return { p_local: F.local || null, p_codigos: q || F.rubro ? codigosDe(q, F.rubro) : null, p_buscar: q && !F.rubro ? q : null,
+               p_ocultar_sin: !F.cero, p_negativos: F.neg };
+    }
+    /* mantener: después de un ajuste vuelve a traer lo que ya se veía y deja la lista donde estaba. */
+    function cargar(mantener) {
+      var n = ++pedido, z = $('stLista'), donde = [z.scrollTop, window.scrollY], p = filtros();
+      if (mirando) { mirando.disconnect(); mirando = null; }
+      if (vista === 'rubro') { p.p_productos = 0; p.p_resumen = true; }
+      else { p.p_desde = 0; p.p_productos = mantener ? Math.min(Math.max(orden.length, ST_TANDA), 2000) : ST_TANDA; }
+      if (!mantener) { z.innerHTML = '<p class="cargando">Cargando…</p>'; z.scrollTop = 0; }
+      llamar('pos_stock_consulta', p).then(function (d) {
+        if (n !== pedido || !z.isConnected) return;
+        pintar(d);
+        if (mantener) { z.scrollTop = donde[0]; window.scrollTo(0, donde[1]); }
+      }).catch(function (e) {
+        if (n !== pedido || !z.isConnected) return;
+        z.innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+        $('stPie').innerHTML = '';
+      });
+    }
+    function recargar() { cargar(true); }
+    function pintar(d) {
+      var z = $('stLista'), lo = localDe(F.local);
+      P = {};
+      orden = [];
+      if (!d.cargado) {
+        $('stPie').innerHTML = '';
+        z.innerHTML = '<div class="pos-cartel"><b>Todavía no hay stock cargado' + (lo ? ' en ' + esc(nombreLocal(lo)) : '') + '.</b> Se carga una vez con un inventario ' +
+          '(Gestión → Inventario: el Excel de «Consulta de stock» de BlueSoft) y desde ahí se mueve solo: las ventas y los cambios lo descuentan, y los remitos lo suman al recibirlos.' +
+          (gestion ? ' <button type="button" class="pos-link" data-ir="inventario">Cargar un inventario</button>' : '') + '</div>';
+        engancharIr(z);
+        return;
+      }
+      pintarPie(d.totales || {});
+      if (vista === 'rubro') { pintarRubros(d.resumen || []); return; }
+      if (!(d.filas || []).length) { z.innerHTML = vacio(); return; }
+      z.innerHTML = vista === 'lista'
+        ? '<div class="pos-marco-tabla"><table class="pos-tabla st-tabla"><thead><tr>' + (F.local ? '' : '<th>Sucursal</th>') +
+            '<th>Código</th><th>Producto</th><th>Rubro</th><th class="c">Talle</th><th>Color</th><th class="n">Hay</th><th class="n">Entraron</th><th class="n">Salieron</th>' +
+            '</tr></thead><tbody></tbody></table></div>'
+        : '<div class="st-prods"></div>';
+      agregar(d);
+    }
+    function vacio() {
+      return '<div class="pos-cartel">' + (F.neg ? 'No hay nada en negativo' : 'No hay stock') + (F.q.trim() ? ' de «' + esc(F.q.trim()) + '»' : '') +
+        (F.rubro ? ' en ' + esc(F.rubro) : '') + (F.cero || F.neg ? '' : '. Para ver también los que están en 0, marcá «Con los que están en 0».') + '</div>';
+    }
+    /* Una tanda: cada producto llega entero (todos sus talles, colores y sucursales en la misma tanda). */
+    function agregar(d) {
+      var z = $('stLista'), nuevos = [], deEsta = {};
       (d.filas || []).forEach(function (f) {   // [local, código, talle, color, cantidad, entradas, salidas, descripción]
-        var p = prods[f[1]];
-        if (!p) { p = prods[f[1]] = { cod: f[1], desc: f[7], talles: [], colores: [], celdas: {}, total: 0 }; orden.push(f[1]); }
+        var p = P[f[1]];
+        if (!p) { p = P[f[1]] = { cod: f[1], desc: f[7], talles: [], colores: [], celdas: {}, filas: [], total: 0 }; orden.push(f[1]); nuevos.push(f[1]); deEsta[f[1]] = 1; }
+        else if (!deEsta[f[1]]) return;   // ya vino en la tanda anterior (el stock cambió en el medio)
         if (p.talles.indexOf(f[2]) < 0) p.talles.push(f[2]);
         if (p.colores.indexOf(f[3]) < 0) p.colores.push(f[3]);
         var x = p.celdas[f[2] + '|' + f[3]] || (p.celdas[f[2] + '|' + f[3]] = { n: 0, locales: [] });
         x.n += f[4];
         x.locales.push([f[0], f[4]]);
+        p.filas.push(f);
         p.total += f[4];
         if (!p.desc && f[7]) p.desc = f[7];
       });
-      var kpis = '<div class="pos-totales">' +
-        '<div class="pos-kpi fuerte"><span>Unidades</span><b>' + num(tt.cantidad) + '</b></div>' +
-        '<div class="pos-kpi"><span>Productos</span><b>' + num(orden.length) + '</b></div>' +
-        '<button type="button" class="pos-kpi st-kpi-neg' + (tt.negativos ? ' mal' : '') + '" id="stVerNeg" title="Ver sólo los negativos"><span>En negativo</span><b>' + num(tt.negativos) + '</b></button></div>';
-      if (!d.cargado) {
-        $('stLista').innerHTML = '<div class="pos-cartel"><b>Todavía no hay stock cargado' + (lo ? ' en ' + esc(nombreLocal(lo)) : '') + '.</b> Se carga una vez con un inventario ' +
-          '(Gestión → Inventario: el Excel de «Consulta de stock» de BlueSoft) y desde ahí se mueve solo: las ventas y los cambios lo descuentan, y los remitos lo suman al recibirlos.' +
-          (gestion ? ' <button type="button" class="pos-link" data-ir="inventario">Cargar un inventario</button>' : '') + '</div>';
-        engancharIr($('stLista'));
-        return;
+      var html = nuevos.map(vista === 'lista' ? renglones : tarjeta).join('');
+      z.querySelector(vista === 'lista' ? 'tbody' : '.st-prods').insertAdjacentHTML('beforeend', html);
+      var m = $('stMas');
+      if (m) m.remove();
+      if (d.mas) {
+        z.insertAdjacentHTML('beforeend', '<button type="button" class="st-mas" id="stMas">Ver más productos <small>(se ven ' + num(orden.length) +
+          ' de ' + num((d.totales || {}).productos) + ')</small></button>');
+        mirar();
       }
-      if (!orden.length) {
-        $('stLista').innerHTML = kpis + '<div class="pos-cartel">' + (F.neg ? 'No hay nada en negativo' : 'No hay stock') + (F.q.trim() ? ' de «' + esc(F.q.trim()) + '»' : '') +
-          (F.rubro ? ' en ' + esc(F.rubro) : '') + (F.cero || F.neg ? '' : '. Para ver también los que están en 0, marcá «Con los que están en 0».') + '</div>';
-        $('stVerNeg').onclick = verNeg;
-        return;
-      }
-      $('stLista').innerHTML = kpis + '<div class="st-prods">' + orden.slice(0, 60).map(function (cod) {
-        var p = prods[cod], ts = ordenarTalles(p.talles, cod), cs = ordenarColores(p.colores, cod);
-        return '<div class="st-prod"><div class="st-prod-cab"><b>' + esc(cod) + '</b><span>' + esc(nombreProd(cod, p.desc)) + '</span>' +
-            (PROD[cod] && PROD[cod][2] ? '<small>' + esc(PROD[cod][2]) + '</small>' : '') + '<em>' + num(p.total) + (Math.abs(p.total) === 1 ? ' unidad' : ' unidades') + '</em></div>' +
-          '<div class="st-scroll"><table class="st-grilla">' + cabGrilla(ts) + '<tbody>' + cs.map(function (col) {
-            return '<tr><th>' + esc(nombreCol(col, cod)) + '</th>' + ts.map(function (t) {
-              var x = p.celdas[t + '|' + col];
-              if (!x) return '<td class="c st-nada">·</td>';
-              return '<td class="c"><button type="button" class="st-n' + (x.n < 0 ? ' neg' : x.n === 0 ? ' cero' : '') + '" data-cod="' + esc(cod) + '" data-t="' + esc(t) + '" data-c="' + esc(col) + '"' +
-                ' aria-label="' + esc(cod + ' ' + nombreTalle(t) + ' ' + nombreCol(col, cod) + ': ' + x.n) + '">' + num(x.n) + '</button></td>';
-            }).join('') + '</tr>';
-          }).join('') + '</tbody></table></div></div>';
-      }).join('') + '</div>' +
-        (orden.length > 60 ? '<p class="pos-mas">Se ven 60 de ' + num(orden.length) + ' productos: buscá o elegí un rubro para encontrar el resto.</p>' : '') +
-        (d.mas ? '<p class="pos-mas">Son más de 3.000 renglones: buscá o elegí un rubro para ver todo.</p>' : '');
-      $('stVerNeg').onclick = verNeg;
-      $('stLista').querySelectorAll('.st-n').forEach(function (b) {
-        b.onclick = function () {
-          var cod = b.getAttribute('data-cod'), t = b.getAttribute('data-t'), col = b.getAttribute('data-c');
-          if (F.local) abrirVariante(F.local, cod, t, col, cargar);
-          else abrirVarianteLocales(cod, t, col, prods[cod].celdas[t + '|' + col].locales, prods[cod].desc, cargar);
-        };
+    }
+    /* Cerca del final de la lista trae la tanda que sigue (el botón queda por si el navegador no avisa). */
+    function mirar() {
+      if (mirando) mirando.disconnect();
+      mirando = null;
+      if (!window.IntersectionObserver) return;
+      var z = $('stLista'), propia = getComputedStyle(z).overflowY !== 'visible';
+      mirando = new IntersectionObserver(function (es) { if (es.some(function (x) { return x.isIntersecting; })) masProductos(); },
+                                         { root: propia ? z : null, rootMargin: '0px 0px 600px 0px' });
+      mirando.observe($('stMas'));
+    }
+    function masProductos() {
+      var m = $('stMas'), n = pedido;
+      if (!m || m.disabled) return;
+      var antes = m.innerHTML, p = filtros();
+      m.disabled = true;
+      m.textContent = 'Cargando…';
+      p.p_desde = orden.length;
+      p.p_productos = ST_TANDA;
+      llamar('pos_stock_consulta', p).then(function (d) {
+        if (n === pedido && m.isConnected) agregar(d);
+      }).catch(function (e) {
+        if (n !== pedido || !m.isConnected) return;
+        m.disabled = false;
+        m.innerHTML = antes;
+        avisar('err', mensajeDe(e));
       });
     }
-    function verNeg() { F.neg = true; $('stNeg').checked = true; cargar(); }
+    /* Por color y talle en el orden del catálogo, y por sucursal. */
+    function enOrden(cod, filas) {
+      var ts = ordenarTalles(unicos(filas.map(function (f) { return f[2]; })), cod), cs = ordenarColores(unicos(filas.map(function (f) { return f[3]; })), cod);
+      return filas.slice().sort(function (a, b) {
+        return cs.indexOf(a[3]) - cs.indexOf(b[3]) || ts.indexOf(a[2]) - ts.indexOf(b[2]) || nombreLocal(localDe(a[0])).localeCompare(nombreLocal(localDe(b[0])));
+      });
+    }
+    /* Por producto: la grilla de talle por color. */
+    function tarjeta(cod) {
+      var p = P[cod], ts = ordenarTalles(p.talles, cod), cs = ordenarColores(p.colores, cod);
+      return '<div class="st-prod"><div class="st-prod-cab"><b>' + esc(cod) + '</b><span>' + esc(nombreProd(cod, p.desc)) + '</span>' +
+          (PROD[cod] && PROD[cod][2] ? '<small>' + esc(PROD[cod][2]) + '</small>' : '') + '<em>' + num(p.total) + (Math.abs(p.total) === 1 ? ' unidad' : ' unidades') + '</em></div>' +
+        '<div class="st-scroll"><table class="st-grilla">' + cabGrilla(ts) + '<tbody>' + cs.map(function (col) {
+          return '<tr><th>' + esc(nombreCol(col, cod)) + '</th>' + ts.map(function (tl) {
+            var x = p.celdas[tl + '|' + col];
+            if (!x) return '<td class="c st-nada">·</td>';
+            return '<td class="c"><button type="button" class="st-n' + (x.n < 0 ? ' neg' : x.n === 0 ? ' cero' : '') + '" data-cod="' + esc(cod) + '" data-t="' + esc(tl) + '" data-c="' + esc(col) + '"' +
+              ' aria-label="' + esc(cod + ' ' + nombreTalle(tl) + ' ' + nombreCol(col, cod) + ': ' + x.n) + '">' + num(x.n) + '</button></td>';
+          }).join('') + '</tr>';
+        }).join('') + '</tbody></table></div></div>';
+    }
+    /* Lista: los renglones de un producto (con «Todas», uno por sucursal); la raya de arriba separa los productos. */
+    function renglones(cod) {
+      var p = P[cod], rubro = PROD[cod] && PROD[cod][2] || '';
+      return enOrden(cod, p.filas).map(function (f, i) {
+        return '<tr data-var tabindex="0" data-l="' + esc(f[0]) + '" data-cod="' + esc(cod) + '" data-t="' + esc(f[2]) + '" data-c="' + esc(f[3]) + '"' + (i ? '' : ' class="st-primero"') + '>' +
+          (F.local ? '' : '<td>' + esc(nombreLocal(localDe(f[0]))) + '</td>') +
+          '<td><b>' + esc(cod) + '</b></td><td class="st-desc">' + esc(nombreProd(cod, p.desc)) + '</td><td>' + esc(rubro) + '</td>' +
+          '<td class="c">' + esc(nombreTalle(f[2])) + '</td><td>' + esc(nombreCol(f[3], cod)) + '</td>' +
+          '<td class="n"><b class="' + (f[4] < 0 ? 'st-sale' : f[4] === 0 ? 'st-cero' : '') + '">' + num(f[4]) + '</b></td><td class="n">' + num(f[5]) + '</td><td class="n">' + num(f[6]) + '</td></tr>';
+      }).join('');
+    }
+    /* Por rubro: las unidades de cada uno; tocar uno muestra sus productos. Lo que no está en el catálogo no tiene rubro. */
+    function pintarRubros(res) {
+      var z = $('stLista'), R = {}, todo = 0;
+      res.forEach(function (x) {   // [código, descripción, cantidad, entradas, salidas, renglones, en negativo]
+        var r = PROD[x[0]] && PROD[x[0]][2] || '', g = R[r] || (R[r] = { r: r, prods: 0, n: 0, e: 0, s: 0, neg: 0 });
+        g.prods++; g.n += x[2]; g.e += x[3]; g.s += x[4]; g.neg += x[6];
+      });
+      var gs = Object.keys(R).map(function (k) { return R[k]; });
+      if (!gs.length) { z.innerHTML = vacio(); return; }
+      gs.forEach(function (g) { todo += Math.max(0, g.n); });
+      gs.sort(function (a, b) { return (a.r ? 0 : 1) - (b.r ? 0 : 1) || b.n - a.n || a.r.localeCompare(b.r); });
+      z.innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla st-tabla st-rubros"><thead><tr><th>Rubro</th><th class="n">Productos</th><th class="n">Hay</th>' +
+          '<th>Del total</th><th class="n">Entraron</th><th class="n">Salieron</th><th class="n">En negativo</th></tr></thead><tbody>' +
+        gs.map(function (g) {
+          var parte = todo ? Math.max(0, g.n) / todo : 0;
+          return '<tr' + (g.r ? ' data-rubro="' + esc(g.r) + '" tabindex="0" title="Ver los productos de ' + esc(g.r) + '"'
+                              : ' class="st-fuera" title="Los códigos que no están en el catálogo no tienen rubro: se buscan por código."') + '>' +
+            '<td><b>' + esc(g.r || 'Fuera del catálogo') + '</b></td><td class="n">' + num(g.prods) + '</td>' +
+            '<td class="n"><b class="' + (g.n < 0 ? 'st-sale' : '') + '">' + num(g.n) + '</b></td>' +
+            '<td class="st-parte"><span class="st-barra"><i style="width:' + Math.round(parte * 1000) / 10 + '%"></i></span>' + porcentaje(parte) + '</td>' +
+            '<td class="n">' + num(g.e) + '</td><td class="n">' + num(g.s) + '</td>' +
+            '<td class="n">' + (g.neg ? '<b class="st-sale">' + num(g.neg) + '</b>' : '0') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    /* Abajo, como en Tickets: los totales de todo lo filtrado y el Excel. */
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    function pintarPie(tt) {
+      $('stPie').innerHTML = caja('Unidades', num(tt.cantidad), 'fuerte') + caja('Entraron', num(tt.entradas)) + caja('Salieron', num(tt.salidas)) +
+        caja('Productos', num(tt.productos)) + caja('Renglones', num(tt.lineas)) +
+        '<button type="button" class="tk-caja' + (tt.negativos ? ' mal' : '') + '" id="stVerNeg" aria-pressed="' + (F.neg ? 'true' : 'false') + '" title="' +
+          (F.neg ? 'Volver a ver todo' : 'Ver sólo los negativos') + '"><span>En negativo</span><b>' + num(tt.negativos) + '</b></button>' +
+        '<button type="button" class="btn btn-sec btn-chico st-excel" id="stExcel">Bajar para Excel</button>';
+      $('stVerNeg').onclick = verNeg;
+      $('stExcel').onclick = bajarStock;
+    }
+    function verNeg() { F.neg = !F.neg; $('stNeg').checked = F.neg; cargar(); }
+    /* El Excel: todo lo filtrado (no sólo lo que se ve), un renglón por talle y color como la Lista. */
+    function bajarStock() {
+      var b = $('stExcel'), lo = localDe(F.local);
+      b.disabled = true;
+      b.textContent = 'Preparando…';
+      llamar('pos_stock_consulta', filtros()).then(function (d) {
+        var por = {}, cods = [], filas = [];
+        (d.filas || []).forEach(function (f) { if (!por[f[1]]) { por[f[1]] = []; cods.push(f[1]); } por[f[1]].push(f); });
+        cods.forEach(function (cod) {
+          enOrden(cod, por[cod]).forEach(function (f) {
+            filas.push([nombreLocal(localDe(f[0])), cod, nombreProd(cod, f[7]), PROD[cod] && PROD[cod][2] || '', nombreTalle(f[2]), nombreCol(f[3], cod), f[4], f[5], f[6]]);
+          });
+        });
+        if (!filas.length) { avisar('err', 'No hay nada para bajar con esos filtros.'); return; }
+        bajarCsv('stock-' + (lo ? normal(nombreLocal(lo)).split(/[^a-z0-9]+/).filter(Boolean).join('-') : 'todas-las-sucursales') + '-' + Interfaz.fecha.hoy() + '.csv',
+                 ['Sucursal', 'Código', 'Producto', 'Rubro', 'Talle', 'Color', 'Hay', 'Entraron', 'Salieron'], filas);
+        if (d.mas) avisar('err', 'Son más de 60.000 renglones: el Excel trae los primeros. Elegí una sucursal o un rubro para bajar el resto.');
+      }).catch(function (e) { avisar('err', mensajeDe(e)); }).then(function () {
+        if (!b.isConnected) return;
+        b.disabled = false;
+        b.textContent = 'Bajar para Excel';
+      });
+    }
     cargar();
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var b = $('stBuscar'); if (b) b.focus(); }, 0);
   }
@@ -3526,6 +3699,12 @@
     });
   }
 
+  /** El Detalle de un movimiento: el motivo de un ajuste o, en las ventas y los cambios, quién vendió o atendió (SQL 172). */
+  function detalleMov(m) {
+    var quien = m.vendedor ? (/^cambio/.test(m.tipo) ? 'Atendió ' : 'Vendió ') + m.vendedor : '';
+    return [m.detalle, quien].filter(Boolean).join(' · ');
+  }
+
   /** Una variante en una sucursal: cuánto hay, de dónde sale ("Ver detalle de movimientos") y, en Gestión, el ajuste. */
   function abrirVariante(localId, cod, talle, color, alCambiar) {
     var tit = esc(cod) + ' · ' + esc(nombreTalle(talle)) + ' · ' + esc(nombreCol(color, cod));
@@ -3538,7 +3717,7 @@
           '<div class="pos-kpi"><span>Entraron</span><b>' + num(s.entradas) + '</b></div><div class="pos-kpi"><span>Salieron</span><b>' + num(s.salidas) + '</b></div></div>' +
         (movs.length ? '<div class="pos-marco-tabla st-movs"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Qué</th><th>Detalle</th><th>Quién</th><th class="n">Cant.</th></tr></thead><tbody>' +
             movs.map(function (m) {
-              return '<tr><td>' + esc(fechaHora(m.fecha)) + '</td><td>' + esc(m.ref || m.tipo) + '</td><td>' + esc(m.detalle || '') + '</td><td>' + esc(m.persona || '—') + '</td>' +
+              return '<tr><td>' + esc(fechaHora(m.fecha)) + '</td><td>' + esc(m.ref || m.tipo) + '</td><td>' + esc(detalleMov(m)) + '</td><td>' + esc(m.persona || '—') + '</td>' +
                 '<td class="n"><b class="' + (m.cantidad < 0 ? 'st-sale' : 'st-entra') + '">' + (m.cantidad > 0 ? '+' : '−') + miles(Math.abs(m.cantidad)) + '</b></td></tr>';
             }).join('') + '</tbody></table></div>' + (movs.length >= 200 ? '<p class="pos-mas">Se ven los últimos 200 movimientos.</p>' : '')
           : '<div class="pos-cartel">Todavía no tuvo movimientos en esta sucursal.</div>') +
@@ -4027,10 +4206,14 @@
               f.estado === 'pendiente' ? 'Sin resolver' : 'Resuelta', RESOLUCION[f.resolucion] || '', f.resuelta_nombre || '',
               f.resuelta_en ? fechaLarga(f.resuelta_en) : '', f.remito_nuevo_numero ? 'R-' + f.remito_nuevo_numero : '', f.nota || ''];
     });
+    bajarCsv('diferencias-remitos-' + (estado === 'pendiente' ? 'sin-resolver-' + Interfaz.fecha.hoy() : r.desde + '-al-' + r.hasta) + '.csv', cab, filas);
+  }
+  /** Una tabla como CSV para Excel: con BOM (los acentos) y separada con «;» (el Excel en castellano). */
+  function bajarCsv(nombre, cab, filas) {
     var csv = '\uFEFF' + [cab].concat(filas).map(function (x) { return x.map(celdaCsv).join(';'); }).join('\r\n');
     var a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-    a.download = 'diferencias-remitos-' + (estado === 'pendiente' ? 'sin-resolver-' + Interfaz.fecha.hoy() : r.desde + '-al-' + r.hasta) + '.csv';
+    a.download = nombre;
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -4678,7 +4861,7 @@
                 '<td class="n"><b class="' + (dif < 0 ? 'st-sale' : 'st-entra') + '">' + (dif > 0 ? '+' : '−') + miles(Math.abs(dif)) + '</b></td></tr>';
             }).join('') + '</tbody></table></div>' + (filas.length > 200 ? '<p class="pos-mas">Se ven 200 de ' + num(filas.length) + ' cambios.</p>' : '')
             : '<div class="pos-cartel">Todo coincide con lo que dice el sistema: no cambia nada.</div>') +
-          (d.mas ? '<p class="pos-mas">La sucursal tiene más de 3.000 renglones: la comparación de arriba es parcial (la carga, no).</p>' : '') +
+          (d.mas ? '<p class="pos-mas">La sucursal tiene más de 60.000 renglones: la comparación de arriba es parcial (la carga, no).</p>' : '') +
           '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" id="invOtro">Elegir otro</button>' +
             '<button type="button" class="btn btn-pri btn-chico" id="invCargar"' + (filas.length ? '' : ' disabled') + '>Cargar el inventario en ' + esc(nombreLocal(localDe(loc))) + '</button></div></div>';
         var rs = $('invResto');

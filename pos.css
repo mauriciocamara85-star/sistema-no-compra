@@ -652,6 +652,45 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .st-ajuste { margin: 12px 0 0; }
 .st-ajuste .pos-ayuda { margin: 0 0 8px; }
 
+/* Las tres vistas de la consulta de stock (SQL 172): Por producto, Lista y Por rubro. En la compu la lista
+   llena el alto y se desplaza adentro, con los totales quietos abajo como en Tickets; en el celular los
+   totales van arriba (la lista sigue cargando al bajar y abajo no se llegaría nunca). */
+.pestanas.st-vistas { margin-bottom: 10px; align-self: flex-start; }
+.st-vistas .pestana { border: 0; background: none; cursor: pointer; }
+.st-vistas .pestana[aria-current="page"] { background: var(--surface); }
+.st-zona { display: flex; flex-direction: column; min-width: 0; }
+.st-zona > .st-pie { order: -1; margin: 0 0 10px; }
+@media (min-width: 1000px) {
+  .pos-cuerpo.lleno > .st-zona { flex: 1 1 auto; min-height: 0; }
+  .st-zona > .st-pie { order: 0; margin: 10px 0 0; }
+  .st-lista { flex: 1 1 auto; height: 0; min-height: 200px; overflow: auto; margin: 0 -6px; padding: 0 6px 6px; }
+  /* Los títulos de la Lista quedan quietos arriba al bajar: el que se desplaza es .st-lista, no el marco. */
+  .st-lista .pos-marco-tabla { overflow: visible; }
+  .st-lista .pos-tabla thead th { position: sticky; top: 0; z-index: 1; border-bottom: 0; box-shadow: inset 0 -1px 0 var(--line); }
+  .st-lista .pos-tabla thead th:first-child { border-top-left-radius: var(--r); }
+  .st-lista .pos-tabla thead th:last-child { border-top-right-radius: var(--r); }
+}
+.st-tabla td, .st-tabla th { white-space: nowrap; }
+.st-tabla .st-desc { white-space: normal; min-width: 160px; }
+.st-tabla tbody tr.st-primero:not(:first-child) td { border-top: 2px solid var(--line-alta); }
+.pos-tabla tr[data-var], .pos-tabla tr[data-rubro] { cursor: pointer; }
+.pos-tabla tr[data-var]:hover td, .pos-tabla tr[data-rubro]:hover td { background: var(--surface-2); }
+.st-tabla tr.st-fuera td { color: var(--txt-3); }
+.st-cero { color: var(--txt-3); }
+.st-parte { min-width: 150px; font-variant-numeric: tabular-nums; color: var(--txt-2); }
+.st-barra { display: inline-block; width: 90px; height: 7px; margin-right: 8px; vertical-align: 1px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.st-barra i { display: block; height: 100%; border-radius: inherit; background: var(--acc); }
+.st-mas {
+  display: block; width: 100%; margin: 10px 0 0; padding: 12px; border: 1px dashed var(--line-alta); border-radius: var(--r);
+  background: none; font: 600 13.5px var(--sans); color: var(--txt-2); cursor: pointer;
+}
+.st-mas:hover:not(:disabled) { color: var(--txt); border-color: var(--txt-3); }
+.st-mas small { font-weight: 500; color: var(--txt-3); }
+.st-pie button.tk-caja span::after { content: none; }
+.st-pie .tk-caja.mal b { color: var(--bad-txt); }
+.st-pie .tk-caja[aria-pressed="true"] { border-color: var(--bad); box-shadow: inset 0 0 0 1px var(--bad); }
+.st-pie .st-excel { flex: none; align-self: center; }
+
 /* La grilla para escribir cantidades (la recepción y el remito nuevo). */
 .pos .st-grilla input.rc-in {
   width: 56px; min-height: 0; padding: 5px 4px; text-align: center;
