@@ -1497,7 +1497,7 @@ var base = {
   agenteFuenteBorrar: function (pin, id, quien) {
     return funcion('agente_fuente_borrar', { p_pin: pin, p_id: id, p_quien: quien || null });
   },
-  /** Las respuestas del Asistente marcadas con el pulgar para abajo. */
+  /** "Para responder": lo que el Asistente no supo (SQL 174) y lo marcado con el pulgar para abajo. */
   asistenteMarcadas: function (pin) {
     return funcion('asistente_marcadas', { p_pin: pin });
   },

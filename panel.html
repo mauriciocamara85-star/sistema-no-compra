@@ -924,8 +924,11 @@
   .agf-leen > b { font-size: 13px; font-weight: 600; color: var(--txt-2); }
   .agf-borrar { margin-right: auto; color: var(--bad-txt); }
   @media (max-width: 599px) { .agf-pubs { grid-template-columns: minmax(0, 1fr); } }
-  /* Respuestas marcadas. */
+  /* Para responder (las que no supo y las del pulgar para abajo). */
   .agx-intro { font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
+  .agm-cab .agm-motivo { margin-left: auto; font-size: 11.5px; font-weight: 700; color: var(--txt-2); background: var(--surface-2);
+                         border: 1px solid var(--line-alta); border-radius: 999px; padding: 1px 8px; white-space: nowrap; }
+  .agm-cab .agm-motivo.pulgar { color: var(--bad-txt); }
   .agm { display: grid; gap: 8px; }
   .agm.revisada { opacity: .75; }
   .agm-cab { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; font-size: 13px; color: var(--txt-3); }
@@ -7176,8 +7179,8 @@
       sub: 'Lo que nunca hace y lo que siempre le pasa a una persona.' },
     { p: 'pruebas', t: 'Pruebas', i: ICO_AG.tilde,
       sub: 'Casos guardados (un mensaje y qué tiene que pasar) para correrlos todos juntos.' },
-    { p: 'marcadas', t: 'Respuestas marcadas', i: ICO_AG.pulgar, solo: 'vendedores',
-      sub: 'Las que los vendedores marcaron con el pulgar para abajo.' },
+    { p: 'marcadas', t: 'Para responder', i: ICO_AG.pulgar, solo: 'vendedores',
+      sub: 'Lo que el Asistente no supo contestar (se anota solo) y lo que los vendedores marcaron con el pulgar para abajo.' },
     { p: 'conexiones', t: 'Conexiones', i: ICO_AG.enchufe,
       sub: 'Si cada servicio que usa está andando ahora.' },
     { p: 'ajustes', t: 'Ajustes', i: ICO_AG.ajustes,
@@ -7208,7 +7211,7 @@
   function cuentaPagAg(p) {
     var d = AG.datos, n = 0, t = '';
     if (!d) { return ''; }
-    if (p === 'marcadas' && AGX.cual === 'vendedores') { n = Number(d.marcadas) || 0; t = 'Para revisar'; }
+    if (p === 'marcadas' && AGX.cual === 'vendedores') { n = Number(d.marcadas) || 0; t = 'Para responder'; }
     if (p === 'conocimiento' && d.fuentes) {
       n = Number(AGX.cual === 'clientes' && d.fuentes.avisos_clientes != null ? d.fuentes.avisos_clientes : d.fuentes.avisos) || 0;
       t = 'Fuentes para revisar';
@@ -8021,7 +8024,8 @@
   $('agfNo').onclick = cerrarFuente;
   $('agfBorrar').onclick = borrarFuente;
 
-  /* ═══ Respuestas marcadas: el pulgar para abajo de los vendedores ═══════ */
+  /* ═══ Para responder: lo que el Asistente no supo (se anota solo, SQL 174)
+     y las respuestas que los vendedores marcaron con el pulgar para abajo ═══ */
   function cargarMarcadas() {
     AGMK.cargando = true;
     base.asistenteMarcadas(pinGuardado())
@@ -8043,10 +8047,13 @@
   }
   function sinMarcasAg(t) { return String(t || '').replace(/\s?\[\d{1,2}\]/g, ''); }
   function localAg(l) { return !l ? '' : l === 'OFICINA' ? 'Oficina' : bonito(l); }
+  /* Sin "motivo" (antes del SQL 174) son todas del pulgar. */
+  function noSupoAg(m) { return m.motivo === 'sin_respuesta'; }
   function htmlMarcada(m) {
-    var resp = sinMarcasAg(m.respuesta);
+    var resp = sinMarcasAg(m.respuesta), noSupo = noSupoAg(m);
     return '<div class="ficha-bloque agm' + (m.revisada ? ' revisada' : '') + '">' +
-      '<div class="agm-cab"><b>' + esc(m.vendedor || 'Alguien') + '</b><span>' + esc([localAg(m.local), fechaAg(m.creado, true)].filter(Boolean).join(' · ')) + '</span></div>' +
+      '<div class="agm-cab"><b>' + esc(m.vendedor || 'Alguien') + '</b><span>' + esc([localAg(m.local), fechaAg(m.creado, true)].filter(Boolean).join(' · ')) + '</span>' +
+        '<span class="agm-motivo' + (noSupo ? '' : ' pulgar') + '">' + (noSupo ? 'No lo supo' : 'Pulgar para abajo') + '</span></div>' +
       '<p class="agm-preg">' + esc(m.pregunta) + '</p>' +
       '<div class="agm-resp"><span>Contestó</span>' + esc(resp.length > 700 ? resp.slice(0, 700) + '…' : resp) + '</div>' +
       (m.comentario ? '<p class="agm-com"><span>Qué estuvo mal</span>“' + esc(m.comentario) + '”</p>' : '') +
@@ -8054,7 +8061,7 @@
       '<div class="agm-acc">' + (m.revisada
         ? '<button type="button" class="btn btn-sec btn-chico" data-agm-volver="' + m.id + '">Volver a revisar</button>'
         : '<button type="button" class="btn btn-sec btn-chico" data-agm-listo="' + m.id + '">Ya está</button>' +
-          '<button type="button" class="btn btn-pri btn-chico" data-agm-corregir="' + m.id + '">Corregir</button>') + '</div></div>';
+          '<button type="button" class="btn btn-pri btn-chico" data-agm-corregir="' + m.id + '">' + (noSupo ? 'Responder' : 'Corregir') + '</button>') + '</div></div>';
   }
   function pagMarcadas() {
     if (AGMK.error) {
@@ -8066,11 +8073,11 @@
       return '<div class="skel"></div>';
     }
     if (!AGMK.lista.length) {
-      return vacioAg('Ninguna todavía', 'Cuando un vendedor marque una respuesta con el pulgar para abajo, aparece acá para corregirla.');
+      return vacioAg('Nada para responder', 'Cuando el Asistente no sepa contestar algo, o un vendedor marque una respuesta con el pulgar para abajo, aparece acá.');
     }
     var pend = AGMK.lista.filter(function (m) { return !m.revisada; }), rev = AGMK.lista.filter(function (m) { return m.revisada; });
-    return '<p class="agx-intro">' + (pend.length ? pend.length + (pend.length === 1 ? ' para revisar.' : ' para revisar.') : 'Nada para revisar.') +
-        ' "Corregir" guarda la respuesta buena como una pregunta en Conocimiento: la próxima vez contesta eso.</p>' +
+    return '<p class="agx-intro">' + (pend.length ? pend.length + ' para responder.' : 'Nada para responder.') +
+        ' "Responder" (o "Corregir") guarda la respuesta como una pregunta en Conocimiento: la próxima vez contesta eso. "Ya está" la saca de la lista.</p>' +
       pend.map(htmlMarcada).join('') +
       (rev.length ? '<details class="agm-rev"><summary>Revisadas (' + rev.length + ')</summary>' + rev.map(htmlMarcada).join('') + '</details>' : '');
   }
@@ -8080,7 +8087,7 @@
         if (pinDelAgente(r)) { return; }
         (AGMK.lista || []).forEach(function (m) { if (+m.id === +id) { m.revisada = si; } });
         if (AG.datos && AGMK.lista) { AG.datos.marcadas = AGMK.lista.filter(function (m) { return !m.revisada; }).length; }
-        if (!callado) { avisar('ok', si ? 'Lista.' : 'Vuelve a "para revisar".'); }
+        if (!callado) { avisar('ok', si ? 'Lista.' : 'Vuelve a "para responder".'); }
         if (vista === 'agente') { pintarVistas(); if (enPaginaAg('marcadas')) { pintarAgente(); } }
       })
       .catch(function (err) {
@@ -8208,7 +8215,8 @@
         var m = (AGMK.lista || []).filter(function (x) { return +x.id === +b.dataset.agmCorregir; })[0];
         if (!m) { return; }
         abrirFuente({ tipo: 'pregunta', titulo: String(m.pregunta || '').slice(0, 200), contenido: '', publico: 'interno',
-                      tema: 'Correcciones', origen: 'correccion', marcada: m.id });
+                      tema: noSupoAg(m) ? 'Preguntas de los locales' : 'Correcciones', origen: noSupoAg(m) ? 'sin-respuesta' : 'correccion',
+                      marcada: m.id });
       };
     });
   }

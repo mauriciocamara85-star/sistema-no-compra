@@ -12579,3 +12579,109 @@ select (select count(*) from agente_fuentes where borrada is null and lee_client
          = (select count(*) from agente_fuentes where borrada is null and publico = 'clientes' and lee_clientes) as clientes_ok,
        jsonb_array_length(asistente_contexto('0', 'chequeo', null)->'fuentes')
          = (select count(*) from agente_fuentes where borrada is null and lee_asistente) as asistente_ok;
+
+-- ─────────────────────────── PARTE 174 (25/10/2026) ───────────────────────────
+-- =====================================================================
+-- VDH · CRM · SQL 174 (25/10/2026): las preguntas que el Asistente no supo
+-- contestar se anotan solas.
+--
+-- Pedido de Mauricio (25/10): "que las preguntas que no tengas respuesta las
+-- dejes anotadas en un lugarcito; después yo te paso las respuestas o las
+-- buscamos con los supervisores, y así lo vamos haciendo más completo".
+--
+-- En CRM → Agentes de IA → Asistente de vendedores, la página de las
+-- respuestas marcadas (desde ahora "Para responder") trae también, solas, las
+-- preguntas que el Asistente no supo contestar: las que contestó con "Eso no
+-- lo tengo en los manuales" (o parecido), y las que contestó sin citar ningún
+-- documento (salvo un saludo o un "gracias"). "Responder" guarda la respuesta
+-- en Conocimiento y la próxima vez el Asistente ya la sabe; "Ya está" la saca
+-- de la lista. Siguen también las del pulgar para abajo, como hasta ahora.
+--
+-- No cambia ninguna tabla ni lo que guarda el Asistente: se reconoce con lo
+-- que ya está guardado de cada respuesta (vale también para las de antes).
+-- Se deshace con deshacer-174.sql.
+-- =====================================================================
+
+/* ═══ ¿Esta respuesta es un "no lo sé"? ══════════════════════════════════ */
+create or replace function asistente_sin_respuesta(p_pregunta text, p_respuesta text, p_fuentes jsonb)
+returns boolean
+language sql
+immutable
+parallel safe
+as $$
+  select coalesce(p_respuesta, '') ~* 'no (lo )?(tengo|encuentro|encontr[eé]|figura|aparece|est[aá])[^.\n]{0,40}(manual|documento)'
+      or ((case when jsonb_typeof(p_fuentes) = 'array' then jsonb_array_length(p_fuentes) else 0 end) = 0
+          and lower(btrim(coalesce(p_pregunta, ''))) !~
+              '^[¡!¿? ]*(hola|holis|buen[oa]s?( d[ií]as?| tardes| noches)?|gracias|muchas gracias|ok|okey|dale|genial|perfecto|listo|chau|joya|b[aá]rbaro|buen[ií]simo)[ !.,?¡¿]*$');
+$$;
+revoke execute on function asistente_sin_respuesta(text, text, jsonb) from public;
+grant execute on function asistente_sin_respuesta(text, text, jsonb) to anon, authenticated, service_role;
+
+/* ═══ La lista "Para responder": las del pulgar para abajo y las que no supo ═══ */
+create or replace function asistente_marcadas(p_pin text)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  return jsonb_build_object('marcadas', coalesce((
+    select jsonb_agg(jsonb_build_object('id', m.id, 'pregunta', m.pregunta, 'respuesta', m.respuesta, 'comentario', m.comentario,
+                                        'fuentes', m.fuentes, 'revisada', m.revisada, 'creado', m.creado,
+                                        'motivo', case when m.voto = -1 then 'pulgar' else 'sin_respuesta' end,
+                                        'local', c.local, 'vendedor', c.vendedor) order by m.revisada, m.creado desc)
+      from (select * from asistente_mensajes x
+             where x.voto = -1 or asistente_sin_respuesta(x.pregunta, x.respuesta, x.fuentes)
+             order by x.creado desc limit 200) m
+      join asistente_charlas c on c.id = m.charla), '[]'::jsonb));
+end;
+$$;
+revoke execute on function asistente_marcadas(text) from public;
+grant execute on function asistente_marcadas(text) to anon, authenticated;
+
+/* "Ya está" / "Volver a revisar" (y "Responder", al guardar la respuesta). */
+create or replace function asistente_marcada_revisar(p_pin text, p_id bigint, p_si boolean default true)
+returns jsonb
+language plpgsql
+volatile
+security definer
+set search_path = public
+as $$
+declare
+  r jsonb := pin_ok(p_pin);
+begin
+  if not coalesce((r->>'ok')::boolean, false) then return agente_pin_mal(r); end if;
+  update asistente_mensajes set revisada = coalesce(p_si, true)
+   where id = p_id and (voto = -1 or asistente_sin_respuesta(pregunta, respuesta, fuentes));
+  return jsonb_build_object('ok', found);
+end;
+$$;
+revoke execute on function asistente_marcada_revisar(text, bigint, boolean) from public;
+grant execute on function asistente_marcada_revisar(text, bigint, boolean) to anon, authenticated;
+
+/* ═══ El numerito del menú (agente_config) cuenta también las que no supo ═══
+   Se cambia sólo esa cuenta adentro de la función que está en la base (así
+   no se pisa nada que otra parte le haya cambiado). */
+do $c$
+declare
+  d     text := pg_get_functiondef('agente_config(text)'::regprocedure);
+  viejo text := $v$'marcadas', (select count(*) from asistente_mensajes m where m.voto = -1 and not m.revisada)$v$;
+  nuevo text := $v$'marcadas', (select count(*) from asistente_mensajes m where (m.voto = -1 or asistente_sin_respuesta(m.pregunta, m.respuesta, m.fuentes)) and not m.revisada)$v$;
+begin
+  d := replace(d, chr(13), '');
+  if position(nuevo in d) > 0 then return; end if;
+  if position(viejo in d) = 0 then
+    raise exception 'SQL 174: agente_config no tiene la cuenta de marcadas que esperaba: no se tocó nada.';
+  end if;
+  execute replace(d, viejo, nuevo);
+end $c$;
+
+/* ═══ Chequeo: tiene que decir t en las cuatro ═══════════════════════════ */
+select asistente_sin_respuesta('¿Cómo hago X?', 'Eso no lo tengo en los manuales. Consultalo con tu encargado.', '[{"n":1}]') as reconoce_no_lo_tengo,
+       asistente_sin_respuesta('¿Cómo hago X?', 'Hacé esto y aquello.', '[]') as reconoce_sin_fuentes,
+       not asistente_sin_respuesta('Hola', '¡Hola! ¿En qué te ayudo?', '[]') as saludo_no_cuenta,
+       position('asistente_sin_respuesta' in pg_get_functiondef('agente_config(text)'::regprocedure)) > 0 as numerito_ok;
