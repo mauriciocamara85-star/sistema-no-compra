@@ -441,9 +441,10 @@ html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg
 
 /* ═════════ EL CIERRE DE CAJA (SQL 149) ═════════
    El de BlueSoft: los pasos a la izquierda y "Resultados del día" a la
-   derecha. Lo distinto: el efectivo y lo que tendría que haber se ven recién
-   después de contar (el candado), y el pase a la caja fuerte es el Paso 2.
-   En la PC del local (1366×657) entra entero sin bajar. */
+   derecha, y el pase a la caja fuerte es el Paso 2. Desde el SQL 175 se ve
+   todo al abrirlo (sin el 175, el efectivo recién al contar: el candado).
+   En la PC del local (1366×657) entra entero sin bajar; en un monitor más
+   alto llega hasta abajo, como la venta. */
 .cj { display: grid; gap: 12px; }
 @media (min-width: 1000px) { .cj { grid-template-columns: minmax(0, 1fr) 330px; align-items: start; } }
 .cj-izq { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
@@ -504,6 +505,54 @@ button.cj-r-btn span::after { content: ' ›'; font-weight: 700; color: var(--tx
 .cj-res-pie { margin: 6px 14px 4px; font-size: 12px; line-height: 1.4; color: var(--txt-3); }
 /* En el modo prueba, la cabecera rayada, como el total de la venta. */
 html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135deg, #6B4403 0 12px, #7A4F08 12px 24px); }
+
+/* SQL 175: lo que tendría que haber, grande en el Paso 1 (es el número del arqueo). */
+.cj-tendria { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; margin-top: 6px; }
+.cj-tendria span { font-size: 13px; font-weight: 600; color: var(--txt-2); }
+.cj-tendria b { font: 700 22px/1.15 var(--sans); letter-spacing: -.3px; color: var(--txt); font-variant-numeric: tabular-nums; }
+.cj-tendria small { flex-basis: 100%; font-size: 12px; line-height: 1.35; color: var(--txt-3); }
+
+/* A todo el alto (Mauricio, 25/10: "que ocupen toda la pantalla, bien distribuido"), como el de BlueSoft:
+   los pasos a lo largo de la columna —lo que sobra va al número del Paso 1 y a Observaciones— y los
+   resultados hasta abajo, con los renglones repartidos. En 1366×657 no sobra nada: queda igual que antes. */
+@media (min-width: 1000px) {
+  .pos-cuerpo.lleno > .cj { flex: 1 1 auto; align-items: stretch; }
+  /* Los datos de arriba no se estiran (en la venta sí: ahí .tk-datos es la columna entera). */
+  .pos-cuerpo.lleno .cj-izq > .tk-datos.cj-datos { flex: none; }
+  .lleno .cj-izq > #cjPaso1 { flex: 3 1 auto; grid-template-rows: auto auto minmax(0, 1fr); }
+  .lleno .cj-izq > #cjPaso2 { flex: 2 1 auto; grid-template-rows: auto auto minmax(0, 1fr); }
+  .lleno .cj-cuenta { display: flex; flex-direction: column; min-height: 0; }
+  .lleno .cj-cuenta .cj-tendria, .lleno .cj-cuenta .cj-dif { margin: auto 0; }
+  .lleno #cjObsL { min-height: 0; }
+  .lleno #cjObs { flex: 1 1 auto; height: auto; min-height: 50px; max-height: 260px; }
+  .lleno .cj-res { display: flex; flex-direction: column; }
+  .lleno .cj-res > .cj-r { flex: 1 1 auto; max-height: 76px; align-items: center; }
+  .lleno .cj-res > .cj-r.barra { flex: none; max-height: none; }
+  .lleno .cj-res-pie { padding-top: 6px; }
+}
+/* Un monitor alto (desde 1920×1080): la columna de la derecha más ancha y los números más grandes. */
+@media (min-width: 1500px) {
+  .lleno .cj { grid-template-columns: minmax(0, 1fr) clamp(330px, 24vw, 440px); }
+}
+@media (min-width: 1000px) and (min-height: 860px) {
+  .lleno .cj-paso { padding: 14px 16px; gap: 10px; }
+  .lleno .cj-paso-cab span { font-size: 15px; }
+  .lleno .cj-monto { width: 210px; }
+  .lleno .cj-monto input { font-size: 17px; padding-top: 9px; padding-bottom: 9px; }
+  .lleno .cj-fila > .btn { min-height: 42px; }
+  .lleno .cj-cuenta .pos-ayuda { font-size: 13.5px; }
+  .lleno .cj-tendria { display: grid; justify-items: center; text-align: center; gap: 4px; }
+  .lleno .cj-tendria span { font-size: 15px; }
+  .lleno .cj-tendria b { font-size: clamp(34px, 4.4vh, 56px); letter-spacing: -1px; }
+  .lleno .cj-tendria small { font-size: 13.5px; }
+  .lleno .cj-dif { padding: 18px 20px; text-align: center; }
+  .lleno .cj-dif b { font-size: clamp(26px, 3.4vh, 40px); }
+  .lleno .cj-dif span { font-size: 15px; }
+  .lleno .cj-res-tit { padding: 12px 16px; font-size: 15.5px; }
+  .lleno .cj-r { padding-left: 16px; padding-right: 16px; font-size: clamp(14.5px, 1.45vh, 17px); }
+  .lleno .cj-r.barra b { font-size: clamp(17px, 1.7vh, 20px); }
+  .lleno .cj-res-pie { margin: 0 16px 6px; font-size: 13px; }
+}
 
 /* El cierre guardado (la ventana). */
 .cj-det { display: grid; gap: 12px; }

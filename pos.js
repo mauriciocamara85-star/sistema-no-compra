@@ -2386,6 +2386,13 @@
      y recién después se ve cuánto tendría que haber; el pase a la caja
      fuerte va adentro del cierre, y los gastos de la caja chica se cargan
      ahí mismo. "Resultados del día" a la derecha, como en BlueSoft.
+     SQL 175 (25/10): todo A LA VISTA, como en BlueSoft. Él: "usamos el
+     cierre de caja para hacer un arqueo… a las 5 cambia… vemos ahí qué
+     importe nos da todo para poder controlar las tarjetas, el efectivo".
+     El arqueo es abrir el cierre y mirar; contar sigue quedando anotado. Y a
+     todo el alto ("que ocupen toda la pantalla, bien distribuido"): los
+     pasos a lo largo de la columna y los resultados hasta abajo. Sin el 175
+     corrido, la base no manda el efectivo y queda como antes (a ciegas).
      ════════════════════════════════════════════════════════════════════ */
   var TIPOS_MOV = { gasto: 'Gasto del local', salida: 'Otra salida', ingreso: 'Otro ingreso', caja_fuerte: 'A la caja fuerte' };
   /* Los tipos de gasto de BlueSoft ("Gasto nuevo" → Tipo de gasto). */
@@ -2429,8 +2436,9 @@
     var c = $('cuerpo'), prueba = enPrueba();
     var l = localDe(S.cajaLocal) || localInicial();
     S.cajaLocal = l.id;
-    /* d: la caja abierta (sin el efectivo); k: lo que devolvió el conteo (con el efectivo). */
+    /* d: la caja abierta (con el efectivo desde el SQL 175); k: lo que devolvió el conteo (con lo que tendría que haber y la diferencia). */
     var K = { d: null, k: null, clave: nuevaClave() }, pedido = 0;
+    c.classList.add('lleno');
     c.innerHTML = cabeza('Cierre de caja' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="cjSub">Cargando…</span>',
         '<div id="cjHecho"></div>' +
         '<button type="button" class="btn btn-sec btn-chico" id="cjGasto">Agregar gasto…</button>' +
@@ -2485,7 +2493,8 @@
         : 'La caja está abierta desde el cierre ' + refCierre({ prueba: prueba, numero: d.ultimo.numero }) + ' (' + fechaHora(d.ultimo.fecha) + ').');
       /* El primer cierre no tiene de dónde sacar el saldo inicial: lo escriben (con cuánto arrancó la caja). */
       $('cjSaldoIni').innerHTML = d.primer ? campo('cj-monto', 'Saldo inicial', '<input type="text" inputmode="decimal" id="cjSaldo" autocomplete="off" placeholder="$0" title="Con cuánto efectivo arrancó la caja (el cambio)">') : '';
-      if ($('cjSaldo')) { $('cjSaldo').value = saldo; $('cjSaldo').oninput = olvidarCuenta; }
+      /* Lo que tendría que haber cambia mientras escriben el saldo inicial. */
+      if ($('cjSaldo')) { $('cjSaldo').value = saldo; $('cjSaldo').oninput = function () { if (K.k) olvidarCuenta(); else pintarPasos(); }; }
       pintarHecho();
       pintarPasos();
     }
@@ -2497,32 +2506,53 @@
         ' · quedan ' + plata(h.queda) + '</span><button type="button" id="cjVerHecho">Ver</button></div>';
       $('cjVerHecho').onclick = function () { abrirCierre(h.id, function () { S.cajaHecho = null; if (S.vista === 'cierre') verCierre(); }); };
     }
-    /* Los resultados: antes de contar, sin el efectivo; después, con todo (lo que devolvió el conteo, más nuevo). */
+    /* SQL 175: la base manda el efectivo desde que se abre el cierre. Sin el 175, recién al contar (como antes). */
+    function aLaVista() { return !!K.d && K.d.ventas.efectivo != null; }
+    /** El saldo inicial escrito en el Paso 1 (el primer cierre del local), en centavos; vacío = 0, mal escrito = NaN. */
+    function saldoEscrito() { var t = $('cjSaldo') ? $('cjSaldo').value.trim() : ''; return t ? leerPlata(t) : 0; }
+    /** Lo que tendría que haber en efectivo, en centavos: la misma cuenta que pos_caja_contar. */
+    function esperadoHoy() {
+      var d = K.d, s = d.primer ? saldoEscrito() : cent(d.saldo_inicial || 0);
+      return (isNaN(s) ? 0 : s) + cent(d.ventas.efectivo) + cent(d.otros_ingresos) - cent(d.gastos) - cent(d.otras_salidas);
+    }
+    /* Los resultados: con todo a la vista (SQL 175); sin el 175, el efectivo recién después de contar. */
     function pintarRes() {
       var d = K.d, k = K.k;
       if (!d) return;
-      var x = k || d, v = x.ventas, p = function (n) { return plata(cent(n || 0)); };
+      var x = k || d, v = x.ventas, p = function (n) { return plata(cent(n || 0)); }, vista = aLaVista();
       var nm = (d.movimientos || []).length, nc = Number(x.cambios) || 0;
+      var saldo = !d.primer ? p(d.saldo_inicial) : k ? p(k.saldo_inicial) :
+        vista && $('cjSaldo') && $('cjSaldo').value.trim() && !isNaN(saldoEscrito()) ? plata(saldoEscrito()) : '<i class="cj-oculto">en el Paso 1</i>';
       $('cjRes').innerHTML = '<h3 class="cj-res-tit">Resultados del día</h3>' +
-        filaRes('Saldo inicial', d.primer ? (k ? p(k.saldo_inicial) : '<i class="cj-oculto">en el Paso 1</i>') : p(d.saldo_inicial), 'fuerte') +
+        filaRes('Saldo inicial', saldo, 'fuerte') +
         filaRes('Ventas Tarjeta', p(v.tarjeta)) +
         filaRes('Ventas Transferencia', p(v.transferencia)) +
-        filaRes('Ventas Efectivo', k ? p(v.efectivo) : OCULTO) +
+        filaRes('Ventas Efectivo', k || vista ? p(v.efectivo) : OCULTO) +
         filaRes('Ventas Mercado Pago', p(v.mercadopago)) +
         filaRes('Ventas MODO', p(v.modo)) +
         filaRes('Ventas Go Cuotas', p(v.go_cuotas)) +
-        filaRes('Ventas totales del día', k ? p(k.ventas_total) : OCULTO, 'barra') +
+        filaRes('Ventas totales del día', k || vista ? p(x.ventas_total) : OCULTO, 'barra') +
         '<button type="button" class="cj-r cj-r-btn" id="cjMovs" title="Ver, agregar o anular los gastos de esta caja"><span>Gastos en efectivo' +
           (nm ? ' (' + nm + ')' : '') + '</span><b>' + p(x.gastos) + '</b></button>' +
         filaRes('Otras salidas', p(x.otras_salidas)) +
         filaRes('Descuentos', p(x.descuentos), 'info') +
         filaRes('Otros ingresos', p(x.otros_ingresos)) +
-        filaRes('Saldo final en efectivo', k ? p(k.esperado) : OCULTO, 'barra') +
-        /* Los cambios van en el pie y no en un renglón: con uno más, el cierre no entra en la PC del local. Lo cobrado, recién al contar. */
+        filaRes('Saldo final en efectivo', k ? p(k.esperado) : vista ? plata(esperadoHoy()) : OCULTO, 'barra') +
+        /* Los cambios van en el pie y no en un renglón: con uno más, el cierre no entra en la PC del local. */
         '<p class="cj-res-pie">' + x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets') +
-          (nc ? ' y ' + nc + (nc === 1 ? ' cambio' : ' cambios') + (k ? ' (se cobró ' + p(k.cambios_diferencia) + ', ya sumado en las ventas)' : '') : '') +
+          (nc ? ' y ' + nc + (nc === 1 ? ' cambio' : ' cambios') + (k || vista ? ' (se cobró ' + p(x.cambios_diferencia) + ', ya sumado en las ventas)' : '') : '') +
           '. Los descuentos ya están restados de las ventas.</p>';
       $('cjMovs').onclick = abrirMovsCaja;
+    }
+    /* Lo que tendría que haber, grande en el Paso 1 (el número del arqueo), con de dónde sale. */
+    function tendria() {
+      var d = K.d, s = d.primer ? saldoEscrito() : cent(d.saldo_inicial || 0);
+      var partes = ['Saldo inicial ' + plata(isNaN(s) ? 0 : s), '+ ventas en efectivo ' + plata(cent(d.ventas.efectivo))];
+      if (cent(d.otros_ingresos)) partes.push('+ otros ingresos ' + plata(cent(d.otros_ingresos)));
+      if (cent(d.gastos)) partes.push('− gastos ' + plata(cent(d.gastos)));
+      if (cent(d.otras_salidas)) partes.push('− otras salidas ' + plata(cent(d.otras_salidas)));
+      return '<div class="cj-tendria"><span>Tendría que haber en efectivo</span><b>' + plata(esperadoHoy()) + '</b>' +
+        '<small>' + esc(partes.join(' ')) + '</small></div>';
     }
     function pintarPasos() {
       var k = K.k, hay = !!k;
@@ -2531,12 +2561,14 @@
       $('cjRetiro').disabled = !hay;
       $('cjObs').disabled = !hay;
       $('cjCerrar').disabled = !hay;
-      $('cjPaso3Txt').textContent = hay ? 'Cerrá la caja' : 'Primero contá el efectivo (Paso 1)';
+      /* El arqueo del cambio de turno se cuenta igual, pero no se cierra: «Cancelar». */
+      $('cjPaso3Txt').textContent = hay ? 'Cerrá la caja (si era un arqueo, «Cancelar»)' : 'Primero contá el efectivo (Paso 1)';
       var obsL = $('cjObsL').firstChild;
       if (!hay) {
-        var n = K.d ? Number(K.d.conteos) : 0;
-        $('cjCuenta').innerHTML = '<p class="pos-ayuda">' + (n ? 'Esta caja ya se contó ' + (n === 1 ? 'una vez' : n + ' veces') + ': cada conteo queda anotado.'
-          : 'Contá la plata del cajón y escribila. Recién ahí se ve cuánto tendría que haber.') + '</p>';
+        var n = K.d ? Number(K.d.conteos) : 0, ya = n ? 'Esta caja ya se contó ' + (n === 1 ? 'una vez' : n + ' veces') + ': cada conteo queda anotado.' : '';
+        $('cjCuenta').innerHTML = aLaVista()
+          ? '<p class="pos-ayuda">Contá la plata del cajón, escribila y tocá «Ver la cuenta»: te dice si cuadra. ' + (ya || 'Cada conteo queda anotado.') + '</p>' + tendria()
+          : '<p class="pos-ayuda">' + (ya || 'Contá la plata del cajón y escribila. Recién ahí se ve cuánto tendría que haber.') + '</p>';
         obsL.textContent = 'Observaciones';
       } else {
         var dv = desvioDe(cent(k.desvio), cent(k.tolerancia));

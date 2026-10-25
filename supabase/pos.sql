@@ -859,8 +859,8 @@ revoke all on pos_cierres, pos_caja_conteos, pos_caja_movimientos from anon, aut
 revoke all on sequence pos_caja_conteos_id_seq from anon, authenticated;
 
 /* La caja abierta de un local (la de verdad o la de prueba): lo que entró
-   desde el último cierre. Es para las otras funciones: trae también el
-   efectivo, que la pantalla ve recién después de contar.
+   desde el último cierre. Es para las otras funciones (desde el SQL 175,
+   pos_caja la devuelve entera: el efectivo ya no se esconde).
    SQL 151: también lo que se cobró en los cambios (la diferencia), en cada
    forma de pago y en el total, como una venta más. */
 create or replace function pos_caja_abierta(p_local uuid, p_prueba boolean) returns jsonb
@@ -926,9 +926,13 @@ begin
   return r;
 end $$;
 
-/* La caja de hoy para la pantalla del cierre: todo menos el efectivo, que se
-   ve recién después de contar (pos_caja_contar). SQL 151: tampoco lo que se
-   cobró en los cambios (puede ser en efectivo); cuántos cambios hubo, sí. */
+/* La caja de hoy para la pantalla del cierre.
+   SQL 175 (Mauricio, 25/10: "vemos ahí qué importe nos da todo para poder
+   controlar las tarjetas, el efectivo"): todo a la vista, como en BlueSoft,
+   también el efectivo y lo cobrado en los cambios. Hasta el 175 el efectivo
+   se veía recién después de contar (el conteo a ciegas del SQL 149); cada
+   conteo sigue quedando anotado (pos_caja_contar). Así se hace el arqueo del
+   cambio de turno: se abre el cierre y se mira, sin cerrar. */
 create or replace function pos_caja(p_local uuid, p_prueba boolean default false) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
@@ -940,7 +944,7 @@ begin
     raise exception 'Elegí la sucursal.';
   end if;
   a := pos_caja_abierta(p_local, v_prueba);
-  return ((a #- '{ventas,efectivo}') - 'ventas_total' - 'cambios_diferencia') || jsonb_build_object(
+  return a || jsonb_build_object(
     'numero', (select coalesce(max(c.numero), 0) + 1 from pos_cierres c where c.local_id = p_local and c.prueba = v_prueba),
     'responsable', (select p.nombre from orden_personas p where p.id = orden_yo_id()),
     'movimientos', coalesce((
@@ -951,8 +955,9 @@ begin
 end $$;
 
 /* Paso 1: el efectivo que contaron. Queda anotado (cada vez que cuentan) y
-   recién ahí se devuelve cuánto tendría que haber y la diferencia. En el
-   primer cierre del local también dicen con cuánto arrancó la caja. */
+   devuelve cuánto tendría que haber y la diferencia (hasta el SQL 175, lo que
+   tendría que haber se veía recién acá). En el primer cierre del local
+   también dicen con cuánto arrancó la caja. */
 create or replace function pos_caja_contar(p_local uuid, p_prueba boolean, p_contado numeric, p_saldo_inicial numeric default null)
 returns jsonb language plpgsql volatile security definer set search_path = public as $$
 declare
