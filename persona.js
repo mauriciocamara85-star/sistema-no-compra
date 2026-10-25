@@ -93,6 +93,12 @@ var persona = (function () {
   var OFICINA = { admin: 1, atencion: 1, gerencia: 1 };
   function oficina() { return !!OFICINA[rol()] || conAtencion(); }
 
+  /* La compu habilitada de un local (el enlace de Cajas habilitadas: la llave de Cobrar, 'nc_caja'). */
+  function compuDelLocal() {
+    try { return /^caja_/.test(localStorage.getItem('nc_caja') || '') && !!localStorage.getItem('nc_caja_local'); }
+    catch (e) { return false; }
+  }
+
   function marcar() {
     var r = rol();
     if (r) document.documentElement.setAttribute('data-nc-rol', r);
@@ -100,6 +106,11 @@ var persona = (function () {
     /* Con la casilla de Atención, estilos.css no esconde el CRM ni el Club. */
     if (conAtencion()) document.documentElement.setAttribute('data-nc-atencion', '');
     else document.documentElement.removeAttribute('data-nc-atencion');
+    /* Mauricio, 25/10: la compu de un local, sin nadie adentro, ve sólo lo del local (la barra del
+       vendedor: sin CRM, Socios, Config ni Supervisión). Al entrar alguien, manda su rol. Es sólo la
+       barra: cada pantalla de la oficina sigue con su portón. */
+    if (!r && compuDelLocal()) document.documentElement.setAttribute('data-nc-compu', '');
+    else document.documentElement.removeAttribute('data-nc-compu');
   }
   marcar();
 

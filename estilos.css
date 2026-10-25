@@ -1366,7 +1366,8 @@ select {
 /* ── QUIÉN ENTRÓ (persona.js, 13/10/2026) ─────────────────────────────────
    Cada persona entra con su usuario y la barra muestra lo que usa su rol.
    persona.js pone el rol en <html> ANTES de pintar, así lo que no va nunca
-   llega a verse. Sin usuario no hay rol y se ve todo, como siempre. */
+   llega a verse. Sin usuario no hay rol y se ve todo, salvo en la compu
+   habilitada de un local (data-nc-compu, 25/10/2026). */
 /* SQL 135: el vendedor o encargado que además atiende clientes (data-nc-atencion) ve también lo de Atención. */
 html[data-nc-rol="vendedor"]:not([data-nc-atencion]) .rail-item[href="panel.html"],
 html[data-nc-rol="vendedor"]:not([data-nc-atencion]) .rail-item[href^="club-numeros.html"],
@@ -1375,6 +1376,12 @@ html[data-nc-rol="supervisor"]:not([data-nc-atencion]) .rail-item[href="panel.ht
 html[data-nc-rol="supervisor"]:not([data-nc-atencion]) .rail-item[href^="club-numeros.html"],
 html[data-nc-rol="atencion"] .rail-item[data-impecable],
 html[data-nc-rol="atencion"] .rail-item[href="impecable-admin.html"] { display: none; }
+/* La compu habilitada de un local sin nadie adentro (data-nc-compu, 25/10): sólo lo del local. */
+html[data-nc-compu] .rail-item[href="panel.html"],
+html[data-nc-compu] .rail-item[href^="club-numeros.html"],
+html[data-nc-compu] .rail-item[href="config.html"],
+html[data-nc-compu] .rail-item[data-impecable],
+html[data-nc-compu] .rail-item[href="impecable-admin.html"] { display: none; }
 /* El POS, mientras está en construcción (20/10), lo ve sólo Administración: ni siquiera sin usuario. */
 html:not([data-nc-rol="admin"]) .rail-item[href="pos.html"],
 html:not([data-nc-rol="admin"]) .rail-item[href="gestion.html"] { display: none; }
