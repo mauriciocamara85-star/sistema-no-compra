@@ -441,14 +441,15 @@ html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg
 
 /* ═════════ EL CIERRE DE CAJA (SQL 149) ═════════
    El de BlueSoft: los pasos a la izquierda y "Resultados del día" a la
-   derecha, y el pase a la caja fuerte es el Paso 2. Desde el SQL 175 se ve
+   derecha; el pase a la caja fuerte, que era el Paso 2, desde el SQL 180 se
+   hace antes, en Movimientos de salida. Desde el SQL 175 se ve
    todo al abrirlo (sin el 175, el efectivo recién al contar: el candado).
    En la PC del local (1366×657) entra entero sin bajar; en un monitor más
    alto llega hasta abajo, como la venta. */
 .cj { display: grid; gap: 12px; }
 @media (min-width: 1000px) { .cj { grid-template-columns: minmax(0, 1fr) 330px; align-items: start; } }
 .cj-izq { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-/* Fecha, Sucursal, Número, Caja y Responsable: en la PC, en un renglón (así entran los tres pasos). */
+/* Fecha, Sucursal, Número, Caja y Responsable: en la PC, en un renglón (así entran los pasos). */
 @media (min-width: 1200px) {
   .tk-datos.cj-datos { grid-template-columns: 1fr 1.4fr .8fr 1fr 1.4fr; }
   .tk-datos.cj-datos > * { grid-column: auto; }
@@ -480,10 +481,10 @@ html.pos-en-prueba .tk-caja.gordo { background: repeating-linear-gradient(135deg
 .cj-queda { margin: 0; padding-bottom: 1px; font-size: 13px; line-height: 1.35; color: var(--txt-2); }
 .cj-queda b { color: var(--txt); font-variant-numeric: tabular-nums; }
 .cj-queda small { display: block; font-size: 12px; color: var(--txt-3); }
-.cj-queda.mal { color: var(--bad-txt); font-weight: 600; }
 .cj-izq textarea { height: 50px; resize: none; }
-.cj-paso-fin { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
-.cj-botones { display: flex; gap: 8px; }
+/* El pie del Paso 2: lo que queda en la caja chica a la izquierda y los botones a la derecha. */
+.cj-fin { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.cj-botones { display: flex; gap: 8px; margin-left: auto; }
 
 /* Resultados del día: la columna de la derecha de BlueSoft. */
 .cj-res { min-width: 0; padding-bottom: 6px; overflow: hidden; background: var(--surface); border: 1px solid var(--borde-tarjeta); border-radius: var(--r); box-shadow: var(--sombra); }
@@ -520,7 +521,7 @@ html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135de
   /* Los datos de arriba no se estiran (en la venta sí: ahí .tk-datos es la columna entera). */
   .pos-cuerpo.lleno .cj-izq > .tk-datos.cj-datos { flex: none; }
   .lleno .cj-izq > #cjPaso1 { flex: 3 1 auto; grid-template-rows: auto auto minmax(0, 1fr); }
-  .lleno .cj-izq > #cjPaso2 { flex: 2 1 auto; grid-template-rows: auto auto minmax(0, 1fr); }
+  .lleno .cj-izq > #cjPaso2 { flex: 2 1 auto; grid-template-rows: auto minmax(0, 1fr) auto; }
   .lleno .cj-cuenta { display: flex; flex-direction: column; min-height: 0; }
   .lleno .cj-cuenta .cj-tendria, .lleno .cj-cuenta .cj-dif { margin: auto 0; }
   .lleno #cjObsL { min-height: 0; }

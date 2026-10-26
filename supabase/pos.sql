@@ -59,6 +59,16 @@
 --  "Gastos del Local" de BlueSoft. La nota "SQL 179" está en la tabla y en
 --  las cuatro funciones que lo mandan.
 --
+--  SQL 180 (26/10/2026, Mauricio: "en BlueSoft tenemos una sección de
+--  movimientos, se llama «movimientos de salida», y ahí agregamos los
+--  movimientos de caja chica a caja fuerte"): el pase a la caja fuerte sale
+--  del cierre (era su Paso 2) y es un movimiento más de la caja chica, tipo
+--  'caja_fuerte', con su propio número: MS-1, MS-2… (las pruebas MSP-1…).
+--  Entra en el próximo cierre como los gastos y se resta de lo que tendría
+--  que haber (pos_cierres.a_caja_fuerte). El cierre ya no pide cuánto pasa
+--  (retiro queda en 0; se sigue aceptando, para la pantalla de antes), y no
+--  se cierra si la caja cambió después de contar.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -799,12 +809,13 @@ create table pos_cierres (
   gastos                numeric(14,2) not null default 0,
   otras_salidas         numeric(14,2) not null default 0,
   otros_ingresos        numeric(14,2) not null default 0,
+  a_caja_fuerte         numeric(14,2) not null default 0,   -- SQL 180: los movimientos de salida a la caja fuerte de este cierre
   esperado              numeric(14,2) not null default 0,   -- el "Saldo final en efectivo"
   contado               numeric(14,2) not null check (contado >= 0),
   desvio                numeric(14,2) generated always as (esperado - contado) stored,
   conteos               int not null default 1,
   primer_conteo         numeric(14,2),
-  retiro                numeric(14,2) not null default 0,   -- a la caja fuerte
+  retiro                numeric(14,2) not null default 0,   -- a la caja fuerte desde el cierre (su Paso 2, hasta el SQL 180)
   queda                 numeric(14,2) generated always as (contado - retiro) stored,
   observaciones         text,
   estado                text not null default 'cerrada' check (estado in ('cerrada', 'anulada')),
@@ -831,13 +842,14 @@ create table pos_caja_conteos (
 create index pos_caja_conteos_local on pos_caja_conteos (local_id, prueba, fecha);
 
 -- Los gastos del local y las otras entradas y salidas de la caja chica.
+-- SQL 180: también lo que pasa a la caja fuerte (los "Movimientos de salida" de BlueSoft).
 create table pos_caja_movimientos (
   id              uuid primary key default gen_random_uuid(),
   local_id        uuid not null references orden_locales(id),
   prueba          boolean not null default false,
   fecha           timestamptz not null default clock_timestamp(),
   dia             date not null,
-  tipo            text not null check (tipo in ('gasto', 'salida', 'ingreso')),
+  tipo            text not null check (tipo in ('gasto', 'salida', 'ingreso', 'caja_fuerte')),
   rubro           text,                 -- el tipo de gasto de BlueSoft (bidones de agua, limpieza…)
   descripcion     text,
   monto           numeric(14,2) not null check (monto > 0 and monto < 100000000),
@@ -849,10 +861,11 @@ create table pos_caja_movimientos (
   anulado_por     uuid,
   anulado_motivo  text,
   clave           text unique,
-  numero          int not null,         -- SQL 179: G-1, G-2… seguido por local (las pruebas aparte, GP-1…)
-  check (tipo <> 'gasto' or rubro is not null),
-  constraint pos_caja_movimientos_numero_key unique (local_id, prueba, numero)
+  numero          int not null,         -- SQL 179: G-1, G-2… seguido por local (las pruebas aparte, GP-1…); SQL 180: los de la caja fuerte, MS-1… aparte
+  check (tipo <> 'gasto' or rubro is not null)
 );
+-- SQL 180: dos talonarios por local, los gastos (G-) y los pases a la caja fuerte (MS-). Hasta el 180, la restricción pos_caja_movimientos_numero_key.
+create unique index pos_caja_movimientos_numero on pos_caja_movimientos (local_id, prueba, (tipo = 'caja_fuerte'), numero);
 create index pos_caja_movimientos_abiertos on pos_caja_movimientos (local_id, prueba) where cierre_id is null;
 create index pos_caja_movimientos_dia on pos_caja_movimientos (dia, local_id);
 
@@ -927,6 +940,7 @@ begin
     'gastos', coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
     'otras_salidas', coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
     'otros_ingresos', coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0),
+    'a_caja_fuerte', coalesce((select sum(m.monto) from m where m.tipo = 'caja_fuerte'), 0),   -- SQL 180
     'conteos', (select count(*) from pos_caja_conteos k
                  where k.local_id = p_local and k.prueba = p_prueba and k.fecha > coalesce(u.fecha, '-infinity'::timestamptz)),
     'tolerancia', coalesce((select o.caja_tolerancia_pesos from orden_config o where o.local_id = p_local), 100)
@@ -989,18 +1003,23 @@ begin
     v_saldo := (a->>'saldo_inicial')::numeric;
   end if;
   v_esp := v_saldo + (a->'ventas'->>'efectivo')::numeric + (a->>'otros_ingresos')::numeric
-         - (a->>'gastos')::numeric - (a->>'otras_salidas')::numeric;
+         - (a->>'gastos')::numeric - (a->>'otras_salidas')::numeric - (a->>'a_caja_fuerte')::numeric;   -- SQL 180
   insert into pos_caja_conteos (local_id, prueba, persona, saldo_inicial, contado, esperado)
   values (p_local, v_prueba, orden_yo_id(), v_saldo, v_cont, v_esp);
   return a || jsonb_build_object('saldo_inicial', v_saldo, 'esperado', v_esp, 'contado', v_cont,
                                  'desvio', v_esp - v_cont, 'conteos', (a->>'conteos')::int + 1);
 end $$;
 
-/* Pasos 2 y 3: lo que pasa a la caja fuerte, y cerrar. La cuenta se vuelve a
-   hacer acá, con lo que haya en ese momento; el efectivo tiene que ser el
-   último que contaron (Paso 1). Con la misma `clave` dos veces (se cortó
-   internet después de cerrar) devuelve el mismo cierre, no lo duplica.
-   SQL 151: los cambios entran en el cierre como las ventas. */
+/* Cerrar. La cuenta se vuelve a hacer acá, con lo que haya en ese momento;
+   el efectivo tiene que ser el último que contaron (Paso 1). Con la misma
+   `clave` dos veces (se cortó internet después de cerrar) devuelve el mismo
+   cierre, no lo duplica.
+   SQL 151: los cambios entran en el cierre como las ventas.
+   SQL 180: lo que pasa a la caja fuerte ya no se escribe acá (era el Paso 2):
+   son los movimientos de salida, que entran como los gastos (a_caja_fuerte).
+   `retiro` se sigue aceptando, para la pantalla de antes. Y si la caja cambió
+   después de contar (una venta en efectivo, un gasto, un pase a la caja
+   fuerte), no cierra: hay que contar de nuevo. */
 create or replace function pos_caja_cerrar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -1101,11 +1120,16 @@ begin
     cambios_diferencia   = coalesce((select sum(cb.diferencia) from cb), 0),
     gastos               = coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
     otras_salidas        = coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
-    otros_ingresos       = coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0)
+    otros_ingresos       = coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0),
+    a_caja_fuerte        = coalesce((select sum(m.monto) from m where m.tipo = 'caja_fuerte'), 0)   -- SQL 180
   where id = v_id;
-  update pos_cierres set esperado = saldo_inicial + ventas_efectivo + otros_ingresos - gastos - otras_salidas
+  update pos_cierres set esperado = saldo_inicial + ventas_efectivo + otros_ingresos - gastos - otras_salidas - a_caja_fuerte
    where id = v_id
   returning * into c;
+  /* SQL 180: lo que tendría que haber es lo mismo que cuando contaron; si no, algo entró o salió en el medio. */
+  if c.esperado <> k.esperado then
+    raise exception 'La caja cambió después de contar (una venta en efectivo, un gasto o un pase a la caja fuerte): contá de nuevo y tocá «Ver la cuenta».';
+  end if;
 
   return jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'esperado', c.esperado, 'contado', c.contado,
                             'desvio', c.desvio, 'retiro', c.retiro, 'queda', c.queda, 'ya', false);
@@ -1114,7 +1138,9 @@ end $$;
 /* Un gasto del local, otra salida u otro ingreso de la caja chica. Entra en
    el próximo cierre. Con la misma `clave` dos veces no se duplica.
    SQL 179: cada uno con su número, seguido por local (G-1, G-2…; las
-   pruebas aparte, GP-1…). Lo devuelve, para el "Anotado: gasto G-12". */
+   pruebas aparte, GP-1…). Lo devuelve, para el "Anotado: gasto G-12".
+   SQL 180: también lo que pasa a la caja fuerte (tipo 'caja_fuerte', los
+   "Movimientos de salida" de BlueSoft), con su propio número: MS-1… */
 create or replace function pos_caja_mov_guardar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -1137,9 +1163,11 @@ begin
   if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
     raise exception 'Elegí la sucursal.';
   end if;
-  if v_tipo not in ('gasto', 'salida', 'ingreso') then raise exception 'El movimiento tiene que ser un gasto, otra salida u otro ingreso.'; end if;
+  if v_tipo not in ('gasto', 'salida', 'ingreso', 'caja_fuerte') then
+    raise exception 'El movimiento tiene que ser un gasto, otra salida, otro ingreso o un pase a la caja fuerte.';
+  end if;
   if v_tipo = 'gasto' and v_rubro is null then raise exception 'Elegí el tipo de gasto.'; end if;
-  if v_tipo <> 'gasto' and v_desc is null then raise exception 'Escribí de qué es.'; end if;
+  if v_tipo in ('salida', 'ingreso') and v_desc is null then raise exception 'Escribí de qué es.'; end if;
   if length(v_rubro) > 60 or length(v_desc) > 200 then raise exception 'El texto es demasiado largo.'; end if;
   if v_monto is null or v_monto <= 0 or v_monto >= 100000000 then raise exception 'Escribí el monto.'; end if;
   /* SQL 179: un número por vez en cada local: si dos guardan al mismo tiempo, el segundo espera (como los cambios). */
@@ -1148,7 +1176,8 @@ begin
     select * into v_ya from pos_caja_movimientos where clave = v_clave;
     if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'ya', true); end if;
   end if;
-  select coalesce(max(m.numero), 0) + 1 into v_num from pos_caja_movimientos m where m.local_id = v_local and m.prueba = v_prueba;
+  select coalesce(max(m.numero), 0) + 1 into v_num from pos_caja_movimientos m
+   where m.local_id = v_local and m.prueba = v_prueba and (m.tipo = 'caja_fuerte') = (v_tipo = 'caja_fuerte');   -- SQL 180: dos talonarios
   insert into pos_caja_movimientos (local_id, prueba, dia, tipo, rubro, descripcion, monto, persona, persona_nombre, clave, numero)
   values (v_local, v_prueba, orden_dia_caja(v_local), v_tipo, case when v_tipo = 'gasto' then v_rubro end, v_desc, v_monto,
           orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_clave, v_num)
@@ -1206,7 +1235,7 @@ begin
                     'mercadopago', coalesce(sum(ventas_mercadopago) filter (where estado = 'cerrada'), 0),
                     'otros',       coalesce(sum(ventas_modo + ventas_go_cuotas + ventas_transferencia) filter (where estado = 'cerrada'), 0),
                     'gastos',      coalesce(sum(gastos + otras_salidas) filter (where estado = 'cerrada'), 0),
-                    'retiro',      coalesce(sum(retiro) filter (where estado = 'cerrada'), 0),
+                    'retiro',      coalesce(sum(retiro + a_caja_fuerte) filter (where estado = 'cerrada'), 0),   -- SQL 180
                     'desvio',      coalesce(sum(desvio) filter (where estado = 'cerrada'), 0),
                     'faltas',      count(*) filter (where estado = 'cerrada' and desvio > tolerancia),
                     'sobras',      count(*) filter (where estado = 'cerrada' and -desvio > tolerancia)) from c),
