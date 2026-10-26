@@ -470,11 +470,14 @@
     t += '<tr class="cab"><th class="izq">  Semana ' + w.n + '</th>' + cols.map(function (x, k) {
       return x ? '<th class="' + (esHoy(C, x) ? 'hoy' : '') + '">' + DIAS[k] + ' ' + x.d + (esHoy(C, x) ? '<span class="pill-hoy">hoy</span>' : '') + '</th>' : '<th></th>';
     }).join('') + '<th>Obj. Semanal</th><th>Desvío</th></tr>';
-    t += '<tr class="obj"><td class="izq">Objetivo</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + '">' + pesos(x.obj) + '</td>'; }) +
-      '<td class="tot">' + pesos(w.obj) + '</td><td class="tot"></td></tr>';
-    t += '<tr class="real"><td class="izq">Venta real</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + ' ' + semDia(x) + '">' + pesos(x.real) + '</td>'; }) +
-      '<td class="tot">' + pesos(w.real) + '</td><td class="tot ' + semSem + '">' + pesosP(w.real - w.obj) + '</td></tr>';
-    t += '<tr class="desv"><td class="izq">Desvío %</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + (x.real && x.obj ? ' ' + semDia(x) : '') + '">' + (x.real && x.obj ? sp(x.real / x.obj - 1) : '') + '</td>'; }) +
+    function na(x) { return noAbre(w, x) ? ' no-abre' : ''; }
+    t += '<tr class="obj"><td class="izq">Objetivo</td>' + cel(function (x) {
+      return na(x) ? '<td class="no-abre' + hoyCl(C, x) + '"' + TIT_NO_ABRE + '>No abre</td>' : '<td class="' + hoyCl(C, x) + '">' + pesos(x.obj) + '</td>';
+    }) + '<td class="tot">' + pesos(w.obj) + '</td><td class="tot"></td></tr>';
+    t += '<tr class="real"><td class="izq">Venta real</td>' + cel(function (x) {
+      return na(x) ? '<td class="no-abre' + hoyCl(C, x) + '"></td>' : '<td class="' + hoyCl(C, x) + ' ' + semDia(x) + '">' + pesos(x.real) + '</td>';
+    }) + '<td class="tot">' + pesos(w.real) + '</td><td class="tot ' + semSem + '">' + pesosP(w.real - w.obj) + '</td></tr>';
+    t += '<tr class="desv"><td class="izq">Desvío %</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + na(x) + (x.real && x.obj ? ' ' + semDia(x) : '') + '">' + (x.real && x.obj ? sp(x.real / x.obj - 1) : '') + '</td>'; }) +
       '<td class="' + (w.real && w.obj ? semSem : '') + '">' + (w.real && w.obj ? sp(w.real / w.obj - 1) : '') + '</td><td></td></tr>';
     V.forEach(function (v, r) {
       t += '<tr class="vend"><td class="izq">' + esc(v.nombre) + '</td>' + cel(function (x, k) { return celdaVenta(C, v, x, r, w, k); }) +
@@ -492,6 +495,14 @@
     return t + '</tbody></table>';
   }
 
+  /* El local no abre ese día (26/10, Mauricio): sin objetivo (el % del día en 0: los domingos de los de calle, los
+     feriados) y sin venta ni tráfico. Rayado como un franco, pero se carga igual: algunos abrieron un feriado
+     (Grand Bourg y Morón el 12/10), y con lo que vendieron la columna vuelve a verse normal. */
+  var TIT_NO_ABRE = ' title="Ese día el local no abre: no tiene objetivo. Si abrió, se carga igual."';
+  function noAbre(w, x) {
+    return !!x && !x.peso && !(x.real > 0) && !(x.t > 0) && w.dias.some(function (y) { return y.peso > 0; });
+  }
+
   /* SQL 181: si ese día está de vacaciones, el motivo ('' si no tiene); si no, null. */
   function deVacaciones(v, d) {
     var a = (ST.vac[v.id] || []).filter(function (p) { return d >= p[0] && d <= p[1]; })[0];
@@ -499,15 +510,15 @@
   }
 
   function celdaVenta(C, v, x, r, w, k) {
-    var val = (ST.venta[v.id] || {})[x.d], franco = v.francos.indexOf(k) >= 0, vac = deVacaciones(v, x.d);
+    var val = (ST.venta[v.id] || {})[x.d], franco = v.francos.indexOf(k) >= 0, vac = deVacaciones(v, x.d), na = noAbre(w, x) ? ' no-abre' : '';
     var titVac = ' title="' + esc(String(v.nombre).split(' ')[0] + ' de vacaciones' + (vac ? ': ' + vac : '')) + '"';
-    if (x.futuro) return '<td class="futuro' + (vac !== null ? ' vac' : franco ? ' franco' : '') + '"' + (vac !== null ? titVac : ' title="Todavía no llegó: se carga el día que pasó"') + '></td>';
+    if (x.futuro) return '<td class="futuro' + (vac !== null ? ' vac' : franco ? ' franco' : '') + na + '"' + (vac !== null ? titVac : na ? TIT_NO_ABRE : ' title="Todavía no llegó: se carga el día que pasó"') + '></td>';
     /* De vacaciones: como un franco, pero sin poder cargarlo (Mauricio, 26/10). Si ya había algo cargado, se ve y cuenta. */
-    if (vac !== null) return '<td class="vac' + hoyCl(C, x) + '"' + titVac + '>' + (def(val) ? pesos(val) : '') + '</td>';
+    if (vac !== null) return '<td class="vac' + na + hoyCl(C, x) + '"' + titVac + '>' + (def(val) ? pesos(val) : '') + '</td>';
     /* Sin el borde de "Falta cargar" (26/10, Mauricio): un día vacío es un día que no vino o no vendió, no algo
        incompleto (en octubre lo marcaba en 311 celdas, casi todas de francos sin anotar y de los que cubren). */
-    var cl = (franco ? 'franco' : '') + hoyCl(C, x);
-    var tit = franco ? ' title="Franco de ' + esc(String(v.nombre).split(' ')[0]) + '"' : '';
+    var cl = (franco ? 'franco' : '') + na + hoyCl(C, x);
+    var tit = na ? TIT_NO_ABRE : franco ? ' title="Franco de ' + esc(String(v.nombre).split(' ')[0]) + '"' : '';
     if (!edita()) return '<td class="' + cl + '"' + tit + '>' + (def(val) ? pesos(val) : '') + '</td>';
     return entrada('venta', v.id + ':' + x.d, val, 'money', cl, 'data-g="s' + w.n + '" data-r="' + r + '" data-c="' + k + '" aria-label="' + esc(v.nombre) + ', ' + DIAS[k] + ' ' + x.d + '"' + tit)
       .replace('<td class="ed', '<td' + tit + ' class="ed');
@@ -548,16 +559,19 @@
     var c = C.c, cols = colsDe(w), NOM = ['Tráfico real', 'Conversión real', 'Ticket promedio real'];
     function cel(f) { return cols.map(function (x, k) { return x ? f(x, k) : '<td class="vt-vacio"></td>'; }).join(''); }
     function campo(x, k, i, tipo) {
-      var v = [x.t, x.cv, x.tk][i];
-      if (x.futuro) return '<td class="futuro" title="Todavía no llegó: se carga el día que pasó"></td>';
-      return entrada('trafico', x.d + ':' + ['trafico', 'conversion', 'ticket'][i], v, tipo, hoyCl(C, x).trim(),
-        'data-g="t' + w.n + '" data-r="' + i + '" data-c="' + k + '" aria-label="' + NOM[i] + ', ' + DIAS[k] + ' ' + x.d + '"');
+      var v = [x.t, x.cv, x.tk][i], na = noAbre(w, x);
+      if (x.futuro) return '<td class="futuro' + (na ? ' no-abre"' + TIT_NO_ABRE : '" title="Todavía no llegó: se carga el día que pasó"') + '></td>';
+      return entrada('trafico', x.d + ':' + ['trafico', 'conversion', 'ticket'][i], v, tipo, (hoyCl(C, x) + (na ? ' no-abre' : '')).trim(),
+        'data-g="t' + w.n + '" data-r="' + i + '" data-c="' + k + '" aria-label="' + NOM[i] + ', ' + DIAS[k] + ' ' + x.d + '"')
+        .replace('<td class="', '<td' + (na ? TIT_NO_ABRE : '') + ' class="');
     }
     var t = '<table class="sem">' + COLG_SEM + '<tbody>';
     t += '<tr class="cab"><th class="izq">  Semana ' + w.n + '</th>' + cols.map(function (x, k) {
       return x ? '<th class="' + (esHoy(C, x) ? 'hoy' : '') + '">' + DIAS_C[k] + ' ' + x.d + (esHoy(C, x) ? '<span class="pill-hoy">hoy</span>' : '') + '</th>' : '<th></th>';
     }).join('') + '<th>Total Sem</th><th>vs Necesario</th></tr>';
-    t += '<tr class="necf"><td class="izq">Tráfico necesario</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + '">' + nf(x.nec) + '</td>'; }) + '<td class="tot">' + nf(w.tNec) + '</td><td class="tot"></td></tr>';
+    t += '<tr class="necf"><td class="izq">Tráfico necesario</td>' + cel(function (x) {
+      return noAbre(w, x) ? '<td class="no-abre' + hoyCl(C, x) + '"' + TIT_NO_ABRE + '>No abre</td>' : '<td class="' + hoyCl(C, x) + '">' + nf(x.nec) + '</td>';
+    }) + '<td class="tot">' + nf(w.tNec) + '</td><td class="tot"></td></tr>';
     t += '<tr class="real"><td class="izq">Tráfico real</td>' + cel(function (x, k) { return campo(x, k, 0, 'int'); }) + '<td class="tot">' + (def(w.tReal) ? nf(w.tReal) : '') + '</td>' +
       '<td class="tot ' + (def(w.tReal) ? sem(w.tReal, w.tNec) : '') + '">' + (def(w.tReal) ? (w.tReal - w.tNec > 0 ? '+' : '') + nf(w.tReal - w.tNec) : '-') + '</td></tr>';
     t += '<tr class="vend"><td class="izq">Conversión real</td>' + cel(function (x, k) { return campo(x, k, 1, 'pct'); }) + '<td class="tot">' + (def(w.tConv) ? pc(w.tConv) : '') + '</td><td class="tot ' + (def(w.tConv) ? sem(w.tConv, c.conv) : '') + '">' + (def(w.tConv) ? sp(w.tConv - c.conv) : '-') + '</td></tr>';

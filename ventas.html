@@ -242,6 +242,10 @@
   /* SQL 181: de vacaciones (Config → Usuarios), rayado como el franco, con una "V", y no se carga. */
   .vt-hoja .sem td.vac { cursor: not-allowed; }
   .vt-hoja .sem td.vac::after { content: "V"; }
+  /* El local no abre (sin objetivo): toda la columna rayada, sin letra, y "No abre" en el objetivo. Se carga igual. */
+  .vt-hoja .sem td.no-abre { background-image: repeating-linear-gradient(135deg, var(--franco) 0 3px, transparent 3px 7px); }
+  .vt-hoja .sem td.franco.no-abre::after { content: none; }
+  .vt-hoja .sem .obj td.no-abre, .vt-hoja .sem .necf td.no-abre { color: var(--h-txt3); font-size: 11.5px; font-weight: 600; }
   .vt-hoja .sem td.falta { box-shadow: inset 0 0 0 1.5px #E0A64A; }
   .vt-hoja .sem td.vt-vacio { background: #FFFFFF; }
   .vt-hoja .sem .sinv td { background: var(--mal-suave); color: var(--mal); font-weight: 700; }
@@ -530,7 +534,7 @@
   <div class="vt-tira" id="vtTira" hidden>
     <details>
       <summary>
-        <span class="vt-leyenda"><i><span class="vt-sw amb"></span>se carga</i><i><span class="vt-sw calc"></span>se calcula solo</i><i class="solo-local"><span class="vt-sw fr"></span>franco (F) o vacaciones (V)</i><i class="solo-ecom"><span class="vt-sw fal"></span>falta cargar</i></span>
+        <span class="vt-leyenda"><i><span class="vt-sw amb"></span>se carga</i><i><span class="vt-sw calc"></span>se calcula solo</i><i class="solo-local"><span class="vt-sw fr"></span>franco (F), vacaciones (V) o el local no abre</i><i class="solo-ecom"><span class="vt-sw fal"></span>falta cargar</i></span>
         <span class="vt-ver">Qué cambia respecto de la planilla</span>
       </summary>
       <ul class="vt-cambios solo-ecom">
@@ -548,6 +552,7 @@
         <li><b>Ventas sin dueño.</b> Lo cargado en la fila sin nombre de la planilla aparece en rojo hasta que alguien diga de quién es.</li>
         <li><b>Francos a la vista.</b> El día franco de cada uno sale rayado (lo saca de Config → Usuarios). Las cuentas no cambian.</li>
         <li><b>Vacaciones.</b> Se cargan en Config → Usuarios → "Vacaciones". Esos días salen rayados con una "V" y no se puede cargar venta.</li>
+        <li><b>Los días que el local no abre.</b> Si el día no tiene objetivo (los domingos de los locales de calle, los feriados), la columna sale rayada y dice "No abre". Si abrió igual, se carga y vuelve a verse normal.</li>
         <li><b>Los días que no llegaron no se pueden cargar.</b> La regla "dejalos vacíos" la cumple el sistema solo.</li>
         <li><b>El número se escribe como salga.</b> "34.500", "34500" o "$34.500" dan lo mismo. Si no es un número, no lo toma y avisa.</li>
         <li><b>Se guarda solo, celda por celda,</b> y queda anotado quién cargó cada cosa. Si dos cargan a la vez, cada uno ve lo del otro al rato.</li>
