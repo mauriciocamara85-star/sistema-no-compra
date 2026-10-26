@@ -492,9 +492,10 @@
   function celdaVenta(C, v, x, r, w, k) {
     var val = (ST.venta[v.id] || {})[x.d], franco = v.francos.indexOf(k) >= 0;
     if (x.futuro) return '<td class="futuro' + (franco ? ' franco' : '') + '" title="Todavía no llegó: se carga el día que pasó"></td>';
-    var falta = edita() && !def(val) && x.d < C.hoy && !franco && ST.tiene[v.id];
-    var cl = (franco ? 'franco' : '') + hoyCl(C, x) + (falta ? ' falta' : '');
-    var tit = franco ? ' title="Franco de ' + esc(String(v.nombre).split(' ')[0]) + '"' : falta ? ' title="Falta cargar"' : '';
+    /* Sin el borde de "Falta cargar" (26/10, Mauricio): un día vacío es un día que no vino o no vendió, no algo
+       incompleto (en octubre lo marcaba en 311 celdas, casi todas de francos sin anotar y de los que cubren). */
+    var cl = (franco ? 'franco' : '') + hoyCl(C, x);
+    var tit = franco ? ' title="Franco de ' + esc(String(v.nombre).split(' ')[0]) + '"' : '';
     if (!edita()) return '<td class="' + cl + '"' + tit + '>' + (def(val) ? pesos(val) : '') + '</td>';
     return entrada('venta', v.id + ':' + x.d, val, 'money', cl, 'data-g="s' + w.n + '" data-r="' + r + '" data-c="' + k + '" aria-label="' + esc(v.nombre) + ', ' + DIAS[k] + ' ' + x.d + '"' + tit)
       .replace('<td class="ed', '<td' + tit + ' class="ed');
