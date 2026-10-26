@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · Configuración</title>
-<meta name="description" content="El objetivo de no-compra, el Club VDH y los usuarios del Sistema VDH.">
+<meta name="description" content="Las compus de los locales, el objetivo de no-compra, las conexiones, el Club VDH y los usuarios del Sistema VDH.">
 <meta name="theme-color" content="#EDEFF2">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icono-oro-apple.png">
@@ -165,9 +165,31 @@
      último bloque de una quedaba pegado al primero de la siguiente. En la PC
      el aire lo pone el gap de la grilla. */
   @media (max-width: 1099px) { .col + .col { margin-top: 12px; } }
-  /* General son dos tarjetas chicas: estiradas a todo el ancho quedaban
+  /* General son tarjetas chicas: estiradas a todo el ancho quedaban
      renglones con un número en una punta y el botón en la otra. */
   #secLocal .col { max-width: 640px; }
+
+  /* Las partes de adentro de una tarjeta de General (25/10/2026): "Habilitar
+     una compu" y "Las que están habilitadas", Kommo y la tienda. Una raya
+     las separa, en vez de una tarjeta cada una como en el Club. */
+  .general-sub {
+    font: 700 14px/1.3 var(--sans);
+    margin: 4px 0 3px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  #compusPorton[hidden], #compusAdentro[hidden], #conexionesAdentro[hidden], #conexionesSin[hidden] { display: none; }
+  #compusPorton { max-width: 420px; }
+  /* En el celular, "Crear el enlace" y "Habilitar este aparato" uno abajo
+     del otro: lado a lado, con la letra agrandada, el segundo se salía de la
+     pantalla. */
+  @media (max-width: 520px) { #cajasNueva .campos { grid-template-columns: minmax(0, 1fr); } }
+  #cajasCuerpo { margin-bottom: 2px; }
+  #tiendaCuerpo, #kommoCuerpo { margin-bottom: 14px; }
+  #conexionesAdentro > div:last-child { margin-bottom: 0; }
+  /* Los ajustes de cada sección: los renglones del menú del Club, sin la caja
+     de alrededor (ya están adentro de una tarjeta). */
+  .mapa { margin: -4px -12px -8px; }
+  .club-op[hidden] { display: none; }
 
   /* El PIN del Club, una vez, arriba de todo lo del Club. Antes estaba
      adentro de "Promociones" y las otras cinco secciones decían "poné el
@@ -182,8 +204,9 @@
   @media (min-width: 1100px) {
     :root { --tope: 1440px; }
     .seccion { display: grid; gap: 14px; align-items: start; }
-    /* General: el objetivo y, al costado, cómo se ve. */
-    #secLocal { grid-template-columns: minmax(0, 640px) 380px; }
+    /* General: las compus y el objetivo; al costado, cómo se ve, las
+       conexiones y dónde está lo de cada sección. */
+    #secLocal { grid-template-columns: minmax(0, 640px) 400px; }
     /* Club: el menú arma sus propias columnas; las pantallas, una. */
     #secClub { display: block; }
   }
@@ -303,10 +326,11 @@
   /* En su propia pantalla hay ancho: el estado y los botones van al lado
      del texto, como en una tabla, y no abajo. */
   @media (min-width: 720px) {
-    .club-pant .promo-fila { flex-wrap: nowrap; }
-    .club-pant .promo-fila-txt { flex: 1 1 0; }
-    .club-pant .promo-fila-txt b { white-space: normal; }
-    .club-pant .promo-fila > .pill, .club-pant .promo-fila > .btn { flex: none; }
+    .club-pant .promo-fila, #compus .promo-fila { flex-wrap: nowrap; }
+    .club-pant .promo-fila-txt, #compus .promo-fila-txt { flex: 1 1 0; }
+    .club-pant .promo-fila-txt b, #compus .promo-fila-txt b { white-space: normal; }
+    .club-pant .promo-fila > .pill, .club-pant .promo-fila > .btn,
+    #compus .promo-fila > .btn { flex: none; }
   }
 
   /* Los días de la semana, como botones que se prenden. Ninguno prendido
@@ -450,7 +474,7 @@
 <main class="hoja">
 
   <!-- ── Las pestañas ──
-       General (el objetivo y cómo se ve), el Club y los usuarios. La elegida
+       General (las compus, el objetivo, cómo se ve, las conexiones), el Club y los usuarios. La elegida
        queda recordada en este dispositivo. Por dentro General sigue siendo
        "local" (secLocal, tabLocal): es lo que quedó guardado en cada aparato. -->
   <div class="secciones" role="tablist" aria-label="Secciones de configuración">
@@ -471,13 +495,54 @@
        23/10/2026: el objetivo en una tarjeta y cómo se ve. Se fueron "Este
        equipo" (el local de la compu lo cambia el administrador desde la
        Carga, en la ventana de su sesión), la gente de cada local (sale de
-       Usuarios) y los carteles que sólo decían que eso se hace en otro lado. -->
+       Usuarios) y los carteles que sólo decían que eso se hace en otro lado.
+       25/10/2026: lo que es del sistema entero y vivía adentro del Club.
+       "Las compus de los locales" era Club VDH → Cajas habilitadas: el enlace
+       deja la compu fija en su local para la Carga, Cobrar y Ventas, no sólo
+       para el Club. "Conexiones" era Club VDH → Integraciones. "Los ajustes de
+       cada sección" lleva a lo que se configura adentro de su sección, sin
+       copiarlo acá. -->
   <section class="seccion" id="secLocal" role="tabpanel" aria-labelledby="tabLocal">
     <div class="col">
+    <div class="bloque" id="compus">
+      <h2 class="bloque-tit">Las compus de los locales</h2>
+      <p class="bloque-sub">Cada compu (o celular) queda fija en su local, sin que nadie entre con su usuario: carga los No Compra de ese local, cobra con el Club y abre la planilla de Ventas de ese local.</p>
+      <div id="compusPorton" hidden></div>
+      <div id="compusAdentro">
+        <h3 class="general-sub">Habilitar una compu</h3>
+        <p class="bloque-sub">Creá un enlace y mandáselo al encargado: lo abre en la compu o el celular con el que cobran y queda habilitado. Sirve una sola vez y, si nadie lo usa, vence a las 24 horas. Un enlace por aparato.</p>
+        <div id="cajasNueva"></div>
+        <h3 class="general-sub">Las que están habilitadas</h3>
+        <div id="cajasCuerpo"></div>
+      </div>
+    </div>
     <div class="bloque" id="cajaLocales">
       <h2 class="bloque-tit">Objetivo de no-compra</h2>
       <p class="bloque-sub">Cuántos clientes se espera que cargue cada local. La Carga muestra cómo viene.</p>
       <div id="locales"><div class="skel"></div></div>
+    </div>
+
+    <!-- ── Los ajustes de cada sección ──
+         Lo que es de una sola sección se configura adentro de ella; esto sólo
+         dice dónde, para el que no se acuerda (o entra por primera vez). Cada
+         renglón se ve sólo si quien entró puede abrir esa pantalla. -->
+    <div class="bloque" id="ajustesSecciones">
+      <h2 class="bloque-tit">Los ajustes de cada sección</h2>
+      <p class="bloque-sub">Lo que es de una sola sección se configura adentro de ella.</p>
+      <div class="mapa">
+        <a class="club-op" href="gestion.html#sucursales" data-mapa="admin">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10h14l1.5 9.5a1 1 0 0 1-1 1.2H4.5a1 1 0 0 1-1-1.2z"/><rect x="7" y="3" width="10" height="4" rx="1"/><path d="M12 7v3"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h8"/></svg></span>
+          <span class="club-op-txt"><b>POS</b><span>En Gestión: las sucursales, las listas de precios y las promociones.</span></span>
+        </a>
+        <a class="club-op" href="panel.html#agentes" data-mapa="panel.html">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+          <span class="club-op-txt"><b>CRM</b><span>Los agentes de IA y lo que saben, las plantillas de WhatsApp y los cupones.</span></span>
+        </a>
+        <a class="club-op" href="impecable-admin.html#ajustes" data-mapa="admin">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16l1 5a3 3 0 0 1-6 0a3 3 0 0 1-6 0a3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/><path d="m9.6 16.6 1.6 1.6 3.3-3.3"/></svg></span>
+          <span class="club-op-txt"><b>Supervisión</b><span>En Ajustes: cómo funciona cada local, las reglas de orden y los tests.</span></span>
+        </a>
+      </div>
     </div>
     </div>
     <div class="col">
@@ -498,6 +563,20 @@
           </button>
         </div>
         <span class="tema-txt">Oscuro para el local, claro para la oficina.</span>
+      </div>
+    </div>
+
+    <div class="bloque" id="conexiones">
+      <h2 class="bloque-tit">Conexiones</h2>
+      <p class="bloque-sub">Lo que el sistema manda y recibe de otros sistemas. Se configuran aparte; acá se ve si andan.</p>
+      <p class="ncp-porton-txt" id="conexionesSin" hidden>Entrá con tu usuario (en Las compus de los locales) y se ve acá.</p>
+      <div id="conexionesAdentro">
+        <h3 class="general-sub">Kommo</h3>
+        <p class="bloque-sub">Cada socio del Club entra a Kommo como contacto, con sus etiquetas, para armar segmentos y mandarles ofertas.</p>
+        <div id="kommoCuerpo"></div>
+        <h3 class="general-sub">Tienda online</h3>
+        <p class="bloque-sub">Las compras pagadas en vdh.com.ar suman puntos si el teléfono o el mail coinciden con un socio. Se revisa cada hora.</p>
+        <div id="tiendaCuerpo"></div>
       </div>
     </div>
     </div>
@@ -569,19 +648,13 @@
           <span class="club-op-txt"><b>Bases y condiciones</b><span data-res="bases">…</span></span>
         </a>
       </div>
+      <!-- 25/10/2026: "Cajas habilitadas" e "Integraciones" se fueron a General
+           (Las compus de los locales y Conexiones): son de todo el sistema. -->
       <div class="club-grupo">
-        <h2 class="club-grupo-tit">Conexiones</h2>
-        <a class="club-op" href="#club/cajas" data-sec="cajas">
-          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
-          <span class="club-op-txt"><b>Cajas habilitadas</b><span data-res="cajas">…</span></span>
-        </a>
+        <h2 class="club-grupo-tit">Reseñas y números</h2>
         <a class="club-op" href="#club/resenas" data-sec="resenas">
           <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9Z"/></svg></span>
           <span class="club-op-txt"><b>Reseñas por local</b><span data-res="resenas">…</span></span>
-        </a>
-        <a class="club-op" href="#club/integraciones" data-sec="integraciones">
-          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></svg></span>
-          <span class="club-op-txt"><b>Integraciones</b><span data-res="integraciones">…</span></span>
         </a>
         <!-- Los números no se configuran: viven en Estadísticas > Club. -->
         <a class="club-op club-op-ir" href="club-numeros.html">
@@ -695,41 +768,6 @@
         <p class="bloque-sub">El día siguiente a una compra le pedimos la reseña al cliente, con el enlace del local donde compró. A todos por igual y sin nada a cambio: son las reglas de Google. Una vez cada 3 meses como máximo.</p>
       </div>
       <div class="bloque" id="cajaResenas"><div id="resenasCuerpo"></div></div>
-    </div>
-
-    <div class="club-pant" data-sec="cajas" hidden>
-      <div class="pant-cab">
-        <a class="pant-volver" href="#club">Club VDH</a>
-        <h2 class="pant-tit">Cajas habilitadas</h2>
-        <p class="bloque-sub">Los aparatos de los locales que cobran, suman puntos, buscan socios y entregan el regalo de cumple sin que nadie entre con su usuario. Cada uno cobra sólo en su local.</p>
-      </div>
-      <div class="bloque">
-        <h3 class="bloque-tit">Habilitar una caja</h3>
-        <p class="bloque-sub">Creá un enlace y mandáselo al encargado: lo abre en la compu o el celular con el que cobran y queda habilitado. Sirve una sola vez y, si nadie lo usa, vence a las 24 horas. Un enlace por aparato.</p>
-        <div id="cajasNueva"></div>
-      </div>
-      <div class="bloque">
-        <h3 class="bloque-tit">Las que están habilitadas</h3>
-        <div id="cajasCuerpo"></div>
-      </div>
-    </div>
-
-    <div class="club-pant" data-sec="integraciones" hidden>
-      <div class="pant-cab">
-        <a class="pant-volver" href="#club">Club VDH</a>
-        <h2 class="pant-tit">Integraciones</h2>
-        <p class="bloque-sub">Lo que el Club manda y recibe de otros sistemas. Se configuran aparte; acá se ve si andan.</p>
-      </div>
-      <div class="bloque">
-        <h3 class="bloque-tit">Kommo</h3>
-        <p class="bloque-sub">Cada socio entra a Kommo como contacto, con sus etiquetas, para armar segmentos y mandarles ofertas.</p>
-        <div id="kommoCuerpo"></div>
-      </div>
-      <div class="bloque">
-        <h3 class="bloque-tit">Tienda online</h3>
-        <p class="bloque-sub">Las compras pagadas en vdh.com.ar suman puntos si el teléfono o el mail coinciden con un socio. Se revisa cada hora.</p>
-        <div id="tiendaCuerpo"></div>
-      </div>
     </div>
   </section>
 
@@ -850,6 +888,7 @@
     pintarMulti();
     pintarMisiones();
     pintarIntegraciones();
+    pintarMapa();
     pintarReglas();
     pintarPortadaTienda();
     pintarAvisosAuto();
@@ -1972,12 +2011,27 @@
       if (/^#club\//.test(location.hash)) { history.replaceState(null, '', '#club'); seccionAbierta = ''; }
       return true;
     };
-    var inicial = /^#club/.test(location.hash) ? 'club' : /^#(general|locales)$/.test(location.hash) ? 'local'
+    /* 25/10/2026: las cajas y las integraciones se mudaron del Club a
+       General. Las direcciones viejas (un acceso guardado, un mensaje) abren
+       General en su tarjeta; #compus y #conexiones son las nuevas. */
+    var irATarjeta = function () {
+      var t = TARJETA_GENERAL[location.hash];
+      if (!t) { return false; }
+      if (!dejarClub()) { return true; }
+      history.replaceState(null, '', '#' + t);
+      mostrar('local');
+      if (!$('secLocal').hidden) { $(t).scrollIntoView({ block: 'start' }); }
+      return true;
+    };
+    var inicial = TARJETA_GENERAL[location.hash] ? 'local'
+                : /^#club/.test(location.hash) ? 'club' : /^#(general|locales)$/.test(location.hash) ? 'local'
                 : location.hash === '#usuarios' ? 'usuarios' : null;
     if (!inicial) {
       try { inicial = localStorage.getItem(K_SECCION); } catch (e) {}
     }
     mostrar(inicial);
+    irATarjeta();
+    window.addEventListener('hashchange', irATarjeta);
     $('tabLocal').onclick = function () { if (dejarClub()) { mostrar('local'); } };
     $('tabClub').onclick = function () { mostrar('club'); };
     $('tabUsuarios').onclick = function () { if (dejarClub()) { mostrar('usuarios'); } };
@@ -1990,8 +2044,11 @@
      pantalla de Premios. Así el "atrás" del celular vuelve al menú, y un
      enlace (el de los QR de reseñas, el de Estadísticas) puede abrir una
      sección directo. */
-  var SECCIONES_CLUB = ['niveles', 'premios', 'cumple', 'misiones', 'promos', 'extra', 'avisos', 'bases', 'cajas', 'resenas', 'integraciones'];
+  /* 'tienda' (la Portada de la Tienda) faltaba: el menú la ofrecía y no se abría (visto el 25/10/2026). */
+  var SECCIONES_CLUB = ['niveles', 'premios', 'cumple', 'misiones', 'promos', 'tienda', 'extra', 'avisos', 'bases', 'resenas'];
   var seccionAbierta = '';
+  /* Lo que se fue del Club a General (25/10/2026): la dirección, y la tarjeta que la abre. */
+  var TARJETA_GENERAL = { '#club/cajas': 'compus', '#compus': 'compus', '#club/integraciones': 'conexiones', '#conexiones': 'conexiones' };
 
   function rutaClub() {
     var m = /^#club\/([a-z]+)/.exec(location.hash);
@@ -2040,7 +2097,7 @@
     /* El "atrás" del celular ya cambió la dirección cuando esto corre: si
        había algo sin guardar y no quiere perderlo, se vuelve a la pantalla. */
     window.addEventListener('hashchange', function () {
-      if (!/^#club/.test(location.hash)) { return; }
+      if (!/^#club/.test(location.hash) || TARJETA_GENERAL[location.hash]) { return; }
       var nueva = rutaClub();
       if (seccionAbierta && nueva !== seccionAbierta && haySinGuardar() &&
           !confirm('Hay cambios sin guardar en esta pantalla. ¿Salir igual y perderlos?')) {
@@ -2279,14 +2336,21 @@
 
   var resenasLista = [];
 
-  /* ── Las cajas habilitadas (SQL 49, 04/10/2026) ── */
+  /* ── Las compus de los locales (SQL 49, 04/10/2026) ──
+     Eran las "Cajas habilitadas" del Club; desde el 25/10/2026 viven en
+     General, porque la compu habilitada queda fija en su local también para
+     la Carga y para Ventas. Las funciones de la base son las mismas, y piden
+     lo mismo que el Club: un usuario de la oficina. Sin él, el portón va en
+     esta tarjeta, que es la primera de General. */
   var cajasLocales = [];
   function pintarCajas() {
     var caja = $('cajasCuerpo'), nueva = $('cajasNueva');
     if (!caja || !nueva) { return; }
+    $('compusPorton').hidden = !!pinPromo();
+    $('compusAdentro').hidden = !pinPromo();
     if (!pinPromo()) {
-      caja.innerHTML = '<p class="bloque-sub">Entrá con tu usuario arriba y esto se abre solo.</p>';
-      nueva.innerHTML = '';
+      persona.porton($('compusPorton'), 'Habilitar las compus es de Administración, Atención al cliente y Gerencia.');
+      caja.innerHTML = nueva.innerHTML = '';
       return;
     }
     caja.innerHTML = '<p class="bloque-sub">Buscando…</p>';
@@ -2294,11 +2358,6 @@
       .then(function (r) {
         var lista = (r && r.cajas) || [];
         cajasLocales = (r && r.locales) || [];
-        var locs = {};
-        lista.forEach(function (c) { locs[c.local] = 1; });
-        ponerResumen('cajas', lista.length
-          ? cuantos(lista.length, 'caja', 'cajas') + ' en ' + cuantos(Object.keys(locs).length, 'local', 'locales')
-          : 'Ninguna todavía: el Club no anda en las cajas de los locales', !lista.length);
         var mia = '';
         try { mia = localStorage.getItem('nc_caja_id') || ''; } catch (e) {}
         var nombreLocal = function (cod) {
@@ -2316,7 +2375,7 @@
         }).join('') : '<p class="bloque-sub">Ninguna todavía.</p>';
         Array.prototype.forEach.call(caja.querySelectorAll('[data-caja-baja]'), function (b) {
           b.onclick = function () {
-            if (!confirm('¿Deshabilitar esta caja? El Club deja de andar en ese aparato hasta que la habilites de nuevo.')) { return; }
+            if (!confirm('¿Deshabilitar esta compu? Deja de cobrar con el Club y de abrir la planilla de Ventas de su local hasta que la habilites de nuevo.')) { return; }
             b.disabled = true;
             base.club.cajaDeshabilitar(pinPromo(), +b.dataset.cajaBaja)
               .then(function (x) {
@@ -2324,7 +2383,7 @@
                 if (b.dataset.cajaBaja === mia) {
                   try { localStorage.removeItem('nc_caja'); localStorage.removeItem('nc_caja_local'); localStorage.removeItem('nc_caja_id'); } catch (e) {}
                 }
-                avisar('ok', 'Caja deshabilitada.');
+                avisar('ok', 'Compu deshabilitada.');
                 pintarCajas();
               })
               .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo.'); b.disabled = false; });
@@ -2369,7 +2428,7 @@
           if (!r || !r.ok) { avisar('err', (r && r.porque) || 'No se pudo crear.'); return; }
           var url = location.origin + location.pathname.replace(/[^\/]*$/, '') + 'caja.html?habilitar=' + r.codigo;
           var nom = (cajasLocales.filter(function (x) { return x.codigo === r.local; })[0] || {}).nombre || r.local;
-          var texto = 'Hola! Este es el enlace para habilitar la caja de ' + nom + ' en el Club VDH. ' +
+          var texto = 'Hola! Este es el enlace para habilitar la compu de ' + nom + ' en el Sistema VDH. ' +
                       'Abrilo en la compu o el celular con el que cobran: sirve una sola vez y vence en 24 horas.\n' + url;
           $('cajaEnlaceListo').innerHTML =
             '<div style="margin-top:14px;padding:14px 16px;border:1px solid var(--line);border-radius:var(--r-sm);background:var(--surface-2)">' +
@@ -2394,7 +2453,7 @@
     $('cajaAca').onclick = function () {
       var loc = local(); if (!loc) { return; }
       var nom = (cajasLocales.filter(function (x) { return x.codigo === loc; })[0] || {}).nombre || loc;
-      if (!confirm('¿Habilitar ESTE aparato como caja de ' + nom + '? Va a cobrar con el Club en ' + nom + ', sin que nadie entre con su usuario.')) { return; }
+      if (!confirm('¿Habilitar ESTE aparato como la compu de ' + nom + '? Queda fijo en ' + nom + ' y cobra con el Club ahí, sin que nadie entre con su usuario.')) { return; }
       var ua = navigator.userAgent || '';
       var aparato = (/Mobi|Android|iPhone/i.test(ua) ? 'Celular' : 'Compu') +
                     (/iPhone|iPad|Mac OS/i.test(ua) ? ' Apple' : /Android/i.test(ua) ? ' Android' : /Windows/i.test(ua) ? ' Windows' : '');
@@ -2407,7 +2466,7 @@
             localStorage.setItem('nc_caja_id', String(r.id));
             localStorage.setItem('nc_local', r.local);
           } catch (e) {}
-          avisar('ok', 'Listo: este aparato cobra con el Club en ' + nom + '.');
+          avisar('ok', 'Listo: este aparato quedó como la compu de ' + nom + '.');
           pintarCajas();
         })
         .catch(function (e) { avisar('err', (e && e.message) || 'No se pudo.'); });
@@ -2836,7 +2895,7 @@
 
   /* ═══ Lo que devuelve club_config_resumen (SQL 36) ═════════════════════
      Las reglas, los niveles y cómo va la tienda online, en un solo viaje:
-     lo usan "Puntos y niveles" e "Integraciones". "El Club en números" se
+     lo usan "Puntos y niveles" y "Conexiones" (en General). "El Club en números" se
      fue de acá: vive en Club > Estadísticas, que tiene lo mismo y más. */
   var resumenClub = null;
   function traerResumenClub() {
@@ -2894,31 +2953,25 @@
       });
   }
 
-  /* ═══ Integraciones: Kommo y la tienda online ══════════════════════════
+  /* ═══ Conexiones: Kommo y la tienda online ════════════════════════════
      Cómo va cada una, en corto. El error de Kommo se resume en una línea y
      el texto técnico queda a un toque: si no se ve acá, se descubre el día
-     que alguien arma un segmento y faltan socios. */
-  var resKommo = '', resTienda = '', kommoOjo = false;
-  function resumenIntegraciones() {
-    ponerResumen('integraciones', [resKommo, resTienda].filter(Boolean).join(' · ') || '…', kommoOjo);
-  }
-
+     que alguien arma un segmento y faltan socios. Eran las "Integraciones"
+     del Club; desde el 25/10/2026, "Conexiones" en General. */
   function pintarIntegraciones() {
-    if (!$('kommoCuerpo') || !pinPromo()) { return; }
+    if (!$('kommoCuerpo')) { return; }
+    $('conexionesSin').hidden = !!pinPromo();
+    $('conexionesAdentro').hidden = !pinPromo();
+    if (!pinPromo()) { return; }
     $('kommoCuerpo').innerHTML = '<p class="bloque-sub">Buscando…</p>';
     $('tiendaCuerpo').innerHTML = '<p class="bloque-sub">Buscando…</p>';
 
     base.club.kommoEstado(pinPromo()).then(function (k) {
       if (!k || !k.activo) {
-        resKommo = 'Kommo sin conectar'; kommoOjo = false;
         $('kommoCuerpo').innerHTML = '<p class="kommo-linea">No está conectado. El Club anda igual sin Kommo.</p>';
-        resumenIntegraciones();
         return;
       }
       var errores = Number(k.fallados) || 0, reint = Number(k.reintentando) || 0;
-      kommoOjo = errores > 0;
-      resKommo = errores ? 'Kommo: ' + cuantos(errores, 'socio con error', 'socios con error')
-                         : 'Kommo: ' + miles(k.en_kommo) + ' de ' + miles(k.socios) + ' socios';
       $('kommoCuerpo').innerHTML =
         '<p class="kommo-linea"><span class="pill ' + (errores ? 'pill-warn' : 'pill-ok') + '">' +
           (errores ? 'Con errores' : 'Andando') + '</span></p>' +
@@ -2933,20 +2986,15 @@
             '<details class="detalle-err"><summary>Ver el detalle del error</summary><p>' +
               esc(k.ultimo_error || 'Kommo no mandó detalle.') + '</p></details>'
           : '');
-      resumenIntegraciones();
     }).catch(function () {
-      resKommo = 'Kommo: no se pudo consultar';
       $('kommoCuerpo').innerHTML = '<p class="kommo-linea">No se pudo consultar cómo va. Probá de nuevo en un rato.</p>';
-      resumenIntegraciones();
     });
 
     traerResumenClub().then(function (r) {
       var t = (r && r.tienda) || {};
       if (!Number(t.pedidos)) {
-        resTienda = 'Tienda online: sin pedidos todavía';
         $('tiendaCuerpo').innerHTML = '<p class="kommo-linea">Todavía no llegó ningún pedido pagado desde que se conectó.</p>';
       } else {
-        resTienda = 'Tienda online: ' + cuantos(Number(t.sumados_30) || 0, 'compra', 'compras') + ' en 30 días';
         $('tiendaCuerpo').innerHTML =
           '<p class="kommo-linea">En los últimos 30 días, <b>' + cuantos(Number(t.sumados_30) || 0, 'compra', 'compras') +
             '</b> de la tienda sumaron <b>' + miles(t.puntos_30) + ' puntos</b>.</p>' +
@@ -2956,11 +3004,18 @@
             : '') +
           (t.ultimo ? '<p class="kommo-linea">Último pedido revisado: ' + esc(fechaHora(t.ultimo)) + '.</p>' : '');
       }
-      resumenIntegraciones();
     }).catch(function () {
-      resTienda = '';
       $('tiendaCuerpo').innerHTML = '<p class="kommo-linea">' + FALTA_36 + '</p>';
-      resumenIntegraciones();
+    });
+  }
+
+  /* Los ajustes de cada sección: cada renglón, sólo si quien entró puede
+     abrir esa pantalla. Lo de Gestión y los Ajustes de Supervisión son del
+     administrador (como el POS en la barra); el CRM, de quien lo ve. */
+  function pintarMapa() {
+    Array.prototype.forEach.call(document.querySelectorAll('[data-mapa]'), function (a) {
+      var q = a.dataset.mapa;
+      a.hidden = q === 'admin' ? persona.rol() !== 'admin' : !persona.puede(q);
     });
   }
 
