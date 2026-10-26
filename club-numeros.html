@@ -1030,9 +1030,9 @@
             '<button type="button" class="btn btn-pri" id="recuMandar">Mandar a ' + saldran + '</button>' +
             '<p class="nota-cn" style="margin-top:0">Les llega al celular en menos de una hora y queda en su campanita. ' +
               'Al que ya se le mandó uno en los últimos 30 días no le llega otro.' +
-              (r.total - puedo ? ' ' + (r.total - puedo) + ' no tienen los avisos prendidos: a esos, por WhatsApp desde Kommo.' : '') + '</p>' +
+              (r.total - puedo ? ' ' + (r.total - puedo) + ' no tienen los avisos prendidos: a esos, por WhatsApp desde el CRM.' : '') + '</p>' +
           '</div>'
-        : '<p class="nota-cn">' + (puedo ? 'A todos los que tienen avisos ya se les mandó uno este mes.' : 'Ninguno tiene los avisos prendidos: para escribirles, por WhatsApp desde Kommo.') + '</p>');
+        : '<p class="nota-cn">' + (puedo ? 'A todos los que tienen avisos ya se les mandó uno este mes.' : 'Ninguno tiene los avisos prendidos: para escribirles, por WhatsApp desde el CRM.') + '</p>');
     if ($('recuAbrir')) {
       $('recuAbrir').onclick = function () { $('recuForm').hidden = false; $('recuAbrir').hidden = true; $('recuTit').focus(); };
       var cuenta = function () { $('recuCuenta').textContent = $('recuCuerpo').value.length + ' / ' + TOPE_CUERPO; };

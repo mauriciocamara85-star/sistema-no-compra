@@ -1332,13 +1332,13 @@
     if (!cl.tel && s.telefono) cl.tel = s.telefono;
     V.cliente = cl;
   }
-  /* "Hacerlo socio": el alta de siempre del Club (club_alta: el bono de bienvenida y Kommo), con el local de la venta.
+  /* "Hacerlo socio": el alta de siempre del Club (club_alta: el bono de bienvenida), con el local de la venta.
      Es de verdad aunque se esté probando: por eso en modo prueba no se puede. */
   function abrirAltaSocio(texto) {
     if (enPrueba()) { avisar('info', 'En modo prueba no se hacen socios: el alta es de verdad.'); return; }
     var dig = String(texto || '').replace(/\D/g, ''), pal = dig ? [] : String(texto || '').trim().split(/\s+/).filter(Boolean);
-    var caja = ventana('<h3 id="posVentTit">Hacerlo socio del Club</h3><p class="pos-bajada">El alta de siempre del Club: se lleva el bono de bienvenida, ' +
-        'entra a Kommo y suma desde esta compra. Es de verdad, aunque estés probando el POS.</p>' +
+    var caja = ventana('<h3 id="posVentTit">Hacerlo socio del Club</h3><p class="pos-bajada">El alta de siempre del Club: se lleva el bono de bienvenida ' +
+        'y suma desde esta compra. Es de verdad, aunque estés probando el POS.</p>' +
       '<div class="pos-campos">' +
         campo('', 'Nombre', '<input type="text" id="saNombre" maxlength="40" autocomplete="off" value="' + esc(pal[0] || '') + '">') +
         campo('', 'Apellido', '<input type="text" id="saApellido" maxlength="40" autocomplete="off" value="' + esc(pal.slice(1).join(' ')) + '">') +

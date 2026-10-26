@@ -1,5 +1,10 @@
 -- VDH · Sistema No Compra — el puente con Kommo.
 --
+-- APAGADO el 25/10/2026: Mauricio no lo paga más. El SQL 176 les cambió el nombre a los
+-- secretos KOMMO_* del vault (KOMMO_TOKEN_APAGADO, etc.), y sin KOMMO_TOKEN nada se encola para Kommo:
+-- ni los No Compra, ni los socios del Club, ni los cambios del CRM. Las pantallas ya no lo muestran
+-- (no-compra-v243). Para prenderlo de nuevo: deshacer-176.sql (y Kommo pago).
+--
 -- Correr DESPUÉS de salidas.sql.
 --
 -- Cada cliente que se va del local sin comprar entra a Kommo como lead con su

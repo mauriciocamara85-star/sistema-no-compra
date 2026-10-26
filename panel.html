@@ -100,32 +100,6 @@
   /* Los números de arriba (.kpis) se fueron del panel el 07/10/2026: el
      lugar es para el tablero. La plata recuperada está en Estadísticas. */
 
-  /* Aviso de sistema: algo de fondo se rompió. Va ARRIBA de los números
-     porque no es un dato más de la operación, es una cosa que hay que ir a
-     arreglar. Sigue la forma de las tarjetas para no parecer un error del
-     navegador. */
-  .aviso {
-    background: var(--surface);
-    border: 1px solid var(--borde-tarjeta);
-    border-left: 3px solid var(--bad);
-    border-radius: var(--r-sm);
-    padding: 13px 14px;
-    margin-bottom: 14px;
-    box-shadow: var(--sombra);
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--txt-2);
-  }
-  .aviso b { color: var(--bad-txt); display: block; margin-bottom: 3px; font-size: 13.5px; }
-  .aviso-detalle {
-    display: block;
-    margin-top: 7px;
-    padding-top: 7px;
-    border-top: 1px solid var(--line);
-    color: var(--txt-3);
-    font-size: 11.5px;
-    word-break: break-word;
-  }
 
   /* Controles */
   .controles { margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -1520,8 +1494,6 @@
                   display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; }
   .ficha-borrar .btn-link { color: var(--bad-txt); }
   .ficha-borrar span { font-size: 12.5px; color: var(--txt-3); }
-  .modal-caja p.borrar-kommo { padding: 10px 12px; border-radius: var(--r-sm); background: var(--warn-soft); color: var(--warn-txt); }
-  .borrar-kommo a { color: inherit; font-weight: 700; }
   .pap-fila { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line); }
   .pap-fila:first-child { border-top: 0; }
   .pap-fila > div { flex: 1; min-width: 0; }
@@ -1675,7 +1647,6 @@
 </nav>
 
 <main class="hoja" id="app">
-  <div class="aviso" id="avisoCrm" hidden></div>
   <!-- El CRM como Kommo (10/10/2026): el menú a la izquierda (en el celular,
        detrás del botón de la sección) y la sección elegida a la derecha. -->
   <div class="crm" id="crm">
@@ -1833,7 +1804,6 @@
       <button type="button" class="chip" data-motivo="Otro">Otro</button>
     </div>
     <div class="campo" id="borrarNotaCampo" hidden><label for="borrarNota">¿Por qué?</label><input id="borrarNota" maxlength="140" placeholder="En una línea"></div>
-    <p class="borrar-kommo" id="borrarKommo" hidden></p>
     <p>Sale del tablero, de Contactos y de las estadísticas. Queda 30 días en la papelera, por si hay que volverlo.</p>
     <div class="modal-pie">
       <button type="button" class="btn btn-sec" id="borrarCancelar">Cancelar</button>
@@ -1846,7 +1816,7 @@
 <div class="modal" id="modalPapelera" hidden>
   <div class="modal-caja" role="dialog" aria-modal="true" aria-labelledby="papTit">
     <h2 id="papTit">Papelera</h2>
-    <p>Los registros borrados quedan acá 30 días. Restaurar los vuelve al tablero como estaban, sin mandarlos de nuevo a Kommo ni a Telegram.</p>
+    <p>Los registros borrados quedan acá 30 días. Restaurar los vuelve al tablero como estaban, sin mandarlos de nuevo a Telegram.</p>
     <div id="papLista"></div>
     <div class="modal-pie"><button type="button" class="btn btn-sec" id="papCerrar">Cerrar</button></div>
   </div>
@@ -2148,10 +2118,6 @@
      30 días desde la compra. Se puede extender desde Cupones. */
   var DIAS = 30;
 
-  /* Dónde vive el CRM. No es un secreto —es la dirección a la que entra
-     Atención al Cliente todos los días— y va acá y no en la base porque la
-     necesita el navegador para armar un enlace, no el servidor. */
-  var KOMMO = 'https://marketingvdh.kommo.com';
 
   /* ═══ Ingreso ═══════════════════════════════════════════════════════════ */
   /**
@@ -2233,7 +2199,6 @@
       try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
     }
     aplicarVista();
-    pintarCrm(res);
     cargar();
   }
 
@@ -2264,23 +2229,6 @@
   function salir() {
     $('btnSalir').disabled = true;
     persona.salir().then(function () { location.reload(); });
-  }
-
-  /* El puente con Kommo se cae callado: un token vencido deja de crear leads y
-     nadie se entera hasta que alguien va a buscar un cliente al CRM y no está.
-     Si el backend avisa que la última sincronización falló, se ve acá arriba.
-     No se muestra nada cuando el puente está apagado a propósito (todavía sin
-     token) ni cuando anda bien: un cartel que está siempre no lo lee nadie. */
-  function pintarCrm(res) {
-    var crm = res.crm, caja = $('avisoCrm');
-    if (!crm || !crm.activo || crm.ok) { caja.hidden = true; caja.innerHTML = ''; return; }
-
-    var detalle = esc(crm.msg || 'Sin detalle.') + (crm.cuando ? ' · ' + esc(crm.cuando) : '');
-    caja.innerHTML = '<b>Kommo no está recibiendo los registros.</b>' +
-      'Los no-compra se siguen guardando y se ven acá, pero no están entrando al CRM. ' +
-      'Lo más probable es que el token haya vencido.' +
-      '<span class="aviso-detalle">' + detalle + '</span>';
-    caja.hidden = false;
   }
 
   /* ═══ El tablero (07/10/2026) ═══════════════════════════════════════════
@@ -2445,9 +2393,6 @@
         avisar('err', 'Error de conexión.');
       });
 
-    base.panel(pin)
-      .then(function (res) { pintarCrm(res); })
-      .catch(function () {});
     cargarPapelera();
   }
 
@@ -3470,10 +3415,8 @@
      Pedido de Mauricio (10/10/2026): borrar una prueba o un duplicado. Va
      a nombre de quien entró con su usuario (hasta el 13/10/2026 pedía el
      PIN compartido de nuevo) y el registro va a una papelera de 30
-     días. Lo que ya salió no vuelve: el lead de Kommo se borra a mano allá
-     (su API no deja), y por eso se avisa ANTES, con el enlace. */
+     días. */
   var papeleraLista = [];
-  function enlaceKommo(lead) { return KOMMO + '/leads/detail/' + encodeURIComponent(lead); }
 
   function pedirBorrar(r) {
     var m = $('modalBorrar'), ok = $('borrarOk'), motivo = 'Prueba';
@@ -3491,11 +3434,6 @@
     });
     $('borrarNotaCampo').hidden = true;
     $('borrarNota').value = '';
-    $('borrarKommo').hidden = !r.lead;
-    $('borrarKommo').innerHTML = r.lead
-      ? 'Tiene un lead en Kommo, y Kommo no deja borrarlo desde acá: después <a href="' + esc(enlaceKommo(r.lead)) +
-        '" target="_blank" rel="noopener">borralo allá</a>.'
-      : '';
     ok.disabled = false;
     ok.onclick = function () {
       var pin = pinGuardado(), nota = $('borrarNota').value.trim();
@@ -3548,7 +3486,6 @@
         '<b>' + esc(p.nombre || p.whatsapp || 'Sin nombre') + '</b>' +
         '<span>' + esc([p.producto, bonito(p.sucursal), p.vendedor ? 'cargó ' + p.vendedor : ''].filter(Boolean).join(' · ')) + '</span>' +
         '<span>' + esc(p.motivo + (p.nota ? ': ' + p.nota : '') + ' · ' + (p.quedan === 1 ? 'queda 1 día' : 'quedan ' + p.quedan + ' días')) + '</span>' +
-        (p.kommo ? '<a href="' + esc(enlaceKommo(p.kommo)) + '" target="_blank" rel="noopener">Ver el lead en Kommo</a>' : '') +
         '</div><button type="button" class="btn btn-sec btn-chico" data-restaurar="' + esc(p.id) + '">Restaurar</button></div>';
     }).join('');
     [].forEach.call($('papLista').querySelectorAll('[data-restaurar]'), function (b) {
@@ -4962,7 +4899,7 @@
      Tienda online), la última arriba. "Sin contestar": lo último lo escribió
      el cliente (lo que vino del historial del celular no cuenta). Cada 20
      segundos se pregunta lo mínimo (el último mensaje); si cambió, se trae la
-     lista o la conversación abierta. Lo que se contesta desde Kommo no nos
+     lista o la conversación abierta. Lo que se contesta desde otra app no nos
      llega: queda una marca de que se contestó, sin el texto. */
   var MS = { buscar: '', datos: null, error: '', pedido: 0, espera: 0, ultimo: null, sin: null, reloj: 0, borrador: {},
              abierto: null, previo: null, ficha: null, numero: '', segmento: leer('nc_ms_segmento') || '', tienda: null, rec: false };
@@ -5130,7 +5067,7 @@
                                  : 'Se hizo socio del Club' + (d.local ? ' en ' + bonito(d.local) : '');
     }
     if (fuente === 'whatsapp') {
-      if (d.desde === 'otra_app') { return 'Le contestaron por Kommo'; }
+      if (d.desde === 'otra_app') { return 'Le contestaron desde otra app'; }
       return (d.sentido === 'sale' ? 'Le contestaron por WhatsApp: ' : 'Escribió por WhatsApp: ') + textoMensaje(d);
     }
     if (fuente === 'cupon_tienda') { return cuponTiendaTxt(d.codigo, d.descuento); }
@@ -5149,7 +5086,7 @@
                        media_placeholder: 'Foto o archivo', edit: 'Editado' };
   function textoMensaje(m) {
     if (!m) { return ''; }
-    if (m.desde === 'otra_app') { return 'Mensaje enviado desde Kommo'; }
+    if (m.desde === 'otra_app') { return 'Mensaje enviado desde otra app'; }
     if (m.tipo === 'template') { return m.texto || 'Plantilla'; }
     var t = TIPO_MENSAJE[m.tipo];
     if (m.tipo === 'text' || m.tipo === 'button' || m.tipo === 'interactive') { return m.texto || ''; }
@@ -5264,7 +5201,7 @@
 
   function filaMensaje(c) {
     var u = c.ultimo || {};
-    var previo = u.desde === 'otra_app' ? 'Contestado desde Kommo' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u);
+    var previo = u.desde === 'otra_app' ? 'Contestado desde otra app' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u);
     var seg = segmentoDe(c.clave, c.numero, c.fuentes);
     var otras = (c.fuentes || []).filter(function (f) { return f !== seg; });
     var origen = chipSegmento(seg) +
@@ -5310,7 +5247,7 @@
 
   /* La conversación, como en el teléfono: un separador por día, lo del
      cliente a la izquierda, lo nuestro a la derecha con quién lo mandó. */
-  var QUIEN_MANDO = { celular: 'Celular', crm: 'CRM', otra_app: 'Kommo' };
+  var QUIEN_MANDO = { celular: 'Celular', crm: 'CRM', otra_app: 'Otra app' };
   function diaChat(f) {
     var hoy = new Date(); hoy.setHours(0, 0, 0, 0);
     var d = new Date(f); d.setHours(0, 0, 0, 0);
@@ -5358,7 +5295,7 @@
       if (m.numero_id) { num = m.numero_id; }
       var otra = m.desde === 'otra_app';
       var tipo = m.tipo === 'template' ? 'Plantilla' : TIPO_MENSAJE[m.tipo];
-      var cuerpo = otra ? 'Mensaje enviado desde Kommo. El texto no nos llega.'
+      var cuerpo = otra ? 'Mensaje enviado desde otra app. El texto no nos llega.'
         : (tipo ? '<span class="burbuja-tipo">' + tipo + '</span>' : '') + esc(m.texto || (tipo ? '' : 'Un mensaje que WhatsApp no deja ver acá'));
       /* Lo de una difusión dice de cuál ("Difusión: Socios dormidos"). */
       var pie = horaChat(f) + (m.sentido === 'sale' ? ' · ' + (m.desde === 'difusion' ? esc(m.quien || 'Difusión') : QUIEN_MANDO[m.desde] || 'Nosotros') +
@@ -7011,7 +6948,7 @@
 
   function tarjetaTienda(t) {
     var u = t.ultimo || {}, espera = esperaRespuesta(t);
-    var previo = u.sentido ? (u.desde === 'otra_app' ? 'Contestado desde Kommo' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u)) : '';
+    var previo = u.sentido ? (u.desde === 'otra_app' ? 'Contestado desde otra app' : (u.sentido === 'sale' ? 'Vos: ' : '') + textoMensaje(u)) : '';
     return '<article class="tj ti-tj' + (espera ? ' ti-espera' : '') + (t.columna === 'Compró' ? ' es-ok' : '') +
         '" data-ti="' + Number(t.id) + '" data-clave="' + esc(t.clave) + '">' +
       '<div class="tj-top">' + ((t.fuentes || []).length ? pillsFuentes(t.fuentes, t.nivel) : '<span class="pill pill-neutra">WhatsApp</span>') +

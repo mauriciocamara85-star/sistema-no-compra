@@ -193,6 +193,8 @@ src/                 ── el backend, en Apps Script ──
 
 ## Kommo (CRM)
 
+> **Apagado el 25/10/2026: Mauricio no lo paga más. El SQL 176 les cambió el nombre a los secretos KOMMO_* del vault (KOMMO_TOKEN_APAGADO, etc.), y sin KOMMO_TOKEN nada se encola para Kommo: ni los No Compra, ni los socios del Club, ni los cambios del CRM. Las pantallas ya no lo muestran (no-compra-v243). Para prenderlo de nuevo: deshacer-176.sql (y Kommo pago).**
+
 Cada no-compra puede entrar a [Kommo](https://kommo.com) como **lead + contacto**,
 para trabajarlo desde el CRM y meterlo después en campañas. Vive en
 `src/Kommo.gs` y está **apagado** hasta que se carguen dos propiedades más:

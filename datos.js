@@ -960,11 +960,6 @@ var base = {
       return funcion('club_mision_guardar', { p_pin: pin, p_clave: clave, p_puntos: puntos, p_activa: activa });
     },
 
-    /** Cómo va la sincronización de los socios con Kommo. Pide PIN. */
-    kommoEstado: function (pin) {
-      return funcion('club_kommo_estado', { p_pin: pin });
-    },
-
     /** Para Configuración (SQL 36): las reglas y los niveles como están, y
         cómo va la tienda online. Sólo lee. Pide PIN. */
     configResumen: function (pin) {
@@ -1706,7 +1701,7 @@ var base = {
   registroBorrar: function (pin, id, motivo, nota) {
     return funcion('registro_borrar', { p_pin: pin, p_id: id, p_motivo: motivo, p_nota: nota || null });
   },
-  /** Volverlo al tablero como estaba, sin mandarlo de nuevo a Kommo ni a Telegram. */
+  /** Volverlo al tablero como estaba, sin mandarlo de nuevo a Telegram. */
   registroRestaurar: function (pin, id) {
     return funcion('registro_restaurar', { p_pin: pin, p_id: id });
   },
@@ -1867,9 +1862,6 @@ function deLaBase_(f) {
     // Los dos campos de la base, de vuelta en el texto del desplegable.
     compro:      f.compro ? ('Sí - ' + (canal === 'online' ? 'online' : 'local')) : (f.estado || f.contactado ? 'No' : ''),
     productoFinal: f.producto_final || '',
-    // El lead en Kommo, para poder abrirlo desde la ficha: el seguimiento se
-    // trabaja allá y esta pantalla tiene que poder llevar hasta ahí.
-    lead:        f.lead_kommo || '',
     // El descuento, para que la ficha sepa si ya se dio y no lo ofrezca dos
     // veces. Viene anidado desde la tabla `beneficios`; se toma el vivo, o
     // el último si no hay ninguno vivo.

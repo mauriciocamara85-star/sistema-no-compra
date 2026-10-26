@@ -170,7 +170,7 @@
   #secLocal .col { max-width: 640px; }
 
   /* Las partes de adentro de una tarjeta de General (25/10/2026): "Habilitar
-     una compu" y "Las que están habilitadas", Kommo y la tienda. Una raya
+     una compu" y "Las que están habilitadas", la tienda. Una raya
      las separa, en vez de una tarjeta cada una como en el Club. */
   .general-sub {
     font: 700 14px/1.3 var(--sans);
@@ -184,7 +184,6 @@
      pantalla. */
   @media (max-width: 520px) { #cajasNueva .campos { grid-template-columns: minmax(0, 1fr); } }
   #cajasCuerpo { margin-bottom: 2px; }
-  #tiendaCuerpo, #kommoCuerpo { margin-bottom: 14px; }
   #conexionesAdentro > div:last-child { margin-bottom: 0; }
   /* Los ajustes de cada sección: los renglones del menú del Club, sin la caja
      de alrededor (ya están adentro de una tarjeta). */
@@ -246,7 +245,7 @@
   .club-op-txt { flex: 1; min-width: 0; }
   .club-op-txt b { display: block; font: 700 15px/1.3 var(--sans); }
   .club-op-txt span { display: block; font-size: 13px; line-height: 1.4; color: var(--txt-2); margin-top: 2px; }
-  /* Lo que avisa algo (un error de Kommo, un local sin enlace) se nota. */
+  /* Lo que avisa algo (un local sin enlace) se nota. */
   .club-op-txt span.ojo { color: var(--warn-txt); }
   /* Los avisos automáticos (SQL 46). */
   .auto-av { border: 1px solid var(--line); border-radius: 12px; padding: 16px; background: var(--surface); }
@@ -304,8 +303,6 @@
   .bases-previa p, .bases-previa li { font-size: 14px; line-height: 1.55; color: var(--txt-2); }
   .bases-previa p + p { margin-top: 6px; }
   .bases-previa ul { padding-left: 18px; display: grid; gap: 4px; }
-  .detalle-err summary { cursor: pointer; font-size: 13.5px; font-weight: 700; color: var(--txt-2); margin-top: 8px; }
-  .detalle-err p { font-size: 13px; color: var(--txt-3); margin-top: 6px; word-break: break-word; }
 
   /* ── Las filas de promociones ──
      La lista vive en la columna angosta de la derecha, asi que se acomoda
@@ -350,10 +347,10 @@
   .horas-fila input { flex: 1; min-width: 0; }
   .horas-fila[hidden] { display: none; }
 
-  .kommo-linea { margin-top: 4px; font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
-  .kommo-linea + .kommo-linea { margin-top: 8px; }
-  .kommo-linea b { color: var(--txt); }
-  .kommo-linea.mal { color: var(--warn-txt); }
+  .conexion-linea { margin-top: 4px; font-size: 13.5px; color: var(--txt-2); line-height: 1.5; }
+  .conexion-linea + .conexion-linea { margin-top: 8px; }
+  .conexion-linea b { color: var(--txt); }
+  .conexion-linea.mal { color: var(--warn-txt); }
 
   /* Las misiones: el texto a la izquierda y los puntos, el interruptor y
      Guardar a la derecha. En el celular, uno abajo del otro. */
@@ -521,29 +518,6 @@
       <p class="bloque-sub">Cuántos clientes se espera que cargue cada local. La Carga muestra cómo viene.</p>
       <div id="locales"><div class="skel"></div></div>
     </div>
-
-    <!-- ── Los ajustes de cada sección ──
-         Lo que es de una sola sección se configura adentro de ella; esto sólo
-         dice dónde, para el que no se acuerda (o entra por primera vez). Cada
-         renglón se ve sólo si quien entró puede abrir esa pantalla. -->
-    <div class="bloque" id="ajustesSecciones">
-      <h2 class="bloque-tit">Los ajustes de cada sección</h2>
-      <p class="bloque-sub">Lo que es de una sola sección se configura adentro de ella.</p>
-      <div class="mapa">
-        <a class="club-op" href="gestion.html#sucursales" data-mapa="admin">
-          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10h14l1.5 9.5a1 1 0 0 1-1 1.2H4.5a1 1 0 0 1-1-1.2z"/><rect x="7" y="3" width="10" height="4" rx="1"/><path d="M12 7v3"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h8"/></svg></span>
-          <span class="club-op-txt"><b>POS</b><span>En Gestión: las sucursales, las listas de precios y las promociones.</span></span>
-        </a>
-        <a class="club-op" href="panel.html#agentes" data-mapa="panel.html">
-          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
-          <span class="club-op-txt"><b>CRM</b><span>Los agentes de IA y lo que saben, las plantillas de WhatsApp y los cupones.</span></span>
-        </a>
-        <a class="club-op" href="impecable-admin.html#ajustes" data-mapa="admin">
-          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16l1 5a3 3 0 0 1-6 0a3 3 0 0 1-6 0a3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/><path d="m9.6 16.6 1.6 1.6 3.3-3.3"/></svg></span>
-          <span class="club-op-txt"><b>Supervisión</b><span>En Ajustes: cómo funciona cada local, las reglas de orden y los tests.</span></span>
-        </a>
-      </div>
-    </div>
     </div>
     <div class="col">
     <!-- ── Cómo se ve ───────────────────────────────────────────────────────
@@ -571,12 +545,33 @@
       <p class="bloque-sub">Lo que el sistema manda y recibe de otros sistemas. Se configuran aparte; acá se ve si andan.</p>
       <p class="ncp-porton-txt" id="conexionesSin" hidden>Entrá con tu usuario (en Las compus de los locales) y se ve acá.</p>
       <div id="conexionesAdentro">
-        <h3 class="general-sub">Kommo</h3>
-        <p class="bloque-sub">Cada socio del Club entra a Kommo como contacto, con sus etiquetas, para armar segmentos y mandarles ofertas.</p>
-        <div id="kommoCuerpo"></div>
         <h3 class="general-sub">Tienda online</h3>
         <p class="bloque-sub">Las compras pagadas en vdh.com.ar suman puntos si el teléfono o el mail coinciden con un socio. Se revisa cada hora.</p>
         <div id="tiendaCuerpo"></div>
+      </div>
+    </div>
+
+    <!-- ── Los ajustes de cada sección ──
+         Lo que es de una sola sección se configura adentro de ella; esto sólo
+         dice dónde, para el que no se acuerda (o entra por primera vez). Cada
+         renglón se ve sólo si quien entró puede abrir esa pantalla. Desde que
+         se fue Kommo (25/10/2026) va en esta columna: así quedan parejas. -->
+    <div class="bloque" id="ajustesSecciones">
+      <h2 class="bloque-tit">Los ajustes de cada sección</h2>
+      <p class="bloque-sub">Lo que es de una sola sección se configura adentro de ella.</p>
+      <div class="mapa">
+        <a class="club-op" href="gestion.html#sucursales" data-mapa="admin">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10h14l1.5 9.5a1 1 0 0 1-1 1.2H4.5a1 1 0 0 1-1-1.2z"/><rect x="7" y="3" width="10" height="4" rx="1"/><path d="M12 7v3"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h8"/></svg></span>
+          <span class="club-op-txt"><b>POS</b><span>En Gestión: las sucursales, las listas de precios y las promociones.</span></span>
+        </a>
+        <a class="club-op" href="panel.html#agentes" data-mapa="panel.html">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+          <span class="club-op-txt"><b>CRM</b><span>Los agentes de IA y lo que saben, las plantillas de WhatsApp y los cupones.</span></span>
+        </a>
+        <a class="club-op" href="impecable-admin.html#ajustes" data-mapa="admin">
+          <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16l1 5a3 3 0 0 1-6 0a3 3 0 0 1-6 0a3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/><path d="m9.6 16.6 1.6 1.6 3.3-3.3"/></svg></span>
+          <span class="club-op-txt"><b>Supervisión</b><span>En Ajustes: cómo funciona cada local, las reglas de orden y los tests.</span></span>
+        </a>
       </div>
     </div>
     </div>
@@ -2953,59 +2948,33 @@
       });
   }
 
-  /* ═══ Conexiones: Kommo y la tienda online ════════════════════════════
-     Cómo va cada una, en corto. El error de Kommo se resume en una línea y
-     el texto técnico queda a un toque: si no se ve acá, se descubre el día
-     que alguien arma un segmento y faltan socios. Eran las "Integraciones"
-     del Club; desde el 25/10/2026, "Conexiones" en General. */
+  /* ═══ Conexiones: la tienda online ═════════════════════════════════════
+     Cómo va, en corto. Eran las "Integraciones" del Club; desde el
+     25/10/2026, "Conexiones" en General. Kommo se fue el mismo 25/10:
+     Mauricio no lo paga más (el puente lo apaga el SQL 176). */
   function pintarIntegraciones() {
-    if (!$('kommoCuerpo')) { return; }
+    if (!$('tiendaCuerpo')) { return; }
     $('conexionesSin').hidden = !!pinPromo();
     $('conexionesAdentro').hidden = !pinPromo();
     if (!pinPromo()) { return; }
-    $('kommoCuerpo').innerHTML = '<p class="bloque-sub">Buscando…</p>';
     $('tiendaCuerpo').innerHTML = '<p class="bloque-sub">Buscando…</p>';
-
-    base.club.kommoEstado(pinPromo()).then(function (k) {
-      if (!k || !k.activo) {
-        $('kommoCuerpo').innerHTML = '<p class="kommo-linea">No está conectado. El Club anda igual sin Kommo.</p>';
-        return;
-      }
-      var errores = Number(k.fallados) || 0, reint = Number(k.reintentando) || 0;
-      $('kommoCuerpo').innerHTML =
-        '<p class="kommo-linea"><span class="pill ' + (errores ? 'pill-warn' : 'pill-ok') + '">' +
-          (errores ? 'Con errores' : 'Andando') + '</span></p>' +
-        '<p class="kommo-linea">En Kommo: <b>' + miles(k.en_kommo) + '</b> de ' + miles(k.socios) + ' socios' +
-          ', <b>' + miles(k.con_promos) + '</b> ' + (Number(k.con_promos) === 1 ? 'acepta' : 'aceptan') + ' promociones' +
-          (k.pendientes ? ' · ' + miles(k.pendientes) + ' en camino' : '') + '. ' +
-          'El segmento para mandarles ofertas: etiquetas <b>VDH Club</b> y <b>Acepta promos</b>.</p>' +
-        (errores || reint
-          ? '<p class="kommo-linea mal">' +
-              (errores ? cuantos(errores, 'socio no se pudo mandar', 'socios no se pudieron mandar') + '. Se reintenta solo todos los días.'
-                       : cuantos(reint, 'socio reintentando', 'socios reintentando') + '.') + '</p>' +
-            '<details class="detalle-err"><summary>Ver el detalle del error</summary><p>' +
-              esc(k.ultimo_error || 'Kommo no mandó detalle.') + '</p></details>'
-          : '');
-    }).catch(function () {
-      $('kommoCuerpo').innerHTML = '<p class="kommo-linea">No se pudo consultar cómo va. Probá de nuevo en un rato.</p>';
-    });
 
     traerResumenClub().then(function (r) {
       var t = (r && r.tienda) || {};
       if (!Number(t.pedidos)) {
-        $('tiendaCuerpo').innerHTML = '<p class="kommo-linea">Todavía no llegó ningún pedido pagado desde que se conectó.</p>';
+        $('tiendaCuerpo').innerHTML = '<p class="conexion-linea">Todavía no llegó ningún pedido pagado desde que se conectó.</p>';
       } else {
         $('tiendaCuerpo').innerHTML =
-          '<p class="kommo-linea">En los últimos 30 días, <b>' + cuantos(Number(t.sumados_30) || 0, 'compra', 'compras') +
+          '<p class="conexion-linea">En los últimos 30 días, <b>' + cuantos(Number(t.sumados_30) || 0, 'compra', 'compras') +
             '</b> de la tienda sumaron <b>' + miles(t.puntos_30) + ' puntos</b>.</p>' +
           (Number(t.sin_socio_30)
-            ? '<p class="kommo-linea">' + cuantos(Number(t.sin_socio_30), 'pedido no coincidió', 'pedidos no coincidieron') +
+            ? '<p class="conexion-linea">' + cuantos(Number(t.sin_socio_30), 'pedido no coincidió', 'pedidos no coincidieron') +
               ' con ningún socio: el teléfono o el mail no están en el Club (o coinciden con más de uno).</p>'
             : '') +
-          (t.ultimo ? '<p class="kommo-linea">Último pedido revisado: ' + esc(fechaHora(t.ultimo)) + '.</p>' : '');
+          (t.ultimo ? '<p class="conexion-linea">Último pedido revisado: ' + esc(fechaHora(t.ultimo)) + '.</p>' : '');
       }
     }).catch(function () {
-      $('tiendaCuerpo').innerHTML = '<p class="kommo-linea">' + FALTA_36 + '</p>';
+      $('tiendaCuerpo').innerHTML = '<p class="conexion-linea">' + FALTA_36 + '</p>';
     });
   }
 
