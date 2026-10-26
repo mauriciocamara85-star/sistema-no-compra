@@ -10,6 +10,8 @@
  * Los francos de cada uno también se cargan acá (SQL 154, 21/10): el
  * administrador a cualquiera y el encargado a sus vendedores. Antes estaban
  * en Supervisión → Ajustes → Personas, que se sacó porque repetía esta pantalla.
+ * Y las vacaciones (SQL 181, 26/10), con las mismas reglas: esos días no se
+ * carga la venta en Ventas y Equipo VDH no le manda controles.
  *
  * Crear un usuario no le pone el PIN: la persona lo crea la primera vez que
  * entra, y ahí queda esperando que alguien confirme en persona que fue ella
@@ -65,6 +67,24 @@ var usuarios = (function () {
   }
   function francoDe(p) { return (p.francos || []).length ? 'franco ' + losDias(p.francos) : 'sin franco fijo'; }
 
+  /* SQL 181: las vacaciones (orden_ausencias), para los mismos que tienen francos. Las usan Ventas (esos días
+     no se carga la venta) y Equipo VDH (no recibe controles). Fechas 'AAAA-MM-DD'; null = sin el SQL 181. */
+  var vacs = null, vacEditando = null;
+  function hayVacaciones() { return vacs !== null; }
+  function vacDe(p) { return (vacs || []).filter(function (a) { return a.persona === p.id; }); }
+  function dosCifras(n) { return (n < 10 ? '0' : '') + n; }
+  function iso(d) { return d.getFullYear() + '-' + dosCifras(d.getMonth() + 1) + '-' + dosCifras(d.getDate()); }
+  function hoyIso() { return iso(new Date()); }
+  /** Lo más atrás que se cargan (como la base): el 1 del mes pasado. */
+  function minVac() { var d = new Date(); return iso(new Date(d.getFullYear(), d.getMonth() - 1, 1)); }
+  function dm(f) { var x = String(f).split('-'); return +x[2] + '/' + +x[1]; }   // '2026-10-19' → '19/10'
+  /** "de vacaciones hasta el 31/10" o "vacaciones del 3/11 al 10/11" (la que sigue); '' si no tiene. */
+  function vacTexto(p) {
+    var h = hoyIso(), a = vacDe(p).filter(function (x) { return x.hasta >= h; })[0];
+    if (!a) return '';
+    return a.desde <= h ? 'de vacaciones hasta el ' + dm(a.hasta) : 'vacaciones del ' + dm(a.desde) + ' al ' + dm(a.hasta);
+  }
+
   var datos = null;
   var filtro = { local: '', desactivados: false };
   var editando = null;
@@ -110,12 +130,15 @@ var usuarios = (function () {
   }
 
   function traer() {
-    return llamar('nc_usuarios').then(function (d) {
+    /* Sin el SQL 181 no está nc_vacaciones: la lista sale igual, sin las vacaciones. */
+    return Promise.all([llamar('nc_usuarios'), llamar('nc_vacaciones').catch(function () { return null; })]).then(function (rr) {
+      var d = rr[0];
       if (!d || d.error) {
         cuerpo().innerHTML = bloque('Usuarios', esc((d && d.porque) || 'No se pudo traer la lista.'));
         return;
       }
       datos = d;
+      vacs = rr[1] && Array.isArray(rr[1].vacaciones) ? rr[1].vacaciones : null;
       dibujar();
     }).catch(function (e) {
       if (e && e.sinSesion) { datos = null; mostrar(); return; }
@@ -164,8 +187,8 @@ var usuarios = (function () {
     }
 
     var sub = admin
-      ? 'Todos los que entran al No Compra y a Equipo VDH. ' + (hayFrancos() ? 'El rol, el local y los francos' : 'El rol y el local') + ' los cambiás vos.'
-      : 'Los vendedores de ' + esc(nombreLocal(datos.yo.local_id)) + '. Podés crearlos, aprobarlos, ' + (hayFrancos() ? 'cambiarles los francos, ' : '') +
+      ? 'Todos los que entran al No Compra y a Equipo VDH. ' + (hayFrancos() ? 'El rol, el local' + (hayVacaciones() ? ', los francos y las vacaciones' : ' y los francos') : 'El rol y el local') + ' los cambiás vos.'
+      : 'Los vendedores de ' + esc(nombreLocal(datos.yo.local_id)) + '. Podés crearlos, aprobarlos, ' + (hayFrancos() ? 'cambiarles los francos, ' : '') + (hayVacaciones() ? 'cargarles las vacaciones, ' : '') +
         'borrarles el PIN y desactivarlos. Reactivar a alguien lo hace el administrador.';
     var filtros = '';
     if (admin) {
@@ -228,9 +251,13 @@ var usuarios = (function () {
     var toca = !p.soy && (admin || p.rol === 'vendedor');
     var acc = '';
     if (editando === p.id) return filaEditor(p);
+    if (vacEditando === p.id) return filaVacaciones(p);
     if (admin && !p.soy) acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="cambiar">Cambiar</button>';
     /* El encargado sólo cambia los francos de sus vendedores (SQL 154). */
     else if (!admin && toca && p.activo && hayFrancos()) acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="cambiar">Francos</button>';
+    /* SQL 181: las vacaciones, a los mismos que tienen francos (nc_puede_tocar, como los francos). */
+    if (toca && p.activo && conFranco(p) && hayVacaciones()) acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="vacaciones">Vacaciones</button>';
+    var vt = hayVacaciones() ? vacTexto(p) : '';
     if (toca && p.activo && (p.pin || !p.en_lista)) {
       acc += '<button type="button" class="btn btn-sec btn-chico" data-acc="pin">' + (p.en_lista ? 'Borrar PIN' : 'Poner en la lista') + '</button>';
     }
@@ -240,7 +267,7 @@ var usuarios = (function () {
     return '<div class="us-fila' + (p.activo ? '' : ' apagada') + '" data-id="' + esc(p.id) + '">' +
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */
-      '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + '</span></div>' +
+      '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + (vt ? ' · ' + esc(vt) : '') + '</span></div>' +
       '<span class="pill pill-' + e[0] + '">' + esc(e[1]) + '</span>' +
       (acc ? '<div class="us-acciones">' + acc + '</div>' : '') +
       '</div>';
@@ -307,6 +334,31 @@ var usuarios = (function () {
         '<label class="us-check" data-ed-atencion' + (puedeAtencion(r) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
           '<input type="checkbox" data-ed="atencion"' + (p.tambien_atencion ? ' checked' : '') + '> También atiende clientes</label>' +
         botones +
+      '</div></div>';
+  }
+
+  /** Las vacaciones de alguien (SQL 181): las que tiene, cada una con "Quitar", y abajo para sumar otras. */
+  function filaVacaciones(p) {
+    var h = hoyIso(), min = minVac();
+    var tiene = vacDe(p).map(function (a) {
+      return '<li><span>Del ' + dm(a.desde) + ' al ' + dm(a.hasta) + (a.motivo ? ' · ' + esc(a.motivo) : '') +
+        (a.hasta < h ? ' <small>(ya pasaron)</small>' : '') + '</span>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-acc="vac-quitar" data-vac="' + esc(a.id) + '">Quitar</button></li>';
+    }).join('');
+    return '<div class="us-fila us-editando" data-id="' + esc(p.id) + '">' +
+      '<div class="us-quien"><b>Vacaciones de ' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b>' +
+        '<span>Esos días no se carga su venta en Ventas y Equipo VDH no le manda controles ni tareas.</span></div>' +
+      '<div class="us-vac">' +
+        (tiene ? '<ul class="us-vac-lista">' + tiene + '</ul>' : '') +
+        '<div class="us-vac-nueva">' +
+          '<label class="us-vac-campo"><span>Desde</span><input type="date" data-vac="desde" min="' + min + '"></label>' +
+          '<label class="us-vac-campo"><span>Hasta <small>(incluido)</small></span><input type="date" data-vac="hasta" min="' + min + '"></label>' +
+          '<label class="us-vac-campo"><span>Motivo <small>(si querés)</small></span><input type="text" data-vac="motivo" maxlength="80" autocomplete="off" placeholder="Vacaciones, licencia…"></label>' +
+        '</div>' +
+        '<div class="us-acciones">' +
+          '<button type="button" class="btn btn-pri btn-chico" data-acc="vac-agregar">Agregar</button>' +
+          '<button type="button" class="btn btn-sec btn-chico" data-acc="vac-cerrar">Listo</button>' +
+        '</div>' +
       '</div></div>';
   }
 
@@ -390,8 +442,32 @@ var usuarios = (function () {
           hacer('orden_aprobar_persona', { p_persona: p.id, p_aprobar: false }, p.alta_propia ? nom + ' quedó afuera.' : 'Listo: ese PIN se borró.');
           break;
         case 'cambiar':
-          editando = p.id;
+          editando = p.id; vacEditando = null;
           document.getElementById('usLista').innerHTML = lista();
+          break;
+        /* SQL 181: las vacaciones, en su propio renglón (como Cambiar). */
+        case 'vacaciones':
+          vacEditando = p.id; editando = null;
+          document.getElementById('usLista').innerHTML = lista();
+          var de = document.getElementById('usLista').querySelector('[data-id="' + p.id + '"] [data-vac="desde"]');
+          if (de) de.focus();
+          break;
+        case 'vac-cerrar':
+          vacEditando = null;
+          document.getElementById('usLista').innerHTML = lista();
+          break;
+        case 'vac-agregar':
+          var desde = f.querySelector('[data-vac="desde"]').value, hasta = f.querySelector('[data-vac="hasta"]').value;
+          if (!desde) { avisar('err', 'Poné desde qué día.'); f.querySelector('[data-vac="desde"]').focus(); return; }
+          if (!hasta) { avisar('err', 'Poné hasta qué día (el último que no viene).'); f.querySelector('[data-vac="hasta"]').focus(); return; }
+          if (hasta < desde) { avisar('err', 'El "hasta" no puede ser antes del "desde".'); return; }
+          hacer('nc_vacacion_guardar', { p_persona: p.id, p_desde: desde, p_hasta: hasta, p_motivo: f.querySelector('[data-vac="motivo"]').value.trim() || null },
+            'Guardado: ' + p.nombre + ' de vacaciones del ' + dm(desde) + ' al ' + dm(hasta) + '. Esos días no se carga su venta y Equipo VDH no le manda controles.');
+          break;
+        case 'vac-quitar':
+          var a = (vacs || []).filter(function (x) { return x.id === b.dataset.vac; })[0];
+          if (!a || !confirm('¿Sacarle a ' + nom + ' las vacaciones del ' + dm(a.desde) + ' al ' + dm(a.hasta) + '? Esos días vuelve a trabajar: se carga su venta y recibe controles.')) return;
+          hacer('nc_vacacion_borrar', { p_id: a.id }, 'Listo: se sacaron las vacaciones del ' + dm(a.desde) + ' al ' + dm(a.hasta) + '.');
           break;
         case 'cancelar':
           editando = null;

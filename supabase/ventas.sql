@@ -454,7 +454,13 @@ begin
              'premios', to_jsonb(m.premios), 'con_dias', m.con_dias) end,
     'vendedores', coalesce((
       select jsonb_agg(jsonb_build_object('id', v.id, 'nombre', v.nombre, 'pct', v.pct, 'persona', v.persona_id,
-                                          'francos', coalesce(to_jsonb(p.dias_libres), '[]'::jsonb))
+                                          'francos', coalesce(to_jsonb(p.dias_libres), '[]'::jsonb),
+                                          /* SQL 181: sus vacaciones de este mes (Config → Usuarios): [primer día, último día, motivo]. */
+                                          'vacaciones', coalesce((
+                                            select jsonb_agg(jsonb_build_array(extract(day from greatest(au.desde, v_mes))::int,
+                                                                               extract(day from least(au.hasta, v_fin - 1))::int, au.motivo) order by au.desde)
+                                              from orden_ausencias au
+                                             where au.persona_id = v.persona_id and au.desde < v_fin and au.hasta >= v_mes), '[]'::jsonb))
                        order by (v.nombre = ''), v.orden, v.id)
         from ventas_vendedores v left join orden_personas p on p.id = v.persona_id
        where v.local_id = p_local and v.mes = v_mes), '[]'::jsonb),
@@ -565,6 +571,11 @@ begin
     end if;
     if ventas_mes_de(v_fecha) <> v_mes then raise exception 'ventas: ese día no es de este mes'; end if;
     if v_fecha > v_hoy then raise exception 'ventas: ese día todavía no llegó' using hint = 'La venta se carga el día que pasó.'; end if;
+    /* SQL 181: los días de vacaciones (Config → Usuarios) no se cargan, como los que no llegaron. */
+    if exists (select 1 from ventas_vendedores vv join orden_ausencias au on au.persona_id = vv.persona_id
+                where vv.id = v_vend and v_fecha between au.desde and au.hasta) then
+      raise exception 'ventas: ese día está de vacaciones' using hint = 'Las vacaciones se sacan en Config → Usuarios.';
+    end if;
     select monto::text into v_antes from ventas_diarias where vendedor_id = v_vend and fecha = v_fecha;
     if v_num is null then
       delete from ventas_diarias where vendedor_id = v_vend and fecha = v_fecha;

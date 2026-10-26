@@ -265,6 +265,9 @@
       /* Lo cargado, a mano para las celdas. */
       ST.venta = {}; ST.tiene = {};
       (D.ventas || []).forEach(function (r) { (ST.venta[r[0]] = ST.venta[r[0]] || {})[r[1]] = Number(r[2]); ST.tiene[r[0]] = true; });
+      /* SQL 181: las vacaciones de cada uno en este mes, [primer día, último día, motivo] (Config → Usuarios). */
+      ST.vac = {};
+      (D.vendedores || []).forEach(function (v) { ST.vac[v.id] = v.vacaciones || []; });
     }
     document.querySelectorAll('.vt-pest').forEach(function (b) { b.setAttribute('aria-selected', String(b.getAttribute('data-tab') === ST.hoja)); });
     $('vtMesPest').textContent = nombreMes(ST.mes);
@@ -489,9 +492,18 @@
     return t + '</tbody></table>';
   }
 
+  /* SQL 181: si ese día está de vacaciones, el motivo ('' si no tiene); si no, null. */
+  function deVacaciones(v, d) {
+    var a = (ST.vac[v.id] || []).filter(function (p) { return d >= p[0] && d <= p[1]; })[0];
+    return a ? a[2] || '' : null;
+  }
+
   function celdaVenta(C, v, x, r, w, k) {
-    var val = (ST.venta[v.id] || {})[x.d], franco = v.francos.indexOf(k) >= 0;
-    if (x.futuro) return '<td class="futuro' + (franco ? ' franco' : '') + '" title="Todavía no llegó: se carga el día que pasó"></td>';
+    var val = (ST.venta[v.id] || {})[x.d], franco = v.francos.indexOf(k) >= 0, vac = deVacaciones(v, x.d);
+    var titVac = ' title="' + esc(String(v.nombre).split(' ')[0] + ' de vacaciones' + (vac ? ': ' + vac : '')) + '"';
+    if (x.futuro) return '<td class="futuro' + (vac !== null ? ' vac' : franco ? ' franco' : '') + '"' + (vac !== null ? titVac : ' title="Todavía no llegó: se carga el día que pasó"') + '></td>';
+    /* De vacaciones: como un franco, pero sin poder cargarlo (Mauricio, 26/10). Si ya había algo cargado, se ve y cuenta. */
+    if (vac !== null) return '<td class="vac' + hoyCl(C, x) + '"' + titVac + '>' + (def(val) ? pesos(val) : '') + '</td>';
     /* Sin el borde de "Falta cargar" (26/10, Mauricio): un día vacío es un día que no vino o no vendió, no algo
        incompleto (en octubre lo marcaba en 311 celdas, casi todas de francos sin anotar y de los que cubren). */
     var cl = (franco ? 'franco' : '') + hoyCl(C, x);
@@ -1270,7 +1282,11 @@
     if (e.key !== 'Enter') return;
     e.preventDefault();
     var g = el.getAttribute('data-g'), r = +el.getAttribute('data-r'), c = el.getAttribute('data-c'), paso = e.shiftKey ? -1 : 1;
-    var sig = g ? hoja.querySelector('input[data-g="' + g + '"][data-r="' + (r + paso) + '"][data-c="' + c + '"]') : null;
+    /* Salta las filas que ese día no se cargan (alguien de vacaciones, SQL 181). */
+    var sig = null;
+    for (var rr = r + paso; g && !sig && rr >= 0 && Math.abs(rr - r) <= 20; rr += paso) {
+      sig = hoja.querySelector('input[data-g="' + g + '"][data-r="' + rr + '"][data-c="' + c + '"]');
+    }
     if (!sig) { var todos = [].slice.call(hoja.querySelectorAll('input')); sig = todos[todos.indexOf(el) + paso]; }
     if (sig) sig.focus(); else el.blur();
   });

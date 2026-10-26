@@ -1594,6 +1594,24 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-dia input:checked + span { background: var(--acc); border-color: var(--acc); color: var(--acc-ink); }
 .us-dia input:focus-visible + span { outline: 2px solid var(--foco); outline-offset: 2px; }
 .campo-lbl small { font-weight: 500; color: var(--txt-3); }
+/* Las vacaciones (SQL 181): las que tiene, cada una con "Quitar", y abajo desde, hasta y motivo para sumar otras. */
+.us-vac { flex: 1 1 100%; display: grid; gap: 10px; }
+.us-vac-lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.us-vac-lista li {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 6px 6px 6px 12px; border-radius: var(--r-sm); background: var(--surface-2); font-size: 14px; font-weight: 500;
+}
+.us-vac-lista small { color: var(--txt-3); font-size: 12.5px; font-weight: 500; }
+/* Desde y Hasta lado a lado; el motivo, en su renglón (en la PC, los tres juntos). */
+.us-vac-nueva { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+.us-vac-nueva .us-vac-campo:last-child { grid-column: 1 / -1; }
+@media (min-width: 900px) {
+  .us-vac-nueva { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(0, 1.4fr); }
+  .us-vac-nueva .us-vac-campo:last-child { grid-column: auto; }
+}
+.us-vac-campo { display: flex; flex-direction: column; align-items: stretch; gap: 4px; font-size: 13px; font-weight: 600; color: var(--txt-2); }
+.us-vac-campo small { font-weight: 500; color: var(--txt-3); }
+.us-vac-campo input { min-height: 40px; padding: 6px 8px 6px 10px; }
 
 /* El portón de lo que antes pedía el PIN compartido (persona.porton). */
 .porton-usuario { width: 100%; }
