@@ -2213,10 +2213,13 @@ function vmAyudaColeccion(R) {
 function vmUltimaEdicion(R) {
   return R.actualizado_en ? 'Guardadas por última vez por ' + (R.actualizado_nombre || 'alguien') + ', el ' + diaMes(R.actualizado_en) + ' a las ' + hora(R.actualizado_en) + '.' : '';
 }
-/** Qué trae cada colección en el stock de fábrica (lo mismo que lee la IA). */
+/** Qué trae cada colección en el stock de fábrica (lo mismo que lee la IA). Los rubros, por modelos: el número que se ve
+ *  (la base los manda por unidades, que es lo que le importa a la IA). */
 function vmColeccionesHtml(R) {
   var c = R.colecciones || {}, items = VM_GRUPOS.filter(function (g) { return c[g[0]]; }).map(function (g) {
-    var x = c[g[0]], rubros = (x.rubros || []).slice(0, 6).map(function (r) { return r.rubro + ' ' + r.articulos; }).join(' · ');
+    var x = c[g[0]], rubros = (x.rubros || []).slice().sort(function (a, b) {
+      return b.articulos - a.articulos || b.unidades - a.unidades || a.rubro.localeCompare(b.rubro);
+    }).slice(0, 6).map(function (r) { return r.rubro + ' ' + r.articulos; }).join(' · ');
     return '<li><b>' + esc(g[1] + (x.numero ? ' · la ' + x.numero : '')) + '</b> ' + esc((x.temporada ? x.temporada + ' · ' : '') + x.articulos + ' artículos') +
       (rubros ? '<small>' + esc(rubros) + (x.colores && x.colores.length ? ' — ' + esc(x.colores.join(', ')) : '') + '</small>' : '') + '</li>';
   });
