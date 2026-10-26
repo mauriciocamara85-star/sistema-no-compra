@@ -548,7 +548,7 @@ function ventanaFoto(f, op) {
         (x.tipo === 'correccion' ? estCorreccion(x) : x.estado === 'enviado' ? '<span class="est sorpresa">Sin revisar</span>' : estNivel(x.nivel, '—')) + '</button>';
     }).join('') + '</div>' : '') +
     (conIA ? '<details class="vm-ia"><summary>Para mejorar la IA</summary><div class="vm-ia-cuerpo"><p class="bajada">Cargando…</p></div></details>' : ''));
-  engancharOpinionIA(w, f.ultimo_intento_id);
+  engancharOpinionIA(w, f.ultimo_intento_id, { comentario: w.querySelector('#vfComent') });
   /* Lo de la IA se carga recién al abrirlo. */
   var det = w.querySelector('.vm-ia');
   if (det) det.addEventListener('toggle', function () {

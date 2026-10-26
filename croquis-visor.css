@@ -463,3 +463,62 @@
 .cv-sens { display: grid; gap: 6px; margin-bottom: 10px; }
 .cv-sens > span { color: var(--cv-suave); font-size: 12.5px; font-weight: 700; }
 @media (prefers-reduced-motion: reduce) { .cv-mira i { transition: none; } }
+
+/* Distribución con la IA (SQL 173): en la vista Zonas, sólo para el supervisor. Cada propuesta es una tarjeta: tocar el
+   encabezado la marca en el croquis; abajo, mandarla al responsable como tarea con foto o descartarla. */
+.cv-vm { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--cv-linea); }
+.cv-vm-col { margin: 0; font-size: 14px; line-height: 1.45; color: var(--cv-suave); }
+.cv-vm-col b { color: var(--cv-lima); font-weight: 800; }
+.cv-vm .cv-fila .cv-chico { flex: 1 1 auto; }
+.cv-vm .cv-chico:disabled { opacity: .6; cursor: progress; }
+.cv-vm-pensando { display: flex; align-items: center; gap: 10px; margin: 0; padding: 12px 14px; border-radius: 14px; background: var(--cv-panel-2); font-size: 14px; font-weight: 700; }
+.cv-vm-pensando i { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--cv-lima); }
+@media (prefers-reduced-motion: no-preference) { .cv-vm-pensando i { animation: cv-vm-latido 1.1s ease-in-out infinite; } }
+@keyframes cv-vm-latido { 0%, 100% { opacity: .25; transform: scale(.8); } 50% { opacity: 1; transform: scale(1.1); } }
+.cv-vm-error { margin: 0; padding: 12px 14px; border-radius: 14px; background: rgba(255, 92, 122, .14); color: #FFD0D9; font-size: 14px; font-weight: 700; }
+.cv-vm-cuando { font-size: 13px; }
+.cv-vm-resumen { margin: 0; font-size: 14.5px; line-height: 1.45; }
+.cv-vm-falta { margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(245, 184, 75, .12); color: #FFE2B0; font-size: 13.5px; line-height: 1.4; }
+.cv-vm-falta b { font-weight: 800; }
+.cv-vm .cv-enlace { justify-self: start; }
+.cv-vm-prop { display: grid; gap: 8px; padding: 10px 12px 12px; border-radius: 16px; background: var(--cv-panel-2); transition: box-shadow .2s, opacity .2s; }
+.cv-vm-prop.en-foco { box-shadow: inset 0 0 0 2px var(--cv-lima); }
+.cv-vm-prop.es-descartada { opacity: .6; }
+.cv-vm-prop.es-descartada dl { display: none; }
+.cv-vm-prop-cab { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
+.cv-vm-prop-cab i { flex: none; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
+.cv-vm-prop-cab b { min-width: 0; font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-vm-prop-cab span { flex: none; color: var(--cv-suave); font-size: 13px; font-weight: 700; }
+.cv-vm-pri { flex: none; margin-left: auto; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-style: normal; font-weight: 800; }
+.cv-vm-pri.pri-alta { background: rgba(255, 92, 122, .18); color: #FFC2CE; }
+.cv-vm-pri.pri-media { background: rgba(245, 208, 75, .16); color: #FCE9A6; }
+.cv-vm-pri.pri-baja { background: rgba(255, 255, 255, .08); color: var(--cv-suave); }
+.cv-vm-prop dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; font-size: 14px; line-height: 1.4; }
+.cv-vm-prop dt { color: var(--cv-suave); font-weight: 700; }
+.cv-vm-prop dd { margin: 0; }
+.cv-vm-prop .cv-ok { padding: 8px 12px; font-size: 13.5px; }
+.cv-vm-prop .cv-gris { font-size: 13.5px; }
+.cv-vm-form { padding: 12px; background: var(--cv-panel); }
+.cv-vm-form .cv-boton { min-height: 44px; }
+
+/* La ventana de las Reglas VDH: una sola columna (sin la de las fotos de la ficha), con el texto grande para editar. */
+.cv-ficha.cv-reglas { width: min(780px, calc(100% - 40px)); }
+@media (max-width: 639px) { .cv-ficha.cv-reglas { width: 100%; } }
+.cv-reglas .cv-ficha-cuerpo { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+.cv-reglas .cv-ficha-cuerpo > * { grid-column: auto; }
+.cv-reg-sub { margin: 6px 0 0; max-width: 56ch; color: var(--cv-suave); font-size: 14px; line-height: 1.45; }
+.cv-reg-datos { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px 12px; align-items: end; }
+.cv-campo { display: grid; gap: 6px; min-width: 0; }
+.cv-campo > span { color: var(--cv-suave); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.cv-campo input, .cv-campo textarea { width: 100%; min-height: 44px; padding: 10px 14px; border: 1px solid var(--cv-linea); border-radius: 12px; background: var(--cv-panel-2); color: var(--cv-texto); font: inherit; outline: none; box-shadow: none; }
+.cv-campo input:focus, .cv-campo textarea:focus { border-color: var(--cv-lima); background: var(--cv-panel-2); }
+.cv-campo input:disabled, .cv-campo textarea[readonly] { opacity: .75; }
+.cv-campo input::placeholder { color: rgba(139, 148, 163, .7); }
+.cv-reglas select.cv-zona { width: 100%; min-height: 44px; min-inline-size: 0; }
+.cv-reg-col input { max-width: 9em; font-variant-numeric: tabular-nums; }
+.cv-reg-texto textarea { min-height: 46vh; resize: vertical; background: var(--cv-bg); font-size: 14.5px; line-height: 1.55; tab-size: 2; }
+@media (max-width: 639px) { .cv-reg-texto textarea { min-height: 55vh; font-size: 15px; } }
+.cv-reg-cols ul { display: grid; gap: 8px; margin: 4px 0 0; padding: 0; list-style: none; }
+.cv-reg-cols li { padding: 10px 12px; border-radius: 12px; background: var(--cv-panel-2); font-size: 14px; }
+.cv-reg-cols li b { font-weight: 800; }
+.cv-reg-cols li small { display: block; margin-top: 4px; color: var(--cv-suave); font-size: 13px; line-height: 1.4; }

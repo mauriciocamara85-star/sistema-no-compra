@@ -71,6 +71,7 @@ function abrirVisor(cont, op) {
     visorSalirRecorrido(V, true);
     V.giro = 0;
     V.resaltado = null;
+    V.vmFoco = null; V.vmTodas = false;
     visorZoom(V, 1, 0, 0, false);   // sin animar: la maqueta nueva se mide enseguida
     cont.querySelectorAll('#cvTabs [data-tab]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
     visorDibujar(V, true);
@@ -131,6 +132,7 @@ function abrirVisor(cont, op) {
   visorPrevia(V);
   /* El panel: cómo verlo (por vendedor, por estado, por antigüedad). */
   cont.querySelector('#cvPanel').addEventListener('click', function (e) {
+    if (vmClic(V, e)) return;   // la distribución con la IA (vista Zonas)
     if (e.target.closest && e.target.closest('#cvVer3d')) { visor3dCambiar(V, !V.usa3d); return; }
     var se = e.target.closest && e.target.closest('[data-sens]');
     if (se) {
@@ -151,15 +153,17 @@ function abrirVisor(cont, op) {
     if (b && b.dataset.vista !== V.vista) {
       V.vista = b.dataset.vista;
       V.resaltado = null;
+      V.vmFoco = null; V.vmTodas = false;
       try { localStorage.setItem('vdh_visor_vista', V.vista); } catch (x) {}
       visorPintar(V); visorPanel(V);
       return;
     }
     /* Tocar a alguien de la leyenda: se iluminan sus módulos y el resto queda atenuado; tocarlo de nuevo, se ve todo. */
     var r = e.target.closest && e.target.closest('[data-resalta]');
-    if (r) { V.resaltado = V.resaltado === r.dataset.resalta ? null : r.dataset.resalta; visorPintar(V); visorPanel(V); }
+    if (r) { V.resaltado = V.resaltado === r.dataset.resalta ? null : r.dataset.resalta; V.vmFoco = null; V.vmTodas = false; visorPintar(V); visorPanel(V); }
     if (e.target.closest && e.target.closest('#cvVerTodos')) { V.resaltado = null; visorPintar(V); visorPanel(V); }
   });
+  cont.querySelector('#cvPanel').addEventListener('input', function (e) { vmEscribe(V, e); });
   V.alTamano = function () {
     if (!document.body.contains(V.raiz)) { visorSalir(V, true); return; }
     if (V.usa3d) { if (V.c3) V.c3.redimensionar(); return; }
@@ -169,8 +173,9 @@ function abrirVisor(cont, op) {
   window.addEventListener('resize', V.alTamano);
   V.alTecla = function (e) {
     if (!document.body.contains(V.raiz)) { visorSalir(V, true); return; }
-    /* Con la lista de la zona abierta, Esc cierra sólo la lista (en la app no está la guardia de interfaz.js). */
-    if (e.key === 'Escape' && V.ficha && !visorListaAbierta()) cerrarFicha(V);
+    /* Con la lista de la zona abierta, Esc cierra sólo la lista (en la app no está la guardia de interfaz.js); con la
+       ventanita de "¿Cerrar sin guardar?" de la app, sólo la ventanita (ella marca el Esc como usado). */
+    if (e.key === 'Escape' && V.ficha && !e.defaultPrevented && !visorListaAbierta()) cerrarFicha(V);
     /* Con el teclado: ← → giran, ↑ ↓ inclinan, + y − acercan (no mientras se escribe ni con un módulo abierto). */
     var t = e.target, tag = t && t.tagName;
     if (V.ficha || !V.d || e.altKey || e.ctrlKey || e.metaKey || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || (t && t.isContentEditable)) return;
@@ -202,6 +207,7 @@ function visorSalir(V, sinVolver) {
   window.removeEventListener('resize', V.alTamano);
   document.removeEventListener('keydown', V.alTecla);
   if (V.ficha) cerrarFicha(V, true);
+  if (V.vm) clearTimeout(V.vm.reloj);
   visor3dSoltar(V);
   if (!sinVolver && V.op.alVolver) V.op.alVolver();
 }
@@ -1097,15 +1103,18 @@ function visorEtiqueta(m) { return queHay(m) || (m.isla ? m.nombre : nombrePropi
 function visorPuedeNombrar(V, m) { var p = V.op.puedeNombrar; return typeof p === 'function' ? !!p(m, V.d) : !!p; }
 /** Cambiar de vista no vuelve a armar la maqueta: sólo cambia los colores (con una transición suave). */
 function visorPintar(V) {
+  /* Con una propuesta de la IA tocada (o "Marcarlas en el croquis"), se iluminan sus módulos en vez de los de la leyenda. */
+  var vm = vmMarcados(V);
+  var marca = vm ? function (m, k) { return !!vm[m.id]; } : V.resaltado ? function (m, k) { return k.clave === V.resaltado; } : null;
   V.mundo.querySelectorAll('.cv-caja[data-mod]').forEach(function (c) {
     var m = visorModulo(V, c.dataset.mod);
     if (!m) return;
-    var k = visorCategoria(V, m);
+    var k = visorCategoria(V, m), si = marca && marca(m, k);
     c.style.setProperty('--halo', k.color);
-    c.classList.toggle('cv-resaltado', !!V.resaltado && k.clave === V.resaltado);
-    c.classList.toggle('cv-apagado', !!V.resaltado && k.clave !== V.resaltado);
+    c.classList.toggle('cv-resaltado', !!marca && si);
+    c.classList.toggle('cv-apagado', !!marca && !si);
   });
-  if (V.c3) V.c3.pintar(function (m) { return visorCategoria(V, m).color; }, V.resaltado ? function (m) { return visorCategoria(V, m).clave === V.resaltado; } : null);
+  if (V.c3) V.c3.pintar(function (m) { return visorCategoria(V, m).color; }, marca ? function (m) { return marca(m, visorCategoria(V, m)); } : null);
 }
 function visorModulosTab(V) { return V.tab === 'deposito' ? V.d.dep : V.d.pared.concat(V.d.islas); }
 
@@ -1135,6 +1144,7 @@ function visorPanel(V) {
     (V.resaltado ? '<button type="button" class="cv-chico cv-ver-todos" id="cvVerTodos">Ver todos</button>' : '') +
     (V.vista === 'zona' ? '<p class="cv-ayuda">Salen solas del croquis, según lo lejos que queda cada módulo de la puerta: la entrada es el primer cuarto del local, ' +
       'el fondo arranca en el 70 % y las mesas del medio son la zona caliente. Si alguna no es así, cambiala en la ficha del módulo.</p>' : '') +
+    vmSeccionHtml(V) +
     '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>' +
     '<details class="cv-sec"><summary>Ajustes de la vista</summary>' +
       (V.usa3d ? '<div class="cv-sens"><span>Sensibilidad del mouse</span><div class="cv-seg" role="group" aria-label="Sensibilidad del mouse">' +
@@ -1496,6 +1506,17 @@ function visorDesde(a, b) {
 function cerrarFicha(V, ya, porAtras) {
   var f = V.ficha;
   if (!f || f.cerrando) return;
+  /* Las reglas con cambios sin guardar: primero pregunta (con el "atrás" del celular, la capa vuelve a quedar puesta). */
+  if (!ya && f.sinGuardar && f.sinGuardar()) {
+    if (porAtras && V.op.capa && f.alAtras) V.op.capa.abrir(f.alAtras);
+    if (f.preguntando) return;
+    f.preguntando = true;
+    preguntarVisor('Tenés cambios sin guardar en las reglas. ¿Cerrar sin guardar?', 'Cerrar sin guardar').then(function (si) {
+      f.preguntando = false;
+      if (si && V.ficha === f) { f.sinGuardar = null; cerrarFicha(V); }
+    });
+    return;
+  }
   f.cerrando = true;
   if (V.op.capa && f.alAtras && !porAtras) V.op.capa.soltar(f.alAtras);
   var listo = false;
@@ -1814,4 +1835,390 @@ function visorContarTareas(V, e) {
 function visorDondeAsignar(V) { return V.op.dondeAsignar || 'asignáselo en Por local'; }
 function avisarVisor(texto) {
   if (typeof avisar === 'function') { avisar(texto); return; }
+}
+/** ¿Sí o no? Con la ventanita de la app si está (la del navegador muestra la dirección de la página); si no, la de siempre. */
+function preguntarVisor(texto, si) {
+  return typeof confirmar === 'function' ? confirmar(texto, si) : Promise.resolve(window.confirm(texto));
+}
+
+/* ── Distribución con la IA (SQL 173, 25/10/2026, paso 3 de visual merchandising). En la vista Zonas, el supervisor le
+      pide a la IA cómo distribuir el salón: lee las reglas VDH (las mismas para todos los locales, se cambian en
+      "Reglas VDH"), la colección nueva (sale del final del código) y lo que vio en la última foto de cada módulo.
+      La propuesta es sólo para él: cada cambio se lo manda al responsable del módulo como tarea con foto (la controla
+      él, no la IA) o lo descarta con su por qué, que la IA lee la próxima vez. Al vendedor no le llega nada de la IA. ── */
+var VM_MOMENTOS = [['lanzamiento', 'Lanzamiento de colección nueva'], ['cambio', 'Cambio de temporada'], ['mitad', 'Mitad de temporada'],
+  ['liquidacion_parcial', 'Liquidación parcial'], ['liquidacion_total', 'Liquidación total'], ['fecha_clave', 'Fecha clave']];
+var VM_PRIORIDADES = { alta: 'Alta', media: 'Media', baja: 'Baja' };
+var VM_GRUPOS = [['nueva', 'Nueva'], ['anterior', 'Anterior'], ['viejas', 'Más viejas'], ['basicos', 'Básicos']];
+var VM_ESPERA = 4000;   // cada cuánto se fija si la IA terminó (la base da por cortada la que pasa de 4 minutos)
+
+function vmMomento(k, fecha) {
+  var x = VM_MOMENTOS.filter(function (m) { return m[0] === k; })[0];
+  return (x ? x[1] : k || '') + (k === 'fecha_clave' && fecha ? ': ' + fecha : '');
+}
+function vmTemporada(n) { return !n ? '' : n === 99 ? 'básicos' : n % 2 ? 'primavera-verano' : 'otoño-invierno'; }
+/** ¿Va la sección? En la vista Zonas, en el salón, para el supervisor. */
+function vmVa(V) { return !!(V.op.puedeSugerir && V.vista === 'zona' && V.tab === 'salon' && V.d && V.d.modulos.length); }
+
+/** Las reglas y la última sugerencia del local, una vez por visor. Sin el SQL 173 la sección no aparece. */
+function vmCargar(V) {
+  if (V.vm) return;
+  var vm = V.vm = { cargando: true, abierto: null, borrador: {}, motivo: {}, plazo: {}, enviando: null };
+  Promise.all([llamar('orden_vm_reglas_leer', {}), llamar('orden_vm_ultima', { p_local: V.op.local.id })]).then(function (r) {
+    vm.cargando = false;
+    vm.reglas = r[0];
+    vm.ultima = r[1] || null;
+    vmSeguir(V);
+    vmRepintar(V);
+  }, function (e) {
+    vm.cargando = false;
+    if (esDeRed(e)) vm.sinRed = true; else vm.no = true;
+    vmRepintar(V);
+  });
+}
+
+function vmSeccionHtml(V) {
+  if (!vmVa(V)) return '';
+  vmCargar(V);
+  var vm = V.vm, cab = '<section class="cv-vm" id="cvVm"><p class="cv-rotulo-sec">Distribución con la IA</p>';
+  if (vm.no) return '';
+  if (vm.cargando) return cab + '<p class="cv-gris">Cargando…</p></section>';
+  if (vm.sinRed) return cab + '<p class="cv-gris">Sin conexión: no se pudo cargar.</p><div class="cv-fila"><button type="button" class="cv-chico" data-vm="recargar">Probar de nuevo</button></div></section>';
+  var R = vm.reglas || {}, u = vm.ultima, ocupado = vm.pidiendo || (u && u.estado === 'pensando');
+  return cab +
+    '<p class="cv-vm-col">' + (R.coleccion ? 'Colección nueva: <b>la ' + R.coleccion + '</b> · ' + esc(R.temporada || vmTemporada(R.coleccion)) : 'Colección nueva: <b>sin datos</b>') +
+      '<br>' + esc(vmMomento(R.momento, R.fecha_clave)) + '</p>' +
+    '<div class="cv-fila"><button type="button" class="cv-chico cv-lima" data-vm="sugerir"' + (ocupado ? ' disabled' : '') + '>' +
+      (ocupado ? 'Pensando…' : u ? 'Sugerir de nuevo' : 'Sugerir distribución') + '</button>' +
+      '<button type="button" class="cv-chico" data-vm="reglas">Reglas VDH</button></div>' +
+    vmEstadoHtml(V) + '</section>';
+}
+
+function vmEstadoHtml(V) {
+  var vm = V.vm, u = vm.ultima;
+  var error = vm.errorPedido ? '<p class="cv-vm-error">' + esc(vm.errorPedido) + '</p>' : '';
+  if (!u) return error || '<p class="cv-ayuda">La IA mira el croquis, lo que hay en cada módulo y la colección nueva, y te propone qué cambiar ' +
+    '(como mucho el 30 % de los módulos). Lo ves sólo vos: cada cambio se lo mandás al responsable como tarea con foto, o lo descartás.</p>';
+  if (u.estado === 'pensando') return error + '<p class="cv-vm-pensando"><i aria-hidden="true"></i>La IA está pensando la distribución. Tarda uno o dos minutos: podés seguir mirando el local.</p>';
+  if (u.estado === 'error') return error || '<p class="cv-vm-error">No salió: ' + esc(String(u.error || 'algo falló').replace(/\.$/, '')) + '. Probá de nuevo.</p>';
+  var props = u.propuestas || [], vivas = props.filter(function (p) { return p.estado !== 'descartada'; }).length;
+  return error + '<p class="cv-gris cv-vm-cuando">' + esc('La pidió ' + (u.creada_nombre || 'alguien') + ', ' + textoHace(u.creada_en) + ' a las ' + hora(u.creada_en)) + '</p>' +
+    (u.resumen ? '<p class="cv-vm-resumen">' + esc(u.resumen) + '</p>' : '') +
+    (u.falta ? '<p class="cv-vm-falta"><b>Le faltó saber:</b> ' + esc(u.falta) + '</p>' : '') +
+    (props.length
+      ? (vivas > 1 ? '<button type="button" class="cv-enlace" data-vm="todas">' + (V.vmTodas && !V.vmFoco ? 'Dejar de marcarlas en el croquis' : 'Marcarlas en el croquis') + '</button>' : '') +
+        props.map(function (p) { return vmPropuestaHtml(V, p); }).join('')
+      : '<p class="cv-ok">La IA no propone cambios: el local está como dicen las reglas.</p>');
+}
+
+function vmQuien(V, id, nombre) { var p = id && V.d.persona[id]; return p ? nombreLista(p) : nombre || ''; }
+function vmPropuestaHtml(V, p) {
+  var vm = V.vm, i = p.indice, z = zonaInfo(p.zona), quien = p.responsable_id ? vmQuien(V, p.responsable_id, p.responsable) : '';
+  var foco = V.vmFoco === p.modulo_id, ab = vm.abierto && vm.abierto.i === i ? vm.abierto.que : null, va = vm.enviando === i;
+  var h = '<article class="cv-vm-prop es-' + esc(p.estado) + (foco ? ' en-foco' : '') + '" data-vm-i="' + i + '">' +
+    '<button type="button" class="cv-vm-prop-cab" data-vm="foco" aria-pressed="' + foco + '" title="Marcarlo en el croquis">' +
+      '<i style="background:' + (z ? z[2] : '#6E7684') + '"></i><b>' + esc(p.nombre || 'Módulo ' + p.ref) + '</b><span>' + esc(z ? z[1] : 'Sin zona') + '</span>' +
+      '<em class="cv-vm-pri pri-' + esc(p.prioridad) + '">' + esc(VM_PRIORIDADES[p.prioridad] || p.prioridad || '') + '</em></button>' +
+    '<dl>' + (p.hoy ? '<dt>Hoy</dt><dd>' + esc(p.hoy) + '</dd>' : '') + '<dt>Propone</dt><dd>' + esc(p.propone) + '</dd>' +
+      (p.mover ? '<dt>Mover</dt><dd>' + esc(p.mover) + '</dd>' : '') + (p.porque ? '<dt>Por qué</dt><dd>' + esc(p.porque) + '</dd>' : '') + '</dl>';
+  var puede = vm.ultima && vm.ultima.puede_mandar;
+  if (p.estado === 'mandada') {
+    h += '<p class="cv-ok">✓ Mandada a ' + esc(vmQuien(V, p.mandada_a, quien)) + ' para ' + esc(VISOR_PLAZOS[p.plazo] || 'esta semana') +
+      (p.mandada_nombre ? ' · la mandó ' + esc(p.mandada_nombre) : '') + '</p>';
+  } else if (p.estado === 'descartada') {
+    h += '<p class="cv-gris">Descartada' + (p.motivo ? ': ' + esc(p.motivo) : '') + '.' + (puede ? ' <button type="button" class="cv-enlace" data-vm="deshacer"' + (va ? ' disabled' : '') + '>Deshacer</button>' : '') + '</p>';
+  } else if (puede && ab === 'mandar') {
+    var plazo = vm.plazo[i] || 'semana';
+    h += '<div class="cv-sugerencia cv-vm-form"><h3>Para ' + esc(quien) + '</h3>' +
+      '<textarea data-vm-texto rows="4" maxlength="1000" aria-label="Qué tiene que hacer">' + esc(vm.borrador[i] || '') + '</textarea>' +
+      '<div class="cv-seg cv-plazo" role="group" aria-label="Para cuándo">' + [['hoy', 'Hoy'], ['manana', 'Mañana'], ['semana', 'Esta semana']].map(function (x) {
+        return '<button type="button" data-vm="plazo" data-plazo="' + x[0] + '" aria-pressed="' + (plazo === x[0]) + '">' + x[1] + '</button>';
+      }).join('') + '</div>' +
+      '<p class="cv-gris">Le llega como tarea con una foto nueva: la controlás vos cuando la revisás.</p>' +
+      '<div class="cv-fila"><button type="button" class="cv-boton cv-lima" data-vm="mandar"' + (va ? ' disabled' : '') + '>' + (va ? 'Mandando…' : 'Mandar a ' + esc(quien)) + '</button>' +
+        '<button type="button" class="cv-boton" data-vm="cerrar-form">Cancelar</button></div></div>';
+  } else if (puede && ab === 'descartar') {
+    h += '<div class="cv-sugerencia cv-vm-form"><textarea data-vm-motivo rows="2" maxlength="300" placeholder="¿Por qué no va? (si querés: la IA lo lee la próxima vez)" aria-label="Por qué no va">' + esc(vm.motivo[i] || '') + '</textarea>' +
+      '<div class="cv-fila"><button type="button" class="cv-boton" data-vm="descartar"' + (va ? ' disabled' : '') + '>' + (va ? 'Descartando…' : 'Descartar') + '</button>' +
+        '<button type="button" class="cv-enlace" data-vm="cerrar-form">Cancelar</button></div></div>';
+  } else if (puede) {
+    h += '<div class="cv-fila">' + (p.modulo_activo === false ? '<p class="cv-gris">Ese módulo ya no está en el salón.</p>'
+        : quien ? '<button type="button" class="cv-chico cv-lima" data-vm="abrir-mandar">Mandar a ' + esc(quien) + '</button>'
+        : '<p class="cv-gris">No tiene responsable: ' + esc(visorDondeAsignar(V)) + '.</p>') +
+      '<button type="button" class="cv-chico" data-vm="abrir-descartar">Descartar</button></div>';
+  }
+  return h + '</article>';
+}
+
+/** Vuelve a dibujar sólo la sección (lo que se está escribiendo queda en vm.borrador / vm.motivo). */
+function vmRepintar(V, enfocar) {
+  var s = V.cont.querySelector('#cvVm');
+  if (!vmVa(V)) { if (s) s.remove(); return; }
+  var html = vmSeccionHtml(V);
+  if (s) { if (html) s.outerHTML = html; else s.remove(); }
+  if (enfocar == null) return;
+  var t = V.cont.querySelector('#cvVm [data-vm-i="' + enfocar + '"] textarea');
+  if (t) { t.focus(); t.setSelectionRange(t.value.length, t.value.length); }
+}
+
+/** El texto que le llega al vendedor, para que el supervisor lo corrija: qué poner y qué mover. */
+function vmTextoInicial(p) {
+  return [p.propone, p.mover].filter(Boolean).map(function (s) { return String(s).trim().replace(/[.\s]+$/, ''); }).join('. ') + '.';
+}
+
+/** Los módulos del salón como los ve el croquis: el número que se ve (las vidrieras, por su nombre) y su zona. */
+function vmModulosPedido(V) {
+  var d = V.d, auto = visorZonasAuto(V);
+  var salon = d.pared.concat(d.islas.filter(function (m) { return !esVidriera(m); }), d.islas.filter(esVidriera));
+  return salon.map(function (m) {
+    var n = m.isla ? numeroVista(d, m) : m.numero, vid = esVidriera(m) || n == null;
+    return { id: m.id, ref: vid ? m.nombre : String(n), nombre: vid ? m.nombre : nombreModulo(m, d.sectorDe[m.sector_id], d), zona: zonaDe(m, auto) || null };
+  });
+}
+
+function vmSugerir(V) {
+  var vm = V.vm;
+  if (vm.pidiendo) return;
+  vm.pidiendo = true;
+  vm.errorPedido = null;
+  vm.abierto = null;
+  vmRepintar(V);
+  llamarFuncion('sugerir-vm', { local_id: V.op.local.id, modulos: vmModulosPedido(V) }).then(function (r) {
+    vm.pidiendo = false;
+    if (!r._ok) {
+      vm.errorPedido = r.error || 'No se pudo pedir la distribución. Probá de nuevo.';
+      vmRepintar(V);
+      vmTraer(V);   // si había una en camino, que se vea
+      return;
+    }
+    vm.ultima = { id: r.sugerencia_id, estado: 'pensando', creada_en: new Date().toISOString(), propuestas: [] };
+    V.vmFoco = null; V.vmTodas = false;
+    visorPintar(V);
+    vmSeguir(V);
+    vmRepintar(V);
+  }, function (e) {
+    vm.pidiendo = false;
+    vm.errorPedido = esDeRed(e) ? 'Sin conexión: no se pidió. Probá de nuevo.' : mensajeDe(e);
+    vmRepintar(V);
+  });
+}
+
+function vmTraer(V) {
+  var vm = V.vm;
+  return llamar('orden_vm_ultima', { p_local: V.op.local.id }).then(function (u) {
+    if (_visorActual !== V || V.vm !== vm) return;
+    var antes = vm.ultima && vm.ultima.estado;
+    vm.ultima = u || null;
+    if (antes === 'pensando' && u && u.estado === 'lista') { vm.errorPedido = null; V.vmFoco = null; V.vmTodas = true; visorPintar(V); }
+    vmSeguir(V);
+    vmRepintar(V);
+  }, function () { vmSeguir(V); });
+}
+/** Mientras la IA piensa, cada unos segundos se fija si terminó. */
+function vmSeguir(V) {
+  var vm = V.vm;
+  clearTimeout(vm.reloj);
+  if (!vm.ultima || vm.ultima.estado !== 'pensando') return;
+  vm.reloj = setTimeout(function () {
+    if (_visorActual !== V || !document.body.contains(V.raiz)) return;
+    vmTraer(V);
+  }, VM_ESPERA);
+}
+
+/** Lo que devuelve la base de una propuesta, con lo de hoy de su módulo (el responsable) que trajo orden_vm_ultima. */
+function vmPoner(vm, r) {
+  vm.ultima.propuestas = vm.ultima.propuestas.map(function (x) {
+    if (x.indice !== r.indice) return x;
+    var n = { responsable_id: x.responsable_id, responsable: x.responsable, modulo_activo: x.modulo_activo };
+    Object.keys(r).forEach(function (k) { n[k] = r[k]; });
+    return n;
+  });
+}
+
+function vmMandar(V, p) {
+  var vm = V.vm, i = p.indice, texto = String(vm.borrador[i] || '').replace(/\s+/g, ' ').trim(), quien = vmQuien(V, p.responsable_id, p.responsable);
+  if (vm.enviando != null) return;
+  if (texto.length < 3) { avisarVisor('Escribí qué tiene que hacer.'); vmRepintar(V, i); return; }
+  vm.enviando = i;
+  vmRepintar(V);
+  llamar('orden_vm_mandar', { p_sugerencia: vm.ultima.id, p_indice: i, p_texto: texto, p_plazo: vm.plazo[i] || 'semana' }).then(function (r) {
+    vm.enviando = null;
+    vm.abierto = null;
+    delete vm.borrador[i];
+    vmPoner(vm, r);
+    if (!r.ya_estaba) { var e2 = V.estado[p.modulo_id] || (V.estado[p.modulo_id] = {}); e2.tareas_abiertas = (+e2.tareas_abiertas || 0) + 1; }
+    avisarVisor('Listo: le llegó a ' + quien.replace(/\.$/, '') + ' como tarea con foto.');
+    vmRepintar(V);
+  }, function (e) {
+    vm.enviando = null;
+    avisarVisor(esDeRed(e) ? 'Sin conexión: no se mandó. Probá de nuevo (no se va a duplicar).' : mensajeDe(e));
+    vmRepintar(V, i);
+  });
+}
+
+function vmDescartar(V, p, deshacer) {
+  var vm = V.vm, i = p.indice;
+  if (vm.enviando != null) return;
+  vm.enviando = i;
+  vmRepintar(V);
+  llamar('orden_vm_descartar', { p_sugerencia: vm.ultima.id, p_indice: i, p_motivo: deshacer ? null : String(vm.motivo[i] || '').trim() || null, p_deshacer: !!deshacer }).then(function (r) {
+    vm.enviando = null;
+    vm.abierto = null;
+    delete vm.motivo[i];
+    vmPoner(vm, r);
+    if (V.vmFoco === p.modulo_id && !deshacer) V.vmFoco = null;
+    visorPintar(V);
+    vmRepintar(V);
+  }, function (e) {
+    vm.enviando = null;
+    avisarVisor(esDeRed(e) ? 'Sin conexión: probá de nuevo.' : mensajeDe(e));
+    vmRepintar(V, deshacer ? null : i);
+  });
+}
+
+/** Los clics de la sección (el panel se vuelve a dibujar seguido: los botones van por data-vm). */
+function vmClic(V, e) {
+  var b = e.target.closest && e.target.closest('[data-vm]');
+  if (!b || !V.vm || b.disabled) return !!b;
+  var vm = V.vm, art = b.closest('[data-vm-i]'), i = art ? +art.dataset.vmI : null;
+  var p = i == null || !vm.ultima ? null : (vm.ultima.propuestas || []).filter(function (x) { return x.indice === i; })[0];
+  switch (b.dataset.vm) {
+    case 'recargar': V.vm = null; vmRepintar(V); break;
+    case 'sugerir': vmSugerir(V); break;
+    case 'reglas': vmAbrirReglas(V); break;
+    case 'todas': V.vmTodas = !(V.vmTodas && !V.vmFoco); V.vmFoco = null; V.resaltado = null; visorPintar(V); visorPanel(V); break;
+    case 'foco': if (p) { V.vmFoco = V.vmFoco === p.modulo_id ? null : p.modulo_id; V.resaltado = null; visorPintar(V); visorPanel(V); } break;
+    case 'abrir-mandar': if (p) { vm.abierto = { i: i, que: 'mandar' }; if (vm.borrador[i] == null) vm.borrador[i] = vmTextoInicial(p); vmRepintar(V, i); } break;
+    case 'abrir-descartar': vm.abierto = { i: i, que: 'descartar' }; vmRepintar(V, i); break;
+    case 'cerrar-form': vm.abierto = null; vmRepintar(V); break;
+    case 'plazo':
+      vm.plazo[i] = b.dataset.plazo;
+      art.querySelectorAll('[data-plazo]').forEach(function (x) { x.setAttribute('aria-pressed', x === b); });
+      break;
+    case 'mandar': if (p) vmMandar(V, p); break;
+    case 'descartar': if (p) vmDescartar(V, p, false); break;
+    case 'deshacer': if (p) vmDescartar(V, p, true); break;
+  }
+  return true;
+}
+/** Lo que se va escribiendo, para que no se pierda cuando el panel se vuelve a dibujar. */
+function vmEscribe(V, e) {
+  var t = e.target, art = t && t.closest && t.closest('#cvVm [data-vm-i]');
+  if (!art || !V.vm) return;
+  if (t.hasAttribute('data-vm-texto')) V.vm.borrador[+art.dataset.vmI] = t.value;
+  if (t.hasAttribute('data-vm-motivo')) V.vm.motivo[+art.dataset.vmI] = t.value;
+}
+/** Los módulos que se marcan en el croquis: el de la tarjeta tocada, o todos los que tienen propuesta. */
+function vmMarcados(V) {
+  var u = V.vm && V.vm.ultima;
+  if (!vmVa(V) || !u || u.estado !== 'lista' || !(V.vmFoco || V.vmTodas)) return null;
+  var s = {};
+  if (V.vmFoco) s[V.vmFoco] = true;
+  else (u.propuestas || []).forEach(function (p) { if (p.estado !== 'descartada' && p.modulo_id) s[p.modulo_id] = true; });
+  return s;
+}
+
+/* ── Reglas VDH: el texto que lee la IA, el momento (lanzamiento, cambio de temporada, liquidación…) y la colección
+      nueva. Las cambian los supervisores y Administración, y valen para todos los locales; cada vez que se guardan
+      queda una versión (se ve quién y cuándo). ── */
+function vmAbrirReglas(V) {
+  var R = V.vm && V.vm.reglas;
+  if (!R || V.ficha) return;
+  var ed = !!R.puede_editar, dis = ed ? '' : ' disabled';
+  V.raiz.insertAdjacentHTML('beforeend', '<div class="cv-ficha-fondo"></div><section class="cv-ficha cv-reglas" role="dialog" aria-modal="true" aria-label="Reglas VDH">' +
+    '<header class="cv-ficha-cab"><div><small>Visual merchandising · todos los locales</small><h2>Reglas VDH</h2>' +
+      '<p class="cv-reg-sub">Las lee la IA cada vez que sugiere una distribución. Son las mismas para todos los locales' + (ed ? ': lo que cambies acá vale para todos.' : '.') + '</p></div>' +
+      '<button class="cv-cerrar" type="button" aria-label="Cerrar">×</button></header>' +
+    '<div class="cv-ficha-cuerpo">' +
+      '<div class="cv-reg-datos">' +
+        '<label class="cv-campo"><span>Momento</span><select class="desplegable cv-zona" id="cvRegMomento"' + dis + '>' + VM_MOMENTOS.map(function (x) {
+          return '<option value="' + x[0] + '"' + (x[0] === R.momento ? ' selected' : '') + '>' + esc(x[1]) + '</option>';
+        }).join('') + '</select></label>' +
+        '<label class="cv-campo" id="cvRegFechaCampo"' + (R.momento === 'fecha_clave' ? '' : ' hidden') + '><span>Qué fecha</span>' +
+          '<input id="cvRegFecha" maxlength="80" autocomplete="off" placeholder="Día del Padre, Black Friday…" value="' + esc(R.fecha_clave || '') + '"' + dis + '></label>' +
+        '<label class="cv-campo cv-reg-col"><span>Colección nueva</span><input id="cvRegCol" type="number" inputmode="numeric" min="1" max="98" step="1" placeholder="' +
+          esc(R.coleccion_auto || '') + '" value="' + esc(R.coleccion_nueva || '') + '"' + dis + '></label>' +
+      '</div>' +
+      '<p class="cv-ayuda" id="cvRegColAyuda">' + esc(vmAyudaColeccion(R)) + '</p>' +
+      vmColeccionesHtml(R) +
+      '<label class="cv-campo cv-reg-texto"><span>Las reglas</span><textarea id="cvRegTexto" rows="16" maxlength="40000" spellcheck="true"' + (ed ? '' : ' readonly') + '>' + esc(R.texto || '') + '</textarea></label>' +
+      '<p class="cv-gris" id="cvRegUltima">' + esc(vmUltimaEdicion(R)) + '</p>' +
+      (ed ? '<div class="cv-fila"><button type="button" class="cv-boton cv-lima" id="cvRegGuardar" disabled>Guardar</button>' +
+        '<button type="button" class="cv-boton" id="cvRegCerrar">Cerrar</button></div>' : '') +
+    '</div></section>');
+  var fondo = V.raiz.querySelector('.cv-ficha-fondo:last-of-type'), f = V.raiz.querySelector('.cv-reglas');
+  var campo = function (id) { return f.querySelector('#' + id); };
+  var leerForm = function () {
+    var col = String(campo('cvRegCol').value || '').trim(), mom = campo('cvRegMomento').value;
+    return { texto: String(campo('cvRegTexto').value || '').replace(/\r/g, '').trim(), col: col, momento: mom, fecha: mom === 'fecha_clave' ? String(campo('cvRegFecha').value || '').replace(/\s+/g, ' ').trim() : '' };
+  };
+  var original = leerForm();
+  var cambiado = function () { var a = leerForm(); return a.texto !== original.texto || a.col !== original.col || a.momento !== original.momento || a.fecha !== original.fecha; };
+  var guardar = campo('cvRegGuardar');
+  var alCambiar = function () {
+    campo('cvRegFechaCampo').hidden = campo('cvRegMomento').value !== 'fecha_clave';
+    if (guardar && !guardar.dataset.guardando) guardar.disabled = !cambiado();
+  };
+  f.addEventListener('input', alCambiar);
+  f.addEventListener('change', alCambiar);
+  V.ficha = { el: f, fondo: fondo, caja: null, id: null, desde: Date.now(), sinGuardar: ed ? cambiado : null };
+  f.querySelector('.cv-cerrar').onclick = function () { cerrarFicha(V); };
+  if (campo('cvRegCerrar')) campo('cvRegCerrar').onclick = function () { cerrarFicha(V); };
+  fondo.onclick = function () { if (V.ficha && Date.now() - V.ficha.desde < 450) return; cerrarFicha(V); };
+  f.addEventListener('keydown', function (ev) {
+    if (ev.key !== 'Tab') return;
+    var fs = [].filter.call(f.querySelectorAll('button, input, select, textarea, summary'), function (x) { return !x.disabled && x.offsetParent !== null; });
+    if (!fs.length) return;
+    if (ev.shiftKey && document.activeElement === fs[0]) { ev.preventDefault(); fs[fs.length - 1].focus(); }
+    else if (!ev.shiftKey && document.activeElement === fs[fs.length - 1]) { ev.preventDefault(); fs[0].focus(); }
+  });
+  if (V.op.capa) { V.ficha.alAtras = function (porNavegar) { if (!porNavegar) cerrarFicha(V, false, true); }; V.op.capa.abrir(V.ficha.alAtras); }
+  if (guardar) guardar.onclick = function () {
+    var a = leerForm(), n = a.col === '' ? null : Number(a.col);
+    if (!a.texto) { avisarVisor('Las reglas no pueden quedar vacías.'); campo('cvRegTexto').focus(); return; }
+    if (n !== null && !(n === Math.floor(n) && n >= 1 && n <= 98)) { avisarVisor('La colección es un número del 1 al 98, o vacío para que salga sola.'); campo('cvRegCol').focus(); return; }
+    guardar.dataset.guardando = '1';
+    guardar.disabled = true;
+    guardar.textContent = 'Guardando…';
+    llamar('orden_vm_reglas_guardar', { p_texto: a.texto, p_coleccion: n, p_momento: a.momento, p_fecha_clave: a.fecha || null }).then(function (r) {
+      delete guardar.dataset.guardando;
+      guardar.textContent = 'Guardar';
+      V.vm.reglas = r;
+      original = leerForm();
+      guardar.disabled = !cambiado();
+      campo('cvRegUltima').textContent = vmUltimaEdicion(r);
+      campo('cvRegColAyuda').textContent = vmAyudaColeccion(r);
+      avisarVisor('Listo: las reglas quedaron guardadas para todos los locales.');
+      vmRepintar(V);
+    }, function (e) {
+      delete guardar.dataset.guardando;
+      guardar.textContent = 'Guardar';
+      guardar.disabled = !cambiado();
+      avisarVisor(esDeRed(e) ? 'Sin conexión: no se guardó. Probá de nuevo.' : mensajeDe(e));
+    });
+  };
+  V.escena.classList.add('cv-detras');
+  if (visorMovimiento()) {
+    f.animate([{ transform: 'translateY(18px)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: 260, easing: 'cubic-bezier(.2,.8,.2,1)' });
+    fondo.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220, easing: 'ease-out' });
+  }
+  f.querySelector('.cv-cerrar').focus({ preventScroll: true });
+}
+function vmAyudaColeccion(R) {
+  if (R.coleccion_nueva) return 'Está fijada a mano en la ' + R.coleccion_nueva + '. Borrá el número para que salga sola del final del código' +
+    (R.coleccion_auto ? ' (hoy daría la ' + R.coleccion_auto + ').' : '.');
+  return R.coleccion_auto ? 'Sale sola del final del código: hoy, la ' + R.coleccion_auto + ' (' + vmTemporada(R.coleccion_auto) + '). La anterior va a liquidación. ' +
+    'Escribí un número sólo si querés fijarla.' : 'No hay códigos en el stock de fábrica para sacarla sola: escribí el número.';
+}
+function vmUltimaEdicion(R) {
+  return R.actualizado_en ? 'Guardadas por última vez por ' + (R.actualizado_nombre || 'alguien') + ', el ' + diaMes(R.actualizado_en) + ' a las ' + hora(R.actualizado_en) + '.' : '';
+}
+/** Qué trae cada colección en el stock de fábrica (lo mismo que lee la IA). */
+function vmColeccionesHtml(R) {
+  var c = R.colecciones || {}, items = VM_GRUPOS.filter(function (g) { return c[g[0]]; }).map(function (g) {
+    var x = c[g[0]], rubros = (x.rubros || []).slice(0, 6).map(function (r) { return r.rubro + ' ' + r.articulos; }).join(' · ');
+    return '<li><b>' + esc(g[1] + (x.numero ? ' · la ' + x.numero : '')) + '</b> ' + esc((x.temporada ? x.temporada + ' · ' : '') + x.articulos + ' artículos') +
+      (rubros ? '<small>' + esc(rubros) + (x.colores && x.colores.length ? ' — ' + esc(x.colores.join(', ')) : '') + '</small>' : '') + '</li>';
+  });
+  return items.length ? '<details class="cv-sec cv-reg-cols"><summary>Qué trae cada colección (stock de fábrica)</summary><ul>' + items.join('') + '</ul></details>' : '';
 }

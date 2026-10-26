@@ -3111,7 +3111,7 @@ function dibujarRevisar(loc, cola, testigos, tareas) {
   engancharSelector(function () { _revisarSaltear = 0; pantallaRevisar(); });
   engancharTestigo();
   cargarFotos(app);
-  engancharOpinionIA(app, c.ultimo_intento_id);
+  engancharOpinionIA(app, c.ultimo_intento_id, { comentario: document.getElementById('coment') });
   var s = document.getElementById('saltear');
   if (s) s.onclick = function () { _revisarSaltear++; dibujarRevisar(loc, cola, testigos, tareas); };
   var fotoRev = app.querySelector('.revision .foto-marcas');

@@ -507,8 +507,11 @@ function hallazgosIA(ia, op) {
 }
 
 /** Engancha los botones de hallazgosIA adentro de cont: trae lo que ya se marcó de esa foto y guarda cada toque.
-    Tocar de nuevo el elegido lo desmarca. */
-function engancharOpinionIA(cont, fotoId) {
+    Tocar de nuevo el elegido lo desmarca. op.comentario: el casillero de "Sugerencia o corrección" (SQL 173, Mauricio,
+    25/10: "si la aprobamos, que se la dé al responsable"): lo que acertó la IA se suma ahí, y le llega al vendedor con
+    el nivel; si se desmarca (o pasa a "Se equivocó"), se saca. */
+function engancharOpinionIA(cont, fotoId, op) {
+  var com = op && op.comentario;
   var filas = cont && fotoId ? cont.querySelectorAll('[data-ia-i]') : [];
   if (!filas.length) return;
   leer('/orden_ia_opiniones?select=indice,acerto,motivo&foto_id=eq.' + valor(fotoId)).then(function (ops) {
@@ -535,12 +538,14 @@ function engancharOpinionIA(cont, fotoId) {
                 function (e) { avisar(mensajeDe(e)); return null; })
           .then(function (r) { ocupado = false; return r; });
       };
+      var linea = String((fila.querySelector('b') || {}).textContent || '').trim();
+      var alComentario = function (r) { if (r && com && linea) comentarioDeIA(com, linea, !!actual && actual.acerto === true); return r; };
       caja.hidden = false;
       pintar();
-      si.onclick = function () { mandar(actual && actual.acerto === true ? null : true); };
+      si.onclick = function () { mandar(actual && actual.acerto === true ? null : true).then(alComentario); };
       no.onclick = function () {
         if (actual && actual.acerto === false) { mandar(null); return; }
-        mandar(false, txt.value).then(function (r) { if (r && !pq.hidden) txt.focus(); });
+        mandar(false, txt.value).then(alComentario).then(function (r) { if (r && !pq.hidden) txt.focus(); });
       };
       guardar.onclick = function () {
         mandar(false, txt.value).then(function (r) { if (r) avisar('Listo: la IA lo va a tener en cuenta con las próximas fotos.'); });
@@ -548,6 +553,21 @@ function engancharOpinionIA(cont, fotoId) {
       txt.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); guardar.click(); } };
     });
   }).catch(function () { /* sin el SQL 170 (o sin señal) los botones no aparecen */ });
+}
+/** Suma (o saca) un renglón en el casillero de la sugerencia, sin repetirlo y sin pasarse de lo que entra. */
+function comentarioDeIA(t, linea, poner) {
+  var renglones = String(t.value || '').split('\n'), esta = renglones.some(function (x) { return x.trim() === linea; });
+  if (!poner) {
+    if (esta) t.value = renglones.filter(function (x) { return x.trim() !== linea; }).join('\n').replace(/^\n+|\n+$/g, '');
+    return;
+  }
+  if (esta || !t.isConnected || t.closest('[hidden]')) return;   // ya revisada: el casillero es el de "Cambiar la revisión", cerrado
+  var nuevo = String(t.value || '').replace(/\s+$/, '');
+  nuevo = nuevo ? nuevo + '\n' + linea : linea;
+  var max = +t.getAttribute('maxlength') || 500;
+  if (nuevo.length > max) { avisar('No entra en «Sugerencia o corrección»: acortá lo que hay escrito.'); return; }
+  t.value = nuevo;
+  avisar('Listo: se sumó a «Sugerencia o corrección», y le llega cuando elijas el nivel.');
 }
 
 /** Lee con las columnas del SQL 150; si la base todavía no las tiene, sin ellas (así nada se rompe en el medio). */
