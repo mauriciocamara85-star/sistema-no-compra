@@ -119,6 +119,23 @@
       w.hab = Math.min(6, w.dias.length);                                               // IV C114 = MIN(6, días de la semana)
     });
     C.sem = semanas;
+
+    /* Cuánto del objetivo de cada semana le toca a cada vendedor (pedido del 26/10: Mel se fue de vacaciones
+       y su objetivo de esas semanas lo tenía que tener Lucas). Cada semana:
+         'mano'  si tiene reparto a mano (ventas_reparto), ése: el que no tiene, 0;
+         'mes'   si no, el % del mes, como siempre.
+       pctMes es lo que le tocó en todo el mes (cada semana con su peso); sin 'mano', el % de siempre. */
+    var aMano = {};
+    (D.reparto || []).forEach(function (r) { (aMano[r[1]] = aMano[r[1]] || {})[r[0]] = cero(r[2]); });
+    semanas.forEach(function (w) {
+      w.fuente = aMano[w.n] ? 'mano' : 'mes';
+      w.parte = {};
+      V.forEach(function (v) { w.parte[v.id] = w.fuente === 'mano' ? cero(aMano[w.n][v.id]) : v.pct; });
+    });
+    C.porSemana = semanas.some(function (w) { return w.fuente !== 'mes'; });
+    V.forEach(function (v) {
+      v.pctMes = C.porSemana ? suma(semanas.map(function (w) { return w.parte[v.id] * w.peso; })) : v.pct;
+    });
     var todos = [];
     semanas.forEach(function (w) { todos = todos.concat(w.dias); });
     C.todos = todos;
@@ -150,14 +167,14 @@
         .sort(function (a, b) { return b._o - a._o; }).slice(0, 3);
     }
     C.rkSem = top3(conNombre.map(function (v) {
-      var o = c.obj * v.pct * act.peso;
+      var o = c.obj * act.parte[v.id] * act.peso;
       return { v: v, nombre: v.nombre, venta: act.porVend[v.id], av: o ? act.porVend[v.id] / o : 0 };   // E9
     }), 'venta');
     C.rkMes = top3(conNombre.map(function (v) {
-      var real = suma(semanas.map(function (w) { return w.porVend[v.id]; })), o = c.obj * v.pct;
+      var real = suma(semanas.map(function (w) { return w.porVend[v.id]; })), o = c.obj * v.pctMes;
       return { v: v, nombre: v.nombre, obj: o, real: real, av: o ? real / o : 0 };                         // I9:K9
     }), 'real');
-    C.pctSuma = suma(conNombre.map(function (v) { return v.pct; }));
+    C.pctSuma = suma(conNombre.map(function (v) { return v.pctMes; }));
 
     /* Escalón de objetivos (filas 92 a 95). */
     var ritmo = C.E4 / Math.max(C.C22, 1);                                              // J92
@@ -205,8 +222,8 @@
       /* SUMPRODUCT($N$21:$S$21, $C$115:$H$115 / $C$114:$H$114): el peso de cada semana según los días que trabajó. */
       var denom = suma(semanas.map(function (w, j) { return w.peso * diasV[j] / w.hab; }));
       var semV = semanas.map(function (w, j) {
-        var crudo = !c.conDias ? c.obj * v.pct * w.peso                                // C26 sin la tabla: ROUND($D$14*$N$19*$N$21)
-          : denom ? c.obj * v.pct * w.peso / denom * (diasV[j] / w.hab) : 0;
+        var crudo = !c.conDias ? c.obj * w.parte[v.id] * w.peso                        // C26 sin la tabla: ROUND($D$14*$N$19*$N$21)
+          : denom ? c.obj * v.pctMes * w.peso / denom * (diasV[j] / w.hab) : 0;
         var o = {
           venta: redondear(crudo),                                                      // C26
           t: c.tp * c.conv ? redondear(crudo / (c.tp * c.conv)) : 0,                    // C28

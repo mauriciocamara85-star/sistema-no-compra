@@ -381,12 +381,15 @@
       '<tr><th class="izq">Vendedores</th>' + V.map(function (v) {
         return entrada('vendedor', v.id + ':nombre', v.nombre, 'txt', 'amb', 'placeholder="Nombre" aria-label="Nombre del vendedor"');
       }).join('') + (edita() ? '<td rowspan="2" style="padding:4px"><button type="button" class="btn-add" data-acc="agregar">+ Sumar vendedor</button></td>' : '') + '</tr>' +
+      /* Si todas las semanas se reparten a mano, el % del mes es lo que dio eso y no se escribe; si alguna va con
+         el % de siempre, se sigue escribiendo acá (es el de esas semanas). */
       '<tr><th class="izq">% Objetivo mensual</th>' + V.map(function (v) {
+        if (todoPorSemana(C)) return '<td class="azul" title="Sale de las semanas (ver abajo de esta tabla)">' + pcIn(v.pctMes) + '</td>';
         return entrada('vendedor', v.id + ':pct', v.pct, 'pct', 'amb', 'aria-label="% del objetivo de ' + esc(v.nombre) + '"');
       }).join('') + '</tr>' +
       '<tr><th class="izq">Objetivo vendedor</th>' + V.map(function (v) {
         var vacio = !ST.tiene[v.id] && !tieneSemanal(v.id);
-        return '<td class="calc-m">' + mill(c.obj * v.pct) + (edita() && vacio ? '<br><button type="button" class="quitar" data-acc="quitar" data-id="' + v.id + '">Quitar</button>' : '') + '</td>';
+        return '<td class="calc-m">' + mill(c.obj * v.pctMes) + (edita() && vacio ? '<br><button type="button" class="quitar" data-acc="quitar" data-id="' + v.id + '">Quitar</button>' : '') + '</td>';
       }).join('') +
       (edita() ? '<td class="suma ' + (sumaOk ? 'ok' : 'mal') + '">' + (sumaOk ? 'Suman 100%' : 'Suman ' + pcIn(C.pctSuma) + ': ' + (C.pctSuma < 1 ? 'falta repartir ' + pcIn(1 - C.pctSuma) : 'sobra ' + pcIn(C.pctSuma - 1))) + '</td>' : '') + '</tr>' +
       '</table></div>' +
@@ -403,6 +406,7 @@
       h += '<p class="aviso-carga" style="padding-top:0">El reparto del objetivo (los % grises arriba de cada semana) lo cambia el encargado o el supervisor.' +
         (Math.abs(sSem - 1) > 0.0005 ? ' <b style="color:var(--mal)">Las semanas suman ' + pcIn(sSem) + ', no 100%.</b>' : '') + '</p>';
     }
+    h += avisoReparto(C);
 
     h += '<div class="semanas-pad">' + C.sem.map(function (w) { return semanaVentas(C, w); }).join('') + '</div>';
 
@@ -416,6 +420,20 @@
           '<td class="' + (e.objDia > 0 ? sem(e.ritmo, e.objDia) : 'sv') + '">' + (e.ok ? '✅ En ritmo' : '⚠️ Acelerar') + '</td></tr>';
       }).join('') + '</table>';
     return h;
+  }
+
+  /* ¿Todas las semanas se reparten a mano (ventas-calc: w.fuente)? */
+  function todoPorSemana(C) { return C.sem.every(function (w) { return w.fuente !== 'mes'; }); }
+  function listaY(a) { return a.length > 1 ? a.slice(0, -1).join(', ') + ' y ' + a[a.length - 1] : a.join(''); }
+
+  /* Las semanas que se reparten a mano (unas vacaciones), dichas arriba de las semanas, con su motivo. */
+  function avisoReparto(C) {
+    var mano = C.sem.filter(function (w) { return w.fuente === 'mano'; }), mot = [];
+    if (!mano.length) return '';
+    (ST.D.reparto || []).forEach(function (r) { if (r[3] && mot.indexOf(r[3]) < 0) mot.push(r[3]); });
+    return '<p class="aviso-carga" style="padding-top:0">' + (mano.length > 1 ? 'Las semanas ' : 'La semana ') +
+      listaY(mano.map(function (w) { return w.n; })) + ' se reparte' + (mano.length > 1 ? 'n' : '') + ' a mano' +
+      (mot.length ? ': ' + esc(mot.join(' · ')) : '') + '.</p>';
   }
 
   function tieneSemanal(vid) {
@@ -432,7 +450,7 @@
     (C.iv || []).forEach(function (x) { ivDe[x.v.id] = x; });
     function objV(v) {
       var s = ivDe[v.id] && ivDe[v.id].semanas[b];
-      return s && def(s.crudo) ? s.crudo : c.obj * v.pct * w.peso;
+      return s && def(s.crudo) ? s.crudo : c.obj * w.parte[v.id] * w.peso;
     }
     function desvioV(v) { return w.porVend[v.id] - objV(v); }
     /* El semáforo de un día o de la semana: sólo con la venta cargada (un día que no llegó queda sin color). */
@@ -564,7 +582,7 @@
       '<tr><th>Conversión objetivo</th><td class="azul" colspan="' + ancho + '">' + pc(c.conv) + '</td></tr>' +
       '<tr><th>TP objetivo</th><td class="azul" colspan="' + ancho + '">' + pesos(c.tp) + '</td></tr>' +
       '<tr><th>Vendedores</th>' + V.map(function (v) { return '<td class="azul">' + esc(String(v.nombre).split(' ')[0] || '—') + '</td>'; }).join('') + relleno(ancho - V.length) + '</tr>' +
-      '<tr><th>% Objetivo mensual</th>' + V.map(function (v) { return '<td class="azul">' + pcIn(v.pct) + '</td>'; }).join('') + relleno(ancho - V.length) + '</tr>' +
+      '<tr><th>% Objetivo mensual</th>' + V.map(function (v) { return '<td class="azul">' + pcIn(v.pctMes) + '</td>'; }).join('') + relleno(ancho - V.length) + '</tr>' +
       '<tr><th>Peso por semana</th>' + C.sem.map(function (w) { return '<td class="azul">' + pc(w.peso) + '</td>'; }).join('') + relleno(ancho - n) + '</tr></table></div>';
 
     /* La tabla de días trabajados por semana (la que probaba Rivadavia) salió el 15/10: más adelante va una
@@ -576,7 +594,7 @@
     C.iv.forEach(function (x, vi) {
       if (x.v.sin && !x.conDatos) return;
       var nom = x.v.sin ? 'Sin vendedor' : x.v.nombre;
-      h += '<div class="vb"><div class="vb-nom">' + esc(nom) + '<small>' + (x.v.sin ? 'lo cargado sin nombre en la planilla' : pcIn(x.v.pct) + ' del objetivo del local') + '</small></div>' +
+      h += '<div class="vb"><div class="vb-nom">' + esc(nom) + '<small>' + (x.v.sin ? 'lo cargado sin nombre en la planilla' : pcIn(x.v.pctMes) + ' del objetivo del local') + '</small></div>' +
         '<table>' + colg + '<tr class="cabv"><th class="izq">Métrica</th>' + C.sem.map(function (w) { return '<th>Sem ' + w.n + '</th>'; }).join('') + '<th>Total/Prom</th><th>Desvío</th></tr>';
       METR.forEach(function (m, mi) {
         var k = m[0], f = m[2], tipo = m[3];

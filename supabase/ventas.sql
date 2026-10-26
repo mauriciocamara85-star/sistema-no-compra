@@ -126,6 +126,20 @@ create table if not exists ventas_semanal (
   primary key (vendedor_id, semana)
 );
 
+-- ---------- El reparto de una semana entre los vendedores, a mano ----------
+-- Pedido de Mauricio (26/10/2026): Mel (Rivadavia) se fue de vacaciones las semanas 4 y 5 de octubre y
+-- su objetivo de esas semanas lo tenía que tener Lucas. Si una semana tiene alguna fila acá, esa semana
+-- se reparte así (el vendedor que no tiene fila va en 0); si no, con el % del mes (ventas-calc.js).
+create table if not exists ventas_reparto (
+  vendedor_id  bigint not null references ventas_vendedores(id) on delete cascade,
+  semana       smallint not null check (semana between 1 and 6),
+  pct          numeric(9,6) not null check (pct >= 0 and pct <= 1),
+  motivo       text,
+  cargado_en   timestamptz not null default now(),
+  cargado_por  text,
+  primary key (vendedor_id, semana)
+);
+
 -- ---------- Informe Temporada: la venta del semestre anterior, mes por mes ----------
 create table if not exists ventas_temporada (
   local_id        uuid not null references orden_locales(id) on delete cascade,
@@ -155,16 +169,16 @@ do $rls$
 declare t text;
 begin
   foreach t in array array['ventas_mes', 'ventas_dias', 'ventas_semanas', 'ventas_vendedores', 'ventas_diarias',
-                           'ventas_trafico', 'ventas_semanal', 'ventas_temporada', 'ventas_cambios'] loop
+                           'ventas_trafico', 'ventas_semanal', 'ventas_temporada', 'ventas_cambios', 'ventas_reparto'] loop
     if not (select relrowsecurity from pg_class where oid = t::regclass) then
       execute format('alter table %I enable row level security', t);
     end if;
   end loop;
 end $rls$;
 revoke all on ventas_mes, ventas_dias, ventas_semanas, ventas_vendedores, ventas_diarias,
-              ventas_trafico, ventas_semanal, ventas_temporada, ventas_cambios from public, anon, authenticated;
+              ventas_trafico, ventas_semanal, ventas_temporada, ventas_cambios, ventas_reparto from public, anon, authenticated;
 grant all on ventas_mes, ventas_dias, ventas_semanas, ventas_vendedores, ventas_diarias,
-             ventas_trafico, ventas_semanal, ventas_temporada, ventas_cambios to service_role;
+             ventas_trafico, ventas_semanal, ventas_temporada, ventas_cambios, ventas_reparto to service_role;
 
 -- =====================================================================
 -- Ayudas
@@ -443,6 +457,11 @@ begin
                                           'francos', coalesce(to_jsonb(p.dias_libres), '[]'::jsonb))
                        order by (v.nombre = ''), v.orden, v.id)
         from ventas_vendedores v left join orden_personas p on p.id = v.persona_id
+       where v.local_id = p_local and v.mes = v_mes), '[]'::jsonb),
+    /* El reparto a mano de alguna semana: [vendedor, semana, %, motivo]. */
+    'reparto', coalesce((
+      select jsonb_agg(jsonb_build_array(r.vendedor_id, r.semana, r.pct, r.motivo) order by r.vendedor_id, r.semana)
+        from ventas_reparto r join ventas_vendedores v on v.id = r.vendedor_id
        where v.local_id = p_local and v.mes = v_mes), '[]'::jsonb),
     'ventas', coalesce((
       select jsonb_agg(jsonb_build_array(d.vendedor_id, extract(day from d.fecha)::int, d.monto))
@@ -851,5 +870,5 @@ grant execute on function ventas_locales(text), ventas_mes_leer(uuid, date, text
 --     ventas_reparto_inicial(uuid, date), ventas_mes_abrir(uuid, date),
 --     ventas_anotar(uuid, date, jsonb, text, text, text, text), ventas_importar(uuid, date, jsonb), ventas_numero(text), ventas_semana(date),
 --     ventas_mes_datos(uuid, date, jsonb), ventas_mes_de(date), ventas_hoy();
---   drop table if exists ventas_cambios, ventas_temporada, ventas_semanal, ventas_trafico, ventas_diarias,
+--   drop table if exists ventas_cambios, ventas_temporada, ventas_reparto, ventas_semanal, ventas_trafico, ventas_diarias,
 --     ventas_vendedores, ventas_semanas, ventas_dias, ventas_mes;
