@@ -45,7 +45,9 @@
   transform: translate(-50%, -50%) translate(var(--dx, 0px), var(--dy, 0px)) scale(var(--s, 1)) rotateX(var(--incl, 54deg)) rotateZ(var(--giro, 0deg));
   transition: transform .45s cubic-bezier(.2, .8, .2, 1); }
 .cv-cargando, .cv-vacio { position: absolute; inset: 0; display: grid; place-items: center; margin: 0; padding: 24px; text-align: center; color: var(--cv-suave); }
-.cv-panel { min-height: 0; overflow: auto; padding: 16px; background: var(--cv-panel); display: grid; align-content: start; gap: 14px; }
+/* Una columna con tope: si no, un renglón largo que no se parte (el título de una propuesta de la IA) la estira y todo
+   el panel se sale por la derecha. */
+.cv-panel { min-height: 0; overflow: auto; padding: 16px; background: var(--cv-panel); display: grid; grid-template-columns: minmax(0, 1fr); align-content: start; gap: 14px; }
 @media (max-width: 899px) {
   .cv-cuerpo { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
   /* El encabezado, en un solo renglón de controles. */
@@ -466,7 +468,7 @@
 
 /* Distribución con la IA (SQL 173): en la vista Zonas, sólo para el supervisor. Cada propuesta es una tarjeta: tocar el
    encabezado la marca en el croquis; abajo, mandarla al responsable como tarea con foto o descartarla. */
-.cv-vm { display: grid; gap: 10px; padding-top: 12px; border-top: 1px solid var(--cv-linea); }
+.cv-vm { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; padding-top: 12px; border-top: 1px solid var(--cv-linea); }
 .cv-vm-col { margin: 0; font-size: 14px; line-height: 1.45; color: var(--cv-suave); }
 .cv-vm-col b { color: var(--cv-lima); font-weight: 800; }
 .cv-vm .cv-fila .cv-chico { flex: 1 1 auto; }
@@ -481,13 +483,14 @@
 .cv-vm-falta { margin: 0; padding: 10px 12px; border-radius: 12px; background: rgba(245, 184, 75, .12); color: #FFE2B0; font-size: 13.5px; line-height: 1.4; }
 .cv-vm-falta b { font-weight: 800; }
 .cv-vm .cv-enlace { justify-self: start; }
-.cv-vm-prop { display: grid; gap: 8px; padding: 10px 12px 12px; border-radius: 16px; background: var(--cv-panel-2); transition: box-shadow .2s, opacity .2s; }
+.cv-vm-prop { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 12px 12px; border-radius: 16px; background: var(--cv-panel-2); transition: box-shadow .2s, opacity .2s; }
 .cv-vm-prop.en-foco { box-shadow: inset 0 0 0 2px var(--cv-lima); }
 .cv-vm-prop.es-descartada { opacity: .6; }
 .cv-vm-prop.es-descartada dl { display: none; }
 .cv-vm-prop-cab { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: none; text-align: left; cursor: pointer; }
 .cv-vm-prop-cab i { flex: none; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 0 1px rgba(0, 0, 0, .35); }
-.cv-vm-prop-cab b { min-width: 0; font-size: 15px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* El nombre entero, aunque baje de renglón: cortado se perdía el número del módulo ("Exhibidor 2 (…"). */
+.cv-vm-prop-cab b { min-width: 0; font-size: 15px; font-weight: 800; line-height: 1.25; overflow-wrap: anywhere; }
 .cv-vm-prop-cab span { flex: none; color: var(--cv-suave); font-size: 13px; font-weight: 700; }
 .cv-vm-pri { flex: none; margin-left: auto; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-style: normal; font-weight: 800; }
 .cv-vm-pri.pri-alta { background: rgba(255, 92, 122, .18); color: #FFC2CE; }
