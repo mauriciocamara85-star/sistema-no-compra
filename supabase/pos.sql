@@ -53,6 +53,12 @@
 --  Está al final del archivo; la venta, los tickets, anular y borrar las
 --  pruebas tienen la nota "SQL 171" donde cambiaron.
 --
+--  SQL 179 (26/10/2026, Mauricio: "el gasto tendría que tener un número"):
+--  cada gasto de la caja (y cada otra salida u otro ingreso) lleva un número
+--  seguido por local, G-1, G-2… (las pruebas GP-1…), como el comprobante de
+--  "Gastos del Local" de BlueSoft. La nota "SQL 179" está en la tabla y en
+--  las cuatro funciones que lo mandan.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -843,7 +849,9 @@ create table pos_caja_movimientos (
   anulado_por     uuid,
   anulado_motivo  text,
   clave           text unique,
-  check (tipo <> 'gasto' or rubro is not null)
+  numero          int not null,         -- SQL 179: G-1, G-2… seguido por local (las pruebas aparte, GP-1…)
+  check (tipo <> 'gasto' or rubro is not null),
+  constraint pos_caja_movimientos_numero_key unique (local_id, prueba, numero)
 );
 create index pos_caja_movimientos_abiertos on pos_caja_movimientos (local_id, prueba) where cierre_id is null;
 create index pos_caja_movimientos_dia on pos_caja_movimientos (dia, local_id);
@@ -949,7 +957,8 @@ begin
     'responsable', (select p.nombre from orden_personas p where p.id = orden_yo_id()),
     'movimientos', coalesce((
       select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'tipo', m.tipo, 'rubro', m.rubro,
-                                          'descripcion', m.descripcion, 'monto', m.monto, 'persona', m.persona_nombre) order by m.fecha)
+                                          'descripcion', m.descripcion, 'monto', m.monto, 'persona', m.persona_nombre,
+                                          'numero', m.numero) order by m.fecha)   -- SQL 179
         from pos_caja_movimientos m
        where m.local_id = p_local and m.prueba = v_prueba and m.cierre_id is null and m.estado = 'ok'), '[]'::jsonb));
 end $$;
@@ -1103,7 +1112,9 @@ begin
 end $$;
 
 /* Un gasto del local, otra salida u otro ingreso de la caja chica. Entra en
-   el próximo cierre. Con la misma `clave` dos veces no se duplica. */
+   el próximo cierre. Con la misma `clave` dos veces no se duplica.
+   SQL 179: cada uno con su número, seguido por local (G-1, G-2…; las
+   pruebas aparte, GP-1…). Lo devuelve, para el "Anotado: gasto G-12". */
 create or replace function pos_caja_mov_guardar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -1115,11 +1126,13 @@ declare
   v_monto   numeric := round(nullif(p->>'monto', '')::numeric, 2);
   v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
   v_id      uuid;
+  v_num     int;
+  v_ya      pos_caja_movimientos;
 begin
   perform pos_permiso();
   if v_clave is not null then
-    select id into v_id from pos_caja_movimientos where clave = v_clave;
-    if found then return jsonb_build_object('id', v_id, 'ya', true); end if;
+    select * into v_ya from pos_caja_movimientos where clave = v_clave;
+    if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'ya', true); end if;
   end if;
   if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
     raise exception 'Elegí la sucursal.';
@@ -1129,11 +1142,18 @@ begin
   if v_tipo <> 'gasto' and v_desc is null then raise exception 'Escribí de qué es.'; end if;
   if length(v_rubro) > 60 or length(v_desc) > 200 then raise exception 'El texto es demasiado largo.'; end if;
   if v_monto is null or v_monto <= 0 or v_monto >= 100000000 then raise exception 'Escribí el monto.'; end if;
-  insert into pos_caja_movimientos (local_id, prueba, dia, tipo, rubro, descripcion, monto, persona, persona_nombre, clave)
+  /* SQL 179: un número por vez en cada local: si dos guardan al mismo tiempo, el segundo espera (como los cambios). */
+  perform pg_advisory_xact_lock(hashtext('pos_gasto:' || v_local::text || ':' || v_prueba::text));
+  if v_clave is not null then
+    select * into v_ya from pos_caja_movimientos where clave = v_clave;
+    if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'ya', true); end if;
+  end if;
+  select coalesce(max(m.numero), 0) + 1 into v_num from pos_caja_movimientos m where m.local_id = v_local and m.prueba = v_prueba;
+  insert into pos_caja_movimientos (local_id, prueba, dia, tipo, rubro, descripcion, monto, persona, persona_nombre, clave, numero)
   values (v_local, v_prueba, orden_dia_caja(v_local), v_tipo, case when v_tipo = 'gasto' then v_rubro end, v_desc, v_monto,
-          orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_clave)
+          orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_clave, v_num)
   returning id into v_id;
-  return jsonb_build_object('id', v_id, 'ya', false);
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'prueba', v_prueba, 'ya', false);
 end $$;
 
 /* Anular un gasto (queda en la lista, tachado, con quién y por qué). Sólo
@@ -1211,7 +1231,8 @@ begin
                   where y.local_id = c.local_id and y.prueba = c.prueba and y.estado = 'cerrada' and y.fecha > c.fecha),
               'movimientos', coalesce((
                  select jsonb_agg(jsonb_build_object('id', m.id, 'fecha', m.fecha, 'tipo', m.tipo, 'rubro', m.rubro, 'descripcion', m.descripcion,
-                                                     'monto', m.monto, 'persona', m.persona_nombre, 'estado', m.estado) order by m.fecha)
+                                                     'monto', m.monto, 'persona', m.persona_nombre, 'estado', m.estado,
+                                                     'numero', m.numero) order by m.fecha)   -- SQL 179
                    from pos_caja_movimientos m where m.cierre_id = c.id), '[]'::jsonb),
               'conteos_detalle', coalesce((
                  select jsonb_agg(jsonb_build_object('fecha', k.fecha, 'contado', k.contado, 'esperado', k.esperado, 'persona', pe.nombre) order by k.fecha, k.id)
@@ -1267,12 +1288,12 @@ begin
   return (
     with t as (
       select m.id, 'mov'::text as origen, m.fecha, m.local_id, m.tipo, m.rubro, m.descripcion, m.monto, m.persona_nombre as persona,
-             m.estado = 'ok' as vale, m.estado, m.cierre_id, m.anulado_motivo
+             m.estado = 'ok' as vale, m.estado, m.cierre_id, m.anulado_motivo, m.numero   -- SQL 179: el número del gasto
         from pos_caja_movimientos m
        where m.dia between p_desde and p_hasta and m.prueba = coalesce(p_prueba, false) and (p_local is null or m.local_id = p_local)
       union all
       select c.id, 'cierre', c.fecha, c.local_id, 'caja_fuerte', null, null, c.retiro, c.responsable_nombre,
-             c.estado = 'cerrada', case when c.estado = 'cerrada' then 'ok' else 'anulado' end, c.id, c.anulado_motivo
+             c.estado = 'cerrada', case when c.estado = 'cerrada' then 'ok' else 'anulado' end, c.id, c.anulado_motivo, null::int
         from pos_cierres c
        where c.retiro > 0 and c.dia between p_desde and p_hasta and c.prueba = coalesce(p_prueba, false)
          and (p_local is null or c.local_id = p_local)
@@ -1284,7 +1305,7 @@ begin
         select jsonb_agg(jsonb_build_object(
                  'id', z.id, 'origen', z.origen, 'fecha', z.fecha, 'local', l.nombre, 'local_id', z.local_id, 'tipo', z.tipo,
                  'rubro', z.rubro, 'descripcion', z.descripcion, 'monto', z.monto, 'persona', z.persona, 'estado', z.estado,
-                 'motivo', z.anulado_motivo,
+                 'motivo', z.anulado_motivo, 'numero', z.numero,
                  'cierre', (select jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'estado', c.estado)
                               from pos_cierres c where c.id = z.cierre_id)) order by z.fecha desc)
           from (select * from f order by fecha desc limit 500) z join orden_locales l on l.id = z.local_id), '[]'::jsonb),

@@ -2419,6 +2419,8 @@
   var OCULTO = '<i class="cj-oculto" title="Se ve después de contar el efectivo (Paso 1)">' + icono('candado') + 'al contar</i>';
 
   function refCierre(c) { return (c.prueba ? 'P-' : 'Nº ') + c.numero; }
+  /** El número del gasto, para escribirlo en el ticket que se guarda con la caja (SQL 179): G-12, o GP-3 el de prueba. Sin el 179, nada. */
+  function refGasto(m, prueba) { return m && m.numero ? ((prueba != null ? prueba : m.prueba) ? 'GP-' : 'G-') + m.numero : ''; }
   /** El desvío en palabras. En centavos; positivo = falta plata (como en Supervisión → Cajas). */
   function desvioDe(dv, tol) {
     var a = Math.abs(dv);
@@ -2655,9 +2657,9 @@
       var ms = (K.d && K.d.movimientos) || [];
       ventana('<h3 id="posVentTit">Gastos de la caja</h3><p class="pos-bajada">Los de ' + esc(nombreLocal(localDe(S.cajaLocal))) +
           ' desde el último cierre: entran en este. Se cargan y se anulan en «Gastos».</p>' +
-        (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Hora</th><th>Qué es</th><th>Detalle</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
+        (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Hora</th><th>Qué es</th><th>Detalle</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
           ms.map(function (x) {
-            return '<tr><td>' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(TIPOS_MOV[x.tipo] || x.tipo) + '</td><td>' + esc([x.rubro, x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
+            return '<tr><td><b>' + esc(refGasto(x, prueba) || '—') + '</b></td><td>' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(TIPOS_MOV[x.tipo] || x.tipo) + '</td><td>' + esc([x.rubro, x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
               '<td>' + esc(x.persona || '') + '</td><td class="n">' + (x.tipo === 'ingreso' ? '+' : '−') + plata(cent(x.monto)) + '</td></tr>';
           }).join('') + '</tbody></table></div>' : '<div class="pos-cartel">Todavía no hay gastos en esta caja.</div>') +
         '<div class="pos-pie"><a class="btn btn-sec btn-chico izq" href="#gastos" id="cjIrGastos">Ir a Gastos</a>' +
@@ -2723,6 +2725,7 @@
     function pintarGastos(d) {
       /* Lo que pasó a la caja fuerte no es un gasto: es del cierre, y se ve en Gestión → Movimientos. */
       var filas = (d.filas || []).filter(function (f) { return f.origen !== 'cierre'; });
+      filas.forEach(function (f) { f.prueba = deLaPrueba(); });
       var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, todas = !$('gsLocal').value;
       var kpis = '<div class="pos-totales">' +
         '<div class="pos-kpi"><span>Gastos del local</span><b>' + p(t.gasto) + '</b></div>' +
@@ -2734,13 +2737,13 @@
         $('gsLista').innerHTML = kpis + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay gastos de prueba' : 'No hay gastos') + ' en ese período con esos filtros. Se cargan con «Nuevo gasto».</div>';
         return;
       }
-      /* Las columnas de "Gastos del Local" de BlueSoft (Fecha, Día, Total, Observaciones), con el tipo de gasto y en qué cierre entró. */
-      $('gsLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Día</th>' + (todas ? '<th>Sucursal</th>' : '') +
+      /* Las columnas de "Gastos del Local" de BlueSoft (Comprobante, Fecha, Día, Total, Observaciones), con el tipo de gasto y en qué cierre entró. */
+      $('gsLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Día</th>' + (todas ? '<th>Sucursal</th>' : '') +
         '<th>Tipo</th><th>Descripción</th><th>Cargó</th><th>Cierre</th><th class="n">Total</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           var an = f.estado !== 'ok';
           return '<tr data-gasto="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (deLaPrueba() ? 'prueba' : '') + '">' +
-            '<td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(diaSemana(f.fecha)) + '</td>' + (todas ? '<td>' + esc(bonito(f.local)) + '</td>' : '') +
+            '<td><b>' + esc(refGasto(f) || '—') + '</b></td><td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(diaSemana(f.fecha)) + '</td>' + (todas ? '<td>' + esc(bonito(f.local)) + '</td>' : '') +
             '<td>' + esc(f.tipo === 'gasto' ? f.rubro || TIPOS_MOV.gasto : TIPOS_MOV[f.tipo] || f.tipo) + '</td>' +
             '<td class="vf-det">' + (f.descripcion ? esc(f.descripcion) : '<span class="apagado">—</span>') + '</td>' +
             '<td>' + esc(f.persona || '—') + '</td>' +
@@ -2796,8 +2799,9 @@
         isNaN(monto) || monto <= 0 ? 'Escribí el total.' : '';
       if (!errorEn(caja, 'gmError', mal) || bt.disabled) return;
       bt.disabled = true;
-      llamar('pos_caja_mov_guardar', { p: { clave: clave, local_id: loc, prueba: !!prueba, tipo: tipo, rubro: tipo === 'gasto' ? rubro : '', descripcion: desc, monto: aPesos(monto) } }).then(function () {
-        avisar('ok', 'Anotado: ' + TIPOS_MOV[tipo].toLowerCase() + ', ' + plata(monto) + '.');
+      llamar('pos_caja_mov_guardar', { p: { clave: clave, local_id: loc, prueba: !!prueba, tipo: tipo, rubro: tipo === 'gasto' ? rubro : '', descripcion: desc, monto: aPesos(monto) } }).then(function (r) {
+        var num = refGasto(r, !!prueba);
+        avisar('ok', 'Anotado: ' + TIPOS_MOV[tipo].toLowerCase() + (num ? ' ' + num : '') + ', ' + plata(monto) + '.' + (num ? ' Escribile el ' + num + ' al ticket.' : ''));
         cerrarVentana();
         if (alGuardar) alGuardar();
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'gmError', mensajeDe(e)); });
@@ -2846,7 +2850,8 @@
             (conteos.length > 1 ? '<p class="pos-lbl">Se contó ' + conteos.length + ' veces</p><ul class="cj-lista">' + conteos.map(function (k) {
               return '<li>' + esc(fechaHora(k.fecha)) + ' — ' + p(k.contado) + (k.persona ? ' (' + esc(k.persona) + ')' : '') + '</li>'; }).join('') + '</ul>' : '') +
             (movs.length ? '<p class="pos-lbl">Gastos y movimientos</p><ul class="cj-lista">' + movs.map(function (m) {
-              return '<li' + (m.estado === 'anulado' ? ' class="tachado"' : '') + '>' + esc(TIPOS_MOV[m.tipo] || m.tipo) + ': ' + esc([m.rubro, m.descripcion].filter(Boolean).join(' · ')) +
+              var num = refGasto(m, c.prueba);
+              return '<li' + (m.estado === 'anulado' ? ' class="tachado"' : '') + '>' + (num ? '<b>' + esc(num) + '</b> ' : '') + esc(TIPOS_MOV[m.tipo] || m.tipo) + ': ' + esc([m.rubro, m.descripcion].filter(Boolean).join(' · ')) +
                 ' — ' + (m.tipo === 'ingreso' ? '+' : '−') + p(m.monto) + (m.estado === 'anulado' ? ' (anulado)' : '') + '</li>'; }).join('') + '</ul>' : '') +
             (c.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(c.observaciones) + '</p>' : '') +
           '</div>' +
@@ -2966,12 +2971,14 @@
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div></div>' +
         ($('mvPrueba').value === '1' ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada.</div>' : '');
       if (!d.filas || !d.filas.length) { $('mvLista').innerHTML = kpis + '<div class="pos-cartel">No hay movimientos en ese período con esos filtros.</div>'; return; }
-      $('mvLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th>Tipo</th><th>Detalle</th>' +
+      var prueba = $('mvPrueba').value === '1';
+      d.filas.forEach(function (f) { if (f.origen !== 'cierre') f.prueba = prueba; });
+      $('mvLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Sucursal</th><th>Tipo</th><th>Detalle</th>' +
         '<th>Cargó</th><th>Cierre</th><th>Estado</th><th class="n">Monto</th></tr></thead><tbody>' +
         d.filas.map(function (f, i) {
           var an = f.estado !== 'ok', cierre = f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') : 'Caja abierta';
-          return '<tr data-mov="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + ($('mvPrueba').value === '1' ? 'prueba' : '') + '">' +
-            '<td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(TIPOS_MOV[f.tipo] || f.tipo) + '</td>' +
+          return '<tr data-mov="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (prueba ? 'prueba' : '') + '">' +
+            '<td><b>' + esc(f.origen === 'cierre' ? '' : refGasto(f) || '—') + '</b></td><td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(TIPOS_MOV[f.tipo] || f.tipo) + '</td>' +
             '<td>' + esc(f.origen === 'cierre' ? 'Del cierre ' + refCierre(f.cierre) : [f.rubro, f.descripcion].filter(Boolean).join(' · ')) + '</td>' +
             '<td>' + esc(f.persona || '—') + '</td><td>' + esc(f.origen === 'cierre' ? '—' : cierre) + '</td>' +
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</td>' +
@@ -2990,7 +2997,8 @@
   /** Un gasto del listado: se ve, y se anula mientras su caja sigue abierta. */
   function abrirMovDetalle(f, alCambiar) {
     var an = f.estado !== 'ok', abierto = !f.cierre;
-    var caja = ventana('<h3 id="posVentTit">' + esc(TIPOS_MOV[f.tipo] || f.tipo) + ' · ' + plata(cent(f.monto)) + ' ' +
+    var num = refGasto(f);
+    var caja = ventana('<h3 id="posVentTit">' + (num ? esc(num) + ' · ' : '') + esc(TIPOS_MOV[f.tipo] || f.tipo) + ' · ' + plata(cent(f.monto)) + ' ' +
         (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</h3>' +
       '<div class="pos-ticket-datos">' +
         '<div><span>Fecha</span>' + esc(fechaHora(f.fecha)) + '</div>' +
