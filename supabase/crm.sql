@@ -12685,3 +12685,109 @@ select asistente_sin_respuesta('¿Cómo hago X?', 'Eso no lo tengo en los manual
        asistente_sin_respuesta('¿Cómo hago X?', 'Hacé esto y aquello.', '[]') as reconoce_sin_fuentes,
        not asistente_sin_respuesta('Hola', '¡Hola! ¿En qué te ayudo?', '[]') as saludo_no_cuenta,
        position('asistente_sin_respuesta' in pg_get_functiondef('agente_config(text)'::regprocedure)) > 0 as numerito_ok;
+
+-- ─────────────────────────── PARTE 184 (27/10/2026) ───────────────────────────
+-- ═══ SQL 184 · El Asistente, con el usuario de cada uno (27/10/2026) ═══
+-- Pedido de Mauricio: en su compu el Asistente le preguntaba "¿Quién sos?" y
+-- le decía "Esta PC no está habilitada". "El asistente tiene que estar
+-- habilitado para todos."
+-- · Quien entró con su usuario y su PIN usa el Asistente en cualquier compu o
+--   celular, sin elegir local ni nombre. Sus charlas quedan con su usuario:
+--   las ve desde cualquier aparato.
+-- · La compu del local (con el enlace de la caja) sigue igual: sin nadie
+--   adentro, "¿Quién sos?" con la gente del local.
+-- · Sin usuario y sin el enlace de la caja sigue sin contestar, porque lee
+--   los manuales internos.
+-- No borra nada ni toca las charlas que ya hay.
+-- Se puede correr dos veces; si algo falla no queda nada a medias.
+-- Se deshace con deshacer-184.sql.
+
+-- 1. Quién entró con su usuario (activo y aprobado): su nombre en "Lo atendió" y su local.
+create or replace function asistente_persona()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('id', p.id,
+           'vendedor', coalesce(e.vendedor, orden_nombre_lista(p.nombre, p.inicial)),
+           'local', l.codigo)
+    from orden_personas p
+    left join orden_locales l on l.id = p.local_id
+    left join equipo e on e.id = p.equipo_id
+   where p.auth_user_id = auth.uid() and auth.uid() is not null and p.activo and p.aprobado
+   limit 1
+$$;
+revoke all on function asistente_persona() from public, anon, authenticated;
+
+-- 2. De quién es una charla. Con la caja: la caja más la llave de la persona
+--    (como hasta hoy). Con el usuario (p_llave = 'persona'): su usuario.
+create or replace function asistente_disp(p_llave text, p_yo text)
+returns text language sql stable security definer set search_path = public as $$
+  select case when p_llave = 'persona' then md5('asistente:persona:' || (asistente_persona()->>'id'))
+    else (select md5('asistente:' || (x.k->>'caja') || ':' || p_yo)
+            from (select asistente_caja(p_llave) as k) x
+           where x.k is not null and coalesce(p_yo, '') ~ '^[0-9a-f]{32}$') end
+$$;
+revoke all on function asistente_disp(text, text) from public, anon, authenticated;
+
+-- 3. Para la Edge Function: la llama con la sesión de quien pregunta (no con
+--    la service role), así la base dice quién es por su cuenta.
+create or replace function asistente_pase_persona()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select case when x.y is null then jsonb_build_object('ok', false)
+    else jsonb_build_object('ok', true, 'disp', md5('asistente:persona:' || (x.y->>'id')),
+                            'vendedor', x.y->>'vendedor', 'local', x.y->>'local') end
+    from (select asistente_persona() as y) x
+$$;
+revoke all on function asistente_pase_persona() from public, anon;
+grant execute on function asistente_pase_persona() to authenticated;
+
+-- 4. La portada: habilitada con la caja o con el usuario.
+create or replace function asistente_portada(p_llave text)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select case when x.k is null and x.y is null then
+      jsonb_build_object('habilitada', false,
+        'prendido', coalesce((select r.valor from agente_reglas r where r.clave = 'asis_prendido'), 'no') = 'si')
+    else jsonb_build_object(
+      'habilitada', true,
+      'local', coalesce(x.k->>'local', x.y->>'local'),
+      'prendido', coalesce((select r.valor from agente_reglas r where r.clave = 'asis_prendido'), 'no') = 'si',
+      'saludo', (select r.valor from agente_reglas r where r.clave = 'asis_saludo'),
+      'sugeridas', coalesce((select r.valor::jsonb from agente_reglas r where r.clave = 'asis_sugeridas'), '[]'::jsonb),
+      'accesos', coalesce((select r.valor::jsonb from agente_reglas r where r.clave = 'asis_accesos'), '[]'::jsonb)) end
+    from (select asistente_caja(p_llave) as k,
+                 case when p_llave = 'persona' then asistente_persona() end as y) x
+$$;
+revoke all on function asistente_portada(text) from public;
+grant execute on function asistente_portada(text) to anon, authenticated;
+
+-- 5. Sus charlas y una charla. Con el usuario alcanza con que sea suyo, aunque
+--    después cambie cómo figura su nombre.
+create or replace function asistente_charlas(p_llave text, p_yo text, p_vendedor text)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(jsonb_build_object('id', c.id, 'titulo', c.titulo, 'cuando', c.actualizada) order by c.actualizada desc), '[]'::jsonb)
+    from (select * from asistente_charlas c
+           where c.disp = asistente_disp(p_llave, p_yo)
+             and (p_llave = 'persona' or lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, ''))))
+           order by c.actualizada desc
+           limit 30) c
+$$;
+revoke all on function asistente_charlas(text, text, text) from public;
+grant execute on function asistente_charlas(text, text, text) to anon, authenticated;
+
+create or replace function asistente_charla(p_llave text, p_yo text, p_vendedor text, p_charla uuid)
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(e order by z.id, z.o), '[]'::jsonb)
+    from (select m.id, 0 as o, jsonb_build_object('rol', 'vendedor', 'texto', m.pregunta) as e
+            from asistente_mensajes m join asistente_charlas c on c.id = m.charla
+           where c.id = p_charla and c.disp = asistente_disp(p_llave, p_yo)
+             and (p_llave = 'persona' or lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, ''))))
+          union all
+          select m.id, 1, jsonb_build_object('rol', 'asistente', 'id', m.id, 'texto', m.respuesta, 'fuentes', m.fuentes, 'voto', m.voto)
+            from asistente_mensajes m join asistente_charlas c on c.id = m.charla
+           where c.id = p_charla and c.disp = asistente_disp(p_llave, p_yo)
+             and (p_llave = 'persona' or lower(btrim(c.vendedor)) = lower(btrim(coalesce(p_vendedor, ''))))) z
+$$;
+revoke all on function asistente_charla(text, text, text, uuid) from public;
+grant execute on function asistente_charla(text, text, text, uuid) to anon, authenticated;
+
+-- (El pulgar, asistente_votar, ya usa asistente_disp: con el usuario anda solo.)
+
+select 'listo: el Asistente, con el usuario de cada uno' as "SQL 184";

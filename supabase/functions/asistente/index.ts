@@ -14,6 +14,10 @@
  *        es la de la caja (la misma de Cobrar) y "yo", la de la persona, que
  *        crea la página al elegir el nombre (SQL 89). Guarda la pregunta y la
  *        respuesta en la charla de esa persona en esa PC.
+ *        Con llave = 'persona' (SQL 184, 27/10/2026), quien entró con su
+ *        usuario, desde cualquier aparato: su sesión va en Authorization y
+ *        la base dice quién es (asistente_pase_persona, con SU token). El
+ *        nombre y la charla salen de su usuario, no de lo que mande la página.
  *   POST {accion: 'probar', pin, historial, pregunta}
  *        El chat de prueba del CRM (con el PIN). No guarda la charla y
  *        contesta aunque el Asistente esté apagado.
@@ -39,6 +43,7 @@ import { pinDeLaPersona } from '../_shared/sesion.ts';
 
 const URL_BASE = Deno.env.get('SUPABASE_URL') ?? '';
 const SERVICIO = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
+const ANONIMA = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
 const claude = new Anthropic();
 
 const CORS = {
@@ -62,6 +67,22 @@ async function rpc(nombre: string, args: unknown): Promise<any> {
     throw new Error(String(msg).slice(0, 300));
   }
   try { return JSON.parse(texto); } catch { return texto; }
+}
+
+/* Quien entró con su usuario (SQL 184): se le pregunta a la base con SU
+   sesión, no con la service role, así la base dice por su cuenta quién es.
+   Sin sesión, o con una que no es de nadie activo y aprobado: { ok: false }. */
+async function paseDeLaPersona(req: Request): Promise<any> {
+  const token = (req.headers.get('authorization') ?? '').replace(/^Bearer\s+/i, '').trim();
+  if (!token || !ANONIMA || token === ANONIMA || token === SERVICIO) return { ok: false };
+  const r = await fetch(URL_BASE + '/rest/v1/rpc/asistente_pase_persona', {
+    method: 'POST',
+    headers: { apikey: ANONIMA, Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: '{}',
+  });
+  if (r.status === 404) return { falta: true };
+  if (!r.ok) return { ok: false };
+  return await r.json();
 }
 
 /* ═══ Lo que se le dice ══════════════════════════════════════════════════
@@ -196,7 +217,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 /* Lo que corta antes de gastar: apagado, freno o tope del mes. */
 function corte(ctx: any, prueba: boolean): string | null {
   if (!prueba && (ctx.reglas ?? {}).asis_prendido !== 'si') return 'El Asistente está apagado por ahora.';
-  if (!prueba && ctx.frenado) return 'Son muchas preguntas seguidas desde esta PC: esperá unos minutos y probá de nuevo.';
+  if (!prueba && ctx.frenado) return 'Son muchas preguntas seguidas: esperá unos minutos y probá de nuevo.';
   const g = ctx.gasto ?? {};
   if (Number(g.usd ?? 0) >= Number(g.tope ?? 20)) {
     return 'El Asistente llegó al tope de gasto del mes' + (prueba ? ' (se sube en Ajustes).' : ': avisale a la oficina.');
@@ -204,23 +225,32 @@ function corte(ctx: any, prueba: boolean): string | null {
   return null;
 }
 
-/* Una pregunta desde un local. */
-async function preguntar(p: any) {
+/* Una pregunta desde un local, o de quien entró con su usuario. */
+async function preguntar(p: any, req: Request) {
+  const conUsuario = p.llave === 'persona';
   const yo = String(p.yo ?? '');
-  const vendedor = String(p.vendedor ?? '').trim().slice(0, 40);
+  let vendedor = String(p.vendedor ?? '').trim().slice(0, 40);
   const pregunta = String(p.pregunta ?? '').replace(/\r/g, '').trim();
   let charla = UUID.test(String(p.charla ?? '')) ? String(p.charla) : null;
-  if (!DISP.test(yo) || !vendedor) return { ok: false, error: 'Falta quién pregunta: volvé a elegir tu nombre.' };
+  if (!conUsuario && (!DISP.test(yo) || !vendedor)) return { ok: false, error: 'Falta quién pregunta: volvé a elegir tu nombre.' };
   if (!pregunta) return { ok: false, error: 'Falta la pregunta.' };
   if (pregunta.length > 2000) return { ok: false, error: 'La pregunta es muy larga: hasta 2000 letras.' };
-  /* La PC tiene que estar habilitada (la llave de la caja): el Asistente lee
-     los manuales internos, así que desde afuera no se pregunta nada. */
+  /* La PC tiene que estar habilitada (la llave de la caja) o la persona,
+     haber entrado con su usuario: el Asistente lee los manuales internos,
+     así que desde afuera no se pregunta nada. */
   let pase: any;
-  try { pase = await rpc('asistente_pase', { p_llave: String(p.llave ?? ''), p_yo: yo }); } catch (e) {
-    return { ok: false, error: /asistente_pase/.test(String(e)) ? 'El Asistente todavía no está listo (falta el SQL 89).' : 'No se pudo leer la base. Probá de nuevo.' };
+  if (conUsuario) {
+    try { pase = await paseDeLaPersona(req); } catch { return { ok: false, error: 'No se pudo leer la base. Probá de nuevo.' }; }
+    if (pase?.falta) return { ok: false, error: 'El Asistente todavía no está listo (falta el SQL 184).' };
+    if (!pase?.ok) return { ok: false, error: 'Se cerró tu sesión. Entrá de nuevo con tu PIN.', sinSesion: true };
+    vendedor = String(pase.vendedor ?? '').trim().slice(0, 40);
+  } else {
+    try { pase = await rpc('asistente_pase', { p_llave: String(p.llave ?? ''), p_yo: yo }); } catch (e) {
+      return { ok: false, error: /asistente_pase/.test(String(e)) ? 'El Asistente todavía no está listo (falta el SQL 89).' : 'No se pudo leer la base. Probá de nuevo.' };
+    }
+    if (!pase?.ok) return { ok: false, error: 'Esta compu no está habilitada para el Asistente: entrá con tu usuario, o pedile al encargado el enlace de la caja (el mismo de Cobrar).' };
+    if (pase.frenado) return { ok: false, error: 'Son muchas preguntas seguidas desde esta PC: esperá unos minutos y probá de nuevo.' };
   }
-  if (!pase?.ok) return { ok: false, error: 'Esta PC no está habilitada para el Asistente: pedile al encargado el enlace de la caja (el mismo de Cobrar).' };
-  if (pase.frenado) return { ok: false, error: 'Son muchas preguntas seguidas desde esta PC: esperá unos minutos y probá de nuevo.' };
   const disp = String(pase.disp);
   let ctx: any;
   try { ctx = await rpc('asistente_contexto', { p_disp: disp, p_vendedor: vendedor, p_charla: charla }); } catch (e) {
@@ -327,7 +357,7 @@ Deno.serve(async (req) => {
   if (p && typeof p.pin === 'string' && p.pin.startsWith('sesion')) p.pin = await pinDeLaPersona(p.pin, req);
   try {
     switch (p.accion) {
-      case 'preguntar': return json(await preguntar(p));
+      case 'preguntar': return json(await preguntar(p, req));
       case 'probar': return json(await probar(p));
       case 'prueba': return json(await prueba(p));
       case 'conexiones': return json(await conexiones(p));

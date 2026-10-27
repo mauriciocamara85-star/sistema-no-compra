@@ -1460,22 +1460,25 @@ var base = {
      las PCs habilitadas (SQL 89): "llave" es la de la caja (la misma de
      Cobrar) y "yo", la de la persona, que se crea al elegir el nombre. ── */
 
+  /* SQL 184 (27/10/2026): con llave = 'persona' es quien entró con su
+     usuario, en cualquier aparato; "sesion" es su token y la base dice quién es. */
+
   /** El saludo, las preguntas sugeridas, los accesos y si está prendido.
-   *  Sin una caja habilitada: sólo { habilitada: false, prendido }. */
-  asistentePortada: function (llave) {
-    return funcion('asistente_portada', { p_llave: llave || '' });
+   *  Sin una caja habilitada ni usuario: sólo { habilitada: false, prendido }. */
+  asistentePortada: function (llave, sesion) {
+    return funcion('asistente_portada', { p_llave: llave || '' }, sesion);
   },
-  /** Las charlas de esa persona en esa PC (y sólo esas). */
-  asistenteCharlas: function (llave, yo, vendedor) {
-    return funcion('asistente_charlas', { p_llave: llave || '', p_yo: yo || '', p_vendedor: vendedor || '' });
+  /** Las charlas de esa persona en esa PC (o de su usuario), y sólo esas. */
+  asistenteCharlas: function (llave, yo, vendedor, sesion) {
+    return funcion('asistente_charlas', { p_llave: llave || '', p_yo: yo || '', p_vendedor: vendedor || '' }, sesion);
   },
-  /** Los mensajes de una charla, si es de esa persona en esa PC. */
-  asistenteCharla: function (llave, yo, vendedor, charla) {
-    return funcion('asistente_charla', { p_llave: llave || '', p_yo: yo || '', p_vendedor: vendedor || '', p_charla: charla });
+  /** Los mensajes de una charla, si es de esa persona en esa PC (o de su usuario). */
+  asistenteCharla: function (llave, yo, vendedor, charla, sesion) {
+    return funcion('asistente_charla', { p_llave: llave || '', p_yo: yo || '', p_vendedor: vendedor || '', p_charla: charla }, sesion);
   },
   /** El pulgar: 1, -1 o 0 (sacarlo), con lo que estuvo mal si lo dicen. */
-  asistenteVotar: function (llave, yo, id, voto, comentario) {
-    return funcion('asistente_votar', { p_llave: llave || '', p_yo: yo || '', p_id: id, p_voto: voto, p_comentario: comentario || null });
+  asistenteVotar: function (llave, yo, id, voto, comentario, sesion) {
+    return funcion('asistente_votar', { p_llave: llave || '', p_yo: yo || '', p_id: id, p_voto: voto, p_comentario: comentario || null }, sesion);
   },
   /* ── Agentes de IA en el CRM (SQL 85): con el PIN. Las que son nuevas no
      tiran error con el PIN malo: devuelven {error: 'pin', porque, mal}. ── */
@@ -1601,11 +1604,14 @@ var base = {
   },
 
   /** Una pregunta: la contesta la Edge Function "asistente" con Claude.
-   *  Devuelve { charla, id, texto, fuentes }. Rechaza con el porqué. */
+   *  Devuelve { charla, id, texto, fuentes }. Rechaza con el porqué.
+   *  d.sesion (SQL 184): el token de quien entró, con d.llave = 'persona'. */
   asistentePreguntar: function (d) {
+    var h = { apikey: CLAVE, 'Content-Type': 'application/json' };
+    if (d.sesion) { h.Authorization = 'Bearer ' + d.sesion; }
     return fetch(BASE + '/functions/v1/asistente', {
       method: 'POST',
-      headers: { apikey: CLAVE, 'Content-Type': 'application/json' },
+      headers: h,
       body: JSON.stringify({ accion: 'preguntar', llave: d.llave || '', yo: d.yo || '', charla: d.charla || null,
                              vendedor: d.vendedor || '', pregunta: d.pregunta })
     }).then(function (r) {
@@ -1613,7 +1619,11 @@ var base = {
     }, function () {
       return { ok: false, error: 'No hay conexión. Revisá internet y probá de nuevo.' };
     }).then(function (x) {
-      if (!x || !x.ok) { throw rechazo((x && x.error) || 'No se pudo hablar con el Asistente.'); }
+      if (!x || !x.ok) {
+        var e = rechazo((x && x.error) || 'No se pudo hablar con el Asistente.');
+        if (x && x.sinSesion) { e.sinSesion = true; }
+        throw e;
+      }
       return x;
     });
   },

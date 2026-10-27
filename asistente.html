@@ -477,6 +477,12 @@
     <div class="asis-cuerpo" id="asisCuerpo">
       <!-- ¿Quién sos? La misma bienvenida de Carga: local y nombre. -->
       <div class="asis-elegir" id="asisElegir">
+        <!-- Sin el enlace de la caja, el Asistente es con el usuario de cada uno (SQL 184). -->
+        <div id="asisPasoEntrar" hidden>
+          <h2>Entrá con tu usuario</h2>
+          <p>Con tu usuario y tu PIN, el Asistente anda en cualquier compu o celular y te guarda tus charlas.</p>
+          <button type="button" class="btn btn-pri" id="asisEntrar">Entrar</button>
+        </div>
         <div id="asisPaso1">
           <h2>¿En qué local estás?</h2>
           <p>Así el Asistente te guarda tus charlas.</p>
@@ -626,8 +632,66 @@
 
   var S = {
     yo: '', local: '', vendedor: '', equipo: [], escribe: false,
+    conUsuario: false, usuario: '', pedidoPortada: 0,
     portada: null, charlas: [], charla: null, msgs: [], esperando: false, pedido: 0
   };
+
+  /* ═══ Quien entró con su usuario (SQL 184) ═══════════════════════════
+     Mauricio, 27/10/2026: "El asistente tiene que estar habilitado para
+     todos". Quien entró con su usuario y su PIN lo usa en cualquier compu o
+     celular, sin "¿Quién sos?": la llave es 'persona', su sesión va en cada
+     pedido y la base dice quién es. Sus charlas quedan con su usuario. En la
+     compu del local, "No soy…" vuelve a la gente del local (y en esa pestaña
+     no lo vuelve a poner solo). */
+  var K_NO_SOY = 'nc_asis_no_soy';
+  function usuario() { return persona.hay() ? persona.yo() : null; }
+  function llave() { return S.conUsuario ? 'persona' : llaveCaja(); }
+  function sesion() { return S.conUsuario ? persona.token() : Promise.resolve(null); }
+  /* Quién está preguntando: lo que cambia si entra o sale alguien. */
+  function clave() { return S.conUsuario ? 'usuario:' + S.usuario : S.yo + '|' + S.vendedor; }
+  function noSoy() { try { return sessionStorage.getItem(K_NO_SOY) || ''; } catch (e) { return ''; } }
+  function guardarNoSoy(id) { try { if (id) { sessionStorage.setItem(K_NO_SOY, id); } else { sessionStorage.removeItem(K_NO_SOY); } } catch (e) {} }
+  function entrarConUsuario(u) {
+    olvidarYo();
+    S.conUsuario = true; S.usuario = u.id; S.yo = '';
+    S.vendedor = u.vendedor || u.nombre || 'Vos';
+    S.local = u.local || '';
+    S.charla = null; S.msgs = []; S.charlas = [];
+    $('asisMain').classList.remove('eligiendo');
+  }
+  /* La base contestó quién es (el nombre de "Lo atendió" y su local). */
+  function alDiaConUsuario() {
+    var u = usuario();
+    if (!S.conUsuario || !u || u.id !== S.usuario) { return; }
+    S.vendedor = u.vendedor || u.nombre || S.vendedor;
+    S.local = u.local || '';
+    pintarPortada();
+    pintarLado();
+  }
+  /* Sin nadie elegido: quien entró con su usuario; si no, la gente del local
+     (con la caja) o "Entrá con tu usuario". */
+  function arrancarSinYo() {
+    var u = usuario();
+    if (u && u.id !== noSoy()) {
+      entrarConUsuario(u);
+      pintarTodo();
+      traerCharlas();
+    } else {
+      S.conUsuario = false; S.usuario = '';
+      S.local = localDelAparato();
+      abrirElegir();
+      pintarTodo();
+    }
+    traerPortada();
+  }
+  /* "No soy…" con el usuario, en la compu del local: la gente del local. */
+  function noSoyUsuario() {
+    guardarNoSoy(S.usuario);
+    S.conUsuario = false; S.usuario = '';
+    S.vendedor = ''; S.charla = null; S.msgs = []; S.charlas = [];
+    cerrarLado();
+    arrancarSinYo();
+  }
 
   /* Con la caja habilitada, el local es el de la caja. */
   function localDelAparato() {
@@ -637,6 +701,8 @@
 
   function abrirElegir(paso) {
     $('asisMain').classList.add('eligiendo');
+    /* Sin el enlace de la caja no hay gente del local para elegir: se entra con el usuario (SQL 184). */
+    if (!llaveCaja()) { elegirPaso(0); pintarLado(); return; }
     $('asisLocales').innerHTML = LOCALES.map(function (l) {
       return '<button type="button" class="chip' + (l.v === S.local ? ' sel' : '') + '" data-v="' + esc(l.v) + '">' + esc(l.t) + '</button>';
     }).join('');
@@ -650,6 +716,7 @@
     pintarLado();
   }
   function elegirPaso(n) {
+    $('asisPasoEntrar').hidden = n !== 0;
     $('asisPaso1').hidden = n !== 1;
     $('asisPaso2').hidden = n !== 2;
     $('asisOtroLocal').hidden = !!(leer(K_CAJA) && leer(K_CAJA_LOCAL));
@@ -716,17 +783,35 @@
     cerrarLado();
     abrirElegir(S.local ? 2 : 1);
   }
-  /* Al volver a la pestaña después de un rato, se pregunta de nuevo. */
+  /* Al volver a la pestaña después de un rato, se pregunta de nuevo. Con el
+     usuario: si salió (o entró otro), se deja; sin nadie elegido, si entró
+     alguien, es él. */
   function revisarYo() {
+    var u = usuario();
+    if (!u) { guardarNoSoy(''); }
+    if (S.conUsuario) {
+      if (!u || u.id !== S.usuario) {
+        S.conUsuario = false; S.usuario = '';
+        S.vendedor = ''; S.charla = null; S.msgs = []; S.charlas = [];
+        cerrarLado();
+        arrancarSinYo();
+      }
+      return;
+    }
     if (S.vendedor && !yoGuardado()) { cambiarYo(); }
+    if (!S.vendedor && u && u.id !== noSoy() && !S.esperando) { arrancarSinYo(); enfocarCaja(); }
   }
 
   /* ═══ La portada: saludo, sugeridas y accesos ════════════════════════ */
   function traerPortada() {
-    base.asistentePortada(llaveCaja())
-      .then(function (p) { S.portada = p || {}; pintarPortada(); })
+    var pedido = ++S.pedidoPortada, k = llave();
+    sesion()
+      .then(function (t) { return base.asistentePortada(k, t); })
+      .then(function (p) { if (pedido === S.pedidoPortada) { S.portada = p || {}; pintarPortada(); } })
       .catch(function (err) {
-        S.portada = { error: /PGRST202|Could not find|asistente_portada/i.test(String(err && err.message)) ? 'falta' : 'red' };
+        if (pedido !== S.pedidoPortada) { return; }
+        S.portada = { error: err && err.sinSesion ? 'sesion'
+          : /PGRST202|Could not find|asistente_portada/i.test(String(err && err.message)) ? 'falta' : 'red' };
         pintarPortada();
       });
   }
@@ -738,10 +823,12 @@
     var aviso = '';
     if (p.error === 'falta') { aviso = 'El Asistente todavía no está listo: falta un paso en la base de datos. Avisale a la oficina.'; }
     else if (p.error === 'red') { aviso = 'No hay conexión con el Asistente. Revisá internet y volvé a entrar.'; }
+    else if (p.error === 'sesion') { aviso = 'Se cerró tu sesión. Entrá de nuevo con tu PIN.'; }
     else if (p.habilitada === false) {
-      aviso = OFICINA || S.local === 'OFICINA'
-        ? 'En la oficina, el Asistente se prueba desde el CRM: Agentes de IA → Asistente de vendedores → Probar.'
-        : 'Esta PC no está habilitada para el Asistente. Se habilita con el mismo enlace de la caja que usa Cobrar: pedíselo al encargado.';
+      /* Sin caja ni usuario lo dice "Entrá con tu usuario", arriba. */
+      aviso = S.conUsuario ? 'Tu usuario todavía no puede usar el Asistente: avisale a la oficina.'
+        : llaveCaja() ? 'Esta compu no está habilitada para el Asistente: entrá con tu usuario, o pedile al encargado el enlace de la caja (el mismo de Cobrar).'
+        : '';
     }
     else if (p.prendido === false) { aviso = 'El Asistente está apagado por ahora.'; }
     $('asisAviso').hidden = !aviso;
@@ -790,10 +877,11 @@
 
   /* ═══ Las charlas de quien está ══════════════════════════════════════ */
   function traerCharlas() {
-    if (!S.vendedor || !S.yo) { return; }
-    var quien = S.vendedor, yo = S.yo;
-    base.asistenteCharlas(llaveCaja(), yo, quien)
-      .then(function (l) { if (quien === S.vendedor && yo === S.yo) { S.charlas = l || []; pintarLado(); } })
+    if (!S.vendedor || (!S.yo && !S.conUsuario)) { return; }
+    var c = clave(), k = llave(), quien = S.vendedor, yo = S.yo;
+    sesion()
+      .then(function (t) { return base.asistenteCharlas(k, yo, quien, t); })
+      .then(function (l) { if (c === clave()) { S.charlas = l || []; pintarLado(); } })
       .catch(function () { /* la lista es un extra: el chat anda igual */ });
   }
   function cuandoCorto(ts) {
@@ -807,21 +895,26 @@
   }
   function pintarLado() {
     var hay = !!S.vendedor;
-    $('asisCharlas').innerHTML = !hay ? '<p class="asis-ch-vacio">Decí quién sos para ver tus charlas.</p>'
+    $('asisCharlas').innerHTML = !hay ? '<p class="asis-ch-vacio">' + (llaveCaja() ? 'Decí quién sos' : 'Entrá con tu usuario') + ' para ver tus charlas.</p>'
       : (S.charlas.length ? S.charlas.map(function (c) {
           return '<button type="button" class="asis-ch' + (c.id === S.charla ? ' sel' : '') + '" data-ch="' + esc(c.id) + '">' +
             '<b>' + esc(c.titulo || 'Charla') + '</b><small>' + esc(cuandoCorto(c.cuando)) + '</small></button>';
-        }).join('') : '<p class="asis-ch-vacio">Todavía no tenés charlas. Las que hagas se ven acá mientras estés vos: al tocar «No soy…» (o a la media hora sin usarlo) se guardan y nadie más las ve.</p>');
+        }).join('') : '<p class="asis-ch-vacio">' + (S.conUsuario
+          ? 'Todavía no tenés charlas. Las que hagas quedan con tu usuario: las ves desde cualquier compu o celular.'
+          : 'Todavía no tenés charlas. Las que hagas se ven acá mientras estés vos: al tocar «No soy…» (o a la media hora sin usarlo) se guardan y nadie más las ve.') + '</p>');
     Array.prototype.forEach.call($('asisCharlas').querySelectorAll('[data-ch]'), function (b) {
       b.onclick = function () { abrirCharla(b.dataset.ch); };
     });
+    /* Con el usuario, "No soy…" sólo en la compu del local: en otro aparato se sale con el botón de la barra. */
+    var conNoSoy = !S.conUsuario || !!llaveCaja();
     $('asisYo').innerHTML = hay
       ? '<span class="asis-yo-av" aria-hidden="true">' + esc(S.vendedor.charAt(0).toUpperCase()) + '</span>' +
-        '<span class="asis-yo-txt"><b>' + esc(S.vendedor) + '</b>' + esc(nombreLocal(S.local)) + '<br><button type="button" id="asisNoSoy">No soy ' + esc(S.vendedor.split(' ')[0]) + '</button></span>'
-      : '<span class="asis-yo-av nadie" aria-hidden="true">?</span><span class="asis-yo-txt">Sin elegir quién sos.</span>';
+        '<span class="asis-yo-txt"><b>' + esc(S.vendedor) + '</b>' + esc(nombreLocal(S.local)) +
+        (conNoSoy ? (S.local ? '<br>' : '') + '<button type="button" id="asisNoSoy">No soy ' + esc(S.vendedor.split(' ')[0]) + '</button>' : '') + '</span>'
+      : '<span class="asis-yo-av nadie" aria-hidden="true">?</span><span class="asis-yo-txt">' + (llaveCaja() ? 'Sin elegir quién sos.' : 'Sin entrar con tu usuario.') + '</span>';
     /* Con el panel achicado queda sólo la inicial: quién es, al pasar el mouse. */
-    $('asisYo').title = hay ? S.vendedor + ' · ' + nombreLocal(S.local) : 'Sin elegir quién sos';
-    if ($('asisNoSoy')) { $('asisNoSoy').onclick = cambiarYo; }
+    $('asisYo').title = hay ? S.vendedor + (S.local ? ' · ' + nombreLocal(S.local) : '') : 'Sin elegir quién sos';
+    if ($('asisNoSoy')) { $('asisNoSoy').onclick = S.conUsuario ? noSoyUsuario : cambiarYo; }
     $('asisNueva').disabled = !hay;
   }
   function abrirCharla(id) {
@@ -831,10 +924,11 @@
     S.charla = id; S.msgs = [];
     pintarLado();
     pintarMsgs(true);
-    var quien = S.vendedor, yo = S.yo;
-    base.asistenteCharla(llaveCaja(), yo, quien, id)
+    var c = clave(), k = llave(), quien = S.vendedor, yo = S.yo;
+    sesion()
+      .then(function (t) { return base.asistenteCharla(k, yo, quien, id, t); })
       .then(function (l) {
-        if (S.charla !== id || quien !== S.vendedor || yo !== S.yo) { return; }
+        if (S.charla !== id || c !== clave()) { return; }
         S.msgs = (l || []).map(function (m) {
           return m.rol === 'vendedor' ? { rol: 'yo', texto: m.texto }
             : { rol: 'ia', id: m.id, texto: m.texto, fuentes: m.fuentes || [], voto: Number(m.voto) || 0 };
@@ -865,10 +959,11 @@
     Array.prototype.forEach.call(document.querySelectorAll('[data-caja] textarea'), function (t) { t.value = ''; ajustarAlto(t); });
     pintarMsgs();
     bajar();
-    var quien = S.vendedor, charla = S.charla, yo = S.yo;
-    base.asistentePreguntar({ llave: llaveCaja(), yo: yo, charla: charla, vendedor: quien, pregunta: texto })
+    var c = clave(), k = llave(), quien = S.vendedor, charla = S.charla, yo = S.yo;
+    sesion()
+      .then(function (t) { return base.asistentePreguntar({ llave: k, yo: yo, charla: charla, vendedor: quien, pregunta: texto, sesion: t }); })
       .then(function (r) {
-        if (quien !== S.vendedor || charla !== S.charla || yo !== S.yo) { S.esperando = false; return; }
+        if (c !== clave() || charla !== S.charla) { S.esperando = false; return; }
         S.esperando = false;
         S.charla = r.charla || S.charla;
         S.msgs.push({ rol: 'ia', id: r.id, texto: r.texto, fuentes: r.fuentes || [], voto: 0 });
@@ -877,7 +972,7 @@
         traerCharlas();
       })
       .catch(function (err) {
-        if (quien !== S.vendedor || charla !== S.charla || yo !== S.yo) { S.esperando = false; return; }
+        if (c !== clave() || charla !== S.charla) { S.esperando = false; return; }
         S.esperando = false;
         S.msgs.push({ rol: 'error', texto: (err && err.message) || 'No se pudo preguntar.', repetir: texto });
         pintarMsgs();
@@ -1006,7 +1101,9 @@
     });
     var lugar = caja.querySelector('.asis-mal-lugar');
     lugar.innerHTML = '';
-    base.asistenteVotar(llaveCaja(), S.yo, m.id, nuevo, null)
+    var k = llave(), yo = S.yo;
+    sesion()
+      .then(function (t) { return base.asistenteVotar(k, yo, m.id, nuevo, null, t); })
       .then(function () {
         if (nuevo === 1) { lugar.innerHTML = '<p class="asis-gracias">¡Gracias!</p>'; }
         if (nuevo === -1) {
@@ -1019,7 +1116,8 @@
           lugar.querySelector('[data-mal-ok]').onclick = function () {
             var t = lugar.querySelector('textarea').value.trim();
             if (!t) { lugar.innerHTML = ''; return; }
-            base.asistenteVotar(llaveCaja(), S.yo, m.id, -1, t)
+            sesion()
+              .then(function (s) { return base.asistenteVotar(k, yo, m.id, -1, t, s); })
               .then(function () { lugar.innerHTML = '<p class="asis-gracias">Le llegó a la oficina. ¡Gracias!</p>'; })
               .catch(function () { avisar('err', 'No se pudo mandar. Probá de nuevo.'); });
           };
@@ -1156,21 +1254,25 @@
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') { revisarYo(); } });
   window.addEventListener('focus', revisarYo);
   setInterval(revisarYo, 60000);
+  $('asisEntrar').onclick = function () { persona.entrar(); };
+  /* Entró o salió alguien (la barra, otra pestaña), o la base dijo quién es. */
+  document.addEventListener('persona', function () { revisarYo(); alDiaConUsuario(); });
+  persona.listo.then(function () { revisarYo(); alDiaConUsuario(); });
 
   /* Arranque: si quien estaba sigue en la pestaña (y no venció), entra
-     directo; si no, "¿quién sos?" con el local del aparato ya elegido. */
+     directo; si no, quien entró con su usuario, o "¿quién sos?" con el
+     local del aparato ya elegido. Lo elegido sin la caja ya no sirve. */
   var y = yoGuardado();
-  if (y) {
+  if (y && llaveCaja()) {
     S.local = y.local; S.vendedor = y.vendedor; S.yo = y.yo;
     $('asisMain').classList.remove('eligiendo');
     renovarYo();
     traerCharlas();
+    pintarTodo();
+    traerPortada();
   } else {
-    S.local = localDelAparato();
-    abrirElegir();
+    arrancarSinYo();
   }
-  pintarTodo();
-  traerPortada();
   enfocarCaja();
   iniciarTema();
   iniciarPWA();
