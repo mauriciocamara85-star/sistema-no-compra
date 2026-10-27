@@ -491,8 +491,8 @@
             <input type="text" id="asisNombre" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" maxlength="40" aria-label="Tu nombre">
             <button type="button" class="btn btn-pri" id="asisNombreOk">Listo</button>
           </div>
-          <button type="button" class="asis-link" id="asisNoEstoy">No estoy en la lista</button>
-          <button type="button" class="asis-link" id="asisOtroLocal">Otro local</button>
+          <!-- "No estoy en la lista" (escribir el nombre) quedó al pie de "Vengo de otro local" (27/10/2026). -->
+          <button type="button" class="asis-link" id="asisOtroLocal">Cambiar de local</button>
         </div>
       </div>
 
@@ -671,13 +671,25 @@
       : 'Estás en <b>' + esc(nombreLocal(S.local)) + '</b>. ' + (S.equipo.length ? 'Tocá tu nombre: vas a ver sólo tus charlas.' : 'Escribí tu nombre.'));
     $('asisVends').innerHTML = S.equipo.map(function (v) {
       return '<button type="button" class="chip' + (v === ultimo ? ' sel' : '') + '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
-    }).join('');
-    Array.prototype.forEach.call($('asisVends').children, function (b) {
+    }).join('') + (S.equipo.length && S.local !== 'OFICINA' ? persona.chipOtroLocal() : '');
+    Array.prototype.forEach.call($('asisVends').querySelectorAll('[data-v]'), function (b) {
       b.onclick = function () { fijarYo(b.dataset.v); };
     });
+    var otro = $('asisVends').querySelector('[data-otro]');
+    if (otro) otro.onclick = function () {
+      persona.otroLocal({
+        local: S.local, yaEstan: S.equipo,
+        /* "Vengo de otro local" (27/10/2026): queda en la lista de este local con su nombre de siempre. */
+        alElegir: function (n) {
+          if (!OFICINA) { base.anotarse(S.local, n).catch(function () {}); }
+          if (S.equipo.indexOf(n) < 0) { S.equipo = S.equipo.concat([n]); }
+          fijarYo(n);
+        },
+        escribir: function () { S.escribe = true; pintarVends(); $('asisNombre').focus(); }
+      });
+    };
     var escribe = S.escribe || !S.equipo.length;
     $('asisNuevoNombre').hidden = !escribe;
-    $('asisNoEstoy').hidden = escribe;
   }
   function fijarYo(nombre) {
     S.vendedor = String(nombre || '').trim().slice(0, 40);
@@ -1136,7 +1148,6 @@
   $('asisNuevaCel').onclick = nuevaCharla;
   $('asisAbrirLado').onclick = function () { if ($('asisApp').classList.contains('lado-abierto')) { cerrarLado(); } else { abrirLado(); } };
   $('asisVelo').onclick = cerrarLado;
-  $('asisNoEstoy').onclick = function () { S.escribe = true; pintarVends(); $('asisNombre').focus(); };
   $('asisNombreOk').onclick = anotarme;
   $('asisNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); anotarme(); } };
   $('asisOtroLocal').onclick = function () { elegirPaso(1); };

@@ -239,8 +239,9 @@
         <input type="text" id="elegirNombre" placeholder="Tu nombre" autocomplete="off" autocapitalize="words" aria-label="Tu nombre">
         <button type="button" class="btn btn-pri" id="elegirListo">Listo</button>
       </div>
-      <button type="button" class="elegir-link" id="elegirNoEstoy">No estoy en la lista</button>
-      <button type="button" class="elegir-link" id="elegirOtroLocal" style="margin-left:14px">Otro local</button>
+      <!-- "No estoy en la lista" (escribir el nombre) quedó al pie de "Vengo de otro local" (27/10/2026):
+           primero se busca entre la gente de los otros locales. -->
+      <button type="button" class="elegir-link" id="elegirOtroLocal">Cambiar de local</button>
     </div>
   </section>
 
@@ -428,13 +429,19 @@
       (equipo.length ? 'Tocá tu nombre.' : 'Escribí tu nombre: queda en la lista del local.');
     $('elegirVends').innerHTML = equipo.map(function (v) {
       return '<button type="button" class="chip' + (v === vendedor ? ' sel' : '') + '" data-v="' + esc(v) + '">' + esc(v) + '</button>';
-    }).join('');
-    Array.prototype.forEach.call($('elegirVends').children, function (b) {
+    }).join('') + (equipo.length ? persona.chipOtroLocal() : '');
+    Array.prototype.forEach.call($('elegirVends').querySelectorAll('[data-v]'), function (b) {
       b.onclick = function () { fijarVendedor(b.dataset.v); };
     });
+    var otro = $('elegirVends').querySelector('[data-otro]');
+    if (otro) otro.onclick = function () {
+      persona.otroLocal({
+        local: local, yaEstan: equipo, alElegir: deOtroLocal,
+        escribir: function () { elegirEscribe = true; pintarElegirVends(); $('elegirNombre').focus(); }
+      });
+    };
     var escribe = elegirEscribe || !equipo.length;
     $('elegirNuevo').hidden = !escribe;
-    $('elegirNoEstoy').hidden = escribe;
   }
   function fijarVendedor(v) {
     vendedor = v;
@@ -445,6 +452,12 @@
     var n = $('elegirNombre').value.trim();
     if (!n) { $('elegirNombre').focus(); return; }
     if (!OFICINA) { base.anotarse(local, n).catch(function () { /* queda igual en este aparato */ }); }
+    fijarVendedor(n);
+  }
+  /* "Vengo de otro local" (27/10/2026): queda en la lista de este local con su nombre de siempre. */
+  function deOtroLocal(n) {
+    if (!OFICINA) { base.anotarse(local, n).catch(function () { /* queda igual en este aparato */ }); }
+    if (equipo.indexOf(n) < 0) { equipo = equipo.concat([n]); }
     fijarVendedor(n);
   }
 
@@ -1028,7 +1041,6 @@
   /* El Enter de la pistola, si cayó en el valor o en lo cobrado: nada. */
   $('gcValor').onkeydown = $('gcCobrado').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); } };
   Array.prototype.forEach.call($('gcPagos').children, function (b) { b.onclick = function () { elegirPago(b.dataset.pago); }; });
-  $('elegirNoEstoy').onclick = function () { elegirEscribe = true; pintarElegirVends(); $('elegirNombre').focus(); };
   $('elegirListo').onclick = anotarme;
   $('elegirNombre').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); anotarme(); } };
   $('elegirOtroLocal').onclick = function () { elegirPaso(1); };

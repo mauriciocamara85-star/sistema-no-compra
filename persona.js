@@ -593,9 +593,175 @@ var persona = (function () {
           else pasoPin(c, local, p, {});
         };
       });
+      /* 27/10/2026: antes de anotarse, que se busque en los otros locales. Sole (de Flores) tocó
+         "No estoy en la lista" en Villa del Parque: se estaba por crear un segundo usuario. */
       var n = c.querySelector('[data-nuevo]');
-      if (n) n.onclick = function () { pasoAlta(c, local); };
+      if (n) n.onclick = function () {
+        pasoOtroLocal(c, {
+          local: local.codigo,
+          titulo: '¿Tenés usuario en otro local?',
+          bajada: 'Si trabajás en otro local, buscate y entrá con tu PIN de siempre: no hace falta otro usuario.',
+          volver: function () { pasoPersonas(c, local); },
+          ninguno: { texto: 'No tengo usuario: anotarme', hacer: function () { pasoAlta(c, local); } },
+          alElegir: function (x) {
+            var l = x.locales[0];
+            if (x.p.nuevo && x.p.pide_apellido) pasoApellido(c, l, x.p);
+            else pasoPin(c, l, x.p, {});
+          }
+        });
+      };
     }).catch(function (e) { fallo(c, e, function () { pasoPersonas(c, local); }); });
+  }
+
+  /* ═══ Vengo de otro local (27/10/2026) ═══════════════════════════════
+     Quien cubre en otro local (Sole, de Flores, en Villa del Parque y en San Justo Shopping) se
+     busca entre la gente de todos los locales: ni un segundo usuario ni el nombre escrito a mano
+     (antes del 23/10 cada uno lo escribía distinto y salían como personas distintas). La gente es
+     la de "Entrar con tu usuario" de cada local: nc_login_personas, una vez por local, porque la
+     base no tiene una lista de todos. Queda guardada en el aparato para cuando no hay internet. */
+  var K_GENTE = 'nc_gente_todos', _gente = null, _genteDe = 0;
+  function genteDeTodos() {
+    /* La Carga queda abierta todo el día: cada 10 minutos se vuelve a pedir (la gente nueva). */
+    if (_gente && Date.now() - _genteDe < 600000) return _gente;
+    _genteDe = Date.now();
+    _gente = funcion('nc_login_locales', {}).then(function (locales) {
+      /* Sólo los locales: "E-commerce" y "Administración" no tienen id. */
+      var deVerdad = (locales || []).filter(function (l) { return l.id && l.codigo; });
+      return Promise.all(deVerdad.map(function (l) {
+        return funcion('nc_login_personas', { p_local: l.id }).then(function (g) { return { l: l, g: g || [] }; });
+      }));
+    }).then(function (por) {
+      /* Uno por persona: el supervisor de varios locales sale con todos los suyos. */
+      var porId = {}, lista = [];
+      por.forEach(function (x) {
+        x.g.forEach(function (p) {
+          var y = porId[p.id];
+          if (!y) { y = porId[p.id] = { p: p, nombre: p.nombre, locales: [] }; lista.push(y); }
+          y.locales.push({ id: x.l.id, codigo: x.l.codigo, nombre: x.l.nombre });
+        });
+      });
+      guardarLS(K_GENTE, lista);
+      return lista;
+    }, function (e) {
+      _gente = null;
+      var g = leerLS(K_GENTE);
+      if (g && g.length) return g;
+      throw e;
+    });
+    return _gente;
+  }
+
+  /* Para buscar sin tildes ni mayúsculas, con el mismo largo (así se marca lo encontrado). */
+  var TILDES = { 'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u', 'ü': 'u', 'ñ': 'n' };
+  function llano(t) { return String(t || '').toLowerCase().replace(/[áéíóúüñ]/g, function (ch) { return TILDES[ch]; }); }
+  function resaltar(t, palabras) {
+    t = String(t || '');
+    var l = llano(t), marca = [];
+    palabras.forEach(function (w) {
+      var i = l.indexOf(w);
+      if (i > -1) for (var k = i; k < i + w.length; k++) marca[k] = true;
+    });
+    var html = '', abierto = false;
+    for (var k = 0; k < t.length; k++) {
+      if (marca[k] && !abierto) { html += '<mark>'; abierto = true; }
+      if (!marca[k] && abierto) { html += '</mark>'; abierto = false; }
+      html += txt(t.charAt(k));
+    }
+    return html + (abierto ? '</mark>' : '');
+  }
+  function iniciales(n) {
+    return String(n || '').replace(/\./g, '').split(/\s+/).filter(Boolean).slice(0, 2)
+      .map(function (w) { return w.charAt(0).toUpperCase(); }).join('');
+  }
+  var LUPA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
+
+  /* o: { local (el código de este aparato: los de acá no salen), yaEstan (los nombres de su lista),
+          titulo, bajada, volver(), ninguno: { texto, hacer() }, alElegir(x) con x = { nombre, p, locales } } */
+  function pasoOtroLocal(c, o) {
+    _teclas = null;
+    cargando(c);
+    genteDeTodos().then(function (gente) {
+      if (!c.isConnected) return;
+      var ya = (o.yaEstan || []).map(llano);
+      var lista = gente.filter(function (x) {
+        return !x.locales.some(function (l) { return l.codigo === o.local; }) && ya.indexOf(llano(x.nombre)) < 0;
+      }).sort(function (a, b) {
+        return a.locales[0].nombre.localeCompare(b.locales[0].nombre, 'es') || a.nombre.localeCompare(b.nombre, 'es');
+      });
+      c.innerHTML = (o.volver ? '<button type="button" class="ncp-volver" data-volver>‹ Volver</button>' : '') +
+        '<h2 id="ncpTit">' + txt(o.titulo) + '</h2><p class="ncp-bajada">' + txt(o.bajada) + '</p>' +
+        '<label class="ncp-buscar">' + LUPA +
+          '<input type="search" data-buscar placeholder="Tu nombre o tu local" autocomplete="off" spellcheck="false" aria-label="Buscá tu nombre o tu local">' +
+        '</label>' +
+        '<div class="ncp-lista ncp-gente" data-gente></div>' +
+        (o.ninguno ? '<div class="ncp-pie ncp-pie-otro"><button type="button" class="btn btn-sec btn-chico" data-ninguno>' + txt(o.ninguno.texto) + '</button></div>' : '');
+      if (o.volver) c.querySelector('[data-volver]').onclick = o.volver;
+      if (o.ninguno) c.querySelector('[data-ninguno]').onclick = o.ninguno.hacer;
+      var buscar = c.querySelector('[data-buscar]'), caja = c.querySelector('[data-gente]'), vis = [];
+
+      function pintar() {
+        var palabras = llano(buscar.value).split(/\s+/).filter(Boolean);
+        vis = lista.filter(function (x) {
+          var donde = llano(x.nombre + ' ' + x.locales.map(function (l) { return l.nombre; }).join(' '));
+          return palabras.every(function (w) { return donde.indexOf(w) > -1; });
+        });
+        if (!vis.length) {
+          caja.innerHTML = '<p class="ncp-vacio">' + (lista.length
+            ? 'No encontramos a nadie con «' + txt(buscar.value.trim()) + '».'
+            : 'Todavía no hay gente de otros locales.') +
+            (o.ninguno ? '' : ' Si no tenés usuario, pedile a tu encargado que te lo cree.') + '</p>';
+          return;
+        }
+        var grupo = '', html = '';
+        vis.forEach(function (x, i) {
+          var g = x.locales[0].nombre;
+          if (g !== grupo) { grupo = g; html += '<p class="ncp-grupo">' + txt(g) + '</p>'; }
+          html += '<button type="button" class="ncp-persona" data-i="' + i + '">' +
+            '<span class="ncp-ini" aria-hidden="true">' + txt(iniciales(x.nombre)) + '</span>' +
+            '<span class="ncp-quien"><b>' + resaltar(x.nombre, palabras) + '</b>' +
+              '<small>' + resaltar(x.locales.map(function (l) { return l.nombre; }).join(' · '), palabras) + '</small></span>' +
+          '</button>';
+        });
+        caja.innerHTML = html;
+        [].forEach.call(caja.querySelectorAll('[data-i]'), function (b) {
+          b.onclick = function () { o.alElegir(vis[+b.dataset.i]); };
+        });
+      }
+      /* Con el teclado: Enter elige si queda uno solo; las flechas pasan de la búsqueda a los nombres. */
+      buscar.oninput = pintar;
+      buscar.onkeydown = function (e) {
+        var prim = caja.querySelector('[data-i]');
+        if (e.key === 'Enter') { e.preventDefault(); if (vis.length === 1) o.alElegir(vis[0]); else if (prim) prim.focus(); }
+        else if (e.key === 'ArrowDown' && prim) { e.preventDefault(); prim.focus(); }
+      };
+      caja.onkeydown = function (e) {
+        if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+        var bs = [].slice.call(caja.querySelectorAll('[data-i]')), i = bs.indexOf(document.activeElement);
+        if (i < 0) return;
+        e.preventDefault();
+        if (e.key === 'ArrowUp' && i === 0) buscar.focus();
+        else if (bs[i + (e.key === 'ArrowDown' ? 1 : -1)]) bs[i + (e.key === 'ArrowDown' ? 1 : -1)].focus();
+      };
+      pintar();
+      /* En el celular el teclado taparía la lista: ahí se toca la búsqueda si hace falta. */
+      if (!(window.matchMedia && matchMedia('(pointer: coarse)').matches)) buscar.focus();
+    }).catch(function (e) { fallo(c, e, function () { pasoOtroLocal(c, o); }); });
+  }
+
+  /* Para las listas de cada local (la Carga, Cobrar, Gift Cards, el Asistente): elige el nombre y
+     la pantalla lo suma a la lista de su local. o: { local, yaEstan, bajada, alElegir(nombre),
+     alCancelar(), escribir() (sólo donde todavía se puede escribir el nombre a mano) }. */
+  function otroLocal(o) {
+    var c = abrirVelo();
+    _alCerrar = o.alCancelar || null;
+    pasoOtroLocal(c, {
+      local: o.local, yaEstan: o.yaEstan,
+      titulo: 'Vengo de otro local',
+      bajada: o.bajada || 'Buscate por tu nombre o por tu local. Quedás en la lista de este local para la próxima.',
+      ninguno: o.escribir ? { texto: 'No estoy en ninguna lista: escribir mi nombre', hacer: function () { _alCerrar = null; cerrarVelo(); o.escribir(); } } : null,
+      alElegir: function (x) { _alCerrar = null; cerrarVelo(); o.alElegir(x.nombre); }
+    });
   }
 
   function campos(lista) {
@@ -1130,6 +1296,10 @@ var persona = (function () {
     token: token,
     tokenSiHay: tokenSiHay,
     entrar: entrar,
+    /** "Vengo de otro local" (27/10/2026): buscar a alguien entre la gente de todos los locales. */
+    otroLocal: otroLocal,
+    /** El botón que lo abre, para poner al final de los nombres de una lista (con data-otro). */
+    chipOtroLocal: function () { return '<button type="button" class="chip chip-otro" data-otro>' + LUPA + 'Vengo de otro local</button>'; },
     /** Cambiar el PIN de 4 por uno de 6 (el de ahora y el nuevo dos veces). */
     cambiarPin: cambiarMiPin,
     salir: salir,

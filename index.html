@@ -1760,6 +1760,8 @@
      se lo aprueban. Escribirlo a mano queda sólo para un local que todavía
      no tiene a nadie. */
   var equipo = [], vendedor = '';
+  /* La última opción de "Lo atendió": abre "Vengo de otro local" (ver buscarOtroLocal). */
+  var OTRO = '__otro_local';
 
   /* Quién lo atendió: al lado de Guardar, en el celular y en la PC (23/10;
      antes eran dos copias, en la barra del celular y en el pie del rail). Lo
@@ -1808,7 +1810,9 @@
         '<option value="" disabled hidden>Elegí quién…</option>' +
         equipo.map(function (v) {
           return '<option value="' + esc(v) + '">' + esc(v) + '</option>';
-        }).join('');
+        }).join('') +
+        '<option value="" disabled>──────────</option>' +
+        '<option value="' + OTRO + '">Vengo de otro local…</option>';
       sel.value = quienVale() ? vendedor : '';
     });
   }
@@ -1877,7 +1881,11 @@
 
   function conectarQuien() {
     cadaQuien(function (caja, sel, txt, nuevo, ok) {
-      sel.onchange = function () { fijarVendedor(sel.value); };
+      sel.onchange = function () {
+        if (sel.value !== OTRO) { fijarVendedor(sel.value); return; }
+        /* Si cierra sin elegir, el desplegable vuelve a quien estaba. */
+        buscarOtroLocal(deOtroLocal, function () { sel.value = quienVale() ? vendedor : ''; });
+      };
       // El campo es para un local sin lista (ver pintarQuien).
       // Al salir del campo el nombre ya queda puesto en ESTE dispositivo,
       // aunque no se toque "Anotarme": nadie tiene que quedarse sin poder
@@ -1925,6 +1933,22 @@
       .catch(function () {
         avisar('info', 'Sin señal. Podés cargar igual: tu nombre entra en la lista con tu primer registro.');
       });
+  }
+
+  /* ═══ Vengo de otro local (27/10/2026) ═══════════════════════════════
+     Quien cubre en otro local (Sole, de Flores, en Villa del Parque) se busca entre la gente de
+     todos los locales (persona.otroLocal) y queda en la lista de este, con su nombre de siempre.
+     Entra en la lista guardada en el aparato antes de que conteste la base: sin señal, Guardar
+     la acepta igual y la base la suma con su primer registro. */
+  function buscarOtroLocal(alElegir, alCancelar) {
+    persona.otroLocal({ local: local, yaEstan: conYo(), alElegir: alElegir, alCancelar: alCancelar });
+  }
+  function deOtroLocal(n) {
+    if (equipo.indexOf(n) < 0) {
+      equipo = equipo.concat([n]).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+      guardarJSON(K_EQUIPO, { local: local, vendedores: equipo });
+    }
+    anotarme(n);
   }
 
   /**
@@ -2439,13 +2463,16 @@
       $('bienvLocalTxt').innerHTML = 'Estás en ' + nom + '. Tocá tu nombre.';
       caja.innerHTML = equipo.map(function (v) {
         return '<button type="button" class="chip" data-v="' + esc(v) + '">' + esc(v) + '</button>';
-      }).join('');
-      Array.prototype.forEach.call(caja.children, function (b) {
+      }).join('') + persona.chipOtroLocal();
+      Array.prototype.forEach.call(caja.querySelectorAll('[data-v]'), function (b) {
         b.onclick = function () {
           fijarVendedor(b.dataset.v);
           cerrarBienvenida();
         };
       });
+      caja.querySelector('[data-otro]').onclick = function () {
+        buscarOtroLocal(function (n) { deOtroLocal(n); cerrarBienvenida(); });
+      };
     } else if (bienvEspera) {
       $('bienvLocalTxt').innerHTML = 'Estás en ' + nom + '.';
       caja.innerHTML = '<div class="bienv-espera">Buscando el equipo del local…</div>';
