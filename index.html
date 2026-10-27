@@ -1146,10 +1146,8 @@
       <div class="bienv-paso" id="bienvPaso1">
         <h2 id="bienvTit1">¡Hola! ¿En qué local estás?</h2>
         <p class="bienv-sub">Se elige una sola vez: queda guardado en este aparato.</p>
+        <!-- "Oficina" va como un botón más, al final (27/10): el link chiquito de abajo no se veía. -->
         <div class="chips chips-local" id="bienvLocales"></div>
-        <div class="bienv-pie">
-          <button type="button" class="bienv-link" id="bienvOficina">No estoy en un local (oficina)</button>
-        </div>
       </div>
       <div class="bienv-paso" id="bienvPaso2" hidden>
         <h2>¿Quién sos?</h2>
@@ -2378,7 +2376,8 @@
       return '<button type="button" class="chip" data-v="' + esc(l.v) + '">' + esc(l.t) + '</button>';
     }).join('') +
       '<span class="bienv-raya" aria-hidden="true"></span>' +
-      '<button type="button" class="chip" data-ecom>E-commerce</button>';
+      '<button type="button" class="chip" data-ecom>E-commerce</button>' +
+      '<button type="button" class="chip" data-oficina>Oficina</button>';
     Array.prototype.forEach.call($('bienvLocales').querySelectorAll('[data-v]'), function (b) {
       b.onclick = function () {
         bienvEspera = true;
@@ -2391,7 +2390,12 @@
       cerrarBienvenida();
       if (!persona.hay()) persona.entrar('ECOMMERCE');
     };
-    $('bienvOficina').onclick = function () { guardar(K_OFICINA, '1'); cerrarBienvenida(); };
+    /* "Oficina" (27/10, Vanina): lo mismo, pero la entrada abre ya en Administración. */
+    $('bienvLocales').querySelector('[data-oficina]').onclick = function () {
+      guardar(K_OFICINA, '1');
+      cerrarBienvenida();
+      if (!persona.hay()) persona.entrar('OFICINA');
+    };
     $('bienvVolver').onclick = function () { bienvPaso(1); };
     /* Si la compu ya tenía su local (alguien cerró su sesión y se borró el
        nombre), "← Cambiar de local" no va: el local lo cambia el

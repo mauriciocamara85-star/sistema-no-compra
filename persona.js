@@ -527,8 +527,8 @@ var persona = (function () {
   var RE_NOMBRE = /^[A-Za-zÁÉÍÓÚÜÑáéíóúüñ' -]{2,30}$/;
   function prolijo(t) { return String(t || '').trim().replace(/\s+/g, ' '); }
 
-  /* cual: el código donde arrancar (la bienvenida de la Carga manda 'ECOMMERCE');
-     si no viene, el local de este aparato. */
+  /* cual: el código donde arrancar (la bienvenida de la Carga manda 'ECOMMERCE' u
+     'OFICINA', que es "Administración"); si no viene, el local de este aparato. */
   function entrar(cual) {
     /* Ya hay alguien adentro (o esperando el OK): se muestra quién, con su
        "No soy", en vez de abrir otra sesión encima de la que hay. */
@@ -546,6 +546,8 @@ var persona = (function () {
       if (saltarA) {
         for (var i = 0; i < locales.length; i++) {
           if (locales[i].codigo && locales[i].codigo === saltarA) { pasoPersonas(c, locales[i]); return; }
+          /* "Administración" no tiene código: se reconoce por su grupo. */
+          if (saltarA === 'OFICINA' && !locales[i].codigo && locales[i].grupo === 'oficina') { pasoPersonas(c, locales[i]); return; }
         }
       }
       /* SQL 148: al final, "E-commerce" (Atención al cliente) y "Administración", con una raya que los separa

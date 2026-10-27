@@ -572,9 +572,9 @@ var usuarios = (function () {
       var cf = document.getElementById('usCampoFrancos');
       var dias = cf && tieneFranco(rol) ? diasTildados(cf) : [];
       if (dias.length === 7) { avisar('err', 'Con los 7 días de franco no trabajaría nunca: dejale al menos uno.'); return; }
-      /* SQL 148: Atención entra por "E-commerce"; Administración, por su botón. */
+      /* SQL 148: Atención entra por "E-commerce"; Administración, por "Oficina" (el botón de la bienvenida, 27/10). */
       var por = rol === 'atencion' ? 'que entre por "E-commerce", toque su nombre' :
-                rol === 'admin' ? 'que entre por "Administración", toque su nombre' : 'que entre con su local y su nombre';
+                rol === 'admin' ? 'que entre por "Oficina", toque su nombre' : 'que entre con su local y su nombre';
       var b = document.getElementById('usCrear');
       b.disabled = true;
       hacer('nc_usuario_crear', { p_nombre: n, p_apellido: a, p_rol: zona ? 'supervisor' : rol, p_local: sinLocal(rol) ? null : loc },
