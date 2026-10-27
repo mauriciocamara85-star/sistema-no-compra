@@ -1204,27 +1204,130 @@
       if (sinGuardar[kNo]) { delete sinGuardar[kNo]; if (!pendientes) { if (Object.keys(sinGuardar).length) pintarGuardado(); else estado(''); } }
       redibujar(); return;
     }
-    var D = que === 'temporada' ? mesTemp(mes) : ST.D;
-    if (D) ponerLocal(D, que, clave, val);
-    if (que === 'temporada' && mes === ST.mes) ST.D.venta_anterior = val === undefined ? null : val;
-    redibujar();
-    var desc = (el.getAttribute('aria-label') || 'una celda') + (el.value.trim() ? ' (' + el.value.trim() + ')' : ' (vacía)');
-    guardarCelda(que, clave, val === undefined ? '' : String(val), mes, desc).catch(function (e) {
-      avisar('err', motivo(e));
-      if (e && e.sinSesion) { porton(); return; }
-      /* No se guardó: la celda vuelve a lo que tenía (no queda a la vista algo que la base no tiene) y se
-         vuelve a leer el mes entero, aunque la base no haya cambiado (sin internet, queda lo de antes). */
-      if (D) ponerLocal(D, que, clave, antes);
-      if (que === 'temporada' && mes === ST.mes) ST.D.venta_anterior = antes === undefined ? null : antes;
-      if (que === 'temporada' && ST.temp) cargarTemporada(true);
+    function seguir() {
+      var D = que === 'temporada' ? mesTemp(mes) : ST.D;
+      if (D) ponerLocal(D, que, clave, val);
+      if (que === 'temporada' && mes === ST.mes) ST.D.venta_anterior = val === undefined ? null : val;
       redibujar();
-      ST.firma = null;
-      cargarMes(true);
+      var desc = (el.getAttribute('aria-label') || 'una celda') + (el.value.trim() ? ' (' + el.value.trim() + ')' : ' (vacía)');
+      guardarCelda(que, clave, val === undefined ? '' : String(val), mes, desc).catch(function (e) {
+        avisar('err', motivo(e));
+        if (e && e.sinSesion) { porton(); return; }
+        /* No se guardó: la celda vuelve a lo que tenía (no queda a la vista algo que la base no tiene) y se
+           vuelve a leer el mes entero, aunque la base no haya cambiado (sin internet, queda lo de antes). */
+        if (D) ponerLocal(D, que, clave, antes);
+        if (que === 'temporada' && mes === ST.mes) ST.D.venta_anterior = antes === undefined ? null : antes;
+        if (que === 'temporada' && ST.temp) cargarTemporada(true);
+        redibujar();
+        ST.firma = null;
+        cargarMes(true);
+      });
+    }
+    var msg = raro(que, clave, val, mes), vista = ST.local.id + '|' + ST.mes;
+    if (!msg) { seguir(); return; }
+    preguntarRaro(msg, el, function () {
+      /* Si mientras tanto cambió de local o de mes, la celda ya no es la que se ve: no se guarda en otro lado. */
+      if (ST.local.id + '|' + ST.mes !== vista) { avisar('err', 'No se guardó: cambiaste de planilla antes de confirmarlo.'); return; }
+      seguir();
     });
   }
 
+  /* ══ "¿Está bien este número?" ══════════════════════════════════════════
+     Pedido de Mauricio (27/10/2026), al ver en las planillas de los locales un tráfico semanal de 327.000
+     (tipearon la venta) y tickets de $23 (sin los miles). Lo imposible ya no se guarda (aplicar); esto es lo
+     posible pero raro: pregunta y no frena, porque a veces es real. Los límites se midieron con septiembre y
+     octubre de los 14 locales (2.239 ventas, 446 semanales, 678 días de tráfico): habrían saltado 8 veces, y 5
+     eran errores (las otras 3, ventas de $4.000 que pueden ser de una sola prenda). */
+  var RARO = { trafSemana: 400, trafDia: 500, ticketMin: 5000, ticketMax: 1e6, ventaMin: 5000, pxt: 8 };
+  function nombreVend(id) {
+    var v = (ST.D.vendedores || []).filter(function (x) { return Number(x.id) === Number(id); })[0];
+    return v && v.nombre ? v.nombre : 'Sin vendedor';
+  }
+  function diaTxt(mes, d) {
+    var p = String(mes).split('-'), k = (new Date(+p[0], +p[1] - 1, +d).getDay() + 6) % 7;
+    return DIAS[k].toLowerCase() + ' ' + Number(d);
+  }
+  /* Lo que se pregunta (HTML), o '' si el número es normal. */
+  function raro(que, clave, val, mes) {
+    if (typeof val !== 'number' || esEcom()) return '';
+    var p = clave.split(':');
+    function b(t) { return '<b>' + esc(t) + '</b>'; }
+    function gente(cuando) {
+      return 'El tráfico ' + cuando + ' dice ' + b(nf(val)) + '. Es mucha gente para ' + (que === 'semanal' ? 'una semana' : 'un día') +
+        (val >= 10000 ? ': ¿no será la venta?' : '. ¿Está bien?');
+    }
+    function ticket(cuando) {
+      if (val > 0 && val < RARO.ticketMin) return 'El ticket promedio ' + cuando + ' dice ' + b(pesos(val)) + '. ¿No le faltan los miles? Serían ' + b(pesos(val * 1000)) + '.';
+      if (val > RARO.ticketMax) return 'El ticket promedio ' + cuando + ' dice ' + b(pesos(val)) + '. Es mucho para un ticket: ¿no será la venta?';
+      return '';
+    }
+    function conversion(cuando) {
+      return val > 1 ? 'La conversión ' + cuando + ' dice ' + b(pc(val)) + ': serían más tickets que gente que entró. ¿Está bien?' : '';
+    }
+    if (que === 'venta') {
+      return val > 0 && val < RARO.ventaMin ? 'La venta de ' + esc(nombreVend(p[0])) + ' del ' + diaTxt(mes, p[1]) + ' dice ' + b(pesos(val)) + '. ¿Está bien, o le faltan ceros?' : '';
+    }
+    if (que === 'trafico') {
+      var del = 'del ' + diaTxt(mes, p[0]);
+      return p[1] === 'trafico' ? (val > RARO.trafDia ? gente(del) : '') : p[1] === 'conversion' ? conversion(del) : p[1] === 'ticket' ? ticket(del) : '';
+    }
+    if (que === 'semanal') {
+      var de = 'de ' + esc(nombreVend(p[0])) + ' en la semana ' + Number(p[1]);
+      if (p[2] === 'trafico') return val > RARO.trafSemana ? gente(de) : '';
+      if (p[2] === 'conversion') return conversion(de);
+      if (p[2] === 'ticket') return ticket(de);
+      if (p[2] === 'pxt' && val > RARO.pxt) return 'Las prendas por ticket ' + de + ' dicen ' + b(decLibre(val)) + '. Es mucho: ¿no será el total de prendas?';
+    }
+    return '';
+  }
+  /* El cartel. "Corregir" (o Escape, o tocar afuera) vuelve a la celda con lo que escribió, para arreglarlo; si sale
+     de la celda sin cambiarlo, queda como estaba. "Está bien así" lo guarda y sigue en la celda adonde iba. */
+  function preguntarRaro(msg, el, guardar) {
+    var k = el.getAttribute('data-k'), km = el.getAttribute('data-mes'), escrito = el.value;
+    function celda(kk, mm) {
+      return $('vtHoja').querySelector('[data-k="' + (window.CSS && CSS.escape ? CSS.escape(kk) : kk) + '"]' + (mm ? '[data-mes="' + mm + '"]' : ''));
+    }
+    /* Después de que el foco llegó a la celda siguiente (Enter o un clic): así se sabe adónde iba. */
+    setTimeout(function () {
+      var a = document.activeElement;
+      var ida = a && a !== el && a.closest && a.closest('#vtHoja') && a.getAttribute('data-k') ? [a.getAttribute('data-k'), a.getAttribute('data-mes')] : null;
+      var d = $('vtDialogo');
+      d.innerHTML = '<h2 id="vtDlgTit">¿Está bien este número?</h2><p class="raro">' + msg + '</p>' +
+        '<div class="pie"><button type="button" class="btn btn-sec" data-raro="si">Está bien así</button>' +
+        '<button type="button" class="btn btn-pri" data-raro="no">Corregir</button></div>';
+      $('vtVelo').hidden = false;
+      d.querySelector('[data-raro="no"]').focus();
+      alCerrarDlg = function () {
+        var n = el.isConnected ? el : celda(k, km);
+        if (!n) { avisar('err', 'No se guardó: quedó como estaba.'); return; }
+        n.value = escrito;
+        n.focus(); n.select();
+        n.addEventListener('blur', function fuera() {
+          n.removeEventListener('blur', fuera);
+          if (n.value === escrito) { n.value = n.defaultValue; avisar('err', 'No se guardó: quedó como estaba.'); }
+        });
+      };
+      d.onclick = function (e) {
+        var bt = e.target.closest('[data-raro]');
+        if (!bt) return;
+        if (bt.getAttribute('data-raro') === 'si') alCerrarDlg = null;
+        cerrarDialogo();
+        if (bt.getAttribute('data-raro') !== 'si') return;
+        var n = ida && celda(ida[0], ida[1]);
+        if (n) n.focus({ preventScroll: true });
+        guardar();
+      };
+    }, 0);
+  }
+
   /* ══ Sumar, quitar y asignar vendedores ═════════════════════════════════ */
-  function cerrarDialogo() { $('vtVelo').hidden = true; $('vtDialogo').innerHTML = ''; }
+  /* Lo que hace cerrar el diálogo sin elegir (Escape, tocar afuera): en "¿Está bien este número?", corregir. */
+  var alCerrarDlg = null;
+  function cerrarDialogo() {
+    $('vtVelo').hidden = true; $('vtDialogo').innerHTML = '';
+    var f = alCerrarDlg; alCerrarDlg = null;
+    if (f) f();
+  }
   function dialogoSumar() {
     var ya = {};
     (ST.D.vendedores || []).forEach(function (v) { if (v.persona) ya[v.persona] = true; });
