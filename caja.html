@@ -473,7 +473,9 @@
   }
 
   /* ═══ Dónde y quién ═══════════════════════════════════════════════════ */
-  var equipo = [], elegirEscribe = false;
+  /* equipoDe: de qué local es la lista que hay. Si la caja se habilita para
+     otro local, la de antes no sirve. */
+  var equipo = [], equipoDe = null, elegirEscribe = false;
   /* Un aparato de oficina (el de Atención): puede cobrar en un local si
      hace falta, pero no se vuelve de local ni anota a nadie en el equipo. */
   var OFICINA = leer('nc_oficina') === '1';
@@ -491,7 +493,7 @@
     elegirPaso(p);
     /* Con el local ya puesto (o el de la caja habilitada), el equipo también
        se trae: si no, sólo aparecía el campo para escribir. */
-    if (p === 2 && !equipo.length) { traerEquipo(); }
+    if (p === 2 && (!equipo.length || equipoDe !== local)) { traerEquipo(); }
   }
   function elegirPaso(n) {
     $('elegirPaso1').hidden = n !== 1;
@@ -501,11 +503,14 @@
     if (n === 2) { elegirEscribe = false; pintarElegirVends(); }
   }
   function traerEquipo() {
+    var para = local;
     equipo = [];
+    equipoDe = para;
     pintarElegirVends();
-    base.equipo(local)
-      .then(function (l) { equipo = l || []; pintarElegirVends(); })
-      .catch(function () { equipo = []; elegirEscribe = true; pintarElegirVends(); });
+    /* La respuesta de un local que ya no es el de ahora se tira. */
+    base.equipo(para)
+      .then(function (l) { if (para !== local) { return; } equipo = l || []; pintarElegirVends(); })
+      .catch(function () { if (para !== local) { return; } equipo = []; elegirEscribe = true; pintarElegirVends(); });
   }
   function pintarElegirVends() {
     if ($('cajaElegir').hidden || $('elegirPaso2').hidden) return;
@@ -1154,6 +1159,9 @@
           guardar(K_CAJA, r.llave);
           guardar(K_CAJA_LOCAL, r.local);
           guardar('nc_caja_id', String(r.id));
+          /* Si antes era de otro local (un enlace equivocado), quien atendía
+             era de allá: se elige de nuevo. */
+          if (local && local !== r.local) { vendedor = ''; guardar(K_VENDEDOR, ''); }
           guardar(K_LOCAL, r.local);
           local = r.local;
           avisoCaja('Listo: esta caja quedó habilitada para ' + bonito(r.local) + '. El Club ya anda acá.', true);
