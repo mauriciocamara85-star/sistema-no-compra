@@ -644,6 +644,7 @@ function hayAlgoEscrito() {
 
 /** Al entrar (recién o con la sesión guardada). */
 var _pinRevisado = null;   // de quién ya se miró si el PIN tiene los números que pide su rol
+var _francoRevisado = null;   // de quién ya se preguntó a la base si le falta elegir el franco (SQL 183)
 function entrarApp(recien) {
   if (_espejo) salirEspejo();
   if (yo().rol === 'atencion') { pantallaSinImpecable(); return; }
@@ -653,6 +654,16 @@ function entrarApp(recien) {
     _pinRevisado = yo().id;
     llamar('orden_pin_estado').then(function (e) {
       if (e && e.cambiar) pantallaCambiarPin(function () { entrarApp(recien); }, null, e.digitos); else entrarApp(recien);
+    }, function () { entrarApp(recien); });
+    return;
+  }
+  /* SQL 183 (27/10, Mauricio): quien es de un local elige su franco la primera vez que entra. Se pregunta a la
+     base una vez por persona en este teléfono; si contestó (o ya tenía francos), no se vuelve a preguntar. */
+  if (pideFranco()) {
+    _francoRevisado = yo().id;
+    llamar('nc_franco_pendiente').then(function (falta) {
+      if (falta === true) pantallaFranco(function () { entrarApp(recien); });
+      else { marcarFranco(yo().id); entrarApp(recien); }
     }, function () { entrarApp(recien); });
     return;
   }
@@ -2347,6 +2358,67 @@ function soltarAvisos() {
 
 function bienvenidaVista(id) { try { return localStorage.getItem('vdh_vend_bienvenida_' + id) === '1'; } catch (e) { return true; } }
 function marcarBienvenida(id) { try { localStorage.setItem('vdh_vend_bienvenida_' + id, '1'); } catch (e) {} }
+
+/* ── El franco (SQL 183, 27/10) ─────────────────────────────────────────────
+   Lo elige cada uno, una sola vez: después lo cambian el encargado o la oficina en Config → Usuarios.
+   "Varía" (sin día fijo) también vale. En la base van de 1 (lunes) a 7 (domingo). */
+var DIAS_FRANCO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+var LOS_DIAS_FRANCO = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados', 'domingos'];
+function francoVisto(id) { try { return localStorage.getItem('vdh_vend_franco_' + id) === '1'; } catch (e) { return false; } }
+function marcarFranco(id) { try { localStorage.setItem('vdh_vend_franco_' + id, '1'); } catch (e) {} }
+function pideFranco() {
+  var p = yo();
+  return !!p.local_id && (p.rol === 'vendedor' || p.rol === 'supervisor') && _francoRevisado !== p.id && !francoVisto(p.id);
+}
+/** "los martes", "los sábados y domingos". */
+function losDiasFranco(dias) {
+  var d = dias.map(function (k) { return LOS_DIAS_FRANCO[k - 1]; });
+  return 'los ' + (d.length > 1 ? d.slice(0, -1).join(', ') + ' y ' + d[d.length - 1] : d[0]);
+}
+
+function pantallaFranco(despues) {
+  barra.hidden = true;
+  app.className = 'app';
+  var dias = [], varia = false;
+  app.innerHTML = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>¿Qué día es tu franco?</h1>' +
+    '<p class="bajada">Hola, ' + esc(primerNombre()) + '. Tocá el día que no trabajás (o los días). Ese día la app no te manda controles ni tareas.</p>' +
+    '<div class="dias-franco" role="group" aria-label="Tu franco">' + DIAS_FRANCO.map(function (d, i) {
+      return '<button type="button" class="dia-franco" data-d="' + (i + 1) + '" aria-pressed="false" aria-label="' + LOS_DIAS_FRANCO[i] + '">' + d + '</button>';
+    }).join('') + '</div>' +
+    '<button type="button" class="boton franco-varia" id="francoVaria" aria-pressed="false">Varía: no tengo un día fijo</button>' +
+    '<button type="button" class="boton lima" id="francoListo" disabled>Elegí tu franco</button>' +
+    '<p class="nota">Lo elegís una sola vez. Si después cambia, avisale a tu encargado.</p>';
+  var listo = document.getElementById('francoListo'), bVaria = document.getElementById('francoVaria');
+  function pintar() {
+    [].forEach.call(app.querySelectorAll('.dia-franco'), function (b) { b.setAttribute('aria-pressed', dias.indexOf(+b.dataset.d) > -1 ? 'true' : 'false'); });
+    bVaria.setAttribute('aria-pressed', varia ? 'true' : 'false');
+    listo.disabled = !varia && (!dias.length || dias.length === 7);
+    listo.textContent = varia ? 'Listo: varía' : dias.length === 7 ? 'Dejá al menos un día' : dias.length ? 'Listo: ' + losDiasFranco(dias) : 'Elegí tu franco';
+  }
+  [].forEach.call(app.querySelectorAll('.dia-franco'), function (b) {
+    b.onclick = function () {
+      var d = +b.dataset.d, i = dias.indexOf(d);
+      if (i > -1) dias.splice(i, 1); else dias.push(d);
+      dias.sort(function (x, y) { return x - y; });
+      varia = false;
+      pintar();
+    };
+  });
+  bVaria.onclick = function () { varia = !varia; if (varia) dias = []; pintar(); };
+  unaVez(listo, function () {
+    listo.textContent = 'Guardando…';
+    return llamar('nc_franco_elegir', { p_dias: varia ? [] : dias }).then(function (r) {
+      if (r && (r.ok || r.ya)) {
+        marcarFranco(yo().id);
+        if (r.ok) avisar(varia ? 'Listo: anotamos que tu franco varía.' : 'Listo: tu franco es ' + losDiasFranco(dias) + '.');
+        despues();
+        return;
+      }
+      throw rechazo((r && r.porque) || 'No se pudo guardar. Probá de nuevo.');
+    });
+  });
+  pintar();
+}
 
 function pantallaBienvenida(despues) {
   barra.hidden = true;

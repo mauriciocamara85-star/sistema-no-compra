@@ -156,6 +156,13 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
 .boton.nivel-bien { border-color: var(--verde); color: var(--verde); }
 .boton.nivel-a_mejorar { border-color: var(--ambar); color: var(--ambar); }
 .boton.nivel-fuera_de_estandar { border-color: var(--rojo); color: var(--rojo); }
+/* El franco (SQL 183): los 7 días que se prenden en lima, y "Varía" como un día más, abajo. */
+.dias-franco { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin: 0 0 10px; }
+.dia-franco { min-height: 56px; padding: 0; border-radius: 14px; border: 1px solid var(--borde); background: var(--tarjeta);
+  color: var(--texto); font: inherit; font-size: 14px; font-weight: 700; cursor: pointer; }
+.dia-franco[aria-pressed="true"], .boton.franco-varia[aria-pressed="true"] { background: var(--lima); border-color: var(--lima); color: var(--sobre-lima); }
+.dia-franco:focus-visible, .boton.franco-varia:focus-visible { outline: 2px solid var(--lima); outline-offset: 2px; }
+.boton.franco-varia { margin: 0 0 20px; }
 .pestanitas { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 14px 0 0; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 14px; padding: 4px; }
 .pestanitas button { min-height: 40px; border: 0; border-radius: 10px; background: none; color: var(--suave); font-weight: 700; cursor: pointer; }
 .pestanitas button.activa { background: var(--borde); color: var(--texto); }

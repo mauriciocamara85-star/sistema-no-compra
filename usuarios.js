@@ -65,7 +65,8 @@ var usuarios = (function () {
     var d = dias.map(function (k) { return LOS_DIAS[k - 1]; });
     return 'los ' + (d.length > 1 ? d.slice(0, -1).join(', ') + ' y ' + d[d.length - 1] : d[0]);
   }
-  function francoDe(p) { return (p.francos || []).length ? 'franco ' + losDias(p.francos) : 'sin franco fijo'; }
+  /* SQL 183: a quien todavía no lo eligió, la app se lo pregunta al entrar. */
+  function francoDe(p) { return (p.francos || []).length ? 'franco ' + losDias(p.francos) : p.falta_franco ? 'falta que elija su franco' : 'sin franco fijo'; }
 
   /* SQL 181: las vacaciones (orden_ausencias), para los mismos que tienen francos. Las usan Ventas (esos días
      no se carga la venta) y Equipo VDH (no recibe controles). Fechas 'AAAA-MM-DD'; null = sin el SQL 181. */
@@ -379,7 +380,9 @@ var usuarios = (function () {
               '<div class="us-locales" role="group" aria-label="Sus locales">' + casillasLocales({}) + '</div></div>'
           : '<div class="campo ancho"><span class="campo-lbl">Rol</span><span class="us-fijo">Vendedor de ' + esc(nombreLocal(datos.yo.local_id)) + '</span></div>') +
         /* SQL 154: los francos, si ya los sabés (se pueden poner después, en Cambiar). */
-        (hayFrancos() ? '<div class="campo ancho" id="usCampoFrancos"><span class="campo-lbl">Francos <small>(si tiene fijos)</small></span>' +
+        /* SQL 183: si se dejan vacíos, la app se los pregunta cuando entra por primera vez. */
+        (hayFrancos() ? '<div class="campo ancho" id="usCampoFrancos"><span class="campo-lbl">Francos <small>' +
+          (datos.personas.some(function (p) { return 'falta_franco' in p; }) ? '(si no los sabés, los elige al entrar)' : '(si tiene fijos)') + '</small></span>' +
           '<div class="us-dias" role="group" aria-label="Francos">' + casillasDias([]) + '</div></div>' : '') +
         '<div class="campo ancho"><button type="button" class="btn btn-pri" id="usCrear">Crear usuario</button></div>' +
       '</div>' +

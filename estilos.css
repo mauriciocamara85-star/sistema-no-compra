@@ -1509,6 +1509,10 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .ncp-aviso { min-height: 20px; margin: 10px 0 0; font-size: 13.5px; font-weight: 600; color: var(--txt-2); text-align: center; }
 .ncp-aviso.mal { color: var(--bad-txt); }
 .ncp-pie { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-top: 16px; }
+/* "¿Qué día es tu franco?" (SQL 183): los 7 días en una fila y "Varía" abajo, a lo ancho. */
+.ncp-dias { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+.ncp-dias .chip { justify-content: center; padding: 0 2px; min-height: 48px; border-radius: var(--r-sm); font-size: 13.5px; }
+.ncp-dias .ncp-varia { grid-column: 1 / -1; padding: 0 12px; }
 .ncp-nota { font-size: 13.5px; color: var(--txt-2); background: var(--surface-2); border-radius: var(--r-sm); padding: 10px 12px; margin: 0; }
 .ncp-puntos { display: flex; justify-content: center; gap: 14px; margin: 8px 0 2px; }
 .ncp-puntos i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-alta); transition: background .15s, border-color .15s; }

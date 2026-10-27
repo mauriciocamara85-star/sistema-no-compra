@@ -484,7 +484,7 @@ var persona = (function () {
      LA VENTANA: entrar, esperar el OK, o ver quién entró
      ════════════════════════════════════════════════════════════════════ */
 
-  var _velo = null, _teclas = null;
+  var _velo = null, _teclas = null, _alCerrar = null;
   /* Lo que una pantalla suma a la ficha de quién entró (ver ponerEnFicha). */
   var _enFicha = null;
 
@@ -506,6 +506,9 @@ var persona = (function () {
     if (_velo) { _velo.remove(); _velo = null; }
     _teclas = null;
     document.removeEventListener('keydown', teclado, true);
+    /* SQL 183: ya entró y está en "¿Qué día es tu franco?": cerrar es seguir sin elegirlo (la página se recarga igual). */
+    var f = _alCerrar; _alCerrar = null;
+    if (f) f();
   }
   function teclado(e) {
     if (!_velo) return;
@@ -872,9 +875,78 @@ var persona = (function () {
   function adentro(c) {
     cargando(c);
     refrescar().then(function (y) {
-      if (vigente(y)) { cerrarVelo(); location.reload(); return; }
+      if (vigente(y)) {
+        var listo = function () { cerrarVelo(); location.reload(); };
+        if (!(y.local_id && (y.rol === 'vendedor' || y.rol === 'supervisor'))) { listo(); return; }
+        /* SQL 183: si es de un local y todavía no eligió su franco, se lo pregunta (sin el SQL, sigue de largo). */
+        token().then(function (t) {
+          return funcion('nc_franco_pendiente', {}, t).then(function (falta) { if (falta === true) pasoFranco(c, t, y); else listo(); });
+        }).catch(listo);
+        return;
+      }
       if (_ses) pasoEspera(c); else cerrarVelo();
     });
+  }
+
+  /* SQL 183 (27/10, Mauricio): quien es de un local elige su franco la primera vez que entra (acá o en Equipo
+     VDH). Una sola vez: después lo cambian el encargado o la oficina en Config → Usuarios. "Varía" (sin día
+     fijo) también vale. En la base van de 1 (lunes) a 7 (domingo). */
+  var DIAS_FRANCO = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+  var LOS_DIAS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados', 'domingos'];
+  /** "los martes", "los sábados y domingos". */
+  function losDias(dias) {
+    var d = dias.map(function (k) { return LOS_DIAS[k - 1]; });
+    return 'los ' + (d.length > 1 ? d.slice(0, -1).join(', ') + ' y ' + d[d.length - 1] : d[0]);
+  }
+  function pasoFranco(c, t, y) {
+    _teclas = null;
+    _alCerrar = function () { location.reload(); };
+    var dias = [], varia = false, ocupado = false;
+    c.innerHTML = '<h2 id="ncpTit">¿Qué día es tu franco?</h2>' +
+      '<p class="ncp-bajada">Hola, ' + txt(y.pila || primerNombre(y.nombre)) + '. Tocá el día que no trabajás (o los días). Ese día Equipo VDH no te manda controles ni tareas.</p>' +
+      '<div class="ncp-dias" role="group" aria-label="Tu franco">' + DIAS_FRANCO.map(function (d, i) {
+        return '<button type="button" class="chip" data-d="' + (i + 1) + '" aria-pressed="false" aria-label="' + LOS_DIAS[i] + '">' + d + '</button>';
+      }).join('') +
+      '<button type="button" class="chip ncp-varia" data-varia aria-pressed="false">Varía: no tengo un día fijo</button></div>' +
+      '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' +
+      '<p class="ncp-nota">Lo elegís una sola vez. Si después cambia, avisale a tu encargado.</p>' +
+      '<div class="ncp-pie"><button type="button" class="btn btn-pri" data-listo disabled>Elegí tu franco</button></div>';
+    var bListo = c.querySelector('[data-listo]'), bVaria = c.querySelector('[data-varia]'), aviso = c.querySelector('[data-aviso]');
+    function pintar() {
+      [].forEach.call(c.querySelectorAll('[data-d]'), function (b) {
+        var si = dias.indexOf(+b.dataset.d) > -1;
+        b.classList.toggle('sel', si); b.setAttribute('aria-pressed', si ? 'true' : 'false');
+      });
+      bVaria.classList.toggle('sel', varia); bVaria.setAttribute('aria-pressed', varia ? 'true' : 'false');
+      bListo.disabled = ocupado || (!varia && (!dias.length || dias.length === 7));
+      bListo.textContent = ocupado ? 'Guardando…' : varia ? 'Listo: varía' : dias.length === 7 ? 'Dejá al menos un día'
+        : dias.length ? 'Listo: ' + losDias(dias) : 'Elegí tu franco';
+    }
+    [].forEach.call(c.querySelectorAll('[data-d]'), function (b) {
+      b.onclick = function () {
+        var d = +b.dataset.d, i = dias.indexOf(d);
+        if (i > -1) dias.splice(i, 1); else dias.push(d);
+        dias.sort(function (x, z) { return x - z; });
+        varia = false; aviso.textContent = '';
+        pintar();
+      };
+    });
+    bVaria.onclick = function () { varia = !varia; if (varia) dias = []; aviso.textContent = ''; pintar(); };
+    bListo.onclick = function () {
+      if (bListo.disabled) return;
+      ocupado = true; pintar();
+      funcion('nc_franco_elegir', { p_dias: varia ? [] : dias }, t).then(function (r) {
+        if (r && (r.ok || r.ya)) { cerrarVelo(); return; }   // cerrar recarga (_alCerrar)
+        ocupado = false; pintar();
+        aviso.className = 'ncp-aviso mal';
+        aviso.textContent = (r && r.porque) || 'No se pudo guardar. Probá de nuevo.';
+      }).catch(function () {
+        ocupado = false; pintar();
+        aviso.className = 'ncp-aviso mal';
+        aviso.textContent = 'Sin conexión. Probá de nuevo cuando haya señal.';
+      });
+    };
+    pintar();
   }
 
   function pasoEspera(c) {
