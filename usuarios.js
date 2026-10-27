@@ -365,13 +365,16 @@ var usuarios = (function () {
   function formCrear() {
     var admin = esAdmin();
     return bloque('Crear un usuario',
-      'Después, esa persona entra con su local y su nombre y crea su PIN. Ahí te aparece en "Esperan tu OK" para que confirmes que fue ella.',
+      /* SQL 162: a quien da de alta otro, crear el PIN le alcanza para entrar; "Esperan tu OK" es del que se anota solo. */
+      'Después, esa persona entra, toca su nombre y crea su PIN: con eso ya puede entrar. A "Esperan tu OK" van sólo los que se anotan solos.',
       '<div class="campos">' +
         '<div class="campo"><label for="usNombre">Nombre</label><input type="text" id="usNombre" maxlength="30" autocomplete="off" autocapitalize="words"></div>' +
         '<div class="campo"><label for="usApellido">Apellido</label><input type="text" id="usApellido" maxlength="30" autocomplete="off" autocapitalize="words"></div>' +
         (admin
           ? '<div class="campo"><label for="usRol">Rol</label><select id="usRol">' + opcionesRol('vendedor') + '</select></div>' +
-            '<div class="campo" id="usCampoLocal"><label for="usLocal">Local</label><select id="usLocal" class="desplegable">' + opcionesLocal('', false) + '</select></div>' +
+            /* E-commerce no es un local: se elige con el rol (27/10, lo buscó acá). */
+            '<div class="campo" id="usCampoLocal"><label for="usLocal">Local</label><select id="usLocal" class="desplegable">' + opcionesLocal('', false) + '</select>' +
+              '<small class="us-pista">¿Es de E-commerce? Elegí el rol "Atención al cliente".</small></div>' +
             '<div class="campo ancho" id="usCampoLocales" hidden><span class="campo-lbl">Sus locales</span>' +
               '<div class="us-locales" role="group" aria-label="Sus locales">' + casillasLocales({}) + '</div></div>'
           : '<div class="campo ancho"><span class="campo-lbl">Rol</span><span class="us-fijo">Vendedor de ' + esc(nombreLocal(datos.yo.local_id)) + '</span></div>') +

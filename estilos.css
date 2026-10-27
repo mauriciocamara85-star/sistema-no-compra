@@ -1563,6 +1563,7 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-editor select[hidden], .us-editor .us-check[hidden] { display: none; }
 .us-vacio { font-size: 14px; color: var(--txt-2); margin: 0; }
 .us-nota { font-size: 13px; color: var(--txt-3); margin: 14px 0 0; }
+.us-pista { font-size: 12.5px; line-height: 1.35; color: var(--txt-3); }
 .us-fijo { font-size: 15px; font-weight: 600; padding: 4px 0; }
 #usCampoLocal[hidden], #usCampoLocales[hidden] { display: none; }
 /* Los locales del supervisor de varios locales (SQL 141): casillas en columnas. En el editor,
