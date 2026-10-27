@@ -26,6 +26,14 @@
    Desde el SQL 148 (21/10/2026), Atención al cliente ve sólo esta hoja: las
    de los locales ya no (ventas_acceso). El vendedor con la casilla de
    Atención ve la de su local y esta.
+
+   Sin internet (27/10/2026): Lomas se quedó sin internet justo al abrir la
+   planilla, y Mauricio pidió que se pueda cargar igual. Cada vez que se lee
+   bien, la compu guarda una copia (los locales y los meses que se abrieron);
+   sin internet abre esa copia. Lo que se carga va a una cola en la compu
+   (sigue ahí aunque la cierren o se apague) y se manda solo, de a una celda
+   y en orden, cuando vuelve. ventas_guardar pone un valor, no lo suma:
+   mandarlo dos veces no cambia nada.
    ═══════════════════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
@@ -44,7 +52,10 @@
 
   var ST = {
     locales: [], local: null, mes: null, D: null, C: null, firma: '',
-    hoja: 'ventas', temp: null, pedido: 0, arranco: false, leido: 0
+    hoja: 'ventas', temp: null, pedido: 0, arranco: false, leido: 0,
+    /* Sin internet: envios cuenta las celdas que llegaron a la base; sinRed, que la última vez no contestó; copiaDe, la
+       hora de la copia que se está mirando (0 si es lo de la base). */
+    envios: 0, sinRed: false, copiaDe: 0, faltaEntrar: false, guardadoA: 0, desde: 0
   };
   /* El e-commerce en el selector: no es un local de la base (ventas_ecom_*). */
   var ECOM = { id: 'ecommerce', nombre: 'E-commerce', codigo: 'ECOMMERCE', ecom: true };
@@ -96,9 +107,9 @@
 
   /* ══ La base ════════════════════════════════════════════════════════════ */
   function caja() { var k = leer('nc_caja'); return /^caja_/.test(k) ? k : null; }
-  function llamar(nombre, args) {
+  function llamar(nombre, args, senal) {
     args.p_caja = caja();
-    return persona.tokenSiHay().then(function (t) { return funcion(nombre, args, t || undefined); });
+    return persona.tokenSiHay().then(function (t) { return funcion(nombre, args, t || undefined, senal); });
   }
   /* El error, dicho para el que carga. */
   function motivo(e) {
@@ -107,6 +118,52 @@
     if (/failed to fetch|networkerror|network|load failed/i.test(m)) return 'Sin conexión con la base: no se guardó. Revisá internet y probá de nuevo.';
     m = m.replace(/^ventas:\s*/, '');
     return m.charAt(0).toUpperCase() + m.slice(1);
+  }
+
+  /* ══ La copia, para abrir sin internet ══════════════════════════════════
+     Es de quien la leyó (su usuario o, sin nadie adentro, la compu del local): otro que entra no la ve, y su primera
+     lectura con internet la reemplaza. Un mes pesa unos 9 KB (medido el 27/10/2026 con los 14 locales). */
+  var K_COPIA = 'nc_ventas_copia', K_COLA = 'nc_ventas_cola', COPIAS_MAX = 16;
+  function quienCopia() {
+    var y = persona.yo();
+    return y && y.id ? 'p:' + y.id : caja() ? 'c:' + (leer('nc_caja_id') || '?') : '';
+  }
+  /* Que no llegó (sin internet, o el servidor de la base no contestó), y no que la base dijo que no. */
+  function sinRed(e) {
+    if (!e || e.sinSesion) return false;
+    if (e.delServidor) return [502, 503, 504, 520, 521, 522, 523, 524].indexOf(e.status) >= 0;
+    if (e.name === 'AbortError') return true;                     // la cortó la cola: no contestaba
+    return /failed to fetch|networkerror|network|load failed/i.test(String(e.message || e));
+  }
+  function leerCopia() {
+    var c = leerJSON(K_COPIA, null), q = quienCopia();
+    return c && q && c.quien === q && c.meses ? c : null;
+  }
+  function guardarCopia(cambiar) {
+    var q = quienCopia();
+    if (!q) return;
+    var c = leerCopia() || { quien: q, meses: {} };
+    cambiar(c);
+    var ks = Object.keys(c.meses).sort(function (a, b) { return c.meses[b].cuando - c.meses[a].cuando; });
+    ks.slice(COPIAS_MAX).forEach(function (k) { delete c.meses[k]; });
+    try { localStorage.setItem(K_COPIA, JSON.stringify(c)); }
+    catch (e) {           // sin lugar: quedan los dos meses más nuevos (lo que no se puede perder es la cola, no la copia)
+      ks.slice(2).forEach(function (k) { delete c.meses[k]; });
+      try { localStorage.setItem(K_COPIA, JSON.stringify(c)); } catch (e2) { /* sin copia */ }
+    }
+  }
+  /* La copia de un mes, puesta en hoy: "hoy" es el de la compu (para cargar el día que pasó, aunque la copia sea de
+     ayer), y el mes cierra el día que cerraría en la base (ventas_acceso_mes). */
+  function deLaCopia(local, mes) {
+    var c = leerCopia(), x = c && c.meses[local + '|' + mes];
+    if (!x || !x.D) return null;
+    var D = x.D, hoy = hoyAR(), y = persona.yo();
+    if (String(D.hoy || '') < hoy) D.hoy = hoy;
+    if (D.carga_hasta && hoy > String(D.carga_hasta).slice(0, 10) && !D.cerrado) {
+      D.cerrado = true;
+      if (D.puede === 'escribir' && !(y && y.rol === 'admin')) D.puede = 'ver';
+    }
+    return { D: D, cuando: x.cuando };
   }
 
   /* ══ Lo que se ve fuera de la hoja ══════════════════════════════════════ */
@@ -119,9 +176,12 @@
   }
   function cargando(txt) { $('vtCargando').textContent = txt; mostrar('cargando'); }
   function cajaMsg(html) { $('vtCaja').innerHTML = html; mostrar('caja'); }
-  function fallo(e, otraVez) {
+  /* queNo: qué planilla le falta a la copia, para decirlo sin internet ("la planilla de Noviembre"). */
+  function fallo(e, otraVez, queNo) {
     if (e && e.sinSesion) { porton(); return; }
-    cajaMsg('<h2>No se pudo abrir la planilla</h2><p>' + esc(motivo(e)) + '</p>' +
+    var txt = sinRed(e) ? 'No hay internet, y esta compu todavía no tiene guardada ' + (queNo || 'la planilla') +
+      ': se guarda sola cada vez que se abre con internet. Revisá internet y probá de nuevo.' : motivo(e);
+    cajaMsg('<h2>No se pudo abrir la planilla</h2><p>' + esc(txt) + '</p>' +
       '<button type="button" class="btn btn-pri" data-acc="reintentar">Probar de nuevo</button>');
     ST.reintentar = otraVez;
   }
@@ -179,22 +239,32 @@
       llamar('ventas_locales', {}),
       llamar('ventas_ecom_puede', {}).catch(function () { return null; })
     ]).then(function (r) {
-      ST.locales = (r[0] || []).slice();
-      if (r[1] === 'escribir') ST.locales.push(ECOM);
-      if (!ST.locales.length) { porton(); return; }
-      var guardado = leer(K_LOCAL), codCaja = String(leer('nc_caja_local') || '').trim().toUpperCase();
-      var y = persona.yo(), elegido = null;
-      function buscar(f) { for (var i = 0; i < ST.locales.length; i++) if (f(ST.locales[i])) return ST.locales[i]; return null; }
-      /* El que eligió antes en este aparato; si no, el de la compu; si no, el de su usuario; si no, el primero. */
-      elegido = buscar(function (l) { return l.id === guardado; }) ||
-        (codCaja && caja() ? buscar(function (l) { return String(l.codigo || '').toUpperCase() === codCaja; }) : null) ||
-        (y && y.local_id ? buscar(function (l) { return l.id === y.local_id; }) : null) ||
-        ST.locales[0];
-      if (!ST.local || ST.local.id !== elegido.id) ST.temp = null;
-      ST.local = elegido;
-      pintarSelectores();
-      cargarMes();
-    }).catch(function (e) { fallo(e, cargarLocales); });
+      var lista = (r[0] || []).slice();
+      if (r[1] === 'escribir') lista.push(ECOM);
+      guardarCopia(function (c) { c.locales = lista; });
+      elegirLocal(lista);
+    }).catch(function (e) {
+      /* Sin internet: los locales de la última vez. */
+      var c = sinRed(e) && leerCopia();
+      if (c && c.locales && c.locales.length) { ST.sinRed = true; elegirLocal(c.locales); return; }
+      fallo(e, cargarLocales);
+    });
+  }
+  function elegirLocal(lista) {
+    ST.locales = lista;
+    if (!ST.locales.length) { porton(); return; }
+    var guardado = leer(K_LOCAL), codCaja = String(leer('nc_caja_local') || '').trim().toUpperCase();
+    var y = persona.yo(), elegido = null;
+    function buscar(f) { for (var i = 0; i < ST.locales.length; i++) if (f(ST.locales[i])) return ST.locales[i]; return null; }
+    /* El que eligió antes en este aparato; si no, el de la compu; si no, el de su usuario; si no, el primero. */
+    elegido = buscar(function (l) { return l.id === guardado; }) ||
+      (codCaja && caja() ? buscar(function (l) { return String(l.codigo || '').toUpperCase() === codCaja; }) : null) ||
+      (y && y.local_id ? buscar(function (l) { return l.id === y.local_id; }) : null) ||
+      ST.locales[0];
+    if (!ST.local || ST.local.id !== elegido.id) ST.temp = null;
+    ST.local = elegido;
+    pintarSelectores();
+    cargarMes();
   }
 
   function pintarSelectores() {
@@ -225,13 +295,11 @@
 
   /* ══ El mes ═════════════════════════════════════════════════════════════ */
   function cargarMes(silencioso) {
-    var pedido = ++ST.pedido;
+    var pedido = ++ST.pedido, envios = ST.envios;
     if (!silencioso) cargando('Abriendo la planilla de ' + nombreMes(ST.mes) + '…');
-    var ec = esEcom();
-    return (ec ? llamar('ventas_ecom_leer', { p_mes: ST.mes, p_abrir: true })
-               : llamar('ventas_mes_leer', { p_local: ST.local.id, p_mes: ST.mes, p_abrir: true })).then(function (D) {
-      if (pedido !== ST.pedido) return;
-      ST.leido = Date.now();
+    var ec = esEcom(), local = ST.local.id, mes = ST.mes;
+    function poner(D) {
+      conCola(D, local);                                           // lo que todavía no llegó a la base, encima
       var firma = JSON.stringify(D);
       if (silencioso && ST.D && firma === ST.firma) return;        // nada cambió
       ST.D = D; ST.firma = firma;
@@ -242,10 +310,31 @@
         return;
       }
       if (silencioso) redibujar(); else dibujar(true);
+    }
+    return (ec ? llamar('ventas_ecom_leer', { p_mes: mes, p_abrir: true })
+               : llamar('ventas_mes_leer', { p_local: local, p_mes: mes, p_abrir: true })).then(function (D) {
+      if (pedido !== ST.pedido) return;
+      /* Mientras se leía, una celda llegó a la base: lo leído puede no tenerla. */
+      if (envios !== ST.envios) return cargarMes(silencioso);
+      ST.leido = Date.now();
+      var deCopia = ST.copiaDe;
+      ST.sinRed = false; ST.copiaDe = 0;
+      guardarCopia(function (c) { c.meses[local + '|' + mes] = { D: D, cuando: Date.now() }; });
+      if (deCopia) ST.firma = null;                                // se estaba mirando la copia: ahora, lo de la base
+      poner(D);
+      pintarEstado();
+      if (cola().length) mandar();                                 // volvió internet
     }).catch(function (e) {
       if (pedido !== ST.pedido) return;
-      if (silencioso) { if (Object.keys(sinGuardar).length) pintarGuardado(); else estado('Sin conexión', 'mal'); return; }
-      fallo(e, function () { cargarMes(); });
+      if (sinRed(e)) {
+        ST.sinRed = true;
+        /* Lo que ya se ve es al menos tan nuevo como la copia: se queda. Si no hay nada a la vista, la copia. */
+        var x = !(silencioso && ST.D) && deLaCopia(local, mes);
+        if (x) { ST.copiaDe = x.cuando; poner(x.D); pintarEstado(); return; }
+        if (silencioso && ST.D) { pintarEstado(); return; }
+      }
+      if (silencioso) { pintarEstado(); return; }
+      fallo(e, function () { cargarMes(); }, 'la planilla de ' + nombreMes(mes));
     });
   }
 
@@ -276,6 +365,7 @@
     else if (ST.hoja === 'temporada') h.innerHTML = hojaTemporada();
     else h.innerHTML = ST.hoja === 'trafico' ? hojaTrafico(ST.C) : ST.hoja === 'vendedor' ? hojaVendedor(ST.C) : hojaVentas(ST.C);
     mostrar('hoja');
+    marcarPendientes();
     if (arriba) posicionar();
   }
 
@@ -654,7 +744,14 @@
     var local = ST.local.id, actual = ST.mes;
     Promise.all(meses.map(function (m) {
       if (m === actual) return Promise.resolve(null);
-      return llamar('ventas_mes_leer', { p_local: local, p_mes: m, p_abrir: false });
+      return llamar('ventas_mes_leer', { p_local: local, p_mes: m, p_abrir: false }).then(function (D) {
+        guardarCopia(function (c) { c.meses[local + '|' + m] = { D: D, cuando: Date.now() }; });
+        return conCola(D, local);
+      }, function (e) {
+        var x = sinRed(e) && deLaCopia(local, m);        // sin internet, el mes que haya en la copia
+        if (x) return conCola(x.D, local);
+        throw e;
+      });
     })).then(function (lista) {
       t.leyendo = false;
       lista.forEach(function (D, i) { if (D) t.D[meses[i]] = D; });
@@ -1118,8 +1215,121 @@
     } else if (que === 'temporada') D.venta_anterior = v;
   }
 
-  /* Las celdas se guardan de a una y en orden (si escribe rápido, la base las recibe como las cargó). */
-  var cola = Promise.resolve(), pendientes = 0;
+  /* ══ La cola: cada celda pasa por acá ═══════════════════════════════════
+     Se anota en la compu y se manda en orden (si escribe rápido, la base las recibe como las cargó). Sale de la cola
+     recién cuando la base contestó: si se corta internet o se cierra la compu en el medio, lo que no llegó sigue ahí.
+     Una celda: { id, local, localNombre, mes, que, clave, valor (el texto para la base), v (para la pantalla), desc }. */
+  var colaMem = null;                 // si la compu no deja guardar (sin lugar, o el navegador lo bloquea): en memoria
+  function cola() { return colaMem ? colaMem.slice() : leerJSON(K_COLA, []); }
+  function guardarCola(c) {
+    if (!colaMem) {
+      try { localStorage.setItem(K_COLA, JSON.stringify(c)); return; } catch (e) {}
+      try { localStorage.removeItem(K_COPIA); localStorage.setItem(K_COLA, JSON.stringify(c)); return; } catch (e) {}
+    }
+    colaMem = c.slice();
+  }
+  function sacarDeCola(id) { guardarCola(cola().filter(function (x) { return x.id !== id; })); }
+  function claveDe(it) { return it.local + '|' + it.mes + '|' + it.que + '|' + it.clave; }
+  /* Lo que todavía no llegó a la base, encima de lo que la base contestó (o de la copia). */
+  function conCola(D, local) {
+    var m = mesDeDatos(D);
+    if (D) cola().forEach(function (it) { if (it.local === local && it.mes === m) ponerLocal(D, it.que, it.clave, it.v); });
+    return D;
+  }
+  /* La puntita en las celdas que faltan mandar (las de lo que se mira). */
+  function marcarPendientes() {
+    var h = $('vtHoja');
+    [].forEach.call(h.querySelectorAll('td.sin-mandar'), function (td) { td.classList.remove('sin-mandar'); });
+    var n = cola().length;
+    $('vtApp').classList.toggle('con-cola', n > 0);
+    if (!n || !ST.local || !ST.D || h.hidden) return;
+    var mesVisto = mesDeDatos(ST.D);
+    cola().forEach(function (it) {
+      if (it.local !== ST.local.id) return;
+      var k = it.que + '|' + it.clave;
+      [].forEach.call(h.querySelectorAll('input[data-k="' + (window.CSS && CSS.escape ? CSS.escape(k) : k) + '"]'), function (el) {
+        if ((el.getAttribute('data-mes') || mesVisto) === it.mes) el.closest('td').classList.add('sin-mandar');
+      });
+    });
+  }
+
+  function guardarCelda(que, clave, valor, mes, desc, v) {
+    var c = cola();
+    var it = { id: Date.now() + '-' + Math.random().toString(36).slice(2), local: ST.local.id, localNombre: ST.local.nombre || '',
+               mes: mes, que: que, clave: clave, valor: valor, v: v === undefined ? null : v, desc: desc || 'una celda' };
+    c.push(it);
+    guardarCola(c);
+    delete sinGuardar[claveDe(it)];       // lo nuevo de esa celda reemplaza lo que no se había guardado
+    marcarPendientes();
+    mandar();
+  }
+
+  var mandando = false, otraVez = false, tReintento = null;
+  function mandar() {
+    clearTimeout(tReintento); tReintento = null;
+    if (mandando) { otraVez = true; return; }
+    if (!cola().length) { pintarEstado(); return; }
+    mandando = true; ST.faltaEntrar = false; ST.desde = Date.now();
+    pintarEstado();
+    setTimeout(pintarEstado, 8000);       // si la base no contesta (wifi sin internet), se dice
+    /* Una sola pestaña manda a la vez: dos mandando la misma celda podrían dejar la vieja encima de la nueva. */
+    var unaPorVez = navigator.locks && navigator.locks.request
+      ? function (f) { return navigator.locks.request('nc_ventas_cola', f); } : function (f) { return f(); };
+    unaPorVez(vaciar).catch(function () {}).then(function (corte) {
+      mandando = false;
+      /* Si se cortó por falta de internet, no se vuelve a probar al toque (con el wifi sin salida serían otros 15
+         segundos colgados): espera al reintento, a que vuelva internet o a una lectura que salga bien. */
+      if (otraVez && corte !== 'sin red') { otraVez = false; mandar(); return; }
+      otraVez = false;
+      if (cola().length && !ST.faltaEntrar) tReintento = setTimeout(mandar, 20000);   // sin internet: se vuelve a probar sola
+      pintarEstado(); marcarPendientes();
+      if (!cola().length && ST.copiaDe && !ST.sinRed && quieto()) cargarMes(true);    // volvió: de la copia a lo de la base
+    });
+  }
+  function vaciar() {
+    var it = cola()[0];
+    if (!it) return Promise.resolve();
+    /* Con el wifi conectado pero sin salida, el pedido puede quedar colgado: a los 15 segundos se corta (y no queda
+       uno viejo dando vueltas que llegue después de uno nuevo) y se vuelve a probar más tarde. */
+    var corte = window.AbortController ? new AbortController() : null, tCorte = corte && setTimeout(function () { corte.abort(); }, 15000);
+    var senal = corte ? corte.signal : undefined;
+    var pedido = it.local === ECOM.id
+      ? llamar('ventas_ecom_guardar', { p_mes: it.mes, p_que: it.que, p_clave: it.clave, p_valor: it.valor }, senal)
+      : llamar('ventas_guardar', { p_local: it.local, p_mes: it.mes, p_que: it.que, p_clave: it.clave, p_valor: it.valor }, senal);
+    pedido.then(function () { clearTimeout(tCorte); }, function () { clearTimeout(tCorte); });
+    return pedido.then(function () {
+      sacarDeCola(it.id);
+      ST.envios++; ST.sinRed = false; ST.guardadoA = Date.now();
+      delete sinGuardar[claveDe(it)];
+      /* La copia, al día: si después se corta internet y se recarga, no vuelve lo de antes. */
+      guardarCopia(function (c) { var x = c.meses[it.local + '|' + it.mes]; if (x && x.D) ponerLocal(x.D, it.que, it.clave, it.v); });
+      marcarPendientes();
+      return vaciar();
+    }, function (e) {
+      if (sinRed(e)) {                    // queda; las que esperan, después dicen cuál no entró si la base la rechaza
+        ST.sinRed = true;
+        guardarCola(cola().map(function (x) { x.espero = true; return x; }));
+        return 'sin red';
+      }
+      /* Sin usuario que pueda cargar en ese local (se cerró la sesión, deshabilitaron la compu): queda hasta que entre alguien. */
+      if ((e && e.sinSesion) || /no podés cargar en este local/i.test(String(e && e.message || ''))) { ST.faltaEntrar = true; return; }
+      sacarDeCola(it.id);
+      rechazada(it, e);
+      return vaciar();
+    });
+  }
+  /* La base no la aceptó. Por una regla (mes cerrado, un día que no llegó): no se puede volver a cargar igual, se avisa. Por
+     otra cosa (la base con un problema): queda en rojo arriba para volver a cargarla. Las dos vuelven a lo que tiene la base. */
+  function rechazada(it, e) {
+    var regla = e && e.delServidor && /^ventas:/.test(String(e.message || '')), m = motivo(e);
+    if (!regla) sinGuardar[claveDe(it)] = { desc: it.desc, local: it.local, localNombre: it.localNombre, mes: it.mes };
+    avisar('err', it.espero ? 'No se guardó ' + it.desc + ': ' + m.charAt(0).toLowerCase() + m.slice(1) : m);
+    if (!ST.local || it.local !== ST.local.id) return;
+    if (it.que === 'temporada' && ST.temp) cargarTemporada(true);
+    ST.firma = null;
+    cargarMes(true);
+  }
+
   /* Lo que no se guardó queda a la vista (en rojo, arriba) hasta que esa misma celda se guarde bien:
      un "Guardado" de otra celda no lo tapa. clave → lo que se escribió y dónde. */
   var sinGuardar = {};
@@ -1128,45 +1338,39 @@
     if (!x.local || (ST.local && x.local === ST.local.id && x.mes === ST.mes)) return x.desc;
     return 'en ' + x.localNombre + ', ' + nombreMes(x.mes).toLowerCase() + ': ' + x.desc;
   }
-  function pintarGuardado() {
-    var ks = Object.keys(sinGuardar);
+  function hora(t) { return new Date(t).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }); }
+  function pintarEstado() {
+    var ks = Object.keys(sinGuardar), n = cola().length, el = $('vtEstado'), tit = '';
     if (ks.length) {
       var todo = ks.map(function (k) { return dondeNoSeGuardo(sinGuardar[k]); });
       estado('No se guardó: ' + todo[0] + (todo.length > 1 ? ' y ' + (todo.length - 1) + ' más' : '') + '. Volvé a cargarlo.', 'mal');
-      $('vtEstado').title = 'No se guardó: ' + todo.join(' · ');
+      el.title = 'No se guardó: ' + todo.join(' · ');
       /* Si decide dejarlo como está (o ya no se puede cargar), lo saca él: no queda pegado hasta recargar. */
       var x = document.createElement('button');
       x.type = 'button'; x.className = 'vt-estado-x'; x.setAttribute('data-acc', 'descartar');
       x.textContent = 'Entendido'; x.title = 'Sacar el aviso: lo que no se guardó no queda guardado';
-      $('vtEstado').appendChild(x);
-    } else {
-      estado('Guardado ' + new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }));
-      $('vtEstado').title = '';
+      el.appendChild(x);
+      return;
     }
-  }
-  function guardarCelda(que, clave, valor, mes, desc) {
-    pendientes++;
-    estado('Guardando…', 'guardando');
-    var local = ST.local.id, localNombre = ST.local.nombre || '', k = local + '|' + mes + '|' + que + '|' + clave;
-    var p = cola.then(function () {
-      if (local === ECOM.id) return llamar('ventas_ecom_guardar', { p_mes: mes, p_que: que, p_clave: clave, p_valor: valor });
-      return llamar('ventas_guardar', { p_local: local, p_mes: mes, p_que: que, p_clave: clave, p_valor: valor });
-    });
-    cola = p.catch(function () {});
-    return p.then(function (r) {
-      pendientes--;
-      delete sinGuardar[k];
-      if (!pendientes) pintarGuardado();
-      return r;
-    }, function (e) {
-      pendientes--;
-      /* Lo que la base rechaza por una regla (mes cerrado, un número que no va) no se puede volver a cargar igual:
-         se avisa y la celda vuelve a lo que tiene la base. Lo que no llegó (internet, la base caída) queda en rojo. */
-      var regla = e && e.delServidor && /^ventas:/.test(String(e.message || ''));
-      if (!regla) sinGuardar[k] = { desc: desc || 'una celda', local: local, localNombre: localNombre, mes: mes };
-      if (Object.keys(sinGuardar).length) pintarGuardado(); else if (!pendientes) estado('');
-      throw e;
-    });
+    var celdas = n === 1 ? '1 celda' : n + ' celdas', lento = mandando && Date.now() - ST.desde > 7500;
+    var copia = ST.copiaDe ? ' (es lo que esta compu guardó el ' + fechaCorta(new Date(ST.copiaDe).toLocaleDateString('en-CA')) + ' a las ' + hora(ST.copiaDe) + ')' : '';
+    if (n && ST.faltaEntrar) {
+      estado('Falta mandar ' + celdas + ': entrá con tu usuario del local', 'mal');
+      tit = 'Lo que se cargó quedó en esta compu, pero para mandarlo hace falta entrar con un usuario del local (o que la compu esté habilitada).';
+    } else if (n && mandando && !ST.sinRed && !lento) {
+      estado('Guardando…', 'guardando');
+    } else if (n) {
+      estado((ST.sinRed || lento ? 'Sin internet' : 'Mandando') + ' · ' + celdas + ' sin mandar', 'espera');
+      tit = 'Lo que cargaste quedó guardado en esta compu y se manda solo cuando vuelva internet. Las celdas que faltan llevan una puntita naranja.' + copia;
+    } else if (ST.sinRed) {
+      estado('Sin internet · podés cargar igual', 'espera');
+      tit = 'Lo que cargues queda guardado en esta compu y se manda solo cuando vuelva internet.' + copia;
+    } else if (ST.guardadoA) {
+      estado('Guardado ' + hora(ST.guardadoA));
+    } else {
+      estado('');
+    }
+    el.title = tit;
   }
 
   function aplicar(el) {
@@ -1201,7 +1405,7 @@
     if (antes === val) {                                     // lo mismo, escrito de otra forma
       /* Si esa celda había quedado sin guardar, escribir lo que tiene la base es dejarla así: se va el rojo. */
       var kNo = ST.local.id + '|' + mes + '|' + que + '|' + clave;
-      if (sinGuardar[kNo]) { delete sinGuardar[kNo]; if (!pendientes) { if (Object.keys(sinGuardar).length) pintarGuardado(); else estado(''); } }
+      if (sinGuardar[kNo]) { delete sinGuardar[kNo]; pintarEstado(); }
       redibujar(); return;
     }
     function seguir() {
@@ -1210,18 +1414,9 @@
       if (que === 'temporada' && mes === ST.mes) ST.D.venta_anterior = val === undefined ? null : val;
       redibujar();
       var desc = (el.getAttribute('aria-label') || 'una celda') + (el.value.trim() ? ' (' + el.value.trim() + ')' : ' (vacía)');
-      guardarCelda(que, clave, val === undefined ? '' : String(val), mes, desc).catch(function (e) {
-        avisar('err', motivo(e));
-        if (e && e.sinSesion) { porton(); return; }
-        /* No se guardó: la celda vuelve a lo que tenía (no queda a la vista algo que la base no tiene) y se
-           vuelve a leer el mes entero, aunque la base no haya cambiado (sin internet, queda lo de antes). */
-        if (D) ponerLocal(D, que, clave, antes);
-        if (que === 'temporada' && mes === ST.mes) ST.D.venta_anterior = antes === undefined ? null : antes;
-        if (que === 'temporada' && ST.temp) cargarTemporada(true);
-        redibujar();
-        ST.firma = null;
-        cargarMes(true);
-      });
+      /* A la cola: sin internet queda en la compu y se manda sola. Si la base la rechaza, la celda vuelve a lo
+         que tiene la base (rechazada). */
+      guardarCelda(que, clave, val === undefined ? '' : String(val), mes, desc, val);
     }
     var msg = raro(que, clave, val, mes), vista = ST.local.id + '|' + ST.mes;
     if (!msg) { seguir(); return; }
@@ -1423,7 +1618,7 @@
   $('vtEstado').addEventListener('click', function (e) {
     if (!e.target.closest('[data-acc="descartar"]')) return;
     sinGuardar = {};
-    estado(''); $('vtEstado').title = '';
+    pintarEstado();
   });
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('vtVelo').hidden) cerrarDialogo(); });
   [].forEach.call(document.querySelectorAll('.vt-pest'), function (b) {
@@ -1453,7 +1648,7 @@
   /* Cada minuto, si nadie está escribiendo, se vuelve a leer el mes (lo que cargó otra compu). */
   function quieto() {
     var a = document.activeElement;
-    return ST.D && ST.D.cfg && !pendientes && $('vtVelo').hidden && document.visibilityState !== 'hidden' &&
+    return ST.D && ST.D.cfg && !mandando && $('vtVelo').hidden && document.visibilityState !== 'hidden' &&
       !(a && a.closest && a.closest('#vtHoja') && a.tagName === 'INPUT');
   }
   setInterval(function () { if (quieto()) { if (ST.hoja === 'temporada' && ST.temp) cargarTemporada(true); cargarMes(true); } }, 60000);
@@ -1463,14 +1658,20 @@
   ST.mes = mesDe(hoyAR());
   var h0 = leer(K_HOJA);
   if (['ventas', 'trafico', 'vendedor', 'temporada'].indexOf(h0) >= 0) ST.hoja = h0;
-  persona.listo.then(function () { ST.arranco = true; cargarLocales(); });
+  /* Lo que quedó en la cola de otra vez (sin internet, y cerraron la compu) sale apenas se sabe quién está. */
+  persona.listo.then(function () { ST.arranco = true; cargarLocales(); mandar(); });
   /* Entró o salió alguien (persona.js): se vuelve a preguntar qué locales ve. */
   var tPersona = null;
   document.addEventListener('persona', function () {
     if (!ST.arranco) return;
     clearTimeout(tPersona);
-    tPersona = setTimeout(cargarLocales, 150);
+    tPersona = setTimeout(function () { cargarLocales(); mandar(); }, 150);
   });
+  /* Volvió internet: lo de la cola sale ya, y lo que se ve pasa a ser lo de la base. Con el wifi conectado pero sin
+     internet este aviso no llega: para eso están el reintento de la cola y la lectura de cada minuto. */
+  window.addEventListener('online', function () { mandar(); if (ST.sinRed && quieto()) cargarMes(true); });
+  /* Otra pestaña mandó o sumó a la cola. */
+  window.addEventListener('storage', function (e) { if (e.key === K_COLA) { pintarEstado(); marcarPendientes(); } });
   iniciarTema();                          // en oscuro, también la barra del navegador (theme-color)
   iniciarPWA();
 })();

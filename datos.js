@@ -114,14 +114,17 @@ function cabecerasCon(pin) {
 }
 
 /** Una función de la base (las que devuelven algo sin dejar leer la tabla). */
-function funcion(nombre, args, sesion) {
+/* senal (opcional, 27/10/2026): un AbortSignal para cortar el pedido si la base no contesta (la cola de Ventas
+   sin internet, con el wifi conectado pero sin salida). */
+function funcion(nombre, args, sesion, senal) {
   /* La marca de la persona viaja con su sesión. Si no hay sesión, el error
      dice "sinSesion" y las pantallas vuelven a pedir que entre. */
   if (!sesion && args && args.p_pin === PIN_SESION && typeof persona !== 'undefined') {
-    return persona.token().then(function (t) { return funcion(nombre, args, t); });
+    return persona.token().then(function (t) { return funcion(nombre, args, t, senal); });
   }
   return fetch(BASE + '/rest/v1/rpc/' + nombre, {
     method: 'POST',
+    signal: senal,
     headers: {
       apikey: CLAVE,
       Authorization: 'Bearer ' + (sesion || CLAVE),

@@ -88,6 +88,9 @@
   .vt-estado.guardando::before { background: var(--warn); }
   .vt-estado.mal { color: var(--bad-txt); font-weight: 600; }
   .vt-estado.mal::before { background: var(--bad); }
+  /* Sin internet (27/10/2026): no es un error, se puede seguir cargando. */
+  .vt-estado.espera { color: var(--warn-txt); font-weight: 600; }
+  .vt-estado.espera::before { background: var(--warn); }
   .vt-estado:empty { display: none; }
   .vt-estado-x { font: inherit; font-size: 12px; font-weight: 600; padding: 1px 9px; margin-left: 4px; border: 1px solid currentColor; border-radius: 999px; background: transparent; color: inherit; cursor: pointer; }
   .vt-estado-x:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
@@ -107,6 +110,9 @@
   .vt-sw.calc { background: #DBEAFE; }
   .vt-sw.fr { background: repeating-linear-gradient(135deg, #E9EBEF 0 3px, #FFFFFF 3px 6px); border: 1px solid #D6D9DE; }
   .vt-sw.fal { background: #FFFFFF; box-shadow: inset 0 0 0 1.5px #E0A64A; }
+  .vt-sw.cola { background: linear-gradient(135deg, var(--warn) 0 5px, #F3F3F3 5px); }
+  .vt-leyenda .solo-cola { display: none; }
+  .vt-app.con-cola .vt-leyenda .solo-cola { display: inline-flex; }
   .vt-cambios { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px 24px; margin: 10px 0 4px; padding: 0; list-style: none; max-width: 1240px; }
   .vt-cambios li { line-height: 1.45; }
   .vt-cambios b { color: var(--txt); font-weight: 600; }
@@ -214,6 +220,10 @@
   /* Lo que llega de Google Analytics (visitas y carritos de la tienda): azul, como lo que se calcula solo; se puede pisar escribiendo. */
   .vt-hoja td.ga, .vt-hoja .sem .vend td.ga { color: var(--h-azul); }
   .vt-hoja td.mal-entrada { animation: vt-sacudir .3s; box-shadow: inset 0 0 0 2px var(--mal) !important; }
+  /* Cargada sin internet y todavía sin mandar: la puntita arriba a la izquierda (a la derecha va la F del franco). */
+  .vt-hoja td.sin-mandar { position: relative; }
+  .vt-hoja td.sin-mandar::before { content: ""; position: absolute; top: 0; left: 0; border-style: solid; border-width: 8px 8px 0 0;
+    border-color: var(--warn) transparent transparent transparent; pointer-events: none; z-index: 1; }
   @keyframes vt-sacudir { 25% { transform: translateX(-2px); } 75% { transform: translateX(2px); } }
 
   /* semanas */
@@ -435,6 +445,7 @@
   html[data-theme="dark"] .vt-sw.calc { background: #15243D; box-shadow: inset 0 0 0 1px #2B4470; }
   html[data-theme="dark"] .vt-sw.fr { background: repeating-linear-gradient(135deg, #2A3342 0 3px, #0E131B 3px 6px); border-color: #3A4556; }
   html[data-theme="dark"] .vt-sw.fal { background: #0E131B; box-shadow: inset 0 0 0 1.5px #E8A53C; }
+  html[data-theme="dark"] .vt-sw.cola { background: linear-gradient(135deg, var(--warn) 0 5px, #111824 5px); }
 
   @media (max-width: 760px) {
     .vt-top h1 { font-size: 15px; }
@@ -535,7 +546,7 @@
   <div class="vt-tira" id="vtTira" hidden>
     <details>
       <summary>
-        <span class="vt-leyenda"><i><span class="vt-sw amb"></span>se carga</i><i><span class="vt-sw calc"></span>se calcula solo</i><i class="solo-local"><span class="vt-sw fr"></span>franco (F), vacaciones (V) o el local no abre</i><i class="solo-ecom"><span class="vt-sw fal"></span>falta cargar</i></span>
+        <span class="vt-leyenda"><i><span class="vt-sw amb"></span>se carga</i><i><span class="vt-sw calc"></span>se calcula solo</i><i class="solo-local"><span class="vt-sw fr"></span>franco (F), vacaciones (V) o el local no abre</i><i class="solo-ecom"><span class="vt-sw fal"></span>falta cargar</i><i class="solo-cola"><span class="vt-sw cola"></span>falta mandar (sin internet)</i></span>
         <span class="vt-ver">Qué cambia respecto de la planilla</span>
       </summary>
       <ul class="vt-cambios solo-ecom">
