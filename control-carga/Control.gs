@@ -13,7 +13,7 @@
    ══════════════════════════════════════════════════════════════════════════ */
 
 var PARA = 'cintiacast15@gmail.com';
-var COPIA = '';                              // si alguien más lo quiere: 'a@x.com, b@y.com'
+var COPIA = 'mauriciocamara85@gmail.com';    // más de uno: 'a@x.com, b@y.com'
 var PRUEBA = 'mauriciocamara85@gmail.com';   // la prueba, y el aviso si algo falla
 var HORA = 11;                               // hora de Argentina (el proyecto está en esa zona)
 var BASE = 'https://gfjdjupuwxohkgchqykx.supabase.co';
