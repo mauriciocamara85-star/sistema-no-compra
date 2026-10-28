@@ -22,3 +22,6 @@ supabase/.temp/
 
 # Perfiles temporales de Chrome de las pruebas
 perfil-chrome/
+
+# La llave del mail de control de carga (va sólo al Apps Script, nunca al repo)
+control-carga/Llave.gs
