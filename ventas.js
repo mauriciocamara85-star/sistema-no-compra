@@ -34,6 +34,9 @@
    (sigue ahí aunque la cierren o se apague) y se manda solo, de a una celda
    y en orden, cuando vuelve. ventas_guardar pone un valor, no lo suma:
    mandarlo dos veces no cambia nada.
+
+   La venta fallida (28/10/2026): dos recordatorios por día para el local,
+   uno a la tarde y otro cuando cargan la venta del día (vfTarde, vfNoche).
    ═══════════════════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
@@ -1262,6 +1265,7 @@
     delete sinGuardar[claveDe(it)];       // lo nuevo de esa celda reemplaza lo que no se había guardado
     marcarPendientes();
     mandar();
+    if (it.local !== ECOM.id) vfGuardo(); // "¿Cargaste toda la venta fallida de hoy?"
   }
 
   var mandando = false, otraVez = false, tReintento = null;
@@ -1515,6 +1519,68 @@
     }, 0);
   }
 
+  /* ══ "Recordá cargar la venta fallida" ═══════════════════════════════════
+     Pedido de Mauricio (28/10/2026): que los locales no se olviden de cargar la venta fallida (hoy la cargan en
+     BlueSoft). Dos veces por día, cada una una sola vez en este aparato:
+     - a la tarde, desde las 17 y con Ventas abierta, para que la carguen en el momento, con el cliente adelante;
+     - a la noche, cuando cargan la venta del día: lo primero que guardan desde las 19, apenas paran de escribir.
+       No tiene hora fija porque medido el 27/10 los de calle cargan a las 20 y los shoppings entre las 21 y las 22.
+     Sólo la compu del local, los vendedores y los encargados: ni el e-commerce, ni la oficina, ni los supervisores.
+     Sin contador ni botón a No Compra hasta que los locales carguen ahí ("lo actualizamos cuando les muestre No
+     Compra"). */
+  var K_VF = 'nc_ventas_vf', VF_TARDE = 17 * 60, VF_NOCHE = 19 * 60, VF_PAUSA = 10000, tVf = null;
+  /* La hora en Argentina, en minutos desde las 0 (la compu puede tener otra zona). */
+  function minutosAR() {
+    try {
+      var p = new Date().toLocaleTimeString('en-GB', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).split(':');
+      return (+p[0] % 24) * 60 + +p[1];
+    } catch (e) { var d = new Date(); return d.getHours() * 60 + d.getMinutes(); }
+  }
+  /* Lo que ya se mostró hoy en este aparato: { dia, tarde, noche }. */
+  function vfHoy() { var v = leerJSON(K_VF, {}), h = hoyAR(); return v && v.dia === h ? v : { dia: h }; }
+  function vfLeToca() {
+    if (!ST.local || esEcom()) return false;
+    var r = persona.rol(), y = persona.yo();
+    return r ? r === 'vendedor' || (r === 'supervisor' && !!(y && y.local_id)) : !!caja();
+  }
+  /* Sin otro cartel abierto ni una celda a medio escribir (si no, al sacarle el foco se guardaría sola). */
+  function vfLibre() {
+    var a = document.activeElement;
+    return !!(ST.D && ST.D.cfg) && $('vtVelo').hidden && document.visibilityState !== 'hidden' &&
+      !(a && a.tagName === 'INPUT' && a.value !== a.defaultValue);
+  }
+  function vfMostrar(cual) {
+    var v = vfHoy(); v[cual] = true; guardarJSON(K_VF, v);
+    var antes = document.activeElement, d = $('vtDialogo');
+    d.innerHTML = (cual === 'tarde'
+      ? '<h2 id="vtDlgTit">Recordá cargar la venta fallida, toda la venta fallida</h2>' +
+        '<p class="raro">Cada cliente que se va sin comprar, cargalo en el momento.</p>'
+      : '<h2 id="vtDlgTit">Antes de cerrar: ¿cargaste toda la venta fallida de hoy?</h2>') +
+      '<div class="pie"><button type="button" class="btn btn-pri" data-vf>Entendido</button></div>';
+    $('vtVelo').hidden = false;
+    d.querySelector('[data-vf]').focus();
+    /* Al cerrarlo (con el botón, Escape o tocando afuera) sigue en la celda donde estaba. */
+    alCerrarDlg = function () {
+      if (antes && antes.isConnected && antes.closest && antes.closest('#vtHoja')) antes.focus({ preventScroll: true });
+    };
+    d.onclick = function (e) { if (e.target.closest('[data-vf]')) cerrarDialogo(); };
+  }
+  function vfTarde() {
+    var m = minutosAR();
+    if (m >= VF_TARDE && m < VF_NOCHE && !vfHoy().tarde && vfLeToca() && vfLibre()) vfMostrar('tarde');
+  }
+  /* Se guardó una celda de un local: desde las 19, la de la noche sale cuando dejan de escribir. */
+  function vfGuardo() {
+    if (minutosAR() < VF_NOCHE || vfHoy().noche || !vfLeToca()) return;
+    clearTimeout(tVf); tVf = setTimeout(vfNoche, VF_PAUSA);
+  }
+  function vfNoche() {
+    tVf = null;
+    if (vfHoy().noche || !vfLeToca()) return;
+    if (!vfLibre()) { tVf = setTimeout(vfNoche, VF_PAUSA); return; }
+    vfMostrar('noche');
+  }
+
   /* ══ Sumar, quitar y asignar vendedores ═════════════════════════════════ */
   /* Lo que hace cerrar el diálogo sin elegir (Escape, tocar afuera): en "¿Está bien este número?", corregir. */
   var alCerrarDlg = null;
@@ -1589,6 +1655,7 @@
   /* Enter baja a la celda de abajo, como en Sheets (Mayús + Enter sube). */
   hoja.addEventListener('keydown', function (e) {
     var el = e.target;
+    if (tVf) { clearTimeout(tVf); tVf = setTimeout(vfNoche, VF_PAUSA); }   // sigue escribiendo: la venta fallida, después
     if (el.tagName !== 'INPUT') return;
     if (e.key === 'Escape') { el.value = el.defaultValue; el.blur(); return; }
     if (e.key !== 'Enter') return;
@@ -1652,7 +1719,10 @@
       !(a && a.closest && a.closest('#vtHoja') && a.tagName === 'INPUT');
   }
   setInterval(function () { if (quieto()) { if (ST.hoja === 'temporada' && ST.temp) cargarTemporada(true); cargarMes(true); } }, 60000);
-  window.addEventListener('focus', function () { if (quieto() && Date.now() - ST.leido > 20000) cargarMes(true); });
+  window.addEventListener('focus', function () { if (quieto() && Date.now() - ST.leido > 20000) cargarMes(true); vfTarde(); });
+  /* La de la tarde: se mira seguido (abrir Ventas a las 17:05 la muestra enseguida, no al minuto). */
+  setInterval(vfTarde, 15000);
+  document.addEventListener('visibilitychange', vfTarde);
 
   /* Arranque */
   ST.mes = mesDe(hoyAR());
