@@ -767,6 +767,19 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 .rn-det b { font-weight: 600; }
 .pos-tabla tr.rn-marca td { background: var(--ok-soft); }
 .rn-tot { margin: 8px 2px 0; font-size: 13.5px; color: var(--txt-2); }
+/* La devolución a fábrica (SQL 189): sus cinco datos en una fila y las observaciones abajo, a todo el ancho. */
+@media (min-width: 1000px) {
+  .tk-datos.dv-datos > * { grid-column: span 2; }
+  .tk-datos.dv-datos > :first-child { grid-column: span 4; }
+  .tk-datos.dv-datos > :last-child { grid-column: span 12; }
+}
+/* En el celular, Fecha y Letra, Estado y Proveedor de a dos. */
+@media (max-width: 520px) {
+  .tk-datos.dv-datos > * { grid-column: span 6; }
+  .tk-datos.dv-datos > :first-child, .tk-datos.dv-datos > :last-child { grid-column: span 12; }
+}
+.pos input.dv-razon { min-width: 170px; }
+.dv-prec { margin: 6px 0 0; }
 .pos-pie.rn-imp { justify-content: flex-start; align-items: center; margin-top: 8px; }
 .pos-caja textarea#imTexto, .pos-caja textarea#ipTexto { font: 13px/1.4 ui-monospace, Consolas, monospace; white-space: pre; }
 

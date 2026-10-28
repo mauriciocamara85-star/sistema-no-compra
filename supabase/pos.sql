@@ -69,6 +69,17 @@
 --  (retiro queda en 0; se sigue aceptando, para la pantalla de antes), y no
 --  se cierra si la caja cambió después de contar.
 --
+--  SQL 189 (28/10/2026, Mauricio: "si tenemos que devolver algo a fábrica,
+--  tenemos que hacer una devolución… la pestaña se tiene que llamar
+--  devolución a fábrica"): el local arma su devolución en el mostrador, como
+--  la "Devolución de Mercadería" de BlueSoft. Es un remito sin destino (eso
+--  ya estaba desde el SQL 167: sale del stock al guardarlo y la oficina lo da
+--  por recibido). Lo nuevo: cada renglón guarda su precio (el de la lista del
+--  local que lo manda, al guardarlo: el total no cambia si después cambian los
+--  precios) y su razón ("fallada"), y quien la mandó la ve entera (no es a
+--  ciegas: nadie la cuenta al recibirla). La nota "SQL 189" está en la tabla
+--  de los renglones y en pos_remito_guardar, pos_remitos y pos_remito.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -1813,6 +1824,9 @@ create index pos_remitos_dia on pos_remitos (dia);
 
 -- Lo que mandaron (cantidad) y lo que llegó (contado; null mientras falta contar ese producto).
 -- Lo que llegó sin estar en el remito entra con cantidad 0.
+-- SQL 189: precio y razón. El precio es el de la lista del local que lo manda
+-- (un envío o una devolución), al guardarlo; null si sale de la fábrica o si el
+-- producto no tiene precio. La razón, la de BlueSoft en cada renglón ("fallada").
 create table pos_remito_items (
   remito_id    uuid not null references pos_remitos(id) on delete cascade,
   codigo       text not null,
@@ -1822,6 +1836,8 @@ create table pos_remito_items (
   cantidad     int not null check (cantidad between 0 and 9999),
   contado      int check (contado between 0 and 9999),
   orden        int not null default 0,
+  precio       numeric(12,2),
+  razon        text check (length(razon) <= 60),
   primary key (remito_id, codigo, talle, color)
 );
 
@@ -2163,6 +2179,7 @@ declare
   v_ya       pos_remitos;
   v_id       uuid;
   v_num      int;
+  v_lista    int;
   x          jsonb;
   m          record;
 begin
@@ -2194,6 +2211,9 @@ begin
     if coalesce(x->>'cantidad', '') !~ '^[0-9]{1,4}$' or (x->>'cantidad')::int < 1 then
       raise exception 'La cantidad de % no es válida (de 1 a 9999).', trim(x->>'codigo');
     end if;
+    if length(trim(coalesce(x->>'razon', ''))) > 60 then   -- SQL 189
+      raise exception 'La razón de % es demasiado larga (hasta 60 letras).', trim(x->>'codigo');
+    end if;
   end loop;
   if exists (select 1 from jsonb_array_elements(v_items) e
               group by upper(trim(e->>'codigo')), upper(trim(coalesce(e->>'talle', ''))), upper(trim(coalesce(e->>'color', '')))
@@ -2213,10 +2233,15 @@ begin
   values (v_num, v_origen, v_destino, v_ref, pos_hoy(), orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_obs, v_clave)
   returning id into v_id;
 
-  insert into pos_remito_items (remito_id, codigo, talle, color, descripcion, cantidad, orden)
-  select v_id, z.c, z.t, z.co, max(z.d), sum(z.n), min(z.o)
+  /* SQL 189: si sale de un local, cada renglón con el precio de la lista de ese local (el de hoy) y su razón. */
+  if v_origen is not null then
+    select s.lista_id into v_lista from pos_sucursales s where s.local_id = v_origen;
+  end if;
+  insert into pos_remito_items (remito_id, codigo, talle, color, descripcion, cantidad, orden, precio, razon)
+  select v_id, z.c, z.t, z.co, max(z.d), sum(z.n), min(z.o), case when v_lista is not null then pos_precio_de(v_lista, z.c) end, max(z.r)
     from (select upper(trim(e.v->>'codigo')) c, upper(trim(coalesce(e.v->>'talle', ''))) t, upper(trim(coalesce(e.v->>'color', ''))) co,
-                 nullif(trim(coalesce(e.v->>'descripcion', '')), '') d, (e.v->>'cantidad')::int n, e.o::int o
+                 nullif(trim(coalesce(e.v->>'descripcion', '')), '') d, (e.v->>'cantidad')::int n, e.o::int o,
+                 nullif(trim(coalesce(e.v->>'razon', '')), '') r
             from jsonb_array_elements(v_items) with ordinality e(v, o)) z
    group by z.c, z.t, z.co;
 
@@ -2230,13 +2255,17 @@ begin
 
   return jsonb_build_object('id', v_id, 'numero', v_num, 'ya', false,
                             'productos', (select count(distinct codigo) from pos_remito_items where remito_id = v_id),
-                            'unidades', (select sum(cantidad) from pos_remito_items where remito_id = v_id));
+                            'unidades', (select sum(cantidad) from pos_remito_items where remito_id = v_id),
+                            'total', (select sum(cantidad * precio) from pos_remito_items where remito_id = v_id));
 end $$;
 
 /* El listado de remitos. p_local: los que llegan a ese local o salen de él.
    "pendiente" trae todos los que faltan recibir, de cualquier día; los demás
    estados, los del período. SQL 167: los que vuelven a la fábrica (sin
-   destino) y las diferencias que faltan resolver de cada uno. */
+   destino) y las diferencias que faltan resolver de cada uno. SQL 189: el
+   total en pesos de cada uno (con el precio de cada renglón), cuántos
+   productos no tienen precio y el monto de todos (sin los anulados), como el
+   pie de "Devoluciones a Fábrica" de BlueSoft. */
 create or replace function pos_remitos(p_desde date, p_hasta date, p_local uuid default null, p_estado text default null)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 begin
@@ -2268,7 +2297,9 @@ begin
                  'contadas', (select sum(i.contado) from pos_remito_items i where i.remito_id = z.id),
                  'dif_pendientes', (select count(*) from pos_remito_diferencias d where d.remito_id = z.id and d.estado = 'pendiente'),
                  'observaciones', z.observaciones, 'creado_nombre', z.creado_nombre, 'recibido_en', z.recibido_en,
-                 'anulado_motivo', z.anulado_motivo) order by z.fecha desc)
+                 'anulado_motivo', z.anulado_motivo,
+                 'total', (select sum(i.cantidad * i.precio) from pos_remito_items i where i.remito_id = z.id),
+                 'sin_precio', (select count(distinct i.codigo) from pos_remito_items i where i.remito_id = z.id and i.precio is null)) order by z.fecha desc)
           from (select * from r order by fecha desc limit 500) z
           left join orden_locales ld on ld.id = z.destino_local_id
           left join orden_locales lo on lo.id = z.origen_local_id), '[]'::jsonb),
@@ -2277,7 +2308,8 @@ begin
                     'pendientes', count(*) filter (where r.estado = 'pendiente'),
                     'con_diferencias', count(*) filter (where r.estado = 'con_diferencias'),
                     'anulados', count(*) filter (where r.estado = 'anulado'),
-                    'unidades', coalesce((select sum(i.cantidad) from pos_remito_items i join r y on y.id = i.remito_id where y.estado <> 'anulado'), 0))
+                    'unidades', coalesce((select sum(i.cantidad) from pos_remito_items i join r y on y.id = i.remito_id where y.estado <> 'anulado'), 0),
+                    'monto', coalesce((select sum(i.cantidad * i.precio) from pos_remito_items i join r y on y.id = i.remito_id where y.estado <> 'anulado'), 0))
                     from r),
       'mas', (select count(*) > 500 from r)
     )
@@ -2287,7 +2319,9 @@ end $$;
 /* Un remito, producto por producto. A CIEGAS: de lo que todavía no se recibió
    van el talle y el color, pero no cuántas mandaron (se ve al comparar). Con
    p_completo (Gestión, la oficina), todo. SQL 167: quién lo recibió, qué pasó
-   y cada diferencia con cómo se resolvió. */
+   y cada diferencia con cómo se resolvió. SQL 189: el precio y la razón de
+   cada producto y el total; y una devolución a la fábrica (sin destino) va
+   siempre entera: nadie la cuenta a ciegas, y el local que la mandó la ve. */
 create or replace function pos_remito(p_id uuid, p_completo boolean default false) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare r jsonb;
@@ -2296,9 +2330,10 @@ begin
   select to_jsonb(x) - 'clave' || jsonb_build_object(
            'origen', coalesce(lo.nombre, 'Fábrica'), 'destino', coalesce(ld.nombre, 'Fábrica'),
            'anulado_por_nombre', (select pe.nombre from orden_personas pe where pe.id = x.anulado_por),
+           'total', (select sum(i.cantidad * i.precio) from pos_remito_items i where i.remito_id = x.id),
            'productos', coalesce((
              select jsonb_agg(jsonb_build_object(
-                      'codigo', g.codigo, 'descripcion', g.descripcion,
+                      'codigo', g.codigo, 'descripcion', g.descripcion, 'precio', g.precio, 'razon', g.razon,
                       'estado', k.estado, 'recibido_en', k.recibido_en, 'recibido_nombre', coalesce(k.recibio, k.recibido_nombre),
                       'observaciones', k.observaciones, 'motivo', k.motivo,
                       'diferencias', (select jsonb_agg(jsonb_build_object('id', d.id, 'talle', d.talle, 'color', d.color, 'cantidad', d.cantidad,
@@ -2309,12 +2344,13 @@ begin
                                        where d.remito_id = x.id and d.codigo = g.codigo),
                       'conteos', (select count(*) from pos_remito_conteos c where c.remito_id = x.id and c.codigo = g.codigo),
                       'celdas', (select jsonb_agg(case when k.codigo is not null or x.estado = 'anulado' or coalesce(p_completo, false)
+                                                            or x.destino_local_id is null
                                                        then jsonb_build_object('talle', i.talle, 'color', i.color, 'cantidad', i.cantidad, 'contado', i.contado)
                                                        else jsonb_build_object('talle', i.talle, 'color', i.color) end
                                                   order by i.color, i.talle)
                                    from pos_remito_items i where i.remito_id = x.id and i.codigo = g.codigo))
                     order by g.orden, g.codigo)
-               from (select i.codigo, max(i.descripcion) descripcion, min(i.orden) orden
+               from (select i.codigo, max(i.descripcion) descripcion, min(i.orden) orden, max(i.precio) precio, max(i.razon) razon
                        from pos_remito_items i where i.remito_id = x.id group by i.codigo) g
                left join pos_remito_productos k on k.remito_id = x.id and k.codigo = g.codigo), '[]'::jsonb))
     into r

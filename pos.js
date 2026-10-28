@@ -89,6 +89,7 @@
   var K_CAMBIO = 'pos_borrador_cambio';    // el cambio a medio armar, igual
   var K_PRUEBA = 'pos_prueba';             // el modo prueba, en sessionStorage: se apaga solo al cerrar la ventana
   var K_REMITO = 'pos_borrador_remito';    // el remito nuevo a medio cargar (Gestión)
+  var K_DEVOL = 'pos_borrador_devolucion'; // la devolución a fábrica a medio cargar (el mostrador, SQL 189)
   var K_REMITO_VER = 'pos_remito';         // el remito que se está recibiendo, en sessionStorage
   var K_CONTEO = 'pos_conteo_remito';      // lo contado de cada remito: si se cierra la pestaña, sigue ahí
 
@@ -97,8 +98,9 @@
     mostrador: [
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
                   ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida']]],
-      /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene. */
-      ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['stock', 'Stock', 'stock']]],
+      /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene.
+         La devolución a fábrica (SQL 189): lo que el local le devuelve, como en BlueSoft. */
+      ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['devoluciones', 'Devolución a fábrica', 'devolucion'], ['stock', 'Stock', 'stock']]],
       /* Los gastos se cargan durante el día, lo de la caja fuerte se pasa antes de cerrar (SQL 180) y el cierre se hace a la noche (SQL 149);
          los listados de todas las sucursales quedan en Gestión. */
       ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['cierre', 'Cierre de caja', 'caja']]]
@@ -113,10 +115,10 @@
   };
   var MENU = MENUS[MODO];
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
-  var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos' }, gestion: { remito_nuevo: 'remitos' } };
+  var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones' }, gestion: { remito_nuevo: 'remitos' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, gastos: 1, salidas: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
-                 stock: 1, remitos: 1, diferencias: 1, inventario: 1 };
+                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
@@ -177,6 +179,7 @@
     stock: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
     envio: '<path d="M1 4h14v12H1z"/><path d="M15 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
     recepcion: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
+    devolucion: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     inventario: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
     dif: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
     producto: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
@@ -421,7 +424,8 @@
     var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, gastos: verGastos, salidas: verSalidas,
                 cierre: verCierre, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
-                stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario }[v];
+                stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
+                devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva }[v];
     if (ver) ver(); else verPronto(v);
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
@@ -4084,6 +4088,92 @@
     cargar();
   }
 
+  /* ════════════════════════════════════════════════════════════════════
+     DEVOLUCIÓN A FÁBRICA (el mostrador, SQL 189, 28/10)
+     Mauricio (28/10): "si tenemos que devolver algo a fábrica, tenemos que
+     hacer una devolución… la pestaña se tiene que llamar devolución a
+     fábrica". Es "Devoluciones a Fábrica y Proveedores" de BlueSoft: la
+     lista de lo que el local devolvió, con el período y la sucursal, y
+     «Nueva devolución». En la base es un remito sin destino (SQL 167): sale
+     del stock al guardarlo y la oficina lo da por recibido cuando llega
+     (Gestión → Remitos, «Llegó a la fábrica»).
+     ════════════════════════════════════════════════════════════════════ */
+  /* Los estados de BlueSoft: "Enviado" mientras viaja; "Recibido" cuando la oficina dice que llegó. */
+  var ESTADO_DEV = { pendiente: ['Enviado', ''], recibido: ['Recibido en la fábrica', 'pill-ok'], con_diferencias: ['Recibido en la fábrica', 'pill-ok'],
+                     anulado: ['Anulada', 'pill-bad'] };
+  function pillDev(e) { var x = ESTADO_DEV[e] || [e, '']; return '<span class="pill ' + x[1] + '">' + esc(x[0]) + '</span>'; }
+  /** El total de una devolución: sin el SQL 189 no hay precios ("—"). */
+  function totalDev(f) { return f.sin_precio === undefined ? '—' : plata(cent(f.total || 0)); }
+
+  function verDevoluciones() {
+    var c = $('cuerpo'), l = localStock(), prueba = enPrueba();
+    c.innerHTML = cabeza('Devolución a fábrica' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+        'Lo que el local le devuelve a la fábrica (fallados, sobrantes). Sale del stock al guardarla; cuando llega, la oficina la da por recibida.',
+        '<button type="button" class="btn btn-sec btn-chico" id="dvBajar" disabled>Bajar para Excel</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" data-ir="devolucion_nueva">Nueva devolución</button>') +
+      '<div class="pos-filtros"><div id="dvPer"></div>' + campo('', 'Sucursal', '<select id="dvLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') + '</div>' +
+      (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan devoluciones: el stock es de verdad. Apagalo (abajo, en el menú) para hacer una.</div>' : '') +
+      '<div id="dvLista"><p class="cargando">Cargando…</p></div>';
+    engancharIr(c);
+    var per = Interfaz.periodo($('dvPer'), { inicial: 'mes', guardar: 'pos_devoluciones_periodo', hastaHoy: true, alCambiar: cargar });
+    $('dvLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
+    var pedido = 0, filas = [];
+    function cargar() {
+      var r = per.rango(), n = ++pedido, loc = $('dvLocal').value;
+      $('dvLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('dvBajar').disabled = true;
+      llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: loc, p_estado: null }).then(function (d) {
+        if (n !== pedido || !$('dvLista')) return;
+        /* De todos los remitos del local, los que salen de él y vuelven a la fábrica. */
+        filas = (d.filas || []).filter(function (f) { return f.origen_local_id === loc && !f.destino_local_id; });
+        pintar(d.mas);
+      }).catch(function (e) { if ($('dvLista')) $('dvLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function pintar(mas) {
+      var vivas = filas.filter(function (f) { return f.estado !== 'anulado'; });
+      var con189 = !filas.length || filas[0].sin_precio !== undefined;
+      /* Los totales de abajo de BlueSoft: cantidad de devoluciones, de productos (unidades) y el monto. */
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi"><span>Devoluciones</span><b>' + miles(vivas.length) + '</b></div>' +
+        '<div class="pos-kpi"><span>Enviadas, sin llegar</span><b>' + miles(vivas.filter(function (f) { return f.estado === 'pendiente'; }).length) + '</b></div>' +
+        '<div class="pos-kpi"><span>Unidades</span><b>' + num(vivas.reduce(function (s, f) { return s + Number(f.unidades || 0); }, 0)) + '</b></div>' +
+        '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + (con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—') + '</b></div></div>';
+      if (!filas.length) {
+        $('dvLista').innerHTML = kpis + '<div class="pos-cartel">No hay devoluciones de ' + esc(nombreLocal(localDe($('dvLocal').value))) + ' en ese período. Se hacen con «Nueva devolución».</div>';
+        return;
+      }
+      /* Las columnas de BlueSoft (Fecha, Comprobante, Estado, Cantidad, Total, Observaciones), con quién la cargó. */
+      $('dvLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Estado</th><th>Cargó</th>' +
+          '<th class="n">Unidades</th><th class="n">Total</th><th>Observaciones</th></tr></thead><tbody>' +
+        filas.map(function (f, i) {
+          return '<tr data-dev="' + i + '" tabindex="0" class="' + (f.estado === 'anulado' ? 'anulada ' : '') + (f.id === S.dvMarcar ? 'recien' : '') + '">' +
+            '<td><b>' + esc(refRemito(f)) + '</b></td><td>' + esc(fechaHora(f.fecha)) + '<small class="st-chico">' + esc(diaSemana(f.fecha)) + '</small></td>' +
+            '<td>' + pillDev(f.estado) + (f.recibido_en ? '<small class="st-chico">' + esc(fechaHora(f.recibido_en)) + '</small>' : '') + '</td>' +
+            '<td>' + esc(f.creado_nombre || '—') + '</td><td class="n tachar">' + num(f.unidades) + '</td>' +
+            '<td class="n tachar"><b>' + totalDev(f) + '</b>' + (f.sin_precio ? '<small class="st-chico">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' +
+            '<td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
+      $('dvLista').querySelectorAll('tr[data-dev]').forEach(function (tr) {
+        var f = filas[Number(tr.getAttribute('data-dev'))];
+        tr.onclick = function () { abrirRemito(f.id, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+      var m = $('dvLista').querySelector('tr.recien');
+      if (m && m.scrollIntoView) m.scrollIntoView({ block: 'nearest' });
+      S.dvMarcar = null;
+      $('dvBajar').disabled = false;
+    }
+    $('dvBajar').onclick = function () {
+      var loc = nombreLocal(localDe($('dvLocal').value)), r = per.rango();
+      bajarCsv('Devoluciones a fábrica ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv', ['Número', 'Fecha', 'Sucursal', 'Estado', 'Cargó', 'Unidades', 'Total', 'Observaciones'],
+        filas.map(function (f) {
+          return [refRemito(f), fechaHora(f.fecha), loc, (ESTADO_DEV[f.estado] || [f.estado])[0], f.creado_nombre || '', Number(f.unidades || 0),
+                  f.total == null ? '' : String(Number(f.total)).replace('.', ','), f.observaciones || ''];   // la coma decimal, para el Excel en castellano
+        }));
+    };
+    cargar();
+  }
+
   /** Un remito entero, para verlo. En Gestión, con lo que mandaron aunque falte recibir, y para anularlo. */
   function abrirRemito(id, alCambiar) {
     var gestion = MODO === 'gestion';
@@ -4091,10 +4181,17 @@
     llamar('pos_remito', { p_id: id, p_completo: gestion }).then(function (r) {
       if (!caja.isConnected) return;
       var an = r.estado === 'anulado', pend = r.estado === 'pendiente', aFabrica = !r.destino_local_id, sinResolver = 0;
+      /* Una devolución a la fábrica (SQL 189): nadie la cuenta a ciegas; cada producto con su precio y su razón, y el total. */
+      var con189 = 'total' in r, unidadesDev = 0, sinPrecio = 0;
       var prods = (r.productos || []).map(function (p) {
-        var est = p.estado === 'coincide' ? '<span class="pill pill-ok">Coincidió</span>' : p.estado === 'diferencias' ? '<span class="pill pill-bad">Con diferencias</span>' :
+        var est = aFabrica ? (p.estado ? '<span class="pill pill-ok">Llegó</span>' : '') :
+                  p.estado === 'coincide' ? '<span class="pill pill-ok">Coincidió</span>' : p.estado === 'diferencias' ? '<span class="pill pill-bad">Con diferencias</span>' :
                   '<span class="pill">Falta recibir</span>';
         var ves = p.celdas && p.celdas.length && 'cantidad' in p.celdas[0];
+        var unid = ves ? p.celdas.reduce(function (s, x) { return s + Number(x.cantidad || 0); }, 0) : 0;
+        if (aFabrica) { unidadesDev += unid; if (con189 && p.precio == null) sinPrecio++; }
+        var precio = aFabrica && con189 && ves ? '<p class="pos-ayuda dv-prec">' + (p.precio == null ? num(unid) + (unid === 1 ? ' unidad' : ' unidades') + ' · <span class="apagado">sin precio en la lista</span>' :
+            num(unid) + ' × ' + plata(cent(p.precio)) + ' = <b>' + plata(cent(p.precio) * unid) + '</b>') + (p.razon ? ' · Razón: <b>' + esc(p.razon) + '</b>' : '') + '</p>' : '';
         /* SQL 167: cada diferencia, con cómo se resolvió (o que falta). */
         var difs = (p.diferencias || []).map(function (d) {
           var n = d.contado - d.cantidad, pendiente = d.estado === 'pendiente';
@@ -4108,32 +4205,47 @@
         }).join('');
         return '<div class="st-prod"><div class="st-prod-cab"><b>' + esc(p.codigo) + '</b><span>' + esc(nombreProd(p.codigo, p.descripcion)) + '</span>' + est +
             (p.conteos > 1 ? '<small title="Las veces que lo contaron">contado ' + p.conteos + ' veces</small>' : '') + '</div>' +
-          (ves ? grillaRemito(p.codigo, p.celdas) : '<p class="pos-ayuda">Se ve cuando lo reciban.</p>') +
-          (p.estado ? '<p class="pos-ayuda">' + (p.recibido_nombre ? 'Lo recibió ' + esc(p.recibido_nombre) + ', ' : 'Recibido ') + esc(fechaHora(p.recibido_en)) + '.' +
+          (ves ? grillaRemito(p.codigo, p.celdas) : '<p class="pos-ayuda">Se ve cuando lo reciban.</p>') + precio +
+          (p.estado && !aFabrica ? '<p class="pos-ayuda">' + (p.recibido_nombre ? 'Lo recibió ' + esc(p.recibido_nombre) + ', ' : 'Recibido ') + esc(fechaHora(p.recibido_en)) + '.' +
                       (p.motivo ? ' Qué pasó: ' + esc(p.motivo) + '.' : '') + (p.observaciones ? ' <b>' + esc(p.observaciones) + '</b>' : '') + '</p>' : '') +
           (difs ? '<ul class="rm-difs">' + difs + '</ul>' : '') + '</div>';
       }).join('');
-      dentro.innerHTML = '<h3 id="posVentTit">Remito ' + esc(refRemito(r)) + ' ' + pillRemito(r.estado) + '</h3>' +
-        '<div class="pos-ticket-datos">' +
+      var queEs = aFabrica ? 'la devolución ' : 'el remito ';
+      dentro.innerHTML = (aFabrica ? '<h3 id="posVentTit">Devolución a fábrica ' + esc(refRemito(r)) + ' ' + pillDev(r.estado) + '</h3>' :
+                                     '<h3 id="posVentTit">Remito ' + esc(refRemito(r)) + ' ' + pillRemito(r.estado) + '</h3>') +
+        (aFabrica ? '<div class="pos-ticket-datos">' +
+          '<div><span>Fecha</span>' + esc(fechaHora(r.fecha)) + '</div>' +
+          '<div><span>Sucursal</span>' + esc(bonito(r.origen)) + '</div>' +
+          '<div><span>Proveedor</span>Fábrica</div>' +
+          '<div><span>Lo cargó</span>' + esc(r.creado_nombre || '—') + '</div>' +
+          '<div><span>Llegó a la fábrica</span>' + esc(r.recibido_en ? fechaHora(r.recibido_en) : pend ? 'Todavía no' : '—') + '</div>' +
+          '<div><span>Total</span>' + (con189 ? '<b>' + plata(cent(r.total || 0)) + '</b>' : '—') + '</div>' +
+          (r.referencia ? '<div><span>Referencia</span>' + esc(r.referencia) + '</div>' : '') +
+        '</div>' : '<div class="pos-ticket-datos">' +
           '<div><span>Fecha</span>' + esc(fechaHora(r.fecha)) + '</div>' +
           '<div><span>Referencia</span>' + esc(r.referencia || '—') + '</div>' +
           '<div><span>Sale de</span>' + esc(bonito(r.origen)) + '</div>' +
           '<div><span>Llega a</span>' + esc(bonito(r.destino)) + '</div>' +
           '<div><span>Lo cargó</span>' + esc(r.creado_nombre || '—') + '</div>' +
           '<div><span>Recibido</span>' + esc(r.recibido_en ? fechaHora(r.recibido_en) : pend ? 'Todavía no' : '—') + '</div>' +
-        '</div>' +
+        '</div>') +
         (r.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(r.observaciones) + '</p>' : '') +
         (gestion && pend && aFabrica ? '<div class="pos-cartel">Vuelve a la fábrica: del stock de ' + esc(bonito(r.origen)) + ' ya salió al mandarlo. Cuando llegue, tocá «Llegó a la fábrica».</div>' :
          gestion && pend ? '<div class="pos-cartel">Lo recibe el local en el mostrador (POS → Remitos), contando a ciegas: hasta que no lo reciban, no entra a su stock.' +
                            (r.origen_local_id ? ' Del stock de ' + esc(bonito(r.origen)) + ' ya salió al mandarlo.' : '') + '</div>' : '') +
         (gestion && sinResolver ? '<div class="pos-cartel st-dif">' + (sinResolver === 1 ? 'Hay una diferencia sin resolver.' : 'Hay ' + sinResolver + ' diferencias sin resolver.') +
                                   ' <button type="button" class="pos-link" id="rmDifs">' + (sinResolver === 1 ? 'Resolverla' : 'Resolverlas') + ' en Diferencias</button></div>' : '') +
-        (!gestion && pend ? '<div class="pos-cartel">Todavía falta recibirlo: lo que mandaron se ve recién al contar.</div>' : '') +
-        '<p class="pos-lbl rm-leyenda">' + (gestion && pend ? 'Lo que mandaron' : 'En cada casilla, lo que llegó; abajo, lo que dice el remito') + '</p>' +
+        (!gestion && pend && aFabrica ? '<div class="pos-cartel">Ya salió del stock de ' + esc(bonito(r.origen)) + '. Cuando llegue a la fábrica, la oficina la da por recibida.</div>' :
+         !gestion && pend ? '<div class="pos-cartel">Todavía falta recibirlo: lo que mandaron se ve recién al contar.</div>' : '') +
+        '<p class="pos-lbl rm-leyenda">' + (aFabrica ? (pend || an ? 'Lo que se devolvió' : 'En cada casilla, lo que llegó a la fábrica; abajo, lo que se devolvió') :
+                                           gestion && pend ? 'Lo que mandaron' : 'En cada casilla, lo que llegó; abajo, lo que dice el remito') + '</p>' +
         '<div class="st-prods">' + prods + '</div>' +
-        (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulado el ' + esc(fechaHora(r.anulado_en)) + (r.anulado_por_nombre ? ' por ' + esc(r.anulado_por_nombre) : '') + ': ' + esc(r.anulado_motivo || '') + '</div>' : '') +
+        (aFabrica && con189 ? '<p class="rn-tot"><b>' + num(unidadesDev) + (unidadesDev === 1 ? ' unidad' : ' unidades') + ' · Total ' + plata(cent(r.total || 0)) + '</b>' +
+                              (sinPrecio ? ' (' + (sinPrecio === 1 ? 'uno no tiene precio: no suma' : sinPrecio + ' no tienen precio: no suman') + ')' : '') + '</p>' : '') +
+        (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulad' + (aFabrica ? 'a' : 'o') + ' el ' + esc(fechaHora(r.anulado_en)) + (r.anulado_por_nombre ? ' por ' + esc(r.anulado_por_nombre) : '') + ': ' + esc(r.anulado_motivo || '') + '</div>' : '') +
         '<div id="rmAnular"></div><div class="pos-pie">' +
-          (gestion && !an ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmAnularBtn">Anular el remito</button>' : '') +
+          /* En el local, la devolución se anula mientras viaja (si se armó mal); lo demás, desde Gestión. */
+          ((gestion || (aFabrica && pend)) && !an ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmAnularBtn">Anular ' + queEs.trim() + '</button>' : '') +
           (!gestion && pend && !enPrueba() && !aFabrica ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmRecibir">Recibirlo</button>' : '') +
           (gestion && pend && aFabrica ? '<button type="button" class="btn btn-pri btn-chico" id="rmFabrica">Llegó a la fábrica</button>' : '') +
           '<button type="button" class="btn ' + (gestion && pend && aFabrica ? 'btn-sec' : 'btn-pri') + ' btn-chico" data-cerrar>Cerrar</button></div>';
@@ -4143,10 +4255,10 @@
       if (rd) rd.onclick = function () { cerrarVentana(); ir('diferencias'); };
       var rf = dentro.querySelector('#rmFabrica');
       if (rf) rf.onclick = function () {
-        if (!confirm('¿Llegó a la fábrica el remito ' + refRemito(r) + '? Queda recibido (el stock de ' + bonito(r.origen) + ' ya lo había descontado).')) return;
+        if (!confirm('¿Llegó a la fábrica ' + queEs + refRemito(r) + '? Queda recibida (el stock de ' + bonito(r.origen) + ' ya la había descontado).')) return;
         rf.disabled = true;
         llamar('pos_remito_fabrica_recibir', { p_id: r.id }).then(function () {
-          avisar('ok', 'El remito ' + refRemito(r) + ' quedó recibido en la fábrica.');
+          avisar('ok', 'La devolución ' + refRemito(r) + ' quedó recibida en la fábrica.');
           if (alCambiar) alCambiar();
           abrirRemito(r.id, alCambiar);
         }).catch(function (e) { rf.disabled = false; avisar('err', mensajeDe(e)); });
@@ -4157,13 +4269,14 @@
         /* Lo que se deshace: lo que entró al local que lo recibió, y lo que salió del que lo mandó. */
         var entro = (r.productos || []).some(function (p) { return p.estado; });
         var vuelve = [r.destino_local_id && entro ? 'lo que ya entró al stock de ' + esc(bonito(r.destino)) + ' vuelve a salir' : '',
-                      r.origen_local_id ? 'a ' + esc(bonito(r.origen)) + ' le vuelve lo que mandó' : ''].filter(Boolean).join(', y ');
-        pedirMotivo(dentro.querySelector('#rmAnular'), 'El remito queda en la lista, tachado, con quién lo anuló y por qué. ' +
+                      r.origen_local_id ? 'a ' + esc(bonito(r.origen)) + ' le vuelve lo que ' + (aFabrica ? 'devolvió' : 'mandó') : ''].filter(Boolean).join(', y ');
+        pedirMotivo(dentro.querySelector('#rmAnular'), (aFabrica ? 'La devolución queda en la lista, tachada, con quién la anuló y por qué. ' :
+                                                                   'El remito queda en la lista, tachado, con quién lo anuló y por qué. ') +
           (vuelve ? vuelve.charAt(0).toUpperCase() + vuelve.slice(1) + '. ' : '') +
           (/^Lo que (faltó|sobró) en R-/.test(r.observaciones || '') ? 'Las diferencias que resolvía vuelven a quedar sin resolver. ' : '') + 'No se puede deshacer.',
-          'Anular el remito ' + refRemito(r), function (motivo) {
+          'Anular ' + queEs + refRemito(r), function (motivo) {
           return llamar('pos_remito_anular', { p_id: r.id, p_motivo: motivo }).then(function () {
-            avisar('ok', 'El remito ' + refRemito(r) + ' quedó anulado.');
+            avisar('ok', (aFabrica ? 'La devolución ' + refRemito(r) + ' quedó anulada.' : 'El remito ' + refRemito(r) + ' quedó anulado.'));
             S.stock = {};
             avisoAlDia();
             if (alCambiar) alCambiar();
@@ -4765,20 +4878,23 @@
      NUEVO REMITO (Gestión): lo que manda la fábrica, o un envío entre locales
      ════════════════════════════════════════════════════════════════════ */
   var RN = null;   // el remito que se está cargando
+  /* La devolución a fábrica del mostrador (SQL 189) es este mismo remito, siempre del local a la fábrica,
+     con su borrador aparte y, en cada producto, el precio y la razón. */
+  var RN_DEV = false;
   var A_FABRICA = 'fabrica';   // "Llega a: Fábrica" (SQL 167): una devolución de un local a la fábrica
   function remitoNuevo(antes) {
-    return { v: 1, clave: nuevaClave(), origen: antes ? antes.origen : '', destino: antes ? antes.destino : '', referencia: '', observaciones: '', lineas: [] };
+    return { v: 1, clave: nuevaClave(), origen: antes ? antes.origen : '', destino: antes ? antes.destino : '', referencia: '', observaciones: '', lineas: [], razon: {} };
   }
   function cargarRemitoNuevo() {
-    var b = leerJSON(K_REMITO, null);
-    if (b && b.v === 1 && b.clave && Array.isArray(b.lineas)) {
-      if (b.origen && !localDe(b.origen)) b.origen = '';
-      if (b.destino && b.destino !== A_FABRICA && !localDe(b.destino)) b.destino = '';
-      return b;
-    }
-    return remitoNuevo();
+    var b = leerJSON(RN_DEV ? K_DEVOL : K_REMITO, null);
+    if (!(b && b.v === 1 && b.clave && Array.isArray(b.lineas))) b = remitoNuevo();
+    if (b.origen && !localDe(b.origen)) b.origen = '';
+    if (b.destino && b.destino !== A_FABRICA && !localDe(b.destino)) b.destino = '';
+    if (!b.razon || typeof b.razon !== 'object') b.razon = {};
+    if (RN_DEV) { b.origen = b.origen || localStock().id; b.destino = A_FABRICA; }
+    return b;
   }
-  function guardarBorradorRn() { guardarJSON(K_REMITO, RN); }
+  function guardarBorradorRn() { guardarJSON(RN_DEV ? K_DEVOL : K_REMITO, RN); }
   function claveRn(l) { return [l.codigo, l.talle || '', l.color || ''].join('|'); }
   /** Suma renglones al remito (los iguales se juntan). */
   function sumarRn(items) {
@@ -4796,6 +4912,7 @@
   }
 
   function verRemitoNuevo() {
+    RN_DEV = false;
     RN = cargarRemitoNuevo();
     var c = $('cuerpo');
     c.innerHTML = cabeza('Nuevo remito', 'Lo que manda la fábrica (o un local) a un local, o lo que un local le devuelve a la fábrica. Al guardarlo, el local lo ve en POS → Remitos para contarlo y recibirlo.',
@@ -4808,11 +4925,7 @@
           '<option value="' + A_FABRICA + '"' + (RN.destino === A_FABRICA ? ' selected' : '') + '>Fábrica (una devolución)</option></select>') +
         campo('', 'Referencia <span class="lbl-opc">(el número de la fábrica)</span>', '<input type="text" id="rnRef" maxlength="40" placeholder="X-0001234" autocomplete="off">') +
         campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Lo que diga el remito de la fábrica" autocomplete="off">') +
-      '</div>' +
-      '<div class="tk-prod rn-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
-        '<button type="button" class="btn btn-sec btn-chico" id="rnPegar" title="Desde un Excel: Código, Talle, Color y Cantidad">Pegar o subir un Excel…</button>' +
-        '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
-      '<div id="rnLista"></div>';
+      '</div>' + htmlProdRn();
     engancharIr(c);
     $('rnRef').value = RN.referencia || '';
     $('rnObs').value = RN.observaciones || '';
@@ -4820,11 +4933,62 @@
     $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); pintarRn(); };
     $('rnRef').oninput = function () { RN.referencia = this.value; guardarBorradorRn(); };
     $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
+    engancharRn(verRemitoNuevo);
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     NUEVA DEVOLUCIÓN A FÁBRICA (el mostrador, SQL 189)
+     La "Devolución de Mercadería" de BlueSoft, con sus campos arriba
+     (Fecha, Letra X, Estado "Enviado", Proveedor, Sucursal) y los productos
+     abajo, con su precio y su razón. Es el mismo remito de Gestión, siempre
+     del local a la fábrica: sale del stock al guardarla. Sin depósito: acá
+     el stock es uno solo por local.
+     ════════════════════════════════════════════════════════════════════ */
+  function verDevolucionNueva() {
+    RN_DEV = true;
+    RN = cargarRemitoNuevo();
+    var c = $('cuerpo'), prueba = enPrueba();
+    c.innerHTML = cabeza('Nueva devolución a fábrica' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+        'Lo que el local le devuelve a la fábrica. Al guardarla sale del stock; cuando llega, la oficina la da por recibida.',
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="devoluciones">‹ Devoluciones</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar"' + (prueba ? ' disabled' : '') + '>Guardar la devolución</button>') +
+      (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan devoluciones: el stock es de verdad. Apagalo (abajo, en el menú) para guardarla.</div>' : '') +
+      '<div class="tk-datos rn-datos dv-datos">' +
+        campo('', 'Sucursal', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
+        campo('', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly tabindex="-1">') +
+        campo('', 'Letra', '<input type="text" value="X" readonly tabindex="-1">') +
+        campo('', 'Estado', '<input type="text" value="Enviado" readonly tabindex="-1">') +
+        campo('', 'Proveedor', '<input type="text" value="Fábrica" readonly tabindex="-1">') +
+        campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: fallas, la retira Daki" autocomplete="off">') +
+      '</div>' + htmlProdRn();
+    engancharIr(c);
+    $('rnObs').value = RN.observaciones || '';
+    $('rnOrigen').onchange = function () { RN.origen = this.value; S.stLocal = this.value; recordarLocal(this.value); guardarBorradorRn(); preciosRn(); };
+    $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
+    engancharRn(verDevolucionNueva);
+    preciosRn();
+  }
+  /** Los precios de la lista de la sucursal (la devolución los muestra; la base guarda los suyos al guardarla). */
+  function preciosRn() {
+    asegurarPrecios(listaDe(localDe(RN.origen))).then(function () { pintarRn(); }, function () { pintarRn(); });
+  }
+
+  /* El campo del producto y la lista: los mismos en el remito de Gestión y en la devolución. */
+  function htmlProdRn() {
+    return '<div class="tk-prod rn-prod">' + campo('', 'Producto', '<input type="search" id="rnProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="rnSug">') +
+        '<button type="button" class="btn btn-sec btn-chico" id="rnPegar" title="Desde un Excel: Código, Talle, Color y Cantidad">Pegar o subir un Excel…</button>' +
+        '<div class="tk-sug" id="rnSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+      '<div id="rnLista"></div>';
+  }
+  /** Limpiar, Guardar, el Excel y la pistola. volver: la pantalla, para dibujarla de nuevo al limpiar. */
+  function engancharRn(volver) {
+    var que = RN_DEV ? 'la devolución' : 'el remito';
     $('rnLimpiar').onclick = function () {
-      if (RN.lineas.length && !confirm('¿Borrar el remito que estás cargando?')) return;
+      if (RN.lineas.length && !confirm('¿Borrar ' + que + ' que estás cargando?')) return;
       RN = remitoNuevo(RN);
       guardarBorradorRn();
-      verRemitoNuevo();
+      volver();
     };
     $('rnGuardar').onclick = guardarRemito;
     $('rnPegar').onclick = function () { abrirImportar(function (items) { sumarRn(items); guardarBorradorRn(); pintarRn(); }); };
@@ -4842,7 +5006,7 @@
       noEsta: function (cod) {
         /* Un código (letras y números, sin espacios): si es un nombre que no aparece, no es un producto nuevo. */
         if (cod.length > 30 || !/^[A-Z0-9][A-Z0-9._\/-]*$/.test(cod) || !/\d/.test(cod)) { avisar('err', 'No encontré «' + cod + '» en el catálogo.'); return; }
-        if (!confirm(cod + ' no está en el catálogo. ¿Agregarlo igual al remito?')) return;
+        if (!confirm(cod + ' no está en el catálogo. ¿Agregarlo igual ' + (RN_DEV ? 'a la devolución' : 'al remito') + '?')) return;
         $('rnProd').limpiar();
         editarProductoRn([cod, cod, '', '', '']);
       } });
@@ -4876,6 +5040,8 @@
   function pintarRn(marcar) {
     var z = $('rnLista');
     if (!z) return;
+    /* La devolución (SQL 189): cada producto con el precio de la lista de la sucursal, el total y la razón, como en BlueSoft. */
+    var dev = RN_DEV, lista = dev ? listaDe(localDe(RN.origen)) : null, plataTot = 0, sinPrecio = 0;
     var prods = [], porCod = {}, total = 0;
     RN.lineas.forEach(function (l) {
       var p = porCod[l.codigo];
@@ -4887,8 +5053,12 @@
         'o pegá las columnas de un Excel (Código, Talle, Color y Cantidad).</div>';
       return;
     }
-    z.innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla rn-tabla"><thead><tr><th>Código</th><th>Producto</th><th>Talles y colores</th><th class="n">Unidades</th><th></th></tr></thead><tbody>' +
+    z.innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla rn-tabla"><thead><tr><th>Código</th><th>Producto</th><th>Talles y colores</th><th class="n">Unidades</th>' +
+        (dev ? '<th class="n">Precio unitario</th><th class="n">Precio total</th><th>Razón</th>' : '') + '<th></th></tr></thead><tbody>' +
       prods.map(function (p) {
+        var pr = dev ? precioDe(p.cod, lista) : null;
+        if (dev && pr == null) sinPrecio++;
+        else if (dev) plataTot += pr * p.total;
         var porColor = {};
         p.lineas.forEach(function (l) { (porColor[l.color] = porColor[l.color] || []).push(l); });
         var det = ordenarColores(Object.keys(porColor), p.cod).map(function (c) {
@@ -4901,11 +5071,20 @@
         return '<tr data-cod="' + esc(p.cod) + '"' + (p.cod === marcar ? ' class="rn-marca"' : '') + '><td><b>' + esc(p.cod) + '</b></td><td>' + esc(nombreProd(p.cod, p.desc)) +
           (PROD[p.cod] ? '' : ' <span class="pill pill-warn" title="No está en el catálogo">Fuera del catálogo</span>') + '</td>' +
           '<td class="rn-det">' + det + '</td><td class="n"><b>' + num(p.total) + '</b></td>' +
+          (dev ? '<td class="n">' + (pr == null ? '<span class="apagado" title="No tiene precio en la lista de la sucursal">—</span>' : plata(pr)) + '</td>' +
+                 '<td class="n">' + (pr == null ? '<span class="apagado">—</span>' : '<b>' + plata(pr * p.total) + '</b>') + '</td>' +
+                 '<td><input type="text" class="dv-razon" data-razon="' + esc(p.cod) + '" maxlength="60" placeholder="Ej.: fallada" autocomplete="off" value="' + esc(RN.razon[p.cod] || '') + '"' +
+                   ' aria-label="' + esc('Razón de ' + p.cod) + '"></td>' : '') +
           '<td class="pos-acc"><button type="button" class="pos-link" data-editar>Cambiar</button><button type="button" class="pos-link" data-quitar>Quitar</button></td></tr>';
       }).join('') + '</tbody></table></div>' +
-      '<p class="rn-tot"><b>' + prods.length + (prods.length === 1 ? ' producto' : ' productos') + ' · ' + num(total) + (total === 1 ? ' unidad' : ' unidades') + '</b>' +
+      '<p class="rn-tot"><b>' + prods.length + (prods.length === 1 ? ' producto' : ' productos') + ' · ' + num(total) + (total === 1 ? ' unidad' : ' unidades') +
+        (dev ? ' · Total ' + plata(plataTot) : '') + '</b>' +
+        (dev && sinPrecio ? ' (' + (sinPrecio === 1 ? 'uno no tiene precio: no suma' : sinPrecio + ' no tienen precio: no suman') + ')' : '') +
         (RN.origen ? ' · salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' : '') +
         (RN.destino === A_FABRICA ? ' y vuelven a la fábrica' : '') + '</p>';
+    z.querySelectorAll('.dv-razon').forEach(function (i) {
+      i.oninput = function () { RN.razon[i.getAttribute('data-razon')] = i.value; guardarBorradorRn(); };
+    });
     z.querySelector('tbody').onclick = function (e) {
       var b = e.target.closest('button'), tr = b && b.closest('tr[data-cod]');
       if (!tr) return;
@@ -4913,6 +5092,7 @@
       if (b.hasAttribute('data-editar')) editarProductoRn(productoRn(cod));
       else if (b.hasAttribute('data-quitar')) {
         RN.lineas = RN.lineas.filter(function (l) { return l.codigo !== cod; });
+        delete RN.razon[cod];
         guardarBorradorRn();
         pintarRn();
       }
@@ -4923,8 +5103,11 @@
 
   function guardarRemito() {
     if (S.guardando || !RN) return;
-    var fab = RN.destino === A_FABRICA;
-    var mal = !RN.destino ? 'Elegí a qué local va.' : fab && !RN.origen ? 'Para mandarlo a la fábrica, elegí de qué local sale.' :
+    var fab = RN.destino === A_FABRICA, dev = RN_DEV, txt = dev ? 'Guardar la devolución' : 'Guardar el remito';
+    /* La devolución sale del stock de verdad: con el modo prueba no se guarda (como los remitos, que no se reciben). */
+    var mal = dev && enPrueba() ? 'Con el modo prueba prendido no se guardan devoluciones: el stock es de verdad.' :
+              dev && !RN.origen ? 'Elegí de qué sucursal sale.' : dev && !RN.lineas.length ? 'La devolución no tiene productos.' :
+              !RN.destino ? 'Elegí a qué local va.' : fab && !RN.origen ? 'Para mandarlo a la fábrica, elegí de qué local sale.' :
               RN.origen === RN.destino ? 'Sale y llega al mismo local: elegí otro.' : !RN.lineas.length ? 'El remito no tiene productos.' : '';
     if (mal) { avisar('err', mal); return; }
     var lo = localDe(RN.origen), ld = localDe(RN.destino), unidades = RN.lineas.reduce(function (s, l) { return s + l.cantidad; }, 0);
@@ -4935,28 +5118,35 @@
       if (!x || !x.con) return '';
       var faltan = RN.lineas.filter(function (l) { return (x.m[claveVar(l.codigo, l.talle, l.color)] || 0) < l.cantidad; });
       return faltan.length ? '\n\nOjo: según el sistema, ' + nombreLocal(lo) + ' no tiene todo (' + faltan.slice(0, 4).map(function (l) {
-        return l.codigo + ' ' + [l.talle, l.color].filter(Boolean).join(' ') + ': hay ' + (x.m[claveVar(l.codigo, l.talle, l.color)] || 0) + ', mandás ' + l.cantidad; }).join('; ') +
-        (faltan.length > 4 ? '…' : '') + '). Si lo mandás igual, queda en negativo.' : '';
+        return l.codigo + ' ' + [l.talle, l.color].filter(Boolean).join(' ') + ': hay ' + (x.m[claveVar(l.codigo, l.talle, l.color)] || 0) + (dev ? ', devolvés ' : ', mandás ') + l.cantidad; }).join('; ') +
+        (faltan.length > 4 ? '…' : '') + (dev ? '). Si la guardás igual, queda en negativo.' : '). Si lo mandás igual, queda en negativo.') : '';
     });
     aviso.then(function (extra) {
-      if (!confirm('¿Guardar el remito de ' + (lo ? nombreLocal(lo) : 'la fábrica') + ' a ' + aDonde + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
+      if (!confirm((dev ? '¿Guardar la devolución a la fábrica de ' + nombreLocal(lo) + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
+                          ' Salen del stock ahora. Cuando llegue, la oficina la da por recibida.' :
+                   '¿Guardar el remito de ' + (lo ? nombreLocal(lo) : 'la fábrica') + ' a ' + aDonde + ' con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
                    (lo ? ' Salen del stock de ' + nombreLocal(lo) + ' ahora.' : '') +
-                   (fab ? ' Cuando llegue, se da por recibido en Gestión → Remitos.' : ' ' + nombreLocal(ld) + ' lo recibe contándolo.') + extra)) return;
+                   (fab ? ' Cuando llegue, se da por recibido en Gestión → Remitos.' : ' ' + nombreLocal(ld) + ' lo recibe contándolo.')) + extra)) return;
       S.guardando = true;
       var b = $('rnGuardar');
       if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
+      /* SQL 189: la razón de cada producto va en cada uno de sus renglones. */
+      var items = !dev ? RN.lineas : RN.lineas.map(function (l) { return Object.assign({}, l, { razon: String(RN.razon[l.codigo] || '').trim() }); });
       llamar('pos_remito_guardar', { p: { clave: RN.clave, origen_local_id: RN.origen || null, destino_local_id: fab ? null : RN.destino, a_fabrica: fab,
-                                          referencia: RN.referencia || '', observaciones: RN.observaciones || '', items: RN.lineas } }).then(function (r) {
+                                          referencia: RN.referencia || '', observaciones: RN.observaciones || '', items: items } }).then(function (r) {
         S.guardando = false;
         if (lo) delete S.stock[lo.id];
-        avisar('ok', 'Remito R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': ' +
+        if (dev) avisar('ok', 'Devolución R-' + r.numero + ' guardada' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': salió del stock de ' + nombreLocal(lo) +
+                              (r.total != null ? ', ' + plata(cent(r.total)) : '') + '.');
+        else avisar('ok', 'Remito R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': ' +
                      (fab ? 'cuando llegue a la fábrica, abrilo y tocá «Llegó a la fábrica».' : nombreLocal(ld) + ' ya lo ve para recibirlo.'));
         RN = remitoNuevo(RN);
         guardarBorradorRn();
         if (S.vista === 'remito_nuevo') ir('remitos');
+        if (S.vista === 'devolucion_nueva') { S.dvMarcar = r.id; ir('devoluciones'); }
       }).catch(function (e) {
         S.guardando = false;
-        if (b && b.isConnected) { b.disabled = false; b.textContent = 'Guardar el remito'; }
+        if (b && b.isConnected) { b.disabled = false; b.textContent = txt; }
         avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
       });
     });
