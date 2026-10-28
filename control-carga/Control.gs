@@ -15,7 +15,7 @@
 var PARA = 'cintiacast15@gmail.com';
 var COPIA = 'mauriciocamara85@gmail.com';    // más de uno: 'a@x.com, b@y.com'
 var PRUEBA = 'mauriciocamara85@gmail.com';   // la prueba, y el aviso si algo falla
-var HORA = 11;                               // hora de Argentina (el proyecto está en esa zona)
+var HORA = 9;                                // hora de Argentina (el proyecto está en esa zona); para cambiarla, correr activar de nuevo
 var BASE = 'https://gfjdjupuwxohkgchqykx.supabase.co';
 var CLAVE = 'sb_publishable_A81zY5i4zCXZyIv2fOpokA_jOxiccNU';   // la pública, la misma de datos.js
 
