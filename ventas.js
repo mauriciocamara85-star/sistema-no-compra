@@ -443,7 +443,8 @@
   function hojaVentas(C) {
     var c = C.c, V = nombrados(C), h = titulo('VENTAS');
     h += '<div class="vt-kpis k4">' + kpi('Avance del mes', pc(C.avance, 1), '% cumplimiento') + kpi('Venta acumulada', pesos(C.E4), 'mes a mes') +
-      kpi('Faltan vender', pesos(C.faltan), 'para cerrar el mes') + kpi('Desvío acumulado', pesos(C.desvAcum), 'vs objetivo a hoy', sem(C.realHoy, C.objHoy)) + '</div>';
+      kpi('Faltan vender', pesos(C.faltan), 'para cerrar el mes') +
+      kpi('Desvío acumulado', pesos(C.desvAcum), C.corte ? 'vs objetivo al ' + C.corte + '/' + C.M.mes : 'aún sin días cargados', sem(C.realHoy, C.objHoy)) + '</div>';
     var hay = C.rkSem.some(function (r) { return Math.trunc(r.venta) > 0; }), hayM = C.rkMes.some(function (r) { return Math.trunc(r.real) > 0; });
     var filaSem = '', filaMes = '';
     for (var i = 0; i < 3; i++) {

@@ -144,12 +144,21 @@
     var objDist = suma(semanas.map(function (w) { return w.obj; }));
     C.avance = objDist ? C.E4 / objDist : 0;                                            // C4
     C.faltan = Math.max(c.obj - C.E4, 0);                                               // G4 (con las 6 semanas)
-    C.C22 = todos.filter(function (x) { return x.cargado; }).length;                    // C22 días transcurridos
-    var prim = todos.slice(0, C.C22);
-    C.realHoy = suma(prim.map(function (x) { return x.real; }));                      // AC26: lo vendido en los días cargados
-    C.objHoy = suma(prim.map(function (x) { return x.obj; }));                        // AC25: su objetivo
-    C.desvAcum = C.realHoy - C.objHoy;                                                  // I4 = AC26 - AC25
-    C.L18 = Math.max(c.diasHabiles - C.C22, 1);                                         // L18 días restantes
+    /* Lo "a hoy" va del 1 al último día con algo cargado, sin pasar de ayer: lo de hoy todavía está entrando
+       (el dashboard también corta en ayer); un mes pasado va entero. La planilla contaba los días cargados y
+       tomaba esa cantidad desde el 1 (I4 = AC26 - AC25): en los locales que no abren el domingo, el domingo
+       vacío no contaba y el corte quedaba atrás (Morón al 27/10 comparaba hasta el 24; lo vio una encargada
+       el 28/10). Por lo mismo, los días transcurridos y los restantes son los que el local abre (con % del día
+       o con venta) antes y después del corte, y ya no salen de Días hábiles. */
+    var pasado = String(D.hoy).slice(0, 7) > String(D.mes).slice(0, 7);
+    C.corte = pasado ? M.dias : 0;
+    if (!pasado) todos.forEach(function (x) { if (x.cargado && x.d < HOY) C.corte = x.d; });
+    var prim = todos.slice(0, C.corte);
+    C.realHoy = suma(prim.map(function (x) { return x.real; }));                      // lo vendido hasta el corte
+    C.objHoy = suma(prim.map(function (x) { return x.obj; }));                        // su objetivo
+    C.desvAcum = C.realHoy - C.objHoy;                                                  // I4
+    C.C22 = prim.filter(function (x) { return x.obj > 0 || x.real > 0; }).length;       // C22 días transcurridos
+    C.L18 = Math.max(todos.slice(C.corte).filter(function (x) { return x.obj > 0; }).length, 1);   // L18 días restantes
     var fr = suma(todos.filter(function (x) { return x.real > 0; }).map(function (x) { return x.peso * semanas[M.semana(x.d) - 1].peso; }));
     C.proyPond = fr ? C.E4 / fr : null;                                                 // C13
     var conVenta = todos.filter(function (x) { return x.real > 0; }).length;
@@ -177,7 +186,7 @@
     C.pctSuma = suma(conNombre.map(function (v) { return v.pctMes; }));
 
     /* Escalón de objetivos (filas 92 a 95). */
-    var ritmo = C.E4 / Math.max(C.C22, 1);                                              // J92
+    var ritmo = C.realHoy / Math.max(C.C22, 1);                                         // J92 (hasta el corte)
     C.escalon = [1, 1.1, 1.2, 1.3].map(function (k, i) {
       var meta = c.obj * k, falta = Math.max(meta - C.E4, 0), objDia = falta / C.L18;
       return { nivel: i ? '+' + i * 10 + '%' : 'Objetivo', meta: meta, premio: c.premios[i], falta: falta,
