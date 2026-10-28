@@ -344,6 +344,12 @@
   /* ══ Dibujar ════════════════════════════════════════════════════════════ */
   function edita() { return !!(ST.D && ST.D.puede === 'escribir'); }
   function editaPesos() { return edita() && !!ST.D.supervisa; }
+  /* Lo que pone Administración (Mauricio, 28/10): el objetivo del mes, el reparto por día y por semana, la
+     configuración del Informe Vendedor (igual en todos los locales) y la venta del semestre anterior. Los demás
+     lo ven fijo, sin el ámbar de "se carga". La base también lo exige (SQL 188). */
+  function esAdmin() { var y = persona.yo(); return !!(y && y.rol === 'admin'); }
+  function editaAdmin() { return edita() && esAdmin(); }
+  function ambAdmin(cl) { return editaAdmin() ? 'amb' + (cl ? ' ' + cl : '') : 'fijo' + (cl ? ' ' + cl : ''); }
 
   function dibujar(arriba) {
     var D = ST.D, ec = !!D.ecom;
@@ -469,8 +475,8 @@
     for (var j = 0; j < V.length; j++) colsV += '<col>';
     h += '<div class="banda">  CONFIGURACIÓN  —  celdas en ámbar son editables</div><div class="cfg">' +
       '<table><colgroup><col style="width:150px"><col><col style="width:190px"><col><col style="width:100px"><col><col style="width:110px"><col></colgroup><tr>' +
-      '<th class="izq">Nombre del local</th><td class="amb">' + esc(String(ST.D.local.nombre || '').toUpperCase()) + '</td>' +
-      '<th>Objetivo Mensual del Local</th>' + entrada('config', 'objetivo', c.obj || null, 'money', 'amb g', 'aria-label="Objetivo mensual del local"') +
+      '<th class="izq">Nombre del local</th><td class="azul">' + esc(String(ST.D.local.nombre || '').toUpperCase()) + '</td>' +
+      '<th>Objetivo Mensual del Local</th>' + entrada('config', 'objetivo', c.obj || null, 'money', ambAdmin('g'), 'aria-label="Objetivo mensual del local"' + (editaAdmin() ? '' : ' title="Lo pone Administración"'), editaAdmin()) +
       '<th>Conversión</th>' + entrada('config', 'conversion', c.conv || null, 'pct', 'amb g', 'aria-label="Conversión objetivo"') +
       '<th>Ticket Prom.</th>' + entrada('config', 'ticket', c.tp || null, 'money', 'amb g', 'aria-label="Ticket promedio objetivo"') + '</tr></table>' +
       /* Con muchos vendedores la caja de Efectivo baja y cada uno tiene su ancho (si igual no entran, la tabla se desliza sola). */
@@ -499,10 +505,10 @@
       '<table><colgroup><col style="width:150px"><col style="width:90px"><col style="width:130px"><col style="width:90px"><col></colgroup><tr>' +
       '<th class="izq">Días transcurridos</th><td class="azul">' + C.C22 + '</td><th>Días restantes</th><td class="azul">' + C.L18 + '</td>' +
       '<td style="border:0"></td></tr></table></div>' +
-      '<p class="aviso-carga">⚠️ Cargá la venta el día que pasó. Si no vendió, poné 0. No cargues nada en días que todavía no llegaron (dejalos vacíos)</p>';
-    if (editaPesos()) {
+      '<p class="aviso-carga">⚠️ Cargá la venta de cada uno en la columna del día que pasó.</p>';
+    if (editaAdmin()) {
       var sSem = suma(C.sem.map(function (w) { return w.peso; }));
-      h += '<p class="aviso-carga" style="padding-top:0">El reparto del objetivo (los % grises arriba de cada semana) lo cambia el encargado o el supervisor.' +
+      h += '<p class="aviso-carga" style="padding-top:0">El reparto del objetivo (los % grises arriba de cada semana) lo pone Administración: los demás lo ven fijo.' +
         (Math.abs(sSem - 1) > 0.0005 ? ' <b style="color:var(--mal)">Las semanas suman ' + pcIn(sSem) + ', no 100%.</b>' : '') + '</p>';
     }
     h += avisoReparto(C);
@@ -510,10 +516,10 @@
     h += '<div class="semanas-pad">' + C.sem.map(function (w) { return semanaVentas(C, w); }).join('') + '</div>';
 
     h += '<div class="banda escalon">  ESCALÓN DE OBJETIVOS  ·  Premio · Falta · Ritmo</div>' +
-      '<table class="esc"><tr><th>Nivel</th><th>Objetivo</th><th>Premio</th><th>Venta acum.</th><th>Falta</th><th>Desvío %</th><th>Días rest.</th><th>Obj. diario</th><th>Ritmo diario</th><th>Estado</th></tr>' +
+      '<table class="esc"><tr><th>Nivel</th><th>Objetivo</th><th>Premio</th><th>Venta acum.</th><th>Falta</th><th>Avance %</th><th>Días rest.</th><th>Obj. diario</th><th>Ritmo diario</th><th>Estado</th></tr>' +
       C.escalon.map(function (e, i) {
         return '<tr><td>' + e.nivel + '</td><td>' + pesos(e.meta) + '</td>' + entrada('premio', String(i), e.premio, 'money', 'amb', 'aria-label="Premio ' + e.nivel + '"') +
-          /* Desvío % es cuánto del nivel ya se vendió (G92): a mitad de mes siempre está lejos, así que sólo se pinta
+          /* Avance % es cuánto del nivel ya se vendió (G92; la planilla lo llamaba "Desvío %"): a mitad de mes siempre está lejos, así que sólo se pinta
              de verde al llegar, como la planilla. El que dice si se va bien es el Estado: el ritmo contra lo que hace falta por día. */
           '<td>' + pesos(C.E4) + '</td><td>' + pesos(e.falta) + '</td><td class="' + (e.desv >= 1 ? 'sv' : '') + '">' + pc(e.desv, 1) + '</td><td class="dias">' + C.L18 + '</td><td>' + pesos(e.objDia) + '</td><td>' + pesos(e.ritmo) + '</td>' +
           '<td class="' + (e.objDia > 0 ? sem(e.ritmo, e.objDia) : 'sv') + '">' + (e.ok ? '✅ En ritmo' : '⚠️ Acelerar') + '</td></tr>';
@@ -542,7 +548,7 @@
   }
 
   function semanaVentas(C, w) {
-    var c = C.c, V = nombrados(C), sin = C.V.filter(function (v) { return v.sin; }), cols = colsDe(w), ep = editaPesos();
+    var c = C.c, V = nombrados(C), sin = C.V.filter(function (v) { return v.sin; }), cols = colsDe(w), ep = editaAdmin();
     /* El desvío de cada vendedor es el de la planilla (K29): contra SU objetivo de la semana, que en los
        locales con la tabla de días trabajados se ajusta por los días que trabajó (ventas-calc, iv). */
     var b = C.sem.indexOf(w), ivDe = {};
@@ -628,7 +634,7 @@
       kpi('Proyección tráfico', def(T.H4) ? nf(T.H4) : 'Sin datos', 'necesario: ' + nf(T.necTot), sem(T.H4, T.necTot)) + kpi('Prendas por ticket', dec(T.pxt, 2), 'objetivo ' + dec(c.pxtObj), T.pxt ? sem(T.pxt, c.pxtObj) : '') + '</div>';
     h += '<div class="banda gris">  TICKET PROMEDIO NECESARIO POR OBJETIVO</div><table class="tp-nec"><tr><th>Nivel</th><th>TP necesario</th><th>TP actual</th><th>Desvío</th></tr>' +
       T.tpNec.map(function (r) {
-        return '<tr><td>' + r.nivel + '</td><td class="grande">' + (def(r.nec) ? pesos(r.nec) : '—') + '</td><td>' + (def(r.act) ? pesos(r.act) : '—') + '</td>' +
+        return '<tr><td>' + r.nivel + '</td><td class="grande' + (r.ok ? ' sv' : '') + '">' + (r.ok ? '✓ Cumplido' : def(r.nec) ? pesos(r.nec) : '—') + '</td><td>' + (def(r.act) ? pesos(r.act) : '—') + '</td>' +
           '<td class="' + (def(r.desv) ? sem(r.act, r.nec) : '') + '">' + (def(r.desv) ? pesosP(r.desv) : '—') + '</td></tr>';
       }).join('') + '</table>';
     /* Los mismos cortes del semáforo (la planilla decía "levemente bajo" hasta −10%). */
@@ -644,7 +650,7 @@
     h += '<div class="banda">  CONFIGURACIÓN  —  conectada a Ventas automáticamente · celdas en ámbar son editables</div><div class="cfg2">' +
       '<table><colgroup><col style="width:170px"><col><col style="width:190px"><col><col style="width:110px"><col><col style="width:130px"><col></colgroup>' +
       '<tr><th class="izq">Local</th><td class="azul">' + esc(String(ST.D.local.nombre || '').toUpperCase()) + '</td><th>Objetivo Mensual del Local</th><td class="verde">' + pesos(c.obj) + '</td><th>Conversión</th><td class="verde">' + pc(c.conv) + '</td><th>Ticket Promedio</th><td class="verde">' + pesos(c.tp) + '</td></tr>' +
-      '<tr><th class="izq">Días restantes</th><td class="verde">' + C.L18 + '</td><th colspan="4" class="nota" style="text-align:center">Prendas por Ticket: actualizar diariamente</th><th>Q Líneas · Q Prendas</th>' +
+      '<tr><th colspan="5" class="nota" style="text-align:center">Prendas por Ticket: actualizar diariamente</th><th colspan="2">Q Líneas · Q Prendas</th>' +
       '<td style="padding:0"><table style="height:100%"><tr>' + entrada('config', 'q_lineas', c.qLineas || null, 'int', 'amb', 'aria-label="Q líneas (tickets)"') + entrada('config', 'q_prendas', c.qPrendas || null, 'int', 'amb', 'aria-label="Q prendas"') + '</tr></table></td></tr>' +
       '<tr><td colspan="8" class="nota izq">  Ingresá tráfico real y conversión real día a día en cada semana</td></tr></table></div>';
     h += '<div class="semanas-pad">' + C.sem.map(function (w) { return semanaTrafico(C, w); }).join('') + '</div>';
@@ -693,13 +699,14 @@
       filaR('Perfumes', 'pf', nf) + filaR('Boxer', 'bx', nf) + filaR('PxT', 'pxt', function (x) { return dec(x); }) + '</table>';
     var ancho = Math.max(V.length, n), relleno = function (k) { var s = ''; for (var j = 0; j < k; j++) s += '<td></td>'; return s; };
     var colsP = ''; for (var q = 0; q < ancho; q++) colsP += '<col>';
-    h += '<div class="banda">  CONFIGURACIÓN  —  ámbar editable · azul se calcula solo</div><div class="iv-cfg' + (V.length > 5 ? ' muchos' : '') + '">' +
+    var ea = editaAdmin();
+    h += '<div class="banda">  CONFIGURACIÓN  —  ' + (ea ? 'ámbar editable (vale para todos los locales)' : 'la pone Administración, igual en todos los locales') + ' · azul se calcula solo</div><div class="iv-cfg' + (V.length > 5 ? ' muchos' : '') + '">' +
       '<table><colgroup><col style="width:150px"><col></colgroup>' +
       '<tr><th>Objetivo Mensual</th><td class="azul">' + pesos(c.obj) + '</td></tr>' +
-      '<tr><th>PxT objetivo</th>' + entrada('config', 'pxt_obj', c.pxtObj || null, 'dec', 'amb', 'aria-label="PxT objetivo"') + '</tr>' +
-      '<tr><th>Factor Perf/Boxer</th>' + entrada('config', 'factor', c.factor || null, 'dec', 'amb', 'aria-label="Factor perfumes y boxer"') + '</tr>' +
-      '<tr><th>Precio Perfume</th>' + entrada('config', 'precio_perfume', c.perfume || null, 'money', 'amb', 'aria-label="Precio del perfume"') + '</tr>' +
-      '<tr><th>Precio Boxer</th>' + entrada('config', 'precio_boxer', c.boxer || null, 'money', 'amb', 'aria-label="Precio del boxer"') + '</tr></table>' +
+      '<tr><th>PxT objetivo</th>' + entrada('config', 'pxt_obj', c.pxtObj || null, 'dec', ambAdmin(), 'aria-label="PxT objetivo"', ea) + '</tr>' +
+      '<tr><th>Factor Perf/Boxer</th>' + entrada('config', 'factor', c.factor || null, 'dec', ambAdmin(), 'aria-label="Factor perfumes y boxer"', ea) + '</tr>' +
+      '<tr><th>Precio Perfume</th>' + entrada('config', 'precio_perfume', c.perfume || null, 'money', ambAdmin(), 'aria-label="Precio del perfume"', ea) + '</tr>' +
+      '<tr><th>Precio Boxer</th>' + entrada('config', 'precio_boxer', c.boxer || null, 'money', ambAdmin(), 'aria-label="Precio del boxer"', ea) + '</tr></table>' +
       '<table class="panel"><colgroup><col style="width:150px">' + colsP + '</colgroup>' +
       '<tr><th>Nombre del local</th><td class="azul" colspan="' + ancho + '">' + esc(String(ST.D.local.nombre || '').toUpperCase()) + '</td></tr>' +
       '<tr><th>Conversión objetivo</th><td class="azul" colspan="' + ancho + '">' + pc(c.conv) + '</td></tr>' +
@@ -843,18 +850,19 @@
       '<tr><td>🩲</td><td>Boxer</td><td class="v ' + sem(T.bx, T.bxObj) + '">' + T.bx + ' vs ' + (def(T.bxObj) ? T.bxObj : '—') + ' obj</td></tr></table>' +
       '<p class="aviso-carga">Objetivos: conv. ' + pc(b.conv || 0) + ' · PxT ' + dec(b.pxtObj || 0) + ' · perfume ' + (b.perfume ? pesos(b.perfume) : '—') + ' · boxer ' + (b.boxer ? pesos(b.boxer) : '—') + '</p></div></div>';
 
-    /* Contra el semestre anterior: lo único que se carga a mano en esta hoja. */
+    /* Contra el semestre anterior: lo único que se carga a mano en esta hoja, y lo carga Administración (28/10). */
     var a0 = anioMes(meses[0]) - 1, a5 = anioMes(meses[5]) - 1;
     h += '<div class="tp-grid" style="grid-template-columns:minmax(0,1fr)"><div><div class="banda">  📈  VS SEMESTRE ANTERIOR   —   ' +
-      nombreMes(meses[0]).slice(0, 3) + ' ' + String(a0).slice(2) + ' → ' + nombreMes(meses[5]).slice(0, 3) + ' ' + String(a5).slice(2) + '   ·   la columna Sem. Anterior es ámbar: se carga a mano</div>' +
+      nombreMes(meses[0]).slice(0, 3) + ' ' + String(a0).slice(2) + ' → ' + nombreMes(meses[5]).slice(0, 3) + ' ' + String(a5).slice(2) + '   ·   ' +
+      (esAdmin() ? 'la columna Sem. Anterior es ámbar: se carga a mano' : 'la columna Sem. Anterior la carga Administración') + '</div>' +
       '<table class="tp-tab"><colgroup><col style="width:110px"><col><col><col style="width:90px"><col><col style="width:110px"><col style="width:70px"></colgroup>' +
       '<tr><th class="izq">Mes</th><th>Sem. Anterior</th><th>Sem. Actual</th><th>Var. %</th><th>Var. $</th><th>Peso del mes</th><th>Tend.</th></tr>' +
       F.map(function (f, i) {
         var con = f.hay && f.empezo, Dm = mesTemp(f.mes);
         /* Cada fila es de su mes: la de un mes cerrado no se escribe, aunque el mes que se mira esté abierto. */
-        var cel = (Dm ? Dm.puede === 'escribir' : edita())
+        var cel = esAdmin() && (Dm ? Dm.puede === 'escribir' : edita())
           ? entrada('temporada', '', f.ant, 'money', 'amb', 'data-mes="' + f.mes + '" data-g="tp" data-r="' + i + '" data-c="0" aria-label="Venta de ' + f.nombre + ' del semestre anterior"', true)
-          : '<td class="amb"' + (Dm.cerrado ? ' title="' + f.nombre + ' ya cerró: si hay que corregirlo, lo hace Administración."' : '') + '>' + esc(texto(f.ant, 'money')) + '</td>';
+          : '<td class="fijo" title="' + (!esAdmin() ? 'La carga Administración.' : Dm && Dm.cerrado ? f.nombre + ' ya cerró: no se cambia.' : '') + '">' + esc(texto(f.ant, 'money')) + '</td>';
         var clA = con && f.ant ? sem(f.real, f.ant) : '';
         return '<tr><td class="izq">' + f.nombre + '</td>' + cel +
           '<td>' + (con ? pesos(f.real) : '') + '</td><td class="' + clA + '">' + (con && f.ant ? pc(f.antVar, 1) : '') + '</td>' +
@@ -868,7 +876,7 @@
       '<div class="graf"><h3>Participación por vendedor</h3>' + graficoDona(T) + '</div>' +
       '<div class="graf"><h3>Objetivo vs Venta Real</h3>' + graficoBarras(F) + '</div>' +
       '<div class="graf"><h3>Acumulado real vs objetivo acumulado</h3>' + graficoLinea(F) + '</div></div>';
-    h += '<p class="aviso-carga">  Todo se calcula solo con las hojas de cada mes. Lo único que se carga a mano es la columna Sem. Anterior.</p>';
+    h += '<p class="aviso-carga">  Todo se calcula solo con las hojas de cada mes. La columna Sem. Anterior la carga Administración.</p>';
     return h;
   }
 
@@ -956,7 +964,7 @@
     h += '<div class="semanas-pad">' + C.sem.map(function (w) { return semanaEcom(C, w); }).join('') + '</div>';
 
     h += '<div class="banda escalon">  ESCALÓN DE OBJETIVOS  ·  Premio · Falta · Ritmo</div>' +
-      '<table class="esc"><tr><th>Nivel</th><th>Objetivo</th><th>Premio</th><th>Venta acum.</th><th>Falta</th><th>Desvío %</th><th>Días rest.</th><th>Obj. diario</th><th>Ritmo diario</th><th>Estado</th></tr>' +
+      '<table class="esc"><tr><th>Nivel</th><th>Objetivo</th><th>Premio</th><th>Venta acum.</th><th>Falta</th><th>Avance %</th><th>Días rest.</th><th>Obj. diario</th><th>Ritmo diario</th><th>Estado</th></tr>' +
       C.escalon.map(function (x, i) {
         return '<tr><td>' + x.nivel + '</td><td>' + pesos(x.meta) + '</td>' + entrada('premio', String(i), x.premio, 'money', 'amb', 'aria-label="Premio ' + x.nivel + '"') +
           '<td>' + pesos(C.E4) + '</td><td>' + pesos(x.falta) + '</td><td class="' + (x.desv >= 1 ? 'sv' : '') + '">' + pc(x.desv, 1) + '</td><td class="dias">' + x.diasRest + '</td>' +

@@ -217,6 +217,9 @@
   .vt-hoja td.amb.ed:focus-within { box-shadow: inset 0 0 0 2px var(--sel); }
   .vt-hoja .azul { color: var(--h-azul); font-weight: 700; }
   .vt-hoja .verde { color: var(--h-verde); font-weight: 700; }
+  /* Lo que pone Administración (objetivo, % de días y semanas, config del Informe Vendedor, semestre anterior): fijo, sin el ámbar. */
+  .vt-hoja .fijo { font-weight: 700; }
+  .vt-hoja .fijo.g { font-size: 14px; }
   /* Lo que llega de Google Analytics (visitas y carritos de la tienda): azul, como lo que se calcula solo; se puede pisar escribiendo. */
   .vt-hoja td.ga, .vt-hoja .sem .vend td.ga { color: var(--h-azul); }
   .vt-hoja td.mal-entrada { animation: vt-sacudir .3s; box-shadow: inset 0 0 0 2px var(--mal) !important; }
@@ -566,10 +569,13 @@
         <li><b>Vacaciones.</b> Se cargan en Config → Usuarios → "Vacaciones". Esos días salen rayados con una "V" y no se puede cargar venta.</li>
         <li><b>Los días que el local no abre.</b> Si el día no tiene objetivo (los domingos de los locales de calle, los feriados), la columna sale rayada y dice "No abre". Si abrió igual, se carga y vuelve a verse normal.</li>
         <li><b>El desvío acumulado compara hasta el último día cargado,</b> sin contar hoy (abajo dice hasta qué día). La planilla se atrasaba si quedaba un día vacío, como el domingo que no abre. Los días se cuentan solos: ya no hay "Días hábiles".</li>
+        <li><b>Lo que pone Administración queda fijo:</b> el objetivo del mes, los % de cada día y de cada semana, la configuración del Informe Vendedor (PxT objetivo, factor y precios de perfume y boxer, iguales en todos los locales) y la venta del semestre anterior.</li>
+        <li><b>Las proyecciones y el TP necesario cuentan bien.</b> Usan lo vendido hasta el último día cargado y los días que el local abre. La planilla contaba también los domingos que no abre, y para el TP necesario suponía que la gente que no entró iba a entrar igual.</li>
+        <li><b>Conversión, ticket y PxT del local, pesados.</b> En el Informe Vendedor y en Temporada cuenta más el que más vendió (o el mes de más gente); la planilla los promediaba.</li>
         <li><b>Los días que no llegaron no se pueden cargar.</b> La regla "dejalos vacíos" la cumple el sistema solo.</li>
         <li><b>El número se escribe como salga.</b> "34.500", "34500" o "$34.500" dan lo mismo. Si no es un número, no lo toma y avisa.</li>
         <li><b>Se guarda solo, celda por celda,</b> y queda anotado quién cargó cada cosa. Si dos cargan a la vez, cada uno ve lo del otro al rato.</li>
-        <li class="igual">Todo lo demás es igual a la planilla: los bloques, los colores, el ámbar para cargar, las fórmulas, los rankings y el escalón de premios. Enter baja a la celda de abajo, como en Sheets.</li>
+        <li class="igual">Todo lo demás es igual a la planilla: los bloques, los colores, el ámbar para cargar, los rankings y el escalón de premios (su "Desvío %" se llama "Avance %": es cuánto del nivel ya se vendió). Enter baja a la celda de abajo, como en Sheets.</li>
       </ul>
     </details>
   </div>

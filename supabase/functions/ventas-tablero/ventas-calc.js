@@ -159,10 +159,14 @@
     C.desvAcum = C.realHoy - C.objHoy;                                                  // I4
     C.C22 = prim.filter(function (x) { return x.obj > 0 || x.real > 0; }).length;       // C22 días transcurridos
     C.L18 = Math.max(todos.slice(C.corte).filter(function (x) { return x.obj > 0; }).length, 1);   // L18 días restantes
-    var fr = suma(todos.filter(function (x) { return x.real > 0; }).map(function (x) { return x.peso * semanas[M.semana(x.d) - 1].peso; }));
-    C.proyPond = fr ? C.E4 / fr : null;                                                 // C13
-    var conVenta = todos.filter(function (x) { return x.real > 0; }).length;
-    C.proyLin = C.E4 ? C.E4 / Math.max(conVenta, 1) * M.dias : null;                   // F13
+    /* Las proyecciones, con lo vendido hasta el corte (lo de hoy está a medias). La lineal multiplica por los
+       días que el local abre en el mes y no por los del calendario: la planilla contaba también los domingos
+       que no abre (auditoría del 28/10). */
+    var conVenta = prim.filter(function (x) { return x.real > 0; });
+    C.abre = todos.filter(function (x) { return x.obj > 0 || (x.real > 0 && x.d <= C.corte); }).length;   // días que el local abre
+    var fr = suma(conVenta.map(function (x) { return x.peso * semanas[M.semana(x.d) - 1].peso; }));
+    C.proyPond = fr && C.realHoy ? C.realHoy / fr : null;                               // C13
+    C.proyLin = C.realHoy ? C.realHoy / Math.max(conVenta.length, 1) * C.abre : null;  // F13
     C.efectivoPct = C.E4 ? c.efectivo / C.E4 : 0;                                       // I13
     C.tarjetaPct = C.E4 ? (C.E4 - c.efectivo) / C.E4 : 0;                               // J13
     C.descPct = (C.E4 + c.descuento) ? c.descuento / (C.E4 + c.descuento) : 0;          // K13
@@ -207,21 +211,28 @@
     var dT = todos.filter(function (x) { return x.t > 0; });
     T.sumT = suma(semanas.map(function (w) { return w.tReal; }));                       // B4
     T.necTot = suma(semanas.map(function (w) { return w.tNec; }));                      // H5 "necesario"
-    T.necCon = suma(dT.map(function (x) { return x.nec; }));
-    T.L5 = T.necCon ? T.sumT / T.necCon - 1 : 0;                                        // L5 ritmo de tráfico
+    /* El ritmo de tráfico y su proyección, con los días hasta el corte, como el desvío. */
+    var dTc = dT.filter(function (x) { return x.d <= C.corte; }), sTc = suma(dTc.map(function (x) { return x.t; }));
+    T.necCon = suma(dTc.map(function (x) { return x.nec; }));
+    T.L5 = T.necCon ? sTc / T.necCon - 1 : 0;                                           // L5 ritmo de tráfico
     var sT = suma(dT.map(function (x) { return x.t; }));
     T.D4 = sT ? suma(dT.map(function (x) { return x.t * (x.cv || 0); })) / sT : null;   // D4 conversión real
     var dTk = todos.filter(function (x) { return x.tk > 0; }), tk = suma(dTk.map(function (x) { return x.real / x.tk; }));
     T.F4 = tk ? suma(dTk.map(function (x) { return x.real; })) / tk : null;             // F4 ticket promedio
-    T.H4 = T.sumT ? redondear(T.sumT / Math.max(dT.length, 1) * M.dias) : null;        // H4 proyección
+    T.H4 = sTc ? redondear(sTc / dTc.length * C.abre) : null;                           // H4 proyección
     T.pxt = c.qLineas ? c.qPrendas / c.qLineas : 0;                                     // J4
-    var resto = T.necTot - T.sumT;
+    /* La gente que falta es la necesaria de los días que quedan (desde hoy) al ritmo que viene el local, y lo que
+       falta vender se cuenta desde lo vendido hasta el corte. La planilla restaba la gente que entró de la
+       necesaria de todo el mes: con el tráfico bajo, "faltaba" más gente de la que podía entrar y el TP
+       necesario daba de menos. */
+    var resto = suma(todos.slice(C.corte).map(function (x) { return x.nec; }));
     T.tpNec = [1, 1.1, 1.2, 1.3].map(function (k, i) {                                 // E8:E11, G8, I8
-      var nec = resto <= 0 || !T.D4 ? null : Math.max(c.obj * k - C.E4, 0) / (resto * (1 + T.L5) * T.D4);
-      return { nivel: i ? '+' + i * 10 + '%' : 'Objetivo', nec: nec, act: T.F4, desv: def(nec) && def(T.F4) ? T.F4 - nec : null };
+      var ok = c.obj > 0 && C.E4 >= c.obj * k;                                          // ese nivel ya se cumplió
+      var nec = ok || resto <= 0 || !T.D4 ? null : Math.max(c.obj * k - C.realHoy, 0) / (resto * (1 + T.L5) * T.D4);
+      return { nivel: i ? '+' + i * 10 + '%' : 'Objetivo', nec: nec, act: T.F4, desv: def(nec) && def(T.F4) ? T.F4 - nec : null, ok: ok };
     });
     T.sinDatos = !T.sumT;
-    T.convNec = T.sinDatos || T.L5 >= 0 || !T.F4 || resto <= 0 ? null : (c.obj - C.E4) / (resto * (1 + T.L5) * T.F4);   // G14
+    T.convNec = T.sinDatos || T.L5 >= 0 || T.tpNec[0].ok || !T.F4 || resto <= 0 ? null : Math.max(c.obj - C.realHoy, 0) / (resto * (1 + T.L5) * T.F4);   // G14
     T.tpComp = T.sinDatos || T.L5 >= 0 ? null : T.tpNec[0].nec;                         // J14
 
     /* ── Informe Vendedor ── */
@@ -253,13 +264,7 @@
       var R = semV.map(function (s) { return s.r; });
       function tot(k) { return R.some(function (r) { return def(r[k]); }) ? suma(R.map(function (r) { return r[k]; })) : null; }
       var t = { venta: tot('venta'), t: tot('t'), pf: tot('pf'), bx: tot('bx') };      // I27, I29, I35, I37
-      /* Los ponderados del 01/10: tickets de la semana = venta / TP. */
-      var conTp = R.filter(function (r) { return r.tp > 0; });
-      var tickets = suma(conTp.map(function (r) { return cero(r.venta) / r.tp; }));
-      var sumT = suma(R.map(function (r) { return r.t; }));
-      t.c = sumT ? tickets / sumT : null;                                               // I31
-      t.tp = tickets ? suma(conTp.map(function (r) { return cero(r.venta); })) / tickets : null;                          // I33
-      t.pxt = tickets ? suma(conTp.map(function (r) { return cero(r.venta) / r.tp * cero(r.pxt); })) / tickets : null;    // I39
+      ponderar(R, t);                                                                   // I31, I33, I39
       function dv(a, b) { return def(a) && a !== 0 && b ? a / b - 1 : null; }
       var desv = { venta: dv(t.venta, ob.venta), t: dv(t.t, ob.t), c: dv(t.c, ob.c), tp: dv(t.tp, ob.tp),            // J27..J39
                    pf: dv(t.pf, ob.pf), bx: dv(t.bx, ob.bx), pxt: dv(t.pxt, ob.pxt) };
@@ -267,22 +272,18 @@
                conDatos: v.sin ? R.some(function (r) { return def(r.t) || def(r.c) || def(r.tp) || def(r.pf) || def(r.bx) || def(r.pxt); }) || t.venta > 0 : true };
     });
 
-    /* Resumen del local por semana (filas 5 a 11): suma también la fila sin vendedor, como la planilla. */
+    /* Resumen del local por semana (filas 5 a 11): suma también la fila sin vendedor, como la planilla. La
+       conversión, el ticket y el PxT van ponderados como los del vendedor; la planilla los promediaba, y un
+       vendedor de pocas ventas pesaba lo mismo que el que más vendió (auditoría del 28/10). */
     C.res = semanas.map(function (w, j) {
       var R = C.iv.map(function (x) { return x.semanas[j].r; });
       function sm(k) { return R.some(function (r) { return def(r[k]); }) ? suma(R.map(function (r) { return r[k]; })) : null; }
-      return {
-        venta: w.empezo ? w.real : null,                                                // C5
-        t: sm('t'), c: promPos(R.map(function (r) { return r.c; })), tp: promPos(R.map(function (r) { return r.tp; })),   // C6:C8
-        pf: sm('pf'), bx: sm('bx'), pxt: promPos(R.map(function (r) { return r.pxt; }))                                   // C9:C11
-      };
+      return ponderar(R, { venta: w.empezo ? w.real : null, t: sm('t'), pf: sm('pf'), bx: sm('bx') });   // C5:C11
     });
     function sumaTot(k) { var a = C.iv.map(function (x) { return x.tot[k]; }); return a.some(def) ? suma(a) : null; }
-    C.resT = {
-      venta: sumaTot('venta'), t: sumaTot('t'),                                         // I5, I6
-      c: promPos(C.res.map(function (r) { return r.c; })), tp: promPos(C.res.map(function (r) { return r.tp; })),   // I7, I8
-      pf: sumaTot('pf'), bx: sumaTot('bx'), pxt: promPos(C.res.map(function (r) { return r.pxt; }))                   // I9:I11
-    };
+    var todasR = [];
+    C.iv.forEach(function (x) { x.semanas.forEach(function (s) { todasR.push(s.r); }); });
+    C.resT = ponderar(todasR, { venta: sumaTot('venta'), t: sumaTot('t'), pf: sumaTot('pf'), bx: sumaTot('bx') });   // I5:I11
     var pfObj = suma(C.iv.map(function (x) { return x.ob.pf; })), bxObj = suma(C.iv.map(function (x) { return x.ob.bx; }));
     var tObj = c.tp * c.conv ? c.obj / (c.tp * c.conv) : 0, rt = C.resT;
     C.resD = {                                                                          // J5:J11
@@ -295,6 +296,18 @@
       pxt: def(rt.pxt) && c.pxtObj ? rt.pxt / c.pxtObj - 1 : null
     };
     return C;
+  }
+
+  /* Los ponderados del 01/10, de un vendedor o de todo el local: tickets de la semana = venta / TP;
+     conversión = tickets / tráfico; ticket = venta / tickets; PxT pesado por los tickets. */
+  function ponderar(R, t) {
+    var conTp = R.filter(function (r) { return r.tp > 0; });
+    var tickets = suma(conTp.map(function (r) { return cero(r.venta) / r.tp; }));
+    var sumT = suma(R.map(function (r) { return r.t; }));
+    t.c = sumT ? tickets / sumT : null;
+    t.tp = tickets ? suma(conTp.map(function (r) { return cero(r.venta); })) / tickets : null;
+    t.pxt = tickets ? suma(conTp.map(function (r) { return cero(r.venta) / r.tp * cero(r.pxt); })) / tickets : null;
+    return t;
   }
 
   /* ═══ Informe Temporada ═══
@@ -342,6 +355,7 @@
       f.conv = C && C.traf.D4 ? C.traf.D4 : 0;                                          // L12 = Tráfico D4
       f.tk = f.t * f.conv ? f.real / (f.t * f.conv) : 0;                                // M12
       f.pxt = C ? C.traf.pxt : 0;                                                       // N12 = Tráfico J4
+      f.ql = C ? cero(C.c.qLineas) : 0; f.qp = C ? cero(C.c.qPrendas) : 0;
       f.ant = x.D && def(x.D.venta_anterior) ? Number(x.D.venta_anterior) : null;       // C22 (ámbar)
       f.pf = C ? cero(C.resT.pf) : 0;                                                   // Informe Vendedor I9
       f.bx = C ? cero(C.resT.bx) : 0;                                                   // Informe Vendedor I10
@@ -355,9 +369,12 @@
     T.desv = T.real - T.obj;                                                            // G18 (= F7)
     T.estado = estado(T.real, T.av);                                                    // H18
     T.t = suma(col('t'));                                                               // K18 (= J6)
-    T.conv = promPos(col('conv')) || 0;                                                 // L18 (= J7)
+    /* La conversión y el PxT del semestre, pesados por la gente y por las líneas de cada mes (la planilla
+       promediaba los meses: uno flojo de tráfico pesaba lo mismo que diciembre). */
+    var conC = F.filter(function (f) { return f.conv > 0 && f.t > 0; }), tC = suma(conC.map(function (f) { return f.t; }));
+    T.conv = tC ? suma(conC.map(function (f) { return f.t * f.conv; })) / tC : 0;     // L18 (= J7)
     T.tk = T.t * T.conv ? T.real / (T.t * T.conv) : 0;                                  // M18 (= N6)
-    T.pxt = promPos(col('pxt')) || 0;                                                   // N18
+    T.pxt = suma(col('ql')) ? suma(col('qp')) / suma(col('ql')) : 0;                    // N18
     T.tkObj = base ? base.tp : 0;
     T.tkDesv = T.tk - T.tkObj;                                                          // N7
 
