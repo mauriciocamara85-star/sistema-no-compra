@@ -494,9 +494,11 @@
       '<tr><th class="izq">Efectivo (acum.)</th>' + entrada('config', 'efectivo', c.efectivo || null, 'money', 'amb', 'aria-label="Efectivo acumulado"') + '</tr>' +
       '<tr><th class="izq">Descuento (acum.)</th>' + entrada('config', 'descuento', c.descuento || null, 'money', 'amb', 'aria-label="Descuento acumulado"') + '</tr>' +
       '<tr><td colspan="2" class="nota">Efectivo y Descuento se actualiza diariamente</td></tr></table></div>' +
-      '<table><colgroup><col style="width:150px"><col style="width:90px"><col style="width:130px"><col style="width:90px"><col style="width:120px"><col style="width:90px"><col></colgroup><tr>' +
-      '<th class="izq">Días transcurridos</th><td class="amb">' + C.C22 + '</td><th>Días restantes</th><td class="azul">' + C.L18 + '</td>' +
-      '<th>Días hábiles</th>' + entrada('config', 'dias_habiles', c.diasHabiles || null, 'int', 'amb g', 'aria-label="Días hábiles"') + '<td style="border:0"></td></tr></table></div>' +
+      /* Sin "Días hábiles" (28/10, Mauricio): los días se cuentan solos con los días que el local abre. Los dos
+         se calculan, así que van en azul (la planilla tenía los transcurridos en ámbar, como si se cargaran). */
+      '<table><colgroup><col style="width:150px"><col style="width:90px"><col style="width:130px"><col style="width:90px"><col></colgroup><tr>' +
+      '<th class="izq">Días transcurridos</th><td class="azul">' + C.C22 + '</td><th>Días restantes</th><td class="azul">' + C.L18 + '</td>' +
+      '<td style="border:0"></td></tr></table></div>' +
       '<p class="aviso-carga">⚠️ Cargá la venta el día que pasó. Si no vendió, poné 0. No cargues nada en días que todavía no llegaron (dejalos vacíos)</p>';
     if (editaPesos()) {
       var sSem = suma(C.sem.map(function (w) { return w.peso; }));
@@ -642,7 +644,7 @@
     h += '<div class="banda">  CONFIGURACIÓN  —  conectada a Ventas automáticamente · celdas en ámbar son editables</div><div class="cfg2">' +
       '<table><colgroup><col style="width:170px"><col><col style="width:190px"><col><col style="width:110px"><col><col style="width:130px"><col></colgroup>' +
       '<tr><th class="izq">Local</th><td class="azul">' + esc(String(ST.D.local.nombre || '').toUpperCase()) + '</td><th>Objetivo Mensual del Local</th><td class="verde">' + pesos(c.obj) + '</td><th>Conversión</th><td class="verde">' + pc(c.conv) + '</td><th>Ticket Promedio</th><td class="verde">' + pesos(c.tp) + '</td></tr>' +
-      '<tr><th class="izq">Días hábiles restantes</th><td class="verde">' + C.L18 + '</td><th>Días hábiles</th><td class="verde">' + c.diasHabiles + '</td><th colspan="2" class="nota" style="text-align:center">Prendas por Ticket: actualizar diariamente</th><th>Q Líneas · Q Prendas</th>' +
+      '<tr><th class="izq">Días restantes</th><td class="verde">' + C.L18 + '</td><th colspan="4" class="nota" style="text-align:center">Prendas por Ticket: actualizar diariamente</th><th>Q Líneas · Q Prendas</th>' +
       '<td style="padding:0"><table style="height:100%"><tr>' + entrada('config', 'q_lineas', c.qLineas || null, 'int', 'amb', 'aria-label="Q líneas (tickets)"') + entrada('config', 'q_prendas', c.qPrendas || null, 'int', 'amb', 'aria-label="Q prendas"') + '</tr></table></td></tr>' +
       '<tr><td colspan="8" class="nota izq">  Ingresá tráfico real y conversión real día a día en cada semana</td></tr></table></div>';
     h += '<div class="semanas-pad">' + C.sem.map(function (w) { return semanaTrafico(C, w); }).join('') + '</div>';
@@ -1393,7 +1395,6 @@
       : que === 'be_roas' && val === undefined ? 'El ROAS mínimo no puede quedar vacío: quedó como estaba.'
       : que === 'be_roas' && val > 100 ? 'Es demasiado para un ROAS: quedó como estaba.'
       : tipo === 'dias' && val > 7 ? 'Una semana tiene hasta 7 días.'
-      : que === 'config' && clave === 'dias_habiles' && val > 31 ? 'El mes no tiene tantos días.'
       : que === 'config' && (clave === 'conversion' || clave === 'factor') && val > 5 ? 'Es demasiado: ' + (clave === 'conversion' ? 'la conversión' : 'el factor') + ' va como % (50% es la mitad). Quedó como estaba.'
       : (que === 'trafico' || que === 'semanal') && /:conversion$/.test(clave) && val > 5 ? 'Es demasiado: la conversión va como % (50% es la mitad). Quedó como estaba.'
       : typeof val === 'number' && val >= 1e10 ? 'El número es demasiado grande: quedó como estaba.'
