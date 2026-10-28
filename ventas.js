@@ -36,7 +36,7 @@
    mandarlo dos veces no cambia nada.
 
    La venta fallida (28/10/2026): dos recordatorios por día para el local,
-   uno a la tarde y otro cuando cargan la venta del día (vfTarde, vfNoche).
+   uno al mediodía y otro cuando cargan la venta del día (vfTarde, vfNoche).
    ═══════════════════════════════════════════════════════════════════════ */
 (function () {
   'use strict';
@@ -1522,13 +1522,15 @@
   /* ══ "Recordá cargar la venta fallida" ═══════════════════════════════════
      Pedido de Mauricio (28/10/2026): que los locales no se olviden de cargar la venta fallida (hoy la cargan en
      BlueSoft). Dos veces por día, cada una una sola vez en este aparato:
-     - a la tarde, desde las 17 y con Ventas abierta, para que la carguen en el momento, con el cliente adelante;
+     - al mediodía, desde las 12 y con Ventas abierta, para que la carguen en el momento, con el cliente adelante.
+       Primero fue a las 17; él la pasó a las 12 "para que temprano lo tengan presente" (los turnos rotan y cambian
+       entre las 13 y las 14: el turno tarde tiene la de la noche);
      - a la noche, cuando cargan la venta del día: lo primero que guardan desde las 19, apenas paran de escribir.
        No tiene hora fija porque medido el 27/10 los de calle cargan a las 20 y los shoppings entre las 21 y las 22.
      Sólo la compu del local, los vendedores y los encargados: ni el e-commerce, ni la oficina, ni los supervisores.
      Sin contador ni botón a No Compra hasta que los locales carguen ahí ("lo actualizamos cuando les muestre No
      Compra"). */
-  var K_VF = 'nc_ventas_vf', VF_TARDE = 17 * 60, VF_NOCHE = 19 * 60, VF_PAUSA = 10000, tVf = null;
+  var K_VF = 'nc_ventas_vf', VF_TARDE = 12 * 60, VF_NOCHE = 19 * 60, VF_PAUSA = 10000, tVf = null;
   /* La hora en Argentina, en minutos desde las 0 (la compu puede tener otra zona). */
   function minutosAR() {
     try {
@@ -1720,7 +1722,7 @@
   }
   setInterval(function () { if (quieto()) { if (ST.hoja === 'temporada' && ST.temp) cargarTemporada(true); cargarMes(true); } }, 60000);
   window.addEventListener('focus', function () { if (quieto() && Date.now() - ST.leido > 20000) cargarMes(true); vfTarde(); });
-  /* La de la tarde: se mira seguido (abrir Ventas a las 17:05 la muestra enseguida, no al minuto). */
+  /* La del mediodía: se mira seguido (abrir Ventas a las 12:05 la muestra enseguida, no al minuto). */
   setInterval(vfTarde, 15000);
   document.addEventListener('visibilitychange', vfTarde);
 
