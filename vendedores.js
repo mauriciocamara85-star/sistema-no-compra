@@ -895,6 +895,14 @@ function primerNombre() { return String(yo().nombre || '').split(' ')[0]; }
 var CAMARA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg>';
 var _controles = {};   // id → control: lo último que mostró Hoy
 
+/* Desde cuándo una foto vencida se puede mandar igual (queda como tarde): toda la semana, hasta el domingo
+   (Mauricio, 28/10: Seba no podía mandar el miércoles las del lunes; antes, sólo al otro día). El lunes, también
+   las del domingo, como antes. La base no pone límite: esto es lo que la app ofrece. */
+function desdeVencidas(hoy) {
+  var lunes = lunesAR(hoy), ayer = sumarDias(hoy, -1);
+  return new Date((ayer < lunes ? ayer : lunes) + 'T03:00:00Z').toISOString();
+}
+
 function pantallaHoy() {
   if (!_vend) { pantallaLocales(); return; }
   marcarPestana('hoy');
@@ -909,12 +917,12 @@ function pantallaHoy() {
   /* Lo que no cargó (sin señal) se anota: así Hoy no dice "¡Listo!" por error. */
   var FALLO = {}, fallo = function () { return FALLO; };
   /* Desde cuándo cuenta "hoy" (la Argentina está en UTC−3 todo el año). */
-  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString(), desdeAyer = new Date(sumarDias(hoy, -1) + 'T03:00:00Z').toISOString();
+  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString(), desdeVenc = desdeVencidas(hoy);
   Promise.all([
     /* Lo de hoy, lo que quedó pendiente y lo que se mandó hoy (el depósito
        se crea un día y se manda otro: así no desaparece apenas se manda, y se puede sacar de nuevo). Y lo que
-       venció ayer u hoy: se puede mandar igual al otro día y queda como tarde (Mauricio, 15/10). */
-    leer('/orden_v_controles?select=id,estado,vence_en,frontal&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeAyer + '))'),
+       venció esta semana: se puede mandar igual hasta el domingo y queda como tarde (Mauricio, 15/10 y 28/10). */
+    leer('/orden_v_controles?select=id,estado,vence_en,frontal&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeVenc + '))'),
     leer('/orden_v_persona_semana?select=nivel_semana,controles,controles_a_tiempo,controles_tarde&persona_id=eq.' + id + '&semana=eq.' + lunesAR()).catch(fallo),
     leer('/orden_sectores?select=id&or=(responsable_id.eq.' + id + ',suplente_id.eq.' + id + ')&limit=1').catch(nada),
     llamar('orden_desafio_mio').catch(fallo),
@@ -960,7 +968,7 @@ function estadoDe(c, corregir) {
   if (c.estado === 'enviado' || c.estado === 'revisado') {
     return { clase: 'listo', texto: c.enviado_en && c.vence_en && c.enviado_en > c.vence_en ? 'Mandada tarde' : 'Listo', hecho: true };
   }
-  /* Vencida: se puede mandar igual (ayer u hoy) y queda como tarde (Mauricio, 15/10). */
+  /* Vencida: se puede mandar igual (hasta el domingo) y queda como tarde (Mauricio, 15/10 y 28/10). */
   if (c.estado === 'vencido') return { clase: 'vencido', texto: 'Vencida: mandala igual' };
   if (corregir[c.modulo_id]) return { clase: 'corregir', texto: 'Corregir' };
   if (c.tipo === 'sorpresa') return { clase: 'sorpresa', texto: 'Control sorpresa' };
@@ -1010,7 +1018,7 @@ function dibujarHoy(x) {
   var pend = x.controles.filter(function (c) { return c.estado === 'pendiente'; });
   var env = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
   if (total) {
-    /* Lo que venció (ayer u hoy) se puede mandar igual: queda como tarde. No se tacha (y no hay festejo). */
+    /* Lo que venció esta semana se puede mandar igual: queda como tarde. No se tacha (y no hay festejo). */
     var vencidas = total - env - pend.length;
     var vence = pend.map(function (c) { return c.vence_en; }).filter(Boolean).sort()[0];
     /* El día del frontal nuevo (SQL 132): primero se cambia el frontal, después la foto (sirve de las dos cosas). */
@@ -1167,13 +1175,13 @@ function pantallaFotos() {
   marcarPestana('fotos');
   adentro();
   var per = yo(), hoy = hoyAR(), id = valor(per.id), nada = function () { return null; };
-  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString(), desdeAyer = new Date(sumarDias(hoy, -1) + 'T03:00:00Z').toISOString();
+  var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString(), desdeVenc = desdeVencidas(hoy);
   app.innerHTML = cabeza('Fotos') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   Promise.all([
-    /* Como en Hoy: lo de hoy, lo pendiente, lo que se mandó hoy (tomada_en: la de la foto mandada) y lo que venció ayer u hoy. */
+    /* Como en Hoy: lo de hoy, lo pendiente, lo que se mandó hoy (tomada_en: la de la foto mandada) y lo que venció esta semana. */
     leerConMueble('/orden_v_controles?select=id,local_id,modulo_id,modulo_numero,modulo_nombre,foto_referencia_path,sector_tipo,mueble,tipo,estado,vence_en,enviado_en,tomada_en,nivel,frontal' +
-         '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeAyer + '))' +
+         '&persona_id=eq.' + id + '&tipo=neq.correccion&or=(fecha.eq.' + hoy + ',estado.eq.pendiente,enviado_en.gte.' + desdeHoy + ',and(estado.eq.vencido,vence_en.gte.' + desdeVenc + '))' +
          '&order=sector_tipo.asc,modulo_numero.asc'),
     /* Lo que la IA marcó y está sin corregir: ese módulo dice "Corregir". */
     leer('/orden_tareas?select=modulo_id&persona_id=eq.' + id + '&estado=eq.pendiente&origen=eq.ia'),
