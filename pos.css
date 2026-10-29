@@ -778,6 +778,16 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
   .tk-datos.dv-datos > * { grid-column: span 6; }
   .tk-datos.dv-datos > :first-child, .tk-datos.dv-datos > :last-child { grid-column: span 12; }
 }
+/* El envío interno: Sale de y Llega a anchos; Fecha, Letra y Estado chicos; las observaciones abajo. En el celular, de a dos. */
+@media (min-width: 1000px) {
+  .tk-datos.ev-datos > * { grid-column: span 2; }
+  .tk-datos.ev-datos > :nth-child(-n+2) { grid-column: span 3; }
+  .tk-datos.ev-datos > :last-child { grid-column: span 12; }
+}
+@media (max-width: 520px) {
+  .tk-datos.ev-datos > * { grid-column: span 6; }
+  .tk-datos.ev-datos > :nth-child(5), .tk-datos.ev-datos > :last-child { grid-column: span 12; }
+}
 .pos input.dv-razon { min-width: 170px; }
 .dv-prec { margin: 6px 0 0; }
 .pos-pie.rn-imp { justify-content: flex-start; align-items: center; margin-top: 8px; }
