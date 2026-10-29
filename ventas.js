@@ -374,6 +374,7 @@
     else if (ST.hoja === 'temporada') h.innerHTML = hojaTemporada();
     else h.innerHTML = ST.hoja === 'trafico' ? hojaTrafico(ST.C) : ST.hoja === 'vendedor' ? hojaVendedor(ST.C) : hojaVentas(ST.C);
     mostrar('hoja');
+    ajustarHoy();
     marcarPendientes();
     if (arriba) posicionar();
   }
@@ -443,6 +444,21 @@
   function colsDe(w) { var c = [null, null, null, null, null, null, null]; w.dias.forEach(function (x) { c[x.k] = x; }); return c; }
   function hoyCl(C, x) { return x && x.d === C.hoy && !C.cerrado ? ' col-hoy' : ''; }
   function esHoy(C, x) { return x && x.d === C.hoy && !C.cerrado; }
+  /* El día en el encabezado de la semana. El de hoy lleva la pastilla "hoy" y también su nombre corto, escondido:
+     si "Miércoles 28" y la pastilla no entran en la columna, ajustarHoy() pone "Mié 28" en vez de cortar la pastilla. */
+  function cabDia(C, x, k, nombres) {
+    if (!x) return '<th></th>';
+    if (!esHoy(C, x)) return '<th class="">' + nombres[k] + ' ' + x.d + '</th>';
+    return '<th class="hoy"><span class="dia-l">' + nombres[k] + '</span><span class="dia-c">' + DIAS_C[k] + '</span> ' + x.d + '<span class="pill-hoy">hoy</span></th>';
+  }
+  /* Si no entra con el nombre largo, el corto; si tampoco, sin la pastilla (hoy queda marcado con la raya celeste). */
+  function ajustarHoy() {
+    [].forEach.call($('vtHoja').querySelectorAll('th.hoy'), function (th) {
+      th.classList.remove('corto', 'sin-pill');
+      if (th.scrollWidth > th.clientWidth + 1) th.classList.add('corto');
+      if (th.scrollWidth > th.clientWidth + 1) th.classList.add('sin-pill');
+    });
+  }
   function nombrados(C) { return C.V.filter(function (v) { return !v.sin; }); }
 
   /* ── Hoja Ventas ─────────────────────────────────────────────────────── */
@@ -570,7 +586,7 @@
     }).join('') + (ep ? entrada('peso_semana', String(w.n), w.peso, 'pct', '', 'aria-label="% de la semana ' + w.n + ' en el mes"') : '<td>' + pc(w.peso) + '</td>') +
       '<td>' + (ep && Math.abs(sDias - 1) > 0.0005 ? '<span class="suma-mal" title="Los días de la semana tienen que sumar 100%">Σ ' + pcIn(sDias) + '</span>' : '') + '</td></tr>';
     t += '<tr class="cab"><th class="izq">  Semana ' + w.n + '</th>' + cols.map(function (x, k) {
-      return x ? '<th class="' + (esHoy(C, x) ? 'hoy' : '') + '">' + DIAS[k] + ' ' + x.d + (esHoy(C, x) ? '<span class="pill-hoy">hoy</span>' : '') + '</th>' : '<th></th>';
+      return cabDia(C, x, k, DIAS);
     }).join('') + '<th>Obj. Semanal</th><th>Desvío</th></tr>';
     function na(x) { return noAbre(w, x) ? ' no-abre' : ''; }
     t += '<tr class="obj"><td class="izq">Objetivo</td>' + cel(function (x) {
@@ -669,7 +685,7 @@
     }
     var t = '<table class="sem">' + COLG_SEM + '<tbody>';
     t += '<tr class="cab"><th class="izq">  Semana ' + w.n + '</th>' + cols.map(function (x, k) {
-      return x ? '<th class="' + (esHoy(C, x) ? 'hoy' : '') + '">' + DIAS_C[k] + ' ' + x.d + (esHoy(C, x) ? '<span class="pill-hoy">hoy</span>' : '') + '</th>' : '<th></th>';
+      return cabDia(C, x, k, DIAS_C);
     }).join('') + '<th>Total Sem</th><th>vs Necesario</th></tr>';
     t += '<tr class="necf"><td class="izq">Tráfico necesario</td>' + cel(function (x) {
       return noAbre(w, x) ? '<td class="no-abre' + hoyCl(C, x) + '"' + TIT_NO_ABRE + '>No abre</td>' : '<td class="' + hoyCl(C, x) + '">' + nf(x.nec) + '</td>';
@@ -1066,7 +1082,7 @@
     }).join('') + (ep ? entrada('peso_semana', String(w.n), w.peso, 'pct', '', 'aria-label="% de la semana ' + w.n + ' en el mes"') : '<td>' + pc(w.peso) + '</td>') +
       '<td>' + (ep && Math.abs(sDias - 1) > 0.0005 ? '<span class="suma-mal" title="Los días de la semana tienen que sumar 100%">Σ ' + pcIn(sDias) + '</span>' : '') + '</td></tr>';
     t += '<tr class="cab"><th class="izq">  Semana ' + w.n + '</th>' + cols.map(function (x, k) {
-      return x ? '<th class="' + (esHoy(C, x) ? 'hoy' : '') + '">' + DIAS[k] + ' ' + x.d + (esHoy(C, x) ? '<span class="pill-hoy">hoy</span>' : '') + '</th>' : '<th></th>';
+      return cabDia(C, x, k, DIAS);
     }).join('') + '<th>Obj. Semanal</th><th>Desvío</th></tr>';
     t += '<tr class="obj"><td class="izq">Objetivo</td>' + cel(function (x) { return '<td class="' + hoyCl(C, x) + '">' + pesos(x.obj) + '</td>'; }) +
       '<td class="tot">' + pesos(w.obj) + '</td><td class="tot"></td></tr>';
@@ -1658,6 +1674,10 @@
 
   /* ══ Los eventos ════════════════════════════════════════════════════════ */
   var hoja = $('vtHoja');
+  /* La pastilla de hoy, de nuevo cuando cambia el ancho (ventana, zoom) o termina de llegar la letra. */
+  if (window.ResizeObserver) new ResizeObserver(function () { ajustarHoy(); }).observe(hoja);
+  else window.addEventListener('resize', ajustarHoy);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(ajustarHoy);
   hoja.addEventListener('change', function (e) {
     var el = e.target;
     if (el.getAttribute('data-acc') === 'asignar') { asignar(el); return; }

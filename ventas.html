@@ -241,6 +241,9 @@
   .vt-hoja .sem .cab th { background: var(--h-banda); color: #FFFFFF; font-weight: 600; font-size: 12.5px; border-color: rgba(255,255,255,.12); height: 32px; }
   .vt-hoja .sem .cab th.hoy { box-shadow: inset 0 -3px 0 #7DD3FC; }
   .vt-hoja .pill-hoy { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; background: #7DD3FC; color: var(--h-titulo); border-radius: 3px; padding: 1px 5px; margin-left: 4px; vertical-align: 1px; }
+  /* Si "Miércoles 28" y la pastilla no entran, "Mié 28"; si tampoco, sin la pastilla (ajustarHoy en ventas.js). */
+  .vt-hoja th.hoy .dia-c, .vt-hoja th.hoy.corto .dia-l, .vt-hoja th.hoy.sin-pill .pill-hoy { display: none; }
+  .vt-hoja th.hoy.corto .dia-c { display: inline; }
   .vt-hoja .sem .obj td { color: var(--h-txt2); font-size: 12px; }
   .vt-hoja .sem .real td { background: var(--h-real); font-weight: 700; font-size: 13.5px; }
   .vt-hoja .sem .desv td { color: var(--h-txt3); font-size: 11px; height: 22px; }
