@@ -1383,7 +1383,8 @@ html[data-nc-compu] .rail-item[href="config.html"],
 html[data-nc-compu] .rail-item[data-impecable],
 html[data-nc-compu] .rail-item[href="impecable-admin.html"] { display: none; }
 /* El POS, mientras está en construcción (20/10), lo ve sólo Administración: ni siquiera sin usuario. */
-html:not([data-nc-rol="admin"]) .rail-item[href="pos.html"],
+/* SQL 190: el POS, también a quien la oficina se lo prendió (data-nc-pos); la Gestión, sólo Administración. */
+html:not([data-nc-rol="admin"]):not([data-nc-pos]) .rail-item[href="pos.html"],
 html:not([data-nc-rol="admin"]) .rail-item[href="gestion.html"] { display: none; }
 /* "Venta fallida" desde el POS abre la Carga con ?volver=pos: arriba, el camino de vuelta (interfaz.js). */
 .volver-pos {
@@ -1607,6 +1608,18 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
 .us-pista { font-size: 12.5px; line-height: 1.35; color: var(--txt-3); }
 .us-fijo { font-size: 15px; font-weight: 600; padding: 4px 0; }
 #usCampoLocal[hidden], #usCampoLocales[hidden] { display: none; }
+/* El POS de cada persona (SQL 190): «Usa el POS» y, si lo usa, sus seis casillas. En el editor, al final y en su renglón. */
+.us-editor .us-pos { order: 11; flex: 1 1 100%; display: grid; gap: 4px; margin-top: 4px; padding: 10px 2px 0; border-top: 1px solid var(--line); }
+.us-pos-usa[hidden], .us-pos-casillas[hidden], .us-pos-admin[hidden] { display: none; }
+.us-pos-tit { font-size: 13px; font-weight: 600; color: var(--txt-2); }
+.us-pos-usa, .us-pos-cas { display: flex; align-items: center; gap: 8px; min-height: 34px; cursor: pointer; }
+.us-pos-usa { font-size: 14px; font-weight: 600; color: var(--txt); }
+.us-pos-usa input, .us-pos-cas input { width: 18px; height: 18px; flex: none; margin: 0; accent-color: var(--sel-borde); }
+.us-pos-casillas { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(270px, 100%), 1fr)); gap: 0 14px; padding-left: 26px; }
+.us-pos-cas { font-size: 14px; font-weight: 500; color: var(--txt); line-height: 1.3; }
+.us-pos-cas small { font-weight: 500; color: var(--txt-3); font-size: 12px; }
+.us-pos-nota { grid-column: 1 / -1; margin: 0 0 2px; font-size: 12.5px; line-height: 1.35; color: var(--txt-3); }
+.us-pos-admin { margin: 0; font-size: 14px; color: var(--txt-2); }
 /* Los locales del supervisor de varios locales (SQL 141): casillas en columnas. En el editor,
    en su renglón, entre los selectores y "También atiende clientes". */
 .us-locales { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 2px 12px; }

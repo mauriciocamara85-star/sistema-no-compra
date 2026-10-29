@@ -118,6 +118,10 @@
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
   var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios' }, gestion: { remito_nuevo: 'remitos' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
+  /* SQL 190: lo que pide cada pantalla del mostrador (las casillas de Config → Usuarios). Sin el permiso, no está en el menú. */
+  var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', cierre: 'caja' };
+  var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
+                      caja: 'No tenés permiso para la caja (gastos, movimientos de salida y cierre).' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, gastos: 1, salidas: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
@@ -371,11 +375,12 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════
-     ARRANQUE: sólo Administración, por ahora
+     ARRANQUE: quien tiene el POS (SQL 190: «Usa el POS» en Config → Usuarios)
      ════════════════════════════════════════════════════════════════════ */
   function arrancar() {
     var y = persona.yo();
-    if (!y || persona.rol() !== 'admin') { pantallaPorton(y); return; }
+    /* El mostrador, quien tenga «Usa el POS» (lo dice nc_yo); la Gestión, sólo Administración. La base lo vuelve a mirar. */
+    if (!y || (persona.rol() !== 'admin' && (MODO === 'gestion' || y.pos !== true))) { pantallaPorton(y); return; }
     app.innerHTML = '<p class="cargando">Cargando…</p>';
     llamar('pos_inicio').then(function (ini) {
       S.ini = ini;
@@ -401,10 +406,11 @@
       (MODO === 'mostrador' ? '<a class="btn btn-sec btn-chico pos-porton-volver" href="index.html">‹ Volver al sistema</a>' : '') + '</section>';
     var c = $('posPorton');
     if (y) {
-      c.innerHTML = '<p class="ncp-porton-txt">Entraste como <b>' + esc(y.nombre) + '</b>. Por ahora lo usa sólo Administración: cuando se pruebe en tu local, va a aparecer en la barra.</p>';
+      c.innerHTML = '<p class="ncp-porton-txt">Entraste como <b>' + esc(y.nombre) + '</b>. ' +
+        (MODO === 'gestion' ? 'La Gestión del POS es de la oficina: la usa Administración.' : 'Todavía no tenés el POS: lo prende la oficina en Config → Usuarios.') + '</p>';
       return;
     }
-    persona.porton(c, 'Por ahora lo usa sólo Administración.');
+    persona.porton(c, MODO === 'gestion' ? 'La usa Administración.' : 'Entrá con tu usuario: lo usa quien tiene el POS prendido.');
   }
 
   function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || INICIO[MODO]; }
@@ -422,6 +428,10 @@
     cerrarVentana();
     app.innerHTML = marco();
     engancharMenu();
+    if (REQUIERE[v] && !puede(REQUIERE[v])) {
+      $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
+      return;
+    }
     var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, gastos: verGastos, salidas: verSalidas,
                 cierre: verCierre, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
@@ -492,6 +502,12 @@
     return 'index.html';
   }
 
+  /* SQL 190: el menú, sin lo que la persona no tiene (los envíos y las devoluciones, la caja). */
+  function menuVisible() {
+    return MENU.map(function (g) { return [g[0], g[1].filter(function (it) { return !REQUIERE[it[0]] || puede(REQUIERE[it[0]]); })]; })
+               .filter(function (g) { return g[1].length; });
+  }
+
   function marco() {
     var chico = menuChico(), y = persona.yo();
     var cab = MODO === 'gestion'
@@ -499,13 +515,13 @@
       : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>' +
         '<a class="pos-item pos-volver" href="' + esc(volverAlSistema()) + '" title="Volver al sistema">' + icono('volver') + '<span>Sistema</span></a>';
     var cuerpo = MODO === 'gestion'
-      ? MENU.map(function (g) {
+      ? menuVisible().map(function (g) {
           var ab = grupoAbierto(g);
           return '<button type="button" class="pos-grupo pos-grupo-btn" data-grupo="' + esc(g[0]) + '" aria-expanded="' + ab + '">' +
             '<span>' + esc(g[0]) + '</span>' + icono('abajo') + '</button>' +
             '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(item).join('') + '</div>';
         }).join('')
-      : MENU.map(function (g) { return '<div class="pos-grupo" aria-hidden="true"></div>' + g[1].map(item).join(''); }).join('') +
+      : menuVisible().map(function (g) { return '<div class="pos-grupo" aria-hidden="true"></div>' + g[1].map(item).join(''); }).join('') +
         /* Abajo: el modo prueba y quién entró (en el mostrador no hay barra que lo diga). */
         '<div class="pos-menu-pie">' +
           '<label class="pos-item pos-modo" title="Modo prueba: lo que guardes no cuenta para nada">' + icono('prueba') + '<span>Modo prueba</span>' +
@@ -596,14 +612,30 @@
     if (X.vendedor) r.vendedor[X.local_id] = X.vendedor;
     guardarJSON(K_RECUERDO, r);
   }
+  /* SQL 190: lo que puede la persona que entró. Sin el SQL 190 la base no lo manda: entonces es Administración y puede todo. */
+  function puede(k) { var p = S.ini && S.ini.puede; return !p || p[k] !== false; }
+  /* Los locales con los que trabaja: el suyo (y los que supervisa); con «Ver otros locales», todos. */
+  function esMio(id) { var p = S.ini && S.ini.puede; return !!id && (!p || p.locales !== false || (p.mios || []).indexOf(id) >= 0); }
+  function localesMios() { return S.ini.locales.filter(function (l) { return esMio(l.id); }); }
+  function localMio(id) { return esMio(id) ? localDe(id) : null; }
+  /** La opción "Todas" de las sucursales, sólo con «Ver otros locales». */
+  function todasLasSucursales() { return puede('locales') ? '<option value="">Todas</option>' : ''; }
+  /* Sin «Ver otros días», el período queda en hoy y no se mueve (la base tampoco deja ver otros días). */
+  function periodoPos(host, op) {
+    if (puede('dias')) return Interfaz.periodo(host, op);
+    var sel = Interfaz.periodo(host, Object.assign({}, op, { inicial: 'hoy', guardar: null }));
+    host.querySelectorAll('button').forEach(function (b) { b.disabled = true; b.title = 'Sólo hoy: para ver otros días, el permiso lo da la oficina en Config → Usuarios.'; });
+    return sel;
+  }
   function localInicial() {
-    var r = recuerdo(), ls = S.ini.locales;
-    var x = localDe(r.local);
+    var r = recuerdo(), ls = localesMios();
+    var x = localMio(r.local);
     if (!x) {
       var nc = String(leer('nc_local') || '').trim().toLowerCase();
       x = ls.filter(function (l) { return nc && (String(l.codigo || '').toLowerCase() === nc || String(l.nombre || '').toLowerCase() === nc); })[0];
     }
-    return x || ls[0];
+    if (!x && S.ini.yo) x = localMio(S.ini.yo.local_id);
+    return x || ls[0] || S.ini.locales[0];
   }
   function vendedoresDe(localId) { return ((S.ini.vendedores || {})[localId] || []).slice(); }
   function vendedorInicial(l) {
@@ -613,14 +645,14 @@
     return vs.indexOf(nc) >= 0 ? nc : '';
   }
   function ventaNueva(antes) {
-    var l = (antes && localDe(antes.local_id)) || localInicial();
+    var l = (antes && localMio(antes.local_id)) || localInicial();
     return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
              lista_id: listaDe(l), letra: 'B', cliente: null, socio: null, lineas: [], sacadas: {}, manuales: [],
              forma: 'efectivo', pago: {}, multiples: null, observaciones: '' };
   }
   function cargarBorrador() {
     var b = leerJSON(K_BORRADOR, null);
-    if (b && b.v === 1 && b.clave && Array.isArray(b.lineas) && localDe(b.local_id) && listaPorId(b.lista_id)) {
+    if (b && b.v === 1 && b.clave && Array.isArray(b.lineas) && localMio(b.local_id) && listaPorId(b.lista_id)) {
       b.sacadas = b.sacadas || {}; b.manuales = b.manuales || []; b.pago = b.pago || {};
       if (!LETRAS[b.letra]) b.letra = 'B';
       if (b.letra === 'X' && b.forma !== 'efectivo') { b.forma = 'efectivo'; b.multiples = null; }
@@ -775,7 +807,7 @@
       '</div>';
 
     $('vFecha').value = fechaCorta(S.ini.hoy);
-    $('vLocal').innerHTML = opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), V.local_id);
+    $('vLocal').innerHTML = opcionesLocales(V.local_id);   // SQL 190: sus locales (con «Ver otros locales», todos)
     $('vLista').innerHTML = opciones(S.ini.listas.map(function (l) { return [l.id, l.nombre]; }), V.lista_id);
     $('vObs').value = V.observaciones || '';
     llenarVendedores();
@@ -1582,7 +1614,7 @@
         (t.observaciones ? '<p style="font-size:14px;margin:10px 0 0"><b>Observaciones:</b> ' + esc(t.observaciones) + '</p>' : '') +
         (anulada ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada el ' + esc(fechaHora(t.anulada_en)) + (t.anulada_por_nombre ? ' por ' + esc(t.anulada_por_nombre) : '') + ': ' + esc(t.anulada_motivo || '') + '</div>' : '') +
         '<div id="tkAnular"></div>' +
-        '<div class="pos-pie">' + (anulada ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="tkAnularBtn">Anular la venta</button>') +
+        '<div class="pos-pie">' + (anulada || !puede('anular') ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="tkAnularBtn">Anular la venta</button>') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
       var ab = dentro.querySelector('#tkAnularBtn');
       if (ab) ab.onclick = function () {
@@ -1638,7 +1670,7 @@
         '<button type="button" class="btn btn-sec btn-chico" id="tkBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-sec btn-chico" data-ir="cambio" title="Ticket de cambio: lo que vuelve y lo que se lleva">Cambio</button>') +
       '<div class="pos-filtros"><div id="tkPer"></div>' +
-        campo('', 'Sucursal', '<select id="tkLocal" class="desplegable"><option value="">Todas</option>' + opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), '') + '</select>') +
+        campo('', 'Sucursal', '<select id="tkLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         campo('', 'Vendedor', '<select id="tkVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
         campo('', 'Comprobante', '<select id="tkLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B], ['X', LETRAS.X]], '') + '</select>') +
         campo('', 'Forma de pago', '<select id="tkMedio"><option value="">Todas</option>' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), '') + '</select>') +
@@ -1659,7 +1691,7 @@
       '</div>' +
       '<div class="tkl-pie" id="tkPie"></div>';
     c.querySelectorAll('.pos-acciones [data-ir], .tkl-panel [data-ir]').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; });
-    var per = Interfaz.periodo($('tkPer'), { inicial: 'hoy', guardar: 'pos_tickets_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('tkPer'), { inicial: 'hoy', guardar: 'pos_tickets_periodo', hastaHoy: true, alCambiar: cargar });
     ['tkLocal', 'tkVend', 'tkLetra', 'tkMedio', 'tkEstado', 'tkPrueba'].forEach(function (id) { $(id).onchange = cargar; });
     $('tkBorrar').onclick = function () { borrarPruebas($('tkLocal').value, this, cargar); };
     $('tkFallida').onclick = function () { abrirFallida({ local: $('tkLocal').value, alGuardar: cargar }); };
@@ -1746,7 +1778,7 @@
   /* o: { local, vendedor (los de la anterior, con «Guardar y nueva»), alGuardar() }. */
   function abrirFallida(o) {
     o = o || {};
-    var l = localDe(o.local) || localInicial(), prueba = enPrueba();
+    var l = localMio(o.local) || localInicial(), prueba = enPrueba();
     var F = { clave: nuevaClave(), local: l ? l.id : null, vendedor: o.vendedor || vendedorInicial(l), motivo: '', prod: null, talle: '', color: '', montoAuto: '' };
     var caja = ventana('<h3 id="posVentTit">Nueva venta fallida' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : '') + '</h3>' +
         '<p class="pos-bajada">' + fechaCorta(S.ini.hoy) + ' · El cliente que se fue sin comprar y no dejó su WhatsApp.</p>' +
@@ -1878,12 +1910,12 @@
         '<a class="btn btn-sec btn-chico" href="index.html?volver=pos" title="El cliente dejó su WhatsApp">No Compra</a>' +
         '<button type="button" class="btn btn-chico btn-fallida" id="vfNueva">Nueva venta fallida</button>') +
       '<div class="pos-filtros"><div id="vfPer"></div>' +
-        campo('', 'Sucursal', '<select id="vfFLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="vfFLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         campo('', 'Vendedor', '<select id="vfFVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
         campo('', 'Motivo', '<select id="vfFMotivo"><option value="">Todos</option>' + opciones(MOTIVOS, '') + '</select>') +
         campo('', 'Ventas fallidas', '<select id="vfFPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="vfLista"><p class="cargando">Cargando…</p></div>';
-    var per = Interfaz.periodo($('vfPer'), { inicial: 'hoy', guardar: 'pos_fallidas_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('vfPer'), { inicial: 'hoy', guardar: 'pos_fallidas_periodo', hastaHoy: true, alCambiar: cargar });
     ['vfFLocal', 'vfFVend', 'vfFMotivo', 'vfFPrueba'].forEach(function (id) { $(id).onchange = cargar; });
     $('vfNueva').onclick = function () { abrirFallida({ local: $('vfFLocal').value, alGuardar: cargar }); };
     var pedido = 0;
@@ -1916,7 +1948,7 @@
             '<td>' + esc(f.vendedor) + '</td><td>' + esc(nombreMotivo(f.motivo)) + '</td><td>' + prod + '</td>' +
             '<td class="vf-det">' + (f.detalle ? esc(f.detalle) : '<span class="apagado">—</span>') + '</td>' +
             '<td class="n">' + (f.monto != null ? plata(cent(f.monto)) : '<span class="apagado">—</span>') + '</td><td>' + esc(f.cargado_por || '—') + '</td>' +
-            '<td><button type="button" class="tk-quitar" data-borrar="' + esc(f.id) + '" title="Borrar (si se cargó por error)" aria-label="Borrar esta venta fallida">' + icono('x') + '</button></td></tr>';
+            '<td>' + (puede('anular') ? '<button type="button" class="tk-quitar" data-borrar="' + esc(f.id) + '" title="Borrar (si se cargó por error)" aria-label="Borrar esta venta fallida">' + icono('x') + '</button>' : '') + '</td></tr>';
         }).join('') + '</tbody></table></div>' +
         (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
       $('vfLista').querySelectorAll('[data-borrar]').forEach(function (b) {
@@ -1949,13 +1981,13 @@
   };
 
   function cambioNuevo(antes) {
-    var l = (antes && localDe(antes.local_id)) || localInicial();
+    var l = (antes && localMio(antes.local_id)) || localInicial();
     return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
              lista_id: listaDe(l), cliente: '', vuelve: [], sale: [], forma: 'efectivo', pago: {}, observaciones: '' };
   }
   function cargarCambio() {
     var b = leerJSON(K_CAMBIO, null);
-    if (b && b.v === 1 && b.clave && Array.isArray(b.vuelve) && Array.isArray(b.sale) && localDe(b.local_id) && listaPorId(b.lista_id)) {
+    if (b && b.v === 1 && b.clave && Array.isArray(b.vuelve) && Array.isArray(b.sale) && localMio(b.local_id) && listaPorId(b.lista_id)) {
       b.pago = b.pago || {};
       if (!MEDIOS[b.forma]) b.forma = 'efectivo';
       return b;
@@ -2286,12 +2318,12 @@
         '<button type="button" class="btn btn-sec btn-chico" id="cmBorrar" hidden>Borrar las pruebas</button>' +
         '<button type="button" class="btn btn-pri btn-chico" data-ir="cambio">Nuevo cambio</button>') +
       '<div class="pos-filtros"><div id="cmPer"></div>' +
-        campo('', 'Sucursal', '<select id="cmLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="cmLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         /* Los de verdad y los de prueba no se mezclan nunca; con el modo prueba prendido arranca en los de prueba. */
         campo('', 'Cambios', '<select id="cmPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="cmLista"><p class="cargando">Cargando…</p></div>';
     c.querySelector('[data-ir="cambio"]').onclick = function () { ir('cambio'); };
-    var per = Interfaz.periodo($('cmPer'), { inicial: 'hoy', guardar: 'pos_cambios_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('cmPer'), { inicial: 'hoy', guardar: 'pos_cambios_periodo', hastaHoy: true, alCambiar: cargar });
     ['cmLocal', 'cmPrueba'].forEach(function (id) { $(id).onchange = cargar; });
     $('cmBorrar').onclick = function () { borrarPruebas($('cmLocal').value, this, cargar); };
     var pedido = 0;
@@ -2383,7 +2415,7 @@
         (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulado el ' + esc(fechaHora(t.anulado_en)) + (t.anulado_por_nombre ? ' por ' + esc(t.anulado_por_nombre) : '') + ': ' + esc(t.anulado_motivo || '') + '</div>' :
           t.cierre ? '<div class="pos-cartel" style="margin-top:12px">Ya entró en el cierre ' + esc(refCierre(t.cierre)) + ': para anularlo, hay que anular el cierre.</div>' : '') +
         '<div id="cbAnular"></div>' +
-        '<div class="pos-pie">' + (an || t.cierre ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="cbAnularBtn">Anular el cambio</button>') +
+        '<div class="pos-pie">' + (an || t.cierre || !puede('anular') ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="cbAnularBtn">Anular el cambio</button>') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
       var ab = dentro.querySelector('#cbAnularBtn');
       if (ab) ab.onclick = function () {
@@ -2455,7 +2487,9 @@
   }
   function recordarLocal(id) { var r = recuerdo(); r.local = id; guardarJSON(K_RECUERDO, r); }
   function filaRes(lbl, valor, cls) { return '<div class="cj-r' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + valor + '</b></div>'; }
-  function opcionesLocales(actual) { return opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), actual); }
+  function opcionesLocales(actual) { return opciones(localesMios().map(function (l) { return [l.id, nombreLocal(l)]; }), actual); }
+  /** Todos los locales, aunque no sean suyos: a dónde va un envío. */
+  function opcionesTodos(actual) { return opciones(S.ini.locales.map(function (l) { return [l.id, nombreLocal(l)]; }), actual); }
 
   /** El "¿por qué se anula?" adentro de una ventana: hacer(motivo) devuelve la promesa del pedido. */
   function pedirMotivo(z, aviso, textoBoton, hacer) {
@@ -2474,14 +2508,14 @@
 
   function verCierre() {
     var c = $('cuerpo'), prueba = enPrueba();
-    var l = localDe(S.cajaLocal) || localInicial();
+    var l = localMio(S.cajaLocal) || localInicial();
     S.cajaLocal = l.id;
     /* d: la caja abierta (con el efectivo desde el SQL 175); k: lo que devolvió el conteo (con lo que tendría que haber y la diferencia). */
     var K = { d: null, k: null, clave: nuevaClave() }, pedido = 0;
     c.classList.add('lleno');
     c.innerHTML = cabeza('Cierre de caja' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''), '<span id="cjSub">Cargando…</span>',
         '<div id="cjHecho"></div>' +
-        '<a class="btn btn-sec btn-chico" href="gestion.html#cierres" title="Los cierres anteriores, en Gestión">Ver los cierres</a>') +
+        (puede('gestion') ? '<a class="btn btn-sec btn-chico" href="gestion.html#cierres" title="Los cierres anteriores, en Gestión">Ver los cierres</a>' : '')) +
       '<div class="cj">' +
         '<section class="cj-izq" aria-label="Los pasos del cierre">' +
           '<div class="tk-datos cj-datos">' +
@@ -2724,20 +2758,20 @@
 
   function verGastos() {
     var c = $('cuerpo'), prueba = enPrueba();
-    var l = localDe(S.cajaLocal) || localInicial();
+    var l = localMio(S.cajaLocal) || localInicial();
     c.innerHTML = cabeza('Gastos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Los gastos del local y las otras salidas y entradas de la caja chica. Cada uno entra solo en el próximo cierre de caja.',
         '<button type="button" class="btn btn-pri btn-chico" id="gsNuevo">Nuevo gasto</button>') +
       '<div class="pos-filtros"><div id="gsPer"></div>' +
-        campo('', 'Sucursal', '<select id="gsLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales(l ? l.id : '') + '</select>') +
+        campo('', 'Sucursal', '<select id="gsLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
         campo('', 'Tipo', '<select id="gsTipo"><option value="">Todos</option>' + opciones(['gasto', 'salida', 'ingreso'].map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +
         campo('', 'Gastos', '<select id="gsPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="gsLista"><p class="cargando">Cargando…</p></div>';
-    var per = Interfaz.periodo($('gsPer'), { inicial: 'mes', guardar: 'pos_gastos_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('gsPer'), { inicial: 'mes', guardar: 'pos_gastos_periodo', hastaHoy: true, alCambiar: cargar });
     /* La sucursal es la misma del cierre: al volver al cierre, queda la que se eligió acá. */
     $('gsLocal').onchange = function () { if (this.value) { S.cajaLocal = this.value; recordarLocal(this.value); } cargar(); };
     ['gsTipo', 'gsPrueba'].forEach(function (id) { $(id).onchange = cargar; });
-    $('gsNuevo').onclick = function () { abrirMovimiento($('gsLocal').value || (localDe(S.cajaLocal) || localInicial()).id, prueba, cargar); };
+    $('gsNuevo').onclick = function () { abrirMovimiento($('gsLocal').value || (localMio(S.cajaLocal) || localInicial()).id, prueba, cargar); };
     var pedido = 0;
     function deLaPrueba() { return $('gsPrueba').value === '1'; }
     function cargar() {
@@ -2847,19 +2881,19 @@
      ════════════════════════════════════════════════════════════════════ */
   function verSalidas() {
     var c = $('cuerpo'), prueba = enPrueba();
-    var l = localDe(S.cajaLocal) || localInicial();
+    var l = localMio(S.cajaLocal) || localInicial();
     c.innerHTML = cabeza('Movimientos de salida' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Lo que pasa de la caja chica a la caja fuerte. Se hace antes de cerrar la caja: el cierre lo resta de lo que tendría que haber.',
         '<button type="button" class="btn btn-pri btn-chico" id="msNueva">Nueva transferencia</button>') +
       '<div class="pos-filtros"><div id="msPer"></div>' +
-        campo('', 'Sucursal', '<select id="msLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales(l ? l.id : '') + '</select>') +
+        campo('', 'Sucursal', '<select id="msLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
         campo('', 'Movimientos', '<select id="msPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
       '</div><div id="msLista"><p class="cargando">Cargando…</p></div>';
-    var per = Interfaz.periodo($('msPer'), { inicial: 'mes', guardar: 'pos_salidas_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('msPer'), { inicial: 'mes', guardar: 'pos_salidas_periodo', hastaHoy: true, alCambiar: cargar });
     /* La sucursal es la misma del cierre y de Gastos. */
     $('msLocal').onchange = function () { if (this.value) { S.cajaLocal = this.value; recordarLocal(this.value); } cargar(); };
     $('msPrueba').onchange = cargar;
-    $('msNueva').onclick = function () { abrirSalida($('msLocal').value || (localDe(S.cajaLocal) || localInicial()).id, prueba, cargar); };
+    $('msNueva').onclick = function () { abrirSalida($('msLocal').value || (localMio(S.cajaLocal) || localInicial()).id, prueba, cargar); };
     var pedido = 0;
     function deLaPrueba() { return $('msPrueba').value === '1'; }
     function cargar() {
@@ -3031,10 +3065,10 @@
     c.innerHTML = cabeza('Cierres de caja', 'Los cierres de todas las sucursales. Se hacen en el mostrador, en POS → Cierre de caja.',
         '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar una caja</a>') +
       '<div class="pos-filtros"><div id="ciPer"></div>' +
-        campo('', 'Sucursal', '<select id="ciLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="ciLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         campo('', 'Cierres', '<select id="ciPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
       '</div><div id="ciLista"><p class="cargando">Cargando…</p></div>';
-    var per = Interfaz.periodo($('ciPer'), { inicial: 'mes', guardar: 'pos_cierres_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('ciPer'), { inicial: 'mes', guardar: 'pos_cierres_periodo', hastaHoy: true, alCambiar: cargar });
     ['ciLocal', 'ciPrueba'].forEach(function (id) { $(id).onchange = cargar; });
     var pedido = 0;
     function cargar() {
@@ -3091,11 +3125,11 @@
     c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, las otras entradas y salidas de la caja chica, y lo que pasó a la caja fuerte (Movimientos de salida).',
         '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>') +
       '<div class="pos-filtros"><div id="mvPer"></div>' +
-        campo('', 'Sucursal', '<select id="mvLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="mvLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         campo('', 'Tipo', '<select id="mvTipo"><option value="">Todos</option>' + opciones(Object.keys(TIPOS_MOV).map(function (k) { return [k, TIPOS_MOV[k]]; }), '') + '</select>') +
         campo('', 'Movimientos', '<select id="mvPrueba"><option value="">De verdad</option><option value="1">De prueba</option></select>') +
       '</div><div id="mvLista"><p class="cargando">Cargando…</p></div>';
-    var per = Interfaz.periodo($('mvPer'), { inicial: 'mes', guardar: 'pos_movimientos_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('mvPer'), { inicial: 'mes', guardar: 'pos_movimientos_periodo', hastaHoy: true, alCambiar: cargar });
     ['mvLocal', 'mvTipo', 'mvPrueba'].forEach(function (id) { $(id).onchange = cargar; });
     $('mvNuevo').onclick = function () { abrirMovimiento($('mvLocal').value || localInicial().id, false, cargar); };
     var pedido = 0;
@@ -3421,7 +3455,7 @@
   function nombreCol(c, cod) { return c ? nombreColor(c, cod) : 'Sin color'; }
   function engancharIr(z) { z.querySelectorAll('.pos-acciones [data-ir], [data-ir].pos-link').forEach(function (b) { b.onclick = function () { ir(b.getAttribute('data-ir')); }; }); }
   /** La sucursal del stock y los remitos (la última que eligió, o la del local). */
-  function localStock() { var l = localDe(S.stLocal) || localInicial(); S.stLocal = l.id; return l; }
+  function localStock() { var l = localMio(S.stLocal) || localInicial(); S.stLocal = l.id; return l; }
 
   /* Los talles en el orden del catálogo; si no están, el de siempre (XS, S, M…), y los números de menor a mayor. */
   function ordenarTalles(ts, cod) {
@@ -3995,7 +4029,7 @@
       '<h3 class="st-tit">Por recibir</h3><div id="rmPend"><p class="cargando">Cargando…</p></div>' +
       '<div class="st-tit-fila"><h3 class="st-tit">Recibidos</h3><div id="rmPer"></div></div><div id="rmHechos"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
-    var per = Interfaz.periodo($('rmPer'), { inicial: 'mes', guardar: 'pos_remitos_periodo', hastaHoy: true, alCambiar: cargarHechos });
+    var per = periodoPos($('rmPer'), { inicial: 'mes', guardar: 'pos_remitos_periodo', hastaHoy: true, alCambiar: cargarHechos });
     $('rmLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
     var pedido = 0;
     function cargar() { cargarPend(); cargarHechos(); }
@@ -4049,12 +4083,12 @@
     c.innerHTML = cabeza('Remitos', 'Lo que la fábrica manda a cada local, los envíos entre locales y lo que vuelve a la fábrica. El local los cuenta a ciegas al recibirlos, en POS → Remitos.',
         '<button type="button" class="btn btn-pri btn-chico" data-ir="remito_nuevo">Nuevo remito</button>') +
       '<div class="pos-filtros"><div id="rgPer"></div>' +
-        campo('', 'Sucursal', '<select id="rgLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales('') + '</select>') +
+        campo('', 'Sucursal', '<select id="rgLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         campo('', 'Estado', '<select id="rgEstado"><option value="">Todos</option>' + opciones([['pendiente', 'Por recibir (de cualquier día)'], ['recibido', 'Recibidos'],
                                                                                               ['con_diferencias', 'Con diferencias'], ['anulado', 'Anulados']], '') + '</select>') +
       '</div><div id="rgLista"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
-    var per = Interfaz.periodo($('rgPer'), { inicial: 'mes', guardar: 'pos_remitos_gestion_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('rgPer'), { inicial: 'mes', guardar: 'pos_remitos_gestion_periodo', hastaHoy: true, alCambiar: cargar });
     ['rgLocal', 'rgEstado'].forEach(function (id) { $(id).onchange = cargar; });
     var pedido = 0;
     function cargar() {
@@ -4116,7 +4150,7 @@
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan devoluciones: el stock es de verdad. Apagalo (abajo, en el menú) para hacer una.</div>' : '') +
       '<div id="dvLista"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
-    var per = Interfaz.periodo($('dvPer'), { inicial: 'mes', guardar: 'pos_devoluciones_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('dvPer'), { inicial: 'mes', guardar: 'pos_devoluciones_periodo', hastaHoy: true, alCambiar: cargar });
     $('dvLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
     var pedido = 0, filas = [];
     function cargar() {
@@ -4132,26 +4166,26 @@
     }
     function pintar(mas) {
       var vivas = filas.filter(function (f) { return f.estado !== 'anulado'; });
-      var con189 = !filas.length || filas[0].sin_precio !== undefined;
+      var con189 = !filas.length || filas[0].sin_precio !== undefined, vp = puede('precios');   // SQL 190: sin «Ver precios», sin el monto
       /* Los totales de abajo de BlueSoft: cantidad de devoluciones, de productos (unidades) y el monto. */
       var kpis = '<div class="pos-totales">' +
         '<div class="pos-kpi"><span>Devoluciones</span><b>' + miles(vivas.length) + '</b></div>' +
         '<div class="pos-kpi"><span>Enviadas, sin llegar</span><b>' + miles(vivas.filter(function (f) { return f.estado === 'pendiente'; }).length) + '</b></div>' +
         '<div class="pos-kpi"><span>Unidades</span><b>' + num(vivas.reduce(function (s, f) { return s + Number(f.unidades || 0); }, 0)) + '</b></div>' +
-        '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + (con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—') + '</b></div></div>';
+        (vp ? '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + (con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—') + '</b></div>' : '') + '</div>';
       if (!filas.length) {
         $('dvLista').innerHTML = kpis + '<div class="pos-cartel">No hay devoluciones de ' + esc(nombreLocal(localDe($('dvLocal').value))) + ' en ese período. Se hacen con «Nueva devolución».</div>';
         return;
       }
       /* Las columnas de BlueSoft (Fecha, Comprobante, Estado, Cantidad, Total, Observaciones), con quién la cargó. */
       $('dvLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Estado</th><th>Cargó</th>' +
-          '<th class="n">Unidades</th><th class="n">Total</th><th>Observaciones</th></tr></thead><tbody>' +
+          '<th class="n">Unidades</th>' + (vp ? '<th class="n">Total</th>' : '') + '<th>Observaciones</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           return '<tr data-dev="' + i + '" tabindex="0" class="' + (f.estado === 'anulado' ? 'anulada ' : '') + (f.id === S.dvMarcar ? 'recien' : '') + '">' +
             '<td><b>' + esc(refRemito(f)) + '</b></td><td>' + esc(fechaHora(f.fecha)) + '<small class="st-chico">' + esc(diaSemana(f.fecha)) + '</small></td>' +
             '<td>' + pillDev(f.estado) + (f.recibido_en ? '<small class="st-chico">' + esc(fechaHora(f.recibido_en)) + '</small>' : '') + '</td>' +
             '<td>' + esc(f.creado_nombre || '—') + '</td><td class="n tachar">' + num(f.unidades) + '</td>' +
-            '<td class="n tachar"><b>' + totalDev(f) + '</b>' + (f.sin_precio ? '<small class="st-chico">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' +
+            (vp ? '<td class="n tachar"><b>' + totalDev(f) + '</b>' + (f.sin_precio ? '<small class="st-chico">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' : '') +
             '<td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
         }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
       $('dvLista').querySelectorAll('tr[data-dev]').forEach(function (tr) {
@@ -4166,10 +4200,11 @@
     }
     $('dvBajar').onclick = function () {
       var loc = nombreLocal(localDe($('dvLocal').value)), r = per.rango();
-      bajarCsv('Devoluciones a fábrica ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv', ['Número', 'Fecha', 'Sucursal', 'Estado', 'Cargó', 'Unidades', 'Total', 'Observaciones'],
+      var vp = puede('precios');
+      bajarCsv('Devoluciones a fábrica ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv', ['Número', 'Fecha', 'Sucursal', 'Estado', 'Cargó', 'Unidades'].concat(vp ? ['Total'] : [], ['Observaciones']),
         filas.map(function (f) {
-          return [refRemito(f), fechaHora(f.fecha), loc, (ESTADO_DEV[f.estado] || [f.estado])[0], f.creado_nombre || '', Number(f.unidades || 0),
-                  f.total == null ? '' : String(Number(f.total)).replace('.', ','), f.observaciones || ''];   // la coma decimal, para el Excel en castellano
+          return [refRemito(f), fechaHora(f.fecha), loc, (ESTADO_DEV[f.estado] || [f.estado])[0], f.creado_nombre || '', Number(f.unidades || 0)]
+            .concat(vp ? [f.total == null ? '' : String(Number(f.total)).replace('.', ',')] : [], [f.observaciones || '']);   // la coma decimal, para el Excel en castellano
         }));
     };
     cargar();
@@ -4195,7 +4230,7 @@
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan envíos: el stock es de verdad. Apagalo (abajo, en el menú) para hacer uno.</div>' : '') +
       '<div id="evLista"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
-    var per = Interfaz.periodo($('evPer'), { inicial: 'mes', guardar: 'pos_envios_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('evPer'), { inicial: 'mes', guardar: 'pos_envios_periodo', hastaHoy: true, alCambiar: cargar });
     $('evLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
     $('evVer').onchange = function () { S.evVer = this.value; pintar(); };
     var pedido = 0, todas = [], filas = [], mas = false;
@@ -4215,13 +4250,13 @@
       var loc = $('evLocal').value, v = $('evVer').value, nom = nombreLocal(localDe(loc));
       filas = todas.filter(function (f) { return !v || (v === 'salen' ? f.origen_local_id === loc : f.destino_local_id === loc); });
       var vivas = filas.filter(function (f) { return f.estado !== 'anulado'; });
-      var con189 = !filas.length || filas[0].sin_precio !== undefined;
+      var con189 = !filas.length || filas[0].sin_precio !== undefined, vp = puede('precios');   // SQL 190: sin «Ver precios», sin el monto
       /* Los totales de abajo de BlueSoft: cantidad de envíos, unidades y monto; y cuántos faltan recibir. */
       var kpis = '<div class="pos-totales">' +
         '<div class="pos-kpi"><span>Envíos</span><b>' + miles(vivas.length) + '</b></div>' +
         '<div class="pos-kpi"><span>Por recibir</span><b>' + miles(vivas.filter(function (f) { return f.estado === 'pendiente'; }).length) + '</b></div>' +
         '<div class="pos-kpi"><span>Unidades</span><b>' + num(vivas.reduce(function (s, f) { return s + Number(f.unidades || 0); }, 0)) + '</b></div>' +
-        '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + (con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—') + '</b></div></div>';
+        (vp ? '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + (con189 ? plata(cent(vivas.reduce(function (s, f) { return s + Number(f.total || 0); }, 0))) : '—') + '</b></div>' : '') + '</div>';
       if (!filas.length) {
         $('evLista').innerHTML = kpis + '<div class="pos-cartel">' + (v === 'llegan' ? 'Ningún local le mandó nada a ' + esc(nom) + ' en ese período.' :
           v === 'salen' ? esc(nom) + ' no mandó nada en ese período. Se hace con «Nuevo envío».' :
@@ -4232,7 +4267,7 @@
       /* Las columnas de BlueSoft (Fecha, Referencia, Origen, Destino, Cantidad, Total, Observaciones), con el estado y quién lo cargó.
          El otro local, en negrita. */
       $('evLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Sale de</th><th>Llega a</th>' +
-          '<th>Estado</th><th>Cargó</th><th class="n">Unidades</th><th class="n">Total</th><th>Observaciones</th></tr></thead><tbody>' +
+          '<th>Estado</th><th>Cargó</th><th class="n">Unidades</th>' + (vp ? '<th class="n">Total</th>' : '') + '<th>Observaciones</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           var sale = f.origen_local_id === loc;
           return '<tr data-env="' + i + '" tabindex="0" class="' + (f.estado === 'anulado' ? 'anulada ' : '') + (f.id === S.evMarcar ? 'recien' : '') + '">' +
@@ -4241,8 +4276,8 @@
             '<td>' + (sale ? '<b>' + esc(bonito(f.destino)) + '</b>' : esc(bonito(f.destino))) + '</td>' +
             '<td>' + pillRemito(f.estado) + (f.recibido_en ? '<small class="st-chico">' + esc(fechaHora(f.recibido_en)) + '</small>' :
                      !sale && f.estado === 'pendiente' ? '<small class="st-chico">Se recibe en Remitos</small>' : '') + '</td>' +
-            '<td>' + esc(f.creado_nombre || '—') + '</td><td class="n tachar">' + num(f.unidades) + '</td>' +
-            '<td class="n tachar"><b>' + totalDev(f) + '</b>' + (f.sin_precio ? '<small class="st-chico">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' +
+            '<td>' + esc(f.creado_nombre || '—') + '</td><td class="n tachar">' + (f.unidades == null ? '<span class="apagado" title="Se ven al contarlo">—</span>' : num(f.unidades)) + '</td>' +
+            (vp ? '<td class="n tachar"><b>' + (f.total == null && !sale ? '<span class="apagado">—</span>' : totalDev(f)) + '</b>' + (f.sin_precio ? '<small class="st-chico">' + f.sin_precio + ' sin precio</small>' : '') + '</td>' : '') +
             '<td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
         }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
       $('evLista').querySelectorAll('tr[data-env]').forEach(function (tr) {
@@ -4258,10 +4293,11 @@
     }
     $('evBajar').onclick = function () {
       var loc = nombreLocal(localDe($('evLocal').value)), r = per.rango();
-      bajarCsv('Envíos internos ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv', ['Número', 'Fecha', 'Sale de', 'Llega a', 'Estado', 'Cargó', 'Unidades', 'Total', 'Observaciones'],
+      var vp = puede('precios');
+      bajarCsv('Envíos internos ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv', ['Número', 'Fecha', 'Sale de', 'Llega a', 'Estado', 'Cargó', 'Unidades'].concat(vp ? ['Total'] : [], ['Observaciones']),
         filas.map(function (f) {
           return [refRemito(f), fechaHora(f.fecha), bonito(f.origen), bonito(f.destino), (ESTADO_REMITO[f.estado] || [f.estado])[0], f.creado_nombre || '',
-                  Number(f.unidades || 0), f.total == null ? '' : String(Number(f.total)).replace('.', ','), f.observaciones || ''];   // la coma decimal, para el Excel en castellano
+                  f.unidades == null ? '' : Number(f.unidades)].concat(vp ? [f.total == null ? '' : String(Number(f.total)).replace('.', ',')] : [], [f.observaciones || '']);   // la coma decimal, para el Excel en castellano
         }));
     };
     cargar();
@@ -4276,7 +4312,7 @@
       if (!caja.isConnected) return;
       var an = r.estado === 'anulado', pend = r.estado === 'pendiente', aFabrica = !r.destino_local_id, sinResolver = 0;
       /* Una devolución a la fábrica (SQL 189): nadie la cuenta a ciegas; cada producto con su precio y su razón, y el total. */
-      var con189 = 'total' in r, unidadesDev = 0, sinPrecio = 0;
+      var con189 = 'total' in r, unidadesDev = 0, sinPrecio = 0, vePrecio = con189 && puede('precios');   // SQL 190: los precios, con «Ver precios»
       /* Un envío entre locales, visto por el que lo mandó: con el precio y el total, como la devolución. */
       var envio = salida && !aFabrica && !!r.origen_local_id, recibioAlgo = (r.productos || []).some(function (p) { return p.estado; });
       var prods = (r.productos || []).map(function (p) {
@@ -4286,8 +4322,9 @@
         var ves = p.celdas && p.celdas.length && 'cantidad' in p.celdas[0];
         var unid = ves ? p.celdas.reduce(function (s, x) { return s + Number(x.cantidad || 0); }, 0) : 0;
         if (aFabrica || envio) { unidadesDev += unid; if (con189 && p.precio == null) sinPrecio++; }
-        var precio = (aFabrica || envio) && con189 && ves ? '<p class="pos-ayuda dv-prec">' + (p.precio == null ? num(unid) + (unid === 1 ? ' unidad' : ' unidades') + ' · <span class="apagado">sin precio en la lista</span>' :
-            num(unid) + ' × ' + plata(cent(p.precio)) + ' = <b>' + plata(cent(p.precio) * unid) + '</b>') + (p.razon ? ' · Razón: <b>' + esc(p.razon) + '</b>' : '') + '</p>' : '';
+        var precio = (aFabrica || envio) && con189 && ves && vePrecio ? '<p class="pos-ayuda dv-prec">' + (p.precio == null ? num(unid) + (unid === 1 ? ' unidad' : ' unidades') + ' · <span class="apagado">sin precio en la lista</span>' :
+            num(unid) + ' × ' + plata(cent(p.precio)) + ' = <b>' + plata(cent(p.precio) * unid) + '</b>') + (p.razon ? ' · Razón: <b>' + esc(p.razon) + '</b>' : '') + '</p>' :
+          p.razon && (aFabrica || envio) ? '<p class="pos-ayuda dv-prec">Razón: <b>' + esc(p.razon) + '</b></p>' : '';
         /* SQL 167: cada diferencia, con cómo se resolvió (o que falta). */
         var difs = (p.diferencias || []).map(function (d) {
           var n = d.contado - d.cantidad, pendiente = d.estado === 'pendiente';
@@ -4316,7 +4353,7 @@
           '<div><span>Proveedor</span>Fábrica</div>' +
           '<div><span>Lo cargó</span>' + esc(r.creado_nombre || '—') + '</div>' +
           '<div><span>Llegó a la fábrica</span>' + esc(r.recibido_en ? fechaHora(r.recibido_en) : pend ? 'Todavía no' : '—') + '</div>' +
-          '<div><span>Total</span>' + (con189 ? '<b>' + plata(cent(r.total || 0)) + '</b>' : '—') + '</div>' +
+          (puede('precios') ? '<div><span>Total</span>' + (con189 ? '<b>' + plata(cent(r.total || 0)) + '</b>' : '—') + '</div>' : '') +
           (r.referencia ? '<div><span>Referencia</span>' + esc(r.referencia) + '</div>' : '') +
         '</div>' : '<div class="pos-ticket-datos">' +
           '<div><span>Fecha</span>' + esc(fechaHora(r.fecha)) + '</div>' +
@@ -4325,7 +4362,7 @@
           '<div><span>Llega a</span>' + esc(bonito(r.destino)) + '</div>' +
           '<div><span>Lo cargó</span>' + esc(r.creado_nombre || '—') + '</div>' +
           '<div><span>Recibido</span>' + esc(r.recibido_en ? fechaHora(r.recibido_en) : pend ? 'Todavía no' : '—') + '</div>' +
-          (envio ? '<div><span>Total</span>' + (con189 ? '<b>' + plata(cent(r.total || 0)) + '</b>' : '—') + '</div>' : '') +
+          (envio && puede('precios') ? '<div><span>Total</span>' + (con189 ? '<b>' + plata(cent(r.total || 0)) + '</b>' : '—') + '</div>' : '') +
         '</div>') +
         (r.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(r.observaciones) + '</p>' : '') +
         (gestion && pend && aFabrica ? '<div class="pos-cartel">Vuelve a la fábrica: del stock de ' + esc(bonito(r.origen)) + ' ya salió al mandarlo. Cuando llegue, tocá «Llegó a la fábrica».</div>' :
@@ -4341,12 +4378,12 @@
                                            gestion && pend ? 'Lo que mandaron' : envio && pend && !recibioAlgo ? 'Lo que mandaste' :
                                            envio ? 'En cada casilla, lo que llegó; abajo, lo que dice el envío' : 'En cada casilla, lo que llegó; abajo, lo que dice el remito') + '</p>' +
         '<div class="st-prods">' + prods + '</div>' +
-        ((aFabrica || envio) && con189 ? '<p class="rn-tot"><b>' + num(unidadesDev) + (unidadesDev === 1 ? ' unidad' : ' unidades') + ' · Total ' + plata(cent(r.total || 0)) + '</b>' +
-                              (sinPrecio ? ' (' + (sinPrecio === 1 ? 'uno no tiene precio: no suma' : sinPrecio + ' no tienen precio: no suman') + ')' : '') + '</p>' : '') +
+        ((aFabrica || envio) && con189 ? '<p class="rn-tot"><b>' + num(unidadesDev) + (unidadesDev === 1 ? ' unidad' : ' unidades') + (vePrecio ? ' · Total ' + plata(cent(r.total || 0)) : '') + '</b>' +
+                              (sinPrecio && vePrecio ? ' (' + (sinPrecio === 1 ? 'uno no tiene precio: no suma' : sinPrecio + ' no tienen precio: no suman') + ')' : '') + '</p>' : '') +
         (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulad' + (aFabrica ? 'a' : 'o') + ' el ' + esc(fechaHora(r.anulado_en)) + (r.anulado_por_nombre ? ' por ' + esc(r.anulado_por_nombre) : '') + ': ' + esc(r.anulado_motivo || '') + '</div>' : '') +
         '<div id="rmAnular"></div><div class="pos-pie">' +
           /* En el local, la devolución y el envío se anulan mientras nadie recibió nada (si se armaron mal); lo demás, desde Gestión. */
-          ((gestion || ((aFabrica || envio) && pend && !recibioAlgo)) && !an ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmAnularBtn">Anular ' + queEs.trim() + '</button>' : '') +
+          ((gestion || (puede('envios') && (aFabrica || envio) && pend && !recibioAlgo)) && !an ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmAnularBtn">Anular ' + queEs.trim() + '</button>' : '') +
           (!gestion && pend && !enPrueba() && !aFabrica && !envio ? '<button type="button" class="btn btn-sec btn-chico izq" id="rmRecibir">Recibirlo</button>' : '') +
           (gestion && pend && aFabrica ? '<button type="button" class="btn btn-pri btn-chico" id="rmFabrica">Llegó a la fábrica</button>' : '') +
           '<button type="button" class="btn ' + (gestion && pend && aFabrica ? 'btn-sec' : 'btn-pri') + ' btn-chico" data-cerrar>Cerrar</button></div>';
@@ -4406,12 +4443,12 @@
     c.innerHTML = cabeza('Diferencias', 'Lo que llegó distinto de lo que decía el remito. Se anota solo cuando un local recibe con diferencias; acá se resuelve.',
         '<button type="button" class="btn btn-sec btn-chico" id="dfBajar" disabled>Bajar para Excel</button>') +
       '<div class="pos-filtros"><div id="dfPer"></div>' +
-        campo('', 'Sucursal', '<select id="dfLocal" class="desplegable"><option value="">Todas</option>' + opcionesLocales(S.dfLocal || '') + '</select>') +
+        campo('', 'Sucursal', '<select id="dfLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(S.dfLocal || '') + '</select>') +
         campo('', 'Mostrar', '<select id="dfEstado">' + opciones([['pendiente', 'Sin resolver (de cualquier día)'], ['resuelta', 'Resueltas'], ['', 'Todas']], est) + '</select>') +
       '</div><div id="dfLista"><p class="cargando">Cargando…</p></div>';
     /* Ya las vio: el aviso de la barra no vuelve a salir por éstas (persona.js). */
     if (window.persona && persona.difVistas) persona.difVistas();
-    var per = Interfaz.periodo($('dfPer'), { inicial: 'mes', guardar: 'pos_diferencias_periodo', hastaHoy: true, alCambiar: cargar });
+    var per = periodoPos($('dfPer'), { inicial: 'mes', guardar: 'pos_diferencias_periodo', hastaHoy: true, alCambiar: cargar });
     $('dfLocal').onchange = function () { S.dfLocal = this.value; cargar(); };
     $('dfEstado').onchange = function () { S.dfEstado = this.value; cargar(); };
     var pedido = 0, D = null, elegidas = {};
@@ -4994,6 +5031,7 @@
     var b = leerJSON(claveBorradorRn(), null);
     if (!(b && b.v === 1 && b.clave && Array.isArray(b.lineas))) b = remitoNuevo();
     if (b.origen && !localDe(b.origen)) b.origen = '';
+    if ((RN_DEV || RN_ENV) && b.origen && !esMio(b.origen)) b.origen = '';
     if (b.destino && b.destino !== A_FABRICA && !localDe(b.destino)) b.destino = '';
     if (!b.razon || typeof b.razon !== 'object') b.razon = {};
     if (RN_DEV) { b.origen = b.origen || localStock().id; b.destino = A_FABRICA; }
@@ -5027,7 +5065,7 @@
         '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar">Guardar el remito</button>') +
       '<div class="tk-datos rn-datos">' +
         campo('', 'Sale de', '<select id="rnOrigen" class="desplegable"><option value="">Fábrica</option>' + opcionesLocales(RN.origen) + '</select>') +
-        campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesLocales(RN.destino) +
+        campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) +
           '<option value="' + A_FABRICA + '"' + (RN.destino === A_FABRICA ? ' selected' : '') + '>Fábrica (una devolución)</option></select>') +
         campo('', 'Referencia <span class="lbl-opc">(el número de la fábrica)</span>', '<input type="text" id="rnRef" maxlength="40" placeholder="X-0001234" autocomplete="off">') +
         campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Lo que diga el remito de la fábrica" autocomplete="off">') +
@@ -5095,7 +5133,7 @@
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan envíos: el stock es de verdad. Apagalo (abajo, en el menú) para guardarlo.</div>' : '') +
       '<div class="tk-datos rn-datos ev-datos">' +
         campo('', 'Sale de', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
-        campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesLocales(RN.destino) + '</select>') +
+        campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) + '</select>') +
         campo('', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly tabindex="-1">') +
         campo('', 'Letra', '<input type="text" value="X" readonly tabindex="-1">') +
         campo('', 'Estado', '<input type="text" value="Enviado" readonly tabindex="-1">') +
@@ -5181,7 +5219,8 @@
     var z = $('rnLista');
     if (!z) return;
     /* La devolución (SQL 189): cada producto con el precio de la lista de la sucursal, el total y la razón, como en BlueSoft. */
-    var dev = RN_DEV || RN_ENV, lista = dev ? listaDe(localDe(RN.origen)) : null, plataTot = 0, sinPrecio = 0;   // el envío, con precio y sin razón
+    /* SQL 190: los precios, con «Ver precios en remitos y envíos»; la razón de la devolución, siempre. */
+    var dev = (RN_DEV || RN_ENV) && puede('precios'), lista = dev ? listaDe(localDe(RN.origen)) : null, plataTot = 0, sinPrecio = 0;   // el envío, con precio y sin razón
     var prods = [], porCod = {}, total = 0;
     RN.lineas.forEach(function (l) {
       var p = porCod[l.codigo];
@@ -5194,7 +5233,7 @@
       return;
     }
     z.innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla rn-tabla"><thead><tr><th>Código</th><th>Producto</th><th>Talles y colores</th><th class="n">Unidades</th>' +
-        (dev ? '<th class="n">Precio unitario</th><th class="n">Precio total</th>' + (RN_DEV ? '<th>Razón</th>' : '') : '') + '<th></th></tr></thead><tbody>' +
+        (dev ? '<th class="n">Precio unitario</th><th class="n">Precio total</th>' : '') + (RN_DEV ? '<th>Razón</th>' : '') + '<th></th></tr></thead><tbody>' +
       prods.map(function (p) {
         var pr = dev ? precioDe(p.cod, lista) : null;
         if (dev && pr == null) sinPrecio++;
@@ -5212,9 +5251,9 @@
           (PROD[p.cod] ? '' : ' <span class="pill pill-warn" title="No está en el catálogo">Fuera del catálogo</span>') + '</td>' +
           '<td class="rn-det">' + det + '</td><td class="n"><b>' + num(p.total) + '</b></td>' +
           (dev ? '<td class="n">' + (pr == null ? '<span class="apagado" title="No tiene precio en la lista de la sucursal">—</span>' : plata(pr)) + '</td>' +
-                 '<td class="n">' + (pr == null ? '<span class="apagado">—</span>' : '<b>' + plata(pr * p.total) + '</b>') + '</td>' + (!RN_DEV ? '' :
+                 '<td class="n">' + (pr == null ? '<span class="apagado">—</span>' : '<b>' + plata(pr * p.total) + '</b>') + '</td>' : '') + (!RN_DEV ? '' :
                  '<td><input type="text" class="dv-razon" data-razon="' + esc(p.cod) + '" maxlength="60" placeholder="Ej.: fallada" autocomplete="off" value="' + esc(RN.razon[p.cod] || '') + '"' +
-                   ' aria-label="' + esc('Razón de ' + p.cod) + '"></td>') : '') +
+                   ' aria-label="' + esc('Razón de ' + p.cod) + '"></td>') +
           '<td class="pos-acc"><button type="button" class="pos-link" data-editar>Cambiar</button><button type="button" class="pos-link" data-quitar>Quitar</button></td></tr>';
       }).join('') + '</tbody></table></div>' +
       '<p class="rn-tot"><b>' + prods.length + (prods.length === 1 ? ' producto' : ' productos') + ' · ' + num(total) + (total === 1 ? ' unidad' : ' unidades') +
@@ -5344,7 +5383,7 @@
      lista reemplaza lo que dice el sistema y queda anotado.
      ════════════════════════════════════════════════════════════════════ */
   function verInventario() {
-    var c = $('cuerpo'), l = localDe(S.invLocal) || localInicial();
+    var c = $('cuerpo'), l = localMio(S.invLocal) || localInicial();
     S.invLocal = l.id;
     c.innerHTML = cabeza('Inventario', 'Lo que hay en una sucursal, contado. La primera vez, el Excel de «Consulta de stock» de BlueSoft; después, el inventario de cada seis meses. Lo de la lista reemplaza lo que dice el sistema.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +

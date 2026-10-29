@@ -86,6 +86,55 @@ var usuarios = (function () {
     return a.desde <= h ? 'de vacaciones hasta el ' + dm(a.hasta) : 'vacaciones del ' + dm(a.desde) + ' al ' + dm(a.hasta);
   }
 
+  /* SQL 190: el POS de cada persona. «Usa el POS» y seis casillas; cada rol arranca con las suyas
+     (pos_permisos_lista trae las de cada rol y las de cada persona). null = no es Administración o falta el SQL. */
+  var posLista = null;
+  var POS_K = ['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios'];
+  var POS_CASILLAS = [['anular', 'Anular ventas y cambios', ''],
+                      ['envios', 'Hacer envíos internos y devoluciones a fábrica', ''],
+                      ['caja', 'Caja: gastos, movimientos de salida y cierre de caja', ''],
+                      ['dias', 'Ver otros días', 'sin esto, sólo lo de hoy'],
+                      ['locales', 'Ver otros locales', 'sin esto, sólo el suyo o los que supervisa'],
+                      ['precios', 'Ver los precios y totales en remitos y envíos', '']];
+  function usaPos(p) { return !!posLista && p.rol !== 'admin' && !!(posLista.personas[p.id] || {}).usa; }
+  /** El bloque del editor. Al administrador no se le toca: tiene todo. */
+  function posBloque(p, r) {
+    if (!posLista) return '';
+    var adm = r === 'admin', e = posLista.personas[p.id] || posLista.roles[r] || {}, usa = !adm && !!e.usa;
+    return '<div class="us-pos" data-ed-pos role="group" aria-label="POS">' +
+      '<span class="us-pos-tit">POS</span>' +
+      '<label class="us-pos-usa"' + (adm ? ' hidden' : '') + '><input type="checkbox" data-pos="usa"' + (usa ? ' checked' : '') + '> Usa el POS</label>' +
+      '<div class="us-pos-casillas"' + (usa ? '' : ' hidden') + '>' +
+        '<p class="us-pos-nota">Nueva venta, Tickets, Cambios, Venta fallida, recibir remitos y Stock los tiene todo el que usa el POS. Además:</p>' +
+        POS_CASILLAS.map(function (c) {
+          return '<label class="us-pos-cas"><input type="checkbox" data-pos="' + c[0] + '"' + (e[c[0]] ? ' checked' : '') + '> <span>' + esc(c[1]) +
+            (c[2] ? ' <small>(' + esc(c[2]) + ')</small>' : '') + '</span></label>';
+        }).join('') + '</div>' +
+      '<p class="us-pos-admin"' + (adm ? '' : ' hidden') + '>Administrador: todo el POS y la Gestión.</p>' +
+    '</div>';
+  }
+  /** Cambió el rol en el editor: las casillas vuelven a las del rol nuevo («Usa el POS» queda como está). */
+  function posRol(pb, rol) {
+    var adm = rol === 'admin', def = posLista.roles[rol] || {};
+    POS_CASILLAS.forEach(function (c) { pb.querySelector('[data-pos="' + c[0] + '"]').checked = !!def[c[0]]; });
+    pb.querySelector('.us-pos-usa').hidden = adm;
+    pb.querySelector('.us-pos-admin').hidden = !adm;
+    pb.querySelector('.us-pos-casillas').hidden = adm || !pb.querySelector('[data-pos="usa"]').checked;
+  }
+  /** Lo que quedó marcado (null: sin el bloque, o es administrador). */
+  function posDelEditor(f, rol) {
+    var pb = f.querySelector('[data-ed-pos]');
+    if (!pb || !posLista || rol === 'admin') return null;
+    var v = {};
+    POS_K.forEach(function (k) { v[k] = pb.querySelector('[data-pos="' + k + '"]').checked; });
+    return v;
+  }
+  /** ¿Lo marcado es distinto de lo que tendría con su rol (el nuevo, si cambió) y lo que ya le cambiaron? */
+  function posCambia(p, rol, v) {
+    var pr = (posLista.personas[p.id] || {}).propios || {}, def = posLista.roles[rol] || {};
+    return POS_K.some(function (k) { return v[k] !== (k in pr ? pr[k] : !!def[k]); });
+  }
+
   var datos = null;
   var filtro = { local: '', desactivados: false };
   var editando = null;
@@ -132,7 +181,9 @@ var usuarios = (function () {
 
   function traer() {
     /* Sin el SQL 181 no está nc_vacaciones: la lista sale igual, sin las vacaciones. */
-    return Promise.all([llamar('nc_usuarios'), llamar('nc_vacaciones').catch(function () { return null; })]).then(function (rr) {
+    /* SQL 190: los permisos del POS, sólo para Administración; sin el SQL, la lista sale igual, sin el bloque POS. */
+    return Promise.all([llamar('nc_usuarios'), llamar('nc_vacaciones').catch(function () { return null; }),
+                        persona.rol() === 'admin' ? llamar('pos_permisos_lista').catch(function () { return null; }) : null]).then(function (rr) {
       var d = rr[0];
       if (!d || d.error) {
         cuerpo().innerHTML = bloque('Usuarios', esc((d && d.porque) || 'No se pudo traer la lista.'));
@@ -140,6 +191,7 @@ var usuarios = (function () {
       }
       datos = d;
       vacs = rr[1] && Array.isArray(rr[1].vacaciones) ? rr[1].vacaciones : null;
+      posLista = rr[2] && rr[2].roles && rr[2].personas ? rr[2] : null;
       dibujar();
     }).catch(function (e) {
       if (e && e.sinSesion) { datos = null; mostrar(); return; }
@@ -268,7 +320,8 @@ var usuarios = (function () {
     return '<div class="us-fila' + (p.activo ? '' : ' apagada') + '" data-id="' + esc(p.id) + '">' +
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */
-      '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + (vt ? ' · ' + esc(vt) : '') + '</span></div>' +
+      '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + (vt ? ' · ' + esc(vt) : '') +
+        (usaPos(p) ? ' · Usa el POS' : '') + '</span></div>' +
       '<span class="pill pill-' + e[0] + '">' + esc(e[1]) + '</span>' +
       (acc ? '<div class="us-acciones">' + acc + '</div>' : '') +
       '</div>';
@@ -325,7 +378,8 @@ var usuarios = (function () {
         '<div class="us-editor solo-dias">' + dias + botones + '</div></div>';
     }
     return '<div class="us-fila us-editando" data-id="' + esc(p.id) + '">' +
-      '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Cambiar el rol, el local' + (fr ? ', los francos' : '') + ' o si también atiende clientes</span></div>' +
+      '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + '</b><span>Cambiar el rol, el local' + (fr ? ', los francos' : '') +
+        (posLista ? ', si también atiende clientes o el POS' : ' o si también atiende clientes') + '</span></div>' +
       '<div class="us-editor">' +
         '<select data-ed="rol" aria-label="Rol">' + opcionesRol(r) + '</select>' +
         '<select data-ed="local" class="desplegable" aria-label="Local"' + (sinLocal(r) ? ' hidden' : '') + '>' + opcionesLocal(p.local_id || '', r === 'gerencia') + '</select>' +
@@ -334,6 +388,7 @@ var usuarios = (function () {
         dias +
         '<label class="us-check" data-ed-atencion' + (puedeAtencion(r) ? '' : ' hidden') + ' title="Entra también al CRM, Socios, el Club y Gift Cards, con un PIN de 6 números">' +
           '<input type="checkbox" data-ed="atencion"' + (p.tambien_atencion ? ' checked' : '') + '> También atiende clientes</label>' +
+        posBloque(p, r) +
         botones +
       '</div></div>';
   }
@@ -386,7 +441,7 @@ var usuarios = (function () {
           '<div class="us-dias" role="group" aria-label="Francos">' + casillasDias([]) + '</div></div>' : '') +
         '<div class="campo ancho"><button type="button" class="btn btn-pri" id="usCrear">Crear usuario</button></div>' +
       '</div>' +
-      (admin ? '<p class="us-nota">' + esc(QUE_VE) + '</p>' : ''));
+      (admin ? '<p class="us-nota">' + esc(QUE_VE) + (posLista ? ' El POS: a quien le prendas «Usa el POS» en Cambiar.' : '') + '</p>' : ''));
   }
 
   /* ═══ Lo que se toca ════════════════════════════════════════════════════ */
@@ -497,6 +552,8 @@ var usuarios = (function () {
               !confirm('¿Sacarle a ' + nom + ' los locales que supervisa (' + susLocales(p) + ')?')) return;
           var cas = f.querySelector('[data-ed="atencion"]');
           var conAt = puedeAtencion(rol) && !!(cas && cas.checked), cambiaAt = conAt !== !!p.tambien_atencion;
+          /* SQL 190: se lee antes, porque cada paso vuelve a dibujar la lista. */
+          var posVa = posDelEditor(f, rol), cambiaPos = !!posVa && posCambia(p, rol, posVa);
           hacer('nc_usuario_cambiar', { p_persona: p.id, p_rol: zona ? 'supervisor' : rol, p_local: sinLocal(rol) ? null : loc }, function () {
             if (zona) return null;   // avisa el paso de los locales
             /* SQL 110: lo de la oficina pide un PIN de 6 números; el suyo
@@ -522,6 +579,12 @@ var usuarios = (function () {
             })
             /* SQL 154: los francos, también aparte (si no cambiaron, no llama). */
             .then(function (ok) { return ok && dias ? guardarFrancos(p, dias) : ok; })
+            /* SQL 190: el POS, también aparte (la base guarda sólo lo distinto de lo de su rol). */
+            .then(function (ok) {
+              if (!ok || !cambiaPos) return ok;
+              return hacer('pos_permisos_guardar', { p_persona: p.id, p: posVa },
+                'Guardado: ' + p.nombre + (posVa.usa ? ' usa el POS.' : ' no usa el POS.'));
+            })
             .then(function (ok) { if (ok) { editando = null; document.getElementById('usLista').innerHTML = lista(); } });
           break;
         case 'pin':
@@ -552,7 +615,10 @@ var usuarios = (function () {
         var di = ed.querySelector('[data-ed-dias]');
         if (di) di.hidden = !tieneFranco(s.value);
         loc.innerHTML = opcionesLocal(loc.value, s.value === 'gerencia');
+        var pb = ed.querySelector('[data-ed-pos]');
+        if (pb && posLista) posRol(pb, s.value);
       }
+      if (s.dataset && s.dataset.pos === 'usa') s.closest('[data-ed-pos]').querySelector('.us-pos-casillas').hidden = !s.checked;
     };
 
     var rolSel = document.getElementById('usRol');

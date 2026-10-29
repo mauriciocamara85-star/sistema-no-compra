@@ -260,13 +260,112 @@ revoke all on sequence pos_listas_id_seq, pos_promos_id_seq from anon, authentic
 --  LAS FUNCIONES
 -- ═══════════════════════════════════════════════════════════════════════════
 
+/* ─── SQL 190 (28/10/2026) · LOS PERMISOS DEL POS ───
+   Mauricio (28/10): "dentro del sistema ya tenemos una parte de usuarios… tiene
+   que servir la que tenemos y, de ahí, poder poner los permisos para el POS".
+   En Config → Usuarios, a cada persona: «Usa el POS» y seis casillas (como la
+   pestaña Permisos de BlueSoft). Cada rol arranca con lo suyo; pos_permisos
+   guarda sólo lo que la oficina le cambió a una persona. El administrador puede
+   todo, y la Gestión (la oficina) es sólo suya. */
+create table if not exists pos_permisos (
+  persona_id   uuid primary key references orden_personas(id) on delete cascade,
+  cambios      jsonb not null default '{}'::jsonb,   -- {"usa": true, "dias": false}: sólo lo distinto de su rol
+  cambiado_por uuid references orden_personas(id) on delete set null,
+  cambiado_en  timestamptz not null default now()
+);
+alter table pos_permisos enable row level security;
+revoke all on pos_permisos from anon, authenticated;
+
+/* Lo que trae cada rol. El vendedor: vender, cambiar, la venta fallida, recibir y el stock (lo
+   de siempre). El encargado, además: anular ventas, los envíos y las devoluciones, la caja, otros
+   días y los precios de los remitos. El supervisor de varios locales, también otros locales.
+   Usar el POS lo prende la oficina a cada uno. */
+create or replace function pos_permiso_del_rol(p_rol text, p_con_local boolean, p_que text) returns boolean
+language sql immutable as $$
+  select case
+    when p_rol = 'admin' then true
+    when p_que in ('usa', 'gestion') then false
+    when p_rol = 'supervisor' then p_que <> 'locales' or not coalesce(p_con_local, false)
+    else false end
+$$;
+
+/* ¿Esta persona puede esto? Lo de su rol, salvo lo que la oficina le cambió. */
+create or replace function pos_puede_persona(p orden_personas, p_que text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select case
+    when p.id is null or not coalesce(p.activo, false) or not coalesce(p.aprobado, false) then false
+    when p.rol = 'admin' then true
+    when p_que = 'gestion' then false
+    else coalesce((select (x.cambios ->> p_que)::boolean from pos_permisos x where x.persona_id = p.id),
+                  pos_permiso_del_rol(p.rol::text, p.local_id is not null, p_que)) end
+$$;
+
+/* Y la persona que entró. */
+create or replace function pos_puede(p_que text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select orden_es_admin() or coalesce((select pos_puede_persona(p, p_que) from orden_personas p where p.id = orden_yo_id()), false)
+$$;
+
 create or replace function pos_permiso() returns void
 language plpgsql stable security definer set search_path = public as $$
 begin
-  if not orden_es_admin() then
-    raise exception 'El POS todavía está en construcción: por ahora lo usa sólo Administración.' using errcode = '42501';
+  if not pos_puede('usa') then
+    raise exception 'Todavía no tenés el POS: lo prende la oficina en Config → Usuarios.' using errcode = '42501';
   end if;
 end $$;
+
+/* Lo que pide un permiso, además de usar el POS. */
+create or replace function pos_permiso(p_que text) returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  if not pos_puede(p_que) then
+    raise exception '%', case p_que
+      when 'gestion' then 'Esto es de la oficina: lo hace Administración.'
+      when 'anular'  then 'No tenés permiso para anular ventas ni cambios. Lo da la oficina en Config → Usuarios.'
+      when 'envios'  then 'No tenés permiso para los envíos internos ni las devoluciones a fábrica. Lo da la oficina en Config → Usuarios.'
+      when 'caja'    then 'No tenés permiso para la caja (gastos, movimientos de salida y cierre). Lo da la oficina en Config → Usuarios.'
+      when 'dias'    then 'Sólo podés ver lo de hoy. Para otros días, el permiso lo da la oficina en Config → Usuarios.'
+      when 'locales' then 'Sólo podés usar el POS de tu local. Para otros, el permiso lo da la oficina en Config → Usuarios.'
+      else 'No tenés permiso para esto en el POS.' end using errcode = '42501';
+  end if;
+end $$;
+
+/* ¿Puede trabajar con ese local? El suyo y los que supervisa; con «Ver otros locales», todos. */
+create or replace function pos_local_mio(p_local uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select p_local is not null and (pos_puede('locales') or exists (
+    select 1 from orden_personas p
+     where p.id = orden_yo_id()
+       and (p.local_id = p_local or exists (select 1 from orden_supervision s where s.persona_id = p.id and s.local_id = p_local and s.aprobado))))
+$$;
+
+/* El local de una pantalla o de lo que se toca. null = todos los locales: sólo con «Ver otros locales». */
+create or replace function pos_local_ok(p_local uuid) returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if not (pos_local_mio(p_local) or (p_local is null and pos_puede('locales'))) then
+    raise exception 'Sólo podés usar el POS de tu local. Para otros, el permiso lo da la oficina en Config → Usuarios.' using errcode = '42501';
+  end if;
+end $$;
+
+/* Sin «Ver otros días», las listas son sólo de hoy. */
+create or replace function pos_dias_ok(p_desde date) returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+  if (p_desde is null or p_desde < pos_hoy()) and not pos_puede('dias') then
+    raise exception 'Sólo podés ver lo de hoy. Para otros días, el permiso lo da la oficina en Config → Usuarios.' using errcode = '42501';
+  end if;
+end $$;
+
+/* Todo lo que puede la persona que entró, para la pantalla (pos_inicio), y sus locales. */
+create or replace function pos_mis_permisos() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('usa', pos_puede('usa'), 'anular', pos_puede('anular'), 'envios', pos_puede('envios'),
+           'caja', pos_puede('caja'), 'dias', pos_puede('dias'), 'locales', pos_puede('locales'), 'precios', pos_puede('precios'),
+           'gestion', pos_puede('gestion'),
+           'mios', coalesce((select jsonb_agg(l.id) from orden_locales l where l.activo and pos_local_mio(l.id)), '[]'::jsonb))
+$$;
 
 create or replace function pos_hoy() returns date
 language sql stable as $$
@@ -279,7 +378,9 @@ language plpgsql stable security definer set search_path = public as $$
 begin
   perform pos_permiso();
   return jsonb_build_object(
-    'yo', (select jsonb_build_object('id', p.id, 'nombre', p.nombre) from orden_personas p where p.id = orden_yo_id()),
+    /* SQL 190: su local y lo que puede en el POS (las casillas de Config → Usuarios). */
+    'yo', (select jsonb_build_object('id', p.id, 'nombre', p.nombre, 'local_id', p.local_id) from orden_personas p where p.id = orden_yo_id()),
+    'puede', pos_mis_permisos(),
     'hoy', pos_hoy(),
     'locales', coalesce((
       select jsonb_agg(jsonb_build_object('id', l.id, 'nombre', l.nombre, 'codigo', l.codigo,
@@ -338,7 +439,7 @@ create or replace function pos_precio_guardar(p_lista int, p_codigo text, p_prec
 language plpgsql volatile security definer set search_path = public as $$
 declare c text := upper(trim(coalesce(p_codigo, '')));
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if not exists (select 1 from pos_listas where id = p_lista) then raise exception 'No existe esa lista de precios.'; end if;
   if c = '' or length(c) > 30 then raise exception 'Falta el código del producto.'; end if;
   if p_precio is null then
@@ -356,7 +457,7 @@ end $$;
 create or replace function pos_lista_guardar(p_lista int, p_ajuste numeric, p_redondeo int) returns boolean
 language plpgsql volatile security definer set search_path = public as $$
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if p_ajuste is null or p_ajuste <= -100 or p_ajuste > 300 then raise exception 'El porcentaje no es válido.'; end if;
   if p_redondeo is null or p_redondeo < 1 or p_redondeo > 10000 then raise exception 'El redondeo no es válido.'; end if;
   update pos_listas set ajuste = p_ajuste, redondeo = p_redondeo where id = p_lista and base_id is not null;
@@ -368,7 +469,7 @@ end $$;
 create or replace function pos_sucursal_guardar(p_local uuid, p_lista int, p_punto_venta int, p_habilitada boolean) returns boolean
 language plpgsql volatile security definer set search_path = public as $$
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if not exists (select 1 from orden_locales where id = p_local) then raise exception 'No existe ese local.'; end if;
   if not exists (select 1 from pos_listas where id = p_lista and activo) then raise exception 'No existe esa lista de precios.'; end if;
   if p_punto_venta is not null and (p_punto_venta < 1 or p_punto_venta > 99999) then raise exception 'El punto de venta va del 1 al 99999.'; end if;
@@ -386,7 +487,7 @@ declare
   v_id     int := nullif(p->>'id', '')::int;
   v_rubros text[];
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   /* Los rubros llegan como lista; vacía (o sin mandar) es "para todo". */
   if jsonb_typeof(p->'rubros') = 'array' then
     select array_agg(distinct trim(r)) into v_rubros from jsonb_array_elements_text(p->'rubros') r where trim(r) <> '';
@@ -451,6 +552,7 @@ declare
   v_mov     bigint;
 begin
   perform pos_permiso();
+  perform pos_local_ok(v_local);   -- SQL 190
 
   if v_clave is not null then
     select * into v_ya from pos_ventas where clave = v_clave;
@@ -614,6 +716,8 @@ create or replace function pos_tickets(p_desde date, p_hasta date, p_local uuid 
 language plpgsql stable security definer set search_path = public as $$
 begin
   perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190: su local y, sin «Ver otros días», hoy
+  perform pos_dias_ok(p_desde);
   if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
   if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
   return (
@@ -694,6 +798,7 @@ begin
     from pos_ventas v join orden_locales l on l.id = v.local_id
    where v.id = p_id;
   if r is null then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok((r->>'local_id')::uuid);   -- SQL 190
   return r;
 end $$;
 
@@ -703,10 +808,11 @@ create or replace function pos_venta_anular(p_id uuid, p_motivo text) returns bo
 language plpgsql volatile security definer set search_path = public as $$
 declare v pos_ventas; m pos_stock_movs;
 begin
-  perform pos_permiso();
+  perform pos_permiso('anular');   -- SQL 190
   if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
   select * into v from pos_ventas where id = p_id for update;
   if not found then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok(v.local_id);
   if v.estado = 'anulada' then raise exception 'Esa venta ya está anulada.'; end if;
   if v.factura is not null then raise exception 'Esa venta tiene factura de ARCA: se anula con una nota de crédito.'; end if;
   update pos_ventas set estado = 'anulada', anulada_en = now(), anulada_por = orden_yo_id(), anulada_motivo = trim(p_motivo)
@@ -735,6 +841,7 @@ language plpgsql volatile security definer set search_path = public as $$
 declare n int; nc int;
 begin
   perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190: las de su local
   delete from pos_ventas where prueba and (p_local is null or local_id = p_local);
   get diagnostics n = row_count;
   delete from pos_cambios where prueba and (p_local is null or local_id = p_local);
@@ -972,7 +1079,8 @@ declare
   a         jsonb;
   v_prueba  boolean := coalesce(p_prueba, false);
 begin
-  perform pos_permiso();
+  perform pos_permiso('caja');   -- SQL 190
+  perform pos_local_ok(p_local);
   if p_local is null or not exists (select 1 from orden_locales where id = p_local and activo) then
     raise exception 'Elegí la sucursal.';
   end if;
@@ -1001,7 +1109,8 @@ declare
   v_saldo   numeric;
   v_esp     numeric;
 begin
-  perform pos_permiso();
+  perform pos_permiso('caja');   -- SQL 190
+  perform pos_local_ok(p_local);
   if p_local is null or not exists (select 1 from orden_locales where id = p_local and activo) then
     raise exception 'Elegí la sucursal.';
   end if;
@@ -1050,7 +1159,8 @@ declare
   v_n        int;
   v_primero  numeric;
 begin
-  perform pos_permiso();
+  perform pos_permiso('caja');   -- SQL 190
+  perform pos_local_ok(v_local);
 
   if v_clave is not null then
     select * into c from pos_cierres where clave = v_clave;
@@ -1166,7 +1276,8 @@ declare
   v_num     int;
   v_ya      pos_caja_movimientos;
 begin
-  perform pos_permiso();
+  perform pos_permiso('caja');   -- SQL 190
+  perform pos_local_ok(v_local);
   if v_clave is not null then
     select * into v_ya from pos_caja_movimientos where clave = v_clave;
     if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'prueba', v_ya.prueba, 'ya', true); end if;
@@ -1202,10 +1313,11 @@ create or replace function pos_caja_mov_anular(p_id uuid, p_motivo text) returns
 language plpgsql volatile security definer set search_path = public as $$
 declare m pos_caja_movimientos;
 begin
-  perform pos_permiso();
+  perform pos_permiso('caja');   -- SQL 190
   if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
   select * into m from pos_caja_movimientos where id = p_id for update;
   if not found then raise exception 'No existe ese movimiento.'; end if;
+  perform pos_local_ok(m.local_id);
   if m.estado = 'anulado' then raise exception 'Ese movimiento ya está anulado.'; end if;
   if m.cierre_id is not null then
     raise exception 'Ese movimiento ya entró en el cierre %: para cambiarlo, hay que anular el cierre.',
@@ -1220,7 +1332,7 @@ end $$;
 create or replace function pos_cierres(p_desde date, p_hasta date, p_local uuid default null, p_prueba boolean default false)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
   if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
   return (
@@ -1260,7 +1372,7 @@ create or replace function pos_cierre(p_id uuid) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare r jsonb;
 begin
-  perform pos_permiso();
+  perform pos_permiso('caja');   -- SQL 190
   select to_jsonb(c) - 'clave'
          || jsonb_build_object(
               'local', l.nombre,
@@ -1282,6 +1394,7 @@ begin
     from pos_cierres c join orden_locales l on l.id = c.local_id
    where c.id = p_id;
   if r is null then raise exception 'No existe ese cierre.'; end if;
+  perform pos_local_ok((r->>'local_id')::uuid);
   return r;
 end $$;
 
@@ -1292,10 +1405,11 @@ create or replace function pos_cierre_anular(p_id uuid, p_motivo text) returns b
 language plpgsql volatile security definer set search_path = public as $$
 declare c pos_cierres; d pos_cierres;
 begin
-  perform pos_permiso();
+  perform pos_permiso('caja');   -- SQL 190
   if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
   select * into c from pos_cierres where id = p_id;
   if not found then raise exception 'No existe ese cierre.'; end if;
+  perform pos_local_ok(c.local_id);
   perform pg_advisory_xact_lock(hashtext('pos_caja:' || c.local_id::text || ':' || c.prueba::text));
   select * into c from pos_cierres where id = p_id for update;
   if c.estado = 'anulada' then raise exception 'Ese cierre ya está anulado.'; end if;
@@ -1321,7 +1435,9 @@ create or replace function pos_caja_movimientos(p_desde date, p_hasta date, p_lo
                                                 p_prueba boolean default false) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 begin
-  perform pos_permiso();
+  perform pos_permiso('caja');   -- SQL 190
+  perform pos_local_ok(p_local);
+  perform pos_dias_ok(p_desde);
   if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
   if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
   if p_tipo is not null and p_tipo not in ('gasto', 'salida', 'ingreso', 'caja_fuerte') then raise exception 'Ese tipo de movimiento no existe.'; end if;
@@ -1514,6 +1630,7 @@ declare
   m         numeric;
 begin
   perform pos_permiso();
+  perform pos_local_ok(v_local);   -- SQL 190
 
   if v_clave is not null then
     select * into v_ya from pos_cambios where clave = v_clave;
@@ -1645,6 +1762,8 @@ create or replace function pos_cambios(p_desde date, p_hasta date, p_local uuid 
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 begin
   perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190
+  perform pos_dias_ok(p_desde);
   if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
   if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
   return (
@@ -1696,6 +1815,7 @@ begin
     from pos_cambios c join orden_locales l on l.id = c.local_id
    where c.id = p_id;
   if r is null then raise exception 'No existe ese cambio.'; end if;
+  perform pos_local_ok((r->>'local_id')::uuid);   -- SQL 190
   return r;
 end $$;
 
@@ -1706,10 +1826,11 @@ create or replace function pos_cambio_anular(p_id uuid, p_motivo text) returns b
 language plpgsql volatile security definer set search_path = public as $$
 declare c pos_cambios; m pos_stock_movs;
 begin
-  perform pos_permiso();
+  perform pos_permiso('anular');   -- SQL 190
   if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
   select * into c from pos_cambios where id = p_id for update;
   if not found then raise exception 'No existe ese cambio.'; end if;
+  perform pos_local_ok(c.local_id);
   if c.estado = 'anulado' then raise exception 'Ese cambio ya está anulado.'; end if;
   if c.cierre_id is not null then
     raise exception 'Ese cambio ya entró en el cierre %: para anularlo, hay que anular el cierre.',
@@ -1934,6 +2055,7 @@ create or replace function pos_stock_local(p_local uuid) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 begin
   perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190
   return jsonb_build_object(
     'con_stock', exists (select 1 from pos_stock s where s.local_id = p_local and s.cantidad > 0),
     'filas', coalesce((select jsonb_agg(jsonb_build_array(s.codigo, s.talle, s.color, s.cantidad))
@@ -1959,6 +2081,7 @@ declare
   v_desde int := greatest(coalesce(p_desde, 0), 0);
 begin
   perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190
   if p_productos is not null and (p_productos < 0 or p_productos > 2000) then
     raise exception 'Se piden de 0 a 2000 productos por vez.';
   end if;
@@ -2007,6 +2130,7 @@ declare
   v_co  text := upper(trim(coalesce(p_color, '')));
 begin
   perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190
   return jsonb_build_object(
     'local', (select l.nombre from orden_locales l where l.id = p_local),
     'stock', (select jsonb_build_object('cantidad', s.cantidad, 'entradas', s.entradas, 'salidas', s.salidas, 'descripcion', s.descripcion)
@@ -2039,7 +2163,7 @@ declare
   v_nueva    int;
   v_actual   int;
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if v_clave is not null and exists (select 1 from pos_stock_movs where clave = v_clave) then
     return jsonb_build_object('ya', true);
   end if;
@@ -2084,7 +2208,7 @@ declare
   x         record;
   e         jsonb;
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if v_clave is not null then
     select * into v_ya from pos_inventarios where clave = v_clave;
     if found then
@@ -2151,7 +2275,7 @@ end $$;
 create or replace function pos_inventarios(p_local uuid default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   return coalesce((
     select jsonb_agg(jsonb_build_object('id', i.id, 'fecha', i.fecha, 'local', l.nombre, 'local_id', i.local_id, 'persona', i.persona_nombre,
                                         'origen', i.origen, 'lineas', i.lineas, 'unidades', i.unidades, 'cambiaron', i.cambiaron,
@@ -2184,6 +2308,8 @@ declare
   m          record;
 begin
   perform pos_permiso();
+  /* SQL 190: lo que viene de la fábrica lo arma la oficina; los envíos y las devoluciones salen del local, con su permiso. */
+  if v_origen is null then perform pos_permiso('gestion'); else perform pos_permiso('envios'); perform pos_local_ok(v_origen); end if;
   if v_clave is not null then
     select * into v_ya from pos_remitos where clave = v_clave;
     if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'ya', true); end if;
@@ -2268,8 +2394,11 @@ end $$;
    pie de "Devoluciones a Fábrica" de BlueSoft. */
 create or replace function pos_remitos(p_desde date, p_hasta date, p_local uuid default null, p_estado text default null)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
+declare v_res jsonb;
 begin
   perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190
+  if p_estado is distinct from 'pendiente' then perform pos_dias_ok(p_desde); end if;
   if p_estado is not null and p_estado not in ('pendiente', 'recibido', 'con_diferencias', 'anulado') then
     raise exception 'Ese estado no existe.';
   end if;
@@ -2277,7 +2406,7 @@ begin
     if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
     if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
   end if;
-  return (
+  v_res := (
     with r as (
       select x.* from pos_remitos x
        where (p_local is null or x.destino_local_id = p_local or x.origen_local_id = p_local)
@@ -2314,6 +2443,20 @@ begin
       'mas', (select count(*) > 500 from r)
     )
   );
+  /* SQL 190: sin «Ver precios», sin montos; el que recibe no ve cuántas unidades vienen hasta contarlas. */
+  if not pos_puede('precios') then
+    v_res := jsonb_set(v_res, '{filas}', coalesce((select jsonb_agg(e || jsonb_build_object('total', null, 'sin_precio', null) order by o)
+                                                     from jsonb_array_elements(v_res->'filas') with ordinality t(e, o)), '[]'::jsonb));
+    v_res := jsonb_set(v_res, '{totales,monto}', 'null'::jsonb);
+  end if;
+  if not pos_puede('gestion') then
+    v_res := jsonb_set(v_res, '{filas}', coalesce((select jsonb_agg(case when e->>'estado' = 'pendiente' and e->>'destino_local_id' is not null
+                                                                      and not pos_local_mio((e->>'origen_local_id')::uuid)
+                                                                 then e || jsonb_build_object('unidades', null, 'contadas', null, 'total', null) else e end order by o)
+                                                     from jsonb_array_elements(v_res->'filas') with ordinality t(e, o)), '[]'::jsonb));
+    v_res := jsonb_set(v_res, '{totales,unidades}', 'null'::jsonb);
+  end if;
+  return v_res;
 end $$;
 
 /* Un remito, producto por producto. A CIEGAS: de lo que todavía no se recibió
@@ -2324,9 +2467,15 @@ end $$;
    siempre entera: nadie la cuenta a ciegas, y el local que la mandó la ve. */
 create or replace function pos_remito(p_id uuid, p_completo boolean default false) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
-declare r jsonb;
+declare r jsonb; v_o uuid; v_d uuid; v_completo boolean := coalesce(p_completo, false);
 begin
   perform pos_permiso();
+  /* SQL 190: de un local suyo; las cantidades, al que lo manda (el que lo recibe, a ciegas). */
+  if not pos_puede('gestion') then
+    select x.origen_local_id, x.destino_local_id into v_o, v_d from pos_remitos x where x.id = p_id;
+    if found and not (pos_local_mio(v_o) or pos_local_mio(v_d)) then perform pos_local_ok(coalesce(v_d, v_o)); end if;
+    v_completo := v_completo and pos_local_mio(v_o);
+  end if;
   select to_jsonb(x) - 'clave' || jsonb_build_object(
            'origen', coalesce(lo.nombre, 'Fábrica'), 'destino', coalesce(ld.nombre, 'Fábrica'),
            'anulado_por_nombre', (select pe.nombre from orden_personas pe where pe.id = x.anulado_por),
@@ -2343,7 +2492,7 @@ begin
                                         from pos_remito_diferencias d left join pos_remitos rn on rn.id = d.remito_nuevo_id
                                        where d.remito_id = x.id and d.codigo = g.codigo),
                       'conteos', (select count(*) from pos_remito_conteos c where c.remito_id = x.id and c.codigo = g.codigo),
-                      'celdas', (select jsonb_agg(case when k.codigo is not null or x.estado = 'anulado' or coalesce(p_completo, false)
+                      'celdas', (select jsonb_agg(case when k.codigo is not null or x.estado = 'anulado' or v_completo
                                                             or x.destino_local_id is null
                                                        then jsonb_build_object('talle', i.talle, 'color', i.color, 'cantidad', i.cantidad, 'contado', i.contado)
                                                        else jsonb_build_object('talle', i.talle, 'color', i.color) end
@@ -2359,6 +2508,10 @@ begin
     left join orden_locales lo on lo.id = x.origen_local_id
    where x.id = p_id;
   if r is null then raise exception 'No existe ese remito.'; end if;
+  if not pos_puede('precios') then
+    r := r || jsonb_build_object('total', null, 'productos', coalesce((select jsonb_agg(e || jsonb_build_object('precio', null) order by o)
+                                                                          from jsonb_array_elements(r->'productos') with ordinality t(e, o)), '[]'::jsonb));
+  end if;
   return r;
 end $$;
 
@@ -2465,6 +2618,7 @@ begin
   if r.estado = 'anulado' then raise exception 'Ese remito está anulado.'; end if;
   if r.estado <> 'pendiente' then raise exception 'Ese remito ya está recibido.'; end if;
   if r.destino_local_id is null then raise exception 'Ese remito vuelve a la fábrica: se da por recibido en Gestión.'; end if;
+  perform pos_local_ok(r.destino_local_id);   -- SQL 190
   if exists (select 1 from pos_remito_productos where remito_id = p_remito and codigo = v_c) then
     raise exception 'Ese producto ya está recibido.';
   end if;
@@ -2519,6 +2673,7 @@ begin
   if r.estado = 'anulado' then raise exception 'Ese remito está anulado.'; end if;
   if r.estado <> 'pendiente' then raise exception 'Ese remito ya está recibido.'; end if;
   if r.destino_local_id is null then raise exception 'Ese remito vuelve a la fábrica: se da por recibido en Gestión.'; end if;
+  perform pos_local_ok(r.destino_local_id);   -- SQL 190
   if exists (select 1 from pos_remito_productos where remito_id = p_remito and codigo = v_c) then
     raise exception 'Ese producto ya está recibido.';
   end if;
@@ -2544,6 +2699,16 @@ begin
   select * into r from pos_remitos where id = p_id for update;
   if not found then raise exception 'No existe ese remito.'; end if;
   if r.estado = 'anulado' then raise exception 'Ese remito ya está anulado.'; end if;
+  /* SQL 190: en el local, sólo sus envíos y devoluciones, con el permiso, mientras nadie empezó a recibirlos. Lo demás, la oficina. */
+  if not pos_puede('gestion') then
+    perform pos_permiso('envios');
+    if r.origen_local_id is null then raise exception 'Los remitos de la fábrica los anula la oficina.' using errcode = '42501'; end if;
+    perform pos_local_ok(r.origen_local_id);
+    if r.estado <> 'pendiente' or exists (select 1 from pos_remito_productos k where k.remito_id = p_id)
+       or exists (select 1 from pos_remito_conteos k where k.remito_id = p_id) then
+      raise exception 'Ya lo empezaron a recibir: ahora lo anula la oficina.' using errcode = '42501';
+    end if;
+  end if;
   for m in select * from pos_stock_movs where ref_id = p_id and tipo in ('remito', 'envio') order by id loop
     perform pos_stock_mover(m.local_id, m.codigo, m.talle, m.color, -m.cantidad, m.tipo || '_anulado', p_id, m.ref || ' (anulado)');
   end loop;
@@ -2634,7 +2799,7 @@ revoke all on sequence pos_remito_diferencias_id_seq from anon, authenticated;
 create or replace function pos_diferencias(p_desde date, p_hasta date, p_local uuid default null, p_estado text default null)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if p_estado is not null and p_estado not in ('pendiente', 'resuelta') then raise exception 'Ese estado no existe.'; end if;
   if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
   if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
@@ -2739,7 +2904,7 @@ declare
   v_items   jsonb;
   v_rem     jsonb;
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if v_res not in ('mandar', 'remito_mal', 'devolver', 'otra') then raise exception 'Elegí cómo se resuelve.'; end if;
   if v_res = 'otra' and v_nota is null then raise exception 'Escribí cómo se resolvió.'; end if;
   if length(v_nota) > 300 then raise exception 'La nota es demasiado larga.'; end if;
@@ -2799,7 +2964,7 @@ create or replace function pos_diferencia_reabrir(p jsonb) returns int
 language plpgsql volatile security definer set search_path = public as $$
 declare v_ids bigint[]; v_ref int; v_n int;
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   if jsonb_typeof(p->'ids') is distinct from 'array' or jsonb_array_length(p->'ids') = 0 then raise exception 'Elegí qué diferencias.'; end if;
   if exists (select 1 from jsonb_array_elements_text(p->'ids') e where e !~ '^[0-9]{1,18}$') then raise exception 'Hay una diferencia que no existe.'; end if;
   select array_agg(distinct e::bigint) into v_ids from jsonb_array_elements_text(p->'ids') e;
@@ -2821,7 +2986,7 @@ create or replace function pos_remito_fabrica_recibir(p_id uuid) returns boolean
 language plpgsql volatile security definer set search_path = public as $$
 declare r pos_remitos;
 begin
-  perform pos_permiso();
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
   perform pg_advisory_xact_lock(hashtext('pos_remito:' || coalesce(p_id::text, '')));
   select * into r from pos_remitos where id = p_id for update;
   if not found then raise exception 'No existe ese remito.'; end if;
@@ -2942,6 +3107,7 @@ declare
   v_ya      pos_fallidas;
 begin
   perform pos_permiso();
+  perform pos_local_ok(v_local);   -- SQL 190
   if v_clave is not null then
     select * into v_ya from pos_fallidas where clave = v_clave;
     if found then return jsonb_build_object('id', v_ya.id, 'ya', true); end if;
@@ -2969,6 +3135,8 @@ create or replace function pos_fallidas(p_desde date, p_hasta date, p_local uuid
 language plpgsql stable security definer set search_path = public as $$
 begin
   perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190
+  perform pos_dias_ok(p_desde);
   if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
   if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
   return (
@@ -2998,7 +3166,8 @@ end $$;
 create or replace function pos_fallida_borrar(p_id uuid) returns boolean
 language plpgsql volatile security definer set search_path = public as $$
 begin
-  perform pos_permiso();
+  perform pos_permiso('anular');   -- SQL 190
+  perform pos_local_ok(f.local_id) from pos_fallidas f where f.id = p_id;
   delete from pos_fallidas where id = p_id;
   if not found then raise exception 'Esa venta fallida ya no está.'; end if;
   return true;
@@ -3076,3 +3245,92 @@ revoke all on function pos_fallida_guardar(jsonb), pos_fallidas(date, date, uuid
 grant execute on function pos_fallida_guardar(jsonb), pos_fallidas(date, date, uuid, text, text, boolean), pos_fallida_borrar(uuid),
                           pos_club_buscar(text), pos_club_alta(jsonb)
        to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 190 (28/10/2026) · LOS PERMISOS DEL POS EN CONFIG → USUARIOS
+--  (pos_permiso y los ayudantes están arriba, donde estaba pos_permiso)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Config → Usuarios: lo que puede cada persona en el POS y lo que trae cada rol. Sólo Administración. */
+create or replace function pos_permisos_lista() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare k text[] := array['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios'];
+begin
+  if not orden_es_admin() then raise exception 'Los permisos del POS los maneja Administración.' using errcode = '42501'; end if;
+  return jsonb_build_object(
+    'roles', (select jsonb_object_agg(r.ed, (select jsonb_object_agg(c, pos_permiso_del_rol(r.rol, r.con_local, c)) from unnest(k) c))
+                from (values ('vendedor', 'vendedor', true), ('supervisor', 'supervisor', true), ('zona', 'supervisor', false),
+                             ('atencion', 'atencion', false), ('admin', 'admin', false)) r(ed, rol, con_local)),
+    'personas', coalesce((
+      select jsonb_object_agg(p.id, (select jsonb_object_agg(c, case when p.rol = 'admin' then true
+                                                                     else coalesce((x.cambios ->> c)::boolean, pos_permiso_del_rol(p.rol::text, p.local_id is not null, c)) end)
+                                       from unnest(k) c) || jsonb_build_object('propios', coalesce(x.cambios, '{}'::jsonb)))
+        from orden_personas p left join pos_permisos x on x.persona_id = p.id), '{}'::jsonb));
+end $$;
+
+/* Guarda las casillas de una persona. Se guarda sólo lo distinto de lo de su rol: si después le
+   cambian el rol, lo demás sigue al rol nuevo. Al administrador no se le cambia nada (tiene todo). */
+create or replace function pos_permisos_guardar(p_persona uuid, p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  k text[] := array['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios'];
+  q orden_personas;
+  c text;
+  v_cambios jsonb;
+begin
+  if not orden_es_admin() then raise exception 'Los permisos del POS los maneja Administración.' using errcode = '42501'; end if;
+  select * into q from orden_personas where id = p_persona;
+  if not found then raise exception 'No existe esa persona.'; end if;
+  if q.rol = 'admin' then raise exception 'El administrador tiene todo el POS: no se le cambia nada.'; end if;
+  if jsonb_typeof(p) is distinct from 'object' then raise exception 'Faltan los permisos.'; end if;
+  select x.cambios into v_cambios from pos_permisos x where x.persona_id = p_persona for update;
+  v_cambios := coalesce(v_cambios, '{}'::jsonb);
+  foreach c in array k loop
+    if p ? c then
+      if jsonb_typeof(p->c) is distinct from 'boolean' then raise exception 'El permiso % no es válido.', c; end if;
+      if (p->>c)::boolean = pos_permiso_del_rol(q.rol::text, q.local_id is not null, c) then v_cambios := v_cambios - c;
+      else v_cambios := v_cambios || jsonb_build_object(c, (p->>c)::boolean); end if;
+    end if;
+  end loop;
+  if v_cambios = '{}'::jsonb then
+    delete from pos_permisos where persona_id = p_persona;
+  else
+    insert into pos_permisos (persona_id, cambios, cambiado_por, cambiado_en) values (p_persona, v_cambios, orden_yo_id(), now())
+    on conflict (persona_id) do update set cambios = excluded.cambios, cambiado_por = excluded.cambiado_por, cambiado_en = now();
+  end if;
+  return (select jsonb_object_agg(c2, pos_puede_persona(q, c2)) from unnest(k) c2) || jsonb_build_object('propios', v_cambios);
+end $$;
+
+/* La persona que entró (la de la base: SQL 135 y 141), más 'pos' (SQL 190): si usa el POS, la barra lo muestra. */
+create or replace function nc_yo() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial),
+           'pila', p.nombre,
+           'rol', p.rol, 'local_id', p.local_id, 'local', l.codigo, 'local_nombre', l.nombre,
+           'vendedor', coalesce(e.vendedor, orden_nombre_lista(p.nombre, p.inicial)),
+           'activo', p.activo, 'aprobado', p.aprobado,
+           /* SQL 135: además atiende clientes (lo de la oficina, como Atención). */
+           'tambien_atencion', p.tambien_atencion,
+           /* SQL 190: si usa el POS (lo prende la oficina en Config → Usuarios). */
+           'pos', pos_puede_persona(p, 'usa'),
+           /* SQL 141: los locales del supervisor de varios locales (los aprobados). */
+           'zona', case when p.rol = 'supervisor' and p.local_id is null then
+                     coalesce((select jsonb_agg(jsonb_build_object('id', z.id, 'codigo', z.codigo, 'nombre', z.nombre) order by z.nombre)
+                                 from orden_supervision s join orden_locales z on z.id = s.local_id
+                                where s.persona_id = p.id and s.aprobado and z.activo), '[]'::jsonb) end,
+           /* Su PIN tiene menos números de los que pide su rol (SQL 110): lo
+              de la oficina no abre hasta cambiarlo. */
+           'pin_corto', k.hash is not null and coalesce(k.digitos, 4) < orden_pin_digitos(p.rol, p.tambien_atencion))
+    from orden_personas p
+    left join orden_locales l on l.id = p.local_id
+    left join equipo e on e.id = p.equipo_id
+    left join orden_pins k on k.persona_id = p.id
+   where p.auth_user_id = auth.uid() and auth.uid() is not null
+   limit 1
+$$;
+
+revoke all on function pos_permiso_del_rol(text, boolean, text), pos_puede_persona(orden_personas, text), pos_puede(text),
+                       pos_permiso(text), pos_local_mio(uuid), pos_local_ok(uuid), pos_dias_ok(date), pos_mis_permisos()
+       from public, anon, authenticated;
+revoke all on function pos_permisos_lista(), pos_permisos_guardar(uuid, jsonb) from public, anon;
+grant execute on function pos_permisos_lista(), pos_permisos_guardar(uuid, jsonb) to authenticated;

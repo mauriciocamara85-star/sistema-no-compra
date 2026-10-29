@@ -31,7 +31,7 @@ var persona = (function () {
   var NO_VE = {
     /* La administración de Impecable es de los encargados: el vendedor usa
        su app (vendedores.html), que es adonde lo lleva la barra. */
-    /* El POS (pos.html y su Gestión, 20/10), mientras está en construcción, es sólo de Administración. */
+    /* El POS (pos.html): quien tenga «Usa el POS» en Config → Usuarios (SQL 190; ver usaPos). Su Gestión, sólo Administración. */
     vendedor: ['panel.html', 'club-numeros.html', 'config.html', 'impecable-admin.html', 'pos.html', 'gestion.html'],
     /* También el supervisor de varios locales (sin local fijo, SQL 120). Mauricio, 14/10:
        "acceso a todo, excepto la parte del CRM". Socios y los números del Club son de la
@@ -106,6 +106,9 @@ var persona = (function () {
     /* Con la casilla de Atención, estilos.css no esconde el CRM ni el Club. */
     if (conAtencion()) document.documentElement.setAttribute('data-nc-atencion', '');
     else document.documentElement.removeAttribute('data-nc-atencion');
+    /* SQL 190: con «Usa el POS», estilos.css no esconde el POS (la Gestión sí). */
+    if (usaPos()) document.documentElement.setAttribute('data-nc-pos', '');
+    else document.documentElement.removeAttribute('data-nc-pos');
     /* Mauricio, 25/10: la compu de un local, sin nadie adentro, ve sólo lo del local (la barra del
        vendedor: sin CRM, Socios, Config ni Supervisión). Al entrar alguien, manda su rol. Es sólo la
        barra: cada pantalla de la oficina sigue con su portón. */
@@ -118,8 +121,11 @@ var persona = (function () {
     var p = location.pathname.split('/').pop();
     return p || 'index.html';
   }
+  /* SQL 190: la oficina le prendió el POS (nc_yo trae 'pos'). */
+  function usaPos() { return vigente(_yo) && _yo.pos === true; }
   function puede(pag) {
     var r = rol(), p = pag || pagina();
+    if (p === 'pos.html' && usaPos()) return true;
     return !r || NO_VE[r].indexOf(p) < 0 || (conAtencion() && NO_VE.atencion.indexOf(p) < 0);
   }
   /** "Encargado" es el supervisor de un local; el de varios locales (sin local fijo, SQL 120), "Supervisor".
@@ -218,7 +224,9 @@ var persona = (function () {
     /* SQL 141: también los locales del supervisor (Estadísticas le muestra sólo esos). */
     var clave = function () {
       return rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado) + '|' + !!(_yo && _yo.pin_corto) + '|' + !!(_yo && _yo.tambien_atencion) +
-        '|' + (_yo && _yo.zona ? _yo.zona.map(function (z) { return z.codigo; }).join(',') : '');
+        '|' + (_yo && _yo.zona ? _yo.zona.map(function (z) { return z.codigo; }).join(',') : '') +
+        /* SQL 190: si le prendieron (o apagaron) el POS, la barra y el acceso a pos.html cambian. */
+        '|' + !!(_yo && _yo.pos);
     };
     var antes = clave();
     _yo = y;
