@@ -1005,3 +1005,11 @@ html[data-theme="dark"] .vv-barras { --vv-barra: #C9824F; }
   .pestanas.vv-vistas { overflow-x: auto; scrollbar-width: none; }
   .vv-vistas .pestana { flex: 0 0 auto; padding: 9px 12px; }
 }
+/* SQL 195: la disponibilidad de las cajas y, al tocar una, sus movimientos. Los cierres y los ajustes (lo que deja el saldo en lo contado) van marcados. */
+.pos-tabla tr[data-caja], .pos-tabla tr[data-fila] { cursor: pointer; }
+.pos-tabla tr[data-caja]:hover td, .pos-tabla tr[data-fila]:hover td { background: var(--surface-2); }
+.dp-tabla td { white-space: nowrap; }
+.dp-tabla td:nth-child(3) { white-space: normal; min-width: 180px; }
+.dp-tabla td.dp-nunca { color: var(--txt-3); }
+.dp-tabla tr.dp-control td { background: var(--surface-2); }
+.dp-cero { font-size: 12px; color: var(--txt-3); }

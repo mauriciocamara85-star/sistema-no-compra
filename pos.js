@@ -111,7 +111,8 @@
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
       ['Stock', [['stock', 'Stock', 'stock'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'], ['inventario', 'Inventario', 'inventario']]],
-      ['Caja', [['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
+      /* La disponibilidad (SQL 195): cuánto hay en cada caja y, al tocarla, sus movimientos ("Consulta de Valores" de BlueSoft). */
+      ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['reportes', 'Reportes', 'reportes']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
     ]
@@ -124,7 +125,7 @@
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, vendedores: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, vendedores: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -181,6 +182,7 @@
     fallida: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/>',
     caja: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
     movs: '<path d="M7 3v18M3 7l4-4 4 4"/><path d="M17 21V3M13 17l4 4 4-4"/>',
+    disp: '<circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/>',
     gasto: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
     fuerte: '<rect x="3" y="3" width="18" height="15" rx="2"/><circle cx="12" cy="10.5" r="3.5"/><path d="M12 10.5l2-2M7 18v3M17 18v3"/>',
     retiro: '<rect x="2" y="10" width="20" height="11" rx="2"/><circle cx="12" cy="15.5" r="2.5"/><path d="M12 7.5V2M9 4.5l3-3 3 3"/>',
@@ -305,7 +307,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_ventas_vendedor/.test(m) ? '192 (las ventas por vendedor)' : /pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
+      return 'Todavía falta correr el SQL ' + (/pos_disponibilidad|pos_caja_valores|pos_caja_ajust/.test(m) ? '195 (la disponibilidad de las cajas)' :
+                                             /pos_ventas_vendedor/.test(m) ? '192 (las ventas por vendedor)' : /pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
                                              /pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
                                              /pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
                                              /pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
@@ -437,7 +440,7 @@
       return;
     }
     var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, vendedores: verVendedores, gastos: verGastos, salidas: verSalidas,
-                retiros: verRetiros, cierre: verCierre, cierres: verCierres,
+                retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
                 devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo }[v];
@@ -3620,6 +3623,224 @@
       pedirMotivo(caja.querySelector('#mdAnular'), 'Queda en la lista, tachado, con quién lo anuló y por qué.', 'Anular', function (motivo) {
         return llamar('pos_caja_mov_anular', { p_id: f.id, p_motivo: motivo }).then(function () {
           avisar('ok', 'Listo: quedó anulado.');
+          cerrarVentana();
+          if (alCambiar) alCambiar();
+        });
+      });
+    };
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     GESTIÓN → DISPONIBILIDAD (SQL 195, 29/10)
+     La "Disponibilidad de Cajas" de BlueSoft: la caja chica y la caja
+     fuerte de cada sucursal con cuánto hay hoy según el sistema. Mauricio:
+     "cuando apretamos en una de las cajas, nos despliega los movimientos
+     que se hicieron… de entradas y salidas": al tocar una se abre su
+     "Consulta de Valores", con el saldo después de cada movimiento. La
+     caja chica la deja en lo contado cada cierre; la caja fuerte arranca
+     en $0 hasta que la oficina la cuenta con «Ajustar» (su "Ajustar/Cerrar
+     Caja"). Sólo lo de verdad: las pruebas no son plata.
+     ════════════════════════════════════════════════════════════════════ */
+  function sin195(e) {
+    var m = mensajeDe(e);
+    return /SQL 195/.test(m) ? 'La disponibilidad de las cajas todavía no está en la base: falta correr el SQL 195.' : m;
+  }
+  /** El importe de un movimiento, con su signo: "+$180.000" o "−$32.000". */
+  function importeConSigno(n) { var c = cent(n || 0); return (c > 0 ? '+' : '') + plata(c); }
+  function nombreCaja(c) { return c.caja === 'chica' ? 'Caja chica' : 'Caja fuerte'; }
+  /** Lo que dice el último control de una caja: el cierre de la chica o el ajuste de la fuerte. */
+  function ultimoControl(c) {
+    var u = c.ultimo;
+    if (!u) return c.caja === 'chica' ? 'Todavía no cerró la caja' : 'Nunca se contó: arranca en $0';
+    return (u.tipo === 'cierre' ? 'Cierre Nº ' : 'Ajuste Nº ') + u.numero + ' · ' + fechaHora(u.fecha);
+  }
+
+  function verDisponibilidad() {
+    var c = $('cuerpo'), pedido = 0;
+    S.dispVer = null;   // desde el menú, siempre la lista
+    c.innerHTML = cabeza('Disponibilidad de cajas', 'Cuánta plata hay hoy en la caja chica y en la caja fuerte de cada sucursal, según el sistema. Tocá una caja para ver sus movimientos.',
+        '<button type="button" class="btn btn-sec btn-chico" id="dpActualizar">Actualizar</button>') +
+      '<div id="dpLista"><p class="cargando">Cargando…</p></div>';
+    $('dpActualizar').onclick = cargar;
+    function cargar() {
+      var n = ++pedido;
+      $('dpLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_disponibilidad').then(function (d) {
+        if (n !== pedido || !$('dpLista')) return;
+        S.dispCajas = d.cajas || [];
+        pintar(d);
+      }).catch(function (e) { if ($('dpLista')) $('dpLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>'; });
+    }
+    function pintar(d) {
+      var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, cajas = d.cajas || [];
+      if (!cajas.length) {
+        $('dpLista').innerHTML = '<div class="pos-cartel">Todavía ninguna sucursal usa el POS de verdad. Cuando una venda, cargue un movimiento o cierre la caja, aparece acá.</div>';
+        return;
+      }
+      var sinContar = cajas.some(function (x) { return x.caja === 'fuerte' && !x.ultimo; });
+      /* Como el "Resumen" de BlueSoft: el total y lo de cada tipo de caja (sin cheques: no se usan). */
+      $('dpLista').innerHTML = '<div class="pos-totales">' +
+          '<div class="pos-kpi fuerte"><span>Total</span><b>' + p(Number(t.chica) + Number(t.fuerte)) + '</b></div>' +
+          '<div class="pos-kpi"><span>En las cajas chicas</span><b>' + p(t.chica) + '</b></div>' +
+          '<div class="pos-kpi"><span>En las cajas fuertes</span><b>' + p(t.fuerte) + '</b></div></div>' +
+        '<div class="pos-marco-tabla"><table class="pos-tabla dp-tabla"><thead><tr><th>Sucursal</th><th>Caja</th><th>Último control</th><th class="n">Hay</th></tr></thead><tbody>' +
+        cajas.map(function (x, i) {
+          return '<tr data-caja="' + i + '" tabindex="0" title="Ver los movimientos de esta caja">' +
+            '<td>' + esc(bonito(x.local)) + '</td><td><b>' + esc(nombreCaja(x)) + '</b></td>' +
+            '<td class="' + (x.ultimo ? '' : 'dp-nunca') + '">' + esc(ultimoControl(x)) + '</td>' +
+            '<td class="n"><b>' + p(x.saldo) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (sinContar ? '<p class="pos-ayuda">La caja fuerte arranca en $0 hasta que alguien la cuenta: tocala y usá «Ajustar» con lo que hay de verdad.</p>' : '');
+      $('dpLista').querySelectorAll('tr[data-caja]').forEach(function (tr) {
+        var x = cajas[Number(tr.getAttribute('data-caja'))];
+        tr.onclick = function () { S.dispVer = { local: x.local_id, caja: x.caja }; verValores(); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    cargar();
+  }
+
+  /* La "Consulta de Valores de Caja" de BlueSoft: los movimientos de una caja en el período, del más nuevo al más viejo,
+     con el saldo después de cada uno. En un cierre o un ajuste, el importe es la diferencia (lo contado menos lo que
+     decía el sistema), así cada renglón es el de abajo más su importe. */
+  function verValores() {
+    var c = $('cuerpo'), sel = S.dispVer, pedido = 0, ult = null;
+    var cajas = S.dispCajas || [];
+    var opcs = cajas.map(function (x) { return [x.local_id + '|' + x.caja, bonito(x.local) + ' · ' + nombreCaja(x)]; });
+    if (!opcs.some(function (o) { return o[0] === sel.local + '|' + sel.caja; })) opcs.unshift([sel.local + '|' + sel.caja, nombreCaja(sel)]);
+    c.innerHTML = cabeza('<span id="vlTit">' + esc(nombreCaja(sel)) + '</span>', 'Los movimientos de la caja, con lo que había después de cada uno.',
+        '<button type="button" class="btn btn-sec btn-chico" id="vlVolver">‹ Disponibilidad</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="vlExcel" disabled>Bajar para Excel</button>' +
+        '<span id="vlAccion"></span>') +
+      '<div class="pos-filtros"><div id="vlPer"></div>' +
+        campo('', 'Caja', '<select id="vlCaja" class="desplegable">' + opciones(opcs, sel.local + '|' + sel.caja) + '</select>') +
+      '</div><div id="vlLista"><p class="cargando">Cargando…</p></div>';
+    $('vlVolver').onclick = function () { S.dispVer = null; verDisponibilidad(); };
+    var per = periodoPos($('vlPer'), { inicial: 'mes', guardar: 'pos_valores_periodo', hastaHoy: true, alCambiar: cargar });
+    $('vlCaja').onchange = function () {
+      var v = $('vlCaja').value.split('|');
+      sel = S.dispVer = { local: v[0], caja: v[1] };
+      cargar();
+    };
+    $('vlExcel').onclick = function () { if (ult) bajarValores(ult.d, ult.r); };
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('vlLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('vlExcel').disabled = true;
+      $('vlAccion').innerHTML = '';
+      llamar('pos_caja_valores', { p_local: sel.local, p_caja: sel.caja, p_desde: r.desde, p_hasta: r.hasta }).then(function (d) {
+        if (n !== pedido || !$('vlLista')) return;
+        ult = { d: d, r: r };
+        pintar(d);
+      }).catch(function (e) { if ($('vlLista')) $('vlLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin195(e)) + '</div>'; });
+    }
+    function pintar(d) {
+      var p = function (n) { return plata(cent(n || 0)); }, chica = sel.caja === 'chica', filas = d.filas || [];
+      $('vlTit').textContent = nombreCaja(sel) + ' · ' + bonito(d.local);
+      /* Su "Ajustar/Cerrar Caja": la chica se cierra en el mostrador; la fuerte la cuenta la oficina acá. */
+      $('vlAccion').innerHTML = chica ? '<a class="btn btn-pri btn-chico" href="pos.html#cierre">Cerrar la caja</a>'
+                                      : '<button type="button" class="btn btn-pri btn-chico" id="vlAjustar">Ajustar…</button>';
+      if (!chica) $('vlAjustar').onclick = function () { abrirAjuste(sel.local, d, cargar); };
+      $('vlExcel').disabled = !filas.length;
+      var u = d.ultimo;
+      $('vlLista').innerHTML = '<div class="pos-totales">' +
+          '<div class="pos-kpi fuerte"><span>Hoy hay</span><b>' + p(d.saldo) + '</b></div>' +
+          '<div class="pos-kpi"><span>Al empezar el período</span><b>' + p(d.antes) + '</b></div>' +
+          '<div class="pos-kpi"><span>Entró</span><b>' + p(d.entro) + '</b></div>' +
+          '<div class="pos-kpi"><span>Salió</span><b>' + p(d.salio) + '</b></div>' +
+          (Number(d.ajustado) ? '<div class="pos-kpi"><span>' + (chica ? 'Diferencias de los cierres' : 'Ajustes') + '</span><b>' + esc(importeConSigno(d.ajustado)) + '</b></div>' : '') +
+        '</div>' +
+        (!filas.length ? '<div class="pos-cartel">No hubo movimientos en esta caja en ese período.</div>' :
+          '<div class="pos-marco-tabla"><table class="pos-tabla dp-tabla"><thead><tr><th>Fecha</th><th>Comprobante</th><th>Detalle</th><th>Cargó</th>' +
+            '<th class="n">Importe</th><th class="n">Saldo</th></tr></thead><tbody>' +
+          filas.map(function (f, i) {
+            /* El cierre (y lo que pasaba a la caja fuerte al cerrar, hasta el SQL 180) abre el cierre; el ajuste, el suyo. */
+            var abre = f.tipo === 'cierre' || f.tipo === 'pase' || f.tipo === 'ajuste';
+            var det = f.control && f.tipo !== 'inicial' ? f.detalle + ' · contaron ' + p(f.contado) : f.detalle;
+            var imp = f.control && f.tipo !== 'inicial' && !cent(f.importe) ? '<small class="dp-cero">sin diferencia</small>' : esc(importeConSigno(f.importe));
+            return '<tr class="' + (f.control ? 'dp-control' : '') + '"' + (abre ? ' data-fila="' + i + '" tabindex="0" title="Ver el ' + (f.tipo === 'ajuste' ? 'ajuste' : 'cierre') + '"' : '') + '>' +
+              '<td>' + esc(fechaHora(f.fecha)) + '</td><td><b>' + esc(f.ref) + '</b></td><td>' + esc(det) + '</td><td>' + esc(f.persona || '—') + '</td>' +
+              '<td class="n">' + imp + '</td><td class="n"><b>' + p(f.saldo) + '</b></td></tr>';
+          }).join('') + '</tbody></table></div>' +
+          (d.mas ? '<p class="pos-mas">Se ven los últimos 1000. Achicá el período para ver el resto.</p>' : '')) +
+        /* Como el pie de BlueSoft ("Último ajuste de Caja" / "No hubo Ajustes de esta Caja"). */
+        '<p class="pos-ayuda">' + (u ? (chica ? 'Último cierre: Nº ' : 'Último ajuste: Nº ') + u.numero + ', el ' + esc(fechaHora(u.fecha)) +
+            (u.persona ? ', ' + esc(u.persona) : '') + '. Contaron ' + p(u.contado) + '.' :
+          chica ? 'Esta caja todavía no se cerró nunca: el saldo es lo de hoy desde $0.' :
+                  'No hubo ajustes de esta caja: el saldo arranca en $0 con el primer movimiento. Contala y usá «Ajustar» para que dé lo de verdad.') + '</p>';
+      $('vlLista').querySelectorAll('tr[data-fila]').forEach(function (tr) {
+        var f = filas[Number(tr.getAttribute('data-fila'))];
+        tr.onclick = function () { if (f.tipo === 'ajuste') abrirAjusteHecho(f, d, cargar); else abrirCierre(f.id, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    cargar();
+  }
+
+  function bajarValores(d, r) {
+    var cab = ['Fecha', 'Comprobante', 'Detalle', 'Cargó', 'Contaron', 'Importe', 'Saldo'];
+    var filas = (d.filas || []).map(function (f) {
+      return [fechaLarga(f.fecha), f.ref, f.detalle, f.persona || '', f.control && f.tipo !== 'inicial' ? Number(f.contado) : '', Number(f.importe), Number(f.saldo)];
+    });
+    var caja = S.dispVer && S.dispVer.caja === 'chica' ? 'caja-chica' : 'caja-fuerte';
+    bajarCsv(caja + '-' + String(bonito(d.local)).toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
+  }
+
+  /* El «Ajustar» de la caja fuerte: la oficina la cuenta y escribe cuánto hay. Muestra lo que dice el sistema y,
+     mientras escriben, cuánto sobra o falta. */
+  function abrirAjuste(localId, d, alGuardar) {
+    var clave = nuevaClave(), hay = cent(d.saldo || 0);
+    var caja = ventana('<h3 id="posVentTit">Ajustar la caja fuerte · ' + esc(bonito(d.local)) + '</h3>' +
+      '<p class="pos-bajada">Contá la plata de la caja fuerte y escribí cuánto hay. Desde ahora, el saldo arranca de ese número.</p>' +
+      '<div class="pos-ticket-datos"><div><span>Según el sistema</span>' + plata(hay) + '</div></div>' +
+      '<div class="pos-campos">' +
+        campo('', 'Hay en la caja fuerte', '<input type="text" inputmode="decimal" id="ajMonto" autocomplete="off" placeholder="$0">') +
+        campo('ancho', 'Observaciones', '<input type="text" id="ajObs" maxlength="200" autocomplete="off">') +
+      '</div><p class="pos-ayuda" id="ajDif"></p><div class="pos-error" id="ajError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="ajGuardar">Ajustar</button></div>');
+    var m = caja.querySelector('#ajMonto');
+    setTimeout(function () { m.focus(); }, 0);
+    m.oninput = function () {
+      errorEn(caja, 'ajError', '');
+      var v = leerPlata(m.value), z = caja.querySelector('#ajDif');
+      z.textContent = isNaN(v) ? '' : v === hay ? 'Coincide con el sistema.' : v > hay ? 'Sobran ' + plata(v - hay) + ' contra el sistema.' : 'Faltan ' + plata(hay - v) + ' contra el sistema.';
+    };
+    function guardar() {
+      var bt = caja.querySelector('#ajGuardar'), v = leerPlata(m.value);
+      if (!errorEn(caja, 'ajError', isNaN(v) || v < 0 ? 'Escribí cuánta plata hay en la caja fuerte.' : '') || bt.disabled) return;
+      bt.disabled = true;
+      llamar('pos_caja_ajustar', { p: { clave: clave, local_id: localId, contado: aPesos(v), observaciones: caja.querySelector('#ajObs').value.trim() } }).then(function (r) {
+        avisar('ok', 'Listo: Ajuste Nº ' + r.numero + '. La caja fuerte de ' + bonito(d.local) + ' quedó en ' + plata(cent(r.contado)) + '.');
+        cerrarVentana();
+        if (alGuardar) alGuardar();
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'ajError', sin195(e)); });
+    }
+    caja.querySelector('#ajGuardar').onclick = guardar;
+    caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); guardar(); } });
+  }
+
+  /** Un ajuste de la lista: lo que decía el sistema, lo contado y la diferencia. El último se puede anular (se cargó mal). */
+  function abrirAjusteHecho(f, d, alCambiar) {
+    var ultimo = d.ultimo && d.ultimo.id === f.id, dif = cent(f.importe);
+    var caja = ventana('<h3 id="posVentTit">' + esc(f.ref) + ' · Caja fuerte · ' + esc(bonito(d.local)) + '</h3>' +
+      '<div class="pos-ticket-datos">' +
+        '<div><span>Fecha</span>' + esc(fechaHora(f.fecha)) + '</div>' +
+        '<div><span>La contó</span>' + esc(f.persona || '—') + '</div>' +
+        '<div><span>Según el sistema</span>' + plata(cent(f.contado) - dif) + '</div>' +
+        '<div><span>Contaron</span>' + plata(cent(f.contado)) + '</div>' +
+        '<div><span>Diferencia</span>' + (dif ? (dif > 0 ? 'Sobraban ' : 'Faltaban ') + plata(Math.abs(dif)) : 'Ninguna') + '</div>' +
+        (f.detalle !== 'Ajuste' ? '<div><span>Observaciones</span>' + esc(f.detalle.replace(/^Ajuste · /, '')) + '</div>' : '') +
+      '</div>' +
+      (ultimo ? '' : '<p class="pos-ayuda">Después vino otro ajuste: sólo se puede anular el último.</p>') +
+      '<div id="ahAnular"></div><div class="pos-pie">' + (ultimo ? '<button type="button" class="btn btn-sec btn-chico izq" id="ahAnularBtn">Anular</button>' : '') +
+        '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>');
+    var ab = caja.querySelector('#ahAnularBtn');
+    if (ab) ab.onclick = function () {
+      ab.remove();
+      pedirMotivo(caja.querySelector('#ahAnular'), 'El saldo vuelve a contarse desde el ajuste anterior (o desde $0, si no hubo otro).', 'Anular', function (motivo) {
+        return llamar('pos_caja_ajuste_anular', { p_id: f.id, p_motivo: motivo }).then(function () {
+          avisar('ok', 'Listo: el ' + f.ref + ' quedó anulado.');
           cerrarVentana();
           if (alCambiar) alCambiar();
         });
