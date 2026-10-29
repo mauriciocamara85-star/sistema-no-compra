@@ -93,6 +93,15 @@
 --  pos_caja_mov_controlar, sólo Administración. La nota "SQL 191" está en las
 --  dos tablas y en las funciones de la caja.
 --
+--  SQL 192 (29/10/2026, Mauricio: "seguí con otra función"): las "Ventas por
+--  Vendedor" de BlueSoft, en POS → Ventas y en Gestión → Clientes y reportes.
+--  pos_ventas_vendedor (nueva, sólo lee): lo que vendió cada vendedor en el
+--  período (neto, descuentos, total, productos y ventas) y lo mismo repartido
+--  por hora, por día, por semana y por mes. Cuenta las ventas cobradas, como
+--  los totales de Tickets: las anuladas no, y los cambios tampoco (no son
+--  ventas). Los mismos permisos que Tickets (su local y, sin «Ver otros
+--  días», hoy).
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -3436,3 +3445,59 @@ revoke all on function pos_permiso_del_rol(text, boolean, text), pos_puede_perso
        from public, anon, authenticated;
 revoke all on function pos_permisos_lista(), pos_permisos_guardar(uuid, jsonb) from public, anon;
 grant execute on function pos_permisos_lista(), pos_permisos_guardar(uuid, jsonb) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 192 (29/10/2026) · LAS VENTAS POR VENDEDOR
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Las "Ventas por Vendedor" de BlueSoft: por vendedor (Neto, Descuentos, Total, productos y ventas; los promedios los
+   saca la pantalla) y, en 'por', lo mismo repartido por hora ('09'), por día ('2026-10-29'), por semana (el lunes) y por
+   mes ('2026-10'). Sólo las ventas cobradas, como los totales de Tickets. Las de verdad y las de prueba no se mezclan
+   nunca: p_prueba elige cuáles. */
+create or replace function pos_ventas_vendedor(p_desde date, p_hasta date, p_local uuid default null, p_vendedor text default null,
+                                               p_prueba boolean default false) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);   -- su local y, sin «Ver otros días», hoy (SQL 190)
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with v as (
+      select x.vendedor, x.neto, x.descuentos, x.total, x.cantidad,
+             lpad(extract(hour from x.fecha at time zone 'America/Argentina/Buenos_Aires')::int::text, 2, '0') hora,
+             x.dia::text dia,
+             (x.dia - (extract(isodow from x.dia)::int - 1))::text semana,
+             to_char(x.dia, 'YYYY-MM') mes
+        from pos_ventas x
+       where x.dia between p_desde and p_hasta
+         and x.prueba = coalesce(p_prueba, false)
+         and x.estado = 'cobrada'
+         and (p_local is null or x.local_id = p_local)
+         and (p_vendedor is null or lower(x.vendedor) = lower(p_vendedor))
+    ),
+    b as (
+      select v.vendedor, k.por, k.k, v.total, v.cantidad
+        from v cross join lateral (values ('hora', v.hora), ('dia', v.dia), ('semana', v.semana), ('mes', v.mes)) k(por, k)
+    )
+    select jsonb_build_object(
+      'vendedores', coalesce((
+        select jsonb_agg(jsonb_build_object('vendedor', z.vendedor, 'neto', z.neto, 'descuentos', z.descuentos, 'total', z.total,
+                                            'productos', z.productos, 'ventas', z.ventas) order by z.total desc, z.vendedor)
+          from (select vendedor, sum(neto) neto, sum(descuentos) descuentos, sum(total) total, sum(cantidad) productos, count(*) ventas
+                  from v group by vendedor) z), '[]'::jsonb),
+      'por', coalesce((
+        select jsonb_object_agg(y.por, y.filas)
+          from (select z.por, jsonb_agg(jsonb_build_object('vendedor', z.vendedor, 'k', z.k, 'total', z.total, 'productos', z.productos,
+                                                           'ventas', z.ventas) order by z.k, z.vendedor) filas
+                  from (select por, vendedor, k, sum(total) total, sum(cantidad) productos, count(*) ventas from b group by por, vendedor, k) z
+                 group by z.por) y), '{}'::jsonb),
+      'totales', (select jsonb_build_object('ventas', count(*), 'productos', coalesce(sum(cantidad), 0), 'neto', coalesce(sum(neto), 0),
+                                            'descuentos', coalesce(sum(descuentos), 0), 'total', coalesce(sum(total), 0)) from v)
+    )
+  );
+end $$;
+
+revoke all on function pos_ventas_vendedor(date, date, uuid, text, boolean) from public, anon;
+grant execute on function pos_ventas_vendedor(date, date, uuid, text, boolean) to authenticated;

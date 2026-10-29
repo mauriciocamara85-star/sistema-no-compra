@@ -98,7 +98,9 @@
   var MENUS = {
     mostrador: [
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
-                  ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida']]],
+                  ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida'],
+                  /* Las ventas por vendedor (SQL 192), como en la PC del local de BlueSoft. */
+                  ['vendedores', 'Ventas por vendedor', 'vendedores']]],
       /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene.
          La devolución a fábrica (SQL 189): lo que el local le devuelve, como en BlueSoft. */
       ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['envios', 'Envíos internos', 'envio'], ['devoluciones', 'Devolución a fábrica', 'devolucion'], ['stock', 'Stock', 'stock']]],
@@ -110,7 +112,7 @@
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
       ['Stock', [['stock', 'Stock', 'stock'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'], ['inventario', 'Inventario', 'inventario']]],
       ['Caja', [['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
-      ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['reportes', 'Reportes', 'reportes']]],
+      ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['reportes', 'Reportes', 'reportes']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
     ]
   };
@@ -122,7 +124,7 @@
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, vendedores: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -138,7 +140,7 @@
       'Lo que compró cada uno, para el CRM.',
       'La condición de IVA guardada, para la factura A.'], ''],
     reportes: ['Reportes', [
-      'Ventas por sucursal, por vendedor, por producto y por medio de pago.',
+      'Ventas por sucursal, por producto y por medio de pago (las de por vendedor ya están, en «Ventas por vendedor»).',
       'Por día, por semana y por mes, comparado con el año pasado.',
       'La conversión por sucursal y por vendedor, día por día (la del período ya está en Tickets).',
       'Que alimente sola la planilla de Ventas, sin cargar nada a mano.'], 'Mientras tanto, los tickets del día y sus totales están en <a href="pos.html#tickets">POS → Tickets</a>.'],
@@ -193,6 +195,7 @@
     promo: '<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
     clientes: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
     reportes: '<path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/>',
+    vendedores: '<circle cx="8" cy="7" r="3.5"/><path d="M2 20v-1a6 6 0 0 1 9.5-4.9"/><path d="M15 20v-3M18.5 20v-6M22 20v-9"/>',
     sucursal: '<path d="M4 4h16l1 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/>',
     medios: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
     arca: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
@@ -302,7 +305,7 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
+      return 'Todavía falta correr el SQL ' + (/pos_ventas_vendedor/.test(m) ? '192 (las ventas por vendedor)' : /pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
                                              /pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
                                              /pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
                                              /pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
@@ -433,7 +436,7 @@
       $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
       return;
     }
-    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, gastos: verGastos, salidas: verSalidas,
+    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, vendedores: verVendedores, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
@@ -1766,6 +1769,185 @@
       S.marcar = null;
       if (nueva) { nueva.classList.add('recien'); nueva.scrollIntoView({ block: 'nearest' }); }
     }
+    cargar();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     VENTAS POR VENDEDOR (SQL 192)
+     Mauricio (29/10): "seguí con otra función". Las "Ventas por Vendedor"
+     de BlueSoft (sus fotos del 28/10): lo que vendió cada vendedor en el
+     período, con sus promedios, y lo mismo por horario, por día, por
+     semana y por mes. Cuentan las ventas cobradas, como los totales de
+     Tickets. La torta de BlueSoft va como barras: con montos parecidos,
+     en una torta no se ve quién vendió más.
+     ════════════════════════════════════════════════════════════════════ */
+  var VV_POR = [['vendedor', 'Por vendedor'], ['hora', 'Por horario'], ['dia', 'Por día'], ['semana', 'Por semana'], ['mes', 'Por mes']];
+  var VV_MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+  var VV_DIAS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
+  /** El título de una columna: la hora ('09'), el día ('2026-10-29'), la semana (su lunes, recortada al período r) o el mes ('2026-10'). */
+  function vvColumna(por, k, r) {
+    var dos = function (n) { return (n < 10 ? '0' : '') + n; };
+    var dm = function (s) { return Number(s.slice(8, 10)) + '/' + Number(s.slice(5, 7)); };
+    if (por === 'hora') return dos(Number(k)) + ' a ' + dos(Number(k) + 1) + ' h';
+    if (por === 'mes') return VV_MESES[Number(k.slice(5, 7)) - 1] + ' ' + k.slice(0, 4);
+    if (por === 'dia') return VV_DIAS[new Date(Date.UTC(Number(k.slice(0, 4)), Number(k.slice(5, 7)) - 1, Number(k.slice(8, 10)))).getUTCDay()] + ' ' + dm(k);
+    var a = r && k < r.desde ? r.desde : k, b = Interfaz.fecha.sumar(k, 6);
+    if (r && b > r.hasta) b = r.hasta;
+    return a === b ? dm(a) : dm(a) + ' al ' + dm(b);
+  }
+
+  function verVendedores() {
+    var c = $('cuerpo'), prueba = enPrueba();
+    /* En el mostrador arranca en su local; en Gestión, en todas. */
+    var l = MODO === 'gestion' && puede('locales') ? null : localInicial();
+    var por = leer('pos_vendedores_vista') || 'vendedor';
+    if (!VV_POR.some(function (x) { return x[0] === por; })) por = 'vendedor';
+    c.innerHTML = cabeza('Ventas por vendedor' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+        'Lo que vendió cada uno: las ventas cobradas, como los totales de Tickets (las anuladas y los cambios no cuentan).',
+        '<button type="button" class="btn btn-sec btn-chico" id="vvBajar" disabled>Bajar para Excel</button>') +
+      '<div class="pos-filtros"><div id="vvPer"></div>' +
+        campo('', 'Sucursal', '<select id="vvLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
+        campo('', 'Vendedor', '<select id="vvVend"></select>') +
+        campo('', 'Ventas', '<select id="vvPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
+      '</div>' +
+      /* Los botones de BlueSoft: Por vendedor, Por horario, Por día, Por semana y Por mes. */
+      '<nav class="pestanas st-vistas vv-vistas" aria-label="Cómo verlas">' + VV_POR.map(function (x) {
+        return '<button type="button" class="pestana" data-por="' + x[0] + '"' + (x[0] === por ? ' aria-current="page"' : '') + '>' + x[1] + '</button>';
+      }).join('') + '</nav>' +
+      '<div id="vvLista"><p class="cargando">Cargando…</p></div>' +
+      '<div class="tkl-pie" id="vvPie"></div>';
+    /* Los vendedores de la sucursal elegida (con "Todas", los de todas); si el elegido sigue estando, queda. */
+    function llenarVend() {
+      var loc = $('vvLocal').value, antes = $('vvVend').value, ns = {};
+      (loc ? [loc] : Object.keys(S.ini.vendedores || {})).forEach(function (k) { vendedoresDe(k).forEach(function (n) { ns[n] = 1; }); });
+      var lista = Object.keys(ns).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+      $('vvVend').innerHTML = '<option value="">Todos</option>' + opciones(lista.map(function (n) { return [n, n]; }), lista.indexOf(antes) >= 0 ? antes : '');
+    }
+    llenarVend();
+    var pedido = 0, ultimo = null, rango = null;
+    var per = periodoPos($('vvPer'), { inicial: 'mes', guardar: 'pos_vendedores_periodo', hastaHoy: true, alCambiar: cargar });
+    $('vvLocal').onchange = function () { llenarVend(); cargar(); };
+    $('vvVend').onchange = cargar;
+    $('vvPrueba').onchange = cargar;
+    c.querySelectorAll('.vv-vistas .pestana').forEach(function (b) {
+      b.onclick = function () {
+        por = b.getAttribute('data-por');
+        guardar('pos_vendedores_vista', por);
+        c.querySelectorAll('.vv-vistas .pestana').forEach(function (x) { if (x === b) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current'); });
+        if (ultimo) pintar();
+      };
+    });
+    function deLaPrueba() { return $('vvPrueba').value === '1'; }
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('vvLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('vvBajar').disabled = true;
+      llamar('pos_ventas_vendedor', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('vvLocal').value || null, p_vendedor: $('vvVend').value || null,
+                                      p_prueba: deLaPrueba() }).then(function (d) {
+        if (n !== pedido || !$('vvLista')) return;
+        ultimo = d;
+        rango = r;
+        pintar();
+      }).catch(function (e) {
+        if (n !== pedido || !$('vvLista')) return;
+        ultimo = null;
+        $('vvLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+        $('vvPie').innerHTML = '';
+      });
+    }
+    function p(x) { return plata(cent(x || 0)); }
+    /** a ÷ b: en plata (el producto y la venta promedio) o con un decimal (las prendas por venta). */
+    function prom(a, b, enPlata) { b = Number(b) || 0; return b ? (enPlata ? plata(Math.round(cent(a) / b)) : decimal(Number(a) / b)) : '—'; }
+    /* Lo de cada uno, en el orden de BlueSoft: Total, Cantidad de productos, Producto promedio, Cantidad de ventas, Venta promedio, Cantidad promedio. */
+    function resumen(x) {
+      return '<td class="n vv-sep"><b>' + p(x.total) + '</b></td><td class="n">' + num(x.productos) + '</td><td class="n">' + prom(x.total, x.productos, true) + '</td>' +
+        '<td class="n">' + num(x.ventas) + '</td><td class="n">' + prom(x.total, x.ventas, true) + '</td><td class="n">' + prom(x.productos, x.ventas) + '</td>';
+    }
+    var RESUMEN = '<th class="n vv-sep">Total</th><th class="n">Productos</th><th class="n">Producto promedio</th><th class="n">Ventas</th>' +
+                  '<th class="n">Venta promedio</th><th class="n">Prendas por venta</th>';
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    /* Abajo, como "CANTIDAD" y "TOTAL" de BlueSoft, con lo demás de Tickets. */
+    function pintarPie(t) {
+      $('vvPie').innerHTML = caja('Ventas', num(t.ventas)) + caja('Productos', num(t.productos)) + caja('Neto', p(t.neto)) + caja('Descuentos', p(t.descuentos)) +
+        caja('Total', p(t.total), 'fuerte') + caja('Venta promedio', prom(t.total, t.ventas, true)) + caja('Prendas por venta', prom(t.productos, t.ventas));
+    }
+    function pintar() {
+      var d = ultimo, t = d.totales || {}, vs = d.vendedores || [];
+      pintarPie(t);
+      var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas de <b>prueba</b>: no cuentan en ningún total de verdad.</div>' : '';
+      if (!vs.length) {
+        $('vvLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas de prueba' : 'No hay ventas') + ' en ese período con esos filtros.</div>';
+        $('vvBajar').disabled = true;
+        return;
+      }
+      $('vvLista').innerHTML = aviso + (por === 'vendedor' ? tablaVendedores(vs, t) : tablaCruce(vs, t));
+      $('vvBajar').disabled = false;
+    }
+    /* Por vendedor: las columnas de BlueSoft y, a la derecha (donde estaba la torta), una barra por vendedor. */
+    function tablaVendedores(vs, t) {
+      var tot = Number(t.total) || 0, max = vs.reduce(function (m, x) { return Math.max(m, Number(x.total) || 0); }, 0);
+      return '<div class="vv-dos"><div class="pos-marco-tabla"><table class="pos-tabla vv-tabla"><thead><tr><th>Vendedor</th><th class="n">Neto</th><th class="n">Descuentos</th>' + RESUMEN +
+          '</tr></thead><tbody>' + vs.map(function (x) {
+            return '<tr><td><b>' + esc(x.vendedor) + '</b></td><td class="n">' + p(x.neto) + '</td><td class="n">' + p(x.descuentos) + '</td>' + resumen(x) + '</tr>';
+          }).join('') + '</tbody>' +
+          (vs.length > 1 ? '<tfoot><tr><td>Total</td><td class="n">' + p(t.neto) + '</td><td class="n">' + p(t.descuentos) + '</td>' + resumen(t) + '</tr></tfoot>' : '') +
+        '</table></div>' +
+        '<section class="vv-barras" aria-label="El total de cada vendedor"><h3>Total por vendedor</h3><ul>' + vs.map(function (x) {
+          var v = Number(x.total) || 0, pc = tot > 0 ? v / tot : 0, ancho = max > 0 ? Math.max(v / max * 100, v > 0 ? 1 : 0) : 0;
+          return '<li title="' + esc(x.vendedor + ': ' + p(v) + ', el ' + porcentaje(pc) + ' del total, en ' + x.ventas + (x.ventas === 1 ? ' venta' : ' ventas')) + '">' +
+            '<span class="vv-nom">' + esc(x.vendedor) + '</span><span class="vv-monto">' + p(v) + '</span>' +
+            '<span class="vv-pista"><i style="width:' + ancho.toFixed(2) + '%"></i></span><span class="vv-pc">' + porcentaje(pc) + '</span></li>';
+        }).join('') + '</ul></section></div>';
+    }
+    /* Por horario, día, semana o mes: un renglón por vendedor y una columna por hora (o día…) con ventas; al final, lo de cada uno. */
+    function cruce() {
+      var filas = (ultimo.por || {})[por] || [], ks = {}, m = {}, sumas = {};
+      filas.forEach(function (f) {
+        ks[f.k] = 1;
+        (m[f.vendedor] = m[f.vendedor] || {})[f.k] = f;
+        var s = sumas[f.k] = sumas[f.k] || { total: 0, ventas: 0, productos: 0 };
+        s.total = Math.round((s.total + Number(f.total || 0)) * 100) / 100;
+        s.ventas += Number(f.ventas) || 0;
+        s.productos += Number(f.productos) || 0;
+      });
+      return { cols: Object.keys(ks).sort(), m: m, sumas: sumas };
+    }
+    function tablaCruce(vs, t) {
+      var x = cruce();
+      function celda(quien, k, f) {
+        if (!f || !f.ventas) return '<td class="n apagado">—</td>';
+        return '<td class="n" title="' + esc(quien + ' · ' + vvColumna(por, k, rango) + ': ' + f.ventas + (f.ventas === 1 ? ' venta, ' : ' ventas, ') +
+          f.productos + (f.productos === 1 ? ' prenda' : ' prendas')) + '">' + p(f.total) + '</td>';
+      }
+      return '<div class="pos-marco-tabla"><table class="pos-tabla vv-tabla vv-cruce"><thead><tr><th class="vv-fijo">Vendedor</th>' +
+          x.cols.map(function (k) { return '<th class="n">' + esc(vvColumna(por, k, rango)) + '</th>'; }).join('') + RESUMEN + '</tr></thead><tbody>' +
+          vs.map(function (v) {
+            return '<tr><td class="vv-fijo"><b>' + esc(v.vendedor) + '</b></td>' + x.cols.map(function (k) { return celda(v.vendedor, k, (x.m[v.vendedor] || {})[k]); }).join('') + resumen(v) + '</tr>';
+          }).join('') + '</tbody>' +
+          (vs.length > 1 ? '<tfoot><tr><td class="vv-fijo">Total</td>' + x.cols.map(function (k) { return celda('Todos', k, x.sumas[k]); }).join('') + resumen(t) + '</tr></tfoot>' : '') +
+        '</table></div>';
+    }
+    /* El Excel de lo que se ve (la pestaña elegida), con la fila del total; la coma decimal, para el Excel en castellano. */
+    $('vvBajar').onclick = function () {
+      if (!ultimo) return;
+      var lo = localDe($('vvLocal').value), vs = ultimo.vendedores || [], t = ultimo.totales || {};
+      var nro = function (n) { return String(Math.round(Number(n || 0) * 100) / 100).replace('.', ','); };
+      var div = function (a, b) { return Number(b) ? nro(Number(a) / Number(b)) : ''; };
+      var res = function (y) { return [nro(y.total), Number(y.productos) || 0, div(y.total, y.productos), Number(y.ventas) || 0, div(y.total, y.ventas), div(y.productos, y.ventas)]; };
+      var cab = ['Total', 'Productos', 'Producto promedio', 'Ventas', 'Venta promedio', 'Prendas por venta'];
+      var nombre = 'Ventas por vendedor' + (por === 'vendedor' ? '' : ' ' + VV_POR.filter(function (y) { return y[0] === por; })[0][1].toLowerCase()) + ' ' +
+        (lo ? nombreLocal(lo) : 'todas las sucursales') + ' ' + rango.desde + ' a ' + rango.hasta + '.csv';
+      if (por === 'vendedor') {
+        bajarCsv(nombre, ['Vendedor', 'Neto', 'Descuentos'].concat(cab), vs.concat([Object.assign({ vendedor: 'Total' }, t)]).map(function (y) {
+          return [y.vendedor, nro(y.neto), nro(y.descuentos)].concat(res(y));
+        }));
+        return;
+      }
+      var x = cruce(), celdaX = function (f) { return f && f.ventas ? nro(f.total) : ''; };
+      bajarCsv(nombre, ['Vendedor'].concat(x.cols.map(function (k) { return vvColumna(por, k, rango); }), cab),
+        vs.map(function (y) { return [y.vendedor].concat(x.cols.map(function (k) { return celdaX((x.m[y.vendedor] || {})[k]); }), res(y)); })
+          .concat([['Total'].concat(x.cols.map(function (k) { return celdaX(x.sumas[k]); }), res(t))]));
+    };
     cargar();
   }
 
