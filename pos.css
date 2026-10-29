@@ -581,8 +581,15 @@ html.pos-en-prueba .cj .cj-res-tit { background: repeating-linear-gradient(135de
 .cj-dv.mal { color: var(--bad-txt); }
 .cj-dv.warn { color: var(--warn-txt); }
 .pos-kpi b.cj-kpi-dif { font-size: 14px; }
-.pos-tabla tr[data-cierre], .pos-tabla tr[data-mov], .pos-tabla tr[data-gasto] { cursor: pointer; }
-.pos-tabla tr[data-cierre]:hover td, .pos-tabla tr[data-mov]:hover td, .pos-tabla tr[data-gasto]:hover td { background: var(--surface-2); }
+.pos-tabla tr[data-cierre], .pos-tabla tr[data-mov], .pos-tabla tr[data-gasto], .pos-tabla tr[data-salida], .pos-tabla tr[data-retiro] { cursor: pointer; }
+.pos-tabla tr[data-cierre]:hover td, .pos-tabla tr[data-mov]:hover td, .pos-tabla tr[data-gasto]:hover td,
+.pos-tabla tr[data-salida]:hover td, .pos-tabla tr[data-retiro]:hover td { background: var(--surface-2); }
+/* SQL 191: los retiros de fondos (de qué caja, y si entra en el cierre), los totales abajo como en BlueSoft, y el tilde «Controlado». */
+.rf-tabla td small { display: block; font-size: 12px; color: var(--txt-3); }
+.pos-totales.abajo { margin: 10px 0 4px; }
+.pos-tabla input.mv-ctl { width: 17px; height: 17px; margin: 0; accent-color: var(--acc); cursor: pointer; vertical-align: middle; }
+.pos-tabla input.mv-ctl:disabled { cursor: default; }
+.pos-lbl.rt-lbl { margin: 12px 0 6px; }
 
 /* ═════════ EL STOCK Y LOS REMITOS (SQL 160) ═════════
    Cada producto con su grilla: un renglón por color y una columna por

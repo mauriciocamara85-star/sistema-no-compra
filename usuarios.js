@@ -92,7 +92,7 @@ var usuarios = (function () {
   var POS_K = ['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios'];
   var POS_CASILLAS = [['anular', 'Anular ventas y cambios', ''],
                       ['envios', 'Hacer envíos internos y devoluciones a fábrica', ''],
-                      ['caja', 'Caja: gastos, movimientos de salida y cierre de caja', ''],
+                      ['caja', 'Caja: gastos, movimientos de salida, retiros y cierre de caja', ''],
                       ['dias', 'Ver otros días', 'sin esto, sólo lo de hoy'],
                       ['locales', 'Ver otros locales', 'sin esto, sólo el suyo o los que supervisa'],
                       ['precios', 'Ver los precios y totales en remitos y envíos', '']];

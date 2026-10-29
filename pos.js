@@ -103,8 +103,8 @@
          La devolución a fábrica (SQL 189): lo que el local le devuelve, como en BlueSoft. */
       ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['envios', 'Envíos internos', 'envio'], ['devoluciones', 'Devolución a fábrica', 'devolucion'], ['stock', 'Stock', 'stock']]],
       /* Los gastos se cargan durante el día, lo de la caja fuerte se pasa antes de cerrar (SQL 180) y el cierre se hace a la noche (SQL 149);
-         los listados de todas las sucursales quedan en Gestión. */
-      ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['cierre', 'Cierre de caja', 'caja']]]
+         los retiros de fondos (SQL 191) sacan plata de la caja chica o de la fuerte. Los listados de todas las sucursales quedan en Gestión. */
+      ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['retiros', 'Retiros de fondos', 'retiro'], ['cierre', 'Cierre de caja', 'caja']]]
     ],
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
@@ -119,10 +119,10 @@
   var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios' }, gestion: { remito_nuevo: 'remitos' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
   /* SQL 190: lo que pide cada pantalla del mostrador (las casillas de Config → Usuarios). Sin el permiso, no está en el menú. */
-  var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', cierre: 'caja' };
+  var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
-                      caja: 'No tenés permiso para la caja (gastos, movimientos de salida y cierre).' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, gastos: 1, salidas: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
+                      caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -181,6 +181,7 @@
     movs: '<path d="M7 3v18M3 7l4-4 4 4"/><path d="M17 21V3M13 17l4 4 4-4"/>',
     gasto: '<path d="M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1"/><path d="M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4"/>',
     fuerte: '<rect x="3" y="3" width="18" height="15" rx="2"/><circle cx="12" cy="10.5" r="3.5"/><path d="M12 10.5l2-2M7 18v3M17 18v3"/>',
+    retiro: '<rect x="2" y="10" width="20" height="11" rx="2"/><circle cx="12" cy="15.5" r="2.5"/><path d="M12 7.5V2M9 4.5l3-3 3 3"/>',
     stock: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
     envio: '<path d="M1 4h14v12H1z"/><path d="M15 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
     recepcion: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
@@ -301,7 +302,7 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
+      return 'Todavía falta correr el SQL ' + (/pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
                                              /pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
                                              /pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
                                              /pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
@@ -433,7 +434,7 @@
       return;
     }
     var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, gastos: verGastos, salidas: verSalidas,
-                cierre: verCierre, cierres: verCierres,
+                retiros: verRetiros, cierre: verCierre, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
                 devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo }[v];
@@ -2455,8 +2456,12 @@
      a la caja fuerte"), que no usaban: eso se pasa antes, en Movimientos de
      salida (verSalidas), y se cuenta lo que queda. Los pasos son dos: contar
      y cerrar. "A la caja fuerte" muestra los pases que entran en este cierre.
+     29/10 (SQL 191): los retiros de fondos de la caja chica también se restan,
+     con su renglón (sólo si hay, para que el cierre siga entrando en la PC del
+     local); los de la caja fuerte no son de esta caja.
      ════════════════════════════════════════════════════════════════════ */
-  var TIPOS_MOV = { gasto: 'Gasto del local', salida: 'Otra salida', ingreso: 'Otro ingreso', caja_fuerte: 'A la caja fuerte' };
+  var TIPOS_MOV = { gasto: 'Gasto del local', salida: 'Otra salida', ingreso: 'Otro ingreso', caja_fuerte: 'A la caja fuerte', retiro: 'Retiro de fondos' };
+  var CAJAS = { chica: 'Caja chica', fuerte: 'Caja fuerte' };
   /* Los tipos de gasto de BlueSoft ("Gasto nuevo" → Tipo de gasto). */
   var RUBROS_GASTO = [
     ['Del local', ['Artículos de limpieza', 'Bidones de agua', 'Cámara de seguridad', 'Gas', 'Internet', 'Limpieza', 'Llave locales', 'Luz',
@@ -2469,14 +2474,43 @@
 
   function refCierre(c) { return (c.prueba ? 'P-' : 'Nº ') + c.numero; }
   /** El número del movimiento, para escribirlo en el ticket que se guarda con la caja (SQL 179): G-12 el gasto, o GP-3 el de prueba;
-      MS-4 lo que pasó a la caja fuerte, o MSP-1 (SQL 180, otro talonario). Sin el 179, nada. */
+      MS-4 lo que pasó a la caja fuerte, o MSP-1 (SQL 180, otro talonario); RF-2 el retiro de fondos, o RFP-1 (SQL 191, otro más). Sin el 179, nada. */
   function refGasto(m, prueba) {
     if (!m || !m.numero) return '';
-    return (m.tipo === 'caja_fuerte' ? 'MS' : 'G') + ((prueba != null ? prueba : m.prueba) ? 'P-' : '-') + m.numero;
+    return (m.tipo === 'caja_fuerte' ? 'MS' : m.tipo === 'retiro' ? 'RF' : 'G') + ((prueba != null ? prueba : m.prueba) ? 'P-' : '-') + m.numero;
   }
-  /** Lo que tendría que haber en la caja chica, en centavos: la misma cuenta que pos_caja_contar (sin el 180, a_caja_fuerte no viene). */
+  /** Lo que tendría que haber en la caja chica, en centavos: la misma cuenta que pos_caja_contar (sin el 180, a_caja_fuerte no viene; sin el 191, retiros_fondos). */
   function esperadoCaja(d, saldo) {
-    return saldo + cent(d.ventas.efectivo) + cent(d.otros_ingresos) - cent(d.gastos) - cent(d.otras_salidas) - cent(d.a_caja_fuerte || 0);
+    return saldo + cent(d.ventas.efectivo) + cent(d.otros_ingresos) - cent(d.gastos) - cent(d.otras_salidas) - cent(d.a_caja_fuerte || 0) - cent(d.retiros_fondos || 0);
+  }
+  /** Sin el SQL 191 la base no conoce los retiros ni el tilde: lo dice así, y no con el mensaje de la base. */
+  function sin191(e) {
+    var m = mensajeDe(e);
+    return /Ese tipo de movimiento no existe|otro ingreso o un pase a la caja fuerte\.|SQL 191/.test(m) ?'Los retiros de fondos todavía no están en la base: falta correr el SQL 191.' : m;
+  }
+  /* SQL 191: el tilde «Controlado» de la oficina, en los movimientos de salida y en los retiros. Mauricio (29/10): "yo después voy a
+     caja fuerte, veo los montos que los chicos agregaron a la caja fuerte y tienen que coincidir con lo que hay en el sistema".
+     Lo tilda sólo Administración; los demás lo ven. Los pases del Paso 2 de los cierres de antes no tienen tilde. */
+  function celdaControlado(f) {
+    if (f.origen === 'cierre' || (f.tipo !== 'caja_fuerte' && f.tipo !== 'retiro')) return '<td></td>';
+    var t = f.controlado ? 'Controlado' + (f.controlado_por ? ' por ' + f.controlado_por : '') + (f.controlado_en ? ', ' + fechaHora(f.controlado_en) : '') : 'Sin controlar';
+    return '<td class="c"><input type="checkbox" class="mv-ctl" data-ctl="' + esc(f.id) + '"' + (f.controlado ? ' checked' : '') +
+      (puede('gestion') && f.estado === 'ok' ? '' : ' disabled') + ' title="' + esc(t) + '" aria-label="Controlado"></td>';
+  }
+  /** Los tildes de una lista: tildar o sacar el tilde, y volver a cargarla (cambia el total controlado). */
+  function tildesControlado(host, alCambiar) {
+    host.querySelectorAll('input.mv-ctl').forEach(function (cb) {
+      cb.onclick = function (e) { e.stopPropagation(); };
+      cb.onkeydown = function (e) { e.stopPropagation(); };
+      cb.onchange = function () {
+        var si = cb.checked;
+        cb.disabled = true;
+        llamar('pos_caja_mov_controlar', { p_id: cb.getAttribute('data-ctl'), p_si: si }).then(function () {
+          avisar('ok', si ? 'Listo: quedó controlado.' : 'Listo: le sacaste el tilde.');
+          alCambiar();
+        }).catch(function (e) { cb.checked = !si; cb.disabled = false; avisar('err', sin191(e)); });
+      };
+    });
   }
   /** El desvío en palabras. En centavos; positivo = falta plata (como en Supervisión → Cajas). */
   function desvioDe(dv, tol) {
@@ -2586,14 +2620,19 @@
       var d = K.d, s = d.primer ? saldoEscrito() : cent(d.saldo_inicial || 0);
       return esperadoCaja(d, isNaN(s) ? 0 : s);
     }
-    /** Los gastos y los pases a la caja fuerte de esta caja, cada uno con su botón en los resultados. */
-    function movsDe(fuerte) { return ((K.d && K.d.movimientos) || []).filter(function (m) { return (m.tipo === 'caja_fuerte') === fuerte; }); }
+    /** Los gastos (false), los pases a la caja fuerte (true) o los retiros de la caja chica ('retiros', SQL 191) de esta caja, cada uno con su botón en los resultados. */
+    function movsDe(que) {
+      var k = que === true ? 'caja_fuerte' : que === 'retiros' ? 'retiro' : '';
+      return ((K.d && K.d.movimientos) || []).filter(function (m) { return k ? m.tipo === k : m.tipo !== 'caja_fuerte' && m.tipo !== 'retiro'; });
+    }
     /* Los resultados: con todo a la vista (SQL 175); sin el 175, el efectivo recién después de contar. */
     function pintarRes() {
       var d = K.d, k = K.k;
       if (!d) return;
       var x = k || d, v = x.ventas, p = function (n) { return plata(cent(n || 0)); }, vista = aLaVista();
-      var nm = movsDe(false).length, nf = movsDe(true).length, nc = Number(x.cambios) || 0;
+      var nm = movsDe(false).length, nf = movsDe(true).length, nr = movsDe('retiros').length, nc = Number(x.cambios) || 0;
+      /* SQL 191: el renglón de los retiros sólo si hay; entonces los descuentos pasan al pie (con un renglón más, el cierre no entra en la PC del local). */
+      var conRet = !!(nr || cent(x.retiros_fondos || 0));
       var saldo = !d.primer ? p(d.saldo_inicial) : k ? p(k.saldo_inicial) :
         vista && $('cjSaldo') && $('cjSaldo').value.trim() && !isNaN(saldoEscrito()) ? plata(saldoEscrito()) : '<i class="cj-oculto">en el Paso 1</i>';
       $('cjRes').innerHTML = '<h3 class="cj-res-tit">Resultados del día</h3>' +
@@ -2610,15 +2649,17 @@
         filaRes('Otras salidas', p(x.otras_salidas)) +
         '<button type="button" class="cj-r cj-r-btn" id="cjFuerte" title="Ver lo que pasó a la caja fuerte desde el último cierre"><span>A la caja fuerte' +
           (nf ? ' (' + nf + ')' : '') + '</span><b>' + p(x.a_caja_fuerte) + '</b></button>' +
-        filaRes('Descuentos', p(x.descuentos), 'info') +
+        (conRet ? '<button type="button" class="cj-r cj-r-btn" id="cjRetiros" title="Ver los retiros de fondos de la caja chica desde el último cierre"><span>Retiros de fondos' +
+          (nr ? ' (' + nr + ')' : '') + '</span><b>' + p(x.retiros_fondos) + '</b></button>' : filaRes('Descuentos', p(x.descuentos), 'info')) +
         filaRes('Otros ingresos', p(x.otros_ingresos)) +
         filaRes('Saldo final en efectivo', k ? p(k.esperado) : vista ? plata(esperadoHoy()) : OCULTO, 'barra') +
         /* Los cambios van en el pie y no en un renglón: con uno más, el cierre no entra en la PC del local. */
         '<p class="cj-res-pie">' + x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets') +
           (nc ? ' y ' + nc + (nc === 1 ? ' cambio' : ' cambios') + (k || vista ? ' (se cobró ' + p(x.cambios_diferencia) + ', ya sumado en las ventas)' : '') : '') +
-          '. Los descuentos ya están restados de las ventas.</p>';
+          (conRet ? '. Descuentos: ' + p(x.descuentos) + ', ya restados de las ventas.</p>' : '. Los descuentos ya están restados de las ventas.</p>');
       $('cjMovs').onclick = function () { abrirMovsCaja(false); };
       $('cjFuerte').onclick = function () { abrirMovsCaja(true); };
+      if ($('cjRetiros')) $('cjRetiros').onclick = function () { abrirMovsCaja('retiros'); };
     }
     /* Lo que tendría que haber, grande en el Paso 1 (el número del arqueo), con de dónde sale. */
     function tendria() {
@@ -2628,6 +2669,7 @@
       if (cent(d.gastos)) partes.push('− gastos ' + plata(cent(d.gastos)));
       if (cent(d.otras_salidas)) partes.push('− otras salidas ' + plata(cent(d.otras_salidas)));
       if (cent(d.a_caja_fuerte || 0)) partes.push('− a la caja fuerte ' + plata(cent(d.a_caja_fuerte)));
+      if (cent(d.retiros_fondos || 0)) partes.push('− retiros de fondos ' + plata(cent(d.retiros_fondos)));
       return '<div class="cj-tendria"><span>Tendría que haber en efectivo</span><b>' + plata(esperadoHoy()) + '</b>' +
         '<small>' + esc(partes.join(' ')) + '</small></div>';
     }
@@ -2709,22 +2751,25 @@
       });
     }
 
-    /* Los gastos (o los pases a la caja fuerte) que entran en este cierre, para mirarlos. Se cargan y se anulan
-       en Gastos y en Movimientos de salida (26/10). */
-    function abrirMovsCaja(fuerte) {
-      var ms = movsDe(fuerte), de = esc(nombreLocal(localDe(S.cajaLocal)));
-      ventana('<h3 id="posVentTit">' + (fuerte ? 'A la caja fuerte' : 'Gastos de la caja') + '</h3><p class="pos-bajada">' + (fuerte
+    /* Los gastos (o los pases a la caja fuerte, o los retiros de la caja chica) que entran en este cierre, para mirarlos. Se cargan
+       y se anulan en Gastos, en Movimientos de salida (26/10) y en Retiros de fondos (SQL 191). */
+    function abrirMovsCaja(que) {
+      var fuerte = que === true, ret = que === 'retiros', ms = movsDe(que), de = esc(nombreLocal(localDe(S.cajaLocal)));
+      ventana('<h3 id="posVentTit">' + (fuerte ? 'A la caja fuerte' : ret ? 'Retiros de fondos' : 'Gastos de la caja') + '</h3><p class="pos-bajada">' + (fuerte
           ? 'Lo que pasó de la caja chica a la caja fuerte de ' + de + ' desde el último cierre: se resta en este. Se carga y se anula en «Movimientos de salida».'
+          : ret ? 'Lo que se retiró de la caja chica de ' + de + ' desde el último cierre: se resta en este. Se carga y se anula en «Retiros de fondos».'
           : 'Los de ' + de + ' desde el último cierre: entran en este. Se cargan y se anulan en «Gastos».') + '</p>' +
-        (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Hora</th>' + (fuerte ? '' : '<th>Qué es</th>') +
-          '<th>' + (fuerte ? 'Observaciones' : 'Detalle') + '</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
+        (ms.length ? '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Hora</th>' + (fuerte ? '' : ret ? '<th>Lo retiró</th>' : '<th>Qué es</th>') +
+          '<th>' + (fuerte || ret ? 'Observaciones' : 'Detalle') + '</th><th>Cargó</th><th class="n">Monto</th></tr></thead><tbody>' +
           ms.map(function (x) {
-            return '<tr><td><b>' + esc(refGasto(x, prueba) || '—') + '</b></td><td>' + esc(fechaHora(x.fecha)) + '</td>' + (fuerte ? '' : '<td>' + esc(TIPOS_MOV[x.tipo] || x.tipo) + '</td>') +
+            return '<tr><td><b>' + esc(refGasto(x, prueba) || '—') + '</b></td><td>' + esc(fechaHora(x.fecha)) + '</td>' +
+              (fuerte ? '' : '<td>' + esc(ret ? x.retira || '—' : TIPOS_MOV[x.tipo] || x.tipo) + '</td>') +
               '<td>' + esc([x.rubro, x.descripcion].filter(Boolean).join(' · ')) + '</td>' +
               '<td>' + esc(x.persona || '') + '</td><td class="n">' + (x.tipo === 'ingreso' ? '+' : '−') + plata(cent(x.monto)) + '</td></tr>';
           }).join('') + '</tbody></table></div>' :
-          '<div class="pos-cartel">' + (fuerte ? 'Todavía no pasó nada a la caja fuerte en esta caja.' : 'Todavía no hay gastos en esta caja.') + '</div>') +
+          '<div class="pos-cartel">' + (fuerte ? 'Todavía no pasó nada a la caja fuerte en esta caja.' : ret ? 'Todavía no se retiró nada de esta caja.' : 'Todavía no hay gastos en esta caja.') + '</div>') +
         '<div class="pos-pie">' + (fuerte ? '<a class="btn btn-sec btn-chico izq" href="#salidas" id="cjIrSalidas">Ir a Movimientos de salida</a>'
+                                   : ret ? '<a class="btn btn-sec btn-chico izq" href="#retiros" id="cjIrRetiros">Ir a Retiros de fondos</a>'
                                           : '<a class="btn btn-sec btn-chico izq" href="#gastos" id="cjIrGastos">Ir a Gastos</a>') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>', true);
     }
@@ -2784,8 +2829,8 @@
       }).catch(function (e) { if ($('gsLista')) $('gsLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
     function pintarGastos(d) {
-      /* Lo que pasó a la caja fuerte no es un gasto: tiene su sección, Movimientos de salida (y se ve en Gestión → Movimientos). */
-      var filas = (d.filas || []).filter(function (f) { return f.origen !== 'cierre' && f.tipo !== 'caja_fuerte'; });
+      /* Lo que pasó a la caja fuerte no es un gasto: tiene su sección, Movimientos de salida; los retiros, la suya (SQL 191). Todo se ve en Gestión → Movimientos. */
+      var filas = (d.filas || []).filter(function (f) { return f.origen !== 'cierre' && f.tipo !== 'caja_fuerte' && f.tipo !== 'retiro'; });
       filas.forEach(function (f) { f.prueba = deLaPrueba(); });
       var t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, todas = !$('gsLocal').value;
       var kpis = '<div class="pos-totales">' +
@@ -2907,9 +2952,11 @@
     }
     function pintarSalidas(d) {
       var filas = d.filas || [], t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, todas = !$('msLocal').value;
+      var ctl = t.controlado !== undefined;   // SQL 191: el tilde «Controlado»
       filas.forEach(function (f) { if (f.origen !== 'cierre') f.prueba = deLaPrueba(); });
       var kpis = '<div class="pos-totales">' +
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div>' +
+        (ctl ? '<div class="pos-kpi"><span>Total controlado</span><b>' + p(t.controlado) + '</b></div>' : '') +
         '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div></div>' +
         (deLaPrueba() ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '');
       if (!filas.length) {
@@ -2919,7 +2966,7 @@
       }
       /* Hasta el SQL 180 se pasaba en el Paso 2 del cierre: esos salen con el cierre, y al tocarlos se abre el cierre. */
       $('msLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Día</th>' + (todas ? '<th>Sucursal</th>' : '') +
-        '<th>Cargó</th><th>Observaciones</th><th>Cierre</th><th class="n">Total</th></tr></thead><tbody>' +
+        '<th>Cargó</th><th>Observaciones</th><th>Cierre</th>' + (ctl ? '<th class="c">Controlado</th>' : '') + '<th class="n">Total</th></tr></thead><tbody>' +
         filas.map(function (f, i) {
           var an = f.estado !== 'ok', delCierre = f.origen === 'cierre';
           return '<tr data-salida="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (deLaPrueba() ? 'prueba' : '') + '">' +
@@ -2927,10 +2974,12 @@
             '<td>' + esc(f.persona || '—') + '</td>' +
             '<td class="vf-det">' + (delCierre ? 'En el cierre (su Paso 2)' : f.descripcion ? esc(f.descripcion) : '<span class="apagado">—</span>') + '</td>' +
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : f.cierre ? esc(refCierre(f.cierre)) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') :
-              '<span class="pill pill-ok">Caja abierta</span>') + '</td>' +
+              '<span class="pill pill-ok">Caja abierta</span>') + '</td>' + (ctl ? celdaControlado(f) : '') +
             '<td class="n tachar"><b>' + p(f.monto) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
-        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '') +
+        (ctl && puede('gestion') ? '<p class="pos-ayuda">«Controlado»: tildalo cuando veas esa plata en la caja fuerte. Lo tilda sólo la oficina.</p>' : '');
+      if (ctl) tildesControlado($('msLista'), cargar);
       $('msLista').querySelectorAll('tr[data-salida]').forEach(function (tr) {
         var f = filas[Number(tr.getAttribute('data-salida'))];
         tr.onclick = function () { if (f.origen === 'cierre') abrirCierre(f.id, cargar); else abrirMovDetalle(f, cargar); };
@@ -2988,6 +3037,175 @@
     caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); guardarSalida(); } });
   }
 
+  /* ════════════════════════════════════════════════════════════════════
+     LOS RETIROS DE FONDOS (SQL 191, 29/10)
+     Mauricio (29/10): "retiro de fondos… lo que va a hacer es sacar de la
+     caja fuerte o chica del local plata para darle a la fábrica". Son los
+     "Retiros de Fondos" de BlueSoft: la lista con el período, la sucursal y
+     el estado, y «Nuevo retiro». Cada uno con su número (RF-1…), de qué caja
+     sale y quién se lleva la plata (el «Socio» de BlueSoft). El de la caja
+     chica lo resta el próximo cierre, como un gasto; el de la caja fuerte no
+     toca el cierre. El tilde «Controlado» lo pone la oficina ("la verdad
+     nunca la usé… agrégalo por las dudas").
+     ════════════════════════════════════════════════════════════════════ */
+  function verRetiros() {
+    var c = $('cuerpo'), prueba = enPrueba();
+    var l = localMio(S.cajaLocal) || localInicial();
+    c.innerHTML = cabeza('Retiros de fondos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+        'La plata que sale de la caja chica o de la caja fuerte del local: para la fábrica, un depósito, un pago. El de la caja chica lo resta el próximo cierre.',
+        '<button type="button" class="btn btn-pri btn-chico" id="rfNuevo">Nuevo retiro</button>') +
+      '<div class="pos-filtros"><div id="rfPer"></div>' +
+        campo('', 'Sucursal', '<select id="rfLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
+        campo('', 'Estado', '<select id="rfEstado"><option value="">Todos</option><option value="ok">Realizados</option><option value="anulado">Anulados</option></select>') +
+        campo('', 'Retiros', '<select id="rfPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
+      '</div><div id="rfLista"><p class="cargando">Cargando…</p></div>';
+    var per = periodoPos($('rfPer'), { inicial: 'mes', guardar: 'pos_retiros_periodo', hastaHoy: true, alCambiar: cargar });
+    /* La sucursal es la misma del cierre, de Gastos y de Movimientos de salida. */
+    $('rfLocal').onchange = function () { if (this.value) { S.cajaLocal = this.value; recordarLocal(this.value); } cargar(); };
+    $('rfPrueba').onchange = cargar;
+    $('rfEstado').onchange = function () { if (ultimo) pintarRetiros(ultimo); };
+    $('rfNuevo').onclick = function () { abrirRetiro($('rfLocal').value || (localMio(S.cajaLocal) || localInicial()).id, prueba, cargar); };
+    var pedido = 0, ultimo = null;
+    function deLaPrueba() { return $('rfPrueba').value === '1'; }
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('rfLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_caja_movimientos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('rfLocal').value || null, p_tipo: 'retiro',
+                                       p_prueba: deLaPrueba() }).then(function (d) {
+        if (n !== pedido || !$('rfLista')) return;
+        ultimo = d;
+        pintarRetiros(d);
+      }).catch(function (e) { if ($('rfLista')) $('rfLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin191(e)) + '</div>'; });
+    }
+    function pintarRetiros(d) {
+      var est = $('rfEstado').value, t = d.totales || {}, p = function (n) { return plata(cent(n || 0)); }, todas = !$('rfLocal').value;
+      var filas = (d.filas || []).filter(function (f) { return !est || f.estado === est; });
+      filas.forEach(function (f) { f.prueba = deLaPrueba(); });
+      /* Abajo, como en BlueSoft: el monto total y el total controlado (de los realizados del período). */
+      var pie = est === 'anulado' ? '' : '<div class="pos-totales abajo">' +
+        '<div class="pos-kpi fuerte"><span>Monto total</span><b>' + p(t.retiro) + '</b></div>' +
+        '<div class="pos-kpi"><span>Total controlado</span><b>' + p(t.controlado) + '</b></div>' +
+        '<div class="pos-kpi"><span>Cantidad</span><b>' + miles(Number(t.cantidad) || 0) + '</b></div></div>' +
+        (puede('gestion') ? '<p class="pos-ayuda">«Controlado»: tildalo cuando veas que la plata llegó. Lo tilda sólo la oficina.</p>' : '');
+      var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Los retiros de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en Tickets.</div>' : '';
+      if (!filas.length) {
+        $('rfLista').innerHTML = aviso + '<div class="pos-cartel">' + (est === 'anulado' ? 'No hay retiros anulados' : deLaPrueba() ? 'No hay retiros de prueba' : 'No hay retiros de fondos') +
+          ' en ese período. Se cargan con «Nuevo retiro».</div>' + pie;
+        return;
+      }
+      /* Las columnas de "Retiros de Fondos" de BlueSoft (Fecha, Comprobante, Socio que retiró, Estado, Controlado, Total, Observaciones), con de qué caja salió. */
+      $('rfLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla rf-tabla"><thead><tr><th>Número</th><th>Fecha</th>' + (todas ? '<th>Sucursal</th>' : '') +
+        '<th>De qué caja</th><th>Lo retiró</th><th>Observaciones</th><th>Cargó</th><th>Estado</th><th class="c">Controlado</th><th class="n">Total</th></tr></thead><tbody>' +
+        filas.map(function (f, i) {
+          var an = f.estado !== 'ok';
+          return '<tr data-retiro="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (deLaPrueba() ? 'prueba' : '') + '">' +
+            '<td><b>' + esc(refGasto(f) || '—') + '</b></td><td>' + esc(fechaHora(f.fecha)) + '</td>' + (todas ? '<td>' + esc(bonito(f.local)) + '</td>' : '') +
+            '<td>' + esc(CAJAS[f.caja] || '—') + (f.caja === 'chica' && !an ? '<small>' + (f.cierre ? 'En el cierre ' + esc(refCierre(f.cierre)) : 'Entra en el próximo cierre') + '</small>' : '') + '</td>' +
+            '<td>' + esc(f.retira || '—') + '</td>' +
+            '<td class="vf-det">' + (f.descripcion ? esc(f.descripcion) : '<span class="apagado">—</span>') + '</td>' +
+            '<td>' + esc(f.persona || '—') + '</td>' +
+            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Realizado</span>') + '</td>' +
+            celdaControlado(f) +
+            '<td class="n tachar"><b>' + p(f.monto) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '') + pie;
+      tildesControlado($('rfLista'), cargar);
+      $('rfLista').querySelectorAll('tr[data-retiro]').forEach(function (tr) {
+        var f = filas[Number(tr.getAttribute('data-retiro'))];
+        tr.onclick = function () { abrirMovDetalle(f, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    cargar();
+  }
+
+  /* El "Retiro de Fondos" de BlueSoft: de qué caja sale (la chica o la fuerte), quién se lleva la plata y cuánto, en efectivo.
+     La caja no viene elegida (cambia el cierre). Del de la caja chica dice cuánto tendría que haber y pregunta si sacan más
+     (un cero de más); el de la caja fuerte no toca el cierre (cuánto hay en la caja fuerte lo va a decir Disponibilidad). */
+  function abrirRetiro(localId, prueba, alGuardar) {
+    var clave = nuevaClave(), hay = null, pedido = 0, deCaja = '';
+    var caja = ventana('<h3 id="posVentTit">' + (prueba ? 'Retiro de prueba' : 'Retiro de fondos') + '</h3>' +
+      '<p class="pos-bajada">Plata que sale del local, en efectivo: para la fábrica, un depósito o un pago.</p>' +
+      '<div class="pos-campos">' +
+        campo('', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly>') +
+        campo('ancho', 'Sucursal', '<select id="rtLocal" class="desplegable">' + opcionesLocales(localId) + '</select>') +
+      '</div>' +
+      '<p class="pos-lbl rt-lbl">¿De qué caja sale?</p>' +
+      '<div class="chips" id="rtCaja" role="group" aria-label="De qué caja sale">' +
+        '<button type="button" class="chip" data-caja="chica">Caja chica</button><button type="button" class="chip" data-caja="fuerte">Caja fuerte</button></div>' +
+      '<div class="pos-campos" style="margin-top:10px">' +
+        campo('ancho', 'Lo retira', '<select id="rtQuien" class="desplegable"><option value="">Cargando…</option></select>') +
+        campo('ancho', 'Nombre de quien lo retira', '<input type="text" id="rtOtro" maxlength="80" autocomplete="off">', ' id="rtOtroL" hidden') +
+        campo('', 'Importe en efectivo', '<input type="text" inputmode="decimal" id="rtMonto" autocomplete="off" placeholder="$0">') +
+        campo('ancho', 'Observaciones', '<input type="text" id="rtObs" maxlength="200" autocomplete="off" placeholder="Para qué es: un depósito, un pago…">') +
+      '</div><p class="pos-ayuda" id="rtHay">El de la caja chica lo resta el próximo cierre; el de la caja fuerte no toca el cierre.</p><div class="pos-error" id="rtError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="rtGuardar">Guardar</button></div>');
+    /* Quién se lleva la plata: la gente de la oficina (arranca con quien entró, si es de la oficina) u "Otro…", escrito a mano. */
+    function pintarQuien(lista) {
+      var yo = S.ini.yo && S.ini.yo.id;
+      caja.querySelector('#rtQuien').innerHTML = '<option value="">Elegí…</option>' + lista.map(function (x) {
+        return '<option value="' + esc(x.nombre) + '"' + (x.id === yo ? ' selected' : '') + '>' + esc(x.nombre) + '</option>'; }).join('') +
+        '<option value="*">Otro…</option>';
+    }
+    function marcarOtro() {
+      var otro = caja.querySelector('#rtQuien').value === '*';
+      caja.querySelector('#rtOtroL').hidden = !otro;
+      if (otro) caja.querySelector('#rtOtro').focus();
+    }
+    (S.retiran ? Promise.resolve(S.retiran) : llamar('pos_retiran', {})).then(function (ls) {
+      S.retiran = Array.isArray(ls) ? ls : [];
+      if (caja.isConnected) pintarQuien(S.retiran);
+    }).catch(function () { if (caja.isConnected) pintarQuien([]); });
+    caja.querySelector('#rtQuien').onchange = function () { errorEn(caja, 'rtError', ''); marcarOtro(); };
+    /* Lo que tendría que haber en la caja chica de esa sucursal (sin el saldo inicial del primer cierre, no se sabe). */
+    function verHay() {
+      var n = ++pedido, z = caja.querySelector('#rtHay');
+      hay = null;
+      if (deCaja !== 'chica') {
+        z.textContent = deCaja === 'fuerte' ? 'Sale de la caja fuerte: no toca el cierre de caja.' : 'El de la caja chica lo resta el próximo cierre; el de la caja fuerte no toca el cierre.';
+        return;
+      }
+      z.textContent = 'Sale de la caja chica: lo resta el próximo cierre.';
+      llamar('pos_caja', { p_local: caja.querySelector('#rtLocal').value, p_prueba: !!prueba }).then(function (d) {
+        if (n !== pedido || !caja.isConnected || d.primer || d.ventas.efectivo == null) return;
+        hay = esperadoCaja(d, cent(d.saldo_inicial || 0));
+        z.innerHTML = 'Sale de la caja chica: lo resta el próximo cierre. Tendría que haber <b>' + plata(hay) + '</b>.';
+      }).catch(function () { /* sin ese dato, se puede guardar igual */ });
+    }
+    caja.querySelector('#rtCaja').onclick = function (e) {
+      var b = e.target.closest('[data-caja]');
+      if (!b) return;
+      deCaja = b.getAttribute('data-caja');
+      caja.querySelectorAll('[data-caja]').forEach(function (x) { var si = x === b; x.classList.toggle('sel', si); x.setAttribute('aria-pressed', String(si)); });
+      errorEn(caja, 'rtError', '');
+      verHay();
+    };
+    caja.querySelector('#rtLocal').onchange = verHay;
+    caja.querySelector('#rtMonto').oninput = function () { errorEn(caja, 'rtError', ''); };
+    setTimeout(function () { var b = caja.querySelector('[data-caja]'); if (b) b.focus(); }, 0);
+    function guardarRetiro() {
+      var bt = caja.querySelector('#rtGuardar');
+      var loc = caja.querySelector('#rtLocal').value, q = caja.querySelector('#rtQuien').value;
+      var quien = q === '*' ? caja.querySelector('#rtOtro').value.trim() : q;
+      var obs = caja.querySelector('#rtObs').value.trim(), monto = leerPlata(caja.querySelector('#rtMonto').value);
+      var mal = !deCaja ? 'Elegí de qué caja sale la plata.' : !quien ? (q === '*' ? 'Escribí quién se lleva la plata.' : 'Elegí quién retira la plata.') :
+        isNaN(monto) || monto <= 0 ? 'Escribí el importe.' : '';
+      if (!errorEn(caja, 'rtError', mal) || bt.disabled) return;
+      if (deCaja === 'chica' && hay != null && monto > hay && !confirm('Es más de lo que tendría que haber en la caja chica (' + plata(hay) + '). ¿Guardarlo igual?')) return;
+      bt.disabled = true;
+      llamar('pos_caja_mov_guardar', { p: { clave: clave, local_id: loc, prueba: !!prueba, tipo: 'retiro', caja: deCaja, retira: quien, rubro: '', descripcion: obs,
+                                            monto: aPesos(monto) } }).then(function (r) {
+        var num = refGasto({ tipo: 'retiro', numero: r.numero }, !!prueba);
+        avisar('ok', 'Anotado' + (num ? ': ' + num : '') + ', ' + plata(monto) + ' de la ' + CAJAS[deCaja].toLowerCase() + '. Lo retiró ' + quien + '.');
+        cerrarVentana();
+        if (alGuardar) alGuardar();
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'rtError', sin191(e)); });
+    }
+    caja.querySelector('#rtGuardar').onclick = guardarRetiro;
+    caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); guardarRetiro(); } });
+  }
+
   /* Un cierre guardado: todos sus números, sus gastos, cada vez que contaron, y anularlo (sólo el último). */
   function abrirCierre(id, alCambiar) {
     var caja = ventana('<h3 id="posVentTit">Cierre de caja</h3><p class="cargando">Cargando…</p>', true);
@@ -3018,6 +3236,7 @@
             filaRes('Ventas totales del día', p(c.ventas_total), 'barra') +
             filaRes('Gastos en efectivo', p(c.gastos)) + filaRes('Otras salidas', p(c.otras_salidas)) +
             (c.a_caja_fuerte != null ? filaRes('A la caja fuerte', p(c.a_caja_fuerte)) : '') +   // SQL 180: los movimientos de salida
+            (Number(c.retiros_fondos) ? filaRes('Retiros de fondos', p(c.retiros_fondos)) : '') +   // SQL 191: los de la caja chica
             filaRes('Descuentos', p(c.descuentos), 'info') +
             (c.cambios ? filaRes('Cobrado en cambios (' + c.cambios + ')', p(c.cambios_diferencia), 'info') : '') +
             filaRes('Otros ingresos', p(c.otros_ingresos)) +
@@ -3030,7 +3249,7 @@
             (conteos.length > 1 ? '<p class="pos-lbl">Se contó ' + conteos.length + ' veces</p><ul class="cj-lista">' + conteos.map(function (k) {
               return '<li>' + esc(fechaHora(k.fecha)) + ' — ' + p(k.contado) + (k.persona ? ' (' + esc(k.persona) + ')' : '') + '</li>'; }).join('') + '</ul>' : '') +
             (movs.length ? '<p class="pos-lbl">Gastos y movimientos</p><ul class="cj-lista">' + movs.map(function (m) {
-              var num = refGasto(m, c.prueba), det = [m.rubro, m.descripcion].filter(Boolean).join(' · ');
+              var num = refGasto(m, c.prueba), det = [m.rubro, m.retira ? 'lo retiró ' + m.retira : '', m.descripcion].filter(Boolean).join(' · ');
               return '<li' + (m.estado === 'anulado' ? ' class="tachado"' : '') + '>' + (num ? '<b>' + esc(num) + '</b> ' : '') + esc(TIPOS_MOV[m.tipo] || m.tipo) + (det ? ': ' + esc(det) : '') +
                 ' — ' + (m.tipo === 'ingreso' ? '+' : '−') + p(m.monto) + (m.estado === 'anulado' ? ' (anulado)' : '') + '</li>'; }).join('') + '</ul>' : '') +
             (c.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(c.observaciones) + '</p>' : '') +
@@ -3090,6 +3309,7 @@
         '<div class="pos-kpi"><span>Mercado Pago</span><b>' + p(t.mercadopago) + '</b></div>' +
         '<div class="pos-kpi"><span>Gastos</span><b>' + p(t.gastos) + '</b></div>' +
         '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.retiro) + '</b></div>' +
+        (Number(t.retiros_fondos) ? '<div class="pos-kpi"><span>Retiros de la caja chica</span><b>' + p(t.retiros_fondos) + '</b></div>' : '') +   // SQL 191
         (t.cierres ? '<div class="pos-kpi"><span>Diferencias</span><b class="cj-kpi-dif">' + esc(dif) + '</b></div>' : '') + '</div>' +
         ($('ciPrueba').value === '1' ? '<div class="pos-cartel prueba">Los cierres de <b>prueba</b>: no cuentan para nada. Se borran con «Borrar las pruebas», en POS → Tickets.</div>' : '');
       if (!d.filas || !d.filas.length) { $('ciLista').innerHTML = kpis + '<div class="pos-cartel">No hay cierres en ese período.</div>'; return; }
@@ -3097,7 +3317,7 @@
          con quién cerró, y "Anulado" en la diferencia. Lo que queda en la caja chica está en el detalle. */
       $('ciLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Cierre</th><th>Sucursal</th>' +
         '<th class="n">Inicial</th><th class="n">Ventas</th><th class="n">Efectivo</th><th class="n">Tarjeta</th><th class="n">Mercado Pago</th>' +
-        '<th class="n" title="MODO, Go Cuotas y transferencias">Otros</th><th class="n" title="Gastos y otras salidas">Gastos</th><th class="n">Contado</th><th>Diferencia</th><th class="n">Caja fuerte</th></tr></thead><tbody>' +
+        '<th class="n" title="MODO, Go Cuotas y transferencias">Otros</th><th class="n" title="Gastos, otras salidas y retiros de fondos de la caja chica">Gastos</th><th class="n">Contado</th><th>Diferencia</th><th class="n">Caja fuerte</th></tr></thead><tbody>' +
         d.filas.map(function (f) {
           var an = f.estado === 'anulada', dv = desvioDe(cent(f.desvio), cent(f.tolerancia));
           return '<tr data-cierre="' + esc(f.id) + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '') + '">' +
@@ -3106,7 +3326,7 @@
             '<td class="n">' + p(f.saldo_inicial) + '</td><td class="n tachar"><b>' + p(f.ventas_total) + '</b></td><td class="n">' + p(f.ventas_efectivo) + '</td>' +
             '<td class="n">' + p(f.ventas_tarjeta) + '</td><td class="n">' + p(f.ventas_mercadopago) + '</td>' +
             '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia)) + '</td>' +
-            '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas)) + '</td><td class="n">' + p(f.contado) + '</td>' +
+            '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas) + Number(f.retiros_fondos || 0)) + '</td><td class="n">' + p(f.contado) + '</td>' +   // SQL 191
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="cj-dv ' + dv.cls + '">' + esc(dv.corto) + '</span>' +
               (f.conteos > 1 ? ' <small class="cj-veces" title="Contaron ' + f.conteos + ' veces">×' + f.conteos + '</small>' : '')) + '</td>' +
             '<td class="n tachar">' + p(Number(f.retiro) + Number(f.a_caja_fuerte || 0)) + '</td></tr>';   // SQL 180: el Paso 2 de antes y los movimientos de salida
@@ -3122,7 +3342,7 @@
 
   function verMovimientos() {
     var c = $('cuerpo');
-    c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, las otras entradas y salidas de la caja chica, y lo que pasó a la caja fuerte (Movimientos de salida).',
+    c.innerHTML = cabeza('Movimientos de caja', 'Los gastos de cada local, las otras entradas y salidas de la caja chica, lo que pasó a la caja fuerte (Movimientos de salida) y los retiros de fondos.',
         '<button type="button" class="btn btn-pri btn-chico" id="mvNuevo">Agregar gasto…</button>') +
       '<div class="pos-filtros"><div id="mvPer"></div>' +
         campo('', 'Sucursal', '<select id="mvLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
@@ -3148,23 +3368,27 @@
         '<div class="pos-kpi"><span>Gastos del local</span><b>' + p(t.gasto) + '</b></div>' +
         '<div class="pos-kpi"><span>Otras salidas</span><b>' + p(t.salida) + '</b></div>' +
         '<div class="pos-kpi"><span>Otros ingresos</span><b>' + p(t.ingreso) + '</b></div>' +
-        '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div></div>' +
+        '<div class="pos-kpi fuerte"><span>A la caja fuerte</span><b>' + p(t.caja_fuerte) + '</b></div>' +
+        (t.retiro !== undefined ? '<div class="pos-kpi"><span>Retiros de fondos</span><b>' + p(t.retiro) + '</b></div>' : '') + '</div>' +   // SQL 191
         ($('mvPrueba').value === '1' ? '<div class="pos-cartel prueba">Los movimientos de <b>prueba</b>: no cuentan para nada.</div>' : '');
       if (!d.filas || !d.filas.length) { $('mvLista').innerHTML = kpis + '<div class="pos-cartel">No hay movimientos en ese período con esos filtros.</div>'; return; }
-      var prueba = $('mvPrueba').value === '1';
+      var prueba = $('mvPrueba').value === '1', ctl = t.controlado !== undefined;   // SQL 191: el tilde «Controlado»
       d.filas.forEach(function (f) { if (f.origen !== 'cierre') f.prueba = prueba; });
       $('mvLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Sucursal</th><th>Tipo</th><th>Detalle</th>' +
-        '<th>Cargó</th><th>Cierre</th><th>Estado</th><th class="n">Monto</th></tr></thead><tbody>' +
+        '<th>Cargó</th><th>Cierre</th><th>Estado</th>' + (ctl ? '<th class="c">Controlado</th>' : '') + '<th class="n">Monto</th></tr></thead><tbody>' +
         d.filas.map(function (f, i) {
-          var an = f.estado !== 'ok', cierre = f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') : 'Caja abierta';
+          var an = f.estado !== 'ok', cierre = f.cierre ? refCierre(f.cierre) + (f.cierre.estado === 'anulada' ? ' (anulado)' : '') :
+            f.tipo === 'retiro' && f.caja === 'fuerte' ? 'No entra (caja fuerte)' : 'Caja abierta';
+          var det = f.tipo === 'retiro' ? [CAJAS[f.caja], f.retira ? 'lo retiró ' + f.retira : '', f.descripcion] : [f.rubro, f.descripcion];
           return '<tr data-mov="' + i + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (prueba ? 'prueba' : '') + '">' +
             '<td><b>' + esc(f.origen === 'cierre' ? '' : refGasto(f) || '—') + '</b></td><td>' + esc(fechaHora(f.fecha)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(TIPOS_MOV[f.tipo] || f.tipo) + '</td>' +
-            '<td>' + esc(f.origen === 'cierre' ? 'Del cierre ' + refCierre(f.cierre) : [f.rubro, f.descripcion].filter(Boolean).join(' · ')) + '</td>' +
+            '<td>' + esc(f.origen === 'cierre' ? 'Del cierre ' + refCierre(f.cierre) : det.filter(Boolean).join(' · ')) + '</td>' +
             '<td>' + esc(f.persona || '—') + '</td><td>' + esc(f.origen === 'cierre' ? '—' : cierre) + '</td>' +
-            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</td>' +
+            '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</td>' + (ctl ? celdaControlado(f) : '') +
             '<td class="n tachar"><b>' + (f.tipo === 'ingreso' ? '+' : '−') + p(f.monto) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
         (d.mas ? '<p class="pos-mas">Se ven los últimos 500. Achicá el período para ver el resto.</p>' : '');
+      if (ctl) tildesControlado($('mvLista'), cargar);
       $('mvLista').querySelectorAll('tr[data-mov]').forEach(function (tr) {
         var f = d.filas[Number(tr.getAttribute('data-mov'))];
         tr.onclick = function () { if (f.origen === 'cierre') abrirCierre(f.id, cargar); else abrirMovDetalle(f, cargar); };
@@ -3174,9 +3398,11 @@
     cargar();
   }
 
-  /** Un gasto del listado: se ve, y se anula mientras su caja sigue abierta. */
+  /** Un gasto del listado: se ve, y se anula mientras su caja sigue abierta. SQL 191: el retiro de la caja fuerte no entra en ningún
+      cierre (se anula cuando sea), y lo que la oficina tildó como controlado no se anula sin sacarle el tilde. */
   function abrirMovDetalle(f, alCambiar) {
-    var an = f.estado !== 'ok', abierto = !f.cierre;
+    var an = f.estado !== 'ok', abierto = !f.cierre, deFuerte = f.tipo === 'retiro' && f.caja === 'fuerte';
+    var ctl = (f.tipo === 'caja_fuerte' || f.tipo === 'retiro') && f.origen !== 'cierre' && f.controlado !== undefined;
     var num = refGasto(f);
     var caja = ventana('<h3 id="posVentTit">' + (num ? esc(num) + ' · ' : '') + esc(TIPOS_MOV[f.tipo] || f.tipo) + ' · ' + plata(cent(f.monto)) + ' ' +
         (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Vale</span>') + '</h3>' +
@@ -3184,14 +3410,28 @@
         '<div><span>Fecha</span>' + esc(fechaHora(f.fecha)) + '</div>' +
         '<div><span>Sucursal</span>' + esc(bonito(f.local)) + '</div>' +
         '<div><span>Cargó</span>' + esc(f.persona || '—') + '</div>' +
-        '<div><span>Cierre</span>' + esc(abierto ? 'Todavía en la caja abierta' : refCierre(f.cierre)) + '</div>' +
+        '<div><span>Cierre</span>' + esc(deFuerte ? 'No entra (sale de la caja fuerte)' : abierto ? 'Todavía en la caja abierta' : refCierre(f.cierre)) + '</div>' +
+        (f.tipo === 'retiro' ? '<div><span>De qué caja</span>' + esc(CAJAS[f.caja] || '—') + '</div><div><span>Lo retiró</span>' + esc(f.retira || '—') + '</div>' : '') +
         (f.rubro ? '<div><span>Tipo de gasto</span>' + esc(f.rubro) + '</div>' : '') +
-        (f.descripcion ? '<div><span>' + (f.tipo === 'caja_fuerte' ? 'Observaciones' : 'Descripción') + '</span>' + esc(f.descripcion) + '</div>' : '') +
+        (f.descripcion ? '<div><span>' + (f.tipo === 'caja_fuerte' || f.tipo === 'retiro' ? 'Observaciones' : 'Descripción') + '</span>' + esc(f.descripcion) + '</div>' : '') +
+        (ctl ? '<div><span>Controlado</span>' + (f.controlado ? 'Sí' + (f.controlado_por ? ', ' + esc(f.controlado_por) : '') +
+          (f.controlado_en ? ' (' + esc(fechaHora(f.controlado_en)) + ')' : '') : 'Todavía no') + '</div>' : '') +
       '</div>' +
       (an ? '<div class="pos-cartel mal">Anulado' + (f.motivo ? ': ' + esc(f.motivo) : '') + '</div>' : '') +
       (!an && !abierto ? '<p class="pos-ayuda">Ya entró en el cierre ' + esc(refCierre(f.cierre)) + ': para cambiarlo, hay que anular ese cierre.</p>' : '') +
-      '<div id="mdAnular"></div><div class="pos-pie">' + (!an && abierto ? '<button type="button" class="btn btn-sec btn-chico izq" id="mdAnularBtn">Anular</button>' : '') +
+      (!an && abierto && f.controlado ? '<p class="pos-ayuda">Ya lo controló la oficina: para anularlo, primero hay que sacarle el tilde de «Controlado».</p>' : '') +
+      '<div id="mdAnular"></div><div class="pos-pie">' + (!an && abierto && !f.controlado ? '<button type="button" class="btn btn-sec btn-chico izq" id="mdAnularBtn">Anular</button>' : '') +
+        (ctl && puede('gestion') && !an ? '<button type="button" class="btn btn-sec btn-chico" id="mdCtlBtn">' + (f.controlado ? 'Sacarle el tilde' : 'Marcar como controlado') + '</button>' : '') +
         '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>');
+    var cb = caja.querySelector('#mdCtlBtn');
+    if (cb) cb.onclick = function () {
+      cb.disabled = true;
+      llamar('pos_caja_mov_controlar', { p_id: f.id, p_si: !f.controlado }).then(function () {
+        avisar('ok', f.controlado ? 'Listo: le sacaste el tilde.' : 'Listo: quedó controlado.');
+        cerrarVentana();
+        if (alCambiar) alCambiar();
+      }).catch(function (e) { cb.disabled = false; avisar('err', sin191(e)); });
+    };
     var ab = caja.querySelector('#mdAnularBtn');
     if (ab) ab.onclick = function () {
       ab.remove();
