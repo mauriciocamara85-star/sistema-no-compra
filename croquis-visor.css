@@ -135,6 +135,24 @@
 .cv-plano .cv-rotulo { transform: translate(-50%, -50%) translateZ(calc(var(--alto) + 2px)) rotateZ(calc(var(--giro, 0deg) * -1)) scale(var(--zc, 1)); }
 
 .cv-rotulo b.vieja::after { content: ""; position: absolute; top: -4px; right: -4px; width: 10px; height: 10px; border-radius: 50%; background: #F5B84B; box-shadow: 0 0 0 2px #0E1116; }
+/* La foto de esta semana (Supervisión → Por local, 28/10): ✓ la mandó, ! falta (ya le tocaba), ● le toca hoy. Más grande
+   que el puntito de antes (Mauricio: "hay un circulito, pero me gustaría algo más"); a la que falta, además, un anillo
+   naranja. Los mismos colores que las marcas del croquis de Por local. */
+.cv-rotulo b.sem-ok::after, .cv-rotulo b.sem-falta::after, .cv-rotulo b.sem-hoy::after,
+.c3-rotulo b.sem-ok::after, .c3-rotulo b.sem-falta::after, .c3-rotulo b.sem-hoy::after, .cv-sem-ic {
+  position: absolute; top: -8px; right: -9px; width: 17px; height: 17px; box-sizing: border-box; display: grid; place-items: center; border-radius: 50%;
+  color: #111; font: 900 11px/1 system-ui, "Segoe UI Symbol", sans-serif; box-shadow: 0 0 0 2px #0E1116; }
+.cv-rotulo b.sem-ok::after, .c3-rotulo b.sem-ok::after, .cv-sem-ic.sem-ok::after { content: "✓"; }
+.cv-rotulo b.sem-ok::after, .c3-rotulo b.sem-ok::after, .cv-sem-ic.sem-ok { background: #2FE38A; }
+.cv-rotulo b.sem-falta::after, .c3-rotulo b.sem-falta::after, .cv-sem-ic.sem-falta::after { content: "!"; }
+.cv-rotulo b.sem-falta::after, .c3-rotulo b.sem-falta::after, .cv-sem-ic.sem-falta { background: #FF8A3D; }
+.cv-rotulo b.sem-hoy::after, .c3-rotulo b.sem-hoy::after { content: ""; }
+.cv-rotulo b.sem-hoy::after, .c3-rotulo b.sem-hoy::after, .cv-sem-ic.sem-hoy { background: radial-gradient(circle, #111 0 3px, #FFFFFF 3.6px); }
+.cv-rotulo b.sem-falta, .c3-rotulo b.sem-falta { box-shadow: 0 0 0 3px rgba(255, 138, 61, .55); }
+/* En la leyenda, la misma marca, en la línea. */
+.cv-sem-ic { position: relative; top: auto; right: auto; display: inline-grid; vertical-align: -3px; margin-right: 3px; font-style: normal; }
+.cv-ayuda-sem { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.cv-ayuda-sem span { white-space: nowrap; }
 .cv-halo, .cv-rotulo b { transition: background-color .3s, border-color .3s, box-shadow .3s, opacity .2s; }
 
 /* Resaltar a alguien: lo suyo se levanta y brilla; lo demás queda atenuado. (La opacidad va en cada cara: en la caja
@@ -168,8 +186,9 @@
 .cv-ayuda { margin: 0; color: var(--cv-suave); font-size: 14px; }
 
 .cv-rotulo-sec { margin: 0 0 -6px; color: var(--cv-suave); font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
-.cv-vistas { display: flex; width: 100%; }
-.cv-vistas button { flex: 1 1 0; padding: 0 8px; font-size: 13.5px; }
+/* Con "Semana" (Supervisión) son cinco: si no entran en una fila, pasan a dos (antes "Zonas" quedaba cortado). */
+.cv-vistas { display: flex; flex-wrap: wrap; row-gap: 3px; width: 100%; box-sizing: border-box; }
+.cv-vistas button { flex: 1 1 auto; padding: 0 8px; font-size: 13.5px; }
 .cv-ley { display: grid; gap: 4px; }
 .cv-ley-item { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 4px 10px; border: 0; border-radius: 12px; background: none; font-size: 14.5px; text-align: left; cursor: pointer; transition: background-color .2s, opacity .2s; }
 .cv-ley-item:hover { background: var(--cv-panel-2); }
@@ -362,6 +381,10 @@
 .cv-previa-txt small { display: flex; align-items: center; gap: 6px; color: var(--cv-suave); font-size: 12.5px; font-weight: 600; }
 .cv-previa-txt small i { flex: none; width: 9px; height: 9px; border-radius: 50%; }
 .cv-previa-txt em { color: var(--cv-suave); font-size: 11.5px; font-style: normal; opacity: .8; }
+/* La de esta semana (Supervisión): en verde si la mandó, en naranja si falta. */
+.cv-previa-sem { justify-self: start; margin-top: 2px; padding: 2px 8px; border-radius: 999px; background: var(--cv-panel-2); color: var(--cv-texto); font-size: 12.5px; font-weight: 800; }
+.cv-previa-sem.sem-ok { background: #2FE38A; color: #0E1116; }
+.cv-previa-sem.sem-falta { background: #FF8A3D; color: #0E1116; }
 @media (prefers-reduced-motion: no-preference) { .cv-previa:not([hidden]) { animation: cv-previa .16s ease-out; } }
 @keyframes cv-previa { from { opacity: 0; transform: translateY(4px); } }
 /* En mira, la foto va arriba del mismo módulo y el módulo queda marcado en lima (al lado del puntito tapaba el módulo
@@ -395,6 +418,7 @@
 @media (max-width: 639px), (max-height: 480px) {
   .c3-rotulo b { min-width: 20px; height: 20px; padding: 0 5px; border-width: 1.5px; font-size: 11px; }
   .c3-rotulo b.vieja::after { top: -3px; right: -3px; width: 8px; height: 8px; }
+  .c3-rotulo b.sem-ok::after, .c3-rotulo b.sem-falta::after, .c3-rotulo b.sem-hoy::after { top: -6px; right: -7px; width: 14px; height: 14px; font-size: 9.5px; }
 }
 #cvCaminar[aria-pressed="true"] { background: var(--cv-texto); color: var(--cv-bg); }
 .cv-sec .cv-interruptor + .cv-interruptor { margin-top: 8px; }

@@ -18,7 +18,8 @@ var VISOR_ALTO = { pared: 58, deposito: 60, centro: 32, vidriera: 26, muro: 34, 
 var VISOR_MODULO_PROPORCION = 1.7, VISOR_MODULO_TOPE = 96;
 
 /** Abre el modo observador adentro de cont (que ya ocupa toda la pantalla). op: { local: {id, nombre}, puedeSugerir,
-    puedeNombrar, puedeEditar, alVolver(), alEditar(d), capa: {abrir(fn), soltar(fn)} } */
+    puedeNombrar, puedeEditar, alVolver(), alEditar(d), capa: {abrir(fn), soltar(fn)}, semana: { id del módulo: { estado
+    ('ok'|'falta'|'hoy'|'luego'), corto, largo } } (Supervisión → Por local: la foto de esta semana; la app no la pasa) } */
 function abrirVisor(cont, op) {
   if (_visorActual) visorSalir(_visorActual, true);
   var V = { op: op, cont: cont, tab: 'salon', inclinado: true, incl: VISOR_INCL, estado: {}, d: null, ficha: null, fit: {}, vista: 'vendedor', giro: 0, todas: false, rec: null };
@@ -28,7 +29,7 @@ function abrirVisor(cont, op) {
     V.vista = localStorage.getItem('vdh_visor_vista') || 'vendedor';
     V.inclinado = localStorage.getItem('vdh_visor_cam') !== 'arriba';
   } catch (e) { V.liviano = false; }
-  if (!VISOR_VISTAS[V.vista] || (V.vista === 'zona' && !op.puedeSugerir)) V.vista = 'vendedor';
+  if (!VISOR_VISTAS[V.vista] || (V.vista === 'zona' && !op.puedeSugerir) || (V.vista === 'semana' && !op.semana)) V.vista = 'vendedor';
   /* En 3D, si el equipo puede (y no se apagó en "Ajustes de la vista"); en un teléfono o una compu chica, liviano. */
   V.usa3d = visor3dElegido();
   if (V.usa3d && !V.liviano && visor3dLento() && !visorLivianoElegido()) V.liviano = true;
@@ -398,7 +399,7 @@ function visorDibujar(V, ajustar) {
     var frente = it.vidriera ? 's' : it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? 'n' : 's';
     var arriba = it.pared === 'frente' && !it.vidriera;
     var numero = esVidriera(m) ? m.nombre : m.isla ? numeroVista(d, m) : m.numero, que = esVidriera(m) ? queHay(m) : visorEtiqueta(m);
-    var rotulo = '<div class="cv-rotulo"><b' + (e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '') + '>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
+    var rotulo = '<div class="cv-rotulo"><b' + visorMarcaNumero(V, m) + '>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
     var tapa = visorSvg(r, interiorModulo(d, m, r, 'cvR', it.pared), 'cv-merca') + '<div class="cv-foto-cara cv-foto-tapa"></div>';
     out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (arriba ? ' foto-arriba' : '') + (it.vidriera ? ' cv-vidriera' : ''),
       'data-mod="' + esc(m.id) + '" role="button" tabindex="0" aria-label="' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '"',
@@ -1013,6 +1014,7 @@ function visorPrevia(V) {
       '<div class="cv-previa-txt"><b>' + esc(titulo) + '</b>' + (bajada ? '<span>' + esc(bajada) + '</span>' : '') +
         '<small><i style="background:' + visorColor(V, m) + '"></i>' + esc(esVidriera(m) ? 'De todos' : resp ? nombreLista(resp) : 'Sin responsable') +
           (e.foto_path && e.tomada_en ? ' · ' + esc(textoHace(e.tomada_en)) : '') + (e.foto_path && e.nivel ? ' · ' + esc(NIVEL[e.nivel] || e.nivel) : '') + '</small>' +
+        (V.op.semana && V.op.semana[m.id] ? '<strong class="cv-previa-sem sem-' + esc(V.op.semana[m.id].estado) + '">' + esc(V.op.semana[m.id].corto) + '</strong>' : '') +
         '<em>' + (V.c3 && V.c3.caminando() && !V.c3.mirando() ? 'Clic para ir hasta ahí' : 'Clic para abrirlo') + '</em></div>';
     var f = el.querySelector('.cv-previa-foto');
     if (e.foto_path) {
@@ -1065,13 +1067,32 @@ function visorPreviaOcultar(V) { if (V.previa) V.previa.ocultar(); }
    Por vendedor: el de quien lo tiene (el mismo de siempre: identifica a la persona). Por estado del orden: el nivel de
    la última foto, con los colores de la app. Por antigüedad de la foto: de verde (de hoy) a rojo (más de 7 días). Por
    zona (sólo el supervisor, 24/10/2026): las del croquis (ZONAS, en impecable-comun.js) o la que eligió en la ficha. */
-var VISOR_VISTAS = { vendedor: 'Vendedor', estado: 'Estado', antiguedad: 'Antigüedad', zona: 'Zonas' };
+/* "Semana" (sólo con op.semana, en Supervisión): quién mandó la foto de esta semana y a quién le falta. */
+var VISOR_VISTAS = { vendedor: 'Vendedor', semana: 'Semana', estado: 'Estado', antiguedad: 'Antigüedad', zona: 'Zonas' };
 var VISOR_ESTADOS = [['impecable', 'Impecable', '#C6F432'], ['bien', 'Bien', '#5BD68A'], ['a_mejorar', 'A mejorar', '#F5B84B'], ['fuera_de_estandar', 'Fuera de estándar', '#FF8A8A'], ['sin', 'Sin foto', '#6E7684']];
 var VISOR_EDADES = [['0', 'Hoy o ayer', '#5BD68A'], ['2', 'De 2 a 4 días', '#B9DE6A'], ['5', 'De 5 a 7 días', '#F5B84B'], ['8', 'Más de 7 días', '#FF8A8A'], ['sin', 'Sin foto', '#6E7684']];
+var VISOR_SEMANA = [['ok', 'La mandó esta semana', '#5BD68A'], ['hoy', 'Le toca hoy', '#F4F5F7'], ['falta', 'Falta (ya le tocaba)', '#FF8A3D'],
+  ['luego', 'Le toca más adelante', '#8B94A3'], ['nada', 'No se pidió esta semana', '#4A515C']];
 function visorDias(ts) { return Math.round((new Date(hoyAR() + 'T12:00:00Z') - new Date(hoyAR(new Date(ts)) + 'T12:00:00Z')) / 864e5); }
+/** Los atributos del número de un módulo: con la semana (Supervisión, 28/10), su marca (✓ la mandó, ! falta la de esta
+    semana, ● le toca hoy; Mauricio: "hay un circulito, pero me gustaría algo más"); sin ella (la app), el puntito de
+    "sin foto reciente" (más de 7 días), como siempre. */
+function visorMarcaNumero(V, m) {
+  if (V.op.semana) {
+    var sm = V.op.semana[m.id];
+    return sm ? ' class="sem-' + esc(sm.estado) + '" title="' + esc(sm.largo || sm.corto || '') + '"' : '';
+  }
+  var e = V.estado[m.id] || {};
+  return e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '';
+}
 /** La categoría de un módulo en la vista elegida: { clave, texto, color }. */
 function visorCategoria(V, m) {
   var e = V.estado[m.id] || {}, x;
+  if (V.vista === 'semana' && V.op.semana) {
+    var sm = V.op.semana[m.id];
+    x = VISOR_SEMANA.filter(function (s) { return s[0] === (sm ? sm.estado : 'nada'); })[0] || VISOR_SEMANA[4];
+    return { clave: 'c:' + x[0], texto: x[1], color: x[2] };
+  }
   if (V.vista === 'estado') {
     x = VISOR_ESTADOS.filter(function (s) { return s[0] === (e.foto_path && e.nivel ? e.nivel : 'sin'); })[0] || VISOR_ESTADOS[4];
     return { clave: 'c:' + x[0], texto: x[1], color: x[2] };
@@ -1129,8 +1150,8 @@ function visorPanel(V) {
      vidriera hacia adentro. */
   var lista = V.vista === 'vendedor' ? orden.sort(function (a, b) { return a === 'p:nadie' ? 1 : b === 'p:nadie' ? -1 : 0; })
     : V.vista === 'zona' ? ZONAS.map(function (z) { return 'z:' + z[0]; }).concat(['z:sin', 'z:deposito']).filter(function (k) { return grupos[k]; })
-    : (V.vista === 'estado' ? VISOR_ESTADOS : VISOR_EDADES).map(function (x) { return 'c:' + x[0]; }).filter(function (k) { return grupos[k]; });
-  var vistas = Object.keys(VISOR_VISTAS).filter(function (k) { return k !== 'zona' || V.op.puedeSugerir; });
+    : (V.vista === 'estado' ? VISOR_ESTADOS : V.vista === 'semana' ? VISOR_SEMANA : VISOR_EDADES).map(function (x) { return 'c:' + x[0]; }).filter(function (k) { return grupos[k]; });
+  var vistas = Object.keys(VISOR_VISTAS).filter(function (k) { return (k !== 'zona' || V.op.puedeSugerir) && (k !== 'semana' || V.op.semana); });
   /* "Qué hay en cada módulo" y "De un vistazo" se sacaron (Mauricio, 15/10: "esas opciones las sacaría"): lo que hay se
      lee en cada módulo y en su ficha. */
   V.cont.querySelector('#cvPanel').innerHTML =
@@ -1145,7 +1166,11 @@ function visorPanel(V) {
     (V.vista === 'zona' ? '<p class="cv-ayuda">Salen solas del croquis, según lo lejos que queda cada módulo de la puerta: la entrada es el primer cuarto del local, ' +
       'el fondo arranca en el 70 % y las mesas del medio son la zona caliente. Si alguna no es así, cambiala en la ficha del módulo.</p>' : '') +
     vmSeccionHtml(V) +
-    '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>' +
+    (V.op.semana
+      ? '<p class="cv-ayuda cv-ayuda-sem"><span><i class="cv-sem-ic sem-ok" aria-hidden="true"></i> La mandó esta semana</span>' +
+        '<span><i class="cv-sem-ic sem-falta" aria-hidden="true"></i> Falta la de esta semana (ya le tocaba)</span>' +
+        '<span><i class="cv-sem-ic sem-hoy" aria-hidden="true"></i> Le toca hoy</span>Tocá un módulo para ver su foto.</p>'
+      : '<p class="cv-ayuda"><span class="cv-punto-viejo" aria-hidden="true"></span> Sin foto reciente (más de 7 días). Tocá un módulo para ver su foto.</p>') +
     '<details class="cv-sec"><summary>Ajustes de la vista</summary>' +
       (V.usa3d ? '<div class="cv-sens"><span>Sensibilidad del mouse</span><div class="cv-seg" role="group" aria-label="Sensibilidad del mouse">' +
         [['baja', 'Baja'], ['media', 'Media'], ['alta', 'Alta']].map(function (x) {
@@ -1222,10 +1247,9 @@ function visor3dMontar(V, caminar) {
       altoModulos: visorAltoModulos(pl, salon ? VISOR_ALTO.pared : VISOR_ALTO.deposito),
       color: function (m) { return visorCategoria(V, m).color; },
       numero: numero,
-      /* El número, con el puntito de "sin foto reciente" (como en la maqueta de siempre). */
+      /* El número, con su marca (la de la semana o el puntito de "sin foto reciente", como en la maqueta de siempre). */
       rotulo: function (m, color) {
-        var e = V.estado[m.id] || {};
-        return '<b style="border-color:' + color + '"' + (e.sin_foto_reciente || !e.foto_path ? ' class="vieja" title="Sin foto reciente"' : '') + '>' + esc(String(numero(m) || '')) + '</b>';
+        return '<b style="border-color:' + color + '"' + visorMarcaNumero(V, m) + '>' + esc(String(numero(m) || '')) + '</b>';
       },
       tipos: function (m) { return prendasDe(visorEtiqueta(m)); },
       /* El mueble de cada módulo como el de verdad (de las fotos del local) y lo que va entre módulos; los locales que

@@ -691,17 +691,118 @@ function verTareaFoto(t, rango, despues) {
    CÓMO ESTÁ EL LOCAL
    ════════════════════════════════════════════════════════════════════════ */
 
+/* ── La foto de esta semana de cada módulo (28/10, Mauricio: "que me aparezca una alerta… para ver quién nos mandó los
+      módulos, las fotos nuevas"; "que diga foto de la semana anterior"; "a Seba un tilde, como que ya la mandó esta
+      semana"). Sale de los controles desde el lunes (sin las correcciones), como los arma la base:
+        'ok'    la mandó (aunque sea tarde);
+        'falta' ya le tocaba y no la mandó (se puede mandar hasta el domingo y queda tarde);
+        'hoy'   le toca hoy y todavía no la mandó;
+        'luego' le toca más adelante esta semana (el día del local, corrido por el franco del que lo tiene).
+      La vidriera, con orden_vidriera_semana (SQL 159): la primera foto de la semana vale para todo el local. ── */
+var _semanaLocal = null;   // { local, mods: { id del módulo: { estado, quien, en, dia, hasta, tarde } } }
+
+function datosSemana(localId) {
+  var L = valor(localId);
+  return Promise.all([
+    leer('/orden_v_controles?select=modulo_id,tipo,estado,fecha,vence_en,enviado_en,persona_nombre,a_tiempo&local_id=eq.' + L +
+         '&fecha=gte.' + lunesAR() + '&tipo=neq.correccion'),
+    llamar('orden_vidriera_semana', { p_local: localId }).catch(function () { return null; }),
+    leer('/orden_config?select=dias_control,deposito_dia_vence&local_id=eq.' + L).catch(function () { return []; }),
+    leer('/orden_personas?select=id,dias_libres&local_id=eq.' + L + '&activo=is.true').catch(function () { return []; })
+  ]).then(function (r) { return { controles: r[0] || [], vidriera: r[1], config: (r[2] || [])[0] || {}, personas: r[3] || [] }; });
+}
+
+/** El día de la semana (1 = lunes … 7 = domingo) de una fecha AAAA-MM-DD. */
+function diaIso(f) { return (new Date(f + 'T12:00:00Z').getUTCDay() + 6) % 7 + 1; }
+/** Como orden_dia_que_le_toca: si ese día tiene franco, el último que trabaja antes en la semana (o, si no hay, el primero
+    después). Sin las vacaciones ni los días que el local no abre: es para decir "le toca el jueves". */
+function diaQueLeToca(libres, n) {
+  var trabaja = function (k) { return (libres || []).map(Number).indexOf(k) < 0; };
+  for (var k = n; k >= 1; k--) if (trabaja(k)) return k;
+  for (k = n + 1; k <= 7; k++) if (trabaja(k)) return k;
+  return n;
+}
+
+function semanaDeModulos(x, d, localId) {
+  var hoy = hoyAR(), hoyIso = diaIso(hoy), ahora = Date.now(), por = {}, libres = {}, out = {}, cfg = x.config || {};
+  x.controles.forEach(function (c) { (por[c.modulo_id] = por[c.modulo_id] || []).push(c); });
+  x.personas.forEach(function (p) { libres[p.id] = p.dias_libres || []; });
+  d.modulos.forEach(function (m) {
+    var s = d.sectorDe[m.sector_id], cs = por[m.id] || [], v = x.vidriera;
+    if (esVidriera(m) && v) {
+      var vm = (v.vidrieras || []).filter(function (y) { return y.modulo === m.id; })[0];
+      out[m.id] = vm && vm.mandada_en ? { estado: 'ok', quien: vm.por_nombre, en: vm.mandada_en }
+        : !v.abierta ? { estado: 'luego', dia: v.dia }
+        : v.tarde || hoy > v.dia ? { estado: 'falta', dia: v.dia } : { estado: 'hoy', hasta: v.limite };
+      return;
+    }
+    var sin = cs.filter(function (c) { return c.estado === 'pendiente' || c.estado === 'vencido'; });
+    var vencida = sin.filter(function (c) { return c.estado === 'vencido' || new Date(c.vence_en).getTime() <= ahora; })[0];
+    if (vencida) { out[m.id] = { estado: 'falta', quien: vencida.persona_nombre, dia: vencida.fecha }; return; }
+    if (sin.length) { out[m.id] = { estado: 'hoy', quien: sin[0].persona_nombre, hasta: sin[0].vence_en }; return; }
+    var mandada = cs.filter(function (c) { return c.enviado_en && (c.estado === 'enviado' || c.estado === 'revisado'); })
+      .sort(function (a, b) { return a.enviado_en < b.enviado_en ? 1 : -1; })[0];
+    if (mandada) { out[m.id] = { estado: 'ok', quien: mandada.persona_nombre, en: mandada.enviado_en, tarde: mandada.a_tiempo === false, dia: mandada.fecha }; return; }
+    /* Todavía no se pidió: si su día es más adelante, "le toca el jueves"; si ya pasó y no se pidió (vacaciones, nadie a
+       cargo), nada. */
+    var dias = s && s.tipo === 'deposito' ? [+cfg.deposito_dia_vence] : (cfg.dias_control || []).map(Number);
+    var prox = dias.filter(function (n) { return n >= 1 && n <= 7; }).map(function (n) {
+      return s && s.responsable_id ? diaQueLeToca(libres[s.responsable_id], n) : n;
+    }).filter(function (n) { return n > hoyIso; }).sort()[0];
+    if (prox) out[m.id] = { estado: 'luego', dia: sumarDias(lunesAR(), prox - 1) };
+  });
+  return { local: localId, mods: out };
+}
+
+/** La foto de esta semana del módulo id del local que se está mirando (o null: sin datos, o no se pidió). */
+function semanaDe(id) { return _semanaLocal && _semanaLocal.local === _local.id ? _semanaLocal.mods[id] || null : null; }
+/** Cómo se dice, corto (en la tarjeta y en la leyenda) y largo (al pasar el mouse). */
+function textoSemana(sm) {
+  if (!sm) return null;
+  if (sm.estado === 'ok') return { corto: '✓ Esta semana', largo: (sm.quien ? 'La mandó ' + sm.quien + ' ' : 'Mandada ') + cuandoFue(sm.en) + (sm.tarde ? ' (tarde: le tocaba el ' + diaYFecha(sm.dia) + ')' : '') };
+  if (sm.estado === 'falta') return { corto: 'Falta la de esta semana', largo: 'Le tocaba ' + (sm.quien ? 'a ' + sm.quien + ' ' : '') + 'el ' + diaYFecha(sm.dia) + ' y no la mandó. Todavía la puede mandar hasta el domingo (queda tarde).' };
+  if (sm.estado === 'hoy') return { corto: 'Le toca hoy', largo: 'Le toca hoy' + (sm.quien ? ' a ' + sm.quien : '') + (sm.hasta ? ', hasta las ' + hora(sm.hasta) : '') + '.' };
+  var dia = DIAS_LARGO[diaIso(sm.dia) - 1];
+  return { corto: 'Le toca el ' + dia, largo: 'Esta semana le toca el ' + dia + ' ' + diaMes(sm.dia) + '.' };
+}
+/** La marca de la semana (la misma del croquis): ✓, ! o la cámara. */
+var MARCA_SEMANA = { ok: 'listo', falta: 'falta', hoy: 'pendiente' };
+function marcaSemanaSvg(estado) {
+  var t = MARCA_SEMANA[estado];
+  return t ? '<svg class="marca-sem" viewBox="-14 -14 28 28" aria-hidden="true">' + marcaModulo(t, 0, 0) + '</svg>' : '';
+}
+/** De cuándo es la foto que se ve, si no es de esta semana: "Semana pasada" o "Del 12/10". */
+function fotoDeOtraSemana(ts) {
+  if (!ts) return null;
+  var f = hoyAR(new Date(ts)), lunes = lunesAR();
+  return f >= lunes ? null : f >= sumarDias(lunes, -7) ? 'Semana pasada' : 'Del ' + diaMes(f);
+}
+/** El resumen de la semana arriba del croquis, que es también la leyenda de las marcas. */
+function resumenSemana(d) {
+  if (!_semanaLocal || !d) return '';
+  var n = { ok: 0, falta: 0, hoy: 0, luego: 0 };
+  d.modulos.forEach(function (m) { var sm = semanaDe(m.id); if (sm) n[sm.estado]++; });
+  if (!n.ok && !n.falta && !n.hoy && !n.luego) return '';
+  var pieza = function (k, texto) { return n[k] ? '<span class="sem-res sem-' + k + '">' + marcaSemanaSvg(k) + '<b>' + n[k] + '</b> ' + texto + '</span>' : ''; };
+  return '<div class="sem-resumen"><span class="sem-tit">Esta semana</span>' +
+    pieza('ok', n.ok === 1 ? 'mandada' : 'mandadas') + pieza('falta', n.falta === 1 ? 'falta (ya le tocaba)' : 'faltan (ya les tocaba)') +
+    pieza('hoy', 'para hoy') + pieza('luego', 'más adelante en la semana') + '</div>';
+}
+
 function verLocal() {
-  var L = valor(_local.id);
+  var L = valor(_local.id), localId = _local.id;
   Promise.all([
     leer('/orden_v_estado_local?select=*&local_id=eq.' + L + '&order=sector_tipo.desc,sector_numero.asc,modulo_numero.asc'),
     llamar('orden_resumen_semanal', { p_local: _local.id, p_semana: lunesAR() }).catch(function () { return null; }),
     leer('/orden_v_persona_semana?select=semana,controles,controles_a_tiempo,controles_tarde,controles_vencidos,puntos,nivel_semana&local_id=eq.' + L + '&semana=gte.' + sumarDias(lunesAR(), -49))
       .catch(function () { return []; }),
-    cargarMapa(_local.id).catch(function () { return null; })
+    cargarMapa(_local.id).catch(function () { return null; }),
+    /* Sin esto (un error, sin permiso), las tarjetas y el croquis quedan como antes: apagadas con más de 7 días. */
+    datosSemana(_local.id).catch(function () { return null; })
   ]).then(function (r) {
     if (_solapa !== 'local') return;
     var mods = r[0] || [], res = r[1] || {};
+    _semanaLocal = r[3] && r[4] ? semanaDeModulos(r[4], r[3], localId) : null;
     var html = '<div class="numeros">' +
       '<div class="numero"><span>Nivel de la semana</span><b>' + esc(res.nivel_local || '—') + '</b></div>' +
       '<div class="numero"><span>Controles a tiempo</span><b>' + (res.controles ? res.controles_a_tiempo + ' de ' + res.controles : '—') + '</b></div>' +
@@ -716,12 +817,20 @@ function verLocal() {
       var lista = mods.filter(function (m) { return m.sector_tipo === g[0]; });
       if (!lista.length) return;
       html += '<div class="seccion">' + g[1] + '</div><div class="grilla-local">' + lista.map(function (m) {
-        return '<button class="tarjeta-modulo' + (m.sin_foto_reciente ? ' gris' : '') + '" data-modulo="' + esc(m.modulo_id) + '">' +
-          (m.foto_path ? '<img data-foto="' + esc(m.foto_path) + '" alt="">' : '<div class="sin-foto">Sin foto</div>') +
+        /* La de esta semana: ✓ si la mandó, la alerta si ya le tocaba y no la mandó; la foto de otra semana, apagada y con
+           "Semana pasada" arriba. Sin los datos de la semana, como antes (apagada con más de 7 días). */
+        var sm = semanaDe(m.modulo_id), ts = textoSemana(sm), otra = m.foto_path && (!sm || sm.estado !== 'ok') ? fotoDeOtraSemana(m.tomada_en) : null;
+        var gris = _semanaLocal ? !!otra : m.sin_foto_reciente;
+        return '<button class="tarjeta-modulo' + (gris ? ' gris' : '') + (sm ? ' sem-' + sm.estado : '') + '" data-modulo="' + esc(m.modulo_id) + '"' +
+          (ts ? ' title="' + esc(ts.largo) + '"' : '') + '>' +
+          '<div class="tm-foto">' + (m.foto_path ? '<img data-foto="' + esc(m.foto_path) + '" alt="">' : '<div class="sin-foto">Sin foto</div>') +
+            (otra ? '<span class="tm-otra">' + esc(otra) + '</span>' : '') + (sm ? marcaSemanaSvg(sm.estado) : '') + '</div>' +
           '<b>' + esc(m.modulo_nombre) + '</b>' +
-          '<div class="info">' + (m.nivel ? '<span class="est nivel-' + esc(m.nivel) + '">' + esc(NIVEL[m.nivel]) + '</span>' : '') +
+          '<div class="info">' + (ts ? '<span class="est sem sem-' + sm.estado + '">' + esc(ts.corto) + '</span>' : '') +
+          (m.nivel ? '<span class="est nivel-' + esc(m.nivel) + '">' + esc(NIVEL[m.nivel]) + '</span>' : '') +
           (m.tareas_abiertas ? '<span class="est corregir">' + m.tareas_abiertas + (m.tareas_abiertas == 1 ? ' tarea' : ' tareas') + '</span>' : '') + '</div>' +
-          '<small>' + esc(haceDias(m.tomada_en) + (m.foto_de ? ' · ' + m.foto_de : '') + (m.responsable ? ' · a cargo de ' + m.responsable : '')) + '</small></button>';
+          '<small>' + esc(haceDias(m.tomada_en) + (m.foto_de ? ' · ' + m.foto_de : '') + (sm && sm.estado === 'ok' && sm.tarde ? ' · tarde' : '') +
+                          (m.responsable ? ' · a cargo de ' + m.responsable : '')) + '</small></button>';
       }).join('') + '</div>';
     });
     var gr = graficoLocal(r[2]);
@@ -2959,7 +3068,7 @@ function dibujarMapaLocal() {
       '<button class="boton chico" id="btnFormaMapa">Armar el croquis</button></div>' : '') +
     (_repartir ? '<p class="bajada">"Repartir parejo" divide los módulos en partes iguales, en bloques seguidos (22 entre 3: 7, 7 y 8). ' +
                  'Para hacerlo a mano o ponerle nombre a un módulo ("Vidriera"), tocalo. Tocá un sector (abajo) para elegir quién lo tiene, quién lo cubre y, en el depósito, qué tiene.</p>' : '') +
-    (d.modulos.length ? '<div class="imp-mapa-dibujos">' + svgMapa(d) + svgDeposito(d) + '</div>' + leyendaNombres(d)
+    (d.modulos.length ? (_repartir ? '' : resumenSemana(d)) + '<div class="imp-mapa-dibujos">' + svgMapa(d, { marcas: marcasSemana(d) }) + svgDeposito(d, { marcas: marcasSemana(d) }) + '</div>' + leyendaNombres(d)
                       : '<div class="vacio">Este local todavía no tiene módulos' + (puede ? ': tocá "Armar el croquis".' : '.') + '</div>') +
     (d.aprox && d.pared.length ? '<p class="bajada">Todavía no se armó el mapa: los módulos están en las paredes a ojo.</p>' : '') +
     (_repartir ? '<div class="seccion">Salón</div>' + leyendaMapa(d, true) + (d.deposito.length ? '<div class="seccion">Depósito</div>' + listaDeposito(d, true) : '')
@@ -2986,14 +3095,31 @@ function dibujarMapaLocal() {
   if (_repartir) z.querySelectorAll('[data-sector]').forEach(function (s) { s.onclick = function () { elegirGenteAdmin(d, s.dataset.sector); }; });
 }
 
+/** Las marcas de la semana en el croquis (✓ la mandó, ! falta, la cámara le toca hoy); repartiendo, ninguna. */
+function marcasSemana(d) {
+  if (_repartir || !_semanaLocal) return null;
+  var out = {};
+  d.modulos.forEach(function (m) { var sm = semanaDe(m.id), t = sm && MARCA_SEMANA[sm.estado]; if (t) out[m.id] = t; });
+  return out;
+}
+
 /** El modo observador (croquis-visor.js), a pantalla completa arriba de la administración. "Armar el croquis" aplana
     la maqueta y abre el editor. */
 function abrirObservador() {
   var caja = document.createElement('div');
   document.body.appendChild(caja);
   var cerrar = function () { caja.remove(); };
+  /* La foto de esta semana de cada módulo, para las marcas de los números y la vista "Semana". */
+  var semana = null;
+  if (_semanaLocal && _semanaLocal.local === _local.id) {
+    semana = {};
+    Object.keys(_semanaLocal.mods).forEach(function (id) {
+      var sm = _semanaLocal.mods[id], t = textoSemana(sm);
+      semana[id] = { estado: sm.estado, corto: t.corto, largo: t.largo };
+    });
+  }
   var v = abrirVisor(caja, {
-    local: _local, puedeSugerir: !soloMira(), puedeNombrar: !soloMira(), puedeEditar: !soloMira(),
+    local: _local, puedeSugerir: !soloMira(), puedeNombrar: !soloMira(), puedeEditar: !soloMira(), semana: semana,
     alVolver: cerrar,
     /* Al salir del editor (con o sin guardar) se vuelve al observador, que es de donde se vino. */
     alEditar: function (d) { cerrar(); editarMapa(d || _mapaLocal, { alSalir: abrirObservador }); }

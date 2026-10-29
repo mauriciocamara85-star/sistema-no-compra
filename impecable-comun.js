@@ -669,18 +669,20 @@ function cargarMapa(localId) {
 }
 
 /* Una marca arriba a la derecha de un módulo: falta la foto (cámara), ya está
-   (✓), hay que corregir (!), se pasó (×). */
+   (✓), hay que corregir (!), se pasó (×). En Supervisión → Por local (28/10), 'falta': la de esta semana ya le tocaba y
+   no la mandó (naranja, la alerta). */
 function marcaModulo(tipo, x, y) {
   var t = 'translate(' + x.toFixed(1) + ',' + y.toFixed(1) + ') scale(1.4)';
   if (tipo === 'listo') return '<g transform="' + t + '"><circle r="9" fill="#2FE38A" stroke="#111" stroke-width="1.4"/><path d="M-4 0.5l2.6 2.6L4.2-3" fill="none" stroke="#111" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></g>';
   if (tipo === 'corregir') return '<g transform="' + t + '"><circle r="9" fill="#FF9AA0" stroke="#111" stroke-width="1.4"/><text y="4.5" text-anchor="middle" font-size="13" font-weight="800" fill="#111">!</text></g>';
+  if (tipo === 'falta') return '<g transform="' + t + '"><circle r="9" fill="#FF8A3D" stroke="#111" stroke-width="1.4"/><path d="M0-4.6V0.8" stroke="#111" stroke-width="2.3" stroke-linecap="round"/><circle cy="4" r="1.35" fill="#111"/></g>';
   if (tipo === 'vencido') return '<g transform="' + t + '"><circle r="9" fill="#8A857C" stroke="#111" stroke-width="1.4"/><text y="4.5" text-anchor="middle" font-size="13" font-weight="800" fill="#111">×</text></g>';
   return '<g transform="' + t + '"><circle r="9.5" fill="' + (tipo === 'sorpresa' ? '#F0C66A' : '#FFFFFF') + '" stroke="#111" stroke-width="1.4"/>' +
     '<rect x="-5.2" y="-3" width="10.4" height="7.2" rx="1.6" fill="#111"/><rect x="-2" y="-5" width="4" height="2.4" rx=".6" fill="#111"/><circle cy=".6" r="2.1" fill="#fff"/></g>';
 }
 
 /* Un módulo dibujado. op.resaltar: un sector; op.mios: {id: true} (lo demás
-   queda apagado); op.marcas: {id: 'pendiente'|'sorpresa'|'listo'|'corregir'|'vencido'}. */
+   queda apagado); op.marcas: {id: 'pendiente'|'sorpresa'|'listo'|'corregir'|'vencido'|'falta'}. */
 /** El nombre propio de un módulo ("Vidriera", "Estantería de remeras"), o null si es el de siempre ("Módulo 7", "Depósito 3"). */
 function nombrePropio(m) {
   var n = String((m && m.nombre) || '').trim();
@@ -1039,13 +1041,14 @@ function cajaModulo(d, op, m, r, etiqueta, sub, lado) {
   if (marca) { var em = esquinaMarca(r, lado); out += marcaModulo(marca, em[0], em[1]); }
   return out + '</g>';
 }
-/** Dónde va la marca de un módulo: en las paredes, al principio del módulo y sobre la pared; en el centro, arriba a la derecha. */
+/** Dónde va la marca de un módulo: en las paredes, al principio del módulo y sobre la pared; en el centro, en la esquina
+    de arriba a la derecha, por afuera (adentro le tapaba el segundo dígito al número: "21", "22"). */
 function esquinaMarca(r, lado) {
   if (lado === 'izquierda') return [r.x - 1, r.y + 13];
   if (lado === 'derecha') return [r.x + r.w + 1, r.y + 13];
   if (lado === 'fondo') return [r.x + 13, r.y - 1];
   if (lado === 'frente') return [r.x + 13, r.y + r.h + 1];
-  return [r.x + r.w - 11, r.y + 11];
+  return [r.x + r.w + 7, r.y + 1];
 }
 /* ── Las imágenes de cada pieza (14/10, "más parecido a la foto"): vistas desde arriba, con el estilo de los locales
    (marco de hierro oxidado, estante de madera, riel negro tipo escalera). Están en croquis-img/; sin esa carpeta

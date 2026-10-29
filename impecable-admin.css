@@ -188,7 +188,26 @@
 .imp .tarjeta-modulo > b, .imp .tarjeta-modulo > small, .imp .tarjeta-modulo > .info,
 .imp-foto > b, .imp-foto > small, .imp-foto > .info { padding: 0 11px; }
 .imp .tarjeta-modulo > small, .imp-foto > small { color: var(--txt-3); font-size: 12px; line-height: 1.35; }
-.imp .tarjeta-modulo.gris { opacity: .6; }
+/* La foto de esta semana (28/10): la marca arriba a la derecha de la foto (✓ la mandó, ! falta, la cámara le toca hoy) y,
+   si la foto es de otra semana, "Semana pasada" arriba a la izquierda. Apagada (foto vieja) se apaga la foto y lo demás,
+   no la alerta ni la marca. */
+.imp .tm-foto { position: relative; }
+.imp .tm-foto .marca-sem { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; filter: drop-shadow(0 1px 3px rgba(0, 0, 0, .45)); }
+.imp .tm-otra { position: absolute; top: 8px; left: 8px; max-width: calc(100% - 50px); padding: 3px 8px; border-radius: var(--r-pill);
+  background: rgba(14, 17, 22, .82); color: #F4F5F7; font: 700 11.5px/1.25 var(--sans); }
+.imp .tarjeta-modulo.gris .tm-foto img, .imp .tarjeta-modulo.gris .tm-foto .sin-foto, .imp .tarjeta-modulo.gris > b,
+.imp .tarjeta-modulo.gris > small, .imp .tarjeta-modulo.gris .info .est:not(.sem) { opacity: .55; }
+.imp .est.sem-ok { background: var(--ok-soft); color: var(--ok-txt); }
+.imp .est.sem-falta { background: #FF8A3D; color: #1A1206; font-weight: 700; white-space: normal; }
+.imp .est.sem-hoy { background: var(--warn-soft); color: var(--warn-txt); }
+.imp .tarjeta-modulo.sem-falta { box-shadow: var(--sombra), inset 0 0 0 2px #FF8A3D; }
+/* El resumen de la semana, arriba del croquis: también es la leyenda de las marcas. */
+.imp .sem-resumen { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 4px 0 12px; font-size: 14px; color: var(--txt-2); }
+.imp .sem-tit { font-weight: 800; color: var(--txt); }
+.imp .sem-res { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.imp .sem-res .marca-sem { width: 22px; height: 22px; flex: none; }
+.imp .sem-res b { color: var(--txt); font-variant-numeric: tabular-nums; }
+.imp .sem-res.sem-luego::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: #8B94A3; margin: 0 5px; }
 
 /* ── La ventana (un módulo, una foto, una caja) ── */
 .ventana-fondo { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(10, 10, 9, .62); }
