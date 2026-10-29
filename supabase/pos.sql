@@ -102,6 +102,21 @@
 --  ventas). Los mismos permisos que Tickets (su local y, sin «Ver otros
 --  días», hoy).
 --
+--  SQL 193 (29/10/2026, Mauricio: "en envíos internos lo usamos para cuando
+--  tenemos que hacer un stock de todo el local… creamos un depósito nuevo en
+--  depósitos… Una vez cargado, en Tickets se cambia el depósito a nuevo y
+--  listo"): los "Depósitos" de BlueSoft. Cada local tiene los suyos (de
+--  temporada, "Verano 2027", u otros, "Fallas"); el stock es por depósito.
+--  Uno es el predeterminado: de ahí descuentan las ventas y los cambios, ahí
+--  entran los remitos y de ahí salen los envíos y las devoluciones. Cada local
+--  arranca con uno, "Principal", con todo lo que tiene hoy. El stock de cada
+--  seis meses: un depósito nuevo, un envío interno por módulo del depósito de
+--  antes al nuevo (pasa en el momento; en Observaciones, el módulo y el
+--  responsable), dos productos testigo por módulo (si no coincide, se rehace)
+--  y «Predeterminar» el nuevo. Lo que quedó en el de antes es lo que no se
+--  encontró. Tablas nuevas pos_depositos y pos_remito_testigos; pos_stock,
+--  pos_stock_movs, pos_remitos y pos_inventarios con el depósito.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -2134,43 +2149,66 @@ revoke all on sequence pos_stock_movs_id_seq, pos_remito_conteos_id_seq from ano
    para las otras funciones. Sin código (un artículo suelto de "Nueva línea"),
    con un código de más de 30 letras o en cero, no hace nada. Las anulaciones
    restan de la columna de enfrente: anular una venta descuenta de las salidas,
-   no suma en las entradas. */
+   no suma en las entradas.
+   SQL 193: en un depósito del local; sin depósito, el predeterminado (el de las
+   ventas). Cambió la firma: la vieja se borra. */
+drop function if exists pos_stock_mover(uuid, text, text, text, int, text, uuid, text, text, text, text);
 create or replace function pos_stock_mover(p_local uuid, p_codigo text, p_talle text, p_color text, p_cantidad int,
                                            p_tipo text, p_ref_id uuid, p_ref text, p_descripcion text default null,
-                                           p_detalle text default null, p_clave text default null)
+                                           p_detalle text default null, p_clave text default null, p_deposito uuid default null)
 returns void language plpgsql volatile security definer set search_path = public as $$
 declare
   v_c   text := upper(trim(coalesce(p_codigo, '')));
   v_t   text := upper(trim(coalesce(p_talle, '')));
   v_co  text := upper(trim(coalesce(p_color, '')));
   v_an  boolean := p_tipo like '%anulad%';
+  v_dep uuid := p_deposito;
   v_e   int;
   v_s   int;
 begin
   if v_c = '' or length(v_c) > 30 or coalesce(p_cantidad, 0) = 0 then return; end if;
+  if v_dep is null then
+    v_dep := pos_deposito_de(p_local);   -- SQL 193
+  elsif not exists (select 1 from pos_depositos where id = v_dep and local_id = p_local) then
+    raise exception 'Ese depósito no es de la sucursal.';
+  end if;
   v_e := case when not v_an and p_cantidad > 0 then p_cantidad when v_an and p_cantidad < 0 then p_cantidad else 0 end;
   v_s := case when not v_an and p_cantidad < 0 then -p_cantidad when v_an and p_cantidad > 0 then -p_cantidad else 0 end;
-  insert into pos_stock_movs (local_id, codigo, talle, color, cantidad, tipo, ref_id, ref, detalle, persona, clave)
-  values (p_local, v_c, v_t, v_co, p_cantidad, p_tipo, p_ref_id, p_ref, nullif(trim(coalesce(p_detalle, '')), ''), orden_yo_id(), p_clave);
-  insert into pos_stock as st (local_id, codigo, talle, color, cantidad, entradas, salidas, descripcion)
-  values (p_local, v_c, v_t, v_co, p_cantidad, v_e, v_s, nullif(trim(coalesce(p_descripcion, '')), ''))
-  on conflict (local_id, codigo, talle, color) do update
+  insert into pos_stock_movs (local_id, deposito_id, codigo, talle, color, cantidad, tipo, ref_id, ref, detalle, persona, clave)
+  values (p_local, v_dep, v_c, v_t, v_co, p_cantidad, p_tipo, p_ref_id, p_ref, nullif(trim(coalesce(p_detalle, '')), ''), orden_yo_id(), p_clave);
+  insert into pos_stock as st (local_id, deposito_id, codigo, talle, color, cantidad, entradas, salidas, descripcion)
+  values (p_local, v_dep, v_c, v_t, v_co, p_cantidad, v_e, v_s, nullif(trim(coalesce(p_descripcion, '')), ''))
+  on conflict (deposito_id, codigo, talle, color) do update
      set cantidad = st.cantidad + excluded.cantidad, entradas = st.entradas + excluded.entradas, salidas = st.salidas + excluded.salidas,
          descripcion = coalesce(excluded.descripcion, st.descripcion), actualizado_en = now();
 end $$;
 
 /* El stock de un local para la venta y el cambio: avisan si se vende algo que
    según el sistema no hay. con_stock: el local ya tiene stock cargado (si no,
-   no se avisa nada). Sólo las variantes que no están en cero. */
-create or replace function pos_stock_local(p_local uuid) returns jsonb
+   no se avisa nada). Sólo las variantes que no están en cero.
+   SQL 193: la suma de los depósitos que cuentan para la consulta de stock (así,
+   mientras se pasa la ropa al depósito nuevo, no avisa de más); con p_deposito,
+   lo de ése (el envío entre depósitos). Cambió la firma: la vieja se borra. */
+drop function if exists pos_stock_local(uuid);
+create or replace function pos_stock_local(p_local uuid, p_deposito uuid default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 begin
   perform pos_permiso();
   perform pos_local_ok(p_local);   -- SQL 190
-  return jsonb_build_object(
-    'con_stock', exists (select 1 from pos_stock s where s.local_id = p_local and s.cantidad > 0),
-    'filas', coalesce((select jsonb_agg(jsonb_build_array(s.codigo, s.talle, s.color, s.cantidad))
-                         from pos_stock s where s.local_id = p_local and s.cantidad <> 0), '[]'::jsonb));
+  if p_deposito is not null and not exists (select 1 from pos_depositos where id = p_deposito and local_id = p_local) then
+    raise exception 'Ese depósito no es de la sucursal.';
+  end if;
+  return (
+    with s as (
+      select x.codigo, x.talle, x.color, sum(x.cantidad)::int cantidad
+        from pos_stock x join pos_depositos d on d.id = x.deposito_id
+       where x.local_id = p_local and case when p_deposito is null then d.consulta and d.activo else d.id = p_deposito end
+       group by x.codigo, x.talle, x.color
+    )
+    select jsonb_build_object(
+      'con_stock', exists (select 1 from pos_stock y where y.local_id = p_local and y.cantidad > 0),
+      'filas', coalesce((select jsonb_agg(jsonb_build_array(s.codigo, s.talle, s.color, s.cantidad)) from s where s.cantidad <> 0), '[]'::jsonb))
+  );
 end $$;
 
 /* La consulta de stock (como la de BlueSoft). p_codigos: los que encontró la
@@ -2181,11 +2219,16 @@ end $$;
    cargando al bajar; sin p_productos, todo junto (el Excel y la comparación del
    inventario), hasta 60.000 renglones (antes cortaba en 3.000: con el
    inventario de un local entero no alcanzaba). p_resumen: un renglón por
-   producto, para la vista "Por rubro". Cambió la firma: la vieja se borra. */
+   producto, para la vista "Por rubro". Cambió la firma: la vieja se borra.
+   SQL 193: sin p_deposito, por local, la suma de sus depósitos que cuentan para
+   la consulta de stock (los activos con «Considerar para consulta de stock»);
+   con p_deposito, sólo ése. Cambió la firma otra vez. */
 drop function if exists pos_stock_consulta(uuid, text[], text, boolean, boolean);
+drop function if exists pos_stock_consulta(uuid, text[], text, boolean, boolean, int, int, boolean);
 create or replace function pos_stock_consulta(p_local uuid default null, p_codigos text[] default null, p_buscar text default null,
                                               p_ocultar_sin boolean default true, p_negativos boolean default false,
-                                              p_desde int default 0, p_productos int default null, p_resumen boolean default false)
+                                              p_desde int default 0, p_productos int default null, p_resumen boolean default false,
+                                              p_deposito uuid default null)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare
   v_q     text := nullif(lower(trim(coalesce(p_buscar, ''))), '');
@@ -2196,11 +2239,22 @@ begin
   if p_productos is not null and (p_productos < 0 or p_productos > 2000) then
     raise exception 'Se piden de 0 a 2000 productos por vez.';
   end if;
+  if p_deposito is not null and not exists (select 1 from pos_depositos where id = p_deposito and local_id = p_local) then
+    raise exception 'Ese depósito no es de la sucursal.';
+  end if;
   return (
-    with s as (
-      select x.* from pos_stock x
+    /* SQL 193: un renglón por local, producto, talle y color (lo de sus depósitos, sumado). */
+    with b as (
+      select x.local_id, x.codigo, x.talle, x.color, sum(x.cantidad)::int cantidad, sum(x.entradas)::int entradas, sum(x.salidas)::int salidas,
+             max(x.descripcion) descripcion
+        from pos_stock x join pos_depositos d on d.id = x.deposito_id
        where (p_local is null or x.local_id = p_local)
-         and ((p_codigos is null and v_q is null)
+         and case when p_deposito is null then d.consulta and d.activo else d.id = p_deposito end
+       group by x.local_id, x.codigo, x.talle, x.color
+    ),
+    s as (
+      select x.* from b x
+       where ((p_codigos is null and v_q is null)
               or x.codigo = any(coalesce(p_codigos, '{}'::text[]))
               or (v_q is not null and (lower(x.codigo) like v_q || '%' or lower(coalesce(x.descripcion, '')) like '%' || v_q || '%')))
          and (not coalesce(p_ocultar_sin, true) or x.cantidad <> 0)
@@ -2224,7 +2278,8 @@ begin
                      from (select codigo, max(descripcion) descripcion, sum(cantidad) cantidad, sum(entradas) entradas, sum(salidas) salidas,
                                   count(*) lineas, count(*) filter (where cantidad < 0) negativos
                              from s group by codigo) g), '[]'::jsonb) end,
-      'cargado', exists (select 1 from pos_stock y where p_local is null or y.local_id = p_local),
+      /* SQL 193: con un depósito, si ése ya tuvo algo. */
+      'cargado', exists (select 1 from pos_stock y where (p_local is null or y.local_id = p_local) and (p_deposito is null or y.deposito_id = p_deposito)),
       /* Con tandas: si quedan productos después de ésta. Sin tandas: si pasó de 60.000 renglones. */
       'mas', case when p_productos is null then (select count(*) > 60000 from f)
                   else (select count(*) > v_desde + p_productos from p) end
@@ -2232,8 +2287,12 @@ begin
   );
 end $$;
 
-/* Una variante en un local: cuánto hay y sus últimos movimientos ("Ver detalle de movimientos"). */
-create or replace function pos_stock_variante(p_local uuid, p_codigo text, p_talle text, p_color text) returns jsonb
+/* Una variante en un local: cuánto hay y sus últimos movimientos ("Ver detalle de movimientos").
+   SQL 193: cuánto hay en cada depósito del local y el depósito de cada movimiento.
+   Sin p_deposito, "hay" es la suma de los de la consulta de stock y van los
+   movimientos de todos; con p_deposito, los de ése. Cambió la firma: la vieja se borra. */
+drop function if exists pos_stock_variante(uuid, text, text, text);
+create or replace function pos_stock_variante(p_local uuid, p_codigo text, p_talle text, p_color text, p_deposito uuid default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare
   v_c   text := upper(trim(coalesce(p_codigo, '')));
@@ -2242,29 +2301,45 @@ declare
 begin
   perform pos_permiso();
   perform pos_local_ok(p_local);   -- SQL 190
+  if p_deposito is not null and not exists (select 1 from pos_depositos where id = p_deposito and local_id = p_local) then
+    raise exception 'Ese depósito no es de la sucursal.';
+  end if;
   return jsonb_build_object(
     'local', (select l.nombre from orden_locales l where l.id = p_local),
-    'stock', (select jsonb_build_object('cantidad', s.cantidad, 'entradas', s.entradas, 'salidas', s.salidas, 'descripcion', s.descripcion)
-                from pos_stock s where s.local_id = p_local and s.codigo = v_c and s.talle = v_t and s.color = v_co),
+    'deposito', (select d.nombre from pos_depositos d where d.id = p_deposito),
+    'stock', (select jsonb_build_object('cantidad', sum(s.cantidad), 'entradas', sum(s.entradas), 'salidas', sum(s.salidas), 'descripcion', max(s.descripcion))
+                from pos_stock s join pos_depositos d on d.id = s.deposito_id
+               where s.local_id = p_local and s.codigo = v_c and s.talle = v_t and s.color = v_co
+                 and case when p_deposito is null then d.consulta and d.activo else d.id = p_deposito end
+              having count(*) > 0),
+    'depositos', coalesce((
+      select jsonb_agg(jsonb_build_object('id', d.id, 'nombre', d.nombre, 'cantidad', s.cantidad, 'predeterminado', d.predeterminado,
+                                          'consulta', d.consulta and d.activo) order by d.predeterminado desc, d.numero)
+        from pos_stock s join pos_depositos d on d.id = s.deposito_id
+       where s.local_id = p_local and s.codigo = v_c and s.talle = v_t and s.color = v_co), '[]'::jsonb),
     'movimientos', coalesce((
       select jsonb_agg(jsonb_build_object('fecha', m.fecha, 'tipo', m.tipo, 'cantidad', m.cantidad, 'ref', m.ref, 'ref_id', m.ref_id,
-                                          'detalle', m.detalle, 'persona', pe.nombre,
+                                          'detalle', m.detalle, 'persona', pe.nombre, 'deposito', dm.nombre,
                                           /* SQL 172: quién vendió o atendió (en las ventas y los cambios), para el Detalle. */
                                           'vendedor', case when m.tipo in ('venta', 'venta_anulada') then (select v.vendedor from pos_ventas v where v.id = m.ref_id)
                                                            when m.tipo in ('cambio', 'cambio_anulado') then (select k.vendedor from pos_cambios k where k.id = m.ref_id) end)
                order by m.fecha desc, m.id desc)
         from (select * from pos_stock_movs x
                where x.local_id = p_local and x.codigo = v_c and x.talle = v_t and x.color = v_co
+                 and (p_deposito is null or x.deposito_id = p_deposito)
                order by x.fecha desc, x.id desc limit 200) m
-        left join orden_personas pe on pe.id = m.persona), '[]'::jsonb));
+        left join orden_personas pe on pe.id = m.persona
+        left join pos_depositos dm on dm.id = m.deposito_id), '[]'::jsonb));
 end $$;
 
 /* El ajuste de stock de BlueSoft: "hay en realidad N", con el motivo. Con la
-   misma clave dos veces no ajusta dos veces. */
+   misma clave dos veces no ajusta dos veces. SQL 193: en un depósito (sin
+   deposito_id, el predeterminado). */
 create or replace function pos_stock_ajustar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
   v_local    uuid := nullif(p->>'local_id', '')::uuid;
+  v_dep      uuid := nullif(p->>'deposito_id', '')::uuid;
   v_c        text := upper(trim(coalesce(p->>'codigo', '')));
   v_t        text := upper(trim(coalesce(p->>'talle', '')));
   v_co       text := upper(trim(coalesce(p->>'color', '')));
@@ -2285,27 +2360,33 @@ begin
   if v_motivo not in ('Falla', 'Robo o faltante', 'Error de carga', 'Apareció', 'Otro') then raise exception 'Elegí el motivo del ajuste.'; end if;
   if v_motivo = 'Otro' and v_detalle is null then raise exception 'Escribí el motivo.'; end if;
   if length(v_detalle) > 200 then raise exception 'El detalle es demasiado largo.'; end if;
+  /* SQL 193: el depósito (sin él, el predeterminado). */
+  if v_dep is null then v_dep := pos_deposito_de(v_local);
+  elsif not exists (select 1 from pos_depositos where id = v_dep and local_id = v_local) then raise exception 'Ese depósito no es de la sucursal.';
+  end if;
   /* Un ajuste por vez en cada local, y el renglón bloqueado (si justo entra
      una venta, espera): así "hay N" es contra lo que hay de verdad. */
   perform pg_advisory_xact_lock(hashtext('pos_stock:' || v_local::text));
   select s.cantidad into v_actual from pos_stock s
-   where s.local_id = v_local and s.codigo = v_c and s.talle = v_t and s.color = v_co for update;
+   where s.deposito_id = v_dep and s.codigo = v_c and s.talle = v_t and s.color = v_co for update;
   v_actual := coalesce(v_actual, 0);
   if v_nueva = v_actual then raise exception 'El sistema ya dice %: no hay nada que ajustar.', v_actual; end if;
   perform pos_stock_mover(v_local, v_c, v_t, v_co, v_nueva - v_actual, 'ajuste', null, 'Ajuste',
-                          nullif(trim(coalesce(p->>'descripcion', '')), ''), v_motivo || coalesce(': ' || v_detalle, ''), v_clave);
-  return jsonb_build_object('antes', v_actual, 'ahora', v_nueva, 'ya', false);
+                          nullif(trim(coalesce(p->>'descripcion', '')), ''), v_motivo || coalesce(': ' || v_detalle, ''), v_clave, v_dep);
+  return jsonb_build_object('antes', v_actual, 'ahora', v_nueva, 'ya', false, 'deposito', (select nombre from pos_depositos where id = v_dep));
 end $$;
 
 /* Cargar un inventario: lo que dice la lista reemplaza lo que dice el sistema
    (la carga inicial desde el Excel de BlueSoft, o el inventario de cada seis
    meses). Con resto_a_cero, lo que no está en la lista queda en 0: es el
    inventario completo del local. Con la misma clave dos veces, no lo carga dos
-   veces. */
+   veces. SQL 193: en un depósito (sin deposito_id, el predeterminado); "el
+   resto en 0" es lo de ese depósito. */
 create or replace function pos_inventario_cargar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
   v_local   uuid := nullif(p->>'local_id', '')::uuid;
+  v_dep     uuid := nullif(p->>'deposito_id', '')::uuid;
   v_items   jsonb := coalesce(p->'items', '[]'::jsonb);
   v_cero    boolean := coalesce(nullif(p->>'resto_a_cero', '')::boolean, false);
   v_obs     text := nullif(trim(coalesce(p->>'observaciones', '')), '');
@@ -2337,13 +2418,17 @@ begin
       raise exception 'La cantidad de % no es un número entero.', trim(e->>'codigo');
     end if;
   end loop;
+  /* SQL 193: el depósito (sin él, el predeterminado). */
+  if v_dep is null then v_dep := pos_deposito_de(v_local);
+  elsif not exists (select 1 from pos_depositos where id = v_dep and local_id = v_local) then raise exception 'Ese depósito no es de la sucursal.';
+  end if;
 
   /* Uno por vez en cada local: los ajustes y las otras cargas esperan, y el
-     stock del local queda bloqueado (las ventas de ese momento esperan). */
+     stock del depósito queda bloqueado (las ventas de ese momento esperan). */
   perform pg_advisory_xact_lock(hashtext('pos_stock:' || v_local::text));
-  perform 1 from pos_stock where local_id = v_local for update;
-  insert into pos_inventarios (local_id, persona, persona_nombre, origen, resto_a_cero, observaciones, clave)
-  values (v_local, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_origen, v_cero, v_obs, v_clave)
+  perform 1 from pos_stock where deposito_id = v_dep for update;
+  insert into pos_inventarios (local_id, deposito_id, persona, persona_nombre, origen, resto_a_cero, observaciones, clave)
+  values (v_local, v_dep, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_origen, v_cero, v_obs, v_clave)
   returning id into v_id;
 
   /* Lo de la lista (los repetidos se suman), contra lo que dice el sistema. */
@@ -2352,37 +2437,38 @@ begin
       from (select upper(trim(e2->>'codigo')) c, upper(trim(coalesce(e2->>'talle', ''))) t, upper(trim(coalesce(e2->>'color', ''))) co,
                    sum((e2->>'cantidad')::int)::int n, max(nullif(trim(coalesce(e2->>'descripcion', '')), '')) d
               from jsonb_array_elements(v_items) e2 group by 1, 2, 3) z
-      left join pos_stock s on s.local_id = v_local and s.codigo = z.c and s.talle = z.t and s.color = z.co
+      left join pos_stock s on s.deposito_id = v_dep and s.codigo = z.c and s.talle = z.t and s.color = z.co
   loop
     v_l := v_l + 1;
     v_u := v_u + greatest(x.n, 0);
     if x.n <> x.actual then
-      perform pos_stock_mover(v_local, x.c, x.t, x.co, x.n - x.actual, 'inventario', v_id, 'Inventario', x.d);
+      perform pos_stock_mover(v_local, x.c, x.t, x.co, x.n - x.actual, 'inventario', v_id, 'Inventario', x.d, null, null, v_dep);
       v_c := v_c + 1;
     elsif x.d is not null then
-      update pos_stock set descripcion = x.d where local_id = v_local and codigo = x.c and talle = x.t and color = x.co and descripcion is null;
+      update pos_stock set descripcion = x.d where deposito_id = v_dep and codigo = x.c and talle = x.t and color = x.co and descripcion is null;
     end if;
   end loop;
 
-  /* Lo que no está en la lista, en 0 (es el inventario completo del local). */
+  /* Lo que no está en la lista, en 0 (es el inventario completo del depósito). */
   if v_cero then
     for x in
       select s.codigo, s.talle, s.color, s.cantidad
         from pos_stock s
         left join (select distinct upper(trim(e3->>'codigo')) c, upper(trim(coalesce(e3->>'talle', ''))) t, upper(trim(coalesce(e3->>'color', ''))) co
                      from jsonb_array_elements(v_items) e3) z on z.c = s.codigo and z.t = s.talle and z.co = s.color
-       where s.local_id = v_local and s.cantidad <> 0 and z.c is null
+       where s.deposito_id = v_dep and s.cantidad <> 0 and z.c is null
     loop
-      perform pos_stock_mover(v_local, x.codigo, x.talle, x.color, -x.cantidad, 'inventario', v_id, 'Inventario', null, 'No estaba en la lista');
+      perform pos_stock_mover(v_local, x.codigo, x.talle, x.color, -x.cantidad, 'inventario', v_id, 'Inventario', null, 'No estaba en la lista', null, v_dep);
       v_c := v_c + 1;
     end loop;
   end if;
 
   update pos_inventarios set lineas = v_l, unidades = v_u, cambiaron = v_c where id = v_id;
-  return jsonb_build_object('id', v_id, 'lineas', v_l, 'unidades', v_u, 'cambiaron', v_c, 'ya', false);
+  return jsonb_build_object('id', v_id, 'lineas', v_l, 'unidades', v_u, 'cambiaron', v_c, 'ya', false,
+                            'deposito', (select nombre from pos_depositos where id = v_dep));
 end $$;
 
-/* Las cargas de inventario anteriores (las últimas 50). */
+/* Las cargas de inventario anteriores (las últimas 50). SQL 193: con el depósito. */
 create or replace function pos_inventarios(p_local uuid default null) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -2390,7 +2476,8 @@ begin
   return coalesce((
     select jsonb_agg(jsonb_build_object('id', i.id, 'fecha', i.fecha, 'local', l.nombre, 'local_id', i.local_id, 'persona', i.persona_nombre,
                                         'origen', i.origen, 'lineas', i.lineas, 'unidades', i.unidades, 'cambiaron', i.cambiaron,
-                                        'resto_a_cero', i.resto_a_cero, 'observaciones', i.observaciones) order by i.fecha desc)
+                                        'resto_a_cero', i.resto_a_cero, 'observaciones', i.observaciones,
+                                        'deposito', (select d.nombre from pos_depositos d where d.id = i.deposito_id)) order by i.fecha desc)
       from (select * from pos_inventarios x where p_local is null or x.local_id = p_local order by x.fecha desc limit 50) i
       join orden_locales l on l.id = i.local_id), '[]'::jsonb);
 end $$;
@@ -2400,7 +2487,11 @@ end $$;
    Si sale de un local, a ése se le saca del stock ahora. Con la misma clave
    dos veces devuelve el que ya estaba.
    SQL 167: con a_fabrica, de un local a la fábrica (una devolución, "que lo
-   devuelvan"): sale del stock del local ahora y la oficina lo da por recibido. */
+   devuelvan"): sale del stock del local ahora y la oficina lo da por recibido.
+   SQL 193: sale del depósito origen_deposito_id (sin él, del predeterminado).
+   Con destino_deposito_id, es un pase entre dos depósitos del mismo local (el
+   stock de cada seis meses, un módulo por vez, con el módulo y el responsable):
+   sale de uno y entra al otro en el acto, y queda recibido. */
 create or replace function pos_remito_guardar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -2411,6 +2502,13 @@ declare
   v_obs      text := nullif(trim(coalesce(p->>'observaciones', '')), '');
   v_ref      text := nullif(trim(coalesce(p->>'referencia', '')), '');
   v_items    jsonb := coalesce(p->'items', '[]'::jsonb);
+  v_dep_o    uuid := nullif(p->>'origen_deposito_id', '')::uuid;    -- SQL 193
+  v_dep_d    uuid := nullif(p->>'destino_deposito_id', '')::uuid;
+  v_modulo   text := nullif(upper(trim(coalesce(p->>'modulo', ''))), '');
+  v_resp     text := nullif(trim(coalesce(p->>'responsable', '')), '');
+  v_entre    boolean := nullif(p->>'destino_deposito_id', '') is not null;
+  v_nom_o    text;
+  v_nom_d    text;
   v_ya       pos_remitos;
   v_id       uuid;
   v_num      int;
@@ -2425,6 +2523,21 @@ begin
     select * into v_ya from pos_remitos where clave = v_clave;
     if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'ya', true); end if;
   end if;
+  /* SQL 193: entre dos depósitos de la sucursal. */
+  if v_entre then
+    if v_origen is null then raise exception 'Elegí la sucursal.'; end if;
+    v_destino := v_origen;
+    v_fabrica := false;
+    if v_dep_o is null then raise exception 'Elegí de qué depósito sale.'; end if;
+    if v_dep_o = v_dep_d then raise exception 'Sale y llega al mismo depósito: elegí otro.'; end if;
+    select nombre into v_nom_o from pos_depositos where id = v_dep_o and local_id = v_origen and activo;
+    select nombre into v_nom_d from pos_depositos where id = v_dep_d and local_id = v_origen and activo;
+    if v_nom_o is null or v_nom_d is null then raise exception 'Los dos depósitos tienen que ser de la sucursal y estar activos.'; end if;
+    if length(v_modulo) > 20 then raise exception 'El módulo es demasiado largo (hasta 20 letras).'; end if;
+    if length(v_resp) > 60 then raise exception 'El nombre del responsable es demasiado largo.'; end if;
+  elsif v_dep_o is not null and (v_origen is null or not exists (select 1 from pos_depositos where id = v_dep_o and local_id = v_origen and activo)) then
+    raise exception 'Ese depósito no es de la sucursal de donde sale.';
+  end if;
   if v_fabrica then
     v_destino := null;
     if v_origen is null then raise exception 'Para mandarlo a la fábrica, elegí de qué local sale.'; end if;
@@ -2434,7 +2547,7 @@ begin
   if v_origen is not null and not exists (select 1 from orden_locales where id = v_origen and activo) then
     raise exception 'El local de donde sale no existe.';
   end if;
-  if v_origen = v_destino then raise exception 'Sale y llega al mismo local: elegí otro.'; end if;
+  if v_origen = v_destino and not v_entre then raise exception 'Sale y llega al mismo local: elegí otro.'; end if;
   if length(v_obs) > 300 then raise exception 'Las observaciones son demasiado largas.'; end if;
   if length(v_ref) > 40 then raise exception 'La referencia es demasiado larga.'; end if;
   if jsonb_typeof(v_items) <> 'array' or jsonb_array_length(v_items) = 0 then raise exception 'El remito no tiene productos.'; end if;
@@ -2465,32 +2578,44 @@ begin
     if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'ya', true); end if;
   end if;
   select coalesce(max(numero), 0) + 1 into v_num from pos_remitos;
+  /* SQL 193: si sale de un local, de qué depósito (sin elegirlo, del predeterminado). */
+  if v_origen is not null and v_dep_o is null then v_dep_o := pos_deposito_de(v_origen); end if;
 
-  insert into pos_remitos (numero, origen_local_id, destino_local_id, referencia, dia, creado_por, creado_nombre, observaciones, clave)
-  values (v_num, v_origen, v_destino, v_ref, pos_hoy(), orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_obs, v_clave)
+  insert into pos_remitos (numero, origen_local_id, destino_local_id, referencia, dia, creado_por, creado_nombre, observaciones, clave,
+                           origen_deposito_id, destino_deposito_id, modulo, responsable, estado, recibido_en)
+  values (v_num, v_origen, v_destino, v_ref, pos_hoy(), orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_obs, v_clave,
+          v_dep_o, v_dep_d, case when v_entre then v_modulo end, case when v_entre then v_resp end,
+          case when v_entre then 'recibido' else 'pendiente' end, case when v_entre then clock_timestamp() end)
   returning id into v_id;
 
   /* SQL 189: si sale de un local, cada renglón con el precio de la lista de ese local (el de hoy) y su razón. */
   if v_origen is not null then
     select s.lista_id into v_lista from pos_sucursales s where s.local_id = v_origen;
   end if;
-  insert into pos_remito_items (remito_id, codigo, talle, color, descripcion, cantidad, orden, precio, razon)
-  select v_id, z.c, z.t, z.co, max(z.d), sum(z.n), min(z.o), case when v_lista is not null then pos_precio_de(v_lista, z.c) end, max(z.r)
+  insert into pos_remito_items (remito_id, codigo, talle, color, descripcion, cantidad, orden, precio, razon, contado)
+  select v_id, z.c, z.t, z.co, max(z.d), sum(z.n), min(z.o), case when v_lista is not null then pos_precio_de(v_lista, z.c) end, max(z.r),
+         case when v_entre then sum(z.n) end   -- SQL 193: el pase entre depósitos llega entero
     from (select upper(trim(e.v->>'codigo')) c, upper(trim(coalesce(e.v->>'talle', ''))) t, upper(trim(coalesce(e.v->>'color', ''))) co,
                  nullif(trim(coalesce(e.v->>'descripcion', '')), '') d, (e.v->>'cantidad')::int n, e.o::int o,
                  nullif(trim(coalesce(e.v->>'razon', '')), '') r
             from jsonb_array_elements(v_items) with ordinality e(v, o)) z
    group by z.c, z.t, z.co;
 
-  /* Un envío entre locales (o una devolución a la fábrica): sale ahora del stock del que lo manda. */
+  /* Un envío entre locales (o una devolución a la fábrica): sale ahora del stock del que lo manda.
+     SQL 193: entre depósitos, sale de uno y entra al otro. */
   if v_origen is not null then
     for m in select * from pos_remito_items where remito_id = v_id loop
       perform pos_stock_mover(v_origen, m.codigo, m.talle, m.color, -m.cantidad, 'envio', v_id,
-                              case when v_destino is null then 'Devolución R-' else 'Envío R-' end || v_num, m.descripcion);
+                              case when v_destino is null then 'Devolución R-' else 'Envío R-' end || v_num, m.descripcion,
+                              case when v_entre then 'Al depósito ' || v_nom_d end, null, v_dep_o);
+      if v_entre then
+        perform pos_stock_mover(v_origen, m.codigo, m.talle, m.color, m.cantidad, 'remito', v_id, 'Envío R-' || v_num, m.descripcion,
+                                'Del depósito ' || v_nom_o, null, v_dep_d);
+      end if;
     end loop;
   end if;
 
-  return jsonb_build_object('id', v_id, 'numero', v_num, 'ya', false,
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'ya', false, 'entre_depositos', v_entre,
                             'productos', (select count(distinct codigo) from pos_remito_items where remito_id = v_id),
                             'unidades', (select sum(cantidad) from pos_remito_items where remito_id = v_id),
                             'total', (select sum(cantidad * precio) from pos_remito_items where remito_id = v_id));
@@ -2502,7 +2627,10 @@ end $$;
    destino) y las diferencias que faltan resolver de cada uno. SQL 189: el
    total en pesos de cada uno (con el precio de cada renglón), cuántos
    productos no tienen precio y el monto de todos (sin los anulados), como el
-   pie de "Devoluciones a Fábrica" de BlueSoft. */
+   pie de "Devoluciones a Fábrica" de BlueSoft. SQL 193: los depósitos, el
+   módulo, el responsable y los testigos (cuántos productos coincidieron y
+   cuántos no, con lo último que se contó de cada uno); el pase entre depósitos
+   del local (entre_depositos) va en las filas pero no en los totales. */
 create or replace function pos_remitos(p_desde date, p_hasta date, p_local uuid default null, p_estado text default null)
 returns jsonb language plpgsql stable security definer set search_path = public as $$
 declare v_res jsonb;
@@ -2539,18 +2667,31 @@ begin
                  'observaciones', z.observaciones, 'creado_nombre', z.creado_nombre, 'recibido_en', z.recibido_en,
                  'anulado_motivo', z.anulado_motivo,
                  'total', (select sum(i.cantidad * i.precio) from pos_remito_items i where i.remito_id = z.id),
-                 'sin_precio', (select count(distinct i.codigo) from pos_remito_items i where i.remito_id = z.id and i.precio is null)) order by z.fecha desc)
+                 'sin_precio', (select count(distinct i.codigo) from pos_remito_items i where i.remito_id = z.id and i.precio is null),
+                 /* SQL 193 */
+                 'entre_depositos', coalesce(z.origen_local_id = z.destino_local_id, false),
+                 'origen_deposito_id', z.origen_deposito_id, 'origen_deposito', dpo.nombre,
+                 'destino_deposito_id', z.destino_deposito_id, 'destino_deposito', dpd.nombre,
+                 'modulo', z.modulo, 'responsable', z.responsable,
+                 'testigos_ok', (select count(*) from (select distinct on (t.codigo) t.coincide from pos_remito_testigos t
+                                                        where t.remito_id = z.id order by t.codigo, t.id desc) u where u.coincide),
+                 'testigos_mal', (select count(*) from (select distinct on (t.codigo) t.coincide from pos_remito_testigos t
+                                                         where t.remito_id = z.id order by t.codigo, t.id desc) u where not u.coincide)) order by z.fecha desc)
           from (select * from r order by fecha desc limit 500) z
           left join orden_locales ld on ld.id = z.destino_local_id
-          left join orden_locales lo on lo.id = z.origen_local_id), '[]'::jsonb),
+          left join orden_locales lo on lo.id = z.origen_local_id
+          left join pos_depositos dpo on dpo.id = z.origen_deposito_id
+          left join pos_depositos dpd on dpd.id = z.destino_deposito_id), '[]'::jsonb),
       'totales', (select jsonb_build_object(
                     'remitos', count(*) filter (where r.estado <> 'anulado'),
                     'pendientes', count(*) filter (where r.estado = 'pendiente'),
                     'con_diferencias', count(*) filter (where r.estado = 'con_diferencias'),
                     'anulados', count(*) filter (where r.estado = 'anulado'),
-                    'unidades', coalesce((select sum(i.cantidad) from pos_remito_items i join r y on y.id = i.remito_id where y.estado <> 'anulado'), 0),
-                    'monto', coalesce((select sum(i.cantidad * i.precio) from pos_remito_items i join r y on y.id = i.remito_id where y.estado <> 'anulado'), 0))
-                    from r),
+                    'unidades', coalesce((select sum(i.cantidad) from pos_remito_items i join r y on y.id = i.remito_id
+                                           where y.estado <> 'anulado' and y.origen_local_id is distinct from y.destino_local_id), 0),
+                    'monto', coalesce((select sum(i.cantidad * i.precio) from pos_remito_items i join r y on y.id = i.remito_id
+                                        where y.estado <> 'anulado' and y.origen_local_id is distinct from y.destino_local_id), 0))
+                    from r where r.origen_local_id is distinct from r.destino_local_id),
       'mas', (select count(*) > 500 from r)
     )
   );
@@ -2575,7 +2716,9 @@ end $$;
    p_completo (Gestión, la oficina), todo. SQL 167: quién lo recibió, qué pasó
    y cada diferencia con cómo se resolvió. SQL 189: el precio y la razón de
    cada producto y el total; y una devolución a la fábrica (sin destino) va
-   siempre entera: nadie la cuenta a ciegas, y el local que la mandó la ve. */
+   siempre entera: nadie la cuenta a ciegas, y el local que la mandó la ve.
+   SQL 193: los nombres de los depósitos y los testigos; el pase entre
+   depósitos del local también va entero (nadie lo recibe a ciegas). */
 create or replace function pos_remito(p_id uuid, p_completo boolean default false) returns jsonb
 language plpgsql stable security definer set search_path = public as $$
 declare r jsonb; v_o uuid; v_d uuid; v_completo boolean := coalesce(p_completo, false);
@@ -2590,6 +2733,13 @@ begin
   select to_jsonb(x) - 'clave' || jsonb_build_object(
            'origen', coalesce(lo.nombre, 'Fábrica'), 'destino', coalesce(ld.nombre, 'Fábrica'),
            'anulado_por_nombre', (select pe.nombre from orden_personas pe where pe.id = x.anulado_por),
+           /* SQL 193 */
+           'entre_depositos', coalesce(x.origen_local_id = x.destino_local_id, false),
+           'origen_deposito', (select d.nombre from pos_depositos d where d.id = x.origen_deposito_id),
+           'destino_deposito', (select d.nombre from pos_depositos d where d.id = x.destino_deposito_id),
+           'testigos', coalesce((select jsonb_agg(jsonb_build_object('codigo', t.codigo, 'contado', t.contado, 'en_envio', t.en_envio, 'coincide', t.coincide,
+                                                                     'fecha', t.fecha, 'quien', coalesce(t.quien, t.persona_nombre)) order by t.id)
+                                   from pos_remito_testigos t where t.remito_id = x.id), '[]'::jsonb),
            'total', (select sum(i.cantidad * i.precio) from pos_remito_items i where i.remito_id = x.id),
            'productos', coalesce((
              select jsonb_agg(jsonb_build_object(
@@ -2604,7 +2754,7 @@ begin
                                        where d.remito_id = x.id and d.codigo = g.codigo),
                       'conteos', (select count(*) from pos_remito_conteos c where c.remito_id = x.id and c.codigo = g.codigo),
                       'celdas', (select jsonb_agg(case when k.codigo is not null or x.estado = 'anulado' or v_completo
-                                                            or x.destino_local_id is null
+                                                            or x.destino_local_id is null or x.origen_local_id = x.destino_local_id
                                                        then jsonb_build_object('talle', i.talle, 'color', i.color, 'cantidad', i.cantidad, 'contado', i.contado)
                                                        else jsonb_build_object('talle', i.talle, 'color', i.color) end
                                                   order by i.color, i.talle)
@@ -2799,7 +2949,10 @@ end $$;
    ya entró al stock vuelve a salir, y si era un envío, al local que lo mandó
    le vuelve lo que mandó. SQL 167: si era el que resolvía unas diferencias
    (lo que faltó, o lo que se devolvía), ésas vuelven a quedar sin resolver;
-   las diferencias del remito anulado dejan de contar. */
+   las diferencias del remito anulado dejan de contar.
+   SQL 193: cada cosa vuelve al depósito de donde salió (o sale del que entró).
+   Un pase entre depósitos del local lo anula el local con su permiso aunque
+   esté recibido: es para rehacer el módulo. */
 create or replace function pos_remito_anular(p_id uuid, p_motivo text) returns boolean
 language plpgsql volatile security definer set search_path = public as $$
 declare r pos_remitos; m pos_stock_movs;
@@ -2815,13 +2968,15 @@ begin
     perform pos_permiso('envios');
     if r.origen_local_id is null then raise exception 'Los remitos de la fábrica los anula la oficina.' using errcode = '42501'; end if;
     perform pos_local_ok(r.origen_local_id);
-    if r.estado <> 'pendiente' or exists (select 1 from pos_remito_productos k where k.remito_id = p_id)
-       or exists (select 1 from pos_remito_conteos k where k.remito_id = p_id) then
+    if r.origen_local_id is distinct from r.destino_local_id   -- SQL 193
+       and (r.estado <> 'pendiente' or exists (select 1 from pos_remito_productos k where k.remito_id = p_id)
+            or exists (select 1 from pos_remito_conteos k where k.remito_id = p_id)) then
       raise exception 'Ya lo empezaron a recibir: ahora lo anula la oficina.' using errcode = '42501';
     end if;
   end if;
   for m in select * from pos_stock_movs where ref_id = p_id and tipo in ('remito', 'envio') order by id loop
-    perform pos_stock_mover(m.local_id, m.codigo, m.talle, m.color, -m.cantidad, m.tipo || '_anulado', p_id, m.ref || ' (anulado)');
+    perform pos_stock_mover(m.local_id, m.codigo, m.talle, m.color, -m.cantidad, m.tipo || '_anulado', p_id, m.ref || ' (anulado)',
+                            null, null, null, m.deposito_id);   -- SQL 193
   end loop;
   update pos_remitos set estado = 'anulado', anulado_en = now(), anulado_por = orden_yo_id(), anulado_motivo = trim(p_motivo)
    where id = p_id;
@@ -2831,17 +2986,17 @@ begin
   return true;
 end $$;
 
-revoke all on function pos_stock_mover(uuid, text, text, text, int, text, uuid, text, text, text, text),
+revoke all on function pos_stock_mover(uuid, text, text, text, int, text, uuid, text, text, text, text, uuid),   -- SQL 193: con el depósito
                        pos_remito_conteo_limpio(jsonb),
                        pos_remito_entrar(pos_remitos, text, jsonb, text, text, text, text, text)
        from public, anon, authenticated;
-revoke all on function pos_stock_local(uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean, int, int, boolean),
-                       pos_stock_variante(uuid, text, text, text), pos_stock_ajustar(jsonb), pos_inventario_cargar(jsonb),
+revoke all on function pos_stock_local(uuid, uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean, int, int, boolean, uuid),
+                       pos_stock_variante(uuid, text, text, text, uuid), pos_stock_ajustar(jsonb), pos_inventario_cargar(jsonb),
                        pos_inventarios(uuid), pos_remito_guardar(jsonb), pos_remitos(date, date, uuid, text), pos_remito(uuid, boolean),
                        pos_remito_contar(uuid, text, jsonb, text), pos_remito_recibir(uuid, text, jsonb, text, text, text, text), pos_remito_anular(uuid, text)
        from public, anon;
-grant execute on function pos_stock_local(uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean, int, int, boolean),
-                          pos_stock_variante(uuid, text, text, text), pos_stock_ajustar(jsonb), pos_inventario_cargar(jsonb),
+grant execute on function pos_stock_local(uuid, uuid), pos_stock_consulta(uuid, text[], text, boolean, boolean, int, int, boolean, uuid),
+                          pos_stock_variante(uuid, text, text, text, uuid), pos_stock_ajustar(jsonb), pos_inventario_cargar(jsonb),
                           pos_inventarios(uuid), pos_remito_guardar(jsonb), pos_remitos(date, date, uuid, text), pos_remito(uuid, boolean),
                           pos_remito_contar(uuid, text, jsonb, text), pos_remito_recibir(uuid, text, jsonb, text, text, text, text), pos_remito_anular(uuid, text)
        to authenticated;
@@ -3501,6 +3656,304 @@ end $$;
 
 revoke all on function pos_ventas_vendedor(date, date, uuid, text, boolean) from public, anon;
 grant execute on function pos_ventas_vendedor(date, date, uuid, text, boolean) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 193 (29/10/2026) · LOS DEPÓSITOS
+--
+--  Mauricio (29/10): "en envíos internos lo usamos para cuando tenemos que
+--  hacer un stock de todo el local. Lo hacemos cada seis meses, creamos un
+--  depósito nuevo en depósitos… Depósito origen es el depósito de la
+--  temporada anterior y el depósito actual es el nuevo que creamos. Lo
+--  identificamos por temporada y por año… Una vez cargado, en Tickets se
+--  cambia el depósito a nuevo y listo. Cada ticket, cada venta, se empieza a
+--  descontar del nuevo." Y el instructivo "Proceso de inventario" (el manual
+--  del sistema): un envío interno por módulo, con el módulo y el responsable
+--  en Observaciones; dos productos testigo por módulo con el supervisor (si
+--  no coincide, se rehace el módulo); el depósito nuevo, predeterminado.
+--
+--  · pos_depositos: los de cada local, como la pantalla "Depósitos" de
+--    BlueSoft (Código, Descripción, Sucursal, «Considerar para consulta de
+--    stock», «Activo» y «Predeterminar»). Lo de BlueSoft para la tienda
+--    online ("Subir stock") y los rollos de tela no van.
+--  · El stock (pos_stock) y sus movimientos (pos_stock_movs) pasan a ser por
+--    depósito. Cada local arranca con "Principal", predeterminado, con todo
+--    lo que tiene hoy: para el que no hace nada, todo sigue igual.
+--  · El predeterminado es uno por local (no por usuario, como en BlueSoft):
+--    al predeterminar el nuevo, toda la sucursal vende de ahí.
+--  · El pase entre depósitos es un remito de la sucursal a sí misma, con los
+--    dos depósitos (pos_remitos.origen_deposito_id y destino_deposito_id), el
+--    módulo y el responsable. Pasa en el momento y queda recibido.
+--  · pos_remito_testigos: cada producto testigo que se contó en un módulo,
+--    contra lo que dice su envío.
+--  Vender mientras se pasa la ropa: la venta descuenta del predeterminado (el
+--  de antes) hasta que se predetermina el nuevo, como en BlueSoft.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table if not exists pos_depositos (
+  id                 uuid primary key default gen_random_uuid(),
+  numero             int not null unique,                 -- el "Código" de BlueSoft: correlativo, de todos los locales juntos
+  local_id           uuid not null references orden_locales(id),
+  nombre             text not null check (length(nombre) between 1 and 40),
+  temporada          text check (temporada in ('Verano', 'Invierno')),
+  anio               int check (anio between 2000 and 2100),
+  consulta           boolean not null default true,        -- «Considerar para consulta de stock»
+  activo             boolean not null default true,
+  predeterminado     boolean not null default false,       -- de acá descuentan las ventas (uno por local)
+  predeterminado_en  timestamptz,
+  creado_en          timestamptz not null default now(),
+  creado_por         uuid,
+  creado_nombre      text,
+  unique (id, local_id),
+  check (not predeterminado or activo),
+  check ((temporada is null) = (anio is null))
+);
+create unique index if not exists pos_depositos_nombre on pos_depositos (local_id, lower(nombre));
+create unique index if not exists pos_depositos_uno on pos_depositos (local_id) where predeterminado;
+alter table pos_depositos enable row level security;
+revoke all on pos_depositos from anon, authenticated;
+
+/* Cada local arranca con uno, "Principal", predeterminado: ahí queda todo lo que tiene hoy. */
+insert into pos_depositos (numero, local_id, nombre, predeterminado, predeterminado_en)
+select coalesce((select max(numero) from pos_depositos), 0) + row_number() over (order by l.nombre, l.id), l.id, 'Principal', true, now()
+  from orden_locales l
+ where not exists (select 1 from pos_depositos d where d.local_id = l.id);
+
+/* El stock, por depósito: la clave pasa a ser el depósito (antes, el local). */
+alter table pos_stock add column if not exists deposito_id uuid;
+update pos_stock s set deposito_id = d.id from pos_depositos d where d.local_id = s.local_id and d.predeterminado and s.deposito_id is null;
+alter table pos_stock alter column deposito_id set not null;
+alter table pos_stock_movs add column if not exists deposito_id uuid;
+update pos_stock_movs m set deposito_id = d.id from pos_depositos d where d.local_id = m.local_id and d.predeterminado and m.deposito_id is null;
+alter table pos_stock_movs alter column deposito_id set not null;
+do $$
+begin
+  if pg_get_constraintdef((select c.oid from pg_constraint c where c.conname = 'pos_stock_pkey' and c.conrelid = 'pos_stock'::regclass)) not like '%deposito_id%' then
+    alter table pos_stock drop constraint pos_stock_pkey;
+    alter table pos_stock add constraint pos_stock_pkey primary key (deposito_id, codigo, talle, color);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'pos_stock_deposito_fkey') then
+    alter table pos_stock add constraint pos_stock_deposito_fkey foreign key (deposito_id, local_id) references pos_depositos (id, local_id);
+  end if;
+  if not exists (select 1 from pg_constraint where conname = 'pos_stock_movs_deposito_fkey') then
+    alter table pos_stock_movs add constraint pos_stock_movs_deposito_fkey foreign key (deposito_id, local_id) references pos_depositos (id, local_id);
+  end if;
+end $$;
+create index if not exists pos_stock_local on pos_stock (local_id, codigo);
+create index if not exists pos_stock_movs_deposito on pos_stock_movs (deposito_id, codigo, talle, color, fecha desc);
+
+/* Los remitos: de qué depósito sale y, entre depósitos del local, a cuál llega, con el módulo y el responsable.
+   Un remito de la sucursal a sí misma sólo si es entre dos depósitos distintos. */
+alter table pos_remitos add column if not exists origen_deposito_id uuid references pos_depositos(id);
+alter table pos_remitos add column if not exists destino_deposito_id uuid references pos_depositos(id);
+alter table pos_remitos add column if not exists modulo text check (length(modulo) <= 20);
+alter table pos_remitos add column if not exists responsable text check (length(responsable) <= 60);
+alter table pos_remitos drop constraint if exists pos_remitos_check;
+alter table pos_remitos add constraint pos_remitos_check
+  check (origen_local_id is null or origen_local_id <> destino_local_id
+         or (origen_deposito_id is not null and destino_deposito_id is not null and origen_deposito_id <> destino_deposito_id));
+
+/* El inventario: en qué depósito se cargó. */
+alter table pos_inventarios add column if not exists deposito_id uuid references pos_depositos(id);
+update pos_inventarios i set deposito_id = d.id from pos_depositos d where d.local_id = i.local_id and d.predeterminado and i.deposito_id is null;
+
+/* Los productos testigo de cada módulo: lo que contó el supervisor contra lo que dice el envío de ese módulo. */
+create table if not exists pos_remito_testigos (
+  id              bigserial primary key,
+  remito_id       uuid not null references pos_remitos(id) on delete cascade,
+  codigo          text not null,
+  contado         int not null check (contado between 0 and 9999),
+  en_envio        int not null,
+  coincide        boolean not null,
+  fecha           timestamptz not null default clock_timestamp(),
+  persona         uuid,
+  persona_nombre  text,
+  quien           text                                  -- quién lo controló (la compu es compartida)
+);
+create index if not exists pos_remito_testigos_remito on pos_remito_testigos (remito_id, codigo, id);
+alter table pos_remito_testigos enable row level security;
+revoke all on pos_remito_testigos from anon, authenticated;
+revoke all on sequence pos_remito_testigos_id_seq from anon, authenticated;
+
+/* El depósito predeterminado de un local (de ahí descuentan las ventas). Un
+   local nuevo, sin ninguno, estrena "Principal". Es para las otras funciones. */
+create or replace function pos_deposito_de(p_local uuid) returns uuid
+language plpgsql volatile security definer set search_path = public as $$
+declare v uuid;
+begin
+  if p_local is null then return null; end if;
+  select id into v from pos_depositos where local_id = p_local and predeterminado;
+  if v is null then
+    perform pg_advisory_xact_lock(hashtext('pos_deposito'));
+    select id into v from pos_depositos where local_id = p_local and predeterminado;
+    if v is null then
+      if exists (select 1 from pos_depositos where local_id = p_local) then
+        raise exception 'La sucursal no tiene depósito predeterminado: elegilo en Depósitos.';
+      end if;
+      insert into pos_depositos (numero, local_id, nombre, predeterminado, predeterminado_en)
+      values ((select coalesce(max(numero), 0) + 1 from pos_depositos), p_local, 'Principal', true, now())
+      returning id into v;
+    end if;
+  end if;
+  return v;
+end $$;
+
+/* Los depósitos (la lista de BlueSoft): los de una sucursal o, sin ella, los
+   de todas las que puede ver. Con cuántas unidades tiene cada uno y si ya se
+   usó (el que nunca se usó se puede borrar). */
+create or replace function pos_depositos(p_local uuid default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  if p_local is not null then perform pos_local_ok(p_local); end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', d.id, 'numero', d.numero, 'local_id', d.local_id, 'local', l.nombre, 'nombre', d.nombre,
+             'temporada', d.temporada, 'anio', d.anio, 'consulta', d.consulta, 'activo', d.activo,
+             'predeterminado', d.predeterminado, 'predeterminado_en', d.predeterminado_en,
+             'creado_en', d.creado_en, 'creado_nombre', d.creado_nombre,
+             'unidades', coalesce(t.unidades, 0), 'renglones', coalesce(t.renglones, 0), 'negativos', coalesce(t.negativos, 0),
+             'usado', exists (select 1 from pos_stock_movs m where m.deposito_id = d.id)
+                      or exists (select 1 from pos_remitos r where r.origen_deposito_id = d.id or r.destino_deposito_id = d.id)
+                      or exists (select 1 from pos_inventarios i where i.deposito_id = d.id))
+           order by l.nombre, d.predeterminado desc, d.activo desc, d.numero)
+      from pos_depositos d
+      join orden_locales l on l.id = d.local_id
+      left join lateral (select sum(s.cantidad)::int unidades, (count(*) filter (where s.cantidad <> 0))::int renglones,
+                                (count(*) filter (where s.cantidad < 0))::int negativos
+                           from pos_stock s where s.deposito_id = d.id) t on true
+     where case when p_local is null then pos_local_mio(d.local_id) else d.local_id = p_local end), '[]'::jsonb);
+end $$;
+
+/* Uno nuevo o cambiar uno. De temporada: la temporada (Verano o Invierno) y el
+   año arman el nombre ("Verano 2027"); si no, el nombre ("Fallas"). La
+   sucursal no se cambia. El predeterminado no se desactiva. Con el permiso de
+   los envíos internos (encargados y supervisores). */
+create or replace function pos_deposito_guardar(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_id      uuid := nullif(p->>'id', '')::uuid;
+  v_local   uuid := nullif(p->>'local_id', '')::uuid;
+  v_temp    text := nullif(trim(coalesce(p->>'temporada', '')), '');
+  v_anio    int;
+  v_nombre  text := nullif(regexp_replace(trim(coalesce(p->>'nombre', '')), '\s+', ' ', 'g'), '');
+  v_cons    boolean := coalesce(nullif(p->>'consulta', '')::boolean, true);
+  v_activo  boolean := coalesce(nullif(p->>'activo', '')::boolean, true);
+  d         pos_depositos;
+begin
+  perform pos_permiso('envios');
+  if v_id is not null then
+    select * into d from pos_depositos where id = v_id for update;
+    if not found then raise exception 'No existe ese depósito.'; end if;
+    v_local := d.local_id;
+  end if;
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then raise exception 'Elegí la sucursal.'; end if;
+  perform pos_local_ok(v_local);
+  if v_temp is not null then
+    if v_temp not in ('Verano', 'Invierno') then raise exception 'La temporada es Verano o Invierno.'; end if;
+    if coalesce(p->>'anio', '') !~ '^[0-9]{4}$' or (p->>'anio')::int not between 2000 and 2100 then
+      raise exception 'Escribí el año (por ejemplo, 2027).';
+    end if;
+    v_anio := (p->>'anio')::int;
+    v_nombre := v_temp || ' ' || v_anio;
+  end if;
+  if v_nombre is null then raise exception 'Escribí el nombre del depósito.'; end if;
+  if length(v_nombre) > 40 then raise exception 'El nombre es demasiado largo (hasta 40 letras).'; end if;
+  if exists (select 1 from pos_depositos x where x.local_id = v_local and lower(x.nombre) = lower(v_nombre) and x.id is distinct from v_id) then
+    raise exception '% ya tiene el depósito «%».', (select l.nombre from orden_locales l where l.id = v_local), v_nombre;
+  end if;
+  if v_id is not null and d.predeterminado and not v_activo then
+    raise exception 'Es el depósito predeterminado: para desactivarlo, primero predeterminá otro.';
+  end if;
+  if v_id is null then
+    perform pg_advisory_xact_lock(hashtext('pos_deposito'));
+    insert into pos_depositos (numero, local_id, nombre, temporada, anio, consulta, activo, creado_por, creado_nombre)
+    values ((select coalesce(max(numero), 0) + 1 from pos_depositos), v_local, v_nombre, v_temp, v_anio, v_cons, v_activo,
+            orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()))
+    returning * into d;
+  else
+    update pos_depositos set nombre = v_nombre, temporada = v_temp, anio = v_anio, consulta = v_cons or predeterminado, activo = v_activo
+     where id = v_id returning * into d;
+  end if;
+  return jsonb_build_object('id', d.id, 'numero', d.numero, 'nombre', d.nombre, 'nuevo', v_id is null);
+end $$;
+
+/* «Predeterminar»: desde ahora la sucursal vende de este depósito (las ventas y
+   los cambios), y ahí entran los remitos. p_sacar_viejo: el de antes deja de
+   contar para la consulta de stock (lo que quedó ahí es lo que no se encontró). */
+create or replace function pos_deposito_predeterminar(p_id uuid, p_sacar_viejo boolean default false) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare d pos_depositos; v pos_depositos;
+begin
+  perform pos_permiso('envios');
+  select * into d from pos_depositos where id = p_id for update;
+  if not found then raise exception 'No existe ese depósito.'; end if;
+  perform pos_local_ok(d.local_id);
+  if not d.activo then raise exception 'El depósito está inactivo: activalo primero.'; end if;
+  if d.predeterminado then raise exception 'Ya es el predeterminado.'; end if;
+  select * into v from pos_depositos where local_id = d.local_id and predeterminado for update;
+  update pos_depositos set predeterminado = false, consulta = consulta and not coalesce(p_sacar_viejo, false) where id = v.id;
+  update pos_depositos set predeterminado = true, predeterminado_en = now(), consulta = true where id = d.id;
+  return jsonb_build_object('nombre', d.nombre, 'anterior', v.nombre,
+                            'quedaron', (select coalesce(sum(s.cantidad), 0) from pos_stock s where s.deposito_id = v.id));
+end $$;
+
+/* Borrar un depósito que nunca se usó (si ya tuvo algo, se desactiva). */
+create or replace function pos_deposito_borrar(p_id uuid) returns boolean
+language plpgsql volatile security definer set search_path = public as $$
+declare d pos_depositos;
+begin
+  perform pos_permiso('envios');
+  select * into d from pos_depositos where id = p_id for update;
+  if not found then raise exception 'No existe ese depósito.'; end if;
+  perform pos_local_ok(d.local_id);
+  if d.predeterminado then raise exception 'Es el depósito predeterminado: no se puede borrar.'; end if;
+  if exists (select 1 from pos_stock where deposito_id = p_id) or exists (select 1 from pos_stock_movs where deposito_id = p_id)
+     or exists (select 1 from pos_remitos where origen_deposito_id = p_id or destino_deposito_id = p_id)
+     or exists (select 1 from pos_inventarios where deposito_id = p_id) then
+    raise exception 'Ya tuvo mercadería: no se puede borrar. Si no se usa más, sacale «Activo».';
+  end if;
+  delete from pos_depositos where id = p_id;
+  return true;
+end $$;
+
+/* Un producto testigo de un módulo: cuántas prendas de ese producto hay en el
+   módulo (contadas por el supervisor) contra las que dice el envío del
+   módulo. Si no coincide, el módulo se rehace (se anula el envío y se hace de
+   nuevo). Cada vez queda anotada. */
+create or replace function pos_remito_testigo(p_remito uuid, p_codigo text, p_contado int, p_quien text default null) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  r     pos_remitos;
+  v_c   text := upper(trim(coalesce(p_codigo, '')));
+  v_q   text := nullif(trim(coalesce(p_quien, '')), '');
+  v_en  int;
+begin
+  perform pos_permiso('envios');
+  if v_c = '' or length(v_c) > 30 then raise exception 'Falta el producto testigo.'; end if;
+  if p_contado is null or p_contado < 0 or p_contado > 9999 then raise exception 'Escribí cuántas contaste (de 0 a 9999).'; end if;
+  if length(v_q) > 60 then raise exception 'El nombre es demasiado largo.'; end if;
+  select * into r from pos_remitos where id = p_remito;
+  if not found then raise exception 'No existe ese envío.'; end if;
+  if r.origen_local_id is distinct from r.destino_local_id then raise exception 'Los testigos son para los envíos entre depósitos de la sucursal.'; end if;
+  perform pos_local_ok(r.origen_local_id);
+  if r.estado = 'anulado' then raise exception 'Ese envío está anulado.'; end if;
+  select coalesce(sum(cantidad), 0)::int into v_en from pos_remito_items where remito_id = p_remito and codigo = v_c;
+  if v_en = 0 and p_contado = 0 then raise exception 'Ese producto no está en el envío. Si está en el módulo, escribí cuántas hay.'; end if;
+  insert into pos_remito_testigos (remito_id, codigo, contado, en_envio, coincide, persona, persona_nombre, quien)
+  values (p_remito, v_c, p_contado, v_en, v_en = p_contado, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_q);
+  return jsonb_build_object('codigo', v_c, 'contado', p_contado, 'en_envio', v_en, 'coincide', v_en = p_contado,
+                            'testigos', (select jsonb_agg(jsonb_build_object('codigo', t.codigo, 'contado', t.contado, 'en_envio', t.en_envio,
+                                                                             'coincide', t.coincide, 'fecha', t.fecha, 'quien', coalesce(t.quien, t.persona_nombre)) order by t.id)
+                                           from pos_remito_testigos t where t.remito_id = p_remito));
+end $$;
+
+revoke all on function pos_deposito_de(uuid) from public, anon, authenticated;
+revoke all on function pos_depositos(uuid), pos_deposito_guardar(jsonb), pos_deposito_predeterminar(uuid, boolean), pos_deposito_borrar(uuid),
+                       pos_remito_testigo(uuid, text, int, text)
+       from public, anon;
+grant execute on function pos_depositos(uuid), pos_deposito_guardar(jsonb), pos_deposito_predeterminar(uuid, boolean), pos_deposito_borrar(uuid),
+                          pos_remito_testigo(uuid, text, int, text)
+       to authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 --  SQL 195 (29/10/2026) · LA DISPONIBILIDAD DE LAS CAJAS

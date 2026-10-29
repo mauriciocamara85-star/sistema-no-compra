@@ -95,6 +95,13 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
   .menu-chico .pos-marca + span { display: none; }
   .menu-chico .pos-menu-pie { padding-top: 6px; }
 }
+/* La PC del local (657 de alto): con Depósitos son 14 secciones y el pie tiene que entrar sin deslizar el menú. */
+@media (min-width: 1000px) and (max-height: 720px) {
+  [data-pos="mostrador"] .pos-item { min-height: 30px; }
+  [data-pos="mostrador"] .pos-menu > .pos-grupo { margin: 5px 10px; }
+  /* Gestión achicada: con Depósitos y Disponibilidad son 17 íconos, y todos tienen que entrar sin deslizar. */
+  [data-pos="gestion"] .menu-chico .pos-item { min-height: 28px; }
+}
 @media (max-width: 999px) {
   .pos-menu-pie { flex-direction: row; margin: 0 0 0 auto; padding: 0 0 0 6px; border-top: 0; border-left: 1px solid var(--line); }
 }
@@ -1013,3 +1020,39 @@ html[data-theme="dark"] .vv-barras { --vv-barra: #C9824F; }
 .dp-tabla td.dp-nunca { color: var(--txt-3); }
 .dp-tabla tr.dp-control td { background: var(--surface-2); }
 .dp-cero { font-size: 12px; color: var(--txt-3); }
+
+/* ── Los depósitos (SQL 193) ── */
+.dep-pasos { margin: 0 0 12px; padding: 10px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--line); font-size: 13.5px; color: var(--txt-2); }
+.dep-pasos summary { cursor: pointer; font-weight: 700; color: var(--txt); }
+.dep-pasos ol { margin: 8px 0 2px; padding-left: 20px; line-height: 1.5; }
+.dep-pasos li + li { margin-top: 3px; }
+.dep-pasos b { color: var(--txt); }
+.dep-est .pill + .pill, .va-deps .pill + .pill, #posVentTit .pill + .pill { margin-left: 4px; }
+.pos-tabla tr.dep-inactivo td { color: var(--txt-3); }
+.pos-campos.dep-campos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.dep-checks { display: flex; flex-wrap: wrap; gap: 0 18px; margin-top: 6px; }
+@media (max-width: 520px) { .pos-campos.dep-campos { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.dep-pred { margin-top: 12px; }
+.dep-pred .pos-check { display: flex; margin-top: 6px; }
+.dep-pred .pos-pie { margin-top: 8px; }
+.st-dep-zona { display: contents; }
+.pestanas.ev-tipos { margin-bottom: 10px; align-self: flex-start; }
+/* El envío entre depósitos: la sucursal, los dos depósitos y el módulo en una fila; el responsable y las observaciones abajo. */
+@media (min-width: 1000px) {
+  .tk-datos.ed-datos > :nth-child(5) { grid-column: span 4; }
+  .tk-datos.ed-datos > :last-child { grid-column: span 8; }
+}
+/* En el celular, cada depósito en su renglón (el nombre se lee entero); el módulo y el responsable, de a dos. */
+@media (max-width: 520px) {
+  .tk-datos.ed-datos > * { grid-column: span 6; }
+  .tk-datos.ed-datos > :nth-child(-n+3), .tk-datos.ed-datos > :last-child { grid-column: span 12; }
+}
+.va-deps { margin-bottom: 10px; }
+.va-deps tr[data-dep] { cursor: pointer; }
+.pa-prods { margin-top: 12px; }
+.pa-prods summary { cursor: pointer; font: 600 13.5px var(--sans); color: var(--txt-2); padding: 4px 0; }
+.pa-prods .st-prods { margin-top: 8px; }
+.tg-prod { margin: 4px 0 2px; }
+.tg-elegido { margin: 6px 0 10px; font-size: 14px; }
+.tg-elegido:empty { display: none; }
+.pos-tabla tr.tg-vieja td { color: var(--txt-3); text-decoration: line-through; }

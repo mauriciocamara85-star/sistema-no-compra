@@ -102,15 +102,17 @@
                   /* Las ventas por vendedor (SQL 192), como en la PC del local de BlueSoft. */
                   ['vendedores', 'Ventas por vendedor', 'vendedores']]],
       /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene.
-         La devolución a fábrica (SQL 189): lo que el local le devuelve, como en BlueSoft. */
-      ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['envios', 'Envíos internos', 'envio'], ['devoluciones', 'Devolución a fábrica', 'devolucion'], ['stock', 'Stock', 'stock']]],
+         La devolución a fábrica (SQL 189): lo que el local le devuelve, como en BlueSoft.
+         Los depósitos (SQL 193): el de cada temporada, para el stock de todo el local. */
+      ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['envios', 'Envíos internos', 'envio'], ['devoluciones', 'Devolución a fábrica', 'devolucion'], ['stock', 'Stock', 'stock'],
+                      ['depositos', 'Depósitos', 'deposito']]],
       /* Los gastos se cargan durante el día, lo de la caja fuerte se pasa antes de cerrar (SQL 180) y el cierre se hace a la noche (SQL 149);
          los retiros de fondos (SQL 191) sacan plata de la caja chica o de la fuerte. Los listados de todas las sucursales quedan en Gestión. */
       ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['retiros', 'Retiros de fondos', 'retiro'], ['cierre', 'Cierre de caja', 'caja']]]
     ],
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
-      ['Stock', [['stock', 'Stock', 'stock'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'], ['inventario', 'Inventario', 'inventario']]],
+      ['Stock', [['stock', 'Stock', 'stock'], ['depositos', 'Depósitos', 'deposito'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'], ['inventario', 'Inventario', 'inventario']]],
       /* La disponibilidad (SQL 195): cuánto hay en cada caja y, al tocarla, sus movimientos ("Consulta de Valores" de BlueSoft). */
       ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['reportes', 'Reportes', 'reportes']]],
@@ -122,11 +124,11 @@
   var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios' }, gestion: { remito_nuevo: 'remitos' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
   /* SQL 190: lo que pide cada pantalla del mostrador (las casillas de Config → Usuarios). Sin el permiso, no está en el menú. */
-  var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
+  var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, vendedores: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
-                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1 };
+                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
@@ -187,6 +189,7 @@
     fuerte: '<rect x="3" y="3" width="18" height="15" rx="2"/><circle cx="12" cy="10.5" r="3.5"/><path d="M12 10.5l2-2M7 18v3M17 18v3"/>',
     retiro: '<rect x="2" y="10" width="20" height="11" rx="2"/><circle cx="12" cy="15.5" r="2.5"/><path d="M12 7.5V2M9 4.5l3-3 3 3"/>',
     stock: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
+    deposito: '<path d="M3 21V8l9-5 9 5v13"/><path d="M7 21v-9h10v9"/><path d="M7 15h10M7 18h10"/>',
     envio: '<path d="M1 4h14v12H1z"/><path d="M15 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
     recepcion: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
     devolucion: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
@@ -292,7 +295,7 @@
 
   /* ── La base ── */
   var S = { ini: null, precios: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, cajaHecho: null,
-            cambioHecho: null, cbFoco: null, cbPagoHay: null, stock: {} };
+            cambioHecho: null, cbFoco: null, cbPagoHay: null, stock: {}, dep: {} };
   var V = null;    // la venta que se está armando
   var CB = null;   // el cambio que se está armando
 
@@ -308,7 +311,7 @@
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
       return 'Todavía falta correr el SQL ' + (/pos_disponibilidad|pos_caja_valores|pos_caja_ajust/.test(m) ? '195 (la disponibilidad de las cajas)' :
-                                             /pos_ventas_vendedor/.test(m) ? '192 (las ventas por vendedor)' : /pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
+                                             /pos_deposito|pos_remito_testigo|p_deposito/.test(m) ? '193 (los depósitos)' : /pos_ventas_vendedor/.test(m) ? '192 (las ventas por vendedor)' : /pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
                                              /pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
                                              /pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
                                              /pos_stock|pos_remito|pos_inventario/.test(m) ? '160 (el stock y los remitos)' : /pos_cambio/.test(m) ? '151 (los cambios)' : /pos_caja|pos_cierre/.test(m) ? '149 (el cierre de caja)' : /pos_tickets|pos_pruebas_borrar/.test(m) ? '147 (el del POS)' : '146 (el del POS)') + ' en Supabase.';
@@ -355,6 +358,40 @@
       (d.filas || []).forEach(function (f) { m[claveVar(f[0], f[1], f[2])] = f[3]; });
       return (S.stock[local] = { con: !!d.con_stock, m: m });
     }, function () { return null; });
+  }
+  /* ── Los depósitos (SQL 193): cada sucursal tiene uno o más; las ventas, los cambios y los remitos van al predeterminado ──
+     S.dep[local] = lo que devuelve pos_depositos de esa sucursal. Sin el SQL 193 (S.sin193): [] y todo sigue como antes,
+     un stock por local. Las funciones viejas no tienen p_deposito: sólo se manda cuando se eligió un depósito. */
+  function sinFuncion(e) { return /Could not find the function|schema cache|PGRST202/.test(String((e && e.message) || e || '')); }
+  function traerDepositos(local, forzar) {
+    if (!local || S.sin193) return Promise.resolve([]);
+    if (S.dep[local] && !forzar) return Promise.resolve(S.dep[local]);
+    return llamar('pos_depositos', { p_local: local }).then(function (d) { return (S.dep[local] = d || []); },
+      function (e) { if (sinFuncion(e)) S.sin193 = true; return []; });
+  }
+  function depPredeterminado(ds) { return (ds || []).filter(function (d) { return d.predeterminado; })[0] || null; }
+  function depDe(ds, id) { return (ds || []).filter(function (d) { return d.id === id; })[0] || null; }
+  /** «Verano 2027 (predeterminado)», para los desplegables. */
+  function nombreDep(d) { return d.nombre + (d.predeterminado ? ' (predeterminado)' : !d.activo ? ' (inactivo)' : !d.consulta ? ' (fuera de la consulta)' : ''); }
+  function pillsDep(d) {
+    return (d.predeterminado ? '<span class="pill pill-ok" title="Las ventas, los cambios y los remitos van a éste">Predeterminado</span>' : '') +
+      (!d.activo ? '<span class="pill pill-bad">Inactivo</span>' : !d.consulta ? '<span class="pill" title="No suma en la consulta de stock">Fuera de la consulta</span>' : '');
+  }
+  /** La temporada del depósito nuevo: de julio a diciembre, el Verano del año que sigue; de enero a junio, el Invierno de ese año. */
+  function temporadaNueva() {
+    var p = String(S.ini.hoy || '').split('-'), a = Number(p[0]) || new Date().getFullYear(), m = Number(p[1]) || new Date().getMonth() + 1;
+    return m >= 7 ? ['Verano', a + 1] : ['Invierno', a];
+  }
+  /** El campo «Depósito» de la venta y el cambio: el predeterminado de la sucursal (sin el SQL 193 sigue «Ventas»). */
+  function ponerDeposito(id, local) {
+    var i = $(id);
+    if (i) i.setAttribute('data-l', local || '');
+    traerDepositos(local).then(function (ds) {
+      var x = $(id), d = depPredeterminado(ds);
+      if (!x || !d || x.getAttribute('data-l') !== local) return;
+      x.value = d.nombre;
+      x.title = 'El depósito predeterminado de la sucursal: se cambia en Mercadería → Depósitos';
+    });
   }
   /** Cuántas hay de una prenda en el local según el sistema; null si no se sabe (todavía no tiene stock cargado). */
   function hayEnLocal(local, cod, talle, color) {
@@ -443,7 +480,7 @@
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
-                devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo }[v];
+                devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo, depositos: verDepositos }[v];
     if (ver) ver(); else verPronto(v);
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
@@ -793,7 +830,7 @@
           campo('', 'Forma de pago', '<select id="vForma">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }).concat([['multiple', 'Múltiple']]), '') + '</select>') +
           '<div class="tk-pagox" id="vPagoX"></div>' +
           campo('c6', 'Sucursal', '<select id="vLocal" class="desplegable"></select>') +
-          campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="Lo vendido sale del stock de la sucursal">') +
+          campo('c3', 'Depósito', '<input type="text" id="vDep" value="Ventas" readonly title="Lo vendido sale del stock de la sucursal">') +
           campo('c3', 'Caja', '<input type="text" value="Chica" readonly title="La caja chica del local">') +
         '</div>' +
         '<div class="tk-tot">' +
@@ -855,6 +892,7 @@
       llenarVendedores();
       cambiarLista(listaDe(l));
       traerStock(l.id).then(function () { if (S.vista === 'venta' && V.local_id === l.id) pintar(); });
+      ponerDeposito('vDep', l.id);
     };
     $('tDescBtn').onclick = abrirDescuento;
     $('vLinea').onclick = function () { abrirLineaLibre(); };
@@ -872,6 +910,7 @@
     pintarPago();
     $('vFilas').innerHTML = '<tr class="tk-vacia"><td colspan="10">Cargando los precios…</td></tr>';
     /* Los precios y el stock del local (para avisar si una prenda no está) a la vez; el stock nunca falla. */
+    ponerDeposito('vDep', V.local_id);
     Promise.all([asegurarPrecios(V.lista_id), traerStock(V.local_id)]).then(function () { pintar(); }, function (e) { pintar(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
     /* En la compu, el foco en Producto: la pistola dispara sin tocar nada. En el celular no (abriría el teclado). */
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('vProd'); if (p) p.focus(); }, 0);
@@ -2235,7 +2274,7 @@
           campo('', 'Forma de pago', '<select id="cbForma">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), CB.forma) + '</select>') +
           '<div class="tk-pagox" id="cbPagoX"></div>' +
           campo('c6', 'Sucursal', '<select id="cbLocal" class="desplegable"></select>') +
-          campo('c3', 'Depósito', '<input type="text" value="Ventas" readonly title="Lo que vuelve entra al stock de la sucursal y lo que se lleva sale">') +
+          campo('c3', 'Depósito', '<input type="text" id="cbDep" value="Ventas" readonly title="Lo que vuelve entra al stock de la sucursal y lo que se lleva sale">') +
           campo('c3', 'Caja', '<input type="text" value="Chica" readonly title="La caja chica del local">') +
         '</div>' +
         '<div class="tk-tot">' +
@@ -2274,6 +2313,7 @@
       llenarVendedores(true);
       cambiarListaCb(listaDe(l));
       traerStock(l.id).then(function () { if (S.vista === 'cambio' && CB.local_id === l.id) pintarCambio(); });
+      ponerDeposito('cbDep', l.id);
     };
     $('cbObs').oninput = function () { CB.observaciones = this.value; guardarBorradorCb(); };
     $('cbLimpiar').onclick = function () {
@@ -2306,6 +2346,7 @@
     });
     pintarPago(true);
     $('cbFilasV').innerHTML = $('cbFilasS').innerHTML = '<tr class="tk-vacia"><td colspan="9">Cargando los precios…</td></tr>';
+    ponerDeposito('cbDep', CB.local_id);
     Promise.all([asegurarPrecios(CB.lista_id), traerStock(CB.local_id)]).then(function () { pintarCambio(); }, function (e) { pintarCambio(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
     /* En la compu, el foco en lo que vuelve: la pistola dispara sin tocar nada. En el celular no (abriría el teclado). */
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('cbVuelve'); if (p) p.focus(); }, 0);
@@ -4330,7 +4371,7 @@
 
   function verStock() {
     var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
-    var F = S.stF = S.stF || { local: gestion ? '' : l.id, q: '', rubro: '', cero: false, neg: false };
+    var F = S.stF = S.stF || { local: gestion ? '' : l.id, q: '', rubro: '', cero: false, neg: false, dep: '' };
     if (!gestion && !localDe(F.local)) F.local = l.id;
     var vista = leerJSON('pos_stock_vista', 'producto');
     if (!ST_VISTAS.some(function (v) { return v[0] === vista; })) vista = 'producto';
@@ -4341,6 +4382,7 @@
                 : '<button type="button" class="btn btn-sec btn-chico" data-ir="remitos">Remitos</button>') +
       '<div class="pos-filtros">' +
         campo('', 'Sucursal', '<select id="stLocal" class="desplegable">' + (gestion ? '<option value="">Todas</option>' : '') + opcionesLocales(F.local) + '</select>') +
+        '<div id="stDepZona" class="st-dep-zona"></div>' +
         campo('ancho', 'Buscar', '<input type="search" id="stBuscar" placeholder="Código o nombre del producto" autocomplete="off" spellcheck="false">') +
         campo('', 'Rubro', '<select id="stRubro"><option value="">Todos</option>' + opciones(RUBROS.map(function (r) { return [r, r]; }), F.rubro) + '</select>') +
         '<label class="pos-check"><input type="checkbox" id="stCero"' + (F.cero ? ' checked' : '') + '> Con los que están en 0</label>' +
@@ -4354,7 +4396,7 @@
     engancharIr(c);
     $('stBuscar').value = F.q;
     var t = null, pedido = 0, P = {}, orden = [], mirando = null;
-    $('stLocal').onchange = function () { F.local = this.value; if (F.local) S.stLocal = F.local; cargar(); };
+    $('stLocal').onchange = function () { F.local = this.value; F.dep = ''; if (F.local) S.stLocal = F.local; pintarDep(); cargar(); };
     $('stBuscar').oninput = function () { clearTimeout(t); t = setTimeout(function () { F.q = $('stBuscar').value; cargar(); }, 250); };
     $('stRubro').onchange = function () { F.rubro = this.value; cargar(); };
     $('stCero').onchange = function () { F.cero = this.checked; cargar(); };
@@ -4367,7 +4409,7 @@
       if (b.id === 'stMas') { masProductos(); return; }
       if (b.hasAttribute('data-rubro')) { F.rubro = b.getAttribute('data-rubro'); $('stRubro').value = F.rubro; ponerVista('producto'); return; }
       var cod = b.getAttribute('data-cod'), tl = b.getAttribute('data-t'), col = b.getAttribute('data-c'), lo = b.getAttribute('data-l') || F.local;
-      if (lo) abrirVariante(lo, cod, tl, col, recargar);
+      if (lo) abrirVariante(lo, cod, tl, col, recargar, F.local && F.dep || null);
       else abrirVarianteLocales(cod, tl, col, P[cod].celdas[tl + '|' + col].locales, P[cod].desc, recargar);
     };
     $('stLista').onkeydown = function (e) {
@@ -4386,8 +4428,24 @@
     function filtros() {
       var q = F.q.trim();
       /* Con un rubro, sólo los del catálogo; sin rubro, también lo que no está en el catálogo (por código o descripción). */
-      return { p_local: F.local || null, p_codigos: q || F.rubro ? codigosDe(q, F.rubro) : null, p_buscar: q && !F.rubro ? q : null,
-               p_ocultar_sin: !F.cero, p_negativos: F.neg };
+      var p = { p_local: F.local || null, p_codigos: q || F.rubro ? codigosDe(q, F.rubro) : null, p_buscar: q && !F.rubro ? q : null,
+                p_ocultar_sin: !F.cero, p_negativos: F.neg };
+      if (F.local && F.dep) p.p_deposito = F.dep;   // SQL 193: un depósito solo
+      return p;
+    }
+    /* SQL 193: con una sucursal que tiene más de un depósito, cuál mirar (sin elegir, la suma de los que cuentan para la consulta). */
+    function pintarDep() {
+      var loc = F.local;
+      $('stDepZona').innerHTML = '';
+      if (!loc) return;
+      traerDepositos(loc).then(function (ds) {
+        var z = $('stDepZona');
+        if (F.local !== loc || !z) return;
+        if (F.dep && !depDe(ds, F.dep)) { F.dep = ''; cargar(); }
+        if (ds.length < 2) return;
+        z.innerHTML = campo('', 'Depósito', '<select id="stDep"><option value="">Todos los de la consulta</option>' + opciones(ds.map(function (d) { return [d.id, nombreDep(d)]; }), F.dep) + '</select>');
+        $('stDep').onchange = function () { F.dep = this.value; cargar(); };
+      });
     }
     /* mantener: después de un ajuste vuelve a traer lo que ya se veía y deja la lista donde estaba. */
     function cargar(mantener) {
@@ -4411,6 +4469,11 @@
       var z = $('stLista'), lo = localDe(F.local);
       P = {};
       orden = [];
+      if (!d.cargado && F.local && F.dep) {   // SQL 193: un depósito nuevo, todavía vacío
+        $('stPie').innerHTML = '';
+        z.innerHTML = '<div class="pos-cartel"><b>Ese depósito todavía no tuvo mercadería.</b> Se llena con Envíos internos → Nuevo envío → Entre depósitos.</div>';
+        return;
+      }
       if (!d.cargado) {
         $('stPie').innerHTML = '';
         z.innerHTML = '<div class="pos-cartel"><b>Todavía no hay stock cargado' + (lo ? ' en ' + esc(nombreLocal(lo)) : '') + '.</b> Se carga una vez con un inventario ' +
@@ -4568,7 +4631,9 @@
           });
         });
         if (!filas.length) { avisar('err', 'No hay nada para bajar con esos filtros.'); return; }
-        bajarCsv('stock-' + (lo ? normal(nombreLocal(lo)).split(/[^a-z0-9]+/).filter(Boolean).join('-') : 'todas-las-sucursales') + '-' + Interfaz.fecha.hoy() + '.csv',
+        var dp = F.local && F.dep ? depDe(S.dep[F.local], F.dep) : null;
+        bajarCsv('stock-' + (lo ? normal(nombreLocal(lo)).split(/[^a-z0-9]+/).filter(Boolean).join('-') : 'todas-las-sucursales') +
+                 (dp ? '-' + normal(dp.nombre).split(/[^a-z0-9]+/).filter(Boolean).join('-') : '') + '-' + Interfaz.fecha.hoy() + '.csv',
                  ['Sucursal', 'Código', 'Producto', 'Rubro', 'Talle', 'Color', 'Hay', 'Entraron', 'Salieron'], filas);
         if (d.mas) avisar('err', 'Son más de 60.000 renglones: el Excel trae los primeros. Elegí una sucursal o un rubro para bajar el resto.');
       }).catch(function (e) { avisar('err', mensajeDe(e)); }).then(function () {
@@ -4578,6 +4643,7 @@
       });
     }
     cargar();
+    pintarDep();
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var b = $('stBuscar'); if (b) b.focus(); }, 0);
   }
 
@@ -4602,31 +4668,56 @@
     return [m.detalle, quien].filter(Boolean).join(' · ');
   }
 
-  /** Una variante en una sucursal: cuánto hay, de dónde sale ("Ver detalle de movimientos") y, en Gestión, el ajuste. */
-  function abrirVariante(localId, cod, talle, color, alCambiar) {
+  /** Una variante en una sucursal: cuánto hay, de dónde sale ("Ver detalle de movimientos") y, en Gestión, el ajuste.
+      SQL 193: dep, la de un depósito solo; sin dep, la suma de los que cuentan para la consulta y cuánto hay en cada depósito.
+      El ajuste va al depósito elegido o, sin elegir, al predeterminado: "hay en realidad" es contra lo que tiene ése. */
+  function abrirVariante(localId, cod, talle, color, alCambiar, dep) {
     var tit = esc(cod) + ' · ' + esc(nombreTalle(talle)) + ' · ' + esc(nombreCol(color, cod));
     var caja = ventana('<h3 id="posVentTit">' + tit + '</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
-    llamar('pos_stock_variante', { p_local: localId, p_codigo: cod, p_talle: talle, p_color: color }).then(function (v) {
+    var pv = { p_local: localId, p_codigo: cod, p_talle: talle, p_color: color };
+    if (dep) pv.p_deposito = dep;
+    Promise.all([llamar('pos_stock_variante', pv), traerDepositos(localId)]).then(function (rs) {
       if (!caja.isConnected) return;
-      var s = v.stock || { cantidad: 0, entradas: 0, salidas: 0 }, movs = v.movimientos || [];
-      dentro.innerHTML = '<h3 id="posVentTit">' + tit + '</h3><p class="pos-bajada">' + esc(nombreProd(cod, s.descripcion)) + ' · ' + esc(bonito(v.local || '')) + '</p>' +
+      var v = rs[0], ds = rs[1], s = v.stock || { cantidad: 0, entradas: 0, salidas: 0 }, movs = v.movimientos || [];
+      var varios = ds.length > 1, pred = depPredeterminado(ds), cuanto = {};
+      (v.depositos || []).forEach(function (x) { cuanto[x.id] = Number(x.cantidad) || 0; });
+      var base = !varios ? Number(s.cantidad) || 0 : cuanto[dep || (pred && pred.id)] || 0, depAj = dep ? v.deposito : varios && pred ? pred.nombre : null;
+      var enDeps = ds.filter(function (d) { return cuanto[d.id] || d.predeterminado || d.id === dep; });
+      dentro.innerHTML = '<h3 id="posVentTit">' + tit + '</h3><p class="pos-bajada">' + esc(nombreProd(cod, s.descripcion)) + ' · ' + esc(bonito(v.local || '')) +
+          (v.deposito ? ' · <b>' + esc(v.deposito) + '</b>' : varios ? ' · los depósitos de la consulta' : '') + '</p>' +
         '<div class="pos-totales"><div class="pos-kpi fuerte"><span>Hay</span><b>' + num(s.cantidad) + '</b></div>' +
           '<div class="pos-kpi"><span>Entraron</span><b>' + num(s.entradas) + '</b></div><div class="pos-kpi"><span>Salieron</span><b>' + num(s.salidas) + '</b></div></div>' +
-        (movs.length ? '<div class="pos-marco-tabla st-movs"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Qué</th><th>Detalle</th><th>Quién</th><th class="n">Cant.</th></tr></thead><tbody>' +
+        (varios ? '<p class="pos-lbl rm-leyenda">En cada depósito</p><div class="pos-marco-tabla va-deps"><table class="pos-tabla"><thead><tr><th>Depósito</th><th class="n">Hay</th></tr></thead><tbody>' +
+            enDeps.map(function (d) {
+              var n = cuanto[d.id] || 0;
+              return '<tr data-dep="' + esc(d.id) + '" tabindex="0"' + (d.id === dep ? ' class="rn-marca"' : '') + ' title="Ver sólo ' + esc(d.nombre) + '"><td>' + esc(d.nombre) + ' ' + pillsDep(d) + '</td>' +
+                '<td class="n"><b class="' + (n < 0 ? 'st-sale' : '') + '">' + num(n) + '</b></td></tr>';
+            }).join('') + '</tbody></table></div>' +
+            (dep ? '<p class="pos-ayuda"><button type="button" class="pos-link" id="vaTodos">Ver la suma de los de la consulta</button></p>' : '') : '') +
+        (movs.length ? '<div class="pos-marco-tabla st-movs"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Qué</th>' + (varios ? '<th>Depósito</th>' : '') +
+            '<th>Detalle</th><th>Quién</th><th class="n">Cant.</th></tr></thead><tbody>' +
             movs.map(function (m) {
-              return '<tr><td>' + esc(fechaHora(m.fecha)) + '</td><td>' + esc(m.ref || m.tipo) + '</td><td>' + esc(detalleMov(m)) + '</td><td>' + esc(m.persona || '—') + '</td>' +
+              return '<tr><td>' + esc(fechaHora(m.fecha)) + '</td><td>' + esc(m.ref || m.tipo) + '</td>' + (varios ? '<td>' + esc(m.deposito || '') + '</td>' : '') +
+                '<td>' + esc(detalleMov(m)) + '</td><td>' + esc(m.persona || '—') + '</td>' +
                 '<td class="n"><b class="' + (m.cantidad < 0 ? 'st-sale' : 'st-entra') + '">' + (m.cantidad > 0 ? '+' : '−') + miles(Math.abs(m.cantidad)) + '</b></td></tr>';
             }).join('') + '</tbody></table></div>' + (movs.length >= 200 ? '<p class="pos-mas">Se ven los últimos 200 movimientos.</p>' : '')
-          : '<div class="pos-cartel">Todavía no tuvo movimientos en esta sucursal.</div>') +
+          : '<div class="pos-cartel">Todavía no tuvo movimientos ' + (dep ? 'en este depósito.' : 'en esta sucursal.') + '</div>') +
         '<div id="vaAjuste"></div><div class="pos-pie">' +
           (MODO === 'gestion' ? '<button type="button" class="btn btn-sec btn-chico izq" id="vaAjustar">Ajustar…</button>' : '<span class="pos-ayuda izq">Los ajustes (falla, robo, error de carga) se hacen en Gestión → Stock.</span>') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      dentro.querySelectorAll('.va-deps tr[data-dep]').forEach(function (tr) {
+        tr.onclick = function () { abrirVariante(localId, cod, talle, color, alCambiar, tr.getAttribute('data-dep')); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+      var vt = dentro.querySelector('#vaTodos');
+      if (vt) vt.onclick = function () { abrirVariante(localId, cod, talle, color, alCambiar, null); };
       var aj = dentro.querySelector('#vaAjustar');
       if (aj) aj.onclick = function () {
         aj.remove();
         var z = dentro.querySelector('#vaAjuste'), clave = nuevaClave();
-        z.innerHTML = '<div class="pos-cartel st-ajuste"><p class="pos-ayuda">Escribí cuántas hay de verdad: el sistema pasa a decir eso y queda anotado con el motivo.</p><div class="pos-campos">' +
-            campo('', 'Hay en realidad', '<input type="number" id="vaHay" min="0" max="99999" value="' + Math.max(0, Number(s.cantidad) || 0) + '">') +
+        z.innerHTML = '<div class="pos-cartel st-ajuste"><p class="pos-ayuda">Escribí cuántas hay de verdad' + (depAj ? ' en <b>«' + esc(depAj) + '»</b>' : '') +
+            ': el sistema pasa a decir eso y queda anotado con el motivo.</p><div class="pos-campos">' +
+            campo('', 'Hay en realidad', '<input type="number" id="vaHay" min="0" max="99999" value="' + Math.max(0, base) + '">') +
             campo('', 'Motivo', '<select id="vaMotivo"><option value="">Elegí…</option>' + opciones(MOTIVOS_AJUSTE.map(function (m) { return [m, m]; }), '') + '</select>') +
             campo('ancho', 'Detalle <span class="lbl-opc">(con «Otro», contá cuál)</span>', '<input type="text" id="vaDetalle" maxlength="200">') +
           '</div><div class="pos-error" id="vaError"></div><div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="vaOk">Guardar el ajuste</button></div></div>';
@@ -4634,21 +4725,202 @@
         hay.focus(); hay.select();
         z.querySelector('#vaOk').onclick = function () {
           var n = hay.value.trim(), mot = z.querySelector('#vaMotivo').value, det = z.querySelector('#vaDetalle').value.trim(), bt = this;
-          if (!errorEn(z, 'vaError', !/^\d{1,5}$/.test(n) ? 'Escribí cuántas hay (de 0 a 99999).' : Number(n) === Number(s.cantidad) ? 'El sistema ya dice ' + s.cantidad + ': no hay nada que ajustar.' :
+          if (!errorEn(z, 'vaError', !/^\d{1,5}$/.test(n) ? 'Escribí cuántas hay (de 0 a 99999).' : Number(n) === base ? 'El sistema ya dice ' + base + ': no hay nada que ajustar.' :
                                      !mot ? 'Elegí el motivo.' : mot === 'Otro' && !det ? 'Escribí el motivo.' : '')) return;
           bt.disabled = true;
-          llamar('pos_stock_ajustar', { p: { local_id: localId, codigo: cod, talle: talle, color: color, cantidad: Number(n), motivo: mot, detalle: det,
-                                             descripcion: PROD[cod] ? PROD[cod][1] : (s.descripcion || ''), clave: clave } }).then(function (r) {
-            avisar('ok', cod + ' ' + nombreTalle(talle) + ' ' + nombreCol(color, cod) + ': ' + (r.ya ? 'ya estaba ajustado.' : 'de ' + r.antes + ' a ' + r.ahora + '.'));
+          var pa = { local_id: localId, codigo: cod, talle: talle, color: color, cantidad: Number(n), motivo: mot, detalle: det,
+                     descripcion: PROD[cod] ? PROD[cod][1] : (s.descripcion || ''), clave: clave };
+          if (dep) pa.deposito_id = dep;   // SQL 193 (sin elegir, la base usa el predeterminado)
+          llamar('pos_stock_ajustar', { p: pa }).then(function (r) {
+            avisar('ok', cod + ' ' + nombreTalle(talle) + ' ' + nombreCol(color, cod) + (r.deposito && varios ? ' en «' + r.deposito + '»' : '') + ': ' + (r.ya ? 'ya estaba ajustado.' : 'de ' + r.antes + ' a ' + r.ahora + '.'));
             delete S.stock[localId];
+            delete S.dep[localId];
             if (alCambiar) alCambiar();
-            abrirVariante(localId, cod, talle, color, alCambiar);
+            abrirVariante(localId, cod, talle, color, alCambiar, dep);
           }).catch(function (e) { bt.disabled = false; errorEn(z, 'vaError', mensajeDe(e)); });
         };
       };
     }).catch(function (e) {
       if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">' + tit + '</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
     });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     DEPÓSITOS (SQL 193): los "Depósitos" de BlueSoft
+     Cada sucursal arranca con uno, «Principal», con todo su stock. Para el
+     stock de todo el local (cada seis meses): un depósito nuevo con la
+     temporada y el año («Verano 2027»), los envíos entre depósitos módulo
+     por módulo (Envíos internos), el control de cada módulo con productos
+     testigo y «Predeterminar» el nuevo: desde ahí las ventas, los cambios y
+     los remitos van a él. Lo que quedó en el de antes es lo que no se
+     encontró (con el tilde, deja de contar para la consulta de stock).
+     ════════════════════════════════════════════════════════════════════ */
+  function verDepositos() {
+    var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
+    var F = S.dpF = S.dpF || { local: gestion && puede('locales') ? '' : l.id, q: '', activos: true };
+    if (F.local && !localMio(F.local)) F.local = l.id;
+    c.innerHTML = cabeza('Depósitos', 'Dónde está la mercadería de cada sucursal. Las ventas, los cambios y los remitos van al predeterminado. Tocá uno para verlo o cambiarlo.',
+        '<button type="button" class="btn btn-sec btn-chico" id="depBajar" disabled>Bajar para Excel</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="depNuevo">Nuevo depósito</button>') +
+      '<div class="pos-filtros">' +
+        campo('', 'Sucursal', '<select id="depLocal" class="desplegable">' + (gestion ? todasLasSucursales() : '') + opcionesLocales(F.local) + '</select>') +
+        campo('ancho', 'Filtrar', '<input type="search" id="depBuscar" placeholder="Nombre o código" autocomplete="off" spellcheck="false">') +
+        '<label class="pos-check"><input type="checkbox" id="depActivos"' + (F.activos ? ' checked' : '') + '> Activos</label>' +
+      '</div>' +
+      '<details class="dep-pasos"' + (leerJSON('pos_dep_pasos', 'abierto') !== 'cerrado' ? ' open' : '') + '><summary>El stock de todo el local, paso a paso</summary><ol>' +
+        '<li><b>Nuevo depósito</b>, con la temporada y el año (por ejemplo, Verano 2027).</li>' +
+        '<li>En <b>Envíos internos → Nuevo envío → Entre depósitos del local</b>, un envío por módulo: del depósito de antes al nuevo, con todas las prendas del módulo.</li>' +
+        '<li>Cada módulo se controla con dos productos testigo (en el envío, <b>Controlar con testigos</b>). Si no coincide, se anula el envío y se pasa de nuevo.</li>' +
+        '<li>Con todo pasado, el nuevo → <b>Predeterminar</b>: desde ahí cada venta descuenta de él. Lo que quedó en el de antes es lo que no se encontró.</li>' +
+      '</ol></details>' +
+      '<div id="depLista"><p class="cargando">Cargando…</p></div>';
+    F.local = $('depLocal').value;
+    $('depBuscar').value = F.q;
+    c.querySelector('.dep-pasos').addEventListener('toggle', function () { guardarJSON('pos_dep_pasos', this.open ? 'abierto' : 'cerrado'); });
+    var todos = [], filas = [], pedido = 0, t = null;
+    $('depLocal').onchange = function () { F.local = this.value; if (F.local) { S.stLocal = F.local; recordarLocal(F.local); } cargar(); };
+    $('depBuscar').oninput = function () { clearTimeout(t); t = setTimeout(function () { F.q = $('depBuscar').value; pintar(); }, 150); };
+    $('depActivos').onchange = function () { F.activos = this.checked; pintar(); };
+    $('depNuevo').onclick = function () { abrirDeposito(null, F.local || l.id, cargar); };
+    function cargar() {
+      var n = ++pedido;
+      $('depLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('depBajar').disabled = true;
+      llamar('pos_depositos', { p_local: F.local || null }).then(function (d) {
+        if (n !== pedido || !$('depLista')) return;
+        todos = d || [];
+        if (F.local) S.dep[F.local] = todos;
+        pintar();
+      }).catch(function (e) {
+        if (n !== pedido || !$('depLista')) return;
+        if (sinFuncion(e)) S.sin193 = true;
+        $('depLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+      });
+    }
+    function pintar() {
+      var q = normal(F.q);
+      filas = todos.filter(function (d) { return (!F.activos || d.activo) && (!q || normal(d.nombre).indexOf(q) >= 0 || String(d.numero) === q); });
+      $('depBajar').disabled = !filas.length;
+      if (!filas.length) {
+        $('depLista').innerHTML = '<div class="pos-cartel">' + (todos.length ? 'Ningún depósito con ese filtro.' : 'Esta sucursal todavía no tiene depósitos.') + '</div>';
+        return;
+      }
+      $('depLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla dep-tabla"><thead><tr><th>Código</th><th>Descripción</th>' + (F.local ? '' : '<th>Sucursal</th>') +
+          '<th class="n">Unidades</th><th>Estado</th><th>Se creó</th></tr></thead><tbody>' +
+        filas.map(function (d, i) {
+          var cl = [d.activo ? '' : 'dep-inactivo', d.id === S.dpMarcar ? 'recien' : ''].filter(Boolean).join(' ');
+          return '<tr data-dep="' + i + '" tabindex="0"' + (cl ? ' class="' + cl + '"' : '') + '><td><b>' + esc(d.numero) + '</b></td><td><b>' + esc(d.nombre) + '</b></td>' +
+            (F.local ? '' : '<td>' + esc(bonito(d.local)) + '</td>') +
+            '<td class="n">' + num(d.unidades) + (d.negativos ? '<small class="st-chico st-sale">' + num(d.negativos) + (d.negativos === 1 ? ' renglón' : ' renglones') + ' en negativo</small>' : '') + '</td>' +
+            '<td class="dep-est">' + pillsDep(d) + '</td><td>' + esc(fechaHora(d.creado_en)) + (d.creado_nombre ? '<small class="st-chico">' + esc(d.creado_nombre) + '</small>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      $('depLista').querySelectorAll('tr[data-dep]').forEach(function (tr) {
+        var d = filas[Number(tr.getAttribute('data-dep'))];
+        tr.onclick = function () { abrirDeposito(d, d.local_id, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+      var m = $('depLista').querySelector('tr.recien');
+      if (m && m.scrollIntoView) m.scrollIntoView({ block: 'nearest' });
+      S.dpMarcar = null;
+    }
+    $('depBajar').onclick = function () {
+      var lo = localDe(F.local);
+      bajarCsv('Depósitos ' + (lo ? nombreLocal(lo) : 'todas las sucursales') + ' ' + Interfaz.fecha.hoy() + '.csv',
+        ['Código', 'Descripción', 'Sucursal', 'Temporada', 'Año', 'Unidades', 'Renglones', 'En negativo', 'Predeterminado', 'Para la consulta de stock', 'Activo', 'Se creó', 'Lo creó'],
+        filas.map(function (d) {
+          return [d.numero, d.nombre, bonito(d.local), d.temporada || '', d.anio || '', Number(d.unidades) || 0, Number(d.renglones) || 0, Number(d.negativos) || 0,
+                  d.predeterminado ? 'Sí' : 'No', d.consulta ? 'Sí' : 'No', d.activo ? 'Sí' : 'No', fechaHora(d.creado_en), d.creado_nombre || ''];
+        }));
+    };
+    cargar();
+  }
+
+  /** La ficha de un depósito, como la de BlueSoft (d null: uno nuevo en la sucursal localId): Guardar, Predeterminar y Eliminar. */
+  function abrirDeposito(d, localId, alCambiar) {
+    var nuevo = !d, tn = temporadaNueva(), temp = d ? !!d.temporada : true;
+    var caja = ventana('<h3 id="posVentTit">' + (nuevo ? 'Nuevo depósito' : esc(d.nombre) + ' ' + pillsDep(d)) + '</h3>' +
+      (nuevo ? '<p class="pos-bajada">El de la temporada nueva, para el stock de todo el local. Después se pasa la ropa con Envíos internos → Nuevo envío → Entre depósitos del local.</p>' :
+       '<p class="pos-bajada">' + num(d.unidades) + (Math.abs(d.unidades) === 1 ? ' unidad' : ' unidades') + ' · se creó el ' + esc(fechaHora(d.creado_en)) + (d.creado_nombre ? ' (' + esc(d.creado_nombre) + ')' : '') +
+         (d.predeterminado && d.predeterminado_en ? ' · predeterminado desde el ' + esc(fechaHora(d.predeterminado_en)) : '') + '</p>') +
+      '<div class="pos-campos dep-campos">' +
+        campo('', 'Código', '<input type="text" value="' + (nuevo ? 'Nuevo' : esc(d.numero)) + '" readonly tabindex="-1">') +
+        campo('', 'Sucursal', nuevo ? '<select id="dfLocal" class="desplegable">' + opcionesLocales(localId) + '</select>' : '<input type="text" value="' + esc(bonito(d.local)) + '" readonly tabindex="-1">') +
+        campo('', 'Tipo', '<select id="dfTipo">' + opciones([['temporada', 'De temporada'], ['otro', 'Otro (fallas…)']], temp ? 'temporada' : 'otro') + '</select>') +
+        campo('dep-temp', 'Temporada', '<select id="dfTemp">' + opciones([['Verano', 'Verano'], ['Invierno', 'Invierno']], d && d.temporada || tn[0]) + '</select>') +
+        campo('dep-temp', 'Año', '<input type="number" id="dfAnio" min="2000" max="2100" value="' + esc(d && d.anio || tn[1]) + '">') +
+        campo('dep-otro', 'Descripción', '<input type="text" id="dfNombre" maxlength="40" autocomplete="off" placeholder="Ej.: Depósito de fallas" value="' + esc(d && !d.temporada ? d.nombre : '') + '">') +
+      '</div>' +
+      '<div class="dep-checks"><label class="pos-check"><input type="checkbox" id="dfConsulta"' + (!d || d.consulta ? ' checked' : '') + (d && d.predeterminado ? ' disabled' : '') + '> Considerar para la consulta de stock</label>' +
+      '<label class="pos-check"><input type="checkbox" id="dfActivo"' + (!d || d.activo ? ' checked' : '') + (d && d.predeterminado ? ' disabled' : '') + '> Activo</label></div>' +
+      (d && d.predeterminado ? '<p class="pos-ayuda">Es el predeterminado: cuenta siempre para la consulta y no se desactiva.</p>' : '') +
+      '<div class="pos-error" id="dfError"></div><div id="dfZona"></div>' +
+      '<div class="pos-pie">' +
+        (d && !d.predeterminado && !d.usado ? '<button type="button" class="btn btn-sec btn-chico izq" id="dfBorrar">Eliminar</button>' : '') +
+        (d && !d.predeterminado && d.activo ? '<button type="button" class="btn btn-sec btn-chico' + (d.usado ? ' izq' : '') + '" id="dfPred">Predeterminar</button>' : '') +
+        '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cerrar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="dfGuardar">Guardar</button></div>');
+    var tipo = caja.querySelector('#dfTipo');
+    function verTipo() {
+      var t = tipo.value === 'temporada';
+      caja.querySelectorAll('.dep-temp').forEach(function (x) { x.style.display = t ? '' : 'none'; });
+      caja.querySelectorAll('.dep-otro').forEach(function (x) { x.style.display = t ? 'none' : ''; });
+    }
+    tipo.onchange = function () { verTipo(); (tipo.value === 'temporada' ? caja.querySelector('#dfAnio') : caja.querySelector('#dfNombre')).focus(); };
+    verTipo();
+    caja.querySelector('#dfGuardar').onclick = function () {
+      var bt = this, t = tipo.value === 'temporada', anio = caja.querySelector('#dfAnio').value.trim(), nom = caja.querySelector('#dfNombre').value.trim();
+      if (!errorEn(caja, 'dfError', t && !/^\d{4}$/.test(anio) ? 'Escribí el año (por ejemplo, ' + tn[1] + ').' : !t && !nom ? 'Escribí la descripción del depósito.' : '')) return;
+      var loc = nuevo ? caja.querySelector('#dfLocal').value : d.local_id;
+      bt.disabled = true;
+      llamar('pos_deposito_guardar', { p: { id: d ? d.id : null, local_id: loc, temporada: t ? caja.querySelector('#dfTemp').value : null, anio: t ? Number(anio) : null,
+                                            nombre: t ? null : nom, consulta: caja.querySelector('#dfConsulta').checked, activo: caja.querySelector('#dfActivo').checked } }).then(function (r) {
+        avisar('ok', r.nuevo ? 'Depósito «' + r.nombre + '» creado (código ' + r.numero + '). Ahora pasá la ropa con Envíos internos → Nuevo envío → Entre depósitos del local.'
+                             : 'Depósito «' + r.nombre + '» guardado.');
+        delete S.dep[loc];
+        delete S.stock[loc];
+        S.dpMarcar = r.id;
+        cerrarVentana();
+        if (alCambiar) alCambiar();
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'dfError', mensajeDe(e)); });
+    };
+    /* «Predeterminar»: lo que hace en una frase, lo que quedó en el de antes y si ése deja de contar para la consulta. */
+    var pd = caja.querySelector('#dfPred');
+    if (pd) pd.onclick = function () {
+      pd.disabled = true;
+      traerDepositos(d.local_id, true).then(function (ds) {
+        var v = depPredeterminado(ds), z = caja.querySelector('#dfZona');
+        pd.remove();
+        z.innerHTML = '<div class="pos-cartel st-dif dep-pred">Desde ahora las ventas, los cambios y los remitos de ' + esc(bonito(d.local)) + ' van a <b>«' + esc(d.nombre) + '»</b>.' +
+          (v ? ' En «' + esc(v.nombre) + '» quedan <b>' + num(v.unidades) + (Math.abs(v.unidades) === 1 ? ' prenda' : ' prendas') + '</b>: si ya pasaste todos los módulos, es lo que no se encontró.' +
+               '<label class="pos-check"><input type="checkbox" id="dfSacar" checked> Que «' + esc(v.nombre) + '» deje de contar para la consulta de stock</label>' : '') +
+          '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="dfPredOk">Predeterminar «' + esc(d.nombre) + '»</button></div></div>';
+        var ok = z.querySelector('#dfPredOk'), sc = z.querySelector('#dfSacar');
+        ok.focus();
+        ok.onclick = function () {
+          ok.disabled = true;
+          llamar('pos_deposito_predeterminar', { p_id: d.id, p_sacar_viejo: !!(sc && sc.checked) }).then(function (r) {
+            avisar('ok', 'Listo: ' + bonito(d.local) + ' vende de «' + r.nombre + '».' +
+                         (r.anterior ? ' En «' + r.anterior + '» quedaron ' + num(r.quedaron) + (Math.abs(r.quedaron) === 1 ? ' prenda.' : ' prendas.') : ''));
+            delete S.dep[d.local_id];
+            delete S.stock[d.local_id];
+            S.dpMarcar = d.id;
+            cerrarVentana();
+            if (alCambiar) alCambiar();
+          }).catch(function (e) { ok.disabled = false; errorEn(caja, 'dfError', mensajeDe(e)); });
+        };
+      });
+    };
+    var bo = caja.querySelector('#dfBorrar');
+    if (bo) bo.onclick = function () {
+      if (!confirm('¿Eliminar el depósito «' + d.nombre + '»? Nunca tuvo mercadería.')) return;
+      bo.disabled = true;
+      llamar('pos_deposito_borrar', { p_id: d.id }).then(function () {
+        avisar('ok', 'Depósito «' + d.nombre + '» eliminado.');
+        delete S.dep[d.local_id];
+        cerrarVentana();
+        if (alCambiar) alCambiar();
+      }).catch(function (e) { bo.disabled = false; errorEn(caja, 'dfError', mensajeDe(e)); });
+    };
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -4680,7 +4952,7 @@
       var n = ++pedido, loc = $('rmLocal').value;
       llamar('pos_remitos', { p_desde: null, p_hasta: null, p_local: loc, p_estado: 'pendiente' }).then(function (d) {
         if (n !== pedido || !$('rmPend')) return;
-        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc; });
+        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc && !f.entre_depositos; });
         $('rmPend').innerHTML = !fs.length ? '<div class="pos-cartel">No hay remitos por recibir en ' + esc(nombreLocal(localDe(loc))) + '.</div>' :
           '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Remito</th><th>Referencia</th><th>Viene de</th><th>Observaciones</th><th>Productos</th><th></th></tr></thead><tbody>' +
           fs.map(function (f) {
@@ -4703,7 +4975,7 @@
       $('rmHechos').innerHTML = '<p class="cargando">Cargando…</p>';
       llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: loc, p_estado: null }).then(function (d) {
         if (n !== pedidoH || !$('rmHechos')) return;
-        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc && f.estado !== 'pendiente'; });
+        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc && f.estado !== 'pendiente' && !f.entre_depositos; });
         $('rmHechos').innerHTML = !fs.length ? '<div class="pos-cartel">No hay remitos recibidos en ese período.</div>' :
           '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Remito</th><th>Referencia</th><th>Viene de</th><th>Observaciones</th><th>Recibido</th>' +
             '<th class="n">Llegaron</th><th>Estado</th></tr></thead><tbody>' +
@@ -4745,6 +5017,7 @@
           '<div class="pos-kpi"><span>Por recibir</span><b>' + num(t.pendientes) + '</b></div>' +
           '<div class="pos-kpi"><span>Con diferencias</span><b class="' + (t.con_diferencias ? 'st-sale' : '') + '">' + num(t.con_diferencias) + '</b></div>' +
           '<div class="pos-kpi fuerte"><span>Unidades mandadas</span><b>' + num(t.unidades) + '</b></div></div>';
+        d.filas = (d.filas || []).filter(function (f) { return !f.entre_depositos; });   // SQL 193: los pases entre depósitos están en Envíos internos
         if (!d.filas || !d.filas.length) { $('rgLista').innerHTML = kpis + '<div class="pos-cartel">No hay remitos en ese período con esos filtros.</div>'; return; }
         $('rgLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Remito</th><th>Referencia</th><th>Sale de</th><th>Llega a</th>' +
             '<th>Observaciones</th><th>Productos</th><th class="n">Mandaron</th><th class="n">Llegaron</th><th>Estado</th></tr></thead><tbody>' +
@@ -4868,11 +5141,14 @@
         '<button type="button" class="btn btn-sec btn-chico" id="evBajar" disabled>Bajar para Excel</button>' +
         '<button type="button" class="btn btn-pri btn-chico" data-ir="envio_nuevo">Nuevo envío</button>') +
       '<div class="pos-filtros"><div id="evPer"></div>' + campo('', 'Sucursal', '<select id="evLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
-        campo('', 'Mostrar', '<select id="evVer">' + opciones([['', 'Los que salen y los que llegan'], ['salen', 'Los que salen'], ['llegan', 'Los que llegan']], S.evVer || '') + '</select>') +
+        campo('', 'Mostrar', '<select id="evVer">' + opciones([['', 'Los que salen y los que llegan'], ['salen', 'Los que salen'], ['llegan', 'Los que llegan'],
+                                             ['depositos', 'Entre depósitos (el stock del local)']], S.evVer || '') + '</select>') +
       '</div>' +
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan envíos: el stock es de verdad. Apagalo (abajo, en el menú) para hacer uno.</div>' : '') +
       '<div id="evLista"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
+    /* SQL 193: desde «Entre depósitos», el envío nuevo arranca en ése. */
+    c.querySelector('.pos-acciones [data-ir="envio_nuevo"]').onclick = function () { S.evTipo = $('evVer').value === 'depositos' ? 'entre' : null; ir('envio_nuevo'); };
     var per = periodoPos($('evPer'), { inicial: 'mes', guardar: 'pos_envios_periodo', hastaHoy: true, alCambiar: cargar });
     $('evLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
     $('evVer').onchange = function () { S.evVer = this.value; pintar(); };
@@ -4891,7 +5167,8 @@
     }
     function pintar() {
       var loc = $('evLocal').value, v = $('evVer').value, nom = nombreLocal(localDe(loc));
-      filas = todas.filter(function (f) { return !v || (v === 'salen' ? f.origen_local_id === loc : f.destino_local_id === loc); });
+      if (v === 'depositos') { pintarPases(); return; }
+      filas = todas.filter(function (f) { return !f.entre_depositos && (!v || (v === 'salen' ? f.origen_local_id === loc : f.destino_local_id === loc)); });
       var vivas = filas.filter(function (f) { return f.estado !== 'anulado'; });
       var con189 = !filas.length || filas[0].sin_precio !== undefined, vp = puede('precios');   // SQL 190: sin «Ver precios», sin el monto
       /* Los totales de abajo de BlueSoft: cantidad de envíos, unidades y monto; y cuántos faltan recibir. */
@@ -4934,8 +5211,54 @@
       S.evMarcar = null;
       $('evBajar').disabled = false;
     }
+    /* SQL 193: los envíos entre depósitos de la sucursal (el stock de todo el local), con su módulo y cómo quedó el control con testigos. */
+    function pintarPases() {
+      var loc = $('evLocal').value, nom = nombreLocal(localDe(loc));
+      filas = todas.filter(function (f) { return f.entre_depositos; });
+      var vivas = filas.filter(function (f) { return f.estado !== 'anulado'; }), est = vivas.map(estadoTestigos);
+      function cuantos(e) { return est.filter(function (x) { return e.indexOf(x) >= 0; }).length; }
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi"><span>Módulos</span><b>' + miles(vivas.length) + '</b></div>' +
+        '<div class="pos-kpi fuerte"><span>Unidades</span><b>' + num(vivas.reduce(function (s, f) { return s + Number(f.unidades || 0); }, 0)) + '</b></div>' +
+        '<div class="pos-kpi"><span>Controlados</span><b>' + miles(cuantos(['ok'])) + '</b></div>' +
+        '<div class="pos-kpi"><span>Sin controlar</span><b>' + miles(cuantos(['sin', 'uno'])) + '</b></div>' +
+        '<div class="pos-kpi"><span>Para rehacer</span><b class="' + (cuantos(['mal']) ? 'st-sale' : '') + '">' + miles(cuantos(['mal'])) + '</b></div></div>';
+      if (!filas.length) {
+        $('evLista').innerHTML = kpis + '<div class="pos-cartel">No hay envíos entre depósitos de ' + esc(nom) + ' en ese período. Para el stock de todo el local: «Nuevo envío» → «Entre depósitos del local», un envío por módulo.</div>';
+        $('evBajar').disabled = true;
+        return;
+      }
+      $('evLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Número</th><th>Fecha</th><th>Módulo</th><th>Responsable</th><th>Sale de</th><th>Llega a</th>' +
+          '<th class="n">Unidades</th><th>Testigos</th><th>Cargó</th><th>Observaciones</th></tr></thead><tbody>' +
+        filas.map(function (f, i) {
+          return '<tr data-env="' + i + '" tabindex="0" class="' + (f.estado === 'anulado' ? 'anulada ' : '') + (f.id === S.evMarcar ? 'recien' : '') + '">' +
+            '<td><b>' + esc(refRemito(f)) + '</b></td><td>' + esc(fechaHora(f.fecha)) + '<small class="st-chico">' + esc(diaSemana(f.fecha)) + '</small></td>' +
+            '<td><b>' + esc(f.modulo || '—') + '</b></td><td>' + esc(f.responsable || '—') + '</td>' +
+            '<td>' + esc(f.origen_deposito || '—') + '</td><td><b>' + esc(f.destino_deposito || '—') + '</b></td>' +
+            '<td class="n tachar">' + num(f.unidades) + '</td><td>' + (f.estado === 'anulado' ? pillRemito('anulado') : pillTestigos(f)) + '</td>' +
+            '<td>' + esc(f.creado_nombre || '—') + '</td><td class="cb-que">' + esc(f.observaciones || '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' + (mas ? '<p class="pos-mas">Se ven los últimos 500 remitos. Achicá el período para ver el resto.</p>' : '');
+      $('evLista').querySelectorAll('tr[data-env]').forEach(function (tr) {
+        var f = filas[Number(tr.getAttribute('data-env'))];
+        tr.onclick = function () { abrirPase(f.id, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+      var m = $('evLista').querySelector('tr.recien');
+      if (m && m.scrollIntoView) m.scrollIntoView({ block: 'nearest' });
+      S.evMarcar = null;
+      $('evBajar').disabled = false;
+    }
     $('evBajar').onclick = function () {
       var loc = nombreLocal(localDe($('evLocal').value)), r = per.rango();
+      if ($('evVer').value === 'depositos') {
+        bajarCsv('Envíos entre depósitos ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv',
+          ['Número', 'Fecha', 'Módulo', 'Responsable', 'Sale de', 'Llega a', 'Estado', 'Unidades', 'Testigos', 'Cargó', 'Observaciones'],
+          filas.map(function (f) {
+            return [refRemito(f), fechaHora(f.fecha), f.modulo || '', f.responsable || '', f.origen_deposito || '', f.destino_deposito || '', f.estado === 'anulado' ? 'Anulado' : 'Pasado',
+                    Number(f.unidades || 0), f.estado === 'anulado' ? '' : TESTIGOS[estadoTestigos(f)], f.creado_nombre || '', f.observaciones || ''];
+          }));
+        return;
+      }
       var vp = puede('precios');
       bajarCsv('Envíos internos ' + loc + ' ' + r.desde + ' a ' + r.hasta + '.csv', ['Número', 'Fecha', 'Sale de', 'Llega a', 'Estado', 'Cargó', 'Unidades'].concat(vp ? ['Total'] : [], ['Observaciones']),
         filas.map(function (f) {
@@ -4944,6 +5267,137 @@
         }));
     };
     cargar();
+  }
+
+  /* ── SQL 193: el envío entre depósitos de la sucursal (un módulo del stock de todo el local) ──
+     El control con testigos: alguien elige dos productos del módulo, cuenta todas sus prendas ahí (todos
+     los talles y colores) y lo anota a ciegas; la base dice si coincide con el envío (vale lo último de
+     cada producto). Si no coincide, el módulo se rehace: se anula el envío y se pasa de nuevo. */
+  var TESTIGOS = { mal: 'Rehacer', ok: 'Controlado', uno: 'Falta un testigo', sin: 'Sin controlar' };
+  function estadoTestigos(f) { var ok = Number(f.testigos_ok) || 0; return Number(f.testigos_mal) > 0 ? 'mal' : ok >= 2 ? 'ok' : ok === 1 ? 'uno' : 'sin'; }
+  function pillTestigos(f) {
+    var e = estadoTestigos(f);
+    return '<span class="pill' + (e === 'mal' ? ' pill-bad" title="Un testigo no coincide: anulá el envío y pasá el módulo de nuevo"' : e === 'ok' ? ' pill-ok"' : e === 'uno' ? ' pill-warn"' : '"') + '>' + TESTIGOS[e] + '</span>';
+  }
+  function ultimosTestigos(ts) { var m = {}; (ts || []).forEach(function (t) { m[t.codigo] = t; }); return Object.keys(m).map(function (k) { return m[k]; }); }
+  function contarTestigos(ts) { var u = ultimosTestigos(ts), mal = u.filter(function (t) { return !t.coincide; }).length; return { testigos_ok: u.length - mal, testigos_mal: mal }; }
+
+  function abrirPase(id, alCambiar) {
+    var caja = ventana('<h3 id="posVentTit">Envío entre depósitos</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
+    llamar('pos_remito', { p_id: id, p_completo: true }).then(function (r) {
+      if (!caja.isConnected) return;
+      var an = r.estado === 'anulado', ts = r.testigos || [], ult = ultimosTestigos(ts), ct = contarTestigos(ts), est = estadoTestigos(ct), unid = 0;
+      var prods = (r.productos || []).map(function (p) {
+        var cel = (p.celdas || []).map(function (x) { unid += Number(x.cantidad || 0); return { talle: x.talle, color: x.color, cantidad: x.cantidad }; });
+        return '<div class="st-prod"><div class="st-prod-cab"><b>' + esc(p.codigo) + '</b><span>' + esc(nombreProd(p.codigo, p.descripcion)) + '</span></div>' + grillaRemito(p.codigo, cel) + '</div>';
+      }).join('');
+      var np = (r.productos || []).length, deDonde = esc(r.origen_deposito || '');
+      dentro.innerHTML = '<h3 id="posVentTit">Envío entre depósitos ' + esc(refRemito(r)) + ' ' + (an ? pillRemito('anulado') : pillTestigos(ct)) + '</h3>' +
+        '<div class="pos-ticket-datos">' +
+          '<div><span>Fecha</span>' + esc(fechaHora(r.fecha)) + '</div>' +
+          '<div><span>Sucursal</span>' + esc(bonito(r.origen)) + '</div>' +
+          '<div><span>Sale de</span>' + deDonde + '</div>' +
+          '<div><span>Llega a</span><b>' + esc(r.destino_deposito || '') + '</b></div>' +
+          '<div><span>Módulo</span><b>' + esc(r.modulo || '—') + '</b></div>' +
+          '<div><span>Responsable</span>' + esc(r.responsable || '—') + '</div>' +
+          '<div><span>Lo cargó</span>' + esc(r.creado_nombre || '—') + '</div>' +
+        '</div>' +
+        (r.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(r.observaciones) + '</p>' : '') +
+        (an ? '<div class="pos-cartel mal">Anulado el ' + esc(fechaHora(r.anulado_en)) + (r.anulado_por_nombre ? ' por ' + esc(r.anulado_por_nombre) : '') + ': ' + esc(r.anulado_motivo || '') +
+              '. Las prendas volvieron a «' + deDonde + '».</div>' :
+         est === 'mal' ? '<div class="pos-cartel mal">Un testigo no coincide con el envío. Contalo de nuevo; si sigue sin coincidir, rehacé el módulo: anulá este envío (las prendas vuelven a «' + deDonde + '») y pasalo de nuevo.</div>' :
+         est === 'ok' ? '<div class="pos-cartel st-ok">Controlado: los testigos coinciden con el envío.</div>' :
+         '<div class="pos-cartel">' + (est === 'uno' ? 'Falta un testigo. ' : 'Todavía no se controló. ') + 'Elegí dos productos del módulo, contá todas sus prendas y anotalas con «Controlar con testigos»: el sistema te dice si coinciden con el envío.</div>') +
+        (ts.length ? '<p class="pos-lbl rm-leyenda">Testigos</p><div class="pos-marco-tabla"><table class="pos-tabla tg-tabla"><thead><tr><th>Producto</th><th class="n">Contaron</th><th>Resultado</th><th>Quién</th><th>Cuándo</th></tr></thead><tbody>' +
+            ts.slice().reverse().map(function (t) {
+              var vale = ult.indexOf(t) >= 0;
+              return '<tr' + (vale ? '' : ' class="tg-vieja" title="Lo contaron de nuevo después: vale lo último"') + '><td><b>' + esc(t.codigo) + '</b> ' + esc(PROD[t.codigo] ? PROD[t.codigo][1] : '') + '</td>' +
+                '<td class="n">' + num(t.contado) + '</td><td>' + (t.coincide ? '<span class="pill pill-ok">Coincide</span>' : '<span class="pill pill-bad">No coincide</span>') + '</td>' +
+                '<td>' + esc(t.quien || '—') + '</td><td>' + esc(fechaHora(t.fecha)) + '</td></tr>';
+            }).join('') + '</tbody></table></div>' : '') +
+        '<details class="pa-prods"><summary>Lo que se pasó: ' + np + (np === 1 ? ' producto, ' : ' productos, ') + num(unid) + (unid === 1 ? ' unidad' : ' unidades') + '</summary>' +
+          '<div class="st-prods">' + prods + '</div></details>' +
+        '<div id="paAnular"></div><div class="pos-pie">' +
+          (!an && puede('envios') ? '<button type="button" class="btn btn-sec btn-chico izq" id="paAnularBtn">Anular el envío</button>' +
+                                    '<button type="button" class="btn btn-sec btn-chico" id="paControlar">Controlar con testigos</button>' : '') +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var ab = dentro.querySelector('#paAnularBtn');
+      if (ab) ab.onclick = function () {
+        ab.remove();
+        pedirMotivo(dentro.querySelector('#paAnular'), 'El envío queda en la lista, tachado, con quién lo anuló y por qué. ' +
+            (unid === 1 ? 'La prenda vuelve' : 'Las ' + num(unid) + ' prendas vuelven') + ' a «' + deDonde + '». Para rehacer el módulo, después hacé un envío nuevo. No se puede deshacer.',
+          'Anular el envío ' + refRemito(r), function (motivo) {
+          return llamar('pos_remito_anular', { p_id: r.id, p_motivo: motivo }).then(function () {
+            avisar('ok', 'El envío ' + refRemito(r) + ' quedó anulado: las prendas volvieron a «' + (r.origen_deposito || '') + '».');
+            S.stock = {};
+            S.dep = {};
+            if (alCambiar) alCambiar();
+            abrirPase(r.id, alCambiar);
+          });
+        });
+      };
+      var co = dentro.querySelector('#paControlar');
+      if (co) co.onclick = function () { abrirTestigos(r, alCambiar); };
+    }).catch(function (e) {
+      if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Envío entre depósitos</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+    });
+  }
+
+  /** El control de un módulo con productos testigo, a ciegas: no se ve lo que dice el envío. */
+  function abrirTestigos(r, alCambiar) {
+    var enEnvio = {}, elegido = null;
+    (r.productos || []).forEach(function (p) { enEnvio[p.codigo] = p.descripcion || ''; });
+    var caja = ventana('<h3 id="posVentTit">Controlar ' + esc(refRemito(r)) + ' con testigos</h3>' +
+      '<p class="pos-bajada">Módulo ' + esc(r.modulo || '—') + ' · de «' + esc(r.origen_deposito || '') + '» a «' + esc(r.destino_deposito || '') + '». ' +
+        'Elegí un producto del módulo, contá todas sus prendas ahí (todos los talles y colores) y escribí cuántas hay. El sistema te dice si coincide con el envío.</p>' +
+      '<div class="tk-prod tg-prod">' + campo('', 'Producto testigo', '<input type="search" id="tgProd" autocomplete="off" spellcheck="false" placeholder="Escaneá la etiqueta, o buscá por código o nombre…" aria-controls="tgSug">') +
+        '<div class="tk-sug" id="tgSug" role="listbox" aria-label="Productos" hidden></div></div>' +
+      '<div id="tgElegido" class="tg-elegido"></div>' +
+      '<div class="pos-campos">' +
+        campo('', 'Cuántas hay en el módulo', '<input type="number" id="tgN" min="0" max="9999" inputmode="numeric">') +
+        campo('', 'Quién controla <span class="lbl-opc">(opcional)</span>', '<input type="text" id="tgQuien" maxlength="60" list="tgVend" autocomplete="off"><datalist id="tgVend">' +
+          vendedoresDe(r.origen_local_id).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>') +
+      '</div><div class="pos-error" id="tgError"></div><div id="tgRes" role="status"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="tgVolver">‹ Volver al envío</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="tgOk">Anotar el testigo</button></div>');
+    var n = caja.querySelector('#tgN'), quien = caja.querySelector('#tgQuien'), el = caja.querySelector('#tgElegido');
+    quien.value = S.tgQuien || '';
+    function elegir(cod) {
+      elegido = cod;
+      $('tgProd').limpiar();
+      el.innerHTML = '<b>' + esc(cod) + '</b> ' + esc(PROD[cod] ? PROD[cod][1] : enEnvio[cod] || '') + ' <button type="button" class="pos-link" id="tgOtro">Elegir otro</button>';
+      el.querySelector('#tgOtro').onclick = function () { elegido = null; el.innerHTML = ''; $('tgProd').focus(); };
+      errorEn(caja, 'tgError', '');
+      n.value = '';
+      n.focus();
+    }
+    engancharProducto({ campo: 'tgProd', sug: 'tgSug', lista: function () { return null; }, sinPrecio: true, sinLinea: true, escaneoLibre: true,
+      prod: function (cod) { return PROD[cod] || (cod in enEnvio ? [cod, enEnvio[cod] || cod, '', '', ''] : null); },
+      elegir: function (p) { elegir(p[0]); },
+      agregar: function (p) { elegir(p[0]); },
+      noEsta: function (cod) { avisar('err', 'No encontré «' + cod + '» en el catálogo.'); } });
+    n.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); caja.querySelector('#tgOk').click(); } };
+    caja.querySelector('#tgOk').onclick = function () {
+      var bt = this, v = n.value.trim();
+      if (!errorEn(caja, 'tgError', !elegido ? 'Elegí el producto testigo.' : !/^\d{1,4}$/.test(v) ? 'Escribí cuántas contaste (de 0 a 9999).' : '')) return;
+      bt.disabled = true;
+      S.tgQuien = quien.value.trim();
+      llamar('pos_remito_testigo', { p_remito: r.id, p_codigo: elegido, p_contado: Number(v), p_quien: S.tgQuien || null }).then(function (x) {
+        bt.disabled = false;
+        var ct = contarTestigos(x.testigos), e = estadoTestigos(ct);
+        caja.querySelector('#tgRes').innerHTML = '<div class="pos-cartel ' + (x.coincide ? 'st-ok' : 'mal') + '">' +
+          (x.coincide ? '<b>' + esc(x.codigo) + ': coincide.</b> ' : '<b>' + esc(x.codigo) + ': no coincide con el envío.</b> Contalo de nuevo; si sigue sin coincidir, hay que rehacer el módulo (anulá el envío y pasalo de nuevo). ') +
+          (e === 'ok' ? 'El módulo quedó controlado.' : e === 'uno' ? 'Falta otro testigo.' : x.coincide ? 'Ojo: otro testigo no coincide.' : '') + '</div>';
+        r.testigos = x.testigos;
+        elegido = null;
+        el.innerHTML = '';
+        n.value = '';
+        if (alCambiar) alCambiar();
+        $('tgProd').focus();
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'tgError', mensajeDe(e)); });
+    };
+    caja.querySelector('#tgVolver').onclick = function () { abrirPase(r.id, alCambiar); };
+    setTimeout(function () { var p = $('tgProd'); if (p) p.focus(); }, 0);
   }
 
   /** Un remito entero, para verlo. En Gestión, con lo que mandaron aunque falte recibir, y para anularlo.
@@ -5668,7 +6122,9 @@
   function claveBorradorRn() { return RN_DEV ? K_DEVOL : RN_ENV ? K_ENVIO : K_REMITO; }
   var A_FABRICA = 'fabrica';   // "Llega a: Fábrica" (SQL 167): una devolución de un local a la fábrica
   function remitoNuevo(antes) {
-    return { v: 1, clave: nuevaClave(), origen: antes ? antes.origen : '', destino: antes ? antes.destino : '', referencia: '', observaciones: '', lineas: [], razon: {} };
+    return { v: 1, clave: nuevaClave(), origen: antes ? antes.origen : '', destino: antes ? antes.destino : '', referencia: '', observaciones: '', lineas: [], razon: {},
+             /* SQL 193: el envío entre depósitos sigue en los mismos depósitos y con el mismo responsable (el módulo, no). */
+             tipo: antes && antes.tipo || '', dep_o: antes && antes.dep_o || '', dep_d: antes && antes.dep_d || '', modulo: '', responsable: antes && antes.responsable || '' };
   }
   function cargarRemitoNuevo() {
     var b = leerJSON(claveBorradorRn(), null);
@@ -5678,7 +6134,13 @@
     if (b.destino && b.destino !== A_FABRICA && !localDe(b.destino)) b.destino = '';
     if (!b.razon || typeof b.razon !== 'object') b.razon = {};
     if (RN_DEV) { b.origen = b.origen || localStock().id; b.destino = A_FABRICA; }
-    if (RN_ENV) { b.origen = b.origen || localStock().id; if (b.destino === A_FABRICA || b.destino === b.origen) b.destino = ''; }
+    if (RN_ENV) {
+      b.origen = b.origen || localStock().id;
+      if (b.destino === A_FABRICA || b.destino === b.origen) b.destino = '';
+      /* SQL 193: a otro local o entre depósitos del local (desde «Entre depósitos» de la lista arranca en ése, si está vacío). */
+      b.tipo = (S.evTipo && !b.lineas.length ? S.evTipo : b.tipo) === 'entre' ? 'entre' : 'local';
+      S.evTipo = null;
+    }
     return b;
   }
   function guardarBorradorRn() { guardarJSON(claveBorradorRn(), RN); }
@@ -5728,8 +6190,8 @@
      La "Devolución de Mercadería" de BlueSoft, con sus campos arriba
      (Fecha, Letra X, Estado "Enviado", Proveedor, Sucursal) y los productos
      abajo, con su precio y su razón. Es el mismo remito de Gestión, siempre
-     del local a la fábrica: sale del stock al guardarla. Sin depósito: acá
-     el stock es uno solo por local.
+     del local a la fábrica: sale del stock al guardarla (del depósito
+     predeterminado, SQL 193).
      ════════════════════════════════════════════════════════════════════ */
   function verDevolucionNueva() {
     RN_DEV = true; RN_ENV = false;
@@ -5760,35 +6222,99 @@
      NUEVO ENVÍO INTERNO (el mostrador, 28/10)
      El "Envío Interno de Mercadería" de BlueSoft. Allá el local pasa la
      mercadería de su depósito al "Depósito entre Locales" ("sale") y el
-     otro la pasa a su depósito ("entra"). Acá cada local tiene un solo
-     stock: es un remito de un local a otro. Sale del stock al guardarlo y
-     el otro local lo recibe contándolo a ciegas en POS → Remitos.
+     otro la pasa a su depósito ("entra"). Acá es un remito de un local a
+     otro (del depósito predeterminado de cada uno). Sale del stock al
+     guardarlo y el otro local lo recibe contándolo a ciegas en POS → Remitos.
+     SQL 193: «Entre depósitos del local», para el stock de todo el local: un
+     envío por módulo, de un depósito de la sucursal a otro, en el momento;
+     después se controla con productos testigo.
      ════════════════════════════════════════════════════════════════════ */
   function verEnvioNuevo() {
     RN_DEV = false; RN_ENV = true;
     RN = cargarRemitoNuevo();
-    var c = $('cuerpo'), prueba = enPrueba();
+    var c = $('cuerpo'), prueba = enPrueba(), entre = RN.tipo === 'entre', hecho = entre ? S.paseHecho : null;
+    S.paseHecho = null;
     c.innerHTML = cabeza('Nuevo envío interno' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
-        'Lo que el local le manda a otro local. Al guardarlo sale del stock; el otro local lo recibe contándolo en POS → Remitos.',
+        entre ? 'De un depósito a otro de la sucursal, para el stock de todo el local: un envío por módulo. Se pasa al guardarlo; después se controla con dos productos testigo.'
+              : 'Lo que el local le manda a otro local. Al guardarlo sale del stock; el otro local lo recibe contándolo en POS → Remitos.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="envios">‹ Envíos</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
         '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar"' + (prueba ? ' disabled' : '') + '>Guardar el envío</button>') +
+      /* SQL 193: el «Envío Interno» de BlueSoft también pasa de un depósito a otro del local. */
+      '<nav class="pestanas ev-tipos" aria-label="Qué envío">' +
+        '<button type="button" class="pestana" data-tipo="local"' + (entre ? '' : ' aria-current="page"') + '>A otro local</button>' +
+        '<button type="button" class="pestana" data-tipo="entre"' + (entre ? ' aria-current="page"' : '') + '>Entre depósitos del local</button></nav>' +
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se guardan envíos: el stock es de verdad. Apagalo (abajo, en el menú) para guardarlo.</div>' : '') +
-      '<div class="tk-datos rn-datos ev-datos">' +
-        campo('', 'Sale de', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
-        campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) + '</select>') +
-        campo('', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly tabindex="-1">') +
-        campo('', 'Letra', '<input type="text" value="X" readonly tabindex="-1">') +
-        campo('', 'Estado', '<input type="text" value="Enviado" readonly tabindex="-1">') +
-        campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: se lo pidió una clienta" autocomplete="off">') +
-      '</div>' + htmlProdRn();
+      (hecho ? '<div class="pos-cartel st-ok">Envío <b>R-' + esc(hecho.numero) + '</b> guardado: el módulo ' + esc(hecho.modulo) + ' (' + num(hecho.unidades) + (hecho.unidades === 1 ? ' unidad' : ' unidades') +
+               ') ya está en «' + esc(hecho.destino) + '». Seguí con el próximo módulo. <button type="button" class="pos-link" id="rnVerPases">Ver los envíos entre depósitos</button></div>' : '') +
+      (entre ? '<div class="tk-datos rn-datos ed-datos">' +
+          campo('', 'Sucursal', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
+          campo('', 'Depósito origen', '<select id="rnDepO"><option value="">Cargando…</option></select>') +
+          campo('', 'Depósito destino', '<select id="rnDepD"><option value="">Cargando…</option></select>') +
+          campo('', 'Módulo', '<input type="text" id="rnModulo" maxlength="20" placeholder="Ej.: 12" autocomplete="off">') +
+          campo('', 'Responsable <span class="lbl-opc">(opcional)</span>', '<input type="text" id="rnResp" maxlength="60" list="rnVend" autocomplete="off" placeholder="Quién lo pasa"><datalist id="rnVend"></datalist>') +
+          campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: la pared del fondo" autocomplete="off">') +
+        '</div><div id="rnDepAviso"></div>'
+      : '<div class="tk-datos rn-datos ev-datos">' +
+          campo('', 'Sale de', '<select id="rnOrigen" class="desplegable">' + opcionesLocales(RN.origen) + '</select>') +
+          campo('', 'Llega a', '<select id="rnDestino" class="desplegable"><option value="">Elegí el local…</option>' + opcionesTodos(RN.destino) + '</select>') +
+          campo('', 'Fecha', '<input type="text" value="' + esc(fechaCorta(S.ini.hoy)) + '" readonly tabindex="-1">') +
+          campo('', 'Letra', '<input type="text" value="X" readonly tabindex="-1">') +
+          campo('', 'Estado', '<input type="text" value="Enviado" readonly tabindex="-1">') +
+          campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: se lo pidió una clienta" autocomplete="off">') +
+        '</div>') + htmlProdRn();
     engancharIr(c);
+    c.querySelectorAll('.ev-tipos .pestana').forEach(function (b) {
+      b.onclick = function () { var t = b.getAttribute('data-tipo'); if (t === RN.tipo) return; RN.tipo = t; guardarBorradorRn(); verEnvioNuevo(); };
+    });
+    var vp = $('rnVerPases');
+    if (vp) vp.onclick = function () { S.evVer = 'depositos'; S.evMarcar = hecho.id; ir('envios'); };
     $('rnObs').value = RN.observaciones || '';
-    $('rnOrigen').onchange = function () { RN.origen = this.value; S.stLocal = this.value; recordarLocal(this.value); guardarBorradorRn(); preciosRn(); };
-    $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); pintarRn(); };
+    $('rnOrigen').onchange = function () {
+      RN.origen = this.value; S.stLocal = this.value; recordarLocal(this.value);
+      if (entre) { RN.dep_o = ''; RN.dep_d = ''; depositosRn(); }
+      guardarBorradorRn(); preciosRn();
+    };
     $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
+    if (entre) {
+      $('rnModulo').value = RN.modulo || '';
+      $('rnResp').value = RN.responsable || '';
+      $('rnModulo').oninput = function () { RN.modulo = this.value; guardarBorradorRn(); };
+      $('rnResp').oninput = function () { RN.responsable = this.value; guardarBorradorRn(); };
+      $('rnDepO').onchange = function () { RN.dep_o = this.value; guardarBorradorRn(); pintarRn(); };
+      $('rnDepD').onchange = function () { RN.dep_d = this.value; guardarBorradorRn(); pintarRn(); };
+      depositosRn();
+    } else $('rnDestino').onchange = function () { RN.destino = this.value; guardarBorradorRn(); pintarRn(); };
     engancharRn(verEnvioNuevo);
     preciosRn();
+  }
+  /** SQL 193: los depósitos de la sucursal del envío entre depósitos. Sin elegir, sale del predeterminado y va al más nuevo de los otros. */
+  function depositosRn() {
+    var loc = RN.origen;
+    traerDepositos(loc, true).then(function (ds) {
+      var o = $('rnDepO'), d = $('rnDepD'), av = $('rnDepAviso'), dl = $('rnVend');
+      if (!o || !RN || RN.origen !== loc || RN.tipo !== 'entre') return;
+      var act = ds.filter(function (x) { return x.activo; });
+      if (!depDe(act, RN.dep_o)) RN.dep_o = (depPredeterminado(act) || act[0] || {}).id || '';
+      if (!depDe(act, RN.dep_d) || RN.dep_d === RN.dep_o) {
+        RN.dep_d = (act.filter(function (x) { return x.id !== RN.dep_o && !x.predeterminado; }).sort(function (a, b) { return b.numero - a.numero; })[0] || {}).id || '';
+      }
+      var ops = act.map(function (x) { return [x.id, nombreDep(x)]; });
+      o.innerHTML = '<option value="">Elegí…</option>' + opciones(ops, RN.dep_o);
+      d.innerHTML = '<option value="">Elegí…</option>' + opciones(ops, RN.dep_d);
+      if (dl) dl.innerHTML = vendedoresDe(loc).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('');
+      av.innerHTML = S.sin193 ? '<div class="pos-cartel mal">Todavía falta correr el SQL 193 (los depósitos) en Supabase.</div>' :
+        !ds.length ? '<div class="pos-cartel mal">No se pudieron traer los depósitos de ' + esc(nombreLocal(localDe(loc))) + '. Probá de nuevo.</div>' :
+        act.length < 2 ? '<div class="pos-cartel">' + esc(nombreLocal(localDe(loc))) + ' tiene un solo depósito. Para el stock de todo el local, primero creá el de la temporada nueva en ' +
+                         '<button type="button" class="pos-link" data-ir="depositos">Mercadería → Depósitos</button>.</div>' : '';
+      engancharIr(av);
+      guardarBorradorRn();
+      pintarRn();
+    });
+  }
+  function textoDepsRn() {
+    var ds = S.dep[RN.origen] || [], o = depDe(ds, RN.dep_o), d = depDe(ds, RN.dep_d);
+    return o && d ? ' · pasan de «' + esc(o.nombre) + '» a «' + esc(d.nombre) + '» al guardar' : '';
   }
   /** Los precios de la lista de la sucursal (la devolución y el envío los muestran; la base guarda los suyos al guardarlos). */
   function preciosRn() {
@@ -5863,7 +6389,7 @@
     if (!z) return;
     /* La devolución (SQL 189): cada producto con el precio de la lista de la sucursal, el total y la razón, como en BlueSoft. */
     /* SQL 190: los precios, con «Ver precios en remitos y envíos»; la razón de la devolución, siempre. */
-    var dev = (RN_DEV || RN_ENV) && puede('precios'), lista = dev ? listaDe(localDe(RN.origen)) : null, plataTot = 0, sinPrecio = 0;   // el envío, con precio y sin razón
+    var dev = (RN_DEV || (RN_ENV && RN.tipo !== 'entre')) && puede('precios'), lista = dev ? listaDe(localDe(RN.origen)) : null, plataTot = 0, sinPrecio = 0;   // el envío, con precio y sin razón
     var prods = [], porCod = {}, total = 0;
     RN.lineas.forEach(function (l) {
       var p = porCod[l.codigo];
@@ -5902,8 +6428,9 @@
       '<p class="rn-tot"><b>' + prods.length + (prods.length === 1 ? ' producto' : ' productos') + ' · ' + num(total) + (total === 1 ? ' unidad' : ' unidades') +
         (dev ? ' · Total ' + plata(plataTot) : '') + '</b>' +
         (dev && sinPrecio ? ' (' + (sinPrecio === 1 ? 'uno no tiene precio: no suma' : sinPrecio + ' no tienen precio: no suman') + ')' : '') +
-        (RN.origen ? ' · salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' : '') +
-        (RN.destino === A_FABRICA ? ' y vuelven a la fábrica' : RN_ENV && localDe(RN.destino) ? ' y van a ' + esc(nombreLocal(localDe(RN.destino))) : '') + '</p>';
+        (RN_ENV && RN.tipo === 'entre' ? textoDepsRn() :
+         (RN.origen ? ' · salen del stock de ' + esc(nombreLocal(localDe(RN.origen))) + ' al guardar' : '') +
+         (RN.destino === A_FABRICA ? ' y vuelven a la fábrica' : RN_ENV && localDe(RN.destino) ? ' y van a ' + esc(nombreLocal(localDe(RN.destino))) : '')) + '</p>';
     z.querySelectorAll('.dv-razon').forEach(function (i) {
       i.oninput = function () { RN.razon[i.getAttribute('data-razon')] = i.value; guardarBorradorRn(); };
     });
@@ -5923,8 +6450,50 @@
     if (m && m.scrollIntoView) m.scrollIntoView({ block: 'nearest' });
   }
 
+  /** SQL 193: el envío entre depósitos de la sucursal (un módulo): pasa en el momento, del depósito origen al destino. Después, el mismo envío nuevo para el próximo módulo. */
+  function guardarPase() {
+    var ds = S.dep[RN.origen] || [], o = depDe(ds, RN.dep_o), d = depDe(ds, RN.dep_d), lo = localMio(RN.origen);
+    var unidades = RN.lineas.reduce(function (s, l) { return s + l.cantidad; }, 0), mod = String(RN.modulo || '').trim();
+    var mal = enPrueba() ? 'Con el modo prueba prendido no se guardan envíos: el stock es de verdad.' : !lo ? 'Elegí la sucursal.' :
+              S.sin193 ? 'Todavía falta correr el SQL 193 (los depósitos) en Supabase.' :
+              !o ? 'Elegí de qué depósito sale.' : !d ? 'Elegí a qué depósito va.' : o.id === d.id ? 'Sale y llega al mismo depósito: elegí otro.' :
+              !mod ? 'Escribí el módulo (el número o la pared).' : !RN.lineas.length ? 'El envío no tiene productos.' : '';
+    if (mal) { avisar('err', mal); return; }
+    /* Si el depósito de donde sale no tiene todo según el sistema, que lo sepa (no frena). */
+    llamar('pos_stock_local', { p_local: lo.id, p_deposito: o.id }).then(function (x) {
+      var m = {};
+      (x.filas || []).forEach(function (f) { m[claveVar(f[0], f[1], f[2])] = f[3]; });
+      var faltan = RN.lineas.filter(function (l) { return (m[claveVar(l.codigo, l.talle, l.color)] || 0) < l.cantidad; });
+      return faltan.length ? '\n\nOjo: según el sistema, «' + o.nombre + '» no tiene todo (' + faltan.slice(0, 4).map(function (l) {
+        return l.codigo + ' ' + [l.talle, l.color].filter(Boolean).join(' ') + ': hay ' + (m[claveVar(l.codigo, l.talle, l.color)] || 0) + ', pasás ' + l.cantidad; }).join('; ') +
+        (faltan.length > 4 ? '…' : '') + '). Si lo pasás igual, ahí queda en negativo.' : '';
+    }, function () { return ''; }).then(function (extra) {
+      if (!confirm('¿Pasar el módulo ' + mod + ' de «' + o.nombre + '» a «' + d.nombre + '» (' + nombreLocal(lo) + ') con ' + num(unidades) + (unidades === 1 ? ' unidad' : ' unidades') + '?' +
+                   ' Se pasan ahora; después controlalo con dos productos testigo.' + extra)) return;
+      S.guardando = true;
+      var b = $('rnGuardar');
+      if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
+      llamar('pos_remito_guardar', { p: { clave: RN.clave, origen_local_id: lo.id, destino_local_id: lo.id, origen_deposito_id: o.id, destino_deposito_id: d.id,
+                                          modulo: mod, responsable: String(RN.responsable || '').trim(), referencia: '', observaciones: RN.observaciones || '', items: RN.lineas } }).then(function (r) {
+        S.guardando = false;
+        delete S.stock[lo.id];
+        delete S.dep[lo.id];
+        avisar('ok', 'Envío R-' + r.numero + ' guardado' + (r.ya ? ' (ya estaba: no se duplicó)' : '') + ': el módulo ' + mod + ' pasó de «' + o.nombre + '» a «' + d.nombre + '».');
+        S.paseHecho = { id: r.id, numero: r.numero, modulo: mod, unidades: unidades, destino: d.nombre };
+        RN = remitoNuevo(RN);
+        guardarBorradorRn();
+        if (S.vista === 'envio_nuevo') verEnvioNuevo();
+      }).catch(function (e) {
+        S.guardando = false;
+        if (b && b.isConnected) { b.disabled = false; b.textContent = 'Guardar el envío'; }
+        avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
+      });
+    });
+  }
+
   function guardarRemito() {
     if (S.guardando || !RN) return;
+    if (RN_ENV && RN.tipo === 'entre') { guardarPase(); return; }
     var fab = RN.destino === A_FABRICA, dev = RN_DEV, env = RN_ENV, txt = dev ? 'Guardar la devolución' : env ? 'Guardar el envío' : 'Guardar el remito';
     /* La devolución sale del stock de verdad: con el modo prueba no se guarda (como los remitos, que no se reciben). */
     var mal = env && enPrueba() ? 'Con el modo prueba prendido no se guardan envíos: el stock es de verdad.' : env && !RN.origen ? 'Elegí de qué sucursal sale.' :
@@ -6032,6 +6601,7 @@
         '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +
       '<div class="cj-paso"><div class="cj-paso-cab"><b>Paso 1</b><span>La sucursal y la lista</span></div>' +
         '<div class="cj-fila">' + campo('', 'Sucursal', '<select id="invLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
+          '<div id="invDepZona" class="st-dep-zona"></div>' +
           '<label class="btn btn-sec btn-chico">Elegir el Excel…<input type="file" id="invArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
           '<button type="button" class="btn btn-sec btn-chico" id="invPegar">Pegar las columnas…</button>' +
           '<span class="pos-ayuda" id="invNombre"></span></div>' +
@@ -6039,7 +6609,21 @@
       '<div id="invPrevia"></div>' +
       '<h3 class="st-tit">Cargas anteriores</h3><div id="invHist"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
-    $('invLocal').onchange = function () { S.invLocal = this.value; if (S.inv) previa(); };
+    $('invLocal').onchange = function () { S.invLocal = this.value; S.invDep = ''; depInv().then(function () { if (S.inv) previa(); }); };
+    /* SQL 193: el depósito donde va el inventario (sin elegir, el predeterminado). Con uno solo, no se pregunta. */
+    function depInv() {
+      var loc = $('invLocal').value;
+      return traerDepositos(loc).then(function (ds) {
+        var z = $('invDepZona');
+        if (!z || $('invLocal').value !== loc) return;
+        var act = ds.filter(function (d) { return d.activo; });
+        if (act.length < 2) { z.innerHTML = ''; S.invDep = ''; return; }
+        if (!depDe(act, S.invDep)) S.invDep = (depPredeterminado(act) || act[0]).id;
+        z.innerHTML = campo('', 'Depósito', '<select id="invDep">' + opciones(act.map(function (d) { return [d.id, nombreDep(d)]; }), S.invDep) + '</select>');
+        $('invDep').onchange = function () { S.invDep = this.value; if (S.inv) previa(); };
+      });
+    }
+    function nombreDepInv() { var d = S.invDep && depDe(S.dep[$('invLocal').value], S.invDep); return d ? ' · «' + d.nombre + '»' : ''; }
     $('invArchivo').onchange = function () {
       var f = this.files && this.files[0];
       this.value = '';
@@ -6064,7 +6648,7 @@
     function previa() {
       var I = S.inv, loc = $('invLocal').value, z = $('invPrevia');
       z.innerHTML = '<p class="cargando">Comparando con lo que dice el sistema…</p>';
-      llamar('pos_stock_consulta', { p_local: loc, p_ocultar_sin: false }).then(function (d) {
+      llamar('pos_stock_consulta', Object.assign({ p_local: loc, p_ocultar_sin: false }, S.invDep ? { p_deposito: S.invDep } : {})).then(function (d) {
         if (S.inv !== I || !$('invPrevia')) return;
         var ahora = {}, nuevo = {}, desc = {}, filas = [];
         (d.filas || []).forEach(function (f) { ahora[claveVar(f[1], f[2], f[3])] = f[4]; desc[f[1]] = desc[f[1]] || f[7]; });
@@ -6096,7 +6680,7 @@
             : '<div class="pos-cartel">Todo coincide con lo que dice el sistema: no cambia nada.</div>') +
           (d.mas ? '<p class="pos-mas">La sucursal tiene más de 60.000 renglones: la comparación de arriba es parcial (la carga, no).</p>' : '') +
           '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" id="invOtro">Elegir otro</button>' +
-            '<button type="button" class="btn btn-pri btn-chico" id="invCargar"' + (filas.length ? '' : ' disabled') + '>Cargar el inventario en ' + esc(nombreLocal(localDe(loc))) + '</button></div></div>';
+            '<button type="button" class="btn btn-pri btn-chico" id="invCargar"' + (filas.length ? '' : ' disabled') + '>Cargar el inventario en ' + esc(nombreLocal(localDe(loc)) + nombreDepInv()) + '</button></div></div>';
         var rs = $('invResto');
         if (rs) rs.onchange = function () { I.resto = rs.checked; previa(); };
         $('invOtro').onclick = function () { S.inv = null; $('invPrevia').innerHTML = ''; $('invNombre').textContent = ''; };
@@ -6105,7 +6689,7 @@
     }
     function cargarInv(loc, nuevo, bt) {
       var I = S.inv, ln = localDe(loc);
-      if (!confirm('¿Cargar el inventario en ' + nombreLocal(ln) + '? Lo de la lista reemplaza lo que dice el sistema' + (I.resto ? ' y lo que no está queda en 0' : '') +
+      if (!confirm('¿Cargar el inventario en ' + nombreLocal(ln) + nombreDepInv() + '? Lo de la lista reemplaza lo que dice el sistema' + (I.resto ? ' y lo que no está queda en 0' : '') +
                    '. Queda anotado quién lo cargó; no se deshace solo.')) return;
       var desc = {};
       I.items.forEach(function (x) { if (x.descripcion) desc[x.codigo] = x.descripcion; });
@@ -6113,8 +6697,11 @@
       var txt = bt.textContent;
       bt.disabled = true;
       bt.textContent = 'Cargando…';
-      llamar('pos_inventario_cargar', { p: { local_id: loc, items: items, resto_a_cero: I.resto, origen: I.origen, clave: I.clave } }).then(function (r) {
+      var pi = { local_id: loc, items: items, resto_a_cero: I.resto, origen: I.origen, clave: I.clave };
+      if (S.invDep) pi.deposito_id = S.invDep;   // SQL 193 (sin elegir, la base usa el predeterminado)
+      llamar('pos_inventario_cargar', { p: pi }).then(function (r) {
         delete S.stock[loc];
+        delete S.dep[loc];
         S.inv = null;
         avisar('ok', 'Inventario cargado en ' + nombreLocal(ln) + ': ' + num(r.lineas) + (r.lineas === 1 ? ' renglón, ' : ' renglones, ') + num(r.cambiaron) +
                      (r.cambiaron === 1 ? ' cambió.' : ' cambiaron.') + (r.ya ? ' (Ya estaba cargado: no se duplicó.)' : ''));
@@ -6127,17 +6714,18 @@
     function historial() {
       llamar('pos_inventarios', { p_local: null }).then(function (h) {
         if (!$('invHist')) return;
+        var conDep = h.some(function (x) { return x.deposito; });   // SQL 193
         $('invHist').innerHTML = !h.length ? '<div class="pos-cartel">Todavía no se cargó ningún inventario.</div>' :
-          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th>Quién</th><th>De dónde</th><th class="n">Renglones</th>' +
+          '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th>' + (conDep ? '<th>Depósito</th>' : '') + '<th>Quién</th><th>De dónde</th><th class="n">Renglones</th>' +
             '<th class="n">Unidades</th><th class="n">Cambiaron</th><th>Completo</th></tr></thead><tbody>' +
           h.map(function (x) {
-            return '<tr><td>' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(bonito(x.local)) + '</td><td>' + esc(x.persona || '—') + '</td><td>' + esc(x.origen || '—') + '</td>' +
+            return '<tr><td>' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(bonito(x.local)) + '</td>' + (conDep ? '<td>' + esc(x.deposito || '—') + '</td>' : '') + '<td>' + esc(x.persona || '—') + '</td><td>' + esc(x.origen || '—') + '</td>' +
               '<td class="n">' + num(x.lineas) + '</td><td class="n">' + num(x.unidades) + '</td><td class="n">' + num(x.cambiaron) + '</td><td>' + (x.resto_a_cero ? 'Sí (el resto a 0)' : '—') + '</td></tr>';
           }).join('') + '</tbody></table></div>';
       }).catch(function (e) { if ($('invHist')) $('invHist').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
     historial();
-    if (S.inv) previa();
+    depInv().then(function () { if (S.inv) previa(); });
   }
 
   /* ════════════════════════════════════════════════════════════════════
