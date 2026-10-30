@@ -95,9 +95,9 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
   .menu-chico .pos-marca + span { display: none; }
   .menu-chico .pos-menu-pie { padding-top: 6px; }
 }
-/* La PC del local (657 de alto): con Depósitos y Ventas por productos son 15 secciones y el pie tiene que entrar sin deslizar el menú. */
+/* La PC del local (657 de alto): con Depósitos, Ventas por productos y Clientes son 16 secciones y el pie tiene que entrar sin deslizar el menú. */
 @media (min-width: 1000px) and (max-height: 720px) {
-  [data-pos="mostrador"] .pos-item { min-height: 28px; }
+  [data-pos="mostrador"] .pos-item { min-height: 26px; }
   [data-pos="mostrador"] .pos-menu > .pos-grupo { margin: 5px 10px; }
   /* Gestión achicada: con Depósitos, Disponibilidad y Ventas por productos son 18 íconos, y todos tienen que entrar sin deslizar. */
   [data-pos="gestion"] .menu-chico .pos-item { min-height: 26px; }
@@ -1070,3 +1070,35 @@ html[data-theme="dark"] .vv-barras { --vv-barra: #C9824F; }
 .vd-bloque { flex: 0 1 auto; min-width: 0; max-width: 100%; }
 .vd-bloque h3 { margin: 0 0 6px; font: 700 12.5px var(--sans); color: var(--txt-2); }
 .vd-matriz td:first-child { white-space: nowrap; }
+
+/* ── Los clientes (SQL 197): la lista y la ficha con sus 4 pestañas (también en la ventana de la venta) ── */
+.pos-filtros .cl-buscar { flex: 0 1 320px; min-width: 200px; }
+tr[data-cl] { cursor: pointer; }
+tr[data-cl]:hover td { background: var(--surface-2); }
+tr.cl-inactivo td { color: var(--txt-3); }
+.cl-tabla td { white-space: nowrap; }
+.cl-tabla td.cl-mail { max-width: 210px; overflow: hidden; text-overflow: ellipsis; }
+#clFicha { max-width: 880px; }
+.cli-info { margin: 0 0 10px; font-size: 13px; color: var(--txt-3); }
+.cli-info b { color: var(--txt); }
+.cli-socio { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; padding: 9px 12px; margin-bottom: 10px; border-radius: 12px;
+             background: var(--surface-2); font-size: 13px; color: var(--txt-2); }
+.cli-socio b { color: var(--txt); }
+.cli-socio small { flex-basis: 100%; color: var(--txt-3); font-size: 12px; }
+.cli-nombre { margin-bottom: 12px; }
+.pestanas.cli-pestanas { margin-bottom: 12px; }
+.cli-pestanas .pestana { border: 0; background: none; cursor: pointer; padding: 8px 16px; font-size: 13.5px; }
+.cli-pestanas .pestana[aria-current="page"] { background: var(--surface); }
+.cli-cuantos { font-weight: 600; color: var(--txt-3); }
+.cli-panel { min-height: 120px; }
+.cli-ayuda { margin: 8px 2px 0; font-size: 12.5px; color: var(--txt-3); }
+.cli-vacio { margin: 4px 2px 8px; font-size: 13px; color: var(--txt-3); }
+.cli-renglon { display: grid; grid-template-columns: minmax(0, 1fr) 30px; gap: 8px; align-items: end; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.cli-renglon .pos-campos { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.cli-renglon .cli-calle { grid-column: span 2; }
+.cli-renglon .pos-check { min-height: 38px; }
+.cli-panel textarea { resize: vertical; }
+@media (max-width: 620px) {
+  .cli-renglon .pos-campos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .cli-pestanas .pestana { padding: 8px 6px; font-size: 12.5px; }
+}

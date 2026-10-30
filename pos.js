@@ -99,6 +99,8 @@
     mostrador: [
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
                   ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida'],
+                  /* Los clientes (SQL 197), con los socios del Club: como la «Administración de clientes» de la PC del local. */
+                  ['clientes', 'Clientes', 'clientes'],
                   /* Las ventas por vendedor (SQL 192) y por productos (SQL 196, el "resumen de ventas"), como en la PC del local de BlueSoft. */
                   ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod']]],
       /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene.
@@ -128,7 +130,7 @@
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -138,11 +140,6 @@
       'El catálogo que ya está en el sistema (' + (window.CATALOGO ? window.CATALOGO.length : 576) + ' productos), con rubro, talles y colores.',
       'Alta y edición de productos, con varios códigos de barras por artículo.',
       'La etiqueta con el código, el talle y el color.'], 'Los precios ya se cambian en <a href="#listas">Listas de precios</a>.'],
-    clientes: ['Clientes', [
-      'Buscar por nombre, DNI, CUIT, mail o teléfono.',
-      'Canjear los premios del Club adentro de la venta (el socio ya se elige con «Cargar»).',
-      'Lo que compró cada uno, para el CRM.',
-      'La condición de IVA guardada, para la factura A.'], ''],
     reportes: ['Reportes', [
       'Ventas por sucursal y por medio de pago (las de por vendedor y por producto ya están, en «Ventas por vendedor» y «Ventas por productos»).',
       'Por día, por semana y por mes, comparado con el año pasado.',
@@ -312,7 +309,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_ventas_productos|pos_ventas_de_producto/.test(m) ? '196 (las ventas por productos)' :
+      return 'Todavía falta correr el SQL ' + (/pos_client|pos_cli_/.test(m) ? '197 (los clientes)' :
+                                             /pos_ventas_productos|pos_ventas_de_producto/.test(m) ? '196 (las ventas por productos)' :
                                              /pos_disponibilidad|pos_caja_valores|pos_caja_ajust/.test(m) ? '195 (la disponibilidad de las cajas)' :
                                              /pos_deposito|pos_remito_testigo|p_deposito/.test(m) ? '193 (los depósitos)' : /pos_ventas_vendedor/.test(m) ? '192 (las ventas por vendedor)' : /pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
                                              /pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
@@ -479,7 +477,7 @@
       $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
       return;
     }
-    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, gastos: verGastos, salidas: verSalidas,
+    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
@@ -1344,7 +1342,7 @@
     function marcar() { caja.querySelectorAll('[data-envio]').forEach(function (b) { b.classList.toggle('sel', b.getAttribute('data-envio') === envio); }); }
     marcar();
     caja.querySelector('#clEnvio').onclick = function (e) { var b = e.target.closest('[data-envio]'); if (b) { envio = envio === b.getAttribute('data-envio') ? '' : b.getAttribute('data-envio'); marcar(); } };
-    caja.querySelector('#clGenerico').onclick = function () { V.cliente = null; V.socio = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    caja.querySelector('#clGenerico').onclick = function () { V.cliente = null; V.socio = null; V.cliente_id = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
     function listo() {
       var x = {
         nombre: caja.querySelector('#clNombre').value.trim(),
@@ -1376,18 +1374,21 @@
     caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); listo(); } });
   }
 
-  /* "Cargar" (SQL 171): primero, ¿es socio del Club? Se busca como en Cobrar (su WhatsApp, su nombre, su mail o la
-     tarjeta) o se hace socio ahí mismo. Los datos para la factura A, o para mandarle la factura, siguen en la de siempre. */
+  /* "Cargar" (SQL 171): la lupita del cliente. Con el SQL 197 busca los clientes y los socios del Club juntos (por el
+     nombre, el DNI o el CUIT, el WhatsApp, el mail o la tarjeta) y tiene «Crear cliente» (Mauricio, 29/10: "cuando buscamos
+     un cliente en la lupita, también ahí tiene que estar la opción de crear cliente con todos los datos"); sin el 197,
+     sólo los socios, como antes. O se hace socio ahí mismo. Los datos para mandarle la factura siguen en la de siempre. */
   function abrirSocio() {
     var so = V.socio, prueba = enPrueba();
-    var caja = ventana('<h3 id="posVentTit">Cliente</h3><p class="pos-bajada">¿Es socio del Club? Buscalo por su WhatsApp, su nombre, su mail o el número de la tarjeta. ' +
-        'Si no es, se hace socio acá mismo.</p>' +
+    var caja = ventana('<h3 id="posVentTit">Cliente</h3><p class="pos-bajada">Buscalo por su nombre, DNI o CUIT, WhatsApp, mail o la tarjeta del Club. ' +
+        'Si no está, crealo; si quiere sumar puntos, hacelo socio.</p>' +
       (so ? '<div class="so-actual">' + marcaClub(so) + '<b>' + esc(so.nombre) + '</b><span>' + miles(so.puntos) + ' puntos</span>' +
             '<button type="button" class="pos-link" id="soSacar">Sacarlo de la venta</button></div>' : '') +
-      campo('', 'Buscar socio', '<input type="search" id="soBuscar" autocomplete="off" spellcheck="false" placeholder="WhatsApp, nombre, mail o tarjeta" autofocus>') +
+      campo('', 'Buscar cliente', '<input type="search" id="soBuscar" autocomplete="off" spellcheck="false" placeholder="Nombre, DNI o CUIT, WhatsApp, mail o tarjeta" autofocus>') +
       '<div class="so-lista" id="soLista"></div><div class="pos-error" id="soError"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="soFinal">Consumidor final</button>' +
-        '<button type="button" class="btn btn-sec btn-chico" id="soFactura" title="La factura A, o mandarle la factura por mail o WhatsApp">Datos para la factura</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="soFactura" title="Para esta venta: la factura A, o mandarle la factura por mail o WhatsApp">Datos para la factura</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="soCrear" title="Con todos sus datos y los de la factura; queda en Clientes"' + (S.sin197 ? ' hidden' : '') + '>Crear cliente</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="soAlta"' + (prueba ? ' disabled title="En modo prueba no se hacen socios: el alta es de verdad"' : '') + '>Hacerlo socio</button></div>');
     var campoB = caja.querySelector('#soBuscar'), lista = caja.querySelector('#soLista'), espera = null, pedido = 0, hallados = [];
     function buscar() {
@@ -1395,15 +1396,21 @@
       errorEn(caja, 'soError', '');
       if (q.length < 3) { hallados = []; lista.innerHTML = ''; return; }
       lista.innerHTML = '<p class="so-nada">Buscando…</p>';
-      llamar('pos_club_buscar', { p_texto: q }).then(function (r) {
+      buscarClientes(q).then(function (r) {
         if (n !== pedido || !caja.isConnected) return;
         if (r && r.corto) { hallados = []; lista.innerHTML = '<p class="so-nada">' + esc(r.porque) + '</p>'; return; }
+        if (S.sin197) caja.querySelector('#soCrear').hidden = true;
         hallados = r || [];
-        lista.innerHTML = hallados.length ? hallados.map(function (s, i) {
-          return '<button type="button" class="so-item" data-so="' + i + '"><span class="so-nom"><b>' + esc(s.nombre) + '</b>' +
-            '<small>' + esc(telCorto(s.telefono)) + (s.mail ? ' · ' + esc(s.mail) : '') + '</small></span>' +
-            '<span class="so-niv">' + esc(s.nivel || '') + '</span><span class="so-pts">' + miles(Number(s.puntos) || 0) + ' puntos</span></button>';
-        }).join('') : '<p class="so-nada">No hay ningún socio con «' + esc(q) + '».' + (prueba ? '' : ' Si quiere sumarse, tocá «Hacerlo socio».') + '</p>';
+        lista.innerHTML = hallados.length ? hallados.map(function (h, i) {
+          var s = h.socio, c = h.cliente;
+          var datos = [c && docTexto(c), c && c.condicion && c.condicion !== 'consumidor_final' ? CONDICION[c.condicion] : '',
+                       s ? telCorto(s.telefono) : c.telefono || '', (c && c.mail) || (s && s.mail) || ''].filter(Boolean).join(' · ');
+          return '<button type="button" class="so-item" data-so="' + i + '"><span class="so-nom"><b>' + esc(c ? c.nombre : s.nombre) + '</b>' +
+            '<small>' + esc(datos) + '</small></span>' +
+            (s ? '<span class="so-niv">' + esc(s.nivel || '') + '</span><span class="so-pts">' + miles(Number(s.puntos) || 0) + ' puntos</span>'
+               : '<span class="so-niv">Cliente Nº ' + c.numero + '</span><span class="so-pts"></span>') + '</button>';
+        }).join('') : '<p class="so-nada">No hay ningún ' + (S.sin197 ? 'socio' : 'cliente ni socio') + ' con «' + esc(q) + '».' +
+          (S.sin197 ? (prueba ? '' : ' Si quiere sumarse, tocá «Hacerlo socio».') : ' Tocá «Crear cliente»' + (prueba ? '.' : ' o, si quiere sumar puntos, «Hacerlo socio».')) + '</p>';
       }).catch(function (e) { if (n === pedido && caja.isConnected) { lista.innerHTML = ''; errorEn(caja, 'soError', mensajeDe(e)); } });
     }
     campoB.oninput = function () { clearTimeout(espera); espera = setTimeout(buscar, 300); };
@@ -1411,21 +1418,37 @@
     lista.onclick = function (e) {
       var b = e.target.closest('[data-so]');
       if (!b) return;
-      elegirSocio(hallados[Number(b.getAttribute('data-so'))]);
+      var h = hallados[Number(b.getAttribute('data-so'))];
+      if (h.cliente) elegirCliente(h.cliente, h.socio);
+      else elegirSocio(h.socio);
       cerrarVentana();
       pintar();
     };
     var sacar = caja.querySelector('#soSacar');
     if (sacar) sacar.onclick = function () { V.socio = null; cerrarVentana(); pintar(); };
-    caja.querySelector('#soFinal').onclick = function () { V.cliente = null; V.socio = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
+    caja.querySelector('#soFinal').onclick = function () { V.cliente = null; V.socio = null; V.cliente_id = null; if (V.letra === 'A') V.letra = 'B'; cerrarVentana(); pintar(); };
     caja.querySelector('#soFactura').onclick = function () { abrirCliente(false); };
+    caja.querySelector('#soCrear').onclick = function () { abrirCrearCliente(campoB.value.trim()); };
     caja.querySelector('#soAlta').onclick = function () { abrirAltaSocio(campoB.value.trim()); };
+  }
+  /** La lupita: los clientes y los socios juntos (SQL 197), cada uno {cliente, socio}; sin el 197, sólo los socios
+      (pos_club_buscar), como antes, y no lo vuelve a intentar hasta recargar. */
+  function buscarClientes(q) {
+    function aSocios(r) { return r && r.corto ? r : (r || []).map(function (s) { return { socio: s, cliente: null }; }); }
+    if (S.sin197) return llamar('pos_club_buscar', { p_texto: q }).then(aSocios);
+    return llamar('pos_clientes_buscar', { p_texto: q }).catch(function (e) {
+      if (!/SQL 197/.test(mensajeDe(e))) throw e;
+      S.sin197 = true;
+      return llamar('pos_club_buscar', { p_texto: q }).then(aSocios);
+    });
   }
   /** El socio elegido: su nombre va al ticket (menos en la factura A, que lleva la razón social) y su mail y su
       WhatsApp quedan a mano para mandarle la factura (con su sí, en «Datos para la factura»). */
   function elegirSocio(s) {
     V.socio = { codigo: s.codigo, nombre: s.nombre, nivel: s.nivel || '', puntos: Number(s.puntos) || 0, factor: Number(s.factor) || 1 };
-    var cl = V.cliente || { condicion: 'consumidor_final' };
+    /* SQL 197: si antes estaba elegido un cliente de la lista, sus datos no pasan a este socio. */
+    var cl = (!V.cliente_id && V.cliente) || { condicion: 'consumidor_final' };
+    V.cliente_id = null;
     if (V.letra !== 'A') cl.nombre = s.nombre;
     if (!cl.email && s.mail) cl.email = String(s.mail).toLowerCase();
     if (!cl.tel && s.telefono) cl.tel = s.telefono;
@@ -2236,6 +2259,373 @@
         return [fechaLarga(x.fecha), bonito(x.local), refCorta(x), x.vendedor, x.cliente || '', x.talle || '', x.color ? nombreColor(x.color, sel.codigo) : '',
                 x.cantidad, nro(x.precio), nro(x.total)];
       }));
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     LOS CLIENTES (SQL 197)
+     La «Administración de clientes» de BlueSoft (Mauricio, 29/10: "para
+     poder crear clientes y también para ver los clientes"), en UNA SOLA
+     LISTA con los socios del Club (lo eligió él): el socio que necesita
+     factura tiene su ficha atada a él. La ficha, con las 4 pestañas de una
+     persona (también lo eligió él): Datos generales, Direcciones, Teléfonos
+     y Datos persona. La lupita de la venta busca clientes y socios juntos
+     y tiene «Crear cliente». El mostrador busca; la lista entera es de la
+     oficina.
+     ════════════════════════════════════════════════════════════════════ */
+  /** Hoy, en Argentina (la fecha de la base). */
+  function hoyCli() { return (S.ini && S.ini.hoy) || new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); }
+  /* El día de un momento guardado (creado, modificado), en la hora de Argentina: la base lo da en UTC. */
+  function diaDe(ts) {
+    try { return new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(ts)); }
+    catch (e) { return fechaCorta(ts); }
+  }
+  var DOC_TIPOS = [['dni', 'DNI'], ['cuit', 'CUIT'], ['pasaporte', 'Pasaporte'], ['libreta', 'Libreta cívica'], ['otro', 'Otro']];
+  function sin197(e) {
+    var m = mensajeDe(e);
+    return /SQL 197/.test(m) ? 'Los clientes todavía no están en la base: falta correr el SQL 197.' : m;
+  }
+  /** "DNI 30.111.222", "CUIT 20-30111222-0", "Pasaporte AB123456". */
+  function docTexto(x) {
+    if (!x || !x.doc) return '';
+    var t = (DOC_TIPOS.filter(function (d) { return d[0] === x.doc_tipo; })[0] || ['', 'Documento'])[1];
+    return t + ' ' + (x.doc_tipo === 'cuit' ? cuit(x.doc) : x.doc_tipo === 'dni' || x.doc_tipo === 'libreta' ? miles(x.doc) : x.doc);
+  }
+  /** El dígito verificador del CUIT, la misma cuenta que la base (pos_cuit_ok): avisa antes de mandar. */
+  function cuitOk(d) {
+    if (!/^\d{11}$/.test(d)) return false;
+    var w = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2], s = 0;
+    for (var i = 0; i < 10; i++) s += Number(d[i]) * w[i];
+    var r = 11 - s % 11;
+    return (r === 11 ? 0 : r === 10 ? 9 : r) === Number(d[10]);
+  }
+  /** Lo del socio en la ficha: su nivel, sus puntos y su WhatsApp (que se cambia en el Club). La oficina lo ve entero. */
+  function socioDeFicha(so, oficina) {
+    return '<div class="cli-socio">' + marcaClub(so) + '<span><b>Socio del Club</b> · ' + miles(Number(so.puntos) || 0) + ' puntos · ' +
+      esc(so.whatsapp ? (oficina ? 'WhatsApp ' + so.whatsapp : telCorto(so.whatsapp)) : 'Sin WhatsApp') + '</span>' +
+      '<small>El nombre del Club, el WhatsApp y los puntos se cambian en el Club.</small></div>';
+  }
+
+  /* La lista: buscar, Mostrar (activos, inactivos, todos) y Club (socios o no). Tocar uno abre su ficha. */
+  function verClientes(volver) {
+    var c = $('cuerpo');
+    S.cliVer = null;
+    if (!volver) S.cliFiltro = null;
+    var F = S.cliFiltro || {};
+    c.innerHTML = cabeza('Clientes', 'Los clientes y los socios del Club, en una sola lista. Tocá uno para ver o cambiar su ficha.',
+        '<button type="button" class="btn btn-sec btn-chico" id="clBajar" hidden disabled>Bajar para Excel</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="clNuevo">Nuevo cliente</button>') +
+      '<div class="pos-filtros">' +
+        campo('cl-buscar', 'Buscar', '<input type="search" id="clBuscar" autocomplete="off" spellcheck="false" placeholder="Nombre, DNI o CUIT, teléfono o mail" ' +
+              'title="El nombre, el DNI o el CUIT, el teléfono, el mail, el Nº de cliente o la tarjeta del Club" value="' + esc(F.buscar || '') + '">') +
+        campo('', 'Mostrar', '<select id="clMostrar">' + opciones([['activos', 'Activos'], ['inactivos', 'Inactivos'], ['todos', 'Todos']], F.mostrar || 'activos') + '</select>') +
+        campo('', 'Club', '<select id="clClub">' + opciones([['todos', 'Todos'], ['socios', 'Socios del Club'], ['sin', 'Sin el Club']], F.club || 'todos') + '</select>') +
+      '</div>' +
+      '<div id="clLista"><p class="cargando">Cargando…</p></div>' +
+      '<div class="tkl-pie" id="clPie"></div>';
+    var pedido = 0, ultimo = null, tBus = null, miLista = $('clLista');
+    $('clBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 400); };
+    $('clBuscar').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBus); cargar(); } };
+    $('clMostrar').onchange = cargar;
+    $('clClub').onchange = cargar;
+    $('clNuevo').onclick = function () { S.cliVer = { nuevo: $('clBuscar').value.trim() }; verCliente(); };
+    function guardarFiltro() { S.cliFiltro = { buscar: $('clBuscar').value, mostrar: $('clMostrar').value, club: $('clClub').value }; }
+    function cargar() {
+      clearTimeout(tBus);
+      if (!miLista.isConnected) return;
+      var n = ++pedido;
+      guardarFiltro();
+      $('clLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('clBajar').disabled = true;
+      llamar('pos_clientes_lista', { p_buscar: $('clBuscar').value.trim() || null, p_mostrar: $('clMostrar').value, p_club: $('clClub').value }).then(function (d) {
+        if (n !== pedido || !miLista.isConnected) return;
+        ultimo = d;
+        pintar();
+      }).catch(function (e) {
+        if (n !== pedido || !miLista.isConnected) return;
+        ultimo = null;
+        $('clLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin197(e)) + '</div>';
+        $('clPie').innerHTML = '';
+      });
+    }
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    function tel(x, ofi) { return x.telefono || (x.whatsapp ? (ofi ? x.whatsapp : telCorto(x.whatsapp)) : ''); }
+    function pintar() {
+      var d = ultimo, xs = d.clientes || [], q = $('clBuscar').value.trim();
+      $('clBajar').hidden = !d.oficina;
+      if (d.corto) {
+        $('clLista').innerHTML = '<div class="pos-cartel">' + esc(d.porque) + ' Si no está, tocá «Nuevo cliente».</div>';
+        $('clPie').innerHTML = '';
+        return;
+      }
+      $('clPie').innerHTML = caja('Clientes', num(d.total), 'fuerte') + caja('Socios del Club', num(xs.filter(function (x) { return x.socio_id; }).length) + (d.mas ? '+' : ''));
+      if (!xs.length) {
+        $('clLista').innerHTML = '<div class="pos-cartel">No hay ningún cliente ' + (q ? 'con «' + esc(q) + '»' : 'con esos filtros') + '. Para cargarlo, tocá «Nuevo cliente».</div>';
+        return;
+      }
+      $('clLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla cl-tabla"><thead><tr><th class="n">Nº</th><th>Nombre</th><th>Club</th><th>Documento</th>' +
+          '<th>Condición de IVA</th><th>Teléfono</th><th>Mail</th><th>Localidad</th></tr></thead><tbody>' + xs.map(function (x, i) {
+          return '<tr data-cl="' + i + '" tabindex="0" title="Ver su ficha"' + (x.activo ? '' : ' class="cl-inactivo"') + '><td class="n">' + (x.numero || '—') + '</td>' +
+            '<td><b>' + esc(x.nombre) + '</b>' + (x.activo ? '' : ' <span class="pos-tag">Inactivo</span>') + '</td>' +
+            '<td>' + (x.socio_id ? marcaClub(x) : '') + '</td>' +
+            '<td>' + esc(docTexto(x) || '—') + '</td><td>' + esc(x.condicion ? CONDICION[x.condicion] || '' : '—') + '</td>' +
+            '<td>' + esc(tel(x, d.oficina) || '—') + '</td><td class="cl-mail"' + (x.mail ? ' title="' + esc(x.mail) + '"' : '') + '>' + esc(x.mail || '—') + '</td>' +
+            '<td>' + esc(x.localidad || '—') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (d.mas ? '<p class="pos-mas">Son muchos: se ven los primeros ' + num(xs.length) + '. Buscá para encontrar los demás.</p>' : '');
+      $('clLista').querySelectorAll('tr[data-cl]').forEach(function (tr) {
+        var x = xs[Number(tr.getAttribute('data-cl'))];
+        tr.onclick = function () { S.cliVer = x.id ? { id: x.id } : { socio: x.socio_id }; verCliente(); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+      $('clBajar').disabled = false;
+    }
+    /* El Excel de lo que se ve (sólo la oficina, que ve la lista entera). */
+    $('clBajar').onclick = function () {
+      if (!ultimo || !ultimo.oficina) return;
+      bajarCsv('Clientes ' + hoyCli() + '.csv',
+        ['Nº', 'Nombre', 'Tipo de documento', 'Documento', 'Condición de IVA', 'Teléfono', 'WhatsApp del Club', 'Mail', 'Localidad', 'Socio del Club', 'Nivel', 'Puntos', 'Activo'],
+        (ultimo.clientes || []).map(function (x) {
+          var t = (DOC_TIPOS.filter(function (d) { return d[0] === x.doc_tipo; })[0] || ['', ''])[1];
+          return [x.numero || '', x.nombre, x.doc ? t : '', x.doc || '', x.condicion ? CONDICION[x.condicion] || '' : '', x.telefono || '', x.whatsapp || '',
+                  x.mail || '', x.localidad || '', x.socio_id ? 'Sí' : 'No', x.nivel || '', x.socio_id ? Number(x.puntos) || 0 : '', x.activo ? 'Sí' : 'No'];
+        }));
+    };
+    cargar();
+    setTimeout(function () { var b = $('clBuscar'); if (b) b.focus(); }, 0);
+  }
+
+  /* La ficha: un cliente ({id}), un socio sin ficha ({socio}: lo del Club para completar) o uno nuevo ({nuevo: lo buscado}). */
+  function verCliente() {
+    var sel = S.cliVer || {}, c = $('cuerpo');
+    c.innerHTML = cabeza(sel.id || sel.socio ? 'Cliente' : 'Nuevo cliente', sel.id || sel.socio ? 'Sus datos y los de la factura.' : 'Con los datos para la factura, si los tiene.',
+        '<button type="button" class="btn btn-sec btn-chico" id="clVolver">‹ Clientes</button>') +
+      '<div id="clFicha"><p class="cargando">Cargando…</p></div>';
+    $('clVolver').onclick = function () { verClientes(true); };
+    (sel.id || sel.socio ? llamar('pos_cliente', { p_id: sel.id || null, p_socio: sel.socio || null }) : Promise.resolve(clienteDeTexto(sel.nuevo))).then(function (d) {
+      if (!$('clFicha')) return;
+      var h = c.querySelector('.pos-cab h2');
+      if (h && d.id) h.textContent = d.nombre;
+      formCliente($('clFicha'), d, {
+        oficina: MODO === 'gestion',
+        alGuardar: function (x, otro) {
+          avisar('ok', (d.id ? 'Listo: se guardó la ficha de ' : 'Listo: ') + x.nombre + (d.id ? '.' : ' quedó cargado (Nº ' + x.numero + ').'));
+          S.cliVer = otro ? { nuevo: '' } : { id: x.id };
+          verCliente();
+        }
+      });
+    }).catch(function (e) { if ($('clFicha')) $('clFicha').innerHTML = '<div class="pos-cartel mal">' + esc(sin197(e)) + '</div>'; });
+  }
+  /** Lo que se escribió en el buscador pasa al cliente nuevo: el documento, el teléfono, el mail o el nombre. */
+  function clienteDeTexto(t) {
+    t = String(t || '').trim();
+    var d = { doc_tipo: 'dni', condicion: 'consumidor_final', direcciones: [], telefonos: [], activo: true }, dig = t.replace(/\D/g, '');
+    if (/^[\d\s.()+\/-]+$/.test(t) && dig) {
+      if (dig.length === 11 && cuitOk(dig)) { d.doc_tipo = 'cuit'; d.doc = dig; }
+      else if (dig.length >= 7 && dig.length <= 8) d.doc = dig;
+      else if (dig.length >= 8) d.telefonos = [{ numero: t, predeterminado: true }];
+    } else if (/@/.test(t)) d.mail = t.toLowerCase();
+    else if (t) d.nombre = t;
+    return d;
+  }
+
+  /* El formulario de la ficha (en Clientes y en la ventana de la venta): el nombre arriba y las 4 pestañas.
+     op.alGuardar(cliente, otro) — otro: «Guardar y nuevo»; op.ventana: en la venta (con «Cancelar»); op.socio: la tarjeta
+     del socio de la venta, para atarlo al crearlo; op.local: dónde se crea. */
+  function formCliente(cont, d, op) {
+    op = op || {};
+    var dirs = (d.direcciones || []).map(function (x) { return Object.assign({}, x); });
+    var tels = (d.telefonos || []).map(function (x) { return Object.assign({}, x); });
+    var pest = 'generales', hoy = hoyCli();
+    var info = d.id ? '<p class="cli-info">Cliente Nº <b>' + d.numero + '</b>' +
+        (d.creado ? ' · lo cargó ' + esc(d.creado_nombre || 'la oficina') + ' el ' + diaDe(d.creado) + (d.local ? ' en ' + esc(bonito(d.local)) : '') : '') +
+        (d.modificado ? ' · lo cambió ' + esc(d.modificado_nombre || 'la oficina') + ' el ' + diaDe(d.modificado) : '') + '</p>' : '';
+    cont.innerHTML = info + (d.socio ? socioDeFicha(d.socio, op.oficina) : '') +
+      '<div class="pos-campos cli-nombre">' + campo('ancho', 'Nombre o razón social', '<input type="text" id="cfNombre" maxlength="120" autocomplete="off" value="' + esc(d.nombre || '') + '">') + '</div>' +
+      '<nav class="pestanas cli-pestanas" aria-label="La ficha">' + [['generales', 'Datos generales'], ['direcciones', 'Direcciones'], ['telefonos', 'Teléfonos'], ['persona', 'Datos persona']].map(function (p) {
+        return '<button type="button" class="pestana" data-pest="' + p[0] + '">' + p[1] + '<span class="cli-cuantos" data-cuantos="' + p[0] + '"></span></button>';
+      }).join('') + '</nav>' +
+      '<div class="cli-panel" data-panel="generales"><div class="pos-campos">' +
+        campo('', 'Tipo de documento', '<select id="cfTipo">' + opciones(DOC_TIPOS, d.doc_tipo || 'dni') + '</select>') +
+        campo('', 'Número', '<input type="text" id="cfDoc" maxlength="20" autocomplete="off" value="' + esc(d.doc ? (d.doc_tipo === 'cuit' ? cuit(d.doc) : d.doc) : '') + '">') +
+        campo('', 'Condición frente al IVA', '<select id="cfCond">' + opciones(Object.keys(CONDICION).map(function (k) { return [k, CONDICION[k]]; }), d.condicion || 'consumidor_final') + '</select>') +
+        campo('', 'Mail', '<input type="email" id="cfMail" maxlength="120" autocomplete="off" value="' + esc(d.mail || '') + '">') +
+        campo('ancho', 'Observaciones', '<textarea id="cfObs" rows="3" maxlength="1000">' + esc(d.observaciones || '') + '</textarea>') +
+        (d.id ? '<label class="pos-check ancho"><input type="checkbox" id="cfActivo"' + (d.activo === false ? '' : ' checked') + '> Activo (si no, no aparece en la venta)</label>' : '') +
+      '</div><p class="cli-ayuda" id="cfAyudaDoc"></p></div>' +
+      '<div class="cli-panel" data-panel="direcciones" hidden><div id="cfDirs"></div><p><button type="button" class="pos-link" id="cfDirMas">+ Agregar dirección</button></p></div>' +
+      '<div class="cli-panel" data-panel="telefonos" hidden><div id="cfTels"></div><p><button type="button" class="pos-link" id="cfTelMas">+ Agregar teléfono</button></p></div>' +
+      '<div class="cli-panel" data-panel="persona" hidden><div class="pos-campos">' +
+        campo('', 'Cumpleaños', '<input type="date" id="cfCumple" max="' + hoy + '" min="1900-01-01" value="' + esc(d.cumple || '') + '">') +
+        campo('', 'Talle de pantalón', '<input type="text" id="cfTp" maxlength="10" autocomplete="off" value="' + esc(d.talle_pantalon || '') + '">') +
+        campo('', 'Talle de remera', '<input type="text" id="cfTr" maxlength="10" autocomplete="off" value="' + esc(d.talle_remera || '') + '">') +
+        campo('', 'Número de calzado', '<input type="text" id="cfCz" maxlength="10" autocomplete="off" value="' + esc(d.calzado || '') + '">') +
+      '</div></div>' +
+      '<div class="pos-error" id="cfError"></div>' +
+      '<div class="pos-pie">' + (op.ventana ? '<button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' :
+                                 '<button type="button" class="btn btn-sec btn-chico" id="cfOtro">Guardar y nuevo</button>') +
+        '<button type="button" class="btn btn-pri btn-chico" id="cfGuardar">' + (op.ventana ? 'Guardar y elegirlo' : 'Guardar') + '</button></div>';
+    var q = function (s) { return cont.querySelector(s); };
+
+    function ponerPest(p) {
+      pest = p;
+      cont.querySelectorAll('.cli-pestanas .pestana').forEach(function (b) { if (b.getAttribute('data-pest') === p) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+      cont.querySelectorAll('.cli-panel').forEach(function (x) { x.hidden = x.getAttribute('data-panel') !== p; });
+    }
+    cont.querySelectorAll('.cli-pestanas .pestana').forEach(function (b) { b.onclick = function () { leerListas(); ponerPest(b.getAttribute('data-pest')); }; });
+    function cuantos() {
+      q('[data-cuantos="direcciones"]').textContent = dirs.length ? ' (' + dirs.length + ')' : '';
+      q('[data-cuantos="telefonos"]').textContent = tels.length ? ' (' + tels.length + ')' : '';
+    }
+    /* El documento: el teclado de números para el DNI y el CUIT, y la ayuda de la factura. */
+    function ayudaDoc() {
+      var t = q('#cfTipo').value, cond = q('#cfCond').value;
+      q('#cfDoc').inputMode = t === 'pasaporte' || t === 'otro' ? 'text' : 'numeric';
+      q('#cfDoc').placeholder = { dni: '7 u 8 números', cuit: '11 números', libreta: 'De 6 a 8 números', pasaporte: 'Letras y números', otro: '' }[t];
+      q('#cfAyudaDoc').textContent = cond !== 'consumidor_final' ? 'Para la factura A va el CUIT con la condición de IVA.' :
+        'Consumidor final: factura B. Para la A, el CUIT y la condición de IVA (responsable inscripto, monotributo o exento).';
+    }
+    q('#cfTipo').onchange = ayudaDoc;
+    q('#cfCond').onchange = function () { if (this.value !== 'consumidor_final' && q('#cfTipo').value !== 'cuit') q('#cfTipo').value = 'cuit'; ayudaDoc(); };
+    ayudaDoc();
+
+    /* Las direcciones y los teléfonos: renglones que se agregan y se quitan; uno es el de las facturas / el predeterminado. */
+    function pintarDirs() {
+      q('#cfDirs').innerHTML = dirs.length ? dirs.map(function (x, i) {
+        return '<div class="cli-renglon" data-dir="' + i + '"><div class="pos-campos">' +
+          campo('cli-calle', 'Calle', '<input type="text" data-k="calle" maxlength="80" value="' + esc(x.calle || '') + '">') +
+          campo('cli-corto', 'Número', '<input type="text" data-k="numero" maxlength="10" value="' + esc(x.numero || '') + '">') +
+          campo('cli-corto', 'Piso', '<input type="text" data-k="piso" maxlength="5" value="' + esc(x.piso || '') + '">') +
+          campo('cli-corto', 'Depto.', '<input type="text" data-k="depto" maxlength="5" value="' + esc(x.depto || '') + '">') +
+          campo('', 'Localidad', '<input type="text" data-k="localidad" maxlength="60" value="' + esc(x.localidad || '') + '">') +
+          campo('cli-corto', 'Código postal', '<input type="text" data-k="cp" maxlength="10" value="' + esc(x.cp || '') + '">') +
+          campo('', 'Provincia', '<input type="text" data-k="provincia" maxlength="60" value="' + esc(x.provincia || '') + '">') +
+          '<label class="pos-check"><input type="radio" name="cfDirFac" data-k="factura"' + (x.factura ? ' checked' : '') + '> Para las facturas</label>' +
+          '</div><button type="button" class="tk-quitar" data-quitar-dir="' + i + '" title="Quitar esta dirección" aria-label="Quitar esta dirección">' + icono('x') + '</button></div>';
+      }).join('') : '<p class="cli-vacio">Sin direcciones. La de las facturas va en la factura A.</p>';
+      cont.querySelectorAll('[data-quitar-dir]').forEach(function (b) {
+        b.onclick = function () { leerListas(); dirs.splice(Number(b.getAttribute('data-quitar-dir')), 1); pintarDirs(); cuantos(); };
+      });
+    }
+    function pintarTels() {
+      q('#cfTels').innerHTML = tels.length ? tels.map(function (x, i) {
+        return '<div class="cli-renglon" data-tel="' + i + '"><div class="pos-campos">' +
+          campo('', 'Número', '<input type="tel" data-k="numero" maxlength="25" placeholder="Con la característica" value="' + esc(x.numero || '') + '">') +
+          campo('', 'Contacto', '<input type="text" data-k="contacto" maxlength="60" value="' + esc(x.contacto || '') + '">') +
+          campo('', 'Horario', '<input type="text" data-k="horario" maxlength="40" value="' + esc(x.horario || '') + '">') +
+          '<label class="pos-check"><input type="radio" name="cfTelPre" data-k="predeterminado"' + (x.predeterminado ? ' checked' : '') + '> Predeterminado</label>' +
+          '</div><button type="button" class="tk-quitar" data-quitar-tel="' + i + '" title="Quitar este teléfono" aria-label="Quitar este teléfono">' + icono('x') + '</button></div>';
+      }).join('') : '<p class="cli-vacio">Sin teléfonos.' + (d.socio ? ' El WhatsApp del Club no hace falta cargarlo acá.' : '') + '</p>';
+      cont.querySelectorAll('[data-quitar-tel]').forEach(function (b) {
+        b.onclick = function () { leerListas(); tels.splice(Number(b.getAttribute('data-quitar-tel')), 1); pintarTels(); cuantos(); };
+      });
+    }
+    function leerRenglones(sel, xs) {
+      cont.querySelectorAll(sel).forEach(function (r, i) {
+        r.querySelectorAll('[data-k]').forEach(function (e) { xs[i][e.getAttribute('data-k')] = e.type === 'radio' ? e.checked : e.value.trim(); });
+      });
+    }
+    function leerListas() { leerRenglones('[data-dir]', dirs); leerRenglones('[data-tel]', tels); }
+    q('#cfDirMas').onclick = function () {
+      leerListas();
+      if (dirs.length >= 10) { errorEn(cont, 'cfError', 'Hasta 10 direcciones.'); return; }
+      dirs.push({ factura: !dirs.length });
+      pintarDirs(); cuantos();
+      var r = cont.querySelectorAll('[data-dir]'); r[r.length - 1].querySelector('[data-k="calle"]').focus();
+    };
+    q('#cfTelMas').onclick = function () {
+      leerListas();
+      if (tels.length >= 10) { errorEn(cont, 'cfError', 'Hasta 10 teléfonos.'); return; }
+      tels.push({ predeterminado: !tels.length });
+      pintarTels(); cuantos();
+      var r = cont.querySelectorAll('[data-tel]'); r[r.length - 1].querySelector('[data-k="numero"]').focus();
+    };
+    pintarDirs(); pintarTels(); cuantos(); ponerPest('generales');
+
+    /* Revisar antes de mandar (la base revisa lo mismo): si algo falta, se abre la pestaña donde está. */
+    function revisar(x) {
+      var dig = x.doc.replace(/\D/g, '');
+      if (!x.nombre) return ['generales', 'cfNombre', 'Falta el nombre (o la razón social).'];
+      if (x.doc && x.doc_tipo === 'cuit' && dig.length !== 11) return ['generales', 'cfDoc', 'El CUIT tiene 11 números.'];
+      if (x.doc && x.doc_tipo === 'cuit' && !cuitOk(dig)) return ['generales', 'cfDoc', 'Ese CUIT no es válido: revisá los números (el último es el dígito verificador).'];
+      if (x.doc && x.doc_tipo === 'dni' && (dig.length < 7 || dig.length > 8)) return ['generales', 'cfDoc', 'El DNI tiene 7 u 8 números.'];
+      if (x.doc && x.doc_tipo === 'libreta' && (dig.length < 6 || dig.length > 8)) return ['generales', 'cfDoc', 'La libreta tiene de 6 a 8 números.'];
+      if (x.doc && x.doc_tipo === 'pasaporte' && !/^[A-Z0-9]{6,12}$/.test(x.doc.toUpperCase().replace(/\s/g, ''))) return ['generales', 'cfDoc', 'El pasaporte tiene de 6 a 12 letras y números.'];
+      if (x.condicion !== 'consumidor_final' && (x.doc_tipo !== 'cuit' || !x.doc)) return ['generales', 'cfDoc', 'Para responsable inscripto, monotributo o exento hace falta el CUIT.'];
+      if (x.mail && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(x.mail)) return ['generales', 'cfMail', 'El mail no está bien escrito.'];
+      for (var i = 0; i < x.direcciones.length; i++) if (!x.direcciones[i].calle) return ['direcciones', null, 'En cada dirección falta la calle (o quitá la que sobra).'];
+      for (var j = 0; j < x.telefonos.length; j++) if (String(x.telefonos[j].numero || '').replace(/\D/g, '').length < 6) return ['telefonos', null, 'Cada teléfono necesita el número, con la característica (o quitá el que sobra).'];
+      if (x.cumple && (x.cumple > hoy || x.cumple < '1900-01-01')) return ['persona', 'cfCumple', 'La fecha de cumpleaños no es válida.'];
+      return null;
+    }
+    function guardar(otro) {
+      leerListas();
+      var x = {
+        id: d.id || null, nombre: q('#cfNombre').value.trim(), doc_tipo: q('#cfTipo').value, doc: q('#cfDoc').value.trim(), condicion: q('#cfCond').value,
+        mail: q('#cfMail').value.trim().toLowerCase(), observaciones: q('#cfObs').value.trim(), cumple: q('#cfCumple').value || null,
+        talle_pantalon: q('#cfTp').value.trim(), talle_remera: q('#cfTr').value.trim(), calzado: q('#cfCz').value.trim(),
+        direcciones: dirs, telefonos: tels, activo: q('#cfActivo') ? q('#cfActivo').checked : true
+      };
+      if (!d.id) {
+        x.local_id = op.local || (localInicial() || {}).id || null;
+        if (d.socio && d.socio.id) x.socio_id = d.socio.id;
+        else if (op.socio) x.socio = op.socio;
+      }
+      var mal = revisar(x);
+      if (mal) {
+        ponerPest(mal[0]);
+        errorEn(cont, 'cfError', mal[2]);
+        if (mal[1]) q('#' + mal[1]).focus();
+        return;
+      }
+      errorEn(cont, 'cfError', '');
+      var bts = cont.querySelectorAll('#cfGuardar, #cfOtro');
+      bts.forEach(function (b) { b.disabled = true; });
+      llamar('pos_cliente_guardar', { p: x }).then(function (r) {
+        if (op.alGuardar) op.alGuardar(r, otro);
+      }).catch(function (e) {
+        bts.forEach(function (b) { b.disabled = false; });
+        errorEn(cont, 'cfError', sin197(e));
+      });
+    }
+    q('#cfGuardar').onclick = function () { guardar(false); };
+    if (q('#cfOtro')) q('#cfOtro').onclick = function () { guardar(true); };
+    cont.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox' && e.target.type !== 'radio') { e.preventDefault(); guardar(false); }
+    });
+    setTimeout(function () { var f = q(d.nombre ? (d.doc || d.socio ? '#cfNombre' : '#cfDoc') : '#cfNombre'); if (f && cont.isConnected) f.focus(); }, 0);
+  }
+
+  /* «Crear cliente» desde la lupita de la venta: la ficha entera en una ventana; al guardarlo queda elegido en la venta.
+     Si la venta tiene un socio sin ficha, la ficha nueva es la suya (con su nombre y su mail) y queda atada a él. */
+  function abrirCrearCliente(texto) {
+    var so = V.socio && !V.cliente_id ? V.socio : null;
+    var d = clienteDeTexto(so ? '' : texto);
+    if (so) { d.nombre = so.nombre; d.mail = (V.cliente && V.cliente.email) || ''; }
+    var caja = ventana('<h3 id="posVentTit">Crear cliente</h3><p class="pos-bajada">' +
+        (so ? 'La ficha de <b>' + esc(so.nombre) + '</b>, atada a su tarjeta del Club: con los datos para la factura y lo que quieras sumar.' :
+              'Queda en Clientes para la próxima vez. Para la factura A: el CUIT y la condición de IVA.') + '</p><div id="ccForm"></div>', true);
+    formCliente(caja.querySelector('#ccForm'), d, {
+      ventana: true, local: V.local_id, socio: so ? so.codigo : null,
+      alGuardar: function (c) {
+        elegirCliente(c, null);
+        cerrarVentana();
+        pintar();
+        avisar('ok', 'Listo: ' + c.nombre + ' quedó cargado en Clientes (Nº ' + c.numero + ') y elegido en la venta.');
+      }
+    });
+  }
+  /** El cliente elegido en la venta: sus datos para la factura (el DNI o el CUIT, la condición, el mail y el teléfono).
+      Con su socio (s, como lo trae la lupita), también el socio. Lo de mandarle la factura queda como estaba. */
+  function elegirCliente(c, s) {
+    if (s) elegirSocio(s);
+    var antes = V.cliente || {};
+    var doc = c.doc && (c.doc_tipo === 'cuit' || c.doc_tipo === 'dni') ? c.doc : '';
+    V.cliente = { nombre: c.nombre, doc: doc, condicion: c.condicion || 'consumidor_final', email: c.mail || antes.email || '',
+                  tel: c.telefono || antes.tel || '', envio: antes.envio || '', acepta: !!antes.acepta };
+    V.cliente_id = c.id;
+    if (V.letra === 'X') return;
+    if (clienteParaA(V.cliente)) V.letra = 'A';
+    else if (V.letra === 'A') V.letra = 'B';
   }
 
   /* ════════════════════════════════════════════════════════════════════

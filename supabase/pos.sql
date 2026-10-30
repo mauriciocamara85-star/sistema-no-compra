@@ -4373,3 +4373,410 @@ revoke all on function pos_ventas_productos(date, date, uuid, text, text, boolea
                        pos_ventas_de_producto(text, date, date, uuid, text, boolean) from public, anon;
 grant execute on function pos_ventas_productos(date, date, uuid, text, text, boolean),
                           pos_ventas_de_producto(text, date, date, uuid, text, boolean) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 197 (29/10/2026) · LOS CLIENTES
+--
+--  La «Administración de clientes» de BlueSoft, como la pidió Mauricio
+--  (29/10): "para poder crear clientes y también para ver los clientes y
+--  también desde tickets de venta, cuando buscamos un cliente en la lupita,
+--  también ahí tiene que estar la opción de crear cliente con todos los datos
+--  y también los datos para hacer factura".
+--  · UNA SOLA LISTA con los socios del Club (lo eligió él): el socio que
+--    necesita factura tiene su ficha de cliente atada a él (socio_id), así
+--    nadie se carga dos veces; los socios sin ficha aparecen igual.
+--  · La ficha, con las 4 pestañas de una persona (lo eligió él): Datos
+--    generales (documento, IVA, mail, observaciones), Direcciones, Teléfonos
+--    y Datos persona (cumpleaños y talles). Lo de venta mayorista de BlueSoft
+--    (condiciones comerciales, acciones, descuentos) queda afuera.
+--  · La condición de IVA es una de las 4 que acepta la venta.
+--  · El mostrador busca (al menos 3 letras o números; hasta 50); la lista
+--    entera es de la oficina. La tarjeta del Club es la credencial del socio:
+--    la lista y la ficha no la traen (sólo la búsqueda de la venta, como
+--    pos_club_buscar, para cargarle los puntos).
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table pos_clientes (
+  id                uuid primary key default gen_random_uuid(),
+  numero            bigint not null unique,                       -- el «Código» de la ficha: 1, 2, 3…
+  socio_id          bigint unique references club_clientes (id) on delete set null,
+  nombre            text not null check (length(btrim(nombre)) between 1 and 120),
+  doc_tipo          text not null default 'dni' check (doc_tipo in ('cuit', 'dni', 'pasaporte', 'libreta', 'otro')),
+  doc               text check (doc is null or length(doc) between 3 and 20),
+  condicion         text not null default 'consumidor_final'
+                    check (condicion in ('consumidor_final', 'responsable_inscripto', 'monotributo', 'exento')),
+  mail              text check (mail is null or length(mail) <= 120),
+  observaciones     text check (observaciones is null or length(observaciones) <= 1000),
+  cumple            date,
+  talle_pantalon    text check (talle_pantalon is null or length(talle_pantalon) <= 10),
+  talle_remera      text check (talle_remera is null or length(talle_remera) <= 10),
+  calzado           text check (calzado is null or length(calzado) <= 10),
+  direcciones       jsonb not null default '[]'::jsonb check (jsonb_typeof(direcciones) = 'array'),
+  telefonos         jsonb not null default '[]'::jsonb check (jsonb_typeof(telefonos) = 'array'),
+  activo            boolean not null default true,
+  local_id          uuid references orden_locales (id) on delete set null,   -- dónde se creó
+  creado            timestamptz not null default now(),
+  creado_por        uuid,
+  creado_nombre     text,
+  modificado        timestamptz,
+  modificado_por    uuid,
+  modificado_nombre text
+);
+/* Un documento, un cliente. */
+create unique index pos_clientes_doc on pos_clientes (doc_tipo, doc) where doc is not null;
+alter table pos_clientes enable row level security;
+revoke all on pos_clientes from anon, authenticated;
+
+/* El dígito verificador del CUIT (el último): 11 menos el resto de dividir por 11 la suma pesada; 11 da 0. Un CUIT que
+   da 10 no existe (ARCA le cambia el prefijo a 23 o 33), y igual se acepta con 9, como los validadores de siempre. */
+create function pos_cuit_ok(p text) returns boolean
+language sql immutable set search_path = public as $$
+  select case when coalesce(p, '') !~ '^[0-9]{11}$' then false else (
+    select case t.r when 11 then 0 when 10 then 9 else t.r end = substr(p, 11, 1)::int
+      from (select 11 - (sum(substr(p, i, 1)::int * (array[5, 4, 3, 2, 7, 6, 5, 4, 3, 2])[i]) % 11)::int r
+              from generate_series(1, 10) i) t) end
+$$;
+
+/* Lo del socio que se muestra en la ficha y en la lista (sin la tarjeta, que es su credencial). */
+create function pos_cli_socio(p_socio bigint) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('id', s.id, 'nombre', s.nombre, 'nivel', s.nivel, 'puntos', s.puntos, 'whatsapp', s.telefono,
+                            'mail', s.mail, 'cumple', s.cumple, 'compras', s.compras)
+    from v_club_clientes s where s.id = p_socio and s.baja is null
+$$;
+
+/* Un cliente, como lo ven la ficha y la venta: lo guardado, el teléfono predeterminado, la dirección para las facturas
+   (escrita en una línea) y su socio. */
+create function pos_cli_json(c pos_clientes) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'id', c.id, 'numero', c.numero, 'nombre', c.nombre, 'doc_tipo', c.doc_tipo, 'doc', c.doc, 'condicion', c.condicion,
+    'mail', c.mail, 'observaciones', c.observaciones, 'cumple', c.cumple, 'talle_pantalon', c.talle_pantalon,
+    'talle_remera', c.talle_remera, 'calzado', c.calzado, 'direcciones', c.direcciones, 'telefonos', c.telefonos,
+    'activo', c.activo, 'local_id', c.local_id, 'local', (select l.nombre from orden_locales l where l.id = c.local_id),
+    'creado', c.creado, 'creado_nombre', c.creado_nombre, 'modificado', c.modificado, 'modificado_nombre', c.modificado_nombre,
+    'telefono', (select x->>'numero' from jsonb_array_elements(c.telefonos) x where coalesce((x->>'predeterminado')::boolean, false) limit 1),
+    'direccion', (select concat_ws(', ', nullif(btrim(concat_ws(' ', x->>'calle', x->>'numero')), ''),
+                                   nullif(btrim(concat_ws(' ', nullif(x->>'piso', '') || 'º', x->>'depto')), ''),
+                                   nullif(btrim(concat_ws(' ', x->>'localidad', '(' || nullif(x->>'cp', '') || ')')), ''),
+                                   nullif(x->>'provincia', ''))
+                    from jsonb_array_elements(c.direcciones) x where coalesce((x->>'factura')::boolean, false) limit 1),
+    'socio', case when c.socio_id is not null then pos_cli_socio(c.socio_id) end)
+$$;
+
+/* Los que coinciden con lo buscado: los clientes (con su socio, si tienen) y los socios del Club sin ficha. Vacío = todos.
+   Números: el Nº de cliente, el documento (también adentro del CUIT), un teléfono o la tarjeta del Club. Con @: el mail.
+   Con letras: el nombre con todas esas palabras (sin mirar acentos ni mayúsculas), o el pasaporte. */
+create function pos_cli_filas(p_buscar text) returns table (cliente_id uuid, socio_id bigint)
+language sql stable security definer set search_path = public as $$
+  with b as (
+    select btrim(coalesce(p_buscar, '')) t,
+           regexp_replace(coalesce(p_buscar, ''), '[^0-9]', '', 'g') dig,
+           btrim(coalesce(p_buscar, '')) ~ '^[0-9\s.()+/-]+$' numeros,
+           translate(lower(btrim(coalesce(p_buscar, ''))), 'áéíóúüñ', 'aeiouun') txt
+  ),
+  todos as (
+    select c.id cliente_id, c.socio_id from pos_clientes c
+    union all
+    select null::uuid, s.id from club_clientes s
+     where s.baja is null and not exists (select 1 from pos_clientes c where c.socio_id = s.id)
+  )
+  select t.cliente_id, t.socio_id
+    from todos t
+    cross join b
+    left join pos_clientes c on c.id = t.cliente_id
+    left join club_clientes s on s.id = t.socio_id and s.baja is null
+   where b.t = ''
+      or (b.numeros and b.dig <> '' and (
+             c.numero::text = b.dig
+          or (length(b.dig) >= 3 and position(b.dig in coalesce(c.doc, '')) > 0)
+          or (length(b.dig) >= 8 and club_tel(s.telefono) = club_tel(b.dig))
+          or (length(b.dig) >= 6 and exists (select 1 from jsonb_array_elements(c.telefonos) x
+                                              where position(b.dig in regexp_replace(coalesce(x->>'numero', ''), '[^0-9]', '', 'g')) > 0
+                                                 or (length(b.dig) >= 8 and club_tel(x->>'numero') = club_tel(b.dig))))
+          or (length(b.dig) = 12 and s.codigo = b.dig)))
+      or (position('@' in b.txt) > 1 and (position(b.txt in lower(coalesce(c.mail, ''))) > 0 or position(b.txt in lower(coalesce(s.mail, ''))) > 0))
+      or (not b.numeros and length(b.t) >= 3 and upper(regexp_replace(b.t, '\s', '', 'g')) = c.doc)
+      or (not b.numeros and b.txt ~ '[a-zñ]' and (
+             not exists (select 1 from regexp_split_to_table(b.txt, '\s+') w
+                          where w <> '' and position(w in translate(lower(coalesce(c.nombre, '')), 'áéíóúüñ', 'aeiouun')) = 0)
+          or not exists (select 1 from regexp_split_to_table(b.txt, '\s+') w
+                          where w <> '' and position(w in translate(lower(coalesce(s.nombre, '')), 'áéíóúüñ', 'aeiouun')) = 0)))
+$$;
+
+/* La lista de Gestión → Clientes (y la del mostrador). p_mostrar: activos, inactivos o todos; p_club: todos, socios
+   (los del Club) o sin (los que no son socios). La oficina ve la lista entera (hasta 1.000; 'mas' avisa que hay más);
+   el mostrador, sólo lo que busca (al menos 3 letras o números; hasta 50). */
+create function pos_clientes_lista(p_buscar text default null, p_mostrar text default 'activos', p_club text default 'todos')
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_t   text := btrim(coalesce(p_buscar, ''));
+  v_ofi boolean;
+  v_max int;
+begin
+  perform pos_permiso();
+  if coalesce(p_mostrar, '') not in ('activos', 'inactivos', 'todos') then raise exception 'Elegí cuáles mostrar.'; end if;
+  if coalesce(p_club, '') not in ('todos', 'socios', 'sin') then raise exception 'Elegí si son socios del Club.'; end if;
+  v_ofi := pos_puede('gestion');
+  if not v_ofi and length(v_t) < 3 then
+    return jsonb_build_object('corto', true, 'oficina', false,
+                              'porque', 'Buscá al cliente por su nombre, DNI o CUIT, teléfono o mail (al menos 3 letras o números).');
+  end if;
+  v_max := case when v_ofi then 1000 else 50 end;
+  return (
+    with r as (
+      select c.id, c.numero, coalesce(c.nombre, s.nombre) nombre, c.doc_tipo, c.doc, c.condicion, coalesce(c.mail, s.mail) mail,
+             (select x->>'numero' from jsonb_array_elements(c.telefonos) x where coalesce((x->>'predeterminado')::boolean, false) limit 1) telefono,
+             (select x->>'localidad' from jsonb_array_elements(c.direcciones) x where coalesce((x->>'factura')::boolean, false) limit 1) localidad,
+             s.id socio_id, s.telefono whatsapp, s.nivel, s.puntos, coalesce(c.activo, true) activo, coalesce(c.creado, s.creado) creado,
+             translate(lower(coalesce(c.nombre, s.nombre)), 'áéíóúüñ', 'aeiouun') orden
+        from pos_cli_filas(v_t) f
+        left join pos_clientes c on c.id = f.cliente_id
+        left join v_club_clientes s on s.id = coalesce(c.socio_id, f.socio_id) and s.baja is null
+       where (c.id is not null or s.id is not null)
+         and (p_mostrar = 'todos' or (p_mostrar = 'inactivos') = not coalesce(c.activo, true))
+         and (p_club = 'todos' or (p_club = 'socios') = (s.id is not null))
+    )
+    select jsonb_build_object(
+      'clientes', coalesce((select jsonb_agg(to_jsonb(z) - 'orden' order by z.orden, z.numero)
+                              from (select * from r order by orden, numero limit v_max) z), '[]'::jsonb),
+      'total', (select count(*) from r),
+      'mas', (select count(*) > v_max from r),
+      'oficina', v_ofi)
+  );
+end $$;
+
+/* La ficha: un cliente (p_id), o un socio (p_socio, su id del Club): si ya tiene ficha, ésa; si no, una nueva con lo del
+   Club (el nombre, el mail y el cumpleaños) para completar y guardar atada a él. */
+create function pos_cliente(p_id uuid default null, p_socio bigint default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  c pos_clientes;
+  so jsonb;
+begin
+  perform pos_permiso();
+  if p_id is not null then
+    select * into c from pos_clientes where id = p_id;
+    if not found then raise exception 'Ese cliente no existe.'; end if;
+    return pos_cli_json(c);
+  end if;
+  if p_socio is null then raise exception 'Elegí el cliente.'; end if;
+  select * into c from pos_clientes where socio_id = p_socio;
+  if found then return pos_cli_json(c); end if;
+  so := pos_cli_socio(p_socio);
+  if so is null then raise exception 'Ese socio no está en el Club (o se dio de baja).'; end if;
+  return jsonb_build_object('id', null, 'numero', null, 'nombre', so->>'nombre', 'doc_tipo', 'dni', 'doc', null,
+                            'condicion', 'consumidor_final', 'mail', so->>'mail', 'cumple', so->>'cumple', 'direcciones', '[]'::jsonb,
+                            'telefonos', '[]'::jsonb, 'activo', true, 'socio', so);
+end $$;
+
+/* Crear o cambiar un cliente (sin id, uno nuevo). Lo hace cualquiera que use el POS: en la venta, con la lupita, o en
+   Clientes. El socio (socio_id, o socio = su tarjeta, desde la venta) se ata sólo al crearlo. Devuelve el cliente. */
+create function pos_cliente_guardar(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_id     uuid;
+  v_nom    text := nullif(btrim(coalesce(p->>'nombre', '')), '');
+  v_tipo   text := coalesce(nullif(p->>'doc_tipo', ''), 'dni');
+  v_doc    text := nullif(btrim(coalesce(p->>'doc', '')), '');
+  v_cond   text := coalesce(nullif(p->>'condicion', ''), 'consumidor_final');
+  v_mail   text := nullif(lower(btrim(coalesce(p->>'mail', ''))), '');
+  v_obs    text := nullif(btrim(coalesce(p->>'observaciones', '')), '');
+  v_tp     text := nullif(upper(btrim(coalesce(p->>'talle_pantalon', ''))), '');
+  v_tr     text := nullif(upper(btrim(coalesce(p->>'talle_remera', ''))), '');
+  v_cz     text := nullif(upper(btrim(coalesce(p->>'calzado', ''))), '');
+  v_activo boolean;
+  v_cumple date;
+  v_soc    bigint;
+  v_loc    uuid;
+  v_dirs   jsonb := '[]'::jsonb;
+  v_tels   jsonb := '[]'::jsonb;
+  v_fac    boolean := false;
+  v_pre    boolean := false;
+  v_yo     uuid := orden_yo_id();
+  v_yon    text := (select pe.nombre from orden_personas pe where pe.id = orden_yo_id());
+  v_hoy    date := (now() at time zone 'America/Argentina/Buenos_Aires')::date;
+  x        jsonb;
+  y        jsonb;
+  o        pos_clientes;
+  c        pos_clientes;
+begin
+  perform pos_permiso();
+  begin
+    v_id := nullif(p->>'id', '')::uuid;
+    v_activo := coalesce(nullif(p->>'activo', '')::boolean, true);
+  exception when others then raise exception 'Los datos del cliente no son válidos.';
+  end;
+
+  if v_nom is null then raise exception 'Falta el nombre (o la razón social).'; end if;
+  if length(v_nom) > 120 then raise exception 'El nombre es muy largo (hasta 120 letras).'; end if;
+
+  /* El documento: el CUIT, el DNI y la libreta, sólo los números; el pasaporte y otro, sin espacios y en mayúsculas. */
+  if v_tipo not in ('cuit', 'dni', 'pasaporte', 'libreta', 'otro') then raise exception 'El tipo de documento no es válido.'; end if;
+  if v_doc is not null then
+    v_doc := case when v_tipo in ('cuit', 'dni', 'libreta') then regexp_replace(v_doc, '[^0-9]', '', 'g')
+                  else upper(regexp_replace(v_doc, '\s', '', 'g')) end;
+    v_doc := nullif(v_doc, '');
+  end if;
+  if v_doc is not null then
+    if v_tipo = 'cuit' and length(v_doc) <> 11 then raise exception 'El CUIT tiene 11 números.'; end if;
+    if v_tipo = 'cuit' and not pos_cuit_ok(v_doc) then
+      raise exception 'Ese CUIT no es válido: revisá los números (el último es el dígito verificador).';
+    end if;
+    if v_tipo = 'dni' and length(v_doc) not between 7 and 8 then raise exception 'El DNI tiene 7 u 8 números.'; end if;
+    if v_tipo = 'libreta' and length(v_doc) not between 6 and 8 then raise exception 'La libreta tiene de 6 a 8 números.'; end if;
+    if v_tipo = 'pasaporte' and v_doc !~ '^[A-Z0-9]{6,12}$' then raise exception 'El pasaporte tiene de 6 a 12 letras y números.'; end if;
+    if v_tipo = 'otro' and length(v_doc) not between 3 and 20 then raise exception 'El documento tiene de 3 a 20 letras y números.'; end if;
+  end if;
+
+  if v_cond not in ('consumidor_final', 'responsable_inscripto', 'monotributo', 'exento') then
+    raise exception 'La condición frente al IVA no es válida.';
+  end if;
+  if v_cond <> 'consumidor_final' and (v_tipo <> 'cuit' or v_doc is null) then
+    raise exception 'Para responsable inscripto, monotributo o exento hace falta el CUIT.';
+  end if;
+  if v_mail is not null and (length(v_mail) > 120 or v_mail !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$') then
+    raise exception 'El mail no está bien escrito.';
+  end if;
+  if length(coalesce(v_obs, '')) > 1000 then raise exception 'Las observaciones son muy largas (hasta 1.000 letras).'; end if;
+  if length(coalesce(v_tp, '')) > 10 or length(coalesce(v_tr, '')) > 10 or length(coalesce(v_cz, '')) > 10 then
+    raise exception 'Los talles son de hasta 10 letras.';
+  end if;
+  begin
+    v_cumple := nullif(p->>'cumple', '')::date;
+  exception when others then raise exception 'La fecha de cumpleaños no es válida.';
+  end;
+  if v_cumple is not null and (v_cumple > v_hoy or v_cumple < date '1900-01-01') then
+    raise exception 'La fecha de cumpleaños no es válida.';
+  end if;
+
+  /* Las direcciones (hasta 10): la calle es lo único obligatorio; una sola es la de las facturas (si ninguna, la primera). */
+  if p ? 'direcciones' and jsonb_typeof(p->'direcciones') = 'array' then
+    if jsonb_array_length(p->'direcciones') > 10 then raise exception 'Hasta 10 direcciones.'; end if;
+    for x in select * from jsonb_array_elements(p->'direcciones') loop
+      if jsonb_typeof(x) <> 'object' then raise exception 'Una dirección no es válida.'; end if;
+      y := jsonb_build_object(
+        'calle', nullif(btrim(coalesce(x->>'calle', '')), ''), 'numero', nullif(btrim(coalesce(x->>'numero', '')), ''),
+        'piso', nullif(btrim(coalesce(x->>'piso', '')), ''), 'depto', nullif(upper(btrim(coalesce(x->>'depto', ''))), ''),
+        'localidad', nullif(btrim(coalesce(x->>'localidad', '')), ''), 'cp', nullif(upper(btrim(coalesce(x->>'cp', ''))), ''),
+        'provincia', nullif(btrim(coalesce(x->>'provincia', '')), ''),
+        'factura', not v_fac and coalesce((x->>'factura')::boolean, false));
+      if y->>'calle' is null then raise exception 'En cada dirección falta la calle.'; end if;
+      if length(y->>'calle') > 80 or length(coalesce(y->>'numero', '')) > 10 or length(coalesce(y->>'piso', '')) > 5
+         or length(coalesce(y->>'depto', '')) > 5 or length(coalesce(y->>'localidad', '')) > 60 or length(coalesce(y->>'cp', '')) > 10
+         or length(coalesce(y->>'provincia', '')) > 60 then
+        raise exception 'Una dirección tiene algo muy largo.';
+      end if;
+      if (y->>'factura')::boolean then v_fac := true; end if;
+      v_dirs := v_dirs || jsonb_build_array(y);
+    end loop;
+    if not v_fac and jsonb_array_length(v_dirs) > 0 then v_dirs := jsonb_set(v_dirs, '{0,factura}', 'true'::jsonb); end if;
+  end if;
+
+  /* Los teléfonos (hasta 10): el número, con al menos 6 dígitos; uno es el predeterminado (si ninguno, el primero). */
+  if p ? 'telefonos' and jsonb_typeof(p->'telefonos') = 'array' then
+    if jsonb_array_length(p->'telefonos') > 10 then raise exception 'Hasta 10 teléfonos.'; end if;
+    for x in select * from jsonb_array_elements(p->'telefonos') loop
+      if jsonb_typeof(x) <> 'object' then raise exception 'Un teléfono no es válido.'; end if;
+      y := jsonb_build_object(
+        'numero', nullif(btrim(coalesce(x->>'numero', '')), ''), 'contacto', nullif(btrim(coalesce(x->>'contacto', '')), ''),
+        'horario', nullif(btrim(coalesce(x->>'horario', '')), ''),
+        'predeterminado', not v_pre and coalesce((x->>'predeterminado')::boolean, false));
+      if length(regexp_replace(coalesce(y->>'numero', ''), '[^0-9]', '', 'g')) < 6 or length(y->>'numero') > 25 then
+        raise exception 'Cada teléfono necesita el número (con la característica).';
+      end if;
+      if length(coalesce(y->>'contacto', '')) > 60 or length(coalesce(y->>'horario', '')) > 40 then
+        raise exception 'Un teléfono tiene algo muy largo.';
+      end if;
+      if (y->>'predeterminado')::boolean then v_pre := true; end if;
+      v_tels := v_tels || jsonb_build_array(y);
+    end loop;
+    if not v_pre and jsonb_array_length(v_tels) > 0 then v_tels := jsonb_set(v_tels, '{0,predeterminado}', 'true'::jsonb); end if;
+  end if;
+
+  if v_id is not null then
+    select * into o from pos_clientes where id = v_id for update;
+    if not found then raise exception 'Ese cliente no existe.'; end if;
+  end if;
+
+  /* Un documento, un cliente. */
+  if v_doc is not null then
+    select * into c from pos_clientes where doc_tipo = v_tipo and doc = v_doc and id is distinct from v_id;
+    if found then
+      raise exception 'Ya hay un cliente con ese %: Nº % · %.',
+        case v_tipo when 'cuit' then 'CUIT' when 'dni' then 'DNI' when 'libreta' then 'documento' when 'pasaporte' then 'pasaporte' else 'documento' end,
+        c.numero, c.nombre;
+    end if;
+  end if;
+
+  if v_id is null then
+    /* El socio, sólo al crearlo: por su id (la ficha) o por su tarjeta (la venta). */
+    if nullif(p->>'socio_id', '') is not null or nullif(p->>'socio', '') is not null then
+      select s.id into v_soc from club_clientes s
+       where s.baja is null
+         and (s.id::text = nullif(p->>'socio_id', '') or s.codigo = nullif(p->>'socio', ''));
+      if v_soc is null then raise exception 'Ese socio no está en el Club (o se dio de baja).'; end if;
+      select * into c from pos_clientes where socio_id = v_soc;
+      if found then raise exception 'Ese socio ya tiene su ficha de cliente: Nº % · %.', c.numero, c.nombre; end if;
+    end if;
+    v_loc := (select l.id from orden_locales l where l.id::text = nullif(p->>'local_id', ''));
+    perform pg_advisory_xact_lock(hashtext('pos_cliente'));
+    insert into pos_clientes (numero, socio_id, nombre, doc_tipo, doc, condicion, mail, observaciones, cumple, talle_pantalon,
+                              talle_remera, calzado, direcciones, telefonos, activo, local_id, creado_por, creado_nombre)
+    values ((select coalesce(max(numero), 0) + 1 from pos_clientes), v_soc, v_nom, v_tipo, v_doc, v_cond, v_mail, v_obs, v_cumple,
+            v_tp, v_tr, v_cz, v_dirs, v_tels, v_activo, v_loc, v_yo, v_yon)
+    returning * into c;
+  else
+    update pos_clientes set nombre = v_nom, doc_tipo = v_tipo, doc = v_doc, condicion = v_cond, mail = v_mail, observaciones = v_obs,
+                            cumple = v_cumple, talle_pantalon = v_tp, talle_remera = v_tr, calzado = v_cz,
+                            direcciones = case when p ? 'direcciones' then v_dirs else direcciones end,
+                            telefonos = case when p ? 'telefonos' then v_tels else telefonos end,
+                            activo = v_activo, modificado = now(), modificado_por = v_yo, modificado_nombre = v_yon
+     where id = v_id
+    returning * into c;
+  end if;
+  return pos_cli_json(c);
+exception when unique_violation then
+  raise exception 'Ya hay un cliente con ese documento (o ese socio ya tiene su ficha). Buscalo en Clientes.';
+end $$;
+
+/* La lupita de la venta: los clientes y los socios del Club juntos (hasta 12, por nombre). Del socio trae lo de
+   pos_club_buscar (la tarjeta y el multiplicador de hoy, para cargarle los puntos); del cliente, sus datos para la
+   factura. */
+create function pos_clientes_buscar(p_texto text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_t text := btrim(coalesce(p_texto, ''));
+begin
+  perform pos_permiso();
+  if length(v_t) < 3 then
+    return jsonb_build_object('corto', true, 'porque', 'Escribí al menos 3 letras del nombre, o el DNI, el CUIT, el teléfono o la tarjeta.');
+  end if;
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'cliente', case when z.cid is not null then (select pos_cli_json(c) from pos_clientes c where c.id = z.cid) end,
+             'socio', case when z.sid is not null then (
+                 select jsonb_build_object('codigo', s.codigo, 'nombre', s.nombre, 'telefono', s.telefono, 'mail', s.mail,
+                                           'puntos', s.puntos, 'nivel', s.nivel, 'compras', s.compras, 'confirmado', s.confirmado,
+                                           'factor', (club_factor(s.id)->>'total')::numeric)
+                   from v_club_clientes s where s.id = z.sid) end)
+           order by z.orden, z.numero)
+      from (
+        select c.id cid, s.id sid, c.numero, translate(lower(coalesce(c.nombre, s.nombre)), 'áéíóúüñ', 'aeiouun') orden
+          from pos_cli_filas(v_t) f
+          left join pos_clientes c on c.id = f.cliente_id and c.activo
+          left join club_clientes s on s.id = coalesce(c.socio_id, f.socio_id) and s.baja is null
+         where c.id is not null or s.id is not null
+         order by orden, c.numero
+         limit 12
+      ) z
+  ), '[]'::jsonb);
+end $$;
+
+revoke all on function pos_cuit_ok(text), pos_cli_socio(bigint), pos_cli_json(pos_clientes), pos_cli_filas(text)
+  from public, anon, authenticated;
+revoke all on function pos_clientes_lista(text, text, text), pos_cliente(uuid, bigint), pos_cliente_guardar(jsonb),
+                       pos_clientes_buscar(text) from public, anon;
+grant execute on function pos_clientes_lista(text, text, text), pos_cliente(uuid, bigint), pos_cliente_guardar(jsonb),
+                          pos_clientes_buscar(text) to authenticated;
