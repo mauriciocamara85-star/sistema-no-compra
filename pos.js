@@ -340,7 +340,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_articul/.test(m) ? '202 (los productos)' :
+      return 'Todavía falta correr el SQL ' + (/pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
+                                             /pos_articul/.test(m) ? '202 (los productos)' :
                                              /pos_lista_(subir|aumentar|rubros|cambios|deshacer)/.test(m) ? '201 (subir y aumentar las listas de precios)' :
                                              /pos_giftcard/.test(m) ? '200 (las gift cards en el POS)' :
                                              /pos_client|pos_cli_/.test(m) ? '197 (los clientes)' :
@@ -6476,15 +6477,47 @@
     c.innerHTML = cabeza('Remitos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
         'Lo que llega de la fábrica o de otro local. Se cuenta producto por producto y, si coincide con el remito, entra al stock.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="stock">Ver el stock</button>') +
-      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="rmLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') + '</div>' +
+      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="rmLocal" class="desplegable">' + opcionesLocales(l.id) + '</select>') +
+        campo('rm-buscar', 'Producto', '<input type="search" id="rmBuscar" autocomplete="off" spellcheck="false" placeholder="Código, nombre o etiqueta" ' +
+              'title="En qué remitos vino un producto y cuántas llegaron. El código o el nombre; o escaneá la etiqueta">') + '</div>' +
       (prueba ? '<div class="pos-cartel prueba">Con el <b>modo prueba</b> prendido no se reciben remitos: el stock es de verdad. Apagalo (abajo, en el menú) para recibir.</div>' : '') +
-      '<h3 class="st-tit">Por recibir</h3><div id="rmPend"><p class="cargando">Cargando…</p></div>' +
-      '<div class="st-tit-fila"><h3 class="st-tit">Recibidos</h3><div id="rmPer"></div></div><div id="rmHechos"><p class="cargando">Cargando…</p></div>';
+      '<div id="rmPendSec"><h3 class="st-tit">Por recibir</h3><div id="rmPend"><p class="cargando">Cargando…</p></div></div>' +
+      '<div class="st-tit-fila"><h3 class="st-tit" id="rmTitH">Recibidos</h3><div id="rmPer"></div></div><div id="rmHechos"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
-    var per = periodoPos($('rmPer'), { inicial: 'mes', guardar: 'pos_remitos_periodo', hastaHoy: true, alCambiar: cargarHechos });
+    var per = periodoPos($('rmPer'), { inicial: 'mes', guardar: 'pos_remitos_periodo', hastaHoy: true,
+                                       alCambiar: function () { if (buscado()) buscar(); else cargarHechos(); } });
     $('rmLocal').onchange = function () { S.stLocal = this.value; recordarLocal(this.value); cargar(); };
-    var pedido = 0;
-    function cargar() { cargarPend(); cargarHechos(); }
+    /* SQL 204: con «Producto», en vez de las dos listas, los remitos que lo trajeron. Mientras escriben busca solo; con la pistola, enseguida. */
+    var tBus = null;
+    $('rmBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 400); };
+    $('rmBuscar').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBus); cargar(); } };
+    function buscado() { return productoBuscado($('rmBuscar').value); }
+    var pedido = 0, pedidoH = 0;
+    function cargar() {
+      clearTimeout(tBus);
+      var q = buscado();
+      $('rmPendSec').hidden = !!q;
+      $('rmTitH').textContent = q ? 'Remitos con «' + q + '»' : 'Recibidos';
+      if (q) { buscar(); return; }
+      cargarPend(); cargarHechos();
+    }
+    var pedidoB = 0;
+    function buscar() {
+      var r = per.rango(), n = ++pedidoB, loc = $('rmLocal').value, q = buscado();
+      ++pedido; ++pedidoH;   // lo que estaba cargando de las otras dos listas ya no se pinta
+      $('rmHechos').innerHTML = '<p class="cargando">Buscando…</p>';
+      llamar('pos_remitos_producto', { p_buscar: q, p_desde: r.desde, p_hasta: r.hasta, p_local: loc }).then(function (d) {
+        if (n !== pedidoB || !$('rmHechos') || buscado() !== q) return;
+        /* Lo que llegó a este local (lo que salió de acá está en Envíos internos y Devolución a fábrica). */
+        var fs = (d.filas || []).filter(function (f) { return f.destino_local_id === loc; });
+        $('rmHechos').innerHTML = tablaRemitosProducto(fs, d.mas, q, false);
+        $('rmHechos').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
+          var id = tr.getAttribute('data-ticket');
+          tr.onclick = function () { if (tr.getAttribute('data-pend') && !prueba) abrirRecepcion(id); else abrirRemito(id, cargar); };
+          tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+        });
+      }).catch(function (e) { if (n === pedidoB && $('rmHechos')) $('rmHechos').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
     function cargarPend() {
       var n = ++pedido, loc = $('rmLocal').value;
       llamar('pos_remitos', { p_desde: null, p_hasta: null, p_local: loc, p_estado: 'pendiente' }).then(function (d) {
@@ -6506,7 +6539,6 @@
         });
       }).catch(function (e) { if ($('rmPend')) $('rmPend').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
-    var pedidoH = 0;
     function cargarHechos() {
       var r = per.rango(), n = ++pedidoH, loc = $('rmLocal').value;
       $('rmHechos').innerHTML = '<p class="cargando">Cargando…</p>';
@@ -6538,12 +6570,20 @@
         campo('', 'Sucursal', '<select id="rgLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         campo('', 'Estado', '<select id="rgEstado"><option value="">Todos</option>' + opciones([['pendiente', 'Por recibir (de cualquier día)'], ['recibido', 'Recibidos'],
                                                                                               ['con_diferencias', 'Con diferencias'], ['anulado', 'Anulados']], '') + '</select>') +
+        campo('rm-buscar', 'Producto', '<input type="search" id="rgBuscar" autocomplete="off" spellcheck="false" placeholder="Código, nombre o etiqueta" ' +
+              'title="En qué remitos va un producto y cuántas llegaron. El código o el nombre; o escaneá la etiqueta">') +
       '</div><div id="rgLista"><p class="cargando">Cargando…</p></div>';
     engancharIr(c);
     var per = periodoPos($('rgPer'), { inicial: 'mes', guardar: 'pos_remitos_gestion_periodo', hastaHoy: true, alCambiar: cargar });
     ['rgLocal', 'rgEstado'].forEach(function (id) { $(id).onchange = cargar; });
+    var tBus = null;
+    $('rgBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 400); };
+    $('rgBuscar').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBus); cargar(); } };
     var pedido = 0;
     function cargar() {
+      clearTimeout(tBus);
+      var q = productoBuscado($('rgBuscar').value);
+      if (q) { buscar(q); return; }
       var r = per.rango(), n = ++pedido;
       $('rgLista').innerHTML = '<p class="cargando">Cargando…</p>';
       llamar('pos_remitos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('rgLocal').value || null, p_estado: $('rgEstado').value || null }).then(function (d) {
@@ -6573,7 +6613,63 @@
         });
       }).catch(function (e) { if ($('rgLista')) $('rgLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
+    /* SQL 204: con «Producto», un renglón por remito con lo que vino de ese producto. El estado se filtra acá. */
+    function buscar(q) {
+      var r = per.rango(), n = ++pedido, est = $('rgEstado').value;
+      $('rgLista').innerHTML = '<p class="cargando">Buscando…</p>';
+      llamar('pos_remitos_producto', { p_buscar: q, p_desde: r.desde, p_hasta: r.hasta, p_local: $('rgLocal').value || null }).then(function (d) {
+        if (n !== pedido || !$('rgLista')) return;
+        var fs = (d.filas || []).filter(function (f) {
+          return !est || f.estado === est || (est === 'recibido' && f.estado === 'con_diferencias');
+        });
+        $('rgLista').innerHTML = tablaRemitosProducto(fs, d.mas, q, true);
+        $('rgLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
+          tr.onclick = function () { abrirRemito(tr.getAttribute('data-ticket'), cargar); };
+          tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+        });
+      }).catch(function (e) { if (n === pedido && $('rgLista')) $('rgLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
     cargar();
+  }
+
+  /* SQL 204: lo que se busca en «Producto» de Remitos. De la etiqueta escaneada ("RM10299 L BL"), la prenda: todos sus
+     talles y colores. Con menos de 2 letras, nada (se ven las listas de siempre). */
+  function productoBuscado(txt) {
+    var t = String(txt || '').trim(), s = leerEscaneo(t);
+    t = s ? s.codigo : t;
+    return t.length >= 2 ? t : '';
+  }
+  /** Los remitos de un producto (SQL 204): un renglón por remito y producto. En el local, sólo lo que llegó; mientras se
+      cuenta a ciegas, «Mandaron» no se ve. Los anulados se ven tachados y no suman. */
+  function tablaRemitosProducto(fs, mas, q, gestion) {
+    if (!fs.length) return '<div class="pos-cartel">No hay remitos con «' + esc(q) + '» en ese período' + (gestion ? ' con esos filtros' : '') + '.</div>';
+    var vale = fs.filter(function (f) { return f.estado !== 'anulado'; }), ids = {}, pend = {}, cods = {}, mand = 0, lleg = 0, ciegas = false;
+    vale.forEach(function (f) {
+      ids[f.id] = 1; cods[f.codigo] = 1;
+      if (f.estado === 'pendiente') pend[f.id] = 1;
+      if (f.mandaron == null) ciegas = true; else mand += f.mandaron;
+      lleg += f.llegaron || 0;
+    });
+    var nCods = Object.keys(cods).length;
+    var kpis = '<div class="pos-totales">' +
+      '<div class="pos-kpi"><span>Remitos</span><b>' + num(Object.keys(ids).length) + '</b></div>' +
+      (nCods > 1 ? '<div class="pos-kpi"><span>Productos</span><b>' + num(nCods) + '</b></div>' : '') +
+      '<div class="pos-kpi"><span>Por recibir</span><b>' + num(Object.keys(pend).length) + '</b></div>' +
+      (ciegas ? '' : '<div class="pos-kpi"><span>Mandaron</span><b>' + num(mand) + '</b></div>') +
+      '<div class="pos-kpi fuerte"><span>Llegaron</span><b>' + num(lleg) + '</b></div></div>';
+    return kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Remito</th>' +
+        (gestion ? '<th>Sale de</th><th>Llega a</th>' : '<th>Viene de</th>') + '<th>Producto</th><th class="n">Mandaron</th><th class="n">Llegaron</th><th>Estado</th></tr></thead><tbody>' +
+      fs.map(function (f) {
+        var dif = f.llegaron != null && f.mandaron != null && f.estado !== 'pendiente' && f.llegaron !== f.mandaron;
+        return '<tr data-ticket="' + esc(f.id) + '"' + (f.estado === 'pendiente' ? ' data-pend="1"' : '') + ' tabindex="0"' + (f.estado === 'anulado' ? ' class="anulada"' : '') + '>' +
+          '<td><b>' + esc(refRemito(f)) + '</b><small' + (gestion ? '' : ' class="st-chico"') + '>' + esc(fechaHora(f.fecha)) + '</small></td>' +
+          (gestion ? '<td>' + esc(bonito(f.origen)) + '</td><td>' + esc(bonito(f.destino)) + '</td>' : '<td>' + esc(bonito(f.origen)) + '</td>') +
+          '<td><b>' + esc(f.codigo) + '</b><small>' + esc(f.descripcion || '') + '</small></td>' +
+          '<td class="n tachar">' + (f.mandaron == null ? '<span class="rm-ciegas" title="Se ve al contarlo">—</span>' : num(f.mandaron)) + '</td>' +
+          '<td class="n tachar' + (dif ? ' st-sale' : '') + '">' + (f.llegaron == null ? '—' : num(f.llegaron)) + '</td>' +
+          '<td>' + pillRemito(f.estado) + '</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      (mas ? '<p class="pos-mas">Se ven los últimos 1.000. Achicá el período para ver el resto.</p>' : '');
   }
 
   /* ════════════════════════════════════════════════════════════════════

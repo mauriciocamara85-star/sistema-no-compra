@@ -1102,6 +1102,9 @@ html[data-theme="dark"] .vv-barras { --vv-barra: #C9824F; }
 /* SQL 196: las ventas por productos. La lista con el Top 10 al costado (como Ventas por vendedor) y, al tocar un producto, sus ventas una por una con lo de cada talle y color. */
 /* Los filtros entran en un renglón a 1366 con el menú abierto; «Mostrar talle y color» va arriba, con el Excel. */
 .pos-filtros .vp-buscar { flex: 0 1 220px; min-width: 180px; }
+/* SQL 204: «Producto» en Remitos. */
+.pos-filtros .rm-buscar { flex: 0 1 240px; min-width: 190px; }
+.rm-ciegas { color: var(--txt-3); cursor: help; }
 .pos-acciones .vp-tc { min-height: 0; margin-right: 6px; }
 .pos-tabla tr[data-vp], .pos-tabla tr[data-vd] { cursor: pointer; }
 .pos-tabla tr[data-vp]:hover td, .pos-tabla tr[data-vd]:hover td { background: var(--surface-2); }

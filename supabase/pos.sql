@@ -5906,3 +5906,73 @@ end $$;
 revoke all on function pos_art_fila(pos_articulos) from public, anon, authenticated;
 revoke all on function pos_articulos_version(), pos_articulos_todos(), pos_articulo_guardar(jsonb) from public, anon;
 grant execute on function pos_articulos_version(), pos_articulos_todos(), pos_articulo_guardar(jsonb) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 204 (30/10/2026) · BUSCAR UN PRODUCTO EN LOS REMITOS
+--
+--  Mauricio (30/10): "en remitos tenemos un buscador que podemos poner el
+--  producto y nos encuentra el remito de ese producto. Entonces podemos
+--  saber cuánto entra, cuánto entró de ese producto" (para el producto
+--  testigo), como en BlueSoft. "Hagamos eso en la parte de remitos, el
+--  buscador."
+--  En Remitos (el del local y el de Gestión), «Producto»: el código, el
+--  nombre o la etiqueta escaneada. Sale cada remito que lo trae, con cuántas
+--  mandaron y cuántas contaron de ese producto (todos sus talles y colores).
+--  Los mismos permisos que la lista de remitos (SQL 190): cada uno ve sus
+--  locales; el que recibe no ve cuántas vienen hasta que las cuenta. Los
+--  pases entre depósitos del mismo local no salen (no entra nada al local).
+--  Sólo lee: no cambia nada.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* p_buscar: el código empieza así, o el nombre (el del remito o el de Productos, SQL 202) tiene todas esas palabras (sin mirar acentos ni mayúsculas), como
+   Ventas por productos. Un renglón por remito y producto; "mandaron" va en null mientras el que recibe cuenta a ciegas. */
+create function pos_remitos_producto(p_buscar text, p_desde date, p_hasta date, p_local uuid default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_q   text := translate(lower(btrim(coalesce(p_buscar, ''))), 'áéíóúü', 'aeiouu');
+  v_ges boolean;
+  v_res jsonb;
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);
+  perform pos_dias_ok(p_desde);
+  if length(v_q) < 2 then raise exception 'Escribí al menos 2 letras del código o del nombre.'; end if;
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  v_ges := pos_puede('gestion');
+  with g as (
+    select x.id, x.numero, x.referencia, x.fecha, x.estado, x.origen_local_id, x.destino_local_id, x.observaciones,
+           i.codigo, coalesce(max(i.descripcion), max(a.nombre)) descripcion, sum(i.cantidad)::int mandaron, sum(i.contado)::int llegaron,
+           bool_or(k.codigo is not null) recibido
+      from pos_remitos x
+      join pos_remito_items i on i.remito_id = x.id
+      left join pos_remito_productos k on k.remito_id = x.id and k.codigo = i.codigo
+      left join pos_articulos a on a.codigo = i.codigo
+     where x.dia between p_desde and p_hasta
+       and x.origen_local_id is distinct from x.destino_local_id
+       and (p_local is null or x.destino_local_id = p_local or x.origen_local_id = p_local)
+       and (position(v_q in lower(i.codigo)) = 1
+            or not exists (select 1 from regexp_split_to_table(v_q, '\s+') w
+                            where position(w in translate(lower(coalesce(i.descripcion, '') || ' ' || coalesce(a.nombre, '')), 'áéíóúü', 'aeiouu')) = 0))
+     group by x.id, i.codigo
+  )
+  select jsonb_build_object(
+    'filas', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', z.id, 'numero', z.numero, 'referencia', z.referencia, 'fecha', z.fecha, 'estado', z.estado,
+               'origen_local_id', z.origen_local_id, 'origen', coalesce(lo.nombre, 'Fábrica'),
+               'destino_local_id', z.destino_local_id, 'destino', coalesce(ld.nombre, 'Fábrica'),
+               'observaciones', z.observaciones, 'codigo', z.codigo, 'descripcion', z.descripcion, 'recibido', z.recibido,
+               'mandaron', case when v_ges or z.recibido or z.estado = 'anulado' or z.destino_local_id is null
+                                     or pos_local_mio(z.origen_local_id) then z.mandaron end,
+               'llegaron', z.llegaron) order by z.fecha desc, z.codigo)
+        from (select * from g order by fecha desc, codigo limit 1000) z
+        left join orden_locales ld on ld.id = z.destino_local_id
+        left join orden_locales lo on lo.id = z.origen_local_id), '[]'::jsonb),
+    'mas', (select count(*) > 1000 from g))
+    into v_res;
+  return v_res;
+end $$;
+
+revoke all on function pos_remitos_producto(text, date, date, uuid) from public, anon;
+grant execute on function pos_remitos_producto(text, date, date, uuid) to authenticated;
