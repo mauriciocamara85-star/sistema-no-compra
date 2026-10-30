@@ -4780,3 +4780,337 @@ revoke all on function pos_clientes_lista(text, text, text), pos_cliente(uuid, b
                        pos_clientes_buscar(text) from public, anon;
 grant execute on function pos_clientes_lista(text, text, text), pos_cliente(uuid, bigint), pos_cliente_guardar(jsonb),
                           pos_clientes_buscar(text) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 201 (30/10/2026) · SUBIR Y AUMENTAR LAS LISTAS DE PRECIOS
+--
+--  Mauricio (30/10), mirando «Importar productos desde la web» en los
+--  Remitos de BlueSoft: "si de la fábrica actualizamos precios, ¿impactan
+--  directamente en el POS?". No: los precios del POS son la lista de BlueSoft
+--  del 29/10 (SQL 194). Lo que pidió ("sí, dale"):
+--  · «Subir lista de BlueSoft»: el mismo Excel «Lista de Precios» que se baja
+--    de BlueSoft (o cualquiera con Código y Precio). La pantalla muestra antes
+--    qué cambia; al aplicarlo, los 14 locales cobran el precio nuevo desde la
+--    próxima venta. Lo que no viene en el Excel queda como está.
+--  · «Aumentar precios»: "que tengan la opción de incrementar la lista de
+--    precio con un porcentaje… todo o por rubro y familias". Con su
+--    redondeo; con el signo menos, baja.
+--  · Cada cambio en bloque queda anotado con los precios de antes y se puede
+--    deshacer (el último de la lista primero), sin pisar lo que se cambió a
+--    mano después.
+--  pos_articulos guarda el nombre, el rubro, la familia y la temporada de
+--  cada código como vienen en la lista de BlueSoft (catalogo.js no tiene la
+--  familia, y tiene sólo 576 de los 6.534 códigos con precio). La primera
+--  carga (la lista del 29/10) va sólo en el SQL de App Orden; cada Excel que
+--  se sube la pone al día (sólo nombre, rubro, familia y temporada).
+--  pos_articulos es LA tabla de productos del POS, la misma del SQL 202
+--  (pos-catalogo: talles, colores, activo y marca, con su pantalla de
+--  Productos): los dos la crean igual, si no existe, así no importa cuál se
+--  corre primero.
+--  Sólo en las listas con precios propios: las calculadas (los locales de
+--  calle) siguen solas a su base.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table if not exists pos_articulos (
+  codigo           text primary key check (length(codigo) between 1 and 30),
+  nombre           text not null check (length(nombre) between 1 and 120),
+  rubro            text check (length(rubro) <= 60),
+  familia          text check (length(familia) <= 60),
+  temporada        text check (length(temporada) <= 60),
+  talles           text,                                -- "S,M,L" (SQL 202)
+  colores          text,                                -- "NE:NEGRO|BL:BLANCO" (SQL 202)
+  activo           boolean not null default true,       -- (SQL 202)
+  marca            text,                                -- (SQL 202)
+  actualizado_en   timestamptz not null default now(),
+  actualizado_por  uuid                                 -- (SQL 202)
+);
+alter table pos_articulos add column if not exists rubro text check (length(rubro) <= 60);
+alter table pos_articulos add column if not exists familia text check (length(familia) <= 60);
+alter table pos_articulos add column if not exists temporada text check (length(temporada) <= 60);
+alter table pos_articulos add column if not exists talles text;
+alter table pos_articulos add column if not exists colores text;
+alter table pos_articulos add column if not exists activo boolean not null default true;
+alter table pos_articulos add column if not exists marca text;
+alter table pos_articulos add column if not exists actualizado_por uuid;
+create index if not exists pos_articulos_rubro on pos_articulos (rubro, familia);
+
+/* Cada cambio en bloque de una lista: "antes" guarda, de cada precio que cambió, [código, precio de antes
+   (null si era nuevo), cuándo se había cambiado], para poder deshacerlo. */
+create table pos_precios_cambios (
+  id               serial primary key,
+  lista_id         int not null references pos_listas(id) on delete cascade,
+  tipo             text not null check (tipo in ('subir', 'aumentar')),
+  detalle          text not null check (length(detalle) <= 300),
+  cambiaron        int not null,
+  antes            jsonb not null check (jsonb_typeof(antes) = 'array'),
+  clave            text unique check (length(clave) <= 60),   -- una por botón: dos clics no lo aplican dos veces
+  creado_en        timestamptz not null default now(),
+  creado_por       uuid,
+  creado_nombre    text,
+  deshecho_en      timestamptz,
+  deshecho_por     uuid,
+  deshecho_nombre  text,
+  volvieron        int
+);
+create index pos_precios_cambios_lista on pos_precios_cambios (lista_id, id desc);
+
+alter table pos_articulos enable row level security;
+alter table pos_precios_cambios enable row level security;
+revoke all on pos_articulos, pos_precios_cambios from anon, authenticated;
+revoke all on sequence pos_precios_cambios_id_seq from anon, authenticated;
+
+/* Una lista con precios propios (las calculadas no se suben ni se aumentan: siguen a su base). */
+create function pos_lista_propia(p_lista int) returns pos_listas
+language plpgsql stable security definer set search_path = public as $$
+declare l pos_listas; b text;
+begin
+  select * into l from pos_listas where id = p_lista and activo;
+  if not found then raise exception 'No existe esa lista de precios.'; end if;
+  if l.base_id is not null then
+    select nombre into b from pos_listas where id = l.base_id;
+    raise exception '«%» se calcula sola de «%»: cambiá esa.', l.nombre, b;
+  end if;
+  return l;
+end $$;
+
+/* Los rubros y las familias de los productos con precio en una lista, con cuántos hay de cada uno
+   (para elegir qué aumentar). */
+create function pos_lista_rubros(p_lista int) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso('gestion');
+  perform pos_lista_propia(p_lista);
+  return jsonb_build_object(
+    'rubros', coalesce((
+      select jsonb_agg(jsonb_build_array(z.rubro, z.familia, z.n) order by z.rubro, z.familia nulls last)
+        from (select a.rubro, a.familia, count(*)::int n
+                from pos_precios p join pos_articulos a on a.codigo = p.codigo
+               where p.lista_id = p_lista and a.rubro is not null
+               group by 1, 2) z), '[]'::jsonb),
+    'total', (select count(*)::int from pos_precios where lista_id = p_lista),
+    'sin_rubro', (select count(*)::int from pos_precios p left join pos_articulos a on a.codigo = p.codigo
+                   where p.lista_id = p_lista and a.rubro is null));
+end $$;
+
+/* Aumentar (o bajar, con el signo menos) los precios de una lista: toda, un rubro o una familia de un
+   rubro, redondeando al múltiplo elegido. Sin p_aplicar, sólo dice qué cambiaría (hasta 300 renglones). */
+create function pos_lista_aumentar(p_lista int, p_porcentaje numeric, p_rubro text, p_familia text, p_redondeo int,
+                                   p_aplicar boolean, p_clave text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_rubro  text := nullif(btrim(coalesce(p_rubro, '')), '');
+  v_fam    text := nullif(btrim(coalesce(p_familia, '')), '');
+  v_clave  text := nullif(btrim(coalesce(p_clave, '')), '');
+  v_cuantos int;
+  v_camb   jsonb;
+  v_n      int;
+  v_pct    text;
+  v_id     int;
+  c        pos_precios_cambios;
+begin
+  perform pos_permiso('gestion');
+  perform pos_lista_propia(p_lista);
+  if p_porcentaje is null or p_porcentaje = 0 or p_porcentaje <= -90 or p_porcentaje > 200 then
+    raise exception 'El porcentaje va de −89 a 200, sin el 0 (para bajar, con el signo menos: −10).';
+  end if;
+  if p_redondeo is null or p_redondeo not in (1, 10, 50, 100, 500, 1000) then raise exception 'El redondeo no es válido.'; end if;
+  if v_fam is not null and v_rubro is null then raise exception 'Para elegir una familia, elegí primero el rubro.'; end if;
+  if coalesce(p_aplicar, false) then
+    if v_clave is null then raise exception 'Falta la clave del cambio.'; end if;
+    select * into c from pos_precios_cambios where clave = v_clave;
+    if found then return jsonb_build_object('ya', true, 'id', c.id, 'cambiaron', c.cambiaron); end if;
+  end if;
+
+  /* [código, precio de antes, precio nuevo, cuándo se había cambiado] de los que cambian. Si con el redondeo
+     quedara en $0, queda como está. */
+  select count(*)::int,
+         coalesce(jsonb_agg(jsonb_build_array(z.codigo, z.antes, z.despues, z.cuando) order by z.codigo)
+                    filter (where z.despues <> z.antes), '[]'::jsonb)
+    into v_cuantos, v_camb
+    from (select p.codigo, p.precio antes, p.actualizado_en cuando,
+                 case when y.r > 0 then least(y.r, 99999999) else p.precio end despues
+            from pos_precios p
+            left join pos_articulos a on a.codigo = p.codigo
+            cross join lateral (select round(p.precio * (1 + p_porcentaje / 100) / p_redondeo) * p_redondeo r) y
+           where p.lista_id = p_lista
+             and (v_rubro is null or a.rubro = v_rubro)
+             and (v_fam is null or a.familia = v_fam)) z;
+  v_n := jsonb_array_length(v_camb);
+
+  if not coalesce(p_aplicar, false) then
+    return jsonb_build_object(
+      'cuantos', v_cuantos,
+      'cambian', v_n,
+      'suma_antes', (select coalesce(sum((e->>1)::numeric), 0) from jsonb_array_elements(v_camb) e),
+      'suma_despues', (select coalesce(sum((e->>2)::numeric), 0) from jsonb_array_elements(v_camb) e),
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_array(q.e->>0, a.nombre, (q.e->>1)::numeric, (q.e->>2)::numeric) order by q.i)
+          from (select e, i from jsonb_array_elements(v_camb) with ordinality x(e, i) order by i limit 300) q
+          left join pos_articulos a on a.codigo = q.e->>0), '[]'::jsonb));
+  end if;
+
+  if v_n = 0 then raise exception 'Con ese porcentaje y ese redondeo no cambia ningún precio.'; end if;
+  v_pct := abs(p_porcentaje)::text;
+  if position('.' in v_pct) > 0 then v_pct := rtrim(rtrim(v_pct, '0'), '.'); end if;
+  insert into pos_precios_cambios (lista_id, tipo, detalle, cambiaron, antes, clave, creado_por, creado_nombre)
+  values (p_lista, 'aumentar',
+          case when p_porcentaje > 0 then 'Aumento del ' else 'Baja del ' end || replace(v_pct, '.', ',') || ' %' ||
+            case when v_rubro is null then ' · toda la lista' else ' · ' || v_rubro || coalesce(' · ' || v_fam, '') end ||
+            case p_redondeo when 1 then ' · sin redondear' when 1000 then ' · redondeo $1.000' else ' · redondeo $' || p_redondeo end,
+          v_n,
+          (select jsonb_agg(jsonb_build_array(e->0, e->1, e->3)) from jsonb_array_elements(v_camb) e),
+          v_clave, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()))
+  returning id into v_id;
+  update pos_precios p set precio = (e->>2)::numeric, actualizado_en = now(), actualizado_por = orden_yo_id()
+    from jsonb_array_elements(v_camb) e
+   where p.lista_id = p_lista and p.codigo = e->>0;
+  return jsonb_build_object('id', v_id, 'cambiaron', v_n);
+end $$;
+
+/* Subir una lista (el Excel «Lista de Precios» de BlueSoft, leído en la pantalla): p_filas es
+   [[código, precio, nombre, rubro, familia, temporada], …], con precio mayor que 0. Pone los precios que
+   cambian (y los nuevos); lo que no viene queda como está. El nombre, el rubro, la familia y la temporada
+   que vengan ponen al día pos_articulos. */
+create function pos_lista_subir(p_lista int, p_filas jsonb, p_origen text, p_clave text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_clave  text := nullif(btrim(coalesce(p_clave, '')), '');
+  v_origen text := left(nullif(btrim(coalesce(p_origen, '')), ''), 120);
+  v_f      jsonb;
+  v_camb   jsonb;
+  v_mal    text;
+  v_n      int;
+  v_art    int;
+  v_id     int;
+  c        pos_precios_cambios;
+begin
+  perform pos_permiso('gestion');
+  perform pos_lista_propia(p_lista);
+  if v_clave is null then raise exception 'Falta la clave del cambio.'; end if;
+  select * into c from pos_precios_cambios where clave = v_clave;
+  if found then return jsonb_build_object('ya', true, 'id', c.id, 'cambiaron', c.cambiaron); end if;
+  if jsonb_typeof(p_filas) is distinct from 'array' or jsonb_array_length(p_filas) = 0 then raise exception 'La lista está vacía.'; end if;
+  if jsonb_array_length(p_filas) > 30000 then raise exception 'La lista tiene demasiados renglones (hasta 30.000).'; end if;
+
+  begin
+    select jsonb_agg(jsonb_build_array(z.c, z.p, z.n, z.r, z.f, z.t) order by z.c) into v_f
+      from (select upper(btrim(coalesce(e->>0, ''))) c, round((e->>1)::numeric, 2) p,
+                   left(nullif(btrim(coalesce(e->>2, '')), ''), 120) n, left(nullif(btrim(coalesce(e->>3, '')), ''), 60) r,
+                   left(nullif(btrim(coalesce(e->>4, '')), ''), 60) f, left(nullif(btrim(coalesce(e->>5, '')), ''), 60) t
+              from jsonb_array_elements(p_filas) e) z;
+  exception when others then raise exception 'Hay un precio que no es un número.';
+  end;
+  select e->>0 into v_mal from jsonb_array_elements(v_f) e where length(e->>0) not between 1 and 30 limit 1;
+  if found then raise exception 'Hay un código vacío o demasiado largo: «%».', left(v_mal, 40); end if;
+  select e->>0 into v_mal from jsonb_array_elements(v_f) e where (e->>1) is null or (e->>1)::numeric <= 0 or (e->>1)::numeric >= 100000000 limit 1;
+  if found then raise exception 'El precio de % no es válido.', v_mal; end if;
+  select e->>0 into v_mal from jsonb_array_elements(v_f) e group by e->>0 having count(*) > 1 limit 1;
+  if found then raise exception 'El código % está dos veces.', v_mal; end if;
+
+  /* Los productos: sólo el nombre, el rubro, la familia y la temporada que trae el Excel (los talles, los
+     colores y si está activo son de Gestión → Productos, SQL 202). Los nuevos entran si traen el nombre. */
+  update pos_articulos a
+     set nombre = coalesce(z.n, a.nombre), rubro = coalesce(z.r, a.rubro), familia = coalesce(z.f, a.familia),
+         temporada = coalesce(z.t, a.temporada), actualizado_en = now()
+    from (select e->>0 c, e->>2 n, e->>3 r, e->>4 f, e->>5 t from jsonb_array_elements(v_f) e) z
+   where a.codigo = z.c
+     and (a.nombre, a.rubro, a.familia, a.temporada) is distinct from
+         (coalesce(z.n, a.nombre), coalesce(z.r, a.rubro), coalesce(z.f, a.familia), coalesce(z.t, a.temporada));
+  get diagnostics v_art = row_count;
+  insert into pos_articulos (codigo, nombre, rubro, familia, temporada)
+  select e->>0, e->>2, e->>3, e->>4, e->>5 from jsonb_array_elements(v_f) e
+   where e->>2 is not null and not exists (select 1 from pos_articulos a where a.codigo = e->>0);
+  get diagnostics v_n = row_count;
+  v_art := v_art + v_n;
+
+  /* [código, precio de antes (null si es nuevo), precio nuevo, cuándo se había cambiado] de los que cambian. */
+  select coalesce(jsonb_agg(jsonb_build_array(e->>0, p.precio, (e->>1)::numeric, p.actualizado_en) order by e->>0), '[]'::jsonb)
+    into v_camb
+    from jsonb_array_elements(v_f) e
+    left join pos_precios p on p.lista_id = p_lista and p.codigo = e->>0
+   where p.precio is distinct from (e->>1)::numeric;
+  v_n := jsonb_array_length(v_camb);
+  if v_n > 0 then
+    insert into pos_precios_cambios (lista_id, tipo, detalle, cambiaron, antes, clave, creado_por, creado_nombre)
+    values (p_lista, 'subir', 'Lista subida' || coalesce(' · ' || v_origen, ''), v_n,
+            (select jsonb_agg(jsonb_build_array(e->0, e->1, e->3)) from jsonb_array_elements(v_camb) e),
+            v_clave, orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()))
+    returning id into v_id;
+    insert into pos_precios (lista_id, codigo, precio, actualizado_por)
+    select p_lista, e->>0, (e->>2)::numeric, orden_yo_id() from jsonb_array_elements(v_camb) e
+    on conflict (lista_id, codigo) do update set precio = excluded.precio, actualizado_en = now(), actualizado_por = excluded.actualizado_por;
+  end if;
+  return jsonb_build_object('id', v_id, 'cambiaron', v_n,
+                            'nuevos', (select count(*)::int from jsonb_array_elements(v_camb) e where e->1 = 'null'::jsonb),
+                            'iguales', jsonb_array_length(v_f) - v_n, 'articulos', v_art);
+end $$;
+
+/* Los últimos cambios en bloque de una lista. "se_deshace": el último sin deshacer (el único que se puede). */
+create function pos_lista_cambios(p_lista int) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso('gestion');
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', c.id, 'fecha', c.creado_en, 'tipo', c.tipo, 'detalle', c.detalle,
+                                        'cambiaron', c.cambiaron, 'persona', c.creado_nombre, 'deshecho', c.deshecho_en,
+                                        'deshizo', c.deshecho_nombre, 'volvieron', c.volvieron,
+                                        'se_deshace', c.deshecho_en is null and not exists (
+                                          select 1 from pos_precios_cambios x where x.lista_id = c.lista_id and x.id > c.id and x.deshecho_en is null))
+                     order by c.id desc)
+      from (select * from pos_precios_cambios where lista_id = p_lista order by id desc limit 15) c), '[]'::jsonb);
+end $$;
+
+/* Deshacer un cambio en bloque (el último de su lista): cada precio vuelve a como estaba, y los que eran
+   nuevos se sacan. Los que alguien cambió a mano después quedan como están. */
+create function pos_lista_deshacer(p_id int) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  c    pos_precios_cambios;
+  v_n  int := 0;
+  v_b  int;
+begin
+  perform pos_permiso('gestion');
+  select * into c from pos_precios_cambios where id = p_id for update;
+  if not found then raise exception 'Ese cambio no existe.'; end if;
+  if c.deshecho_en is not null then raise exception 'Ese cambio ya se deshizo.'; end if;
+  if exists (select 1 from pos_precios_cambios x where x.lista_id = c.lista_id and x.id > c.id and x.deshecho_en is null) then
+    raise exception 'Primero hay que deshacer los cambios que se hicieron después.';
+  end if;
+  /* Sólo los que siguen como los dejó el cambio (actualizado_en es el del cambio). */
+  delete from pos_precios p
+   using jsonb_array_elements(c.antes) e
+   where p.lista_id = c.lista_id and p.codigo = e->>0 and e->1 = 'null'::jsonb and p.actualizado_en <= c.creado_en;
+  get diagnostics v_b = row_count;
+  update pos_precios p set precio = (e->>1)::numeric, actualizado_en = coalesce((e->>2)::timestamptz, p.actualizado_en),
+                           actualizado_por = orden_yo_id()
+    from jsonb_array_elements(c.antes) e
+   where p.lista_id = c.lista_id and p.codigo = e->>0 and e->1 <> 'null'::jsonb and p.actualizado_en <= c.creado_en;
+  get diagnostics v_n = row_count;
+  update pos_precios_cambios set deshecho_en = now(), deshecho_por = orden_yo_id(), volvieron = v_n + v_b,
+         deshecho_nombre = (select pe.nombre from orden_personas pe where pe.id = orden_yo_id())
+   where id = c.id;
+  return jsonb_build_object('volvieron', v_n + v_b, 'quedaron', c.cambiaron - v_n - v_b);
+end $$;
+
+/* La "versión" de los precios de una lista (y de su base, si se calcula de otra): cambia con cualquier precio
+   cambiado, sacado, subido, aumentado o deshecho, y con el porcentaje de la calculada. La venta la pregunta al
+   empezar y vuelve a traer la lista sólo si cambió: una caja abierta todo el día cobra igual el precio nuevo. */
+create function pos_precios_version(p_lista int) returns text
+language plpgsql stable security definer set search_path = public as $$
+declare l pos_listas;
+begin
+  perform pos_permiso();
+  select * into l from pos_listas where id = p_lista;
+  if not found then raise exception 'No existe esa lista de precios.'; end if;
+  return concat_ws('|', l.ajuste, l.redondeo, l.base_id,
+           (select count(*) || '/' || coalesce(sum(precio), 0) || '/' || coalesce(max(actualizado_en)::text, '')
+              from pos_precios where lista_id in (l.id, l.base_id)));
+end $$;
+
+revoke all on function pos_lista_propia(int) from public, anon, authenticated;
+revoke all on function pos_lista_rubros(int), pos_lista_aumentar(int, numeric, text, text, int, boolean, text),
+                       pos_lista_subir(int, jsonb, text, text), pos_lista_cambios(int), pos_lista_deshacer(int),
+                       pos_precios_version(int) from public, anon;
+grant execute on function pos_lista_rubros(int), pos_lista_aumentar(int, numeric, text, text, int, boolean, text),
+                          pos_lista_subir(int, jsonb, text, text), pos_lista_cambios(int), pos_lista_deshacer(int),
+                          pos_precios_version(int) to authenticated;

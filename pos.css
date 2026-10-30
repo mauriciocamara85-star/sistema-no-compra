@@ -834,6 +834,21 @@ button.pos-kpi:hover { border-color: var(--line-alta); }
 #invPrevia .pos-check { margin: 0 0 8px; }
 #invPrevia .cj-paso { margin-top: 10px; }
 
+/* Las listas de precios (SQL 201): la lista subida, el aumento y los cambios en bloque. */
+.ls-previa { max-height: 340px; overflow: auto; margin-bottom: 4px; }
+.ls-previa th { position: sticky; top: 0; z-index: 1; }
+.pos-caja .ls-previa { max-height: 260px; }
+@media (max-height: 720px) { .pos-caja .ls-previa { max-height: 200px; } }
+#lsSubida .cj-paso { margin-bottom: 10px; }
+.ls-preg { margin: 0; font-size: 13.5px; color: var(--txt-2); }
+.ls-info { margin: 0 0 8px; }
+.ls-aum { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 10px; }
+.ls-aum .pos-f { width: 170px; }
+.ls-aum .pos-f.ls-pct { width: 96px; }
+#laPrevia { margin-top: 12px; }
+#laPrevia .pos-cartel { margin-bottom: 0; }
+.ls-cambios { margin-bottom: 12px; }
+
 /* ═════════ LAS DIFERENCIAS DE LOS REMITOS (SQL 167) ═════════
    La planilla de errores: se arma sola al recibir con diferencias, y en
    Gestión → Diferencias se resuelve. El número del menú, como el de la

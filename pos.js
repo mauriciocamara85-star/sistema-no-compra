@@ -294,7 +294,7 @@
   }
 
   /* ── La base ── */
-  var S = { ini: null, precios: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, cajaHecho: null,
+  var S = { ini: null, precios: {}, preciosVer: {}, vista: 'venta', guardando: false, ultimo: null, listaSel: null, cajaLocal: null, cajaHecho: null,
             cambioHecho: null, cbFoco: null, cbPagoHay: null, stock: {}, dep: {} };
   var V = null;    // la venta que se está armando
   var CB = null;   // el cambio que se está armando
@@ -310,7 +310,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_client|pos_cli_/.test(m) ? '197 (los clientes)' :
+      return 'Todavía falta correr el SQL ' + (/pos_lista_(subir|aumentar|rubros|cambios|deshacer)/.test(m) ? '201 (subir y aumentar las listas de precios)' :
+                                             /pos_client|pos_cli_/.test(m) ? '197 (los clientes)' :
                                              /pos_ventas_productos|pos_ventas_de_producto/.test(m) ? '196 (las ventas por productos)' :
                                              /pos_disponibilidad|pos_caja_valores|pos_caja_ajust/.test(m) ? '195 (la disponibilidad de las cajas)' :
                                              /pos_deposito|pos_remito_testigo|p_deposito/.test(m) ? '193 (los depósitos)' : /pos_ventas_vendedor/.test(m) ? '192 (las ventas por vendedor)' : /pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
@@ -331,12 +332,28 @@
   function asegurarPrecios(lista) {
     if (!lista) return Promise.resolve({});
     if (S.precios[lista]) return Promise.resolve(S.precios[lista]);
-    return llamar('pos_precios', { p_lista: lista }).then(function (filas) {
+    /* SQL 201: primero la "versión" de la lista y después los precios (si algo cambia en el medio, la próxima
+       vez la versión no coincide y se vuelven a traer). Sin el SQL 201, sin versión: como antes. */
+    var ver = null;
+    return llamar('pos_precios_version', { p_lista: lista }).then(function (v) { ver = v; }, function () {}).then(function () {
+      return llamar('pos_precios', { p_lista: lista });
+    }).then(function (filas) {
       var m = {};
       (filas || []).forEach(function (f) { m[f[0]] = { c: cent(f[1]), propio: !!f[2] }; });
       S.precios[lista] = m;
+      S.preciosVer[lista] = ver;
       return m;
     });
+  }
+  /** Al empezar una venta o un cambio: si en la oficina subieron o aumentaron la lista desde que se trajo, se trae
+      de nuevo (una caja abierta todo el día cobra igual el precio nuevo). Preguntar cuesta unas letras; la lista
+      entera viaja sólo si cambió. Sin conexión, con la que ya estaba. */
+  function preciosAlDia(lista) {
+    if (!lista || !S.precios[lista] || !S.preciosVer[lista]) return asegurarPrecios(lista);
+    return llamar('pos_precios_version', { p_lista: lista }).then(function (v) {
+      if (v !== S.preciosVer[lista]) delete S.precios[lista];
+      return asegurarPrecios(lista);
+    }, function () { return S.precios[lista]; });
   }
   function precioDe(codigo, lista) {
     var m = S.precios[lista || (V && V.lista_id)], x = m && m[codigo];
@@ -947,7 +964,7 @@
     $('vFilas').innerHTML = '<tr class="tk-vacia"><td colspan="10">Cargando los precios…</td></tr>';
     /* Los precios y el stock del local (para avisar si una prenda no está) a la vez; el stock nunca falla. */
     ponerDeposito('vDep', V.local_id);
-    Promise.all([asegurarPrecios(V.lista_id), traerStock(V.local_id)]).then(function () { pintar(); }, function (e) { pintar(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
+    Promise.all([preciosAlDia(V.lista_id), traerStock(V.local_id)]).then(function () { pintar(); }, function (e) { pintar(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
     /* En la compu, el foco en Producto: la pistola dispara sin tocar nada. En el celular no (abriría el teclado). */
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('vProd'); if (p) p.focus(); }, 0);
   }
@@ -3045,7 +3062,7 @@
     pintarPago(true);
     $('cbFilasV').innerHTML = $('cbFilasS').innerHTML = '<tr class="tk-vacia"><td colspan="9">Cargando los precios…</td></tr>';
     ponerDeposito('cbDep', CB.local_id);
-    Promise.all([asegurarPrecios(CB.lista_id), traerStock(CB.local_id)]).then(function () { pintarCambio(); }, function (e) { pintarCambio(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
+    Promise.all([preciosAlDia(CB.lista_id), traerStock(CB.local_id)]).then(function () { pintarCambio(); }, function (e) { pintarCambio(); avisar('err', 'No se pudieron traer los precios: ' + mensajeDe(e)); });
     /* En la compu, el foco en lo que vuelve: la pistola dispara sin tocar nada. En el celular no (abriría el teclado). */
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var p = $('cbVuelve'); if (p) p.focus(); }, 0);
   }
@@ -4589,7 +4606,83 @@
 
   /* ════════════════════════════════════════════════════════════════════
      LISTAS DE PRECIOS
+     SQL 201 (30/10, Mauricio, mirando «Importar productos desde la web» de
+     BlueSoft): en una lista con precios propios, «Subir lista de BlueSoft»
+     (el Excel «Lista de Precios»: se ve antes qué cambia) y «Aumentar
+     precios» con un porcentaje, para toda la lista, un rubro o una familia de
+     un rubro ("por si quieren aumentar la lista de un rubro y familia
+     aparte"). Cada cambio en bloque queda anotado y se puede deshacer.
      ════════════════════════════════════════════════════════════════════ */
+  var REDONDEOS = [[1, 'Sin redondear'], [10, 'A $10'], [50, 'A $50'], [100, 'A $100'], [500, 'A $500'], [1000, 'A $1.000']];
+  /** Dónde vale una lista: las sucursales que la usan y las de las listas que se calculan de ella. */
+  function dondeValeLista(li) {
+    var hijas = S.ini.listas.filter(function (l) { return l.base_id === li.id; });
+    var ids = [li.id].concat(hijas.map(function (l) { return l.id; }));
+    var n = S.ini.locales.filter(function (l) { return ids.indexOf(listaDe(l)) >= 0; }).length;
+    if (!n) return 'Ninguna sucursal la usa todavía.';
+    return 'Valen desde la próxima venta en ' + (n === 1 ? 'la sucursal que la usa' : 'las ' + n + ' sucursales que la usan') +
+      (hijas.length ? ' (con «' + hijas.map(function (l) { return l.nombre; }).join('» y «') + '», que se calcula de esta)' : '') + '.';
+  }
+  /** "10", "12,5", "-10", "−10", "10 %" → el número (NaN si no es uno). */
+  function leerPorcentaje(s) {
+    s = String(s == null ? '' : s).replace(/[%\s]/g, '').replace(/[−–]/g, '-').replace(',', '.');
+    return /^-?\d+(\.\d{1,2})?$/.test(s) ? parseFloat(s) : NaN;
+  }
+  function textoPorcentaje(p) { return String(Math.abs(p)).replace('.', ','); }
+  /** Cuánto cambió un precio: "+10 %", "−3,5 %". */
+  function difPrecio(antes, ahora) {
+    var d = Math.round((ahora / antes - 1) * 1000) / 10;
+    return (d > 0 ? '+' : d < 0 ? '−' : '') + String(Math.abs(d)).replace('.', ',') + ' %';
+  }
+
+  /** El Excel de precios → {items, ceros, errores, listas}. Busca la fila de los títulos con Código y el precio:
+      en la «Lista de Precios» de BlueSoft, «PrecioFinal» (con IVA; «ProductoPrecio» es sin IVA y no se usa).
+      Si trae la columna Lista, cada renglón dice de cuál es. Los precios, en centavos. */
+  function leerPrecios(filas, deExcel) {
+    var esCod = /^(codigo|cod\.?|articulo|sku)$/, iCab = -1, i;
+    for (i = 0; i < Math.min(filas.length, 30); i++) {
+      if ((filas[i] || []).some(function (c) { return esCod.test(normal(c)); })) { iCab = i; break; }
+    }
+    if (iCab < 0) return { error: 'No encontré la fila de los títulos: el Excel tiene que tener una columna Código y otra con el precio (PrecioFinal o Precio).' };
+    var cab = filas[iCab].map(normal);
+    var busca = function (re) { for (var j = 0; j < cab.length; j++) if (re.test(cab[j] || '')) return j; return -1; };
+    var ic = { codigo: busca(esCod), precio: busca(/^precio ?final$/), nombre: busca(/^(nombre|descripcion|producto)$/), rubro: busca(/^rubro$/),
+               familia: busca(/^familia$/), temporada: busca(/^temporada$/), lista: busca(/^lista$/), listaDesc: busca(/^lista ?descripcion$/) };
+    if (ic.precio < 0) ic.precio = busca(/^(precio|precio de venta|precio con iva|pvp)$/);
+    if (ic.precio < 0) return { error: 'No encontré la columna del precio: tiene que decir PrecioFinal (como la «Lista de Precios» de BlueSoft) o Precio.' };
+    var items = [], errores = [], ceros = 0, listas = {};
+    var celda = function (f, k) { return ic[k] >= 0 ? String(f[ic[k]] == null ? '' : f[ic[k]]).trim() : ''; };
+    filas.slice(iCab + 1).forEach(function (f, j) {
+      if (!f) return;
+      var cod = celda(f, 'codigo').toUpperCase(), fila = iCab + 2 + j, txt = celda(f, 'precio');
+      if (!cod || /^total/i.test(cod)) return;
+      if (cod.length > 30) { errores.push('Fila ' + fila + ': el código «' + cod.slice(0, 40) + '» es demasiado largo.'); return; }
+      /* En el .xlsx el número viene crudo (16333.3333); escrito o en un CSV, como lo escribimos ("41.000", "16.333,33").
+         Sin precio, en $0 o negativo (en la de BlueSoft, los avíos y los costos): no se carga, se vendería mal. */
+      var neg = /^[-−]/.test(txt);
+      var p = deExcel && /^-?\d+(\.\d+)?(e[+-]?\d+)?$/i.test(txt) ? Math.round(Number(txt) * 100) : leerPlata(txt.replace(/^[-−]/, ''));
+      if (txt === '' || p === 0 || neg || p < 0) { ceros++; return; }
+      if (!(p > 0)) { errores.push('Fila ' + fila + ': el precio de ' + cod + ' («' + txt.slice(0, 20) + '») no se entiende.'); return; }
+      if (p >= 10000000000) { errores.push('Fila ' + fila + ': el precio de ' + cod + ' es demasiado grande.'); return; }
+      var lista = celda(f, 'lista');
+      if (ic.lista >= 0) {
+        var x = listas[lista] = listas[lista] || { nombre: celda(f, 'listaDesc') || 'Lista ' + lista, n: 0 };
+        x.n++;
+      }
+      items.push({ fila: fila, codigo: cod, precio: p, lista: lista, nombre: celda(f, 'nombre').slice(0, 120), rubro: celda(f, 'rubro').slice(0, 60),
+                   familia: celda(f, 'familia').slice(0, 60), temporada: celda(f, 'temporada').slice(0, 60) });
+    });
+    if (!items.length && !errores.length) return { error: 'El Excel no trae ningún precio.' };
+    return { items: items, ceros: ceros, errores: errores, listas: listas };
+  }
+  /** Si el Excel trae varias listas, la que dice el número de la nuestra («Lista 100 · …» ↔ 100); si no se sabe, null (que elija). */
+  function listaDelExcel(r, li) {
+    var ks = Object.keys(r.listas);
+    if (ks.length < 2) return ks[0] || '';
+    var m = ks.filter(function (k) { return /^\d+$/.test(k) && new RegExp('(^|\\D)' + k + '(\\D|$)').test(li.nombre); });
+    return m.length === 1 ? m[0] : null;
+  }
+
   function verListas() {
     var c = $('cuerpo');
     if (!listaPorId(S.listaSel)) S.listaSel = S.ini.listas[0] && S.ini.listas[0].id;
@@ -4597,7 +4690,10 @@
     if (!li) { c.innerHTML = cabeza('Listas de precios', '') + '<div class="pos-cartel">No hay listas de precios.</div>'; return; }
     var base = li.base_id ? listaPorId(li.base_id) : null;
     var usan = S.ini.locales.filter(function (l) { return l.lista_id === li.id; }).map(nombreLocal);
-    c.innerHTML = cabeza('Listas de precios', 'Cada sucursal usa una (se elige en Sucursales). Un precio cambiado acá vale desde la próxima venta.') +
+    if (S.subida && S.subida.li !== li.id) S.subida = null;
+    c.innerHTML = cabeza('Listas de precios', 'Cada sucursal usa una (se elige en Sucursales). Un precio cambiado acá vale desde la próxima venta.',
+        base ? '' : '<label class="btn btn-sec btn-chico">Subir lista de BlueSoft…<input type="file" id="lsArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
+                    '<button type="button" class="btn btn-sec btn-chico" id="lsAumentar">Aumentar precios…</button>') +
       '<div class="pos-listas-elegir" role="group" aria-label="Lista">' + S.ini.listas.map(function (l) {
         return '<button type="button" class="chip' + (l.id === li.id ? ' sel' : '') + '" data-lista="' + l.id + '">' + esc(l.nombre) + '</button>'; }).join('') + '</div>' +
       (base ? '<div class="pos-calc"><p>Se calcula sola de <b>' + esc(base.nombre) + '</b>: ' + (Number(li.ajuste) < 0 ? String(-li.ajuste).replace('.', ',') + ' % menos' : String(li.ajuste).replace('.', ',') + ' % más') +
@@ -4605,11 +4701,22 @@
           campo('', 'Porcentaje', '<input type="text" inputmode="decimal" id="lsAjuste" value="' + String(li.ajuste).replace('.', ',') + '">') +
           campo('', 'Redondeo ($)', '<input type="number" id="lsRedondeo" min="1" max="10000" value="' + li.redondeo + '">') +
           '<button type="button" class="btn btn-sec btn-chico" id="lsGuardar">Guardar</button></div>'
-        : '<div class="pos-calc"><p>Los precios propios de esta lista' + (usan.length ? '. La usan: ' + esc(usan.join(', ')) : '') + '.</p></div>') +
+        : '<div class="pos-calc"><p>Los precios propios de esta lista' + (usan.length ? '. La usan: ' + esc(usan.join(', ')) : '') + '.</p></div>' +
+          '<div id="lsSubida"></div><div id="lsCambios"></div>') +
       '<div class="pos-filtros">' + campo('ancho', 'Buscar', '<input type="search" id="lsBuscar" placeholder="Código o nombre" autocomplete="off">') +
         '<label class="pos-check"><input type="checkbox" id="lsSolo" checked> Sólo los que tienen precio</label></div>' +
       '<div id="lsTabla"><p class="cargando">Cargando…</p></div>';
     c.querySelectorAll('[data-lista]').forEach(function (b) { b.onclick = function () { S.listaSel = Number(b.getAttribute('data-lista')); verListas(); }; });
+    if (!base) {
+      $('lsArchivo').onchange = function () {
+        var f = this.files && this.files[0];
+        this.value = '';
+        if (f) subirLista(li, f);
+      };
+      $('lsAumentar').onclick = function () { aumentarLista(li); };
+      if (S.subida) previaSubida(li);
+      cambiosDeLista(li);
+    }
     if ($('lsGuardar')) $('lsGuardar').onclick = function () {
       var aj = parseFloat(String($('lsAjuste').value).replace(',', '.')), red = parseInt($('lsRedondeo').value, 10), bt = this;
       if (!(aj > -100 && aj <= 300)) { avisar('err', 'El porcentaje va de −99 a 300 (para menos, con el signo menos: −15).'); return; }
@@ -4681,6 +4788,239 @@
         return asegurarPrecios(li.id).then(pintarTabla);
       }).catch(function (e) { avisar('err', mensajeDe(e)); });
     }
+  }
+
+  /* ── Subir la lista de BlueSoft: leer el Excel, mostrar qué cambia y aplicarlo ── */
+  function subirLista(li, f) {
+    function poner(h) { var z = $('lsSubida'); if (z) z.innerHTML = h; }
+    S.subida = null;
+    poner('<p class="cargando">Leyendo ' + esc(f.name) + '…</p>');
+    leerArchivo(f).then(function (filas) {
+      var r = leerPrecios(filas, /\.xlsx$/i.test(f.name));
+      if (r.error) { poner('<div class="pos-cartel mal">' + esc(r.error) + '</div>'); return; }
+      return asegurarPrecios(li.id).then(function () {
+        S.subida = { li: li.id, origen: f.name, r: r, lista: listaDelExcel(r, li), clave: nuevaClave() };
+        if (S.listaSel === li.id) previaSubida(li);
+      }, function (e) { poner('<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'); });
+    }, function (e) { poner('<div class="pos-cartel mal">' + esc(e.message || String(e)) + '</div>'); });
+  }
+  function previaSubida(li) {
+    var U = S.subida, z = $('lsSubida');
+    if (!U || !z) return;
+    var r = U.r, m = S.precios[li.id] || {}, ks = Object.keys(r.listas);
+    var items = [], errores = r.errores.slice(), cambios = [], vistos = {}, suben = 0, bajan = 0, nuevos = 0, grandes = 0, noVienen = 0;
+    if (U.lista != null) {
+      r.items.forEach(function (x) {
+        if (ks.length > 1 && x.lista !== U.lista) return;
+        var y = vistos[x.codigo];
+        if (y) { if (y.precio !== x.precio) errores.push('Fila ' + x.fila + ': ' + x.codigo + ' está dos veces con precios distintos (vale el de la fila ' + y.fila + ').'); return; }
+        vistos[x.codigo] = x;
+        items.push(x);
+      });
+      items.forEach(function (x) {
+        var a = m[x.codigo] ? m[x.codigo].c : null;
+        if (a === x.precio) return;
+        /* Más de la mitad, para arriba o para abajo: puede ser un error del Excel (un "41.000" leído como 41). */
+        var g = a != null && (x.precio > a * 1.5 || x.precio < a * 0.5);
+        if (a == null) nuevos++; else if (x.precio > a) suben++; else bajan++;
+        if (g) grandes++;
+        cambios.push({ x: x, antes: a, grande: g });
+      });
+      cambios.sort(function (p, q) { return (q.grande - p.grande) || (p.x.codigo < q.x.codigo ? -1 : p.x.codigo > q.x.codigo ? 1 : 0); });
+      noVienen = Object.keys(m).filter(function (k) { return !vistos[k]; }).length;
+    }
+    var info = (r.ceros ? num(r.ceros) + (r.ceros === 1 ? ' renglón sin precio (vacío, en $0 o negativo) no se carga. ' : ' renglones sin precio (vacíos, en $0 o negativos) no se cargan. ') : '') +
+               (noVienen ? num(noVienen) + (noVienen === 1 ? ' producto de la lista no viene' : ' productos de la lista no vienen') + ' en el Excel: quedan con el precio de ahora. ' : '') +
+               dondeValeLista(li);
+    z.innerHTML = '<div class="cj-paso ls-subida"><div class="cj-paso-cab"><b>Lista subida</b><span>' + esc(U.origen) + '</span></div>' +
+      (ks.length > 1 ? '<p class="ls-preg">El Excel trae ' + ks.length + ' listas: ¿cuál va en «' + esc(li.nombre) + '»?</p>' +
+        '<div class="pos-listas-elegir" role="group" aria-label="Lista del Excel">' + ks.map(function (k) {
+          return '<button type="button" class="chip' + (U.lista === k ? ' sel' : '') + '" data-lx="' + esc(k) + '">' + esc(r.listas[k].nombre) + ' (' + num(r.listas[k].n) + ')</button>';
+        }).join('') + '</div>' : '') +
+      (U.lista == null ? '' :
+        '<div class="pos-totales">' +
+          '<div class="pos-kpi"><span>En el Excel</span><b>' + num(items.length) + '</b></div>' +
+          '<div class="pos-kpi fuerte"><span>Cambian</span><b>' + num(cambios.length) + '</b></div>' +
+          '<div class="pos-kpi"><span>Suben</span><b>' + num(suben) + '</b></div>' +
+          '<div class="pos-kpi"><span>Bajan</span><b>' + num(bajan) + '</b></div>' +
+          '<div class="pos-kpi"><span>Nuevos</span><b>' + num(nuevos) + '</b></div></div>' +
+        (grandes ? '<div class="pos-cartel st-dif"><b>Ojo:</b> ' + (grandes === 1 ? '1 precio cambia' : num(grandes) + ' precios cambian') +
+          ' más de la mitad (están arriba de todo, en naranja). Revisalos antes de aplicar.</div>' : '') +
+        (errores.length ? '<div class="pos-cartel mal">' + (errores.length === 1 ? 'No se carga 1 renglón' : 'No se cargan ' + num(errores.length) + ' renglones') + ': ' +
+          esc(errores.slice(0, 6).join(' ')) + (errores.length > 6 ? '…' : '') + '</div>' : '') +
+        (cambios.length ? '' : '<div class="pos-cartel st-ok">Todo coincide con la lista: no cambia ningún precio.</div>') +
+        '<p class="pos-ayuda ls-info">' + esc(info) + '</p>' +
+        (cambios.length ? '<div class="pos-marco-tabla ls-previa"><table class="pos-tabla"><thead><tr><th>Código</th><th>Producto</th><th>Rubro</th>' +
+            '<th class="n">Antes</th><th class="n">Ahora</th><th class="n">Cambio</th></tr></thead><tbody>' +
+          cambios.slice(0, 200).map(function (k) {
+            var x = k.x, rubro = x.rubro || (PROD[x.codigo] && PROD[x.codigo][2]) || '';
+            return '<tr><td><b>' + esc(x.codigo) + '</b></td><td>' + esc(nombreProd(x.codigo, x.nombre)) + '</td><td>' + esc(rubro + (x.familia ? ' · ' + x.familia : '')) + '</td>' +
+              '<td class="n">' + (k.antes == null ? '<span class="apagado">—</span>' : plata(k.antes)) + '</td><td class="n"><b>' + plata(x.precio) + '</b></td>' +
+              '<td class="n">' + (k.antes == null ? '<span class="pill pill-info">Nuevo</span>' :
+                k.grande ? '<span class="pill pill-warn">' + difPrecio(k.antes, x.precio) + '</span>' : difPrecio(k.antes, x.precio)) + '</td></tr>';
+          }).join('') + '</tbody></table></div>' + (cambios.length > 200 ? '<p class="pos-mas">Se ven 200 de ' + num(cambios.length) + ' cambios.</p>' : '') : '')) +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" id="lsSubNo">Cancelar</button>' +
+        (U.lista == null || !cambios.length ? '' : '<button type="button" class="btn btn-pri btn-chico" id="lsSubSi">Aplicar ' +
+          (cambios.length === 1 ? '1 precio' : num(cambios.length) + ' precios') + '</button>') + '</div></div>';
+    z.querySelectorAll('[data-lx]').forEach(function (b) { b.onclick = function () { U.lista = b.getAttribute('data-lx'); previaSubida(li); }; });
+    $('lsSubNo').onclick = function () { S.subida = null; z.innerHTML = ''; };
+    if ($('lsSubSi')) $('lsSubSi').onclick = function () { aplicarSubida(li, items, cambios.length, nuevos, this); };
+  }
+  function aplicarSubida(li, items, n, nuevos, bt) {
+    var U = S.subida;
+    if (!confirm('¿Aplicar los precios del Excel a «' + li.nombre + '»? Cambian ' + num(n) + (nuevos ? ' (' + num(nuevos) + (nuevos === 1 ? ' es nuevo)' : ' son nuevos)') : '') +
+                 '. ' + dondeValeLista(li) + ' Si hace falta, se deshace desde «Cambios en bloque».')) return;
+    var txt = bt.textContent;
+    bt.disabled = true;
+    bt.textContent = 'Aplicando…';
+    llamar('pos_lista_subir', { p_lista: li.id, p_origen: U.origen, p_clave: U.clave, p_filas: items.map(function (x) {
+      return [x.codigo, aPesos(x.precio), x.nombre || null, x.rubro || null, x.familia || null, x.temporada || null];
+    }) }).then(function (r) {
+      if (S.subida === U) S.subida = null;
+      olvidarPrecios(li.id);
+      avisar('ok', r.ya ? 'Esa lista ya estaba aplicada: no se repitió.' : 'Listo: ' + (r.cambiaron === 1 ? 'cambió 1 precio' : 'cambiaron ' + num(r.cambiaron) + ' precios') +
+                   (r.nuevos ? ' (' + num(r.nuevos) + (r.nuevos === 1 ? ' nuevo)' : ' nuevos)') : '') + '. Valen desde la próxima venta.');
+      if ($('lsTabla') && S.listaSel === li.id) verListas();
+    }).catch(function (e) {
+      bt.disabled = false;
+      bt.textContent = txt;
+      avisar('err', esDeRed(e) ? 'No se pudo aplicar: sin conexión. Probá de nuevo; no se aplica dos veces.' : mensajeDe(e));
+    });
+  }
+
+  /* ── Aumentar (o bajar) con un porcentaje: toda la lista, un rubro o una familia de un rubro ── */
+  function aumentarLista(li) {
+    var A = { previa: null, rubros: {} };
+    var caja = ventana('<h3 id="posVentTit">Aumentar precios</h3>' +
+      '<p class="pos-bajada">De «' + esc(li.nombre) + '». ' + esc(dondeValeLista(li)) + '</p>' +
+      '<div class="ls-aum">' +
+        campo('ls-pct', 'Porcentaje', '<input type="text" inputmode="decimal" id="laPct" placeholder="10" autocomplete="off" autofocus>') +
+        campo('', 'Rubro', '<select id="laRubro" disabled><option value="">Cargando…</option></select>') +
+        campo('', 'Familia', '<select id="laFam" disabled><option value="">Todas las familias</option></select>') +
+        campo('', 'Redondeo', '<select id="laRed">' + opciones(REDONDEOS, 100) + '</select>') +
+        '<button type="button" class="btn btn-sec btn-chico" id="laVer">Ver qué cambia</button></div>' +
+      '<p class="pos-ayuda">Para bajar, con el signo menos: −10. Redondea al más cercano: con «A $100», $45.130 queda en $45.100.<span id="laSinRubro"></span></p>' +
+      '<div id="laPrevia"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="laAplicar" disabled>Aplicar</button></div>', true);
+    function q(id) { return caja.querySelector('#' + id); }
+    function olvidar() {
+      A.previa = null;
+      q('laPrevia').innerHTML = '';
+      q('laAplicar').disabled = true;
+      q('laAplicar').textContent = 'Aplicar';
+    }
+    llamar('pos_lista_rubros', { p_lista: li.id }).then(function (d) {
+      (d.rubros || []).forEach(function (x) {
+        var r = A.rubros[x[0]] = A.rubros[x[0]] || { n: 0, fams: [] };
+        r.n += x[2];
+        if (x[1]) r.fams.push([x[1], x[1] + ' (' + num(x[2]) + ')']);
+      });
+      var rs = Object.keys(A.rubros).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+      q('laRubro').innerHTML = opciones([['', 'Todos los rubros (' + num(d.total) + ')']].concat(rs.map(function (r) { return [r, r + ' (' + num(A.rubros[r].n) + ')']; })), '');
+      q('laRubro').disabled = false;
+      if (d.sin_rubro) q('laSinRubro').textContent = ' ' + (d.sin_rubro === 1 ? '1 producto no tiene rubro: sólo cambia' : num(d.sin_rubro) + ' productos no tienen rubro: sólo cambian') + ' con «Todos los rubros».';
+    }).catch(function (e) { q('laRubro').innerHTML = '<option value="">Todos los rubros</option>'; q('laRubro').disabled = false; avisar('err', mensajeDe(e)); });
+    q('laRubro').onchange = function () {
+      var r = A.rubros[this.value], f = q('laFam');
+      f.innerHTML = opciones([['', 'Todas las familias']].concat(r ? r.fams.slice().sort(function (a, b) { return a[0].localeCompare(b[0], 'es'); }) : []), '');
+      f.disabled = !r || !r.fams.length;
+      olvidar();
+    };
+    q('laFam').onchange = olvidar;
+    q('laRed').onchange = olvidar;
+    q('laPct').oninput = olvidar;
+    q('laPct').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); ver(); } };
+    q('laVer').onclick = ver;
+    function pedido() {
+      return { p_lista: li.id, p_porcentaje: leerPorcentaje(q('laPct').value), p_rubro: q('laRubro').value || null,
+               p_familia: q('laFam').value || null, p_redondeo: Number(q('laRed').value) };
+    }
+    function ver() {
+      var p = pedido(), bt = q('laVer');
+      if (!(p.p_porcentaje > -90 && p.p_porcentaje <= 200) || p.p_porcentaje === 0) {
+        avisar('err', 'Escribí el porcentaje: de −89 a 200, sin el 0 (para bajar, con el signo menos: −10).');
+        q('laPct').focus();
+        return;
+      }
+      olvidar();
+      bt.disabled = true;
+      q('laPrevia').innerHTML = '<p class="cargando">Calculando…</p>';
+      llamar('pos_lista_aumentar', Object.assign({ p_aplicar: false, p_clave: null }, p)).then(function (d) {
+        bt.disabled = false;
+        if (!_velo || !caja.isConnected) return;
+        var dif = d.suma_antes > 0 ? difPrecio(Number(d.suma_antes), Number(d.suma_despues)) : '';
+        q('laPrevia').innerHTML = !d.cambian ? '<div class="pos-cartel">' + (d.cuantos ? 'Con ese porcentaje y ese redondeo no cambia ningún precio.' : 'No hay productos con precio en lo que elegiste.') + '</div>' :
+          '<div class="pos-totales"><div class="pos-kpi"><span>Productos</span><b>' + num(d.cuantos) + '</b></div>' +
+            '<div class="pos-kpi fuerte"><span>Cambian</span><b>' + num(d.cambian) + '</b></div>' +
+            '<div class="pos-kpi"><span>En total</span><b>' + esc(dif) + '</b></div></div>' +
+          '<div class="pos-marco-tabla ls-previa"><table class="pos-tabla"><thead><tr><th>Código</th><th>Producto</th><th class="n">Antes</th><th class="n">Ahora</th></tr></thead><tbody>' +
+            d.filas.map(function (f) {
+              return '<tr><td><b>' + esc(f[0]) + '</b></td><td>' + esc(nombreProd(f[0], f[1])) + '</td><td class="n">' + plata(cent(f[2])) + '</td><td class="n"><b>' + plata(cent(f[3])) + '</b></td></tr>';
+            }).join('') + '</tbody></table></div>' +
+          (d.cambian > d.filas.length ? '<p class="pos-mas">Se ven ' + num(d.filas.length) + ' de ' + num(d.cambian) + '.</p>' : '');
+        if (!d.cambian) return;
+        A.previa = { p: p, n: d.cambian, clave: nuevaClave() };
+        q('laAplicar').disabled = false;
+        q('laAplicar').textContent = (p.p_porcentaje > 0 ? 'Aumentar ' : 'Bajar ') + (d.cambian === 1 ? '1 precio' : num(d.cambian) + ' precios');
+      }).catch(function (e) { bt.disabled = false; q('laPrevia').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    q('laAplicar').onclick = function () {
+      var P = A.previa, bt = this;
+      if (!P) return;
+      var que = P.p.p_rubro ? ' de ' + P.p.p_rubro + (P.p.p_familia ? ' · ' + P.p.p_familia : '') : '';
+      if (!confirm('¿' + (P.p.p_porcentaje > 0 ? 'Aumentar' : 'Bajar') + ' un ' + textoPorcentaje(P.p.p_porcentaje) + ' % ' + (P.n === 1 ? '1 precio' : num(P.n) + ' precios') + que +
+                   ' en «' + li.nombre + '»? ' + dondeValeLista(li) + ' Si hace falta, se deshace desde «Cambios en bloque».')) return;
+      bt.disabled = true;
+      bt.textContent = 'Aplicando…';
+      llamar('pos_lista_aumentar', Object.assign({ p_aplicar: true, p_clave: P.clave }, P.p)).then(function (r) {
+        cerrarVentana();
+        olvidarPrecios(li.id);
+        avisar('ok', r.ya ? 'Ese cambio ya estaba aplicado: no se repitió.' : 'Listo: ' + (r.cambiaron === 1 ? 'cambió 1 precio' : 'cambiaron ' + num(r.cambiaron) + ' precios') + '. Valen desde la próxima venta.');
+        if ($('lsTabla') && S.listaSel === li.id) verListas();
+      }).catch(function (e) {
+        bt.disabled = false;
+        bt.textContent = (P.p.p_porcentaje > 0 ? 'Aumentar ' : 'Bajar ') + (P.n === 1 ? '1 precio' : num(P.n) + ' precios');
+        avisar('err', esDeRed(e) ? 'No se pudo aplicar: sin conexión. Probá de nuevo; no se aplica dos veces.' : mensajeDe(e));
+      });
+    };
+  }
+
+  /* ── Los cambios en bloque de una lista (subidas y aumentos), con «Deshacer» en el último ── */
+  function cambiosDeLista(li) {
+    llamar('pos_lista_cambios', { p_lista: li.id }).then(function (h) {
+      var z = $('lsCambios');
+      if (!z || S.listaSel !== li.id) return;
+      if (!h.length) { z.innerHTML = ''; return; }
+      var ver = S.lsTodos ? h : h.slice(0, 3);
+      z.innerHTML = '<div class="st-tit-fila"><h3 class="st-tit">Cambios en bloque</h3>' +
+          (h.length > 3 ? '<div><button type="button" class="pos-link" id="lsTodos">' + (S.lsTodos ? 'Ver menos' : 'Ver los ' + h.length) + '</button></div>' : '') + '</div>' +
+        '<div class="pos-marco-tabla ls-cambios"><table class="pos-tabla"><thead><tr><th>Fecha</th><th>Quién</th><th>Qué</th><th class="n">Precios</th><th></th></tr></thead><tbody>' +
+        ver.map(function (x) {
+          return '<tr' + (x.deshecho ? ' class="anulada"' : '') + '><td>' + esc(fechaHora(x.fecha)) + '</td><td>' + esc(x.persona || '—') + '</td><td>' + esc(x.detalle) + '</td>' +
+            '<td class="n">' + num(x.cambiaron) + '</td><td class="pos-acc">' +
+            (x.deshecho ? 'Deshecho el ' + esc(fechaHora(x.deshecho)) + (x.deshizo ? ' por ' + esc(x.deshizo) : '') :
+             x.se_deshace ? '<button type="button" class="pos-link" data-deshacer="' + x.id + '">Deshacer</button>' : '') + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      if ($('lsTodos')) $('lsTodos').onclick = function () { S.lsTodos = !S.lsTodos; cambiosDeLista(li); };
+      z.querySelectorAll('[data-deshacer]').forEach(function (b) {
+        b.onclick = function () {
+          var x = h.filter(function (y) { return String(y.id) === b.getAttribute('data-deshacer'); })[0];
+          if (!x || !confirm('¿Deshacer «' + x.detalle + '»? ' + (x.cambiaron === 1 ? 'El precio vuelve' : 'Los ' + num(x.cambiaron) + ' precios vuelven') +
+                             ' a como estaban antes (los nuevos se sacan). Los que alguien cambió a mano después quedan como están.')) return;
+          b.disabled = true;
+          llamar('pos_lista_deshacer', { p_id: x.id }).then(function (r) {
+            olvidarPrecios(li.id);
+            avisar('ok', 'Listo: ' + (r.volvieron === 1 ? 'volvió 1 precio' : 'volvieron ' + num(r.volvieron) + ' precios') + '.' +
+                         (r.quedaron ? ' ' + (r.quedaron === 1 ? '1 quedó como estaba porque se cambió' : num(r.quedaron) + ' quedaron como estaban porque se cambiaron') + ' a mano después.' : ''));
+            if ($('lsTabla') && S.listaSel === li.id) verListas();
+          }).catch(function (e) { b.disabled = false; avisar('err', mensajeDe(e)); });
+        };
+      });
+    }).catch(function (e) {
+      var z = $('lsCambios');
+      if (z && S.listaSel === li.id) z.innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+    });
   }
 
   /* ════════════════════════════════════════════════════════════════════
