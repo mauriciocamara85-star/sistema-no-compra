@@ -10,8 +10,9 @@
    Lo que manda (decidido con él):
    · Adentro de cada pantalla, los mismos campos en los mismos lugares que
      BlueSoft (05/10: "si ven todo como BlueSoft, agarran confianza").
-   · Las promos se aplican solas y se pueden sacar; además existe el
-     descuento a mano, como en BlueSoft (05/10).
+   · Las promos NO se aplican solas (29/10: "que no aparezca automático,
+     por las dudas"): el vendedor las elige en «Descuentos +» y el sistema
+     hace la cuenta. Además existe el descuento a mano, como en BlueSoft.
    · La factura de ARCA todavía NO: la venta queda registrada y la factura la
      sigue haciendo BlueSoft hasta que esté el certificado.
    · Por ahora lo usa sólo Administración: la barra lo esconde a los demás
@@ -692,13 +693,14 @@
   function ventaNueva(antes) {
     var l = (antes && localMio(antes.local_id)) || localInicial();
     return { v: 1, clave: nuevaClave(), local_id: l ? l.id : null, vendedor: antes ? antes.vendedor : vendedorInicial(l),
-             lista_id: listaDe(l), letra: 'B', cliente: null, socio: null, lineas: [], sacadas: {}, manuales: [],
+             lista_id: listaDe(l), letra: 'B', cliente: null, socio: null, lineas: [], puestas: {}, manuales: [],
              forma: 'efectivo', pago: {}, multiples: null, observaciones: '' };
   }
   function cargarBorrador() {
     var b = leerJSON(K_BORRADOR, null);
     if (b && b.v === 1 && b.clave && Array.isArray(b.lineas) && localMio(b.local_id) && listaPorId(b.lista_id)) {
-      b.sacadas = b.sacadas || {}; b.manuales = b.manuales || []; b.pago = b.pago || {};
+      /* Los borradores de antes del 29/10 traen "sacadas" (las promos iban solas): ahí ninguna está elegida. */
+      b.puestas = b.puestas || {}; delete b.sacadas; b.manuales = b.manuales || []; b.pago = b.pago || {};
       if (!LETRAS[b.letra]) b.letra = 'B';
       if (b.letra === 'X' && b.forma !== 'efectivo') { b.forma = 'efectivo'; b.multiples = null; }
       return b;
@@ -708,24 +710,25 @@
   function guardarBorrador() { guardarJSON(K_BORRADOR, V); }
 
   /* ── La cuenta del ticket ──────────────────────────────────────────────
-     1. Las promos que NO se combinan: se aplica la que más le conviene al
-        cliente (si la sacan, entra la que sigue).
+     Las promos NO se aplican solas (Mauricio, 29/10: "que no aparezca
+     automático, por las dudas"): entran sólo las que el vendedor eligió en
+     «Descuentos +» (v.puestas), y el sistema hace la cuenta.
+     1. La que NO se combina (3x2, 2.ª al 50 %): una sola por ticket.
      2. Las que se combinan (10 % en efectivo), en su orden, sobre lo que queda.
      3. Los descuentos a mano, sobre el total del ticket (como en BlueSoft).
      El 3x2 regala la más barata de cada tres; la 2.ª al 50 % va de a pares,
-     de la más cara a la más barata, y descuenta la segunda de cada par. */
+     de la más cara a la más barata, y descuenta la segunda de cada par.
+     Una elegida que con estas prendas no descuenta nada va en noAplican. */
   function cuenta(v) {
-    var hoy = S.ini.hoy, neto = 0, cant = 0, unidades = [];
+    var hoy = S.ini.hoy, neto = 0, cant = 0, unidades = [], puestas = v.puestas || {};
     v.lineas.forEach(function (l, i) {
       neto += l.precio * l.cantidad;
       cant += l.cantidad;
       for (var k = 0; k < l.cantidad; k++) unidades.push({ l: i, p: l.precio, rubro: l.rubro || '' });
     });
     var porLinea = v.lineas.map(function () { return 0; });
-    var usadas = {}, desc = [], sacadas = [], resto = neto;
-    var vigentes = (S.ini.promos || []).filter(function (p) {
-      return p.activo && (!p.desde || p.desde <= hoy) && (!p.hasta || p.hasta >= hoy);
-    });
+    var usadas = {}, desc = [], noAplican = [], resto = neto;
+    var vigentes = promosVigentes(hoy).filter(function (p) { return puestas[p.id]; });
     function vale(p, rubro) { return !p.rubros || !p.rubros.length || p.rubros.indexOf(rubro) >= 0; }
     function calcular(p) {
       if (p.tipo === 'medio_pago') {
@@ -763,15 +766,13 @@
     var mejor = null;
     vigentes.filter(function (p) { return !p.combinable; }).forEach(function (p) {
       var r = calcular(p);
-      if (r.monto <= 0) return;
-      if (v.sacadas[p.id]) { sacadas.push(p); return; }
+      if (r.monto <= 0) { noAplican.push(p); return; }
       if (!mejor || r.monto > mejor.r.monto) mejor = { p: p, r: r };
     });
     if (mejor) aplicar(mejor.p, mejor.r);
     vigentes.filter(function (p) { return p.combinable; }).forEach(function (p) {
       var r = calcular(p);
-      if (r.monto <= 0) return;
-      if (v.sacadas[p.id]) { sacadas.push(p); return; }
+      if (r.monto <= 0) { noAplican.push(p); return; }
       aplicar(p, r);
     });
     v.manuales.forEach(function (m, i) {
@@ -780,7 +781,41 @@
       resto -= monto;
       desc.push({ tipo: 'manual', idx: i, descripcion: m.descripcion + (m.pct ? ' (' + String(m.pct).replace('.', ',') + ' %)' : ''), monto: monto });
     });
-    return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, sacadas: sacadas, descuento: neto - resto, total: resto };
+    return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, noAplican: noAplican, descuento: neto - resto, total: resto };
+  }
+
+  /** Las promos que se ofrecen en la venta: las prendidas en Gestión → Promociones y dentro de sus fechas. */
+  function promosVigentes(hoy) {
+    hoy = hoy || S.ini.hoy;
+    return (S.ini.promos || []).filter(function (p) { return p.activo && (!p.desde || p.desde <= hoy) && (!p.hasta || p.hasta >= hoy); });
+  }
+  /** Cómo quedarían las promos elegidas al sumar p (la que no se combina reemplaza a la otra que no se combina),
+      y cuánto descontaría p en este ticket. */
+  function conPromo(p) {
+    var puestas = {};
+    Object.keys(V.puestas || {}).forEach(function (id) {
+      var q = promoDe(Number(id));
+      if (q && (p.combinable || q.combinable)) puestas[id] = true;
+    });
+    puestas[p.id] = true;
+    var d = cuenta(Object.assign({}, V, { puestas: puestas })).descuentos.filter(function (x) { return x.tipo === 'promo' && x.promo_id === p.id; })[0];
+    var reemplaza = p.combinable ? null : promosVigentes().filter(function (q) { return !q.combinable && q.id !== p.id && V.puestas[q.id]; })[0] || null;
+    return { puestas: puestas, monto: d ? d.monto : 0, reemplaza: reemplaza };
+  }
+  /** Qué hace una promo, corto, para el botón de «Descuentos +». */
+  function queHacePromo(p) {
+    var pct = String(Number(p.porcentaje)).replace('.', ',') + ' %';
+    var que = p.tipo === 'lleva_paga' ? 'Lleva ' + p.lleva + ', paga ' + p.paga + ': ' + (p.lleva - p.paga === 1 ? 'la más barata, gratis' : 'las más baratas, gratis') :
+              p.tipo === 'segunda' ? 'La segunda de cada par al ' + pct + ' (la más barata)' :
+              pct + ' pagando todo ' + (p.medio === 'efectivo' ? 'en efectivo' : 'con ' + (MEDIOS[p.medio] || p.medio));
+    return que + (p.rubros && p.rubros.length ? ' · sólo ' + p.rubros.join(', ') : '');
+  }
+  /** Por qué una promo no descuenta nada en esta venta (el botón apagado y el renglón gris de la grilla). */
+  function porQueNoPromo(p, v) {
+    var rub = p.rubros && p.rubros.length ? ' de ' + p.rubros.join(', ') : '';
+    if (p.tipo === 'medio_pago') return v.forma !== p.medio ? 'es pagando todo ' + (p.medio === 'efectivo' ? 'en efectivo' : 'con ' + (MEDIOS[p.medio] || p.medio)) :
+                                        rub ? 'es sólo para' + rub.slice(3) : 'con estas prendas no descuenta nada';
+    return 'hacen falta ' + (p.tipo === 'lleva_paga' ? p.lleva : 2) + ' prendas' + rub;
   }
 
   /** Los pagos que se mandan a la base (en centavos). X: la venta (V) o el cambio (CB). */
@@ -836,7 +871,7 @@
         '</div>' +
         '<div class="tk-tot">' +
           '<div class="tk-caja"><span>Neto</span><b id="tNeto">$0</b></div>' +
-          '<button type="button" class="tk-caja" id="tDescBtn" title="Agregar un descuento a mano"><span>Descuentos</span><b id="tDesc">$0</b></button>' +
+          '<button type="button" class="tk-caja" id="tDescBtn" title="Elegir una promo o agregar un descuento a mano"><span>Descuentos</span><b id="tDesc">$0</b></button>' +
           '<div class="tk-caja"><span>Productos</span><b id="tCant">0</b></div>' +
           '<div class="tk-caja gordo"><span>' + (prueba ? 'Total · prueba' : 'Total a pagar') + '</span><b id="tTotal">$0</b></div>' +
         '</div></section>' +
@@ -999,8 +1034,9 @@
         (d.tipo === 'promo' ? 'data-sacar="' + d.promo_id + '" title="Sacar la promo" aria-label="Sacar la promo ' + esc(d.descripcion) + '"'
                             : 'data-manual="' + d.idx + '" title="Sacar el descuento" aria-label="Sacar el descuento ' + esc(d.descripcion) + '"') + '>' + icono('x') + '</button></td></tr>');
     });
-    c.sacadas.forEach(function (p) {
-      filas.push('<tr class="tk-fila-sacada"><td></td><td colspan="9">Sacaste «' + esc(p.nombre) + '». <button type="button" data-volver="' + p.id + '">Volver a aplicarla</button></td></tr>');
+    c.noAplican.forEach(function (p) {
+      filas.push('<tr class="tk-fila-sacada"><td></td><td colspan="9">Elegiste «' + esc(p.nombre) + '», pero ' + esc(porQueNoPromo(p, V)) + ': todavía no descuenta. ' +
+        '<button type="button" data-sacar="' + p.id + '">Sacarla</button></td></tr>');
     });
     $('vFilas').innerHTML = filas.length ? filas.join('') :
       '<tr class="tk-vacia"><td colspan="10"><b>Todavía no hay productos</b>Dispará la pistola a la etiqueta o buscá el producto arriba.</td></tr>';
@@ -1278,8 +1314,7 @@
       var b = e.target.closest('button');
       if (!b) return;
       if (b.hasAttribute('data-quitar')) V.lineas.splice(Number(b.getAttribute('data-quitar')), 1);
-      else if (b.hasAttribute('data-sacar')) V.sacadas[b.getAttribute('data-sacar')] = true;
-      else if (b.hasAttribute('data-volver')) delete V.sacadas[b.getAttribute('data-volver')];
+      else if (b.hasAttribute('data-sacar')) delete V.puestas[b.getAttribute('data-sacar')];
       else if (b.hasAttribute('data-manual')) V.manuales.splice(Number(b.getAttribute('data-manual')), 1);
       else return;
       pintar();
@@ -1287,13 +1322,30 @@
     });
   }
 
-  /* "Agregar descuento…" de BlueSoft. */
+  /* "Agregar descuento…" de BlueSoft. Arriba, las promos prendidas para elegir (Mauricio, 29/10: "que haya algún
+     lado de aplicar el descuento en la prenda más barata, o en la segunda al 50 %… pero que no aparezca
+     automático"): cada una dice cuánto descuenta en este ticket y, al tocarla, el sistema hace la cuenta.
+     Abajo, el descuento a mano de siempre. */
   function abrirDescuento() {
     var c = cuenta(V);
     if (!c.neto) { avisar('info', 'Primero cargá los productos.'); return; }
-    var caja = ventana('<h3 id="posVentTit">Agregar descuento</h3><p class="pos-bajada">Sobre el total del ticket, después de las promos (' + plata(c.total) + '). Se saca con la ✕ de la grilla.</p>' +
+    var ofrecidas = promosVigentes(), foco = false;
+    var promos = ofrecidas.map(function (p) {
+      var o = conPromo(p), puesta = !!V.puestas[p.id] && c.descuentos.some(function (d) { return d.promo_id === p.id; });
+      var sirve = !puesta && o.monto > 0, auto = sirve && !foco ? (foco = true, ' autofocus') : '';
+      return '<button type="button" class="pos-promo-op' + (puesta ? ' puesta' : '') + '" data-promo="' + p.id + '"' + (sirve ? '' : ' disabled') + auto + '>' +
+        '<span class="pos-promo-op-txt"><b>' + esc(p.nombre) + '</b><small>' + esc(queHacePromo(p)) + '</small>' +
+        (puesta ? '<em>Ya está en el ticket</em>' : !sirve ? '<em>No aplica: ' + esc(porQueNoPromo(p, V)) + '</em>' :
+          o.reemplaza ? '<em>Reemplaza a «' + esc(o.reemplaza.nombre) + '» (no se suman)</em>' : '') + '</span>' +
+        '<span class="pos-promo-op-monto">' + (puesta ? icono('ok') : sirve ? '−' + plata(o.monto) : '') + '</span></button>';
+    }).join('');
+    var caja = ventana('<h3 id="posVentTit">Agregar descuento</h3>' +
+      (promos ? '<p class="pos-bajada">Las promos no se aplican solas: tocá la que corresponde y el sistema hace la cuenta. Se sacan con la ✕ de la grilla.</p>' +
+          '<div class="pos-ds-titulo">Promociones</div><div class="pos-promos-elegir">' + promos + '</div>' +
+          '<div class="pos-ds-titulo">O un descuento a mano</div><p class="pos-ayuda pos-ds-ayuda">Sobre el total del ticket (' + plata(c.total) + ').</p>'
+        : '<p class="pos-bajada">Sobre el total del ticket, después de las promos (' + plata(c.total) + '). Se saca con la ✕ de la grilla.</p>') +
       '<div class="pos-campos">' +
-        campo('ancho', 'Descuento', '<select id="dsTipo" autofocus>' + DESCUENTOS.map(function (d, i) { return '<option value="' + i + '">' + esc(d[0]) + '</option>'; }).join('') + '</select>') +
+        campo('ancho', 'Descuento', '<select id="dsTipo"' + (foco ? '' : ' autofocus') + '>' + DESCUENTOS.map(function (d, i) { return '<option value="' + i + '">' + esc(d[0]) + '</option>'; }).join('') + '</select>') +
         campo('', 'Porcentaje', '<input type="text" inputmode="decimal" id="dsPct" value="5">') +
         campo('', 'O un monto ($)', '<input type="text" inputmode="decimal" id="dsVal" placeholder="$">') +
       '</div><div class="pos-error" id="dsError"></div>' +
@@ -1317,6 +1369,17 @@
     }
     caja.querySelector('#dsOk').onclick = listo;
     caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); listo(); } });
+    caja.querySelectorAll('[data-promo]').forEach(function (b) {
+      b.onclick = function () {
+        var p = promoDe(Number(b.getAttribute('data-promo'))), o = p && conPromo(p);
+        if (!o || !o.monto) return;
+        V.puestas = o.puestas;
+        cerrarVentana();
+        pintar();
+        avisar('ok', p.nombre + ': −' + plata(o.monto) + (o.reemplaza ? ' (en lugar de «' + o.reemplaza.nombre + '»)' : '') + '.');
+        $('vProd').focus();
+      };
+    });
   }
 
   /* El cliente: para la factura A, o para mandarle la factura. */
@@ -4633,10 +4696,10 @@
   }
   function verPromos() {
     var c = $('cuerpo');
-    c.innerHTML = cabeza('Promociones', 'Se aplican solas en la venta y el vendedor las puede sacar. Entre las que no se suman, va la que más le conviene al cliente.',
+    c.innerHTML = cabeza('Promociones', 'No se aplican solas: en la venta, el vendedor elige la que corresponde en «Descuentos +» y el sistema hace la cuenta. Sólo se ofrecen las prendidas.',
         '<button type="button" class="btn btn-pri btn-chico" id="prNueva">Nueva promoción</button>') +
       '<div class="pos-promos">' + ((S.ini.promos || []).length ? S.ini.promos.map(function (p) {
-        return '<div class="pos-promo' + (p.activo ? '' : ' apagada') + '"><label class="pos-switch" title="' + (p.activo ? 'Activa' : 'Apagada') + '"><input type="checkbox" data-activa="' + p.id + '"' + (p.activo ? ' checked' : '') +
+        return '<div class="pos-promo' + (p.activo ? '' : ' apagada') + '"><label class="pos-switch" title="' + (p.activo ? 'Prendida: se ofrece en la venta' : 'Apagada: no se ofrece') + '"><input type="checkbox" data-activa="' + p.id + '"' + (p.activo ? ' checked' : '') +
           ' aria-label="' + esc(p.nombre) + ' activa"><i></i></label><div><b>' + esc(p.nombre) + '</b><small>' + esc(describirPromo(p)) + '</small></div>' +
           '<button type="button" class="btn btn-sec btn-chico" data-editar="' + p.id + '">Editar</button></div>';
       }).join('') : '<div class="pos-cartel">Todavía no hay promociones.</div>') + '</div>';
