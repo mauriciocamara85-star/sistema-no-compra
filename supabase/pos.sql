@@ -4782,6 +4782,642 @@ grant execute on function pos_clientes_lista(text, text, text), pos_cliente(uuid
                           pos_clientes_buscar(text) to authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 200 (30/10/2026) · LAS GIFT CARDS EN EL POS
+--
+--  Mauricio (30/10): "la gift card, sí, ponerla como forma de pago tendría
+--  que estar. También para vender una… sii hacelo… pero que todavía se pueda
+--  cobrar de la otra manera hasta que demos el alta todo el pos".
+--  · VENDERLA: la tarjeta impresa (Black o Gold, los 14 números que lee la
+--    pistola) entra a la venta como un renglón, con el valor que se escriba.
+--    Al guardar queda vendida igual que desde Gift Cards (en beneficios,
+--    vence a los 30 días), a nombre del cliente de la venta si lo hay.
+--  · COBRAR CON ELLA: «Gift card» es una forma de pago más (sola o en el pago
+--    múltiple). Se usa entera, como en Cobrar: queda usada con el local, el
+--    vendedor y el total de la compra. Si vale más de lo que paga, la
+--    diferencia se pierde (la pantalla lo avisa antes).
+--  · Gift Cards y Cobrar siguen como siempre: la vendida en el POS se canjea
+--    en Cobrar y la vendida en Gift Cards paga en el POS.
+--  · Una gift card no se compra con otra, no sale del stock y no da puntos
+--    del Club (los da lo que se compra con ella).
+--  · Anular la venta: la tarjeta que se vendió vuelve a estar sin vender (si
+--    ya se usó, la venta no se anula) y la que pagó vuelve a estar disponible.
+--  · La caja: lo pagado con gift card va aparte (no es efectivo).
+--  · En modo prueba se revisa todo, pero no se vende ni se usa ninguna.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+alter table pos_venta_items add column beneficio bigint references beneficios (id) on delete set null;
+alter table pos_venta_pagos add column beneficio bigint references beneficios (id) on delete set null;
+create index pos_venta_items_beneficio on pos_venta_items (beneficio) where beneficio is not null;
+create index pos_venta_pagos_beneficio on pos_venta_pagos (beneficio) where beneficio is not null;
+alter table pos_venta_pagos drop constraint pos_venta_pagos_medio_check;
+alter table pos_venta_pagos add constraint pos_venta_pagos_medio_check
+  check (medio in ('efectivo', 'tarjeta', 'mercadopago', 'modo', 'go_cuotas', 'transferencia', 'giftcard'));
+alter table pos_cierres add column ventas_giftcard numeric not null default 0;
+
+/* El nombre de una gift card para los mensajes y el ticket: «Black Nº 001». Nunca sus 14 números: con
+   ellos se cobra (una vieja, sin tarjeta impresa, va con su número corto). */
+create function pos_gc_nombre(p_serie text) returns text
+language sql stable security definer set search_path = public as $$
+  select coalesce((select g.color || ' Nº ' || lpad(g.nro::text, 3, '0') from giftcard_tarjetas g where g.codigo = p_serie),
+                  'Nº ' || p_serie)
+$$;
+
+/* La tarjeta que pasan por la pistola: si es una de las impresas, si se vendió y cómo está. La venta la
+   pide para venderla (tiene que estar sin vender) y para cobrar con ella (tiene que estar disponible). */
+create function pos_giftcard(p_codigo text) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v_cod  text := regexp_replace(coalesce(p_codigo, ''), '[^0-9]', '', 'g');
+  t      giftcard_tarjetas%rowtype;
+  b      v_beneficios%rowtype;
+begin
+  perform pos_permiso();
+  if v_cod !~ '^99[0-9]{12}$' then return jsonb_build_object('existe', false, 'formato', false); end if;
+  select * into t from giftcard_tarjetas g where g.codigo = v_cod;
+  if not found then return jsonb_build_object('existe', false, 'formato', true); end if;
+  select * into b from v_beneficios x where x.tipo = 'giftcard' and upper(trim(x.serie)) = v_cod;
+  return jsonb_build_object('existe', true, 'formato', true, 'nro', lpad(t.nro::text, 3, '0'), 'color', t.color,
+                            'vendida', b.id is not null, 'estado', b.estado, 'valor', b.valor, 'vence', b.vence,
+                            'local', b.local, 'vendida_el', b.creado, 'usada_el', b.usado, 'local_canje', b.local_canje);
+end $$;
+
+CREATE OR REPLACE FUNCTION public.pos_venta_guardar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_local   uuid := nullif(p->>'local_id', '')::uuid;
+  v_clave   text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_letra   text := coalesce(nullif(p->>'letra', ''), 'B');
+  v_prueba  boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_serie   text;
+  v_cond    text := coalesce(nullif(p->>'cliente_condicion', ''), 'consumidor_final');
+  v_doc     text := nullif(regexp_replace(coalesce(p->>'cliente_doc', ''), '[^0-9]', '', 'g'), '');
+  v_vend    text := nullif(trim(coalesce(p->>'vendedor', '')), '');
+  v_items   jsonb := coalesce(p->'items', '[]'::jsonb);
+  v_descs   jsonb := coalesce(p->'descuentos', '[]'::jsonb);
+  v_pagos   jsonb := coalesce(p->'pagos', '[]'::jsonb);
+  v_neto    numeric := 0;
+  v_desc    numeric := 0;
+  v_pagado  numeric := 0;
+  v_cant    int := 0;
+  v_total   numeric;
+  v_num     bigint;
+  v_id      uuid;
+  v_ya      pos_ventas;
+  x         jsonb;
+  it        record;
+  i         int;
+  n         int;
+  pr        numeric;
+  m         numeric;
+  v_socio   text := nullif(regexp_replace(coalesce(p->>'socio', ''), '[^0-9]', '', 'g'), '');   -- SQL 171
+  v_cli     v_club_clientes%rowtype;
+  v_factor  jsonb;
+  v_gana    int;
+  v_mov     bigint;
+  /* SQL 200: las gift cards. */
+  gc        text;
+  v_gcs     text[] := '{}';   -- las que se venden en esta venta
+  v_gcp     text[] := '{}';   -- las que la pagan
+  v_gc_neto numeric := 0;     -- lo que valen las que se venden
+  v_gc_cob  numeric := 0;     -- lo que se cobra por ellas (con su parte de los descuentos)
+  v_gb      v_beneficios%rowtype;
+  v_locod   text;
+  v_pago    forma_pago;
+  v_bid     bigint;
+begin
+  perform pos_permiso();
+  perform pos_local_ok(v_local);   -- SQL 190
+
+  if v_clave is not null then
+    select * into v_ya from pos_ventas where clave = v_clave;
+    if found then
+      return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'serie', v_ya.serie, 'prueba', v_ya.prueba,
+                                'fecha', v_ya.fecha, 'ya', true, 'socio_puntos', v_ya.socio_puntos, 'puntos_sumados', v_ya.club_mov is not null);
+    end if;
+  end if;
+
+  /* SQL 171: el socio del Club (el número de su tarjeta), si lo eligieron. */
+  if v_socio is not null then
+    select * into v_cli from v_club_clientes where codigo = v_socio and baja is null;
+    if not found then raise exception 'Ese socio del Club no existe o se dio de baja.'; end if;
+  end if;
+
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_vend is null then raise exception 'Elegí el vendedor.'; end if;
+  if v_letra not in ('A', 'B', 'X') then raise exception 'El comprobante tiene que ser A, B o X.'; end if;
+  if v_cond not in ('consumidor_final', 'responsable_inscripto', 'monotributo', 'exento') then
+    raise exception 'La condición de IVA del cliente no es válida.';
+  end if;
+  if v_letra = 'A' and (v_doc is null or length(v_doc) <> 11) then
+    raise exception 'La factura A necesita el CUIT del cliente (11 números).';
+  end if;
+  if v_letra = 'A' and v_cond = 'consumidor_final' then
+    raise exception 'A un consumidor final se le hace factura B.';
+  end if;
+
+  if jsonb_typeof(v_items) <> 'array' or jsonb_array_length(v_items) = 0 then raise exception 'La venta no tiene productos.'; end if;
+  if jsonb_array_length(v_items) > 200 then raise exception 'Son demasiados renglones para una venta.'; end if;
+  for x in select * from jsonb_array_elements(v_items) loop
+    n := (x->>'cantidad')::int;
+    pr := round((x->>'precio')::numeric, 2);
+    if n is null or n < 1 or n > 999 then raise exception 'Hay una cantidad que no es válida.'; end if;
+    if pr is null or pr < 0 or pr >= 100000000 then raise exception 'Hay un precio que no es válido.'; end if;
+    if nullif(trim(coalesce(x->>'descripcion', '')), '') is null then raise exception 'Hay un renglón sin descripción.'; end if;
+    /* SQL 200: la gift card que se vende: una de las impresas, sin vender, de a una y con su valor. */
+    if nullif(x->>'giftcard', '') is not null then
+      gc := regexp_replace(x->>'giftcard', '[^0-9]', '', 'g');
+      if gc !~ '^99[0-9]{12}$' then raise exception 'Ese código no es de una Gift Card VDH.'; end if;
+      if not exists (select 1 from giftcard_tarjetas g where g.codigo = gc) then
+        raise exception 'Esa tarjeta no está entre las Gift Cards impresas.';
+      end if;
+      if exists (select 1 from beneficios z where upper(trim(z.serie)) = gc) then
+        raise exception 'La Gift Card % ya se vendió.', pos_gc_nombre(gc);
+      end if;
+      if gc = any (v_gcs) then raise exception 'La Gift Card % está dos veces en la venta.', pos_gc_nombre(gc); end if;
+      if n <> 1 then raise exception 'Cada Gift Card va en su renglón, de a una.'; end if;
+      if pr <= 0 then raise exception 'Falta el valor de la Gift Card %.', pos_gc_nombre(gc); end if;
+      if pr >= 10000000 then raise exception 'Ese valor no parece de una Gift Card: revisalo (tiene que ser menos de $ 10.000.000).'; end if;
+      v_gcs := v_gcs || gc;
+      v_gc_neto := v_gc_neto + pr;
+    end if;
+    v_neto := v_neto + pr * n;
+    v_cant := v_cant + n;
+  end loop;
+
+  if jsonb_typeof(v_descs) <> 'array' then raise exception 'Los descuentos no son válidos.'; end if;
+  for x in select * from jsonb_array_elements(v_descs) loop
+    m := round((x->>'monto')::numeric, 2);
+    if m is null or m <= 0 then raise exception 'Hay un descuento que no es válido.'; end if;
+    if coalesce(x->>'tipo', '') not in ('promo', 'manual') then raise exception 'Hay un descuento de un tipo que no existe.'; end if;
+    v_desc := v_desc + m;
+  end loop;
+  if v_desc > v_neto then raise exception 'Los descuentos son más que la venta.'; end if;
+  v_total := v_neto - v_desc;
+  /* SQL 200: lo que se cobra por las gift cards que se venden: su valor, con su parte de los descuentos. */
+  if v_neto > 0 then v_gc_cob := round(v_gc_neto * v_total / v_neto, 2); end if;
+
+  if jsonb_typeof(v_pagos) <> 'array' then raise exception 'Los pagos no son válidos.'; end if;
+  if v_total > 0 and jsonb_array_length(v_pagos) = 0 then raise exception 'Falta la forma de pago.'; end if;
+  for x in select * from jsonb_array_elements(v_pagos) loop
+    m := round((x->>'monto')::numeric, 2);
+    if m is null or m <= 0 then raise exception 'Hay un pago sin monto.'; end if;
+    if coalesce(x->>'medio', '') not in ('efectivo', 'tarjeta', 'mercadopago', 'modo', 'go_cuotas', 'transferencia', 'giftcard') then   -- SQL 200: giftcard
+      raise exception 'Hay una forma de pago que no existe.';
+    end if;
+    if v_letra = 'X' and x->>'medio' <> 'efectivo' then
+      raise exception 'La X (el comprobante interno) va sólo con efectivo.';
+    end if;
+    if x->>'medio' = 'tarjeta' then
+      if nullif(trim(coalesce(x->>'tarjeta', '')), '') is null then raise exception 'Falta qué tarjeta es.'; end if;
+      if coalesce(x->>'tipo_tarjeta', '') not in ('credito', 'debito') then raise exception 'Falta si la tarjeta es de crédito o de débito.'; end if;
+      if coalesce(nullif(x->>'cuotas', '')::int, 1) not between 1 and 24 then raise exception 'Las cuotas van de 1 a 24.'; end if;
+      if nullif(x->>'ultimos4', '') is not null and (x->>'ultimos4') !~ '^[0-9]{4}$' then raise exception 'Los últimos 4 números de la tarjeta son 4 números.'; end if;
+    end if;
+    if x->>'medio' = 'efectivo' and nullif(x->>'recibido', '') is not null and (x->>'recibido')::numeric < m then
+      raise exception 'Lo que recibiste en efectivo es menos que lo que se cobra.';
+    end if;
+    /* SQL 200: la gift card con la que paga: vendida, disponible y que alcance. Se usa entera, como en Cobrar. */
+    if x->>'medio' = 'giftcard' then
+      gc := regexp_replace(coalesce(x->>'giftcard', ''), '[^0-9]', '', 'g');
+      if gc = '' then raise exception 'Falta pasar la Gift Card con la que paga.'; end if;
+      if v_gc_neto > 0 then raise exception 'Una Gift Card no se compra con otra Gift Card.'; end if;
+      if gc = any (v_gcp) then raise exception 'La Gift Card % está dos veces en los pagos.', pos_gc_nombre(gc); end if;
+      select * into v_gb from v_beneficios z where z.tipo = 'giftcard' and upper(trim(z.serie)) = gc;
+      if not found then raise exception 'La Gift Card % no se vendió: no se puede cobrar con ella.', pos_gc_nombre(gc); end if;
+      if v_gb.estado <> 'disponible' then
+        raise exception 'La Gift Card % está %: no se puede cobrar con ella.', pos_gc_nombre(gc),
+          case v_gb.estado when 'usado' then 'usada' when 'vencido' then 'vencida' when 'anulado' then 'anulada' else v_gb.estado end;
+      end if;
+      if m > v_gb.valor then
+        raise exception 'La Gift Card % vale $%: con ella no se pagan $%.', pos_gc_nombre(gc),
+          to_char(v_gb.valor, 'FM999G999G990D00'), to_char(m, 'FM999G999G990D00');
+      end if;
+      v_gcp := v_gcp || gc;
+    end if;
+    v_pagado := v_pagado + m;
+  end loop;
+  if v_pagado <> v_total then
+    raise exception 'Los pagos ($%) no suman el total ($%).', to_char(v_pagado, 'FM999G999G990D00'), to_char(v_total, 'FM999G999G990D00');
+  end if;
+
+  /* SQL 200: cómo se pagó, para la gift card que se vende (el «pago» de la sección Gift Cards). */
+  if jsonb_array_length(v_pagos) = 1 then
+    v_pago := (case v_pagos->0->>'medio'
+                 when 'efectivo' then 'efectivo'
+                 when 'tarjeta' then case coalesce(nullif(v_pagos->0->>'cuotas', '')::int, 1) when 3 then '3 cuotas' when 6 then '6 cuotas' else 'tarjeta' end
+                 else 'otro' end)::forma_pago;
+  elsif jsonb_array_length(v_pagos) > 1 then
+    v_pago := 'otro';
+  end if;
+  v_locod := (select codigo from orden_locales where id = v_local);
+
+  /* Cada serie con su número: las pruebas (de cualquier letra) aparte, las X aparte, y A y B juntas. */
+  v_serie := case when v_prueba then 'prueba' when v_letra = 'X' then 'x' else 'factura' end;
+  insert into pos_numeros (local_id, serie, ultimo) values (v_local, v_serie, 1)
+  on conflict (local_id, serie) do update set ultimo = pos_numeros.ultimo + 1
+  returning ultimo into v_num;
+
+  insert into pos_ventas (local_id, numero, serie, prueba, dia, letra, cliente_nombre, cliente_doc, cliente_condicion, cliente_email,
+                          cliente_tel, envio, vendedor, cargado_por, lista_id, neto, descuentos, total, cantidad,
+                          observaciones, clave, socio)
+  values (v_local, v_num, v_serie, v_prueba, pos_hoy(), v_letra, nullif(trim(coalesce(p->>'cliente_nombre', '')), ''), v_doc, v_cond,
+          nullif(lower(trim(coalesce(p->>'cliente_email', ''))), ''), nullif(trim(coalesce(p->>'cliente_tel', '')), ''),
+          nullif(p->>'envio', ''), v_vend, orden_yo_id(), nullif(p->>'lista_id', '')::int, v_neto, v_desc, v_total, v_cant,
+          nullif(trim(coalesce(p->>'observaciones', '')), ''), v_clave, v_socio)
+  returning id into v_id;
+
+  i := 0;
+  for x in select * from jsonb_array_elements(v_items) loop
+    i := i + 1;
+    gc := nullif(regexp_replace(coalesce(x->>'giftcard', ''), '[^0-9]', '', 'g'), '');
+    v_bid := null;
+    /* SQL 200: la gift card que se vende queda vendida como desde Gift Cards (vender_giftcard), con lo que
+       se cobró por ella y a nombre del cliente de la venta. En una prueba, no. */
+    if gc is not null and not v_prueba then
+      begin
+        insert into beneficios (tipo, serie, valor, cobrado, pago, vence, local, vendedor, telefono, nombre, obs, creado_por, creado_por_nombre)
+        values ('giftcard', gc, round((x->>'precio')::numeric, 2),
+                case when v_neto > 0 then round(round((x->>'precio')::numeric, 2) * v_total / v_neto, 2) else 0 end,
+                v_pago, pos_hoy() + 30, v_locod, v_vend,
+                coalesce(tel_cliente(p->>'cliente_tel'), nullif(regexp_replace(coalesce(p->>'cliente_tel', ''), '[^0-9]', '', 'g'), '')),
+                nullif(trim(coalesce(p->>'cliente_nombre', '')), ''),
+                'Vendida en el POS: venta ' || case when v_serie = 'x' then 'X-' else 'Nº ' end || v_num,
+                auth.uid(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()))
+        returning id into v_bid;
+      exception when unique_violation then
+        raise exception 'La Gift Card % ya se vendió.', pos_gc_nombre(gc);
+      end;
+    end if;
+    insert into pos_venta_items (venta_id, item, codigo, descripcion, talle, color, cantidad, precio, total, beneficio)
+    values (v_id, i, case when gc is not null then 'GIFTCARD' else nullif(upper(trim(coalesce(x->>'codigo', ''))), '') end,
+            case when gc is not null then 'Gift Card ' || pos_gc_nombre(gc) else trim(x->>'descripcion') end,
+            case when gc is null then nullif(trim(coalesce(x->>'talle', '')), '') end,
+            case when gc is null then nullif(trim(coalesce(x->>'color', '')), '') end,
+            (x->>'cantidad')::int, round((x->>'precio')::numeric, 2), round((x->>'precio')::numeric, 2) * (x->>'cantidad')::int, v_bid);
+  end loop;
+
+  /* SQL 160: lo vendido sale del stock del local. Si no hay, igual se vende
+     (queda en negativo, como en BlueSoft). Las pruebas no lo tocan. */
+  if not v_prueba then
+    for it in select * from pos_venta_items where venta_id = v_id and beneficio is null order by item loop   -- SQL 200: la gift card no es stock
+      perform pos_stock_mover(v_local, it.codigo, it.talle, it.color, -it.cantidad, 'venta', v_id,
+                              'Venta ' || case when v_serie = 'x' then 'X-' else 'Nº ' end || v_num, it.descripcion);
+    end loop;
+  end if;
+
+  i := 0;
+  for x in select * from jsonb_array_elements(v_descs) loop
+    i := i + 1;
+    insert into pos_venta_descuentos (venta_id, orden, tipo, promo_id, descripcion, monto)
+    values (v_id, i, x->>'tipo', nullif(x->>'promo_id', '')::int,
+            coalesce(nullif(trim(coalesce(x->>'descripcion', '')), ''), 'Descuento'), round((x->>'monto')::numeric, 2));
+  end loop;
+
+  i := 0;
+  for x in select * from jsonb_array_elements(v_pagos) loop
+    i := i + 1;
+    /* SQL 200: la gift card que paga queda usada, como en Cobrar (canjear_beneficio): con el local, el vendedor
+       y el total de la compra. En una prueba, no (y la venta no queda atada a ella). */
+    v_bid := null;
+    gc := null;
+    if x->>'medio' = 'giftcard' then
+      gc := regexp_replace(x->>'giftcard', '[^0-9]', '', 'g');
+      if not v_prueba then
+        update beneficios set usado = now(), local_canje = v_locod, vendedor_canje = v_vend, monto_compra = v_total, canal_canje = 'local'
+         where tipo = 'giftcard' and upper(trim(serie)) = gc and usado is null and anulado is null
+        returning id into v_bid;
+        if v_bid is null then raise exception 'La Gift Card % la acaban de usar en otro lado.', pos_gc_nombre(gc); end if;
+      end if;
+    end if;
+    insert into pos_venta_pagos (venta_id, orden, medio, monto, tarjeta, tipo_tarjeta, cuotas, cupon, lote, ultimos4, recibido, vuelto, beneficio)
+    values (v_id, i, x->>'medio', round((x->>'monto')::numeric, 2),
+            nullif(trim(coalesce(x->>'tarjeta', '')), ''), nullif(x->>'tipo_tarjeta', ''),
+            case when x->>'medio' = 'tarjeta' then coalesce(nullif(x->>'cuotas', '')::int, 1) end,
+            case when gc is not null then pos_gc_nombre(gc) else nullif(trim(coalesce(x->>'cupon', '')), '') end,
+            nullif(trim(coalesce(x->>'lote', '')), ''), nullif(x->>'ultimos4', ''),
+            nullif(x->>'recibido', '')::numeric,
+            case when nullif(x->>'recibido', '') is not null then (x->>'recibido')::numeric - round((x->>'monto')::numeric, 2) end, v_bid);
+  end loop;
+
+  /* SQL 171: los puntos del socio, con la misma cuenta que Cobrar (club_sumar_compra): el total sobre los
+     pesos por punto, por el multiplicador de su nivel y las promos del día, redondeado una vez al final. Se
+     anotan siempre en la venta; se SUMAN sólo con la regla pos_suma_puntos = 'si' (apagada hasta que el POS
+     reemplace a BlueSoft: mientras tanto se cargan en Cobrar, y así no se suman dos veces) y nunca en una prueba. */
+  if v_socio is not null then
+    v_factor := club_factor(v_cli.id);
+    /* SQL 200: la gift card que se vende no da puntos (los da lo que se compre con ella). */
+    v_gana := floor((greatest(v_total - v_gc_cob, 0) / coalesce((select nullif(valor, '')::numeric from club_reglas where clave = 'pesos_por_punto'), 100))
+                    * (v_factor->>'total')::numeric);
+    if not v_prueba and v_gana > 0 and coalesce((select valor from club_reglas where clave = 'pos_suma_puntos'), 'no') = 'si' then
+      insert into club_movimientos (cliente, tipo, puntos, local, vendedor, ticket, importe, obs)
+      values (v_cli.id, 'compra', v_gana, (select codigo from orden_locales where id = v_local), v_vend,
+              'POS ' || case when v_serie = 'x' then 'X-' else 'Nº ' end || v_num, greatest(v_total - v_gc_cob, 0),
+              case when (v_factor->>'extra')::numeric > 1 then
+                (v_factor->>'motivo') || ' ' || replace(trim_scale((v_factor->>'extra')::numeric)::text, '.', ',') || 'x'
+              end)
+      returning id into v_mov;
+    end if;
+    update pos_ventas set socio_puntos = v_gana, club_mov = v_mov where id = v_id;
+  end if;
+
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'serie', v_serie, 'prueba', v_prueba, 'fecha', now(), 'ya', false,
+                            'socio_puntos', v_gana, 'puntos_sumados', v_mov is not null);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_venta_anular(p_id uuid, p_motivo text)
+ RETURNS boolean
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v pos_ventas; m pos_stock_movs; v_usadas text;
+begin
+  perform pos_permiso('anular');   -- SQL 190
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
+  select * into v from pos_ventas where id = p_id for update;
+  if not found then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok(v.local_id);
+  if v.estado = 'anulada' then raise exception 'Esa venta ya está anulada.'; end if;
+  if v.factura is not null then raise exception 'Esa venta tiene factura de ARCA: se anula con una nota de crédito.'; end if;
+  /* SQL 200: la gift card que se vendió en esta venta no tiene que estar usada. */
+  select string_agg(pos_gc_nombre(b.serie), ', ' order by i.item) into v_usadas
+    from pos_venta_items i join beneficios b on b.id = i.beneficio
+   where i.venta_id = p_id and b.usado is not null;
+  if v_usadas is not null then
+    raise exception 'La Gift Card % de esta venta ya se usó: la venta no se puede anular.', v_usadas;
+  end if;
+  update pos_ventas set estado = 'anulada', anulada_en = now(), anulada_por = orden_yo_id(), anulada_motivo = trim(p_motivo)
+   where id = p_id;
+  for m in select * from pos_stock_movs where ref_id = p_id and tipo = 'venta' order by id loop
+    perform pos_stock_mover(m.local_id, m.codigo, m.talle, m.color, -m.cantidad, 'venta_anulada', p_id, m.ref || ' (anulada)');
+  end loop;
+  /* SQL 171: si la venta le sumó puntos a un socio, se le descuentan: el movimiento del Club queda anulado,
+     como cuando se anula una carga en Cobrar. */
+  if v.club_mov is not null then
+    update club_movimientos
+       set anulado = now(), anulado_por = coalesce((select p.nombre from orden_personas p where p.id = orden_yo_id()), 'POS'),
+           motivo_anul = 'Venta anulada en el POS: ' || trim(p_motivo)
+     where id = v.club_mov and anulado is null;
+  end if;
+  /* SQL 200: la gift card que se vendió vuelve a estar sin vender (se puede vender de nuevo: la venta anulada
+     guarda cuál era y por cuánto) y la que pagó vuelve a estar disponible. */
+  delete from beneficios b using pos_venta_items i where i.venta_id = p_id and i.beneficio = b.id;
+  update beneficios b set usado = null, local_canje = null, vendedor_canje = null, monto_compra = null, canal_canje = null
+    from pos_venta_pagos g
+   where g.venta_id = p_id and g.medio = 'giftcard' and g.beneficio = b.id;
+  return true;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_abierta(p_local uuid, p_prueba boolean)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  u        pos_cierres;
+  v_dia    date := orden_dia_caja(p_local);
+  v_corte  timestamptz;
+  r        jsonb;
+begin
+  select * into u from pos_cierres c
+   where c.local_id = p_local and c.prueba = p_prueba and c.estado = 'cerrada'
+   order by c.fecha desc limit 1;
+  /* Desde dónde se toman las ventas: desde el primer cierre del local (así las de antes del
+     POS no entran nunca) o, si todavía no cerró ninguno, desde el comienzo de hoy. */
+  v_corte := coalesce((select min(c.desde) from pos_cierres c
+                        where c.local_id = p_local and c.prueba = p_prueba and c.estado = 'cerrada'),
+                      orden_en_hora(p_local, v_dia, '00:00'));
+  with v as (
+    select x.* from pos_ventas x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'cobrada'
+       and x.fecha >= v_corte
+  ), cb as (
+    select x.* from pos_cambios x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'hecho'
+       and x.fecha >= v_corte
+  ), g as (
+    select z.medio, sum(z.monto) monto from (
+      select pg.medio, pg.monto from pos_venta_pagos pg join v on v.id = pg.venta_id
+      union all
+      select pc.medio, pc.monto from pos_cambio_pagos pc join cb on cb.id = pc.cambio_id) z
+     group by z.medio
+  ), m as (
+    select x.* from pos_caja_movimientos x
+     where x.local_id = p_local and x.prueba = p_prueba and x.cierre_id is null and x.estado = 'ok'
+       and coalesce(x.caja, 'chica') = 'chica'   -- SQL 191
+  )
+  select jsonb_build_object(
+    'dia', v_dia,
+    'desde', coalesce(u.fecha, v_corte),
+    'primer', u.id is null,
+    'ultimo', case when u.id is null then null
+                   else jsonb_build_object('id', u.id, 'numero', u.numero, 'fecha', u.fecha, 'queda', u.queda) end,
+    'saldo_inicial', u.queda,
+    'tickets', (select count(*) from v),
+    'ventas', jsonb_build_object(
+      'efectivo',      coalesce((select g.monto from g where g.medio = 'efectivo'), 0),
+      'tarjeta',       coalesce((select g.monto from g where g.medio = 'tarjeta'), 0),
+      'mercadopago',   coalesce((select g.monto from g where g.medio = 'mercadopago'), 0),
+      'modo',          coalesce((select g.monto from g where g.medio = 'modo'), 0),
+      'go_cuotas',     coalesce((select g.monto from g where g.medio = 'go_cuotas'), 0),
+      'transferencia', coalesce((select g.monto from g where g.medio = 'transferencia'), 0),
+      'giftcard',      coalesce((select g.monto from g where g.medio = 'giftcard'), 0)),   -- SQL 200
+    'ventas_total', coalesce((select sum(v.total) from v), 0) + coalesce((select sum(cb.diferencia) from cb), 0),
+    'descuentos', coalesce((select sum(v.descuentos) from v), 0),
+    'cambios', (select count(*) from cb),
+    'cambios_diferencia', coalesce((select sum(cb.diferencia) from cb), 0),
+    'gastos', coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
+    'otras_salidas', coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
+    'otros_ingresos', coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0),
+    'a_caja_fuerte', coalesce((select sum(m.monto) from m where m.tipo = 'caja_fuerte'), 0),   -- SQL 180
+    'retiros_fondos', coalesce((select sum(m.monto) from m where m.tipo = 'retiro'), 0),   -- SQL 191
+    'conteos', (select count(*) from pos_caja_conteos k
+                 where k.local_id = p_local and k.prueba = p_prueba and k.fecha > coalesce(u.fecha, '-infinity'::timestamptz)),
+    'tolerancia', coalesce((select o.caja_tolerancia_pesos from orden_config o where o.local_id = p_local), 100)
+  ) into r;
+  return r;
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_caja_cerrar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_local    uuid := nullif(p->>'local_id', '')::uuid;
+  v_prueba   boolean := coalesce(nullif(p->>'prueba', '')::boolean, false);
+  v_cont     numeric := round(nullif(p->>'contado', '')::numeric, 2);
+  v_retiro   numeric := round(coalesce(nullif(p->>'retiro', '')::numeric, 0), 2);
+  v_clave    text := nullif(trim(coalesce(p->>'clave', '')), '');
+  v_obs      text := nullif(trim(coalesce(p->>'observaciones', '')), '');
+  u          pos_cierres;
+  c          pos_cierres;
+  k          pos_caja_conteos;
+  v_dia      date;
+  v_corte    timestamptz;
+  v_id       uuid;
+  v_num      int;
+  v_n        int;
+  v_primero  numeric;
+begin
+  perform pos_permiso('caja');   -- SQL 190
+  perform pos_local_ok(v_local);
+
+  if v_clave is not null then
+    select * into c from pos_cierres where clave = v_clave;
+    if found then
+      return jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'esperado', c.esperado, 'contado', c.contado,
+                                'desvio', c.desvio, 'retiro', c.retiro, 'queda', c.queda, 'ya', true);
+    end if;
+  end if;
+
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local and activo) then
+    raise exception 'Elegí la sucursal.';
+  end if;
+  if v_cont is null or v_cont < 0 then raise exception 'Falta el efectivo que contaste (Paso 1).'; end if;
+  if v_retiro < 0 then raise exception 'Lo que pasa a la caja fuerte no puede ser negativo.'; end if;
+  if v_retiro > v_cont then
+    raise exception 'No se puede pasar a la caja fuerte más de lo que hay ($%).', to_char(v_cont, 'FM999G999G990D00');
+  end if;
+  if length(v_obs) > 500 then raise exception 'Las observaciones son demasiado largas.'; end if;
+
+  /* Un cierre por vez en cada caja: si dos la cierran al mismo tiempo, el segundo espera y frena abajo. */
+  perform pg_advisory_xact_lock(hashtext('pos_caja:' || v_local::text || ':' || v_prueba::text));
+
+  select * into u from pos_cierres x
+   where x.local_id = v_local and x.prueba = v_prueba and x.estado = 'cerrada'
+   order by x.fecha desc limit 1;
+  select * into k from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
+   order by x.fecha desc, x.id desc limit 1;
+  if not found then raise exception 'Primero contá el efectivo y tocá «Ver la cuenta» (Paso 1).'; end if;
+  if k.contado <> v_cont then raise exception 'El efectivo no es el que contaste: tocá «Ver la cuenta» de nuevo.'; end if;
+  select count(*) into v_n from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz);
+  select x.contado into v_primero from pos_caja_conteos x
+   where x.local_id = v_local and x.prueba = v_prueba and x.fecha > coalesce(u.fecha, '-infinity'::timestamptz)
+   order by x.fecha, x.id limit 1;
+
+  v_dia := orden_dia_caja(v_local);
+  v_corte := coalesce((select min(x.desde) from pos_cierres x
+                        where x.local_id = v_local and x.prueba = v_prueba and x.estado = 'cerrada'),
+                      orden_en_hora(v_local, v_dia, '00:00'));
+  select coalesce(max(x.numero), 0) + 1 into v_num from pos_cierres x where x.local_id = v_local and x.prueba = v_prueba;
+
+  insert into pos_cierres (local_id, numero, prueba, dia, desde, responsable, responsable_nombre, saldo_inicial,
+                           contado, retiro, conteos, primer_conteo, observaciones, clave)
+  values (v_local, v_num, v_prueba, v_dia, coalesce(u.fecha, v_corte), orden_yo_id(),
+          (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()),
+          case when u.id is null then k.saldo_inicial else u.queda end,
+          v_cont, v_retiro, v_n, v_primero, v_obs, v_clave)
+  returning id into v_id;
+
+  /* Lo que entra en este cierre: todo lo que no tenía (también lo anulado, que no suma). */
+  update pos_ventas set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null and fecha >= v_corte;
+  update pos_caja_movimientos set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null
+     and coalesce(caja, 'chica') = 'chica';   -- SQL 191: el retiro de la caja fuerte no es de esta caja
+  update pos_cambios set cierre_id = v_id
+   where local_id = v_local and prueba = v_prueba and cierre_id is null and fecha >= v_corte;
+
+  with v as (select * from pos_ventas where cierre_id = v_id and estado = 'cobrada'),
+       cb as (select * from pos_cambios where cierre_id = v_id and estado = 'hecho'),
+       g as (select z.medio, sum(z.monto) monto from (
+               select pg.medio, pg.monto from pos_venta_pagos pg join v on v.id = pg.venta_id
+               union all
+               select pc.medio, pc.monto from pos_cambio_pagos pc join cb on cb.id = pc.cambio_id) z
+              group by z.medio),
+       m as (select * from pos_caja_movimientos where cierre_id = v_id and estado = 'ok')
+  update pos_cierres set
+    tickets              = (select count(*) from v),
+    ventas_efectivo      = coalesce((select g.monto from g where g.medio = 'efectivo'), 0),
+    ventas_tarjeta       = coalesce((select g.monto from g where g.medio = 'tarjeta'), 0),
+    ventas_mercadopago   = coalesce((select g.monto from g where g.medio = 'mercadopago'), 0),
+    ventas_modo          = coalesce((select g.monto from g where g.medio = 'modo'), 0),
+    ventas_go_cuotas     = coalesce((select g.monto from g where g.medio = 'go_cuotas'), 0),
+    ventas_transferencia = coalesce((select g.monto from g where g.medio = 'transferencia'), 0),
+    ventas_giftcard      = coalesce((select g.monto from g where g.medio = 'giftcard'), 0),   -- SQL 200
+    ventas_total         = coalesce((select sum(v.total) from v), 0) + coalesce((select sum(cb.diferencia) from cb), 0),
+    descuentos           = coalesce((select sum(v.descuentos) from v), 0),
+    cambios              = (select count(*) from cb),
+    cambios_diferencia   = coalesce((select sum(cb.diferencia) from cb), 0),
+    gastos               = coalesce((select sum(m.monto) from m where m.tipo = 'gasto'), 0),
+    otras_salidas        = coalesce((select sum(m.monto) from m where m.tipo = 'salida'), 0),
+    otros_ingresos       = coalesce((select sum(m.monto) from m where m.tipo = 'ingreso'), 0),
+    a_caja_fuerte        = coalesce((select sum(m.monto) from m where m.tipo = 'caja_fuerte'), 0),   -- SQL 180
+    retiros_fondos       = coalesce((select sum(m.monto) from m where m.tipo = 'retiro'), 0)   -- SQL 191
+  where id = v_id;
+  update pos_cierres set esperado = saldo_inicial + ventas_efectivo + otros_ingresos - gastos - otras_salidas - a_caja_fuerte
+                                  - retiros_fondos   -- SQL 191
+   where id = v_id
+  returning * into c;
+  /* SQL 180: lo que tendría que haber es lo mismo que cuando contaron; si no, algo entró o salió en el medio. */
+  if c.esperado <> k.esperado then
+    raise exception 'La caja cambió después de contar (una venta en efectivo, un gasto, un pase a la caja fuerte o un retiro): contá de nuevo y tocá «Ver la cuenta».';
+  end if;
+
+  return jsonb_build_object('id', c.id, 'numero', c.numero, 'prueba', c.prueba, 'esperado', c.esperado, 'contado', c.contado,
+                            'desvio', c.desvio, 'retiro', c.retiro, 'queda', c.queda, 'ya', false);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_cierres(p_desde date, p_hasta date, p_local uuid DEFAULT NULL::uuid, p_prueba boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_permiso('gestion');   -- SQL 190: es de la oficina
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with c as (
+      select x.*, l.nombre as local,
+             coalesce((select o.caja_tolerancia_pesos from orden_config o where o.local_id = x.local_id), 100) as tolerancia,
+             (x.estado = 'cerrada' and not exists (
+                select 1 from pos_cierres y
+                 where y.local_id = x.local_id and y.prueba = x.prueba and y.estado = 'cerrada' and y.fecha > x.fecha)) as es_ultimo
+        from pos_cierres x join orden_locales l on l.id = x.local_id
+       where x.dia between p_desde and p_hasta and x.prueba = coalesce(p_prueba, false)
+         and (p_local is null or x.local_id = p_local)
+    )
+    select jsonb_build_object(
+      'filas', coalesce((select jsonb_agg(to_jsonb(z) - 'clave' order by z.fecha desc)
+                           from (select * from c order by fecha desc limit 500) z), '[]'::jsonb),
+      'totales', (select jsonb_build_object(
+                    'cierres',     count(*) filter (where estado = 'cerrada'),
+                    'anulados',    count(*) filter (where estado = 'anulada'),
+                    'ventas',      coalesce(sum(ventas_total) filter (where estado = 'cerrada'), 0),
+                    'efectivo',    coalesce(sum(ventas_efectivo) filter (where estado = 'cerrada'), 0),
+                    'tarjeta',     coalesce(sum(ventas_tarjeta) filter (where estado = 'cerrada'), 0),
+                    'mercadopago', coalesce(sum(ventas_mercadopago) filter (where estado = 'cerrada'), 0),
+                    'otros',       coalesce(sum(ventas_modo + ventas_go_cuotas + ventas_transferencia) filter (where estado = 'cerrada'), 0),
+                    'giftcard',    coalesce(sum(ventas_giftcard) filter (where estado = 'cerrada'), 0),   -- SQL 200
+                    'gastos',      coalesce(sum(gastos + otras_salidas) filter (where estado = 'cerrada'), 0),
+                    'retiro',      coalesce(sum(retiro + a_caja_fuerte) filter (where estado = 'cerrada'), 0),   -- SQL 180
+                    'retiros_fondos', coalesce(sum(retiros_fondos) filter (where estado = 'cerrada'), 0),   -- SQL 191
+                    'desvio',      coalesce(sum(desvio) filter (where estado = 'cerrada'), 0),
+                    'faltas',      count(*) filter (where estado = 'cerrada' and desvio > tolerancia),
+                    'sobras',      count(*) filter (where estado = 'cerrada' and -desvio > tolerancia)) from c),
+      'mas', (select count(*) > 500 from c)
+    )
+  );
+end $function$;
+
+revoke all on function pos_gc_nombre(text) from public, anon, authenticated;
+revoke all on function pos_giftcard(text) from public, anon;
+grant execute on function pos_giftcard(text) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
 --  SQL 201 (30/10/2026) · SUBIR Y AUMENTAR LAS LISTAS DE PRECIOS
 --
 --  Mauricio (30/10), mirando «Importar productos desde la web» en los

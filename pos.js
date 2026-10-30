@@ -159,6 +159,8 @@
   };
 
   var MEDIOS = { efectivo: 'Efectivo', tarjeta: 'Tarjeta', mercadopago: 'Mercado Pago', modo: 'MODO', go_cuotas: 'Go Cuotas', transferencia: 'Transferencia' };
+  /* SQL 200: la venta también se cobra con una gift card (el cambio y las promos, no). */
+  var MEDIOS_VENTA = Object.assign({}, MEDIOS, { giftcard: 'Gift card' });
   var TARJETAS = [['VISA', 'credito'], ['VISA Débito', 'debito'], ['Mastercard', 'credito'], ['Master Débito', 'debito'],
                   ['AMEX', 'credito'], ['Naranja', 'credito'], ['Cabal', 'credito'], ['Cabal Débito', 'debito'], ['Maestro', 'debito'],
                   ['Otra de crédito', 'credito'], ['Otra de débito', 'debito']];
@@ -311,6 +313,7 @@
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
       return 'Todavía falta correr el SQL ' + (/pos_lista_(subir|aumentar|rubros|cambios|deshacer)/.test(m) ? '201 (subir y aumentar las listas de precios)' :
+                                             /pos_giftcard/.test(m) ? '200 (las gift cards en el POS)' :
                                              /pos_client|pos_cli_/.test(m) ? '197 (los clientes)' :
                                              /pos_ventas_productos|pos_ventas_de_producto/.test(m) ? '196 (las ventas por productos)' :
                                              /pos_disponibilidad|pos_caja_valores|pos_caja_ajust/.test(m) ? '195 (la disponibilidad de las cajas)' :
@@ -737,10 +740,12 @@
      de la más cara a la más barata, y descuenta la segunda de cada par.
      Una elegida que con estas prendas no descuenta nada va en noAplican. */
   function cuenta(v) {
-    var hoy = S.ini.hoy, neto = 0, cant = 0, unidades = [], puestas = v.puestas || {};
+    var hoy = S.ini.hoy, neto = 0, cant = 0, unidades = [], puestas = v.puestas || {}, gcs = 0;
     v.lineas.forEach(function (l, i) {
       neto += l.precio * l.cantidad;
       cant += l.cantidad;
+      /* SQL 200: la gift card no es una prenda: el 3x2 y la 2.ª al 50 % no la cuentan (el 10 % en efectivo sí, como en Gift Cards). */
+      if (l.giftcard) { gcs += l.precio * l.cantidad; return; }
       for (var k = 0; k < l.cantidad; k++) unidades.push({ l: i, p: l.precio, rubro: l.rubro || '' });
     });
     var porLinea = v.lineas.map(function () { return 0; });
@@ -798,7 +803,8 @@
       resto -= monto;
       desc.push({ tipo: 'manual', idx: i, descripcion: m.descripcion + (m.pct ? ' (' + String(m.pct).replace('.', ',') + ' %)' : ''), monto: monto });
     });
-    return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, noAplican: noAplican, descuento: neto - resto, total: resto };
+    return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, noAplican: noAplican, descuento: neto - resto, total: resto,
+             gcCobro: neto ? Math.round(gcs * resto / neto) : 0 };   // SQL 200: lo que se cobra por las gift cards que se venden
   }
 
   /** Las promos que se ofrecen en la venta: las prendidas en Gestión → Promociones y dentro de sus fechas. */
@@ -843,11 +849,135 @@
     var p = { medio: X.forma, monto: total };
     if (X.forma === 'efectivo' && X.pago.recibido) p.recibido = X.pago.recibido;
     if (X.forma === 'tarjeta') { p.tarjeta = X.pago.tarjeta || ''; p.tipo_tarjeta = tipoTarjeta(p.tarjeta); p.cuotas = Number(X.pago.cuotas) || 1; p.cupon = X.pago.cupon || ''; }
+    else if (X.forma === 'giftcard') { p.giftcard = X.pago.gc ? X.pago.gc.codigo : ''; p.gc = X.pago.gc; }   // SQL 200 (gc es de la pantalla: no viaja)
     else if (X.forma !== 'efectivo') p.cupon = X.pago.operacion || '';
     return [p];
   }
   function tipoTarjeta(t) { var x = TARJETAS.filter(function (y) { return y[0] === t; })[0]; return x ? x[1] : ''; }
   function sumaPagos(ps) { return (ps || []).reduce(function (s, x) { return s + (x.monto || 0); }, 0); }
+
+  /* ── Las gift cards (SQL 200) ──────────────────────────────────────────
+     Mauricio (30/10): "la gift card, sí, ponerla como forma de pago tendría
+     que estar. También para vender una… pero que todavía se pueda cobrar de
+     la otra manera hasta que demos el alta todo el pos". Se vende pasando la
+     tarjeta impresa por la pistola en Producto (entra como un renglón con el
+     valor que se escriba) y se cobra con ella eligiendo «Gift card» en Forma
+     de pago (o en Múltiple). Se usa entera, como en Cobrar. Gift Cards y
+     Cobrar siguen andando igual. */
+  var ES_GC = /^99\d{12}$/;
+  var ESTADO_GC = { usado: 'usada', vencido: 'vencida', anulado: 'anulada' };
+  /** La sugerencia «Gift Card» del campo de producto (escribiendo "gift"). */
+  var SUG_GC = ['GIFTCARD', 'Gift Card', 'Pasá la tarjeta por la pistola'];
+  SUG_GC.gc = true;
+  function nombreGc(r) { return 'Gift Card ' + r.color + ' Nº ' + r.nro; }
+  /** El local de la tarjeta: en beneficios va el código (el de Rivadavia es «MAR DEL PLATA»). */
+  function localDeCodigo(c) {
+    var l = ((S.ini && S.ini.locales) || []).filter(function (x) { return String(x.codigo || '').toLowerCase() === String(c || '').toLowerCase(); })[0];
+    return l ? nombreLocal(l) : bonito(String(c || ''));
+  }
+  /** Por qué no se puede vender (para = 'vender') o cobrar con ella ('pagar'); '' si se puede. */
+  function motivoGc(r, para) {
+    if (!r) return 'Pasá la tarjeta por la pistola.';
+    if (r.error) return r.error;
+    if (r.formato === false) return 'Ese código no es de una Gift Card VDH: pasá de nuevo la tarjeta.';
+    if (!r.existe) return 'Esa tarjeta no está entre las Gift Cards impresas.';
+    if (para === 'vender') {
+      return r.vendida ? 'La ' + nombreGc(r) + ' ya se vendió' + (r.vendida_el ? ' (el ' + diaDe(r.vendida_el) + (r.local ? ' en ' + localDeCodigo(r.local) : '') + ')' : '') +
+                         '. Para cobrar con ella, elegí «Gift card» en Forma de pago.' : '';
+    }
+    if (!r.vendida) return 'La ' + nombreGc(r) + ' no se vendió: no se puede cobrar con ella.';
+    if (r.estado !== 'disponible') {
+      return 'La ' + nombreGc(r) + ' está ' + (ESTADO_GC[r.estado] || r.estado) +
+        (r.estado === 'usado' && r.usada_el ? ' (el ' + diaDe(r.usada_el) + (r.local_canje ? ' en ' + localDeCodigo(r.local_canje) : '') + ')' :
+         r.estado === 'vencido' && r.vence ? ' (venció el ' + fechaCorta(r.vence) + ')' : '') + '.';
+    }
+    return '';
+  }
+  /** Lo que se ve abajo del campo de la tarjeta. */
+  function textoGc(r, para) {
+    if (!r) return '';
+    var m = motivoGc(r, para);
+    if (m) return '<span class="tk-gc-mal">' + esc(m) + '</span>';
+    return '<b>' + esc(nombreGc(r)) + '</b> · ' + (para === 'vender' ? 'sin vender' :
+      'vale ' + plata(cent(r.valor)) + (r.vence ? ' · vence el ' + esc(fechaCorta(r.vence)) : ''));
+  }
+  /** El campo de una tarjeta: con los 14 números (la pistola manda Enter o no) la busca en la base. alLeer(r): lo que
+      encontró, con r.ok si se puede vender o cobrar con ella; null si el campo quedó vacío o a medias. Devuelve leer(). */
+  function engancharGc(inp, para, alLeer) {
+    var t = null, pedido = 0;
+    function leer() {
+      clearTimeout(t);
+      var cod = inp.value.replace(/\D/g, ''), n = ++pedido;
+      if (!ES_GC.test(cod)) { alLeer(cod ? { codigo: cod, formato: false } : null); return; }
+      llamar('pos_giftcard', { p_codigo: cod }).then(function (r) {
+        if (n !== pedido || !inp.isConnected) return;
+        r = Object.assign({}, r, { codigo: cod });
+        r.ok = !motivoGc(r, para);
+        alLeer(r);
+      }, function (e) {
+        if (n === pedido && inp.isConnected) alLeer({ codigo: cod, error: mensajeDe(e) });
+      });
+    }
+    inp.oninput = function () {
+      clearTimeout(t);
+      pedido++;
+      if (ES_GC.test(inp.value.replace(/\D/g, ''))) t = setTimeout(leer, 150);
+      else alLeer(null);
+    };
+    /* El Enter de la pistola busca la tarjeta; nunca guarda la venta. */
+    inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); leer(); } };
+    return leer;
+  }
+  /** «Vender una Gift Card»: la tarjeta (cod, si vino de la pistola en Producto) y su valor; entra a la venta como un renglón. */
+  function abrirGiftcard(cod) {
+    var caja = ventana('<h3 id="posVentTit">Vender una Gift Card</h3><p class="pos-bajada">Pasá la tarjeta por la pistola y escribí el valor. ' +
+        'Al guardar la venta queda vendida, igual que desde Gift Cards, y vence a los 30 días.</p>' +
+      '<div class="pos-campos">' +
+        campo('ancho', 'Tarjeta', '<input type="text" id="gcCod" inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Los 14 números de la tarjeta">') +
+        '<p class="tk-gc ancho" id="gcInfo" role="status"></p>' +
+        campo('', 'Valor', '<input type="text" inputmode="decimal" id="gcValor" placeholder="$">') +
+      '</div><div class="pos-error" id="gcError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button><button type="button" class="btn btn-pri btn-chico" id="gcOk">Agregar</button></div>');
+    var leida = null, inp = caja.querySelector('#gcCod');
+    var leer = engancharGc(inp, 'vender', function (r) {
+      leida = r;
+      caja.querySelector('#gcInfo').innerHTML = textoGc(r, 'vender');
+      errorEn(caja, 'gcError', '');
+      if (r && r.ok) caja.querySelector('#gcValor').focus();
+    });
+    function listo() {
+      var v = leerPlata(caja.querySelector('#gcValor').value);
+      var mal = !leida || !leida.ok ? motivoGc(leida, 'vender') :
+        V.lineas.some(function (l) { return l.giftcard === leida.codigo; }) ? 'Esa Gift Card ya está en la venta.' :
+        !(v > 0) ? 'Escribí el valor de la Gift Card.' :
+        v >= 1000000000 ? 'Ese valor no parece de una Gift Card: revisalo (tiene que ser menos de $ 10.000.000).' : '';
+      if (!errorEn(caja, 'gcError', mal)) return;
+      cerrarVentana();
+      V.lineas.push({ giftcard: leida.codigo, codigo: 'GIFTCARD', descripcion: nombreGc(leida), rubro: '', talle: '', color: '', color_nom: '',
+                      cantidad: 1, precio: v, propio: true, libre: true });
+      pintar();
+      var p = $('vProd');
+      if (p) { if (p.limpiar) p.limpiar(); p.focus(); }
+    }
+    caja.querySelector('#gcOk').onclick = listo;
+    caja.querySelector('#gcValor').oninput = function () { errorEn(caja, 'gcError', ''); };
+    caja.querySelector('#gcValor').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); listo(); } };
+    if (cod) { inp.value = cod; leer(); }
+    else setTimeout(function () { inp.focus(); }, 0);
+  }
+  /** El aviso abajo de «Gift card» en Forma de pago: si no alcanza, o si sobra (se usa entera: lo que sobra se pierde).
+      Corto, en un renglón: lo que vale ya está al lado del campo y a 1366×657 dos renglones sacan el total de la pantalla. */
+  function avisoGc(c) {
+    var g = V.pago.gc;
+    if (!g || !g.ok) return '';
+    var val = cent(g.valor);
+    return val < c.total ? 'No alcanza: el resto, en «Múltiple».' :
+           val > c.total ? 'Se usa entera: se pierden ' + plata(val - c.total) + '.' : '';
+  }
+  /** Lo que sobra de las gift cards con las que paga (y se pierde), para preguntar antes de guardar. */
+  function sobraGc(pagos) {
+    return pagos.reduce(function (s, x) { return s + (x.medio === 'giftcard' && x.gc && x.gc.ok ? Math.max(cent(x.gc.valor) - x.monto, 0) : 0); }, 0);
+  }
 
   function campo(cls, lbl, control, extra) {
     return '<label class="pos-f' + (cls ? ' ' + cls : '') + '"' + (extra || '') + '><span>' + lbl + '</span>' + control + '</label>';
@@ -880,7 +1010,7 @@
           '<div class="pos-f"><span>Cliente</span><div class="tk-cliente"><div class="tk-cliente-txt" id="vCliente"></div>' +
             '<button type="button" class="btn btn-sec btn-chico" id="vCargarCli">Cargar</button></div></div>' +
           campo('', 'Lista de precios', '<select id="vLista"></select>') +
-          campo('', 'Forma de pago', '<select id="vForma">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }).concat([['multiple', 'Múltiple']]), '') + '</select>') +
+          campo('', 'Forma de pago', '<select id="vForma">' + opciones(Object.keys(MEDIOS_VENTA).map(function (k) { return [k, MEDIOS_VENTA[k]]; }).concat([['multiple', 'Múltiple']]), '') + '</select>') +
           '<div class="tk-pagox" id="vPagoX"></div>' +
           campo('c6', 'Sucursal', '<select id="vLocal" class="desplegable"></select>') +
           campo('c3', 'Depósito', '<input type="text" id="vDep" value="Ventas" readonly title="Lo vendido sale del stock de la sucursal">') +
@@ -936,6 +1066,7 @@
       V.multiples = null;
       pintarPago();
       pintar();
+      if (V.forma === 'giftcard' && $('vGc')) $('vGc').focus();   // SQL 200: lista para la pistola
     };
     $('vLocal').onchange = function () {
       var l = localDe(this.value);
@@ -1038,7 +1169,8 @@
       return '<tr data-i="' + i + '"><td class="pos-num">' + ('00' + (i + 1)).slice(-3) + '</td>' +
         '<td class="tk-cod">' + esc(l.codigo || '—') + '</td><td class="tk-desc">' + esc(l.descripcion) + pillStock(V.local_id, l) + '</td>' +
         '<td class="c">' + esc(l.talle || '') + '</td><td>' + esc(l.color_nom || l.color || '') + '</td>' +
-        '<td class="c"><input type="number" class="tk-cant" min="1" max="999" value="' + l.cantidad + '" aria-label="Cantidad de ' + esc(l.descripcion) + '"></td>' +
+        '<td class="c">' + (l.giftcard ? '<span title="Una Gift Card va de a una">1</span>' :   // SQL 200
+          '<input type="number" class="tk-cant" min="1" max="999" value="' + l.cantidad + '" aria-label="Cantidad de ' + esc(l.descripcion) + '">') + '</td>' +
         '<td class="n"><input type="text" inputmode="decimal" class="tk-precio' + (l.precio ? '' : ' sin') + '" value="' + plataCampo(l.precio) + '"' +
           (l.precio ? '' : ' placeholder="Sin precio"') + ' aria-label="Precio unitario de ' + esc(l.descripcion) + '"></td>' +
         '<td class="n">' + (d ? '<span class="tk-desc-l">−' + plata(d) + '</span>' : '') + '</td>' +
@@ -1065,12 +1197,14 @@
     if (av) {
       var s = sumaPagos(V.multiples);
       av.textContent = V.forma === 'multiple' && s !== c.total ? 'Los pagos suman ' + plata(s) + ' y el total es ' + plata(c.total) + ': tocá «Cambiar».' :
+                       V.forma === 'giftcard' ? avisoGc(c) :   // SQL 200
                        (V.forma === 'efectivo' && V.pago.recibido && V.pago.recibido < c.total ? 'Lo recibido es menos que el total.' : '');
     }
     var mt = $('vMultTxt');
-    if (mt) mt.textContent = (V.multiples || []).map(function (x) { return MEDIOS[x.medio] + ' ' + plata(x.monto); }).join(' + ') || '—';
+    if (mt) mt.textContent = (V.multiples || []).map(function (x) { return MEDIOS_VENTA[x.medio] + (x.gc ? ' ' + x.gc.color + ' Nº ' + x.gc.nro : '') + ' ' + plata(x.monto); }).join(' + ') || '—';
 
-    var cl = V.cliente, so = V.socio, pts = so ? puntosDe(c.total, so.factor) : 0;
+    /* SQL 200: la gift card que se vende no da puntos (los da lo que se compre con ella). */
+    var cl = V.cliente, so = V.socio, pts = so ? puntosDe(c.total - c.gcCobro, so.factor) : 0;
     /* Los puntos del socio: los anota la venta; los suma recién con la regla del Club prendida (SQL 171). */
     var club = !so ? '' : '<span class="tk-nota-club"><b>Club:</b> ' + (enPrueba() ? 'en modo prueba no se suman puntos.' :
       !c.total ? esc(String(so.nombre || '').split(' ')[0]) + ' suma puntos con lo que compre.' :
@@ -1104,6 +1238,10 @@
       x.innerHTML = campo('c5', 'Tarjeta', '<select id="' + pre + 'Tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), p.tarjeta) + '</select>') +
         campo('c3', 'Cuotas', '<select id="' + pre + 'Cuotas">' + opciones(CUOTAS.map(function (n) { return [n, n]; }), p.cuotas || 1) + '</select>') +
         campo('c4', 'Cupón', '<input type="text" id="' + pre + 'Cupon" inputmode="numeric" maxlength="20" placeholder="Del posnet" value="' + esc(p.cupon || '') + '">');
+    } else if (X.forma === 'giftcard') {
+      /* SQL 200: la gift card con la que paga, por la pistola. */
+      x.innerHTML = campo('c5', 'Gift card', '<input type="text" id="' + pre + 'Gc" inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Pasala por la pistola" value="' + esc(p.gc ? p.gc.codigo : '') + '">') +
+        '<p class="tk-gc c7" id="' + pre + 'GcInfo" role="status">' + textoGc(p.gc, 'pagar') + '</p>';
     } else if (X.forma === 'multiple') {
       x.innerHTML = '<div class="pos-f"><span>Pagos</span><div class="tk-cliente"><div class="tk-cliente-txt" id="vMultTxt"></div>' +
         '<button type="button" class="btn btn-sec btn-chico" id="vMultBtn">Cambiar</button></div></div>';
@@ -1118,6 +1256,12 @@
       var e = $(pre + k[0]);
       if (e) e[e.tagName === 'SELECT' ? 'onchange' : 'oninput'] = function () { X.pago[k[1]] = e.value; guardarB(); };
     });
+    /* SQL 200: al leer la tarjeta, lo que vale y si alcanza; si ya había una (el borrador), se mira de nuevo cómo está. */
+    var g = $(pre + 'Gc');
+    if (g) {
+      var leerGc = engancharGc(g, 'pagar', function (r) { X.pago.gc = r; var i = $(pre + 'GcInfo'); if (i) i.innerHTML = textoGc(r, 'pagar'); repintar(); });
+      if (p.gc && p.gc.codigo) leerGc();
+    }
   }
 
   /* ── El producto: un solo campo para buscar o dispararle a la etiqueta ──
@@ -1148,7 +1292,12 @@
   }
 
   /** El campo de producto de la venta. El cambio tiene dos: lo que vuelve y lo que se lleva. */
-  function prodVenta() { return { campo: 'vProd', sug: 'vSug', lista: function () { return V.lista_id; }, agregar: agregar }; }
+  /* SQL 200: la venta además vende gift cards (los 14 números de la tarjeta, o escribiendo "gift"). */
+  function prodVenta() {
+    return { campo: 'vProd', sug: 'vSug', lista: function () { return V.lista_id; }, agregar: agregar, giftcard: abrirGiftcard,
+             buscar: function (q) { var r = buscarProductos(q); return /^gif/i.test(String(q || '').trim()) ? [SUG_GC].concat(r).slice(0, 8) : r; },
+             elegir: function (p) { if (p === SUG_GC) { $('vProd').limpiar(); abrirGiftcard(); } else abrirDetalle(p); } };
+  }
 
   /* o: { campo, sug (los id), lista() y agregar(p, talle, color, cantidad) }. Cada campo con sus sugerencias.
      Los remitos (SQL 160) además le pasan: prod(código) y buscar(texto) en vez del catálogo solo, elegir(p)
@@ -1166,7 +1315,7 @@
         var pr = o.sinPrecio ? 0 : precioDe(p[0], o.lista());
         return '<button type="button" role="option" id="' + o.sug + i + '" data-sug="' + i + '" class="' + (i === mira ? 'on' : '') + '" aria-selected="' + (i === mira) + '">' +
           '<span>' + esc(p[1]) + ' <small>' + esc(p[2] || '') + '</small></span><small>' + esc(p[0]) + '</small>' +
-          (o.sinPrecio ? '' : pr ? '<span class="n">' + plata(pr) + '</span>' : '<span class="sin">Sin precio</span>') + '</button>';
+          (o.sinPrecio || p.gc ? '' : pr ? '<span class="n">' + plata(pr) + '</span>' : '<span class="sin">Sin precio</span>') + '</button>';
       }).join('');
       caja.hidden = false;
       campoP.setAttribute('aria-activedescendant', o.sug + mira);
@@ -1175,6 +1324,13 @@
     campoP.limpiar = function () { clearTimeout(tEsc); campoP.value = ''; cerrar(); };
     campoP.oninput = function () {
       clearTimeout(tEsc);
+      /* SQL 200: los 14 números de una gift card impresa (la pistola que no manda Enter): a venderla. */
+      var gcod = campoP.value.trim();
+      if (o.giftcard && ES_GC.test(gcod)) {
+        tEsc = setTimeout(function () { if (campoP.value.trim() === gcod) { campoP.limpiar(); o.giftcard(gcod); } }, 150);
+        cerrar();
+        return;
+      }
       var d = leerEscaneo(campoP.value);
       /* Algunas pistolas no mandan Enter: si el texto ya es un disparo completo (el talle y el color
          existen en esa prenda), se agrega solo, cuando deja de escribir. */
@@ -1200,6 +1356,7 @@
       var d = leerEscaneo(campoP.value);
       if (d) { agregarEscaneo(d, o); return; }
       var cod = campoP.value.trim().toUpperCase(), pc = prodDe(cod);
+      if (o.giftcard && ES_GC.test(cod)) { campoP.limpiar(); o.giftcard(cod); return; }   // SQL 200: una gift card impresa
       if (pc) { elegir(pc); return; }
       /* Si las sugerencias se cerraron (salió del campo y volvió), se buscan de nuevo. */
       if (!sug.length) { sug = buscar(campoP.value); mira = 0; }
@@ -1577,7 +1734,10 @@
     /* Con varios medios no va la promo de un medio (el 10 % es pagando TODO en efectivo). */
     var c = cuenta(Object.assign({}, V, { forma: 'multiple' }));
     if (!c.total) { avisar('info', 'Primero cargá los productos.'); return; }
-    var filas = (V.multiples && V.multiples.length ? V.multiples : [{ medio: 'efectivo', monto: 0 }, { medio: 'tarjeta', monto: 0, cuotas: 1 }])
+    /* SQL 200: si venía con una gift card que no alcanza, arranca con ella y el resto en efectivo. */
+    var filas = (V.multiples && V.multiples.length ? V.multiples :
+                 V.forma === 'giftcard' && V.pago.gc && V.pago.gc.ok ? [{ medio: 'giftcard', monto: Math.min(cent(V.pago.gc.valor), c.total), gc: V.pago.gc }, { medio: 'efectivo', monto: 0 }] :
+                 [{ medio: 'efectivo', monto: 0 }, { medio: 'tarjeta', monto: 0, cuotas: 1 }])
       .map(function (x) { return Object.assign({}, x); });
     var caja = ventana('<h3 id="posVentTit">Pago múltiple</h3><p class="pos-bajada">El total es <b>' + plata(c.total) + '</b>. Si dejás un monto vacío, se completa con lo que falta.</p>' +
       '<div class="pos-pagos" id="pmFilas"></div>' +
@@ -1589,10 +1749,12 @@
         ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), x.tarjeta) + '</select>') +
           campo('', 'Cuotas', '<select data-k="cuotas">' + opciones(CUOTAS.map(function (n) { return [n, n]; }), x.cuotas || 1) + '</select>') +
           campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') + '</div>'
+        : x.medio === 'giftcard' ? '<div class="pos-pago-mas">' + campo('', 'Gift card', '<input type="text" data-k="gc" inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Pasala por la pistola" value="' +
+            esc(x.gc ? x.gc.codigo : '') + '">') + '<p class="tk-gc" data-gc-info role="status">' + textoGc(x.gc, 'pagar') + '</p></div>'   // SQL 200
         : x.medio === 'efectivo' ? '<div class="pos-pago-mas"></div>'
         : '<div class="pos-pago-mas">' + campo('', 'Nº de operación', '<input type="text" data-k="cupon" maxlength="30" value="' + esc(x.cupon || '') + '">') + '</div>';
       return '<div class="pos-pago-fila" data-f="' + i + '">' +
-        campo('', 'Medio', '<select data-k="medio">' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), x.medio) + '</select>') +
+        campo('', 'Medio', '<select data-k="medio">' + opciones(Object.keys(MEDIOS_VENTA).map(function (k) { return [k, MEDIOS_VENTA[k]]; }), x.medio) + '</select>') +
         campo('', 'Monto', '<input type="text" inputmode="decimal" data-k="monto" value="' + plataCampo(x.monto) + '">') + mas +
         '<button type="button" class="tk-quitar" data-quitar-pago="' + i + '" title="Quitar este pago" aria-label="Quitar este pago">' + icono('x') + '</button></div>';
     }
@@ -1601,12 +1763,27 @@
       e.className = 'pos-pago-cuenta ' + (dif === 0 ? 'ok' : 'mal');
       e.innerHTML = '<span>Pagos: ' + plata(s) + '</span><span>' + (dif === 0 ? 'Justo' : dif > 0 ? 'Falta ' + plata(dif) : 'Sobra ' + plata(-dif)) + '</span>';
     }
-    function pintarFilas() { caja.querySelector('#pmFilas').innerHTML = filas.map(fila).join(''); cuentaTxt(); }
+    function pintarFilas() { caja.querySelector('#pmFilas').innerHTML = filas.map(fila).join(''); cuentaTxt(); engancharGcs(); }
+    /* SQL 200: cada renglón de gift card, con su tarjeta; al leerla, el monto es lo que falta (hasta lo que vale). */
+    function engancharGcs() {
+      caja.querySelectorAll('[data-k="gc"]').forEach(function (inp) {
+        var f = inp.closest('[data-f]'), x = filas[Number(f.getAttribute('data-f'))];
+        engancharGc(inp, 'pagar', function (r) {
+          x.gc = r;
+          f.querySelector('[data-gc-info]').innerHTML = textoGc(r, 'pagar');
+          if (r && r.ok && !x.monto) {
+            x.monto = Math.min(cent(r.valor), Math.max(c.total - sumaPagos(filas), 0));
+            f.querySelector('[data-k="monto"]').value = plataCampo(x.monto);
+            cuentaTxt();
+          }
+        });
+      });
+    }
     pintarFilas();
     var lista = caja.querySelector('#pmFilas');
     lista.addEventListener('input', function (e) {
       var f = e.target.closest('[data-f]'), k = e.target.getAttribute('data-k');
-      if (!f || !k || k === 'medio') return;
+      if (!f || !k || k === 'medio' || k === 'gc') return;
       var x = filas[Number(f.getAttribute('data-f'))];
       if (k === 'monto') { var m = leerPlata(e.target.value); x.monto = isNaN(m) ? 0 : m; cuentaTxt(); }
       else x[k] = e.target.value;
@@ -1615,7 +1792,11 @@
       var f = e.target.closest('[data-f]'), k = e.target.getAttribute('data-k');
       if (!f || !k) return;
       var x = filas[Number(f.getAttribute('data-f'))];
-      if (k === 'medio') { x.medio = e.target.value; delete x.tarjeta; delete x.cupon; x.cuotas = 1; pintarFilas(); }
+      if (k === 'medio') {
+        x.medio = e.target.value; delete x.tarjeta; delete x.cupon; delete x.gc; x.cuotas = 1; pintarFilas();
+        var q = x.medio === 'giftcard' && caja.querySelector('[data-f="' + f.getAttribute('data-f') + '"] [data-k="gc"]');
+        if (q) q.focus();   // SQL 200: lista para la pistola
+      }
       else if (k === 'tarjeta' || k === 'cuotas') x[k] = e.target.value;
     });
     lista.addEventListener('click', function (e) {
@@ -1633,12 +1814,20 @@
       if (filas.length < 2) mal = 'Un pago múltiple tiene por lo menos dos pagos (si es uno solo, elegilo en «Forma de pago»).';
       else if (filas.some(function (x) { return !(x.monto > 0); })) mal = 'Hay un pago sin monto.';
       else if (filas.some(function (x) { return x.medio === 'tarjeta' && !x.tarjeta; })) mal = 'Elegí qué tarjeta es.';
+      /* SQL 200: la gift card leída, que esté para cobrar, que no pague más de lo que vale y una sola vez. */
+      else if (filas.some(function (x) { return x.medio === 'giftcard' && !(x.gc && x.gc.ok); })) {
+        var gm = filas.filter(function (x) { return x.medio === 'giftcard' && !(x.gc && x.gc.ok); })[0].gc;
+        mal = gm && gm.codigo ? motivoGc(gm, 'pagar') : 'Pasá por la pistola la Gift Card (o elegí otro medio).';
+      }
+      else if (filas.some(function (x) { return x.medio === 'giftcard' && x.monto > cent(x.gc.valor); })) mal = 'Una Gift Card no paga más de lo que vale.';
+      else if (filas.some(function (x, i) { return x.medio === 'giftcard' && filas.some(function (y, j) { return j < i && y.medio === 'giftcard' && y.gc.codigo === x.gc.codigo; }); })) mal = 'La misma Gift Card está dos veces.';
       else if (sumaPagos(filas) !== c.total) mal = 'Los pagos tienen que sumar ' + plata(c.total) + '.';
       if (mal) { pintarFilas(); errorEn(caja, 'pmError', mal); return; }
       V.multiples = filas.map(function (x) {
         var p = { medio: x.medio, monto: x.monto };
         if (x.medio === 'tarjeta') { p.tarjeta = x.tarjeta; p.tipo_tarjeta = tipoTarjeta(x.tarjeta); p.cuotas = Number(x.cuotas) || 1; }
         if (x.cupon) p.cupon = String(x.cupon).trim();
+        if (x.medio === 'giftcard') { p.giftcard = x.gc.codigo; p.gc = x.gc; }   // SQL 200
         return p;
       });
       V.forma = 'multiple';
@@ -1659,10 +1848,17 @@
       V.lineas.some(function (l) { return !l.precio; }) ? 'Hay una prenda sin precio: escribilo en «Precio unit.».' :
       V.letra === 'A' && !clienteParaA(V.cliente) ? 'La factura A necesita el cliente con su CUIT: tocá «Cargar».' :
       V.letra === 'X' && V.forma !== 'efectivo' ? 'La X va sólo con efectivo.' :
+      /* SQL 200 */
+      pagos.some(function (x) { return x.medio === 'giftcard'; }) && V.lineas.some(function (l) { return l.giftcard; }) ? 'Una Gift Card no se compra con otra Gift Card.' :
+      V.forma === 'giftcard' && !(V.pago.gc && V.pago.gc.ok) ? (V.pago.gc && V.pago.gc.codigo ? motivoGc(V.pago.gc, 'pagar') : 'Pasá por la pistola la Gift Card con la que paga.') :
+      V.forma === 'giftcard' && cent(V.pago.gc.valor) < c.total ? 'La Gift Card no alcanza: el resto, con otro medio en «Múltiple».' :
       V.forma === 'tarjeta' && !V.pago.tarjeta ? 'Elegí qué tarjeta es.' :
       V.forma === 'efectivo' && V.pago.recibido && V.pago.recibido < c.total ? 'Lo recibido en efectivo es menos que el total.' :
       V.forma === 'multiple' && sumaPagos(V.multiples) !== c.total ? 'Los pagos no suman el total: tocá «Cambiar» en Pagos.' : '';
     if (mal) { avisar('err', mal); return; }
+    /* SQL 200: la gift card se usa entera (como en Cobrar): si vale más que lo que paga, la diferencia se pierde. */
+    var sobra = sobraGc(pagos);
+    if (sobra && !confirm('La Gift Card se usa entera, como en Cobrar: los ' + plata(sobra) + ' que sobran se pierden. ¿Guardar igual?')) return;
     var l0 = localDe(V.local_id);
     var p = {
       clave: V.clave, prueba: enPrueba(), local_id: V.local_id, vendedor: V.vendedor, letra: V.letra, lista_id: V.lista_id,
@@ -1670,11 +1866,14 @@
       cliente_email: cl.email || '', cliente_tel: cl.tel || '', envio: cl.envio || '', observaciones: V.observaciones || '',
       socio: V.socio ? V.socio.codigo : '',
       items: V.lineas.map(function (l) {
-        return { codigo: l.codigo || '', descripcion: l.descripcion, talle: l.talle || '', color: l.color || '', cantidad: l.cantidad, precio: aPesos(l.precio) };
+        var it = { codigo: l.codigo || '', descripcion: l.descripcion, talle: l.talle || '', color: l.color || '', cantidad: l.cantidad, precio: aPesos(l.precio) };
+        if (l.giftcard) it.giftcard = l.giftcard;   // SQL 200: la tarjeta que se vende
+        return it;
       }),
       descuentos: c.descuentos.map(function (d) { return { tipo: d.tipo, promo_id: d.promo_id || '', descripcion: d.descripcion, monto: aPesos(d.monto) }; }),
       pagos: pagos.map(function (x) {
         var y = Object.assign({}, x, { monto: aPesos(x.monto) });
+        delete y.gc;   // SQL 200: lo de la pantalla no viaja
         if (y.recibido) y.recibido = aPesos(y.recibido); else delete y.recibido;
         return y;
       })
@@ -1731,9 +1930,9 @@
       if (!_velo || !caja.isConnected) return;
       var anulada = t.estado === 'anulada';
       var pagos = (t.pagos || []).map(function (g) {
-        var x = MEDIOS[g.medio] || g.medio;
+        var x = MEDIOS_VENTA[g.medio] || g.medio;
         if (g.medio === 'tarjeta') x += ' ' + (g.tarjeta || '') + (g.cuotas > 1 ? ' · ' + g.cuotas + ' cuotas' : '');
-        if (g.cupon) x += ' · ' + (g.medio === 'tarjeta' ? 'cupón ' : 'op. ') + g.cupon;
+        if (g.cupon) x += (g.medio === 'giftcard' ? ' ' : ' · ' + (g.medio === 'tarjeta' ? 'cupón ' : 'op. ')) + g.cupon;   // SQL 200: «Gift card Black Nº 001»
         if (g.recibido) x += ' · recibido ' + plata(cent(g.recibido)) + ', vuelto ' + plata(cent(g.vuelto || 0));
         return '<li>' + esc(x) + ' — <b>' + plata(cent(g.monto)) + '</b></li>';
       }).join('');
@@ -1825,7 +2024,7 @@
         campo('', 'Sucursal', '<select id="tkLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
         campo('', 'Vendedor', '<select id="tkVend"><option value="">Todos</option>' + opciones(Object.keys(todos).sort().map(function (n) { return [n, n]; }), '') + '</select>') +
         campo('', 'Comprobante', '<select id="tkLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B], ['X', LETRAS.X]], '') + '</select>') +
-        campo('', 'Forma de pago', '<select id="tkMedio"><option value="">Todas</option>' + opciones(Object.keys(MEDIOS).map(function (k) { return [k, MEDIOS[k]]; }), '') + '</select>') +
+        campo('', 'Forma de pago', '<select id="tkMedio"><option value="">Todas</option>' + opciones(Object.keys(MEDIOS_VENTA).map(function (k) { return [k, MEDIOS_VENTA[k]]; }), '') + '</select>') +
         campo('', 'Estado', '<select id="tkEstado"><option value="">Todos</option><option value="cobrada">Cobradas</option><option value="anulada">Anuladas</option></select>') +
         /* Las de verdad y las de prueba no se mezclan nunca; con el modo prueba prendido arranca en las de prueba. */
         campo('', 'Ventas', '<select id="tkPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
@@ -1901,7 +2100,7 @@
             '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td class="tk-cli">' + (f.socio ? '<span class="tk-club" title="Socio del Club">Club</span>' : '') +
               '<span class="tk-cli-n">' + esc(f.cliente) + '</span></td>' +
             '<td>' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
-            '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS[m] || m; }).join(' + ') || '—') + '</td>' +
+            '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + ') || '—') + '</td>' +
             '<td>' + (an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
             '<td class="n">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
             (f.letra === 'X' || f.prueba ? '<td class="apagado" title="' + (f.prueba ? 'Es una prueba' : 'La X es un comprobante interno') + '">No va</td>'
@@ -3300,7 +3499,7 @@
           return '<tr data-cambio="' + esc(f.id) + '" tabindex="0"' + (clases.trim() ? ' class="' + clases.trim() + '"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td>' +
             '<td class="n">' + esc(refCambio(f)) + '</td><td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td>' + esc(f.cliente) + '</td>' +
             '<td class="cb-que">' + esc(f.vuelven || '') + '</td><td class="cb-que">' + esc(f.salen || '') + '</td>' +
-            '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS[m] || m; }).join(' + ') || '—') + '</td>' +
+            '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + ') || '—') + '</td>' +
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="pill pill-ok">Hecho</span>') + '</td>' +
             '<td class="n tachar"><b>' + plata(cent(f.diferencia)) + '</b></td></tr>';
         }).join('') + '</tbody></table></div>' +
@@ -3597,6 +3796,7 @@
         /* Los cambios van en el pie y no en un renglón: con uno más, el cierre no entra en la PC del local. */
         '<p class="cj-res-pie">' + x.tickets + (Number(x.tickets) === 1 ? ' ticket' : ' tickets') +
           (nc ? ' y ' + nc + (nc === 1 ? ' cambio' : ' cambios') + (k || vista ? ' (se cobró ' + p(x.cambios_diferencia) + ', ya sumado en las ventas)' : '') : '') +
+          (cent((d.ventas || {}).giftcard || 0) ? '. Pagado con gift card: ' + p(d.ventas.giftcard) + ', ya sumado en las ventas' : '') +   // SQL 200: no es efectivo
           (conRet ? '. Descuentos: ' + p(x.descuentos) + ', ya restados de las ventas.</p>' : '. Los descuentos ya están restados de las ventas.</p>');
       $('cjMovs').onclick = function () { abrirMovsCaja(false); };
       $('cjFuerte').onclick = function () { abrirMovsCaja(true); };
@@ -4174,6 +4374,7 @@
             filaRes('Ventas Tarjeta', p(c.ventas_tarjeta)) + filaRes('Ventas Transferencia', p(c.ventas_transferencia)) +
             filaRes('Ventas Efectivo', p(c.ventas_efectivo)) + filaRes('Ventas Mercado Pago', p(c.ventas_mercadopago)) +
             filaRes('Ventas MODO', p(c.ventas_modo)) + filaRes('Ventas Go Cuotas', p(c.ventas_go_cuotas)) +
+            (Number(c.ventas_giftcard) ? filaRes('Ventas Gift card', p(c.ventas_giftcard)) : '') +   // SQL 200
             filaRes('Ventas totales del día', p(c.ventas_total), 'barra') +
             filaRes('Gastos en efectivo', p(c.gastos)) + filaRes('Otras salidas', p(c.otras_salidas)) +
             (c.a_caja_fuerte != null ? filaRes('A la caja fuerte', p(c.a_caja_fuerte)) : '') +   // SQL 180: los movimientos de salida
@@ -4258,7 +4459,7 @@
          con quién cerró, y "Anulado" en la diferencia. Lo que queda en la caja chica está en el detalle. */
       $('ciLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla cj-tabla"><thead><tr><th>Cierre</th><th>Sucursal</th>' +
         '<th class="n">Inicial</th><th class="n">Ventas</th><th class="n">Efectivo</th><th class="n">Tarjeta</th><th class="n">Mercado Pago</th>' +
-        '<th class="n" title="MODO, Go Cuotas y transferencias">Otros</th><th class="n" title="Gastos, otras salidas y retiros de fondos de la caja chica">Gastos</th><th class="n">Contado</th><th>Diferencia</th><th class="n">Caja fuerte</th></tr></thead><tbody>' +
+        '<th class="n" title="MODO, Go Cuotas, transferencias y gift cards">Otros</th><th class="n" title="Gastos, otras salidas y retiros de fondos de la caja chica">Gastos</th><th class="n">Contado</th><th>Diferencia</th><th class="n">Caja fuerte</th></tr></thead><tbody>' +
         d.filas.map(function (f) {
           var an = f.estado === 'anulada', dv = desvioDe(cent(f.desvio), cent(f.tolerancia));
           return '<tr data-cierre="' + esc(f.id) + '" tabindex="0" class="' + (an ? 'anulada ' : '') + (f.prueba ? 'prueba' : '') + '">' +
@@ -4266,7 +4467,7 @@
             '<td>' + esc(bonito(f.local)) + '<small>' + esc(f.responsable_nombre || '—') + '</small></td>' +
             '<td class="n">' + p(f.saldo_inicial) + '</td><td class="n tachar"><b>' + p(f.ventas_total) + '</b></td><td class="n">' + p(f.ventas_efectivo) + '</td>' +
             '<td class="n">' + p(f.ventas_tarjeta) + '</td><td class="n">' + p(f.ventas_mercadopago) + '</td>' +
-            '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia)) + '</td>' +
+            '<td class="n">' + p(Number(f.ventas_modo) + Number(f.ventas_go_cuotas) + Number(f.ventas_transferencia) + Number(f.ventas_giftcard || 0)) + '</td>' +
             '<td class="n">' + p(Number(f.gastos) + Number(f.otras_salidas) + Number(f.retiros_fondos || 0)) + '</td><td class="n">' + p(f.contado) + '</td>' +   // SQL 191
             '<td>' + (an ? '<span class="pill pill-bad">Anulado</span>' : '<span class="cj-dv ' + dv.cls + '">' + esc(dv.corto) + '</span>' +
               (f.conteos > 1 ? ' <small class="cj-veces" title="Contaron ' + f.conteos + ' veces">×' + f.conteos + '</small>' : '')) + '</td>' +

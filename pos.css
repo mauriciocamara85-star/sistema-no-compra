@@ -180,10 +180,11 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 .tk-datos .c4 { grid-column: span 4; }
 .tk-datos .c5 { grid-column: span 5; }
 .tk-datos .c6 { grid-column: span 6; }
+.tk-datos .c7 { grid-column: span 7; }
 .tk-datos .c8 { grid-column: span 8; }
 .tk-pagox { display: contents; }
 @media (max-width: 520px) {
-  .tk-datos .c3, .tk-datos .c4, .tk-datos .c5, .tk-datos .c6, .tk-datos .c8 { grid-column: span 6; }
+  .tk-datos .c3, .tk-datos .c4, .tk-datos .c5, .tk-datos .c6, .tk-datos .c7, .tk-datos .c8 { grid-column: span 6; }
 }
 .tk-cliente { display: flex; gap: 6px; }
 .tk-cliente-txt {
@@ -193,6 +194,11 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 }
 .tk-cliente .btn { flex: none; }
 .tk-aviso-pago { grid-column: span 12; font-size: 12px; font-weight: 600; color: var(--bad-txt); }
+/* SQL 200: lo que dice la gift card que pasaron por la pistola. */
+.tk-gc { margin: 0; align-self: center; font-size: 12px; line-height: 1.35; color: var(--txt-2); }
+.tk-gc b { color: var(--txt); }
+.tk-gc-mal { font-weight: 600; color: var(--bad-txt); }
+.pos-pago-mas .tk-gc { grid-column: span 2; align-self: end; padding-bottom: 9px; }
 .tk-vuelto input { font-weight: 700; color: var(--ok-txt); }
 
 /* Los totales: abajo a la izquierda, como en BlueSoft. */
