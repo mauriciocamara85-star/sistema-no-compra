@@ -5637,8 +5637,9 @@ begin
   begin
     select jsonb_agg(jsonb_build_array(z.c, z.p, z.n, z.r, z.f, z.t) order by z.c) into v_f
       from (select upper(btrim(coalesce(e->>0, ''))) c, round((e->>1)::numeric, 2) p,
-                   left(nullif(btrim(coalesce(e->>2, '')), ''), 120) n, left(nullif(btrim(coalesce(e->>3, '')), ''), 60) r,
-                   left(nullif(btrim(coalesce(e->>4, '')), ''), 60) f, left(nullif(btrim(coalesce(e->>5, '')), ''), 60) t
+                   /* Los espacios de más, juntados en uno (como los guarda el SQL 202). */
+                   left(nullif(btrim(regexp_replace(coalesce(e->>2, ''), '\s+', ' ', 'g')), ''), 120) n, left(nullif(btrim(regexp_replace(coalesce(e->>3, ''), '\s+', ' ', 'g')), ''), 60) r,
+                   left(nullif(btrim(regexp_replace(coalesce(e->>4, ''), '\s+', ' ', 'g')), ''), 60) f, left(nullif(btrim(regexp_replace(coalesce(e->>5, ''), '\s+', ' ', 'g')), ''), 60) t
               from jsonb_array_elements(p_filas) e) z;
   exception when others then raise exception 'Hay un precio que no es un número.';
   end;
