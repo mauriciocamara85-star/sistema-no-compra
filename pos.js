@@ -98,8 +98,9 @@
   /* ── Los menús: las secciones de Tango y Dragonfish, con los nombres de BlueSoft ── */
   var MENUS = {
     mostrador: [
+      /* Las notas de crédito (SQL 205), después de los cambios, como en el menú de BlueSoft. */
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
-                  ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida'],
+                  ['cambios', 'Cambios', 'cambio'], ['notas', 'Notas de crédito', 'nc'], ['fallida', 'Venta fallida', 'fallida'],
                   /* Los clientes (SQL 197), con los socios del Club: como la «Administración de clientes» de la PC del local. */
                   ['clientes', 'Clientes', 'clientes'],
                   /* Las ventas por vendedor (SQL 192) y por productos (SQL 196, el "resumen de ventas"), como en la PC del local de BlueSoft. */
@@ -131,7 +132,7 @@
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -178,6 +179,7 @@
     venta: '<path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M12 10v6M9 13h6"/>',
     tickets: '<path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1z"/><path d="M8 7h8M8 11h8M8 15h5"/>',
     cambio: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+    nc: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M9 15h6"/>',
     fallida: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m17 8 5 5M22 8l-5 5"/>',
     caja: '<rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M6 12h.01M18 12h.01"/>',
     movs: '<path d="M7 3v18M3 7l4-4 4 4"/><path d="M17 21V3M13 17l4 4 4-4"/>',
@@ -263,6 +265,8 @@
   function nombreVenta(v) { return (v.serie === 'prueba' ? 'Prueba ' : 'Venta ') + ref(v); }
   /* Los cambios numeran aparte de las ventas (SQL 151): "C-4", y las pruebas "CP-2". */
   function refCambio(c) { return (c.prueba ? 'CP-' : 'C-') + c.numero; }
+  /* Las notas de crédito, también aparte (SQL 205): "NC-3", y las de prueba "NCP-1". */
+  function refNota(n) { return (n.prueba ? 'NCP-' : 'NC-') + n.numero; }
 
   /* ── El modo prueba: la venta hace el mismo camino que una de verdad, pero no cuenta ──
      Vive en sessionStorage: al cerrar la ventana vuelve solo a lo de verdad, así no queda
@@ -340,7 +344,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
+      return 'Todavía falta correr el SQL ' + (/pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
+                                             /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
                                              /pos_articul/.test(m) ? '202 (los productos)' :
                                              /pos_lista_(subir|aumentar|rubros|cambios|deshacer)/.test(m) ? '201 (subir y aumentar las listas de precios)' :
                                              /pos_giftcard/.test(m) ? '200 (las gift cards en el POS)' :
@@ -552,7 +557,7 @@
       $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
       return;
     }
-    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, gastos: verGastos, salidas: verSalidas,
+    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, notas: verNotas, fallida: verFallidas, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, productos: function () { verProductos(); }, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
@@ -1983,21 +1988,45 @@
   /* ════════════════════════════════════════════════════════════════════
      EL TICKET GUARDADO (verlo y anularlo)
      ════════════════════════════════════════════════════════════════════ */
+  /** Los pagos de un ticket, uno por renglón. */
+  function pagosTicket(t) {
+    return (t.pagos || []).map(function (g) {
+      var x = MEDIOS_VENTA[g.medio] || g.medio;
+      if (g.medio === 'tarjeta') x += ' ' + (g.tarjeta || '') + (g.cuotas > 1 ? ' · ' + g.cuotas + ' cuotas' : '');
+      if (g.cupon) x += (g.medio === 'giftcard' ? ' ' : ' · ' + (g.medio === 'tarjeta' ? 'cupón ' : 'op. ')) + g.cupon;   // SQL 200: «Gift card Black Nº 001»
+      if (g.recibido) x += ' · recibido ' + plata(cent(g.recibido)) + ', vuelto ' + plata(cent(g.vuelto || 0));
+      return '<li>' + esc(x) + ' — <b>' + plata(cent(g.monto)) + '</b></li>';
+    }).join('');
+  }
+  /** Los productos de un ticket (y sus descuentos) y el total: el mismo cuadro en el ticket y en su nota de crédito. */
+  function productosTicket(t) {
+    return '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th><th class="c">Cant.</th><th class="n">Precio unit.</th><th class="n">Total</th></tr></thead><tbody>' +
+        (t.items || []).map(function (i) {
+          return '<tr><td>' + ('00' + i.item).slice(-3) + '</td><td>' + esc(i.codigo || '—') + '</td><td>' + esc(i.descripcion) + '</td><td class="c">' + esc(i.talle || '') + '</td>' +
+            '<td>' + esc(i.color ? nombreColor(i.color, i.codigo) : '') + '</td><td class="c">' + i.cantidad + '</td><td class="n">' + plata(cent(i.precio)) + '</td><td class="n">' + plata(cent(i.total)) + '</td></tr>';
+        }).join('') +
+        (t.descuentos_detalle || []).map(function (d) {
+          return '<tr><td></td><td colspan="6">' + esc(d.descripcion) + '</td><td class="n">−' + plata(cent(d.monto)) + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+      '<div class="pos-ticket-tot"><span>Neto ' + plata(cent(t.neto)) + (Number(t.descuentos) ? ' · Descuentos −' + plata(cent(t.descuentos)) : '') +
+        ' · ' + t.cantidad + (t.cantidad === 1 ? ' prenda' : ' prendas') + '</span><b>Total ' + plata(cent(t.total)) + '</b></div>';
+  }
+
   function abrirTicket(id, alCambiar) {
     var caja = ventana('<h3 id="posVentTit">Ticket</h3><p class="cargando">Cargando…</p>', true);
     var dentro = caja.querySelector('.pos-caja-in');
     llamar('pos_venta', { p_id: id }).then(function (t) {
       if (!_velo || !caja.isConnected) return;
       var anulada = t.estado === 'anulada';
-      var pagos = (t.pagos || []).map(function (g) {
-        var x = MEDIOS_VENTA[g.medio] || g.medio;
-        if (g.medio === 'tarjeta') x += ' ' + (g.tarjeta || '') + (g.cuotas > 1 ? ' · ' + g.cuotas + ' cuotas' : '');
-        if (g.cupon) x += (g.medio === 'giftcard' ? ' ' : ' · ' + (g.medio === 'tarjeta' ? 'cupón ' : 'op. ')) + g.cupon;   // SQL 200: «Gift card Black Nº 001»
-        if (g.recibido) x += ' · recibido ' + plata(cent(g.recibido)) + ', vuelto ' + plata(cent(g.vuelto || 0));
-        return '<li>' + esc(x) + ' — <b>' + plata(cent(g.monto)) + '</b></li>';
-      }).join('');
+      var pagos = pagosTicket(t);
+      /* SQL 205: las facturas A y B se anulan con una nota de crédito, como en BlueSoft; la X, con «Anular la venta».
+         Sin el 205 (pos_venta no trae nota_credito), todo como antes. */
+      var con205 = Object.prototype.hasOwnProperty.call(t, 'nota_credito'), nota = t.nota_credito || null;
+      var conNota = con205 && t.letra !== 'X';
+      var izq = anulada || !puede('anular') ? '' : !conNota ? '<button type="button" class="btn btn-sec btn-chico izq" id="tkAnularBtn">Anular la venta</button>' :
+        t.cierre ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="tkNotaBtn" title="Anula el ticket entero, como «Generar nota crédito» de BlueSoft">Nota de crédito</button>';
       dentro.innerHTML = '<h3 id="posVentTit">Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' ' +
-          (anulada ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') +
+          (anulada ? '<span class="pill pill-bad">' + (nota ? 'Anulada · ' + esc(refNota(nota)) : 'Anulada') + '</span>' : '<span class="pill pill-ok">Cobrada</span>') +
           (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
         (t.prueba ? '<div class="pos-cartel prueba">Es una venta de prueba: no cuenta en ningún total y se borra con «Borrar las pruebas».</div>' : '') +
         '<div class="pos-ticket-datos">' +
@@ -2012,21 +2041,26 @@
           (t.socio ? '<div><span>Club</span>' + (t.socio_nivel ? esc(t.socio_nivel) + ' · ' : '') + 'tarjeta ' + esc(t.socio) + '<br>' + miles(Number(t.socio_puntos) || 0) + ' puntos ' +
             (t.puntos_sumados ? 'sumados' : t.prueba ? '(una prueba no suma)' : anulada ? '(la venta está anulada)' : 'sin sumar (se cargan en Cobrar)') + '</div>' : '') +
         '</div>' +
-        '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Ítem</th><th>Código</th><th>Descripción</th><th class="c">Talle</th><th>Color</th><th class="c">Cant.</th><th class="n">Precio unit.</th><th class="n">Total</th></tr></thead><tbody>' +
-          (t.items || []).map(function (i) {
-            return '<tr><td>' + ('00' + i.item).slice(-3) + '</td><td>' + esc(i.codigo || '—') + '</td><td>' + esc(i.descripcion) + '</td><td class="c">' + esc(i.talle || '') + '</td>' +
-              '<td>' + esc(i.color ? nombreColor(i.color, i.codigo) : '') + '</td><td class="c">' + i.cantidad + '</td><td class="n">' + plata(cent(i.precio)) + '</td><td class="n">' + plata(cent(i.total)) + '</td></tr>';
-          }).join('') +
-          (t.descuentos_detalle || []).map(function (d) {
-            return '<tr><td></td><td colspan="6">' + esc(d.descripcion) + '</td><td class="n">−' + plata(cent(d.monto)) + '</td></tr>';
-          }).join('') + '</tbody></table></div>' +
-        '<div class="pos-ticket-tot"><span>Neto ' + plata(cent(t.neto)) + (Number(t.descuentos) ? ' · Descuentos −' + plata(cent(t.descuentos)) : '') + '</span><b>Total ' + plata(cent(t.total)) + '</b></div>' +
+        productosTicket(t) +
         (pagos ? '<p class="pos-lbl" style="margin:10px 0 4px">Pagos</p><ul style="margin:0;padding-left:18px;font-size:14px;display:grid;gap:3px">' + pagos + '</ul>' : '') +
         (t.observaciones ? '<p style="font-size:14px;margin:10px 0 0"><b>Observaciones:</b> ' + esc(t.observaciones) + '</p>' : '') +
-        (anulada ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada el ' + esc(fechaHora(t.anulada_en)) + (t.anulada_por_nombre ? ' por ' + esc(t.anulada_por_nombre) : '') + ': ' + esc(t.anulada_motivo || '') + '</div>' : '') +
+        (anulada && nota ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada con la nota de crédito <b>' + esc(refNota(nota)) + '</b> el ' + esc(fechaHora(nota.fecha)) +
+            (nota.hizo_nombre ? ' por ' + esc(nota.hizo_nombre) : '') + ': ' + esc(nota.motivo || '') +
+            ' <button type="button" class="pos-link" id="tkVerNota">Ver la nota de crédito</button></div>' :
+          anulada ? '<div class="pos-cartel mal" style="margin-top:12px">Anulada el ' + esc(fechaHora(t.anulada_en)) + (t.anulada_por_nombre ? ' por ' + esc(t.anulada_por_nombre) : '') + ': ' + esc(t.anulada_motivo || '') + '</div>' :
+          conNota && t.cierre && puede('anular') ? '<div class="pos-cartel" style="margin-top:12px">Ya entró en el cierre de caja ' + esc(refCierre(t.cierre)) +
+            ': para hacerle la nota de crédito, primero hay que anular ese cierre.</div>' : '') +
         '<div id="tkAnular"></div>' +
-        '<div class="pos-pie">' + (anulada || !puede('anular') ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="tkAnularBtn">Anular la venta</button>') +
+        '<div class="pos-pie">' + izq +
+          /* «Duplicar» de BlueSoft: la venta de nuevo, para rehacer bien la que se anuló (sólo en el mostrador, donde está la Nueva venta). */
+          (MODO === 'mostrador' ? '<button type="button" class="btn btn-sec btn-chico" id="tkDuplicar" title="Una venta nueva con los mismos productos, el vendedor y el cliente">Duplicar</button>' : '') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var vn = dentro.querySelector('#tkVerNota');
+      if (vn) vn.onclick = function () { abrirNota(t.id, alCambiar); };
+      var nb = dentro.querySelector('#tkNotaBtn');
+      if (nb) nb.onclick = function () { hacerNota(t, alCambiar); };
+      var du = dentro.querySelector('#tkDuplicar');
+      if (du) du.onclick = function () { duplicarVenta(t); };
       var ab = dentro.querySelector('#tkAnularBtn');
       if (ab) ab.onclick = function () {
         ab.remove();
@@ -2053,6 +2087,134 @@
     }).catch(function (e) {
       if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Ticket</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
     });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     LA NOTA DE CRÉDITO (SQL 205)
+     Mauricio (30/10): "La nota de crédito la hacen para cancelar un ticket
+     en B… me olvidé de hacer un descuento, le erré en algo." Como en
+     BlueSoft (sus fotos): en el ticket, «Nota de crédito»; se abre la nota
+     con el ticket entero y se guarda. La venta queda anulada (sale de la
+     caja), en el posnet se anula la operación y se hace la venta de nuevo,
+     bien («Duplicar»). Sólo A y B; la X se sigue anulando.
+     ════════════════════════════════════════════════════════════════════ */
+  /** Lo de ARCA de una nota: arca = pendiente | autorizada | sin_factura | no_va (con la nota todavía sin guardar, el que va a tener). */
+  function arcaNota(arca, cae) {
+    return arca === 'autorizada' ? 'Con CAE' + (cae ? ' ' + esc(cae) : '') :
+      arca === 'pendiente' ? 'Pendiente: se le pide el CAE cuando el POS facture' :
+      arca === 'no_va' ? 'No va (es una prueba)' : 'No va: el ticket no tiene factura de ARCA (la hace BlueSoft). La nota que vale, hacela también en BlueSoft.';
+  }
+  /** Los datos de la nota (n: la nota guardada, o null mientras se arma), el ticket que anula y sus productos, como la de BlueSoft. */
+  function datosNota(t, n) {
+    var pagos = (t.pagos || []).map(function (g) { return (MEDIOS_VENTA[g.medio] || g.medio) + (g.medio === 'tarjeta' && g.tarjeta ? ' ' + g.tarjeta : ''); }).join(' + ');
+    return '<div class="pos-ticket-datos">' +
+        '<div><span>Fecha</span>' + esc(n ? fechaHora(n.fecha) : fechaCorta(S.ini.hoy)) + '</div>' +
+        '<div><span>Sucursal</span>' + esc(bonito(t.local)) + '</div>' +
+        '<div><span>Número</span>' + (n ? '<b>' + esc(refNota(n)) + '</b>' : 'Lo da la base al guardar') + '</div>' +
+        '<div><span>Vendedor</span>' + esc(t.vendedor) + '</div>' +
+        (n ? '<div><span>La hizo</span>' + esc(n.hizo_nombre || '—') + '</div>' : '') +
+        '<div><span>Cliente</span>' + esc(t.cliente_nombre || 'Consumidor final') + (t.cliente_doc ? '<br>' + esc(t.cliente_doc.length === 11 ? 'CUIT ' + cuit(t.cliente_doc) : 'DNI ' + t.cliente_doc) : '') + '</div>' +
+        '<div><span>Condición de IVA</span>' + esc(CONDICION[t.cliente_condicion] || '') + '</div>' +
+        '<div><span>Forma de pago</span>' + esc(pagos || '—') + '</div>' +
+        '<div class="nc-anula"><span>Anula</span>Ticket ' + esc(ref(t)) + ' · ' + esc(LETRAS[t.letra] || t.letra) + ' del ' + esc(fechaHora(t.fecha)) + ' · ' + plata(cent(t.total)) + ' (100 %)</div>' +
+        '<div class="nc-arca"><span>ARCA</span>' + arcaNota(n ? n.arca : t.prueba ? 'no_va' : t.factura ? 'pendiente' : 'sin_factura', n && n.cae) + '</div>' +
+      '</div>' + productosTicket(t);
+  }
+
+  /* Hacer la nota de crédito de una venta A o B (t: lo que trajo pos_venta). */
+  function hacerNota(t, alCambiar) {
+    var tarjeta = (t.pagos || []).some(function (g) { return g.medio === 'tarjeta'; });
+    /* En la PC del local (657 de alto) el ticket entero no entra: lo de abajo (qué pasa, el motivo y Guardar) queda fijo
+       al pie de la ventana y el ticket se desplaza arriba, tenga los productos que tenga. */
+    var caja = ventana('<h3 id="posVentTit">Nota de crédito · ' + esc(LETRAS[t.letra] || t.letra) + (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
+      datosNota(t, null) +
+      '<div class="nc-accion">' +
+        '<p class="nc-efecto">Al guardarla, el ticket ' + esc(ref(t)) + ' queda anulado entero: deja de contar en la caja' +
+          (t.prueba ? '' : ' y lo vendido vuelve al stock') +
+          (t.puntos_sumados ? '; al socio se le descuentan los ' + miles(Number(t.socio_puntos) || 0) + ' puntos' : '') + '. No se puede deshacer.' +
+          (tarjeta ? ' <b>Anulá también la operación en el posnet.</b>' : '') + '</p>' +
+        campo('ancho', '¿Por qué se hace?', '<textarea id="ncMotivo" maxlength="300" rows="2" placeholder="Por ejemplo: me olvidé del descuento" autofocus></textarea>') +
+        '<div class="pos-error" id="ncError"></div>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="ncVolver">Volver al ticket</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" id="ncGuardar">Guardar la nota de crédito</button></div>' +
+      '</div>', true);
+    caja.querySelector('#ncVolver').onclick = function () { abrirTicket(t.id, alCambiar); };
+    var m = caja.querySelector('#ncMotivo');
+    m.oninput = function () { errorEn(caja, 'ncError', ''); };
+    caja.querySelector('#ncGuardar').onclick = function () {
+      var motivo = m.value.trim(), bt = this;
+      if (!errorEn(caja, 'ncError', motivo.length < 3 ? 'Escribí por qué se hace la nota de crédito.' : '')) { m.focus(); return; }
+      bt.disabled = true;
+      llamar('pos_nc_hacer', { p_venta: t.id, p_motivo: motivo }).then(function (r) {
+        S.stock = {};
+        avisar('ok', 'Listo: la nota de crédito ' + refNota(r) + ' anuló la venta ' + ref(t) + '.');
+        if (alCambiar) alCambiar();
+        abrirNota(t.id, alCambiar, true);
+      }).catch(function (e) {
+        bt.disabled = false;
+        if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo.'); persona.entrar(); return; }
+        errorEn(caja, 'ncError', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se hace dos veces.' : mensajeDe(e));
+      });
+    };
+  }
+
+  /* Una nota de crédito guardada (id: el de la venta que anula). recien: la que se acaba de hacer (lo que sigue es rehacer la venta). */
+  function abrirNota(id, alCambiar, recien) {
+    var caja = ventana('<h3 id="posVentTit">Nota de crédito</h3><p class="cargando">Cargando…</p>', true);
+    var dentro = caja.querySelector('.pos-caja-in');
+    llamar('pos_venta', { p_id: id }).then(function (t) {
+      if (!_velo || !caja.isConnected) return;
+      var n = t.nota_credito;
+      if (!n) { dentro.innerHTML = '<h3 id="posVentTit">Nota de crédito</h3><div class="pos-cartel mal">Esa venta no tiene nota de crédito.</div>'; return; }
+      var dup = MODO === 'mostrador';
+      dentro.innerHTML = '<h3 id="posVentTit">Nota de crédito ' + esc(refNota(n)) + ' · ' + esc(LETRAS[n.letra] || n.letra) + (n.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
+        (n.prueba ? '<div class="pos-cartel prueba">Es una nota de prueba: se borra con «Borrar las pruebas», junto con su venta.</div>' : '') +
+        (recien ? '<div class="pos-cartel st-ok">Listo: la venta ' + esc(ref(t)) + ' quedó anulada.' + (dup ? ' Ahora hacé la venta de nuevo, bien: «Hacer la venta de nuevo» la arma con los mismos productos.' : '') + '</div>' : '') +
+        datosNota(t, n) +
+        '<p style="font-size:14px;margin:10px 0 0"><b>Motivo:</b> ' + esc(n.motivo) + '</p>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="ncTicket">Ver el ticket ' + esc(ref(t)) + '</button>' +
+          (dup ? '<button type="button" class="btn ' + (recien ? 'btn-pri' : 'btn-sec') + ' btn-chico" id="ncDuplicar">Hacer la venta de nuevo</button>' : '') +
+          '<button type="button" class="btn ' + (recien && dup ? 'btn-sec' : 'btn-pri') + ' btn-chico" data-cerrar>Cerrar</button></div>';
+      dentro.querySelector('#ncTicket').onclick = function () { abrirTicket(t.id, alCambiar); };
+      var d = dentro.querySelector('#ncDuplicar');
+      if (d) d.onclick = function () { duplicarVenta(t); };
+    }).catch(function (e) {
+      if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Nota de crédito</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+    });
+  }
+
+  /* «Duplicar» de BlueSoft: una venta nueva con los mismos productos (a su precio), el vendedor, el comprobante y el cliente,
+     para rehacer bien la que se anuló. Los descuentos, el socio y la forma de pago se cargan de nuevo (casi siempre el error
+     estaba ahí). Las gift cards que se vendieron no se copian: se pasan de nuevo por la pistola. */
+  function duplicarVenta(t) {
+    var l = localMio(t.local_id);
+    if (!l) { avisar('err', 'Esa venta es de una sucursal que no es tuya: no la podés duplicar.'); return; }
+    var antes = leerJSON(K_BORRADOR, null);
+    if (antes && antes.lineas && antes.lineas.length && !confirm('Tenés una venta a medio armar. ¿La reemplazo por la copia del ticket ' + ref(t) + '?')) return;
+    var b = ventaNueva();
+    b.local_id = l.id;
+    b.vendedor = t.vendedor || '';
+    b.lista_id = listaPorId(t.lista_id) ? t.lista_id : listaDe(l);
+    b.letra = LETRAS[t.letra] ? t.letra : 'B';
+    if (t.cliente_nombre || t.cliente_doc || t.cliente_email || t.cliente_tel) {
+      b.cliente = { nombre: t.cliente_nombre || '', doc: t.cliente_doc || '', condicion: t.cliente_condicion || 'consumidor_final',
+                    email: t.cliente_email || '', tel: t.cliente_tel || '', envio: t.envio || '', acepta: !!t.envio };
+    }
+    if (b.letra === 'A' && !clienteParaA(b.cliente)) b.letra = 'B';
+    var gcs = 0;
+    (t.items || []).forEach(function (i) {
+      if (i.beneficio || i.codigo === 'GIFTCARD') { gcs++; return; }
+      var p = i.codigo ? PROD[i.codigo] : null, c = cent(i.precio);
+      b.lineas.push({ codigo: i.codigo || '', descripcion: i.descripcion, rubro: p ? p[2] || '' : '', talle: i.talle || '', color: i.color || '',
+                      color_nom: i.color ? nombreColor(i.color, i.codigo) : '', cantidad: i.cantidad, precio: c,
+                      propio: !p || precioDe(i.codigo, b.lista_id) !== c, libre: !p });
+    });
+    V = b;
+    guardarBorrador();
+    var falta = (Number(t.descuentos) ? ['los descuentos'] : []).concat(t.socio ? ['el socio del Club'] : [], ['la forma de pago']);
+    avisar('ok', 'Copié el ticket ' + ref(t) + (gcs ? ' (sin ' + (gcs === 1 ? 'la gift card: pasala' : 'las gift cards: pasalas') + ' de nuevo)' : '') + '. Cargá ' +
+      (falta.length > 1 ? falta.slice(0, -1).join(', ') + ' y ' + falta[falta.length - 1] : falta[0]) + '.');
+    ir('venta');
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -2161,7 +2323,9 @@
               '<span class="tk-cli-n">' + esc(f.cliente) + '</span></td>' +
             '<td>' + esc(LETRAS[f.letra] || f.letra) + '</td>' +
             '<td>' + esc((f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + ') || '—') + '</td>' +
-            '<td>' + (an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
+            /* SQL 205: la anulada con una nota de crédito dice cuál. */
+            '<td>' + (an && f.nc ? '<span class="pill pill-bad" title="Anulada con la nota de crédito ' + esc(refNota({ numero: f.nc, prueba: f.prueba })) + '">Anulada · ' +
+                esc(refNota({ numero: f.nc, prueba: f.prueba })) + '</span>' : an ? '<span class="pill pill-bad">Anulada</span>' : '<span class="pill pill-ok">Cobrada</span>') + '</td>' +
             '<td class="n">' + f.cantidad + '</td><td class="n tachar"><b>' + plata(cent(f.total)) + '</b></td>' +
             (f.letra === 'X' || f.prueba ? '<td class="apagado" title="' + (f.prueba ? 'Es una prueba' : 'La X es un comprobante interno') + '">No va</td>'
               : '<td class="apagado" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>';
@@ -2177,6 +2341,85 @@
       if (nueva) { nueva.classList.add('recien'); nueva.scrollIntoView({ block: 'nearest' }); }
     }
     cargar();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     NOTAS DE CRÉDITO (SQL 205): el listado «Notas de crédito de venta» de
+     BlueSoft (sus fotos del 30/10). Cada una con el ticket que anula. Se
+     hacen desde el ticket («Nota de crédito»), no desde acá.
+     ════════════════════════════════════════════════════════════════════ */
+  var ARCA_CORTO = { pendiente: 'Pendiente', autorizada: 'Con CAE', sin_factura: 'No va', no_va: 'No va' };
+  function verNotas() {
+    var c = $('cuerpo'), prueba = enPrueba(), ultima = null;
+    c.innerHTML = cabeza('Notas de crédito' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+        'Las facturas A y B anuladas. Se hacen desde el ticket: en Tickets, abrí la venta y tocá «Nota de crédito».',
+        '<button type="button" class="btn btn-sec btn-chico" id="ncBajar" disabled>Bajar para Excel</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="tickets">Ir a Tickets</button>') +
+      '<div class="pos-filtros"><div id="ncPer"></div>' +
+        campo('', 'Sucursal', '<select id="ncLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales('') + '</select>') +
+        campo('', 'Comprobante', '<select id="ncLetra"><option value="">Todos</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B]], '') + '</select>') +
+        /* Las de verdad y las de prueba no se mezclan nunca; con el modo prueba prendido arranca en las de prueba. */
+        campo('', 'Notas', '<select id="ncPrueba"><option value="">De verdad</option><option value="1"' + (prueba ? ' selected' : '') + '>De prueba</option></select>') +
+      '</div><div id="ncLista"><p class="cargando">Cargando…</p></div>';
+    c.querySelector('[data-ir="tickets"]').onclick = function () { ir('tickets'); };
+    var per = periodoPos($('ncPer'), { inicial: 'hoy', guardar: 'pos_notas_periodo', hastaHoy: true, alCambiar: cargar });
+    ['ncLocal', 'ncLetra', 'ncPrueba'].forEach(function (id) { $(id).onchange = cargar; });
+    $('ncBajar').onclick = function () { if (ultima) bajarNotas(ultima.d, ultima.r); };
+    var pedido = 0;
+    function dePrueba() { return $('ncPrueba').value === '1'; }
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('ncLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('ncBajar').disabled = true;
+      ultima = null;
+      llamar('pos_notas_credito', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('ncLocal').value || null, p_letra: $('ncLetra').value || null, p_prueba: dePrueba() }).then(function (d) {
+        if (n !== pedido || !$('ncLista')) return;
+        pintarLista(d, r);
+      }).catch(function (e) { if ($('ncLista')) $('ncLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function pintarLista(d, r) {
+      var t = d.totales || {};
+      var kpis = '<div class="pos-totales">' +
+        '<div class="pos-kpi"><span>Notas de crédito</span><b>' + (t.notas || 0) + '</b></div>' +
+        '<div class="pos-kpi"><span>Prendas</span><b>' + (t.productos || 0) + '</b></div>' +
+        '<div class="pos-kpi"><span>Neto</span><b>' + plata(cent(t.neto || 0)) + '</b></div>' +
+        '<div class="pos-kpi"><span>Descuentos</span><b>' + plata(cent(t.descuentos || 0)) + '</b></div>' +
+        '<div class="pos-kpi fuerte"><span>Total</span><b>' + plata(cent(t.total || 0)) + '</b></div></div>' +
+        (dePrueba() ? '<div class="pos-cartel prueba">Las notas de <b>prueba</b>: no cuentan para nada. Se borran con su venta, con «Borrar las pruebas» de Tickets.</div>' : '');
+      if (!d.filas || !d.filas.length) {
+        $('ncLista').innerHTML = kpis + '<div class="pos-cartel">' + (dePrueba() ? 'No hay notas de crédito de prueba en ese período.' : 'No hay notas de crédito en ese período.') + '</div>';
+        return;
+      }
+      ultima = { d: d, r: r };
+      $('ncBajar').disabled = false;
+      $('ncLista').innerHTML = kpis + '<div class="pos-marco-tabla"><table class="pos-tabla nc-lista"><thead><tr><th>Fecha</th><th class="n">Comprobante</th><th class="c">Letra</th><th class="n">Anula</th>' +
+        '<th>Sucursal</th><th>Vendedor</th><th>Cliente</th><th>Motivo</th><th>La hizo</th><th>ARCA</th><th class="n">Cant.</th><th class="n">Total</th></tr></thead><tbody>' +
+        d.filas.map(function (f) {
+          return '<tr data-nota="' + esc(f.venta_id) + '" tabindex="0"' + (f.prueba ? ' class="prueba"' : '') + '><td>' + esc(fechaHora(f.fecha)) + '</td>' +
+            '<td class="n"><b>' + esc(refNota(f)) + '</b></td><td class="c" title="' + esc(LETRAS[f.letra] || f.letra) + '">' + esc(f.letra) + '</td>' +
+            '<td class="n" title="El ticket que anula, del ' + esc(fechaHora(f.venta_fecha)) + '">' + esc(refCorta({ serie: f.venta_serie, numero: f.venta_numero })) + '</td>' +
+            '<td>' + esc(bonito(f.local)) + '</td><td>' + esc(f.vendedor) + '</td><td class="nc-cli">' + esc(f.cliente) + '</td>' +
+            '<td class="nc-motivo">' + esc(f.motivo) + '</td><td>' + esc(f.hizo || '—') + '</td>' +
+            '<td class="apagado" title="' + esc(arcaNota(f.arca, f.cae)) + '">' + esc(ARCA_CORTO[f.arca] || f.arca) + '</td>' +
+            '<td class="n">' + f.cantidad + '</td><td class="n"><b>' + plata(cent(f.total)) + '</b></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
+      $('ncLista').querySelectorAll('tr[data-nota]').forEach(function (tr) {
+        tr.onclick = function () { abrirNota(tr.getAttribute('data-nota'), cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    cargar();
+  }
+  function bajarNotas(d, r) {
+    var cab = ['Fecha', 'Comprobante', 'Letra', 'Anula el ticket', 'Fecha del ticket', 'Sucursal', 'Vendedor', 'Cliente', 'CUIT o DNI', 'Motivo', 'La hizo', 'ARCA', 'CAE',
+               'Forma de pago', 'Cantidad', 'Neto', 'Descuentos', 'Total'];
+    var filas = (d.filas || []).map(function (f) {
+      return [fechaLarga(f.fecha), refNota(f), LETRAS[f.letra] || f.letra, refCorta({ serie: f.venta_serie, numero: f.venta_numero }), fechaLarga(f.venta_fecha),
+              bonito(f.local), f.vendedor, f.cliente, f.cliente_doc || '', f.motivo, f.hizo || '', ARCA_CORTO[f.arca] || f.arca, f.cae || '',
+              (f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + '), f.cantidad, Number(f.neto), Number(f.descuentos), Number(f.total)];
+    });
+    bajarCsv('notas-de-credito-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
   }
 
   /* ════════════════════════════════════════════════════════════════════

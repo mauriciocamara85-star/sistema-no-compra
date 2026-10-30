@@ -5976,3 +5976,285 @@ end $$;
 
 revoke all on function pos_remitos_producto(text, date, date, uuid) from public, anon;
 grant execute on function pos_remitos_producto(text, date, date, uuid) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 205 (30/10/2026) · LAS NOTAS DE CRÉDITO
+--
+--  Mauricio (30/10): "La nota de crédito la hacen para cancelar un ticket en
+--  B. Guardo en el sistema un ticket en B que está mal, me olvidé de hacer
+--  un descuento, le erré en algo. Entonces, para anular eso se hace una nota
+--  de crédito." En BlueSoft (sus fotos del 30/10): en Tickets se abre el
+--  ticket, «Generar nota crédito», se abre la nota con todo el ticket y
+--  «Guardar». La venta queda anulada, se descuenta en el cierre de caja, en
+--  el posnet se anula la operación y se hace una venta nueva bien hecha.
+--  Los cambios siguen igual (sin nota de crédito).
+--
+--  · Las facturas A y B se anulan SÓLO con una nota de crédito (la X, con
+--    «Anular la venta», como siempre). La nota anula el ticket entero: lo
+--    vendido vuelve al stock, al socio se le descuentan los puntos y la
+--    gift card vuelve a como estaba, igual que la anulación de siempre.
+--  · Cada local numera sus notas aparte: NC-1, NC-2… (las de prueba, NCP-).
+--  · ARCA: si el ticket tiene factura de ARCA, la nota queda «pendiente» y
+--    se le va a pedir el CAE cuando el POS facture. Hoy ningún ticket tiene
+--    factura (la hace BlueSoft): la nota queda «sin_factura», como el
+--    ticket. Las de prueba no van.
+--  · La caja: mientras la venta no entró en un cierre, al anularla sale de
+--    la caja abierta. Si ya entró en un cierre, primero hay que anular ese
+--    cierre (como los cambios).
+--  Cambia pos_venta_anular (frena las A y B), pos_venta (trae la nota y el
+--  cierre) y pos_tickets (el número de la nota en cada renglón).
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table pos_notas_credito (
+  id           uuid primary key default gen_random_uuid(),
+  venta_id     uuid not null unique references pos_ventas(id) on delete cascade,   -- «Borrar las pruebas» se las lleva con su venta
+  local_id     uuid not null references orden_locales(id),
+  numero       int not null,
+  prueba       boolean not null default false,
+  letra        text not null check (letra in ('A', 'B')),
+  fecha        timestamptz not null default clock_timestamp(),
+  dia          date not null,
+  hizo         uuid,                    -- quién la hizo (orden_personas)
+  motivo       text not null,
+  arca         text not null check (arca in ('pendiente', 'autorizada', 'sin_factura', 'no_va')),
+  cae          text,
+  cae_vence    date,
+  arca_numero  bigint,
+  unique (local_id, prueba, numero)
+);
+create index pos_notas_credito_dia on pos_notas_credito (dia);
+alter table pos_notas_credito enable row level security;
+revoke all on pos_notas_credito from anon, authenticated;
+
+/* Lo que deshace una venta (era el cuerpo de pos_venta_anular): la marca anulada, devuelve lo vendido al stock, le
+   descuenta los puntos al socio y deja la gift card como estaba. La usan la anulación (p_nc null) y la nota de crédito
+   (p_nc = 'NC-3'). Quien la llama ya tiene la venta bloqueada y ya miró los permisos: por eso no se publica. */
+create function pos_venta_deshacer(p_id uuid, p_motivo text, p_nc text) returns void
+language plpgsql security definer set search_path = public as $$
+declare v pos_ventas; m pos_stock_movs; v_usadas text;
+begin
+  select * into v from pos_ventas where id = p_id;
+  /* SQL 200: la gift card que se vendió en esta venta no tiene que estar usada. */
+  select string_agg(pos_gc_nombre(b.serie), ', ' order by i.item) into v_usadas
+    from pos_venta_items i join beneficios b on b.id = i.beneficio
+   where i.venta_id = p_id and b.usado is not null;
+  if v_usadas is not null then
+    raise exception 'La Gift Card % de esta venta ya se usó: la venta no se puede anular.', v_usadas;
+  end if;
+  update pos_ventas set estado = 'anulada', anulada_en = now(), anulada_por = orden_yo_id(), anulada_motivo = trim(p_motivo)
+   where id = p_id;
+  for m in select * from pos_stock_movs where ref_id = p_id and tipo = 'venta' order by id loop
+    perform pos_stock_mover(m.local_id, m.codigo, m.talle, m.color, -m.cantidad, 'venta_anulada', p_id,
+                            m.ref || ' (' || coalesce('nota de crédito ' || p_nc, 'anulada') || ')');
+  end loop;
+  /* SQL 171: si la venta le sumó puntos a un socio, se le descuentan: el movimiento del Club queda anulado,
+     como cuando se anula una carga en Cobrar. */
+  if v.club_mov is not null then
+    update club_movimientos
+       set anulado = now(), anulado_por = coalesce((select p.nombre from orden_personas p where p.id = orden_yo_id()), 'POS'),
+           motivo_anul = coalesce('Nota de crédito ' || p_nc || ' en el POS: ', 'Venta anulada en el POS: ') || trim(p_motivo)
+     where id = v.club_mov and anulado is null;
+  end if;
+  /* SQL 200: la gift card que se vendió vuelve a estar sin vender (se puede vender de nuevo: la venta anulada
+     guarda cuál era y por cuánto) y la que pagó vuelve a estar disponible. */
+  delete from beneficios b using pos_venta_items i where i.venta_id = p_id and i.beneficio = b.id;
+  update beneficios b set usado = null, local_canje = null, vendedor_canje = null, monto_compra = null, canal_canje = null
+    from pos_venta_pagos g
+   where g.venta_id = p_id and g.medio = 'giftcard' and g.beneficio = b.id;
+end $$;
+revoke all on function pos_venta_deshacer(uuid, text, text) from public, anon, authenticated;
+
+/* Anular la venta: ahora sólo la X (y la prueba X). Las A y B, con la nota de crédito. */
+create or replace function pos_venta_anular(p_id uuid, p_motivo text) returns boolean
+language plpgsql security definer set search_path = public as $$
+declare v pos_ventas;
+begin
+  perform pos_permiso('anular');   -- SQL 190
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
+  select * into v from pos_ventas where id = p_id for update;
+  if not found then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok(v.local_id);
+  if v.estado = 'anulada' then raise exception 'Esa venta ya está anulada.'; end if;
+  if v.factura is not null then raise exception 'Esa venta tiene factura de ARCA: se anula con una nota de crédito.'; end if;
+  if v.letra <> 'X' then raise exception 'Las facturas A y B se anulan con una nota de crédito: en el ticket, «Nota de crédito».'; end if;
+  perform pos_venta_deshacer(p_id, p_motivo, null);
+  return true;
+end $$;
+
+/* La nota de crédito de una factura A o B: anula la venta entera y le da su número. */
+create function pos_nc_hacer(p_venta uuid, p_motivo text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v pos_ventas; n pos_notas_credito; k pos_cierres; v_num int; v_id uuid; v_ref text;
+begin
+  perform pos_permiso('anular');
+  if length(trim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se hace la nota de crédito.'; end if;
+  select * into v from pos_ventas where id = p_venta;
+  if not found then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok(v.local_id);
+  /* Un número por vez en cada local: si dos la hacen al mismo tiempo, el segundo espera (primero el candado, después la venta). */
+  perform pg_advisory_xact_lock(hashtext('pos_nc:' || v.local_id::text || ':' || v.prueba::text));
+  select * into v from pos_ventas where id = p_venta for update;
+  select * into n from pos_notas_credito where venta_id = p_venta;
+  if found then raise exception 'Esa venta ya tiene la nota de crédito %.', case when n.prueba then 'NCP-' else 'NC-' end || n.numero; end if;
+  if v.estado = 'anulada' then raise exception 'Esa venta ya está anulada.'; end if;
+  if v.letra = 'X' then raise exception 'La X es un comprobante interno: no lleva nota de crédito. Se anula con «Anular la venta».'; end if;
+  if v.cierre_id is not null then
+    select * into k from pos_cierres where id = v.cierre_id;
+    raise exception 'Esa venta ya entró en el cierre de caja %: para hacerle la nota de crédito, primero hay que anular ese cierre.',
+      case when k.prueba then 'P-' else 'Nº ' end || k.numero;
+  end if;
+  select coalesce(max(x.numero), 0) + 1 into v_num from pos_notas_credito x where x.local_id = v.local_id and x.prueba = v.prueba;
+  v_ref := case when v.prueba then 'NCP-' else 'NC-' end || v_num;
+  insert into pos_notas_credito (venta_id, local_id, numero, prueba, letra, dia, hizo, motivo, arca)
+  values (v.id, v.local_id, v_num, v.prueba, v.letra, pos_hoy(), orden_yo_id(), trim(p_motivo),
+          case when v.prueba then 'no_va' when v.factura is not null then 'pendiente' else 'sin_factura' end)
+  returning id into v_id;
+  perform pos_venta_deshacer(v.id, p_motivo, v_ref);
+  return jsonb_build_object('id', v_id, 'numero', v_num, 'prueba', v.prueba, 'venta_id', v.id);
+end $$;
+
+/* Las notas de crédito del período, como el listado de BlueSoft: con el ticket que anula y lo que valía. */
+create function pos_notas_credito(p_desde date, p_hasta date, p_local uuid default null, p_letra text default null, p_prueba boolean default false)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);   -- su local y, sin «Ver otros días», hoy (SQL 190)
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with z as (
+      select n.*, v.numero venta_numero, v.serie venta_serie, v.fecha venta_fecha, v.vendedor, v.cliente_nombre, v.cliente_doc,
+             v.neto, v.descuentos, v.total, v.cantidad
+        from pos_notas_credito n join pos_ventas v on v.id = n.venta_id
+       where n.dia between p_desde and p_hasta
+         and n.prueba = coalesce(p_prueba, false)
+         and (p_local is null or n.local_id = p_local)
+         and (p_letra is null or n.letra = p_letra)
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', z.id, 'venta_id', z.venta_id, 'numero', z.numero, 'prueba', z.prueba, 'letra', z.letra, 'fecha', z.fecha,
+                 'local', l.nombre, 'local_id', z.local_id, 'motivo', z.motivo, 'arca', z.arca, 'cae', z.cae, 'arca_numero', z.arca_numero,
+                 'hizo', (select p.nombre from orden_personas p where p.id = z.hizo),
+                 'venta_numero', z.venta_numero, 'venta_serie', z.venta_serie, 'venta_fecha', z.venta_fecha,
+                 'vendedor', z.vendedor, 'cliente', coalesce(z.cliente_nombre, 'Consumidor final'), 'cliente_doc', z.cliente_doc,
+                 'medios', (select jsonb_agg(g.medio order by g.orden) from pos_venta_pagos g where g.venta_id = z.venta_id),
+                 'neto', z.neto, 'descuentos', z.descuentos, 'total', z.total, 'cantidad', z.cantidad) order by z.fecha desc)
+          from (select * from z order by fecha desc limit 500) z join orden_locales l on l.id = z.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object('notas', count(*), 'productos', coalesce(sum(cantidad), 0), 'neto', coalesce(sum(neto), 0),
+                                            'descuentos', coalesce(sum(descuentos), 0), 'total', coalesce(sum(total), 0)) from z),
+      'mas', (select count(*) > 500 from z)
+    )
+  );
+end $$;
+
+revoke all on function pos_nc_hacer(uuid, text), pos_notas_credito(date, date, uuid, text, boolean) from public, anon;
+grant execute on function pos_nc_hacer(uuid, text), pos_notas_credito(date, date, uuid, text, boolean) to authenticated;
+
+/* SQL 205: la venta trae su nota de crédito y su cierre (lo demás, igual). */
+CREATE OR REPLACE FUNCTION public.pos_venta(p_id uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare r jsonb;
+begin
+  perform pos_permiso();
+  select to_jsonb(v) - 'clave'
+         || jsonb_build_object(
+              'local', l.nombre,
+              'cargado_por_nombre', (select p.nombre from orden_personas p where p.id = v.cargado_por),
+              'anulada_por_nombre', (select p.nombre from orden_personas p where p.id = v.anulada_por),
+              'items', coalesce((select jsonb_agg(to_jsonb(i) - 'venta_id' order by i.item) from pos_venta_items i where i.venta_id = v.id), '[]'::jsonb),
+              'descuentos_detalle', coalesce((select jsonb_agg(to_jsonb(d) - 'venta_id' order by d.orden) from pos_venta_descuentos d where d.venta_id = v.id), '[]'::jsonb),
+              'pagos', coalesce((select jsonb_agg(to_jsonb(g) - 'venta_id' order by g.orden) from pos_venta_pagos g where g.venta_id = v.id), '[]'::jsonb),
+              /* SQL 171: el socio, con su nivel de hoy, y si los puntos están sumados (y no se anularon). */
+              'socio_nivel', (select c.nivel from v_club_clientes c where c.codigo = v.socio),
+              'puntos_sumados', exists (select 1 from club_movimientos m where m.id = v.club_mov and m.anulado is null),
+              /* SQL 205: la nota de crédito que la anuló (con quién la hizo) y el cierre de caja en el que entró. */
+              'nota_credito', (select to_jsonb(n) || jsonb_build_object('hizo_nombre', (select p.nombre from orden_personas p where p.id = n.hizo))
+                                 from pos_notas_credito n where n.venta_id = v.id),
+              'cierre', (select jsonb_build_object('id', k.id, 'numero', k.numero, 'prueba', k.prueba, 'estado', k.estado)
+                           from pos_cierres k where k.id = v.cierre_id))
+    into r
+    from pos_ventas v join orden_locales l on l.id = v.local_id
+   where v.id = p_id;
+  if r is null then raise exception 'No existe esa venta.'; end if;
+  perform pos_local_ok((r->>'local_id')::uuid);   -- SQL 190
+  return r;
+end $function$;
+
+/* SQL 205: cada renglón de Tickets trae el número de su nota de crédito (lo demás, igual). */
+CREATE OR REPLACE FUNCTION public.pos_tickets(p_desde date, p_hasta date, p_local uuid DEFAULT NULL::uuid, p_vendedor text DEFAULT NULL::text, p_medio text DEFAULT NULL::text, p_estado text DEFAULT NULL::text, p_letra text DEFAULT NULL::text, p_prueba boolean DEFAULT false)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);   -- SQL 190: su local y, sin «Ver otros días», hoy
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with v as (
+      select x.* from pos_ventas x
+       where x.dia between p_desde and p_hasta
+         and x.prueba = coalesce(p_prueba, false)
+         and (p_local is null or x.local_id = p_local)
+         and (p_vendedor is null or lower(x.vendedor) = lower(p_vendedor))
+         and (p_estado is null or x.estado = p_estado)
+         and (p_letra is null or x.letra = p_letra)
+         and (p_medio is null or exists (select 1 from pos_venta_pagos g where g.venta_id = x.id and g.medio = p_medio))
+    )
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'id', v.id, 'numero', v.numero, 'serie', v.serie, 'prueba', v.prueba, 'fecha', v.fecha, 'local', l.nombre, 'local_id', v.local_id,
+                 'vendedor', v.vendedor, 'cliente', coalesce(v.cliente_nombre, 'Consumidor final'), 'letra', v.letra,
+                 'medios', (select jsonb_agg(g.medio order by g.orden) from pos_venta_pagos g where g.venta_id = v.id),
+                 'estado', v.estado, 'neto', v.neto, 'descuentos', v.descuentos, 'total', v.total, 'cantidad', v.cantidad,
+                 'factura', v.factura, 'socio', v.socio is not null,
+                 'nc', (select n.numero from pos_notas_credito n where n.venta_id = v.id)) order by v.fecha desc)   -- SQL 205
+          from (select * from v order by fecha desc limit 500) v join orden_locales l on l.id = v.local_id), '[]'::jsonb),
+      /* SQL 171: el panel de la derecha de BlueSoft. Tráfico = ventas + ventas fallidas + No Compras (Mauricio,
+         24/10: los que entraron y no compraron son las dos cosas, separadas) del período, de la sucursal y del
+         vendedor elegidos; los demás filtros (comprobante, forma de pago, estado) no cambian a quién entró.
+         Conversión = ventas ÷ tráfico. Las pruebas cuentan sólo con las pruebas (los No Compra no tienen). */
+      'trafico', (
+        select jsonb_build_object('ventas', t.ventas, 'fallidas', f.n, 'perdido', f.perdido, 'no_compras', nc.n,
+                                  'trafico', t.ventas + f.n + nc.n,
+                                  'conversion', case when t.ventas + f.n + nc.n > 0 then round(t.ventas::numeric / (t.ventas + f.n + nc.n), 4) end)
+          from (select count(*) ventas from pos_ventas x
+                 where x.dia between p_desde and p_hasta and x.prueba = coalesce(p_prueba, false) and x.estado = 'cobrada'
+                   and (p_local is null or x.local_id = p_local)
+                   and (p_vendedor is null or lower(x.vendedor) = lower(p_vendedor))) t,
+               (select count(*) n, coalesce(sum(y.monto), 0) perdido from pos_fallidas y
+                 where y.dia between p_desde and p_hasta and y.prueba = coalesce(p_prueba, false)
+                   and (p_local is null or y.local_id = p_local)
+                   and (p_vendedor is null or lower(y.vendedor) = lower(p_vendedor))) f,
+               (select count(*) n from registros r
+                 where not coalesce(p_prueba, false)
+                   and r.creado >= (p_desde::timestamp at time zone 'America/Argentina/Buenos_Aires')
+                   and r.creado < ((p_hasta + 1)::timestamp at time zone 'America/Argentina/Buenos_Aires')
+                   and (p_local is null or lower(trim(r.sucursal)) = (select lower(trim(l.codigo)) from orden_locales l where l.id = p_local))
+                   and (p_vendedor is null or lower(trim(r.vendedor)) = lower(trim(p_vendedor)))) nc),
+      'totales', (select jsonb_build_object(
+                    'tickets', count(*) filter (where estado = 'cobrada'),
+                    'anulados', count(*) filter (where estado = 'anulada'),
+                    'productos', coalesce(sum(cantidad) filter (where estado = 'cobrada'), 0),
+                    'neto', coalesce(sum(neto) filter (where estado = 'cobrada'), 0),
+                    'descuentos', coalesce(sum(descuentos) filter (where estado = 'cobrada'), 0),
+                    'total', coalesce(sum(total) filter (where estado = 'cobrada'), 0)) from v),
+      /* Lo cobrado por comprobante: {"A": …, "B": …, "X": …}. */
+      'por_letra', (select coalesce(jsonb_object_agg(z.letra, z.total), '{}'::jsonb)
+                      from (select letra, sum(total) total from v where estado = 'cobrada' group by letra) z),
+      'mas', (select count(*) > 500 from v)
+    )
+  );
+end $function$;
