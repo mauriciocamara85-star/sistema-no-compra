@@ -1386,6 +1386,13 @@ html[data-nc-compu] .rail-item[href="impecable-admin.html"] { display: none; }
 html[data-nc-compu-habilitada][data-nc-rol="vendedor"] .rail-item[data-impecable],
 html[data-nc-compu-habilitada][data-nc-rol="vendedor"] .rail-item[href="impecable-admin.html"],
 html[data-nc-compu-habilitada][data-nc-rol="vendedor"] .rail-item[href="vendedores.html"] { display: none; }
+/* Y en cualquier compu (con mouse), aunque no tenga la llave de la caja: el 30/10 seguía en Rivadavia. En el celular
+   (con el dedo) sigue, porque ahí es su app. */
+@media (hover: hover) and (pointer: fine) {
+  html[data-nc-rol="vendedor"] .rail-item[data-impecable],
+  html[data-nc-rol="vendedor"] .rail-item[href="impecable-admin.html"],
+  html[data-nc-rol="vendedor"] .rail-item[href="vendedores.html"] { display: none; }
+}
 /* El POS, mientras está en construcción (20/10), lo ve sólo Administración: ni siquiera sin usuario. */
 /* SQL 190: el POS, también a quien la oficina se lo prendió (data-nc-pos); la Gestión, sólo Administración. */
 html:not([data-nc-rol="admin"]):not([data-nc-pos]) .rail-item[href="pos.html"],
