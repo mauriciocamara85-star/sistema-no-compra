@@ -117,6 +117,12 @@
 --  encontró. Tablas nuevas pos_depositos y pos_remito_testigos; pos_stock,
 --  pos_stock_movs, pos_remitos y pos_inventarios con el depósito.
 --
+--  SQL 202 (30/10/2026, Mauricio: "descargué todos [los productos], así los
+--  juntamos con la lista de precios… sí, daleee"): pos_articulos, todos los
+--  productos de BlueSoft con sus talles y colores, para que la venta los
+--  encuentre a todos (no sólo los 576 de catalogo.js) y para el alta y la
+--  edición en Gestión → Productos. Está al final del archivo.
+--
 --  La cuenta de una venta (la misma que BlueSoft: Neto, Descuentos, Total):
 --    renglón:   total = precio × cantidad
 --    neto       = suma de los renglones
@@ -5750,3 +5756,152 @@ revoke all on function pos_lista_rubros(int), pos_lista_aumentar(int, numeric, t
 grant execute on function pos_lista_rubros(int), pos_lista_aumentar(int, numeric, text, text, int, boolean, text),
                           pos_lista_subir(int, jsonb, text, text), pos_lista_cambios(int), pos_lista_deshacer(int),
                           pos_precios_version(int) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 202 (30/10/2026) · LOS ARTÍCULOS: todos los productos de BlueSoft
+--
+--  Mauricio (30/10): "descargué todos [los productos], así los juntamos con
+--  la lista de precios"; y a la propuesta de que la venta los conozca a
+--  todos: "sí, daleee". Hasta acá la venta buscaba sólo en catalogo.js (576,
+--  las temporadas 39 a 41): una prenda de Verano 2025, de Continuidad (Vander
+--  Blue, Homos…), de Promo o de Segunda no se podía vender.
+--
+--  pos_articulos es el maestro de productos del POS: uno por código, con lo
+--  de BlueSoft (nombre, rubro, familia, temporada, marca), los talles y los
+--  colores que existen y si está activo (inactivo = no aparece al buscar por
+--  nombre; por el código, la pistola lo encuentra igual). La comparte el SQL
+--  201 (las listas de precios, de la otra sesión): por eso el create y cada
+--  columna van con "if not exists" y da lo mismo cuál se corre primero.
+--  Los precios siguen en pos_precios: acá no hay plata.
+--
+--  La pantalla guarda una copia en la compu (anda sin internet) y la baja de
+--  nuevo sólo si cambió algo (pos_articulos_version). El alta y la edición
+--  (Gestión → Productos) son de la oficina.
+--
+--  Los 7.072 de «Productos 30 oct.xlsx» se cargan en App Orden/
+--  correr-en-supabase-202.sql (los datos nunca van al repo).
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* La misma definición que el SQL 201, letra por letra: la que se corra primero la crea. */
+create table if not exists pos_articulos (
+  codigo           text primary key check (length(codigo) between 1 and 30),
+  nombre           text not null check (length(nombre) between 1 and 120),
+  rubro            text check (length(rubro) <= 60),
+  familia          text check (length(familia) <= 60),
+  temporada        text check (length(temporada) <= 60),
+  talles           text,                            -- "S,M,L,XL"
+  colores          text,                            -- "NE:NEGRO|BL:BLANCO", como catalogo.js
+  activo           boolean not null default true,   -- inactivo: no sale al buscar por nombre
+  marca            text,
+  actualizado_en   timestamptz not null default now(),
+  actualizado_por  uuid
+);
+alter table pos_articulos add column if not exists rubro text check (length(rubro) <= 60);
+alter table pos_articulos add column if not exists familia text check (length(familia) <= 60);
+alter table pos_articulos add column if not exists temporada text check (length(temporada) <= 60);
+alter table pos_articulos add column if not exists talles text;
+alter table pos_articulos add column if not exists colores text;
+alter table pos_articulos add column if not exists activo boolean not null default true;
+alter table pos_articulos add column if not exists marca text;
+alter table pos_articulos add column if not exists actualizado_por uuid;
+create index if not exists pos_articulos_rubro on pos_articulos (rubro, familia);
+alter table pos_articulos enable row level security;
+revoke all on pos_articulos from anon, authenticated;
+
+/* Si cambió algo desde la copia de la compu: cuántos son y el último cambio. Liviana: la pide cada vez que abre. */
+create or replace function pos_articulos_version() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  return (select jsonb_build_object('n', count(*), 'v', max(actualizado_en)) from pos_articulos);
+end $$;
+
+/* Todos, para el buscador y Gestión → Productos:
+   [código, nombre, rubro, talles, colores, temporada, activo, familia, marca]. */
+create or replace function pos_art_fila(a pos_articulos) returns jsonb
+language sql immutable as $$
+  select jsonb_build_array(a.codigo, a.nombre, coalesce(a.rubro, ''), coalesce(a.talles, ''), coalesce(a.colores, ''),
+                           coalesce(a.temporada, ''), a.activo, coalesce(a.familia, ''), coalesce(a.marca, ''))
+$$;
+
+create or replace function pos_articulos_todos() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  return (select jsonb_build_object('n', count(*), 'v', max(a.actualizado_en),
+                                    'filas', coalesce(jsonb_agg(pos_art_fila(a) order by a.codigo), '[]'::jsonb))
+            from pos_articulos a);
+end $$;
+
+/* El alta y la edición (Gestión → Productos), sólo la oficina.
+   p: {nuevo, codigo, nombre, rubro, familia, temporada, marca, talles: "S,M,L", colores: [{cod, nom}], activo}.
+   El código no se cambia (lo usan los precios, el stock y las ventas) y va en mayúsculas, como en ellos.
+   Devuelve la fila, como pos_articulos_todos. */
+create or replace function pos_articulo_guardar(p jsonb) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_nuevo   boolean := coalesce((p->>'nuevo')::boolean, false);
+  v_cod     text := btrim(coalesce(p->>'codigo', ''));
+  v_nom     text := nullif(regexp_replace(btrim(coalesce(p->>'nombre', '')), '\s+', ' ', 'g'), '');
+  v_rubro   text := nullif(regexp_replace(btrim(coalesce(p->>'rubro', '')), '\s+', ' ', 'g'), '');
+  v_familia text := nullif(regexp_replace(btrim(coalesce(p->>'familia', '')), '\s+', ' ', 'g'), '');
+  v_temp    text := nullif(regexp_replace(btrim(coalesce(p->>'temporada', '')), '\s+', ' ', 'g'), '');
+  v_marca   text := nullif(regexp_replace(btrim(coalesce(p->>'marca', '')), '\s+', ' ', 'g'), '');
+  v_activo  boolean := coalesce((p->>'activo')::boolean, true);
+  v_talles  text;
+  v_colores text;
+  r         pos_articulos;
+begin
+  perform pos_permiso('gestion');
+  v_cod := upper(v_cod);
+  if v_cod = '' or length(v_cod) > 30 or v_cod !~ '^[A-Za-z0-9][A-Za-z0-9._/-]*$' then
+    raise exception 'El código va con letras y números, sin espacios (hasta 30).';
+  end if;
+  if v_nom is null or length(v_nom) > 120 then raise exception 'Falta el nombre del producto (hasta 120 letras).'; end if;
+  if length(coalesce(v_rubro, '')) > 60 or length(coalesce(v_familia, '')) > 60 or length(coalesce(v_temp, '')) > 60 or length(coalesce(v_marca, '')) > 60 then
+    raise exception 'El rubro, la familia, la temporada y la marca van con hasta 60 letras.';
+  end if;
+
+  /* Los talles: "s, M ,m,L" → "S,M,L" (en mayúsculas, sin repetidos, en el orden en que los escribieron). */
+  select string_agg(t, ',' order by o) into v_talles
+    from (select upper(btrim(x)) t, min(n) o
+            from unnest(string_to_array(coalesce(p->>'talles', ''), ',')) with ordinality u(x, n)
+           where btrim(x) <> '' group by upper(btrim(x))) z;
+  if exists (select 1 from unnest(string_to_array(coalesce(v_talles, ''), ',')) t where length(t) > 10) then
+    raise exception 'Cada talle va con hasta 10 letras.';
+  end if;
+
+  /* Los colores: [{cod: "ne", nom: "negro"}] → "NE:NEGRO" (el primero de cada código). */
+  if jsonb_typeof(coalesce(p->'colores', '[]'::jsonb)) <> 'array' then raise exception 'Los colores no se entienden.'; end if;
+  select string_agg(c || ':' || coalesce(nullif(n, ''), c), '|' order by o) into v_colores
+    from (select distinct on (c) c, n, o
+            from (select upper(btrim(coalesce(e->>'cod', ''))) c, upper(regexp_replace(btrim(coalesce(e->>'nom', '')), '\s+', ' ', 'g')) n, o
+                    from jsonb_array_elements(coalesce(p->'colores', '[]'::jsonb)) with ordinality a(e, o)) y
+           where c <> '' order by c, o) z;
+  if exists (select 1 from unnest(string_to_array(coalesce(v_colores, ''), '|')) x
+              where split_part(x, ':', 1) !~ '^[A-Z0-9]{1,6}$' or length(substr(x, length(split_part(x, ':', 1)) + 2)) > 40
+                 or substr(x, length(split_part(x, ':', 1)) + 2) ~ '[:|]') then
+    raise exception 'Cada color va con un código de hasta 6 letras o números y un nombre de hasta 40.';
+  end if;
+
+  if v_nuevo then
+    if exists (select 1 from pos_articulos where codigo = v_cod) then
+      raise exception 'Ya hay un producto con el código %.', v_cod;
+    end if;
+    insert into pos_articulos (codigo, nombre, rubro, familia, temporada, marca, talles, colores, activo, actualizado_en, actualizado_por)
+    values (v_cod, v_nom, v_rubro, v_familia, v_temp, v_marca, v_talles, v_colores, v_activo, now(), orden_yo_id())
+    returning * into r;
+  else
+    update pos_articulos
+       set nombre = v_nom, rubro = v_rubro, familia = v_familia, temporada = v_temp, marca = v_marca,
+           talles = v_talles, colores = v_colores, activo = v_activo, actualizado_en = now(), actualizado_por = orden_yo_id()
+     where codigo = v_cod
+    returning * into r;
+    if not found then raise exception 'No existe el producto %.', v_cod; end if;
+  end if;
+  return pos_art_fila(r);
+end $$;
+
+revoke all on function pos_art_fila(pos_articulos) from public, anon, authenticated;
+revoke all on function pos_articulos_version(), pos_articulos_todos(), pos_articulo_guardar(jsonb) from public, anon;
+grant execute on function pos_articulos_version(), pos_articulos_todos(), pos_articulo_guardar(jsonb) to authenticated;

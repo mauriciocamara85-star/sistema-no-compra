@@ -131,16 +131,12 @@
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
   var PRONTO = {
-    productos: ['Productos', [
-      'El catálogo que ya está en el sistema (' + (window.CATALOGO ? window.CATALOGO.length : 576) + ' productos), con rubro, talles y colores.',
-      'Alta y edición de productos, con varios códigos de barras por artículo.',
-      'La etiqueta con el código, el talle y el color.'], 'Los precios ya se cambian en <a href="#listas">Listas de precios</a>.'],
     reportes: ['Reportes', [
       'Ventas por sucursal y por medio de pago (las de por vendedor y por producto ya están, en «Ventas por vendedor» y «Ventas por productos»).',
       'Por día, por semana y por mes, comparado con el año pasado.',
@@ -278,10 +274,42 @@
   function marcarPrueba() { document.documentElement.classList.toggle('pos-en-prueba', enPrueba()); }
   marcarPrueba();
 
-  /* ── El catálogo (catalogo.js: [código, nombre, rubro, "S,M,L", "NE:NEGRO|BL:BLANCO"]) ── */
-  var PROD = {};
-  (window.CATALOGO || []).forEach(function (p) { PROD[p[0]] = p; });
-  var RUBROS = Object.keys((window.CATALOGO || []).reduce(function (m, p) { if (p[2]) m[p[2]] = 1; return m; }, {})).sort();
+  /* ── El catálogo: los artículos de la base (SQL 202) y, de respaldo, catalogo.js ──
+     Cada producto: [código, nombre, rubro, "S,M,L", "NE:NEGRO|BL:BLANCO", orden de la temporada, activo,
+     familia, temporada, marca]. catalogo.js trae sólo los cinco primeros (las temporadas 39 a 41, los 576 del
+     No Compra). Los de la base (pos_articulos: los 7.072 de BlueSoft, con Verano 2025, Continuidad, Promo y
+     Segunda) los pisan y quedan guardados en la compu (K_ART): sin internet la venta los sigue encontrando.
+     El inactivo no sale al buscar por nombre; por el código (la pistola) sí.
+     PROD también se encuentra en mayúsculas: la pistola escribe "BE40941" y en BlueSoft está "be40941". */
+  var K_ART = 'pos_articulos';
+  var PROD = {}, LISTA_PROD = [], BUSCA = [], RUBROS = [];
+  /** "41 Verano 2027" → 4054, "40 Invierno 2026" → 4053: el más nuevo, más alto. Continuidad, arriba de todo. */
+  function ordenTemporada(t) {
+    t = String(t || '');
+    if (/continuidad|exitos/i.test(t)) return 9000;
+    var m = t.match(/(verano|invierno)\s*(\d{4})/i);
+    if (m) return Number(m[2]) * 2 + (/invierno/i.test(m[1]) ? 1 : 0);
+    return /promo|segunda/i.test(t) ? 4040 : 0;
+  }
+  function armarCatalogo(arts) {
+    var m = {}, rs = {};
+    /* Por el código en mayúsculas, como los precios y el stock: el be40941 de catalogo.js y el BE40941 de la base son uno. */
+    (window.CATALOGO || []).forEach(function (p) { m[p[0].toUpperCase()] = [p[0], p[1], p[2] || '', p[3] || '', p[4] || '', 9999, true, '', '', '']; });
+    (arts || []).forEach(function (a) { m[a[0].toUpperCase()] = [a[0], a[1], a[2] || '', a[3] || '', a[4] || '', ordenTemporada(a[5]), a[6] !== false, a[7] || '', a[5] || '', a[8] || '']; });
+    PROD = {}; LISTA_PROD = []; BUSCA = [];
+    Object.keys(m).forEach(function (k) {
+      var p = m[k];
+      PROD[k] = p;
+      if (p[0] !== k) PROD[p[0]] = p;
+      LISTA_PROD.push(p);
+      BUSCA.push({ p: p, cod: k.toLowerCase(), nom: normal(p[1]) });
+      if (p[6] && p[2]) rs[p[2]] = 1;
+    });
+    RUBROS = Object.keys(rs).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+  }
+  var ART = leerJSON(K_ART, null);   // { n, v, filas }: la copia de la última vez
+  if (!ART || !Array.isArray(ART.filas)) ART = null;
+  armarCatalogo(ART && ART.filas);
   function titulo(s) { return String(s || '').toLowerCase().replace(/(^|[\s/-])\S/g, function (c) { return c.toUpperCase(); }); }
   function coloresDe(p) {
     return String((p && p[4]) || '').split('|').filter(Boolean).map(function (x) {
@@ -312,7 +340,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_lista_(subir|aumentar|rubros|cambios|deshacer)/.test(m) ? '201 (subir y aumentar las listas de precios)' :
+      return 'Todavía falta correr el SQL ' + (/pos_articul/.test(m) ? '202 (los productos)' :
+                                             /pos_lista_(subir|aumentar|rubros|cambios|deshacer)/.test(m) ? '201 (subir y aumentar las listas de precios)' :
                                              /pos_giftcard/.test(m) ? '200 (las gift cards en el POS)' :
                                              /pos_client|pos_cli_/.test(m) ? '197 (los clientes)' :
                                              /pos_ventas_productos|pos_ventas_de_producto/.test(m) ? '196 (las ventas por productos)' :
@@ -366,6 +395,29 @@
   function olvidarPrecios(lista) {
     delete S.precios[lista];
     S.ini.listas.forEach(function (l) { if (l.base_id === lista) delete S.precios[l.id]; });
+  }
+
+  /* ── Los artículos de la base (SQL 202) ──
+     Al abrir se pregunta si cambiaron (pos_articulos_version, liviana); recién ahí se bajan todos y se guardan
+     en la compu. Nunca frena: sin el SQL 202 o sin conexión, sigue con la copia o con catalogo.js. */
+  function traerArticulos(forzar) {
+    if (S.sin202) return Promise.resolve(false);
+    return llamar('pos_articulos_version').then(function (ver) {
+      if (!forzar && ART && ver && ART.n === ver.n && ART.v === ver.v) return false;
+      return llamar('pos_articulos_todos').then(function (d) { ponerArticulos(d); return true; });
+    }).catch(function (e) { if (sinFuncion(e)) S.sin202 = true; return false; });
+  }
+  function ponerArticulos(d) {
+    ART = d;
+    try { localStorage.setItem(K_ART, JSON.stringify(d)); } catch (e) { /* sin lugar en la compu: queda en la memoria */ }
+    armarCatalogo(d.filas);
+  }
+  /** Se guardó uno en Gestión → Productos: se cambia en la copia, y la próxima vez que abra se baja todo de nuevo. */
+  function cambiarArticulo(fila) {
+    if (!ART) return traerArticulos(true);
+    var filas = ART.filas.filter(function (a) { return a[0] !== fila[0]; });
+    filas.push(fila);
+    ponerArticulos({ n: null, v: null, filas: filas });
   }
 
   /* ── El stock del local (SQL 160): para avisar en la venta y el cambio si una prenda no está ──
@@ -451,6 +503,7 @@
     llamar('pos_inicio').then(function (ini) {
       S.ini = ini;
       if (!ini.locales || !ini.locales.length) { app.innerHTML = '<div class="pos-cartel">No hay sucursales cargadas.</div>'; return; }
+      S.artPromesa = traerArticulos();   // SQL 202: todos los productos, sin esperarlos (la venta arranca con la copia)
       ir(vistaDelHash());
       cuentaDif();
     }).catch(function (e) {
@@ -500,7 +553,7 @@
     }
     var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
-                movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
+                movimientos: verMovimientos, productos: function () { verProductos(); }, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
                 devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo, depositos: verDepositos }[v];
     if (ver) ver(); else verPronto(v);
@@ -1275,19 +1328,25 @@
     var m = String(txt || '').trim().match(ESCANEO);
     return m ? { codigo: m[1].toUpperCase(), talle: m[2].toUpperCase(), color: m[3].toUpperCase() } : null;
   }
+  /* SQL 202: entre todos los de BlueSoft. Primero el código entero (también un inactivo), después los que empiezan
+     con lo escrito y después por el nombre; entre los del nombre, los de la temporada más nueva primero. */
   function buscarProductos(q) {
     q = String(q || '').trim().toLowerCase();
     if (q.length < 2) return [];
-    var pal = q.split(/\s+/), res = [];
-    (window.CATALOGO || []).forEach(function (p) {
-      var cod = p[0].toLowerCase(), nom = String(p[1]).toLowerCase(), pts;
-      if (cod === q) pts = 0;
-      else if (cod.indexOf(q) === 0) pts = 1;
-      else if (pal.every(function (w) { return nom.indexOf(w) >= 0; })) pts = nom.indexOf(pal[0]) === 0 ? 2 : 3;
+    var pal = normal(q).split(' ').filter(Boolean), res = [];
+    BUSCA.forEach(function (b) {
+      var pts;
+      if (b.cod === q) pts = 0;
+      else if (!b.p[6]) return;
+      else if (b.cod.indexOf(q) === 0) pts = 1;
+      else if (pal.every(function (w) { return b.nom.indexOf(w) >= 0; })) pts = b.nom.indexOf(pal[0]) === 0 ? 2 : 3;
       else return;
-      res.push([pts, p]);
+      res.push([pts, b.p]);
     });
-    res.sort(function (a, b) { return a[0] - b[0] || String(a[1][1]).localeCompare(String(b[1][1]), 'es'); });
+    res.sort(function (a, b) {
+      return Math.min(a[0], 2) - Math.min(b[0], 2) || (b[1][5] || 0) - (a[1][5] || 0) || a[0] - b[0] ||
+        String(a[1][1]).localeCompare(String(b[1][1]), 'es');
+    });
     return res.slice(0, 8).map(function (x) { return x[1]; });
   }
 
@@ -4806,6 +4865,245 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════
+     PRODUCTOS (SQL 202): todos los de BlueSoft, con sus talles y colores
+     La lista sale de la copia de la compu (los 7.072 entran enteros y se
+     filtran al toque, sin ir a la base). Tocar uno abre su ficha; «Nuevo
+     producto», una vacía. De la plata, la ficha muestra y cambia sólo el de
+     la lista principal; lo demás sigue en Listas de precios.
+     ════════════════════════════════════════════════════════════════════ */
+  var PD_TANDA = 200;
+  /** La lista que no se calcula de otra (la Lista 100). */
+  function listaPrincipal() { var ls = (S.ini && S.ini.listas) || []; return ls.filter(function (l) { return !l.base_id; })[0] || ls[0] || null; }
+  /** Los valores distintos de una columna del producto (2 rubro, 7 familia, 8 temporada, 9 marca). */
+  function valoresDe(i) {
+    var m = {};
+    LISTA_PROD.forEach(function (p) { if (p[i]) m[p[i]] = 1; });
+    return Object.keys(m).sort(function (a, b) { return i === 8 ? ordenTemporada(b) - ordenTemporada(a) || a.localeCompare(b, 'es') : a.localeCompare(b, 'es'); });
+  }
+  function nombresColores(p) { return coloresDe(p).map(function (x) { return x.nom; }).join(', '); }
+  function totalCaja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+  function sin202Cartel() {
+    return S.sin202 ? '<div class="pos-cartel mal">Todavía falta correr el SQL 202 (los productos) en Supabase: se ven sólo los ' + num(LISTA_PROD.length) +
+      ' de catalogo.js y no se pueden cambiar.</div>' : '';
+  }
+
+  function verProductos(volver) {
+    var c = $('cuerpo'), li = listaPrincipal();
+    S.prodVer = null;
+    if (!volver) S.prodFiltro = null;
+    var F = S.prodFiltro || { buscar: '', rubro: '', temporada: '', mostrar: 'activos', precio: '' };
+    c.innerHTML = cabeza('Productos', 'Todos los de BlueSoft, con sus talles y colores. Los inactivos no salen al buscar en la venta; la pistola los encuentra igual. Tocá uno para cambiarlo.',
+        '<button type="button" class="btn btn-sec btn-chico" id="pdBajar" disabled>Bajar para Excel</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="pdNuevo">Nuevo producto</button>') +
+      '<div class="pos-filtros">' +
+        campo('cl-buscar', 'Buscar', '<input type="search" id="pdBuscar" autocomplete="off" spellcheck="false" placeholder="Código o nombre" value="' + esc(F.buscar) + '">') +
+        campo('', 'Rubro', '<select id="pdRubro"></select>') +
+        campo('', 'Temporada', '<select id="pdTemp"></select>') +
+        campo('', 'Mostrar', '<select id="pdMostrar">' + opciones([['activos', 'Activos'], ['inactivos', 'Inactivos'], ['todos', 'Todos']], F.mostrar) + '</select>') +
+        campo('', 'Precio', '<select id="pdPrecio">' + opciones([['', 'Todos'], ['con', 'Con precio'], ['sin', 'Sin precio']], F.precio) + '</select>') +
+      '</div>' +
+      '<div id="pdAviso"></div><div id="pdLista"><p class="cargando">Cargando…</p></div><div class="tkl-pie" id="pdPie"></div>';
+    var miLista = $('pdLista'), t = null, vistas = [], hasta = PD_TANDA;
+    function llenarSelects() {
+      $('pdRubro').innerHTML = '<option value="">Todos</option>' + opciones(valoresDe(2).map(function (r) { return [r, r]; }), F.rubro);
+      $('pdTemp').innerHTML = '<option value="">Todas</option>' + opciones(valoresDe(8).map(function (r) { return [r, r]; }), F.temporada);
+    }
+    function leerF() {
+      F = { buscar: $('pdBuscar').value, rubro: $('pdRubro').value, temporada: $('pdTemp').value, mostrar: $('pdMostrar').value, precio: $('pdPrecio').value };
+      S.prodFiltro = F;
+    }
+    function precios() { return (li && S.precios[li.id]) || {}; }
+    function filtrar() {
+      var m = precios(), qc = F.buscar.trim().toLowerCase(), pal = normal(F.buscar).split(' ').filter(Boolean);
+      return LISTA_PROD.filter(function (p) {
+        if (F.mostrar === 'activos' ? !p[6] : F.mostrar === 'inactivos' ? p[6] : false) return false;
+        if (F.rubro && p[2] !== F.rubro) return false;
+        if (F.temporada && p[8] !== F.temporada) return false;
+        if (F.precio && (F.precio === 'con') !== !!m[p[0]]) return false;
+        if (!qc) return true;
+        var n = normal(p[1]);
+        return p[0].toLowerCase().indexOf(qc) === 0 || pal.every(function (w) { return n.indexOf(w) >= 0; });
+      }).sort(function (a, b) { return (b[5] || 0) - (a[5] || 0) || a[0].localeCompare(b[0], 'es'); });
+    }
+    function pintar() {
+      if (!miLista.isConnected) return;
+      leerF();
+      vistas = filtrar();
+      var m = precios(), total = vistas.length;
+      $('pdPie').innerHTML = totalCaja('Productos', num(total), 'fuerte') + totalCaja('Activos', num(vistas.filter(function (p) { return p[6]; }).length)) +
+        (li ? totalCaja('Sin precio', num(vistas.filter(function (p) { return !m[p[0]]; }).length)) : '');
+      $('pdBajar').disabled = !total;
+      if (!total) {
+        $('pdLista').innerHTML = '<div class="pos-cartel">No hay productos ' + (F.buscar.trim() ? 'con «' + esc(F.buscar.trim()) + '»' : 'con esos filtros') + '. Para cargar uno, tocá «Nuevo producto».</div>';
+        return;
+      }
+      var xs = vistas.slice(0, hasta);
+      /* El precio al lado del nombre: en una pantalla de 1366, lo de la derecha queda para correr. */
+      $('pdLista').innerHTML = '<div class="pos-marco-tabla"><table class="pos-tabla pd-tabla"><thead><tr><th>Código</th><th>Nombre</th>' + (li ? '<th class="n">Precio</th>' : '') +
+          '<th>Rubro</th><th>Familia</th><th>Temporada</th><th>Talles</th><th>Colores</th></tr></thead><tbody>' + xs.map(function (p, i) {
+          var x = m[p[0]], cs = nombresColores(p), ts = tallesDe(p).join(' ');
+          return '<tr data-pd="' + i + '" tabindex="0" title="Ver su ficha"' + (p[6] ? '' : ' class="cl-inactivo"') + '><td><b>' + esc(p[0]) + '</b></td>' +
+            '<td>' + esc(p[1]) + (p[6] ? '' : ' <span class="pos-tag">Inactivo</span>') + '</td>' +
+            (li ? '<td class="n">' + (x ? plata(x.c) : '<span class="apagado">Sin precio</span>') + '</td>' : '') +
+            '<td>' + esc(p[2] || '—') + '</td><td>' + esc(p[7] || '—') + '</td>' +
+            '<td class="pd-largo" title="' + esc(p[8]) + '">' + esc(p[8] || '—') + '</td><td class="pd-largo" title="' + esc(ts) + '">' + esc(ts || '—') + '</td>' +
+            '<td class="pd-largo" title="' + esc(cs) + '">' + esc(cs || '—') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (total > xs.length ? '<p class="pos-mas">Se ven ' + num(xs.length) + ' de ' + num(total) + '. <button type="button" class="pos-link" id="pdMas">Ver ' +
+          num(Math.min(PD_TANDA, total - xs.length)) + ' más</button> o buscá para encontrar el resto.</p>' : '');
+      if ($('pdMas')) $('pdMas').onclick = function () { hasta += PD_TANDA; pintar(); };
+      $('pdLista').querySelectorAll('tr[data-pd]').forEach(function (tr) {
+        var p = xs[Number(tr.getAttribute('data-pd'))];
+        tr.onclick = function () { S.prodVer = { codigo: p[0] }; verProducto(); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    $('pdBuscar').oninput = function () { clearTimeout(t); t = setTimeout(function () { hasta = PD_TANDA; pintar(); }, 150); };
+    ['pdRubro', 'pdTemp', 'pdMostrar', 'pdPrecio'].forEach(function (id) { $(id).onchange = function () { hasta = PD_TANDA; pintar(); }; });
+    $('pdNuevo').onclick = function () {
+      var q = $('pdBuscar').value.trim();
+      S.prodVer = { nuevo: true, codigo: /^[A-Za-z]{1,4}\d[A-Za-z0-9]*$/.test(q) ? q.toUpperCase() : '' };
+      verProducto();
+    };
+    /* El Excel de lo que se ve (todo lo filtrado, no sólo la primera tanda). */
+    $('pdBajar').onclick = function () {
+      var m = precios();
+      bajarCsv('Productos ' + hoyCli() + '.csv',
+        ['Código', 'Nombre', 'Rubro', 'Familia', 'Temporada', 'Marca', 'Talles', 'Colores'].concat(li ? ['Precio (' + li.nombre + ')'] : []).concat(['Activo']),
+        vistas.map(function (p) {
+          var x = m[p[0]];
+          return [p[0], p[1], p[2], p[7], p[8], p[9], tallesDe(p).join(', '), nombresColores(p)]
+            .concat(li ? [x ? String(aPesos(x.c)).replace('.', ',') : ''] : []).concat([p[6] ? 'Sí' : 'No']);
+        }));
+    };
+    llenarSelects();
+    Promise.all([S.artPromesa || Promise.resolve(false), li ? asegurarPrecios(li.id).catch(function () { return {}; }) : null]).then(function () {
+      if (!miLista.isConnected) return;
+      $('pdAviso').innerHTML = sin202Cartel();
+      llenarSelects();
+      pintar();
+    });
+    setTimeout(function () { var b = $('pdBuscar'); if (b) b.focus(); }, 0);
+  }
+
+  /* La ficha: un producto ({codigo}) o uno nuevo ({nuevo, codigo: lo que buscaban}). El código no se cambia:
+     lo usan los precios, el stock y las ventas. */
+  function verProducto() {
+    var sel = S.prodVer || {}, p = sel.nuevo ? null : PROD[sel.codigo], c = $('cuerpo'), li = listaPrincipal(), nuevo = !p;
+    c.innerHTML = cabeza(nuevo ? 'Nuevo producto' : esc(p[1]), nuevo ? 'Con el código de la etiqueta y los talles y colores que existen.' : esc(p[0]) + (p[8] ? ' · ' + esc(p[8]) : ''),
+        '<button type="button" class="btn btn-sec btn-chico" id="pdVolver">‹ Productos</button>') +
+      sin202Cartel() + '<div id="pdFicha"><p class="cargando">Cargando…</p></div>';
+    $('pdVolver').onclick = function () { verProductos(true); };
+    if (!sel.nuevo && !p) { $('pdFicha').innerHTML = '<div class="pos-cartel mal">No encontré el producto ' + esc(sel.codigo || '') + '.</div>'; return; }
+    (li ? asegurarPrecios(li.id).catch(function () { return {}; }) : Promise.resolve()).then(function () { if ($('pdFicha')) formProducto(); });
+
+    function formProducto() {
+      var f = $('pdFicha'), x = li && p ? (S.precios[li.id] || {})[p[0].toUpperCase()] : null;
+      var cols = coloresDe(p).map(function (k) { return { cod: k.cod, nom: k.nom }; });
+      var calc = li ? S.ini.listas.filter(function (l) { return l.base_id === li.id; }).map(function (l) { return l.nombre; }) : [];
+      /* Los colores que ya existen en otros productos: al escribir el código, el nombre sale solo. */
+      var conocidos = {};
+      LISTA_PROD.forEach(function (q) { coloresDe(q).forEach(function (k) { if (!conocidos[k.cod]) conocidos[k.cod] = k.nom; }); });
+      function lista(id, i) { return '<datalist id="' + id + '">' + valoresDe(i).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>'; }
+      function texto(id, lbl, max, v, extra, cls) {
+        return campo(cls || '', lbl, '<input type="text" id="' + id + '" maxlength="' + max + '" autocomplete="off" value="' + esc(v || '') + '"' + (extra || '') + '>');
+      }
+      f.innerHTML = '<div class="pos-campos pd-campos">' +
+          texto('pfCod', 'Código', 30, p ? p[0] : sel.codigo, ' spellcheck="false"' + (p ? ' readonly title="El código no se cambia: lo usan los precios, el stock y las ventas"' : '')) +
+          texto('pfNom', 'Nombre', 120, p && p[1], '', 'pd-nombre') +
+          texto('pfRubro', 'Rubro', 60, p && p[2], ' list="pfRubros"') +
+          texto('pfFam', 'Familia', 60, p && p[7], ' list="pfFamilias"') +
+          texto('pfTemp', 'Temporada', 60, p && p[8], ' list="pfTemps"') +
+          texto('pfMarca', 'Marca', 60, p && p[9], ' list="pfMarcas"') +
+          campo('ancho', 'Talles <span class="lbl-opc">(separados por comas, como en la etiqueta)</span>',
+                '<input type="text" id="pfTalles" maxlength="400" autocomplete="off" spellcheck="false" placeholder="S, M, L, XL" value="' + esc(p ? tallesDe(p).join(', ') : '') + '">') +
+          (li ? campo('', 'Precio', '<input type="text" inputmode="decimal" id="pfPrecio" placeholder="Sin precio"' +
+                      ' value="' + esc(x ? plataCampo(x.c) : '') + '">') : '') +
+          '<label class="pos-check pd-activo"><input type="checkbox" id="pfActivo"' + (!p || p[6] ? ' checked' : '') + '> Activo (si no, no sale al buscar en la venta)</label>' +
+        '</div>' +
+        (li ? '<p class="cli-ayuda">El precio es el de «' + esc(li.nombre) + '»' + (calc.length ? '; ' + esc(calc.join(', ')) +
+                (calc.length > 1 ? ' se calculan solas' : ' se calcula sola') + ' de ésta' : '') + '.</p>' : '') +
+        '<h3 class="pd-sub">Colores</h3><div id="pfColores"></div><p><button type="button" class="pos-link" id="pfColMas">+ Agregar color</button></p>' +
+        lista('pfRubros', 2) + lista('pfFamilias', 7) + lista('pfTemps', 8) + lista('pfMarcas', 9) +
+        '<datalist id="pfColCods">' + Object.keys(conocidos).sort().map(function (k) { return '<option value="' + esc(k) + '" label="' + esc(conocidos[k]) + '">'; }).join('') + '</datalist>' +
+        '<div class="pos-error" id="pfError"></div>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" id="pfOtro">Guardar y nuevo</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" id="pfGuardar">Guardar</button></div>';
+      function leerCols() {
+        f.querySelectorAll('[data-col]').forEach(function (r) {
+          var k = cols[Number(r.getAttribute('data-col'))];
+          if (k) { k.cod = r.querySelector('[data-k="cod"]').value.trim().toUpperCase(); k.nom = r.querySelector('[data-k="nom"]').value.trim(); }
+        });
+      }
+      function pintarCols() {
+        $('pfColores').innerHTML = cols.length ? cols.map(function (k, i) {
+          return '<div class="cli-renglon pd-color" data-col="' + i + '"><div class="pos-campos">' +
+            campo('', 'Código', '<input type="text" data-k="cod" maxlength="6" list="pfColCods" autocomplete="off" spellcheck="false" value="' + esc(k.cod) + '">') +
+            campo('', 'Nombre', '<input type="text" data-k="nom" maxlength="40" autocomplete="off" value="' + esc(k.nom) + '">') +
+            '</div><button type="button" class="tk-quitar" data-quitar-col="' + i + '" title="Quitar este color" aria-label="Quitar este color">' + icono('x') + '</button></div>';
+        }).join('') : '<p class="cli-vacio">Sin colores: en la venta no se pide el color.</p>';
+        $('pfColores').querySelectorAll('[data-k="cod"]').forEach(function (inp) {
+          inp.onchange = function () {
+            var nom = inp.closest('[data-col]').querySelector('[data-k="nom"]'), k = inp.value.trim().toUpperCase();
+            inp.value = k;
+            if (!nom.value.trim() && conocidos[k]) nom.value = conocidos[k];
+          };
+        });
+        $('pfColores').querySelectorAll('[data-quitar-col]').forEach(function (b) {
+          b.onclick = function () { leerCols(); cols.splice(Number(b.getAttribute('data-quitar-col')), 1); pintarCols(); };
+        });
+      }
+      pintarCols();
+      $('pfColMas').onclick = function () {
+        leerCols();
+        cols.push({ cod: '', nom: '' });
+        pintarCols();
+        var r = $('pfColores').querySelector('[data-col="' + (cols.length - 1) + '"] [data-k="cod"]');
+        if (r) r.focus();
+      };
+      function guardarProd(otro) {
+        leerCols();
+        var v = function (id) { return $(id).value.trim(); };
+        var cod = (nuevo ? v('pfCod') : p[0]).toUpperCase(), nom = v('pfNom');
+        var inP = li && $('pfPrecio'), pr = inP ? v('pfPrecio') : null, precio = pr ? leerPlata(pr) : null, antes = x ? x.c : null;
+        var err = !cod ? 'Falta el código (el de la etiqueta).' :
+                  nuevo && !/^[A-Za-z0-9][A-Za-z0-9._\/-]*$/.test(cod) ? 'El código va con letras y números, sin espacios.' :
+                  nuevo && LISTA_PROD.some(function (q) { return q[0].toUpperCase() === cod; }) ? 'Ya hay un producto con el código ' + cod + '.' :
+                  !nom ? 'Falta el nombre.' :
+                  pr && !(precio > 0) ? 'Ese precio no se entiende. Escribilo así: 20000 o 16.333,33 (para sacarlo, dejalo vacío).' :
+                  cols.some(function (k) { return k.cod && !/^[A-Z0-9]{1,6}$/.test(k.cod); }) ? 'Cada color va con un código de hasta 6 letras o números, como en la etiqueta.' :
+                  cols.some(function (k) { return !k.cod && k.nom; }) ? 'A un color le falta el código.' : '';
+        if (!errorEn(f, 'pfError', err)) return;
+        if (pr === '' && antes != null && !confirm('¿Sacarle el precio a ' + cod + '? En la venta va a salir «Sin precio».')) return;
+        var bs = [$('pfGuardar'), $('pfOtro')];
+        bs.forEach(function (b) { b.disabled = true; });
+        llamar('pos_articulo_guardar', { p: { nuevo: nuevo, codigo: cod, nombre: nom, rubro: v('pfRubro'), familia: v('pfFam'), temporada: v('pfTemp'), marca: v('pfMarca'),
+                                              talles: v('pfTalles'), colores: cols.filter(function (k) { return k.cod; }), activo: $('pfActivo').checked } }).then(function (fila) {
+          cambiarArticulo(fila);
+          var cambia = pr !== null && (pr === '' ? antes != null : precio !== antes);
+          var dePrecio = cambia ? llamar('pos_precio_guardar', { p_lista: li.id, p_codigo: fila[0], p_precio: pr === '' ? null : aPesos(precio) })
+            .then(function () { olvidarPrecios(li.id); return asegurarPrecios(li.id); }) : Promise.resolve();
+          return dePrecio.then(function () {
+            avisar('ok', 'Listo: ' + fila[1] + ' (' + fila[0] + ') ' + (nuevo ? 'quedó cargado.' : 'se guardó.'));
+            S.prodVer = otro ? { nuevo: true } : { codigo: fila[0] };
+            verProducto();
+          }, function (e) {
+            avisar('err', 'El producto se guardó, pero el precio no: ' + mensajeDe(e));
+            S.prodVer = { codigo: fila[0] };
+            verProducto();
+          });
+        }).catch(function (e) {
+          bs.forEach(function (b) { b.disabled = false; });
+          errorEn(f, 'pfError', mensajeDe(e));
+        });
+      }
+      $('pfGuardar').onclick = function () { guardarProd(false); };
+      $('pfOtro').onclick = function () { guardarProd(true); };
+      setTimeout(function () { var e = $(nuevo ? 'pfCod' : 'pfNom'); if (e) e.focus(); }, 0);
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
      LISTAS DE PRECIOS
      SQL 201 (30/10, Mauricio, mirando «Importar productos desde la web» de
      BlueSoft): en una lista con precios propios, «Subir lista de BlueSoft»
@@ -4937,7 +5235,7 @@
 
     function pintarTabla() {
       var m = S.precios[li.id] || {}, q = $('lsBuscar').value.trim().toLowerCase(), solo = $('lsSolo').checked;
-      var filas = (window.CATALOGO || []).map(function (p) { return { cod: p[0], nom: p[1], rubro: p[2] || '' }; });
+      var filas = LISTA_PROD.map(function (p) { return { cod: p[0], nom: p[1], rubro: p[2] || '' }; });   // SQL 202: todos, no sólo catalogo.js
       Object.keys(m).forEach(function (k) { if (!PROD[k]) filas.push({ cod: k, nom: '(no está en el catálogo)', rubro: '' }); });
       filas = filas.filter(function (f) {
         if (solo && !m[f.cod]) return false;
@@ -5594,7 +5892,7 @@
   /** Los códigos del catálogo que coinciden con lo buscado (código, palabras del nombre) y con el rubro. */
   function codigosDe(q, rubro) {
     var pal = normal(q).split(' ').filter(Boolean), todo = pal.join(' '), cods = [];
-    (window.CATALOGO || []).forEach(function (p) {
+    LISTA_PROD.forEach(function (p) {   // SQL 202: todos los de BlueSoft, también los inactivos (pueden tener stock)
       if (rubro && p[2] !== rubro) return;
       var cod = String(p[0]).toLowerCase(), nom = normal(p[1]);
       if (!pal.length || cod.indexOf(todo) === 0 || pal.every(function (w) { return nom.indexOf(w) >= 0 || cod.indexOf(w) === 0; })) cods.push(p[0]);

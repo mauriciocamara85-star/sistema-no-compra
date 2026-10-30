@@ -1144,3 +1144,19 @@ tr.cl-inactivo td { color: var(--txt-3); }
   .cli-renglon .pos-campos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .cli-pestanas .pestana { padding: 8px 6px; font-size: 12.5px; }
 }
+/* ── Los productos (SQL 202): todos los de BlueSoft, con el alta y la edición (Gestión → Productos) ── */
+tr[data-pd] { cursor: pointer; }
+tr[data-pd]:hover td { background: var(--surface-2); }
+.pd-tabla td { white-space: nowrap; }
+.pd-tabla td.pd-largo { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+#pdFicha { max-width: 880px; }
+.pos-campos.pd-campos { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.pd-campos .pd-nombre { grid-column: span 3; }
+.pd-campos .pd-activo { align-self: end; min-height: 38px; }
+.pd-sub { margin: 16px 0 2px; font: 700 14px var(--sans); color: var(--txt); }
+.cli-renglon.pd-color { max-width: 560px; }
+.cli-renglon.pd-color .pos-campos { grid-template-columns: 130px minmax(0, 1fr); }
+@media (max-width: 760px) {
+  .pos-campos.pd-campos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .pd-campos .pd-nombre { grid-column: 1 / -1; }
+}
