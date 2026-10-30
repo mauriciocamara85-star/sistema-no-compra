@@ -114,6 +114,10 @@ var persona = (function () {
        barra: cada pantalla de la oficina sigue con su portón. */
     if (!r && compuDelLocal()) document.documentElement.setAttribute('data-nc-compu', '');
     else document.documentElement.removeAttribute('data-nc-compu');
+    /* Mauricio, 29/10: en esa compu, con alguien adentro o sin nadie. Equipo VDH es la app del celular de cada
+       uno: al vendedor que entra en la compu del local la barra no se la muestra (estilos.css). */
+    if (compuDelLocal()) document.documentElement.setAttribute('data-nc-compu-habilitada', '');
+    else document.documentElement.removeAttribute('data-nc-compu-habilitada');
   }
   marcar();
 

@@ -1382,6 +1382,10 @@ html[data-nc-compu] .rail-item[href^="club-numeros.html"],
 html[data-nc-compu] .rail-item[href="config.html"],
 html[data-nc-compu] .rail-item[data-impecable],
 html[data-nc-compu] .rail-item[href="impecable-admin.html"] { display: none; }
+/* En esa compu, con un vendedor adentro (29/10): sin Equipo VDH, que es la app del celular de cada uno. */
+html[data-nc-compu-habilitada][data-nc-rol="vendedor"] .rail-item[data-impecable],
+html[data-nc-compu-habilitada][data-nc-rol="vendedor"] .rail-item[href="impecable-admin.html"],
+html[data-nc-compu-habilitada][data-nc-rol="vendedor"] .rail-item[href="vendedores.html"] { display: none; }
 /* El POS, mientras está en construcción (20/10), lo ve sólo Administración: ni siquiera sin usuario. */
 /* SQL 190: el POS, también a quien la oficina se lo prendió (data-nc-pos); la Gestión, sólo Administración. */
 html:not([data-nc-rol="admin"]):not([data-nc-pos]) .rail-item[href="pos.html"],
