@@ -4243,3 +4243,133 @@ revoke all on function pos_disponibilidad(), pos_caja_valores(uuid, text, date, 
                        pos_caja_ajuste_anular(uuid, text) from public, anon;
 grant execute on function pos_disponibilidad(), pos_caja_valores(uuid, text, date, date), pos_caja_ajustar(jsonb),
                           pos_caja_ajuste_anular(uuid, text) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 196 (29/10/2026) · LAS VENTAS POR PRODUCTOS
+--
+--  Las "Ventas por Productos" de BlueSoft, el "resumen de ventas" de los
+--  locales (Mauricio, 29/10: "cuando hay producto testigo, vamos a resumen de
+--  ventas, buscamos un producto y ahí me dice las ventas totales de ese
+--  producto, qué día fue, de qué ticket fue, cuántas ventas, qué colores").
+--  · pos_ventas_productos: cada producto vendido en el período, con la
+--    cantidad, el total y en cuántas ventas; y lo mismo por talle y color
+--    (el «Mostrar Talle/Color» de BlueSoft).
+--  · pos_ventas_de_producto: las ventas de un producto, una por una (el día,
+--    la sucursal, el ticket, el vendedor, el talle, el color y la cantidad),
+--    y cuánto se vendió de cada talle y color.
+--  Como Ventas por vendedor (SQL 192): sólo las ventas cobradas (las anuladas
+--  y los cambios no cuentan), las de verdad y las de prueba nunca juntas, el
+--  mostrador ve su local (y sin «Ver otros días», sólo hoy) y la oficina
+--  todas. El total de cada renglón lleva su parte de los descuentos de la
+--  venta: así los totales dan lo mismo que Tickets y Ventas por vendedor.
+--  Un producto es su código; uno escrito a mano, sin código, va por su nombre.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Los renglones vendidos del período, con lo que cobró cada uno (su parte de los descuentos de la venta). p_buscar: el
+   código empieza así, o el nombre tiene todas esas palabras (sin mirar acentos ni mayúsculas). Sin permiso de afuera:
+   lo llaman las dos de abajo, después de mirar los permisos. */
+create function pos_vp_renglones(p_desde date, p_hasta date, p_local uuid, p_vendedor text, p_buscar text, p_prueba boolean)
+returns table (venta_id uuid, fecha timestamptz, dia date, local_id uuid, serie text, numero bigint, letra text, vendedor text,
+               cliente text, socio text, clave text, codigo text, descripcion text, talle text, color text, cantidad int,
+               precio numeric, cobrado numeric)
+language sql stable security definer set search_path = public as $$
+  with q as (select translate(lower(btrim(coalesce(p_buscar, ''))), 'áéíóúü', 'aeiouu') t)
+  select v.id, v.fecha, v.dia, v.local_id, v.serie, v.numero, v.letra, v.vendedor, v.cliente_nombre, v.socio,
+         coalesce(upper(nullif(btrim(i.codigo), '')), '~' || lower(btrim(i.descripcion))),
+         upper(nullif(btrim(i.codigo), '')), i.descripcion, nullif(btrim(i.talle), ''), nullif(btrim(i.color), ''), i.cantidad, i.precio,
+         case when v.neto > 0 then i.total * v.total / v.neto else 0 end
+    from pos_ventas v
+    join pos_venta_items i on i.venta_id = v.id
+    cross join q
+   where v.dia between p_desde and p_hasta
+     and v.prueba = coalesce(p_prueba, false)
+     and v.estado = 'cobrada'
+     and (p_local is null or v.local_id = p_local)
+     and (p_vendedor is null or lower(v.vendedor) = lower(p_vendedor))
+     and (q.t = ''
+          or position(q.t in lower(coalesce(i.codigo, ''))) = 1
+          or not exists (select 1 from regexp_split_to_table(q.t, '\s+') w
+                          where position(w in translate(lower(i.descripcion), 'áéíóúü', 'aeiouu')) = 0))
+$$;
+
+/* La lista: los productos (de más a menos vendidos), y por talle y color. Hasta 3.000 productos y 6.000 talles y colores
+   ('mas' avisa que hay más: se achica con el período, la sucursal o el producto). */
+create function pos_ventas_productos(p_desde date, p_hasta date, p_local uuid default null, p_vendedor text default null,
+                                     p_buscar text default null, p_prueba boolean default false) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);   -- su local y, sin «Ver otros días», hoy (SQL 190)
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with r as (select * from pos_vp_renglones(p_desde, p_hasta, p_local, p_vendedor, p_buscar, p_prueba)),
+    p as (select r.clave, max(r.codigo) codigo, max(r.descripcion) descripcion, sum(r.cantidad) cantidad, round(sum(r.cobrado), 2) total,
+                 count(distinct r.venta_id) ventas, count(distinct r.local_id) sucursales, max(r.fecha) ultima
+            from r group by r.clave),
+    t as (select r.clave, max(r.codigo) codigo, max(r.descripcion) descripcion, r.talle, r.color, sum(r.cantidad) cantidad,
+                 round(sum(r.cobrado), 2) total, count(distinct r.venta_id) ventas
+            from r group by r.clave, r.talle, r.color)
+    select jsonb_build_object(
+      'productos', coalesce((select jsonb_agg(jsonb_build_object('clave', z.clave, 'codigo', z.codigo, 'descripcion', z.descripcion,
+                                                                 'cantidad', z.cantidad, 'total', z.total, 'ventas', z.ventas,
+                                                                 'sucursales', z.sucursales, 'ultima', z.ultima)
+                                              order by z.cantidad desc, z.total desc, z.descripcion)
+                               from (select * from p order by cantidad desc, total desc, descripcion limit 3000) z), '[]'::jsonb),
+      'variantes', coalesce((select jsonb_agg(jsonb_build_object('clave', z.clave, 'codigo', z.codigo, 'descripcion', z.descripcion,
+                                                                 'talle', z.talle, 'color', z.color, 'cantidad', z.cantidad,
+                                                                 'total', z.total, 'ventas', z.ventas)
+                                              order by z.cantidad desc, z.total desc, z.descripcion, z.talle, z.color)
+                               from (select * from t order by cantidad desc, total desc, descripcion, talle, color limit 6000) z), '[]'::jsonb),
+      'mas', (select count(*) > 3000 from p) or (select count(*) > 6000 from t),
+      'totales', (select jsonb_build_object('cantidad', coalesce(sum(r.cantidad), 0), 'total', coalesce(round(sum(r.cobrado), 2), 0),
+                                            'productos', count(distinct r.clave), 'ventas', count(distinct r.venta_id)) from r)
+    )
+  );
+end $$;
+
+/* Un producto (su clave, la de la lista): sus ventas una por una, de la más nueva a la más vieja (hasta 2.000), cuánto se
+   vendió de cada talle y color, y en cada sucursal. */
+create function pos_ventas_de_producto(p_clave text, p_desde date, p_hasta date, p_local uuid default null,
+                                       p_vendedor text default null, p_prueba boolean default false) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);
+  perform pos_dias_ok(p_desde);
+  if p_clave is null or btrim(p_clave) = '' then raise exception 'Elegí el producto.'; end if;
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with r as (select * from pos_vp_renglones(p_desde, p_hasta, p_local, p_vendedor, null, p_prueba) x where x.clave = p_clave)
+    select jsonb_build_object(
+      'producto', (select jsonb_build_object('clave', p_clave, 'codigo', max(r.codigo), 'descripcion', max(r.descripcion)) from r),
+      'renglones', coalesce((select jsonb_agg(jsonb_build_object('venta_id', z.venta_id, 'fecha', z.fecha, 'dia', z.dia,
+                                                                 'local_id', z.local_id, 'local', (select o.nombre from orden_locales o where o.id = z.local_id),
+                                                                 'serie', z.serie, 'numero', z.numero, 'letra', z.letra, 'vendedor', z.vendedor,
+                                                                 'cliente', z.cliente, 'socio', z.socio, 'talle', z.talle, 'color', z.color,
+                                                                 'cantidad', z.cantidad, 'precio', z.precio, 'total', round(z.cobrado, 2))
+                                              order by z.fecha desc, z.numero desc)
+                               from (select * from r order by fecha desc, numero desc limit 2000) z), '[]'::jsonb),
+      'mas', (select count(*) > 2000 from r),
+      'variantes', coalesce((select jsonb_agg(jsonb_build_object('talle', z.talle, 'color', z.color, 'cantidad', z.cantidad, 'total', z.total)
+                                              order by z.cantidad desc, z.talle, z.color)
+                               from (select r.talle, r.color, sum(r.cantidad) cantidad, round(sum(r.cobrado), 2) total
+                                       from r group by r.talle, r.color) z), '[]'::jsonb),
+      'sucursales', coalesce((select jsonb_agg(jsonb_build_object('local_id', z.local_id, 'local', (select o.nombre from orden_locales o where o.id = z.local_id),
+                                                                  'cantidad', z.cantidad, 'total', z.total, 'ventas', z.ventas)
+                                               order by z.cantidad desc)
+                                from (select r.local_id, sum(r.cantidad) cantidad, round(sum(r.cobrado), 2) total, count(distinct r.venta_id) ventas
+                                        from r group by r.local_id) z), '[]'::jsonb),
+      'totales', (select jsonb_build_object('cantidad', coalesce(sum(r.cantidad), 0), 'total', coalesce(round(sum(r.cobrado), 2), 0),
+                                            'ventas', count(distinct r.venta_id), 'ultima', max(r.fecha)) from r)
+    )
+  );
+end $$;
+
+revoke all on function pos_vp_renglones(date, date, uuid, text, text, boolean) from public, anon, authenticated;
+revoke all on function pos_ventas_productos(date, date, uuid, text, text, boolean),
+                       pos_ventas_de_producto(text, date, date, uuid, text, boolean) from public, anon;
+grant execute on function pos_ventas_productos(date, date, uuid, text, text, boolean),
+                          pos_ventas_de_producto(text, date, date, uuid, text, boolean) to authenticated;

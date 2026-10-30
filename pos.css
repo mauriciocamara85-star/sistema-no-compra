@@ -95,12 +95,12 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
   .menu-chico .pos-marca + span { display: none; }
   .menu-chico .pos-menu-pie { padding-top: 6px; }
 }
-/* La PC del local (657 de alto): con Depósitos son 14 secciones y el pie tiene que entrar sin deslizar el menú. */
+/* La PC del local (657 de alto): con Depósitos y Ventas por productos son 15 secciones y el pie tiene que entrar sin deslizar el menú. */
 @media (min-width: 1000px) and (max-height: 720px) {
-  [data-pos="mostrador"] .pos-item { min-height: 30px; }
+  [data-pos="mostrador"] .pos-item { min-height: 28px; }
   [data-pos="mostrador"] .pos-menu > .pos-grupo { margin: 5px 10px; }
-  /* Gestión achicada: con Depósitos y Disponibilidad son 17 íconos, y todos tienen que entrar sin deslizar. */
-  [data-pos="gestion"] .menu-chico .pos-item { min-height: 28px; }
+  /* Gestión achicada: con Depósitos, Disponibilidad y Ventas por productos son 18 íconos, y todos tienen que entrar sin deslizar. */
+  [data-pos="gestion"] .menu-chico .pos-item { min-height: 26px; }
 }
 @media (max-width: 999px) {
   .pos-menu-pie { flex-direction: row; margin: 0 0 0 auto; padding: 0 0 0 6px; border-top: 0; border-left: 1px solid var(--line); }
@@ -1056,3 +1056,17 @@ html[data-theme="dark"] .vv-barras { --vv-barra: #C9824F; }
 .tg-elegido { margin: 6px 0 10px; font-size: 14px; }
 .tg-elegido:empty { display: none; }
 .pos-tabla tr.tg-vieja td { color: var(--txt-3); text-decoration: line-through; }
+
+/* SQL 196: las ventas por productos. La lista con el Top 10 al costado (como Ventas por vendedor) y, al tocar un producto, sus ventas una por una con lo de cada talle y color. */
+/* Los filtros entran en un renglón a 1366 con el menú abierto; «Mostrar talle y color» va arriba, con el Excel. */
+.pos-filtros .vp-buscar { flex: 0 1 220px; min-width: 180px; }
+.pos-acciones .vp-tc { min-height: 0; margin-right: 6px; }
+.pos-tabla tr[data-vp], .pos-tabla tr[data-vd] { cursor: pointer; }
+.pos-tabla tr[data-vp]:hover td, .pos-tabla tr[data-vd]:hover td { background: var(--surface-2); }
+.vp-tabla td { white-space: nowrap; }
+.vd-tabla td { white-space: nowrap; }
+.vd-cod { margin-left: 10px; font: 600 14px var(--sans); color: var(--txt-3); letter-spacing: 0; }
+.vd-dos { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+.vd-bloque { flex: 0 1 auto; min-width: 0; max-width: 100%; }
+.vd-bloque h3 { margin: 0 0 6px; font: 700 12.5px var(--sans); color: var(--txt-2); }
+.vd-matriz td:first-child { white-space: nowrap; }

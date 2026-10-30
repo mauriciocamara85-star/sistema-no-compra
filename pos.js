@@ -99,8 +99,8 @@
     mostrador: [
       ['Ventas', [['venta', 'Nueva venta', 'venta'], ['tickets', 'Tickets', 'tickets'],
                   ['cambios', 'Cambios', 'cambio'], ['fallida', 'Venta fallida', 'fallida'],
-                  /* Las ventas por vendedor (SQL 192), como en la PC del local de BlueSoft. */
-                  ['vendedores', 'Ventas por vendedor', 'vendedores']]],
+                  /* Las ventas por vendedor (SQL 192) y por productos (SQL 196, el "resumen de ventas"), como en la PC del local de BlueSoft. */
+                  ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod']]],
       /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene.
          La devolución a fábrica (SQL 189): lo que el local le devuelve, como en BlueSoft.
          Los depósitos (SQL 193): el de cada temporada, para el stock de todo el local. */
@@ -115,7 +115,8 @@
       ['Stock', [['stock', 'Stock', 'stock'], ['depositos', 'Depósitos', 'deposito'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'], ['inventario', 'Inventario', 'inventario']]],
       /* La disponibilidad (SQL 195): cuánto hay en cada caja y, al tocarla, sus movimientos ("Consulta de Valores" de BlueSoft). */
       ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
-      ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['reportes', 'Reportes', 'reportes']]],
+      ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod'],
+                                ['reportes', 'Reportes', 'reportes']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
     ]
   };
@@ -127,7 +128,7 @@
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
-  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, vendedores: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
+  var HECHAS = { venta: 1, tickets: 1, cambios: 1, fallida: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, listas: 1, promos: 1, sucursales: 1,
                  stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
@@ -143,7 +144,7 @@
       'Lo que compró cada uno, para el CRM.',
       'La condición de IVA guardada, para la factura A.'], ''],
     reportes: ['Reportes', [
-      'Ventas por sucursal, por producto y por medio de pago (las de por vendedor ya están, en «Ventas por vendedor»).',
+      'Ventas por sucursal y por medio de pago (las de por vendedor y por producto ya están, en «Ventas por vendedor» y «Ventas por productos»).',
       'Por día, por semana y por mes, comparado con el año pasado.',
       'La conversión por sucursal y por vendedor, día por día (la del período ya está en Tickets).',
       'Que alimente sola la planilla de Ventas, sin cargar nada a mano.'], 'Mientras tanto, los tickets del día y sus totales están en <a href="pos.html#tickets">POS → Tickets</a>.'],
@@ -200,6 +201,7 @@
     promo: '<path d="M19 5 5 19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>',
     clientes: '<path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/>',
     reportes: '<path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/>',
+    vprod: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 6h12M7 11h8M7 16h3"/>',
     vendedores: '<circle cx="8" cy="7" r="3.5"/><path d="M2 20v-1a6 6 0 0 1 9.5-4.9"/><path d="M15 20v-3M18.5 20v-6M22 20v-9"/>',
     sucursal: '<path d="M4 4h16l1 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/>',
     medios: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
@@ -310,7 +312,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_disponibilidad|pos_caja_valores|pos_caja_ajust/.test(m) ? '195 (la disponibilidad de las cajas)' :
+      return 'Todavía falta correr el SQL ' + (/pos_ventas_productos|pos_ventas_de_producto/.test(m) ? '196 (las ventas por productos)' :
+                                             /pos_disponibilidad|pos_caja_valores|pos_caja_ajust/.test(m) ? '195 (la disponibilidad de las cajas)' :
                                              /pos_deposito|pos_remito_testigo|p_deposito/.test(m) ? '193 (los depósitos)' : /pos_ventas_vendedor/.test(m) ? '192 (las ventas por vendedor)' : /pos_retiran|pos_caja_mov_controlar/.test(m) ? '191 (los retiros de fondos)' : /p_productos|p_resumen/.test(m) ? '172 (el stock de a tandas y por rubro)' :
                                              /pos_fallida|pos_club/.test(m) ? '171 (la venta fallida y el socio del Club)' :
                                              /pos_diferencia|pos_remito_fabrica|p_recibio|p_motivo/.test(m) ? '167 (las diferencias de los remitos)' :
@@ -476,7 +479,7 @@
       $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
       return;
     }
-    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, vendedores: verVendedores, gastos: verGastos, salidas: verSalidas,
+    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, fallida: verFallidas, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
@@ -1991,6 +1994,248 @@
           .concat([['Total'].concat(x.cols.map(function (k) { return celdaX(x.sumas[k]); }), res(t))]));
     };
     cargar();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     LAS VENTAS POR PRODUCTOS (SQL 196)
+     Las "Ventas por Productos" de BlueSoft, el "resumen de ventas" de los
+     locales (Mauricio, 29/10: "cuando hay producto testigo, vamos a resumen
+     de ventas, buscamos un producto y ahí me dice las ventas totales de ese
+     producto, qué día fue, de qué ticket fue, cuántas ventas, qué
+     colores"). La lista, de más a menos vendido, con el Top 10 y «Mostrar
+     talle y color»; al tocar un producto, sus ventas una por una y cuánto
+     se vendió de cada talle y color.
+     ════════════════════════════════════════════════════════════════════ */
+  function sin196(e) {
+    var m = mensajeDe(e);
+    return /SQL 196/.test(m) ? 'Las ventas por productos todavía no están en la base: falta correr el SQL 196.' : m;
+  }
+  /** El nombre del producto: el del catálogo o, si no está (o se escribió a mano), el del ticket. */
+  function nombreVendido(x) { var p = x.codigo && PROD[x.codigo]; return p ? p[1] : x.descripcion || ''; }
+  function rubroVendido(x) { var p = x.codigo && PROD[x.codigo]; return (p && p[2]) || ''; }
+  function colorVendido(x) { return x.color ? nombreColor(x.color, x.codigo) : ''; }
+
+  /* volver: desde «‹ Ventas por productos», con los filtros de antes; desde el menú, de cero. */
+  function verPorProducto(volver) {
+    var c = $('cuerpo'), prueba = enPrueba();
+    S.vpVer = null;
+    if (!volver) S.vpFiltro = null;
+    var F = S.vpFiltro || {};
+    /* En el mostrador arranca en su local; en Gestión, en todas (como Ventas por vendedor). */
+    var l = MODO === 'gestion' && puede('locales') ? null : localInicial();
+    var local = F.local !== undefined ? F.local : l ? l.id : '';
+    c.innerHTML = cabeza('Ventas por productos' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
+        'Cuánto se vendió de cada producto (las ventas cobradas, como Tickets). Tocá uno para ver sus ventas una por una.',
+        /* El «Mostrar Talle/Color» de BlueSoft: un renglón por talle y color. */
+        '<label class="pos-check vp-tc"><input type="checkbox" id="vpTc"' + (leer('pos_productos_tc') === '1' ? ' checked' : '') + '> Mostrar talle y color</label>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="vpBajar" disabled>Bajar para Excel</button>') +
+      '<div class="pos-filtros"><div id="vpPer"></div>' +
+        campo('', 'Sucursal', '<select id="vpLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(local) + '</select>') +
+        campo('vp-buscar', 'Producto', '<input type="search" id="vpBuscar" autocomplete="off" spellcheck="false" placeholder="Código, nombre o etiqueta" title="El código o el nombre; o escaneá la etiqueta" value="' + esc(F.buscar || '') + '">') +
+        campo('', 'Rubro', '<select id="vpRubro"><option value="">Todos</option>' + opciones(RUBROS.map(function (r) { return [r, r]; }), F.rubro || '') + '</select>') +
+        campo('', 'Vendedor', '<select id="vpVend"></select>') +
+        campo('', 'Ventas', '<select id="vpPrueba"><option value="">De verdad</option><option value="1"' + ((F.prueba !== undefined ? F.prueba : prueba) ? ' selected' : '') + '>De prueba</option></select>') +
+      '</div>' +
+      '<div id="vpLista"><p class="cargando">Cargando…</p></div>' +
+      '<div class="tkl-pie" id="vpPie"></div>';
+    function llenarVend() {
+      var loc = $('vpLocal').value, antes = $('vpVend').value || F.vendedor || '', ns = {};
+      (loc ? [loc] : Object.keys(S.ini.vendedores || {})).forEach(function (k) { vendedoresDe(k).forEach(function (n) { ns[n] = 1; }); });
+      var lista = Object.keys(ns).sort(function (a, b) { return a.localeCompare(b, 'es'); });
+      $('vpVend').innerHTML = '<option value="">Todos</option>' + opciones(lista.map(function (n) { return [n, n]; }), lista.indexOf(antes) >= 0 ? antes : '');
+    }
+    llenarVend();
+    var pedido = 0, ultimo = null, rango = null, tBus = null;
+    var per = periodoPos($('vpPer'), { inicial: 'mes', guardar: 'pos_productos_periodo', hastaHoy: true, alCambiar: cargar });
+    $('vpLocal').onchange = function () { llenarVend(); cargar(); };
+    $('vpVend').onchange = cargar;
+    $('vpPrueba').onchange = cargar;
+    $('vpRubro').onchange = function () { guardarFiltro(); if (ultimo) pintar(); };
+    $('vpTc').onchange = function () { guardar('pos_productos_tc', this.checked ? '1' : ''); if (ultimo) pintar(); };
+    /* Mientras escriben, busca solo; con la pistola (que termina en Enter), enseguida. */
+    $('vpBuscar').oninput = function () { clearTimeout(tBus); tBus = setTimeout(cargar, 400); };
+    $('vpBuscar').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(tBus); cargar(); } };
+    function deLaPrueba() { return $('vpPrueba').value === '1'; }
+    /* De la etiqueta escaneada ("RM10299 L BL") se busca la prenda: las ventas de todos sus talles y colores. */
+    function buscado() { var t = $('vpBuscar').value.trim(), s = leerEscaneo(t); return s ? s.codigo : t; }
+    function guardarFiltro() {
+      S.vpFiltro = { local: $('vpLocal').value, vendedor: $('vpVend').value, buscar: $('vpBuscar').value, rubro: $('vpRubro').value, prueba: deLaPrueba() };
+    }
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      clearTimeout(tBus);
+      guardarFiltro();
+      $('vpLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('vpBajar').disabled = true;
+      llamar('pos_ventas_productos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('vpLocal').value || null, p_vendedor: $('vpVend').value || null,
+                                       p_buscar: buscado() || null, p_prueba: deLaPrueba() }).then(function (d) {
+        if (n !== pedido || !$('vpLista')) return;
+        ultimo = d;
+        rango = r;
+        pintar();
+      }).catch(function (e) {
+        if (n !== pedido || !$('vpLista')) return;
+        ultimo = null;
+        $('vpLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin196(e)) + '</div>';
+        $('vpPie').innerHTML = '';
+      });
+    }
+    function p(x) { return plata(cent(x || 0)); }
+    function prom(t, n) { n = Number(n) || 0; return n ? plata(Math.round(cent(t) / n)) : '—'; }
+    function suma(xs, k) { return xs.reduce(function (s, x) { return s + Number(x[k] || 0); }, 0); }
+    /* El rubro sale del catálogo: se filtra acá, sin volver a pedir. */
+    function filtrar(xs) { var r = $('vpRubro').value; return r ? xs.filter(function (x) { return rubroVendido(x) === r; }) : xs; }
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    /* Abajo, como BlueSoft: TOTAL, CANTIDAD, PRECIO PROMEDIO y PRODUCTOS (y las ventas, menos con un rubro elegido). */
+    function pintarPie(t) {
+      $('vpPie').innerHTML = caja('Total', p(t.total), 'fuerte') + caja('Cantidad', num(t.cantidad)) + caja('Precio promedio', prom(t.total, t.cantidad)) +
+        caja('Productos', num(t.productos)) + (t.ventas != null ? caja('Ventas', num(t.ventas)) : '');
+    }
+    function pintar() {
+      var d = ultimo, tc = $('vpTc').checked, ps = filtrar(d.productos || []), vs = filtrar(d.variantes || []);
+      var t = $('vpRubro').value ? { total: suma(ps, 'total'), cantidad: suma(ps, 'cantidad'), productos: ps.length, ventas: null } : d.totales || {};
+      pintarPie(t);
+      var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas de <b>prueba</b>: no cuentan en ningún total de verdad.</div>' : '';
+      if (!ps.length) {
+        $('vpLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas de prueba' : 'No se vendió nada') + ' en ese período con esos filtros.</div>';
+        $('vpBajar').disabled = true;
+        return;
+      }
+      var filas = tc ? vs : ps;
+      $('vpLista').innerHTML = aviso + '<div class="vv-dos"><div class="pos-marco-tabla"><table class="pos-tabla vv-tabla vp-tabla"><thead><tr><th>Código</th><th>Nombre</th>' +
+            (tc ? '<th>Talle</th><th>Color</th>' : '<th>Rubro</th>') + '<th class="n">Cantidad</th><th class="n">Total</th><th class="n">Promedio</th>' + (tc ? '' : '<th class="n">Ventas</th>') +
+          '</tr></thead><tbody>' + filas.map(function (x, i) {
+            return '<tr data-vp="' + i + '" tabindex="0" title="Ver sus ventas una por una"><td>' + esc(x.codigo || '—') + '</td><td><b>' + esc(nombreVendido(x)) + '</b></td>' +
+              (tc ? '<td>' + esc(x.talle || '—') + '</td><td>' + esc(colorVendido(x) || '—') + '</td>' : '<td>' + esc(rubroVendido(x) || '—') + '</td>') +
+              '<td class="n"><b>' + num(x.cantidad) + '</b></td><td class="n">' + p(x.total) + '</td><td class="n">' + prom(x.total, x.cantidad) + '</td>' +
+              (tc ? '' : '<td class="n">' + num(x.ventas) + '</td>') + '</tr>';
+          }).join('') + '</tbody></table></div>' + top10(ps) + '</div>' +
+        (d.mas ? '<p class="pos-mas">Son muchos: se ven los más vendidos. Achicá el período, elegí la sucursal o buscá el producto.</p>' : '');
+      $('vpLista').querySelectorAll('tr[data-vp]').forEach(function (tr) {
+        var x = filas[Number(tr.getAttribute('data-vp'))];
+        tr.onclick = function () { S.vpVer = { clave: x.clave, codigo: x.codigo, descripcion: x.descripcion }; verProdVendido(); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+      $('vpBajar').disabled = false;
+    }
+    /* A la derecha, el "Top 10 (cantidad)" de BlueSoft, con barras como las de Ventas por vendedor. */
+    function top10(ps) {
+      var top = ps.slice(0, 10), max = top.reduce(function (m, x) { return Math.max(m, x.cantidad); }, 0);
+      return '<section class="vv-barras" aria-label="Los diez más vendidos"><h3>Top 10 (cantidad)</h3><ul>' + top.map(function (x) {
+        var ancho = max > 0 ? Math.max(x.cantidad / max * 100, 1) : 0;
+        return '<li title="' + esc(nombreVendido(x) + ': ' + x.cantidad + (x.cantidad === 1 ? ' prenda, ' : ' prendas, ') + p(x.total)) + '">' +
+          '<span class="vv-nom">' + esc(nombreVendido(x)) + '</span><span class="vv-monto">' + num(x.cantidad) + '</span>' +
+          '<span class="vv-pista"><i style="width:' + ancho.toFixed(2) + '%"></i></span><span class="vv-pc">' + p(x.total) + '</span></li>';
+      }).join('') + '</ul></section>';
+    }
+    /* El Excel de lo que se ve (con talle y color, si está prendido); la coma decimal, para el Excel en castellano. */
+    $('vpBajar').onclick = function () {
+      if (!ultimo) return;
+      var tc = $('vpTc').checked, xs = filtrar(tc ? ultimo.variantes || [] : ultimo.productos || []), lo = localDe($('vpLocal').value);
+      var nro = function (n) { return String(Math.round(Number(n || 0) * 100) / 100).replace('.', ','); };
+      bajarCsv('Ventas por productos ' + (lo ? nombreLocal(lo) : 'todas las sucursales') + ' ' + rango.desde + ' a ' + rango.hasta + '.csv',
+        ['Código', 'Nombre', 'Rubro'].concat(tc ? ['Talle', 'Color'] : [], ['Cantidad', 'Total', 'Promedio'], tc ? [] : ['Ventas']),
+        xs.map(function (x) {
+          return [x.codigo || '', nombreVendido(x), rubroVendido(x)].concat(tc ? [x.talle || '', colorVendido(x)] : [],
+            [x.cantidad, nro(x.total), x.cantidad ? nro(Number(x.total) / x.cantidad) : ''], tc ? [] : [x.ventas]);
+        }));
+    };
+    cargar();
+  }
+
+  /* Un producto: sus ventas una por una (la más nueva primero), cuánto se vendió de cada talle y color y en cada
+     sucursal. El período es el mismo de la lista; el vendedor y "de prueba", los que estaban elegidos. */
+  function verProdVendido() {
+    var c = $('cuerpo'), sel = S.vpVer, F = S.vpFiltro || {}, pedido = 0, ult = null;
+    c.innerHTML = cabeza(esc(nombreVendido(sel)) + (sel.codigo ? '<span class="vd-cod">' + esc(sel.codigo) + '</span>' : ''),
+        'Sus ventas una por una, de la más nueva a la más vieja' + (F.vendedor ? ', las de ' + esc(F.vendedor) : '') + (F.prueba ? ' (las de prueba)' : '') +
+          '. Tocá una para ver el ticket.',
+        '<button type="button" class="btn btn-sec btn-chico" id="vdVolver">‹ Ventas por productos</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="vdExcel" disabled>Bajar para Excel</button>') +
+      '<div class="pos-filtros"><div id="vdPer"></div>' +
+        campo('', 'Sucursal', '<select id="vdLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(F.local || '') + '</select>') +
+      '</div><div id="vdLista"><p class="cargando">Cargando…</p></div>';
+    $('vdVolver').onclick = function () { verPorProducto(true); };
+    var per = periodoPos($('vdPer'), { inicial: 'mes', guardar: 'pos_productos_periodo', hastaHoy: true, alCambiar: cargar });
+    $('vdLocal').onchange = function () { F.local = this.value; S.vpFiltro = F; cargar(); };
+    $('vdExcel').onclick = function () { if (ult) bajarProdVendido(sel, ult.d, ult.r); };
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('vdLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('vdExcel').disabled = true;
+      llamar('pos_ventas_de_producto', { p_clave: sel.clave, p_desde: r.desde, p_hasta: r.hasta, p_local: $('vdLocal').value || null,
+                                         p_vendedor: F.vendedor || null, p_prueba: !!F.prueba }).then(function (d) {
+        if (n !== pedido || !$('vdLista')) return;
+        ult = { d: d, r: r };
+        pintar(d);
+      }).catch(function (e) { if (n === pedido && $('vdLista')) $('vdLista').innerHTML = '<div class="pos-cartel mal">' + esc(sin196(e)) + '</div>'; });
+    }
+    function p(x) { return plata(cent(x || 0)); }
+    function kpi(lbl, v, cls) { return '<div class="pos-kpi' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    function pintar(d) {
+      var t = d.totales || {}, rs = d.renglones || [];
+      $('vdLista').innerHTML = '<div class="pos-totales">' + kpi('Vendidas', num(t.cantidad), 'fuerte') + kpi('Total', p(t.total)) + kpi('Ventas', num(t.ventas)) +
+          kpi('Precio promedio', t.cantidad ? plata(Math.round(cent(t.total) / t.cantidad)) : '—') + kpi('Última venta', t.ultima ? esc(fechaHora(t.ultima)) : '—') + '</div>' +
+        (!rs.length ? '<div class="pos-cartel">No se vendió en ese período' + ($('vdLocal').value ? ' en esa sucursal' : '') + '.</div>' :
+          '<div class="vd-dos">' + matriz(d.variantes || []) + porSucursal(d.sucursales || []) + '</div>' +
+          '<div class="pos-marco-tabla"><table class="pos-tabla vd-tabla"><thead><tr><th>Fecha</th><th>Sucursal</th><th class="n">Ticket</th><th>Vendedor</th><th>Cliente</th>' +
+            '<th>Talle</th><th>Color</th><th class="n">Cant.</th><th class="n">Importe</th></tr></thead><tbody>' +
+          rs.map(function (r, i) {
+            return '<tr data-vd="' + i + '" tabindex="0" title="Ver el ticket"><td>' + esc(fechaHora(r.fecha)) + '</td><td>' + esc(bonito(r.local)) + '</td>' +
+              '<td class="n"><b>' + esc(refCorta(r)) + '</b></td><td>' + esc(r.vendedor) + '</td><td>' + esc(r.cliente || '—') + '</td>' +
+              '<td>' + esc(r.talle || '—') + '</td><td>' + esc(r.color ? nombreColor(r.color, sel.codigo) : '—') + '</td>' +
+              '<td class="n">' + num(r.cantidad) + '</td><td class="n">' + p(r.total) + '</td></tr>';
+          }).join('') + '</tbody></table></div>' +
+          (d.mas ? '<p class="pos-mas">Se ven las últimas 2000. Achicá el período para ver el resto.</p>' : ''));
+      $('vdExcel').disabled = !rs.length;
+      $('vdLista').querySelectorAll('tr[data-vd]').forEach(function (tr) {
+        var r = rs[Number(tr.getAttribute('data-vd'))];
+        tr.onclick = function () { abrirTicket(r.venta_id, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    /* Un renglón por color y una columna por talle (en el orden del catálogo): lo que se vendió de cada uno. */
+    function matriz(vs) {
+      var orden = tallesDe(PROD[sel.codigo]), ts = {}, porColor = {}, m = {}, porTalle = {};
+      vs.forEach(function (x) {
+        var tl = x.talle || '', co = x.color || '';
+        ts[tl] = 1;
+        porColor[co] = (porColor[co] || 0) + x.cantidad;
+        porTalle[tl] = (porTalle[tl] || 0) + x.cantidad;
+        (m[co] = m[co] || {})[tl] = (m[co][tl] || 0) + x.cantidad;
+      });
+      var lugar = function (t) { var i = orden.indexOf(t); return i < 0 ? 999 : i; };
+      var cols = Object.keys(ts).sort(function (a, b) { return lugar(a) - lugar(b) || a.localeCompare(b, 'es'); });
+      var filas = Object.keys(porColor).sort(function (a, b) { return porColor[b] - porColor[a] || a.localeCompare(b, 'es'); });
+      var celda = function (n) { return n ? '<td class="n">' + num(n) + '</td>' : '<td class="n apagado">—</td>'; };
+      return '<section class="vd-bloque"><h3>Por talle y color</h3><div class="pos-marco-tabla"><table class="pos-tabla vv-tabla vd-matriz"><thead><tr><th>Color</th>' +
+          cols.map(function (t) { return '<th class="n">' + esc(t || 'Sin talle') + '</th>'; }).join('') + '<th class="n vv-sep">Total</th></tr></thead><tbody>' +
+          filas.map(function (co) {
+            return '<tr><td><b>' + esc(co ? nombreColor(co, sel.codigo) : 'Sin color') + '</b></td>' + cols.map(function (t) { return celda(m[co][t]); }).join('') +
+              '<td class="n vv-sep"><b>' + num(porColor[co]) + '</b></td></tr>';
+          }).join('') + '</tbody>' +
+          (filas.length > 1 ? '<tfoot><tr><td>Total</td>' + cols.map(function (t) { return '<td class="n">' + num(porTalle[t]) + '</td>'; }).join('') +
+            '<td class="n vv-sep">' + num(vs.reduce(function (s, x) { return s + x.cantidad; }, 0)) + '</td></tr></tfoot>' : '') +
+        '</table></div></section>';
+    }
+    function porSucursal(ss) {
+      if (ss.length < 2) return '';
+      return '<section class="vd-bloque"><h3>Por sucursal</h3><div class="pos-marco-tabla"><table class="pos-tabla vv-tabla"><thead><tr><th>Sucursal</th>' +
+          '<th class="n">Cantidad</th><th class="n">Total</th></tr></thead><tbody>' + ss.map(function (s) {
+            return '<tr><td><b>' + esc(bonito(s.local)) + '</b></td><td class="n">' + num(s.cantidad) + '</td><td class="n">' + p(s.total) + '</td></tr>';
+          }).join('') + '</tbody></table></div></section>';
+    }
+    cargar();
+  }
+
+  function bajarProdVendido(sel, d, r) {
+    var nro = function (n) { return String(Math.round(Number(n || 0) * 100) / 100).replace('.', ','); };
+    bajarCsv('Ventas de ' + nombreVendido(sel) + (sel.codigo ? ' ' + sel.codigo : '') + ' ' + r.desde + ' a ' + r.hasta + '.csv',
+      ['Fecha', 'Sucursal', 'Ticket', 'Vendedor', 'Cliente', 'Talle', 'Color', 'Cantidad', 'Precio', 'Importe'],
+      (d.renglones || []).map(function (x) {
+        return [fechaLarga(x.fecha), bonito(x.local), refCorta(x), x.vendedor, x.cliente || '', x.talle || '', x.color ? nombreColor(x.color, sel.codigo) : '',
+                x.cantidad, nro(x.precio), nro(x.total)];
+      }));
   }
 
   /* ════════════════════════════════════════════════════════════════════
