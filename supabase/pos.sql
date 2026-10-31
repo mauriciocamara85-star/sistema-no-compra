@@ -6258,3 +6258,299 @@ begin
     )
   );
 end $function$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 206 (31/10/2026) · EL REGISTRO DE TIEMPOS
+--
+--  Mauricio (31/10): el "Registro de tiempos" de BlueSoft, el de la huella:
+--  "cada vendedor o encargado, cuando llega al local… pone su huella y le
+--  detecta la hora". Sólo Entrada y Salida ("sólo aparece entrada y salida,
+--  usamos eso"), y hay horarios cortados ("de 9 a 1 y de 5 a 9"): un día
+--  puede tener dos turnos.
+--  Gestión → Personal → Registro de tiempos. Por ahora los registros entran
+--  a mano («Nuevo registro») o del Excel de BlueSoft («Subir de BlueSoft»);
+--  la huella viene después (origen 'huella', con su terminal).
+--  · pos_tiempos: cada entrada o salida de una persona, con su sucursal, de
+--    dónde vino (huella, a mano o BlueSoft), quién la cargó y, si se anuló,
+--    por qué. Lo anulado queda (tachado) y no cuenta.
+--  · pos_tiempos_bluesoft: quién es quién en el Excel de BlueSoft (su
+--    «Código Persona» en cada sucursal), para no elegirlo cada vez.
+--  Lo que sube de BlueSoft no se repite (el ID de BlueSoft de esa sucursal)
+--  y cada subida se puede deshacer entera (su lote).
+--  Todo es de la oficina (pos_permiso('gestion')).
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table pos_tiempos (
+  id              bigint generated always as identity primary key,
+  persona_id      uuid not null references orden_personas(id),
+  local_id        uuid references orden_locales(id),
+  momento         timestamptz not null,
+  dia             date not null,                       -- el día en Argentina
+  tipo            text not null check (tipo in ('entrada', 'salida')),
+  origen          text not null check (origen in ('huella', 'manual', 'bluesoft')),
+  terminal        text,
+  observaciones   text,
+  cargado_por     uuid,
+  cargado_en      timestamptz not null default clock_timestamp(),
+  estado          text not null default 'ok' check (estado in ('ok', 'anulado')),
+  anulado_en      timestamptz,
+  anulado_por     uuid,
+  anulado_motivo  text,
+  externo         text unique,                         -- 'bluesoft:<sucursal>:<ID de BlueSoft>': no se sube dos veces
+  lote            uuid,                                -- la subida de BlueSoft: se deshace entera
+  clave           text unique                          -- la del «Nuevo registro»: tocar dos veces Guardar no lo repite
+);
+create index pos_tiempos_dia on pos_tiempos (dia, local_id);
+create index pos_tiempos_persona on pos_tiempos (persona_id, momento);
+create index pos_tiempos_lote on pos_tiempos (lote) where lote is not null;
+alter table pos_tiempos enable row level security;
+revoke all on pos_tiempos from anon, authenticated;
+
+/* En el Excel de BlueSoft cada persona tiene su «Código Persona» (00001109) y su nombre corto (Lau). Se elige una vez
+   quién es en el sistema y queda para la próxima subida de esa sucursal. persona_id null = no se sube. */
+create table pos_tiempos_bluesoft (
+  local_id     uuid not null references orden_locales(id),
+  codigo       text not null,
+  nombre       text,
+  persona_id   uuid references orden_personas(id),
+  cambiado_en  timestamptz not null default now(),
+  primary key (local_id, codigo)
+);
+alter table pos_tiempos_bluesoft enable row level security;
+revoke all on pos_tiempos_bluesoft from anon, authenticated;
+
+/* Los registros del período (todas las sucursales o una), los más nuevos primero, como listas cortas para que viaje
+   poco: [id, persona_id, local_id, momento, dia, tipo, origen, terminal, observaciones, estado]. Los turnos y las
+   horas los arma la pantalla. Con las personas: las activas y las que tienen registros en el período (con sus
+   francos, ISO 1..7). */
+create function pos_tiempos(p_desde date, p_hasta date, p_local uuid default null, p_persona uuid default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso('gestion');
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  return (
+    with t as (
+      select x.* from pos_tiempos x
+       where x.dia between p_desde and p_hasta
+         and (p_local is null or x.local_id = p_local)
+         and (p_persona is null or x.persona_id = p_persona)
+    )
+    select jsonb_build_object(
+      'hoy', pos_hoy(),
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_array(z.id, z.persona_id, z.local_id, z.momento, z.dia, z.tipo, z.origen, z.terminal,
+                                           z.observaciones, z.estado) order by z.momento desc, z.id desc)
+          from (select * from t order by momento desc, id desc limit 20000) z), '[]'::jsonb),
+      'mas', (select count(*) > 20000 from t),
+      'personas', coalesce((
+        select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial), 'apellido', p.apellido,
+                                            'local_id', p.local_id, 'rol', p.rol, 'activo', p.activo and p.aprobado,
+                                            'francos', to_jsonb(p.dias_libres)) order by p.nombre, p.apellido)
+          from orden_personas p
+         where (p.activo and p.aprobado) or exists (select 1 from t where t.persona_id = p.id)), '[]'::jsonb)
+    ));
+end $$;
+
+/* Un registro entero, para su ventana: quién lo cargó, de qué subida vino y, si se anuló, quién y por qué. */
+create function pos_tiempo(p_id bigint) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare v jsonb;
+begin
+  perform pos_permiso('gestion');
+  select jsonb_build_object(
+           'id', x.id, 'persona_id', x.persona_id, 'persona', orden_nombre_lista(p.nombre, p.inicial), 'apellido', p.apellido,
+           'local_id', x.local_id, 'local', l.nombre, 'momento', x.momento, 'dia', x.dia, 'tipo', x.tipo, 'origen', x.origen,
+           'terminal', x.terminal, 'observaciones', x.observaciones, 'externo', x.externo, 'lote', x.lote,
+           'cargado_en', x.cargado_en,
+           'cargado_por', (select orden_nombre_lista(c.nombre, c.inicial) from orden_personas c where c.id = x.cargado_por),
+           'estado', x.estado, 'anulado_en', x.anulado_en, 'anulado_motivo', x.anulado_motivo,
+           'anulado_por', (select orden_nombre_lista(c.nombre, c.inicial) from orden_personas c where c.id = x.anulado_por))
+    into v
+    from pos_tiempos x
+    join orden_personas p on p.id = x.persona_id
+    left join orden_locales l on l.id = x.local_id
+   where x.id = p_id;
+  if v is null then raise exception 'Ese registro ya no está.'; end if;
+  return v;
+end $$;
+
+/* «Nuevo registro»: una entrada o una salida, o el día entero (corrido: entrada y salida; cortado: dos de cada una),
+   de una persona en un día. Va todo o nada. Con la hora de Argentina; nada que todavía no pasó; las horas en orden;
+   sin repetir una que ya está (la misma persona, el mismo tipo, en el mismo minuto). Se dice por qué se carga a mano.
+   p: {clave, persona_id, local_id, dia, observaciones, registros: [{tipo, hora: 'HH:MM'}, …]} (de 1 a 4). */
+create function pos_tiempo_guardar(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_clave   text := nullif(btrim(coalesce(p->>'clave', '')), '');
+  v_persona uuid;
+  v_local   uuid;
+  v_dia     date;
+  v_nombre  text;
+  v_obs     text := left(btrim(coalesce(p->>'observaciones', '')), 200);
+  v_r       record;
+  v_tipo    text;
+  v_hora    text;
+  v_mom     timestamptz;
+  v_ant     timestamptz;
+  v_id      bigint;
+  v_ids     bigint[] := '{}';
+begin
+  perform pos_permiso('gestion');
+  /* Tocaron dos veces Guardar: lo que ya se guardó con esa clave. */
+  if v_clave is not null and exists (select 1 from pos_tiempos where clave = v_clave || ':1') then
+    return jsonb_build_object('ids', (select jsonb_agg(id order by id) from pos_tiempos where clave like v_clave || ':_'), 'repetido', true);
+  end if;
+  begin
+    v_persona := nullif(p->>'persona_id', '')::uuid;
+    v_local := nullif(p->>'local_id', '')::uuid;
+    v_dia := nullif(p->>'dia', '')::date;
+  exception when others then
+    raise exception 'Faltan datos: la sucursal, la persona o la fecha no se entienden.';
+  end;
+  select orden_nombre_lista(x.nombre, x.inicial) into v_nombre from orden_personas x where x.id = v_persona;
+  if v_nombre is null then raise exception 'Elegí la persona.'; end if;
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local) then raise exception 'Elegí la sucursal.'; end if;
+  if v_dia is null then raise exception 'Elegí la fecha.'; end if;
+  if v_dia > pos_hoy() then raise exception 'No se puede cargar un día que todavía no llegó.'; end if;
+  if v_dia < pos_hoy() - 400 then raise exception 'Esa fecha es de hace más de un año.'; end if;
+  if length(v_obs) < 3 then raise exception 'Escribí por qué se carga a mano (por ejemplo: se olvidó de poner la huella).'; end if;
+  if jsonb_typeof(p->'registros') is distinct from 'array' or jsonb_array_length(p->'registros') not between 1 and 4 then
+    raise exception 'No hay nada para guardar.';
+  end if;
+  for v_r in select e.x, e.n from jsonb_array_elements(p->'registros') with ordinality e(x, n) order by e.n loop
+    v_tipo := v_r.x->>'tipo';
+    v_hora := btrim(coalesce(v_r.x->>'hora', ''));
+    if v_tipo is null or v_tipo not in ('entrada', 'salida') then raise exception 'Elegí si es una entrada o una salida.'; end if;
+    if v_hora !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then raise exception 'La hora «%» no se entiende: escribila como 09:00.', v_hora; end if;
+    v_mom := (v_dia + v_hora::time) at time zone 'America/Argentina/Buenos_Aires';
+    if v_mom > now() + interval '5 minutes' then raise exception 'Las % todavía no pasaron: se carga cuando pase.', v_hora; end if;
+    if v_ant is not null and v_mom <= v_ant then raise exception 'Las horas tienen que ir en orden: las % van después de la anterior.', v_hora; end if;
+    v_ant := v_mom;
+    if exists (select 1 from pos_tiempos x where x.persona_id = v_persona and x.tipo = v_tipo and x.estado = 'ok'
+                and x.momento > v_mom - interval '1 minute' and x.momento < v_mom + interval '1 minute') then
+      raise exception 'Ya está cargada la % de las % de %.', v_tipo, v_hora, rtrim(v_nombre, '.');   -- "de Nano M." sin otro punto
+    end if;
+    insert into pos_tiempos (persona_id, local_id, momento, dia, tipo, origen, observaciones, cargado_por, clave)
+    values (v_persona, v_local, v_mom, v_dia, v_tipo, 'manual', v_obs, orden_yo_id(),
+            case when v_clave is not null then v_clave || ':' || v_r.n end)
+    returning id into v_id;
+    v_ids := v_ids || v_id;
+  end loop;
+  return jsonb_build_object('ids', to_jsonb(v_ids), 'persona', v_nombre);
+end $$;
+
+/* Anular un registro (cargado mal, repetido…): queda tachado, con quién y por qué, y deja de contar. */
+create function pos_tiempo_anular(p_id bigint, p_motivo text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare v pos_tiempos;
+begin
+  perform pos_permiso('gestion');
+  if length(btrim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
+  select * into v from pos_tiempos where id = p_id for update;
+  if v.id is null then raise exception 'Ese registro ya no está.'; end if;
+  if v.estado = 'anulado' then raise exception 'Ese registro ya estaba anulado.'; end if;
+  update pos_tiempos set estado = 'anulado', anulado_en = clock_timestamp(), anulado_por = orden_yo_id(), anulado_motivo = left(btrim(p_motivo), 300)
+   where id = p_id;
+  return jsonb_build_object('id', p_id);
+end $$;
+
+/* Quién es quién en el Excel de BlueSoft de esa sucursal, según la última subida: {"00001109": {nombre, persona_id}}. */
+create function pos_tiempos_bluesoft(p_local uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso('gestion');
+  return coalesce((select jsonb_object_agg(b.codigo, jsonb_build_object('nombre', b.nombre, 'persona_id', b.persona_id))
+                     from pos_tiempos_bluesoft b where b.local_id = p_local), '{}'::jsonb);
+end $$;
+
+/* «Subir de BlueSoft»: el Excel del Registro de tiempos de BlueSoft de una sucursal (lo lee la pantalla).
+   p_mapa: [{codigo, nombre, persona_id|null}] (queda guardado para la próxima); p_filas: [{id, codigo, fecha
+   'AAAA-MM-DD', hora 'HH:MM[:SS]', tipo entrada|salida, terminal, observaciones}]. Se sube lo de las personas
+   elegidas; lo que ya estaba (el mismo ID de BlueSoft en esa sucursal) no se repite. Todo en un lote, que se
+   deshace con pos_tiempos_deshacer. */
+create function pos_tiempos_subir(p_local uuid, p_mapa jsonb, p_filas jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_lote  uuid := gen_random_uuid();
+  v_total int;
+  v_con   int;
+  v_subidos int;
+  v_mal   text;
+begin
+  perform pos_permiso('gestion');
+  if p_local is null or not exists (select 1 from orden_locales where id = p_local) then raise exception 'Elegí la sucursal.'; end if;
+  if jsonb_typeof(p_filas) is distinct from 'array' or jsonb_array_length(p_filas) = 0 then raise exception 'El archivo no trae registros.'; end if;
+  v_total := jsonb_array_length(p_filas);
+  if v_total > 20000 then raise exception 'Son demasiados registros juntos (máximo 20.000): exportalo de BlueSoft con menos fechas.'; end if;
+  /* Lo que no se entiende frena todo, antes de guardar nada. */
+  select coalesce(nullif(x->>'id', ''), '(sin ID)') into v_mal
+    from jsonb_array_elements(p_filas) x
+   where coalesce(x->>'fecha', '') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+      or coalesce(x->>'hora', '') !~ '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$'
+      or coalesce(x->>'tipo', '') not in ('entrada', 'salida')
+      or btrim(coalesce(x->>'codigo', '')) = ''
+   limit 1;
+  if v_mal is not null then raise exception 'El registro % de BlueSoft no se entiende (la fecha, la hora, el tipo o la persona).', v_mal; end if;
+  select coalesce(x->>'id', '') into v_mal
+    from jsonb_array_elements(p_filas) x
+   where (x->>'fecha')::date > pos_hoy() or (x->>'fecha')::date < date '2015-01-01'
+   limit 1;
+  if found then raise exception 'El registro % de BlueSoft tiene una fecha que no puede ser.', v_mal; end if;
+
+  insert into pos_tiempos_bluesoft (local_id, codigo, nombre, persona_id, cambiado_en)
+  select distinct on (left(btrim(m->>'codigo'), 40)) p_local, left(btrim(m->>'codigo'), 40), left(btrim(coalesce(m->>'nombre', '')), 80),
+         (select o.id from orden_personas o where o.id::text = m->>'persona_id'), now()
+    from jsonb_array_elements(coalesce(p_mapa, '[]'::jsonb)) m
+   where btrim(coalesce(m->>'codigo', '')) <> ''
+  on conflict (local_id, codigo) do update set nombre = excluded.nombre, persona_id = excluded.persona_id, cambiado_en = excluded.cambiado_en;
+
+  with f as (
+    select left(btrim(coalesce(x->>'id', '')), 40) bid, left(btrim(x->>'codigo'), 40) codigo, (x->>'fecha')::date dia, (x->>'hora')::time hora,
+           x->>'tipo' tipo, nullif(left(btrim(coalesce(x->>'terminal', '')), 60), '') terminal,
+           nullif(left(btrim(coalesce(x->>'observaciones', '')), 200), '') obs
+      from jsonb_array_elements(p_filas) x
+  ), v as (
+    select f.*, b.persona_id,
+           'bluesoft:' || p_local || ':' || case when f.bid <> '' then f.bid else f.codigo || '|' || f.dia || '|' || f.hora || '|' || f.tipo end externo
+      from f join pos_tiempos_bluesoft b on b.local_id = p_local and b.codigo = f.codigo
+     where b.persona_id is not null
+  ), ins as (
+    insert into pos_tiempos (persona_id, local_id, momento, dia, tipo, origen, terminal, observaciones, cargado_por, externo, lote)
+    select v.persona_id, p_local, (v.dia + v.hora) at time zone 'America/Argentina/Buenos_Aires', v.dia, v.tipo, 'bluesoft', v.terminal, v.obs,
+           orden_yo_id(), v.externo, v_lote
+      from v
+    on conflict (externo) do nothing
+    returning 1
+  )
+  select (select count(*) from v), (select count(*) from ins) into v_con, v_subidos;
+  return jsonb_build_object('lote', case when v_subidos > 0 then v_lote end, 'total', v_total, 'subidos', v_subidos,
+                            'ya_estaban', v_con - v_subidos, 'sin_persona', v_total - v_con);
+end $$;
+
+/* Deshacer una subida de BlueSoft entera (se eligió mal la sucursal o una persona): borra lo que subió ese lote. */
+create function pos_tiempos_deshacer(p_lote uuid) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare n int;
+begin
+  perform pos_permiso('gestion');
+  if p_lote is null then raise exception 'No hay nada para deshacer.'; end if;
+  delete from pos_tiempos where lote = p_lote and origen = 'bluesoft';
+  get diagnostics n = row_count;
+  return jsonb_build_object('borrados', n);
+end $$;
+
+revoke all on function pos_tiempos(date, date, uuid, uuid) from public, anon;
+revoke all on function pos_tiempo(bigint) from public, anon;
+revoke all on function pos_tiempo_guardar(jsonb) from public, anon;
+revoke all on function pos_tiempo_anular(bigint, text) from public, anon;
+revoke all on function pos_tiempos_bluesoft(uuid) from public, anon;
+revoke all on function pos_tiempos_subir(uuid, jsonb, jsonb) from public, anon;
+revoke all on function pos_tiempos_deshacer(uuid) from public, anon;
+grant execute on function pos_tiempos(date, date, uuid, uuid) to authenticated;
+grant execute on function pos_tiempo(bigint) to authenticated;
+grant execute on function pos_tiempo_guardar(jsonb) to authenticated;
+grant execute on function pos_tiempo_anular(bigint, text) to authenticated;
+grant execute on function pos_tiempos_bluesoft(uuid) to authenticated;
+grant execute on function pos_tiempos_subir(uuid, jsonb, jsonb) to authenticated;
+grant execute on function pos_tiempos_deshacer(uuid) to authenticated;

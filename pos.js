@@ -121,6 +121,8 @@
       ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod'],
                                 ['reportes', 'Reportes', 'reportes']]],
+      /* El registro de tiempos (SQL 206): las entradas y salidas de cada uno, como el "Registro de tiempos" de BlueSoft (la huella viene después). */
+      ['Personal', [['tiempos', 'Registro de tiempos', 'reloj']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
     ]
   };
@@ -133,7 +135,7 @@
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
-                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1 };
+                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
@@ -204,7 +206,8 @@
     sucursal: '<path d="M4 4h16l1 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/>',
     medios: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
     arca: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
-    x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    reloj: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9.5 2h5M12 2v3"/>',
+    x:'<path d="M18 6 6 18M6 6l12 12"/>',
     ok: '<path d="M20 6 9 17l-5-5"/>',
     volver: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
     prueba: '<path d="M9 3h6M10 3v6l-5.4 9.4A1.7 1.7 0 0 0 6 21h12a1.7 1.7 0 0 0 1.4-2.6L14 9V3"/><path d="M7.2 15h9.6"/>',
@@ -344,7 +347,8 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
+      return 'Todavía falta correr el SQL ' + (/pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
+                                             /pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
                                              /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
                                              /pos_articul/.test(m) ? '202 (los productos)' :
                                              /pos_lista_(subir|aumentar|rubros|cambios|deshacer)/.test(m) ? '201 (subir y aumentar las listas de precios)' :
@@ -561,7 +565,7 @@
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, productos: function () { verProductos(); }, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
-                devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo, depositos: verDepositos }[v];
+                devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo, depositos: verDepositos, tiempos: verTiempos }[v];
     if (ver) ver(); else verPronto(v);
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
@@ -8605,6 +8609,677 @@
   }
 
   /* ════════════════════════════════════════════════════════════════════
+     GESTIÓN → PERSONAL → REGISTRO DE TIEMPOS (SQL 206)
+     Mauricio (31/10): el "Registro de tiempos" de BlueSoft, el de la huella
+     ("cada vendedor o encargado, cuando llega al local… pone su huella y le
+     detecta la hora"). Sólo Entrada y Salida ("sólo aparece entrada y
+     salida, usamos eso") y los horarios cortados ("de 9 a 1 y de 5 a 9"):
+     un día puede tener dos turnos, y las horas se suman.
+     Por ahora los registros entran a mano («Nuevo registro», uno o el día
+     entero, corrido o cortado) o del Excel de BlueSoft («Subir de
+     BlueSoft»). La huella viene después: hace falta el programa de HID en
+     la compu del local, y BlueSoft usa el lector hasta marzo.
+     Tres vistas: Registros (las columnas de BlueSoft), Por día (los turnos
+     de cada uno) y Por persona (las horas del período, con sus francos).
+     ════════════════════════════════════════════════════════════════════ */
+  var TI_VISTAS = [['registros', 'Registros'], ['dia', 'Por día'], ['persona', 'Por persona']];
+  var TI_ORIGEN = { huella: 'Huella', manual: 'A mano', bluesoft: 'BlueSoft' };
+  var TI_FRANCOS = ['', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];   // los francos van en ISO: 1 = lunes
+  var TI_DOBLE = 15 * 60000;    // la misma marca dos veces en menos de 15 minutos: puso el dedo dos veces
+  var TI_VER = 1500;            // los renglones que se dibujan en Registros (el Excel lleva todos)
+  /* El día entero de «Nuevo registro», como arranca cada horario (se cambian a mano). */
+  var TI_HORARIOS = { corrido: ['09:00', '17:00'], cortado: ['09:00', '13:00', '17:00', '21:00'] };
+  var _tiReloj = null;
+  function tiDos(n) { return (n < 10 ? '0' : '') + n; }
+  /** La hora de Argentina de un momento: "09:05" o, con los segundos, "09:05:12" (como BlueSoft). */
+  function tiHora(ms, seg) {
+    try {
+      _tiReloj = _tiReloj || new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+      var x = _tiReloj.format(new Date(ms));
+      return seg ? x : x.slice(0, 5);
+    } catch (e) { return new Date(ms - 3 * 3600000).toISOString().slice(11, seg ? 19 : 16); }
+  }
+  /** 485 minutos → "8 h 05 min"; 480 → "8 h". */
+  function tiHoras(min) {
+    min = Math.round(Number(min) || 0);
+    var m = min % 60;
+    return Math.floor(min / 60) + ' h' + (m ? ' ' + tiDos(m) + ' min' : '');
+  }
+  /* Para el Excel: "8:05" y, para hacer cuentas, "8,08". */
+  function tiHm(min) { min = Math.round(min || 0); return Math.floor(min / 60) + ':' + tiDos(min % 60); }
+  function tiDecimal(min) { return String(Math.round((min || 0) / 60 * 100) / 100).replace('.', ','); }
+  function tiFecha(s) { var d = new Date(Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10))); return d; }
+  /** "2026-10-31" → "sáb 31/10". */
+  function tiDiaCorto(s) { return VV_DIAS[tiFecha(s).getUTCDay()] + ' ' + Number(s.slice(8, 10)) + '/' + Number(s.slice(5, 7)); }
+  /** El día de la semana en ISO (1 = lunes… 7 = domingo), como los francos. */
+  function tiIso(s) { var w = tiFecha(s).getUTCDay(); return w === 0 ? 7 : w; }
+  function tiNombre(p) { return p ? p.nombre + (p.activo === false ? ' (inactivo)' : '') : '—'; }
+
+  /** Un renglón de la base ([id, persona, sucursal, momento, día, tipo, origen, terminal, observaciones, estado]) → un objeto. */
+  function tiFila(a) {
+    return { id: a[0], pid: a[1], lid: a[2], t: Date.parse(a[3]), dia: a[4], tipo: a[5], origen: a[6], terminal: a[7] || '', obs: a[8] || '', an: a[9] === 'anulado' };
+  }
+
+  /** Los registros de una persona en un día, en orden → sus turnos, {e, s} (el que falta, null). La misma marca dos veces
+      seguidas en menos de 15 minutos es el dedo puesto dos veces: vale la primera entrada y la última salida. */
+  function tiTurnos(rs) {
+    var ts = [], ab = null;
+    rs.forEach(function (r) {
+      if (r.tipo === 'entrada') {
+        if (ab) {
+          if (r.t - ab.t < TI_DOBLE) return;
+          ts.push({ e: ab, s: null });
+        }
+        ab = r;
+        return;
+      }
+      if (ab) { ts.push({ e: ab, s: r }); ab = null; return; }
+      var u = ts[ts.length - 1];
+      if (u && u.s && r.t - u.s.t < TI_DOBLE) { u.s = r; return; }
+      ts.push({ e: null, s: r });
+    });
+    if (ab) ts.push({ e: ab, s: null });
+    return ts;
+  }
+  /** Un día de una persona: sus turnos, los minutos (sólo de los turnos completos), lo que le falta y si está adentro
+      (hoy, con la última entrada y sin la salida todavía: no es un error). */
+  function tiDia(rs, hoy) {
+    var ts = tiTurnos(rs), min = 0, faltan = [], esHoy = !!rs.length && rs[0].dia === hoy;
+    ts.forEach(function (x, i) {
+      if (x.e && x.s) min += Math.round((x.s.t - x.e.t) / 60000);
+      else if (!x.e) faltan.push('entrada');
+      else if (!(esHoy && i === ts.length - 1)) faltan.push('salida');
+    });
+    var u = ts[ts.length - 1];
+    return { turnos: ts, min: min, faltan: faltan, adentro: !!(esHoy && u && u.e && !u.s),
+             cortado: ts.filter(function (x) { return x.e && x.s; }).length > 1 };
+  }
+  /** Los registros válidos (sin los anulados) por persona y día: el más nuevo primero y, en el mismo día, por nombre. */
+  function tiPorDia(regs, hoy, nombre) {
+    var g = {}, lista = [];
+    regs.filter(function (r) { return !r.an; }).sort(function (a, b) { return a.t - b.t || a.id - b.id; }).forEach(function (r) {
+      var k = r.pid + '|' + r.dia;
+      if (!g[k]) lista.push(g[k] = { pid: r.pid, dia: r.dia, regs: [], locales: [] });
+      g[k].regs.push(r);
+      if (r.lid && g[k].locales.indexOf(r.lid) < 0) g[k].locales.push(r.lid);
+    });
+    return lista.map(function (x) { return Object.assign(x, tiDia(x.regs, hoy)); }).sort(function (a, b) {
+      return a.dia < b.dia ? 1 : a.dia > b.dia ? -1 : String(nombre(a.pid)).localeCompare(nombre(b.pid), 'es');
+    });
+  }
+  /** Lo de cada persona en el período: días con registros, horas, días cortados, días con faltantes y los que vino en su franco. */
+  function tiPorPersona(dias, personas, nombre) {
+    var m = {};
+    dias.forEach(function (d) {
+      var x = m[d.pid] = m[d.pid] || { pid: d.pid, dias: 0, conHoras: 0, min: 0, cortados: 0, incompletos: 0, enFranco: 0, locales: [] };
+      x.dias++;
+      x.min += d.min;
+      if (d.min) x.conHoras++;
+      if (d.cortado) x.cortados++;
+      if (d.faltan.length) x.incompletos++;
+      var p = personas[d.pid];
+      if (p && (p.francos || []).indexOf(tiIso(d.dia)) >= 0) x.enFranco++;
+      d.locales.forEach(function (l) { if (x.locales.indexOf(l) < 0) x.locales.push(l); });
+    });
+    return Object.keys(m).map(function (k) { return m[k]; }).sort(function (a, b) { return String(nombre(a.pid)).localeCompare(nombre(b.pid), 'es'); });
+  }
+  /** "09:00 a 13:00 · 17:00 a 21:00"; lo que falta, con un «¿?» (o «ahora», si está adentro). */
+  function tiTurnosTexto(d, html) {
+    var falta = html ? '<span class="ti-falta" title="Falta esta marca">¿?</span>' : '¿?';
+    return d.turnos.map(function (x, i) {
+      var fin = x.s ? tiHora(x.s.t) : d.adentro && i === d.turnos.length - 1 ? 'ahora' : falta;
+      return (x.e ? tiHora(x.e.t) : falta) + ' a ' + fin;
+    }).join(' · ');
+  }
+  function tiEstado(d) {
+    if (d.faltan.length) return '<span class="pill pill-warn">' + (d.faltan.length > 1 ? 'Faltan marcas' : 'Falta la ' + d.faltan[0]) + '</span>';
+    if (d.adentro) return '<span class="pill pill-ok">Adentro</span>';
+    return d.cortado ? '<span class="pill pill-neutra">Cortado</span>' : '';
+  }
+
+  /** Las personas para las ventanas: las que trajo la lista o, si todavía no la abrieron, las de la base. */
+  function tiPersonasLista() {
+    if (S.tiPersonas) return Promise.resolve(S.tiPersonas);
+    return llamar('pos_tiempos', { p_desde: S.ini.hoy, p_hasta: S.ini.hoy }).then(function (d) { return (S.tiPersonas = d.personas || []); });
+  }
+  /** Las opciones de «Persona»: primero las de la sucursal y después las demás (las inactivas, sólo si ya estaba elegida). */
+  function tiOpcionesPersonas(ps, local, actual, primera) {
+    var vale = function (p) { return p.activo !== false || p.id === actual; };
+    var mias = ps.filter(function (p) { return vale(p) && local && p.local_id === local; });
+    var otras = ps.filter(function (p) { return vale(p) && !(local && p.local_id === local); });
+    var opt = function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === actual ? ' selected' : '') + '>' + esc(tiNombre(p)) + '</option>'; };
+    var l = local && localDe(local);
+    return primera + (mias.length ? '<optgroup label="' + esc('De ' + (l ? nombreLocal(l) : 'la sucursal')) + '">' + mias.map(opt).join('') + '</optgroup>' : '') +
+      (otras.length ? '<optgroup label="' + (mias.length ? 'Las demás' : 'Todas') + '">' + otras.map(opt).join('') + '</optgroup>' : '');
+  }
+
+  function verTiempos() {
+    var c = $('cuerpo');
+    var vista = leer('pos_tiempos_vista') || 'registros';
+    if (!TI_VISTAS.some(function (x) { return x[0] === vista; })) vista = 'registros';
+    var loc0 = leer('pos_tiempos_local') || '';
+    if (loc0 && !localMio(loc0)) loc0 = '';
+    c.innerHTML = cabeza('Registro de tiempos',
+        'Cuándo entra y sale cada uno. Un día de horario cortado (de 9 a 13 y de 17 a 21) son dos turnos: las horas se suman. ' +
+        'Por ahora se cargan a mano o se suben de BlueSoft; la huella viene después.',
+        '<button type="button" class="btn btn-sec btn-chico" id="tiSubir">Subir de BlueSoft…</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="tiBajar" disabled>Bajar para Excel</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="tiNuevo">Nuevo registro</button>') +
+      '<div class="pos-filtros"><div id="tiPer"></div>' +
+        campo('', 'Sucursal', '<select id="tiLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(loc0) + '</select>') +
+        campo('', 'Persona', '<select id="tiPersona"><option value="">Todas</option></select>') +
+        campo('', 'Tipo de registro', '<select id="tiTipo"><option value="">Todos</option><option value="entrada">Entrada</option><option value="salida">Salida</option></select>', ' id="tiTipoL"') +
+      '</div>' +
+      '<nav class="pestanas st-vistas ti-vistas" aria-label="Cómo verlos">' + TI_VISTAS.map(function (x) {
+        return '<button type="button" class="pestana" data-vista="' + x[0] + '"' + (x[0] === vista ? ' aria-current="page"' : '') + '>' + x[1] + '</button>';
+      }).join('') + '</nav>' +
+      '<div id="tiLista"><p class="cargando">Cargando…</p></div>' +
+      '<div class="tkl-pie" id="tiPie"></div>';
+    var pedido = 0, D = null, rango = null;   // D: lo que trajo la base, ya armado
+    var per = Interfaz.periodo($('tiPer'), { inicial: 'mes', guardar: 'pos_tiempos_periodo', hastaHoy: true, alCambiar: cargar });
+    $('tiLocal').onchange = function () { guardar('pos_tiempos_local', this.value); cargar(); };
+    $('tiPersona').onchange = pintar;
+    $('tiTipo').onchange = pintar;
+    $('tiNuevo').onclick = function () { abrirTiempoNuevo({ local: $('tiLocal').value, persona: $('tiPersona').value }, cargar); };
+    $('tiSubir').onclick = function () { abrirSubirBluesoft($('tiLocal').value, cargar); };
+    c.querySelectorAll('.ti-vistas .pestana').forEach(function (b) {
+      b.onclick = function () { ponerVista(b.getAttribute('data-vista')); };
+    });
+    function ponerVista(v) {
+      vista = v;
+      guardar('pos_tiempos_vista', v);
+      c.querySelectorAll('.ti-vistas .pestana').forEach(function (x) {
+        if (x.getAttribute('data-vista') === v) x.setAttribute('aria-current', 'page'); else x.removeAttribute('aria-current');
+      });
+      if (D) pintar();
+    }
+    function nombre(pid) { return tiNombre(D && D.personas[pid]); }
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('tiLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('tiBajar').disabled = true;
+      llamar('pos_tiempos', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('tiLocal').value || null }).then(function (d) {
+        if (n !== pedido || !$('tiLista')) return;
+        S.tiPersonas = d.personas || [];
+        var ps = {};
+        S.tiPersonas.forEach(function (p) { ps[p.id] = p; });
+        D = { hoy: d.hoy || S.ini.hoy, regs: (d.filas || []).map(tiFila), personas: ps, mas: d.mas };
+        rango = r;
+        llenarPersonas();
+        pintar();
+      }).catch(function (e) {
+        if (n !== pedido || !$('tiLista')) return;
+        D = null;
+        $('tiLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+        $('tiPie').innerHTML = '';
+      });
+    }
+    /* En «Persona»: las de la sucursal elegida (con «Todas», las que tienen sucursal) y las que tienen registros en el período. */
+    function llenarPersonas() {
+      var sel = $('tiPersona'), antes = sel.value, loc = $('tiLocal').value, con = {};
+      D.regs.forEach(function (r) { con[r.pid] = 1; });
+      var lista = S.tiPersonas.filter(function (p) { return con[p.id] || (p.activo && (loc ? p.local_id === loc : !!p.local_id)); });
+      if (antes && !lista.some(function (p) { return p.id === antes; }) && D.personas[antes]) lista.push(D.personas[antes]);
+      sel.innerHTML = '<option value="">Todas</option>' + opciones(lista.map(function (p) { return [p.id, tiNombre(p)]; }), antes);
+    }
+    /** Lo que se ve: la persona elegida y, en Registros, el tipo. */
+    function regsVistos(conTipo) {
+      var p = $('tiPersona').value, t = conTipo ? $('tiTipo').value : '';
+      return D.regs.filter(function (r) { return (!p || r.pid === p) && (!t || r.tipo === t); });
+    }
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    function pintar() {
+      if (!D) return;
+      $('tiTipoL').hidden = vista !== 'registros';
+      var dias = tiPorDia(regsVistos(false), D.hoy, nombre), todas = !$('tiLocal').value;
+      var min = dias.reduce(function (s, d) { return s + d.min; }, 0), validos = regsVistos(false).filter(function (r) { return !r.an; });
+      var pids = {}; validos.forEach(function (r) { pids[r.pid] = 1; });
+      $('tiPie').innerHTML = caja('Registros', num(validos.length)) + caja('Personas', num(Object.keys(pids).length)) +
+        caja('Horas trabajadas', tiHoras(min), 'fuerte') + caja('Días con faltantes', num(dias.filter(function (d) { return d.faltan.length; }).length));
+      var html = vista === 'registros' ? tablaRegistros(regsVistos(true), todas) : vista === 'dia' ? tablaDias(dias, todas) : tablaPersonas(tiPorPersona(dias, D.personas, nombre));
+      $('tiLista').innerHTML = (D.mas ? '<div class="pos-cartel">Son muchos registros: se ven los últimos 20.000. Achicá el período o elegí una sucursal.</div>' : '') + html;
+      $('tiBajar').disabled = !D.regs.length;
+      engancharFilas(dias);
+    }
+    function vacio() {
+      return '<div class="pos-cartel">No hay registros en ese período' + ($('tiPersona').value || $('tiTipo').value ? ' con esos filtros' : '') +
+        '. Se cargan con «Nuevo registro» o se suben con «Subir de BlueSoft».</div>';
+    }
+    function nombreLoc(id) { var l = localDe(id); return l ? nombreLocal(l) : '—'; }
+    /* Las columnas de "Registro de tiempos" de BlueSoft: ID, Fecha, Hora, Persona, Origen, Tipo de registro, Terminal y Observaciones. */
+    function tablaRegistros(rs, todas) {
+      if (!rs.length) return vacio();
+      return '<div class="pos-marco-tabla"><table class="pos-tabla ti-tabla"><thead><tr><th>ID</th><th>Fecha</th><th>Hora</th><th>Persona</th>' + (todas ? '<th>Sucursal</th>' : '') +
+          '<th>Origen</th><th>Tipo de registro</th><th>Terminal</th><th>Observaciones</th></tr></thead><tbody>' +
+        rs.slice(0, TI_VER).map(function (r, i) {
+          return '<tr data-reg="' + r.id + '" tabindex="0"' + (r.an ? ' class="anulada"' : '') + '><td>' + r.id + '</td><td>' + esc(tiDiaCorto(r.dia)) + '</td>' +
+            '<td class="tachar">' + esc(tiHora(r.t, true)) + '</td><td><b>' + esc(nombre(r.pid)) + '</b></td>' + (todas ? '<td>' + esc(nombreLoc(r.lid)) + '</td>' : '') +
+            '<td>' + esc(TI_ORIGEN[r.origen] || r.origen) + '</td>' +
+            '<td>' + (r.an ? '<span class="pill pill-bad">Anulado</span>' : r.tipo === 'entrada' ? '<span class="pill pill-ok">Entrada</span>' : '<span class="pill pill-neutra">Salida</span>') + '</td>' +
+            '<td>' + (r.terminal ? esc(r.terminal) : '<span class="apagado">—</span>') + '</td>' +
+            '<td class="vf-det">' + (r.obs ? esc(r.obs) : '<span class="apagado">—</span>') + '</td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        (rs.length > TI_VER ? '<p class="pos-mas">Se ven los últimos ' + miles(TI_VER) + ' de ' + miles(rs.length) + '. El Excel los trae todos.</p>' : '');
+    }
+    function tablaDias(dias, todas) {
+      if (!dias.length) return vacio();
+      return '<div class="pos-marco-tabla"><table class="pos-tabla ti-tabla"><thead><tr><th>Fecha</th><th>Persona</th>' + (todas ? '<th>Sucursal</th>' : '') +
+          '<th>Turnos</th><th class="n">Horas</th><th>Estado</th></tr></thead><tbody>' +
+        dias.map(function (d, i) {
+          return '<tr data-dia="' + i + '" tabindex="0"><td>' + esc(tiDiaCorto(d.dia)) + '</td><td><b>' + esc(nombre(d.pid)) + '</b></td>' +
+            (todas ? '<td>' + esc(d.locales.map(nombreLoc).join(' / ') || '—') + '</td>' : '') +
+            '<td class="ti-turnos">' + tiTurnosTexto(d, true) + '</td><td class="n">' + (d.min ? tiHoras(d.min) : '<span class="apagado">—</span>') + '</td>' +
+            '<td>' + tiEstado(d) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    function tablaPersonas(ps) {
+      if (!ps.length) return vacio();
+      var tot = ps.reduce(function (t, x) { t.dias += x.dias; t.min += x.min; t.cortados += x.cortados; t.incompletos += x.incompletos; t.enFranco += x.enFranco; return t; },
+                          { dias: 0, min: 0, cortados: 0, incompletos: 0, enFranco: 0 });
+      var francos = function (x) { var p = D.personas[x.pid]; return (p && p.francos || []).map(function (n) { return TI_FRANCOS[n] || ''; }).filter(Boolean).join(', '); };
+      return '<div class="pos-marco-tabla"><table class="pos-tabla ti-tabla"><thead><tr><th>Persona</th><th>Sucursal</th><th class="n">Días</th><th class="n">Horas</th>' +
+          '<th class="n">Promedio por día</th><th class="n">Días cortados</th><th class="n">Con faltantes</th><th>Francos</th><th class="n">Vino en su franco</th></tr></thead><tbody>' +
+        ps.map(function (x) {
+          var p = D.personas[x.pid], fr = francos(x);
+          return '<tr data-persona="' + esc(x.pid) + '" tabindex="0" title="Ver sus días"><td><b>' + esc(nombre(x.pid)) + '</b></td>' +
+            '<td>' + esc((x.locales.length ? x.locales : p && p.local_id ? [p.local_id] : []).map(nombreLoc).join(' / ') || '—') + '</td>' +
+            '<td class="n">' + num(x.dias) + '</td><td class="n"><b>' + tiHoras(x.min) + '</b></td>' +
+            '<td class="n">' + (x.conHoras ? tiHoras(Math.round(x.min / x.conHoras)) : '—') + '</td><td class="n">' + (x.cortados || '—') + '</td>' +
+            '<td class="n">' + (x.incompletos ? '<span class="pill pill-warn">' + x.incompletos + '</span>' : '—') + '</td>' +
+            '<td>' + (fr ? esc(fr) : '<span class="apagado">Sin cargar</span>') + '</td><td class="n">' + (x.enFranco || '—') + '</td></tr>';
+        }).join('') + '</tbody>' +
+        (ps.length > 1 ? '<tfoot><tr><td>Total</td><td></td><td class="n">' + num(tot.dias) + '</td><td class="n">' + tiHoras(tot.min) + '</td><td></td>' +
+          '<td class="n">' + (tot.cortados || '—') + '</td><td class="n">' + (tot.incompletos || '—') + '</td><td></td><td class="n">' + (tot.enFranco || '—') + '</td></tr></tfoot>' : '') +
+        '</table></div><p class="pos-ayuda">«Días»: los días con algún registro. «Promedio por día»: las horas ÷ los días con turnos completos. Los francos son los de Config → Usuarios.</p>';
+    }
+    function engancharFilas(dias) {
+      var al = function (tr, f) { tr.onclick = f; tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); f(); } }; };
+      $('tiLista').querySelectorAll('tr[data-reg]').forEach(function (tr) { al(tr, function () { abrirTiempo(Number(tr.getAttribute('data-reg')), cargar); }); });
+      $('tiLista').querySelectorAll('tr[data-dia]').forEach(function (tr) {
+        al(tr, function () { abrirTiDia(dias[Number(tr.getAttribute('data-dia'))], D, cargar); });
+      });
+      /* Por persona → sus días. */
+      $('tiLista').querySelectorAll('tr[data-persona]').forEach(function (tr) {
+        al(tr, function () { $('tiPersona').value = tr.getAttribute('data-persona'); ponerVista('dia'); });
+      });
+    }
+    /* El Excel de la vista que se ve, con todos los renglones. */
+    $('tiBajar').onclick = function () {
+      if (!D) return;
+      var lo = localDe($('tiLocal').value), sufijo = (lo ? nombreLocal(lo) : 'todas las sucursales') + ' ' + rango.desde + ' a ' + rango.hasta + '.csv';
+      var dias = tiPorDia(regsVistos(false), D.hoy, nombre), fecha = function (s) { return fechaCorta(s); };
+      if (vista === 'registros') {
+        bajarCsv('Registro de tiempos ' + sufijo, ['ID', 'Fecha', 'Hora', 'Persona', 'Sucursal', 'Origen', 'Tipo de registro', 'Terminal', 'Observaciones', 'Estado'],
+          regsVistos(true).map(function (r) {
+            return [r.id, fecha(r.dia), tiHora(r.t, true), nombre(r.pid), nombreLoc(r.lid), TI_ORIGEN[r.origen] || r.origen, r.tipo === 'entrada' ? 'Entrada' : 'Salida',
+                    r.terminal, r.obs, r.an ? 'Anulado' : ''];
+          }));
+        return;
+      }
+      if (vista === 'dia') {
+        var max = dias.reduce(function (m, d) { return Math.max(m, d.turnos.length); }, 1), cab = ['Fecha', 'Día', 'Persona', 'Sucursal'];
+        for (var i = 1; i <= max; i++) cab.push('Entrada ' + i, 'Salida ' + i);
+        bajarCsv('Registro de tiempos por día ' + sufijo, cab.concat(['Horas', 'Horas (para cuentas)', 'Falta']), dias.map(function (d) {
+          var f = [fecha(d.dia), VV_DIAS[tiFecha(d.dia).getUTCDay()], nombre(d.pid), d.locales.map(nombreLoc).join(' / ')];
+          for (var j = 0; j < max; j++) { var x = d.turnos[j]; f.push(x && x.e ? tiHora(x.e.t) : '', x && x.s ? tiHora(x.s.t) : ''); }
+          return f.concat([tiHm(d.min), tiDecimal(d.min), d.faltan.length ? d.faltan.map(function (y) { return 'la ' + y; }).join(' y ') : '']);
+        }));
+        return;
+      }
+      bajarCsv('Registro de tiempos por persona ' + sufijo,
+        ['Persona', 'Sucursal', 'Días', 'Horas', 'Horas (para cuentas)', 'Promedio por día', 'Días cortados', 'Días con faltantes', 'Francos', 'Vino en su franco'],
+        tiPorPersona(dias, D.personas, nombre).map(function (x) {
+          var p = D.personas[x.pid];
+          return [nombre(x.pid), (x.locales.length ? x.locales : p && p.local_id ? [p.local_id] : []).map(nombreLoc).join(' / '), x.dias, tiHm(x.min), tiDecimal(x.min),
+                  x.conHoras ? tiHm(Math.round(x.min / x.conHoras)) : '', x.cortados, x.incompletos,
+                  (p && p.francos || []).map(function (n) { return TI_FRANCOS[n] || ''; }).filter(Boolean).join(', '), x.enFranco];
+        }));
+    };
+    cargar();
+  }
+
+  /* Un día de una persona (Por día): sus marcas, una por una (tocar una abre su ventana, para anularla), y cargar la que falta. */
+  function abrirTiDia(d, D, alCambiar) {
+    var p = D.personas[d.pid], todos = D.regs.filter(function (r) { return r.pid === d.pid && r.dia === d.dia; })
+      .sort(function (a, b) { return a.t - b.t || a.id - b.id; });
+    var caja = ventana('<h3 id="posVentTit">' + esc(tiNombre(p)) + ' · ' + esc(tiDiaCorto(d.dia)) + '</h3>' +
+      '<p class="pos-bajada">' + tiTurnosTexto(d, true) + (d.min ? ' — <b>' + tiHoras(d.min) + '</b>' : '') + ' ' + tiEstado(d) + '</p>' +
+      '<div class="pos-marco-tabla"><table class="pos-tabla ti-tabla"><thead><tr><th>Hora</th><th>Tipo</th><th>Origen</th><th>Sucursal</th><th>Observaciones</th></tr></thead><tbody>' +
+      todos.map(function (r) {
+        var l = localDe(r.lid);
+        return '<tr data-reg="' + r.id + '" tabindex="0"' + (r.an ? ' class="anulada"' : '') + '><td class="tachar"><b>' + esc(tiHora(r.t, true)) + '</b></td>' +
+          '<td>' + (r.an ? '<span class="pill pill-bad">Anulado</span>' : r.tipo === 'entrada' ? '<span class="pill pill-ok">Entrada</span>' : '<span class="pill pill-neutra">Salida</span>') + '</td>' +
+          '<td>' + esc(TI_ORIGEN[r.origen] || r.origen) + '</td><td>' + esc(l ? nombreLocal(l) : '—') + '</td><td class="vf-det">' + (r.obs ? esc(r.obs) : '<span class="apagado">—</span>') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<p class="pos-ayuda">Tocá una marca para verla o anularla.</p>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="tdNuevo">' + (d.faltan.length ? 'Cargar la ' + d.faltan[0] : 'Cargar una marca a mano') + '</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>', true);
+    caja.querySelectorAll('tr[data-reg]').forEach(function (tr) {
+      var f = function () { abrirTiempo(Number(tr.getAttribute('data-reg')), alCambiar); };
+      tr.onclick = f;
+      tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); f(); } };
+    });
+    caja.querySelector('#tdNuevo').onclick = function () {
+      abrirTiempoNuevo({ local: d.locales[0] || (p && p.local_id) || '', persona: d.pid, dia: d.dia, tipo: d.faltan[0] || '' }, alCambiar);
+    };
+  }
+
+  /* Un registro: todos sus datos y «Anular el registro» (queda tachado y deja de contar). */
+  function abrirTiempo(id, alCambiar) {
+    var caja = ventana('<h3 id="posVentTit">Registro ' + id + '</h3><p class="cargando">Cargando…</p>');
+    var dentro = caja.querySelector('.pos-caja-in');
+    llamar('pos_tiempo', { p_id: id }).then(function (r) {
+      if (!caja.isConnected) return;
+      var an = r.estado === 'anulado', t = Date.parse(r.momento), bs = r.origen === 'bluesoft' && r.externo ? String(r.externo).split(':').pop() : '';
+      dentro.innerHTML = '<h3 id="posVentTit">' + (r.tipo === 'entrada' ? 'Entrada' : 'Salida') + ' · ' + esc(r.persona) + ' ' +
+          (an ? '<span class="pill pill-bad">Anulado</span>' : '') + '</h3>' +
+        '<div class="pos-ticket-datos cj-det-datos">' +
+          '<div><span>Fecha</span>' + esc(tiDiaCorto(r.dia)) + ' ' + esc(fechaCorta(r.dia).slice(6)) + '</div>' +
+          '<div><span>Hora</span>' + esc(tiHora(t, true)) + '</div>' +
+          '<div><span>Sucursal</span>' + esc(r.local ? bonito(r.local) : '—') + '</div>' +
+          '<div><span>Origen</span>' + esc(TI_ORIGEN[r.origen] || r.origen) + (bs && !/\|/.test(bs) ? ' (ID ' + esc(bs) + ')' : '') + '</div>' +
+          (r.terminal ? '<div><span>Terminal</span>' + esc(r.terminal) + '</div>' : '') +
+          '<div><span>' + (r.origen === 'bluesoft' ? 'Lo subió' : r.origen === 'manual' ? 'Lo cargó' : 'Anotado') + '</span>' +
+            esc((r.cargado_por || '—') + ' · ' + fechaHora(r.cargado_en)) + '</div>' +
+        '</div>' +
+        (r.observaciones ? '<p class="cj-obs"><b>Observaciones:</b> ' + esc(r.observaciones) + '</p>' : '') +
+        (an ? '<div class="pos-cartel mal" style="margin-top:12px">Anulado el ' + esc(fechaHora(r.anulado_en)) + (r.anulado_por ? ' por ' + esc(r.anulado_por) : '') +
+              ': ' + esc(r.anulado_motivo || '') + '</div>' : '') +
+        '<div id="tiAnular"></div>' +
+        '<div class="pos-pie">' + (an ? '' : '<button type="button" class="btn btn-sec btn-chico izq" id="tiAnularBtn">Anular el registro</button>') +
+          '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
+      var ab = dentro.querySelector('#tiAnularBtn');
+      if (ab) ab.onclick = function () {
+        ab.remove();
+        pedirMotivo(dentro.querySelector('#tiAnular'), 'El registro queda en la lista, tachado, y deja de contar en las horas.', 'Anular el registro', function (motivo) {
+          return llamar('pos_tiempo_anular', { p_id: id, p_motivo: motivo }).then(function () {
+            avisar('ok', 'El registro ' + id + ' quedó anulado.');
+            if (alCambiar) alCambiar();
+            abrirTiempo(id, alCambiar);
+          });
+        });
+      };
+    }).catch(function (e) {
+      if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Registro ' + id + '</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+    });
+  }
+
+  /* «Nuevo registro»: una entrada o una salida, o el día entero (corrido o cortado), de una persona. Se dice por qué. */
+  function abrirTiempoNuevo(pre, alGuardar) {
+    pre = pre || {};
+    var clave = nuevaClave(), hoy = S.ini.hoy, que = 'uno', tipo = pre.tipo || '', horario = 'corrido';
+    var HS = { corrido: TI_HORARIOS.corrido.slice(), cortado: TI_HORARIOS.cortado.slice() }, ps = [];
+    var loc = localMio(pre.local) ? pre.local : '';
+    var caja = ventana('<h3 id="posVentTit">Nuevo registro</h3>' +
+      '<p class="pos-bajada">Para cuando alguien se olvidó de poner la huella o hay que corregir un día. Queda anotado quién lo cargó y por qué.</p>' +
+      '<div class="pos-campos">' +
+        campo('ancho', 'Sucursal', '<select id="tnLocal" class="desplegable">' + (loc ? '' : '<option value="">Elegí…</option>') + opcionesLocales(loc) + '</select>') +
+        campo('ancho', 'Persona', '<select id="tnPersona"><option value="">Cargando…</option></select>') +
+        campo('', 'Fecha', '<input type="date" id="tnDia" max="' + esc(hoy) + '" value="' + esc(pre.dia || hoy) + '">') +
+      '</div>' +
+      '<p class="pos-lbl ti-lbl">¿Qué cargás?</p>' +
+      '<div class="chips" id="tnQue" role="group" aria-label="Qué cargás">' +
+        '<button type="button" class="chip" data-que="uno">Una entrada o una salida</button><button type="button" class="chip" data-que="dia">El día entero</button></div>' +
+      '<div id="tnUno" class="ti-bloque">' +
+        '<div class="chips" id="tnTipo" role="group" aria-label="Entrada o salida">' +
+          '<button type="button" class="chip" data-tipo="entrada">Entrada</button><button type="button" class="chip" data-tipo="salida">Salida</button></div>' +
+        '<div class="pos-campos ti-horas">' + campo('', 'Hora', '<input type="time" id="tnHora">') + '</div></div>' +
+      '<div id="tnTodo" class="ti-bloque" hidden>' +
+        '<div class="chips" id="tnHorario" role="group" aria-label="El horario">' +
+          '<button type="button" class="chip" data-horario="corrido">Corrido</button><button type="button" class="chip" data-horario="cortado">Cortado (dos turnos)</button></div>' +
+        '<div class="pos-campos ti-horas" id="tnHoras"></div></div>' +
+      '<div class="pos-campos ti-obs">' + campo('ancho', 'Observaciones', '<input type="text" id="tnObs" maxlength="200" autocomplete="off" placeholder="Por qué se carga a mano: se olvidó la huella, cambió el turno…">') + '</div>' +
+      '<div class="pos-error" id="tnError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="tnGuardar">Guardar</button></div>');
+    var q = function (s) { return caja.querySelector(s); };
+    function elegir(grupo, attr, valor) {
+      caja.querySelectorAll(grupo + ' [' + attr + ']').forEach(function (b) { var si = b.getAttribute(attr) === valor; b.classList.toggle('sel', si); b.setAttribute('aria-pressed', String(si)); });
+    }
+    function pintarPersonas() {
+      var antes = q('#tnPersona').value || pre.persona || '';
+      q('#tnPersona').innerHTML = tiOpcionesPersonas(ps, q('#tnLocal').value, antes, '<option value="">Elegí…</option>');
+    }
+    /* Las horas del día entero: entrada, salida (y otra entrada y otra salida, si es cortado). Lo que escriben queda al cambiar. */
+    function pintarHoras() {
+      q('#tnHoras').innerHTML = HS[horario].map(function (h, i) {
+        return campo('', (i % 2 ? 'Salida' : 'Entrada') + (horario === 'cortado' ? ' ' + (i < 2 ? '1' : '2') : ''), '<input type="time" data-h="' + i + '" value="' + esc(h) + '">');
+      }).join('');
+      caja.querySelectorAll('#tnHoras [data-h]').forEach(function (inp) {
+        inp.oninput = function () { HS[horario][Number(inp.getAttribute('data-h'))] = inp.value; errorEn(caja, 'tnError', ''); };
+      });
+    }
+    function ponerQue(v) {
+      que = v;
+      elegir('#tnQue', 'data-que', v);
+      q('#tnUno').hidden = v !== 'uno';
+      q('#tnTodo').hidden = v !== 'dia';
+      errorEn(caja, 'tnError', '');
+    }
+    q('#tnQue').onclick = function (e) { var b = e.target.closest('[data-que]'); if (b) ponerQue(b.getAttribute('data-que')); };
+    q('#tnTipo').onclick = function (e) { var b = e.target.closest('[data-tipo]'); if (!b) return; tipo = b.getAttribute('data-tipo'); elegir('#tnTipo', 'data-tipo', tipo); errorEn(caja, 'tnError', ''); };
+    q('#tnHorario').onclick = function (e) { var b = e.target.closest('[data-horario]'); if (!b) return; horario = b.getAttribute('data-horario'); elegir('#tnHorario', 'data-horario', horario); pintarHoras(); };
+    q('#tnLocal').onchange = function () { pintarPersonas(); errorEn(caja, 'tnError', ''); };
+    ponerQue('uno');
+    if (tipo) elegir('#tnTipo', 'data-tipo', tipo);
+    elegir('#tnHorario', 'data-horario', horario);
+    pintarHoras();
+    tiPersonasLista().then(function (lista) { ps = lista; if (caja.isConnected) pintarPersonas(); })
+      .catch(function (e) { if (caja.isConnected) { q('#tnPersona').innerHTML = '<option value="">—</option>'; errorEn(caja, 'tnError', mensajeDe(e)); } });
+    setTimeout(function () { var x = q(loc ? (pre.persona ? (tipo ? '#tnHora' : '#tnTipo .chip') : '#tnPersona') : '#tnLocal'); if (x) x.focus(); }, 0);
+    function guardarlo() {
+      var bt = q('#tnGuardar'), dia = q('#tnDia').value, obs = q('#tnObs').value.trim(), regs;
+      if (que === 'uno') regs = tipo && q('#tnHora').value ? [{ tipo: tipo, hora: q('#tnHora').value.slice(0, 5) }] : null;
+      else regs = HS[horario].map(function (h, i) { return { tipo: i % 2 ? 'salida' : 'entrada', hora: String(h || '').slice(0, 5) }; });
+      var desorden = regs && regs.some(function (r, i) { return i && r.hora <= regs[i - 1].hora; });
+      var mal = !q('#tnLocal').value ? 'Elegí la sucursal.' : !q('#tnPersona').value ? 'Elegí la persona.' : !dia ? 'Elegí la fecha.' : dia > hoy ? 'No se puede cargar un día que todavía no llegó.' :
+        que === 'uno' && !tipo ? 'Elegí si es una entrada o una salida.' : que === 'uno' && !q('#tnHora').value ? 'Escribí la hora.' :
+        regs && regs.some(function (r) { return !/^\d\d:\d\d$/.test(r.hora); }) ? 'Completá todas las horas.' :
+        desorden ? 'Las horas tienen que ir en orden: cada una después de la anterior.' :
+        obs.length < 3 ? 'Escribí por qué se carga a mano (por ejemplo: se olvidó de poner la huella).' : '';
+      if (!errorEn(caja, 'tnError', mal) || bt.disabled) return;
+      bt.disabled = true;
+      llamar('pos_tiempo_guardar', { p: { clave: clave, persona_id: q('#tnPersona').value, local_id: q('#tnLocal').value, dia: dia, observaciones: obs, registros: regs } }).then(function (r) {
+        var quien = (r && r.persona) || '';
+        if (que === 'uno') avisar('ok', ('Anotada la ' + tipo + ' de las ' + regs[0].hora + (quien ? ' de ' + quien : '') + '.').replace(/\.\.$/, '.'));   // "de Nano M." no lleva otro punto
+        else {
+          var min = 0;
+          for (var i = 0; i + 1 < regs.length; i += 2) { var a = regs[i].hora.split(':'), b = regs[i + 1].hora.split(':'); min += (b[0] * 60 + +b[1]) - (a[0] * 60 + +a[1]); }
+          avisar('ok', 'Anotado el día' + (quien ? ' de ' + quien : '') + ': ' + tiHoras(min) + (horario === 'cortado' ? ', en dos turnos.' : '.'));
+        }
+        cerrarVentana();
+        if (alGuardar) alGuardar();
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'tnError', mensajeDe(e)); });
+    }
+    q('#tnGuardar').onclick = guardarlo;
+    caja.addEventListener('keydown', function (e) { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); guardarlo(); } });
+  }
+
+  /* ── «Subir de BlueSoft»: el Excel de su Registro de tiempos ──
+     BlueSoft exporta ID, Fecha, Hora, Código Persona, Persona, Origen, Tipo de Registro, Terminal y Observaciones.
+     La fecha y la hora pueden venir como texto (31/8/2026, 08:54:01) o como número de Excel (46265, 0,3708…). */
+  function tiFechaExcel(v) {
+    v = String(v == null ? '' : v).trim();
+    var m = /^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/.exec(v), d, mes, a;
+    if (m) {
+      d = +m[1]; mes = +m[2]; a = +m[3];
+      if (a < 100) a += 2000;
+      if (mes > 12 && d <= 12) { var x = d; d = mes; mes = x; }   // 8/31/2026, como lo escribe un Excel en inglés
+    } else if ((m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(v))) { a = +m[1]; mes = +m[2]; d = +m[3]; }
+    else if (/^\d+(\.\d+)?$/.test(v) && +v > 20000 && +v < 80000) return new Date(Date.UTC(1899, 11, 30) + Math.floor(+v) * 864e5).toISOString().slice(0, 10);
+    else return '';
+    if (!(mes >= 1 && mes <= 12 && d >= 1 && d <= 31 && a >= 2000 && a <= 2100)) return '';
+    var t = new Date(Date.UTC(a, mes - 1, d));
+    return t.getUTCDate() === d ? t.toISOString().slice(0, 10) : '';
+  }
+  /** "08:54:01", "8:54", "8:54 p. m." o el número de Excel (0,3708… es la hora; 46265,37… es fecha y hora) → "08:54:01". */
+  function tiHoraExcel(v, deFecha) {
+    v = String(v == null ? '' : v).trim();
+    var m = /(\d{1,2}):(\d{2})(?::(\d{2}))?\s*([ap])?\.?\s*(m\.?)?/i.exec(v);
+    if (m) {
+      var h = +m[1];
+      if (m[4] && m[5]) { var pm = /p/i.test(m[4]); if (h === 12) h = pm ? 12 : 0; else if (pm) h += 12; }
+      if (h > 23 || +m[2] > 59 || +(m[3] || 0) > 59) return '';
+      return tiDos(h) + ':' + m[2] + ':' + (m[3] || '00');
+    }
+    if (/^\d*\.?\d+$/.test(v)) {
+      var n = +v;
+      if (!deFecha && n >= 1) return '';
+      if (deFecha && n === Math.floor(n)) return '';   // la fecha sola, sin la hora
+      var s = Math.round((n - Math.floor(n)) * 86400);
+      if (s >= 86400) s = 86399;
+      return tiDos(Math.floor(s / 3600)) + ':' + tiDos(Math.floor(s % 3600 / 60)) + ':' + tiDos(s % 60);
+    }
+    return '';
+  }
+  /** Las filas del Excel → los registros que se suben (sólo Entrada y Salida), las personas de BlueSoft y lo que no se entendió. */
+  function tiLeerBluesoft(filas) {
+    var iCab = -1, cab = [], i;
+    for (i = 0; i < Math.min(filas.length, 30); i++) {
+      cab = (filas[i] || []).map(function (x) { return normal(x); });
+      if (cab.indexOf('persona') >= 0 && cab.some(function (x) { return /^tipo( de registro)?$/.test(x || ''); })) { iCab = i; break; }
+    }
+    if (iCab < 0) return { error: 'No encontré los títulos del Registro de tiempos de BlueSoft (Fecha, Hora, Persona, Tipo de Registro…). ¿Es ese Excel?' };
+    var busca = function (re) { for (var j = 0; j < cab.length; j++) if (re.test(cab[j] || '')) return j; return -1; };
+    var ic = { id: busca(/^id$/), fecha: busca(/^fecha$/), hora: busca(/^hora$/), codigo: busca(/^cod(igo|\.)?\s*(de\s*)?persona$/), persona: busca(/^persona$/),
+               tipo: busca(/^tipo( de registro)?$/), terminal: busca(/^terminal$/), obs: busca(/^observaciones?$/) };
+    if (ic.fecha < 0) return { error: 'No encontré la columna Fecha.' };
+    var R = { filas: [], personas: [], desde: '', hasta: '', entradas: 0, salidas: 0, otros: 0, errores: [] }, ps = {};
+    filas.slice(iCab + 1).forEach(function (f, j) {
+      if (!f || !f.some(function (x) { return String(x == null ? '' : x).trim(); })) return;
+      var n = iCab + 2 + j, celda = function (k) { return ic[k] >= 0 ? String(f[ic[k]] == null ? '' : f[ic[k]]).trim() : ''; };
+      var tipo = normal(celda('tipo')), nom = celda('persona'), cod = celda('codigo') || (nom ? 'nombre:' + normal(nom) : '');
+      if (!cod) { R.errores.push('Fila ' + n + ': no dice de quién es.'); return; }
+      if (tipo !== 'entrada' && tipo !== 'salida') { if (tipo) R.otros++; else R.errores.push('Fila ' + n + ': no dice si es entrada o salida.'); return; }
+      var dia = tiFechaExcel(celda('fecha')), hora = tiHoraExcel(celda('hora')) || tiHoraExcel(celda('fecha'), true);
+      if (!dia) { R.errores.push('Fila ' + n + ': no entiendo la fecha «' + celda('fecha') + '».'); return; }
+      if (!hora) { R.errores.push('Fila ' + n + ': no entiendo la hora «' + celda('hora') + '».'); return; }
+      R.filas.push({ id: celda('id'), codigo: cod.slice(0, 40), fecha: dia, hora: hora, tipo: tipo, terminal: celda('terminal'), observaciones: celda('obs') });
+      if (tipo === 'entrada') R.entradas++; else R.salidas++;
+      if (!R.desde || dia < R.desde) R.desde = dia;
+      if (!R.hasta || dia > R.hasta) R.hasta = dia;
+      var p = ps[cod] = ps[cod] || { codigo: cod.slice(0, 40), nombre: nom, n: 0 };
+      p.n++;
+    });
+    R.personas = Object.keys(ps).map(function (k) { return ps[k]; }).sort(function (a, b) { return b.n - a.n || String(a.nombre).localeCompare(b.nombre, 'es'); });
+    return R;
+  }
+  /** Quién es en el sistema la persona de BlueSoft: el mismo primer nombre en la sucursal (o que empiece igual: "Lau" → "Laura");
+      si no, el mismo nombre en todas. Sólo si hay una sola que coincide: si hay dos, que lo elijan. Si los dos traen la inicial del
+      apellido ("Juan P" y "Juan F."), tiene que ser la misma. */
+  function tiAdivinar(nom, local, ps) {
+    var partes = normal(nom).split(' '), n = partes[0], ini = (partes[1] || '').charAt(0);
+    var act = ps.filter(function (p) {
+      var suya = normal(p.apellido || normal(p.nombre).split(' ')[1] || '').charAt(0);
+      return p.activo !== false && (!ini || !suya || ini === suya);
+    });
+    if (!n) return '';
+    var de = function (l, f) { var x = l.filter(function (p) { return f(normal(p.nombre).split(' ')[0]); }); return x.length === 1 ? x[0].id : ''; };
+    var suyas = act.filter(function (p) { return p.local_id === local; });
+    return de(suyas, function (a) { return a === n; }) || (n.length >= 3 ? de(suyas, function (a) { return a.indexOf(n) === 0; }) : '') || de(act, function (a) { return a === n; });
+  }
+  function abrirSubirBluesoft(local0, alListo) {
+    var L = null, guardado = {}, ps = [], pedido = 0, nombreArch = '';
+    var caja = ventana('<h3 id="posVentTit">Subir de BlueSoft</h3>' +
+      '<p class="pos-bajada">En BlueSoft: <b>Registro de tiempos</b> → las fechas → <b>Exportar</b> (el ícono de Excel). Ese archivo se sube acá, con la sucursal de esa compu. ' +
+        'Lo que ya estaba no se repite, así que se puede subir de nuevo con fechas que se pisan.</p>' +
+      '<div class="pos-campos">' + campo('ancho', 'Sucursal (la de la compu de BlueSoft)', '<select id="sbLocal" class="desplegable"><option value="">Elegí…</option>' + opcionesLocales(local0 || '') + '</select>') + '</div>' +
+      '<div class="pos-pie ti-archivo"><label class="btn btn-sec btn-chico">Elegir el Excel…<input type="file" id="sbArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
+        '<span class="pos-ayuda" id="sbNombre">Todavía no elegiste el archivo.</span></div>' +
+      '<div id="sbRes"></div>', true);
+    var q = function (s) { return caja.querySelector(s); };
+    tiPersonasLista().then(function (l) { ps = l; if (L && caja.isConnected) pintar(); }, function () {});
+    q('#sbLocal').onchange = function () { guardado = {}; traerGuardado(); };
+    q('#sbArchivo').onchange = function () {
+      var f = this.files && this.files[0];
+      this.value = '';
+      if (!f) return;
+      nombreArch = f.name;
+      q('#sbNombre').textContent = 'Leyendo ' + f.name + '…';
+      q('#sbRes').innerHTML = '';
+      leerArchivo(f).then(function (filas) {
+        if (!caja.isConnected) return;
+        L = tiLeerBluesoft(filas);
+        q('#sbNombre').textContent = nombreArch;
+        if (L.error) { q('#sbRes').innerHTML = '<div class="pos-cartel mal">' + esc(L.error) + '</div>'; L = null; return; }
+        traerGuardado();
+      }).catch(function (e) { if (caja.isConnected) { q('#sbNombre').textContent = nombreArch; q('#sbRes').innerHTML = '<div class="pos-cartel mal">' + esc(e.message || String(e)) + '</div>'; } });
+    };
+    /* Quién era quién la última vez que se subió de esa sucursal. */
+    function traerGuardado() {
+      var loc = q('#sbLocal').value, n = ++pedido;
+      if (!L) return;
+      if (!loc) { pintar(); return; }
+      llamar('pos_tiempos_bluesoft', { p_local: loc }).then(function (g) { if (n === pedido && caja.isConnected) { guardado = g || {}; pintar(); } },
+        function (e) { if (n === pedido && caja.isConnected) q('#sbRes').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
+    }
+    function pintar() {
+      var loc = q('#sbLocal').value, R = L;
+      var resumen = '<div class="pos-cartel">' + (R.filas.length ? '<b>' + miles(R.filas.length) + '</b> registros de BlueSoft, del ' + esc(fechaCorta(R.desde)) + ' al ' + esc(fechaCorta(R.hasta)) +
+          ': ' + miles(R.entradas) + (R.entradas === 1 ? ' entrada' : ' entradas') + ' y ' + miles(R.salidas) + (R.salidas === 1 ? ' salida.' : ' salidas.') : 'El archivo no trae entradas ni salidas.') +
+        (R.otros ? ' ' + miles(R.otros) + ' de otro tipo (pausa o reanudar) no se suben.' : '') +
+        (R.errores.length ? '<br>' + R.errores.length + (R.errores.length === 1 ? ' fila no se entiende' : ' filas no se entienden') + ' y no se sube' + (R.errores.length === 1 ? '' : 'n') + ': ' +
+          esc(R.errores.slice(0, 3).join(' ')) + (R.errores.length > 3 ? '…' : '') : '') + '</div>';
+      if (!R.filas.length) { q('#sbRes').innerHTML = resumen; return; }
+      if (!loc) { q('#sbRes').innerHTML = resumen + '<div class="pos-cartel">Elegí arriba de qué sucursal es el Excel.</div>'; return; }
+      q('#sbRes').innerHTML = resumen +
+        '<p class="pos-lbl ti-lbl">¿Quién es quién?</p>' +
+        '<div class="pos-marco-tabla"><table class="pos-tabla ti-tabla"><thead><tr><th>En BlueSoft</th><th class="n">Registros</th><th>En el sistema</th></tr></thead><tbody>' +
+        R.personas.map(function (p, i) {
+          var g = guardado[p.codigo], elegida = g ? (g.persona_id || '') : tiAdivinar(p.nombre, loc, ps);
+          return '<tr><td><b>' + esc(p.nombre || '—') + '</b>' + (/^nombre:/.test(p.codigo) ? '' : '<small>Código ' + esc(p.codigo) + '</small>') + '</td><td class="n">' + miles(p.n) + '</td>' +
+            '<td><select data-p="' + i + '" aria-label="' + esc('Quién es ' + (p.nombre || p.codigo)) + '">' +
+              tiOpcionesPersonas(ps, loc, elegida, '<option value="">— No se sube —</option>') + '</select></td></tr>';
+        }).join('') + '</tbody></table></div>' +
+        '<p class="pos-ayuda">Queda guardado para la próxima vez que subas de esta sucursal.</p>' +
+        '<div class="pos-error" id="sbError"></div>' +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+          '<button type="button" class="btn btn-pri btn-chico" id="sbSubir"></button></div>';
+      caja.querySelectorAll('#sbRes select[data-p]').forEach(function (s) { s.onchange = function () { contar(); errorEn(caja, 'sbError', ''); }; });
+      q('#sbSubir').onclick = subir;
+      contar();
+    }
+    function elegidas() {
+      var m = {};
+      caja.querySelectorAll('#sbRes select[data-p]').forEach(function (s) { m[L.personas[Number(s.getAttribute('data-p'))].codigo] = s.value; });
+      return m;
+    }
+    function contar() {
+      var m = elegidas(), n = L.filas.filter(function (f) { return m[f.codigo]; }).length, b = q('#sbSubir');
+      b.textContent = n ? 'Subir ' + miles(n) + (n === 1 ? ' registro' : ' registros') : 'Subir';
+      b.disabled = !n;
+    }
+    function subir() {
+      var b = q('#sbSubir'), m = elegidas(), loc = q('#sbLocal').value;
+      if (b.disabled) return;
+      b.disabled = true;
+      b.textContent = 'Subiendo…';
+      llamar('pos_tiempos_subir', { p_local: loc, p_mapa: L.personas.map(function (p) { return { codigo: p.codigo, nombre: p.nombre, persona_id: m[p.codigo] || null }; }),
+                                    p_filas: L.filas }).then(function (r) {
+        if (alListo) alListo();
+        if (!caja.isConnected) return;
+        var l = localDe(loc);
+        q('#sbRes').innerHTML = '<div class="pos-cartel ok">Listo: ' + (r.subidos ? 'se subieron <b>' + miles(r.subidos) + '</b> registros de ' + esc(l ? nombreLocal(l) : 'la sucursal') + '.' : 'no había nada nuevo para subir.') +
+            (r.ya_estaban ? ' ' + miles(r.ya_estaban) + ' ya estaban y no se repitieron.' : '') +
+            (r.sin_persona ? ' ' + miles(r.sin_persona) + ' no se subieron (sin persona en el sistema).' : '') + '</div>' +
+          '<div class="pos-pie">' + (r.lote ? '<button type="button" class="btn btn-sec btn-chico izq" id="sbDeshacer">Deshacer esta subida</button>' : '') +
+            '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Listo</button></div>';
+        L = null;
+        var dz = q('#sbDeshacer');
+        if (dz) dz.onclick = function () {
+          if (!confirm('¿Borrar los ' + miles(r.subidos) + ' registros que se acaban de subir?')) return;
+          dz.disabled = true;
+          llamar('pos_tiempos_deshacer', { p_lote: r.lote }).then(function (x) {
+            avisar('ok', 'Listo: se borraron los ' + miles(x.borrados) + ' registros de esa subida.');
+            cerrarVentana();
+            if (alListo) alListo();
+          }).catch(function (e) { dz.disabled = false; avisar('err', mensajeDe(e)); });
+        };
+      }).catch(function (e) { b.disabled = false; contar(); errorEn(caja, 'sbError', mensajeDe(e)); });
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
      LO QUE TODAVÍA NO ESTÁ
      ════════════════════════════════════════════════════════════════════ */
   function verPronto(v) {
@@ -8621,5 +9296,8 @@
   window.__pos = { cuenta: function (v, ini) { var antes = S.ini; S.ini = ini; try { return cuenta(v); } finally { S.ini = antes; } }, leerPlata: leerPlata, plata: plata,
                   leerTabla: leerTabla, filasDeTexto: filasDeTexto, filasDeXml: filasDeXml, siglaColor: siglaColor, ordenarTalles: ordenarTalles,
                   celdaCsv: celdaCsv, tiempoRes: tiempoRes,
+                  /* El registro de tiempos (SQL 206): los turnos de un día y leer el Excel de BlueSoft. */
+                  tiFila: tiFila, tiTurnos: tiTurnos, tiDia: tiDia, tiPorDia: tiPorDia, tiPorPersona: tiPorPersona, tiHora: tiHora, tiHoras: tiHoras,
+                  tiFechaExcel: tiFechaExcel, tiHoraExcel: tiHoraExcel, tiLeerBluesoft: tiLeerBluesoft, tiAdivinar: tiAdivinar,
                   puntosDe: function (total, factor, ini) { var antes = S.ini; S.ini = ini; try { return puntosDe(total, factor); } finally { S.ini = antes; } } };
 })();
