@@ -1786,9 +1786,12 @@ function verCajasTodosRango() {
    local (Ajustes → El local) y, los domingos, la suya si es otra ("Rivadavia abre a las 9, pero los domingos a las
    10"); los días que el local no abre no cuentan ("hay locales que cierran los domingos").
    Con un período de un día (Hoy, Ayer, o ‹ › desde ahí) se ve día a día: cada local con quién llegó y a qué hora.
+   Las solapas (31/10, a la noche): "que esté por zonas de supervisores acá. Zona MAU, zona BREN, zona tal y tal. Y en
+   cada zona los locales" (antes, Calle, Shopping y Mar del Plata, como la planilla). La zona de cada local es la de
+   quien lo supervisa en Configuración → Usuarios; los que no tienen supervisor los lleva él.
    ════════════════════════════════════════════════════════════════════════ */
 
-var ZONAS_LLEGADAS = [['calle', 'Calle'], ['shopping', 'Shopping'], ['mdq', 'Mar del Plata']];
+var LL_SIN_SUPERVISOR = ['sin', 'Mauricio'];   // la zona de los locales sin supervisor ("Zona MAU")
 var LL_TOLERANCIA = 10;   // minutos después de que abre: hasta ahí, a horario
 var LL_MANANA = 180;      // la primera entrada hasta 3 horas después de que abre es la de la mañana; más tarde, otro turno (no se mira)
 var LL_DOBLE = 15;        // la misma marca dos veces en menos de 15 minutos: el dedo dos veces (como en el registro de tiempos)
@@ -1798,6 +1801,7 @@ var ORIGEN_LL = { huella: 'con la huella', manual: 'cargada a mano', bluesoft: '
 var TEXTO_LL = { bien: 'a horario', tarde: 'tarde', 'otro-turno': 'entró en otro turno (no se mira)', 'sin-entrada': 'marcó la salida y no la entrada',
                  fuera: 'marcó un día que el local no abre', franco: 'franco', cerrado: 'el local no abre', falta: 'no marcó', hoy: 'todavía no marcó', futuro: '' };
 var _ll = null, _llPedido = 0;   // _ll: lo que llegó, armado como la planilla (llArmar); _ll.vista, las filas de la zona que se ve
+var _llSup = null;               // la promesa de quién supervisa cada local (llSupervisores), una vez por entrada a la pantalla
 
 function llMin(hm) { var p = String(hm || '').split(':'); return +p[0] * 60 + +p[1]; }
 /** "09:05" → "9:05"; llHmDe(550) → "9:10". */
@@ -1859,10 +1863,16 @@ function llDias(desde, hasta) {
 }
 
 /** Lo que llegó de la base, como la planilla: una fila por persona y local (la de su local, siempre; la de otro local,
-    si marcó ahí porque cubrió), con cada día del período. */
-function llArmar(d, r) {
+    si marcó ahí porque cubrió), con cada día del período. sup: quién supervisa cada local (llSupervisores). */
+function llArmar(d, r, sup) {
   var locales = {}, personas = {}, marcas = {}, control = {}, filas = [], porClave = {}, dias = llDias(r.desde, r.hasta);
-  (d.locales || []).forEach(function (l) { locales[l.id] = l; });
+  /* La zona de cada local: la de quien lo supervisa (si son dos, va en las dos); sin supervisor, la de Mauricio. Sin
+     sup, todo junto. */
+  (d.locales || []).forEach(function (l) {
+    var ss = sup ? sup[l.id] || [] : null;
+    l.zonas = !ss ? [['', '']] : ss.length ? ss.map(function (s) { return [s.id, s.nombre]; }) : [LL_SIN_SUPERVISOR];
+    locales[l.id] = l;
+  });
   (d.personas || []).forEach(function (p) { personas[p.id] = p; });
   (d.control || []).forEach(function (c) { control[c.persona_id + '|' + c.mes] = c; });
   (d.filas || []).forEach(function (f) {
@@ -1891,16 +1901,33 @@ function verLlegadas() {
   c.innerHTML = '<div class="cajas-per" id="llPer"></div><div id="llCuerpo"><p class="cargando">Cargando…</p></div>';
   if (!window.Interfaz) return;
   var sel = Interfaz.periodo(document.getElementById('llPer'), { inicial: 'mes', atajos: ATAJOS_LLEGADAS, guardar: K_LL_PERIODO, alCambiar: llCargar });
+  _llSup = null;
   llCargar(sel.rango());
+}
+
+/** Quién supervisa cada local: { local_id: [{ id, nombre }] }, de Configuración → Usuarios (los supervisores de varios
+    locales, activos, con sus locales aprobados). Sólo para la administración: el supervisor y el encargado ven nada más
+    que lo suyo, así que para ellos es una sola zona (null: sin solapas). Si no se puede leer, también. */
+function llSupervisores() {
+  if (!esAdmin()) return Promise.resolve(null);
+  return llamar('nc_usuarios').then(function (d) {
+    if (!d || !d.personas) return null;
+    var m = {};
+    d.personas.forEach(function (p) {
+      if (p.rol !== 'supervisor' || p.local_id || !p.activo || !p.aprobado) return;
+      (p.supervisa || []).forEach(function (s) { if (s.aprobado) (m[s.id] = m[s.id] || []).push({ id: p.id, nombre: p.nombre }); });
+    });
+    return m;
+  }, function () { _llSup = null; return null; });
 }
 
 function llCargar(r) {
   var n = ++_llPedido, host = document.getElementById('llCuerpo');
   if (!host) return;
   host.innerHTML = '<p class="cargando">Cargando…</p>';
-  llamar('pos_llegadas', { p_desde: r.desde, p_hasta: r.hasta }).then(function (d) {
+  Promise.all([llamar('pos_llegadas', { p_desde: r.desde, p_hasta: r.hasta }), _llSup || (_llSup = llSupervisores())]).then(function (x) {
     if (n !== _llPedido || _solapa !== 'llegadas') return;
-    _ll = llArmar(d || {}, r);
+    _ll = llArmar(x[0] || {}, r, x[1]);
     llDibujar();
   }).catch(function (e) {
     if (n !== _llPedido || _solapa !== 'llegadas') return;
@@ -1916,11 +1943,12 @@ function llCargar(r) {
   });
 }
 
-/** Las zonas que tienen algún local de los que se ven, en el orden de la planilla. */
+/** Las zonas que tienen algún local de los que se ven: primero la de Mauricio y después cada supervisor, por nombre. */
 function llZonas() {
-  var hay = {};
-  Object.keys(_ll.locales).forEach(function (id) { hay[_ll.locales[id].zona] = true; });
-  return ZONAS_LLEGADAS.filter(function (z) { return hay[z[0]]; });
+  var hay = {}, sin = LL_SIN_SUPERVISOR[0];
+  Object.keys(_ll.locales).forEach(function (id) { _ll.locales[id].zonas.forEach(function (z) { hay[z[0]] = z; }); });
+  return Object.keys(hay).map(function (k) { return hay[k]; })
+    .sort(function (a, b) { return (b[0] === sin) - (a[0] === sin) || a[1].localeCompare(b[1], 'es'); });
 }
 
 function llDibujar() {
@@ -1929,14 +1957,14 @@ function llDibujar() {
   var zonas = llZonas(), guardada = null;
   try { guardada = localStorage.getItem(K_LL_ZONA); } catch (e) {}
   var zona = (zonas.filter(function (z) { return z[0] === guardada; })[0] || zonas[0] || [''])[0];
-  var deZona = function (k) { return _ll.filas.filter(function (f) { return f.l.zona === k; }); };
+  var deZona = function (k) { return _ll.filas.filter(function (f) { return f.l.zonas.some(function (z) { return z[0] === k; }); }); };
   var filas = _ll.vista = deZona(zona);
   var tardes = function (fs) { return fs.reduce(function (a, f) { return a + f.tarde; }, 0); };
   /* Al volver a dibujar (un «Check», un descuento) la tabla queda donde estaba: si no, volvía al día 1. */
   var d0 = host.querySelector('.ll-desliza'), izq = d0 ? d0.scrollLeft : 0;
   var html = (zonas.length > 1 ? '<div class="solapas chicas ll-zonas">' + zonas.map(function (z) {
       var t = tardes(deZona(z[0]));
-      return '<button data-zona="' + z[0] + '"' + (z[0] === zona ? ' class="activa"' : '') + '>' + esc(z[1]) +
+      return '<button data-zona="' + esc(z[0]) + '"' + (z[0] === zona ? ' class="activa"' : '') + '>' + esc('Zona ' + z[1]) +
         (t ? ' <span class="ll-cuenta" title="' + t + (t === 1 ? ' llegada tarde' : ' llegadas tarde') + '">' + t + '</span>' : '') + '</button>';
     }).join('') + '</div>' : '');
   if (!_ll.hayMarcas) html += '<div class="nota">' + (esAdmin()
@@ -2117,7 +2145,8 @@ function llVerDia(f, dia) {
     '<p class="bajada" style="margin-top:12px">' + (esAdmin() ? 'Si una marca está mal, se anula o se carga la que falta en el POS → Gestión → Personal → Registro de tiempos.' : 'Si una marca está mal, la corrige la oficina.') + '</p>');
 }
 
-/* Ajustes → El local: la zona de las llegadas y la hora a la que abre los domingos, si es otra (SQL 208). */
+/* Ajustes → El local: la hora a la que abre los domingos, si es otra (SQL 208). La zona ya no se elige acá: es la de
+   quien supervisa el local (Configuración → Usuarios); la de la base (pos_tiempos_locales.zona) se guarda como estaba. */
 var HORAS_DOMINGO = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '13:00', '14:00'];
 function llAjusteLocal(cont) {
   if (!cont) return;
@@ -2130,19 +2159,19 @@ function llAjusteLocal(cont) {
     var horas = HORAS_DOMINGO.slice();
     if (l.abre_domingo && horas.indexOf(l.abre_domingo) < 0) horas.push(l.abre_domingo);
     editor({ cont: cont, filas: [{ id: l.id, zona: l.zona, abre_domingo: l.abre_domingo }],
-      cols: [{ k: 'zona', t: 'La zona', tipo: 'sel', ops: ZONAS_LLEGADAS },
-             { k: 'abre_domingo', t: 'Los domingos abre', tipo: 'sel', ops: [[null, 'a la hora de siempre']].concat(horas.sort().map(function (h) { return [h, 'a las ' + llHm(h)]; })) }],
+      cols: [{ k: 'abre_domingo', t: 'Los domingos abre', tipo: 'sel', ops: [[null, 'a la hora de siempre']].concat(horas.sort().map(function (h) { return [h, 'a las ' + llHm(h)]; })) }],
       armar: function (c) {
-        return frase('En Supervisión → Llegadas va con los de la zona ' + c('zona') + ' y los domingos abre ' + c('abre_domingo') + '.') +
-          frase('Los días que abre y la hora de siempre son los de arriba. Hasta ' + LL_TOLERANCIA + ' minutos después de que abre, la llegada está a horario.', 'aclara');
+        return frase('Para las llegadas, los domingos abre ' + c('abre_domingo') + '.') +
+          frase('Los días que abre y la hora de siempre son los de arriba. Hasta ' + LL_TOLERANCIA + ' minutos después de que abre, la llegada está a horario. ' +
+            'En Supervisión → Llegadas va en la zona de quien lo supervisa (Configuración → Usuarios); si no tiene supervisor, en la de ' + LL_SIN_SUPERVISOR[1] + '.', 'aclara');
       },
       guardar: function (f, c) {
-        return llamar('pos_llegadas_local', { p_local: f.id, p_zona: 'zona' in c ? c.zona : f.zona, p_apertura_domingo: 'abre_domingo' in c ? c.abre_domingo : f.abre_domingo });
+        return llamar('pos_llegadas_local', { p_local: f.id, p_zona: f.zona, p_apertura_domingo: 'abre_domingo' in c ? c.abre_domingo : f.abre_domingo });
       } });
   }).catch(function (e) {
     if (!document.body.contains(cont)) return;
     cont.innerHTML = '<div class="nota">' + esc(e && e.delServidor && /PGRST202|could not find the function/i.test(e.message || '')
-      ? 'Para elegir la zona de las llegadas falta correr en Supabase el SQL 208 (y antes el 206). Están en el Escritorio, en «App Orden».'
+      ? 'Para elegir el horario de los domingos falta correr en Supabase el SQL 208 (y antes el 206). Están en el Escritorio, en «App Orden».'
       : esDeRed(e) ? 'Sin conexión: no se pudo cargar.' : mensajeDe(e)) + '</div>';
   });
 }
