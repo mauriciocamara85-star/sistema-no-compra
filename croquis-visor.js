@@ -393,13 +393,18 @@ function visorDibujar(V, ajustar) {
       return;
     }
     if (it.tipo === 'fijo') { out += visorPieza(pl, it); return; }
-    var m = it.m, e = V.estado[m.id] || {}, alto = pl.tipo === 'deposito' ? altoDep : it.vidriera ? VISOR_ALTO.vidriera : it.pared ? altoPared : VISOR_ALTO.centro;
+    /* La vidriera, desde arriba, tan alta como los módulos del frente: más baja, los que tiene atrás (en Rivadavia, el 1 y
+       el 20) se le paraban encima con la perspectiva y la tapaban entera, sin número para tocar (31/10, Mauricio). */
+    var m = it.m, e = V.estado[m.id] || {}, alto = pl.tipo === 'deposito' ? altoDep : it.vidriera ? (V.inclinado ? VISOR_ALTO.vidriera : altoPared) : it.pared ? altoPared : VISOR_ALTO.centro;
     /* La cara que mira al salón: la de los costados mira al medio; la del frente mira hacia adentro (de espaldas a
        quien mira la maqueta), así que esos llevan la foto arriba. */
     var frente = it.vidriera ? 's' : it.pared === 'izquierda' ? 'e' : it.pared === 'derecha' ? 'o' : it.pared === 'frente' ? 'n' : 's';
     var arriba = it.pared === 'frente' && !it.vidriera;
-    var numero = esVidriera(m) ? m.nombre : m.isla ? numeroVista(d, m) : m.numero, que = esVidriera(m) ? queHay(m) : visorEtiqueta(m);
-    var rotulo = '<div class="cv-rotulo"><b' + visorMarcaNumero(V, m) + '>' + esc(String(numero || '')) + '</b>' + (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
+    /* La vidriera dice "Vidriera" (el "izq." o "der." no entraba en la pastilla y quedaba cortado; se ve en su ficha);
+       con el local girado queda de costado y la pastilla pisaba el número de al lado: ahí dice "V", como en el 3D. */
+    var numero = m.isla ? numeroVista(d, m) : m.numero, que = esVidriera(m) ? queHay(m) : visorEtiqueta(m);
+    var rotulo = '<div class="cv-rotulo"><b' + visorMarcaNumero(V, m) + '>' + (esVidriera(m) ? '<i class="cv-vid-largo">Vidriera</i><i class="cv-vid-corto">V</i>' : esc(String(numero || ''))) + '</b>' +
+      (que ? '<span>' + esc(recortar(que, 18)) + '</span>' : '') + '</div>';
     var tapa = visorSvg(r, interiorModulo(d, m, r, 'cvR', it.pared), 'cv-merca') + '<div class="cv-foto-cara cv-foto-tapa"></div>';
     out += visorCaja(r, alto, 'cv-mod' + (e.foto_path ? ' con-foto' : ' sin-foto') + (it.pared ? '' : ' adentro') + (arriba ? ' foto-arriba' : '') + (it.vidriera ? ' cv-vidriera' : ''),
       'data-mod="' + esc(m.id) + '" role="button" tabindex="0" aria-label="' + esc(nombreModulo(m, d.sectorDe[m.sector_id], d)) + '"',
@@ -430,6 +435,11 @@ function visorRotulos(V) {
   var base = Math.max(1, 0.9 / (V.sFit || 1)), k = (V.z && V.z.k) || 1;
   V.mundo.style.setProperty('--zc', Math.max(0.42, base / Math.pow(k, 0.8)).toFixed(3));
   if (V.raiz) V.raiz.classList.toggle('cv-nombres-ocultos', (V.sFit || 1) * k < 0.68);
+  visorVidrieraCostado(V);
+}
+/** Con el local girado más de 30°, la vidriera queda de costado: su pastilla dice "V" (y sin "qué hay"). */
+function visorVidrieraCostado(V) {
+  if (V.raiz) V.raiz.classList.toggle('cv-vid-costado', Math.abs(Math.sin((V.giro || 0) * Math.PI / 180)) > 0.5);
 }
 /** Acercar manteniendo quieto el punto f (de la pantalla). */
 function visorZoomEn(V, k2, f, animar) {
@@ -608,6 +618,7 @@ function visorPose(V) {
   mu.style.transition = 'none';
   mu.style.setProperty('--giro', V.giro.toFixed(2) + 'deg');
   mu.style.setProperty('--incl', (V.inclinado ? V.incl : 0).toFixed(2) + 'deg');
+  visorVidrieraCostado(V);
 }
 /** Un paso con el teclado: gira dg grados e inclina di (alrededor de lo que está en el medio de la pantalla). */
 function visorPaso(V, dg, di) {
