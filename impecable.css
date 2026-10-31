@@ -110,6 +110,8 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
   background: var(--tarjeta); border: 1px solid var(--borde); margin-bottom: 10px;
 }
 .modulo .que { flex: 1; min-width: 0; }
+/* Fotos → Para corregir (31/10): lo que pidió el supervisor, debajo del módulo. */
+.modulo .pedido { color: var(--ambar); font-size: 14px; margin-top: 3px; }
 .nombre { font-weight: 700; }
 .info { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .chip { font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 99px; border: 1px solid currentColor; white-space: nowrap; }

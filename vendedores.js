@@ -1190,11 +1190,17 @@ function pantallaFotos() {
     /* SQL 159: la vidriera de la semana y las tareas de foto de todo el equipo (sin el 159: null, como antes). */
     per.local_id ? llamar('orden_vidriera_semana', { p_local: per.local_id }).catch(nada) : Promise.resolve(null),
     leer('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,local_id,modulo_id,modulo_nombre,modulo_referencia,grupo' +
-         '&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)&grupo=not.is.null&modulo_id=not.is.null&order=vence_en.asc,creado_en.asc').catch(nada)
+         '&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)&grupo=not.is.null&modulo_id=not.is.null&order=vence_en.asc,creado_en.asc').catch(nada),
+    /* Las correcciones de un módulo que pidió el supervisor (31/10: Seba no encontraba dónde mandar la del Módulo 11;
+       acá el módulo estaba en verde y decía "Hoy no tenés fotos para mandar"). Las de la IA ya marcan su control.
+       foto_antes y marcas (SQL 150): la foto de antes en la cámara. */
+    leer150('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,local_id,modulo_id,modulo_nombre,modulo_referencia,correccion' +
+         '&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)&requiere_foto=is.true&modulo_id=not.is.null&grupo=is.null&origen=neq.ia' +
+         '&order=vence_en.asc,creado_en.asc', 'foto_antes,marcas').catch(nada)
   ]).then(function (r) {
     if (_pestana !== 'fotos') return;
     dibujarFotos({ controles: r[0] || [], tareasIA: r[1] || [], sinModulos: Array.isArray(r[2]) && r[2].length === 0, mapa: r[3],
-                   vidriera: r[4], tareasEquipo: r[5] || [] });
+                   vidriera: r[4], tareasEquipo: r[5] || [], correcciones: r[6] || [] });
   }).catch(function (e) { pantallaError(e, pantallaFotos); });
 }
 
@@ -1226,13 +1232,28 @@ function dibujarFotos(x) {
   (x.tareasEquipo || []).forEach(function (t) {
     if (t.grupo && t.modulo_id && (t.estado === 'pendiente' || t.estado === 'vencida') && !tareaDe[t.modulo_id]) tareaDe[t.modulo_id] = t;
   });
+  /* Las correcciones que pidió el supervisor (31/10): van primero, con su cámara, y su módulo lleva el "!" en el croquis. */
+  var corr = (x.correcciones || []).filter(function (t) { return t.modulo_id && !t.grupo && (t.estado === 'pendiente' || t.estado === 'vencida'); });
+  var corrDe = {}, porTarea = {};
+  corr.forEach(function (t) { porTarea[t.id] = t; if (!corrDe[t.modulo_id]) corrDe[t.modulo_id] = t; });
 
   var total = x.controles.length;
   var hechos = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
   var html = cabeza('Fotos') + '<div class="progreso-fotos">' + (total
     ? '<b>' + hechos + ' de ' + total + '</b> ' + (total === 1 ? 'foto mandada' : 'fotos mandadas') +
       '<div class="progreso"><i style="width:' + Math.round(100 * hechos / total) + '%"></i></div>'
+    : corr.length ? '<b>' + (corr.length === 1 ? 'Te queda una corrección para mandar.' : 'Te quedan ' + corr.length + ' correcciones para mandar.') + '</b>'
     : '<b>Hoy no tenés fotos para mandar.</b>') + '</div>';
+  if (corr.length) {
+    html += '<div class="seccion">Para corregir</div>' + corr.map(function (t) {
+      var pedido = t.correccion || t.detalle || t.titulo, nombre = t.modulo_nombre || 'El módulo';
+      return '<div class="modulo"><div class="que"><div class="nombre">' + esc(nombre) + '</div>' +
+        '<div class="pedido">' + esc(pedido) + '</div>' +
+        '<div class="info"><span class="chip corregir">Corregir</span><span class="chip ' + (t.estado === 'vencida' ? 'vencido' : 'vence') + '">' +
+          esc(textoVence(t.vence_en, t.estado)) + '</span></div></div>' +
+        '<button class="camara" data-tarea="' + esc(t.id) + '" aria-label="Sacar la foto de la corrección de ' + esc(nombre) + '">' + CAMARA + '</button></div>';
+    }).join('');
+  }
 
   /* El croquis del local: lo tuyo con tu color, lo demás apagado. Tocás un
      módulo con la cámara y mandás su foto. */
@@ -1266,6 +1287,9 @@ function dibujarFotos(x) {
       mios[mod] = true;
       if (!marcas[mod] || marcas[mod] === 'listo') marcas[mod] = marca;
     });
+    /* La corrección pesa más que todo: tocar el módulo abre su cámara. */
+    var corrMapa = Object.keys(corrDe).filter(function (mod) { return enMapa[mod]; });
+    corrMapa.forEach(function (mod) { mios[mod] = true; marcas[mod] = 'corregir'; });
     var hayMios = Object.keys(mios).length;
     var faltaVid = vidrieras.some(function (m) { return !(porVid[m.id] && porVid[m.id].por); });
     var textoVid = !vidrieras.length ? ''
@@ -1279,11 +1303,14 @@ function dibujarFotos(x) {
       return tareaDe[mod].modulo_nombre || nombreModulo(m, mapa.sectorDe[m.sector_id], mapa);
     });
     var textoEquipo = equipo.length ? ' Tarea para todo el equipo: la foto de ' + equipo.join(', ') + ' (con que uno la mande, alcanza).' : '';
+    var textoCorr = !corrMapa.length ? ''
+      : corrMapa.length === 1 ? 'Tocá el módulo con el ! para mandar la foto de la corrección.' : 'Tocá los módulos con el ! para mandar las fotos de las correcciones.';
     /* Simple (16/10): sólo la instrucción. Sin la lista de nombres ni "Ver el local": el mapa entero es para el
        supervisor y el encargado (Equipo → El mapa del local). */
     html += '<div class="mapa-caja" id="mapaFotos">' +
       svgMapa(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + svgDeposito(mapa, { mios: hayMios ? mios : null, marcas: marcas }) + '</div>' +
-      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? (x.controles.some(function (c) { return c.frontal && !estadoDe(c, corregir).hecho; }) ? 'Hoy toca frontal nuevo: cambialo y tocá el módulo con la cámara para mandar su foto.' : 'Tocá un módulo con la cámara para mandar su foto.')
+      '<p class="bajada">' + (x.controles.some(function (c) { return !estadoDe(c, corregir).hecho; }) ? (x.controles.some(function (c) { return c.frontal && !estadoDe(c, corregir).hecho; }) ? 'Hoy toca frontal nuevo: cambialo y tocá el módulo con la cámara para mandar su foto.' : 'Tocá un módulo con la cámara para mandar su foto.') + (textoCorr ? ' ' + textoCorr : '')
+                              : textoCorr ? textoCorr
                               : total ? 'Por hoy no te queda ninguna foto para mandar.'
                               : hayMios ? 'Lo tuyo está marcado con tu color.' : 'Todavía no tenés módulos asignados: tocá uno para ver de quién es.') +
       textoEquipo + textoVid + '</p>';
@@ -1318,7 +1345,11 @@ function dibujarFotos(x) {
 
   app.innerHTML = html;
   engancharCabeza();
-  app.querySelectorAll('.camara').forEach(function (bt) {
+  /* La corrección: la misma cámara que en Tareas; al volver, a Fotos. */
+  app.querySelectorAll('.camara[data-tarea]').forEach(function (bt) {
+    bt.onclick = function () { accionTarea(porTarea[bt.dataset.tarea], 'hecha', bt, 'fotos'); };
+  });
+  app.querySelectorAll('.camara[data-id]').forEach(function (bt) {
     bt.onclick = function () {
       var c = _controles[bt.dataset.id];
       if (sePuedeRehacer(c)) { ofrecerRehacer(c); return; }
@@ -1330,6 +1361,8 @@ function dibujarFotos(x) {
   /* Tocar el croquis: si ese módulo tiene tu control pendiente, la cámara; si no, de quién es. */
   app.querySelectorAll('#mapaFotos .mapa-mod').forEach(function (g) {
     g.onclick = function () {
+      /* El "!" de una corrección (31/10): su cámara, antes que la foto del día. */
+      if (corrDe[g.dataset.mod]) { accionTarea(corrDe[g.dataset.mod], 'hecha', null, 'fotos'); return; }
       var suyos = x.controles.filter(function (k) { return k.modulo_id === g.dataset.mod; });
       var falta = suyos.filter(function (k) { return !estadoDe(k, corregir).hecho && k.estado !== 'vencido'; })[0] ||
                   suyos.filter(function (k) { return k.estado === 'vencido'; })[0];
@@ -1337,7 +1370,7 @@ function dibujarFotos(x) {
       var deNuevo = suyos.filter(sePuedeRehacer)[0];
       if (deNuevo) { ofrecerRehacer(deNuevo); return; }
       /* Una tarea de foto de todo el equipo (SQL 159): la cámara de la tarea. */
-      if (tareaDe[g.dataset.mod]) { accionTarea(tareaDe[g.dataset.mod], 'hecha'); return; }
+      if (tareaDe[g.dataset.mod]) { accionTarea(tareaDe[g.dataset.mod], 'hecha', null, 'fotos'); return; }
       var m = mapa.modulos.filter(function (k) { return k.id === g.dataset.mod; })[0], s = m && mapa.sectorDe[m.sector_id];
       /* La vidriera, de todos (SQL 145), una vez por semana (SQL 159): si ya la mandó alguien esta semana, quién. */
       if (esVidriera(m) && vidrieras.length) {
@@ -1968,7 +2001,8 @@ function pantallaAvisos() {
   }).catch(function (e) { pantallaError(e, pantallaAvisos); });
 }
 
-function accionTarea(t, accion, boton) {
+/** volverA: la pestaña a la que vuelve la cámara de un módulo ('tareas' si no se dice; 'fotos' desde el croquis). */
+function accionTarea(t, accion, boton, volverA) {
   if (accion === 'nopude') {
     return preguntarTexto('Contá en una línea por qué no pudiste:').then(function (m) {
       if (!m) return;
@@ -1993,8 +2027,8 @@ function accionTarea(t, accion, boton) {
     /* La de todo el equipo (SQL 159) no es una corrección: es la foto del módulo. La corrección muestra la foto de
        antes (con sus marcas) en lugar de la modelo: es la que dice qué módulo es. */
     camara((t.modulo_nombre || 'El módulo') + (t.grupo ? '' : ' · corrección'), t.foto_antes || t.modulo_referencia || null, 'Que entre todo el módulo en el recuadro',
-      function (blob) { mandarFotoTarea(t, blob, null); },
-      function () { irA('tareas'); },
+      function (blob) { mandarFotoTarea(t, blob, null, volverA); },
+      function () { irA(volverA || 'tareas'); },
       t.foto_antes ? { marcas: t.marcas } : null);
     return;
   }
@@ -2056,34 +2090,36 @@ function verRevision(id) {
 }
 
 /** La foto de la corrección, recién sacada con la cámara del recuadro: se sube y la tarea queda hecha.
-    Sin señal, "Reintentar" sigue con la misma foto (y no la sube dos veces si ya subió). */
-function mandarFotoTarea(t, blob, ruta) {
+    Sin señal, "Reintentar" sigue con la misma foto (y no la sube dos veces si ya subió).
+    volverA: 'tareas' (si no se dice) o 'fotos' (desde el croquis, 31/10): ahí vuelve al terminar. */
+function mandarFotoTarea(t, blob, ruta, volverA) {
+  var destino = volverA || 'tareas';
   barra.hidden = true;
   app.className = 'app';
   var vista = 'tarea-' + (++_revisiones);
-  var arriba = '<button class="volver" id="volver" data-vista="' + vista + '">‹ Volver a Tareas</button><h1>' + esc(t.modulo_nombre || 'La corrección') + '</h1>';
+  var arriba = '<button class="volver" id="volver" data-vista="' + vista + '">‹ Volver a ' + (destino === 'fotos' ? 'Fotos' : 'Tareas') + '</button><h1>' + esc(t.modulo_nombre || 'La corrección') + '</h1>';
   /* Si se fue ("Volver", el "atrás" del teléfono) mientras se mandaba, lo que llega después no se dibuja encima de otra pantalla. */
   var aca = function () { var v = document.getElementById('volver'); return !!v && v.getAttribute('data-vista') === vista; };
   app.innerHTML = arriba + '<div class="revisando"><span class="ruedita"></span>Mandando la foto…</div>';
-  document.getElementById('volver').onclick = function () { irA('tareas'); };
+  document.getElementById('volver').onclick = function () { irA(destino); };
   (ruta ? Promise.resolve(ruta) : subirArchivo(t.local_id + '/tareas/' + t.id + '/' + nombreArchivo(), blob))
     .then(function (r) { ruta = r; return llamar('orden_completar_tarea', { p_tarea: t.id, p_foto_path: r }, 30000); })
     .then(function (r) {
       /* La IA también la mira (lo que quedó bien de lo que ella había marcado se cierra solo). */
       if (r && r.foto_id) analizar(r.foto_id).catch(function () {});
       avisar(t.grupo ? '¡Listo! Mandaste la foto: queda hecha para todo el equipo.' : '¡Listo! Mandaste la corrección. Tu supervisor la va a mirar.');
-      if (aca() || (_pestana === 'tareas' && !barra.hidden)) irA('tareas');
+      if (aca() || (_pestana === destino && !barra.hidden)) irA(destino);
     }, function (e) {
       if (e && e.sinSesion) { pantallaError(e); return; }
-      if (/ya está cerrada/i.test(mensajeDe(e))) { if (aca()) irA('tareas'); return; }
+      if (/ya está cerrada/i.test(mensajeDe(e))) { if (aca()) irA(destino); return; }
       /* La de todo el equipo, ya la hizo otro (SQL 159). */
-      if (/queda hecha para todo el equipo/i.test(mensajeDe(e))) { if (aca()) irA('tareas'); avisar(conPunto(mensajeDe(e))); return; }
-      if (!aca()) { avisar('No se pudo mandar la foto de la corrección: sacala de nuevo desde Tareas.'); return; }
+      if (/queda hecha para todo el equipo/i.test(mensajeDe(e))) { if (aca()) irA(destino); avisar(conPunto(mensajeDe(e))); return; }
+      if (!aca()) { avisar('No se pudo mandar la foto de la corrección: sacala de nuevo desde ' + (destino === 'fotos' ? 'Fotos' : 'Tareas') + '.'); return; }
       app.innerHTML = arriba +
         '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e)) + '</div>' +
         '<div class="acciones"><button class="boton lima" id="reintentar">Reintentar</button></div>';
-      document.getElementById('volver').onclick = function () { irA('tareas'); };
-      document.getElementById('reintentar').onclick = function () { mandarFotoTarea(t, blob, ruta); };
+      document.getElementById('volver').onclick = function () { irA(destino); };
+      document.getElementById('reintentar').onclick = function () { mandarFotoTarea(t, blob, ruta, volverA); };
     });
 }
 
