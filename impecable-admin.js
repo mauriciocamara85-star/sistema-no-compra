@@ -1116,11 +1116,19 @@ function leerCierres(ruta) {
 
 /* "Todo controlado y ok", o qué faltó o sobró y qué día (como la planilla). */
 var MEDIOS_CAJA = [['desvio_mp', 'Mercado Pago'], ['desvio_tarjeta', 'tarjeta'], ['desvio_gocuotas', 'Go Cuotas'], ['desvio_efectivo', 'efectivo']];
+/** (SQL 213) Lo que un día suma al desvío del mes, igual que la base (orden_v_cajas_mes). Pedidos de Mauricio (31/10):
+    nada si la diferencia quedó a cargo de alguien ("el sistema da bien… mientras esté el detalle del error ahí abajo"), y
+    en efectivo sólo lo que faltó ("si sobra plata se ingresa a la caja inicial del otro día"). */
+function desvioDelMes(c, k) {
+  if (c.diferencia_persona) return 0;
+  var v = Number(c[k] || 0);
+  return k === 'desvio_efectivo' ? Math.max(v, 0) : v;
+}
 function textoCierre(cajas, tot) {
   var partes = [];
   cajas.forEach(function (c) {
     MEDIOS_CAJA.forEach(function (md) {
-      var v = Number(c[md[0]] || 0);
+      var v = desvioDelMes(c, md[0]);
       if (Math.abs(v) > 0.5) partes.push((v > 0 ? 'faltaron ' : 'sobraron ') + pesos(Math.abs(v)) + ' en ' + md[1] + ' el ' + diaMes(c.fecha));
     });
   });
@@ -1284,7 +1292,18 @@ function tablaDiasCaja(cajas, tot) {
         (c.diferencia_persona ? ' <span class="est vencido" title="' + esc('Diferencia a cargo de ' + (c.diferencia_persona_nombre || '—') + ': ' + pesos(c.diferencia_monto)) + '">A cargo</span>' : '') + '</td></tr>';
     }).join('') +
     (tot ? '<tr class="fila-total"><td><b>Total</b></td>' + colsCaja(tot, 'sis_efectivo') + '<td class="ini"></td></tr>' : '') +
-    '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos o corregir los números.</p>';
+    '</tbody></table></div><p class="bajada" style="margin-top:8px">Desvío = lo que dice el cierre − lo real (positivo: falta plata). Tocá un día para ver las fotos o corregir los números.' +
+    notaTotalCaja(cajas, tot) + '</p>';
+}
+/** (SQL 213) Por qué el desvío del total no es la resta de sus columnas. Sin el SQL 213, el total de la base todavía suma
+    todo (no trae sobrante_efectivo): ahí no se dice nada. */
+function notaTotalCaja(cajas, tot) {
+  if (!tot || tot.sobrante_efectivo === undefined) return '';
+  var aCargo = cajas.some(function (c) { return c.diferencia_persona; }), sobro = Number(tot.sobrante_efectivo) > 0.5;
+  if (aCargo && sobro) return ' En el total no cuentan los días con la diferencia a cargo de alguien ni el efectivo que sobró (pasa a la caja del día siguiente): están anotados abajo.';
+  if (aCargo) return ' En el total no cuentan los días con la diferencia a cargo de alguien: están anotados abajo.';
+  if (sobro) return ' En el total no cuenta el efectivo que sobró (pasa a la caja del día siguiente): está anotado abajo.';
+  return '';
 }
 /** (SQL 124) Las diferencias que no tuvieron arreglo: a cargo de quién, en el período. */
 function aCargoCajaHTML(cajas, cuando) {
@@ -1299,15 +1318,36 @@ function aCargoCajaHTML(cajas, cuando) {
     Object.keys(aCargo).sort().map(function (k) { return '<tr><td><b>' + esc(k) + '</b></td><td class="n rojo">' + pesos(aCargo[k].total) + '</td><td>' + esc(aCargo[k].dias.join(' · ')) + '</td></tr>'; }).join('') +
     '</tbody></table></div><p class="bajada" style="margin-top:8px">Las anota el supervisor al dar la caja por controlada, cuando la diferencia no tuvo arreglo.</p>';
 }
+/** (SQL 213) El efectivo que sobró (31/10, Mauricio: "si sobra plata se ingresa a la caja inicial del otro día"): no suma
+    en el desvío del mes, pero queda anotado acá, debajo de las diferencias a cargo. Tocar un día lo abre. */
+function sobrantesCajaHTML(cajas, cuando, tot) {
+  var dias = cajas.filter(function (x) { return Number(x.desvio_efectivo) < -0.5; });
+  if (!dias.length) return '';
+  var total = dias.reduce(function (a, x) { return a - Number(x.desvio_efectivo); }, 0);
+  return '<h3 class="cierre-titulo">Efectivo que sobró en ' + esc(cuando) + '</h3><div class="desliza"><table class="tabla-datos a-cargo"><thead><tr><th>Día</th><th class="n">Sobró</th><th>Contaron · decía el cierre</th></tr></thead><tbody>' +
+    dias.map(function (x) {
+      return '<tr data-caja="' + esc(x.id) + '" style="cursor:pointer"><td><b>' + esc(diaMes(x.fecha)) + '</b></td><td class="n">' + pesos(-Number(x.desvio_efectivo)) + '</td><td>' + pesos(x.real_efectivo) + ' · ' + pesos(x.sis_saldo_final_efvo) + '</td></tr>';
+    }).join('') +
+    (dias.length > 1 ? '<tr><td><b>Total</b></td><td class="n"><b>' + pesos(total) + '</b></td><td></td></tr>' : '') +
+    '</tbody></table></div><p class="bajada" style="margin-top:8px">Lo que sobra pasa a la caja inicial del día siguiente' +
+    (tot && tot.sobrante_efectivo !== undefined ? ': queda anotado acá y no suma en el desvío del mes.' : '.') + '</p>';
+}
 /** Los totales de unos días (para un rango que no es un mes): lo mismo que da la base para el mes. */
 function totalCajas(cajas) {
   var t = { dias_sin_cargar: 0, dias_sin_controlar: 0, dias_con_alertas: 0 };
-  ['sis_mp', 'real_mp', 'desvio_mp', 'sis_tarjeta', 'real_lote', 'desvio_tarjeta', 'sis_gocuotas', 'real_gocuotas', 'desvio_gocuotas', 'real_efectivo', 'desvio_efectivo'].forEach(function (k) {
+  ['sis_mp', 'real_mp', 'sis_tarjeta', 'real_lote', 'sis_gocuotas', 'real_gocuotas', 'real_efectivo'].forEach(function (k) {
     var hay = cajas.filter(function (c) { return c[k] != null; });
     t[k] = hay.length ? hay.reduce(function (a, c) { return a + Number(c[k]); }, 0) : null;
   });
   var se = cajas.filter(function (c) { return c.sis_saldo_final_efvo != null; });
   t.sis_efectivo = se.length ? se.reduce(function (a, c) { return a + Number(c.sis_saldo_final_efvo); }, 0) : null;
+  /* (SQL 213) Los desvíos, como los del mes: sin los días a cargo y, en efectivo, sólo lo que faltó; lo que sobró va aparte. */
+  ['desvio_mp', 'desvio_tarjeta', 'desvio_gocuotas', 'desvio_efectivo'].forEach(function (k) {
+    var hay = cajas.filter(function (c) { return c[k] != null; });
+    t[k] = hay.length ? hay.reduce(function (a, c) { return a + desvioDelMes(c, k); }, 0) : null;
+  });
+  var de = cajas.filter(function (c) { return c.desvio_efectivo != null; });
+  t.sobrante_efectivo = de.length ? de.reduce(function (a, c) { return a + Math.max(-Number(c.desvio_efectivo), 0); }, 0) : null;
   cajas.forEach(function (c) {
     if (c.estado === 'pendiente') t.dias_sin_cargar++;
     if (c.estado === 'cargada') t.dias_sin_controlar++;
@@ -1353,7 +1393,7 @@ function verCajas() {
       (tot ? '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div><div class="numero"><span>Días con alertas</span><b>' + tot.dias_con_alertas + '</b></div><div class="numero"><span>Desvío del mes (efectivo)</span><b>' + pesos(tot.desvio_efectivo) + '</b></div></div>' : '') +
       tarjetaCierre(cierre, tot, terminado, r[3].falta, _mes < hoyMes);
     if (!cajas.length) html += '<div class="vacio">No hay cajas cargadas en este mes.</div>';
-    else html += tablaDiasCaja(cajas, tot) + aCargoCajaHTML(cajas, nombreMes(_mes));
+    else html += tablaDiasCaja(cajas, tot) + aCargoCajaHTML(cajas, nombreMes(_mes)) + sobrantesCajaHTML(cajas, nombreMes(_mes), tot);
     /* Resumen por mes, como la parte de arriba de la planilla: del más viejo al más nuevo. */
     var conDatos = meses.slice().reverse().filter(function (m) { return porMes[m]; });
     if (conDatos.length) {
@@ -1403,7 +1443,7 @@ function verCajasRango() {
       '<div class="numeros"><div class="numero"><span>Días sin cargar</span><b>' + tot.dias_sin_cargar + '</b></div><div class="numero"><span>Sin controlar</span><b>' + tot.dias_sin_controlar + '</b></div>' +
         '<div class="numero"><span>Días con alertas</span><b>' + tot.dias_con_alertas + '</b></div><div class="numero"><span>Desvío (efectivo)</span><b>' + pesos(tot.desvio_efectivo) + '</b></div></div>' +
       '<p class="bajada">El cierre se da por mes: para darlo por controlado, elegí un mes.</p>' +
-      (cajas.length ? tablaDiasCaja(cajas, tot) + aCargoCajaHTML(cajas, rg.texto.toLowerCase()) : '<div class="vacio">No hay cajas cargadas en este período.</div>');
+      (cajas.length ? tablaDiasCaja(cajas, tot) + aCargoCajaHTML(cajas, rg.texto.toLowerCase()) + sobrantesCajaHTML(cajas, rg.texto.toLowerCase(), tot) : '<div class="vacio">No hay cajas cargadas en este período.</div>');
     var c = document.getElementById('cuerpo');
     c.innerHTML = html;
     armarPeriodoCajas();
@@ -1696,12 +1736,13 @@ function verCajasTodos(meses) {
 /* Todos los locales en un rango que no es un mes: los desvíos de esos días, por local. */
 function verCajasTodosRango() {
   var rg = _cajasRango, K = ['desvio_mp', 'desvio_tarjeta', 'desvio_gocuotas', 'desvio_efectivo'];
-  leerTodas('/orden_v_cajas?select=local_id,estado,' + K.join(',') + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc,id.asc').then(function (filas) {
+  leerTodas('/orden_v_cajas?select=local_id,estado,diferencia_persona,' + K.join(',') + '&fecha=gte.' + rg.desde + '&fecha=lte.' + rg.hasta + '&order=fecha.asc,id.asc').then(function (filas) {
     if (_solapa !== 'cajas' || !_cajasTodos || _cajasRango !== rg) return;
     var porLocal = {};
     (filas || []).forEach(function (x) {
       var t = porLocal[x.local_id] = porLocal[x.local_id] || { desvio_mp: 0, desvio_tarjeta: 0, desvio_gocuotas: 0, desvio_efectivo: 0, dias_sin_cargar: 0, dias_sin_controlar: 0 };
-      K.forEach(function (k) { t[k] += Number(x[k] || 0); });
+      /* (SQL 213) Como los del mes: sin los días a cargo y, en efectivo, sólo lo que faltó. */
+      K.forEach(function (k) { t[k] += desvioDelMes(x, k); });
       if (x.estado === 'pendiente') t.dias_sin_cargar++;
       if (x.estado === 'cargada') t.dias_sin_controlar++;
     });
