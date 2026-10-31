@@ -3617,48 +3617,139 @@ function ajPreguntas() {
   };
 }
 
-/** 22/10: el test semanal (orden_config.desafio_activo), todos los locales juntos; antes estaba en El local, de a uno. */
+/** 22/10: el test semanal (orden_config.desafio_activo), todos los locales juntos; antes estaba en El local, de a uno.
+    31/10 (SQL 210, Mauricio): "Cuándo sale": el mismo día y la misma hora para todos (arranca martes 14 h; al que tiene
+    franco, el día anterior que trabaja), así al otro día se controla quién lo hizo; o al azar, como antes. Se guarda
+    igual en todos los locales. Abajo, "Esta semana": a quién le llegó y si lo hizo. */
+var COLS_TEST = [{ k: 'desafio_cuando', t: 'Cuándo sale el test', tipo: 'sel', ops: [['fijo', 'el mismo día para todos'], ['azar', 'al azar, distinto para cada uno']] },
+                 { k: 'desafio_dia', t: 'Qué día sale', tipo: 'sel', numero: true, ops: LOS_DIAS.map(function (d, i) { return [i + 1, d]; }) },
+                 { k: 'desafio_hora', t: 'A qué hora sale', tipo: 'hora' }];
 function ajTestSemanal(z) {
   var cont = z.querySelector('#ajSemanal');
   if (!cont) return;
-  leer('/orden_config?select=local_id,desafio_activo').then(function (filas) {
-    var antes = {};
-    (filas || []).forEach(function (f) { antes[f.local_id] = !!f.desafio_activo; });
+  /* Sin el SQL 210 no están las columnas: se ve como antes y avisa qué falta. */
+  leer('/orden_config?select=local_id,desafio_activo,desafio_cuando,desafio_dia,desafio_hora').then(function (f) { return { filas: f }; }, function (e) {
+    if (e && !e.sinSesion && /desafio_cuando|42703|does not exist/i.test(e.message || '')) {
+      return leer('/orden_config?select=local_id,desafio_activo').then(function (f) { return { filas: f, sinSQL: true }; });
+    }
+    throw e;
+  }).then(function (r) {
+    var antes = {}, filas = r.filas || [], sinSQL = r.sinSQL;
+    filas.forEach(function (f) { antes[f.local_id] = !!f.desafio_activo; });
     var locs = _locales.filter(function (l) { return l.id in antes; }), sl = soloMira();
     if (!locs.length) { cont.innerHTML = '<div class="nota">Ningún local tiene todavía los ajustes de los controles.</div>'; return; }
+    /* El "cuándo" es uno solo para todos: se muestra el de un local prendido (o el primero). */
+    var c0 = sinSQL ? null : filas.filter(function (f) { return f.desafio_activo; })[0] || filas[0];
+    var c = function (k) { return campoFrase(COLS_TEST.filter(function (x) { return x.k === k; })[0], c0, sl); };
     cont.innerHTML = '<div class="renglon frases">' +
-      frase('A cada vendedor le llega un test de conocimiento por semana, un día y una hora al azar (no cuenta para faltas). Prendido en:') +
+      frase('A cada vendedor le llega un test de conocimiento por semana (no cuenta para faltas).') +
+      (sinSQL ? frase('Le llega a cada uno un día y una hora al azar. Para elegir el día y la hora falta correr el SQL 210 en Supabase (está en el Escritorio, en "App Orden").', 'aclara')
+              : frase('Cuándo sale: ' + c('desafio_cuando') + '<span data-ts-fijo>, ' + c('desafio_dia') + ' a las ' + c('desafio_hora') + '</span>.') + '<p class="frase aclara" data-ts-aclara></p>') +
+      frase('Prendido en:') +
       (locs.length > 1 && !sl ? '<div class="imp-mapa-acc"><button type="button" class="boton chico" data-ts="todos">Todos</button><button type="button" class="boton chico" data-ts="ninguno">Ninguno</button></div>' : '') +
       '<div class="imp-locales">' + locs.map(function (l) {
         return '<label class="imp-check"><input type="checkbox" data-ts-loc="' + esc(l.id) + '"' + (antes[l.id] ? ' checked' : '') + (sl ? ' disabled' : '') + '> ' + esc(l.nombre) + '</label>';
       }).join('') + '</div>' +
-      (sl ? '' : '<div class="acciones-renglon"><button class="boton chico lima" data-guardar disabled>Guardar</button></div>') + '</div>';
+      (sl ? '' : '<div class="acciones-renglon"><button class="boton chico lima" data-guardar disabled>Guardar</button></div>') + '</div>' +
+      '<div data-ts-semana></div>';
+    var campo = function (k) { return cont.querySelector('[data-k="' + k + '"]'); };
+    var elegido = function () {
+      return sinSQL ? null : { desafio_cuando: campo('desafio_cuando').value, desafio_dia: +campo('desafio_dia').value, desafio_hora: campo('desafio_hora').value };
+    };
+    /* Con "al azar" no hay día ni hora; la aclaración dice qué pasa con cada uno. */
+    var pintarCuando = function () {
+      if (sinSQL) return;
+      var e = elegido(), fijo = e.desafio_cuando === 'fijo';
+      cont.querySelector('[data-ts-fijo]').hidden = !fijo;
+      cont.querySelector('[data-ts-aclara]').textContent = fijo
+        ? 'Al que tiene franco ese día le llega el día anterior que trabaja. Vence ese día a la noche: al otro día ves abajo quién lo hizo. ' +
+          'El que no llegó lo puede hacer igual hasta que le llega el de la semana siguiente, y queda como tarde. Si prendés un local a mitad de semana, el primero le sale la semana que viene.'
+        : 'A cada uno le llega un día que trabaja, a una hora entre el aviso de la mañana y el recordatorio de la tarde (El local → Los avisos), así que no se sabe cuándo. ' +
+          'Tiene hasta el día siguiente que trabaja; después lo puede hacer igual hasta que le llega el de la semana siguiente.';
+    };
+    pintarCuando();
+    ajTestEstaSemana(cont.querySelector('[data-ts-semana]'), c0);
     if (sl) return;
     var g = cont.querySelector('[data-guardar]');
     var cajas = function () { return [].slice.call(cont.querySelectorAll('[data-ts-loc]')); };
     var cambiadas = function () { return cajas().filter(function (x) { return x.checked !== antes[x.dataset.tsLoc]; }); };
-    var marcar = function () { g.disabled = !cambiadas().length; };
+    var cambioCuando = function () {
+      var e = elegido();
+      return !!e && (e.desafio_cuando !== c0.desafio_cuando || e.desafio_dia !== +c0.desafio_dia || e.desafio_hora !== String(c0.desafio_hora || '').slice(0, 5));
+    };
+    var marcar = function () { pintarCuando(); g.disabled = !cambiadas().length && !cambioCuando(); };
     cont.addEventListener('change', marcar);
+    cont.addEventListener('input', marcar);
     cont.querySelectorAll('[data-ts]').forEach(function (b) {
       b.onclick = function () { var si = b.dataset.ts === 'todos'; cajas().forEach(function (x) { x.checked = si; }); marcar(); };
     });
     unaVez(g, function () {
-      var cam = cambiadas();
-      if (!cam.length) return 'dejar-apagado';
+      var cam = cambiadas(), e = elegido(), cuando = cambioCuando();
+      if (!cam.length && !cuando) return 'dejar-apagado';
+      if (e && !e.desafio_hora) {
+        if (e.desafio_cuando === 'fijo') { avisar('Elegí la hora.'); return; }
+        e.desafio_hora = String(c0.desafio_hora).slice(0, 5);   /* al azar la hora no se usa: queda la que estaba */
+      }
       var ruta = function (si) {
         var ids = cam.filter(function (x) { return x.checked === si; }).map(function (x) { return valor(x.dataset.tsLoc); });
         return ids.length ? guardarFila('/orden_config?local_id=in.(' + ids.join(',') + ')', { desafio_activo: si }) : null;
       };
+      /* El día y la hora, iguales en todos los locales (también los apagados: así, al prenderlos, ya salen ese día). */
+      var todos = Object.keys(antes).map(valor);
       g.textContent = 'Guardando…';
-      return Promise.all([ruta(true), ruta(false)]).then(function () {
+      return Promise.all([ruta(true), ruta(false), cuando ? guardarFila('/orden_config?local_id=in.(' + todos.join(',') + ')', e) : null]).then(function () {
         cam.forEach(function (x) { antes[x.dataset.tsLoc] = x.checked; });
+        if (cuando) { c0 = Object.assign({}, c0, e); ajTestEstaSemana(cont.querySelector('[data-ts-semana]'), c0); }
         var n = cajas().filter(function (x) { return x.checked; }).length;
+        var donde = n === locs.length && n > 1 ? 'los ' + n + ' locales' : n + (n === 1 ? ' local' : ' locales');
         avisar(!n ? 'Guardado: el test semanal quedó apagado en todos los locales.'
-                  : 'Guardado: el test semanal está prendido en ' + (n === locs.length && n > 1 ? 'los ' + n + ' locales' : n + (n === 1 ? ' local' : ' locales')) + '.');
+          : 'Guardado: el test semanal ' + (sinSQL ? 'está prendido' : c0.desafio_cuando === 'fijo' ? 'sale ' + LOS_DIAS[c0.desafio_dia - 1] + ' a las ' + String(c0.desafio_hora).slice(0, 5) : 'sale al azar') +
+            ' en ' + donde + '.');
         return 'dejar-apagado';
       });
     });
   }).catch(function (e) { cont.innerHTML = '<div class="nota">' + esc(mensajeDe(e)) + '</div>'; });
+}
+
+/** "Esta semana" (SQL 210): el test de la semana de cada vendedor, de todos los locales: cuándo le llegó y si lo hizo
+    (a tiempo, tarde, todavía no o no lo hizo). Es para el control del día siguiente. */
+function ajTestEstaSemana(cont, c0) {
+  if (!cont) return;
+  var lunes = lunesAR(), ahora = new Date();
+  leer('/orden_desafios?select=persona_id,local_id,creado_en,vence_en,terminado_en,puntaje,total&titulo=is.null&semana=eq.' + lunes).then(function (tests) {
+    tests = tests || [];
+    var ids = tests.map(function (t) { return t.persona_id; });
+    return (ids.length ? leer('/orden_personas?select=id,nombre,inicial&id=in.(' + ids.map(valor).join(',') + ')') : Promise.resolve([])).then(function (gente) {
+      if (!cont.isConnected) return;
+      var nombre = {};
+      (gente || []).forEach(function (p) { nombre[p.id] = p.nombre + (p.inicial ? ' ' + p.inicial + '.' : ''); });
+      /* Cuándo sale (o salió) el de esta semana, si es el mismo día para todos. */
+      var cuando = '';
+      if (c0 && c0.desafio_cuando === 'fijo') {
+        var dia = sumarDias(lunes, c0.desafio_dia - 1), hh = String(c0.desafio_hora).slice(0, 5);
+        var salio = hoyAR() > dia || (hoyAR() === dia && hora(ahora) >= hh);
+        cuando = (salio ? 'Salió el ' : 'Sale el ') + diaYFecha(dia) + ' a las ' + hh + (salio ? '' : ' (al que tiene franco ese día, el día anterior que trabaja)') + '.';
+      } else if (c0) cuando = 'Al azar: a cada uno le llega un día distinto.';
+      var hechos = tests.filter(function (t) { return t.terminado_en; }).length;
+      var estado = function (t) {
+        var nota = t.puntaje + '/' + t.total;
+        if (t.terminado_en) return new Date(t.terminado_en) <= new Date(t.vence_en) ? '<span class="est listo">Lo hizo · ' + nota + '</span>' : '<span class="est sorpresa">Lo hizo tarde · ' + nota + '</span>';
+        return new Date(t.vence_en) > ahora ? '<span class="est">Todavía no</span>' : '<span class="est vencido">No lo hizo</span>';
+      };
+      tests.sort(function (a, b) {
+        return nombreLocal(a.local_id).localeCompare(nombreLocal(b.local_id)) || String(nombre[a.persona_id] || '').localeCompare(String(nombre[b.persona_id] || ''));
+      });
+      cont.innerHTML = '<div class="seccion">Esta semana</div>' +
+        (cuando ? frase(esc(cuando)) : '') +
+        (!tests.length ? '<div class="vacio">Todavía no le llegó a nadie.</div>'
+          : frase('Lo hicieron <b>' + hechos + ' de ' + tests.length + '</b>.') +
+            '<div class="desliza"><table class="tabla-datos"><thead><tr><th>Local</th><th>Vendedor</th><th>Le llegó</th><th>El test</th></tr></thead><tbody>' +
+            tests.map(function (t) {
+              return '<tr><td>' + esc(nombreLocal(t.local_id)) + '</td><td><b>' + esc(nombre[t.persona_id] || '—') + '</b></td>' +
+                '<td>' + esc(diaYFecha(hoyAR(new Date(t.creado_en))) + ' a las ' + hora(t.creado_en)) + '</td><td>' + estado(t) + '</td></tr>';
+            }).join('') + '</tbody></table></div>');
+    });
+  }).catch(function (e) { if (cont.isConnected) cont.innerHTML = '<div class="nota">' + esc(mensajeDe(e)) + '</div>'; });
 }
 
 /** Una pregunta nueva: 2 a 4 opciones, cuál es la correcta y la explicación (la ven al responder). */

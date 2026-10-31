@@ -1108,10 +1108,12 @@ function dibujarHoy(x) {
   }
 
   var d = x.desafio;
-  if (d && !d.terminado_en && new Date(d.vence_en) > new Date()) {
-    var faltanQ = (d.preguntas || []).filter(function (q) { return !q.respondida; }).length;
-    filas.push({ id: 'hTest', titulo: 'Test de conocimiento' + (d.titulo ? ': ' + d.titulo : '') + (d.abiertos > 1 ? ' (+' + (d.abiertos - 1) + ')' : ''), hecho: false,
-      texto: faltanQ === d.total ? d.total + ' preguntas de opción múltiple. Si le errás, no pasa nada.' : 'Te quedan ' + faltanQ + ' preguntas.' });
+  /* SQL 210: el vencido se puede hacer igual hasta que cierra (una semana después de que le llegó); sin el SQL, hasta que vence. */
+  if (testAbierto(d)) {
+    var faltanQ = (d.preguntas || []).filter(function (q) { return !q.respondida; }).length, vencio = new Date(d.vence_en) <= new Date();
+    filas.push({ id: 'hTest', titulo: 'Test de conocimiento' + (d.titulo ? ': ' + d.titulo : '') + (d.abiertos > 1 ? ' (+' + (d.abiertos - 1) + ')' : ''), hecho: false, alerta: vencio,
+      texto: (vencio ? 'Se venció, pero lo podés hacer igual. ' : '') +
+        (faltanQ === d.total ? d.total + ' preguntas de opción múltiple. Si le errás, no pasa nada.' : 'Te quedan ' + faltanQ + ' preguntas.') });
   } else if (d && d.terminado_en && hoyAR(new Date(d.terminado_en)) === hoy) {
     filas.push({ id: 'hTest', titulo: 'Test de conocimiento', hecho: true, texto: 'Acertaste ' + d.puntaje + ' de ' + d.total + '.' });
   }
@@ -2535,8 +2537,14 @@ function pantallaBienvenida(despues) {
 
 function abrirDesafio() {
   llamar('orden_desafio_mio').then(function (d) {
-    if (d && !d.terminado_en) pantallaDesafio(d); else { pantallaHoy(); avisar('No tenés un test abierto.'); }
+    if (testAbierto(d)) pantallaDesafio(d); else { pantallaHoy(); avisar('No tenés un test abierto.'); }
   }).catch(function (e) { pantallaError(e, pantallaHoy); });
+}
+
+/** Se puede contestar: sin terminar y antes de que cierre. Con el SQL 210 cierra una semana después de que le llegó,
+    aunque haya vencido (cierra_en); sin el SQL, cuando vence. */
+function testAbierto(d) {
+  return !!d && !d.terminado_en && new Date(d.cierra_en || d.vence_en) > new Date();
 }
 
 function pantallaDesafio(d, recien) {
@@ -4173,13 +4181,15 @@ preguntarSalir = function () { if (_espejo) { salirEspejo(); return Promise.reso
 
 /** El test, como lo devuelve orden_desafio_mio (el abierto primero), leído de sus tests. */
 function desafioEspejo() {
-  return leer('/orden_desafios?select=id,semana,titulo,vence_en,terminado_en,puntaje,total,preguntas,respuestas&persona_id=eq.' + valor(_espejo.id) + '&order=creado_en.desc&limit=20').then(function (f) {
+  return leer('/orden_desafios?select=id,semana,titulo,creado_en,vence_en,terminado_en,puntaje,total,preguntas,respuestas&persona_id=eq.' + valor(_espejo.id) + '&order=creado_en.desc&limit=20').then(function (f) {
     f = f || [];
-    var ahora = new Date(), abierto = function (d) { return !d.terminado_en && new Date(d.vence_en) > ahora; };
+    /* Como orden_desafio_mio con el SQL 210: el vencido sigue abierto hasta una semana después de que le llegó. */
+    var cierra = function (d) { return new Date(Math.max(new Date(d.vence_en), new Date(d.creado_en).getTime() + 7 * 864e5)).toISOString(); };
+    var ahora = new Date(), abierto = function (d) { return !d.terminado_en && new Date(cierra(d)) > ahora; };
     var d = f.filter(abierto)[0] || f[0];
     if (!d) return null;
     var resp = d.respuestas || {};
-    return { id: d.id, semana: d.semana, titulo: d.titulo, vence_en: d.vence_en, terminado_en: d.terminado_en, puntaje: d.puntaje, total: d.total,
+    return { id: d.id, semana: d.semana, titulo: d.titulo, vence_en: d.vence_en, cierra_en: cierra(d), terminado_en: d.terminado_en, puntaje: d.puntaje, total: d.total,
              abiertos: f.filter(abierto).length, preguntas: (d.preguntas || []).map(function (q) { return { id: q, respondida: Object.prototype.hasOwnProperty.call(resp, q) }; }) };
   });
 }
