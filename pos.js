@@ -94,6 +94,11 @@
   var K_ENVIO = 'pos_borrador_envio';      // el envío interno a medio cargar (el mostrador)
   var K_REMITO_VER = 'pos_remito';         // el remito que se está recibiendo, en sessionStorage
   var K_CONTEO = 'pos_conteo_remito';      // lo contado de cada remito: si se cierra la pestaña, sigue ahí
+  /* Sin internet (SQL 212): la fila de las ventas que todavía no llegaron a la base y las copias para abrir sin conexión. */
+  var K_COLA = 'pos_cola';                 // las ventas hechas sin internet, en orden: se mandan solas cuando vuelve
+  var K_INI_COPIA = 'pos_inicio_copia';    // lo de pos_inicio de la última vez (de quien entró), para abrir sin internet
+  var K_PRECIOS = 'pos_precios_copia';     // los precios de las últimas listas usadas, para vender sin internet
+  var ESPERA = 15000;                      // cuánto se espera a la base antes de dar la red por caída (el wifi conectado pero sin salida)
 
   /* ── Los menús: las secciones de Tango y Dragonfish, con los nombres de BlueSoft ── */
   var MENUS = {
@@ -207,6 +212,7 @@
     medios: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
     arca: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
     reloj: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5"/><path d="M9.5 2h5M12 2v3"/>',
+    nube: '<path d="m2 2 20 20"/><path d="M5.8 5.8A7 7 0 0 0 9 19h8.5a4.5 4.5 0 0 0 1.3-.2"/><path d="M21.5 15.9A4.5 4.5 0 0 0 17.5 9h-1.8A7 7 0 0 0 9.4 5.1"/>',
     x:'<path d="M18 6 6 18M6 6l12 12"/>',
     ok: '<path d="M20 6 9 17l-5-5"/>',
     volver: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
@@ -336,10 +342,27 @@
   var V = null;    // la venta que se está armando
   var CB = null;   // el cambio que se está armando
 
+  /* Cada llamada dice si la red anda (SQL 212): un "no llegué" la da por caída; cualquier respuesta de la base, por buena. */
+  function alDia(pr) {
+    return pr.then(function (r) { redVolvio(); return r; },
+      function (e) { if (esDeRed(e) && !(e && e.sinSesion)) redSeCayo(); else if (e && e.delServidor) redVolvio(); throw e; });
+  }
   function llamar(nombre, args) {
-    return persona.token().then(function (t) { return funcion(nombre, args || {}, t); });
+    return alDia(persona.token().then(function (t) { return funcion(nombre, args || {}, t); }));
+  }
+  /** Como llamar, pero si la base no contesta en ms (ESPERA) se corta: con el wifi conectado y sin salida, el pedido
+      quedaría colgado minutos. El corte cuenta como "sin conexión". Si el pedido llegó igual, la clave evita duplicarlo. */
+  function llamarCorto(nombre, args, ms) {
+    var ctl = typeof AbortController === 'function' ? new AbortController() : null, reloj = null;
+    var corte = new Promise(function (_, no) {
+      reloj = setTimeout(function () { if (ctl) ctl.abort(); no(new Error('La base no contestó a tiempo.')); }, ms || ESPERA);
+    });
+    var pedido = persona.token().then(function (t) { return funcion(nombre, args || {}, t, ctl ? ctl.signal : undefined); });
+    return alDia(Promise.race([pedido, corte]).then(function (r) { clearTimeout(reloj); return r; }, function (e) { clearTimeout(reloj); throw e; }));
   }
   function esDeRed(e) { return !(e && (e.delServidor || e.sinSesion)); }
+  /** Para la fila: lo que vale volver a probar (sin red, o la base caída un rato: 5xx o 429). Un "no" de la base, no. */
+  function reintentable(e) { return !(e && e.sinSesion) && (esDeRed(e) || (e && (e.status >= 500 || e.status === 429))); }
   function mensajeDe(e) {
     var m = String((e && e.message) || e || '');
     /* El 147 (pruebas y la X) cambia pos_tickets y suma pos_pruebas_borrar; con el 146 solo, la X no existe.
@@ -371,20 +394,40 @@
   function listaDe(l) { return (l && l.lista_id) || (S.ini.listas[0] && S.ini.listas[0].id) || null; }
   function nombreLocal(l) { return l ? bonito(l.nombre) : ''; }
 
+  function ponerPrecios(lista, ver, filas) {
+    var m = {};
+    (filas || []).forEach(function (f) { m[f[0]] = { c: cent(f[1]), propio: !!f[2] }; });
+    S.precios[lista] = m;
+    S.preciosVer[lista] = ver;
+    return m;
+  }
+  /* SQL 212: la copia de los precios en la compu, para vender sin internet. Las tres últimas listas que se usaron
+     (en un local, una sola). Si no hay lugar, no se guarda: con internet anda igual. */
+  function copiaPrecios(lista) { var c = leerJSON(K_PRECIOS, {}) || {}; return c[lista] && Array.isArray(c[lista].filas) ? c[lista] : null; }
+  function guardarCopiaPrecios(lista, ver, filas) {
+    var c = leerJSON(K_PRECIOS, {}) || {};
+    c[lista] = { ver: ver, en: Date.now(), filas: filas || [] };
+    Object.keys(c).sort(function (a, b) { return c[b].en - c[a].en; }).slice(3).forEach(function (k) { delete c[k]; });
+    try { localStorage.setItem(K_PRECIOS, JSON.stringify(c)); } catch (e) { /* sin lugar en la compu */ }
+  }
   function asegurarPrecios(lista) {
     if (!lista) return Promise.resolve({});
     if (S.precios[lista]) return Promise.resolve(S.precios[lista]);
+    /* Sin internet, directo la copia de la compu (sin esperar a que la base no conteste). */
+    var cp = redCaida() && copiaPrecios(lista);
+    if (cp) return Promise.resolve(ponerPrecios(lista, cp.ver, cp.filas));
     /* SQL 201: primero la "versión" de la lista y después los precios (si algo cambia en el medio, la próxima
        vez la versión no coincide y se vuelven a traer). Sin el SQL 201, sin versión: como antes. */
     var ver = null;
-    return llamar('pos_precios_version', { p_lista: lista }).then(function (v) { ver = v; }, function () {}).then(function () {
-      return llamar('pos_precios', { p_lista: lista });
+    return llamarCorto('pos_precios_version', { p_lista: lista }).then(function (v) { ver = v; }, function () {}).then(function () {
+      return llamarCorto('pos_precios', { p_lista: lista });
     }).then(function (filas) {
-      var m = {};
-      (filas || []).forEach(function (f) { m[f[0]] = { c: cent(f[1]), propio: !!f[2] }; });
-      S.precios[lista] = m;
-      S.preciosVer[lista] = ver;
-      return m;
+      guardarCopiaPrecios(lista, ver, filas);
+      return ponerPrecios(lista, ver, filas);
+    }, function (e) {
+      var c = esDeRed(e) && copiaPrecios(lista);
+      if (!c) throw e;
+      return ponerPrecios(lista, c.ver, c.filas);
     });
   }
   /** Al empezar una venta o un cambio: si en la oficina subieron o aumentaron la lista desde que se trajo, se trae
@@ -392,7 +435,8 @@
       entera viaja sólo si cambió. Sin conexión, con la que ya estaba. */
   function preciosAlDia(lista) {
     if (!lista || !S.precios[lista] || !S.preciosVer[lista]) return asegurarPrecios(lista);
-    return llamar('pos_precios_version', { p_lista: lista }).then(function (v) {
+    if (redCaida()) return Promise.resolve(S.precios[lista]);
+    return llamarCorto('pos_precios_version', { p_lista: lista }).then(function (v) {
       if (v !== S.preciosVer[lista]) delete S.precios[lista];
       return asegurarPrecios(lista);
     }, function () { return S.precios[lista]; });
@@ -411,8 +455,8 @@
      Al abrir se pregunta si cambiaron (pos_articulos_version, liviana); recién ahí se bajan todos y se guardan
      en la compu. Nunca frena: sin el SQL 202 o sin conexión, sigue con la copia o con catalogo.js. */
   function traerArticulos(forzar) {
-    if (S.sin202) return Promise.resolve(false);
-    return llamar('pos_articulos_version').then(function (ver) {
+    if (S.sin202 || redCaida()) return Promise.resolve(false);   // sin internet, con la copia de la compu (SQL 212)
+    return llamarCorto('pos_articulos_version').then(function (ver) {
       if (!forzar && ART && ver && ART.n === ver.n && ART.v === ver.v) return false;
       return llamar('pos_articulos_todos').then(function (d) { ponerArticulos(d); return true; });
     }).catch(function (e) { if (sinFuncion(e)) S.sin202 = true; return false; });
@@ -437,7 +481,8 @@
   function traerStock(local, forzar) {
     if (!local) return Promise.resolve(null);
     if (S.stock[local] && !forzar) return Promise.resolve(S.stock[local]);
-    return llamar('pos_stock_local', { p_local: local }).then(function (d) {
+    if (redCaida()) return Promise.resolve(null);   // sin internet, sin el aviso (SQL 212): la venta no espera
+    return llamarCorto('pos_stock_local', { p_local: local }, 8000).then(function (d) {
       var m = {};
       (d.filas || []).forEach(function (f) { m[claveVar(f[0], f[1], f[2])] = f[3]; });
       return (S.stock[local] = { con: !!d.con_stock, m: m });
@@ -510,19 +555,35 @@
     /* El mostrador, quien tenga «Usa el POS» (lo dice nc_yo); la Gestión, sólo Administración. La base lo vuelve a mirar. */
     if (!y || (persona.rol() !== 'admin' && (MODO === 'gestion' || y.pos !== true))) { pantallaPorton(y); return; }
     app.innerHTML = '<p class="cargando">Cargando…</p>';
-    llamar('pos_inicio').then(function (ini) {
-      S.ini = ini;
-      if (!ini.locales || !ini.locales.length) { app.innerHTML = '<div class="pos-cartel">No hay sucursales cargadas.</div>'; return; }
-      S.artPromesa = traerArticulos();   // SQL 202: todos los productos, sin esperarlos (la venta arranca con la copia)
-      ir(vistaDelHash());
-      cuentaDif();
+    llamarCorto('pos_inicio').then(function (ini) {
+      /* SQL 212: lo de hoy queda en la compu (de quien entró), para poder abrir el mostrador sin internet. */
+      if (MODO === 'mostrador') guardarJSON(K_INI_COPIA, { id: y.id, en: Date.now(), ini: ini });
+      empezar(ini, false);
     }).catch(function (e) {
       if (e && e.sinSesion) { pantallaPorton(null); return; }
+      /* Sin internet, el mostrador abre con lo de la última vez: se puede vender y las ventas se mandan solas cuando vuelve. */
+      var cp = MODO === 'mostrador' && esDeRed(e) ? leerJSON(K_INI_COPIA, null) : null;
+      if (cp && cp.ini && cp.id === y.id) { empezar(cp.ini, true); return; }
       app.innerHTML = '<div class="pos-porton"><h2>' + (MODO === 'gestion' ? 'Gestión' : 'POS') + '</h2><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>' +
         '<button type="button" class="btn btn-sec btn-chico" id="reintentar">Probar de nuevo</button>' +
         (MODO === 'mostrador' ? '<a class="btn btn-sec btn-chico pos-porton-volver" href="index.html">‹ Volver al sistema</a>' : '') + '</div>';
       $('reintentar').onclick = arrancar;
     });
+  }
+  function empezar(ini, sinRed) {
+    S.ini = ini;
+    if (!ini.locales || !ini.locales.length) { app.innerHTML = '<div class="pos-cartel">No hay sucursales cargadas.</div>'; return; }
+    if (sinRed) ini.hoy = hoyAR();   // la copia puede ser de otro día
+    S.artPromesa = traerArticulos();   // SQL 202: todos los productos, sin esperarlos (la venta arranca con la copia)
+    ir(vistaDelHash());
+    cuentaDif();
+    if (sinRed) avisar('info', 'Sin internet: el POS abrió con lo de la última vez. Podés vender igual: las ventas se mandan solas cuando vuelva.');
+    setTimeout(vaciarCola, 1500);
+  }
+  /** El día de hoy en la Argentina ("2026-10-31"), como pos_hoy() de la base. */
+  function hoyAR() {
+    try { return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Buenos_Aires', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); }
+    catch (e) { var d = new Date(Date.now() - 3 * 3600e3); return d.toISOString().slice(0, 10); }
   }
 
   function pantallaPorton(y) {
@@ -553,6 +614,7 @@
     if (!esDe(MODO, v) && esDe(otro, v)) { location.replace(PAGINA[otro] + '#' + v); return; }
     if (!esDe(MODO, v)) v = INICIO[MODO];
     S.vista = v;
+    S.recargar = null;   // la vista que se abre pone el suyo (Tickets, el cierre): lo llama la fila al mandar ventas (SQL 212)
     try { history.replaceState(null, '', location.pathname + location.search + '#' + v); } catch (e) {}
     cerrarVentana();
     app.innerHTML = marco();
@@ -651,8 +713,9 @@
             '<div class="pos-grupo-items' + (ab ? '' : ' cerrado') + '">' + g[1].map(item).join('') + '</div>';
         }).join('')
       : menuVisible().map(function (g) { return '<div class="pos-grupo" aria-hidden="true"></div>' + g[1].map(item).join(''); }).join('') +
-        /* Abajo: el modo prueba y quién entró (en el mostrador no hay barra que lo diga). */
+        /* Abajo: sin internet y las ventas sin mandar (SQL 212), el modo prueba y quién entró (en el mostrador no hay barra que lo diga). */
         '<div class="pos-menu-pie">' +
+          '<button type="button" class="pos-item pos-red" id="posRed" hidden>' + icono('nube') + '<span id="posRedTxt"></span></button>' +
           '<label class="pos-item pos-modo" title="Modo prueba: lo que guardes no cuenta para nada">' + icono('prueba') + '<span>Modo prueba</span>' +
             '<span class="pos-switch chico"><input type="checkbox" id="posPrueba"' + (enPrueba() ? ' checked' : '') + ' aria-label="Modo prueba"><i></i></span></label>' +
           '<button type="button" class="pos-item pos-yo" id="posYo" title="' + esc(y ? y.nombre + ' · No soy yo' : 'Entrar') + '">' + icono('yo') +
@@ -690,6 +753,9 @@
     if (pr) pr.onchange = function () { ponerPrueba(pr.checked); };
     var yo = $('posYo');
     if (yo) yo.onclick = function () { persona.entrar(); };
+    var rd = $('posRed');
+    if (rd) rd.onclick = abrirCola;
+    pintarRed();
     /* En el celular el menú es una tira: que se vea la sección abierta. */
     var m = app.querySelector('.pos-menu'), a = m && m.querySelector('.activa');
     if (m && a && m.scrollWidth > m.clientWidth + 1) m.scrollLeft = Math.max(0, a.offsetLeft - (m.clientWidth - a.offsetWidth) / 2);
@@ -1284,6 +1350,16 @@
   function pintarHecho() {
     var u = S.ultimo, h = $('vHecho');
     if (!h) return;
+    /* SQL 212: la venta que quedó en la compu (sin internet), o el aviso de que no hay internet o de lo que falta mandar. */
+    var n = leerCola().length;
+    if ((u && u.cola) || (!u && (redCaida() || n))) {
+      h.innerHTML = '<div class="pos-hecho cola" role="status">' + icono('nube') + '<span>' +
+        (u && u.cola ? 'Sin internet: venta guardada en esta compu · ' + plata(u.total) + ' · se manda sola' :
+         n ? (redCaida() ? 'Sin internet · ' : '') + (n === 1 ? '1 venta sin mandar' : n + ' ventas sin mandar') :
+         'Sin internet · podés vender igual') + '</span><button type="button" id="vVerCola">Ver</button></div>';
+      $('vVerCola').onclick = abrirCola;
+      return;
+    }
     h.innerHTML = u ? '<div class="pos-hecho' + (u.serie === 'prueba' ? ' prueba' : '') + '" role="status">' + icono('ok') + '<span>' + esc(nombreVenta(u)) + ' guardada · ' + plata(u.total) +
       (u.ya ? ' (ya estaba guardada: no se duplicó)' : '') + '</span><button type="button" id="vVerUltimo">Ver el ticket</button></div>' : '';
     if (u) $('vVerUltimo').onclick = function () { abrirTicket(u.id); };
@@ -1947,13 +2023,37 @@
         return y;
       })
     };
+    /* SQL 212: sin internet la venta queda en la compu y se manda sola cuando vuelve. La gift card no: hay que leerla en la base. */
+    var conGc = p.items.some(function (i) { return i.giftcard; }) || p.pagos.some(function (x) { return x.medio === 'giftcard'; });
+    var socio = V.socio;
+    function aLaFila() {
+      p.hecha = new Date().toISOString();
+      var x = encolarVenta(p, c, JSON.parse(JSON.stringify(V)));
+      S.guardando = false;
+      if (!x) {
+        reponerBotones();
+        avisar('err', 'Sin internet, y en la compu no hay lugar para guardarla. Probá de nuevo cuando vuelva internet: la venta sigue armada.');
+        return;
+      }
+      S.ultimo = { cola: true, clave: x.clave, total: c.total, local: nombreLocal(l0), prueba: !!p.prueba };
+      V = ventaNueva(V);
+      guardarBorrador();
+      avisar('ok', 'Sin internet: la venta quedó guardada en esta compu y se manda sola cuando vuelva.' +
+        (socio && !p.prueba ? ' Los puntos de ' + String(socio.nombre || '').split(' ')[0] + ' se anotan cuando llegue.' : ''));
+      pintarRed();
+      if (S.vista === 'venta') verVenta();
+    }
+    if (!conGc && redCaida()) { aLaFila(); return; }
     S.guardando = true;
     var b = $('vGuardar'), bv = $('vGuardarVer'), bx = aTickets ? bv : b;
     if (b) b.disabled = true;
     if (bv) bv.disabled = true;
     if (bx) bx.textContent = 'Guardando…';
-    var socio = V.socio;
-    llamar('pos_venta_guardar', { p: p }).then(function (r) {
+    function reponerBotones() {
+      if (b && b.isConnected) { b.disabled = false; b.innerHTML = textoGuardar(true); }
+      if (bv && bv.isConnected) { bv.disabled = false; bv.innerHTML = textoGuardar(false); }
+    }
+    llamarCorto('pos_venta_guardar', { p: p }).then(function (r) {
       S.ultimo = { id: r.id, numero: r.numero, serie: r.serie || 'factura', total: c.total, local: nombreLocal(l0), ya: !!r.ya };
       S.stock = {};   // lo vendido salió del stock: se vuelve a traer
       V = ventaNueva(V);
@@ -1971,11 +2071,199 @@
       ir('tickets');
     }).catch(function (e) {
       S.guardando = false;
-      if (b && b.isConnected) { b.disabled = false; b.innerHTML = textoGuardar(true); }
-      if (bv && bv.isConnected) { bv.disabled = false; bv.innerHTML = textoGuardar(false); }
-      if (e && e.sinSesion) { avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
-      avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : mensajeDe(e));
+      if (e && e.sinSesion) { reponerBotones(); avisar('err', 'Se cerró tu sesión: entrá de nuevo. La venta sigue armada.'); persona.entrar(); return; }
+      /* Sin internet (o la base caída un rato): a la fila. Si en realidad llegó y se cortó la respuesta, al mandarla de nuevo
+         la base la reconoce por la clave y no la duplica. */
+      if (reintentable(e) && !conGc) { aLaFila(); return; }
+      reponerBotones();
+      avisar('err', reintentable(e) ? 'Sin internet no se puede vender ni cobrar con una Gift Card (hay que leerla en la base): cobrá con otro medio o esperá a que vuelva.' : mensajeDe(e));
     });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     SIN INTERNET (31/10/2026, SQL 212: "vender sin internet, sí")
+     La venta que no se pudo mandar queda en una fila en la compu (K_COLA, en orden) y se manda sola: al volver
+     internet, cada 20 segundos y al abrir el POS. La base le da el número recién cuando llega y, con el SQL 212,
+     la deja con la hora en que se hizo. Una sola pestaña manda a la vez (Web Lock). Lo que la base rechaza queda
+     en la fila con el porqué, para corregirlo o descartarlo; nada se pierde sin que alguien lo decida.
+     Sin internet NO se puede: gift cards, buscar o hacer socios, cambios, cierre de caja y los listados.
+     ════════════════════════════════════════════════════════════════════ */
+  var RED = { caida: 0, mandando: false, sinSesion: false, llegaron: [] };
+  function redCaida() { return RED.caida > 0 || navigator.onLine === false; }
+  function redSeCayo() { if (!RED.caida) { RED.caida = Date.now(); pintarRed(); } }
+  function redVolvio() { if (RED.caida) { RED.caida = 0; pintarRed(); setTimeout(vaciarCola, 0); } }
+  function leerCola() { var c = leerJSON(K_COLA, []); return Array.isArray(c) ? c : []; }
+  function guardarCola(c) {
+    try { if (c.length) localStorage.setItem(K_COLA, JSON.stringify(c)); else localStorage.removeItem(K_COLA); return true; }
+    catch (e) { return false; }
+  }
+  function pendientes() { return leerCola().filter(function (x) { return !x.error; }); }
+  /** Las sin mandar de una sucursal (sin sucursal: de todas) y de prueba o de verdad. */
+  function colaDe(local, prueba) { return leerCola().filter(function (x) { return (!local || x.local_id === local) && !!x.prueba === !!prueba; }); }
+  /** La venta a la fila: lo que se manda (p, con la hora en que se hizo) y la venta armada (v), para corregirla si la base la rechaza. */
+  function encolarVenta(p, c, v) {
+    var cola = leerCola();
+    if (cola.some(function (y) { return y.clave === p.clave; })) return cola.filter(function (y) { return y.clave === p.clave; })[0];
+    var x = { clave: p.clave, hecha: p.hecha, p: p, v: v, local_id: p.local_id, vendedor: p.vendedor, letra: p.letra, prueba: !!p.prueba,
+              total: c.total, cant: c.cantidad, error: '' };
+    cola.push(x);
+    return guardarCola(cola) ? x : null;
+  }
+  function cambiarEnCola(clave, f) {
+    var cola = leerCola(), i = -1;
+    cola.forEach(function (y, k) { if (y.clave === clave) i = k; });
+    if (i < 0) return;
+    if (f) f(cola[i]); else cola.splice(i, 1);
+    guardarCola(cola);
+  }
+
+  function vaciarCola() {
+    if (RED.mandando || !S.ini) return Promise.resolve();
+    if (!pendientes().length) {
+      /* Nada para mandar: si la red estaba caída, se pregunta algo liviano para saber si volvió. */
+      if (RED.caida && navigator.onLine !== false) return llamarCorto('pos_articulos_version').then(function () {}, function () {});
+      return Promise.resolve();
+    }
+    if (navigator.onLine === false) return Promise.resolve();
+    RED.mandando = true;
+    pintarRed();
+    var llegaron = [];
+    function una() {
+      var x = pendientes()[0];
+      if (!x) return null;
+      return llamarCorto('pos_venta_guardar', { p: x.p }).then(function (r) {
+        cambiarEnCola(x.clave, null);
+        llegaron.push(r);
+        RED.llegaron.unshift({ hecha: x.hecha, total: x.total, local_id: x.local_id, vendedor: x.vendedor, r: r });
+        if (S.ultimo && S.ultimo.cola && S.ultimo.clave === x.clave) {
+          S.ultimo = { id: r.id, numero: r.numero, serie: r.serie || 'factura', total: x.total, local: S.ultimo.local, ya: false };
+        }
+        return una();
+      }, function (e) {
+        if (e && e.sinSesion) { RED.sinSesion = true; return null; }
+        if (reintentable(e)) return null;   // sigue sin internet: la próxima vuelta
+        cambiarEnCola(x.clave, function (y) { y.error = mensajeDe(e); });
+        return una();
+      });
+    }
+    function hacer() { RED.sinSesion = false; return Promise.resolve(una()); }
+    var p = navigator.locks && navigator.locks.request
+      ? navigator.locks.request('pos_cola', { ifAvailable: true }, function (l) { return l ? hacer() : null; })
+      : hacer();
+    function fin() {
+      RED.mandando = false;
+      if (llegaron.length) {
+        avisar('ok', llegaron.length === 1 ? 'Llegó a la base la venta que se hizo sin internet: es la ' + nombreVenta(llegaron[0]) + '.'
+                                           : 'Llegaron a la base las ' + llegaron.length + ' ventas que se hicieron sin internet.');
+        S.stock = {};
+        if (S.recargar) S.recargar();
+      }
+      var malas = leerCola().filter(function (x) { return x.error; }).length;
+      if (malas && llegaron.length) setTimeout(function () { avisar('err', (malas === 1 ? 'Una venta hecha sin internet no se pudo mandar' : malas + ' ventas hechas sin internet no se pudieron mandar') + ': tocá «Sin mandar» en el menú.'); }, 3500);
+      pintarRed();
+    }
+    return p.then(fin, fin);
+  }
+  window.addEventListener('online', function () { setTimeout(vaciarCola, 500); });
+  window.addEventListener('offline', function () { redSeCayo(); });
+  window.addEventListener('storage', function (e) { if (e.key === K_COLA) pintarRed(); });
+  setInterval(function () { if (S.ini && (RED.caida || pendientes().length)) vaciarCola(); }, 20000);
+
+  /** El aviso del menú (abajo, se ve también con el menú achicado) y, en la venta, el de la cabecera. */
+  function pintarRed() {
+    var cola = leerCola(), malas = cola.filter(function (x) { return x.error; }).length, n = cola.length, caida = redCaida();
+    var bt = $('posRed');
+    if (bt) {
+      bt.hidden = !caida && !n;
+      bt.classList.toggle('mal', malas > 0);
+      var txt = malas ? (malas === 1 ? '1 no se mandó' : malas + ' no se mandaron') : n ? (n === 1 ? '1 sin mandar' : n + ' sin mandar') : 'Sin internet';
+      $('posRedTxt').textContent = txt;
+      bt.title = (caida ? 'Sin internet. ' : '') + (n ? (n === 1 ? 'Hay 1 venta' : 'Hay ' + n + ' ventas') + ' guardadas en esta compu que todavía no llegaron a la base' +
+        (RED.sinSesion ? ': entrá con tu usuario para mandarlas.' : ': se mandan solas.') : 'Podés vender igual: las ventas quedan en esta compu.');
+      var em = bt.querySelector('.pos-cuenta');
+      if (em) em.remove();
+      if (n) bt.insertAdjacentHTML('beforeend', '<em class="pos-cuenta">' + (n > 99 ? '99+' : n) + '</em>');
+    }
+    if (S.vista === 'venta') pintarHecho();
+  }
+
+  /** La ventana de la fila: lo que falta mandar, con su estado; lo que la base rechazó se corrige o se descarta. */
+  function abrirCola() {
+    var caja = ventana('<h3 id="posVentTit">Ventas hechas sin internet</h3><div id="colaIn"></div>', true);
+    function pintarC() {
+      var cola = leerCola(), dentro = caja.querySelector('#colaIn');
+      if (!dentro) return;
+      var hora = function (iso) { return fechaHora(iso); };
+      var filas = cola.map(function (x, i) {
+        var l = localDe(x.local_id);
+        return '<tr' + (x.error ? ' class="mal"' : '') + '><td>' + esc(hora(x.hecha)) + '</td><td>' + esc(nombreLocal(l)) + '</td><td>' + esc(x.vendedor || '') + '</td>' +
+          '<td>' + esc(LETRAS[x.letra] || x.letra || '') + (x.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</td><td class="c">' + (x.cant || '') + '</td>' +
+          '<td class="n"><b>' + plata(x.total) + '</b></td>' +
+          '<td>' + (x.error ? '<span class="cola-mal">No se pudo: ' + esc(x.error) + '</span>' : RED.mandando && i === 0 ? 'Mandando…' : 'Esperando internet') + '</td>' +
+          '<td class="cola-acc">' + (x.error ? '<button type="button" class="pos-link" data-corregir="' + esc(x.clave) + '">Corregir</button> ' +
+            '<button type="button" class="pos-link" data-descartar="' + esc(x.clave) + '">Descartar</button>' : '') + '</td></tr>';
+      }).join('');
+      var llegaron = RED.llegaron.slice(0, 8).map(function (y) {
+        return '<li>' + esc(hora(y.hecha)) + ' · ' + esc(nombreVenta(y.r)) + ' · ' + plata(y.total) + ' · ' + esc(nombreLocal(localDe(y.local_id))) + '</li>';
+      }).join('');
+      var malas = cola.filter(function (x) { return x.error; }).length;
+      dentro.innerHTML =
+        '<p class="pos-bajada">' + (malas === cola.length && malas
+          ? (malas === 1 ? 'La base no aceptó esta venta' : 'La base no aceptó estas ventas') + ': con «Corregir» vuelve a la venta para arreglarla y guardarla de nuevo; con «Descartar», no queda registrada. ' +
+            '<b>No cierres la caja hasta resolverlo</b>: el cierre todavía no ' + (malas === 1 ? 'la' : 'las') + ' ve.'
+          : cola.length
+          ? 'Quedaron guardadas en esta compu y se mandan solas, en orden, apenas vuelve internet. Cuando llegan, la base les da el número. <b>No cierres la caja hasta que se manden</b>: el cierre todavía no las ve.' +
+            (malas ? ' Las que la base no aceptó se corrigen o se descartan.' : '')
+          : redCaida() ? 'Sin internet. Podés vender igual: las ventas quedan guardadas en esta compu y se mandan solas cuando vuelva.'
+          : 'No queda ninguna venta sin mandar en esta compu.') + '</p>' +
+        (RED.sinSesion ? '<div class="pos-cartel mal">Se cerró la sesión: entrá con tu usuario para mandarlas.</div>' : '') +
+        (cola.length ? '<div class="pos-marco-tabla"><table class="pos-tabla cola-tabla"><thead><tr><th>Se hizo</th><th>Sucursal</th><th>Vendedor</th><th>Comprobante</th>' +
+          '<th class="c">Prendas</th><th class="n">Total</th><th>Estado</th><th><span class="sr">Acciones</span></th></tr></thead><tbody>' + filas + '</tbody></table></div>' : '') +
+        (llegaron ? '<p class="cola-llegaron-tit">Ya llegaron a la base</p><ul class="cola-llegaron">' + llegaron + '</ul>' : '') +
+        '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cerrar</button>' +
+          (cola.length ? '<button type="button" class="btn btn-pri btn-chico" id="colaMandar"' + (RED.mandando ? ' disabled' : '') + '>' + (RED.mandando ? 'Mandando…' : 'Mandar ahora') + '</button>' : '') + '</div>';
+      var bm = dentro.querySelector('#colaMandar');
+      if (bm) bm.onclick = function () {
+        if (RED.sinSesion) { persona.entrar(); return; }
+        /* Lo que la base rechazó se vuelve a probar también (quizá ya se arregló: corrieron un SQL, volvió el socio…). */
+        var cl = leerCola(); cl.forEach(function (y) { y.error = ''; }); guardarCola(cl);
+        RED.caida = 0;
+        vaciarCola().then(pintarC);
+        pintarC();
+      };
+      dentro.querySelectorAll('[data-corregir]').forEach(function (b) {
+        b.onclick = function () {
+          var x = leerCola().filter(function (y) { return y.clave === b.getAttribute('data-corregir'); })[0];
+          if (!x || !x.v) return;
+          if (V && V.lineas && V.lineas.length && !confirm('Estás armando otra venta: se reemplaza por la que hay que corregir. ¿Seguir?')) return;
+          cambiarEnCola(x.clave, null);
+          V = x.v;   // con la misma clave: si al final había llegado, la base no la duplica
+          guardarBorrador();
+          S.ultimo = null;
+          cerrarVentana();
+          ir('venta');
+          avisar('info', 'La venta que no se pudo mandar: ' + x.error + ' Corregila y guardala de nuevo.');
+          pintarRed();
+        };
+      });
+      dentro.querySelectorAll('[data-descartar]').forEach(function (b) {
+        b.onclick = function () {
+          if (!confirm('Esta venta NO va a quedar registrada en el sistema (ni en la caja ni en el stock). ¿Descartarla?')) return;
+          cambiarEnCola(b.getAttribute('data-descartar'), null);
+          pintarRed();
+          pintarC();
+        };
+      });
+    }
+    function firma() { return JSON.stringify([leerCola().map(function (x) { return [x.clave, x.error]; }), RED.mandando, RED.sinSesion, RED.llegaron.length, redCaida()]); }
+    var vista = firma();
+    pintarC();
+    /* Mientras está abierta, se pone al día sola (sólo si cambió algo: así no se mueve lo que están por tocar). */
+    var t = setInterval(function () {
+      if (!caja.isConnected) { clearInterval(t); return; }
+      var f = firma();
+      if (f !== vista) { vista = f; pintarC(); }
+    }, 1000);
   }
 
   document.addEventListener('keydown', function (e) {
@@ -2034,7 +2322,9 @@
           (t.prueba ? ' <span class="pill pill-warn">Prueba</span>' : '') + '</h3>' +
         (t.prueba ? '<div class="pos-cartel prueba">Es una venta de prueba: no cuenta en ningún total y se borra con «Borrar las pruebas».</div>' : '') +
         '<div class="pos-ticket-datos">' +
-          '<div><span>Fecha</span>' + esc(fechaHora(t.fecha)) + '</div>' +
+          '<div><span>Fecha</span>' + esc(fechaHora(t.fecha)) +
+            /* SQL 212: la que se hizo sin internet dice cuándo llegó a la base. */
+            (t.sin_internet ? '<br><small class="tk-sin-red">Se hizo sin internet · llegó el ' + esc(fechaHora(t.sin_internet)) + '</small>' : '') + '</div>' +
           '<div><span>Sucursal</span>' + esc(bonito(t.local)) + '</div>' +
           '<div><span>Vendedor</span>' + esc(t.vendedor) + '</div>' +
           '<div><span>Cargó</span>' + esc(t.cargado_por_nombre || '—') + '</div>' +
@@ -2314,8 +2604,15 @@
         caja('Anulados', t.anulados || 0) + porLetra;
       var aviso = deLaPrueba() ? '<div class="pos-cartel prueba">Las ventas de <b>prueba</b>: no cuentan en ningún total de verdad. ' +
         '«Borrar las pruebas» las borra' + ($('tkLocal').value ? ' (las de esa sucursal)' : ' todas') + ', de cualquier día.</div>' : '';
+      /* SQL 212: las ventas hechas sin internet que esta compu todavía no mandó no están en la lista (no tienen número). */
+      var nc = colaDe($('tkLocal').value || null, deLaPrueba()).length;
+      if (nc) aviso += '<div class="pos-cartel cola">' + icono('nube') + '<span>' + (nc === 1 ? 'Hay 1 venta hecha sin internet que todavía no llegó a la base: no está en esta lista.'
+        : 'Hay ' + nc + ' ventas hechas sin internet que todavía no llegaron a la base: no están en esta lista.') +
+        ' Se mandan solas cuando vuelve internet.</span> <button type="button" class="pos-link" id="tkVerCola">Ver</button></div>';
+      function verCola() { var b = $('tkVerCola'); if (b) b.onclick = abrirCola; }
       if (!d.filas || !d.filas.length) {
         $('tkLista').innerHTML = aviso + '<div class="pos-cartel">' + (deLaPrueba() ? 'No hay ventas de prueba en ese período con esos filtros.' : 'No hay ventas en ese período con esos filtros.') + '</div>';
+        verCola();
         return;
       }
       $('tkLista').innerHTML = aviso + '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Fecha</th><th class="n">Referencia</th><th>Sucursal</th><th>Vendedor</th>' +
@@ -2335,6 +2632,7 @@
               : '<td class="apagado" title="Por ahora la factura la hace BlueSoft">' + (f.factura ? 'Con CAE' : '—') + '</td>') + '</tr>';
         }).join('') + '</tbody></table></div>' +
         (d.mas ? '<p class="pos-mas">Se ven las últimas 500. Achicá el período para ver el resto.</p>' : '');
+      verCola();
       $('tkLista').querySelectorAll('tr[data-ticket]').forEach(function (tr) {
         tr.onclick = function () { abrirTicket(tr.getAttribute('data-ticket'), cargar); };
         tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
@@ -2344,6 +2642,8 @@
       S.marcar = null;
       if (nueva) { nueva.classList.add('recien'); nueva.scrollIntoView({ block: 'nearest' }); }
     }
+    /* SQL 212: cuando llegan las ventas hechas sin internet, la lista se vuelve a traer. */
+    S.recargar = function () { if (S.vista === 'tickets' && $('tkLista')) cargar(); };
     cargar();
   }
 
@@ -4151,8 +4451,17 @@
     /* Si cambian lo contado (o el saldo inicial) después de ver la cuenta, hay que volver a contar. */
     function olvidarCuenta() { if (K.k) { K.k = null; pintarPasos(); } }
 
+    /* SQL 212: las ventas hechas sin internet que todavía están en esta compu no están en la caja de la base. */
+    function sinMandar() {
+      var n = colaDe(S.cajaLocal, prueba).length;
+      return !n ? '' : n === 1 ? 'Hay 1 venta hecha sin internet que todavía no llegó a la base (no está en esta cuenta)'
+                               : 'Hay ' + n + ' ventas hechas sin internet que todavía no llegaron a la base (no están en esta cuenta)';
+    }
     function contar() {
       if (!K.d) return;
+      /* Cada conteo queda anotado: con ventas sin mandar daría un desvío que no es (la plata está y la venta no). */
+      var sm = sinMandar();
+      if (sm) { avisar('err', sm + '. Se mandan solas cuando vuelve internet: recién ahí se puede contar y cerrar.'); abrirCola(); return; }
       var cont = leerPlata($('cjContado').value);
       if (isNaN(cont)) { avisar('err', 'Escribí cuánto efectivo hay en el local.'); $('cjContado').focus(); return; }
       var saldo = null;
@@ -4177,6 +4486,9 @@
     function cerrar() {
       var k = K.k;
       if (!k || S.guardando) return;
+      /* SQL 212: con ventas sin mandar el efectivo no da (la plata está en el cajón y la venta todavía no en la base). */
+      var sm = sinMandar();
+      if (sm) { avisar('err', sm + '. Esperá a que vuelva internet (se mandan solas) y contá de nuevo para cerrar.'); abrirCola(); return; }
       var obs = $('cjObs').value.trim(), dv = desvioDe(cent(k.desvio), cent(k.tolerancia));
       if (dv.cls !== 'ok' && !obs && !confirm(dv.txt + ' y no escribiste nada en Observaciones. ¿Cerrar la caja igual?')) { $('cjObs').focus(); return; }
       S.guardando = true;
@@ -4234,6 +4546,8 @@
       $('cjContado').focus();
     };
     $('cjCerrar').onclick = cerrar;
+    /* SQL 212: cuando llegan las ventas hechas sin internet, la caja se vuelve a traer (y hay que contar de nuevo). */
+    S.recargar = function () { if (S.vista === 'cierre' && $('cjRes')) { $('cjContado').value = ''; cargar(); } };
     cargar();
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var x = $('cjContado'); if (x) x.focus(); }, 0);
   }

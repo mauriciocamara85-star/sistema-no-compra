@@ -1194,6 +1194,8 @@ select {
   bottom: calc(env(safe-area-inset-bottom) + 96px);
   transform: translate(-50%, 20px);
   z-index: 130;  /* encima de las ventanitas (z 70) y del rail (96): un aviso tapado no avisa */
+  /* Sin el max-content, con left: 50% el ancho se achica a la mitad de la pantalla y en el celular un aviso largo quedaba como un óvalo. */
+  width: max-content;
   max-width: calc(100vw - 32px);
   display: flex; align-items: center; gap: 9px;
   padding: 13px 18px;

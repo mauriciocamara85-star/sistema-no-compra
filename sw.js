@@ -14,7 +14,7 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v303';
+const CACHE = 'no-compra-v304';
 
 const BASICOS = [
   './',
@@ -106,7 +106,10 @@ self.addEventListener('fetch', (evento) => {
         }
         return respuesta;
       })
-      .catch(() => caches.match(pedido).then((guardada) => {
+      .catch(() => caches.match(pedido).then((guardada) => guardada ||
+        /* La página con otro "?…" detrás (pos.html?x=1): sin señal vale la misma página guardada (el POS abre sin
+           internet, SQL 212). */
+        (pedido.mode === 'navigate' ? caches.match(pedido, { ignoreSearch: true }) : undefined)).then((guardada) => {
         if (guardada) return guardada;
         // Navegación sin señal y sin esa página en el caché: se ofrece el
         // formulario, que es a lo que viene el 95% de las aperturas.

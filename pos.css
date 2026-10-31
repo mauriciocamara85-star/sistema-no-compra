@@ -1193,3 +1193,27 @@ tr[data-pd]:hover td { background: var(--surface-2); }
 .pos-campos.ti-obs { margin-top: 12px; }
 .pos-pie.ti-archivo { justify-content: flex-start; align-items: center; margin-top: 4px; }
 @media (max-width: 560px) { .pos-campos.ti-horas { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ═════════ SIN INTERNET (SQL 212) ═════════
+   Las ventas que se hacen sin internet quedan en la compu y se mandan solas.
+   En el pie del menú, el aviso (ámbar; en rojo si la base rechazó alguna);
+   en la venta, el cartel de la cabecera; y la ventana con la fila. */
+.pos-item.pos-red { background: var(--warn-soft); color: var(--warn-txt); }
+.pos-item.pos-red:hover { color: var(--warn-txt); filter: brightness(.97); }
+.pos-item.pos-red[hidden] { display: none; }   /* .pos-item es flex: sin esto el hidden no lo esconde */
+.pos-item.pos-red .pos-cuenta { background: var(--warn); color: #fff; }
+.pos-item.pos-red.mal { background: var(--bad-soft); color: var(--bad-txt); }
+.pos-item.pos-red.mal .pos-cuenta { background: var(--bad); color: var(--bad-ink); }
+.pos-hecho.cola { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-txt); }
+.pos-hecho.cola button { color: var(--warn-txt); }
+.pos-cartel.cola { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 10px; background: var(--warn-soft); border-color: transparent; color: var(--warn-txt); }
+.pos-cartel.cola svg { width: 18px; height: 18px; flex: none; }
+.pos-cartel.cola span { flex: 1 1 260px; }
+.pos-cartel.cola .pos-link { color: inherit; }
+.cola-tabla td { vertical-align: top; }
+.cola-tabla tr.mal td { background: var(--bad-soft); }
+.cola-mal { color: var(--bad-txt); font-weight: 600; }
+.cola-acc { white-space: nowrap; text-align: right; }
+.cola-llegaron-tit { margin: 14px 0 4px; font: 700 12px var(--sans); color: var(--txt-3); text-transform: uppercase; letter-spacing: .5px; }
+.cola-llegaron { margin: 0; padding-left: 18px; display: grid; gap: 3px; font-size: 13.5px; color: var(--txt-2); }
+.tk-sin-red { display: block; margin-top: 2px; font-size: 12px; font-weight: 600; color: var(--warn-txt); }
