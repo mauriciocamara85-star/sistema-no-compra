@@ -536,23 +536,24 @@ var ICONO = {
   tareas: '<path d="M9 11l3 3 8-8"/><path d="M20 12v6a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3V6a3 3 0 0 1 3-3h9"/>',
   ideas: '<path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7V17h8v-2.3A7 7 0 0 0 12 2z"/>',
   perfil: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-  fotos: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
+  /* Módulos (31/10, antes "Fotos"): un mueble con sus estantes. La cámara quedó para Papeles. */
+  fotos: '<rect x="4" y="3" width="16" height="16" rx="1.5"/><path d="M4 8.5h16M4 14h16M6.5 19v2M17.5 19v2"/>',
   revisar: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><path d="M9 14l2 2 4-4"/>',
   equipo: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
-  cajas: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/>'
+  /* Papeles (31/10): la hoja con la camarita (Mauricio: "los papeles con la hoja de la cámara"). */
+  papeles: '<path d="M10 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8l4 4v4"/><path d="M14 3v4h4"/><rect x="12" y="13.5" width="10" height="7.5" rx="1.5"/><path d="M15 13.5l1-1.5h2l1 1.5"/><circle cx="17" cy="17.2" r="1.7"/>'
 };
-ICONO.caja = ICONO.cajas;
-var PESTANAS_SUPERVISION = [['revisar', 'Revisar'], ['equipo', 'Equipo'], ['cajas', 'Cajas'], ['ideas', 'Ideas'], ['perfil', 'Perfil']];
+var PESTANAS_SUPERVISION = [['revisar', 'Revisar'], ['equipo', 'Equipo'], ['papeles', 'Papeles'], ['ideas', 'Ideas'], ['perfil', 'Perfil']];
 var _pestana = 'hoy';
 
-/* Las pestañas del vendedor (13/10): Hoy (lo que falta hoy) · Fotos (el mapa
-   con las cámaras) · Tareas · Caja · Ideas. El Perfil, en la inicial de arriba.
-   La Caja, sólo en los locales con el control de caja prendido (se recuerda en
-   el teléfono para armar la barra enseguida). */
+/* Las pestañas del vendedor (13/10; 31/10): Hoy (lo que falta hoy) · Módulos (el mapa con las cámaras; antes
+   "Fotos") · Tareas · Papeles (la caja, los certificados y los apercibimientos) · Ideas. El Perfil, en la inicial de
+   arriba. La Caja de Papeles, sólo en los locales con el control de caja prendido (se recuerda en el teléfono para
+   armar las pestañitas enseguida). */
 var K_CAJA = 'vdh_vend_caja_activa';
 function cajaActiva() { try { return !!yo().local_id && localStorage.getItem(K_CAJA) === yo().local_id; } catch (e) { return false; } }
 function pestanasVendedor() {
-  return [['hoy', 'Hoy'], ['fotos', 'Fotos'], ['tareas', 'Tareas']].concat(cajaActiva() ? [['caja', 'Caja']] : []).concat([['ideas', 'Ideas']]);
+  return [['hoy', 'Hoy'], ['fotos', 'Módulos'], ['tareas', 'Tareas'], ['papeles', 'Papeles'], ['ideas', 'Ideas']];
 }
 
 function armarBarra() {
@@ -582,31 +583,41 @@ function revisarCaja() {
     var activa = !!(r[0] && r[0][0] && r[0][0].caja_activa);
     if (activa !== cajaActiva()) {
       try { if (activa) localStorage.setItem(K_CAJA, per.local_id); else localStorage.removeItem(K_CAJA); } catch (e) {}
-      armarBarra();
-      marcarPestana(_pestana);
+      /* Las pestañitas de Papeles cambian (con o sin Caja): si está a la vista, se rearma. */
+      if (_pestana === 'papeles' && !barra.hidden && !hayAlgoEscrito()) pantallaPapeles();
     }
     var horaAR = Number(new Intl.DateTimeFormat('en-US', { timeZone: ZONA, hour: 'numeric', hourCycle: 'h23' }).format(new Date()));
     var caja = (r[1] || [])[0];
-    var b = barra.querySelector('[data-pestana="caja"]');
-    if (b) b.classList.toggle('con-punto', activa && horaAR >= 19 && (!caja || caja.estado === 'pendiente'));
+    _puntoCaja = activa && horaAR >= 19 && (!caja || caja.estado === 'pendiente');
+    pintarPuntoCaja();
   }).catch(function () {});
+}
+/* Desde las 19, si falta guardar la caja de hoy: el puntito en Papeles y en su pestañita Caja. */
+var _puntoCaja = false;
+function pintarPuntoCaja() {
+  var b = barra.querySelector('[data-pestana="papeles"]');
+  if (b) b.classList.toggle('con-punto', _puntoCaja && !esSupervision());
+  var s = app.querySelector('.pestanitas [data-papel="caja"]');
+  if (s) s.classList.toggle('con-punto', _puntoCaja);
 }
 
 function irA(p) {
   apagarCamara();
   cerrarCapas();
+  /* Lo de adentro de Papeles (la caja, los certificados…) es una pestañita de Papeles. */
+  var papel = PAPELES_TODOS.indexOf(p) > -1 ? p : null;
+  if (papel) p = 'papeles';
   marcarPestana(p);
   try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
   if (p === 'hoy') pantallaHoy();
   else if (p === 'fotos') pantallaFotos();
   else if (p === 'avisos') pantallaAvisos();
   else if (p === 'tareas') pantallaTareas();
-  else if (p === 'caja') pantallaCaja();
+  else if (p === 'papeles') pantallaPapeles(papel);
   else if (p === 'ideas') pantallaIdeas();
   else if (p === 'perfil') pantallaPerfil();
   else if (p === 'revisar') pantallaRevisar();
   else if (p === 'equipo') pantallaEquipo();
-  else if (p === 'cajas') pantallaCajasSup();
 }
 
 function irInicio() { irA(esSupervision() ? 'revisar' : 'hoy'); }
@@ -631,6 +642,7 @@ document.addEventListener('visibilitychange', function () {
   if (yo().aprobado === false) { revisarAprobacion(true); return; }
   if (Date.now() - _ultimoArchivo < 10 * 60e3 || Date.now() - _oculta < 30e3) return;
   if (barra.hidden || hayAlgoEscrito() || app.querySelector('button:disabled')) return;
+  if (window.Escaner && Escaner.abierto()) return;   // el escáner de Papeles con hojas a medio sacar
   irA(_pestana);
 });
 
@@ -763,8 +775,10 @@ function irPorEnlace() { return irAEnlace(location.hash); }
 function irAEnlace(enlace) {
   var h = String(enlace || '').replace(/^.*#/, '').replace(/^\/+/, '').replace(/[?#].*$/, '');
   if (!h) return false;
-  var mapa = { hoy: 'hoy', fotos: 'fotos', tareas: 'tareas', caja: 'caja', ideas: 'ideas', perfil: 'perfil', historial: 'perfil', avisos: 'avisos',
-               revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas' };
+  var mapa = { hoy: 'hoy', fotos: 'fotos', modulos: 'fotos', tareas: 'tareas', caja: 'caja', ideas: 'ideas', perfil: 'perfil', historial: 'perfil', avisos: 'avisos',
+               revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas',
+               /* Papeles (SQL 209): a la supervisión, "certificados" la lleva a Ausencias. */
+               papeles: 'papeles', certificados: esSupervision() ? 'ausencias' : 'certificados', ausencias: 'ausencias', apercibimientos: 'apercibimientos' };
   /* Las pantallas completas ponen una marca en el historial para el "atrás" de Android: si el #/… del aviso quedaba
      en la dirección, al volver la app regresaba a él y la abría de nuevo por debajo de Hoy, sin la barra de abajo
      (21/10). Se saca antes de abrirlas; las pestañas lo sacan en irA. */
@@ -777,8 +791,10 @@ function irAEnlace(enlace) {
   /* El aviso de una revisión con sugerencia o marcas (SQL 150): la foto revisada. */
   if (/^revision\/[0-9a-f-]{36}$/i.test(h)) { if (esSupervision()) return false; sinEnlace(); marcarPestana('hoy'); verRevision(h.slice(9)); return true; }
   if ((h === 'admin' || h === 'admin-testigo') && esSupervision()) { location.replace('impecable-admin.html' + (h === 'admin-testigo' ? '#testigo' : '')); return true; }
+  /* "Se anotó tu ausencia: si tenés certificado, tocá este aviso" (SQL 209): directo a mandar la foto de esa ausencia. */
+  if (/^certificado\/[0-9a-f-]{36}$/i.test(h)) { _certificadoPedido = h.slice(12); irA(esSupervision() ? 'ausencias' : 'certificados'); return true; }
   var p = mapa[h];
-  if (!p || (esSupervision() ? ['hoy', 'fotos', 'tareas', 'caja'].indexOf(p) > -1 : ['revisar', 'equipo', 'cajas'].indexOf(p) > -1)) return false;
+  if (!p || (esSupervision() ? ['hoy', 'fotos', 'tareas', 'caja', 'certificados'].indexOf(p) > -1 : ['revisar', 'equipo', 'cajas', 'ausencias'].indexOf(p) > -1)) return false;
   irA(p);
   return true;
 }
@@ -821,6 +837,9 @@ function engancharCabeza() {
   if (b) b.onclick = function () { pantallaAvisos(); };
   var a = document.getElementById('avatar');
   if (a) a.onclick = function () { apagarCamara(); cerrarCapas(); pantallaPerfil(); };
+  /* Las pestañitas de Papeles (Caja · Certificados · Apercibimientos). */
+  app.querySelectorAll('.pestanitas [data-papel]').forEach(function (x) { x.onclick = function () { if (x.dataset.papel !== _papel || !enPapel(_papel)) irA(x.dataset.papel); }; });
+  pintarPuntoCaja();
   contarSinLeer();
 }
 
@@ -1176,7 +1195,7 @@ function pantallaFotos() {
   adentro();
   var per = yo(), hoy = hoyAR(), id = valor(per.id), nada = function () { return null; };
   var desdeHoy = new Date(hoy + 'T03:00:00Z').toISOString(), desdeVenc = desdeVencidas(hoy);
-  app.innerHTML = cabeza('Fotos') + '<p class="cargando">Cargando…</p>';
+  app.innerHTML = cabeza('Módulos') + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   Promise.all([
     /* Como en Hoy: lo de hoy, lo pendiente, lo que se mandó hoy (tomada_en: la de la foto mandada) y lo que venció esta semana. */
@@ -1239,7 +1258,7 @@ function dibujarFotos(x) {
 
   var total = x.controles.length;
   var hechos = x.controles.filter(function (c) { return c.estado === 'enviado' || c.estado === 'revisado'; }).length;
-  var html = cabeza('Fotos') + '<div class="progreso-fotos">' + (total
+  var html = cabeza('Módulos') + '<div class="progreso-fotos">' + (total
     ? '<b>' + hechos + ' de ' + total + '</b> ' + (total === 1 ? 'foto mandada' : 'fotos mandadas') +
       '<div class="progreso"><i style="width:' + Math.round(100 * hechos / total) + '%"></i></div>'
     : corr.length ? '<b>' + (corr.length === 1 ? 'Te queda una corrección para mandar.' : 'Te quedan ' + corr.length + ' correcciones para mandar.') + '</b>'
@@ -1774,7 +1793,7 @@ function abrirRevision(c, estado) {
   app.className = 'app';
   var r = estado.resultado || {};
   var html =
-    '<button class="volver" id="volver" data-vista="' + estado.vista + '">' + (r.cerrado ? '‹ Fotos' : estado.rehacer ? '‹ Dejar la que mandé' : '‹ Volver a Fotos') + '</button>' +
+    '<button class="volver" id="volver" data-vista="' + estado.vista + '">' + (r.cerrado ? '‹ Módulos' : estado.rehacer ? '‹ Dejar la que mandé' : '‹ Volver a Módulos') + '</button>' +
     '<h1>' + esc(c.modulo_nombre) + '</h1>' +
     /* Si ya no se puede cambiar, la nueva no queda: no se muestra como si fuera la del módulo. Más chica que en otras
        pantallas, así "Enviar" entra sin bajar en un celular chico. */
@@ -1788,7 +1807,7 @@ function abrirRevision(c, estado) {
 
   html += '<div class="acciones">';
   if (r.cerrado) {
-    html += '<button class="boton lima" id="aFotos">Volver a Fotos</button>';
+    html += '<button class="boton lima" id="aFotos">Volver a Módulos</button>';
   } else if (r.fallo) {
     html += '<button class="boton lima" id="reintentar">Reintentar</button><button class="boton" id="repetir">Sacar otra foto</button>';
   } else if (r.subiendo) {
@@ -2097,7 +2116,7 @@ function mandarFotoTarea(t, blob, ruta, volverA) {
   barra.hidden = true;
   app.className = 'app';
   var vista = 'tarea-' + (++_revisiones);
-  var arriba = '<button class="volver" id="volver" data-vista="' + vista + '">‹ Volver a ' + (destino === 'fotos' ? 'Fotos' : 'Tareas') + '</button><h1>' + esc(t.modulo_nombre || 'La corrección') + '</h1>';
+  var arriba = '<button class="volver" id="volver" data-vista="' + vista + '">‹ Volver a ' + (destino === 'fotos' ? 'Módulos' : 'Tareas') + '</button><h1>' + esc(t.modulo_nombre || 'La corrección') + '</h1>';
   /* Si se fue ("Volver", el "atrás" del teléfono) mientras se mandaba, lo que llega después no se dibuja encima de otra pantalla. */
   var aca = function () { var v = document.getElementById('volver'); return !!v && v.getAttribute('data-vista') === vista; };
   app.innerHTML = arriba + '<div class="revisando"><span class="ruedita"></span>Mandando la foto…</div>';
@@ -2114,7 +2133,7 @@ function mandarFotoTarea(t, blob, ruta, volverA) {
       if (/ya está cerrada/i.test(mensajeDe(e))) { if (aca()) irA(destino); return; }
       /* La de todo el equipo, ya la hizo otro (SQL 159). */
       if (/queda hecha para todo el equipo/i.test(mensajeDe(e))) { if (aca()) irA(destino); avisar(conPunto(mensajeDe(e))); return; }
-      if (!aca()) { avisar('No se pudo mandar la foto de la corrección: sacala de nuevo desde ' + (destino === 'fotos' ? 'Fotos' : 'Tareas') + '.'); return; }
+      if (!aca()) { avisar('No se pudo mandar la foto de la corrección: sacala de nuevo desde ' + (destino === 'fotos' ? 'Módulos' : 'Tareas') + '.'); return; }
       app.innerHTML = arriba +
         '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin señal: la foto no se pudo mandar. Quedó acá; tocá "Reintentar" cuando haya señal.' : mensajeDe(e)) + '</div>' +
         '<div class="acciones"><button class="boton lima" id="reintentar">Reintentar</button></div>';
@@ -2640,12 +2659,14 @@ function textoAlerta(a) {
   return 'Revisar.';
 }
 
-/* La Caja, como pestaña (pedido de Mauricio, 13/10): antes era una tarjeta en Hoy. */
+/* La Caja, como pestaña (pedido de Mauricio, 13/10): antes era una tarjeta en Hoy. Desde el 31/10, la primera
+   pestañita de Papeles. */
 function pantallaCaja() {
   apagarCamara();
   adentro();
-  marcarPestana('caja');
-  app.innerHTML = cabeza('Caja') + '<p class="cargando">Cargando…</p>';
+  marcarPestana('papeles');
+  _papel = 'caja';
+  app.innerHTML = cabeza('Caja') + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   if (yo().local_id) {
     /* select=*: así también trae caja_ia (SQL 134) sin romperse si todavía no está. */
@@ -2659,7 +2680,7 @@ function pantallaCaja() {
   }
   llamar('orden_caja_hoy').then(function (caja) {
     return leer('/orden_caja_fotos?select=tipo,ia_estado,ia_resultado&caja_id=eq.' + valor(caja.id) + '&order=tomada_en.desc')
-      .then(function (f) { if (_pestana === 'caja') dibujarCaja(caja, f || []); });
+      .then(function (f) { if (enPapel('caja')) dibujarCaja(caja, f || []); });
   }).catch(function (e) { pantallaError(e, pantallaCaja); });
 }
 
@@ -2684,7 +2705,7 @@ function dibujarCaja(caja, fotos, corrige) {
       '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + (_cajaIA
         ? 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.'
         : 'Corregí los números a mano (si se corrigió en el sistema, sacá también la foto del cierre nuevo). Al guardar queda anotado quién cambió qué.')) + '</p>'
-    : cabeza('Caja del ' + diaMes(caja.fecha)) +
+    : cabeza('Caja del ' + diaMes(caja.fecha)) + pestanitasPapeles() +
       (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>');
   if (!cerrada) {
     html += '<div class="grilla">' + FOTOS_CAJA.map(function (t) {
@@ -2825,7 +2846,7 @@ function guardarCaja(caja, boton, corrige) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   SUPERVISIÓN: Revisar · Equipo · Cajas
+   SUPERVISIÓN: Revisar · Equipo · Papeles (Cajas · Ausencias · Apercibimientos)
    El encargado (supervisor con local fijo) ve su local; el administrador y la gerencia eligen entre todos; el
    supervisor de varios locales (SQL 120), entre los que eligió y le aprobaron.
    ════════════════════════════════════════════════════════════════════════ */
@@ -3471,11 +3492,12 @@ function pantallaNuevaTarea(loc, gente) {
   });
 }
 
-/* ── Cajas ── */
+/* ── Cajas (desde el 31/10, la primera pestañita de Papeles) ── */
 function pantallaCajasSup() {
-  marcarPestana('cajas');
+  marcarPestana('papeles');
+  _papel = 'cajas';
   adentro();
-  app.innerHTML = cabeza('Cajas', '') + '<p class="cargando">Cargando…</p>';
+  app.innerHTML = cabeza('Cajas', '') + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Cajas'); return; }
@@ -3484,9 +3506,9 @@ function pantallaCajasSup() {
       leer('/orden_v_cajas?select=*&local_id=eq.' + L + '&order=fecha.desc&limit=31'),
       leer('/orden_config?select=caja_activa&local_id=eq.' + L)
     ]).then(function (r) {
-      if (_pestana !== 'cajas') return;
+      if (!enPapel('cajas')) return;
       var cajas = r[0] || [], activa = !!(r[1] && r[1][0] && r[1][0].caja_activa);
-      var html = cabeza('Cajas', loc.nombre) + selectorLocal(loc);
+      var html = cabeza('Cajas', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
       if (!activa) html += '<div class="nota">El control de caja está apagado en este local. Se prende desde la administración.</div>';
       var sin = cajas.filter(function (c) { return c.estado === 'cargada'; });
       if (sin.length) html += '<div class="seccion">Sin controlar</div>' + sin.map(filaCaja).join('');
@@ -3593,12 +3615,524 @@ function detalleCaja(c) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   PAPELES (SQL 209, 31/10, pedido de Mauricio): la caja, los certificados médicos y los apercibimientos, en una
+   pestaña con la hoja y la camarita.
+   El vendedor: Caja (si el local la usa) · Certificados (sus ausencias: manda la foto del certificado y, si faltó y
+   nadie la anotó, la anota él mandándolo) · Apercibimientos (los suyos, con su descargo).
+   La supervisión: Cajas · Ausencias (anotarla, sumar el certificado, ¿se descuenta?) · Apercibimientos.
+   Las hojas se sacan con el escáner (escaner.js) y van al bucket privado "legajos" ({local}/{persona}/archivo): el
+   certificado es un dato de salud, lo ven la persona, quienes supervisan su local y la administración.
+   ════════════════════════════════════════════════════════════════════════ */
+
+var LEGAJOS = 'legajos';
+var PAPELES_TODOS = ['caja', 'cajas', 'certificados', 'ausencias', 'apercibimientos'];
+var _papel = null;                // la pestañita de Papeles a la vista
+var _certificadoPedido = null;    // llegó por el aviso "si tenés certificado, tocá acá": se abre la cámara de esa ausencia
+
+function subPapeles() {
+  if (esSupervision()) return [['cajas', 'Cajas'], ['ausencias', 'Ausencias'], ['apercibimientos', 'Apercibimientos']];
+  return (cajaActiva() ? [['caja', 'Caja']] : []).concat([['certificados', 'Certificados'], ['apercibimientos', 'Apercibimientos']]);
+}
+function enPapel(s) { return _pestana === 'papeles' && _papel === s; }
+function pestanitasPapeles() {
+  var subs = subPapeles();
+  /* Cada una del ancho de su palabra ("Caja" es corta y "Apercibimientos" larga): así entran las tres en 360 px. */
+  return '<div class="pestanitas papeles-sub" style="grid-template-columns:repeat(' + subs.length + ',auto)">' + subs.map(function (s) {
+    return '<button type="button" data-papel="' + s[0] + '"' + (s[0] === _papel ? ' class="activa" aria-current="page"' : '') + '>' + esc(s[1]) + '</button>';
+  }).join('') + '</div>';
+}
+
+function pantallaPapeles(papel) {
+  /* 'caja' y 'cajas' son lo mismo según quién mira (un aviso o un enlace viejo). */
+  if (papel === 'caja' && esSupervision()) papel = 'cajas';
+  if (papel === 'cajas' && !esSupervision()) papel = 'caja';
+  var subs = subPapeles().map(function (s) { return s[0]; });
+  _papel = subs.indexOf(papel) > -1 ? papel : subs.indexOf(_papel) > -1 ? _papel : subs[0];
+  marcarPestana('papeles');
+  if (_papel === 'caja') pantallaCaja();
+  else if (_papel === 'cajas') pantallaCajasSup();
+  else if (_papel === 'certificados') pantallaCertificados();
+  else if (_papel === 'ausencias') pantallaAusencias();
+  else pantallaApercibimientos();
+}
+
+/** Arranca una pestañita de Papeles: la barra, el título, las pestañitas y "Cargando…". */
+function empezarPapel(papel, titulo, debajo) {
+  apagarCamara();
+  adentro();
+  marcarPestana('papeles');
+  _papel = papel;
+  app.innerHTML = cabeza(titulo, debajo) + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
+  engancharCabeza();
+}
+
+/** Sin el SQL 209 todavía (la tabla o las funciones no están). */
+function faltaSql209(e) { return !!e && !e.sinSesion && !esDeRed(e) && /orden_legajo|PGRST205|PGRST202|42P01|could not find the (table|function)/i.test(String(e.message)); }
+function errorPapel(e, titulo, reintentar) {
+  if (!faltaSql209(e)) { pantallaError(e, reintentar); return; }
+  app.innerHTML = cabeza(titulo, esSupervision() ? '' : undefined) + pestanitasPapeles() +
+    '<div class="vacio">' + (esAdmin() ? 'Falta correr el SQL 209 en Supabase.' : 'Esto todavía no está listo: en unos días aparece.') + '</div>';
+  engancharCabeza();
+}
+
+/** Los papeles que pide el filtro, con el nombre de la persona y de quien lo cargó. */
+function leerPapeles(filtro) {
+  return leer('/orden_legajo?select=*&' + filtro + '&order=desde.desc,creado_en.desc&limit=300').then(function (f) {
+    f = f || [];
+    var ids = {};
+    f.forEach(function (x) { ids[x.persona_id] = 1; if (x.cargado_por) ids[x.cargado_por] = 1; });
+    var lista = Object.keys(ids);
+    if (!lista.length) return f;
+    return leer('/orden_personas?select=id,nombre,inicial&id=in.(' + lista.map(valor).join(',') + ')').then(function (g) {
+      var n = {};
+      (g || []).forEach(function (p) { n[p.id] = nombreLista(p); });
+      f.forEach(function (x) { x.persona_nombre = n[x.persona_id] || 'Alguien'; x.cargado_nombre = n[x.cargado_por] || ''; });
+      return f;
+    }, function () { return f; });
+  });
+}
+
+/** La gente de un local (vendedores y su encargado), para elegir a quién se le carga un papel. */
+function genteDelLocal(local) {
+  return leer('/orden_personas?select=id,nombre,inicial,rol&local_id=eq.' + valor(local) + '&activo=is.true&rol=in.(vendedor,supervisor)&order=nombre.asc');
+}
+
+function diasEntre(d, h) { return Math.round((new Date(h + 'T12:00:00Z') - new Date(d + 'T12:00:00Z')) / 864e5) + 1; }
+/** "El jueves 30/10" o "Del 30/10 al 1/11 (3 días)". */
+function textoDias(d, h) {
+  if (d === h) { var t = diaYFecha(d); return 'El ' + t; }
+  return 'Del ' + diaMes(d) + ' al ' + diaMes(h) + ' (' + diasEntre(d, h) + ' días)';
+}
+var DESCUENTO = { a_definir: ['sorpresa', 'Descuento: a definir'], si: ['vencido', 'Se descuenta'], no: ['listo', 'No se descuenta'] };
+
+/** Las hojas de un papel, chiquitas (al tocarlas se abren enteras). */
+function fotosPapel(x) {
+  return '<div class="grilla papel-fotos">' + (x.fotos || []).map(function (r, i) {
+    return '<figure class="foto-chica"><img data-legajo="' + esc(r) + '" alt="Hoja ' + (i + 1) + '"><figcaption>Hoja ' + (i + 1) + '</figcaption></figure>';
+  }).join('') + '</div>';
+}
+function cargarFotosPapeles(cont) {
+  cont.querySelectorAll('img[data-legajo]').forEach(function (img) {
+    var ruta = img.getAttribute('data-legajo');
+    img.removeAttribute('data-legajo');
+    urlFirmadaEn(LEGAJOS, ruta).then(function (u) { if (u) img.src = u; else img.alt = 'Foto no disponible'; });
+  });
+}
+
+/** Abre el escáner (el "atrás" de Android lo cierra); alListo(blobs) con las hojas listas. */
+function escanear(op, alListo) {
+  if (_espejo) { avisar(textoEspejo()); return; }
+  if (!window.Escaner) { avisar('Actualizá la app: cerrala y abrila de nuevo.'); return; }
+  apagarCamara();
+  var capa = function () { Escaner.cerrar(); };
+  abrirCapa(capa);
+  Escaner.abrir({
+    titulo: op.titulo, guia: op.guia, maxHojas: op.maxHojas || 8, textoListo: op.textoListo,
+    confirmar: function (t) { return confirmar(t, 'Salir'); },
+    alCerrar: function () { soltarCapa(capa); },
+    alTerminar: function (blobs) { soltarCapa(capa); despuesDelAtras(function () { alListo(blobs); }); }
+  });
+}
+
+/** Sube las hojas que todavía no se subieron (si falló a la mitad, al reintentar no se suben de nuevo). Devuelve las rutas. */
+function subirHojas(local, persona, hojas) {
+  return hojas.reduce(function (p, h) {
+    return p.then(function () {
+      if (h.ruta) return;
+      return subirArchivoEn(LEGAJOS, local + '/' + persona + '/' + nombreArchivo(), h.blob, 'image/jpeg').then(function (r) { h.ruta = r; });
+    });
+  }, Promise.resolve()).then(function () { return hojas.map(function (h) { return h.ruta; }); });
+}
+
+/** Suma hojas a un papel que ya está (el certificado que faltaba, el apercibimiento firmado). */
+function sumarHojas(x, alVolver) {
+  var aus = x.tipo === 'ausencia';
+  escanear({ titulo: aus ? 'Certificado médico' : 'Apercibimiento firmado', textoListo: 'Mandar' }, function (blobs) {
+    var hojas = blobs.map(function (b) { return { blob: b }; });
+    var local = x.persona_id === yo().id ? yo().local_id : x.local_id;
+    /* Mientras sube, los botones de la pantalla quedan trabados (y la app no se recarga al volver a ella). */
+    var trabar = function (si) { app.querySelectorAll('[data-sumar], #sumarHoja').forEach(function (b) { b.disabled = si; }); };
+    trabar(true);
+    avisar(blobs.length === 1 ? 'Subiendo la hoja…' : 'Subiendo las ' + blobs.length + ' hojas…');
+    subirHojas(local, x.persona_id, hojas)
+      .then(function (rutas) { return llamar('orden_legajo_fotos', { p_id: x.id, p_fotos: rutas }); })
+      .then(function () {
+        avisar(x.persona_id === yo().id ? 'Listo: tu supervisor ya lo tiene.' : 'Listo: quedó guardado.');
+        alVolver();
+      }, function (e) {
+        trabar(false);
+        if (e && e.sinSesion) { pantallaError(e); return; }
+        avisar(esDeRed(e) ? 'Sin señal: no se mandó. Probá de nuevo.' : mensajeDe(e));
+      });
+  });
+}
+
+/* ── El vendedor: Certificados ── */
+function pantallaCertificados() {
+  empezarPapel('certificados', 'Certificados');
+  leerPapeles('persona_id=eq.' + valor(yo().id) + '&tipo=eq.ausencia').then(function (f) {
+    if (enPapel('certificados')) dibujarCertificados(f);
+  }).catch(function (e) { if (enPapel('certificados')) errorPapel(e, 'Certificados', pantallaCertificados); });
+}
+
+function dibujarCertificados(lista) {
+  var html = cabeza('Certificados') + pestanitasPapeles() +
+    '<p class="bajada">¿Faltaste por enfermedad? Sacale una foto al certificado médico y mandala: le llega a tu supervisor.</p>' +
+    (yo().local_id ? '<button class="boton lima" id="nuevoCert">Mandar un certificado</button>' : '') +
+    '<div class="seccion">Tus ausencias</div>';
+  if (!lista.length) html += '<div class="vacio">No tenés ausencias anotadas.</div>';
+  html += lista.map(function (x) {
+    var n = (x.fotos || []).length;
+    return '<div class="tarea papel"><div class="nombre">' + esc(textoDias(x.desde, x.hasta)) + '</div>' +
+      (x.motivo ? '<div class="detalle">' + esc(x.motivo) + '</div>' : '') +
+      '<div class="papel-chips"><span class="chip ' + (n ? 'listo' : 'pendiente') + '">' + (n ? 'Con certificado' : 'Sin certificado') + '</span></div>' +
+      (n ? fotosPapel(x) : '') +
+      (n >= 8 ? '' : '<div class="botones"><button class="boton chico' + (n ? '' : ' lima') + '" data-sumar="' + esc(x.id) + '">' + (n ? 'Sumar otra hoja' : 'Mandar el certificado') + '</button></div>') +
+      '</div>';
+  }).join('');
+  app.innerHTML = html;
+  engancharCabeza();
+  cargarFotosPapeles(app);
+  var nuevo = document.getElementById('nuevoCert');
+  if (nuevo) nuevo.onclick = function () { pantallaCargarPapel({ tipo: 'ausencia', propia: true, mias: lista }); };
+  var porId = {};
+  lista.forEach(function (x) { porId[x.id] = x; });
+  app.querySelectorAll('[data-sumar]').forEach(function (b) { b.onclick = function () { sumarHojas(porId[b.dataset.sumar], pantallaCertificados); }; });
+  /* Llegó por el aviso "si tenés certificado, tocá este aviso": la cámara de esa ausencia, si todavía no lo mandó. */
+  var pedido = _certificadoPedido && porId[_certificadoPedido];
+  _certificadoPedido = null;
+  if (pedido && !(pedido.fotos || []).length && !_espejo) sumarHojas(pedido, pantallaCertificados);
+}
+
+/* ── Apercibimientos: el vendedor ve los suyos; la supervisión, los del local ── */
+function pantallaApercibimientos() {
+  if (esSupervision()) { pantallaApercibimientosSup(); return; }
+  empezarPapel('apercibimientos', 'Apercibimientos');
+  leerPapeles('persona_id=eq.' + valor(yo().id) + '&tipo=eq.apercibimiento').then(function (f) {
+    if (enPapel('apercibimientos')) dibujarApercibimientosMios(f);
+  }).catch(function (e) { if (enPapel('apercibimientos')) errorPapel(e, 'Apercibimientos', pantallaApercibimientos); });
+}
+
+function dibujarApercibimientosMios(lista) {
+  var html = cabeza('Apercibimientos') + pestanitasPapeles();
+  if (!lista.length) html += '<div class="vacio">No tenés apercibimientos. ¡Seguí así!</div>';
+  else html += '<p class="bajada">Si no estás de acuerdo, escribí tu descargo: lo lee tu supervisor.</p>';
+  html += lista.map(function (x) {
+    return '<div class="tarea papel"><div class="nombre">' + esc(textoDias(x.desde, x.hasta)) + '</div>' +
+      '<div class="detalle">' + esc(x.motivo || '') + '</div>' +
+      ((x.fotos || []).length ? fotosPapel(x) : '') +
+      (x.descargo ? '<div class="nota papel-descargo"><b>Tu descargo:</b> ' + esc(x.descargo) + '</div>' : '') +
+      '<div class="botones"><button class="boton chico" data-descargo="' + esc(x.id) + '">' + (x.descargo ? 'Cambiar mi descargo' : 'Escribir mi descargo') + '</button></div></div>';
+  }).join('');
+  app.innerHTML = html;
+  engancharCabeza();
+  cargarFotosPapeles(app);
+  var porId = {};
+  lista.forEach(function (x) { porId[x.id] = x; });
+  app.querySelectorAll('[data-descargo]').forEach(function (b) {
+    unaVez(b, function () { return escribirDescargo(porId[b.dataset.descargo], pantallaApercibimientos); });
+  });
+}
+
+function escribirDescargo(x, alVolver) {
+  if (_espejo) { avisar(textoEspejo()); return; }
+  var p = preguntar({ texto: 'Tu descargo: contá tu versión de lo que pasó.', campo: 'Escribilo acá', si: 'Guardar' });
+  var campo = document.querySelector('.dialogo-campo');
+  if (campo && x.descargo) campo.value = x.descargo;
+  return p.then(function (t) {
+    if (!t) return;
+    return llamar('orden_legajo_descargo', { p_id: x.id, p_texto: t }).then(function () { avisar('Tu descargo quedó guardado.'); alVolver(); });
+  });
+}
+
+/* ── La supervisión: Ausencias ── */
+function pantallaAusencias() {
+  empezarPapel('ausencias', 'Ausencias', '');
+  localSup().then(function (loc) {
+    if (!loc) { sinLocales('Ausencias'); return; }
+    return Promise.all([
+      leerPapeles('local_id=eq.' + valor(loc.id) + '&tipo=eq.ausencia&hasta=gte.' + sumarDias(hoyAR(), -120)),
+      genteDelLocal(loc.id)
+    ]).then(function (r) { if (enPapel('ausencias')) dibujarAusencias(loc, r[0], r[1] || []); });
+  }).catch(function (e) { if (enPapel('ausencias')) errorPapel(e, 'Ausencias', pantallaAusencias); });
+}
+
+function filaPapel(x) {
+  var n = (x.fotos || []).length, aus = x.tipo === 'ausencia', d = DESCUENTO[x.descuento];
+  return '<button class="fila fila-boton papel-fila" data-papel-id="' + esc(x.id) + '"><span><b>' + esc(x.persona_nombre) + '</b>' +
+    '<small>' + esc(textoDias(x.desde, x.hasta) + (!aus && x.motivo ? ' · ' + x.motivo : '')) + '</small></span>' +
+    (aus ? '<span class="chip ' + (n ? 'listo' : 'pendiente') + '">' + (n ? 'Con certificado' : 'Sin certificado') + '</span>' + (d ? '<span class="chip ' + d[0] + '">' + d[1] + '</span>' : '')
+         : (n ? '<span class="chip listo">Firmado</span>' : '') + (x.descargo ? '<span class="chip sorpresa">Con descargo</span>' : '')) + '</button>';
+}
+
+function dibujarAusencias(loc, lista, gente) {
+  var mira = soloMira(), hoy = hoyAR();
+  var html = cabeza('Ausencias', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
+  if (!mira && gente.length) html += '<button class="boton lima" id="nuevaAus" style="margin-top:14px">Anotar una ausencia</button>';
+  /* Este mes, por persona: los días que faltó y cuántos sin certificado. */
+  var ini = hoy.slice(0, 8) + '01', fin = sumarDias(sumarDias(ini, 32).slice(0, 8) + '01', -1), mes = {};
+  lista.forEach(function (x) {
+    var d = x.desde > ini ? x.desde : ini, h = x.hasta < fin ? x.hasta : fin;
+    if (h < d) return;
+    var m = mes[x.persona_id] || (mes[x.persona_id] = { nombre: x.persona_nombre, dias: 0, sin: 0 });
+    var n = diasEntre(d, h);
+    m.dias += n;
+    if (!(x.fotos || []).length) m.sin += n;
+  });
+  var ids = Object.keys(mes).sort(function (a, b) { return mes[b].dias - mes[a].dias || mes[a].nombre.localeCompare(mes[b].nombre); });
+  if (ids.length) {
+    html += '<div class="seccion">Este mes</div>' + ids.map(function (id) {
+      var m = mes[id];
+      return '<div class="fila"><span><b>' + esc(m.nombre) + '</b></span><span>' + m.dias + (m.dias === 1 ? ' día' : ' días') +
+        (m.sin ? ' · <b class="rojo">' + m.sin + ' sin certificado</b>' : '') + '</span></div>';
+    }).join('');
+  }
+  var decidir = lista.filter(function (x) { return x.descuento === 'a_definir'; });
+  var resto = lista.filter(function (x) { return x.descuento !== 'a_definir'; });
+  if (decidir.length) html += '<div class="seccion">Para decidir si se descuenta</div>' + decidir.map(filaPapel).join('');
+  if (resto.length) html += '<div class="seccion">Últimas ausencias</div>' + resto.map(filaPapel).join('');
+  if (!lista.length) html += '<div class="vacio" style="margin-top:16px">No hay ausencias anotadas en los últimos 4 meses.</div>';
+  app.innerHTML = html;
+  engancharCabeza();
+  engancharSelector(pantallaAusencias);
+  var porId = {};
+  lista.forEach(function (x) { porId[x.id] = x; });
+  app.querySelectorAll('[data-papel-id]').forEach(function (b) { b.onclick = function () { detallePapel(porId[b.dataset.papelId], loc); }; });
+  var n = document.getElementById('nuevaAus');
+  if (n) n.onclick = function () { pantallaCargarPapel({ tipo: 'ausencia', loc: loc, gente: gente }); };
+  /* El aviso "se anotó tu ausencia" de un encargado: su ausencia, para mandar el certificado. */
+  var pedido = _certificadoPedido && porId[_certificadoPedido];
+  _certificadoPedido = null;
+  if (pedido) detallePapel(pedido, loc);
+}
+
+/* ── La supervisión: Apercibimientos ── */
+function pantallaApercibimientosSup() {
+  empezarPapel('apercibimientos', 'Apercibimientos', '');
+  localSup().then(function (loc) {
+    if (!loc) { sinLocales('Apercibimientos'); return; }
+    return Promise.all([
+      leerPapeles('local_id=eq.' + valor(loc.id) + '&tipo=eq.apercibimiento'),
+      genteDelLocal(loc.id)
+    ]).then(function (r) { if (enPapel('apercibimientos')) dibujarApercibimientosSup(loc, r[0], r[1] || []); });
+  }).catch(function (e) { if (enPapel('apercibimientos')) errorPapel(e, 'Apercibimientos', pantallaApercibimientos); });
+}
+
+function dibujarApercibimientosSup(loc, lista, gente) {
+  var mira = soloMira();
+  var otros = gente.filter(function (p) { return p.id !== yo().id; });
+  var html = cabeza('Apercibimientos', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
+  if (!mira && otros.length) html += '<button class="boton lima" id="nuevoAperc" style="margin-top:14px">Hacer un apercibimiento</button>';
+  if (lista.length) html += '<div class="seccion">Los del local</div>' + lista.map(filaPapel).join('');
+  else html += '<div class="vacio" style="margin-top:16px">No hay apercibimientos en este local.</div>';
+  app.innerHTML = html;
+  engancharCabeza();
+  engancharSelector(pantallaApercibimientos);
+  var porId = {};
+  lista.forEach(function (x) { porId[x.id] = x; });
+  app.querySelectorAll('[data-papel-id]').forEach(function (b) { b.onclick = function () { detallePapel(porId[b.dataset.papelId], loc); }; });
+  var n = document.getElementById('nuevoAperc');
+  if (n) n.onclick = function () { pantallaCargarPapel({ tipo: 'apercibimiento', loc: loc, gente: otros }); };
+}
+
+/** Un papel, entero (supervisión): las hojas, si se descuenta, el descargo, sumar hojas y borrar. */
+function detallePapel(x, loc) {
+  if (!x) return;
+  barra.hidden = true;
+  app.className = 'app';
+  var aus = x.tipo === 'ausencia', mio = x.persona_id === yo().id, mira = soloMira() || mio, n = (x.fotos || []).length;
+  var volver = function () { irA(aus ? 'ausencias' : 'apercibimientos'); };
+  var html = '<button class="volver" id="volver">‹ Volver a ' + (aus ? 'ausencias' : 'apercibimientos') + '</button>' +
+    '<h1>' + esc(x.persona_nombre) + '</h1>' +
+    '<p class="bajada">' + esc((aus ? 'Ausencia · ' : 'Apercibimiento · ') + textoDias(x.desde, x.hasta)) + '</p>' +
+    (x.motivo ? '<div class="nota">' + esc(x.motivo) + '</div>' : '') +
+    (x.cargado_nombre ? '<p class="bajada papel-quien">' + esc((x.cargado_por === x.persona_id ? 'La mandó ' : 'La cargó ') + x.cargado_nombre + ' el ' + diaMes(x.creado_en) + '.') + '</p>' : '');
+  html += '<div class="seccion">' + (aus ? 'El certificado' : 'El papel firmado') + '</div>' +
+    (n ? fotosPapel(x) : '<div class="vacio">' + (aus ? 'Sin certificado.' : 'Sin la foto del papel firmado.') + '</div>') +
+    (n < 8 && (!soloMira() || mio) && (aus || !mio)
+      ? '<button class="boton" id="sumarHoja" style="margin-top:12px">' + (n ? 'Sumar otra hoja' : aus ? 'Sacarle la foto al certificado' : 'Sacarle la foto al papel firmado') + '</button>' : '');
+  if (aus) {
+    html += '<div class="seccion">¿Se descuenta del sueldo?</div>';
+    if (mira) html += '<p class="bajada">' + esc(DESCUENTO[x.descuento] ? DESCUENTO[x.descuento][1] : '') + (mio ? ' (lo decide tu supervisor o la administración).' : '') + '</p>';
+    else html += '<div class="pestanitas papel-descuento" style="grid-template-columns:repeat(3,1fr)">' +
+      [['si', 'Sí'], ['no', 'No'], ['a_definir', 'A definir']].map(function (o) {
+        return '<button type="button" data-desc="' + o[0] + '" class="' + (x.descuento === o[0] ? 'activa ' + o[0] : '') + '">' + o[1] + '</button>';
+      }).join('') + '</div><p class="bajada papel-ayuda">Con certificado, en general no se descuenta; sin aviso ni certificado, sí.</p>';
+  } else {
+    html += '<div class="seccion">Su descargo</div>' + (x.descargo ? '<div class="nota">' + esc(x.descargo) + '</div>' : '<p class="bajada">Todavía no escribió su descargo.</p>');
+    if (mio) html += '<button class="boton" id="miDescargo">' + (x.descargo ? 'Cambiar mi descargo' : 'Escribir mi descargo') + '</button>';
+  }
+  if (!mira) html += '<button class="boton suave" id="borrarPapel" style="margin-top:22px">Borrar ' + (aus ? 'esta ausencia' : 'este apercibimiento') + '</button>';
+  app.innerHTML = html;
+  cargarFotosPapeles(app);
+  document.getElementById('volver').onclick = volver;
+  /* Lo que cambia se relee de la base y se vuelve a dibujar. */
+  var otraVez = function () {
+    return leerPapeles('id=eq.' + valor(x.id)).then(function (f) { if (f && f[0]) detallePapel(f[0], loc); else volver(); });
+  };
+  var s = document.getElementById('sumarHoja');
+  if (s) s.onclick = function () { sumarHojas(x, otraVez); };
+  app.querySelectorAll('[data-desc]').forEach(function (b) {
+    unaVez(b, function () {
+      if (b.dataset.desc === x.descuento) return;
+      return llamar('orden_legajo_descuento', { p_id: x.id, p_descuento: b.dataset.desc }).then(function () {
+        avisar(b.dataset.desc === 'si' ? 'Anotado: se descuenta.' : b.dataset.desc === 'no' ? 'Anotado: no se descuenta.' : 'Queda a definir.');
+        return otraVez();
+      });
+    });
+  });
+  var md = document.getElementById('miDescargo');
+  if (md) unaVez(md, function () { return escribirDescargo(x, otraVez); });
+  var br = document.getElementById('borrarPapel');
+  if (br) unaVez(br, function () {
+    return confirmar('¿Borrar ' + (aus ? 'la ausencia' : 'el apercibimiento') + ' de ' + x.persona_nombre + '? Ya no se va a ver ni a contar.', 'Borrar').then(function (si) {
+      if (!si) return;
+      return llamar('orden_legajo_borrar', { p_id: x.id }).then(function () { avisar('Borrado.'); volver(); });
+    });
+  });
+}
+
+/**
+ * Anotar un papel nuevo, en pantalla completa:
+ *  - el vendedor, su ausencia con el certificado (op.propia);
+ *  - la supervisión, una ausencia (con o sin certificado, y si se descuenta) o un apercibimiento (con el papel
+ *    firmado, si ya lo tiene). op: { tipo: 'ausencia' | 'apercibimiento', propia, loc, gente }.
+ */
+function pantallaCargarPapel(op) {
+  if (_espejo) { avisar(textoEspejo()); return; }
+  barra.hidden = true;
+  app.className = 'app';
+  var aus = op.tipo === 'ausencia', hoy = hoyAR(), hojas = [], descuento = null, tocoDescuento = false;
+  var volver = function () { irA(aus ? (op.propia ? 'certificados' : 'ausencias') : 'apercibimientos'); };
+  var titulo = op.propia ? 'Mandar un certificado' : aus ? 'Anotar una ausencia' : 'Hacer un apercibimiento';
+  var gente = op.gente || [];
+  var html = '<button class="volver" id="volver">‹ Volver</button><h1>' + titulo + '</h1>' +
+    '<p class="bajada">' + esc(op.propia
+      ? 'Le llega a tu supervisor. Sacale la foto con la hoja apoyada sobre algo oscuro: la app la endereza y la deja nítida.'
+      : (op.loc ? op.loc.nombre + ' · ' : '') + (aus ? 'Le llega el aviso a quien faltó. Si después trae el certificado, se lo sumás.'
+                                                    : 'Le llega el aviso, y puede escribir su descargo desde la app.')) + '</p>';
+  if (!op.propia) {
+    html += '<label class="campo"><span>¿A quién?</span><select id="pPersona" class="desplegable"><option value="">Elegí…</option>' + gente.map(function (p) {
+      return '<option value="' + esc(p.id) + '">' + esc(p.id === yo().id ? 'Yo (mi certificado)' : nombreLista(p)) + '</option>';
+    }).join('') + '</select></label>';
+  }
+  var min = sumarDias(hoy, -120), max = aus ? sumarDias(hoy, 7) : hoy;
+  if (aus) {
+    html += '<div class="papel-fechas"><label class="campo"><span>' + (op.propia ? '¿Qué día faltaste?' : 'Desde') + '</span><input type="date" id="pDesde" value="' + hoy + '" min="' + min + '" max="' + max + '"></label>' +
+      '<label class="campo"><span>' + (op.propia ? '¿Hasta qué día?' : 'Hasta') + '</span><input type="date" id="pHasta" value="' + hoy + '" min="' + min + '" max="' + sumarDias(hoy, 67) + '"></label></div>';
+  } else {
+    html += '<label class="campo"><span>Fecha</span><input type="date" id="pDesde" value="' + hoy + '" min="' + min + '" max="' + max + '"></label>';
+  }
+  html += '<label class="campo"><span>' + (aus ? (op.propia ? 'Algo para aclarar (opcional)' : 'Motivo (opcional)') : 'Motivo') + '</span>' +
+    '<textarea id="pMotivo" rows="' + (aus ? 2 : 3) + '" maxlength="300" placeholder="' + (aus ? (op.propia ? 'Por ejemplo: avisé por WhatsApp a la mañana' : 'Por ejemplo: enfermedad, sin aviso, trámite') : 'Qué pasó') + '"></textarea></label>';
+  html += '<div class="seccion">' + (aus ? (op.propia ? 'El certificado' : 'El certificado (si lo trajo)') : 'El papel firmado (si ya lo tenés)') + '</div><div id="pHojas"></div>';
+  if (aus && !op.propia) {
+    html += '<div class="seccion">¿Se descuenta del sueldo?</div><div class="pestanitas papel-descuento" style="grid-template-columns:repeat(3,1fr)">' +
+      [['si', 'Sí'], ['no', 'No'], ['a_definir', 'A definir']].map(function (o) { return '<button type="button" data-desc="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>' +
+      '<p class="bajada papel-ayuda">Si no sabés todavía, dejalo "A definir": lo podés cambiar después.</p>';
+  }
+  html += '<button class="boton lima" id="guardarPapel" style="margin-top:18px">' + (op.propia ? 'Mandar' : aus ? 'Guardar la ausencia' : 'Guardar el apercibimiento') + '</button>';
+  app.innerHTML = html;
+
+  var desde = document.getElementById('pDesde'), hasta = document.getElementById('pHasta');
+  if (hasta) desde.addEventListener('change', function () { if (!hasta.value || hasta.value < desde.value) hasta.value = desde.value; });
+  function pintarDescuento() {
+    var d = descuento || (hojas.length ? 'no' : 'a_definir');
+    app.querySelectorAll('[data-desc]').forEach(function (b) { b.className = b.dataset.desc === d ? 'activa ' + d : ''; });
+  }
+  app.querySelectorAll('[data-desc]').forEach(function (b) { b.onclick = function () { descuento = b.dataset.desc; tocoDescuento = true; pintarDescuento(); }; });
+  function pintarHojas() {
+    var lugar = document.getElementById('pHojas');
+    if (!lugar) return;
+    lugar.innerHTML = (hojas.length ? '<div class="grilla papel-fotos">' + hojas.map(function (h, i) {
+      return '<figure class="foto-chica papel-hoja"><img src="' + h.url + '" alt="Hoja ' + (i + 1) + '"><figcaption>Hoja ' + (i + 1) + '</figcaption>' +
+        '<button type="button" class="papel-sacar" data-sacar="' + i + '" aria-label="Sacar la hoja ' + (i + 1) + '">×</button></figure>';
+    }).join('') + '</div>' : '') +
+      (hojas.length < 8 ? '<button type="button" class="boton" id="pEscanear"' + (hojas.length ? ' style="margin-top:10px"' : '') + '>' +
+        (hojas.length ? 'Sumar otra hoja' : 'Sacarle la foto') + '</button>' : '');
+    lugar.querySelectorAll('[data-sacar]').forEach(function (b) {
+      b.onclick = function (e) {
+        e.stopPropagation();
+        var h = hojas.splice(+b.dataset.sacar, 1)[0];
+        if (h && h.url) URL.revokeObjectURL(h.url);
+        pintarHojas();
+      };
+    });
+    var bE = document.getElementById('pEscanear');
+    if (bE) bE.onclick = function () {
+      escanear({ titulo: aus ? 'Certificado médico' : 'Apercibimiento firmado', maxHojas: 8 - hojas.length }, function (blobs) {
+        blobs.forEach(function (b) { hojas.push({ blob: b, url: URL.createObjectURL(b) }); });
+        pintarHojas();
+      });
+    };
+    if (!tocoDescuento) pintarDescuento();
+  }
+  pintarHojas();
+
+  var salir = function () {
+    var algo = hojas.length || document.getElementById('pMotivo').value.trim();
+    (algo ? confirmar('¿Salir sin guardar?', 'Salir') : Promise.resolve(true)).then(function (si) {
+      if (!si) return;
+      hojas.forEach(function (h) { if (h.url) URL.revokeObjectURL(h.url); });
+      volver();
+    });
+  };
+  document.getElementById('volver').onclick = salir;
+
+  var b = document.getElementById('guardarPapel');
+  unaVez(b, function () {
+    var sel = document.getElementById('pPersona');
+    var persona = op.propia ? yo().id : sel.value;
+    var propia = persona === yo().id;
+    if (!persona) { avisar('Elegí a quién.'); sel.focus(); return; }
+    var d = desde.value, h = hasta ? (hasta.value || d) : d;
+    if (!d) { avisar('Poné la fecha.'); return; }
+    if (h < d) { avisar('El "hasta" no puede ser antes del "desde".'); return; }
+    var motivo = document.getElementById('pMotivo').value.trim();
+    if (!aus && motivo.length < 5) { avisar('Escribí el motivo del apercibimiento.'); document.getElementById('pMotivo').focus(); return; }
+    if (propia && !hojas.length) { avisar('Sacale la foto al certificado.'); return; }
+    var local = propia ? yo().local_id : op.loc.id;
+    /* Esos días ya los anotó el supervisor (la base no deja dos ausencias que se pisen): el certificado se suma a esa,
+       sin volver a escanear. Si se pisa sólo en parte, se avisa antes de subir nada. */
+    var otra = op.propia ? (op.mias || []).filter(function (x) { return x.desde <= h && x.hasta >= d; })[0] : null;
+    if (otra && !(otra.desde <= d && otra.hasta >= h)) {
+      avisar('Ya tenés una ausencia anotada ' + textoDias(otra.desde, otra.hasta).toLowerCase() + ': mandá el certificado desde esa, o revisá las fechas.');
+      return;
+    }
+    if (otra) {
+      b.textContent = 'Subiendo…';
+      return subirHojas(local, persona, hojas).then(function (rutas) {
+        return llamar('orden_legajo_fotos', { p_id: otra.id, p_fotos: rutas });
+      }).then(function () {
+        hojas.forEach(function (x) { if (x.url) URL.revokeObjectURL(x.url); });
+        avisar('Listo: lo sumamos a tu ausencia ' + textoDias(otra.desde, otra.hasta).toLowerCase() + ' y tu supervisor ya lo tiene.');
+        volver();
+      });
+    }
+    b.textContent = hojas.length ? 'Subiendo…' : 'Guardando…';
+    return subirHojas(local, persona, hojas).then(function (rutas) {
+      b.textContent = 'Guardando…';
+      return llamar('orden_legajo_cargar', { p_tipo: op.tipo, p_persona: persona, p_desde: d, p_hasta: aus ? h : null, p_motivo: motivo || null, p_fotos: rutas });
+    }).then(function (v) {
+      var elegido = aus && !propia ? (descuento || (hojas.length ? 'no' : 'a_definir')) : null;
+      if (!v || !elegido || elegido === v.descuento) return;
+      return llamar('orden_legajo_descuento', { p_id: v.id, p_descuento: elegido })
+        .catch(function () { avisar('Se anotó, pero no se guardó si se descuenta: cambialo desde la lista.'); });
+    }).then(function () {
+      hojas.forEach(function (x) { if (x.url) URL.revokeObjectURL(x.url); });
+      avisar(propia ? 'Listo: tu supervisor ya lo tiene.' : aus ? 'Ausencia anotada: le llegó el aviso.' : 'Apercibimiento guardado: le llegó el aviso.');
+      volver();
+    });
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    ARRANQUE
    ════════════════════════════════════════════════════════════════════════ */
 
 /* ════════════════════════════════════════════════════════════════════════
    VER SU APP (14/10, pedido de Mauricio: "ver lo que hacen los chicos, cómo les aparece"). La supervisión (y la
-   gerencia) abre la app de un vendedor tal cual la ve él, con sus datos: Hoy, Fotos, Tareas, Caja, Ideas, los avisos y
+   gerencia) abre la app de un vendedor tal cual la ve él, con sus datos: Hoy, Módulos, Tareas, Papeles, Ideas, los avisos y
    el Perfil. Sólo para mirar: lo que se hace (fotos, tareas, test, caja, producto testigo, descargos, marcar avisos)
    queda trabado. Lo que se ve lo sigue decidiendo la base (la supervisión lee lo de su local; escribir como otro, no).
    ════════════════════════════════════════════════════════════════════════ */

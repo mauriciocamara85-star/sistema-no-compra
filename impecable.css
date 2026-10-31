@@ -657,3 +657,26 @@ select.desplegable option::checkmark { order: 1; margin-inline-start: auto; }
     margin: 0; inline-size: auto; max-block-size: calc(100dvh - 140px);
   }
 }
+
+/* ── Papeles (SQL 209, 31/10): Caja · Certificados · Apercibimientos ──
+   Las pestañitas de a tres (entran "Apercibimientos" en 390 px), el puntito
+   de la caja de las 19 h, las hojas del escáner y "¿Se descuenta?". */
+.pestanitas.papeles-sub { margin: 14px 0 6px; }
+.pestanitas.papeles-sub button { position: relative; min-width: 0; padding: 0 4px; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pestanitas button.con-punto::after { content: ''; position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--rojo); }
+.papel .nombre { font-size: 16px; }
+.papel-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.papel-fotos { margin-top: 10px; }
+.papel-descargo { margin: 10px 0 0; color: var(--texto); }
+.papel-fila > span:first-child { flex: 1 1 100%; }
+.papel-quien { font-size: 13px; margin-top: -4px; }
+.papel-ayuda { font-size: 13px; margin: 8px 0 0; }
+.pestanitas.papel-descuento { margin: 0; }
+.pestanitas.papel-descuento button.activa.si { color: var(--rojo); }
+.pestanitas.papel-descuento button.activa.no { color: var(--verde); }
+.pestanitas.papel-descuento button.activa.a_definir { color: var(--lima); }
+.papel-fechas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.papel-fechas .campo { min-width: 0; }
+.campo input[type=date] { color-scheme: dark; min-width: 0; width: 100%; }
+.papel-hoja { position: relative; }
+.papel-sacar { position: absolute; top: 6px; right: 6px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .72); color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }

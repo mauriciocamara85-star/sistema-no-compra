@@ -81,6 +81,8 @@ var ICONO_MENU = {
   orden: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
   cajas: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
   llegadas: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M9.5 2h5M12 2v3"/>',
+  /* Papeles (SQL 209): la hoja con la camarita, como en la app. */
+  papeles: '<path d="M10 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8l4 4v4"/><path d="M14 3v4h4"/><rect x="12" y="13.5" width="10" height="7.5" rx="1.5"/><path d="M15 13.5l1-1.5h2l1 1.5"/><circle cx="17" cy="17.2" r="1.7"/>',
   testigo: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
   ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   app: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
@@ -93,6 +95,7 @@ var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                ['orden', 'Por vendedor', 'Cada vendedor, semana a semana'],
                ['cajas', 'Cajas', 'Como la planilla del control diario'],
                ['llegadas', 'Llegadas', 'A qué hora llegó cada uno, por zona y día a día'],
+               ['papeles', 'Papeles', 'Ausencias, certificados médicos y apercibimientos'],
                ['testigo', 'Productos testigo', 'Lo que se cuenta cada semana'],
                ['ajustes', 'Ajustes', 'Cómo funciona cada local, las reglas de orden y los tests']];
 /* Sólo el administrador (22/10: "Tareas" era "Crear tarea", adentro de Ajustes). */
@@ -204,7 +207,7 @@ function ir(solapa) {
   engancharPlegar();
   asomarMenu();
   if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
-  ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, llegadas: verLlegadas, testigo: verTestigo, ajustes: verAjustes })[solapa]();
+  ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, llegadas: verLlegadas, papeles: verPapeles, testigo: verTestigo, ajustes: verAjustes })[solapa]();
 }
 
 /** El botón del menú: cada vez se busca el que está en la página (al tocarlo se rehace con el texto contrario; el
@@ -2307,6 +2310,337 @@ function editor(cfg) {
       unaVez(b, function () { return cfg.accion(fila, b.dataset.accion, b); });
     });
   });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   PAPELES (SQL 209, 31/10, pedido de Mauricio): las ausencias (con o sin certificado médico, y si se descuentan) y
+   los apercibimientos. Mauricio: "está bueno tener una estadística de cuánto falta cada vendedor". Se cargan desde la
+   app (el vendedor manda su certificado; el supervisor anota) y acá se ven todos, se decide el descuento y también se
+   cargan (con la foto o el archivo que llegó por WhatsApp). Las hojas están en el bucket privado "legajos".
+   ════════════════════════════════════════════════════════════════════════ */
+
+var LEGAJOS = 'legajos';
+var _papTodos = false, _papPedido = 0, _papPersona = null;
+var DESCUENTO_PAP = { a_definir: ['sorpresa', 'A definir'], si: ['vencido', 'Se descuenta'], no: ['listo', 'No se descuenta'] };
+
+function verPapeles() {
+  var sel = document.getElementById('selLocal');
+  if (sel) sel.style.display = _papTodos && _locales.length > 1 ? 'none' : '';
+  var c = document.getElementById('cuerpo');
+  c.innerHTML = '<div class="imp-filtros"><div id="papPer"></div>' +
+    (_locales.length > 1 ? '<div class="solapas chicas"><button data-pap-vista="local" class="' + (_papTodos ? '' : 'activa') + '">Un local</button>' +
+      '<button data-pap-vista="todos" class="' + (_papTodos ? 'activa' : '') + '">Todos los locales</button></div>' : '') +
+    '</div><div id="papDatos"><p class="cargando">Cargando…</p></div>';
+  var per = Interfaz.periodo(document.getElementById('papPer'), {
+    inicial: 'mes', atajos: ['mes', 'mes-pasado', '3m', '6m', 'anio'], guardar: 'nc_eq_papeles',
+    alCambiar: function (r) { datosPapeles(r); }
+  });
+  c.querySelectorAll('[data-pap-vista]').forEach(function (b) { b.onclick = function () { _papTodos = b.dataset.papVista === 'todos'; _papPersona = null; verPapeles(); }; });
+  datosPapeles(per.rango());
+}
+
+/** Los días de un papel que caen adentro del período. */
+function diasPap(x, r) {
+  var d = x.desde > r.desde ? x.desde : r.desde, h = x.hasta < r.hasta ? x.hasta : r.hasta;
+  return h < d ? 0 : Math.round((new Date(h + 'T12:00:00Z') - new Date(d + 'T12:00:00Z')) / 864e5) + 1;
+}
+function textoDiasPap(x) { return x.desde === x.hasta ? diaMes(x.desde) : diaMes(x.desde) + ' al ' + diaMes(x.hasta); }
+
+function datosPapeles(rango) {
+  var pedido = ++_papPedido, todos = _papTodos && _locales.length > 1;
+  var donde = todos ? '' : '&local_id=eq.' + valor(_local.id);
+  var nombreLocal = {};
+  _locales.forEach(function (l) { nombreLocal[l.id] = l.nombre; });
+  leerTodas('/orden_legajo?select=*&desde=lte.' + rango.hasta + '&hasta=gte.' + rango.desde + donde + '&order=desde.desc,creado_en.desc,id.asc').then(function (f) {
+    f = f || [];
+    var ids = {};
+    f.forEach(function (x) { ids[x.persona_id] = 1; if (x.cargado_por) ids[x.cargado_por] = 1; });
+    var lista = Object.keys(ids);
+    return (lista.length ? leer('/orden_personas?select=id,nombre,inicial,apellido&id=in.(' + lista.map(valor).join(',') + ')') : Promise.resolve([])).then(function (g) {
+      var n = {};
+      (g || []).forEach(function (p) { n[p.id] = p; });
+      f.forEach(function (x) {
+        var p = n[x.persona_id];
+        x.persona_nombre = p ? p.nombre + (p.apellido ? ' ' + p.apellido : p.inicial ? ' ' + p.inicial + '.' : '') : 'Alguien';
+        x.cargado_nombre = n[x.cargado_por] ? nombreVendedor(n[x.cargado_por]) : '';
+        x.local_nombre = nombreLocal[x.local_id] || '';
+      });
+      return f;
+    });
+  }).then(function (f) {
+    if (_solapa !== 'papeles' || pedido !== _papPedido) return;
+    dibujarPapeles(f, rango, todos);
+  }).catch(function (e) {
+    if (_solapa !== 'papeles' || pedido !== _papPedido) return;
+    if (/orden_legajo|PGRST205|42P01|could not find the table/i.test(String(e && e.message)) && !esDeRed(e) && !e.sinSesion) {
+      document.getElementById('papDatos').innerHTML = '<div class="vacio">' + (esAdmin() ? 'Falta correr el SQL 209 en Supabase.' : 'Esto todavía no está listo: en unos días aparece.') + '</div>';
+      return;
+    }
+    error(e, verPapeles);
+  });
+}
+
+function dibujarPapeles(f, rango, todos) {
+  var aus = f.filter(function (x) { return x.tipo === 'ausencia'; }), aper = f.filter(function (x) { return x.tipo === 'apercibimiento'; });
+  /* Por persona: las veces que faltó, los días (adentro del período), con y sin certificado, los que se descuentan y
+     los apercibimientos. De más a menos días. */
+  var por = {};
+  var de = function (x) { return por[x.persona_id] || (por[x.persona_id] = { id: x.persona_id, nombre: x.persona_nombre, local: x.local_nombre, veces: 0, dias: 0, con: 0, sin: 0, desc: 0, definir: 0, aper: 0 }); };
+  aus.forEach(function (x) {
+    var p = de(x), d = diasPap(x, rango);
+    p.veces++; p.dias += d;
+    if ((x.fotos || []).length) p.con += d; else p.sin += d;
+    if (x.descuento === 'si') p.desc += d;
+    if (x.descuento === 'a_definir') p.definir++;
+  });
+  aper.forEach(function (x) { de(x).aper++; });
+  var gente = Object.keys(por).map(function (k) { return por[k]; })
+    .sort(function (a, b) { return b.dias - a.dias || b.aper - a.aper || a.nombre.localeCompare(b.nombre); });
+  var tot = gente.reduce(function (t, p) { t.dias += p.dias; t.sin += p.sin; t.definir += p.definir; t.aper += p.aper; return t; }, { dias: 0, sin: 0, definir: 0, aper: 0 });
+  var mira = soloMira();
+
+  var html = '<div class="numeros">' +
+    '<div class="numero"><span>Días de ausencia</span><b>' + tot.dias + '</b><span>' + aus.length + (aus.length === 1 ? ' ausencia' : ' ausencias') + ' · ' + esc(rango.texto || '') + '</span></div>' +
+    '<div class="numero"><span>Días sin certificado</span><b>' + tot.sin + '</b><span>' + (tot.dias ? Math.round(100 * tot.sin / tot.dias) + '% de los días' : 'Ninguno') + '</span></div>' +
+    '<div class="numero"><span>Para decidir si se descuenta</span><b>' + tot.definir + '</b><span>' + (tot.definir ? 'Están abajo, primero' : 'Todo decidido') + '</span></div>' +
+    '<div class="numero"><span>Apercibimientos</span><b>' + tot.aper + '</b><span>' + esc(rango.texto || '') + '</span></div></div>';
+  html += '<div class="botones pap-acciones">' +
+    (mira ? '' : '<button class="boton chico lima" id="papAusencia">Anotar una ausencia</button><button class="boton chico" id="papAperc">Hacer un apercibimiento</button>') +
+    (f.length ? '<button class="boton chico" id="papExcel">Descargar para Excel</button>' : '') + '</div>';
+
+  html += '<div class="seccion">Por persona</div>';
+  if (!gente.length) html += '<div class="vacio">No hay ausencias ni apercibimientos en este período.</div>';
+  else html += '<div class="desliza"><table class="tabla-datos pap-personas"><thead><tr><th>Persona</th>' + (todos ? '<th>Local</th>' : '') +
+    '<th class="n">Veces que faltó</th><th class="n">Días</th><th class="n">Con certificado</th><th class="n">Sin certificado</th><th class="n">Días que se descuentan</th><th class="n">Apercibimientos</th></tr></thead><tbody>' +
+    gente.map(function (p) {
+      return '<tr data-pap-persona="' + esc(p.id) + '" class="' + (p.id === _papPersona ? 'mes-activo' : '') + '" style="cursor:pointer"><td><b>' + esc(p.nombre) + '</b></td>' + (todos ? '<td>' + esc(p.local) + '</td>' : '') +
+        '<td class="n">' + (p.veces || '—') + '</td><td class="n"><b>' + (p.dias || '—') + '</b></td><td class="n">' + (p.con || '—') + '</td>' +
+        '<td class="n' + (p.sin ? ' rojo' : '') + '">' + (p.sin || '—') + '</td><td class="n">' + (p.desc || '—') + (p.definir ? ' <span class="est sorpresa">' + p.definir + ' a definir</span>' : '') + '</td>' +
+        '<td class="n' + (p.aper ? ' rojo' : '') + '">' + (p.aper || '—') + '</td></tr>';
+    }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Los días cuentan los que caen adentro del período. Tocá a una persona para ver sólo lo suyo.</p>';
+
+  /* La lista: las ausencias "a definir" primero (es lo que hay que hacer), después las demás, de la más nueva a la más vieja. */
+  var deQuien = function (x) { return !_papPersona || x.persona_id === _papPersona; };
+  var ausL = aus.filter(deQuien).sort(function (a, b) { return (a.descuento === 'a_definir' ? 0 : 1) - (b.descuento === 'a_definir' ? 0 : 1) || (a.desde < b.desde ? 1 : a.desde > b.desde ? -1 : 0); });
+  var aperL = aper.filter(deQuien);
+  var quien = _papPersona && por[_papPersona] ? por[_papPersona].nombre : '';
+  if (quien) html += '<div class="nota">Mostrando sólo lo de <b>' + esc(quien) + '</b>. <button class="imp-enlace" id="papTodos">Ver a todos</button></div>';
+  html += '<div class="seccion">Ausencias</div>';
+  if (!ausL.length) html += '<div class="vacio">No hay ausencias en este período.</div>';
+  else html += '<div class="desliza"><table class="tabla-datos pap-lista"><thead><tr><th>Fecha</th><th>Persona</th>' + (todos ? '<th>Local</th>' : '') +
+    '<th class="n">Días</th><th>Certificado</th><th>¿Se descuenta?</th><th>Motivo</th><th></th></tr></thead><tbody>' +
+    ausL.map(function (x) {
+      var n = (x.fotos || []).length;
+      return '<tr><td>' + esc(textoDiasPap(x)) + '</td><td><b>' + esc(x.persona_nombre) + '</b>' + (x.cargado_por === x.persona_id ? '<small class="pap-chico">lo mandó desde la app</small>' : '') + '</td>' + (todos ? '<td>' + esc(x.local_nombre) + '</td>' : '') +
+        '<td class="n">' + diasPap(x, { desde: x.desde, hasta: x.hasta }) + '</td>' +
+        '<td>' + (n ? '<span class="est listo">Con certificado' + (n > 1 ? ' (' + n + ' hojas)' : '') + '</span>' : '<span class="est">Sin certificado</span>') + '</td>' +
+        '<td>' + (mira ? '<span class="est ' + DESCUENTO_PAP[x.descuento][0] + '">' + DESCUENTO_PAP[x.descuento][1] + '</span>'
+          : '<select class="imp-sel pap-desc desc-' + esc(x.descuento) + '" data-pap-desc="' + esc(x.id) + '" aria-label="¿Se descuenta la ausencia de ' + esc(x.persona_nombre) + '?">' +
+            [['a_definir', 'A definir'], ['si', 'Sí'], ['no', 'No']].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === x.descuento ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>') + '</td>' +
+        '<td class="pap-motivo">' + esc(x.motivo || '') + '</td><td><button class="boton chico" data-pap-ver="' + esc(x.id) + '">Ver</button></td></tr>';
+    }).join('') + '</tbody></table></div>';
+  html += '<div class="seccion">Apercibimientos</div>';
+  if (!aperL.length) html += '<div class="vacio">No hay apercibimientos en este período.</div>';
+  else html += '<div class="desliza"><table class="tabla-datos pap-lista"><thead><tr><th>Fecha</th><th>Persona</th>' + (todos ? '<th>Local</th>' : '') +
+    '<th>Motivo</th><th>Papel firmado</th><th>Descargo</th><th></th></tr></thead><tbody>' +
+    aperL.map(function (x) {
+      return '<tr><td>' + esc(diaMes(x.desde)) + '</td><td><b>' + esc(x.persona_nombre) + '</b></td>' + (todos ? '<td>' + esc(x.local_nombre) + '</td>' : '') +
+        '<td class="pap-motivo">' + esc(x.motivo || '') + '</td><td>' + ((x.fotos || []).length ? '<span class="est listo">Firmado</span>' : '<span class="est">Sin foto</span>') + '</td>' +
+        '<td class="pap-motivo">' + esc(x.descargo || '—') + '</td><td><button class="boton chico" data-pap-ver="' + esc(x.id) + '">Ver</button></td></tr>';
+    }).join('') + '</tbody></table></div>';
+
+  var c = document.getElementById('papDatos');
+  c.innerHTML = html;
+  var porId = {};
+  f.forEach(function (x) { porId[x.id] = x; });
+  var otraVez = function () { datosPapeles(rango); };
+  c.querySelectorAll('[data-pap-persona]').forEach(function (tr) {
+    tr.onclick = function () { _papPersona = _papPersona === tr.dataset.papPersona ? null : tr.dataset.papPersona; dibujarPapeles(f, rango, todos); };
+  });
+  var bt = document.getElementById('papTodos');
+  if (bt) bt.onclick = function () { _papPersona = null; dibujarPapeles(f, rango, todos); };
+  c.querySelectorAll('[data-pap-ver]').forEach(function (b) { b.onclick = function () { ventanaPapel(porId[b.dataset.papVer], otraVez); }; });
+  c.querySelectorAll('[data-pap-desc]').forEach(function (s) {
+    var antes = s.value;
+    s.onchange = function () {
+      s.disabled = true;
+      llamar('orden_legajo_descuento', { p_id: s.dataset.papDesc, p_descuento: s.value }).then(function () {
+        antes = s.value; porId[s.dataset.papDesc].descuento = s.value;
+        avisar(s.value === 'si' ? 'Anotado: se descuenta.' : s.value === 'no' ? 'Anotado: no se descuenta.' : 'Queda a definir.');
+        s.className = 'imp-sel pap-desc desc-' + s.value;
+        s.disabled = false;
+      }, function (e) { s.value = antes; s.disabled = false; avisar(esDeRed(e) ? 'Sin señal: no se guardó. Probá de nuevo.' : mensajeDe(e)); });
+    };
+  });
+  var ba = document.getElementById('papAusencia'), bp = document.getElementById('papAperc'), bx = document.getElementById('papExcel');
+  if (ba) ba.onclick = function () { ventanaNuevoPapel('ausencia', todos, otraVez); };
+  if (bp) bp.onclick = function () { ventanaNuevoPapel('apercibimiento', todos, otraVez); };
+  if (bx) bx.onclick = function () { excelPapeles(f, rango, todos); };
+}
+
+/** Las hojas de un papel en una ventana (con la dirección firmada del bucket privado). */
+function fotosLegajo(cont) {
+  cont.querySelectorAll('img[data-legajo]').forEach(function (img) {
+    var ruta = img.getAttribute('data-legajo');
+    img.removeAttribute('data-legajo');
+    urlFirmadaEn(LEGAJOS, ruta).then(function (u) { if (u) img.src = u; else img.alt = 'Foto no disponible'; });
+  });
+}
+
+/** Sube hojas (blobs) a la carpeta de la persona; devuelve las rutas. Si falla a la mitad, al reintentar no repite. */
+function subirHojasPap(local, persona, hojas) {
+  return hojas.reduce(function (p, h) {
+    return p.then(function () {
+      if (h.ruta) return;
+      return subirArchivoEn(LEGAJOS, local + '/' + persona + '/' + nombreArchivo(), h.blob, 'image/jpeg').then(function (r) { h.ruta = r; });
+    });
+  }, Promise.resolve()).then(function () { return hojas.map(function (h) { return h.ruta; }); });
+}
+
+/** En la compu: elegir un archivo (la foto o la captura que llegó por WhatsApp) y enderezarlo con el escáner. */
+function escanearArchivo(titulo, max, alListo) {
+  if (!window.Escaner) { avisar('Recargá la página: falta una parte.'); return; }
+  var inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = function () {
+    var a = inp.files && inp.files[0];
+    if (!a) return;
+    Escaner.desdeArchivo(a, { titulo: titulo, sinCamara: true, maxHojas: max, alTerminar: alListo });
+  };
+  inp.click();
+}
+
+function ventanaPapel(x, alCambiar) {
+  if (!x) return;
+  var aus = x.tipo === 'ausencia', n = (x.fotos || []).length, mira = soloMira() || x.persona_id === yo().id;
+  var v = ventana('<h1>' + esc(x.persona_nombre) + '</h1>' +
+    '<p class="bajada">' + esc((aus ? 'Ausencia · ' : 'Apercibimiento · ') + (x.desde === x.hasta ? diaMes(x.desde) : 'del ' + diaMes(x.desde) + ' al ' + diaMes(x.hasta) + ' (' + diasPap(x, x) + ' días)') +
+      (x.local_nombre ? ' · ' + x.local_nombre : '') + (x.cargado_nombre ? ' · ' + (x.cargado_por === x.persona_id ? 'lo mandó ' : 'lo cargó ') + x.cargado_nombre + ' el ' + diaMes(x.creado_en) : '')) + '</p>' +
+    (x.motivo ? '<div class="nota">' + esc(x.motivo) + '</div>' : '') +
+    (aus ? '<div class="campo pap-desc-campo"><span>¿Se descuenta del sueldo?</span>' + (mira ? '<span class="est ' + DESCUENTO_PAP[x.descuento][0] + '">' + DESCUENTO_PAP[x.descuento][1] + '</span>'
+        : '<select class="imp-sel" id="papDescV">' + [['a_definir', 'A definir'], ['si', 'Se descuenta'], ['no', 'No se descuenta']].map(function (o) {
+          return '<option value="' + o[0] + '"' + (o[0] === x.descuento ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>') + '</div>'
+         : '<div class="seccion">Su descargo</div>' + (x.descargo ? '<div class="nota">' + esc(x.descargo) + '</div>' : '<p class="bajada">Todavía no escribió su descargo.</p>')) +
+    '<div class="seccion">' + (aus ? 'El certificado' : 'El papel firmado') + '</div>' +
+    (n ? '<div class="historia pap-hojas">' + x.fotos.map(function (r, i) {
+      return '<figure class="foto-chica"><img data-legajo="' + esc(r) + '" alt="Hoja ' + (i + 1) + '"><figcaption>Hoja ' + (i + 1) + ' · tocala para verla entera</figcaption></figure>';
+    }).join('') + '</div>' : '<div class="vacio">' + (aus ? 'Sin certificado.' : 'Sin la foto del papel firmado.') + '</div>') +
+    '<div class="botones">' +
+    (soloMira() || n >= 8 || (x.persona_id === yo().id && !aus) ? '' : '<button class="boton chico" id="papSumar">' + (n ? 'Sumar otra hoja (desde un archivo)' : 'Subir la foto (desde un archivo)') + '</button>') +
+    (mira ? '' : '<button class="boton chico" id="papBorrar">Borrar ' + (aus ? 'esta ausencia' : 'este apercibimiento') + '</button>') + '</div>');
+  fotosLegajo(v);
+  var cerrarYRecargar = function () { v.remove(); alCambiar(); };
+  var sd = v.querySelector('#papDescV');
+  if (sd) sd.onchange = function () {
+    sd.disabled = true;
+    llamar('orden_legajo_descuento', { p_id: x.id, p_descuento: sd.value }).then(function () { avisar('Guardado.'); x.descuento = sd.value; sd.disabled = false; alCambiar(); },
+      function (e) { sd.value = x.descuento; sd.disabled = false; avisar(mensajeDe(e)); });
+  };
+  var bs = v.querySelector('#papSumar');
+  if (bs) bs.onclick = function () {
+    escanearArchivo(aus ? 'Certificado médico' : 'Apercibimiento firmado', 8 - n, function (blobs) {
+      avisar('Subiendo…');
+      subirHojasPap(x.persona_id === yo().id ? yo().local_id : x.local_id, x.persona_id, blobs.map(function (b) { return { blob: b }; }))
+        .then(function (rutas) { return llamar('orden_legajo_fotos', { p_id: x.id, p_fotos: rutas }); })
+        .then(function () { avisar('Listo: quedó guardado.'); cerrarYRecargar(); }, function (e) { avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e)); });
+    });
+  };
+  var bb = v.querySelector('#papBorrar');
+  if (bb) unaVez(bb, function () {
+    if (!confirm('¿Borrar ' + (aus ? 'la ausencia' : 'el apercibimiento') + ' de ' + x.persona_nombre + '? Ya no se va a ver ni a contar.')) return;
+    return llamar('orden_legajo_borrar', { p_id: x.id }).then(function () { avisar('Borrado.'); cerrarYRecargar(); });
+  });
+}
+
+/** Anotar una ausencia o hacer un apercibimiento desde la compu. */
+function ventanaNuevoPapel(tipo, todos, alCambiar) {
+  var aus = tipo === 'ausencia', hoy = hoyAR(), hojas = [];
+  var locs = todos ? _locales.map(function (l) { return l.id; }) : [_local.id];
+  var nombreLocal = {};
+  _locales.forEach(function (l) { nombreLocal[l.id] = l.nombre; });
+  var v = ventana('<h1>' + (aus ? 'Anotar una ausencia' : 'Hacer un apercibimiento') + '</h1>' +
+    '<p class="bajada">' + (aus ? 'Le llega el aviso a quien faltó. Si trajo el certificado, subí la foto (o la captura que mandó por WhatsApp).'
+                                : 'Le llega el aviso, y puede escribir su descargo desde la app.') + '</p>' +
+    '<label class="campo"><span>¿A quién?</span><select id="papQuien"><option value="">Cargando…</option></select></label>' +
+    '<div class="renglon"><label class="campo c-medio"><span>' + (aus ? 'Desde' : 'Fecha') + '</span><input type="date" id="papDesde" value="' + hoy + '" min="' + sumarDias(hoy, -120) + '" max="' + (aus ? sumarDias(hoy, 7) : hoy) + '"></label>' +
+      (aus ? '<label class="campo c-medio"><span>Hasta</span><input type="date" id="papHasta" value="' + hoy + '" min="' + sumarDias(hoy, -120) + '" max="' + sumarDias(hoy, 67) + '"></label>' : '') + '</div>' +
+    '<label class="campo"><span>' + (aus ? 'Motivo (opcional)' : 'Motivo') + '</span><textarea id="papMotivo" rows="' + (aus ? 2 : 3) + '" maxlength="300"></textarea></label>' +
+    (aus ? '<label class="campo"><span>¿Se descuenta del sueldo?</span><select id="papDesc"><option value="">A definir (o "No" si subís el certificado)</option><option value="si">Se descuenta</option><option value="no">No se descuenta</option></select></label>' : '') +
+    '<div class="seccion">' + (aus ? 'El certificado (si lo trajo)' : 'El papel firmado (si ya lo tenés)') + '</div><div id="papHojasN"></div>' +
+    '<div class="botones"><button class="boton lima" id="papGuardar" data-aviso-guardar disabled>' + (aus ? 'Guardar la ausencia' : 'Guardar el apercibimiento') + '</button></div>');
+  var sel = v.querySelector('#papQuien'), gente = {};
+  /* El Guardar se prende al elegir o escribir algo (y entonces, cerrar sin guardar pregunta). */
+  var prender = function () { var g = v.querySelector('#papGuardar'); if (g && sel.value) g.disabled = false; };
+  v.addEventListener('change', prender);
+  v.addEventListener('input', prender);
+  leer('/orden_personas?select=id,nombre,inicial,apellido,local_id,rol&activo=is.true&rol=in.(vendedor,supervisor)&local_id=in.(' + locs.map(valor).join(',') + ')&order=nombre.asc').then(function (g) {
+    g = (g || []).filter(function (p) { return p.id !== yo().id; });
+    g.forEach(function (p) { gente[p.id] = p; });
+    sel.innerHTML = '<option value="">Elegí…</option>' + g.map(function (p) {
+      return '<option value="' + esc(p.id) + '">' + esc(p.nombre + (p.apellido ? ' ' + p.apellido : p.inicial ? ' ' + p.inicial + '.' : '') + (todos ? ' · ' + (nombreLocal[p.local_id] || '') : '')) + '</option>';
+    }).join('');
+  }).catch(function (e) { sel.innerHTML = '<option value="">No se pudo cargar la gente</option>'; avisar(mensajeDe(e)); });
+  var desde = v.querySelector('#papDesde'), hasta = v.querySelector('#papHasta');
+  if (hasta) desde.addEventListener('change', function () { if (!hasta.value || hasta.value < desde.value) hasta.value = desde.value; });
+  function pintarHojas() {
+    var l = v.querySelector('#papHojasN');
+    l.innerHTML = (hojas.length ? '<div class="historia">' + hojas.map(function (h, i) {
+      return '<figure class="foto-chica"><img src="' + h.url + '" alt="Hoja ' + (i + 1) + '"><figcaption>Hoja ' + (i + 1) + ' · <button class="imp-enlace" data-sacar="' + i + '">Sacarla</button></figcaption></figure>';
+    }).join('') + '</div>' : '') +
+      (hojas.length < 8 ? '<div class="botones"><button class="boton chico" id="papSubir">' + (hojas.length ? 'Sumar otra hoja' : 'Subir la foto (desde un archivo)') + '</button></div>' : '');
+    l.querySelectorAll('[data-sacar]').forEach(function (b) { b.onclick = function () { var h = hojas.splice(+b.dataset.sacar, 1)[0]; if (h) URL.revokeObjectURL(h.url); pintarHojas(); }; });
+    var bs = l.querySelector('#papSubir');
+    if (bs) bs.onclick = function () {
+      escanearArchivo(aus ? 'Certificado médico' : 'Apercibimiento firmado', 8 - hojas.length, function (blobs) {
+        blobs.forEach(function (b) { hojas.push({ blob: b, url: URL.createObjectURL(b) }); });
+        pintarHojas();
+      });
+    };
+  }
+  pintarHojas();
+  var b = v.querySelector('#papGuardar');
+  unaVez(b, function () {
+    var p = gente[sel.value];
+    if (!p) { avisar('Elegí a quién.'); sel.focus(); return; }
+    var d = desde.value, h = hasta ? (hasta.value || d) : d;
+    if (!d) { avisar('Poné la fecha.'); return; }
+    if (h < d) { avisar('El "hasta" no puede ser antes del "desde".'); return; }
+    var motivo = v.querySelector('#papMotivo').value.trim();
+    if (!aus && motivo.length < 5) { avisar('Escribí el motivo del apercibimiento.'); return; }
+    b.textContent = hojas.length ? 'Subiendo…' : 'Guardando…';
+    return subirHojasPap(p.local_id, p.id, hojas).then(function (rutas) {
+      return llamar('orden_legajo_cargar', { p_tipo: tipo, p_persona: p.id, p_desde: d, p_hasta: aus ? h : null, p_motivo: motivo || null, p_fotos: rutas });
+    }).then(function (x) {
+      var dsc = aus ? v.querySelector('#papDesc').value : '';
+      if (!x || !dsc || dsc === x.descuento) return;
+      return llamar('orden_legajo_descuento', { p_id: x.id, p_descuento: dsc }).catch(function () { avisar('Se anotó, pero no se guardó si se descuenta: cambialo en la lista.'); });
+    }).then(function () {
+      hojas.forEach(function (x) { URL.revokeObjectURL(x.url); });
+      avisar(aus ? 'Ausencia anotada: le llegó el aviso.' : 'Apercibimiento guardado: le llegó el aviso.');
+      b.removeAttribute('data-aviso-guardar');
+      v.remove();
+      alCambiar();
+    });
+  });
+}
+
+/** "Descargar para Excel": un CSV con punto y coma (el Excel en castellano lo abre en columnas) y con BOM (los acentos). */
+function excelPapeles(f, rango, todos) {
+  var celda = function (t) { t = String(t == null ? '' : t); return /[;"\n\r]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t; };
+  var filas = [['Tipo', 'Persona', 'Local', 'Desde', 'Hasta', 'Días', 'Certificado / papel firmado', '¿Se descuenta?', 'Motivo', 'Descargo', 'Lo cargó']];
+  f.forEach(function (x) {
+    var aus = x.tipo === 'ausencia';
+    filas.push([aus ? 'Ausencia' : 'Apercibimiento', x.persona_nombre, x.local_nombre, x.desde, x.hasta, aus ? diasPap(x, x) : '',
+      (x.fotos || []).length ? 'Sí (' + x.fotos.length + (x.fotos.length === 1 ? ' hoja)' : ' hojas)') : 'No',
+      aus ? DESCUENTO_PAP[x.descuento][1] : '', x.motivo || '', x.descargo || '', x.cargado_nombre || '']);
+  });
+  var csv = '\uFEFF' + filas.map(function (r) { return r.map(celda).join(';'); }).join('\r\n');
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'papeles ' + (todos ? 'todos los locales' : _local.nombre) + ' ' + rango.desde + ' a ' + rango.hasta + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
 /* ════════════════════════════════════════════════════════════════════════

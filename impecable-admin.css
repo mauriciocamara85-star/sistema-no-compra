@@ -800,3 +800,16 @@
 .ventana .ll-marca b { font: 700 16px var(--sans); font-variant-numeric: tabular-nums; }
 .ventana .ll-marca small { color: var(--txt-3); font-size: 12.5px; }
 .ventana .ll-marcas + .bajada { margin-bottom: 0; }
+/* ── Papeles (SQL 209, 31/10): ausencias, certificados médicos y apercibimientos ── */
+.imp .pap-acciones { margin: 0 0 6px; }
+.imp .pap-lista .pap-motivo { min-width: 160px; max-width: 340px; white-space: normal; color: var(--txt-2); }
+.imp .pap-chico { display: block; font-size: 11.5px; font-weight: 500; color: var(--txt-3); }
+.imp .pap-desc { min-height: 34px; min-width: 118px; padding: 0 30px 0 10px; font-size: 13px; }
+.imp .pap-desc.desc-si { color: var(--bad-txt); }
+.imp .pap-desc.desc-no { color: var(--ok-txt); }
+.imp .pap-desc.desc-a_definir { color: var(--warn-txt); }
+.imp .pap-personas tr.mes-activo td { background: var(--surface-2); }
+.imp .pap-personas tr.mes-activo td:first-child { box-shadow: inset 3px 0 0 var(--sel-borde); }
+.ventana .pap-hojas img { aspect-ratio: auto; max-height: 64vh; }
+.ventana .pap-desc-campo .imp-sel { width: auto; min-width: 220px; }
+.ventana .pap-desc-campo .est { justify-self: start; }
