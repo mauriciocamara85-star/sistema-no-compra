@@ -235,7 +235,10 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
 .camara-arriba { position: absolute; top: 0; left: 0; right: 0; display: flex; justify-content: space-between; align-items: center;
                  padding: max(12px, env(safe-area-inset-top)) 16px 12px; background: linear-gradient(rgba(0,0,0,.6), transparent); }
 .camara-arriba .volver { color: var(--texto); }
-.camara-arriba .titulo { font-weight: 800; }
+/* El módulo bien grande y, abajo, chico, qué es (corrección, frontal nuevo): 31/10, para no confundir un módulo con otro. */
+.camara-arriba .titulo { font-weight: 800; display: grid; justify-items: center; text-align: center; min-width: 0; line-height: 1.15; }
+.camara-arriba .titulo b { font-size: 21px; }
+.camara-arriba .titulo small { font-size: 12px; font-weight: 700; color: var(--lima); }
 .guia { position: absolute; left: 8%; right: 8%; top: 16%; bottom: 24%; border: 2px dashed var(--lima); border-radius: 18px; pointer-events: none; }
 .guia span { position: absolute; top: -30px; left: 0; right: 0; text-align: center; font-size: 13px; font-weight: 700; color: var(--lima); }
 /* Teléfono acostado (la app sigue en vertical): el cartel va del lado de arriba de quien mira y se lee derecho. */
@@ -274,9 +277,16 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
 /* No más alta que el botón: si no, al aparecer agranda la franja y el recuadro salta. */
 .ref-caja .referencia { position: static; width: 46px; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; box-shadow: none; }
 .ref-caja small { font-size: 11px; font-weight: 700; line-height: 1; }
-.ref-caja.grande { position: fixed; inset: 0; z-index: 12; place-content: center; gap: 10px; background: rgba(0,0,0,.88); }
+/* stretch: el justify-self: start de la miniatura (y el place-items: center de la franja) Chrome también lo aplica a
+   una caja fixed, que quedaba angosta, contra la izquierda y sin tapar toda la cámara (visto el 31/10). */
+.camara-vista .ref-caja.grande { position: fixed; inset: 0; z-index: 12; justify-self: stretch; align-self: stretch; place-content: center; gap: 10px; background: rgba(0,0,0,.88); }
 .ref-caja.grande .referencia { width: min(82vw, 380px); max-height: 78vh; aspect-ratio: auto; object-fit: contain; }
 .ref-caja.grande small { font-size: 14px; color: var(--texto); }
+/* La de antes de una corrección (31/10): agrandada, con las marcas del supervisor encima. La caja mide lo mismo que
+   la foto (sin franjas de contain) para que cada marca caiga en su lugar; en la miniatura no entran. */
+.ref-foto { position: relative; display: block; line-height: 0; }
+.ref-caja:not(.grande) .fm-capa { display: none; }
+.ref-caja.antes.grande .referencia { width: auto; height: auto; max-width: min(82vw, 380px); max-height: 78vh; object-fit: fill; }
 /* Si la pantalla giró sola (más ancha que alta): el botón, a la derecha. */
 @media (orientation: landscape) {
   .con-marco { flex-direction: row; }

@@ -929,7 +929,7 @@ function pantallaHoy() {
     /* Las tareas abiertas y las que se cerraron hoy (para tacharlas). foto_antes (SQL 150): una corrección. grupo (SQL 159):
        la de todo el equipo, que la pudo hacer otro. */
     leer159('/orden_v_tareas?select=id,titulo,estado,completada_en,correccion,motivo_no_pude&persona_id=eq.' + id +
-         '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + desdeHoy + ')&order=vence_en.asc', 'foto_antes').catch(fallo),
+         '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + desdeHoy + ')&order=vence_en.asc,creado_en.asc', 'foto_antes').catch(fallo),
     estadoAvisos().catch(function () { return 'no-soportado'; }),
     /* SQL 102/151: producto testigo para contar (desde que se programa hasta la fecha límite), uno vencido sin mandar, o el que se mandó hoy.
        Con sus videos (SQL 157): si el supervisor pidió grabar alguno de nuevo, se hace hoy. */
@@ -1190,7 +1190,7 @@ function pantallaFotos() {
     /* SQL 159: la vidriera de la semana y las tareas de foto de todo el equipo (sin el 159: null, como antes). */
     per.local_id ? llamar('orden_vidriera_semana', { p_local: per.local_id }).catch(nada) : Promise.resolve(null),
     leer('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,local_id,modulo_id,modulo_nombre,modulo_referencia,grupo' +
-         '&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)&grupo=not.is.null&modulo_id=not.is.null&order=vence_en.asc').catch(nada)
+         '&persona_id=eq.' + id + '&estado=in.(pendiente,vencida)&grupo=not.is.null&modulo_id=not.is.null&order=vence_en.asc,creado_en.asc').catch(nada)
   ]).then(function (r) {
     if (_pestana !== 'fotos') return;
     dibujarFotos({ controles: r[0] || [], tareasIA: r[1] || [], sinModulos: Array.isArray(r[2]) && r[2].length === 0, mapa: r[3],
@@ -1548,21 +1548,30 @@ function registrarFoto(c, estado, ruta) {
   });
 }
 
-/** La cámara a pantalla completa. alSacar(blob) recibe la foto ya achicada. */
-function camara(titulo, referencia, guia, alSacar, alCerrar) {
+/** La cámara a pantalla completa. alSacar(blob) recibe la foto ya achicada.
+    El título va en dos renglones: el módulo, grande, y lo que va después de " · " (corrección, frontal nuevo), chico.
+    antes: { marcas } para una corrección (31/10): la foto de referencia es la de antes, con sus marcas al agrandarla. */
+function camara(titulo, referencia, guia, alSacar, alCerrar, antes) {
   apagarCamara();
   barra.hidden = true;
   app.className = 'app';
+  var partes = String(titulo).split(' · ');
   app.innerHTML =
     '<div class="camara-vista con-marco" id="vista">' +
       '<div class="visor">' +
         '<video id="video" playsinline muted autoplay></video>' +
         '<div class="guia"><span>' + esc(guia) + '</span></div>' +
-        '<div class="camara-arriba"><button class="volver" id="cerrar">‹ Volver</button><span class="titulo">' + esc(titulo) + '</span><span style="width:60px"></span></div>' +
+        '<div class="camara-arriba"><button class="volver" id="cerrar">‹ Volver</button><span class="titulo"><b>' + esc(partes[0]) + '</b>' +
+          (partes.length > 1 ? '<small>' + esc(partes.slice(1).join(' · ')) + '</small>' : '') + '</span><span style="width:60px"></span></div>' +
       '</div>' +
       '<div class="camara-abajo">' +
-        /* La foto modelo, al costado del botón como la última foto en la cámara del teléfono: tocarla la agranda. */
-        '<button class="ref-caja" id="refCaja" type="button" hidden><img class="referencia" id="ref" alt="Cómo tiene que quedar"><small>Modelo</small></button>' +
+        /* La foto modelo, al costado del botón como la última foto en la cámara del teléfono: tocarla la agranda.
+           En una corrección, la de antes: así se ve qué módulo hay que fotografiar (Mauricio, 31/10: Seba mandó
+           la de Atrás de caja en la corrección del Módulo 12 y al revés). */
+        '<button class="ref-caja' + (antes ? ' antes' : '') + '" id="refCaja" type="button" hidden><span class="ref-foto">' +
+          '<img class="referencia" id="ref" alt="' + (antes ? 'El módulo antes de corregirlo' : 'Cómo tiene que quedar') + '">' +
+          (antes && (antes.marcas || []).length ? '<span class="fm-capa">' + dibujoMarcas(antes.marcas) + '</span>' : '') +
+        '</span><small>' + (antes ? 'Antes' : 'Modelo') + '</small></button>' +
         '<button class="disparar" id="disparar" aria-label="Sacar la foto"></button>' +
         '<button class="enlace" id="otra">¿No anda la cámara?</button>' +
       '</div>' +
@@ -1859,7 +1868,7 @@ function pantallaTareas() {
   /* SQL 150: la foto sobre la que le piden la corrección, con sus marcas, y la foto modelo para la cámara. SQL 159: el
      grupo (la tarea de todo el equipo) y quién la hizo. */
   leer159('/orden_v_tareas?select=id,titulo,detalle,origen,estado,vence_en,requiere_foto,prorroga_estado,local_id,completada_en,correccion,modulo_id,modulo_nombre,motivo_no_pude' +
-       '&persona_id=eq.' + id + '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + semana + ')&order=vence_en.asc',
+       '&persona_id=eq.' + id + '&or=(estado.in.(pendiente,vencida),completada_en.gte.' + semana + ')&order=vence_en.asc,creado_en.asc',
        'foto_antes,marcas,control_nivel,modulo_referencia').then(function (r) {
     if (_pestana !== 'tareas') return;
     dibujarTareas(r || []);
@@ -1981,10 +1990,12 @@ function accionTarea(t, accion, boton) {
   /* La tarea de un módulo (una corrección): la cámara con el recuadro, como en los controles (SQL 150). Así la foto
      nueva sale encuadrada igual que la de antes y se pueden comparar. */
   if (t.modulo_id) {
-    /* La de todo el equipo (SQL 159) no es una corrección: es la foto del módulo. */
-    camara((t.modulo_nombre || 'El módulo') + (t.grupo ? '' : ' · corrección'), t.modulo_referencia || null, 'Que entre todo el módulo en el recuadro',
+    /* La de todo el equipo (SQL 159) no es una corrección: es la foto del módulo. La corrección muestra la foto de
+       antes (con sus marcas) en lugar de la modelo: es la que dice qué módulo es. */
+    camara((t.modulo_nombre || 'El módulo') + (t.grupo ? '' : ' · corrección'), t.foto_antes || t.modulo_referencia || null, 'Que entre todo el módulo en el recuadro',
       function (blob) { mandarFotoTarea(t, blob, null); },
-      function () { irA('tareas'); });
+      function () { irA('tareas'); },
+      t.foto_antes ? { marcas: t.marcas } : null);
     return;
   }
   /* Con foto: la cámara del teléfono, la foto achicada a la carpeta de la tarea. */
@@ -3241,7 +3252,7 @@ function pantallaEquipo() {
       leer('/orden_controles?select=persona_id&local_id=eq.' + L + '&estado=eq.pendiente&fecha=eq.' + hoyAR()),
       leer('/orden_v_tareas?select=id,titulo,persona_nombre,prorroga_motivo,vence_en&local_id=eq.' + L + '&prorroga_estado=eq.pedida&estado=in.(pendiente,vencida)'),
       leer('/orden_faltas?select=id,persona_id,tipo,motivo,creado_en&local_id=eq.' + L + '&estado=eq.sugerida&order=creado_en.desc'),
-      leer('/orden_v_tareas?select=id,titulo,persona_nombre,origen,vence_en,estado&local_id=eq.' + L + '&estado=in.(pendiente,vencida)&order=vence_en.asc&limit=40')
+      leer('/orden_v_tareas?select=id,titulo,persona_nombre,origen,vence_en,estado&local_id=eq.' + L + '&estado=in.(pendiente,vencida)&order=vence_en.asc,creado_en.asc&limit=40')
     ]).then(function (r) {
       if (_pestana !== 'equipo') return;
       /* Esperan el OK los que ya entraron (crearon su PIN) o se anotaron solos.
