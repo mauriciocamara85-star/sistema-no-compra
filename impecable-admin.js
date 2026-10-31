@@ -80,6 +80,7 @@ var ICONO_MENU = {
   tareas: '<path d="M9 11l3 3 8-8"/><path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
   orden: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
   cajas: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/>',
+  llegadas: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2"/><path d="M9.5 2h5M12 2v3"/>',
   testigo: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
   ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   app: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
@@ -91,6 +92,7 @@ var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                ['tareas', 'Tareas', 'Una tarea para un local, varios o todos, y si la hicieron'],
                ['orden', 'Por vendedor', 'Cada vendedor, semana a semana'],
                ['cajas', 'Cajas', 'Como la planilla del control diario'],
+               ['llegadas', 'Llegadas', 'A qué hora llegó cada uno, por zona y día a día'],
                ['testigo', 'Productos testigo', 'Lo que se cuenta cada semana'],
                ['ajustes', 'Ajustes', 'Cómo funciona cada local, las reglas de orden y los tests']];
 /* Sólo el administrador (22/10: "Tareas" era "Crear tarea", adentro de Ajustes). */
@@ -164,8 +166,9 @@ function cabezaAdmin() {
   var per = yo();
   var solapas = SOLAPAS.filter(function (x) { return SOLO_ADMIN.indexOf(x[0]) < 0 || esAdmin(); });
   var actual = SOLAPAS.filter(function (x) { return x[0] === _solapa; })[0] || SOLAPAS[0];
-  /* El local se elige en todo salvo en el Panorama, que es de todos, y en Tareas, que tiene su lista de locales. */
-  var conLocal = _solapa !== 'panorama' && _solapa !== 'tareas' && _locales.length > 1;
+  /* El local se elige en todo salvo en el Panorama, que es de todos, en Tareas, que tiene su lista de locales, y en
+     Llegadas, que va por zona. */
+  var conLocal = _solapa !== 'panorama' && _solapa !== 'tareas' && _solapa !== 'llegadas' && _locales.length > 1;
   /* En la compu el menú se achica a íconos con el botón de todos los paneles (interfaz.js), y se recuerda. */
   var chico = Interfaz.panelChico(K_MENU_CHICO);
   return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Supervisión"><div class="imp-menu-cab"><span>Supervisión</span>' + Interfaz.botonPanel(chico, '', 'menuEquipo') + '</div>' +
@@ -201,7 +204,7 @@ function ir(solapa) {
   engancharPlegar();
   asomarMenu();
   if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
-  ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, testigo: verTestigo, ajustes: verAjustes })[solapa]();
+  ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, llegadas: verLlegadas, testigo: verTestigo, ajustes: verAjustes })[solapa]();
 }
 
 /** El botón del menú: cada vez se busca el que está en la página (al tocarlo se rehace con el texto contrario; el
@@ -1730,6 +1733,377 @@ function verCajasTodosRango() {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   LLEGADAS (SQL 208; 31/10/2026): la planilla de Anto, la gerente, adentro de Supervisión
+   Mauricio, con la foto de su "09 RDT Septiembre 2026" (una solapa por zona; cada empleado con su local, la hora a la
+   que llegó cada día en verde o en rojo, las llegadas tarde, el «Check» y el «Descuento»): "así se tendría que ver
+   dentro de supervisión … estaría bueno verlo día a día". Las marcas son las del registro de tiempos del POS (SQL 206).
+   La regla (31/10): "si se pasa 10 minutos, ya es un apercibimiento por llegada tarde … si llega antes, no pasa nada …
+   lo único que se puede poner tarde es … la mañana; en el cortado no manejamos todavía". La hora es la de apertura del
+   local (Ajustes → El local) y, los domingos, la suya si es otra ("Rivadavia abre a las 9, pero los domingos a las
+   10"); los días que el local no abre no cuentan ("hay locales que cierran los domingos").
+   Con un período de un día (Hoy, Ayer, o ‹ › desde ahí) se ve día a día: cada local con quién llegó y a qué hora.
+   ════════════════════════════════════════════════════════════════════════ */
+
+var ZONAS_LLEGADAS = [['calle', 'Calle'], ['shopping', 'Shopping'], ['mdq', 'Mar del Plata']];
+var LL_TOLERANCIA = 10;   // minutos después de que abre: hasta ahí, a horario
+var LL_MANANA = 180;      // la primera entrada hasta 3 horas después de que abre es la de la mañana; más tarde, otro turno (no se mira)
+var LL_DOBLE = 15;        // la misma marca dos veces en menos de 15 minutos: el dedo dos veces (como en el registro de tiempos)
+var ATAJOS_LLEGADAS = ['mes', 'mes-pasado', 'semana', 'semana-pasada', 'hoy', 'ayer'];
+var K_LL_ZONA = 'nc_eq_llegadas_zona', K_LL_PERIODO = 'nc_eq_llegadas_periodo';
+var ORIGEN_LL = { huella: 'con la huella', manual: 'cargada a mano', bluesoft: 'de BlueSoft' };
+var TEXTO_LL = { bien: 'a horario', tarde: 'tarde', 'otro-turno': 'entró en otro turno (no se mira)', 'sin-entrada': 'marcó la salida y no la entrada',
+                 fuera: 'marcó un día que el local no abre', franco: 'franco', cerrado: 'el local no abre', falta: 'no marcó', hoy: 'todavía no marcó', futuro: '' };
+var _ll = null, _llPedido = 0;   // _ll: lo que llegó, armado como la planilla (llArmar); _ll.vista, las filas de la zona que se ve
+
+function llMin(hm) { var p = String(hm || '').split(':'); return +p[0] * 60 + +p[1]; }
+/** "09:05" → "9:05"; llHmDe(550) → "9:10". */
+function llHm(hm) { return String(hm || '').replace(/^0(\d)/, '$1'); }
+function llHmDe(min) { return Math.floor(min / 60) + ':' + ('0' + (min % 60)).slice(-2); }
+
+/** La hora a la que abre un local ese día ("HH:MM"), o null si ese día no abre. */
+function llAbre(l, dia) {
+  var iso = diaIso(dia);
+  if ((l.dias || []).map(Number).indexOf(iso) < 0) return null;
+  return iso === 7 && l.abre_domingo ? l.abre_domingo : l.abre;
+}
+/** "abre 9:00, los domingos 10:00" / "abre 9:00 · no abre los domingos". */
+function llHorario(l) {
+  var dias = (l.dias || []).map(Number), no = [1, 2, 3, 4, 5, 6, 7].filter(function (i) { return dias.indexOf(i) < 0; });
+  return 'abre ' + llHm(l.abre) + (l.abre_domingo && dias.indexOf(7) > -1 && l.abre_domingo !== l.abre ? ', los domingos ' + llHm(l.abre_domingo) : '') +
+    (no.length ? ' · no abre ' + yLista(no.map(function (i) { return LOS_DIAS[i - 1]; })) : '');
+}
+function llNombreLocal(id) {
+  var l = _ll.locales[id] || _locales.filter(function (x) { return x.id === id; })[0];
+  return l ? l.nombre : 'otro local';
+}
+
+/** Las marcas de un día sin el dedo puesto dos veces: de dos entradas seguidas vale la primera; de dos salidas, la última. */
+function llSinDobles(ms) {
+  var out = [];
+  (ms || []).forEach(function (m) {
+    var u = out[out.length - 1];
+    if (u && u.tipo === m.tipo && new Date(m.momento) - new Date(u.momento) < LL_DOBLE * 6e4) { if (m.tipo === 'salida') out[out.length - 1] = m; return; }
+    out.push(m);
+  });
+  return out;
+}
+
+/** Cómo le fue a una persona un día en un local. est: bien | tarde | otro-turno (la primera entrada, más de 3 horas
+    después de que abre: no se mira) | sin-entrada | fuera (marcó un día que el local no abre) | franco | cerrado |
+    falta (no marcó) | hoy (todavía no marcó) | futuro. min: cuántos minutos después de que abre. */
+function llDia(p, l, dia, ms, hoy) {
+  var abre = llAbre(l, dia);
+  ms = llSinDobles(ms);
+  var ent = ms.filter(function (m) { return m.tipo === 'entrada'; })[0];
+  var c = { dia: dia, marcas: ms, abre: abre, entrada: ent ? ent.hm : null, min: 0 };
+  if (ent && abre) {
+    c.min = llMin(ent.hm) - llMin(abre);
+    c.est = c.min > LL_MANANA ? 'otro-turno' : c.min > LL_TOLERANCIA ? 'tarde' : 'bien';
+  } else if (ent) c.est = 'fuera';
+  else if (ms.length) c.est = 'sin-entrada';
+  else if (dia > hoy) c.est = 'futuro';
+  else if (!abre) c.est = 'cerrado';
+  else if ((p.francos || []).map(Number).indexOf(diaIso(dia)) > -1) c.est = 'franco';
+  else c.est = dia === hoy ? 'hoy' : 'falta';
+  return c;
+}
+
+function llDias(desde, hasta) {
+  var out = [];
+  for (var t = new Date(desde + 'T12:00:00Z'), fin = new Date(hasta + 'T12:00:00Z'); t <= fin; t = new Date(t.getTime() + 864e5)) out.push(t.toISOString().slice(0, 10));
+  return out;
+}
+
+/** Lo que llegó de la base, como la planilla: una fila por persona y local (la de su local, siempre; la de otro local,
+    si marcó ahí porque cubrió), con cada día del período. */
+function llArmar(d, r) {
+  var locales = {}, personas = {}, marcas = {}, control = {}, filas = [], porClave = {}, dias = llDias(r.desde, r.hasta);
+  (d.locales || []).forEach(function (l) { locales[l.id] = l; });
+  (d.personas || []).forEach(function (p) { personas[p.id] = p; });
+  (d.control || []).forEach(function (c) { control[c.persona_id + '|' + c.mes] = c; });
+  (d.filas || []).forEach(function (f) {
+    var k = f[1] + '|' + f[2] + '|' + f[4];
+    (marcas[k] = marcas[k] || []).push({ id: f[0], momento: f[3], tipo: f[5], origen: f[6], obs: f[7], hm: hora(f[3]) });
+  });
+  var fila = function (p, lid) {
+    var k = p.id + '|' + lid;
+    if (!porClave[k]) filas.push(porClave[k] = { p: p, l: locales[lid], dias: {}, tarde: 0, deOtro: p.local_id !== lid });
+    return porClave[k];
+  };
+  (d.personas || []).forEach(function (p) { if (p.activo && locales[p.local_id] && (p.rol === 'vendedor' || p.rol === 'supervisor')) fila(p, p.local_id); });
+  Object.keys(marcas).forEach(function (k) { var x = k.split('|'); if (personas[x[0]] && locales[x[1]]) fila(personas[x[0]], x[1]); });
+  filas.forEach(function (f) {
+    dias.forEach(function (dia) {
+      var c = f.dias[dia] = llDia(f.p, f.l, dia, marcas[f.p.id + '|' + f.l.id + '|' + dia], d.hoy);
+      if (c.est === 'tarde') f.tarde++;
+    });
+  });
+  filas.sort(function (a, b) { return a.l.nombre.localeCompare(b.l.nombre, 'es') || (a.deOtro - b.deOtro) || a.p.nombre.localeCompare(b.p.nombre, 'es'); });
+  return { r: r, hoy: d.hoy, dias: dias, filas: filas, locales: locales, control: control, hayMarcas: (d.filas || []).length > 0 };
+}
+
+function verLlegadas() {
+  var c = document.getElementById('cuerpo');
+  c.innerHTML = '<div class="cajas-per" id="llPer"></div><div id="llCuerpo"><p class="cargando">Cargando…</p></div>';
+  if (!window.Interfaz) return;
+  var sel = Interfaz.periodo(document.getElementById('llPer'), { inicial: 'mes', atajos: ATAJOS_LLEGADAS, guardar: K_LL_PERIODO, alCambiar: llCargar });
+  llCargar(sel.rango());
+}
+
+function llCargar(r) {
+  var n = ++_llPedido, host = document.getElementById('llCuerpo');
+  if (!host) return;
+  host.innerHTML = '<p class="cargando">Cargando…</p>';
+  llamar('pos_llegadas', { p_desde: r.desde, p_hasta: r.hasta }).then(function (d) {
+    if (n !== _llPedido || _solapa !== 'llegadas') return;
+    _ll = llArmar(d || {}, r);
+    llDibujar();
+  }).catch(function (e) {
+    if (n !== _llPedido || _solapa !== 'llegadas') return;
+    if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+    host = document.getElementById('llCuerpo');
+    if (!host) return;
+    if (e && e.delServidor && /PGRST202|could not find the function/i.test(e.message || '')) {
+      host.innerHTML = '<div class="nota">Para ver las llegadas falta correr en Supabase el SQL 208 (y antes el 206, el del registro de tiempos). Están en el Escritorio, en «App Orden».</div>';
+      return;
+    }
+    host.innerHTML = '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin conexión: no se pudo cargar.' : mensajeDe(e)) + '</div><button class="boton chico" id="llOtraVez">Probar de nuevo</button>';
+    document.getElementById('llOtraVez').onclick = function () { llCargar(r); };
+  });
+}
+
+/** Las zonas que tienen algún local de los que se ven, en el orden de la planilla. */
+function llZonas() {
+  var hay = {};
+  Object.keys(_ll.locales).forEach(function (id) { hay[_ll.locales[id].zona] = true; });
+  return ZONAS_LLEGADAS.filter(function (z) { return hay[z[0]]; });
+}
+
+function llDibujar() {
+  var host = document.getElementById('llCuerpo');
+  if (!host || !_ll) return;
+  var zonas = llZonas(), guardada = null;
+  try { guardada = localStorage.getItem(K_LL_ZONA); } catch (e) {}
+  var zona = (zonas.filter(function (z) { return z[0] === guardada; })[0] || zonas[0] || [''])[0];
+  var deZona = function (k) { return _ll.filas.filter(function (f) { return f.l.zona === k; }); };
+  var filas = _ll.vista = deZona(zona);
+  var tardes = function (fs) { return fs.reduce(function (a, f) { return a + f.tarde; }, 0); };
+  /* Al volver a dibujar (un «Check», un descuento) la tabla queda donde estaba: si no, volvía al día 1. */
+  var d0 = host.querySelector('.ll-desliza'), izq = d0 ? d0.scrollLeft : 0;
+  var html = (zonas.length > 1 ? '<div class="solapas chicas ll-zonas">' + zonas.map(function (z) {
+      var t = tardes(deZona(z[0]));
+      return '<button data-zona="' + z[0] + '"' + (z[0] === zona ? ' class="activa"' : '') + '>' + esc(z[1]) +
+        (t ? ' <span class="ll-cuenta" title="' + t + (t === 1 ? ' llegada tarde' : ' llegadas tarde') + '">' + t + '</span>' : '') + '</button>';
+    }).join('') + '</div>' : '');
+  if (!_ll.hayMarcas) html += '<div class="nota">' + (esAdmin()
+    ? 'Todavía no hay entradas en este período. Salen del registro de tiempos del POS (Gestión → Personal → Registro de tiempos): por ahora se suben del Excel de BlueSoft y, con la huella, van a entrar solas.'
+    : 'Todavía no hay entradas en este período. Por ahora las sube la oficina desde BlueSoft; con la huella, van a entrar solas.') + '</div>';
+  html += _ll.dias.length === 1 ? llDiaHTML(filas) : llGrillaHTML(filas, _ll.r.unidad === 'mes');
+  host.innerHTML = html;
+  var d1 = host.querySelector('.ll-desliza'), th = d1 && d1.querySelector('th.ll-d.hoy');
+  if (d1 && izq) d1.scrollLeft = izq;
+  /* La primera vez, en el mes en curso, se ve hasta hoy (con el check y el descuento, si entran): lo último es lo que
+     se controla. */
+  else if (th && !_ll.movido) d1.scrollLeft = Math.max(0, th.offsetLeft + th.offsetWidth + 260 - d1.clientWidth);
+  if (d1) _ll.movido = true;
+  host.querySelectorAll('[data-zona]').forEach(function (b) { b.onclick = function () { try { localStorage.setItem(K_LL_ZONA, b.dataset.zona); } catch (e) {} llDibujar(); }; });
+  host.querySelectorAll('[data-ll-i]').forEach(function (x) { x.onclick = function () { llVerDia(_ll.vista[+x.dataset.llI], x.dataset.llDia); }; });
+  host.querySelectorAll('[data-ll-check]').forEach(function (x) { x.onchange = function () { llCheck(x, _ll.vista[+x.dataset.llCheck]); }; });
+  host.querySelectorAll('[data-ll-desc]').forEach(function (b) { b.onclick = function () { llDescuento(_ll.vista[+b.dataset.llDesc]); }; });
+}
+
+/** La planilla: una columna por día con la hora de la primera entrada, las llegadas tarde y, si es un mes, el «Check» y
+    el «Descuento». */
+function llGrillaHTML(filas, mes) {
+  if (!filas.length) return '<div class="vacio">No hay nadie cargado en los locales de esta zona.</div>';
+  var dias = _ll.dias, hoy = _ll.hoy, resto = dias.length + 1 + (mes ? 2 : 0), ultimo = null;
+  var conTarde = {}, conCheck = 0, propias = 0;
+  filas.forEach(function (f) {
+    if (f.tarde) conTarde[f.p.id] = 1;
+    if (!f.deOtro) { propias++; var c = llControl(f); if (c && c.controlado) conCheck++; }
+  });
+  var nums = '<div class="numeros"><div class="numero"><span>Llegadas tarde</span><b>' + filas.reduce(function (a, f) { return a + f.tarde; }, 0) + '</b></div>' +
+    '<div class="numero"><span>Personas que llegaron tarde</span><b>' + Object.keys(conTarde).length + '</b></div>' +
+    (mes ? '<div class="numero"><span>Con el check</span><b>' + conCheck + ' de ' + propias + '</b></div>' : '') + '</div>';
+  var cab = '<tr><th class="ll-quien">Empleado</th>' + dias.map(function (d) {
+      var i = diaIso(d) - 1;
+      return '<th class="ll-d' + (i === 6 ? ' dom' : '') + (d === hoy ? ' hoy' : '') + '" title="' + esc(DIAS_LARGO[i] + ' ' + diaMes(d)) + '"><small>' + DIAS[i] + '</small>' + Number(d.slice(8)) + '</th>';
+    }).join('') + '<th class="ll-tot" title="Llegadas tarde">Tarde</th>' + (mes ? '<th class="ll-check">Check</th><th class="ll-desc">Descuento</th>' : '') + '</tr>';
+  var cuerpo = filas.map(function (f, i) {
+    var loc = '';
+    if (f.l !== ultimo) { ultimo = f.l; loc = '<tr class="ll-local"><td class="ll-quien"><b>' + esc(f.l.nombre) + '</b></td><td colspan="' + resto + '"><span class="ll-hor">' + esc(llHorario(f.l)) + '</span></td></tr>'; }
+    return loc + '<tr><td class="ll-quien"><b>' + esc(f.p.nombre) + '</b>' + (f.deOtro ? '<small>' + esc('cubrió · es de ' + llNombreLocal(f.p.local_id)) + '</small>' : '') + '</td>' +
+      dias.map(function (d) { return llCeldaHTML(f.dias[d], i); }).join('') +
+      '<td class="ll-tot' + (f.tarde ? ' rojo' : '') + '">' + (f.tarde || '—') + '</td>' +
+      (mes ? llCheckHTML(f, i) + llDescHTML(f, i) : '') + '</tr>';
+  }).join('');
+  return nums + '<div class="desliza ll-desliza"><table class="tabla-datos ll-tabla"><thead>' + cab + '</thead><tbody>' + cuerpo + '</tbody></table></div>' +
+    '<p class="bajada ll-leyenda">La hora de la primera entrada de cada día: <span class="ll-muestra ll-bien">9:05</span> a horario (hasta ' + LL_TOLERANCIA + ' minutos después de que abre; llegar antes está bien) · ' +
+    '<span class="ll-muestra ll-tarde">9:25</span> tarde · <span class="ll-muestra ll-otro-turno">14:00</span> entró en otro turno (la tarde y el cortado todavía no se miran) · ' +
+    '<span class="ll-muestra ll-sin-entrada">s/e</span> marcó la salida y no la entrada · <b>F</b> franco · <span class="ll-muestra ll-cerrado"></span> el local no abre. Tocá una hora para ver las marcas del día.' +
+    (mes ? '' : ' El check y el descuento van por mes: para anotarlos, elegí un mes.') + '</p>';
+}
+
+function llTitulo(c) {
+  var d = DIAS_LARGO[diaIso(c.dia) - 1] + ' ' + diaMes(c.dia) + ': ';
+  if (c.abre && c.entrada) return d + 'llegó ' + llHm(c.entrada) + ' (abre ' + llHm(c.abre) + ') · ' + (c.est === 'tarde' ? c.min + ' minutos tarde' : TEXTO_LL[c.est]);
+  return d + TEXTO_LL[c.est];
+}
+function llCeldaHTML(c, i) {
+  var txt = c.entrada ? llHm(c.entrada) : c.est === 'sin-entrada' ? 's/e' : c.est === 'franco' ? 'F' : '';
+  return '<td class="ll-c ll-' + c.est + '"' + (c.est === 'futuro' ? '' : ' title="' + esc(llTitulo(c)) + '"') +
+    (c.marcas.length ? ' data-ll-i="' + i + '" data-ll-dia="' + c.dia + '"' : '') + '>' + txt + '</td>';
+}
+
+function llControl(f) { return _ll.control[f.p.id + '|' + _ll.r.desde] || null; }
+/** El «Check» y el descuento los anotan el supervisor del local de la persona y la administración; lo de uno, otro. */
+function llPuedeAnotar(f) {
+  var l = _ll.locales[f.p.local_id];
+  return !soloMira() && !!(l && l.editar) && (esAdmin() || f.p.id !== yo().id);
+}
+function llCheckHTML(f, i) {
+  if (f.deOtro) return '<td class="ll-check"></td>';
+  var c = llControl(f), si = !!(c && c.controlado);
+  var tit = si ? 'Lo controló ' + (c.controlado_por || '—') + (c.controlado_en ? ' el ' + diaMes(c.controlado_en) : '') : 'Sin controlar';
+  return '<td class="ll-check" title="' + esc(tit) + '">' + (llPuedeAnotar(f)
+    ? '<input type="checkbox" data-ll-check="' + i + '"' + (si ? ' checked' : '') + ' aria-label="' + esc('Check de ' + f.p.nombre) + '">'
+    : si ? '<span class="ll-tilde">✓</span>' : '') + '</td>';
+}
+function llDescHTML(f, i) {
+  if (f.deOtro) return '<td class="ll-desc"></td>';
+  var c = llControl(f), t = c && c.descuento;
+  if (!llPuedeAnotar(f)) return '<td class="ll-desc">' + esc(t || '') + '</td>';
+  return '<td class="ll-desc"><button class="ll-anotar' + (t ? ' con' : '') + '" data-ll-desc="' + i + '" title="' +
+    esc(t ? 'Lo anotó ' + (c.descuento_por || '—') + (c.descuento_en ? ' el ' + diaMes(c.descuento_en) : '') + '. Tocá para cambiarlo.' : 'Anotar un descuento') + '">' + esc(t || 'Anotar') + '</button></td>';
+}
+
+function llCheck(x, f) {
+  var si = x.checked, mes = _ll.r.desde, ll = _ll;
+  x.disabled = true;
+  llamar('pos_llegadas_control', { p_persona: f.p.id, p_mes: mes, p_controlado: si }).then(function (c) {
+    ll.control[f.p.id + '|' + mes] = c;
+    avisar(si ? 'Listo: ' + f.p.nombre + ', controlado.' : 'Se sacó el check de ' + f.p.nombre + '.');
+    if (_ll === ll) llDibujar();
+  }, function (e) {
+    x.checked = !si; x.disabled = false;
+    if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
+    avisar(esDeRed(e) ? 'Sin señal: no se guardó. Probá de nuevo.' : mensajeDe(e));
+  });
+}
+
+function llDescuento(f) {
+  var mes = _ll.r.desde, ll = _ll, c = llControl(f), antes = (c && c.descuento) || '';
+  var v = ventana('<h1>Descuento · ' + esc(f.p.nombre) + '</h1>' +
+    '<p class="bajada">' + esc(nombreMes(mes.slice(0, 7)) + ' en ' + f.l.nombre + ': ' + (f.tarde ? f.tarde + (f.tarde === 1 ? ' llegada tarde' : ' llegadas tarde') : 'sin llegadas tarde')) + '. Una nota libre, como en la planilla.</p>' +
+    '<label class="campo"><span>Descuento</span><textarea id="llDescTxt" rows="3" maxlength="300">' + esc(antes) + '</textarea></label>' +
+    (antes ? '<p class="bajada">Lo anotó ' + esc(c.descuento_por || '—') + (c.descuento_en ? ' el ' + esc(diaMes(c.descuento_en)) : '') + '. Para borrarlo, dejalo vacío y guardá.</p>' : '') +
+    '<button class="boton lima" id="llDescOk" data-aviso-guardar disabled style="margin-right:8px">Guardar</button>');
+  var t = v.querySelector('#llDescTxt'), b = v.querySelector('#llDescOk');
+  t.oninput = function () { b.disabled = t.value.trim() === antes; };
+  t.focus();
+  unaVez(b, function () {
+    b.textContent = 'Guardando…';
+    return llamar('pos_llegadas_control', { p_persona: f.p.id, p_mes: mes, p_descuento: t.value.trim() }).then(function (r) {
+      ll.control[f.p.id + '|' + mes] = r;
+      v.remove();
+      avisar(r && r.descuento ? 'Descuento anotado.' : 'Descuento borrado.');
+      if (_ll === ll) llDibujar();
+    });
+  });
+}
+
+function llEstado(c) {
+  if (c.est === 'bien') return '<span class="est listo">A horario</span>';
+  if (c.est === 'tarde') return '<span class="est vencido">' + c.min + ' min tarde</span>';
+  if (c.est === 'otro-turno') return '<span class="est">Otro turno</span>';
+  if (c.est === 'sin-entrada') return '<span class="est sorpresa">Falta la entrada</span>';
+  if (c.est === 'fuera') return '<span class="est">El local no abría</span>';
+  if (c.est === 'franco') return '<span class="est">Franco</span>';
+  if (c.est === 'cerrado') return '<span class="est">No abre</span>';
+  if (c.est === 'hoy') return llMin(hora(Date.now())) > llMin(c.abre) + LL_TOLERANCIA ? '<span class="est sorpresa">Todavía no marcó</span>' : '<span class="est">Abre a las ' + llHm(c.abre) + '</span>';
+  if (c.est === 'falta') return '<span class="est">No marcó</span>';
+  return '';
+}
+/** "9:05 → 13:00 · 17:20 → 21:00" (la entrada sin salida: "9:05 → …"). */
+function llTurnos(ms) {
+  var out = [], ab = null;
+  ms.forEach(function (m) {
+    if (m.tipo === 'entrada') { if (ab) out.push(llHm(ab) + ' → …'); ab = m.hm; }
+    else { out.push((ab ? llHm(ab) : '…') + ' → ' + llHm(m.hm)); ab = null; }
+  });
+  if (ab) out.push(llHm(ab) + ' → …');
+  return out.join(' · ');
+}
+
+/** Un día: cada local con quién llegó, a qué hora, sus marcas y cómo le fue. */
+function llDiaHTML(filas) {
+  var dia = _ll.dias[0], iso = diaIso(dia), hoy = dia === _ll.hoy;
+  if (!filas.length) return '<div class="vacio">No hay nadie cargado en los locales de esta zona.</div>';
+  var n = { tarde: 0, bien: 0, nada: 0 };
+  filas.forEach(function (f) { var e = f.dias[dia].est; if (e === 'tarde') n.tarde++; else if (e === 'bien') n.bien++; else if (e === 'hoy' || e === 'falta') n.nada++; });
+  var grupos = [], g = null;
+  filas.forEach(function (f, i) { if (!g || g.l !== f.l) grupos.push(g = { l: f.l, filas: [] }); g.filas.push(i); });
+  return '<div class="numeros"><div class="numero"><span>Llegaron tarde</span><b>' + n.tarde + '</b></div><div class="numero"><span>A horario</span><b>' + n.bien + '</b></div>' +
+      '<div class="numero"><span>' + (hoy ? 'Todavía no marcaron' : 'No marcaron') + '</span><b>' + n.nada + '</b></div></div>' +
+    grupos.map(function (g) {
+      var abre = llAbre(g.l, dia), marcaron = g.filas.some(function (i) { return filas[i].dias[dia].marcas.length; });
+      var cab = '<h3 class="cierre-titulo ll-titulo">' + esc(g.l.nombre) + '<small>' + esc(abre ? 'abre a las ' + llHm(abre) : 'no abre ' + LOS_DIAS[iso - 1]) + '</small></h3>';
+      if (!abre && !marcaron) return cab + '<div class="vacio">' + esc(g.l.nombre + ' no abre ' + LOS_DIAS[iso - 1] + '.') + '</div>';
+      return cab + '<div class="desliza"><table class="tabla-datos ll-hoy"><thead><tr><th>Empleado</th><th class="n">Llegó</th><th>Marcas del día</th><th>Estado</th></tr></thead><tbody>' +
+        g.filas.map(function (i) {
+          var f = filas[i], c = f.dias[dia];
+          return '<tr' + (c.marcas.length ? ' data-ll-i="' + i + '" data-ll-dia="' + dia + '"' : '') + '><td><b>' + esc(f.p.nombre) + '</b>' +
+            (f.deOtro ? ' <small class="ll-de">' + esc('cubrió · es de ' + llNombreLocal(f.p.local_id)) + '</small>' : '') + '</td>' +
+            '<td class="n ll-llego ll-' + c.est + '">' + (c.entrada ? llHm(c.entrada) : '—') + '</td><td>' + esc(llTurnos(c.marcas) || '—') + '</td><td>' + llEstado(c) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+    }).join('') +
+    '<p class="bajada ll-leyenda">A horario: hasta ' + LL_TOLERANCIA + ' minutos después de que abre (llegar antes está bien). Si la primera entrada es más de 3 horas después, es otro turno y no se mira (la tarde y el cortado, todavía no). Tocá a alguien para ver sus marcas.</p>';
+}
+
+/** Las marcas de una persona un día, con de dónde vino cada una. */
+function llVerDia(f, dia) {
+  if (!f || !f.dias[dia]) return;
+  var c = f.dias[dia], nom = DIAS_LARGO[diaIso(dia) - 1];
+  ventana('<h1>' + esc(f.p.nombre) + '</h1><p class="bajada">' + esc(nom.charAt(0).toUpperCase() + nom.slice(1) + ' ' + diaMes(dia) + ' en ' + f.l.nombre +
+      (c.abre ? ': abre a las ' + llHm(c.abre) + '; hasta las ' + llHmDe(llMin(c.abre) + LL_TOLERANCIA) + ', a horario.' : ': ese día no abre.')) + '</p>' +
+    '<div class="vf-estado">' + llEstado(c) + '</div>' +
+    '<div class="ll-marcas">' + c.marcas.map(function (m) {
+      return '<div class="ll-marca"><b>' + llHm(m.hm) + '</b><span>' + (m.tipo === 'entrada' ? 'Entrada' : 'Salida') + '</span><small>' + esc((ORIGEN_LL[m.origen] || m.origen) + (m.obs ? ' · ' + m.obs : '')) + '</small></div>';
+    }).join('') + '</div>' +
+    '<p class="bajada" style="margin-top:12px">' + (esAdmin() ? 'Si una marca está mal, se anula o se carga la que falta en el POS → Gestión → Personal → Registro de tiempos.' : 'Si una marca está mal, la corrige la oficina.') + '</p>');
+}
+
+/* Ajustes → El local: la zona de las llegadas y la hora a la que abre los domingos, si es otra (SQL 208). */
+var HORAS_DOMINGO = ['08:00', '08:30', '09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '13:00', '14:00'];
+function llAjusteLocal(cont) {
+  if (!cont) return;
+  cont.innerHTML = '<p class="cargando">Cargando…</p>';
+  var id = _local.id;
+  llamar('pos_llegadas', { p_desde: hoyAR(), p_hasta: hoyAR() }).then(function (d) {
+    if (!document.body.contains(cont)) return;
+    var l = ((d && d.locales) || []).filter(function (x) { return x.id === id; })[0];
+    if (!l) { cont.innerHTML = '<div class="nota">Este local no aparece en las llegadas: está apagado.</div>'; return; }
+    var horas = HORAS_DOMINGO.slice();
+    if (l.abre_domingo && horas.indexOf(l.abre_domingo) < 0) horas.push(l.abre_domingo);
+    editor({ cont: cont, filas: [{ id: l.id, zona: l.zona, abre_domingo: l.abre_domingo }],
+      cols: [{ k: 'zona', t: 'La zona', tipo: 'sel', ops: ZONAS_LLEGADAS },
+             { k: 'abre_domingo', t: 'Los domingos abre', tipo: 'sel', ops: [[null, 'a la hora de siempre']].concat(horas.sort().map(function (h) { return [h, 'a las ' + llHm(h)]; })) }],
+      armar: function (c) {
+        return frase('En Supervisión → Llegadas va con los de la zona ' + c('zona') + ' y los domingos abre ' + c('abre_domingo') + '.') +
+          frase('Los días que abre y la hora de siempre son los de arriba. Hasta ' + LL_TOLERANCIA + ' minutos después de que abre, la llegada está a horario.', 'aclara');
+      },
+      guardar: function (f, c) {
+        return llamar('pos_llegadas_local', { p_local: f.id, p_zona: 'zona' in c ? c.zona : f.zona, p_apertura_domingo: 'abre_domingo' in c ? c.abre_domingo : f.abre_domingo });
+      } });
+  }).catch(function (e) {
+    if (!document.body.contains(cont)) return;
+    cont.innerHTML = '<div class="nota">' + esc(e && e.delServidor && /PGRST202|could not find the function/i.test(e.message || '')
+      ? 'Para elegir la zona de las llegadas falta correr en Supabase el SQL 208 (y antes el 206). Están en el Escritorio, en «App Orden».'
+      : esDeRed(e) ? 'Sin conexión: no se pudo cargar.' : mensajeDe(e)) + '</div>';
+  });
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    EDITOR DE FILAS (lo usan los productos testigo y los ajustes)
    ════════════════════════════════════════════════════════════════════════ */
 
@@ -2563,7 +2937,7 @@ function ajLocal() {
     var loc = (r[0] || [])[0], cfg = (r[1] || [])[0], otros = _locales.length - 1;
     var z = zonaAjuste('<p class="bajada">Lo de ' + esc(_local.nombre) + '. Cada parte se guarda con su botón' +
         (otros ? '; "Copiar a los otros locales" pone lo mismo en ' + (otros === 1 ? 'el otro' : 'los otros ' + otros) + ' (el nombre, el horario, los días y las horas de cada uno no cambian)' : '') + '.</p>' +
-      '<div class="seccion">El local</div><div id="ajLocal"></div>' +
+      '<div class="seccion">El local</div><div id="ajLocal"></div><div class="seccion">Las llegadas</div><div id="ajLlegadas"></div>' +
       (cfg ? BLOQUES_LOCAL.map(function (b) { return '<div class="seccion">' + esc(b.titulo) + '</div><div id="ajb-' + b.id + '"></div>'; }).join('')
            : '<div class="nota">Este local todavía no tiene los ajustes de los controles.</div>'));
     if (loc) editor({ cont: z.querySelector('#ajLocal'), filas: [loc], cols: COLS_DEL_LOCAL,
@@ -2571,6 +2945,7 @@ function ajLocal() {
         return frase('En la app se llama ' + c('nombre') + '.') + frase('Abre los días ' + c('dias_abiertos') + ' de ' + c('hora_apertura') + ' a ' + c('hora_cierre') + '.') + frase(c('activo'));
       },
       guardar: function (f, c) { return guardarFila('/orden_locales?id=eq.' + valor(f.id), c).then(function () { if (c.nombre) { _local.nombre = c.nombre; } }); } });
+    llAjusteLocal(z.querySelector('#ajLlegadas'));
     if (!cfg) return;
     BLOQUES_LOCAL.forEach(function (b) {
       /* Lo nuevo (col.nuevo) sólo si la base ya lo tiene: con la base de antes, todo sigue como estaba. */

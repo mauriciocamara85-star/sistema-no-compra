@@ -6554,3 +6554,186 @@ grant execute on function pos_tiempo_anular(bigint, text) to authenticated;
 grant execute on function pos_tiempos_bluesoft(uuid) to authenticated;
 grant execute on function pos_tiempos_subir(uuid, jsonb, jsonb) to authenticated;
 grant execute on function pos_tiempos_deshacer(uuid) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 208 (31/10/2026) · LAS LLEGADAS (Supervisión → Llegadas)
+--
+--  Mauricio (31/10), con la foto de la planilla que manda Anto, la gerente,
+--  a los supervisores ("09 RDT Septiembre 2026": una solapa por zona, Calle,
+--  Shopping y Mdq; cada empleado con su local, la hora a la que llegó cada
+--  día en verde o en rojo, las llegadas tarde, el «Check» y el «Descuento»):
+--  "así se tendría que ver dentro de supervisión … estaría bueno verlo día
+--  a día".
+--  La regla (31/10): "si se pasa 10 minutos, ya es un apercibimiento por
+--  llegada tarde … si llega antes, no pasa nada … lo único que se puede
+--  poner tarde es … la mañana; en el cortado no manejamos todavía". La hora
+--  es la de apertura de cada local (Ajustes → El local) y, los domingos, la
+--  suya si es otra ("Rivadavia abre a las 9, pero los domingos abrimos a las
+--  10"); los días que el local no abre no cuentan ("hay locales que cierran
+--  los domingos"). Las cuentas las hace la pantalla.
+--  · pos_tiempos_locales: la zona de cada local y, si los domingos abre a
+--    otra hora, cuál.
+--  · pos_tiempos_control: el «Check» y el «Descuento» (una nota libre) de
+--    cada persona, por mes.
+--  Lee el registro de tiempos del SQL 206. Lo ven la supervisión de cada
+--  local, la gerencia y la administración (orden_ve_equipo); el «Check» y el
+--  «Descuento» los anotan el supervisor del local y la administración; la
+--  zona y el domingo, la administración.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Sin el 206 las funciones se crearían igual y fallarían al usarlas: se frena acá, sin cambiar nada. */
+do $$
+begin
+  if to_regclass('public.pos_tiempos') is null then
+    raise exception 'Primero hay que correr el SQL 206 (el registro de tiempos): está en App Orden.';
+  end if;
+end $$;
+
+create table pos_tiempos_locales (
+  local_id          uuid primary key references orden_locales(id),
+  zona              text not null check (zona in ('calle', 'shopping', 'mdq')),
+  apertura_domingo  time,                                  -- null: los domingos abre a la hora de siempre
+  cambiado_por      uuid,
+  cambiado_en       timestamptz not null default now()
+);
+alter table pos_tiempos_locales enable row level security;
+revoke all on pos_tiempos_locales from anon, authenticated;
+
+/* Las solapas de la planilla de Anto. Rivadavia (el local de Mar del Plata) los domingos abre a las 10. */
+insert into pos_tiempos_locales (local_id, zona, apertura_domingo)
+select l.id,
+       case when l.codigo in ('DOT', 'PARQUE BROWN', 'SAN JUSTO SHOPPING', 'UNICENTER') then 'shopping'
+            when l.codigo = 'MAR DEL PLATA' then 'mdq'
+            else 'calle' end,
+       case when l.codigo = 'MAR DEL PLATA' then time '10:00' end
+  from orden_locales l;
+
+create table pos_tiempos_control (
+  persona_id      uuid not null references orden_personas(id),
+  mes             date not null check (mes = date_trunc('month', mes)::date),
+  controlado      boolean not null default false,
+  controlado_por  uuid,
+  controlado_en   timestamptz,
+  descuento       text,
+  descuento_por   uuid,
+  descuento_en    timestamptz,
+  primary key (persona_id, mes)
+);
+alter table pos_tiempos_control enable row level security;
+revoke all on pos_tiempos_control from anon, authenticated;
+
+/* El «Check» y el «Descuento» de una fila, como los devuelven las dos funciones. */
+create function pos_llegadas_control_json(c pos_tiempos_control) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object(
+    'persona_id', c.persona_id, 'mes', c.mes, 'controlado', c.controlado, 'controlado_en', c.controlado_en,
+    'controlado_por', (select orden_nombre_lista(q.nombre, q.inicial) from orden_personas q where q.id = c.controlado_por),
+    'descuento', c.descuento, 'descuento_en', c.descuento_en,
+    'descuento_por', (select orden_nombre_lista(q.nombre, q.inicial) from orden_personas q where q.id = c.descuento_por))
+$$;
+
+/* Las llegadas del período en los locales que ve quien entró: los locales (con su zona, los días que abre, la hora y la
+   de los domingos, y si puede anotar), las personas (las activas de esos locales y las que marcaron ahí, con sus
+   francos, ISO 1..7), las marcas que valen como listas cortas [id, persona_id, local_id, momento, dia, tipo, origen,
+   observaciones] y el «Check» y el «Descuento» de los meses del período. Una marca sin local cuenta en el de la
+   persona; un local nuevo, sin zona todavía, va con los de la calle. */
+create function pos_llegadas(p_desde date, p_hasta date) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare v_locales uuid[];
+begin
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 92 then raise exception 'El período es demasiado largo (máximo, tres meses).'; end if;
+  select coalesce(array_agg(l.id), '{}') into v_locales from orden_locales l where l.activo and orden_ve_equipo(l.id);
+  if cardinality(v_locales) = 0 then raise exception 'Las llegadas son para la supervisión de los locales.'; end if;
+  return (
+    with t as (
+      select x.id, x.persona_id, coalesce(x.local_id, p.local_id) local_id, x.momento, x.dia, x.tipo, x.origen, x.observaciones
+        from pos_tiempos x
+        join orden_personas p on p.id = x.persona_id
+       where x.dia between p_desde and p_hasta and x.estado = 'ok'
+         and coalesce(x.local_id, p.local_id) = any (v_locales)
+    ), ps as (
+      select p.* from orden_personas p
+       where (p.activo and p.aprobado and p.local_id = any (v_locales) and p.rol in ('vendedor', 'supervisor'))
+          or exists (select 1 from t where t.persona_id = p.id)
+    )
+    select jsonb_build_object(
+      'hoy', pos_hoy(),
+      'locales', coalesce((
+        select jsonb_agg(jsonb_build_object('id', l.id, 'nombre', l.nombre, 'zona', coalesce(z.zona, 'calle'), 'dias', to_jsonb(l.dias_abiertos),
+                                            'abre', left(l.hora_apertura::text, 5), 'abre_domingo', left(z.apertura_domingo::text, 5),
+                                            'editar', orden_es_supervisor_de(l.id)) order by l.nombre)
+          from orden_locales l left join pos_tiempos_locales z on z.local_id = l.id
+         where l.id = any (v_locales)), '[]'::jsonb),
+      'personas', coalesce((
+        select jsonb_agg(jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial), 'apellido', p.apellido,
+                                            'local_id', p.local_id, 'rol', p.rol, 'activo', p.activo and p.aprobado,
+                                            'francos', to_jsonb(p.dias_libres)) order by p.nombre, p.apellido)
+          from ps p), '[]'::jsonb),
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_array(t.id, t.persona_id, t.local_id, t.momento, t.dia, t.tipo, t.origen, t.observaciones)
+                         order by t.momento, t.id)
+          from t), '[]'::jsonb),
+      'control', coalesce((
+        select jsonb_agg(pos_llegadas_control_json(c))
+          from pos_tiempos_control c
+         where c.mes between date_trunc('month', p_desde)::date and p_hasta
+           and c.persona_id in (select id from ps)), '[]'::jsonb)
+    ));
+end $$;
+
+/* El «Check» (p_controlado) o el «Descuento» (p_descuento; '' lo borra) de una persona en un mes: lo que viene en null
+   no se toca. Lo anotan el supervisor de su local y la administración; lo de cada uno, otro. */
+create function pos_llegadas_control(p_persona uuid, p_mes date, p_controlado boolean default null, p_descuento text default null)
+returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  v_local uuid;
+  v_yo    uuid := orden_yo_id();
+  v_mes   date := date_trunc('month', p_mes)::date;
+  v_desc  text := nullif(left(btrim(coalesce(p_descuento, '')), 300), '');
+  v_c     pos_tiempos_control;
+begin
+  if p_persona is null or p_mes is null then raise exception 'Falta la persona o el mes.'; end if;
+  if p_controlado is null and p_descuento is null then raise exception 'No hay nada para anotar.'; end if;
+  select local_id into v_local from orden_personas where id = p_persona;
+  if not found then raise exception 'Esa persona ya no está.'; end if;
+  if not orden_es_supervisor_de(v_local) then raise exception 'Lo anotan el supervisor de su local o la administración.'; end if;
+  if p_persona = v_yo and not orden_es_admin() then raise exception 'Lo tuyo lo anota otro.'; end if;
+  if v_mes > date_trunc('month', pos_hoy())::date then raise exception 'Ese mes todavía no empezó.'; end if;
+  insert into pos_tiempos_control as c (persona_id, mes, controlado, controlado_por, controlado_en, descuento, descuento_por, descuento_en)
+  values (p_persona, v_mes, coalesce(p_controlado, false),
+          case when p_controlado is not null then v_yo end, case when p_controlado is not null then now() end,
+          v_desc, case when p_descuento is not null then v_yo end, case when p_descuento is not null then now() end)
+  on conflict (persona_id, mes) do update set
+    controlado     = coalesce(p_controlado, c.controlado),
+    controlado_por = case when p_controlado is not null then v_yo else c.controlado_por end,
+    controlado_en  = case when p_controlado is not null then now() else c.controlado_en end,
+    descuento      = case when p_descuento is not null then v_desc else c.descuento end,
+    descuento_por  = case when p_descuento is not null then v_yo else c.descuento_por end,
+    descuento_en   = case when p_descuento is not null then now() else c.descuento_en end
+  returning * into v_c;
+  return pos_llegadas_control_json(v_c);
+end $$;
+
+/* La zona de un local y la hora a la que abre los domingos (null: la de siempre). Sólo la administración. */
+create function pos_llegadas_local(p_local uuid, p_zona text, p_apertura_domingo time default null) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  if not orden_es_admin() then raise exception 'La zona y el horario de los domingos los cambia la administración.'; end if;
+  if p_zona is null or p_zona not in ('calle', 'shopping', 'mdq') then raise exception 'Elegí la zona del local.'; end if;
+  if not exists (select 1 from orden_locales where id = p_local) then raise exception 'Ese local no está.'; end if;
+  insert into pos_tiempos_locales as z (local_id, zona, apertura_domingo, cambiado_por, cambiado_en)
+  values (p_local, p_zona, p_apertura_domingo, orden_yo_id(), now())
+  on conflict (local_id) do update set zona = excluded.zona, apertura_domingo = excluded.apertura_domingo,
+                                       cambiado_por = excluded.cambiado_por, cambiado_en = excluded.cambiado_en;
+  return jsonb_build_object('local_id', p_local, 'zona', p_zona, 'abre_domingo', left(p_apertura_domingo::text, 5));
+end $$;
+
+revoke all on function pos_llegadas_control_json(pos_tiempos_control) from public, anon, authenticated;
+revoke all on function pos_llegadas(date, date) from public, anon;
+revoke all on function pos_llegadas_control(uuid, date, boolean, text) from public, anon;
+revoke all on function pos_llegadas_local(uuid, text, time) from public, anon;
+grant execute on function pos_llegadas(date, date) to authenticated;
+grant execute on function pos_llegadas_control(uuid, date, boolean, text) to authenticated;
+grant execute on function pos_llegadas_local(uuid, text, time) to authenticated;

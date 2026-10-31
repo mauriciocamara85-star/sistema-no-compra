@@ -740,3 +740,63 @@
 .ventana .vm-ia > summary:hover { color: var(--txt); }
 .ventana .vm-ia-cuerpo { margin-top: 12px; }
 .ventana .vm-ia-bajada { margin: 0 0 12px; }
+
+/* ═══ Llegadas (SQL 208, 31/10/2026): la planilla de Anto, una solapa por zona ═════════
+   Una columna por día con la hora de la primera entrada: verde a horario, rojo tarde. La columna del nombre queda
+   fija al deslizar los días. */
+.imp .ll-zonas button { display: inline-flex; align-items: center; gap: 7px; }
+.imp .ll-cuenta { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; border-radius: var(--r-pill);
+                  background: var(--bad-soft); color: var(--bad-txt); font: 700 11.5px var(--sans); }
+.imp .solapas button.activa .ll-cuenta { background: var(--acc-ink); color: var(--acc); }
+.imp .ll-tabla { width: auto; min-width: 100%; font-size: 12.5px; }
+.imp .ll-tabla th, .imp .ll-tabla td { padding: 6px 3px; text-align: center; }
+.imp .ll-tabla .ll-quien { position: sticky; left: 0; z-index: 1; width: 150px; min-width: 150px; max-width: 150px; padding: 6px 10px; text-align: left;
+                           background: var(--surface); box-shadow: inset -1px 0 0 var(--line-alta); }
+.imp .ll-tabla thead .ll-quien { z-index: 2; background: var(--surface-2); }
+.imp .ll-tabla .ll-quien b { font-weight: 600; }
+.imp .ll-tabla .ll-quien small { display: block; margin-top: 1px; font-size: 11px; font-weight: 500; color: var(--txt-3); }
+.imp .ll-tabla th.ll-d { min-width: 38px; font-weight: 700; color: var(--txt-2); }
+.imp .ll-tabla th.ll-d small { display: block; font-size: 10px; font-weight: 600; color: var(--txt-3); }
+.imp .ll-tabla th.ll-d.dom { color: var(--txt-3); }
+.imp .ll-tabla th.ll-d.hoy { color: var(--txt); box-shadow: inset 0 -3px 0 var(--sel-borde); }
+.imp .ll-tabla td.ll-c { min-width: 38px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.imp .ll-bien { background: var(--ok-soft); color: var(--ok-txt); font-weight: 600; }
+.imp .ll-tarde { background: var(--bad-soft); color: var(--bad-txt); font-weight: 700; }
+.imp .ll-otro-turno, .imp .ll-fuera { color: var(--txt-2); }
+.imp .ll-sin-entrada { background: var(--warn-soft); color: var(--warn-txt); font-weight: 600; }
+.imp .ll-tabla td.ll-franco { color: var(--txt-3); font-weight: 700; }
+.imp .ll-cerrado { background: repeating-linear-gradient(135deg, var(--surface-2) 0 4px, transparent 4px 8px); }
+.imp .ll-tabla td[data-ll-i] { cursor: pointer; }
+.imp .ll-tabla td[data-ll-i]:hover { box-shadow: inset 0 0 0 2px var(--sel-borde); }
+.imp .ll-tabla tr.ll-local td { padding-top: 9px; padding-bottom: 7px; background: var(--surface-2); border-top: 1px solid var(--line-alta); }
+.imp .ll-tabla tr.ll-local td.ll-quien { background: var(--surface-2); }
+.imp .ll-tabla tr.ll-local .ll-quien b { font-weight: 700; color: var(--txt); }
+/* El horario del local, en el mismo renglón: al deslizar los días queda pegado al nombre (la columna mide 170 px). */
+.imp .ll-tabla tr.ll-local td:not(.ll-quien) { padding-left: 8px; text-align: left; }
+.imp .ll-hor { position: sticky; left: 178px; display: inline-block; font-size: 12px; font-weight: 500; color: var(--txt-3); white-space: nowrap; }
+.imp .ll-tabla .ll-tot { min-width: 50px; border-left: 1px solid var(--line-alta); }
+.imp .ll-tabla .ll-check { min-width: 56px; }
+.imp .ll-tabla .ll-check input { width: 18px; height: 18px; margin: 0; cursor: pointer; accent-color: var(--acc); }
+.imp .ll-tilde { color: var(--ok-txt); font-weight: 700; }
+.imp .ll-tabla .ll-desc { min-width: 150px; max-width: 240px; padding-right: 10px; text-align: left; white-space: normal; }
+.imp .ll-anotar { padding: 4px 9px; border: 1px dashed var(--line-alta); border-radius: var(--r-sm); background: none; color: var(--txt-3);
+                  font: 600 12px var(--sans); text-align: left; cursor: pointer; }
+.imp .ll-anotar:hover { border-color: var(--sel-borde); color: var(--txt); }
+.imp .ll-anotar.con { border-style: solid; color: var(--txt); font-weight: 500; }
+.imp .ll-leyenda { margin-top: 10px; font-size: 13px; line-height: 1.9; }
+.imp .ll-muestra { display: inline-block; min-width: 34px; padding: 0 5px; border-radius: 4px; text-align: center; font-size: 12px; line-height: 20px; vertical-align: middle; }
+.imp .ll-muestra.ll-otro-turno { border: 1px solid var(--line); }
+.imp .ll-muestra.ll-cerrado { height: 20px; border: 1px solid var(--line); }
+/* Un día: cada local con su gente */
+.imp .ll-titulo small { margin-left: 10px; font: 500 13px var(--sans); color: var(--txt-3); }
+.imp .ll-hoy tr[data-ll-i] { cursor: pointer; }
+.imp .ll-hoy tr[data-ll-i]:hover { background: var(--surface-2); }
+.imp .ll-hoy td.ll-llego { font-variant-numeric: tabular-nums; width: 80px; }
+.imp .ll-hoy .ll-de { color: var(--txt-3); font-size: 12px; }
+/* Las marcas de un día, en su ventana */
+.ventana .ll-marcas { margin-top: 6px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.ventana .ll-marca { display: grid; grid-template-columns: 62px 72px 1fr; align-items: baseline; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--line); font-size: 14px; }
+.ventana .ll-marca:first-child { border-top: 0; }
+.ventana .ll-marca b { font: 700 16px var(--sans); font-variant-numeric: tabular-nums; }
+.ventana .ll-marca small { color: var(--txt-3); font-size: 12.5px; }
+.ventana .ll-marcas + .bajada { margin-bottom: 0; }
