@@ -151,7 +151,7 @@
       'La conversión por sucursal y por vendedor, día por día (la del período ya está en Tickets).',
       'Que alimente sola la planilla de Ventas, sin cargar nada a mano.'], 'Mientras tanto, los tickets del día y sus totales están en <a href="pos.html#tickets">POS → Tickets</a>.'],
     medios: ['Medios de pago', [
-      'Las tarjetas y sus cuotas, con recargo o sin interés.',
+      'Cambiar desde acá el interés de las cuotas (hoy, ya puesto en la venta: 3 cuotas sin interés desde $80.000 y 6 desde $150.000; con menos, 8 % y 17 %).',
       'Mercado Pago: probar el Point Smart conectado a la caja (es el único posnet que se puede integrar sin instalar nada).',
       'Payway, MODO, Go Cuotas y transferencias: el cupón se carga a mano y después se concilia.'], ''],
     arca: ['Facturación (ARCA)', [
@@ -169,6 +169,10 @@
                   ['AMEX', 'credito'], ['Naranja', 'credito'], ['Cabal', 'credito'], ['Cabal Débito', 'debito'], ['Maestro', 'debito'],
                   ['Otra de crédito', 'credito'], ['Otra de débito', 'debito']];
   var CUOTAS = [1, 2, 3, 6, 9, 12, 18, 24];
+  /* SQL 215: el interés de las cuotas (Mauricio, 31/10): 3 cuotas sin interés desde $80.000 y 6 cuotas desde $150.000;
+     con menos, 8 % y 17 %. Viene puesto, para que se acuerden la regla, y se saca con el tilde cuando se hace una
+     excepción. Las demás cuotas, sin interés. Los montos, en centavos. */
+  var INTERES = { 3: { desde: 8000000, pct: 8 }, 6: { desde: 15000000, pct: 17 } };
   var CONDICION = { consumidor_final: 'Consumidor final', responsable_inscripto: 'Responsable inscripto', monotributo: 'Monotributo', exento: 'Exento' };
   /* La lista del "Agregar descuento" de BlueSoft. */
   var DESCUENTOS = [['Descuento 5 %', 5], ['Descuento 15 %', 15], ['Descuento 25 %', 25], ['Descuento 40 %', 40],
@@ -932,7 +936,20 @@
       resto -= monto;
       desc.push({ tipo: 'manual', idx: i, descripcion: m.descripcion + (m.pct ? ' (' + String(m.pct).replace('.', ',') + ' %)' : ''), monto: monto });
     });
-    return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, noAplican: noAplican, descuento: neto - resto, total: resto,
+    /* SQL 215: el interés de lo que se paga en 3 o 6 cuotas. La regla mira el total del ticket, sin el interés. */
+    var interes = 0, notas = [], sinInteres = false;
+    function sumarInteres(monto, cuotas, sin) {
+      var r = reglaInteres(cuotas, resto);
+      if (!r) return;
+      interes += interesDe(monto, cuotas, resto, sin);
+      if (sin) sinInteres = true;
+      var n = notaInteres(cuotas, resto, sin);
+      if (notas.indexOf(n) < 0) notas.push(n);
+    }
+    if (v.forma === 'tarjeta') sumarInteres(resto, v.pago && v.pago.cuotas, v.pago && v.pago.sin_interes);
+    else if (v.forma === 'multiple') (v.multiples || []).forEach(function (x) { if (x.medio === 'tarjeta') sumarInteres(x.monto, x.cuotas, x.sin_interes); });
+    return { neto: neto, cantidad: cant, porLinea: porLinea, descuentos: desc, noAplican: noAplican, descuento: neto - resto,
+             subtotal: resto, interes: interes, interesNota: notas.join(' · '), sinInteres: sinInteres, total: resto + interes,
              gcCobro: neto ? Math.round(gcs * resto / neto) : 0 };   // SQL 200: lo que se cobra por las gift cards que se venden
   }
 
@@ -974,7 +991,16 @@
   function pagosDe(total, X) {
     X = X || V;
     if (total <= 0) return [];
-    if (X.forma === 'multiple') return (X.multiples || []).map(function (x) { return Object.assign({}, x); });
+    if (X.forma === 'multiple') {
+      /* SQL 215: la tarjeta en 3 o 6 cuotas cobra su parte con el interés (los montos, sin él, suman el total del ticket). */
+      var base = sumaPagos(X.multiples);
+      return (X.multiples || []).map(function (x) {
+        var y = Object.assign({}, x);
+        if (X === V && x.medio === 'tarjeta') y.monto = x.monto + interesDe(x.monto, x.cuotas, base, x.sin_interes);
+        delete y.sin_interes;
+        return y;
+      });
+    }
     var p = { medio: X.forma, monto: total };
     if (X.forma === 'efectivo' && X.pago.recibido) p.recibido = X.pago.recibido;
     if (X.forma === 'tarjeta') { p.tarjeta = X.pago.tarjeta || ''; p.tipo_tarjeta = tipoTarjeta(p.tarjeta); p.cuotas = Number(X.pago.cuotas) || 1; p.cupon = X.pago.cupon || ''; }
@@ -983,6 +1009,40 @@
     return [p];
   }
   function tipoTarjeta(t) { var x = TARJETAS.filter(function (y) { return y[0] === t; })[0]; return x ? x[1] : ''; }
+  /* SQL 215: el interés de las cuotas (ver INTERES). total: el del ticket, sin el interés. */
+  function reglaInteres(cuotas, total) { var r = INTERES[Number(cuotas)]; return r && total > 0 && total < r.desde ? r : null; }
+  /** Lo que se suma por pagar monto en esas cuotas, redondeado al peso; sin: le sacaron el tilde (la excepción). */
+  function interesDe(monto, cuotas, total, sin) { var r = reglaInteres(cuotas, total); return r && !sin ? Math.round(monto * r.pct / 100 / 100) * 100 : 0; }
+  /** El renglón del ticket: «Interés 3 cuotas (8 %)», o la excepción. */
+  function notaInteres(cuotas, total, sin) {
+    var r = reglaInteres(cuotas, total);
+    return !r ? '' : sin ? cuotas + ' cuotas sin interés: excepción (con menos de ' + plata(r.desde) + ' lleva ' + r.pct + ' %)' : 'Interés ' + cuotas + ' cuotas (' + r.pct + ' %)';
+  }
+  /** El renglón del interés en la grilla de la venta. Con tarjeta en cuotas: la regla, el tilde puesto (sólo si lleva
+      interés; sacarlo es la excepción) y de cuánto es cada cuota. En el pago múltiple, lo de sus tarjetas (el tilde
+      está en «Cambiar»). Va en la grilla y no debajo de «Cuotas»: ahí empujaba el total fuera de la pantalla de los
+      locales (1366×657). */
+  function filaInteres(c) {
+    var fila = function (sin, txt, monto) {
+      return '<tr class="tk-fila-i' + (sin ? ' sin' : '') + '"><td></td><td colspan="7">' + txt + '</td><td class="n">' + (monto ? '+' + plata(monto) : '') + '</td><td></td></tr>';
+    };
+    if (V.forma === 'multiple') return c.interes || c.sinInteres ? fila(!c.interes, esc(c.interesNota), c.interes) : '';
+    var n = Number(V.pago.cuotas) || 1;
+    if (V.forma !== 'tarjeta' || n < 2 || !c.subtotal) return '';
+    var r = reglaInteres(n, c.subtotal), q = INTERES[n], sin = !!V.pago.sin_interes, cada = n + ' cuotas de ' + plata(Math.round(c.total / n / 100) * 100);
+    if (!r) return fila(true, esc((q ? n + ' cuotas sin interés (desde ' + plata(q.desde) + ')' : 'Sin interés') + ' · ' + cada), 0);
+    return fila(sin, '<label class="tk-interes"><input type="checkbox" data-interes' + (sin ? '' : ' checked') + '><span>' +
+      esc((sin ? notaInteres(n, c.subtotal, true) : 'Interés ' + n + ' cuotas (' + r.pct + ' %, con menos de ' + plata(r.desde) + ')') + ' · ' + cada) +
+      '</span></label>', c.interes);
+  }
+  /** En la tarjeta del pago múltiple: la regla, cuánto suma y de cuánto es cada cuota. */
+  function textoInteres(monto, cuotas, total, sin) {
+    var n = Number(cuotas) || 1, r = reglaInteres(n, total), q = INTERES[n], i = interesDe(monto, n, total, sin);
+    var cada = n > 1 && monto > 0 ? n + ' cuotas de ' + plata(Math.round((monto + i) / n / 100) * 100) : '';
+    var que = r ? 'Interés ' + r.pct + ' % (' + n + ' cuotas con menos de ' + plata(r.desde) + ')' : q ? 'Sin interés (desde ' + plata(q.desde) + ')' : '';
+    var cuanto = r && monto > 0 ? (sin ? 'sin interés' : '+' + plata(i)) : '';
+    return [que, [cuanto, cada].filter(Boolean).join(', ')].filter(Boolean).join(': ');
+  }
   function sumaPagos(ps) { return (ps || []).reduce(function (s, x) { return s + (x.monto || 0); }, 0); }
 
   /* ── Las gift cards (SQL 200) ──────────────────────────────────────────
@@ -1316,6 +1376,8 @@
       filas.push('<tr class="tk-fila-sacada"><td></td><td colspan="9">Elegiste «' + esc(p.nombre) + '», pero ' + esc(porQueNoPromo(p, V)) + ': todavía no descuenta. ' +
         '<button type="button" data-sacar="' + p.id + '">Sacarla</button></td></tr>');
     });
+    /* SQL 215: el interés de las cuotas, con su tilde (ver filaInteres). */
+    if (V.lineas.length) { var fi = filaInteres(c); if (fi) filas.push(fi); }
     $('vFilas').innerHTML = filas.length ? filas.join('') :
       '<tr class="tk-vacia"><td colspan="10"><b>Todavía no hay productos</b>Dispará la pistola a la etiqueta o buscá el producto arriba.</td></tr>';
 
@@ -1325,15 +1387,19 @@
     var av = $('vPagoAviso');
     if (av) {
       var s = sumaPagos(V.multiples);
-      av.textContent = V.forma === 'multiple' && s !== c.total ? 'Los pagos suman ' + plata(s) + ' y el total es ' + plata(c.total) + ': tocá «Cambiar».' :
+      av.textContent = V.forma === 'multiple' && s !== c.subtotal ? 'Los pagos suman ' + plata(s) + ' y el total es ' + plata(c.subtotal) + ': tocá «Cambiar».' :
                        V.forma === 'giftcard' ? avisoGc(c) :   // SQL 200
                        (V.forma === 'efectivo' && V.pago.recibido && V.pago.recibido < c.total ? 'Lo recibido es menos que el total.' : '');
     }
     var mt = $('vMultTxt');
-    if (mt) mt.textContent = (V.multiples || []).map(function (x) { return MEDIOS_VENTA[x.medio] + (x.gc ? ' ' + x.gc.color + ' Nº ' + x.gc.nro : '') + ' ' + plata(x.monto); }).join(' + ') || '—';
+    if (mt) mt.textContent = (V.multiples || []).map(function (x) {
+      var i = x.medio === 'tarjeta' ? interesDe(x.monto, x.cuotas, c.subtotal, x.sin_interes) : 0;   // SQL 215
+      return MEDIOS_VENTA[x.medio] + (x.gc ? ' ' + x.gc.color + ' Nº ' + x.gc.nro : '') + (x.medio === 'tarjeta' && x.cuotas > 1 ? ' en ' + x.cuotas + ' cuotas' : '') +
+        ' ' + plata(x.monto) + (i ? ' + interés ' + plata(i) : '');
+    }).join(' + ') || '—';
 
-    /* SQL 200: la gift card que se vende no da puntos (los da lo que se compre con ella). */
-    var cl = V.cliente, so = V.socio, pts = so ? puntosDe(c.total - c.gcCobro, so.factor) : 0;
+    /* SQL 200: la gift card que se vende no da puntos (los da lo que se compre con ella). SQL 215: el interés tampoco. */
+    var cl = V.cliente, so = V.socio, pts = so ? puntosDe(c.total - c.interes - c.gcCobro, so.factor) : 0;
     /* Los puntos del socio: los anota la venta; los suma recién con la regla del Club prendida (SQL 171). */
     var club = !so ? '' : '<span class="tk-nota-club"><b>Club:</b> ' + (enPrueba() ? 'en modo prueba no se suman puntos.' :
       !c.total ? esc(String(so.nombre || '').split(' ')[0]) + ' suma puntos con lo que compre.' :
@@ -1395,6 +1461,9 @@
       var e = $(pre + k[0]);
       if (e) e[e.tagName === 'SELECT' ? 'onchange' : 'oninput'] = function () { X.pago[k[1]] = e.value; guardarB(); };
     });
+    /* SQL 215: otras cuotas vuelven a la regla (con interés si corresponde) y cambian el total. En el cambio, no hay interés. */
+    var cuo = !cb && $('vCuotas');
+    if (cuo) cuo.onchange = function () { V.pago.cuotas = cuo.value; delete V.pago.sin_interes; pintar(); };
     /* SQL 200: al leer la tarjeta, lo que vale y si alcanza; si ya había una (el borrador), se mira de nuevo cómo está. */
     var g = $(pre + 'Gc');
     if (g) {
@@ -1614,6 +1683,14 @@
   function engancharFilas() {
     var t = $('vFilas');
     t.addEventListener('change', function (e) {
+      /* SQL 215: el tilde del interés; sacarlo es la excepción (3 o 6 cuotas sin interés con menos del monto). */
+      if (e.target.hasAttribute('data-interes')) {
+        if (e.target.checked) delete V.pago.sin_interes; else V.pago.sin_interes = true;
+        pintar();
+        var k = t.querySelector('[data-interes]');
+        if (k) k.focus();
+        return;
+      }
       var tr = e.target.closest('tr[data-i]');
       if (!tr) return;
       var l = V.lineas[Number(tr.getAttribute('data-i'))];
@@ -1661,8 +1738,8 @@
     var caja = ventana('<h3 id="posVentTit">Agregar descuento</h3>' +
       (promos ? '<p class="pos-bajada">Las promos no se aplican solas: tocá la que corresponde y el sistema hace la cuenta. Se sacan con la ✕ de la grilla.</p>' +
           '<div class="pos-ds-titulo">Promociones</div><div class="pos-promos-elegir">' + promos + '</div>' +
-          '<div class="pos-ds-titulo">O un descuento a mano</div><p class="pos-ayuda pos-ds-ayuda">Sobre el total del ticket (' + plata(c.total) + ').</p>'
-        : '<p class="pos-bajada">Sobre el total del ticket, después de las promos (' + plata(c.total) + '). Se saca con la ✕ de la grilla.</p>') +
+          '<div class="pos-ds-titulo">O un descuento a mano</div><p class="pos-ayuda pos-ds-ayuda">Sobre el total del ticket (' + plata(c.subtotal) + ').</p>'
+        : '<p class="pos-bajada">Sobre el total del ticket, después de las promos (' + plata(c.subtotal) + '). Se saca con la ✕ de la grilla.</p>') +
       '<div class="pos-campos">' +
         campo('ancho', 'Descuento', '<select id="dsTipo"' + (foco ? '' : ' autofocus') + '>' + DESCUENTOS.map(function (d, i) { return '<option value="' + i + '">' + esc(d[0]) + '</option>'; }).join('') + '</select>') +
         campo('', 'Porcentaje', '<input type="text" inputmode="decimal" id="dsPct" value="5">') +
@@ -1677,7 +1754,7 @@
       var d = DESCUENTOS[Number(tipo.value)], p = parseFloat(String(pct.value).replace(',', '.')), m = leerPlata(val.value);
       var nombre = d[0].replace(/\s*\d+\s*%$/, '') || d[0];
       if (val.value.trim()) {
-        if (!errorEn(caja, 'dsError', !(m > 0) ? 'El monto no se entiende.' : m > c.total ? 'Es más que el total del ticket.' : '')) return;
+        if (!errorEn(caja, 'dsError', !(m > 0) ? 'El monto no se entiende.' : m > c.subtotal ? 'Es más que el total del ticket.' : '')) return;
         V.manuales.push({ descripcion: nombre, monto: m });
       } else {
         if (!errorEn(caja, 'dsError', !(p > 0 && p <= 100) ? 'El porcentaje va de 0 a 100 (o escribí un monto).' : '')) return;
@@ -1877,14 +1954,14 @@
   function abrirMultiple() {
     if (V.letra === 'X') { avisar('info', 'La X va sólo con efectivo.'); return; }
     /* Con varios medios no va la promo de un medio (el 10 % es pagando TODO en efectivo). */
-    var c = cuenta(Object.assign({}, V, { forma: 'multiple' }));
-    if (!c.total) { avisar('info', 'Primero cargá los productos.'); return; }
+    var c = cuenta(Object.assign({}, V, { forma: 'multiple' })), tot = c.subtotal;   // SQL 215: los montos van sin el interés
+    if (!tot) { avisar('info', 'Primero cargá los productos.'); return; }
     /* SQL 200: si venía con una gift card que no alcanza, arranca con ella y el resto en efectivo. */
     var filas = (V.multiples && V.multiples.length ? V.multiples :
-                 V.forma === 'giftcard' && V.pago.gc && V.pago.gc.ok ? [{ medio: 'giftcard', monto: Math.min(cent(V.pago.gc.valor), c.total), gc: V.pago.gc }, { medio: 'efectivo', monto: 0 }] :
+                 V.forma === 'giftcard' && V.pago.gc && V.pago.gc.ok ? [{ medio: 'giftcard', monto: Math.min(cent(V.pago.gc.valor), tot), gc: V.pago.gc }, { medio: 'efectivo', monto: 0 }] :
                  [{ medio: 'efectivo', monto: 0 }, { medio: 'tarjeta', monto: 0, cuotas: 1 }])
       .map(function (x) { return Object.assign({}, x); });
-    var caja = ventana('<h3 id="posVentTit">Pago múltiple</h3><p class="pos-bajada">El total es <b>' + plata(c.total) + '</b>. Si dejás un monto vacío, se completa con lo que falta.</p>' +
+    var caja = ventana('<h3 id="posVentTit">Pago múltiple</h3><p class="pos-bajada">El total es <b>' + plata(tot) + '</b>. Si dejás un monto vacío, se completa con lo que falta.</p>' +
       '<div class="pos-pagos" id="pmFilas"></div>' +
       '<p><button type="button" class="pos-link" id="pmMas">+ Agregar otro pago</button></p>' +
       '<div class="pos-pago-cuenta" id="pmCuenta"></div><div class="pos-error" id="pmError"></div>' +
@@ -1893,7 +1970,9 @@
       var mas = x.medio === 'tarjeta'
         ? '<div class="pos-pago-mas">' + campo('', 'Tarjeta', '<select data-k="tarjeta"><option value="">Elegí…</option>' + opciones(TARJETAS.map(function (t) { return [t[0], t[0]]; }), x.tarjeta) + '</select>') +
           campo('', 'Cuotas', '<select data-k="cuotas">' + opciones(CUOTAS.map(function (n) { return [n, n]; }), x.cuotas || 1) + '</select>') +
-          campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') + '</div>'
+          campo('', 'Cupón', '<input type="text" data-k="cupon" inputmode="numeric" maxlength="20" value="' + esc(x.cupon || '') + '">') +
+          /* SQL 215: el interés de las cuotas, puesto; se saca para una excepción. */
+          '<label class="tk-interes pos-pago-int" data-int hidden><input type="checkbox" data-k="sin"' + (x.sin_interes ? '' : ' checked') + '><span></span></label></div>'
         : x.medio === 'giftcard' ? '<div class="pos-pago-mas">' + campo('', 'Gift card', '<input type="text" data-k="gc" inputmode="numeric" maxlength="20" autocomplete="off" placeholder="Pasala por la pistola" value="' +
             esc(x.gc ? x.gc.codigo : '') + '">') + '<p class="tk-gc" data-gc-info role="status">' + textoGc(x.gc, 'pagar') + '</p></div>'   // SQL 200
         : x.medio === 'efectivo' ? '<div class="pos-pago-mas"></div>'
@@ -1904,11 +1983,21 @@
         '<button type="button" class="tk-quitar" data-quitar-pago="' + i + '" title="Quitar este pago" aria-label="Quitar este pago">' + icono('x') + '</button></div>';
     }
     function cuentaTxt() {
-      var s = sumaPagos(filas), dif = c.total - s, e = caja.querySelector('#pmCuenta');
+      var s = sumaPagos(filas), dif = tot - s, e = caja.querySelector('#pmCuenta');
       e.className = 'pos-pago-cuenta ' + (dif === 0 ? 'ok' : 'mal');
       e.innerHTML = '<span>Pagos: ' + plata(s) + '</span><span>' + (dif === 0 ? 'Justo' : dif > 0 ? 'Falta ' + plata(dif) : 'Sobra ' + plata(-dif)) + '</span>';
     }
-    function pintarFilas() { caja.querySelector('#pmFilas').innerHTML = filas.map(fila).join(''); cuentaTxt(); engancharGcs(); }
+    function pintarFilas() { caja.querySelector('#pmFilas').innerHTML = filas.map(fila).join(''); cuentaTxt(); engancharGcs(); filas.forEach(function (x, i) { pintarInteres(i); }); }
+    /* SQL 215: debajo de la tarjeta, el interés de su parte y de cuánto es cada cuota. */
+    function pintarInteres(i) {
+      var x = filas[i], e = caja.querySelector('[data-f="' + i + '"] [data-int]');
+      if (!e) return;
+      var cu = Number(x.cuotas) || 1, r = reglaInteres(cu, tot), txt = textoInteres(x.monto || 0, cu, tot, x.sin_interes);
+      e.hidden = cu < 2;
+      e.querySelector('input').hidden = !r;
+      e.querySelector('span').textContent = txt || cu + ' cuotas';
+      e.classList.toggle('con', !!interesDe(x.monto || 0, cu, tot, x.sin_interes));
+    }
     /* SQL 200: cada renglón de gift card, con su tarjeta; al leerla, el monto es lo que falta (hasta lo que vale). */
     function engancharGcs() {
       caja.querySelectorAll('[data-k="gc"]').forEach(function (inp) {
@@ -1917,7 +2006,7 @@
           x.gc = r;
           f.querySelector('[data-gc-info]').innerHTML = textoGc(r, 'pagar');
           if (r && r.ok && !x.monto) {
-            x.monto = Math.min(cent(r.valor), Math.max(c.total - sumaPagos(filas), 0));
+            x.monto = Math.min(cent(r.valor), Math.max(tot - sumaPagos(filas), 0));
             f.querySelector('[data-k="monto"]').value = plataCampo(x.monto);
             cuentaTxt();
           }
@@ -1928,9 +2017,9 @@
     var lista = caja.querySelector('#pmFilas');
     lista.addEventListener('input', function (e) {
       var f = e.target.closest('[data-f]'), k = e.target.getAttribute('data-k');
-      if (!f || !k || k === 'medio' || k === 'gc') return;
+      if (!f || !k || k === 'medio' || k === 'gc' || k === 'sin') return;
       var x = filas[Number(f.getAttribute('data-f'))];
-      if (k === 'monto') { var m = leerPlata(e.target.value); x.monto = isNaN(m) ? 0 : m; cuentaTxt(); }
+      if (k === 'monto') { var m = leerPlata(e.target.value); x.monto = isNaN(m) ? 0 : m; cuentaTxt(); pintarInteres(Number(f.getAttribute('data-f'))); }
       else x[k] = e.target.value;
     });
     lista.addEventListener('change', function (e) {
@@ -1938,11 +2027,16 @@
       if (!f || !k) return;
       var x = filas[Number(f.getAttribute('data-f'))];
       if (k === 'medio') {
-        x.medio = e.target.value; delete x.tarjeta; delete x.cupon; delete x.gc; x.cuotas = 1; pintarFilas();
+        x.medio = e.target.value; delete x.tarjeta; delete x.cupon; delete x.gc; delete x.sin_interes; x.cuotas = 1; pintarFilas();
         var q = x.medio === 'giftcard' && caja.querySelector('[data-f="' + f.getAttribute('data-f') + '"] [data-k="gc"]');
         if (q) q.focus();   // SQL 200: lista para la pistola
       }
-      else if (k === 'tarjeta' || k === 'cuotas') x[k] = e.target.value;
+      else if (k === 'tarjeta') x[k] = e.target.value;
+      else if (k === 'cuotas') { x.cuotas = e.target.value; delete x.sin_interes; pintarFilas(); }   // SQL 215: otras cuotas, otra vez la regla
+      else if (k === 'sin') {
+        if (e.target.hidden) e.target.checked = true; else if (e.target.checked) delete x.sin_interes; else x.sin_interes = true;
+        pintarInteres(Number(f.getAttribute('data-f')));
+      }
     });
     lista.addEventListener('click', function (e) {
       var b = e.target.closest('[data-quitar-pago]');
@@ -1953,7 +2047,7 @@
     caja.querySelector('#pmMas').onclick = function () { filas.push({ medio: 'mercadopago', monto: 0 }); pintarFilas(); };
     caja.querySelector('#pmOk').onclick = function () {
       var vacias = filas.filter(function (x) { return !x.monto; });
-      if (vacias.length === 1) { vacias[0].monto = c.total - sumaPagos(filas); }
+      if (vacias.length === 1) { vacias[0].monto = tot - sumaPagos(filas); }
       var mal = '';
       filas = filas.filter(function (x) { return x.monto || x === vacias[0]; });
       if (filas.length < 2) mal = 'Un pago múltiple tiene por lo menos dos pagos (si es uno solo, elegilo en «Forma de pago»).';
@@ -1966,11 +2060,11 @@
       }
       else if (filas.some(function (x) { return x.medio === 'giftcard' && x.monto > cent(x.gc.valor); })) mal = 'Una Gift Card no paga más de lo que vale.';
       else if (filas.some(function (x, i) { return x.medio === 'giftcard' && filas.some(function (y, j) { return j < i && y.medio === 'giftcard' && y.gc.codigo === x.gc.codigo; }); })) mal = 'La misma Gift Card está dos veces.';
-      else if (sumaPagos(filas) !== c.total) mal = 'Los pagos tienen que sumar ' + plata(c.total) + '.';
+      else if (sumaPagos(filas) !== tot) mal = 'Los pagos tienen que sumar ' + plata(tot) + '.';
       if (mal) { pintarFilas(); errorEn(caja, 'pmError', mal); return; }
       V.multiples = filas.map(function (x) {
         var p = { medio: x.medio, monto: x.monto };
-        if (x.medio === 'tarjeta') { p.tarjeta = x.tarjeta; p.tipo_tarjeta = tipoTarjeta(x.tarjeta); p.cuotas = Number(x.cuotas) || 1; }
+        if (x.medio === 'tarjeta') { p.tarjeta = x.tarjeta; p.tipo_tarjeta = tipoTarjeta(x.tarjeta); p.cuotas = Number(x.cuotas) || 1; if (x.sin_interes && reglaInteres(p.cuotas, tot)) p.sin_interes = true; }
         if (x.cupon) p.cupon = String(x.cupon).trim();
         if (x.medio === 'giftcard') { p.giftcard = x.gc.codigo; p.gc = x.gc; }   // SQL 200
         return p;
@@ -1999,7 +2093,7 @@
       V.forma === 'giftcard' && cent(V.pago.gc.valor) < c.total ? 'La Gift Card no alcanza: el resto, con otro medio en «Múltiple».' :
       V.forma === 'tarjeta' && !V.pago.tarjeta ? 'Elegí qué tarjeta es.' :
       V.forma === 'efectivo' && V.pago.recibido && V.pago.recibido < c.total ? 'Lo recibido en efectivo es menos que el total.' :
-      V.forma === 'multiple' && sumaPagos(V.multiples) !== c.total ? 'Los pagos no suman el total: tocá «Cambiar» en Pagos.' : '';
+      V.forma === 'multiple' && sumaPagos(V.multiples) !== c.subtotal ? 'Los pagos no suman el total: tocá «Cambiar» en Pagos.' : '';   // SQL 215: sin el interés
     if (mal) { avisar('err', mal); return; }
     /* SQL 200: la gift card se usa entera (como en Cobrar): si vale más que lo que paga, la diferencia se pierde. */
     var sobra = sobraGc(pagos);
@@ -2016,6 +2110,8 @@
         return it;
       }),
       descuentos: c.descuentos.map(function (d) { return { tipo: d.tipo, promo_id: d.promo_id || '', descripcion: d.descripcion, monto: aPesos(d.monto) }; }),
+      /* SQL 215: el interés de las cuotas (va en el total) y la excepción sin interés. */
+      interes: aPesos(c.interes), interes_nota: c.interesNota, sin_interes: c.sinInteres,
       pagos: pagos.map(function (x) {
         var y = Object.assign({}, x, { monto: aPesos(x.monto) });
         delete y.gc;   // SQL 200: lo de la pantalla no viaja
@@ -2076,8 +2172,12 @@
          la base la reconoce por la clave y no la duplica. */
       if (reintentable(e) && !conGc) { aLaFila(); return; }
       reponerBotones();
-      avisar('err', reintentable(e) ? 'Sin internet no se puede vender ni cobrar con una Gift Card (hay que leerla en la base): cobrá con otro medio o esperá a que vuelva.' : mensajeDe(e));
+      avisar('err', reintentable(e) ? 'Sin internet no se puede vender ni cobrar con una Gift Card (hay que leerla en la base): cobrá con otro medio o esperá a que vuelva.' : faltaInteres(e, c) || mensajeDe(e));
     });
+  }
+  /** SQL 215: sin él, la base no conoce el interés y dice que los pagos no suman el total. */
+  function faltaInteres(e, c) {
+    return c.interes && /no suman el total/.test(mensajeDe(e)) ? 'Falta correr el SQL 215 en la base para cobrar con el interés de las cuotas. Mientras tanto, para guardarla sacale el tilde del interés.' : '';
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -2299,9 +2399,13 @@
         }).join('') +
         (t.descuentos_detalle || []).map(function (d) {
           return '<tr><td></td><td colspan="6">' + esc(d.descripcion) + '</td><td class="n">−' + plata(cent(d.monto)) + '</td></tr>';
-        }).join('') + '</tbody></table></div>' +
+        }).join('') +
+        /* SQL 215: el interés de las cuotas, o la excepción sin interés. */
+        (Number(t.interes) || t.sin_interes ? '<tr class="tk-fila-i' + (Number(t.interes) ? '' : ' sin') + '"><td></td><td colspan="6">' +
+          esc(t.interes_nota || 'Interés de las cuotas') + '</td><td class="n">' + (Number(t.interes) ? '+' + plata(cent(t.interes)) : '') + '</td></tr>' : '') +
+        '</tbody></table></div>' +
       '<div class="pos-ticket-tot"><span>Neto ' + plata(cent(t.neto)) + (Number(t.descuentos) ? ' · Descuentos −' + plata(cent(t.descuentos)) : '') +
-        ' · ' + t.cantidad + (t.cantidad === 1 ? ' prenda' : ' prendas') + '</span><b>Total ' + plata(cent(t.total)) + '</b></div>';
+        (Number(t.interes) ? ' · Interés +' + plata(cent(t.interes)) : '') + ' · ' + t.cantidad + (t.cantidad === 1 ? ' prenda' : ' prendas') + '</span><b>Total ' + plata(cent(t.total)) + '</b></div>';
   }
 
   function abrirTicket(id, alCambiar) {

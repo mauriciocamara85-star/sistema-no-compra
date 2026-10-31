@@ -200,6 +200,13 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 .tk-gc-mal { font-weight: 600; color: var(--bad-txt); }
 .pos-pago-mas .tk-gc { grid-column: span 2; align-self: end; padding-bottom: 9px; }
 .tk-vuelto input { font-weight: 700; color: var(--ok-txt); }
+/* SQL 215: el interés de las cuotas, con su tilde (en el renglón de la grilla y en la tarjeta del pago múltiple). */
+.tk-interes { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; line-height: 1.35; color: var(--txt-2); cursor: pointer; }
+.tk-interes[hidden] { display: none; }
+.tk-interes input { flex: none; width: 17px; height: 17px; margin: 0; accent-color: var(--acc); cursor: pointer; }
+.tk-interes.con { color: var(--info-txt); }
+.pos-pago-mas .tk-interes { grid-column: 1 / -1; }
+.tk-fila-i .tk-interes { font: inherit; color: inherit; }
 
 /* Los totales: abajo a la izquierda, como en BlueSoft. */
 .tk-tot { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
@@ -265,6 +272,9 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .tk-quitar svg { width: 15px; height: 15px; }
 .tk-fila-d td { background: var(--ok-soft); color: var(--ok-txt); font-weight: 600; }
 .tk-fila-d.manual td { background: var(--warn-soft); color: var(--warn-txt); }
+/* SQL 215: el interés de las cuotas suma (en la venta y en el ticket); la excepción sin interés, gris. */
+.tk-fila-i td { background: var(--info-soft); color: var(--info-txt); font-weight: 600; }
+.tk-fila-i.sin td { background: none; color: var(--txt-3); font-weight: 500; font-size: 12.5px; }
 .tk-fila-sacada td { color: var(--txt-3); font-size: 12.5px; padding-top: 6px; padding-bottom: 6px; }
 .tk-fila-sacada button { border: 0; background: none; padding: 0; color: var(--txt); font: 600 12.5px var(--sans); text-decoration: underline; cursor: pointer; }
 .tk-vacia td { padding: 34px 12px; text-align: center; color: var(--txt-3); border-bottom: 0; }
