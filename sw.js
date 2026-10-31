@@ -14,7 +14,7 @@
  * Al tocar cualquier archivo de la app, subir CACHE: ese cambio de nombre es
  * lo que borra el caché viejo de los celulares.
  */
-const CACHE = 'no-compra-v309';
+const CACHE = 'no-compra-v311';
 
 const BASICOS = [
   './',
@@ -30,6 +30,8 @@ const BASICOS = [
   './ventas.html',
   './ventas.js',
   './ventas-calc.js',
+  /* El fichero con QR de la compu de cada local (SQL 218, 31/10/2026). */
+  './fichero.html',
   /* El POS (20/10/2026), en construcción: por ahora lo usa sólo Administración. */
   './pos.html',
   './gestion.html',

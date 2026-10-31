@@ -9041,7 +9041,7 @@
      de cada uno) y Por persona (las horas del período, con sus francos).
      ════════════════════════════════════════════════════════════════════ */
   var TI_VISTAS = [['registros', 'Registros'], ['dia', 'Por día'], ['persona', 'Por persona']];
-  var TI_ORIGEN = { huella: 'Huella', manual: 'A mano', bluesoft: 'BlueSoft' };
+  var TI_ORIGEN = { huella: 'Huella', manual: 'A mano', bluesoft: 'BlueSoft', celular: 'Fichero QR' };   // celular: SQL 218
   var TI_FRANCOS = ['', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb', 'dom'];   // los francos van en ISO: 1 = lunes
   var TI_DOBLE = 15 * 60000;    // la misma marca dos veces en menos de 15 minutos: puso el dedo dos veces
   var TI_VER = 1500;            // los renglones que se dibujan en Registros (el Excel lleva todos)

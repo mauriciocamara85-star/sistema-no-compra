@@ -348,6 +348,17 @@ var persona = (function () {
         if (dibujo._cual !== cual) { dibujo.innerHTML = cual === 'percha' ? DIBUJO_PERCHA : dibujo._local; dibujo._cual = cual; }
       }
     }
+    /* El fichero con QR (SQL 218, 31/10): sólo en la compu habilitada de un local, después de Ventas. Lo agrega
+       acá para no tocar la barra de cada página. */
+    if (compuDelLocal() && !rail.querySelector('.rail-item[href="fichero.html"]')) {
+      var fi = document.createElement('a');
+      fi.className = 'rail-item';
+      fi.href = 'fichero.html';
+      if (pagina() === 'fichero.html') fi.setAttribute('aria-current', 'page');
+      fi.innerHTML = '<span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>\n      Fichero\n    ';
+      var ve = rail.querySelector('.rail-item[href="ventas.html"]');
+      rail.insertBefore(fi, ve ? ve.nextSibling : rail.querySelector('.rail-yo'));
+    }
     var b = rail.querySelector('.rail-yo');
     if (!b) {
       b = document.createElement('button');

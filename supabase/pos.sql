@@ -7412,3 +7412,227 @@ begin
   return jsonb_build_object('id', v_id, 'numero', v_num, 'serie', v_serie, 'prueba', v_prueba, 'fecha', coalesce(v_hecha, now()), 'ya', false,
                             'socio_puntos', v_gana, 'puntos_sumados', v_mov is not null);
 end $function$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 218 (31/10/2026) · EL FICHERO CON QR (Ingreso y egreso)
+--
+--  Mauricio (31/10): "sería como un fichero de los viejos que vos fichabas,
+--  pero ahora con el QR fichás. Entrá y salí." En la compu de cada local
+--  (fichero.html) se ve un QR que cambia cada 30 segundos; el vendedor lo
+--  escanea desde Equipo VDH (la camarita → Papeles → Fichar) y queda su
+--  entrada o su salida en el registro de tiempos (SQL 206), con la hora en
+--  que lo escaneó y el origen 'celular'. Sin selfie ("con selfie no te
+--  falta") y sin la huella.
+--  · El QR no es un enlace: lo lee sólo la app, con la persona adentro con
+--    su usuario. Cada QR vale un minuto, a lo sumo: una foto pasada por
+--    WhatsApp llega vencida.
+--  · Un celular por persona: el primero desde el que ficha cada uno queda
+--    como el suyo (un número al azar que guarda la app). Si ficha desde
+--    otro, o desde un celular fichan dos personas el mismo día, la marca
+--    queda igual pero con un aviso, que la supervisión ve en Llegadas (y
+--    ahí, «Es su celular nuevo»).
+--  · pos_fichero: el secreto con el que se firman los QR (uno solo; nunca
+--    sale de la base).
+--  · pos_fichero_celulares: el celular de cada persona.
+--  Escribe en el registro de tiempos del SQL 206.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Sin el 206 no hay dónde anotar: se frena acá, sin cambiar nada. */
+do $$
+begin
+  if to_regclass('public.pos_tiempos') is null then
+    raise exception 'Primero hay que correr el SQL 206 (el registro de tiempos): está en App Orden.';
+  end if;
+end $$;
+
+create table pos_fichero (
+  id       int primary key default 1 check (id = 1),
+  secreto  bytea not null default extensions.gen_random_bytes(32),
+  creado   timestamptz not null default now()
+);
+insert into pos_fichero default values;
+alter table pos_fichero enable row level security;
+revoke all on pos_fichero from anon, authenticated;
+
+create table pos_fichero_celulares (
+  persona_id    uuid primary key references orden_personas(id),
+  celular       text not null unique,                    -- el número al azar que guarda la app en ese celular
+  desde         timestamptz not null default now(),
+  cambiado_por  uuid                                     -- null: quedó solo, la primera vez que fichó
+);
+alter table pos_fichero_celulares enable row level security;
+revoke all on pos_fichero_celulares from anon, authenticated;
+
+alter table pos_tiempos drop constraint pos_tiempos_origen_check;
+alter table pos_tiempos add constraint pos_tiempos_origen_check check (origen in ('huella', 'manual', 'bluesoft', 'celular'));
+alter table pos_tiempos add column celular text;          -- SQL 218: desde qué celular fichó (origen 'celular')
+
+/* La firma de un QR: la compu y la ventana de 30 segundos, con el secreto. 16 letras alcanzan (nadie las adivina). */
+create function pos_fichero_firma(p_caja bigint, p_ventana bigint) returns text
+language sql stable security definer set search_path = public as $$
+  select left(encode(extensions.hmac(convert_to('VDHF1.' || p_caja || '.' || p_ventana, 'UTF8'), f.secreto, 'sha256'), 'hex'), 16)
+    from pos_fichero f where f.id = 1
+$$;
+
+/* La compu del local (fichero.html) pide sus QR: el de ahora y los de los próximos dos minutos (uno cada 30 segundos),
+   con la hora de la base, para que la pantalla los cambie a tiempo aunque el reloj de la compu ande mal. Y las
+   últimas marcas de hoy en ese local. Hace falta la llave de la compu habilitada (la de Cobrar); anda sin nadie
+   adentro. */
+create function pos_fichero_qr(p_caja text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_cod   text := club_caja_local(p_caja);
+  v_caja  bigint;
+  v_loc   orden_locales;
+  v_ahora timestamptz := clock_timestamp();
+  v_w     bigint;
+begin
+  if v_cod is null then
+    raise exception 'Esta compu no está habilitada como la de un local: se habilita en Config → General → Las compus de los locales.';
+  end if;
+  select id into v_caja from club_cajas where llave_hash = club_caja_hash(p_caja) and baja is null;
+  select * into v_loc from orden_locales l where l.activo and upper(btrim(l.codigo)) = upper(btrim(v_cod)) limit 1;
+  if v_loc.id is null then raise exception 'El local de esta compu (%) no está en el sistema.', v_cod; end if;
+  v_w := floor(extract(epoch from v_ahora) / 30)::bigint;
+  return jsonb_build_object(
+    'local_id', v_loc.id,
+    'local', v_loc.nombre,
+    'ahora_ms', floor(extract(epoch from v_ahora) * 1000)::bigint,
+    'codigos', (select jsonb_agg(jsonb_build_array(w, 'VDHF1.' || v_caja || '.' || w || '.' || pos_fichero_firma(v_caja, w)) order by w)
+                  from generate_series(v_w, v_w + 4) w),
+    'ultimas', coalesce((
+      select jsonb_agg(jsonb_build_array(u.nombre, u.tipo, u.hora) order by u.momento desc)
+        from (select orden_nombre_lista(p.nombre, p.inicial) nombre, x.tipo, x.momento,
+                     to_char(x.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI') hora
+                from pos_tiempos x join orden_personas p on p.id = x.persona_id
+               where x.local_id = v_loc.id and x.dia = pos_hoy() and x.estado = 'ok'
+               order by x.momento desc limit 8) u), '[]'::jsonb));
+end $$;
+
+/* Fichar desde Equipo VDH: quien entró con su usuario escaneó el QR de la compu de un local. Queda su entrada o su
+   salida en ese local, con la hora de ahora. El QR vale en su ventana y en la de al lado (un minuto, a lo sumo);
+   escanear dos veces seguidas no la repite (10 minutos). p_celular: el número al azar que guarda la app en ese
+   celular; el primero desde el que ficha cada uno queda como el suyo, y si no, la marca lleva un aviso. */
+create function pos_fichar(p_codigo text, p_tipo text, p_celular text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_yo     uuid := orden_yo_id();
+  v_p      orden_personas;
+  v_m      text[];
+  v_caja   club_cajas;
+  v_ahora  timestamptz := clock_timestamp();
+  v_w      bigint;
+  v_loc    orden_locales;
+  v_cel    text := btrim(coalesce(p_celular, ''));
+  v_suyo   text;
+  v_duenio uuid;
+  v_otro   text;
+  v_aviso  text[] := '{}';
+  v_ya     pos_tiempos;
+  v_id     bigint;
+begin
+  if v_yo is null then raise exception 'Entrá con tu usuario para fichar.'; end if;
+  select * into v_p from orden_personas where id = v_yo;
+  if not coalesce(v_p.activo and v_p.aprobado, false) then raise exception 'Tu usuario no está activo: hablá con tu supervisor.'; end if;
+  if p_tipo is null or p_tipo not in ('entrada', 'salida') then raise exception 'Elegí si es tu entrada o tu salida.'; end if;
+  if v_cel !~ '^[A-Za-z0-9_-]{8,64}$' then raise exception 'A este celular le falta su número: actualizá la app y probá de nuevo.'; end if;
+  v_m := regexp_match(btrim(coalesce(p_codigo, '')), '^VDHF1\.([0-9]{1,12})\.([0-9]{1,12})\.([0-9a-f]{16})$');
+  if v_m is null then raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.'; end if;
+  select * into v_caja from club_cajas where id = v_m[1]::bigint;
+  if v_caja.id is null or pos_fichero_firma(v_caja.id, v_m[2]::bigint) is distinct from v_m[3] then
+    raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.';
+  end if;
+  if v_caja.baja is not null then raise exception 'Esa compu ya no está habilitada: avisale a tu supervisor.'; end if;
+  v_w := floor(extract(epoch from v_ahora) / 30)::bigint;
+  if v_m[2]::bigint < v_w - 1 or v_m[2]::bigint > v_w + 1 then
+    raise exception 'Ese QR ya cambió: escaneá el que se ve ahora en la compu del local.';
+  end if;
+  select * into v_loc from orden_locales l where l.activo and upper(btrim(l.codigo)) = upper(btrim(v_caja.local)) limit 1;
+  if v_loc.id is null then raise exception 'El local de esa compu no está en el sistema.'; end if;
+
+  /* Dos toques a la vez, o escanear dos veces seguidas: una sola marca. */
+  perform pg_advisory_xact_lock(hashtext('pos_fichar:' || v_yo));
+  select * into v_ya from pos_tiempos x
+   where x.persona_id = v_yo and x.tipo = p_tipo and x.estado = 'ok' and x.momento > v_ahora - interval '10 minutes'
+   order by x.momento desc limit 1;
+  if v_ya.id is not null then
+    return jsonb_build_object('ya', true, 'id', v_ya.id, 'tipo', p_tipo, 'local', v_loc.nombre,
+                              'hora', to_char(v_ya.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                              'aviso', case when v_ya.origen = 'celular' then v_ya.observaciones end);
+  end if;
+
+  /* Un celular por persona. Desde el suyo, nada que avisar. */
+  select celular into v_suyo from pos_fichero_celulares where persona_id = v_yo;
+  select c.persona_id into v_duenio from pos_fichero_celulares c where c.celular = v_cel and c.persona_id <> v_yo;
+  if v_duenio is not null then
+    v_aviso := v_aviso || ('Fichó desde el celular de ' || (select orden_nombre_lista(p.nombre, p.inicial) from orden_personas p where p.id = v_duenio) || '.');
+  elsif v_suyo is distinct from v_cel then
+    select string_agg(distinct orden_nombre_lista(p.nombre, p.inicial), ', ') into v_otro
+      from pos_tiempos x join orden_personas p on p.id = x.persona_id
+     where x.celular = v_cel and x.persona_id <> v_yo and x.dia = pos_hoy() and x.estado = 'ok';
+    if v_suyo is not null then v_aviso := v_aviso || 'No es su celular de siempre.'::text; end if;
+    if v_otro is not null then v_aviso := v_aviso || ('Desde ese celular también fichó hoy ' || v_otro || '.'); end if;
+    if v_suyo is null and v_otro is null then   -- el primero: queda como el suyo
+      insert into pos_fichero_celulares (persona_id, celular) values (v_yo, v_cel);
+    end if;
+  end if;
+
+  insert into pos_tiempos (persona_id, local_id, momento, dia, tipo, origen, terminal, observaciones, cargado_por, celular)
+  values (v_yo, v_loc.id, v_ahora, (v_ahora at time zone 'America/Argentina/Buenos_Aires')::date, p_tipo, 'celular',
+          left('Fichero QR · ' || coalesce(nullif(btrim(v_caja.nombre), ''), 'compu ' || v_caja.id), 80),
+          nullif(array_to_string(v_aviso, ' '), ''), v_yo, v_cel)
+  returning id into v_id;
+  return jsonb_build_object('ya', false, 'id', v_id, 'tipo', p_tipo, 'local', v_loc.nombre,
+                            'hora', to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                            'aviso', nullif(array_to_string(v_aviso, ' '), ''));
+end $$;
+
+/* Lo de hoy de quien entró (Equipo VDH → Papeles → Fichar): sus marcas de hoy, de cualquier origen, en orden. El
+   aviso, sólo en las del fichero (las observaciones de las cargadas a mano son de la oficina). */
+create function pos_fichero_mio() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare v_yo uuid := orden_yo_id();
+begin
+  if v_yo is null then raise exception 'Entrá con tu usuario para fichar.'; end if;
+  return jsonb_build_object('hoy', pos_hoy(), 'marcas', coalesce((
+    select jsonb_agg(jsonb_build_object('tipo', x.tipo, 'local', l.nombre, 'origen', x.origen,
+                                        'hora', to_char(x.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                                        'aviso', case when x.origen = 'celular' then x.observaciones end) order by x.momento)
+      from pos_tiempos x left join orden_locales l on l.id = x.local_id
+     where x.persona_id = v_yo and x.dia = pos_hoy() and x.estado = 'ok'), '[]'::jsonb));
+end $$;
+
+/* «Es su celular nuevo» (Supervisión → Llegadas, en una marca del fichero con aviso): desde ahora ese celular es el de
+   esa persona (y deja de ser de quien lo tenía). Lo hacen el supervisor de su local, o el del local donde fichó, y la
+   administración; lo propio, otro. */
+create function pos_fichero_celular_nuevo(p_marca bigint) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v     pos_tiempos;
+  v_yo  uuid := orden_yo_id();
+  v_obs text;
+begin
+  select * into v from pos_tiempos where id = p_marca for update;
+  if v.id is null or v.origen <> 'celular' or v.celular is null then raise exception 'Esa marca no es del fichero.'; end if;
+  if not (orden_es_supervisor_de(v.local_id) or orden_es_supervisor_de((select local_id from orden_personas where id = v.persona_id))) then
+    raise exception 'Lo hacen el supervisor de su local o la administración.';
+  end if;
+  if v.persona_id = v_yo and not orden_es_admin() then raise exception 'Lo tuyo lo hace otro.'; end if;
+  delete from pos_fichero_celulares where celular = v.celular and persona_id <> v.persona_id;
+  insert into pos_fichero_celulares as c (persona_id, celular, desde, cambiado_por) values (v.persona_id, v.celular, now(), v_yo)
+  on conflict (persona_id) do update set celular = excluded.celular, desde = excluded.desde, cambiado_por = excluded.cambiado_por;
+  v_obs := btrim(coalesce(v.observaciones, '') || ' Ya es su celular (lo dijo '
+                 || coalesce((select orden_nombre_lista(p.nombre, p.inicial) from orden_personas p where p.id = v_yo), 'la oficina') || ').');
+  update pos_tiempos set observaciones = v_obs where id = p_marca;
+  return jsonb_build_object('id', p_marca, 'aviso', v_obs);
+end $$;
+
+revoke all on function pos_fichero_firma(bigint, bigint) from public, anon, authenticated;
+revoke all on function pos_fichero_qr(text) from public;
+revoke all on function pos_fichar(text, text, text) from public, anon;
+revoke all on function pos_fichero_mio() from public, anon;
+revoke all on function pos_fichero_celular_nuevo(bigint) from public, anon;
+grant execute on function pos_fichero_qr(text) to anon, authenticated;
+grant execute on function pos_fichar(text, text, text) to authenticated;
+grant execute on function pos_fichero_mio() to authenticated;
+grant execute on function pos_fichero_celular_nuevo(bigint) to authenticated;

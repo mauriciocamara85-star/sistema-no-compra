@@ -799,6 +799,11 @@
 .ventana .ll-marca:first-child { border-top: 0; }
 .ventana .ll-marca b { font: 700 16px var(--sans); font-variant-numeric: tabular-nums; }
 .ventana .ll-marca small { color: var(--txt-3); font-size: 12.5px; }
+/* SQL 218: la marca del fichero con QR que no se fichó desde el celular de siempre. */
+.ventana .ll-marca-ojo small { color: var(--warn-txt); font-weight: 600; }
+.ventana .ll-marca .boton.chico { grid-column: 1 / -1; justify-self: start; }
+.imp .ll-ojo { box-shadow: inset 0 -3px 0 var(--warn-txt); }
+.imp .ll-ojo-txt { display: inline-block; margin-left: 4px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--warn-soft); color: var(--warn-txt); font: 600 11.5px var(--sans); }
 .ventana .ll-marcas + .bajada { margin-bottom: 0; }
 /* ── Papeles (SQL 209, 31/10): ausencias, certificados médicos y apercibimientos ── */
 .imp .pap-acciones { margin: 0 0 6px; }

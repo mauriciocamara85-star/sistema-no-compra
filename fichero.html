@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>VDH · Fichero</title>
+<meta name="description" content="El fichero de la compu del local: un QR que cambia cada 30 segundos para fichar la entrada y la salida desde Equipo VDH.">
+<meta name="theme-color" content="#EDEFF2">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icono-oro-apple.png">
+<link rel="icon" href="icono-oro-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="estilos.css">
+<!-- El dibujo del QR: qrcode-generator 1.4.4 (MIT), el mismo de qr-resenas.html. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
+<script>
+  try {
+    document.documentElement.dataset.theme =
+      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
+  } catch (e) {}
+</script>
+<style>
+  /* ── El fichero (SQL 218, 31/10/2026) ──────────────────────────────────────
+     Mauricio: "sería como un fichero de los viejos que vos fichabas, pero
+     ahora con el QR fichás. Entrá y salí." Va en la compu de cada local (la
+     habilitada en Config → General → Las compus de los locales): un QR que
+     cambia cada 30 segundos y que cada uno escanea desde Equipo VDH →
+     Papeles → Fichar. La hora que queda es la del escaneo.
+     La base da los QR de los próximos dos minutos, firmados, con su hora:
+     la pantalla los va cambiando sola aunque el reloj de la compu ande mal.
+     Pide de nuevo cada minuto y sólo mientras se ve (así gasta poco). */
+  :root { --tope: 1180px; }
+  .fi { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 1000px) { .fi { grid-template-columns: minmax(0, 1.25fr) minmax(300px, 1fr); align-items: start; } }
+  .fi[hidden], .fi-sin[hidden] { display: none; }
+  .fi-qr-lado { text-align: center; }
+  .fi-cabeza { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; text-align: left; margin-bottom: 14px; }
+  .fi-local { font: 700 24px/1.15 var(--display); letter-spacing: -.3px; }
+  .fi-fecha { font-size: 14.5px; color: var(--txt-2); margin-top: 3px; }
+  .fi-fecha::first-letter { text-transform: uppercase; }
+  .fi-reloj { font: 700 46px/1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+  /* El QR siempre negro sobre blanco (también con el tema oscuro): así lo lee cualquier cámara. */
+  .fi-qr-caja { position: relative; display: inline-block; background: #fff; border-radius: 18px; padding: 14px; border: 1px solid var(--borde-tarjeta); }
+  .fi-qr { width: min(64vh, 82vw, 440px); aspect-ratio: 1; }
+  .fi-qr svg { display: block; width: 100%; height: 100%; }
+  .fi-tapa { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; border-radius: 18px;
+             background: rgba(255, 255, 255, .94); color: #3F4650; font: 600 16px/1.4 var(--sans); }
+  .fi-tapa[hidden] { display: none; }
+  .fi-barra { width: min(64vh, 82vw, 440px); height: 6px; margin: 14px auto 0; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+  .fi-barra i { display: block; height: 100%; background: var(--cobre-barra); border-radius: 99px; transition: width .25s linear; }
+  .fi-cambia { font-size: 13px; color: var(--txt-3); margin-top: 8px; }
+  .fi-pasos { margin: 10px 0 12px; padding-left: 22px; font-size: 16px; line-height: 1.55; }
+  .fi-pasos li { margin-bottom: 4px; }
+  .fi-ultimas { display: grid; margin-top: 8px; }
+  .fi-ult { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: baseline; padding: 9px 2px; border-top: 1px solid var(--line); font-size: 15px; }
+  .fi-ult:first-child { border-top: 0; }
+  .fi-ult b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fi-ult span { color: var(--txt-2); font-size: 13.5px; }
+  .fi-ult time { font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fi-ult.nueva { animation: fiNueva 2.4s var(--curva); }
+  @keyframes fiNueva { 0%, 40% { background: var(--ok-soft); } 100% { background: transparent; } }
+  .fi-nada { color: var(--txt-3); font-size: 14px; margin: 6px 0 2px; }
+  .fi-lado .btn { width: 100%; }
+  /* Pantalla completa: sólo el fichero, sin la barra. */
+  html.fi-completa .rail { display: none; }
+  html.fi-completa body.hay-rail { padding-left: 0; }
+</style>
+<!-- Quién entró: marca el rol antes de pintar la barra, y suma «Fichero» en la compu del local. Ver persona.js. -->
+<script src="persona.js"></script>
+<script src="interfaz.js"></script>
+</head>
+<body class="hay-rail">
+<!-- El oro de la bolsa de la marca (estilos.css → .marca-icono, .rail-marca-icono). -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><linearGradient id="oroCintaBolsa" gradientUnits="userSpaceOnUse" x1="4" y1="5" x2="20" y2="21"><stop offset="0" stop-color="#FFE7A8"/><stop offset=".45" stop-color="#EDBA5E"/><stop offset="1" stop-color="#C99446"/></linearGradient></defs></svg>
+
+<div class="marco" id="marco">
+
+<nav class="rail" aria-label="Secciones">
+  <div class="rail-marca">
+    <span class="rail-marca-icono">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <g fill="none" stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/><path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g><circle cx="9.1" cy="8.9" r="1.15" fill="currentColor" stroke="none"/><circle cx="14.8" cy="8.8" r="1.15" fill="currentColor" stroke="none"/>
+      </svg>
+    </span>
+    <span class="rail-marca-txt"><small>Sistema</small>VDH</span>
+  </div>
+  <div class="rail-in">
+    <a class="rail-item" href="pos.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10h14l1.5 9.5a1 1 0 0 1-1 1.2H4.5a1 1 0 0 1-1-1.2z"/><rect x="7" y="3" width="10" height="4" rx="1"/><path d="M12 7v3"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h8"/></svg></span>
+      POS
+    </a>
+    <a class="rail-item" href="gestion.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3"/><path d="M1 14h6M9 8h6M17 16h6"/></svg></span>
+      Gestión
+    </a>
+    <a class="rail-item" href="index.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6M22 11h-6"/></svg></span>
+      No Compra
+    </a>
+    <a class="rail-item" href="caja.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></svg></span>
+      Cobrar
+    </a>
+    <a class="rail-item" href="giftcards.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C9.5 3 11 5 12 8c1-3 2.5-5 4.5-5a2.5 2.5 0 0 1 0 5"/></svg></span>
+      Gift Cards
+    </a>
+    <a class="rail-item" href="club-numeros.html#socios">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.8l2.85 5.8 6.4.93-4.63 4.5 1.1 6.37L12 17.4l-5.72 3l1.1-6.37L2.75 9.53l6.4-.93z"/></svg></span>
+      Socios
+    </a>
+    <a class="rail-item" href="asistente.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><path d="M12 6.5l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1-2.1-.9 2.1-.9z"/></svg></span>
+      Asistente
+    </a>
+    <a class="rail-item" href="ventas.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M3 15h18M9 3v18"/></svg></span>
+      Ventas
+    </a>
+    <a class="rail-item" href="estadisticas.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/></svg></span>
+      Estadísticas
+    </a>
+    <a class="rail-item" href="panel.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M9 12h6M9 16h6"/></svg></span>
+      CRM
+    </a>
+    <a class="rail-item" href="impecable-admin.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16l1 5a3 3 0 0 1-6 0a3 3 0 0 1-6 0a3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/><path d="m9.6 16.6 1.6 1.6 3.3-3.3"/></svg></span>
+      Supervisión
+    </a>
+    <a class="rail-item" href="config.html">
+      <span class="rail-icono"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1Z"/></svg></span>
+      Config.
+    </a>
+  </div>
+</nav>
+
+<main class="hoja">
+
+  <!-- Una compu que no es la de un local: el fichero no tiene QR que dar. -->
+  <section class="bloque fi-sin" id="fiSin" hidden>
+    <div class="bloque-tit">El fichero va en la compu del local</div>
+    <p class="bloque-sub" id="fiSinTxt">Esta compu no está habilitada como la de un local. Se habilita una vez, con el enlace de Config → General → Las compus de los locales; desde ahí, el fichero está en «Fichero», en la barra.</p>
+  </section>
+
+  <section class="fi" id="fi" hidden>
+    <div class="bloque fi-qr-lado">
+      <div class="fi-cabeza">
+        <div><div class="fi-local" id="fiLocal">Fichero</div><div class="fi-fecha" id="fiFecha"></div></div>
+        <div class="fi-reloj" id="fiReloj" aria-label="La hora">--:--</div>
+      </div>
+      <div class="fi-qr-caja">
+        <div class="fi-qr" id="fiQr" role="img" aria-label="El QR para fichar"></div>
+        <div class="fi-tapa" id="fiTapa">Cargando…</div>
+      </div>
+      <div class="fi-barra" aria-hidden="true"><i id="fiBarra" style="width:100%"></i></div>
+      <p class="fi-cambia">Cambia cada 30 segundos</p>
+    </div>
+    <div class="fi-lado">
+      <div class="bloque">
+        <div class="bloque-tit">Para fichar tu entrada o tu salida</div>
+        <ol class="fi-pasos">
+          <li>Abrí <b>Equipo VDH</b> en tu celular.</li>
+          <li>Tocá <b>Papeles → Fichar</b>.</li>
+          <li>Elegí <b>entrada</b> o <b>salida</b> y apuntá la cámara a este QR.</li>
+        </ol>
+        <p class="bloque-sub" style="margin-bottom:0">Queda la hora en que lo escaneás. Una foto del QR no sirve: cambia cada 30 segundos.</p>
+      </div>
+      <div class="bloque">
+        <div class="bloque-tit">Hoy en este local</div>
+        <div class="fi-ultimas" id="fiUltimas"><p class="fi-nada">Todavía nadie fichó hoy.</p></div>
+      </div>
+      <button type="button" class="btn btn-sec" id="fiCompleta">Pantalla completa</button>
+    </div>
+  </section>
+
+</main>
+
+</div><!-- /.marco -->
+
+<div class="toast" id="toast"></div>
+
+<script src="comun.js"></script>
+<script src="datos.js"></script>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var ZONA = 'America/Argentina/Buenos_Aires';
+  var PEDIR_CADA = 60000;          // cada minuto, mientras se ve
+  var llave = leer('nc_caja');
+  var codigos = [];                // [[ventana, código]], de la base
+  var desfase = 0;                 // la hora de la base menos la de la compu
+  var pedido = 0, enCamino = false, apagado = false, actual = null, ultimasClave = null;
+
+  if (!/^caja_/.test(llave || '')) { $('fiSin').hidden = false; return; }
+  $('fi').hidden = false;
+
+  function ahora() { return Date.now() + desfase; }
+
+  function pedir() {
+    if (apagado || enCamino || document.hidden) return;
+    enCamino = true;
+    pedido = Date.now();
+    var t0 = Date.now();
+    funcion('pos_fichero_qr', { p_caja: llave }).then(function (r) {
+      enCamino = false;
+      var t1 = Date.now();
+      desfase = Number(r.ahora_ms) - (t0 + t1) / 2;
+      codigos = r.codigos || [];
+      $('fiLocal').textContent = r.local || 'Fichero';
+      pintarUltimas(r.ultimas || []);
+      pintar(true);
+    }, function (e) {
+      enCamino = false;
+      var m = String((e && e.message) || '');
+      if (/no está habilitada|no está en el sistema/.test(m)) {
+        apagado = true;
+        $('fi').hidden = true;
+        $('fiSin').hidden = false;
+        $('fiSinTxt').textContent = m;
+        return;
+      }
+      if (/PGRST202|could not find the function/i.test(m)) {
+        apagado = true;
+        tapa('El fichero todavía no está listo: falta correr el SQL 218 en Supabase.');
+        return;
+      }
+      pintar(true);   // sin internet: sigue con los que tiene; cuando se acaban, lo dice
+    });
+  }
+
+  function tapa(texto) {
+    $('fiTapa').hidden = !texto;
+    $('fiTapa').textContent = texto || '';
+  }
+
+  function pintar(forzar) {
+    var t = ahora(), w = Math.floor(t / 30000), d = new Date(t);
+    $('fiReloj').textContent = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: ZONA });
+    $('fiFecha').textContent = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: ZONA });
+    $('fiBarra').style.width = (100 - (t % 30000) / 300).toFixed(1) + '%';
+    if (apagado) return;
+    var c = codigos.filter(function (x) { return Number(x[0]) === w; })[0];
+    if (!c) {
+      actual = null;
+      $('fiQr').innerHTML = '';
+      tapa(codigos.length ? 'Sin conexión: el QR vuelve cuando vuelva internet.' : 'Cargando…');
+    } else if (forzar || actual !== c[1]) {
+      var q = qrcode(0, 'M');
+      q.addData(c[1]);
+      q.make();
+      $('fiQr').innerHTML = q.createSvgTag({ cellSize: 8, margin: 0, scalable: true });
+      actual = c[1];
+      tapa('');
+    }
+    /* Quedan menos de dos QR: se piden más (también si el minuto todavía no pasó). */
+    var ultimo = codigos.length ? Number(codigos[codigos.length - 1][0]) : -1;
+    if ((ultimo - w < 2 && Date.now() - pedido > 10000) || Date.now() - pedido > PEDIR_CADA) pedir();
+  }
+
+  function pintarUltimas(lista) {
+    var clave = JSON.stringify(lista);
+    if (clave === ultimasClave) return;
+    var antes = ultimasClave ? JSON.parse(ultimasClave) : null;
+    ultimasClave = clave;
+    if (!lista.length) { $('fiUltimas').innerHTML = '<p class="fi-nada">Todavía nadie fichó hoy.</p>'; return; }
+    var viejas = {};
+    (antes || []).forEach(function (u) { viejas[u.join('|')] = 1; });
+    $('fiUltimas').innerHTML = lista.map(function (u) {
+      return '<div class="fi-ult' + (antes && !viejas[u.join('|')] ? ' nueva' : '') + '"><b>' + esc(u[0]) + '</b><span>' +
+        (u[1] === 'entrada' ? 'Entrada' : 'Salida') + '</span><time>' + esc(u[2]) + '</time></div>';
+    }).join('');
+  }
+
+  $('fiCompleta').onclick = function () {
+    var el = document.documentElement;
+    if (document.fullscreenElement) { document.exitFullscreen(); return; }
+    if (el.requestFullscreen) el.requestFullscreen().catch(function () {});
+  };
+  document.addEventListener('fullscreenchange', function () {
+    var si = !!document.fullscreenElement;
+    document.documentElement.classList.toggle('fi-completa', si);
+    $('fiCompleta').textContent = si ? 'Salir de la pantalla completa' : 'Pantalla completa';
+  });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { pedir(); pintar(true); } });
+
+  pedir();
+  pintar(true);
+  setInterval(pintar, 250);
+})();
+</script>
+</body>
+</html>

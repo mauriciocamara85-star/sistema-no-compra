@@ -778,7 +778,8 @@ function irAEnlace(enlace) {
   var mapa = { hoy: 'hoy', fotos: 'fotos', modulos: 'fotos', tareas: 'tareas', caja: 'caja', ideas: 'ideas', perfil: 'perfil', historial: 'perfil', avisos: 'avisos',
                revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas',
                /* Papeles (SQL 209): a la supervisión, "certificados" la lleva a Ausencias. */
-               papeles: 'papeles', certificados: esSupervision() ? 'ausencias' : 'certificados', ausencias: 'ausencias', apercibimientos: 'apercibimientos' };
+               papeles: 'papeles', certificados: esSupervision() ? 'ausencias' : 'certificados', ausencias: 'ausencias', apercibimientos: 'apercibimientos',
+               fichar: 'fichar', fichero: 'fichar' };
   /* Las pantallas completas ponen una marca en el historial para el "atrás" de Android: si el #/… del aviso quedaba
      en la dirección, al volver la app regresaba a él y la abría de nuevo por debajo de Hoy, sin la barra de abajo
      (21/10). Se saca antes de abrirlas; las pestañas lo sacan en irA. */
@@ -3633,13 +3634,15 @@ function detalleCaja(c) {
    ════════════════════════════════════════════════════════════════════════ */
 
 var LEGAJOS = 'legajos';
-var PAPELES_TODOS = ['caja', 'cajas', 'certificados', 'ausencias', 'apercibimientos'];
+var PAPELES_TODOS = ['fichar', 'caja', 'cajas', 'certificados', 'ausencias', 'apercibimientos'];
 var _papel = null;                // la pestañita de Papeles a la vista
 var _certificadoPedido = null;    // llegó por el aviso "si tenés certificado, tocá acá": se abre la cámara de esa ausencia
 
 function subPapeles() {
-  if (esSupervision()) return [['cajas', 'Cajas'], ['ausencias', 'Ausencias'], ['apercibimientos', 'Apercibimientos']];
-  return (cajaActiva() ? [['caja', 'Caja']] : []).concat([['certificados', 'Certificados'], ['apercibimientos', 'Apercibimientos']]);
+  /* Fichar (SQL 218) primero: es lo de todos los días, al llegar y al irse. */
+  var fichar = fichaAca() ? [['fichar', 'Fichar']] : [];
+  if (esSupervision()) return fichar.concat([['cajas', 'Cajas'], ['ausencias', 'Ausencias'], ['apercibimientos', 'Apercibimientos']]);
+  return fichar.concat(cajaActiva() ? [['caja', 'Caja']] : []).concat([['certificados', 'Certificados'], ['apercibimientos', 'Apercibimientos']]);
 }
 function enPapel(s) { return _pestana === 'papeles' && _papel === s; }
 function pestanitasPapeles() {
@@ -3657,7 +3660,8 @@ function pantallaPapeles(papel) {
   var subs = subPapeles().map(function (s) { return s[0]; });
   _papel = subs.indexOf(papel) > -1 ? papel : subs.indexOf(_papel) > -1 ? _papel : subs[0];
   marcarPestana('papeles');
-  if (_papel === 'caja') pantallaCaja();
+  if (_papel === 'fichar') pantallaFichar();
+  else if (_papel === 'caja') pantallaCaja();
   else if (_papel === 'cajas') pantallaCajasSup();
   else if (_papel === 'certificados') pantallaCertificados();
   else if (_papel === 'ausencias') pantallaAusencias();
@@ -3681,6 +3685,227 @@ function errorPapel(e, titulo, reintentar) {
   app.innerHTML = cabeza(titulo, esSupervision() ? '' : undefined) + pestanitasPapeles() +
     '<div class="vacio">' + (esAdmin() ? 'Falta correr el SQL 209 en Supabase.' : 'Esto todavía no está listo: en unos días aparece.') + '</div>';
   engancharCabeza();
+}
+
+/* ── Fichar (SQL 218, 31/10, pedido de Mauricio): "sería como un fichero de los viejos que vos fichabas, pero ahora
+   con el QR fichás. Entrá y salí." En la compu del local (fichero.html) hay un QR que cambia cada 30 segundos; acá se
+   escanea y queda la entrada o la salida en el registro de tiempos, con la hora de ese momento. Sin selfie ("con
+   selfie no te falta") y sin la huella. El QR no es un enlace: sólo lo lee esta app, con la persona adentro.
+   Cada celular tiene su número al azar (vdh_celular: queda en el aparato aunque se salga de la app). El primero
+   desde el que ficha cada uno queda como el suyo; desde otro, la marca lleva un aviso que ve la supervisión. ── */
+var K_CELULAR = 'vdh_celular';
+function fichaAca() { var r = yo().rol; return !!yo().local_id && (r === 'vendedor' || r === 'supervisor'); }
+function celularId() {
+  var v = '';
+  try { v = localStorage.getItem(K_CELULAR) || ''; } catch (e) {}
+  if (/^[A-Za-z0-9_-]{8,64}$/.test(v)) return v;
+  var b = new Uint8Array(16);
+  window.crypto.getRandomValues(b);
+  v = 'c' + Array.prototype.map.call(b, function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+  try { localStorage.setItem(K_CELULAR, v); } catch (e) {}
+  return v;
+}
+function faltaSql218(e) { return !!e && !e.sinSesion && !esDeRed(e) && /pos_fichero|pos_fichar|PGRST202|could not find the function/i.test(String(e.message)); }
+function errorFichar(e, reintentar) {
+  if (!faltaSql218(e)) { pantallaError(e, reintentar); return; }
+  app.innerHTML = cabeza('Fichar') + pestanitasPapeles() + '<div class="vacio">Esto todavía no está listo: en unos días aparece.</div>';
+  engancharCabeza();
+}
+var TIPO_FICHA = { entrada: 'Entrada', salida: 'Salida' };
+var TILDE_FICHA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>';
+var ORIGEN_FICHA = { celular: '', huella: 'con la huella', manual: 'la cargó la oficina', bluesoft: 'de BlueSoft' };
+/* El aviso de la base es para la supervisión ("Fichó desde el celular de…"); a quien fichó se le dice en su idioma. */
+function avisoFicha(a) {
+  if (!a) return '';
+  return /Ya es su celular/.test(a) ? 'Tu supervisor anotó este celular como el tuyo.' : 'No la fichaste desde tu celular de siempre: tu supervisor lo va a ver.';
+}
+
+function pantallaFichar() {
+  empezarPapel('fichar', 'Fichar');
+  llamar('pos_fichero_mio', {}, 15000).then(function (r) {
+    if (enPapel('fichar')) dibujarFichar((r && r.marcas) || []);
+  }).catch(function (e) { if (enPapel('fichar')) errorFichar(e, pantallaFichar); });
+}
+
+function dibujarFichar(marcas) {
+  var ult = marcas[marcas.length - 1];
+  var toca = ult && ult.tipo === 'entrada' ? 'salida' : 'entrada', otra = toca === 'entrada' ? 'salida' : 'entrada';
+  var boton = function (t, lima) {
+    return '<button class="boton' + (lima ? ' lima' : '') + ' fichar-boton" data-fichar="' + t + '">' + (t === 'entrada' ? 'Fichar mi entrada' : 'Fichar mi salida') + '</button>';
+  };
+  var html = cabeza('Fichar') + pestanitasPapeles() +
+    '<p class="bajada">Al llegar y al irte: tocá el botón y escaneá el QR de la compu del local.</p>' +
+    boton(toca, true) + boton(otra, false) +
+    '<div class="seccion">Hoy</div>';
+  if (!marcas.length) html += '<div class="vacio">Todavía no fichaste hoy.</div>';
+  html += marcas.map(function (m) {
+    var d = [m.local, ORIGEN_FICHA[m.origen]].filter(Boolean).join(' · ');
+    return '<div class="tarea ficha"><div class="nombre">' + esc(TIPO_FICHA[m.tipo] || m.tipo) + ' · ' + esc(m.hora) + '</div>' +
+      (d ? '<div class="detalle">' + esc(d) + '</div>' : '') +
+      (m.aviso ? '<div class="nota alerta">' + esc(avisoFicha(m.aviso)) + '</div>' : '') + '</div>';
+  }).join('');
+  app.innerHTML = html;
+  engancharCabeza();
+  app.querySelectorAll('[data-fichar]').forEach(function (b) { b.onclick = function () { fichar(b.dataset.fichar); }; });
+}
+
+function fichar(tipo) {
+  lectorQR((tipo === 'entrada' ? 'Fichar mi entrada' : 'Fichar mi salida') + ' · el QR de la compu del local',
+    function (codigo) { mandarFicha(tipo, codigo); },
+    function () { irA('fichar'); });
+}
+
+function mandarFicha(tipo, codigo) {
+  adentro();
+  marcarPestana('papeles');
+  _papel = 'fichar';
+  app.innerHTML = cabeza('Fichar') + '<p class="cargando">Anotando tu ' + tipo + '…</p>';
+  engancharCabeza();
+  llamar('pos_fichar', { p_codigo: codigo, p_tipo: tipo, p_celular: celularId() }, 20000).then(function (r) {
+    if (!enPapel('fichar')) return;
+    try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) {}
+    app.innerHTML = cabeza('Fichar') +
+      '<div class="ficha-hecha"><span class="ficha-tilde" aria-hidden="true">' + TILDE_FICHA + '</span>' +
+        '<h2>' + esc(TIPO_FICHA[r.tipo] || r.tipo) + ' · ' + esc(r.hora) + '</h2>' +
+        '<p>' + esc(r.local) + (r.ya ? ' · ya estaba anotada' : '') + '</p></div>' +
+      (r.aviso ? '<div class="nota alerta">' + esc(avisoFicha(r.aviso)) + '</div>' : '') +
+      '<button class="boton lima" id="fichaListo">Listo</button>';
+    engancharCabeza();
+    document.getElementById('fichaListo').onclick = function () { irA('fichar'); };
+  }).catch(function (e) {
+    if (!enPapel('fichar')) return;
+    if (e && e.sinSesion) { pantallaError(e); return; }
+    if (faltaSql218(e)) { errorFichar(e, pantallaFichar); return; }
+    app.innerHTML = cabeza('Fichar') +
+      '<h2 class="ficha-mal">' + (esDeRed(e) ? 'Sin conexión' : 'No se anotó') + '</h2>' +
+      '<p class="bajada">' + esc(esDeRed(e) ? 'No hay señal o internet anda lento: no se anotó. Escaneá el QR de nuevo cuando tengas señal.' : mensajeDe(e)) + '</p>' +
+      '<button class="boton lima" id="fichaOtra">Escanear de nuevo</button>' +
+      '<button class="boton fichar-boton" id="fichaVolver">Volver</button>';
+    engancharCabeza();
+    document.getElementById('fichaOtra').onclick = function () { fichar(tipo); };
+    document.getElementById('fichaVolver').onclick = function () { irA('fichar'); };
+  });
+}
+
+/* El lector de QR: la cámara de atrás y un cuadrado. Lee solo, sin botón: con el lector del celular (BarcodeDetector,
+   Android) o, si no tiene (iPhone), con jsQR, que se baja la primera vez. Si la cámara no anda adentro de la app, una
+   foto con la del teléfono (el QR vale un minuto: alcanza). */
+var _lectorVivo = 0;
+function lectorQR(titulo, alLeer, alCerrar) {
+  apagarCamara();
+  barra.hidden = true;
+  app.className = 'app';
+  var vivo = ++_lectorVivo, leido = false;
+  var partes = String(titulo).split(' · ');
+  app.innerHTML =
+    '<div class="camara-vista con-marco lector-qr" id="vista">' +
+      '<div class="visor">' +
+        '<video id="video" playsinline muted autoplay></video>' +
+        '<div class="guia"><span id="guiaQR">Que el QR entre en el cuadrado</span></div>' +
+        '<div class="camara-arriba"><button class="volver" id="cerrar">‹ Volver</button><span class="titulo"><b>' + esc(partes[0]) + '</b>' +
+          (partes.length > 1 ? '<small>' + esc(partes.slice(1).join(' · ')) + '</small>' : '') + '</span><span style="width:60px"></span></div>' +
+      '</div>' +
+      '<div class="camara-abajo"><button class="enlace" id="otra">¿No anda la cámara? Sacale una foto al QR</button></div>' +
+      '<input type="file" id="archivo" accept="image/*" capture="environment" hidden>' +
+    '</div>';
+  var video = document.getElementById('video'), archivo = document.getElementById('archivo'), guia = document.getElementById('guiaQR');
+  var sigue = function () { return vivo === _lectorVivo && !leido && !!document.getElementById('video'); };
+  var decir = function (t) { if (guia) guia.textContent = t; };
+  var otroQR = 0;
+  var probar = function (texto) {
+    if (!texto || !sigue()) return false;
+    if (!/^VDHF1\./.test(texto)) {   // otro QR (una promo, un enlace): se sigue mirando
+      decir('Ese QR no es el del fichero: buscá el de la compu del local');
+      clearTimeout(otroQR);
+      otroQR = setTimeout(function () { decir('Que el QR entre en el cuadrado'); }, 2500);
+      return false;
+    }
+    leido = true;
+    _lectorVivo++;
+    apagarCamara();
+    alLeer(texto);
+    return true;
+  };
+  document.getElementById('cerrar').onclick = function () { _lectorVivo++; apagarCamara(); alCerrar(); };
+  document.getElementById('otra').onclick = function () { archivo.click(); };
+  archivo.onchange = function () {
+    var f = archivo.files && archivo.files[0];
+    if (!f) return;
+    var img = new Image(), url = URL.createObjectURL(f);
+    img.onload = function () {
+      motorQR().then(function (leer) { return leer(img); }).then(function (t) {
+        URL.revokeObjectURL(url);
+        if (!probar(t) && sigue()) avisar(t ? 'Ese QR no es el del fichero.' : 'No se ve el QR en la foto: probá de nuevo, más cerca.');
+      }, function (e) { URL.revokeObjectURL(url); avisar(mensajeDe(e)); });
+    };
+    img.onerror = function () { URL.revokeObjectURL(url); avisar('No se pudo abrir la foto.'); };
+    img.src = url;
+  };
+  var sinCamara = function () { decir('Tocá abajo para sacarle una foto al QR'); };
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { sinCamara(); return; }
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
+    .then(function (s) {
+      if (!sigue()) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+      _stream = s;
+      video.srcObject = s;
+      var p = video.play();
+      if (p && p.catch) p.catch(function () {});
+      return motorQR().then(function (leer) {
+        var mirar = function () {
+          if (!sigue() || !_stream) return;
+          if (video.readyState < 2 || !video.videoWidth) { setTimeout(mirar, 200); return; }
+          leer(video).then(function (t) { if (!probar(t)) setTimeout(mirar, 150); }, function () { setTimeout(mirar, 400); });
+        };
+        mirar();
+      }, function (e) { decir(mensajeDe(e)); });
+    }).catch(sinCamara);
+}
+
+/* Con qué se lee el QR: una función (imagen o video) → el texto, o null si no hay ninguno. */
+var _motorQR = null, _lienzoQR = null;
+var JSQR = ['https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js', 'https://unpkg.com/jsqr@1.4.0/dist/jsQR.js'];
+var JSQR_HUELLA = 'sha384-b5Ya4Bq3qCyz39m2ISh+4DxjAIljdeFwK/BsXLuj9gugaNwAcj/ia15fxNZL9Nlx';
+function motorQR() {
+  if (_motorQR) return _motorQR;
+  var nativo = window.BarcodeDetector && BarcodeDetector.getSupportedFormats
+    ? BarcodeDetector.getSupportedFormats().then(function (f) { return f.indexOf('qr_code') > -1; }, function () { return false; })
+    : Promise.resolve(false);
+  _motorQR = nativo.then(function (si) {
+    if (si) {
+      var d = new BarcodeDetector({ formats: ['qr_code'] });
+      return function (fuente) { return d.detect(fuente).then(function (r) { return r && r[0] ? r[0].rawValue : null; }); };
+    }
+    return cargarJsQR(0).then(function () { return function (fuente) { return Promise.resolve(jsQRDe(fuente)); }; });
+  });
+  _motorQR.catch(function () { _motorQR = null; });   // sin señal para bajar el lector: se prueba de nuevo la próxima vez
+  return _motorQR;
+}
+function cargarJsQR(i) {
+  if (window.jsQR) return Promise.resolve();
+  return new Promise(function (ok, mal) {
+    var s = document.createElement('script');
+    s.src = JSQR[i];
+    s.integrity = JSQR_HUELLA;
+    s.crossOrigin = 'anonymous';
+    s.onload = function () { if (window.jsQR) ok(); else mal(new Error('No se pudo preparar el lector del QR.')); };
+    s.onerror = function () {
+      s.remove();
+      if (i + 1 < JSQR.length) cargarJsQR(i + 1).then(ok, mal);
+      else mal(new Error('No se pudo preparar el lector del QR: revisá que tengas señal.'));
+    };
+    document.head.appendChild(s);
+  });
+}
+function jsQRDe(fuente) {
+  var w = fuente.videoWidth || fuente.naturalWidth || fuente.width, h = fuente.videoHeight || fuente.naturalHeight || fuente.height;
+  if (!w || !h) return null;
+  var k = Math.min(1, 800 / Math.max(w, h)), cw = Math.round(w * k), ch = Math.round(h * k);
+  var c = _lienzoQR || (_lienzoQR = document.createElement('canvas'));
+  c.width = cw; c.height = ch;
+  var x = c.getContext('2d', { willReadFrequently: true });
+  x.drawImage(fuente, 0, 0, cw, ch);
+  var r = window.jsQR(x.getImageData(0, 0, cw, ch).data, cw, ch, { inversionAttempts: 'dontInvert' });
+  return r ? r.data : null;
 }
 
 /** Los papeles que pide el filtro, con el nombre de la persona y de quien lo cargó. */

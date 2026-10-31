@@ -1797,7 +1797,10 @@ var LL_MANANA = 180;      // la primera entrada hasta 3 horas después de que ab
 var LL_DOBLE = 15;        // la misma marca dos veces en menos de 15 minutos: el dedo dos veces (como en el registro de tiempos)
 var ATAJOS_LLEGADAS = ['mes', 'mes-pasado', 'semana', 'semana-pasada', 'hoy', 'ayer'];
 var K_LL_ZONA = 'nc_eq_llegadas_zona', K_LL_PERIODO = 'nc_eq_llegadas_periodo';
-var ORIGEN_LL = { huella: 'con la huella', manual: 'cargada a mano', bluesoft: 'de BlueSoft' };
+var ORIGEN_LL = { huella: 'con la huella', manual: 'cargada a mano', bluesoft: 'de BlueSoft', celular: 'con el QR' };
+/* SQL 218: una marca del fichero con QR que no se fichó desde el celular de siempre (el aviso de la base), mientras
+   nadie dijo «Es su celular nuevo». */
+function llOjo(m) { return m.origen === 'celular' && !!m.obs && !/Ya es su celular/.test(m.obs); }
 var TEXTO_LL = { bien: 'a horario', tarde: 'tarde', 'otro-turno': 'entró en otro turno (no se mira)', 'sin-entrada': 'marcó la salida y no la entrada',
                  fuera: 'marcó un día que el local no abre', franco: 'franco', cerrado: 'el local no abre', falta: 'no marcó', hoy: 'todavía no marcó', futuro: '' };
 var _ll = null, _llPedido = 0;   // _ll: lo que llegó, armado como la planilla (llArmar); _ll.vista, las filas de la zona que se ve
@@ -1843,7 +1846,7 @@ function llDia(p, l, dia, ms, hoy) {
   var abre = llAbre(l, dia);
   ms = llSinDobles(ms);
   var ent = ms.filter(function (m) { return m.tipo === 'entrada'; })[0];
-  var c = { dia: dia, marcas: ms, abre: abre, entrada: ent ? ent.hm : null, min: 0 };
+  var c = { dia: dia, marcas: ms, abre: abre, entrada: ent ? ent.hm : null, min: 0, ojo: ms.some(llOjo) };
   if (ent && abre) {
     c.min = llMin(ent.hm) - llMin(abre);
     c.est = c.min > LL_MANANA ? 'otro-turno' : c.min > LL_TOLERANCIA ? 'tarde' : 'bien';
@@ -2023,7 +2026,7 @@ function llTitulo(c) {
 }
 function llCeldaHTML(c, i) {
   var txt = c.entrada ? llHm(c.entrada) : c.est === 'sin-entrada' ? 's/e' : c.est === 'franco' ? 'F' : '';
-  return '<td class="ll-c ll-' + c.est + '"' + (c.est === 'futuro' ? '' : ' title="' + esc(llTitulo(c)) + '"') +
+  return '<td class="ll-c ll-' + c.est + (c.ojo ? ' ll-ojo' : '') + '"' + (c.est === 'futuro' ? '' : ' title="' + esc(llTitulo(c) + (c.ojo ? ' · ojo: no fichó desde su celular' : '')) + '"') +
     (c.marcas.length ? ' data-ll-i="' + i + '" data-ll-dia="' + c.dia + '"' : '') + '>' + txt + '</td>';
 }
 
@@ -2125,7 +2128,8 @@ function llDiaHTML(filas) {
         g.filas.map(function (i) {
           var f = filas[i], c = f.dias[dia];
           return '<tr' + (c.marcas.length ? ' data-ll-i="' + i + '" data-ll-dia="' + dia + '"' : '') + '><td><b>' + esc(f.p.nombre) + '</b>' +
-            (f.deOtro ? ' <small class="ll-de">' + esc('cubrió · es de ' + llNombreLocal(f.p.local_id)) + '</small>' : '') + '</td>' +
+            (f.deOtro ? ' <small class="ll-de">' + esc('cubrió · es de ' + llNombreLocal(f.p.local_id)) + '</small>' : '') +
+            (c.ojo ? ' <small class="ll-ojo-txt">no fichó desde su celular</small>' : '') + '</td>' +
             '<td class="n ll-llego ll-' + c.est + '">' + (c.entrada ? llHm(c.entrada) : '—') + '</td><td>' + esc(llTurnos(c.marcas) || '—') + '</td><td>' + llEstado(c) + '</td></tr>';
         }).join('') + '</tbody></table></div>';
     }).join('') +
@@ -2136,13 +2140,27 @@ function llDiaHTML(filas) {
 function llVerDia(f, dia) {
   if (!f || !f.dias[dia]) return;
   var c = f.dias[dia], nom = DIAS_LARGO[diaIso(dia) - 1];
-  ventana('<h1>' + esc(f.p.nombre) + '</h1><p class="bajada">' + esc(nom.charAt(0).toUpperCase() + nom.slice(1) + ' ' + diaMes(dia) + ' en ' + f.l.nombre +
+  var v = ventana('<h1>' + esc(f.p.nombre) + '</h1><p class="bajada">' + esc(nom.charAt(0).toUpperCase() + nom.slice(1) + ' ' + diaMes(dia) + ' en ' + f.l.nombre +
       (c.abre ? ': abre a las ' + llHm(c.abre) + '; hasta las ' + llHmDe(llMin(c.abre) + LL_TOLERANCIA) + ', a horario.' : ': ese día no abre.')) + '</p>' +
     '<div class="vf-estado">' + llEstado(c) + '</div>' +
     '<div class="ll-marcas">' + c.marcas.map(function (m) {
-      return '<div class="ll-marca"><b>' + llHm(m.hm) + '</b><span>' + (m.tipo === 'entrada' ? 'Entrada' : 'Salida') + '</span><small>' + esc((ORIGEN_LL[m.origen] || m.origen) + (m.obs ? ' · ' + m.obs : '')) + '</small></div>';
+      return '<div class="ll-marca' + (llOjo(m) ? ' ll-marca-ojo' : '') + '"><b>' + llHm(m.hm) + '</b><span>' + (m.tipo === 'entrada' ? 'Entrada' : 'Salida') + '</span><small>' + esc((ORIGEN_LL[m.origen] || m.origen) + (m.obs ? ' · ' + m.obs : '')) + '</small>' +
+        /* SQL 218: cambió de celular (o lo usó otro). Si es el suyo nuevo, se dice una vez y no avisa más. */
+        (llOjo(m) && yo().rol !== 'gerencia' ? '<button class="boton chico" data-cel-nuevo="' + esc(m.id) + '">Es su celular nuevo</button>' : '') + '</div>';
     }).join('') + '</div>' +
+    (c.ojo ? '<p class="bajada" style="margin-top:12px">Cada uno ficha con el QR desde su celular. Si cambió de celular, tocá «Es su celular nuevo»: desde ahí ese es el suyo (y deja de ser de quien lo tenía).</p>' : '') +
     '<p class="bajada" style="margin-top:12px">' + (esAdmin() ? 'Si una marca está mal, se anula o se carga la que falta en el POS → Gestión → Personal → Registro de tiempos.' : 'Si una marca está mal, la corrige la oficina.') + '</p>');
+  v.querySelectorAll('[data-cel-nuevo]').forEach(function (b) {
+    b.onclick = function () {
+      if (b.disabled) return;
+      b.disabled = true;
+      llamar('pos_fichero_celular_nuevo', { p_marca: +b.dataset.celNuevo }).then(function () {
+        avisar('Listo: ese celular ahora es el de ' + f.p.nombre + '.');
+        v.remove();
+        llCargar(_ll.r);
+      }, function (e) { b.disabled = false; avisar(esDeRed(e) ? 'Sin conexión: no se hizo. Probá de nuevo.' : mensajeDe(e)); });
+    };
+  });
 }
 
 /* Ajustes → El local: la hora a la que abre los domingos, si es otra (SQL 208). La zona ya no se elige acá: es la de
