@@ -691,3 +691,18 @@ select.desplegable option::checkmark { order: 1; margin-inline-start: auto; }
 .campo input[type=date] { color-scheme: dark; min-width: 0; width: 100%; }
 .papel-hoja { position: relative; }
 .papel-sacar { position: absolute; top: 6px; right: 6px; width: 34px; height: 34px; border-radius: 50%; border: 0; background: rgba(0, 0, 0, .72); color: #fff; font-size: 22px; line-height: 1; cursor: pointer; }
+/* (SQL 219) Lo que leyó la IA del certificado o del apercibimiento, y los campos que completó ella. */
+.papel-ia { margin: 12px 0 4px; padding: 12px 14px; border: 1px solid var(--borde); border-left: 3px solid var(--lima); border-radius: 14px; background: var(--tarjeta); font-size: 14px; color: var(--texto); }
+.papel-ia p { margin: 6px 0 0; }
+.papel-ia-titulo { font-size: 13px; font-weight: 800; color: var(--lima); }
+.papel-ia-fila { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--borde); }
+.papel-ia-fila span { color: var(--suave); }
+.papel-ia-fila b { text-align: right; overflow-wrap: anywhere; }
+.papel-ia .papel-ia-ojo { color: var(--rojo); font-weight: 700; }
+.papel-ia .papel-ia-duda { color: var(--ambar); }
+.papel-ia .boton { margin: 10px 8px 0 0; }
+.papel-ia.revisando { display: flex; align-items: center; gap: 10px; color: var(--suave); }
+.papel-ia.papel-ia-sin { border-left-color: var(--borde); color: var(--suave); }
+.papel-ia-sin p { margin: 0; }
+.campo.papel-de-ia > span::after { content: 'IA'; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--lima); color: var(--sobre-lima); font-size: 11px; font-weight: 800; vertical-align: 1px; }
+.campo.papel-de-ia input, .campo.papel-de-ia textarea, .campo.papel-de-ia select { border-color: var(--lima); }

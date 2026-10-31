@@ -818,3 +818,22 @@
 .ventana .pap-hojas img { aspect-ratio: auto; max-height: 64vh; }
 .ventana .pap-desc-campo .imp-sel { width: auto; min-width: 220px; }
 .ventana .pap-desc-campo .est { justify-self: start; }
+/* (SQL 219) Lo que leyó la IA del papel, y los campos que completó ella. */
+.imp .pap-ia-marca { display: table; margin-top: 4px; white-space: nowrap; }
+.ventana .papel-ia { margin: 12px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-left: 3px solid var(--acc); border-radius: var(--r-sm); background: var(--surface-2); font-size: 14px; color: var(--txt); }
+.ventana .papel-ia p { margin: 6px 0 0; }
+.ventana .papel-ia-titulo { font: 700 12.5px var(--sans); text-transform: uppercase; letter-spacing: .6px; color: var(--acc-txt); }
+.ventana .papel-ia-fila { display: flex; justify-content: space-between; gap: 12px; margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.ventana .papel-ia-fila span { color: var(--txt-3); }
+.ventana .papel-ia-fila b { text-align: right; }
+.ventana .papel-ia .papel-ia-ojo { color: var(--bad-txt); font-weight: 700; }
+.ventana .papel-ia .papel-ia-duda { color: var(--warn-txt); }
+.ventana .papel-ia .boton { min-height: 36px; margin: 10px 8px 0 0; padding: 0 12px; font-size: 13px; }
+.ventana .papel-ia.revisando { display: flex; align-items: center; gap: 10px; color: var(--txt-2); }
+.ventana .papel-ia .ruedita { flex: none; width: 18px; height: 18px; border-radius: 50%; border: 3px solid var(--line-alta); border-top-color: var(--acc); animation: papIaGirar .8s linear infinite; }
+@keyframes papIaGirar { to { transform: rotate(360deg); } }
+.ventana .papel-ia.papel-ia-sin { border-left-color: var(--line-alta); color: var(--txt-2); }
+.ventana .papel-ia-sin p { margin: 0; }
+.ventana .papel-ayuda { margin: 8px 0 0; font-size: 13px; color: var(--txt-3); }
+.ventana .campo.papel-de-ia > span::after { content: 'IA'; margin-left: 6px; padding: 1px 7px; border-radius: var(--r-pill); background: var(--acc); color: var(--acc-ink); font: 700 10.5px var(--sans); vertical-align: 1px; }
+.ventana .campo.papel-de-ia input, .ventana .campo.papel-de-ia textarea, .ventana .campo.papel-de-ia select { border-color: var(--acc); }

@@ -3977,8 +3977,11 @@ function subirHojas(local, persona, hojas) {
   }, Promise.resolve()).then(function () { return hojas.map(function (h) { return h.ruta; }); });
 }
 
-/** Suma hojas a un papel que ya está (el certificado que faltaba, el apercibimiento firmado). */
-function sumarHojas(x, alVolver) {
+/** Los papeles que la IA está leyendo ahora (por id), para mostrar "Leyendo…" en vez del botón. */
+var _papelLeyendo = {};
+
+/** Suma hojas a un papel que ya está (el certificado que faltaba, el apercibimiento firmado). alLeer: cuando la IA terminó de leerlas. */
+function sumarHojas(x, alVolver, alLeer) {
   var aus = x.tipo === 'ausencia';
   escanear({ titulo: aus ? 'Certificado médico' : 'Apercibimiento firmado', textoListo: 'Mandar' }, function (blobs) {
     var hojas = blobs.map(function (b) { return { blob: b }; });
@@ -3990,6 +3993,9 @@ function sumarHojas(x, alVolver) {
     subirHojas(local, x.persona_id, hojas)
       .then(function (rutas) { return llamar('orden_legajo_fotos', { p_id: x.id, p_fotos: rutas }); })
       .then(function () {
+        /* La IA lee la hoja y le pega lo leído al papel (SQL 219), sin hacer esperar a nadie. */
+        _papelLeyendo[x.id] = 1;
+        releerPapelIA(x.id).then(function (r) { delete _papelLeyendo[x.id]; if (alLeer) alLeer(r); });
         avisar(x.persona_id === yo().id ? 'Listo: tu supervisor ya lo tiene.' : 'Listo: quedó guardado.');
         alVolver();
       }, function (e) {
@@ -4095,7 +4101,8 @@ function filaPapel(x) {
   return '<button class="fila fila-boton papel-fila" data-papel-id="' + esc(x.id) + '"><span><b>' + esc(x.persona_nombre) + '</b>' +
     '<small>' + esc(textoDias(x.desde, x.hasta) + (!aus && x.motivo ? ' · ' + x.motivo : '')) + '</small></span>' +
     (aus ? '<span class="chip ' + (n ? 'listo' : 'pendiente') + '">' + (n ? 'Con certificado' : 'Sin certificado') + '</span>' + (d ? '<span class="chip ' + d[0] + '">' + d[1] + '</span>' : '')
-         : (n ? '<span class="chip listo">Firmado</span>' : '') + (x.descargo ? '<span class="chip sorpresa">Con descargo</span>' : '')) + '</button>';
+         : (n ? '<span class="chip listo">Firmado</span>' : '') + (x.descargo ? '<span class="chip sorpresa">Con descargo</span>' : '')) +
+    (marcaPapelIA(x) ? '<span class="chip vencido">' + marcaPapelIA(x) + '</span>' : '') + '</button>';
 }
 
 function dibujarAusencias(loc, lista, gente) {
@@ -4184,6 +4191,8 @@ function detallePapel(x, loc) {
     (n ? fotosPapel(x) : '<div class="vacio">' + (aus ? 'Sin certificado.' : 'Sin la foto del papel firmado.') + '</div>') +
     (n < 8 && (!soloMira() || mio) && (aus || !mio)
       ? '<button class="boton" id="sumarHoja" style="margin-top:12px">' + (n ? 'Sumar otra hoja' : aus ? 'Sacarle la foto al certificado' : 'Sacarle la foto al papel firmado') + '</button>' : '');
+  /* Lo que leyó la IA de la hoja (SQL 219; sin la columna, nada). */
+  if ('ia_lectura' in x) html += '<div id="papelIA" data-id="' + esc(x.id) + '">' + bloquePapelIA(x, { corregir: !mira, leer: !mira, leyendo: !!_papelLeyendo[x.id] }) + '</div>';
   if (aus) {
     html += '<div class="seccion">¿Se descuenta del sueldo?</div>';
     if (mira) html += '<p class="bajada">' + esc(DESCUENTO[x.descuento] ? DESCUENTO[x.descuento][1] : '') + (mio ? ' (lo decide tu supervisor o la administración).' : '') + '</p>';
@@ -4204,7 +4213,28 @@ function detallePapel(x, loc) {
     return leerPapeles('id=eq.' + valor(x.id)).then(function (f) { if (f && f[0]) detallePapel(f[0], loc); else volver(); });
   };
   var s = document.getElementById('sumarHoja');
-  if (s) s.onclick = function () { sumarHojas(x, otraVez); };
+  /* Cuando la IA termina de leer la hoja sumada, si este papel sigue en pantalla, se vuelve a dibujar con lo leído. */
+  if (s) s.onclick = function () {
+    sumarHojas(x, otraVez, function () { var c = document.getElementById('papelIA'); if (c && c.dataset.id === x.id) otraVez(); });
+  };
+  var bl = app.querySelector('[data-papel-ia-leer]');
+  if (bl) unaVez(bl, function () {
+    bl.textContent = 'Leyendo…';
+    return releerPapelIA(x.id).then(function (r) {
+      if (r.error) { avisar(r.error); return; }
+      if (!r.pegada) { avisar('La IA lo leyó, pero no se pudo guardar: probá de nuevo.'); return; }
+      avisar('Listo: la IA leyó la hoja.');
+      return otraVez();
+    });
+  });
+  var bf = app.querySelector('[data-papel-ia-fechas]');
+  if (bf) unaVez(bf, function () {
+    var l = x.ia_lectura;
+    return llamar('orden_legajo_fechas', { p_id: x.id, p_desde: l.desde, p_hasta: l.hasta }).then(function () {
+      avisar('Listo: quedó ' + diasPapelIA(l.desde, l.hasta) + '.');
+      return otraVez();
+    });
+  });
   app.querySelectorAll('[data-desc]').forEach(function (b) {
     unaVez(b, function () {
       if (b.dataset.desc === x.descuento) return;
@@ -4241,9 +4271,12 @@ function pantallaCargarPapel(op) {
   var gente = op.gente || [];
   var html = '<button class="volver" id="volver">‹ Volver</button><h1>' + titulo + '</h1>' +
     '<p class="bajada">' + esc(op.propia
-      ? 'Le llega a tu supervisor. Sacale la foto con la hoja apoyada sobre algo oscuro: la app la endereza y la deja nítida.'
+      ? 'Le llega a tu supervisor. Sacale la foto con la hoja apoyada sobre algo oscuro: la app la endereza y la IA completa los datos.'
       : (op.loc ? op.loc.nombre + ' · ' : '') + (aus ? 'Le llega el aviso a quien faltó. Si después trae el certificado, se lo sumás.'
                                                     : 'Le llega el aviso, y puede escribir su descargo desde la app.')) + '</p>';
+  /* Primero la foto: la IA la lee y completa lo de abajo (SQL 219). */
+  html += '<div class="seccion">' + (aus ? (op.propia ? 'El certificado' : 'El certificado (si lo trajo)') : 'El papel firmado (si ya lo tenés)') + '</div>' +
+    '<div id="pHojas"></div><div id="pIA"></div><div class="seccion">Los datos</div>';
   if (!op.propia) {
     html += '<label class="campo"><span>¿A quién?</span><select id="pPersona" class="desplegable"><option value="">Elegí…</option>' + gente.map(function (p) {
       return '<option value="' + esc(p.id) + '">' + esc(p.id === yo().id ? 'Yo (mi certificado)' : nombreLista(p)) + '</option>';
@@ -4258,7 +4291,6 @@ function pantallaCargarPapel(op) {
   }
   html += '<label class="campo"><span>' + (aus ? (op.propia ? 'Algo para aclarar (opcional)' : 'Motivo (opcional)') : 'Motivo') + '</span>' +
     '<textarea id="pMotivo" rows="' + (aus ? 2 : 3) + '" maxlength="300" placeholder="' + (aus ? (op.propia ? 'Por ejemplo: avisé por WhatsApp a la mañana' : 'Por ejemplo: enfermedad, sin aviso, trámite') : 'Qué pasó') + '"></textarea></label>';
-  html += '<div class="seccion">' + (aus ? (op.propia ? 'El certificado' : 'El certificado (si lo trajo)') : 'El papel firmado (si ya lo tenés)') + '</div><div id="pHojas"></div>';
   if (aus && !op.propia) {
     html += '<div class="seccion">¿Se descuenta del sueldo?</div><div class="pestanitas papel-descuento" style="grid-template-columns:repeat(3,1fr)">' +
       [['si', 'Sí'], ['no', 'No'], ['a_definir', 'A definir']].map(function (o) { return '<button type="button" data-desc="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>' +
@@ -4268,7 +4300,18 @@ function pantallaCargarPapel(op) {
   app.innerHTML = html;
 
   var desde = document.getElementById('pDesde'), hasta = document.getElementById('pHasta');
+  var sel = document.getElementById('pPersona'), motivoEl = document.getElementById('pMotivo');
   if (hasta) desde.addEventListener('change', function () { if (!hasta.value || hasta.value < desde.value) hasta.value = desde.value; });
+
+  /* La IA lee las hojas apenas se sacan y completa lo que todavía no se tocó (SQL 219); lo leído se pega al guardar. */
+  var ia = papelConIA({
+    tipo: op.tipo, propia: !!op.propia, yo: yo().id, campos: { persona: sel, desde: desde, hasta: hasta, motivo: motivoEl },
+    min: min, max: max, maxHasta: sumarDias(hoy, 67), verbo: op.propia ? 'mandar' : 'guardar',
+    lugar: function () { return document.getElementById('pIA'); },
+    hojas: function () { return hojas.map(function (h) { return h.blob; }); },
+    persona_id: op.propia ? yo().id : null, local_ids: op.propia ? null : [op.loc.id]
+  });
+
   function pintarDescuento() {
     var d = descuento || (hojas.length ? 'no' : 'a_definir');
     app.querySelectorAll('[data-desc]').forEach(function (b) { b.className = b.dataset.desc === d ? 'activa ' + d : ''; });
@@ -4289,6 +4332,7 @@ function pantallaCargarPapel(op) {
         var h = hojas.splice(+b.dataset.sacar, 1)[0];
         if (h && h.url) URL.revokeObjectURL(h.url);
         pintarHojas();
+        ia.leer();
       };
     });
     var bE = document.getElementById('pEscanear');
@@ -4296,6 +4340,7 @@ function pantallaCargarPapel(op) {
       escanear({ titulo: aus ? 'Certificado médico' : 'Apercibimiento firmado', maxHojas: 8 - hojas.length }, function (blobs) {
         blobs.forEach(function (b) { hojas.push({ blob: b, url: URL.createObjectURL(b) }); });
         pintarHojas();
+        ia.leer();
       });
     };
     if (!tocoDescuento) pintarDescuento();
@@ -4314,7 +4359,7 @@ function pantallaCargarPapel(op) {
 
   var b = document.getElementById('guardarPapel');
   unaVez(b, function () {
-    var sel = document.getElementById('pPersona');
+    if (ia.leyendo()) { avisar('Esperá un momento: la IA está leyendo la hoja.'); return; }
     var persona = op.propia ? yo().id : sel.value;
     var propia = persona === yo().id;
     if (!persona) { avisar('Elegí a quién.'); sel.focus(); return; }
@@ -4337,6 +4382,8 @@ function pantallaCargarPapel(op) {
       return subirHojas(local, persona, hojas).then(function (rutas) {
         return llamar('orden_legajo_fotos', { p_id: otra.id, p_fotos: rutas });
       }).then(function () {
+        return pegarLecturaPapel(otra.id, ia.lecturaId());
+      }).then(function () {
         hojas.forEach(function (x) { if (x.url) URL.revokeObjectURL(x.url); });
         avisar('Listo: lo sumamos a tu ausencia ' + textoDias(otra.desde, otra.hasta).toLowerCase() + ' y tu supervisor ya lo tiene.');
         volver();
@@ -4346,6 +4393,8 @@ function pantallaCargarPapel(op) {
     return subirHojas(local, persona, hojas).then(function (rutas) {
       b.textContent = 'Guardando…';
       return llamar('orden_legajo_cargar', { p_tipo: op.tipo, p_persona: persona, p_desde: d, p_hasta: aus ? h : null, p_motivo: motivo || null, p_fotos: rutas });
+    }).then(function (v) {
+      return pegarLecturaPapel(v && v.id, ia.lecturaId()).then(function () { return v; });
     }).then(function (v) {
       var elegido = aus && !propia ? (descuento || (hojas.length ? 'no' : 'a_definir')) : null;
       if (!v || !elegido || elegido === v.descuento) return;

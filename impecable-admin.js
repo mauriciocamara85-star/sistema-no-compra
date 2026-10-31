@@ -2392,6 +2392,10 @@ function diasPap(x, r) {
   return h < d ? 0 : Math.round((new Date(h + 'T12:00:00Z') - new Date(d + 'T12:00:00Z')) / 864e5) + 1;
 }
 function textoDiasPap(x) { return x.desde === x.hasta ? diaMes(x.desde) : diaMes(x.desde) + ' al ' + diaMes(x.hasta); }
+/** (SQL 219) Lo que leyó la IA no coincide con lo anotado: abajo del certificado, en rojo. */
+function marcaPap(x) { var m = marcaPapelIA(x); return m ? ' <span class="est vencido pap-ia-marca">' + m + '</span>' : ''; }
+/** Los papeles que la IA está leyendo ahora (por id). */
+var _papLeyendo = {};
 
 function datosPapeles(rango) {
   var pedido = ++_papPedido, todos = _papTodos && _locales.length > 1;
@@ -2480,7 +2484,7 @@ function dibujarPapeles(f, rango, todos) {
       var n = (x.fotos || []).length;
       return '<tr><td>' + esc(textoDiasPap(x)) + '</td><td><b>' + esc(x.persona_nombre) + '</b>' + (x.cargado_por === x.persona_id ? '<small class="pap-chico">lo mandó desde la app</small>' : '') + '</td>' + (todos ? '<td>' + esc(x.local_nombre) + '</td>' : '') +
         '<td class="n">' + diasPap(x, { desde: x.desde, hasta: x.hasta }) + '</td>' +
-        '<td>' + (n ? '<span class="est listo">Con certificado' + (n > 1 ? ' (' + n + ' hojas)' : '') + '</span>' : '<span class="est">Sin certificado</span>') + '</td>' +
+        '<td>' + (n ? '<span class="est listo">Con certificado' + (n > 1 ? ' (' + n + ' hojas)' : '') + '</span>' : '<span class="est">Sin certificado</span>') + marcaPap(x) + '</td>' +
         '<td>' + (mira ? '<span class="est ' + DESCUENTO_PAP[x.descuento][0] + '">' + DESCUENTO_PAP[x.descuento][1] + '</span>'
           : '<select class="imp-sel pap-desc desc-' + esc(x.descuento) + '" data-pap-desc="' + esc(x.id) + '" aria-label="¿Se descuenta la ausencia de ' + esc(x.persona_nombre) + '?">' +
             [['a_definir', 'A definir'], ['si', 'Sí'], ['no', 'No']].map(function (o) { return '<option value="' + o[0] + '"' + (o[0] === x.descuento ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>') + '</td>' +
@@ -2492,7 +2496,7 @@ function dibujarPapeles(f, rango, todos) {
     '<th>Motivo</th><th>Papel firmado</th><th>Descargo</th><th></th></tr></thead><tbody>' +
     aperL.map(function (x) {
       return '<tr><td>' + esc(diaMes(x.desde)) + '</td><td><b>' + esc(x.persona_nombre) + '</b></td>' + (todos ? '<td>' + esc(x.local_nombre) + '</td>' : '') +
-        '<td class="pap-motivo">' + esc(x.motivo || '') + '</td><td>' + ((x.fotos || []).length ? '<span class="est listo">Firmado</span>' : '<span class="est">Sin foto</span>') + '</td>' +
+        '<td class="pap-motivo">' + esc(x.motivo || '') + '</td><td>' + ((x.fotos || []).length ? '<span class="est listo">Firmado</span>' : '<span class="est">Sin foto</span>') + marcaPap(x) + '</td>' +
         '<td class="pap-motivo">' + esc(x.descargo || '—') + '</td><td><button class="boton chico" data-pap-ver="' + esc(x.id) + '">Ver</button></td></tr>';
     }).join('') + '</tbody></table></div>';
 
@@ -2572,11 +2576,41 @@ function ventanaPapel(x, alCambiar) {
     (n ? '<div class="historia pap-hojas">' + x.fotos.map(function (r, i) {
       return '<figure class="foto-chica"><img data-legajo="' + esc(r) + '" alt="Hoja ' + (i + 1) + '"><figcaption>Hoja ' + (i + 1) + ' · tocala para verla entera</figcaption></figure>';
     }).join('') + '</div>' : '<div class="vacio">' + (aus ? 'Sin certificado.' : 'Sin la foto del papel firmado.') + '</div>') +
+    ('ia_lectura' in x ? bloquePapelIA(x, { corregir: !mira, leer: !mira, leyendo: !!_papLeyendo[x.id] }) : '') +
     '<div class="botones">' +
     (soloMira() || n >= 8 || (x.persona_id === yo().id && !aus) ? '' : '<button class="boton chico" id="papSumar">' + (n ? 'Sumar otra hoja (desde un archivo)' : 'Subir la foto (desde un archivo)') + '</button>') +
     (mira ? '' : '<button class="boton chico" id="papBorrar">Borrar ' + (aus ? 'esta ausencia' : 'este apercibimiento') + '</button>') + '</div>');
   fotosLegajo(v);
   var cerrarYRecargar = function () { v.remove(); alCambiar(); };
+  /* Después de leer o corregir: la lista se recarga y la ventana se vuelve a abrir con el papel como quedó. */
+  var otraVez = function () {
+    return leer('/orden_legajo?select=*&id=eq.' + valor(x.id)).then(function (f) {
+      v.remove();
+      alCambiar();
+      var y = f && f[0];
+      if (!y) return;
+      y.persona_nombre = x.persona_nombre; y.local_nombre = x.local_nombre; y.cargado_nombre = x.cargado_nombre;
+      ventanaPapel(y, alCambiar);
+    });
+  };
+  var bl = v.querySelector('[data-papel-ia-leer]');
+  if (bl) unaVez(bl, function () {
+    bl.textContent = 'Leyendo…';
+    return releerPapelIA(x.id).then(function (r) {
+      if (r.error) { avisar(r.error); return; }
+      if (!r.pegada) { avisar('La IA lo leyó, pero no se pudo guardar: probá de nuevo.'); return; }
+      avisar('Listo: la IA leyó la hoja.');
+      return otraVez();
+    });
+  });
+  var bf = v.querySelector('[data-papel-ia-fechas]');
+  if (bf) unaVez(bf, function () {
+    var l = x.ia_lectura;
+    return llamar('orden_legajo_fechas', { p_id: x.id, p_desde: l.desde, p_hasta: l.hasta }).then(function () {
+      avisar('Listo: quedó ' + diasPapelIA(l.desde, l.hasta) + '.');
+      return otraVez();
+    });
+  });
   var sd = v.querySelector('#papDescV');
   if (sd) sd.onchange = function () {
     sd.disabled = true;
@@ -2589,7 +2623,13 @@ function ventanaPapel(x, alCambiar) {
       avisar('Subiendo…');
       subirHojasPap(x.persona_id === yo().id ? yo().local_id : x.local_id, x.persona_id, blobs.map(function (b) { return { blob: b }; }))
         .then(function (rutas) { return llamar('orden_legajo_fotos', { p_id: x.id, p_fotos: rutas }); })
-        .then(function () { avisar('Listo: quedó guardado.'); cerrarYRecargar(); }, function (e) { avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e)); });
+        .then(function () {
+          /* La IA lee la hoja y le pega lo leído al papel (SQL 219); cuando termina, la lista se recarga con la marca. */
+          _papLeyendo[x.id] = 1;
+          releerPapelIA(x.id).then(function (r) { delete _papLeyendo[x.id]; if (r.pegada) alCambiar(); });
+          avisar('Listo: quedó guardado. La IA está leyendo la hoja.');
+          cerrarYRecargar();
+        }, function (e) { avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e)); });
     });
   };
   var bb = v.querySelector('#papBorrar');
@@ -2608,12 +2648,14 @@ function ventanaNuevoPapel(tipo, todos, alCambiar) {
   var v = ventana('<h1>' + (aus ? 'Anotar una ausencia' : 'Hacer un apercibimiento') + '</h1>' +
     '<p class="bajada">' + (aus ? 'Le llega el aviso a quien faltó. Si trajo el certificado, subí la foto (o la captura que mandó por WhatsApp).'
                                 : 'Le llega el aviso, y puede escribir su descargo desde la app.') + '</p>' +
+    /* Primero la foto: la IA la lee y completa lo de abajo (SQL 219). */
+    '<div class="seccion">' + (aus ? 'El certificado (si lo trajo)' : 'El papel firmado (si ya lo tenés)') + '</div><div id="papHojasN"></div><div id="papIA"></div>' +
+    '<div class="seccion">Los datos</div>' +
     '<label class="campo"><span>¿A quién?</span><select id="papQuien"><option value="">Cargando…</option></select></label>' +
     '<div class="renglon"><label class="campo c-medio"><span>' + (aus ? 'Desde' : 'Fecha') + '</span><input type="date" id="papDesde" value="' + hoy + '" min="' + sumarDias(hoy, -120) + '" max="' + (aus ? sumarDias(hoy, 7) : hoy) + '"></label>' +
       (aus ? '<label class="campo c-medio"><span>Hasta</span><input type="date" id="papHasta" value="' + hoy + '" min="' + sumarDias(hoy, -120) + '" max="' + sumarDias(hoy, 67) + '"></label>' : '') + '</div>' +
     '<label class="campo"><span>' + (aus ? 'Motivo (opcional)' : 'Motivo') + '</span><textarea id="papMotivo" rows="' + (aus ? 2 : 3) + '" maxlength="300"></textarea></label>' +
     (aus ? '<label class="campo"><span>¿Se descuenta del sueldo?</span><select id="papDesc"><option value="">A definir (o "No" si subís el certificado)</option><option value="si">Se descuenta</option><option value="no">No se descuenta</option></select></label>' : '') +
-    '<div class="seccion">' + (aus ? 'El certificado (si lo trajo)' : 'El papel firmado (si ya lo tenés)') + '</div><div id="papHojasN"></div>' +
     '<div class="botones"><button class="boton lima" id="papGuardar" data-aviso-guardar disabled>' + (aus ? 'Guardar la ausencia' : 'Guardar el apercibimiento') + '</button></div>');
   var sel = v.querySelector('#papQuien'), gente = {};
   /* El Guardar se prende al elegir o escribir algo (y entonces, cerrar sin guardar pregunta). */
@@ -2629,24 +2671,34 @@ function ventanaNuevoPapel(tipo, todos, alCambiar) {
   }).catch(function (e) { sel.innerHTML = '<option value="">No se pudo cargar la gente</option>'; avisar(mensajeDe(e)); });
   var desde = v.querySelector('#papDesde'), hasta = v.querySelector('#papHasta');
   if (hasta) desde.addEventListener('change', function () { if (!hasta.value || hasta.value < desde.value) hasta.value = desde.value; });
+  /* La IA lee las hojas apenas se suben y completa lo que todavía no se tocó; lo leído se pega al guardar. */
+  var ia = papelConIA({
+    tipo: tipo, propia: false, yo: yo().id, campos: { persona: sel, desde: desde, hasta: hasta, motivo: v.querySelector('#papMotivo') },
+    min: sumarDias(hoy, -120), max: aus ? sumarDias(hoy, 7) : hoy, maxHasta: sumarDias(hoy, 67), verbo: 'guardar',
+    lugar: function () { return v.isConnected ? v.querySelector('#papIA') : null; },
+    hojas: function () { return hojas.map(function (h) { return h.blob; }); },
+    local_ids: locs, alCompletar: prender
+  });
   function pintarHojas() {
     var l = v.querySelector('#papHojasN');
     l.innerHTML = (hojas.length ? '<div class="historia">' + hojas.map(function (h, i) {
       return '<figure class="foto-chica"><img src="' + h.url + '" alt="Hoja ' + (i + 1) + '"><figcaption>Hoja ' + (i + 1) + ' · <button class="imp-enlace" data-sacar="' + i + '">Sacarla</button></figcaption></figure>';
     }).join('') + '</div>' : '') +
       (hojas.length < 8 ? '<div class="botones"><button class="boton chico" id="papSubir">' + (hojas.length ? 'Sumar otra hoja' : 'Subir la foto (desde un archivo)') + '</button></div>' : '');
-    l.querySelectorAll('[data-sacar]').forEach(function (b) { b.onclick = function () { var h = hojas.splice(+b.dataset.sacar, 1)[0]; if (h) URL.revokeObjectURL(h.url); pintarHojas(); }; });
+    l.querySelectorAll('[data-sacar]').forEach(function (b) { b.onclick = function () { var h = hojas.splice(+b.dataset.sacar, 1)[0]; if (h) URL.revokeObjectURL(h.url); pintarHojas(); ia.leer(); }; });
     var bs = l.querySelector('#papSubir');
     if (bs) bs.onclick = function () {
       escanearArchivo(aus ? 'Certificado médico' : 'Apercibimiento firmado', 8 - hojas.length, function (blobs) {
         blobs.forEach(function (b) { hojas.push({ blob: b, url: URL.createObjectURL(b) }); });
         pintarHojas();
+        ia.leer();
       });
     };
   }
   pintarHojas();
   var b = v.querySelector('#papGuardar');
   unaVez(b, function () {
+    if (ia.leyendo()) { avisar('Esperá un momento: la IA está leyendo la hoja.'); return; }
     var p = gente[sel.value];
     if (!p) { avisar('Elegí a quién.'); sel.focus(); return; }
     var d = desde.value, h = hasta ? (hasta.value || d) : d;
@@ -2657,6 +2709,8 @@ function ventanaNuevoPapel(tipo, todos, alCambiar) {
     b.textContent = hojas.length ? 'Subiendo…' : 'Guardando…';
     return subirHojasPap(p.local_id, p.id, hojas).then(function (rutas) {
       return llamar('orden_legajo_cargar', { p_tipo: tipo, p_persona: p.id, p_desde: d, p_hasta: aus ? h : null, p_motivo: motivo || null, p_fotos: rutas });
+    }).then(function (x) {
+      return pegarLecturaPapel(x && x.id, ia.lecturaId()).then(function () { return x; });
     }).then(function (x) {
       var dsc = aus ? v.querySelector('#papDesc').value : '';
       if (!x || !dsc || dsc === x.descuento) return;

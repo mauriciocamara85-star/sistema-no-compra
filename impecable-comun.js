@@ -592,6 +592,223 @@ function llamarFuncion(nombre, cuerpo) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
+   LA IA LEE EL PAPEL (SQL 219, 31/10, pedido de Mauricio: "si un vendedor sube su certificado o su apercibimiento,
+   que la IA lo lea y complete todo sola"). Lo comparten la app y la compu: la función leer-papel lee la hoja (de
+   quién es, las fechas, el médico, el motivo), el formulario se completa solo y lo leído queda con el papel, así el
+   supervisor ve si alguien cambió lo que decía. Si la IA no puede, se completa a mano como antes.
+   ════════════════════════════════════════════════════════════════════════ */
+
+var _iaPapelSinLectura = 'No pudimos leer la hoja: completá los datos a mano.';
+
+/** Una hoja (blob) en base64, sin el "data:image/jpeg;base64,". */
+function blobABase64(b) {
+  return new Promise(function (ok, mal) {
+    var r = new FileReader();
+    r.onload = function () { ok(String(r.result).replace(/^data:[^,]*,/, '')); };
+    r.onerror = function () { mal(r.error); };
+    r.readAsDataURL(b);
+  });
+}
+
+/** Lo que contesta leer-papel → { lectura, lectura_id, pegada } o { error }; si tarda más de 90 segundos, se deja. */
+function pedirLecturaPapel(cuerpo) {
+  var tarde = new Promise(function (ok) { setTimeout(function () { ok({ error: 'La IA tardó demasiado: completá los datos a mano.' }); }, 90000); });
+  var pedido = llamarFuncion('leer-papel', cuerpo).then(function (d) {
+    if (d && d.ok && d.lectura) return { lectura: d.lectura, lectura_id: d.lectura_id || null, pegada: !!d.pegada };
+    /* La función todavía no está publicada (Supabase contesta 404 sin "error"; el "no encontramos ese papel" de la función lo trae). */
+    if (d && d._status === 404 && !d.error) return { error: 'La lectura con IA todavía no está lista: completá los datos a mano.' };
+    return { error: (d && d.mensaje) || _iaPapelSinLectura };
+  }, function (e) {
+    return { error: esDeRed(e) ? 'Sin señal: la IA no pudo leer la hoja. Completá los datos a mano.' : _iaPapelSinLectura };
+  });
+  return Promise.race([pedido, tarde]);
+}
+
+/** Las hojas recién sacadas (hasta 4). op: { tipo, blobs, persona_id } (de esa persona) o { tipo, blobs, local_ids }. */
+function leerPapelIA(op) {
+  return Promise.all(op.blobs.slice(0, 4).map(blobABase64)).then(function (hojas) {
+    return pedirLecturaPapel({ tipo: op.tipo, hojas: hojas, persona_id: op.persona_id || null, local_ids: op.local_ids || null });
+  }, function () { return { error: _iaPapelSinLectura }; });
+}
+
+/** Un papel ya guardado: la función lee sus hojas y le pega la lectura. */
+function releerPapelIA(id) { return pedirLecturaPapel({ legajo_id: id }); }
+
+/** Pega al papel la lectura hecha antes de guardarlo. Sin el SQL 219 (o si ya no sirve), no hace nada. */
+function pegarLecturaPapel(id, lecturaId) {
+  if (!id || !lecturaId) return Promise.resolve(null);
+  return llamar('orden_legajo_con_lectura', { p_id: id, p_lectura: lecturaId }).catch(function () { return null; });
+}
+
+/** "el 30/10" o "del 30/10 al 1/11 (3 días)". */
+function diasPapelIA(d, h) {
+  if (!h || d === h) return 'el ' + diaMes(d);
+  var n = Math.round((new Date(h + 'T12:00:00Z') - new Date(d + 'T12:00:00Z')) / 864e5) + 1;
+  return 'del ' + diaMes(d) + ' al ' + diaMes(h) + ' (' + n + ' días)';
+}
+
+/** Las fechas leídas no son las del papel (en la ausencia, si no leyó el "hasta", sólo el "desde"). */
+function fechasDifierenIA(l, x) {
+  if (!l || !l.valido || !l.desde) return false;
+  return l.desde !== x.desde || (!!l.hasta && l.hasta !== x.hasta);
+}
+
+/** Lo que no coincide entre lo que leyó la IA y el papel guardado, para mostrar en rojo. */
+function avisosPapelIA(l, x) {
+  var out = [];
+  if (!l || !l.valido) return out;
+  var aus = x.tipo === 'ausencia';
+  if (l.nombre && l.persona_id !== x.persona_id) out.push('El papel dice «' + l.nombre + '»: fijate que sea de esta persona.');
+  if (fechasDifierenIA(l, x)) {
+    out.push((aus ? 'El certificado dice ' : 'El papel dice ') + diasPapelIA(l.desde, aus ? l.hasta : null) +
+      '; ' + (aus ? 'está anotada ' : 'está anotado ') + diasPapelIA(x.desde, aus ? x.hasta : null) + '.');
+  }
+  if (!aus && l.firmado === false) out.push('No se ve la firma del empleado.');
+  return out;
+}
+
+/** Para las listas: un aviso corto si lo que leyó la IA no coincide con lo anotado (o la hoja no parece el papel). */
+function marcaPapelIA(x) {
+  var l = x.ia_lectura;
+  if (!l) return '';
+  if (!l.valido) return 'Revisar la hoja';
+  return (l.nombre && l.persona_id !== x.persona_id) || fechasDifierenIA(l, x) ? 'No coincide con la hoja' : '';
+}
+
+/**
+ * El recuadro "Lo que leyó la IA" de un papel (la supervisión, en la app y en la compu). op.corregir: muestra "Usar
+ * las fechas del certificado" si no coinciden; op.leer: "Leer con la IA" (o "Leer de nuevo"); op.leyendo: la IA
+ * lo está leyendo ahora. Sin hojas, nada.
+ */
+function bloquePapelIA(x, op) {
+  var l = x.ia_lectura, aus = x.tipo === 'ausencia', n = (x.fotos || []).length;
+  if (!n) return '';
+  if (op.leyendo) return '<div class="papel-ia revisando"><span class="ruedita"></span>La IA está leyendo la hoja…</div>';
+  var leer = op.leer ? '<button type="button" class="boton chico" data-papel-ia-leer>' + (l ? 'Leer de nuevo con la IA' : 'Leer con la IA') + '</button>' : '';
+  if (!l) return op.leer ? '<div class="papel-ia papel-ia-sin"><p>La IA todavía no leyó ' + (aus ? 'este certificado' : 'este papel') + '.</p>' + leer + '</div>' : '';
+  var fila = function (k, v) { return v ? '<div class="papel-ia-fila"><span>' + k + '</span><b>' + esc(v) + '</b></div>' : ''; };
+  var html = '<div class="papel-ia"><div class="papel-ia-titulo">Lo que leyó la IA</div>';
+  if (!l.valido) {
+    html += '<p class="papel-ia-ojo">No le pareció ' + (aus ? 'un certificado médico.' : 'un apercibimiento.') + '</p>' +
+      (l.motivo_invalido ? '<p>' + esc(l.motivo_invalido) + '</p>' : '');
+  } else {
+    html += fila(aus ? 'Paciente' : 'Empleado', l.nombre) +
+      fila(aus ? 'Días' : 'Fecha', l.desde ? diasPapelIA(l.desde, aus ? l.hasta : null) : '') +
+      (aus ? fila('Médico', l.medico) : fila('Firmado', l.firmado === true ? 'Sí' : l.firmado === false ? 'No se ve la firma' : ''));
+    var av = avisosPapelIA(l, x);
+    html += av.map(function (t) { return '<p class="papel-ia-ojo">' + esc(t) + '</p>'; }).join('');
+    if (l.confianza === 'baja') html += '<p class="papel-ia-duda">La foto o la letra no se leen bien: revisalo con la hoja.</p>';
+    html += (l.dudas || []).map(function (t) { return '<p class="papel-ia-duda">' + esc(t) + '</p>'; }).join('');
+    if (op.corregir && aus && l.desde && l.hasta && fechasDifierenIA(l, x)) {
+      html += '<button type="button" class="boton chico lima" data-papel-ia-fechas>Usar las fechas del certificado</button>';
+    }
+  }
+  return html + leer + '</div>';
+}
+
+/**
+ * La IA en el formulario de un papel nuevo (la app y la compu): lee las hojas apenas se suman y completa lo que la
+ * persona todavía no tocó, con la marca "IA"; si se sacan todas las hojas, lo que completó vuelve a como estaba.
+ * op: { tipo, propia (el vendedor, lo suyo), yo, campos: { persona, desde, hasta, motivo } (los elementos), min, max
+ *       (del "desde"), maxHasta, verbo ('guardar' | 'mandar'), lugar() (el recuadro), hojas() (los blobs),
+ *       persona_id o local_ids (de quién puede ser), alCompletar() }.
+ * Devuelve { leer(), leyendo(), lecturaId() }: lecturaId es lo que se pega al papel al guardarlo.
+ */
+function papelConIA(op) {
+  var aus = op.tipo === 'ausencia', c = op.campos;
+  var lectura = null, lecturaId = null, estado = '', turno = 0, completo = [], tocado = {}, deIA = {}, antes = {};
+  function marcar(k, si) {
+    deIA[k] = si;
+    var e = c[k] && c[k].closest('.campo');
+    if (e) e.classList.toggle('papel-de-ia', si);
+  }
+  Object.keys(c).forEach(function (k) {
+    var el = c[k];
+    if (!el) return;
+    antes[k] = el.value;
+    var tocar = function () { tocado[k] = true; if (deIA[k]) marcar(k, false); if (lectura) pintar(); };
+    el.addEventListener('input', tocar);
+    el.addEventListener('change', tocar);
+  });
+  function deshacer() {
+    Object.keys(deIA).forEach(function (k) { if (deIA[k]) { c[k].value = antes[k]; marcar(k, false); } });
+    completo = [];
+  }
+  function completar(l) {
+    deshacer();
+    if (!l || !l.valido) return;
+    var s = c.persona;
+    if (s && l.persona_id && !tocado.persona && [].some.call(s.options, function (o) { return o.value === l.persona_id; })) {
+      s.value = l.persona_id; marcar('persona', true); completo.push('a quién');
+    }
+    if (l.desde && l.desde >= op.min && l.desde <= op.max && !tocado.desde) {
+      c.desde.value = l.desde; marcar('desde', true);
+      if (c.hasta && !tocado.hasta) { c.hasta.value = l.hasta && l.hasta >= l.desde && l.hasta <= op.maxHasta ? l.hasta : l.desde; marcar('hasta', true); }
+      completo.push(aus ? 'las fechas' : 'la fecha');
+    }
+    if (c.motivo && l.motivo && !tocado.motivo) { c.motivo.value = l.motivo.slice(0, 300); marcar('motivo', true); completo.push('el motivo'); }
+  }
+  /* Lo que no coincide entre la hoja y lo que está en el formulario (se recalcula al cambiar algo). */
+  function avisos(l) {
+    var out = [], quien = c.persona ? c.persona.value : op.yo, d = c.desde.value, h = c.hasta ? c.hasta.value || d : d;
+    if (op.propia) {
+      if (l.nombre && l.persona_id !== op.yo) out.push('El certificado dice «' + l.nombre + '»: ¿es tuyo? Si no, sacá esa hoja.');
+    } else if (!quien) {
+      out.push(l.nombre ? 'El papel dice «' + l.nombre + '»: no lo encontramos en la lista, elegí a quién.' : 'No se lee el nombre: elegí a quién.');
+    } else if (l.nombre && l.persona_id !== quien) {
+      out.push('El papel dice «' + l.nombre + '»: fijate que sea esa persona.');
+    }
+    if (fechasDifierenIA(l, { desde: d, hasta: h })) out.push((aus ? 'El certificado dice ' : 'El papel dice ') + diasPapelIA(l.desde, aus ? l.hasta : null) + '.');
+    if (!aus && l.firmado === false) out.push('No se ve la firma: si ya lo firmó, sumá la foto de la hoja firmada.');
+    return out;
+  }
+  function pintar() {
+    var lugar = op.lugar();
+    if (!lugar) return;
+    if (!op.hojas().length) {
+      lugar.innerHTML = '<p class="bajada papel-ayuda">Con la foto, la IA completa sola ' +
+        (op.propia ? 'los días' : 'a quién, ' + (aus ? 'las fechas' : 'la fecha')) + ' y el motivo.</p>';
+      return;
+    }
+    if (estado === 'leyendo') { lugar.innerHTML = '<div class="papel-ia revisando"><span class="ruedita"></span>La IA está leyendo la hoja…</div>'; return; }
+    if (estado) { lugar.innerHTML = '<p class="nota alerta">' + esc(estado) + '</p>'; return; }
+    var l = lectura;
+    if (!l) { lugar.innerHTML = ''; return; }
+    var html = '<div class="papel-ia"><div class="papel-ia-titulo">Lo que leyó la IA</div>';
+    if (!l.valido) {
+      html += '<p class="papel-ia-ojo">No parece ' + (aus ? 'un certificado médico.' : 'un apercibimiento.') + '</p>' +
+        (l.motivo_invalido ? '<p>' + esc(l.motivo_invalido) + '</p>' : '') + '<p>Fijate la foto, o completá los datos a mano.</p>';
+    } else {
+      var y = completo.length > 1 ? completo.slice(0, -1).join(', ') + ' y ' + completo[completo.length - 1] : completo[0];
+      html += '<p>' + (y ? 'Completó ' + y + ': revisalo antes de ' + (op.verbo || 'guardar') + '.' : 'La leyó, y quedó lo que escribiste.') + '</p>';
+      if (aus && l.medico) html += '<div class="papel-ia-fila"><span>Médico</span><b>' + esc(l.medico) + '</b></div>';
+      avisos(l).forEach(function (t) { html += '<p class="papel-ia-ojo">' + esc(t) + '</p>'; });
+      if (aus && l.desde && !l.hasta) html += '<p class="papel-ia-duda">No se lee hasta qué día: fijate el «Hasta».</p>';
+      if (l.confianza === 'baja') html += '<p class="papel-ia-duda">La foto o la letra no se leen bien: revisá los datos con la hoja.</p>';
+      (l.dudas || []).forEach(function (t) { html += '<p class="papel-ia-duda">' + esc(t) + '</p>'; });
+    }
+    lugar.innerHTML = html + '</div>';
+  }
+  function leer() {
+    var mio = ++turno, blobs = op.hojas();
+    lectura = null; lecturaId = null;
+    if (!blobs.length) { estado = ''; deshacer(); pintar(); return; }
+    estado = 'leyendo';
+    pintar();
+    leerPapelIA({ tipo: op.tipo, blobs: blobs, persona_id: op.persona_id, local_ids: op.local_ids }).then(function (r) {
+      if (mio !== turno || !op.lugar()) return;   // hay una lectura más nueva, o ya se fue del formulario
+      estado = r.error || '';
+      lectura = r.lectura || null;
+      lecturaId = r.lectura_id || null;
+      if (lectura) { completar(lectura); if (op.alCompletar) op.alCompletar(); }
+      pintar();
+    });
+  }
+  pintar();
+  return { leer: leer, leyendo: function () { return estado === 'leyendo'; }, lecturaId: function () { return lecturaId; } };
+}
+
+/* ════════════════════════════════════════════════════════════════════════
    EL MAPA DEL LOCAL, visto desde arriba (SQL 99)
 
    Lo usan la app (cada vendedor ve el local con lo suyo marcado y toca un

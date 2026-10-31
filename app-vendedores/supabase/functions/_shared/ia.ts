@@ -399,13 +399,14 @@ export function sinHistorial(e: ReturnType<typeof armarEsquema>) {
 /**
  * Pide a Claude una respuesta en JSON (structured outputs) y la devuelve ya leída.
  * Reintenta si la API está saturada o hubo un error del servidor. Lo usan las fotos de
- * los módulos y las del cierre de caja.
+ * los módulos, las del cierre de caja y los papeles (beta: el encabezado anthropic-beta, si hace falta).
  */
 export async function pedirJson(opts: {
   apiKey: string;
   cuerpo: Record<string, unknown>;
   pedir?: typeof fetch;
   espera?: number;
+  beta?: string;
 }): Promise<Record<string, unknown>> {
   const pedir = opts.pedir ?? fetch;
   let ultimoError = "";
@@ -416,6 +417,7 @@ export async function pedirJson(opts: {
         "x-api-key": opts.apiKey,
         "anthropic-version": "2023-06-01",
         "content-type": "application/json",
+        ...(opts.beta ? { "anthropic-beta": opts.beta } : {}),
       },
       body: JSON.stringify(opts.cuerpo),
     });
