@@ -788,6 +788,23 @@ function resumenSemana(d) {
     pieza('ok', n.ok === 1 ? 'mandada' : 'mandadas') + pieza('falta', n.falta === 1 ? 'falta (ya le tocaba)' : 'faltan (ya les tocaba)') +
     pieza('hoy', 'para hoy') + pieza('luego', 'más adelante en la semana') + '</div>';
 }
+/* Las tarjetas de Por local: primero las vidrieras (la izquierda antes que la derecha), después los módulos de las
+   paredes por su número y los del centro a continuación, como los numera el croquis; el depósito, por número (Mauricio,
+   31/10: "las vidrieras al principio, y después módulo 1, módulo 2"). Hasta ahí iban agrupadas por sector, o sea por
+   vendedor. d: el mapa del local; sin el mapa, los del centro son los de número mayor a 100 (las paredes llegan hasta 100). */
+function ordenTarjetas(mods, d) {
+  var isla = {};
+  if (d) d.islas.forEach(function (m) { isla[m.id] = true; });
+  var clave = function (m) {
+    var centro = d ? !!isla[m.modulo_id] : m.modulo_numero > 100, n = m.modulo_nombre;
+    if (centro && esNombreVidriera(n)) return [0, /izq\./i.test(n) ? 1 : /der\./i.test(n) ? 2 : 0];
+    return [centro ? 2 : 1, 0];
+  };
+  return mods.slice().sort(function (a, b) {
+    var x = clave(a), y = clave(b);
+    return x[0] - y[0] || x[1] - y[1] || a.modulo_numero - b.modulo_numero || a.sector_numero - b.sector_numero;
+  });
+}
 
 function verLocal() {
   var L = valor(_local.id), localId = _local.id;
@@ -814,7 +831,7 @@ function verLocal() {
     html += '<div id="zonaMapa"></div>';
     if (!mods.length) html += '<div class="vacio">Este local todavía no tiene módulos: se arman en el mapa, con "Armar el croquis".</div>';
     [['salon', 'Salón'], ['deposito', 'Depósito']].forEach(function (g) {
-      var lista = mods.filter(function (m) { return m.sector_tipo === g[0]; });
+      var lista = ordenTarjetas(mods.filter(function (m) { return m.sector_tipo === g[0]; }), r[3]);
       if (!lista.length) return;
       html += '<div class="seccion">' + g[1] + '</div><div class="grilla-local">' + lista.map(function (m) {
         /* La de esta semana: ✓ si la mandó, la alerta si ya le tocaba y no la mandó; la foto de otra semana, apagada y con
