@@ -92,6 +92,7 @@
   var K_REMITO = 'pos_borrador_remito';    // el remito nuevo a medio cargar (Gestión)
   var K_DEVOL = 'pos_borrador_devolucion'; // la devolución a fábrica a medio cargar (el mostrador, SQL 189)
   var K_ENVIO = 'pos_borrador_envio';      // el envío interno a medio cargar (el mostrador)
+  var K_SG = 'pos_borrador_sg';            // SQL 222: cada módulo del stock general a medio cargar (+ :local:módulo)
   var K_REMITO_VER = 'pos_remito';         // el remito que se está recibiendo, en sessionStorage
   var K_CONTEO = 'pos_conteo_remito';      // lo contado de cada remito: si se cierra la pestaña, sigue ahí
   /* Sin internet (SQL 212): la fila de las ventas que todavía no llegaron a la base y las copias para abrir sin conexión. */
@@ -112,16 +113,18 @@
                   ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod']]],
       /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene.
          La devolución a fábrica (SQL 189): lo que el local le devuelve, como en BlueSoft.
-         Los depósitos (SQL 193): el de cada temporada, para el stock de todo el local. */
+         Los depósitos (SQL 193): el de cada temporada, para el stock de todo el local.
+         El stock general (SQL 222): el stock de todo el local, por los módulos del croquis. */
       ['Mercadería', [['remitos', 'Remitos', 'recepcion'], ['envios', 'Envíos internos', 'envio'], ['devoluciones', 'Devolución a fábrica', 'devolucion'], ['stock', 'Stock', 'stock'],
-                      ['depositos', 'Depósitos', 'deposito']]],
+                      ['general', 'Stock general', 'general'], ['depositos', 'Depósitos', 'deposito']]],
       /* Los gastos se cargan durante el día, lo de la caja fuerte se pasa antes de cerrar (SQL 180) y el cierre se hace a la noche (SQL 149);
          los retiros de fondos (SQL 191) sacan plata de la caja chica o de la fuerte. Los listados de todas las sucursales quedan en Gestión. */
       ['Caja', [['gastos', 'Gastos', 'gasto'], ['salidas', 'Movimientos de salida', 'fuerte'], ['retiros', 'Retiros de fondos', 'retiro'], ['cierre', 'Cierre de caja', 'caja']]]
     ],
     gestion: [
       ['Artículos', [['productos', 'Productos', 'producto'], ['listas', 'Listas de precios', 'lista'], ['promos', 'Promociones', 'promo']]],
-      ['Stock', [['stock', 'Stock', 'stock'], ['depositos', 'Depósitos', 'deposito'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'], ['inventario', 'Inventario', 'inventario']]],
+      ['Stock', [['stock', 'Stock', 'stock'], ['general', 'Stock general', 'general'], ['depositos', 'Depósitos', 'deposito'], ['remitos', 'Remitos', 'envio'], ['diferencias', 'Diferencias', 'dif'],
+                 ['inventario', 'Inventario', 'inventario']]],
       /* La disponibilidad (SQL 195): cuánto hay en cada caja y, al tocarla, sus movimientos ("Consulta de Valores" de BlueSoft). */
       ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod'],
@@ -133,14 +136,15 @@
   };
   var MENU = MENUS[MODO];
   /* Las pantallas que no están en el menú y se abren desde otra (en el menú queda marcada ésa). */
-  var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios' }, gestion: { remito_nuevo: 'remitos' } };
+  var DENTRO = { mostrador: { cambio: 'cambios', remito: 'remitos', devolucion_nueva: 'devoluciones', envio_nuevo: 'envios', general_modulo: 'general' },
+                 gestion: { remito_nuevo: 'remitos', general_modulo: 'general' } };
   var INICIO = { mostrador: 'venta', gestion: 'listas' };
   /* SQL 190: lo que pide cada pantalla del mostrador (las casillas de Config → Usuarios). Sin el permiso, no está en el menú. */
   var REQUIERE = { envios: 'envios', envio_nuevo: 'envios', depositos: 'envios', devoluciones: 'envios', devolucion_nueva: 'envios', gastos: 'caja', salidas: 'caja', retiros: 'caja', cierre: 'caja' };
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
-                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1 };
+                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
@@ -203,6 +207,7 @@
     envio: '<path d="M1 4h14v12H1z"/><path d="M15 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2"/><circle cx="18.5" cy="18.5" r="2"/>',
     recepcion: '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z"/>',
     devolucion: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
+    general: '<rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><path d="m14 17.5 2.5 2.5 4.5-5"/>',
     inventario: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
     dif: '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
     producto: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/>',
@@ -374,7 +379,7 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
+      return 'Todavía falta correr el SQL ' + (/pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
                                              /pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
                                              /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
                                              /pos_articul/.test(m) ? '202 (los productos)' :
@@ -631,7 +636,8 @@
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, productos: function () { verProductos(); }, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
-                devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo, depositos: verDepositos, tiempos: verTiempos }[v];
+                devoluciones: verDevoluciones, devolucion_nueva: verDevolucionNueva, envios: verEnvios, envio_nuevo: verEnvioNuevo, depositos: verDepositos, tiempos: verTiempos,
+                general: verStockGeneral, general_modulo: verModuloSg }[v];
     if (ver) ver(); else verPronto(v);
   }
   window.addEventListener('hashchange', function () { var v = vistaDelHash(); if (S.ini && v !== S.vista) ir(v); });
@@ -6970,16 +6976,13 @@
         campo('ancho', 'Filtrar', '<input type="search" id="depBuscar" placeholder="Nombre o código" autocomplete="off" spellcheck="false">') +
         '<label class="pos-check"><input type="checkbox" id="depActivos"' + (F.activos ? ' checked' : '') + '> Activos</label>' +
       '</div>' +
-      '<details class="dep-pasos"' + (leerJSON('pos_dep_pasos', 'abierto') !== 'cerrado' ? ' open' : '') + '><summary>El stock de todo el local, paso a paso</summary><ol>' +
-        '<li><b>Nuevo depósito</b>, con la temporada y el año (por ejemplo, Verano 2027).</li>' +
-        '<li>En <b>Envíos internos → Nuevo envío → Entre depósitos del local</b>, un envío por módulo: del depósito de antes al nuevo, con todas las prendas del módulo.</li>' +
-        '<li>Cada módulo se controla con dos productos testigo (en el envío, <b>Controlar con testigos</b>). Si no coincide, se anula el envío y se pasa de nuevo.</li>' +
-        '<li>Con todo pasado, el nuevo → <b>Predeterminar</b>: desde ahí cada venta descuenta de él. Lo que quedó en el de antes es lo que no se encontró.</li>' +
-      '</ol></details>' +
+      /* SQL 222: el stock de todo el local se hace en su pantalla (empezar, los módulos y terminar). */
+      '<div class="pos-cartel dep-pasos">El stock de todo el local (cada seis meses) se hace en <button type="button" class="pos-link" data-ir="general">Stock general</button>: ' +
+        'empezar, pasar y controlar cada módulo del croquis, y terminar. Acá quedan los depósitos uno por uno (por ejemplo, uno de fallas).</div>' +
       '<div id="depLista"><p class="cargando">Cargando…</p></div>';
     F.local = $('depLocal').value;
     $('depBuscar').value = F.q;
-    c.querySelector('.dep-pasos').addEventListener('toggle', function () { guardarJSON('pos_dep_pasos', this.open ? 'abierto' : 'cerrado'); });
+    engancharIr(c);
     var todos = [], filas = [], pedido = 0, t = null;
     $('depLocal').onchange = function () { F.local = this.value; if (F.local) { S.stLocal = F.local; recordarLocal(F.local); } cargar(); };
     $('depBuscar').oninput = function () { clearTimeout(t); t = setTimeout(function () { F.q = $('depBuscar').value; pintar(); }, 150); };
@@ -7042,7 +7045,7 @@
   function abrirDeposito(d, localId, alCambiar) {
     var nuevo = !d, tn = temporadaNueva(), temp = d ? !!d.temporada : true;
     var caja = ventana('<h3 id="posVentTit">' + (nuevo ? 'Nuevo depósito' : esc(d.nombre) + ' ' + pillsDep(d)) + '</h3>' +
-      (nuevo ? '<p class="pos-bajada">El de la temporada nueva, para el stock de todo el local. Después se pasa la ropa con Envíos internos → Nuevo envío → Entre depósitos del local.</p>' :
+      (nuevo ? '<p class="pos-bajada">Para el stock de todo el local, mejor empezarlo en Stock general (crea el de la temporada nueva). Acá, cualquier otro: por ejemplo, uno de fallas.</p>' :
        '<p class="pos-bajada">' + num(d.unidades) + (Math.abs(d.unidades) === 1 ? ' unidad' : ' unidades') + ' · se creó el ' + esc(fechaHora(d.creado_en)) + (d.creado_nombre ? ' (' + esc(d.creado_nombre) + ')' : '') +
          (d.predeterminado && d.predeterminado_en ? ' · predeterminado desde el ' + esc(fechaHora(d.predeterminado_en)) : '') + '</p>') +
       '<div class="pos-campos dep-campos">' +
@@ -7077,7 +7080,7 @@
       bt.disabled = true;
       llamar('pos_deposito_guardar', { p: { id: d ? d.id : null, local_id: loc, temporada: t ? caja.querySelector('#dfTemp').value : null, anio: t ? Number(anio) : null,
                                             nombre: t ? null : nom, consulta: caja.querySelector('#dfConsulta').checked, activo: caja.querySelector('#dfActivo').checked } }).then(function (r) {
-        avisar('ok', r.nuevo ? 'Depósito «' + r.nombre + '» creado (código ' + r.numero + '). Ahora pasá la ropa con Envíos internos → Nuevo envío → Entre depósitos del local.'
+        avisar('ok', r.nuevo ? 'Depósito «' + r.nombre + '» creado (código ' + r.numero + ').' + (t ? ' El stock de todo el local sigue en Mercadería → Stock general.' : '')
                              : 'Depósito «' + r.nombre + '» guardado.');
         delete S.dep[loc];
         delete S.stock[loc];
@@ -7580,7 +7583,9 @@
   function ultimosTestigos(ts) { var m = {}; (ts || []).forEach(function (t) { m[t.codigo] = t; }); return Object.keys(m).map(function (k) { return m[k]; }); }
   function contarTestigos(ts) { var u = ultimosTestigos(ts), mal = u.filter(function (t) { return !t.coincide; }).length; return { testigos_ok: u.length - mal, testigos_mal: mal }; }
 
-  function abrirPase(id, alCambiar) {
+  /** op.general (SQL 222): lo abrió el stock general: lo rehace y lo controla cualquiera del local, y lo que se pasó no se ve hasta que está controlado. */
+  function abrirPase(id, alCambiar, op) {
+    op = op || {};
     var caja = ventana('<h3 id="posVentTit">Envío entre depósitos</h3><p class="cargando">Cargando…</p>', true), dentro = caja.querySelector('.pos-caja-in');
     llamar('pos_remito', { p_id: id, p_completo: true }).then(function (r) {
       if (!caja.isConnected) return;
@@ -7613,36 +7618,42 @@
                 '<td class="n">' + num(t.contado) + '</td><td>' + (t.coincide ? '<span class="pill pill-ok">Coincide</span>' : '<span class="pill pill-bad">No coincide</span>') + '</td>' +
                 '<td>' + esc(t.quien || '—') + '</td><td>' + esc(fechaHora(t.fecha)) + '</td></tr>';
             }).join('') + '</tbody></table></div>' : '') +
+        (op.general && !an && est !== 'ok' ? '<p class="pos-ayuda">Lo que se pasó se ve cuando el módulo queda controlado: así el control con los testigos es a ciegas.</p>' :
         '<details class="pa-prods"><summary>Lo que se pasó: ' + np + (np === 1 ? ' producto, ' : ' productos, ') + num(unid) + (unid === 1 ? ' unidad' : ' unidades') + '</summary>' +
-          '<div class="st-prods">' + prods + '</div></details>' +
+          '<div class="st-prods">' + prods + '</div></details>') +
         '<div id="paAnular"></div><div class="pos-pie">' +
-          (!an && puede('envios') ? '<button type="button" class="btn btn-sec btn-chico izq" id="paAnularBtn">Anular el envío</button>' +
+          (!an && (puede('envios') || op.general) ? '<button type="button" class="btn btn-sec btn-chico izq" id="paAnularBtn">' + (op.general ? 'Rehacer el módulo' : 'Anular el envío') + '</button>' +
                                     '<button type="button" class="btn btn-sec btn-chico" id="paControlar">Controlar con testigos</button>' : '') +
           '<button type="button" class="btn btn-pri btn-chico" data-cerrar>Cerrar</button></div>';
       var ab = dentro.querySelector('#paAnularBtn');
       if (ab) ab.onclick = function () {
         ab.remove();
-        pedirMotivo(dentro.querySelector('#paAnular'), 'El envío queda en la lista, tachado, con quién lo anuló y por qué. ' +
+        pedirMotivo(dentro.querySelector('#paAnular'), op.general ?
+            (unid === 1 ? 'La prenda vuelve' : 'Las ' + num(unid) + ' prendas vuelven') + ' a «' + deDonde + '» y el módulo queda para pasarlo de nuevo, entero. El pase queda anotado, tachado, con quién lo rehízo y por qué.' :
+            'El envío queda en la lista, tachado, con quién lo anuló y por qué. ' +
             (unid === 1 ? 'La prenda vuelve' : 'Las ' + num(unid) + ' prendas vuelven') + ' a «' + deDonde + '». Para rehacer el módulo, después hacé un envío nuevo. No se puede deshacer.',
-          'Anular el envío ' + refRemito(r), function (motivo) {
+          op.general ? 'Rehacer el módulo' : 'Anular el envío ' + refRemito(r), function (motivo) {
           return llamar('pos_remito_anular', { p_id: r.id, p_motivo: motivo }).then(function () {
-            avisar('ok', 'El envío ' + refRemito(r) + ' quedó anulado: las prendas volvieron a «' + (r.origen_deposito || '') + '».');
+            avisar('ok', op.general ? 'Listo: «' + (r.modulo || 'el módulo') + '» queda para pasarlo de nuevo; las prendas volvieron a «' + (r.origen_deposito || '') + '».'
+                                    : 'El envío ' + refRemito(r) + ' quedó anulado: las prendas volvieron a «' + (r.origen_deposito || '') + '».');
             S.stock = {};
             S.dep = {};
+            if (op.general) { cerrarVentana(); if (alCambiar) alCambiar(); return; }
             if (alCambiar) alCambiar();
             abrirPase(r.id, alCambiar);
           });
         });
       };
       var co = dentro.querySelector('#paControlar');
-      if (co) co.onclick = function () { abrirTestigos(r, alCambiar); };
+      if (co) co.onclick = function () { abrirTestigos(r, alCambiar, op); };
     }).catch(function (e) {
       if (caja.isConnected) dentro.innerHTML = '<h3 id="posVentTit">Envío entre depósitos</h3><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
     });
   }
 
   /** El control de un módulo con productos testigo, a ciegas: no se ve lo que dice el envío. */
-  function abrirTestigos(r, alCambiar) {
+  function abrirTestigos(r, alCambiar, op) {
+    op = op || {};
     var enEnvio = {}, elegido = null;
     (r.productos || []).forEach(function (p) { enEnvio[p.codigo] = p.descripcion || ''; });
     var caja = ventana('<h3 id="posVentTit">Controlar ' + esc(refRemito(r)) + ' con testigos</h3>' +
@@ -7653,7 +7664,7 @@
       '<div id="tgElegido" class="tg-elegido"></div>' +
       '<div class="pos-campos">' +
         campo('', 'Cuántas hay en el módulo', '<input type="number" id="tgN" min="0" max="9999" inputmode="numeric">') +
-        campo('', 'Quién controla <span class="lbl-opc">(opcional)</span>', '<input type="text" id="tgQuien" maxlength="60" list="tgVend" autocomplete="off"><datalist id="tgVend">' +
+        campo('', 'Quién controla' + (op.general ? '' : ' <span class="lbl-opc">(opcional)</span>'), '<input type="text" id="tgQuien" maxlength="60" list="tgVend" autocomplete="off"><datalist id="tgVend">' +
           vendedoresDe(r.origen_local_id).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>') +
       '</div><div class="pos-error" id="tgError"></div><div id="tgRes" role="status"></div>' +
       '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico izq" id="tgVolver">‹ Volver al envío</button>' +
@@ -7677,7 +7688,8 @@
     n.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); caja.querySelector('#tgOk').click(); } };
     caja.querySelector('#tgOk').onclick = function () {
       var bt = this, v = n.value.trim();
-      if (!errorEn(caja, 'tgError', !elegido ? 'Elegí el producto testigo.' : !/^\d{1,4}$/.test(v) ? 'Escribí cuántas contaste (de 0 a 9999).' : '')) return;
+      if (!errorEn(caja, 'tgError', !elegido ? 'Elegí el producto testigo.' : !/^\d{1,4}$/.test(v) ? 'Escribí cuántas contaste (de 0 a 9999).' :
+                                    op.general && !quien.value.trim() ? 'Escribí quién controla.' : '')) return;
       bt.disabled = true;
       S.tgQuien = quien.value.trim();
       llamar('pos_remito_testigo', { p_remito: r.id, p_codigo: elegido, p_contado: Number(v), p_quien: S.tgQuien || null }).then(function (x) {
@@ -7685,7 +7697,9 @@
         var ct = contarTestigos(x.testigos), e = estadoTestigos(ct);
         caja.querySelector('#tgRes').innerHTML = '<div class="pos-cartel ' + (x.coincide ? 'st-ok' : 'mal') + '">' +
           (x.coincide ? '<b>' + esc(x.codigo) + ': coincide.</b> ' : '<b>' + esc(x.codigo) + ': no coincide con el envío.</b> Contalo de nuevo; si sigue sin coincidir, hay que rehacer el módulo (anulá el envío y pasalo de nuevo). ') +
-          (e === 'ok' ? 'El módulo quedó controlado.' : e === 'uno' ? 'Falta otro testigo.' : x.coincide ? 'Ojo: otro testigo no coincide.' : '') + '</div>';
+          (e === 'ok' ? 'El módulo quedó controlado.' : e === 'uno' ? 'Falta otro testigo.' : x.coincide ? 'Ojo: otro testigo no coincide.' : '') +
+          /* SQL 222: el control vale más si lo hace otro. */
+          (op.general && normal(S.tgQuien || '') === normal(r.responsable || r.creado_nombre || '') ? ' Ojo: lo controla el mismo que lo pasó; mejor que lo haga otra persona.' : '') + '</div>';
         r.testigos = x.testigos;
         elegido = null;
         el.innerHTML = '';
@@ -7694,7 +7708,7 @@
         $('tgProd').focus();
       }).catch(function (e) { bt.disabled = false; errorEn(caja, 'tgError', mensajeDe(e)); });
     };
-    caja.querySelector('#tgVolver').onclick = function () { abrirPase(r.id, alCambiar); };
+    caja.querySelector('#tgVolver').onclick = function () { abrirPase(r.id, alCambiar, op); };
     setTimeout(function () { var p = $('tgProd'); if (p) p.focus(); }, 0);
   }
 
@@ -8417,7 +8431,9 @@
   var RN_DEV = false;
   /* El envío interno del mostrador: el mismo remito, de un local a otro, con su borrador aparte y el precio de cada producto (sin razón). */
   var RN_ENV = false;
-  function claveBorradorRn() { return RN_DEV ? K_DEVOL : RN_ENV ? K_ENVIO : K_REMITO; }
+  /* SQL 222: pasar un módulo del stock general es este mismo remito (entre depósitos), con su borrador por módulo (la clave). */
+  var RN_SG = false;
+  function claveBorradorRn() { return RN_SG ? RN_SG : RN_DEV ? K_DEVOL : RN_ENV ? K_ENVIO : K_REMITO; }
   var A_FABRICA = 'fabrica';   // "Llega a: Fábrica" (SQL 167): una devolución de un local a la fábrica
   function remitoNuevo(antes) {
     return { v: 1, clave: nuevaClave(), origen: antes ? antes.origen : '', destino: antes ? antes.destino : '', referencia: '', observaciones: '', lineas: [], razon: {},
@@ -8459,7 +8475,7 @@
   }
 
   function verRemitoNuevo() {
-    RN_DEV = false; RN_ENV = false;
+    RN_DEV = false; RN_ENV = false; RN_SG = false;
     RN = cargarRemitoNuevo();
     var c = $('cuerpo');
     c.innerHTML = cabeza('Nuevo remito', 'Lo que manda la fábrica (o un local) a un local, o lo que un local le devuelve a la fábrica. Al guardarlo, el local lo ve en POS → Remitos para contarlo y recibirlo.',
@@ -8492,7 +8508,7 @@
      predeterminado, SQL 193).
      ════════════════════════════════════════════════════════════════════ */
   function verDevolucionNueva() {
-    RN_DEV = true; RN_ENV = false;
+    RN_DEV = true; RN_ENV = false; RN_SG = false;
     RN = cargarRemitoNuevo();
     var c = $('cuerpo'), prueba = enPrueba();
     c.innerHTML = cabeza('Nueva devolución a fábrica' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
@@ -8528,12 +8544,12 @@
      después se controla con productos testigo.
      ════════════════════════════════════════════════════════════════════ */
   function verEnvioNuevo() {
-    RN_DEV = false; RN_ENV = true;
+    RN_DEV = false; RN_ENV = true; RN_SG = false;
     RN = cargarRemitoNuevo();
     var c = $('cuerpo'), prueba = enPrueba(), entre = RN.tipo === 'entre', hecho = entre ? S.paseHecho : null;
     S.paseHecho = null;
     c.innerHTML = cabeza('Nuevo envío interno' + (prueba ? '<span class="pos-tag prueba">Modo prueba</span>' : ''),
-        entre ? 'De un depósito a otro de la sucursal, para el stock de todo el local: un envío por módulo. Se pasa al guardarlo; después se controla con dos productos testigo.'
+        entre ? 'De un depósito a otro de la sucursal: se pasa al guardarlo. Para el stock de todo el local, mejor <button type="button" class="pos-link" data-ir="general">Stock general</button>, con los módulos del croquis.'
               : 'Lo que el local le manda a otro local. Al guardarlo sale del stock; el otro local lo recibe contándolo en POS → Remitos.',
         '<button type="button" class="btn btn-sec btn-chico" data-ir="envios">‹ Envíos</button>' +
         '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
@@ -8791,6 +8807,7 @@
 
   function guardarRemito() {
     if (S.guardando || !RN) return;
+    if (RN_SG) { guardarModuloSg(); return; }   // SQL 222
     if (RN_ENV && RN.tipo === 'entre') { guardarPase(); return; }
     var fab = RN.destino === A_FABRICA, dev = RN_DEV, env = RN_ENV, txt = dev ? 'Guardar la devolución' : env ? 'Guardar el envío' : 'Guardar el remito';
     /* La devolución sale del stock de verdad: con el modo prueba no se guarda (como los remitos, que no se reciben). */
@@ -8884,6 +8901,294 @@
       avisar('ok', 'Se agregaron ' + res.items.length + (res.items.length === 1 ? ' renglón.' : ' renglones.'));
     };
     setTimeout(function () { caja.querySelector('#imTexto').focus(); }, 0);
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     STOCK GENERAL (SQL 222): el stock de todo el local en una pantalla
+     Mauricio (31/10): "en base a los módulos: módulo 1, y ahí cargamos
+     todo; después ellos controlan", y que entren "todos en el local,
+     porque lo hacen ellos". Los módulos son los del croquis de Equipo VDH
+     (las paredes, el centro y el depósito). Cada uno se toca, se carga
+     entero (pasa al depósito de la temporada nueva) y se controla con dos
+     testigos a ciegas; si no coincide, se rehace. Empezar (crear el
+     depósito) y Terminar (predeterminarlo) son del encargado o el
+     supervisor; lo demás, de cualquiera del local que use el POS.
+     ════════════════════════════════════════════════════════════════════ */
+  var LUGARES_SG = [['pared', 'Salón · paredes'], ['centro', 'Salón · centro'], ['deposito', 'Depósito del local']];
+  var ESTADO_SG = { no: 'Sin pasar', sin: 'Para controlar', uno: 'Falta un testigo', ok: 'Controlado', mal: 'Rehacer' };
+  function estadoSg(pase) { return pase ? estadoTestigos(pase) : 'no'; }
+  /** El nombre corto de un módulo para el cuadro: el número («7») si se llama «Módulo 7» o «Depósito 3»; si no, su nombre. */
+  function tituloSg(m) { return m.lugar !== 'centro' && /^(m[oó]dulo|dep[oó]sito)\s+\d+$/i.test(m.nombre || '') ? String(m.numero) : m.nombre || String(m.numero); }
+  function nombreSg(m) { return m.lugar === 'deposito' && /^dep[oó]sito\s+\d+$/i.test(m.nombre || '') ? 'Depósito ' + m.numero + ' (atrás)' : m.nombre || 'Módulo ' + m.numero; }
+  /** La temporada que sigue y que la sucursal todavía no tiene (Verano 2027 → Invierno 2027 → Verano 2028…). */
+  function proximaTemporada(nombres) {
+    var t = temporadaNueva(), ya = (nombres || []).map(function (n) { return normal(n); });
+    for (var i = 0; i < 8 && ya.indexOf(normal(t[0] + ' ' + t[1])) >= 0; i++) t = t[0] === 'Verano' ? ['Invierno', t[1]] : ['Verano', t[1] + 1];
+    return t;
+  }
+  /** Las cuentas de un local: cuántos módulos en cada estado, las prendas pasadas y lo que queda en el de antes. */
+  function cuentasSg(d) {
+    var k = { total: d.modulos.length, no: 0, sin: 0, uno: 0, ok: 0, mal: 0, unidades: 0, otros: (d.otros || []).length };
+    d.modulos.forEach(function (m) { k[estadoSg(m.pase)]++; if (m.pase) k.unidades += Number(m.pase.unidades) || 0; });
+    (d.otros || []).forEach(function (p) { k.unidades += Number(p.unidades) || 0; });
+    k.controlar = k.sin + k.uno;
+    k.queda = d.queda ? Number(d.queda.unidades) || 0 : 0;
+    return k;
+  }
+  function claveSg(g) { return K_SG + ':' + g.local + ':' + (g.mod.otro ? 'otro' : g.mod.id); }
+
+  function verStockGeneral() {
+    var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
+    var F = S.sgF = S.sgF || { local: gestion && puede('locales') ? '' : l.id };
+    if (F.local && !localMio(F.local)) F.local = l.id;
+    c.innerHTML = cabeza('Stock general', 'El stock de todo el local, módulo por módulo: cada módulo se pasa entero al depósito de la temporada nueva y se controla con dos productos testigo. Mientras tanto se sigue vendiendo del de antes.',
+        '<button type="button" class="btn btn-sec btn-chico" id="sgActualizar">Actualizar</button>') +
+      '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="sgLocal" class="desplegable">' + (gestion ? todasLasSucursales() : '') + opcionesLocales(F.local) + '</select>') + '</div>' +
+      '<div id="sgCuerpo"><p class="cargando">Cargando…</p></div>';
+    F.local = $('sgLocal').value;
+    var pedido = 0, D = null;
+    $('sgLocal').onchange = function () { F.local = this.value; if (F.local) { S.stLocal = F.local; recordarLocal(F.local); } cargar(); };
+    $('sgActualizar').onclick = function () { cargar(); };
+    function cargar() {
+      var n = ++pedido, z = $('sgCuerpo');
+      if (!D) z.innerHTML = '<p class="cargando">Cargando…</p>';
+      llamar('pos_stock_general', { p_local: F.local || null }).then(function (d) {
+        if (n !== pedido || !$('sgCuerpo')) return;
+        D = d;
+        if (F.local) pintarLocal(d); else pintarTodas(d || []);
+      }).catch(function (e) {
+        if (n !== pedido || !$('sgCuerpo')) return;
+        $('sgCuerpo').innerHTML = '<div class="pos-cartel mal">' + esc(sinFuncion(e) ? 'Todavía falta correr el SQL 222 (el stock general) en Supabase.' : mensajeDe(e)) + '</div>';
+      });
+    }
+
+    /* Todas las sucursales (Gestión): cómo va cada una. */
+    function pintarTodas(ls) {
+      if (!ls.length) { $('sgCuerpo').innerHTML = '<div class="pos-cartel">No hay sucursales para mostrar.</div>'; return; }
+      var enCurso = ls.filter(function (d) { return d.nuevo; }).length;
+      $('sgCuerpo').innerHTML = '<p class="sg-nota">' + (enCurso ? (enCurso === 1 ? 'Una sucursal está' : enCurso + ' sucursales están') + ' haciendo el stock general.' : 'Ninguna sucursal está haciendo el stock general.') +
+          ' Tocá una para ver sus módulos.</p>' +
+        '<div class="pos-marco-tabla"><table class="pos-tabla sg-tabla"><thead><tr><th>Sucursal</th><th>Stock general</th><th>Avance</th><th class="n">Sin pasar</th><th class="n">Para controlar</th>' +
+          '<th class="n">Para rehacer</th><th class="n">Prendas pasadas</th><th class="n">Quedan en el de antes</th></tr></thead><tbody>' +
+        ls.map(function (d, i) {
+          var k = cuentasSg(d), sinCroquis = !d.modulos.length;
+          if (!d.nuevo) return '<tr data-sg="' + i + '" tabindex="0"><td><b>' + esc(bonito(d.local)) + '</b></td><td class="apagado" colspan="7">' +
+            (sinCroquis ? 'Sin stock en curso · todavía no tiene el croquis (los módulos)' : 'Sin stock en curso · ' + k.total + ' módulos en el croquis') + '</td></tr>';
+          return '<tr data-sg="' + i + '" tabindex="0"><td><b>' + esc(bonito(d.local)) + '</b></td><td>«' + esc(d.viejo ? d.viejo.nombre : '') + '» → <b>«' + esc(d.nuevo.nombre) + '»</b>' +
+              '<small class="st-chico">desde el ' + esc(fechaHora(d.nuevo.creado_en)) + '</small></td>' +
+            '<td>' + barraSg(k, true) + '</td><td class="n">' + miles(k.no) + '</td><td class="n">' + miles(k.controlar) + '</td>' +
+            '<td class="n' + (k.mal ? ' st-sale' : '') + '">' + miles(k.mal) + '</td><td class="n">' + num(k.unidades) + '</td><td class="n">' + num(k.queda) + '</td></tr>';
+        }).join('') + '</tbody></table></div>';
+      $('sgCuerpo').querySelectorAll('tr[data-sg]').forEach(function (tr) {
+        var d = ls[Number(tr.getAttribute('data-sg'))];
+        tr.onclick = function () { F.local = d.local_id; $('sgLocal').value = d.local_id; D = null; cargar(); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+
+    /* Una sucursal: empezar, el cuadro de los módulos y terminar. */
+    function pintarLocal(d) {
+      var z = $('sgCuerpo'), nom = bonito(d.local), hecho = S.sgHecho && S.sgHecho.local === d.local_id ? S.sgHecho : null, fin = S.sgFin && S.sgFin.local === d.local_id ? S.sgFin : null;
+      S.sgHecho = null; S.sgFin = null;
+      var croquis = d.modulos.length ? '' : '<div class="pos-cartel">Los módulos salen del croquis del local, y ' + esc(nom) + ' todavía no lo tiene. Se arma en <b>Supervisión → Por local → «Armar el croquis»</b>, ' +
+        'con las paredes, el centro y el depósito.' + (d.nuevo ? ' Mientras tanto, se puede pasar la ropa con «Otro lugar».' : '') + '</div>';
+      if (!d.viejo) { z.innerHTML = '<div class="pos-cartel mal">' + esc(nom) + ' no tiene depósito predeterminado: elegilo en Mercadería → Depósitos.</div>'; return; }
+      if (!d.nuevo) {
+        var t = proximaTemporada(d.nombres), env = puede('envios');
+        z.innerHTML = (fin ? '<div class="pos-cartel st-ok"><b>Stock general terminado.</b> Desde ahora ' + esc(nom) + ' vende de «' + esc(fin.nombre) + '».' +
+                              (fin.anterior ? ' En «' + esc(fin.anterior) + '» quedaron ' + num(fin.quedaron) + (Math.abs(fin.quedaron) === 1 ? ' prenda' : ' prendas') + ': lo que no se encontró.' : '') + '</div>' : '') + croquis +
+          '<div class="sg-caja"><h3>Empezar el stock general de ' + esc(nom) + '</h3>' +
+            '<p>Se crea el depósito de la temporada nueva y se pasa la ropa módulo por módulo' + (d.modulos.length ? ' (' + d.modulos.length + ' en el croquis)' : '') +
+              '. Hasta terminar, las ventas, los cambios y los remitos siguen en «' + esc(d.viejo.nombre) + '».</p>' +
+            (env ? '<div class="sg-fila">' + campo('', 'Temporada', '<select id="sgTemp">' + opciones([['Verano', 'Verano'], ['Invierno', 'Invierno']], t[0]) + '</select>') +
+                     campo('', 'Año', '<input type="number" id="sgAnio" min="2000" max="2100" value="' + esc(t[1]) + '">') +
+                     '<button type="button" class="btn btn-pri btn-chico" id="sgEmpezar">Empezar el stock general</button></div><div class="pos-error" id="sgError"></div>'
+                 : '<p class="pos-ayuda">Lo empieza el encargado o el supervisor. Después, cada módulo lo puede pasar y controlar cualquiera del local.</p>') + '</div>';
+        var bt = $('sgEmpezar');
+        if (bt) bt.onclick = function () {
+          var anio = $('sgAnio').value.trim(), temp = $('sgTemp').value;
+          if (!errorEn(z, 'sgError', /^\d{4}$/.test(anio) ? '' : 'Escribí el año (por ejemplo, ' + t[1] + ').')) return;
+          if (!confirm('¿Empezar el stock general de ' + nom + ' con «' + temp + ' ' + anio + '»? Se crea ese depósito; las ventas siguen en «' + d.viejo.nombre + '» hasta terminar.')) return;
+          bt.disabled = true;
+          llamar('pos_deposito_guardar', { p: { local_id: d.local_id, temporada: temp, anio: Number(anio), nombre: null, consulta: true, activo: true } }).then(function (r) {
+            avisar('ok', 'Empezó el stock general de ' + nom + ': cada módulo va a «' + r.nombre + '».');
+            delete S.dep[d.local_id];
+            cargar();
+          }).catch(function (e) { bt.disabled = false; errorEn(z, 'sgError', mensajeDe(e)); });
+        };
+        return;
+      }
+      var k = cuentasSg(d), q = d.queda || {};
+      var html = (hecho ? '<div class="pos-cartel st-ok"><b>' + esc(hecho.nombre) + '</b> pasó a «' + esc(d.nuevo.nombre) + '» (' + num(hecho.unidades) + (hecho.unidades === 1 ? ' prenda' : ' prendas') + '). ' +
+                          'Ahora se controla con dos productos testigo: mejor que lo haga otra persona. <button type="button" class="pos-link" id="sgYa">Controlarlo ahora</button></div>' : '') +
+        '<div class="sg-de">De <b>«' + esc(d.viejo.nombre) + '»</b> a <b>«' + esc(d.nuevo.nombre) + '»</b> · empezó el ' + esc(fechaHora(d.nuevo.creado_en)) +
+          (d.nuevo.creado_nombre ? ' (' + esc(d.nuevo.creado_nombre) + ')' : '') + '</div>' +
+        '<div class="sg-avance">' + barraSg(k) + '</div>' +
+        '<div class="pos-totales">' +
+          '<div class="pos-kpi"><span>Sin pasar</span><b>' + miles(k.no) + '</b></div>' +
+          '<div class="pos-kpi"><span>Para controlar</span><b>' + miles(k.controlar) + '</b></div>' +
+          '<div class="pos-kpi"><span>Para rehacer</span><b class="' + (k.mal ? 'st-sale' : '') + '">' + miles(k.mal) + '</b></div>' +
+          '<div class="pos-kpi fuerte"><span>Prendas pasadas</span><b>' + num(k.unidades) + '</b></div>' +
+          '<div class="pos-kpi"><span>Quedan en «' + esc(d.viejo.nombre) + '»</span><b>' + num(k.queda) + '</b></div></div>' + croquis +
+        LUGARES_SG.map(function (lg) {
+          var ms = d.modulos.filter(function (m) { return m.lugar === lg[0]; });
+          return ms.length ? '<h3 class="sg-tit">' + lg[1] + '</h3><div class="sg-grilla">' + ms.map(function (m) { return casillaSg(m, d.modulos.indexOf(m)); }).join('') + '</div>' : '';
+        }).join('') +
+        '<h3 class="sg-tit">Otros lugares <small>(cajas, el mostrador… lo que no está en un módulo)</small></h3><div class="sg-grilla">' +
+          (d.otros || []).map(function (p, i) { return casillaSg({ otro: true, nombre: p.modulo || 'Otro lugar', pase: p }, 'o' + i); }).join('') +
+          '<button type="button" class="sg-mod sg-mas" data-sg="nuevo"><b>+</b><span>Otro lugar</span></button></div>' +
+        '<p class="sg-ley"><i class="sg-no"></i> Sin pasar <i class="sg-sin"></i> Para controlar <i class="sg-ok"></i> Controlado <i class="sg-mal"></i> Rehacer' +
+          ' · <span class="sg-ojo">!</span> lo controló el mismo que lo pasó</p>' +
+        '<div class="sg-caja sg-fin"><h3>Terminar</h3><p>' +
+          (k.no || k.controlar || k.mal ? 'Falta' + (k.no + k.controlar + k.mal === 1 ? '' : 'n') + ': ' + [k.no ? k.no + ' sin pasar' : '', k.controlar ? k.controlar + ' para controlar' : '', k.mal ? k.mal + ' para rehacer' : ''].filter(Boolean).join(', ') + '. '
+                                        : '<b>Todos los módulos están pasados y controlados.</b> ') +
+          'En «' + esc(d.viejo.nombre) + '» quedan <b>' + num(k.queda) + (Math.abs(k.queda) === 1 ? ' prenda' : ' prendas') + '</b>' +
+          (q.productos ? ' de ' + num(q.productos) + (q.productos === 1 ? ' producto' : ' productos') : '') + (q.monto != null && k.queda > 0 ? ' (' + plata(q.monto) + ')' : '') +
+          ': si ya pasaron todo, es lo que no se encontró. <button type="button" class="pos-link" id="sgQueda">Ver qué quedó</button></p>' +
+          (puede('envios') ? '<label class="pos-check"><input type="checkbox" id="sgSacar" checked> Que «' + esc(d.viejo.nombre) + '» deje de contar para la consulta de stock</label>' +
+                             '<div class="pos-pie"><button type="button" class="btn btn-pri btn-chico" id="sgTerminar">Terminar el stock general</button></div><div class="pos-error" id="sgError"></div>'
+                           : '<p class="pos-ayuda">Lo termina el encargado o el supervisor: desde ahí las ventas descuentan de «' + esc(d.nuevo.nombre) + '».</p>') + '</div>';
+      z.innerHTML = html;
+      z.querySelectorAll('.sg-mod[data-sg]').forEach(function (b) {
+        b.onclick = function () {
+          var x = b.getAttribute('data-sg');
+          tocarSg(d, x === 'nuevo' ? { otro: true, nombre: '', pase: null } : x.charAt(0) === 'o' ? { otro: true, nombre: d.otros[Number(x.slice(1))].modulo, pase: d.otros[Number(x.slice(1))] } : d.modulos[Number(x)]);
+        };
+      });
+      var ya = $('sgYa');
+      if (ya) ya.onclick = function () { controlarSg(hecho.id); };
+      $('sgQueda').onclick = function () {
+        S.stF = S.stF || { local: '', q: '', rubro: '', cero: false, neg: false, dep: '' };
+        S.stF.local = d.local_id; S.stF.dep = d.viejo.id; S.stF.q = ''; S.stF.rubro = '';
+        ir('stock');
+      };
+      var te = $('sgTerminar');
+      if (te) te.onclick = function () {
+        var falta = k.no + k.controlar + k.mal;
+        if (!confirm('¿Terminar el stock general de ' + nom + '? Desde ahora las ventas, los cambios y los remitos van a «' + d.nuevo.nombre + '».' +
+                     (falta ? '\n\nOjo: ' + (falta === 1 ? 'falta un módulo' : 'faltan ' + falta + ' módulos') + ' (sin pasar, sin controlar o para rehacer).' : '') +
+                     '\n\nEn «' + d.viejo.nombre + '» quedan ' + num(k.queda) + ' prendas: lo que no se encontró.')) return;
+        te.disabled = true;
+        llamar('pos_deposito_predeterminar', { p_id: d.nuevo.id, p_sacar_viejo: !!$('sgSacar').checked }).then(function (r) {
+          avisar('ok', 'Listo: ' + nom + ' vende de «' + r.nombre + '».');
+          delete S.dep[d.local_id];
+          delete S.stock[d.local_id];
+          S.sgFin = { local: d.local_id, nombre: r.nombre, anterior: r.anterior, quedaron: Number(r.quedaron) || 0 };
+          cargar();
+        }).catch(function (e) { te.disabled = false; errorEn(z, 'sgError', mensajeDe(e)); });
+      };
+    }
+    /** Un módulo del cuadro: su número, cómo está y cuántas prendas tiene. */
+    function casillaSg(m, i) {
+      var e = estadoSg(m.pase), t = m.otro ? m.nombre : tituloSg(m), largo = String(t).length > 4;
+      var tit = (m.otro ? m.nombre : nombreSg(m)) + ': ' + ESTADO_SG[e] + (m.pase ? ' · ' + m.pase.unidades + ' prendas · lo pasó ' + (m.pase.responsable || m.pase.creado_nombre || '—') +
+                (m.pase.controlo ? ' · lo controló ' + m.pase.controlo : '') : '') + (m.rehechos ? ' · rehecho ' + (m.rehechos === 1 ? 'una vez' : m.rehechos + ' veces') : '') +
+                (m.pase && m.pase.mismo ? ' · ojo: lo controló el mismo que lo pasó' : '');
+      return '<button type="button" class="sg-mod sg-' + e + (largo ? ' sg-largo' : '') + '" data-sg="' + i + '" title="' + esc(tit) + '">' +
+        '<b>' + esc(t) + '</b>' + (!m.otro && t === String(m.numero) && !/^(m[oó]dulo|dep[oó]sito)\s+\d+$/i.test(m.nombre || '') ? '<em>' + esc(m.nombre) + '</em>' : '') +
+        '<span>' + ESTADO_SG[e] + '</span>' + (m.pase ? '<small>' + num(m.pase.unidades) + (Number(m.pase.unidades) === 1 ? ' prenda' : ' prendas') + '</small>' : '') +
+        (m.pase && m.pase.mismo ? '<span class="sg-ojo" aria-label="Lo controló el mismo que lo pasó">!</span>' : '') + '</button>';
+    }
+    /* Tocar un módulo: sin pasar, se carga; para controlar, los testigos (a ciegas); controlado o para rehacer, el pase. */
+    function tocarSg(d, m) {
+      var e = estadoSg(m.pase);
+      if (e === 'no') {
+        if (enPrueba()) { avisar('err', 'Con el modo prueba prendido no se pasan módulos: el stock es de verdad. Apagalo (abajo, en el menú).'); return; }
+        S.sgPase = { local: d.local_id, viejo: d.viejo, nuevo: d.nuevo, mod: m.otro ? { otro: true } : { id: m.id, numero: m.numero, nombre: m.nombre, lugar: m.lugar } };
+        ir('general_modulo');
+      } else if (e === 'sin' || e === 'uno') controlarSg(m.pase.id);
+      else abrirPase(m.pase.id, cargar, { general: true });
+    }
+    function controlarSg(id) {
+      llamar('pos_remito', { p_id: id, p_completo: true }).then(function (r) { abrirTestigos(r, cargar, { general: true }); }, function (e) { avisar('err', mensajeDe(e)); });
+    }
+    cargar();
+  }
+  /** La barra del avance: lo controlado (verde) y lo pasado sin controlar (amarillo), de todos los módulos. */
+  function barraSg(k, chica) {
+    var t = Math.max(k.total, 1), ok = Math.round(k.ok / t * 100), pas = Math.round((k.controlar + k.mal) / t * 100);
+    return '<div class="sg-barra' + (chica ? ' chica' : '') + '" role="img" aria-label="' + k.ok + ' de ' + k.total + ' módulos controlados"><i class="ok" style="width:' + ok + '%"></i><i class="pas" style="width:' + pas + '%"></i></div>' +
+      '<span class="sg-cuenta"><b>' + k.ok + ' de ' + k.total + '</b> ' + (chica ? 'controlados' : 'módulos controlados') + (k.otros ? ' · ' + k.otros + (k.otros === 1 ? ' lugar más' : ' lugares más') : '') + '</span>';
+  }
+
+  /* Pasar un módulo: todas sus prendas, escaneadas o buscadas (el mismo cargador de los remitos), y quién lo pasa. */
+  function verModuloSg() {
+    var g = S.sgPase;
+    if (!g || !localMio(g.local)) { ir('general'); return; }
+    RN_DEV = false; RN_ENV = true; RN_SG = claveSg(g);
+    var b = leerJSON(RN_SG, null);
+    if (!(b && b.v === 1 && b.clave && Array.isArray(b.lineas))) b = remitoNuevo();
+    b.tipo = 'entre'; b.origen = g.local; b.destino = g.local; b.dep_o = g.viejo.id; b.dep_d = g.nuevo.id;
+    if (!g.mod.otro) b.modulo = '';
+    b.responsable = b.responsable || S.sgQuien || '';
+    RN = b;
+    guardarBorradorRn();
+    var c = $('cuerpo'), nom = g.mod.otro ? 'Otro lugar' : nombreSg(g.mod), loc = localDe(g.local);
+    c.innerHTML = cabeza(esc(nom) + ' <span class="pos-tag">Stock general</span>',
+        'Cargá todas las prendas ' + (g.mod.otro ? 'de ese lugar' : 'del módulo') + ': disparale a cada etiqueta o buscá el producto. Al guardar pasan de «' + esc(g.viejo.nombre) + '» a «' + esc(g.nuevo.nombre) + '»; después se controla con dos testigos.',
+        '<button type="button" class="btn btn-sec btn-chico" data-ir="general">‹ Stock general</button>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="rnLimpiar">Limpiar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="rnGuardar">Guardar ' + (g.mod.otro ? 'el lugar' : 'el módulo') + '</button>') +
+      '<div class="tk-datos rn-datos sg-datos">' +
+        campo('', 'Sucursal', '<input type="text" value="' + esc(nombreLocal(loc)) + '" readonly tabindex="-1">') +
+        (g.mod.otro ? campo('', 'Qué lugar es', '<input type="text" id="sgLugar" maxlength="20" placeholder="Ej.: cajas del fondo" autocomplete="off">')
+                    : campo('', 'Módulo', '<input type="text" value="' + esc(nom) + '" readonly tabindex="-1">')) +
+        campo('', 'Quién lo pasa', '<input type="text" id="rnResp" maxlength="60" list="rnVend" autocomplete="off" placeholder="Tu nombre"><datalist id="rnVend">' +
+          vendedoresDe(g.local).map(function (v) { return '<option value="' + esc(v) + '">'; }).join('') + '</datalist>') +
+        campo('', 'Observaciones', '<input type="text" id="rnObs" maxlength="300" placeholder="Ej.: faltan las etiquetas de dos" autocomplete="off">') +
+      '</div>' + htmlProdRn();
+    engancharIr(c);
+    $('rnResp').value = RN.responsable || '';
+    $('rnObs').value = RN.observaciones || '';
+    $('rnResp').oninput = function () { RN.responsable = this.value; guardarBorradorRn(); };
+    $('rnObs').oninput = function () { RN.observaciones = this.value; guardarBorradorRn(); };
+    var lu = $('sgLugar');
+    if (lu) { lu.value = RN.modulo || ''; lu.oninput = function () { RN.modulo = this.value; guardarBorradorRn(); }; }
+    engancharRn(verModuloSg);
+    /* forzar: el depósito nuevo pudo crearse en otra compu después de que ésta guardó la lista */
+    traerDepositos(g.local, true).then(function () { pintarRn(); });
+    if (!RN.responsable) setTimeout(function () { var r = $('rnResp'); if (r && !(lu && !lu.value)) r.focus(); }, 0);
+    else if (lu && !lu.value) setTimeout(function () { lu.focus(); }, 0);
+  }
+  /** Guardar el módulo: pasa en el momento al depósito nuevo y vuelve al cuadro, con el aviso para controlarlo. */
+  function guardarModuloSg() {
+    var g = S.sgPase, lo = g && localMio(g.local);
+    var unidades = RN.lineas.reduce(function (s, l) { return s + l.cantidad; }, 0), quien = String(RN.responsable || '').trim();
+    var lugar = g && g.mod.otro ? String(RN.modulo || '').trim() : '', nom = !g ? '' : g.mod.otro ? lugar : nombreSg(g.mod);
+    var mal = !lo ? 'Volvé al stock general y elegí el módulo.' : enPrueba() ? 'Con el modo prueba prendido no se pasan módulos: el stock es de verdad.' :
+              g.mod.otro && !lugar ? 'Escribí qué lugar es (por ejemplo, cajas del fondo).' : !quien ? 'Escribí quién lo pasa.' :
+              !RN.lineas.length ? 'Todavía no cargaste ninguna prenda.' : '';
+    if (mal) { avisar('err', mal); if (/quién/.test(mal)) $('rnResp').focus(); return; }
+    /* Si el depósito de antes no tiene todo según el sistema, que lo sepa (no frena). */
+    llamar('pos_stock_local', { p_local: lo.id, p_deposito: g.viejo.id }).then(function (x) {
+      var m = {};
+      (x.filas || []).forEach(function (f) { m[claveVar(f[0], f[1], f[2])] = f[3]; });
+      var faltan = RN.lineas.filter(function (l) { return (m[claveVar(l.codigo, l.talle, l.color)] || 0) < l.cantidad; });
+      return faltan.length ? '\n\nOjo: según el sistema, «' + g.viejo.nombre + '» no tiene todo (' + faltan.slice(0, 4).map(function (l) {
+        return l.codigo + ' ' + [l.talle, l.color].filter(Boolean).join(' ') + ': hay ' + (m[claveVar(l.codigo, l.talle, l.color)] || 0) + ', pasás ' + l.cantidad; }).join('; ') +
+        (faltan.length > 4 ? '…' : '') + '). Si lo pasás igual, ahí queda en negativo.' : '';
+    }, function () { return ''; }).then(function (extra) {
+      if (!confirm('¿Pasar ' + (g.mod.otro ? '«' + lugar + '»' : 'el ' + nom) + ' con ' + num(unidades) + (unidades === 1 ? ' prenda' : ' prendas') + ' a «' + g.nuevo.nombre + '»?' + extra)) return;
+      S.guardando = true;
+      var b = $('rnGuardar');
+      if (b) { b.disabled = true; b.textContent = 'Guardando…'; }
+      llamar('pos_remito_guardar', { p: { clave: RN.clave, origen_local_id: lo.id, destino_local_id: lo.id, origen_deposito_id: g.viejo.id, destino_deposito_id: g.nuevo.id,
+                                          modulo_id: g.mod.otro ? null : g.mod.id, modulo: g.mod.otro ? lugar : null, responsable: quien, referencia: '',
+                                          observaciones: RN.observaciones || '', items: RN.lineas } }).then(function (r) {
+        S.guardando = false;
+        S.sgQuien = quien;
+        try { localStorage.removeItem(RN_SG); } catch (e) {}
+        delete S.stock[lo.id];
+        delete S.dep[lo.id];
+        S.sgHecho = { local: lo.id, id: r.id, nombre: g.mod.otro ? lugar : nom, unidades: unidades };
+        S.sgPase = null;
+        if (S.vista === 'general_modulo') ir('general');
+      }).catch(function (e) {
+        S.guardando = false;
+        if (b && b.isConnected) { b.disabled = false; b.textContent = 'Guardar ' + (g.mod.otro ? 'el lugar' : 'el módulo'); }
+        avisar('err', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo; no se duplica.' : sinFuncion(e) || /column .*modulo_id/.test(e && e.message) ? 'Todavía falta correr el SQL 222 (el stock general) en Supabase.' : mensajeDe(e));
+      });
+    });
   }
 
   /* ════════════════════════════════════════════════════════════════════

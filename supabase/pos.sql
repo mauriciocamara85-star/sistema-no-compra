@@ -2497,7 +2497,11 @@ end $$;
    SQL 193: sale del depósito origen_deposito_id (sin él, del predeterminado).
    Con destino_deposito_id, es un pase entre dos depósitos del mismo local (el
    stock de cada seis meses, un módulo por vez, con el módulo y el responsable):
-   sale de uno y entra al otro en el acto, y queda recibido. */
+   sale de uno y entra al otro en el acto, y queda recibido.
+   SQL 222: el pase de un módulo al stock general en curso (al depósito de la
+   temporada nueva) lo hace cualquiera del local que use el POS, sin el permiso
+   de los envíos; con modulo_id, el módulo del croquis del local (de ahí sale su
+   nombre), y cada módulo se pasa una vez (para pasarlo de nuevo, se rehace). */
 create or replace function pos_remito_guardar(p jsonb) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -2513,6 +2517,8 @@ declare
   v_modulo   text := nullif(upper(trim(coalesce(p->>'modulo', ''))), '');
   v_resp     text := nullif(trim(coalesce(p->>'responsable', '')), '');
   v_entre    boolean := nullif(p->>'destino_deposito_id', '') is not null;
+  v_mod_id   uuid := nullif(p->>'modulo_id', '')::uuid;               -- SQL 222
+  v_mod_nom  text;
   v_nom_o    text;
   v_nom_d    text;
   v_ya       pos_remitos;
@@ -2524,7 +2530,12 @@ declare
 begin
   perform pos_permiso();
   /* SQL 190: lo que viene de la fábrica lo arma la oficina; los envíos y las devoluciones salen del local, con su permiso. */
-  if v_origen is null then perform pos_permiso('gestion'); else perform pos_permiso('envios'); perform pos_local_ok(v_origen); end if;
+  if v_origen is null then perform pos_permiso('gestion');
+  else
+    /* SQL 222: el pase de un módulo al stock general lo hace cualquiera del local (lo hacen ellos). */
+    if not (v_entre and pos_stock_general_es_(v_origen, v_dep_d)) then perform pos_permiso('envios'); end if;
+    perform pos_local_ok(v_origen);
+  end if;
   if v_clave is not null then
     select * into v_ya from pos_remitos where clave = v_clave;
     if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'ya', true); end if;
@@ -2541,6 +2552,13 @@ begin
     if v_nom_o is null or v_nom_d is null then raise exception 'Los dos depósitos tienen que ser de la sucursal y estar activos.'; end if;
     if length(v_modulo) > 20 then raise exception 'El módulo es demasiado largo (hasta 20 letras).'; end if;
     if length(v_resp) > 60 then raise exception 'El nombre del responsable es demasiado largo.'; end if;
+    /* SQL 222: el módulo del croquis del local (el stock general): de ahí sale su nombre. */
+    if v_mod_id is not null then
+      select om.nombre into v_mod_nom from orden_modulos om join orden_sectores os on os.id = om.sector_id
+       where om.id = v_mod_id and os.local_id = v_origen and om.activo and os.activo;
+      if v_mod_nom is null then raise exception 'Ese módulo no es de la sucursal (o ya no está en el croquis).'; end if;
+      v_modulo := coalesce(v_modulo, left(upper(v_mod_nom), 20));
+    end if;
   elsif v_dep_o is not null and (v_origen is null or not exists (select 1 from pos_depositos where id = v_dep_o and local_id = v_origen and activo)) then
     raise exception 'Ese depósito no es de la sucursal de donde sale.';
   end if;
@@ -2583,15 +2601,21 @@ begin
     select * into v_ya from pos_remitos where clave = v_clave;
     if found then return jsonb_build_object('id', v_ya.id, 'numero', v_ya.numero, 'ya', true); end if;
   end if;
+  /* SQL 222: un módulo del stock general se pasa una vez (para pasarlo de nuevo, primero se rehace). */
+  if v_entre and v_mod_id is not null then
+    select * into v_ya from pos_remitos where destino_deposito_id = v_dep_d and modulo_id = v_mod_id and estado <> 'anulado' order by numero desc limit 1;
+    if found then raise exception '«%» ya se pasó (R-%): para pasarlo de nuevo, primero rehacelo.', v_mod_nom, v_ya.numero; end if;
+  end if;
   select coalesce(max(numero), 0) + 1 into v_num from pos_remitos;
   /* SQL 193: si sale de un local, de qué depósito (sin elegirlo, del predeterminado). */
   if v_origen is not null and v_dep_o is null then v_dep_o := pos_deposito_de(v_origen); end if;
 
   insert into pos_remitos (numero, origen_local_id, destino_local_id, referencia, dia, creado_por, creado_nombre, observaciones, clave,
-                           origen_deposito_id, destino_deposito_id, modulo, responsable, estado, recibido_en)
+                           origen_deposito_id, destino_deposito_id, modulo, responsable, estado, recibido_en, modulo_id)
   values (v_num, v_origen, v_destino, v_ref, pos_hoy(), orden_yo_id(), (select pe.nombre from orden_personas pe where pe.id = orden_yo_id()), v_obs, v_clave,
           v_dep_o, v_dep_d, case when v_entre then v_modulo end, case when v_entre then v_resp end,
-          case when v_entre then 'recibido' else 'pendiente' end, case when v_entre then clock_timestamp() end)
+          case when v_entre then 'recibido' else 'pendiente' end, case when v_entre then clock_timestamp() end,
+          case when v_entre then v_mod_id end)   -- SQL 222
   returning id into v_id;
 
   /* SQL 189: si sale de un local, cada renglón con el precio de la lista de ese local (el de hoy) y su razón. */
@@ -2958,7 +2982,8 @@ end $$;
    las diferencias del remito anulado dejan de contar.
    SQL 193: cada cosa vuelve al depósito de donde salió (o sale del que entró).
    Un pase entre depósitos del local lo anula el local con su permiso aunque
-   esté recibido: es para rehacer el módulo. */
+   esté recibido: es para rehacer el módulo. SQL 222: el del stock general en
+   curso lo anula (lo rehace) cualquiera del local. */
 create or replace function pos_remito_anular(p_id uuid, p_motivo text) returns boolean
 language plpgsql volatile security definer set search_path = public as $$
 declare r pos_remitos; m pos_stock_movs;
@@ -2971,7 +2996,8 @@ begin
   if r.estado = 'anulado' then raise exception 'Ese remito ya está anulado.'; end if;
   /* SQL 190: en el local, sólo sus envíos y devoluciones, con el permiso, mientras nadie empezó a recibirlos. Lo demás, la oficina. */
   if not pos_puede('gestion') then
-    perform pos_permiso('envios');
+    /* SQL 222: rehacer un módulo del stock general en curso lo hace cualquiera del local. */
+    if not (r.origen_local_id = r.destino_local_id and pos_stock_general_es_(r.origen_local_id, r.destino_deposito_id)) then perform pos_permiso('envios'); end if;
     if r.origen_local_id is null then raise exception 'Los remitos de la fábrica los anula la oficina.' using errcode = '42501'; end if;
     perform pos_local_ok(r.origen_local_id);
     if r.origen_local_id is distinct from r.destino_local_id   -- SQL 193
@@ -3925,7 +3951,8 @@ end $$;
 /* Un producto testigo de un módulo: cuántas prendas de ese producto hay en el
    módulo (contadas por el supervisor) contra las que dice el envío del
    módulo. Si no coincide, el módulo se rehace (se anula el envío y se hace de
-   nuevo). Cada vez queda anotada. */
+   nuevo). Cada vez queda anotada. SQL 222: los del stock general en curso los
+   cuenta cualquiera del local; los demás, con el permiso de los envíos. */
 create or replace function pos_remito_testigo(p_remito uuid, p_codigo text, p_contado int, p_quien text default null) returns jsonb
 language plpgsql volatile security definer set search_path = public as $$
 declare
@@ -3934,7 +3961,7 @@ declare
   v_q   text := nullif(trim(coalesce(p_quien, '')), '');
   v_en  int;
 begin
-  perform pos_permiso('envios');
+  perform pos_permiso();   -- SQL 222: el de los envíos, más abajo (el stock general no lo pide)
   if v_c = '' or length(v_c) > 30 then raise exception 'Falta el producto testigo.'; end if;
   if p_contado is null or p_contado < 0 or p_contado > 9999 then raise exception 'Escribí cuántas contaste (de 0 a 9999).'; end if;
   if length(v_q) > 60 then raise exception 'El nombre es demasiado largo.'; end if;
@@ -3942,6 +3969,7 @@ begin
   if not found then raise exception 'No existe ese envío.'; end if;
   if r.origen_local_id is distinct from r.destino_local_id then raise exception 'Los testigos son para los envíos entre depósitos de la sucursal.'; end if;
   perform pos_local_ok(r.origen_local_id);
+  if not pos_stock_general_es_(r.origen_local_id, r.destino_deposito_id) then perform pos_permiso('envios'); end if;   -- SQL 222
   if r.estado = 'anulado' then raise exception 'Ese envío está anulado.'; end if;
   select coalesce(sum(cantidad), 0)::int into v_en from pos_remito_items where remito_id = p_remito and codigo = v_c;
   if v_en = 0 and p_contado = 0 then raise exception 'Ese producto no está en el envío. Si está en el módulo, escribí cuántas hay.'; end if;
@@ -7636,6 +7664,137 @@ grant execute on function pos_fichero_qr(text) to anon, authenticated;
 grant execute on function pos_fichar(text, text, text) to authenticated;
 grant execute on function pos_fichero_mio() to authenticated;
 grant execute on function pos_fichero_celular_nuevo(bigint) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 222 (31/10/2026) · EL STOCK GENERAL
+--
+--  Mauricio (31/10): una sola pantalla para el stock de todo el local, "en
+--  base a los módulos: módulo 1, y ahí cargamos todo; después ellos
+--  controlan", y que entren "todos en el local, porque lo hacen ellos". Hasta
+--  ahora estaba en tres lugares (el depósito nuevo en Depósitos, los módulos
+--  escritos a mano en Envíos internos → Entre depósitos del local, y
+--  «Predeterminar» de vuelta en Depósitos), con el permiso de los envíos.
+--
+--  · El stock general en curso de un local: el depósito de temporada (Verano
+--    o Invierno + año) activo y todavía no predeterminado, creado DESDE que
+--    se predeterminó el actual (así el de la temporada de antes, que queda
+--    activo con lo que no se encontró, no vuelve a contar). Si hay dos, el más
+--    nuevo. Se empieza creando ese depósito y se termina predeterminándolo
+--    (las dos cosas, con el permiso de los envíos: encargado o supervisor).
+--  · Los módulos son los del croquis de Equipo VDH (orden_modulos de los
+--    sectores del local: las paredes, el centro y el depósito). Cada pase
+--    guarda el suyo en pos_remitos.modulo_id; se pasa una vez (para pasarlo de
+--    nuevo, se rehace: se anula el pase y las prendas vuelven).
+--  · Pasar un módulo, contar sus testigos y rehacerlo lo hace cualquiera del
+--    local que use el POS (pos_remito_guardar, pos_remito_testigo y
+--    pos_remito_anular, sólo para el stock general en curso).
+--  · pos_stock_general: lo que ve la pantalla (Mercadería → Stock general y
+--    Gestión → Stock → Stock general), un local o todos los que puede ver.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+alter table pos_remitos add column if not exists modulo_id uuid references orden_modulos(id) on delete set null;
+create index if not exists pos_remitos_modulo on pos_remitos (destino_deposito_id, modulo_id) where modulo_id is not null;
+
+/* El depósito del stock general en curso de un local (null si no hay). */
+create or replace function pos_stock_general_dep_(p_local uuid) returns uuid
+language sql stable security definer set search_path = public as $$
+  select n.id
+    from pos_depositos n
+    join pos_depositos v on v.local_id = n.local_id and v.predeterminado
+   where n.local_id = p_local and n.temporada is not null and n.activo and not n.predeterminado
+     and n.creado_en >= coalesce(v.predeterminado_en, '-infinity'::timestamptz)
+   order by n.numero desc
+   limit 1
+$$;
+
+/* ¿Ese depósito es el del stock general en curso del local? */
+create or replace function pos_stock_general_es_(p_local uuid, p_deposito uuid) returns boolean
+language sql stable security definer set search_path = public as $$
+  select p_deposito is not null and p_deposito is not distinct from pos_stock_general_dep_(p_local)
+$$;
+
+/* Un pase del stock general: cuánto se pasó, quién, y sus testigos (vale lo último de cada producto).
+   mismo: lo controló el mismo que lo pasó (por el nombre: la compu del local es compartida). */
+create or replace function pos_stock_general_pase_(p_id uuid) returns jsonb
+language sql stable security definer set search_path = public as $$
+  with u as (select distinct on (t.codigo) t.codigo, t.coincide, nullif(trim(coalesce(t.quien, t.persona_nombre)), '') quien
+               from pos_remito_testigos t where t.remito_id = p_id order by t.codigo, t.id desc)
+  select jsonb_build_object(
+           'id', r.id, 'numero', r.numero, 'fecha', r.fecha, 'modulo', r.modulo, 'modulo_id', r.modulo_id,
+           'responsable', r.responsable, 'creado_nombre', r.creado_nombre,
+           'unidades', (select coalesce(sum(i.cantidad), 0) from pos_remito_items i where i.remito_id = r.id),
+           'productos', (select count(distinct i.codigo) from pos_remito_items i where i.remito_id = r.id),
+           'testigos_ok', (select count(*) from u where u.coincide),
+           'testigos_mal', (select count(*) from u where not u.coincide),
+           'controlo', (select string_agg(distinct u.quien, ', ') from u),
+           'mismo', exists (select 1 from u where lower(u.quien) = lower(trim(coalesce(nullif(trim(r.responsable), ''), r.creado_nombre, '')))))
+    from pos_remitos r
+   where r.id = p_id
+$$;
+
+/* El stock general de un local: el depósito de antes y el nuevo, cada módulo del croquis con su pase (si ya se
+   pasó), lo que se pasó sin módulo del croquis (otros lugares) y lo que queda en el de antes (lo que no se
+   encontró; la plata, sólo con «Ver los precios»). nombres: los depósitos que ya tiene (para proponer el próximo). */
+create or replace function pos_stock_general_local_(p_local uuid) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare
+  v       pos_depositos;   -- el predeterminado: de ahí sale todo
+  n       pos_depositos;   -- el de la temporada nueva, si hay un stock general en curso
+  v_lista int := (select s.lista_id from pos_sucursales s where s.local_id = p_local);
+begin
+  select * into v from pos_depositos where local_id = p_local and predeterminado;
+  select * into n from pos_depositos where id = pos_stock_general_dep_(p_local);
+  return jsonb_build_object(
+    'local_id', p_local,
+    'local', (select l.nombre from orden_locales l where l.id = p_local),
+    'viejo', case when v.id is not null then jsonb_build_object('id', v.id, 'nombre', v.nombre, 'predeterminado_en', v.predeterminado_en) end,
+    'nuevo', case when n.id is not null then jsonb_build_object('id', n.id, 'nombre', n.nombre, 'temporada', n.temporada, 'anio', n.anio,
+                                                                'creado_en', n.creado_en, 'creado_nombre', n.creado_nombre,
+                                                                'unidades', (select coalesce(sum(s.cantidad), 0) from pos_stock s where s.deposito_id = n.id)) end,
+    'modulos', coalesce((
+      select jsonb_agg(jsonb_build_object(
+               'id', m.id, 'numero', m.numero, 'nombre', m.nombre,
+               'lugar', case when s.tipo = 'deposito' then 'deposito' when m.isla then 'centro' else 'pared' end,
+               'pase', (select pos_stock_general_pase_(r.id) from pos_remitos r
+                         where n.id is not null and r.destino_deposito_id = n.id and r.modulo_id = m.id and r.estado <> 'anulado'
+                         order by r.numero desc limit 1),
+               'rehechos', (select count(*) from pos_remitos r
+                             where n.id is not null and r.destino_deposito_id = n.id and r.modulo_id = m.id and r.estado = 'anulado'))
+             order by case when s.tipo = 'deposito' then 1 else 0 end, m.isla, m.numero)
+        from orden_modulos m join orden_sectores s on s.id = m.sector_id
+       where s.local_id = p_local and s.activo and m.activo), '[]'::jsonb),
+    'otros', coalesce((
+      select jsonb_agg(pos_stock_general_pase_(r.id) order by r.numero)
+        from pos_remitos r
+       where n.id is not null and r.destino_deposito_id = n.id and r.estado <> 'anulado'
+         and not exists (select 1 from orden_modulos m join orden_sectores s on s.id = m.sector_id
+                          where m.id = r.modulo_id and s.local_id = p_local and s.activo and m.activo)), '[]'::jsonb),
+    'queda', case when v.id is not null then (
+      select jsonb_build_object('unidades', coalesce(sum(x.n) filter (where x.n > 0), 0),
+                                'productos', count(*) filter (where x.n > 0),
+                                'negativos', count(*) filter (where x.n < 0),
+                                'monto', case when pos_puede('precios') then coalesce(sum(x.n * pos_precio_de(v_lista, x.codigo)) filter (where x.n > 0), 0) end)
+        from (select st.codigo, sum(st.cantidad) n from pos_stock st where st.deposito_id = v.id group by st.codigo) x) end,
+    'nombres', coalesce((select jsonb_agg(d.nombre order by d.numero) from pos_depositos d where d.local_id = p_local), '[]'::jsonb));
+end $$;
+
+/* Lo que ve la pantalla: un local (el suyo o uno de los que supervisa) o, sin local, todos los que puede ver. */
+create or replace function pos_stock_general(p_local uuid default null) returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  if p_local is not null then
+    perform pos_local_ok(p_local);
+    return pos_stock_general_local_(p_local);
+  end if;
+  return coalesce((select jsonb_agg(pos_stock_general_local_(l.id) order by l.nombre)
+                     from orden_locales l where l.activo and pos_local_mio(l.id)), '[]'::jsonb);
+end $$;
+
+revoke all on function pos_stock_general_dep_(uuid), pos_stock_general_es_(uuid, uuid), pos_stock_general_pase_(uuid), pos_stock_general_local_(uuid)
+       from public, anon, authenticated;
+revoke all on function pos_stock_general(uuid) from public, anon;
+grant execute on function pos_stock_general(uuid) to authenticated;
 
 -- ═══════════════════════════════════════════════════════════════════════════
 --  SQL 223 (31/10/2026) · LAS LLEGADAS TARDE, AL FICHAR
