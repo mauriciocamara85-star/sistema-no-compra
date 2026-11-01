@@ -4470,6 +4470,7 @@ llamar = function (nombre, args, tope) {
   if (!_espejo) return _llamarReal(nombre, args, tope);
   if (nombre === 'orden_desafio_mio') return desafioEspejo();
   if (nombre === 'orden_caja_hoy') return cajaEspejo();
+  if (nombre === 'pos_fichero_mio') return ficheroEspejo();
   /* Sólo lee (SQL 159): la vidriera de la semana de su local. */
   if (nombre === 'orden_vidriera_semana') return _llamarReal(nombre, args, tope);
   return trabado();
@@ -4479,7 +4480,7 @@ subirArchivo = function (ruta, blob) { return _espejo ? trabado() : _subirReal(r
 subirArchivoEn = function (b, ruta, blob, tipo) { return _espejo ? trabado() : _subirEnReal(b, ruta, blob, tipo); };
 llamarFuncion = function (nombre, cuerpo) { return _espejo && nombre !== 'ideas-tablero' ? trabado() : _funcionReal(nombre, cuerpo); };
 /* Lo que abre la cámara o pregunta algo antes de escribir: ni se abre. */
-[['abrirCamara'], ['accionTarea'], ['abrirDesafio'], ['pantallaDesafio'], ['grabarVideo'], ['activarAvisos'], ['instalarApp']].forEach(function (x) {
+[['abrirCamara'], ['accionTarea'], ['abrirDesafio'], ['pantallaDesafio'], ['grabarVideo'], ['activarAvisos'], ['instalarApp'], ['fichar']].forEach(function (x) {
   var real = window[x[0]];
   window[x[0]] = function () { if (_espejo) { avisar(textoEspejo()); return Promise.resolve(); } return real.apply(this, arguments); };
 });
@@ -4512,6 +4513,19 @@ function cajaEspejo() {
   if (!_espejo.local_id) return Promise.reject(rechazo('No tiene local.'));
   return leer('/orden_cajas?select=*&local_id=eq.' + valor(_espejo.local_id) + '&fecha=eq.' + hoyAR()).then(function (f) {
     return (f || [])[0] || { id: '00000000-0000-0000-0000-000000000000', local_id: _espejo.local_id, fecha: hoyAR(), estado: 'pendiente' };
+  });
+}
+/** Lo de hoy en Trámites → Fichar, como lo devuelve pos_fichero_mio: sus marcas de hoy, sacadas de las llegadas de
+   hoy, que la supervisión ya ve (Supervisión → Llegadas). Sin esto, Trámites entero decía "Algo falló" (1/11). */
+function ficheroEspejo() {
+  var hoy = hoyAR();
+  return _llamarReal('pos_llegadas', { p_desde: hoy, p_hasta: hoy }, 15000).then(function (d) {
+    var loc = {};
+    ((d && d.locales) || []).forEach(function (l) { loc[l.id] = l.nombre; });
+    /* [id, persona_id, local_id, momento, dia, tipo, origen, observaciones], ya en orden. */
+    return { hoy: d && d.hoy, marcas: ((d && d.filas) || []).filter(function (x) { return x[1] === _espejo.id; }).map(function (x) {
+      return { tipo: x[5], local: loc[x[2]] || '', origen: x[6], hora: hora(x[3]), aviso: x[6] === 'celular' ? x[7] : null };
+    }) };
   });
 }
 
