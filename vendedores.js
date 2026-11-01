@@ -541,20 +541,22 @@ var ICONO = {
   revisar: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><path d="M9 14l2 2 4-4"/>',
   equipo: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0"/><path d="M16 4.5a3.5 3.5 0 0 1 0 7M18 14.5a6.5 6.5 0 0 1 3.5 5.5"/>',
   /* Papeles (31/10): la hoja con la camarita (Mauricio: "los papeles con la hoja de la cámara"). Desde el 31/10 a la
-     noche la pestaña se llama «Trámites» (Mauricio: "no me gusta ese nombre"); por dentro sigue siendo papeles. */
+     noche la pestaña se llama «Trámites» (Mauricio: "no me gusta ese nombre") y desde el 1/11 «Registro», como en
+     Supervisión ("Me gusta más registro"); en singular, porque «registros» son los de No Compra. Por dentro sigue
+     siendo papeles. */
   papeles: '<path d="M10 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8l4 4v4"/><path d="M14 3v4h4"/><rect x="12" y="13.5" width="10" height="7.5" rx="1.5"/><path d="M15 13.5l1-1.5h2l1 1.5"/><circle cx="17" cy="17.2" r="1.7"/>'
 };
-var PESTANAS_SUPERVISION = [['revisar', 'Revisar'], ['equipo', 'Equipo'], ['papeles', 'Trámites'], ['ideas', 'Ideas'], ['perfil', 'Perfil']];
+var PESTANAS_SUPERVISION = [['revisar', 'Revisar'], ['equipo', 'Equipo'], ['papeles', 'Registro'], ['ideas', 'Ideas'], ['perfil', 'Perfil']];
 var _pestana = 'hoy';
 
 /* Las pestañas del vendedor (13/10; 31/10): Hoy (lo que falta hoy) · Módulos (el mapa con las cámaras; antes
-   "Fotos") · Tareas · Trámites (fichar, la caja, los certificados y los apercibimientos) · Ideas. El Perfil, en la inicial de
+   "Fotos") · Tareas · Registro (fichar, la caja, los certificados y los apercibimientos) · Ideas. El Perfil, en la inicial de
    arriba. La Caja de Papeles, sólo en los locales con el control de caja prendido (se recuerda en el teléfono para
    armar las pestañitas enseguida). */
 var K_CAJA = 'vdh_vend_caja_activa';
 function cajaActiva() { try { return !!yo().local_id && localStorage.getItem(K_CAJA) === yo().local_id; } catch (e) { return false; } }
 function pestanasVendedor() {
-  return [['hoy', 'Hoy'], ['fotos', 'Módulos'], ['tareas', 'Tareas'], ['papeles', 'Trámites'], ['ideas', 'Ideas']];
+  return [['hoy', 'Hoy'], ['fotos', 'Módulos'], ['tareas', 'Tareas'], ['papeles', 'Registro'], ['ideas', 'Ideas']];
 }
 
 function armarBarra() {
@@ -779,7 +781,7 @@ function irAEnlace(enlace) {
   var mapa = { hoy: 'hoy', fotos: 'fotos', modulos: 'fotos', tareas: 'tareas', caja: 'caja', ideas: 'ideas', perfil: 'perfil', historial: 'perfil', avisos: 'avisos',
                revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas',
                /* Papeles (SQL 209): a la supervisión, "certificados" la lleva a Ausencias. */
-               papeles: 'papeles', tramites: 'papeles', legajos: 'papeles', certificados: esSupervision() ? 'ausencias' : 'certificados', ausencias: 'ausencias', apercibimientos: 'apercibimientos',
+               papeles: 'papeles', tramites: 'papeles', legajos: 'papeles', registro: 'papeles', certificados: esSupervision() ? 'ausencias' : 'certificados', ausencias: 'ausencias', apercibimientos: 'apercibimientos',
                fichar: 'fichar', fichero: 'fichar' };
   /* Las pantallas completas ponen una marca en el historial para el "atrás" de Android: si el #/… del aviso quedaba
      en la dirección, al volver la app regresaba a él y la abría de nuevo por debajo de Hoy, sin la barra de abajo
@@ -2856,7 +2858,7 @@ function guardarCaja(caja, boton, corrige) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   SUPERVISIÓN: Revisar · Equipo · Trámites (Cajas · Ausencias · Apercibimientos)
+   SUPERVISIÓN: Revisar · Equipo · Registro (Cajas · Ausencias · Apercibimientos)
    El encargado (supervisor con local fijo) ve su local; el administrador y la gerencia eligen entre todos; el
    supervisor de varios locales (SQL 120), entre los que eligió y le aprobaron.
    ════════════════════════════════════════════════════════════════════════ */
@@ -4460,7 +4462,7 @@ function pantallaCargarPapel(op) {
 
 /* ════════════════════════════════════════════════════════════════════════
    VER SU APP (14/10, pedido de Mauricio: "ver lo que hacen los chicos, cómo les aparece"). La supervisión (y la
-   gerencia) abre la app de un vendedor tal cual la ve él, con sus datos: Hoy, Módulos, Tareas, Trámites, Ideas, los avisos y
+   gerencia) abre la app de un vendedor tal cual la ve él, con sus datos: Hoy, Módulos, Tareas, Registro, Ideas, los avisos y
    el Perfil. Sólo para mirar: lo que se hace (fotos, tareas, test, caja, producto testigo, descargos, marcar avisos)
    queda trabado. Lo que se ve lo sigue decidiendo la base (la supervisión lee lo de su local; escribir como otro, no).
    ════════════════════════════════════════════════════════════════════════ */
@@ -4521,7 +4523,7 @@ function cajaEspejo() {
     return (f || [])[0] || { id: '00000000-0000-0000-0000-000000000000', local_id: _espejo.local_id, fecha: hoyAR(), estado: 'pendiente' };
   });
 }
-/** Lo de hoy en Trámites → Fichar, como lo devuelve pos_fichero_mio: sus marcas de hoy, sacadas de las llegadas de
+/** Lo de hoy en Registro → Fichar, como lo devuelve pos_fichero_mio: sus marcas de hoy, sacadas de las llegadas de
    hoy, que la supervisión ya ve (Supervisión → Llegadas). Sin esto, Trámites entero decía "Algo falló" (1/11). */
 function ficheroEspejo() {
   var hoy = hoyAR();
