@@ -7995,3 +7995,188 @@ begin
                             'hora', to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
                             'aviso', nullif(array_to_string(v_aviso, ' '), ''), 'tarde', v_tarde);
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 224 (31/10/2026) · LAS LLEGADAS TARDE, EN PERÍODOS DE 90 DÍAS
+--
+--  Mauricio (31/10): "Cada llegada tarde es un apercibimiento … Al cuarto
+--  apercibimiento se suspende y no se reinicia todos los meses … Podríamos
+--  poner que se renueva cada 90 días … Desde el primer procedimiento tiene 90
+--  días."
+--  En el 223 la cuenta era por mes (volvía a cero el 1.º). Ahora va por
+--  períodos de 90 días: la primera llegada tarde abre un período (ese día y
+--  los 89 siguientes) y las que caen adentro se suman, aunque cambie el mes; la
+--  primera llegada tarde después de que el período se cierra abre otro, desde
+--  1. Qué es llegar tarde no cambia (la regla de Llegadas), ni a quién le
+--  llegan los avisos (a la tercera, a él y a la supervisión; desde la cuarta,
+--  a la supervisión, cada vez): cambian los textos, "desde el 1/11" en vez de
+--  "en noviembre", y "hasta el …" cuándo se cierra el período.
+--  · pos_tardes_periodo_: el período abierto de una persona en p_dia (n,
+--    desde, hasta); nada si no tiene uno abierto.
+--  · Saca pos_tardes_del_mes_ (la usaba sólo pos_fichar).
+--  Reemplaza pos_fichar: lo mismo del 223, con la cuenta nueva. La respuesta
+--  trae también 'desde' y 'hasta' (D/M), y 'mes' = 'estos 90 días' para la app
+--  de antes (impecable-v77), que arma «… en {mes}».
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Sin el 223 no hay llegadas tarde: se frena acá, sin cambiar nada. */
+do $$
+begin
+  if to_regprocedure('public.pos_minutos_tarde_(uuid, date, timestamptz)') is null then
+    raise exception 'Primero hay que correr el SQL 223 (las llegadas tarde al fichar): está en App Orden.';
+  end if;
+end $$;
+
+/* El período de llegadas tarde de una persona en p_dia: recorre sus llegadas tarde (la regla de Llegadas: la primera
+   entrada del día en cada local, más de 10 minutos y hasta 3 horas después de que abría) en orden; la primera abre un
+   período de 90 días (ese día y los 89 siguientes), las de adentro suman, y la primera después de que se cierra abre
+   otro. Devuelve el período abierto en p_dia (cuántas lleva, desde y hasta qué día); nada si no tiene uno abierto. */
+create or replace function pos_tardes_periodo_(p_persona uuid, p_dia date)
+returns table (n integer, desde date, hasta date) language plpgsql stable security definer set search_path = public as $$
+declare r record; v_desde date; v_n int := 0;
+begin
+  for r in
+    select e.dia
+      from (select coalesce(x.local_id, p.local_id) local_id, x.dia, min(x.momento) entrada
+              from pos_tiempos x
+              join orden_personas p on p.id = x.persona_id
+             where x.persona_id = p_persona and x.estado = 'ok' and x.tipo = 'entrada' and x.dia <= p_dia
+             group by 1, 2) e
+     where pos_minutos_tarde_(e.local_id, e.dia, e.entrada) between 11 and 180
+     order by e.dia
+  loop
+    if v_desde is null or r.dia >= v_desde + 90 then
+      v_desde := r.dia;
+      v_n := 0;
+    end if;
+    v_n := v_n + 1;
+  end loop;
+  if v_desde is not null and p_dia < v_desde + 90 then
+    n := v_n; desde := v_desde; hasta := v_desde + 89;
+    return next;
+  end if;
+end $$;
+revoke all on function pos_tardes_periodo_(uuid, date) from public, anon, authenticated;
+
+/* Lo mismo del 223; lo nuevo es la cuenta en períodos de 90 días (SQL 224). */
+create or replace function pos_fichar(p_codigo text, p_tipo text, p_celular text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_yo     uuid := orden_yo_id();
+  v_p      orden_personas;
+  v_m      text[];
+  v_caja   club_cajas;
+  v_ahora  timestamptz := clock_timestamp();
+  v_w      bigint;
+  v_loc    orden_locales;
+  v_cel    text := btrim(coalesce(p_celular, ''));
+  v_suyo   text;
+  v_duenio uuid;
+  v_otro   text;
+  v_aviso  text[] := '{}';
+  v_ya     pos_tiempos;
+  v_id     bigint;
+  v_dia    date;
+  v_min    int;
+  v_n      int;
+  v_mes    text;
+  v_desde  date;
+  v_hasta  date;
+  v_de     text;
+  v_al     text;
+  v_abre   text;
+  v_hora   text;
+  v_quien  text;
+  v_clave  text;
+  v_tarde  jsonb;
+begin
+  if v_yo is null then raise exception 'Entrá con tu usuario para fichar.'; end if;
+  select * into v_p from orden_personas where id = v_yo;
+  if not coalesce(v_p.activo and v_p.aprobado, false) then raise exception 'Tu usuario no está activo: hablá con tu supervisor.'; end if;
+  if p_tipo is null or p_tipo not in ('entrada', 'salida') then raise exception 'Elegí si es tu entrada o tu salida.'; end if;
+  if v_cel !~ '^[A-Za-z0-9_-]{8,64}$' then raise exception 'A este celular le falta su número: actualizá la app y probá de nuevo.'; end if;
+  v_m := regexp_match(btrim(coalesce(p_codigo, '')), '^VDHF1\.([0-9]{1,12})\.([0-9]{1,12})\.([0-9a-f]{16})$');
+  if v_m is null then raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.'; end if;
+  select * into v_caja from club_cajas where id = v_m[1]::bigint;
+  if v_caja.id is null or pos_fichero_firma(v_caja.id, v_m[2]::bigint) is distinct from v_m[3] then
+    raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.';
+  end if;
+  if v_caja.baja is not null then raise exception 'Esa compu ya no está habilitada: avisale a tu supervisor.'; end if;
+  v_w := floor(extract(epoch from v_ahora) / 30)::bigint;
+  if v_m[2]::bigint < v_w - 1 or v_m[2]::bigint > v_w + 1 then
+    raise exception 'Ese QR ya cambió: escaneá el que se ve ahora en la compu del local.';
+  end if;
+  select * into v_loc from orden_locales l where l.activo and upper(btrim(l.codigo)) = upper(btrim(v_caja.local)) limit 1;
+  if v_loc.id is null then raise exception 'El local de esa compu no está en el sistema.'; end if;
+
+  /* Dos toques a la vez, o escanear dos veces seguidas: una sola marca. */
+  perform pg_advisory_xact_lock(hashtext('pos_fichar:' || v_yo));
+  select * into v_ya from pos_tiempos x
+   where x.persona_id = v_yo and x.tipo = p_tipo and x.estado = 'ok' and x.momento > v_ahora - interval '10 minutes'
+   order by x.momento desc limit 1;
+  if v_ya.id is not null then
+    return jsonb_build_object('ya', true, 'id', v_ya.id, 'tipo', p_tipo, 'local', v_loc.nombre,
+                              'hora', to_char(v_ya.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                              'aviso', case when v_ya.origen = 'celular' then v_ya.observaciones end);
+  end if;
+
+  /* Un celular por persona. Desde el suyo, nada que avisar. */
+  select celular into v_suyo from pos_fichero_celulares where persona_id = v_yo;
+  select c.persona_id into v_duenio from pos_fichero_celulares c where c.celular = v_cel and c.persona_id <> v_yo;
+  if v_duenio is not null then
+    v_aviso := v_aviso || ('Fichó desde el celular de ' || (select orden_nombre_lista(p.nombre, p.inicial) from orden_personas p where p.id = v_duenio) || '.');
+  elsif v_suyo is distinct from v_cel then
+    select string_agg(distinct orden_nombre_lista(p.nombre, p.inicial), ', ') into v_otro
+      from pos_tiempos x join orden_personas p on p.id = x.persona_id
+     where x.celular = v_cel and x.persona_id <> v_yo and x.dia = pos_hoy() and x.estado = 'ok';
+    if v_suyo is not null then v_aviso := v_aviso || 'No es su celular de siempre.'::text; end if;
+    if v_otro is not null then v_aviso := v_aviso || ('Desde ese celular también fichó hoy ' || v_otro || '.'); end if;
+    if v_suyo is null and v_otro is null then   -- el primero: queda como el suyo
+      insert into pos_fichero_celulares (persona_id, celular) values (v_yo, v_cel);
+    end if;
+  end if;
+
+  v_dia := (v_ahora at time zone 'America/Argentina/Buenos_Aires')::date;
+  insert into pos_tiempos (persona_id, local_id, momento, dia, tipo, origen, terminal, observaciones, cargado_por, celular)
+  values (v_yo, v_loc.id, v_ahora, v_dia, p_tipo, 'celular',
+          left('Fichero QR · ' || coalesce(nullif(btrim(v_caja.nombre), ''), 'compu ' || v_caja.id), 80),
+          nullif(array_to_string(v_aviso, ' '), ''), v_yo, v_cel)
+  returning id into v_id;
+
+  /* SQL 223: la llegada tarde. Sólo la primera entrada del día en ese local (la que mira Llegadas).
+     SQL 224: cuántas lleva en su período de 90 días (pos_tardes_periodo_), ya no en el mes. */
+  if p_tipo = 'entrada' and not exists (
+       select 1 from pos_tiempos x join orden_personas p on p.id = x.persona_id
+        where x.persona_id = v_yo and x.estado = 'ok' and x.tipo = 'entrada' and x.dia = v_dia and x.id <> v_id
+          and x.momento < v_ahora and coalesce(x.local_id, p.local_id) = v_loc.id) then
+    v_min := pos_minutos_tarde_(v_loc.id, v_dia, v_ahora);
+    if v_min between 11 and 180 then
+      select t.n, t.desde, t.hasta into v_n, v_desde, v_hasta from pos_tardes_periodo_(v_yo, v_dia) t;
+      v_de := to_char(v_desde, 'FMDD/FMMM');
+      v_al := to_char(v_hasta, 'FMDD/FMMM');
+      v_mes := 'estos 90 días';   -- para la app de antes (impecable-v77), que arma «… en {mes}»
+      v_abre := (select to_char(case when extract(isodow from v_dia) = 7 and z.apertura_domingo is not null then z.apertura_domingo
+                                     else l.hora_apertura end, 'FMHH24:MI')
+                   from orden_locales l left join pos_tiempos_locales z on z.local_id = l.id where l.id = v_loc.id);
+      v_hora := to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'FMHH24:MI');
+      v_quien := orden_nombre_lista(v_p.nombre, v_p.inicial);
+      v_clave := 'tarde:' || v_yo || ':' || v_desde || ':' || v_n;
+      if v_n = 3 then
+        perform orden_encolar_aviso(v_yo, 'llegadas', 'Ya acumulás 3 llegadas tarde desde el ' || v_de,
+          'Ojo: si llegás tarde otra vez hasta el ' || v_al || ', corrés riesgo de suspensión.', '/fichar', v_clave, 2::smallint);
+        perform pos_tarde_avisar_sup_(v_yo, v_loc.id, v_quien || ' ya acumula 3 llegadas tarde desde el ' || v_de,
+          'Hoy llegó a las ' || v_hora || ' a ' || v_loc.nombre || ' (abre a las ' || v_abre || '). Si llega tarde otra vez hasta el ' || v_al || ', corre riesgo de suspensión.', v_clave);
+      elsif v_n >= 4 then
+        perform pos_tarde_avisar_sup_(v_yo, v_loc.id, v_quien || ' ya acumula ' || v_n || ' llegadas tarde desde el ' || v_de,
+          'Hoy llegó a las ' || v_hora || ' a ' || v_loc.nombre || ' (abre a las ' || v_abre || '). Corre riesgo de suspensión.', v_clave);
+      end if;
+      v_tarde := jsonb_build_object('min', v_min, 'abre', v_abre, 'n', v_n, 'mes', v_mes, 'desde', v_de, 'hasta', v_al);
+    end if;
+  end if;
+
+  return jsonb_build_object('ya', false, 'id', v_id, 'tipo', p_tipo, 'local', v_loc.nombre,
+                            'hora', to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                            'aviso', nullif(array_to_string(v_aviso, ' '), ''), 'tarde', v_tarde);
+end $$;
+
+drop function if exists pos_tardes_del_mes_(uuid, date);

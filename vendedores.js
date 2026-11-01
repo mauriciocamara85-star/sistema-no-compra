@@ -3720,15 +3720,23 @@ function avisoFicha(a) {
   if (!a) return '';
   return /Ya es su celular/.test(a) ? 'Tu supervisor anotó este celular como el tuyo.' : 'No la fichaste desde tu celular de siempre: tu supervisor lo va a ver.';
 }
-/* La llegada tarde (SQL 223), con cuántas lleva en el mes. Mauricio (31/10): "aunque vayan diciendo 'ya acumulás dos, ya
-   acumulás tres', en la cuarta, obvio que corrés el riesgo de suspensión". La regla y la cuenta son las de Llegadas; los
-   avisos (a la tercera, a él y a quien supervisa; desde la cuarta, a quien supervisa) los manda la base. */
+/* La llegada tarde (SQL 223), con cuántas lleva. Mauricio (31/10): "aunque vayan diciendo 'ya acumulás dos, ya acumulás
+   tres', en la cuarta, obvio que corrés el riesgo de suspensión". La regla es la de Llegadas; los avisos (a la tercera, a
+   él y a quien supervisa; desde la cuarta, a quien supervisa) los manda la base. Desde el SQL 224 la cuenta no vuelve a
+   cero con el mes: "no se reinicia todos los meses … desde el primer procedimiento tiene 90 días". La primera llegada
+   tarde abre un período de 90 días (t.desde, t.hasta: D/M) y las de adentro suman. Sin 'desde' (la base del 223), el mes. */
 function minutosTarde(min) {
   var h = Math.floor(min / 60), m = min % 60, mm = m + (m === 1 ? ' minuto' : ' minutos');
   return h ? h + (h === 1 ? ' hora' : ' horas') + (m ? ' y ' + mm : '') : mm;
 }
 function textoTarde(t) {
   var y = 'Llegaste ' + minutosTarde(t.min) + ' tarde (abre a las ' + t.abre + '). ';
+  if (t.desde) {
+    if (t.n <= 1) return y + 'Es tu primera llegada tarde: cuenta durante 90 días, hasta el ' + t.hasta + '.';
+    if (t.n === 2) return y + 'Ya acumulás 2 llegadas tarde desde el ' + t.desde + ' (cuentan hasta el ' + t.hasta + ').';
+    if (t.n === 3) return y + 'Ya acumulás 3 llegadas tarde desde el ' + t.desde + '. Ojo: si llegás tarde otra vez hasta el ' + t.hasta + ', corrés riesgo de suspensión.';
+    return y + 'Ya acumulás ' + t.n + ' llegadas tarde desde el ' + t.desde + ': corrés riesgo de suspensión.';
+  }
   if (t.n <= 1) return y + 'Es tu primera llegada tarde de ' + t.mes + '.';
   if (t.n === 2) return y + 'Ya acumulás 2 llegadas tarde en ' + t.mes + '.';
   if (t.n === 3) return y + 'Ya acumulás 3 llegadas tarde en ' + t.mes + '. Ojo: a la cuarta corrés riesgo de suspensión.';
