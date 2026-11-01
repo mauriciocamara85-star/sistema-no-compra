@@ -8180,3 +8180,234 @@ begin
 end $$;
 
 drop function if exists pos_tardes_del_mes_(uuid, date);
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 225 (01/11/2026) · EL QR EN MOVIMIENTO
+--
+--  Mauricio (01/11): "a ver qué podemos implementar para que no se pueda
+--  sacar la foto … tenemos la aplicación, una cámara; hay que aprovechar."
+--  Hasta el 224 el QR cambiaba cada 30 segundos y valía hasta un minuto: un
+--  compañero le sacaba una foto, la mandaba por WhatsApp y el que no había
+--  llegado fichaba desde su casa. Ahora:
+--  · La compu (fichero.html) muestra un QR distinto cada medio segundo:
+--    pos_fichero_qr2 le da los de los próximos 30 segundos, firmados con el
+--    mismo secreto del 218 (pos_fichero_firma2, con otro prefijo: VDHF2).
+--  · La app (Equipo VDH → Trámites → Fichar) apunta la cámara y lee tres
+--    distintos; pos_fichar los recibe juntos y pide tres de la misma compu,
+--    en menos de 5 segundos, y el último de hace 10 segundos a lo sumo.
+--    Una foto tiene uno solo; un video grabado y reenviado llega vencido.
+--  · El QR de antes (VDHF1) ya no vale. Una compu que quedó con la página
+--    de antes abierta (pos_fichero_qr) dice que aprieten F5.
+--  · pos_fichero_qr2 trae también el id de las últimas marcas: la compu
+--    muestra un cartel grande cuando alguien ficha (sin sonido).
+--  Lo demás de pos_fichar (un celular por persona, las llegadas tarde en
+--  períodos de 90 días, los avisos) queda igual que en el 224.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Sin el 224 (y el 218 debajo) no hay fichero que cambiar: se frena acá, sin cambiar nada. */
+do $$
+begin
+  if to_regprocedure('public.pos_tardes_periodo_(uuid, date)') is null then
+    raise exception 'Primero hay que correr el SQL 224 (las llegadas tarde en períodos de 90 días): está en App Orden.';
+  end if;
+end $$;
+
+/* La firma de un QR en movimiento: la compu y el medio segundo, con el secreto del 218. 16 letras alcanzan. */
+create or replace function pos_fichero_firma2(p_caja bigint, p_paso bigint) returns text
+language sql stable security definer set search_path = public as $$
+  select left(encode(extensions.hmac(convert_to('VDHF2.' || p_caja || '.' || p_paso, 'UTF8'), f.secreto, 'sha256'), 'hex'), 16)
+    from pos_fichero f where f.id = 1
+$$;
+revoke all on function pos_fichero_firma2(bigint, bigint) from public, anon, authenticated;
+
+/* La compu del local (fichero.html) pide sus QR: uno por cada medio segundo de los próximos 30, con la hora de la base,
+   para que la pantalla los cambie a tiempo aunque el reloj de la compu ande mal. Y las últimas marcas de hoy en ese
+   local, con su id (para el cartel de "fichó"). Hace falta la llave de la compu habilitada; anda sin nadie adentro. */
+create or replace function pos_fichero_qr2(p_caja text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_cod   text := club_caja_local(p_caja);
+  v_caja  bigint;
+  v_loc   orden_locales;
+  v_ahora timestamptz := clock_timestamp();
+  v_p     bigint;
+begin
+  if v_cod is null then
+    raise exception 'Esta compu no está habilitada como la de un local: se habilita en Config → General → Las compus de los locales.';
+  end if;
+  select id into v_caja from club_cajas where llave_hash = club_caja_hash(p_caja) and baja is null;
+  select * into v_loc from orden_locales l where l.activo and upper(btrim(l.codigo)) = upper(btrim(v_cod)) limit 1;
+  if v_loc.id is null then raise exception 'El local de esta compu (%) no está en el sistema.', v_cod; end if;
+  v_p := floor(extract(epoch from v_ahora) * 2)::bigint;   -- el medio segundo de ahora
+  return jsonb_build_object(
+    'local_id', v_loc.id,
+    'local', v_loc.nombre,
+    'ahora_ms', floor(extract(epoch from v_ahora) * 1000)::bigint,
+    'paso_ms', 500,
+    'codigos', (select jsonb_agg(jsonb_build_array(k, 'VDHF2.' || v_caja || '.' || k || '.' || pos_fichero_firma2(v_caja, k)) order by k)
+                  from generate_series(v_p, v_p + 59) k),
+    'ultimas', coalesce((
+      select jsonb_agg(jsonb_build_array(u.nombre, u.tipo, u.hora, u.id) order by u.momento desc)
+        from (select x.id, orden_nombre_lista(p.nombre, p.inicial) nombre, x.tipo, x.momento,
+                     to_char(x.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI') hora
+                from pos_tiempos x join orden_personas p on p.id = x.persona_id
+               where x.local_id = v_loc.id and x.dia = pos_hoy() and x.estado = 'ok'
+               order by x.momento desc limit 8) u), '[]'::jsonb));
+end $$;
+
+revoke all on function pos_fichero_qr2(text) from public;
+grant execute on function pos_fichero_qr2(text) to anon, authenticated;
+
+/* La página de antes (la del QR de 30 segundos) pide con esta función: desde el 225 le dice que aprieten F5. El texto
+   lleva "ya no está habilitada" porque así la página de antes lo muestra entero, en lugar del QR. */
+create or replace function pos_fichero_qr(p_caja text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+begin
+  raise exception 'Hay una versión nueva del fichero: apretá F5 para verla (la de esta pantalla ya no está habilitada).';
+end $$;
+
+/* Lo mismo del 224; lo nuevo es la lectura del QR en movimiento (SQL 225). */
+create or replace function pos_fichar(p_codigo text, p_tipo text, p_celular text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_yo     uuid := orden_yo_id();
+  v_p      orden_personas;
+  v_m      text[];
+  v_caja   club_cajas;
+  v_ahora  timestamptz := clock_timestamp();
+  v_txt    text := btrim(coalesce(p_codigo, ''));
+  v_parte  text;
+  v_cid    bigint;
+  v_pasos  bigint[] := '{}';
+  v_cuant  int;
+  v_pmin   bigint;
+  v_pmax   bigint;
+  v_pahora bigint;
+  v_loc    orden_locales;
+  v_cel    text := btrim(coalesce(p_celular, ''));
+  v_suyo   text;
+  v_duenio uuid;
+  v_otro   text;
+  v_aviso  text[] := '{}';
+  v_ya     pos_tiempos;
+  v_id     bigint;
+  v_dia    date;
+  v_min    int;
+  v_n      int;
+  v_mes    text;
+  v_desde  date;
+  v_hasta  date;
+  v_de     text;
+  v_al     text;
+  v_abre   text;
+  v_hora   text;
+  v_quien  text;
+  v_clave  text;
+  v_tarde  jsonb;
+begin
+  if v_yo is null then raise exception 'Entrá con tu usuario para fichar.'; end if;
+  select * into v_p from orden_personas where id = v_yo;
+  if not coalesce(v_p.activo and v_p.aprobado, false) then raise exception 'Tu usuario no está activo: hablá con tu supervisor.'; end if;
+  if p_tipo is null or p_tipo not in ('entrada', 'salida') then raise exception 'Elegí si es tu entrada o tu salida.'; end if;
+  if v_cel !~ '^[A-Za-z0-9_-]{8,64}$' then raise exception 'A este celular le falta su número: actualizá la app y probá de nuevo.'; end if;
+  /* SQL 225: el QR en movimiento. La compu muestra uno nuevo cada medio segundo y la app manda los que leyó en vivo,
+     separados por espacios: hacen falta tres distintos, de la misma compu, en menos de 5 segundos, y el último de hace
+     10 segundos a lo sumo. Una foto (uno solo) o un video grabado y reenviado (llega vencido) no alcanzan. El QR de
+     antes (VDHF1, uno cada 30 segundos) ya no vale. */
+  if v_txt ~ '^VDHF1\.' then
+    raise exception 'La compu del local tiene el fichero de antes: que aprieten F5 en la compu y escaneá de nuevo.';
+  end if;
+  if length(v_txt) > 800 then raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.'; end if;
+  foreach v_parte in array regexp_split_to_array(v_txt, '\s+') loop
+    v_m := regexp_match(v_parte, '^VDHF2\.([0-9]{1,12})\.([0-9]{1,15})\.([0-9a-f]{16})$');
+    if v_m is null or v_m[1]::bigint is distinct from coalesce(v_cid, v_m[1]::bigint)
+       or pos_fichero_firma2(v_m[1]::bigint, v_m[2]::bigint) is distinct from v_m[3] then
+      raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.';
+    end if;
+    v_cid := v_m[1]::bigint;
+    v_pasos := v_pasos || v_m[2]::bigint;
+  end loop;
+  select count(distinct x)::int, min(x), max(x) into v_cuant, v_pmin, v_pmax from unnest(v_pasos) x;
+  if v_cuant < 3 or v_pmax - v_pmin > 10 then
+    raise exception 'El QR no se leyó en vivo: apuntá la cámara al QR de la compu del local, sin moverla, hasta que se cierre.';
+  end if;
+  select * into v_caja from club_cajas where id = v_cid;
+  if v_caja.id is null then raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.'; end if;
+  if v_caja.baja is not null then raise exception 'Esa compu ya no está habilitada: avisale a tu supervisor.'; end if;
+  v_pahora := floor(extract(epoch from v_ahora) * 2)::bigint;
+  if v_pmax < v_pahora - 20 or v_pmax > v_pahora + 4 then
+    raise exception 'Ese QR ya cambió: escaneá el que se ve ahora en la compu del local.';
+  end if;
+  select * into v_loc from orden_locales l where l.activo and upper(btrim(l.codigo)) = upper(btrim(v_caja.local)) limit 1;
+  if v_loc.id is null then raise exception 'El local de esa compu no está en el sistema.'; end if;
+
+  /* Dos toques a la vez, o escanear dos veces seguidas: una sola marca. */
+  perform pg_advisory_xact_lock(hashtext('pos_fichar:' || v_yo));
+  select * into v_ya from pos_tiempos x
+   where x.persona_id = v_yo and x.tipo = p_tipo and x.estado = 'ok' and x.momento > v_ahora - interval '10 minutes'
+   order by x.momento desc limit 1;
+  if v_ya.id is not null then
+    return jsonb_build_object('ya', true, 'id', v_ya.id, 'tipo', p_tipo, 'local', v_loc.nombre,
+                              'hora', to_char(v_ya.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                              'aviso', case when v_ya.origen = 'celular' then v_ya.observaciones end);
+  end if;
+
+  /* Un celular por persona. Desde el suyo, nada que avisar. */
+  select celular into v_suyo from pos_fichero_celulares where persona_id = v_yo;
+  select c.persona_id into v_duenio from pos_fichero_celulares c where c.celular = v_cel and c.persona_id <> v_yo;
+  if v_duenio is not null then
+    v_aviso := v_aviso || ('Fichó desde el celular de ' || (select orden_nombre_lista(p.nombre, p.inicial) from orden_personas p where p.id = v_duenio) || '.');
+  elsif v_suyo is distinct from v_cel then
+    select string_agg(distinct orden_nombre_lista(p.nombre, p.inicial), ', ') into v_otro
+      from pos_tiempos x join orden_personas p on p.id = x.persona_id
+     where x.celular = v_cel and x.persona_id <> v_yo and x.dia = pos_hoy() and x.estado = 'ok';
+    if v_suyo is not null then v_aviso := v_aviso || 'No es su celular de siempre.'::text; end if;
+    if v_otro is not null then v_aviso := v_aviso || ('Desde ese celular también fichó hoy ' || v_otro || '.'); end if;
+    if v_suyo is null and v_otro is null then   -- el primero: queda como el suyo
+      insert into pos_fichero_celulares (persona_id, celular) values (v_yo, v_cel);
+    end if;
+  end if;
+
+  v_dia := (v_ahora at time zone 'America/Argentina/Buenos_Aires')::date;
+  insert into pos_tiempos (persona_id, local_id, momento, dia, tipo, origen, terminal, observaciones, cargado_por, celular)
+  values (v_yo, v_loc.id, v_ahora, v_dia, p_tipo, 'celular',
+          left('Fichero QR · ' || coalesce(nullif(btrim(v_caja.nombre), ''), 'compu ' || v_caja.id), 80),
+          nullif(array_to_string(v_aviso, ' '), ''), v_yo, v_cel)
+  returning id into v_id;
+
+  /* SQL 225: la lectura del QR es nueva (arriba); lo de abajo es lo mismo del 224.
+     SQL 223: la llegada tarde. Sólo la primera entrada del día en ese local (la que mira Llegadas).
+     SQL 224: cuántas lleva en su período de 90 días (pos_tardes_periodo_), ya no en el mes. */
+  if p_tipo = 'entrada' and not exists (
+       select 1 from pos_tiempos x join orden_personas p on p.id = x.persona_id
+        where x.persona_id = v_yo and x.estado = 'ok' and x.tipo = 'entrada' and x.dia = v_dia and x.id <> v_id
+          and x.momento < v_ahora and coalesce(x.local_id, p.local_id) = v_loc.id) then
+    v_min := pos_minutos_tarde_(v_loc.id, v_dia, v_ahora);
+    if v_min between 11 and 180 then
+      select t.n, t.desde, t.hasta into v_n, v_desde, v_hasta from pos_tardes_periodo_(v_yo, v_dia) t;
+      v_de := to_char(v_desde, 'FMDD/FMMM');
+      v_al := to_char(v_hasta, 'FMDD/FMMM');
+      v_mes := 'estos 90 días';   -- para la app de antes (impecable-v77), que arma «… en {mes}»
+      v_abre := (select to_char(case when extract(isodow from v_dia) = 7 and z.apertura_domingo is not null then z.apertura_domingo
+                                     else l.hora_apertura end, 'FMHH24:MI')
+                   from orden_locales l left join pos_tiempos_locales z on z.local_id = l.id where l.id = v_loc.id);
+      v_hora := to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'FMHH24:MI');
+      v_quien := orden_nombre_lista(v_p.nombre, v_p.inicial);
+      v_clave := 'tarde:' || v_yo || ':' || v_desde || ':' || v_n;
+      if v_n = 3 then
+        perform orden_encolar_aviso(v_yo, 'llegadas', 'Ya acumulás 3 llegadas tarde desde el ' || v_de,
+          'Ojo: si llegás tarde otra vez hasta el ' || v_al || ', corrés riesgo de suspensión.', '/fichar', v_clave, 2::smallint);
+        perform pos_tarde_avisar_sup_(v_yo, v_loc.id, v_quien || ' ya acumula 3 llegadas tarde desde el ' || v_de,
+          'Hoy llegó a las ' || v_hora || ' a ' || v_loc.nombre || ' (abre a las ' || v_abre || '). Si llega tarde otra vez hasta el ' || v_al || ', corre riesgo de suspensión.', v_clave);
+      elsif v_n >= 4 then
+        perform pos_tarde_avisar_sup_(v_yo, v_loc.id, v_quien || ' ya acumula ' || v_n || ' llegadas tarde desde el ' || v_de,
+          'Hoy llegó a las ' || v_hora || ' a ' || v_loc.nombre || ' (abre a las ' || v_abre || '). Corre riesgo de suspensión.', v_clave);
+      end if;
+      v_tarde := jsonb_build_object('min', v_min, 'abre', v_abre, 'n', v_n, 'mes', v_mes, 'desde', v_de, 'hasta', v_al);
+    end if;
+  end if;
+
+  return jsonb_build_object('ya', false, 'id', v_id, 'tipo', p_tipo, 'local', v_loc.nombre,
+                            'hora', to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                            'aviso', nullif(array_to_string(v_aviso, ' '), ''), 'tarde', v_tarde);
+end $$;

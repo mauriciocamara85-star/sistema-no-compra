@@ -3692,6 +3692,10 @@ function errorPapel(e, titulo, reintentar) {
    con el QR fichás. Entrá y salí." En la compu del local (fichero.html) hay un QR que cambia cada 30 segundos; acá se
    escanea y queda la entrada o la salida en el registro de tiempos, con la hora de ese momento. Sin selfie ("con
    selfie no te falta") y sin la huella. El QR no es un enlace: sólo lo lee esta app, con la persona adentro.
+   SQL 225 (01/11): el QR EN MOVIMIENTO ("a ver qué podemos implementar para que no se pueda sacar la foto … tenemos la
+   aplicación, una cámara; hay que aprovechar"): la compu muestra uno distinto cada medio segundo y el lector junta tres
+   seguidos, en vivo, antes de mandarlos. Una foto tiene uno solo; un video grabado y reenviado llega vencido. Sin el
+   botón de sacarle una foto al QR (dejaba elegir una de la galería).
    Cada celular tiene su número al azar (vdh_celular: queda en el aparato aunque se salga de la app). El primero
    desde el que ficha cada uno queda como el suyo; desde otro, la marca lleva un aviso que ve la supervisión. ── */
 var K_CELULAR = 'vdh_celular';
@@ -3812,14 +3816,17 @@ function mandarFicha(tipo, codigo) {
 }
 
 /* El lector de QR: la cámara de atrás y un cuadrado. Lee solo, sin botón: con el lector del celular (BarcodeDetector,
-   Android) o, si no tiene (iPhone), con jsQR, que se baja la primera vez. Si la cámara no anda adentro de la app, una
-   foto con la del teléfono (el QR vale un minuto: alcanza). */
+   Android) o, si no tiene (iPhone), con jsQR, que se baja la primera vez. El QR en movimiento (VDHF2, SQL 225): junta
+   tres distintos de la misma compu, leídos en los últimos 4 segundos, y recién ahí los manda, juntos (separados por un
+   espacio). El de antes (VDHF1) se manda solo, como siempre. Sin cámara no se ficha: nada de fotos. */
 var _lectorVivo = 0;
+var QR_JUNTOS = 3, QR_FRESCO = 4000;
 function lectorQR(titulo, alLeer, alCerrar) {
   apagarCamara();
   barra.hidden = true;
   app.className = 'app';
   var vivo = ++_lectorVivo, leido = false;
+  var leidos = {}, cajaLeida = null;   // el QR en movimiento: medio segundo → [el código, cuándo se leyó]
   var partes = String(titulo).split(' · ');
   app.innerHTML =
     '<div class="camara-vista con-marco lector-qr" id="vista">' +
@@ -3829,16 +3836,24 @@ function lectorQR(titulo, alLeer, alCerrar) {
         '<div class="camara-arriba"><button class="volver" id="cerrar">‹ Volver</button><span class="titulo"><b>' + esc(partes[0]) + '</b>' +
           (partes.length > 1 ? '<small>' + esc(partes.slice(1).join(' · ')) + '</small>' : '') + '</span><span style="width:60px"></span></div>' +
       '</div>' +
-      '<div class="camara-abajo"><button class="enlace" id="otra">¿No anda la cámara? Sacale una foto al QR</button></div>' +
-      '<input type="file" id="archivo" accept="image/*" capture="environment" hidden>' +
+      '<div class="camara-abajo"><p id="ayudaQR">Apuntá al QR de la compu y no muevas el celular hasta que se cierre la cámara.</p></div>' +
     '</div>';
-  var video = document.getElementById('video'), archivo = document.getElementById('archivo'), guia = document.getElementById('guiaQR');
+  var video = document.getElementById('video'), guia = document.getElementById('guiaQR');
   var sigue = function () { return vivo === _lectorVivo && !leido && !!document.getElementById('video'); };
   var decir = function (t) { if (guia) guia.textContent = t; };
   var otroQR = 0;
   var probar = function (texto) {
     if (!texto || !sigue()) return false;
-    if (!/^VDHF1\./.test(texto)) {   // otro QR (una promo, un enlace): se sigue mirando
+    var m = /^VDHF2\.(\d+)\.(\d+)\.[0-9a-f]{16}$/.exec(texto);
+    if (m) {   // el QR en movimiento: se siguen mirando hasta juntar tres distintos
+      var ya = Date.now();
+      if (cajaLeida !== m[1]) { leidos = {}; cajaLeida = m[1]; }
+      leidos[m[2]] = [texto, ya];
+      Object.keys(leidos).forEach(function (k) { if (ya - leidos[k][1] > QR_FRESCO) delete leidos[k]; });
+      var pasos = Object.keys(leidos).sort(function (a, b) { return a - b; });
+      if (pasos.length < QR_JUNTOS) { clearTimeout(otroQR); decir('Leyendo… no muevas el celular'); return false; }
+      texto = pasos.map(function (k) { return leidos[k][0]; }).join(' ');
+    } else if (!/^VDHF1\./.test(texto)) {   // otro QR (una promo, un enlace): se sigue mirando
       decir('Ese QR no es el del fichero: buscá el de la compu del local');
       clearTimeout(otroQR);
       otroQR = setTimeout(function () { decir('Que el QR entre en el cuadrado'); }, 2500);
@@ -3847,25 +3862,16 @@ function lectorQR(titulo, alLeer, alCerrar) {
     leido = true;
     _lectorVivo++;
     apagarCamara();
+    try { if (navigator.vibrate) navigator.vibrate(40); } catch (e) {}
     alLeer(texto);
     return true;
   };
   document.getElementById('cerrar').onclick = function () { _lectorVivo++; apagarCamara(); alCerrar(); };
-  document.getElementById('otra').onclick = function () { archivo.click(); };
-  archivo.onchange = function () {
-    var f = archivo.files && archivo.files[0];
-    if (!f) return;
-    var img = new Image(), url = URL.createObjectURL(f);
-    img.onload = function () {
-      motorQR().then(function (leer) { return leer(img); }).then(function (t) {
-        URL.revokeObjectURL(url);
-        if (!probar(t) && sigue()) avisar(t ? 'Ese QR no es el del fichero.' : 'No se ve el QR en la foto: probá de nuevo, más cerca.');
-      }, function (e) { URL.revokeObjectURL(url); avisar(mensajeDe(e)); });
-    };
-    img.onerror = function () { URL.revokeObjectURL(url); avisar('No se pudo abrir la foto.'); };
-    img.src = url;
+  var sinCamara = function () {
+    decir('La cámara no se abrió');
+    var a = document.getElementById('ayudaQR');
+    if (a) a.textContent = 'Sin la cámara no se puede fichar: fijate que la app tenga permiso para usar la cámara. Si igual no anda, avisale a tu supervisor.';
   };
-  var sinCamara = function () { decir('Tocá abajo para sacarle una foto al QR'); };
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { sinCamara(); return; }
   navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false })
     .then(function (s) {
@@ -3878,7 +3884,7 @@ function lectorQR(titulo, alLeer, alCerrar) {
         var mirar = function () {
           if (!sigue() || !_stream) return;
           if (video.readyState < 2 || !video.videoWidth) { setTimeout(mirar, 200); return; }
-          leer(video).then(function (t) { if (!probar(t)) setTimeout(mirar, 150); }, function () { setTimeout(mirar, 400); });
+          leer(video).then(function (t) { if (!probar(t)) setTimeout(mirar, t ? 40 : 120); }, function () { setTimeout(mirar, 400); });
         };
         mirar();
       }, function (e) { decir(mensajeDe(e)); });

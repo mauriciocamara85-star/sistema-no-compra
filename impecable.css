@@ -273,9 +273,11 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
 .con-marco .camara-abajo { position: static; flex: none; grid-template-columns: 1fr auto 1fr; gap: 4px 12px; background: #000;
                            padding: 14px 16px max(10px, env(safe-area-inset-bottom)); }
 .con-marco .disparar { grid-column: 2; grid-row: 1; }
-/* El lector de QR para fichar (SQL 218): un cuadrado en el medio y, abajo, sólo "¿No anda la cámara?". */
+/* El lector de QR para fichar (SQL 218): un cuadrado en el medio y, abajo, cómo apuntar (SQL 225: sin "¿No anda la
+   cámara?", que dejaba usar una foto). */
 .lector-qr .guia { width: min(72vw, 320px); height: min(72vw, 320px); left: 50%; top: 50%; transform: translate(-50%, -50%); }
 .lector-qr .camara-abajo { grid-template-columns: 1fr; }
+.lector-qr .camara-abajo p { margin: 0; min-height: 44px; display: grid; place-items: center; text-align: center; color: var(--suave); font-size: 14px; line-height: 1.4; max-width: 340px; }
 /* Fichar: los dos botones, el tilde grande al anotarse y el título si no se anotó. */
 .fichar-boton { margin-top: 10px; }
 .ficha-hecha { text-align: center; padding: 26px 12px 10px; }

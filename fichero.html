@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · Fichero</title>
-<meta name="description" content="El fichero de la compu del local: un QR que cambia cada 30 segundos para fichar la entrada y la salida desde Equipo VDH.">
+<meta name="description" content="El fichero de la compu del local: un QR en movimiento para fichar la entrada y la salida desde Equipo VDH.">
 <meta name="theme-color" content="#EDEFF2">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icono-oro-apple.png">
@@ -30,7 +30,15 @@
      Trámites → Fichar. La hora que queda es la del escaneo.
      La base da los QR de los próximos dos minutos, firmados, con su hora:
      la pantalla los va cambiando sola aunque el reloj de la compu ande mal.
-     Pide de nuevo cada minuto y sólo mientras se ve (así gasta poco). */
+     Pide de nuevo cada minuto y sólo mientras se ve (así gasta poco).
+     SQL 225 (01/11): el QR EN MOVIMIENTO. Mauricio: "a ver qué podemos
+     implementar para que no se pueda sacar la foto … tenemos la aplicación,
+     una cámara; hay que aprovechar." Ahora cambia cada medio segundo
+     (pos_fichero_qr2 da los de los próximos 30 segundos) y la app lee tres
+     seguidos con la cámara en vivo: una foto tiene uno solo, y un video
+     grabado y reenviado llega vencido. Pide cada 8 segundos, así también
+     ve enseguida quién fichó: un cartel grande, sin sonido ("no le pondría
+     sonido porque el cartel sí"). Sin el 225, el QR de 30 segundos. */
   :root { --tope: 1180px; }
   .fi { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
   @media (min-width: 1000px) { .fi { grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr); align-items: start; } }
@@ -64,6 +72,18 @@
   .fi-ult.nueva { animation: fiNueva 2.4s var(--curva); }
   @keyframes fiNueva { 0%, 40% { background: var(--ok-soft); } 100% { background: transparent; } }
   .fi-nada { color: var(--txt-3); font-size: 14px; margin: 6px 0 2px; }
+  .fi-barra[hidden] { display: none; }
+  /* El cartel de "fichó" (SQL 225): grande, arriba de las instrucciones, sin tapar el QR. Se va solo a los 8 segundos. */
+  .fi-cartel { display: flex; align-items: center; gap: 16px; padding: 18px 20px; margin-bottom: 14px; border-radius: 18px;
+               background: var(--ok-soft); border: 1px solid var(--ok-borde); color: var(--ok-txt); animation: fiCartel .35s var(--curva); }
+  .fi-cartel[hidden] { display: none; }
+  .fi-cartel-tilde { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--ok); color: var(--ok-ink); }
+  .fi-cartel-tilde svg { width: 28px; height: 28px; }
+  .fi-cartel-txt { min-width: 0; }
+  .fi-cartel-fila { font-size: 17px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fi-cartel-fila + .fi-cartel-fila { margin-top: 4px; }
+  .fi-cartel-fila b { font: 700 24px/1.2 var(--display); letter-spacing: -.3px; margin-right: 6px; }
+  @keyframes fiCartel { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
   .fi-lado .btn { width: 100%; }
   /* Pantalla completa: sólo el fichero, sin la barra. */
   html.fi-completa .rail { display: none; }
@@ -159,18 +179,19 @@
         <div class="fi-qr" id="fiQr" role="img" aria-label="El QR para fichar"></div>
         <div class="fi-tapa" id="fiTapa">Cargando…</div>
       </div>
-      <div class="fi-barra" aria-hidden="true"><i id="fiBarra" style="width:100%"></i></div>
-      <p class="fi-cambia">Cambia cada 30 segundos</p>
+      <div class="fi-barra" id="fiBarraCaja" aria-hidden="true"><i id="fiBarra" style="width:100%"></i></div>
+      <p class="fi-cambia" id="fiCambia">Cambia cada 30 segundos</p>
     </div>
     <div class="fi-lado">
+      <div class="fi-cartel" id="fiCartel" role="status" aria-live="polite" hidden></div>
       <div class="bloque">
         <div class="bloque-tit">Para fichar tu entrada o tu salida</div>
         <ol class="fi-pasos">
           <li>Abrí <b>Equipo VDH</b> en tu celular.</li>
           <li>Tocá <b>Trámites → Fichar</b>.</li>
-          <li>Elegí <b>entrada</b> o <b>salida</b> y apuntá la cámara a este QR.</li>
+          <li>Elegí <b>entrada</b> o <b>salida</b> y apuntá la cámara a este QR<span id="fiPaso3"></span>.</li>
         </ol>
-        <p class="bloque-sub" style="margin-bottom:0">Queda la hora en que lo escaneás. Una foto del QR no sirve: cambia cada 30 segundos.</p>
+        <p class="bloque-sub" style="margin-bottom:0" id="fiNota">Queda la hora en que lo escaneás. Una foto del QR no sirve: cambia cada 30 segundos.</p>
       </div>
       <div class="bloque">
         <div class="bloque-tit">Hoy en este local</div>
@@ -192,11 +213,16 @@
 (function () {
   var $ = function (id) { return document.getElementById(id); };
   var ZONA = 'America/Argentina/Buenos_Aires';
-  var PEDIR_CADA = 60000;          // cada minuto, mientras se ve
+  var PEDIR_CADA = 60000;          // cada minuto, mientras se ve (el QR de 30 segundos)
+  var PEDIR_MOVIL = 8000;          // SQL 225: cada 8 segundos (los QR y quién fichó)
   var llave = leer('nc_caja');
-  var codigos = [];                // [[ventana, código]], de la base
+  var codigos = [];                // [[ventana o medio segundo, código]], de la base
   var desfase = 0;                 // la hora de la base menos la de la compu
   var pedido = 0, enCamino = false, apagado = false, actual = null, ultimasClave = null;
+  /* SQL 225: con pos_fichero_qr2, el QR en movimiento (uno cada medio segundo). Sin el 225 (la función no está), el de
+     30 segundos de antes, con pos_fichero_qr: así la página puede publicarse antes o después del SQL. */
+  var movil = true, paso = 500;
+  var vistas = null, cartelHasta = 0;   // los id de las marcas que ya estaban (para el cartel de "fichó")
 
   if (!/^caja_/.test(llave || '')) { $('fiSin').hidden = false; return; }
   $('fi').hidden = false;
@@ -208,17 +234,25 @@
     enCamino = true;
     pedido = Date.now();
     var t0 = Date.now();
-    funcion('pos_fichero_qr', { p_caja: llave }).then(function (r) {
+    funcion(movil ? 'pos_fichero_qr2' : 'pos_fichero_qr', { p_caja: llave }).then(function (r) {
       enCamino = false;
       var t1 = Date.now();
       desfase = Number(r.ahora_ms) - (t0 + t1) / 2;
       codigos = r.codigos || [];
+      paso = Number(r.paso_ms) || 30000;
       $('fiLocal').textContent = r.local || 'Fichero';
+      textos();
       pintarUltimas(r.ultimas || []);
       pintar(true);
     }, function (e) {
       enCamino = false;
       var m = String((e && e.message) || '');
+      if (movil && /PGRST202|could not find the function/i.test(m)) {   // sin el 225: el QR de 30 segundos
+        movil = false;
+        pedido = 0;
+        pedir();
+        return;
+      }
       if (/no está habilitada|no está en el sistema/.test(m)) {
         apagado = true;
         $('fi').hidden = true;
@@ -240,11 +274,22 @@
     $('fiTapa').textContent = texto || '';
   }
 
+  /* Los textos según el QR: el de 30 segundos (con la barrita) o el que se mueve (SQL 225). */
+  function textos() {
+    var m = paso < 30000;
+    $('fiBarraCaja').hidden = m;
+    $('fiCambia').textContent = m ? 'Cambia todo el tiempo: hay que escanearlo en vivo' : 'Cambia cada 30 segundos';
+    $('fiPaso3').textContent = m ? ', sin moverlo, hasta que se cierre la cámara' : '';
+    $('fiNota').textContent = m ? 'Queda la hora en que lo escaneás. Una foto o un video del QR no sirven: el celular tiene que verlo en vivo.'
+                                : 'Queda la hora en que lo escaneás. Una foto del QR no sirve: cambia cada 30 segundos.';
+  }
+
   function pintar(forzar) {
-    var t = ahora(), w = Math.floor(t / 30000), d = new Date(t);
+    var t = ahora(), w = Math.floor(t / paso), d = new Date(t);
     $('fiReloj').textContent = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: ZONA });
     $('fiFecha').textContent = d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: ZONA });
-    $('fiBarra').style.width = (100 - (t % 30000) / 300).toFixed(1) + '%';
+    if (paso >= 30000) $('fiBarra').style.width = (100 - (t % 30000) / 300).toFixed(1) + '%';
+    if (cartelHasta && Date.now() > cartelHasta) { cartelHasta = 0; $('fiCartel').hidden = true; }
     if (apagado) return;
     var c = codigos.filter(function (x) { return Number(x[0]) === w; })[0];
     if (!c) {
@@ -259,12 +304,30 @@
       actual = c[1];
       tapa('');
     }
-    /* Quedan menos de dos QR: se piden más (también si el minuto todavía no pasó). */
+    /* Quedan pocos QR (menos de un minuto con los de 30 segundos, menos de 10 segundos con los que se mueven): se piden
+       más, también si todavía no pasó el tiempo de pedir. */
     var ultimo = codigos.length ? Number(codigos[codigos.length - 1][0]) : -1;
-    if ((ultimo - w < 2 && Date.now() - pedido > 10000) || Date.now() - pedido > PEDIR_CADA) pedir();
+    var poco = paso < 30000 ? (ultimo - w < 20 && Date.now() - pedido > 3000) : (ultimo - w < 2 && Date.now() - pedido > 10000);
+    if (poco || Date.now() - pedido > (paso < 30000 ? PEDIR_MOVIL : PEDIR_CADA)) pedir();
+  }
+
+  /* El cartel de "fichó" (SQL 225): las marcas nuevas desde la última vez (por su id; las de antes de abrir la página no). */
+  function cartel(lista) {
+    var ids = {}, nuevas = [];
+    lista.forEach(function (u) { if (u[3] != null) ids[u[3]] = 1; });
+    if (vistas) nuevas = lista.filter(function (u) { return u[3] != null && !vistas[u[3]]; });
+    vistas = ids;
+    if (!nuevas.length) return;
+    $('fiCartel').innerHTML = '<span class="fi-cartel-tilde" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>' +
+      '<div class="fi-cartel-txt">' + nuevas.slice(0, 3).map(function (u) {
+        return '<div class="fi-cartel-fila"><b>' + esc(u[0]) + '</b>fichó su ' + (u[1] === 'entrada' ? 'entrada' : 'salida') + ' · ' + esc(u[2]) + '</div>';
+      }).join('') + '</div>';
+    $('fiCartel').hidden = false;
+    cartelHasta = Date.now() + 8000;
   }
 
   function pintarUltimas(lista) {
+    cartel(lista);
     var clave = JSON.stringify(lista);
     if (clave === ultimasClave) return;
     var antes = ultimasClave ? JSON.parse(ultimasClave) : null;
@@ -290,9 +353,10 @@
   });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { pedir(); pintar(true); } });
 
+  textos();
   pedir();
   pintar(true);
-  setInterval(pintar, 250);
+  setInterval(pintar, 100);   // con el QR en movimiento, cada medio segundo uno nuevo: se mira seguido
 })();
 </script>
 </body>
