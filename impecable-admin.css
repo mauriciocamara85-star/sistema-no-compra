@@ -817,6 +817,9 @@
 .ventana .ll-marcas + .bajada { margin-bottom: 0; }
 /* ── Papeles (SQL 209, 31/10): ausencias, certificados médicos y apercibimientos ── */
 .imp .pap-acciones { margin: 0 0 6px; }
+/* «Una por una» | «Por persona»: una tabla a la vez, pegada a sus solapas. */
+.imp .pap-vistas { margin: 22px 0 12px; scroll-margin-top: 84px; }   /* al traerlas a la vista, debajo de la barra fija */
+.imp .pap-vistas + .seccion, .imp .pap-vistas + .nota + .seccion { margin-top: 4px; }
 .imp .pap-lista .pap-motivo { min-width: 160px; max-width: 340px; white-space: normal; color: var(--txt-2); }
 .imp .pap-chico { display: block; font-size: 11.5px; font-weight: 500; color: var(--txt-3); }
 .imp .pap-desc { min-height: 34px; min-width: 118px; padding: 0 30px 0 10px; font-size: 13px; }

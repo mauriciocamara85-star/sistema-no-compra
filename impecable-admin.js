@@ -2387,6 +2387,9 @@ function editor(cfg) {
 
 var LEGAJOS = 'legajos';
 var _papTodos = false, _papPedido = 0, _papPersona = null;
+/* _papComo: 'lista' (una por una: las ausencias y los apercibimientos) o 'persona' (la tabla por persona). Una sola a
+   la vez (31/10, Mauricio: "¿no sentís que se repite?"); arranca en la lista, que es donde está lo que hay que decidir. */
+var _papComo = 'lista';
 var DESCUENTO_PAP = { a_definir: ['sorpresa', 'A definir'], si: ['vencido', 'Se descuenta'], no: ['listo', 'No se descuenta'] };
 
 function verPapeles() {
@@ -2469,26 +2472,36 @@ function dibujarPapeles(f, rango, todos) {
     .sort(function (a, b) { return b.dias - a.dias || b.aper - a.aper || a.nombre.localeCompare(b.nombre); });
   var tot = gente.reduce(function (t, p) { t.dias += p.dias; t.sin += p.sin; t.definir += p.definir; t.aper += p.aper; return t; }, { dias: 0, sin: 0, definir: 0, aper: 0 });
   var mira = soloMira();
+  /* La persona elegida no tiene nada en este período (se cambió el mes): se vuelve a ver a todos. */
+  if (_papPersona && !por[_papPersona]) _papPersona = null;
 
   var html = '<div class="numeros">' +
     '<div class="numero"><span>Días de ausencia</span><b>' + tot.dias + '</b><span>' + aus.length + (aus.length === 1 ? ' ausencia' : ' ausencias') + ' · ' + esc(rango.texto || '') + '</span></div>' +
     '<div class="numero"><span>Días sin certificado</span><b>' + tot.sin + '</b><span>' + (tot.dias ? Math.round(100 * tot.sin / tot.dias) + '% de los días' : 'Ninguno') + '</span></div>' +
-    '<div class="numero"><span>Para decidir si se descuenta</span><b>' + tot.definir + '</b><span>' + (tot.definir ? 'Están abajo, primero' : 'Todo decidido') + '</span></div>' +
+    '<div class="numero"><span>Para decidir si se descuenta</span><b>' + tot.definir + '</b><span>' + (tot.definir ? (_papComo === 'lista' ? 'Están abajo, primero' : 'En «Una por una», primero') : 'Todo decidido') + '</span></div>' +
     '<div class="numero"><span>Apercibimientos</span><b>' + tot.aper + '</b><span>' + esc(rango.texto || '') + '</span></div></div>';
   html += '<div class="botones pap-acciones">' +
     (mira ? '' : '<button class="boton chico lima" id="papAusencia">Anotar una ausencia</button><button class="boton chico" id="papAperc">Hacer un apercibimiento</button>') +
     (f.length ? '<button class="boton chico" id="papExcel">Descargar para Excel</button>' : '') + '</div>';
 
-  html += '<div class="seccion">Por persona</div>';
-  if (!gente.length) html += '<div class="vacio">No hay ausencias ni apercibimientos en este período.</div>';
-  else html += '<div class="desliza"><table class="tabla-datos pap-personas"><thead><tr><th>Persona</th>' + (todos ? '<th>Local</th>' : '') +
-    '<th class="n">Veces que faltó</th><th class="n">Días</th><th class="n">Con certificado</th><th class="n">Sin certificado</th><th class="n">Días que se descuentan</th><th class="n">Apercibimientos</th></tr></thead><tbody>' +
-    gente.map(function (p) {
-      return '<tr data-pap-persona="' + esc(p.id) + '" class="' + (p.id === _papPersona ? 'mes-activo' : '') + '" style="cursor:pointer"><td><b>' + esc(p.nombre) + '</b></td>' + (todos ? '<td>' + esc(p.local) + '</td>' : '') +
-        '<td class="n">' + (p.veces || '—') + '</td><td class="n"><b>' + (p.dias || '—') + '</b></td><td class="n">' + (p.con || '—') + '</td>' +
-        '<td class="n' + (p.sin ? ' rojo' : '') + '">' + (p.sin || '—') + '</td><td class="n">' + (p.desc || '—') + (p.definir ? ' <span class="est sorpresa">' + p.definir + ' a definir</span>' : '') + '</td>' +
-        '<td class="n' + (p.aper ? ' rojo' : '') + '">' + (p.aper || '—') + '</td></tr>';
-    }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Los días cuentan los que caen adentro del período. Tocá a una persona para ver sólo lo suyo.</p>';
+  html += '<div class="solapas chicas pap-vistas">' + [['lista', 'Una por una'], ['persona', 'Por persona']].map(function (o) {
+    return '<button data-pap-como="' + o[0] + '" class="' + (_papComo === o[0] ? 'activa' : '') + '">' + o[1] + '</button>';
+  }).join('') + '</div>';
+
+  if (_papComo === 'persona') {
+    if (!gente.length) html += '<div class="vacio">No hay ausencias ni apercibimientos en este período.</div>';
+    else html += '<div class="desliza"><table class="tabla-datos pap-personas"><thead><tr><th>Persona</th>' + (todos ? '<th>Local</th>' : '') +
+      '<th class="n">Veces que faltó</th><th class="n">Días</th><th class="n">Con certificado</th><th class="n">Sin certificado</th><th class="n">Días que se descuentan</th><th class="n">Apercibimientos</th></tr></thead><tbody>' +
+      gente.map(function (p) {
+        /* Sin días descontados pero con alguno a definir, va sólo la etiqueta (el "—" pegado se leía raro). */
+        return '<tr data-pap-persona="' + esc(p.id) + '" class="' + (p.id === _papPersona ? 'mes-activo' : '') + '" style="cursor:pointer"><td><b>' + esc(p.nombre) + '</b></td>' + (todos ? '<td>' + esc(p.local) + '</td>' : '') +
+          '<td class="n">' + (p.veces || '—') + '</td><td class="n"><b>' + (p.dias || '—') + '</b></td><td class="n">' + (p.con || '—') + '</td>' +
+          '<td class="n' + (p.sin ? ' rojo' : '') + '">' + (p.sin || '—') + '</td><td class="n">' + (p.desc || (p.definir ? '' : '—')) + (p.definir ? (p.desc ? ' ' : '') + '<span class="est sorpresa">' + p.definir + ' a definir</span>' : '') + '</td>' +
+          '<td class="n' + (p.aper ? ' rojo' : '') + '">' + (p.aper || '—') + '</td></tr>';
+      }).join('') + '</tbody></table></div><p class="bajada" style="margin-top:8px">Los días cuentan los que caen adentro del período. Tocá a una persona para ver sus ausencias y apercibimientos.</p>';
+    pintarPapeles(html, f, rango, todos);
+    return;
+  }
 
   /* La lista: las ausencias "a definir" primero (es lo que hay que hacer), después las demás, de la más nueva a la más vieja. */
   var deQuien = function (x) { return !_papPersona || x.persona_id === _papPersona; };
@@ -2521,14 +2534,25 @@ function dibujarPapeles(f, rango, todos) {
         '<td class="pap-motivo">' + esc(x.motivo || '') + '</td><td>' + ((x.fotos || []).length ? '<span class="est listo">Firmado</span>' : '<span class="est">Sin foto</span>') + marcaPap(x) + '</td>' +
         '<td class="pap-motivo">' + esc(x.descargo || '—') + '</td><td><button class="boton chico" data-pap-ver="' + esc(x.id) + '">Ver</button></td></tr>';
     }).join('') + '</tbody></table></div>';
+  pintarPapeles(html, f, rango, todos);
+}
 
+/** Pone lo armado en la pantalla y engancha los botones (los de las dos vistas). */
+function pintarPapeles(html, f, rango, todos) {
   var c = document.getElementById('papDatos');
   c.innerHTML = html;
   var porId = {};
   f.forEach(function (x) { porId[x.id] = x; });
   var otraVez = function () { datosPapeles(rango); };
+  c.querySelectorAll('[data-pap-como]').forEach(function (b) { b.onclick = function () { _papComo = b.dataset.papComo; dibujarPapeles(f, rango, todos); }; });
+  /* Tocar a alguien en «Por persona» pasa a «Una por una» con sólo lo suyo (y las solapas a la vista, si se había bajado). */
   c.querySelectorAll('[data-pap-persona]').forEach(function (tr) {
-    tr.onclick = function () { _papPersona = _papPersona === tr.dataset.papPersona ? null : tr.dataset.papPersona; dibujarPapeles(f, rango, todos); };
+    tr.onclick = function () {
+      _papPersona = tr.dataset.papPersona; _papComo = 'lista';
+      dibujarPapeles(f, rango, todos);
+      var s = c.querySelector('.pap-vistas');
+      if (s) s.scrollIntoView({ block: 'nearest' });
+    };
   });
   var bt = document.getElementById('papTodos');
   if (bt) bt.onclick = function () { _papPersona = null; dibujarPapeles(f, rango, todos); };
