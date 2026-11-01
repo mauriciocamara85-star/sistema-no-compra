@@ -3932,10 +3932,10 @@ function leerPapeles(filtro) {
     f.forEach(function (x) { ids[x.persona_id] = 1; if (x.cargado_por) ids[x.cargado_por] = 1; });
     var lista = Object.keys(ids);
     if (!lista.length) return f;
-    return leer('/orden_personas?select=id,nombre,inicial&id=in.(' + lista.map(valor).join(',') + ')').then(function (g) {
-      var n = {};
-      (g || []).forEach(function (p) { n[p.id] = nombreLista(p); });
-      f.forEach(function (x) { x.persona_nombre = n[x.persona_id] || 'Alguien'; x.cargado_nombre = n[x.cargado_por] || ''; });
+    return leer('/orden_personas?select=id,nombre,inicial,rol&id=in.(' + lista.map(valor).join(',') + ')').then(function (g) {
+      var n = {}, rol = {};
+      (g || []).forEach(function (p) { n[p.id] = nombreLista(p); rol[p.id] = p.rol; });
+      f.forEach(function (x) { x.persona_nombre = n[x.persona_id] || 'Alguien'; x.cargado_nombre = n[x.cargado_por] || ''; x.cargado_rol = rol[x.cargado_por] || ''; });
       return f;
     }, function () { return f; });
   });
@@ -4070,8 +4070,13 @@ function pantallaApercibimientos() {
 
 function dibujarApercibimientosMios(lista) {
   var html = cabeza('Apercibimientos') + pestanitasPapeles();
+  /* (SQL 221) El apercibimiento ya firmado lo sube cualquiera del local, el suyo o el de un compañero, con la foto. */
+  if (yo().local_id) {
+    html += '<button class="boton lima" id="subirAperc">Subir un apercibimiento</button>' +
+      '<p class="bajada papel-ayuda">Si te dieron uno firmado, a vos o a alguien del local, sacale la foto: la IA completa los datos y le llega al supervisor.</p>';
+  }
   if (!lista.length) html += '<div class="vacio">No tenés apercibimientos. ¡Seguí así!</div>';
-  else html += '<p class="bajada">Si no estás de acuerdo, escribí tu descargo: lo lee tu supervisor.</p>';
+  else html += '<p class="bajada"' + (yo().local_id ? ' style="margin-top:18px"' : '') + '>Si no estás de acuerdo, escribí tu descargo: lo lee tu supervisor.</p>';
   html += lista.map(function (x) {
     return '<div class="tarea papel"><div class="nombre">' + esc(textoDias(x.desde, x.hasta)) + '</div>' +
       '<div class="detalle">' + esc(x.motivo || '') + '</div>' +
@@ -4086,6 +4091,13 @@ function dibujarApercibimientosMios(lista) {
   lista.forEach(function (x) { porId[x.id] = x; });
   app.querySelectorAll('[data-descargo]').forEach(function (b) {
     unaVez(b, function () { return escribirDescargo(porId[b.dataset.descargo], pantallaApercibimientos); });
+  });
+  var s = document.getElementById('subirAperc');
+  if (s) unaVez(s, function () {
+    if (_espejo) { avisar(textoEspejo()); return; }
+    return genteDelLocal(yo().local_id).then(function (g) {
+      pantallaCargarPapel({ tipo: 'apercibimiento', deLocal: true, loc: { id: yo().local_id, nombre: '' }, gente: g || [] });
+    });
   });
 }
 
@@ -4202,7 +4214,7 @@ function detallePapel(x, loc) {
     '<h1>' + esc(x.persona_nombre) + '</h1>' +
     '<p class="bajada">' + esc((aus ? 'Ausencia · ' : 'Apercibimiento · ') + textoDias(x.desde, x.hasta)) + '</p>' +
     (x.motivo ? '<div class="nota">' + esc(x.motivo) + '</div>' : '') +
-    (x.cargado_nombre ? '<p class="bajada papel-quien">' + esc((x.cargado_por === x.persona_id ? 'La mandó ' : 'La cargó ') + x.cargado_nombre + ' el ' + diaMes(x.creado_en) + '.') + '</p>' : '');
+    (x.cargado_nombre ? '<p class="bajada papel-quien">' + esc(quienPapel(x) + ' ' + x.cargado_nombre + ' el ' + diaMes(x.creado_en) + '.') + '</p>' : '');
   html += '<div class="seccion">' + (aus ? 'El certificado' : 'El papel firmado') + '</div>' +
     (n ? fotosPapel(x) : '<div class="vacio">' + (aus ? 'Sin certificado.' : 'Sin la foto del papel firmado.') + '</div>') +
     (n < 8 && (!soloMira() || mio) && (aus || !mio)
@@ -4275,7 +4287,8 @@ function detallePapel(x, loc) {
  * Anotar un papel nuevo, en pantalla completa:
  *  - el vendedor, su ausencia con el certificado (op.propia);
  *  - la supervisión, una ausencia (con o sin certificado, y si se descuenta) o un apercibimiento (con el papel
- *    firmado, si ya lo tiene). op: { tipo: 'ausencia' | 'apercibimiento', propia, loc, gente }.
+ *    firmado, si ya lo tiene). op: { tipo: 'ausencia' | 'apercibimiento', propia, loc, gente, deLocal };
+ *  - cualquiera del local (op.deLocal, SQL 221): el apercibimiento ya firmado, el suyo o el de un compañero, con la foto.
  */
 function pantallaCargarPapel(op) {
   if (_espejo) { avisar(textoEspejo()); return; }
@@ -4283,19 +4296,20 @@ function pantallaCargarPapel(op) {
   app.className = 'app';
   var aus = op.tipo === 'ausencia', hoy = hoyAR(), hojas = [], descuento = null, tocoDescuento = false;
   var volver = function () { irA(aus ? (op.propia ? 'certificados' : 'ausencias') : 'apercibimientos'); };
-  var titulo = op.propia ? 'Mandar un certificado' : aus ? 'Anotar una ausencia' : 'Hacer un apercibimiento';
+  var titulo = op.propia ? 'Mandar un certificado' : op.deLocal ? 'Subir un apercibimiento' : aus ? 'Anotar una ausencia' : 'Hacer un apercibimiento';
   var gente = op.gente || [];
   var html = '<button class="volver" id="volver">‹ Volver</button><h1>' + titulo + '</h1>' +
     '<p class="bajada">' + esc(op.propia
       ? 'Le llega a tu supervisor. Sacale la foto con la hoja apoyada sobre algo oscuro: la app la endereza y la IA completa los datos.'
+      : op.deLocal ? 'Sacale la foto al apercibimiento ya firmado: la app la endereza y la IA completa de quién es, la fecha y el motivo. Le llega al supervisor.'
       : (op.loc ? op.loc.nombre + ' · ' : '') + (aus ? 'Le llega el aviso a quien faltó. Si después trae el certificado, se lo sumás.'
                                                     : 'Le llega el aviso, y puede escribir su descargo desde la app.')) + '</p>';
   /* Primero la foto: la IA la lee y completa lo de abajo (SQL 219). */
-  html += '<div class="seccion">' + (aus ? (op.propia ? 'El certificado' : 'El certificado (si lo trajo)') : 'El papel firmado (si ya lo tenés)') + '</div>' +
+  html += '<div class="seccion">' + (aus ? (op.propia ? 'El certificado' : 'El certificado (si lo trajo)') : op.deLocal ? 'El papel firmado' : 'El papel firmado (si ya lo tenés)') + '</div>' +
     '<div id="pHojas"></div><div id="pIA"></div><div class="seccion">Los datos</div>';
   if (!op.propia) {
-    html += '<label class="campo"><span>¿A quién?</span><select id="pPersona" class="desplegable"><option value="">Elegí…</option>' + gente.map(function (p) {
-      return '<option value="' + esc(p.id) + '">' + esc(p.id === yo().id ? 'Yo (mi certificado)' : nombreLista(p)) + '</option>';
+    html += '<label class="campo"><span>' + (op.deLocal ? '¿De quién es?' : '¿A quién?') + '</span><select id="pPersona" class="desplegable"><option value="">Elegí…</option>' + gente.map(function (p) {
+      return '<option value="' + esc(p.id) + '">' + esc(p.id === yo().id ? (aus ? 'Yo (mi certificado)' : 'Yo (es mío)') : nombreLista(p)) + '</option>';
     }).join('') + '</select></label>';
   }
   var min = sumarDias(hoy, -120), max = aus ? sumarDias(hoy, 7) : hoy;
@@ -4312,7 +4326,7 @@ function pantallaCargarPapel(op) {
       [['si', 'Sí'], ['no', 'No'], ['a_definir', 'A definir']].map(function (o) { return '<button type="button" data-desc="' + o[0] + '">' + o[1] + '</button>'; }).join('') + '</div>' +
       '<p class="bajada papel-ayuda">Si no sabés todavía, dejalo "A definir": lo podés cambiar después.</p>';
   }
-  html += '<button class="boton lima" id="guardarPapel" style="margin-top:18px">' + (op.propia ? 'Mandar' : aus ? 'Guardar la ausencia' : 'Guardar el apercibimiento') + '</button>';
+  html += '<button class="boton lima" id="guardarPapel" style="margin-top:18px">' + (op.propia || op.deLocal ? 'Mandar' : aus ? 'Guardar la ausencia' : 'Guardar el apercibimiento') + '</button>';
   app.innerHTML = html;
 
   var desde = document.getElementById('pDesde'), hasta = document.getElementById('pHasta');
@@ -4322,7 +4336,7 @@ function pantallaCargarPapel(op) {
   /* La IA lee las hojas apenas se sacan y completa lo que todavía no se tocó (SQL 219); lo leído se pega al guardar. */
   var ia = papelConIA({
     tipo: op.tipo, propia: !!op.propia, yo: yo().id, campos: { persona: sel, desde: desde, hasta: hasta, motivo: motivoEl },
-    min: min, max: max, maxHasta: sumarDias(hoy, 67), verbo: op.propia ? 'mandar' : 'guardar',
+    min: min, max: max, maxHasta: sumarDias(hoy, 67), verbo: op.propia || op.deLocal ? 'mandar' : 'guardar',
     lugar: function () { return document.getElementById('pIA'); },
     hojas: function () { return hojas.map(function (h) { return h.blob; }); },
     persona_id: op.propia ? yo().id : null, local_ids: op.propia ? null : [op.loc.id]
@@ -4384,7 +4398,7 @@ function pantallaCargarPapel(op) {
     if (h < d) { avisar('El "hasta" no puede ser antes del "desde".'); return; }
     var motivo = document.getElementById('pMotivo').value.trim();
     if (!aus && motivo.length < 5) { avisar('Escribí el motivo del apercibimiento.'); document.getElementById('pMotivo').focus(); return; }
-    if (propia && !hojas.length) { avisar('Sacale la foto al certificado.'); return; }
+    if ((propia || op.deLocal) && !hojas.length) { avisar(aus ? 'Sacale la foto al certificado.' : 'Sacale la foto al apercibimiento firmado.'); return; }
     var local = propia ? yo().local_id : op.loc.id;
     /* Esos días ya los anotó el supervisor (la base no deja dos ausencias que se pisen): el certificado se suma a esa,
        sin volver a escanear. Si se pisa sólo en parte, se avisa antes de subir nada. */
@@ -4418,7 +4432,9 @@ function pantallaCargarPapel(op) {
         .catch(function () { avisar('Se anotó, pero no se guardó si se descuenta: cambialo desde la lista.'); });
     }).then(function () {
       hojas.forEach(function (x) { if (x.url) URL.revokeObjectURL(x.url); });
-      avisar(propia ? 'Listo: tu supervisor ya lo tiene.' : aus ? 'Ausencia anotada: le llegó el aviso.' : 'Apercibimiento guardado: le llegó el aviso.');
+      avisar(propia ? 'Listo: tu supervisor ya lo tiene.'
+        : op.deLocal ? 'Listo: le llegó el aviso a ' + sel.options[sel.selectedIndex].text + ' y a su supervisor.'
+        : aus ? 'Ausencia anotada: le llegó el aviso.' : 'Apercibimiento guardado: le llegó el aviso.');
       volver();
     });
   });

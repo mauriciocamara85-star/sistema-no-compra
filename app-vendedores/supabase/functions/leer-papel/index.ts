@@ -3,12 +3,13 @@
 // Body, una de dos:
 //  - { tipo, hojas: ["<jpeg en base64>", …], persona_id?, local_ids? }: las hojas recién sacadas, antes de guardar.
 //    persona_id: el papel es de esa persona (el vendedor, su certificado); local_ids: de alguien de esos locales
-//    (el supervisor que anota: la IA elige a quién por el nombre del papel).
+//    (el supervisor que anota: la IA elige a quién por el nombre del papel). Un apercibimiento firmado lo sube
+//    también cualquiera de su local (SQL 221): con local_ids = su local.
 //  - { legajo_id }: un papel ya guardado: lee sus hojas del lugar privado y le pega la lectura ("Leer con la IA", o
 //    el certificado que se sumó a una ausencia ya anotada).
 // Devuelve { ok: true, lectura, lectura_id, pegada } o { ok: false, mensaje }. Si la IA falla, se completa a mano.
-// Lo que se lee y a quién se ve lo decide la base con la sesión de quien pide (clienteUsuario): sólo lo suyo, o lo de
-// los locales que supervisa.
+// Lo que se lee y a quién se ve lo decide la base con la sesión de quien pide (clienteUsuario): sólo lo suyo, lo de
+// los locales que supervisa o, si es un apercibimiento, la gente de su local.
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { aBase64, clienteServicio, clienteUsuario, cors, env, json } from "../_shared/comun.ts";
 import type { Imagen } from "../_shared/ia.ts";
@@ -97,8 +98,14 @@ Deno.serve(async (req) => {
         }
       } else {
         const pedidos = (Array.isArray(body.local_ids) ? body.local_ids : []).filter((l): l is string => typeof l === "string" && UUID.test(l)).slice(0, 30);
+        /* El apercibimiento firmado lo sube cualquiera de su local (SQL 221): la gente de su propio local, sí. */
+        let miLocal: string | null = null;
+        if (tipo === "apercibimiento") {
+          const { data: m } = await usuario.from("orden_personas").select("local_id").eq("id", yo).maybeSingle();
+          miLocal = m?.local_id ?? null;
+        }
         const locales: string[] = [];
-        for (const l of pedidos) if (await esSupervisor(usuario, l)) locales.push(l);
+        for (const l of pedidos) if (l === miLocal || await esSupervisor(usuario, l)) locales.push(l);
         if (!locales.length) return json({ error: "No podés leer papeles de esos locales." }, 403);
         candidatos = await gente(usuario, { locales });
       }

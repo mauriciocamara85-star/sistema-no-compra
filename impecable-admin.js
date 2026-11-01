@@ -2409,13 +2409,14 @@ function datosPapeles(rango) {
     var ids = {};
     f.forEach(function (x) { ids[x.persona_id] = 1; if (x.cargado_por) ids[x.cargado_por] = 1; });
     var lista = Object.keys(ids);
-    return (lista.length ? leer('/orden_personas?select=id,nombre,inicial,apellido&id=in.(' + lista.map(valor).join(',') + ')') : Promise.resolve([])).then(function (g) {
+    return (lista.length ? leer('/orden_personas?select=id,nombre,inicial,apellido,rol&id=in.(' + lista.map(valor).join(',') + ')') : Promise.resolve([])).then(function (g) {
       var n = {};
       (g || []).forEach(function (p) { n[p.id] = p; });
       f.forEach(function (x) {
         var p = n[x.persona_id];
         x.persona_nombre = p ? p.nombre + (p.apellido ? ' ' + p.apellido : p.inicial ? ' ' + p.inicial + '.' : '') : 'Alguien';
         x.cargado_nombre = n[x.cargado_por] ? nombreVendedor(n[x.cargado_por]) : '';
+        x.cargado_rol = n[x.cargado_por] ? n[x.cargado_por].rol : '';
         x.local_nombre = nombreLocal[x.local_id] || '';
       });
       return f;
@@ -2497,7 +2498,9 @@ function dibujarPapeles(f, rango, todos) {
   else html += '<div class="desliza"><table class="tabla-datos pap-lista"><thead><tr><th>Fecha</th><th>Persona</th>' + (todos ? '<th>Local</th>' : '') +
     '<th>Motivo</th><th>Papel firmado</th><th>Descargo</th><th></th></tr></thead><tbody>' +
     aperL.map(function (x) {
-      return '<tr><td>' + esc(diaMes(x.desde)) + '</td><td><b>' + esc(x.persona_nombre) + '</b></td>' + (todos ? '<td>' + esc(x.local_nombre) + '</td>' : '') +
+      /* (SQL 221) El firmado lo puede subir la persona o un compañero desde la app: se ve quién. */
+      var subio = x.cargado_por === x.persona_id ? 'lo subió desde la app' : x.cargado_rol === 'vendedor' ? 'lo subió ' + x.cargado_nombre : '';
+      return '<tr><td>' + esc(diaMes(x.desde)) + '</td><td><b>' + esc(x.persona_nombre) + '</b>' + (subio ? '<small class="pap-chico">' + esc(subio) + '</small>' : '') + '</td>' + (todos ? '<td>' + esc(x.local_nombre) + '</td>' : '') +
         '<td class="pap-motivo">' + esc(x.motivo || '') + '</td><td>' + ((x.fotos || []).length ? '<span class="est listo">Firmado</span>' : '<span class="est">Sin foto</span>') + marcaPap(x) + '</td>' +
         '<td class="pap-motivo">' + esc(x.descargo || '—') + '</td><td><button class="boton chico" data-pap-ver="' + esc(x.id) + '">Ver</button></td></tr>';
     }).join('') + '</tbody></table></div>';
@@ -2568,7 +2571,7 @@ function ventanaPapel(x, alCambiar) {
   var aus = x.tipo === 'ausencia', n = (x.fotos || []).length, mira = soloMira() || x.persona_id === yo().id;
   var v = ventana('<h1>' + esc(x.persona_nombre) + '</h1>' +
     '<p class="bajada">' + esc((aus ? 'Ausencia · ' : 'Apercibimiento · ') + (x.desde === x.hasta ? diaMes(x.desde) : 'del ' + diaMes(x.desde) + ' al ' + diaMes(x.hasta) + ' (' + diasPap(x, x) + ' días)') +
-      (x.local_nombre ? ' · ' + x.local_nombre : '') + (x.cargado_nombre ? ' · ' + (x.cargado_por === x.persona_id ? 'lo mandó ' : 'lo cargó ') + x.cargado_nombre + ' el ' + diaMes(x.creado_en) : '')) + '</p>' +
+      (x.local_nombre ? ' · ' + x.local_nombre : '') + (x.cargado_nombre ? ' · ' + quienPapel(x).toLowerCase() + ' ' + x.cargado_nombre + ' el ' + diaMes(x.creado_en) : '')) + '</p>' +
     (x.motivo ? '<div class="nota">' + esc(x.motivo) + '</div>' : '') +
     (aus ? '<div class="campo pap-desc-campo"><span>¿Se descuenta del sueldo?</span>' + (mira ? '<span class="est ' + DESCUENTO_PAP[x.descuento][0] + '">' + DESCUENTO_PAP[x.descuento][1] + '</span>'
         : '<select class="imp-sel" id="papDescV">' + [['a_definir', 'A definir'], ['si', 'Se descuenta'], ['no', 'No se descuenta']].map(function (o) {

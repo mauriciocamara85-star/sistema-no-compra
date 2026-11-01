@@ -675,6 +675,15 @@ function marcaPapelIA(x) {
   return (l.nombre && l.persona_id !== x.persona_id) || fechasDifierenIA(l, x) ? 'No coincide con la hoja' : '';
 }
 
+/** Cómo llegó un papel, para "… Nahu el 31/10": "La mandó" (su certificado), "Lo subió" (el apercibimiento firmado que
+    subió la persona o, desde el SQL 221, un compañero: x.cargado_rol 'vendedor') o "La cargó" / "Lo cargó". */
+function quienPapel(x) {
+  var aus = x.tipo === 'ausencia';
+  if (x.cargado_por === x.persona_id) return aus ? 'La mandó' : 'Lo subió';
+  if (!aus && x.cargado_rol === 'vendedor') return 'Lo subió';
+  return aus ? 'La cargó' : 'Lo cargó';
+}
+
 /**
  * El recuadro "Lo que leyó la IA" de un papel (la supervisión, en la app y en la compu). op.corregir: muestra "Usar
  * las fechas del certificado" si no coinciden; op.leer: "Leer con la IA" (o "Leer de nuevo"); op.leyendo: la IA
