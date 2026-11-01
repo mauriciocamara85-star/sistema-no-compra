@@ -7636,3 +7636,203 @@ grant execute on function pos_fichero_qr(text) to anon, authenticated;
 grant execute on function pos_fichar(text, text, text) to authenticated;
 grant execute on function pos_fichero_mio() to authenticated;
 grant execute on function pos_fichero_celular_nuevo(bigint) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 223 (31/10/2026) · LAS LLEGADAS TARDE, AL FICHAR
+--
+--  Mauricio (31/10): "Cuando sume tres llegadas tarde, estaría bueno que meta
+--  un aviso … aunque vayan diciendo 'ya acumulás dos, ya acumulás tres', en la
+--  cuarta, obvio que corrés el riesgo de suspensión."
+--  Al fichar la entrada con el QR (pos_fichar, SQL 218), si es la primera del
+--  día en ese local y llegó tarde, la respuesta trae cuántos minutos y cuántas
+--  llegadas tarde lleva en el mes, y la app se lo dice. La regla es la de
+--  Llegadas: la primera entrada del día, más de 10 minutos después de que abre
+--  el local (los domingos, su hora si tiene otra) y hasta 3 horas (más tarde
+--  es otro turno); los días que el local no abre no cuentan. Se cuentan las de
+--  todo el mes, de cualquier origen (QR, huella o a mano) y en cualquier local.
+--  A la tercera del mes le llega un aviso a él y a quien supervisa el local;
+--  desde la cuarta, "corrés riesgo de suspensión", y el aviso a quien
+--  supervisa, cada vez.
+--  · pos_minutos_tarde_: cuántos minutos después de que abre (en horas y
+--    minutos, como Llegadas); null si ese día el local no abre.
+--  · pos_tardes_del_mes_: las llegadas tarde de una persona en el mes, hasta
+--    ese día.
+--  · pos_tarde_avisar_sup_: el aviso a quienes supervisan el local (como el de
+--    los legajos: sin la persona misma; si ninguno entró nunca a la app, a la
+--    administración).
+--  Reemplaza pos_fichar: lo mismo del 218, más lo de la llegada tarde.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Sin el 218 no hay fichero: se frena acá, sin cambiar nada. */
+do $$
+begin
+  if to_regprocedure('public.pos_fichar(text, text, text)') is null then
+    raise exception 'Primero hay que correr el SQL 218 (el fichero con QR): está en App Orden.';
+  end if;
+end $$;
+
+/* Cuántos minutos después de que abre el local ese día llegó (en horas y minutos, como Llegadas: las 9:10:59 son las
+   9:10). null si ese día no abre. */
+create or replace function pos_minutos_tarde_(p_local uuid, p_dia date, p_entrada timestamptz)
+returns integer language sql stable security definer set search_path = public as $$
+  select ((extract(hour from x.h) * 60 + extract(minute from x.h)) - (extract(hour from x.a) * 60 + extract(minute from x.a)))::int
+    from (select (p_entrada at time zone 'America/Argentina/Buenos_Aires')::time h,
+                 case when extract(isodow from p_dia) = 7 and z.apertura_domingo is not null then z.apertura_domingo
+                      else l.hora_apertura end a
+            from orden_locales l
+            left join pos_tiempos_locales z on z.local_id = l.id
+           where l.id = p_local and extract(isodow from p_dia)::smallint = any (l.dias_abiertos)) x
+   where x.a is not null
+$$;
+revoke all on function pos_minutos_tarde_(uuid, date, timestamptz) from public, anon, authenticated;
+
+/* Las llegadas tarde de una persona en el mes de p_dia, hasta ese día: los días (en cada local) en que la primera
+   entrada fue más de 10 minutos y hasta 3 horas después de que abría. Como la columna de Llegadas. */
+create or replace function pos_tardes_del_mes_(p_persona uuid, p_dia date)
+returns integer language sql stable security definer set search_path = public as $$
+  select count(*)::int
+    from (select coalesce(x.local_id, p.local_id) local_id, x.dia, min(x.momento) entrada
+            from pos_tiempos x
+            join orden_personas p on p.id = x.persona_id
+           where x.persona_id = p_persona and x.estado = 'ok' and x.tipo = 'entrada'
+             and x.dia between date_trunc('month', p_dia)::date and p_dia
+           group by 1, 2) e
+   where pos_minutos_tarde_(e.local_id, e.dia, e.entrada) between 11 and 180
+$$;
+revoke all on function pos_tardes_del_mes_(uuid, date) from public, anon, authenticated;
+
+/* El aviso a quienes supervisan el local (sin la persona misma, si es la encargada); si ninguno entró nunca a la app,
+   a la administración. Como orden_legajo_avisar_sup_. */
+create or replace function pos_tarde_avisar_sup_(p_persona uuid, p_local uuid, p_titulo text, p_cuerpo text, p_clave text)
+returns integer language plpgsql volatile security definer set search_path = public as $$
+declare r record; n int := 0; v_hay boolean;
+begin
+  select exists (select 1 from orden_personas where id in (select orden_supervisores_de(p_local))
+                   and id <> p_persona and aprobado and auth_user_id is not null) into v_hay;
+  for r in
+    select id from orden_personas
+     where activo and id <> p_persona
+       and (id in (select orden_supervisores_de(p_local)) or (rol = 'admin' and not v_hay))
+  loop
+    if orden_encolar_aviso(r.id, 'llegadas', p_titulo, p_cuerpo, '/equipo', p_clave || ':' || r.id, 2::smallint) is not null then
+      n := n + 1;
+    end if;
+  end loop;
+  return n;
+end $$;
+revoke all on function pos_tarde_avisar_sup_(uuid, uuid, text, text, text) from public, anon, authenticated;
+
+/* Lo mismo del 218; lo nuevo es lo de la llegada tarde, al final. */
+create or replace function pos_fichar(p_codigo text, p_tipo text, p_celular text) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_yo     uuid := orden_yo_id();
+  v_p      orden_personas;
+  v_m      text[];
+  v_caja   club_cajas;
+  v_ahora  timestamptz := clock_timestamp();
+  v_w      bigint;
+  v_loc    orden_locales;
+  v_cel    text := btrim(coalesce(p_celular, ''));
+  v_suyo   text;
+  v_duenio uuid;
+  v_otro   text;
+  v_aviso  text[] := '{}';
+  v_ya     pos_tiempos;
+  v_id     bigint;
+  v_dia    date;
+  v_min    int;
+  v_n      int;
+  v_mes    text;
+  v_abre   text;
+  v_hora   text;
+  v_quien  text;
+  v_clave  text;
+  v_tarde  jsonb;
+begin
+  if v_yo is null then raise exception 'Entrá con tu usuario para fichar.'; end if;
+  select * into v_p from orden_personas where id = v_yo;
+  if not coalesce(v_p.activo and v_p.aprobado, false) then raise exception 'Tu usuario no está activo: hablá con tu supervisor.'; end if;
+  if p_tipo is null or p_tipo not in ('entrada', 'salida') then raise exception 'Elegí si es tu entrada o tu salida.'; end if;
+  if v_cel !~ '^[A-Za-z0-9_-]{8,64}$' then raise exception 'A este celular le falta su número: actualizá la app y probá de nuevo.'; end if;
+  v_m := regexp_match(btrim(coalesce(p_codigo, '')), '^VDHF1\.([0-9]{1,12})\.([0-9]{1,12})\.([0-9a-f]{16})$');
+  if v_m is null then raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.'; end if;
+  select * into v_caja from club_cajas where id = v_m[1]::bigint;
+  if v_caja.id is null or pos_fichero_firma(v_caja.id, v_m[2]::bigint) is distinct from v_m[3] then
+    raise exception 'Ese QR no es el del fichero: escaneá el que está en la compu del local.';
+  end if;
+  if v_caja.baja is not null then raise exception 'Esa compu ya no está habilitada: avisale a tu supervisor.'; end if;
+  v_w := floor(extract(epoch from v_ahora) / 30)::bigint;
+  if v_m[2]::bigint < v_w - 1 or v_m[2]::bigint > v_w + 1 then
+    raise exception 'Ese QR ya cambió: escaneá el que se ve ahora en la compu del local.';
+  end if;
+  select * into v_loc from orden_locales l where l.activo and upper(btrim(l.codigo)) = upper(btrim(v_caja.local)) limit 1;
+  if v_loc.id is null then raise exception 'El local de esa compu no está en el sistema.'; end if;
+
+  /* Dos toques a la vez, o escanear dos veces seguidas: una sola marca. */
+  perform pg_advisory_xact_lock(hashtext('pos_fichar:' || v_yo));
+  select * into v_ya from pos_tiempos x
+   where x.persona_id = v_yo and x.tipo = p_tipo and x.estado = 'ok' and x.momento > v_ahora - interval '10 minutes'
+   order by x.momento desc limit 1;
+  if v_ya.id is not null then
+    return jsonb_build_object('ya', true, 'id', v_ya.id, 'tipo', p_tipo, 'local', v_loc.nombre,
+                              'hora', to_char(v_ya.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                              'aviso', case when v_ya.origen = 'celular' then v_ya.observaciones end);
+  end if;
+
+  /* Un celular por persona. Desde el suyo, nada que avisar. */
+  select celular into v_suyo from pos_fichero_celulares where persona_id = v_yo;
+  select c.persona_id into v_duenio from pos_fichero_celulares c where c.celular = v_cel and c.persona_id <> v_yo;
+  if v_duenio is not null then
+    v_aviso := v_aviso || ('Fichó desde el celular de ' || (select orden_nombre_lista(p.nombre, p.inicial) from orden_personas p where p.id = v_duenio) || '.');
+  elsif v_suyo is distinct from v_cel then
+    select string_agg(distinct orden_nombre_lista(p.nombre, p.inicial), ', ') into v_otro
+      from pos_tiempos x join orden_personas p on p.id = x.persona_id
+     where x.celular = v_cel and x.persona_id <> v_yo and x.dia = pos_hoy() and x.estado = 'ok';
+    if v_suyo is not null then v_aviso := v_aviso || 'No es su celular de siempre.'::text; end if;
+    if v_otro is not null then v_aviso := v_aviso || ('Desde ese celular también fichó hoy ' || v_otro || '.'); end if;
+    if v_suyo is null and v_otro is null then   -- el primero: queda como el suyo
+      insert into pos_fichero_celulares (persona_id, celular) values (v_yo, v_cel);
+    end if;
+  end if;
+
+  v_dia := (v_ahora at time zone 'America/Argentina/Buenos_Aires')::date;
+  insert into pos_tiempos (persona_id, local_id, momento, dia, tipo, origen, terminal, observaciones, cargado_por, celular)
+  values (v_yo, v_loc.id, v_ahora, v_dia, p_tipo, 'celular',
+          left('Fichero QR · ' || coalesce(nullif(btrim(v_caja.nombre), ''), 'compu ' || v_caja.id), 80),
+          nullif(array_to_string(v_aviso, ' '), ''), v_yo, v_cel)
+  returning id into v_id;
+
+  /* SQL 223: la llegada tarde. Sólo la primera entrada del día en ese local (la que mira Llegadas). */
+  if p_tipo = 'entrada' and not exists (
+       select 1 from pos_tiempos x join orden_personas p on p.id = x.persona_id
+        where x.persona_id = v_yo and x.estado = 'ok' and x.tipo = 'entrada' and x.dia = v_dia and x.id <> v_id
+          and x.momento < v_ahora and coalesce(x.local_id, p.local_id) = v_loc.id) then
+    v_min := pos_minutos_tarde_(v_loc.id, v_dia, v_ahora);
+    if v_min between 11 and 180 then
+      v_n := pos_tardes_del_mes_(v_yo, v_dia);
+      v_mes := (array['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre',
+                      'noviembre', 'diciembre'])[extract(month from v_dia)::int];
+      v_abre := (select to_char(case when extract(isodow from v_dia) = 7 and z.apertura_domingo is not null then z.apertura_domingo
+                                     else l.hora_apertura end, 'FMHH24:MI')
+                   from orden_locales l left join pos_tiempos_locales z on z.local_id = l.id where l.id = v_loc.id);
+      v_hora := to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'FMHH24:MI');
+      v_quien := orden_nombre_lista(v_p.nombre, v_p.inicial);
+      v_clave := 'tarde:' || v_yo || ':' || to_char(v_dia, 'YYYY-MM') || ':' || v_n;
+      if v_n = 3 then
+        perform orden_encolar_aviso(v_yo, 'llegadas', 'Ya acumulás 3 llegadas tarde en ' || v_mes,
+          'Ojo: a la cuarta corrés riesgo de suspensión.', '/fichar', v_clave, 2::smallint);
+        perform pos_tarde_avisar_sup_(v_yo, v_loc.id, v_quien || ' ya acumula 3 llegadas tarde en ' || v_mes,
+          'Hoy llegó a las ' || v_hora || ' a ' || v_loc.nombre || ' (abre a las ' || v_abre || '). A la cuarta corre riesgo de suspensión.', v_clave);
+      elsif v_n >= 4 then
+        perform pos_tarde_avisar_sup_(v_yo, v_loc.id, v_quien || ' ya acumula ' || v_n || ' llegadas tarde en ' || v_mes,
+          'Hoy llegó a las ' || v_hora || ' a ' || v_loc.nombre || ' (abre a las ' || v_abre || '). Corre riesgo de suspensión.', v_clave);
+      end if;
+      v_tarde := jsonb_build_object('min', v_min, 'abre', v_abre, 'n', v_n, 'mes', v_mes);
+    end if;
+  end if;
+
+  return jsonb_build_object('ya', false, 'id', v_id, 'tipo', p_tipo, 'local', v_loc.nombre,
+                            'hora', to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
+                            'aviso', nullif(array_to_string(v_aviso, ' '), ''), 'tarde', v_tarde);
+end $$;

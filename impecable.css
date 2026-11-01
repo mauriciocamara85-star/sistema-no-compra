@@ -284,6 +284,9 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
 .ficha-hecha h2 { font-size: 30px; margin: 16px 0 4px; }
 .ficha-hecha p { color: var(--suave); margin: 0 0 16px; }
 .ficha-mal { color: var(--rojo); margin: 26px 0 8px; }
+/* La llegada tarde (SQL 223): ámbar hasta la tercera; desde la cuarta, en rojo (riesgo de suspensión). */
+.ficha-tarde { font-size: 15px; line-height: 1.45; }
+.nota.riesgo { color: var(--rojo); border-color: var(--rojo); font-weight: 600; }
 .con-marco #otra { grid-column: 1 / -1; min-height: 36px; }
 .ref-caja { grid-column: 1; grid-row: 1; justify-self: start; display: grid; justify-items: center; gap: 3px;
             padding: 0; background: none; border: 0; color: var(--suave); cursor: pointer; }

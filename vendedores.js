@@ -3720,6 +3720,20 @@ function avisoFicha(a) {
   if (!a) return '';
   return /Ya es su celular/.test(a) ? 'Tu supervisor anotó este celular como el tuyo.' : 'No la fichaste desde tu celular de siempre: tu supervisor lo va a ver.';
 }
+/* La llegada tarde (SQL 223), con cuántas lleva en el mes. Mauricio (31/10): "aunque vayan diciendo 'ya acumulás dos, ya
+   acumulás tres', en la cuarta, obvio que corrés el riesgo de suspensión". La regla y la cuenta son las de Llegadas; los
+   avisos (a la tercera, a él y a quien supervisa; desde la cuarta, a quien supervisa) los manda la base. */
+function minutosTarde(min) {
+  var h = Math.floor(min / 60), m = min % 60, mm = m + (m === 1 ? ' minuto' : ' minutos');
+  return h ? h + (h === 1 ? ' hora' : ' horas') + (m ? ' y ' + mm : '') : mm;
+}
+function textoTarde(t) {
+  var y = 'Llegaste ' + minutosTarde(t.min) + ' tarde (abre a las ' + t.abre + '). ';
+  if (t.n <= 1) return y + 'Es tu primera llegada tarde de ' + t.mes + '.';
+  if (t.n === 2) return y + 'Ya acumulás 2 llegadas tarde en ' + t.mes + '.';
+  if (t.n === 3) return y + 'Ya acumulás 3 llegadas tarde en ' + t.mes + '. Ojo: a la cuarta corrés riesgo de suspensión.';
+  return y + 'Ya acumulás ' + t.n + ' llegadas tarde en ' + t.mes + ': corrés riesgo de suspensión.';
+}
 
 function pantallaFichar() {
   empezarPapel('fichar', 'Fichar');
@@ -3769,6 +3783,7 @@ function mandarFicha(tipo, codigo) {
       '<div class="ficha-hecha"><span class="ficha-tilde" aria-hidden="true">' + TILDE_FICHA + '</span>' +
         '<h2>' + esc(TIPO_FICHA[r.tipo] || r.tipo) + ' · ' + esc(r.hora) + '</h2>' +
         '<p>' + esc(r.local) + (r.ya ? ' · ya estaba anotada' : '') + '</p></div>' +
+      (r.tarde ? '<div class="nota ficha-tarde ' + (r.tarde.n >= 4 ? 'riesgo' : 'alerta') + '">' + esc(textoTarde(r.tarde)) + '</div>' : '') +
       (r.aviso ? '<div class="nota alerta">' + esc(avisoFicha(r.aviso)) + '</div>' : '') +
       '<button class="boton lima" id="fichaListo">Listo</button>';
     engancharCabeza();
