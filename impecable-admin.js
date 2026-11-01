@@ -1801,10 +1801,15 @@ function verCajasTodosRango() {
    Con un período de un día (Hoy, Ayer, o ‹ › desde ahí) se ve día a día: cada local con quién llegó y a qué hora.
    Las solapas (31/10, a la noche): "que esté por zonas de supervisores acá. Zona MAU, zona BREN, zona tal y tal. Y en
    cada zona los locales" (antes, Calle, Shopping y Mar del Plata, como la planilla). La zona de cada local es la de
-   quien lo supervisa en Configuración → Usuarios; los que no tienen supervisor los lleva él.
+   quien lo supervisa en Configuración → Usuarios. Los que no tienen supervisor (31/10, más tarde): "yo tengo solo
+   Rivadavia … y Anto, los que tenía Anto": los de Mar del Plata, él; los demás, Antonella.
    ════════════════════════════════════════════════════════════════════════ */
 
-var LL_SIN_SUPERVISOR = ['sin', 'Mauricio'];   // la zona de los locales sin supervisor ("Zona MAU")
+var LL_ZONA_MAURICIO = ['mau', 'Mauricio'];    // los de Mar del Plata sin supervisor ("Zona MAU")
+var LL_SIN_SUPERVISOR = ['sin', 'Antonella'];  // los demás sin supervisor
+/** La zona de un local que no tiene supervisor: la de Mauricio si es de Mar del Plata (la zona 'mdq' que guarda la
+    base desde las llegadas por Calle / Shopping / Mar del Plata; ya no se elige en Ajustes), si no la de Antonella. */
+function llZonaSinSupervisor(l) { return l.zona === 'mdq' ? LL_ZONA_MAURICIO : LL_SIN_SUPERVISOR; }
 var LL_TOLERANCIA = 10;   // minutos después de que abre: hasta ahí, a horario
 var LL_MANANA = 180;      // la primera entrada hasta 3 horas después de que abre es la de la mañana; más tarde, otro turno (no se mira)
 var LL_DOBLE = 15;        // la misma marca dos veces en menos de 15 minutos: el dedo dos veces (como en el registro de tiempos)
@@ -1882,11 +1887,11 @@ function llDias(desde, hasta) {
     si marcó ahí porque cubrió), con cada día del período. sup: quién supervisa cada local (llSupervisores). */
 function llArmar(d, r, sup) {
   var locales = {}, personas = {}, marcas = {}, control = {}, filas = [], porClave = {}, dias = llDias(r.desde, r.hasta);
-  /* La zona de cada local: la de quien lo supervisa (si son dos, va en las dos); sin supervisor, la de Mauricio. Sin
-     sup, todo junto. */
+  /* La zona de cada local: la de quien lo supervisa (si son dos, va en las dos); sin supervisor, la de Mauricio o la de
+     Antonella (llZonaSinSupervisor). Sin sup, todo junto. */
   (d.locales || []).forEach(function (l) {
     var ss = sup ? sup[l.id] || [] : null;
-    l.zonas = !ss ? [['', '']] : ss.length ? ss.map(function (s) { return [s.id, s.nombre]; }) : [LL_SIN_SUPERVISOR];
+    l.zonas = !ss ? [['', '']] : ss.length ? ss.map(function (s) { return [s.id, s.nombre]; }) : [llZonaSinSupervisor(l)];
     locales[l.id] = l;
   });
   (d.personas || []).forEach(function (p) { personas[p.id] = p; });
@@ -1959,12 +1964,13 @@ function llCargar(r) {
   });
 }
 
-/** Las zonas que tienen algún local de los que se ven: primero la de Mauricio y después cada supervisor, por nombre. */
+/** Las zonas que tienen algún local de los que se ven: primero la de Mauricio, después la de Antonella y después cada
+    supervisor, por nombre. */
 function llZonas() {
-  var hay = {}, sin = LL_SIN_SUPERVISOR[0];
+  var hay = {}, orden = function (z) { return z[0] === LL_ZONA_MAURICIO[0] ? 0 : z[0] === LL_SIN_SUPERVISOR[0] ? 1 : 2; };
   Object.keys(_ll.locales).forEach(function (id) { _ll.locales[id].zonas.forEach(function (z) { hay[z[0]] = z; }); });
   return Object.keys(hay).map(function (k) { return hay[k]; })
-    .sort(function (a, b) { return (b[0] === sin) - (a[0] === sin) || a[1].localeCompare(b[1], 'es'); });
+    .sort(function (a, b) { return orden(a) - orden(b) || a[1].localeCompare(b[1], 'es'); });
 }
 
 function llDibujar() {
@@ -2194,7 +2200,7 @@ function llAjusteLocal(cont) {
       armar: function (c) {
         return frase('Para las llegadas, los domingos abre ' + c('abre_domingo') + '.') +
           frase('Los días que abre y la hora de siempre son los de arriba. Hasta ' + LL_TOLERANCIA + ' minutos después de que abre, la llegada está a horario. ' +
-            'En Supervisión → Llegadas va en la zona de quien lo supervisa (Configuración → Usuarios); si no tiene supervisor, en la de ' + LL_SIN_SUPERVISOR[1] + '.', 'aclara');
+            'En Supervisión → Llegadas va en la zona de quien lo supervisa (Configuración → Usuarios); si no tiene supervisor, en la de ' + llZonaSinSupervisor(l)[1] + '.', 'aclara');
       },
       guardar: function (f, c) {
         return llamar('pos_llegadas_local', { p_local: f.id, p_zona: f.zona, p_apertura_domingo: 'abre_domingo' in c ? c.abre_domingo : f.abre_domingo });
