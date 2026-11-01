@@ -95,7 +95,8 @@ var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                ['orden', 'Por vendedor', 'Cada vendedor, semana a semana'],
                ['cajas', 'Cajas', 'Como la planilla del control diario'],
                ['llegadas', 'Llegadas', 'A qué hora llegó cada uno, por zona y día a día'],
-               ['papeles', 'Papeles', 'Ausencias, certificados médicos y apercibimientos'],
+               /* Era «Papeles» hasta el 31/10 a la noche (Mauricio: "no me gusta ese nombre"): «Legajos». */
+               ['papeles', 'Legajos', 'Ausencias, certificados médicos y apercibimientos'],
                ['testigo', 'Productos testigo', 'Lo que se cuenta cada semana'],
                ['ajustes', 'Ajustes', 'Cómo funciona cada local, las reglas de orden y los tests']];
 /* Sólo el administrador (22/10: "Tareas" era "Crear tarea", adentro de Ajustes). */
@@ -152,6 +153,7 @@ function inicio() {
     try { guardado = localStorage.getItem(K_LOCAL_SUP); } catch (e) {}
     _local = _locales.filter(function (x) { return x.id === guardado; })[0] || _locales[0] || null;
     var h = String(location.hash || '').replace(/^#\/?/, '');
+    if (h === 'legajos') h = 'papeles';
     if (SOLAPAS.some(function (s) { return s[0] === h; })) _solapa = h;
     if (SOLO_ADMIN.indexOf(_solapa) > -1 && !esAdmin()) _solapa = 'panorama';
     ir(_solapa);

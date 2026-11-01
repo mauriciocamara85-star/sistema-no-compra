@@ -27,28 +27,30 @@
      ahora con el QR fichás. Entrá y salí." Va en la compu de cada local (la
      habilitada en Config → General → Las compus de los locales): un QR que
      cambia cada 30 segundos y que cada uno escanea desde Equipo VDH →
-     Papeles → Fichar. La hora que queda es la del escaneo.
+     Trámites → Fichar. La hora que queda es la del escaneo.
      La base da los QR de los próximos dos minutos, firmados, con su hora:
      la pantalla los va cambiando sola aunque el reloj de la compu ande mal.
      Pide de nuevo cada minuto y sólo mientras se ve (así gasta poco). */
   :root { --tope: 1180px; }
   .fi { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
-  @media (min-width: 1000px) { .fi { grid-template-columns: minmax(0, 1.25fr) minmax(300px, 1fr); align-items: start; } }
+  @media (min-width: 1000px) { .fi { grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr); align-items: start; } }
   .fi[hidden], .fi-sin[hidden] { display: none; }
   .fi-qr-lado { text-align: center; }
   .fi-cabeza { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; text-align: left; margin-bottom: 14px; }
   .fi-local { font: 700 24px/1.15 var(--display); letter-spacing: -.3px; }
   .fi-fecha { font-size: 14.5px; color: var(--txt-2); margin-top: 3px; }
   .fi-fecha::first-letter { text-transform: uppercase; }
-  .fi-reloj { font: 700 46px/1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+  .fi-reloj { font: 700 40px/1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
   /* El QR siempre negro sobre blanco (también con el tema oscuro): así lo lee cualquier cámara. */
   .fi-qr-caja { position: relative; display: inline-block; background: #fff; border-radius: 18px; padding: 14px; border: 1px solid var(--borde-tarjeta); }
-  .fi-qr { width: min(64vh, 82vw, 440px); aspect-ratio: 1; }
+  /* 300 px alcanzan para leerlo desde el mostrador (Mauricio, 31/10: "siento que ocupa toda la pantalla"); en pantalla
+     completa vuelve a ser grande, por si un local lo deja fijo en un monitor. */
+  .fi-qr { width: min(46vh, 70vw, 300px); aspect-ratio: 1; }
   .fi-qr svg { display: block; width: 100%; height: 100%; }
   .fi-tapa { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; border-radius: 18px;
              background: rgba(255, 255, 255, .94); color: #3F4650; font: 600 16px/1.4 var(--sans); }
   .fi-tapa[hidden] { display: none; }
-  .fi-barra { width: min(64vh, 82vw, 440px); height: 6px; margin: 14px auto 0; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
+  .fi-barra { width: min(46vh, 70vw, 300px); height: 6px; margin: 14px auto 0; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
   .fi-barra i { display: block; height: 100%; background: var(--cobre-barra); border-radius: 99px; transition: width .25s linear; }
   .fi-cambia { font-size: 13px; color: var(--txt-3); margin-top: 8px; }
   .fi-pasos { margin: 10px 0 12px; padding-left: 22px; font-size: 16px; line-height: 1.55; }
@@ -66,6 +68,7 @@
   /* Pantalla completa: sólo el fichero, sin la barra. */
   html.fi-completa .rail { display: none; }
   html.fi-completa body.hay-rail { padding-left: 0; }
+  html.fi-completa .fi-qr, html.fi-completa .fi-barra { width: min(64vh, 82vw, 440px); }
 </style>
 <!-- Quién entró: marca el rol antes de pintar la barra, y suma «Fichero» en la compu del local. Ver persona.js. -->
 <script src="persona.js"></script>
@@ -164,7 +167,7 @@
         <div class="bloque-tit">Para fichar tu entrada o tu salida</div>
         <ol class="fi-pasos">
           <li>Abrí <b>Equipo VDH</b> en tu celular.</li>
-          <li>Tocá <b>Papeles → Fichar</b>.</li>
+          <li>Tocá <b>Trámites → Fichar</b>.</li>
           <li>Elegí <b>entrada</b> o <b>salida</b> y apuntá la cámara a este QR.</li>
         </ol>
         <p class="bloque-sub" style="margin-bottom:0">Queda la hora en que lo escaneás. Una foto del QR no sirve: cambia cada 30 segundos.</p>
