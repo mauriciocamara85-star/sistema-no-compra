@@ -60,16 +60,21 @@ function yLista(xs) { return xs.length > 1 ? xs.slice(0, -1).join(', ') + ' y ' 
    ENTRADA
    ════════════════════════════════════════════════════════════════════════ */
 
+/* Sin la barra del sistema (31/10/2026, body.sin-barra): sin el menú, el camino de vuelta va acá, como en el POS. */
+function botonVolverSistema(chico) {
+  return '<a class="boton' + (chico ? ' chico' : '') + '" href="' + esc(Interfaz.volverAlSistema()) + '">‹ Volver al sistema</a>';
+}
+
 function pantallaSinSesion(mensaje) {
   app.innerHTML = '<div class="imp-entrar"><h2>Entrá con tu PIN</h2>' +
     '<p>' + esc(mensaje || 'Supervisión usa la misma entrada que la app Equipo VDH: elegí "' + SIN_LOCAL + '" (o tu local), tu nombre y tu PIN. Queda guardada en esta computadora.') + '</p>' +
-    '<a class="boton lima enlace-boton" href="vendedores.html#/admin">Entrar con tu PIN</a></div>';
+    '<div class="botones"><a class="boton lima enlace-boton" href="vendedores.html#/admin">Entrar con tu PIN</a>' + botonVolverSistema() + '</div></div>';
 }
 
 function pantallaNoCorresponde() {
   app.innerHTML = '<div class="imp-entrar"><h2>Esta parte es para supervisión</h2>' +
     '<p>Entraste como ' + esc(yo().nombre || '') + '. Tus controles y tareas están en la app.</p>' +
-    '<a class="boton lima enlace-boton" href="vendedores.html">Ir a la app</a></div>';
+    '<div class="botones"><a class="boton lima enlace-boton" href="vendedores.html">Ir a la app</a>' + botonVolverSistema() + '</div></div>';
 }
 
 /* El menú de la izquierda, como el del CRM: [clave, nombre, ícono, bajada]. */
@@ -86,7 +91,8 @@ var ICONO_MENU = {
   testigo: '<path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0L3 13V3h10l7.6 7.6a2 2 0 0 1 0 2.8z"/><circle cx="7.5" cy="7.5" r="1.5"/>',
   ajustes: '<circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M2 12h3M19 12h3M4.9 19.1 7 17M17 7l2.1-2.1"/>',
   app: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
-  salir: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>'
+  volver: '<path d="M19 12H5M12 19l-7-7 7-7"/>',
+  salir:'<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/>'
 };
 var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                ['local', 'Por local', 'Cada módulo con su última foto, y cómo viene el local'],
@@ -162,8 +168,11 @@ function inicio() {
 
 function error(e, reintentar) {
   if (e && e.sinSesion) { pantallaSinSesion(e.message); return; }
-  var c = document.getElementById('cuerpo') || app;
-  c.innerHTML = '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin conexión: no se pudo cargar.' : mensajeDe(e)) + '</div><button class="boton chico" id="reintentar">Probar de nuevo</button>';
+  var c = document.getElementById('cuerpo');
+  /* Sin el menú (falló al entrar), también el camino de vuelta al sistema. */
+  (c || app).innerHTML = '<div class="nota alerta">' + esc(esDeRed(e) ? 'Sin conexión: no se pudo cargar.' : mensajeDe(e)) + '</div>' +
+    (c ? '<button class="boton chico" id="reintentar">Probar de nuevo</button>'
+       : '<div class="botones"><button class="boton chico" id="reintentar">Probar de nuevo</button>' + botonVolverSistema(true) + '</div>');
   document.getElementById('reintentar').onclick = reintentar;
 }
 
@@ -176,7 +185,9 @@ function cabezaAdmin() {
   var conLocal = _solapa !== 'panorama' && _solapa !== 'tareas' && _solapa !== 'llegadas' && _locales.length > 1;
   /* En la compu el menú se achica a íconos con el botón de todos los paneles (interfaz.js), y se recuerda. */
   var chico = Interfaz.panelChico(K_MENU_CHICO);
+  /* Sin la barra del sistema (31/10/2026): "‹ Sistema" arriba de las secciones, como en el POS. */
   return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Supervisión"><div class="imp-menu-cab"><span>Supervisión</span>' + Interfaz.botonPanel(chico, '', 'menuEquipo') + '</div>' +
+    '<a class="imp-item imp-volver" href="' + esc(Interfaz.volverAlSistema()) + '" title="Volver al sistema">' + svgMenu('volver') + '<span>Sistema</span></a><div class="imp-raya" aria-hidden="true"></div>' +
     solapas.map(function (x) {
       return '<button class="imp-item' + (x[0] === _solapa ? ' activa' : '') + '" data-solapa="' + x[0] + '" title="' + esc(x[1]) + '">' + svgMenu(x[0]) + '<span>' + esc(x[1]) + '</span></button>';
     }).join('') +

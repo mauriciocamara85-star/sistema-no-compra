@@ -25,13 +25,14 @@
 <script src="persona.js"></script>
 <script src="interfaz.js"></script>
 </head>
-<body class="hay-rail" data-pos="gestion">
+<body class="sin-barra" data-pos="gestion">
 <!-- El oro de la bolsa de la marca (estilos.css → .marca-icono, .rail-marca-icono). -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><linearGradient id="oroCintaBolsa" gradientUnits="userSpaceOnUse" x1="4" y1="5" x2="20" y2="21"><stop offset="0" stop-color="#FFE7A8"/><stop offset=".45" stop-color="#EDBA5E"/><stop offset="1" stop-color="#C99446"/></linearGradient></defs></svg>
 
 <div class="marco">
 
-<!-- La misma barra que el resto del sistema. Gestión es la parte de atrás del POS (20/10): el mostrador (pos.html) va sin barra. -->
+<!-- La misma barra que el resto del sistema. Gestión es la parte de atrás del POS (20/10): el mostrador (pos.html) va sin barra.
+     Desde el 31/10 Gestión tampoco la muestra (body.sin-barra): va sólo con su menú, y "‹ Sistema" vuelve. -->
 <nav class="rail" aria-label="Secciones">
   <div class="rail-marca">
     <span class="rail-marca-icono">

@@ -648,10 +648,10 @@
      menú se abre desde el botón de la sección, por encima de todo. El
      numerito es lo que espera: lo que nadie contactó o contestó todavía. */
   .crm-cuerpo { min-width: 0; }
-  /* La barra negra (15/10/2026): la misma angosta de todas las secciones
-     (interfaz.js), que se abre al pasar el mouse. Ya no va el CRM "a
-     pantalla completa" con el botón ☰ que la abría encima: a Mauricio no le
-     gustaba que "te come la pantalla". */
+  /* La barra negra: el 15/10/2026 el CRM pasó a mostrar la angosta (el ☰
+     que la abría encima "te come la pantalla"); desde el 31/10/2026 va sin
+     ella, como el POS: sólo el menú, que arriba lleva "‹ Sistema"
+     (body.sin-barra, estilos.css). */
   .crm-menu { display: flex; flex-direction: column; gap: 2px; padding: 10px 8px; background: var(--surface);
               border: 1px solid var(--borde-tarjeta); border-radius: var(--r); }
   .crm-menu-cab { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px 10px; }
@@ -659,6 +659,8 @@
   .crm-item, .crm-subitem { position: relative; display: flex; align-items: center; gap: 10px; width: 100%; min-height: 38px;
                             padding: 7px 10px; border-radius: 10px; text-align: left; font: 600 13px var(--sans); color: var(--txt-2); }
   .crm-item:hover, .crm-subitem:hover { background: var(--surface-2); color: var(--txt); }
+  .crm-volver { color: var(--txt-3); text-decoration: none; }
+  .crm-raya { flex: none; height: 1px; margin: 4px 10px; background: var(--line); }
   .crm-item.sel, .crm-subitem.sel { background: var(--acc-soft); color: var(--txt); }
   .crm-item.sel::before, .crm-subitem.sel::before { content: ''; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
                                                    border-radius: 3px; background: var(--acc); }
@@ -1529,7 +1531,8 @@
 <script src="persona.js"></script>
 <script src="interfaz.js"></script>
 </head>
-<body>
+<!-- Sin la barra del sistema (31/10/2026): el CRM va sólo con su menú, como el POS (estilos.css → body.sin-barra). -->
+<body class="sin-barra">
 <!-- El oro de la bolsa de la marca (estilos.css → .marca-icono, .rail-marca-icono). -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false"><defs><linearGradient id="oroCintaBolsa" gradientUnits="userSpaceOnUse" x1="4" y1="5" x2="20" y2="21"><stop offset="0" stop-color="#FFE7A8"/><stop offset=".45" stop-color="#EDBA5E"/><stop offset="1" stop-color="#C99446"/></linearGradient></defs></svg>
 
@@ -2161,10 +2164,8 @@
 
     $('porton').hidden = true;
     $('marco').hidden = false;
-    // El rail recién existe acá adentro, así que el hueco que le reserva
-    // el contenido también: con el portón cerrado la pantalla es una sola
-    // caja centrada y un margen izquierdo la dejaría corrida.
-    document.body.classList.add('hay-rail');
+    // Sin la barra del sistema (31/10/2026, body.sin-barra): el CRM va sólo
+    // con su menú, que arriba lleva "‹ Sistema", como el POS.
     $('btnRefrescar').hidden = false;
     $('btnSalir').hidden = false;
     pintarWhoami();
@@ -2216,7 +2217,6 @@
   /* Vuelve al portón (la sesión ya no sirve, o le cambiaron el rol). */
   function cerrarPanel() {
     $('marco').hidden = true;
-    document.body.classList.remove('hay-rail');
     $('btnRefrescar').hidden = true;
     $('btnSalir').hidden = true;
     cerrarFicha();
@@ -2403,7 +2403,8 @@
      Automatizaciones junta Bots, Plantillas y Difusiones. Lo que todavía no
      está dice "Pronto" y explica qué va a hacer. */
   var ICO = {
-    chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+    volver: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>',
+    chat:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
     pipe: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>',
     seg: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="9" r="5.5"/><circle cx="15" cy="15" r="5.5"/></svg>',
     gente: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
@@ -2457,6 +2458,9 @@
     };
     $('vistas').innerHTML =
       '<div class="crm-menu-cab"><b>CRM</b>' + Interfaz.botonPanel($('crm').classList.contains('chico')) + '</div>' +
+      /* Sin la barra del sistema (31/10/2026): "‹ Sistema" arriba de las secciones, como en el POS. */
+      '<a class="crm-item crm-volver" href="' + esc(Interfaz.volverAlSistema()) + '" title="Volver al sistema">' +
+        '<span class="crm-ico" aria-hidden="true">' + ICO.volver + '</span><span class="crm-txt">Sistema</span></a><div class="crm-raya" aria-hidden="true"></div>' +
       MENU_CRM.map(function (o) {
         if (!o.hijos) { return item(o); }
         var activo = o.hijos.some(function (h) { return h.v === vista; });

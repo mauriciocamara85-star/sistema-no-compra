@@ -112,6 +112,32 @@
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', armarVolver); else armarVolver();
 
+  /* Las secciones con su propia barra van sin la negra (Mauricio, 31/10/2026: "cada vez que entremos a una sección
+     como esta, es mejor que la barra no esté, que aparezca sólo la barra de la sección, como ya tenemos hecho en el
+     POS"): el POS, Gestión, Supervisión y el CRM (<body class="sin-barra">, estilos.css). Arriba de su menú,
+     "‹ Sistema" vuelve a la última pantalla con la barra que se usó en esta pestaña. */
+  var SIN_BARRA = ['pos.html', 'gestion.html', 'impecable-admin.html', 'panel.html'];
+  var K_VOLVER = 'nc_volver_sistema';
+  function pagina(u) { return u.pathname.split('/').pop() || 'index.html'; }
+  function anotarVuelta() {
+    if (!document.querySelector('.rail') || SIN_BARRA.indexOf(pagina(location)) > -1) return;
+    try { sessionStorage.setItem(K_VOLVER, pagina(location) + location.hash); } catch (e) {}
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', anotarVuelta); else anotarVuelta();
+  window.addEventListener('hashchange', anotarVuelta);
+  /** Adónde va "‹ Sistema": la última pantalla con la barra; si no hay (se abrió de un enlace), la de la que vino, o
+      la Carga. */
+  function volverAlSistema() {
+    var v = null;
+    try { v = sessionStorage.getItem(K_VOLVER); } catch (e) {}
+    if (v) return v;
+    try {
+      var r = new URL(document.referrer), p = pagina(r);
+      if (r.origin === location.origin && /\.html$/.test(p) && SIN_BARRA.indexOf(p) < 0) return p + r.hash;
+    } catch (e) {}
+    return 'index.html';
+  }
+
   /* ══ 2. El panel de cada sección ══════════════════════════════════════
      Cada sección arma su panel a su manera; lo común es el botón (el mismo ícono, arriba a la derecha) y que
      el estado se recuerda por sección. Uso: Interfaz.panelChico('nc_panel_equipo') → true/false;
@@ -427,9 +453,14 @@
   new MutationObserver(pedirMedida).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['hidden', 'class', 'style'] });
   window.addEventListener('resize', medirDeNuevo);
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(medirDeNuevo);
+  /* Cada letra que termina de llegar, de nuevo: "ready" ya estaba cumplido si al arrancar no se cargaba ninguna, y una
+     letra pedida después (en las secciones sin la barra, Poppins llega más tarde) dejaba el piso medido con la de
+     reemplazo, más angosta: el desplegable de local saltaba de ancho al elegir (31/10/2026). */
+  if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', medirDeNuevo);
 
   window.Interfaz = {
     railFija: railFija,
+    volverAlSistema: volverAlSistema,
     panelChico: panelChico,
     botonPanel: botonPanel,
     periodo: periodo,

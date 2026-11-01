@@ -575,7 +575,7 @@
       if (cp && cp.ini && cp.id === y.id) { empezar(cp.ini, true); return; }
       app.innerHTML = '<div class="pos-porton"><h2>' + (MODO === 'gestion' ? 'Gestión' : 'POS') + '</h2><div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>' +
         '<button type="button" class="btn btn-sec btn-chico" id="reintentar">Probar de nuevo</button>' +
-        (MODO === 'mostrador' ? '<a class="btn btn-sec btn-chico pos-porton-volver" href="index.html">‹ Volver al sistema</a>' : '') + '</div>';
+        '<a class="btn btn-sec btn-chico pos-porton-volver" href="' + esc(volverAlSistema()) + '">‹ Volver al sistema</a></div>';
       $('reintentar').onclick = arrancar;
     });
   }
@@ -601,8 +601,8 @@
       '<p>' + (MODO === 'gestion' ? 'La parte de atrás del POS: precios, promociones, stock y sucursales.' :
                                     'El punto de venta propio, para reemplazar a BlueSoft en las sucursales.') + ' Todavía está en construcción.</p>' +
       '<div id="posPorton"></div>' +
-      /* En el mostrador no hay barra: el camino de vuelta va acá. */
-      (MODO === 'mostrador' ? '<a class="btn btn-sec btn-chico pos-porton-volver" href="index.html">‹ Volver al sistema</a>' : '') + '</section>';
+      /* No hay barra (en Gestión, desde el 31/10): el camino de vuelta va acá. */
+      '<a class="btn btn-sec btn-chico pos-porton-volver" href="' + esc(volverAlSistema()) + '">‹ Volver al sistema</a></section>';
     var c = $('posPorton');
     if (y) {
       c.innerHTML = '<p class="ncp-porton-txt">Entraste como <b>' + esc(y.nombre) + '</b>. ' +
@@ -693,15 +693,8 @@
     if (g[1].some(function (it) { return it[0] === S.vista || it[0] === DENTRO[MODO][S.vista]; })) return true;
     return (leerJSON(K_GRUPOS, {}) || {})[g[0]] === 1;
   }
-  /** Adónde vuelve "‹ Sistema": a la pantalla de la que vino (si es del sistema), o a la Carga. */
-  function volverAlSistema() {
-    try {
-      var r = new URL(document.referrer);
-      var p = r.pathname.split('/').pop();
-      if (r.origin === location.origin && /\.html$/.test(p) && p !== 'pos.html') return p + r.hash;
-    } catch (e) {}
-    return 'index.html';
-  }
+  /** Adónde vuelve "‹ Sistema": a la última pantalla con la barra (interfaz.js; 31/10, Gestión también va sin la barra). */
+  function volverAlSistema() { return Interfaz.volverAlSistema(); }
 
   /* SQL 190: el menú, sin lo que la persona no tiene (los envíos y las devoluciones, la caja). */
   function menuVisible() {
@@ -711,10 +704,11 @@
 
   function marco() {
     var chico = menuChico(), y = persona.yo();
-    var cab = MODO === 'gestion'
+    /* Los dos sin la barra del sistema (Gestión desde el 31/10): "‹ Sistema" arriba de las secciones. */
+    var cab = (MODO === 'gestion'
       ? '<div class="pos-menu-cab"><span>Gestión</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>'
-      : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>' +
-        '<a class="pos-item pos-volver" href="' + esc(volverAlSistema()) + '" title="Volver al sistema">' + icono('volver') + '<span>Sistema</span></a>';
+      : '<div class="pos-menu-cab"><span class="pos-marca" aria-hidden="true">' + BOLSA + '</span><span>POS</span>' + Interfaz.botonPanel(chico, '', 'menuPos') + '</div>') +
+      '<a class="pos-item pos-volver" href="' + esc(volverAlSistema()) + '" title="Volver al sistema">' + icono('volver') + '<span>Sistema</span></a>';
     var cuerpo = MODO === 'gestion'
       ? menuVisible().map(function (g) {
           var ab = grupoAbierto(g);

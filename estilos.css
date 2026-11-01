@@ -1776,6 +1776,17 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   .rail-item { padding-top: 3px; padding-bottom: 3px; }
   .rail-icono { height: 28px; }
 }
+/* ── Las secciones con su propia barra, sin la negra (31/10/2026) ─────────
+   Gestión, Supervisión y el CRM, como el POS: a pantalla completa, sólo con el
+   menú de la sección, que arriba lleva "‹ Sistema" (interfaz.js). En la compu
+   el menú queda donde estaba la barra; en el celular no hay barra de abajo
+   (--nav en 0: lo que se paraba encima de ella baja hasta el borde). */
+body.sin-barra .rail { display: none; }
+body.sin-barra { --nav: 0px; }
+@media (min-width: 900px) {
+  body.sin-barra { padding-left: 0; }
+  body.sin-barra .hoja { padding-left: 12px; }
+}
 
 /* ── El panel de cada sección (CRM, Equipo VDH, Asistente) ────────────────
    El mismo botón, arriba a la derecha del panel, para achicarlo a íconos. */
