@@ -26,13 +26,25 @@ var SIN_LOCAL = 'Supervisores y administración';   // los que no son de un loca
    LA SESIÓN
    ════════════════════════════════════════════════════════════════════════ */
 
+/* En la PC (con mouse) la sesión es de la ventana (sessionStorage): al cerrarla se cierra, y dos ventanas pueden
+   tener dos personas (2/11/2026, como en persona.js, que decide igual y es la que se fija si Chrome la reabrió).
+   En el celular sigue guardada en el aparato. La de antes, guardada en la compu, se la queda la primera ventana. */
+function lugarVend_() {
+  try { return window.matchMedia && matchMedia('(pointer: fine)').matches && window.sessionStorage ? sessionStorage : localStorage; } catch (e) { return localStorage; }
+}
+try {
+  if (lugarVend_() !== localStorage && localStorage.getItem(K_VEND)) {
+    if (!sessionStorage.getItem(K_VEND)) sessionStorage.setItem(K_VEND, localStorage.getItem(K_VEND));
+    localStorage.removeItem(K_VEND);
+  }
+} catch (e) {}
 function leerVend_() {
-  try { return JSON.parse(localStorage.getItem(K_VEND) || 'null'); } catch (e) { return null; }
+  try { return JSON.parse(lugarVend_().getItem(K_VEND) || 'null'); } catch (e) { return null; }
 }
 function guardarVend_(s) {
   try {
-    if (s) localStorage.setItem(K_VEND, JSON.stringify(s));
-    else localStorage.removeItem(K_VEND);
+    if (s) lugarVend_().setItem(K_VEND, JSON.stringify(s));
+    else lugarVend_().removeItem(K_VEND);
   } catch (e) { /* incógnito: dura lo que la pestaña */ }
   _vend = s;
 }

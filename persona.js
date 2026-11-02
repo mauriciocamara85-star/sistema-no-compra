@@ -7,6 +7,10 @@
  * allá, y al revés. La abre la Edge Function `entrar` de Impecable, que es la
  * que revisa el PIN y lleva el freno de 5 intentos.
  *
+ * En la PC la sesión es de la ventana (2/11/2026, ver porVentana): al cerrarla
+ * se cierra, y dos ventanas pueden tener dos personas a la vez. En el celular
+ * sigue guardada en el aparato.
+ *
  * Se carga en el <head>, antes que comun.js y datos.js. Lo primero que hace es
  * marcar el rol en <html> (data-nc-rol): con eso estilos.css esconde de la
  * barra lo que ese rol no usa ANTES de pintar, sin parpadeo. Todo lo demás
@@ -48,6 +52,42 @@ var persona = (function () {
   function guardarLS(k, v) {
     try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* incógnito */ }
   }
+  /* ── La sesión de cada ventana (2/11/2026) ──
+     Mauricio: "cada vez que cerremos se cierra el sistema y cuando abramos se da como BlueSoft… podría haber dos
+     sistemas abiertos en simultáneo con dos usuarios diferentes". En la PC (con mouse) la sesión va en sessionStorage:
+     es de esa ventana, muere al cerrarla, y otra ventana puede tener otra persona. En el celular (táctil) sigue en
+     localStorage, como siempre (Equipo VDH queda adentro). impecable-comun.js decide igual (lugarVend_). */
+  var POR_VENTANA = (function () {
+    try { return !!(window.matchMedia && matchMedia('(pointer: fine)').matches && window.sessionStorage); } catch (e) { return false; }
+  })();
+  var K_VISTO = 'nc_ses_visto';   // sessionStorage: la última vez que esta ventana estuvo abierta (ver abajo)
+  function lugarSesion() { return POR_VENTANA ? sessionStorage : localStorage; }
+  function leerSesion() { try { return JSON.parse(lugarSesion().getItem(K_SESION) || 'null'); } catch (e) { return null; } }
+  function guardarSesion(v) {
+    try { if (v == null) lugarSesion().removeItem(K_SESION); else lugarSesion().setItem(K_SESION, JSON.stringify(v)); } catch (e) { /* incógnito */ }
+  }
+  if (POR_VENTANA) {
+    try {
+      /* La de antes (guardada en la compu): se la queda la primera ventana que abre, así nadie queda afuera a mitad
+         de una venta el día del cambio; las que se abren después piden entrar. */
+      var deAntes = localStorage.getItem(K_SESION);
+      if (deAntes) {
+        if (!sessionStorage.getItem(K_SESION)) sessionStorage.setItem(K_SESION, deAntes);
+        localStorage.removeItem(K_SESION);
+      }
+      /* Chrome puede reabrir la ventana con lo suyo (al reiniciarse, o con «Reabrir pestaña»): si estuvo más de dos
+         minutos cerrada (o dormida), cuenta como cerrada. Mientras está abierta se anota cada 30 segundos. */
+      var visto = Number(sessionStorage.getItem(K_VISTO)) || 0;
+      if (visto && Date.now() - visto > 120000) sessionStorage.removeItem(K_SESION);
+    } catch (e) {}
+    var anotarVisto = function () { try { sessionStorage.setItem(K_VISTO, String(Date.now())); } catch (e) {} };
+    anotarVisto();
+    setInterval(anotarVisto, 30000);
+    window.addEventListener('pagehide', anotarVisto);
+    document.addEventListener('visibilitychange', anotarVisto);
+    document.addEventListener('freeze', anotarVisto);
+  }
+
   function txt(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
@@ -60,7 +100,7 @@ var persona = (function () {
      anterior volvía a entrar la Carga ya no lo elegía. Corre antes de que
      la Carga lea "quién carga" (este archivo va en el <head>). */
   function limpiarSiSalio() {
-    if (leerLS(K_SESION)) return;
+    if (leerSesion()) return;
     var marca = null;
     try { marca = localStorage.getItem(K_VEND_DE); } catch (e) { return; }
     if (!marca) return;
@@ -73,7 +113,7 @@ var persona = (function () {
   }
   limpiarSiSalio();
 
-  var _ses = leerLS(K_SESION);
+  var _ses = leerSesion();
   var _yo = leerLS(K_YO);
   /* Lo guardado vale sólo si es de la persona de la sesión. Si entró por
      Impecable todavía no hay nada guardado: se usa lo que trajo la sesión
@@ -162,7 +202,7 @@ var persona = (function () {
       vence: r.expires_at ? (r.expires_at - 60) * 1000 : Date.now() + 3540 * 1000,
       persona: p || (_ses && _ses.persona)
     };
-    guardarLS(K_SESION, _ses);
+    guardarSesion(_ses);
   }
 
   function sinSesion() {
@@ -173,7 +213,7 @@ var persona = (function () {
 
   function olvidar() {
     _ses = null;
-    guardarLS(K_SESION, null);
+    guardarSesion(null);
     try { localStorage.removeItem(K_VEND_DE); } catch (e) {}
     fijarYo(null);
   }
@@ -184,7 +224,7 @@ var persona = (function () {
 
   function token() {
     /* Otra pestaña (o Impecable) pudo haberla renovado o cerrado. */
-    var g = leerLS(K_SESION);
+    var g = leerSesion();
     if (!g) { if (_ses) olvidar(); return Promise.reject(sinSesion()); }
     if (!_ses || g.refresco !== _ses.refresco) _ses = g;
     if (!_ses.refresco) return Promise.reject(sinSesion());
@@ -197,7 +237,7 @@ var persona = (function () {
         body: JSON.stringify({ refresh_token: refresco })
       }).then(function (r) {
         if (r.status === 400 || r.status === 401) {
-          var otra = leerLS(K_SESION);
+          var otra = leerSesion();
           if (otra && otra.refresco && otra.refresco !== refresco) { _ses = otra; return null; }
           olvidar();
           throw sinSesion();
@@ -271,7 +311,7 @@ var persona = (function () {
   }
 
   function refrescar() {
-    if (!leerLS(K_SESION)) { if (_ses || _yo) olvidar(); return Promise.resolve(null); }
+    if (!leerSesion()) { if (_ses || _yo) olvidar(); return Promise.resolve(null); }
     return token()
       .then(function (t) { return funcion('nc_yo', {}, t); })
       .then(function (y) {
@@ -1604,8 +1644,9 @@ var persona = (function () {
 
   /* Entró o salió en otra pestaña (o en Impecable): la barra se pone al día. */
   window.addEventListener('storage', function (e) {
-    if (e.key !== K_SESION) return;
-    var g = leerLS(K_SESION);
+    /* En la PC cada ventana tiene la suya: lo que pase en otra no la toca. */
+    if (e.key !== K_SESION || POR_VENTANA) return;
+    var g = leerSesion();
     if (!g) { limpiarSiSalio(); _ses = null; fijarYo(null); return; }
     var otra = !_ses || !_ses.persona || !g.persona || g.persona.id !== _ses.persona.id;
     _ses = g;
