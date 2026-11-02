@@ -110,7 +110,9 @@
                   /* Los clientes (SQL 197), con los socios del Club: como la «Administración de clientes» de la PC del local. */
                   ['clientes', 'Clientes', 'clientes'],
                   /* Las ventas por vendedor (SQL 192) y por productos (SQL 196, el "resumen de ventas"), como en la PC del local de BlueSoft. */
-                  ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod']]],
+                  ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod'],
+                  /* El IVA de las facturas A y B (SQL 231): el «Reporte IVA Ventas» de BlueSoft, el que se manda a la fábrica. */
+                  ['iva', 'IVA Ventas', 'iva']]],
       /* El stock y los remitos (SQL 160): el local recibe la mercadería y mira lo que tiene.
          La devolución a fábrica (SQL 189): lo que el local le devuelve, como en BlueSoft.
          Los depósitos (SQL 193): el de cada temporada, para el stock de todo el local.
@@ -128,7 +130,7 @@
       /* La disponibilidad (SQL 195): cuánto hay en cada caja y, al tocarla, sus movimientos ("Consulta de Valores" de BlueSoft). */
       ['Caja', [['disponibilidad', 'Disponibilidad', 'disp'], ['cierres', 'Cierres de caja', 'caja'], ['movimientos', 'Movimientos', 'movs']]],
       ['Clientes y reportes', [['clientes', 'Clientes', 'clientes'], ['vendedores', 'Ventas por vendedor', 'vendedores'], ['porproducto', 'Ventas por productos', 'vprod'],
-                                ['reportes', 'Reportes', 'reportes']]],
+                                ['iva', 'IVA Ventas', 'iva'], ['reportes', 'Reportes', 'reportes']]],
       /* El registro de tiempos (SQL 206): las entradas y salidas de cada uno, como el "Registro de tiempos" de BlueSoft (la huella viene después). */
       ['Personal', [['tiempos', 'Registro de tiempos', 'reloj']]],
       ['Configuración', [['sucursales', 'Sucursales', 'sucursal'], ['medios', 'Medios de pago', 'medios'], ['arca', 'Facturación (ARCA)', 'arca']]]
@@ -144,7 +146,7 @@
   var SIN_PERMISO = { envios: 'No tenés permiso para los envíos internos ni las devoluciones a fábrica.',
                       caja: 'No tenés permiso para la caja (gastos, movimientos de salida, retiros y cierre).' };
   var HECHAS = { venta: 1, tickets: 1, cambios: 1, notas: 1, fallida: 1, clientes: 1, vendedores: 1, porproducto: 1, gastos: 1, salidas: 1, retiros: 1, cierre: 1, disponibilidad: 1, cierres: 1, movimientos: 1, productos: 1, listas: 1, promos: 1, sucursales: 1,
-                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1 };
+                 stock: 1, remitos: 1, diferencias: 1, inventario: 1, devoluciones: 1, envios: 1, depositos: 1, tiempos: 1, general: 1, iva: 1 };
   var LETRAS = { A: 'Factura A', B: 'Factura B', X: 'X · interno' };
 
   /* Lo que va a tener cada sección que todavía no está (de la investigación del 20/10 y del mapa de BlueSoft). */
@@ -217,6 +219,7 @@
     reportes: '<path d="M3 3v18h18"/><path d="M7 16v-5M12 16V8M17 16v-3"/>',
     vprod: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 6h12M7 11h8M7 16h3"/>',
     vendedores: '<circle cx="8" cy="7" r="3.5"/><path d="M2 20v-1a6 6 0 0 1 9.5-4.9"/><path d="M15 20v-3M18.5 20v-6M22 20v-9"/>',
+    iva: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m9 18 6-6"/><circle cx="9.5" cy="12.5" r="1"/><circle cx="14.5" cy="17.5" r="1"/>',
     sucursal: '<path d="M4 4h16l1 5a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0z"/><path d="M5 13v7h14v-7"/>',
     medios: '<rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20M6 15h4"/>',
     arca: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h5"/>',
@@ -379,7 +382,7 @@
        (y quién recibió: p_recibio). El 171, la venta fallida y el socio del Club. El 172, el stock de a tandas
        y por rubro (p_productos, p_resumen). */
     if (/Could not find the function|schema cache|PGRST202/.test(m)) {
-      return 'Todavía falta correr el SQL ' + (/pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
+      return 'Todavía falta correr el SQL ' + (/pos_iva_ventas/.test(m) ? '231 (el IVA Ventas)' : /pos_stock_general/.test(m) ? '222 (el stock general)' : /pos_tiempo/.test(m) ? '206 (el registro de tiempos)' :
                                              /pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
                                              /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
                                              /pos_articul/.test(m) ? '202 (los productos)' :
@@ -634,7 +637,7 @@
       $('cuerpo').innerHTML = '<div class="pos-cartel">' + esc(SIN_PERMISO[REQUIERE[v]]) + ' Lo da la oficina en Config → Usuarios.</div>';
       return;
     }
-    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, notas: verNotas, fallida: verFallidas, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, gastos: verGastos, salidas: verSalidas,
+    var ver = { venta: verVenta, tickets: verTickets, cambios: verCambios, cambio: verCambio, notas: verNotas, fallida: verFallidas, clientes: function () { verClientes(); }, vendedores: verVendedores, porproducto: function () { verPorProducto(); }, iva: verIva, gastos: verGastos, salidas: verSalidas,
                 retiros: verRetiros, cierre: verCierre, disponibilidad: verDisponibilidad, cierres: verCierres,
                 movimientos: verMovimientos, productos: function () { verProductos(); }, listas: verListas, promos: verPromos, sucursales: verSucursales,
                 stock: verStock, remitos: verRemitos, remito: verRemito, remito_nuevo: verRemitoNuevo, diferencias: verDiferencias, inventario: verInventario,
@@ -2830,6 +2833,169 @@
               (f.medios || []).map(function (m) { return MEDIOS_VENTA[m] || m; }).join(' + '), f.cantidad, Number(f.neto), Number(f.descuentos), Number(f.total)];
     });
     bajarCsv('notas-de-credito-' + r.desde + '-al-' + r.hasta + '.csv', cab, filas);
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
+     IVA VENTAS (SQL 231)
+     El «Reporte IVA Ventas» de BlueSoft (Mauricio, 2/11, con dos fotos:
+     "es algo que usamos, todos los primeros de cada mes mandamos IVA por
+     mail a la fábrica del mes anterior"). Un renglón por factura A o B y
+     por nota de crédito (en negativo, el día que se hizo), con la base
+     imponible y el IVA 21 % separados; abajo, los totales. «Agrupar por
+     día» y «Bajar para Excel», como en BlueSoft. Arranca siempre en el
+     mes pasado: el que se manda el 1.º. Las X no van (son internas).
+     ════════════════════════════════════════════════════════════════════ */
+  var TIPO_IVA = { ticket: 'Ticket', nc: 'Nota de crédito' };
+  /** "2026-10-01" → "1/10/2026", como la fecha de BlueSoft. */
+  function diaCorto(d) { var p = String(d || '').split('-'); return p.length === 3 ? Number(p[2]) + '/' + Number(p[1]) + '/' + p[0] : String(d || ''); }
+  /** La plata con los centavos siempre ("$35.000,00"), como las columnas de BlueSoft. */
+  function plata2(c) { var s = plata(c); return /,\d\d$/.test(s) ? s : s + ',00'; }
+  /** Para el nombre del Excel: "octubre 2026" si es un mes entero; si no, las dos fechas. */
+  function nombrePeriodo(r) {
+    var a = r.desde, b = r.hasta;
+    if (a.slice(8) === '01' && a.slice(0, 7) === b.slice(0, 7) && Interfaz.fecha.sumar(b, 1).slice(8) === '01') return VV_MESES[Number(a.slice(5, 7)) - 1].toLowerCase() + ' ' + a.slice(0, 4);
+    return a + ' a ' + b;
+  }
+
+  function verIva() {
+    var c = $('cuerpo');
+    /* En el mostrador arranca en su local; en Gestión, en todas (como Ventas por vendedor). */
+    var l = MODO === 'gestion' && puede('locales') ? null : localInicial();
+    c.innerHTML = cabeza('IVA Ventas', 'Las facturas A y B y las notas de crédito, con el IVA separado: lo que se le manda a la fábrica el 1.º de cada mes. Las X no van.',
+        /* El «Agrupar por día» de BlueSoft: un renglón por día. */
+        '<label class="pos-check iv-dia"><input type="checkbox" id="ivDia"' + (leer('pos_iva_dia') === '1' ? ' checked' : '') + '> Agrupar por día</label>' +
+        '<button type="button" class="btn btn-sec btn-chico" id="ivBajar" disabled>Bajar para Excel</button>') +
+      '<div class="pos-filtros"><div id="ivPer"></div>' +
+        campo('', 'Sucursal', '<select id="ivLocal" class="desplegable">' + todasLasSucursales() + opcionesLocales(l ? l.id : '') + '</select>') +
+        campo('', 'Comprobante', '<select id="ivLetra"><option value="">A y B</option>' + opciones([['A', LETRAS.A], ['B', LETRAS.B]], '') + '</select>') +
+        campo('iv-buscar', 'Cliente', '<input type="search" id="ivCli" autocomplete="off" spellcheck="false" placeholder="Nombre, CUIT o DNI">') +
+      '</div>' +
+      '<div id="ivLista"><p class="cargando">Cargando…</p></div>' +
+      '<div class="tkl-pie" id="ivPie"></div>';
+    var pedido = 0, ultimo = null, rango = null, tCli = null;
+    /* Siempre arranca en el mes pasado (no se guarda): el 1.º es el que se manda. */
+    var per = periodoPos($('ivPer'), { inicial: 'mes-pasado', hastaHoy: true, alCambiar: cargar });
+    $('ivLocal').onchange = cargar;
+    $('ivLetra').onchange = cargar;
+    $('ivDia').onchange = function () { guardar('pos_iva_dia', this.checked ? '1' : ''); if (ultimo) pintar(); };
+    /* El cliente se busca en lo que ya llegó, sin volver a la base. */
+    $('ivCli').oninput = function () { clearTimeout(tCli); tCli = setTimeout(function () { if (ultimo) pintar(); }, 200); };
+    function cargar() {
+      var r = per.rango(), n = ++pedido;
+      $('ivLista').innerHTML = '<p class="cargando">Cargando…</p>';
+      $('ivBajar').disabled = true;
+      llamar('pos_iva_ventas', { p_desde: r.desde, p_hasta: r.hasta, p_local: $('ivLocal').value || null, p_letra: $('ivLetra').value || null }).then(function (d) {
+        if (n !== pedido || !$('ivLista')) return;
+        ultimo = d;
+        rango = r;
+        pintar();
+      }).catch(function (e) {
+        if (n !== pedido || !$('ivLista')) return;
+        ultimo = null;
+        $('ivLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>';
+        $('ivPie').innerHTML = '';
+      });
+    }
+    function filtradas() {
+      var q = $('ivCli').value.trim().toLowerCase(), qd = q.replace(/\D/g, '');
+      return ((ultimo && ultimo.filas) || []).filter(function (f) {
+        return !q || String(f.cliente || '').toLowerCase().indexOf(q) >= 0 || (qd.length >= 3 && String(f.doc || '').replace(/\D/g, '').indexOf(qd) >= 0);
+      });
+    }
+    /** Los totales, en centavos: comprobante por comprobante, como BlueSoft. */
+    function sumar(fs) {
+      return fs.reduce(function (t, f) {
+        t.base += cent(f.base); t.iva += cent(f.iva); t.total += cent(f.total);
+        if (f.tipo === 'nc') t.notas++; else t.tickets++;
+        return t;
+      }, { base: 0, iva: 0, total: 0, tickets: 0, notas: 0 });
+    }
+    function porDia(fs) {
+      var m = {};
+      fs.forEach(function (f) { (m[f.dia] = m[f.dia] || []).push(f); });
+      return Object.keys(m).sort().map(function (k) { return Object.assign({ dia: k }, sumar(m[k])); });
+    }
+    function caja(lbl, v, cls) { return '<div class="tk-caja' + (cls ? ' ' + cls : '') + '"><span>' + lbl + '</span><b>' + v + '</b></div>'; }
+    /* Abajo, los totales de BlueSoft: base imponible, IVA y total. */
+    function pintarPie(t) {
+      $('ivPie').innerHTML = caja('Tickets', miles(t.tickets)) + (t.notas ? caja('Notas de crédito', miles(t.notas)) : '') +
+        caja('Base imponible', plata2(t.base)) + caja('IVA 21 %', plata2(t.iva)) + caja('Total', plata2(t.total), 'fuerte');
+    }
+    function pintar() {
+      var fs = filtradas(), t = sumar(fs);
+      pintarPie(t);
+      /* Mientras el POS no factura, el CAE está en BlueSoft: lo que se manda a la fábrica sale de allá. */
+      var aviso = fs.some(function (f) { return f.cae; }) ? '' : '<div class="pos-cartel">Por ahora la factura (con su CAE) la hace BlueSoft: ' +
+        'el IVA que se manda a la fábrica sigue saliendo de BlueSoft. Acá está lo cargado en el POS, para compararlo.</div>';
+      if (ultimo.mas) aviso += '<div class="pos-cartel mal">Son demasiados comprobantes: se ven los primeros 20.000. Achicá el período o elegí una sucursal.</div>';
+      if (!fs.length) {
+        $('ivLista').innerHTML = aviso + '<div class="pos-cartel">' + ($('ivCli').value.trim() ? 'No hay comprobantes de ese cliente en el período.' :
+          'No hay facturas A ni B en ese período.') + '</div>';
+        $('ivBajar').disabled = true;
+        return;
+      }
+      $('ivBajar').disabled = false;
+      $('ivLista').innerHTML = aviso + ($('ivDia').checked ? tablaDias(porDia(fs), t) : tablaComprobantes(fs, !$('ivLocal').value));
+      $('ivLista').querySelectorAll('tr[data-iv]').forEach(function (tr) {
+        tr.onclick = function () { var id = tr.getAttribute('data-iv'); if (tr.getAttribute('data-tipo') === 'nc') abrirNota(id, cargar); else abrirTicket(id, cargar); };
+        tr.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); tr.onclick(); } };
+      });
+    }
+    /* Las columnas de BlueSoft, apretadas para que entren en la compu del local (1366 px, con el menú): el tipo se ve en
+       el comprobante (la nota, «NC-1», en rojo), la condición y el CUIT van abajo del cliente (casi todos son consumidor
+       final, en una línea), el CAE sólo cuando alguno lo tiene y No gravado y las percepciones (siempre 0), sólo en el Excel. */
+    function tablaComprobantes(fs, todas) {
+      var conCae = fs.some(function (f) { return f.cae; });
+      return '<div class="pos-marco-tabla"><table class="pos-tabla iv-tabla"><thead><tr><th>Fecha</th><th class="c">L</th><th class="n">Comprobante</th>' +
+          (todas ? '<th>Sucursal</th>' : '') + '<th>Cliente</th><th class="n">Base imponible</th><th class="n">IVA 21 %</th><th class="n">Total</th>' +
+          (conCae ? '<th>CAE</th>' : '') + '</tr></thead><tbody>' +
+        fs.map(function (f) {
+          var nc = f.tipo === 'nc', dato = (f.condicion === 'consumidor_final' && !f.doc ? '' : CONDICION[f.condicion] || f.condicion || '') +
+                                              (f.doc ? ' · ' + cuit(f.doc) : '');
+          return '<tr data-iv="' + esc(f.venta_id) + '" data-tipo="' + esc(f.tipo) + '" tabindex="0"' + (nc ? ' class="iv-nc"' : '') + '>' +
+            '<td title="' + esc(fechaLarga(f.fecha)) + '">' + esc(diaCorto(f.dia)) + '</td>' +
+            '<td class="c" title="' + esc(LETRAS[f.letra] || f.letra) + '">' + esc(f.letra) + '</td>' +
+            (nc ? '<td class="n" title="Nota de crédito: anula el ticket Nº ' + esc(f.numero) + '"><b>' + esc(refNota({ numero: f.nc })) + '</b> <small class="iv-anula">anula Nº ' + esc(f.numero) + '</small></td>'
+                : '<td class="n" title="Ticket · ' + esc(LETRAS[f.letra] || f.letra) + '"><b>Nº ' + esc(f.numero) + '</b></td>') +
+            (todas ? '<td>' + esc(bonito(f.local)) + '</td>' : '') +
+            '<td class="iv-cli">' + esc(f.cliente) + (dato ? '<small class="iv-dato">' + esc(dato.replace(/^ · /, '')) + '</small>' : '') + '</td>' +
+            '<td class="n">' + plata2(cent(f.base)) + '</td><td class="n">' + plata2(cent(f.iva)) + '</td><td class="n"><b>' + plata2(cent(f.total)) + '</b></td>' +
+            (conCae ? '<td class="apagado">' + esc(f.cae || '—') + '</td>' : '') + '</tr>';
+        }).join('') + '</tbody></table></div>';
+    }
+    function tablaDias(ds, t) {
+      var fila = function (d) {
+        return '<td class="n">' + (d.tickets ? miles(d.tickets) : '—') + '</td><td class="n">' + (d.notas ? miles(d.notas) : '—') + '</td>' +
+          '<td class="n">' + plata2(d.base) + '</td><td class="n">' + plata2(d.iva) + '</td><td class="n"><b>' + plata2(d.total) + '</b></td>';
+      };
+      return '<div class="pos-marco-tabla"><table class="pos-tabla iv-tabla"><thead><tr><th>Día</th><th class="n">Tickets</th><th class="n">Notas de crédito</th>' +
+          '<th class="n">Base imponible</th><th class="n">IVA 21 %</th><th class="n">Total</th></tr></thead><tbody>' +
+        ds.map(function (d) { return '<tr><td>' + esc(diaCorto(d.dia)) + '</td>' + fila(d) + '</tr>'; }).join('') + '</tbody>' +
+        (ds.length > 1 ? '<tfoot><tr><td>Total</td>' + fila(t) + '</tr></tfoot>' : '') + '</table></div>';
+    }
+    /* El Excel de lo que se ve, con la fila del total. Comprobante por comprobante, con todas las columnas de BlueSoft
+       (No gravado y las percepciones en 0), para que a la fábrica le llegue igual que siempre. */
+    $('ivBajar').onclick = function () {
+      if (!ultimo) return;
+      var fs = filtradas(), t = sumar(fs), lo = localDe($('ivLocal').value);
+      var nro = function (c) { return (c / 100).toFixed(2).replace('.', ','); };   // en centavos, con la coma del Excel en castellano
+      var nombre = 'IVA Ventas ' + (lo ? nombreLocal(lo) : 'todas las sucursales') + ' ' + nombrePeriodo(rango) + '.csv';
+      if ($('ivDia').checked) {
+        bajarCsv(nombre, ['Día', 'Tickets', 'Notas de crédito', 'Base imponible', 'IVA 21 %', 'Total'],
+          porDia(fs).map(function (d) { return [diaCorto(d.dia), d.tickets, d.notas, nro(d.base), nro(d.iva), nro(d.total)]; })
+            .concat([['Total', t.tickets, t.notas, nro(t.base), nro(t.iva), nro(t.total)]]));
+        return;
+      }
+      bajarCsv(nombre, ['Fecha', 'L', 'Tipo', 'Comprobante', 'Anula', 'Sucursal', 'CAE', 'Cliente', 'Condición IVA', 'CUIT / DNI',
+                        'Base imponible', 'No gravado', 'IVA 21 %', 'Perc. IIBB', 'IIBB CABA', 'IIBB BSAS', 'Total'],
+        fs.map(function (f) {
+          var nc = f.tipo === 'nc';
+          return [diaCorto(f.dia), f.letra, TIPO_IVA[f.tipo] || f.tipo, nc ? refNota({ numero: f.nc }) : 'Nº ' + f.numero, nc ? 'Nº ' + f.numero : '',
+                  bonito(f.local), f.cae || '', f.cliente, CONDICION[f.condicion] || f.condicion || '', f.doc ? cuit(f.doc) : '',
+                  nro(cent(f.base)), '0,00', nro(cent(f.iva)), '0,00', '0,00', '0,00', nro(cent(f.total))];
+        }).concat([['Total', '', '', '', '', '', '', '', '', '', nro(t.base), '0,00', nro(t.iva), '0,00', '0,00', '0,00', nro(t.total)]]));
+    };
+    cargar();
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -8247,7 +8413,7 @@
   function celdaCsv(v) {
     var s = String(v == null ? '' : v);
     /* Un texto que empieza con = + - @ sería una fórmula para Excel: va como texto. */
-    if (/^[=+\-@]/.test(s) && isNaN(Number(s))) s = "'" + s;
+    if (/^[=+\-@]/.test(s) && isNaN(Number(s)) && !/^-\d+(,\d+)?$/.test(s)) s = "'" + s;   // "-50702,48" es un número (las notas de crédito del IVA)
     return /[";\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
   function bajarDiferencias(d, r, estado) {

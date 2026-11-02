@@ -1295,3 +1295,15 @@ tr[data-pd]:hover td { background: var(--surface-2); }
   .sg-avance { flex-wrap: wrap; }
   .sg-grilla { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px; }
 }
+
+/* ── IVA Ventas (SQL 231): el «Reporte IVA Ventas» de BlueSoft ── */
+.pos-acciones .iv-dia { min-height: 0; margin-right: 6px; }
+.pos-filtros .iv-buscar { flex: 0 1 220px; min-width: 170px; }
+.pos-tabla.iv-tabla td { white-space: nowrap; }
+.pos-tabla.iv-tabla td.iv-cli { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.iv-dato { display: block; overflow: hidden; text-overflow: ellipsis; font-size: 11.5px; font-weight: 500; color: var(--txt-3); }
+.pos-tabla.iv-tabla tr[data-iv] { cursor: pointer; }
+.pos-tabla.iv-tabla tr[data-iv]:hover td { background: var(--surface-2); }
+/* La nota de crédito resta: los importes en rojo, como el negativo que es. */
+.pos-tabla.iv-tabla tr.iv-nc td.n { color: var(--bad-txt); }
+.iv-anula { font-size: 11.5px; font-weight: 500; color: var(--txt-3); }

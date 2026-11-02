@@ -8946,3 +8946,71 @@ end $$;
 
 revoke all on function pos_fichero_qr2_oficina(uuid) from public, anon;
 grant execute on function pos_fichero_qr2_oficina(uuid) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 231 (02/11/2026) · IVA VENTAS
+--
+--  Mauricio (2/11), con dos fotos del «Reporte IVA Ventas» de BlueSoft: "esta
+--  es la sección de consulta de IVA, es algo que usamos, todos los primeros de
+--  cada mes mandamos IVA por mail a la fábrica del mes anterior".
+--  · Un renglón por comprobante: las facturas A y B (las X son internas y no
+--    van) y las notas de crédito (SQL 205), en negativo, el día que se
+--    hicieron. El ticket anulado con una nota sigue en su día: los dos
+--    comprobantes existen. Una A o B anulada sin nota (de antes del 205) no va.
+--  · Base imponible = total ÷ 1,21 redondeado al centavo, e IVA 21 % = total −
+--    base, comprobante por comprobante, como BlueSoft (61.350 → 50.702,48 +
+--    10.647,52). El total ya trae el interés de las cuotas (SQL 215).
+--  · El CAE: el de la factura de ARCA cuando el POS facture (factura->>'cae';
+--    en la nota, el suyo). Hoy la factura la hace BlueSoft: va vacío.
+--  · Las de prueba no van nunca. Sólo lee.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create or replace function pos_iva_ventas(p_desde date, p_hasta date, p_local uuid default null, p_letra text default null)
+returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso();
+  perform pos_local_ok(p_local);   -- su local y, sin «Ver otros días», hoy (SQL 190)
+  perform pos_dias_ok(p_desde);
+  if p_desde is null or p_hasta is null or p_hasta < p_desde then raise exception 'El período no es válido.'; end if;
+  if p_hasta - p_desde > 400 then raise exception 'El período es demasiado largo (máximo, un año).'; end if;
+  if p_letra is not null and p_letra not in ('A', 'B') then raise exception 'En el IVA van sólo las facturas A y B.'; end if;
+  return (
+    with z as (
+      select 'ticket'::text tipo, v.id venta_id, v.local_id, v.fecha, v.dia, v.letra, v.numero, null::int nc,
+             v.cliente_nombre, v.cliente_doc, v.cliente_condicion, v.total, nullif(v.factura->>'cae', '') cae
+        from pos_ventas v
+       where v.dia between p_desde and p_hasta
+         and not v.prueba
+         and v.letra in ('A', 'B')
+         and (v.estado = 'cobrada' or exists (select 1 from pos_notas_credito n where n.venta_id = v.id))
+         and (p_local is null or v.local_id = p_local)
+         and (p_letra is null or v.letra = p_letra)
+      union all
+      select 'nc', v.id, n.local_id, n.fecha, n.dia, n.letra, v.numero, n.numero,
+             v.cliente_nombre, v.cliente_doc, v.cliente_condicion, -v.total, n.cae
+        from pos_notas_credito n join pos_ventas v on v.id = n.venta_id
+       where n.dia between p_desde and p_hasta
+         and not n.prueba
+         and (p_local is null or n.local_id = p_local)
+         and (p_letra is null or n.letra = p_letra)
+    ),
+    y as (select z.*, round(z.total / 1.21, 2) base from z)
+    select jsonb_build_object(
+      'filas', coalesce((
+        select jsonb_agg(jsonb_build_object(
+                 'tipo', y.tipo, 'venta_id', y.venta_id, 'fecha', y.fecha, 'dia', y.dia, 'letra', y.letra, 'numero', y.numero, 'nc', y.nc,
+                 'local', l.nombre, 'local_id', y.local_id, 'cliente', coalesce(y.cliente_nombre, 'Consumidor final'), 'doc', y.cliente_doc,
+                 'condicion', y.cliente_condicion, 'base', y.base, 'iva', y.total - y.base, 'total', y.total, 'cae', y.cae)
+                 order by y.fecha, y.tipo desc)
+          from (select * from y order by fecha, tipo desc limit 20000) y join orden_locales l on l.id = y.local_id), '[]'::jsonb),
+      'totales', (select jsonb_build_object('tickets', count(*) filter (where tipo = 'ticket'), 'notas', count(*) filter (where tipo = 'nc'),
+                                            'base', coalesce(sum(base), 0), 'iva', coalesce(sum(total - base), 0), 'total', coalesce(sum(total), 0))
+                    from y),
+      'mas', (select count(*) > 20000 from y)
+    )
+  );
+end $$;
+
+revoke all on function pos_iva_ventas(date, date, uuid, text) from public, anon;
+grant execute on function pos_iva_ventas(date, date, uuid, text) to authenticated;
