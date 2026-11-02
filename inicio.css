@@ -1,0 +1,152 @@
+/* ═══ EL INICIO (2/11/2026) ════════════════════════════════════════════════
+   La pantalla para entrar al abrir el sistema (persona.js → EL INICIO), como
+   la maqueta A «Campaña» que eligió Mauricio: la foto de la campaña a la
+   izquierda con la hora, y a la derecha «¿Quién entra?» y el PIN. Siempre en
+   oscuro, aunque la compu esté en claro: los pasos de entrar (.ncp-*, los
+   mismos de la ventana) toman los colores de acá. Lo que tapa la página
+   mientras carga está en estilos.css (html[data-nc-inicio]). */
+
+.inicio {
+  /* El oscuro del sistema (estilos.css → html[data-theme="dark"]), para los pasos de entrar. */
+  --bg: #0B0D10; --surface: #14171B; --surface-2: #1B1F24; --surface-3: #262B33; --campo: #1B1F24;
+  --line: #2A3038; --borde-tarjeta: #2A3038; --line-alta: #4A525D; --line-campo: #6F7884;
+  --txt: #EEF1F4; --txt-2: #C4CAD2; --txt-3: #A6AEB8;
+  --acc-txt: #E8AE85; --acc-soft: rgba(232, 174, 133, .14); --acc-line: rgba(232, 174, 133, .40);
+  --chip: #1B1F24; --chip-line: #6F7884;
+  --sel-fondo: rgba(232, 174, 133, .14); --sel-borde: #C98A5E; --sel-txt: #F0BE98; --sel-glow: 0 0 12px -4px rgba(232, 174, 133, .55);
+  --bad-txt: #FF9AA0; --ok: #4FB07F; --foco: #EEF1F4;
+  --ini-bronce: #E8AE85; --ini-cobre: #C98A5E;
+  --ini-sombra: #D59D6D; --ini-medio: #F2AB6F; --ini-brillo: #FDDFA0;
+  --ini-guardar: linear-gradient(180deg, #F0BE98 0%, #E3A177 55%, #D08C60 100%);
+  color-scheme: dark;
+
+  position: fixed; inset: 0; z-index: 99;   /* debajo de la ventana de salir (.ncp-velo, 100) */
+  visibility: visible;                      /* estilos.css la esconde hasta que llega esta hoja */
+  display: grid; grid-template-columns: minmax(0, 1.12fr) minmax(470px, 1fr);
+  background: var(--bg); color: var(--txt);
+  font-family: Poppins, system-ui, sans-serif; -webkit-font-smoothing: antialiased;
+}
+
+/* ── La foto de la campaña, con la hora ── */
+.ini-foto { position: relative; overflow: hidden; background: #111418; }
+.ini-foto img {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  object-fit: cover; object-position: 50% 18%;
+  opacity: 0; transition: opacity 1.4s ease;
+}
+.ini-foto img.on { opacity: 1; }
+.ini-sombra { position: absolute; inset: 0; background:
+  linear-gradient(180deg, rgba(11, 13, 16, .62) 0%, rgba(11, 13, 16, 0) 20%, rgba(11, 13, 16, 0) 42%, rgba(11, 13, 16, .92) 100%),
+  linear-gradient(90deg, rgba(11, 13, 16, .35) 0%, rgba(11, 13, 16, 0) 45%); }
+.ini-costura { position: absolute; top: 0; right: 0; width: 1px; height: 100%;
+  background: linear-gradient(180deg, rgba(213, 157, 109, 0) 8%, var(--ini-sombra) 30%, var(--ini-brillo) 50%, var(--ini-sombra) 70%, rgba(213, 157, 109, 0) 92%);
+  box-shadow: 0 0 14px 1px rgba(242, 171, 111, .45); }
+.ini-marca { position: absolute; top: 26px; left: 32px; display: flex; align-items: center; gap: 12px; }
+.ini-marca-icono {
+  width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+  background: linear-gradient(#0E1115, #0E1115) padding-box, linear-gradient(135deg, #FFE7A8 0%, #EDBA5E 28%, #C99446 62%, #EDBA5E 100%) border-box;
+  border: 1.5px solid transparent; box-shadow: 0 0 16px -3px rgba(237, 186, 94, .6);
+}
+.ini-marca-icono svg { width: 26px; height: 26px; }
+.ini-marca-txt small { display: block; font-size: 9.5px; letter-spacing: 2.6px; text-transform: uppercase; color: var(--txt-2); line-height: 1.2; }
+.ini-marca-txt b { display: block; font-size: 20px; font-weight: 600; letter-spacing: .6px; line-height: 1.1; }
+.ini-hora { position: absolute; left: 34px; bottom: 30px; text-shadow: 0 2px 18px rgba(0, 0, 0, .35); }
+.ini-reloj {
+  font-size: clamp(86px, 17vh, 168px); font-weight: 200; line-height: .86; letter-spacing: -3px;
+  background: linear-gradient(180deg, #FBE6CB 0%, #E8AE85 58%, #C98A5E 100%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+}
+.ini-fecha { font-size: 18px; font-weight: 500; margin-top: 14px; }
+.ini-local { font-size: 13px; color: var(--txt-2); margin-top: 3px; letter-spacing: .3px; }
+.ini-puntos { position: absolute; right: 30px; bottom: 38px; display: flex; gap: 6px; }
+.ini-puntos i { width: 16px; height: 2px; background: rgba(255, 255, 255, .35); border-radius: 2px; transition: width .4s, background .4s; }
+.ini-puntos i.on { width: 30px; background: var(--ini-brillo); box-shadow: 0 0 6px rgba(242, 171, 111, .7); }
+
+/* ── Entrar ── */
+.ini-entrar {
+  position: relative; display: flex; flex-direction: column; min-height: 0;
+  padding: 24px 44px 22px; overflow-y: auto;
+  background: radial-gradient(110% 55% at 100% 0%, rgba(201, 138, 94, .11), rgba(201, 138, 94, 0) 62%), var(--bg);
+}
+.ini-entrar::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+  background: linear-gradient(90deg, rgba(213, 157, 109, 0) 14%, var(--ini-sombra) 24.8%, var(--ini-medio) 37.4%, var(--ini-brillo) 50%, var(--ini-medio) 62.6%, var(--ini-sombra) 75.2%, rgba(213, 157, 109, 0) 86%); }
+.ini-estado { display: flex; justify-content: flex-end; align-items: center; gap: 8px; min-height: 18px; font-size: 12px; color: var(--txt-3); }
+.ini-estado i { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(79, 176, 127, .2); }
+.ini-estado.sin i { background: #D9A441; box-shadow: 0 0 0 3px rgba(217, 164, 65, .2); }
+.ini-centro { flex: 1; display: flex; flex-direction: column; justify-content: center; max-width: 470px; width: 100%; margin: 0 auto; padding: 12px 0; }
+
+.ini-saludo { font-size: 14px; color: var(--ini-bronce); font-weight: 500; letter-spacing: .3px; }
+.ini-tit { font-size: 31px; font-weight: 600; letter-spacing: -.4px; margin: 1px 0 0; line-height: 1.2; }
+.ini-tit:focus { outline: none; }
+.ini-gente { display: grid; grid-template-columns: repeat(var(--ini-cols, 3), minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.ini-persona {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 8px 13px;
+  display: flex; flex-direction: column; align-items: center; gap: 9px; cursor: pointer;
+  color: var(--txt); font: inherit; min-width: 0;
+  transition: border-color .15s, box-shadow .15s, transform .1s;
+}
+.ini-persona:hover, .ini-persona:focus-visible {
+  outline: none; border-color: var(--ini-cobre);
+  box-shadow: 0 0 0 1px var(--ini-cobre), 0 14px 34px -14px rgba(242, 171, 111, .45);
+}
+.ini-persona:active { transform: scale(.98); }
+.ini-persona b { font-size: 15px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ini-cara {
+  width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+  font-size: 20px; font-weight: 600; color: var(--ini-bronce);
+  background: linear-gradient(#1B1F24, #1B1F24) padding-box, linear-gradient(135deg, var(--ini-brillo), var(--ini-sombra) 38%, #3A3F47 72%) border-box;
+  border: 1.5px solid transparent;
+}
+.ini-otro { margin: 12px 0 0; font-size: 13px; color: var(--txt-3); }
+.ini-otro button { border: 0; background: none; padding: 0; font: 500 13px Poppins, sans-serif; color: var(--ini-bronce); cursor: pointer; }
+.ini-otro button:hover { text-decoration: underline; }
+
+.ini-pie { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 470px; width: 100%; margin: 0 auto; }
+.ini-btn {
+  height: 46px; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 9px;
+  font: 500 14px Poppins, sans-serif; color: var(--txt); background: var(--surface); border: 1px solid var(--line-alta);
+  cursor: pointer; text-decoration: none;
+}
+.ini-btn:hover, .ini-btn:focus-visible { border-color: var(--ini-cobre); outline: none; }
+.ini-btn svg { width: 18px; height: 18px; stroke: var(--ini-bronce); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ── Los pasos de entrar (persona.js), dibujados acá ── */
+.inicio .ncp-volver { align-self: flex-start; padding: 0 0 6px; color: var(--ini-bronce); font: 500 13px Poppins, sans-serif; }
+.inicio .ncp-volver:hover { color: var(--ini-brillo); }
+.inicio .ini-centro h2 { font: 600 25px/1.2 Poppins, sans-serif; letter-spacing: -.3px; margin: 10px 0 2px; }
+.inicio .ncp-bajada { font-size: 13.5px; color: var(--txt-3); margin: 0 0 12px; }
+.inicio .ncp-cargando, .inicio .ncp-vacio { color: var(--txt-3); }
+/* El del PIN, centrado, como la maqueta. */
+.inicio .ini-centro:has(.ncp-teclado) { text-align: center; }
+.ini-cara-pin { width: 76px; height: 76px; font-size: 28px; margin: 6px auto 0; box-shadow: 0 16px 40px -16px rgba(242, 171, 111, .5); }
+.inicio .ncp-puntos { gap: 14px; margin: 14px 0 4px; }
+.inicio .ncp-puntos i { border: 1.5px solid var(--line-alta); }
+.inicio .ncp-puntos i.lleno {
+  border-color: transparent;
+  background: radial-gradient(circle at 35% 30%, #FBE6CB, #E3A177 60%, #C98A5E);
+  box-shadow: 0 0 10px rgba(242, 171, 111, .55);
+}
+.inicio .ncp-aviso { min-height: 20px; margin: 6px 0 4px; }
+.inicio .ncp-teclado { grid-template-columns: repeat(3, 84px); gap: 10px 16px; justify-content: center; max-width: none; margin: 4px auto 0; }
+.inicio .ncp-teclado button {
+  height: 52px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line);
+  font: 300 23px Poppins, sans-serif; color: var(--txt);
+}
+.inicio .ncp-teclado button:hover:not(:disabled) { border-color: var(--ini-cobre); color: var(--ini-bronce); }
+.inicio .ncp-teclado button:active:not(:disabled) { box-shadow: inset 0 0 0 1px var(--ini-cobre); background: var(--surface-2); }
+.ini-ayuda { font-size: 12px; color: var(--txt-3); margin: 12px 0 0; }
+.inicio .ncp-pie { justify-content: flex-start; }
+
+/* ── Pantallas altas (1920×1080): lo de entrar, más grande ── */
+@media (min-height: 860px) {
+  .ini-centro, .ini-pie, .ini-estado { zoom: 1.3; }
+}
+/* ── Angosta: sólo entrar, sin la foto ── */
+@media (max-width: 900px) {
+  .inicio { grid-template-columns: 1fr; }
+  .ini-foto { display: none; }
+  .ini-entrar { padding: 20px 20px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ini-foto img, .ini-puntos i { transition: none; }
+}

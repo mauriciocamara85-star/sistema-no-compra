@@ -331,6 +331,8 @@ var persona = (function () {
       try {
         if (y && y.vendedor && localStorage.getItem('nc_vendedor') === y.vendedor) localStorage.removeItem('nc_vendedor');
       } catch (e) {}
+      /* El que se fue pudo haber tocado «Seguir sin entrar»: al salir vuelve el inicio. */
+      try { sessionStorage.removeItem(K_SIGUE); } catch (e) {}
       cerrarSesion();
     });
   }
@@ -833,7 +835,8 @@ var persona = (function () {
     }).join('') + '</div><p class="ncp-aviso mal" data-aviso></p>';
   }
 
-  function pasoApellido(c, local, p) {
+  /* volver (opcional): adónde lleva "‹ No soy …" (el inicio vuelve a su «¿Quién entra?»). */
+  function pasoApellido(c, local, p, volver) {
     _teclas = null;
     var nom = primerNombre(p.nombre);
     c.innerHTML = '<button type="button" class="ncp-volver" data-volver>‹ No soy ' + txt(nom) + '</button>' +
@@ -841,12 +844,12 @@ var persona = (function () {
       '<p class="ncp-bajada">Antes de crear tu PIN, poné tu apellido. Así no te confundimos con otro ' + txt(nom) + '.</p>' +
       campos([['apellido', 'Apellido', 'family-name']]) +
       '<div class="ncp-pie"><button type="button" class="btn btn-pri" data-seguir>Seguir</button></div>';
-    c.querySelector('[data-volver]').onclick = function () { pasoPersonas(c, local); };
+    c.querySelector('[data-volver]').onclick = function () { if (volver) volver(); else pasoPersonas(c, local); };
     var campo = c.querySelector('#ncp_apellido');
     var seguir = function () {
       var ap = prolijo(campo.value);
       if (!RE_NOMBRE.test(ap)) { c.querySelector('[data-aviso]').textContent = 'Poné tu apellido: sólo letras, de 2 a 30.'; campo.focus(); return; }
-      pasoPin(c, local, p, { apellido: ap });
+      pasoPin(c, local, p, { apellido: ap, volver: volver });
     };
     c.querySelector('[data-seguir]').onclick = seguir;
     campo.onkeydown = function (e) { if (e.key === 'Enter') seguir(); };
@@ -882,15 +885,22 @@ var persona = (function () {
       '<button type="button" data-n="x" aria-label="Borrar">⌫</button>' +
     '</div>';
 
+  /* extra: { apellido, alta, volver (opcional: adónde lleva "‹ No soy …") }. */
   function pasoPin(c, local, p, extra) {
     var pin = '', ocupado = false, crear = !!p.nuevo, primero = null;
     var largo = extra.alta ? 4 : (Number(p.digitos) === 6 ? 6 : 4);
     var nom = primerNombre(p.nombre);
+    /* En el inicio, como en la maqueta: la inicial arriba del saludo y que se puede escribir con el teclado. */
+    var enInicio = !!(_inicio && c === _inicio.c);
     c.innerHTML = '<button type="button" class="ncp-volver" data-volver>‹ ' + (extra.alta ? 'Volver' : 'No soy ' + txt(nom)) + '</button>' +
+      (enInicio && !extra.alta ? '<span class="ini-cara ini-cara-pin" aria-hidden="true">' + txt(inicial(p.nombre)) + '</span>' : '') +
       '<h2 id="ncpTit"></h2><p class="ncp-bajada" data-bajada></p>' +
       puntosDe(largo) +
-      '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' + TECLADO;
-    c.querySelector('[data-volver]').onclick = function () { if (extra.alta) pasoAlta(c, local); else pasoPersonas(c, local); };
+      '<p class="ncp-aviso" data-aviso aria-live="polite"></p>' + TECLADO +
+      (enInicio ? '<p class="ini-ayuda">También lo podés escribir con el teclado.</p>' : '');
+    c.querySelector('[data-volver]').onclick = function () {
+      if (extra.volver) extra.volver(); else if (extra.alta) pasoAlta(c, local); else pasoPersonas(c, local);
+    };
     var puntos = c.querySelector('[data-puntos]'), aviso = c.querySelector('[data-aviso]');
     var botones = c.querySelectorAll('.ncp-teclado [data-n]');
 
@@ -1279,11 +1289,239 @@ var persona = (function () {
   }
 
   /* ════════════════════════════════════════════════════════════════════
+     EL INICIO (2/11/2026): la pantalla para entrar al abrir el sistema
+     Mauricio: "cuando se abra el sistema tiene que aparecer la pantalla de
+     inicio como la de BlueSoft pero con nuestro diseño". Eligió la maqueta
+     A «Campaña»: la foto de la campaña a la izquierda con la hora, y a la
+     derecha «¿Quién entra?» con la gente del local; se toca el nombre y el
+     PIN se pone ahí mismo. Primero en Rivadavia (la del POS de prueba).
+     Sale cuando no hay nadie adentro: al abrir el sistema y después de
+     «Sí, salir». «Seguir sin entrar» la saca en esta pestaña (la Carga, Cobrar
+     y Ventas andan sin usuario, como siempre). Los pasos (el PIN, crearlo,
+     el apellido, el franco, esperar el OK) son los de la ventana de entrar,
+     dibujados en el panel. El QR del celular viene después (lleva un SQL).
+     Para mirarlo en otra compu: ?inicio (o ?inicio=FLORES), aunque haya
+     alguien adentro.
+     ════════════════════════════════════════════════════════════════════ */
+
+  var INICIO_EN = ['MAR DEL PLATA'];   // los códigos de los locales con el inicio (Rivadavia)
+  /* Sólo donde se arranca a trabajar: no en el fichero, ni en lo de la oficina, ni en el enlace que habilita la compu. */
+  var INICIO_PAGINAS = ['index.html', 'caja.html', 'giftcards.html', 'asistente.html', 'ventas.html', 'estadisticas.html', 'pos.html', 'gestion.html'];
+  var K_SIGUE = 'nc_inicio_sigue';     // sessionStorage: tocó «Seguir sin entrar» en esta pestaña
+  var K_INICIO_LOCAL = 'nc_inicio_local';
+  var FOTOS_INICIO = ['NF608272', 'NF609080', 'NF608224', 'NF608396'];   // inicio-fotos/, de «VDH CAMPAÑA 2026»
+  var _inicio = null;
+
+  function inicial(n) { return String(n || '').trim().charAt(0).toUpperCase(); }
+
+  /* El código del local para el inicio, o '' si acá no va. */
+  function localInicio() {
+    var m = /[?&]inicio(?:=([^&#]*))?/.exec(location.search);
+    var cod = '';
+    /* La compu habilitada dice su local; si perdió la llave, el que quedó elegido en la Carga. */
+    try { cod = (compuDelLocal() && localStorage.getItem('nc_caja_local')) || localStorage.getItem('nc_local') || ''; } catch (e) {}
+    if (m) {
+      var pedido = decodeURIComponent((m[1] || '').replace(/\+/g, ' ')).trim().toUpperCase();
+      return pedido || (INICIO_EN.indexOf(cod) > -1 ? cod : INICIO_EN[0]);
+    }
+    if (_ses || INICIO_EN.indexOf(cod) < 0) return '';
+    if (INICIO_PAGINAS.indexOf(pagina()) < 0 || /[?&]habilitar=/.test(location.search)) return '';
+    try { if (sessionStorage.getItem(K_SIGUE)) return ''; } catch (e) {}
+    return cod;
+  }
+
+  /* Se decide en el <head>: la página queda tapada desde el primer momento (estilos.css) y sin saltos. */
+  var _inicioCod = localInicio();
+  if (_inicioCod) {
+    document.documentElement.setAttribute('data-nc-inicio', '');
+    var hojaInicio = document.createElement('link');
+    hojaInicio.rel = 'stylesheet';
+    hojaInicio.href = 'inicio.css';
+    document.head.appendChild(hojaInicio);
+  }
+
+  var BOLSA_INICIO = '<svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+    '<defs><linearGradient id="oroInicio" gradientUnits="userSpaceOnUse" x1="4" y1="5" x2="20" y2="21"><stop offset="0" stop-color="#FFE7A8"/><stop offset=".45" stop-color="#EDBA5E"/><stop offset="1" stop-color="#C99446"/></linearGradient></defs>' +
+    '<g stroke="url(#oroInicio)" stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/><path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g>' +
+    '<circle cx="9.1" cy="8.9" r="1.15" fill="url(#oroInicio)"/><circle cx="14.8" cy="8.8" r="1.15" fill="url(#oroInicio)"/></svg>';
+  var ICONO_RELOJ = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>';
+  var ICONO_SEGUIR = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+
+  function abrirInicio(cod) {
+    /* Pedido con ?inicio: se saca de la dirección, así al entrar (que recarga) queda la página de siempre. */
+    if (/[?&]inicio\b/.test(location.search)) {
+      try {
+        var resto = location.search.replace(/[?&]inicio(=[^&#]*)?/, '').replace(/^&/, '?');
+        history.replaceState(null, '', location.pathname + (resto === '?' ? '' : resto) + location.hash);
+      } catch (e) {}
+    }
+    var d = document.createElement('div');
+    d.className = 'inicio';
+    d.setAttribute('role', 'dialog');
+    d.setAttribute('aria-modal', 'true');
+    d.setAttribute('aria-labelledby', 'ncpTit');
+    d.innerHTML = '<section class="ini-foto">' +
+        FOTOS_INICIO.map(function (f, i) { return '<img src="inicio-fotos/' + f + '.jpg" alt=""' + (i ? '' : ' class="on"') + '>'; }).join('') +
+        '<div class="ini-sombra"></div><div class="ini-costura"></div>' +
+        '<div class="ini-marca"><span class="ini-marca-icono">' + BOLSA_INICIO + '</span><span class="ini-marca-txt"><small>Sistema</small><b>VDH</b></span></div>' +
+        '<div class="ini-hora"><div class="ini-reloj" data-reloj></div><div class="ini-fecha" data-fecha></div><div class="ini-local" data-local></div></div>' +
+        '<div class="ini-puntos" aria-hidden="true">' + FOTOS_INICIO.map(function (f, i) { return '<i' + (i ? '' : ' class="on"') + '></i>'; }).join('') + '</div>' +
+      '</section>' +
+      '<section class="ini-entrar">' +
+        '<div class="ini-estado" data-estado aria-live="polite"></div>' +
+        '<div class="ini-centro" data-centro></div>' +
+        '<div class="ini-pie">' +
+          '<a class="ini-btn" href="fichero.html">' + ICONO_RELOJ + 'Fichar entrada o salida</a>' +
+          '<button type="button" class="ini-btn" data-seguir>' + ICONO_SEGUIR + 'Seguir sin entrar</button>' +
+        '</div>' +
+      '</section>';
+    document.body.appendChild(d);
+    var ini = _inicio = { el: d, c: d.querySelector('[data-centro]'), cod: cod, local: leerLS(K_INICIO_LOCAL), relojes: [] };
+    if (ini.local && ini.local.codigo !== cod) ini.local = null;
+    /* Lo que quedó con el foco abajo (el buscador del POS) no se lleva las teclas. */
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    document.addEventListener('keydown', tecladoInicio, true);
+    d.querySelector('[data-seguir]').onclick = function () {
+      try { sessionStorage.setItem(K_SIGUE, '1'); } catch (e) {}
+      cerrarInicio();
+    };
+    d.querySelectorAll('.ini-foto img').forEach(function (im) { im.onerror = function () { im.remove(); }; });
+
+    /* La hora y la fecha de acá (la compu está en Argentina; igual se fija la zona). */
+    var fHora = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', hour12: false });
+    var fFecha = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', weekday: 'long', day: 'numeric', month: 'long' });
+    var fH = new Intl.DateTimeFormat('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: 'numeric', hour12: false });
+    function tic() {
+      var ahora = new Date(), f = fFecha.format(ahora).replace(',', '');
+      d.querySelector('[data-reloj]').textContent = fHora.format(ahora);
+      d.querySelector('[data-fecha]').textContent = f.charAt(0).toUpperCase() + f.slice(1);
+      var h = Number(fH.format(ahora)) % 24;
+      ini.saludo = h >= 6 && h < 13 ? 'Buen día' : h >= 6 && h < 20 ? 'Buenas tardes' : 'Buenas noches';
+      var s = d.querySelector('[data-saludo]');
+      if (s) s.textContent = ini.saludo;
+    }
+    tic();
+    ini.relojes.push(setInterval(tic, 10000));
+
+    /* Las fotos de la campaña pasan solas (cada 8 s); con "menos movimiento" en Windows, queda la primera. */
+    if (!(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      var n = 0;
+      ini.relojes.push(setInterval(function () {
+        var fotos = d.querySelectorAll('.ini-foto img');
+        if (fotos.length < 2) return;
+        n = (n + 1) % fotos.length;
+        fotos.forEach(function (im, i) { im.classList.toggle('on', i === n); });
+        d.querySelectorAll('.ini-puntos i').forEach(function (p, i) { p.classList.toggle('on', i === n); });
+      }, 8000));
+    }
+
+    function estado() {
+      var nom = ini.local ? ini.local.nombre : '';
+      var e = d.querySelector('[data-estado]');
+      e.classList.toggle('sin', !navigator.onLine);
+      e.innerHTML = '<i></i>' + (navigator.onLine ? 'Conectado' : 'Sin conexión') + (nom ? ' · ' + txt(nom) : '');
+      d.querySelector('[data-local]').textContent = nom ? 'VDH ' + nom + ' · Compu del local' : '';
+    }
+    ini.estado = estado;
+    window.addEventListener('online', estado);
+    window.addEventListener('offline', estado);
+    estado();
+    inicioQuien();
+  }
+
+  function cerrarInicio() {
+    if (!_inicio) return;
+    _inicio.relojes.forEach(clearInterval);
+    window.removeEventListener('online', _inicio.estado);
+    window.removeEventListener('offline', _inicio.estado);
+    document.removeEventListener('keydown', tecladoInicio, true);
+    _inicio.el.remove();
+    _inicio = null;
+    _teclas = null;
+    document.documentElement.removeAttribute('data-nc-inicio');
+  }
+
+  /* El PIN también con el teclado de la compu; mientras está el inicio, la página de abajo no recibe teclas
+     (el POS tiene atajos). Con una ventana encima (la de salir), manda la ventana. */
+  function tecladoInicio(e) {
+    if (!_inicio || _velo) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || /^F(5|11|12)$/.test(e.key)) return;
+    if (_teclas && (/^[0-9]$/.test(e.key) || e.key === 'Backspace')) {
+      e.preventDefault(); e.stopPropagation();
+      _teclas(e.key === 'Backspace' ? 'x' : e.key);
+      return;
+    }
+    if (e.key === 'Escape') {
+      var v = _inicio.c.querySelector('[data-volver]');
+      if (v) { e.preventDefault(); v.click(); }
+      return;
+    }
+    if (!(e.target && e.target.closest && e.target.closest('.inicio'))) { e.preventDefault(); e.stopPropagation(); }
+  }
+
+  /* El local (id y nombre) sale de la misma lista de entrar; queda guardado para cuando no hay internet. */
+  function localDelInicio() {
+    if (_inicio.local) return Promise.resolve(_inicio.local);
+    return funcion('nc_login_locales', {}).then(function (locales) {
+      var l = (locales || []).filter(function (x) { return x.id && x.codigo === _inicio.cod; })[0];
+      if (!l) throw Object.assign(new Error('Este local no está en la lista para entrar.'), { delServidor: true });
+      _inicio.local = { id: l.id, codigo: l.codigo, nombre: l.nombre };
+      guardarLS(K_INICIO_LOCAL, _inicio.local);
+      _inicio.estado();
+      return _inicio.local;
+    });
+  }
+
+  /* «¿Quién entra?»: la gente del local, cada uno con su inicial. */
+  function inicioQuien() {
+    if (!_inicio) return;
+    var c = _inicio.c;
+    _teclas = null;
+    cargando(c);
+    localDelInicio().then(function (local) {
+      return funcion('nc_login_personas', { p_local: local.id }).then(function (gente) {
+        if (!_inicio || c !== _inicio.c) return;
+        gente = gente || [];
+        var cols = gente.length <= 4 ? Math.max(gente.length, 3) : gente.length <= 6 ? 3 : 4;
+        c.innerHTML = '<div class="ini-saludo" data-saludo>' + txt(_inicio.saludo) + '</div>' +
+          '<h1 class="ini-tit" id="ncpTit">¿Quién entra?</h1>' +
+          (gente.length
+            ? '<div class="ini-gente" style="--ini-cols:' + cols + '">' + gente.map(function (p, i) {
+                return '<button type="button" class="ini-persona" data-i="' + i + '">' +
+                  '<span class="ini-cara" aria-hidden="true">' + txt(inicial(p.nombre)) + '</span><b>' + txt(p.nombre) + '</b></button>';
+              }).join('') + '</div>'
+            : '<p class="ncp-vacio">Todavía no hay nadie con usuario en ' + txt(local.nombre) + '. Pedile a tu encargado que te lo cree.</p>') +
+          '<p class="ini-otro">¿Venís de otro local? <button type="button" data-otro>Buscá tu nombre ›</button></p>';
+        c.querySelectorAll('[data-i]').forEach(function (b) {
+          b.onclick = function () { inicioElegir(local, gente[+b.dataset.i]); };
+        });
+        c.querySelector('[data-otro]').onclick = function () {
+          pasoOtroLocal(c, {
+            local: local.codigo,
+            titulo: 'Vengo de otro local',
+            bajada: 'Buscate por tu nombre o por tu local y entrá con tu PIN de siempre.',
+            volver: inicioQuien,
+            alElegir: function (x) { inicioElegir(x.locales[0], x.p); }
+          });
+        };
+      });
+    }).catch(function (e) { if (_inicio && c === _inicio.c) fallo(c, e, inicioQuien); });
+  }
+
+  /* El que entra por primera vez pone su apellido (si hace falta) y crea su PIN, como en la ventana. */
+  function inicioElegir(local, p) {
+    var c = _inicio.c;
+    if (p.nuevo && p.pide_apellido) pasoApellido(c, local, p, inicioQuien);
+    else pasoPin(c, local, p, { volver: inicioQuien });
+  }
+
+  /* ════════════════════════════════════════════════════════════════════
      ARRANQUE
      ════════════════════════════════════════════════════════════════════ */
 
   var listo = new Promise(function (resolver) {
     var arrancar = function () {
+      if (_inicioCod) abrirInicio(_inicioCod);
       pintarBarra();
       revisarAcceso();
       refrescar().then(resolver, function () { resolver(null); });

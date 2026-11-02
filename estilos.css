@@ -1696,6 +1696,12 @@ button.rail-item { border: 0; background: none; cursor: pointer; }
   background: var(--bg);
 }
 
+/* El inicio (persona.js → EL INICIO, 2/11/2026): mientras está, la página de abajo no se ve (desde el
+   primer momento, sin saltos); el inicio mismo espera a su hoja, inicio.css, para no verse a medio armar. */
+html[data-nc-inicio], html[data-nc-inicio] body { background: #0B0D10; overflow: hidden; }
+html[data-nc-inicio] body > :not(.inicio):not(.ncp-velo) { visibility: hidden; }
+.inicio { visibility: hidden; }
+
 /* ══ INTERFAZ COMÚN (interfaz.js, 15/10/2026) ═══════════════════════════════
    Pedido de Mauricio: "que todo funcione de la misma manera". Eligió en la
    maqueta la barra como Supabase, el mismo botón para achicar los paneles y
