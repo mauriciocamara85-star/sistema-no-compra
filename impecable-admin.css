@@ -45,6 +45,17 @@
 .imp-item svg { width: 19px; height: 19px; flex: none; }
 .imp-item:hover { background: var(--surface-2); color: var(--txt); }
 .imp-item.activa { background: var(--surface-3); color: var(--txt); box-shadow: inset 3px 0 0 var(--sel-borde); }
+/* Cuántas cosas esperan en Revisar (1/11/2026): a la derecha del nombre; con el menú achicado, sobre el ícono. */
+.imp-item { position: relative; }
+.imp-cuenta {
+  margin-left: auto; min-width: 22px; height: 22px; padding: 0 7px; border-radius: var(--r-pill);
+  display: inline-grid; place-items: center; background: var(--acc); color: var(--acc-ink);
+  font: 700 12px/1 var(--sans); font-variant-numeric: tabular-nums;
+}
+@media (min-width: 1000px) {
+  .menu-chico .imp-cuenta { position: absolute; top: 0; right: -2px; min-width: 18px; height: 18px; padding: 0 4px; font-size: 10.5px; box-shadow: 0 0 0 2px var(--surface); }
+}
+@media (max-width: 999px) { .imp-cuenta { margin-left: 2px; } }
 /* "‹ Sistema" (31/10/2026: Supervisión va sin la barra negra, como el POS) y la rayita que lo separa de las secciones. */
 .imp-volver { color: var(--txt-3); }
 .imp-raya { flex: none; height: 1px; margin: 4px 10px; background: var(--line); }
@@ -218,6 +229,13 @@
 .imp .sem-res .marca-sem { width: 22px; height: 22px; flex: none; }
 .imp .sem-res b { color: var(--txt); font-variant-numeric: tabular-nums; }
 .imp .sem-res.sem-luego::before { content: ""; width: 12px; height: 12px; border-radius: 50%; background: #8B94A3; margin: 0 5px; }
+
+/* La bandeja de Revisar (1/11/2026): sin nada, un cartel tranquilo; las que ya tienen una foto más nueva, una línea abajo. */
+.imp .rev-listo b { display: block; margin-bottom: 4px; color: var(--txt); font-size: 15px; }
+.imp .rev-viejas { margin: 14px 0 0; color: var(--txt-3); font-size: 13px; }
+/* En la ventana de la foto abierta desde la bandeja: "Para revisar: 3 de 28" y «Saltear ›». */
+.ventana .vf-cola { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -4px 0 12px; padding: 0 0 10px; border-bottom: 1px solid var(--line); font-size: 13.5px; color: var(--txt-2); }
+.ventana .vf-cola b { color: var(--txt); font-variant-numeric: tabular-nums; }
 
 /* ── La ventana (un módulo, una foto, una caja) ── */
 .ventana-fondo { position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 16px; background: rgba(10, 10, 9, .62); }

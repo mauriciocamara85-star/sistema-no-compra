@@ -96,7 +96,9 @@ var ICONO_MENU = {
 };
 var SOLAPAS = [['panorama', 'Panorama', 'Todos los locales, semana a semana'],
                ['local', 'Por local', 'Cada módulo con su última foto, y cómo viene el local'],
-               ['fotos', 'Fotos', 'Las fotos de los controles, con lo que dijo la IA'],
+               /* Era «Fotos» hasta el 1/11 (Mauricio: "siento que se repite" con Por local; "hay que buscarle una función
+                  útil"): ahora es la bandeja del supervisor, con todas las fotos en otra solapa. Por dentro sigue 'fotos'. */
+               ['fotos', 'Revisar', 'Lo que espera tu revisión, y todas las fotos de los controles'],
                ['tareas', 'Tareas', 'Una tarea para un local, varios o todos, y si la hicieron'],
                ['orden', 'Por vendedor', 'Cada vendedor, semana a semana'],
                ['cajas', 'Cajas', 'Como la planilla del control diario'],
@@ -161,6 +163,7 @@ function inicio() {
     _local = _locales.filter(function (x) { return x.id === guardado; })[0] || _locales[0] || null;
     var h = String(location.hash || '').replace(/^#\/?/, '');
     if (h === 'legajos' || h === 'registro') h = 'papeles';
+    if (h === 'revisar') { h = 'fotos'; _fotoDe = 'revisar'; }
     if (SOLAPAS.some(function (s) { return s[0] === h; })) _solapa = h;
     if (SOLO_ADMIN.indexOf(_solapa) > -1 && !esAdmin()) _solapa = 'panorama';
     ir(_solapa);
@@ -190,7 +193,9 @@ function cabezaAdmin() {
   return '<div class="imp-grid' + (chico ? ' menu-chico' : '') + '"><nav class="imp-menu" id="menuEquipo" aria-label="Supervisión"><div class="imp-menu-cab"><span>Supervisión</span>' + Interfaz.botonPanel(chico, '', 'menuEquipo') + '</div>' +
     '<a class="imp-item imp-volver" href="' + esc(Interfaz.volverAlSistema()) + '" title="Volver al sistema">' + svgMenu('volver') + '<span>Sistema</span></a><div class="imp-raya" aria-hidden="true"></div>' +
     solapas.map(function (x) {
-      return '<button class="imp-item' + (x[0] === _solapa ? ' activa' : '') + '" data-solapa="' + x[0] + '" title="' + esc(x[1]) + '">' + svgMenu(x[0]) + '<span>' + esc(x[1]) + '</span></button>';
+      /* Revisar lleva cuántas cosas esperan (contarRevisar la llena después de dibujar). */
+      return '<button class="imp-item' + (x[0] === _solapa ? ' activa' : '') + '" data-solapa="' + x[0] + '" title="' + esc(x[1]) + '">' + svgMenu(x[0]) + '<span>' + esc(x[1]) + '</span>' +
+        (x[0] === 'fotos' ? '<b class="imp-cuenta" hidden></b>' : '') + '</button>';
     }).join('') +
     '<div class="imp-menu-pie"><div class="imp-quien"><b>' + esc(per.nombre || '') + '</b>' + esc(ROL[per.rol] || '') + '</div>' +
       '<a class="imp-item" href="vendedores.html" title="Abrir la app">' + svgMenu('app') + '<span>Abrir la app</span></a>' +
@@ -221,6 +226,8 @@ function ir(solapa) {
   engancharPlegar();
   asomarMenu();
   if (!_local) { document.getElementById('cuerpo').innerHTML = '<div class="vacio">No hay locales cargados.</div>'; return; }
+  /* La bandeja ya cuenta sola al cargar; en lo demás, el número del menú se pide aparte. */
+  if (solapa !== 'local' && !(solapa === 'fotos' && _fotoDe === 'revisar')) contarRevisar();
   ({ panorama: verPanorama, local: verLocal, fotos: verFotos, tareas: verTareas, orden: verOrden, cajas: verCajas, llegadas: verLlegadas, papeles: verPapeles, testigo: verTestigo, ajustes: verAjustes })[solapa]();
 }
 
@@ -320,9 +327,13 @@ function datosPanorama(rango) {
   Promise.all([
     /* De a 1000 (leerTodas): con 12 semanas o 3 meses y los 14 locales se pasa el tope de filas de la base. */
     leerTodas('/orden_v_persona_semana?select=local_id,semana,controles,controles_a_tiempo,controles_tarde,controles_vencidos,puntos,nivel_semana&semana=gte.' + desde + '&semana=lte.' + hasta + '&order=semana.asc,local_id.asc,persona_id.asc'),
-    leer('/orden_v_estado_local?select=local_id,modulo_id,tareas_abiertas,sin_foto_reciente'),
-    leer('/orden_v_por_revisar?select=id,local_id'),
-    leerTodas('/orden_v_cajas?select=local_id,fecha,estado,alertas&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + '&order=fecha.asc,local_id.asc')
+    leer('/orden_v_estado_local?select=local_id,modulo_id,control_id,tareas_abiertas,sin_foto_reciente'),
+    /* «Para revisar», como lo cuenta Revisar (1/11): las fotos sin revisar que siguen siendo la última de su módulo y
+       las correcciones y tareas para mirar. */
+    leer('/orden_v_por_revisar?select=id,local_id,modulo_id'),
+    leerTodas('/orden_v_cajas?select=local_id,fecha,estado,alertas&fecha=gte.' + rango.desde + '&fecha=lte.' + rango.hasta + '&order=fecha.asc,local_id.asc'),
+    leer('/orden_v_tareas?select=local_id,estado,completada_en,revisada_en&estado=eq.hecha&foto_path=not.is.null&completada_en=gte.' + new Date(Date.now() - 14 * 864e5).toISOString() + '&limit=1000')
+      .catch(function () { return []; })
   ]).then(function (r) {
     if (_solapa !== 'panorama' || pedido !== _panPedido) return;
     var por = {};
@@ -335,8 +346,10 @@ function datosPanorama(rango) {
       sumarSemana(x.sem[f.semana] || (x.sem[f.semana] = grupoVacio()), f);
       sumarSemana(x.tot, f);
     });
-    (r[1] || []).forEach(function (m) { var x = por[m.local_id]; if (!x) return; x.mods++; x.tareas += m.tareas_abiertas || 0; if (m.sin_foto_reciente) x.sinFoto++; });
-    (r[2] || []).forEach(function (v) { var x = por[v.local_id]; if (x) x.revisar++; });
+    var ultima = {};
+    (r[1] || []).forEach(function (m) { ultima[m.modulo_id] = m.control_id; var x = por[m.local_id]; if (!x) return; x.mods++; x.tareas += m.tareas_abiertas || 0; if (m.sin_foto_reciente) x.sinFoto++; });
+    (r[2] || []).forEach(function (v) { var x = por[v.local_id]; if (x && (!ultima[v.modulo_id] || ultima[v.modulo_id] === v.id)) x.revisar++; });
+    (r[4] || []).forEach(function (t) { var x = por[t.local_id]; if (x && tareaParaMirar(t)) x.revisar++; });
     (r[3] || []).forEach(function (k) { var x = por[k.local_id]; if (x && (k.alertas || []).length) x.cajasDif++; });
     var lista = Object.keys(por).map(function (k) { return por[k]; });
     var conMods = lista.filter(function (x) { return x.mods; }).length;
@@ -348,7 +361,7 @@ function datosPanorama(rango) {
         '<div class="kpi-pie">' + (ce.r ? ce.ca + ' de ' + ce.r + ' hechos' : ce.c ? 'Ninguno hecho todavía' : 'Sin controles todavía') +
           (ce.c > ce.r ? ' · ' + (ce.c - ce.r) + ' por hacer' : '') + (pp != null ? ' · la pasada ' + pp + '%' : '') + '</div></div>' +
       '<div class="kpi"><div class="kpi-n">' + esc(nc ? NIVEL[nc] : '—') + '</div><div class="kpi-l">Nivel de la cadena esta semana</div><div class="kpi-pie">Lo que vio la IA y confirmó la supervisión</div></div>' +
-      '<div class="kpi' + (t.revisar ? ' es-pend' : '') + '"><div class="kpi-n">' + t.revisar + '</div><div class="kpi-l">Fotos sin revisar</div><div class="kpi-pie">En todos los locales, ahora</div></div>' +
+      '<div class="kpi' + (t.revisar ? ' es-pend' : '') + '"><div class="kpi-n">' + t.revisar + '</div><div class="kpi-l">Para revisar</div><div class="kpi-pie">Fotos, correcciones y tareas, en todos los locales</div></div>' +
       '<div class="kpi' + (t.tareas ? ' es-pend' : '') + '"><div class="kpi-n">' + t.tareas + '</div><div class="kpi-l">Tareas abiertas en los módulos</div><div class="kpi-pie">Pendientes o vencidas</div></div>' +
       '<div class="kpi' + (t.cajas ? ' es-mal' : '') + '"><div class="kpi-n">' + t.cajas + '</div><div class="kpi-l">Cajas con diferencia</div><div class="kpi-pie">' + esc(rango.texto) + '</div></div>' +
       '<div class="kpi"><div class="kpi-n">' + conMods + '<small> de ' + lista.length + '</small></div><div class="kpi-l">Locales con módulos cargados</div><div class="kpi-pie">Los otros todavía no generan controles</div></div>' +
@@ -369,7 +382,7 @@ function datosPanorama(rango) {
     if (!lista.length) html += '<div class="vacio">Todavía ningún local tiene módulos: se arman en Por local, con "Armar el croquis".</div>';
     else html += '<div class="desliza"><table class="tabla-datos imp-pano"><thead><tr><th>Local</th>' +
       semanas.map(function (w) { return '<th class="n" style="text-align:center">' + esc(diaMes(w)) + '</th>'; }).join('') +
-      '<th class="n">A tiempo</th><th class="n">Sin revisar</th><th class="n">Tareas</th><th class="n">Cajas con dif.</th></tr></thead><tbody>' +
+      '<th class="n">A tiempo</th><th class="n">Para revisar</th><th class="n">Tareas</th><th class="n">Cajas con dif.</th></tr></thead><tbody>' +
       lista.map(function (x) {
         var a = pct(x.tot.ca, x.tot.r);
         return '<tr data-ir="' + esc(x.l.id) + '"><td class="local"><b>' + esc(x.l.nombre) + '</b><small>' + x.mods + (x.mods === 1 ? ' módulo' : ' módulos') + (x.sinFoto ? ' · ' + x.sinFoto + ' sin foto reciente' : '') + '</small></td>' +
@@ -419,21 +432,28 @@ function graficoLocal(filas) {
 }
 
 /* ════════════════════════════════════════════════════════════════════════
-   FOTOS: las de los controles, con lo que dijo la IA
+   REVISAR (antes «Fotos»): lo que espera la revisión del supervisor, y todas las fotos de los controles
    ════════════════════════════════════════════════════════════════════════ */
 
-/* El período es el selector común (15/10/2026): arranca en los últimos 7 días. */
-var _fotoNivel = '', _fotoQuien = '', _fotoPedido = 0, _fotoDe = 'modulos';
+/* Tres solapas (1/11/2026): «Para revisar» (la bandeja, arranca ahí), «Todas las fotos» (la grilla de siempre, con el
+   período, el nivel y quién) y «Correcciones y tareas». El período es el selector común (15/10/2026): arranca en los
+   últimos 7 días. */
+var _fotoNivel = '', _fotoQuien = '', _fotoPedido = 0, _fotoDe = 'revisar';
 function verFotos() {
-  var c = document.getElementById('cuerpo');
+  var c = document.getElementById('cuerpo'), bandeja = _fotoDe === 'revisar';
   /* Módulos | Tareas (16/10): las fotos de las tareas hechas, para mirarlas y mandar a corregir (SQL 132).
      Desde el SQL 150 también las correcciones pedidas al revisar, Antes | Ahora. */
-  c.innerHTML = '<div class="imp-filtros"><div class="solapas" id="fotoDe">' + [['modulos', 'Módulos'], ['tareas', 'Correcciones y tareas']].map(function (o) {
+  c.innerHTML = '<div class="imp-filtros"><div class="solapas" id="fotoDe">' + [['revisar', 'Para revisar'], ['modulos', 'Todas las fotos'], ['tareas', 'Correcciones y tareas']].map(function (o) {
       return '<button data-foto-de="' + o[0] + '" class="' + (o[0] === _fotoDe ? 'activa' : '') + '">' + o[1] + '</button>';
-    }).join('') + '</div><div id="fotoPer"></div><div class="solapas"' + (_fotoDe === 'tareas' ? ' hidden' : '') + '>' +
+    }).join('') + '</div><div id="fotoPer"' + (bandeja ? ' hidden' : '') + '></div><div class="solapas"' + (_fotoDe !== 'modulos' ? ' hidden' : '') + '>' +
     [['', 'Todos los niveles']].concat(NIVELES.slice().reverse().map(function (n) { return [n, NIVEL[n]]; })).map(function (o) {
       return '<button data-foto-nivel="' + o[0] + '" class="' + (o[0] === _fotoNivel ? 'activa' : '') + '">' + esc(o[1]) + '</button>';
     }).join('') + '</div><span id="fotoQuienLugar"></span></div><div id="fotoDatos"><p class="cargando">Cargando…</p></div>';
+  c.querySelectorAll('[data-foto-de]').forEach(function (b) {
+    b.onclick = function () { if (b.dataset.fotoDe !== _fotoDe) { _fotoDe = b.dataset.fotoDe; verFotos(); } };
+  });
+  if (_cuenta && _cuenta.local === _local.id) pintarCuenta(_cuenta);
+  if (bandeja) { datosRevisar(); return; }
   var sel = Interfaz.periodo(document.getElementById('fotoPer'), {
     inicial: '7', atajos: ['hoy', 'ayer', '7', 'semana', 'semana-pasada', '30', 'mes', 'mes-pasado'], hastaHoy: true, guardar: 'nc_eq_fotos',
     alCambiar: function (r) { (_fotoDe === 'tareas' ? datosTareasFoto : datosFotos)(r); }
@@ -445,10 +465,114 @@ function verFotos() {
       datosFotos(sel.rango());
     };
   });
-  c.querySelectorAll('[data-foto-de]').forEach(function (b) {
-    b.onclick = function () { if (b.dataset.fotoDe !== _fotoDe) { _fotoDe = b.dataset.fotoDe; verFotos(); } };
-  });
   (_fotoDe === 'tareas' ? datosTareasFoto : datosFotos)(sel.rango());
+}
+
+/* ── La bandeja (1/11/2026, Mauricio: Fotos y Por local "se repiten"; "hay que buscarle una función útil a esa
+   sección"). Lo que espera al supervisor en el local: las fotos sin revisar y las correcciones y tareas con foto para
+   mirar, lo más viejo primero. Una foto sin revisar de un módulo que ya tiene otra más nueva no entra: la que vale es
+   la última (la misma que muestra Por local). Al revisar una se abre sola la siguiente. ── */
+
+/** Lo que espera revisión en un local: { local, fotos, tareas, viejas (las que ya tienen una foto más nueva) }.
+    completo: con todo lo que necesita la ventana de la foto; si no, sólo para contar. Lo usan la bandeja, el número
+    del menú y Por local, así dicen lo mismo. */
+function porRevisar(localId, completo) {
+  var L = valor(localId), ruta = '/orden_v_controles?select=' + (completo ? COLS_FOTO : 'id,modulo_id') +
+    '&local_id=eq.' + L + '&estado=eq.enviado&tipo=neq.correccion&order=enviado_en.asc&limit=300';
+  return Promise.all([
+    completo ? leer150(ruta, COLS_FOTO_150) : leer(ruta),
+    /* La última foto de cada módulo (por qué control es). */
+    leer('/orden_v_estado_local?select=modulo_id,control_id&local_id=eq.' + L),
+    tareasParaMirar(localId, completo)
+  ]).then(function (r) {
+    var ultima = {}, todas = r[0] || [];
+    (r[1] || []).forEach(function (m) { ultima[m.modulo_id] = m.control_id; });
+    var fotos = todas.filter(function (f) { return !ultima[f.modulo_id] || ultima[f.modulo_id] === f.id; });
+    return { local: localId, fotos: fotos, tareas: r[2] || [], viejas: todas.length - fotos.length };
+  });
+}
+
+/** Las tareas con foto (y las correcciones) hechas en las últimas 2 semanas que todavía nadie miró, como en Revisar de
+    la app. */
+function tareasParaMirar(localId, completo) {
+  var desde = new Date(Date.now() - 14 * 864e5).toISOString();
+  var base = '/orden_v_tareas?select=' + (completo ? COLS_TAREA_FOTO : 'id,estado,completada_en,revisada_en') + '&local_id=eq.' + valor(localId) +
+    '&estado=eq.hecha&foto_path=not.is.null&completada_en=gte.' + desde + '&order=completada_en.asc&limit=100';
+  return (completo ? leer150(base, 'foto_antes,marcas,ia_correccion') : leer(base)).then(function (l) { return (l || []).filter(tareaParaMirar); });
+}
+
+/* El último conteo (el del local que se está mirando), para pintar el número sin volver a pedirlo. */
+var _cuenta = null, _cuentaPedido = 0;
+function contarRevisar() {
+  if (!_local) return;
+  var pedido = ++_cuentaPedido;
+  porRevisar(_local.id).then(function (p) { if (pedido === _cuentaPedido) pintarCuenta(p); }).catch(function () { /* sin el número, el menú anda igual */ });
+}
+/** El número en el menú («Revisar 28») y en la solapa «Para revisar · 28». */
+function pintarCuenta(p) {
+  _cuenta = p;
+  if (!_local || p.local !== _local.id) return;
+  var n = p.fotos.length + p.tareas.length, b = app.querySelector('.imp-item[data-solapa="fotos"]');
+  if (b) {
+    var s = b.querySelector('.imp-cuenta');
+    if (s) { s.textContent = n > 99 ? '99+' : String(n); s.hidden = !n; }
+    b.title = 'Revisar' + (n ? ': ' + n + ' para revisar' : '');
+  }
+  var t = app.querySelector('[data-foto-de="revisar"]');
+  if (t) t.textContent = 'Para revisar' + (n ? ' · ' + n : '');
+}
+
+var _bandeja = null;
+/** abrir: el lugar de la foto que se abre sola al cargar (la siguiente, después de revisar una). */
+function datosRevisar(abrir) {
+  var pedido = ++_fotoPedido, local = _local;
+  porRevisar(local.id, true).then(function (p) {
+    if (_solapa !== 'fotos' || _fotoDe !== 'revisar' || pedido !== _fotoPedido) return;
+    _bandeja = p;
+    pintarCuenta(p);
+    var nf = p.fotos.length, nt = p.tareas.length, html = '';
+    if (!nf && !nt) html += '<div class="vacio rev-listo"><b>No queda nada para revisar en ' + esc(local.nombre) + '.</b>' +
+      'Cuando manden fotos nuevas, aparecen acá.</div>';
+    else html += '<p class="bajada">' + yLista([nf ? nf + (nf === 1 ? ' foto' : ' fotos') : '', nt ? nt + (nt === 1 ? ' corrección o tarea' : ' correcciones o tareas') : ''].filter(Boolean)) +
+      ' para revisar, lo más viejo primero.' + (nf > 1 && !soloMira() ? ' Tocá una: al revisarla se abre la siguiente.' : ' Tocá una para verla grande.') + '</p>';
+    if (nf) html += (nt ? '<div class="seccion">Fotos de los módulos</div>' : '') + '<div class="imp-fotos">' + p.fotos.map(function (f, i) { return tarjetaFoto(f, 'data-rf="' + i + '"'); }).join('') + '</div>';
+    if (nt) html += '<div class="seccion">Correcciones y tareas</div><div class="imp-fotos">' + p.tareas.map(function (t, i) { return tarjetaTarea(t, 'data-rt="' + i + '"'); }).join('') + '</div>';
+    if (p.viejas) html += '<p class="ayuda-chica rev-viejas">' + (p.viejas === 1 ? 'Otra foto quedó sin revisar, pero ese módulo ya tiene una más nueva: no hace falta mirarla.'
+      : 'Otras ' + p.viejas + ' fotos quedaron sin revisar, pero esos módulos ya tienen una más nueva: no hace falta mirarlas.') + ' Están en «Todas las fotos».</p>';
+    var c = document.getElementById('fotoDatos');
+    c.innerHTML = html;
+    cargarFotos(c);
+    c.querySelectorAll('[data-rf]').forEach(function (b) { b.onclick = function () { abrirEnBandeja(+b.dataset.rf); }; });
+    c.querySelectorAll('[data-rt]').forEach(function (b) {
+      b.onclick = function () { verTareaFoto(p.tareas[+b.dataset.rt], null, function () { datosRevisar(); }); };
+    });
+    if (abrir == null) return;
+    if (abrir < nf) { abrirEnBandeja(abrir); return; }
+    /* Era la última de la lista: lo que dijo al revisar, y qué quedó. */
+    avisar(cartel.textContent + (nf ? ' Llegaste a la última: ' + (nf === 1 ? 'queda 1 foto que salteaste.' : 'quedan ' + nf + ' fotos que salteaste.')
+      : nt ? ' Ya no quedan fotos: faltan ' + (nt === 1 ? '1 corrección o tarea.' : nt + ' correcciones o tareas.') : ' No queda nada más para revisar.'));
+  }).catch(function (e) { error(e, verFotos); });
+}
+
+/** Abre la foto i de la bandeja, con «2 de 28» y «Saltear»; revisada, se recarga la bandeja y se abre la que quedó en
+    su lugar (la siguiente). */
+function abrirEnBandeja(i) {
+  var lista = _bandeja ? _bandeja.fotos : [], f = lista[i];
+  if (!f) return;
+  ventanaFoto(f, {
+    cola: { n: i + 1, de: lista.length, saltear: i + 1 < lista.length ? function () { abrirEnBandeja(i + 1); } : null },
+    alTerminar: function () { datosRevisar(i); }
+  });
+}
+
+/** La tarjeta de una foto de un control (Todas las fotos y la bandeja). attr: con qué se la reconoce al tocarla. */
+function tarjetaFoto(f, attr) {
+  var distinta = f.nivel_ia && f.nivel && f.nivel_ia !== f.nivel;
+  return '<button class="imp-foto" ' + attr + '><img data-foto="' + esc(f.foto_path) + '" alt=""><b>' + esc(f.modulo_nombre) + '</b>' +
+    '<div class="info">' + (f.tipo === 'correccion' ? estCorreccion(f)
+      : estNivel(f.nivel, 'Esperando revisión') + (distinta ? '<span class="est">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>' : '') + (f.estado === 'enviado' && f.nivel ? '<span class="est sorpresa">Sin revisar</span>' : '') +
+        (f.correccion_pedida ? '<span class="est corregir">Corrección pedida</span>' : '')) + '</div>' +
+    '<small>' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + (f.tipo === 'sorpresa' ? ' · sorpresa' : '') + (f.frontal ? ' · frontal nuevo' : '') + (f.a_tiempo === false ? ' · tarde' : '')) + '</small></button>';
 }
 
 /* Lo que hace falta de una foto para la ventana de la foto (Fotos y el módulo de Por local). SQL 150: las marcas, si
@@ -473,12 +597,7 @@ function datosFotos(rango) {
       var html = '';
       if (!vistas.length) html += '<div class="vacio">No hay fotos en este período' + (_fotoNivel ? ' con ese nivel' : '') + '.</div>';
       else html += '<p class="bajada">' + vistas.length + (vistas.length === 1 ? ' foto' : ' fotos') + '. Tocá una para verla grande.</p><div class="imp-fotos">' + vistas.map(function (f, i) {
-        var distinta = f.nivel_ia && f.nivel && f.nivel_ia !== f.nivel;
-        return '<button class="imp-foto" data-i="' + i + '"><img data-foto="' + esc(f.foto_path) + '" alt=""><b>' + esc(f.modulo_nombre) + '</b>' +
-          '<div class="info">' + (f.tipo === 'correccion' ? estCorreccion(f)
-            : estNivel(f.nivel, 'Esperando revisión') + (distinta ? '<span class="est">IA: ' + esc(NIVEL[f.nivel_ia]) + '</span>' : '') + (f.estado === 'enviado' && f.nivel ? '<span class="est sorpresa">Sin revisar</span>' : '') +
-              (f.correccion_pedida ? '<span class="est corregir">Corrección pedida</span>' : '')) + '</div>' +
-          '<small>' + esc(diaMes(f.fecha) + ' · ' + (f.persona_nombre || '') + (f.tipo === 'sorpresa' ? ' · sorpresa' : '') + (f.frontal ? ' · frontal nuevo' : '') + (f.a_tiempo === false ? ' · tarde' : '')) + '</small></button>';
+        return tarjetaFoto(f, 'data-i="' + i + '"');
       }).join('') + '</div>';
       var c = document.getElementById('fotoDatos');
       c.innerHTML = html;
@@ -486,7 +605,7 @@ function datosFotos(rango) {
       var q = document.getElementById('fotoQuien');
       if (q) q.onchange = function () { _fotoQuien = q.value; datosFotos(rango); };
       c.querySelectorAll('[data-i]').forEach(function (b) {
-        b.onclick = function () { ventanaFoto(vistas[+b.dataset.i], { alTerminar: function () { datosFotos(rango); } }); };
+        b.onclick = function () { ventanaFoto(vistas[+b.dataset.i], { alTerminar: function () { datosFotos(rango); contarRevisar(); } }); };
       });
     }).catch(function (e) { error(e, verFotos); });
 }
@@ -527,7 +646,10 @@ function ventanaFoto(f, op) {
     : revisada ? '<span class="est nivel-' + esc(f.nivel_final || f.nivel) + '">Revisada: ' + esc(NIVEL[f.nivel_final || f.nivel] || '—') + '</span>'
     : '<span class="est sorpresa">Esperando revisión</span>';
   var conIA = !soloMira() && !!f.modulo_id && (esAdmin() || f.sector_tipo !== 'deposito');
-  var w = ventana('<h1>' + esc(f.modulo_nombre) + '</h1>' + (bajada ? '<p class="bajada">' + esc(bajada) + '</p>' : '') +
+  /* Desde la bandeja de Revisar (1/11): en cuál va y «Saltear» para pasar a la siguiente sin revisarla. */
+  var cola = op.cola ? '<div class="vf-cola"><span>Para revisar: <b>' + op.cola.n + ' de ' + op.cola.de + '</b></span>' +
+    (op.cola.saltear ? '<button class="boton chico" id="vfSaltear">Saltear ›</button>' : '') + '</div>' : '';
+  var w = ventana(cola + '<h1>' + esc(f.modulo_nombre) + '</h1>' + (bajada ? '<p class="bajada">' + esc(bajada) + '</p>' : '') +
     (!f.id ? '<div class="vacio">Todavía no hay fotos de este módulo.</div>' :
       fotoConMarcas(f.foto_path, f.marcas, { clase: 'fm-grande', alt: 'La foto del módulo' }) +
       (puede ? '<p class="ayuda-marcas" id="vfAyuda"' + (revisada ? ' hidden' : '') + '>Tocá la foto para marcar dónde. Tocá una marca para sacarla.</p>' : '') +
@@ -569,6 +691,11 @@ function ventanaFoto(f, op) {
     }).join('') + '</div>' : '') +
     (conIA ? '<details class="vm-ia"><summary>Para mejorar la IA</summary><div class="vm-ia-cuerpo"><p class="bajada">Cargando…</p></div></details>' : ''));
   engancharOpinionIA(w, f.ultimo_intento_id, { comentario: w.querySelector('#vfComent') });
+  var sa = w.querySelector('#vfSaltear');
+  if (sa) sa.onclick = function () {
+    if (w.querySelector('[data-aviso-guardar]:not([disabled])') && !confirm('Hay cambios sin guardar. ¿Pasar a la siguiente igual? Lo que no guardaste se pierde.')) return;
+    w.remove(); op.cola.saltear();
+  };
   /* Lo de la IA se carga recién al abrirlo. */
   var det = w.querySelector('.vm-ia');
   if (det) det.addEventListener('toggle', function () {
@@ -656,15 +783,20 @@ function datosTareasFoto(rango) {
       var mirar = lista.filter(tareaParaMirar).length, c = document.getElementById('fotoDatos');
       c.innerHTML = !lista.length ? '<div class="vacio">No hay correcciones ni fotos de tareas en este período.</div>'
         : '<p class="bajada">' + lista.length + (lista.length === 1 ? ' corrección o tarea con foto' : ' correcciones y tareas con foto') + (mirar ? ' · ' + mirar + ' para mirar' : '') +
-          '. Tocá una para verla grande.</p><div class="imp-fotos">' + lista.map(function (t, i) {
-            return '<button class="imp-foto" data-t="' + i + '"><img data-foto="' + esc(t.estado === 'hecha' ? t.foto_path : t.foto_antes || t.foto_path) + '" alt=""><b>' + esc(t.titulo) + '</b>' +
-              '<div class="info">' + estTarea(t) + '</div>' +
-              '<small>' + esc((t.estado === 'hecha' ? diaMes(t.completada_en) : 'a corregir desde el ' + diaMes(t.correccion_en || t.creado_en)) + ' · ' + (t.persona_nombre || '') +
-                              (t.estado === 'hecha' && t.completada_a_tiempo === false ? ' · tarde' : '') + ((t.correcciones || []).length && t.estado === 'hecha' ? ' · corregida' : '')) + '</small></button>';
-          }).join('') + '</div>';
+          '. Tocá una para verla grande.</p><div class="imp-fotos">' + lista.map(function (t, i) { return tarjetaTarea(t, 'data-t="' + i + '"'); }).join('') + '</div>';
       cargarFotos(c);
-      c.querySelectorAll('[data-t]').forEach(function (b) { b.onclick = function () { verTareaFoto(lista[+b.dataset.t], rango); }; });
+      c.querySelectorAll('[data-t]').forEach(function (b) {
+        b.onclick = function () { verTareaFoto(lista[+b.dataset.t], rango, function () { datosTareasFoto(rango); contarRevisar(); }); };
+      });
     }).catch(function (e) { error(e, verFotos); });
+}
+
+/** La tarjeta de una tarea con foto o una corrección (Correcciones y tareas, y la bandeja). */
+function tarjetaTarea(t, attr) {
+  return '<button class="imp-foto" ' + attr + '><img data-foto="' + esc(t.estado === 'hecha' ? t.foto_path : t.foto_antes || t.foto_path) + '" alt=""><b>' + esc(t.titulo) + '</b>' +
+    '<div class="info">' + estTarea(t) + '</div>' +
+    '<small>' + esc((t.estado === 'hecha' ? diaMes(t.completada_en) : 'a corregir desde el ' + diaMes(t.correccion_en || t.creado_en)) + ' · ' + (t.persona_nombre || '') +
+                    (t.estado === 'hecha' && t.completada_a_tiempo === false ? ' · tarde' : '') + ((t.correcciones || []).length && t.estado === 'hecha' ? ' · corregida' : '')) + '</small></button>';
 }
 
 /** Una tarea con foto: la de antes (con sus marcas) y la que mandó, "Quedó bien" o "Pedir otra corrección".
@@ -835,16 +967,20 @@ function verLocal() {
       .catch(function () { return []; }),
     cargarMapa(_local.id).catch(function () { return null; }),
     /* Sin esto (un error, sin permiso), las tarjetas y el croquis quedan como antes: apagadas con más de 7 días. */
-    datosSemana(_local.id).catch(function () { return null; })
+    datosSemana(_local.id).catch(function () { return null; }),
+    /* Lo mismo que cuenta Revisar (1/11): sin las que ya tienen una foto más nueva, y con las tareas para mirar. */
+    porRevisar(_local.id).catch(function () { return null; })
   ]).then(function (r) {
     if (_solapa !== 'local') return;
-    var mods = r[0] || [], res = r[1] || {};
+    var mods = r[0] || [], res = r[1] || {}, pr = r[5], npr = pr ? pr.fotos.length + pr.tareas.length : res.sin_revisar;
+    if (pr) pintarCuenta(pr);
     _semanaLocal = r[3] && r[4] ? semanaDeModulos(r[4], r[3], localId) : null;
     var html = '<div class="numeros">' +
       '<div class="numero"><span>Nivel de la semana</span><b>' + esc(res.nivel_local || '—') + '</b></div>' +
       '<div class="numero"><span>Controles a tiempo</span><b>' + (res.controles ? res.controles_a_tiempo + ' de ' + res.controles : '—') + '</b></div>' +
       '<div class="numero"><span>Tareas pendientes</span><b>' + (res.tareas_pendientes != null ? res.tareas_pendientes : '—') + '</b></div>' +
-      '<div class="numero"><span>Fotos sin revisar</span><b>' + (res.sin_revisar != null ? res.sin_revisar : '—') + '</b></div></div>';
+      '<div class="numero"><span>Para revisar</span><b>' + (npr != null ? npr : '—') + '</b>' +
+        (npr ? '<button class="imp-enlace" id="irRevisar">Revisar ›</button>' : '') + '</div></div>';
     /* El croquis es lo principal (Mauricio, 15/10: "que el protagonista sea el croquis"): va arriba; el gráfico semana a
        semana, al final y cerrado. */
     _mapaLocal = r[3];
@@ -878,6 +1014,8 @@ function verLocal() {
     var porId = {};
     mods.forEach(function (m) { porId[m.modulo_id] = m; });
     c.querySelectorAll('[data-modulo]').forEach(function (b) { b.onclick = function () { verModulo(porId[b.dataset.modulo]); }; });
+    var irRev = document.getElementById('irRevisar');
+    if (irRev) irRev.onclick = function () { _fotoDe = 'revisar'; ir('fotos'); };
     _porIdLocal = porId;
     dibujarMapaLocal();
   }).catch(function (e) { error(e, verLocal); });
