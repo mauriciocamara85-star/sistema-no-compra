@@ -562,8 +562,9 @@
      ════════════════════════════════════════════════════════════════════ */
   function arrancar() {
     var y = persona.yo();
-    /* El mostrador, quien tenga «Usa el POS» (lo dice nc_yo); la Gestión, sólo Administración. La base lo vuelve a mirar. */
-    if (!y || (persona.rol() !== 'admin' && (MODO === 'gestion' || y.pos !== true))) { pantallaPorton(y); return; }
+    /* El mostrador, quien tenga «Usa el POS» (lo dice nc_yo); la Gestión, quien tenga «Entra a Gestión» (SQL 229).
+       La base lo vuelve a mirar. */
+    if (!y || (persona.rol() !== 'admin' && (MODO === 'gestion' ? y.gestion !== true : y.pos !== true))) { pantallaPorton(y); return; }
     app.innerHTML = '<p class="cargando">Cargando…</p>';
     llamarCorto('pos_inicio').then(function (ini) {
       /* SQL 212: lo de hoy queda en la compu (de quien entró), para poder abrir el mostrador sin internet. */
@@ -607,10 +608,10 @@
     var c = $('posPorton');
     if (y) {
       c.innerHTML = '<p class="ncp-porton-txt">Entraste como <b>' + esc(y.nombre) + '</b>. ' +
-        (MODO === 'gestion' ? 'La Gestión del POS es de la oficina: la usa Administración.' : 'Todavía no tenés el POS: lo prende la oficina en Config → Usuarios.') + '</p>';
+        (MODO === 'gestion' ? 'Todavía no tenés la Gestión: la prende la oficina en Config → Usuarios («Entra a Gestión»).' : 'Todavía no tenés el POS: lo prende la oficina en Config → Usuarios.') + '</p>';
       return;
     }
-    persona.porton(c, MODO === 'gestion' ? 'La usa Administración.' : 'Entrá con tu usuario: lo usa quien tiene el POS prendido.');
+    persona.porton(c, MODO === 'gestion' ? 'Entrá con tu usuario: la usa quien tiene la Gestión prendida.' : 'Entrá con tu usuario: lo usa quien tiene el POS prendido.');
   }
 
   function vistaDelHash() { return String(location.hash || '').replace(/^#\/?/, '') || INICIO[MODO]; }

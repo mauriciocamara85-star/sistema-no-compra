@@ -86,17 +86,20 @@ var usuarios = (function () {
     return a.desde <= h ? 'de vacaciones hasta el ' + dm(a.hasta) : 'vacaciones del ' + dm(a.desde) + ' al ' + dm(a.hasta);
   }
 
-  /* SQL 190: el POS de cada persona. «Usa el POS» y seis casillas; cada rol arranca con las suyas
+  /* SQL 190: el POS de cada persona. «Usa el POS» y seis casillas (SQL 229: siete, con «Entra a Gestión»); cada rol arranca con las suyas
      (pos_permisos_lista trae las de cada rol y las de cada persona). null = no es Administración o falta el SQL. */
   var posLista = null;
-  var POS_K = ['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios'];
+  var POS_K = ['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios', 'gestion'];
   var POS_CASILLAS = [['anular', 'Anular ventas y cambios', ''],
                       ['envios', 'Hacer envíos internos y devoluciones a fábrica', ''],
                       ['caja', 'Caja: gastos, movimientos de salida, retiros y cierre de caja', ''],
                       ['dias', 'Ver otros días', 'sin esto, sólo lo de hoy'],
                       ['locales', 'Ver otros locales', 'sin esto, sólo el suyo o los que supervisa'],
-                      ['precios', 'Ver los precios y totales en remitos y envíos', '']];
+                      ['precios', 'Ver los precios y totales en remitos y envíos', ''],
+                      /* SQL 229. Mauricio (2/11): "Sí, gestión, dáselo también". */
+                      ['gestion', 'Entra a Gestión', 'precios, productos, stock y caja de todos los locales']];
   function usaPos(p) { return !!posLista && p.rol !== 'admin' && !!(posLista.personas[p.id] || {}).usa; }
+  function usaGestion(p) { return usaPos(p) && !!(posLista.personas[p.id] || {}).gestion; }
   /** El bloque del editor. Al administrador no se le toca: tiene todo. */
   function posBloque(p, r) {
     if (!posLista) return '';
@@ -321,7 +324,7 @@ var usuarios = (function () {
       '<div class="us-quien"><b>' + esc(p.nombre + ' ' + (p.apellido || '')) + (p.soy ? ' <small>(vos)</small>' : '') + '</b>' +
       /* El local no se repite: la lista ya está agrupada (o filtrada) por local. */
       '<span>' + esc(rolDe(p)) + (hayFrancos() && conFranco(p) ? ' · ' + esc(francoDe(p)) : '') + (vt ? ' · ' + esc(vt) : '') +
-        (usaPos(p) ? ' · Usa el POS' : '') + '</span></div>' +
+        (usaPos(p) ? ' · Usa el POS' + (usaGestion(p) ? ' y la Gestión' : '') : '') + '</span></div>' +
       '<span class="pill pill-' + e[0] + '">' + esc(e[1]) + '</span>' +
       (acc ? '<div class="us-acciones">' + acc + '</div>' : '') +
       '</div>';

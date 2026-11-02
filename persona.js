@@ -31,7 +31,8 @@ var persona = (function () {
   var NO_VE = {
     /* La administración de Impecable es de los encargados: el vendedor usa
        su app (vendedores.html), que es adonde lo lleva la barra. */
-    /* El POS (pos.html): quien tenga «Usa el POS» en Config → Usuarios (SQL 190; ver usaPos). Su Gestión, sólo Administración. */
+    /* El POS (pos.html): quien tenga «Usa el POS» en Config → Usuarios (SQL 190; ver usaPos). Su Gestión (gestion.html),
+       quien tenga además «Entra a Gestión» (SQL 229; ver usaGestion). */
     vendedor: ['panel.html', 'club-numeros.html', 'config.html', 'impecable-admin.html', 'pos.html', 'gestion.html'],
     /* También el supervisor de varios locales (sin local fijo, SQL 120). Mauricio, 14/10:
        "acceso a todo, excepto la parte del CRM". Socios y los números del Club son de la
@@ -109,6 +110,9 @@ var persona = (function () {
     /* SQL 190: con «Usa el POS», estilos.css no esconde el POS (la Gestión sí). */
     if (usaPos()) document.documentElement.setAttribute('data-nc-pos', '');
     else document.documentElement.removeAttribute('data-nc-pos');
+    /* SQL 229: con «Entra a Gestión», tampoco la Gestión. */
+    if (usaGestion()) document.documentElement.setAttribute('data-nc-gestion', '');
+    else document.documentElement.removeAttribute('data-nc-gestion');
     /* Mauricio, 25/10: la compu de un local, sin nadie adentro, ve sólo lo del local (la barra del
        vendedor: sin CRM, Socios, Config ni Supervisión). Al entrar alguien, manda su rol. Es sólo la
        barra: cada pantalla de la oficina sigue con su portón. */
@@ -127,9 +131,12 @@ var persona = (function () {
   }
   /* SQL 190: la oficina le prendió el POS (nc_yo trae 'pos'). */
   function usaPos() { return vigente(_yo) && _yo.pos === true; }
+  /* SQL 229: la oficina le prendió la Gestión del POS (nc_yo trae 'gestion'; pide también el POS). */
+  function usaGestion() { return vigente(_yo) && _yo.gestion === true; }
   function puede(pag) {
     var r = rol(), p = pag || pagina();
     if (p === 'pos.html' && usaPos()) return true;
+    if (p === 'gestion.html' && usaGestion()) return true;
     return !r || NO_VE[r].indexOf(p) < 0 || (conAtencion() && NO_VE.atencion.indexOf(p) < 0);
   }
   /** "Encargado" es el supervisor de un local; el de varios locales (sin local fijo, SQL 120), "Supervisor".
@@ -230,7 +237,9 @@ var persona = (function () {
       return rol() + '|' + (_yo && _yo.id) + '|' + (_yo && _yo.aprobado) + '|' + !!(_yo && _yo.pin_corto) + '|' + !!(_yo && _yo.tambien_atencion) +
         '|' + (_yo && _yo.zona ? _yo.zona.map(function (z) { return z.codigo; }).join(',') : '') +
         /* SQL 190: si le prendieron (o apagaron) el POS, la barra y el acceso a pos.html cambian. */
-        '|' + !!(_yo && _yo.pos);
+        '|' + !!(_yo && _yo.pos) +
+        /* SQL 229: lo mismo con la Gestión. */
+        '|' + !!(_yo && _yo.gestion);
     };
     var antes = clave();
     _yo = y;

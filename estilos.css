@@ -1396,9 +1396,10 @@ html[data-nc-compu-habilitada][data-nc-rol="vendedor"] .rail-item[href="vendedor
   html[data-nc-rol="vendedor"] .rail-item[href="vendedores.html"] { display: none; }
 }
 /* El POS, mientras está en construcción (20/10), lo ve sólo Administración: ni siquiera sin usuario. */
-/* SQL 190: el POS, también a quien la oficina se lo prendió (data-nc-pos); la Gestión, sólo Administración. */
+/* SQL 190: el POS, también a quien la oficina se lo prendió (data-nc-pos); la Gestión, a quien le prendió
+   «Entra a Gestión» (data-nc-gestion, SQL 229). */
 html:not([data-nc-rol="admin"]):not([data-nc-pos]) .rail-item[href="pos.html"],
-html:not([data-nc-rol="admin"]) .rail-item[href="gestion.html"] { display: none; }
+html:not([data-nc-rol="admin"]):not([data-nc-gestion]) .rail-item[href="gestion.html"] { display: none; }
 /* "Venta fallida" desde el POS abre la Carga con ?volver=pos: arriba, el camino de vuelta (interfaz.js). */
 .volver-pos {
   display: flex; width: fit-content; justify-self: start; align-items: center; gap: 6px; margin: 0 0 12px; padding: 7px 14px 7px 10px;

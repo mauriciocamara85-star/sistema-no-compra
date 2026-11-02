@@ -8628,3 +8628,199 @@ revoke all on function pos_lista_crear(text, text, int, numeric, int), pos_lista
                        pos_lista_reactivar(int), pos_listas_bajas() from public, anon;
 grant execute on function pos_lista_crear(text, text, int, numeric, int), pos_lista_renombrar(int, text), pos_lista_baja(int),
                           pos_lista_reactivar(int), pos_listas_bajas() to authenticated;
+
+/* ─── SQL 229 (2/11/2026) · LA GESTIÓN POR PERSONA ───
+   Mauricio (2/11): "Sí, gestión, dáselo también; no van a tocar nada, tranqui." La Gestión del POS deja
+   de ser sólo de Administración: la oficina la prende a una persona con «Entra a Gestión» en Config →
+   Usuarios (pos_permisos, clave 'gestion'); por rol sigue apagada. nc_yo trae 'gestion' para la barra.
+   En el registro de tiempos, lo de uno lo carga a mano y lo anula otro (con la Gestión abierta, nadie tapa
+   su propia llegada tarde).
+   (El mismo SQL les prendió todo el POS y la Gestión a los de Rivadavia: eso son datos y no va acá.) */
+CREATE OR REPLACE FUNCTION public.pos_puede_persona(p orden_personas, p_que text)
+ RETURNS boolean
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select case
+    when p.id is null or not coalesce(p.activo, false) or not coalesce(p.aprobado, false) then false
+    when p.rol = 'admin' then true
+    /* SQL 229: la Gestión ya no es sólo de Administración: la prende la oficina a una persona (pos_permisos). */
+    else coalesce((select (x.cambios ->> p_que)::boolean from pos_permisos x where x.persona_id = p.id),
+                  pos_permiso_del_rol(p.rol::text, p.local_id is not null, p_que)) end
+$function$;
+
+CREATE OR REPLACE FUNCTION public.pos_permisos_lista()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare k text[] := array['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios', 'gestion'];
+begin
+  if not orden_es_admin() then raise exception 'Los permisos del POS los maneja Administración.' using errcode = '42501'; end if;
+  return jsonb_build_object(
+    'roles', (select jsonb_object_agg(r.ed, (select jsonb_object_agg(c, pos_permiso_del_rol(r.rol, r.con_local, c)) from unnest(k) c))
+                from (values ('vendedor', 'vendedor', true), ('supervisor', 'supervisor', true), ('zona', 'supervisor', false),
+                             ('atencion', 'atencion', false), ('admin', 'admin', false)) r(ed, rol, con_local)),
+    'personas', coalesce((
+      select jsonb_object_agg(p.id, (select jsonb_object_agg(c, case when p.rol = 'admin' then true
+                                                                     else coalesce((x.cambios ->> c)::boolean, pos_permiso_del_rol(p.rol::text, p.local_id is not null, c)) end)
+                                       from unnest(k) c) || jsonb_build_object('propios', coalesce(x.cambios, '{}'::jsonb)))
+        from orden_personas p left join pos_permisos x on x.persona_id = p.id), '{}'::jsonb));
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_permisos_guardar(p_persona uuid, p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  k text[] := array['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios', 'gestion'];
+  q orden_personas;
+  c text;
+  v_cambios jsonb;
+begin
+  if not orden_es_admin() then raise exception 'Los permisos del POS los maneja Administración.' using errcode = '42501'; end if;
+  select * into q from orden_personas where id = p_persona;
+  if not found then raise exception 'No existe esa persona.'; end if;
+  if q.rol = 'admin' then raise exception 'El administrador tiene todo el POS: no se le cambia nada.'; end if;
+  if jsonb_typeof(p) is distinct from 'object' then raise exception 'Faltan los permisos.'; end if;
+  select x.cambios into v_cambios from pos_permisos x where x.persona_id = p_persona for update;
+  v_cambios := coalesce(v_cambios, '{}'::jsonb);
+  foreach c in array k loop
+    if p ? c then
+      if jsonb_typeof(p->c) is distinct from 'boolean' then raise exception 'El permiso % no es válido.', c; end if;
+      if (p->>c)::boolean = pos_permiso_del_rol(q.rol::text, q.local_id is not null, c) then v_cambios := v_cambios - c;
+      else v_cambios := v_cambios || jsonb_build_object(c, (p->>c)::boolean); end if;
+    end if;
+  end loop;
+  if v_cambios = '{}'::jsonb then
+    delete from pos_permisos where persona_id = p_persona;
+  else
+    insert into pos_permisos (persona_id, cambios, cambiado_por, cambiado_en) values (p_persona, v_cambios, orden_yo_id(), now())
+    on conflict (persona_id) do update set cambios = excluded.cambios, cambiado_por = excluded.cambiado_por, cambiado_en = now();
+  end if;
+  return (select jsonb_object_agg(c2, pos_puede_persona(q, c2)) from unnest(k) c2) || jsonb_build_object('propios', v_cambios);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.nc_yo()
+ RETURNS jsonb
+ LANGUAGE sql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+  select jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial),
+           'pila', p.nombre,
+           'rol', p.rol, 'local_id', p.local_id, 'local', l.codigo, 'local_nombre', l.nombre,
+           'vendedor', coalesce(e.vendedor, orden_nombre_lista(p.nombre, p.inicial)),
+           'activo', p.activo, 'aprobado', p.aprobado,
+           /* SQL 135: además atiende clientes (lo de la oficina, como Atención). */
+           'tambien_atencion', p.tambien_atencion,
+           /* SQL 190: si usa el POS (lo prende la oficina en Config → Usuarios). */
+           'pos', pos_puede_persona(p, 'usa'),
+           /* SQL 229: si entra a la Gestión del POS (la prende la oficina en Config → Usuarios; pide también el POS). */
+           'gestion', pos_puede_persona(p, 'usa') and pos_puede_persona(p, 'gestion'),
+           /* SQL 141: los locales del supervisor de varios locales (los aprobados). */
+           'zona', case when p.rol = 'supervisor' and p.local_id is null then
+                     coalesce((select jsonb_agg(jsonb_build_object('id', z.id, 'codigo', z.codigo, 'nombre', z.nombre) order by z.nombre)
+                                 from orden_supervision s join orden_locales z on z.id = s.local_id
+                                where s.persona_id = p.id and s.aprobado and z.activo), '[]'::jsonb) end,
+           /* Su PIN tiene menos números de los que pide su rol (SQL 110): lo
+              de la oficina no abre hasta cambiarlo. */
+           'pin_corto', k.hash is not null and coalesce(k.digitos, 4) < orden_pin_digitos(p.rol, p.tambien_atencion))
+    from orden_personas p
+    left join orden_locales l on l.id = p.local_id
+    left join equipo e on e.id = p.equipo_id
+    left join orden_pins k on k.persona_id = p.id
+   where p.auth_user_id = auth.uid() and auth.uid() is not null
+   limit 1
+$function$;
+
+CREATE OR REPLACE FUNCTION public.pos_tiempo_guardar(p jsonb)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare
+  v_clave   text := nullif(btrim(coalesce(p->>'clave', '')), '');
+  v_persona uuid;
+  v_local   uuid;
+  v_dia     date;
+  v_nombre  text;
+  v_obs     text := left(btrim(coalesce(p->>'observaciones', '')), 200);
+  v_r       record;
+  v_tipo    text;
+  v_hora    text;
+  v_mom     timestamptz;
+  v_ant     timestamptz;
+  v_id      bigint;
+  v_ids     bigint[] := '{}';
+begin
+  perform pos_permiso('gestion');
+  /* Tocaron dos veces Guardar: lo que ya se guardó con esa clave. */
+  if v_clave is not null and exists (select 1 from pos_tiempos where clave = v_clave || ':1') then
+    return jsonb_build_object('ids', (select jsonb_agg(id order by id) from pos_tiempos where clave like v_clave || ':_'), 'repetido', true);
+  end if;
+  begin
+    v_persona := nullif(p->>'persona_id', '')::uuid;
+    v_local := nullif(p->>'local_id', '')::uuid;
+    v_dia := nullif(p->>'dia', '')::date;
+  exception when others then
+    raise exception 'Faltan datos: la sucursal, la persona o la fecha no se entienden.';
+  end;
+  select orden_nombre_lista(x.nombre, x.inicial) into v_nombre from orden_personas x where x.id = v_persona;
+  if v_nombre is null then raise exception 'Elegí la persona.'; end if;
+  /* SQL 229: con la Gestión abierta a los locales, lo tuyo lo carga otro (como el control del mes). */
+  if v_persona = orden_yo_id() and not orden_es_admin() then raise exception 'Lo tuyo lo carga otro: tu supervisor o la oficina.'; end if;
+  if v_local is null or not exists (select 1 from orden_locales where id = v_local) then raise exception 'Elegí la sucursal.'; end if;
+  if v_dia is null then raise exception 'Elegí la fecha.'; end if;
+  if v_dia > pos_hoy() then raise exception 'No se puede cargar un día que todavía no llegó.'; end if;
+  if v_dia < pos_hoy() - 400 then raise exception 'Esa fecha es de hace más de un año.'; end if;
+  if length(v_obs) < 3 then raise exception 'Escribí por qué se carga a mano (por ejemplo: se olvidó de poner la huella).'; end if;
+  if jsonb_typeof(p->'registros') is distinct from 'array' or jsonb_array_length(p->'registros') not between 1 and 4 then
+    raise exception 'No hay nada para guardar.';
+  end if;
+  for v_r in select e.x, e.n from jsonb_array_elements(p->'registros') with ordinality e(x, n) order by e.n loop
+    v_tipo := v_r.x->>'tipo';
+    v_hora := btrim(coalesce(v_r.x->>'hora', ''));
+    if v_tipo is null or v_tipo not in ('entrada', 'salida') then raise exception 'Elegí si es una entrada o una salida.'; end if;
+    if v_hora !~ '^([01][0-9]|2[0-3]):[0-5][0-9]$' then raise exception 'La hora «%» no se entiende: escribila como 09:00.', v_hora; end if;
+    v_mom := (v_dia + v_hora::time) at time zone 'America/Argentina/Buenos_Aires';
+    if v_mom > now() + interval '5 minutes' then raise exception 'Las % todavía no pasaron: se carga cuando pase.', v_hora; end if;
+    if v_ant is not null and v_mom <= v_ant then raise exception 'Las horas tienen que ir en orden: las % van después de la anterior.', v_hora; end if;
+    v_ant := v_mom;
+    if exists (select 1 from pos_tiempos x where x.persona_id = v_persona and x.tipo = v_tipo and x.estado = 'ok'
+                and x.momento > v_mom - interval '1 minute' and x.momento < v_mom + interval '1 minute') then
+      raise exception 'Ya está cargada la % de las % de %.', v_tipo, v_hora, rtrim(v_nombre, '.');   -- "de Nano M." sin otro punto
+    end if;
+    insert into pos_tiempos (persona_id, local_id, momento, dia, tipo, origen, observaciones, cargado_por, clave)
+    values (v_persona, v_local, v_mom, v_dia, v_tipo, 'manual', v_obs, orden_yo_id(),
+            case when v_clave is not null then v_clave || ':' || v_r.n end)
+    returning id into v_id;
+    v_ids := v_ids || v_id;
+  end loop;
+  return jsonb_build_object('ids', to_jsonb(v_ids), 'persona', v_nombre);
+end $function$;
+
+CREATE OR REPLACE FUNCTION public.pos_tiempo_anular(p_id bigint, p_motivo text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+declare v pos_tiempos;
+begin
+  perform pos_permiso('gestion');
+  if length(btrim(coalesce(p_motivo, ''))) < 3 then raise exception 'Escribí por qué se anula.'; end if;
+  select * into v from pos_tiempos where id = p_id for update;
+  if v.id is null then raise exception 'Ese registro ya no está.'; end if;
+  if v.estado = 'anulado' then raise exception 'Ese registro ya estaba anulado.'; end if;
+  /* SQL 229: lo mismo para anular. */
+  if v.persona_id = orden_yo_id() and not orden_es_admin() then raise exception 'Lo tuyo lo anula otro: tu supervisor o la oficina.'; end if;
+  update pos_tiempos set estado = 'anulado', anulado_en = clock_timestamp(), anulado_por = orden_yo_id(), anulado_motivo = left(btrim(p_motivo), 300)
+   where id = p_id;
+  return jsonb_build_object('id', p_id);
+end $function$;
