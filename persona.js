@@ -1338,7 +1338,9 @@ var persona = (function () {
      inicio como la de BlueSoft pero con nuestro diseño". Eligió la maqueta
      A «Campaña»: la foto de la campaña a la izquierda con la hora, y a la
      derecha «¿Quién entra?» con la gente del local; se toca el nombre y el
-     PIN se pone ahí mismo. Primero en Rivadavia (la del POS de prueba).
+     PIN se pone ahí mismo. Primero en Rivadavia (la del POS de prueba);
+     desde la v337 en toda PC: con la gente del local de la compu, o la de
+     Administración si la compu no tiene local.
      Sale cuando no hay nadie adentro: al abrir el sistema y después de
      «Sí, salir». «Seguir sin entrar» la saca en esta pestaña (la Carga, Cobrar
      y Ventas andan sin usuario, como siempre). Los pasos (el PIN, crearlo,
@@ -1348,7 +1350,7 @@ var persona = (function () {
      alguien adentro.
      ════════════════════════════════════════════════════════════════════ */
 
-  var INICIO_EN = ['MAR DEL PLATA'];   // los códigos de los locales con el inicio (Rivadavia)
+  var INICIO_EN = ['MAR DEL PLATA'];   // en el celular (táctil), los locales con el inicio; en la PC sale en todas
   /* Sólo donde se arranca a trabajar: no en el fichero, ni en lo de la oficina, ni en el enlace que habilita la compu. */
   var INICIO_PAGINAS = ['index.html', 'caja.html', 'giftcards.html', 'asistente.html', 'ventas.html', 'estadisticas.html', 'pos.html', 'gestion.html'];
   var K_SIGUE = 'nc_inicio_sigue';     // sessionStorage: tocó «Seguir sin entrar» en esta pestaña
@@ -1400,28 +1402,32 @@ var persona = (function () {
     return recien;
   }
 
-  /* ¿Se prende solo ahora? Una de esas tres personas adentro, en una PC sin el inicio de un local, por primera vez. */
+  /* ¿Se prende solo ahora? Una de esas tres personas adentro, en una PC que no es la de un local, por primera vez. */
   function inicioSolo() {
     var quien = _ses && _ses.persona ? _ses.persona.id : '';
     if (INICIO_PC_DE.indexOf(quien) < 0) return false;
     try { if (localStorage.getItem(K_INICIO_AUTO)) return false; } catch (e) { return false; }
-    if (compuDelLocal() || (!_inicioFijo && hayInicioAca())) return false;
+    if (compuDelLocal() || (!_inicioFijo && INICIO_EN.indexOf(codDelLocal()) > -1)) return false;
     if (INICIO_PAGINAS.indexOf(pagina()) < 0 || /[?&]habilitar=/.test(location.search)) return false;
     return !!(window.matchMedia && matchMedia('(pointer: fine) and (min-width: 900px)').matches);
+  }
+
+  /* El local de esta compu: el de su llave; si la perdió (o no es la de un local), el que quedó elegido en la Carga. */
+  function codDelLocal() {
+    try { return (compuDelLocal() && localStorage.getItem('nc_caja_local')) || localStorage.getItem('nc_local') || ''; } catch (e) { return ''; }
   }
 
   /* El código del local para el inicio, o '' si acá no va. */
   function localInicio() {
     var recien = leerInicioFijo();
     var m = /[?&]inicio(?:=([^&#]*))?(?=[&#]|$)/.exec(location.search);
-    var cod = '';
-    /* La compu habilitada dice su local; si perdió la llave, el que quedó elegido en la Carga. */
-    try { cod = _inicioFijo || (compuDelLocal() && localStorage.getItem('nc_caja_local')) || localStorage.getItem('nc_local') || ''; } catch (e) {}
+    /* En una PC sin local (ni fijo, ni llave, ni elegido en la Carga): la gente de Administración. */
+    var cod = _inicioFijo || codDelLocal() || (POR_VENTANA ? 'OFICINA' : '');
     /* Recién prendido: se ve ya, aunque haya alguien adentro (para mirar cómo queda). */
     if (recien) return cod;
     if (m) {
       var pedido = decodeURIComponent((m[1] || '').replace(/\+/g, ' ')).trim().toUpperCase();
-      return pedido || (_inicioFijo || INICIO_EN.indexOf(cod) > -1 ? cod : INICIO_EN[0]);
+      return pedido || (hayInicioAca(cod) ? cod : INICIO_EN[0]);
     }
     if (_ses || !hayInicioAca(cod)) return '';
     if (INICIO_PAGINAS.indexOf(pagina()) < 0 || /[?&]habilitar=/.test(location.search)) return '';
@@ -1429,11 +1435,11 @@ var persona = (function () {
     return cod;
   }
 
-  /* ¿Esta compu arranca con el inicio? (la de un local de INICIO_EN, o una con el inicio fijo). */
+  /* ¿Esta compu arranca con el inicio? Toda PC (2/11, Mauricio: "de la pantalla de inicio quiero que funcionen todas
+     las compus"); en el celular, sólo con el inicio fijo o en un local de INICIO_EN. */
   function hayInicioAca(cod) {
-    if (_inicioFijo) return true;
-    if (cod === undefined) try { cod = (compuDelLocal() && localStorage.getItem('nc_caja_local')) || localStorage.getItem('nc_local') || ''; } catch (e) { cod = ''; }
-    return INICIO_EN.indexOf(cod) > -1;
+    if (_inicioFijo || POR_VENTANA) return true;
+    return INICIO_EN.indexOf(cod === undefined ? codDelLocal() : cod) > -1;
   }
 
   /* Se decide en el <head>: la página queda tapada desde el primer momento (estilos.css) y sin saltos. */
@@ -1521,7 +1527,7 @@ var persona = (function () {
       var e = d.querySelector('[data-estado]');
       e.classList.toggle('sin', !navigator.onLine);
       e.innerHTML = '<i></i>' + (navigator.onLine ? 'Conectado' : 'Sin conexión') + (nom ? ' · ' + txt(nom) : '');
-      d.querySelector('[data-local]').textContent = !nom ? '' : ini.local.grupo ? 'VDH · ' + nom : 'VDH ' + nom + ' · Compu del local';
+      d.querySelector('[data-local]').textContent = !nom ? '' : ini.local.grupo ? 'VDH · ' + nom : 'VDH ' + nom + (compuDelLocal() ? ' · Compu del local' : '');
     }
     ini.estado = estado;
     window.addEventListener('online', estado);
@@ -1563,12 +1569,16 @@ var persona = (function () {
   /* El local (id y nombre) sale de la misma lista de entrar; queda guardado para cuando no hay internet. */
   function localDelInicio() {
     if (_inicio.local) return Promise.resolve(_inicio.local);
-    /* 'OFICINA' es "Administración", que no tiene código: se reconoce por su grupo (como en pasoLocales). */
-    var ofi = _inicio.cod === 'OFICINA';
+    /* 'OFICINA' es "Administración", que no tiene código: se reconoce por su grupo (como en pasoLocales). E-commerce
+       tiene código pero no id: también va por su grupo. Un código que ya no está (un local elegido hace mucho en la
+       Carga): la gente de Administración, que siempre está. */
     return funcion('nc_login_locales', {}).then(function (locales) {
-      var l = (locales || []).filter(function (x) { return ofi ? !x.codigo && x.grupo === 'oficina' : x.id && x.codigo === _inicio.cod; })[0];
+      locales = locales || [];
+      var ofi = function (x) { return !x.codigo && x.grupo === 'oficina'; };
+      var l = _inicio.cod === 'OFICINA' ? locales.filter(ofi)[0] : locales.filter(function (x) { return x.codigo === _inicio.cod; })[0];
+      if (!l) l = locales.filter(ofi)[0];
       if (!l) throw Object.assign(new Error('Este local no está en la lista para entrar.'), { delServidor: true });
-      _inicio.local = ofi ? { id: null, grupo: 'oficina', codigo: 'OFICINA', nombre: l.nombre } : { id: l.id, codigo: l.codigo, nombre: l.nombre };
+      _inicio.local = l.id ? { id: l.id, codigo: l.codigo, nombre: l.nombre } : { id: null, grupo: l.grupo, codigo: _inicio.cod, nombre: l.nombre };
       guardarLS(K_INICIO_LOCAL, _inicio.local);
       _inicio.estado();
       return _inicio.local;
