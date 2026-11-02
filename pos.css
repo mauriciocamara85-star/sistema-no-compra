@@ -363,6 +363,15 @@ button.tk-caja span::after { content: ' ＋'; font-weight: 700; color: var(--txt
 .pos-calc { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 12px; padding: 12px; margin-bottom: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
 .pos-calc p { flex: 1 1 260px; margin: 0; font-size: 13.5px; color: var(--txt-2); line-height: 1.45; }
 .pos-calc .pos-f { width: 120px; }
+/* SQL 226: crear, renombrar y dar de baja. «+ Nueva lista» con el borde punteado: agrega, no elige. */
+.pos-listas-elegir { align-items: center; }
+.chip.ls-nueva { border-style: dashed; color: var(--txt-2); }
+.ls-bajas { margin-left: 6px; font-weight: 500; color: var(--txt-3); }
+.ls-acc { display: flex; align-items: center; margin-left: auto; padding-bottom: 2px; white-space: nowrap; }
+.pos-caja .ls-nombre { margin-bottom: 12px; }
+.ls-tit { margin: 0 0 6px; font: 600 11.5px/1.25 var(--sans); color: var(--txt-2); }
+#nlDe { margin-bottom: 6px; }
+#nlDe .pos-f:first-child { flex: 1 1 100%; width: auto; }   /* el nombre entero de la lista; el porcentaje y el redondeo, abajo */
 
 /* Las promociones. */
 .pos-promos { display: grid; gap: 8px; }

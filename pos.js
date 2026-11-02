@@ -383,6 +383,7 @@
                                              /pos_nc_hacer|pos_notas_credito/.test(m) ? '205 (las notas de crédito)' :
                                              /pos_remitos_producto/.test(m) ? '204 (buscar un producto en los remitos)' :
                                              /pos_articul/.test(m) ? '202 (los productos)' :
+                                             /pos_lista_(crear|renombrar|baja|reactivar)|pos_listas_bajas/.test(m) ? '226 (crear y dar de baja listas de precios)' :
                                              /pos_lista_(subir|aumentar|rubros|cambios|deshacer)/.test(m) ? '201 (subir y aumentar las listas de precios)' :
                                              /pos_giftcard/.test(m) ? '200 (las gift cards en el POS)' :
                                              /pos_client|pos_cli_/.test(m) ? '197 (los clientes)' :
@@ -5855,23 +5856,32 @@
     if (!li) { c.innerHTML = cabeza('Listas de precios', '') + '<div class="pos-cartel">No hay listas de precios.</div>'; return; }
     var base = li.base_id ? listaPorId(li.base_id) : null;
     var usan = S.ini.locales.filter(function (l) { return l.lista_id === li.id; }).map(nombreLocal);
+    var quien = usan.length ? 'La usan: ' + esc(usan.join(', ')) + '.' : 'Ninguna sucursal la usa todavía: se elige en Sucursales.';
+    /* SQL 226: cambiarle el nombre y darla de baja (crear una nueva, «+ Nueva lista», va con las listas). */
+    var acc = '<div class="ls-acc"><button type="button" class="pos-link" id="lsRenombrar">Cambiar el nombre</button>' +
+              '<button type="button" class="pos-link" id="lsBaja">Dar de baja</button></div>';
     if (S.subida && S.subida.li !== li.id) S.subida = null;
     c.innerHTML = cabeza('Listas de precios', 'Cada sucursal usa una (se elige en Sucursales). Un precio cambiado acá vale desde la próxima venta.',
         base ? '' : '<label class="btn btn-sec btn-chico">Subir lista de BlueSoft…<input type="file" id="lsArchivo" accept=".xlsx,.csv,.txt" hidden></label>' +
                     '<button type="button" class="btn btn-sec btn-chico" id="lsAumentar">Aumentar precios…</button>') +
       '<div class="pos-listas-elegir" role="group" aria-label="Lista">' + S.ini.listas.map(function (l) {
-        return '<button type="button" class="chip' + (l.id === li.id ? ' sel' : '') + '" data-lista="' + l.id + '">' + esc(l.nombre) + '</button>'; }).join('') + '</div>' +
+        return '<button type="button" class="chip' + (l.id === li.id ? ' sel' : '') + '" data-lista="' + l.id + '">' + esc(l.nombre) + '</button>'; }).join('') +
+        '<button type="button" class="chip ls-nueva" id="lsNueva">+ Nueva lista</button><span id="lsBajasZona"></span></div>' +
       (base ? '<div class="pos-calc"><p>Se calcula sola de <b>' + esc(base.nombre) + '</b>: ' + (Number(li.ajuste) < 0 ? String(-li.ajuste).replace('.', ',') + ' % menos' : String(li.ajuste).replace('.', ',') + ' % más') +
-          ', redondeado a $' + miles(li.redondeo) + '. Un precio cambiado a mano en esta lista pisa al calculado.' + (usan.length ? ' La usan: ' + esc(usan.join(', ')) + '.' : '') + '</p>' +
+          ', redondeado a $' + miles(li.redondeo) + '. Un precio cambiado a mano en esta lista pisa al calculado. ' + quien + '</p>' +
           campo('', 'Porcentaje', '<input type="text" inputmode="decimal" id="lsAjuste" value="' + String(li.ajuste).replace('.', ',') + '">') +
           campo('', 'Redondeo ($)', '<input type="number" id="lsRedondeo" min="1" max="10000" value="' + li.redondeo + '">') +
-          '<button type="button" class="btn btn-sec btn-chico" id="lsGuardar">Guardar</button></div>'
-        : '<div class="pos-calc"><p>Los precios propios de esta lista' + (usan.length ? '. La usan: ' + esc(usan.join(', ')) : '') + '.</p></div>' +
+          '<button type="button" class="btn btn-sec btn-chico" id="lsGuardar">Guardar</button>' + acc + '</div>'
+        : '<div class="pos-calc"><p>Los precios propios de esta lista. ' + quien + '</p>' + acc + '</div>' +
           '<div id="lsSubida"></div><div id="lsCambios"></div>') +
       '<div class="pos-filtros">' + campo('ancho', 'Buscar', '<input type="search" id="lsBuscar" placeholder="Código o nombre" autocomplete="off">') +
         '<label class="pos-check"><input type="checkbox" id="lsSolo" checked> Sólo los que tienen precio</label></div>' +
       '<div id="lsTabla"><p class="cargando">Cargando…</p></div>';
     c.querySelectorAll('[data-lista]').forEach(function (b) { b.onclick = function () { S.listaSel = Number(b.getAttribute('data-lista')); verListas(); }; });
+    $('lsNueva').onclick = function () { if (con226()) nuevaLista(); };
+    $('lsRenombrar').onclick = function () { if (con226()) renombrarLista(li); };
+    $('lsBaja').onclick = function () { if (con226()) bajaLista(li); };
+    pintarBajas();
     if (!base) {
       $('lsArchivo').onchange = function () {
         var f = this.files && this.files[0];
@@ -5909,7 +5919,8 @@
       });
       var total = filas.length;
       filas = filas.slice(0, 300);
-      $('lsTabla').innerHTML = !total ? '<div class="pos-cartel">' + (q ? 'No hay productos con «' + esc(q) + '».' : 'Esta lista no tiene precios todavía.') + '</div>' :
+      $('lsTabla').innerHTML = !total ? '<div class="pos-cartel">' + (q ? 'No hay productos con «' + esc(q) + '».' :
+          'Esta lista no tiene precios todavía' + (base || !solo ? '.' : ': subí la lista de BlueSoft, o destildá «Sólo los que tienen precio» para ponerlos a mano.')) + '</div>' :
         '<div class="pos-marco-tabla"><table class="pos-tabla"><thead><tr><th>Código</th><th>Producto</th><th>Rubro</th><th class="n">Precio</th>' + (base ? '<th>De dónde sale</th>' : '') + '<th></th></tr></thead><tbody>' +
         filas.map(function (f) {
           var x = m[f.cod];
@@ -5953,6 +5964,177 @@
         return asegurarPrecios(li.id).then(pintarTabla);
       }).catch(function (e) { avisar('err', mensajeDe(e)); });
     }
+  }
+
+  /* ── Crear, renombrar y dar de baja una lista (SQL 226) ──
+     Mauricio (1/11): "una sección para crear lista de precios… si quiero modificar una, cambiarle el nombre, crear
+     una". La nueva sale calculada de otra (como los locales de calle), copiada de otra o vacía. Dar de baja no
+     borra nada (las ventas guardan con qué lista se hicieron) y se vuelve a usar desde «Dadas de baja». */
+  var SIN_226 = 'Todavía falta correr el SQL 226 (crear y dar de baja listas de precios) en Supabase.';
+  function con226() { if (S.sin226) avisar('err', SIN_226); return !S.sin226; }
+  /** Después de crear, renombrar o dar de baja: las listas de nuevo (pos_inicio), y las dadas de baja cuando se vean. */
+  function recargarListas() {
+    S.listasBajas = null;
+    return llamar('pos_inicio').then(function (ini) { S.ini = ini; });
+  }
+  function nombreRepetido(nombre, salvo) {
+    var n = nombre.toLowerCase();
+    return S.ini.listas.concat(S.listasBajas || []).filter(function (l) { return l.id !== salvo && l.nombre.toLowerCase() === n; })[0] || null;
+  }
+  function limpiarNombre(s) { return String(s || '').replace(/\s+/g, ' ').trim(); }
+  /** «Dadas de baja (n)», al lado de las listas, si hay alguna. Se pregunta una vez; sin el SQL 226 no sale. */
+  function pintarBajas() {
+    var z = $('lsBajasZona');
+    if (!z) return;
+    if (S.listasBajas) {
+      z.innerHTML = S.listasBajas.length ? '<button type="button" class="pos-link ls-bajas" id="lsBajas">Dadas de baja (' + S.listasBajas.length + ')</button>' : '';
+      if ($('lsBajas')) $('lsBajas').onclick = verBajas;
+      return;
+    }
+    if (S.sin226 || S.bajasPidiendo) return;
+    S.bajasPidiendo = true;
+    llamar('pos_listas_bajas').then(function (r) { S.bajasPidiendo = false; S.listasBajas = r || []; pintarBajas(); },
+      function (e) { S.bajasPidiendo = false; if (sinFuncion(e)) S.sin226 = true; });
+  }
+
+  function nuevaLista() {
+    var OPS = [['calculada', 'Calculada de otra', 'Con un porcentaje, como «Locales de calle». Si la otra cambia, ésta cambia sola.'],
+               ['copia', 'Copia de otra', 'Arranca con los mismos precios y después va por su cuenta: se cambia con «Aumentar precios» o a mano.'],
+               ['vacia', 'Vacía', 'Sin precios: se llena con «Subir lista de BlueSoft» o a mano.']];
+    var caja = ventana('<h3 id="posVentTit">Nueva lista de precios</h3>' +
+      '<p class="pos-bajada">No cambia ningún precio de venta hasta que una sucursal la use (se elige en Sucursales).</p>' +
+      campo('ancho ls-nombre', 'Nombre', '<input type="text" id="nlNombre" maxlength="60" autocomplete="off" placeholder="Por ejemplo: Outlet" autofocus>') +
+      '<p class="ls-tit">¿De dónde salen los precios?</p>' +
+      '<div class="df-ops" role="radiogroup" aria-label="De dónde salen los precios">' + OPS.map(function (o, i) {
+        return '<label class="df-op"><input type="radio" name="nlTipo" value="' + o[0] + '"' + (i ? '' : ' checked') + '><span><b>' + o[1] + '</b><small>' + o[2] + '</small></span></label>';
+      }).join('') + '</div>' +
+      '<div class="ls-aum" id="nlDe">' + campo('', 'De la lista', '<select id="nlLista"></select>') +
+        campo('ls-pct', 'Porcentaje', '<input type="text" inputmode="decimal" id="nlPct" placeholder="−15" autocomplete="off">', ' id="nlCampoPct"') +
+        campo('', 'Redondeo', '<select id="nlRed">' + opciones(REDONDEOS, 100) + '</select>', ' id="nlCampoRed"') + '</div>' +
+      '<p class="pos-ayuda" id="nlAyuda"></p>' +
+      '<div class="pos-error" id="nlError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="nlOk">Crear la lista</button></div>');
+    function q(id) { return caja.querySelector('#' + id); }
+    function tipo() { return (caja.querySelector('input[name="nlTipo"]:checked') || {}).value; }
+    function ajustar() {
+      var t = tipo(), antes = q('nlLista').value;
+      /* La calculada sale de una con precios propios (la cuenta es de un solo paso); la copia, de cualquiera. */
+      var de = S.ini.listas.filter(function (l) { return t !== 'calculada' || !l.base_id; });
+      q('nlLista').innerHTML = opciones(de.map(function (l) { return [l.id, l.nombre]; }), de.some(function (l) { return String(l.id) === antes; }) ? antes : S.listaSel);
+      q('nlDe').hidden = t === 'vacia';
+      q('nlCampoPct').hidden = q('nlCampoRed').hidden = t !== 'calculada';
+      q('nlAyuda').textContent = t === 'calculada' ? 'Para menos, con el signo menos: −15 es un 15 % menos que la otra (como «Locales de calle»).' :
+        t === 'copia' ? 'Se copian los precios que tiene hoy esa lista; los cambios que se le hagan después no pasan a la nueva.' :
+        'Después, en la lista: «Subir lista de BlueSoft…» o «Cambiar» en cada producto.';
+      errorEn(caja, 'nlError', '');
+    }
+    caja.querySelectorAll('input[name="nlTipo"]').forEach(function (x) { x.onchange = ajustar; });
+    ajustar();
+    q('nlNombre').onkeydown = q('nlPct').onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); q('nlOk').click(); } };
+    q('nlOk').onclick = function () {
+      var bt = this, t = tipo(), nombre = limpiarNombre(q('nlNombre').value), pct = leerPorcentaje(q('nlPct').value);
+      var de = t === 'vacia' ? null : Number(q('nlLista').value) || null, rep = nombre && nombreRepetido(nombre);
+      var err = !nombre ? 'Escribí el nombre de la lista.' : nombre.length > 60 ? 'El nombre es demasiado largo (hasta 60 letras).' :
+        rep ? 'Ya hay una lista que se llama «' + rep.nombre + '»' + (listaPorId(rep.id) ? '' : ' (está dada de baja: se puede volver a usar)') + '.' :
+        t !== 'vacia' && !de ? 'Elegí de qué lista salen los precios.' :
+        t === 'calculada' && !(pct > -100 && pct <= 300) ? 'Escribí el porcentaje: de −99 a 300 (para menos, con el signo menos: −15).' : '';
+      if (!errorEn(caja, 'nlError', err)) return;
+      bt.disabled = true;
+      bt.textContent = 'Creando…';
+      llamar('pos_lista_crear', { p_nombre: nombre, p_tipo: t, p_de: de, p_ajuste: t === 'calculada' ? pct : null,
+                                  p_redondeo: t === 'calculada' ? Number(q('nlRed').value) : null }).then(function (r) {
+        return recargarListas().then(function () {
+          cerrarVentana();
+          S.listaSel = r.id;
+          verListas();
+          avisar('ok', 'Listo: «' + r.nombre + '» creada' + (r.copiados ? ' con ' + (r.copiados === 1 ? '1 precio' : num(r.copiados) + ' precios') : '') +
+                       '. Para usarla, elegila en Sucursales.');
+        });
+      }).catch(function (e) {
+        bt.disabled = false;
+        bt.textContent = 'Crear la lista';
+        errorEn(caja, 'nlError', esDeRed(e) ? 'No se pudo crear: sin conexión. Probá de nuevo.' : mensajeDe(e));
+        /* Si ya existe (la creó otro, o se creó y no llegó la respuesta), que aparezca. */
+        if (/Ya hay una lista/.test(mensajeDe(e))) recargarListas().then(verListas, function () {});
+      });
+    };
+  }
+
+  function renombrarLista(li) {
+    /* «Subir lista de BlueSoft» elige sola, en un Excel con varias listas, la del número del nombre (listaDelExcel). */
+    var nro = !li.base_id && (li.nombre.match(/(^|\D)(\d+)(\D|$)/) || [])[2];
+    var caja = ventana('<h3 id="posVentTit">Cambiar el nombre</h3>' +
+      '<p class="pos-bajada">De «' + esc(li.nombre) + '». Las sucursales que la usan siguen con ella y los precios no cambian.</p>' +
+      campo('ancho ls-nombre', 'Nombre nuevo', '<input type="text" id="rnNombre" maxlength="60" autocomplete="off" value="' + esc(li.nombre) + '" autofocus>') +
+      '<p class="pos-ayuda" id="rnAyuda"></p>' +
+      '<div class="pos-error" id="rnError"></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cancelar</button>' +
+        '<button type="button" class="btn btn-pri btn-chico" id="rnOk">Guardar</button></div>');
+    var inp = caja.querySelector('#rnNombre');
+    setTimeout(function () { inp.select(); }, 0);
+    inp.oninput = function () {
+      var sin = nro && !new RegExp('(^|\\D)' + nro + '(\\D|$)').test(inp.value);
+      caja.querySelector('#rnAyuda').textContent = sin ? 'Ojo: «Subir lista de BlueSoft» usa el ' + nro + ' del nombre para encontrar sola esta lista en el Excel. ' +
+        'Sin el número, cuando el Excel traiga varias listas, te va a preguntar cuál usar.' : '';
+      errorEn(caja, 'rnError', '');
+    };
+    inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); caja.querySelector('#rnOk').click(); } };
+    caja.querySelector('#rnOk').onclick = function () {
+      var bt = this, nombre = limpiarNombre(inp.value), rep = nombre && nombreRepetido(nombre, li.id);
+      if (nombre === li.nombre) { cerrarVentana(); return; }
+      if (!errorEn(caja, 'rnError', !nombre ? 'Escribí el nombre de la lista.' : rep ? 'Ya hay una lista que se llama «' + rep.nombre + '».' : '')) return;
+      bt.disabled = true;
+      llamar('pos_lista_renombrar', { p_lista: li.id, p_nombre: nombre }).then(function (n) {
+        return recargarListas().then(function () {
+          cerrarVentana();
+          verListas();
+          avisar('ok', 'Listo: ahora se llama «' + n + '».');
+        });
+      }).catch(function (e) { bt.disabled = false; errorEn(caja, 'rnError', esDeRed(e) ? 'No se pudo guardar: sin conexión. Probá de nuevo.' : mensajeDe(e)); });
+    };
+  }
+
+  function bajaLista(li) {
+    var usan = S.ini.locales.filter(function (l) { return l.lista_id === li.id; }).map(nombreLocal);
+    var hijas = S.ini.listas.filter(function (l) { return l.base_id === li.id; }), n = hijas.length;
+    if (usan.length) { avisar('err', 'No se puede dar de baja: la usan ' + usan.join(', ') + '. Primero pasá esas sucursales a otra lista en Sucursales.'); return; }
+    if (n) {
+      avisar('err', '«' + hijas.map(function (l) { return l.nombre; }).join('» y «') + '» se calcula' + (n > 1 ? 'n' : '') + ' de esta: primero da' + (n > 1 ? 'las' : 'la') + ' de baja.');
+      return;
+    }
+    if (S.ini.listas.length < 2) { avisar('err', 'Tiene que quedar al menos una lista.'); return; }
+    if (!confirm('¿Dar de baja «' + li.nombre + '»? Deja de aparecer acá y en Sucursales, pero no se borra nada: se puede volver a usar desde «Dadas de baja».')) return;
+    llamar('pos_lista_baja', { p_lista: li.id }).then(function () { return recargarListas(); }).then(function () {
+      S.listaSel = null;
+      verListas();
+      avisar('ok', 'Listo: «' + li.nombre + '» quedó dada de baja.');
+    }).catch(function (e) { avisar('err', mensajeDe(e)); });
+  }
+
+  function verBajas() {
+    var todas = S.ini.listas.concat(S.listasBajas || []);
+    function nombreDe(id) { var l = todas.filter(function (x) { return x.id === id; })[0]; return l ? l.nombre : ''; }
+    var caja = ventana('<h3 id="posVentTit">Listas dadas de baja</h3>' +
+      '<p class="pos-bajada">No aparecen en Sucursales. Al volver a usarla, la lista sigue con los precios que tenía.</p>' +
+      '<div class="pos-marco-tabla"><table class="pos-tabla"><tbody>' + (S.listasBajas || []).map(function (l) {
+        return '<tr data-id="' + l.id + '"><td><b>' + esc(l.nombre) + '</b></td><td class="apagado">' +
+          (l.base_id ? 'Calculada de «' + esc(nombreDe(l.base_id)) + '»' : l.propios === 1 ? '1 precio' : num(l.propios) + ' precios') + '</td>' +
+          '<td class="pos-acc"><button type="button" class="pos-link" data-volver>Volver a usar</button></td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<div class="pos-pie"><button type="button" class="btn btn-sec btn-chico" data-cerrar>Cerrar</button></div>');
+    caja.querySelector('tbody').onclick = function (e) {
+      var b = e.target.closest('[data-volver]'), tr = b && b.closest('tr[data-id]');
+      if (!tr) return;
+      var id = Number(tr.getAttribute('data-id')), nom = nombreDe(id);
+      b.disabled = true;
+      llamar('pos_lista_reactivar', { p_lista: id }).then(function () { return recargarListas(); }).then(function () {
+        cerrarVentana();
+        S.listaSel = id;
+        verListas();
+        avisar('ok', 'Listo: «' + nom + '» se puede usar de nuevo. Para que la use una sucursal, elegila en Sucursales.');
+      }).catch(function (er) { b.disabled = false; avisar('err', mensajeDe(er)); });
+    };
   }
 
   /* ── Subir la lista de BlueSoft: leer el Excel, mostrar qué cambia y aplicarlo ── */

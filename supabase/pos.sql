@@ -8485,3 +8485,146 @@ end $$;
 
 revoke all on function pos_fichero_qr2_oficina(uuid) from public, anon;
 grant execute on function pos_fichero_qr2_oficina(uuid) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 226 (01/11/2026) · CREAR, RENOMBRAR Y DAR DE BAJA LAS LISTAS DE PRECIOS
+--
+--  Mauricio (1/11), en Gestión → Listas de precios: "Tendríamos que tener acá
+--  una sección para crear lista de precios, ¿no? Si quiero modificar una,
+--  cambiarle el nombre, crear una." Hasta acá las dos listas (la 100 y la de
+--  los locales de calle) se habían creado desde la base.
+--  · Una lista nueva sale de una de tres maneras: calculada de otra con un
+--    porcentaje y un redondeo (como los locales de calle), copia de otra
+--    (arranca con los mismos precios y después va por su cuenta; de una
+--    calculada se copian los precios calculados) o vacía (se llena con
+--    «Subir lista de BlueSoft» o a mano). La base de una calculada es siempre
+--    una lista con precios propios: pos_precios calcula un solo nivel.
+--  · Dar de baja no borra: las ventas, los cambios y los cambios en bloque
+--    guardan con qué lista se hicieron. No se puede mientras una sucursal la
+--    use u otra lista se calcule de ella, ni dejar sin listas. Se vuelve a
+--    usar con pos_lista_reactivar.
+--  · El nombre no se repite (sin importar mayúsculas), tampoco con las dadas
+--    de baja.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* El nombre de una lista, sin espacios de más: de 1 a 60 letras y que no lo tenga otra (ni una dada de baja). */
+create or replace function pos_lista_nombre_(p_nombre text, p_lista int) returns text
+language plpgsql stable security definer set search_path = public as $$
+declare n text := regexp_replace(trim(coalesce(p_nombre, '')), '\s+', ' ', 'g'); o pos_listas;
+begin
+  if n = '' then raise exception 'Escribí el nombre de la lista.'; end if;
+  if length(n) > 60 then raise exception 'El nombre es demasiado largo (hasta 60 letras).'; end if;
+  select * into o from pos_listas where lower(nombre) = lower(n) and id is distinct from p_lista limit 1;
+  if found then
+    raise exception 'Ya hay una lista que se llama «%»%.', o.nombre,
+      case when o.activo then '' else ' (está dada de baja: se puede volver a usar)' end;
+  end if;
+  return n;
+end $$;
+
+/* Una lista nueva. p_tipo: 'calculada' (de p_de, que tiene que tener precios propios, con p_ajuste % y
+   p_redondeo), 'copia' (los precios de p_de; si p_de se calcula de otra, los calculados) o 'vacia'.
+   Devuelve su id, el nombre como quedó y cuántos precios copió. */
+create or replace function pos_lista_crear(p_nombre text, p_tipo text, p_de int, p_ajuste numeric, p_redondeo int) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare n text; d pos_listas; v_id int; v_n int := 0;
+begin
+  perform pos_permiso('gestion');
+  n := pos_lista_nombre_(p_nombre, null);
+  if p_tipo is null or p_tipo not in ('calculada', 'copia', 'vacia') then raise exception 'Elegí de dónde salen los precios.'; end if;
+  if p_tipo <> 'vacia' then
+    select * into d from pos_listas where id = p_de and activo;
+    if not found then raise exception 'Elegí de qué lista salen los precios.'; end if;
+  end if;
+  if p_tipo = 'calculada' then
+    if d.base_id is not null then raise exception '«%» ya se calcula de otra: elegí una lista con precios propios.', d.nombre; end if;
+    if p_ajuste is null or p_ajuste <= -100 or p_ajuste > 300 then raise exception 'El porcentaje no es válido.'; end if;
+    if p_redondeo is null or p_redondeo < 1 or p_redondeo > 10000 then raise exception 'El redondeo no es válido.'; end if;
+  end if;
+  insert into pos_listas (nombre, base_id, ajuste, redondeo)
+  values (n, case when p_tipo = 'calculada' then d.id end,
+          case when p_tipo = 'calculada' then round(p_ajuste, 2) else 0 end,
+          case when p_tipo = 'calculada' then p_redondeo else 1 end)
+  returning id into v_id;
+  if p_tipo = 'copia' then
+    /* Los mismos precios que ve la venta en p_de (la cuenta de pos_precios). */
+    insert into pos_precios (lista_id, codigo, precio, actualizado_por)
+    select v_id, x.codigo, x.precio, orden_yo_id()
+      from (select coalesce(p.codigo, b.codigo) codigo,
+                   coalesce(p.precio, round(b.precio * (1 + d.ajuste / 100) / d.redondeo) * d.redondeo) precio
+              from (select codigo, precio from pos_precios where lista_id = d.id) p
+              full join (select codigo, precio from pos_precios where lista_id = d.base_id) b on b.codigo = p.codigo) x
+     where x.precio is not null;
+    get diagnostics v_n = row_count;
+  end if;
+  return jsonb_build_object('id', v_id, 'nombre', n, 'copiados', v_n);
+end $$;
+
+/* Cambiarle el nombre a una lista. Devuelve el nombre como quedó. */
+create or replace function pos_lista_renombrar(p_lista int, p_nombre text) returns text
+language plpgsql volatile security definer set search_path = public as $$
+declare n text;
+begin
+  perform pos_permiso('gestion');
+  if not exists (select 1 from pos_listas where id = p_lista and activo) then raise exception 'No existe esa lista de precios.'; end if;
+  n := pos_lista_nombre_(p_nombre, p_lista);
+  update pos_listas set nombre = n where id = p_lista;
+  return n;
+end $$;
+
+/* Dar de baja una lista: deja de aparecer en Listas de precios y en Sucursales. No se borra nada. */
+create or replace function pos_lista_baja(p_lista int) returns boolean
+language plpgsql volatile security definer set search_path = public as $$
+declare l pos_listas; v text; k int;
+begin
+  perform pos_permiso('gestion');
+  select * into l from pos_listas where id = p_lista and activo for update;
+  if not found then raise exception 'No existe esa lista de precios.'; end if;
+  select string_agg(o.nombre, ', ' order by o.nombre) into v
+    from pos_sucursales s join orden_locales o on o.id = s.local_id
+   where s.lista_id = p_lista;
+  if v is not null then raise exception 'La usan: %. Primero pasá esas sucursales a otra lista (en Sucursales).', v; end if;
+  select string_agg('«' || nombre || '»', ' y ' order by id), count(*) into v, k from pos_listas where base_id = p_lista and activo;
+  if k > 0 then
+    raise exception '% se calcula% de esta: primero da% de baja.', v, case when k > 1 then 'n' else '' end,
+      case when k > 1 then 'las' else 'la' end;
+  end if;
+  if not exists (select 1 from pos_listas where activo and id <> p_lista) then raise exception 'Tiene que quedar al menos una lista.'; end if;
+  update pos_listas set activo = false where id = p_lista;
+  return true;
+end $$;
+
+/* Volver a usar una lista dada de baja. */
+create or replace function pos_lista_reactivar(p_lista int) returns boolean
+language plpgsql volatile security definer set search_path = public as $$
+declare l pos_listas; b pos_listas;
+begin
+  perform pos_permiso('gestion');
+  select * into l from pos_listas where id = p_lista and not activo for update;
+  if not found then raise exception 'Esa lista no está dada de baja.'; end if;
+  if l.base_id is not null then
+    select * into b from pos_listas where id = l.base_id;
+    if not b.activo then
+      raise exception '«%» se calcula de «%», que está dada de baja: primero volvé a usar esa.', l.nombre, b.nombre;
+    end if;
+  end if;
+  update pos_listas set activo = true where id = p_lista;
+  return true;
+end $$;
+
+/* Las listas dadas de baja (pos_inicio trae sólo las que se usan). */
+create or replace function pos_listas_bajas() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform pos_permiso('gestion');
+  return coalesce((
+    select jsonb_agg(jsonb_build_object('id', x.id, 'nombre', x.nombre, 'base_id', x.base_id,
+                                        'propios', (select count(*) from pos_precios p where p.lista_id = x.id)) order by x.nombre)
+      from pos_listas x where not x.activo), '[]'::jsonb);
+end $$;
+
+revoke all on function pos_lista_nombre_(text, int) from public, anon, authenticated;
+revoke all on function pos_lista_crear(text, text, int, numeric, int), pos_lista_renombrar(int, text), pos_lista_baja(int),
+                       pos_lista_reactivar(int), pos_listas_bajas() from public, anon;
+grant execute on function pos_lista_crear(text, text, int, numeric, int), pos_lista_renombrar(int, text), pos_lista_baja(int),
+                          pos_lista_reactivar(int), pos_listas_bajas() to authenticated;
