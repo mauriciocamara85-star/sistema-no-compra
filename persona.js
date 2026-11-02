@@ -335,6 +335,29 @@ var persona = (function () {
     });
   }
 
+  /* "¿Querés salir del sistema VDH?" (2/11/2026): todo "No soy…" y todo
+     "Salir" pregunta antes. La sesión no se cierra sola y volver a entrar
+     pide el PIN: un toque de más en el POS no tiene que sacar al cajero.
+     Mauricio: "cuando salgas del sistema te aparezca una ventana que te
+     pregunte". Cancelar, la × o Escape es quedarse. Con el sí, la ventana
+     queda en "Saliendo…" hasta que la página se recarga sin nadie adentro. */
+  function salirPreguntando() {
+    var c = abrirVelo();
+    var y = _yo;
+    c.innerHTML = '<h2 id="ncpTit">¿Querés salir del sistema VDH?</h2>' +
+      '<p class="ncp-bajada">' + (y && y.nombre ? 'Se cierra la sesión de <b>' + txt(y.nombre) + '</b>. ' : 'Se cierra la sesión. ') +
+        'Para volver a entrar hace falta el PIN.</p>' +
+      '<div class="ncp-pie"><button type="button" class="btn btn-sec" data-no>Cancelar</button>' +
+      '<button type="button" class="btn btn-pri" data-si>Sí, salir</button></div>';
+    var no = c.querySelector('[data-no]'), si = c.querySelector('[data-si]');
+    no.onclick = cerrarVelo;
+    si.onclick = function () {
+      no.disabled = si.disabled = true;
+      si.textContent = 'Saliendo…';
+      salir().then(function () { location.reload(); });
+    };
+  }
+
   /* ════════════════════════════════════════════════════════════════════
      LA BARRA: el botón de quién entró, y lo que cada rol ve
      ════════════════════════════════════════════════════════════════════ */
@@ -426,7 +449,7 @@ var persona = (function () {
       '<p>Entraste como <b>' + txt(_yo.nombre) + '</b> (' + txt(nombreRol(_yo)) + '). Lo que podés usar está en la barra.</p>' +
       '<div class="ncp-pie"><a class="btn btn-pri" href="index.html">Ir a No Compra</a>' +
       '<button type="button" class="btn btn-sec" data-salir>No soy ' + txt(primerNombre(_yo.nombre)) + '</button></div></div>';
-    d.querySelector('[data-salir]').onclick = function () { salir().then(function () { location.reload(); }); };
+    d.querySelector('[data-salir]').onclick = salirPreguntando;
     document.body.appendChild(d);
   }
 
@@ -1175,7 +1198,7 @@ var persona = (function () {
         aviso.textContent = 'Todavía no. Pedíselo y probá de nuevo.';
       });
     };
-    c.querySelector('[data-salir]').onclick = function () { salir().then(function () { cerrarVelo(); location.reload(); }); };
+    c.querySelector('[data-salir]').onclick = salirPreguntando;
   }
 
   function abrirFicha() {
@@ -1197,11 +1220,7 @@ var persona = (function () {
         '<button type="button" class="btn btn-pri" data-salir>No soy ' + txt(primerNombre(y.nombre)) + '</button>' +
       '</div>';
     if (extra) c.querySelector('[data-extra]').onclick = function () { cerrarVelo(); extra.hacer(); };
-    c.querySelector('[data-salir]').onclick = function () {
-      var b = this;
-      b.disabled = true;
-      salir().then(function () { cerrarVelo(); location.reload(); });
-    };
+    c.querySelector('[data-salir]').onclick = salirPreguntando;
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -1255,7 +1274,7 @@ var persona = (function () {
       if (a === 'entrar') entrar();
       else if (a === 'ficha') abrirFicha();
       else if (a === 'pin') cambiarMiPin();
-      else { b.disabled = true; salir().then(function () { location.reload(); }); }
+      else salirPreguntando();
     };
   }
 
@@ -1342,6 +1361,8 @@ var persona = (function () {
     /** Cambiar el PIN de 4 por uno de 6 (el de ahora y el nuevo dos veces). */
     cambiarPin: cambiarMiPin,
     salir: salir,
+    /** El "Salir" de una pantalla: "¿Querés salir del sistema VDH?" y, con el sí, sale y recarga. */
+    salirPreguntando: salirPreguntando,
     refrescar: refrescar
   };
 })();

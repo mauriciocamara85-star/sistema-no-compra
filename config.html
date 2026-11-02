@@ -862,11 +862,9 @@
     var y = persona.yo();
     if (y) { $('sesionTxt').innerHTML = 'Entraste como <b>' + esc(y.nombre) + '</b>'; }
   }
-  /* "Salir" es "No soy yo": cierra la sesión de la persona en este aparato. */
-  function salirPin() {
-    $('btnSalirPin').disabled = true;
-    persona.salir().then(function () { location.reload(); });
-  }
+  /* "Salir" es "No soy yo": cierra la sesión de la persona en este aparato
+     (antes pregunta "¿Querés salir del sistema VDH?", 2/11/2026). */
+  function salirPin() { persona.salirPreguntando(); }
   if ($('btnSalirPin')) { $('btnSalirPin').onclick = salirPin; }
 
   /* Todas las secciones a la vez, y no la que se abre: el menú necesita el

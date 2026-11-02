@@ -217,8 +217,11 @@ function ir(solapa) {
   app.innerHTML = cabezaAdmin();
   var s = document.getElementById('selLocal');
   if (s) s.onchange = function () { if (!puedeSalir()) { s.value = _local.id; return; } elegirLocal(s.value); ir(_solapa); };
+  /* La misma ventana que el resto del sistema, "¿Querés salir del sistema VDH?" (2/11/2026);
+     la sesión es la misma, y al recargar sin nadie adentro se ve "Entrá con tu PIN". */
   document.getElementById('salir').onclick = function () {
-    if (!confirm('¿Salir? Para volver a entrar hace falta el PIN.')) return;
+    if (window.persona && persona.salirPreguntando) { persona.salirPreguntando(); return; }
+    if (!confirm('¿Querés salir del sistema VDH? Para volver a entrar hace falta el PIN.')) return;
     cerrarSesion();
     pantallaSinSesion('Saliste. Para volver, entrá de nuevo con tu PIN.');
   };

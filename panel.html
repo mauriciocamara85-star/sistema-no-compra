@@ -2225,11 +2225,9 @@
     pintarPorton();
   }
 
-  /* "Salir" es "No soy yo": cierra la sesión de la persona en este aparato. */
-  function salir() {
-    $('btnSalir').disabled = true;
-    persona.salir().then(function () { location.reload(); });
-  }
+  /* "Salir" es "No soy yo": cierra la sesión de la persona en este aparato
+     (antes pregunta "¿Querés salir del sistema VDH?", 2/11/2026). */
+  function salir() { persona.salirPreguntando(); }
 
   /* ═══ El tablero (07/10/2026) ═══════════════════════════════════════════
      Nuestro CRM. Una columna por estado, como Kommo; "Pendiente" no es un
