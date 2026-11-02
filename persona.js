@@ -1329,6 +1329,13 @@ var persona = (function () {
     } catch (e) {}
   }
 
+  /* Las PC de Mauricio, Antonella y Daniel (2/11, Mauricio: "que la próxima vez que abra en mi PC, o Anto la suya, o
+     Daniel la suya, aparezca el inicio"): la primera vez que entran a una PC (no la compu de un local, no el celular)
+     el inicio se prende solo, con la gente de Administración, y se ve esa vez. K_INICIO_AUTO: ya pasó en esta PC
+     (también si lo apagaron con ?inicio-compu=no: no vuelve solo). */
+  var INICIO_PC_DE = ['71c210ff-2811-4f34-a2b7-2f4e85e77a77', '41962154-4351-4b54-aa76-5c1f1b1c4db0', '3ea336cd-a80d-485f-b2a1-bcbe8082683c'];
+  var K_INICIO_AUTO = 'nc_inicio_auto';
+
   /* El inicio fijo de esta compu ('' si no tiene); ?inicio-compu= lo prende o lo apaga. Devuelve true si se acaba de prender. */
   var _inicioFijo = '';
   function leerInicioFijo() {
@@ -1336,13 +1343,31 @@ var persona = (function () {
     if (m) {
       var v = decodeURIComponent(m[1].replace(/\+/g, ' ')).trim().toUpperCase();
       try {
-        if (!v || v === 'NO') localStorage.removeItem(K_INICIO_COMPU);
+        if (!v || v === 'NO') { localStorage.removeItem(K_INICIO_COMPU); localStorage.setItem(K_INICIO_AUTO, '1'); }
         else { localStorage.setItem(K_INICIO_COMPU, v); recien = true; }
       } catch (e) {}
       sacarDeLaDireccion(/[?&]inicio-compu=[^&#]*/);
     }
     try { _inicioFijo = localStorage.getItem(K_INICIO_COMPU) || ''; } catch (e) {}
+    /* Con ?inicio (mirar el de un local) manda lo pedido: se prende solo otra vez. */
+    if (!m && !/[?&]inicio(?=[=&#]|$)/.test(location.search) && inicioSolo()) {
+      try {
+        localStorage.setItem(K_INICIO_AUTO, '1');
+        if (!_inicioFijo) localStorage.setItem(K_INICIO_COMPU, _inicioFijo = 'OFICINA');
+      } catch (e) {}
+      recien = true;
+    }
     return recien;
+  }
+
+  /* ¿Se prende solo ahora? Una de esas tres personas adentro, en una PC sin el inicio de un local, por primera vez. */
+  function inicioSolo() {
+    var quien = _ses && _ses.persona ? _ses.persona.id : '';
+    if (INICIO_PC_DE.indexOf(quien) < 0) return false;
+    try { if (localStorage.getItem(K_INICIO_AUTO)) return false; } catch (e) { return false; }
+    if (compuDelLocal() || (!_inicioFijo && hayInicioAca())) return false;
+    if (INICIO_PAGINAS.indexOf(pagina()) < 0 || /[?&]habilitar=/.test(location.search)) return false;
+    return !!(window.matchMedia && matchMedia('(pointer: fine) and (min-width: 900px)').matches);
   }
 
   /* El código del local para el inicio, o '' si acá no va. */
