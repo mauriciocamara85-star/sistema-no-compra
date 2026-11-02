@@ -784,12 +784,39 @@ var persona = (function () {
   var LUPA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
     '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>';
 
+  /* La de todos más la de E-commerce y Administración, que no son locales (van por su grupo): para
+     el inicio, donde Atención en una compu sin local tiene que poder encontrarse (2/11, Ale de Atención).
+     Copia las filas: la lista de todos queda guardada y la Carga la sigue usando sin los grupos. */
+  function genteConGrupos() {
+    return Promise.all([genteDeTodos(), funcion('nc_login_locales', {}).catch(function () { return []; })]).then(function (r) {
+      var lista = (r[0] || []).map(function (y) { return { p: y.p, nombre: y.nombre, locales: y.locales.slice() }; });
+      var porId = {};
+      lista.forEach(function (y) { porId[y.p.id] = y; });
+      var grupos = (r[1] || []).filter(function (l) { return !l.id && l.grupo; });
+      return Promise.all(grupos.map(function (l) {
+        return funcion('nc_login_personas', { p_local: null, p_grupo: l.grupo })
+          .then(function (g) { return { l: l, g: g || [] }; }, function () { return { l: l, g: [] }; });
+      })).then(function (por) {
+        por.forEach(function (x) {
+          var loc = { id: null, grupo: x.l.grupo, codigo: x.l.codigo || (x.l.grupo === 'oficina' ? 'OFICINA' : String(x.l.grupo).toUpperCase()), nombre: x.l.nombre };
+          x.g.forEach(function (p) {
+            var y = porId[p.id];
+            if (!y) { y = porId[p.id] = { p: p, nombre: p.nombre, locales: [] }; lista.push(y); }
+            y.locales.push(loc);
+          });
+        });
+        return lista;
+      });
+    });
+  }
+
   /* o: { local (el código de este aparato: los de acá no salen), yaEstan (los nombres de su lista),
-          titulo, bajada, volver(), ninguno: { texto, hacer() }, alElegir(x) con x = { nombre, p, locales } } */
+          titulo, bajada, volver(), ninguno: { texto, hacer() }, alElegir(x) con x = { nombre, p, locales },
+          conGrupos (también E-commerce y Administración) } */
   function pasoOtroLocal(c, o) {
     _teclas = null;
     cargando(c);
-    genteDeTodos().then(function (gente) {
+    (o.conGrupos ? genteConGrupos() : genteDeTodos()).then(function (gente) {
       if (!c.isConnected) return;
       var ya = (o.yaEstan || []).map(llano);
       var lista = gente.filter(function (x) {
@@ -1611,9 +1638,10 @@ var persona = (function () {
         c.querySelector('[data-otro]').onclick = function () {
           pasoOtroLocal(c, {
             local: local.codigo,
-            titulo: 'Vengo de otro local',
+            titulo: local.grupo ? 'Buscá tu nombre' : 'Vengo de otro local',
             bajada: 'Buscate por tu nombre o por tu local y entrá con tu PIN de siempre.',
             volver: inicioQuien,
+            conGrupos: true,
             alElegir: function (x) { inicioElegir(x.locales[0], x.p); }
           });
         };
