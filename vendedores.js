@@ -565,7 +565,9 @@ function armarBarra() {
     return '<button class="pestana" data-pestana="' + p[0] + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
            'stroke-linecap="round" stroke-linejoin="round">' + ICONO[p[0]] + '</svg>' + p[1] + '</button>';
   }).join('') + '</nav>';
-  barra.querySelectorAll('.pestana').forEach(function (b) { b.onclick = function () { irA(b.dataset.pestana); }; });
+  barra.querySelectorAll('.pestana').forEach(function (b) {
+    b.onclick = function () { irA(b.dataset.pestana === 'papeles' ? papelAlEntrar() || 'papeles' : b.dataset.pestana); };
+  });
 }
 
 function marcarPestana(p) {
@@ -843,8 +845,25 @@ function engancharCabeza() {
   if (a) a.onclick = function () { apagarCamara(); cerrarCapas(); pantallaPerfil(); };
   /* Las pestañitas de Papeles (Caja · Certificados · Apercibimientos). */
   app.querySelectorAll('.pestanitas [data-papel]').forEach(function (x) { x.onclick = function () { if (x.dataset.papel !== _papel || !enPapel(_papel)) irA(x.dataset.papel); }; });
+  desplazarPestanitas(app.querySelector('.pestanitas.papeles-sub'));
   pintarPuntoCaja();
   contarSinLeer();
+}
+
+/* Las pestañitas de Registro con la letra agrandada (2/11, el árbitro: a 360 px con la letra al 130 % se leía
+   «Certifica…» y «Apercibi…»): ya no se cortan, se deslizan de costado. La que está a la vista queda en el medio, y una
+   sombra en el borde avisa que hay más. Con la letra normal entran enteras y no cambia nada. */
+function desplazarPestanitas(ps) {
+  if (!ps) return;
+  var marcar = function () {
+    var max = ps.scrollWidth - ps.clientWidth;
+    ps.classList.toggle('mas-izq', max > 1 && ps.scrollLeft > 1);
+    ps.classList.toggle('mas-der', max > 1 && ps.scrollLeft < max - 1);
+  };
+  var act = ps.querySelector('.activa');
+  if (act && ps.scrollWidth > ps.clientWidth + 1) ps.scrollLeft = act.offsetLeft + act.offsetWidth / 2 - ps.clientWidth / 2;
+  marcar();
+  ps.onscroll = marcar;
 }
 
 /* Avisos y el Perfil del vendedor se abren desde arriba, no son pestañas:
@@ -970,7 +989,9 @@ function pantallaHoy() {
          '&correccion_pedida=is.false&revisado_en=gte.' + new Date(Date.now() - 2 * 864e5).toISOString() +
          '&or=(comentario.not.is.null,marcas.not.is.null)&order=revisado_en.desc&limit=3').catch(nada),
     /* SQL 159: la vidriera de la semana (sin el 159, null: es libre y no va en Hoy). */
-    per.local_id ? llamar('orden_vidriera_semana', { p_local: per.local_id }).catch(nada) : Promise.resolve(null)
+    per.local_id ? llamar('orden_vidriera_semana', { p_local: per.local_id }).catch(nada) : Promise.resolve(null),
+    /* Fichar (SQL 218): lo de hoy, para el renglón de fichar (sin el SQL o sin señal, no va el renglón). */
+    fichaTodosLosDias() ? llamar('pos_fichero_mio', {}, 15000).catch(nada) : Promise.resolve(null)
   ]).then(function (r) {
     if (_pestana !== 'hoy') return;
     var incompleto = [r[3], r[4], r[6], r[7]].indexOf(FALLO) > -1, semanaFallo = r[1] === FALLO;
@@ -979,6 +1000,7 @@ function pantallaHoy() {
     dibujarHoy({
       controles: r[0] || [], semana: (r[1] || [])[0], sinModulos: Array.isArray(r[2]) && r[2].length === 0, desafio: r[3],
       tareas: r[4] || [], avisos: r[5], incompleto: incompleto, semanaFallo: semanaFallo, sugerencias: r[8] || [], vidriera: r[9],
+      fichero: r[10] ? guardarFichaHoy(r[10].marcas) : null,
       caja: r[7] ? { activa: !!(r[7][0] && r[7][0][0] && r[7][0][0].caja_activa), hoy: (r[7][1] || [])[0] || null } : null,
       testigoPend: testigos.filter(function (s) { return !s.cargada_en; })[0] || null,
       testigoHecho: testigos.filter(function (s) { return s.cargada_en; })[0] || null
@@ -1031,11 +1053,25 @@ function festejarUnaVez(clave, texto) {
   setTimeout(function () { festejar(texto); }, Math.max(300, 4600 - (Date.now() - _ultimoFestejo)));
 }
 
+/** Un renglón de la lista de Hoy (también el de fichar en Revisar, para el encargado). */
+function htmlItemHoy(f) {
+  var estado = f.hecho ? 'Hecho: ' : f.perdido ? 'No se hizo: ' : f.luego ? 'Más tarde: ' : 'Falta: ';
+  return '<button class="item-hoy' + (f.hecho ? ' hecho' : '') + (f.perdido ? ' perdido' : '') + (f.luego ? ' luego' : '') + (f.alerta && !f.hecho ? ' alerta' : '') + '" id="' + f.id + '"' +
+    ' aria-label="' + esc(estado + f.titulo + '. ' + f.texto) + '">' +
+    '<i class="tilde" aria-hidden="true">' + (f.hecho ? '✓' : f.perdido ? '✕' : '') + '</i>' +
+    '<span><b>' + esc(f.titulo) + '</b><small>' + esc(f.texto) + '</small></span><em aria-hidden="true">›</em></button>';
+}
+
 /* Hoy (13/10, pedido de Mauricio): sólo lo que hay que hacer hoy, como una
    lista para ir tachando; cada renglón lleva a su lugar. Aparte, la tarjeta
    de colores "Tu orden esta semana". Con todo hecho, el festejo. */
 function dibujarHoy(x) {
   var hoy = hoyAR(), filas = [];
+
+  /* Fichar (2/11): sin fichar, arriba de todo (es lo primero al llegar). Con la entrada, al final y «más tarde» (la
+     salida es al irse); con la salida, tachado. */
+  var fichaFila = x.fichero ? filaFichar(x.fichero) : null;
+  if (fichaFila && !fichaFila.luego && !fichaFila.hecho) filas.push(fichaFila);
 
   var total = x.controles.length;
   var pend = x.controles.filter(function (c) { return c.estado === 'pendiente'; });
@@ -1128,6 +1164,7 @@ function dibujarHoy(x) {
     else if (horaAR() >= 19) filas.push({ id: 'hCaja', titulo: 'Caja del día', hecho: false, texto: 'Las fotos del cierre y los números del día.' });
     else filas.push({ id: 'hCaja', titulo: 'Caja del día', luego: true, texto: 'Desde las 19 h: las fotos del cierre y el efectivo.' });
   }
+  if (fichaFila && (fichaFila.luego || fichaFila.hecho)) filas.push(fichaFila);
 
   var faltan = filas.filter(function (f) { return !f.hecho && !f.perdido && !f.luego; }).length;
   var perdidos = filas.filter(function (f) { return f.perdido; }).length;
@@ -1144,13 +1181,7 @@ function dibujarHoy(x) {
   }
   if (filas.length) {
     html += '<div class="seccion">' + titulo + '</div>' +
-      '<div class="lista-hoy">' + filas.map(function (f) {
-        var estado = f.hecho ? 'Hecho: ' : f.perdido ? 'No se hizo: ' : f.luego ? 'Más tarde: ' : 'Falta: ';
-        return '<button class="item-hoy' + (f.hecho ? ' hecho' : '') + (f.perdido ? ' perdido' : '') + (f.luego ? ' luego' : '') + (f.alerta && !f.hecho ? ' alerta' : '') + '" id="' + f.id + '"' +
-          ' aria-label="' + esc(estado + f.titulo + '. ' + f.texto) + '">' +
-          '<i class="tilde" aria-hidden="true">' + (f.hecho ? '✓' : f.perdido ? '✕' : '') + '</i>' +
-          '<span><b>' + esc(f.titulo) + '</b><small>' + esc(f.texto) + '</small></span><em aria-hidden="true">›</em></button>';
-      }).join('') + '</div>';
+      '<div class="lista-hoy">' + filas.map(htmlItemHoy).join('') + '</div>';
   } else if (!x.sinModulos && !x.incompleto) {
     html += '<div class="vacio">Hoy no tenés nada pendiente.</div>';
   }
@@ -1173,7 +1204,8 @@ function dibujarHoy(x) {
     hTestigoVideo: function () { pantallaTestigo(x.testigoHecho.id); },
     hTareas: function () { irA('tareas'); },
     hTest: function () { pantallaDesafio(d); },
-    hCaja: function () { irA('caja'); }
+    hCaja: function () { irA('caja'); },
+    hFichar: function () { tocarFilaFichar(x.fichero, 'hoy'); }
   };
   Object.keys(ir).forEach(function (k) { var b = document.getElementById(k); if (b) b.onclick = ir[k]; });
   var b;
@@ -1181,8 +1213,8 @@ function dibujarHoy(x) {
   if ((b = document.getElementById('reintentarHoy'))) b.onclick = pantallaHoy;
   app.querySelectorAll('[data-sug]').forEach(function (s) { s.onclick = function () { verRevision(x.sugerencias[+s.dataset.sug].id); }; });
   /* Con todo lo tuyo hecho (y todo cargado): el festejo, una vez por día. La
-     caja no cuenta: la cierra uno solo y a la noche (si no, casi nadie lo vería). */
-  var propias = filas.filter(function (f) { return f.id !== 'hCaja'; });
+     caja no cuenta: la cierra uno solo y a la noche (si no, casi nadie lo vería). Fichar tampoco: la salida es al irse. */
+  var propias = filas.filter(function (f) { return f.id !== 'hCaja' && f.id !== 'hFichar'; });
   if (propias.length && !x.incompleto && propias.every(function (f) { return f.hecho; })) {
     festejarUnaVez('dia-' + hoy, filas.every(function (f) { return f.hecho; }) ? '¡Terminaste todo lo de hoy!' : '¡Terminaste lo tuyo de hoy!');
   }
@@ -2678,7 +2710,7 @@ function pantallaCaja() {
   adentro();
   marcarPestana('papeles');
   _papel = 'caja';
-  app.innerHTML = cabeza('Caja') + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
+  app.innerHTML = cabeza('Registro') + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   if (yo().local_id) {
     /* select=*: así también trae caja_ia (SQL 134) sin romperse si todavía no está. */
@@ -2717,7 +2749,7 @@ function dibujarCaja(caja, fotos, corrige) {
       '<p class="bajada">' + esc((caja.local_nombre ? caja.local_nombre + ' · ' : '') + (_cajaIA
         ? 'Si se corrigió en el sistema, sacá la foto del cierre nuevo: la IA carga los números. Si no, corregilos a mano. Al guardar queda anotado quién cambió qué.'
         : 'Corregí los números a mano (si se corrigió en el sistema, sacá también la foto del cierre nuevo). Al guardar queda anotado quién cambió qué.')) + '</p>'
-    : cabeza('Caja del ' + diaMes(caja.fecha)) + pestanitasPapeles() +
+    : cabeza('Registro') + pestanitasPapeles() +
       (cerrada ? '<p class="bajada">Tu supervisor ya la controló.</p>' : '<p class="bajada" id="bajadaCaja">' + esc(textoBajadaCaja()) + '</p>');
   if (!cerrada) {
     html += '<div class="grilla">' + FOTOS_CAJA.map(function (t) {
@@ -2966,7 +2998,9 @@ function pantallaRevisar() {
       /* El producto testigo de los locales que mira: si no se puede leer, Revisar sigue igual. */
       testigosRevisar(loc).catch(function () { return []; }),
       /* Las tareas con foto (SQL 132): sin ese SQL, null y no se muestra la tarjeta. */
-      tareasConFoto(loc.id).catch(function () { return null; })
+      tareasConFoto(loc.id).catch(function () { return null; }),
+      /* El encargado ficha (2/11): lo de hoy, para el renglón de arriba. */
+      fichaTodosLosDias() ? llamar('pos_fichero_mio', {}, 15000).then(function (f) { if (f) guardarFichaHoy(f.marcas); }).catch(function () {}) : null
     ]).then(function (r) {
       if (_pestana !== 'revisar') return;
       dibujarRevisar(loc, r[0] || [], r[1] || [], r[2]);
@@ -3206,12 +3240,18 @@ function dibujarRevisar(loc, cola, testigos, tareas) {
   testigos = testigos || [];
   if (_revisarSaltear >= cola.length) _revisarSaltear = 0;
   var c = cola[_revisarSaltear];
-  var html = cabeza('Revisar', loc.nombre) + selectorLocal(loc) + tarjetasTestigoRevisar(testigos) + tarjetaTareasFoto(tareas);
+  /* El encargado: el renglón de fichar arriba de todo, mientras le falte (con el día terminado, no va). */
+  var fichero = fichaTodosLosDias() ? fichaHoyConocida() : null;
+  var fichaFila = fichero && estadoFicha(fichero) !== 'listo' ? filaFichar(fichero) : null;
+  var html = cabeza('Revisar', loc.nombre) + (fichaFila ? '<div class="lista-hoy fichar-revisar">' + htmlItemHoy(fichaFila) + '</div>' : '') +
+    selectorLocal(loc) + tarjetasTestigoRevisar(testigos) + tarjetaTareasFoto(tareas);
   var conTarjetas = testigos.length || !!tareas;
   var engancharTestigo = function () {
     app.querySelectorAll('[data-trev]').forEach(function (b) { b.onclick = function () { verTestigoRevisar(testigos[+b.dataset.trev]); }; });
     var vt = document.getElementById('verTareasFoto');
     if (vt) vt.onclick = function () { pantallaTareasFoto(loc); };
+    var hf = document.getElementById('hFichar');
+    if (hf) hf.onclick = function () { tocarFilaFichar(fichero, 'revisar'); };
   };
   if (!c) {
     html += (conTarjetas ? '<div class="seccion">Fotos</div>' : '') + '<div class="vacio">No hay fotos para revisar.</div>';
@@ -3509,7 +3549,7 @@ function pantallaCajasSup() {
   marcarPestana('papeles');
   _papel = 'cajas';
   adentro();
-  app.innerHTML = cabeza('Cajas', '') + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
+  app.innerHTML = cabeza('Registro', '') + pestanitasPapeles() + '<p class="cargando">Cargando…</p>';
   engancharCabeza();
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Cajas'); return; }
@@ -3520,7 +3560,7 @@ function pantallaCajasSup() {
     ]).then(function (r) {
       if (!enPapel('cajas')) return;
       var cajas = r[0] || [], activa = !!(r[1] && r[1][0] && r[1][0].caja_activa);
-      var html = cabeza('Cajas', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
+      var html = cabeza('Registro', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
       if (!activa) html += '<div class="nota">El control de caja está apagado en este local. Se prende desde la administración.</div>';
       var sin = cajas.filter(function (c) { return c.estado === 'cargada'; });
       if (sin.length) html += '<div class="seccion">Sin controlar</div>' + sin.map(filaCaja).join('');
@@ -3642,8 +3682,10 @@ var _papel = null;                // la pestañita de Papeles a la vista
 var _certificadoPedido = null;    // llegó por el aviso "si tenés certificado, tocá acá": se abre la cámara de esa ausencia
 
 function subPapeles() {
-  /* Fichar (SQL 218) primero: es lo de todos los días, al llegar y al irse. */
+  /* Fichar (SQL 218) primero: es lo de todos los días, al llegar y al irse. Al administrador, al final (2/11): ficha
+     para probarlo, y lo suyo de todos los días son las cajas y las ausencias. */
   var fichar = fichaAca() ? [['fichar', 'Fichar']] : [];
+  if (esAdmin()) return [['cajas', 'Cajas'], ['ausencias', 'Ausencias'], ['apercibimientos', 'Apercibimientos']].concat(fichar);
   if (esSupervision()) return fichar.concat([['cajas', 'Cajas'], ['ausencias', 'Ausencias'], ['apercibimientos', 'Apercibimientos']]);
   return fichar.concat(cajaActiva() ? [['caja', 'Caja']] : []).concat([['certificados', 'Certificados'], ['apercibimientos', 'Apercibimientos']]);
 }
@@ -3704,6 +3746,23 @@ var K_CELULAR = 'vdh_celular';
 /* El vendedor y el encargado (con local). Desde el SQL 227 (1/11), también el administrador, para probarlo con el QR de
    cualquier local (Mauricio: "quiero poder probarlo yo también, desde mi aplicación"). */
 function fichaAca() { var r = yo().rol; return r === 'admin' || (!!yo().local_id && (r === 'vendedor' || r === 'supervisor')); }
+/** A quien ficha todos los días (el vendedor y el encargado): el administrador ficha sólo para probar. */
+function fichaTodosLosDias() { return fichaAca() && !esAdmin(); }
+/* Lo de hoy de quien entró: la última respuesta de pos_fichero_mio (Fichar, Hoy o Revisar). Con esto, la barra de
+   abajo sabe si Registro abre en Fichar (2/11). */
+var _fichaHoy = null;
+function guardarFichaHoy(marcas) { _fichaHoy = { quien: yo().id, dia: hoyAR(), marcas: marcas || [] }; return _fichaHoy.marcas; }
+function fichaHoyConocida() { return _fichaHoy && _fichaHoy.quien === yo().id && _fichaHoy.dia === hoyAR() ? _fichaHoy.marcas : null; }
+/** Cómo viene el día: 'nada' (sin marcas), 'adentro' (la última es una entrada) o 'listo' (la última es una salida). */
+function estadoFicha(marcas) { var u = marcas[marcas.length - 1]; return !u ? 'nada' : u.tipo === 'entrada' ? 'adentro' : 'listo'; }
+/* Desde la barra de abajo (2/11, el árbitro: "si la PWA quedó abierta en Apercibimientos, a la mañana siguiente
+   «Registro» abre en Apercibimientos"): a quien ficha todos los días, Registro le abre en Fichar mientras le falte
+   fichar. Con la salida ya fichada, en la última que miró. */
+function papelAlEntrar() {
+  if (!fichaTodosLosDias()) return null;
+  var m = fichaHoyConocida();
+  return m && estadoFicha(m) === 'listo' ? null : 'fichar';
+}
 function celularId() {
   var v = '';
   try { v = localStorage.getItem(K_CELULAR) || ''; } catch (e) {}
@@ -3717,7 +3776,7 @@ function celularId() {
 function faltaSql218(e) { return !!e && !e.sinSesion && !esDeRed(e) && /pos_fichero|pos_fichar|PGRST202|could not find the function/i.test(String(e.message)); }
 function errorFichar(e, reintentar) {
   if (!faltaSql218(e)) { pantallaError(e, reintentar); return; }
-  app.innerHTML = cabeza('Fichar') + pestanitasPapeles() + '<div class="vacio">Esto todavía no está listo: en unos días aparece.</div>';
+  app.innerHTML = cabeza('Registro') + pestanitasPapeles() + '<div class="vacio">Esto todavía no está listo: en unos días aparece.</div>';
   engancharCabeza();
 }
 var TIPO_FICHA = { entrada: 'Entrada', salida: 'Salida' };
@@ -3752,39 +3811,93 @@ function textoTarde(t) {
 }
 
 function pantallaFichar() {
-  empezarPapel('fichar', 'Fichar');
+  empezarPapel('fichar', 'Registro');
   llamar('pos_fichero_mio', {}, 15000).then(function (r) {
     if (enPapel('fichar')) dibujarFichar((r && r.marcas) || []);
   }).catch(function (e) { if (enPapel('fichar')) errorFichar(e, pantallaFichar); });
 }
 
+/* Fichar ordenado (2/11, Mauricio con su captura: "¿mejorarías algo de acá, las posiciones de las secciones…?", y un
+   árbitro que la usó sin mi opinión; coincidimos en casi todo). Primero cómo viene el día («Todavía no fichaste hoy»,
+   «Entraste a las 10:07», «Listo por hoy»); después UN botón grande con lo que toca, y lo otro como un texto chico que
+   pregunta antes: parados y apurados, dos botones iguales invitaban a tocar el equivocado, y la base no lo frena (sólo
+   el mismo tipo dentro de 10 minutos). El freno va acá y no en la base: si alguien se olvidó de fichar la entrada, la
+   salida igual se tiene que poder anotar. La lista de las marcas, sólo cuando suma algo (un turno cortado, una cargada
+   por la oficina); el aviso del celular, siempre. Con el día terminado ya no pinta «Fichar mi entrada» en lima. */
+function textoEstadoFicha(marcas) {
+  var est = estadoFicha(marcas), ult = marcas[marcas.length - 1];
+  if (est === 'nada') return { titulo: 'Todavía no fichaste hoy', texto: 'Al llegar, fichá tu entrada.' };
+  if (est === 'adentro') return { titulo: 'Entraste a las ' + ult.hora, texto: [ult.local, 'al irte, fichá la salida'].filter(Boolean).join(' · ') };
+  var ent = marcas.filter(function (m) { return m.tipo === 'entrada'; })[0];
+  return { titulo: 'Listo por hoy', texto: (ent ? 'Entrada ' + ent.hora + ' · ' : '') + 'Salida ' + ult.hora };
+}
+function textoBotonFicha(tipo, est) {
+  if (tipo === 'entrada') return est === 'nada' ? 'Fichar mi entrada' : 'Fichar otra entrada';
+  return est === 'listo' ? 'Fichar otra salida' : 'Fichar mi salida';
+}
 function dibujarFichar(marcas) {
-  var ult = marcas[marcas.length - 1];
-  var toca = ult && ult.tipo === 'entrada' ? 'salida' : 'entrada', otra = toca === 'entrada' ? 'salida' : 'entrada';
-  var boton = function (t, lima) {
-    return '<button class="boton' + (lima ? ' lima' : '') + ' fichar-boton" data-fichar="' + t + '">' + (t === 'entrada' ? 'Fichar mi entrada' : 'Fichar mi salida') + '</button>';
-  };
-  var html = cabeza('Fichar') + pestanitasPapeles() +
-    '<p class="bajada">Al llegar y al irte: tocá el botón y escaneá el QR de la compu del local.</p>' +
-    boton(toca, true) + boton(otra, false) +
-    '<div class="seccion">Hoy</div>';
-  if (!marcas.length) html += '<div class="vacio">Todavía no fichaste hoy.</div>';
-  html += marcas.map(function (m) {
-    var d = [m.local, ORIGEN_FICHA[m.origen]].filter(Boolean).join(' · ');
-    return '<div class="tarea ficha"><div class="nombre">' + esc(TIPO_FICHA[m.tipo] || m.tipo) + ' · ' + esc(m.hora) + '</div>' +
-      (d ? '<div class="detalle">' + esc(d) + '</div>' : '') +
-      (m.aviso ? '<div class="nota alerta">' + esc(avisoFicha(m.aviso)) + '</div>' : '') + '</div>';
-  }).join('');
+  marcas = guardarFichaHoy(marcas);
+  var est = estadoFicha(marcas), e = textoEstadoFicha(marcas);
+  var toca = est === 'adentro' ? 'salida' : 'entrada', otra = toca === 'entrada' ? 'salida' : 'entrada';
+  var conLista = marcas.length > 2 || marcas.some(function (m) { return m.origen && m.origen !== 'celular'; });
+  var html = cabeza('Registro') + pestanitasPapeles() +
+    '<div class="ficha-estado ' + est + '">' + (est === 'listo' ? '<i aria-hidden="true">' + TILDE_FICHA + '</i>' : '') +
+      '<b>' + esc(e.titulo) + '</b><span>' + esc(e.texto) + '</span></div>' +
+    '<button class="boton' + (est === 'listo' ? '' : ' lima') + ' fichar-boton principal" data-fichar="' + toca + '">' + textoBotonFicha(toca, est) + '</button>' +
+    '<p class="ayuda-chica fichar-ayuda">Tocá el botón y escaneá el QR de la compu del local.</p>' +
+    '<button type="button" class="fichar-otra" data-fichar-otra="' + otra + '">' + textoBotonFicha(otra, est) + '</button>';
+  if (conLista) {
+    html += '<div class="seccion">Tus marcas de hoy</div>' + marcas.map(function (m) {
+      var d = [m.local, ORIGEN_FICHA[m.origen]].filter(Boolean).join(' · ');
+      return '<div class="tarea ficha"><div class="nombre">' + esc(TIPO_FICHA[m.tipo] || m.tipo) + ' · ' + esc(m.hora) + '</div>' +
+        (d ? '<div class="detalle">' + esc(d) + '</div>' : '') +
+        (m.aviso ? '<div class="nota alerta">' + esc(avisoFicha(m.aviso)) + '</div>' : '') + '</div>';
+    }).join('');
+  } else {
+    var avisos = [];
+    marcas.forEach(function (m) { var a = m.aviso ? avisoFicha(m.aviso) : ''; if (a && avisos.indexOf(a) < 0) avisos.push(a); });
+    html += avisos.map(function (a) { return '<div class="nota alerta">' + esc(a) + '</div>'; }).join('');
+  }
   app.innerHTML = html;
   engancharCabeza();
-  app.querySelectorAll('[data-fichar]').forEach(function (b) { b.onclick = function () { fichar(b.dataset.fichar); }; });
+  app.querySelector('[data-fichar]').onclick = function () { fichar(toca); };
+  app.querySelector('[data-fichar-otra]').onclick = function () { ficharLoOtro(otra, marcas); };
 }
 
-function fichar(tipo) {
+/* El renglón de fichar en Hoy (el vendedor) y arriba de Revisar (el encargado), 2/11: el árbitro, "es lo único que se
+   hace todos los días, 2 veces, y está en la 4.ª pestaña". Tocarlo abre el lector de una vez; con el día terminado,
+   Registro → Fichar. */
+function filaFichar(marcas) {
+  var est = estadoFicha(marcas), ult = marcas[marcas.length - 1];
+  if (est === 'nada') return { id: 'hFichar', titulo: 'Fichar tu entrada', texto: 'Tocá acá y escaneá el QR de la compu del local.' };
+  if (est === 'adentro') return { id: 'hFichar', titulo: 'Fichar tu salida', luego: true, texto: 'Entraste a las ' + ult.hora + ': la salida es al irte.' };
+  return { id: 'hFichar', titulo: 'Fichar', hecho: true, texto: textoEstadoFicha(marcas).texto + '.' };
+}
+function tocarFilaFichar(marcas, volver) {
+  var est = estadoFicha(marcas);
+  if (est === 'listo') irA('fichar');
+  else fichar(est === 'nada' ? 'entrada' : 'salida', volver);
+}
+
+/** Lo que no toca (el texto chico): pregunta antes, con lo que ya está anotado. */
+function ficharLoOtro(tipo, marcas) {
+  if (_espejo) { fichar(tipo); return; }   // en «Ver su app» avisa que eso lo hace desde su celular
+  var est = estadoFicha(marcas), ult = marcas[marcas.length - 1];
+  var texto = est === 'nada' ? 'Todavía no fichaste la entrada de hoy. ¿Fichar la salida igual?'
+    : est === 'adentro' ? 'Ya fichaste la entrada a las ' + ult.hora + ' y todavía no la salida. ¿Fichar otra entrada?'
+    : 'Ya fichaste la salida a las ' + ult.hora + '. ¿Fichar otra salida?';
+  confirmar(texto, tipo === 'entrada' ? 'Fichar la entrada' : 'Fichar la salida').then(function (si) { if (si) fichar(tipo); });
+}
+
+/* Adónde se vuelve al terminar: Registro → Fichar, o Hoy / Revisar si se fichó desde ahí (2/11). */
+var _fichaVolver = null;
+function fichar(tipo, volver) {
+  _fichaVolver = volver || null;
   lectorQR((tipo === 'entrada' ? 'Fichar mi entrada' : 'Fichar mi salida') + ' · el QR de la compu del local',
     function (codigo) { mandarFicha(tipo, codigo); },
-    function () { irA('fichar'); });
+    volverDeFicha);
 }
+function volverDeFicha() { var v = _fichaVolver; _fichaVolver = null; irA(v || 'fichar'); }
 
 function mandarFicha(tipo, codigo) {
   adentro();
@@ -3793,6 +3906,7 @@ function mandarFicha(tipo, codigo) {
   app.innerHTML = cabeza('Fichar') + '<p class="cargando">Anotando tu ' + tipo + '…</p>';
   engancharCabeza();
   llamar('pos_fichar', { p_codigo: codigo, p_tipo: tipo, p_celular: celularId() }, 20000).then(function (r) {
+    _fichaHoy = null;   // cambió lo de hoy: la próxima pantalla lo vuelve a preguntar
     if (!enPapel('fichar')) return;
     try { if (navigator.vibrate) navigator.vibrate(60); } catch (e) {}
     app.innerHTML = cabeza('Fichar') +
@@ -3803,7 +3917,7 @@ function mandarFicha(tipo, codigo) {
       (r.aviso ? '<div class="nota alerta">' + esc(avisoFicha(r.aviso)) + '</div>' : '') +
       '<button class="boton lima" id="fichaListo">Listo</button>';
     engancharCabeza();
-    document.getElementById('fichaListo').onclick = function () { irA('fichar'); };
+    document.getElementById('fichaListo').onclick = volverDeFicha;
   }).catch(function (e) {
     if (!enPapel('fichar')) return;
     if (e && e.sinSesion) { pantallaError(e); return; }
@@ -3814,8 +3928,8 @@ function mandarFicha(tipo, codigo) {
       '<button class="boton lima" id="fichaOtra">Escanear de nuevo</button>' +
       '<button class="boton fichar-boton" id="fichaVolver">Volver</button>';
     engancharCabeza();
-    document.getElementById('fichaOtra').onclick = function () { fichar(tipo); };
-    document.getElementById('fichaVolver').onclick = function () { irA('fichar'); };
+    document.getElementById('fichaOtra').onclick = function () { fichar(tipo, _fichaVolver); };
+    document.getElementById('fichaVolver').onclick = volverDeFicha;
   });
 }
 
@@ -4042,14 +4156,14 @@ function sumarHojas(x, alVolver, alLeer) {
 
 /* ── El vendedor: Certificados ── */
 function pantallaCertificados() {
-  empezarPapel('certificados', 'Certificados');
+  empezarPapel('certificados', 'Registro');
   leerPapeles('persona_id=eq.' + valor(yo().id) + '&tipo=eq.ausencia').then(function (f) {
     if (enPapel('certificados')) dibujarCertificados(f);
-  }).catch(function (e) { if (enPapel('certificados')) errorPapel(e, 'Certificados', pantallaCertificados); });
+  }).catch(function (e) { if (enPapel('certificados')) errorPapel(e, 'Registro', pantallaCertificados); });
 }
 
 function dibujarCertificados(lista) {
-  var html = cabeza('Certificados') + pestanitasPapeles() +
+  var html = cabeza('Registro') + pestanitasPapeles() +
     '<p class="bajada">¿Faltaste por enfermedad? Sacale una foto al certificado médico y mandala: le llega a tu supervisor.</p>' +
     (yo().local_id ? '<button class="boton lima" id="nuevoCert">Mandar un certificado</button>' : '') +
     '<div class="seccion">Tus ausencias</div>';
@@ -4080,14 +4194,14 @@ function dibujarCertificados(lista) {
 /* ── Apercibimientos: el vendedor ve los suyos; la supervisión, los del local ── */
 function pantallaApercibimientos() {
   if (esSupervision()) { pantallaApercibimientosSup(); return; }
-  empezarPapel('apercibimientos', 'Apercibimientos');
+  empezarPapel('apercibimientos', 'Registro');
   leerPapeles('persona_id=eq.' + valor(yo().id) + '&tipo=eq.apercibimiento').then(function (f) {
     if (enPapel('apercibimientos')) dibujarApercibimientosMios(f);
-  }).catch(function (e) { if (enPapel('apercibimientos')) errorPapel(e, 'Apercibimientos', pantallaApercibimientos); });
+  }).catch(function (e) { if (enPapel('apercibimientos')) errorPapel(e, 'Registro', pantallaApercibimientos); });
 }
 
 function dibujarApercibimientosMios(lista) {
-  var html = cabeza('Apercibimientos') + pestanitasPapeles();
+  var html = cabeza('Registro') + pestanitasPapeles();
   /* (SQL 221) El apercibimiento ya firmado lo sube cualquiera del local, el suyo o el de un compañero, con la foto. */
   if (yo().local_id) {
     html += '<button class="boton lima" id="subirAperc">Subir un apercibimiento</button>' +
@@ -4132,14 +4246,14 @@ function escribirDescargo(x, alVolver) {
 
 /* ── La supervisión: Ausencias ── */
 function pantallaAusencias() {
-  empezarPapel('ausencias', 'Ausencias', '');
+  empezarPapel('ausencias', 'Registro', '');
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Ausencias'); return; }
     return Promise.all([
       leerPapeles('local_id=eq.' + valor(loc.id) + '&tipo=eq.ausencia&hasta=gte.' + sumarDias(hoyAR(), -120)),
       genteDelLocal(loc.id)
     ]).then(function (r) { if (enPapel('ausencias')) dibujarAusencias(loc, r[0], r[1] || []); });
-  }).catch(function (e) { if (enPapel('ausencias')) errorPapel(e, 'Ausencias', pantallaAusencias); });
+  }).catch(function (e) { if (enPapel('ausencias')) errorPapel(e, 'Registro', pantallaAusencias); });
 }
 
 function filaPapel(x) {
@@ -4153,7 +4267,7 @@ function filaPapel(x) {
 
 function dibujarAusencias(loc, lista, gente) {
   var mira = soloMira(), hoy = hoyAR();
-  var html = cabeza('Ausencias', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
+  var html = cabeza('Registro', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
   if (!mira && gente.length) html += '<button class="boton lima" id="nuevaAus" style="margin-top:14px">Anotar una ausencia</button>';
   /* Este mes, por persona: los días que faltó y cuántos sin certificado. */
   var ini = hoy.slice(0, 8) + '01', fin = sumarDias(sumarDias(ini, 32).slice(0, 8) + '01', -1), mes = {};
@@ -4194,20 +4308,20 @@ function dibujarAusencias(loc, lista, gente) {
 
 /* ── La supervisión: Apercibimientos ── */
 function pantallaApercibimientosSup() {
-  empezarPapel('apercibimientos', 'Apercibimientos', '');
+  empezarPapel('apercibimientos', 'Registro', '');
   localSup().then(function (loc) {
     if (!loc) { sinLocales('Apercibimientos'); return; }
     return Promise.all([
       leerPapeles('local_id=eq.' + valor(loc.id) + '&tipo=eq.apercibimiento'),
       genteDelLocal(loc.id)
     ]).then(function (r) { if (enPapel('apercibimientos')) dibujarApercibimientosSup(loc, r[0], r[1] || []); });
-  }).catch(function (e) { if (enPapel('apercibimientos')) errorPapel(e, 'Apercibimientos', pantallaApercibimientos); });
+  }).catch(function (e) { if (enPapel('apercibimientos')) errorPapel(e, 'Registro', pantallaApercibimientos); });
 }
 
 function dibujarApercibimientosSup(loc, lista, gente) {
   var mira = soloMira();
   var otros = gente.filter(function (p) { return p.id !== yo().id; });
-  var html = cabeza('Apercibimientos', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
+  var html = cabeza('Registro', loc.nombre) + selectorLocal(loc) + pestanitasPapeles();
   if (!mira && otros.length) html += '<button class="boton lima" id="nuevoAperc" style="margin-top:14px">Hacer un apercibimiento</button>';
   if (lista.length) html += '<div class="seccion">Los del local</div>' + lista.map(filaPapel).join('');
   else html += '<div class="vacio" style="margin-top:16px">No hay apercibimientos en este local.</div>';

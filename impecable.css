@@ -280,6 +280,21 @@ a.volver { display: inline-flex; align-items: center; text-decoration: none; }
 .lector-qr .camara-abajo p { margin: 0; min-height: 44px; display: grid; place-items: center; text-align: center; color: var(--suave); font-size: 14px; line-height: 1.4; max-width: 340px; }
 /* Fichar: los dos botones, el tilde grande al anotarse y el título si no se anotó. */
 .fichar-boton { margin-top: 10px; }
+/* Desde el 2/11: primero cómo viene el día, un botón grande con lo que toca y lo otro como un texto chico. */
+.ficha-estado { display: grid; grid-template-columns: auto 1fr; column-gap: 12px; row-gap: 2px; align-items: center; margin: 4px 0 0;
+  padding: 14px 16px; background: var(--tarjeta); border: 1px solid var(--borde); border-radius: 16px; }
+.ficha-estado b, .ficha-estado span { grid-column: 1 / -1; }
+.ficha-estado b { font-size: 18px; }
+.ficha-estado span { color: var(--suave); font-size: 14px; }
+.ficha-estado.adentro { border-color: var(--verde); }
+.ficha-estado.listo i { grid-row: 1 / 3; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--verde); color: var(--sobre-lima); }
+.ficha-estado.listo i svg { width: 20px; height: 20px; }
+.ficha-estado.listo b, .ficha-estado.listo span { grid-column: 2; }
+.fichar-boton.principal { min-height: 64px; margin-top: 14px; font-size: 18px; }
+.fichar-ayuda { margin: 8px 0 0; text-align: center; }
+.fichar-otra { display: block; min-height: 44px; margin: 8px auto 0; padding: 0 14px; border: 0; background: none; color: var(--suave);
+  font: inherit; font-size: 15px; font-weight: 700; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.fichar-revisar { margin: 16px 0 4px; }
 .ficha-hecha { text-align: center; padding: 26px 12px 10px; }
 .ficha-tilde { display: inline-grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; background: var(--verde); color: var(--sobre-lima); }
 .ficha-tilde svg { width: 44px; height: 44px; }
@@ -677,8 +692,13 @@ select.desplegable option::checkmark { order: 1; margin-inline-start: auto; }
 /* ── Papeles (SQL 209, 31/10): Caja · Certificados · Apercibimientos ──
    Las pestañitas de a tres (entran "Apercibimientos" en 390 px), el puntito
    de la caja de las 19 h, las hojas del escáner y "¿Se descuenta?". */
-.pestanitas.papeles-sub { margin: 14px 0 6px; }
-.pestanitas.papeles-sub button { position: relative; min-width: 0; padding: 0 4px; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pestanitas.papeles-sub { position: relative; margin: 14px 0 6px; overflow-x: auto; scrollbar-width: none; overscroll-behavior-x: contain; }
+.pestanitas.papeles-sub::-webkit-scrollbar { display: none; }
+/* 2/11: con la letra agrandada no se cortan con «…»: cada una mide su palabra y se desliza de costado. */
+.pestanitas.papeles-sub button { position: relative; padding: 0 6px; font-size: 13.5px; white-space: nowrap; }
+.pestanitas.papeles-sub.mas-der { -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 32px), transparent); }
+.pestanitas.papeles-sub.mas-izq { -webkit-mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to left, #000 calc(100% - 32px), transparent); }
+.pestanitas.papeles-sub.mas-izq.mas-der { -webkit-mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); mask-image: linear-gradient(to right, transparent, #000 32px, #000 calc(100% - 32px), transparent); }
 .pestanitas button.con-punto::after { content: ''; position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--rojo); }
 .papel .nombre { font-size: 16px; }
 .papel-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
