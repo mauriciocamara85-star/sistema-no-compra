@@ -133,6 +133,9 @@ var persona = (function () {
   function usaPos() { return vigente(_yo) && _yo.pos === true; }
   /* SQL 229: la oficina le prendió la Gestión del POS (nc_yo trae 'gestion'; pide también el POS). */
   function usaGestion() { return vigente(_yo) && _yo.gestion === true; }
+  /* SQL 230 (2/11, de prueba): su local tiene el fichero de prueba (Rivadavia): «Fichero» con su usuario, en
+     cualquier compu (nc_yo trae 'fichero'). */
+  function fichaPrueba() { return vigente(_yo) && _yo.fichero === true; }
   function puede(pag) {
     var r = rol(), p = pag || pagina();
     if (p === 'pos.html' && usaPos()) return true;
@@ -239,7 +242,9 @@ var persona = (function () {
         /* SQL 190: si le prendieron (o apagaron) el POS, la barra y el acceso a pos.html cambian. */
         '|' + !!(_yo && _yo.pos) +
         /* SQL 229: lo mismo con la Gestión. */
-        '|' + !!(_yo && _yo.gestion);
+        '|' + !!(_yo && _yo.gestion) +
+        /* SQL 230: y con el fichero de prueba. */
+        '|' + !!(_yo && _yo.fichero);
     };
     var antes = clave();
     _yo = y;
@@ -359,8 +364,9 @@ var persona = (function () {
     }
     /* El fichero con QR (SQL 218, 31/10): en la compu habilitada de un local, después de Ventas. Lo agrega acá para no
        tocar la barra de cada página. Desde el SQL 227 (1/11), también para un administrador en cualquier compu: elige
-       el local y ve el mismo QR (Mauricio: "Necesito que esté en mi sistema"). */
-    if ((compuDelLocal() || rol() === 'admin') && !rail.querySelector('.rail-item[href="fichero.html"]')) {
+       el local y ve el mismo QR (Mauricio: "Necesito que esté en mi sistema"). Desde el SQL 230 (2/11, de prueba),
+       también quien es de un local con el fichero de prueba: el QR de su local ("agregame la seccion, es de prueba"). */
+    if ((compuDelLocal() || rol() === 'admin' || fichaPrueba()) && !rail.querySelector('.rail-item[href="fichero.html"]')) {
       var fi = document.createElement('a');
       fi.className = 'rail-item';
       fi.href = 'fichero.html';

@@ -8824,3 +8824,125 @@ begin
    where id = p_id;
   return jsonb_build_object('id', p_id);
 end $function$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 230 (02/11/2026) · EL FICHERO DE PRUEBA EN RIVADAVIA, CON EL USUARIO
+--
+--  Mauricio (2/11): "rivadavia tendria que tener para fichar asi lo probamos".
+--  La compu de Rivadavia había perdido su llave (la caja 14, sin uso desde el
+--  27/10) y para el fichero hacía falta abrir allá el enlace de Config. Él:
+--  "agregame la seccion, es de prueba".
+--  · pos_fichero_prueba: los locales donde, DE PRUEBA, quien es del local
+--    (vendedor o encargado, activo y aprobado) ve «Fichero» con su usuario,
+--    en cualquier compu y sin el enlace: el mismo QR que daría la compu del
+--    local (el de su caja habilitada más nueva). Va Rivadavia.
+--  · OJO: así no hay compu que ate el fichero al local; con el usuario abierto
+--    en otra compu se podría fichar desde ahí. Por eso es de prueba: se saca
+--    borrando el local de pos_fichero_prueba (o con deshacer-230.sql).
+--  · nc_yo suma 'fichero' (la barra y fichero.html lo leen), y
+--    pos_fichero_qr2_oficina, que era sólo de los administradores, deja pasar
+--    a esas personas, sólo con el QR de su local.
+-- ═══════════════════════════════════════════════════════════════════════════
+
+create table if not exists pos_fichero_prueba (
+  local_id uuid primary key references orden_locales(id),
+  desde    timestamptz not null default now()
+);
+alter table pos_fichero_prueba enable row level security;
+revoke all on pos_fichero_prueba from anon, authenticated;
+
+/* El local de quien entró, si ese local tiene el fichero de prueba y es suyo (vendedor o encargado). */
+create or replace function pos_fichero_prueba_local_() returns uuid
+language sql stable security definer set search_path = public as $$
+  select p.local_id
+    from orden_personas p join pos_fichero_prueba f on f.local_id = p.local_id
+   where p.id = orden_yo_id() and p.activo and p.aprobado and p.rol in ('vendedor', 'supervisor')
+$$;
+revoke all on function pos_fichero_prueba_local_() from public, anon, authenticated;
+
+create or replace function nc_yo() returns jsonb
+language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('id', p.id, 'nombre', orden_nombre_lista(p.nombre, p.inicial),
+           'pila', p.nombre,
+           'rol', p.rol, 'local_id', p.local_id, 'local', l.codigo, 'local_nombre', l.nombre,
+           'vendedor', coalesce(e.vendedor, orden_nombre_lista(p.nombre, p.inicial)),
+           'activo', p.activo, 'aprobado', p.aprobado,
+           /* SQL 135: además atiende clientes (lo de la oficina, como Atención). */
+           'tambien_atencion', p.tambien_atencion,
+           /* SQL 190: si usa el POS (lo prende la oficina en Config → Usuarios). */
+           'pos', pos_puede_persona(p, 'usa'),
+           /* SQL 229: si entra a la Gestión del POS (la prende la oficina en Config → Usuarios; pide también el POS). */
+           'gestion', pos_puede_persona(p, 'usa') and pos_puede_persona(p, 'gestion'),
+           /* SQL 230: el fichero de prueba de su local, con su usuario (pos_fichero_prueba). */
+           'fichero', p.activo and p.aprobado and p.rol in ('vendedor', 'supervisor')
+                      and exists (select 1 from pos_fichero_prueba f where f.local_id = p.local_id),
+           /* SQL 141: los locales del supervisor de varios locales (los aprobados). */
+           'zona', case when p.rol = 'supervisor' and p.local_id is null then
+                     coalesce((select jsonb_agg(jsonb_build_object('id', z.id, 'codigo', z.codigo, 'nombre', z.nombre) order by z.nombre)
+                                 from orden_supervision s join orden_locales z on z.id = s.local_id
+                                where s.persona_id = p.id and s.aprobado and z.activo), '[]'::jsonb) end,
+           /* Su PIN tiene menos números de los que pide su rol (SQL 110): lo
+              de la oficina no abre hasta cambiarlo. */
+           'pin_corto', k.hash is not null and coalesce(k.digitos, 4) < orden_pin_digitos(p.rol, p.tambien_atencion))
+    from orden_personas p
+    left join orden_locales l on l.id = p.local_id
+    left join equipo e on e.id = p.equipo_id
+    left join orden_pins k on k.persona_id = p.id
+   where p.auth_user_id = auth.uid() and auth.uid() is not null
+   limit 1
+$$;
+
+create or replace function pos_fichero_qr2_oficina(p_local uuid default null) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_locales jsonb;
+  v_loc     orden_locales;
+  v_caja    bigint;
+  v_ahora   timestamptz := clock_timestamp();
+  v_p       bigint;
+  v_prueba  uuid;
+begin
+  /* SQL 230: además del administrador, quien es de un local con el fichero de prueba: sólo el de su local. */
+  if not orden_es_admin() then
+    v_prueba := pos_fichero_prueba_local_();
+    if v_prueba is null then
+      raise exception 'El fichero de la oficina es sólo para los administradores: el de cada local está en su compu.';
+    end if;
+  end if;
+  /* Los locales con su compu habilitada (sin ella no hay QR que mostrar). */
+  select coalesce(jsonb_agg(jsonb_build_array(l.id, l.nombre) order by l.nombre), '[]'::jsonb) into v_locales
+    from orden_locales l
+   where l.activo and (v_prueba is null or l.id = v_prueba)
+     and exists (select 1 from club_cajas c where c.baja is null and upper(btrim(c.local)) = upper(btrim(l.codigo)));
+  select * into v_loc from orden_locales l where l.activo and l.id = coalesce(v_prueba, p_local);
+  if v_loc.id is null and jsonb_array_length(v_locales) > 0 then   -- sin elegir (o uno que ya no está): el primero
+    select * into v_loc from orden_locales l where l.id = (v_locales -> 0 ->> 0)::uuid;
+  end if;
+  if v_loc.id is null then
+    raise exception 'Ningún local tiene su compu habilitada: se habilita en Config → General → Las compus de los locales.';
+  end if;
+  select c.id into v_caja from club_cajas c
+   where c.baja is null and upper(btrim(c.local)) = upper(btrim(v_loc.codigo)) order by c.id desc limit 1;
+  if v_caja is null then
+    raise exception '% no tiene su compu habilitada: se habilita en Config → General → Las compus de los locales.', v_loc.nombre;
+  end if;
+  v_p := floor(extract(epoch from v_ahora) * 2)::bigint;   -- el medio segundo de ahora
+  return jsonb_build_object(
+    'local_id', v_loc.id,
+    'local', v_loc.nombre,
+    'locales', v_locales,
+    'ahora_ms', floor(extract(epoch from v_ahora) * 1000)::bigint,
+    'paso_ms', 500,
+    'codigos', (select jsonb_agg(jsonb_build_array(k, 'VDHF2.' || v_caja || '.' || k || '.' || pos_fichero_firma2(v_caja, k)) order by k)
+                  from generate_series(v_p, v_p + 59) k),
+    'ultimas', coalesce((
+      select jsonb_agg(jsonb_build_array(u.nombre, u.tipo, u.hora, u.id) order by u.momento desc)
+        from (select x.id, orden_nombre_lista(p.nombre, p.inicial) nombre, x.tipo, x.momento,
+                     to_char(x.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI') hora
+                from pos_tiempos x join orden_personas p on p.id = x.persona_id
+               where x.local_id = v_loc.id and x.dia = pos_hoy() and x.estado = 'ok'
+               order by x.momento desc limit 8) u), '[]'::jsonb));
+end $$;
+
+revoke all on function pos_fichero_qr2_oficina(uuid) from public, anon;
+grant execute on function pos_fichero_qr2_oficina(uuid) to authenticated;

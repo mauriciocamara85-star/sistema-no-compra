@@ -234,6 +234,12 @@
   /* SQL 227 (1/11, Mauricio: "Necesito que esté en mi sistema"): un administrador, en una compu que no es la de un
      local, elige el local y ve su fichero: el mismo QR que está en la compu de ese local (sirve para fichar ahí). */
   var oficina = !/^caja_/.test(llave || '') && typeof persona !== 'undefined' && persona.rol() === 'admin';
+  /* SQL 230 (2/11, de prueba: "agregame la seccion, es de prueba"): quien es de un local con el fichero de prueba
+     (Rivadavia) lo ve con su usuario, en cualquier compu y sin elegir local: el QR de su local, el mismo que el de la
+     oficina (pos_fichero_qr2_oficina sólo le da el suyo). */
+  var prueba = !oficina && !/^caja_/.test(llave || '') && typeof persona !== 'undefined' &&
+               !!(persona.yo() && persona.yo().fichero === true);
+  if (prueba) oficina = true;
   var K_OFI = 'nc_fichero_local', elegido = leer(K_OFI) || null, vuelta = 0;
   var codigos = [];                // [[ventana o medio segundo, código]], de la base
   var desfase = 0;                 // la hora de la base menos la de la compu
@@ -243,10 +249,20 @@
   var movil = true, paso = 500;
   var vistas = null, cartelHasta = 0;   // los id de las marcas que ya estaban (para el cartel de "fichó")
 
-  if (!/^caja_/.test(llave || '') && !oficina) { $('fiSin').hidden = false; return; }
+  if (!/^caja_/.test(llave || '') && !oficina) {
+    $('fiSin').hidden = false;
+    /* La base contestó después (lo guardado era de antes): si ahora le toca, se abre. Una vez por minuto, como mucho. */
+    document.addEventListener('persona', function (e) {
+      var y = e.detail, antes = 0;
+      if (!y || (y.rol !== 'admin' && y.fichero !== true)) return;
+      try { antes = Number(sessionStorage.getItem('nc_fi_recargo')) || 0; sessionStorage.setItem('nc_fi_recargo', String(Date.now())); } catch (x) { return; }
+      if (Date.now() - antes > 60000) location.reload();
+    });
+    return;
+  }
   $('fi').hidden = false;
   if (oficina) {
-    $('fiOfi').hidden = false;
+    $('fiOfi').hidden = prueba;   // de prueba, sin elegir local: sólo el suyo
     $('fiElegir').onchange = function () {   // otro local: de cero, sin cartel por las marcas que ya tenía
       elegido = this.value || null;
       guardar(K_OFI, elegido || '');
