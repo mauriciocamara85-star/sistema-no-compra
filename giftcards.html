@@ -558,7 +558,7 @@
     if (cod && !esCodigoGC(cod)) { avisar('err', 'Ese código no es de una Gift Card VDH: pasá de nuevo la tarjeta.'); $('gcCodigo').focus(); return; }
     /* Sólo las impresas (las viejas, sin código, ya no se venden: 13/10/2026). */
     if (!cod) {
-      mostrarTarjeta('mal', 'No pasaste ninguna tarjeta. Pasala por el lector: se venden las Black y Gold.');
+      mostrarTarjeta('mal', 'No pasaste ninguna tarjeta. Pasala por el lector: se venden sólo las tarjetas impresas.');
       avisar('err', 'Pasá la tarjeta por el lector.');
       $('gcCodigo').focus();
       return;
