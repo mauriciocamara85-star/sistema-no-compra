@@ -40,6 +40,10 @@
      ve enseguida quién fichó: un cartel grande, sin sonido ("no le pondría
      sonido porque el cartel sí"). Sin el 225, el QR de 30 segundos. */
   :root { --tope: 1180px; }
+  /* SQL 227: en la compu de la oficina (un administrador), arriba a la derecha se elige de qué local es el QR. */
+  .fi-ofi { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; font-size: 14px; color: var(--txt-2); }
+  .fi-ofi[hidden], html.fi-completa .fi-ofi { display: none; }
+  .fi-ofi > span { white-space: nowrap; }
   .fi { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
   @media (min-width: 1000px) { .fi { grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr); align-items: start; } }
   .fi[hidden], .fi-sin[hidden] { display: none; }
@@ -183,6 +187,7 @@
       <p class="fi-cambia" id="fiCambia">Cambia cada 30 segundos</p>
     </div>
     <div class="fi-lado">
+      <div class="fi-ofi" id="fiOfi" hidden><span>Desde la oficina, el QR de</span><select class="desplegable" id="fiElegir" aria-label="El local del fichero"></select></div>
       <div class="fi-cartel" id="fiCartel" role="status" aria-live="polite" hidden></div>
       <div class="bloque">
         <div class="bloque-tit">Para fichar tu entrada o tu salida</div>
@@ -216,6 +221,10 @@
   var PEDIR_CADA = 60000;          // cada minuto, mientras se ve (el QR de 30 segundos)
   var PEDIR_MOVIL = 8000;          // SQL 225: cada 8 segundos (los QR y quién fichó)
   var llave = leer('nc_caja');
+  /* SQL 227 (1/11, Mauricio: "Necesito que esté en mi sistema"): un administrador, en una compu que no es la de un
+     local, elige el local y ve su fichero: el mismo QR que está en la compu de ese local (sirve para fichar ahí). */
+  var oficina = !/^caja_/.test(llave || '') && typeof persona !== 'undefined' && persona.rol() === 'admin';
+  var K_OFI = 'nc_fichero_local', elegido = leer(K_OFI) || null, vuelta = 0;
   var codigos = [];                // [[ventana o medio segundo, código]], de la base
   var desfase = 0;                 // la hora de la base menos la de la compu
   var pedido = 0, enCamino = false, apagado = false, actual = null, ultimasClave = null;
@@ -224,8 +233,32 @@
   var movil = true, paso = 500;
   var vistas = null, cartelHasta = 0;   // los id de las marcas que ya estaban (para el cartel de "fichó")
 
-  if (!/^caja_/.test(llave || '')) { $('fiSin').hidden = false; return; }
+  if (!/^caja_/.test(llave || '') && !oficina) { $('fiSin').hidden = false; return; }
   $('fi').hidden = false;
+  if (oficina) {
+    $('fiOfi').hidden = false;
+    $('fiElegir').onchange = function () {   // otro local: de cero, sin cartel por las marcas que ya tenía
+      elegido = this.value || null;
+      guardar(K_OFI, elegido || '');
+      vuelta++;
+      enCamino = false; codigos = []; actual = null; vistas = null; ultimasClave = null; cartelHasta = 0;
+      $('fiCartel').hidden = true;
+      $('fiQr').innerHTML = '';
+      tapa('Cargando…');
+      pedir();
+    };
+  }
+
+  /* La lista del desplegable (los locales con su compu habilitada) y el elegido. */
+  function elegirLista(r) {
+    var s = $('fiElegir'), lista = r.locales || [], clave = JSON.stringify(lista);
+    if (s.dataset.clave !== clave) {
+      s.innerHTML = lista.map(function (l) { return '<option value="' + esc(l[0]) + '">' + esc(l[1]) + '</option>'; }).join('');
+      s.dataset.clave = clave;
+    }
+    s.value = r.local_id;
+    if (elegido !== r.local_id) { elegido = r.local_id; guardar(K_OFI, elegido); }
+  }
 
   function ahora() { return Date.now() + desfase; }
 
@@ -234,8 +267,14 @@
     enCamino = true;
     pedido = Date.now();
     var t0 = Date.now();
-    funcion(movil ? 'pos_fichero_qr2' : 'pos_fichero_qr', { p_caja: llave }).then(function (r) {
+    var mia = ++vuelta;
+    var pide = oficina
+      ? persona.token().then(function (t) { return funcion('pos_fichero_qr2_oficina', { p_local: elegido }, t); })
+      : funcion(movil ? 'pos_fichero_qr2' : 'pos_fichero_qr', { p_caja: llave });
+    pide.then(function (r) {
+      if (mia !== vuelta) return;   // la oficina cambió de local mientras tanto
       enCamino = false;
+      if (oficina) elegirLista(r);
       var t1 = Date.now();
       desfase = Number(r.ahora_ms) - (t0 + t1) / 2;
       codigos = r.codigos || [];
@@ -245,8 +284,20 @@
       pintarUltimas(r.ultimas || []);
       pintar(true);
     }, function (e) {
+      if (mia !== vuelta) return;
       enCamino = false;
       var m = String((e && e.message) || '');
+      if (oficina) {
+        if (/PGRST202|could not find the function/i.test(m)) { apagado = true; tapa('Para verlo desde la oficina falta correr el SQL 227 en Supabase.'); return; }
+        if ((e && e.sinSesion) || /administradores/.test(m)) {
+          apagado = true;
+          $('fi').hidden = true;
+          $('fiSin').hidden = false;
+          $('fiSinTxt').textContent = e && e.sinSesion ? 'Entrá con tu usuario para ver el fichero desde la oficina.' : m;
+          return;
+        }
+        if (/compu habilitada/.test(m)) { codigos = []; $('fiQr').innerHTML = ''; tapa(m); return; }
+      }
       if (movil && /PGRST202|could not find the function/i.test(m)) {   // sin el 225: el QR de 30 segundos
         movil = false;
         pedido = 0;

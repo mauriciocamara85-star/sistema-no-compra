@@ -348,9 +348,10 @@ var persona = (function () {
         if (dibujo._cual !== cual) { dibujo.innerHTML = cual === 'percha' ? DIBUJO_PERCHA : dibujo._local; dibujo._cual = cual; }
       }
     }
-    /* El fichero con QR (SQL 218, 31/10): sólo en la compu habilitada de un local, después de Ventas. Lo agrega
-       acá para no tocar la barra de cada página. */
-    if (compuDelLocal() && !rail.querySelector('.rail-item[href="fichero.html"]')) {
+    /* El fichero con QR (SQL 218, 31/10): en la compu habilitada de un local, después de Ventas. Lo agrega acá para no
+       tocar la barra de cada página. Desde el SQL 227 (1/11), también para un administrador en cualquier compu: elige
+       el local y ve el mismo QR (Mauricio: "Necesito que esté en mi sistema"). */
+    if ((compuDelLocal() || rol() === 'admin') && !rail.querySelector('.rail-item[href="fichero.html"]')) {
       var fi = document.createElement('a');
       fi.className = 'rail-item';
       fi.href = 'fichero.html';

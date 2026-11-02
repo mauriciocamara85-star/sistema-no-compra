@@ -3701,7 +3701,9 @@ function errorPapel(e, titulo, reintentar) {
    Cada celular tiene su número al azar (vdh_celular: queda en el aparato aunque se salga de la app). El primero
    desde el que ficha cada uno queda como el suyo; desde otro, la marca lleva un aviso que ve la supervisión. ── */
 var K_CELULAR = 'vdh_celular';
-function fichaAca() { var r = yo().rol; return !!yo().local_id && (r === 'vendedor' || r === 'supervisor'); }
+/* El vendedor y el encargado (con local). Desde el SQL 227 (1/11), también el administrador, para probarlo con el QR de
+   cualquier local (Mauricio: "quiero poder probarlo yo también, desde mi aplicación"). */
+function fichaAca() { var r = yo().rol; return r === 'admin' || (!!yo().local_id && (r === 'vendedor' || r === 'supervisor')); }
 function celularId() {
   var v = '';
   try { v = localStorage.getItem(K_CELULAR) || ''; } catch (e) {}

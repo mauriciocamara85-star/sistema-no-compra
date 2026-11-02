@@ -8411,3 +8411,77 @@ begin
                             'hora', to_char(v_ahora at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI'),
                             'aviso', nullif(array_to_string(v_aviso, ' '), ''), 'tarde', v_tarde);
 end $$;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 227 (01/11/2026) · EL FICHERO EN LA OFICINA
+--
+--  Mauricio (01/11): "Necesito que esté en mi sistema … si lo quiero mostrar
+--  al dueño mañana, no lo voy a tener." Hasta acá el QR salía sólo en la
+--  compu habilitada de cada local (pos_fichero_qr2 pide su llave).
+--  · pos_fichero_qr2_oficina(p_local): lo mismo que pos_fichero_qr2 (los QR
+--    del próximo medio minuto, la hora de la base y quién fichó hoy), pero
+--    para un administrador con su sesión, eligiendo el local. Usa la compu
+--    habilitada de ese local: el QR es el mismo que se ve en el local, y
+--    fichar con él es fichar en ese local.
+--  · Trae también la lista de los locales que tienen compu habilitada, para
+--    el desplegable.
+--  No afloja nada: un administrador ya puede cargar marcas a mano (Gestión
+--  → Personal → Registro de tiempos).
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Sin el 225 no hay QR en movimiento: se frena acá, sin cambiar nada. */
+do $$
+begin
+  if to_regprocedure('public.pos_fichero_firma2(bigint, bigint)') is null then
+    raise exception 'Primero hay que correr el SQL 225 (el fichero con el QR en movimiento): está en App Orden.';
+  end if;
+end $$;
+
+create or replace function pos_fichero_qr2_oficina(p_local uuid default null) returns jsonb
+language plpgsql volatile security definer set search_path = public as $$
+declare
+  v_locales jsonb;
+  v_loc     orden_locales;
+  v_caja    bigint;
+  v_ahora   timestamptz := clock_timestamp();
+  v_p       bigint;
+begin
+  if not orden_es_admin() then
+    raise exception 'El fichero de la oficina es sólo para los administradores: el de cada local está en su compu.';
+  end if;
+  /* Los locales con su compu habilitada (sin ella no hay QR que mostrar). */
+  select coalesce(jsonb_agg(jsonb_build_array(l.id, l.nombre) order by l.nombre), '[]'::jsonb) into v_locales
+    from orden_locales l
+   where l.activo and exists (select 1 from club_cajas c where c.baja is null and upper(btrim(c.local)) = upper(btrim(l.codigo)));
+  select * into v_loc from orden_locales l where l.activo and l.id = p_local;
+  if v_loc.id is null and jsonb_array_length(v_locales) > 0 then   -- sin elegir (o uno que ya no está): el primero
+    select * into v_loc from orden_locales l where l.id = (v_locales -> 0 ->> 0)::uuid;
+  end if;
+  if v_loc.id is null then
+    raise exception 'Ningún local tiene su compu habilitada: se habilita en Config → General → Las compus de los locales.';
+  end if;
+  select c.id into v_caja from club_cajas c
+   where c.baja is null and upper(btrim(c.local)) = upper(btrim(v_loc.codigo)) order by c.id desc limit 1;
+  if v_caja is null then
+    raise exception '% no tiene su compu habilitada: se habilita en Config → General → Las compus de los locales.', v_loc.nombre;
+  end if;
+  v_p := floor(extract(epoch from v_ahora) * 2)::bigint;   -- el medio segundo de ahora
+  return jsonb_build_object(
+    'local_id', v_loc.id,
+    'local', v_loc.nombre,
+    'locales', v_locales,
+    'ahora_ms', floor(extract(epoch from v_ahora) * 1000)::bigint,
+    'paso_ms', 500,
+    'codigos', (select jsonb_agg(jsonb_build_array(k, 'VDHF2.' || v_caja || '.' || k || '.' || pos_fichero_firma2(v_caja, k)) order by k)
+                  from generate_series(v_p, v_p + 59) k),
+    'ultimas', coalesce((
+      select jsonb_agg(jsonb_build_array(u.nombre, u.tipo, u.hora, u.id) order by u.momento desc)
+        from (select x.id, orden_nombre_lista(p.nombre, p.inicial) nombre, x.tipo, x.momento,
+                     to_char(x.momento at time zone 'America/Argentina/Buenos_Aires', 'HH24:MI') hora
+                from pos_tiempos x join orden_personas p on p.id = x.persona_id
+               where x.local_id = v_loc.id and x.dia = pos_hoy() and x.estado = 'ok'
+               order by x.momento desc limit 8) u), '[]'::jsonb));
+end $$;
+
+revoke all on function pos_fichero_qr2_oficina(uuid) from public, anon;
+grant execute on function pos_fichero_qr2_oficina(uuid) to authenticated;
