@@ -91,6 +91,9 @@
 }
 .ini-persona:active { transform: scale(.98); }
 .ini-persona b { font-size: 15px; font-weight: 600; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* De a cuatro (la oficina, 8 personas) las tarjetas son más angostas: que entre «Antonella M.». */
+.ini-gente[style*="--ini-cols:4"] .ini-persona { padding-inline: 3px; }
+.ini-gente[style*="--ini-cols:4"] .ini-persona b { font-size: 14px; letter-spacing: -.01em; }
 .ini-cara {
   width: 54px; height: 54px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
   font-size: 20px; font-weight: 600; color: var(--ini-bronce);

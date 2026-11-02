@@ -356,7 +356,11 @@ var persona = (function () {
     si.onclick = function () {
       no.disabled = si.disabled = true;
       si.textContent = 'Saliendo…';
-      salir().then(function () { location.reload(); });
+      /* En una compu con el inicio, desde una pantalla sin él (lo de la oficina) se vuelve a la Carga, que lo muestra. */
+      salir().then(function () {
+        if (hayInicioAca() && INICIO_PAGINAS.indexOf(pagina()) < 0 && pagina() !== 'fichero.html') location.href = 'index.html';
+        else location.reload();
+      });
     };
   }
 
@@ -1309,25 +1313,62 @@ var persona = (function () {
   var INICIO_PAGINAS = ['index.html', 'caja.html', 'giftcards.html', 'asistente.html', 'ventas.html', 'estadisticas.html', 'pos.html', 'gestion.html'];
   var K_SIGUE = 'nc_inicio_sigue';     // sessionStorage: tocó «Seguir sin entrar» en esta pestaña
   var K_INICIO_LOCAL = 'nc_inicio_local';
+  /* El inicio prendido a mano en una compu que no es de un local (la de Mauricio): index.html?inicio-compu=oficina
+     (la gente de Administración) o ?inicio-compu=mar del plata; ?inicio-compu=no lo apaga. */
+  var K_INICIO_COMPU = 'nc_inicio_compu';
   var FOTOS_INICIO = ['NF608272', 'NF609080', 'NF608224', 'NF608396'];   // inicio-fotos/, de «VDH CAMPAÑA 2026»
   var _inicio = null;
 
   function inicial(n) { return String(n || '').trim().charAt(0).toUpperCase(); }
 
+  /* Saca un parámetro de la dirección sin recargar. */
+  function sacarDeLaDireccion(re) {
+    try {
+      var resto = location.search.replace(re, '').replace(/^&/, '?');
+      history.replaceState(null, '', location.pathname + (resto === '?' ? '' : resto) + location.hash);
+    } catch (e) {}
+  }
+
+  /* El inicio fijo de esta compu ('' si no tiene); ?inicio-compu= lo prende o lo apaga. Devuelve true si se acaba de prender. */
+  var _inicioFijo = '';
+  function leerInicioFijo() {
+    var m = /[?&]inicio-compu=([^&#]*)/.exec(location.search), recien = false;
+    if (m) {
+      var v = decodeURIComponent(m[1].replace(/\+/g, ' ')).trim().toUpperCase();
+      try {
+        if (!v || v === 'NO') localStorage.removeItem(K_INICIO_COMPU);
+        else { localStorage.setItem(K_INICIO_COMPU, v); recien = true; }
+      } catch (e) {}
+      sacarDeLaDireccion(/[?&]inicio-compu=[^&#]*/);
+    }
+    try { _inicioFijo = localStorage.getItem(K_INICIO_COMPU) || ''; } catch (e) {}
+    return recien;
+  }
+
   /* El código del local para el inicio, o '' si acá no va. */
   function localInicio() {
-    var m = /[?&]inicio(?:=([^&#]*))?/.exec(location.search);
+    var recien = leerInicioFijo();
+    var m = /[?&]inicio(?:=([^&#]*))?(?=[&#]|$)/.exec(location.search);
     var cod = '';
     /* La compu habilitada dice su local; si perdió la llave, el que quedó elegido en la Carga. */
-    try { cod = (compuDelLocal() && localStorage.getItem('nc_caja_local')) || localStorage.getItem('nc_local') || ''; } catch (e) {}
+    try { cod = _inicioFijo || (compuDelLocal() && localStorage.getItem('nc_caja_local')) || localStorage.getItem('nc_local') || ''; } catch (e) {}
+    /* Recién prendido: se ve ya, aunque haya alguien adentro (para mirar cómo queda). */
+    if (recien) return cod;
     if (m) {
       var pedido = decodeURIComponent((m[1] || '').replace(/\+/g, ' ')).trim().toUpperCase();
-      return pedido || (INICIO_EN.indexOf(cod) > -1 ? cod : INICIO_EN[0]);
+      return pedido || (_inicioFijo || INICIO_EN.indexOf(cod) > -1 ? cod : INICIO_EN[0]);
     }
-    if (_ses || INICIO_EN.indexOf(cod) < 0) return '';
+    if (_ses || !hayInicioAca(cod)) return '';
     if (INICIO_PAGINAS.indexOf(pagina()) < 0 || /[?&]habilitar=/.test(location.search)) return '';
     try { if (sessionStorage.getItem(K_SIGUE)) return ''; } catch (e) {}
     return cod;
+  }
+
+  /* ¿Esta compu arranca con el inicio? (la de un local de INICIO_EN, o una con el inicio fijo). */
+  function hayInicioAca(cod) {
+    if (_inicioFijo) return true;
+    if (cod === undefined) try { cod = (compuDelLocal() && localStorage.getItem('nc_caja_local')) || localStorage.getItem('nc_local') || ''; } catch (e) { cod = ''; }
+    return INICIO_EN.indexOf(cod) > -1;
   }
 
   /* Se decide en el <head>: la página queda tapada desde el primer momento (estilos.css) y sin saltos. */
@@ -1349,12 +1390,7 @@ var persona = (function () {
 
   function abrirInicio(cod) {
     /* Pedido con ?inicio: se saca de la dirección, así al entrar (que recarga) queda la página de siempre. */
-    if (/[?&]inicio\b/.test(location.search)) {
-      try {
-        var resto = location.search.replace(/[?&]inicio(=[^&#]*)?/, '').replace(/^&/, '?');
-        history.replaceState(null, '', location.pathname + (resto === '?' ? '' : resto) + location.hash);
-      } catch (e) {}
-    }
+    if (/[?&]inicio(?=[=&#]|$)/.test(location.search)) sacarDeLaDireccion(/[?&]inicio(=[^&#]*)?(?=[&#]|$)/);
     var d = document.createElement('div');
     d.className = 'inicio';
     d.setAttribute('role', 'dialog');
@@ -1420,7 +1456,7 @@ var persona = (function () {
       var e = d.querySelector('[data-estado]');
       e.classList.toggle('sin', !navigator.onLine);
       e.innerHTML = '<i></i>' + (navigator.onLine ? 'Conectado' : 'Sin conexión') + (nom ? ' · ' + txt(nom) : '');
-      d.querySelector('[data-local]').textContent = nom ? 'VDH ' + nom + ' · Compu del local' : '';
+      d.querySelector('[data-local]').textContent = !nom ? '' : ini.local.grupo ? 'VDH · ' + nom : 'VDH ' + nom + ' · Compu del local';
     }
     ini.estado = estado;
     window.addEventListener('online', estado);
@@ -1462,10 +1498,12 @@ var persona = (function () {
   /* El local (id y nombre) sale de la misma lista de entrar; queda guardado para cuando no hay internet. */
   function localDelInicio() {
     if (_inicio.local) return Promise.resolve(_inicio.local);
+    /* 'OFICINA' es "Administración", que no tiene código: se reconoce por su grupo (como en pasoLocales). */
+    var ofi = _inicio.cod === 'OFICINA';
     return funcion('nc_login_locales', {}).then(function (locales) {
-      var l = (locales || []).filter(function (x) { return x.id && x.codigo === _inicio.cod; })[0];
+      var l = (locales || []).filter(function (x) { return ofi ? !x.codigo && x.grupo === 'oficina' : x.id && x.codigo === _inicio.cod; })[0];
       if (!l) throw Object.assign(new Error('Este local no está en la lista para entrar.'), { delServidor: true });
-      _inicio.local = { id: l.id, codigo: l.codigo, nombre: l.nombre };
+      _inicio.local = ofi ? { id: null, grupo: 'oficina', codigo: 'OFICINA', nombre: l.nombre } : { id: l.id, codigo: l.codigo, nombre: l.nombre };
       guardarLS(K_INICIO_LOCAL, _inicio.local);
       _inicio.estado();
       return _inicio.local;
@@ -1479,7 +1517,7 @@ var persona = (function () {
     _teclas = null;
     cargando(c);
     localDelInicio().then(function (local) {
-      return funcion('nc_login_personas', { p_local: local.id }).then(function (gente) {
+      return funcion('nc_login_personas', local.grupo ? { p_local: null, p_grupo: local.grupo } : { p_local: local.id }).then(function (gente) {
         if (!_inicio || c !== _inicio.c) return;
         gente = gente || [];
         var cols = gente.length <= 4 ? Math.max(gente.length, 3) : gente.length <= 6 ? 3 : 4;
@@ -1491,7 +1529,7 @@ var persona = (function () {
                   '<span class="ini-cara" aria-hidden="true">' + txt(inicial(p.nombre)) + '</span><b>' + txt(p.nombre) + '</b></button>';
               }).join('') + '</div>'
             : '<p class="ncp-vacio">Todavía no hay nadie con usuario en ' + txt(local.nombre) + '. Pedile a tu encargado que te lo cree.</p>') +
-          '<p class="ini-otro">¿Venís de otro local? <button type="button" data-otro>Buscá tu nombre ›</button></p>';
+          '<p class="ini-otro">' + (local.grupo ? '¿No estás en la lista?' : '¿Venís de otro local?') + ' <button type="button" data-otro>Buscá tu nombre ›</button></p>';
         c.querySelectorAll('[data-i]').forEach(function (b) {
           b.onclick = function () { inicioElegir(local, gente[+b.dataset.i]); };
         });
