@@ -310,6 +310,50 @@ var persona = (function () {
     return !!(e && e.delServidor && (e.status === 401 || e.status === 403 || /JWT/i.test(e.message)));
   }
 
+  /* ════════════════════════════════════════════════════════════════════
+     DESDE QUÉ COMPU (SQL 235, 3/11/2026: el modo aviso)
+     ════════════════════════════════════════════════════════════════════
+     Cada aparato guarda un código al azar (nc_aparato) y, una vez por
+     ventana y por día, le cuenta a la base quién entró y si trae la llave de
+     un local (nc_caja, la del enlace de Config → General → Las compus de los
+     locales). No traba nada: es para saber qué compus se usan antes de que
+     cada una tenga que estar aprobada por Mauricio. Sin el SQL 235 la base
+     contesta que la función no existe y no pasa nada. */
+  var K_APARATO = 'nc_aparato', K_ANOTADA = 'nc_compu_anotada';
+  function codigoAparato() {
+    try {
+      var c = localStorage.getItem(K_APARATO) || '';
+      if (/^[A-Za-z0-9_-]{20,80}$/.test(c)) return c;
+      var b = new Uint8Array(24);
+      crypto.getRandomValues(b);
+      c = btoa(String.fromCharCode.apply(null, b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      localStorage.setItem(K_APARATO, c);
+      return localStorage.getItem(K_APARATO) === c ? c : '';
+    } catch (e) { return ''; }
+  }
+  function tipoAparato() {
+    var ua = navigator.userAgent || '';
+    var que = /Mobi|Android|iPhone/i.test(ua) ? 'Celular' : /iPad|Tablet/i.test(ua) ? 'Tablet' : 'Compu';
+    var so = /iPhone|iPad|Mac OS/i.test(ua) ? 'Apple' : /Android/i.test(ua) ? 'Android' : /Windows/i.test(ua) ? 'Windows' : /Linux/i.test(ua) ? 'Linux' : '';
+    return que + (so ? ' ' + so : '');
+  }
+  function anotarCompu() {
+    if (!vigente(_yo) || typeof funcion !== 'function') return;
+    var llave = '';
+    try { llave = localStorage.getItem('nc_caja') || ''; } catch (e) {}
+    /* Una vez por ventana, por persona y por día; de nuevo si la compu recibió (o perdió) la llave. */
+    var marca = _yo.id + '|' + new Date().toLocaleDateString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires' }) + '|' + (llave ? 1 : 0);
+    try {
+      if (sessionStorage.getItem(K_ANOTADA) === marca) return;
+      sessionStorage.setItem(K_ANOTADA, marca);   // antes de mandar: si falla, no se reintenta en cada pantalla
+    } catch (e) { return; }
+    var cod = codigoAparato();
+    if (!cod) return;
+    token().then(function (t) {
+      return funcion('nc_compu_anotar', { p_aparato: cod, p_llave: llave || null, p_tipo: tipoAparato(), p_tactil: !POR_VENTANA, p_pagina: pagina() }, t);
+    }).catch(function () { /* sin el SQL 235 o sin señal: no cambia nada */ });
+  }
+
   function refrescar() {
     if (!leerSesion()) { if (_ses || _yo) olvidar(); return Promise.resolve(null); }
     return token()
@@ -320,6 +364,7 @@ var persona = (function () {
            se le cerró la cuenta). Desactivado: lo mismo. */
         if (!y || y.activo === false) { cerrarSesion(); return null; }
         fijarYo(y);
+        anotarCompu();
         return y;
       })
       .catch(function (e) {

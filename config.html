@@ -177,7 +177,7 @@
     margin: 4px 0 3px; padding-top: 14px;
     border-top: 1px solid var(--line);
   }
-  #compusPorton[hidden], #compusAdentro[hidden], #conexionesAdentro[hidden], #conexionesSin[hidden] { display: none; }
+  #compusPorton[hidden], #compusAdentro[hidden], #compusAvisoBloque[hidden], #conexionesAdentro[hidden], #conexionesSin[hidden] { display: none; }
   #compusPorton { max-width: 420px; }
   /* En el celular, "Crear el enlace" y "Habilitar este aparato" uno abajo
      del otro: lado a lado, con la letra agrandada, el segundo se salía de la
@@ -511,6 +511,12 @@
         <div id="cajasNueva"></div>
         <h3 class="general-sub">Las que están habilitadas</h3>
         <div id="cajasCuerpo"></div>
+        <!-- SQL 235 (3/11/2026): el modo aviso. Sólo lo ve Administración. -->
+        <div id="compusAvisoBloque" hidden>
+          <h3 class="general-sub">Desde qué compu entra cada uno</h3>
+          <p class="bloque-sub">Modo aviso: se anota cada compu o celular donde alguien entra con su usuario, y si tiene la llave de un local. Todavía no traba nada. Son los últimos 14 días.</p>
+          <div id="compusAviso"></div>
+        </div>
       </div>
     </div>
     <div class="bloque" id="cajaLocales">
@@ -2383,12 +2389,69 @@
           };
         });
         pintarCajaNueva();
+        pintarCompusAviso();
       })
       .catch(function (e) {
         var m = (e && e.message) || '';
         caja.innerHTML = '<p class="bloque-sub">' + esc(/club_cajas_listar|PGRST202|could not find the function/i.test(m)
           ? 'Falta correr el SQL 49 en Supabase.' : (m || 'No se pudo traer la lista.')) + '</p>';
         nueva.innerHTML = '';
+      });
+  }
+
+  /* ── Desde qué compu entra cada uno (SQL 235, 3/11/2026: el modo aviso) ──
+     persona.js anota cada aparato donde alguien entra (una vez por ventana y
+     por día) y si trae la llave de un local. Esta lista es para que Mauricio
+     vea, antes de prender la traba, qué compus sin llave se usan y de quién
+     son. Las sin llave van primero. Sólo Administración (la base también lo
+     pide). */
+  function pintarCompusAviso() {
+    var bloque = $('compusAvisoBloque'), cuerpo = $('compusAviso');
+    if (!bloque || !cuerpo) { return; }
+    bloque.hidden = persona.rol() !== 'admin';
+    if (bloque.hidden) { cuerpo.innerHTML = ''; return; }
+    cuerpo.innerHTML = '<p class="bloque-sub">Buscando…</p>';
+    var mio = '';
+    try { mio = localStorage.getItem('nc_aparato') || ''; } catch (e) {}
+    var nombreLocal = function (cod) {
+      var l = cajasLocales.filter(function (x) { return x.codigo === cod; })[0];
+      return l ? l.nombre : cod;
+    };
+    persona.token()
+      .then(function (t) { return funcion('nc_compus_listar', { p_dias: 14, p_aparato: mio || null }, t); })
+      .then(function (r) {
+        var lista = (r && r.compus) || [];
+        if (!lista.length) {
+          cuerpo.innerHTML = '<p class="bloque-sub">Todavía no entró nadie desde que se prendió el modo aviso.</p>';
+          return;
+        }
+        var sinLlave = lista.filter(function (c) { return !c.local; }).length;
+        cuerpo.innerHTML =
+          '<p class="bloque-sub"><b>' + sinLlave + ' sin llave</b> · ' +
+            (lista.length - sinLlave) + ' con la llave de su local</p>' +
+          lista.map(function (c) {
+            var gente = (c.personas || []).map(function (p) {
+              return esc(p.nombre) + ' (' + esc(fechaHora(p.ultima)) + (p.dias > 1 ? ', ' + p.dias + ' días' : '') + ')';
+            }).join(' · ');
+            var internet = c.local ? '' : (c.internet && c.internet.length
+              ? 'Internet: la misma que ' + c.internet.map(function (x) { return esc(nombreLocal(x)); }).join(', ')
+              : 'Internet: no es la de ningún local');
+            return '<div class="promo-fila">' +
+              '<div class="promo-fila-txt"><b>' + (c.local ? esc(nombreLocal(c.local)) + ' · ' : '') + esc(c.tipo || 'Aparato') +
+                (c.local ? ' <span class="pill pill-ok">Con llave</span>' : ' <span class="pill pill-warn">Sin llave</span>') +
+                (c.llave_mala ? ' <span class="pill pill-bad">Llave vieja</span>' : '') +
+                (c.esta ? ' <span class="pill pill-neutra">Esta compu</span>' : '') + '</b>' +
+                '<span>Entró: ' + (gente || '—') + '</span>' +
+                (internet ? '<br><span>' + internet + '</span>' : '') +
+                '<br><span>Primera vez: ' + esc(fechaHora(c.primera)) + ' · última: ' + esc(fechaHora(c.ultima)) + '</span>' +
+              '</div>' +
+            '</div>';
+          }).join('');
+      })
+      .catch(function (e) {
+        var m = (e && e.message) || '';
+        cuerpo.innerHTML = '<p class="bloque-sub">' + esc(/nc_compus_listar|PGRST202|could not find the function/i.test(m)
+          ? 'Falta correr el SQL 235 en Supabase.' : (m || 'No se pudo traer la lista.')) + '</p>';
       });
   }
 
