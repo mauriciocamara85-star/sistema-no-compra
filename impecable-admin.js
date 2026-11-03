@@ -4213,7 +4213,7 @@ function dibujarMapaLocal() {
       (_repartir && d.dep.length > 1 && depositoNumerado(d) ? '<button class="boton chico" id="btnParejoDep">Repartir parejo el depósito entre ' + entreCuantos(d, 'deposito') + '</button>' : '') +
       (_repartir && esAdmin() ? '<button class="boton chico" id="btnNuevoSector">Agregar un sector</button>' : '') +
       '<button class="boton chico" id="btnFormaMapa">Armar el croquis</button></div>' : '') +
-    (_repartir ? '<p class="bajada">"Repartir parejo" arma un sector para cada vendedora del local y le da a cada una la misma cantidad de módulos, en bloques seguidos (22 entre 3: 7, 7 y 8). ' +
+    (_repartir ? '<p class="bajada">"Repartir parejo" te deja elegir entre qué vendedoras (la que cubre francos viene destildada), arma un sector para cada una y les da la misma cantidad de módulos, en bloques seguidos (22 entre 3: 7, 7 y 8). ' +
                  'Para hacerlo a mano o ponerle nombre a un módulo ("Vidriera"), tocalo. Tocá un sector (abajo) para elegir quién lo tiene, quién lo cubre y, en el depósito, qué tiene.</p>' : '') +
     (d.modulos.length ? (_repartir ? '' : resumenSemana(d)) + '<div class="imp-mapa-dibujos">' + svgMapa(d, { marcas: marcasSemana(d) }) + svgDeposito(d, { marcas: marcasSemana(d) }) + '</div>' + leyendaNombres(d)
                       : '<div class="vacio">Este local todavía no tiene módulos' + (puede ? ': tocá "Armar el croquis".' : '.') + '</div>') +
@@ -4344,22 +4344,35 @@ function vendedorasDe(d) {
     .sort(function (a, b) { return nombreLista(a).localeCompare(nombreLista(b), 'es'); });
 }
 
-/** Un sector para cada vendedora (pedido de Mauricio, 3/11: "que se haga automáticamente"). La que ya tiene uno se lo queda;
-    a las demás les toca un sector sin nadie (o con alguien que no es vendedora del local) y, si no alcanzan, uno nuevo, que
-    sólo crea el administrador (la base no deja al supervisor). La que no tiene sector pero cubre el de otra (la franquera,
-    como Mel en Rivadavia) sigue cubriendo y no recibe uno. quedan: los sectores como van a quedar, en el orden en que
-    reparte la base (por número; los nuevos, al final). sobran: los que se quedan sin nadie. faltan: las que no tienen sector. */
-function sectoresPorVendedora(d, tipo) {
+/** Las que "Repartir parejo" deja afuera si no se elige otra cosa: la que no tiene sector pero cubre el de otra (la
+    franquera, como Mel en Rivadavia). En la ventana se tildan o destildan. {id: true} */
+function afueraPorDefecto(d, tipo) {
+  var tiene = {}, cubre = {}, out = {};
+  (tipo === 'deposito' ? d.deposito : d.salon).forEach(function (s) {
+    if (s.responsable_id) tiene[s.responsable_id] = true;
+    if (s.suplente_id) cubre[s.suplente_id] = true;
+  });
+  vendedorasDe(d).forEach(function (p) { if (cubre[p.id] && !tiene[p.id]) out[p.id] = true; });
+  return out;
+}
+
+/** Un sector para cada vendedora que entra en el reparto (pedido de Mauricio, 3/11: "que se haga automáticamente", y
+    que se pueda sacar a alguna, como la que cubre francos). afuera: {id: true}, las que no entran (sin él, las de
+    afueraPorDefecto). La que entra y ya tiene sector se lo queda; a las demás les toca un sector sin nadie (o con alguien
+    que no entra) y, si no alcanzan, uno nuevo, que sólo crea el administrador (la base no deja al supervisor).
+    quedan: los sectores como van a quedar, en el orden en que reparte la base (por número; los nuevos, al final).
+    sobran: los que se quedan sin nadie. faltan: las que entran pero se quedan sin sector. */
+function sectoresPorVendedora(d, tipo, afuera) {
+  afuera = afuera || afueraPorDefecto(d, tipo);
   var todos = (tipo === 'deposito' ? d.deposito : d.salon).slice().sort(function (a, b) { return a.numero - b.numero; });
-  var vend = vendedorasDe(d), es = {}, tiene = {}, cubre = {}, quedan = [], libres = [], faltan = [];
+  var vend = vendedorasDe(d).filter(function (p) { return !afuera[p.id]; }), es = {}, tiene = {}, quedan = [], libres = [], faltan = [];
   vend.forEach(function (p) { es[p.id] = true; });
   todos.forEach(function (s) {
-    if (s.suplente_id) cubre[s.suplente_id] = true;
     if (es[s.responsable_id] && !tiene[s.responsable_id]) { tiene[s.responsable_id] = true; quedan.push({ sector: s, resp: s.responsable_id }); }
     else libres.push(s);
   });
   vend.forEach(function (p) {
-    if (tiene[p.id] || cubre[p.id]) return;
+    if (tiene[p.id]) return;
     if (libres.length) quedan.push({ sector: libres.shift(), resp: p.id });
     else if (esAdmin()) quedan.push({ sector: null, resp: p.id });
     else faltan.push(p);
@@ -4368,16 +4381,17 @@ function sectoresPorVendedora(d, tipo) {
   return { quedan: quedan, sobran: libres, faltan: faltan };
 }
 
-/** "2 vendedoras" o, en un local sin vendedoras cargadas, la cantidad de sectores (como antes). */
+/** "2 vendedoras" (las que entran si no se destilda a nadie) o, en un local sin vendedoras cargadas, la cantidad de
+    sectores (como antes). */
 function entreCuantos(d, tipo) {
   var n = planReparto(d, tipo).length;
   return vendedorasDe(d).length ? n + (n === 1 ? ' vendedora' : ' vendedoras') : n;
 }
 
 /** Cómo quedaría el reparto parejo (lo mismo que hace la base): bloques seguidos, los últimos llevan uno más. */
-function planReparto(d, tipo) {
+function planReparto(d, tipo, afuera) {
   var secs;
-  if (vendedorasDe(d).length) secs = sectoresPorVendedora(d, tipo).quedan;
+  if (vendedorasDe(d).length) secs = sectoresPorVendedora(d, tipo, afuera).quedan;
   else {
     var todos = tipo === 'deposito' ? d.deposito : d.salon;
     secs = todos.filter(function (s) { return s.responsable_id; });
@@ -4394,58 +4408,120 @@ function planReparto(d, tipo) {
   });
 }
 
+/** "Repartir parejo": la ventana con las vendedoras del local, cada una con su casilla (la que cubre francos viene
+    destildada), cómo queda (cambia al tildar) y quién cubre. En un local sin vendedoras cargadas, entre los sectores. */
 function repartirParejo(d, tipo) {
-  var plan = planReparto(d, tipo), mods = tipo === 'deposito' ? d.dep : d.pared.concat(d.islas.filter(function (m) { return !esVidriera(m); }));
-  if (!plan.length || !mods.length) { avisar('No hay módulos para repartir.'); return; }
-  var pv = vendedorasDe(d).length ? sectoresPorVendedora(d, tipo) : null, t = tipo === 'deposito' ? 'deposito' : 'salon';
-  var nuevos = plan.filter(function (p) { return !p.sector; }).length;
-  var texto = plan.map(function (p) {
-    var resp = d.persona[p.resp];
-    return (resp ? nombreLista(resp) : nombreSector(p.sector)) + ': ' + (p.nums.length ? rangosMixtos(p.nums) + ' (' + p.cantidad + ')' : 'ninguno');
-  }).join('\n');
-  var sinNadie = pv ? pv.sobran.filter(function (s) { return s.responsable_id; }) : [];
-  var notas = (nuevos ? (nuevos === 1 ? 'Se agrega un sector nuevo. ' : 'Se agregan ' + nuevos + ' sectores nuevos. ') : '') +
-    (sinNadie.length ? sinNadie.map(nombreSector).join(' y ') + (sinNadie.length === 1 ? ' se queda' : ' se quedan') + ' sin nadie y sin módulos. ' : '') +
-    (pv && pv.faltan.length ? 'A ' + pv.faltan.map(nombreLista).join(' y ') + ' le falta un sector: lo agrega un administrador. ' : '');
+  var t = tipo === 'deposito' ? 'deposito' : 'salon';
+  var mods = t === 'deposito' ? d.dep : d.pared.concat(d.islas.filter(function (m) { return !esVidriera(m); }));
+  if (!mods.length) { avisar('No hay módulos para repartir.'); return; }
+  var vend = vendedorasDe(d);
+  if (!vend.length) return repartirEntreSectores(d, t, mods);
+  var todos = t === 'deposito' ? d.deposito : d.salon, suSector = {}, cubreA = {};
+  todos.forEach(function (s) { if (s.responsable_id) suSector[s.responsable_id] = s; if (s.suplente_id) cubreA[s.suplente_id] = true; });
+  var porDefecto = afueraPorDefecto(d, t), franqueras = Object.keys(porDefecto);
+  var f = ventana('<h1>Repartir parejo ' + (t === 'deposito' ? 'el depósito' : 'el salón') + '</h1>' +
+    '<p class="bajada">Los ' + mods.length + ' módulos ' + (t === 'deposito' ? 'del depósito' : 'del salón (paredes y centro)') +
+      ' en partes iguales, en bloques seguidos, entre las que tildes. ' +
+      (t === 'deposito' ? 'El salón no cambia.' : 'Las vidrieras siguen siendo de todas y el depósito no cambia.') + '</p>' +
+    '<div class="seccion">¿Entre quiénes?</div><div class="imp-locales">' + vend.map(function (p) {
+      var s = suSector[p.id];
+      return '<label class="imp-check"><input type="checkbox" data-rp="' + esc(p.id) + '"' + (porDefecto[p.id] ? '' : ' checked') + '> ' + esc(nombreLista(p)) +
+        ' <small>' + esc(s ? nombreSector(s) : cubreA[p.id] ? 'Cubre francos' : 'Sin sector') + '</small></label>';
+    }).join('') + '</div>' +
+    '<div id="rpCubreFila"><label class="campo"><span>Lo cubre en todos los sectores (franco o ausencia)</span><select id="rpCubre"></select></label></div>' +
+    '<div class="seccion">Cómo queda</div><div class="nota" id="rpPlan"></div>' +
+    '<div class="botones"><button class="boton lima" id="rpRepartir">Repartir</button></div>');
+  var cubreSel = f.querySelector('#rpCubre'), elegida = franqueras.length === 1 ? franqueras[0] : '';
+  var afuera = function () {
+    var a = {};
+    f.querySelectorAll('[data-rp]').forEach(function (c) { if (!c.checked) a[c.dataset.rp] = true; });
+    return a;
+  };
   /* Quien cubre se queda, si sigue en el local (la base no acepta a alguien que ya no está). */
   var cubre = function (id, resp) {
     var p = id && id !== resp && d.persona[id];
     return p && (p.rol === 'vendedor' || p.rol === 'supervisor') && !(p.alta_propia && !p.aprobado) ? id : null;
   };
-  if (!confirm('Repartir los ' + mods.length + (tipo === 'deposito' ? ' módulos del depósito' : ' módulos del salón (paredes y centro)') + ' en partes iguales:\n\n' + texto + '\n\n' +
-               notas + (tipo === 'deposito' ? 'El salón no cambia.' : 'El depósito no cambia.') + ' ¿Repartir así?')) return;
-  /* Primero los sectores (los nuevos y quién tiene cada uno), uno por uno; después reparte la base. Si algo se corta en el
-     medio, tocar de nuevo termina lo que faltó: la que ya tiene sector se lo queda. */
-  var pasos = Promise.resolve(), sectorDe = {};
-  if (pv) {
-    if (nuevos) pasos = leer('/orden_sectores?select=numero&local_id=eq.' + valor(_local.id) + '&tipo=eq.' + t + '&order=numero.desc&limit=1').then(function (u) {
+  var pintar = function () {
+    var a = afuera(), pv = sectoresPorVendedora(d, t, a), plan = planReparto(d, t, a);
+    var fuera = vend.filter(function (p) { return a[p.id]; });
+    /* Quién cubre: una de las que quedan afuera, o como está ahora en cada sector. */
+    if (cubreSel.value !== undefined && cubreSel.options.length) elegida = cubreSel.value;
+    if (!fuera.some(function (p) { return p.id === elegida; })) elegida = '';
+    cubreSel.innerHTML = '<option value="">Como está ahora en cada sector</option>' + fuera.map(function (p) {
+      return '<option value="' + esc(p.id) + '"' + (p.id === elegida ? ' selected' : '') + '>' + esc(nombreLista(p)) + '</option>';
+    }).join('');
+    f.querySelector('#rpCubreFila').style.display = fuera.length ? '' : 'none';
+    var boton = f.querySelector('#rpRepartir');
+    if (!plan.length) {
+      f.querySelector('#rpPlan').innerHTML = pv.faltan.length ? 'Ninguna tiene sector: los sectores nuevos los agrega un administrador.' : 'Tildá al menos una.';
+      boton.disabled = true;
+      return;
+    }
+    boton.disabled = false;
+    var nuevos = plan.filter(function (p) { return !p.sector; }).length;
+    var sinNadie = pv.sobran.filter(function (s) { return s.responsable_id; });
+    var quien = elegida && d.persona[elegida];
+    f.querySelector('#rpPlan').innerHTML = plan.map(function (p) {
+      return '<div><b>' + esc(nombreLista(d.persona[p.resp])) + '</b>: ' + esc(p.nums.length ? rangosMixtos(p.nums) + ' (' + p.cantidad + ')' : 'ninguno') + '</div>';
+    }).join('') +
+      (quien ? '<div>Las cubre ' + esc(nombreLista(quien).replace(/\.?$/, '.')) + '</div>' : '') +
+      (nuevos ? '<div>' + (nuevos === 1 ? 'Se agrega un sector nuevo.' : 'Se agregan ' + nuevos + ' sectores nuevos.') + '</div>' : '') +
+      (sinNadie.length ? '<div>' + esc(sinNadie.map(nombreSector).join(' y ')) + (sinNadie.length === 1 ? ' se queda' : ' se quedan') + ' sin nadie y sin módulos.</div>' : '') +
+      (pv.faltan.length ? '<div>A ' + esc(pv.faltan.map(nombreLista).join(' y ')) + ' le falta un sector: lo agrega un administrador.</div>' : '');
+  };
+  f.querySelectorAll('[data-rp]').forEach(function (c) { c.onchange = pintar; });
+  cubreSel.onchange = pintar;
+  pintar();
+  unaVez(f.querySelector('#rpRepartir'), function () {
+    var a = afuera(), pv = sectoresPorVendedora(d, t, a), plan = planReparto(d, t, a), sup = elegida || null;
+    if (!plan.length) return;
+    var sinNadie = pv.sobran.filter(function (s) { return s.responsable_id; });
+    /* Primero los sectores (los nuevos, quién tiene cada uno y quién lo cubre), uno por uno; después reparte la base. Si
+       algo se corta en el medio, tocar de nuevo termina lo que faltó: la que ya tiene sector se lo queda. */
+    var pasos = Promise.resolve(), nuevoDe = {};
+    if (plan.some(function (p) { return !p.sector; })) pasos = leer('/orden_sectores?select=numero&local_id=eq.' + valor(_local.id) + '&tipo=eq.' + t + '&order=numero.desc&limit=1').then(function (u) {
       var n = u && u[0] ? u[0].numero : 0;   // sigue al más alto, contando los apagados (la base no deja dos iguales)
       return plan.filter(function (p) { return !p.sector; }).reduce(function (cad, p) {
         return cad.then(function () {
           var id = crypto.randomUUID ? crypto.randomUUID() : null;
           if (!id) throw rechazo('Este navegador no puede agregar sectores. Probá con Chrome.');
-          sectorDe[p.resp] = { id: id, suplente_id: null };
+          nuevoDe[p.resp] = { id: id, responsable_id: null, suplente_id: null };
           return escribir('/orden_sectores', 'POST', { id: id, local_id: _local.id, tipo: t, numero: ++n });
         });
       }, Promise.resolve());
     });
     plan.forEach(function (p) {
-      var s = p.sector || sectorDe[p.resp];
-      if (p.sector && p.sector.responsable_id === p.resp) return;
       pasos = pasos.then(function () {
-        s = s || sectorDe[p.resp];
-        return llamar('orden_sector_gente', { p_sector: s.id, p_responsable: p.resp, p_suplente: cubre(s.suplente_id, p.resp), p_nombre: null });
+        var s = p.sector || nuevoDe[p.resp], cubreNueva = sup ? cubre(sup, p.resp) : cubre(s.suplente_id, p.resp);
+        if (s.responsable_id === p.resp && (s.suplente_id || null) === cubreNueva) return;
+        return llamar('orden_sector_gente', { p_sector: s.id, p_responsable: p.resp, p_suplente: cubreNueva, p_nombre: null });
       });
     });
     sinNadie.forEach(function (s) {
       pasos = pasos.then(function () { return llamar('orden_sector_gente', { p_sector: s.id, p_responsable: null, p_suplente: cubre(s.suplente_id, null), p_nombre: null }); });
     });
-  }
-  return pasos.then(function () {
-    return llamar('orden_mapa_repartir', { p_local: _local.id, p_tipo: t });
-  }).then(function () {
+    return pasos.then(function () {
+      return llamar('orden_mapa_repartir', { p_local: _local.id, p_tipo: t });
+    }).then(function () {
+      f.remove(); avisar('Listo: repartido parejo.'); recargarMapaLocal();
+    }, function (e) { recargarMapaLocal(); throw e; });
+  });
+}
+
+/** Sin vendedoras cargadas en el local: entre los sectores, como antes. */
+function repartirEntreSectores(d, t, mods) {
+  var plan = planReparto(d, t);
+  if (!plan.length) { avisar('No hay módulos para repartir.'); return; }
+  var texto = plan.map(function (p) {
+    var resp = d.persona[p.resp];
+    return (resp ? nombreLista(resp) : nombreSector(p.sector)) + ': ' + (p.nums.length ? rangosMixtos(p.nums) + ' (' + p.cantidad + ')' : 'ninguno');
+  }).join('\n');
+  if (!confirm('Repartir los ' + mods.length + (t === 'deposito' ? ' módulos del depósito' : ' módulos del salón (paredes y centro)') + ' en partes iguales:\n\n' + texto + '\n\n' +
+               (t === 'deposito' ? 'El salón no cambia.' : 'El depósito no cambia.') + ' ¿Repartir así?')) return;
+  return llamar('orden_mapa_repartir', { p_local: _local.id, p_tipo: t }).then(function () {
     avisar('Listo: repartido parejo.'); recargarMapaLocal();
-  }, function (e) { recargarMapaLocal(); throw e; });
+  });
 }
 
 /** Un sector nuevo (antes, en Ajustes → Sectores y módulos). Después se toca abajo para elegir quién lo tiene. */
