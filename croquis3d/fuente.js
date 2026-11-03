@@ -345,6 +345,7 @@ function materiales(estilo) {
   MAT.aluminio = new THREE.MeshStandardMaterial({ color: '#C8CBCF', roughness: 0.35, metalness: 0.85 });
   MAT.rojo = new THREE.MeshStandardMaterial({ color: '#C8322C', roughness: 0.5 });
   MAT.agua = new THREE.MeshStandardMaterial({ color: '#7FB6E0', transparent: true, opacity: 0.55, roughness: 0.1 }); MAT.agua.userData.sinSombra = true;
+  MAT.bidonRojo = new THREE.MeshStandardMaterial({ color: '#B0302A', transparent: true, opacity: 0.82, roughness: 0.15 }); MAT.bidonRojo.userData.sinSombra = true;
   MAT.toque = new THREE.MeshBasicMaterial({ visible: false });   // la caja invisible de cada módulo, para saber cuál se toca
   return MAT;
 }
@@ -699,6 +700,9 @@ function extraPared(L, x, lotePared, sem, R, alto) {
   }
   if (o.tipo === 'zapatillero') { zapatillero(R, S, o, sem); return; }
   if (o.tipo === 'cascada') { percheroCascada(R, S, o, sem, alto || 90); return; }
+  if (o.tipo === 'estantePercha') { estanteYPercha(L, R, S, Sp, lotePared, o, sem); return; }
+  if (o.tipo === 'dispenser') { dispenserBidon(L, R, S, o, sem); return; }
+  if (o.tipo === 'colgado') { colgadoDeposito(L, S, Sp, o); return; }
   const lista = o.tipo === 'maniquies' ? [{ base: 'carroBajo', ropa: { arriba: 'saco', abajo: 'pantalon', colArriba: '#3A3C40', colAbajo: '#3A3C40', zapas: 'negro' } },
     { base: 'cajaNegra', ropa: Object.assign({ negro: true, arriba: 'camisa', abajo: 'bermuda', colArriba: '#2A2B2E', colAbajo: '#E6E1D6' }) }] : [{ base: o.base, ropa: o.ropa }];
   lista.forEach((m, i) => {
@@ -756,6 +760,65 @@ function bolsaColgada(S, a, y, tipo, color) {
     S.caja(mat, 12.5, 13, 1.2, a, y - 11.6, 3.4);
     S.caja(MAT.blanco, 6, 2, 0.2, a, y - 10.6, 4.1);                    // el logo
   }
+}
+/** El fondo del depósito de Lomas: el estante blanco alto sobre dos ménsulas (aerosoles, botellitas, una bolsa de papel,
+    bolsas negras, el balde naranja y una caja), los sacos colgados debajo y, en el piso, el tacho negro con el rollo de
+    cocina y el aromatizante, un bidón y el cesto verde. lp: el lote de la pared (lo de arriba se corta con ella). o.sacos:
+    [[dónde (−1 a 1, a lo largo), color]]. */
+function estanteYPercha(L, R, S, Sp, lp, o, sem) {
+  const r0 = azar(sem), A = S.largo / 2 - 3, ye = o.alto || 102, P = Math.min(S.fondo - 4, 24), sobre = ye + 0.8;
+  const cil = (lote, mat, r1, r2, h, a, y, b) => { const p = S.pos(a, y + h / 2, b); lote.cilindro(mat, r1, r2, h, p[0], p[1], p[2], 14); };
+  Sp.caja(MAT.blanco, A * 2, 1.6, P, 0, ye, P / 2);
+  for (const fa of [-0.15, 0.55]) {   // las ménsulas: en la pared y debajo del estante
+    Sp.caja(MAT.blanco, 1.4, 20, 1, fa * A, ye - 10.8, 0.6);
+    Sp.caja(MAT.blanco, 1.4, 1.4, P - 3, fa * A, ye - 1.5, (P - 3) / 2);
+  }
+  /* Arriba del estante, de izquierda a derecha como en la foto. */
+  cil(lp, MAT.blanco, 1.6, 1.6, 9, -A * 0.62, sobre, P * 0.5); cil(lp, MAT.rojo, 1.6, 1.6, 1.4, -A * 0.62, sobre + 9, P * 0.5);
+  cil(lp, telaMat('#9ED3C3', true), 2.1, 2.1, 10, -A * 0.52, sobre, P * 0.45);
+  cil(lp, telaMat('#E7A6B8', true), 2.1, 2.1, 9, -A * 0.44, sobre, P * 0.55);
+  Sp.caja(MAT.carton, 9, 13, 6, -A * 0.3, sobre + 6.5, P * 0.55);
+  const bola = new THREE.SphereGeometry(1, 10, 8);
+  for (let i = 0; i < 4; i++) {
+    const p = S.pos(-A * 0.1 + i * A * 0.09, sobre + 3 + (i % 2) * 2, P * (0.35 + 0.25 * r0()));
+    lp.add(MAT.plastico, bola, new THREE.Matrix4().compose(new THREE.Vector3(p[0], p[1], p[2]), new THREE.Quaternion().setFromEuler(new THREE.Euler(r0(), r0() * 3, r0())), new THREE.Vector3(6 + r0() * 2, 3.5 + r0(), 5 + r0() * 2)));
+  }
+  cil(lp, telaMat('#D8B23A', true), 1.7, 1.7, 12, A * 0.3, sobre, P * 0.4);
+  cil(lp, telaMat('#E8752A', true), 5.6, 4.6, 11, A * 0.52, sobre, P * 0.5);
+  Sp.caja(telaMat('#E9A9C4'), 10, 14, 8, A * 0.82, sobre + 7, P * 0.45);
+  /* Los sacos, de frente: el gris de la ménsula y el negro de un barral corto. */
+  Sp.caja(MAT.cano, 16, 0.8, 0.8, A * 0.42, ye - 6, 6);
+  (o.sacos || [[-0.15, '#C9CBCB'], [0.42, '#1C1D20']]).forEach(([fa, col]) => {
+    R.add('larga', S.matriz(fa * A, ye - 7.6, 7, 0, new THREE.Vector3(1.15, 54, 1.3)), col);
+    R.add('percha', S.matriz(fa * A, ye - 7.2, 7, 0), null);
+  });
+  /* En el piso. */
+  cil(L.lote, MAT.negroMate, 8, 7.4, 26, A * 0.16, 0, 14);
+  cil(L.lote, MAT.blanco, 3.4, 3.4, 11, A * 0.2, 26, 14);
+  cil(L.lote, telaMat('#D9467A', true), 1.5, 1.5, 9, A * 0.08, 26, 12);
+  cil(L.lote, MAT.bidonRojo, 6.5, 6.5, 24, A * 0.42, 0, 12); cil(L.lote, MAT.blanco, 2, 2, 3, A * 0.42, 24, 12);
+  cil(L.lote, telaMat('#A9CDB0', true), 6.2, 5.2, 17, A * 0.68, 0, 10);
+}
+/** El dispenser de agua del depósito de Lomas: blanco, con el bidón rojo y, encima, mantas dobladas. o.lado: de qué lado
+    del lugar va (1, si no se dice: a la derecha mirando la pared). */
+function dispenserBidon(L, R, S, o, sem) {
+  const r0 = azar(sem), a = (o.lado === -1 ? -1 : 1) * (S.largo / 2 - 10), b = 9;
+  S.caja(MAT.blanco, 13, 38, 13, a, 19, b);
+  S.caja(MAT.negroMate, 8, 0.8, 4, a, 14, b + 5);   // la rejilla del goteo
+  S.caja(MAT.rojo, 1.4, 1.8, 1.8, a - 2.4, 30, b + 7); S.caja(telaMat('#2F5FB0', true), 1.4, 1.8, 1.8, a + 2.4, 30, b + 7);   // las canillas
+  const p = S.pos(a, 48, b); L.lote.cilindro(MAT.bidonRojo, 6.3, 6.3, 20, p[0], p[1], p[2], 18);
+  (o.mantas || ['#5A3E6E', '#7FC4B0', '#E8E1D3', '#5A3E6E']).forEach((col, k) => R.add('doblada', S.matriz(a + (r0() - 0.5) * 2, 59 + k * 2.6, b, (r0() - 0.5) * 0.5, new THREE.Vector3(1.2, 1.3, 1.15)), col));
+}
+/** Lo colgado en una pared del depósito (Lomas, al lado de las camisas): bolsas de ganchos y, parado en el piso, el banner
+    naranja de VDH. o.bolsas: [[dónde (−1 a 1), alto, color]]; o.banner: dónde (−1 a 1). */
+function colgadoDeposito(L, S, Sp, o) {
+  const A = S.largo / 2 - 8;
+  (o.bolsas || [[-0.85, 94, '#3FA06A'], [-0.85, 72, '#D9465A'], [-0.6, 90, '#D8C7A4']]).forEach(([fa, y, col]) => bolsaColgada(Sp, fa * A, y, 'tote', col));
+  const ab = A * (o.banner == null ? -0.25 : o.banner);
+  S.caja(MAT.chapa, 24, 2.4, 9, ab, 1.2, 9);
+  S.caja(telaMat('#E8752A'), 22, 84, 0.6, ab, 45, 9);
+  const c = new THREE.Mesh(new THREE.PlaneGeometry(18, 4.5), new THREE.MeshBasicMaterial({ map: texturaTexto('VDH'), transparent: true, depthWrite: false }));
+  const p = S.pos(ab, 74, 9.4); c.position.set(p[0], p[1], p[2]); c.rotation.y = S.ry; L.escena.add(c);
 }
 /** Un módulo de shopping: un nicho de madera clara con luz arriba, un estante con ropa doblada, el barral con la ropa
     colgada y abajo el zócalo; entre nicho y nicho, la pared negra. */
@@ -1151,6 +1214,41 @@ function estanteriaPared(L, R, it, sem) {
   });
   return { centro: S.pos(0, 106, P / 2), frente: S.pos(0, 0, P + 1.5) };
 }
+/** La estantería de metal blanca de los depósitos (Lomas): de encastre, con los agujeritos en los parantes, estantes de
+    chapa con su canto, la ropa doblada en sus bolsitas y el cartelito pegado en el canto ("TALLE M"). f.niveles: [[altura
+    (0 a 1), colores, cartel]], de abajo para arriba; f.alto; f.tablero: a qué altura (0 a 1) está el tablero de luz en la
+    pared, detrás. */
+function estanteriaMetal(L, R, it, sem, f) {
+  const S = sobrePared(L, it), r0 = azar(sem), P = Math.min(S.fondo - 6, 22), A = S.largo / 2 - 2, H = f.alto || 118, t = 1.8;
+  const tramos = Math.max(1, Math.round(A * 2 / 92)), paso = A * 2 / tramos;
+  for (let k = 0; k <= tramos; k++) {
+    const a = -A + k * paso + (k === 0 ? t / 2 : k === tramos ? -t / 2 : 0);
+    for (const b of [t / 2, P - t / 2]) S.caja(MAT.blanco, t, H, t, a, H / 2, b);
+    for (let y = 5; y < H - 3; y += 4.6) S.caja(MAT.negroMate, 0.45, 1.5, 0.2, a, y, P + 0.05);   // los agujeritos de adelante
+  }
+  const niveles = (f.niveles || [[0.02], [0.3], [0.58], [0.86]]).slice().sort((p, q) => p[0] - q[0]);
+  niveles.forEach(([fr, cols, cartel], i) => {
+    const y = 1.5 + (H - 3) * fr, arriba = niveles[i + 1] ? 1.5 + (H - 3) * niveles[i + 1][0] : y + 16;
+    S.caja(MAT.blanco, A * 2, 0.8, P, 0, y, P / 2);
+    S.caja(MAT.blanco, A * 2, 2.6, 0.3, 0, y - 0.9, P - 0.15);   // el canto de la chapa
+    if (cartel) {
+      const c = new THREE.Mesh(new THREE.PlaneGeometry(14, 3.1), new THREE.MeshStandardMaterial({ map: texturaCartelito(cartel), roughness: 0.8 }));
+      const p = S.pos(-A * 0.35, y - 1.1, P + 0.05); c.position.set(p[0], p[1], p[2]); c.rotation.y = S.ry; L.escena.add(c);
+    }
+    if (!cols || !cols.length) return;
+    const tope = Math.max(1, Math.floor((arriba - y - 3) / 2.05));
+    for (let a = -A + 1.5; a < A - 12; a += 13.4 + r0() * 1.2) {
+      const n = Math.min(tope, 2 + Math.floor(r0() * 5)), col = elegir(cols, r0);
+      for (let k = 0; k < n; k++) R.add('doblada', S.matriz(a + 6.5, y + 1.45 + k * 2.05, P * 0.5, (r0() - 0.5) * 0.1), r0() < 0.8 ? col : elegir(cols, r0));
+    }
+  });
+  if (f.tablero) {   // el tablero de luz: la caja con la tapa oscura y, arriba, la fila de térmicas
+    const yt = H * f.tablero, at = A * 0.3;
+    S.caja(MAT.blanco, 22, 15, 3, at, yt, 1.5); S.caja(MAT.pantalla, 17, 7, 0.3, at, yt - 1.5, 3.1);
+    S.caja(MAT.blanco, 20, 6, 2.2, at, yt + 13, 1.1); S.caja(MAT.negroMate, 16, 2.4, 0.3, at, yt + 13, 2.3);
+  }
+  return { centro: S.pos(0, H, P / 2), frente: S.pos(0, 0, P + 1.5) };
+}
 /** El medio del depósito (fotos 43 y 44): la mesa negra que dice VDH, una silla, el bidón de agua, bolsas negras
     en el piso y la escalera. */
 function medioDeposito(L, R, pl, sem) {
@@ -1187,6 +1285,10 @@ function escaleraAluminio(L, x, z, ry) {
   for (const s of [-1, 1]) { E.caja(MAT.aluminio, 1, 62, 1.6, s * 6, 31, 0); E.caja(MAT.aluminio, 1, 60, 1.6, s * 6, 30, -4); }
   for (let y = 12; y < 58; y += 12) E.caja(MAT.aluminio, 12, 0.8, 4, 0, y, 1);
   E.caja(MAT.rojo, 12.5, 1.6, 6, 0, 61, -1);
+}
+/** El cartelito de papel pegado en el canto de un estante del depósito ("TALLE M"), escrito con fibra. */
+function texturaCartelito(texto) {
+  return lienzo(256, 56, (g, w, h) => { g.fillStyle = '#FBFAF6'; g.fillRect(0, 0, w, h); g.font = '800 40px "Segoe Print", "Comic Sans MS", Manrope, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#0E0F11'; g.fillText(texto, w / 2, h / 2 + 2, w - 12); });
 }
 function texturaTexto(texto) {
   const t = lienzo(512, 128, (g, w, h) => { g.clearRect(0, 0, w, h); g.font = '800 92px "Arial Black", Manrope, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = '#F2F0EB'; g.fillText(texto, w / 2, h / 2 + 4); });
@@ -1426,7 +1528,7 @@ function armarEscena(pl, op) {
     const f = (op.ficha && op.ficha(m, it)) || {}, colgadaC = tipos.some((t) => t === 'camisa' || t === 'campera' || t === 'vestido');
     const mueble = f.tipo || (op.mueble && op.mueble(m, it)) || (it.pared ? 'pared' : colgadaC ? 'perchero' : 'mesa'), calle = estilo === 'calle';
     if (it.vidriera) info = vidriera(L, R, r, sem);
-    else if (it.pared && pl.tipo === 'deposito') info = calle ? estanteriaPared(L, R, it, sem) : moduloDeposito(L, R, it, Math.max(alto, 96), tipos, sem);
+    else if (it.pared && pl.tipo === 'deposito') info = calle ? (f.tipo === 'metal' ? estanteriaMetal(L, R, it, sem, f) : estanteriaPared(L, R, it, sem)) : moduloDeposito(L, R, it, Math.max(alto, 96), tipos, sem);
     else if (it.pared && (mueble === 'malla' || mueble === 'carro')) {
       const S = sobrePared(L, it), W = Math.min(S.largo - 10, 64), D = Math.min(S.fondo - 6, 26), c = S.pos(0, 0, D / 2 + 3);
       info = exhibidorMalla(L, R, enLugar(L, c[0], c[2], S.ry), W, D, tipos.length ? tipos : ['campera'], sem, true, f.arriba || 'gorras', f);

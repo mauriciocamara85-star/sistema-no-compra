@@ -8,7 +8,9 @@
    - entre: lo que va entre dos módulos de la pared (un espejo, maniquíes).
    - lugares: lo que hay en un lugar de la pared que no es módulo, por su nombre en el croquis (en minúscula): un
      maniquí en su base, la tabla de las zapatillas (zapatillero), el perchero angosto con ganchos en cascada.
-   - medioDeposito: la mesa negra del medio del depósito. */
+   - medioDeposito: la mesa negra del medio del depósito.
+   - deposito: { fichas, lugares } del depósito, con sus números (tipo metal: la estantería de metal blanca, con niveles
+     [altura, colores, cartel]; lugares: estantePercha, dispenser, colgado). */
 export const LOCALES_3D = {
   /* Rivadavia: de las fotos de Mauricio (15/10/2026), módulo por módulo. */
   '7ce69820-6c1b-48a2-bdaa-4a546f448522': {
@@ -65,6 +67,24 @@ export const LOCALES_3D = {
       "maniquí": {"tipo":"maniqui","base":"carroBajo","ropa":{"negro":true,"arriba":"remera","abajo":"bermuda","colArriba":"#ECE8DD","colAbajo":"#1E1F22","gorra":true,"colGorra":"#2A2B2E","zapas":"negro"}},
       "zapatillas": {"tipo":"zapatillero","pila":"izquierda"},
       "perchero": {"tipo":"cascada","lado":-1,"malla":1,"prendas":[[0.84,"remera","#F2F0EB"],[0.46,"pantalon","#1E1F22"]]}
+    },
+    /* El depósito (fotos del 3/11): estanterías de metal blancas con la ropa en bolsitas y el talle en el canto. */
+    deposito: {
+      fichas: {
+        "1": {"tipo":"metal","niveles":[[0.02,["#1E1F22","#D9CBB0","#3A3B3D","#2A2B2E"]],[0.21,["#EDEAE3","#D6D3CC","#2A2B2E","#4A6B4E"]],
+              [0.4,["#1E1F22","#2A2B2E","#3A3B3D"]],[0.58,["#1F2A3D","#2B3F5C","#1E1F22","#3E6B4A"],"JEANS T 40"],
+              [0.77,["#C8B59A","#B9A486","#F2F0EB","#1E1F22"]],[0.96,["#8E2F3A","#1E1F22","#4D5240","#7A2E35"]]]},
+        "2": {"tipo":"metal","tablero":0.62,"niveles":[[0.02,["#1E1F22","#E6DCC8","#F2F0EB","#3A3B3D"]],[0.24,["#EDEAE3","#1E1F22","#F1DC7A","#D9D4CB"],"TALLE XL"],
+              [0.45,["#3C5A80","#F2F0EB","#1E1F22","#2B3A55","#8C8F94"],"TALLE L"],[0.8,["#2A2B2E","#F2F0EB","#EDEAE3","#4A3B4A"],"TALLE M"],
+              [0.97,["#3A2B3A","#F2F0EB","#D6D3CC"],"REMERAS S"]]},
+        "3": {"tipo":"metal","niveles":[[0.02,["#1E1F22","#2A2B2E","#3A3B3D"]],[0.28,["#1E1F22","#F2F0EB","#2E5A44","#2A2B2E"]],
+              [0.5,["#1E1F22","#E8E1D3","#F2F0EB"],"CAMISAS"],[0.78,["#1E1F22","#F2F0EB","#2A2B2E"],"CAMISAS"],[0.97,["#F2F0EB","#E8E4DC"]]]}
+      },
+      lugares: {
+        "estante y percha": {"tipo":"estantePercha"},
+        "dispenser": {"tipo":"dispenser"},
+        "bolsas": {"tipo":"colgado"}
+      }
     }
   }
 };

@@ -1242,6 +1242,8 @@ function visor3dMontar(V, caminar) {
     if (pide !== V.c3pide || !V.usa3d || _visorActual !== V) return;   // ya se pidió otro, se apagó o se cerró
     visor3dSoltar(V);
     var d = V.d, pl = planoMapa(d, tab), salon = pl.tipo !== 'deposito', loc = motor.locales[V.op.local.id] || null;
+    var fichas = loc ? (salon ? loc.fichas : loc.deposito && loc.deposito.fichas) || null : null;   // las del depósito, aparte (sus números son otros)
+    var lugares = loc ? (salon ? loc.lugares : loc.deposito && loc.deposito.lugares) || null : null;
     var numero = function (m) { return esVidriera(m) ? 'V' : m.isla ? numeroVista(d, m) : m.numero; };
     var cont = document.createElement('div');
     cont.className = 'cv-3d';
@@ -1265,9 +1267,9 @@ function visor3dMontar(V, caminar) {
       tipos: function (m) { return prendasDe(visorEtiqueta(m)); },
       /* El mueble de cada módulo como el de verdad (de las fotos del local) y lo que va entre módulos; los locales que
          todavía no están en croquis-locales.js, con los muebles de siempre. */
-      ficha: loc && loc.fichas && salon ? function (m) { return loc.fichas[String(numero(m))] || null; } : null,
+      ficha: fichas ? function (m) { return fichas[String(numero(m))] || null; } : null,
       entre: loc && salon ? loc.entre || null : null,
-      lugares: loc && salon ? loc.lugares || null : null,
+      lugares: lugares,
       medioDeposito: !!(loc && loc.medioDeposito),
       quieto: function () { return !!V.ficha; },
       sensibilidad: visorSensibilidad(),
