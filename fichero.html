@@ -1,108 +1,165 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+<html lang="es" data-theme="dark" class="fi-pagina">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>VDH · Fichero</title>
 <meta name="description" content="El fichero de la compu del local: un QR en movimiento para fichar la entrada y la salida desde Equipo VDH.">
-<meta name="theme-color" content="#EDEFF2">
+<meta name="theme-color" content="#0B0D10">
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icono-oro-apple.png">
 <link rel="icon" href="icono-oro-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@200;300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="estilos.css">
 <!-- El dibujo del QR: qrcode-generator 1.4.4 (MIT), el mismo de qr-resenas.html. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
-<script>
-  try {
-    document.documentElement.dataset.theme =
-      localStorage.getItem('nc_tema_club') === 'dark' ? 'dark' : 'light';
-  } catch (e) {}
-</script>
 <style>
   /* ── El fichero (SQL 218, 31/10/2026) ──────────────────────────────────────
      Mauricio: "sería como un fichero de los viejos que vos fichabas, pero
      ahora con el QR fichás. Entrá y salí." Va en la compu de cada local (la
      habilitada en Config → General → Las compus de los locales): un QR que
-     cambia cada 30 segundos y que cada uno escanea desde Equipo VDH →
-     Registro → Fichar. La hora que queda es la del escaneo.
-     La base da los QR de los próximos dos minutos, firmados, con su hora:
-     la pantalla los va cambiando sola aunque el reloj de la compu ande mal.
-     Pide de nuevo cada minuto y sólo mientras se ve (así gasta poco).
+     cada uno escanea desde Equipo VDH → Registro → Fichar. La hora que queda
+     es la del escaneo.
+     La base da los QR que vienen, firmados, con su hora: la pantalla los va
+     cambiando sola aunque el reloj de la compu ande mal.
      SQL 225 (01/11): el QR EN MOVIMIENTO. Mauricio: "a ver qué podemos
-     implementar para que no se pueda sacar la foto … tenemos la aplicación,
-     una cámara; hay que aprovechar." Ahora cambia cada medio segundo
-     (pos_fichero_qr2 da los de los próximos 30 segundos) y la app lee tres
-     seguidos con la cámara en vivo: una foto tiene uno solo, y un video
-     grabado y reenviado llega vencido. Pide cada 8 segundos, así también
-     ve enseguida quién fichó: un cartel grande, sin sonido ("no le pondría
-     sonido porque el cartel sí"). Sin el 225, el QR de 30 segundos. */
-  /* --fi-qr: el lado del QR (en pantalla completa, más grande). */
-  :root { --tope: 1180px; --fi-qr: min(46vh, 70vw, 300px); }
-  html.fi-completa { --fi-qr: min(64vh, 82vw, 440px); }
+     implementar para que no se pueda sacar la foto". Cambia cada medio
+     segundo (pos_fichero_qr2) y la app lee tres seguidos con la cámara en
+     vivo: una foto tiene uno solo, y un video grabado llega vencido. Pide cada
+     8 segundos, así también ve enseguida quién fichó: un cartel grande, sin
+     sonido ("no le pondría sonido porque el cartel sí"). Sin el 225, el QR de
+     30 segundos.
+     2/11: el mismo tono del inicio (negro y dorado), la maqueta A «Centro» que
+     eligió Mauricio: la hora a la izquierda, el QR en el medio en una placa
+     blanca con borde dorado, «Hoy en …» a la derecha y los 3 pasos abajo. El
+     cartel de «fichó» arriba, nunca encima del QR. Siempre oscura. */
+  html.fi-pagina, html.fi-pagina body { background: #0B0D10; }
+  html.fi-pagina body::before { display: none; }
+  .fi-hoja { max-width: none; margin: 0; padding: 0 !important; }
+  .fi-sin { margin: 24px; }
+  .fi-sin[hidden], .fi[hidden] { display: none; }
+
+  .fi {
+    --bg: #0B0D10; --sup: #14171B; --linea: #2A3038; --t1: #EEF1F4; --t2: #C4CAD2; --t3: #A6AEB8;
+    --bronce: #E8AE85; --sombra: #D59D6D; --medio: #F2AB6F; --brillo: #FDDFA0; --verde: #4FB07F;
+    /* El alto que se usa para medir (en una pantalla alta todo va con zoom: ver abajo). */
+    --vh: 100vh;
+    --qr: min(calc(var(--vh) - 300px), 400px);
+    position: relative; height: var(--vh); display: grid; grid-template-rows: auto minmax(0, 1fr) auto;
+    color: var(--t1); font-family: Poppins, system-ui, sans-serif; -webkit-font-smoothing: antialiased; overflow: hidden;
+    background: radial-gradient(55% 65% at 50% 46%, rgba(201, 138, 94, .13), rgba(201, 138, 94, 0) 70%), var(--bg);
+  }
+  /* En una pantalla alta (la de 1920), todo más grande y en la misma proporción. */
+  @media (min-height: 860px) { .fi { zoom: 1.3; --vh: calc(100vh / 1.3); } }
+  .fi-linea { position: absolute; top: 0; left: 0; right: 0; height: 1px; pointer-events: none;
+    background: linear-gradient(90deg, rgba(213, 157, 109, 0) 14%, var(--sombra) 24.8%, var(--medio) 37.4%, var(--brillo) 50%, var(--medio) 62.6%, var(--sombra) 75.2%, rgba(213, 157, 109, 0) 86%); }
+
+  /* Arriba: (la marca, sólo en pantalla completa: con la barra ya está en la barra) Fichero · el local | conectado, pantalla completa. */
+  .fi-arriba { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 30px 0; min-height: 62px; }
+  .fi-izq, .fi-der { display: flex; align-items: center; gap: 14px; min-width: 0; }
+  .fi-marca { display: none; align-items: center; gap: 12px; }
+  html.fi-completa .fi-marca { display: flex; }
+  .fi-marca-icono { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0;
+    background: linear-gradient(#0E1115, #0E1115) padding-box, linear-gradient(135deg, #FFE7A8 0%, #EDBA5E 28%, #C99446 62%, #EDBA5E 100%) border-box;
+    border: 1.5px solid transparent; box-shadow: 0 0 16px -3px rgba(237, 186, 94, .6); }
+  .fi-marca-icono svg { width: 26px; height: 26px; }
+  .fi-marca-txt small { display: block; font-size: 9.5px; letter-spacing: 2.6px; text-transform: uppercase; color: var(--t2); line-height: 1.2; }
+  .fi-marca-txt b { display: block; font-size: 20px; font-weight: 600; letter-spacing: .6px; line-height: 1.1; }
+  .fi-marca::after { content: ""; width: 1px; height: 30px; background: var(--linea); margin: 0 4px 0 6px; }
+  .fi-seccion { font-size: 15px; font-weight: 500; color: var(--t2); white-space: nowrap; }
+  .fi-seccion b { color: var(--bronce); font-weight: 600; }
+  .fi-estado { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--t3); white-space: nowrap; }
+  .fi-estado i { width: 7px; height: 7px; border-radius: 50%; background: var(--t3); }
+  .fi-estado.si i { background: var(--verde); box-shadow: 0 0 0 3px rgba(79, 176, 127, .2); }
+  .fi-estado.no i { background: #E5A04F; box-shadow: 0 0 0 3px rgba(229, 160, 79, .2); }
+  .fi-btn-icono { width: 36px; height: 36px; border-radius: 10px; display: grid; place-items: center; padding: 0; cursor: pointer;
+    background: var(--sup); border: 1px solid var(--linea); color: var(--t2); }
+  .fi-btn-icono:hover { color: var(--t1); border-color: #3A414B; }
+  .fi-btn-icono:focus-visible { outline: 2px solid var(--bronce); outline-offset: 2px; }
+  .fi-btn-icono svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
   /* SQL 227: en la compu de la oficina (un administrador), arriba a la derecha se elige de qué local es el QR. */
-  .fi-ofi { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; font-size: 14px; color: var(--txt-2); }
+  .fi-ofi { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--t2); }
   .fi-ofi[hidden], html.fi-completa .fi-ofi { display: none; }
   .fi-ofi > span { white-space: nowrap; }
-  .fi { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
-  @media (min-width: 1000px) { .fi { grid-template-columns: minmax(0, 1fr) minmax(300px, 1fr); align-items: start; } }
-  /* En una pantalla alta, la tarjeta del QR en el medio (Mauricio, 2/11: "que quede más centrado, para que no quede
-     todo ese espacio abajo"). Se centra la tarjeta, no todo el bloque: el cartel de quién fichó y la lista de «Hoy»
-     crecen a la derecha, y si contaran, el QR se correría justo cuando el próximo lo está escaneando. La tarjeta mide
-     el QR + 169 px (el nombre, la hora, lo de abajo), 4 más desde 1600 de ancho (ahí .bloque pasa de 18 a 20 px de
-     margen, estilos.css); 18 px es el margen de arriba de la hoja. En la compu del local (1366×768: 657 px de alto)
-     no cambia nada. */
-  :root { --fi-resto: 169px; }
-  @media (min-width: 1600px) { :root { --fi-resto: 173px; } }
-  @media (min-width: 1000px) and (min-height: 760px) { .fi { margin-top: max(0px, calc(50vh - 18px - (var(--fi-qr) + var(--fi-resto)) / 2)); } }
-  .fi[hidden], .fi-sin[hidden] { display: none; }
-  .fi-qr-lado { text-align: center; }
-  .fi-cabeza { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; text-align: left; margin-bottom: 14px; }
-  .fi-local { font: 700 24px/1.15 var(--display); letter-spacing: -.3px; }
-  .fi-fecha { font-size: 14.5px; color: var(--txt-2); margin-top: 3px; }
+
+  /* El medio: la hora | el QR | hoy. */
+  .fi-medio { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 40px; padding: 0 34px; min-height: 0; }
+  .fi-reloj { font-size: clamp(76px, calc(var(--vh) * .17), 150px); font-weight: 200; line-height: .86; letter-spacing: -3px; font-variant-numeric: tabular-nums;
+    background: linear-gradient(180deg, #FBE6CB 0%, #E8AE85 58%, #C98A5E 100%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .fi-fecha { font-size: 18px; font-weight: 500; margin-top: 14px; }
   .fi-fecha::first-letter { text-transform: uppercase; }
-  .fi-reloj { font: 700 40px/1 var(--display); font-variant-numeric: tabular-nums; letter-spacing: -1px; }
-  /* El QR siempre negro sobre blanco (también con el tema oscuro): así lo lee cualquier cámara. */
-  .fi-qr-caja { position: relative; display: inline-block; background: #fff; border-radius: 18px; padding: 14px; border: 1px solid var(--borde-tarjeta); }
-  /* 300 px alcanzan para leerlo desde el mostrador (Mauricio, 31/10: "siento que ocupa toda la pantalla"); en pantalla
-     completa vuelve a ser grande, por si un local lo deja fijo en un monitor. */
-  .fi-qr { width: var(--fi-qr); aspect-ratio: 1; }
+  .fi-donde { font-size: 13px; color: var(--t2); margin-top: 3px; letter-spacing: .3px; }
+
+  .fi-centro { display: flex; flex-direction: column; align-items: center; }
+  /* El QR siempre negro sobre blanco (invertido, algunos celulares no lo leen), en una placa con borde dorado. */
+  .fi-placa { position: relative; padding: 18px; border-radius: 24px; border: 3px solid transparent;
+    background: linear-gradient(#fff, #fff) padding-box, linear-gradient(135deg, #FFE7A8 0%, #EDBA5E 30%, #C99446 62%, #EDBA5E 100%) border-box;
+    box-shadow: 0 0 0 1px rgba(253, 223, 160, .15), 0 0 46px -8px rgba(237, 186, 94, .55), 0 30px 60px -30px rgba(0, 0, 0, .9); }
+  .fi-qr { width: var(--qr); height: var(--qr); }
   .fi-qr svg { display: block; width: 100%; height: 100%; }
-  .fi-tapa { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; border-radius: 18px;
-             background: rgba(255, 255, 255, .94); color: #3F4650; font: 600 16px/1.4 var(--sans); }
+  .fi-tapa { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; border-radius: 21px; text-align: center;
+    background: rgba(255, 255, 255, .95); color: #3F4650; font: 600 16px/1.4 Poppins, system-ui, sans-serif; }
   .fi-tapa[hidden] { display: none; }
-  .fi-barra { width: var(--fi-qr); height: 6px; margin: 14px auto 0; border-radius: 99px; background: var(--surface-3); overflow: hidden; }
-  .fi-barra i { display: block; height: 100%; background: var(--cobre-barra); border-radius: 99px; transition: width .25s linear; }
-  .fi-cambia { font-size: 13px; color: var(--txt-3); margin-top: 8px; }
-  .fi-pasos { margin: 10px 0 12px; padding-left: 22px; font-size: 16px; line-height: 1.55; }
-  .fi-pasos li { margin-bottom: 4px; }
-  .fi-ultimas { display: grid; margin-top: 8px; }
-  .fi-ult { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: baseline; padding: 9px 2px; border-top: 1px solid var(--line); font-size: 15px; }
-  .fi-ult:first-child { border-top: 0; }
-  .fi-ult b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fi-ult span { color: var(--txt-2); font-size: 13.5px; }
-  .fi-ult time { font-weight: 700; font-variant-numeric: tabular-nums; }
-  .fi-ult.nueva { animation: fiNueva 2.4s var(--curva); }
-  @keyframes fiNueva { 0%, 40% { background: var(--ok-soft); } 100% { background: transparent; } }
-  .fi-nada { color: var(--txt-3); font-size: 14px; margin: 6px 0 2px; }
+  .fi-barra { width: var(--qr); height: 5px; margin-top: 14px; border-radius: 99px; background: rgba(255, 255, 255, .08); overflow: hidden; }
   .fi-barra[hidden] { display: none; }
-  /* El cartel de "fichó" (SQL 225): grande, arriba de las instrucciones, sin tapar el QR. Se va solo a los 8 segundos. */
-  .fi-cartel { display: flex; align-items: center; gap: 16px; padding: 18px 20px; margin-bottom: 14px; border-radius: 18px;
-               background: var(--ok-soft); border: 1px solid var(--ok-borde); color: var(--ok-txt); animation: fiCartel .35s var(--curva); }
+  .fi-barra i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--sombra), var(--brillo)); transition: width .25s linear; }
+  .fi-vivo { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 16px 0 0; font-size: 13px; color: var(--t2); }
+  .fi-vivo i { width: 8px; height: 8px; border-radius: 50%; background: var(--medio); box-shadow: 0 0 0 4px rgba(242, 171, 111, .18), 0 0 10px rgba(242, 171, 111, .8); }
+
+  /* Hoy: las últimas fichadas del local (la base da las 8 más nuevas, la más nueva arriba). */
+  .fi-hoy { justify-self: end; width: 100%; max-width: 360px; max-height: 100%; overflow: auto; scrollbar-width: thin;
+    background: rgba(20, 23, 27, .85); border: 1px solid var(--linea); border-radius: 18px; padding: 16px 18px 6px; }
+  .fi-hoy-tit { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .fi-hoy-tit small { font-size: 12px; font-weight: 400; color: var(--t3); white-space: nowrap; }
+  .fi-ult { display: flex; align-items: center; gap: 12px; padding: 8px 0; border-top: 1px solid rgba(42, 48, 56, .7); }
+  .fi-ult:first-child { border-top: 0; }
+  .fi-ult.nueva { animation: fiNueva 2.4s cubic-bezier(.2, .8, .2, 1); }
+  @keyframes fiNueva { 0%, 40% { background: rgba(79, 176, 127, .16); } 100% { background: transparent; } }
+  .fi-cara { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; font-size: 14px; font-weight: 600; color: var(--bronce);
+    background: linear-gradient(#1B1F24, #1B1F24) padding-box, linear-gradient(135deg, var(--brillo), var(--sombra) 38%, #3A3F47 72%) border-box; border: 1.5px solid transparent; }
+  .fi-ult b { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fi-tipo { font-size: 11px; font-weight: 600; letter-spacing: .4px; text-transform: uppercase; padding: 3px 8px; border-radius: 99px; }
+  .fi-tipo.ent { color: #7FD3A6; background: rgba(79, 176, 127, .14); }
+  .fi-tipo.sal { color: var(--bronce); background: rgba(232, 174, 133, .14); }
+  .fi-ult time { font-variant-numeric: tabular-nums; font-weight: 500; font-size: 15px; }
+  .fi-nada { color: var(--t3); font-size: 14px; margin: 8px 0 12px; }
+
+  /* Abajo: los 3 pasos. */
+  .fi-pasos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin: 0; padding: 0 34px 22px; list-style: none; }
+  .fi-pasos li { display: flex; align-items: center; gap: 14px; padding: 14px 18px; border-radius: 14px; background: rgba(20, 23, 27, .85); border: 1px solid var(--linea);
+    font-size: 14px; line-height: 1.35; color: var(--t2); }
+  .fi-pasos b { color: var(--t1); font-weight: 600; }
+  .fi-num { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; font-size: 14px; font-weight: 600; color: #1A1206;
+    background: linear-gradient(180deg, #FBE6CB 0%, #E8AE85 58%, #C98A5E 100%); box-shadow: 0 0 12px -3px rgba(242, 171, 111, .7); }
+
+  /* El cartel de «fichó» (SQL 225): grande, arriba en el medio, sin tapar el QR. Se va solo a los 8 segundos. */
+  .fi-cartel { position: absolute; left: 50%; top: 9px; transform: translateX(-50%); z-index: 5; display: flex; align-items: center; gap: 16px;
+    max-width: calc(100% - 40px); padding: 9px 22px 9px 9px; border-radius: 18px; background: rgba(20, 23, 27, .97);
+    border: 1px solid rgba(253, 223, 160, .5); box-shadow: 0 0 0 1px rgba(253, 223, 160, .12), 0 0 50px -10px rgba(237, 186, 94, .6), 0 30px 60px -20px rgba(0, 0, 0, .9);
+    animation: fiCartel .35s cubic-bezier(.2, .8, .2, 1); }
   .fi-cartel[hidden] { display: none; }
-  .fi-cartel-tilde { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--ok); color: var(--ok-ink); }
-  .fi-cartel-tilde svg { width: 28px; height: 28px; }
+  .fi-cartel-tilde { flex: none; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; color: #0B0D10;
+    background: linear-gradient(180deg, #8FE0B3 0%, #4FB07F 100%); box-shadow: 0 0 18px -2px rgba(79, 176, 127, .8); }
+  .fi-cartel-tilde svg { width: 22px; height: 22px; }
   .fi-cartel-txt { min-width: 0; }
-  .fi-cartel-fila { font-size: 17px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .fi-cartel-fila + .fi-cartel-fila { margin-top: 4px; }
-  .fi-cartel-fila b { font: 700 24px/1.2 var(--display); letter-spacing: -.3px; margin-right: 6px; }
-  @keyframes fiCartel { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
-  .fi-lado .btn { width: 100%; }
+  .fi-cartel-fila { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fi-cartel-fila + .fi-cartel-fila { margin-top: 6px; }
+  .fi-cartel-fila b { display: block; font-size: 18px; line-height: 1.25; font-weight: 600; overflow: hidden; text-overflow: ellipsis; }
+  .fi-cartel-fila span { font-size: 13px; color: var(--t2); }
+  @keyframes fiCartel { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translate(-50%, 0); } }
+
   /* Pantalla completa: sólo el fichero, sin la barra. */
   html.fi-completa .rail { display: none; }
   html.fi-completa body.hay-rail { padding-left: 0; }
+  /* Una pantalla angosta (no es la de un local, pero que no se rompa): uno abajo del otro. */
+  @media (max-width: 1080px) {
+    .fi { height: auto; min-height: var(--vh); overflow: visible; }
+    .fi-medio { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 24px; justify-items: center; text-align: center; }
+    .fi-hoy { justify-self: center; }
+    .fi-pasos { grid-template-columns: minmax(0, 1fr); padding: 0 24px 24px; }
+  }
 </style>
 <!-- Quién entró: marca el rol antes de pintar la barra, y suma «Fichero» en la compu del local. Ver persona.js. -->
 <script src="persona.js"></script>
@@ -175,7 +232,7 @@
   </div>
 </nav>
 
-<main class="hoja">
+<main class="hoja fi-hoja">
 
   <!-- Una compu que no es la de un local: el fichero no tiene QR que dar. -->
   <section class="bloque fi-sin" id="fiSin" hidden>
@@ -184,36 +241,43 @@
   </section>
 
   <section class="fi" id="fi" hidden>
-    <div class="bloque fi-qr-lado">
-      <div class="fi-cabeza">
-        <div><div class="fi-local" id="fiLocal">Fichero</div><div class="fi-fecha" id="fiFecha"></div></div>
+    <div class="fi-linea" aria-hidden="true"></div>
+    <div class="fi-cartel" id="fiCartel" role="status" aria-live="polite" hidden></div>
+    <header class="fi-arriba">
+      <div class="fi-izq">
+        <div class="fi-marca"><span class="fi-marca-icono"><svg viewBox="0 0 24 24" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><g stroke="url(#oroCintaBolsa)" stroke-width="1.55"><path d="M9.1 8.6V6.1a2.85 2.85 0 0 1 5.7 0v2.4"/><path d="M18.6 6.2 7.4 6.7Q6.2 6.75 6.35 7.95L8.05 19.6Q8.25 20.85 9.45 20.45L19.6 16.9"/><path d="M5.35 7.3 3.85 19.55Q3.75 20.45 4.65 20.15Q6.35 19.7 7.3 20.85"/></g><circle cx="9.1" cy="8.9" r="1.15" fill="url(#oroCintaBolsa)"/><circle cx="14.8" cy="8.8" r="1.15" fill="url(#oroCintaBolsa)"/></svg></span><span class="fi-marca-txt"><small>Sistema</small><b>VDH</b></span></div>
+        <span class="fi-seccion">Fichero · <b id="fiLocal">…</b></span>
+      </div>
+      <div class="fi-der">
+        <div class="fi-ofi" id="fiOfi" hidden><span>El QR de</span><select class="desplegable" id="fiElegir" aria-label="El local del fichero"></select></div>
+        <span class="fi-estado" id="fiEstado"><i></i><span>Conectando…</span></span>
+        <button type="button" class="fi-btn-icono" id="fiCompleta" title="Pantalla completa" aria-label="Pantalla completa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      </div>
+    </header>
+    <div class="fi-medio">
+      <div class="fi-hora">
         <div class="fi-reloj" id="fiReloj" aria-label="La hora">--:--</div>
+        <div class="fi-fecha" id="fiFecha"></div>
+        <div class="fi-donde" id="fiDonde"></div>
       </div>
-      <div class="fi-qr-caja">
-        <div class="fi-qr" id="fiQr" role="img" aria-label="El QR para fichar"></div>
-        <div class="fi-tapa" id="fiTapa">Cargando…</div>
+      <div class="fi-centro">
+        <div class="fi-placa">
+          <div class="fi-qr" id="fiQr" role="img" aria-label="El QR para fichar"></div>
+          <div class="fi-tapa" id="fiTapa">Cargando…</div>
+        </div>
+        <div class="fi-barra" id="fiBarraCaja" aria-hidden="true" hidden><i id="fiBarra" style="width:100%"></i></div>
+        <p class="fi-vivo"><i aria-hidden="true"></i><span id="fiCambia">Cambia todo el tiempo: escanealo en vivo</span></p>
       </div>
-      <div class="fi-barra" id="fiBarraCaja" aria-hidden="true"><i id="fiBarra" style="width:100%"></i></div>
-      <p class="fi-cambia" id="fiCambia">Cambia cada 30 segundos</p>
+      <div class="fi-hoy">
+        <div class="fi-hoy-tit"><span id="fiHoyTit">Hoy</span><small id="fiCuantas"></small></div>
+        <div id="fiUltimas"><p class="fi-nada">Todavía nadie fichó hoy.</p></div>
+      </div>
     </div>
-    <div class="fi-lado">
-      <div class="fi-ofi" id="fiOfi" hidden><span>Desde la oficina, el QR de</span><select class="desplegable" id="fiElegir" aria-label="El local del fichero"></select></div>
-      <div class="fi-cartel" id="fiCartel" role="status" aria-live="polite" hidden></div>
-      <div class="bloque">
-        <div class="bloque-tit">Para fichar tu entrada o tu salida</div>
-        <ol class="fi-pasos">
-          <li>Abrí <b>Equipo VDH</b> en tu celular.</li>
-          <li>Tocá <b>Registro → Fichar</b>.</li>
-          <li>Elegí <b>entrada</b> o <b>salida</b> y apuntá la cámara a este QR<span id="fiPaso3"></span>.</li>
-        </ol>
-        <p class="bloque-sub" style="margin-bottom:0" id="fiNota">Queda la hora en que lo escaneás. Una foto del QR no sirve: cambia cada 30 segundos.</p>
-      </div>
-      <div class="bloque">
-        <div class="bloque-tit">Hoy en este local</div>
-        <div class="fi-ultimas" id="fiUltimas"><p class="fi-nada">Todavía nadie fichó hoy.</p></div>
-      </div>
-      <button type="button" class="btn btn-sec" id="fiCompleta">Pantalla completa</button>
-    </div>
+    <ol class="fi-pasos">
+      <li><span class="fi-num" aria-hidden="true">1</span><span>Abrí <b>Equipo VDH</b> en tu celular</span></li>
+      <li><span class="fi-num" aria-hidden="true">2</span><span>Tocá <b>Registro → Fichar</b></span></li>
+      <li><span class="fi-num" aria-hidden="true">3</span><span>Elegí <b>entrada</b> o <b>salida</b> y apuntá al QR<span id="fiPaso3"> hasta que se cierre la cámara</span></span></li>
+    </ol>
   </section>
 
 </main>
@@ -248,6 +312,7 @@
      30 segundos de antes, con pos_fichero_qr: así la página puede publicarse antes o después del SQL. */
   var movil = true, paso = 500;
   var vistas = null, cartelHasta = 0;   // los id de las marcas que ya estaban (para el cartel de "fichó")
+  var lugarActual = '';            // el nombre del local (para el cartel)
 
   if (!/^caja_/.test(llave || '') && !oficina) {
     $('fiSin').hidden = false;
@@ -305,7 +370,8 @@
       desfase = Number(r.ahora_ms) - (t0 + t1) / 2;
       codigos = r.codigos || [];
       paso = Number(r.paso_ms) || 30000;
-      $('fiLocal').textContent = r.local || 'Fichero';
+      lugar(r.local || '');
+      conexion(true);
       textos();
       pintarUltimas(r.ultimas || []);
       pintar(true);
@@ -342,6 +408,7 @@
         tapa('El fichero todavía no está listo: falta correr el SQL 218 en Supabase.');
         return;
       }
+      conexion(false);
       pintar(true);   // sin internet: sigue con los que tiene; cuando se acaban, lo dice
     });
   }
@@ -351,14 +418,27 @@
     $('fiTapa').textContent = texto || '';
   }
 
+  /* Arriba a la derecha: si la base contesta. */
+  function conexion(si) {
+    var e = $('fiEstado');
+    e.className = 'fi-estado ' + (si ? 'si' : 'no');
+    e.lastChild.textContent = si ? 'Conectado' : 'Sin conexión';
+  }
+
+  /* El local: arriba («Fichero · Rivadavia»), abajo de la hora y en «Hoy en …». */
+  function lugar(local) {
+    lugarActual = local;
+    $('fiLocal').textContent = local || '…';
+    $('fiHoyTit').textContent = local ? 'Hoy en ' + local : 'Hoy';
+    $('fiDonde').textContent = !local ? '' : 'VDH ' + local + (oficina ? (prueba ? '' : ' · Desde la oficina') : ' · Compu del local');
+  }
+
   /* Los textos según el QR: el de 30 segundos (con la barrita) o el que se mueve (SQL 225). */
   function textos() {
     var m = paso < 30000;
     $('fiBarraCaja').hidden = m;
-    $('fiCambia').textContent = m ? 'Cambia todo el tiempo: hay que escanearlo en vivo' : 'Cambia cada 30 segundos';
-    $('fiPaso3').textContent = m ? ', sin moverlo, hasta que se cierre la cámara' : '';
-    $('fiNota').textContent = m ? 'Queda la hora en que lo escaneás. Una foto o un video del QR no sirven: el celular tiene que verlo en vivo.'
-                                : 'Queda la hora en que lo escaneás. Una foto del QR no sirve: cambia cada 30 segundos.';
+    $('fiCambia').textContent = m ? 'Cambia todo el tiempo: escanealo en vivo' : 'Cambia cada 30 segundos: una foto no sirve';
+    $('fiPaso3').textContent = m ? ' hasta que se cierre la cámara' : '';
   }
 
   function pintar(forzar) {
@@ -396,8 +476,12 @@
     vistas = ids;
     if (!nuevas.length) return;
     $('fiCartel').innerHTML = '<span class="fi-cartel-tilde" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>' +
-      '<div class="fi-cartel-txt">' + nuevas.slice(0, 3).map(function (u) {
-        return '<div class="fi-cartel-fila"><b>' + esc(u[0]) + '</b>fichó su ' + (u[1] === 'entrada' ? 'entrada' : 'salida') + ' · ' + esc(u[2]) + '</div>';
+      /* Siempre de una fila (si crece, tapa el QR): la más nueva (la base las da de la más nueva a la más vieja) y
+         cuántas más, que están en «Hoy». */
+      '<div class="fi-cartel-txt">' + [nuevas[0]].map(function (u) {
+        return '<div class="fi-cartel-fila"><b>' + esc(u[0]) + ' fichó su ' + (u[1] === 'entrada' ? 'entrada' : 'salida') + '</b>' +
+          '<span>' + esc(u[2]) + (lugarActual ? ' · ' + esc(lugarActual) : '') +
+          (nuevas.length > 1 ? ' · y ' + (nuevas.length - 1) + ' más en «Hoy»' : '') + '</span></div>';
       }).join('') + '</div>';
     $('fiCartel').hidden = false;
     cartelHasta = Date.now() + 8000;
@@ -409,12 +493,16 @@
     if (clave === ultimasClave) return;
     var antes = ultimasClave ? JSON.parse(ultimasClave) : null;
     ultimasClave = clave;
+    /* La base da las 8 más nuevas: si son 8, son «las últimas 8», no todas las del día. */
+    $('fiCuantas').textContent = !lista.length ? '' : lista.length >= 8 ? 'Las últimas 8' : lista.length === 1 ? '1 fichada' : lista.length + ' fichadas';
     if (!lista.length) { $('fiUltimas').innerHTML = '<p class="fi-nada">Todavía nadie fichó hoy.</p>'; return; }
     var viejas = {};
     (antes || []).forEach(function (u) { viejas[u.join('|')] = 1; });
     $('fiUltimas').innerHTML = lista.map(function (u) {
-      return '<div class="fi-ult' + (antes && !viejas[u.join('|')] ? ' nueva' : '') + '"><b>' + esc(u[0]) + '</b><span>' +
-        (u[1] === 'entrada' ? 'Entrada' : 'Salida') + '</span><time>' + esc(u[2]) + '</time></div>';
+      var ent = u[1] === 'entrada', nom = String(u[0] || '');
+      return '<div class="fi-ult' + (antes && !viejas[u.join('|')] ? ' nueva' : '') + '">' +
+        '<span class="fi-cara" aria-hidden="true">' + esc(nom.trim().charAt(0).toUpperCase()) + '</span><b>' + esc(nom) + '</b>' +
+        '<span class="fi-tipo ' + (ent ? 'ent' : 'sal') + '">' + (ent ? 'Entrada' : 'Salida') + '</span><time>' + esc(u[2]) + '</time></div>';
     }).join('');
   }
 
@@ -424,9 +512,10 @@
     if (el.requestFullscreen) el.requestFullscreen().catch(function () {});
   };
   document.addEventListener('fullscreenchange', function () {
-    var si = !!document.fullscreenElement;
+    var si = !!document.fullscreenElement, b = $('fiCompleta'), t = si ? 'Salir de la pantalla completa' : 'Pantalla completa';
     document.documentElement.classList.toggle('fi-completa', si);
-    $('fiCompleta').textContent = si ? 'Salir de la pantalla completa' : 'Pantalla completa';
+    b.title = t;
+    b.setAttribute('aria-label', t);
   });
   document.addEventListener('visibilitychange', function () { if (!document.hidden) { pedir(); pintar(true); } });
 
