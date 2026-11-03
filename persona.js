@@ -1369,8 +1369,9 @@ var persona = (function () {
      desde la v337 en toda PC: con la gente del local de la compu, o la de
      Administración si la compu no tiene local.
      Sale cuando no hay nadie adentro: al abrir el sistema y después de
-     «Sí, salir». «Seguir sin entrar» la saca en esta pestaña (la Carga, Cobrar
-     y Ventas andan sin usuario, como siempre). Los pasos (el PIN, crearlo,
+     «Sí, salir». Desde el 3/11 NO se puede seguir sin entrar (Mauricio: "que
+     todos necesiten clave, aunque todavía no esté el POS"): se sale del inicio
+     sólo entrando, o con «Fichar entrada o salida». Los pasos (el PIN, crearlo,
      el apellido, el franco, esperar el OK) son los de la ventana de entrar,
      dibujados en el panel. El QR del celular viene después (lleva un SQL).
      Para mirarlo en otra compu: ?inicio (o ?inicio=FLORES), aunque haya
@@ -1380,7 +1381,7 @@ var persona = (function () {
   var INICIO_EN = ['MAR DEL PLATA'];   // en el celular (táctil), los locales con el inicio; en la PC sale en todas
   /* Sólo donde se arranca a trabajar: no en el fichero, ni en lo de la oficina, ni en el enlace que habilita la compu. */
   var INICIO_PAGINAS = ['index.html', 'caja.html', 'giftcards.html', 'asistente.html', 'ventas.html', 'estadisticas.html', 'pos.html', 'gestion.html'];
-  var K_SIGUE = 'nc_inicio_sigue';     // sessionStorage: tocó «Seguir sin entrar» en esta pestaña
+  var K_SIGUE = 'nc_inicio_sigue';     // sessionStorage: el «Seguir sin entrar» de antes del 3/11 (ya no vale: se borra)
   var K_INICIO_LOCAL = 'nc_inicio_local';
   /* El inicio prendido a mano en una compu que no es de un local (la de Mauricio): index.html?inicio-compu=oficina
      (la gente de Administración) o ?inicio-compu=mar del plata; ?inicio-compu=no lo apaga. */
@@ -1458,7 +1459,8 @@ var persona = (function () {
     }
     if (_ses || !hayInicioAca(cod)) return '';
     if (INICIO_PAGINAS.indexOf(pagina()) < 0 || /[?&]habilitar=/.test(location.search)) return '';
-    try { if (sessionStorage.getItem(K_SIGUE)) return ''; } catch (e) {}
+    /* Una pestaña que había tocado «Seguir sin entrar» antes de que se sacara también tiene que entrar. */
+    try { sessionStorage.removeItem(K_SIGUE); } catch (e) {}
     return cod;
   }
 
@@ -1506,7 +1508,9 @@ var persona = (function () {
         '<div class="ini-centro" data-centro></div>' +
         '<div class="ini-pie">' +
           '<a class="ini-btn" href="fichero.html">' + ICONO_RELOJ + 'Fichar entrada o salida</a>' +
-          '<button type="button" class="ini-btn" data-seguir>' + ICONO_SEGUIR + 'Seguir sin entrar</button>' +
+          /* Sin «Seguir sin entrar» (3/11): para usar el sistema hay que entrar. Sólo si ya hay alguien adentro (se
+             abrió con ?inicio para mirarlo) se puede volver a lo que estaba. */
+          (_ses ? '<button type="button" class="ini-btn" data-seguir>' + ICONO_SEGUIR + 'Volver al sistema</button>' : '') +
         '</div>' +
       '</section>';
     document.body.appendChild(d);
@@ -1515,10 +1519,8 @@ var persona = (function () {
     /* Lo que quedó con el foco abajo (el buscador del POS) no se lleva las teclas. */
     if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
     document.addEventListener('keydown', tecladoInicio, true);
-    d.querySelector('[data-seguir]').onclick = function () {
-      try { sessionStorage.setItem(K_SIGUE, '1'); } catch (e) {}
-      cerrarInicio();
-    };
+    var volver = d.querySelector('[data-seguir]');
+    if (volver) volver.onclick = function () { if (_ses) cerrarInicio(); };
     d.querySelectorAll('.ini-foto img').forEach(function (im) { im.onerror = function () { im.remove(); }; });
 
     /* La hora y la fecha de acá (la compu está en Argentina; igual se fija la zona). */

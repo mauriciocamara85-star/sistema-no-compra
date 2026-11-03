@@ -105,6 +105,8 @@
 .ini-otro button:hover { text-decoration: underline; }
 
 .ini-pie { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; max-width: 470px; width: 100%; margin: 0 auto; }
+/* Sin «Seguir sin entrar» (3/11) queda un solo botón, «Fichar entrada o salida»: a todo el ancho. */
+.ini-pie .ini-btn:only-child { grid-column: 1 / -1; }
 .ini-btn {
   height: 46px; border-radius: 10px; display: flex; align-items: center; justify-content: center; gap: 9px;
   font: 500 14px Poppins, sans-serif; color: var(--txt); background: var(--surface); border: 1px solid var(--line-alta);
