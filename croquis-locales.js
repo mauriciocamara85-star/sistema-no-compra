@@ -1,7 +1,8 @@
 /* Cómo es el mueble de cada módulo, local por local, para el observador en 3D (croquis3d.js). Los locales que no están
    acá se arman con los muebles de siempre (según qué hay en cada módulo).
    - fichas: por el número del módulo (el que se ve en el croquis; el de los del medio, el de la vista). tipo: carro,
-     accesoriosCaja, zapatos, mallaAncho, percheroDoble, percheroTubo, rackDoble; o, en la pared, las bahías del mueble
+     accesoriosCaja, zapatos, mallaAncho, percheroDoble, percheroTubo, rackDoble, pie (el perchero de pie: brazos, cartel,
+     cruzado), mesaReja; o, en la pared, las bahías del mueble
      de izquierda a derecha (col: columna de estantes; frente: prendas colgadas de frente; maniqui; simple: estantes y
      barrales; libre: estante por estante, como la foto, con una o varias prendas de frente, cintos y bolsas colgadas)
      y lo que cuelga del barral de abajo (barralCol: sus colores, como la foto; en simple, el cuarto dato del barral).
@@ -61,7 +62,12 @@ export const LOCALES_3D = {
       "5": {"peso":1.1,"bahias":[{"k":"libre","w":0.75,"bolsas":[[0.86,"tote","#E07A2E"],[0.58,"mochila","#E4DAC2"],[0.32,"tote","#DCD7CC"]]},{"k":"col","ropa":"buzo","bajo":true},{"k":"col","ropa":"remera","bajo":true}]},
       "6": {"peso":1.9,"barral":"campera","barralCol":["#F2F0EB","#1E1F22","#3A3D42","#D9534A","#A9C4DA","#E8C9A8","#3F5470","#26324A","#6E8FB0","#8C8F93","#D9B8A8","#EDE6D6"],"bahias":[{"k":"col","ropa":"remera","bajo":true},{"k":"frente","ropa":"remera","col":"#5E6B4E"},{"k":"col","ropa":"remera","w":0.7}]},
       "7": {"peso":1.5,"bahias":[{"k":"libre","estantes":[[0.98,"jean"]],"frente":[{"fr":0.86,"ropa":"remera","col":"#EDE6D6","hasta":0.56},{"fr":0.5,"ropa":"bermuda","col":"#CFC6B4","hasta":0.14}]},{"k":"libre","estantes":[[0.98,"remera"]],"frente":[{"fr":0.86,"ropa":"remera","col":"#1E1F22","hasta":0.5},{"fr":0.5,"ropa":"jean","col":"#3F5470","hasta":0.03}]},{"k":"libre","estantes":[[0.98,"remera"]],"frente":[{"fr":0.86,"ropa":"remera","col":"#F2F0EB","hasta":0.56},{"fr":0.5,"ropa":"bermuda","col":"#1E1F22","hasta":0.14}]}]},
-      "8": {"peso":1.9,"barral":"campera","barralCol":["#1E1F22","#2A2D33","#A9C4DA","#C9AA88","#E8664A","#B04040","#D9A9B0","#B49AA0","#DCCFB8","#5FAF6B","#EDE6D6","#2F6FC0","#6E7276","#F4F3EF"],"bahias":[{"k":"col","ropa":"gorra","w":0.75},{"k":"frente","ropa":"campera","col":"#2F6FC0"},{"k":"col","ropa":"remera","bajo":true}]}
+      "8": {"peso":1.9,"barral":"campera","barralCol":["#1E1F22","#2A2D33","#A9C4DA","#C9AA88","#E8664A","#B04040","#D9A9B0","#B49AA0","#DCCFB8","#5FAF6B","#EDE6D6","#2F6FC0","#6E7276","#F4F3EF"],"bahias":[{"k":"col","ropa":"gorra","w":0.75},{"k":"frente","ropa":"campera","col":"#2F6FC0"},{"k":"col","ropa":"remera","bajo":true}]},
+      /* Los del medio (fotos 11 a 20), de la vidriera a la caja: tres percheros de pie y la mesa de reja. */
+      "9": {"tipo":"pie","cartel":true,"brazos":[{"ropa":"saco","cols":["#5F5D5B","#5B5957","#575553"],"camisa":"#A6C1D9"},{"ropa":"pantalon","cols":["#1E1F22","#222326","#1E1F22"]}]},
+      "10": {"tipo":"pie","cruzado":true,"brazos":[{"ropa":"remera","cols":["#1B1C1F","#1E1F22","#202124"]},{"ropa":"bermuda","cols":["#A9C2D8","#9FB8CF","#B2C9DD"]}]},
+      "11": {"tipo":"pie","cruzado":true,"brazos":[{"ropa":"remera","cols":["#1D1E21","#202124","#1D1E21"]},{"ropa":"bermuda","cols":["#5E7894","#56708C","#647F9A"]}]},
+      "12": {"tipo":"mesaReja"}
     },
     lugares: {
       "maniquí": {"tipo":"maniqui","base":"carroBajo","ropa":{"negro":true,"arriba":"remera","abajo":"bermuda","colArriba":"#ECE8DD","colAbajo":"#1E1F22","gorra":true,"colGorra":"#2A2B2E","zapas":"negro"}},

@@ -1163,6 +1163,88 @@ function mesaMalla(L, R, r, sem, alto) {
   E.caja(MAT.malla, A * 2 - 2 * t, h - 6, 0.3, 0, (h - 3) / 2, -(B - t / 2));
   E.caja(MAT.estante, A * 2 - 2 * t, 1.6, B * 2 - 2 * t, 0, 5, 0);
 }
+/** El perchero de pie del medio (Lomas, fotos 11 a 16): la base cuadrada de hierro con un travesaño, el caño parado y,
+    arriba, un barral corto de lado a lado con ganchos; en cada punta, unas perchas con la ropa mirando para afuera.
+    f.brazos: [la de una punta, la de la otra], cada una { ropa, cols (la de la punta primero), camisa (el color de la
+    camisa que asoma del saco abierto) }. El barral va a lo largo del módulo (la primera, hacia la vidriera); con cruzado,
+    de pared a pared (la primera, hacia la derecha). Con cartel, el porta-cartel arriba con la hoja de la promo. */
+function percheroPie(L, R, r, f, sem) {
+  const [cx, cz] = L.mundo(r.x + r.w / 2, r.y + r.h / 2), parado = r.h > r.w, r0 = azar(sem);
+  const E = enLugar(L, cx, cz, (parado ? Math.PI / 2 : 0) + (f.cruzado ? Math.PI / 2 : 0));
+  const h = 58, t = 1.9, B = 8, tb = 1.5, A = 11.5;
+  /* La base: el cuadrado y el travesaño del medio, donde se para el caño. */
+  for (const s of [-1, 1]) { E.caja(MAT.hierro, B * 2, tb, tb, 0, tb / 2, s * (B - tb / 2)); E.caja(MAT.hierro, tb, tb, B * 2 - tb * 2, s * (B - tb / 2), tb / 2, 0); }
+  E.caja(MAT.hierro, B * 2 - tb * 2, tb, tb, 0, tb / 2, 0);
+  E.caja(MAT.hierro, t, h + 1.5 - tb, t, 0, (h + 1.5 + tb) / 2, 0);
+  /* El barral redondo, con un tope en cada punta, y la varilla roscada que sale arriba del caño. */
+  const barral = new THREE.CylinderGeometry(0.6, 0.6, A * 2, 10), tope = new THREE.CylinderGeometry(0.95, 0.95, 1.2, 8);
+  const acostado = (a) => { const p = E.pos(a, h, 0); return new THREE.Matrix4().makeRotationY(E.ry).multiply(new THREE.Matrix4().makeRotationZ(Math.PI / 2)).setPosition(p[0], p[1], p[2]); };
+  L.lote.add(MAT.hierro, barral, acostado(0));
+  for (const s of [-1, 1]) L.lote.add(MAT.hierro, tope, acostado(s * (A + 0.4)));
+  const arriba = f.cartel ? 63 : h + 5, pv = E.pos(0, (h + 1.5 + arriba) / 2, 0);
+  L.lote.cilindro(MAT.cano, 0.45, 0.45, arriba - h - 1.5, pv[0], pv[1], pv[2], 8);
+  /* La ropa: en cada punta, perchas una detrás de la otra (la de la punta es la que se ve de frente). */
+  (f.brazos || []).slice(0, 2).forEach((b, k) => {
+    const s = k ? 1 : -1, tipo = b.ropa || 'remera', [forma, largo, grosor] = COLGADA[tipo] || COLGADA.remera;
+    const cols = b.cols && b.cols.length ? b.cols : [elegir(TELAS[tipo] || TELAS.remera, r0)], n = b.n || 3;
+    for (let i = 0; i < n; i++) {
+      const a = s * (A - 1.5 - i * 2.6), giro = s * Math.PI / 2 + (r0() - 0.5) * 0.12;
+      R.add('gancho', E.matriz(a, h - 1.2, 0, 0), null);
+      R.add(forma, E.matriz(a, h - 3, 0, giro, new THREE.Vector3(0.92 + r0() * 0.08, largo * (0.95 + r0() * 0.06), grosor)), cols[Math.min(i, cols.length - 1)]);
+      R.add('percha', E.matriz(a, h - 2.6, 0, giro), null);
+    }
+    /* La camisa que asoma del saco abierto: una tira angosta delante del de la punta. */
+    if (b.camisa) R.add('larga', E.matriz(s * (A - 1.5 + 1.5 * grosor + 0.9), h - 4, 0, s * Math.PI / 2, new THREE.Vector3(0.22, largo * 0.58, 0.5)), b.camisa);
+  });
+  /* El cartel de la promo: el porta-cartel en la varilla y la hoja, de frente a la vidriera (y blanca atrás). */
+  if (f.cartel) {
+    const W = 12, H = 16.5, yc = arriba + 0.8 + H / 2;
+    E.caja(MAT.cano, W * 0.8, 0.8, 1.6, 0, arriba + 0.4, 0);
+    E.caja(MAT.blanco, 0.4, H, W, 0, yc, 0);
+    const hoja = new THREE.Mesh(new THREE.PlaneGeometry(W, H), new THREE.MeshStandardMaterial({ map: texturaPromo(), roughness: 0.6 }));
+    const p = E.pos(-0.25, yc, 0); hoja.position.set(p[0], p[1], p[2]); hoja.rotation.y = E.ry - Math.PI / 2; L.escena.add(hoja);
+    return { centro: E.pos(0, yc + H / 2 + 2, 0) };
+  }
+  return { centro: E.pos(0, h + 6, 0) };
+}
+/** La hoja de la promo del perchero de pie de Lomas (foto 17): "Llevate todo por $89.000". */
+function texturaPromo() {
+  return lienzo(300, 412, (g, w, h) => {
+    g.fillStyle = '#F7F8FA'; g.fillRect(0, 0, w, h);
+    const cielo = g.createLinearGradient(0, 150, 0, 330); cielo.addColorStop(0, '#F7F8FA'); cielo.addColorStop(0.5, '#D6E6F4'); cielo.addColorStop(1, '#F7F8FA');
+    g.fillStyle = cielo; g.fillRect(0, 150, w, 180);
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    const linea = (txt, y, fuente, color) => { g.font = fuente; g.fillStyle = color; g.fillText(txt, w / 2, y, w - 24); };
+    linea('VDH', 52, '800 50px Manrope, "Arial Black", sans-serif', '#1F3A5A');
+    g.fillStyle = '#3D6A99'; g.fillRect(34, 88, w - 68, 62);
+    linea('LLEVATE TODO', 108, '800 28px Manrope, Arial, sans-serif', '#FFFFFF');
+    linea('POR', 135, '800 22px Manrope, Arial, sans-serif', '#FFFFFF');
+    linea('SACO + CAMISA + PANTALÓN', 176, '700 17px Manrope, Arial, sans-serif', '#2B3E55');
+    linea('$89.000', 226, '800 58px Manrope, "Arial Black", sans-serif', '#1F3A5A');
+    linea('ABONANDO EN EFVO/TRANSF', 264, '700 14px Manrope, Arial, sans-serif', '#2B3E55');
+    linea('PRECIO LISTA $102.350', 318, '700 14px Manrope, Arial, sans-serif', '#2B3E55');
+    linea('3 CUOTAS S/INTERÉS DE $34.117', 338, '700 14px Manrope, Arial, sans-serif', '#2B3E55');
+    linea('vdh.com.ar', 386, '600 13px Manrope, Arial, sans-serif', '#5A6B80');
+  });
+}
+/** La mesa de reja del medio (Lomas, foto 20): tapa gruesa de madera, marco de hierro, malla en los cuatro lados y,
+    adentro, el piso y un estante con ropa doblada que se ve a través de la malla (la tapa, libre). */
+function mesaReja(L, R, r, f, sem) {
+  const { E } = delMedio(L, r), r0 = azar(sem), h = f.alto || 38, A = (f.largo || 46) / 2, B = (f.ancho || 26) / 2, t = 1.6, hm = h - 3;
+  E.caja(MAT.estante, A * 2 + 1, 3, B * 2 + 1, 0, h - 1.5, 0);
+  for (const sa of [-1, 1]) for (const sb of [-1, 1]) E.caja(MAT.hierro, t, hm, t, sa * (A - t / 2), hm / 2, sb * (B - t / 2));
+  for (const y of [t / 2, hm - t / 2]) {
+    for (const sb of [-1, 1]) E.caja(MAT.hierro, A * 2, t, t, 0, y, sb * (B - t / 2));
+    for (const sa of [-1, 1]) E.caja(MAT.hierro, t, t, B * 2 - 2 * t, sa * (A - t / 2), y, 0);
+  }
+  for (const sb of [-1, 1]) E.caja(MAT.malla, A * 2 - 2 * t, hm - 2 * t, 0.3, 0, hm / 2, sb * (B - t / 2));
+  for (const sa of [-1, 1]) E.caja(MAT.malla, 0.3, hm - 2 * t, B * 2 - 2 * t, sa * (A - t / 2), hm / 2, 0);
+  for (const y of [2.4, h * 0.5]) {
+    E.caja(MAT.estante, A * 2 - 2 * t, 1.4, B * 2 - 2 * t, 0, y, 0);
+    apilar(R, E, f.doblada || 'remera', -A + t + 1, A - t - 1, y + 0.7, 0, h * 0.5 - 6, r0);
+  }
+  return { centro: E.pos(0, h + 4, 0) };
+}
 /** El banquito (foto 35): tapa de madera, marco de hierro, malla en las puntas y adentro dos engranajes. */
 function bancoMalla(L, r, sem) {
   const { E, largo, ancho } = delMedio(L, r), h = 18, A = largo / 2 - 1, B = ancho / 2 - 1, t = 1.4;
@@ -1537,6 +1619,8 @@ function armarEscena(pl, op) {
     else if (it.pared && calle && mueble === 'accesoriosCaja') info = moduloAccesoriosCaja(L, R, it, alto, sem, paredes[it.pared], f);
     else if (it.pared && calle && f.bahias) info = moduloBahias(L, R, it, alto, f, sem);
     else if (it.pared) info = (estilo === 'shopping' ? moduloShopping : moduloCalle)(L, R, it, alto, tipos.length ? tipos : ['remera'], sem);
+    else if (mueble === 'pie') info = percheroPie(L, R, r, f, sem);
+    else if (mueble === 'mesaReja') info = mesaReja(L, R, r, f, sem);
     else if (mueble === 'percheroTubo') info = percheroTubo(L, R, r, f.ropa, sem);
     else if (mueble === 'rackDoble') info = rackDoble(L, R, r, f.ropa, f.doblada, sem);
     else {
