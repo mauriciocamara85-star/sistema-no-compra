@@ -371,10 +371,10 @@ function sobrePared(L, it) {
 /** Lo claro de un color (para ordenar en degradé). */
 function luz(hex) { const c = new THREE.Color(hex); return 0.3 * c.r + 0.59 * c.g + 0.11 * c.b; }
 /** La ropa colgada de un barral (de costado, una al lado de la otra, con su percha de madera), en degradé del más claro al
-    más oscuro, como la regla de los locales (y como se ve en las fotos). */
-function colgarDeBarral(R, S, tipo, a0, a1, y, b, r0, apretada, tope) {
+    más oscuro, como la regla de los locales (y como se ve en las fotos). Con colores, los de la foto en vez de los de siempre. */
+function colgarDeBarral(R, S, tipo, a0, a1, y, b, r0, apretada, tope, colores) {
   const [forma, largo0, grosor] = COLGADA[tipo] || COLGADA.remera, largo = tope ? Math.min(largo0, tope) : largo0;
-  const paleta = (TELAS[tipo] || TELAS.remera).slice().sort((p, q) => luz(q) - luz(p));
+  const paleta = (colores || TELAS[tipo] || TELAS.remera).slice().sort((p, q) => luz(q) - luz(p));
   const paso = (apretada ? 2.2 : 2.7) * Math.max(1, grosor * 0.8), cuantas = Math.max(2, Math.floor((a1 - a0) / paso));
   for (let i = 0; i < cuantas; i++) {
     const a = a0 + (a1 - a0) * (i + 0.5) / cuantas + (r0() - 0.5) * 0.5, giro = Math.PI / 2 + (r0() - 0.5) * 0.18;
@@ -513,7 +513,7 @@ function moduloBahias(L, R, it, alto, f, sem) {
       S.caja(MAT.estante, w, 2.2, P - 1, c, hs, P / 2);
       escalerita(S, c, hs + 6, alto - 3);
       const ropa = b.ropa || 'remera', [forma, largo, grosor] = COLGADA[ropa] || COLGADA.remera, l = Math.min(largo, alto - hs - 14);
-      const ap = b.piernas ? a0 + w * 0.36 : c, col = elegir(TELAS[ropa] || TELAS.remera, r0);
+      const ap = b.piernas ? a0 + w * 0.36 : c, col0 = elegir(TELAS[ropa] || TELAS.remera, r0), col = b.col || col0;   // col: el color de la foto
       if (b.colgados) {   // varios colgados de frente (los cargo de la foto)
         for (let i = 0; i < b.colgados; i++) {
           const a = a0 + w * (i + 0.5) / b.colgados, yy = alto - 7 - (i % 2) * 9;
@@ -553,17 +553,23 @@ function moduloBahias(L, R, it, alto, f, sem) {
           else for (let k = 0; k < 2; k++) R.add('bolso', S.matriz(a - k * 4, hs + 2, P * 0.5, 0.2, new THREE.Vector3(0.45, 0.35, 0.8)), elegir(TELAS.cinto, r0));   // cintos enrollados
         });
       }
-      if (b.frente) {
-        const ropa = b.frente.ropa || 'remera', [forma, largo, grosor] = COLGADA[ropa] || COLGADA.remera, yg = alto * b.frente.fr, capas = b.frente.capas || 1;
-        escalerita(S, c, Math.max(hs + 4, yg - 30), Math.min(alto - 3, yg + 8));
-        const l = Math.min(largo, yg - (b.largo ? hs : alto * 0.3) - 4), col = elegir(TELAS[ropa] || TELAS.remera, r0);
+      /* Una prenda de frente o varias, una debajo de la otra (frente: [{ … }], como los ganchos en cascada de Lomas): x, dónde
+         va a lo ancho de la bahía (0 a 1); hasta, a qué altura llega la prenda. */
+      (Array.isArray(b.frente) ? b.frente : b.frente ? [b.frente] : []).forEach((fe) => {
+        const ropa = fe.ropa || 'remera', [forma, largo, grosor] = COLGADA[ropa] || COLGADA.remera, yg = alto * fe.fr, capas = fe.capas || 1;
+        const ac = fe.x != null ? a0 + w * fe.x : c;
+        escalerita(S, ac, Math.max(fe.hasta != null ? alto * fe.hasta : hs + 4, yg - 30), Math.min(alto - 3, yg + 8));
+        const l = Math.min(largo, yg - (fe.hasta != null ? alto * fe.hasta : b.largo ? hs : alto * 0.3) - 4), col = elegir(TELAS[ropa] || TELAS.remera, r0);
         for (let k = capas - 1; k >= 0; k--) {
-          const ak = c + (k - (capas - 1) / 2) * 2.2;
-          R.add(forma, S.matriz(ak, yg - 0.6 * k, 4 + k * 0.9, 0, new THREE.Vector3(1.04, l, grosor)), k ? col : (b.frente.col || col));
+          const ak = ac + (k - (capas - 1) / 2) * 2.2;
+          R.add(forma, S.matriz(ak, yg - 0.6 * k, 4 + k * 0.9, 0, new THREE.Vector3(1.04, l, grosor)), k ? col : (fe.col || col));
           R.add('percha', S.matriz(ak, yg + 0.4 - 0.6 * k, 4 + k * 0.9, 0), null);
         }
-        R.add('gancho', S.matriz(c, yg + 1.8, 3.2, Math.PI / 2), null);
-      }
+        R.add('gancho', S.matriz(ac, yg + 1.8, 3.2, Math.PI / 2), null);
+      });
+      /* Cintos colgados de un barral corto ([altura, desde, hasta], a lo ancho de 0 a 1) y bolsas colgadas de ganchos. */
+      if (b.cintos) cintos(R, S, a0 + w * (b.cintos[1] != null ? b.cintos[1] : 0.1), a0 + w * (b.cintos[2] != null ? b.cintos[2] : 0.9), alto * b.cintos[0], P * 0.5, r0);
+      (b.bolsas || []).forEach(([fr, tipo, color]) => bolsaColgada(S, c, alto * fr, tipo, color));
       if (b.piernas) { const y = alto * b.piernas.fr; S.caja(MAT.estante, w, 2, P - 1, c, y, P / 2); piernasManiqui(L, S.pos(c, y + 1, P * 0.5), S.ry, sem + o.i, b.piernas.ropa); }
       if (b.bolsa != null) {
         const y = b.bolsa > 0.03 ? alto * b.bolsa : 2.6;
@@ -574,12 +580,12 @@ function moduloBahias(L, R, it, alto, f, sem) {
       if (b.cartel) S.caja(MAT.blanco, 3.4, 4.6, 0.4, a0 + w * 0.2, hs + 3.5, P * 0.78);
       if (b.barral) barral.push([a0, a1]);
     } else if (b.k === 'simple') {
-      b.niveles.forEach(([que, fr, ropa], i) => {
+      b.niveles.forEach(([que, fr, ropa, colores], i) => {
         const y = alto * fr, sig = b.niveles[i + 1], abajo = sig ? alto * sig[1] : 2;
         if (que === 'estante') { S.caja(MAT.estante, w, 2, P - 1, c, y, P / 2); if (ropa) enEstante(R, S, ropa, a0 + 0.8, a1 - 0.8, y + 1, P, alto * 0.08, r0, i); }
         else {
           S.caja(MAT.cano, w - 1, 1, 1, c, y, P * 0.5);
-          colgarDeBarral(R, S, ropa || 'remera', a0 + 1.5, a1 - 1.5, y, P * 0.5, r0, ropa === 'pantalon' || ropa === 'jean', y - abajo - 4);
+          colgarDeBarral(R, S, ropa || 'remera', a0 + 1.5, a1 - 1.5, y, P * 0.5, r0, ropa === 'pantalon' || ropa === 'jean', y - abajo - 4, colores);
         }
       });
     }
@@ -589,7 +595,7 @@ function moduloBahias(L, R, it, alto, f, sem) {
   barral.forEach((s) => { const u = tramos[tramos.length - 1]; if (u && Math.abs(u[1] - s[0]) < 0.5) u[1] = s[1]; else tramos.push(s.slice()); });
   tramos.forEach(([s0, s1]) => {
     S.caja(MAT.cano, s1 - s0, 1, 1, (s0 + s1) / 2, hs - 3.2, P * 0.5);
-    colgarDeBarral(R, S, tipoB, s0 + 1.5, s1 - 1.5, hs - 3.2, P * 0.5, r0, tipoB === 'jean' || tipoB === 'pantalon', hs - 10);
+    colgarDeBarral(R, S, tipoB, s0 + 1.5, s1 - 1.5, hs - 3.2, P * 0.5, r0, tipoB === 'jean' || tipoB === 'pantalon', hs - 10, f.barralCol);
   });
   return { centro: S.pos(0, alto, P / 2), frente: S.pos(0, 0, P + 1.5) };
 }
@@ -647,8 +653,9 @@ function moduloMallaAncho(L, R, it, alto, sem) {
   return { centro: S.pos(0, h + 4, P / 2), frente: S.pos(0, 0, P + 1.5) };
 }
 /** Atrás de la caja (foto 14): la estantería de madera y hierro con los boxers en exhibición, cajitas, riñoneras y las
-    bolsas de papel VDH; gorras colgadas en la pared a los costados, y el aire acondicionado arriba (va con la pared). */
-function moduloAccesoriosCaja(L, R, it, alto, sem, lotePared) {
+    bolsas de papel VDH; gorras colgadas en la pared a los costados, y el aire acondicionado arriba (va con la pared).
+    Con f.sinPared, sin las gorras ni el aire (Lomas: atrás de la caja no hay). */
+function moduloAccesoriosCaja(L, R, it, alto, sem, lotePared, f) {
   const S = sobrePared(L, it), r0 = azar(sem), t = 1.5, P = Math.min(S.fondo - 8, 16), W = Math.min(S.largo - 30, 72), A = W / 2, h = alto * 0.8;
   for (const s of [-1, 1]) for (const b of [t / 2, P - t / 2]) S.caja(MAT.pino, t, h, t, s * (A - t / 2), h / 2, b);
   S.caja(MAT.malla, 0.3, h - 2, P - 2 * t, A - t / 2, h / 2, P / 2);
@@ -663,6 +670,7 @@ function moduloAccesoriosCaja(L, R, it, alto, sem, lotePared) {
   for (let a = -A + 6; a < A - 4; a += 9.5) R.add('bolso', S.matriz(a, ys[3] + 3.7, P * 0.5, (r0() - 0.5) * 0.3), elegir(['#1E1F22', '#2B2D33', '#3A3D44'], r0));
   for (let a = -A + 4; a < A - 3; a += 5.6) for (let k = 0; k < 2; k++) R.add('caja', S.matriz(a, ys[2] + 1.6 + k * 1.4, P * 0.5, 0, new THREE.Vector3(0.9, 0.2, 2)), k ? '#E6E4E0' : '#8C8F94');
   for (const y of [ys[0], ys[1]]) for (let a = -A + 7; a < A - 6; a += 13) R.add('caja', S.matriz(a, y + 6.6, P * 0.55, (r0() - 0.5) * 0.1, new THREE.Vector3(2, 1.9, 2.4)), '#C49A63');
+  if (f && f.sinPared) return { centro: S.pos(0, h + 6, P / 2), frente: S.pos(0, 0, P + 1.5) };
   /* Las gorras en la pared, a los costados, y el aire acondicionado arriba. */
   const Sp = sobrePared({ mundo: L.mundo, lote: lotePared || L.lote }, it);
   for (const s of [-1, 1]) {
@@ -680,14 +688,17 @@ function estanteBajo(L, R, it, sem) {
   [2, 12, 22, 33].forEach((y, i) => { S.caja(MAT.chapa, A * 2, 1.2, P, 0, y, P / 2); if (i < 3) apilar(R, S, i === 1 ? 'remera' : 'buzo', -A + 1, A - 1, y + 0.6, P, 7, r0); });
   apilar(R, S, 'remera', -A + 1, 0, 33.6, P, 5, r0);
 }
-/** En la pared, entre módulo y módulo: un espejo de piso a techo (va con la pared) o maniquíes parados en su base. */
-function extraPared(L, x, lotePared, sem) {
+/** En la pared, entre módulo y módulo (o en un lugar de la pared con nombre: op.lugares): un espejo de piso a techo (va
+    con la pared), maniquíes parados en su base, la tabla de las zapatillas o el perchero angosto con ganchos en cascada. */
+function extraPared(L, x, lotePared, sem, R, alto) {
   const S = sobrePared(L, x), Sp = sobrePared({ mundo: L.mundo, lote: lotePared }, x), o = x.o;
   if (o.tipo === 'espejo') {
     Sp.caja(MAT.pared, S.largo - 1, 100, 2.4, 0, 50, 1.2);
     Sp.caja(MAT.espejo, S.largo - 7, 76, 0.4, 0, 46, 2.6);
     return;
   }
+  if (o.tipo === 'zapatillero') { zapatillero(R, S, o, sem); return; }
+  if (o.tipo === 'cascada') { percheroCascada(R, S, o, sem, alto || 90); return; }
   const lista = o.tipo === 'maniquies' ? [{ base: 'carroBajo', ropa: { arriba: 'saco', abajo: 'pantalon', colArriba: '#3A3C40', colAbajo: '#3A3C40', zapas: 'negro' } },
     { base: 'cajaNegra', ropa: Object.assign({ negro: true, arriba: 'camisa', abajo: 'bermuda', colArriba: '#2A2B2E', colAbajo: '#E6E1D6' }) }] : [{ base: o.base, ropa: o.ropa }];
   lista.forEach((m, i) => {
@@ -695,6 +706,56 @@ function extraPared(L, x, lotePared, sem) {
     const hb = baseManiqui(S, m.base || 'cajaNegra', a, b, lista.length > 1 ? Math.min(13, S.largo * 0.4) : 15);
     maniquiFigura(L, S.pos(a, hb, b), S.ry, sem + i * 7, m.ropa || {});
   });
+}
+/** La tabla de las zapatillas (Lomas, entre el 2 y el 3): una tabla de madera en la pared con una zapatilla de costado en
+    cada par de pernos y, al lado, en el piso, la pila de cajas de zapatillas. o.pila: de qué lado va la pila mirando la
+    pared ('izquierda', si no se dice; la tabla, del otro). */
+function zapatillero(R, S, o, sem) {
+  const r0 = azar(sem), la = S.largo, lp = o.pila === 'derecha' ? 1 : -1, tw = Math.min(26, la * 0.42), ta = -lp * (la / 2 - tw / 2 - 3);
+  S.caja(MAT.estante, tw, 76, 1.6, ta, 54, 0.8);
+  for (let k = 0; k < 7; k++) {
+    const y = 21 + k * 10.6;
+    for (const s of [-1, 1]) S.caja(MAT.cobre || MAT.cano, 1.1, 1.1, 3.6, ta + s * 3.2, y, 3.4);
+    R.add('zapatilla', S.matriz(ta, y + 2.3, 4.6, Math.PI / 2), k % 3 === 2 ? '#D9CDB8' : elegir(['#1E1F22', '#1E1F22', '#F2F0EB'], r0));
+  }
+  const pa = lp * (la / 2 - 8), n = o.cajas || 9;
+  for (let k = 0; k < n; k++) R.add('cajaZapato', S.matriz(pa + (r0() - 0.5) * 0.8, 3 + k * 3.9, 7, (r0() - 0.5) * 0.08), r0() < 0.8 ? '#1B1C1F' : '#D8D5CF');
+}
+/** El perchero angosto de hierro contra la pared (Lomas, al lado del 8): el marco con malla de un lado y, en la pared,
+    ganchos en cascada con prendas de frente. o.prendas: [[altura del gancho (0 a 1), ropa, color]]; o.ancho; o.lado: contra
+    qué lado del lugar va (-1 izquierda, 1 derecha, mirando la pared; si no, al medio); o.malla: el lado de la malla. */
+function percheroCascada(R, S, o, sem, alto) {
+  const r0 = azar(sem), t = 1.6, h = alto * 0.97, W = Math.min(S.largo - 6, o.ancho || 34), A = W / 2, P = Math.min(S.fondo - 8, 16);
+  const c = o.lado ? o.lado * (S.largo / 2 - A - 3) : 0;
+  for (const s of [-1, 1]) for (const b of [t / 2, P - t / 2]) S.caja(MAT.hierro, t, h, t, c + s * (A - t / 2), h / 2, b);
+  for (const y of [t / 2, h - t / 2]) { for (const b of [t / 2, P - t / 2]) S.caja(MAT.hierro, W, t, t, c, y, b); for (const s of [-1, 1]) S.caja(MAT.hierro, t, t, P, c + s * (A - t / 2), y, P / 2); }
+  S.caja(MAT.malla, 0.3, h - 3, P - 2 * t, c + (o.malla === -1 ? -1 : 1) * (A - t / 2), h / 2, P / 2);
+  escalerita(S, c, 6, h - 4);
+  const prendas = (o.prendas || [[0.82, 'remera'], [0.45, 'pantalon']]).slice().sort((p, q) => q[0] - p[0]);
+  prendas.forEach(([fr, ropa, color], i) => {
+    const [forma, largo, grosor] = COLGADA[ropa] || COLGADA.remera, yg = h * fr, abajo = prendas[i + 1] ? h * prendas[i + 1][0] + 3 : 3;
+    const l = Math.min(largo, yg - abajo - 2), col = color || elegir(TELAS[ropa] || TELAS.remera, r0);
+    for (let k = 1; k >= 0; k--) {   // dos de cada una: la de adelante y, asomando, la de atrás
+      R.add(forma, S.matriz(c + k * 0.6, yg - 0.6 * k, 5 + k * 0.9, 0, new THREE.Vector3(1.04, l, grosor)), col);
+      R.add('percha', S.matriz(c + k * 0.6, yg + 0.4 - 0.6 * k, 5 + k * 0.9, 0), null);
+    }
+    R.add('gancho', S.matriz(c, yg + 1.8, 3.2, Math.PI / 2), null);
+  });
+}
+/** Una bolsa colgada de un gancho en (a, y): la de tela VDH Culture (tipo 'tote') o una mochila, del color de la foto. */
+function bolsaColgada(S, a, y, tipo, color) {
+  const mat = telaMat(color || '#E07A2E');
+  S.caja(MAT.cano, 0.8, 0.8, 5, a, y + 0.6, 2.5);
+  if (tipo === 'mochila') {
+    for (const s of [-1, 1]) S.caja(mat, 1, 3.4, 1, a + s * 3, y - 1.2, 3.6);
+    S.caja(mat, 11, 13, 6, a, y - 9.5, 4.6);
+    S.caja(mat, 8.5, 5.5, 1.4, a, y - 11.5, 8.2);                      // el bolsillo de adelante
+    S.caja(telaMat('#6E4A2E'), 11.2, 2.6, 6.2, a, y - 15.2, 4.6);      // la base de cuero
+  } else {
+    for (const s of [-1, 1]) S.caja(mat, 0.9, 5.2, 0.5, a + s * 3.2, y - 2.6, 3.4);
+    S.caja(mat, 12.5, 13, 1.2, a, y - 11.6, 3.4);
+    S.caja(MAT.blanco, 6, 2, 0.2, a, y - 10.6, 4.1);                    // el logo
+  }
 }
 /** Un módulo de shopping: un nicho de madera clara con luz arriba, un estante con ropa doblada, el barral con la ropa
     colgada y abajo el zócalo; entre nicho y nicho, la pared negra. */
@@ -1208,7 +1269,8 @@ function redistribuir(pl, op) {
 }
 
 /** Arma la escena del plano pl. op: { color(m), numero(m), tipos(m), altoModulos, estilo, ficha(m, it), entre,
-    medioDeposito } — ficha: cómo es el mueble de cada módulo (ver moduloBahias y los de abajo). */
+    medioDeposito, lugares } — ficha: cómo es el mueble de cada módulo (ver moduloBahias y los de abajo); lugares: lo que
+    hay en un lugar de la pared que no es módulo, por su nombre en minúscula (ver extraPared). */
 function armarEscena(pl, op) {
   const estilo = op.estilo === 'shopping' ? 'shopping' : 'calle';
   materiales(estilo); geos();
@@ -1300,7 +1362,7 @@ function armarEscena(pl, op) {
     L.lote.caja(MAT.vereda, pl.x1 - pl.x0 + 60, 1, 48, vx, -0.5, vz);
   }
   /* Lo que va entre módulo y módulo (espejos, maniquíes), y el medio del depósito. */
-  extras.forEach((x, i) => extraPared(L, x, (paredes[x.pared] = paredes[x.pared] || new Lote()), 900 + i));
+  extras.forEach((x, i) => extraPared(L, x, (paredes[x.pared] = paredes[x.pared] || new Lote()), 900 + i, R, alto));
   if (dep && op.medioDeposito) {
     medioDeposito(L, R, pl, 31);
     const [dx, dz] = L.mundo(pl.x0 + 38, pl.y1 - 50); dispenser(L, dx, dz);
@@ -1333,7 +1395,11 @@ function armarEscena(pl, op) {
     }
     if (it.tipo === 'fijo') {
       const k = it.pieza, sem = semilla('p' + r.x + r.y), [cx, cz] = L.mundo(r.x + r.w / 2, r.y + r.h / 2);
-      if (k === 'probador') probador(L, r, it.frente, (it.pared && paredes[it.pared]) || L.lote, it.pared ? hm : 80);
+      /* Un lugar de la pared con nombre que el local describe (op.lugares, por el nombre: el maniquí en su carro, la tabla de
+         las zapatillas, el perchero en cascada), como lo de entre módulos. */
+      const lu = it.pared && op.lugares ? op.lugares[String(it.texto || '').trim().toLowerCase()] : null;
+      if (lu) extraPared(L, Object.assign({}, it, { o: lu }), (paredes[it.pared] = paredes[it.pared] || new Lote()), sem, R, alto);
+      else if (k === 'probador') probador(L, r, it.frente, (it.pared && paredes[it.pared]) || L.lote, it.pared ? hm : 80);
       else if (k === 'caja') { if (estilo === 'calle') cajaOxido(L, r); else cajaMostrador(L, r, estilo); }
       else if (k === 'mesa' && it.pared) estanteBajo(L, R, it, sem);   // contra la pared: el estante bajo
       else if (k === 'mesa') mesa(L, R, r, ['remera'], sem, 30, estilo);
@@ -1366,7 +1432,7 @@ function armarEscena(pl, op) {
       info = exhibidorMalla(L, R, enLugar(L, c[0], c[2], S.ry), W, D, tipos.length ? tipos : ['campera'], sem, true, f.arriba || 'gorras', f);
     } else if (it.pared && calle && mueble === 'zapatos') info = moduloZapatos(L, R, it, alto, sem);
     else if (it.pared && calle && mueble === 'mallaAncho') info = moduloMallaAncho(L, R, it, alto, sem);
-    else if (it.pared && calle && mueble === 'accesoriosCaja') info = moduloAccesoriosCaja(L, R, it, alto, sem, paredes[it.pared]);
+    else if (it.pared && calle && mueble === 'accesoriosCaja') info = moduloAccesoriosCaja(L, R, it, alto, sem, paredes[it.pared], f);
     else if (it.pared && calle && f.bahias) info = moduloBahias(L, R, it, alto, f, sem);
     else if (it.pared) info = (estilo === 'shopping' ? moduloShopping : moduloCalle)(L, R, it, alto, tipos.length ? tipos : ['remera'], sem);
     else if (mueble === 'percheroTubo') info = percheroTubo(L, R, r, f.ropa, sem);

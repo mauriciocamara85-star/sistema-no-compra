@@ -1267,6 +1267,7 @@ function visor3dMontar(V, caminar) {
          todavía no están en croquis-locales.js, con los muebles de siempre. */
       ficha: loc && loc.fichas && salon ? function (m) { return loc.fichas[String(numero(m))] || null; } : null,
       entre: loc && salon ? loc.entre || null : null,
+      lugares: loc && salon ? loc.lugares || null : null,
       medioDeposito: !!(loc && loc.medioDeposito),
       quieto: function () { return !!V.ficha; },
       sensibilidad: visorSensibilidad(),
