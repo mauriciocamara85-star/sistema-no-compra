@@ -566,8 +566,8 @@
   function arrancar() {
     var y = persona.yo();
     /* El mostrador, quien tenga «Usa el POS» (lo dice nc_yo); la Gestión, quien tenga «Entra a Gestión» (SQL 229).
-       La base lo vuelve a mirar. */
-    if (!y || (persona.rol() !== 'admin' && (MODO === 'gestion' ? y.gestion !== true : y.pos !== true))) { pantallaPorton(y); return; }
+       SQL 236: también el administrador (Mauricio, 3/11: "sólo Anto, Daky y yo"). La base lo vuelve a mirar. */
+    if (!y || (MODO === 'gestion' ? y.gestion !== true : y.pos !== true)) { pantallaPorton(y); return; }
     app.innerHTML = '<p class="cargando">Cargando…</p>';
     llamarCorto('pos_inicio').then(function (ini) {
       /* SQL 212: lo de hoy queda en la compu (de quien entró), para poder abrir el mostrador sin internet. */

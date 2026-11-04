@@ -566,7 +566,7 @@
       <h2 class="bloque-tit">Los ajustes de cada sección</h2>
       <p class="bloque-sub">Lo que es de una sola sección se configura adentro de ella.</p>
       <div class="mapa">
-        <a class="club-op" href="gestion.html#sucursales" data-mapa="admin">
+        <a class="club-op" href="gestion.html#sucursales" data-mapa="gestion.html">
           <span class="club-op-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 10h14l1.5 9.5a1 1 0 0 1-1 1.2H4.5a1 1 0 0 1-1-1.2z"/><rect x="7" y="3" width="10" height="4" rx="1"/><path d="M12 7v3"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h8"/></svg></span>
           <span class="club-op-txt"><b>POS</b><span>En Gestión: las sucursales, las listas de precios y las promociones.</span></span>
         </a>
@@ -3040,8 +3040,9 @@
   }
 
   /* Los ajustes de cada sección: cada renglón, sólo si quien entró puede
-     abrir esa pantalla. Lo de Gestión y los Ajustes de Supervisión son del
-     administrador (como el POS en la barra); el CRM, de quien lo ve. */
+     abrir esa pantalla. Los Ajustes de Supervisión son del administrador; lo
+     de Gestión, de quien tiene la Gestión (SQL 236: también el administrador,
+     sólo con el POS prendido); el CRM, de quien lo ve. */
   function pintarMapa() {
     Array.prototype.forEach.call(document.querySelectorAll('[data-mapa]'), function (a) {
       var q = a.dataset.mapa;

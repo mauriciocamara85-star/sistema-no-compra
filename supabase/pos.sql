@@ -9014,3 +9014,143 @@ end $$;
 
 revoke all on function pos_iva_ventas(date, date, uuid, text) from public, anon;
 grant execute on function pos_iva_ventas(date, date, uuid, text) to authenticated;
+
+-- ═══════════════════════════════════════════════════════════════════════════
+--  SQL 236 (04/11/2026) · EL POS Y LA GESTIÓN, SÓLO PARA LOS ADMINISTRADORES
+--  QUE ELIJA LA OFICINA
+--
+--  Mauricio (3/11), después de juntarse con el dueño (el POS va a tener las
+--  ventas y la caja, y más adelante la fábrica): "sólo los administradores:
+--  Anto, Daky y yo". Hasta acá todo administrador tenía el POS y la Gestión
+--  por serlo.
+--  · El administrador tiene el POS sólo si se lo prenden en Config → Usuarios
+--    («Usa el POS y la Gestión»); con eso tiene todo, como antes. Sin eso, nada
+--    del POS ni de la Gestión. Un administrador nuevo arranca sin el POS.
+--  · pos_puede ya no deja pasar a todo administrador: sólo al servicio (los
+--    avisos de cada hora, Hermes) y a quien lo tiene.
+--  · Los permisos del POS los maneja un administrador que tiene el POS; el
+--    suyo no se lo saca él mismo (así nunca queda nadie sin poder prenderlo).
+--  · El cartel de las diferencias de remitos, sólo a quien tiene la Gestión.
+--  (A quién se lo prendió este SQL son datos y no van acá.)
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/* Lo que trae cada rol. SQL 236: el administrador, todo menos usar el POS (lo prende la oficina). */
+create or replace function pos_permiso_del_rol(p_rol text, p_con_local boolean, p_que text) returns boolean
+language sql immutable as $$
+  select case
+    when p_rol = 'admin' then p_que not in ('usa', 'gestion')
+    when p_que in ('usa', 'gestion') then false
+    when p_rol = 'supervisor' then p_que <> 'locales' or not coalesce(p_con_local, false)
+    else false end
+$$;
+
+/* ¿Esta persona puede esto? SQL 236: el administrador, todo si tiene «Usa el POS»; si no, nada. */
+create or replace function pos_puede_persona(p orden_personas, p_que text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select case
+    when p.id is null or not coalesce(p.activo, false) or not coalesce(p.aprobado, false) then false
+    when p.rol = 'admin' then coalesce((select (x.cambios ->> 'usa')::boolean from pos_permisos x where x.persona_id = p.id), false)
+    else coalesce((select (x.cambios ->> p_que)::boolean from pos_permisos x where x.persona_id = p.id),
+                  pos_permiso_del_rol(p.rol::text, p.local_id is not null, p_que)) end
+$$;
+
+/* Y la persona que entró. SQL 236: sin la puerta del administrador; el servicio sigue pasando. */
+create or replace function pos_puede(p_que text) returns boolean
+language sql stable security definer set search_path = public as $$
+  select orden_es_servicio() or coalesce((select pos_puede_persona(p, p_que) from orden_personas p where p.id = orden_yo_id()), false)
+$$;
+
+/* Config → Usuarios. SQL 236: la abre un administrador con el POS; 'admin_elige' le dice a la pantalla que al
+   administrador también se le prende o se le apaga. */
+create or replace function pos_permisos_lista() returns jsonb
+language plpgsql stable security definer set search_path = public as $$
+declare k text[] := array['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios', 'gestion'];
+begin
+  if not orden_es_admin() or not pos_puede('usa') then
+    raise exception 'Los permisos del POS los maneja un administrador que tiene el POS.' using errcode = '42501';
+  end if;
+  return jsonb_build_object(
+    'admin_elige', true,
+    'roles', (select jsonb_object_agg(r.ed, (select jsonb_object_agg(c, pos_permiso_del_rol(r.rol, r.con_local, c)) from unnest(k) c))
+                from (values ('vendedor', 'vendedor', true), ('supervisor', 'supervisor', true), ('zona', 'supervisor', false),
+                             ('atencion', 'atencion', false), ('admin', 'admin', false)) r(ed, rol, con_local)),
+    'personas', coalesce((
+      select jsonb_object_agg(p.id, (select jsonb_object_agg(c, case when p.rol = 'admin' then coalesce((x.cambios ->> 'usa')::boolean, false)
+                                                                     else coalesce((x.cambios ->> c)::boolean, pos_permiso_del_rol(p.rol::text, p.local_id is not null, c)) end)
+                                       from unnest(k) c) || jsonb_build_object('propios', coalesce(x.cambios, '{}'::jsonb)))
+        from orden_personas p left join pos_permisos x on x.persona_id = p.id), '{}'::jsonb));
+end $$;
+
+create or replace function pos_permisos_guardar(p_persona uuid, p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare
+  k text[] := array['usa', 'anular', 'envios', 'caja', 'dias', 'locales', 'precios', 'gestion'];
+  q orden_personas;
+  c text;
+  v_cambios jsonb;
+begin
+  if not orden_es_admin() or not pos_puede('usa') then
+    raise exception 'Los permisos del POS los maneja un administrador que tiene el POS.' using errcode = '42501';
+  end if;
+  select * into q from orden_personas where id = p_persona;
+  if not found then raise exception 'No existe esa persona.'; end if;
+  if jsonb_typeof(p) is distinct from 'object' then raise exception 'Faltan los permisos.'; end if;
+  /* SQL 236: al administrador, sólo «Usa el POS» (con eso tiene todo, también la Gestión). El suyo no se lo saca él. */
+  if q.rol = 'admin' then
+    if jsonb_typeof(p->'usa') is distinct from 'boolean' then raise exception 'Falta si usa el POS.'; end if;
+    if q.id = orden_yo_id() and not (p->>'usa')::boolean then
+      raise exception 'Tu POS no te lo podés sacar vos: te lo saca otro administrador.';
+    end if;
+    p := jsonb_build_object('usa', p->'usa');
+  end if;
+  select x.cambios into v_cambios from pos_permisos x where x.persona_id = p_persona for update;
+  v_cambios := coalesce(v_cambios, '{}'::jsonb);
+  foreach c in array k loop
+    if p ? c then
+      if jsonb_typeof(p->c) is distinct from 'boolean' then raise exception 'El permiso % no es válido.', c; end if;
+      if (p->>c)::boolean = pos_permiso_del_rol(q.rol::text, q.local_id is not null, c) then v_cambios := v_cambios - c;
+      else v_cambios := v_cambios || jsonb_build_object(c, (p->>c)::boolean); end if;
+    end if;
+  end loop;
+  if v_cambios = '{}'::jsonb then
+    delete from pos_permisos where persona_id = p_persona;
+  else
+    insert into pos_permisos (persona_id, cambios, cambiado_por, cambiado_en) values (p_persona, v_cambios, orden_yo_id(), now())
+    on conflict (persona_id) do update set cambios = excluded.cambios, cambiado_por = excluded.cambiado_por, cambiado_en = now();
+  end if;
+  return (select jsonb_object_agg(c2, pos_puede_persona(q, c2)) from unnest(k) c2) || jsonb_build_object('propios', v_cambios);
+end $$;
+
+/* El aviso al abrir el sistema (SQL 236: con la Gestión). */
+CREATE OR REPLACE FUNCTION public.pos_diferencias_aviso()
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+begin
+  /* SQL 236: sólo a quien tiene la Gestión (el administrador, si tiene el POS). */
+  if not orden_es_admin() or not pos_puede('gestion') then return jsonb_build_object('pendientes', 0, 'ultimo', 0, 'productos', '[]'::jsonb); end if;
+  return (
+    with d as (
+      select x.* from pos_remito_diferencias x join pos_remitos r on r.id = x.remito_id
+       where x.estado = 'pendiente' and r.estado <> 'anulado'
+    )
+    select jsonb_build_object(
+      'pendientes', (select count(*) from d),
+      'ultimo', coalesce((select max(id) from d), 0),
+      'productos', coalesce((
+        select jsonb_agg(jsonb_build_object('ultimo', z.ultimo, 'fecha', z.fecha, 'local', l.nombre, 'numero', r.numero, 'referencia', r.referencia,
+                                            'codigo', z.codigo, 'descripcion', z.descripcion, 'faltan', z.faltan, 'sobran', z.sobran,
+                                            'recibio', coalesce(k.recibio, k.recibido_nombre), 'celdas', z.celdas)
+                         order by z.ultimo desc)
+          from (select d.remito_id, d.codigo, d.local_id, max(d.id) ultimo, max(d.creado_en) fecha, max(d.descripcion) descripcion,
+                       sum(greatest(d.cantidad - d.contado, 0)) faltan, sum(greatest(d.contado - d.cantidad, 0)) sobran,
+                       jsonb_agg(jsonb_build_object('talle', d.talle, 'color', d.color, 'cantidad', d.cantidad, 'contado', d.contado) order by d.color, d.talle) celdas
+                  from d group by d.remito_id, d.codigo, d.local_id order by max(d.id) desc limit 5) z
+          join pos_remitos r on r.id = z.remito_id
+          join orden_locales l on l.id = z.local_id
+          left join pos_remito_productos k on k.remito_id = z.remito_id and k.codigo = z.codigo), '[]'::jsonb)
+    )
+  );
+end $function$;

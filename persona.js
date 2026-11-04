@@ -44,7 +44,9 @@ var persona = (function () {
        encargado. */
     supervisor: ['panel.html', 'club-numeros.html', 'pos.html', 'gestion.html'],
     atencion: ['impecable-admin.html', 'pos.html', 'gestion.html'],
-    admin: [],
+    /* SQL 236. Mauricio (3/11): el POS y la Gestión, "sólo los administradores: Anto, Daky y yo". El administrador
+       también los abre sólo si tiene «Usa el POS y la Gestión» en Config → Usuarios (usaPos). */
+    admin: ['pos.html', 'gestion.html'],
     gerencia: ['pos.html', 'gestion.html']
   };
 
@@ -180,6 +182,9 @@ var persona = (function () {
     var r = rol(), p = pag || pagina();
     if (p === 'pos.html' && usaPos()) return true;
     if (p === 'gestion.html' && usaGestion()) return true;
+    /* SQL 236: mientras la base no contestó quién es (recién entró, o la compu tiene guardado a otro), el POS y la
+       Gestión no se tapan: pos.js espera esa respuesta y tiene su propio portón. */
+    if ((p === 'pos.html' || p === 'gestion.html') && _yo && _yo.provisorio) return true;
     return !r || NO_VE[r].indexOf(p) < 0 || (conAtencion() && NO_VE.atencion.indexOf(p) < 0);
   }
   /** "Encargado" es el supervisor de un local; el de varios locales (sin local fijo, SQL 120), "Supervisor".
@@ -568,8 +573,8 @@ var persona = (function () {
   }
 
   function avisoDiferencias() {
-    if (rol() !== 'admin' || !document.querySelector('.rail')) {
-      /* Si entró otro que no es de Administración, lo del anterior se va. */
+    if (rol() !== 'admin' || !usaGestion() || !document.querySelector('.rail')) {
+      /* Si entró otro que no es de Administración (o no tiene la Gestión, SQL 236), lo del anterior se va. */
       _dif = null;
       pintarCuentaDif();
       var c = document.getElementById('ncpDif');

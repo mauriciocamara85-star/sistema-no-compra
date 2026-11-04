@@ -98,36 +98,45 @@ var usuarios = (function () {
                       ['precios', 'Ver los precios y totales en remitos y envíos', ''],
                       /* SQL 229. Mauricio (2/11): "Sí, gestión, dáselo también". */
                       ['gestion', 'Entra a Gestión', 'precios, productos, stock y caja de todos los locales']];
-  function usaPos(p) { return !!posLista && p.rol !== 'admin' && !!(posLista.personas[p.id] || {}).usa; }
+  /* SQL 236. Mauricio (3/11): el POS y la Gestión, "sólo los administradores: Anto, Daky y yo". Al administrador
+     también se le prende o se le apaga, con una sola casilla (con el POS tiene todo, también la Gestión). Sin el SQL la
+     lista no trae 'admin_elige' y el administrador tiene todo, como antes. */
+  function adminElige() { return !!posLista && posLista.admin_elige === true; }
+  function usaPos(p) { return !!posLista && (p.rol !== 'admin' || adminElige()) && !!(posLista.personas[p.id] || {}).usa; }
   function usaGestion(p) { return usaPos(p) && !!(posLista.personas[p.id] || {}).gestion; }
-  /** El bloque del editor. Al administrador no se le toca: tiene todo. */
+  function textoUsa(adm) { return adm ? 'Usa el POS y la Gestión' : 'Usa el POS'; }
+  function textoAdmin() { return adminElige() ? 'Administrador: con el POS tiene todo, también la Gestión.' : 'Administrador: todo el POS y la Gestión.'; }
+  /** El bloque del editor. Al administrador, sólo «Usa el POS y la Gestión» (SQL 236). */
   function posBloque(p, r) {
     if (!posLista) return '';
-    var adm = r === 'admin', e = posLista.personas[p.id] || posLista.roles[r] || {}, usa = !adm && !!e.usa;
+    var adm = r === 'admin', e = posLista.personas[p.id] || posLista.roles[r] || {}, usa = !!e.usa && (!adm || adminElige());
     return '<div class="us-pos" data-ed-pos role="group" aria-label="POS">' +
       '<span class="us-pos-tit">POS</span>' +
-      '<label class="us-pos-usa"' + (adm ? ' hidden' : '') + '><input type="checkbox" data-pos="usa"' + (usa ? ' checked' : '') + '> Usa el POS</label>' +
-      '<div class="us-pos-casillas"' + (usa ? '' : ' hidden') + '>' +
+      '<label class="us-pos-usa"' + (adm && !adminElige() ? ' hidden' : '') + '><input type="checkbox" data-pos="usa"' + (usa ? ' checked' : '') + '> ' +
+        '<span class="us-pos-usa-txt">' + esc(textoUsa(adm)) + '</span></label>' +
+      '<div class="us-pos-casillas"' + (usa && !adm ? '' : ' hidden') + '>' +
         '<p class="us-pos-nota">Nueva venta, Tickets, Cambios, Venta fallida, recibir remitos y Stock los tiene todo el que usa el POS. Además:</p>' +
         POS_CASILLAS.map(function (c) {
           return '<label class="us-pos-cas"><input type="checkbox" data-pos="' + c[0] + '"' + (e[c[0]] ? ' checked' : '') + '> <span>' + esc(c[1]) +
             (c[2] ? ' <small>(' + esc(c[2]) + ')</small>' : '') + '</span></label>';
         }).join('') + '</div>' +
-      '<p class="us-pos-admin"' + (adm ? '' : ' hidden') + '>Administrador: todo el POS y la Gestión.</p>' +
+      '<p class="us-pos-admin"' + (adm ? '' : ' hidden') + '>' + esc(textoAdmin()) + '</p>' +
     '</div>';
   }
   /** Cambió el rol en el editor: las casillas vuelven a las del rol nuevo («Usa el POS» queda como está). */
   function posRol(pb, rol) {
     var adm = rol === 'admin', def = posLista.roles[rol] || {};
     POS_CASILLAS.forEach(function (c) { pb.querySelector('[data-pos="' + c[0] + '"]').checked = !!def[c[0]]; });
-    pb.querySelector('.us-pos-usa').hidden = adm;
+    pb.querySelector('.us-pos-usa').hidden = adm && !adminElige();
+    pb.querySelector('.us-pos-usa-txt').textContent = textoUsa(adm);
     pb.querySelector('.us-pos-admin').hidden = !adm;
     pb.querySelector('.us-pos-casillas').hidden = adm || !pb.querySelector('[data-pos="usa"]').checked;
   }
-  /** Lo que quedó marcado (null: sin el bloque, o es administrador). */
+  /** Lo que quedó marcado (null: sin el bloque, o es administrador sin el SQL 236). Al administrador, sólo «usa». */
   function posDelEditor(f, rol) {
     var pb = f.querySelector('[data-ed-pos]');
-    if (!pb || !posLista || rol === 'admin') return null;
+    if (!pb || !posLista || (rol === 'admin' && !adminElige())) return null;
+    if (rol === 'admin') return { usa: pb.querySelector('[data-pos="usa"]').checked };
     var v = {};
     POS_K.forEach(function (k) { v[k] = pb.querySelector('[data-pos="' + k + '"]').checked; });
     return v;
@@ -135,7 +144,7 @@ var usuarios = (function () {
   /** ¿Lo marcado es distinto de lo que tendría con su rol (el nuevo, si cambió) y lo que ya le cambiaron? */
   function posCambia(p, rol, v) {
     var pr = (posLista.personas[p.id] || {}).propios || {}, def = posLista.roles[rol] || {};
-    return POS_K.some(function (k) { return v[k] !== (k in pr ? pr[k] : !!def[k]); });
+    return Object.keys(v).some(function (k) { return v[k] !== (k in pr ? pr[k] : !!def[k]); });
   }
 
   var datos = null;
@@ -585,8 +594,10 @@ var usuarios = (function () {
             /* SQL 190: el POS, también aparte (la base guarda sólo lo distinto de lo de su rol). */
             .then(function (ok) {
               if (!ok || !cambiaPos) return ok;
+              /* SQL 236: al administrador, el POS y la Gestión juntos. */
+              var yG = rol === 'admin' ? (posVa.usa ? ' y la Gestión' : ' ni la Gestión') : '';
               return hacer('pos_permisos_guardar', { p_persona: p.id, p: posVa },
-                'Guardado: ' + p.nombre + (posVa.usa ? ' usa el POS.' : ' no usa el POS.'));
+                'Guardado: ' + p.nombre + (posVa.usa ? ' usa el POS' : ' no usa el POS') + yG + '.');
             })
             .then(function (ok) { if (ok) { editando = null; document.getElementById('usLista').innerHTML = lista(); } });
           break;
@@ -621,7 +632,11 @@ var usuarios = (function () {
         var pb = ed.querySelector('[data-ed-pos]');
         if (pb && posLista) posRol(pb, s.value);
       }
-      if (s.dataset && s.dataset.pos === 'usa') s.closest('[data-ed-pos]').querySelector('.us-pos-casillas').hidden = !s.checked;
+      if (s.dataset && s.dataset.pos === 'usa') {
+        /* SQL 236: al administrador no se le abren las casillas (con el POS tiene todo). */
+        var rs = s.closest('.us-editor').querySelector('[data-ed="rol"]');
+        s.closest('[data-ed-pos]').querySelector('.us-pos-casillas').hidden = !s.checked || (!!rs && rs.value === 'admin');
+      }
     };
 
     var rolSel = document.getElementById('usRol');
