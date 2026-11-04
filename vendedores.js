@@ -559,6 +559,20 @@ function pestanasVendedor() {
   return [['hoy', 'Hoy'], ['fotos', 'Módulos'], ['tareas', 'Tareas'], ['papeles', 'Registro'], ['ideas', 'Ideas']];
 }
 
+/* Sólo la caja (4/11, Mauricio, en la capacitación de los locales): "para los demás locales excepto Rivadavia, que sólo
+   esté habilitada la sección de cierre de caja, que es por ahora lo único que van a usar"; "no pongas llaves, hagámoslo
+   simple, la semana que viene te digo qué activar". El vendedor y el encargado de cualquier otro local entran directo a
+   la Caja, sin la barra de abajo; arriba quedan la campanita y la inicial (el Perfil: No soy yo, los avisos, instalar).
+   El encargado tiene además «Cajas» (los días de su local, para controlarlos): desde la supervisión sola no podía cargar
+   la del día si ningún vendedor la había abierto. Todo aviso o enlace que lleve a otra parte los deja en la caja. Para
+   sumar un local a todo Equipo VDH: su id acá y su código en orden_local_completo (SQL 238), que frena los controles. */
+var LOCALES_CON_TODO = ['7ce69820-6c1b-48a2-bdaa-4a546f448522'];   // Rivadavia (MAR DEL PLATA)
+function soloCaja() {
+  var p = yo();
+  return !!p && !!p.local_id && (p.rol === 'vendedor' || p.rol === 'supervisor') && LOCALES_CON_TODO.indexOf(p.local_id) < 0;
+}
+function pantallaDeCaja() { return 'caja'; }
+
 function armarBarra() {
   var lista = esSupervision() ? PESTANAS_SUPERVISION : pestanasVendedor();
   barra.innerHTML = '<nav style="grid-template-columns:repeat(' + lista.length + ',1fr)">' + lista.map(function (p) {
@@ -607,6 +621,8 @@ function pintarPuntoCaja() {
 }
 
 function irA(p) {
+  /* Sólo la caja: lo que no sea la caja, el Perfil o los avisos lleva a la caja. */
+  if (soloCaja() && ['caja', 'cajas', 'papeles', 'perfil', 'avisos'].indexOf(p) < 0) p = pantallaDeCaja();
   apagarCamara();
   cerrarCapas();
   /* Lo de adentro de Papeles (la caja, los certificados…) es una pestañita de Papeles. */
@@ -625,7 +641,7 @@ function irA(p) {
   else if (p === 'equipo') pantallaEquipo();
 }
 
-function irInicio() { irA(esSupervision() ? 'revisar' : 'hoy'); }
+function irInicio() { irA(soloCaja() ? pantallaDeCaja() : esSupervision() ? 'revisar' : 'hoy'); }
 
 window.addEventListener('hashchange', function () {
   if (!_vend || !_vend.refresco) return;
@@ -780,6 +796,11 @@ function irPorEnlace() { return irAEnlace(location.hash); }
 function irAEnlace(enlace) {
   var h = String(enlace || '').replace(/^.*#/, '').replace(/^\/+/, '').replace(/[?#].*$/, '');
   if (!h) return false;
+  /* Sólo la caja: el Perfil y los avisos se abren; todo lo demás (un control, una tarea, el test…) lleva a la caja. */
+  if (soloCaja()) {
+    irA(h === 'avisos' ? 'avisos' : h === 'perfil' || h === 'historial' ? 'perfil' : h === 'cajas' && esSupervision() ? 'cajas' : pantallaDeCaja());
+    return true;
+  }
   var mapa = { hoy: 'hoy', fotos: 'fotos', modulos: 'fotos', tareas: 'tareas', caja: 'caja', ideas: 'ideas', perfil: 'perfil', historial: 'perfil', avisos: 'avisos',
                revisar: 'revisar', equipo: 'equipo', faltas: 'equipo', cajas: 'cajas',
                /* Papeles (SQL 209): a la supervisión, "certificados" la lleva a Ausencias. */
@@ -806,8 +827,9 @@ function irAEnlace(enlace) {
 }
 
 function adentro() {
-  barra.hidden = false;
-  app.className = 'app con-barra';
+  /* Sólo la caja: sin la barra de abajo (tendría una sola pestaña). */
+  barra.hidden = soloCaja();
+  app.className = barra.hidden ? 'app' : 'app con-barra';
 }
 
 /* Arriba de cada pantalla: el título y, a la derecha, la campanita de los
@@ -818,6 +840,7 @@ var CAMPANA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke
 var _sinLeer = 0, _sinLeerEn = 0, _sinLeerDe = null;   // cuántos, cuándo se preguntó y de quién
 function cabeza(titulo, debajo) {
   var per = yo();
+  if (titulo === 'Registro' && soloCaja()) titulo = 'Caja';
   var inicial = String(per.nombre || '').trim().charAt(0).toUpperCase() || '?';
   return '<div class="cabeza"><div>' + volverAlSistema() +
     '<h1>' + esc(titulo) + '</h1>' +
@@ -825,7 +848,7 @@ function cabeza(titulo, debajo) {
     '</div><div class="cabeza-botones">' +
     '<button class="campanita" id="campanita" aria-label="' + textoCampanita() + '">' + CAMPANA +
       '<i class="sin-leer"' + (sinLeer() ? '' : ' hidden') + '>' + (sinLeer() > 9 ? '9+' : sinLeer()) + '</i></button>' +
-    (esSupervision() ? '' : '<button class="avatar" id="avatar" aria-label="Tu perfil">' + esc(inicial) + '</button>') + '</div></div>';
+    (esSupervision() && !soloCaja() ? '' : '<button class="avatar" id="avatar" aria-label="Tu perfil">' + esc(inicial) + '</button>') + '</div></div>';
 }
 /* Si a la app se llegó desde Supervisión de la compu (impecable-admin.js lo anota en la pestaña), arriba de todo
    "‹ Volver al sistema" (Mauricio, 20/10: "acá no tengo manera de salir de vuelta al sistema"). Al vendedor, nunca. */
@@ -2307,17 +2330,19 @@ function verIdea(fotos, i) {
    ════════════════════════════════════════════════════════════════════════ */
 
 function pantallaPerfil() {
-  if (!esSupervision()) abrirAparte('perfil');   // el vendedor llega desde la inicial de arriba
+  /* El vendedor (y, con sólo la caja, también el encargado) llega desde la inicial de arriba. */
+  var aparte = !esSupervision() || soloCaja();
+  if (aparte) abrirAparte('perfil');
   marcarPestana('perfil');
   adentro();
   var per = yo();
-  var volver = esSupervision() ? volverAlSistema() : '<button class="volver" id="volverPerfil">‹ Volver</button>';
+  var volver = aparte ? '<button class="volver" id="volverPerfil">‹ Volver</button>' : volverAlSistema();
   app.innerHTML = volver + '<h1>Perfil</h1><p class="cargando">Cargando…</p>';
   var bv = document.getElementById('volverPerfil');
   if (bv) bv.onclick = volverDeAparte;
   var id = valor(per.id);
   Promise.all([
-    esSupervision() ? Promise.resolve([]) :
+    esSupervision() || soloCaja() ? Promise.resolve([]) :
       leer('/orden_v_persona_semana?select=semana,nivel_semana,controles,controles_a_tiempo,controles_tarde,tareas,tareas_a_tiempo,desafio_puntaje,desafio_total' +
            '&persona_id=eq.' + id + '&order=semana.desc&limit=8'),
     leer('/orden_faltas?select=id,tipo,motivo,decidida_en,descargo&persona_id=eq.' + id + '&estado=eq.confirmada&order=creado_en.desc'),
@@ -2341,7 +2366,9 @@ function pantallaPerfil() {
         '<button class="boton" id="misLocales">Elegir mis locales</button>' +
         '<p class="bajada" style="margin:8px 0 0">Los que supervisás. Los nuevos los aprueba el administrador.</p>';
     }
-    if (esSupervision()) {
+    if (soloCaja()) {
+      /* Sólo la caja: sin la administración ni el historial de los controles (todavía no los usa). */
+    } else if (esSupervision()) {
       html += '<div class="seccion">Administración</div>' +
         '<a class="boton enlace-boton" href="impecable-admin.html">Abrir la administración</a>' +
         '<p class="bajada" style="margin:8px 0 0">Cómo está cada local, las estadísticas y los ajustes. Mejor en la compu.</p>';
@@ -2538,7 +2565,8 @@ function pantallaBienvenida(despues) {
   marcarBienvenida(yo().id);
   estadoAvisos().catch(function () { return 'no-soportado'; }).then(function (estado) {
     var html = '<p class="marca"><b>' + NOMBRE_APP + '</b> VDH</p><h1>Activá los avisos</h1>' +
-      '<p class="bajada">Te avisamos cuando te toca un control, cuando tenés una tarea y cuando está por vencer. Sin avisos, te enterás tarde.</p>';
+      '<p class="bajada">' + (soloCaja() ? 'Te avisamos si se pasa la hora y falta cargar la caja del día.'
+                                         : 'Te avisamos cuando te toca un control, cuando tenés una tarea y cuando está por vencer. Sin avisos, te enterás tarde.') + '</p>';
     if (estado === 'instalar') {
       html += '<div class="pasos">' +
         '<div class="paso"><b>1</b><span>Tocá el botón <b>Compartir</b> (el cuadrado con la flecha para arriba), abajo en Safari.</span></div>' +
@@ -3684,6 +3712,7 @@ var _certificadoPedido = null;    // llegó por el aviso "si tenés certificado,
 function subPapeles() {
   /* Fichar (SQL 218) primero: es lo de todos los días, al llegar y al irse. Al administrador, al final (2/11): ficha
      para probarlo, y lo suyo de todos los días son las cajas y las ausencias. */
+  if (soloCaja()) return esSupervision() ? [['caja', 'Caja de hoy'], ['cajas', 'Cajas']] : [['caja', 'Caja']];
   var fichar = fichaAca() ? [['fichar', 'Fichar']] : [];
   if (esAdmin()) return [['cajas', 'Cajas'], ['ausencias', 'Ausencias'], ['apercibimientos', 'Apercibimientos']].concat(fichar);
   if (esSupervision()) return fichar.concat([['cajas', 'Cajas'], ['ausencias', 'Ausencias'], ['apercibimientos', 'Apercibimientos']]);
@@ -3692,6 +3721,7 @@ function subPapeles() {
 function enPapel(s) { return _pestana === 'papeles' && _papel === s; }
 function pestanitasPapeles() {
   var subs = subPapeles();
+  if (soloCaja() && subs.length < 2) return '';   // una sola (la Caja del vendedor): no hacen falta las pestañitas
   /* Cada una del ancho de su palabra ("Caja" es corta y "Apercibimientos" larga): así entran las tres en 360 px. */
   return '<div class="pestanitas papeles-sub" style="grid-template-columns:repeat(' + subs.length + ',auto)">' + subs.map(function (s) {
     return '<button type="button" data-papel="' + s[0] + '"' + (s[0] === _papel ? ' class="activa" aria-current="page"' : '') + '>' + esc(s[1]) + '</button>';
@@ -3700,7 +3730,7 @@ function pestanitasPapeles() {
 
 function pantallaPapeles(papel) {
   /* 'caja' y 'cajas' son lo mismo según quién mira (un aviso o un enlace viejo). */
-  if (papel === 'caja' && esSupervision()) papel = 'cajas';
+  if (papel === 'caja' && esSupervision() && !soloCaja()) papel = 'cajas';   // el encargado con sólo la caja tiene las dos
   if (papel === 'cajas' && !esSupervision()) papel = 'caja';
   var subs = subPapeles().map(function (s) { return s[0]; });
   _papel = subs.indexOf(papel) > -1 ? papel : subs.indexOf(_papel) > -1 ? _papel : subs[0];
