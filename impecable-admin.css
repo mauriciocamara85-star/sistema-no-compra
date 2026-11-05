@@ -294,6 +294,7 @@
 .lectura-ia .boton.chico { min-height: 36px; padding: 0 12px; margin-left: 6px; font-size: 13px; }
 /* (SQL 122) Falta cargar un número, y los que cargó la IA desde la foto. */
 .falta-cargar { display: inline-block; padding: 2px 8px; border-radius: var(--r-pill); background: var(--warn-soft); color: var(--warn-txt); font: 700 12px var(--sans); }
+.de-mano { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: var(--r-pill); background: var(--warn-soft); color: var(--warn-txt); font: 700 10.5px var(--sans); vertical-align: 1px; }
 .de-ia { display: inline-block; margin-left: 4px; padding: 1px 6px; border-radius: var(--r-pill); background: var(--info-soft); color: var(--txt-2); font: 700 10.5px var(--sans); vertical-align: 1px; }
 .ventana .bajada-chica { margin: 6px 0 0; font-size: 13px; color: var(--txt-3); }
 

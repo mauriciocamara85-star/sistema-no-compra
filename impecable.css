@@ -746,3 +746,69 @@ select.desplegable option::checkmark { order: 1; margin-inline-start: auto; }
 .papel-ia-sin p { margin: 0; }
 .campo.papel-de-ia > span::after { content: 'IA'; margin-left: 6px; padding: 1px 7px; border-radius: 999px; background: var(--lima); color: var(--sobre-lima); font-size: 11px; font-weight: 800; vertical-align: 1px; }
 .campo.papel-de-ia input, .campo.papel-de-ia textarea, .campo.papel-de-ia select { border-color: var(--lima); }
+
+/* (SQL 244, 5/11) La caja «a prueba de tontos»: los pasos arriba, la foto que sigue con borde verde, los números trabados
+   (salen de la foto; «Editar a mano» con su porqué) y abajo, fija, la barra con lo que hay que hacer ahora. */
+/* 200: la barra más alta (dos renglones arriba y la sugerencia abajo) mide ~175 px. */
+.app:has(> .caja-pie) { padding-bottom: calc(200px + env(safe-area-inset-bottom)); }
+.app.con-barra:has(> .caja-pie) { padding-bottom: calc(var(--barra) + 200px + env(safe-area-inset-bottom)); }
+
+.pasos-caja { list-style: none; display: grid; grid-template-columns: repeat(3, 1fr); margin: 16px 0 18px; padding: 0; }
+.pasos-caja li { position: relative; display: grid; justify-items: center; gap: 6px; color: var(--suave); font-size: 13px; font-weight: 700; text-align: center; }
+.pasos-caja li::before { content: ''; position: absolute; top: 16px; left: -50%; right: 50%; height: 2px; background: var(--borde); }
+.pasos-caja li:first-child::before { display: none; }
+.pasos-caja i { position: relative; z-index: 1; width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center;
+  font-style: normal; font-weight: 800; font-size: 15px; background: var(--fondo); border: 2px solid var(--borde); color: var(--suave); }
+.pasos-caja li.activo { color: var(--texto); }
+.pasos-caja li.activo i { background: var(--lima); border-color: var(--lima); color: var(--sobre-lima); }
+.pasos-caja li.hecho i { border-color: var(--verde); color: var(--verde); }
+.pasos-caja li.hecho + li::before { background: var(--verde); }
+.pasos-caja li.revisar { color: var(--ambar); }
+.pasos-caja li.revisar i { border-color: var(--ambar); color: var(--ambar); }
+
+.foto-caja.siguiente { border-color: var(--lima); box-shadow: inset 0 0 0 1px var(--lima); }
+.chip.empezar { color: var(--sobre-lima); background: var(--lima); border-color: var(--lima); }
+
+.seccion-fila { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 22px 0 10px; }
+.seccion-fila .seccion { margin: 0; }
+.editar-mano { display: inline-flex; align-items: center; gap: 6px; background: none; border: 1px solid var(--borde); border-radius: 99px;
+  color: var(--suave); font: inherit; font-size: 13px; font-weight: 700; padding: 6px 12px; min-height: 34px; cursor: pointer; }
+.editar-mano svg { width: 14px; height: 14px; }
+.editar-mano[hidden] { display: none; }
+
+.campo.caja-monto input[readonly] { background: transparent; border-style: dashed; cursor: default; }
+.campo.caja-monto input[readonly]:focus { border-color: var(--borde); }
+.campo.caja-monto input::placeholder { color: var(--suave); opacity: .8; }
+.campo.caja-monto input.a-mano { border-color: var(--ambar); }
+.tag-mano { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 99px; border: 1px solid var(--ambar); color: var(--ambar);
+  font-size: 11px; font-weight: 800; font-style: normal; line-height: 17px; vertical-align: 1px; }
+.tag-mano[hidden] { display: none; }
+.nota-mano { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 0 10px; padding: 10px 14px; border-radius: 14px;
+  background: rgba(245, 184, 75, .10); border: 1px solid var(--ambar); color: var(--ambar); font-size: 14px; font-weight: 700; }
+.nota-mano button { flex: none; background: none; border: 0; color: var(--texto); font: inherit; font-size: 13px; text-decoration: underline; padding: 4px; min-height: 36px; cursor: pointer; }
+
+.caja-pie { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; background: rgba(14, 17, 22, .97); border-top: 1px solid var(--borde);
+  padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); box-shadow: 0 -12px 30px rgba(0, 0, 0, .35); }
+.caja-pie > * { max-width: 448px; margin-left: auto; margin-right: auto; }
+.caja-pie-estado { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 0; margin-bottom: 8px; font-size: 13px; font-weight: 700;
+  color: var(--suave); text-align: center; }
+.caja-pie-estado.sin-guardar { color: var(--ambar); }
+.caja-pie-estado.sin-guardar::before { content: ''; flex: none; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.caja-pie .boton { min-height: 58px; font-size: 17px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+.caja-pie .boton svg { flex: none; width: 22px; height: 22px; }
+.caja-pie .boton .ruedita { margin-right: 0; }
+.caja-pie-listo { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 58px; border-radius: 16px; font-size: 16px; font-weight: 800; }
+.caja-pie-listo.revisar { color: var(--ambar); border: 1px solid var(--ambar); background: rgba(245, 184, 75, .08); }
+.caja-pie-listo.bien { color: var(--verde); border: 1px solid var(--verde); background: rgba(91, 214, 138, .08); }
+.pie-mano { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%; margin-top: 6px; min-height: 40px; background: none; border: 0;
+  color: var(--texto); font: inherit; font-size: 14px; font-weight: 700; text-decoration: underline; cursor: pointer; }
+.pie-mano svg { width: 15px; height: 15px; }
+/* Con la barra de las pestañas (Rivadavia), la de la caja va justo encima; el cartelito, encima de las dos. */
+body:has(#barra:not([hidden])) .caja-pie { bottom: calc(var(--barra) + env(safe-area-inset-bottom)); padding-bottom: 12px; }
+body:has(.caja-pie) .cartel { bottom: calc(190px + env(safe-area-inset-bottom)); }
+body:has(#barra:not([hidden])):has(.caja-pie) .cartel { bottom: calc(var(--barra) + 190px + env(safe-area-inset-bottom)); }
+
+.dialogo .opcion { width: 100%; margin: 0 0 10px; font-size: 16px; min-height: 56px; }
+.dialogo .dialogo-sub { margin: -6px 0 14px; color: var(--suave); font-size: 14px; }
+.revision.mano { border-color: var(--ambar); }
+.revision.mano .titulo { color: var(--ambar); }

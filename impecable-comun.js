@@ -248,6 +248,33 @@ function pesos(n) {
 var OTRA_FOTO_CAJA = { lote: ['Otro posnet', '+ Otro posnet'], mp: ['Mercado Pago, otra foto', '+ Otra foto de Mercado Pago'] };
 function parteFoto(f) { return Number(f && f.parte) || 1; }
 
+/* (SQL 244) Lo cargado a mano: un número de la caja que ninguna foto leída respalda (la base lo marca con la alerta
+   a_mano; también lo que no coincide con la foto). Lo usan la app (la caja y Revisar) y la compu (el día de caja). */
+var NOMBRE_A_MANO = { sis_tarjeta: 'la tarjeta del sistema', sis_mp: 'Mercado Pago del sistema', sis_gocuotas: 'Go Cuotas del sistema',
+  sis_saldo_final_efvo: 'el efectivo del sistema', real_lote: 'el posnet', real_mp: 'Mercado Pago', real_gocuotas: 'Go Cuotas',
+  real_efectivo: 'el efectivo que contaste' };
+function camposAManoCaja(c) {
+  var out = [];
+  ((c && c.alertas) || []).forEach(function (a) {
+    if (a.tipo === 'a_mano') (a.campos || []).forEach(function (k) { if (out.indexOf(k) < 0) out.push(k); });
+    if (a.tipo === 'no_coincide_foto' && out.indexOf(a.campo) < 0) out.push(a.campo);
+  });
+  return out;
+}
+/** "Cargado a mano (la foto no se lee): lo que dice el sistema y el efectivo que contaste." */
+function textoAManoCaja(a) {
+  var campos = (a.campos || []).slice(), partes = [];
+  var sis = ['sis_tarjeta', 'sis_mp', 'sis_gocuotas', 'sis_saldo_final_efvo'];
+  if (sis.every(function (k) { return campos.indexOf(k) > -1; })) {
+    partes.push('lo que dice el sistema');
+    campos = campos.filter(function (k) { return sis.indexOf(k) < 0; });
+  }
+  campos.forEach(function (k) { partes.push(NOMBRE_A_MANO[k] || k); });
+  var lista = partes.length > 1 ? partes.slice(0, -1).join(', ') + ' y ' + partes[partes.length - 1] : partes.join('');
+  var m = String(a.motivo || '').trim();
+  return 'Cargado a mano' + (m ? ' (' + m.charAt(0).toLowerCase() + m.slice(1) + ')' : '') + ': ' + lista + '.';
+}
+
 /** Lo que leyó la IA de un medio: del sistema, su foto; de los demás, { total, partes } con las partes sumadas.
     null si no hay nada leído. */
 function lecturaCaja(fotos, tipo) {

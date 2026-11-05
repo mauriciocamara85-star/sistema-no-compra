@@ -1637,6 +1637,8 @@ function textoAlertaCaja(a) {
   if (a.tipo === 'desvio') return 'Diferencia en ' + a.campo + ': ' + pesos(a.monto);
   if (a.tipo === 'falta') return 'Falta cargar ' + a.campo + (a.falta === 'sistema' ? ' (lo que dice el sistema)' : '') + (a.motivo ? ': la foto no se lee. ' + a.motivo : '');
   if (a.tipo === 'no_coincide_foto') return 'Un monto no coincide con la foto (' + a.campo + ')';
+  /* (SQL 244) Lo escrito sin una foto que lo respalde (el texto está en impecable-comun.js: lo usa también la app). */
+  if (a.tipo === 'a_mano') return textoAManoCaja(a);
   return 'Foto de otro día (' + a.foto + ')';
 }
 
@@ -1745,7 +1747,13 @@ function engancharControlCaja(v, k) {
 
 /** Los 4 renglones de la caja del día; editando, cada monto es un casillero para escribir. */
 function filasDiaCaja(k, deIA, editando) {
-  var monto = function (campo) { return pesos(k[campo]) + (deIA.indexOf(campo) > -1 && k[campo] != null ? ' <span class="de-ia" title="Lo cargó la IA desde la foto">IA</span>' : ''); };
+  /* (SQL 244) «a mano»: un número que ninguna foto leída respalda (o que no coincide con la foto). */
+  var aMano = camposAManoCaja(k);
+  var monto = function (campo) {
+    return pesos(k[campo]) + (k[campo] == null ? ''
+      : aMano.indexOf(campo) > -1 ? ' <span class="de-mano" title="Lo escribieron a mano: ninguna foto lo respalda">a mano</span>'
+      : deIA.indexOf(campo) > -1 ? ' <span class="de-ia" title="Lo cargó la IA desde la foto">IA</span>' : '');
+  };
   return FILAS_DIA_CAJA.map(function (f) {
     var d = Number(k[f[3]] || 0);
     var lado = function (a, b) {
