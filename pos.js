@@ -233,7 +233,8 @@
     candado: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     entra: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
     sale: '<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/>',
-    abajo: '<path d="m6 9 6 6 6-6"/>'
+    abajo: '<path d="m6 9 6 6 6-6"/>',
+    actualizar: '<path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.5 9a9 9 0 0 1 14.9-3.4L23 10M1 14l4.6 4.4A9 9 0 0 0 20.5 15"/>'   // el de Estadísticas
   };
   /* La bolsa de la marca, la misma del rail (en el mostrador no hay rail). */
   var BOLSA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
@@ -360,8 +361,10 @@
       function (e) { if (esDeRed(e) && !(e && e.sinSesion)) redSeCayo(); else if (e && e.delServidor) redVolvio(); throw e; });
   }
   function llamar(nombre, args) {
-    return alDia(persona.token().then(function (t) { return funcion(nombre, args || {}, t); }));
+    return medido(alDia(persona.token().then(function (t) { return funcion(nombre, args || {}, t); })));
   }
+  /** El botón de actualizar (5/11) gira hasta que vuelven los pedidos que hizo la pantalla al tocarlo. */
+  function medido(pr) { if (S.midiendo) S.midiendo.push(pr); return pr; }
   /** Como llamar, pero si la base no contesta en ms (ESPERA) se corta: con el wifi conectado y sin salida, el pedido
       quedaría colgado minutos. El corte cuenta como "sin conexión". Si el pedido llegó igual, la clave evita duplicarlo. */
   function llamarCorto(nombre, args, ms) {
@@ -370,7 +373,7 @@
       reloj = setTimeout(function () { if (ctl) ctl.abort(); no(new Error('La base no contestó a tiempo.')); }, ms || ESPERA);
     });
     var pedido = persona.token().then(function (t) { return funcion(nombre, args || {}, t, ctl ? ctl.signal : undefined); });
-    return alDia(Promise.race([pedido, corte]).then(function (r) { clearTimeout(reloj); return r; }, function (e) { clearTimeout(reloj); throw e; }));
+    return medido(alDia(Promise.race([pedido, corte]).then(function (r) { clearTimeout(reloj); return r; }, function (e) { clearTimeout(reloj); throw e; })));
   }
   function esDeRed(e) { return !(e && (e.delServidor || e.sinSesion)); }
   /** Para la fila: lo que vale volver a probar (sin red, o la base caída un rato: 5xx o 429). Un "no" de la base, no. */
@@ -629,6 +632,7 @@
     if (!esDe(MODO, v)) v = INICIO[MODO];
     S.vista = v;
     S.recargar = null;   // la vista que se abre pone el suyo (Tickets, el cierre): lo llama la fila al mandar ventas (SQL 212)
+    S.actualizar = null; // y el del botón de actualizar, si lo tiene (actualizable)
     try { history.replaceState(null, '', location.pathname + location.search + '#' + v); } catch (e) {}
     cerrarVentana();
     app.innerHTML = marco();
@@ -773,6 +777,40 @@
   function cabeza(titulo, sub, acciones) {
     return '<div class="pos-cab"><div><h2>' + titulo + '</h2>' + (sub ? '<span class="pos-sub">' + sub + '</span>' : '') + '</div>' +
       (acciones ? '<div class="pos-acciones">' + acciones + '</div>' : '') + '</div>';
+  }
+
+  /* El botón de actualizar (Mauricio, 5/11: "un botoncito ahí, superior derecha … para recargar la página", y "en todas
+     las pantallas estaría bueno"). La ventana instalada no tiene la flechita del navegador. No recarga la página: vuelve a
+     traer los números de la pantalla con los mismos filtros, sin perder lo que se escribió. Lo pone cada pantalla que
+     muestra datos de la base, con su forma de volver a traerlos; las que son para escribir (la venta, el cambio, las
+     fichas, los nuevos) no lo tienen. Va primero en los botones de arriba a la derecha, el mismo de Estadísticas. */
+  function actualizable(fn) {
+    S.actualizar = fn;
+    var cab = $('cuerpo') && $('cuerpo').querySelector('.pos-cab');
+    if (!cab || cab.querySelector('.pos-actualizar')) return;
+    var ac = cab.querySelector('.pos-acciones');
+    if (!ac) { ac = document.createElement('div'); ac.className = 'pos-acciones'; cab.appendChild(ac); }
+    /* pos-cab-act: el subtítulo se acomoda al lado de los botones en vez de mandarlos a una fila de abajo (a la izquierda):
+       con el botón de más, en Movimientos y en Ventas por productos bajaban, y en la PC del local cada fila de alto cuenta. */
+    cab.classList.add('pos-cab-act');
+    ac.insertAdjacentHTML('afterbegin', '<button type="button" class="btn-icono pos-actualizar" title="Actualizar" aria-label="Actualizar">' + icono('actualizar') + '</button>');
+    ac.firstChild.onclick = actualizar;
+  }
+  function actualizar() {
+    var b = this, fn = S.actualizar, pedidos = [], r = null;
+    if (!fn || b.disabled) return;
+    b.disabled = true;
+    b.classList.add('girando');
+    S.midiendo = pedidos;
+    try { r = fn(); } catch (e) { avisar('err', mensajeDe(e)); }
+    S.midiendo = null;
+    if (r && typeof r.then === 'function') pedidos.push(r);
+    /* Gira por lo menos medio segundo (si la base contesta enseguida, igual se ve que hizo algo) y como mucho 20: con el
+       wifi conectado y sin salida el pedido queda colgado, y el botón tiene que poder tocarse de nuevo. */
+    var todos = pedidos.map(function (p) { return p.then(null, function () {}); });
+    todos.push(new Promise(function (ok) { setTimeout(ok, 500); }));
+    var tope = new Promise(function (ok) { setTimeout(ok, 20000); });
+    Promise.race([Promise.all(todos), tope]).then(function () { b.disabled = false; b.classList.remove('girando'); });
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -2758,6 +2796,7 @@
     /* SQL 212: cuando llegan las ventas hechas sin internet, la lista se vuelve a traer. */
     S.recargar = function () { if (S.vista === 'tickets' && $('tkLista')) cargar(); };
     cargar();
+    actualizable(cargar);
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -2827,6 +2866,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
   function bajarNotas(d, r) {
     var cab = ['Fecha', 'Comprobante', 'Letra', 'Anula el ticket', 'Fecha del ticket', 'Sucursal', 'Vendedor', 'Cliente', 'CUIT o DNI', 'Motivo', 'La hizo', 'ARCA', 'CAE',
@@ -3000,6 +3040,7 @@
         }).concat([['Total', '', '', '', '', '', '', '', '', '', nro(t.base), '0,00', nro(t.iva), '0,00', '0,00', '0,00', nro(t.total)]]));
     };
     cargar();
+    actualizable(cargar);
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -3179,6 +3220,7 @@
           .concat([['Total'].concat(x.cols.map(function (k) { return celdaX(x.sumas[k]); }), res(t))]));
     };
     cargar();
+    actualizable(cargar);
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -3326,6 +3368,7 @@
         }));
     };
     cargar();
+    actualizable(cargar);
   }
 
   /* Un producto: sus ventas una por una (la más nueva primero), cuánto se vendió de cada talle y color y en cada
@@ -3411,6 +3454,7 @@
           }).join('') + '</tbody></table></div></section>';
     }
     cargar();
+    actualizable(cargar);
   }
 
   function bajarProdVendido(sel, d, r) {
@@ -3553,6 +3597,7 @@
         }));
     };
     cargar();
+    actualizable(cargar);
     setTimeout(function () { var b = $('clBuscar'); if (b) b.focus(); }, 0);
   }
 
@@ -3984,6 +4029,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -4393,6 +4439,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   /* ── Un cambio guardado: verlo y anularlo (sólo mientras la caja está abierta) ── */
@@ -4864,6 +4911,14 @@
     /* SQL 212: cuando llegan las ventas hechas sin internet, la caja se vuelve a traer (y hay que contar de nuevo). */
     S.recargar = function () { if (S.vista === 'cierre' && $('cjRes')) { $('cjContado').value = ''; cargar(); } };
     cargar();
+    /* El botón de actualizar (5/11): lo escrito en el efectivo queda; si ya habían visto la cuenta, se cuenta de nuevo
+       (los números pudieron cambiar y cada conteo queda anotado: no se cuenta solo). Mientras cierra, no hace nada. */
+    actualizable(function () {
+      if (S.guardando) return;
+      var habia = !!K.k;
+      cargar();
+      if (habia) avisar('info', 'Los números se trajeron de nuevo: tocá «Ver la cuenta» otra vez.');
+    });
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var x = $('cjContado'); if (x) x.focus(); }, 0);
   }
 
@@ -4942,6 +4997,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   /* Un gasto del local, otra salida u otro ingreso de la caja chica ("Agregar gasto…" de BlueSoft).
@@ -5064,6 +5120,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   /* La "Transferencia de fondos" de BlueSoft: de la caja chica a la caja fuerte, en efectivo. Dice cuánto
@@ -5194,6 +5251,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   /* El "Retiro de Fondos" de BlueSoft: de qué caja sale (la chica o la fuerte), quién se lleva la plata y cuánto, en efectivo.
@@ -5525,6 +5583,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   function verMovimientos() {
@@ -5583,6 +5642,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   /** Un gasto del listado: se ve, y se anula mientras su caja sigue abierta. SQL 191: el retiro de la caja fuerte no entra en ningún
@@ -5660,10 +5720,9 @@
   function verDisponibilidad() {
     var c = $('cuerpo'), pedido = 0;
     S.dispVer = null;   // desde el menú, siempre la lista
-    c.innerHTML = cabeza('Disponibilidad de cajas', 'Cuánta plata hay hoy en la caja chica y en la caja fuerte de cada sucursal, según el sistema. Tocá una caja para ver sus movimientos.',
-        '<button type="button" class="btn btn-sec btn-chico" id="dpActualizar">Actualizar</button>') +
+    /* El «Actualizar» con letras de antes es ahora el botón común (actualizable, 5/11). */
+    c.innerHTML = cabeza('Disponibilidad de cajas', 'Cuánta plata hay hoy en la caja chica y en la caja fuerte de cada sucursal, según el sistema. Tocá una caja para ver sus movimientos.') +
       '<div id="dpLista"><p class="cargando">Cargando…</p></div>';
-    $('dpActualizar').onclick = cargar;
     function cargar() {
       var n = ++pedido;
       $('dpLista').innerHTML = '<p class="cargando">Cargando…</p>';
@@ -5700,6 +5759,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   /* La "Consulta de Valores de Caja" de BlueSoft: los movimientos de una caja en el período, del más nuevo al más viejo,
@@ -5777,6 +5837,7 @@
       });
     }
     cargar();
+    actualizable(cargar);
   }
 
   function bajarValores(d, r) {
@@ -7347,6 +7408,7 @@
       });
     }
     cargar();
+    actualizable(function () { cargar(true); });   // como después de un ajuste: deja la lista donde estaba
     pintarDep();
     if (window.matchMedia && matchMedia('(min-width: 1000px)').matches) setTimeout(function () { var b = $('stBuscar'); if (b) b.focus(); }, 0);
   }
@@ -7534,6 +7596,7 @@
         }));
     };
     cargar();
+    actualizable(cargar);
   }
 
   /** La ficha de un depósito, como la de BlueSoft (d null: uno nuevo en la sucursal localId): Guardar, Predeterminar y Eliminar. */
@@ -7723,6 +7786,7 @@
       }).catch(function (e) { if ($('rmHechos')) $('rmHechos').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
     cargar();
+    actualizable(cargar);
   }
 
   function verRemitosGestion() {
@@ -7793,6 +7857,7 @@
       }).catch(function (e) { if (n === pedido && $('rgLista')) $('rgLista').innerHTML = '<div class="pos-cartel mal">' + esc(mensajeDe(e)) + '</div>'; });
     }
     cargar();
+    actualizable(cargar);
   }
 
   /* SQL 204: lo que se busca en «Producto» de Remitos. De la etiqueta escaneada ("RM10299 L BL"), la prenda: todos sus
@@ -7920,6 +7985,7 @@
         }));
     };
     cargar();
+    actualizable(cargar);
   }
 
   /* ════════════════════════════════════════════════════════════════════
@@ -8063,6 +8129,7 @@
         }));
     };
     cargar();
+    actualizable(cargar);
   }
 
   /* ── SQL 193: el envío entre depósitos de la sucursal (un módulo del stock de todo el local) ──
@@ -8465,6 +8532,7 @@
       $('dfResolver').onclick = function () { resolverDiferencias(fs, cargar); };
     }
     cargar();
+    actualizable(cargar);
   }
 
   /** Cuánto tardan en resolverse: en horas, o en días si pasan de dos. */
@@ -9436,14 +9504,12 @@
     var c = $('cuerpo'), gestion = MODO === 'gestion', l = localStock();
     var F = S.sgF = S.sgF || { local: gestion && puede('locales') ? '' : l.id };
     if (F.local && !localMio(F.local)) F.local = l.id;
-    c.innerHTML = cabeza('Stock general', 'El stock de todo el local, módulo por módulo: cada módulo se pasa entero al depósito de la temporada nueva y se controla con dos productos testigo. Mientras tanto se sigue vendiendo del de antes.',
-        '<button type="button" class="btn btn-sec btn-chico" id="sgActualizar">Actualizar</button>') +
+    c.innerHTML = cabeza('Stock general', 'El stock de todo el local, módulo por módulo: cada módulo se pasa entero al depósito de la temporada nueva y se controla con dos productos testigo. Mientras tanto se sigue vendiendo del de antes.') +   // el «Actualizar» con letras es ahora el botón común (5/11)
       '<div class="pos-filtros">' + campo('', 'Sucursal', '<select id="sgLocal" class="desplegable">' + (gestion ? todasLasSucursales() : '') + opcionesLocales(F.local) + '</select>') + '</div>' +
       '<div id="sgCuerpo"><p class="cargando">Cargando…</p></div>';
     F.local = $('sgLocal').value;
     var pedido = 0, D = null;
     $('sgLocal').onchange = function () { F.local = this.value; if (F.local) { S.stLocal = F.local; recordarLocal(F.local); } cargar(); };
-    $('sgActualizar').onclick = function () { cargar(); };
     function cargar() {
       var n = ++pedido, z = $('sgCuerpo');
       if (!D) z.innerHTML = '<p class="cargando">Cargando…</p>';
@@ -9598,6 +9664,7 @@
       llamar('pos_remito', { p_id: id, p_completo: true }).then(function (r) { abrirTestigos(r, cargar, { general: true }); }, function (e) { avisar('err', mensajeDe(e)); });
     }
     cargar();
+    actualizable(cargar);
   }
   /** La barra del avance: lo controlado (verde) y lo pasado sin controlar (amarillo), de todos los módulos. */
   function barraSg(k, chica) {
@@ -10154,6 +10221,7 @@
         }));
     };
     cargar();
+    actualizable(cargar);
   }
 
   /* Un día de una persona (Por día): sus marcas, una por una (tocar una abre su ventana, para anularla), y cargar la que falta. */

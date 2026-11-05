@@ -134,6 +134,13 @@ html.pos-en-prueba .pos-modo { background: var(--warn-soft); color: var(--warn-t
 .pos-cab h2 { margin: 0; font: 700 21px/1.15 var(--display); letter-spacing: -.3px; color: var(--txt); }
 .pos-sub { display: block; margin-top: 2px; font-size: 12.5px; color: var(--txt-3); }
 .pos-acciones { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+/* El botón de actualizar (5/11): el redondo de Estadísticas, del alto de los botones chicos de al lado. */
+.pos-acciones .pos-actualizar { width: 38px; height: 38px; flex: none; cursor: pointer; }
+.pos-acciones .pos-actualizar:disabled { cursor: progress; }
+/* Con el botón: el título y el subtítulo toman el lugar que dejan los botones (el subtítulo pasa a dos renglones) y los
+   botones quedan arriba a la derecha, en vez de bajar a una fila sola a la izquierda. Si no entran ni así (el celular),
+   bajan como antes. */
+.pos-cab.pos-cab-act > :first-child { flex: 1 1 0; min-width: 260px; }
 .pos-tecla { font: 600 11px var(--sans); opacity: .7; }
 
 /* ── Los campos (más bajos en la compu) ── */
