@@ -35,9 +35,21 @@ const CAMPOS: Record<TipoFoto, Record<string, string>> = {
 const QUE_ES: Record<TipoFoto, string> = {
   sistema:
     'la pantalla "Cierre de caja" del sistema del local: a la derecha "Resultados del día" y a la izquierda el recuadro "TOTAL EFECTIVO" con el mensaje de sobrante o faltante (puede verse sólo "Resultados del día")',
-  lote: "el cierre de lote del posnet (Payway, Getnet u otro); puede haber dos o más posnet en la misma foto",
+  // (5/11) El cierre de lote puede ser el ticket impreso o la pantalla del posnet (Mauricio: "a veces también puede ser
+  // la pantalla, directamente la pantalla del posnet").
+  lote: "el cierre de lote del posnet (Payway, Getnet u otro), en el ticket impreso o en la pantalla del posnet; puede haber dos o más posnet en la misma foto",
   mp: "el resumen de cobros de Mercado Pago del día",
   gocuotas: "el resumen de cobros de Go Cuotas del día",
+};
+
+/** (5/11) Lo que tiene que leerse para que la foto sirva. Si esto se lee, la foto vale aunque esté torcida, con reflejo o
+ *  un poco cortada (Mauricio: "Dale bastante margen … no rechazar ninguna, excepto que sea algo muy evidente"). Si no se
+ *  lee, se rechaza: aceptarla dejaría el casillero vacío y trabado, peor que pedir otra foto. */
+const LO_PRINCIPAL: Record<TipoFoto, string> = {
+  sistema: 'los montos de "Resultados del día"',
+  lote: "el total del cierre de lote",
+  mp: "el total del día o los cobros del día en la lista",
+  gocuotas: "el total del día o los cobros de la lista",
 };
 
 const numeroONulo = (description: string) => ({ anyOf: [{ type: "number" }, { type: "null" }], description });
@@ -52,8 +64,8 @@ export function esquemaCaja(tipo: TipoFoto) {
   const montos = Object.fromEntries(Object.entries(CAMPOS[tipo]).map(([k, etiqueta]) => [k, numeroONulo(etiqueta)]));
   const conLista = tipo === "mp" || tipo === "gocuotas";
   const properties = {
-    foto_valida: { type: "boolean", description: "false si no se leen los números o no es la pantalla pedida" },
-    motivo: { type: "string", description: 'Si foto_valida es false, cómo sacarla de nuevo; si no, ""' },
+    foto_valida: { type: "boolean", description: "false SÓLO si es claramente otra cosa o si no se lee lo principal" },
+    motivo: { type: "string", description: 'Si foto_valida es false: UNA sola frase corta y simple (12 palabras como mucho) con qué está mal y qué hacer; si no, ""' },
     fecha: { type: "string", description: 'Fecha que aparece en la foto, formato AAAA-MM-DD; "" si no aparece' },
     ...montos,
     ...(conLista
@@ -98,7 +110,7 @@ export function esquemaCaja(tipo: TipoFoto) {
         },
       }
       : {}),
-    lista_cortada: { type: "boolean", description: "true si la lista sigue fuera de la foto (no se ven todas)" },
+    lista_cortada: { type: "boolean", description: "true si pueden quedar cobros del día de la caja fuera de la foto" },
     dudas: { type: "array", items: { type: "string" }, description: "Números que no se leen bien (vacío si no hay)" },
   };
   return { type: "object", properties, required: Object.keys(properties), additionalProperties: false };
@@ -112,7 +124,11 @@ Esta foto debería ser ${QUE_ES[tipo]}.
 - Si en la foto aparece una fecha, devolvela (sirve para detectar fotos de otro día); si no, "".
 ${tipo === "lote" ? `- Si se ven dos o más posnet (por ejemplo un Payway y un Getnet), anotá cada uno en "posnets" con su nombre y su total; no los sumes. Si dos tickets son del mismo posnet (el mismo terminal), va una sola vez.
 ` : ""}${tipo === "mp" ? `- Si se ve la lista de cobros, anotá cada uno en "operaciones", en el orden de la pantalla: la hora tal como aparece, el número de operación si se ve y el monto. Un renglón cortado por el borde de la foto va sólo si se leen la hora y el monto. No los sumes: la cuenta la hace el sistema.
-` : ""}- Si la foto no es la pantalla pedida o no se lee, foto_valida = false y explicá en "motivo" cómo sacarla de nuevo; si está bien, "".
+- En "operaciones" van sólo los cobros del día de la caja: si la lista separa los días («Hoy», «Ayer» o una fecha), los de otros días no van. "lista_cortada" = true sólo si pueden quedar cobros de ese día fuera de la foto (si abajo ya empiezan los de otro día, la lista del día está completa). Si no se ve de qué día son (ni «Hoy» ni una fecha), "lista_cortada" = true.
+` : ""}${tipo === "mp" || tipo === "gocuotas" ? `- Si la pantalla dice que no hay cobros ni ventas (por ejemplo «No tenés ninguna venta»), la foto vale y el total es 0.
+` : ""}- Dale margen a la foto: si se lee ${LO_PRINCIPAL[tipo]}, foto_valida = true aunque esté torcida, con reflejo o sombra, un poco cortada o algo borrosa. Lo que no se lea bien va en null y en "dudas".
+- foto_valida = false SÓLO en dos casos: es claramente otra cosa (otra pantalla, el cupón de una venta, una foto en negro o de otra cosa) o no se lee ${LO_PRINCIPAL[tipo]}. Ante la duda, true.
+- Si foto_valida es false, en "motivo" escribí UNA sola frase corta, muy simple, como para un chico de 10 años: qué está mal y qué hacer. Como mucho 12 palabras, sin montos, sin horas ni nombres de campos. Ejemplos: "Es otra pantalla: sacale a la del cierre de caja.", "Falta la parte de abajo: que entre toda la pantalla.", "Salió borrosa: sacala quieta, de frente y sin reflejos.", "Es el cupón de una venta: sacale al cierre de lote.", "No se ven los montos: abrí la lista de cobros de hoy.". Si está bien, "".
 Respondé SOLO con la lectura, en el formato JSON pedido.`;
 }
 
@@ -152,6 +168,7 @@ export async function leerFotoCaja(opts: {
   r.fecha = fechaValida(r.fecha);
   // Sin motivo, null como antes (la base y la app preguntan si hay motivo).
   if (typeof r.motivo !== "string" || !r.motivo.trim()) r.motivo = null;
+  else r.motivo = r.motivo.trim();
   return r;
 }
 
