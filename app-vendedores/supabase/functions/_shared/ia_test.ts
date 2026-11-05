@@ -283,7 +283,9 @@ Deno.test("si la API rechaza el formato nuevo (400), la foto se revisa igual con
   igual(error.startsWith("API 401"), true, "otro error no se reintenta: sigue como antes");
 });
 
-import { aNumero, efectivoContado, esquemaCaja, fechaValida, leerFotoCaja, MAX_UNIONES, sistemaCaja, sumarPosnets } from "./caja_ia.ts";
+import {
+  aNumero, efectivoContado, esquemaCaja, fechaValida, horaDeVenta, leerFotoCaja, MAX_UNIONES, sistemaCaja, sumarPosnets, ventasDeLaLista,
+} from "./caja_ia.ts";
 
 /** Las propiedades con anyOf o con una lista de tipos, en todo el esquema (la API acepta hasta 16). */
 function uniones(s: unknown): number {
@@ -388,4 +390,39 @@ Deno.test("caja: dos posnet en la foto del lote se suman en el código, no en la
     }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch,
   });
   igual([r.total, (r.posnets as unknown[]).length], [817500, 2], "la lectura completa");
+});
+
+Deno.test("caja: Mercado Pago anota cada venta y la suma la hace el código (4/11, SQL 242)", async () => {
+  const mp = esquemaCaja("mp") as { properties: Record<string, unknown>; required: string[] };
+  igual("operaciones" in mp.properties && mp.required.includes("operaciones"), true, "MP pide la lista de ventas");
+  igual(["sistema", "lote", "gocuotas"].some((t) => "operaciones" in esquemaCaja(t as "mp").properties), false, "los demás no");
+  igual(uniones(mp), 3, "el total, la suma y el monto de cada venta");
+  igual(sistemaCaja("mp", "2026-11-04", "Flores").includes('"operaciones"'), true, "Mercado Pago lo explica");
+  igual(sistemaCaja("lote", "2026-11-04", "Flores").includes("operaciones"), false, "el lote no");
+
+  igual([horaDeVenta("18:42"), horaDeVenta("9.05 hs"), horaDeVenta("Hoy 21h07"), horaDeVenta("hace 5 minutos"), horaDeVenta("25:10"), horaDeVenta(null)],
+    ["18:42", "09:05", "21:07", "", "", ""], "la hora, igual en las dos fotos");
+  const lista = (r: Record<string, unknown>) => (ventasDeLaLista(r), r);
+  const dos = lista({ total: null, suma_operaciones: 1, operaciones: [{ hora: "18:42", numero: "#123 456", monto: "$ 17.400" }, { hora: "18:50", numero: "", monto: 30000 }] });
+  igual([dos.suma_operaciones, dos.operaciones], [47400, [{ hora: "18:42", numero: "123456", monto: 17400 }, { hora: "18:50", numero: "", monto: 30000 }]],
+    "la suma de la IA no vale: la hace el código");
+  const flojo = lista({ total: null, suma_operaciones: 47400, dudas: [], operaciones: [{ hora: "18:42", numero: "", monto: 17400 }, { hora: "18:50", numero: "", monto: null }] });
+  igual([flojo.suma_operaciones, flojo.dudas], [null, ["No se lee el monto de la venta de las 18:50"]], "un monto sin leer deja la suma sin leer");
+  igual(lista({ total: 47400, operaciones: [{ hora: "18:42", numero: "", monto: 17400 }, { hora: "18:50", numero: "", monto: 30000 }] }).total_de_lista, true,
+    "un total igual a la suma de la lista no es el de la pantalla");
+  igual(lista({ total: 500000, operaciones: [{ hora: "18:42", numero: "", monto: 17400 }] }).total_de_lista, undefined, "el de la pantalla, sí");
+  const vieja = lista({ total: 21000, suma_operaciones: 21000 });
+  igual([vieja.total, vieja.suma_operaciones, vieja.operaciones], [21000, 21000, []], "sin lista (lecturas de antes): igual");
+
+  const r = await leerFotoCaja({
+    tipo: "mp", fecha: "2026-11-04", local: "Flores", foto: { media_type: "image/jpeg", data: "eA==" },
+    modelo: "m", apiKey: "k", pedir: (async () => new Response(JSON.stringify({
+      stop_reason: "end_turn",
+      content: [{ type: "text", text: JSON.stringify({
+        foto_valida: true, motivo: "", fecha: "2026-11-04", total: null, suma_operaciones: 99, lista_cortada: false, dudas: [],
+        operaciones: [{ hora: "18:42", numero: "", monto: 17400 }, { hora: "18:50", numero: "", monto: 30000 }],
+      }) }],
+    }), { status: 200, headers: { "content-type": "application/json" } })) as unknown as typeof fetch,
+  });
+  igual([r.total, r.suma_operaciones, r.total_de_lista], [47400, 47400, true], "la lectura completa: el total sale de la lista del código");
 });

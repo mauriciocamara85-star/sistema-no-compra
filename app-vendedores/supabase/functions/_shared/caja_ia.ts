@@ -28,7 +28,7 @@ const CAMPOS: Record<TipoFoto, Record<string, string>> = {
       'El mensaje debajo de TOTAL EFECTIVO: 0 si dice "No hay sobrante ni faltante de caja"; si dice sobrante, el monto en positivo; si dice faltante, el monto en negativo; null si no se ve',
   },
   lote: { total: "Total en pesos del cierre de lote (si se ven dos o más posnet, el del primero: cada uno va en posnets)" },
-  mp: { total: "Total cobrado en el día (si la pantalla muestra un total)" },
+  mp: { total: "Total cobrado en el día, sólo si la pantalla lo muestra escrito (no lo calcules)" },
   gocuotas: { total: "Total cobrado en el día" },
 };
 
@@ -78,6 +78,26 @@ export function esquemaCaja(tipo: TipoFoto) {
         },
       }
       : {}),
+    // (4/11, SQL 242) Mercado Pago en dos fotos: la IA lista cada venta y el código cuenta una sola vez la que se ve en
+    // las dos (Mauricio: "que se dé cuenta si hay ventas de la primera foto para que no las sume en la segunda").
+    ...(tipo === "mp"
+      ? {
+        operaciones: {
+          type: "array",
+          description: "Cada cobro de la lista que se ve, en el orden de la pantalla (vacío si no hay lista)",
+          items: {
+            type: "object",
+            properties: {
+              hora: { type: "string", description: 'La hora del cobro tal como aparece ("18:42"); "" si no se ve' },
+              numero: { type: "string", description: 'El número de operación, si se ve; "" si no' },
+              monto: numeroONulo("El monto en pesos de ese cobro"),
+            },
+            required: ["hora", "numero", "monto"],
+            additionalProperties: false,
+          },
+        },
+      }
+      : {}),
     lista_cortada: { type: "boolean", description: "true si la lista sigue fuera de la foto (no se ven todas)" },
     dudas: { type: "array", items: { type: "string" }, description: "Números que no se leen bien (vacío si no hay)" },
   };
@@ -91,6 +111,7 @@ Esta foto debería ser ${QUE_ES[tipo]}.
 - Copiá SOLO lo que se lee claramente. Si un número no se lee bien, dejalo en null y anotalo en "dudas". Nunca inventes ni calcules un monto que no está.
 - Si en la foto aparece una fecha, devolvela (sirve para detectar fotos de otro día); si no, "".
 ${tipo === "lote" ? `- Si se ven dos o más posnet (por ejemplo un Payway y un Getnet), anotá cada uno en "posnets" con su nombre y su total; no los sumes. Si dos tickets son del mismo posnet (el mismo terminal), va una sola vez.
+` : ""}${tipo === "mp" ? `- Si se ve la lista de cobros, anotá cada uno en "operaciones", en el orden de la pantalla: la hora tal como aparece, el número de operación si se ve y el monto. Un renglón cortado por el borde de la foto va sólo si se leen la hora y el monto. No los sumes: la cuenta la hace el sistema.
 ` : ""}- Si la foto no es la pantalla pedida o no se lee, foto_valida = false y explicá en "motivo" cómo sacarla de nuevo; si está bien, "".
 Respondé SOLO con la lectura, en el formato JSON pedido.`;
 }
@@ -119,6 +140,7 @@ export async function leerFotoCaja(opts: {
 
   // Montos: siempre número o null (por si la IA devuelve "1.440.100,00" como texto)
   for (const k of [...Object.keys(CAMPOS[opts.tipo]), "suma_operaciones"]) r[k] = aNumero(r[k]);
+  if (opts.tipo === "mp") ventasDeLaLista(r);
   // Si Mercado Pago/Go Cuotas no muestran total pero la lista está completa, usamos la suma.
   if ((opts.tipo === "mp" || opts.tipo === "gocuotas") && r.total == null && typeof r.suma_operaciones === "number" && !r.lista_cortada) {
     r.total = r.suma_operaciones;
@@ -159,6 +181,30 @@ export function sumarPosnets(r: Record<string, unknown>) {
     r.total = null;
     r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), ...sinLeer.map((p) => `No se lee el total del posnet ${p.nombre || "sin nombre"}`)];
   } else r.total = posnets.reduce((s, p) => s + (p.total as number), 0);
+}
+
+/** (SQL 242) Las ventas de la lista de Mercado Pago: la hora como "18:42" y el número sólo con sus dígitos (así la misma
+ *  venta en dos fotos se reconoce), y la suma la hace el código. Si un monto no se lee, la suma queda sin leer y va a
+ *  dudas. Un "total" igual a la suma de la lista no es el total del día de la pantalla: con dos fotos se cuentan las ventas. */
+export function ventasDeLaLista(r: Record<string, unknown>) {
+  const lista = Array.isArray(r.operaciones) ? r.operaciones as Record<string, unknown>[] : [];
+  const ops = lista.map((o) => ({ hora: horaDeVenta(o?.hora), numero: String(o?.numero ?? "").replace(/\D/g, ""), monto: aNumero(o?.monto) }));
+  r.operaciones = ops;
+  if (!ops.length) return;
+  const sinLeer = ops.filter((o) => o.monto == null);
+  if (sinLeer.length) {
+    r.suma_operaciones = null;
+    r.dudas = [...(Array.isArray(r.dudas) ? r.dudas : []), ...sinLeer.map((o) => `No se lee el monto de la venta${o.hora ? ` de las ${o.hora}` : ""}`)];
+    return;
+  }
+  r.suma_operaciones = Math.round(ops.reduce((s, o) => s + (o.monto as number), 0) * 100) / 100;
+  if (typeof r.total === "number" && Math.abs(r.total - (r.suma_operaciones as number)) < 0.01) r.total_de_lista = true;
+}
+
+/** "18:42" | "18.42 hs" | "9:05" → "18:42" / "09:05"; cualquier otra cosa ("hace 5 minutos") → "" */
+export function horaDeVenta(v: unknown): string {
+  const m = typeof v === "string" ? v.match(/(\d{1,2})\s*[:.h]\s*(\d{2})/) : null;
+  return m && Number(m[1]) < 24 && Number(m[2]) < 60 ? `${m[1].padStart(2, "0")}:${m[2]}` : "";
 }
 
 /** "1.440.100,00" | "$ 708.000" | 708000 → número; cualquier otra cosa → null */

@@ -270,8 +270,33 @@ function lecturaCaja(fotos, tipo) {
     var pantalla = [];
     partes.forEach(function (r) { var t = num(r.total); if (t != null && r.total_de_lista !== true && pantalla.indexOf(t) < 0) pantalla.push(t); });
     if (pantalla.length) return { total: suma(pantalla), partes: partes, pantalla: true };
+    var v = ventasSinRepetir(partes, num);
+    if (v) return { total: v.total, partes: partes, ventas: v.ventas, repetidas: v.repetidas };
   }
-  return { total: suma(partes.map(function (r) { var t = num(r.total); return tipo === 'mp' && t == null ? num(r.suma_operaciones) : t; })), partes: partes };
+  var valores = partes.map(function (r) { var t = num(r.total); return tipo === 'mp' && t == null ? num(r.suma_operaciones) : t; });
+  /* (SQL 242) Una parte sin leer deja el medio sin leer (no la suma de un pedazo). */
+  return { total: valores.some(function (x) { return x == null; }) ? null : suma(valores), partes: partes };
+}
+
+/* (SQL 242, 4/11) Mercado Pago en varias fotos: cada venta de las listas (hora y monto; sin hora, el número de operación)
+   una sola vez aunque esté en las dos fotos, y dos ventas iguales en una misma foto, dos. Como orden_caja_lecturas en la
+   base. null si alguna foto no trae su lista leída entera (las de antes del 242): entonces se suman como antes. */
+function ventasSinRepetir(partes, num) {
+  var listas = partes.every(function (r) { return Array.isArray(r.operaciones) && r.operaciones.length && num(r.suma_operaciones) != null; });
+  if (!listas) return null;
+  var veces = {}, monto = {}, todas = 0;
+  partes.forEach(function (r, i) {
+    var aca = {};
+    r.operaciones.forEach(function (o, j) {
+      var m = num(o && o.monto) || 0, h = o && o.hora, n = o && o.numero;
+      var k = h ? 'h:' + h + '|' + m.toFixed(2) : n ? 'n:' + n + '|' + m.toFixed(2) : 'u:' + i + ':' + j;
+      aca[k] = (aca[k] || 0) + 1; monto[k] = m; todas++;
+    });
+    Object.keys(aca).forEach(function (k) { veces[k] = Math.max(veces[k] || 0, aca[k]); });
+  });
+  var total = 0, ventas = 0;
+  Object.keys(veces).forEach(function (k) { total += veces[k] * monto[k]; ventas += veces[k]; });
+  return { total: Math.round(total * 100) / 100, ventas: ventas, repetidas: todas - ventas };
 }
 
 /** "Posnet: Payway $ 253.000 + Getnet $ 564.500 = $ 817.500", si el comprobante sale de sumar. */
@@ -279,6 +304,10 @@ function detalleSumaCaja(fotos, tipo) {
   var l = lecturaCaja(fotos, tipo);
   if (!l || !l.partes) return '';
   if (l.pantalla) return 'Mercado Pago: vale el total del día de la pantalla, ' + pesos(l.total) + '.';
+  if (l.ventas != null) {
+    return 'Mercado Pago: ' + l.ventas + (l.ventas === 1 ? ' venta' : ' ventas') + ' en ' + l.partes.length + ' fotos' +
+      (l.repetidas ? ' (' + l.repetidas + (l.repetidas === 1 ? ' repetida, no se suma)' : ' repetidas, no se suman)') : '') + ' = ' + pesos(l.total);
+  }
   var items = [];
   l.partes.forEach(function (r) {
     var ps = Array.isArray(r.posnets) ? r.posnets : [];

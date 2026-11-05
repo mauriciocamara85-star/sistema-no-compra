@@ -1872,7 +1872,9 @@ function engancharReleer(v, k, fs) {
           div.innerHTML = sumaCierre(t, fs, k);
           suma.replaceWith(div.firstChild);
         }
-        avisar(d.lectura.foto_valida === false ? 'La IA dice que esa foto no se lee.' : 'Listo: la IA leyó la foto.');
+        /* (SQL 242) Si con esa foto la caja quedó completa y da todo, la base la guardó sola. */
+        avisar(d.lectura.foto_valida === false ? 'La IA dice que esa foto no se lee.'
+          : d.caja_guardada ? 'Listo: la IA leyó la foto, dio todo bien y la caja quedó guardada.' : 'Listo: la IA leyó la foto.');
       });
     });
   });

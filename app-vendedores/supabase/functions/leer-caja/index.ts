@@ -26,8 +26,11 @@ Deno.serve(async (req) => {
     const lectura = await leerFotoCaja({
       tipo: ctx.tipo as TipoFoto, fecha: ctx.fecha, local: ctx.local, foto, modelo, apiKey: env("ANTHROPIC_API_KEY"),
     });
-    await sb.rpc("orden_caja_aplicar_lectura", { p_foto: fotoId, p_resultado: lectura, p_modelo: modelo });
-    return json({ ok: true, tipo: ctx.tipo, lectura });
+    const { data: aplicada } = await sb.rpc("orden_caja_aplicar_lectura", { p_foto: fotoId, p_resultado: lectura, p_modelo: modelo });
+    // (SQL 242) Con esta foto la caja quedó completa y dio todo bien: la base la guardó sola (Pacheco 4/11 sacó todas
+    // las fotos y nadie tocó «Guardar»).
+    const guardada = !!aplicada && typeof aplicada === "object" && (aplicada as Record<string, unknown>).caja_guardada === true;
+    return json({ ok: true, tipo: ctx.tipo, lectura, ...(guardada ? { caja_guardada: true } : {}) });
   } catch (e) {
     console.error("leer-caja", fotoId, e);
     await sb.from("orden_caja_fotos").update({ ia_estado: "error" }).eq("id", fotoId);

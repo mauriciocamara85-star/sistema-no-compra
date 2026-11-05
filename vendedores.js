@@ -2864,14 +2864,25 @@ function dibujarCaja(caja, fotos, corrige) {
           .then(function (nueva) {
             delete estado[clave];
             if (nueva) { fotos.unshift(nueva); completarConLectura(nueva); }
+            return nueva;
           }, function (e) {
             estado[clave] = { texto: 'Probá de nuevo' };
             if (e && e.sinSesion) { pantallaError(e); return; }
             avisar(esDeRed(e) ? 'Sin señal: no se subió. Probá de nuevo.' : mensajeDe(e));
           })
-          .then(function () { b.disabled = false; pintarFotos(); });
+          .then(function (nueva) { b.disabled = false; if (nueva && nueva.caja_guardada) guardadaSola(); else pintarFotos(); });
       };
     });
+  }
+  /* (SQL 242) Con esta foto la caja quedó completa y dio todo bien: la base la guardó sola (Pacheco 4/11 sacó todas las
+     fotos y nadie tocó «Guardar»). Si escribieron algo a mano, queda en la pantalla para que lo guarden. */
+  var tocado = false;
+  function guardadaSola() {
+    caja.estado = 'cargada'; caja.alertas = [];
+    if (!corrige) revisarCaja();
+    if (tocado) { pintarFotos(); avisar('Dio todo bien: la caja quedó guardada. Lo que escribiste a mano, guardalo con «Guardar».'); return; }
+    dibujarCaja(caja, fotos, corrige);
+    avisar('Dio todo bien: la caja quedó guardada.');
   }
   /* Lo que leyó la foto nueva pasa a los números (el posnet y Mercado Pago, sumados con sus otras fotos). */
   function completarConLectura(nueva) {
@@ -2886,13 +2897,17 @@ function dibujarCaja(caja, fotos, corrige) {
     revisarFilasCaja();
     var sinEfectivo = nueva.tipo === 'sistema' && !String(app.querySelector('[data-campo="real_efectivo"]').value || '').trim();
     var suma = OTRA_FOTO_CAJA[nueva.tipo] && l && l.total != null && detalleSumaCaja(fotos, nueva.tipo);
+    var rep = suma && l.repetidas ? ' (' + l.repetidas + (l.repetidas === 1 ? ' venta repetida va una vez)' : ' ventas repetidas van una vez)') : '';
     avisar(sinEfectivo ? 'Listo, pero no se leyó el TOTAL EFECTIVO: escribí el efectivo que contaste.'
-      : suma ? 'Listo: ' + (nueva.tipo === 'lote' ? 'el posnet' : 'Mercado Pago') + ' suma ' + pesos(l.total) + '. Revisá los números.'
+      : suma ? 'Listo: ' + (nueva.tipo === 'lote' ? 'el posnet' : 'Mercado Pago') + ' suma ' + pesos(l.total) + rep + '. Revisá los números.'
       : 'Listo: revisá los números que se cargaron.');
   }
 
+  var obs = document.getElementById('obs');
+  if (obs) obs.addEventListener('input', function () { tocado = true; });
   app.querySelectorAll('.caja-fila input').forEach(function (i) {
     i.addEventListener('input', function () {
+      tocado = true;
       revisarFilasCaja();
       if (/^sis_(tarjeta|mp|gocuotas)$/.test(i.dataset.campo)) pintarFotos();
     });
@@ -2939,7 +2954,7 @@ function fotoCaja(caja, tipo, parte, input, alEmpezar) {
         .then(function (fotoId) { return _cajaIA ? llamarFuncion('leer-caja', { foto_id: fotoId }) : { apagada: true }; })
         .then(function (r) {
           var lectura = r && r.ok ? r.lectura : null;
-          ok({ tipo: tipo, parte: parte, ia_resultado: lectura,
+          ok({ tipo: tipo, parte: parte, ia_resultado: lectura, caja_guardada: !!(r && r.caja_guardada),
                ia_estado: r && r.apagada ? 'pendiente' : lectura && lectura.foto_valida !== false ? 'ok' : lectura ? 'invalida' : 'error' });
         }, mal);
     };
